@@ -1,0 +1,9 @@
+[package]
+name = "teasel"
+version = "0.0.0"
+edition = "2024"
+description = "A JavaScript parser in Rust"
+license = "MIT"
+repository = "https://github.com/Nic-Polumeyv/teasel"
+
+[dependencies]
