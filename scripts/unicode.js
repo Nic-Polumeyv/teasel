@@ -1,4 +1,4 @@
-// Regenerates src/unicode.rs from the Unicode Character Database.
+// Regenerates src/lexer/unicode.rs from the Unicode Character Database.
 // Usage: bun scripts/unicode.js [version]
 
 const version = process.argv[2] ?? '17.0.0';
@@ -71,5 +71,5 @@ pub fn is_id_continue(c: char) -> bool {
 }
 `;
 
-await Bun.write(new URL('../src/unicode.rs', import.meta.url), src);
+await Bun.write(new URL('../src/lexer/unicode.rs', import.meta.url), src);
 console.log(`ID_Start ${start.length} ranges, ID_Continue ${cont.length} ranges`);

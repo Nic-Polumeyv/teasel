@@ -1,4 +1,6 @@
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+use crate::interner::StrId;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Token {
 	pub kind: TokenKind,
 	pub start: u32,
@@ -6,17 +8,33 @@ pub struct Token {
 	pub newline_before: bool,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum TokenKind {
 	Eof,
-	Ident,
-	PrivateName,
+	Ident {
+		name: StrId,
+		escaped: bool,
+	},
+	PrivateName(StrId),
 	Keyword(Keyword),
-	Number,
+	Number {
+		value: f64,
+		legacy_octal: bool,
+	},
 	BigInt,
-	String,
-	Template,
-	RegExp,
+	String {
+		value: StrId,
+		octal: bool,
+	},
+	Template {
+		cooked: Option<StrId>,
+		raw: StrId,
+		tail: bool,
+	},
+	RegExp {
+		pattern: StrId,
+		flags: StrId,
+	},
 
 	BraceL,
 	BraceR,

@@ -1,10 +1,10 @@
 //! A JavaScript parser in Rust.
 
 pub mod error;
+pub mod interner;
 pub mod lexer;
-pub mod token;
-pub mod unicode;
 
 pub use error::SyntaxError;
+pub use interner::{Interner, StrId};
 pub use lexer::Lexer;
-pub use token::{Comment, Keyword, Token, TokenKind};
+pub use lexer::token::{Comment, Keyword, Token, TokenKind};
