@@ -4,7 +4,7 @@ use super::{Lexer, Result, is_new_line};
 
 impl Lexer<'_> {
 	/// Re-reads a `/` or `/=` token as a regular expression literal.
-	pub fn read_regex(&mut self, token: Token) -> Result<Token> {
+	pub(crate) fn read_regex(&mut self, token: Token) -> Result<Token> {
 		let start = token.start as usize;
 		self.pos = start + 1;
 		let mut escaped = false;

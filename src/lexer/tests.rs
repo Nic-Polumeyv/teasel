@@ -1,8 +1,9 @@
 use super::Lexer;
 use super::token::{
-	Comment, Keyword, Token,
+	Keyword, Token,
 	TokenKind::{self, *},
 };
+use crate::ast::Comment;
 use crate::error::SyntaxError;
 
 fn tokens(src: &str) -> Vec<Token> {
@@ -172,7 +173,7 @@ fn escaped_identifiers() {
 fn private_names() {
 	let (lexer, kind) = single("#foo");
 	let PrivateName(name) = kind else { panic!("{kind:?}") };
-	assert_eq!(lexer.strings.get(name), "#foo");
+	assert_eq!(lexer.strings.get(name), "foo");
 	assert!(matches!(single("#class").1, PrivateName(_)));
 	assert_eq!(error("# a").message, "Unexpected character '#'");
 }

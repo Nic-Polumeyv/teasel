@@ -40,7 +40,7 @@ impl Lexer<'_> {
 	}
 
 	/// Reads a template chunk, leaving the position after the closing backquote or `${`.
-	pub fn read_template(&mut self) -> Result<Token> {
+	pub(crate) fn read_template(&mut self) -> Result<Token> {
 		let start = self.pos;
 		self.buf.clear();
 		let mut valid = true;

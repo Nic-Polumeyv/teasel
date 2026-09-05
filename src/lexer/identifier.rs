@@ -63,11 +63,10 @@ impl Lexer<'_> {
 			_ => return self.error(start, "Unexpected character '#'"),
 		}
 		let name = match self.read_word()? {
-			TokenKind::Ident { name, .. } => self.strings.get(name).to_owned(),
-			TokenKind::Keyword(keyword) => keyword.as_str().to_owned(),
+			TokenKind::Ident { name, .. } => name,
+			TokenKind::Keyword(keyword) => self.strings.intern(keyword.as_str()),
 			_ => unreachable!(),
 		};
-		let name = self.strings.intern(&format!("#{name}"));
 		Ok(TokenKind::PrivateName(name))
 	}
 }

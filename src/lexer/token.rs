@@ -1,15 +1,15 @@
 use crate::interner::StrId;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Token {
-	pub kind: TokenKind,
-	pub start: u32,
-	pub end: u32,
-	pub newline_before: bool,
+pub(crate) struct Token {
+	pub(crate) kind: TokenKind,
+	pub(crate) start: u32,
+	pub(crate) end: u32,
+	pub(crate) newline_before: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum TokenKind {
+pub(crate) enum TokenKind {
 	Eof,
 	Ident {
 		name: StrId,
@@ -100,7 +100,7 @@ pub enum TokenKind {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Keyword {
+pub(crate) enum Keyword {
 	Break,
 	Case,
 	Catch,
@@ -139,7 +139,7 @@ pub enum Keyword {
 }
 
 impl Keyword {
-	pub fn from_word(word: &str) -> Option<Keyword> {
+	pub(crate) fn from_word(word: &str) -> Option<Keyword> {
 		use Keyword::*;
 		Some(match word {
 			"break" => Break,
@@ -181,7 +181,7 @@ impl Keyword {
 		})
 	}
 
-	pub fn as_str(self) -> &'static str {
+	pub(crate) fn as_str(self) -> &'static str {
 		use Keyword::*;
 		match self {
 			Break => "break",
@@ -221,11 +221,4 @@ impl Keyword {
 			With => "with",
 		}
 	}
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Comment {
-	pub block: bool,
-	pub start: u32,
-	pub end: u32,
 }

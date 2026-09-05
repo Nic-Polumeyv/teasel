@@ -1,0 +1,414 @@
+use super::{Options, parse, parse_expression_at};
+use crate::ast::{Ast, NodeId, NodeKind};
+
+/// Renders a node as its Debug form with ids, strings and lists expanded inline.
+fn dump(ast: &Ast, id: NodeId) -> String {
+	let node = ast.node(id);
+	let text = format!("{:?}", node.kind);
+	let mut out = String::new();
+	let mut rest = text.as_str();
+	while let Some(i) = rest.find(['N', 'S', 'L']) {
+		out.push_str(&rest[..i]);
+		let tail = &rest[i..];
+		if let Some(r) = tail.strip_prefix("NodeId(") {
+			let end = r.find(')').unwrap();
+			let child = NodeId(r[..end].parse().unwrap());
+			out.push_str(&dump(ast, child));
+			rest = &r[end + 1..];
+		} else if let Some(r) = tail.strip_prefix("StrId(") {
+			let end = r.find(')').unwrap();
+			let s = ast.str(crate::interner::StrId(r[..end].parse().unwrap()));
+			out.push_str(&format!("{s:?}"));
+			rest = &r[end + 1..];
+		} else if let Some(r) = tail.strip_prefix("List { start: ") {
+			let end = r.find(" }").unwrap();
+			let (start, len) = r[..end].split_once(", len: ").unwrap();
+			let list = crate::ast::List {
+				start: start.parse().unwrap(),
+				len: len.parse().unwrap(),
+			};
+			let items: Vec<String> = ast
+				.list(list)
+				.iter()
+				.map(|c| c.map(|c| dump(ast, c)).unwrap_or_else(|| "hole".into()))
+				.collect();
+			out.push('[');
+			out.push_str(&items.join(", "));
+			out.push(']');
+			rest = &r[end + 2..];
+		} else {
+			out.push_str(&tail[..1]);
+			rest = &tail[1..];
+		}
+	}
+	out.push_str(rest);
+	out
+}
+
+fn expr(src: &str) -> String {
+	let (ast, id) = parse_expression_at(src, 0, Options::default()).unwrap_or_else(|e| panic!("{src}: {e}"));
+	dump(&ast, id)
+}
+
+fn module(src: &str) -> String {
+	let ast = parse(
+		src,
+		Options {
+			module: true,
+			..Options::default()
+		},
+	)
+	.unwrap_or_else(|e| panic!("{src}: {e}"));
+	let root = NodeId(ast.nodes.len() as u32 - 1);
+	let NodeKind::Program { body, .. } = ast.node(root).kind else {
+		panic!()
+	};
+	ast.list(body)
+		.iter()
+		.map(|s| dump(&ast, s.unwrap()))
+		.collect::<Vec<_>>()
+		.join("\n")
+}
+
+fn script(src: &str) -> String {
+	let ast = parse(src, Options::default()).unwrap_or_else(|e| panic!("{src}: {e}"));
+	let root = NodeId(ast.nodes.len() as u32 - 1);
+	let NodeKind::Program { body, .. } = ast.node(root).kind else {
+		panic!()
+	};
+	ast.list(body)
+		.iter()
+		.map(|s| dump(&ast, s.unwrap()))
+		.collect::<Vec<_>>()
+		.join("\n")
+}
+
+fn module_error(src: &str) -> String {
+	match parse(
+		src,
+		Options {
+			module: true,
+			..Options::default()
+		},
+	) {
+		Ok(_) => panic!("no error for {src:?}"),
+		Err(e) => format!("{} ({})", e.message, e.pos),
+	}
+}
+
+fn span(src: &str) -> (u32, u32) {
+	let (ast, id) = parse_expression_at(src, 0, Options::default()).unwrap();
+	(ast.node(id).start, ast.node(id).end)
+}
+
+#[test]
+fn literals() {
+	assert_eq!(expr("42"), "NumberLiteral { value: 42.0 }");
+	assert_eq!(expr("'hi'"), r#"StringLiteral { value: "hi" }"#);
+	assert_eq!(expr("true"), "BooleanLiteral { value: true }");
+	assert_eq!(expr("null"), "NullLiteral");
+	assert_eq!(expr("10n"), "BigIntLiteral");
+	assert_eq!(expr("/a+/gi"), r#"RegExpLiteral { pattern: "a+", flags: "gi" }"#);
+	assert_eq!(expr("this"), "ThisExpression");
+}
+
+#[test]
+fn binary_precedence() {
+	assert_eq!(
+		expr("a + b * c"),
+		r#"BinaryExpression { operator: Add, left: Identifier { name: "a" }, right: BinaryExpression { operator: Mul, left: Identifier { name: "b" }, right: Identifier { name: "c" } } }"#
+	);
+	assert_eq!(
+		expr("a ** b ** c"),
+		r#"BinaryExpression { operator: Exp, left: Identifier { name: "a" }, right: BinaryExpression { operator: Exp, left: Identifier { name: "b" }, right: Identifier { name: "c" } } }"#
+	);
+	assert_eq!(
+		expr("a || b && c"),
+		r#"LogicalExpression { operator: Or, left: Identifier { name: "a" }, right: LogicalExpression { operator: And, left: Identifier { name: "b" }, right: Identifier { name: "c" } } }"#
+	);
+	assert_eq!(
+		expr("a ?? b"),
+		r#"LogicalExpression { operator: Nullish, left: Identifier { name: "a" }, right: Identifier { name: "b" } }"#
+	);
+	assert_eq!(
+		expr("a - b - c"),
+		r#"BinaryExpression { operator: Sub, left: BinaryExpression { operator: Sub, left: Identifier { name: "a" }, right: Identifier { name: "b" } }, right: Identifier { name: "c" } }"#
+	);
+}
+
+#[test]
+fn unary_and_update() {
+	assert_eq!(
+		expr("-a"),
+		r#"UnaryExpression { operator: Minus, argument: Identifier { name: "a" } }"#
+	);
+	assert_eq!(
+		expr("typeof a"),
+		r#"UnaryExpression { operator: Typeof, argument: Identifier { name: "a" } }"#
+	);
+	assert_eq!(
+		expr("a++"),
+		r#"UpdateExpression { operator: Increment, prefix: false, argument: Identifier { name: "a" } }"#
+	);
+	assert_eq!(
+		expr("--a"),
+		r#"UpdateExpression { operator: Decrement, prefix: true, argument: Identifier { name: "a" } }"#
+	);
+	assert!(!expr("(-a) ** 2").contains("ParenthesizedExpression"));
+}
+
+#[test]
+fn members_and_calls() {
+	assert_eq!(
+		expr("a.b[c](d)"),
+		r#"CallExpression { callee: MemberExpression { object: MemberExpression { object: Identifier { name: "a" }, property: Identifier { name: "b" }, computed: false, optional: false }, property: Identifier { name: "c" }, computed: true, optional: false }, arguments: [Identifier { name: "d" }], optional: false }"#
+	);
+	assert_eq!(
+		expr("a?.b"),
+		r#"ChainExpression { expression: MemberExpression { object: Identifier { name: "a" }, property: Identifier { name: "b" }, computed: false, optional: true } }"#
+	);
+	assert_eq!(
+		expr("new A(1)"),
+		r#"NewExpression { callee: Identifier { name: "A" }, arguments: [NumberLiteral { value: 1.0 }] }"#
+	);
+	assert_eq!(
+		expr("new A"),
+		r#"NewExpression { callee: Identifier { name: "A" }, arguments: [] }"#
+	);
+	assert_eq!(
+		expr("f(...a, b)"),
+		r#"CallExpression { callee: Identifier { name: "f" }, arguments: [SpreadElement { argument: Identifier { name: "a" } }, Identifier { name: "b" }], optional: false }"#
+	);
+}
+
+#[test]
+fn arrows() {
+	assert_eq!(
+		expr("x => x"),
+		r#"ArrowFunctionExpression { params: [Identifier { name: "x" }], body: Identifier { name: "x" }, expression: true, is_async: false }"#
+	);
+	assert_eq!(
+		expr("(a, b = 1, ...c) => {}"),
+		r#"ArrowFunctionExpression { params: [Identifier { name: "a" }, AssignmentPattern { left: Identifier { name: "b" }, right: NumberLiteral { value: 1.0 } }, RestElement { argument: Identifier { name: "c" } }], body: BlockStatement { body: [] }, expression: false, is_async: false }"#
+	);
+	assert_eq!(
+		expr("async x => await x"),
+		r#"ArrowFunctionExpression { params: [Identifier { name: "x" }], body: AwaitExpression { argument: Identifier { name: "x" } }, expression: true, is_async: true }"#
+	);
+	assert_eq!(
+		expr("async (x) => x"),
+		r#"ArrowFunctionExpression { params: [Identifier { name: "x" }], body: Identifier { name: "x" }, expression: true, is_async: true }"#
+	);
+	assert_eq!(
+		expr("async(x)"),
+		r#"CallExpression { callee: Identifier { name: "async" }, arguments: [Identifier { name: "x" }], optional: false }"#
+	);
+}
+
+#[test]
+fn objects_and_arrays() {
+	assert_eq!(
+		expr("{a, b: 1, [c]: 2, d() {}, get e() {}, ...f}"),
+		r#"ObjectExpression { properties: [Property { key: Identifier { name: "a" }, value: Identifier { name: "a" }, kind: Init, computed: false, method: false, shorthand: true }, Property { key: Identifier { name: "b" }, value: NumberLiteral { value: 1.0 }, kind: Init, computed: false, method: false, shorthand: false }, Property { key: Identifier { name: "c" }, value: NumberLiteral { value: 2.0 }, kind: Init, computed: true, method: false, shorthand: false }, Property { key: Identifier { name: "d" }, value: FunctionExpression { function: Function { id: None, params: [], body: BlockStatement { body: [] }, is_async: false, generator: false } }, kind: Init, computed: false, method: true, shorthand: false }, Property { key: Identifier { name: "e" }, value: FunctionExpression { function: Function { id: None, params: [], body: BlockStatement { body: [] }, is_async: false, generator: false } }, kind: Get, computed: false, method: false, shorthand: false }, SpreadElement { argument: Identifier { name: "f" } }] }"#
+	);
+	assert_eq!(
+		expr("[1, , 3]"),
+		"ArrayExpression { elements: [NumberLiteral { value: 1.0 }, hole, NumberLiteral { value: 3.0 }] }"
+	);
+}
+
+#[test]
+fn destructuring_assignment() {
+	assert_eq!(
+		expr("[a, {b, c = 1}, ...d] = e"),
+		r#"AssignmentExpression { operator: Assign, left: ArrayPattern { elements: [Identifier { name: "a" }, ObjectPattern { properties: [Property { key: Identifier { name: "b" }, value: Identifier { name: "b" }, kind: Init, computed: false, method: false, shorthand: true }, Property { key: Identifier { name: "c" }, value: AssignmentPattern { left: Identifier { name: "c" }, right: NumberLiteral { value: 1.0 } }, kind: Init, computed: false, method: false, shorthand: true }] }, RestElement { argument: Identifier { name: "d" } }] }, right: Identifier { name: "e" } }"#
+	);
+}
+
+#[test]
+fn templates() {
+	assert_eq!(
+		expr("`a${b}c`"),
+		r#"TemplateLiteral { quasis: [TemplateElement { cooked: Some("a"), raw: "a", tail: false }, TemplateElement { cooked: Some("c"), raw: "c", tail: true }], expressions: [Identifier { name: "b" }] }"#
+	);
+	assert_eq!(
+		expr("tag`x`"),
+		r#"TaggedTemplateExpression { tag: Identifier { name: "tag" }, quasi: TemplateLiteral { quasis: [TemplateElement { cooked: Some("x"), raw: "x", tail: true }], expressions: [] } }"#
+	);
+	assert_eq!(span("`a${b}c` "), (0, 8));
+}
+
+#[test]
+fn conditional_and_sequence() {
+	assert_eq!(
+		expr("a ? b : c"),
+		r#"ConditionalExpression { test: Identifier { name: "a" }, consequent: Identifier { name: "b" }, alternate: Identifier { name: "c" } }"#
+	);
+	assert_eq!(
+		expr("a, b"),
+		r#"SequenceExpression { expressions: [Identifier { name: "a" }, Identifier { name: "b" }] }"#
+	);
+}
+
+#[test]
+fn expression_ends_where_it_ends() {
+	assert_eq!(span("a + b }"), (0, 5));
+	assert_eq!(span("  x"), (2, 3));
+	let (ast, id) = parse_expression_at("{ a.b }", 2, Options::default()).unwrap();
+	assert_eq!((ast.node(id).start, ast.node(id).end), (2, 5));
+}
+
+#[test]
+fn preserve_parens() {
+	let (ast, id) = parse_expression_at(
+		"(a)",
+		0,
+		Options {
+			preserve_parens: true,
+			..Options::default()
+		},
+	)
+	.unwrap();
+	assert_eq!(
+		dump(&ast, id),
+		r#"ParenthesizedExpression { expression: Identifier { name: "a" } }"#
+	);
+}
+
+#[test]
+fn statements() {
+	assert_eq!(
+		script("var a = 1, b;"),
+		r#"VariableDeclaration { declarations: [VariableDeclarator { id: Identifier { name: "a" }, init: Some(NumberLiteral { value: 1.0 }) }, VariableDeclarator { id: Identifier { name: "b" }, init: None }], kind: Var }"#
+	);
+	assert_eq!(
+		script("if (a) b; else { c }"),
+		r#"IfStatement { test: Identifier { name: "a" }, consequent: ExpressionStatement { expression: Identifier { name: "b" }, directive: None }, alternate: Some(BlockStatement { body: [ExpressionStatement { expression: Identifier { name: "c" }, directive: None }] }) }"#
+	);
+	assert_eq!(
+		script("for (let i = 0; i < 1; i++) {}"),
+		r#"ForStatement { init: Some(VariableDeclaration { declarations: [VariableDeclarator { id: Identifier { name: "i" }, init: Some(NumberLiteral { value: 0.0 }) }], kind: Let }), test: Some(BinaryExpression { operator: Lt, left: Identifier { name: "i" }, right: NumberLiteral { value: 1.0 } }), update: Some(UpdateExpression { operator: Increment, prefix: false, argument: Identifier { name: "i" } }), body: BlockStatement { body: [] } }"#
+	);
+	assert_eq!(
+		script("for (const x of xs) ;"),
+		r#"ForOfStatement { left: VariableDeclaration { declarations: [VariableDeclarator { id: Identifier { name: "x" }, init: None }], kind: Const }, right: Identifier { name: "xs" }, body: EmptyStatement, is_await: false }"#
+	);
+	assert_eq!(
+		script("for (k in o) ;"),
+		r#"ForInStatement { left: Identifier { name: "k" }, right: Identifier { name: "o" }, body: EmptyStatement }"#
+	);
+	assert_eq!(
+		script("label: while (true) { break label; }"),
+		r#"LabeledStatement { label: Identifier { name: "label" }, body: WhileStatement { test: BooleanLiteral { value: true }, body: BlockStatement { body: [BreakStatement { label: Some(Identifier { name: "label" }) }] } } }"#
+	);
+	assert_eq!(
+		script("switch (a) { case 1: b; default: }"),
+		r#"SwitchStatement { discriminant: Identifier { name: "a" }, cases: [SwitchCase { test: Some(NumberLiteral { value: 1.0 }), consequent: [ExpressionStatement { expression: Identifier { name: "b" }, directive: None }] }, SwitchCase { test: None, consequent: [] }] }"#
+	);
+	assert_eq!(
+		script("try { a } catch (e) { b } finally { c }"),
+		r#"TryStatement { block: BlockStatement { body: [ExpressionStatement { expression: Identifier { name: "a" }, directive: None }] }, handler: Some(CatchClause { param: Some(Identifier { name: "e" }), body: BlockStatement { body: [ExpressionStatement { expression: Identifier { name: "b" }, directive: None }] } }), finalizer: Some(BlockStatement { body: [ExpressionStatement { expression: Identifier { name: "c" }, directive: None }] }) }"#
+	);
+	assert_eq!(
+		script("'use strict'"),
+		r#"ExpressionStatement { expression: StringLiteral { value: "use strict" }, directive: Some("use strict") }"#
+	);
+}
+
+#[test]
+fn functions_and_classes() {
+	assert_eq!(
+		script("function f(a, b = 2) { return a }"),
+		r#"FunctionDeclaration { function: Function { id: Some(Identifier { name: "f" }), params: [Identifier { name: "a" }, AssignmentPattern { left: Identifier { name: "b" }, right: NumberLiteral { value: 2.0 } }], body: BlockStatement { body: [ReturnStatement { argument: Some(Identifier { name: "a" }) }] }, is_async: false, generator: false } }"#
+	);
+	assert_eq!(
+		script("async function* g() { yield 1; await 2 }"),
+		r#"FunctionDeclaration { function: Function { id: Some(Identifier { name: "g" }), params: [], body: BlockStatement { body: [ExpressionStatement { expression: YieldExpression { argument: Some(NumberLiteral { value: 1.0 }), delegate: false }, directive: None }, ExpressionStatement { expression: AwaitExpression { argument: NumberLiteral { value: 2.0 } }, directive: None }] }, is_async: true, generator: true } }"#
+	);
+	assert_eq!(
+		script(
+			"class A extends B { #x = 1; static y; constructor() { super() } get z() { return this.#x } static { } }"
+		),
+		r#"ClassDeclaration { class: Class { id: Some(Identifier { name: "A" }), super_class: Some(Identifier { name: "B" }), body: ClassBody { body: [PropertyDefinition { key: PrivateIdentifier { name: "x" }, value: Some(NumberLiteral { value: 1.0 }), computed: false, is_static: false }, PropertyDefinition { key: Identifier { name: "y" }, value: None, computed: false, is_static: true }, MethodDefinition { key: Identifier { name: "constructor" }, value: FunctionExpression { function: Function { id: None, params: [], body: BlockStatement { body: [ExpressionStatement { expression: CallExpression { callee: Super, arguments: [], optional: false }, directive: None }] }, is_async: false, generator: false } }, kind: Constructor, computed: false, is_static: false }, MethodDefinition { key: Identifier { name: "z" }, value: FunctionExpression { function: Function { id: None, params: [], body: BlockStatement { body: [ReturnStatement { argument: Some(MemberExpression { object: ThisExpression, property: PrivateIdentifier { name: "x" }, computed: false, optional: false }) }] }, is_async: false, generator: false } }, kind: Get, computed: false, is_static: false }, StaticBlock { body: [] }] } } }"#
+	);
+}
+
+#[test]
+fn modules() {
+	assert_eq!(
+		module("import a, { b as c } from 'm';"),
+		r#"ImportDeclaration { specifiers: [ImportDefaultSpecifier { local: Identifier { name: "a" } }, ImportSpecifier { imported: Identifier { name: "b" }, local: Identifier { name: "c" } }], source: StringLiteral { value: "m" }, attributes: [] }"#
+	);
+	assert_eq!(
+		module("import * as ns from 'm' with { type: 'json' };"),
+		r#"ImportDeclaration { specifiers: [ImportNamespaceSpecifier { local: Identifier { name: "ns" } }], source: StringLiteral { value: "m" }, attributes: [ImportAttribute { key: Identifier { name: "type" }, value: StringLiteral { value: "json" } }] }"#
+	);
+	assert_eq!(
+		module("export const x = 1;"),
+		r#"ExportNamedDeclaration { declaration: Some(VariableDeclaration { declarations: [VariableDeclarator { id: Identifier { name: "x" }, init: Some(NumberLiteral { value: 1.0 }) }], kind: Const }), specifiers: [], source: None, attributes: [] }"#
+	);
+	assert_eq!(
+		module("let x; export { x as y };"),
+		"VariableDeclaration { declarations: [VariableDeclarator { id: Identifier { name: \"x\" }, init: None }], kind: Let }\nExportNamedDeclaration { declaration: None, specifiers: [ExportSpecifier { local: Identifier { name: \"x\" }, exported: Identifier { name: \"y\" } }], source: None, attributes: [] }"
+	);
+	assert_eq!(
+		module("export default 1;"),
+		"ExportDefaultDeclaration { declaration: NumberLiteral { value: 1.0 } }"
+	);
+	assert_eq!(
+		module("export * as all from 'm';"),
+		r#"ExportAllDeclaration { exported: Some(Identifier { name: "all" }), source: StringLiteral { value: "m" }, attributes: [] }"#
+	);
+	assert_eq!(
+		module("import.meta.url"),
+		r#"ExpressionStatement { expression: MemberExpression { object: MetaProperty { meta: Identifier { name: "import" }, property: Identifier { name: "meta" } }, property: Identifier { name: "url" }, computed: false, optional: false }, directive: None }"#
+	);
+	assert_eq!(
+		module("await 1;"),
+		"ExpressionStatement { expression: AwaitExpression { argument: NumberLiteral { value: 1.0 } }, directive: None }"
+	);
+}
+
+#[test]
+fn errors() {
+	assert_eq!(module_error("export { nope };"), "Export 'nope' is not defined (9)");
+	assert_eq!(
+		module_error("let a; let a;"),
+		"Identifier 'a' has already been declared (11)"
+	);
+	assert_eq!(
+		module_error("a ?? b || c"),
+		"Logical expressions and coalesce expressions cannot be mixed. Wrap either by parentheses (7)"
+	);
+	assert_eq!(module_error("1 = 2"), "Assigning to rvalue (0)");
+	assert_eq!(
+		module_error("({a = 1})"),
+		"Shorthand property assignments are valid only in destructuring patterns (4)"
+	);
+	assert_eq!(module_error("return"), "'return' outside of function (0)");
+	assert_eq!(module_error("break"), "Unsyntactic break (0)");
+	assert_eq!(module_error("with (a) {}"), "'with' in strict mode (0)");
+	assert_eq!(
+		module_error("class A { constructor(){} constructor(){} }"),
+		"Duplicate constructor in the same class (26)"
+	);
+	assert_eq!(
+		module_error("a.#x"),
+		"Private field '#x' must be declared in an enclosing class (2)"
+	);
+	assert_eq!(
+		module_error("function f(a, a) { 'use strict' }"),
+		"Argument name clash (14)"
+	);
+	assert_eq!(module_error("x = 1 +"), "Unexpected token (7)");
+}
+
+#[test]
+fn undeclared_exports_can_be_allowed() {
+	let options = Options {
+		module: true,
+		allow_undeclared_exports: true,
+		..Options::default()
+	};
+	assert!(parse("export { nope };", options).is_ok());
+}

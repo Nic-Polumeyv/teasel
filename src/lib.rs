@@ -2,11 +2,12 @@
 
 #![warn(unreachable_pub)]
 
+pub mod ast;
 pub mod error;
 pub mod interner;
-pub mod lexer;
+pub(crate) mod lexer;
+pub mod parser;
 
 pub use error::SyntaxError;
 pub use interner::{Interner, StrId};
-pub use lexer::Lexer;
-pub use lexer::token::{Comment, Keyword, Token, TokenKind};
+pub use parser::{Options, parse, parse_expression_at};

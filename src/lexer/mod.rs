@@ -2,30 +2,37 @@ mod identifier;
 mod number;
 mod regex;
 mod string;
-pub mod token;
-pub mod unicode;
+pub(crate) mod token;
+pub(crate) mod unicode;
 
 #[cfg(test)]
 mod tests;
 
+use crate::ast::Comment;
 use crate::error::SyntaxError;
 use crate::interner::Interner;
-use token::{Comment, Token, TokenKind};
+use token::{Token, TokenKind};
 use unicode::is_id_start;
 
 type Result<T> = std::result::Result<T, SyntaxError>;
 
+#[derive(Clone, Copy)]
+pub(crate) struct Snapshot {
+	pos: usize,
+	comments: usize,
+}
+
 /// Positions are byte offsets into the source.
-pub struct Lexer<'a> {
+pub(crate) struct Lexer<'a> {
 	src: &'a str,
 	pos: usize,
 	buf: String,
-	pub comments: Vec<Comment>,
-	pub strings: Interner,
+	pub(crate) comments: Vec<Comment>,
+	pub(crate) strings: Interner,
 }
 
 impl<'a> Lexer<'a> {
-	pub fn new(src: &'a str) -> Self {
+	pub(crate) fn new(src: &'a str) -> Self {
 		Self {
 			src,
 			pos: 0,
@@ -35,20 +42,24 @@ impl<'a> Lexer<'a> {
 		}
 	}
 
-	pub fn source(&self) -> &'a str {
+	pub(crate) fn source(&self) -> &'a str {
 		self.src
 	}
 
-	pub fn pos(&self) -> u32 {
-		self.pos as u32
-	}
-
-	pub fn set_pos(&mut self, pos: u32) {
+	pub(crate) fn set_pos(&mut self, pos: u32) {
 		self.pos = pos as usize;
 	}
 
-	pub fn slice(&self, start: u32, end: u32) -> &'a str {
-		&self.src[start as usize..end as usize]
+	pub(crate) fn snapshot(&self) -> Snapshot {
+		Snapshot {
+			pos: self.pos,
+			comments: self.comments.len(),
+		}
+	}
+
+	pub(crate) fn restore(&mut self, snapshot: Snapshot) {
+		self.pos = snapshot.pos;
+		self.comments.truncate(snapshot.comments);
 	}
 
 	fn byte(&self) -> Option<u8> {
@@ -67,7 +78,7 @@ impl<'a> Lexer<'a> {
 		Err(SyntaxError::new(pos as u32, message))
 	}
 
-	pub fn next_token(&mut self) -> Result<Token> {
+	pub(crate) fn next_token(&mut self) -> Result<Token> {
 		let newline_before = self.skip_space()?;
 		let start = self.pos;
 		let Some(b) = self.byte() else {
@@ -274,7 +285,7 @@ impl<'a> Lexer<'a> {
 	}
 }
 
-pub fn is_new_line(c: char) -> bool {
+pub(crate) fn is_new_line(c: char) -> bool {
 	matches!(c, '\n' | '\r' | '\u{2028}' | '\u{2029}')
 }
 
