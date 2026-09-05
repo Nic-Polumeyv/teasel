@@ -100,6 +100,8 @@ pub struct State {
 	export_kind: Option<Kind>,
 	/// Modifiers for the class about to be parsed.
 	next_class: ClassFrame,
+	/// Inside a namespace or module block, whose exports name its own scope.
+	module_blocks: u32,
 	/// Decorators waiting for their class, one list per nesting level of decorator expressions.
 	decorators: Vec<Vec<NodeId>>,
 }
@@ -247,23 +249,6 @@ impl Parser<'_, TypeScript> {
 		Some(&mut self.ast.extension.nodes[index])
 	}
 
-	/// The byte column acorn-typescript reports as a position for modifier order errors.
-	fn column(&self, pos: u32) -> u32 {
-		let source = self.source();
-		let line_start = source[..pos as usize].rfind(['\n', '\r']).map_or(0, |i| i + 1);
-		let column: usize = source[line_start..pos as usize].chars().map(char::len_utf16).sum();
-		// The column is reported as if it were an offset, so it is mapped back to the byte
-		// offset that serializes to that number.
-		let mut units = 0;
-		for (byte, c) in source.char_indices() {
-			if units >= column {
-				return byte as u32;
-			}
-			units += c.len_utf16();
-		}
-		source.len() as u32
-	}
-
 	fn extras_mut(&mut self, id: NodeId) -> &mut Extras {
 		self.ast.extension.extras.entry(id).or_default()
 	}
@@ -372,6 +357,7 @@ impl Parser<'_, TypeScript> {
 		};
 		if self.eat(TokenKind::ParenL)? {
 			let args = self.parse_expr_list(TokenKind::ParenR, false, false, &mut None)?;
+			self.no_type_casts(&args)?;
 			let arguments = self.list(&args);
 			let callee_start = self.start_of(expression);
 			expression = self.add(
@@ -435,6 +421,9 @@ impl Parser<'_, TypeScript> {
 				self.start_of(id),
 				format!("type '{}' has already been declared.", self.str(name)),
 			);
+		}
+		if depth == 0 {
+			self.undeclared_exports.remove(&name);
 		}
 		self.ext.types.push(depth, name);
 		Ok(())
@@ -585,11 +574,7 @@ impl Parser<'_, TypeScript> {
 		if !no_calls && self.eat(TokenKind::ParenL)? {
 			let mut errors = Some(DestructuringErrors::default());
 			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut errors)?;
-			for arg in args.iter().flatten() {
-				if let Some(TsKind::TypeCastExpression { type_annotation, .. }) = self.ts_kind(*arg) {
-					return self.error(self.start_of(type_annotation), "Did not expect a type annotation here.");
-				}
-			}
+			self.no_type_casts(&args)?;
 			let arguments = self.list(&args);
 			let node = self.add(
 				NodeKind::CallExpression {
@@ -672,6 +657,23 @@ impl Parser<'_, TypeScript> {
 				Ok(false)
 			}
 		}
+	}
+
+	/// A type annotation in a list that is not becoming parameters is an error.
+	fn no_type_casts(&self, items: &[Option<NodeId>]) -> Result<()> {
+		for item in items.iter().flatten() {
+			let annotation = match self.ts_kind(*item) {
+				Some(TsKind::TypeCastExpression { type_annotation, .. }) => Some(type_annotation),
+				_ if matches!(self.kind(*item), NodeKind::SpreadElement { .. }) => {
+					self.ext_data().extras(*item).and_then(|e| e.type_annotation)
+				}
+				_ => None,
+			};
+			if let Some(annotation) = annotation {
+				return self.error(self.start_of(annotation), "Did not expect a type annotation here.");
+			}
+		}
+		Ok(())
 	}
 
 	fn type_cast_to_parameter(&mut self, id: NodeId) -> NodeId {
@@ -805,11 +807,10 @@ impl Extension for TypeScript {
 			None => p.parse_statement(Context::None, false, None)?,
 		};
 		p.ext.ambient = old_ambient;
-		if is_declare
-			|| matches!(
-				p.ts_kind(declaration),
-				Some(TsKind::InterfaceDeclaration { .. } | TsKind::TypeAliasDeclaration { .. })
-			) {
+		if matches!(
+			p.ts_kind(declaration),
+			Some(TsKind::InterfaceDeclaration { .. } | TsKind::TypeAliasDeclaration { .. })
+		) {
 			p.ext.export_kind = Some(Kind::Type);
 		}
 		if is_declare {
@@ -901,7 +902,7 @@ impl Extension for TypeScript {
 	}
 
 	fn declares_export(p: &mut Parser<Self>, name: StrId) -> bool {
-		p.ext.types.contains(name) || p.ext.export_only.contains(name)
+		p.ext.module_blocks > 0 || p.ext.types.contains(name) || p.ext.export_only.contains(name)
 	}
 
 	fn scope_exit(p: &mut Parser<Self>) {
@@ -1109,6 +1110,9 @@ impl Extension for TypeScript {
 	fn function_end(p: &mut Parser<Self>, node: NodeId) -> Result<()> {
 		let frame = p.ext.functions.pop().unwrap();
 		p.ext.maybe_in_arrow_parameters = frame.arrow_parameters;
+		if let Some(TsKind::DeclareFunction { id: Some(id), .. }) = p.ts_kind(node) {
+			p.declare_export_only(id);
+		}
 		if frame.type_parameters.is_some() || frame.return_type.is_some() {
 			let extras = p.extras_mut(node);
 			if frame.type_parameters.is_some() {
@@ -1558,7 +1562,6 @@ impl Extension for TypeScript {
 			if no_calls {
 				return Ok(Some((base, false)));
 			}
-			p.extras_mut(base).optional = true;
 			chained = true;
 			is_optional_call = true;
 			p.next()?;
@@ -1597,6 +1600,10 @@ impl Extension for TypeScript {
 
 	fn checks_assignment_target(p: &mut Parser<Self>) -> bool {
 		!p.ext.maybe_in_arrow_parameters
+	}
+
+	fn list_items(p: &mut Parser<Self>, items: &[Option<NodeId>]) -> Result<()> {
+		p.no_type_casts(items)
 	}
 
 	fn new_expression(p: &mut Parser<Self>, node: NodeId) {

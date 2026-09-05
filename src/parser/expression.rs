@@ -594,6 +594,7 @@ impl<E: Extension> Parser<'_, E> {
 				return Ok((arrow, false));
 			}
 			self.check_expression_errors(&errors, true)?;
+			E::list_items(self, &args)?;
 			if old_yield != 0 {
 				self.yield_pos = old_yield;
 			}
@@ -722,6 +723,7 @@ impl<E: Extension> Parser<'_, E> {
 			TokenKind::BracketL => {
 				self.next()?;
 				let elements = self.parse_expr_list(TokenKind::BracketR, true, true, errors)?;
+				E::list_items(self, &elements)?;
 				let elements = self.list(&elements);
 				Ok(self.add(NodeKind::ArrayExpression { elements }, start))
 			}
@@ -817,6 +819,7 @@ impl<E: Extension> Parser<'_, E> {
 			return self.unexpected_at(pos);
 		}
 		self.check_expression_errors(&paren.errors, true)?;
+		E::list_items(self, &paren.items)?;
 		if old_yield != 0 {
 			self.yield_pos = old_yield;
 		}
@@ -916,6 +919,7 @@ impl<E: Extension> Parser<'_, E> {
 		}
 		let arguments = if self.eat(TokenKind::ParenL)? {
 			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut None)?;
+			E::list_items(self, &args)?;
 			self.list(&args)
 		} else {
 			List::EMPTY

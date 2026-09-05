@@ -337,7 +337,7 @@ fn enums_and_namespaces() {
 	);
 	assert_eq!(
 		module(r#"declare namespace N { const x = 1; }"#),
-		r#"error 32: A 'const' initializer in an ambient context must be a string or numeric literal or literal enum reference."#
+		r#"ModuleDeclaration { id: Identifier { name: "N" }, body: Some(ModuleBlock { body: [VariableDeclaration { declarations: [VariableDeclarator { id: Identifier { name: "x" }, init: Some(NumberLiteral { value: 1.0 }) }], kind: Const }] }), global: false } +{declare}"#
 	);
 	assert_eq!(
 		module(r#"declare namespace N { export const x = a.b; }"#),
@@ -353,7 +353,7 @@ fn ambient() {
 	);
 	assert_eq!(
 		module(r#"declare const x = 1;"#),
-		r#"error 18: A 'const' initializer in an ambient context must be a string or numeric literal or literal enum reference."#
+		r#"VariableDeclaration { declarations: [VariableDeclarator { id: Identifier { name: "x" }, init: Some(NumberLiteral { value: 1.0 }) }], kind: Const } +{declare}"#
 	);
 	assert_eq!(
 		module(r#"declare function f(): void;"#),
@@ -373,7 +373,7 @@ fn ambient() {
 	);
 	assert_eq!(
 		module(r#"export declare const x: number;"#),
-		r#"ExportNamedDeclaration { declaration: Some(VariableDeclaration { declarations: [VariableDeclarator { id: Identifier { name: "x" }, init: None }], kind: Const }), specifiers: [], source: None, attributes: [] } +{exportKind: type}"#
+		r#"ExportNamedDeclaration { declaration: Some(VariableDeclaration { declarations: [VariableDeclarator { id: Identifier { name: "x" }, init: None }], kind: Const }), specifiers: [], source: None, attributes: [] }"#
 	);
 }
 
@@ -513,7 +513,7 @@ fn expressions() {
 	);
 	assert_eq!(
 		module(r#"f(a?: number);"#),
-		r#"ExpressionStatement { expression: CallExpression { callee: Identifier { name: "f" }, arguments: [TypeCastExpression { expression: Identifier { name: "a" }, type_annotation: TypeAnnotation { type_annotation: Keyword(Number) } }], optional: false }, directive: None }"#
+		r#"error 4: Did not expect a type annotation here."#
 	);
 	assert_eq!(
 		module(r#"let x = y as T >> 2;"#),

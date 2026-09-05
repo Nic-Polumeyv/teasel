@@ -28,21 +28,32 @@ function normalize(key, value) {
 export function normalize_ts(key, value) {
 	if (typeof value === 'bigint') return null;
 	if (value instanceof RegExp) return null;
-	if (value && typeof value === 'object' && !Array.isArray(value)) {
-		if (value.type === 'ImportExpression') {
-			const { arguments: args, ...rest } = value;
-			return { ...rest, options: args?.[0] ?? null };
-		}
-		if (/^(Import|ExportNamed|ExportAll)Declaration$/.test(value.type) && !('attributes' in value)) return { ...value, attributes: [] };
-		if (value.type === 'CallExpression' && !('optional' in value)) return { ...value, optional: false };
-		if (value.type === 'ClassExpression' && !('id' in value)) return { ...value, id: null };
-		if (value.type === 'MemberExpression' && !('optional' in value)) return { ...value, optional: false };
-		if ('extra' in value) {
-			const { extra, ...rest } = value;
-			return rest;
-		}
+	if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+	let v = value;
+	if (v.type === 'ImportExpression') {
+		const { arguments: args, ...rest } = v;
+		v = { ...rest, options: args?.[0] ?? null };
 	}
-	return value;
+	if (/^(Import|ExportNamed|ExportAll)Declaration$/.test(v.type) && !('attributes' in v)) v = { ...v, attributes: [] };
+	if (v.type === 'CallExpression' && !('optional' in v)) v = { ...v, optional: false };
+	if (v.type === 'ClassExpression' && !('id' in v)) v = { ...v, id: null };
+	if (v.type === 'MemberExpression' && !('optional' in v)) v = { ...v, optional: false };
+	// `a?.<T>()` marks the callee itself optional in the plugin; on a member callee the tree alone
+	// cannot say whether the plugin or the source put it there, so `typescript.js` compares those
+	// without it.
+	if (v.type === 'CallExpression' && v.typeArguments && v.optional && v.callee?.type === 'Identifier' && 'optional' in v.callee) {
+		const { optional, ...callee } = v.callee;
+		v = { ...v, callee };
+	}
+	// `export declare` is a value export; the plugin marks every `export declare` type-only.
+	if (v.type === 'ExportNamedDeclaration' && v.exportKind === 'type' && v.declaration && !/^TS(Interface|TypeAlias)Declaration$/.test(v.declaration.type)) {
+		v = { ...v, exportKind: 'value' };
+	}
+	if ('extra' in v) {
+		const { extra, ...rest } = v;
+		v = rest;
+	}
+	return v;
 }
 
 function acorn_error(e) {
@@ -119,13 +130,16 @@ function parse_line(line) {
 
 /// `expected` is a function of the job so acorn's ASTs are built one at a time; `lines` are
 /// teasel's raw output lines.
-export function compare(jobs, expected, lines, { verbose, label = corpus, skipped = 0 }) {
-	const stats = { identical: 0, mismatch: 0, both_error: 0, error_differs: 0, only_acorn_error: 0, only_teasel_error: 0 };
+/// `known(expected, actual)` names an oracle bug: such a pair counts as agreement and is
+/// reported on its own line.
+export function compare(jobs, expected, lines, { verbose, label = corpus, skipped = 0, known = () => false }) {
+	const stats = { identical: 0, mismatch: 0, both_error: 0, error_differs: 0, only_acorn_error: 0, only_teasel_error: 0, oracle_bug: 0 };
 	const details = [];
 	for (const [i, job] of jobs.entries()) {
 		const e = expected(job);
 		const a = parse_line(lines[i]);
-		if (e.error && a.error) {
+		if (known(e, a)) stats.oracle_bug++;
+		else if (e.error && a.error) {
 			if (!diff(e.error, a.error)) stats.both_error++;
 			else {
 				stats.error_differs++;
@@ -148,7 +162,7 @@ export function compare(jobs, expected, lines, { verbose, label = corpus, skippe
 	const total = jobs.length;
 	console.log(`${total} jobs from ${label} (acorn ${acorn.version})${skipped ? `, ${skipped} files skipped` : ''}`);
 	for (const [k, v] of Object.entries(stats)) console.log(`  ${k.padEnd(18)} ${v}`);
-	const agree = stats.identical + stats.both_error;
+	const agree = stats.identical + stats.both_error + stats.oracle_bug;
 	console.log(`  agreement          ${((100 * agree) / total).toFixed(2)}%`);
 	const shown = verbose ? details : details.slice(0, 25);
 	for (const line of shown) console.log(line);

@@ -9,7 +9,7 @@ import * as acorn from 'acorn';
 import { tsPlugin } from '@sveltejs/acorn-typescript';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { args, compare, normalize_ts, root, teasel } from './lib.js';
+import { args, compare, diff, normalize_ts, root, teasel } from './lib.js';
 
 const Parser = acorn.Parser.extend(tsPlugin());
 const kit = process.env.KIT_DIR ?? join(process.env.HOME, 'Projects/kit');
@@ -66,5 +66,25 @@ if (dts) {
 }
 if (jobs.length > limit) jobs.length = limit;
 
+// Where acorn-typescript is wrong and teasel follows TypeScript: it rejects every ambient
+// initializer, misses declarations that satisfy an export, reports a modifier's column as its
+// offset, and marks the callee of `a.b?.<T>()` optional.
+function plugin_bug(expected, actual) {
+	if (!expected.error && !actual.error) return !!diff(expected, actual) && !diff(without_callee_optional(expected), without_callee_optional(actual));
+	if (!expected.error || (actual.error && actual.error.message !== expected.error.message)) return false;
+	const message = expected.error.message;
+	if (actual.error) return expected.error.pos === actual.error.loc?.column && actual.error.pos !== expected.error.pos;
+	return message.startsWith("A 'const' initializer in an ambient context") || /^Export '.*' is not defined$/.test(message);
+}
+
+function without_callee_optional(node) {
+	if (Array.isArray(node)) return node.map(without_callee_optional);
+	if (!node || typeof node !== 'object') return node;
+	const out = {};
+	for (const [k, v] of Object.entries(node)) out[k] = without_callee_optional(v);
+	if (node.type === 'CallExpression' && node.typeArguments && node.optional && node.callee?.type === 'MemberExpression') delete out.callee.optional;
+	return out;
+}
+
 const lines = await teasel(jobs);
-process.exit(compare(jobs, (job) => reference(job.source), lines, { verbose, label: `${root} + ${kit}` }) ? 0 : 1);
+process.exit(compare(jobs, (job) => reference(job.source), lines, { verbose, label: `${root} + ${kit}`, known: plugin_bug }) ? 0 : 1);

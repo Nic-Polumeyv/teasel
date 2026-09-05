@@ -1222,26 +1222,24 @@ impl Parser<'_, TypeScript> {
 		Ok(modifiers)
 	}
 
-	/// Duplicate, misordered and conflicting modifiers. The plugin reports order and conflict
-	/// errors at the modifier's column, not its offset.
+	/// Duplicate, misordered and conflicting modifiers.
 	fn check_modifier(&self, seen: &Modifiers, modifier: &str, start: u32) -> Result<()> {
-		let column = self.column(start);
 		let order = |before: &str, after: &str| -> Result<()> {
 			if modifier == before && seen.has(after) {
-				return self.error(column, format!("'{before}' modifier must precede '{after}' modifier."));
+				return self.error(start, format!("'{before}' modifier must precede '{after}' modifier."));
 			}
 			Ok(())
 		};
 		let conflict = |a: &str, b: &str| -> Result<()> {
 			if (seen.has(a) && modifier == b) || (seen.has(b) && modifier == a) {
-				return self.error(column, format!("'{a}' modifier cannot be used with '{b}' modifier."));
+				return self.error(start, format!("'{a}' modifier cannot be used with '{b}' modifier."));
 			}
 			Ok(())
 		};
 		match modifier {
 			"public" | "private" | "protected" => {
 				if seen.extras.accessibility.is_some() {
-					return self.error(self.tok.start, "Accessibility modifier already seen.");
+					return self.error(start, "Accessibility modifier already seen.");
 				}
 				for after in ["override", "static", "readonly", "accessor"] {
 					order(modifier, after)?;
@@ -1249,13 +1247,13 @@ impl Parser<'_, TypeScript> {
 			}
 			"in" | "out" => {
 				if seen.has(modifier) {
-					return self.error(self.tok.start, format!("Duplicate modifier: '{modifier}'."));
+					return self.error(start, format!("Duplicate modifier: '{modifier}'."));
 				}
 				order("in", "out")?;
 			}
 			"accessor" => {
 				if seen.has(modifier) {
-					return self.error(self.tok.start, format!("Duplicate modifier: '{modifier}'."));
+					return self.error(start, format!("Duplicate modifier: '{modifier}'."));
 				}
 				for other in ["readonly", "static", "override"] {
 					conflict("accessor", other)?;
@@ -1263,12 +1261,12 @@ impl Parser<'_, TypeScript> {
 			}
 			"const" => {
 				if seen.has(modifier) {
-					return self.error(self.tok.start, format!("Duplicate modifier: '{modifier}'."));
+					return self.error(start, format!("Duplicate modifier: '{modifier}'."));
 				}
 			}
 			_ => {
 				if seen.has(modifier) {
-					return self.error(self.tok.start, format!("Duplicate modifier: '{modifier}'."));
+					return self.error(start, format!("Duplicate modifier: '{modifier}'."));
 				}
 				order("static", "readonly")?;
 				order("static", "override")?;
