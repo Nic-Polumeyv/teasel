@@ -1,4 +1,6 @@
-/target
-/node_modules
-/oracle/node_modules
-/oracle/test262-parser-tests
+target/
+/oracle/node_modules/
+/oracle/test262-parser-tests/
+/bindings/node/node_modules/
+/bindings/wasm/pkg/
+*.node

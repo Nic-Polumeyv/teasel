@@ -13,7 +13,8 @@
 
 use std::io::{self, BufRead, Read, Write};
 use std::process::ExitCode;
-use teasel::{Options, estree};
+use teasel::json::{Entry, Request};
+use teasel::{Options, json};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Mode {
@@ -32,6 +33,16 @@ impl Mode {
 			"params" => Mode::Params,
 			"stmt" => Mode::Statement,
 			_ => Mode::Program,
+		}
+	}
+
+	fn entry(self) -> Entry {
+		match self {
+			Mode::Program => Entry::Program,
+			Mode::Expression => Entry::Expression,
+			Mode::Pattern => Entry::Pattern,
+			Mode::Params => Entry::Params,
+			Mode::Statement => Entry::Statement,
 		}
 	}
 
@@ -54,54 +65,6 @@ impl Mode {
 			},
 		}
 	}
-}
-
-fn run(source: &str, options: Options, mode: Mode, offset: u32, typescript: bool, comments: bool) -> String {
-	if !source.is_char_boundary(offset as usize) {
-		return format!(
-			"{{\"error\":{{\"message\":\"offset {offset} is not a character boundary\",\"pos\":{offset}}}}}"
-		);
-	}
-	macro_rules! run {
-		($language:path) => {{
-			use $language as language;
-			let one = |(mut ast, id)| {
-				if comments {
-					teasel::comments::attach(&mut ast, source, id, offset);
-				}
-				estree::to_json(&ast, id, source)
-			};
-			match mode {
-				Mode::Program => language::parse(source, options).map(|ast| {
-					let root = ast.last();
-					one((ast, root))
-				}),
-				Mode::Expression => language::parse_expression_at(source, offset, options).map(one),
-				Mode::Pattern => language::parse_pattern_at(source, offset, options).map(one),
-				Mode::Statement => language::parse_statement_at(source, offset, options).map(one),
-				Mode::Params => language::parse_params_at(source, offset, options).map(|(mut ast, ids, _)| {
-					if comments {
-						teasel::comments::attach_all(&mut ast, source, &ids, offset);
-					}
-					estree::list_to_json(&ast, &ids, source)
-				}),
-			}
-		}};
-	}
-	#[cfg(feature = "typescript")]
-	let result = if typescript {
-		run!(teasel::typescript)
-	} else {
-		run!(teasel)
-	};
-	#[cfg(not(feature = "typescript"))]
-	let result = {
-		if typescript {
-			return String::from("{\"error\":{\"message\":\"built without TypeScript\",\"pos\":0}}");
-		}
-		run!(teasel)
-	};
-	result.unwrap_or_else(|error| estree::error_to_json(&error, source))
 }
 
 fn batch() -> io::Result<()> {
@@ -142,14 +105,14 @@ fn batch() -> io::Result<()> {
 		let mode_text = mode_text.as_str();
 		let mode = Mode::from_batch(mode_text);
 		let offset = mode_text.split_once(':').and_then(|(_, n)| n.parse().ok()).unwrap_or(0);
-		let json = run(
-			&source,
-			mode.options(mode_text, undeclared_exports),
-			mode,
+		let request = Request {
+			entry: mode.entry(),
 			offset,
 			typescript,
 			comments,
-		);
+			options: mode.options(mode_text, undeclared_exports),
+		};
+		let json = json::parse(&source, &request);
 		out.write_all(json.as_bytes())?;
 		out.write_all(b"\n")?;
 		out.flush()?;
@@ -212,9 +175,13 @@ fn main() -> ExitCode {
 			return ExitCode::FAILURE;
 		}
 	};
-	println!(
-		"{}",
-		run(&source, options, mode, offset.unwrap_or(0), typescript, comments)
-	);
+	let request = Request {
+		entry: mode.entry(),
+		offset: offset.unwrap_or(0),
+		typescript,
+		comments,
+		options,
+	};
+	println!("{}", json::parse(&source, &request));
 	ExitCode::SUCCESS
 }

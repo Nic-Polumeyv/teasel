@@ -24,6 +24,14 @@ Known divergences:
 - A parameter list is read from the real source, so `(x = ")")` parses; Svelte's own paren scanner stops at the `)` inside the string.
 - A pattern's type annotation extends the pattern's end, identifiers included; Svelte leaves an identifier's end before the annotation it builds by hand.
 
+## Bindings
+
+`json::parse` is the one entry every front end uses: a request names what to parse, where, and how, and the answer is ESTree JSON or an acorn-shaped error. The CLI, the Node addon in `bindings/node` and the WebAssembly module in `bindings/wasm` all go through it.
+
+`@teasel/parser` is the Node package: `parse`, `parseExpressionAt`, `parsePatternAt`, `parseParamsAt` and `parseStatementAt` take acorn's options plus `typescript` and `comments`, return the tree and throw a `SyntaxError` with `pos` and `loc`. Offsets are UTF-16, as in acorn. Build it with `bun run build` in `bindings/node`; the wasm module is `cargo build --release -p teasel-wasm --target wasm32-unknown-unknown` followed by `wasm-bindgen --target web`.
+
+Parsing is a fraction of acorn's time; moving the tree into JavaScript is not yet. On a 66 KB file the parser takes 1.9 ms where acorn takes 4.5 ms, serializing adds 2.4 ms and `JSON.parse` on the other side 3.7 ms, so end to end the two are close. `examples/time.rs` prints that split for any file. Cutting the transfer cost is the next piece of work.
+
 ## Comments
 
 The lexer keeps every comment with its range. `comments::attach` hangs them on nodes as `leadingComments` and `trailingComments`, for tools that read directives from comments or print with them. The rule: a comment before a node leads the first node that starts after it; a comment after a node, separated from it by nothing but spaces, commas and closing parens, trails it; the last node of a block, program, array or object takes everything up to the closing bracket, and an empty one keeps what is inside it as `innerComments`; what is left trails the root. Children are visited in source order. `oracle/comments.js` diffs the scripts and template expressions of every component in a Svelte checkout against what Svelte's own attachment produces. Svelte follows the same rule but visits children in the order acorn creates properties, so a comment between `case` and its test, inside a template literal, after a label, before an arrow's return type, before a decorated key or inside a call's type arguments can land elsewhere there; acorn-typescript also reports a comment twice when it backtracks over it, and Svelte keeps both.

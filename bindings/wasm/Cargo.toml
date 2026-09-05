@@ -1,0 +1,12 @@
+[package]
+name = "teasel-wasm"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+teasel = { path = "../.." }
+wasm-bindgen = "0.2"

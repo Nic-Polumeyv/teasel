@@ -7,6 +7,7 @@ pub mod comments;
 pub mod error;
 pub mod estree;
 pub mod interner;
+pub mod json;
 pub(crate) mod lexer;
 pub mod parser;
 #[cfg(feature = "typescript")]
