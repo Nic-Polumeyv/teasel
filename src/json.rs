@@ -124,7 +124,7 @@ where
 	E::Data: Emit,
 {
 	let (offset, options, locations) = (request.offset, request.options, request.locations);
-	let one = |result: Result<(Ast<E::Data>, NodeId), SyntaxError>| {
+	let one = |result: Result<(Ast<E::Data>, NodeId), Box<SyntaxError>>| {
 		result.map(|(mut ast, root)| {
 			if request.comments {
 				attach(&mut ast, source, root, offset);

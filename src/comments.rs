@@ -6,7 +6,7 @@
 //! visited in source order.
 
 use crate::ast::{Ast, Attached, List, NodeId, NodeKind, Walk};
-use std::collections::HashMap;
+use crate::interner::FastMap;
 
 /// Attaches the comments at or after `from` to the tree under `root`, replacing any earlier
 /// attachment.
@@ -27,7 +27,7 @@ pub fn attach_all<X: Walk>(ast: &mut Ast<X>, source: &str, roots: &[NodeId], fro
 		ast,
 		source,
 		next: first as u32,
-		attached: HashMap::new(),
+		attached: FastMap::default(),
 		scratch: Vec::new(),
 	};
 	for &root in roots {
@@ -49,7 +49,7 @@ struct Attacher<'a, X> {
 	ast: &'a Ast<X>,
 	source: &'a str,
 	next: u32,
-	attached: HashMap<NodeId, Attached>,
+	attached: FastMap<NodeId, Attached>,
 	scratch: Vec<NodeId>,
 }
 

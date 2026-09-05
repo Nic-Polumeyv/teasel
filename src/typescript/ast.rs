@@ -1,13 +1,12 @@
 use crate::ast::{List, NodeId};
-use crate::interner::StrId;
-use std::collections::HashMap;
+use crate::interner::{FastMap, StrId};
 
 /// What the TypeScript extension hands back with a tree: its own nodes, indexed by the
 /// `NodeKind::Extension` payload, and the keys it adds to JavaScript nodes.
 #[derive(Debug, Default)]
 pub struct Data {
 	pub nodes: Vec<TsKind>,
-	pub extras: HashMap<NodeId, Extras>,
+	pub extras: FastMap<NodeId, Extras>,
 }
 
 impl Data {

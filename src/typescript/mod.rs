@@ -18,11 +18,11 @@ use crate::parser::{
 	Context, DestructuringErrors, Errors, Extension, ForInit, FunctionKind, Options, Parser, Result, Unwrap,
 };
 use ast::{Accessibility, Data, Extras, Kind, TsKind};
-use std::collections::HashMap;
+use crate::interner::FastMap;
 use types::TypeParameterModifiers;
 
 pub fn parse(src: &str, options: Options) -> std::result::Result<Ast<Data>, SyntaxError> {
-	crate::parser::parse::<TypeScript>(src, options)
+	crate::parser::parse::<TypeScript>(src, options).map_err(|e| *e)
 }
 
 pub fn parse_expression_at(
@@ -30,7 +30,7 @@ pub fn parse_expression_at(
 	offset: u32,
 	options: Options,
 ) -> std::result::Result<(Ast<Data>, NodeId), SyntaxError> {
-	crate::parser::parse_expression_at::<TypeScript>(src, offset, options)
+	crate::parser::parse_expression_at::<TypeScript>(src, offset, options).map_err(|e| *e)
 }
 
 pub fn parse_pattern_at(
@@ -38,7 +38,7 @@ pub fn parse_pattern_at(
 	offset: u32,
 	options: Options,
 ) -> std::result::Result<(Ast<Data>, NodeId), SyntaxError> {
-	crate::parser::parse_pattern_at::<TypeScript>(src, offset, options)
+	crate::parser::parse_pattern_at::<TypeScript>(src, offset, options).map_err(|e| *e)
 }
 
 pub fn parse_params_at(
@@ -46,7 +46,7 @@ pub fn parse_params_at(
 	offset: u32,
 	options: Options,
 ) -> std::result::Result<(Ast<Data>, Vec<NodeId>, u32), SyntaxError> {
-	crate::parser::parse_params_at::<TypeScript>(src, offset, options)
+	crate::parser::parse_params_at::<TypeScript>(src, offset, options).map_err(|e| *e)
 }
 
 pub fn parse_statement_at(
@@ -54,7 +54,7 @@ pub fn parse_statement_at(
 	offset: u32,
 	options: Options,
 ) -> std::result::Result<(Ast<Data>, NodeId), SyntaxError> {
-	crate::parser::parse_statement_at::<TypeScript>(src, offset, options)
+	crate::parser::parse_statement_at::<TypeScript>(src, offset, options).map_err(|e| *e)
 }
 
 /// Parser state that only TypeScript needs. `State` is copied into every snapshot, so it stays
@@ -110,7 +110,7 @@ pub struct State {
 #[derive(Default)]
 struct Names {
 	log: Vec<(usize, StrId)>,
-	depths: HashMap<StrId, Vec<usize>>,
+	depths: FastMap<StrId, Vec<usize>>,
 }
 
 impl Names {

@@ -1175,7 +1175,8 @@ impl Parser<'_, TypeScript> {
 	/// follow it.
 	fn parse_modifier(
 		&mut self,
-		modifiers: &[&str],
+		allowed: &[&str],
+		disallowed: &[&str],
 		stop_on_static_block: bool,
 	) -> Result<Option<(&'static str, u32)>> {
 		let word = match self.tok.kind {
@@ -1187,7 +1188,7 @@ impl Parser<'_, TypeScript> {
 		let Some(&modifier) = MODIFIERS.iter().find(|m| **m == word) else {
 			return Ok(None);
 		};
-		if !modifiers.contains(&modifier) {
+		if !allowed.contains(&modifier) && !disallowed.contains(&modifier) {
 			return Ok(None);
 		}
 		if stop_on_static_block && modifier == "static" && self.peek_char().0 == Some('{') {
@@ -1211,8 +1212,7 @@ impl Parser<'_, TypeScript> {
 		disallowed_error: &str,
 	) -> Result<Modifiers> {
 		let mut modifiers = Modifiers::default();
-		let all: Vec<&str> = allowed.iter().chain(disallowed).copied().collect();
-		while let Some((modifier, start)) = self.parse_modifier(&all, stop_on_static_block)? {
+		while let Some((modifier, start)) = self.parse_modifier(allowed, disallowed, stop_on_static_block)? {
 			self.check_modifier(&modifiers, modifier, start)?;
 			modifiers.set(modifier);
 			if disallowed.contains(&modifier) {

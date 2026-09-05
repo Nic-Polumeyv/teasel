@@ -16,7 +16,7 @@ use crate::interner::Interner;
 use token::{Token, TokenKind};
 use unicode::is_id_start;
 
-type Result<T> = std::result::Result<T, SyntaxError>;
+type Result<T> = std::result::Result<T, Box<SyntaxError>>;
 
 /// Positions are byte offsets into the source.
 pub(crate) struct Lexer<'a> {
@@ -97,19 +97,12 @@ impl<'a> Lexer<'a> {
 					pos += 1;
 					newline = true;
 				}
-				b'/' if bytes.get(pos + 1) == Some(&b'/') => {
-					while let Some(c) = self.src[pos..].chars().next() {
-						if is_new_line(c) {
-							break;
-						}
-						pos += c.len_utf8();
-					}
-				}
+				b'/' if bytes.get(pos + 1) == Some(&b'/') => pos += line_end(&bytes[pos..]),
 				b'/' if bytes.get(pos + 1) == Some(&b'*') => {
-					let Some(len) = self.src[pos + 2..].find("*/") else {
+					let Some((len, broke)) = comment_end(&bytes[pos + 2..]) else {
 						return (None, newline, self.src.len());
 					};
-					newline |= self.src[pos + 2..pos + 2 + len].chars().any(is_new_line);
+					newline |= broke;
 					pos += len + 4;
 				}
 				_ => {
@@ -138,7 +131,7 @@ impl<'a> Lexer<'a> {
 	}
 
 	fn error<T>(&self, pos: usize, message: impl Into<String>) -> Result<T> {
-		Err(SyntaxError::new(pos as u32, message))
+		Err(Box::new(SyntaxError::new(pos as u32, message)))
 	}
 
 	pub(crate) fn next_token(&mut self) -> Result<Token> {
@@ -231,12 +224,7 @@ impl<'a> Lexer<'a> {
 			CommentKind::HtmlClose => 3,
 			_ => 2,
 		};
-		while let Some(c) = self.char() {
-			if is_new_line(c) {
-				break;
-			}
-			self.pos += c.len_utf8();
-		}
+		self.pos += line_end(&self.src.as_bytes()[self.pos..]);
 		self.comments.push(Comment {
 			kind,
 			start: start as u32,
@@ -246,11 +234,10 @@ impl<'a> Lexer<'a> {
 
 	fn skip_block_comment(&mut self) -> Result<bool> {
 		let start = self.pos;
-		let Some(len) = self.src[start + 2..].find("*/") else {
+		let Some((len, newline)) = comment_end(&self.src.as_bytes()[start + 2..]) else {
 			return self.error(start, "Unterminated comment");
 		};
 		let end = start + 2 + len + 2;
-		let newline = self.src[start + 2..end - 2].chars().any(is_new_line);
 		self.pos = end;
 		self.comments.push(Comment {
 			kind: CommentKind::Block,
@@ -358,6 +345,40 @@ impl<'a> Lexer<'a> {
 		self.pos += len;
 		Ok(kind)
 	}
+}
+
+/// Whether `bytes` starts with a line separator or paragraph separator (U+2028, U+2029).
+pub(crate) fn is_separator(bytes: &[u8]) -> bool {
+	matches!(bytes, [0xe2, 0x80, 0xa8 | 0xa9, ..])
+}
+
+/// The length of `bytes` up to the first line terminator.
+fn line_end(bytes: &[u8]) -> usize {
+	let mut i = 0;
+	while i < bytes.len() {
+		match bytes[i] {
+			b'\n' | b'\r' => break,
+			0xe2 if is_separator(&bytes[i..]) => break,
+			_ => i += 1,
+		}
+	}
+	i
+}
+
+/// Where `*/` starts in `bytes`, and whether a line terminator precedes it.
+fn comment_end(bytes: &[u8]) -> Option<(usize, bool)> {
+	let mut newline = false;
+	let mut i = 0;
+	while i + 1 < bytes.len() {
+		match bytes[i] {
+			b'*' if bytes[i + 1] == b'/' => return Some((i, newline)),
+			b'\n' | b'\r' => newline = true,
+			0xe2 if is_separator(&bytes[i..]) => newline = true,
+			_ => {}
+		}
+		i += 1;
+	}
+	None
 }
 
 pub(crate) fn is_new_line(c: char) -> bool {

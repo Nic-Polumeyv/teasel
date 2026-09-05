@@ -5,7 +5,17 @@ use super::{Lexer, Result};
 impl Lexer<'_> {
 	pub(super) fn read_word(&mut self) -> Result<TokenKind> {
 		let start = self.pos;
-		let mut first = true;
+		let bytes = self.src.as_bytes();
+		let mut pos = self.pos;
+		while let Some(&b) = bytes.get(pos) {
+			if b.is_ascii_alphanumeric() || b == b'$' || b == b'_' {
+				pos += 1;
+			} else {
+				break;
+			}
+		}
+		self.pos = pos;
+		let mut first = pos == start;
 		self.buf.clear();
 		while let Some(c) = self.char() {
 			if c == '\\' {
