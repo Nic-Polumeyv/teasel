@@ -5,7 +5,7 @@
 
 import { readFileSync } from 'node:fs';
 import { relative } from 'node:path';
-import { acorn_expression, args, compare, corpus, files, root, teasel } from './lib.js';
+import { acorn_expression, args, compare, corpus, files, is_typescript, root, teasel } from './lib.js';
 
 const { parse } = await import(`${root}/packages/svelte/src/compiler/index.js`);
 
@@ -47,11 +47,7 @@ for (const path of files(corpus, /\.svelte$/)) {
 	const name = relative(corpus, path);
 	if (filter && !name.includes(filter)) continue;
 	const source = readFileSync(path, 'utf8');
-	// TypeScript components go through acorn-typescript in Svelte; not covered until teasel parses TS.
-	if (/<script[^>]*lang=["']?ts/.test(source)) {
-		skipped_files++;
-		continue;
-	}
+	const ts = is_typescript(source);
 	let ast;
 	try {
 		ast = parse(source, { modern: true });
@@ -61,7 +57,7 @@ for (const path of files(corpus, /\.svelte$/)) {
 	}
 	for (const node of roots(ast.fragment, 'fragment', ast, false, source)) {
 		const offset = Buffer.byteLength(source.slice(0, node.start), 'utf8');
-		jobs.push({ name: `${name}@${node.start}`, source, mode: `expr:${offset}`, offset: node.start });
+		jobs.push({ name: `${name}@${node.start}`, source, mode: `${ts ? 'ts-' : ''}expr:${offset}`, offset: node.start, ts });
 	}
 	if (jobs.length >= limit) {
 		jobs.length = limit;
@@ -70,4 +66,4 @@ for (const path of files(corpus, /\.svelte$/)) {
 }
 
 const lines = await teasel(jobs);
-process.exit(compare(jobs, (job) => acorn_expression(job.source, job.offset), lines, { verbose, skipped: skipped_files }) ? 0 : 1);
+process.exit(compare(jobs, (job) => acorn_expression(job.source, job.offset, job.ts), lines, { verbose, skipped: skipped_files }) ? 0 : 1);
