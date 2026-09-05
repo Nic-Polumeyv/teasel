@@ -6,6 +6,7 @@ mod estree;
 #[cfg(test)]
 mod tests;
 mod types;
+mod walk;
 
 use crate::ast::{Ast, List, NodeId, NodeKind, VariableKind};
 use crate::error::SyntaxError;
@@ -1040,14 +1041,10 @@ impl Extension for TypeScript {
 		Ok(())
 	}
 
-	/// Svelte keeps an identifier's own end here and extends a destructuring pattern's.
 	fn pattern_annotation(p: &mut Parser<Self>, pattern: NodeId) -> Result<()> {
-		if !p.is(TokenKind::Colon) {
-			return Ok(());
-		}
-		let annotation = p.parse_type_annotation(true, None)?;
-		p.extras_mut(pattern).type_annotation = Some(annotation);
-		if !matches!(p.kind(pattern), NodeKind::Identifier { .. }) {
+		if p.is(TokenKind::Colon) {
+			let annotation = p.parse_type_annotation(true, None)?;
+			p.extras_mut(pattern).type_annotation = Some(annotation);
 			p.ast.node_mut(pattern).end = p.end_of(annotation);
 		}
 		Ok(())

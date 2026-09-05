@@ -1,14 +1,15 @@
 //! Command line front end, mainly for the acorn conformance harness.
 //!
-//! `teasel [--module] [--typescript] [--expression|--pattern|--params|--statement] [--preserve-parens]
-//! [--offset N] FILE` prints ESTree JSON. `--offset` alone parses an expression. The pattern,
-//! params and statement modes parse as a module, and params preserve parens, the way the Svelte
-//! compiler drives acorn.
+//! `teasel [--module] [--typescript] [--comments] [--expression|--pattern|--params|--statement]
+//! [--preserve-parens] [--offset N] FILE` prints ESTree JSON. `--offset` alone parses an expression. The pattern,
+//! params and statement modes parse as a module, and params preserve parens, as an arrow's would.
 //!
 //! `teasel --batch` reads jobs from stdin, each a header line `MODE LENGTH` followed by LENGTH
 //! bytes of source, and prints one JSON line per job. MODE is `module`, `script`, `expr:OFFSET`,
-//! `pattern:OFFSET`, `params:OFFSET` or `stmt:OFFSET`, with a `ts-` prefix for TypeScript. Offsets
-//! are byte offsets into the source; the JSON output reports UTF-16 offsets like acorn.
+//! `pattern:OFFSET`, `params:OFFSET` or `stmt:OFFSET`, with a `ts-` prefix for TypeScript and
+//! `+comments` to attach comments or `+undeclared-exports` to accept exports of names the source
+//! never declares. Offsets are byte offsets into the source; the JSON output reports UTF-16
+//! offsets like acorn.
 
 use std::io::{self, BufRead, Read, Write};
 use std::process::ExitCode;
@@ -34,11 +35,12 @@ impl Mode {
 		}
 	}
 
-	/// The options the Svelte compiler uses with this entry point.
-	fn options(self, batch_mode: &str) -> Options {
+	/// The options each entry point takes in a batch.
+	fn options(self, batch_mode: &str, undeclared_exports: bool) -> Options {
 		match self {
 			Mode::Program => Options {
-				module: batch_mode == "module",
+				module: batch_mode != "script",
+				allow_undeclared_exports: undeclared_exports,
 				..Options::default()
 			},
 			Mode::Expression | Mode::Params => Options {
@@ -54,7 +56,7 @@ impl Mode {
 	}
 }
 
-fn run(source: &str, options: Options, mode: Mode, offset: u32, typescript: bool) -> String {
+fn run(source: &str, options: Options, mode: Mode, offset: u32, typescript: bool, comments: bool) -> String {
 	if !source.is_char_boundary(offset as usize) {
 		return format!(
 			"{{\"error\":{{\"message\":\"offset {offset} is not a character boundary\",\"pos\":{offset}}}}}"
@@ -63,19 +65,26 @@ fn run(source: &str, options: Options, mode: Mode, offset: u32, typescript: bool
 	macro_rules! run {
 		($language:path) => {{
 			use $language as language;
+			let one = |(mut ast, id)| {
+				if comments {
+					teasel::comments::attach(&mut ast, source, id, offset);
+				}
+				estree::to_json(&ast, id, source)
+			};
 			match mode {
 				Mode::Program => language::parse(source, options).map(|ast| {
 					let root = ast.last();
-					estree::to_json(&ast, root, source)
+					one((ast, root))
 				}),
-				Mode::Expression => language::parse_expression_at(source, offset, options)
-					.map(|(ast, id)| estree::to_json(&ast, id, source)),
-				Mode::Pattern => language::parse_pattern_at(source, offset, options)
-					.map(|(ast, id)| estree::to_json(&ast, id, source)),
-				Mode::Statement => language::parse_statement_at(source, offset, options)
-					.map(|(ast, id)| estree::to_json(&ast, id, source)),
-				Mode::Params => language::parse_params_at(source, offset, options)
-					.map(|(ast, ids, _)| estree::list_to_json(&ast, &ids, source)),
+				Mode::Expression => language::parse_expression_at(source, offset, options).map(one),
+				Mode::Pattern => language::parse_pattern_at(source, offset, options).map(one),
+				Mode::Statement => language::parse_statement_at(source, offset, options).map(one),
+				Mode::Params => language::parse_params_at(source, offset, options).map(|(mut ast, ids, _)| {
+					if comments {
+						teasel::comments::attach_all(&mut ast, source, &ids, offset);
+					}
+					estree::list_to_json(&ast, &ids, source)
+				}),
 			}
 		}};
 	}
@@ -127,9 +136,20 @@ fn batch() -> io::Result<()> {
 			Some(rest) => (true, rest),
 			None => (false, mode_text),
 		};
+		let comments = mode_text.contains("+comments");
+		let undeclared_exports = mode_text.contains("+undeclared-exports");
+		let mode_text = mode_text.replace("+comments", "").replace("+undeclared-exports", "");
+		let mode_text = mode_text.as_str();
 		let mode = Mode::from_batch(mode_text);
 		let offset = mode_text.split_once(':').and_then(|(_, n)| n.parse().ok()).unwrap_or(0);
-		let json = run(&source, mode.options(mode_text), mode, offset, typescript);
+		let json = run(
+			&source,
+			mode.options(mode_text, undeclared_exports),
+			mode,
+			offset,
+			typescript,
+			comments,
+		);
 		out.write_all(json.as_bytes())?;
 		out.write_all(b"\n")?;
 		out.flush()?;
@@ -151,6 +171,7 @@ fn main() -> ExitCode {
 	let mut offset = None;
 	let mut module = false;
 	let mut typescript = false;
+	let mut comments = false;
 	let mut preserve_parens = false;
 	let mut file = None;
 	let mut args = args.into_iter();
@@ -158,6 +179,7 @@ fn main() -> ExitCode {
 		match arg.as_str() {
 			"--module" => module = true,
 			"--typescript" => typescript = true,
+			"--comments" => comments = true,
 			"--preserve-parens" => preserve_parens = true,
 			"--expression" => mode = Mode::Expression,
 			"--pattern" => mode = Mode::Pattern,
@@ -173,13 +195,13 @@ fn main() -> ExitCode {
 	let mut options = if mode == Mode::Program || mode == Mode::Expression {
 		Options::default()
 	} else {
-		mode.options("")
+		mode.options("", false)
 	};
 	options.module |= module;
 	options.preserve_parens |= preserve_parens;
 	let Some(file) = file else {
 		eprintln!(
-			"usage: teasel [--module] [--typescript] [--expression|--pattern|--params|--statement] [--preserve-parens] [--offset N] FILE"
+			"usage: teasel [--module] [--typescript] [--comments] [--expression|--pattern|--params|--statement] [--preserve-parens] [--offset N] FILE"
 		);
 		return ExitCode::FAILURE;
 	};
@@ -190,6 +212,9 @@ fn main() -> ExitCode {
 			return ExitCode::FAILURE;
 		}
 	};
-	println!("{}", run(&source, options, mode, offset.unwrap_or(0), typescript));
+	println!(
+		"{}",
+		run(&source, options, mode, offset.unwrap_or(0), typescript, comments)
+	);
 	ExitCode::SUCCESS
 }

@@ -1,12 +1,12 @@
 # teasel
 
-A JavaScript parser in Rust, built to sit under the Svelte compiler. The npm name `@teasel/parser` is reserved for it.
+A JavaScript and TypeScript parser in Rust. It produces acorn's ESTree, byte for byte, and fixes what makes acorn awkward under a compiler that embeds JavaScript in a larger syntax: parsing an expression, pattern, parameter list or statement at an offset in a bigger source, attaching comments, and TypeScript without a plugin. Svelte is the first consumer; nothing in it is specific to Svelte. The npm name `@teasel/parser` is reserved for it.
 
 Named after the plant whose dried heads were used to tease apart wool fibres and raise the nap on cloth.
 
 ## Conformance
 
-The oracle is acorn. `oracle/run.js` parses every script in a Svelte checkout with both, as a module and as a script, and diffs the ESTree output, positions included. `oracle/expressions.js` does the same for every template expression, from the offset the Svelte compiler hands to `parseExpressionAt`, and `oracle/svelte.js` for the each-block patterns, snippet parameters and `@const` declarations Svelte parses through wrappers.
+The oracle is acorn, and the corpus is a Svelte checkout, which has thousands of small scripts and template expressions. `oracle/run.js` parses every script with both, as a module and as a script, and diffs the ESTree output, positions included. `oracle/expressions.js` does the same for every template expression, from its offset in the whole file, and `oracle/svelte.js` for the patterns, parameter lists and declarations Svelte reads through wrappers around acorn, compared with what those wrappers produce.
 
 ```
 cargo build --release
@@ -21,11 +21,22 @@ bun regexp.js
 Known divergences:
 
 - A lone surrogate in a string literal becomes U+FFFD.
-- Snippet parameters are read from the real source, so `{#snippet s(x = ")")}` parses; Svelte's own paren scanner stops at the `)` inside the string.
+- A parameter list is read from the real source, so `(x = ")")` parses; Svelte's own paren scanner stops at the `)` inside the string.
+- A pattern's type annotation extends the pattern's end, identifiers included; Svelte leaves an identifier's end before the annotation it builds by hand.
+
+## Comments
+
+The lexer keeps every comment with its range. `comments::attach` hangs them on nodes as `leadingComments` and `trailingComments`, for tools that read directives from comments or print with them. The rule: a comment before a node leads the first node that starts after it; a comment after a node, separated from it by nothing but spaces, commas and closing parens, trails it; the last node of a block, program, array or object takes everything up to the closing bracket, and an empty one keeps what is inside it as `innerComments`; what is left trails the root. Children are visited in source order. `oracle/comments.js` diffs the scripts and template expressions of every component in a Svelte checkout against what Svelte's own attachment produces. Svelte follows the same rule but visits children in the order acorn creates properties, so a comment between `case` and its test, inside a template literal, after a label, before an arrow's return type, before a decorated key or inside a call's type arguments can land elsewhere there; acorn-typescript also reports a comment twice when it backtracks over it, and Svelte keeps both.
+
+```
+SVELTE_DIR=~/Projects/svelte bun comments.js
+```
+
+Comment values are the text between the delimiters; Svelte strips a block comment's indentation, which the oracle applies before comparing, and keeps one comment list per file so a script inherits the comments of what came before it, which the oracle drops.
 
 ## TypeScript
 
-TypeScript is an extension of the JavaScript grammar: the JavaScript parser calls into a fixed set of hook points and knows nothing else about it. `src/typescript/` holds the types, declarations and expressions, its own nodes, and the keys it adds to JavaScript nodes. The oracle is `@sveltejs/acorn-typescript`, the fork Svelte compiles with, quirks included. `oracle/typescript.js` diffs every `.ts` file in the Svelte and SvelteKit checkouts and every `lang="ts"` script in the Svelte test fixtures, and with `--dts` every `.d.ts` under the Svelte checkout's node_modules; the template oracles above cover TypeScript components too.
+TypeScript is an extension of the JavaScript grammar: the JavaScript parser calls into a fixed set of hook points and knows nothing else about it. `src/typescript/` holds the types, declarations and expressions, its own nodes, and the keys it adds to JavaScript nodes. The oracle is `@sveltejs/acorn-typescript`, the most used acorn TypeScript plugin. `oracle/typescript.js` diffs every `.ts` file in the Svelte and SvelteKit checkouts and every `lang="ts"` script in the Svelte test fixtures, and with `--dts` every `.d.ts` under the Svelte checkout's node_modules; the template oracles above cover TypeScript components too.
 
 ```
 SVELTE_DIR=~/Projects/svelte KIT_DIR=~/Projects/kit bun typescript.js --dts

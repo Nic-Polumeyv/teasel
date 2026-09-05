@@ -5,7 +5,7 @@ use crate::interner::StrId;
 use std::fmt::Write;
 
 /// How an extension's data serializes: its own nodes, and the keys it adds to JavaScript nodes.
-pub trait Emit: Sized {
+pub trait Emit: crate::ast::Walk {
 	fn node(&self, w: &mut Writer<Self>, id: NodeId, index: u32);
 	fn extras(&self, _w: &mut Writer<Self>, _id: NodeId) {}
 }
@@ -131,6 +131,38 @@ impl<'a, X: Emit> Writer<'a, X> {
 		self.out.push('"');
 		self.span(node.start, node.end);
 		self.ast.extension.extras(self, id);
+		if let Some(attached) = self.ast.attached.get(&id) {
+			self.comments("leadingComments", &attached.leading);
+			self.comments("trailingComments", &attached.trailing);
+			self.comments("innerComments", &attached.inner);
+		}
+	}
+
+	fn comments(&mut self, key: &str, comments: &[u32]) {
+		if comments.is_empty() {
+			return;
+		}
+		self.key(key);
+		self.out.push('[');
+		for (i, &index) in comments.iter().enumerate() {
+			if i > 0 {
+				self.out.push(',');
+			}
+			let comment = self.ast.comments[index as usize];
+			self.out.push_str(if comment.is_block() {
+				"{\"type\":\"Block\""
+			} else {
+				"{\"type\":\"Line\""
+			});
+			self.key("value");
+			write_json_string(&mut self.out, &self.source[comment.text_range()]);
+			self.key("start");
+			push_int(&mut self.out, self.positions.offset(comment.start));
+			self.key("end");
+			push_int(&mut self.out, self.positions.offset(comment.end));
+			self.out.push('}');
+		}
+		self.out.push(']');
 	}
 
 	pub(crate) fn span(&mut self, start: u32, end: u32) {
