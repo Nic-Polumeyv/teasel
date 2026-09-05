@@ -28,11 +28,22 @@ const MAX_CHAIN: u32 = 10_000;
 pub struct Options {
 	/// Parse as an ES module: strict mode, top-level `await`, `import` and `export`.
 	pub module: bool,
+	/// A word operator that ends an expression parsed at an offset when it appears at the top
+	/// level, for hosts whose own keyword follows the expression.
+	pub until: Option<Until>,
 	pub allow_return_outside_function: bool,
 	pub allow_await_outside_function: bool,
 	pub allow_super_outside_method: bool,
 	pub allow_undeclared_exports: bool,
 	pub preserve_parens: bool,
+}
+
+/// The word operators a host may need an expression to stop before: `as` where a template loop
+/// names its item after the list, `in` where one names the list after the item.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Until {
+	As,
+	In,
 }
 
 /// What a function-shaped node is, for the extension hooks around its signature.
@@ -252,7 +263,13 @@ pub(crate) trait Extension: Default + Sized {
 		Ok(None)
 	}
 	/// At an operator position; `Some` is the new left operand.
-	fn expr_op(p: &mut Parser<Self>, left: NodeId, left_start: u32, min_prec: i8) -> Result<Option<NodeId>> {
+	fn expr_op(
+		p: &mut Parser<Self>,
+		left: NodeId,
+		left_start: u32,
+		min_prec: i8,
+		for_init: ForInit,
+	) -> Result<Option<NodeId>> {
 		Ok(None)
 	}
 	#[allow(clippy::too_many_arguments)]
@@ -342,7 +359,12 @@ pub(crate) fn parse_expression_at<E: Extension>(
 ) -> Result<(Ast<E::Data>, NodeId, u32)> {
 	let mut parser = Parser::<E>::new(src, offset, options)?;
 	parser.enter_scope(SCOPE_TOP);
-	let expression = parser.parse_expression(false, &mut None)?;
+	let context = match options.until {
+		Some(Until::As) => ForInit::NoAs,
+		Some(Until::In) => ForInit::Yes,
+		None => ForInit::No,
+	};
+	let expression = parser.parse_sequence(context, &mut None)?;
 	let end = parser.consumed_end();
 	Ok((parser.finish(), expression, end))
 }

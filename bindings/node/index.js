@@ -62,3 +62,40 @@ export function parseParamsAt(source, offset, options) {
 export function parseStatementAt(source, offset, options) {
 	return result(native.parseStatementAt(source, offset, check(options)));
 }
+
+/**
+ * A source kept with its options: the parses out of it share the source copy and the position
+ * tables, which is what a host parsing every expression of a template wants.
+ */
+export class Source {
+	#native;
+
+	/** @param {string} source @param {Options} [options] */
+	constructor(source, options) {
+		this.#native = new native.Source(source, check(options));
+	}
+
+	parse() {
+		return result(this.#native.parse());
+	}
+
+	/** @param {number} offset @param {'as' | 'in'} [until] the word operator the expression stops before */
+	parseExpressionAt(offset, until) {
+		return result(this.#native.parseExpressionAt(offset, until));
+	}
+
+	/** @param {number} offset */
+	parsePatternAt(offset) {
+		return result(this.#native.parsePatternAt(offset));
+	}
+
+	/** @param {number} offset */
+	parseParamsAt(offset) {
+		return result(this.#native.parseParamsAt(offset));
+	}
+
+	/** @param {number} offset */
+	parseStatementAt(offset) {
+		return result(this.#native.parseStatementAt(offset));
+	}
+}

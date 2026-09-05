@@ -1,4 +1,4 @@
-import { parse, parseExpressionAt, parseParamsAt, parseStatementAt, isIdentifierStart, isIdentifierChar } from './index.js';
+import { Source, parse, parseExpressionAt, parseParamsAt, parseStatementAt, isIdentifierStart, isIdentifierChar } from './index.js';
 import assert from 'node:assert/strict';
 
 const program = parse('let x: number = 1; // done', { sourceType: 'module', typescript: true, comments: true, locations: true });
@@ -23,6 +23,10 @@ assert.equal(parens.end, 12);
 assert.deepEqual(parens.comments.map((c) => c.value), [' c ']);
 assert.equal(parens.node.trailingComments[0].start, 5);
 assert.equal(parseStatementAt('{@const x = 1}', 2).end, 13);
+assert.equal(parseExpressionAt('{items as item}', 1, { typescript: true }).node.type, 'TSAsExpression');
+assert.equal(parseExpressionAt('{items as item}', 1, { typescript: true, until: 'as' }).end, 6);
+assert.equal(parseExpressionAt('{f(x as T) as item}', 1, { typescript: true, until: 'as' }).end, 10);
+assert.equal(parseExpressionAt('{a in b}', 1, { until: 'in' }).end, 2);
 
 const params = parseParamsAt('(a, b = 1) => a', 0);
 assert.equal(params.params.length, 2);
@@ -40,4 +44,11 @@ assert.equal(unicode.type, 'Identifier');
 assert.equal(unicode.start, 6);
 assert.equal(isIdentifierStart('a'.codePointAt(0)) && isIdentifierStart('é'.codePointAt(0)) && !isIdentifierStart('1'.codePointAt(0)), true);
 assert.equal(isIdentifierChar('1'.codePointAt(0)) && !isIdentifierChar('-'.codePointAt(0)), true);
+const source = new Source('{a} {"é"} {b /* c */}', { locations: true, comments: true });
+assert.equal(source.parseExpressionAt(1).node.name, 'a');
+assert.equal(new Source('{xs as x}', { typescript: true }).parseExpressionAt(1, 'as').end, 3);
+assert.equal(source.parseExpressionAt(11).end, 20);
+assert.equal(source.parseExpressionAt(11).comments[0].loc.start.column, 13);
+assert.throws(() => source.parseExpressionAt(99), SyntaxError);
+assert.throws(() => new Source('𝒳 + y').parseExpressionAt(1), (e) => /surrogate/.test(e.message));
 console.log('ok');

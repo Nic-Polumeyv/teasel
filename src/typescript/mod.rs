@@ -1509,12 +1509,18 @@ impl Extension for TypeScript {
 		Ok(None)
 	}
 
-	fn expr_op(p: &mut Parser<Self>, left: NodeId, left_start: u32, min_prec: i8) -> Result<Option<NodeId>> {
+	fn expr_op(
+		p: &mut Parser<Self>,
+		left: NodeId,
+		left_start: u32,
+		min_prec: i8,
+		for_init: ForInit,
+	) -> Result<Option<NodeId>> {
 		if 7 <= min_prec || p.tok.newline_before {
 			return Ok(None);
 		}
 		let is_as = p.is_contextual("as");
-		if !is_as && !p.is_contextual("satisfies") {
+		if !is_as && !p.is_contextual("satisfies") || is_as && for_init.no_as() {
 			return Ok(None);
 		}
 		let type_annotation = match p.try_next_parse_constant_context()? {

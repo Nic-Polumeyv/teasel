@@ -5,6 +5,7 @@ export { init };
 export { isIdentifierStart, isIdentifierChar } from './identifier.js';
 
 const FLAGS = ['typescript', 'comments', 'locations', 'preserveParens', 'allowReturnOutsideFunction', 'allowAwaitOutsideFunction', 'allowSuperOutsideMethod', 'allowUndeclaredExports'];
+const UNTIL = { as: 'untilAs', in: 'untilIn' };
 
 function flags(options = {}) {
 	for (const key of ['ranges', 'onComment', 'onToken', 'onInsertedSemicolon', 'onTrailingComma']) {
@@ -15,6 +16,7 @@ function flags(options = {}) {
 	}
 	const on = FLAGS.filter((flag) => options[flag] === true);
 	if (options.sourceType !== 'module') on.push('script');
+	if (options.until in UNTIL) on.push(UNTIL[options.until]);
 	return on.join(',');
 }
 
@@ -35,3 +37,37 @@ export const parseExpressionAt = (source, offset, options) => result(wasm.parseE
 export const parsePatternAt = (source, offset, options) => result(wasm.parsePatternAt(source, offset, flags(options)));
 export const parseParamsAt = (source, offset, options) => result(wasm.parseParamsAt(source, offset, flags(options)));
 export const parseStatementAt = (source, offset, options) => result(wasm.parseStatementAt(source, offset, flags(options)));
+
+// A source kept with its options, so the parses out of it share its tables.
+export class Source {
+	#wasm;
+
+	constructor(source, options) {
+		this.#wasm = new wasm.Source(source, flags(options));
+	}
+
+	parse() {
+		return result(this.#wasm.parse());
+	}
+
+	parseExpressionAt(offset, until) {
+		return result(this.#wasm.parseExpressionAt(offset, until));
+	}
+
+	parsePatternAt(offset) {
+		return result(this.#wasm.parsePatternAt(offset));
+	}
+
+	parseParamsAt(offset) {
+		return result(this.#wasm.parseParamsAt(offset));
+	}
+
+	parseStatementAt(offset) {
+		return result(this.#wasm.parseStatementAt(offset));
+	}
+
+	/** Frees the WebAssembly memory the source holds. */
+	free() {
+		this.#wasm.free();
+	}
+}

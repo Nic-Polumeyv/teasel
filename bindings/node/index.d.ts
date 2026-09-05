@@ -16,6 +16,12 @@ export interface Options {
 	allowUndeclaredExports?: boolean;
 	/** Accepted for acorn's sake and ignored: the latest ECMAScript is always parsed. */
 	ecmaVersion?: number | 'latest';
+	/**
+	 * A word operator that ends an expression parsed at an offset when it appears at the top
+	 * level: `as` where a template loop names its item after the list, `in` where one names
+	 * the list after the item.
+	 */
+	until?: 'as' | 'in';
 }
 
 /** Thrown for a syntax error, with acorn's `pos` and `loc`. */
@@ -58,6 +64,19 @@ export function parsePatternAt(source: string, offset: number, options?: Options
 export function parseParamsAt(source: string, offset: number, options?: Options): Params;
 /** Parses one statement starting at `offset`. */
 export function parseStatementAt(source: string, offset: number, options?: Options): Parsed<Statement>;
+
+/**
+ * A source kept with its options: the parses out of it share the source copy and the position
+ * tables, which is what a host parsing every expression of a template wants.
+ */
+export class Source {
+	constructor(source: string, options?: Options);
+	parse(): Program & { comments?: Comment[] };
+	parseExpressionAt(offset: number, until?: 'as' | 'in'): Parsed<Expression>;
+	parsePatternAt(offset: number): Parsed<Pattern>;
+	parseParamsAt(offset: number): Params;
+	parseStatementAt(offset: number): Parsed<Statement>;
+}
 
 /** Whether a code point can start an identifier, as acorn decides it. */
 export function isIdentifierStart(code: number): boolean;

@@ -97,7 +97,8 @@ function normalize(node, source, from, is_root, raw_values, ts) {
 			// teasel reports them as the block's `innerComments`.
 			const inner = v.flatMap((c) => c.trailingComments ?? []);
 			if (inner.length) out.innerComments = inner.filter((c) => c.start >= from);
-			const kept = v.filter((c) => c.start >= from).map(({ leadingComments, trailingComments, loc, ...c }) => (raw_values ? dedent(source, c) : c));
+			// both sides lose a block comment's indentation, whichever side kept the raw text
+			const kept = v.filter((c) => c.start >= from).map(({ leadingComments, trailingComments, loc, ...c }) => dedent(source, c));
 			if (kept.length) out[k] = kept;
 			continue;
 		}

@@ -21,6 +21,8 @@ function strip(node) {
 	// Svelte builds an each-block context's annotation by hand and leaves the identifier's end
 	// before it; teasel extends the end over the annotation, as acorn-typescript does elsewhere.
 	if (node.type === 'Identifier' && node.typeAnnotation && node.end < node.typeAnnotation.end) node = { ...node, end: node.typeAnnotation.end };
+	// Svelte on acorn kept the parens of a snippet parameter's default; nothing else keeps them
+	if (node.type === 'ParenthesizedExpression') return strip(node.expression);
 	const out = {};
 	for (const [k, v] of Object.entries(node)) {
 		if (k === 'leadingComments' || k === 'trailingComments' || k === 'metadata' || k === 'character') continue;

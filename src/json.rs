@@ -3,8 +3,8 @@
 
 use crate::ast::{Ast, NodeId};
 use crate::comments::{attach, attach_all};
-use crate::estree::{Emit, error_to_json, node_to_json, params_to_json, program_to_json};
-use crate::{Options, SyntaxError};
+use crate::estree::{Emit, Positions, error_to_json, node_to_json, params_to_json, program_to_json};
+use crate::{Options, SyntaxError, Until};
 
 /// What to parse; everything but a program starts at the request's offset.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -30,7 +30,7 @@ pub struct Request {
 }
 
 /// The names front ends accept for the request's switches, as acorn spells them.
-pub const FLAGS: [&str; 9] = [
+pub const FLAGS: [&str; 11] = [
 	"typescript",
 	"comments",
 	"locations",
@@ -40,6 +40,8 @@ pub const FLAGS: [&str; 9] = [
 	"allowAwaitOutsideFunction",
 	"allowSuperOutsideMethod",
 	"allowUndeclaredExports",
+	"untilAs",
+	"untilIn",
 ];
 
 impl Request {
@@ -67,31 +69,11 @@ impl Request {
 			"allowAwaitOutsideFunction" => self.options.allow_await_outside_function = true,
 			"allowSuperOutsideMethod" => self.options.allow_super_outside_method = true,
 			"allowUndeclaredExports" => self.options.allow_undeclared_exports = true,
+			"untilAs" => self.options.until = Some(Until::As),
+			"untilIn" => self.options.until = Some(Until::In),
 			_ => {}
 		}
 	}
-}
-
-/// The byte offset of a UTF-16 offset, so front ends can take positions the way acorn does.
-pub fn byte_offset(source: &str, utf16: f64) -> Result<u32, String> {
-	if !(utf16 >= 0.0 && utf16.fract() == 0.0 && utf16 <= u32::MAX as f64) {
-		return Err(format!("offset {utf16} is not a valid position"));
-	}
-	let target = utf16 as usize;
-	let mut units = 0;
-	for (byte, c) in source.char_indices() {
-		if units == target {
-			return Ok(byte as u32);
-		}
-		if units > target {
-			return Err(format!("offset {target} is inside a surrogate pair"));
-		}
-		units += c.len_utf16();
-	}
-	if units < target {
-		return Err(format!("offset {target} is past the end of the source"));
-	}
-	Ok(source.len() as u32)
 }
 
 pub fn error_json(message: &str, pos: u32) -> String {
@@ -102,37 +84,78 @@ pub fn error_json(message: &str, pos: u32) -> String {
 }
 
 pub fn parse(source: &str, request: &Request) -> String {
+	parse_with(source, &Positions::new(source, request.locations), request)
+}
+
+/// A source with its position tables and switches, for hosts that parse many pieces of one
+/// source: offsets come in as UTF-16 the way acorn takes them.
+pub struct Prepared {
+	source: String,
+	positions: Positions,
+	request: Request,
+}
+
+impl Prepared {
+	/// The request's entry and offset are ignored; `parse` takes them.
+	pub fn new(source: String, request: Request) -> Prepared {
+		let positions = Positions::new(&source, request.locations);
+		Prepared {
+			source,
+			positions,
+			request,
+		}
+	}
+
+	/// `until` ends an expression at that top-level word operator, over the source's own setting.
+	pub fn parse(&self, entry: Entry, utf16_offset: f64, until: Option<Until>) -> String {
+		let offset = match self.positions.byte_offset(utf16_offset) {
+			Ok(offset) => offset,
+			Err(message) => return error_json(&message, 0),
+		};
+		let mut request = Request {
+			entry,
+			offset,
+			..self.request
+		};
+		if until.is_some() {
+			request.options.until = until;
+		}
+		parse_with(&self.source, &self.positions, &request)
+	}
+}
+
+fn parse_with(source: &str, positions: &Positions, request: &Request) -> String {
 	if !source.is_char_boundary(request.offset as usize) {
 		return error_json(
-			&format!("offset {} is not a character boundary", request.offset),
+			&format!("offset {} is inside a surrogate pair", request.offset),
 			request.offset,
 		);
 	}
 	#[cfg(feature = "typescript")]
 	if request.typescript {
-		return run::<crate::typescript::TypeScript>(source, request);
+		return run::<crate::typescript::TypeScript>(source, positions, request);
 	}
 	#[cfg(not(feature = "typescript"))]
 	if request.typescript {
 		return error_json("built without TypeScript", 0);
 	}
-	run::<()>(source, request)
+	run::<()>(source, positions, request)
 }
 
 /// A tree, its root and the offset after what the parse consumed.
 type Parsed<D> = Result<(Ast<D>, NodeId, u32), Box<SyntaxError>>;
 
-fn run<E: crate::parser::Extension>(source: &str, request: &Request) -> String
+fn run<E: crate::parser::Extension>(source: &str, positions: &Positions, request: &Request) -> String
 where
 	E::Data: Emit,
 {
-	let (offset, options, locations, comments) = (request.offset, request.options, request.locations, request.comments);
+	let (offset, options, comments) = (request.offset, request.options, request.comments);
 	let one = |result: Parsed<E::Data>| {
 		result.map(|(mut ast, root, end)| {
 			if comments {
 				attach(&mut ast, source, root, offset);
 			}
-			node_to_json(&ast, root, end, source, locations, comments)
+			node_to_json(&ast, root, end, source, positions, comments)
 		})
 	};
 	let result = match request.entry {
@@ -141,7 +164,7 @@ where
 			if comments {
 				attach(&mut ast, source, root, 0);
 			}
-			program_to_json(&ast, root, source, locations, comments)
+			program_to_json(&ast, root, source, positions, comments)
 		}),
 		Entry::Expression => one(crate::parser::parse_expression_at::<E>(source, offset, options)),
 		Entry::Pattern => one(crate::parser::parse_pattern_at::<E>(source, offset, options)),
@@ -150,7 +173,7 @@ where
 			if comments {
 				attach_all(&mut ast, source, &ids, offset);
 			}
-			params_to_json(&ast, &ids, end, source, locations, comments)
+			params_to_json(&ast, &ids, end, source, positions, comments)
 		}),
 	};
 	result.unwrap_or_else(|error| error_to_json(&error, source))
