@@ -1520,8 +1520,18 @@ impl Extension for TypeScript {
 			return Ok(None);
 		}
 		let is_as = p.is_contextual("as");
-		if !is_as && !p.is_contextual("satisfies") || is_as && for_init.no_as() {
+		if !is_as && !p.is_contextual("satisfies") {
 			return Ok(None);
+		}
+		// where a host's `as` follows the expression, a top-level `as` is an assertion only when
+		// a type and another `as` follow it, so the last one is the host's
+		if is_as && for_init.no_as() {
+			let snapshot = p.snapshot();
+			let assertion = p.next_then_parse_type().is_ok_and(|_| p.is_contextual("as"));
+			p.restore(snapshot);
+			if !assertion {
+				return Ok(None);
+			}
 		}
 		let type_annotation = match p.try_next_parse_constant_context()? {
 			Some(constant) => constant,

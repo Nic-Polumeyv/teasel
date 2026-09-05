@@ -29,7 +29,8 @@ pub struct Options {
 	/// Parse as an ES module: strict mode, top-level `await`, `import` and `export`.
 	pub module: bool,
 	/// A word operator that ends an expression parsed at an offset when it appears at the top
-	/// level, for hosts whose own keyword follows the expression.
+	/// level, for hosts whose own keyword follows the expression. Before a host's `as`, a
+	/// TypeScript assertion is still one when a type and another `as` follow it.
 	pub until: Option<Until>,
 	pub allow_return_outside_function: bool,
 	pub allow_await_outside_function: bool,

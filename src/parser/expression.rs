@@ -13,7 +13,7 @@ pub(crate) enum ForInit {
 	No,
 	Yes,
 	Await,
-	/// A host's expression that ends at a top-level `as`, TypeScript's assertion operator.
+	/// A host's expression that ends at the last top-level `as`, TypeScript's assertion operator.
 	NoAs,
 }
 

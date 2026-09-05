@@ -26,6 +26,9 @@ assert.equal(parseStatementAt('{@const x = 1}', 2).end, 13);
 assert.equal(parseExpressionAt('{items as item}', 1, { typescript: true }).node.type, 'TSAsExpression');
 assert.equal(parseExpressionAt('{items as item}', 1, { typescript: true, until: 'as' }).end, 6);
 assert.equal(parseExpressionAt('{f(x as T) as item}', 1, { typescript: true, until: 'as' }).end, 10);
+assert.equal(parseExpressionAt('{xs as T[] as item}', 1, { typescript: true, until: 'as' }).end, 10);
+assert.equal(parseExpressionAt('{xs as unknown as T[] as item: T, i}', 1, { typescript: true, until: 'as' }).end, 21);
+assert.equal(parseExpressionAt('{xs as {a, b}}', 1, { typescript: true, until: 'as' }).end, 3);
 assert.equal(parseExpressionAt('{a in b}', 1, { until: 'in' }).end, 2);
 
 const params = parseParamsAt('(a, b = 1) => a', 0);

@@ -19,7 +19,8 @@ export interface Options {
 	/**
 	 * A word operator that ends an expression parsed at an offset when it appears at the top
 	 * level: `as` where a template loop names its item after the list, `in` where one names
-	 * the list after the item.
+	 * the list after the item. A TypeScript assertion before the host's `as` stays one, so
+	 * `list as Type as item` ends before the second `as`.
 	 */
 	until?: 'as' | 'in';
 }
