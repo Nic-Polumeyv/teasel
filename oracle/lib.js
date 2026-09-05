@@ -73,7 +73,7 @@ export async function teasel(jobs) {
 	});
 }
 
-export function compare(jobs, expected, actual, { verbose }) {
+export function compare(jobs, expected, actual, { verbose, label = corpus }) {
 	const stats = { identical: 0, mismatch: 0, both_error: 0, error_differs: 0, only_acorn_error: 0, only_teasel_error: 0 };
 	const details = [];
 	for (const [i, job] of jobs.entries()) {
@@ -100,7 +100,7 @@ export function compare(jobs, expected, actual, { verbose }) {
 		}
 	}
 	const total = jobs.length;
-	console.log(`${total} jobs from ${corpus} (acorn ${acorn.version})`);
+	console.log(`${total} jobs from ${label} (acorn ${acorn.version})`);
 	for (const [k, v] of Object.entries(stats)) console.log(`  ${k.padEnd(18)} ${v}`);
 	const agree = stats.identical + stats.both_error;
 	console.log(`  agreement          ${((100 * agree) / total).toFixed(2)}%`);
