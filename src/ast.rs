@@ -72,6 +72,8 @@ pub struct Ast<X = ()> {
 pub struct Attached {
 	pub leading: Vec<u32>,
 	pub trailing: Vec<u32>,
+	/// Inside an empty block, program, array or object.
+	pub inner: Vec<u32>,
 }
 
 /// How an extension's nodes join a walk over the tree.

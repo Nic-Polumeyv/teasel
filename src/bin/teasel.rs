@@ -79,8 +79,12 @@ fn run(source: &str, options: Options, mode: Mode, offset: u32, typescript: bool
 				Mode::Expression => language::parse_expression_at(source, offset, options).map(one),
 				Mode::Pattern => language::parse_pattern_at(source, offset, options).map(one),
 				Mode::Statement => language::parse_statement_at(source, offset, options).map(one),
-				Mode::Params => language::parse_params_at(source, offset, options)
-					.map(|(ast, ids, _)| estree::list_to_json(&ast, &ids, source)),
+				Mode::Params => language::parse_params_at(source, offset, options).map(|(mut ast, ids, _)| {
+					if comments {
+						teasel::comments::attach_all(&mut ast, source, &ids, offset);
+					}
+					estree::list_to_json(&ast, &ids, source)
+				}),
 			}
 		}};
 	}

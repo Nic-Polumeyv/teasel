@@ -134,6 +134,7 @@ impl<'a, X: Emit> Writer<'a, X> {
 		if let Some(attached) = self.ast.attached.get(&id) {
 			self.comments("leadingComments", &attached.leading);
 			self.comments("trailingComments", &attached.trailing);
+			self.comments("innerComments", &attached.inner);
 		}
 	}
 
