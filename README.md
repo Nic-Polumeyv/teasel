@@ -44,8 +44,14 @@ SVELTE_DIR=~/Projects/svelte KIT_DIR=~/Projects/kit bun typescript.js --dts
 
 Where acorn-typescript leaves out keys acorn sets (`attributes`, `optional` on a call with type arguments or a decorator's member expression, `options` of `import()`, `id` of a class expression), teasel follows acorn and the oracle brings the expected side in line before comparing. `TSTypeParameterDeclaration` does not carry the plugin's `extra.trailingComma`.
 
-Known divergences from the plugin:
+Where acorn-typescript gets TypeScript wrong, teasel follows TypeScript and the oracle counts the case as an oracle bug:
 
+- `declare const x = 1` is valid; the plugin rejects every ambient initializer because it checks Babel's node names.
+- A type, interface or enum declared after `export { T }` satisfies the export; the plugin reports it undefined.
+- Modifier order and conflict errors point at the modifier; the plugin reports its column as the offset.
+- `export declare const x` is a value export; the plugin marks every `export declare` type-only.
+- `f(a: T)` and `[a: T]` are errors, as in TypeScript; the plugin keeps a type cast node there.
+- `a?.<T>()` leaves the callee alone; the plugin marks the callee itself optional.
 - `class type {}`, `function declare() {}` and labels named after TypeScript's contextual keywords parse; the plugin rejects them.
 - `async <T>(x: T) => x` keeps its parameters; the plugin drops them.
 - `for (a as b of c)` parses; the plugin reports a type cast in parameter position.

@@ -1222,19 +1222,17 @@ impl Parser<'_, TypeScript> {
 		Ok(modifiers)
 	}
 
-	/// Duplicate, misordered and conflicting modifiers. The plugin reports order and conflict
-	/// errors at the modifier's column, not its offset.
+	/// Duplicate, misordered and conflicting modifiers.
 	fn check_modifier(&self, seen: &Modifiers, modifier: &str, start: u32) -> Result<()> {
-		let column = self.column(start);
 		let order = |before: &str, after: &str| -> Result<()> {
 			if modifier == before && seen.has(after) {
-				return self.error(column, format!("'{before}' modifier must precede '{after}' modifier."));
+				return self.error(start, format!("'{before}' modifier must precede '{after}' modifier."));
 			}
 			Ok(())
 		};
 		let conflict = |a: &str, b: &str| -> Result<()> {
 			if (seen.has(a) && modifier == b) || (seen.has(b) && modifier == a) {
-				return self.error(column, format!("'{a}' modifier cannot be used with '{b}' modifier."));
+				return self.error(start, format!("'{a}' modifier cannot be used with '{b}' modifier."));
 			}
 			Ok(())
 		};

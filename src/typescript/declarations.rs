@@ -41,6 +41,7 @@ impl Parser<'_, TypeScript> {
 		self.expect_contextual("enum")?;
 		let id = self.parse_ident(false)?;
 		self.check_lval_simple(id, Binding::None, &mut None)?;
+		self.declare_export_only(id);
 		self.expect(TokenKind::BraceL)?;
 		let members = self.parse_delimited_list(ListKind::EnumMembers, |p| p.parse_enum_member())?;
 		self.expect(TokenKind::BraceR)?;
@@ -70,6 +71,7 @@ impl Parser<'_, TypeScript> {
 	fn parse_module_block(&mut self) -> Result<NodeId> {
 		let start = self.tok.start;
 		self.enter_scope(SCOPE_TS_OTHER);
+		self.ext.module_blocks += 1;
 		self.expect(TokenKind::BraceL)?;
 		let mut body = Vec::new();
 		let mut exports = HashSet::new();
@@ -77,6 +79,7 @@ impl Parser<'_, TypeScript> {
 			body.push(self.parse_statement(Context::None, true, Some(&mut exports))?);
 		}
 		self.next()?;
+		self.ext.module_blocks -= 1;
 		self.exit_scope();
 		let body = self.list_of(&body);
 		Ok(self.ts(TsKind::ModuleBlock { body }, start))
@@ -297,9 +300,8 @@ impl Parser<'_, TypeScript> {
 		})
 	}
 
-	/// In an ambient context only a `const` may be initialized, and acorn-typescript compares the
-	/// initializer against node types acorn never produces, so only a template without
-	/// substitutions or a member chain passes.
+	/// In an ambient context only a `const` may be initialized, and only with a string or numeric
+	/// literal, a template without substitutions, or a reference to an enum member.
 	pub(super) fn check_ambient_initializer(&mut self, declarator: NodeId, kind: VariableKind) -> Result<()> {
 		let NodeKind::VariableDeclarator { id, init: Some(init) } = self.kind(declarator) else {
 			return Ok(());
@@ -309,6 +311,14 @@ impl Parser<'_, TypeScript> {
 			return self.error(self.start_of(init), "Initializers are not allowed in ambient contexts.");
 		}
 		let literal = match self.kind(init) {
+			NodeKind::StringLiteral { .. } | NodeKind::NumberLiteral { .. } | NodeKind::BigIntLiteral => true,
+			NodeKind::UnaryExpression {
+				operator: crate::ast::UnaryOperator::Minus,
+				argument,
+			} => matches!(
+				self.kind(argument),
+				NodeKind::NumberLiteral { .. } | NodeKind::BigIntLiteral
+			),
 			NodeKind::TemplateLiteral { expressions, .. } => expressions.len == 0,
 			NodeKind::MemberExpression { .. } => self.is_possibly_literal_enum(init),
 			_ => false,

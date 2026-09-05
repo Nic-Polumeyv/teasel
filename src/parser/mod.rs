@@ -277,6 +277,11 @@ pub(crate) trait Extension: Default + Sized {
 	fn checks_assignment_target(p: &mut Parser<Self>) -> bool {
 		true
 	}
+	/// A finished list of expressions: array elements, arguments, or a parenthesized expression
+	/// that did not become parameters.
+	fn list_items(p: &mut Parser<Self>, items: &[Option<NodeId>]) -> Result<()> {
+		Ok(())
+	}
 	fn new_expression(p: &mut Parser<Self>, node: NodeId) {}
 	/// An object property whose value starts unexpectedly for the plain grammar.
 	#[allow(clippy::too_many_arguments)]
