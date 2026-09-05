@@ -14,8 +14,9 @@ cd oracle && bun install
 SVELTE_DIR=~/Projects/svelte bun run.js
 SVELTE_DIR=~/Projects/svelte bun expressions.js
 git clone --depth 1 https://github.com/tc39/test262-parser-tests.git && bun test262.js
+bun regexp.js
 ```
 
-Known divergences: a lone surrogate in a string literal becomes U+FFFD, and regular expression patterns are not validated yet.
+Known divergence: a lone surrogate in a string literal becomes U+FFFD.
 
 Early days. Nothing to use yet.

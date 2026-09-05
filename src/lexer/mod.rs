@@ -1,6 +1,8 @@
 mod identifier;
 mod number;
 mod regex;
+mod regexp;
+mod regexp_data;
 mod string;
 pub(crate) mod token;
 pub(crate) mod unicode;
