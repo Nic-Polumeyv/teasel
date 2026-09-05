@@ -399,6 +399,55 @@ fn regex() {
 }
 
 #[test]
+fn regex_validation() {
+	let regex = |src: &str| {
+		let mut lexer = Lexer::new(src);
+		let t = lexer.next_token().unwrap();
+		lexer.read_regex(t).map(|_| ()).map_err(|e| (e.message, e.pos))
+	};
+	assert!(regex("/(?<a>x)|(?<a>y)/").is_ok());
+	assert!(regex("/[\\p{L}--[a-z]]/v").is_ok());
+	assert!(regex("/(?i:a)b/").is_ok());
+	assert!(regex("/\\1(a)/").is_ok());
+	assert_eq!(
+		regex("/(/"),
+		Err(("Invalid regular expression: /(/: Unterminated group".into(), 1))
+	);
+	assert_eq!(regex("/a/gg"), Err(("Duplicate regular expression flag".into(), 1)));
+	assert_eq!(regex("/a/uv"), Err(("Invalid regular expression flag".into(), 1)));
+	assert_eq!(
+		regex("/\\1/u"),
+		Err(("Invalid regular expression: /\\1/: Invalid escape".into(), 1))
+	);
+	assert_eq!(
+		regex("/[b-a]/"),
+		Err((
+			"Invalid regular expression: /[b-a]/: Range out of order in character class".into(),
+			1
+		))
+	);
+	assert_eq!(
+		regex("/(?<a>x)(?<a>y)/"),
+		Err((
+			"Invalid regular expression: /(?<a>x)(?<a>y)/: Duplicate capture group name".into(),
+			1
+		))
+	);
+	assert_eq!(
+		regex("/\\p{Nope}/u"),
+		Err((
+			"Invalid regular expression: /\\p{Nope}/: Invalid property name".into(),
+			1
+		))
+	);
+	assert!(regex("/{*/").is_ok());
+	assert_eq!(
+		regex("/{*/u"),
+		Err(("Invalid regular expression: /{*/: Lone quantifier brackets".into(), 1))
+	);
+}
+
+#[test]
 fn comments_are_collected_and_skipped() {
 	let mut lexer = Lexer::new("a // one\n/* two\n */ b");
 	assert!(is_ident(&lexer.next_token().unwrap().kind));

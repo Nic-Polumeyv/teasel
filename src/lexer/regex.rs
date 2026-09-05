@@ -46,7 +46,9 @@ impl Lexer<'_> {
 		if escaped {
 			return self.error(flags_start, "Unexpected token");
 		}
-		let flags = self.strings.intern(&self.src[flags_start..self.pos]);
+		let flags_text = &self.src[flags_start..self.pos];
+		super::regexp::validate(start as u32 + 1, &self.src[start + 1..flags_start - 1], flags_text)?;
+		let flags = self.strings.intern(flags_text);
 		let kind = TokenKind::RegExp { pattern, flags };
 		Ok(Token {
 			kind,
