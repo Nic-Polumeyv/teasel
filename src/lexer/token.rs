@@ -51,7 +51,6 @@ pub enum TokenKind {
 	Colon,
 	Arrow,
 	Backquote,
-	DollarBraceL,
 	At,
 
 	Eq,
