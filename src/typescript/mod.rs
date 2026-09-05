@@ -357,6 +357,7 @@ impl Parser<'_, TypeScript> {
 		};
 		if self.eat(TokenKind::ParenL)? {
 			let args = self.parse_expr_list(TokenKind::ParenR, false, false, &mut None)?;
+			self.no_type_casts(&args)?;
 			let arguments = self.list(&args);
 			let callee_start = self.start_of(expression);
 			expression = self.add(
@@ -573,7 +574,7 @@ impl Parser<'_, TypeScript> {
 		if !no_calls && self.eat(TokenKind::ParenL)? {
 			let mut errors = Some(DestructuringErrors::default());
 			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut errors)?;
-			<TypeScript as Extension>::list_items(self, &args)?;
+			self.no_type_casts(&args)?;
 			let arguments = self.list(&args);
 			let node = self.add(
 				NodeKind::CallExpression {
@@ -656,6 +657,23 @@ impl Parser<'_, TypeScript> {
 				Ok(false)
 			}
 		}
+	}
+
+	/// A type annotation in a list that is not becoming parameters is an error.
+	fn no_type_casts(&self, items: &[Option<NodeId>]) -> Result<()> {
+		for item in items.iter().flatten() {
+			let annotation = match self.ts_kind(*item) {
+				Some(TsKind::TypeCastExpression { type_annotation, .. }) => Some(type_annotation),
+				_ if matches!(self.kind(*item), NodeKind::SpreadElement { .. }) => {
+					self.ext_data().extras(*item).and_then(|e| e.type_annotation)
+				}
+				_ => None,
+			};
+			if let Some(annotation) = annotation {
+				return self.error(self.start_of(annotation), "Did not expect a type annotation here.");
+			}
+		}
+		Ok(())
 	}
 
 	fn type_cast_to_parameter(&mut self, id: NodeId) -> NodeId {
@@ -1585,12 +1603,7 @@ impl Extension for TypeScript {
 	}
 
 	fn list_items(p: &mut Parser<Self>, items: &[Option<NodeId>]) -> Result<()> {
-		for item in items.iter().flatten() {
-			if let Some(TsKind::TypeCastExpression { type_annotation, .. }) = p.ts_kind(*item) {
-				return p.error(p.start_of(type_annotation), "Did not expect a type annotation here.");
-			}
-		}
-		Ok(())
+		p.no_type_casts(items)
 	}
 
 	fn new_expression(p: &mut Parser<Self>, node: NodeId) {

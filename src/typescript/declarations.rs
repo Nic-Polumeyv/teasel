@@ -4,7 +4,7 @@
 use super::ast::{Kind, TsKind};
 use super::types::{ListKind, TypeParameterModifiers};
 use super::{ClassFrame, TypeScript};
-use crate::ast::{NodeId, NodeKind, VariableKind};
+use crate::ast::{List, NodeId, NodeKind, VariableKind};
 use crate::lexer::token::{Keyword, TokenKind};
 use crate::parser::class::ClassKind;
 use crate::parser::scope::Binding;
@@ -300,8 +300,8 @@ impl Parser<'_, TypeScript> {
 		})
 	}
 
-	/// In an ambient context only a `const` may be initialized, and only with a string or numeric
-	/// literal, a template without substitutions, or a reference to an enum member.
+	/// In an ambient context only a `const` may be initialized, and only with a literal, a template
+	/// without substitutions, or a reference to an enum member.
 	pub(super) fn check_ambient_initializer(&mut self, declarator: NodeId, kind: VariableKind) -> Result<()> {
 		let NodeKind::VariableDeclarator { id, init: Some(init) } = self.kind(declarator) else {
 			return Ok(());
@@ -311,7 +311,10 @@ impl Parser<'_, TypeScript> {
 			return self.error(self.start_of(init), "Initializers are not allowed in ambient contexts.");
 		}
 		let literal = match self.kind(init) {
-			NodeKind::StringLiteral { .. } | NodeKind::NumberLiteral { .. } | NodeKind::BigIntLiteral => true,
+			NodeKind::StringLiteral { .. }
+			| NodeKind::NumberLiteral { .. }
+			| NodeKind::BigIntLiteral
+			| NodeKind::BooleanLiteral { .. } => true,
 			NodeKind::UnaryExpression {
 				operator: crate::ast::UnaryOperator::Minus,
 				argument,
@@ -343,8 +346,15 @@ impl Parser<'_, TypeScript> {
 			return false;
 		};
 		if computed
-			&& !matches!(self.kind(property), NodeKind::TemplateLiteral { expressions, .. } if expressions.len == 0)
-		{
+			&& !matches!(
+				self.kind(property),
+				NodeKind::StringLiteral { .. }
+					| NodeKind::NumberLiteral { .. }
+					| NodeKind::TemplateLiteral {
+						expressions: List { len: 0, .. },
+						..
+					}
+			) {
 			return false;
 		}
 		self.is_uncomputed_member_chain(object)

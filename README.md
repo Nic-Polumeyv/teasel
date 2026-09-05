@@ -47,7 +47,7 @@ Where acorn-typescript leaves out keys acorn sets (`attributes`, `optional` on a
 Where acorn-typescript gets TypeScript wrong, teasel follows TypeScript and the oracle counts the case as an oracle bug:
 
 - `declare const x = 1` is valid; the plugin rejects every ambient initializer because it checks Babel's node names.
-- A type, interface or enum declared after `export { T }` satisfies the export; the plugin reports it undefined.
+- A type, interface, enum, namespace, overload or `declare function` anywhere at the top level satisfies `export { T }`, and exports inside a `declare module` or namespace block name that block; the plugin reports them undefined.
 - Modifier order and conflict errors point at the modifier; the plugin reports its column as the offset.
 - `export declare const x` is a value export; the plugin marks every `export declare` type-only.
 - `f(a: T)` and `[a: T]` are errors, as in TypeScript; the plugin keeps a type cast node there.

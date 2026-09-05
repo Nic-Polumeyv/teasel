@@ -1239,7 +1239,7 @@ impl Parser<'_, TypeScript> {
 		match modifier {
 			"public" | "private" | "protected" => {
 				if seen.extras.accessibility.is_some() {
-					return self.error(self.tok.start, "Accessibility modifier already seen.");
+					return self.error(start, "Accessibility modifier already seen.");
 				}
 				for after in ["override", "static", "readonly", "accessor"] {
 					order(modifier, after)?;
@@ -1247,13 +1247,13 @@ impl Parser<'_, TypeScript> {
 			}
 			"in" | "out" => {
 				if seen.has(modifier) {
-					return self.error(self.tok.start, format!("Duplicate modifier: '{modifier}'."));
+					return self.error(start, format!("Duplicate modifier: '{modifier}'."));
 				}
 				order("in", "out")?;
 			}
 			"accessor" => {
 				if seen.has(modifier) {
-					return self.error(self.tok.start, format!("Duplicate modifier: '{modifier}'."));
+					return self.error(start, format!("Duplicate modifier: '{modifier}'."));
 				}
 				for other in ["readonly", "static", "override"] {
 					conflict("accessor", other)?;
@@ -1261,12 +1261,12 @@ impl Parser<'_, TypeScript> {
 			}
 			"const" => {
 				if seen.has(modifier) {
-					return self.error(self.tok.start, format!("Duplicate modifier: '{modifier}'."));
+					return self.error(start, format!("Duplicate modifier: '{modifier}'."));
 				}
 			}
 			_ => {
 				if seen.has(modifier) {
-					return self.error(self.tok.start, format!("Duplicate modifier: '{modifier}'."));
+					return self.error(start, format!("Duplicate modifier: '{modifier}'."));
 				}
 				order("static", "readonly")?;
 				order("static", "override")?;

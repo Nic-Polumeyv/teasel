@@ -38,10 +38,12 @@ export function normalize_ts(key, value) {
 	if (v.type === 'CallExpression' && !('optional' in v)) v = { ...v, optional: false };
 	if (v.type === 'ClassExpression' && !('id' in v)) v = { ...v, id: null };
 	if (v.type === 'MemberExpression' && !('optional' in v)) v = { ...v, optional: false };
-	// `a?.<T>()` marks the callee itself optional in the plugin.
-	if (v.type === 'CallExpression' && v.typeArguments && v.optional && v.callee?.optional) {
+	// `a?.<T>()` marks the callee itself optional in the plugin; on a member callee the tree alone
+	// cannot say whether the plugin or the source put it there, so `typescript.js` compares those
+	// without it.
+	if (v.type === 'CallExpression' && v.typeArguments && v.optional && v.callee?.type === 'Identifier' && 'optional' in v.callee) {
 		const { optional, ...callee } = v.callee;
-		v = { ...v, callee: callee.type === 'Identifier' ? callee : { ...callee, optional: false } };
+		v = { ...v, callee };
 	}
 	// `export declare` is a value export; the plugin marks every `export declare` type-only.
 	if (v.type === 'ExportNamedDeclaration' && v.exportKind === 'type' && v.declaration && !/^TS(Interface|TypeAlias)Declaration$/.test(v.declaration.type)) {
