@@ -7,10 +7,11 @@ use teasel::json::{self, Entry, Request};
 #[napi(object)]
 #[derive(Default)]
 pub struct Options {
-	/// `"module"` or `"script"`; a module by default.
+	/// `"script"` (the default, as in acorn) or `"module"`.
 	pub source_type: Option<String>,
 	pub typescript: Option<bool>,
 	pub comments: Option<bool>,
+	pub locations: Option<bool>,
 	pub preserve_parens: Option<bool>,
 	pub allow_return_outside_function: Option<bool>,
 	pub allow_await_outside_function: Option<bool>,
@@ -18,61 +19,55 @@ pub struct Options {
 	pub allow_undeclared_exports: Option<bool>,
 }
 
-fn request(entry: Entry, offset: u32, options: Option<Options>) -> Request {
+fn run(source: &str, entry: Entry, offset: f64, options: Option<Options>) -> String {
+	let offset = match json::byte_offset(source, offset) {
+		Ok(offset) => offset,
+		Err(message) => return json::error_json(&message, 0),
+	};
 	let options = options.unwrap_or_default();
-	Request {
-		entry,
-		offset,
-		typescript: options.typescript.unwrap_or(false),
-		comments: options.comments.unwrap_or(false),
-		options: teasel::Options {
-			module: options.source_type.as_deref() != Some("script"),
-			preserve_parens: options.preserve_parens.unwrap_or(false),
-			allow_return_outside_function: options.allow_return_outside_function.unwrap_or(false),
-			allow_await_outside_function: options.allow_await_outside_function.unwrap_or(false),
-			allow_super_outside_method: options.allow_super_outside_method.unwrap_or(false),
-			allow_undeclared_exports: options.allow_undeclared_exports.unwrap_or(false),
-		},
-	}
-}
-
-/// Byte offset of a UTF-16 offset, so callers can pass acorn-style positions.
-fn byte_offset(source: &str, utf16: u32) -> u32 {
-	let mut units = 0;
-	for (byte, c) in source.char_indices() {
-		if units >= utf16 as usize {
-			return byte as u32;
+	let mut request = Request::new(entry, offset);
+	let flags = [
+		("typescript", options.typescript),
+		("comments", options.comments),
+		("locations", options.locations),
+		("preserveParens", options.preserve_parens),
+		("allowReturnOutsideFunction", options.allow_return_outside_function),
+		("allowAwaitOutsideFunction", options.allow_await_outside_function),
+		("allowSuperOutsideMethod", options.allow_super_outside_method),
+		("allowUndeclaredExports", options.allow_undeclared_exports),
+	];
+	for (flag, on) in flags {
+		if on == Some(true) {
+			request.set(flag);
 		}
-		units += c.len_utf16();
 	}
-	source.len() as u32
+	if options.source_type.as_deref() != Some("module") {
+		request.set("script");
+	}
+	json::parse(source, &request)
 }
 
-#[napi]
+#[napi(catch_unwind)]
 pub fn parse(source: String, options: Option<Options>) -> String {
-	json::parse(&source, &request(Entry::Program, 0, options))
+	run(&source, Entry::Program, 0.0, options)
 }
 
-#[napi]
-pub fn parse_expression_at(source: String, offset: u32, options: Option<Options>) -> String {
-	let offset = byte_offset(&source, offset);
-	json::parse(&source, &request(Entry::Expression, offset, options))
+#[napi(catch_unwind)]
+pub fn parse_expression_at(source: String, offset: f64, options: Option<Options>) -> String {
+	run(&source, Entry::Expression, offset, options)
 }
 
-#[napi]
-pub fn parse_pattern_at(source: String, offset: u32, options: Option<Options>) -> String {
-	let offset = byte_offset(&source, offset);
-	json::parse(&source, &request(Entry::Pattern, offset, options))
+#[napi(catch_unwind)]
+pub fn parse_pattern_at(source: String, offset: f64, options: Option<Options>) -> String {
+	run(&source, Entry::Pattern, offset, options)
 }
 
-#[napi]
-pub fn parse_params_at(source: String, offset: u32, options: Option<Options>) -> String {
-	let offset = byte_offset(&source, offset);
-	json::parse(&source, &request(Entry::Params, offset, options))
+#[napi(catch_unwind)]
+pub fn parse_params_at(source: String, offset: f64, options: Option<Options>) -> String {
+	run(&source, Entry::Params, offset, options)
 }
 
-#[napi]
-pub fn parse_statement_at(source: String, offset: u32, options: Option<Options>) -> String {
-	let offset = byte_offset(&source, offset);
-	json::parse(&source, &request(Entry::Statement, offset, options))
+#[napi(catch_unwind)]
+pub fn parse_statement_at(source: String, offset: f64, options: Option<Options>) -> String {
+	run(&source, Entry::Statement, offset, options)
 }

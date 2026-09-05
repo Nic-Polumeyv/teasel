@@ -28,9 +28,9 @@ Known divergences:
 
 `json::parse` is the one entry every front end uses: a request names what to parse, where, and how, and the answer is ESTree JSON or an acorn-shaped error. The CLI, the Node addon in `bindings/node` and the WebAssembly module in `bindings/wasm` all go through it.
 
-`@teasel/parser` is the Node package: `parse`, `parseExpressionAt`, `parsePatternAt`, `parseParamsAt` and `parseStatementAt` take acorn's options plus `typescript` and `comments`, return the tree and throw a `SyntaxError` with `pos` and `loc`. Offsets are UTF-16, as in acorn. Build it with `bun run build` in `bindings/node`; the wasm module is `cargo build --release -p teasel-wasm --target wasm32-unknown-unknown` followed by `wasm-bindgen --target web`.
+`@teasel/parser` is the Node package: `parse`, `parseExpressionAt`, `parsePatternAt`, `parseParamsAt` and `parseStatementAt` take acorn's options with acorn's defaults (`sourceType: 'script'`, no `loc` without `locations`) plus `typescript` and `comments`, return the tree and throw a `SyntaxError` with `pos` and `loc`. `parseParamsAt` returns the parameters and the offset after the closing paren. Offsets are UTF-16, as in acorn; a lone surrogate inside a string literal reaches the parser as U+FFFD. Build it with `bun run build` in `bindings/node`; the wasm module is `cargo build --release -p teasel-wasm --target wasm32-unknown-unknown` followed by `wasm-bindgen --target web --out-dir bindings/wasm/pkg --out-name teasel`, and `bindings/wasm/index.js` gives it the same API.
 
-Parsing is a fraction of acorn's time; moving the tree into JavaScript is not yet. On a 66 KB file the parser takes 1.9 ms where acorn takes 4.5 ms, serializing adds 2.4 ms and `JSON.parse` on the other side 3.7 ms, so end to end the two are close. `examples/time.rs` prints that split for any file. Cutting the transfer cost is the next piece of work.
+The parser is faster than acorn; moving the tree into JavaScript is what costs. On a 63 KB file under Node, parsing takes 1.3 ms where acorn takes 3.4 ms, serializing adds 1.5 ms and `JSON.parse` on the other side 7.3 ms with `locations` or 3.0 ms without. `examples/time.rs` prints the Rust side of that split for any file. A transfer that is not JSON is the next piece of work.
 
 ## Comments
 

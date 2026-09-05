@@ -6,7 +6,8 @@
 //!
 //! `teasel --batch` reads jobs from stdin, each a header line `MODE LENGTH` followed by LENGTH
 //! bytes of source, and prints one JSON line per job. MODE is `module`, `script`, `expr:OFFSET`,
-//! `pattern:OFFSET`, `params:OFFSET` or `stmt:OFFSET`, with a `ts-` prefix for TypeScript and
+//! `pattern:OFFSET`, `params:OFFSET` (whose answer is `{"params": [...], "end": N}`) or
+//! `stmt:OFFSET`, with a `ts-` prefix for TypeScript and
 //! `+comments` to attach comments or `+undeclared-exports` to accept exports of names the source
 //! never declares. Offsets are byte offsets into the source; the JSON output reports UTF-16
 //! offsets like acorn.
@@ -110,6 +111,7 @@ fn batch() -> io::Result<()> {
 			offset,
 			typescript,
 			comments,
+			locations: true,
 			options: mode.options(mode_text, undeclared_exports),
 		};
 		let json = json::parse(&source, &request);
@@ -180,6 +182,7 @@ fn main() -> ExitCode {
 		offset: offset.unwrap_or(0),
 		typescript,
 		comments,
+		locations: true,
 		options,
 	};
 	println!("{}", json::parse(&source, &request));
