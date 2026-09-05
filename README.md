@@ -23,6 +23,16 @@ Known divergences:
 - A lone surrogate in a string literal becomes U+FFFD.
 - Snippet parameters are read from the real source, so `{#snippet s(x = ")")}` parses; Svelte's own paren scanner stops at the `)` inside the string.
 
+## Comments
+
+The lexer keeps every comment with its range. `comments::attach` hangs them on nodes as `leadingComments` and `trailingComments` the way the Svelte compiler does after parsing with acorn, since Svelte reads `svelte-ignore` from them and prints with them: a comment before a node leads it, a comment on the same line after a node trails it, and the last node of a block, program, array or object takes what follows up to the closing bracket. `oracle/comments.js` diffs the scripts and template expressions of every component in a Svelte checkout against Svelte's own output.
+
+```
+SVELTE_DIR=~/Projects/svelte bun comments.js
+```
+
+Comment values are the text between the delimiters; Svelte strips a block comment's indentation, which the oracle applies before comparing.
+
 ## TypeScript
 
 TypeScript is an extension of the JavaScript grammar: the JavaScript parser calls into a fixed set of hook points and knows nothing else about it. `src/typescript/` holds the types, declarations and expressions, its own nodes, and the keys it adds to JavaScript nodes. The oracle is `@sveltejs/acorn-typescript`, the fork Svelte compiles with, quirks included. `oracle/typescript.js` diffs every `.ts` file in the Svelte and SvelteKit checkouts and every `lang="ts"` script in the Svelte test fixtures, and with `--dts` every `.d.ts` under the Svelte checkout's node_modules; the template oracles above cover TypeScript components too.

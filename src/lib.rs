@@ -3,6 +3,7 @@
 #![warn(unreachable_pub)]
 
 pub mod ast;
+pub mod comments;
 pub mod error;
 pub mod estree;
 pub mod interner;

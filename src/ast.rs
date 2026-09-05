@@ -1,4 +1,5 @@
 use crate::interner::{Interner, StrId};
+use std::collections::HashMap;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Comment {
@@ -62,10 +63,207 @@ pub struct Ast<X = ()> {
 	pub lists: Vec<Option<NodeId>>,
 	pub strings: Interner,
 	pub comments: Vec<Comment>,
+	/// Comments attached to nodes by `comments::attach`, as indices into `comments`.
+	pub attached: HashMap<NodeId, Attached>,
 	pub extension: X,
 }
 
+#[derive(Debug, Default)]
+pub struct Attached {
+	pub leading: Vec<u32>,
+	pub trailing: Vec<u32>,
+}
+
+/// How an extension's nodes join a walk over the tree.
+pub trait Walk: Sized {
+	/// The children of `id` in the order a walker visits them, which is the order acorn creates
+	/// the properties. Plain nodes come from `Ast::plain_children`.
+	fn children(&self, ast: &Ast<Self>, id: NodeId, out: &mut Vec<NodeId>);
+}
+
+impl Walk for () {
+	fn children(&self, ast: &Ast<Self>, id: NodeId, out: &mut Vec<NodeId>) {
+		ast.plain_children(id, out);
+	}
+}
+
+impl<X: Walk> Ast<X> {
+	pub fn children(&self, id: NodeId, out: &mut Vec<NodeId>) {
+		self.extension.children(self, id, out);
+	}
+}
+
 impl<X> Ast<X> {
+	/// The children of a plain JavaScript node in acorn's property order; an extension node has
+	/// none here.
+	pub fn plain_children(&self, id: NodeId, out: &mut Vec<NodeId>) {
+		use NodeKind::*;
+		let list = |list: List, out: &mut Vec<NodeId>| out.extend(self.list(list).iter().flatten());
+		match self.node(id).kind {
+			Program { body, .. } | BlockStatement { body } | StaticBlock { body } | ClassBody { body } => {
+				list(body, out)
+			}
+			Identifier { .. }
+			| PrivateIdentifier { .. }
+			| NumberLiteral { .. }
+			| BigIntLiteral
+			| StringLiteral { .. }
+			| BooleanLiteral { .. }
+			| NullLiteral
+			| RegExpLiteral { .. }
+			| TemplateElement { .. }
+			| ThisExpression
+			| Super
+			| EmptyStatement
+			| DebuggerStatement
+			| Extension(_) => {}
+			TemplateLiteral { quasis, expressions } => {
+				list(expressions, out);
+				list(quasis, out);
+			}
+			TaggedTemplateExpression { tag, quasi } => out.extend([tag, quasi]),
+			ArrayExpression { elements } | ArrayPattern { elements } => list(elements, out),
+			ObjectExpression { properties } | ObjectPattern { properties } => list(properties, out),
+			Property { key, value, .. } => out.extend([key, value]),
+			SpreadElement { argument }
+			| RestElement { argument }
+			| UnaryExpression { argument, .. }
+			| UpdateExpression { argument, .. }
+			| AwaitExpression { argument }
+			| ThrowStatement { argument } => out.push(argument),
+			BinaryExpression { left, right, .. }
+			| LogicalExpression { left, right, .. }
+			| AssignmentExpression { left, right, .. }
+			| AssignmentPattern { left, right } => out.extend([left, right]),
+			ConditionalExpression {
+				test,
+				consequent,
+				alternate,
+			} => out.extend([test, consequent, alternate]),
+			MemberExpression { object, property, .. } => out.extend([object, property]),
+			CallExpression { callee, arguments, .. } | NewExpression { callee, arguments } => {
+				out.push(callee);
+				list(arguments, out);
+			}
+			ChainExpression { expression }
+			| ParenthesizedExpression { expression }
+			| ExpressionStatement { expression, .. } => out.push(expression),
+			SequenceExpression { expressions } => list(expressions, out),
+			ArrowFunctionExpression { params, body, .. } => {
+				list(params, out);
+				out.push(body);
+			}
+			FunctionExpression { function } | FunctionDeclaration { function } => {
+				out.extend(function.id);
+				list(function.params, out);
+				out.push(function.body);
+			}
+			ClassExpression { class } | ClassDeclaration { class } => {
+				out.extend(class.id);
+				out.extend(class.super_class);
+				out.push(class.body);
+			}
+			MethodDefinition { key, value, .. } => out.extend([key, value]),
+			PropertyDefinition { key, value, .. } => {
+				out.push(key);
+				out.extend(value);
+			}
+			YieldExpression { argument, .. } | ReturnStatement { argument } => out.extend(argument),
+			MetaProperty { meta, property } => out.extend([meta, property]),
+			ImportExpression { source, options } => {
+				out.push(source);
+				out.extend(options);
+			}
+			WithStatement { object, body } => out.extend([object, body]),
+			LabeledStatement { label, body } => out.extend([body, label]),
+			BreakStatement { label } | ContinueStatement { label } => out.extend(label),
+			IfStatement {
+				test,
+				consequent,
+				alternate,
+			} => {
+				out.extend([test, consequent]);
+				out.extend(alternate);
+			}
+			SwitchStatement { discriminant, cases } => {
+				out.push(discriminant);
+				list(cases, out);
+			}
+			SwitchCase { test, consequent } => {
+				list(consequent, out);
+				out.extend(test);
+			}
+			TryStatement {
+				block,
+				handler,
+				finalizer,
+			} => {
+				out.push(block);
+				out.extend(handler);
+				out.extend(finalizer);
+			}
+			CatchClause { param, body } => {
+				out.extend(param);
+				out.push(body);
+			}
+			WhileStatement { test, body } => out.extend([test, body]),
+			DoWhileStatement { body, test } => out.extend([body, test]),
+			ForStatement {
+				init,
+				test,
+				update,
+				body,
+			} => {
+				out.extend(init);
+				out.extend(test);
+				out.extend(update);
+				out.push(body);
+			}
+			ForInStatement { left, right, body } | ForOfStatement { left, right, body, .. } => {
+				out.extend([left, right, body]);
+			}
+			VariableDeclaration { declarations, .. } => list(declarations, out),
+			VariableDeclarator { id, init } => {
+				out.push(id);
+				out.extend(init);
+			}
+			ImportDeclaration {
+				specifiers,
+				source,
+				attributes,
+			} => {
+				list(specifiers, out);
+				out.push(source);
+				list(attributes, out);
+			}
+			ImportSpecifier { imported, local } => out.extend([imported, local]),
+			ImportDefaultSpecifier { local } | ImportNamespaceSpecifier { local } => out.push(local),
+			ImportAttribute { key, value } => out.extend([key, value]),
+			ExportNamedDeclaration {
+				declaration,
+				specifiers,
+				source,
+				attributes,
+			} => {
+				out.extend(declaration);
+				list(specifiers, out);
+				out.extend(source);
+				list(attributes, out);
+			}
+			ExportSpecifier { local, exported } => out.extend([local, exported]),
+			ExportDefaultDeclaration { declaration } => out.push(declaration),
+			ExportAllDeclaration {
+				exported,
+				source,
+				attributes,
+			} => {
+				out.extend(exported);
+				out.push(source);
+				list(attributes, out);
+			}
+		}
+	}
+
 	pub fn node(&self, id: NodeId) -> &Node {
 		&self.nodes[id.0 as usize]
 	}

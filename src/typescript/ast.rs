@@ -100,6 +100,9 @@ pub struct Extras {
 	pub is_override: bool,
 	pub accessor: bool,
 	pub is_static: bool,
+	/// An object literal method's type parameters come after its body in the plugin's property
+	/// order, which walkers follow.
+	pub type_parameters_after_body: bool,
 }
 
 impl Extras {
@@ -127,6 +130,7 @@ impl Extras {
 		self.is_override |= other.is_override;
 		self.accessor |= other.accessor;
 		self.is_static |= other.is_static;
+		self.type_parameters_after_body |= other.type_parameters_after_body;
 	}
 }
 
