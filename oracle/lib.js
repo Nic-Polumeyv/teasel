@@ -55,8 +55,8 @@ export function diff(a, b, path = '') {
 	return null;
 }
 
-/// Runs every job through one teasel process. A job is { source, mode } where mode is
-/// 'module', 'script' or 'expr:BYTE_OFFSET'.
+/// Runs every job through one teasel process and returns its output lines, one JSON document
+/// per job, unparsed. A job is { source, mode } where mode is 'module', 'script' or 'expr:BYTE_OFFSET'.
 export async function teasel(jobs) {
 	const proc = Bun.spawn([binary, '--batch'], { stdin: 'pipe', stdout: 'pipe', stderr: 'inherit' });
 	let input = '';
@@ -64,23 +64,27 @@ export async function teasel(jobs) {
 	proc.stdin.write(input);
 	proc.stdin.end();
 	const output = await new Response(proc.stdout).text();
-	return output.split('\n').map((line) => {
-		try {
-			return JSON.parse(line);
-		} catch {
-			return { error: { message: `bad output: ${line.slice(0, 80)}` } };
-		}
-	});
+	return output.split('\n');
 }
 
-export function compare(jobs, expected, actual, { verbose, label = corpus }) {
+function parse_line(line) {
+	try {
+		return JSON.parse(line);
+	} catch {
+		return { error: { message: `bad output: ${line.slice(0, 80)}` } };
+	}
+}
+
+/// `expected` is a function of the job so acorn's ASTs are built one at a time; `lines` are
+/// teasel's raw output lines.
+export function compare(jobs, expected, lines, { verbose, label = corpus, skipped = 0 }) {
 	const stats = { identical: 0, mismatch: 0, both_error: 0, error_differs: 0, only_acorn_error: 0, only_teasel_error: 0 };
 	const details = [];
 	for (const [i, job] of jobs.entries()) {
-		const e = expected[i];
-		const a = actual[i];
+		const e = expected(job);
+		const a = parse_line(lines[i]);
 		if (e.error && a.error) {
-			if (e.error.message === a.error.message && e.error.pos === a.error.pos) stats.both_error++;
+			if (!diff(e.error, a.error)) stats.both_error++;
 			else {
 				stats.error_differs++;
 				details.push(`${job.name}: acorn "${e.error.message}" @${e.error.pos}, teasel "${a.error.message}" @${a.error.pos}`);
@@ -100,7 +104,7 @@ export function compare(jobs, expected, actual, { verbose, label = corpus }) {
 		}
 	}
 	const total = jobs.length;
-	console.log(`${total} jobs from ${label} (acorn ${acorn.version})`);
+	console.log(`${total} jobs from ${label} (acorn ${acorn.version})${skipped ? `, ${skipped} files skipped` : ''}`);
 	for (const [k, v] of Object.entries(stats)) console.log(`  ${k.padEnd(18)} ${v}`);
 	const agree = stats.identical + stats.both_error;
 	console.log(`  agreement          ${((100 * agree) / total).toFixed(2)}%`);

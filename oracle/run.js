@@ -29,6 +29,5 @@ for (const path of files(corpus, /\.(svelte|js)$/)) {
 	}
 }
 
-const expected = jobs.map((job) => acorn_parse(job.source, job.mode));
-const actual = await teasel(jobs);
-process.exit(compare(jobs, expected, actual, { verbose }) ? 0 : 1);
+const lines = await teasel(jobs);
+process.exit(compare(jobs, (job) => acorn_parse(job.source, job.mode), lines, { verbose }) ? 0 : 1);

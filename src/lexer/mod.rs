@@ -10,7 +10,7 @@ pub(crate) mod unicode;
 #[cfg(test)]
 mod tests;
 
-use crate::ast::Comment;
+use crate::ast::{Comment, CommentKind};
 use crate::error::SyntaxError;
 use crate::interner::Interner;
 use token::{Token, TokenKind};
@@ -161,13 +161,15 @@ impl<'a> Lexer<'a> {
 		let mut newline = false;
 		let last_end = self.pos;
 		if self.pos == 0 && self.src.starts_with("#!") {
-			self.skip_line_comment(2);
+			self.skip_line_comment(CommentKind::Hashbang);
 		}
 		while let Some(b) = self.byte() {
 			match b {
-				b'<' if !self.module && self.src[self.pos..].starts_with("<!--") => self.skip_line_comment(4),
+				b'<' if !self.module && self.src[self.pos..].starts_with("<!--") => {
+					self.skip_line_comment(CommentKind::HtmlOpen)
+				}
 				b'-' if !self.module && (last_end == 0 || newline) && self.src[self.pos..].starts_with("-->") => {
-					self.skip_line_comment(3)
+					self.skip_line_comment(CommentKind::HtmlClose)
 				}
 				b' ' | b'\t' | 0x0b | 0x0c => self.pos += 1,
 				b'\n' | b'\r' => {
@@ -175,7 +177,7 @@ impl<'a> Lexer<'a> {
 					newline = true;
 				}
 				b'/' => match self.byte_at(1) {
-					Some(b'/') => self.skip_line_comment(2),
+					Some(b'/') => self.skip_line_comment(CommentKind::Line),
 					Some(b'*') => newline |= self.skip_block_comment()?,
 					_ => break,
 				},
@@ -194,9 +196,13 @@ impl<'a> Lexer<'a> {
 		Ok(newline)
 	}
 
-	fn skip_line_comment(&mut self, skip: usize) {
+	fn skip_line_comment(&mut self, kind: CommentKind) {
 		let start = self.pos;
-		self.pos += skip;
+		self.pos += match kind {
+			CommentKind::HtmlOpen => 4,
+			CommentKind::HtmlClose => 3,
+			_ => 2,
+		};
 		while let Some(c) = self.char() {
 			if is_new_line(c) {
 				break;
@@ -204,7 +210,7 @@ impl<'a> Lexer<'a> {
 			self.pos += c.len_utf8();
 		}
 		self.comments.push(Comment {
-			block: false,
+			kind,
 			start: start as u32,
 			end: self.pos as u32,
 		});
@@ -219,7 +225,7 @@ impl<'a> Lexer<'a> {
 		let newline = self.src[start + 2..end - 2].chars().any(is_new_line);
 		self.pos = end;
 		self.comments.push(Comment {
-			block: true,
+			kind: CommentKind::Block,
 			start: start as u32,
 			end: end as u32,
 		});
