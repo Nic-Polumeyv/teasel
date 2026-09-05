@@ -64,6 +64,14 @@ impl<'a> Lexer<'a> {
 		self.pos as u32
 	}
 
+	pub(crate) fn escaped(&self) -> bool {
+		self.escaped
+	}
+
+	pub(crate) fn set_escaped(&mut self, escaped: bool) {
+		self.escaped = escaped;
+	}
+
 	/// The token after the current one, leaving the lexer where it was.
 	pub(crate) fn peek_token(&mut self) -> Result<Token> {
 		let pos = self.pos;

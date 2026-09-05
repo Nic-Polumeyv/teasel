@@ -1,13 +1,13 @@
-mod class;
-mod expression;
+pub(crate) mod class;
+pub(crate) mod expression;
 mod pattern;
-mod scope;
-mod statement;
+pub(crate) mod scope;
+pub(crate) mod statement;
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
-use crate::ast::{Ast, List, NodeId, NodeKind};
+use crate::ast::{Ast, List, NodeId, NodeKind, VariableKind};
 use crate::error::SyntaxError;
 use crate::interner::StrId;
 use crate::lexer::Lexer;
@@ -111,7 +111,9 @@ pub(crate) trait Extension: Default + Clone + Sized {
 	fn var_id(p: &mut Parser<Self>, id: NodeId) -> Result<()> {
 		Ok(())
 	}
-	fn var_declarator(p: &mut Parser<Self>, node: NodeId) {}
+	fn var_declarator(p: &mut Parser<Self>, node: NodeId, kind: VariableKind) -> Result<()> {
+		Ok(())
+	}
 	/// Whether a declarator may go without an initializer where the plain grammar requires one.
 	fn allows_missing_initializer(p: &mut Parser<Self>) -> bool {
 		false
@@ -131,6 +133,10 @@ pub(crate) trait Extension: Default + Clone + Sized {
 		Ok(item)
 	}
 	fn catch_param(p: &mut Parser<Self>, param: NodeId) -> Result<()> {
+		Ok(())
+	}
+	/// After a pattern read on its own, the way Svelte reads an each-block context.
+	fn pattern_annotation(p: &mut Parser<Self>, pattern: NodeId) -> Result<()> {
 		Ok(())
 	}
 
@@ -180,7 +186,7 @@ pub(crate) trait Extension: Default + Clone + Sized {
 		Ok(None)
 	}
 	/// After the key of a class element.
-	fn class_key_end(p: &mut Parser<Self>) -> Result<()> {
+	fn class_key_end(p: &mut Parser<Self>, key: NodeId, computed: bool) -> Result<()> {
 		Ok(())
 	}
 	fn starts_class_method(p: &mut Parser<Self>) -> bool {
@@ -200,6 +206,9 @@ pub(crate) trait Extension: Default + Clone + Sized {
 	fn maybe_assign(p: &mut Parser<Self>, for_init: ForInit, errors: &mut Errors) -> Result<Option<NodeId>> {
 		Ok(None)
 	}
+	/// Entering a parenthesized list that may turn out to be arrow parameters.
+	fn paren_list_start(p: &mut Parser<Self>) {}
+	fn paren_list_end(p: &mut Parser<Self>) {}
 	/// An item of a parenthesized list, after its expression.
 	fn paren_item(p: &mut Parser<Self>, item: NodeId) -> Result<NodeId> {
 		Ok(item)
@@ -213,6 +222,10 @@ pub(crate) trait Extension: Default + Clone + Sized {
 		Ok(None)
 	}
 	fn unary(p: &mut Parser<Self>, for_init: ForInit) -> Result<Option<NodeId>> {
+		Ok(None)
+	}
+	/// First look at an atom.
+	fn atom(p: &mut Parser<Self>, errors: &mut Errors, for_init: ForInit, for_new: bool) -> Result<Option<NodeId>> {
 		Ok(None)
 	}
 	/// At an operator position; `Some` is the new left operand.
@@ -308,6 +321,7 @@ pub(crate) fn parse_pattern_at<E: Extension>(
 	};
 	let pattern = parser.make_pattern(expression, false, &mut errors)?;
 	parser.check_lval_pattern(pattern, scope::Binding::None, &mut None)?;
+	E::pattern_annotation(&mut parser, pattern)?;
 	Ok((parser.finish(), pattern))
 }
 
@@ -423,13 +437,12 @@ impl<'a, E: Extension> Parser<'a, E> {
 		let strict = options.module || expression::strict_directive(src, offset);
 		lexer.strict = strict;
 		lexer.module = options.module;
-		let tok = lexer.next_token()?;
 		let mut parser = Self {
 			lexer,
 			ast: Ast::default(),
 			ext: E::default(),
 			options,
-			tok,
+			tok: Token::eof(offset),
 			prev_end: offset,
 			strict,
 			depth: 0,
@@ -444,6 +457,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 			potential_arrow_in_for_await: false,
 		};
 		E::init(&mut parser);
+		parser.tok = parser.lexer.next_token()?;
 		Ok(parser)
 	}
 
@@ -482,13 +496,23 @@ impl<'a, E: Extension> Parser<'a, E> {
 	}
 
 	pub(crate) fn peek_token(&mut self) -> Result<Token> {
+		let escaped = self.lexer.escaped();
+		let token = self.lexer.peek_token();
+		self.lexer.set_escaped(escaped);
+		token
+	}
+
+	#[allow(dead_code)]
+	fn peek_token_raw(&mut self) -> Result<Token> {
 		self.lexer.peek_token()
 	}
 
 	/// Re-reads the current token, after the lexer's mode changed under it.
 	pub(crate) fn relex(&mut self) -> Result<()> {
+		let newline_before = self.tok.newline_before;
 		self.lexer.set_pos(self.tok.start);
 		self.tok = self.lexer.next_token()?;
+		self.tok.newline_before = newline_before;
 		Ok(())
 	}
 

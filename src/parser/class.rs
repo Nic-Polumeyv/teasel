@@ -237,7 +237,7 @@ impl<E: Extension> Parser<'_, E> {
 			}
 			None => self.parse_class_element_name()?,
 		};
-		E::class_key_end(self)?;
+		E::class_key_end(self, key, computed)?;
 		if self.is(TokenKind::ParenL)
 			|| E::starts_class_method(self)
 			|| kind != MethodKind::Method

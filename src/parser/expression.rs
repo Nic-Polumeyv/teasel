@@ -567,7 +567,9 @@ impl<E: Extension> Parser<'_, E> {
 			self.yield_pos = 0;
 			self.await_pos = 0;
 			self.await_ident_pos = 0;
+			E::paren_list_start(self);
 			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut errors)?;
+			E::paren_list_end(self);
 			if maybe_async_arrow && !optional && E::should_parse_async_arrow(self)? {
 				self.check_pattern_errors(&errors, false)?;
 				self.check_yield_await_in_default_params()?;
@@ -621,6 +623,9 @@ impl<E: Extension> Parser<'_, E> {
 	pub(crate) fn parse_expr_atom(&mut self, errors: &mut Errors, for_init: ForInit, for_new: bool) -> Result<NodeId> {
 		if self.is(TokenKind::Slash) || self.is(TokenKind::SlashEq) {
 			self.tok = self.lexer.read_regex(self.tok)?;
+		}
+		if let Some(atom) = E::atom(self, errors, for_init, for_new)? {
+			return Ok(atom);
 		}
 		let start = self.tok.start;
 		let can_be_arrow = self.potential_arrow_at == start;
@@ -830,6 +835,7 @@ impl<E: Extension> Parser<'_, E> {
 	/// Parses the comma-separated expressions after an opening paren through the closing one,
 	/// which may turn out to be arrow function parameters.
 	pub(crate) fn parse_paren_items(&mut self) -> Result<ParenItems> {
+		E::paren_list_start(self);
 		let inner_start = self.tok.start;
 		let mut items: Vec<Option<NodeId>> = Vec::new();
 		let mut first = true;
@@ -860,6 +866,7 @@ impl<E: Extension> Parser<'_, E> {
 		}
 		let inner_end = self.prev_end;
 		self.expect(TokenKind::ParenR)?;
+		E::paren_list_end(self);
 		Ok(ParenItems {
 			items,
 			errors,

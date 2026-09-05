@@ -166,6 +166,17 @@ impl<'a, X: Emit> Writer<'a, X> {
 		self.node(id);
 	}
 
+	pub(crate) fn kind(&self, id: NodeId) -> NodeKind {
+		self.ast.node(id).kind
+	}
+
+	/// The key only when there is a node, the way acorn leaves unset properties out.
+	pub(crate) fn opt_key(&mut self, key: &str, id: Option<NodeId>) {
+		if let Some(id) = id {
+			self.field(key, id);
+		}
+	}
+
 	pub(crate) fn opt(&mut self, key: &str, id: Option<NodeId>) {
 		self.key(key);
 		match id {

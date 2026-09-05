@@ -465,20 +465,7 @@ impl<E: Extension> Parser<'_, E> {
 		let generator = self.eat(TokenKind::Star)?;
 		let mut id = None;
 		if is_statement && (flags & FUNC_NULLABLE_ID == 0 || matches!(self.tok.kind, TokenKind::Ident(_))) {
-			let name = self.parse_ident(false)?;
-			if flags & FUNC_HANGING == 0 {
-				let binding = if self.strict || generator || is_async {
-					if self.treat_functions_as_var() {
-						Binding::Var
-					} else {
-						Binding::Lexical
-					}
-				} else {
-					Binding::Function
-				};
-				self.check_lval_simple(name, binding, &mut None)?;
-			}
-			id = Some(name);
+			id = Some(self.parse_ident(false)?);
 		}
 		let (old_yield, old_await, old_await_ident) = (self.yield_pos, self.await_pos, self.await_ident_pos);
 		self.yield_pos = 0;
@@ -523,6 +510,23 @@ impl<E: Extension> Parser<'_, E> {
 		self.yield_pos = old_yield;
 		self.await_pos = old_await;
 		self.await_ident_pos = old_await_ident;
+		if is_statement
+			&& flags & FUNC_HANGING == 0
+			&& let Some(name) = id
+		{
+			let binding = if !matches!(self.kind(node), NodeKind::FunctionDeclaration { .. }) {
+				Binding::None
+			} else if self.strict || generator || is_async {
+				if self.treat_functions_as_var() {
+					Binding::Var
+				} else {
+					Binding::Lexical
+				}
+			} else {
+				Binding::Function
+			};
+			self.check_lval_simple(name, binding, &mut None)?;
+		}
 		E::function_end(self, node);
 		Ok(node)
 	}
@@ -665,7 +669,7 @@ impl<E: Extension> Parser<'_, E> {
 		))
 	}
 
-	fn parse_var_statement(&mut self, start: u32, kind: VariableKind) -> Result<NodeId> {
+	pub(crate) fn parse_var_statement(&mut self, start: u32, kind: VariableKind) -> Result<NodeId> {
 		self.next()?;
 		let node = self.parse_var(start, false, kind)?;
 		self.semicolon()?;
@@ -796,7 +800,7 @@ impl<E: Extension> Parser<'_, E> {
 				None
 			};
 			let declarator = self.add(NodeKind::VariableDeclarator { id, init }, decl_start);
-			E::var_declarator(self, declarator);
+			E::var_declarator(self, declarator, kind)?;
 			declarations.push(declarator);
 			if !self.eat(TokenKind::Comma)? {
 				break;
@@ -934,7 +938,7 @@ impl<E: Extension> Parser<'_, E> {
 		Ok(self.list_of(&nodes))
 	}
 
-	fn parse_module_export_name(&mut self) -> Result<NodeId> {
+	pub(crate) fn parse_module_export_name(&mut self) -> Result<NodeId> {
 		if matches!(self.tok.kind, TokenKind::String(_)) {
 			let literal = self.parse_expr_atom(&mut None, ForInit::No, false)?;
 			return Ok(literal);
@@ -1086,7 +1090,7 @@ impl<E: Extension> Parser<'_, E> {
 		Ok(declaration)
 	}
 
-	fn should_parse_export_statement(&mut self) -> bool {
+	pub(crate) fn should_parse_export_statement(&mut self) -> bool {
 		self.is_keyword(Keyword::Var)
 			|| self.is_keyword(Keyword::Const)
 			|| self.is_keyword(Keyword::Class)
