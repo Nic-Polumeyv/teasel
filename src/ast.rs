@@ -2,9 +2,35 @@ use crate::interner::{Interner, StrId};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Comment {
-	pub block: bool,
+	pub kind: CommentKind,
 	pub start: u32,
 	pub end: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CommentKind {
+	Line,
+	Block,
+	Hashbang,
+	HtmlOpen,
+	HtmlClose,
+}
+
+impl Comment {
+	pub fn is_block(&self) -> bool {
+		self.kind == CommentKind::Block
+	}
+
+	/// Byte range of the comment text, without its delimiters.
+	pub fn text_range(&self) -> std::ops::Range<usize> {
+		let (prefix, suffix) = match self.kind {
+			CommentKind::Line | CommentKind::Hashbang => (2, 0),
+			CommentKind::Block => (2, 2),
+			CommentKind::HtmlOpen => (4, 0),
+			CommentKind::HtmlClose => (3, 0),
+		};
+		self.start as usize + prefix..self.end as usize - suffix
+	}
 }
 
 /// Index of a node in `Ast::nodes`.

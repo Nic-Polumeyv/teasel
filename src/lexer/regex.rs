@@ -35,7 +35,7 @@ impl Lexer<'_> {
 		let mut escaped = false;
 		while let Some(c) = self.char() {
 			if c == '\\' {
-				self.read_word_escape(false)?;
+				self.read_word_escape(self.pos == flags_start)?;
 				escaped = true;
 			} else if is_word_char(c, false) {
 				self.pos += c.len_utf8();
