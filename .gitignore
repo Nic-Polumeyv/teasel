@@ -1,3 +1,4 @@
 /target
 /node_modules
 /oracle/node_modules
+/oracle/test262-parser-tests
