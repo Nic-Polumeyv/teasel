@@ -37,7 +37,7 @@ impl Lexer<'_> {
 		Ok(TokenKind::Ident(name))
 	}
 
-	fn read_word_escape(&mut self, first: bool) -> Result<char> {
+	pub(super) fn read_word_escape(&mut self, first: bool) -> Result<char> {
 		let esc_start = self.pos;
 		self.pos += 1;
 		if self.byte() != Some(b'u') {

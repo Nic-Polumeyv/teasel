@@ -32,14 +32,19 @@ impl Lexer<'_> {
 		let pattern = self.strings.intern(&self.src[start + 1..self.pos]);
 		self.pos += 1;
 		let flags_start = self.pos;
+		let mut escaped = false;
 		while let Some(c) = self.char() {
 			if c == '\\' {
-				return self.error(flags_start, "Unexpected token");
-			}
-			if !is_word_char(c, false) {
+				self.read_word_escape(self.pos == flags_start)?;
+				escaped = true;
+			} else if is_word_char(c, false) {
+				self.pos += c.len_utf8();
+			} else {
 				break;
 			}
-			self.pos += c.len_utf8();
+		}
+		if escaped {
+			return self.error(flags_start, "Unexpected token");
 		}
 		let flags = self.strings.intern(&self.src[flags_start..self.pos]);
 		let kind = TokenKind::RegExp { pattern, flags };

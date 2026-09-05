@@ -55,6 +55,9 @@ impl Lexer<'_> {
 	/// Reads a template chunk, leaving the position after the closing backquote or `${`.
 	pub(crate) fn read_template(&mut self) -> Result<Token> {
 		let start = self.pos;
+		if start == self.src.len() {
+			return self.error(start, "Unterminated template literal");
+		}
 		self.buf.clear();
 		let mut valid = true;
 		let mut plain = true;

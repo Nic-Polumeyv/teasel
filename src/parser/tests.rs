@@ -451,7 +451,7 @@ fn review_fixes() {
 	);
 	assert_eq!(
 		module_error("class A extends B { constructor() { new super() } }"),
-		"Invalid use of 'super' (36)"
+		"Invalid use of 'super' (40)"
 	);
 	assert_eq!(
 		module_error("var await = 1"),

@@ -3,7 +3,7 @@ use super::token::{
 	Keyword, Token,
 	TokenKind::{self, *},
 };
-use crate::ast::Comment;
+use crate::ast::{Comment, CommentKind};
 use crate::error::SyntaxError;
 use crate::interner::StrId;
 
@@ -205,11 +205,12 @@ fn hashbang() {
 	assert_eq!(
 		lexer.comments,
 		[Comment {
-			block: false,
+			kind: CommentKind::Hashbang,
 			start: 0,
 			end: 4
 		}]
 	);
+	assert_eq!(&"#!/x\ny"[lexer.comments[0].text_range()], "/x");
 }
 
 #[test]
@@ -355,6 +356,10 @@ fn template_newlines_normalise() {
 	lexer.next_token().unwrap();
 	let e = lexer.read_template().unwrap_err();
 	assert_eq!((e.message.as_str(), e.pos), ("Unterminated template", 1));
+	let mut lexer = Lexer::new("`");
+	lexer.next_token().unwrap();
+	let e = lexer.read_template().unwrap_err();
+	assert_eq!((e.message.as_str(), e.pos), ("Unterminated template literal", 1));
 }
 
 #[test]
@@ -383,6 +388,14 @@ fn regex() {
 	let t = lexer.next_token().unwrap();
 	let e = lexer.read_regex(t).unwrap_err();
 	assert_eq!((e.message.as_str(), e.pos), ("Unexpected token", 3));
+	let mut lexer = Lexer::new("/a/\\u{30}");
+	let t = lexer.next_token().unwrap();
+	let e = lexer.read_regex(t).unwrap_err();
+	assert_eq!((e.message.as_str(), e.pos), ("Invalid Unicode escape", 3));
+	let mut lexer = Lexer::new("/a/\\ux");
+	let t = lexer.next_token().unwrap();
+	let e = lexer.read_regex(t).unwrap_err();
+	assert_eq!((e.message.as_str(), e.pos), ("Bad character escape sequence", 5));
 }
 
 #[test]
@@ -396,18 +409,35 @@ fn comments_are_collected_and_skipped() {
 		lexer.comments,
 		[
 			Comment {
-				block: false,
+				kind: CommentKind::Line,
 				start: 2,
 				end: 8
 			},
 			Comment {
-				block: true,
+				kind: CommentKind::Block,
 				start: 9,
 				end: 19
 			}
 		]
 	);
+	assert_eq!(&"a // one\n/* two\n */ b"[lexer.comments[1].text_range()], " two\n ");
 	assert_eq!(error("/* x").0, "Unterminated comment");
+}
+
+#[test]
+fn html_comments_outside_modules() {
+	assert_eq!(texts("a <!-- b\n+c"), ["a", "+", "c"]);
+	assert_eq!(texts("--> x\ny"), ["y"]);
+	assert_eq!(texts("a = b-->1;\n --> nothing"), ["a", "=", "b", "--", ">", "1", ";"]);
+	assert_eq!(texts("/* c */--> x\ny"), ["y"]);
+	let mut lexer = Lexer::new("<!-- a\nb");
+	lexer.next_token().unwrap();
+	assert_eq!(lexer.comments[0].kind, CommentKind::HtmlOpen);
+	assert_eq!(&"<!-- a\nb"[lexer.comments[0].text_range()], " a");
+	let mut lexer = Lexer::new("a <!-- b");
+	lexer.module = true;
+	lexer.next_token().unwrap();
+	assert_eq!(lexer.next_token().unwrap().kind, Lt);
 }
 
 #[test]
