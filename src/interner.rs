@@ -1,13 +1,14 @@
 use std::collections::HashMap;
+use std::rc::Rc;
 
 /// Index of an interned string.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct StrId(pub u32);
+pub struct StrId(pub(crate) u32);
 
 #[derive(Debug, Default)]
 pub struct Interner {
-	map: HashMap<String, StrId>,
-	strings: Vec<String>,
+	map: HashMap<Rc<str>, StrId>,
+	strings: Vec<Rc<str>>,
 }
 
 impl Interner {
@@ -16,8 +17,9 @@ impl Interner {
 			return id;
 		}
 		let id = StrId(self.strings.len() as u32);
-		self.strings.push(s.to_owned());
-		self.map.insert(s.to_owned(), id);
+		let s: Rc<str> = Rc::from(s);
+		self.strings.push(Rc::clone(&s));
+		self.map.insert(s, id);
 		id
 	}
 

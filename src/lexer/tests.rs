@@ -5,6 +5,7 @@ use super::token::{
 };
 use crate::ast::Comment;
 use crate::error::SyntaxError;
+use crate::interner::StrId;
 
 fn tokens(src: &str) -> Vec<Token> {
 	let mut lexer = Lexer::new(src);
@@ -29,8 +30,9 @@ fn texts(src: &str) -> Vec<&str> {
 		.collect()
 }
 
-fn error(src: &str) -> SyntaxError {
+fn error_in(src: &str, strict: bool) -> SyntaxError {
 	let mut lexer = Lexer::new(src);
+	lexer.strict = strict;
 	loop {
 		match lexer.next_token() {
 			Ok(t) if t.kind == Eof => panic!("no error for {src:?}"),
@@ -40,45 +42,55 @@ fn error(src: &str) -> SyntaxError {
 	}
 }
 
-fn single(src: &str) -> (Lexer<'_>, TokenKind) {
+fn error(src: &str) -> (std::string::String, u32) {
+	let e = error_in(src, false);
+	(e.message, e.pos)
+}
+
+fn strict_error(src: &str) -> (std::string::String, u32) {
+	let e = error_in(src, true);
+	(e.message, e.pos)
+}
+
+fn single(src: &str) -> (Lexer<'_>, Token) {
 	let mut lexer = Lexer::new(src);
-	let kind = lexer.next_token().unwrap().kind;
-	(lexer, kind)
+	let token = lexer.next_token().unwrap();
+	(lexer, token)
 }
 
 fn number(src: &str) -> f64 {
-	match single(src).1 {
-		Number { value, .. } => value,
+	match single(src).1.kind {
+		Number(value) => value,
 		kind => panic!("{kind:?}"),
 	}
 }
 
-fn string(src: &str) -> (std::string::String, bool) {
-	let (lexer, kind) = single(src);
-	match kind {
-		String { value, octal } => (lexer.strings.get(value).to_owned(), octal),
+fn string(src: &str) -> std::string::String {
+	let (lexer, token) = single(src);
+	match token.kind {
+		String(value) => lexer.strings.get(value).to_owned(),
 		kind => panic!("{kind:?}"),
 	}
 }
 
 fn ident(src: &str) -> (std::string::String, bool) {
-	let (lexer, kind) = single(src);
-	match kind {
-		Ident { name, escaped } => (lexer.strings.get(name).to_owned(), escaped),
+	let (lexer, token) = single(src);
+	match token.kind {
+		Ident(name) => (lexer.strings.get(name).to_owned(), token.escaped),
 		kind => panic!("{kind:?}"),
 	}
 }
 
 fn is_ident(kind: &TokenKind) -> bool {
-	matches!(kind, Ident { .. })
+	matches!(kind, Ident(_))
 }
 
 #[test]
 fn punctuators() {
 	assert_eq!(
-		kinds("{ } ( ) [ ] ; , : ~ @"),
+		kinds("{ } ( ) [ ] ; , : ~"),
 		[
-			BraceL, BraceR, ParenL, ParenR, BracketL, BracketR, Semi, Comma, Colon, Tilde, At
+			BraceL, BraceR, ParenL, ParenR, BracketL, BracketR, Semi, Comma, Colon, Tilde
 		]
 	);
 	assert_eq!(
@@ -114,6 +126,7 @@ fn punctuators() {
 			Amp, AmpAmp, AmpEq, AmpAmpEq, Pipe, PipePipe, PipeEq, PipePipeEq, Caret, CaretEq
 		]
 	);
+	assert_eq!(error("x@y"), ("Unexpected character '@'".into(), 1));
 }
 
 #[test]
@@ -122,6 +135,7 @@ fn longest_match_without_spaces() {
 	assert_eq!(texts("a**=b"), ["a", "**=", "b"]);
 	assert_eq!(texts("a?.b"), ["a", "?.", "b"]);
 	assert_eq!(texts("a?.5:b"), ["a", "?", ".5", ":", "b"]);
+	assert_eq!(texts("a?."), ["a", "?", "."]);
 	assert_eq!(texts("...a"), ["...", "a"]);
 	assert_eq!(texts("..a"), [".", ".", "a"]);
 }
@@ -148,6 +162,7 @@ fn words_and_keywords() {
 	assert!(super::tests::kinds("$foo _bar a1 ünïcödé 変数").iter().all(is_ident));
 	assert_eq!(texts("a\u{200d}b"), ["a\u{200d}b"]);
 	assert_eq!(ident("hello"), ("hello".to_owned(), false));
+	assert!(super::tests::kinds("breaks constant iffy").iter().all(is_ident));
 }
 
 #[test]
@@ -164,26 +179,37 @@ fn identifiers_are_interned() {
 fn escaped_identifiers() {
 	assert_eq!(ident("\\u0061bc"), ("abc".to_owned(), true));
 	assert_eq!(ident("\\u{62}c"), ("bc".to_owned(), true));
-	assert_eq!(error("\\u0069f").message, "Escape sequence in keyword if");
-	assert_eq!(error("\\u0031a").message, "Invalid Unicode escape");
-	assert_eq!(error("a\\x").message, "Expecting Unicode escape sequence \\uXXXX");
+	let token = single("\\u0069f").1;
+	assert_eq!((token.kind, token.escaped), (Keyword(Keyword::If), true));
+	assert_eq!(error("\\u0031a"), ("Invalid Unicode escape".into(), 0));
+	assert_eq!(error("\\ud801\\udc00"), ("Invalid Unicode escape".into(), 0));
+	assert_eq!(error("a\\x"), ("Expecting Unicode escape sequence \\uXXXX".into(), 2));
 }
 
 #[test]
 fn private_names() {
-	let (lexer, kind) = single("#foo");
-	let PrivateName(name) = kind else { panic!("{kind:?}") };
+	let (lexer, token) = single("#foo");
+	let PrivateName(name) = token.kind else {
+		panic!("{:?}", token.kind)
+	};
 	assert_eq!(lexer.strings.get(name), "foo");
-	assert!(matches!(single("#class").1, PrivateName(_)));
-	assert_eq!(error("# a").message, "Unexpected character '#'");
+	assert!(matches!(single("#class").1.kind, PrivateName(_)));
+	assert_eq!(error("# a"), ("Unexpected character ' '".into(), 1));
 }
 
 #[test]
 fn hashbang() {
 	assert_eq!(texts("#!/usr/bin/env node\nfoo"), ["foo"]);
-	let mut lexer = Lexer::new("#!/x");
+	let mut lexer = Lexer::new("#!/x\ny");
 	lexer.next_token().unwrap();
-	assert!(lexer.comments.is_empty());
+	assert_eq!(
+		lexer.comments,
+		[Comment {
+			block: false,
+			start: 0,
+			end: 4
+		}]
+	);
 }
 
 #[test]
@@ -200,82 +226,82 @@ fn numbers() {
 	assert_eq!(number("1_000_000"), 1_000_000.0);
 	assert_eq!(number("0x1_f"), 31.0);
 	assert_eq!(kinds("10n 0xFFn 0n"), [BigInt, BigInt, BigInt]);
+	assert_eq!(kinds("0x1na"), [BigInt, Ident(StrId(0))]);
+	assert_eq!(kinds("1\\u0061"), [Number(1.0), Ident(StrId(0))]);
 }
 
 #[test]
 fn legacy_octal_numbers() {
+	assert_eq!(number("017"), 15.0);
+	assert_eq!(number("08.5"), 8.5);
+	assert_eq!(number("0"), 0.0);
+	assert_eq!(number("0374547736741752762421"), 4552292526566663700.0);
+	assert_eq!(error("017n").0, "Identifier directly after number");
 	assert_eq!(
-		single("017").1,
-		Number {
-			value: 15.0,
-			legacy_octal: true
-		}
-	);
-	assert_eq!(
-		single("08.5").1,
-		Number {
-			value: 8.5,
-			legacy_octal: true
-		}
-	);
-	assert_eq!(
-		single("0").1,
-		Number {
-			value: 0.0,
-			legacy_octal: false
-		}
-	);
-	assert_eq!(error("017n").message, "Identifier directly after number");
-	assert_eq!(
-		error("01_7").message,
+		error("01_7").0,
 		"Numeric separator is not allowed in legacy octal numeric literals"
 	);
+	assert_eq!(
+		error("0_1"),
+		(
+			"Numeric separator is not allowed in legacy octal numeric literals".into(),
+			1
+		)
+	);
+	assert_eq!(strict_error("017"), ("Invalid number".into(), 0));
+	assert_eq!(strict_error("06B"), ("Invalid number".into(), 0));
+	assert_eq!(strict_error("x = 08"), ("Invalid number".into(), 4));
 }
 
 #[test]
 fn number_errors() {
-	assert_eq!(error("1a").message, "Identifier directly after number");
+	assert_eq!(error("1a"), ("Identifier directly after number".into(), 1));
+	assert_eq!(error("1__0").0, "Numeric separator must be exactly one underscore");
+	assert_eq!(error("1_").0, "Numeric separator is not allowed at the last of digits");
 	assert_eq!(
-		error("1__0").message,
-		"Numeric separator must be exactly one underscore"
-	);
-	assert_eq!(
-		error("1_").message,
-		"Numeric separator is not allowed at the last of digits"
-	);
-	assert_eq!(
-		error("0x_1").message,
+		error("0x_1").0,
 		"Numeric separator is not allowed at the first of digits"
 	);
-	assert_eq!(error("0x").message, "Expected number in radix 16");
-	assert_eq!(error("1e").message, "Invalid number");
-	assert_eq!(error("1.5n").message, "Identifier directly after number");
+	assert_eq!(error("0x"), ("Expected number in radix 16".into(), 2));
+	assert_eq!(error("1e").0, "Invalid number");
+	assert_eq!(error("1.5n").0, "Identifier directly after number");
 }
 
 #[test]
 fn strings() {
-	assert_eq!(string("'hello'").0, "hello");
-	assert_eq!(string("\"it's\"").0, "it's");
-	assert_eq!(string("'a\\nb\\tc'").0, "a\nb\tc");
-	assert_eq!(string("'\\x41\\u0042\\u{43}'").0, "ABC");
-	assert_eq!(string("'\\ud83d\\ude00'").0, "😀");
-	assert_eq!(string("'a\\\nb'").0, "ab");
-	assert_eq!(string("'a\\\r\nb'").0, "ab");
-	assert_eq!(string("'\\0'"), ("\0".to_owned(), false));
-	assert_eq!(string("'\\q'").0, "q");
-	assert_eq!(string("'\u{2028}'").0, "\u{2028}");
-	assert_eq!(error("'abc").message, "Unterminated string constant");
-	assert_eq!(error("'a\nb'").message, "Unterminated string constant");
-	assert_eq!(error("'\\x4'").message, "Bad character escape sequence");
-	assert_eq!(error("'\\u{110000}'").message, "Bad character escape sequence");
+	assert_eq!(string("'hello'"), "hello");
+	assert_eq!(string("\"it's\""), "it's");
+	assert_eq!(string("'a\\nb\\tc'"), "a\nb\tc");
+	assert_eq!(string("'\\x41\\u0042\\u{43}'"), "ABC");
+	assert_eq!(string("'\\ud83d\\ude00'"), "😀");
+	assert_eq!(string("'\\u{d83d}\\u{de00}'"), "😀");
+	assert_eq!(string("'\\ud83d\\u{de00}'"), "😀");
+	assert_eq!(string("'\\ud83dx'"), "\u{fffd}x");
+	assert_eq!(string("'a\\\nb'"), "ab");
+	assert_eq!(string("'a\\\r\nb'"), "ab");
+	assert_eq!(string("'\\0'"), "\0");
+	assert_eq!(string("'\\q'"), "q");
+	assert_eq!(string("'\u{2028}'"), "\u{2028}");
+	assert_eq!(error("'abc").0, "Unterminated string constant");
+	assert_eq!(error("'a\nb'").0, "Unterminated string constant");
+	assert_eq!(error("'\\"), ("Unterminated string constant".into(), 0));
+	assert_eq!(error("'\\x4'"), ("Bad character escape sequence".into(), 3));
+	assert_eq!(error("'\\u{}'"), ("Bad character escape sequence".into(), 4));
+	assert_eq!(error("'\\u{110000}'"), ("Code point out of bounds".into(), 4));
 }
 
 #[test]
 fn legacy_octal_escapes() {
-	assert_eq!(string("'\\101'"), ("A".to_owned(), true));
-	assert_eq!(string("'\\08'"), ("\08".to_owned(), true));
-	assert_eq!(string("'\\8'"), ("8".to_owned(), true));
-	assert_eq!(string("'\\0a'"), ("\0a".to_owned(), false));
+	assert_eq!(string("'\\101'"), "A");
+	assert_eq!(string("'\\08'"), "\08");
+	assert_eq!(string("'\\8'"), "8");
+	assert_eq!(string("'\\0a'"), "\0a");
+	assert_eq!(strict_error("x = '\\101'"), ("Octal literal in strict mode".into(), 5));
+	assert_eq!(strict_error("'\\8'"), ("Invalid escape sequence".into(), 2));
+	assert_eq!(strict_error("'\\08'").0, "Octal literal in strict mode");
+	let mut lexer = Lexer::new("'\\0'");
+	lexer.strict = true;
+	assert!(matches!(lexer.next_token().unwrap().kind, String(_)));
 }
 
 #[test]
@@ -287,8 +313,8 @@ fn templates() {
 	let Template { cooked, raw, tail } = chunk.kind else {
 		panic!()
 	};
-	assert_eq!(lexer.strings.get(cooked.unwrap()), "a");
 	assert_eq!(lexer.strings.get(raw), "a");
+	assert_eq!(cooked, Some(raw));
 	assert!(!tail);
 	assert!(is_ident(&lexer.next_token().unwrap().kind));
 	assert_eq!(lexer.next_token().unwrap().kind, BraceR);
@@ -305,7 +331,7 @@ fn templates() {
 
 #[test]
 fn template_invalid_escapes_cook_to_nothing() {
-	for src in ["`\\unicode`", "`\\1`", "`\\x`"] {
+	for src in ["`\\unicode`", "`\\1`", "`\\x`", "`\\8`"] {
 		let mut lexer = Lexer::new(src);
 		lexer.next_token().unwrap();
 		let Template { cooked, tail, .. } = lexer.read_template().unwrap().kind else {
@@ -327,7 +353,8 @@ fn template_newlines_normalise() {
 	assert_eq!(lexer.strings.get(raw), "a\nb\nc");
 	let mut lexer = Lexer::new("`abc");
 	lexer.next_token().unwrap();
-	assert_eq!(lexer.read_template().unwrap_err().message, "Unterminated template");
+	let e = lexer.read_template().unwrap_err();
+	assert_eq!((e.message.as_str(), e.pos), ("Unterminated template", 1));
 }
 
 #[test]
@@ -349,10 +376,13 @@ fn regex() {
 
 	let mut lexer = Lexer::new("/abc\n/");
 	let t = lexer.next_token().unwrap();
-	assert_eq!(
-		lexer.read_regex(t).unwrap_err().message,
-		"Unterminated regular expression"
-	);
+	let e = lexer.read_regex(t).unwrap_err();
+	assert_eq!((e.message.as_str(), e.pos), ("Unterminated regular expression", 1));
+
+	let mut lexer = Lexer::new("/a/\\u0067");
+	let t = lexer.next_token().unwrap();
+	let e = lexer.read_regex(t).unwrap_err();
+	assert_eq!((e.message.as_str(), e.pos), ("Unexpected token", 3));
 }
 
 #[test]
@@ -377,7 +407,7 @@ fn comments_are_collected_and_skipped() {
 			}
 		]
 	);
-	assert_eq!(error("/* x").message, "Unterminated comment");
+	assert_eq!(error("/* x").0, "Unterminated comment");
 }
 
 #[test]
@@ -393,6 +423,6 @@ fn unicode_whitespace() {
 
 #[test]
 fn unexpected_characters() {
-	assert_eq!(error("a ¬ b").message, "Unexpected character '¬'");
-	assert_eq!(error("\\").message, "Expecting Unicode escape sequence \\uXXXX");
+	assert_eq!(error("a ¬ b").0, "Unexpected character '¬'");
+	assert_eq!(error("\\").0, "Expecting Unicode escape sequence \\uXXXX");
 }

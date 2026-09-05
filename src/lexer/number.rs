@@ -13,19 +13,19 @@ impl Lexer<'_> {
 				_ => {}
 			}
 		}
-		let mut legacy = false;
-		if !starts_with_dot {
-			legacy = self.byte() == Some(b'0') && self.byte_at(1).is_some_and(|b| b.is_ascii_digit());
-			if self.read_int(10, legacy)?.is_none() {
-				return self.error(start, "Invalid number");
-			}
+		if !starts_with_dot && self.read_int(10, true)?.is_none() {
+			return self.error(start, "Invalid number");
 		}
-		let octal = legacy && self.src[start..self.pos].bytes().all(|b| (b'0'..=b'7').contains(&b));
+		let legacy = self.pos - start >= 2 && self.src.as_bytes()[start] == b'0';
+		if legacy && self.strict {
+			return self.error(start, "Invalid number");
+		}
 		if !legacy && !starts_with_dot && self.byte() == Some(b'n') {
 			self.pos += 1;
 			self.check_after_number()?;
 			return Ok(TokenKind::BigInt);
 		}
+		let octal = legacy && self.src[start..self.pos].bytes().all(|b| (b'0'..=b'7').contains(&b));
 		if !octal && self.byte() == Some(b'.') {
 			self.pos += 1;
 			self.read_int(10, false)?;
@@ -42,38 +42,34 @@ impl Lexer<'_> {
 		self.check_after_number()?;
 		let text = &self.src[start..self.pos];
 		let value = if octal {
-			text.bytes().fold(0.0, |acc, b| acc * 8.0 + (b - b'0') as f64)
+			match u128::from_str_radix(text, 8) {
+				Ok(v) => v as f64,
+				Err(_) => text.bytes().fold(0.0, |acc, b| acc * 8.0 + (b - b'0') as f64),
+			}
 		} else if text.contains('_') {
 			text.replace('_', "").parse().unwrap()
 		} else {
 			text.parse().unwrap()
 		};
-		Ok(TokenKind::Number {
-			value,
-			legacy_octal: legacy,
-		})
+		Ok(TokenKind::Number(value))
 	}
 
 	fn read_radix_number(&mut self, radix: u32) -> Result<TokenKind> {
-		let start = self.pos;
 		self.pos += 2;
 		let Some(value) = self.read_int(radix, false)? else {
-			return self.error(start, format!("Expected number in radix {radix}"));
+			return self.error(self.pos, format!("Expected number in radix {radix}"));
 		};
 		if self.byte() == Some(b'n') {
 			self.pos += 1;
-			self.check_after_number()?;
 			return Ok(TokenKind::BigInt);
 		}
 		self.check_after_number()?;
-		Ok(TokenKind::Number {
-			value,
-			legacy_octal: false,
-		})
+		Ok(TokenKind::Number(value))
 	}
 
-	fn read_int(&mut self, radix: u32, legacy_octal: bool) -> Result<Option<f64>> {
+	fn read_int(&mut self, radix: u32, maybe_legacy_octal: bool) -> Result<Option<f64>> {
 		let start = self.pos;
+		let legacy_octal = maybe_legacy_octal && self.byte() == Some(b'0');
 		let mut total = 0.0;
 		let mut last_was_separator = false;
 		while let Some(b) = self.byte() {
@@ -109,7 +105,7 @@ impl Lexer<'_> {
 
 	fn check_after_number(&mut self) -> Result<()> {
 		if let Some(c) = self.char()
-			&& (is_word_char(c, true) || c == '\\')
+			&& is_word_char(c, true)
 		{
 			return self.error(self.pos, "Identifier directly after number");
 		}

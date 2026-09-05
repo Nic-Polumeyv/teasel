@@ -6,26 +6,19 @@ pub(crate) struct Token {
 	pub(crate) start: u32,
 	pub(crate) end: u32,
 	pub(crate) newline_before: bool,
+	/// An identifier or keyword written with a unicode escape.
+	pub(crate) escaped: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum TokenKind {
 	Eof,
-	Ident {
-		name: StrId,
-		escaped: bool,
-	},
+	Ident(StrId),
 	PrivateName(StrId),
 	Keyword(Keyword),
-	Number {
-		value: f64,
-		legacy_octal: bool,
-	},
+	Number(f64),
 	BigInt,
-	String {
-		value: StrId,
-		octal: bool,
-	},
+	String(StrId),
 	Template {
 		cooked: Option<StrId>,
 		raw: StrId,
@@ -51,7 +44,6 @@ pub(crate) enum TokenKind {
 	Colon,
 	Arrow,
 	Backquote,
-	At,
 
 	Eq,
 	PlusEq,
@@ -141,6 +133,14 @@ pub(crate) enum Keyword {
 impl Keyword {
 	pub(crate) fn from_word(word: &str) -> Option<Keyword> {
 		use Keyword::*;
+		let bytes = word.as_bytes();
+		if !(2..=10).contains(&bytes.len())
+			|| !matches!(
+				bytes[0],
+				b'b' | b'c' | b'd' | b'e' | b'f' | b'i' | b'n' | b'r' | b's' | b't' | b'v' | b'w'
+			) {
+			return None;
+		}
 		Some(match word {
 			"break" => Break,
 			"case" => Case,
