@@ -744,15 +744,58 @@ impl Parser<'_> {
 	fn parse_paren_and_distinguish_expression(&mut self, can_be_arrow: bool, for_init: ForInit) -> Result<NodeId> {
 		let start = self.tok.start;
 		self.next()?;
+		let (old_yield, old_await) = (self.yield_pos, self.await_pos);
+		self.yield_pos = 0;
+		self.await_pos = 0;
+		let paren = self.parse_paren_items()?;
+
+		if can_be_arrow && !self.can_insert_semicolon() && self.eat(TokenKind::Arrow)? {
+			self.check_pattern_errors(&paren.errors, false)?;
+			self.check_yield_await_in_default_params()?;
+			self.yield_pos = old_yield;
+			self.await_pos = old_await;
+			return self.parse_arrow_expression(start, paren.items, false, for_init);
+		}
+
+		if paren.items.is_empty() || paren.last_is_comma {
+			return self.unexpected_at(self.prev_end - 1);
+		}
+		if let Some(pos) = paren.spread_start {
+			return self.unexpected_at(pos);
+		}
+		self.check_expression_errors(&paren.errors, true)?;
+		if old_yield != 0 {
+			self.yield_pos = old_yield;
+		}
+		if old_await != 0 {
+			self.await_pos = old_await;
+		}
+
+		let value = if paren.items.len() > 1 {
+			let expressions = self.list(&paren.items);
+			self.add_with_end(
+				NodeKind::SequenceExpression { expressions },
+				paren.inner_start,
+				paren.inner_end,
+			)
+		} else {
+			paren.items[0].unwrap()
+		};
+		if self.options.preserve_parens {
+			return Ok(self.add(NodeKind::ParenthesizedExpression { expression: value }, start));
+		}
+		Ok(value)
+	}
+
+	/// Parses the comma-separated expressions after an opening paren through the closing one,
+	/// which may turn out to be arrow function parameters.
+	pub(crate) fn parse_paren_items(&mut self) -> Result<ParenItems> {
 		let inner_start = self.tok.start;
 		let mut items: Vec<Option<NodeId>> = Vec::new();
 		let mut first = true;
 		let mut last_is_comma = false;
 		let mut spread_start = None;
 		let mut errors = Some(DestructuringErrors::default());
-		let (old_yield, old_await) = (self.yield_pos, self.await_pos);
-		self.yield_pos = 0;
-		self.await_pos = 0;
 		while !self.is(TokenKind::ParenR) {
 			if first {
 				first = false;
@@ -776,39 +819,14 @@ impl Parser<'_> {
 		}
 		let inner_end = self.prev_end;
 		self.expect(TokenKind::ParenR)?;
-
-		if can_be_arrow && !self.can_insert_semicolon() && self.eat(TokenKind::Arrow)? {
-			self.check_pattern_errors(&errors, false)?;
-			self.check_yield_await_in_default_params()?;
-			self.yield_pos = old_yield;
-			self.await_pos = old_await;
-			return self.parse_arrow_expression(start, items, false, for_init);
-		}
-
-		if items.is_empty() || last_is_comma {
-			return self.unexpected_at(self.prev_end - 1);
-		}
-		if let Some(pos) = spread_start {
-			return self.unexpected_at(pos);
-		}
-		self.check_expression_errors(&errors, true)?;
-		if old_yield != 0 {
-			self.yield_pos = old_yield;
-		}
-		if old_await != 0 {
-			self.await_pos = old_await;
-		}
-
-		let value = if items.len() > 1 {
-			let expressions = self.list(&items);
-			self.add_with_end(NodeKind::SequenceExpression { expressions }, inner_start, inner_end)
-		} else {
-			items[0].unwrap()
-		};
-		if self.options.preserve_parens {
-			return Ok(self.add(NodeKind::ParenthesizedExpression { expression: value }, start));
-		}
-		Ok(value)
+		Ok(ParenItems {
+			items,
+			errors,
+			inner_start,
+			inner_end,
+			last_is_comma,
+			spread_start,
+		})
 	}
 
 	fn parse_new(&mut self) -> Result<NodeId> {
@@ -1249,7 +1267,7 @@ impl Parser<'_> {
 			.all(|p| matches!(self.kind(p.unwrap()), NodeKind::Identifier { .. }))
 	}
 
-	fn check_params(&mut self, params: List, allow_duplicates: bool) -> Result<()> {
+	pub(crate) fn check_params(&mut self, params: List, allow_duplicates: bool) -> Result<()> {
 		let mut names = if allow_duplicates { None } else { Some(Vec::new()) };
 		for i in 0..params.len {
 			let param = self.ast.lists[(params.start + i) as usize].unwrap();
@@ -1493,6 +1511,15 @@ fn skip_space(src: &[u8], mut pos: u32) -> u32 {
 			None => return pos,
 		}
 	}
+}
+
+pub(crate) struct ParenItems {
+	pub items: Vec<Option<NodeId>>,
+	pub errors: Errors,
+	pub inner_start: u32,
+	pub inner_end: u32,
+	pub last_is_comma: bool,
+	pub spread_start: Option<u32>,
 }
 
 #[derive(Clone, Copy)]

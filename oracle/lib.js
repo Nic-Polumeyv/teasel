@@ -43,6 +43,18 @@ export function acorn_expression(source, offset) {
 	}
 }
 
+/// The way Svelte's parse_statement_at drives acorn: a parser started at `offset`, one statement.
+export function acorn_statement(source, offset) {
+	try {
+		const parser = new acorn.Parser({ ecmaVersion: 16, sourceType: 'module', locations: true }, source, offset);
+		parser.nextToken();
+		const node = parser.parseStatement(null, true, Object.create(null));
+		return JSON.parse(JSON.stringify(node, normalize));
+	} catch (e) {
+		return acorn_error(e);
+	}
+}
+
 export function diff(a, b, path = '') {
 	if (a === b) return null;
 	if (typeof a !== typeof b || a === null || b === null || typeof a !== 'object') return `${path || '.'}: ${JSON.stringify(a)} vs ${JSON.stringify(b)}`;

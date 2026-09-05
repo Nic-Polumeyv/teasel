@@ -85,6 +85,11 @@ impl Ast {
 		NodeId(self.nodes.len() as u32 - 1)
 	}
 
+	/// The last node added, which is the root after a whole-program parse.
+	pub fn last(&self) -> NodeId {
+		NodeId(self.nodes.len() as u32 - 1)
+	}
+
 	pub fn add_list(&mut self, items: &[Option<NodeId>]) -> List {
 		let start = self.lists.len() as u32;
 		self.lists.extend_from_slice(items);
