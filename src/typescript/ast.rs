@@ -1,12 +1,12 @@
 use crate::ast::{List, NodeId};
-use crate::interner::{FastMap, StrId};
+use crate::interner::StrId;
 
 /// What the TypeScript extension hands back with a tree: its own nodes, indexed by the
 /// `NodeKind::Extension` payload, and the keys it adds to JavaScript nodes.
 #[derive(Debug, Default)]
 pub struct Data {
 	pub nodes: Vec<TsKind>,
-	pub extras: FastMap<NodeId, Extras>,
+	pub extras: ExtrasTable,
 }
 
 impl Data {
@@ -15,7 +15,41 @@ impl Data {
 	}
 
 	pub fn extras(&self, id: NodeId) -> Option<&Extras> {
-		self.extras.get(&id)
+		self.extras.get(id)
+	}
+}
+
+/// The extras of each node that has any, found through a slot per node id.
+#[derive(Debug, Default)]
+pub struct ExtrasTable {
+	slots: Vec<u32>,
+	list: Vec<Extras>,
+}
+
+const NONE: u32 = u32::MAX;
+
+impl ExtrasTable {
+	pub fn get(&self, id: NodeId) -> Option<&Extras> {
+		match self.slots.get(id.0 as usize) {
+			Some(&slot) if slot != NONE => Some(&self.list[slot as usize]),
+			_ => None,
+		}
+	}
+
+	pub fn get_or_insert(&mut self, id: NodeId) -> &mut Extras {
+		let index = id.0 as usize;
+		if index >= self.slots.len() {
+			self.slots.resize(index + 1, NONE);
+		}
+		if self.slots[index] == NONE {
+			self.slots[index] = self.list.len() as u32;
+			self.list.push(Extras::default());
+		}
+		&mut self.list[self.slots[index] as usize]
+	}
+
+	pub fn is_empty(&self) -> bool {
+		self.list.is_empty()
 	}
 }
 

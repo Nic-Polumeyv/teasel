@@ -99,7 +99,7 @@ impl<'a> Lexer<'a> {
 				}
 				b'/' if bytes.get(pos + 1) == Some(&b'/') => pos += line_end(&bytes[pos..]),
 				b'/' if bytes.get(pos + 1) == Some(&b'*') => {
-					let Some((len, broke)) = comment_end(&bytes[pos + 2..]) else {
+					let Some((len, broke)) = comment_end(&self.src[pos + 2..]) else {
 						return (None, newline, self.src.len());
 					};
 					newline |= broke;
@@ -234,7 +234,7 @@ impl<'a> Lexer<'a> {
 
 	fn skip_block_comment(&mut self) -> Result<bool> {
 		let start = self.pos;
-		let Some((len, newline)) = comment_end(&self.src.as_bytes()[start + 2..]) else {
+		let Some((len, newline)) = comment_end(&self.src[start + 2..]) else {
 			return self.error(start, "Unterminated comment");
 		};
 		let end = start + 2 + len + 2;
@@ -365,20 +365,18 @@ fn line_end(bytes: &[u8]) -> usize {
 	i
 }
 
-/// Where `*/` starts in `bytes`, and whether a line terminator precedes it.
-fn comment_end(bytes: &[u8]) -> Option<(usize, bool)> {
-	let mut newline = false;
-	let mut i = 0;
-	while i + 1 < bytes.len() {
-		match bytes[i] {
-			b'*' if bytes[i + 1] == b'/' => return Some((i, newline)),
-			b'\n' | b'\r' => newline = true,
-			0xe2 if is_separator(&bytes[i..]) => newline = true,
-			_ => {}
+/// Where `*/` starts in `text`, and whether a line terminator precedes it.
+fn comment_end(text: &str) -> Option<(usize, bool)> {
+	let mut from = 0;
+	loop {
+		let star = from + text[from..].find('*')?;
+		if text.as_bytes().get(star + 1) == Some(&b'/') {
+			let body = &text[..star];
+			let newline = ['\n', '\r', '\u{2028}', '\u{2029}'].iter().any(|&c| body.contains(c));
+			return Some((star, newline));
 		}
-		i += 1;
+		from = star + 1;
 	}
-	None
 }
 
 pub(crate) fn is_new_line(c: char) -> bool {
