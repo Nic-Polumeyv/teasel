@@ -16,6 +16,7 @@ pub(super) fn validate(start: u32, pattern: &str, flags: &str) -> Result<()> {
 }
 
 const EOF: i32 = -1;
+const MAX_DEPTH: usize = 1000;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum CharSet {
@@ -40,15 +41,16 @@ struct State<'a> {
 	switch_v: bool,
 	switch_n: bool,
 	pos: usize,
-	last_int_value: i64,
+	last_int_value: f64,
 	last_string_value: String,
 	last_assertion_is_quantifiable: bool,
-	num_capturing_parens: i64,
-	max_back_reference: i64,
+	num_capturing_parens: f64,
+	max_back_reference: f64,
 	group_names: HashMap<String, Vec<usize>>,
 	back_reference_names: Vec<String>,
 	branches: Vec<Branch>,
 	branch: Option<usize>,
+	class_depth: usize,
 }
 
 impl<'a> State<'a> {
@@ -64,15 +66,16 @@ impl<'a> State<'a> {
 			switch_v: unicode_sets,
 			switch_n: unicode_sets || unicode,
 			pos: 0,
-			last_int_value: 0,
+			last_int_value: 0.0,
 			last_string_value: String::new(),
 			last_assertion_is_quantifiable: false,
-			num_capturing_parens: 0,
-			max_back_reference: 0,
+			num_capturing_parens: 0.0,
+			max_back_reference: 0.0,
 			group_names: HashMap::new(),
 			back_reference_names: Vec::new(),
 			branches: Vec::new(),
 			branch: None,
+			class_depth: 0,
 		}
 	}
 
@@ -191,11 +194,11 @@ impl<'a> State<'a> {
 
 	fn pattern(&mut self) -> Result<()> {
 		self.pos = 0;
-		self.last_int_value = 0;
+		self.last_int_value = 0.0;
 		self.last_string_value.clear();
 		self.last_assertion_is_quantifiable = false;
-		self.num_capturing_parens = 0;
-		self.max_back_reference = 0;
+		self.num_capturing_parens = 0.0;
+		self.max_back_reference = 0.0;
 		self.group_names.clear();
 		self.back_reference_names.clear();
 		self.branches.clear();
@@ -241,22 +244,35 @@ impl<'a> State<'a> {
 		self.branch = Some(id);
 	}
 
-	fn separated(&self, a: usize, b: usize) -> bool {
-		let mut x = Some(a);
+	/// The base of every branch on the chain from `branch` to the root, keyed by base.
+	fn ancestor_bases(&self, branch: usize) -> HashMap<usize, usize> {
+		let mut bases = HashMap::new();
+		let mut x = Some(branch);
 		while let Some(i) = x {
-			let mut y = Some(b);
-			while let Some(j) = y {
-				if self.branches[i].base == self.branches[j].base && i != j {
-					return true;
-				}
-				y = self.branches[j].parent;
-			}
+			bases.insert(self.branches[i].base, i);
 			x = self.branches[i].parent;
+		}
+		bases
+	}
+
+	/// Whether `other` sits in a different alternative from the branch whose bases are given.
+	fn separated(&self, bases: &HashMap<usize, usize>, other: usize) -> bool {
+		let mut y = Some(other);
+		while let Some(j) = y {
+			if let Some(&i) = bases.get(&self.branches[j].base)
+				&& i != j
+			{
+				return true;
+			}
+			y = self.branches[j].parent;
 		}
 		false
 	}
 
 	fn disjunction(&mut self) -> Result<()> {
+		if self.branches.len() >= MAX_DEPTH {
+			return self.raise("Regular expression nested too deeply");
+		}
 		self.push_branch();
 		self.alternative()?;
 		while self.eat('|') {
@@ -340,14 +356,14 @@ impl<'a> State<'a> {
 	fn eat_braced_quantifier(&mut self, no_error: bool) -> Result<bool> {
 		let start = self.pos;
 		if self.eat('{') {
-			let mut max = -1;
+			let mut max = -1.0;
 			if self.eat_decimal_digits() {
 				let min = self.last_int_value;
 				if self.eat(',') && self.eat_decimal_digits() {
 					max = self.last_int_value;
 				}
 				if self.eat('}') {
-					if max != -1 && max < min && !no_error {
+					if max != -1.0 && max < min && !no_error {
 						return self.raise("numbers out of order in {} quantifier");
 					}
 					return Ok(true);
@@ -423,7 +439,7 @@ impl<'a> State<'a> {
 			self.group_specifier()?;
 			self.disjunction()?;
 			if self.eat(')') {
-				self.num_capturing_parens += 1;
+				self.num_capturing_parens += 1.0;
 				return Ok(true);
 			}
 			return self.raise("Unterminated group");
@@ -464,7 +480,7 @@ impl<'a> State<'a> {
 	fn eat_syntax_character(&mut self) -> bool {
 		let ch = self.current();
 		if is_syntax_character(ch) {
-			self.last_int_value = ch as i64;
+			self.last_int_value = ch as f64;
 			self.advance();
 			return true;
 		}
@@ -508,8 +524,9 @@ impl<'a> State<'a> {
 			let name = self.last_string_value.clone();
 			let branch = self.branch.unwrap();
 			if let Some(known) = self.group_names.get(&name) {
+				let bases = self.ancestor_bases(branch);
 				for &other in known {
-					if !self.separated(other, branch) {
+					if !self.separated(&bases, other) {
 						return self.raise("Duplicate capture group name");
 					}
 				}
@@ -563,7 +580,7 @@ impl<'a> State<'a> {
 			_ => false,
 		};
 		if ok {
-			self.last_int_value = ch as i64;
+			self.last_int_value = ch as f64;
 			return Ok(true);
 		}
 		self.pos = start;
@@ -640,7 +657,7 @@ impl<'a> State<'a> {
 
 	fn eat_zero(&mut self) -> bool {
 		if self.current() == '0' as i32 && !is_decimal_digit(self.lookahead()) {
-			self.last_int_value = 0;
+			self.last_int_value = 0.0;
 			self.advance();
 			return true;
 		}
@@ -656,7 +673,7 @@ impl<'a> State<'a> {
 			0x72 => 0x0d,
 			_ => return false,
 		};
-		self.last_int_value = value;
+		self.last_int_value = value as f64;
 		self.advance();
 		true
 	}
@@ -664,7 +681,7 @@ impl<'a> State<'a> {
 	fn eat_control_letter(&mut self) -> bool {
 		let ch = self.current();
 		if is_control_letter(ch) {
-			self.last_int_value = (ch % 0x20) as i64;
+			self.last_int_value = (ch % 0x20) as f64;
 			self.advance();
 			return true;
 		}
@@ -677,12 +694,12 @@ impl<'a> State<'a> {
 		if self.eat('u') {
 			if self.eat_fixed_hex_digits(4) {
 				let lead = self.last_int_value;
-				if switch_u && (0xd800..=0xdbff).contains(&lead) {
+				if switch_u && (55296.0..=56319.0).contains(&lead) {
 					let lead_end = self.pos;
 					if self.eat('\\') && self.eat('u') && self.eat_fixed_hex_digits(4) {
 						let trail = self.last_int_value;
-						if (0xdc00..=0xdfff).contains(&trail) {
-							self.last_int_value = (lead - 0xd800) * 0x400 + (trail - 0xdc00) + 0x10000;
+						if (56320.0..=57343.0).contains(&trail) {
+							self.last_int_value = (lead - 55296.0) * 1024.0 + (trail - 56320.0) + 65536.0;
 							return Ok(true);
 						}
 					}
@@ -691,7 +708,7 @@ impl<'a> State<'a> {
 				}
 				return Ok(true);
 			}
-			if switch_u && self.eat('{') && self.eat_hex_digits() && self.eat('}') && self.last_int_value <= 0x10ffff {
+			if switch_u && self.eat('{') && self.eat_hex_digits() && self.eat('}') && self.last_int_value <= 1114111.0 {
 				return Ok(true);
 			}
 			if switch_u {
@@ -708,14 +725,14 @@ impl<'a> State<'a> {
 				return true;
 			}
 			if self.eat('/') {
-				self.last_int_value = '/' as i64;
+				self.last_int_value = '/' as u32 as f64;
 				return true;
 			}
 			return false;
 		}
 		let ch = self.current();
 		if ch != 'c' as i32 && (!self.switch_n || ch != 'k' as i32) {
-			self.last_int_value = ch as i64;
+			self.last_int_value = ch as f64;
 			self.advance();
 			return true;
 		}
@@ -723,11 +740,11 @@ impl<'a> State<'a> {
 	}
 
 	fn eat_decimal_escape(&mut self) -> bool {
-		self.last_int_value = 0;
+		self.last_int_value = 0.0;
 		let mut ch = self.current();
 		if ch >= '1' as i32 && ch <= '9' as i32 {
 			loop {
-				self.last_int_value = (10 * self.last_int_value + (ch - '0' as i32) as i64).min(i64::MAX / 16);
+				self.last_int_value = 10.0 * self.last_int_value + (ch - '0' as i32) as f64;
 				self.advance();
 				ch = self.current();
 				if !(ch >= '0' as i32 && ch <= '9' as i32) {
@@ -742,13 +759,13 @@ impl<'a> State<'a> {
 	fn eat_character_class_escape(&mut self) -> Result<CharSet> {
 		let ch = self.current();
 		if is_character_class_escape(ch) {
-			self.last_int_value = -1;
+			self.last_int_value = -1.0;
 			self.advance();
 			return Ok(CharSet::Ok);
 		}
 		let negate = ch == 'P' as i32;
 		if self.switch_u && (negate || ch == 'p' as i32) {
-			self.last_int_value = -1;
+			self.last_int_value = -1.0;
 			self.advance();
 			if self.eat('{') {
 				let result = self.eat_unicode_property_value_expression()?;
@@ -839,6 +856,16 @@ impl<'a> State<'a> {
 	}
 
 	fn class_contents(&mut self) -> Result<CharSet> {
+		self.class_depth += 1;
+		if self.class_depth > MAX_DEPTH {
+			return self.raise("Regular expression nested too deeply");
+		}
+		let result = self.class_contents_inner();
+		self.class_depth -= 1;
+		result
+	}
+
+	fn class_contents_inner(&mut self) -> Result<CharSet> {
 		if self.current() == ']' as i32 {
 			return Ok(CharSet::Ok);
 		}
@@ -854,10 +881,10 @@ impl<'a> State<'a> {
 			let left = self.last_int_value;
 			if self.eat('-') && self.eat_class_atom()? {
 				let right = self.last_int_value;
-				if self.switch_u && (left == -1 || right == -1) {
+				if self.switch_u && (left == -1.0 || right == -1.0) {
 					return self.raise("Invalid character class");
 				}
-				if left != -1 && right != -1 && left > right {
+				if left != -1.0 && right != -1.0 && left > right {
 					return self.raise("Range out of order in character class");
 				}
 			}
@@ -882,7 +909,7 @@ impl<'a> State<'a> {
 		}
 		let ch = self.current();
 		if ch != ']' as i32 && ch != EOF {
-			self.last_int_value = ch as i64;
+			self.last_int_value = ch as f64;
 			self.advance();
 			return Ok(true);
 		}
@@ -892,11 +919,11 @@ impl<'a> State<'a> {
 	fn eat_class_escape(&mut self) -> Result<bool> {
 		let start = self.pos;
 		if self.eat('b') {
-			self.last_int_value = 0x08;
+			self.last_int_value = 8.0;
 			return Ok(true);
 		}
 		if self.switch_u && self.eat('-') {
-			self.last_int_value = '-' as i64;
+			self.last_int_value = '-' as u32 as f64;
 			return Ok(true);
 		}
 		if !self.switch_u && self.eat('c') {
@@ -961,7 +988,7 @@ impl<'a> State<'a> {
 			let left = self.last_int_value;
 			if self.eat('-') && self.eat_class_set_character()? {
 				let right = self.last_int_value;
-				if left != -1 && right != -1 && left > right {
+				if left != -1.0 && right != -1.0 && left > right {
 					return self.raise("Range out of order in character class");
 				}
 				return Ok(true);
@@ -1045,7 +1072,7 @@ impl<'a> State<'a> {
 				return Ok(true);
 			}
 			if self.eat('b') {
-				self.last_int_value = 0x08;
+				self.last_int_value = 8.0;
 				return Ok(true);
 			}
 			self.pos = start;
@@ -1059,14 +1086,14 @@ impl<'a> State<'a> {
 			return Ok(false);
 		}
 		self.advance();
-		self.last_int_value = ch as i64;
+		self.last_int_value = ch as f64;
 		Ok(true)
 	}
 
 	fn eat_class_set_reserved_punctuator(&mut self) -> bool {
 		let ch = self.current();
 		if is_class_set_reserved_punctuator(ch) {
-			self.last_int_value = ch as i64;
+			self.last_int_value = ch as f64;
 			self.advance();
 			return true;
 		}
@@ -1076,7 +1103,7 @@ impl<'a> State<'a> {
 	fn eat_class_control_letter(&mut self) -> bool {
 		let ch = self.current();
 		if is_decimal_digit(ch) || ch == '_' as i32 {
-			self.last_int_value = (ch % 0x20) as i64;
+			self.last_int_value = (ch % 0x20) as f64;
 			self.advance();
 			return true;
 		}
@@ -1099,13 +1126,13 @@ impl<'a> State<'a> {
 
 	fn eat_decimal_digits(&mut self) -> bool {
 		let start = self.pos;
-		self.last_int_value = 0;
+		self.last_int_value = 0.0;
 		loop {
 			let ch = self.current();
 			if !is_decimal_digit(ch) {
 				break;
 			}
-			self.last_int_value = (10 * self.last_int_value + (ch - '0' as i32) as i64).min(i64::MAX / 16);
+			self.last_int_value = 10.0 * self.last_int_value + (ch - '0' as i32) as f64;
 			self.advance();
 		}
 		self.pos != start
@@ -1113,11 +1140,11 @@ impl<'a> State<'a> {
 
 	fn eat_hex_digits(&mut self) -> bool {
 		let start = self.pos;
-		self.last_int_value = 0;
+		self.last_int_value = 0.0;
 		loop {
 			let ch = self.current();
 			let Some(digit) = hex_value(ch) else { break };
-			self.last_int_value = (16 * self.last_int_value + digit).min(i64::MAX / 32);
+			self.last_int_value = 16.0 * self.last_int_value + digit as f64;
 			self.advance();
 		}
 		self.pos != start
@@ -1128,10 +1155,10 @@ impl<'a> State<'a> {
 			let n1 = self.last_int_value;
 			if self.eat_octal_digit() {
 				let n2 = self.last_int_value;
-				if n1 <= 3 && self.eat_octal_digit() {
-					self.last_int_value += n1 * 64 + n2 * 8;
+				if n1 <= 3.0 && self.eat_octal_digit() {
+					self.last_int_value += n1 * 64.0 + n2 * 8.0;
 				} else {
-					self.last_int_value = n1 * 8 + n2;
+					self.last_int_value = n1 * 8.0 + n2;
 				}
 			} else {
 				self.last_int_value = n1;
@@ -1144,23 +1171,23 @@ impl<'a> State<'a> {
 	fn eat_octal_digit(&mut self) -> bool {
 		let ch = self.current();
 		if is_octal_digit(ch) {
-			self.last_int_value = (ch - '0' as i32) as i64;
+			self.last_int_value = (ch - '0' as i32) as f64;
 			self.advance();
 			return true;
 		}
-		self.last_int_value = 0;
+		self.last_int_value = 0.0;
 		false
 	}
 
 	fn eat_fixed_hex_digits(&mut self, length: usize) -> bool {
 		let start = self.pos;
-		self.last_int_value = 0;
+		self.last_int_value = 0.0;
 		for _ in 0..length {
 			let Some(digit) = hex_value(self.current()) else {
 				self.pos = start;
 				return false;
 			};
-			self.last_int_value = 16 * self.last_int_value + digit;
+			self.last_int_value = 16.0 * self.last_int_value + digit as f64;
 			self.advance();
 		}
 		true
