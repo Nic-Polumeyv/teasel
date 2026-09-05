@@ -492,8 +492,10 @@ fn review_fixes() {
 			let deep = format!("{}1{}", "(".repeat(2000), ")".repeat(2000));
 			assert_eq!(module_error(&deep).as_str(), "Maximum nesting depth exceeded (499)");
 			assert!(parse(&format!("{}1{}", "(".repeat(400), ")".repeat(400)), Options::default()).is_ok());
-			let chain = format!("x = 1{}", " + 1".repeat(20000));
+			let chain = format!("x = 1{}", " + 1".repeat(9000));
 			assert!(parse(&chain, Options::default()).is_ok());
+			let chain = format!("x = 1{}", " + 1".repeat(20000));
+			assert_eq!(module_error(&chain).as_str(), "Maximum nesting depth exceeded (40006)");
 		})
 		.unwrap()
 		.join()
