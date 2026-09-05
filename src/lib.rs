@@ -8,6 +8,8 @@ pub mod estree;
 pub mod interner;
 pub(crate) mod lexer;
 pub mod parser;
+#[cfg(feature = "typescript")]
+pub mod typescript;
 
 pub use error::SyntaxError;
 pub use interner::{Interner, StrId};
