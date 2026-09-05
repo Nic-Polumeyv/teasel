@@ -1,11 +1,13 @@
 use super::class::ClassKind;
 use super::expression::ForInit;
 use super::pattern::Binding;
-use super::scope::{SCOPE_ASYNC, SCOPE_SIMPLE_CATCH, SCOPE_TOP, function_flags};
+use super::scope::{SCOPE_SIMPLE_CATCH, SCOPE_TOP, function_flags};
 use super::{DestructuringErrors, Label, LabelKind, Parser, Result};
 use crate::ast::{Function, NodeId, NodeKind, VariableKind};
 use crate::interner::StrId;
 use crate::lexer::token::{Keyword, TokenKind};
+use crate::lexer::unicode::is_id_start;
+use std::collections::HashSet;
 
 pub(crate) const FUNC_STATEMENT: u8 = 1;
 pub(crate) const FUNC_HANGING: u8 = 2;
@@ -35,26 +37,27 @@ impl Parser<'_> {
 	pub(crate) fn parse_program(&mut self) -> Result<NodeId> {
 		let start = self.prev_end;
 		let module = self.options.module;
-		self.enter_scope(SCOPE_TOP | if module { SCOPE_ASYNC } else { 0 });
+		self.enter_scope(SCOPE_TOP);
 		let mut body = Vec::new();
-		let mut exports = Vec::new();
+		let mut exports = HashSet::new();
 		while !self.is(TokenKind::Eof) {
 			body.push(self.parse_statement(Context::None, true, Some(&mut exports))?);
 		}
 		if module
 			&& !self.options.allow_undeclared_exports
-			&& let Some(&(name, pos)) = self.undeclared_exports.first()
+			&& let Some((&name, &(pos, _))) = self.undeclared_exports.iter().min_by_key(|(_, (_, order))| *order)
 		{
 			return self.error(pos, format!("Export '{}' is not defined", self.str(name)));
 		}
-		self.adapt_directive_prologue(&body);
-		self.exit_scope();
 		let body = self.list_of(&body);
+		self.adapt_directive_prologue(body);
+		self.exit_scope();
 		Ok(self.add_with_end(NodeKind::Program { body, module }, start, self.tok.end))
 	}
 
-	fn adapt_directive_prologue(&mut self, statements: &[NodeId]) {
-		for &statement in statements {
+	pub(crate) fn adapt_directive_prologue(&mut self, statements: crate::ast::List) {
+		for i in 0..statements.len {
+			let statement = self.ast.lists[(statements.start + i) as usize].unwrap();
 			let NodeKind::ExpressionStatement {
 				expression,
 				directive: None,
@@ -62,7 +65,11 @@ impl Parser<'_> {
 			else {
 				break;
 			};
-			if !matches!(self.kind(expression), NodeKind::StringLiteral { .. }) {
+			let quoted = matches!(
+				self.source().as_bytes().get(self.start_of(statement) as usize),
+				Some(b'"' | b'\'')
+			);
+			if !quoted || !matches!(self.kind(expression), NodeKind::StringLiteral { .. }) {
 				break;
 			}
 			let (start, end) = (self.start_of(expression), self.end_of(expression));
@@ -79,10 +86,25 @@ impl Parser<'_> {
 		&mut self,
 		context: Context,
 		top_level: bool,
-		exports: Option<&mut Vec<StrId>>,
+		exports: Option<&mut HashSet<StrId>>,
+	) -> Result<NodeId> {
+		self.enter()?;
+		let result = self.parse_statement_inner(context, top_level, exports);
+		self.leave();
+		result
+	}
+
+	fn parse_statement_inner(
+		&mut self,
+		context: Context,
+		top_level: bool,
+		exports: Option<&mut HashSet<StrId>>,
 	) -> Result<NodeId> {
 		let start = self.tok.start;
-		if self.is_let(context)? {
+		if self.is_let(context) {
+			if context != Context::None {
+				return self.unexpected();
+			}
 			return self.parse_var_statement(start, VariableKind::Let);
 		}
 		match self.tok.kind {
@@ -130,12 +152,9 @@ impl Parser<'_> {
 			}
 			TokenKind::Keyword(Keyword::Import) | TokenKind::Keyword(Keyword::Export) => {
 				let is_import = self.is_keyword(Keyword::Import);
-				if is_import {
-					let next = self.peek()?;
-					if next.kind == TokenKind::ParenL || next.kind == TokenKind::Dot {
-						let expression = self.parse_expression(false, &mut None)?;
-						return self.parse_expression_statement(start, expression);
-					}
+				if is_import && matches!(self.peek_char().0, Some('(' | '.')) {
+					let expression = self.parse_expression(false, &mut None)?;
+					return self.parse_expression_statement(start, expression);
 				}
 				if !top_level {
 					return self.error(start, "'import' and 'export' may only appear at the top level");
@@ -150,7 +169,7 @@ impl Parser<'_> {
 				}
 			}
 			_ => {
-				if self.is_async_function()? {
+				if self.is_async_function() {
 					if context != Context::None {
 						return self.unexpected();
 					}
@@ -171,34 +190,62 @@ impl Parser<'_> {
 		}
 	}
 
-	fn is_let(&mut self, context: Context) -> Result<bool> {
+	/// Whether a `let` token starts a declaration rather than being an identifier.
+	fn is_let(&self, context: Context) -> bool {
 		if !self.is_contextual("let") {
-			return Ok(false);
+			return false;
 		}
-		let next = self.peek()?;
-		Ok(match next.kind {
-			TokenKind::BracketL => true,
-			_ if context != Context::None => false,
-			TokenKind::BraceL | TokenKind::Ident { .. } => true,
-			TokenKind::Keyword(Keyword::In) | TokenKind::Keyword(Keyword::Instanceof) => false,
-			TokenKind::Keyword(_) => true,
-			_ => false,
-		})
+		let (next, _, pos) = self.peek_char();
+		let Some(next) = next else { return false };
+		if next == '[' || next == '\\' {
+			return true;
+		}
+		if context != Context::None {
+			return false;
+		}
+		if next == '{' {
+			return true;
+		}
+		if next == '$' || next == '_' || is_id_start(next) {
+			let rest = &self.source()[pos..];
+			let len = rest
+				.char_indices()
+				.find(|&(_, c)| {
+					!(c == '$'
+						|| c == '_' || crate::lexer::unicode::is_id_continue(c)
+						|| c == '\u{200c}' || c == '\u{200d}')
+				})
+				.map_or(rest.len(), |(i, _)| i);
+			if rest[len..].starts_with('\\') {
+				return true;
+			}
+			let word = &rest[..len];
+			return word != "in" && word != "instanceof";
+		}
+		false
 	}
 
-	fn is_async_function(&mut self) -> Result<bool> {
+	fn is_async_function(&self) -> bool {
 		if !self.is_contextual("async") {
-			return Ok(false);
+			return false;
 		}
-		let next = self.peek()?;
-		Ok(next.kind == TokenKind::Keyword(Keyword::Function) && !next.newline_before)
+		let (next, newline, pos) = self.peek_char();
+		if newline || next != Some('f') {
+			return false;
+		}
+		let rest = &self.source()[pos..];
+		rest.starts_with("function")
+			&& !rest[8..]
+				.chars()
+				.next()
+				.is_some_and(|c| c == '$' || c == '_' || crate::lexer::unicode::is_id_continue(c))
 	}
 
 	fn parse_break_continue(&mut self, start: u32, is_break: bool) -> Result<NodeId> {
 		self.next()?;
 		let label = if self.eat(TokenKind::Semi)? || self.can_insert_semicolon() {
 			None
-		} else if !matches!(self.tok.kind, TokenKind::Ident { .. }) {
+		} else if !matches!(self.tok.kind, TokenKind::Ident(_)) {
 			return self.unexpected();
 		} else {
 			let label = self.parse_ident(false)?;
@@ -263,7 +310,7 @@ impl Parser<'_> {
 			}
 			return self.parse_for_rest(start, None);
 		}
-		let is_let = self.is_let(Context::None)?;
+		let is_let = self.is_let(Context::None);
 		if self.is_keyword(Keyword::Var) || self.is_keyword(Keyword::Const) || is_let {
 			let init_start = self.tok.start;
 			let kind = if is_let {
@@ -295,11 +342,11 @@ impl Parser<'_> {
 			return self.parse_for_rest(start, Some(init));
 		}
 		let starts_with_let = self.is_contextual("let");
-		let escaped = matches!(self.tok.kind, TokenKind::Ident { escaped: true, .. });
+		let escaped = self.tok.escaped;
 		let mut errors = Some(DestructuringErrors::default());
 		let init_pos = self.tok.start;
 		let init = if await_at.is_some() {
-			self.parse_maybe_unary(&mut errors, false, false, ForInit::Await)?
+			self.parse_expr_subscripts(&mut errors, ForInit::Await)?
 		} else {
 			self.parse_sequence(ForInit::Yes, &mut errors)?
 		};
@@ -317,7 +364,7 @@ impl Parser<'_> {
 			if starts_with_let && is_for_of {
 				return self.error(
 					self.start_of(init),
-					"The left-hand side of a for-of loop may not be 'let'.",
+					"The left-hand side of a for-of loop may not start with 'let'.",
 				);
 			}
 			let init = self.make_pattern(init, false, &mut errors)?;
@@ -414,7 +461,7 @@ impl Parser<'_> {
 		}
 		let generator = self.eat(TokenKind::Star)?;
 		let mut id = None;
-		if is_statement && (flags & FUNC_NULLABLE_ID == 0 || matches!(self.tok.kind, TokenKind::Ident { .. })) {
+		if is_statement && (flags & FUNC_NULLABLE_ID == 0 || matches!(self.tok.kind, TokenKind::Ident(_))) {
 			let name = self.parse_ident(false)?;
 			if flags & FUNC_HANGING == 0 {
 				let binding = if self.strict || generator || is_async {
@@ -435,7 +482,7 @@ impl Parser<'_> {
 		self.await_pos = 0;
 		self.await_ident_pos = 0;
 		self.enter_scope(function_flags(is_async, generator));
-		if !is_statement && matches!(self.tok.kind, TokenKind::Ident { .. }) {
+		if !is_statement && matches!(self.tok.kind, TokenKind::Ident(_)) {
 			id = Some(self.parse_ident(false)?);
 		}
 		self.expect(TokenKind::ParenL)?;
@@ -481,7 +528,9 @@ impl Parser<'_> {
 	}
 
 	fn parse_return(&mut self, start: u32) -> Result<NodeId> {
-		if !self.in_function() && !self.options.allow_return_outside_function {
+		if !self.in_function()
+			&& !(self.options.allow_return_outside_function && self.current_var_scope().flags & SCOPE_TOP != 0)
+		{
 			return self.error(start, "'return' outside of function");
 		}
 		self.next()?;
@@ -683,7 +732,7 @@ impl Parser<'_> {
 			body.push(self.parse_statement(Context::None, false, None)?);
 		}
 		if exit_strict {
-			self.strict = false;
+			self.set_strict(false);
 		}
 		self.next()?;
 		if new_scope {
@@ -734,13 +783,13 @@ impl Parser<'_> {
 		self.next()?;
 		let specifiers;
 		let source;
-		if matches!(self.tok.kind, TokenKind::String { .. }) {
+		if matches!(self.tok.kind, TokenKind::String(_)) {
 			specifiers = Vec::new();
 			source = self.parse_expr_atom(&mut None, ForInit::No, false)?;
 		} else {
 			specifiers = self.parse_import_specifiers()?;
 			self.expect_contextual("from")?;
-			if !matches!(self.tok.kind, TokenKind::String { .. }) {
+			if !matches!(self.tok.kind, TokenKind::String(_)) {
 				return self.unexpected();
 			}
 			source = self.parse_expr_atom(&mut None, ForInit::No, false)?;
@@ -760,7 +809,7 @@ impl Parser<'_> {
 
 	fn parse_import_specifiers(&mut self) -> Result<Vec<NodeId>> {
 		let mut nodes = Vec::new();
-		if matches!(self.tok.kind, TokenKind::Ident { .. }) {
+		if matches!(self.tok.kind, TokenKind::Ident(_)) {
 			let start = self.tok.start;
 			let local = self.parse_ident(false)?;
 			self.check_lval_simple(local, Binding::Lexical, &mut None)?;
@@ -821,13 +870,13 @@ impl Parser<'_> {
 				first = false;
 			}
 			let start = self.tok.start;
-			let key = if matches!(self.tok.kind, TokenKind::String { .. }) {
+			let key = if matches!(self.tok.kind, TokenKind::String(_)) {
 				self.parse_expr_atom(&mut None, ForInit::No, false)?
 			} else {
 				self.parse_ident(true)?
 			};
 			self.expect(TokenKind::Colon)?;
-			if !matches!(self.tok.kind, TokenKind::String { .. }) {
+			if !matches!(self.tok.kind, TokenKind::String(_)) {
 				return self.unexpected();
 			}
 			let value = self.parse_expr_atom(&mut None, ForInit::No, false)?;
@@ -848,14 +897,14 @@ impl Parser<'_> {
 	}
 
 	fn parse_module_export_name(&mut self) -> Result<NodeId> {
-		if matches!(self.tok.kind, TokenKind::String { .. }) {
+		if matches!(self.tok.kind, TokenKind::String(_)) {
 			let literal = self.parse_expr_atom(&mut None, ForInit::No, false)?;
 			return Ok(literal);
 		}
 		self.parse_ident(true)
 	}
 
-	fn parse_export(&mut self, start: u32, exports: &mut Vec<StrId>) -> Result<NodeId> {
+	fn parse_export(&mut self, start: u32, exports: &mut HashSet<StrId>) -> Result<NodeId> {
 		self.next()?;
 		if self.eat(TokenKind::Star)? {
 			let exported = if self.eat_contextual("as")? {
@@ -866,7 +915,7 @@ impl Parser<'_> {
 				None
 			};
 			self.expect_contextual("from")?;
-			if !matches!(self.tok.kind, TokenKind::String { .. }) {
+			if !matches!(self.tok.kind, TokenKind::String(_)) {
 				return self.unexpected();
 			}
 			let source = self.parse_expr_atom(&mut None, ForInit::No, false)?;
@@ -889,7 +938,7 @@ impl Parser<'_> {
 			let declaration = self.parse_export_default_declaration()?;
 			return Ok(self.add(NodeKind::ExportDefaultDeclaration { declaration }, start));
 		}
-		if self.should_parse_export_statement()? {
+		if self.should_parse_export_statement() {
 			let declaration = self.parse_statement(Context::None, false, None)?;
 			match self.kind(declaration) {
 				NodeKind::VariableDeclaration { declarations, .. } => {
@@ -927,7 +976,7 @@ impl Parser<'_> {
 		let source;
 		let attributes;
 		if self.eat_contextual("from")? {
-			if !matches!(self.tok.kind, TokenKind::String { .. }) {
+			if !matches!(self.tok.kind, TokenKind::String(_)) {
 				return self.unexpected();
 			}
 			source = Some(self.parse_expr_atom(&mut None, ForInit::No, false)?);
@@ -966,7 +1015,7 @@ impl Parser<'_> {
 
 	fn parse_export_default_declaration(&mut self) -> Result<NodeId> {
 		let start = self.tok.start;
-		let is_async = self.is_async_function()?;
+		let is_async = self.is_async_function();
 		if self.is_keyword(Keyword::Function) || is_async {
 			self.next()?;
 			if is_async {
@@ -982,16 +1031,16 @@ impl Parser<'_> {
 		Ok(declaration)
 	}
 
-	fn should_parse_export_statement(&mut self) -> Result<bool> {
-		Ok(self.is_keyword(Keyword::Var)
+	fn should_parse_export_statement(&self) -> bool {
+		self.is_keyword(Keyword::Var)
 			|| self.is_keyword(Keyword::Const)
 			|| self.is_keyword(Keyword::Class)
 			|| self.is_keyword(Keyword::Function)
-			|| self.is_let(Context::None)?
-			|| self.is_async_function()?)
+			|| self.is_let(Context::None)
+			|| self.is_async_function()
 	}
 
-	fn parse_export_specifiers(&mut self, exports: &mut Vec<StrId>) -> Result<Vec<NodeId>> {
+	fn parse_export_specifiers(&mut self, exports: &mut HashSet<StrId>) -> Result<Vec<NodeId>> {
 		let mut nodes = Vec::new();
 		self.expect(TokenKind::BraceL)?;
 		let mut first = true;
@@ -1017,7 +1066,7 @@ impl Parser<'_> {
 		Ok(nodes)
 	}
 
-	fn check_export(&self, exports: &mut Vec<StrId>, name: NodeId, pos: u32) -> Result<()> {
+	fn check_export(&self, exports: &mut HashSet<StrId>, name: NodeId, pos: u32) -> Result<()> {
 		let name = match self.kind(name) {
 			NodeKind::Identifier { name } | NodeKind::StringLiteral { value: name } => name,
 			_ => return Ok(()),
@@ -1025,15 +1074,14 @@ impl Parser<'_> {
 		self.check_export_name(exports, name, pos)
 	}
 
-	fn check_export_name(&self, exports: &mut Vec<StrId>, name: StrId, pos: u32) -> Result<()> {
-		if exports.contains(&name) {
+	fn check_export_name(&self, exports: &mut HashSet<StrId>, name: StrId, pos: u32) -> Result<()> {
+		if !exports.insert(name) {
 			return self.error(pos, format!("Duplicate export '{}'", self.str(name)));
 		}
-		exports.push(name);
 		Ok(())
 	}
 
-	fn check_pattern_export(&self, exports: &mut Vec<StrId>, pattern: NodeId) -> Result<()> {
+	fn check_pattern_export(&self, exports: &mut HashSet<StrId>, pattern: NodeId) -> Result<()> {
 		match self.kind(pattern) {
 			NodeKind::Identifier { .. } => self.check_export(exports, pattern, self.start_of(pattern)),
 			NodeKind::ObjectPattern { properties } => {

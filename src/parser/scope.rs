@@ -147,7 +147,9 @@ impl Parser<'_> {
 				redeclared =
 					scope.lexical.contains(&name) || scope.functions.contains(&name) || scope.var.contains(&name);
 				scope.lexical.push(name);
-				self.forget_undeclared_export(name, true);
+				if self.current_scope().flags & SCOPE_TOP != 0 {
+					self.undeclared_exports.remove(&name);
+				}
 			}
 			Binding::SimpleCatch => self.current_scope_mut().lexical.push(name),
 			Binding::Function => {
@@ -170,7 +172,9 @@ impl Parser<'_> {
 					scope.var.push(name);
 					let top = scope.flags & SCOPE_TOP != 0;
 					let stop = scope.flags & SCOPE_VAR != 0;
-					self.forget_undeclared_export(name, top);
+					if top {
+						self.undeclared_exports.remove(&name);
+					}
 					if stop {
 						break;
 					}
@@ -186,16 +190,14 @@ impl Parser<'_> {
 		Ok(())
 	}
 
-	fn forget_undeclared_export(&mut self, name: StrId, at_top: bool) {
-		if at_top && self.options.module && self.current_scope().flags & SCOPE_TOP != 0 {
-			self.undeclared_exports.retain(|(n, _)| *n != name);
-		}
-	}
-
 	pub(crate) fn check_local_export(&mut self, name: StrId, pos: u32) {
 		let scope = &self.scopes[0];
 		if !scope.lexical.contains(&name) && !scope.var.contains(&name) && !scope.functions.contains(&name) {
-			self.undeclared_exports.push((name, pos));
+			let order = self.undeclared_exports.len();
+			self.undeclared_exports
+				.entry(name)
+				.and_modify(|e| e.0 = pos)
+				.or_insert((pos, order));
 		}
 	}
 }

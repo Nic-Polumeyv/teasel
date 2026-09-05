@@ -12,9 +12,12 @@ use crate::error::SyntaxError;
 use crate::interner::StrId;
 use crate::lexer::Lexer;
 use crate::lexer::token::{Keyword, Token, TokenKind};
-use scope::{SCOPE_ASYNC, SCOPE_TOP, Scope};
+use scope::{SCOPE_TOP, Scope};
+use std::collections::HashMap;
 
 pub(crate) type Result<T> = std::result::Result<T, SyntaxError>;
+
+const MAX_DEPTH: u32 = 1000;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Options {
@@ -37,7 +40,7 @@ pub fn parse(src: &str, options: Options) -> Result<Ast> {
 /// Parses a single expression starting at `offset`, stopping where the expression ends.
 pub fn parse_expression_at(src: &str, offset: u32, options: Options) -> Result<(Ast, NodeId)> {
 	let mut parser = Parser::new(src, offset, options)?;
-	parser.enter_scope(SCOPE_TOP | if options.module { SCOPE_ASYNC } else { 0 });
+	parser.enter_scope(SCOPE_TOP);
 	let expression = parser.parse_expression(false, &mut None)?;
 	Ok((parser.finish(), expression))
 }
@@ -49,10 +52,11 @@ pub(crate) struct Parser<'a> {
 	tok: Token,
 	prev_end: u32,
 	strict: bool,
+	depth: u32,
 	scopes: Vec<Scope>,
 	labels: Vec<Label>,
 	private_names: Vec<PrivateNameScope>,
-	undeclared_exports: Vec<(StrId, u32)>,
+	undeclared_exports: HashMap<StrId, (u32, usize)>,
 	yield_pos: u32,
 	await_pos: u32,
 	await_ident_pos: u32,
@@ -103,6 +107,8 @@ impl<'a> Parser<'a> {
 	fn new(src: &'a str, offset: u32, options: Options) -> Result<Self> {
 		let mut lexer = Lexer::new(src);
 		lexer.set_pos(offset);
+		let strict = options.module || expression::strict_directive(src, offset);
+		lexer.strict = strict;
 		let tok = lexer.next_token()?;
 		Ok(Self {
 			lexer,
@@ -110,11 +116,12 @@ impl<'a> Parser<'a> {
 			options,
 			tok,
 			prev_end: offset,
-			strict: options.module,
+			strict,
+			depth: 0,
 			scopes: Vec::new(),
 			labels: Vec::new(),
 			private_names: Vec::new(),
-			undeclared_exports: Vec::new(),
+			undeclared_exports: HashMap::new(),
 			yield_pos: 0,
 			await_pos: 0,
 			await_ident_pos: 0,
@@ -188,9 +195,40 @@ impl<'a> Parser<'a> {
 		self.ast.node(id).end
 	}
 
+	pub(crate) fn set_strict(&mut self, strict: bool) {
+		self.strict = strict;
+		self.lexer.strict = strict;
+	}
+
+	/// Guards the recursive descent so deep nesting fails cleanly instead of overflowing the stack.
+	pub(crate) fn enter(&mut self) -> Result<()> {
+		self.depth += 1;
+		if self.depth > MAX_DEPTH {
+			return self.error(self.tok.start, "Maximum nesting depth exceeded");
+		}
+		Ok(())
+	}
+
+	pub(crate) fn leave(&mut self) {
+		self.depth -= 1;
+	}
+
 	// Tokens
 
+	/// Consumes the current token; an escaped keyword is an error unless consumed as a name.
 	pub(crate) fn next(&mut self) -> Result<()> {
+		if self.tok.escaped
+			&& let TokenKind::Keyword(keyword) = self.tok.kind
+		{
+			return self.error(
+				self.tok.start,
+				format!("Escape sequence in keyword {}", keyword.as_str()),
+			);
+		}
+		self.next_liberal()
+	}
+
+	pub(crate) fn next_liberal(&mut self) -> Result<()> {
 		self.prev_end = self.tok.end;
 		self.tok = self.lexer.next_token()?;
 		Ok(())
@@ -228,10 +266,7 @@ impl<'a> Parser<'a> {
 	/// The current token is the unescaped identifier `name`.
 	pub(crate) fn is_contextual(&self, name: &str) -> bool {
 		match self.tok.kind {
-			TokenKind::Ident {
-				name: id,
-				escaped: false,
-			} => self.str(id) == name,
+			TokenKind::Ident(id) if !self.tok.escaped => self.str(id) == name,
 			_ => false,
 		}
 	}
@@ -255,16 +290,14 @@ impl<'a> Parser<'a> {
 
 	pub(crate) fn ident_name(&self) -> Option<StrId> {
 		match self.tok.kind {
-			TokenKind::Ident { name, .. } => Some(name),
+			TokenKind::Ident(name) => Some(name),
 			_ => None,
 		}
 	}
 
-	pub(crate) fn peek(&mut self) -> Result<Token> {
-		let snapshot = self.lexer.snapshot();
-		let tok = self.lexer.next_token();
-		self.lexer.restore(snapshot);
-		tok
+	/// The next significant character and whether a line break precedes it, without tokenizing.
+	pub(crate) fn peek_char(&self) -> (Option<char>, bool, usize) {
+		self.lexer.peek_char()
 	}
 
 	pub(crate) fn can_insert_semicolon(&self) -> bool {
@@ -321,7 +354,14 @@ impl<'a> Parser<'a> {
 			errors.parenthesized_bind
 		};
 		if let Some(pos) = parens {
-			return self.error(pos, "Parenthesized pattern");
+			return self.error(
+				pos,
+				if is_assign {
+					"Assigning to rvalue"
+				} else {
+					"Parenthesized pattern"
+				},
+			);
 		}
 		Ok(())
 	}

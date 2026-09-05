@@ -403,6 +403,95 @@ fn errors() {
 	assert_eq!(module_error("x = 1 +"), "Unexpected token (7)");
 }
 
+fn script_error(src: &str) -> String {
+	match parse(src, Options::default()) {
+		Ok(_) => panic!("no error for {src:?}"),
+		Err(e) => format!("{} ({})", e.message, e.pos),
+	}
+}
+
+#[test]
+fn review_fixes() {
+	assert_eq!(module_error("x => {} ? 1 : 2"), "Unexpected token (8)");
+	assert_eq!(module_error("() => {} ** 2"), "Unexpected token (9)");
+	assert_eq!(script_error("'use strict'; with (x) {}"), "'with' in strict mode (14)");
+	assert_eq!(script_error("'use strict'; 010"), "Invalid number (14)");
+	assert!(parse("with (x) {}", Options::default()).is_ok());
+	assert!(
+		parse(
+			"export {a}; { var a; }",
+			Options {
+				module: true,
+				..Options::default()
+			}
+		)
+		.is_ok()
+	);
+	assert!(
+		parse(
+			"export default class A {} export {A}",
+			Options {
+				module: true,
+				..Options::default()
+			}
+		)
+		.is_ok()
+	);
+	assert_eq!(
+		module_error("class A {} export default class A {}"),
+		"Identifier 'A' has already been declared (32)"
+	);
+	assert_eq!(
+		script("function f() { 'use strict'; }"),
+		r#"FunctionDeclaration { function: Function { id: Some(Identifier { name: "f" }), params: [], body: BlockStatement { body: [ExpressionStatement { expression: StringLiteral { value: "use strict" }, directive: Some("use strict") }] }, is_async: false, generator: false } }"#
+	);
+	assert_eq!(
+		script("('use strict')"),
+		r#"ExpressionStatement { expression: StringLiteral { value: "use strict" }, directive: None }"#
+	);
+	assert_eq!(
+		module_error("class A extends B { constructor() { new super() } }"),
+		"Invalid use of 'super' (36)"
+	);
+	assert_eq!(
+		module_error("var await = 1"),
+		"Cannot use keyword 'await' outside an async function (4)"
+	);
+	assert_eq!(module_error("({a}) = 1"), "Assigning to rvalue (0)");
+	assert_eq!(
+		module_error("export {a}; export {a as b};"),
+		"Export 'a' is not defined (20)"
+	);
+	assert!(parse("({ \\u0069f: 1 }); x.\\u0074his; ({ i\\u0066: 1 })", Options::default()).is_ok());
+	assert_eq!(script_error("\\u0069f (x) {}"), "Escape sequence in keyword if (0)");
+	assert_eq!(
+		script_error("import /* unterminated"),
+		"'import' and 'export' may appear only with 'sourceType: module' (0)"
+	);
+	assert_eq!(script_error("if (x) let \\u0061 = 1"), "Unexpected token (7)");
+	assert!(parse("function f(){ \u{2000}'use strict'; with(x){} }", Options::default()).is_err());
+	assert_eq!(
+		module_error("async function f(){ for await (-x of y); }"),
+		"Unexpected token (31)"
+	);
+	std::thread::Builder::new()
+		.stack_size(64 << 20)
+		.spawn(|| {
+			let deep = format!("{}1{}", "(".repeat(2000), ")".repeat(2000));
+			assert_eq!(module_error(&deep).as_str(), "Maximum nesting depth exceeded (499)");
+			assert!(parse(&format!("{}1{}", "(".repeat(400), ")".repeat(400)), Options::default()).is_ok());
+			let chain = format!("x = 1{}", " + 1".repeat(20000));
+			assert!(parse(&chain, Options::default()).is_ok());
+		})
+		.unwrap()
+		.join()
+		.unwrap();
+	assert_eq!(
+		script_error("'use strict'; var s = 'abc\\012def';"),
+		"Octal literal in strict mode (26)"
+	);
+}
+
 #[test]
 fn undeclared_exports_can_be_allowed() {
 	let options = Options {

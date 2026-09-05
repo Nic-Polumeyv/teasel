@@ -19,10 +19,10 @@ impl Parser<'_> {
 		let start = self.tok.start;
 		self.next()?;
 		let old_strict = self.strict;
-		self.strict = true;
-		let id = if matches!(self.tok.kind, TokenKind::Ident { .. }) {
+		self.set_strict(true);
+		let id = if matches!(self.tok.kind, TokenKind::Ident(_)) {
 			let id = self.parse_ident(false)?;
-			if kind == ClassKind::Declaration {
+			if kind != ClassKind::Expression {
 				self.check_lval_simple(id, Binding::Lexical, &mut None)?;
 			}
 			Some(id)
@@ -33,7 +33,7 @@ impl Parser<'_> {
 			None
 		};
 		let super_class = if self.eat_keyword(Keyword::Extends)? {
-			Some(self.parse_expr_subscripts_public(ForInit::No)?)
+			Some(self.parse_expr_subscripts(&mut None, ForInit::No)?)
 		} else {
 			None
 		};
@@ -101,7 +101,7 @@ impl Parser<'_> {
 				_ => {}
 			}
 		}
-		self.strict = old_strict;
+		self.set_strict(old_strict);
 		self.next()?;
 		let body = self.list_of(&body);
 		let body = self.add(NodeKind::ClassBody { body }, body_start);
@@ -239,11 +239,11 @@ impl Parser<'_> {
 	fn is_class_element_name_start(&self) -> bool {
 		matches!(
 			self.tok.kind,
-			TokenKind::Ident { .. }
+			TokenKind::Ident(_)
 				| TokenKind::PrivateName(_)
-				| TokenKind::Number { .. }
+				| TokenKind::Number(_)
 				| TokenKind::BigInt
-				| TokenKind::String { .. }
+				| TokenKind::String(_)
 				| TokenKind::BracketL
 				| TokenKind::Keyword(_)
 		)
