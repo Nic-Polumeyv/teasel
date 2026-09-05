@@ -18,6 +18,9 @@ function strip(node) {
 	if (Array.isArray(node)) return node.map(strip);
 	if (node instanceof RegExp) return null;
 	if (!node || typeof node !== 'object') return node;
+	// Svelte builds an each-block context's annotation by hand and leaves the identifier's end
+	// before it; teasel extends the end over the annotation, as acorn-typescript does elsewhere.
+	if (node.type === 'Identifier' && node.typeAnnotation && node.end < node.typeAnnotation.end) node = { ...node, end: node.typeAnnotation.end };
 	const out = {};
 	for (const [k, v] of Object.entries(node)) {
 		if (k === 'leadingComments' || k === 'trailingComments' || k === 'metadata' || k === 'character') continue;

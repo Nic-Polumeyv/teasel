@@ -66,7 +66,7 @@ for (const path of files(corpus, /\.svelte$/)) {
 		if (!script) continue;
 		const program = script.content;
 		const blank = source.slice(0, program.start).replace(/[^\n]/g, ' ') + source.slice(program.start, program.end);
-		jobs.push({ name: `${name}@${program.start} script`, source: blank, mode: `${ts}svelte+comments`, expected: normalize(program, source, program.start, true, false), from: program.start });
+		jobs.push({ name: `${name}@${program.start} script`, source: blank, mode: `${ts}module+comments+undeclared-exports`, expected: normalize(program, source, program.start, true, false), from: program.start });
 	}
 	for (const node of walk(ast.fragment)) {
 		if (node.type !== 'ExpressionTag' || !node.expression) continue;

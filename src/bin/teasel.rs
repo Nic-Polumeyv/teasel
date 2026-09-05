@@ -2,15 +2,14 @@
 //!
 //! `teasel [--module] [--typescript] [--comments] [--expression|--pattern|--params|--statement]
 //! [--preserve-parens] [--offset N] FILE` prints ESTree JSON. `--offset` alone parses an expression. The pattern,
-//! params and statement modes parse as a module, and params preserve parens, the way the Svelte
-//! compiler drives acorn.
+//! params and statement modes parse as a module, and params preserve parens, as an arrow's would.
 //!
 //! `teasel --batch` reads jobs from stdin, each a header line `MODE LENGTH` followed by LENGTH
-//! bytes of source, and prints one JSON line per job. MODE is `module`, `script`, `svelte` (a module
-//! whose exports need not be declared, the way Svelte reads a component script), `expr:OFFSET`,
-//! `pattern:OFFSET`, `params:OFFSET` or `stmt:OFFSET`, with a `ts-` prefix for TypeScript and a
-//! `+comments` suffix on the word to attach comments the way Svelte does. Offsets are byte offsets
-//! into the source; the JSON output reports UTF-16 offsets like acorn.
+//! bytes of source, and prints one JSON line per job. MODE is `module`, `script`, `expr:OFFSET`,
+//! `pattern:OFFSET`, `params:OFFSET` or `stmt:OFFSET`, with a `ts-` prefix for TypeScript and
+//! `+comments` to attach comments or `+undeclared-exports` to accept exports of names the source
+//! never declares. Offsets are byte offsets into the source; the JSON output reports UTF-16
+//! offsets like acorn.
 
 use std::io::{self, BufRead, Read, Write};
 use std::process::ExitCode;
@@ -36,12 +35,12 @@ impl Mode {
 		}
 	}
 
-	/// The options the Svelte compiler uses with this entry point.
-	fn options(self, batch_mode: &str) -> Options {
+	/// The options each entry point takes in a batch.
+	fn options(self, batch_mode: &str, undeclared_exports: bool) -> Options {
 		match self {
 			Mode::Program => Options {
 				module: batch_mode != "script",
-				allow_undeclared_exports: batch_mode == "svelte",
+				allow_undeclared_exports: undeclared_exports,
 				..Options::default()
 			},
 			Mode::Expression | Mode::Params => Options {
@@ -134,11 +133,19 @@ fn batch() -> io::Result<()> {
 			None => (false, mode_text),
 		};
 		let comments = mode_text.contains("+comments");
-		let mode_text = mode_text.replace("+comments", "");
+		let undeclared_exports = mode_text.contains("+undeclared-exports");
+		let mode_text = mode_text.replace("+comments", "").replace("+undeclared-exports", "");
 		let mode_text = mode_text.as_str();
 		let mode = Mode::from_batch(mode_text);
 		let offset = mode_text.split_once(':').and_then(|(_, n)| n.parse().ok()).unwrap_or(0);
-		let json = run(&source, mode.options(mode_text), mode, offset, typescript, comments);
+		let json = run(
+			&source,
+			mode.options(mode_text, undeclared_exports),
+			mode,
+			offset,
+			typescript,
+			comments,
+		);
 		out.write_all(json.as_bytes())?;
 		out.write_all(b"\n")?;
 		out.flush()?;
@@ -184,7 +191,7 @@ fn main() -> ExitCode {
 	let mut options = if mode == Mode::Program || mode == Mode::Expression {
 		Options::default()
 	} else {
-		mode.options("")
+		mode.options("", false)
 	};
 	options.module |= module;
 	options.preserve_parens |= preserve_parens;

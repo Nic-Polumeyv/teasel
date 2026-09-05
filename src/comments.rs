@@ -1,6 +1,8 @@
-//! Attaches comments to nodes the way the Svelte compiler does after parsing with acorn: a
-//! comment before a node leads it, a comment after a node on the same line trails it, and the
-//! last node of a body takes everything up to the body's end.
+//! Attaches comments to nodes, for tools that read directives from them or print with them. A
+//! comment before a node leads the first node that starts after it; a comment after a node,
+//! separated from it by nothing but spaces, commas and closing parens, trails it; the last node
+//! of a block, program, array or object takes everything up to the closing bracket; what is left
+//! trails the root. Children are visited in source order.
 
 use crate::ast::{Ast, NodeId, NodeKind, Walk};
 
@@ -194,11 +196,12 @@ mod tests {
 	}
 
 	#[test]
-	fn walk_order_follows_acorn() {
+	fn source_order() {
 		assert_eq!(
 			module("switch (x) { case /* a */ 1: y; }"),
-			[r#"ExpressionStatement leading=[" a "] trailing=[]"#]
+			[r#"NumberLiteral leading=[" a "] trailing=[]"#]
 		);
 		assert_eq!(module("`${/* a */ x}`"), [r#"Identifier leading=[" a "] trailing=[]"#]);
+		assert_eq!(module("l /* a */ : x;"), [r#"Identifier leading=[] trailing=[" a "]"#]);
 	}
 }

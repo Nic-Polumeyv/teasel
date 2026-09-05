@@ -76,8 +76,8 @@ pub struct Attached {
 
 /// How an extension's nodes join a walk over the tree.
 pub trait Walk: Sized {
-	/// The children of `id` in the order a walker visits them, which is the order acorn creates
-	/// the properties. Plain nodes come from `Ast::plain_children`.
+	/// Pushes the children of `id`, in any order; `Ast::children` sorts them. Plain nodes come from
+	/// `Ast::plain_children`.
 	fn children(&self, ast: &Ast<Self>, id: NodeId, out: &mut Vec<NodeId>);
 }
 
@@ -88,14 +88,16 @@ impl Walk for () {
 }
 
 impl<X: Walk> Ast<X> {
+	/// Appends the children of `id` in source order.
 	pub fn children(&self, id: NodeId, out: &mut Vec<NodeId>) {
+		let from = out.len();
 		self.extension.children(self, id, out);
+		out[from..].sort_by_key(|&child| self.node(child).start);
 	}
 }
 
 impl<X> Ast<X> {
-	/// The children of a plain JavaScript node in acorn's property order; an extension node has
-	/// none here.
+	/// The children of a plain JavaScript node; an extension node has none here.
 	pub fn plain_children(&self, id: NodeId, out: &mut Vec<NodeId>) {
 		use NodeKind::*;
 		let list = |list: List, out: &mut Vec<NodeId>| out.extend(self.list(list).iter().flatten());
@@ -118,8 +120,8 @@ impl<X> Ast<X> {
 			| DebuggerStatement
 			| Extension(_) => {}
 			TemplateLiteral { quasis, expressions } => {
-				list(expressions, out);
 				list(quasis, out);
+				list(expressions, out);
 			}
 			TaggedTemplateExpression { tag, quasi } => out.extend([tag, quasi]),
 			ArrayExpression { elements } | ArrayPattern { elements } => list(elements, out),
@@ -175,7 +177,7 @@ impl<X> Ast<X> {
 				out.extend(options);
 			}
 			WithStatement { object, body } => out.extend([object, body]),
-			LabeledStatement { label, body } => out.extend([body, label]),
+			LabeledStatement { label, body } => out.extend([label, body]),
 			BreakStatement { label } | ContinueStatement { label } => out.extend(label),
 			IfStatement {
 				test,
@@ -190,8 +192,8 @@ impl<X> Ast<X> {
 				list(cases, out);
 			}
 			SwitchCase { test, consequent } => {
-				list(consequent, out);
 				out.extend(test);
+				list(consequent, out);
 			}
 			TryStatement {
 				block,

@@ -1,5 +1,4 @@
-//! The children of TypeScript nodes, and of JavaScript nodes with TypeScript keys, in the order
-//! acorn-typescript creates the properties.
+//! The children of TypeScript nodes, and the ones TypeScript adds to JavaScript nodes.
 
 use super::ast::{Data, TsKind};
 use crate::ast::{Ast, List, NodeId, NodeKind, Walk};
@@ -227,58 +226,14 @@ impl Walk for Data {
 					ParameterProperty { parameter } => out.push(parameter),
 				}
 			}
-			NodeKind::FunctionDeclaration { function } | NodeKind::FunctionExpression { function } => {
-				out.extend(function.id);
-				if !extras.type_parameters_after_body {
-					out.extend(extras.type_parameters);
-				}
-				list(Some(function.params), out);
-				out.extend(extras.return_type);
-				out.push(function.body);
-				if extras.type_parameters_after_body {
-					out.extend(extras.type_parameters);
-				}
-			}
-			NodeKind::ArrowFunctionExpression {
-				params, body, is_async, ..
-			} => {
-				if is_async {
-					out.extend(extras.type_parameters);
-					list(Some(params), out);
-					out.extend(extras.return_type);
-					out.push(body);
-				} else {
-					out.extend(extras.return_type);
-					list(Some(params), out);
-					out.push(body);
-					out.extend(extras.type_parameters);
-				}
-			}
-			NodeKind::ClassDeclaration { class } | NodeKind::ClassExpression { class } => {
-				list(extras.decorators, out);
-				out.extend(class.id);
-				out.extend(extras.type_parameters);
-				out.extend(class.super_class);
-				out.extend(extras.super_type_arguments);
-				list(extras.implements, out);
-				out.push(class.body);
-			}
-			NodeKind::MethodDefinition { key, value, .. } => {
-				out.push(key);
-				out.extend(extras.type_parameters);
-				out.push(value);
-				list(extras.decorators, out);
-			}
-			NodeKind::PropertyDefinition { key, value, .. } => {
-				out.push(key);
-				out.extend(extras.type_annotation);
-				out.extend(value);
-				list(extras.decorators, out);
-			}
 			_ => {
 				ast.plain_children(id, out);
 				out.extend(extras.type_annotation);
+				out.extend(extras.return_type);
+				out.extend(extras.type_parameters);
 				out.extend(extras.type_arguments);
+				out.extend(extras.super_type_arguments);
+				list(extras.implements, out);
 				list(extras.decorators, out);
 			}
 		}

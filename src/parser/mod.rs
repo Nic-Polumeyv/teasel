@@ -149,7 +149,7 @@ pub(crate) trait Extension: Default + Sized {
 	fn catch_param(p: &mut Parser<Self>, param: NodeId) -> Result<()> {
 		Ok(())
 	}
-	/// After a pattern read on its own, the way Svelte reads an each-block context.
+	/// After a pattern read on its own through `parse_pattern_at`.
 	fn pattern_annotation(p: &mut Parser<Self>, pattern: NodeId) -> Result<()> {
 		Ok(())
 	}
@@ -341,8 +341,8 @@ pub(crate) fn parse_expression_at<E: Extension>(
 }
 
 /// Parses an assignment target starting at `offset`: an identifier or a destructuring pattern,
-/// the way Svelte reads `{#each list as pattern}` by handing `(pattern = 1)` to acorn. Svelte reads
-/// a bare identifier itself, so only the destructuring forms are reached through acorn there.
+/// as it would appear on the left of `=`. Compilers that embed JavaScript in a larger syntax, such
+/// as Svelte's `{#each list as pattern}`, read it directly instead of through a wrapper.
 pub(crate) fn parse_pattern_at<E: Extension>(
 	src: &str,
 	offset: u32,
@@ -363,10 +363,9 @@ pub(crate) fn parse_pattern_at<E: Extension>(
 	Ok((parser.finish(), pattern))
 }
 
-/// Parses a parenthesized parameter list starting at `offset`, the way acorn reads the
-/// parameters of `(params) => {}`: as expressions in the enclosing scope, reinterpreted as
-/// patterns once the list is complete. Returns the parameters and the offset after the closing
-/// paren.
+/// Parses a parenthesized parameter list starting at `offset` as the parameters of an arrow
+/// function would be read: as expressions in the enclosing scope, reinterpreted as patterns once
+/// the list is complete. Returns the parameters and the offset after the closing paren.
 pub(crate) fn parse_params_at<E: Extension>(
 	src: &str,
 	offset: u32,

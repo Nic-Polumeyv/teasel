@@ -150,7 +150,6 @@ struct ParameterHead {
 #[derive(Clone, Copy, Default)]
 struct FunctionFrame {
 	in_class_method: bool,
-	kind_is_method: bool,
 	type_parameters: Option<NodeId>,
 	return_type: Option<NodeId>,
 	arrow_parameters: bool,
@@ -1042,14 +1041,10 @@ impl Extension for TypeScript {
 		Ok(())
 	}
 
-	/// Svelte keeps an identifier's own end here and extends a destructuring pattern's.
 	fn pattern_annotation(p: &mut Parser<Self>, pattern: NodeId) -> Result<()> {
-		if !p.is(TokenKind::Colon) {
-			return Ok(());
-		}
-		let annotation = p.parse_type_annotation(true, None)?;
-		p.extras_mut(pattern).type_annotation = Some(annotation);
-		if !matches!(p.kind(pattern), NodeKind::Identifier { .. }) {
+		if p.is(TokenKind::Colon) {
+			let annotation = p.parse_type_annotation(true, None)?;
+			p.extras_mut(pattern).type_annotation = Some(annotation);
 			p.ast.node_mut(pattern).end = p.end_of(annotation);
 		}
 		Ok(())
@@ -1060,7 +1055,6 @@ impl Extension for TypeScript {
 	fn function_start(p: &mut Parser<Self>, kind: FunctionKind) -> Result<()> {
 		let mut frame = FunctionFrame {
 			in_class_method: kind == FunctionKind::Method { in_class: true },
-			kind_is_method: matches!(kind, FunctionKind::Method { .. }),
 			arrow_parameters: p.ext.maybe_in_arrow_parameters,
 			..FunctionFrame::default()
 		};
@@ -1116,11 +1110,9 @@ impl Extension for TypeScript {
 		let frame = p.ext.functions.pop().unwrap();
 		p.ext.maybe_in_arrow_parameters = frame.arrow_parameters;
 		if frame.type_parameters.is_some() || frame.return_type.is_some() {
-			let object_method = matches!(p.kind(node), NodeKind::FunctionExpression { .. }) && !frame.in_class_method;
 			let extras = p.extras_mut(node);
 			if frame.type_parameters.is_some() {
 				extras.type_parameters = frame.type_parameters;
-				extras.type_parameters_after_body = object_method && frame.kind_is_method;
 			}
 			extras.return_type = frame.return_type;
 		}
