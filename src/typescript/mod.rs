@@ -29,7 +29,7 @@ pub fn parse_expression_at(
 	src: &str,
 	offset: u32,
 	options: Options,
-) -> std::result::Result<(Ast<Data>, NodeId), SyntaxError> {
+) -> std::result::Result<(Ast<Data>, NodeId, u32), SyntaxError> {
 	crate::parser::parse_expression_at::<TypeScript>(src, offset, options).map_err(|e| *e)
 }
 
@@ -37,7 +37,7 @@ pub fn parse_pattern_at(
 	src: &str,
 	offset: u32,
 	options: Options,
-) -> std::result::Result<(Ast<Data>, NodeId), SyntaxError> {
+) -> std::result::Result<(Ast<Data>, NodeId, u32), SyntaxError> {
 	crate::parser::parse_pattern_at::<TypeScript>(src, offset, options).map_err(|e| *e)
 }
 
@@ -53,7 +53,7 @@ pub fn parse_statement_at(
 	src: &str,
 	offset: u32,
 	options: Options,
-) -> std::result::Result<(Ast<Data>, NodeId), SyntaxError> {
+) -> std::result::Result<(Ast<Data>, NodeId, u32), SyntaxError> {
 	crate::parser::parse_statement_at::<TypeScript>(src, offset, options).map_err(|e| *e)
 }
 

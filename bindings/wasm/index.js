@@ -2,6 +2,7 @@
 import init, * as wasm from './pkg/teasel.js';
 
 export { init };
+export { isIdentifierStart, isIdentifierChar } from './identifier.js';
 
 const FLAGS = ['typescript', 'comments', 'locations', 'preserveParens', 'allowReturnOutsideFunction', 'allowAwaitOutsideFunction', 'allowSuperOutsideMethod', 'allowUndeclaredExports'];
 

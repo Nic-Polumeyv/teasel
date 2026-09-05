@@ -190,7 +190,7 @@ mod tests {
 			preserve_parens: true,
 			..Options::default()
 		};
-		let (mut ast, root) = parse_expression_at(src, offset, options).unwrap();
+		let (mut ast, root, _) = parse_expression_at(src, offset, options).unwrap();
 		super::attach(&mut ast, src, root, offset);
 		attached(&ast, src)
 	}

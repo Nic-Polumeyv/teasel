@@ -160,7 +160,7 @@ function actual(line, job) {
 	const node = JSON.parse(line);
 	if (node.error && job.error_only) return { error: { message: node.error.message, pos: node.error.pos } };
 	if (job.mode.startsWith('params:') || job.mode.startsWith('ts-params:')) return node.error ? node : node.params;
-	return node;
+	return node.node ?? node;
 }
 
 const lines = (await teasel(jobs)).map((line, i) => (jobs[i] ? JSON.stringify(actual(line, jobs[i])) : line));

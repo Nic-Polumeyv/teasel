@@ -23,8 +23,40 @@ pub fn to_json<X: Emit>(ast: &Ast<X>, root: NodeId, source: &str, locations: boo
 	w.out
 }
 
-/// Serializes parameters as `{"params":[...],"end":N}`, `end` being the offset after the list.
-pub fn params_to_json<X: Emit>(ast: &Ast<X>, params: &[NodeId], end: u32, source: &str, locations: bool) -> String {
+/// Serializes a program; `comments` adds every comment to it as `comments`.
+pub fn program_to_json<X: Emit>(ast: &Ast<X>, root: NodeId, source: &str, locations: bool, comments: bool) -> String {
+	let mut w = Writer::new(ast, source, locations);
+	w.program_comments = comments;
+	w.node(root);
+	w.out
+}
+
+/// Serializes a node parsed at an offset as `{"node":...,"end":N}`, `end` being the offset after
+/// everything the parse consumed; `comments` adds every comment read as `comments`.
+pub fn node_to_json<X: Emit>(
+	ast: &Ast<X>,
+	root: NodeId,
+	end: u32,
+	source: &str,
+	locations: bool,
+	comments: bool,
+) -> String {
+	let mut w = Writer::new(ast, source, locations);
+	w.out.push_str("{\"node\":");
+	w.node(root);
+	w.tail(end, comments);
+	w.out
+}
+
+/// Serializes parameters as `{"params":[...],"end":N}` the way `node_to_json` does a node.
+pub fn params_to_json<X: Emit>(
+	ast: &Ast<X>,
+	params: &[NodeId],
+	end: u32,
+	source: &str,
+	locations: bool,
+	comments: bool,
+) -> String {
 	let mut w = Writer::new(ast, source, locations);
 	w.out.push_str("{\"params\":[");
 	for (i, &param) in params.iter().enumerate() {
@@ -33,9 +65,8 @@ pub fn params_to_json<X: Emit>(ast: &Ast<X>, params: &[NodeId], end: u32, source
 		}
 		w.node(param);
 	}
-	w.out.push_str("],\"end\":");
-	push_int(&mut w.out, w.positions.offset(end));
-	w.out.push('}');
+	w.out.push(']');
+	w.tail(end, comments);
 	w.out
 }
 
@@ -60,6 +91,8 @@ pub struct Writer<'a, X = ()> {
 	out: String,
 	positions: Positions,
 	locations: bool,
+	/// Whether the program lists every comment.
+	program_comments: bool,
 }
 
 /// Maps byte offsets to the UTF-16 offsets and line/column pairs that acorn reports.
@@ -155,6 +188,7 @@ impl<'a, X: Emit> Writer<'a, X> {
 			out: String::with_capacity(ast.nodes.len() * if locations { 160 } else { 80 }),
 			positions: Positions::new(source, locations),
 			locations,
+			program_comments: false,
 		}
 	}
 
@@ -173,10 +207,13 @@ impl<'a, X: Emit> Writer<'a, X> {
 	}
 
 	fn comments(&mut self, key: &str, comments: &[u32]) {
-		if comments.is_empty() {
-			return;
+		if !comments.is_empty() {
+			self.key(key);
+			self.comment_list(comments);
 		}
-		self.key(key);
+	}
+
+	fn comment_list(&mut self, comments: &[u32]) {
 		self.out.push('[');
 		for (i, &index) in comments.iter().enumerate() {
 			if i > 0 {
@@ -190,13 +227,27 @@ impl<'a, X: Emit> Writer<'a, X> {
 			});
 			self.key("value");
 			write_json_string(&mut self.out, &self.source[comment.text_range()]);
-			self.key("start");
-			push_int(&mut self.out, self.positions.offset(comment.start));
-			self.key("end");
-			push_int(&mut self.out, self.positions.offset(comment.end));
+			self.span(comment.start, comment.end);
 			self.out.push('}');
 		}
 		self.out.push(']');
+	}
+
+	/// Every comment read, in source order.
+	fn all_comments(&mut self) {
+		let all: Vec<u32> = (0..self.ast.comments.len() as u32).collect();
+		self.key("comments");
+		self.comment_list(&all);
+	}
+
+	/// Closes the object around a node parsed at an offset.
+	fn tail(&mut self, end: u32, comments: bool) {
+		self.out.push_str(",\"end\":");
+		push_int(&mut self.out, self.positions.offset(end));
+		if comments {
+			self.all_comments();
+		}
+		self.out.push('}');
 	}
 
 	pub(crate) fn span(&mut self, start: u32, end: u32) {
@@ -308,6 +359,9 @@ impl<'a, X: Emit> Writer<'a, X> {
 				self.begin("Program", id);
 				self.list("body", body);
 				self.string("sourceType", if module { "module" } else { "script" });
+				if self.program_comments {
+					self.all_comments();
+				}
 			}
 			Identifier { name } => {
 				self.begin("Identifier", id);

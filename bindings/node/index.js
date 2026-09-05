@@ -1,5 +1,7 @@
 import * as native from './binding.cjs';
 
+export { isIdentifierStart, isIdentifierChar } from './identifier.js';
+
 /** @typedef {import('./index.d.ts').Options} Options */
 
 /** Rejects the acorn options teasel cannot honor and the values it cannot take. */
@@ -36,7 +38,12 @@ export function parse(source, options) {
 	return result(native.parse(source, check(options)));
 }
 
-/** @param {string} source @param {number} offset @param {Options} [options] */
+/**
+ * The parse-at functions return the node with `end`, the offset after everything the parse
+ * consumed (closing parens and trailing comments included), and the comments read when
+ * `comments` is on.
+ * @param {string} source @param {number} offset @param {Options} [options]
+ */
 export function parseExpressionAt(source, offset, options) {
 	return result(native.parseExpressionAt(source, offset, check(options)));
 }

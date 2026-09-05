@@ -97,7 +97,7 @@ function normalize(node, source, from, is_root, raw_values, ts) {
 			// teasel reports them as the block's `innerComments`.
 			const inner = v.flatMap((c) => c.trailingComments ?? []);
 			if (inner.length) out.innerComments = inner.filter((c) => c.start >= from);
-			const kept = v.filter((c) => c.start >= from).map(({ leadingComments, trailingComments, ...c }) => (raw_values ? dedent(source, c) : c));
+			const kept = v.filter((c) => c.start >= from).map(({ leadingComments, trailingComments, loc, ...c }) => (raw_values ? dedent(source, c) : c));
 			if (kept.length) out[k] = kept;
 			continue;
 		}
@@ -154,8 +154,10 @@ function* walk(node) {
 
 const lines = (await teasel(jobs)).map((line, i) => {
 	if (!jobs[i]) return line;
-	const node = JSON.parse(line);
-	if (node.error) return line;
+	const parsed = JSON.parse(line);
+	if (parsed.error) return line;
+	const node = parsed.node ?? parsed;
+	delete node.comments;
 	return JSON.stringify(normalize(node, jobs[i].source, jobs[i].from, true, true, jobs[i].ts));
 });
 process.exit(compare(jobs, (job) => job.expected, lines, { verbose, label: 'comment attachment', skipped: skipped_files }) ? 0 : 1);

@@ -334,15 +334,17 @@ pub(crate) fn parse<E: Extension>(src: &str, options: Options) -> Result<Ast<E::
 }
 
 /// Parses a single expression starting at `offset`, stopping where the expression ends.
+/// Returns the tree, the expression and the offset after everything it consumed.
 pub(crate) fn parse_expression_at<E: Extension>(
 	src: &str,
 	offset: u32,
 	options: Options,
-) -> Result<(Ast<E::Data>, NodeId)> {
+) -> Result<(Ast<E::Data>, NodeId, u32)> {
 	let mut parser = Parser::<E>::new(src, offset, options)?;
 	parser.enter_scope(SCOPE_TOP);
 	let expression = parser.parse_expression(false, &mut None)?;
-	Ok((parser.finish(), expression))
+	let end = parser.consumed_end();
+	Ok((parser.finish(), expression, end))
 }
 
 /// Parses an assignment target starting at `offset`: an identifier or a destructuring pattern,
@@ -352,7 +354,7 @@ pub(crate) fn parse_pattern_at<E: Extension>(
 	src: &str,
 	offset: u32,
 	options: Options,
-) -> Result<(Ast<E::Data>, NodeId)> {
+) -> Result<(Ast<E::Data>, NodeId, u32)> {
 	let mut parser = Parser::<E>::new(src, offset, options)?;
 	parser.enter_scope(SCOPE_TOP);
 	let mut errors = Some(DestructuringErrors::default());
@@ -365,12 +367,13 @@ pub(crate) fn parse_pattern_at<E: Extension>(
 	let pattern = parser.make_pattern(expression, false, &mut errors)?;
 	parser.check_lval_pattern(pattern, scope::Binding::None, &mut None)?;
 	E::pattern_annotation(&mut parser, pattern)?;
-	Ok((parser.finish(), pattern))
+	let end = parser.consumed_end();
+	Ok((parser.finish(), pattern, end))
 }
 
 /// Parses a parenthesized parameter list starting at `offset` as the parameters of an arrow
 /// function would be read: as expressions in the enclosing scope, reinterpreted as patterns once
-/// the list is complete. Returns the parameters and the offset after the closing paren.
+/// the list is complete. Returns the parameters and the offset after everything they consumed.
 pub(crate) fn parse_params_at<E: Extension>(
 	src: &str,
 	offset: u32,
@@ -380,7 +383,7 @@ pub(crate) fn parse_params_at<E: Extension>(
 	parser.enter_scope(SCOPE_TOP);
 	parser.expect(TokenKind::ParenL)?;
 	let paren = parser.parse_paren_items()?;
-	let end = parser.prev_end;
+	let end = parser.consumed_end();
 	parser.check_pattern_errors(&paren.errors, false)?;
 	parser.check_yield_await_in_default_params()?;
 	parser.enter_scope(scope::function_flags(false, false) | scope::SCOPE_ARROW);
@@ -396,12 +399,13 @@ pub(crate) fn parse_statement_at<E: Extension>(
 	src: &str,
 	offset: u32,
 	options: Options,
-) -> Result<(Ast<E::Data>, NodeId)> {
+) -> Result<(Ast<E::Data>, NodeId, u32)> {
 	let mut parser = Parser::<E>::new(src, offset, options)?;
 	parser.enter_scope(SCOPE_TOP);
 	let mut exports = FastSet::default();
 	let statement = parser.parse_statement(statement::Context::None, true, Some(&mut exports))?;
-	Ok((parser.finish(), statement))
+	let end = parser.consumed_end();
+	Ok((parser.finish(), statement, end))
 }
 
 pub(crate) struct Parser<'a, E: Extension = ()> {
@@ -574,6 +578,15 @@ impl<'a, E: Extension> Parser<'a, E> {
 		self.tok = self.lexer.next_token()?;
 		self.tok.newline_before = newline_before;
 		Ok(())
+	}
+
+	/// The offset after the last token read, or after the comments that follow it before the
+	/// next token: where a host embedding JavaScript resumes its own syntax.
+	fn consumed_end(&self) -> u32 {
+		match self.lexer.comments.last() {
+			Some(comment) if comment.start >= self.prev_end => comment.end,
+			_ => self.prev_end,
+		}
 	}
 
 	fn finish(self) -> Ast<E::Data> {

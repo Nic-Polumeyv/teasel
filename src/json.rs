@@ -3,7 +3,7 @@
 
 use crate::ast::{Ast, NodeId};
 use crate::comments::{attach, attach_all};
-use crate::estree::{Emit, error_to_json, params_to_json, to_json};
+use crate::estree::{Emit, error_to_json, node_to_json, params_to_json, program_to_json};
 use crate::{Options, SyntaxError};
 
 /// What to parse; everything but a program starts at the request's offset.
@@ -119,32 +119,38 @@ pub fn parse(source: &str, request: &Request) -> String {
 	run::<()>(source, request)
 }
 
+/// A tree, its root and the offset after what the parse consumed.
+type Parsed<D> = Result<(Ast<D>, NodeId, u32), Box<SyntaxError>>;
+
 fn run<E: crate::parser::Extension>(source: &str, request: &Request) -> String
 where
 	E::Data: Emit,
 {
-	let (offset, options, locations) = (request.offset, request.options, request.locations);
-	let one = |result: Result<(Ast<E::Data>, NodeId), Box<SyntaxError>>| {
-		result.map(|(mut ast, root)| {
-			if request.comments {
+	let (offset, options, locations, comments) = (request.offset, request.options, request.locations, request.comments);
+	let one = |result: Parsed<E::Data>| {
+		result.map(|(mut ast, root, end)| {
+			if comments {
 				attach(&mut ast, source, root, offset);
 			}
-			to_json(&ast, root, source, locations)
+			node_to_json(&ast, root, end, source, locations, comments)
 		})
 	};
 	let result = match request.entry {
-		Entry::Program => one(crate::parser::parse::<E>(source, options).map(|ast| {
+		Entry::Program => crate::parser::parse::<E>(source, options).map(|mut ast| {
 			let root = ast.last();
-			(ast, root)
-		})),
+			if comments {
+				attach(&mut ast, source, root, 0);
+			}
+			program_to_json(&ast, root, source, locations, comments)
+		}),
 		Entry::Expression => one(crate::parser::parse_expression_at::<E>(source, offset, options)),
 		Entry::Pattern => one(crate::parser::parse_pattern_at::<E>(source, offset, options)),
 		Entry::Statement => one(crate::parser::parse_statement_at::<E>(source, offset, options)),
 		Entry::Params => crate::parser::parse_params_at::<E>(source, offset, options).map(|(mut ast, ids, end)| {
-			if request.comments {
+			if comments {
 				attach_all(&mut ast, source, &ids, offset);
 			}
-			params_to_json(&ast, &ids, end, source, locations)
+			params_to_json(&ast, &ids, end, source, locations, comments)
 		}),
 	};
 	result.unwrap_or_else(|error| error_to_json(&error, source))

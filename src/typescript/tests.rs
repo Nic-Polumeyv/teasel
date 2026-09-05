@@ -92,7 +92,7 @@ fn expr(src: &str) -> String {
 		..Options::default()
 	};
 	match parse_expression_at(src, 0, options) {
-		Ok((ast, id)) => dump(&ast, id),
+		Ok((ast, id, _)) => dump(&ast, id),
 		Err(e) => format!("error {}: {}", e.pos, e.message),
 	}
 }

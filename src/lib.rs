@@ -21,11 +21,15 @@ pub fn parse(src: &str, options: Options) -> Result<ast::Ast, SyntaxError> {
 	parser::parse::<()>(src, options).map_err(|e| *e)
 }
 
-pub fn parse_expression_at(src: &str, offset: u32, options: Options) -> Result<(ast::Ast, ast::NodeId), SyntaxError> {
+pub fn parse_expression_at(
+	src: &str,
+	offset: u32,
+	options: Options,
+) -> Result<(ast::Ast, ast::NodeId, u32), SyntaxError> {
 	parser::parse_expression_at::<()>(src, offset, options).map_err(|e| *e)
 }
 
-pub fn parse_pattern_at(src: &str, offset: u32, options: Options) -> Result<(ast::Ast, ast::NodeId), SyntaxError> {
+pub fn parse_pattern_at(src: &str, offset: u32, options: Options) -> Result<(ast::Ast, ast::NodeId, u32), SyntaxError> {
 	parser::parse_pattern_at::<()>(src, offset, options).map_err(|e| *e)
 }
 
@@ -37,6 +41,10 @@ pub fn parse_params_at(
 	parser::parse_params_at::<()>(src, offset, options).map_err(|e| *e)
 }
 
-pub fn parse_statement_at(src: &str, offset: u32, options: Options) -> Result<(ast::Ast, ast::NodeId), SyntaxError> {
+pub fn parse_statement_at(
+	src: &str,
+	offset: u32,
+	options: Options,
+) -> Result<(ast::Ast, ast::NodeId, u32), SyntaxError> {
 	parser::parse_statement_at::<()>(src, offset, options).map_err(|e| *e)
 }
