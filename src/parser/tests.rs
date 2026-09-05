@@ -1,4 +1,4 @@
-use super::{Options, parse, parse_expression_at};
+use super::{Options, parse, parse_expression_at, parse_params_at, parse_pattern_at, parse_statement_at};
 use crate::ast::{Ast, NodeId, NodeKind};
 
 /// Renders a node as its Debug form with ids, strings and lists expanded inline.
@@ -490,6 +490,49 @@ fn review_fixes() {
 		script_error("'use strict'; var s = 'abc\\012def';"),
 		"Octal literal in strict mode (26)"
 	);
+}
+
+#[test]
+fn svelte_entry_points() {
+	let options = Options {
+		module: true,
+		..Options::default()
+	};
+	let (ast, id) = parse_pattern_at("{#each items as {a, b = 1}, i}", 16, options).unwrap();
+	assert_eq!(
+		dump(&ast, id),
+		r#"ObjectPattern { properties: [Property { key: Identifier { name: "a" }, value: Identifier { name: "a" }, kind: Init, computed: false, method: false, shorthand: true }, Property { key: Identifier { name: "b" }, value: AssignmentPattern { left: Identifier { name: "b" }, right: NumberLiteral { value: 1.0 } }, kind: Init, computed: false, method: false, shorthand: true }] }"#
+	);
+	assert_eq!(ast.node(id).end, 26);
+	let (ast, id) = parse_pattern_at("{#each items as item (item.id)}", 16, options).unwrap();
+	assert_eq!(dump(&ast, id), r#"Identifier { name: "item" }"#);
+	assert_eq!(ast.node(id).end, 20);
+	assert!(parse_pattern_at("{#each items as 1}", 16, options).is_err());
+
+	let (ast, params, end) = parse_params_at("{#snippet row(a, {b}, ...rest)}", 13, options).unwrap();
+	let dumped: Vec<String> = params.iter().map(|p| dump(&ast, *p)).collect();
+	assert_eq!(
+		dumped,
+		[
+			r#"Identifier { name: "a" }"#,
+			r#"ObjectPattern { properties: [Property { key: Identifier { name: "b" }, value: Identifier { name: "b" }, kind: Init, computed: false, method: false, shorthand: true }] }"#,
+			r#"RestElement { argument: Identifier { name: "rest" } }"#
+		]
+	);
+	assert_eq!(end, 30);
+	assert_eq!(
+		parse_params_at("{#snippet row(a, a)}", 13, options)
+			.unwrap_err()
+			.message,
+		"Argument name clash"
+	);
+
+	let (ast, id) = parse_statement_at("{@const x = a + 1}", 2, options).unwrap();
+	assert_eq!(
+		dump(&ast, id),
+		r#"VariableDeclaration { declarations: [VariableDeclarator { id: Identifier { name: "x" }, init: Some(BinaryExpression { operator: Add, left: Identifier { name: "a" }, right: NumberLiteral { value: 1.0 } }) }], kind: Const }"#
+	);
+	assert_eq!(ast.node(id).end, 17);
 }
 
 #[test]

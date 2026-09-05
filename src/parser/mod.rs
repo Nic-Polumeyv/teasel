@@ -13,7 +13,7 @@ use crate::interner::StrId;
 use crate::lexer::Lexer;
 use crate::lexer::token::{Keyword, Token, TokenKind};
 use scope::{SCOPE_TOP, Scope};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 pub(crate) type Result<T> = std::result::Result<T, SyntaxError>;
 
@@ -43,6 +43,49 @@ pub fn parse_expression_at(src: &str, offset: u32, options: Options) -> Result<(
 	parser.enter_scope(SCOPE_TOP);
 	let expression = parser.parse_expression(false, &mut None)?;
 	Ok((parser.finish(), expression))
+}
+
+/// Parses an assignment target starting at `offset`: an identifier or a destructuring pattern,
+/// the way Svelte reads `{#each list as pattern}` by handing `(pattern = 1)` to acorn.
+pub fn parse_pattern_at(src: &str, offset: u32, options: Options) -> Result<(Ast, NodeId)> {
+	let mut parser = Parser::new(src, offset, options)?;
+	parser.enter_scope(SCOPE_TOP);
+	let mut errors = Some(DestructuringErrors::default());
+	let expression = match parser.tok.kind {
+		TokenKind::BraceL | TokenKind::BracketL => {
+			parser.parse_expr_atom(&mut errors, expression::ForInit::No, false)?
+		}
+		_ => parser.parse_ident(false)?,
+	};
+	let pattern = parser.make_pattern(expression, false, &mut errors)?;
+	parser.check_lval_pattern(pattern, scope::Binding::None, &mut None)?;
+	Ok((parser.finish(), pattern))
+}
+
+/// Parses a parenthesized parameter list starting at `offset`, the way acorn reads the
+/// parameters of `(params) => {}`. Returns the parameters and the offset after the closing paren.
+pub fn parse_params_at(src: &str, offset: u32, options: Options) -> Result<(Ast, Vec<NodeId>, u32)> {
+	let mut parser = Parser::new(src, offset, options)?;
+	parser.enter_scope(SCOPE_TOP);
+	parser.enter_scope(scope::function_flags(false, false) | scope::SCOPE_ARROW);
+	parser.expect(TokenKind::ParenL)?;
+	let params = parser.parse_binding_list(TokenKind::ParenR, false, true)?;
+	let end = parser.prev_end;
+	let mut names = Some(Vec::new());
+	for param in params.iter().flatten() {
+		parser.check_lval_inner_pattern(*param, scope::Binding::Var, &mut names)?;
+	}
+	let params = params.into_iter().flatten().collect();
+	Ok((parser.finish(), params, end))
+}
+
+/// Parses a single statement starting at `offset`, as if at the top level of a module.
+pub fn parse_statement_at(src: &str, offset: u32, options: Options) -> Result<(Ast, NodeId)> {
+	let mut parser = Parser::new(src, offset, options)?;
+	parser.enter_scope(SCOPE_TOP);
+	let mut exports = HashSet::new();
+	let statement = parser.parse_statement(statement::Context::None, true, Some(&mut exports))?;
+	Ok((parser.finish(), statement))
 }
 
 pub(crate) struct Parser<'a> {

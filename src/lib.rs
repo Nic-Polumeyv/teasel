@@ -11,4 +11,4 @@ pub mod parser;
 
 pub use error::SyntaxError;
 pub use interner::{Interner, StrId};
-pub use parser::{Options, parse, parse_expression_at};
+pub use parser::{Options, parse, parse_expression_at, parse_params_at, parse_pattern_at, parse_statement_at};

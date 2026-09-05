@@ -15,6 +15,25 @@ pub fn to_json(ast: &Ast, root: NodeId, source: &str) -> String {
 	w.out
 }
 
+/// Serializes several nodes as a JSON array.
+pub fn list_to_json(ast: &Ast, roots: &[NodeId], source: &str) -> String {
+	let mut w = Writer {
+		ast,
+		source,
+		out: String::new(),
+		positions: Positions::new(source),
+	};
+	w.out.push('[');
+	for (i, &root) in roots.iter().enumerate() {
+		if i > 0 {
+			w.out.push(',');
+		}
+		w.node(root);
+	}
+	w.out.push(']');
+	w.out
+}
+
 /// Serializes a syntax error the way acorn reports one: UTF-16 `pos` plus a `loc`.
 pub fn error_to_json(error: &crate::SyntaxError, source: &str) -> String {
 	let positions = Positions::new(source);
