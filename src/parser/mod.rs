@@ -64,6 +64,8 @@ pub(crate) trait Extension: Default + Sized {
 	const DUPLICATE_EXPORT_ERRORS: bool = true;
 	/// Whether a function's name is declared after its body, so a bodiless overload declares nothing.
 	const DECLARES_FUNCTION_NAME_AFTER_BODY: bool = false;
+	/// Whether `static` before a class member is only ever read by `class_modifiers`.
+	const STATIC_IS_A_MODIFIER: bool = false;
 
 	fn init(p: &mut Parser<Self>) {}
 	fn save(&self) -> Self::Snapshot;
@@ -215,7 +217,9 @@ pub(crate) trait Extension: Default + Sized {
 	fn class_field_annotation(p: &mut Parser<Self>) -> Result<()> {
 		Ok(())
 	}
-	fn class_element_end(p: &mut Parser<Self>, node: NodeId) {}
+	fn class_element_end(p: &mut Parser<Self>, node: NodeId) -> Result<()> {
+		Ok(())
+	}
 
 	// Expressions
 
@@ -287,9 +291,15 @@ pub(crate) trait Extension: Default + Sized {
 	fn template_expression(p: &mut Parser<Self>) -> Result<Option<NodeId>> {
 		Ok(None)
 	}
-	/// Reinterprets an extension node as a pattern.
+	/// Reinterprets an extension node as a pattern; the result replaces it.
 	fn make_pattern(p: &mut Parser<Self>, id: NodeId, is_binding: bool, errors: &mut Errors) -> Result<Option<NodeId>> {
 		Ok(None)
+	}
+	/// Replaces the items of a list about to become patterns.
+	fn convert_items(p: &mut Parser<Self>, items: &mut [Option<NodeId>]) {}
+	/// What a parenthesized expression becomes as a pattern, given what its inner one became.
+	fn parenthesized_pattern(p: &mut Parser<Self>, paren: NodeId, inner: NodeId, pattern: NodeId) -> NodeId {
+		paren
 	}
 	/// The plain node an extension wrapper stands for in a check, if any.
 	fn unwrap(p: &Parser<Self>, id: NodeId, context: Unwrap) -> Option<NodeId> {
@@ -408,12 +418,17 @@ pub(crate) struct Parser<'a, E: Extension = ()> {
 }
 
 pub(crate) struct Snapshot<E: Extension> {
+	tokens: TokenSnapshot,
+	depth: u32,
+	ext: E::Snapshot,
+}
+
+pub(crate) struct TokenSnapshot {
 	pos: u32,
 	in_type: bool,
 	tok: Token,
 	prev_end: u32,
 	comments: usize,
-	ext: E::Snapshot,
 }
 
 #[derive(Clone, Copy)]
@@ -490,22 +505,35 @@ impl<'a, E: Extension> Parser<'a, E> {
 	/// in the arena, unreferenced.
 	pub(crate) fn snapshot(&self) -> Snapshot<E> {
 		Snapshot {
-			pos: self.lexer.pos(),
-			in_type: self.lexer.in_type,
-			tok: self.tok,
-			prev_end: self.prev_end,
-			comments: self.lexer.comments.len(),
+			tokens: self.token_snapshot(),
+			depth: self.depth,
 			ext: self.ext.save(),
 		}
 	}
 
 	pub(crate) fn restore(&mut self, snapshot: Snapshot<E>) {
+		self.restore_tokens(snapshot.tokens);
+		self.depth = snapshot.depth;
+		self.ext.restore(snapshot.ext);
+	}
+
+	/// The tokenizer alone, enough for a lookahead that parses nothing.
+	pub(crate) fn token_snapshot(&self) -> TokenSnapshot {
+		TokenSnapshot {
+			pos: self.lexer.pos(),
+			in_type: self.lexer.in_type,
+			tok: self.tok,
+			prev_end: self.prev_end,
+			comments: self.lexer.comments.len(),
+		}
+	}
+
+	pub(crate) fn restore_tokens(&mut self, snapshot: TokenSnapshot) {
 		self.lexer.set_pos(snapshot.pos);
 		self.lexer.in_type = snapshot.in_type;
 		self.tok = snapshot.tok;
 		self.prev_end = snapshot.prev_end;
 		self.lexer.comments.truncate(snapshot.comments);
-		self.ext.restore(snapshot.ext);
 	}
 
 	/// Runs `f`, undoing it when it fails.

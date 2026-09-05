@@ -31,7 +31,7 @@ TypeScript is an extension of the JavaScript grammar: the JavaScript parser call
 SVELTE_DIR=~/Projects/svelte KIT_DIR=~/Projects/kit bun typescript.js --dts
 ```
 
-Where acorn-typescript leaves out keys acorn sets (`attributes`, `optional` on a call with type arguments, `options` of `import()`, `id` of a class expression), teasel follows acorn and the oracle brings the expected side in line before comparing. `TSTypeParameterDeclaration` does not carry the plugin's `extra.trailingComma`.
+Where acorn-typescript leaves out keys acorn sets (`attributes`, `optional` on a call with type arguments or a decorator's member expression, `options` of `import()`, `id` of a class expression), teasel follows acorn and the oracle brings the expected side in line before comparing. `TSTypeParameterDeclaration` does not carry the plugin's `extra.trailingComma`.
 
 Known divergences from the plugin:
 
@@ -39,5 +39,7 @@ Known divergences from the plugin:
 - `async <T>(x: T) => x` keeps its parameters; the plugin drops them.
 - `for (a as b of c)` parses; the plugin reports a type cast in parameter position.
 - Modifiers on type parameters report a formatted message; the plugin prints the source of its message function.
+- `type T = intrinsic` is the intrinsic keyword; the plugin tests for the word `interface` instead.
+- `a?.<b>c` reports a position; the plugin reports `NaN`.
 
 Early days. Nothing to use yet.

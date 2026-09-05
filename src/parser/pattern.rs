@@ -54,11 +54,12 @@ impl<E: Extension> Parser<'_, E> {
 			NodeKind::ArrayExpression { elements } => {
 				self.ast.node_mut(id).kind = NodeKind::ArrayPattern { elements };
 				self.check_pattern_errors(errors, true)?;
-				for i in 0..elements.len {
-					if let Some(element) = self.ast.lists[(elements.start + i) as usize] {
-						let pattern = self.make_pattern(element, is_binding, &mut None)?;
-						self.ast.lists[(elements.start + i) as usize] = Some(pattern);
-					}
+				let mut items = self.ast.list(elements).to_vec();
+				E::convert_items(self, &mut items);
+				self.ast.lists[elements.start as usize..(elements.start + elements.len) as usize]
+					.copy_from_slice(&items);
+				for element in items.into_iter().flatten() {
+					self.make_pattern(element, is_binding, &mut None)?;
 				}
 			}
 			NodeKind::SpreadElement { argument } => {
@@ -79,7 +80,8 @@ impl<E: Extension> Parser<'_, E> {
 				self.ast.node_mut(id).kind = NodeKind::AssignmentPattern { left, right };
 			}
 			NodeKind::ParenthesizedExpression { expression } => {
-				self.make_pattern(expression, is_binding, errors)?;
+				let pattern = self.make_pattern(expression, is_binding, errors)?;
+				return Ok(E::parenthesized_pattern(self, id, expression, pattern));
 			}
 			NodeKind::ChainExpression { .. } => {
 				return self.error(start, "Optional chaining cannot appear in left-hand side");
@@ -101,8 +103,9 @@ impl<E: Extension> Parser<'_, E> {
 		mut items: Vec<Option<NodeId>>,
 		is_binding: bool,
 	) -> Result<Vec<Option<NodeId>>> {
-		for item in items.iter_mut().flatten() {
-			*item = self.make_pattern(*item, is_binding, &mut None)?;
+		E::convert_items(self, &mut items);
+		for item in items.iter().flatten() {
+			self.make_pattern(*item, is_binding, &mut None)?;
 		}
 		Ok(items)
 	}

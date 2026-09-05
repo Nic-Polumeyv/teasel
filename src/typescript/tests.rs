@@ -509,7 +509,7 @@ fn expressions() {
 	);
 	assert_eq!(
 		module(r#"let x = (a as any) = 1;"#),
-		r#"VariableDeclaration { declarations: [VariableDeclarator { id: Identifier { name: "x" }, init: Some(AssignmentExpression { operator: Assign, left: AsExpression { expression: Identifier { name: "a" }, type_annotation: Keyword(Any) }, right: NumberLiteral { value: 1.0 } }) }], kind: Let }"#
+		r#"VariableDeclaration { declarations: [VariableDeclarator { id: Identifier { name: "x" }, init: Some(AssignmentExpression { operator: Assign, left: Identifier { name: "a" }, right: NumberLiteral { value: 1.0 } }) }], kind: Let }"#
 	);
 	assert_eq!(
 		module(r#"f(a?: number);"#),

@@ -184,13 +184,17 @@ impl<E: Extension> Parser<'_, E> {
 		let mut kind = MethodKind::Method;
 		let mut is_static = E::class_modifiers(self)?;
 		if let Some(signature) = E::class_index_signature(self, start)? {
-			E::class_element_end(self, signature);
+			E::class_element_end(self, signature)?;
 			return Ok(Some(signature));
 		}
-		if !is_static && self.eat_contextual("static")? {
+		if !is_static
+			&& self.is_contextual("static")
+			&& (!E::STATIC_IS_A_MODIFIER || self.peek_char().0 == Some('{'))
+			&& self.eat_contextual("static")?
+		{
 			if self.eat(TokenKind::BraceL)? {
 				let block = self.parse_class_static_block(start)?;
-				E::class_element_end(self, block);
+				E::class_element_end(self, block)?;
 				return Ok(Some(block));
 			}
 			if self.is_class_element_name_start() || self.is(TokenKind::Star) {
@@ -340,7 +344,7 @@ impl<E: Extension> Parser<'_, E> {
 			},
 			start,
 		);
-		E::class_element_end(self, node);
+		E::class_element_end(self, node)?;
 		Ok(node)
 	}
 
@@ -373,7 +377,7 @@ impl<E: Extension> Parser<'_, E> {
 			},
 			start,
 		);
-		E::class_element_end(self, node);
+		E::class_element_end(self, node)?;
 		Ok(node)
 	}
 

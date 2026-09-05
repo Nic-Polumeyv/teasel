@@ -492,7 +492,10 @@ impl Parser<'_, TypeScript> {
 		let start = self.tok.start;
 		let operator = self.ident_name().unwrap();
 		self.next()?;
-		let type_annotation = self.parse_type_operator_or_higher()?;
+		self.enter()?;
+		let type_annotation = self.parse_type_operator_or_higher();
+		self.leave();
+		let type_annotation = type_annotation?;
 		if self.str(operator) == "readonly"
 			&& !matches!(
 				self.ts_kind(type_annotation),
@@ -1191,12 +1194,12 @@ impl Parser<'_, TypeScript> {
 			return Ok(None);
 		}
 		let start = self.tok.start;
-		let snapshot = self.snapshot();
+		let snapshot = self.token_snapshot();
 		self.next_liberal()?;
 		if self.token_can_follow_modifier() {
 			return Ok(Some((modifier, start)));
 		}
-		self.restore(snapshot);
+		self.restore_tokens(snapshot);
 		Ok(None)
 	}
 

@@ -125,6 +125,7 @@ impl Names {
 	}
 
 	fn truncate(&mut self, len: usize) {
+		debug_assert!(self.log.len() >= len);
 		while self.log.len() > len {
 			let (_, name) = self.log.pop().unwrap();
 			self.depths.get_mut(&name).unwrap().pop();
@@ -172,6 +173,8 @@ struct ElementFrame {
 	extras: Extras,
 	key: Option<NodeId>,
 	computed: bool,
+	/// The ambient flag before a `declare` member set it.
+	outer_ambient: Option<bool>,
 }
 
 #[derive(Default)]
@@ -245,8 +248,19 @@ impl Parser<'_, TypeScript> {
 
 	/// The byte column acorn-typescript reports as a position for modifier order errors.
 	fn column(&self, pos: u32) -> u32 {
-		let line_start = self.source()[..pos as usize].rfind(['\n', '\r']).map_or(0, |i| i + 1);
-		pos - line_start as u32
+		let source = self.source();
+		let line_start = source[..pos as usize].rfind(['\n', '\r']).map_or(0, |i| i + 1);
+		let column: usize = source[line_start..pos as usize].chars().map(char::len_utf16).sum();
+		// The column is reported as if it were an offset, so it is mapped back to the byte
+		// offset that serializes to that number.
+		let mut units = 0;
+		for (byte, c) in source.char_indices() {
+			if units >= column {
+				return byte as u32;
+			}
+			units += c.len_utf16();
+		}
+		source.len() as u32
 	}
 
 	fn extras_mut(&mut self, id: NodeId) -> &mut Extras {
@@ -300,6 +314,18 @@ impl Parser<'_, TypeScript> {
 		self.lexer.set_pos(self.tok.start + 1);
 		self.tok.kind = TokenKind::Lt;
 		self.tok.end = self.tok.start + 1;
+	}
+
+	/// At the start of an expression the plugin reads a lone `<` whatever follows it.
+	fn starts_with_lt(&mut self) -> bool {
+		match self.tok.kind {
+			TokenKind::Lt => true,
+			TokenKind::LtLt | TokenKind::LtEq | TokenKind::LtLtEq => {
+				self.split_lt();
+				true
+			}
+			_ => false,
+		}
 	}
 
 	/// Re-reads a `<` or `>` left by a type context, where they are single characters.
@@ -667,6 +693,7 @@ impl Extension for TypeScript {
 
 	const DUPLICATE_EXPORT_ERRORS: bool = false;
 	const DECLARES_FUNCTION_NAME_AFTER_BODY: bool = true;
+	const STATIC_IS_A_MODIFIER: bool = true;
 
 	fn init(p: &mut Parser<Self>) {
 		p.lexer.at_sign = true;
@@ -1198,19 +1225,46 @@ impl Extension for TypeScript {
 			"'{}' modifier can only appear on a type parameter of a class, interface or type alias.",
 		)?;
 		if !decorators.is_empty() {
+			if p.is(TokenKind::BraceR) {
+				return p.error(p.tok.end, "Decorators must be attached to a class element.");
+			}
 			modifiers.extras.decorators = Some(p.list_of(&decorators));
 		}
+		if modifiers.extras != Extras::default() && p.is_contextual("static") && p.peek_char().0 == Some('{') {
+			let snapshot = p.token_snapshot();
+			p.next()?;
+			p.next()?;
+			let inside = p.tok.start;
+			p.restore_tokens(snapshot);
+			return p.error(inside, "Static class blocks cannot have any modifier.");
+		}
+		let outer_ambient = modifiers
+			.extras
+			.declare
+			.then(|| std::mem::replace(&mut p.ext.ambient, true));
 		p.ext.elements.push(ElementFrame {
 			start,
 			extras: modifiers.extras,
 			key: None,
 			computed: false,
+			outer_ambient,
 		});
 		Ok(modifiers.extras.is_static)
 	}
 
 	fn class_index_signature(p: &mut Parser<Self>, start: u32) -> Result<Option<NodeId>> {
 		let Some(signature) = p.try_parse_index_signature(start)? else {
+			let has_super = p.ext.classes.last().is_some_and(|c| c.has_super);
+			let extras = p.ext.elements.last().unwrap().extras;
+			if !p.ext.in_abstract_class && extras.is_abstract {
+				return p.error(start, "Abstract methods can only appear within an abstract class.");
+			}
+			if extras.is_override && !has_super {
+				return p.error(
+					start,
+					"This member cannot have an 'override' modifier because its containing class does not extend another class.",
+				);
+			}
 			return Ok(None);
 		};
 		let extras = p.ext.elements.last().unwrap().extras;
@@ -1236,22 +1290,11 @@ impl Extension for TypeScript {
 	}
 
 	fn class_key_end(p: &mut Parser<Self>, key: NodeId, computed: bool) -> Result<()> {
-		let has_super = p.ext.classes.last().is_some_and(|c| c.has_super);
-		let in_abstract_class = p.ext.in_abstract_class;
 		let element = p.ext.elements.last_mut().unwrap();
 		element.key = Some(key);
 		element.computed = computed;
 		let start = element.start;
 		let extras = element.extras;
-		if !in_abstract_class && extras.is_abstract {
-			return p.error(start, "Abstract methods can only appear within an abstract class.");
-		}
-		if extras.is_override && !has_super {
-			return p.error(
-				start,
-				"This member cannot have an 'override' modifier because its containing class does not extend another class.",
-			);
-		}
 		if p.eat(TokenKind::Question)? {
 			p.ext.elements.last_mut().unwrap().extras.optional = true;
 		}
@@ -1344,20 +1387,37 @@ impl Extension for TypeScript {
 		Ok(())
 	}
 
-	fn class_element_end(p: &mut Parser<Self>, node: NodeId) {
+	fn class_element_end(p: &mut Parser<Self>, node: NodeId) -> Result<()> {
 		let frame = p.ext.elements.pop().unwrap();
+		if let Some(outer) = frame.outer_ambient {
+			p.ext.ambient = outer;
+		}
 		if let Some(decorators) = frame.extras.decorators {
-			p.ast.node_mut(node).start = p.start_of(p.ast.list(decorators)[0].unwrap());
+			let start = p.start_of(p.ast.list(decorators)[0].unwrap());
+			p.ast.node_mut(node).start = start;
+			if let NodeKind::MethodDefinition {
+				kind: crate::ast::MethodKind::Constructor,
+				value,
+				..
+			} = p.kind(node)
+				&& matches!(p.kind(value), NodeKind::FunctionExpression { .. })
+			{
+				return p.error(
+					start,
+					"Decorators can't be used with a constructor. Did you mean '@dec class { ... }'?",
+				);
+			}
 		}
 		if frame.extras != Extras::default() {
 			p.extras_mut(node).merge(frame.extras);
 		}
+		Ok(())
 	}
 
 	// Expressions
 
 	fn maybe_assign(p: &mut Parser<Self>, for_init: ForInit, errors: &mut Errors) -> Result<Option<NodeId>> {
-		if !p.is(TokenKind::Lt) {
+		if !p.starts_with_lt() {
 			return Ok(None);
 		}
 		let snapshot = p.snapshot();
@@ -1434,7 +1494,7 @@ impl Extension for TypeScript {
 	}
 
 	fn unary(p: &mut Parser<Self>, for_init: ForInit) -> Result<Option<NodeId>> {
-		if p.is(TokenKind::Lt) {
+		if p.starts_with_lt() {
 			return p.parse_type_assertion(for_init).map(Some);
 		}
 		Ok(None)
@@ -1602,16 +1662,36 @@ impl Extension for TypeScript {
 				| TsKind::SatisfiesExpression { expression, .. }
 				| TsKind::NonNullExpression { expression }
 				| TsKind::TypeAssertion { expression, .. },
-			) => {
-				p.make_pattern(expression, is_binding, errors)?;
-				Ok(Some(id))
-			}
+			) => p.make_pattern(expression, is_binding, errors).map(Some),
 			Some(TsKind::TypeCastExpression { .. }) => {
 				let parameter = p.type_cast_to_parameter(id);
 				p.make_pattern(parameter, is_binding, errors).map(Some)
 			}
 			_ => Ok(None),
 		}
+	}
+
+	/// Only `expr: type` items become their parameter; other wrappers stay in a list.
+	fn convert_items(p: &mut Parser<Self>, items: &mut [Option<NodeId>]) {
+		for item in items.iter_mut().flatten() {
+			if matches!(p.ts_kind(*item), Some(TsKind::TypeCastExpression { .. })) {
+				*item = p.type_cast_to_parameter(*item);
+			}
+		}
+	}
+
+	/// Parentheses around a type wrapper or more parentheses drop away as an assignment target.
+	fn parenthesized_pattern(p: &mut Parser<Self>, paren: NodeId, inner: NodeId, pattern: NodeId) -> NodeId {
+		let wrapper = matches!(
+			p.ts_kind(inner),
+			Some(
+				TsKind::AsExpression { .. }
+					| TsKind::SatisfiesExpression { .. }
+					| TsKind::NonNullExpression { .. }
+					| TsKind::TypeAssertion { .. }
+			)
+		) || matches!(p.kind(inner), NodeKind::ParenthesizedExpression { .. });
+		if wrapper { pattern } else { paren }
 	}
 
 	fn unwrap(p: &Parser<Self>, id: NodeId, context: Unwrap) -> Option<NodeId> {
