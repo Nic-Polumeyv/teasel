@@ -6,11 +6,13 @@ Named after the plant whose dried heads were used to tease apart wool fibres and
 
 ## Conformance
 
-The oracle is acorn. `oracle/run.js` parses every script in a Svelte checkout with both and diffs the ESTree output, positions included.
+The oracle is acorn. `oracle/run.js` parses every script in a Svelte checkout with both, as a module and as a script, and diffs the ESTree output, positions included.
 
 ```
 cargo build --release
 cd oracle && bun install && SVELTE_DIR=~/Projects/svelte bun run.js
 ```
+
+Known divergences: a lone surrogate in a string literal becomes U+FFFD, and regular expression patterns are not validated yet.
 
 Early days. Nothing to use yet.

@@ -39,26 +39,22 @@ struct Writer<'a> {
 
 /// Maps byte offsets to the UTF-16 offsets and line/column pairs that acorn reports.
 struct Positions {
-	utf16: Option<Vec<u32>>,
+	/// After each non-ASCII character: its end byte offset and the bytes-minus-code-units gap so far.
+	gaps: Vec<(u32, u32)>,
 	line_starts: Vec<u32>,
+	len: u32,
 }
 
 impl Positions {
 	fn new(source: &str) -> Self {
-		let utf16 = if source.is_ascii() {
-			None
-		} else {
-			let mut table = Vec::with_capacity(source.len() + 1);
-			let mut offset = 0;
-			for c in source.chars() {
-				for _ in 0..c.len_utf8() {
-					table.push(offset);
-				}
-				offset += c.len_utf16() as u32;
+		let mut gaps = Vec::new();
+		let mut gap = 0;
+		for (i, c) in source.char_indices() {
+			if !c.is_ascii() {
+				gap += c.len_utf8() as u32 - c.len_utf16() as u32;
+				gaps.push((i as u32 + c.len_utf8() as u32, gap));
 			}
-			table.push(offset);
-			Some(table)
-		};
+		}
 		let mut line_starts = vec![0];
 		let bytes = source.as_bytes();
 		let mut i = 0;
@@ -75,17 +71,22 @@ impl Positions {
 			}
 			i += 1;
 		}
-		Self { utf16, line_starts }
-	}
-
-	fn offset(&self, byte: u32) -> u32 {
-		match &self.utf16 {
-			Some(table) => table[byte as usize],
-			None => byte,
+		Self {
+			gaps,
+			line_starts,
+			len: source.len() as u32,
 		}
 	}
 
+	fn offset(&self, byte: u32) -> u32 {
+		let byte = byte.min(self.len);
+		let i = self.gaps.partition_point(|&(end, _)| end <= byte);
+		let gap = if i == 0 { 0 } else { self.gaps[i - 1].1 };
+		byte - gap
+	}
+
 	fn line_column(&self, byte: u32) -> (usize, u32) {
+		let byte = byte.min(self.len);
 		let line = self.line_starts.partition_point(|&s| s <= byte);
 		let start = self.line_starts[line - 1];
 		(line, self.offset(byte) - self.offset(start))
@@ -93,10 +94,6 @@ impl Positions {
 }
 
 impl Writer<'_> {
-	fn str(&self, id: StrId) -> &str {
-		self.ast.str(id)
-	}
-
 	fn begin(&mut self, ty: &str, id: NodeId) {
 		let node = self.ast.node(id);
 		self.out.push_str("{\"type\":\"");
@@ -108,13 +105,19 @@ impl Writer<'_> {
 	fn span(&mut self, start: u32, end: u32) {
 		let (sl, sc) = self.positions.line_column(start);
 		let (el, ec) = self.positions.line_column(end);
-		write!(
-			self.out,
-			",\"start\":{},\"end\":{},\"loc\":{{\"start\":{{\"line\":{sl},\"column\":{sc}}},\"end\":{{\"line\":{el},\"column\":{ec}}}}}",
-			self.positions.offset(start),
-			self.positions.offset(end)
-		)
-		.unwrap();
+		self.out.push_str(",\"start\":");
+		push_int(&mut self.out, self.positions.offset(start));
+		self.out.push_str(",\"end\":");
+		push_int(&mut self.out, self.positions.offset(end));
+		self.out.push_str(",\"loc\":{\"start\":{\"line\":");
+		push_int(&mut self.out, sl as u32);
+		self.out.push_str(",\"column\":");
+		push_int(&mut self.out, sc);
+		self.out.push_str("},\"end\":{\"line\":");
+		push_int(&mut self.out, el as u32);
+		self.out.push_str(",\"column\":");
+		push_int(&mut self.out, ec);
+		self.out.push_str("}}");
 	}
 
 	fn end(&mut self) {
@@ -165,10 +168,15 @@ impl Writer<'_> {
 		write_json_string(&mut self.out, value);
 	}
 
+	fn interned(&mut self, key: &str, id: StrId) {
+		self.key(key);
+		write_json_string(&mut self.out, self.ast.str(id));
+	}
+
 	fn raw(&mut self, id: NodeId) {
 		let node = self.ast.node(id);
-		let raw = &self.source[node.start as usize..node.end as usize];
-		self.string("raw", raw);
+		self.key("raw");
+		write_json_string(&mut self.out, &self.source[node.start as usize..node.end as usize]);
 	}
 
 	fn function(&mut self, f: Function, expression: bool) {
@@ -191,13 +199,11 @@ impl Writer<'_> {
 			}
 			Identifier { name } => {
 				self.begin("Identifier", id);
-				let name = self.str(name).to_owned();
-				self.string("name", &name);
+				self.interned("name", name);
 			}
 			PrivateIdentifier { name } => {
 				self.begin("PrivateIdentifier", id);
-				let name = self.str(name).to_owned();
-				self.string("name", &name);
+				self.interned("name", name);
 			}
 			NumberLiteral { value } => {
 				self.begin("Literal", id);
@@ -216,13 +222,12 @@ impl Writer<'_> {
 				self.raw(id);
 				let node = self.ast.node(id);
 				let raw = &self.source[node.start as usize..node.end as usize - 1];
-				let bigint = raw.replace('_', "");
+				let bigint = bigint_decimal(raw);
 				self.string("bigint", &bigint);
 			}
 			StringLiteral { value } => {
 				self.begin("Literal", id);
-				let value = self.str(value).to_owned();
-				self.string("value", &value);
+				self.interned("value", value);
 				self.raw(id);
 			}
 			BooleanLiteral { value } => {
@@ -243,11 +248,9 @@ impl Writer<'_> {
 				self.raw(id);
 				self.key("regex");
 				self.out.push_str("{\"pattern\":");
-				let pattern = self.str(pattern).to_owned();
-				let flags = self.str(flags).to_owned();
-				write_json_string(&mut self.out, &pattern);
+				write_json_string(&mut self.out, self.ast.str(pattern));
 				self.out.push_str(",\"flags\":");
-				write_json_string(&mut self.out, &flags);
+				write_json_string(&mut self.out, self.ast.str(flags));
 				self.out.push('}');
 			}
 			TemplateLiteral { quasis, expressions } => {
@@ -259,14 +262,10 @@ impl Writer<'_> {
 				self.begin("TemplateElement", id);
 				self.key("value");
 				self.out.push_str("{\"raw\":");
-				let raw = self.str(raw).to_owned();
-				write_json_string(&mut self.out, &raw);
+				write_json_string(&mut self.out, self.ast.str(raw));
 				self.out.push_str(",\"cooked\":");
 				match cooked {
-					Some(cooked) => {
-						let cooked = self.str(cooked).to_owned();
-						write_json_string(&mut self.out, &cooked);
-					}
+					Some(cooked) => write_json_string(&mut self.out, self.ast.str(cooked)),
 					None => self.out.push_str("null"),
 				}
 				self.out.push('}');
@@ -515,8 +514,7 @@ impl Writer<'_> {
 				self.begin("ExpressionStatement", id);
 				self.field("expression", expression);
 				if let Some(directive) = directive {
-					let directive = self.str(directive).to_owned();
-					self.string("directive", &directive);
+					self.interned("directive", directive);
 				}
 			}
 			BlockStatement { body } => {
@@ -698,6 +696,47 @@ impl Writer<'_> {
 		}
 		self.end();
 	}
+}
+
+fn push_int(out: &mut String, mut value: u32) {
+	let mut buf = [0u8; 10];
+	let mut i = buf.len();
+	loop {
+		i -= 1;
+		buf[i] = b'0' + (value % 10) as u8;
+		value /= 10;
+		if value == 0 {
+			break;
+		}
+	}
+	out.push_str(std::str::from_utf8(&buf[i..]).unwrap());
+}
+
+/// The decimal digits of a BigInt literal's text, without the `n`.
+fn bigint_decimal(raw: &str) -> String {
+	let (radix, digits) = match raw.get(..2) {
+		Some("0x" | "0X") => (16, &raw[2..]),
+		Some("0o" | "0O") => (8, &raw[2..]),
+		Some("0b" | "0B") => (2, &raw[2..]),
+		_ => return raw.replace('_', ""),
+	};
+	let mut limbs: Vec<u32> = vec![0];
+	for digit in digits.bytes().filter(|b| *b != b'_') {
+		let mut carry = (digit as char).to_digit(radix).unwrap() as u64;
+		for limb in limbs.iter_mut() {
+			let v = *limb as u64 * radix as u64 + carry;
+			*limb = (v % 1_000_000_000) as u32;
+			carry = v / 1_000_000_000;
+		}
+		if carry > 0 {
+			limbs.push(carry as u32);
+		}
+	}
+	let mut out = limbs.last().unwrap().to_string();
+	for limb in limbs.iter().rev().skip(1) {
+		out.push_str(&format!("{limb:09}"));
+	}
+	out
 }
 
 fn write_json_string(out: &mut String, s: &str) {

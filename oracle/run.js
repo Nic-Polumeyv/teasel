@@ -23,7 +23,7 @@ function* files(dir) {
 	}
 }
 
-const script_re = /<script(\s[^>]*)?>([\s\S]*?)<\/script>/g;
+const script_re = /<script((?:\s+(?:"[^"]*"|'[^']*'|[^>"'])*)?)>([\s\S]*?)<\/script>/g;
 
 const jobs = [];
 for (const path of files(corpus)) {
@@ -31,14 +31,18 @@ for (const path of files(corpus)) {
 	if (filter && !name.includes(filter)) continue;
 	const text = readFileSync(path, 'utf8');
 	if (path.endsWith('.js')) {
-		jobs.push({ name, source: text });
+		jobs.push({ name, source: text, mode: 'module' });
+		if (!/^\s*(import|export)\b/m.test(text)) jobs.push({ name: `${name} (script)`, source: text, mode: 'script' });
 	} else {
 		for (const match of text.matchAll(script_re)) {
 			if (/lang=["']?ts/.test(match[1] ?? '')) continue;
-			jobs.push({ name: `${name}#${match.index}`, source: match[2] });
+			jobs.push({ name: `${name}#${match.index}`, source: match[2], mode: 'module' });
 		}
 	}
-	if (jobs.length >= limit) break;
+	if (jobs.length >= limit) {
+		jobs.length = limit;
+		break;
+	}
 }
 
 function normalize(key, value) {
@@ -47,11 +51,12 @@ function normalize(key, value) {
 	return value;
 }
 
-function acorn_parse(source) {
+function acorn_parse(source, mode) {
 	try {
-		const ast = acorn.parse(source, { ecmaVersion: 16, sourceType: 'module', locations: true });
+		const ast = acorn.parse(source, { ecmaVersion: 16, sourceType: mode, locations: true });
 		return JSON.parse(JSON.stringify(ast, normalize));
 	} catch (e) {
+		if (!(e instanceof SyntaxError) || e.pos === undefined) return { error: { message: `acorn threw ${e.name}: ${e.message}`, pos: -1 } };
 		return { error: { message: e.message.replace(/ \(\d+:\d+\)$/, ''), pos: e.pos, loc: { line: e.loc.line, column: e.loc.column } } };
 	}
 }
@@ -72,7 +77,7 @@ const proc = Bun.spawn([binary, '--batch'], { stdin: 'pipe', stdout: 'pipe', std
 let input = '';
 for (const job of jobs) {
 	const bytes = Buffer.byteLength(job.source, 'utf8');
-	input += `module ${bytes}\n${job.source}`;
+	input += `${job.mode} ${bytes}\n${job.source}`;
 }
 proc.stdin.write(input);
 proc.stdin.end();
@@ -82,7 +87,7 @@ const lines = output.split('\n');
 const stats = { identical: 0, mismatch: 0, both_error: 0, error_differs: 0, only_acorn_error: 0, only_teasel_error: 0 };
 const details = [];
 for (const [i, job] of jobs.entries()) {
-	const expected = acorn_parse(job.source);
+	const expected = acorn_parse(job.source, job.mode);
 	let actual;
 	try {
 		actual = JSON.parse(lines[i]);
@@ -111,11 +116,11 @@ for (const [i, job] of jobs.entries()) {
 }
 
 const total = jobs.length;
-console.log(`${total} scripts from ${corpus}`);
+console.log(`${total} jobs from ${corpus} (acorn ${acorn.version})`);
 for (const [k, v] of Object.entries(stats)) console.log(`  ${k.padEnd(18)} ${v}`);
 const agree = stats.identical + stats.both_error;
 console.log(`  agreement          ${((100 * agree) / total).toFixed(2)}%`);
 const shown = verbose ? details : details.slice(0, 25);
 for (const line of shown) console.log(line);
 if (!verbose && details.length > shown.length) console.log(`... ${details.length - shown.length} more (--verbose)`);
-process.exit(agree === total ? 0 : 1);
+process.exit(total > 0 && agree === total ? 0 : 1);
