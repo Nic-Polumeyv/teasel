@@ -33,7 +33,7 @@ impl Context {
 
 impl Parser<'_> {
 	pub(crate) fn parse_program(&mut self) -> Result<NodeId> {
-		let start = self.tok.start;
+		let start = self.prev_end;
 		let module = self.options.module;
 		self.enter_scope(SCOPE_TOP | if module { SCOPE_ASYNC } else { 0 });
 		let mut body = Vec::new();

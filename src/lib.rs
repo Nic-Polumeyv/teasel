@@ -4,6 +4,7 @@
 
 pub mod ast;
 pub mod error;
+pub mod estree;
 pub mod interner;
 pub(crate) mod lexer;
 pub mod parser;
