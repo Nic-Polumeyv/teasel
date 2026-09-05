@@ -1,5 +1,5 @@
-use super::{Options, parse, parse_expression_at, parse_params_at, parse_pattern_at, parse_statement_at};
 use crate::ast::{Ast, NodeId, NodeKind};
+use crate::{Options, parse, parse_expression_at, parse_params_at, parse_pattern_at, parse_statement_at};
 
 /// Renders a node as its Debug form with ids, strings and lists expanded inline.
 fn dump(ast: &Ast, id: NodeId) -> String {

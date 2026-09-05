@@ -4,14 +4,26 @@ use crate::ast::{Ast, Function, List, MethodKind, NodeId, NodeKind, PropertyKind
 use crate::interner::StrId;
 use std::fmt::Write;
 
-pub fn to_json(ast: &Ast, root: NodeId, source: &str) -> String {
+/// How an extension's data serializes: its own nodes, and the keys it adds to JavaScript nodes.
+pub trait Emit: Sized {
+	fn node(&self, w: &mut Writer<Self>, id: NodeId, index: u32);
+	fn extras(&self, _w: &mut Writer<Self>, _id: NodeId) {}
+}
+
+impl Emit for () {
+	fn node(&self, _w: &mut Writer<Self>, _id: NodeId, _index: u32) {
+		unreachable!("the JavaScript parser adds no extension nodes")
+	}
+}
+
+pub fn to_json<X: Emit>(ast: &Ast<X>, root: NodeId, source: &str) -> String {
 	let mut w = Writer::new(ast, source);
 	w.node(root);
 	w.out
 }
 
 /// Serializes several nodes as a JSON array.
-pub fn list_to_json(ast: &Ast, roots: &[NodeId], source: &str) -> String {
+pub fn list_to_json<X: Emit>(ast: &Ast<X>, roots: &[NodeId], source: &str) -> String {
 	let mut w = Writer::new(ast, source);
 	w.out.push('[');
 	for (i, &root) in roots.iter().enumerate() {
@@ -39,8 +51,8 @@ pub fn error_to_json(error: &crate::SyntaxError, source: &str) -> String {
 	out
 }
 
-struct Writer<'a> {
-	ast: &'a Ast,
+pub struct Writer<'a, X = ()> {
+	ast: &'a Ast<X>,
 	source: &'a str,
 	out: String,
 	positions: Positions,
@@ -102,8 +114,8 @@ impl Positions {
 	}
 }
 
-impl<'a> Writer<'a> {
-	fn new(ast: &'a Ast, source: &'a str) -> Self {
+impl<'a, X: Emit> Writer<'a, X> {
+	fn new(ast: &'a Ast<X>, source: &'a str) -> Self {
 		Self {
 			ast,
 			source,
@@ -112,15 +124,16 @@ impl<'a> Writer<'a> {
 		}
 	}
 
-	fn begin(&mut self, ty: &str, id: NodeId) {
+	pub(crate) fn begin(&mut self, ty: &str, id: NodeId) {
 		let node = self.ast.node(id);
 		self.out.push_str("{\"type\":\"");
 		self.out.push_str(ty);
 		self.out.push('"');
 		self.span(node.start, node.end);
+		self.ast.extension.extras(self, id);
 	}
 
-	fn span(&mut self, start: u32, end: u32) {
+	pub(crate) fn span(&mut self, start: u32, end: u32) {
 		let (sl, sc) = self.positions.line_column(start);
 		let (el, ec) = self.positions.line_column(end);
 		self.out.push_str(",\"start\":");
@@ -138,22 +151,22 @@ impl<'a> Writer<'a> {
 		self.out.push_str("}}");
 	}
 
-	fn end(&mut self) {
+	pub(crate) fn end(&mut self) {
 		self.out.push('}');
 	}
 
-	fn key(&mut self, key: &str) {
+	pub(crate) fn key(&mut self, key: &str) {
 		self.out.push_str(",\"");
 		self.out.push_str(key);
 		self.out.push_str("\":");
 	}
 
-	fn field(&mut self, key: &str, id: NodeId) {
+	pub(crate) fn field(&mut self, key: &str, id: NodeId) {
 		self.key(key);
 		self.node(id);
 	}
 
-	fn opt(&mut self, key: &str, id: Option<NodeId>) {
+	pub(crate) fn opt(&mut self, key: &str, id: Option<NodeId>) {
 		self.key(key);
 		match id {
 			Some(id) => self.node(id),
@@ -161,7 +174,7 @@ impl<'a> Writer<'a> {
 		}
 	}
 
-	fn list(&mut self, key: &str, list: List) {
+	pub(crate) fn list(&mut self, key: &str, list: List) {
 		self.key(key);
 		self.out.push('[');
 		for (i, item) in self.ast.list(list).iter().enumerate() {
@@ -176,22 +189,22 @@ impl<'a> Writer<'a> {
 		self.out.push(']');
 	}
 
-	fn bool(&mut self, key: &str, value: bool) {
+	pub(crate) fn bool(&mut self, key: &str, value: bool) {
 		self.key(key);
 		self.out.push_str(if value { "true" } else { "false" });
 	}
 
-	fn string(&mut self, key: &str, value: &str) {
+	pub(crate) fn string(&mut self, key: &str, value: &str) {
 		self.key(key);
 		write_json_string(&mut self.out, value);
 	}
 
-	fn interned(&mut self, key: &str, id: StrId) {
+	pub(crate) fn interned(&mut self, key: &str, id: StrId) {
 		self.key(key);
 		write_json_string(&mut self.out, self.ast.str(id));
 	}
 
-	fn raw(&mut self, id: NodeId) {
+	pub(crate) fn raw(&mut self, id: NodeId) {
 		let node = self.ast.node(id);
 		self.key("raw");
 		write_json_string(&mut self.out, &self.source[node.start as usize..node.end as usize]);
@@ -710,6 +723,9 @@ impl<'a> Writer<'a> {
 				self.opt("exported", exported);
 				self.field("source", source);
 				self.list("attributes", attributes);
+			}
+			Extension(index) => {
+				self.ast.extension.node(self, id, index);
 			}
 		}
 		self.end();

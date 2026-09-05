@@ -1,12 +1,12 @@
 use super::expression::ForInit;
-use super::{DestructuringErrors, Parser, Result};
+use super::{DestructuringErrors, Extension, Parser, Result, Unwrap};
 use crate::ast::{AssignmentOperator, NodeId, NodeKind, PropertyKind};
 use crate::interner::StrId;
 use crate::lexer::token::TokenKind;
 
 pub(crate) use super::scope::Binding;
 
-impl Parser<'_> {
+impl<E: Extension> Parser<'_, E> {
 	/// Reinterprets an expression as an assignment or binding pattern, in place.
 	pub(crate) fn make_pattern(
 		&mut self,
@@ -44,20 +44,26 @@ impl Parser<'_> {
 				if kind != PropertyKind::Init {
 					return self.error(self.start_of(key), "Object pattern can't contain getter or setter");
 				}
-				self.make_pattern(value, is_binding, &mut None)?;
+				let pattern = self.make_pattern(value, is_binding, &mut None)?;
+				if pattern != value
+					&& let NodeKind::Property { value, .. } = &mut self.ast.node_mut(id).kind
+				{
+					*value = pattern;
+				}
 			}
 			NodeKind::ArrayExpression { elements } => {
 				self.ast.node_mut(id).kind = NodeKind::ArrayPattern { elements };
 				self.check_pattern_errors(errors, true)?;
 				for i in 0..elements.len {
 					if let Some(element) = self.ast.lists[(elements.start + i) as usize] {
-						self.make_pattern(element, is_binding, &mut None)?;
+						let pattern = self.make_pattern(element, is_binding, &mut None)?;
+						self.ast.lists[(elements.start + i) as usize] = Some(pattern);
 					}
 				}
 			}
 			NodeKind::SpreadElement { argument } => {
+				let argument = self.make_pattern(argument, is_binding, &mut None)?;
 				self.ast.node_mut(id).kind = NodeKind::RestElement { argument };
-				self.make_pattern(argument, is_binding, &mut None)?;
 				if matches!(self.kind(argument), NodeKind::AssignmentPattern { .. }) {
 					return self.error(self.start_of(argument), "Rest elements cannot have a default value");
 				}
@@ -69,8 +75,8 @@ impl Parser<'_> {
 						"Only '=' operator can be used for specifying default value.",
 					);
 				}
+				let left = self.make_pattern(left, is_binding, &mut None)?;
 				self.ast.node_mut(id).kind = NodeKind::AssignmentPattern { left, right };
-				self.make_pattern(left, is_binding, &mut None)?;
 			}
 			NodeKind::ParenthesizedExpression { expression } => {
 				self.make_pattern(expression, is_binding, errors)?;
@@ -79,6 +85,12 @@ impl Parser<'_> {
 				return self.error(start, "Optional chaining cannot appear in left-hand side");
 			}
 			NodeKind::MemberExpression { .. } if !is_binding => {}
+			NodeKind::Extension(_) => {
+				return match E::make_pattern(self, id, is_binding, errors)? {
+					Some(pattern) => Ok(pattern),
+					None => self.error(start, "Assigning to rvalue"),
+				};
+			}
 			_ => return self.error(start, "Assigning to rvalue"),
 		}
 		Ok(id)
@@ -86,11 +98,11 @@ impl Parser<'_> {
 
 	pub(crate) fn make_patterns(
 		&mut self,
-		items: Vec<Option<NodeId>>,
+		mut items: Vec<Option<NodeId>>,
 		is_binding: bool,
 	) -> Result<Vec<Option<NodeId>>> {
-		for item in items.iter().flatten() {
-			self.make_pattern(*item, is_binding, &mut None)?;
+		for item in items.iter_mut().flatten() {
+			*item = self.make_pattern(*item, is_binding, &mut None)?;
 		}
 		Ok(items)
 	}
@@ -103,11 +115,14 @@ impl Parser<'_> {
 	}
 
 	fn parse_binding_atom_inner(&mut self) -> Result<NodeId> {
+		if let Some(atom) = E::binding_atom(self)? {
+			return Ok(atom);
+		}
 		match self.tok.kind {
 			TokenKind::BracketL => {
 				let start = self.tok.start;
 				self.next()?;
-				let elements = self.parse_binding_list(TokenKind::BracketR, true, true)?;
+				let elements = self.parse_binding_list(TokenKind::BracketR, true, true, false)?;
 				let elements = self.list(&elements);
 				Ok(self.add(NodeKind::ArrayPattern { elements }, start))
 			}
@@ -121,6 +136,7 @@ impl Parser<'_> {
 		close: TokenKind,
 		allow_empty: bool,
 		allow_trailing_comma: bool,
+		allow_modifiers: bool,
 	) -> Result<Vec<Option<NodeId>>> {
 		let mut elements = Vec::new();
 		let mut first = true;
@@ -136,6 +152,7 @@ impl Parser<'_> {
 				break;
 			} else if self.is(TokenKind::Ellipsis) {
 				let rest = self.parse_rest_binding()?;
+				E::binding_annotation(self, rest)?;
 				elements.push(Some(rest));
 				if self.is(TokenKind::Comma) {
 					return self.error(self.tok.start, "Comma is not permitted after the rest element");
@@ -144,7 +161,11 @@ impl Parser<'_> {
 				break;
 			} else {
 				let start = self.tok.start;
-				elements.push(Some(self.parse_maybe_default(start, None)?));
+				E::binding_item_start(self, allow_modifiers)?;
+				let left = self.parse_maybe_default(start, None)?;
+				E::binding_annotation(self, left)?;
+				let item = self.parse_maybe_default(start, Some(left))?;
+				elements.push(Some(E::binding_item_end(self, item)?));
 			}
 		}
 		Ok(elements)
@@ -213,6 +234,9 @@ impl Parser<'_> {
 				}
 				self.check_lval_simple(expression, binding, clashes)
 			}
+			NodeKind::Extension(_) if let Some(inner) = E::unwrap(self, id, Unwrap::Simple) => {
+				self.check_lval_simple(inner, binding, clashes)
+			}
 			_ => self.error(
 				start,
 				if is_bind {
@@ -260,6 +284,9 @@ impl Parser<'_> {
 			NodeKind::Property { value, .. } => self.check_lval_inner_pattern(value, binding, clashes),
 			NodeKind::AssignmentPattern { left, .. } => self.check_lval_pattern(left, binding, clashes),
 			NodeKind::RestElement { argument } => self.check_lval_pattern(argument, binding, clashes),
+			NodeKind::Extension(_) if let Some(inner) = E::unwrap(self, id, Unwrap::InnerPattern) => {
+				self.check_lval_inner_pattern(inner, binding, clashes)
+			}
 			_ => self.check_lval_pattern(id, binding, clashes),
 		}
 	}

@@ -2,7 +2,7 @@ use super::class::ClassKind;
 use super::expression::ForInit;
 use super::pattern::Binding;
 use super::scope::{SCOPE_SIMPLE_CATCH, SCOPE_TOP, function_flags};
-use super::{DestructuringErrors, Label, LabelKind, Parser, Result};
+use super::{DestructuringErrors, Extension, FunctionKind, Label, LabelKind, Parser, Result};
 use crate::ast::{Function, NodeId, NodeKind, VariableKind};
 use crate::interner::StrId;
 use crate::lexer::token::{Keyword, TokenKind};
@@ -33,7 +33,7 @@ impl Context {
 	}
 }
 
-impl Parser<'_> {
+impl<E: Extension> Parser<'_, E> {
 	pub(crate) fn parse_program(&mut self) -> Result<NodeId> {
 		let start = self.prev_end;
 		let module = self.options.module;
@@ -101,6 +101,9 @@ impl Parser<'_> {
 		exports: Option<&mut HashSet<StrId>>,
 	) -> Result<NodeId> {
 		let start = self.tok.start;
+		if let Some(statement) = E::statement(self, context, top_level)? {
+			return Ok(statement);
+		}
 		if self.is_let(context) {
 			if context != Context::None {
 				return self.unexpected();
@@ -485,27 +488,43 @@ impl Parser<'_> {
 		if !is_statement && matches!(self.tok.kind, TokenKind::Ident(_)) {
 			id = Some(self.parse_ident(false)?);
 		}
+		let kind = if is_statement {
+			FunctionKind::Declaration
+		} else {
+			FunctionKind::Expression
+		};
+		E::function_start(self, kind)?;
 		self.expect(TokenKind::ParenL)?;
-		let params = self.parse_binding_list(TokenKind::ParenR, false, true)?;
+		let params = self.parse_binding_list(TokenKind::ParenR, false, true, false)?;
 		self.check_yield_await_in_default_params()?;
 		let params = self.list(&params);
-		let (body, _) = self.parse_function_body(start, id, params, false, false, for_init)?;
+		let node = match E::function_body(self, start, id, params, is_async, generator, kind)? {
+			Some(node) => {
+				self.exit_scope();
+				node
+			}
+			None => {
+				let (body, _) = self.parse_function_body(start, id, params, false, false, for_init)?;
+				let function = Function {
+					id,
+					params,
+					body,
+					is_async,
+					generator,
+				};
+				let kind = if is_statement {
+					NodeKind::FunctionDeclaration { function }
+				} else {
+					NodeKind::FunctionExpression { function }
+				};
+				self.add(kind, start)
+			}
+		};
 		self.yield_pos = old_yield;
 		self.await_pos = old_await;
 		self.await_ident_pos = old_await_ident;
-		let function = Function {
-			id,
-			params,
-			body,
-			is_async,
-			generator,
-		};
-		let kind = if is_statement {
-			NodeKind::FunctionDeclaration { function }
-		} else {
-			NodeKind::FunctionExpression { function }
-		};
-		Ok(self.add(kind, start))
+		E::function_end(self, node);
+		Ok(node)
 	}
 
 	fn parse_if(&mut self, start: u32) -> Result<NodeId> {
@@ -617,6 +636,7 @@ impl Parser<'_> {
 					if simple { Binding::SimpleCatch } else { Binding::Lexical },
 					&mut None,
 				)?;
+				E::catch_param(self, param)?;
 				self.expect(TokenKind::ParenR)?;
 				Some(param)
 			} else {
@@ -704,6 +724,11 @@ impl Parser<'_> {
 	}
 
 	fn parse_expression_statement(&mut self, start: u32, expression: NodeId) -> Result<NodeId> {
+		if matches!(self.kind(expression), NodeKind::Identifier { .. })
+			&& let Some(statement) = E::expression_statement(self, start, expression)?
+		{
+			return Ok(statement);
+		}
 		self.semicolon()?;
 		Ok(self.add(
 			NodeKind::ExpressionStatement {
@@ -753,14 +778,16 @@ impl Parser<'_> {
 				Binding::Lexical
 			};
 			self.check_lval_pattern(id, binding, &mut None)?;
+			E::var_id(self, id)?;
 			let init = if self.eat(TokenKind::Eq)? {
 				Some(self.parse_maybe_assign(if is_for { ForInit::Yes } else { ForInit::No }, &mut None)?)
 			} else {
 				let in_or_of = self.is_keyword(Keyword::In) || self.is_contextual("of");
-				if kind == VariableKind::Const && !in_or_of {
+				let missing_allowed = E::allows_missing_initializer(self);
+				if kind == VariableKind::Const && !in_or_of && !missing_allowed {
 					return self.unexpected();
 				}
-				if !matches!(self.kind(id), NodeKind::Identifier { .. }) && !(is_for && in_or_of) {
+				if !matches!(self.kind(id), NodeKind::Identifier { .. }) && !(is_for && in_or_of) && !missing_allowed {
 					return self.error(
 						self.prev_end,
 						"Complex binding patterns require an initialization value",
@@ -768,7 +795,9 @@ impl Parser<'_> {
 				}
 				None
 			};
-			declarations.push(self.add(NodeKind::VariableDeclarator { id, init }, decl_start));
+			let declarator = self.add(NodeKind::VariableDeclarator { id, init }, decl_start);
+			E::var_declarator(self, declarator);
+			declarations.push(declarator);
 			if !self.eat(TokenKind::Comma)? {
 				break;
 			}
@@ -781,6 +810,9 @@ impl Parser<'_> {
 
 	fn parse_import(&mut self, start: u32) -> Result<NodeId> {
 		self.next()?;
+		if let Some(node) = E::import_head(self, start)? {
+			return Ok(node);
+		}
 		let specifiers;
 		let source;
 		if matches!(self.tok.kind, TokenKind::String(_)) {
@@ -797,14 +829,16 @@ impl Parser<'_> {
 		let attributes = self.parse_with_clause()?;
 		self.semicolon()?;
 		let specifiers = self.list_of(&specifiers);
-		Ok(self.add(
+		let node = self.add(
 			NodeKind::ImportDeclaration {
 				specifiers,
 				source,
 				attributes,
 			},
 			start,
-		))
+		);
+		E::import_end(self, node);
+		Ok(node)
 	}
 
 	fn parse_import_specifiers(&mut self) -> Result<Vec<NodeId>> {
@@ -837,6 +871,10 @@ impl Parser<'_> {
 				}
 			} else {
 				first = false;
+			}
+			if let Some(node) = E::import_specifier(self)? {
+				nodes.push(node);
+				continue;
 			}
 			let start = self.tok.start;
 			let imported = self.parse_module_export_name()?;
@@ -906,6 +944,9 @@ impl Parser<'_> {
 
 	fn parse_export(&mut self, start: u32, exports: &mut HashSet<StrId>) -> Result<NodeId> {
 		self.next()?;
+		if let Some(node) = E::export_head(self, start)? {
+			return Ok(node);
+		}
 		if self.eat(TokenKind::Star)? {
 			let exported = if self.eat_contextual("as")? {
 				let exported = self.parse_module_export_name()?;
@@ -921,14 +962,16 @@ impl Parser<'_> {
 			let source = self.parse_expr_atom(&mut None, ForInit::No, false)?;
 			let attributes = self.parse_with_clause()?;
 			self.semicolon()?;
-			return Ok(self.add(
+			let node = self.add(
 				NodeKind::ExportAllDeclaration {
 					exported,
 					source,
 					attributes,
 				},
 				start,
-			));
+			);
+			E::export_end(self, node);
+			return Ok(node);
 		}
 		if self.is_keyword(Keyword::Default) {
 			let default_start = self.tok.start;
@@ -936,10 +979,15 @@ impl Parser<'_> {
 			let name = self.intern("default");
 			self.check_export_name(exports, name, default_start)?;
 			let declaration = self.parse_export_default_declaration()?;
-			return Ok(self.add(NodeKind::ExportDefaultDeclaration { declaration }, start));
+			let node = self.add(NodeKind::ExportDefaultDeclaration { declaration }, start);
+			E::export_end(self, node);
+			return Ok(node);
 		}
 		if self.should_parse_export_statement() {
-			let declaration = self.parse_statement(Context::None, false, None)?;
+			let declaration = match E::export_declaration(self)? {
+				Some(declaration) => declaration,
+				None => self.parse_statement(Context::None, false, None)?,
+			};
 			match self.kind(declaration) {
 				NodeKind::VariableDeclaration { declarations, .. } => {
 					for i in 0..declarations.len {
@@ -962,7 +1010,7 @@ impl Parser<'_> {
 			}
 			let specifiers = self.list_of(&[]);
 			let attributes = self.list_of(&[]);
-			return Ok(self.add(
+			let node = self.add(
 				NodeKind::ExportNamedDeclaration {
 					declaration: Some(declaration),
 					specifiers,
@@ -970,7 +1018,9 @@ impl Parser<'_> {
 					attributes,
 				},
 				start,
-			));
+			);
+			E::export_end(self, node);
+			return Ok(node);
 		}
 		let specifiers = self.parse_export_specifiers(exports)?;
 		let source;
@@ -1002,7 +1052,7 @@ impl Parser<'_> {
 		}
 		self.semicolon()?;
 		let specifiers = self.list_of(&specifiers);
-		Ok(self.add(
+		let node = self.add(
 			NodeKind::ExportNamedDeclaration {
 				declaration: None,
 				specifiers,
@@ -1010,10 +1060,15 @@ impl Parser<'_> {
 				attributes,
 			},
 			start,
-		))
+		);
+		E::export_end(self, node);
+		Ok(node)
 	}
 
 	fn parse_export_default_declaration(&mut self) -> Result<NodeId> {
+		if let Some(declaration) = E::export_default(self)? {
+			return Ok(declaration);
+		}
 		let start = self.tok.start;
 		let is_async = self.is_async_function();
 		if self.is_keyword(Keyword::Function) || is_async {
@@ -1031,13 +1086,14 @@ impl Parser<'_> {
 		Ok(declaration)
 	}
 
-	fn should_parse_export_statement(&self) -> bool {
+	fn should_parse_export_statement(&mut self) -> bool {
 		self.is_keyword(Keyword::Var)
 			|| self.is_keyword(Keyword::Const)
 			|| self.is_keyword(Keyword::Class)
 			|| self.is_keyword(Keyword::Function)
 			|| self.is_let(Context::None)
 			|| self.is_async_function()
+			|| E::starts_export_declaration(self)
 	}
 
 	fn parse_export_specifiers(&mut self, exports: &mut HashSet<StrId>) -> Result<Vec<NodeId>> {
@@ -1052,6 +1108,10 @@ impl Parser<'_> {
 				}
 			} else {
 				first = false;
+			}
+			if let Some(node) = E::export_specifier(self)? {
+				nodes.push(node);
+				continue;
 			}
 			let start = self.tok.start;
 			let local = self.parse_module_export_name()?;
@@ -1075,7 +1135,7 @@ impl Parser<'_> {
 	}
 
 	fn check_export_name(&self, exports: &mut HashSet<StrId>, name: StrId, pos: u32) -> Result<()> {
-		if !exports.insert(name) {
+		if !exports.insert(name) && E::DUPLICATE_EXPORT_ERRORS {
 			return self.error(pos, format!("Duplicate export '{}'", self.str(name)));
 		}
 		Ok(())

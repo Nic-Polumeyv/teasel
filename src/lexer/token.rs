@@ -44,6 +44,7 @@ pub(crate) enum TokenKind {
 	Colon,
 	Arrow,
 	Backquote,
+	At,
 
 	Eq,
 	PlusEq,
