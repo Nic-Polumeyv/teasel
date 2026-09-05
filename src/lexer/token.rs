@@ -1,31 +1,24 @@
 use crate::interner::StrId;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Token {
-	pub kind: TokenKind,
-	pub start: u32,
-	pub end: u32,
-	pub newline_before: bool,
+pub(crate) struct Token {
+	pub(crate) kind: TokenKind,
+	pub(crate) start: u32,
+	pub(crate) end: u32,
+	pub(crate) newline_before: bool,
+	/// An identifier or keyword written with a unicode escape.
+	pub(crate) escaped: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum TokenKind {
+pub(crate) enum TokenKind {
 	Eof,
-	Ident {
-		name: StrId,
-		escaped: bool,
-	},
+	Ident(StrId),
 	PrivateName(StrId),
 	Keyword(Keyword),
-	Number {
-		value: f64,
-		legacy_octal: bool,
-	},
+	Number(f64),
 	BigInt,
-	String {
-		value: StrId,
-		octal: bool,
-	},
+	String(StrId),
 	Template {
 		cooked: Option<StrId>,
 		raw: StrId,
@@ -51,7 +44,6 @@ pub enum TokenKind {
 	Colon,
 	Arrow,
 	Backquote,
-	At,
 
 	Eq,
 	PlusEq,
@@ -100,7 +92,7 @@ pub enum TokenKind {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Keyword {
+pub(crate) enum Keyword {
 	Break,
 	Case,
 	Catch,
@@ -139,8 +131,16 @@ pub enum Keyword {
 }
 
 impl Keyword {
-	pub fn from_word(word: &str) -> Option<Keyword> {
+	pub(crate) fn from_word(word: &str) -> Option<Keyword> {
 		use Keyword::*;
+		let bytes = word.as_bytes();
+		if !(2..=10).contains(&bytes.len())
+			|| !matches!(
+				bytes[0],
+				b'b' | b'c' | b'd' | b'e' | b'f' | b'i' | b'n' | b'r' | b's' | b't' | b'v' | b'w'
+			) {
+			return None;
+		}
 		Some(match word {
 			"break" => Break,
 			"case" => Case,
@@ -181,7 +181,7 @@ impl Keyword {
 		})
 	}
 
-	pub fn as_str(self) -> &'static str {
+	pub(crate) fn as_str(self) -> &'static str {
 		use Keyword::*;
 		match self {
 			Break => "break",
@@ -221,11 +221,4 @@ impl Keyword {
 			With => "with",
 		}
 	}
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Comment {
-	pub block: bool,
-	pub start: u32,
-	pub end: u32,
 }

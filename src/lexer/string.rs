@@ -6,7 +6,7 @@ impl Lexer<'_> {
 		let start = self.pos;
 		self.pos += 1;
 		self.buf.clear();
-		let mut octal = false;
+		let mut pending = None;
 		let mut chunk_start = self.pos;
 		loop {
 			let Some(c) = self.char() else {
@@ -14,19 +14,32 @@ impl Lexer<'_> {
 			};
 			match c {
 				_ if c as u32 == quote as u32 => {
-					self.buf.push_str(&self.src[chunk_start..self.pos]);
+					self.push_chunk(chunk_start, &mut pending);
+					self.flush(&mut pending);
 					self.pos += 1;
 					let value = self.strings.intern(&self.buf);
-					return Ok(TokenKind::String { value, octal });
+					return Ok(TokenKind::String(value));
 				}
 				'\\' => {
-					self.buf.push_str(&self.src[chunk_start..self.pos]);
+					self.push_chunk(chunk_start, &mut pending);
 					self.pos += 1;
 					match self.read_escape()? {
-						Escape::Char(c) => self.buf.push(c),
-						Escape::Octal(c) => {
+						Escape::Char(c) => {
+							self.flush(&mut pending);
 							self.buf.push(c);
-							octal = true;
+						}
+						Escape::Code(code) => self.push_code(code, &mut pending),
+						Escape::Octal(c, pos, is_89) => {
+							if self.strict {
+								let message = if is_89 {
+									"Invalid escape sequence"
+								} else {
+									"Octal literal in strict mode"
+								};
+								return self.error(pos, message);
+							}
+							self.flush(&mut pending);
+							self.buf.push(c);
 						}
 						Escape::Nothing => {}
 						Escape::Invalid(pos, message) => return self.error(pos, message),
@@ -40,10 +53,12 @@ impl Lexer<'_> {
 	}
 
 	/// Reads a template chunk, leaving the position after the closing backquote or `${`.
-	pub fn read_template(&mut self) -> Result<Token> {
+	pub(crate) fn read_template(&mut self) -> Result<Token> {
 		let start = self.pos;
 		self.buf.clear();
 		let mut valid = true;
+		let mut plain = true;
+		let mut pending = None;
 		let mut chunk_start = self.pos;
 		loop {
 			let Some(c) = self.char() else {
@@ -51,33 +66,53 @@ impl Lexer<'_> {
 			};
 			match c {
 				'`' | '$' if c == '`' || self.byte_at(1) == Some(b'{') => {
-					self.buf.push_str(&self.src[chunk_start..self.pos]);
+					self.push_chunk(chunk_start, &mut pending);
+					self.flush(&mut pending);
 					let end = self.pos;
 					let tail = c == '`';
 					self.pos += if tail { 1 } else { 2 };
-					let cooked = valid.then(|| self.strings.intern(&self.buf));
-					let raw = self.src[start..end].replace("\r\n", "\n").replace('\r', "\n");
-					let raw = self.strings.intern(&raw);
+					let raw_text = &self.src[start..end];
+					let raw = if raw_text.contains('\r') {
+						let normalized = raw_text.replace("\r\n", "\n").replace('\r', "\n");
+						self.strings.intern(&normalized)
+					} else {
+						self.strings.intern(raw_text)
+					};
+					let cooked = if !valid {
+						None
+					} else if plain {
+						Some(raw)
+					} else {
+						Some(self.strings.intern(&self.buf))
+					};
 					let kind = TokenKind::Template { cooked, raw, tail };
 					return Ok(Token {
 						kind,
 						start: start as u32,
 						end: end as u32,
 						newline_before: false,
+						escaped: false,
 					});
 				}
 				'\\' => {
-					self.buf.push_str(&self.src[chunk_start..self.pos]);
+					plain = false;
+					self.push_chunk(chunk_start, &mut pending);
 					self.pos += 1;
 					match self.read_escape()? {
-						Escape::Char(c) => self.buf.push(c),
+						Escape::Char(c) => {
+							self.flush(&mut pending);
+							self.buf.push(c);
+						}
+						Escape::Code(code) => self.push_code(code, &mut pending),
 						Escape::Nothing => {}
-						Escape::Octal(_) | Escape::Invalid(..) => valid = false,
+						Escape::Octal(..) | Escape::Invalid(..) => valid = false,
 					}
 					chunk_start = self.pos;
 				}
 				'\r' => {
-					self.buf.push_str(&self.src[chunk_start..self.pos]);
+					plain = false;
+					self.push_chunk(chunk_start, &mut pending);
+					self.flush(&mut pending);
 					self.buf.push('\n');
 					self.pos += 1;
 					if self.byte() == Some(b'\n') {
@@ -90,11 +125,41 @@ impl Lexer<'_> {
 		}
 	}
 
+	fn push_chunk(&mut self, chunk_start: usize, pending: &mut Option<u32>) {
+		if chunk_start < self.pos {
+			self.flush(pending);
+			self.buf.push_str(&self.src[chunk_start..self.pos]);
+		}
+	}
+
+	/// Appends a code unit from an escape, pairing surrogates across escapes as JavaScript strings do.
+	fn push_code(&mut self, code: u32, pending: &mut Option<u32>) {
+		if let Some(high) = pending.take() {
+			if (0xdc00..0xe000).contains(&code) {
+				self.buf
+					.push(char::from_u32(0x10000 + ((high - 0xd800) << 10) + (code - 0xdc00)).unwrap());
+				return;
+			}
+			self.buf.push('\u{fffd}');
+		}
+		if (0xd800..0xdc00).contains(&code) {
+			*pending = Some(code);
+		} else {
+			self.buf.push(char::from_u32(code).unwrap_or('\u{fffd}'));
+		}
+	}
+
+	fn flush(&mut self, pending: &mut Option<u32>) {
+		if pending.take().is_some() {
+			self.buf.push('\u{fffd}');
+		}
+	}
+
 	fn read_escape(&mut self) -> Result<Escape> {
+		let backslash = self.pos - 1;
 		let Some(c) = self.char() else {
-			return self.error(self.pos, "Bad escape sequence");
+			return Ok(Escape::Char('\0'));
 		};
-		let esc_pos = self.pos - 1;
 		self.pos += c.len_utf8();
 		Ok(Escape::Char(match c {
 			'n' => '\n',
@@ -103,14 +168,19 @@ impl Lexer<'_> {
 			'b' => '\u{8}',
 			'v' => '\u{b}',
 			'f' => '\u{c}',
-			'x' => match self.read_hex(2) {
-				Some(v) => char::from_u32(v).unwrap(),
-				None => return Ok(Escape::Invalid(esc_pos, "Bad character escape sequence")),
-			},
-			'u' => match self.read_code_point() {
-				Ok(c) => c,
-				Err(e) => return Ok(Escape::Invalid(e.pos as usize, "Bad character escape sequence")),
-			},
+			'x' => {
+				let digits = self.pos;
+				return Ok(match self.read_hex(2) {
+					Some(v) => Escape::Code(v),
+					None => Escape::Invalid(digits, "Bad character escape sequence".into()),
+				});
+			}
+			'u' => {
+				return Ok(match self.read_code_point() {
+					Ok(code) => Escape::Code(code),
+					Err(e) => Escape::Invalid(e.pos as usize, e.message),
+				});
+			}
 			'\r' => {
 				if self.byte() == Some(b'\n') {
 					self.pos += 1;
@@ -118,7 +188,7 @@ impl Lexer<'_> {
 				return Ok(Escape::Nothing);
 			}
 			'\n' | '\u{2028}' | '\u{2029}' => return Ok(Escape::Nothing),
-			'8' | '9' => return Ok(Escape::Octal(c)),
+			'8' | '9' => return Ok(Escape::Octal(c, self.pos - 1, true)),
 			'0'..='7' => {
 				let mut value = c.to_digit(8).unwrap();
 				let mut digits = 1;
@@ -135,7 +205,7 @@ impl Lexer<'_> {
 				let next_is_89 = matches!(self.byte(), Some(b'8' | b'9'));
 				let c = char::from_u32(value).unwrap();
 				if c != '\0' || digits > 1 || next_is_89 {
-					return Ok(Escape::Octal(c));
+					return Ok(Escape::Octal(c, backslash, false));
 				}
 				c
 			}
@@ -144,64 +214,46 @@ impl Lexer<'_> {
 	}
 
 	pub(super) fn read_hex(&mut self, len: usize) -> Option<u32> {
-		let start = self.pos;
 		let mut value = 0;
 		for _ in 0..len {
 			let digit = (self.byte()? as char).to_digit(16)?;
 			value = value * 16 + digit;
 			self.pos += 1;
 		}
-		(self.pos - start == len).then_some(value)
+		Some(value)
 	}
 
-	pub(super) fn read_code_point(&mut self) -> Result<char> {
-		let start = self.pos;
-		let value = if self.byte() == Some(b'{') {
+	/// Reads the hex digits of a `\u` escape, returning a code point that may be a lone surrogate.
+	pub(super) fn read_code_point(&mut self) -> Result<u32> {
+		if self.byte() == Some(b'{') {
 			self.pos += 1;
+			let digits = self.pos;
 			let mut value: u32 = 0;
-			let digits_start = self.pos;
 			while let Some(d) = self.byte().and_then(|b| (b as char).to_digit(16)) {
 				value = value.saturating_mul(16).saturating_add(d);
 				self.pos += 1;
 			}
-			if self.pos == digits_start || self.byte() != Some(b'}') {
-				return self.error(start, "Bad character escape sequence");
+			if self.pos == digits || self.byte() != Some(b'}') {
+				return self.error(digits, "Bad character escape sequence");
 			}
 			self.pos += 1;
 			if value > 0x10ffff {
-				return self.error(start, "Code point out of bounds");
+				return self.error(digits, "Code point out of bounds");
 			}
-			value
-		} else {
-			let Some(v) = self.read_hex(4) else {
-				return self.error(start, "Bad character escape sequence");
-			};
-			v
-		};
-		Ok(self
-			.surrogate_pair(value)
-			.unwrap_or_else(|| char::from_u32(value).unwrap_or('\u{fffd}')))
-	}
-
-	fn surrogate_pair(&mut self, high: u32) -> Option<char> {
-		if !(0xd800..0xdc00).contains(&high) || !self.src[self.pos..].starts_with("\\u") {
-			return None;
+			return Ok(value);
 		}
-		let save = self.pos;
-		self.pos += 2;
-		if let Some(low) = self.read_hex(4)
-			&& (0xdc00..0xe000).contains(&low)
-		{
-			return char::from_u32(0x10000 + ((high - 0xd800) << 10) + (low - 0xdc00));
+		let digits = self.pos;
+		match self.read_hex(4) {
+			Some(v) => Ok(v),
+			None => self.error(digits, "Bad character escape sequence"),
 		}
-		self.pos = save;
-		None
 	}
 }
 
 enum Escape {
 	Char(char),
-	Octal(char),
+	Code(u32),
+	Octal(char, usize, bool),
 	Nothing,
-	Invalid(usize, &'static str),
+	Invalid(usize, String),
 }

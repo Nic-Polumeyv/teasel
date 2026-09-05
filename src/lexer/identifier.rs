@@ -5,20 +5,19 @@ use super::{Lexer, Result};
 impl Lexer<'_> {
 	pub(super) fn read_word(&mut self) -> Result<TokenKind> {
 		let start = self.pos;
-		let mut escaped = false;
 		let mut first = true;
 		self.buf.clear();
 		while let Some(c) = self.char() {
 			if c == '\\' {
-				if !escaped {
-					escaped = true;
+				if !self.escaped {
+					self.escaped = true;
 					self.buf.push_str(&self.src[start..self.pos]);
 				}
 				let c = self.read_word_escape(first)?;
 				self.buf.push(c);
 			} else if is_word_char(c, first) {
 				self.pos += c.len_utf8();
-				if escaped {
+				if self.escaped {
 					self.buf.push(c);
 				}
 			} else {
@@ -26,19 +25,16 @@ impl Lexer<'_> {
 			}
 			first = false;
 		}
-		let word = if escaped {
+		let word = if self.escaped {
 			self.buf.as_str()
 		} else {
 			&self.src[start..self.pos]
 		};
 		if let Some(keyword) = Keyword::from_word(word) {
-			if escaped {
-				return self.error(start, format!("Escape sequence in keyword {}", keyword.as_str()));
-			}
 			return Ok(TokenKind::Keyword(keyword));
 		}
 		let name = self.strings.intern(word);
-		Ok(TokenKind::Ident { name, escaped })
+		Ok(TokenKind::Ident(name))
 	}
 
 	fn read_word_escape(&mut self, first: bool) -> Result<char> {
@@ -48,26 +44,27 @@ impl Lexer<'_> {
 			return self.error(self.pos, "Expecting Unicode escape sequence \\uXXXX");
 		}
 		self.pos += 1;
-		let c = self.read_code_point()?;
-		if !is_word_char(c, first) {
-			return self.error(esc_start, "Invalid Unicode escape");
+		let code = self.read_code_point()?;
+		match char::from_u32(code) {
+			Some(c) if is_word_char(c, first) => Ok(c),
+			_ => self.error(esc_start, "Invalid Unicode escape"),
 		}
-		Ok(c)
 	}
 
 	pub(super) fn read_private_name(&mut self) -> Result<TokenKind> {
-		let start = self.pos;
 		self.pos += 1;
 		match self.char() {
 			Some(c) if c == '\\' || is_word_char(c, true) => {}
-			_ => return self.error(start, "Unexpected character '#'"),
+			next => {
+				let c = next.unwrap_or('\u{10000}');
+				return self.error(self.pos, format!("Unexpected character '{c}'"));
+			}
 		}
 		let name = match self.read_word()? {
-			TokenKind::Ident { name, .. } => self.strings.get(name).to_owned(),
-			TokenKind::Keyword(keyword) => keyword.as_str().to_owned(),
+			TokenKind::Ident(name) => name,
+			TokenKind::Keyword(keyword) => self.strings.intern(keyword.as_str()),
 			_ => unreachable!(),
 		};
-		let name = self.strings.intern(&format!("#{name}"));
 		Ok(TokenKind::PrivateName(name))
 	}
 }

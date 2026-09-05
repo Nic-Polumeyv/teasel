@@ -4,17 +4,17 @@ use super::{Lexer, Result, is_new_line};
 
 impl Lexer<'_> {
 	/// Re-reads a `/` or `/=` token as a regular expression literal.
-	pub fn read_regex(&mut self, token: Token) -> Result<Token> {
+	pub(crate) fn read_regex(&mut self, token: Token) -> Result<Token> {
 		let start = token.start as usize;
 		self.pos = start + 1;
 		let mut escaped = false;
 		let mut in_class = false;
 		loop {
 			let Some(c) = self.char() else {
-				return self.error(start, "Unterminated regular expression");
+				return self.error(start + 1, "Unterminated regular expression");
 			};
 			if is_new_line(c) {
-				return self.error(start, "Unterminated regular expression");
+				return self.error(start + 1, "Unterminated regular expression");
 			}
 			if escaped {
 				escaped = false;
@@ -34,7 +34,7 @@ impl Lexer<'_> {
 		let flags_start = self.pos;
 		while let Some(c) = self.char() {
 			if c == '\\' {
-				return self.error(self.pos, "Invalid regular expression flag");
+				return self.error(flags_start, "Unexpected token");
 			}
 			if !is_word_char(c, false) {
 				break;
@@ -48,6 +48,7 @@ impl Lexer<'_> {
 			start: start as u32,
 			end: self.pos as u32,
 			newline_before: token.newline_before,
+			escaped: false,
 		})
 	}
 }

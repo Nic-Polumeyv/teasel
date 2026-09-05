@@ -2,53 +2,94 @@ mod identifier;
 mod number;
 mod regex;
 mod string;
-pub mod token;
-pub mod unicode;
+pub(crate) mod token;
+pub(crate) mod unicode;
 
 #[cfg(test)]
 mod tests;
 
+use crate::ast::Comment;
 use crate::error::SyntaxError;
 use crate::interner::Interner;
-use token::{Comment, Token, TokenKind};
+use token::{Token, TokenKind};
 use unicode::is_id_start;
 
 type Result<T> = std::result::Result<T, SyntaxError>;
 
 /// Positions are byte offsets into the source.
-pub struct Lexer<'a> {
+pub(crate) struct Lexer<'a> {
 	src: &'a str,
 	pos: usize,
 	buf: String,
-	pub comments: Vec<Comment>,
-	pub strings: Interner,
+	escaped: bool,
+	/// Strict mode rejects legacy octal literals and escapes while scanning, as acorn does.
+	pub(crate) strict: bool,
+	pub(crate) comments: Vec<Comment>,
+	pub(crate) strings: Interner,
 }
 
 impl<'a> Lexer<'a> {
-	pub fn new(src: &'a str) -> Self {
+	pub(crate) fn new(src: &'a str) -> Self {
 		Self {
 			src,
 			pos: 0,
 			buf: String::new(),
+			escaped: false,
+			strict: false,
 			comments: Vec::new(),
 			strings: Interner::default(),
 		}
 	}
 
-	pub fn source(&self) -> &'a str {
+	pub(crate) fn source(&self) -> &'a str {
 		self.src
 	}
 
-	pub fn pos(&self) -> u32 {
-		self.pos as u32
-	}
-
-	pub fn set_pos(&mut self, pos: u32) {
+	pub(crate) fn set_pos(&mut self, pos: u32) {
 		self.pos = pos as usize;
 	}
 
-	pub fn slice(&self, start: u32, end: u32) -> &'a str {
-		&self.src[start as usize..end as usize]
+	/// The next significant character, whether a line break precedes it, and its position.
+	pub(crate) fn peek_char(&self) -> (Option<char>, bool, usize) {
+		let mut pos = self.pos;
+		let mut newline = false;
+		let bytes = self.src.as_bytes();
+		loop {
+			let Some(&b) = bytes.get(pos) else {
+				return (None, newline, pos);
+			};
+			match b {
+				b' ' | b'\t' | 0x0b | 0x0c => pos += 1,
+				b'\n' | b'\r' => {
+					pos += 1;
+					newline = true;
+				}
+				b'/' if bytes.get(pos + 1) == Some(&b'/') => {
+					while let Some(c) = self.src[pos..].chars().next() {
+						if is_new_line(c) {
+							break;
+						}
+						pos += c.len_utf8();
+					}
+				}
+				b'/' if bytes.get(pos + 1) == Some(&b'*') => {
+					let Some(len) = self.src[pos + 2..].find("*/") else {
+						return (None, newline, self.src.len());
+					};
+					newline |= self.src[pos + 2..pos + 2 + len].chars().any(is_new_line);
+					pos += len + 4;
+				}
+				_ => {
+					let c = self.src[pos..].chars().next().unwrap();
+					if is_new_line(c) {
+						newline = true;
+					} else if !is_whitespace(c) {
+						return (Some(c), newline, pos);
+					}
+					pos += c.len_utf8();
+				}
+			}
+		}
 	}
 
 	fn byte(&self) -> Option<u8> {
@@ -67,15 +108,17 @@ impl<'a> Lexer<'a> {
 		Err(SyntaxError::new(pos as u32, message))
 	}
 
-	pub fn next_token(&mut self) -> Result<Token> {
+	pub(crate) fn next_token(&mut self) -> Result<Token> {
 		let newline_before = self.skip_space()?;
 		let start = self.pos;
+		self.escaped = false;
 		let Some(b) = self.byte() else {
 			return Ok(Token {
 				kind: TokenKind::Eof,
 				start: start as u32,
 				end: start as u32,
 				newline_before,
+				escaped: false,
 			});
 		};
 
@@ -105,13 +148,14 @@ impl<'a> Lexer<'a> {
 			start: start as u32,
 			end: self.pos as u32,
 			newline_before,
+			escaped: self.escaped,
 		})
 	}
 
 	fn skip_space(&mut self) -> Result<bool> {
 		let mut newline = false;
 		if self.pos == 0 && self.src.starts_with("#!") {
-			self.skip_line_comment(2, false);
+			self.skip_line_comment(2);
 		}
 		while let Some(b) = self.byte() {
 			match b {
@@ -121,7 +165,7 @@ impl<'a> Lexer<'a> {
 					newline = true;
 				}
 				b'/' => match self.byte_at(1) {
-					Some(b'/') => self.skip_line_comment(2, true),
+					Some(b'/') => self.skip_line_comment(2),
 					Some(b'*') => newline |= self.skip_block_comment()?,
 					_ => break,
 				},
@@ -140,7 +184,7 @@ impl<'a> Lexer<'a> {
 		Ok(newline)
 	}
 
-	fn skip_line_comment(&mut self, skip: usize, record: bool) {
+	fn skip_line_comment(&mut self, skip: usize) {
 		let start = self.pos;
 		self.pos += skip;
 		while let Some(c) = self.char() {
@@ -149,13 +193,11 @@ impl<'a> Lexer<'a> {
 			}
 			self.pos += c.len_utf8();
 		}
-		if record {
-			self.comments.push(Comment {
-				block: false,
-				start: start as u32,
-				end: self.pos as u32,
-			});
-		}
+		self.comments.push(Comment {
+			block: false,
+			start: start as u32,
+			end: self.pos as u32,
+		});
 	}
 
 	fn skip_block_comment(&mut self) -> Result<bool> {
@@ -190,7 +232,6 @@ impl<'a> Lexer<'a> {
 			b',' => (Comma, 1),
 			b':' => (Colon, 1),
 			b'~' => (Tilde, 1),
-			b'@' => (At, 1),
 			b'.' => match (next, next2) {
 				(Some(b'.'), Some(b'.')) => (Ellipsis, 3),
 				_ => (Dot, 1),
@@ -198,8 +239,7 @@ impl<'a> Lexer<'a> {
 			b'?' => match (next, next2) {
 				(Some(b'?'), Some(b'=')) => (QuestionQuestionEq, 3),
 				(Some(b'?'), _) => (QuestionQuestion, 2),
-				(Some(b'.'), Some(d)) if d.is_ascii_digit() => (Question, 1),
-				(Some(b'.'), _) => (QuestionDot, 2),
+				(Some(b'.'), Some(d)) if !d.is_ascii_digit() => (QuestionDot, 2),
 				_ => (Question, 1),
 			},
 			b'=' => match (next, next2) {
@@ -274,11 +314,11 @@ impl<'a> Lexer<'a> {
 	}
 }
 
-pub fn is_new_line(c: char) -> bool {
+pub(crate) fn is_new_line(c: char) -> bool {
 	matches!(c, '\n' | '\r' | '\u{2028}' | '\u{2029}')
 }
 
-fn is_whitespace(c: char) -> bool {
+pub(crate) fn is_whitespace(c: char) -> bool {
 	matches!(
 		c,
 		'\u{a0}' | '\u{1680}' | '\u{2000}'..='\u{200a}' | '\u{202f}' | '\u{205f}' | '\u{3000}' | '\u{feff}'
