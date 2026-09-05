@@ -353,7 +353,7 @@ pub(crate) fn is_separator(bytes: &[u8]) -> bool {
 }
 
 /// The length of `bytes` up to the first line terminator.
-fn line_end(bytes: &[u8]) -> usize {
+pub(crate) fn line_end(bytes: &[u8]) -> usize {
 	let mut i = 0;
 	while i < bytes.len() {
 		match bytes[i] {
@@ -366,7 +366,7 @@ fn line_end(bytes: &[u8]) -> usize {
 }
 
 /// Where `*/` starts in `text`, and whether a line terminator precedes it.
-fn comment_end(text: &str) -> Option<(usize, bool)> {
+pub(crate) fn comment_end(text: &str) -> Option<(usize, bool)> {
 	let mut from = 0;
 	loop {
 		let star = from + text[from..].find('*')?;

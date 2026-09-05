@@ -10,7 +10,6 @@ use crate::parser::class::ClassKind;
 use crate::parser::scope::Binding;
 use crate::parser::statement::FUNC_STATEMENT;
 use crate::parser::{Context, ForInit, Parser, Result};
-use std::collections::HashSet;
 
 /// The scope flags acorn-typescript gives module blocks; the inner one is also the class field
 /// initializer flag, so `arguments` is rejected inside namespaces the same way.
@@ -74,7 +73,7 @@ impl Parser<'_, TypeScript> {
 		self.ext.module_blocks += 1;
 		self.expect(TokenKind::BraceL)?;
 		let mut body = Vec::new();
-		let mut exports = HashSet::new();
+		let mut exports = crate::interner::FastSet::default();
 		while !self.is(TokenKind::BraceR) {
 			body.push(self.parse_statement(Context::None, true, Some(&mut exports))?);
 		}

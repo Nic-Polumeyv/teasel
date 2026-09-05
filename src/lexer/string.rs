@@ -9,6 +9,13 @@ impl Lexer<'_> {
 		let mut pending = None;
 		let mut chunk_start = self.pos;
 		loop {
+			let bytes = self.src.as_bytes();
+			while bytes
+				.get(self.pos)
+				.is_some_and(|&b| b < 0x80 && b != quote && !matches!(b, b'\\' | b'\n' | b'\r'))
+			{
+				self.pos += 1;
+			}
 			let Some(c) = self.char() else {
 				return self.error(start, "Unterminated string constant");
 			};

@@ -3,7 +3,7 @@
 
 use crate::ast::{Ast, NodeId};
 use crate::comments::{attach, attach_all};
-use crate::estree::{Emit, error_to_json, list_to_json, to_json};
+use crate::estree::{Emit, error_to_json, params_to_json, to_json};
 use crate::{Options, SyntaxError};
 
 /// What to parse; everything but a program starts at the request's offset.
@@ -144,10 +144,7 @@ where
 			if request.comments {
 				attach_all(&mut ast, source, &ids, offset);
 			}
-			let mut out = String::from("{\"params\":");
-			out.push_str(&list_to_json(&ast, &ids, source, locations));
-			out.push_str(&format!(",\"end\":{}}}", crate::estree::utf16_offset(source, end)));
-			out
+			params_to_json(&ast, &ids, end, source, locations)
 		}),
 	};
 	result.unwrap_or_else(|error| error_to_json(&error, source))

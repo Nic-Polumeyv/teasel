@@ -51,6 +51,7 @@ impl Hasher for FastHasher {
 }
 
 pub type FastMap<K, V> = HashMap<K, V, BuildHasherDefault<FastHasher>>;
+pub type FastSet<K> = std::collections::HashSet<K, BuildHasherDefault<FastHasher>>;
 
 /// Index of an interned string.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

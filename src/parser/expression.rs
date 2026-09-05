@@ -1581,20 +1581,12 @@ fn skip_space(text: &str, mut pos: u32) -> u32 {
 	loop {
 		let i = pos as usize;
 		match src.get(i) {
-			Some(b'/') if src.get(i + 1) == Some(&b'/') => {
-				while let Some(&b) = src.get(pos as usize) {
-					if b == b'\n' || b == b'\r' {
-						break;
-					}
-					pos += 1;
-				}
-			}
+			Some(b'/') if src.get(i + 1) == Some(&b'/') => pos += crate::lexer::line_end(&src[i..]) as u32,
 			Some(b'/') if src.get(i + 1) == Some(&b'*') => {
-				let mut j = i + 2;
-				while j + 1 < src.len() && !(src[j] == b'*' && src[j + 1] == b'/') {
-					j += 1;
+				pos = match crate::lexer::comment_end(&text[i + 2..]) {
+					Some((len, _)) => (i + len + 4) as u32,
+					None => src.len() as u32,
 				}
-				pos = (j + 2).min(src.len()) as u32;
 			}
 			Some(&b) if b < 0x80 => {
 				if b.is_ascii_whitespace() {

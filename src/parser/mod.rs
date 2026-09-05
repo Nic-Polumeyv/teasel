@@ -9,14 +9,12 @@ pub(crate) mod tests;
 
 use crate::ast::{Ast, List, NodeId, NodeKind, VariableKind};
 use crate::error::SyntaxError;
-use crate::interner::FastMap;
-use crate::interner::StrId;
+use crate::interner::{FastMap, FastSet, StrId};
 use crate::lexer::Lexer;
 use crate::lexer::token::{Keyword, Token, TokenKind};
 pub(crate) use expression::ForInit;
 use scope::{SCOPE_TOP, Scope};
 pub(crate) use statement::Context;
-use std::collections::HashSet;
 
 /// Errors travel boxed so every `Result` stays two words wide.
 pub(crate) type Result<T> = std::result::Result<T, Box<SyntaxError>>;
@@ -401,7 +399,7 @@ pub(crate) fn parse_statement_at<E: Extension>(
 ) -> Result<(Ast<E::Data>, NodeId)> {
 	let mut parser = Parser::<E>::new(src, offset, options)?;
 	parser.enter_scope(SCOPE_TOP);
-	let mut exports = HashSet::new();
+	let mut exports = FastSet::default();
 	let statement = parser.parse_statement(statement::Context::None, true, Some(&mut exports))?;
 	Ok((parser.finish(), statement))
 }

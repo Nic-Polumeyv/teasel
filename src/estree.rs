@@ -23,30 +23,27 @@ pub fn to_json<X: Emit>(ast: &Ast<X>, root: NodeId, source: &str, locations: boo
 	w.out
 }
 
-/// Serializes several nodes as a JSON array.
-pub fn list_to_json<X: Emit>(ast: &Ast<X>, roots: &[NodeId], source: &str, locations: bool) -> String {
+/// Serializes parameters as `{"params":[...],"end":N}`, `end` being the offset after the list.
+pub fn params_to_json<X: Emit>(ast: &Ast<X>, params: &[NodeId], end: u32, source: &str, locations: bool) -> String {
 	let mut w = Writer::new(ast, source, locations);
-	w.out.push('[');
-	for (i, &root) in roots.iter().enumerate() {
+	w.out.push_str("{\"params\":[");
+	for (i, &param) in params.iter().enumerate() {
 		if i > 0 {
 			w.out.push(',');
 		}
-		w.node(root);
+		w.node(param);
 	}
-	w.out.push(']');
+	w.out.push_str("],\"end\":");
+	push_int(&mut w.out, w.positions.offset(end));
+	w.out.push('}');
 	w.out
-}
-
-/// The UTF-16 offset of a byte offset.
-pub fn utf16_offset(source: &str, byte: u32) -> u32 {
-	Positions::new(source).offset(byte)
 }
 
 /// Serializes a syntax error the way acorn reports one: UTF-16 `pos` plus a `loc`.
 pub fn error_to_json(error: &crate::SyntaxError, source: &str) -> String {
-	let mut positions = Positions::new(source);
-	let (line, column) = positions.line_column(error.pos);
+	let mut positions = Positions::new(source, true);
 	let pos = positions.offset(error.pos);
+	let (line, column) = positions.line_column(error.pos, pos);
 	let mut out = String::from("{\"error\":{\"message\":");
 	write_json_string(&mut out, &error.message);
 	write!(
@@ -80,17 +77,21 @@ struct Positions {
 }
 
 impl Positions {
-	fn new(source: &str) -> Self {
+	/// `lines` builds the line table, which only `loc` needs.
+	fn new(source: &str, lines: bool) -> Self {
 		let bytes = source.as_bytes();
 		let mut gaps = Vec::new();
 		let mut line_starts = vec![(0, 0)];
 		let mut gap = 0u32;
 		let mut i = 0;
+		if !lines && bytes.is_ascii() {
+			i = bytes.len();
+		}
 		while i < bytes.len() {
 			let b = bytes[i];
 			if b < 0x80 {
 				i += 1;
-				if b == b'\n' || (b == b'\r' && bytes.get(i) != Some(&b'\n')) {
+				if lines && (b == b'\n' || (b == b'\r' && bytes.get(i) != Some(&b'\n'))) {
 					line_starts.push((i as u32, i as u32 - gap));
 				}
 			} else {
@@ -105,7 +106,7 @@ impl Positions {
 				i += len;
 				gap += len as u32 - if len == 4 { 2 } else { 1 };
 				gaps.push((i as u32, gap));
-				if separator {
+				if lines && separator {
 					line_starts.push((i as u32, i as u32 - gap));
 				}
 			}
@@ -128,11 +129,11 @@ impl Positions {
 		byte - if self.gap == 0 { 0 } else { self.gaps[self.gap - 1].1 }
 	}
 
-	fn line_column(&mut self, byte: u32) -> (usize, u32) {
+	/// The line of `byte` and its column, given `byte` already mapped by `offset`.
+	fn line_column(&mut self, byte: u32, offset: u32) -> (usize, u32) {
 		let byte = byte.min(self.len);
 		self.line = locate(&self.line_starts, self.line, byte, |l| l.0);
-		let units = self.line_starts[self.line - 1].1;
-		(self.line, self.offset(byte) - units)
+		(self.line, offset - self.line_starts[self.line - 1].1)
 	}
 }
 
@@ -151,8 +152,8 @@ impl<'a, X: Emit> Writer<'a, X> {
 		Self {
 			ast,
 			source,
-			out: String::with_capacity(source.len() * if locations { 12 } else { 6 }),
-			positions: Positions::new(source),
+			out: String::with_capacity(ast.nodes.len() * if locations { 160 } else { 80 }),
+			positions: Positions::new(source, locations),
 			locations,
 		}
 	}
@@ -199,15 +200,16 @@ impl<'a, X: Emit> Writer<'a, X> {
 	}
 
 	pub(crate) fn span(&mut self, start: u32, end: u32) {
+		let (start_offset, end_offset) = (self.positions.offset(start), self.positions.offset(end));
 		self.out.push_str(",\"start\":");
-		push_int(&mut self.out, self.positions.offset(start));
+		push_int(&mut self.out, start_offset);
 		self.out.push_str(",\"end\":");
-		push_int(&mut self.out, self.positions.offset(end));
+		push_int(&mut self.out, end_offset);
 		if !self.locations {
 			return;
 		}
-		let (sl, sc) = self.positions.line_column(start);
-		let (el, ec) = self.positions.line_column(end);
+		let (sl, sc) = self.positions.line_column(start, start_offset);
+		let (el, ec) = self.positions.line_column(end, end_offset);
 		self.out.push_str(",\"loc\":{\"start\":{\"line\":");
 		push_int(&mut self.out, sl as u32);
 		self.out.push_str(",\"column\":");

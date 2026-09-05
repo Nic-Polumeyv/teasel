@@ -7,11 +7,16 @@ impl Lexer<'_> {
 		let start = self.pos;
 		let bytes = self.src.as_bytes();
 		let mut pos = self.pos;
-		while let Some(&b) = bytes.get(pos) {
-			if b.is_ascii_alphanumeric() || b == b'$' || b == b'_' {
+		if bytes
+			.get(pos)
+			.is_some_and(|b| b.is_ascii_alphabetic() || *b == b'$' || *b == b'_')
+		{
+			pos += 1;
+			while bytes
+				.get(pos)
+				.is_some_and(|b| b.is_ascii_alphanumeric() || *b == b'$' || *b == b'_')
+			{
 				pos += 1;
-			} else {
-				break;
 			}
 		}
 		self.pos = pos;
