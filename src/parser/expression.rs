@@ -274,7 +274,10 @@ impl<E: Extension> Parser<'_, E> {
 	}
 
 	fn parse_expr_op(&mut self, mut left: NodeId, left_start: u32, min_prec: i8, for_init: ForInit) -> Result<NodeId> {
+		let mut links = 0;
 		loop {
+			links += 1;
+			self.chain(links)?;
 			if let Some(expr) = E::expr_op(self, left, left_start, min_prec)? {
 				left = expr;
 				continue;
@@ -494,7 +497,10 @@ impl<E: Extension> Parser<'_, E> {
 			_ => false,
 		};
 		let mut optional_chained = false;
+		let mut links = 0;
 		loop {
+			links += 1;
+			self.chain(links)?;
 			let (element, optional) =
 				self.parse_subscript(base, start, no_calls, maybe_async_arrow, optional_chained, for_init)?;
 			if optional {
