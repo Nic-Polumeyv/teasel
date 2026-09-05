@@ -146,50 +146,66 @@ pub(crate) enum Keyword {
 impl Keyword {
 	pub(crate) fn from_word(word: &str) -> Option<Keyword> {
 		use Keyword::*;
-		let bytes = word.as_bytes();
-		if !(2..=10).contains(&bytes.len())
-			|| !matches!(
-				bytes[0],
-				b'b' | b'c' | b'd' | b'e' | b'f' | b'i' | b'n' | b'r' | b's' | b't' | b'v' | b'w'
-			) {
-			return None;
-		}
-		Some(match word {
-			"break" => Break,
-			"case" => Case,
-			"catch" => Catch,
-			"class" => Class,
-			"const" => Const,
-			"continue" => Continue,
-			"debugger" => Debugger,
-			"default" => Default,
-			"delete" => Delete,
-			"do" => Do,
-			"else" => Else,
-			"export" => Export,
-			"extends" => Extends,
-			"false" => False,
-			"finally" => Finally,
-			"for" => For,
-			"function" => Function,
-			"if" => If,
-			"import" => Import,
-			"in" => In,
-			"instanceof" => Instanceof,
-			"new" => New,
-			"null" => Null,
-			"return" => Return,
-			"super" => Super,
-			"switch" => Switch,
-			"this" => This,
-			"throw" => Throw,
-			"true" => True,
-			"try" => Try,
-			"typeof" => Typeof,
-			"var" => Var,
-			"void" => Void,
-			"while" => While,
-			"with" => With,
+		Some(match word.len() {
+			2 => match word {
+				"do" => Do,
+				"if" => If,
+				"in" => In,
+				_ => return None,
+			},
+			3 => match word {
+				"for" => For,
+				"new" => New,
+				"try" => Try,
+				"var" => Var,
+				_ => return None,
+			},
+			4 => match word {
+				"case" => Case,
+				"else" => Else,
+				"null" => Null,
+				"this" => This,
+				"true" => True,
+				"void" => Void,
+				"with" => With,
+				_ => return None,
+			},
+			5 => match word {
+				"break" => Break,
+				"catch" => Catch,
+				"class" => Class,
+				"const" => Const,
+				"false" => False,
+				"super" => Super,
+				"throw" => Throw,
+				"while" => While,
+				_ => return None,
+			},
+			6 => match word {
+				"delete" => Delete,
+				"export" => Export,
+				"import" => Import,
+				"return" => Return,
+				"switch" => Switch,
+				"typeof" => Typeof,
+				_ => return None,
+			},
+			7 => match word {
+				"default" => Default,
+				"extends" => Extends,
+				"finally" => Finally,
+				_ => return None,
+			},
+			8 => match word {
+				"continue" => Continue,
+				"debugger" => Debugger,
+				"function" => Function,
+				_ => return None,
+			},
+			10 => match word {
+				"instanceof" => Instanceof,
+				_ => return None,
+			},
 			_ => return None,
 		})
 	}

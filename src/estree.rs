@@ -23,35 +23,32 @@ pub fn to_json<X: Emit>(ast: &Ast<X>, root: NodeId, source: &str, locations: boo
 	w.out
 }
 
-/// Serializes several nodes as a JSON array.
-pub fn list_to_json<X: Emit>(ast: &Ast<X>, roots: &[NodeId], source: &str, locations: bool) -> String {
+/// Serializes parameters as `{"params":[...],"end":N}`, `end` being the offset after the list.
+pub fn params_to_json<X: Emit>(ast: &Ast<X>, params: &[NodeId], end: u32, source: &str, locations: bool) -> String {
 	let mut w = Writer::new(ast, source, locations);
-	w.out.push('[');
-	for (i, &root) in roots.iter().enumerate() {
+	w.out.push_str("{\"params\":[");
+	for (i, &param) in params.iter().enumerate() {
 		if i > 0 {
 			w.out.push(',');
 		}
-		w.node(root);
+		w.node(param);
 	}
-	w.out.push(']');
+	w.out.push_str("],\"end\":");
+	push_int(&mut w.out, w.positions.offset(end));
+	w.out.push('}');
 	w.out
-}
-
-/// The UTF-16 offset of a byte offset.
-pub fn utf16_offset(source: &str, byte: u32) -> u32 {
-	Positions::new(source).offset(byte)
 }
 
 /// Serializes a syntax error the way acorn reports one: UTF-16 `pos` plus a `loc`.
 pub fn error_to_json(error: &crate::SyntaxError, source: &str) -> String {
-	let positions = Positions::new(source);
-	let (line, column) = positions.line_column(error.pos);
+	let mut positions = Positions::new(source, true);
+	let pos = positions.offset(error.pos);
+	let (line, column) = positions.line_column(error.pos, pos);
 	let mut out = String::from("{\"error\":{\"message\":");
 	write_json_string(&mut out, &error.message);
 	write!(
 		out,
-		",\"pos\":{},\"loc\":{{\"line\":{line},\"column\":{column}}}}}}}",
-		positions.offset(error.pos)
+		",\"pos\":{pos},\"loc\":{{\"line\":{line},\"column\":{column}}}}}}}"
 	)
 	.unwrap();
 	out
@@ -66,59 +63,88 @@ pub struct Writer<'a, X = ()> {
 }
 
 /// Maps byte offsets to the UTF-16 offsets and line/column pairs that acorn reports.
+///
+/// Nodes serialize in source order, so each lookup first tries the entry the previous one found
+/// and its successor before falling back to a binary search.
 struct Positions {
 	/// After each non-ASCII character: its end byte offset and the bytes-minus-code-units gap so far.
 	gaps: Vec<(u32, u32)>,
-	line_starts: Vec<u32>,
+	/// Each line's start as a byte offset and a UTF-16 offset.
+	line_starts: Vec<(u32, u32)>,
 	len: u32,
+	gap: usize,
+	line: usize,
 }
 
 impl Positions {
-	fn new(source: &str) -> Self {
-		let mut gaps = Vec::new();
-		let mut gap = 0;
-		for (i, c) in source.char_indices() {
-			if !c.is_ascii() {
-				gap += c.len_utf8() as u32 - c.len_utf16() as u32;
-				gaps.push((i as u32 + c.len_utf8() as u32, gap));
-			}
-		}
-		let mut line_starts = vec![0];
+	/// `lines` builds the line table, which only `loc` needs.
+	fn new(source: &str, lines: bool) -> Self {
 		let bytes = source.as_bytes();
+		let mut gaps = Vec::new();
+		let mut line_starts = vec![(0, 0)];
+		let mut gap = 0u32;
 		let mut i = 0;
+		if !lines && bytes.is_ascii() {
+			i = bytes.len();
+		}
 		while i < bytes.len() {
-			match bytes[i] {
-				b'\n' => line_starts.push(i as u32 + 1),
-				b'\r' => {
-					if bytes.get(i + 1) != Some(&b'\n') {
-						line_starts.push(i as u32 + 1);
-					}
+			let b = bytes[i];
+			if b < 0x80 {
+				i += 1;
+				if lines && (b == b'\n' || (b == b'\r' && bytes.get(i) != Some(&b'\n'))) {
+					line_starts.push((i as u32, i as u32 - gap));
 				}
-				0xe2 if matches!(bytes.get(i + 1..i + 3), Some([0x80, 0xa8 | 0xa9])) => line_starts.push(i as u32 + 3),
-				_ => {}
+			} else {
+				let len = if b >= 0xf0 {
+					4
+				} else if b >= 0xe0 {
+					3
+				} else {
+					2
+				};
+				let separator = len == 3 && crate::lexer::is_separator(&bytes[i..]);
+				i += len;
+				gap += len as u32 - if len == 4 { 2 } else { 1 };
+				gaps.push((i as u32, gap));
+				if lines && separator {
+					line_starts.push((i as u32, i as u32 - gap));
+				}
 			}
-			i += 1;
 		}
 		Self {
 			gaps,
 			line_starts,
 			len: source.len() as u32,
+			gap: 0,
+			line: 1,
 		}
 	}
 
-	fn offset(&self, byte: u32) -> u32 {
+	fn offset(&mut self, byte: u32) -> u32 {
+		if self.gaps.is_empty() {
+			return byte.min(self.len);
+		}
 		let byte = byte.min(self.len);
-		let i = self.gaps.partition_point(|&(end, _)| end <= byte);
-		let gap = if i == 0 { 0 } else { self.gaps[i - 1].1 };
-		byte - gap
+		self.gap = locate(&self.gaps, self.gap, byte, |g| g.0);
+		byte - if self.gap == 0 { 0 } else { self.gaps[self.gap - 1].1 }
 	}
 
-	fn line_column(&self, byte: u32) -> (usize, u32) {
+	/// The line of `byte` and its column, given `byte` already mapped by `offset`.
+	fn line_column(&mut self, byte: u32, offset: u32) -> (usize, u32) {
 		let byte = byte.min(self.len);
-		let line = self.line_starts.partition_point(|&s| s <= byte);
-		let start = self.line_starts[line - 1];
-		(line, self.offset(byte) - self.offset(start))
+		self.line = locate(&self.line_starts, self.line, byte, |l| l.0);
+		(self.line, offset - self.line_starts[self.line - 1].1)
 	}
+}
+
+/// The number of `items` whose key is at most `byte`, trying `hint` and the next index first.
+fn locate<T>(items: &[T], hint: usize, byte: u32, key: impl Fn(&T) -> u32) -> usize {
+	for p in [hint, hint + 1] {
+		if p <= items.len() && (p == 0 || key(&items[p - 1]) <= byte) && (p == items.len() || key(&items[p]) > byte) {
+			return p;
+		}
+	}
+	items.partition_point(|item| key(item) <= byte)
 }
 
 impl<'a, X: Emit> Writer<'a, X> {
@@ -126,8 +152,8 @@ impl<'a, X: Emit> Writer<'a, X> {
 		Self {
 			ast,
 			source,
-			out: String::new(),
-			positions: Positions::new(source),
+			out: String::with_capacity(ast.nodes.len() * if locations { 160 } else { 80 }),
+			positions: Positions::new(source, locations),
 			locations,
 		}
 	}
@@ -174,15 +200,16 @@ impl<'a, X: Emit> Writer<'a, X> {
 	}
 
 	pub(crate) fn span(&mut self, start: u32, end: u32) {
+		let (start_offset, end_offset) = (self.positions.offset(start), self.positions.offset(end));
 		self.out.push_str(",\"start\":");
-		push_int(&mut self.out, self.positions.offset(start));
+		push_int(&mut self.out, start_offset);
 		self.out.push_str(",\"end\":");
-		push_int(&mut self.out, self.positions.offset(end));
+		push_int(&mut self.out, end_offset);
 		if !self.locations {
 			return;
 		}
-		let (sl, sc) = self.positions.line_column(start);
-		let (el, ec) = self.positions.line_column(end);
+		let (sl, sc) = self.positions.line_column(start, start_offset);
+		let (el, ec) = self.positions.line_column(end, end_offset);
 		self.out.push_str(",\"loc\":{\"start\":{\"line\":");
 		push_int(&mut self.out, sl as u32);
 		self.out.push_str(",\"column\":");
@@ -787,15 +814,26 @@ impl<'a, X: Emit> Writer<'a, X> {
 }
 
 fn push_int(out: &mut String, mut value: u32) {
+	const DIGITS: &[u8; 200] = b"0001020304050607080910111213141516171819\
+2021222324252627282930313233343536373839\
+4041424344454647484950515253545556575859\
+6061626364656667686970717273747576777879\
+8081828384858687888990919293949596979899";
 	let mut buf = [0u8; 10];
 	let mut i = buf.len();
-	loop {
+	while value >= 100 {
+		let pair = (value % 100) as usize * 2;
+		i -= 2;
+		buf[i..i + 2].copy_from_slice(&DIGITS[pair..pair + 2]);
+		value /= 100;
+	}
+	if value >= 10 {
+		let pair = value as usize * 2;
+		i -= 2;
+		buf[i..i + 2].copy_from_slice(&DIGITS[pair..pair + 2]);
+	} else {
 		i -= 1;
-		buf[i] = b'0' + (value % 10) as u8;
-		value /= 10;
-		if value == 0 {
-			break;
-		}
+		buf[i] = b'0' + value as u8;
 	}
 	out.push_str(std::str::from_utf8(&buf[i..]).unwrap());
 }
@@ -829,18 +867,24 @@ fn bigint_decimal(raw: &str) -> String {
 
 pub(crate) fn write_json_string(out: &mut String, s: &str) {
 	out.push('"');
-	for c in s.chars() {
-		match c {
-			'"' => out.push_str("\\\""),
-			'\\' => out.push_str("\\\\"),
-			'\n' => out.push_str("\\n"),
-			'\r' => out.push_str("\\r"),
-			'\t' => out.push_str("\\t"),
-			'\u{8}' => out.push_str("\\b"),
-			'\u{c}' => out.push_str("\\f"),
-			c if (c as u32) < 0x20 => write!(out, "\\u{:04x}", c as u32).unwrap(),
-			c => out.push(c),
+	let mut from = 0;
+	for (i, b) in s.bytes().enumerate() {
+		if b >= 0x20 && b != b'"' && b != b'\\' {
+			continue;
 		}
+		out.push_str(&s[from..i]);
+		match b {
+			b'"' => out.push_str("\\\""),
+			b'\\' => out.push_str("\\\\"),
+			b'\n' => out.push_str("\\n"),
+			b'\r' => out.push_str("\\r"),
+			b'\t' => out.push_str("\\t"),
+			8 => out.push_str("\\b"),
+			12 => out.push_str("\\f"),
+			_ => write!(out, "\\u{b:04x}").unwrap(),
+		}
+		from = i + 1;
 	}
+	out.push_str(&s[from..]);
 	out.push('"');
 }

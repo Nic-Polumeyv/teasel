@@ -37,7 +37,7 @@ fn error_in(src: &str, strict: bool) -> SyntaxError {
 		match lexer.next_token() {
 			Ok(t) if t.kind == Eof => panic!("no error for {src:?}"),
 			Ok(_) => {}
-			Err(e) => return e,
+			Err(e) => return *e,
 		}
 	}
 }

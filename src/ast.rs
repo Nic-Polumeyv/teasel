@@ -1,5 +1,4 @@
-use crate::interner::{Interner, StrId};
-use std::collections::HashMap;
+use crate::interner::{FastMap, Interner, StrId};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Comment {
@@ -64,7 +63,7 @@ pub struct Ast<X = ()> {
 	pub strings: Interner,
 	pub comments: Vec<Comment>,
 	/// Comments attached to nodes by `comments::attach`, as indices into `comments`.
-	pub attached: HashMap<NodeId, Attached>,
+	pub attached: FastMap<NodeId, Attached>,
 	pub extension: X,
 }
 

@@ -9,15 +9,15 @@ pub(crate) mod tests;
 
 use crate::ast::{Ast, List, NodeId, NodeKind, VariableKind};
 use crate::error::SyntaxError;
-use crate::interner::StrId;
+use crate::interner::{FastMap, FastSet, StrId};
 use crate::lexer::Lexer;
 use crate::lexer::token::{Keyword, Token, TokenKind};
 pub(crate) use expression::ForInit;
 use scope::{SCOPE_TOP, Scope};
 pub(crate) use statement::Context;
-use std::collections::{HashMap, HashSet};
 
-pub(crate) type Result<T> = std::result::Result<T, SyntaxError>;
+/// Errors travel boxed so every `Result` stays two words wide.
+pub(crate) type Result<T> = std::result::Result<T, Box<SyntaxError>>;
 
 const MAX_DEPTH: u32 = 1000;
 /// Subscripts and binary operators chain without recursion, but the tree they build is as deep
@@ -399,7 +399,7 @@ pub(crate) fn parse_statement_at<E: Extension>(
 ) -> Result<(Ast<E::Data>, NodeId)> {
 	let mut parser = Parser::<E>::new(src, offset, options)?;
 	parser.enter_scope(SCOPE_TOP);
-	let mut exports = HashSet::new();
+	let mut exports = FastSet::default();
 	let statement = parser.parse_statement(statement::Context::None, true, Some(&mut exports))?;
 	Ok((parser.finish(), statement))
 }
@@ -416,7 +416,7 @@ pub(crate) struct Parser<'a, E: Extension = ()> {
 	pub(crate) scopes: Vec<Scope>,
 	labels: Vec<Label>,
 	private_names: Vec<PrivateNameScope>,
-	pub(crate) undeclared_exports: HashMap<StrId, (u32, usize)>,
+	pub(crate) undeclared_exports: FastMap<StrId, (u32, usize)>,
 	pub(crate) yield_pos: u32,
 	pub(crate) await_pos: u32,
 	pub(crate) await_ident_pos: u32,
@@ -496,7 +496,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 			scopes: Vec::new(),
 			labels: Vec::new(),
 			private_names: Vec::new(),
-			undeclared_exports: HashMap::new(),
+			undeclared_exports: FastMap::default(),
 			yield_pos: 0,
 			await_pos: 0,
 			await_ident_pos: 0,
@@ -589,7 +589,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 	}
 
 	pub(crate) fn error<T>(&self, pos: u32, message: impl Into<String>) -> Result<T> {
-		Err(SyntaxError::new(pos, message))
+		Err(Box::new(SyntaxError::new(pos, message)))
 	}
 
 	pub(crate) fn unexpected<T>(&self) -> Result<T> {

@@ -4,10 +4,9 @@ use super::pattern::Binding;
 use super::scope::{SCOPE_SIMPLE_CATCH, SCOPE_TOP, function_flags};
 use super::{DestructuringErrors, Extension, FunctionKind, Label, LabelKind, Parser, Result};
 use crate::ast::{Function, NodeId, NodeKind, VariableKind};
-use crate::interner::StrId;
+use crate::interner::{FastSet, StrId};
 use crate::lexer::token::{Keyword, TokenKind};
 use crate::lexer::unicode::is_id_start;
-use std::collections::HashSet;
 
 pub(crate) const FUNC_STATEMENT: u8 = 1;
 pub(crate) const FUNC_HANGING: u8 = 2;
@@ -39,7 +38,7 @@ impl<E: Extension> Parser<'_, E> {
 		let module = self.options.module;
 		self.enter_scope(SCOPE_TOP);
 		let mut body = Vec::new();
-		let mut exports = HashSet::new();
+		let mut exports = FastSet::default();
 		while !self.is(TokenKind::Eof) {
 			body.push(self.parse_statement(Context::None, true, Some(&mut exports))?);
 		}
@@ -86,7 +85,7 @@ impl<E: Extension> Parser<'_, E> {
 		&mut self,
 		context: Context,
 		top_level: bool,
-		exports: Option<&mut HashSet<StrId>>,
+		exports: Option<&mut FastSet<StrId>>,
 	) -> Result<NodeId> {
 		self.enter()?;
 		let result = self.parse_statement_inner(context, top_level, exports);
@@ -98,7 +97,7 @@ impl<E: Extension> Parser<'_, E> {
 		&mut self,
 		context: Context,
 		top_level: bool,
-		exports: Option<&mut HashSet<StrId>>,
+		exports: Option<&mut FastSet<StrId>>,
 	) -> Result<NodeId> {
 		if let Some(statement) = E::statement(self, context, top_level)? {
 			return Ok(statement);
@@ -958,7 +957,7 @@ impl<E: Extension> Parser<'_, E> {
 		self.parse_ident(true)
 	}
 
-	fn parse_export(&mut self, start: u32, exports: &mut HashSet<StrId>) -> Result<NodeId> {
+	fn parse_export(&mut self, start: u32, exports: &mut FastSet<StrId>) -> Result<NodeId> {
 		self.next()?;
 		if let Some(node) = E::export_head(self, start)? {
 			return Ok(node);
@@ -1112,7 +1111,7 @@ impl<E: Extension> Parser<'_, E> {
 			|| E::starts_export_declaration(self)
 	}
 
-	fn parse_export_specifiers(&mut self, exports: &mut HashSet<StrId>) -> Result<Vec<NodeId>> {
+	fn parse_export_specifiers(&mut self, exports: &mut FastSet<StrId>) -> Result<Vec<NodeId>> {
 		let mut nodes = Vec::new();
 		self.expect(TokenKind::BraceL)?;
 		let mut first = true;
@@ -1142,7 +1141,7 @@ impl<E: Extension> Parser<'_, E> {
 		Ok(nodes)
 	}
 
-	fn check_export(&self, exports: &mut HashSet<StrId>, name: NodeId, pos: u32) -> Result<()> {
+	fn check_export(&self, exports: &mut FastSet<StrId>, name: NodeId, pos: u32) -> Result<()> {
 		let name = match self.kind(name) {
 			NodeKind::Identifier { name } | NodeKind::StringLiteral { value: name } => name,
 			_ => return Ok(()),
@@ -1150,14 +1149,14 @@ impl<E: Extension> Parser<'_, E> {
 		self.check_export_name(exports, name, pos)
 	}
 
-	fn check_export_name(&self, exports: &mut HashSet<StrId>, name: StrId, pos: u32) -> Result<()> {
+	fn check_export_name(&self, exports: &mut FastSet<StrId>, name: StrId, pos: u32) -> Result<()> {
 		if !exports.insert(name) && E::DUPLICATE_EXPORT_ERRORS {
 			return self.error(pos, format!("Duplicate export '{}'", self.str(name)));
 		}
 		Ok(())
 	}
 
-	fn check_pattern_export(&self, exports: &mut HashSet<StrId>, pattern: NodeId) -> Result<()> {
+	fn check_pattern_export(&self, exports: &mut FastSet<StrId>, pattern: NodeId) -> Result<()> {
 		match self.kind(pattern) {
 			NodeKind::Identifier { .. } => self.check_export(exports, pattern, self.start_of(pattern)),
 			NodeKind::ObjectPattern { properties } => {

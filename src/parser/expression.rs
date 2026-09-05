@@ -1538,7 +1538,7 @@ pub(crate) fn strict_directive(source: &str, mut pos: u32) -> bool {
 	let src = source.as_bytes();
 	{
 		loop {
-			pos = skip_space(src, pos);
+			pos = skip_space(source, pos);
 			let Some(quote) = src.get(pos as usize).filter(|b| **b == b'\'' || **b == b'"') else {
 				return false;
 			};
@@ -1555,7 +1555,7 @@ pub(crate) fn strict_directive(source: &str, mut pos: u32) -> bool {
 			let literal = &src[pos as usize + 1..end];
 			let after = end as u32 + 1;
 			if literal == b"use strict" {
-				let next_pos = skip_space(src, after);
+				let next_pos = skip_space(source, after);
 				let next = src.get(next_pos as usize).copied();
 				if next == Some(b';') || next == Some(b'}') || next.is_none() {
 					return true;
@@ -1567,7 +1567,7 @@ pub(crate) fn strict_directive(source: &str, mut pos: u32) -> bool {
 					&& !(b"(`.[+-/*%<>=,?^&".contains(&next)
 						|| (next == b'!' && src.get(next_pos as usize + 1) == Some(&b'=')));
 			}
-			pos = skip_space(src, after);
+			pos = skip_space(source, after);
 			if src.get(pos as usize) == Some(&b';') {
 				pos += 1;
 			}
@@ -1576,29 +1576,28 @@ pub(crate) fn strict_directive(source: &str, mut pos: u32) -> bool {
 }
 
 /// Skips whitespace, line terminators and comments starting at a byte offset.
-fn skip_space(src: &[u8], mut pos: u32) -> u32 {
-	let text = std::str::from_utf8(src).unwrap();
+fn skip_space(text: &str, mut pos: u32) -> u32 {
+	let src = text.as_bytes();
 	loop {
 		let i = pos as usize;
 		match src.get(i) {
-			Some(b'/') if src.get(i + 1) == Some(&b'/') => {
-				while let Some(&b) = src.get(pos as usize) {
-					if b == b'\n' || b == b'\r' {
-						break;
-					}
-					pos += 1;
+			Some(b'/') if src.get(i + 1) == Some(&b'/') => pos += crate::lexer::line_end(&src[i..]) as u32,
+			Some(b'/') if src.get(i + 1) == Some(&b'*') => {
+				pos = match crate::lexer::comment_end(&text[i + 2..]) {
+					Some((len, _)) => (i + len + 4) as u32,
+					None => src.len() as u32,
 				}
 			}
-			Some(b'/') if src.get(i + 1) == Some(&b'*') => {
-				let mut j = i + 2;
-				while j + 1 < src.len() && !(src[j] == b'*' && src[j + 1] == b'/') {
-					j += 1;
+			Some(&b) if b < 0x80 => {
+				if b.is_ascii_whitespace() {
+					pos += 1;
+				} else {
+					return pos;
 				}
-				pos = (j + 2).min(src.len()) as u32;
 			}
 			Some(_) => {
 				let c = text[i..].chars().next().unwrap();
-				if crate::lexer::is_new_line(c) || crate::lexer::is_whitespace(c) || c.is_ascii_whitespace() {
+				if crate::lexer::is_new_line(c) || crate::lexer::is_whitespace(c) {
 					pos += c.len_utf8() as u32;
 				} else {
 					return pos;

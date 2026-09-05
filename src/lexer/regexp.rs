@@ -6,7 +6,7 @@ use super::unicode::{is_id_continue, is_id_start};
 use crate::error::SyntaxError;
 use std::collections::HashMap;
 
-type Result<T> = std::result::Result<T, SyntaxError>;
+type Result<T> = std::result::Result<T, Box<SyntaxError>>;
 
 /// Validates `pattern` and `flags` for a literal whose pattern starts at byte `start`.
 pub(super) fn validate(start: u32, pattern: &str, flags: &str) -> Result<()> {
@@ -80,14 +80,14 @@ impl<'a> State<'a> {
 	}
 
 	fn raise<T>(&self, message: &str) -> Result<T> {
-		Err(SyntaxError::new(
+		Err(Box::new(SyntaxError::new(
 			self.start,
 			format!("Invalid regular expression: /{}/: {message}", self.pattern),
-		))
+		)))
 	}
 
 	fn flag_error<T>(&self, message: &str) -> Result<T> {
-		Err(SyntaxError::new(self.start, message))
+		Err(Box::new(SyntaxError::new(self.start, message)))
 	}
 
 	// Cursor

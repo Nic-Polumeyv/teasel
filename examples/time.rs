@@ -1,21 +1,18 @@
 use std::time::Instant;
 
+/// The fastest of 40 runs each, which is stable across CPU frequency changes.
 fn time<E>(source: &str, parse: impl Fn(&str) -> E, json: impl Fn(&E) -> String) -> (f64, f64, usize) {
-	let (mut parse_ms, mut json_ms, mut bytes) = (0.0, 0.0, 0);
-	for i in 0..23 {
+	let (mut parse_ms, mut json_ms, mut bytes) = (f64::MAX, f64::MAX, 0);
+	for _ in 0..40 {
 		let t = Instant::now();
 		let ast = parse(source);
-		let parsed = t.elapsed().as_secs_f64() * 1000.0;
+		parse_ms = parse_ms.min(t.elapsed().as_secs_f64() * 1000.0);
 		let t = Instant::now();
 		let out = json(&ast);
-		let serialized = t.elapsed().as_secs_f64() * 1000.0;
-		if i >= 3 {
-			parse_ms += parsed;
-			json_ms += serialized;
-		}
+		json_ms = json_ms.min(t.elapsed().as_secs_f64() * 1000.0);
 		bytes = out.len();
 	}
-	(parse_ms / 20.0, json_ms / 20.0, bytes)
+	(parse_ms, json_ms, bytes)
 }
 
 fn main() {
