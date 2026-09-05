@@ -435,8 +435,9 @@ fn regex_validation() {
 			1
 		))
 	);
+	assert!(regex("/{*/").is_ok());
 	assert_eq!(
-		regex("/{*/"),
+		regex("/{*/u"),
 		Err(("Invalid regular expression: /{*/: Lone quantifier brackets".into(), 1))
 	);
 }
