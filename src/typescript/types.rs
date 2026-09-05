@@ -291,6 +291,13 @@ impl Parser<'_, TypeScript> {
 	// Types
 
 	pub(super) fn parse_type(&mut self) -> Result<NodeId> {
+		self.enter()?;
+		let result = self.parse_type_inner();
+		self.leave();
+		result
+	}
+
+	fn parse_type_inner(&mut self) -> Result<NodeId> {
 		debug_assert!(self.lexer.in_type);
 		let check_type = self.parse_non_conditional_type()?;
 		if self.ext.disallow_conditional_types || self.tok.newline_before || !self.eat_keyword(Keyword::Extends)? {
@@ -469,13 +476,14 @@ impl Parser<'_, TypeScript> {
 	}
 
 	fn parse_type_operator_or_higher(&mut self) -> Result<NodeId> {
-		if (self.is_contextual("keyof") || self.is_contextual("readonly") || self.is_contextual("unique"))
+		if let Some(name) = self.ident_name()
 			&& !self.tok.escaped
 		{
-			return self.parse_type_operator();
-		}
-		if self.is_contextual("infer") {
-			return self.parse_infer_type();
+			match self.str(name) {
+				"keyof" | "readonly" | "unique" => return self.parse_type_operator(),
+				"infer" => return self.parse_infer_type(),
+				_ => {}
+			}
 		}
 		self.allow_conditional_types(|p| p.parse_array_type_or_higher())
 	}
@@ -904,6 +912,7 @@ impl Parser<'_, TypeScript> {
 		let params = self.parse_delimited_list(ListKind::TypeParametersOrArguments, |p| {
 			p.parse_type_parameter(modifiers)
 		})?;
+		// Unlike type arguments, checked after the `>`: the error position follows the plugin.
 		self.expect(TokenKind::Gt)?;
 		if params.is_empty() {
 			return self.error(self.tok.start, "Type parameter list cannot be empty.");
@@ -1161,7 +1170,11 @@ impl Parser<'_, TypeScript> {
 
 	/// Consumes the current identifier when it is one of the modifiers and a member name may
 	/// follow it.
-	fn parse_modifier(&mut self, modifiers: &[&str], stop_on_static_block: bool) -> Result<Option<&'static str>> {
+	fn parse_modifier(
+		&mut self,
+		modifiers: &[&str],
+		stop_on_static_block: bool,
+	) -> Result<Option<(&'static str, u32)>> {
 		let word = match self.tok.kind {
 			TokenKind::Ident(name) if !self.tok.escaped => self.str(name),
 			TokenKind::Keyword(Keyword::In) => "in",
@@ -1177,10 +1190,11 @@ impl Parser<'_, TypeScript> {
 		if stop_on_static_block && modifier == "static" && self.peek_char().0 == Some('{') {
 			return Ok(None);
 		}
+		let start = self.tok.start;
 		let snapshot = self.snapshot();
 		self.next_liberal()?;
 		if self.token_can_follow_modifier() {
-			return Ok(Some(modifier));
+			return Ok(Some((modifier, start)));
 		}
 		self.restore(snapshot);
 		Ok(None)
@@ -1195,13 +1209,73 @@ impl Parser<'_, TypeScript> {
 	) -> Result<Modifiers> {
 		let mut modifiers = Modifiers::default();
 		let all: Vec<&str> = allowed.iter().chain(disallowed).copied().collect();
-		while let Some(modifier) = self.parse_modifier(&all, stop_on_static_block)? {
+		while let Some((modifier, start)) = self.parse_modifier(&all, stop_on_static_block)? {
+			self.check_modifier(&modifiers, modifier, start)?;
 			modifiers.set(modifier);
 			if disallowed.contains(&modifier) {
 				return self.error(self.tok.start, disallowed_error.replace("{}", modifier));
 			}
 		}
 		Ok(modifiers)
+	}
+
+	/// Duplicate, misordered and conflicting modifiers. The plugin reports order and conflict
+	/// errors at the modifier's column, not its offset.
+	fn check_modifier(&self, seen: &Modifiers, modifier: &str, start: u32) -> Result<()> {
+		let column = self.column(start);
+		let order = |before: &str, after: &str| -> Result<()> {
+			if modifier == before && seen.has(after) {
+				return self.error(column, format!("'{before}' modifier must precede '{after}' modifier."));
+			}
+			Ok(())
+		};
+		let conflict = |a: &str, b: &str| -> Result<()> {
+			if (seen.has(a) && modifier == b) || (seen.has(b) && modifier == a) {
+				return self.error(column, format!("'{a}' modifier cannot be used with '{b}' modifier."));
+			}
+			Ok(())
+		};
+		match modifier {
+			"public" | "private" | "protected" => {
+				if seen.extras.accessibility.is_some() {
+					return self.error(self.tok.start, "Accessibility modifier already seen.");
+				}
+				for after in ["override", "static", "readonly", "accessor"] {
+					order(modifier, after)?;
+				}
+			}
+			"in" | "out" => {
+				if seen.has(modifier) {
+					return self.error(self.tok.start, format!("Duplicate modifier: '{modifier}'."));
+				}
+				order("in", "out")?;
+			}
+			"accessor" => {
+				if seen.has(modifier) {
+					return self.error(self.tok.start, format!("Duplicate modifier: '{modifier}'."));
+				}
+				for other in ["readonly", "static", "override"] {
+					conflict("accessor", other)?;
+				}
+			}
+			"const" => {
+				if seen.has(modifier) {
+					return self.error(self.tok.start, format!("Duplicate modifier: '{modifier}'."));
+				}
+			}
+			_ => {
+				if seen.has(modifier) {
+					return self.error(self.tok.start, format!("Duplicate modifier: '{modifier}'."));
+				}
+				order("static", "readonly")?;
+				order("static", "override")?;
+				order("override", "readonly")?;
+				order("abstract", "override")?;
+				conflict("declare", "override")?;
+				conflict("static", "abstract")?;
+			}
+		}
+		Ok(())
 	}
 }
 

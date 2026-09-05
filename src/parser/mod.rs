@@ -55,13 +55,19 @@ pub(crate) enum Unwrap {
 /// parsing lives in `Self` (cloned into snapshots, so keep it small); what it hands back with the
 /// tree lives in `Data`.
 #[allow(unused_variables)]
-pub(crate) trait Extension: Default + Clone + Sized {
+pub(crate) trait Extension: Default + Sized {
 	type Data: Default;
+	/// What a speculative parse needs to put the extension's state back.
+	type Snapshot;
 
 	/// Whether exporting the same name twice is an error.
 	const DUPLICATE_EXPORT_ERRORS: bool = true;
+	/// Whether a function's name is declared after its body, so a bodiless overload declares nothing.
+	const DECLARES_FUNCTION_NAME_AFTER_BODY: bool = false;
 
 	fn init(p: &mut Parser<Self>) {}
+	fn save(&self) -> Self::Snapshot;
+	fn restore(&mut self, snapshot: Self::Snapshot);
 
 	// Statements and modules
 
@@ -95,7 +101,9 @@ pub(crate) trait Extension: Default + Clone + Sized {
 	fn import_head(p: &mut Parser<Self>, start: u32) -> Result<Option<NodeId>> {
 		Ok(None)
 	}
-	fn import_end(p: &mut Parser<Self>, node: NodeId) {}
+	fn import_end(p: &mut Parser<Self>, node: NodeId) -> Result<()> {
+		Ok(())
+	}
 	fn import_specifier(p: &mut Parser<Self>) -> Result<Option<NodeId>> {
 		Ok(None)
 	}
@@ -121,9 +129,10 @@ pub(crate) trait Extension: Default + Clone + Sized {
 	fn binding_atom(p: &mut Parser<Self>) -> Result<Option<NodeId>> {
 		Ok(None)
 	}
-	/// Before an element of a binding list; `allow_modifiers` inside class methods.
-	fn binding_item_start(p: &mut Parser<Self>, allow_modifiers: bool) -> Result<()> {
-		Ok(())
+	/// Before an element of a binding list; `allow_modifiers` inside class methods. Returns where
+	/// the element's own node starts.
+	fn binding_item_start(p: &mut Parser<Self>, allow_modifiers: bool) -> Result<u32> {
+		Ok(p.tok.start)
 	}
 	/// After a binding, before its default.
 	fn binding_annotation(p: &mut Parser<Self>, node: NodeId) -> Result<()> {
@@ -159,7 +168,14 @@ pub(crate) trait Extension: Default + Clone + Sized {
 	) -> Result<Option<NodeId>> {
 		Ok(None)
 	}
-	fn function_end(p: &mut Parser<Self>, node: NodeId) {}
+	fn function_end(p: &mut Parser<Self>, node: NodeId) -> Result<()> {
+		Ok(())
+	}
+	/// Whether an object literal accessor's first parameter is a `this` parameter, which does not
+	/// count.
+	fn accessor_this_param(p: &Parser<Self>, params: List) -> bool {
+		false
+	}
 	/// The parameters of a function-shaped extension node.
 	fn function_params(p: &Parser<Self>, node: NodeId) -> Option<List> {
 		None
@@ -250,6 +266,10 @@ pub(crate) trait Extension: Default + Clone + Sized {
 	fn should_parse_async_arrow(p: &mut Parser<Self>) -> Result<bool> {
 		Ok(!p.can_insert_semicolon() && p.eat(TokenKind::Arrow)?)
 	}
+	/// Whether the target of an assignment is checked here.
+	fn checks_assignment_target(p: &mut Parser<Self>) -> bool {
+		true
+	}
 	fn new_expression(p: &mut Parser<Self>, node: NodeId) {}
 	/// An object property whose value starts unexpectedly for the plain grammar.
 	#[allow(clippy::too_many_arguments)]
@@ -279,6 +299,11 @@ pub(crate) trait Extension: Default + Clone + Sized {
 
 impl Extension for () {
 	type Data = ();
+	type Snapshot = ();
+
+	fn save(&self) {}
+
+	fn restore(&mut self, _: ()) {}
 }
 
 pub(crate) type Errors = Option<DestructuringErrors>;
@@ -382,13 +407,13 @@ pub(crate) struct Parser<'a, E: Extension = ()> {
 	potential_arrow_in_for_await: bool,
 }
 
-pub(crate) struct Snapshot<E> {
+pub(crate) struct Snapshot<E: Extension> {
 	pos: u32,
 	in_type: bool,
 	tok: Token,
 	prev_end: u32,
 	comments: usize,
-	ext: E,
+	ext: E::Snapshot,
 }
 
 #[derive(Clone, Copy)]
@@ -470,7 +495,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 			tok: self.tok,
 			prev_end: self.prev_end,
 			comments: self.lexer.comments.len(),
-			ext: self.ext.clone(),
+			ext: self.ext.save(),
 		}
 	}
 
@@ -480,7 +505,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 		self.tok = snapshot.tok;
 		self.prev_end = snapshot.prev_end;
 		self.lexer.comments.truncate(snapshot.comments);
-		self.ext = snapshot.ext;
+		self.ext.restore(snapshot.ext);
 	}
 
 	/// Runs `f`, undoing it when it fails.

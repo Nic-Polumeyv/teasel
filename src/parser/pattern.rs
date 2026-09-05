@@ -160,11 +160,10 @@ impl<E: Extension> Parser<'_, E> {
 				self.expect(close)?;
 				break;
 			} else {
-				let start = self.tok.start;
-				E::binding_item_start(self, allow_modifiers)?;
+				let start = E::binding_item_start(self, allow_modifiers)?;
 				let left = self.parse_maybe_default(start, None)?;
 				E::binding_annotation(self, left)?;
-				let item = self.parse_maybe_default(start, Some(left))?;
+				let item = self.parse_maybe_default(self.start_of(left), Some(left))?;
 				elements.push(Some(E::binding_item_end(self, item)?));
 			}
 		}

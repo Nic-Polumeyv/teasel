@@ -442,7 +442,11 @@ impl Emit for Data {
 
 	fn extras(&self, w: &mut Writer<Self>, id: NodeId) {
 		let kind = w.kind(id);
-		let extras = self.extras(id).copied().unwrap_or_default();
+		let extras = if self.extras.is_empty() {
+			Extras::default()
+		} else {
+			self.extras(id).copied().unwrap_or_default()
+		};
 		let extension = matches!(kind, NodeKind::Extension(_));
 		match kind {
 			NodeKind::ImportDeclaration { .. } | NodeKind::ImportSpecifier { .. } => {

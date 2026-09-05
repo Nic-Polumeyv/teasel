@@ -191,10 +191,12 @@ impl<E: Extension> Parser<'_, E> {
 			if e.shorthand_assign.is_some_and(|p| p >= self.start_of(left)) {
 				e.shorthand_assign = None;
 			}
-			if is_eq {
-				self.check_lval_pattern(left, Binding::None, &mut None)?;
-			} else {
-				self.check_lval_simple(left, Binding::None, &mut None)?;
+			if E::checks_assignment_target(self) {
+				if is_eq {
+					self.check_lval_pattern(left, Binding::None, &mut None)?;
+				} else {
+					self.check_lval_simple(left, Binding::None, &mut None)?;
+				}
 			}
 			self.next()?;
 			let right = self.parse_maybe_assign(for_init, &mut None)?;
@@ -1117,7 +1119,7 @@ impl<E: Extension> Parser<'_, E> {
 			};
 			let (accessor_key, accessor_computed) = self.parse_property_name()?;
 			let func = self.parse_method(false, false, false, false)?;
-			self.check_accessor_params(func, kind == PropertyKind::Get)?;
+			self.check_accessor_params(func, kind == PropertyKind::Get, false)?;
 			return Ok(self.add(
 				NodeKind::Property {
 					key: accessor_key,
@@ -1166,7 +1168,7 @@ impl<E: Extension> Parser<'_, E> {
 		))
 	}
 
-	pub(crate) fn check_accessor_params(&self, func: NodeId, is_getter: bool) -> Result<()> {
+	pub(crate) fn check_accessor_params(&self, func: NodeId, is_getter: bool, in_class: bool) -> Result<()> {
 		let params = match self.kind(func) {
 			NodeKind::FunctionExpression { function } => function.params,
 			_ => match E::function_params(self, func) {
@@ -1174,8 +1176,9 @@ impl<E: Extension> Parser<'_, E> {
 				None => return Ok(()),
 			},
 		};
+		let this_param = !in_class && E::accessor_this_param(self, params);
 		let params = self.ast.list(params);
-		let expected = if is_getter { 0 } else { 1 };
+		let expected = if is_getter { 0 } else { 1 } + usize::from(this_param);
 		if params.len() != expected {
 			let start = self.start_of(func);
 			return if is_getter {
@@ -1220,7 +1223,6 @@ impl<E: Extension> Parser<'_, E> {
 		allow_direct_super: bool,
 		in_class: bool,
 	) -> Result<NodeId> {
-		let start = self.tok.start;
 		let (old_yield, old_await, old_await_ident) = (self.yield_pos, self.await_pos, self.await_ident_pos);
 		self.yield_pos = 0;
 		self.await_pos = 0;
@@ -1230,6 +1232,7 @@ impl<E: Extension> Parser<'_, E> {
 		);
 		let kind = FunctionKind::Method { in_class };
 		E::function_start(self, kind)?;
+		let start = self.tok.start;
 		self.expect(TokenKind::ParenL)?;
 		let params = self.parse_binding_list(TokenKind::ParenR, false, true, in_class)?;
 		self.check_yield_await_in_default_params()?;
@@ -1254,7 +1257,7 @@ impl<E: Extension> Parser<'_, E> {
 		self.yield_pos = old_yield;
 		self.await_pos = old_await;
 		self.await_ident_pos = old_await_ident;
-		E::function_end(self, node);
+		E::function_end(self, node)?;
 		Ok(node)
 	}
 
@@ -1286,7 +1289,7 @@ impl<E: Extension> Parser<'_, E> {
 			},
 			start,
 		);
-		E::function_end(self, node);
+		E::function_end(self, node)?;
 		Ok(node)
 	}
 

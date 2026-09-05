@@ -100,10 +100,10 @@ impl<E: Extension> Parser<'_, E> {
 		top_level: bool,
 		exports: Option<&mut HashSet<StrId>>,
 	) -> Result<NodeId> {
-		let start = self.tok.start;
 		if let Some(statement) = E::statement(self, context, top_level)? {
 			return Ok(statement);
 		}
+		let start = self.tok.start;
 		if self.is_let(context) {
 			if context != Context::None {
 				return self.unexpected();
@@ -465,7 +465,12 @@ impl<E: Extension> Parser<'_, E> {
 		let generator = self.eat(TokenKind::Star)?;
 		let mut id = None;
 		if is_statement && (flags & FUNC_NULLABLE_ID == 0 || matches!(self.tok.kind, TokenKind::Ident(_))) {
-			id = Some(self.parse_ident(false)?);
+			let name = self.parse_ident(false)?;
+			if flags & FUNC_HANGING == 0 && !E::DECLARES_FUNCTION_NAME_AFTER_BODY {
+				let binding = self.function_binding(generator, is_async);
+				self.check_lval_simple(name, binding, &mut None)?;
+			}
+			id = Some(name);
 		}
 		let (old_yield, old_await, old_await_ident) = (self.yield_pos, self.await_pos, self.await_ident_pos);
 		self.yield_pos = 0;
@@ -512,23 +517,30 @@ impl<E: Extension> Parser<'_, E> {
 		self.await_ident_pos = old_await_ident;
 		if is_statement
 			&& flags & FUNC_HANGING == 0
+			&& E::DECLARES_FUNCTION_NAME_AFTER_BODY
 			&& let Some(name) = id
 		{
-			let binding = if !matches!(self.kind(node), NodeKind::FunctionDeclaration { .. }) {
-				Binding::None
-			} else if self.strict || generator || is_async {
-				if self.treat_functions_as_var() {
-					Binding::Var
-				} else {
-					Binding::Lexical
-				}
+			let binding = if matches!(self.kind(node), NodeKind::FunctionDeclaration { .. }) {
+				self.function_binding(generator, is_async)
 			} else {
-				Binding::Function
+				Binding::None
 			};
 			self.check_lval_simple(name, binding, &mut None)?;
 		}
-		E::function_end(self, node);
+		E::function_end(self, node)?;
 		Ok(node)
+	}
+
+	fn function_binding(&self, generator: bool, is_async: bool) -> Binding {
+		if self.strict || generator || is_async {
+			if self.treat_functions_as_var() {
+				Binding::Var
+			} else {
+				Binding::Lexical
+			}
+		} else {
+			Binding::Function
+		}
 	}
 
 	fn parse_if(&mut self, start: u32) -> Result<NodeId> {
@@ -841,7 +853,7 @@ impl<E: Extension> Parser<'_, E> {
 			},
 			start,
 		);
-		E::import_end(self, node);
+		E::import_end(self, node)?;
 		Ok(node)
 	}
 

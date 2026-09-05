@@ -17,6 +17,7 @@ use crate::parser::{
 	Context, DestructuringErrors, Errors, Extension, ForInit, FunctionKind, Options, Parser, Result, Unwrap,
 };
 use ast::{Accessibility, Data, Extras, Kind, TsKind};
+use std::collections::HashMap;
 use types::TypeParameterModifiers;
 
 pub fn parse(src: &str, options: Options) -> std::result::Result<Ast<Data>, SyntaxError> {
@@ -55,9 +56,31 @@ pub fn parse_statement_at(
 	crate::parser::parse_statement_at::<TypeScript>(src, offset, options)
 }
 
-/// Parser state that only TypeScript needs. Cloned into snapshots, so it stays small.
-#[derive(Clone, Default)]
+/// Parser state that only TypeScript needs. `State` is copied into every snapshot, so it stays
+/// small; the name tables only grow within a scope and are truncated instead.
+#[derive(Default)]
 pub struct TypeScript {
+	state: State,
+	types: Names,
+	export_only: Names,
+}
+
+impl std::ops::Deref for TypeScript {
+	type Target = State;
+
+	fn deref(&self) -> &State {
+		&self.state
+	}
+}
+
+impl std::ops::DerefMut for TypeScript {
+	fn deref_mut(&mut self) -> &mut State {
+		&mut self.state
+	}
+}
+
+#[derive(Clone, Default)]
+pub struct State {
 	disallow_conditional_types: bool,
 	ambient: bool,
 	in_abstract_class: bool,
@@ -76,10 +99,43 @@ pub struct TypeScript {
 	export_kind: Option<Kind>,
 	/// Modifiers for the class about to be parsed.
 	next_class: ClassFrame,
-	types: Vec<(usize, StrId)>,
-	export_only: Vec<(usize, StrId)>,
 	/// Decorators waiting for their class, one list per nesting level of decorator expressions.
 	decorators: Vec<Vec<NodeId>>,
+}
+
+/// Names declared per scope depth, in declaration order so a scope's names are a suffix.
+#[derive(Default)]
+struct Names {
+	log: Vec<(usize, StrId)>,
+	depths: HashMap<StrId, Vec<usize>>,
+}
+
+impl Names {
+	fn push(&mut self, depth: usize, name: StrId) {
+		self.log.push((depth, name));
+		self.depths.entry(name).or_default().push(depth);
+	}
+
+	fn contains(&self, name: StrId) -> bool {
+		self.depths.get(&name).is_some_and(|d| !d.is_empty())
+	}
+
+	fn contains_at(&self, depth: usize, name: StrId) -> bool {
+		self.depths.get(&name).is_some_and(|d| d.contains(&depth))
+	}
+
+	fn truncate(&mut self, len: usize) {
+		while self.log.len() > len {
+			let (_, name) = self.log.pop().unwrap();
+			self.depths.get_mut(&name).unwrap().pop();
+		}
+	}
+
+	/// Forgets the names of a scope being left.
+	fn exit(&mut self, depth: usize) {
+		let len = self.log.iter().rposition(|(d, _)| *d < depth).map_or(0, |i| i + 1);
+		self.truncate(len);
+	}
 }
 
 /// What precedes a parameter: its decorators, and modifiers that make it a parameter property.
@@ -91,6 +147,7 @@ struct ParameterHead {
 
 #[derive(Clone, Copy, Default)]
 struct FunctionFrame {
+	in_class_method: bool,
 	type_parameters: Option<NodeId>,
 	return_type: Option<NodeId>,
 	arrow_parameters: bool,
@@ -126,6 +183,24 @@ pub(crate) struct Modifiers {
 }
 
 impl Modifiers {
+	fn has(&self, modifier: &str) -> bool {
+		match modifier {
+			"public" => self.extras.accessibility == Some(Accessibility::Public),
+			"private" => self.extras.accessibility == Some(Accessibility::Private),
+			"protected" => self.extras.accessibility == Some(Accessibility::Protected),
+			"declare" => self.extras.declare,
+			"abstract" => self.extras.is_abstract,
+			"override" => self.extras.is_override,
+			"readonly" => self.extras.readonly,
+			"accessor" => self.extras.accessor,
+			"static" => self.extras.is_static,
+			"in" => self.is_in,
+			"out" => self.is_out,
+			"const" => self.is_const,
+			_ => unreachable!(),
+		}
+	}
+
 	fn set(&mut self, modifier: &str) {
 		match modifier {
 			"public" => self.extras.accessibility = Some(Accessibility::Public),
@@ -152,18 +227,26 @@ impl Parser<'_, TypeScript> {
 		self.add(NodeKind::Extension(index), start)
 	}
 
-	fn ts_kind(&self, id: NodeId) -> Option<TsKind> {
+	fn ts_index(&self, id: NodeId) -> Option<usize> {
 		match self.kind(id) {
-			NodeKind::Extension(index) => Some(self.ast.extension.nodes[index as usize]),
+			NodeKind::Extension(index) => Some(index as usize),
 			_ => None,
 		}
 	}
 
+	fn ts_kind(&self, id: NodeId) -> Option<TsKind> {
+		Some(self.ast.extension.nodes[self.ts_index(id)?])
+	}
+
 	fn ts_kind_mut(&mut self, id: NodeId) -> Option<&mut TsKind> {
-		match self.kind(id) {
-			NodeKind::Extension(index) => Some(&mut self.ast.extension.nodes[index as usize]),
-			_ => None,
-		}
+		let index = self.ts_index(id)?;
+		Some(&mut self.ast.extension.nodes[index])
+	}
+
+	/// The byte column acorn-typescript reports as a position for modifier order errors.
+	fn column(&self, pos: u32) -> u32 {
+		let line_start = self.source()[..pos as usize].rfind(['\n', '\r']).map_or(0, |i| i + 1);
+		pos - line_start as u32
 	}
 
 	fn extras_mut(&mut self, id: NodeId) -> &mut Extras {
@@ -319,14 +402,14 @@ impl Parser<'_, TypeScript> {
 		let NodeKind::Identifier { name } = self.kind(id) else {
 			unreachable!()
 		};
-		let entry = (self.scope_depth(), name);
-		if unique && self.ext.types.contains(&entry) {
+		let depth = self.scope_depth();
+		if unique && self.ext.types.contains_at(depth, name) {
 			return self.error(
 				self.start_of(id),
 				format!("type '{}' has already been declared.", self.str(name)),
 			);
 		}
-		self.ext.types.push(entry);
+		self.ext.types.push(depth, name);
 		Ok(())
 	}
 
@@ -338,7 +421,24 @@ impl Parser<'_, TypeScript> {
 		if depth == 0 {
 			self.undeclared_exports.remove(&name);
 		}
-		self.ext.export_only.push((depth, name));
+		self.ext.export_only.push(depth, name);
+	}
+
+	/// A class member's name the way error messages print it.
+	fn element_name(&self, element: ElementFrame) -> String {
+		match element.key {
+			Some(key) if !element.computed && matches!(self.kind(key), NodeKind::Identifier { .. }) => {
+				let NodeKind::Identifier { name } = self.kind(key) else {
+					unreachable!()
+				};
+				self.str(name).to_string()
+			}
+			Some(key) => format!(
+				"[{}]",
+				&self.source()[self.start_of(key) as usize..self.end_of(key) as usize]
+			),
+			None => String::new(),
+		}
 	}
 
 	// Expressions
@@ -505,18 +605,18 @@ impl Parser<'_, TypeScript> {
 				self.ast.list(properties).iter().enumerate().all(|(i, prop)| {
 					let prop = prop.unwrap();
 					(i as u32 == last || !matches!(self.kind(prop), NodeKind::SpreadElement { .. }))
-						&& self.is_assignable(prop, is_binding)
+						&& self.is_assignable(prop, false)
 				})
 			}
-			NodeKind::Property { value, .. } => self.is_assignable(value, is_binding),
-			NodeKind::SpreadElement { argument } => self.is_assignable(argument, is_binding),
+			NodeKind::Property { value, .. } => self.is_assignable(value, false),
+			NodeKind::SpreadElement { argument } => self.is_assignable(argument, false),
 			NodeKind::ArrayExpression { elements } => self
 				.ast
 				.list(elements)
 				.iter()
-				.all(|element| element.is_none_or(|e| self.is_assignable(e, is_binding))),
+				.all(|element| element.is_none_or(|e| self.is_assignable(e, false))),
 			NodeKind::AssignmentExpression { operator, .. } => operator == crate::ast::AssignmentOperator::Assign,
-			NodeKind::ParenthesizedExpression { expression } => self.is_assignable(expression, is_binding),
+			NodeKind::ParenthesizedExpression { expression } => self.is_assignable(expression, false),
 			NodeKind::MemberExpression { .. } => !is_binding,
 			NodeKind::Extension(_) => match self.ts_kind(id) {
 				Some(TsKind::TypeCastExpression { expression, .. }) => self.is_assignable(expression, is_binding),
@@ -527,20 +627,22 @@ impl Parser<'_, TypeScript> {
 		}
 	}
 
-	/// The return type before `=>`, kept only when an arrow really follows.
-	fn try_arrow_return_type(&mut self) -> Result<Option<Option<NodeId>>> {
+	/// Reads a `: type` before `=>` into `arrow_return_type`; false when there is a colon but no
+	/// arrow follows it.
+	fn take_arrow_return_type(&mut self) -> Result<bool> {
+		self.ext.arrow_return_type = None;
+		if !self.is(TokenKind::Colon) {
+			return Ok(true);
+		}
 		let snapshot = self.snapshot();
 		match self.parse_type_or_type_predicate_annotation(TokenKind::Colon) {
-			Ok(return_type) => {
-				if self.can_insert_semicolon() || !self.is(TokenKind::Arrow) {
-					self.restore(snapshot);
-					return Ok(Some(None));
-				}
-				Ok(Some(Some(return_type)))
+			Ok(return_type) if !self.can_insert_semicolon() && self.is(TokenKind::Arrow) => {
+				self.ext.arrow_return_type = Some(return_type);
+				Ok(true)
 			}
-			Err(_) => {
+			_ => {
 				self.restore(snapshot);
-				Ok(None)
+				Ok(false)
 			}
 		}
 	}
@@ -561,11 +663,23 @@ impl Parser<'_, TypeScript> {
 
 impl Extension for TypeScript {
 	type Data = Data;
+	type Snapshot = (State, usize, usize);
 
 	const DUPLICATE_EXPORT_ERRORS: bool = false;
+	const DECLARES_FUNCTION_NAME_AFTER_BODY: bool = true;
 
 	fn init(p: &mut Parser<Self>) {
 		p.lexer.at_sign = true;
+	}
+
+	fn save(&self) -> Self::Snapshot {
+		(self.state.clone(), self.types.log.len(), self.export_only.log.len())
+	}
+
+	fn restore(&mut self, (state, types, export_only): Self::Snapshot) {
+		self.state = state;
+		self.types.truncate(types);
+		self.export_only.truncate(export_only);
 	}
 
 	// Statements and modules
@@ -731,9 +845,24 @@ impl Extension for TypeScript {
 		Ok(None)
 	}
 
-	fn import_end(p: &mut Parser<Self>, node: NodeId) {
+	fn import_end(p: &mut Parser<Self>, node: NodeId) -> Result<()> {
 		let kind = p.ext.outer_kind.take().unwrap_or(Kind::Value);
 		p.extras_mut(node).import_kind = Some(kind);
+		let NodeKind::ImportDeclaration { specifiers, .. } = p.kind(node) else {
+			unreachable!()
+		};
+		if kind == Kind::Type
+			&& specifiers.len > 1
+			&& matches!(
+				p.kind(p.ast.list(specifiers)[0].unwrap()),
+				NodeKind::ImportDefaultSpecifier { .. }
+			) {
+			return p.error(
+				p.start_of(node),
+				"A type-only import can specify a default import or named bindings, but not both.",
+			);
+		}
+		Ok(())
 	}
 
 	fn import_specifier(p: &mut Parser<Self>) -> Result<Option<NodeId>> {
@@ -744,13 +873,13 @@ impl Extension for TypeScript {
 	}
 
 	fn declares_export(p: &mut Parser<Self>, name: StrId) -> bool {
-		p.ext.types.iter().any(|(_, n)| *n == name) || p.ext.export_only.iter().any(|(_, n)| *n == name)
+		p.ext.types.contains(name) || p.ext.export_only.contains(name)
 	}
 
 	fn scope_exit(p: &mut Parser<Self>) {
 		let depth = p.scope_depth();
-		p.ext.types.retain(|(d, _)| *d < depth);
-		p.ext.export_only.retain(|(d, _)| *d < depth);
+		p.ext.types.exit(depth);
+		p.ext.export_only.exit(depth);
 	}
 
 	// Bindings
@@ -791,7 +920,7 @@ impl Extension for TypeScript {
 		Ok(None)
 	}
 
-	fn binding_item_start(p: &mut Parser<Self>, allow_modifiers: bool) -> Result<()> {
+	fn binding_item_start(p: &mut Parser<Self>, allow_modifiers: bool) -> Result<u32> {
 		let mut decorators = Vec::new();
 		while p.is(TokenKind::At) {
 			decorators.push(p.parse_decorator()?);
@@ -801,9 +930,9 @@ impl Extension for TypeScript {
 		} else {
 			Some(p.list_of(&decorators))
 		};
+		let start = p.tok.start;
 		let mut entry = None;
 		if allow_modifiers {
-			let start = p.tok.start;
 			let modifiers = p.parse_modifiers(
 				&["public", "private", "protected", "override", "readonly"],
 				&[],
@@ -819,7 +948,7 @@ impl Extension for TypeScript {
 			modifiers: entry,
 			decorators,
 		});
-		Ok(())
+		Ok(start)
 	}
 
 	fn binding_annotation(p: &mut Parser<Self>, node: NodeId) -> Result<()> {
@@ -834,6 +963,12 @@ impl Extension for TypeScript {
 		}
 		if p.is(TokenKind::Colon) {
 			let annotation = p.parse_type_annotation(true, None)?;
+			if matches!(p.kind(node), NodeKind::AssignmentPattern { .. }) {
+				return p.error(
+					p.start_of(annotation),
+					"Type annotations must come before default assignments, e.g. instead of `age = 25: number` use `age: number = 25`.",
+				);
+			}
 			p.extras_mut(node).type_annotation = Some(annotation);
 		}
 		p.ast.node_mut(node).end = p.prev_end;
@@ -895,6 +1030,7 @@ impl Extension for TypeScript {
 
 	fn function_start(p: &mut Parser<Self>, kind: FunctionKind) -> Result<()> {
 		let mut frame = FunctionFrame {
+			in_class_method: kind == FunctionKind::Method { in_class: true },
 			arrow_parameters: p.ext.maybe_in_arrow_parameters,
 			..FunctionFrame::default()
 		};
@@ -943,29 +1079,10 @@ impl Extension for TypeScript {
 		if kind == FunctionKind::Declaration && p.ext.ambient {
 			return p.error(start, "An implementation cannot be declared in ambient contexts.");
 		}
-		if kind == (FunctionKind::Method { in_class: true })
-			&& let Some(element) = p.ext.elements.last()
-			&& element.extras.is_abstract
-		{
-			let name = match element.key {
-				Some(key) if !element.computed && matches!(p.kind(key), NodeKind::Identifier { .. }) => {
-					let NodeKind::Identifier { name } = p.kind(key) else {
-						unreachable!()
-					};
-					p.str(name).to_string()
-				}
-				Some(key) => format!("[{}]", &p.source()[p.start_of(key) as usize..p.end_of(key) as usize]),
-				None => String::new(),
-			};
-			return p.error(
-				element.start,
-				format!("Method '{name}' cannot have an implementation because it is marked abstract."),
-			);
-		}
 		Ok(None)
 	}
 
-	fn function_end(p: &mut Parser<Self>, node: NodeId) {
+	fn function_end(p: &mut Parser<Self>, node: NodeId) -> Result<()> {
 		let frame = p.ext.functions.pop().unwrap();
 		p.ext.maybe_in_arrow_parameters = frame.arrow_parameters;
 		if frame.type_parameters.is_some() || frame.return_type.is_some() {
@@ -975,6 +1092,25 @@ impl Extension for TypeScript {
 			}
 			extras.return_type = frame.return_type;
 		}
+		if frame.in_class_method
+			&& matches!(p.kind(node), NodeKind::FunctionExpression { .. })
+			&& let Some(element) = p.ext.elements.last()
+			&& element.extras.is_abstract
+		{
+			let name = p.element_name(*element);
+			return p.error(
+				element.start,
+				format!("Method '{name}' cannot have an implementation because it is marked abstract."),
+			);
+		}
+		Ok(())
+	}
+
+	fn accessor_this_param(p: &Parser<Self>, params: List) -> bool {
+		p.ast
+			.list(params)
+			.first()
+			.is_some_and(|param| param.is_some_and(|param| p.ident_is(param, "this")))
 	}
 
 	fn function_params(p: &Parser<Self>, node: NodeId) -> Option<List> {
@@ -1134,22 +1270,49 @@ impl Extension for TypeScript {
 
 	fn class_method_start(p: &mut Parser<Self>) -> Result<()> {
 		let type_parameters = p.try_parse_type_parameters(TypeParameterModifiers::Const)?;
+		let element = *p.ext.elements.last().unwrap();
+		let key = element.key.unwrap();
+		if matches!(p.kind(key), NodeKind::PrivateIdentifier { .. }) {
+			if let Some(accessibility) = element.extras.accessibility {
+				return p.error(
+					element.start,
+					format!(
+						"Private methods cannot have an accessibility modifier ('{}').",
+						accessibility.as_str()
+					),
+				);
+			}
+		} else if let Some(type_parameters) = type_parameters
+			&& !element.extras.is_static
+			&& !element.computed
+			&& matches!(p.kind(key), NodeKind::Identifier { name } | NodeKind::StringLiteral { value: name } if p.str(name) == "constructor")
+		{
+			return p.error(
+				p.start_of(type_parameters),
+				"Type parameters cannot appear on a constructor declaration.",
+			);
+		}
 		p.ext.elements.last_mut().unwrap().extras.type_parameters = type_parameters;
 		Ok(())
 	}
 
 	fn class_field_annotation(p: &mut Parser<Self>) -> Result<()> {
 		let element = *p.ext.elements.last().unwrap();
-		if !element.extras.optional {
+		let mut definite = false;
+		let mut optional = element.extras.optional;
+		if !optional {
 			if p.is(TokenKind::Bang) {
 				p.next()?;
-				p.ext.elements.last_mut().unwrap().extras.definite = true;
-			} else if p.eat(TokenKind::Question)? {
-				p.ext.elements.last_mut().unwrap().extras.optional = true;
+				definite = true;
+			} else {
+				optional = p.eat(TokenKind::Question)?;
 			}
 		}
 		let type_annotation = p.try_parse_type_annotation()?;
-		p.ext.elements.last_mut().unwrap().extras.type_annotation = type_annotation;
+		let extras = &mut p.ext.elements.last_mut().unwrap().extras;
+		extras.definite = definite;
+		extras.optional = optional;
+		extras.type_annotation = type_annotation;
 		let private = element
 			.key
 			.is_some_and(|key| matches!(p.kind(key), NodeKind::PrivateIdentifier { .. }));
@@ -1171,11 +1334,7 @@ impl Extension for TypeScript {
 				return p.error(p.tok.start, "Initializers are not allowed in ambient contexts.");
 			}
 			if element.extras.is_abstract {
-				let key = element.key.unwrap();
-				let name = match p.kind(key) {
-					NodeKind::Identifier { name } if !element.computed => p.str(name).to_string(),
-					_ => format!("[{}]", &p.source()[p.start_of(key) as usize..p.end_of(key) as usize]),
-				};
+				let name = p.element_name(element);
 				return p.error(
 					p.tok.start,
 					format!("Property '{name}' cannot have an initializer because it is marked abstract."),
@@ -1224,7 +1383,8 @@ impl Extension for TypeScript {
 	}
 
 	fn paren_list_start(p: &mut Parser<Self>) {
-		p.ext.paren_lists.push(p.ext.maybe_in_arrow_parameters);
+		let inside = p.ext.maybe_in_arrow_parameters;
+		p.ext.paren_lists.push(inside);
 		p.ext.maybe_in_arrow_parameters = true;
 	}
 
@@ -1330,10 +1490,14 @@ impl Extension for TypeScript {
 			let node = p.ts(TsKind::NonNullExpression { expression: base }, start);
 			return Ok(Some((node, false)));
 		}
+		let optional_call = p.is(TokenKind::QuestionDot) && p.peek_char().0 == Some('<');
+		if !optional_call && !p.is(TokenKind::Lt) && !p.is(TokenKind::LtLt) {
+			return Ok(None);
+		}
 		let mut chained = optional_chained;
 		let mut is_optional_call = false;
 		let snapshot = p.snapshot();
-		if p.is(TokenKind::QuestionDot) && p.peek_char().0 == Some('<') {
+		if optional_call {
 			if no_calls {
 				return Ok(Some((base, false)));
 			}
@@ -1367,42 +1531,15 @@ impl Extension for TypeScript {
 		} else {
 			!p.can_insert_semicolon()
 		};
-		if !should {
-			p.ext.arrow_return_type = None;
-			return Ok(false);
-		}
-		if p.is(TokenKind::Colon) {
-			match p.try_arrow_return_type()? {
-				Some(Some(return_type)) => p.ext.arrow_return_type = Some(return_type),
-				Some(None) => {
-					p.ext.arrow_return_type = None;
-					return Ok(false);
-				}
-				None => {}
-			}
-		}
-		if !p.is(TokenKind::Arrow) {
-			p.ext.arrow_return_type = None;
-			return Ok(false);
-		}
-		Ok(true)
+		Ok(should && p.take_arrow_return_type()? && p.is(TokenKind::Arrow))
 	}
 
 	fn should_parse_async_arrow(p: &mut Parser<Self>) -> Result<bool> {
-		if p.is(TokenKind::Colon) {
-			return match p.try_arrow_return_type()? {
-				Some(Some(return_type)) => {
-					p.ext.arrow_return_type = Some(return_type);
-					Ok(!p.can_insert_semicolon() && p.eat(TokenKind::Arrow)?)
-				}
-				Some(None) => {
-					p.ext.arrow_return_type = None;
-					Ok(false)
-				}
-				None => Ok(false),
-			};
-		}
-		Ok(!p.can_insert_semicolon() && p.eat(TokenKind::Arrow)?)
+		Ok(p.take_arrow_return_type()? && !p.can_insert_semicolon() && p.eat(TokenKind::Arrow)?)
+	}
+
+	fn checks_assignment_target(p: &mut Parser<Self>) -> bool {
+		!p.ext.maybe_in_arrow_parameters
 	}
 
 	fn new_expression(p: &mut Parser<Self>, node: NodeId) {

@@ -35,6 +35,7 @@ export function normalize_ts(key, value) {
 		}
 		if (/^(Import|ExportNamed|ExportAll)Declaration$/.test(value.type) && !('attributes' in value)) return { ...value, attributes: [] };
 		if (value.type === 'CallExpression' && !('optional' in value)) return { ...value, optional: false };
+		if (value.type === 'ClassExpression' && !('id' in value)) return { ...value, id: null };
 		if ('extra' in value) {
 			const { extra, ...rest } = value;
 			return rest;

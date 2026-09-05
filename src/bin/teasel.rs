@@ -79,9 +79,17 @@ fn run(source: &str, options: Options, mode: Mode, offset: u32, typescript: bool
 			}
 		}};
 	}
+	#[cfg(feature = "typescript")]
 	let result = if typescript {
 		run!(teasel::typescript)
 	} else {
+		run!(teasel)
+	};
+	#[cfg(not(feature = "typescript"))]
+	let result = {
+		if typescript {
+			return String::from("{\"error\":{\"message\":\"built without TypeScript\",\"pos\":0}}");
+		}
 		run!(teasel)
 	};
 	result.unwrap_or_else(|error| estree::error_to_json(&error, source))

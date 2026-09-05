@@ -104,6 +104,13 @@ impl Parser<'_, TypeScript> {
 	}
 
 	fn parse_module_or_namespace_declaration(&mut self, start: u32, nested: bool) -> Result<NodeId> {
+		self.enter()?;
+		let result = self.parse_module_or_namespace_declaration_inner(start, nested);
+		self.leave();
+		result
+	}
+
+	fn parse_module_or_namespace_declaration_inner(&mut self, start: u32, nested: bool) -> Result<NodeId> {
 		let id = self.parse_ident(false)?;
 		if !nested {
 			self.check_lval_simple(id, Binding::None, &mut None)?;

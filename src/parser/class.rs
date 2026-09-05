@@ -328,7 +328,7 @@ impl<E: Extension> Parser<'_, E> {
 		E::class_method_start(self)?;
 		let value = self.parse_method(generator, is_async, allows_direct_super, true)?;
 		if kind == MethodKind::Get || kind == MethodKind::Set {
-			self.check_accessor_params(value, kind == MethodKind::Get)?;
+			self.check_accessor_params(value, kind == MethodKind::Get, true)?;
 		}
 		let node = self.add(
 			NodeKind::MethodDefinition {

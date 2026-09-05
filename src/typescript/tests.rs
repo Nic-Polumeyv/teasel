@@ -429,7 +429,7 @@ fn modules() {
 	);
 	assert_eq!(
 		module(r#"import type A, { B } from "a";"#),
-		r#"ImportDeclaration { specifiers: [ImportDefaultSpecifier { local: Identifier { name: "A" } }, ImportSpecifier { imported: Identifier { name: "B" }, local: Identifier { name: "B" } }], source: StringLiteral { value: "a" }, attributes: [] } +{importKind: type}"#
+		r#"error 0: A type-only import can specify a default import or named bindings, but not both."#
 	);
 }
 
