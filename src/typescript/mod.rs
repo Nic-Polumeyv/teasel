@@ -10,6 +10,7 @@ mod walk;
 
 use crate::ast::{Ast, List, NodeId, NodeKind, VariableKind};
 use crate::error::SyntaxError;
+use crate::interner::FastMap;
 use crate::interner::StrId;
 use crate::lexer::token::{Keyword, TokenKind};
 use crate::parser::class::ClassKind;
@@ -18,7 +19,6 @@ use crate::parser::{
 	Context, DestructuringErrors, Errors, Extension, ForInit, FunctionKind, Options, Parser, Result, Unwrap,
 };
 use ast::{Accessibility, Data, Extras, Kind, TsKind};
-use crate::interner::FastMap;
 use types::TypeParameterModifiers;
 
 pub fn parse(src: &str, options: Options) -> std::result::Result<Ast<Data>, SyntaxError> {

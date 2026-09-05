@@ -49,7 +49,11 @@ pub fn error_to_json(error: &crate::SyntaxError, source: &str) -> String {
 	let pos = positions.offset(error.pos);
 	let mut out = String::from("{\"error\":{\"message\":");
 	write_json_string(&mut out, &error.message);
-	write!(out, ",\"pos\":{pos},\"loc\":{{\"line\":{line},\"column\":{column}}}}}}}").unwrap();
+	write!(
+		out,
+		",\"pos\":{pos},\"loc\":{{\"line\":{line},\"column\":{column}}}}}}}"
+	)
+	.unwrap();
 	out
 }
 
@@ -90,7 +94,13 @@ impl Positions {
 					line_starts.push((i as u32, i as u32 - gap));
 				}
 			} else {
-				let len = if b >= 0xf0 { 4 } else if b >= 0xe0 { 3 } else { 2 };
+				let len = if b >= 0xf0 {
+					4
+				} else if b >= 0xe0 {
+					3
+				} else {
+					2
+				};
 				let separator = len == 3 && crate::lexer::is_separator(&bytes[i..]);
 				i += len;
 				gap += len as u32 - if len == 4 { 2 } else { 1 };

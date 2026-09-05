@@ -9,13 +9,13 @@ pub(crate) mod tests;
 
 use crate::ast::{Ast, List, NodeId, NodeKind, VariableKind};
 use crate::error::SyntaxError;
+use crate::interner::FastMap;
 use crate::interner::StrId;
 use crate::lexer::Lexer;
 use crate::lexer::token::{Keyword, Token, TokenKind};
 pub(crate) use expression::ForInit;
 use scope::{SCOPE_TOP, Scope};
 pub(crate) use statement::Context;
-use crate::interner::FastMap;
 use std::collections::HashSet;
 
 /// Errors travel boxed so every `Result` stays two words wide.
