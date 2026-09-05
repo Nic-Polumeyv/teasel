@@ -109,6 +109,7 @@ impl<'a> Parser<'a> {
 		lexer.set_pos(offset);
 		let strict = options.module || expression::strict_directive(src, offset);
 		lexer.strict = strict;
+		lexer.module = options.module;
 		let tok = lexer.next_token()?;
 		Ok(Self {
 			lexer,

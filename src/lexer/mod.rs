@@ -24,6 +24,8 @@ pub(crate) struct Lexer<'a> {
 	escaped: bool,
 	/// Strict mode rejects legacy octal literals and escapes while scanning, as acorn does.
 	pub(crate) strict: bool,
+	/// Modules have no HTML-style comments.
+	pub(crate) module: bool,
 	pub(crate) comments: Vec<Comment>,
 	pub(crate) strings: Interner,
 }
@@ -36,6 +38,7 @@ impl<'a> Lexer<'a> {
 			buf: String::new(),
 			escaped: false,
 			strict: false,
+			module: false,
 			comments: Vec::new(),
 			strings: Interner::default(),
 		}
@@ -154,11 +157,16 @@ impl<'a> Lexer<'a> {
 
 	fn skip_space(&mut self) -> Result<bool> {
 		let mut newline = false;
+		let last_end = self.pos;
 		if self.pos == 0 && self.src.starts_with("#!") {
 			self.skip_line_comment(2);
 		}
 		while let Some(b) = self.byte() {
 			match b {
+				b'<' if !self.module && self.src[self.pos..].starts_with("<!--") => self.skip_line_comment(4),
+				b'-' if !self.module && (last_end == 0 || newline) && self.src[self.pos..].starts_with("-->") => {
+					self.skip_line_comment(3)
+				}
 				b' ' | b'\t' | 0x0b | 0x0c => self.pos += 1,
 				b'\n' | b'\r' => {
 					self.pos += 1;

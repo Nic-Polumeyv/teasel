@@ -838,7 +838,7 @@ impl Parser<'_> {
 		let atom = self.parse_expr_atom(&mut None, ForInit::No, true)?;
 		let callee = self.parse_subscripts(atom, callee_start, true, ForInit::No)?;
 		if matches!(self.kind(callee), NodeKind::Super) {
-			return self.error(start, "Invalid use of 'super'");
+			return self.error(self.start_of(callee), "Invalid use of 'super'");
 		}
 		let arguments = if self.eat(TokenKind::ParenL)? {
 			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut None)?;

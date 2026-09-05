@@ -355,6 +355,10 @@ fn template_newlines_normalise() {
 	lexer.next_token().unwrap();
 	let e = lexer.read_template().unwrap_err();
 	assert_eq!((e.message.as_str(), e.pos), ("Unterminated template", 1));
+	let mut lexer = Lexer::new("`");
+	lexer.next_token().unwrap();
+	let e = lexer.read_template().unwrap_err();
+	assert_eq!((e.message.as_str(), e.pos), ("Unterminated template literal", 1));
 }
 
 #[test]
@@ -383,6 +387,10 @@ fn regex() {
 	let t = lexer.next_token().unwrap();
 	let e = lexer.read_regex(t).unwrap_err();
 	assert_eq!((e.message.as_str(), e.pos), ("Unexpected token", 3));
+	let mut lexer = Lexer::new("/a/\\ux");
+	let t = lexer.next_token().unwrap();
+	let e = lexer.read_regex(t).unwrap_err();
+	assert_eq!((e.message.as_str(), e.pos), ("Bad character escape sequence", 5));
 }
 
 #[test]
@@ -408,6 +416,18 @@ fn comments_are_collected_and_skipped() {
 		]
 	);
 	assert_eq!(error("/* x").0, "Unterminated comment");
+}
+
+#[test]
+fn html_comments_outside_modules() {
+	assert_eq!(texts("a <!-- b\n+c"), ["a", "+", "c"]);
+	assert_eq!(texts("--> x\ny"), ["y"]);
+	assert_eq!(texts("a = b-->1;\n --> nothing"), ["a", "=", "b", "--", ">", "1", ";"]);
+	assert_eq!(texts("/* c */--> x\ny"), ["y"]);
+	let mut lexer = Lexer::new("a <!-- b");
+	lexer.module = true;
+	lexer.next_token().unwrap();
+	assert_eq!(lexer.next_token().unwrap().kind, Lt);
 }
 
 #[test]
