@@ -1,0 +1,11 @@
+{
+	"name": "teasel-oracle",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"run": "bun run.js"
+	},
+	"devDependencies": {
+		"acorn": "^8.15.0"
+	}
+}

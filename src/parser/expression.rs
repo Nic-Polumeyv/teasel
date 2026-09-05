@@ -93,9 +93,7 @@ fn unary_operator(kind: TokenKind) -> Option<UnaryOperator> {
 pub(crate) fn starts_expression(kind: TokenKind) -> bool {
 	use TokenKind as T;
 	match kind {
-		T::Ident { .. } | T::PrivateName(_) | T::Number { .. } | T::BigInt | T::String { .. } | T::RegExp { .. } => {
-			true
-		}
+		T::Ident(_) | T::PrivateName(_) | T::Number(_) | T::BigInt | T::String(_) | T::RegExp { .. } => true,
 		T::ParenL | T::BracketL | T::BraceL | T::Backquote | T::Slash | T::SlashEq => true,
 		T::Bang | T::Tilde | T::Plus | T::Minus | T::PlusPlus | T::MinusMinus => true,
 		T::Keyword(k) => {
@@ -137,6 +135,13 @@ impl Parser<'_> {
 	}
 
 	pub(crate) fn parse_maybe_assign(&mut self, for_init: ForInit, errors: &mut Errors) -> Result<NodeId> {
+		self.enter()?;
+		let result = self.parse_maybe_assign_inner(for_init, errors);
+		self.leave();
+		result
+	}
+
+	fn parse_maybe_assign_inner(&mut self, for_init: ForInit, errors: &mut Errors) -> Result<NodeId> {
 		if self.is_contextual("yield") && self.in_generator() {
 			return self.parse_yield(for_init);
 		}
@@ -154,7 +159,7 @@ impl Parser<'_> {
 			}
 		};
 		let start = self.tok.start;
-		if self.is(TokenKind::ParenL) || matches!(self.tok.kind, TokenKind::Ident { .. }) {
+		if self.is(TokenKind::ParenL) || matches!(self.tok.kind, TokenKind::Ident(_)) {
 			self.potential_arrow_at = start;
 			self.potential_arrow_in_for_await = for_init == ForInit::Await;
 		}
@@ -209,6 +214,9 @@ impl Parser<'_> {
 		if self.check_expression_errors(errors, false)? {
 			return Ok(expr);
 		}
+		if self.is_arrow_at(expr, start) {
+			return Ok(expr);
+		}
 		if self.eat(TokenKind::Question)? {
 			let consequent = self.parse_maybe_assign(ForInit::No, &mut None)?;
 			self.expect(TokenKind::Colon)?;
@@ -231,45 +239,53 @@ impl Parser<'_> {
 		if self.check_expression_errors(errors, false)? {
 			return Ok(expr);
 		}
-		if self.start_of(expr) == start && matches!(self.kind(expr), NodeKind::ArrowFunctionExpression { .. }) {
+		if self.is_arrow_at(expr, start) {
 			return Ok(expr);
 		}
 		self.parse_expr_op(expr, start, -1, for_init)
 	}
 
-	fn parse_expr_op(&mut self, left: NodeId, left_start: u32, min_prec: i8, for_init: ForInit) -> Result<NodeId> {
-		let (prec, op): (i8, Op) = match self.tok.kind {
-			TokenKind::QuestionQuestion => (1, Op::Coalesce),
-			TokenKind::PipePipe => (1, Op::Logical(LogicalOperator::Or)),
-			TokenKind::AmpAmp => (2, Op::Logical(LogicalOperator::And)),
-			kind => match binary_precedence(kind) {
-				Some((prec, op)) => (prec as i8, Op::Binary(op)),
-				None => return Ok(left),
-			},
-		};
-		if for_init.no_in() && self.is_keyword(Keyword::In) {
-			return Ok(left);
+	fn is_arrow_at(&self, expr: NodeId, start: u32) -> bool {
+		self.start_of(expr) == start && matches!(self.kind(expr), NodeKind::ArrowFunctionExpression { .. })
+	}
+
+	fn parse_expr_op(&mut self, mut left: NodeId, left_start: u32, min_prec: i8, for_init: ForInit) -> Result<NodeId> {
+		loop {
+			let (prec, op): (i8, Op) = match self.tok.kind {
+				TokenKind::QuestionQuestion => (1, Op::Coalesce),
+				TokenKind::PipePipe => (1, Op::Logical(LogicalOperator::Or)),
+				TokenKind::AmpAmp => (2, Op::Logical(LogicalOperator::And)),
+				kind => match binary_precedence(kind) {
+					Some((prec, op)) => (prec as i8, Op::Binary(op)),
+					None => return Ok(left),
+				},
+			};
+			if for_init.no_in() && self.is_keyword(Keyword::In) {
+				return Ok(left);
+			}
+			if prec <= min_prec {
+				return Ok(left);
+			}
+			let logical = matches!(op, Op::Logical(_));
+			let coalesce = matches!(op, Op::Coalesce);
+			let prec = if coalesce { 2 } else { prec };
+			self.next()?;
+			let right_start = self.tok.start;
+			let unary = self.parse_maybe_unary(&mut None, false, false, for_init)?;
+			self.enter()?;
+			let right = self.parse_expr_op(unary, right_start, if coalesce { prec - 1 } else { prec }, for_init);
+			self.leave();
+			let right = right?;
+			left = self.build_binary(left_start, left, right, op)?;
+			if (logical && self.is(TokenKind::QuestionQuestion))
+				|| (coalesce && (self.is(TokenKind::PipePipe) || self.is(TokenKind::AmpAmp)))
+			{
+				return self.error(
+					self.tok.start,
+					"Logical expressions and coalesce expressions cannot be mixed. Wrap either by parentheses",
+				);
+			}
 		}
-		if prec <= min_prec {
-			return Ok(left);
-		}
-		let logical = matches!(op, Op::Logical(_));
-		let coalesce = matches!(op, Op::Coalesce);
-		let prec = if coalesce { 2 } else { prec };
-		self.next()?;
-		let right_start = self.tok.start;
-		let unary = self.parse_maybe_unary(&mut None, false, false, for_init)?;
-		let right = self.parse_expr_op(unary, right_start, if coalesce { prec - 1 } else { prec }, for_init)?;
-		let node = self.build_binary(left_start, left, right, op)?;
-		if (logical && self.is(TokenKind::QuestionQuestion))
-			|| (coalesce && (self.is(TokenKind::PipePipe) || self.is(TokenKind::AmpAmp)))
-		{
-			return self.error(
-				self.tok.start,
-				"Logical expressions and coalesce expressions cannot be mixed. Wrap either by parentheses",
-			);
-		}
-		self.parse_expr_op(node, left_start, min_prec, for_init)
 	}
 
 	fn build_binary(&mut self, start: u32, left: NodeId, right: NodeId, op: Op) -> Result<NodeId> {
@@ -292,6 +308,19 @@ impl Parser<'_> {
 	}
 
 	pub(crate) fn parse_maybe_unary(
+		&mut self,
+		errors: &mut Errors,
+		saw_unary: bool,
+		inc_dec: bool,
+		for_init: ForInit,
+	) -> Result<NodeId> {
+		self.enter()?;
+		let result = self.parse_maybe_unary_inner(errors, saw_unary, inc_dec, for_init);
+		self.leave();
+		result
+	}
+
+	fn parse_maybe_unary_inner(
 		&mut self,
 		errors: &mut Errors,
 		mut saw_unary: bool,
@@ -366,7 +395,7 @@ impl Parser<'_> {
 			expr = e;
 		}
 
-		if !inc_dec && self.is(TokenKind::StarStar) {
+		if !inc_dec && self.is(TokenKind::StarStar) && !self.is_arrow_at(expr, start) {
 			if saw_unary {
 				return self.unexpected();
 			}
@@ -396,11 +425,7 @@ impl Parser<'_> {
 		}
 	}
 
-	pub(crate) fn parse_expr_subscripts_public(&mut self, for_init: ForInit) -> Result<NodeId> {
-		self.parse_expr_subscripts(&mut None, for_init)
-	}
-
-	fn parse_expr_subscripts(&mut self, errors: &mut Errors, for_init: ForInit) -> Result<NodeId> {
+	pub(crate) fn parse_expr_subscripts(&mut self, errors: &mut Errors, for_init: ForInit) -> Result<NodeId> {
 		let start = self.tok.start;
 		let expr = self.parse_expr_atom(errors, for_init, false)?;
 		if matches!(self.kind(expr), NodeKind::ArrowFunctionExpression { .. })
@@ -577,7 +602,8 @@ impl Parser<'_> {
 				self.next()?;
 				Ok(self.add(NodeKind::ThisExpression, start))
 			}
-			TokenKind::Ident { name, escaped } => {
+			TokenKind::Ident(name) => {
+				let escaped = self.tok.escaped;
 				let id = self.parse_ident(false)?;
 				let is_async = !escaped && self.str(name) == "async";
 				if is_async && !self.can_insert_semicolon() && self.eat_keyword(Keyword::Function)? {
@@ -588,7 +614,7 @@ impl Parser<'_> {
 						return self.parse_arrow_expression(start, vec![Some(id)], false, for_init);
 					}
 					if is_async
-						&& matches!(self.tok.kind, TokenKind::Ident { .. })
+						&& matches!(self.tok.kind, TokenKind::Ident(_))
 						&& (!self.potential_arrow_in_for_await || !self.is_contextual("of"))
 					{
 						let param = self.parse_ident(false)?;
@@ -604,10 +630,7 @@ impl Parser<'_> {
 				self.next()?;
 				Ok(self.add(NodeKind::RegExpLiteral { pattern, flags }, start))
 			}
-			TokenKind::Number { value, legacy_octal } => {
-				if legacy_octal && self.strict {
-					return self.error(start, "Invalid number");
-				}
+			TokenKind::Number(value) => {
 				self.next()?;
 				Ok(self.add(NodeKind::NumberLiteral { value }, start))
 			}
@@ -615,10 +638,7 @@ impl Parser<'_> {
 				self.next()?;
 				Ok(self.add(NodeKind::BigIntLiteral, start))
 			}
-			TokenKind::String { value, octal } => {
-				if octal && self.strict {
-					return self.error(start, "Octal literal in strict mode");
-				}
+			TokenKind::String(value) => {
 				self.next()?;
 				Ok(self.add(NodeKind::StringLiteral { value }, start))
 			}
@@ -700,7 +720,7 @@ impl Parser<'_> {
 
 	fn parse_import_meta(&mut self, start: u32, meta: NodeId) -> Result<NodeId> {
 		self.next()?;
-		let escaped = matches!(self.tok.kind, TokenKind::Ident { escaped: true, .. });
+		let escaped = self.tok.escaped;
 		let property = self.parse_ident(true)?;
 		if !self.ident_is(property, "meta") {
 			return self.error(
@@ -795,7 +815,7 @@ impl Parser<'_> {
 		let start = self.tok.start;
 		let meta = self.parse_ident(true)?;
 		if self.eat(TokenKind::Dot)? {
-			let escaped = matches!(self.tok.kind, TokenKind::Ident { escaped: true, .. });
+			let escaped = self.tok.escaped;
 			let property = self.parse_ident(true)?;
 			if !self.ident_is(property, "target") {
 				return self.error(
@@ -817,6 +837,9 @@ impl Parser<'_> {
 		let callee_start = self.tok.start;
 		let atom = self.parse_expr_atom(&mut None, ForInit::No, true)?;
 		let callee = self.parse_subscripts(atom, callee_start, true, ForInit::No)?;
+		if matches!(self.kind(callee), NodeKind::Super) {
+			return self.error(start, "Invalid use of 'super'");
+		}
 		let arguments = if self.eat(TokenKind::ParenL)? {
 			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut None)?;
 			self.list(&args)
@@ -944,7 +967,7 @@ impl Parser<'_> {
 		if !is_pattern {
 			generator = self.eat(TokenKind::Star)?;
 		}
-		let escaped = matches!(self.tok.kind, TokenKind::Ident { escaped: true, .. });
+		let escaped = self.tok.escaped;
 		let (mut key, mut computed) = self.parse_property_name()?;
 		let mut is_async = false;
 		if !is_pattern && !escaped && !generator && !computed && self.is_async_prop(key) {
@@ -959,10 +982,10 @@ impl Parser<'_> {
 		self.ident_is(key, "async")
 			&& (matches!(
 				self.tok.kind,
-				TokenKind::Ident { .. }
-					| TokenKind::Number { .. }
+				TokenKind::Ident(_)
+					| TokenKind::Number(_)
 					| TokenKind::BigInt
-					| TokenKind::String { .. }
+					| TokenKind::String(_)
 					| TokenKind::BracketL
 					| TokenKind::Keyword(_)
 					| TokenKind::Star
@@ -1103,7 +1126,7 @@ impl Parser<'_> {
 			return Ok((key, true));
 		}
 		let key = match self.tok.kind {
-			TokenKind::Number { .. } | TokenKind::BigInt | TokenKind::String { .. } => {
+			TokenKind::Number(_) | TokenKind::BigInt | TokenKind::String(_) => {
 				self.parse_expr_atom(&mut None, ForInit::No, false)?
 			}
 			_ => self.parse_ident(true)?,
@@ -1198,7 +1221,7 @@ impl Parser<'_> {
 			}
 			let old_labels = std::mem::take(&mut self.labels);
 			if use_strict {
-				self.strict = true;
+				self.set_strict(true);
 			}
 			self.check_params(params, !old_strict && !use_strict && !is_arrow && !is_method && simple)?;
 			if self.strict
@@ -1207,11 +1230,15 @@ impl Parser<'_> {
 				self.check_lval_simple(id, Binding::Outside, &mut None)?;
 			}
 			let body = self.parse_block(false, use_strict && !old_strict)?;
+			let NodeKind::BlockStatement { body: statements } = self.kind(body) else {
+				unreachable!()
+			};
+			self.adapt_directive_prologue(statements);
 			self.labels = old_labels;
 			result = (body, false);
 		}
 		self.exit_scope();
-		self.strict = old_strict;
+		self.set_strict(old_strict);
 		Ok(result)
 	}
 
@@ -1318,11 +1345,15 @@ impl Parser<'_> {
 	pub(crate) fn parse_ident(&mut self, liberal: bool) -> Result<NodeId> {
 		let start = self.tok.start;
 		let name = match self.tok.kind {
-			TokenKind::Ident { name, .. } => name,
+			TokenKind::Ident(name) => name,
 			TokenKind::Keyword(keyword) => self.intern(keyword.as_str()),
 			_ => return self.unexpected(),
 		};
-		self.next()?;
+		if liberal {
+			self.next_liberal()?;
+		} else {
+			self.next()?;
+		}
 		let id = self.add(NodeKind::Identifier { name }, start);
 		if !liberal {
 			self.check_unreserved(id)?;
@@ -1383,9 +1414,15 @@ impl Parser<'_> {
 		Ok(self.add(NodeKind::AwaitExpression { argument }, start))
 	}
 
-	/// Scans for a `"use strict"` directive at the start of a body without tokenizing it.
-	pub(crate) fn strict_directive(&self, mut pos: u32) -> bool {
-		let src = self.source().as_bytes();
+	pub(crate) fn strict_directive(&self, pos: u32) -> bool {
+		strict_directive(self.source(), pos)
+	}
+}
+
+/// Scans for a `"use strict"` directive at the start of a body without tokenizing it.
+pub(crate) fn strict_directive(source: &str, mut pos: u32) -> bool {
+	let src = source.as_bytes();
+	{
 		loop {
 			pos = skip_space(src, pos);
 			let Some(quote) = src.get(pos as usize).filter(|b| **b == b'\'' || **b == b'"') else {
@@ -1409,7 +1446,7 @@ impl Parser<'_> {
 				if next == Some(b';') || next == Some(b'}') || next.is_none() {
 					return true;
 				}
-				let between = &self.source()[after as usize..next_pos as usize];
+				let between = &source[after as usize..next_pos as usize];
 				let has_newline = between.chars().any(crate::lexer::is_new_line);
 				let next = next.unwrap();
 				return has_newline
@@ -1424,11 +1461,12 @@ impl Parser<'_> {
 	}
 }
 
+/// Skips whitespace, line terminators and comments starting at a byte offset.
 fn skip_space(src: &[u8], mut pos: u32) -> u32 {
+	let text = std::str::from_utf8(src).unwrap();
 	loop {
 		let i = pos as usize;
 		match src.get(i) {
-			Some(b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c) => pos += 1,
 			Some(b'/') if src.get(i + 1) == Some(&b'/') => {
 				while let Some(&b) = src.get(pos as usize) {
 					if b == b'\n' || b == b'\r' {
@@ -1444,10 +1482,15 @@ fn skip_space(src: &[u8], mut pos: u32) -> u32 {
 				}
 				pos = (j + 2).min(src.len()) as u32;
 			}
-			Some(0xc2) if src.get(i + 1) == Some(&0xa0) => pos += 2,
-			Some(0xe2) if matches!(src.get(i + 1..i + 3), Some([0x80, 0xa8 | 0xa9])) => pos += 3,
-			Some(0xef) if matches!(src.get(i + 1..i + 3), Some([0xbb, 0xbf])) => pos += 3,
-			_ => return pos,
+			Some(_) => {
+				let c = text[i..].chars().next().unwrap();
+				if crate::lexer::is_new_line(c) || crate::lexer::is_whitespace(c) || c.is_ascii_whitespace() {
+					pos += c.len_utf8() as u32;
+				} else {
+					return pos;
+				}
+			}
+			None => return pos,
 		}
 	}
 }

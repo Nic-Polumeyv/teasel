@@ -12,6 +12,7 @@ pub(crate) const SCOPE_DIRECT_SUPER: u32 = 128;
 pub(crate) const SCOPE_CLASS_STATIC_BLOCK: u32 = 256;
 pub(crate) const SCOPE_CLASS_FIELD_INIT: u32 = 512;
 pub(crate) const SCOPE_VAR: u32 = SCOPE_TOP | SCOPE_FUNCTION | SCOPE_CLASS_STATIC_BLOCK;
+const SCOPE_VAR_LIKE: u32 = SCOPE_VAR | SCOPE_CLASS_FIELD_INIT;
 
 pub(crate) fn function_flags(is_async: bool, generator: bool) -> u32 {
 	SCOPE_FUNCTION | if is_async { SCOPE_ASYNC } else { 0 } | if generator { SCOPE_GENERATOR } else { 0 }
@@ -63,14 +64,18 @@ impl Parser<'_> {
 	}
 
 	pub(crate) fn current_var_scope(&self) -> &Scope {
-		self.scopes.iter().rev().find(|s| s.flags & SCOPE_VAR != 0).unwrap()
+		self.scopes
+			.iter()
+			.rev()
+			.find(|s| s.flags & SCOPE_VAR_LIKE != 0)
+			.unwrap()
 	}
 
 	pub(crate) fn current_this_scope(&self) -> &Scope {
 		self.scopes
 			.iter()
 			.rev()
-			.find(|s| s.flags & SCOPE_VAR != 0 && s.flags & SCOPE_ARROW == 0)
+			.find(|s| s.flags & SCOPE_VAR_LIKE != 0 && s.flags & SCOPE_ARROW == 0)
 			.unwrap()
 	}
 
@@ -83,15 +88,15 @@ impl Parser<'_> {
 	}
 
 	pub(crate) fn in_function(&self) -> bool {
-		self.current_var_scope().flags & SCOPE_FUNCTION != 0 && !self.in_class_field_init()
+		self.current_var_scope().flags & SCOPE_FUNCTION != 0
 	}
 
 	pub(crate) fn in_generator(&self) -> bool {
-		self.current_var_scope().flags & SCOPE_GENERATOR != 0 && !self.in_class_field_init()
+		self.current_var_scope().flags & SCOPE_GENERATOR != 0
 	}
 
 	pub(crate) fn in_async(&self) -> bool {
-		self.current_var_scope().flags & SCOPE_ASYNC != 0 && !self.in_class_field_init()
+		self.current_var_scope().flags & SCOPE_ASYNC != 0
 	}
 
 	pub(crate) fn can_await(&self) -> bool {
@@ -107,8 +112,7 @@ impl Parser<'_> {
 	}
 
 	pub(crate) fn allow_super(&self) -> bool {
-		let flags = self.current_this_scope().flags;
-		flags & SCOPE_SUPER != 0 || self.in_class_field_init() || self.options.allow_super_outside_method
+		self.current_this_scope().flags & SCOPE_SUPER != 0 || self.options.allow_super_outside_method
 	}
 
 	pub(crate) fn allow_direct_super(&self) -> bool {
@@ -132,7 +136,7 @@ impl Parser<'_> {
 	}
 
 	pub(crate) fn in_class_field_init(&self) -> bool {
-		self.scopes.iter().rev().any(|s| s.flags & SCOPE_CLASS_FIELD_INIT != 0)
+		self.current_this_scope().flags & SCOPE_VAR == 0
 	}
 
 	pub(crate) fn declare_name(&mut self, name: StrId, binding: Binding, pos: u32) -> Result<()> {
@@ -143,7 +147,9 @@ impl Parser<'_> {
 				redeclared =
 					scope.lexical.contains(&name) || scope.functions.contains(&name) || scope.var.contains(&name);
 				scope.lexical.push(name);
-				self.forget_undeclared_export(name, true);
+				if self.current_scope().flags & SCOPE_TOP != 0 {
+					self.undeclared_exports.remove(&name);
+				}
 			}
 			Binding::SimpleCatch => self.current_scope_mut().lexical.push(name),
 			Binding::Function => {
@@ -166,7 +172,9 @@ impl Parser<'_> {
 					scope.var.push(name);
 					let top = scope.flags & SCOPE_TOP != 0;
 					let stop = scope.flags & SCOPE_VAR != 0;
-					self.forget_undeclared_export(name, top);
+					if top {
+						self.undeclared_exports.remove(&name);
+					}
 					if stop {
 						break;
 					}
@@ -182,16 +190,14 @@ impl Parser<'_> {
 		Ok(())
 	}
 
-	fn forget_undeclared_export(&mut self, name: StrId, at_top: bool) {
-		if at_top && self.options.module && self.current_scope().flags & SCOPE_TOP != 0 {
-			self.undeclared_exports.retain(|(n, _)| *n != name);
-		}
-	}
-
 	pub(crate) fn check_local_export(&mut self, name: StrId, pos: u32) {
 		let scope = &self.scopes[0];
 		if !scope.lexical.contains(&name) && !scope.var.contains(&name) && !scope.functions.contains(&name) {
-			self.undeclared_exports.push((name, pos));
+			let order = self.undeclared_exports.len();
+			self.undeclared_exports
+				.entry(name)
+				.and_modify(|e| e.0 = pos)
+				.or_insert((pos, order));
 		}
 	}
 }
