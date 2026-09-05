@@ -11,7 +11,7 @@ use teasel::{Options, estree, parse, parse_expression_at};
 
 fn run(source: &str, options: Options, expression: Option<u32>) -> String {
 	let result = match expression {
-		Some(offset) => parse_expression_at(source, offset, options).map(|(ast, id)| (ast, id)),
+		Some(offset) => parse_expression_at(source, offset, options),
 		None => parse(source, options).map(|ast| {
 			let root = NodeId(ast.nodes.len() as u32 - 1);
 			(ast, root)
