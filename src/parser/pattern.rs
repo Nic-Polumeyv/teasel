@@ -96,6 +96,13 @@ impl Parser<'_> {
 	}
 
 	pub(crate) fn parse_binding_atom(&mut self) -> Result<NodeId> {
+		self.enter()?;
+		let result = self.parse_binding_atom_inner();
+		self.leave();
+		result
+	}
+
+	fn parse_binding_atom_inner(&mut self) -> Result<NodeId> {
 		match self.tok.kind {
 			TokenKind::BracketL => {
 				let start = self.tok.start;

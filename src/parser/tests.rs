@@ -59,7 +59,7 @@ fn module(src: &str) -> String {
 		},
 	)
 	.unwrap_or_else(|e| panic!("{src}: {e}"));
-	let root = NodeId(ast.nodes.len() as u32 - 1);
+	let root = ast.last();
 	let NodeKind::Program { body, .. } = ast.node(root).kind else {
 		panic!()
 	};
@@ -72,7 +72,7 @@ fn module(src: &str) -> String {
 
 fn script(src: &str) -> String {
 	let ast = parse(src, Options::default()).unwrap_or_else(|e| panic!("{src}: {e}"));
-	let root = NodeId(ast.nodes.len() as u32 - 1);
+	let root = ast.last();
 	let NodeKind::Program { body, .. } = ast.node(root).kind else {
 		panic!()
 	};
@@ -526,6 +526,22 @@ fn svelte_entry_points() {
 			.message,
 		"Argument name clash"
 	);
+	// Parameters are read as expressions first, so the errors are the ones acorn gives an arrow.
+	let params_error = |src: &str| {
+		let e = parse_params_at(src, 13, options).unwrap_err();
+		(e.message, e.pos)
+	};
+	assert_eq!(params_error("{#snippet row(a.b)}"), ("Assigning to rvalue".into(), 14));
+	assert_eq!(
+		params_error("{#snippet row((a))}"),
+		("Parenthesized pattern".into(), 14)
+	);
+	assert_eq!(
+		params_error("{#snippet row(a = await x)}"),
+		("Await expression cannot be a default value".into(), 18)
+	);
+	let deep = format!("({}a{})", "[".repeat(20_000), "]".repeat(20_000));
+	assert!(parse_params_at(&deep, 0, options).is_err());
 
 	let (ast, id) = parse_statement_at("{@const x = a + 1}", 2, options).unwrap();
 	assert_eq!(

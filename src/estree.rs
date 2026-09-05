@@ -5,24 +5,14 @@ use crate::interner::StrId;
 use std::fmt::Write;
 
 pub fn to_json(ast: &Ast, root: NodeId, source: &str) -> String {
-	let mut w = Writer {
-		ast,
-		source,
-		out: String::new(),
-		positions: Positions::new(source),
-	};
+	let mut w = Writer::new(ast, source);
 	w.node(root);
 	w.out
 }
 
 /// Serializes several nodes as a JSON array.
 pub fn list_to_json(ast: &Ast, roots: &[NodeId], source: &str) -> String {
-	let mut w = Writer {
-		ast,
-		source,
-		out: String::new(),
-		positions: Positions::new(source),
-	};
+	let mut w = Writer::new(ast, source);
 	w.out.push('[');
 	for (i, &root) in roots.iter().enumerate() {
 		if i > 0 {
@@ -112,7 +102,16 @@ impl Positions {
 	}
 }
 
-impl Writer<'_> {
+impl<'a> Writer<'a> {
+	fn new(ast: &'a Ast, source: &'a str) -> Self {
+		Self {
+			ast,
+			source,
+			out: String::new(),
+			positions: Positions::new(source),
+		}
+	}
+
 	fn begin(&mut self, ty: &str, id: NodeId) {
 		let node = self.ast.node(id);
 		self.out.push_str("{\"type\":\"");

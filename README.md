@@ -1,6 +1,6 @@
 # teasel
 
-A JavaScript parser in Rust, built to sit under the Svelte compiler. Published on npm as `@teasel/parser`.
+A JavaScript parser in Rust, built to sit under the Svelte compiler. The npm name `@teasel/parser` is reserved for it.
 
 Named after the plant whose dried heads were used to tease apart wool fibres and raise the nap on cloth.
 
@@ -18,6 +18,9 @@ git clone --depth 1 https://github.com/tc39/test262-parser-tests.git && bun test
 bun regexp.js
 ```
 
-Known divergence: a lone surrogate in a string literal becomes U+FFFD.
+Known divergences:
+
+- A lone surrogate in a string literal becomes U+FFFD.
+- Snippet parameters are read from the real source, so `{#snippet s(x = ")")}` parses; Svelte's own paren scanner stops at the `)` inside the string.
 
 Early days. Nothing to use yet.

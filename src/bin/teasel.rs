@@ -1,36 +1,59 @@
 //! Command line front end, mainly for the acorn conformance harness.
 //!
 //! `teasel [--module] [--expression|--pattern|--params|--statement] [--preserve-parens] [--offset N] FILE`
-//! prints ESTree JSON. `teasel --batch` reads jobs from stdin, each a header line `MODE LENGTH`
-//! followed by LENGTH bytes of source, and prints one JSON line per job. MODE is `module`, `script`,
-//! `expr:OFFSET`, `pattern:OFFSET`, `params:OFFSET` or `stmt:OFFSET`. Offsets are byte offsets into
-//! the source; the JSON output reports UTF-16 offsets like acorn.
+//! prints ESTree JSON. `--offset` alone parses an expression. The pattern, params and statement
+//! modes parse as a module, and params preserve parens, the way the Svelte compiler drives acorn.
+//!
+//! `teasel --batch` reads jobs from stdin, each a header line `MODE LENGTH` followed by LENGTH
+//! bytes of source, and prints one JSON line per job. MODE is `module`, `script`, `expr:OFFSET`,
+//! `pattern:OFFSET`, `params:OFFSET` or `stmt:OFFSET`. Offsets are byte offsets into the source;
+//! the JSON output reports UTF-16 offsets like acorn.
 
 use std::io::{self, BufRead, Read, Write};
 use std::process::ExitCode;
-use teasel::ast::NodeId;
 use teasel::{Options, estree, parse, parse_expression_at, parse_params_at, parse_pattern_at, parse_statement_at};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum Mode {
 	Program,
-	Expression(u32),
-	Pattern(u32),
-	Params(u32),
-	Statement(u32),
+	Expression,
+	Pattern,
+	Params,
+	Statement,
 }
 
 impl Mode {
-	fn offset(self) -> u32 {
+	fn from_batch(mode: &str) -> Mode {
+		match mode.split_once(':').map_or(mode, |(m, _)| m) {
+			"expr" => Mode::Expression,
+			"pattern" => Mode::Pattern,
+			"params" => Mode::Params,
+			"stmt" => Mode::Statement,
+			_ => Mode::Program,
+		}
+	}
+
+	/// The options the Svelte compiler uses with this entry point.
+	fn options(self, batch_mode: &str) -> Options {
 		match self {
-			Mode::Program => 0,
-			Mode::Expression(o) | Mode::Pattern(o) | Mode::Params(o) | Mode::Statement(o) => o,
+			Mode::Program => Options {
+				module: batch_mode == "module",
+				..Options::default()
+			},
+			Mode::Expression | Mode::Params => Options {
+				module: true,
+				preserve_parens: true,
+				..Options::default()
+			},
+			Mode::Pattern | Mode::Statement => Options {
+				module: true,
+				..Options::default()
+			},
 		}
 	}
 }
 
-fn run(source: &str, options: Options, mode: Mode) -> String {
-	let offset = mode.offset();
+fn run(source: &str, options: Options, mode: Mode, offset: u32) -> String {
 	if !source.is_char_boundary(offset as usize) {
 		return format!(
 			"{{\"error\":{{\"message\":\"offset {offset} is not a character boundary\",\"pos\":{offset}}}}}"
@@ -38,21 +61,21 @@ fn run(source: &str, options: Options, mode: Mode) -> String {
 	}
 	let result = match mode {
 		Mode::Program => parse(source, options).map(|ast| {
-			let root = NodeId(ast.nodes.len() as u32 - 1);
-			(ast, vec![root])
+			let root = ast.last();
+			estree::to_json(&ast, root, source)
 		}),
-		Mode::Expression(o) => parse_expression_at(source, o, options).map(|(ast, id)| (ast, vec![id])),
-		Mode::Pattern(o) => parse_pattern_at(source, o, options).map(|(ast, id)| (ast, vec![id])),
-		Mode::Statement(o) => parse_statement_at(source, o, options).map(|(ast, id)| (ast, vec![id])),
-		Mode::Params(o) => parse_params_at(source, o, options).map(|(ast, ids, _)| (ast, ids)),
+		Mode::Expression => {
+			parse_expression_at(source, offset, options).map(|(ast, id)| estree::to_json(&ast, id, source))
+		}
+		Mode::Pattern => parse_pattern_at(source, offset, options).map(|(ast, id)| estree::to_json(&ast, id, source)),
+		Mode::Statement => {
+			parse_statement_at(source, offset, options).map(|(ast, id)| estree::to_json(&ast, id, source))
+		}
+		Mode::Params => {
+			parse_params_at(source, offset, options).map(|(ast, ids, _)| estree::list_to_json(&ast, &ids, source))
+		}
 	};
-	match result {
-		Ok((ast, roots)) => match mode {
-			Mode::Params(_) => estree::list_to_json(&ast, &roots, source),
-			_ => estree::to_json(&ast, roots[0], source),
-		},
-		Err(error) => estree::error_to_json(&error, source),
-	}
+	result.unwrap_or_else(|error| estree::error_to_json(&error, source))
 }
 
 fn batch() -> io::Result<()> {
@@ -67,7 +90,7 @@ fn batch() -> io::Result<()> {
 			return Ok(());
 		}
 		let mut parts = header.trim_end().splitn(2, ' ');
-		let mode = parts.next().unwrap_or("");
+		let mode_text = parts.next().unwrap_or("");
 		let Some(length) = parts.next().and_then(|n| n.parse::<u64>().ok()) else {
 			return Err(io::Error::new(
 				io::ErrorKind::InvalidData,
@@ -83,26 +106,9 @@ fn batch() -> io::Result<()> {
 			));
 		}
 		let source = String::from_utf8_lossy(&bytes);
-		let svelte = Options {
-			module: true,
-			preserve_parens: true,
-			..Options::default()
-		};
-		let module = Options {
-			module: true,
-			..Options::default()
-		};
-		let offset = |m: &str| m.split_once(':').and_then(|(_, n)| n.parse().ok()).unwrap_or(0);
-		let (options, run_mode) = match mode {
-			"module" => (module, Mode::Program),
-			"script" => (Options::default(), Mode::Program),
-			m if m.starts_with("expr:") => (svelte, Mode::Expression(offset(m))),
-			m if m.starts_with("pattern:") => (module, Mode::Pattern(offset(m))),
-			m if m.starts_with("params:") => (svelte, Mode::Params(offset(m))),
-			m if m.starts_with("stmt:") => (module, Mode::Statement(offset(m))),
-			_ => (Options::default(), Mode::Program),
-		};
-		let json = run(&source, options, run_mode);
+		let mode = Mode::from_batch(mode_text);
+		let offset = mode_text.split_once(':').and_then(|(_, n)| n.parse().ok()).unwrap_or(0);
+		let json = run(&source, mode.options(mode_text), mode, offset);
 		out.write_all(json.as_bytes())?;
 		out.write_all(b"\n")?;
 		out.flush()?;
@@ -120,30 +126,34 @@ fn main() -> ExitCode {
 			}
 		};
 	}
-	let mut options = Options::default();
 	let mut mode = Mode::Program;
-	let mut offset = 0;
+	let mut offset = None;
+	let mut module = false;
+	let mut preserve_parens = false;
 	let mut file = None;
 	let mut args = args.into_iter();
 	while let Some(arg) = args.next() {
 		match arg.as_str() {
-			"--module" => options.module = true,
-			"--preserve-parens" => options.preserve_parens = true,
-			"--expression" => mode = Mode::Expression(0),
-			"--pattern" => mode = Mode::Pattern(0),
-			"--params" => mode = Mode::Params(0),
-			"--statement" => mode = Mode::Statement(0),
-			"--offset" => offset = args.next().and_then(|n| n.parse().ok()).unwrap_or(0),
+			"--module" => module = true,
+			"--preserve-parens" => preserve_parens = true,
+			"--expression" => mode = Mode::Expression,
+			"--pattern" => mode = Mode::Pattern,
+			"--params" => mode = Mode::Params,
+			"--statement" => mode = Mode::Statement,
+			"--offset" => offset = args.next().and_then(|n| n.parse().ok()),
 			_ => file = Some(arg),
 		}
 	}
-	let mode = match mode {
-		Mode::Program => Mode::Program,
-		Mode::Expression(_) => Mode::Expression(offset),
-		Mode::Pattern(_) => Mode::Pattern(offset),
-		Mode::Params(_) => Mode::Params(offset),
-		Mode::Statement(_) => Mode::Statement(offset),
+	if mode == Mode::Program && offset.is_some() {
+		mode = Mode::Expression;
+	}
+	let mut options = if mode == Mode::Program || mode == Mode::Expression {
+		Options::default()
+	} else {
+		mode.options("")
 	};
+	options.module |= module;
+	options.preserve_parens |= preserve_parens;
 	let Some(file) = file else {
 		eprintln!(
 			"usage: teasel [--module] [--expression|--pattern|--params|--statement] [--preserve-parens] [--offset N] FILE"
@@ -157,6 +167,6 @@ fn main() -> ExitCode {
 			return ExitCode::FAILURE;
 		}
 	};
-	println!("{}", run(&source, options, mode));
+	println!("{}", run(&source, options, mode, offset.unwrap_or(0)));
 	ExitCode::SUCCESS
 }

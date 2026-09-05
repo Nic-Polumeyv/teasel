@@ -33,7 +33,7 @@ pub struct Options {
 pub fn parse(src: &str, options: Options) -> Result<Ast> {
 	let mut parser = Parser::new(src, 0, options)?;
 	let program = parser.parse_program()?;
-	debug_assert_eq!(program, NodeId(parser.ast.nodes.len() as u32 - 1));
+	debug_assert_eq!(program, parser.ast.last());
 	Ok(parser.finish())
 }
 
@@ -46,7 +46,8 @@ pub fn parse_expression_at(src: &str, offset: u32, options: Options) -> Result<(
 }
 
 /// Parses an assignment target starting at `offset`: an identifier or a destructuring pattern,
-/// the way Svelte reads `{#each list as pattern}` by handing `(pattern = 1)` to acorn.
+/// the way Svelte reads `{#each list as pattern}` by handing `(pattern = 1)` to acorn. Svelte reads
+/// a bare identifier itself, so only the destructuring forms are reached through acorn there.
 pub fn parse_pattern_at(src: &str, offset: u32, options: Options) -> Result<(Ast, NodeId)> {
 	let mut parser = Parser::new(src, offset, options)?;
 	parser.enter_scope(SCOPE_TOP);
@@ -63,18 +64,21 @@ pub fn parse_pattern_at(src: &str, offset: u32, options: Options) -> Result<(Ast
 }
 
 /// Parses a parenthesized parameter list starting at `offset`, the way acorn reads the
-/// parameters of `(params) => {}`. Returns the parameters and the offset after the closing paren.
+/// parameters of `(params) => {}`: as expressions in the enclosing scope, reinterpreted as
+/// patterns once the list is complete. Returns the parameters and the offset after the closing
+/// paren.
 pub fn parse_params_at(src: &str, offset: u32, options: Options) -> Result<(Ast, Vec<NodeId>, u32)> {
 	let mut parser = Parser::new(src, offset, options)?;
 	parser.enter_scope(SCOPE_TOP);
-	parser.enter_scope(scope::function_flags(false, false) | scope::SCOPE_ARROW);
 	parser.expect(TokenKind::ParenL)?;
-	let params = parser.parse_binding_list(TokenKind::ParenR, false, true)?;
+	let paren = parser.parse_paren_items()?;
 	let end = parser.prev_end;
-	let mut names = Some(Vec::new());
-	for param in params.iter().flatten() {
-		parser.check_lval_inner_pattern(*param, scope::Binding::Var, &mut names)?;
-	}
+	parser.check_pattern_errors(&paren.errors, false)?;
+	parser.check_yield_await_in_default_params()?;
+	parser.enter_scope(scope::function_flags(false, false) | scope::SCOPE_ARROW);
+	let params = parser.make_patterns(paren.items, true)?;
+	let list = parser.list(&params);
+	parser.check_params(list, false)?;
 	let params = params.into_iter().flatten().collect();
 	Ok((parser.finish(), params, end))
 }
