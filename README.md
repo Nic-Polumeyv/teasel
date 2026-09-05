@@ -23,4 +23,23 @@ Known divergences:
 - A lone surrogate in a string literal becomes U+FFFD.
 - Snippet parameters are read from the real source, so `{#snippet s(x = ")")}` parses; Svelte's own paren scanner stops at the `)` inside the string.
 
+## TypeScript
+
+TypeScript is an extension of the JavaScript grammar: the JavaScript parser calls into a fixed set of hook points and knows nothing else about it. `src/typescript/` holds the types, declarations and expressions, its own nodes, and the keys it adds to JavaScript nodes. The oracle is `@sveltejs/acorn-typescript`, the fork Svelte compiles with, quirks included. `oracle/typescript.js` diffs every `.ts` file in the Svelte and SvelteKit checkouts and every `lang="ts"` script in the Svelte test fixtures, and with `--dts` every `.d.ts` under the Svelte checkout's node_modules; the template oracles above cover TypeScript components too.
+
+```
+SVELTE_DIR=~/Projects/svelte KIT_DIR=~/Projects/kit bun typescript.js --dts
+```
+
+Where acorn-typescript leaves out keys acorn sets (`attributes`, `optional` on a call with type arguments or a decorator's member expression, `options` of `import()`, `id` of a class expression), teasel follows acorn and the oracle brings the expected side in line before comparing. `TSTypeParameterDeclaration` does not carry the plugin's `extra.trailingComma`.
+
+Known divergences from the plugin:
+
+- `class type {}`, `function declare() {}` and labels named after TypeScript's contextual keywords parse; the plugin rejects them.
+- `async <T>(x: T) => x` keeps its parameters; the plugin drops them.
+- `for (a as b of c)` parses; the plugin reports a type cast in parameter position.
+- Modifiers on type parameters report a formatted message; the plugin prints the source of its message function.
+- `type T = intrinsic` is the intrinsic keyword; the plugin tests for the word `interface` instead.
+- `a?.<b>c` reports a position; the plugin reports `NaN`.
+
 Early days. Nothing to use yet.

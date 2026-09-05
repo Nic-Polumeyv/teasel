@@ -1,6 +1,9 @@
 import * as acorn from 'acorn';
+import { tsPlugin } from '@sveltejs/acorn-typescript';
 import { readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+
+const TSParser = acorn.Parser.extend(tsPlugin());
 
 export const root = process.env.SVELTE_DIR ?? join(process.env.HOME, 'Projects/svelte');
 export const corpus = join(root, 'packages/svelte/tests');
@@ -20,6 +23,28 @@ function normalize(key, value) {
 	return value;
 }
 
+// acorn-typescript bundles older acorn code paths and leaves a few keys out that acorn sets;
+// teasel follows acorn there, so the expected side is brought in line before comparing.
+export function normalize_ts(key, value) {
+	if (typeof value === 'bigint') return null;
+	if (value instanceof RegExp) return null;
+	if (value && typeof value === 'object' && !Array.isArray(value)) {
+		if (value.type === 'ImportExpression') {
+			const { arguments: args, ...rest } = value;
+			return { ...rest, options: args?.[0] ?? null };
+		}
+		if (/^(Import|ExportNamed|ExportAll)Declaration$/.test(value.type) && !('attributes' in value)) return { ...value, attributes: [] };
+		if (value.type === 'CallExpression' && !('optional' in value)) return { ...value, optional: false };
+		if (value.type === 'ClassExpression' && !('id' in value)) return { ...value, id: null };
+		if (value.type === 'MemberExpression' && !('optional' in value)) return { ...value, optional: false };
+		if ('extra' in value) {
+			const { extra, ...rest } = value;
+			return rest;
+		}
+	}
+	return value;
+}
+
 function acorn_error(e) {
 	if (!(e instanceof SyntaxError) || e.pos === undefined) return { error: { message: `acorn threw ${e.name}: ${e.message}`, pos: -1 } };
 	return { error: { message: e.message.replace(/ \(\d+:\d+\)$/, ''), pos: e.pos, loc: { line: e.loc.line, column: e.loc.column } } };
@@ -34,25 +59,30 @@ export function acorn_parse(source, mode) {
 	}
 }
 
-export function acorn_expression(source, offset) {
+export function acorn_expression(source, offset, ts = false) {
 	try {
-		const ast = acorn.parseExpressionAt(source, offset, { ecmaVersion: 16, sourceType: 'module', locations: true, preserveParens: true });
-		return JSON.parse(JSON.stringify(ast, normalize));
+		const parser = ts ? TSParser : acorn.Parser;
+		const ast = parser.parseExpressionAt(source, offset, { ecmaVersion: 16, sourceType: 'module', locations: true, preserveParens: true });
+		return JSON.parse(JSON.stringify(ast, ts ? normalize_ts : normalize));
 	} catch (e) {
 		return acorn_error(e);
 	}
 }
 
 /// The way Svelte's parse_statement_at drives acorn: a parser started at `offset`, one statement.
-export function acorn_statement(source, offset) {
+export function acorn_statement(source, offset, ts = false) {
 	try {
-		const parser = new acorn.Parser({ ecmaVersion: 16, sourceType: 'module', locations: true }, source, offset);
+		const parser = new (ts ? TSParser : acorn.Parser)({ ecmaVersion: 16, sourceType: 'module', locations: true }, source, offset);
 		parser.nextToken();
 		const node = parser.parseStatement(null, true, Object.create(null));
-		return JSON.parse(JSON.stringify(node, normalize));
+		return JSON.parse(JSON.stringify(node, ts ? normalize_ts : normalize));
 	} catch (e) {
 		return acorn_error(e);
 	}
+}
+
+export function is_typescript(source) {
+	return /<script[^>]*lang=["']?ts/.test(source);
 }
 
 export function diff(a, b, path = '') {

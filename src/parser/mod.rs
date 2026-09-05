@@ -1,18 +1,20 @@
-mod class;
-mod expression;
+pub(crate) mod class;
+pub(crate) mod expression;
 mod pattern;
-mod scope;
-mod statement;
+pub(crate) mod scope;
+pub(crate) mod statement;
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
-use crate::ast::{Ast, List, NodeId, NodeKind};
+use crate::ast::{Ast, List, NodeId, NodeKind, VariableKind};
 use crate::error::SyntaxError;
 use crate::interner::StrId;
 use crate::lexer::Lexer;
 use crate::lexer::token::{Keyword, Token, TokenKind};
+pub(crate) use expression::ForInit;
 use scope::{SCOPE_TOP, Scope};
+pub(crate) use statement::Context;
 use std::collections::{HashMap, HashSet};
 
 pub(crate) type Result<T> = std::result::Result<T, SyntaxError>;
@@ -30,16 +32,306 @@ pub struct Options {
 	pub preserve_parens: bool,
 }
 
-pub fn parse(src: &str, options: Options) -> Result<Ast> {
-	let mut parser = Parser::new(src, 0, options)?;
+/// What a function-shaped node is, for the extension hooks around its signature.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FunctionKind {
+	Declaration,
+	Expression,
+	Method { in_class: bool },
+	Arrow,
+}
+
+/// The check an extension node is being unwrapped for.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Unwrap {
+	/// `check_lval_simple`: the target of an assignment or update.
+	Simple,
+	/// `check_lval_inner_pattern`: an element of a parameter list or pattern.
+	InnerPattern,
+}
+
+/// Grammar an extension adds to the JavaScript parser at fixed points. Every hook has a no-op
+/// default, so the plain JavaScript parser is the unit extension. State an extension keeps while
+/// parsing lives in `Self` (cloned into snapshots, so keep it small); what it hands back with the
+/// tree lives in `Data`.
+#[allow(unused_variables)]
+pub(crate) trait Extension: Default + Sized {
+	type Data: Default;
+	/// What a speculative parse needs to put the extension's state back.
+	type Snapshot;
+
+	/// Whether exporting the same name twice is an error.
+	const DUPLICATE_EXPORT_ERRORS: bool = true;
+	/// Whether a function's name is declared after its body, so a bodiless overload declares nothing.
+	const DECLARES_FUNCTION_NAME_AFTER_BODY: bool = false;
+	/// Whether `static` before a class member is only ever read by `class_modifiers`.
+	const STATIC_IS_A_MODIFIER: bool = false;
+
+	fn init(p: &mut Parser<Self>) {}
+	fn save(&self) -> Self::Snapshot;
+	fn restore(&mut self, snapshot: Self::Snapshot);
+
+	// Statements and modules
+
+	/// First look at a statement; `Some` replaces it entirely.
+	fn statement(p: &mut Parser<Self>, context: Context, top_level: bool) -> Result<Option<NodeId>> {
+		Ok(None)
+	}
+	/// An expression statement whose expression is a bare identifier may be a declaration instead.
+	fn expression_statement(p: &mut Parser<Self>, start: u32, expression: NodeId) -> Result<Option<NodeId>> {
+		Ok(None)
+	}
+	fn starts_export_declaration(p: &mut Parser<Self>) -> bool {
+		false
+	}
+	/// Right after `export`; `Some` is a whole export statement.
+	fn export_head(p: &mut Parser<Self>, start: u32) -> Result<Option<NodeId>> {
+		Ok(None)
+	}
+	/// The declaration after `export`, when `starts_export_declaration` or the plain grammar said so.
+	fn export_declaration(p: &mut Parser<Self>) -> Result<Option<NodeId>> {
+		Ok(None)
+	}
+	fn export_default(p: &mut Parser<Self>) -> Result<Option<NodeId>> {
+		Ok(None)
+	}
+	fn export_end(p: &mut Parser<Self>, node: NodeId) {}
+	fn export_specifier(p: &mut Parser<Self>) -> Result<Option<NodeId>> {
+		Ok(None)
+	}
+	/// Right after `import`; `Some` is a whole import statement.
+	fn import_head(p: &mut Parser<Self>, start: u32) -> Result<Option<NodeId>> {
+		Ok(None)
+	}
+	fn import_end(p: &mut Parser<Self>, node: NodeId) -> Result<()> {
+		Ok(())
+	}
+	fn import_specifier(p: &mut Parser<Self>) -> Result<Option<NodeId>> {
+		Ok(None)
+	}
+	/// Whether the extension declared `name` in a way that satisfies a local `export { name }`.
+	fn declares_export(p: &mut Parser<Self>, name: StrId) -> bool {
+		false
+	}
+	fn scope_exit(p: &mut Parser<Self>) {}
+
+	// Bindings
+
+	/// After the id of a variable declarator.
+	fn var_id(p: &mut Parser<Self>, id: NodeId) -> Result<()> {
+		Ok(())
+	}
+	fn var_declarator(p: &mut Parser<Self>, node: NodeId, kind: VariableKind) -> Result<()> {
+		Ok(())
+	}
+	/// Whether a declarator may go without an initializer where the plain grammar requires one.
+	fn allows_missing_initializer(p: &mut Parser<Self>) -> bool {
+		false
+	}
+	fn binding_atom(p: &mut Parser<Self>) -> Result<Option<NodeId>> {
+		Ok(None)
+	}
+	/// Before an element of a binding list; `allow_modifiers` inside class methods. Returns where
+	/// the element's own node starts.
+	fn binding_item_start(p: &mut Parser<Self>, allow_modifiers: bool) -> Result<u32> {
+		Ok(p.tok.start)
+	}
+	/// After a binding, before its default.
+	fn binding_annotation(p: &mut Parser<Self>, node: NodeId) -> Result<()> {
+		Ok(())
+	}
+	fn binding_item_end(p: &mut Parser<Self>, item: NodeId) -> Result<NodeId> {
+		Ok(item)
+	}
+	fn catch_param(p: &mut Parser<Self>, param: NodeId) -> Result<()> {
+		Ok(())
+	}
+	/// After a pattern read on its own, the way Svelte reads an each-block context.
+	fn pattern_annotation(p: &mut Parser<Self>, pattern: NodeId) -> Result<()> {
+		Ok(())
+	}
+
+	// Functions and classes
+
+	/// Before the parameters of a function, method or arrow.
+	fn function_start(p: &mut Parser<Self>, kind: FunctionKind) -> Result<()> {
+		Ok(())
+	}
+	/// After the parameters, before the body; `Some` is a function without a body.
+	#[allow(clippy::too_many_arguments)]
+	fn function_body(
+		p: &mut Parser<Self>,
+		start: u32,
+		id: Option<NodeId>,
+		params: List,
+		is_async: bool,
+		generator: bool,
+		kind: FunctionKind,
+	) -> Result<Option<NodeId>> {
+		Ok(None)
+	}
+	fn function_end(p: &mut Parser<Self>, node: NodeId) -> Result<()> {
+		Ok(())
+	}
+	/// Whether an object literal accessor's first parameter is a `this` parameter, which does not
+	/// count.
+	fn accessor_this_param(p: &Parser<Self>, params: List) -> bool {
+		false
+	}
+	/// The parameters of a function-shaped extension node.
+	fn function_params(p: &Parser<Self>, node: NodeId) -> Option<List> {
+		None
+	}
+	fn class_start(p: &mut Parser<Self>) -> Result<()> {
+		Ok(())
+	}
+	/// Whether the token after `class` opens a heritage clause rather than naming the class.
+	fn starts_class_heritage(p: &mut Parser<Self>) -> bool {
+		false
+	}
+	fn class_type_parameters(p: &mut Parser<Self>) -> Result<()> {
+		Ok(())
+	}
+	fn class_heritage(p: &mut Parser<Self>, has_super: bool) -> Result<()> {
+		Ok(())
+	}
+	fn class_end(p: &mut Parser<Self>, node: NodeId) {}
+	/// Modifiers before a class element; returns whether `static` was among them.
+	fn class_modifiers(p: &mut Parser<Self>) -> Result<bool> {
+		Ok(false)
+	}
+	fn class_index_signature(p: &mut Parser<Self>, start: u32) -> Result<Option<NodeId>> {
+		Ok(None)
+	}
+	/// After the key of a class element.
+	fn class_key_end(p: &mut Parser<Self>, key: NodeId, computed: bool) -> Result<()> {
+		Ok(())
+	}
+	fn starts_class_method(p: &mut Parser<Self>) -> bool {
+		false
+	}
+	fn class_method_start(p: &mut Parser<Self>) -> Result<()> {
+		Ok(())
+	}
+	/// After the key of a class field, before its initializer.
+	fn class_field_annotation(p: &mut Parser<Self>) -> Result<()> {
+		Ok(())
+	}
+	fn class_element_end(p: &mut Parser<Self>, node: NodeId) -> Result<()> {
+		Ok(())
+	}
+
+	// Expressions
+
+	fn maybe_assign(p: &mut Parser<Self>, for_init: ForInit, errors: &mut Errors) -> Result<Option<NodeId>> {
+		Ok(None)
+	}
+	/// Entering a parenthesized list that may turn out to be arrow parameters.
+	fn paren_list_start(p: &mut Parser<Self>) {}
+	fn paren_list_end(p: &mut Parser<Self>) {}
+	/// An item of a parenthesized list, after its expression.
+	fn paren_item(p: &mut Parser<Self>, item: NodeId) -> Result<NodeId> {
+		Ok(item)
+	}
+	/// A spread in an argument list.
+	fn spread(p: &mut Parser<Self>, spread: NodeId) -> Result<()> {
+		Ok(())
+	}
+	/// At `?` after an expression; `Some` replaces the conditional.
+	fn conditional(p: &mut Parser<Self>, expr: NodeId, start: u32, for_init: ForInit) -> Result<Option<NodeId>> {
+		Ok(None)
+	}
+	fn unary(p: &mut Parser<Self>, for_init: ForInit) -> Result<Option<NodeId>> {
+		Ok(None)
+	}
+	/// First look at an atom.
+	fn atom(p: &mut Parser<Self>, errors: &mut Errors, for_init: ForInit, for_new: bool) -> Result<Option<NodeId>> {
+		Ok(None)
+	}
+	/// At an operator position; `Some` is the new left operand.
+	fn expr_op(p: &mut Parser<Self>, left: NodeId, left_start: u32, min_prec: i8) -> Result<Option<NodeId>> {
+		Ok(None)
+	}
+	#[allow(clippy::too_many_arguments)]
+	fn subscript(
+		p: &mut Parser<Self>,
+		base: NodeId,
+		start: u32,
+		no_calls: bool,
+		maybe_async_arrow: bool,
+		optional_chained: bool,
+		for_init: ForInit,
+	) -> Result<Option<(NodeId, bool)>> {
+		Ok(None)
+	}
+	fn should_parse_arrow(p: &mut Parser<Self>, items: &[Option<NodeId>]) -> Result<bool> {
+		Ok(!p.can_insert_semicolon())
+	}
+	fn should_parse_async_arrow(p: &mut Parser<Self>) -> Result<bool> {
+		Ok(!p.can_insert_semicolon() && p.eat(TokenKind::Arrow)?)
+	}
+	/// Whether the target of an assignment is checked here.
+	fn checks_assignment_target(p: &mut Parser<Self>) -> bool {
+		true
+	}
+	fn new_expression(p: &mut Parser<Self>, node: NodeId) {}
+	/// An object property whose value starts unexpectedly for the plain grammar.
+	#[allow(clippy::too_many_arguments)]
+	fn property_value(
+		p: &mut Parser<Self>,
+		start: u32,
+		key: NodeId,
+		computed: bool,
+		is_pattern: bool,
+		generator: bool,
+		is_async: bool,
+	) -> Result<Option<NodeId>> {
+		Ok(None)
+	}
+	fn template_expression(p: &mut Parser<Self>) -> Result<Option<NodeId>> {
+		Ok(None)
+	}
+	/// Reinterprets an extension node as a pattern; the result replaces it.
+	fn make_pattern(p: &mut Parser<Self>, id: NodeId, is_binding: bool, errors: &mut Errors) -> Result<Option<NodeId>> {
+		Ok(None)
+	}
+	/// Replaces the items of a list about to become patterns.
+	fn convert_items(p: &mut Parser<Self>, items: &mut [Option<NodeId>]) {}
+	/// What a parenthesized expression becomes as a pattern, given what its inner one became.
+	fn parenthesized_pattern(p: &mut Parser<Self>, paren: NodeId, inner: NodeId, pattern: NodeId) -> NodeId {
+		paren
+	}
+	/// The plain node an extension wrapper stands for in a check, if any.
+	fn unwrap(p: &Parser<Self>, id: NodeId, context: Unwrap) -> Option<NodeId> {
+		None
+	}
+}
+
+impl Extension for () {
+	type Data = ();
+	type Snapshot = ();
+
+	fn save(&self) {}
+
+	fn restore(&mut self, _: ()) {}
+}
+
+pub(crate) type Errors = Option<DestructuringErrors>;
+
+pub(crate) fn parse<E: Extension>(src: &str, options: Options) -> Result<Ast<E::Data>> {
+	let mut parser = Parser::<E>::new(src, 0, options)?;
 	let program = parser.parse_program()?;
 	debug_assert_eq!(program, parser.ast.last());
 	Ok(parser.finish())
 }
 
 /// Parses a single expression starting at `offset`, stopping where the expression ends.
-pub fn parse_expression_at(src: &str, offset: u32, options: Options) -> Result<(Ast, NodeId)> {
-	let mut parser = Parser::new(src, offset, options)?;
+pub(crate) fn parse_expression_at<E: Extension>(
+	src: &str,
+	offset: u32,
+	options: Options,
+) -> Result<(Ast<E::Data>, NodeId)> {
+	let mut parser = Parser::<E>::new(src, offset, options)?;
 	parser.enter_scope(SCOPE_TOP);
 	let expression = parser.parse_expression(false, &mut None)?;
 	Ok((parser.finish(), expression))
@@ -48,8 +340,12 @@ pub fn parse_expression_at(src: &str, offset: u32, options: Options) -> Result<(
 /// Parses an assignment target starting at `offset`: an identifier or a destructuring pattern,
 /// the way Svelte reads `{#each list as pattern}` by handing `(pattern = 1)` to acorn. Svelte reads
 /// a bare identifier itself, so only the destructuring forms are reached through acorn there.
-pub fn parse_pattern_at(src: &str, offset: u32, options: Options) -> Result<(Ast, NodeId)> {
-	let mut parser = Parser::new(src, offset, options)?;
+pub(crate) fn parse_pattern_at<E: Extension>(
+	src: &str,
+	offset: u32,
+	options: Options,
+) -> Result<(Ast<E::Data>, NodeId)> {
+	let mut parser = Parser::<E>::new(src, offset, options)?;
 	parser.enter_scope(SCOPE_TOP);
 	let mut errors = Some(DestructuringErrors::default());
 	let expression = match parser.tok.kind {
@@ -60,6 +356,7 @@ pub fn parse_pattern_at(src: &str, offset: u32, options: Options) -> Result<(Ast
 	};
 	let pattern = parser.make_pattern(expression, false, &mut errors)?;
 	parser.check_lval_pattern(pattern, scope::Binding::None, &mut None)?;
+	E::pattern_annotation(&mut parser, pattern)?;
 	Ok((parser.finish(), pattern))
 }
 
@@ -67,8 +364,12 @@ pub fn parse_pattern_at(src: &str, offset: u32, options: Options) -> Result<(Ast
 /// parameters of `(params) => {}`: as expressions in the enclosing scope, reinterpreted as
 /// patterns once the list is complete. Returns the parameters and the offset after the closing
 /// paren.
-pub fn parse_params_at(src: &str, offset: u32, options: Options) -> Result<(Ast, Vec<NodeId>, u32)> {
-	let mut parser = Parser::new(src, offset, options)?;
+pub(crate) fn parse_params_at<E: Extension>(
+	src: &str,
+	offset: u32,
+	options: Options,
+) -> Result<(Ast<E::Data>, Vec<NodeId>, u32)> {
+	let mut parser = Parser::<E>::new(src, offset, options)?;
 	parser.enter_scope(SCOPE_TOP);
 	parser.expect(TokenKind::ParenL)?;
 	let paren = parser.parse_paren_items()?;
@@ -84,31 +385,50 @@ pub fn parse_params_at(src: &str, offset: u32, options: Options) -> Result<(Ast,
 }
 
 /// Parses a single statement starting at `offset`, as if at the top level of a module.
-pub fn parse_statement_at(src: &str, offset: u32, options: Options) -> Result<(Ast, NodeId)> {
-	let mut parser = Parser::new(src, offset, options)?;
+pub(crate) fn parse_statement_at<E: Extension>(
+	src: &str,
+	offset: u32,
+	options: Options,
+) -> Result<(Ast<E::Data>, NodeId)> {
+	let mut parser = Parser::<E>::new(src, offset, options)?;
 	parser.enter_scope(SCOPE_TOP);
 	let mut exports = HashSet::new();
 	let statement = parser.parse_statement(statement::Context::None, true, Some(&mut exports))?;
 	Ok((parser.finish(), statement))
 }
 
-pub(crate) struct Parser<'a> {
-	lexer: Lexer<'a>,
-	pub(crate) ast: Ast,
-	options: Options,
-	tok: Token,
-	prev_end: u32,
-	strict: bool,
-	depth: u32,
-	scopes: Vec<Scope>,
+pub(crate) struct Parser<'a, E: Extension = ()> {
+	pub(crate) lexer: Lexer<'a>,
+	pub(crate) ast: Ast<E::Data>,
+	pub(crate) ext: E,
+	pub(crate) options: Options,
+	pub(crate) tok: Token,
+	pub(crate) prev_end: u32,
+	pub(crate) strict: bool,
+	pub(crate) depth: u32,
+	pub(crate) scopes: Vec<Scope>,
 	labels: Vec<Label>,
 	private_names: Vec<PrivateNameScope>,
-	undeclared_exports: HashMap<StrId, (u32, usize)>,
-	yield_pos: u32,
-	await_pos: u32,
-	await_ident_pos: u32,
-	potential_arrow_at: u32,
+	pub(crate) undeclared_exports: HashMap<StrId, (u32, usize)>,
+	pub(crate) yield_pos: u32,
+	pub(crate) await_pos: u32,
+	pub(crate) await_ident_pos: u32,
+	pub(crate) potential_arrow_at: u32,
 	potential_arrow_in_for_await: bool,
+}
+
+pub(crate) struct Snapshot<E: Extension> {
+	tokens: TokenSnapshot,
+	depth: u32,
+	ext: E::Snapshot,
+}
+
+pub(crate) struct TokenSnapshot {
+	pos: u32,
+	in_type: bool,
+	tok: Token,
+	prev_end: u32,
+	comments: usize,
 }
 
 #[derive(Clone, Copy)]
@@ -150,19 +470,19 @@ pub(crate) struct DestructuringErrors {
 	pub double_proto: Option<u32>,
 }
 
-impl<'a> Parser<'a> {
+impl<'a, E: Extension> Parser<'a, E> {
 	fn new(src: &'a str, offset: u32, options: Options) -> Result<Self> {
 		let mut lexer = Lexer::new(src);
 		lexer.set_pos(offset);
 		let strict = options.module || expression::strict_directive(src, offset);
 		lexer.strict = strict;
 		lexer.module = options.module;
-		let tok = lexer.next_token()?;
-		Ok(Self {
+		let mut parser = Self {
 			lexer,
 			ast: Ast::default(),
+			ext: E::default(),
 			options,
-			tok,
+			tok: Token::eof(offset),
 			prev_end: offset,
 			strict,
 			depth: 0,
@@ -175,10 +495,81 @@ impl<'a> Parser<'a> {
 			await_ident_pos: 0,
 			potential_arrow_at: u32::MAX,
 			potential_arrow_in_for_await: false,
-		})
+		};
+		E::init(&mut parser);
+		parser.tok = parser.lexer.next_token()?;
+		Ok(parser)
 	}
 
-	fn finish(self) -> Ast {
+	/// Enough state to retry a speculative parse from here. Nodes built by a failed attempt stay
+	/// in the arena, unreferenced.
+	pub(crate) fn snapshot(&self) -> Snapshot<E> {
+		Snapshot {
+			tokens: self.token_snapshot(),
+			depth: self.depth,
+			ext: self.ext.save(),
+		}
+	}
+
+	pub(crate) fn restore(&mut self, snapshot: Snapshot<E>) {
+		self.restore_tokens(snapshot.tokens);
+		self.depth = snapshot.depth;
+		self.ext.restore(snapshot.ext);
+	}
+
+	/// The tokenizer alone, enough for a lookahead that parses nothing.
+	pub(crate) fn token_snapshot(&self) -> TokenSnapshot {
+		TokenSnapshot {
+			pos: self.lexer.pos(),
+			in_type: self.lexer.in_type,
+			tok: self.tok,
+			prev_end: self.prev_end,
+			comments: self.lexer.comments.len(),
+		}
+	}
+
+	pub(crate) fn restore_tokens(&mut self, snapshot: TokenSnapshot) {
+		self.lexer.set_pos(snapshot.pos);
+		self.lexer.in_type = snapshot.in_type;
+		self.tok = snapshot.tok;
+		self.prev_end = snapshot.prev_end;
+		self.lexer.comments.truncate(snapshot.comments);
+	}
+
+	/// Runs `f`, undoing it when it fails.
+	pub(crate) fn attempt<T>(&mut self, f: impl FnOnce(&mut Self) -> Result<T>) -> Option<T> {
+		let snapshot = self.snapshot();
+		match f(self) {
+			Ok(value) => Some(value),
+			Err(_) => {
+				self.restore(snapshot);
+				None
+			}
+		}
+	}
+
+	pub(crate) fn peek_token(&mut self) -> Result<Token> {
+		let escaped = self.lexer.escaped();
+		let token = self.lexer.peek_token();
+		self.lexer.set_escaped(escaped);
+		token
+	}
+
+	#[allow(dead_code)]
+	fn peek_token_raw(&mut self) -> Result<Token> {
+		self.lexer.peek_token()
+	}
+
+	/// Re-reads the current token, after the lexer's mode changed under it.
+	pub(crate) fn relex(&mut self) -> Result<()> {
+		let newline_before = self.tok.newline_before;
+		self.lexer.set_pos(self.tok.start);
+		self.tok = self.lexer.next_token()?;
+		self.tok.newline_before = newline_before;
+		Ok(())
+	}
+
+	fn finish(self) -> Ast<E::Data> {
 		let mut ast = self.ast;
 		let mut lexer = self.lexer;
 		ast.comments = std::mem::take(&mut lexer.comments);
@@ -428,6 +819,9 @@ impl<'a> Parser<'a> {
 		match self.kind(id) {
 			NodeKind::ParenthesizedExpression { expression } => self.is_simple_assign_target(expression),
 			NodeKind::Identifier { .. } | NodeKind::MemberExpression { .. } => true,
+			NodeKind::Extension(_) => {
+				E::unwrap(self, id, Unwrap::Simple).is_some_and(|inner| self.is_simple_assign_target(inner))
+			}
 			_ => false,
 		}
 	}

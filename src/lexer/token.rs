@@ -10,6 +10,18 @@ pub(crate) struct Token {
 	pub(crate) escaped: bool,
 }
 
+impl Token {
+	pub(crate) fn eof(pos: u32) -> Token {
+		Token {
+			kind: TokenKind::Eof,
+			start: pos,
+			end: pos,
+			newline_before: false,
+			escaped: false,
+		}
+	}
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum TokenKind {
 	Eof,
@@ -44,6 +56,7 @@ pub(crate) enum TokenKind {
 	Colon,
 	Arrow,
 	Backquote,
+	At,
 
 	Eq,
 	PlusEq,

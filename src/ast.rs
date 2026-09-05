@@ -55,15 +55,17 @@ pub struct Node {
 	pub end: u32,
 }
 
+/// `X` is the data an extension attaches to the tree; the plain JavaScript parser attaches none.
 #[derive(Debug, Default)]
-pub struct Ast {
+pub struct Ast<X = ()> {
 	pub nodes: Vec<Node>,
 	pub lists: Vec<Option<NodeId>>,
 	pub strings: Interner,
 	pub comments: Vec<Comment>,
+	pub extension: X,
 }
 
-impl Ast {
+impl<X> Ast<X> {
 	pub fn node(&self, id: NodeId) -> &Node {
 		&self.nodes[id.0 as usize]
 	}
@@ -402,6 +404,9 @@ pub enum NodeKind {
 		source: NodeId,
 		attributes: List,
 	},
+
+	/// A node owned by a parser extension, indexed into its own data.
+	Extension(u32),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

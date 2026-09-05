@@ -8,7 +8,7 @@
 
 import { readFileSync } from 'node:fs';
 import { relative } from 'node:path';
-import { acorn_statement, args, compare, corpus, files, root, teasel } from './lib.js';
+import { acorn_statement, args, compare, corpus, files, is_typescript, root, teasel } from './lib.js';
 
 const { parse } = await import(`${root}/packages/svelte/src/compiler/index.js`);
 const { verbose, limit, filter } = args();
@@ -16,10 +16,11 @@ const { verbose, limit, filter } = args();
 // Svelte adds `character` to `loc` positions and attaches comments; neither is acorn's output.
 function strip(node) {
 	if (Array.isArray(node)) return node.map(strip);
+	if (node instanceof RegExp) return null;
 	if (!node || typeof node !== 'object') return node;
 	const out = {};
 	for (const [k, v] of Object.entries(node)) {
-		if (k === 'leadingComments' || k === 'trailingComments' || k === 'metadata' || k === 'typeAnnotation' || k === 'character') continue;
+		if (k === 'leadingComments' || k === 'trailingComments' || k === 'metadata' || k === 'character') continue;
 		out[k] = strip(v);
 	}
 	return out;
@@ -46,6 +47,8 @@ function fix_loc(node, position) {
 	if (!node || typeof node !== 'object') return node;
 	const out = {};
 	for (const [k, v] of Object.entries(node)) out[k] = k === 'loc' ? { start: position(node.start), end: position(node.end) } : fix_loc(v, position);
+	// The type annotation of a context is a node Svelte builds by hand, without a `loc`.
+	if (typeof node.type === 'string' && !('loc' in node)) out.loc = { start: position(node.start), end: position(node.end) };
 	return out;
 }
 
@@ -68,10 +71,8 @@ for (const path of files(corpus, /\.svelte$/)) {
 	const name = relative(corpus, path);
 	if (filter && !name.includes(filter)) continue;
 	const source = readFileSync(path, 'utf8');
-	if (/<script[^>]*lang=["']?ts/.test(source)) {
-		skipped_files++;
-		continue;
-	}
+	const ts = is_typescript(source);
+	const prefix = ts ? 'ts-' : '';
 	let ast;
 	try {
 		ast = parse(source, { modern: true });
@@ -81,7 +82,7 @@ for (const path of files(corpus, /\.svelte$/)) {
 	}
 	const byte = (utf16) => Buffer.byteLength(source.slice(0, utf16), 'utf8');
 	const position = locate(source);
-	const pattern = (node) => jobs.push({ name: `${name}@${node.start} pattern`, source, mode: `pattern:${byte(node.start)}`, expected: fix_loc(strip(node), position) });
+	const pattern = (node) => jobs.push({ name: `${name}@${node.start} pattern`, source, mode: `${prefix}pattern:${byte(node.start)}`, expected: fix_loc(strip(node), position) });
 	for (const node of walk(ast.fragment)) {
 		if (node.type === 'EachBlock' && node.context) pattern(node.context);
 		if (node.type === 'AwaitBlock') {
@@ -90,12 +91,12 @@ for (const path of files(corpus, /\.svelte$/)) {
 		}
 		if (node.type === 'SnippetBlock' && node.parameters.length) {
 			const open = source.indexOf('(', node.expression.end);
-			jobs.push({ name: `${name}@${open} params`, source, mode: `params:${byte(open)}`, expected: strip(node.parameters) });
+			jobs.push({ name: `${name}@${open} params`, source, mode: `${prefix}params:${byte(open)}`, expected: strip(node.parameters) });
 		}
 		// Svelte hands the declaration of `{const x = 1}` back unchanged, so this is its own node.
 		if (node.type === 'DeclarationTag') {
 			const offset = node.declaration.start;
-			jobs.push({ name: `${name}@${offset} declaration`, source, mode: `stmt:${byte(offset)}`, expected: strip(node.declaration) });
+			jobs.push({ name: `${name}@${offset} declaration`, source, mode: `${prefix}stmt:${byte(offset)}`, expected: strip(node.declaration) });
 		}
 		// Svelte rebuilds the declaration of `{@const x = 1}`, so the expected side is acorn driven
 		// the way Svelte drives it, from the `const` or `let` keyword after the `@`.
@@ -103,7 +104,7 @@ for (const path of files(corpus, /\.svelte$/)) {
 			const keyword = /(?:const|let)\b/g;
 			keyword.lastIndex = node.start;
 			const offset = keyword.exec(source)?.index ?? node.declaration.start;
-			jobs.push({ name: `${name}@${offset} const`, source, mode: `stmt:${byte(offset)}`, expected: acorn_statement(source, offset) });
+			jobs.push({ name: `${name}@${offset} const`, source, mode: `${prefix}stmt:${byte(offset)}`, expected: acorn_statement(source, offset, ts) });
 		}
 	}
 	if (jobs.length >= limit) {

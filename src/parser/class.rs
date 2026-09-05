@@ -2,7 +2,7 @@ use super::expression::ForInit;
 use super::pattern::Binding;
 use super::scope::{SCOPE_CLASS_FIELD_INIT, SCOPE_CLASS_STATIC_BLOCK, SCOPE_SUPER};
 use super::statement::Context;
-use super::{Parser, PrivateKind, PrivateNameScope, Result};
+use super::{Extension, Parser, PrivateKind, PrivateNameScope, Result};
 use crate::ast::{Class, MethodKind, NodeId, NodeKind};
 use crate::interner::StrId;
 use crate::lexer::token::{Keyword, TokenKind};
@@ -14,13 +14,16 @@ pub(crate) enum ClassKind {
 	NullableId,
 }
 
-impl Parser<'_> {
+impl<E: Extension> Parser<'_, E> {
 	pub(crate) fn parse_class(&mut self, kind: ClassKind) -> Result<NodeId> {
 		let start = self.tok.start;
 		self.next()?;
+		E::class_start(self)?;
 		let old_strict = self.strict;
 		self.set_strict(true);
-		let id = if matches!(self.tok.kind, TokenKind::Ident(_)) {
+		let id = if matches!(self.tok.kind, TokenKind::Ident(_))
+			&& !(kind == ClassKind::Expression && E::starts_class_heritage(self))
+		{
 			let id = self.parse_ident(false)?;
 			if kind != ClassKind::Expression {
 				self.check_lval_simple(id, Binding::Lexical, &mut None)?;
@@ -32,11 +35,13 @@ impl Parser<'_> {
 			}
 			None
 		};
+		E::class_type_parameters(self)?;
 		let super_class = if self.eat_keyword(Keyword::Extends)? {
 			Some(self.parse_expr_subscripts(&mut None, ForInit::No)?)
 		} else {
 			None
 		};
+		E::class_heritage(self, super_class.is_some())?;
 		self.private_names.push(PrivateNameScope::default());
 		let body_start = self.tok.start;
 		let mut body = Vec::new();
@@ -50,53 +55,25 @@ impl Parser<'_> {
 			match self.kind(element) {
 				NodeKind::MethodDefinition {
 					kind: MethodKind::Constructor,
+					value,
 					..
-				} => {
+				} if matches!(self.kind(value), NodeKind::FunctionExpression { .. }) => {
 					if had_constructor {
 						return self.error(self.start_of(element), "Duplicate constructor in the same class");
 					}
 					had_constructor = true;
 				}
-				NodeKind::MethodDefinition { key, is_static, .. }
-				| NodeKind::PropertyDefinition { key, is_static, .. }
+				NodeKind::MethodDefinition {
+					key, is_static, value, ..
+				} if matches!(self.kind(key), NodeKind::PrivateIdentifier { .. })
+					&& !matches!(self.kind(value), NodeKind::Extension(_)) =>
+				{
+					self.declare_private_element(element, key, is_static)?;
+				}
+				NodeKind::PropertyDefinition { key, is_static, .. }
 					if matches!(self.kind(key), NodeKind::PrivateIdentifier { .. }) =>
 				{
-					let NodeKind::PrivateIdentifier { name } = self.kind(key) else {
-						unreachable!()
-					};
-					let private_kind = match (self.kind(element), is_static) {
-						(
-							NodeKind::MethodDefinition {
-								kind: MethodKind::Get, ..
-							},
-							false,
-						) => PrivateKind::InstanceGet,
-						(
-							NodeKind::MethodDefinition {
-								kind: MethodKind::Set, ..
-							},
-							false,
-						) => PrivateKind::InstanceSet,
-						(
-							NodeKind::MethodDefinition {
-								kind: MethodKind::Get, ..
-							},
-							true,
-						) => PrivateKind::StaticGet,
-						(
-							NodeKind::MethodDefinition {
-								kind: MethodKind::Set, ..
-							},
-							true,
-						) => PrivateKind::StaticSet,
-						_ => PrivateKind::Any,
-					};
-					if self.declare_private_name(name, private_kind) {
-						return self.error(
-							self.start_of(key),
-							format!("Identifier '#{}' has already been declared", self.str(name)),
-						);
-					}
+					self.declare_private_element(element, key, is_static)?;
 				}
 				_ => {}
 			}
@@ -112,7 +89,49 @@ impl Parser<'_> {
 		} else {
 			NodeKind::ClassDeclaration { class }
 		};
-		Ok(self.add(kind, start))
+		let node = self.add(kind, start);
+		E::class_end(self, node);
+		Ok(node)
+	}
+
+	fn declare_private_element(&mut self, element: NodeId, key: NodeId, is_static: bool) -> Result<()> {
+		let NodeKind::PrivateIdentifier { name } = self.kind(key) else {
+			unreachable!()
+		};
+		let private_kind = match (self.kind(element), is_static) {
+			(
+				NodeKind::MethodDefinition {
+					kind: MethodKind::Get, ..
+				},
+				false,
+			) => PrivateKind::InstanceGet,
+			(
+				NodeKind::MethodDefinition {
+					kind: MethodKind::Set, ..
+				},
+				false,
+			) => PrivateKind::InstanceSet,
+			(
+				NodeKind::MethodDefinition {
+					kind: MethodKind::Get, ..
+				},
+				true,
+			) => PrivateKind::StaticGet,
+			(
+				NodeKind::MethodDefinition {
+					kind: MethodKind::Set, ..
+				},
+				true,
+			) => PrivateKind::StaticSet,
+			_ => PrivateKind::Any,
+		};
+		if self.declare_private_name(name, private_kind) {
+			return self.error(
+				self.start_of(key),
+				format!("Identifier '#{}' has already been declared", self.str(name)),
+			);
+		}
+		Ok(())
 	}
 
 	/// Returns whether the name conflicts with an earlier declaration.
@@ -163,10 +182,20 @@ impl Parser<'_> {
 		let mut generator = false;
 		let mut is_async = false;
 		let mut kind = MethodKind::Method;
-		let mut is_static = false;
-		if self.eat_contextual("static")? {
+		let mut is_static = E::class_modifiers(self)?;
+		if let Some(signature) = E::class_index_signature(self, start)? {
+			E::class_element_end(self, signature)?;
+			return Ok(Some(signature));
+		}
+		if !is_static
+			&& self.is_contextual("static")
+			&& (!E::STATIC_IS_A_MODIFIER || self.peek_char().0 == Some('{'))
+			&& self.eat_contextual("static")?
+		{
 			if self.eat(TokenKind::BraceL)? {
-				return Ok(Some(self.parse_class_static_block(start)?));
+				let block = self.parse_class_static_block(start)?;
+				E::class_element_end(self, block)?;
+				return Ok(Some(block));
 			}
 			if self.is_class_element_name_start() || self.is(TokenKind::Star) {
 				is_static = true;
@@ -212,7 +241,13 @@ impl Parser<'_> {
 			}
 			None => self.parse_class_element_name()?,
 		};
-		if self.is(TokenKind::ParenL) || kind != MethodKind::Method || generator || is_async {
+		E::class_key_end(self, key, computed)?;
+		if self.is(TokenKind::ParenL)
+			|| E::starts_class_method(self)
+			|| kind != MethodKind::Method
+			|| generator
+			|| is_async
+		{
 			let is_constructor = !is_static && self.check_key_name(key, computed, "constructor");
 			let allows_direct_super = is_constructor && constructor_allows_super;
 			if is_constructor && kind != MethodKind::Method {
@@ -294,11 +329,12 @@ impl Parser<'_> {
 				"Classes may not have a static property named prototype",
 			);
 		}
-		let value = self.parse_method(generator, is_async, allows_direct_super)?;
+		E::class_method_start(self)?;
+		let value = self.parse_method(generator, is_async, allows_direct_super, true)?;
 		if kind == MethodKind::Get || kind == MethodKind::Set {
-			self.check_accessor_params(value, kind == MethodKind::Get)?;
+			self.check_accessor_params(value, kind == MethodKind::Get, true)?;
 		}
-		Ok(self.add(
+		let node = self.add(
 			NodeKind::MethodDefinition {
 				key,
 				value,
@@ -307,7 +343,9 @@ impl Parser<'_> {
 				is_static,
 			},
 			start,
-		))
+		);
+		E::class_element_end(self, node)?;
+		Ok(node)
 	}
 
 	fn parse_class_field(&mut self, start: u32, key: NodeId, computed: bool, is_static: bool) -> Result<NodeId> {
@@ -320,6 +358,7 @@ impl Parser<'_> {
 				"Classes can't have a static field named 'prototype'",
 			);
 		}
+		E::class_field_annotation(self)?;
 		let value = if self.eat(TokenKind::Eq)? {
 			self.enter_scope(SCOPE_CLASS_FIELD_INIT | SCOPE_SUPER);
 			let value = self.parse_maybe_assign(ForInit::No, &mut None)?;
@@ -329,7 +368,7 @@ impl Parser<'_> {
 			None
 		};
 		self.semicolon()?;
-		Ok(self.add(
+		let node = self.add(
 			NodeKind::PropertyDefinition {
 				key,
 				value,
@@ -337,7 +376,9 @@ impl Parser<'_> {
 				is_static,
 			},
 			start,
-		))
+		);
+		E::class_element_end(self, node)?;
+		Ok(node)
 	}
 
 	fn parse_class_static_block(&mut self, start: u32) -> Result<NodeId> {

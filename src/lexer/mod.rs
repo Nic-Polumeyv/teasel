@@ -28,6 +28,10 @@ pub(crate) struct Lexer<'a> {
 	pub(crate) strict: bool,
 	/// Modules have no HTML-style comments.
 	pub(crate) module: bool,
+	/// Reads `@` as a token instead of rejecting it.
+	pub(crate) at_sign: bool,
+	/// Reads `<` and `>` as single characters, so `>>` closes two type argument lists.
+	pub(crate) in_type: bool,
 	pub(crate) comments: Vec<Comment>,
 	pub(crate) strings: Interner,
 }
@@ -41,6 +45,8 @@ impl<'a> Lexer<'a> {
 			escaped: false,
 			strict: false,
 			module: false,
+			at_sign: false,
+			in_type: false,
 			comments: Vec::new(),
 			strings: Interner::default(),
 		}
@@ -52,6 +58,28 @@ impl<'a> Lexer<'a> {
 
 	pub(crate) fn set_pos(&mut self, pos: u32) {
 		self.pos = pos as usize;
+	}
+
+	pub(crate) fn pos(&self) -> u32 {
+		self.pos as u32
+	}
+
+	pub(crate) fn escaped(&self) -> bool {
+		self.escaped
+	}
+
+	pub(crate) fn set_escaped(&mut self, escaped: bool) {
+		self.escaped = escaped;
+	}
+
+	/// The token after the current one, leaving the lexer where it was.
+	pub(crate) fn peek_token(&mut self) -> Result<Token> {
+		let pos = self.pos;
+		let comments = self.comments.len();
+		let token = self.next_token();
+		self.pos = pos;
+		self.comments.truncate(comments);
+		token
 	}
 
 	/// The next significant character, whether a line break precedes it, and its position.
@@ -269,6 +297,8 @@ impl<'a> Lexer<'a> {
 				(Some(b'='), _) => (BangEq, 2),
 				_ => (Bang, 1),
 			},
+			b'@' if self.at_sign => (At, 1),
+			b'<' | b'>' if self.in_type => (if b == b'<' { Lt } else { Gt }, 1),
 			b'<' => match (next, next2) {
 				(Some(b'<'), Some(b'=')) => (LtLtEq, 3),
 				(Some(b'<'), _) => (LtLt, 2),

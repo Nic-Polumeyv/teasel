@@ -6,4 +6,8 @@ description = "A JavaScript parser in Rust"
 license = "MIT"
 repository = "https://github.com/Nic-Polumeyv/teasel"
 
+[features]
+default = ["typescript"]
+typescript = []
+
 [dependencies]

@@ -1,4 +1,4 @@
-use super::{Parser, Result};
+use super::{Extension, Parser, Result};
 use crate::interner::StrId;
 
 pub(crate) const SCOPE_TOP: u32 = 1;
@@ -46,12 +46,13 @@ impl Scope {
 	}
 }
 
-impl Parser<'_> {
+impl<E: Extension> Parser<'_, E> {
 	pub(crate) fn enter_scope(&mut self, flags: u32) {
 		self.scopes.push(Scope::new(flags));
 	}
 
 	pub(crate) fn exit_scope(&mut self) {
+		E::scope_exit(self);
 		self.scopes.pop();
 	}
 
@@ -191,6 +192,9 @@ impl Parser<'_> {
 	}
 
 	pub(crate) fn check_local_export(&mut self, name: StrId, pos: u32) {
+		if E::declares_export(self, name) {
+			return;
+		}
 		let scope = &self.scopes[0];
 		if !scope.lexical.contains(&name) && !scope.var.contains(&name) && !scope.functions.contains(&name) {
 			let order = self.undeclared_exports.len();

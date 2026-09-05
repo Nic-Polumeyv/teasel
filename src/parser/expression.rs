@@ -1,6 +1,6 @@
 use super::pattern::Binding;
 use super::scope::{SCOPE_ARROW, SCOPE_DIRECT_SUPER, SCOPE_SUPER, function_flags};
-use super::{DestructuringErrors, Parser, Result};
+use super::{DestructuringErrors, Errors, Extension, FunctionKind, Parser, Result};
 use crate::ast::{
 	AssignmentOperator, BinaryOperator, Function, List, LogicalOperator, NodeId, NodeKind, PropertyKind, UnaryOperator,
 	UpdateOperator,
@@ -20,8 +20,6 @@ impl ForInit {
 		self != ForInit::No
 	}
 }
-
-type Errors = Option<DestructuringErrors>;
 
 fn binary_precedence(kind: TokenKind) -> Option<(u8, BinaryOperator)> {
 	use BinaryOperator as B;
@@ -114,7 +112,7 @@ pub(crate) fn starts_expression(kind: TokenKind) -> bool {
 	}
 }
 
-impl Parser<'_> {
+impl<E: Extension> Parser<'_, E> {
 	pub(crate) fn parse_expression(&mut self, for_init: bool, errors: &mut Errors) -> Result<NodeId> {
 		let for_init = if for_init { ForInit::Yes } else { ForInit::No };
 		self.parse_sequence(for_init, errors)
@@ -136,12 +134,24 @@ impl Parser<'_> {
 
 	pub(crate) fn parse_maybe_assign(&mut self, for_init: ForInit, errors: &mut Errors) -> Result<NodeId> {
 		self.enter()?;
-		let result = self.parse_maybe_assign_inner(for_init, errors);
+		let result = self.parse_maybe_assign_inner(for_init, errors, false);
 		self.leave();
 		result
 	}
 
-	fn parse_maybe_assign_inner(&mut self, for_init: ForInit, errors: &mut Errors) -> Result<NodeId> {
+	/// An assignment expression that is an item of a parenthesized list, which an extension may
+	/// read differently.
+	pub(crate) fn parse_paren_item(&mut self, for_init: ForInit, errors: &mut Errors) -> Result<NodeId> {
+		self.enter()?;
+		let result = self.parse_maybe_assign_inner(for_init, errors, true);
+		self.leave();
+		result
+	}
+
+	fn parse_maybe_assign_inner(&mut self, for_init: ForInit, errors: &mut Errors, item: bool) -> Result<NodeId> {
+		if let Some(expr) = E::maybe_assign(self, for_init, errors)? {
+			return Ok(expr);
+		}
 		if self.is_contextual("yield") && self.in_generator() {
 			return self.parse_yield(for_init);
 		}
@@ -164,6 +174,9 @@ impl Parser<'_> {
 			self.potential_arrow_in_for_await = for_init == ForInit::Await;
 		}
 		let mut left = self.parse_maybe_conditional(for_init, errors)?;
+		if item {
+			left = E::paren_item(self, left)?;
+		}
 		if let Some(operator) = assignment_operator(self.tok.kind) {
 			let is_eq = operator == AssignmentOperator::Assign;
 			if is_eq {
@@ -178,10 +191,12 @@ impl Parser<'_> {
 			if e.shorthand_assign.is_some_and(|p| p >= self.start_of(left)) {
 				e.shorthand_assign = None;
 			}
-			if is_eq {
-				self.check_lval_pattern(left, Binding::None, &mut None)?;
-			} else {
-				self.check_lval_simple(left, Binding::None, &mut None)?;
+			if E::checks_assignment_target(self) {
+				if is_eq {
+					self.check_lval_pattern(left, Binding::None, &mut None)?;
+				} else {
+					self.check_lval_simple(left, Binding::None, &mut None)?;
+				}
 			}
 			self.next()?;
 			let right = self.parse_maybe_assign(for_init, &mut None)?;
@@ -217,20 +232,29 @@ impl Parser<'_> {
 		if self.is_arrow_at(expr, start) {
 			return Ok(expr);
 		}
-		if self.eat(TokenKind::Question)? {
-			let consequent = self.parse_maybe_assign(ForInit::No, &mut None)?;
-			self.expect(TokenKind::Colon)?;
-			let alternate = self.parse_maybe_assign(for_init, &mut None)?;
-			return Ok(self.add(
-				NodeKind::ConditionalExpression {
-					test: expr,
-					consequent,
-					alternate,
-				},
-				start,
-			));
+		if self.is(TokenKind::Question) {
+			if let Some(expr) = E::conditional(self, expr, start, for_init)? {
+				return Ok(expr);
+			}
+			return self.parse_conditional(expr, start, for_init);
 		}
 		Ok(expr)
+	}
+
+	/// The `? consequent : alternate` after a test.
+	pub(crate) fn parse_conditional(&mut self, test: NodeId, start: u32, for_init: ForInit) -> Result<NodeId> {
+		self.next()?;
+		let consequent = self.parse_maybe_assign(ForInit::No, &mut None)?;
+		self.expect(TokenKind::Colon)?;
+		let alternate = self.parse_maybe_assign(for_init, &mut None)?;
+		Ok(self.add(
+			NodeKind::ConditionalExpression {
+				test,
+				consequent,
+				alternate,
+			},
+			start,
+		))
 	}
 
 	fn parse_expr_ops(&mut self, for_init: ForInit, errors: &mut Errors) -> Result<NodeId> {
@@ -251,6 +275,10 @@ impl Parser<'_> {
 
 	fn parse_expr_op(&mut self, mut left: NodeId, left_start: u32, min_prec: i8, for_init: ForInit) -> Result<NodeId> {
 		loop {
+			if let Some(expr) = E::expr_op(self, left, left_start, min_prec)? {
+				left = expr;
+				continue;
+			}
 			let (prec, op): (i8, Op) = match self.tok.kind {
 				TokenKind::QuestionQuestion => (1, Op::Coalesce),
 				TokenKind::PipePipe => (1, Op::Logical(LogicalOperator::Or)),
@@ -327,6 +355,9 @@ impl Parser<'_> {
 		inc_dec: bool,
 		for_init: ForInit,
 	) -> Result<NodeId> {
+		if let Some(expr) = E::unary(self, for_init)? {
+			return Ok(expr);
+		}
 		let start = self.tok.start;
 		let expr;
 		if self.is_contextual("await") && self.can_await() {
@@ -488,6 +519,17 @@ impl Parser<'_> {
 		optional_chained: bool,
 		for_init: ForInit,
 	) -> Result<(NodeId, bool)> {
+		if let Some(result) = E::subscript(
+			self,
+			base,
+			start,
+			no_calls,
+			maybe_async_arrow,
+			optional_chained,
+			for_init,
+		)? {
+			return Ok(result);
+		}
 		let optional = self.eat(TokenKind::QuestionDot)?;
 		if no_calls && optional {
 			return self.error(
@@ -527,8 +569,10 @@ impl Parser<'_> {
 			self.yield_pos = 0;
 			self.await_pos = 0;
 			self.await_ident_pos = 0;
+			E::paren_list_start(self);
 			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut errors)?;
-			if maybe_async_arrow && !optional && !self.can_insert_semicolon() && self.eat(TokenKind::Arrow)? {
+			E::paren_list_end(self);
+			if maybe_async_arrow && !optional && E::should_parse_async_arrow(self)? {
 				self.check_pattern_errors(&errors, false)?;
 				self.check_yield_await_in_default_params()?;
 				if self.await_ident_pos > 0 {
@@ -581,6 +625,9 @@ impl Parser<'_> {
 	pub(crate) fn parse_expr_atom(&mut self, errors: &mut Errors, for_init: ForInit, for_new: bool) -> Result<NodeId> {
 		if self.is(TokenKind::Slash) || self.is(TokenKind::SlashEq) {
 			self.tok = self.lexer.read_regex(self.tok)?;
+		}
+		if let Some(atom) = E::atom(self, errors, for_init, for_new)? {
+			return Ok(atom);
 		}
 		let start = self.tok.start;
 		let can_be_arrow = self.potential_arrow_at == start;
@@ -749,7 +796,7 @@ impl Parser<'_> {
 		self.await_pos = 0;
 		let paren = self.parse_paren_items()?;
 
-		if can_be_arrow && !self.can_insert_semicolon() && self.eat(TokenKind::Arrow)? {
+		if can_be_arrow && E::should_parse_arrow(self, &paren.items)? && self.eat(TokenKind::Arrow)? {
 			self.check_pattern_errors(&paren.errors, false)?;
 			self.check_yield_await_in_default_params()?;
 			self.yield_pos = old_yield;
@@ -790,6 +837,7 @@ impl Parser<'_> {
 	/// Parses the comma-separated expressions after an opening paren through the closing one,
 	/// which may turn out to be arrow function parameters.
 	pub(crate) fn parse_paren_items(&mut self) -> Result<ParenItems> {
+		E::paren_list_start(self);
 		let inner_start = self.tok.start;
 		let mut items: Vec<Option<NodeId>> = Vec::new();
 		let mut first = true;
@@ -809,16 +857,18 @@ impl Parser<'_> {
 			if self.is(TokenKind::Ellipsis) {
 				spread_start = Some(self.tok.start);
 				let rest = self.parse_rest_binding()?;
+				let rest = E::paren_item(self, rest)?;
 				items.push(Some(rest));
 				if self.is(TokenKind::Comma) {
 					return self.error(self.tok.start, "Comma is not permitted after the rest element");
 				}
 				break;
 			}
-			items.push(Some(self.parse_maybe_assign(ForInit::No, &mut errors)?));
+			items.push(Some(self.parse_paren_item(ForInit::No, &mut errors)?));
 		}
 		let inner_end = self.prev_end;
 		self.expect(TokenKind::ParenR)?;
+		E::paren_list_end(self);
 		Ok(ParenItems {
 			items,
 			errors,
@@ -864,7 +914,9 @@ impl Parser<'_> {
 		} else {
 			List::EMPTY
 		};
-		Ok(self.add(NodeKind::NewExpression { callee, arguments }, start))
+		let node = self.add(NodeKind::NewExpression { callee, arguments }, start);
+		E::new_expression(self, node);
+		Ok(node)
 	}
 
 	pub(crate) fn parse_template(&mut self, is_tagged: bool) -> Result<NodeId> {
@@ -887,7 +939,11 @@ impl Parser<'_> {
 			}
 			self.prev_end = chunk.end + 2;
 			self.tok = self.lexer.next_token()?;
-			expressions.push(self.parse_expression(false, &mut None)?);
+			let expression = match E::template_expression(self)? {
+				Some(expression) => expression,
+				None => self.parse_expression(false, &mut None)?,
+			};
+			expressions.push(expression);
 			if !self.is(TokenKind::BraceR) {
 				return self.unexpected();
 			}
@@ -1022,6 +1078,9 @@ impl Parser<'_> {
 		errors: &mut Errors,
 		escaped: bool,
 	) -> Result<NodeId> {
+		if let Some(prop) = E::property_value(self, start, key, computed, is_pattern, generator, is_async)? {
+			return Ok(prop);
+		}
 		if (generator || is_async) && self.is(TokenKind::Colon) {
 			return self.unexpected();
 		}
@@ -1041,7 +1100,7 @@ impl Parser<'_> {
 				return self.unexpected();
 			}
 			method = true;
-			value = self.parse_method(generator, is_async, false)?;
+			value = self.parse_method(generator, is_async, false, false)?;
 		} else if !is_pattern
 			&& !escaped
 			&& !computed
@@ -1059,8 +1118,8 @@ impl Parser<'_> {
 				PropertyKind::Set
 			};
 			let (accessor_key, accessor_computed) = self.parse_property_name()?;
-			let func = self.parse_method(false, false, false)?;
-			self.check_accessor_params(func, kind == PropertyKind::Get)?;
+			let func = self.parse_method(false, false, false, false)?;
+			self.check_accessor_params(func, kind == PropertyKind::Get, false)?;
 			return Ok(self.add(
 				NodeKind::Property {
 					key: accessor_key,
@@ -1109,12 +1168,17 @@ impl Parser<'_> {
 		))
 	}
 
-	pub(crate) fn check_accessor_params(&self, func: NodeId, is_getter: bool) -> Result<()> {
-		let NodeKind::FunctionExpression { function } = self.kind(func) else {
-			unreachable!()
+	pub(crate) fn check_accessor_params(&self, func: NodeId, is_getter: bool, in_class: bool) -> Result<()> {
+		let params = match self.kind(func) {
+			NodeKind::FunctionExpression { function } => function.params,
+			_ => match E::function_params(self, func) {
+				Some(params) => params,
+				None => return Ok(()),
+			},
 		};
-		let params = self.ast.list(function.params);
-		let expected = if is_getter { 0 } else { 1 };
+		let this_param = !in_class && E::accessor_this_param(self, params);
+		let params = self.ast.list(params);
+		let expected = if is_getter { 0 } else { 1 } + usize::from(this_param);
 		if params.len() != expected {
 			let start = self.start_of(func);
 			return if is_getter {
@@ -1152,8 +1216,13 @@ impl Parser<'_> {
 		Ok((key, false))
 	}
 
-	pub(crate) fn parse_method(&mut self, generator: bool, is_async: bool, allow_direct_super: bool) -> Result<NodeId> {
-		let start = self.tok.start;
+	pub(crate) fn parse_method(
+		&mut self,
+		generator: bool,
+		is_async: bool,
+		allow_direct_super: bool,
+		in_class: bool,
+	) -> Result<NodeId> {
 		let (old_yield, old_await, old_await_ident) = (self.yield_pos, self.await_pos, self.await_ident_pos);
 		self.yield_pos = 0;
 		self.await_pos = 0;
@@ -1161,22 +1230,35 @@ impl Parser<'_> {
 		self.enter_scope(
 			function_flags(is_async, generator) | SCOPE_SUPER | if allow_direct_super { SCOPE_DIRECT_SUPER } else { 0 },
 		);
+		let kind = FunctionKind::Method { in_class };
+		E::function_start(self, kind)?;
+		let start = self.tok.start;
 		self.expect(TokenKind::ParenL)?;
-		let params = self.parse_binding_list(TokenKind::ParenR, false, true)?;
+		let params = self.parse_binding_list(TokenKind::ParenR, false, true, in_class)?;
 		self.check_yield_await_in_default_params()?;
 		let params = self.list(&params);
-		let (body, _) = self.parse_function_body(start, None, params, false, true, ForInit::No)?;
+		let node = match E::function_body(self, start, None, params, is_async, generator, kind)? {
+			Some(node) => {
+				self.exit_scope();
+				node
+			}
+			None => {
+				let (body, _) = self.parse_function_body(start, None, params, false, true, ForInit::No)?;
+				let function = Function {
+					id: None,
+					params,
+					body,
+					is_async,
+					generator,
+				};
+				self.add(NodeKind::FunctionExpression { function }, start)
+			}
+		};
 		self.yield_pos = old_yield;
 		self.await_pos = old_await;
 		self.await_ident_pos = old_await_ident;
-		let function = Function {
-			id: None,
-			params,
-			body,
-			is_async,
-			generator,
-		};
-		Ok(self.add(NodeKind::FunctionExpression { function }, start))
+		E::function_end(self, node)?;
+		Ok(node)
 	}
 
 	pub(crate) fn parse_arrow_expression(
@@ -1188,6 +1270,7 @@ impl Parser<'_> {
 	) -> Result<NodeId> {
 		let (old_yield, old_await, old_await_ident) = (self.yield_pos, self.await_pos, self.await_ident_pos);
 		self.enter_scope(function_flags(is_async, false) | SCOPE_ARROW);
+		E::function_start(self, FunctionKind::Arrow)?;
 		self.yield_pos = 0;
 		self.await_pos = 0;
 		self.await_ident_pos = 0;
@@ -1197,7 +1280,7 @@ impl Parser<'_> {
 		self.yield_pos = old_yield;
 		self.await_pos = old_await;
 		self.await_ident_pos = old_await_ident;
-		Ok(self.add(
+		let node = self.add(
 			NodeKind::ArrowFunctionExpression {
 				params,
 				body,
@@ -1205,7 +1288,9 @@ impl Parser<'_> {
 				is_async,
 			},
 			start,
-		))
+		);
+		E::function_end(self, node)?;
+		Ok(node)
 	}
 
 	/// Parses a function body after the parameters, returning the body and whether it is an expression.
@@ -1298,6 +1383,7 @@ impl Parser<'_> {
 				None
 			} else if self.is(TokenKind::Ellipsis) {
 				let spread = self.parse_spread(errors)?;
+				E::spread(self, spread)?;
 				if self.is(TokenKind::Comma)
 					&& let Some(e) = errors
 					&& e.trailing_comma.is_none()
@@ -1306,7 +1392,7 @@ impl Parser<'_> {
 				}
 				Some(spread)
 			} else {
-				Some(self.parse_maybe_assign(ForInit::No, errors)?)
+				Some(self.parse_paren_item(ForInit::No, errors)?)
 			};
 			elements.push(element);
 		}
