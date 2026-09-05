@@ -159,6 +159,7 @@ for (const [marked, mode] of invalid) {
 function actual(line, job) {
 	const node = JSON.parse(line);
 	if (node.error && job.error_only) return { error: { message: node.error.message, pos: node.error.pos } };
+	if (job.mode.startsWith('params:') || job.mode.startsWith('ts-params:')) return node.error ? node : node.params;
 	return node;
 }
 

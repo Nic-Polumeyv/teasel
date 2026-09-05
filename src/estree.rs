@@ -16,15 +16,16 @@ impl Emit for () {
 	}
 }
 
-pub fn to_json<X: Emit>(ast: &Ast<X>, root: NodeId, source: &str) -> String {
-	let mut w = Writer::new(ast, source);
+/// Serializes a node; `locations` adds acorn's `loc` to every node.
+pub fn to_json<X: Emit>(ast: &Ast<X>, root: NodeId, source: &str, locations: bool) -> String {
+	let mut w = Writer::new(ast, source, locations);
 	w.node(root);
 	w.out
 }
 
 /// Serializes several nodes as a JSON array.
-pub fn list_to_json<X: Emit>(ast: &Ast<X>, roots: &[NodeId], source: &str) -> String {
-	let mut w = Writer::new(ast, source);
+pub fn list_to_json<X: Emit>(ast: &Ast<X>, roots: &[NodeId], source: &str, locations: bool) -> String {
+	let mut w = Writer::new(ast, source, locations);
 	w.out.push('[');
 	for (i, &root) in roots.iter().enumerate() {
 		if i > 0 {
@@ -34,6 +35,11 @@ pub fn list_to_json<X: Emit>(ast: &Ast<X>, roots: &[NodeId], source: &str) -> St
 	}
 	w.out.push(']');
 	w.out
+}
+
+/// The UTF-16 offset of a byte offset.
+pub fn utf16_offset(source: &str, byte: u32) -> u32 {
+	Positions::new(source).offset(byte)
 }
 
 /// Serializes a syntax error the way acorn reports one: UTF-16 `pos` plus a `loc`.
@@ -56,6 +62,7 @@ pub struct Writer<'a, X = ()> {
 	source: &'a str,
 	out: String,
 	positions: Positions,
+	locations: bool,
 }
 
 /// Maps byte offsets to the UTF-16 offsets and line/column pairs that acorn reports.
@@ -115,12 +122,13 @@ impl Positions {
 }
 
 impl<'a, X: Emit> Writer<'a, X> {
-	fn new(ast: &'a Ast<X>, source: &'a str) -> Self {
+	fn new(ast: &'a Ast<X>, source: &'a str, locations: bool) -> Self {
 		Self {
 			ast,
 			source,
 			out: String::new(),
 			positions: Positions::new(source),
+			locations,
 		}
 	}
 
@@ -166,12 +174,15 @@ impl<'a, X: Emit> Writer<'a, X> {
 	}
 
 	pub(crate) fn span(&mut self, start: u32, end: u32) {
-		let (sl, sc) = self.positions.line_column(start);
-		let (el, ec) = self.positions.line_column(end);
 		self.out.push_str(",\"start\":");
 		push_int(&mut self.out, self.positions.offset(start));
 		self.out.push_str(",\"end\":");
 		push_int(&mut self.out, self.positions.offset(end));
+		if !self.locations {
+			return;
+		}
+		let (sl, sc) = self.positions.line_column(start);
+		let (el, ec) = self.positions.line_column(end);
 		self.out.push_str(",\"loc\":{\"start\":{\"line\":");
 		push_int(&mut self.out, sl as u32);
 		self.out.push_str(",\"column\":");
@@ -816,7 +827,7 @@ fn bigint_decimal(raw: &str) -> String {
 	out
 }
 
-fn write_json_string(out: &mut String, s: &str) {
+pub(crate) fn write_json_string(out: &mut String, s: &str) {
 	out.push('"');
 	for c in s.chars() {
 		match c {

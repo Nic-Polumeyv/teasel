@@ -11,3 +11,6 @@ default = ["typescript"]
 typescript = []
 
 [dependencies]
+
+[workspace]
+members = ["bindings/node", "bindings/wasm"]
