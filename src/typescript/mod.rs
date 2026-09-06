@@ -16,7 +16,7 @@ use crate::lexer::token::{Keyword, TokenKind};
 use crate::parser::class::ClassKind;
 use crate::parser::expression::starts_expression;
 use crate::parser::{
-	Context, DestructuringErrors, Errors, Extension, ForInit, FunctionKind, Options, Parser, Result, Unwrap,
+	Context, DestructuringErrors, Errors, Extension, ForInit, FunctionKind, Options, Parser, Result, UntilAs, Unwrap,
 };
 use ast::{Accessibility, Data, Extras, Kind, TsKind};
 use types::TypeParameterModifiers;
@@ -1523,14 +1523,12 @@ impl Extension for TypeScript {
 		if !is_as && !p.is_contextual("satisfies") {
 			return Ok(None);
 		}
-		// where a host's `as` follows the expression, a top-level `as` is an assertion only when
-		// a type and another `as` follow it, so the last one is the host's
 		if is_as && for_init.no_as() {
-			let snapshot = p.snapshot();
-			let assertion = p.next_then_parse_type().is_ok_and(|_| p.is_contextual("as"));
-			p.restore(snapshot);
-			if !assertion {
-				return Ok(None);
+			let start = p.tok.start;
+			match &mut p.until_as {
+				UntilAs::Record(offsets) => offsets.push(start),
+				UntilAs::Stop(at) if *at == start => return Ok(None),
+				_ => {}
 			}
 		}
 		let type_annotation = match p.try_next_parse_constant_context()? {

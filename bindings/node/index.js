@@ -13,6 +13,9 @@ function check(options) {
 	if ('sourceType' in options && options.sourceType !== 'script' && options.sourceType !== 'module') {
 		throw new TypeError(`sourceType must be "script" or "module", not ${JSON.stringify(options.sourceType)}`);
 	}
+	if ('until' in options && options.until !== 'as') {
+		throw new TypeError(`until must be "as", not ${JSON.stringify(options.until)}`);
+	}
 	return options;
 }
 
@@ -79,7 +82,7 @@ export class Source {
 		return result(this.#native.parse());
 	}
 
-	/** @param {number} offset @param {'as' | 'in'} [until] the word operator the expression stops before */
+	/** @param {number} offset @param {'as'} [until] when the host's `as` follows the expression */
 	parseExpressionAt(offset, until) {
 		return result(this.#native.parseExpressionAt(offset, until));
 	}

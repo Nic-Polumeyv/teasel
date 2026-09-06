@@ -108,6 +108,20 @@ fn module_error(src: &str) -> String {
 	}
 }
 
+#[test]
+fn consumed_end() {
+	let options = Options {
+		module: true,
+		..Options::default()
+	};
+	let end = |src: &str, at: u32| parse_expression_at(src, at, options).unwrap().2;
+	assert_eq!(end("{a /* c */ }", 1), 10);
+	assert_eq!(end("{(a) }", 1), 4);
+	assert_eq!(end("{a} /* c */", 1), 2);
+	assert_eq!(parse_statement_at("{@const x = 1}", 2, options).unwrap().2, 13);
+	assert_eq!(parse_params_at("{#snippet s(a) /* c */}", 11, options).unwrap().2, 22);
+}
+
 fn span(src: &str) -> (u32, u32) {
 	let (ast, id, _) = parse_expression_at(src, 0, Options::default()).unwrap();
 	(ast.node(id).start, ast.node(id).end)

@@ -5,7 +5,6 @@ export { init };
 export { isIdentifierStart, isIdentifierChar } from './identifier.js';
 
 const FLAGS = ['typescript', 'comments', 'locations', 'preserveParens', 'allowReturnOutsideFunction', 'allowAwaitOutsideFunction', 'allowSuperOutsideMethod', 'allowUndeclaredExports'];
-const UNTIL = { as: 'untilAs', in: 'untilIn' };
 
 function flags(options = {}) {
 	for (const key of ['ranges', 'onComment', 'onToken', 'onInsertedSemicolon', 'onTrailingComma']) {
@@ -14,9 +13,12 @@ function flags(options = {}) {
 	if ('sourceType' in options && options.sourceType !== 'script' && options.sourceType !== 'module') {
 		throw new TypeError(`sourceType must be "script" or "module", not ${JSON.stringify(options.sourceType)}`);
 	}
+	if ('until' in options && options.until !== 'as') {
+		throw new TypeError(`until must be "as", not ${JSON.stringify(options.until)}`);
+	}
 	const on = FLAGS.filter((flag) => options[flag] === true);
 	if (options.sourceType !== 'module') on.push('script');
-	if (options.until in UNTIL) on.push(UNTIL[options.until]);
+	if (options.until === 'as') on.push('untilAs');
 	return on.join(',');
 }
 

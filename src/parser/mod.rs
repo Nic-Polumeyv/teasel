@@ -28,10 +28,10 @@ const MAX_CHAIN: u32 = 10_000;
 pub struct Options {
 	/// Parse as an ES module: strict mode, top-level `await`, `import` and `export`.
 	pub module: bool,
-	/// A word operator that ends an expression parsed at an offset when it appears at the top
-	/// level, for hosts whose own keyword follows the expression. Before a host's `as`, a
-	/// TypeScript assertion is still one when a type and another `as` follow it.
-	pub until: Option<Until>,
+	/// The host's own `as` follows the expression parsed at an offset, as a template loop's item
+	/// follows its list: the expression ends at the last top-level `as`, so TypeScript assertions
+	/// before it stay assertions.
+	pub until_as: bool,
 	pub allow_return_outside_function: bool,
 	pub allow_await_outside_function: bool,
 	pub allow_super_outside_method: bool,
@@ -39,12 +39,13 @@ pub struct Options {
 	pub preserve_parens: bool,
 }
 
-/// The word operators a host may need an expression to stop before: `as` where a template loop
-/// names its item after the list, `in` where one names the list after the item.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Until {
-	As,
-	In,
+/// How a top-level `as` is read under `until_as`: a first pass records every one it reads as an
+/// assertion, a second stops at the last of them, which is the host's.
+#[derive(Debug)]
+pub(crate) enum UntilAs {
+	Off,
+	Record(Vec<u32>),
+	Stop(u32),
 }
 
 /// What a function-shaped node is, for the extension hooks around its signature.
@@ -360,12 +361,25 @@ pub(crate) fn parse_expression_at<E: Extension>(
 ) -> Result<(Ast<E::Data>, NodeId, u32)> {
 	let mut parser = Parser::<E>::new(src, offset, options)?;
 	parser.enter_scope(SCOPE_TOP);
-	let context = match options.until {
-		Some(Until::As) => ForInit::NoAs,
-		Some(Until::In) => ForInit::Yes,
-		None => ForInit::No,
+	if !options.until_as {
+		let expression = parser.parse_sequence(ForInit::No, &mut None)?;
+		let end = parser.consumed_end();
+		return Ok((parser.finish(), expression, end));
+	}
+	parser.until_as = UntilAs::Record(Vec::new());
+	let first = parser.parse_sequence(ForInit::NoAs, &mut None);
+	let UntilAs::Record(recorded) = std::mem::replace(&mut parser.until_as, UntilAs::Off) else {
+		unreachable!()
 	};
-	let expression = parser.parse_sequence(context, &mut None)?;
+	let Some(&last) = recorded.last() else {
+		let expression = first?;
+		let end = parser.consumed_end();
+		return Ok((parser.finish(), expression, end));
+	};
+	let mut parser = Parser::<E>::new(src, offset, options)?;
+	parser.enter_scope(SCOPE_TOP);
+	parser.until_as = UntilAs::Stop(last);
+	let expression = parser.parse_sequence(ForInit::NoAs, &mut None)?;
 	let end = parser.consumed_end();
 	Ok((parser.finish(), expression, end))
 }
@@ -449,6 +463,7 @@ pub(crate) struct Parser<'a, E: Extension = ()> {
 	pub(crate) await_ident_pos: u32,
 	pub(crate) potential_arrow_at: u32,
 	potential_arrow_in_for_await: bool,
+	pub(crate) until_as: UntilAs,
 }
 
 pub(crate) struct Snapshot<E: Extension> {
@@ -529,6 +544,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 			await_ident_pos: 0,
 			potential_arrow_at: u32::MAX,
 			potential_arrow_in_for_await: false,
+			until_as: UntilAs::Off,
 		};
 		E::init(&mut parser);
 		parser.tok = parser.lexer.next_token()?;

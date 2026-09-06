@@ -11,7 +11,7 @@ import { args, compare, corpus, files, is_typescript, normalize_ts, root, teasel
 const { parse } = await import(`${root}/packages/svelte/src/compiler/index.js`);
 const { verbose, limit, filter } = args();
 
-// Svelte strips a block comment's indentation from its value; teasel keeps the text as written.
+// Both sides lose a block comment's indentation before comparing; Svelte used to strip it.
 function dedent(source, comment) {
 	if (comment.type !== 'Block' || !/\n/.test(comment.value)) return comment;
 	let a = comment.start;
@@ -97,8 +97,7 @@ function normalize(node, source, from, is_root, raw_values, ts) {
 			// teasel reports them as the block's `innerComments`.
 			const inner = v.flatMap((c) => c.trailingComments ?? []);
 			if (inner.length) out.innerComments = inner.filter((c) => c.start >= from);
-			// both sides lose a block comment's indentation, whichever side kept the raw text
-			const kept = v.filter((c) => c.start >= from).map(({ leadingComments, trailingComments, loc, ...c }) => dedent(source, c));
+			const kept = v.filter((c) => c.start >= from).map(({ leadingComments, trailingComments, ...c }) => dedent(source, c));
 			if (kept.length) out[k] = kept;
 			continue;
 		}

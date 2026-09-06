@@ -4,8 +4,8 @@
 export declare class Source {
   constructor(source: string, options?: Options | undefined | null)
   parse(): string
-  /** `until` is `"as"` or `"in"`: the word operator this expression stops before. */
-  parseExpressionAt(offset: number, untilWord?: string | undefined | null): string
+  /** `until` is `"as"` when the host's `as` follows the expression. */
+  parseExpressionAt(offset: number, until?: string | undefined | null): string
   parsePatternAt(offset: number): string
   parseParamsAt(offset: number): string
   parseStatementAt(offset: number): string
@@ -22,7 +22,7 @@ export interface Options {
   allowAwaitOutsideFunction?: boolean
   allowSuperOutsideMethod?: boolean
   allowUndeclaredExports?: boolean
-  /** `"as"` or `"in"`: a word operator that ends an expression at the top level. */
+  /** `"as"`: the host's `as` follows the expression, which ends at the last top-level one. */
   until?: string
 }
 

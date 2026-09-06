@@ -4,7 +4,7 @@
 use crate::ast::{Ast, NodeId};
 use crate::comments::{attach, attach_all};
 use crate::estree::{Emit, Positions, error_to_json, node_to_json, params_to_json, program_to_json};
-use crate::{Options, SyntaxError, Until};
+use crate::{Options, SyntaxError};
 
 /// What to parse; everything but a program starts at the request's offset.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -30,7 +30,7 @@ pub struct Request {
 }
 
 /// The names front ends accept for the request's switches, as acorn spells them.
-pub const FLAGS: [&str; 11] = [
+pub const FLAGS: [&str; 10] = [
 	"typescript",
 	"comments",
 	"locations",
@@ -41,7 +41,6 @@ pub const FLAGS: [&str; 11] = [
 	"allowSuperOutsideMethod",
 	"allowUndeclaredExports",
 	"untilAs",
-	"untilIn",
 ];
 
 impl Request {
@@ -69,8 +68,7 @@ impl Request {
 			"allowAwaitOutsideFunction" => self.options.allow_await_outside_function = true,
 			"allowSuperOutsideMethod" => self.options.allow_super_outside_method = true,
 			"allowUndeclaredExports" => self.options.allow_undeclared_exports = true,
-			"untilAs" => self.options.until = Some(Until::As),
-			"untilIn" => self.options.until = Some(Until::In),
+			"untilAs" => self.options.until_as = true,
 			_ => {}
 		}
 	}
@@ -106,10 +104,11 @@ impl Prepared {
 		}
 	}
 
-	/// `until` ends an expression at that top-level word operator, over the source's own setting.
-	pub fn parse(&self, entry: Entry, utf16_offset: f64, until: Option<Until>) -> String {
+	/// `until_as` says the host's `as` follows this expression, on top of the source's options.
+	pub fn parse(&self, entry: Entry, utf16_offset: f64, until_as: bool) -> String {
 		let offset = match self.positions.byte_offset(utf16_offset) {
-			Ok(offset) => offset,
+			Ok(offset) if self.source.is_char_boundary(offset as usize) => offset,
+			Ok(_) => return error_json(&format!("offset {utf16_offset} is inside a surrogate pair"), 0),
 			Err(message) => return error_json(&message, 0),
 		};
 		let mut request = Request {
@@ -117,9 +116,7 @@ impl Prepared {
 			offset,
 			..self.request
 		};
-		if until.is_some() {
-			request.options.until = until;
-		}
+		request.options.until_as |= until_as;
 		parse_with(&self.source, &self.positions, &request)
 	}
 }
@@ -127,7 +124,7 @@ impl Prepared {
 fn parse_with(source: &str, positions: &Positions, request: &Request) -> String {
 	if !source.is_char_boundary(request.offset as usize) {
 		return error_json(
-			&format!("offset {} is inside a surrogate pair", request.offset),
+			&format!("offset {} is not a character boundary", request.offset),
 			request.offset,
 		);
 	}

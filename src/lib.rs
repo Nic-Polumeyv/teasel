@@ -15,7 +15,7 @@ pub mod typescript;
 
 pub use error::SyntaxError;
 pub use interner::{Interner, StrId};
-pub use parser::{Options, Until};
+pub use parser::Options;
 
 pub fn parse(src: &str, options: Options) -> Result<ast::Ast, SyntaxError> {
 	parser::parse::<()>(src, options).map_err(|e| *e)

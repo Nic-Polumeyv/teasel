@@ -1,7 +1,6 @@
 //! The WebAssembly module: the same five entry points, with the request's switches as a
 //! comma-separated list of the names in `teasel::json::FLAGS`, each returning ESTree JSON.
 
-use teasel::Until;
 use teasel::json::{Entry, Prepared, Request};
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -13,16 +12,8 @@ fn request(flags: &str) -> Request {
 	request
 }
 
-fn until(word: Option<String>) -> Option<Until> {
-	match word.as_deref() {
-		Some("as") => Some(Until::As),
-		Some("in") => Some(Until::In),
-		_ => None,
-	}
-}
-
-fn run(source: &str, entry: Entry, offset: f64, flags: &str) -> String {
-	Prepared::new(source.to_owned(), request(flags)).parse(entry, offset, None)
+fn run(source: String, entry: Entry, offset: f64, flags: &str) -> String {
+	Prepared::new(source, request(flags)).parse(entry, offset, false)
 }
 
 /// A source held with its switches, so many parses out of it pay for its tables once.
@@ -41,52 +32,53 @@ impl Source {
 	}
 
 	pub fn parse(&self) -> String {
-		self.prepared.parse(Entry::Program, 0.0, None)
+		self.prepared.parse(Entry::Program, 0.0, false)
 	}
 
-	/// `until` is `"as"` or `"in"`: the word operator this expression stops before.
+	/// `until` is `"as"` when the host's `as` follows the expression.
 	#[wasm_bindgen(js_name = parseExpressionAt)]
-	pub fn parse_expression_at(&self, offset: f64, until_word: Option<String>) -> String {
-		self.prepared.parse(Entry::Expression, offset, until(until_word))
+	pub fn parse_expression_at(&self, offset: f64, until: Option<String>) -> String {
+		self.prepared
+			.parse(Entry::Expression, offset, until.as_deref() == Some("as"))
 	}
 
 	#[wasm_bindgen(js_name = parsePatternAt)]
 	pub fn parse_pattern_at(&self, offset: f64) -> String {
-		self.prepared.parse(Entry::Pattern, offset, None)
+		self.prepared.parse(Entry::Pattern, offset, false)
 	}
 
 	#[wasm_bindgen(js_name = parseParamsAt)]
 	pub fn parse_params_at(&self, offset: f64) -> String {
-		self.prepared.parse(Entry::Params, offset, None)
+		self.prepared.parse(Entry::Params, offset, false)
 	}
 
 	#[wasm_bindgen(js_name = parseStatementAt)]
 	pub fn parse_statement_at(&self, offset: f64) -> String {
-		self.prepared.parse(Entry::Statement, offset, None)
+		self.prepared.parse(Entry::Statement, offset, false)
 	}
 }
 
 #[wasm_bindgen]
-pub fn parse(source: &str, flags: &str) -> String {
+pub fn parse(source: String, flags: &str) -> String {
 	run(source, Entry::Program, 0.0, flags)
 }
 
 #[wasm_bindgen(js_name = parseExpressionAt)]
-pub fn parse_expression_at(source: &str, offset: f64, flags: &str) -> String {
+pub fn parse_expression_at(source: String, offset: f64, flags: &str) -> String {
 	run(source, Entry::Expression, offset, flags)
 }
 
 #[wasm_bindgen(js_name = parsePatternAt)]
-pub fn parse_pattern_at(source: &str, offset: f64, flags: &str) -> String {
+pub fn parse_pattern_at(source: String, offset: f64, flags: &str) -> String {
 	run(source, Entry::Pattern, offset, flags)
 }
 
 #[wasm_bindgen(js_name = parseParamsAt)]
-pub fn parse_params_at(source: &str, offset: f64, flags: &str) -> String {
+pub fn parse_params_at(source: String, offset: f64, flags: &str) -> String {
 	run(source, Entry::Params, offset, flags)
 }
 
 #[wasm_bindgen(js_name = parseStatementAt)]
-pub fn parse_statement_at(source: &str, offset: f64, flags: &str) -> String {
+pub fn parse_statement_at(source: String, offset: f64, flags: &str) -> String {
 	run(source, Entry::Statement, offset, flags)
 }

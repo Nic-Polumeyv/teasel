@@ -28,8 +28,11 @@ assert.equal(parseExpressionAt('{items as item}', 1, { typescript: true, until: 
 assert.equal(parseExpressionAt('{f(x as T) as item}', 1, { typescript: true, until: 'as' }).end, 10);
 assert.equal(parseExpressionAt('{xs as T[] as item}', 1, { typescript: true, until: 'as' }).end, 10);
 assert.equal(parseExpressionAt('{xs as unknown as T[] as item: T, i}', 1, { typescript: true, until: 'as' }).end, 21);
-assert.equal(parseExpressionAt('{xs as {a, b}}', 1, { typescript: true, until: 'as' }).end, 3);
-assert.equal(parseExpressionAt('{a in b}', 1, { until: 'in' }).end, 2);
+assert.equal(parseExpressionAt('{xs as [a, b = 1]}', 1, { typescript: true, until: 'as' }).end, 3);
+assert.throws(() => parseExpressionAt('éé𝒳x', 3), (e) => e.message === 'offset 3 is inside a surrogate pair');
+assert.equal(parseExpressionAt('{xs as T === y as item}', 1, { typescript: true, until: 'as' }).end, 14);
+assert.equal(parseExpressionAt('{xs as const as item}', 1, { typescript: true, until: 'as' }).end, 12);
+assert.throws(() => parseExpressionAt('{a}', 1, { until: 'in' }), TypeError);
 
 const params = parseParamsAt('(a, b = 1) => a', 0);
 assert.equal(params.params.length, 2);

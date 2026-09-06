@@ -977,3 +977,18 @@ pub(crate) fn write_json_string(out: &mut String, s: &str) {
 	out.push_str(&s[from..]);
 	out.push('"');
 }
+
+#[cfg(test)]
+mod tests {
+	use super::Positions;
+
+	#[test]
+	fn byte_offsets() {
+		let positions = Positions::new("aé𝒳b", false);
+		let bytes: Vec<_> = (0..=6).map(|n| positions.byte_offset(n as f64).ok()).collect();
+		assert_eq!(bytes, [Some(0), Some(1), Some(3), Some(4), Some(7), Some(8), None]);
+		assert!(positions.byte_offset(-1.0).is_err());
+		assert!(positions.byte_offset(1.5).is_err());
+		assert_eq!(Positions::new("abc", true).byte_offset(3.0), Ok(3));
+	}
+}

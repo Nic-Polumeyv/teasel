@@ -17,12 +17,12 @@ export interface Options {
 	/** Accepted for acorn's sake and ignored: the latest ECMAScript is always parsed. */
 	ecmaVersion?: number | 'latest';
 	/**
-	 * A word operator that ends an expression parsed at an offset when it appears at the top
-	 * level: `as` where a template loop names its item after the list, `in` where one names
-	 * the list after the item. A TypeScript assertion before the host's `as` stays one, so
-	 * `list as Type as item` ends before the second `as`.
+	 * For `parseExpressionAt` only: the host's own `as` follows the expression, as a template
+	 * loop's item follows its list. The expression ends at the last top-level `as`, so
+	 * TypeScript assertions before it stay assertions: `list as Type as item` ends before the
+	 * second `as`.
 	 */
-	until?: 'as' | 'in';
+	until?: 'as';
 }
 
 /** Thrown for a syntax error, with acorn's `pos` and `loc`. */
@@ -49,8 +49,10 @@ export interface Parsed<T> {
 	comments?: Comment[];
 }
 
+/** What `parseParamsAt` returns: the list rather than one node, otherwise as `Parsed`. */
 export interface Params {
 	params: Pattern[];
+	/** The offset after the closing paren and the comments after it. */
 	end: number;
 	comments?: Comment[];
 }
@@ -73,7 +75,7 @@ export function parseStatementAt(source: string, offset: number, options?: Optio
 export class Source {
 	constructor(source: string, options?: Options);
 	parse(): Program & { comments?: Comment[] };
-	parseExpressionAt(offset: number, until?: 'as' | 'in'): Parsed<Expression>;
+	parseExpressionAt(offset: number, until?: 'as'): Parsed<Expression>;
 	parsePatternAt(offset: number): Parsed<Pattern>;
 	parseParamsAt(offset: number): Params;
 	parseStatementAt(offset: number): Parsed<Statement>;
