@@ -14,7 +14,14 @@ impl Data {
 	}
 
 	fn extras_of(&self, id: NodeId) -> Extras {
+		if self.extras.is_empty() {
+			return Extras::default();
+		}
 		self.extras(id).copied().unwrap_or_default()
+	}
+
+	fn is_ts(&self, w: &Writer<Self>, id: NodeId, test: impl Fn(TsKind) -> bool) -> bool {
+		matches!(w.kind(id), NodeKind::Extension(index) if test(self.kind(index)))
 	}
 }
 
@@ -27,11 +34,12 @@ impl Emit for Data {
 		}
 		match w.kind(id) {
 			NodeKind::MethodDefinition { .. } | NodeKind::PropertyDefinition { .. } if extras.is_abstract => true,
+			// an overload signature: a method without a body
+			NodeKind::MethodDefinition { value, .. } => self.is_ts(w, value, |k| matches!(k, DeclareMethod { .. })),
 			NodeKind::Extension(index) => match self.kind(index) {
 				InterfaceDeclaration { .. }
 				| TypeAliasDeclaration { .. }
 				| DeclareFunction { .. }
-				| DeclareMethod { .. }
 				| IndexSignature { .. }
 				| NamespaceExportDeclaration { .. } => true,
 				ImportEqualsDeclaration { import_kind, .. } => import_kind == Kind::Type,
@@ -58,11 +66,10 @@ impl Emit for Data {
 				specifiers,
 				..
 			} => {
+				// `export { type A }` keeps an `export {}`, as tsc keeps the file a module
+				let _ = specifiers;
 				extras.export_kind == Some(Kind::Type)
-					|| match declaration {
-						Some(declaration) => self.erased(w, declaration),
-						None => specifiers.len > 0 && self.all_erased(w, specifiers),
-					}
+					|| declaration.is_some_and(|declaration| self.erased(w, declaration))
 			}
 			NodeKind::ExportDefaultDeclaration { declaration } => {
 				extras.export_kind == Some(Kind::Type) || self.erased(w, declaration)
@@ -529,11 +536,7 @@ impl Emit for Data {
 
 	fn extras(&self, w: &mut Writer<Self>, id: NodeId) {
 		let kind = w.kind(id);
-		let extras = if self.extras.is_empty() {
-			Extras::default()
-		} else {
-			self.extras(id).copied().unwrap_or_default()
-		};
+		let extras = self.extras_of(id);
 		let extension = matches!(kind, NodeKind::Extension(_));
 		if w.output.erase {
 			// what JavaScript itself has: decorators and accessor fields

@@ -68,4 +68,5 @@ assert.equal(script.start, 8);
 assert.equal(script.end, 22);
 assert.equal(script.body[0].loc.start.line, 2);
 assert.throws(() => template.parse(22, 8), SyntaxError);
+assert.equal(template.parse(24).body[0].type, 'ExpressionStatement');
 console.log('ok');

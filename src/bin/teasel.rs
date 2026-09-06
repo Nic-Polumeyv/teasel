@@ -181,7 +181,7 @@ fn main() -> ExitCode {
 	options.preserve_parens |= preserve_parens;
 	let Some(file) = file else {
 		eprintln!(
-			"usage: teasel [--module] [--typescript] [--comments] [--expression|--pattern|--params|--statement] [--preserve-parens] [--offset N] FILE"
+			"usage: teasel [--module] [--typescript] [--comments] [--expression|--pattern|--params|--statement] [--preserve-parens] [--erase] [--offset N] FILE"
 		);
 		return ExitCode::FAILURE;
 	};

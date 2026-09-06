@@ -35,7 +35,7 @@ impl Source {
 	pub fn parse(&self, start: Option<f64>, end: Option<f64>) -> String {
 		match (start, end) {
 			(None, None) => self.prepared.parse(Entry::Program, 0.0, false),
-			(start, end) => self.prepared.parse_range(start.unwrap_or(0.0), end.unwrap_or(f64::NAN)),
+			(start, end) => self.prepared.parse_range(start.unwrap_or(0.0), end),
 		}
 	}
 

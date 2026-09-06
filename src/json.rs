@@ -124,14 +124,17 @@ impl Prepared {
 		request.options.until_as |= until_as;
 		parse_with(&self.source, &self.positions, &request)
 	}
-}
 
-impl Prepared {
-	/// The program that spans `start..end` of the source, both UTF-16 offsets.
-	pub fn parse_range(&self, start: f64, end: f64) -> String {
-		let (start, end) = match (self.byte_offset(start), self.byte_offset(end)) {
-			(Ok(start), Ok(end)) if start <= end => (start, end),
-			(Ok(_), Ok(_)) => return error_json(&format!("offset {end} is before {start}"), 0),
+	/// The program that spans `start..end` of the source, both UTF-16 offsets; `end` defaults to
+	/// the end of the source.
+	pub fn parse_range(&self, start: f64, end: Option<f64>) -> String {
+		let end_byte = match end {
+			Some(end) => self.byte_offset(end),
+			None => Ok(self.source.len() as u32),
+		};
+		let (start, end) = match (self.byte_offset(start), end_byte) {
+			(Ok(from), Ok(to)) if from <= to => (from, to),
+			(Ok(_), Ok(_)) => return error_json(&format!("offset {} is before {start}", end.unwrap_or(0.0)), 0),
 			(Err(json), _) | (_, Err(json)) => return json,
 		};
 		let request = Request {
@@ -160,6 +163,14 @@ fn parse_with(source: &str, positions: &Positions, request: &Request) -> String 
 			request.offset,
 		);
 	}
+	if let Some(end) = request.end {
+		if !source.is_char_boundary(end as usize) {
+			return error_json(&format!("offset {end} is not a character boundary"), end);
+		}
+		if end < request.offset {
+			return error_json(&format!("offset {end} is before {}", request.offset), end);
+		}
+	}
 	#[cfg(feature = "typescript")]
 	if request.typescript {
 		return run::<crate::typescript::TypeScript>(source, positions, request);
@@ -180,7 +191,6 @@ where
 {
 	let (offset, options, comments) = (request.offset, request.options, request.comments);
 	let output = Output {
-		locations: request.locations,
 		comments,
 		erase: request.erase && request.typescript,
 	};

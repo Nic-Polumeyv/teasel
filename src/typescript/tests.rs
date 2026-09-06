@@ -681,6 +681,17 @@ fn erasure() {
 	let mut request = crate::json::Request::new(crate::json::Entry::Program, 0);
 	request.typescript = true;
 	request.erase = true;
+	let json = crate::json::parse(
+		"class C { m(): void; m(a) { return a } constructor(); constructor(b?) {} }",
+		&request,
+	);
+	assert_eq!(json.matches("\"MethodDefinition\"").count(), 2, "{json}");
+	assert!(!json.contains("TSDeclareMethod"));
+	let json = crate::json::parse("export { type A }; type A = 1;", &request);
+	assert!(json.contains("\"specifiers\":[]"), "{json}");
+	let mut request = crate::json::Request::new(crate::json::Entry::Program, 0);
+	request.typescript = true;
+	request.erase = true;
 	let json = crate::json::parse("function f(this: Window, a?: number): void {}", &request);
 	assert!(
 		!json.contains("this") && !json.contains("optional") && !json.contains("returnType"),
@@ -707,4 +718,13 @@ fn program_in_a_range() {
 	};
 	assert_eq!((ast.node(root).start, ast.node(root).end), (8, 26));
 	assert_eq!(ast.comments.len(), 0);
+	let mut request = crate::json::Request::new(crate::json::Entry::Program, 8);
+	request.typescript = true;
+	request.end = Some(1000);
+	assert!(crate::json::parse(src, &request).contains("is not a character boundary"));
+	request.end = Some(2);
+	assert!(crate::json::parse(src, &request).contains("is before"));
+	let prepared = crate::json::Prepared::new(src[..26].to_string(), request);
+	assert!(prepared.parse_range(8.0, None).contains("\"end\":26"));
+	assert!(prepared.parse_range(22.0, Some(8.0)).contains("is before"));
 }

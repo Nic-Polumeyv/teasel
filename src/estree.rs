@@ -18,8 +18,6 @@ pub trait Emit: crate::ast::Walk {
 /// How a tree serializes beyond acorn's shape.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Output {
-	/// Every node carries `loc`.
-	pub locations: bool,
 	/// The answer lists every comment read.
 	pub comments: bool,
 	/// TypeScript is erased: annotations, type-only declarations and imports go, assertions give
@@ -263,7 +261,8 @@ impl<'a, X: Emit> Writer<'a, X> {
 	fn all_kept(&mut self) {
 		self.key("typescript");
 		self.out.push('[');
-		let kept = std::mem::take(&mut self.kept);
+		let mut kept = std::mem::take(&mut self.kept);
+		kept.sort_by_key(|&(_, id)| self.ast.node(id).start);
 		for (i, &(ty, id)) in kept.iter().enumerate() {
 			if i > 0 {
 				self.out.push(',');

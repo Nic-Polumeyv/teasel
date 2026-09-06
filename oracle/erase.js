@@ -6,11 +6,18 @@
 
 import * as acorn from 'acorn';
 import { tsPlugin } from '@sveltejs/acorn-typescript';
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { execSync } from 'node:child_process';
 import { join, relative } from 'node:path';
 import { args, compare, normalize_ts, root, teasel } from './lib.js';
 
-const { remove_typescript_nodes } = await import(`${root}/packages/svelte/src/compiler/phases/1-parse/remove_typescript_nodes.js`);
+// the file lives on Svelte's main; a checkout on the teasel branch dropped it, so it is taken
+// from git and placed beside its imports for the duration of the run
+const stripper = `${root}/packages/svelte/src/compiler/phases/1-parse/remove_typescript_nodes.js`;
+const temporary = existsSync(stripper) ? null : stripper.replace(/\.js$/, '.oracle.js');
+if (temporary) writeFileSync(temporary, execSync('git show main:packages/svelte/src/compiler/phases/1-parse/remove_typescript_nodes.js', { cwd: root }));
+const { remove_typescript_nodes } = await import(temporary ?? stripper);
+if (temporary) unlinkSync(temporary);
 // Svelte's errors locate themselves in the current source
 const { set_source } = await import(`${root}/packages/svelte/src/compiler/state.js`);
 const Parser = acorn.Parser.extend(tsPlugin());
@@ -56,9 +63,10 @@ function reference(source) {
 }
 
 // Svelte deletes the type keys it visits, but skips the children of a default export and leaves a
-// class index signature, an abstract property and a method's `this` parameter in place.
+// class index signature, an abstract property, an overload signature and a method's `this`
+// parameter in place.
 const TYPE_KEYS = new Set(['typeAnnotation', 'typeParameters', 'typeArguments', 'returnType', 'accessibility', 'readonly', 'definite', 'override', 'abstract', 'implements', 'superTypeParameters', 'superTypeArguments', 'declare', 'importKind', 'exportKind', 'typescript']);
-const dropped = (n) => n && (n.type === 'EmptyStatement' || n.type === 'TSIndexSignature' || (n.type === 'PropertyDefinition' && n.abstract) || (n.type === 'ExportNamedDeclaration' && !n.declaration && !n.source && n.specifiers?.length === 0) || (n.type === 'ExportDefaultDeclaration' && ['TSDeclareFunction', 'TSInterfaceDeclaration'].includes(n.declaration?.type)));
+const dropped = (n) => n && (n.type === 'EmptyStatement' || n.type === 'TSIndexSignature' || (n.type === 'PropertyDefinition' && n.abstract) || (n.type === 'MethodDefinition' && n.value?.type === 'TSDeclareMethod') || (n.type === 'ExportNamedDeclaration' && !n.declaration && !n.source && n.specifiers?.length === 0) || (n.type === 'ExportDefaultDeclaration' && ['TSDeclareFunction', 'TSInterfaceDeclaration'].includes(n.declaration?.type)));
 
 // Both sides: no EmptyStatement placeholders, no type keys, no `export {}`, which Svelte drops.
 function normalize(node) {
