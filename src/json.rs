@@ -131,7 +131,7 @@ pub fn constants_json() -> String {
 
 pub fn shapes_json() -> String {
 	let words = crate::estree::shapes();
-	let mut json = String::with_capacity(words.len() * 4 + 2);
+	let mut json = String::with_capacity(words.len() * 8 + 2);
 	json.push('[');
 	for (i, word) in words.iter().enumerate() {
 		if i > 0 {

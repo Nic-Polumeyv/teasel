@@ -419,7 +419,7 @@ impl Binary {
 	}
 
 	pub fn finish(mut self) -> Vec<u32> {
-		debug_assert!(self.frames.is_empty() && self.seq.len() == 1 + self.tables);
+		debug_assert!(self.frames.is_empty() && self.seq.len() == 1);
 		let tree = self.words.len() as u32 - 7;
 		self.words[..7].copy_from_slice(&[
 			tree,

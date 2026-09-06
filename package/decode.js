@@ -143,11 +143,11 @@ function generate({ type, keys, kinds }, link) {
 	const facts = { scope: 'undefined', declares: 'undefined', binding: 'undefined', write: 'false', mutate: 'false' };
 	for (let i = 0; i < keys.length; i++) {
 		const key = keys[i];
-		if (i > last) props.push(`${key}: ${READ[kinds[i]]}`);
+		if (i > last) props.push(`${JSON.stringify(key)}: ${READ[kinds[i]]}`);
 		else {
 			lead.push(`const v${i} = ${READ[kinds[i]]};`);
 			if (FACTS.has(key)) facts[key] = `v${i}`;
-			else props.push(`${key}: v${i}`);
+			else props.push(`${JSON.stringify(key)}: v${i}`);
 		}
 	}
 	const body = `${lead.join(' ')} const n = { ${props.join(', ')} }; ${last < 0 ? '' : `file(n, ${facts.scope}, ${facts.declares}, ${facts.binding}, ${facts.write}, ${facts.mutate});`} return n;`;
@@ -280,6 +280,7 @@ export function decode(answer, source, engine, link = true) {
 	S.build = builders(table, link);
 	let scopes = null, bindings = null;
 	if (tables_at !== 0) {
+		// the writer's `all_scopes` order; a third table would have to carry its key
 		S.at = HEADER + tables_at;
 		scopes = nodes();
 		bindings = nodes();
