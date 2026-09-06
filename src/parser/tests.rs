@@ -396,6 +396,50 @@ fn modules() {
 }
 
 #[test]
+fn reserved_words_by_context() {
+	use crate::Code;
+	let code = |src: &str, module: bool| {
+		crate::parse(
+			src,
+			Options {
+				module,
+				..Options::default()
+			},
+		)
+		.err()
+		.map(|e| e.code)
+	};
+	assert_eq!(
+		code("function* g() { var yield; }", false),
+		Some(Code::YieldAsIdentifier)
+	);
+	assert_eq!(
+		code("async function f() { var await; }", false),
+		Some(Code::AwaitAsIdentifier)
+	);
+	assert_eq!(
+		code("class C { x = arguments; }", false),
+		Some(Code::ArgumentsInFieldInitializer)
+	);
+	assert_eq!(
+		code("class C { static { await; } }", false),
+		Some(Code::InvalidInStaticBlock)
+	);
+	assert_eq!(code("var \\u0069f;", false), Some(Code::EscapeInKeyword));
+	assert_eq!(code("var enum;", false), Some(Code::ReservedWord));
+	assert_eq!(code("var \\u0065num;", false), Some(Code::ReservedWord));
+	assert_eq!(code("var let;", true), Some(Code::ReservedWord));
+	assert_eq!(code("var static;", true), Some(Code::ReservedWord));
+	assert_eq!(code("var await;", true), Some(Code::AwaitOutsideAsync));
+	assert_eq!(code("'use strict'; eval = 1;", false), Some(Code::StrictBinding));
+	assert_eq!(
+		code("var yield; var let; var static; var await; eval = 1;", false),
+		None
+	);
+	assert_eq!(code("var implements;", false), None);
+}
+
+#[test]
 fn errors() {
 	assert_eq!(module_error("export { nope };"), "Export 'nope' is not defined (9)");
 	assert_eq!(
@@ -724,6 +768,7 @@ fn phases() {
 }
 
 // TEASEL_BENCH=file cargo test --release profile -- --ignored --nocapture; writes target/parse.svg
+#[cfg(target_os = "linux")]
 #[test]
 #[ignore]
 fn profile() {

@@ -68,9 +68,9 @@ pub struct Interner {
 	table: Vec<u32>,
 }
 
-/// The same mix as `FastHasher`, eight bytes at a time, the tail read as two overlapping words
-/// rather than copied into one; the low half of the product depends on the first bytes only,
-/// so the high half is folded in.
+/// `FastHasher`'s mix over the length and then eight bytes at a time, the tail read as two
+/// overlapping words rather than copied into one; the low half of the product depends on the
+/// first bytes only, so the high half is folded in.
 fn hash(s: &str) -> u32 {
 	let bytes = s.as_bytes();
 	let n = bytes.len();
@@ -98,12 +98,12 @@ fn hash(s: &str) -> u32 {
 
 impl Interner {
 	/// Room for the strings of `bytes` of source, so the table grows rarely.
-	pub fn sized(bytes: usize) -> Self {
+	pub(crate) fn sized(bytes: usize) -> Self {
 		let slots = (bytes / 16).next_power_of_two().clamp(64, 4096);
 		let mut starts = Vec::with_capacity(slots / 2 + 1);
 		starts.push(0);
 		Interner {
-			text: String::with_capacity(bytes / 4),
+			text: String::with_capacity(bytes / 32),
 			starts,
 			hashes: Vec::with_capacity(slots / 2),
 			table: vec![0; slots],
@@ -208,6 +208,31 @@ mod tests {
 		}
 		assert_eq!(interner.find("nope"), None);
 		assert_eq!(interner.len(), 501);
+	}
+
+	#[test]
+	fn every_length_and_every_byte_counts() {
+		let mut interner = Interner::sized(1 << 12);
+		let mut ids = std::collections::HashSet::new();
+		for len in 1..=40 {
+			let base: String = "a".repeat(len);
+			for at in 0..len {
+				let mut bytes = base.clone().into_bytes();
+				bytes[at] = b'b';
+				let s = String::from_utf8(bytes).unwrap();
+				let id = interner.intern(&s);
+				assert!(ids.insert(id), "{s}");
+				assert_eq!(interner.get(id), s);
+				assert_eq!(interner.find(&s), Some(id));
+				assert_eq!(interner.intern(&s), id);
+			}
+		}
+		for s in ["é", "éé", "a\0b", "\0", "日本語の識別子"] {
+			let id = interner.intern(s);
+			assert_eq!(interner.get(id), s);
+			assert_eq!(interner.find(s), Some(id));
+		}
+		assert_eq!(interner.len(), ids.len() + 5);
 	}
 
 	#[test]

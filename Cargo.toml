@@ -20,7 +20,7 @@ lto = "fat"
 codegen-units = 1
 strip = true
 
-[dev-dependencies]
+[target.'cfg(target_os = "linux")'.dev-dependencies]
 pprof = { version = "0.15.0", features = ["flamegraph"] }
 rustc-demangle = "0.1.28"
 

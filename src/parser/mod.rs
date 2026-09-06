@@ -352,7 +352,7 @@ pub(crate) fn parse<E: Extension>(src: &str, options: Options) -> Result<Ast<E::
 /// template: positions stay those of the whole source. The range is not a source of its own:
 /// a hashbang or an HTML comment at `start` is what it would be in the middle of a file.
 pub(crate) fn parse_range<E: Extension>(src: &str, start: u32, end: u32, options: Options) -> Result<Ast<E::Data>> {
-	let mut parser = Parser::<E>::new(&src[..end as usize], start, options)?;
+	let mut parser = Parser::<E>::new(&src[..end as usize], start, options, (end - start) as usize)?;
 	let program = parser.parse_program()?;
 	debug_assert_eq!(program, parser.ast.last());
 	Ok(parser.finish())
@@ -365,7 +365,7 @@ pub(crate) fn parse_expression_at<E: Extension>(
 	offset: u32,
 	options: Options,
 ) -> Result<(Ast<E::Data>, NodeId, u32)> {
-	let mut parser = Parser::<E>::new(src, offset, options)?;
+	let mut parser = Parser::<E>::new(src, offset, options, 0)?;
 	parser.enter_scope(SCOPE_TOP);
 	if !options.until_as {
 		let expression = parser.parse_sequence(ForInit::No, &mut None)?;
@@ -382,7 +382,7 @@ pub(crate) fn parse_expression_at<E: Extension>(
 		let end = parser.consumed_end();
 		return Ok((parser.finish(), expression, end));
 	};
-	let mut parser = Parser::<E>::new(src, offset, options)?;
+	let mut parser = Parser::<E>::new(src, offset, options, 0)?;
 	parser.enter_scope(SCOPE_TOP);
 	parser.until_as = UntilAs::Stop(last);
 	let expression = parser.parse_sequence(ForInit::NoAs, &mut None)?;
@@ -398,7 +398,7 @@ pub(crate) fn parse_pattern_at<E: Extension>(
 	offset: u32,
 	options: Options,
 ) -> Result<(Ast<E::Data>, NodeId, u32)> {
-	let mut parser = Parser::<E>::new(src, offset, options)?;
+	let mut parser = Parser::<E>::new(src, offset, options, 0)?;
 	parser.enter_scope(SCOPE_TOP);
 	let mut errors = Some(DestructuringErrors::default());
 	let expression = match parser.tok.kind {
@@ -422,7 +422,7 @@ pub(crate) fn parse_params_at<E: Extension>(
 	offset: u32,
 	options: Options,
 ) -> Result<(Ast<E::Data>, Vec<NodeId>, u32)> {
-	let mut parser = Parser::<E>::new(src, offset, options)?;
+	let mut parser = Parser::<E>::new(src, offset, options, 0)?;
 	parser.enter_scope(SCOPE_TOP);
 	parser.expect(TokenKind::ParenL)?;
 	let paren = parser.parse_paren_items()?;
@@ -443,7 +443,7 @@ pub(crate) fn parse_statement_at<E: Extension>(
 	offset: u32,
 	options: Options,
 ) -> Result<(Ast<E::Data>, NodeId, u32)> {
-	let mut parser = Parser::<E>::new(src, offset, options)?;
+	let mut parser = Parser::<E>::new(src, offset, options, 0)?;
 	parser.enter_scope(SCOPE_TOP);
 	let mut exports = FastSet::default();
 	let statement = parser.parse_statement(statement::Context::None, true, Some(&mut exports))?;
@@ -526,15 +526,15 @@ pub(crate) struct DestructuringErrors {
 }
 
 impl<'a, E: Extension> Parser<'a, E> {
-	fn new(src: &'a str, offset: u32, options: Options) -> Result<Self> {
-		let mut lexer = Lexer::new(src);
+	fn new(src: &'a str, offset: u32, options: Options, budget: usize) -> Result<Self> {
+		let mut lexer = Lexer::sized(src, budget);
 		lexer.set_pos(offset);
 		let strict = options.module || expression::strict_directive(src, offset);
 		lexer.strict = strict;
 		lexer.module = options.module;
 		let mut parser = Self {
 			lexer,
-			ast: Ast::sized(src.len()),
+			ast: Ast::sized(budget),
 			ext: E::default(),
 			options,
 			tok: Token::eof(offset),

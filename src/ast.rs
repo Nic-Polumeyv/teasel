@@ -79,7 +79,7 @@ pub struct Attached {
 
 impl<X: Default> Ast<X> {
 	/// Room for the tree of `bytes` of source: about a node per eight bytes, a list per thirty.
-	pub fn sized(bytes: usize) -> Self {
+	pub(crate) fn sized(bytes: usize) -> Self {
 		Ast {
 			nodes: Vec::with_capacity(bytes / 8 + 16),
 			lists: Vec::with_capacity(bytes / 30 + 16),

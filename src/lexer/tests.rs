@@ -352,6 +352,13 @@ fn template_newlines_normalise() {
 	};
 	assert_eq!(lexer.strings.get(cooked.unwrap()), "a\nb\nc");
 	assert_eq!(lexer.strings.get(raw), "a\nb\nc");
+	let mut lexer = Lexer::new("`a\\\r\nb\\\rc`");
+	lexer.next_token().unwrap();
+	let Template { cooked, raw, .. } = lexer.read_template().unwrap().kind else {
+		panic!()
+	};
+	assert_eq!(lexer.strings.get(cooked.unwrap()), "abc");
+	assert_eq!(lexer.strings.get(raw), "a\\\nb\\\nc");
 	let mut lexer = Lexer::new("`abc");
 	lexer.next_token().unwrap();
 	let e = lexer.read_template().unwrap_err();

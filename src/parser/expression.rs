@@ -2,7 +2,7 @@ use super::scope::{Binding, SCOPE_ARROW, SCOPE_DIRECT_SUPER, SCOPE_SUPER, functi
 use super::{DestructuringErrors, Errors, Extension, FunctionKind, Parser, Result, Unwrap};
 use crate::error::Code;
 use crate::interner::StrId;
-use crate::lexer::token::{Keyword, TokenKind};
+use crate::lexer::token::{Keyword, TokenKind, word};
 
 use crate::ast::{
 	AssignmentOperator, BinaryOperator, Function, List, LogicalOperator, NodeId, NodeKind, PropertyKind, UnaryOperator,
@@ -928,11 +928,11 @@ impl<E: Extension> Parser<'_, E> {
 			quasis.push(self.add_with_end(NodeKind::TemplateElement { cooked, raw, tail }, chunk.start, chunk.end));
 			if tail {
 				self.prev_end = chunk.end + 1;
-				self.tok = self.lexer.next_token()?;
+				self.lexer.next_token_into(&mut self.tok)?;
 				break;
 			}
 			self.prev_end = chunk.end + 2;
-			self.tok = self.lexer.next_token()?;
+			self.lexer.next_token_into(&mut self.tok)?;
 			let expression = match E::template_expression(self)? {
 				Some(expression) => expression,
 				None => self.parse_expression(false, &mut None)?,
@@ -1398,7 +1398,6 @@ impl<E: Extension> Parser<'_, E> {
 	}
 
 	pub(crate) fn check_unreserved(&mut self, id: NodeId) -> Result<()> {
-		use crate::lexer::token::word;
 		let NodeKind::Identifier { name: id_name } = self.kind(id) else {
 			return Ok(());
 		};
@@ -1427,7 +1426,7 @@ impl<E: Extension> Parser<'_, E> {
 		if flags & word::KEYWORD != 0 {
 			return self.error_with(start, Code::UnexpectedKeyword, format!("Unexpected keyword '{name}'"));
 		}
-		if self.is_reserved_word(name) {
+		if self.is_reserved_word(flags) {
 			if !self.in_async() && name == "await" {
 				return self.error(start, Code::AwaitOutsideAsync);
 			}
@@ -1436,14 +1435,11 @@ impl<E: Extension> Parser<'_, E> {
 		Ok(())
 	}
 
-	pub(crate) fn is_reserved_word(&self, name: &str) -> bool {
-		match name {
-			"enum" => true,
-			"await" => self.options.module,
-			"implements" | "interface" | "let" | "package" | "private" | "protected" | "public" | "static"
-			| "yield" => self.strict,
-			_ => false,
-		}
+	/// `flags` are the word's `token::word` flags.
+	pub(crate) fn is_reserved_word(&self, flags: u8) -> bool {
+		flags & word::ENUM != 0
+			|| (flags & word::AWAIT != 0 && self.options.module)
+			|| (flags & word::STRICT != 0 && self.strict)
 	}
 
 	pub(crate) fn parse_ident(&mut self, liberal: bool) -> Result<NodeId> {
@@ -1807,8 +1803,11 @@ impl<E: Extension> Parser<'_, E> {
 		let start = self.start_of(id);
 		match self.kind(id) {
 			NodeKind::Identifier { name } => {
+				let flags = self.lexer.word_flags(name);
 				let text = self.str(name);
-				if self.strict && (self.is_reserved_word(text) || text == "eval" || text == "arguments") {
+				if self.strict
+					&& (self.is_reserved_word(flags) || flags & word::EVAL != 0 || flags & word::ARGUMENTS != 0)
+				{
 					let verb = if is_bind { "Binding " } else { "Assigning to " };
 					return self.error_with(start, Code::StrictBinding, format!("{verb}{text} in strict mode"));
 				}

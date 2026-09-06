@@ -153,12 +153,14 @@ pub(crate) mod word {
 	pub(crate) const STRICT: u8 = 16;
 	/// A keyword written with an escape, which the lexer read as a word.
 	pub(crate) const KEYWORD: u8 = 32;
+	pub(crate) const EVAL: u8 = 64;
 
 	pub(crate) fn flags(word: &str) -> u8 {
 		let mut flags = match word {
 			"yield" => YIELD | STRICT,
 			"await" => AWAIT,
 			"arguments" => ARGUMENTS,
+			"eval" => EVAL,
 			"enum" => ENUM,
 			"implements" | "interface" | "let" | "package" | "private" | "protected" | "public" | "static" => STRICT,
 			_ => 0,

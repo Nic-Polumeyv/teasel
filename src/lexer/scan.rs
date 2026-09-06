@@ -3,6 +3,8 @@ pub(crate) const NEWLINE: u8 = 2;
 pub(crate) const ID_START: u8 = 4;
 pub(crate) const ID_CONTINUE: u8 = 8;
 pub(crate) const DIGIT: u8 = 16;
+/// May start what `skip_space` reads: space, a line break, a comment or an HTML comment.
+pub(crate) const TRIVIA: u8 = 32;
 
 pub(crate) static CLASS: [u8; 256] = classes();
 
@@ -23,6 +25,9 @@ const fn classes() -> [u8; 256] {
 		}
 		if c.is_ascii_digit() {
 			class |= DIGIT | ID_CONTINUE;
+		}
+		if matches!(c, b' ' | b'\t' | 0x0b | 0x0c | b'\n' | b'\r' | b'/' | b'<' | b'-') {
+			class |= TRIVIA;
 		}
 		table[b] = class;
 		b += 1;
