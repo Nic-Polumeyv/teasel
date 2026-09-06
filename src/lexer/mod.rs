@@ -206,6 +206,13 @@ impl<'a> Lexer<'a> {
 		}
 		let src = self.src;
 		let bytes = src.as_bytes();
+		if let Some(&b) = bytes.get(self.pos)
+			&& b < 0x80
+			&& scan::class(b) & (scan::SPACE | scan::NEWLINE) == 0
+			&& !matches!(b, b'/' | b'<' | b'-')
+		{
+			return Ok(false);
+		}
 		while let Some(&b) = bytes.get(self.pos) {
 			let class = scan::class(b);
 			if class & scan::SPACE != 0 {
@@ -683,6 +690,7 @@ impl<'a> Lexer<'a> {
 		self.buf.clear();
 		let mut valid = true;
 		let mut plain = true;
+		let mut returns = false;
 		let mut pending = None;
 		let mut chunk_start = self.pos;
 		loop {
@@ -698,7 +706,7 @@ impl<'a> Lexer<'a> {
 					let tail = c == '`';
 					self.pos += if tail { 1 } else { 2 };
 					let raw_text = &self.src[start..end];
-					let raw = if raw_text.contains('\r') {
+					let raw = if returns {
 						let normalized = raw_text.replace("\r\n", "\n").replace('\r', "\n");
 						self.strings.intern(&normalized)
 					} else {
@@ -737,6 +745,7 @@ impl<'a> Lexer<'a> {
 				}
 				'\r' => {
 					plain = false;
+					returns = true;
 					self.push_chunk(chunk_start, &mut pending);
 					self.flush(&mut pending);
 					self.buf.push('\n');
