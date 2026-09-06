@@ -256,6 +256,12 @@ pub struct Binary {
 	floats: Vec<f64>,
 }
 
+impl Default for Binary {
+	fn default() -> Self {
+		Self::new()
+	}
+}
+
 impl Binary {
 	/// Starts with the header's five words, filled in by `finish`.
 	pub fn new() -> Self {
@@ -442,17 +448,18 @@ pub fn params_at<X: Emit, S: Sink>(
 	w.sink
 }
 
-/// Serializes a syntax error the way acorn reports one: UTF-16 `pos` plus a `loc`.
+/// Serializes a syntax error: its code and message, UTF-16 `pos` and `end`, and a `loc`.
 pub fn error_to_json(error: &crate::SyntaxError, source: &str) -> String {
 	let positions = Positions::new(source, true);
 	let mut cursor = Cursor::default();
 	let pos = positions.offset(&mut cursor, error.pos);
 	let (line, column) = positions.line_column(&mut cursor, error.pos, pos);
-	let mut out = String::from("{\"error\":{\"message\":");
+	let end = positions.offset(&mut cursor, error.end);
+	let mut out = format!("{{\"error\":{{\"code\":\"{}\",\"message\":", error.code.name());
 	write_json_string(&mut out, &error.message);
 	write!(
 		out,
-		",\"pos\":{pos},\"loc\":{{\"line\":{line},\"column\":{column}}}}}}}"
+		",\"pos\":{pos},\"end\":{end},\"loc\":{{\"line\":{line},\"column\":{column}}}}}}}"
 	)
 	.unwrap();
 	out

@@ -4,6 +4,7 @@ use super::scope::{SCOPE_CLASS_FIELD_INIT, SCOPE_CLASS_STATIC_BLOCK, SCOPE_SUPER
 use super::statement::Context;
 use super::{Extension, Parser, PrivateKind, PrivateNameScope, Result};
 use crate::ast::{Class, MethodKind, NodeId, NodeKind};
+use crate::error::Code;
 use crate::interner::StrId;
 use crate::lexer::token::{Keyword, TokenKind};
 
@@ -59,7 +60,7 @@ impl<E: Extension> Parser<'_, E> {
 					..
 				} if matches!(self.kind(value), NodeKind::FunctionExpression { .. }) => {
 					if had_constructor {
-						return self.error(self.start_of(element), "Duplicate constructor in the same class");
+						return self.error(self.start_of(element), Code::DuplicateConstructor);
 					}
 					had_constructor = true;
 				}
@@ -126,8 +127,9 @@ impl<E: Extension> Parser<'_, E> {
 			_ => PrivateKind::Any,
 		};
 		if self.declare_private_name(name, private_kind) {
-			return self.error(
+			return self.error_with(
 				self.start_of(key),
+				Code::Redeclaration,
 				format!("Identifier '#{}' has already been declared", self.str(name)),
 			);
 		}
@@ -160,8 +162,9 @@ impl<E: Extension> Parser<'_, E> {
 			match self.private_names.last_mut() {
 				Some(parent) => parent.used.push((name, pos)),
 				None => {
-					return self.error(
+					return self.error_with(
 						pos,
+						Code::UndeclaredPrivateName,
 						format!(
 							"Private field '#{}' must be declared in an enclosing class",
 							self.str(name)
@@ -251,7 +254,7 @@ impl<E: Extension> Parser<'_, E> {
 			let is_constructor = !is_static && self.check_key_name(key, computed, "constructor");
 			let allows_direct_super = is_constructor && constructor_allows_super;
 			if is_constructor && kind != MethodKind::Method {
-				return self.error(self.start_of(key), "Constructor can't have get/set modifier");
+				return self.error(self.start_of(key), Code::AccessorConstructor);
 			}
 			if is_constructor {
 				kind = MethodKind::Constructor;
@@ -287,7 +290,7 @@ impl<E: Extension> Parser<'_, E> {
 	fn parse_class_element_name(&mut self) -> Result<(NodeId, bool)> {
 		if let TokenKind::PrivateName(name) = self.tok.kind {
 			if self.str(name) == "constructor" {
-				return self.error(self.tok.start, "Classes can't have an element named '#constructor'");
+				return self.error(self.tok.start, Code::PrivateConstructor);
 			}
 			return Ok((self.parse_private_ident()?, false));
 		}
@@ -318,14 +321,15 @@ impl<E: Extension> Parser<'_, E> {
 	) -> Result<NodeId> {
 		if kind == MethodKind::Constructor {
 			if generator {
-				return self.error(self.start_of(key), "Constructor can't be a generator");
+				return self.error(self.start_of(key), Code::GeneratorConstructor);
 			}
 			if is_async {
-				return self.error(self.start_of(key), "Constructor can't be an async method");
+				return self.error(self.start_of(key), Code::AsyncConstructor);
 			}
 		} else if is_static && self.check_key_name(key, computed, "prototype") {
-			return self.error(
+			return self.error_with(
 				self.start_of(key),
+				Code::StaticPrototype,
 				"Classes may not have a static property named prototype",
 			);
 		}
@@ -350,13 +354,10 @@ impl<E: Extension> Parser<'_, E> {
 
 	fn parse_class_field(&mut self, start: u32, key: NodeId, computed: bool, is_static: bool) -> Result<NodeId> {
 		if self.check_key_name(key, computed, "constructor") {
-			return self.error(self.start_of(key), "Classes can't have a field named 'constructor'");
+			return self.error(self.start_of(key), Code::ConstructorField);
 		}
 		if is_static && self.check_key_name(key, computed, "prototype") {
-			return self.error(
-				self.start_of(key),
-				"Classes can't have a static field named 'prototype'",
-			);
+			return self.error(self.start_of(key), Code::StaticPrototype);
 		}
 		E::class_field_annotation(self)?;
 		let value = if self.eat(TokenKind::Eq)? {

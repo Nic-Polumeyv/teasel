@@ -4,6 +4,7 @@ use super::pattern::Binding;
 use super::scope::{SCOPE_SIMPLE_CATCH, SCOPE_TOP, function_flags};
 use super::{DestructuringErrors, Extension, FunctionKind, Label, LabelKind, Parser, Result};
 use crate::ast::{Function, NodeId, NodeKind, VariableKind};
+use crate::error::Code;
 use crate::interner::{FastSet, StrId};
 use crate::lexer::token::{Keyword, TokenKind};
 use crate::lexer::unicode::is_id_start;
@@ -46,7 +47,11 @@ impl<E: Extension> Parser<'_, E> {
 			&& !self.options.allow_undeclared_exports
 			&& let Some((&name, &(pos, _))) = self.undeclared_exports.iter().min_by_key(|(_, (_, order))| *order)
 		{
-			return self.error(pos, format!("Export '{}' is not defined", self.str(name)));
+			return self.error_with(
+				pos,
+				Code::UndefinedExport,
+				format!("Export '{}' is not defined", self.str(name)),
+			);
 		}
 		let body = self.list_of(&body);
 		self.adapt_directive_prologue(body);
@@ -159,10 +164,10 @@ impl<E: Extension> Parser<'_, E> {
 					return self.parse_expression_statement(start, expression);
 				}
 				if !top_level {
-					return self.error(start, "'import' and 'export' may only appear at the top level");
+					return self.error(start, Code::ImportExportNotTopLevel);
 				}
 				if !self.options.module {
-					return self.error(start, "'import' and 'export' may appear only with 'sourceType: module'");
+					return self.error(start, Code::ImportExportInScript);
 				}
 				if is_import {
 					self.parse_import(start)
@@ -264,8 +269,9 @@ impl<E: Extension> Parser<'_, E> {
 					|| (label.is_some() && is_break))
 		});
 		if !found {
-			return self.error(
+			return self.error_with(
 				start,
+				Code::Unsyntactic,
 				format!("Unsyntactic {}", if is_break { "break" } else { "continue" }),
 			);
 		}
@@ -364,10 +370,7 @@ impl<E: Extension> Parser<'_, E> {
 				return self.unexpected();
 			}
 			if starts_with_let && is_for_of {
-				return self.error(
-					self.start_of(init),
-					"The left-hand side of a for-of loop may not start with 'let'.",
-				);
+				return self.error(self.start_of(init), Code::ForOfLet);
 			}
 			let init = self.make_pattern(init, false, &mut errors)?;
 			self.check_lval_pattern(init, Binding::None, &mut None)?;
@@ -422,8 +425,9 @@ impl<E: Extension> Parser<'_, E> {
 					|| !matches!(self.kind(id), NodeKind::Identifier { .. }))
 			{
 				let loop_kind = if is_for_in { "for-in" } else { "for-of" };
-				return self.error(
+				return self.error_with(
 					self.start_of(left),
+					Code::ForInOfInitializer,
 					format!("{loop_kind} loop variable declaration may not have an initializer"),
 				);
 			}
@@ -565,7 +569,7 @@ impl<E: Extension> Parser<'_, E> {
 		if !self.in_function()
 			&& !(self.options.allow_return_outside_function && self.current_var_scope().flags & SCOPE_TOP != 0)
 		{
-			return self.error(start, "'return' outside of function");
+			return self.error(start, Code::ReturnOutsideFunction);
 		}
 		self.next()?;
 		let argument = if self.eat(TokenKind::Semi)? || self.can_insert_semicolon() {
@@ -600,7 +604,7 @@ impl<E: Extension> Parser<'_, E> {
 					Some(self.parse_expression(false, &mut None)?)
 				} else {
 					if saw_default {
-						return self.error(case_start, "Multiple default clauses");
+						return self.error(case_start, Code::DuplicateDefault);
 					}
 					saw_default = true;
 					None
@@ -628,7 +632,7 @@ impl<E: Extension> Parser<'_, E> {
 	fn parse_throw(&mut self, start: u32) -> Result<NodeId> {
 		self.next()?;
 		if self.tok.newline_before {
-			return self.error(self.prev_end, "Illegal newline after throw");
+			return self.error(self.prev_end, Code::NewlineAfterThrow);
 		}
 		let argument = self.parse_expression(false, &mut None)?;
 		self.semicolon()?;
@@ -668,7 +672,7 @@ impl<E: Extension> Parser<'_, E> {
 			None
 		};
 		if handler.is_none() && finalizer.is_none() {
-			return self.error(start, "Missing catch or finally clause");
+			return self.error(start, Code::MissingCatchOrFinally);
 		}
 		Ok(self.add(
 			NodeKind::TryStatement {
@@ -699,7 +703,7 @@ impl<E: Extension> Parser<'_, E> {
 
 	fn parse_with(&mut self, start: u32) -> Result<NodeId> {
 		if self.strict {
-			return self.error(start, "'with' in strict mode");
+			return self.error(start, Code::StrictWith);
 		}
 		self.next()?;
 		let object = self.parse_paren_expression()?;
@@ -709,8 +713,9 @@ impl<E: Extension> Parser<'_, E> {
 
 	fn parse_labeled(&mut self, start: u32, name: StrId, label: NodeId, context: Context) -> Result<NodeId> {
 		if self.labels.iter().any(|l| l.name == Some(name)) {
-			return self.error(
+			return self.error_with(
 				self.start_of(label),
+				Code::DuplicateLabel,
 				format!("Label '{}' is already declared", self.str(name)),
 			);
 		}
@@ -803,10 +808,7 @@ impl<E: Extension> Parser<'_, E> {
 					return self.unexpected();
 				}
 				if !matches!(self.kind(id), NodeKind::Identifier { .. }) && !(is_for && in_or_of) && !missing_allowed {
-					return self.error(
-						self.prev_end,
-						"Complex binding patterns require an initialization value",
-					);
+					return self.error(self.prev_end, Code::PatternWithoutInitializer);
 				}
 				None
 			};
@@ -938,8 +940,9 @@ impl<E: Extension> Parser<'_, E> {
 				_ => unreachable!(),
 			};
 			if seen.contains(&key_name) {
-				return self.error(
+				return self.error_with(
 					self.start_of(key),
+					Code::DuplicateImportAttribute,
 					format!("Duplicate attribute key '{}'", self.str(key_name)),
 				);
 			}
@@ -1055,10 +1058,7 @@ impl<E: Extension> Parser<'_, E> {
 				match self.kind(local) {
 					NodeKind::Identifier { name } => self.check_local_export(name, self.start_of(local)),
 					_ => {
-						return self.error(
-							self.start_of(local),
-							"A string literal cannot be used as an exported binding without `from`.",
-						);
+						return self.error(self.start_of(local), Code::StringExportWithoutFrom);
 					}
 				}
 			}
@@ -1151,7 +1151,11 @@ impl<E: Extension> Parser<'_, E> {
 
 	fn check_export_name(&self, exports: &mut FastSet<StrId>, name: StrId, pos: u32) -> Result<()> {
 		if !exports.insert(name) && E::DUPLICATE_EXPORT_ERRORS {
-			return self.error(pos, format!("Duplicate export '{}'", self.str(name)));
+			return self.error_with(
+				pos,
+				Code::DuplicateExport,
+				format!("Duplicate export '{}'", self.str(name)),
+			);
 		}
 		Ok(())
 	}

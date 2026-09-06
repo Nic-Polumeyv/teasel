@@ -1,6 +1,7 @@
 use super::token::{Keyword, TokenKind};
 use super::unicode::{is_id_continue, is_id_start};
 use super::{Lexer, Result};
+use crate::error::Code;
 
 impl Lexer<'_> {
 	pub(super) fn read_word(&mut self) -> Result<TokenKind> {
@@ -56,13 +57,13 @@ impl Lexer<'_> {
 		let esc_start = self.pos;
 		self.pos += 1;
 		if self.byte() != Some(b'u') {
-			return self.error(self.pos, "Expecting Unicode escape sequence \\uXXXX");
+			return self.error(self.pos, Code::ExpectedUnicodeEscape);
 		}
 		self.pos += 1;
 		let code = self.read_code_point()?;
 		match char::from_u32(code) {
 			Some(c) if is_word_char(c, first) => Ok(c),
-			_ => self.error(esc_start, "Invalid Unicode escape"),
+			_ => self.error(esc_start, Code::InvalidUnicodeEscape),
 		}
 	}
 
@@ -72,7 +73,11 @@ impl Lexer<'_> {
 			Some(c) if c == '\\' || is_word_char(c, true) => {}
 			next => {
 				let c = next.unwrap_or('\u{10000}');
-				return self.error(self.pos, format!("Unexpected character '{c}'"));
+				return self.error_with(
+					self.pos,
+					Code::UnexpectedCharacter,
+					format!("Unexpected character '{c}'"),
+				);
 			}
 		}
 		let name = match self.read_word()? {

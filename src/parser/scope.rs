@@ -1,4 +1,5 @@
 use super::{Extension, Parser, Result};
+use crate::error::Code;
 use crate::interner::StrId;
 
 pub(crate) const SCOPE_TOP: u32 = 1;
@@ -183,8 +184,9 @@ impl<E: Extension> Parser<'_, E> {
 			}
 		}
 		if redeclared {
-			return self.error(
+			return self.error_with(
 				pos,
+				Code::Redeclaration,
 				format!("Identifier '{}' has already been declared", self.str(name)),
 			);
 		}

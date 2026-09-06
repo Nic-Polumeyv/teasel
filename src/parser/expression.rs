@@ -5,6 +5,7 @@ use crate::ast::{
 	AssignmentOperator, BinaryOperator, Function, List, LogicalOperator, NodeId, NodeKind, PropertyKind, UnaryOperator,
 	UpdateOperator,
 };
+use crate::error::Code;
 use crate::lexer::token::{Keyword, TokenKind};
 
 /// Whether the expression is the init of a `for` statement, where `in` is not an operator.
@@ -317,20 +318,14 @@ impl<E: Extension> Parser<'_, E> {
 			if (logical && self.is(TokenKind::QuestionQuestion))
 				|| (coalesce && (self.is(TokenKind::PipePipe) || self.is(TokenKind::AmpAmp)))
 			{
-				return self.error(
-					self.tok.start,
-					"Logical expressions and coalesce expressions cannot be mixed. Wrap either by parentheses",
-				);
+				return self.error(self.tok.start, Code::MixedCoalesce);
 			}
 		}
 	}
 
 	fn build_binary(&mut self, start: u32, left: NodeId, right: NodeId, op: Op) -> Result<NodeId> {
 		if matches!(self.kind(right), NodeKind::PrivateIdentifier { .. }) {
-			return self.error(
-				self.start_of(right),
-				"Private identifier can only be left side of binary expression",
-			);
+			return self.error(self.start_of(right), Code::PrivateNameOutsideIn);
 		}
 		let kind = match op {
 			Op::Binary(operator) => NodeKind::BinaryExpression { operator, left, right },
@@ -377,10 +372,10 @@ impl<E: Extension> Parser<'_, E> {
 			let argument = self.parse_maybe_unary(&mut None, true, false, for_init)?;
 			self.check_expression_errors(errors, true)?;
 			if self.strict && operator == UnaryOperator::Delete && self.is_local_variable_access(argument) {
-				return self.error(start, "Deleting local variable in strict mode");
+				return self.error(start, Code::StrictDelete);
 			}
 			if operator == UnaryOperator::Delete && self.is_private_field_access(argument) {
-				return self.error(start, "Private fields can not be deleted");
+				return self.error(start, Code::DeletePrivate);
 			}
 			saw_unary = true;
 			expr = self.add(NodeKind::UnaryExpression { operator, argument }, start);
@@ -544,10 +539,7 @@ impl<E: Extension> Parser<'_, E> {
 		}
 		let optional = self.eat(TokenKind::QuestionDot)?;
 		if no_calls && optional {
-			return self.error(
-				self.prev_end - 2,
-				"Optional chaining cannot appear in the callee of new expressions",
-			);
+			return self.error(self.prev_end - 2, Code::OptionalChainInNew);
 		}
 		let computed = self.eat(TokenKind::BracketL)?;
 		if computed
@@ -588,10 +580,7 @@ impl<E: Extension> Parser<'_, E> {
 				self.check_pattern_errors(&errors, false)?;
 				self.check_yield_await_in_default_params()?;
 				if self.await_ident_pos > 0 {
-					return self.error(
-						self.await_ident_pos,
-						"Cannot use 'await' as identifier inside an async function",
-					);
+					return self.error(self.await_ident_pos, Code::AwaitAsIdentifier);
 				}
 				self.yield_pos = old_yield;
 				self.await_pos = old_await;
@@ -623,10 +612,7 @@ impl<E: Extension> Parser<'_, E> {
 		}
 		if self.is(TokenKind::Backquote) {
 			if optional || optional_chained {
-				return self.error(
-					self.tok.start,
-					"Optional chaining cannot appear in the tag of tagged template expressions",
-				);
+				return self.error(self.tok.start, Code::OptionalChainInTaggedTemplate);
 			}
 			let quasi = self.parse_template(true)?;
 			let node = self.add(NodeKind::TaggedTemplateExpression { tag: base, quasi }, start);
@@ -647,11 +633,11 @@ impl<E: Extension> Parser<'_, E> {
 		match self.tok.kind {
 			TokenKind::Keyword(Keyword::Super) => {
 				if !self.allow_super() {
-					return self.error(start, "'super' keyword outside a method");
+					return self.error(start, Code::SuperOutsideMethod);
 				}
 				self.next()?;
 				if self.is(TokenKind::ParenL) && !self.allow_direct_super() {
-					return self.error(start, "super() call outside constructor of a subclass");
+					return self.error(start, Code::SuperCallOutsideConstructor);
 				}
 				if !self.is(TokenKind::Dot) && !self.is(TokenKind::BracketL) && !self.is(TokenKind::ParenL) {
 					return self.unexpected();
@@ -784,16 +770,13 @@ impl<E: Extension> Parser<'_, E> {
 		let escaped = self.tok.escaped;
 		let property = self.parse_ident(true)?;
 		if !self.ident_is(property, "meta") {
-			return self.error(
-				self.start_of(property),
-				"The only valid meta property for import is 'import.meta'",
-			);
+			return self.error(self.start_of(property), Code::InvalidImportMeta);
 		}
 		if escaped {
-			return self.error(start, "'import.meta' must not contain escaped characters");
+			return self.error(start, Code::ImportMetaEscaped);
 		}
 		if !self.options.module {
-			return self.error(start, "Cannot use 'import.meta' outside a module");
+			return self.error(start, Code::ImportMetaOutsideModule);
 		}
 		Ok(self.add(NodeKind::MetaProperty { meta, property }, start))
 	}
@@ -875,7 +858,7 @@ impl<E: Extension> Parser<'_, E> {
 				let rest = E::paren_item(self, rest)?;
 				items.push(Some(rest));
 				if self.is(TokenKind::Comma) {
-					return self.error(self.tok.start, "Comma is not permitted after the rest element");
+					return self.error(self.tok.start, Code::CommaAfterRest);
 				}
 				break;
 			}
@@ -901,19 +884,13 @@ impl<E: Extension> Parser<'_, E> {
 			let escaped = self.tok.escaped;
 			let property = self.parse_ident(true)?;
 			if !self.ident_is(property, "target") {
-				return self.error(
-					self.start_of(property),
-					"The only valid meta property for new is 'new.target'",
-				);
+				return self.error(self.start_of(property), Code::InvalidNewTarget);
 			}
 			if escaped {
-				return self.error(start, "'new.target' must not contain escaped characters");
+				return self.error(start, Code::NewTargetEscaped);
 			}
 			if !self.allow_new_target() {
-				return self.error(
-					start,
-					"'new.target' can only be used in functions and class static block",
-				);
+				return self.error(start, Code::NewTargetOutsideFunction);
 			}
 			return Ok(self.add(NodeKind::MetaProperty { meta, property }, start));
 		}
@@ -921,7 +898,7 @@ impl<E: Extension> Parser<'_, E> {
 		let atom = self.parse_expr_atom(&mut None, ForInit::No, true)?;
 		let callee = self.parse_subscripts(atom, callee_start, true, ForInit::No)?;
 		if matches!(self.kind(callee), NodeKind::Super) {
-			return self.error(self.start_of(callee), "Invalid use of 'super'");
+			return self.error(self.start_of(callee), Code::InvalidSuper);
 		}
 		let arguments = if self.eat(TokenKind::ParenL)? {
 			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut None)?;
@@ -945,7 +922,7 @@ impl<E: Extension> Parser<'_, E> {
 				unreachable!()
 			};
 			if cooked.is_none() && !is_tagged {
-				return self.error(chunk.start, "Bad escape sequence in untagged template literal");
+				return self.error(chunk.start, Code::BadTemplateEscape);
 			}
 			quasis.push(self.add_with_end(NodeKind::TemplateElement { cooked, raw, tail }, chunk.start, chunk.end));
 			if tail {
@@ -1026,7 +1003,7 @@ impl<E: Extension> Parser<'_, E> {
 							e.double_proto = Some(self.start_of(key));
 						}
 					}
-					None => return self.error(self.start_of(key), "Redefinition of __proto__ property"),
+					None => return self.error(self.start_of(key), Code::DuplicateProto),
 				}
 			}
 			*has_proto = true;
@@ -1040,7 +1017,7 @@ impl<E: Extension> Parser<'_, E> {
 			if is_pattern {
 				let argument = self.parse_ident(false)?;
 				if self.is(TokenKind::Comma) {
-					return self.error(self.tok.start, "Comma is not permitted after the rest element");
+					return self.error(self.tok.start, Code::CommaAfterRest);
 				}
 				return Ok(self.add(NodeKind::RestElement { argument }, start));
 			}
@@ -1198,15 +1175,15 @@ impl<E: Extension> Parser<'_, E> {
 		if params.len() != expected {
 			let start = self.start_of(func);
 			return if is_getter {
-				self.error(start, "getter should have no params")
+				self.error(start, Code::GetterParams)
 			} else {
-				self.error(start, "setter should have exactly one param")
+				self.error(start, Code::SetterParams)
 			};
 		}
 		if !is_getter {
 			let param = params[0].unwrap();
 			if matches!(self.kind(param), NodeKind::RestElement { .. }) {
-				return self.error(self.start_of(param), "Setter cannot use rest params");
+				return self.error(self.start_of(param), Code::SetterRestParam);
 			}
 		}
 		Ok(())
@@ -1332,10 +1309,7 @@ impl<E: Extension> Parser<'_, E> {
 			if !old_strict || !simple {
 				use_strict = self.strict_directive(self.tok.end);
 				if use_strict && !simple {
-					return self.error(
-						start,
-						"Illegal 'use strict' directive in function with non-simple parameter list",
-					);
+					return self.error(start, Code::StrictDirectiveNonSimpleParams);
 				}
 			}
 			let old_labels = std::mem::take(&mut self.labels);
@@ -1429,25 +1403,29 @@ impl<E: Extension> Parser<'_, E> {
 		let start = self.start_of(id);
 		let name = self.str(name);
 		if self.in_generator() && name == "yield" {
-			return self.error(start, "Cannot use 'yield' as identifier inside a generator");
+			return self.error(start, Code::YieldAsIdentifier);
 		}
 		if self.in_async() && name == "await" {
-			return self.error(start, "Cannot use 'await' as identifier inside an async function");
+			return self.error(start, Code::AwaitAsIdentifier);
 		}
 		if self.in_class_field_init() && name == "arguments" {
-			return self.error(start, "Cannot use 'arguments' in class field initializer");
+			return self.error(start, Code::ArgumentsInFieldInitializer);
 		}
 		if self.in_class_static_block() && (name == "arguments" || name == "await") {
-			return self.error(start, format!("Cannot use {name} in class static initialization block"));
+			return self.error_with(
+				start,
+				Code::InvalidInStaticBlock,
+				format!("Cannot use {name} in class static initialization block"),
+			);
 		}
 		if Keyword::from_word(name).is_some() {
-			return self.error(start, format!("Unexpected keyword '{name}'"));
+			return self.error_with(start, Code::UnexpectedKeyword, format!("Unexpected keyword '{name}'"));
 		}
 		if self.is_reserved_word(name) {
 			if !self.in_async() && name == "await" {
-				return self.error(start, "Cannot use keyword 'await' outside an async function");
+				return self.error(start, Code::AwaitOutsideAsync);
 			}
-			return self.error(start, format!("The keyword '{name}' is reserved"));
+			return self.error_with(start, Code::ReservedWord, format!("The keyword '{name}' is reserved"));
 		}
 		Ok(())
 	}
@@ -1494,8 +1472,9 @@ impl<E: Extension> Parser<'_, E> {
 		match self.private_names.last_mut() {
 			Some(scope) => scope.used.push((name, start)),
 			None => {
-				return self.error(
+				return self.error_with(
 					start,
+					Code::UndeclaredPrivateName,
 					format!(
 						"Private field '#{}' must be declared in an enclosing class",
 						self.str(name)

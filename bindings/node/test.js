@@ -38,7 +38,9 @@ const params = parseParamsAt('(a, b = 1) => a', 0);
 assert.equal(params.params.length, 2);
 assert.equal(params.end, 10);
 
-assert.throws(() => parse('x = ;'), (e) => e instanceof SyntaxError && e.pos === 4 && e.loc.column === 4 && e.message === 'Unexpected token (1:4)');
+assert.throws(() => parse('x = ;'), (e) => e instanceof SyntaxError && e.code === 'unexpected_token' && e.pos === 4 && e.end === 5 && e.loc.column === 4 && e.message === 'Unexpected token');
+assert.throws(() => parse('x = '), (e) => e.code === 'unexpected_eof' && e.pos === 4 && e.end === 4);
+assert.throws(() => parse('/a', { locations: true }), (e) => e.code === 'unterminated_regexp' && e.pos === 1);
 assert.throws(() => parse('x', { ranges: true }), TypeError);
 assert.throws(() => parse('x', { sourceType: 'nonsense' }), TypeError);
 assert.throws(() => parseExpressionAt('𝒳 + y', 1), (e) => e instanceof SyntaxError && /surrogate/.test(e.message));

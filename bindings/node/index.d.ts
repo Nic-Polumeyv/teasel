@@ -30,9 +30,16 @@ export interface Options {
 	until?: 'as';
 }
 
-/** Thrown for a syntax error, with acorn's `pos` and `loc`. */
+/**
+ * Thrown for a syntax error. `code` names what went wrong, for a host to branch on, and
+ * `message` says it in words, without a position; `pos` and `end` span the offending token,
+ * or meet at the error when there is none. A bad offset from the host is an `invalid_request`
+ * without a `loc`.
+ */
 export interface ParseError extends SyntaxError {
+	code: string;
 	pos: number;
+	end: number;
 	loc?: { line: number; column: number };
 }
 

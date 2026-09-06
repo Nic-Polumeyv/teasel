@@ -56,9 +56,12 @@ export function normalize_ts(key, value) {
 	return v;
 }
 
-function acorn_error(e) {
+/// acorn says "Unexpected token" at the end of the input, where teasel names the end.
+function acorn_error(e, source) {
 	if (!(e instanceof SyntaxError) || e.pos === undefined) return { error: { message: `acorn threw ${e.name}: ${e.message}`, pos: -1 } };
-	return { error: { message: e.message.replace(/ \(\d+:\d+\)$/, ''), pos: e.pos, loc: { line: e.loc.line, column: e.loc.column } } };
+	let message = e.message.replace(/ \(\d+:\d+\)$/, '');
+	if (message === 'Unexpected token' && e.pos === source.length) message = 'Unexpected end of input';
+	return { error: { message, pos: e.pos, loc: { line: e.loc.line, column: e.loc.column } } };
 }
 
 export function acorn_parse(source, mode) {
@@ -66,7 +69,7 @@ export function acorn_parse(source, mode) {
 		const ast = acorn.parse(source, { ecmaVersion: 16, sourceType: mode, locations: true });
 		return JSON.parse(JSON.stringify(ast, normalize));
 	} catch (e) {
-		return acorn_error(e);
+		return acorn_error(e, source);
 	}
 }
 
@@ -76,7 +79,7 @@ export function acorn_expression(source, offset, ts = false) {
 		const ast = parser.parseExpressionAt(source, offset, { ecmaVersion: 16, sourceType: 'module', locations: true, preserveParens: true });
 		return JSON.parse(JSON.stringify(ast, ts ? normalize_ts : normalize));
 	} catch (e) {
-		return acorn_error(e);
+		return acorn_error(e, source);
 	}
 }
 
@@ -88,7 +91,7 @@ export function acorn_statement(source, offset, ts = false) {
 		const node = parser.parseStatement(null, true, Object.create(null));
 		return JSON.parse(JSON.stringify(node, ts ? normalize_ts : normalize));
 	} catch (e) {
-		return acorn_error(e);
+		return acorn_error(e, source);
 	}
 }
 
@@ -123,6 +126,8 @@ export async function teasel(jobs) {
 function parse_line(line) {
 	try {
 		const value = JSON.parse(line);
+		// acorn's errors have no code or end
+		if (value.error) return { error: { message: value.error.message, pos: value.error.pos, loc: value.error.loc } };
 		// parse-at answers wrap the node with the offset the parse stopped at
 		return 'node' in value && !('type' in value) ? value.node : value;
 	} catch {

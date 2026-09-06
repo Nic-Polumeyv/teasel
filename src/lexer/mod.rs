@@ -1,3 +1,4 @@
+use crate::error::Code;
 mod identifier;
 mod number;
 mod regex;
@@ -130,8 +131,12 @@ impl<'a> Lexer<'a> {
 		self.src[self.pos..].chars().next()
 	}
 
-	fn error<T>(&self, pos: usize, message: impl Into<String>) -> Result<T> {
-		Err(Box::new(SyntaxError::new(pos as u32, message)))
+	fn error<T>(&self, pos: usize, code: Code) -> Result<T> {
+		Err(Box::new(SyntaxError::new(pos as u32, code)))
+	}
+
+	fn error_with<T>(&self, pos: usize, code: Code, message: impl Into<String>) -> Result<T> {
+		Err(Box::new(SyntaxError::with(pos as u32, code, message)))
 	}
 
 	pub(crate) fn next_token(&mut self) -> Result<Token> {
@@ -164,7 +169,7 @@ impl<'a> Lexer<'a> {
 				if is_id_start(c) {
 					self.read_word()?
 				} else {
-					return self.error(start, format!("Unexpected character '{c}'"));
+					return self.error_with(start, Code::UnexpectedCharacter, format!("Unexpected character '{c}'"));
 				}
 			}
 		};
@@ -235,7 +240,7 @@ impl<'a> Lexer<'a> {
 	fn skip_block_comment(&mut self) -> Result<bool> {
 		let start = self.pos;
 		let Some((len, newline)) = comment_end(&self.src[start + 2..]) else {
-			return self.error(start, "Unterminated comment");
+			return self.error(start, Code::UnterminatedComment);
 		};
 		let end = start + 2 + len + 2;
 		self.pos = end;
@@ -340,7 +345,13 @@ impl<'a> Lexer<'a> {
 				Some(b'=') => (CaretEq, 2),
 				_ => (Caret, 1),
 			},
-			_ => return self.error(self.pos, format!("Unexpected character '{}'", b as char)),
+			_ => {
+				return self.error_with(
+					self.pos,
+					Code::UnexpectedCharacter,
+					format!("Unexpected character '{}'", b as char),
+				);
+			}
 		};
 		self.pos += len;
 		Ok(kind)

@@ -22,18 +22,14 @@ function check(options) {
 }
 
 /**
- * Turns the addon's answer into a tree, or into the `SyntaxError` acorn would throw, with `pos`
- * and `loc` on it. An answer is a token stream to decode, or the error as JSON text.
+ * Turns the addon's answer into a tree, or into a `SyntaxError` with the error's `code`, `pos`,
+ * `end` and `loc` on it. An answer is a token stream to decode, or the error as JSON text.
  * @param {ArrayBuffer | string} answer
  * @param {string} source
  */
 function result(answer, source) {
 	if (typeof answer !== 'string') return decode(answer, source, native.constants);
-	const { message, pos, loc } = JSON.parse(answer).error;
-	const error = new SyntaxError(loc ? `${message} (${loc.line}:${loc.column})` : message);
-	error.pos = pos;
-	error.loc = loc;
-	throw error;
+	throw Object.assign(new SyntaxError(), JSON.parse(answer).error);
 }
 
 /** @param {string} source @param {Options} [options] */

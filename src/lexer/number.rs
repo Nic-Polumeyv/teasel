@@ -1,6 +1,7 @@
 use super::identifier::is_word_char;
 use super::token::TokenKind;
 use super::{Lexer, Result};
+use crate::error::Code;
 
 impl Lexer<'_> {
 	pub(super) fn read_number(&mut self, starts_with_dot: bool) -> Result<TokenKind> {
@@ -14,11 +15,11 @@ impl Lexer<'_> {
 			}
 		}
 		if !starts_with_dot && self.read_int(10, true)?.is_none() {
-			return self.error(start, "Invalid number");
+			return self.error(start, Code::InvalidNumber);
 		}
 		let legacy = self.pos - start >= 2 && self.src.as_bytes()[start] == b'0';
 		if legacy && self.strict {
-			return self.error(start, "Invalid number");
+			return self.error(start, Code::InvalidNumber);
 		}
 		if !legacy && !starts_with_dot && self.byte() == Some(b'n') {
 			self.pos += 1;
@@ -36,7 +37,7 @@ impl Lexer<'_> {
 				self.pos += 1;
 			}
 			if self.read_int(10, false)?.is_none() {
-				return self.error(start, "Invalid number");
+				return self.error(start, Code::InvalidNumber);
 			}
 		}
 		self.check_after_number()?;
@@ -57,7 +58,11 @@ impl Lexer<'_> {
 	fn read_radix_number(&mut self, radix: u32) -> Result<TokenKind> {
 		self.pos += 2;
 		let Some(value) = self.read_int(radix, false)? else {
-			return self.error(self.pos, format!("Expected number in radix {radix}"));
+			return self.error_with(
+				self.pos,
+				Code::ExpectedNumberInRadix,
+				format!("Expected number in radix {radix}"),
+			);
 		};
 		if self.byte() == Some(b'n') {
 			self.pos += 1;
@@ -75,16 +80,13 @@ impl Lexer<'_> {
 		while let Some(b) = self.byte() {
 			if b == b'_' {
 				if legacy_octal {
-					return self.error(
-						self.pos,
-						"Numeric separator is not allowed in legacy octal numeric literals",
-					);
+					return self.error(self.pos, Code::NumericSeparatorLegacyOctal);
 				}
 				if last_was_separator {
-					return self.error(self.pos, "Numeric separator must be exactly one underscore");
+					return self.error(self.pos, Code::NumericSeparatorDouble);
 				}
 				if self.pos == start {
-					return self.error(self.pos, "Numeric separator is not allowed at the first of digits");
+					return self.error(self.pos, Code::NumericSeparatorFirst);
 				}
 				last_was_separator = true;
 				self.pos += 1;
@@ -98,7 +100,7 @@ impl Lexer<'_> {
 			self.pos += 1;
 		}
 		if last_was_separator {
-			return self.error(self.pos - 1, "Numeric separator is not allowed at the last of digits");
+			return self.error(self.pos - 1, Code::NumericSeparatorLast);
 		}
 		Ok((self.pos > start).then_some(total))
 	}
@@ -107,7 +109,7 @@ impl Lexer<'_> {
 		if let Some(c) = self.char()
 			&& is_word_char(c, true)
 		{
-			return self.error(self.pos, "Identifier directly after number");
+			return self.error(self.pos, Code::IdentifierAfterNumber);
 		}
 		Ok(())
 	}
