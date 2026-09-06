@@ -15,7 +15,7 @@
 		"./wasm": { "types": "./wasm.d.ts", "default": "./wasm.js" },
 		"./teasel.wasm": "./teasel.wasm"
 	},
-	"files": ["index.js", "index.d.ts", "wasm.js", "wasm.d.ts", "api.js", "options.js", "decode.js", "identifier.js", "binding.cjs", "binding.d.ts", "*.node", "teasel.wasm"],
+	"files": ["index.js", "index.d.ts", "wasm.js", "wasm.d.ts", "api.js", "decode.js", "identifier.js", "binding.cjs", "binding.d.ts", "*.node", "teasel.wasm"],
 	"napi": {
 		"binaryName": "teasel",
 		"targets": ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu", "x86_64-apple-darwin", "aarch64-apple-darwin", "x86_64-pc-windows-msvc"]

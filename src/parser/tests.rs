@@ -598,9 +598,14 @@ fn phases() {
 	use crate::estree::{Binary, Json, Output, Positions, program};
 	use crate::lexer::Lexer;
 	use crate::lexer::token::TokenKind;
-	let Ok(path) = std::env::var("TEASEL_BENCH") else { return };
+	let Ok(path) = std::env::var("TEASEL_BENCH") else {
+		return;
+	};
 	let source = std::fs::read_to_string(path).unwrap();
-	let options = crate::Options { module: true, ..Default::default() };
+	let options = crate::Options {
+		module: true,
+		..Default::default()
+	};
 	for _ in 0..300 {
 		let _ = crate::parser::parse_range::<()>(&source, 0, source.len() as u32, options).unwrap();
 	}
@@ -636,7 +641,10 @@ fn phases() {
 		for _ in 0..300 {
 			f();
 		}
-		eprintln!("{:7.3} ms  {name} (mean of 300)", t.elapsed().as_secs_f64() * 1e3 / 300.0);
+		eprintln!(
+			"{:7.3} ms  {name} (mean of 300)",
+			t.elapsed().as_secs_f64() * 1e3 / 300.0
+		);
 	};
 	mean("parse", &mut || {
 		let _ = crate::parser::parse_range::<()>(&source, 0, source.len() as u32, options).unwrap();
@@ -660,7 +668,12 @@ fn phases() {
 	let mut ast = crate::parser::parse_range::<()>(&source, 0, source.len() as u32, options).unwrap();
 	let root = ast.last();
 	crate::comments::attach(&mut ast, &source, root, 0);
-	let output = Output { comments: true, scopes: false, pattern: false, erase: false };
+	let output = Output {
+		comments: true,
+		scopes: false,
+		pattern: false,
+		erase: false,
+	};
 	let flat = Positions::new(&source, false);
 	let lines = Positions::new(&source, true);
 	best("Binary encode, no loc", &mut || {
@@ -672,5 +685,11 @@ fn phases() {
 	best("Json write, loc", &mut || {
 		let _ = program(&ast, root, &source, &lines, output, Json::default()).finish();
 	});
-	eprintln!("nodes {} lists {} strings {} comments {}", ast.nodes.len(), ast.lists.len(), ast.strings.len(), ast.comments.len());
+	eprintln!(
+		"nodes {} lists {} strings {} comments {}",
+		ast.nodes.len(),
+		ast.lists.len(),
+		ast.strings.len(),
+		ast.comments.len()
+	);
 }

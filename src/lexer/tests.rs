@@ -527,6 +527,11 @@ fn line_end_finds_every_terminator() {
 		(b"\xe2\xe2\xe2\xe2\xe2\xe2\xe2\xe2\xe2\n", 9),
 	];
 	for &(bytes, end) in cases {
-		assert_eq!(line_end(bytes), end, "{:?}", std::string::String::from_utf8_lossy(bytes));
+		assert_eq!(
+			line_end(bytes),
+			end,
+			"{:?}",
+			std::string::String::from_utf8_lossy(bytes)
+		);
 	}
 }

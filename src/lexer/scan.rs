@@ -110,8 +110,14 @@ mod tests {
 		for b in 0..=255u8 {
 			assert_eq!(class(b) & SPACE != 0, matches!(b, b' ' | b'\t' | 0x0b | 0x0c));
 			assert_eq!(class(b) & NEWLINE != 0, matches!(b, b'\n' | b'\r'));
-			assert_eq!(class(b) & ID_START != 0, b.is_ascii_alphabetic() || b == b'$' || b == b'_');
-			assert_eq!(class(b) & ID_CONTINUE != 0, b.is_ascii_alphanumeric() || b == b'$' || b == b'_');
+			assert_eq!(
+				class(b) & ID_START != 0,
+				b.is_ascii_alphabetic() || b == b'$' || b == b'_'
+			);
+			assert_eq!(
+				class(b) & ID_CONTINUE != 0,
+				b.is_ascii_alphanumeric() || b == b'$' || b == b'_'
+			);
 			assert_eq!(class(b) & DIGIT != 0, b.is_ascii_digit());
 		}
 		assert_eq!(run_of(b"abc1_$ x", 0, ID_CONTINUE), 6);

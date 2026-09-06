@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { createRequire } from 'node:module';
 import * as node from './index.js';
 import * as wasm from './wasm.js';
-import { bits } from './options.js';
+import { bits } from './api.js';
 import { decode } from './decode.js';
 
 const native = createRequire(import.meta.url)('./binding.cjs');

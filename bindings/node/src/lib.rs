@@ -59,16 +59,25 @@ fn answer(env: &Env, result: Result<Vec<u32>, String>) -> Answer {
 		let reference = VIEW.get();
 		if reference.is_null() || grown {
 			if !reference.is_null() {
-				status(unsafe { sys::napi_delete_reference(env.raw(), reference) }, "delete the view")?;
+				status(
+					unsafe { sys::napi_delete_reference(env.raw(), reference) },
+					"delete the view",
+				)?;
 			}
 			// the buffer outlives every view: it is never freed, only outgrown
 			let view = unsafe { Uint32Array::with_external_data(w.as_mut_ptr(), w.capacity(), |_, _| {}) };
 			value = unsafe { ToNapiValue::to_napi_value(env.raw(), view)? };
 			let mut reference = std::ptr::null_mut();
-			status(unsafe { sys::napi_create_reference(env.raw(), value, 1, &mut reference) }, "keep the view")?;
+			status(
+				unsafe { sys::napi_create_reference(env.raw(), value, 1, &mut reference) },
+				"keep the view",
+			)?;
 			VIEW.set(reference);
 		} else {
-			status(unsafe { sys::napi_get_reference_value(env.raw(), reference, &mut value) }, "get the view")?;
+			status(
+				unsafe { sys::napi_get_reference_value(env.raw(), reference, &mut value) },
+				"get the view",
+			)?;
 		}
 		Ok(Either::A(unsafe { Uint32Array::from_napi_value(env.raw(), value)? }))
 	})
@@ -78,7 +87,10 @@ fn answer(env: &Env, result: Result<Vec<u32>, String>) -> Answer {
 /// `as` follows the expression.
 #[napi(catch_unwind)]
 pub fn parse_at(env: Env, source: Uint8Array, bits: u32, entry: u32, offset: f64, until: bool) -> Answer {
-	answer(&env, prepared(&source, bits).binary(Entry::from_index(entry), offset, until))
+	answer(
+		&env,
+		prepared(&source, bits).binary(Entry::from_index(entry), offset, until),
+	)
 }
 
 /// The same answer as JSON text, for checking the decoder against.

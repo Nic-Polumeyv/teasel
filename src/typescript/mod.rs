@@ -2,21 +2,19 @@
 
 use crate::error::Code;
 pub mod ast;
-mod bind;
 mod declarations;
 mod estree;
 #[cfg(test)]
 mod tests;
 mod types;
-mod walk;
 
 use crate::ast::{Ast, List, NodeId, NodeKind, VariableKind};
 use crate::error::SyntaxError;
 use crate::interner::FastMap;
 use crate::interner::StrId;
 use crate::lexer::token::{Keyword, TokenKind};
-use crate::parser::class::ClassKind;
 use crate::parser::expression::starts_expression;
+use crate::parser::statement::ClassKind;
 use crate::parser::{
 	Context, DestructuringErrors, Errors, Extension, ForInit, FunctionKind, Options, Parser, Result, UntilAs, Unwrap,
 };
