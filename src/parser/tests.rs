@@ -608,7 +608,7 @@ fn phases() {
 	for _ in 0..300 {
 		let _ = crate::parser::parse_range::<()>(&source, 0, source.len() as u32, options).unwrap();
 	}
-	let mut best = |name: &str, f: &mut dyn FnMut()| {
+	let best = |name: &str, f: &mut dyn FnMut()| {
 		let mut m = f64::MAX;
 		for _ in 0..300 {
 			let t = std::time::Instant::now();
@@ -658,6 +658,31 @@ fn phases() {
 		let root = ast.last();
 		crate::scopes::analyze(&mut ast, root);
 	});
+	{
+		let mut ast = crate::parser::parse_range::<()>(&source, 0, source.len() as u32, options).unwrap();
+		let root = ast.last();
+		crate::comments::attach(&mut ast, &source, root, 0);
+		crate::scopes::analyze(&mut ast, root);
+		let scoped = Output {
+			comments: true,
+			scopes: true,
+			pattern: false,
+			erase: false,
+		};
+		let flat = Positions::new(&source, false);
+		best("Binary encode with scopes", &mut || {
+			let _ = program(&ast, root, &source, &flat, scoped, Binary::new()).finish();
+		});
+		let s = ast.scopes.as_ref().unwrap();
+		eprintln!(
+			"scopes {} bindings {} references {} of_node {} of_identifier {}",
+			s.scopes.len(),
+			s.bindings.len(),
+			s.references.len(),
+			s.of_node.iter().count(),
+			s.of_identifier.iter().count()
+		);
+	}
 	best("Positions::new, no lines", &mut || {
 		let _ = Positions::new(&source, false);
 	});
@@ -690,5 +715,10 @@ fn phases() {
 		ast.lists.len(),
 		ast.strings.len(),
 		ast.comments.len()
+	);
+	eprintln!(
+		"node {} bytes, token {} bytes",
+		std::mem::size_of::<crate::ast::Node>(),
+		std::mem::size_of::<crate::lexer::token::Token>()
 	);
 }

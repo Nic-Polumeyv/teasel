@@ -669,16 +669,16 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		if self.name_only {
 			return;
 		}
-		if let Some(&scope) = scopes.of_node.get(&id) {
+		if let Some(scope) = scopes.of_node.get(id) {
 			self.key("scope");
 			self.sink.int(scope);
 		}
-		match scopes.of_identifier.get(&id) {
-			Some(&Role::Declares(binding)) => {
+		match scopes.of_identifier.get(id) {
+			Some(Role::Declares(binding)) => {
 				self.key("declares");
 				self.sink.int(binding);
 			}
-			Some(&Role::Reference(reference)) => {
+			Some(Role::Reference(reference)) => {
 				let reference = scopes.reference(reference);
 				self.key("binding");
 				match reference.binding {
