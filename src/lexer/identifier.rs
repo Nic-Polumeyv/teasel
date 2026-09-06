@@ -1,26 +1,22 @@
 use super::token::{Keyword, TokenKind};
 use super::unicode::{is_id_continue, is_id_start};
-use super::{Lexer, Result};
+use super::{Lexer, Result, scan};
 use crate::error::Code;
 
 impl Lexer<'_> {
 	pub(super) fn read_word(&mut self) -> Result<TokenKind> {
 		let start = self.pos;
-		let bytes = self.src.as_bytes();
-		let mut pos = self.pos;
-		if bytes
-			.get(pos)
-			.is_some_and(|b| b.is_ascii_alphabetic() || *b == b'$' || *b == b'_')
-		{
-			pos += 1;
-			while bytes
-				.get(pos)
-				.is_some_and(|b| b.is_ascii_alphanumeric() || *b == b'$' || *b == b'_')
-			{
-				pos += 1;
-			}
+		let src = self.src;
+		let bytes = src.as_bytes();
+		let mut pos = start;
+		if bytes.get(pos).is_some_and(|&b| scan::class(b) & scan::ID_START != 0) {
+			pos = scan::run_of(bytes, pos + 1, scan::ID_CONTINUE);
 		}
 		self.pos = pos;
+		// nearly every word is ASCII and ends at an ASCII byte: nothing more to read
+		if pos > start && bytes.get(pos).is_none_or(|&b| b < 0x80 && b != b'\\') {
+			return Ok(self.word(&src[start..pos]));
+		}
 		let mut first = pos == start;
 		self.buf.clear();
 		while let Some(c) = self.char() {
@@ -41,16 +37,22 @@ impl Lexer<'_> {
 			}
 			first = false;
 		}
-		let word = if self.escaped {
-			self.buf.as_str()
+		if self.escaped {
+			let buf = std::mem::take(&mut self.buf);
+			let kind = self.word(&buf);
+			self.buf = buf;
+			Ok(kind)
 		} else {
-			&self.src[start..self.pos]
-		};
-		if let Some(keyword) = Keyword::from_word(word) {
-			return Ok(TokenKind::Keyword(keyword));
+			Ok(self.word(&src[start..self.pos]))
 		}
-		let name = self.strings.intern(word);
-		Ok(TokenKind::Ident(name))
+	}
+
+	/// A keyword, or the name interned.
+	fn word(&mut self, word: &str) -> TokenKind {
+		match Keyword::from_word(word) {
+			Some(keyword) => TokenKind::Keyword(keyword),
+			None => TokenKind::Ident(self.strings.intern(word)),
+		}
 	}
 
 	pub(super) fn read_word_escape(&mut self, first: bool) -> Result<char> {

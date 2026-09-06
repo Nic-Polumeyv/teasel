@@ -4,6 +4,7 @@ mod number;
 mod regex;
 mod regexp;
 mod regexp_data;
+pub(crate) mod scan;
 mod string;
 pub(crate) mod token;
 pub(crate) mod unicode;
@@ -189,20 +190,27 @@ impl<'a> Lexer<'a> {
 		if self.pos == 0 && self.src.starts_with("#!") {
 			self.skip_line_comment(CommentKind::Hashbang);
 		}
-		while let Some(b) = self.byte() {
+		let src = self.src;
+		let bytes = src.as_bytes();
+		while let Some(&b) = bytes.get(self.pos) {
+			let class = scan::class(b);
+			if class & scan::SPACE != 0 {
+				self.pos = scan::run_of(bytes, self.pos + 1, scan::SPACE);
+				continue;
+			}
+			if class & scan::NEWLINE != 0 {
+				self.pos += 1;
+				newline = true;
+				continue;
+			}
 			match b {
-				b'<' if !self.module && self.src[self.pos..].starts_with("<!--") => {
+				b'<' if !self.module && src[self.pos..].starts_with("<!--") => {
 					self.skip_line_comment(CommentKind::HtmlOpen)
 				}
-				b'-' if !self.module && (last_end == 0 || newline) && self.src[self.pos..].starts_with("-->") => {
+				b'-' if !self.module && (last_end == 0 || newline) && src[self.pos..].starts_with("-->") => {
 					self.skip_line_comment(CommentKind::HtmlClose)
 				}
-				b' ' | b'\t' | 0x0b | 0x0c => self.pos += 1,
-				b'\n' | b'\r' => {
-					self.pos += 1;
-					newline = true;
-				}
-				b'/' => match self.byte_at(1) {
+				b'/' => match bytes.get(self.pos + 1) {
 					Some(b'/') => self.skip_line_comment(CommentKind::Line),
 					Some(b'*') => newline |= self.skip_block_comment()?,
 					_ => break,
@@ -363,42 +371,16 @@ pub(crate) fn is_separator(bytes: &[u8]) -> bool {
 	matches!(bytes, [0xe2, 0x80, 0xa8 | 0xa9, ..])
 }
 
-const ONES: u64 = 0x0101_0101_0101_0101;
-const HIGHS: u64 = 0x8080_8080_8080_8080;
-
-/// The bytes of `word` equal to `byte`, as their high bits: subtracting one from every byte
-/// borrows into the high bit of a byte that was zero, and only there once the bytes that had
-/// their high bit set are masked off.
-fn bytes_equal(word: u64, byte: u8) -> u64 {
-	let x = word ^ (ONES * byte as u64);
-	x.wrapping_sub(ONES) & !x & HIGHS
-}
-
-/// The length of `bytes` up to the first line terminator: `\n`, `\r`, U+2028 or U+2029. Eight
-/// bytes are tested at a time for one of the three bytes a terminator can start with.
+/// The length of `bytes` up to the first line terminator: `\n`, `\r`, U+2028 or U+2029.
 pub(crate) fn line_end(bytes: &[u8]) -> usize {
 	let mut i = 0;
-	while let Some(chunk) = bytes.get(i..i + 8) {
-		let word = u64::from_le_bytes(chunk.try_into().unwrap());
-		let hits = bytes_equal(word, b'\n') | bytes_equal(word, b'\r') | bytes_equal(word, 0xe2);
-		if hits == 0 {
-			i += 8;
-			continue;
-		}
-		i += (hits.trailing_zeros() / 8) as usize;
-		if bytes[i] != 0xe2 || is_separator(&bytes[i..]) {
+	loop {
+		i = scan::find(bytes, i, *b"\n\r\xe2", false);
+		if i == bytes.len() || bytes[i] != 0xe2 || is_separator(&bytes[i..]) {
 			return i;
 		}
 		i += 1;
 	}
-	while i < bytes.len() {
-		match bytes[i] {
-			b'\n' | b'\r' => break,
-			0xe2 if is_separator(&bytes[i..]) => break,
-			_ => i += 1,
-		}
-	}
-	i
 }
 
 /// Where `*/` starts in `text`, and whether a line terminator precedes it.
@@ -407,9 +389,8 @@ pub(crate) fn comment_end(text: &str) -> Option<(usize, bool)> {
 	loop {
 		let star = from + text[from..].find('*')?;
 		if text.as_bytes().get(star + 1) == Some(&b'/') {
-			let body = &text[..star];
-			let newline = ['\n', '\r', '\u{2028}', '\u{2029}'].iter().any(|&c| body.contains(c));
-			return Some((star, newline));
+			let body = &text.as_bytes()[..star];
+			return Some((star, line_end(body) < body.len()));
 		}
 		from = star + 1;
 	}

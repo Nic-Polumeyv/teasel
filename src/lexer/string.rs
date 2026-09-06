@@ -10,13 +10,8 @@ impl Lexer<'_> {
 		let mut pending = None;
 		let mut chunk_start = self.pos;
 		loop {
-			let bytes = self.src.as_bytes();
-			while bytes
-				.get(self.pos)
-				.is_some_and(|&b| b < 0x80 && b != quote && !matches!(b, b'\\' | b'\n' | b'\r'))
-			{
-				self.pos += 1;
-			}
+			// everything else is string text, skipped eight bytes at a time
+			self.pos = super::scan::find(self.src.as_bytes(), self.pos, [quote, b'\\', b'\n', b'\r'], false);
 			let Some(c) = self.char() else {
 				return self.error(start, Code::UnterminatedString);
 			};
@@ -68,6 +63,8 @@ impl Lexer<'_> {
 		let mut pending = None;
 		let mut chunk_start = self.pos;
 		loop {
+			// everything else is template text, skipped eight bytes at a time
+			self.pos = super::scan::find(self.src.as_bytes(), self.pos, *b"`$\\\r", false);
 			let Some(c) = self.char() else {
 				return self.error(start, Code::UnterminatedTemplate);
 			};

@@ -532,8 +532,10 @@ impl Positions {
 		if !lines && bytes.is_ascii() {
 			i = bytes.len();
 		}
+		// only a line terminator or a character past ASCII gets a look; the bytes between are skipped eight at a time
 		while i < bytes.len() {
-			let b = bytes[i];
+			i = crate::lexer::scan::find(bytes, i, *b"\n\r", true);
+			let Some(&b) = bytes.get(i) else { break };
 			if b < 0x80 {
 				i += 1;
 				if lines && (b == b'\n' || (b == b'\r' && bytes.get(i) != Some(&b'\n'))) {
