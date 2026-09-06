@@ -363,9 +363,34 @@ pub(crate) fn is_separator(bytes: &[u8]) -> bool {
 	matches!(bytes, [0xe2, 0x80, 0xa8 | 0xa9, ..])
 }
 
-/// The length of `bytes` up to the first line terminator.
+const ONES: u64 = 0x0101_0101_0101_0101;
+const HIGHS: u64 = 0x8080_8080_8080_8080;
+
+/// The bytes of `word` equal to `byte`, as their high bits: subtracting one from every byte
+/// borrows into the high bit of a byte that was zero, and only there once the bytes that had
+/// their high bit set are masked off.
+fn bytes_equal(word: u64, byte: u8) -> u64 {
+	let x = word ^ (ONES * byte as u64);
+	x.wrapping_sub(ONES) & !x & HIGHS
+}
+
+/// The length of `bytes` up to the first line terminator: `\n`, `\r`, U+2028 or U+2029. Eight
+/// bytes are tested at a time for one of the three bytes a terminator can start with.
 pub(crate) fn line_end(bytes: &[u8]) -> usize {
 	let mut i = 0;
+	while let Some(chunk) = bytes.get(i..i + 8) {
+		let word = u64::from_le_bytes(chunk.try_into().unwrap());
+		let hits = bytes_equal(word, b'\n') | bytes_equal(word, b'\r') | bytes_equal(word, 0xe2);
+		if hits == 0 {
+			i += 8;
+			continue;
+		}
+		i += (hits.trailing_zeros() / 8) as usize;
+		if bytes[i] != 0xe2 || is_separator(&bytes[i..]) {
+			return i;
+		}
+		i += 1;
+	}
 	while i < bytes.len() {
 		match bytes[i] {
 			b'\n' | b'\r' => break,
