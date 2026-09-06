@@ -616,3 +616,115 @@ fn until_as() {
 	assert_eq!(end("{f(x as T) as item}"), 10);
 	assert_eq!(end("{(xs as T) as item}"), 10);
 }
+
+/// The erased program's statements and what stayed TypeScript, from the JSON answer.
+fn erase(src: &str) -> (Vec<String>, Vec<String>) {
+	let mut request = crate::json::Request::new(crate::json::Entry::Program, 0);
+	request.typescript = true;
+	request.erase = true;
+	let json = crate::json::parse(src, &request);
+	assert!(!json.contains("\"error\""), "{json}");
+	let types = |key: &str| {
+		let start = json.find(&format!("\"{key}\":[")).unwrap() + key.len() + 4;
+		let mut depth = 0;
+		let mut out = Vec::new();
+		let mut at = start;
+		for (i, c) in json[start..].char_indices() {
+			match c {
+				'{' if depth == 0 => at = start + i,
+				'{' => {}
+				'}' if depth == 1 => {
+					let item = &json[at..=start + i];
+					let ty = item.split("\"type\":\"").nth(1).unwrap().split('"').next().unwrap();
+					out.push(ty.to_string());
+				}
+				']' if depth == 0 => break,
+				_ => {}
+			}
+			match c {
+				'{' => depth += 1,
+				'}' => depth -= 1,
+				_ => {}
+			}
+		}
+		out
+	};
+	(types("body"), types("typescript"))
+}
+
+#[test]
+fn erasure() {
+	let (body, kept) =
+		erase("import type T from 't'; import { a, type B } from 'b'; export type { T }; type U = 1; interface I {}");
+	assert_eq!(body, ["ImportDeclaration"]);
+	assert!(kept.is_empty());
+	let (body, kept) =
+		erase("declare const d: number; export declare function f(): void; export const x: U = <any>(1 as any)!;");
+	assert_eq!(body, ["ExportNamedDeclaration"]);
+	assert!(kept.is_empty());
+	let (body, kept) = erase(
+		"enum E {} namespace N { export type X = 1 } namespace M { export const y = 1 } @dec class Z { constructor(public q: number) {} }",
+	);
+	assert_eq!(body, ["TSEnumDeclaration", "TSModuleDeclaration", "ClassDeclaration"]);
+	assert_eq!(
+		kept,
+		[
+			"TSEnumDeclaration",
+			"TSModuleDeclaration",
+			"Decorator",
+			"TSParameterProperty"
+		]
+	);
+	let (body, _) =
+		erase("abstract class K implements I { declare d: number; abstract m(): void; p?: number; f(this: K) {} }");
+	assert_eq!(body, ["ClassDeclaration"]);
+	let mut request = crate::json::Request::new(crate::json::Entry::Program, 0);
+	request.typescript = true;
+	request.erase = true;
+	let json = crate::json::parse(
+		"class C { m(): void; m(a) { return a } constructor(); constructor(b?) {} }",
+		&request,
+	);
+	assert_eq!(json.matches("\"MethodDefinition\"").count(), 2, "{json}");
+	assert!(!json.contains("TSDeclareMethod"));
+	let json = crate::json::parse("export { type A }; type A = 1;", &request);
+	assert!(json.contains("\"specifiers\":[]"), "{json}");
+	let mut request = crate::json::Request::new(crate::json::Entry::Program, 0);
+	request.typescript = true;
+	request.erase = true;
+	let json = crate::json::parse("function f(this: Window, a?: number): void {}", &request);
+	assert!(
+		!json.contains("this") && !json.contains("optional") && !json.contains("returnType"),
+		"{json}"
+	);
+}
+
+#[test]
+fn program_in_a_range() {
+	let src = "<script>let a: number = 1;</script>{a}";
+	let (ast, root) = {
+		let ast = crate::parser::parse_range::<super::TypeScript>(
+			src,
+			8,
+			26,
+			Options {
+				module: true,
+				..Options::default()
+			},
+		)
+		.unwrap();
+		let root = ast.last();
+		(ast, root)
+	};
+	assert_eq!((ast.node(root).start, ast.node(root).end), (8, 26));
+	assert_eq!(ast.comments.len(), 0);
+	let mut request = crate::json::Request::new(crate::json::Entry::Program, 8);
+	request.typescript = true;
+	request.end = Some(1000);
+	assert!(crate::json::parse(src, &request).contains("is not a character boundary"));
+	request.end = Some(2);
+	assert!(crate::json::parse(src, &request).contains("is before"));
+	let prepared = crate::json::Prepared::new(src[..26].to_string(), request);
+	assert!(prepared.parse_range(8.0, None).contains("\"end\":26"));
+	assert!(prepared.parse_range(22.0, Some(8.0)).contains("is before"));
+}

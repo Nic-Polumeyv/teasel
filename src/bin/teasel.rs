@@ -1,7 +1,7 @@
 //! Command line front end, mainly for the acorn conformance harness.
 //!
 //! `teasel [--module] [--typescript] [--comments] [--expression|--pattern|--params|--statement]
-//! [--preserve-parens] [--offset N] FILE` prints ESTree JSON, wrapped with `end` for everything but
+//! [--preserve-parens] [--erase] [--offset N] FILE` prints ESTree JSON, wrapped with `end` for everything but
 //! a program. `--offset` alone parses an expression. The pattern, params and statement modes parse
 //! as a module.
 //!
@@ -10,7 +10,8 @@
 //! `pattern:OFFSET`, `params:OFFSET` or `stmt:OFFSET`, whose answers wrap the node or the parameters
 //! with `end`, the offset after what the parse consumed, with a `ts-` prefix for TypeScript and
 //! `+comments` to attach comments, `+undeclared-exports` to accept exports of names the source
-//! never declares or `+until-as` to end an expression at the host's `as`. In a batch, expressions
+//! never declares, `+until-as` to end an expression at the host's `as` or `+erase` to erase
+//! TypeScript from the output. In a batch, expressions
 //! preserve parens. Offsets are byte offsets into the source; the JSON output reports UTF-16
 //! offsets like acorn.
 
@@ -105,10 +106,12 @@ fn batch() -> io::Result<()> {
 		let comments = mode_text.contains("+comments");
 		let undeclared_exports = mode_text.contains("+undeclared-exports");
 		let until_as = mode_text.contains("+until-as");
+		let erase = mode_text.contains("+erase");
 		let mode_text = mode_text
 			.replace("+comments", "")
 			.replace("+undeclared-exports", "")
-			.replace("+until-as", "");
+			.replace("+until-as", "")
+			.replace("+erase", "");
 		let mode_text = mode_text.as_str();
 		let mode = Mode::from_batch(mode_text);
 		let offset = mode_text.split_once(':').and_then(|(_, n)| n.parse().ok()).unwrap_or(0);
@@ -120,6 +123,8 @@ fn batch() -> io::Result<()> {
 			typescript,
 			comments,
 			locations: true,
+			erase,
+			end: None,
 			options,
 		};
 		let json = json::parse(&source, &request);
@@ -146,6 +151,7 @@ fn main() -> ExitCode {
 	let mut typescript = false;
 	let mut comments = false;
 	let mut preserve_parens = false;
+	let mut erase = false;
 	let mut file = None;
 	let mut args = args.into_iter();
 	while let Some(arg) = args.next() {
@@ -154,6 +160,7 @@ fn main() -> ExitCode {
 			"--typescript" => typescript = true,
 			"--comments" => comments = true,
 			"--preserve-parens" => preserve_parens = true,
+			"--erase" => erase = true,
 			"--expression" => mode = Mode::Expression,
 			"--pattern" => mode = Mode::Pattern,
 			"--params" => mode = Mode::Params,
@@ -174,7 +181,7 @@ fn main() -> ExitCode {
 	options.preserve_parens |= preserve_parens;
 	let Some(file) = file else {
 		eprintln!(
-			"usage: teasel [--module] [--typescript] [--comments] [--expression|--pattern|--params|--statement] [--preserve-parens] [--offset N] FILE"
+			"usage: teasel [--module] [--typescript] [--comments] [--expression|--pattern|--params|--statement] [--preserve-parens] [--erase] [--offset N] FILE"
 		);
 		return ExitCode::FAILURE;
 	};
@@ -191,6 +198,8 @@ fn main() -> ExitCode {
 		typescript,
 		comments,
 		locations: true,
+		erase,
+		end: None,
 		options,
 	};
 	println!("{}", json::parse(&source, &request));

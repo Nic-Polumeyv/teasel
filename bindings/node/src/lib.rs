@@ -10,6 +10,8 @@ pub struct Options {
 	/// `"script"` (the default, as in acorn) or `"module"`.
 	pub source_type: Option<String>,
 	pub typescript: Option<bool>,
+	/// With `typescript`: erase it from the output.
+	pub erase: Option<bool>,
 	pub comments: Option<bool>,
 	pub locations: Option<bool>,
 	pub preserve_parens: Option<bool>,
@@ -26,6 +28,7 @@ fn request(options: Option<Options>) -> Request {
 	let mut request = Request::new(Entry::Program, 0);
 	let flags = [
 		("typescript", options.typescript),
+		("erase", options.erase),
 		("comments", options.comments),
 		("locations", options.locations),
 		("preserveParens", options.preserve_parens),
@@ -92,9 +95,13 @@ impl Source {
 		}
 	}
 
+	/// The whole source, or the program spanning `start..end` of it.
 	#[napi(catch_unwind)]
-	pub fn parse(&self) -> String {
-		self.prepared.parse(Entry::Program, 0.0, false)
+	pub fn parse(&self, start: Option<f64>, end: Option<f64>) -> String {
+		match (start, end) {
+			(None, None) => self.prepared.parse(Entry::Program, 0.0, false),
+			(start, end) => self.prepared.parse_range(start.unwrap_or(0.0), end),
+		}
 	}
 
 	/// `until` is `"as"` when the host's `as` follows the expression.

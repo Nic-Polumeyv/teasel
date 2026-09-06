@@ -346,7 +346,14 @@ impl Extension for () {
 pub(crate) type Errors = Option<DestructuringErrors>;
 
 pub(crate) fn parse<E: Extension>(src: &str, options: Options) -> Result<Ast<E::Data>> {
-	let mut parser = Parser::<E>::new(src, 0, options)?;
+	parse_range::<E>(src, 0, src.len() as u32, options)
+}
+
+/// Parses the program that spans `start..end` of a larger source, such as a script in a
+/// template: positions stay those of the whole source. The range is not a source of its own:
+/// a hashbang or an HTML comment at `start` is what it would be in the middle of a file.
+pub(crate) fn parse_range<E: Extension>(src: &str, start: u32, end: u32, options: Options) -> Result<Ast<E::Data>> {
+	let mut parser = Parser::<E>::new(&src[..end as usize], start, options)?;
 	let program = parser.parse_program()?;
 	debug_assert_eq!(program, parser.ast.last());
 	Ok(parser.finish())

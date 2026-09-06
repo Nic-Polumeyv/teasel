@@ -16,6 +16,7 @@ function check(options) {
 	if ('until' in options && options.until !== 'as') {
 		throw new TypeError(`until must be "as", not ${JSON.stringify(options.until)}`);
 	}
+	if (options.typescript === 'erase') return { ...options, typescript: true, erase: true };
 	return options;
 }
 
@@ -78,8 +79,13 @@ export class Source {
 		this.#native = new native.Source(source, check(options));
 	}
 
-	parse() {
-		return result(this.#native.parse());
+	/**
+	 * The whole source, or the program that spans `start..end` of it, such as a script inside a
+	 * template: positions stay those of the whole source.
+	 * @param {number} [start] @param {number} [end]
+	 */
+	parse(start, end) {
+		return result(this.#native.parse(start, end));
 	}
 
 	/** @param {number} offset @param {'as'} [until] when the host's `as` follows the expression */

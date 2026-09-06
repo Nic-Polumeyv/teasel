@@ -3,7 +3,8 @@
 /** A source held with its options, so many parses out of it pay for its tables once. */
 export declare class Source {
   constructor(source: string, options?: Options | undefined | null)
-  parse(): string
+  /** The whole source, or the program spanning `start..end` of it. */
+  parse(start?: number | undefined | null, end?: number | undefined | null): string
   /** `until` is `"as"` when the host's `as` follows the expression. */
   parseExpressionAt(offset: number, until?: string | undefined | null): string
   parsePatternAt(offset: number): string
@@ -15,6 +16,8 @@ export interface Options {
   /** `"script"` (the default, as in acorn) or `"module"`. */
   sourceType?: string
   typescript?: boolean
+  /** With `typescript`: erase it from the output. */
+  erase?: boolean
   comments?: boolean
   locations?: boolean
   preserveParens?: boolean

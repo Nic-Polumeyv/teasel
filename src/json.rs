@@ -3,7 +3,7 @@
 
 use crate::ast::{Ast, NodeId};
 use crate::comments::{attach, attach_all};
-use crate::estree::{Emit, Positions, error_to_json, node_to_json, params_to_json, program_to_json};
+use crate::estree::{Emit, Output, Positions, error_to_json, node_to_json, params_to_json, program_to_json};
 use crate::{Options, SyntaxError};
 
 /// What to parse; everything but a program starts at the request's offset.
@@ -26,11 +26,15 @@ pub struct Request {
 	pub comments: bool,
 	/// Line and column on every node, as acorn's `locations` option.
 	pub locations: bool,
+	/// TypeScript erased on output; see `estree::Output`.
+	pub erase: bool,
+	/// Where a program ends, as a byte offset, for a program inside a larger source.
+	pub end: Option<u32>,
 	pub options: Options,
 }
 
 /// The names front ends accept for the request's switches, as acorn spells them.
-pub const FLAGS: [&str; 10] = [
+pub const FLAGS: [&str; 11] = [
 	"typescript",
 	"comments",
 	"locations",
@@ -41,6 +45,7 @@ pub const FLAGS: [&str; 10] = [
 	"allowSuperOutsideMethod",
 	"allowUndeclaredExports",
 	"untilAs",
+	"erase",
 ];
 
 impl Request {
@@ -69,6 +74,7 @@ impl Request {
 			"allowSuperOutsideMethod" => self.options.allow_super_outside_method = true,
 			"allowUndeclaredExports" => self.options.allow_undeclared_exports = true,
 			"untilAs" => self.options.until_as = true,
+			"erase" => self.erase = true,
 			_ => {}
 		}
 	}
@@ -106,10 +112,9 @@ impl Prepared {
 
 	/// `until_as` says the host's `as` follows this expression, on top of the source's options.
 	pub fn parse(&self, entry: Entry, utf16_offset: f64, until_as: bool) -> String {
-		let offset = match self.positions.byte_offset(utf16_offset) {
-			Ok(offset) if self.source.is_char_boundary(offset as usize) => offset,
-			Ok(_) => return error_json(&format!("offset {utf16_offset} is inside a surrogate pair"), 0),
-			Err(message) => return error_json(&message, 0),
+		let offset = match self.byte_offset(utf16_offset) {
+			Ok(offset) => offset,
+			Err(json) => return json,
 		};
 		let mut request = Request {
 			entry,
@@ -119,6 +124,36 @@ impl Prepared {
 		request.options.until_as |= until_as;
 		parse_with(&self.source, &self.positions, &request)
 	}
+
+	/// The program that spans `start..end` of the source, both UTF-16 offsets; `end` defaults to
+	/// the end of the source.
+	pub fn parse_range(&self, start: f64, end: Option<f64>) -> String {
+		let end_byte = match end {
+			Some(end) => self.byte_offset(end),
+			None => Ok(self.source.len() as u32),
+		};
+		let (start, end) = match (self.byte_offset(start), end_byte) {
+			(Ok(from), Ok(to)) if from <= to => (from, to),
+			(Ok(_), Ok(_)) => return error_json(&format!("offset {} is before {start}", end.unwrap_or(0.0)), 0),
+			(Err(json), _) | (_, Err(json)) => return json,
+		};
+		let request = Request {
+			entry: Entry::Program,
+			offset: start,
+			end: Some(end),
+			..self.request
+		};
+		parse_with(&self.source, &self.positions, &request)
+	}
+
+	/// A UTF-16 offset as a byte offset, or the error answer for it.
+	fn byte_offset(&self, utf16: f64) -> Result<u32, String> {
+		match self.positions.byte_offset(utf16) {
+			Ok(offset) if self.source.is_char_boundary(offset as usize) => Ok(offset),
+			Ok(_) => Err(error_json(&format!("offset {utf16} is inside a surrogate pair"), 0)),
+			Err(message) => Err(error_json(&message, 0)),
+		}
+	}
 }
 
 fn parse_with(source: &str, positions: &Positions, request: &Request) -> String {
@@ -127,6 +162,14 @@ fn parse_with(source: &str, positions: &Positions, request: &Request) -> String 
 			&format!("offset {} is not a character boundary", request.offset),
 			request.offset,
 		);
+	}
+	if let Some(end) = request.end {
+		if !source.is_char_boundary(end as usize) {
+			return error_json(&format!("offset {end} is not a character boundary"), end);
+		}
+		if end < request.offset {
+			return error_json(&format!("offset {end} is before {}", request.offset), end);
+		}
 	}
 	#[cfg(feature = "typescript")]
 	if request.typescript {
@@ -147,22 +190,29 @@ where
 	E::Data: Emit,
 {
 	let (offset, options, comments) = (request.offset, request.options, request.comments);
+	let output = Output {
+		comments,
+		erase: request.erase && request.typescript,
+	};
 	let one = |result: Parsed<E::Data>| {
 		result.map(|(mut ast, root, end)| {
 			if comments {
 				attach(&mut ast, source, root, offset);
 			}
-			node_to_json(&ast, root, end, source, positions, comments)
+			node_to_json(&ast, root, end, source, positions, output)
 		})
 	};
 	let result = match request.entry {
-		Entry::Program => crate::parser::parse::<E>(source, options).map(|mut ast| {
-			let root = ast.last();
-			if comments {
-				attach(&mut ast, source, root, 0);
-			}
-			program_to_json(&ast, root, source, positions, comments)
-		}),
+		Entry::Program => {
+			let end = request.end.unwrap_or(source.len() as u32);
+			crate::parser::parse_range::<E>(source, offset, end, options).map(|mut ast| {
+				let root = ast.last();
+				if comments {
+					attach(&mut ast, source, root, offset);
+				}
+				program_to_json(&ast, root, source, positions, output)
+			})
+		}
 		Entry::Expression => one(crate::parser::parse_expression_at::<E>(source, offset, options)),
 		Entry::Pattern => one(crate::parser::parse_pattern_at::<E>(source, offset, options)),
 		Entry::Statement => one(crate::parser::parse_statement_at::<E>(source, offset, options)),
@@ -170,7 +220,7 @@ where
 			if comments {
 				attach_all(&mut ast, source, &ids, offset);
 			}
-			params_to_json(&ast, &ids, end, source, positions, comments)
+			params_to_json(&ast, &ids, end, source, positions, output)
 		}),
 	};
 	result.unwrap_or_else(|error| error_to_json(&error, source))
