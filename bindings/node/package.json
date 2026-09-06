@@ -13,7 +13,7 @@
 			"default": "./index.js"
 		}
 	},
-	"files": ["index.js", "index.d.ts", "identifier.js", "binding.cjs", "binding.d.ts", "*.node"],
+	"files": ["index.js", "index.d.ts", "identifier.js", "decode.js", "binding.cjs", "binding.d.ts", "*.node"],
 	"napi": {
 		"binaryName": "teasel",
 		"targets": ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu", "x86_64-apple-darwin", "aarch64-apple-darwin", "x86_64-pc-windows-msvc"]

@@ -1,4 +1,5 @@
 import * as native from './binding.cjs';
+import { decode } from './decode.js';
 
 export { isIdentifierStart, isIdentifierChar } from './identifier.js';
 
@@ -21,25 +22,23 @@ function check(options) {
 }
 
 /**
- * Turns the addon's JSON into a tree, or into the `SyntaxError` acorn would throw, with `pos`
- * and `loc` on it.
- * @param {string} json
+ * Turns the addon's answer into a tree, or into the `SyntaxError` acorn would throw, with `pos`
+ * and `loc` on it. An answer is a token stream to decode, or the error as JSON text.
+ * @param {ArrayBuffer | string} answer
+ * @param {string} source
  */
-function result(json) {
-	const value = JSON.parse(json);
-	if (value.error) {
-		const { message, pos, loc } = value.error;
-		const error = new SyntaxError(loc ? `${message} (${loc.line}:${loc.column})` : message);
-		error.pos = pos;
-		error.loc = loc;
-		throw error;
-	}
-	return value;
+function result(answer, source) {
+	if (typeof answer !== 'string') return decode(answer, source, native.constants);
+	const { message, pos, loc } = JSON.parse(answer).error;
+	const error = new SyntaxError(loc ? `${message} (${loc.line}:${loc.column})` : message);
+	error.pos = pos;
+	error.loc = loc;
+	throw error;
 }
 
 /** @param {string} source @param {Options} [options] */
 export function parse(source, options) {
-	return result(native.parse(source, check(options)));
+	return result(native.parse(source, check(options)), source);
 }
 
 /**
@@ -49,22 +48,22 @@ export function parse(source, options) {
  * @param {string} source @param {number} offset @param {Options} [options]
  */
 export function parseExpressionAt(source, offset, options) {
-	return result(native.parseExpressionAt(source, offset, check(options)));
+	return result(native.parseExpressionAt(source, offset, check(options)), source);
 }
 
 /** @param {string} source @param {number} offset @param {Options} [options] */
 export function parsePatternAt(source, offset, options) {
-	return result(native.parsePatternAt(source, offset, check(options)));
+	return result(native.parsePatternAt(source, offset, check(options)), source);
 }
 
 /** @param {string} source @param {number} offset @param {Options} [options] */
 export function parseParamsAt(source, offset, options) {
-	return result(native.parseParamsAt(source, offset, check(options)));
+	return result(native.parseParamsAt(source, offset, check(options)), source);
 }
 
 /** @param {string} source @param {number} offset @param {Options} [options] */
 export function parseStatementAt(source, offset, options) {
-	return result(native.parseStatementAt(source, offset, check(options)));
+	return result(native.parseStatementAt(source, offset, check(options)), source);
 }
 
 /**
@@ -73,10 +72,11 @@ export function parseStatementAt(source, offset, options) {
  */
 export class Source {
 	#native;
-
+	#source;
 	/** @param {string} source @param {Options} [options] */
 	constructor(source, options) {
 		this.#native = new native.Source(source, check(options));
+		this.#source = source;
 	}
 
 	/**
@@ -85,26 +85,26 @@ export class Source {
 	 * @param {number} [start] @param {number} [end]
 	 */
 	parse(start, end) {
-		return result(this.#native.parse(start, end));
+		return result(this.#native.parse(start, end), this.#source);
 	}
 
 	/** @param {number} offset @param {'as'} [until] when the host's `as` follows the expression */
 	parseExpressionAt(offset, until) {
-		return result(this.#native.parseExpressionAt(offset, until));
+		return result(this.#native.parseExpressionAt(offset, until), this.#source);
 	}
 
 	/** @param {number} offset */
 	parsePatternAt(offset) {
-		return result(this.#native.parsePatternAt(offset));
+		return result(this.#native.parsePatternAt(offset), this.#source);
 	}
 
 	/** @param {number} offset */
 	parseParamsAt(offset) {
-		return result(this.#native.parseParamsAt(offset));
+		return result(this.#native.parseParamsAt(offset), this.#source);
 	}
 
 	/** @param {number} offset */
 	parseStatementAt(offset) {
-		return result(this.#native.parseStatementAt(offset));
+		return result(this.#native.parseStatementAt(offset), this.#source);
 	}
 }
