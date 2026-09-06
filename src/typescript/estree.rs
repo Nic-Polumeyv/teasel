@@ -1,12 +1,98 @@
 //! ESTree output for TypeScript nodes and the keys TypeScript adds to JavaScript nodes.
 
 use super::ast::{Data, Extras, Kind, Modifier, TsKind};
-use crate::ast::{NodeId, NodeKind};
+use crate::ast::{List, NodeId, NodeKind};
 use crate::estree::{Emit, Writer};
 
+impl Data {
+	/// Whether every statement of a list erases to nothing.
+	fn all_erased(&self, w: &Writer<Self>, list: List) -> bool {
+		w.ast()
+			.list(list)
+			.iter()
+			.all(|item| item.is_none_or(|id| self.erased(w, id)))
+	}
+
+	fn extras_of(&self, id: NodeId) -> Extras {
+		self.extras(id).copied().unwrap_or_default()
+	}
+}
+
 impl Emit for Data {
+	fn erased(&self, w: &Writer<Self>, id: NodeId) -> bool {
+		use TsKind::*;
+		let extras = self.extras_of(id);
+		if extras.declare {
+			return true;
+		}
+		match w.kind(id) {
+			NodeKind::MethodDefinition { .. } | NodeKind::PropertyDefinition { .. } if extras.is_abstract => true,
+			NodeKind::Extension(index) => match self.kind(index) {
+				InterfaceDeclaration { .. }
+				| TypeAliasDeclaration { .. }
+				| DeclareFunction { .. }
+				| DeclareMethod { .. }
+				| IndexSignature { .. }
+				| NamespaceExportDeclaration { .. } => true,
+				ImportEqualsDeclaration { import_kind, .. } => import_kind == Kind::Type,
+				ModuleDeclaration { body, .. } => match body {
+					None => true,
+					Some(block) => match w.kind(block) {
+						NodeKind::Extension(index) => match self.kind(index) {
+							ModuleBlock { body } => self.all_erased(w, body),
+							_ => false,
+						},
+						_ => false,
+					},
+				},
+				_ => false,
+			},
+			NodeKind::ImportDeclaration { specifiers, .. } => {
+				extras.import_kind == Some(Kind::Type) || (specifiers.len > 0 && self.all_erased(w, specifiers))
+			}
+			NodeKind::ImportSpecifier { .. } => extras.import_kind == Some(Kind::Type),
+			NodeKind::ExportSpecifier { .. } => extras.export_kind == Some(Kind::Type),
+			NodeKind::ExportAllDeclaration { .. } => extras.export_kind == Some(Kind::Type),
+			NodeKind::ExportNamedDeclaration {
+				declaration,
+				specifiers,
+				..
+			} => {
+				extras.export_kind == Some(Kind::Type)
+					|| match declaration {
+						Some(declaration) => self.erased(w, declaration),
+						None => specifiers.len > 0 && self.all_erased(w, specifiers),
+					}
+			}
+			NodeKind::ExportDefaultDeclaration { declaration } => {
+				extras.export_kind == Some(Kind::Type) || self.erased(w, declaration)
+			}
+			_ => false,
+		}
+	}
+
 	fn node(&self, w: &mut Writer<Self>, id: NodeId, index: u32) {
 		use TsKind::*;
+		if w.output.erase {
+			match self.kind(index) {
+				AsExpression { expression, .. }
+				| SatisfiesExpression { expression, .. }
+				| NonNullExpression { expression }
+				| TypeAssertion { expression, .. }
+				| TypeCastExpression { expression, .. }
+				| InstantiationExpression { expression, .. } => return w.node(expression),
+				ParameterProperty { parameter } => {
+					w.keep("TSParameterProperty", id);
+					return w.node(parameter);
+				}
+				EnumDeclaration { .. } => w.keep("TSEnumDeclaration", id),
+				ModuleDeclaration { .. } => w.keep("TSModuleDeclaration", id),
+				ExportAssignment { .. } => w.keep("TSExportAssignment", id),
+				ImportEqualsDeclaration { .. } => w.keep("TSImportEqualsDeclaration", id),
+				Decorator { .. } => w.keep("Decorator", id),
+				_ => {}
+			}
+		}
 		match self.kind(index) {
 			TypeAnnotation { type_annotation } => {
 				w.begin("TSTypeAnnotation", id);
@@ -438,6 +524,7 @@ impl Emit for Data {
 				w.field("expression", expression);
 			}
 		}
+		w.end();
 	}
 
 	fn extras(&self, w: &mut Writer<Self>, id: NodeId) {
@@ -448,6 +535,16 @@ impl Emit for Data {
 			self.extras(id).copied().unwrap_or_default()
 		};
 		let extension = matches!(kind, NodeKind::Extension(_));
+		if w.output.erase {
+			// what JavaScript itself has: decorators and accessor fields
+			if let Some(decorators) = extras.decorators {
+				w.list("decorators", decorators);
+			}
+			if extras.accessor {
+				w.bool("accessor", true);
+			}
+			return;
+		}
 		match kind {
 			NodeKind::ImportDeclaration { .. } | NodeKind::ImportSpecifier { .. } => {
 				w.string("importKind", extras.import_kind.unwrap_or(Kind::Value).as_str());

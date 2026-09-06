@@ -31,8 +31,12 @@ impl Source {
 		}
 	}
 
-	pub fn parse(&self) -> String {
-		self.prepared.parse(Entry::Program, 0.0, false)
+	/// The whole source, or the program spanning `start..end` of it.
+	pub fn parse(&self, start: Option<f64>, end: Option<f64>) -> String {
+		match (start, end) {
+			(None, None) => self.prepared.parse(Entry::Program, 0.0, false),
+			(start, end) => self.prepared.parse_range(start.unwrap_or(0.0), end.unwrap_or(f64::NAN)),
+		}
 	}
 
 	/// `until` is `"as"` when the host's `as` follows the expression.

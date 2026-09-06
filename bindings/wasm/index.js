@@ -17,6 +17,7 @@ function flags(options = {}) {
 		throw new TypeError(`until must be "as", not ${JSON.stringify(options.until)}`);
 	}
 	const on = FLAGS.filter((flag) => options[flag] === true);
+	if (options.typescript === 'erase') on.push('typescript', 'erase');
 	if (options.sourceType !== 'module') on.push('script');
 	if (options.until === 'as') on.push('untilAs');
 	return on.join(',');
@@ -48,8 +49,8 @@ export class Source {
 		this.#wasm = new wasm.Source(source, flags(options));
 	}
 
-	parse() {
-		return result(this.#wasm.parse());
+	parse(start, end) {
+		return result(this.#wasm.parse(start, end));
 	}
 
 	parseExpressionAt(offset, until) {

@@ -6,8 +6,25 @@ use std::fmt::Write;
 
 /// How an extension's data serializes: its own nodes, and the keys it adds to JavaScript nodes.
 pub trait Emit: crate::ast::Walk {
+	/// Emits one of the extension's own nodes and closes it, or what erasing puts in its place.
 	fn node(&self, w: &mut Writer<Self>, id: NodeId, index: u32);
 	fn extras(&self, _w: &mut Writer<Self>, _id: NodeId) {}
+	/// Whether erasing leaves nothing of a node in a list: type-only declarations and imports.
+	fn erased(&self, _w: &Writer<Self>, _id: NodeId) -> bool {
+		false
+	}
+}
+
+/// How a tree serializes beyond acorn's shape.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Output {
+	/// Every node carries `loc`.
+	pub locations: bool,
+	/// The answer lists every comment read.
+	pub comments: bool,
+	/// TypeScript is erased: annotations, type-only declarations and imports go, assertions give
+	/// way to their expression, and what erasure cannot express is listed as `typescript`.
+	pub erase: bool,
 }
 
 impl Emit for () {
@@ -30,10 +47,11 @@ pub fn program_to_json<X: Emit>(
 	root: NodeId,
 	source: &str,
 	positions: &Positions,
-	comments: bool,
+	output: Output,
 ) -> String {
 	let mut w = Writer::new(ast, source, positions);
-	w.program_comments = comments;
+	w.program_tail = true;
+	w.output = output;
 	w.node(root);
 	w.out
 }
@@ -46,12 +64,13 @@ pub fn node_to_json<X: Emit>(
 	end: u32,
 	source: &str,
 	positions: &Positions,
-	comments: bool,
+	output: Output,
 ) -> String {
 	let mut w = Writer::new(ast, source, positions);
+	w.output = output;
 	w.out.push_str("{\"node\":");
 	w.node(root);
-	w.tail(end, comments);
+	w.tail(end);
 	w.out
 }
 
@@ -62,18 +81,24 @@ pub fn params_to_json<X: Emit>(
 	end: u32,
 	source: &str,
 	positions: &Positions,
-	comments: bool,
+	output: Output,
 ) -> String {
 	let mut w = Writer::new(ast, source, positions);
+	w.output = output;
 	w.out.push_str("{\"params\":[");
-	for (i, &param) in params.iter().enumerate() {
-		if i > 0 {
+	let mut first = true;
+	for &param in params {
+		if w.output.erase && ast.extension.erased(&w, param) {
+			continue;
+		}
+		if !first {
 			w.out.push(',');
 		}
+		first = false;
 		w.node(param);
 	}
 	w.out.push(']');
-	w.tail(end, comments);
+	w.tail(end);
 	w.out
 }
 
@@ -99,8 +124,11 @@ pub struct Writer<'a, X = ()> {
 	out: String,
 	positions: &'a Positions,
 	cursor: Cursor,
-	/// Whether the program lists every comment.
-	program_comments: bool,
+	pub(crate) output: Output,
+	/// Whether the program carries the comment list and the erasure leftovers.
+	program_tail: bool,
+	/// What erasure left in place, in emission order.
+	kept: Vec<(&'static str, NodeId)>,
 }
 
 /// Maps byte offsets to the UTF-16 offsets and line/column pairs that acorn reports, and UTF-16
@@ -220,8 +248,34 @@ impl<'a, X: Emit> Writer<'a, X> {
 			out: String::with_capacity(ast.nodes.len() * if positions.lines { 160 } else { 80 }),
 			positions,
 			cursor: Cursor::default(),
-			program_comments: false,
+			output: Output::default(),
+			program_tail: false,
+			kept: Vec::new(),
 		}
+	}
+
+	/// Records a node erasure had to leave in place.
+	pub(crate) fn keep(&mut self, ty: &'static str, id: NodeId) {
+		self.kept.push((ty, id));
+	}
+
+	/// What erasure left in place, as `typescript`.
+	fn all_kept(&mut self) {
+		self.key("typescript");
+		self.out.push('[');
+		let kept = std::mem::take(&mut self.kept);
+		for (i, &(ty, id)) in kept.iter().enumerate() {
+			if i > 0 {
+				self.out.push(',');
+			}
+			self.out.push_str("{\"type\":\"");
+			self.out.push_str(ty);
+			self.out.push('"');
+			let node = self.ast.node(id);
+			self.span(node.start, node.end);
+			self.out.push('}');
+		}
+		self.out.push(']');
 	}
 
 	pub(crate) fn begin(&mut self, ty: &str, id: NodeId) {
@@ -273,11 +327,14 @@ impl<'a, X: Emit> Writer<'a, X> {
 	}
 
 	/// Closes the object around a node parsed at an offset.
-	fn tail(&mut self, end: u32, comments: bool) {
+	fn tail(&mut self, end: u32) {
 		self.out.push_str(",\"end\":");
 		push_int(&mut self.out, self.positions.offset(&mut self.cursor, end));
-		if comments {
+		if self.output.comments {
 			self.all_comments();
+		}
+		if self.output.erase {
+			self.all_kept();
 		}
 		self.out.push('}');
 	}
@@ -326,6 +383,10 @@ impl<'a, X: Emit> Writer<'a, X> {
 		self.ast.node(id).kind
 	}
 
+	pub(crate) fn ast(&self) -> &'a Ast<X> {
+		self.ast
+	}
+
 	/// The key only when there is a node, the way acorn leaves unset properties out.
 	pub(crate) fn opt_key(&mut self, key: &str, id: Option<NodeId>) {
 		if let Some(id) = id {
@@ -344,16 +405,38 @@ impl<'a, X: Emit> Writer<'a, X> {
 	pub(crate) fn list(&mut self, key: &str, list: List) {
 		self.key(key);
 		self.out.push('[');
-		for (i, item) in self.ast.list(list).iter().enumerate() {
-			if i > 0 {
+		let ast = self.ast;
+		let mut first = true;
+		for item in ast.list(list) {
+			if self.output.erase && item.is_some_and(|id| ast.extension.erased(self, id)) {
+				continue;
+			}
+			if !first {
 				self.out.push(',');
 			}
+			first = false;
 			match item {
 				Some(id) => self.node(*id),
 				None => self.out.push_str("null"),
 			}
 		}
 		self.out.push(']');
+	}
+
+	/// A parameter list; erasing drops TypeScript's `this` parameter.
+	pub(crate) fn params(&mut self, key: &str, list: List) {
+		if self.output.erase
+			&& let Some(&Some(first)) = self.ast.list(list).first()
+			&& let NodeKind::Identifier { name } = self.kind(first)
+			&& self.ast.str(name) == "this"
+		{
+			let rest = List {
+				start: list.start + 1,
+				len: list.len - 1,
+			};
+			return self.list(key, rest);
+		}
+		self.list(key, list)
 	}
 
 	pub(crate) fn bool(&mut self, key: &str, value: bool) {
@@ -382,11 +465,11 @@ impl<'a, X: Emit> Writer<'a, X> {
 		self.bool("expression", expression);
 		self.bool("generator", f.generator);
 		self.bool("async", f.is_async);
-		self.list("params", f.params);
+		self.params("params", f.params);
 		self.field("body", f.body);
 	}
 
-	fn node(&mut self, id: NodeId) {
+	pub(crate) fn node(&mut self, id: NodeId) {
 		use NodeKind::*;
 		let kind = self.ast.node(id).kind;
 		match kind {
@@ -394,8 +477,11 @@ impl<'a, X: Emit> Writer<'a, X> {
 				self.begin("Program", id);
 				self.list("body", body);
 				self.string("sourceType", if module { "module" } else { "script" });
-				if self.program_comments {
+				if self.program_tail && self.output.comments {
 					self.all_comments();
+				}
+				if self.program_tail && self.output.erase {
+					self.all_kept();
 				}
 			}
 			Identifier { name } => {
@@ -609,7 +695,7 @@ impl<'a, X: Emit> Writer<'a, X> {
 				self.bool("expression", expression);
 				self.bool("generator", false);
 				self.bool("async", is_async);
-				self.list("params", params);
+				self.params("params", params);
 				self.field("body", body);
 			}
 			FunctionExpression { function } => {
@@ -894,9 +980,8 @@ impl<'a, X: Emit> Writer<'a, X> {
 				self.field("source", source);
 				self.list("attributes", attributes);
 			}
-			Extension(index) => {
-				self.ast.extension.node(self, id, index);
-			}
+			// the extension closes its own node, since erasing may put another in its place
+			Extension(index) => return self.ast.extension.node(self, id, index),
 		}
 		self.end();
 	}

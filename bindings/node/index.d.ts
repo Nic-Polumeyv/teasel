@@ -3,8 +3,13 @@ import type { Expression, Pattern, Program, Statement } from 'estree';
 export interface Options {
 	/** `script` by default, as in acorn. */
 	sourceType?: 'script' | 'module';
-	/** Parse TypeScript. */
-	typescript?: boolean;
+	/**
+	 * Parse TypeScript. `'erase'` parses it and emits JavaScript: annotations, type-only
+	 * declarations and imports go, assertions give way to their expression, and what erasure
+	 * cannot express (enums, namespaces with values, parameter properties, decorators, `export =`,
+	 * `import =`) stays in the tree and is listed as `typescript` on the answer.
+	 */
+	typescript?: boolean | 'erase';
 	/** Attach `leadingComments`, `trailingComments` and `innerComments` to nodes. */
 	comments?: boolean;
 	/** Add `loc` with line and column to every node, as in acorn; off by default. */
@@ -40,6 +45,14 @@ export interface Comment {
 	loc?: { start: { line: number; column: number }; end: { line: number; column: number } };
 }
 
+/** A node erasure left in place, by type and range. */
+export interface Kept {
+	type: string;
+	start: number;
+	end: number;
+	loc?: { start: { line: number; column: number }; end: { line: number; column: number } };
+}
+
 /** What a parse at an offset returns. */
 export interface Parsed<T> {
 	node: T;
@@ -47,7 +60,12 @@ export interface Parsed<T> {
 	end: number;
 	/** Every comment read, in source order; only with `comments`. */
 	comments?: Comment[];
+	/** What erasure left in place; only with `typescript: 'erase'`. */
+	typescript?: Kept[];
 }
+
+/** A program, with the comment list and the erasure leftovers when those options are on. */
+export type ParsedProgram = Program & { comments?: Comment[]; typescript?: Kept[] };
 
 /** What `parseParamsAt` returns: the list rather than one node, otherwise as `Parsed`. */
 export interface Params {
@@ -55,10 +73,11 @@ export interface Params {
 	/** The offset after the closing paren and the comments after it. */
 	end: number;
 	comments?: Comment[];
+	typescript?: Kept[];
 }
 
 /** Parses a whole program; with `comments` it lists every comment as `comments`. */
-export function parse(source: string, options?: Options): Program & { comments?: Comment[] };
+export function parse(source: string, options?: Options): ParsedProgram;
 /** Parses one expression starting at `offset`, a UTF-16 offset into `source`. */
 export function parseExpressionAt(source: string, offset: number, options?: Options): Parsed<Expression>;
 /** Parses an assignment target starting at `offset`. */
@@ -74,7 +93,8 @@ export function parseStatementAt(source: string, offset: number, options?: Optio
  */
 export class Source {
 	constructor(source: string, options?: Options);
-	parse(): Program & { comments?: Comment[] };
+	/** The whole source, or the program that spans `start..end` of it; positions stay those of the whole source. */
+	parse(start?: number, end?: number): ParsedProgram;
 	parseExpressionAt(offset: number, until?: 'as'): Parsed<Expression>;
 	parsePatternAt(offset: number): Parsed<Pattern>;
 	parseParamsAt(offset: number): Params;

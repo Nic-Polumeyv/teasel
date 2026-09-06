@@ -15,5 +15,7 @@ assert.throws(() => parseExpressionAt('𝒳 + y', 1), SyntaxError);
 const source = new Source('{a} {b}', { comments: true });
 assert.equal(source.parseExpressionAt(5).node.name, 'b');
 assert.equal(new Source('{xs as x}', { typescript: true }).parseExpressionAt(1, 'as').end, 3);
+assert.equal(parse('let x: number = 1', { typescript: 'erase' }).body[0].declarations[0].id.typeAnnotation, undefined);
+assert.equal(new Source('<script>let a = 1</script>').parse(8, 17).body[0].end, 17);
 source.free();
 console.log('ok');
