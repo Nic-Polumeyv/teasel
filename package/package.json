@@ -23,7 +23,7 @@
 	"scripts": {
 		"build": "napi build --platform --release --manifest-path ../bindings/node/Cargo.toml --package-json-path package.json -o . --js binding.cjs --dts binding.d.ts",
 		"build:wasm": "cargo build --release -p teasel-wasm --target wasm32-unknown-unknown && cp ../target/wasm32-unknown-unknown/release/teasel_wasm.wasm teasel.wasm",
-		"test": "bun test.js",
+		"test": "bun test.js && bun test.js interpret",
 		"check": "node check.js"
 	},
 	"dependencies": {

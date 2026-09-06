@@ -8,6 +8,7 @@ import { bits } from './api.js';
 import { decode } from './decode.js';
 
 const native = createRequire(import.meta.url)('./binding.cjs');
+const engine = { constants: native.constants, shapes: native.shapes };
 await wasm.init(readFileSync(new URL('./teasel.wasm', import.meta.url)));
 const ENTRY = { expression: 1, pattern: 2, params: 3, statement: 4 };
 const files = [];
@@ -56,7 +57,7 @@ function report(name, difference) {
 
 function json(name, source, b, entry, at) {
 	const answer = native.parseAt(Buffer.from(source), b, entry, at, false);
-	const tree = typeof answer === 'string' ? answer : JSON.stringify(decode(answer, source, native.constants, false));
+	const tree = typeof answer === 'string' ? answer : JSON.stringify(decode(answer, source, engine, false));
 	const text = native.parseAtJson(Buffer.from(source), b, entry, at, false);
 	report(name, tree === text ? null : `differs from the JSON at ${[...tree].findIndex((c, i) => c !== text[i])}`);
 }

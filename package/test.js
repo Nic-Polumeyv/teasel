@@ -1,7 +1,9 @@
+// `bun test.js interpret` runs the decoder without code generation, as a host forbidding it would
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
-import * as node from './index.js';
-import * as wasm from './wasm.js';
+if (process.argv[2] === 'interpret') globalThis.Function = /** @type {any} */ (() => { throw new EvalError('blocked'); });
+const node = await import('./index.js');
+const wasm = await import('./wasm.js');
 
 await wasm.init(readFileSync(new URL('./teasel.wasm', import.meta.url)));
 

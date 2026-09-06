@@ -103,6 +103,11 @@ pub fn constants() -> Vec<&'static str> {
 }
 
 #[napi]
+pub fn shapes() -> Vec<u32> {
+	teasel::estree::shapes()
+}
+
+#[napi]
 pub struct Source {
 	prepared: Prepared<'static>,
 }

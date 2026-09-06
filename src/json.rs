@@ -129,6 +129,20 @@ pub fn constants_json() -> String {
 	json
 }
 
+pub fn shapes_json() -> String {
+	let words = crate::estree::shapes();
+	let mut json = String::with_capacity(words.len() * 4 + 2);
+	json.push('[');
+	for (i, word) in words.iter().enumerate() {
+		if i > 0 {
+			json.push(',');
+		}
+		json.push_str(&word.to_string());
+	}
+	json.push(']');
+	json
+}
+
 pub fn parse(source: &str, request: &Request) -> String {
 	parse_with(source, &Positions::new(source, request.locations), request)
 }

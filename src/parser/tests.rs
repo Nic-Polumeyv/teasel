@@ -786,9 +786,27 @@ fn profile() {
 		.build()
 		.unwrap();
 	let mut sink = 0usize;
-	for _ in 0..3000 {
-		let ast = crate::parser::parse_range::<()>(&source, 0, source.len() as u32, options).unwrap();
-		sink = sink.wrapping_add(ast.nodes.len());
+	if std::env::var("TEASEL_PROFILE").is_ok_and(|what| what == "encode") {
+		use crate::estree::{Binary, Output, Positions, program};
+		let mut ast = crate::parser::parse_range::<()>(&source, 0, source.len() as u32, options).unwrap();
+		let root = ast.last();
+		crate::comments::attach(&mut ast, &source, root, 0);
+		let output = Output {
+			comments: true,
+			scopes: false,
+			pattern: false,
+			erase: false,
+		};
+		let positions = Positions::new(&source, false);
+		for _ in 0..3000 {
+			let words = program(&ast, root, &source, &positions, output, Binary::new()).finish();
+			sink = sink.wrapping_add(words.len());
+		}
+	} else {
+		for _ in 0..3000 {
+			let ast = crate::parser::parse_range::<()>(&source, 0, source.len() as u32, options).unwrap();
+			sink = sink.wrapping_add(ast.nodes.len());
+		}
 	}
 	let report = guard.report().build().unwrap();
 	let file = std::fs::File::create("target/parse.svg").unwrap();

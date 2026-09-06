@@ -10,6 +10,9 @@ const utf8 = new TextDecoder();
 let wasm;
 /** @type {string[]} */
 let constants = [];
+/** @type {number[]} */
+let shapes = [];
+let shapes_known = 0;
 
 /** @param {BufferSource | WebAssembly.Module | Response | Promise<Response>} [module] `teasel.wasm` next to this file by default */
 export async function init(module) {
@@ -36,12 +39,17 @@ function create(source, bits) {
 const text = () => utf8.decode(new Uint8Array(wasm.memory.buffer, wasm.text_ptr(), wasm.text_len()));
 const words = () => new Uint32Array(wasm.memory.buffer, wasm.words_ptr(), wasm.words_len());
 
-// the constants come first: writing them can grow the memory and detach a view taken before
+// the constants and shapes come first: writing them can grow the memory and detach a view taken before
 function answer(status) {
 	if (status !== 0) return text();
 	if (words()[4] > constants.length) {
 		wasm.constants();
 		constants = JSON.parse(text());
+	}
+	if (words()[5] > shapes_known) {
+		shapes_known = words()[5];
+		wasm.shapes();
+		shapes = JSON.parse(text());
 	}
 	return words();
 }
@@ -61,4 +69,5 @@ export const { parse, parseExpressionAt, parsePatternAt, parseParamsAt, parseSta
 	parseRange: (held, start, end) => answer(wasm.source_parse_range(held, start, end ?? 0, end === undefined ? 0 : 1)),
 	free: (held) => wasm.source_free(held),
 	constants: () => constants,
+	shapes: () => shapes,
 });

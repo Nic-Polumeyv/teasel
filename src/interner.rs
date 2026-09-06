@@ -6,7 +6,7 @@ use std::hash::{BuildHasherDefault, Hasher};
 #[derive(Default)]
 pub struct FastHasher(u64);
 
-const SEED: u64 = 0x51_7c_c1_b7_27_22_0a_95;
+pub(crate) const SEED: u64 = 0x51_7c_c1_b7_27_22_0a_95;
 
 impl FastHasher {
 	fn add(&mut self, word: u64) {
