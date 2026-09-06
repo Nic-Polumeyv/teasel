@@ -75,6 +75,10 @@ impl Interner {
 		id
 	}
 
+	pub fn find(&self, s: &str) -> Option<StrId> {
+		self.map.get(s).copied()
+	}
+
 	pub fn get(&self, id: StrId) -> &str {
 		&self.strings[id.0 as usize]
 	}

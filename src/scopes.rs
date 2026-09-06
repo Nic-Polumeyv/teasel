@@ -166,14 +166,86 @@ pub enum Role {
 	Reference(ReferenceId),
 }
 
+/// A table by node, dense: nodes are numbered, and a hash of the number cost more than the room.
+/// Zero is empty so the room comes zeroed from the allocator.
+#[derive(Debug)]
+pub struct NodeTable<T>(Vec<u32>, std::marker::PhantomData<T>);
+
+impl<T> Default for NodeTable<T> {
+	fn default() -> Self {
+		NodeTable(Vec::new(), std::marker::PhantomData)
+	}
+}
+
+pub trait Packed: Copy {
+	fn pack(self) -> u32;
+	fn unpack(word: u32) -> Self;
+}
+
+impl Packed for ScopeId {
+	fn pack(self) -> u32 {
+		self
+	}
+	fn unpack(word: u32) -> Self {
+		word
+	}
+}
+
+impl Packed for Role {
+	fn pack(self) -> u32 {
+		match self {
+			Role::Declares(binding) => binding << 1,
+			Role::Reference(reference) => reference << 1 | 1,
+		}
+	}
+	fn unpack(word: u32) -> Self {
+		if word & 1 == 0 {
+			Role::Declares(word >> 1)
+		} else {
+			Role::Reference(word >> 1)
+		}
+	}
+}
+
+impl<T: Packed> NodeTable<T> {
+	fn sized(nodes: usize) -> Self {
+		NodeTable(vec![0; nodes], std::marker::PhantomData)
+	}
+
+	pub fn get(&self, id: NodeId) -> Option<T> {
+		match self.0.get(id.0 as usize) {
+			Some(&word) if word != 0 => Some(T::unpack(word - 1)),
+			_ => None,
+		}
+	}
+
+	fn insert(&mut self, id: NodeId, value: T) {
+		self.0[id.0 as usize] = value.pack() + 1;
+	}
+
+	fn insert_new(&mut self, id: NodeId, value: T) {
+		let slot = &mut self.0[id.0 as usize];
+		if *slot == 0 {
+			*slot = value.pack() + 1;
+		}
+	}
+
+	pub fn iter(&self) -> impl Iterator<Item = (NodeId, T)> + '_ {
+		self.0
+			.iter()
+			.enumerate()
+			.filter(|(_, w)| **w != 0)
+			.map(|(i, w)| (NodeId(i as u32), T::unpack(w - 1)))
+	}
+}
+
 #[derive(Debug, Default)]
 pub struct Scopes {
 	pub scopes: Vec<Scope>,
 	pub bindings: Vec<Binding>,
 	pub references: Vec<Reference>,
-	/// The scope each scope-opening node opens.
-	pub of_node: FastMap<NodeId, ScopeId>,
-	pub of_identifier: FastMap<NodeId, Role>,
+	pub of_node: NodeTable<ScopeId>,
+	pub of_identifier: NodeTable<Role>,
 }
 
 impl Scopes {
@@ -282,16 +354,22 @@ pub struct Binder<'a, X> {
 	pending: Vec<Vec<ReferenceId>>,
 	/// The scope a binding owns, for declarations that merge: namespaces and enums.
 	owned: FastMap<BindingId, ScopeId>,
+	arguments: Option<StrId>,
 }
 
 impl<'a, X: Bind> Binder<'a, X> {
 	fn new(ast: &'a Ast<X>) -> Self {
 		Binder {
 			ast,
-			out: Scopes::default(),
+			out: Scopes {
+				of_node: NodeTable::sized(ast.nodes.len()),
+				of_identifier: NodeTable::sized(ast.nodes.len()),
+				..Scopes::default()
+			},
 			stack: Vec::new(),
 			pending: Vec::new(),
 			owned: FastMap::default(),
+			arguments: ast.strings.find("arguments"),
 		}
 	}
 
@@ -347,8 +425,8 @@ impl<'a, X: Bind> Binder<'a, X> {
 
 	/// The binding an identifier declares, once declared.
 	pub fn declared_by(&self, node: NodeId) -> Option<BindingId> {
-		match self.out.of_identifier.get(&node) {
-			Some(&Role::Declares(binding)) => Some(binding),
+		match self.out.of_identifier.get(node) {
+			Some(Role::Declares(binding)) => Some(binding),
 			_ => None,
 		}
 	}
@@ -372,7 +450,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 			if found.is_none()
 				&& self.out.scopes[scope as usize].kind == ScopeKind::Function
 				&& !self.out.scopes[scope as usize].arrow
-				&& self.ast.str(name) == "arguments"
+				&& Some(name) == self.arguments
 			{
 				found = Some(self.declare_in(scope, name, BindingKind::Arguments, None));
 			}
@@ -429,7 +507,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 		s.names.insert(name, id);
 		// a class name declares the outer binding; the one inside its body shares the identifier
 		if let Some(node) = node {
-			self.out.of_identifier.entry(node).or_insert(Role::Declares(id));
+			self.out.of_identifier.insert_new(node, Role::Declares(id));
 		}
 		id
 	}
@@ -447,7 +525,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 			}
 		}
 		if let Some(&existing) = self.out.scopes[scope as usize].names.get(&name) {
-			self.out.of_identifier.entry(node).or_insert(Role::Declares(existing));
+			self.out.of_identifier.insert_new(node, Role::Declares(existing));
 			return;
 		}
 		self.declare_in(scope, name, kind, Some(node));
@@ -941,15 +1019,15 @@ mod tests {
 		analyze(&mut ast, root);
 		let scopes = ast.scopes.as_ref().unwrap();
 		let mut ids: Vec<_> = scopes.of_identifier.iter().collect();
-		ids.sort_by_key(|&(&id, _)| ast.node(id).start);
+		ids.sort_by_key(|&(id, _)| ast.node(id).start);
 		let mut out = Vec::new();
-		for (&id, role) in ids {
+		for (id, role) in ids {
 			let node = ast.node(id);
 			let NodeKind::Identifier { name } = node.kind else {
 				unreachable!()
 			};
 			let mut line = format!("{}@{} ", ast.str(name), node.start);
-			match *role {
+			match role {
 				Role::Declares(b) => {
 					let binding = scopes.binding(b);
 					line += &format!(
