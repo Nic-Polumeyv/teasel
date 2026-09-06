@@ -744,6 +744,19 @@ fn phases() {
 	};
 	let flat = Positions::new(&source, false);
 	let lines = Positions::new(&source, true);
+	{
+		let mut request = crate::json::Request::new(crate::json::Entry::Program, 0);
+		request.set_bits(0b10);
+		let prepared = crate::json::Prepared::borrowed(&source, request);
+		best("whole request: positions, parse, comments, encode, finish", &mut || {
+			let _ = prepared.binary(crate::json::Entry::Program, 0.0, false).unwrap();
+		});
+		request.set_bits(0b1110);
+		let prepared = crate::json::Prepared::borrowed(&source, request);
+		best("whole request with scopes and loc", &mut || {
+			let _ = prepared.binary(crate::json::Entry::Program, 0.0, false).unwrap();
+		});
+	}
 	best("Binary encode, no loc", &mut || {
 		let _ = program(&ast, root, &source, &flat, output, Binary::new()).finish();
 	});
@@ -798,7 +811,7 @@ fn profile() {
 			erase: false,
 		};
 		let positions = Positions::new(&source, false);
-		for _ in 0..3000 {
+		for _ in 0..30000 {
 			let words = program(&ast, root, &source, &positions, output, Binary::new()).finish();
 			sink = sink.wrapping_add(words.len());
 		}

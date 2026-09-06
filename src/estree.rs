@@ -1856,4 +1856,41 @@ mod tests {
 		assert_eq!(f64::from_bits(bits), 1.5);
 		assert_eq!(words.len(), floats_at + 2);
 	}
+
+	// cargo test --release hot_paths -- --ignored --nocapture
+	#[test]
+	#[ignore]
+	fn hot_paths() {
+		use super::{constant, kind, shape};
+		let record = [
+			constant("Identifier") + 1,
+			constant("start") << 4 | kind::INT,
+			constant("end") << 4 | kind::INT,
+			constant("binding") << 4 | kind::INT,
+			constant("name") << 4 | kind::STR,
+		];
+		let other = [
+			constant("Literal") + 1,
+			constant("start") << 4 | kind::INT,
+			constant("end") << 4 | kind::INT,
+			constant("value") << 4 | kind::STR,
+			constant("raw") << 4 | kind::SLICE,
+		];
+		let n = 10_000_000u32;
+		let mut sink = 0u32;
+		let t = std::time::Instant::now();
+		for i in 0..n {
+			sink = sink.wrapping_add(shape(if i & 1 == 0 { &record } else { &other }));
+		}
+		eprintln!("shape hit {:.1} ns", t.elapsed().as_nanos() as f64 / n as f64);
+		let keys = ["name", "start", "end", "body", "expression", "value", "raw", "id"];
+		let t = std::time::Instant::now();
+		for i in 0..n {
+			sink = sink.wrapping_add(constant(keys[(i & 7) as usize]));
+		}
+		eprintln!(
+			"constant hit {:.1} ns  ({sink})",
+			t.elapsed().as_nanos() as f64 / n as f64
+		);
+	}
 }
