@@ -46,7 +46,7 @@ impl Lexer<'_> {
 							self.buf.push(c);
 						}
 						Escape::Nothing => {}
-						Escape::Invalid(e) => return Err(Box::new(e)),
+						Escape::Invalid(e) => return Err(e),
 					}
 					chunk_start = self.pos;
 				}
@@ -179,13 +179,13 @@ impl Lexer<'_> {
 				let digits = self.pos;
 				return Ok(match self.read_hex(2) {
 					Some(v) => Escape::Code(v),
-					None => Escape::Invalid(SyntaxError::new(digits as u32, Code::BadCharacterEscape)),
+					None => Escape::Invalid(Box::new(SyntaxError::new(digits as u32, Code::BadCharacterEscape))),
 				});
 			}
 			'u' => {
 				return Ok(match self.read_code_point() {
 					Ok(code) => Escape::Code(code),
-					Err(e) => Escape::Invalid(*e),
+					Err(e) => Escape::Invalid(e),
 				});
 			}
 			'\r' => {
@@ -262,5 +262,5 @@ enum Escape {
 	Code(u32),
 	Octal(char, usize, bool),
 	Nothing,
-	Invalid(SyntaxError),
+	Invalid(Box<SyntaxError>),
 }

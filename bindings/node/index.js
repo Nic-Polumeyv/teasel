@@ -29,7 +29,8 @@ function check(options) {
  */
 function result(answer, source) {
 	if (typeof answer !== 'string') return decode(answer, source, native.constants);
-	throw Object.assign(new SyntaxError(), JSON.parse(answer).error);
+	const { message, ...error } = JSON.parse(answer).error;
+	throw Object.assign(new SyntaxError(message), error);
 }
 
 /** @param {string} source @param {Options} [options] */

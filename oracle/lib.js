@@ -56,11 +56,11 @@ export function normalize_ts(key, value) {
 	return v;
 }
 
-/// acorn says "Unexpected token" at the end of the input, where teasel names the end.
+/// acorn reports an unexpected token at the end of the input, where teasel names the end; the rewrite is keyed on the offset alone.
 function acorn_error(e, source) {
 	if (!(e instanceof SyntaxError) || e.pos === undefined) return { error: { message: `acorn threw ${e.name}: ${e.message}`, pos: -1 } };
 	let message = e.message.replace(/ \(\d+:\d+\)$/, '');
-	if (message === 'Unexpected token' && e.pos === source.length) message = 'Unexpected end of input';
+	if (e.pos === source.length && message === 'Unexpected token') message = 'Unexpected end of input';
 	return { error: { message, pos: e.pos, loc: { line: e.loc.line, column: e.loc.column } } };
 }
 

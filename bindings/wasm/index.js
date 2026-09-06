@@ -25,7 +25,10 @@ function flags(options = {}) {
 
 function result(json) {
 	const value = JSON.parse(json);
-	if (value.error) throw Object.assign(new SyntaxError(), value.error);
+	if (value.error) {
+		const { message, ...error } = value.error;
+		throw Object.assign(new SyntaxError(message), error);
+	}
 	return value;
 }
 

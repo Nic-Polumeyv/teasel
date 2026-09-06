@@ -967,7 +967,7 @@ impl Extension for TypeScript {
 				&["public", "private", "protected", "override", "readonly"],
 				&[],
 				false,
-				(Code::UnexpectedToken, ""),
+				None,
 			)?;
 			let extras = modifiers.extras;
 			if extras.accessibility.is_some() || extras.readonly || extras.is_override {
@@ -1216,10 +1216,10 @@ impl Extension for TypeScript {
 			],
 			&["in", "out"],
 			true,
-			(
+			Some((
 				Code::TypeParameterModifier,
 				"'{}' modifier can only appear on a type parameter of a class, interface or type alias.",
-			),
+			)),
 		)?;
 		if !decorators.is_empty() {
 			if p.is(TokenKind::BraceR) {

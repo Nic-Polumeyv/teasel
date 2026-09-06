@@ -878,7 +878,7 @@ impl Parser<'_, TypeScript> {
 			TypeParameterModifiers::InOut => "'{}' modifier cannot appear on a type parameter.",
 			_ => "'{}' modifier can only appear on a type parameter of a class, interface or type alias.",
 		};
-		let error = (Code::TypeParameterModifier, error);
+		let error = Some((Code::TypeParameterModifier, error));
 		let parsed = self.parse_modifiers(allowed, disallowed, false, error)?;
 		let name = self.parse_type_parameter_name()?;
 		let constraint = self.eat_keyword_then_parse_type(Keyword::Extends)?;
@@ -1013,7 +1013,7 @@ impl Parser<'_, TypeScript> {
 				"override",
 			],
 			false,
-			(Code::UnexpectedToken, "'{}' modifier cannot appear on a type member."),
+			Some((Code::TypeMemberModifier, Code::TypeMemberModifier.message())),
 		)?;
 		if let Some(signature) = self.try_parse_index_signature(start)? {
 			self.extras_mut(signature).readonly = modifiers.extras.readonly;
@@ -1082,7 +1082,7 @@ impl Parser<'_, TypeScript> {
 					if count != 1 {
 						return self.error_with(
 							self.tok.start,
-							Code::GetterParams,
+							Code::SetterParams,
 							"A 'get' accesor must not have any formal parameters.",
 						);
 					}
@@ -1201,18 +1201,14 @@ impl Parser<'_, TypeScript> {
 		allowed: &[&str],
 		disallowed: &[&str],
 		stop_on_static_block: bool,
-		disallowed_error: (Code, &str),
+		disallowed_error: Option<(Code, &str)>,
 	) -> Result<Modifiers> {
 		let mut modifiers = Modifiers::default();
 		while let Some((modifier, start)) = self.parse_modifier(allowed, disallowed, stop_on_static_block)? {
 			self.check_modifier(&modifiers, modifier, start)?;
 			modifiers.set(modifier);
-			if disallowed.contains(&modifier) {
-				return self.error_with(
-					self.tok.start,
-					disallowed_error.0,
-					disallowed_error.1.replace("{}", modifier),
-				);
+			if let Some((code, template)) = disallowed_error.filter(|_| disallowed.contains(&modifier)) {
+				return self.error_with(self.tok.start, code, template.replace("{}", modifier));
 			}
 		}
 		Ok(modifiers)
@@ -1251,21 +1247,13 @@ impl Parser<'_, TypeScript> {
 			}
 			"in" | "out" => {
 				if seen.has(modifier) {
-					return self.error_with(
-						start,
-						Code::DuplicateModifier,
-						format!("Duplicate modifier: '{modifier}'."),
-					);
+					return self.error_with(start, Code::DuplicateModifier, Code::DuplicateModifier.with(modifier));
 				}
 				order("in", "out")?;
 			}
 			"accessor" => {
 				if seen.has(modifier) {
-					return self.error_with(
-						start,
-						Code::DuplicateModifier,
-						format!("Duplicate modifier: '{modifier}'."),
-					);
+					return self.error_with(start, Code::DuplicateModifier, Code::DuplicateModifier.with(modifier));
 				}
 				for other in ["readonly", "static", "override"] {
 					conflict("accessor", other)?;
@@ -1273,20 +1261,12 @@ impl Parser<'_, TypeScript> {
 			}
 			"const" => {
 				if seen.has(modifier) {
-					return self.error_with(
-						start,
-						Code::DuplicateModifier,
-						format!("Duplicate modifier: '{modifier}'."),
-					);
+					return self.error_with(start, Code::DuplicateModifier, Code::DuplicateModifier.with(modifier));
 				}
 			}
 			_ => {
 				if seen.has(modifier) {
-					return self.error_with(
-						start,
-						Code::DuplicateModifier,
-						format!("Duplicate modifier: '{modifier}'."),
-					);
+					return self.error_with(start, Code::DuplicateModifier, Code::DuplicateModifier.with(modifier));
 				}
 				order("static", "readonly")?;
 				order("static", "override")?;

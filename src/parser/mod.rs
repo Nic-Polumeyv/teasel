@@ -648,12 +648,14 @@ impl<'a, E: Extension> Parser<'a, E> {
 		self.lexer.source()
 	}
 
+	/// An error at the current token spans it; one elsewhere is a point.
 	pub(crate) fn error<T>(&self, pos: u32, code: Code) -> Result<T> {
-		Err(Box::new(SyntaxError::new(pos, code)))
+		self.error_with(pos, code, code.message())
 	}
 
 	pub(crate) fn error_with<T>(&self, pos: u32, code: Code, message: impl Into<String>) -> Result<T> {
-		Err(Box::new(SyntaxError::with(pos, code, message)))
+		let end = if pos == self.tok.start { self.tok.end } else { pos };
+		Err(Box::new(SyntaxError::with(pos, code, message).to(end)))
 	}
 
 	/// The current token is not what the grammar allows; at the end of the input that is its own error.
@@ -663,7 +665,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 		} else {
 			Code::UnexpectedToken
 		};
-		Err(Box::new(SyntaxError::new(self.tok.start, code).to(self.tok.end)))
+		self.error(self.tok.start, code)
 	}
 
 	pub(crate) fn unexpected_at<T>(&self, pos: u32) -> Result<T> {
