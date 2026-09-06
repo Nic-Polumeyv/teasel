@@ -2,6 +2,10 @@
 //! packed token stream the package's `decode.js` turns into ESTree objects, or with the error
 //! as JSON.
 
+// The answer goes into a buffer JavaScript owns, which only the compat API creates; the
+// replacement it points at makes external buffers, slower to hand over and to collect.
+#![allow(deprecated)]
+
 use napi::bindgen_prelude::Either;
 use napi::{Env, JsArrayBuffer, JsArrayBufferValue};
 use napi_derive::napi;
@@ -57,7 +61,6 @@ fn request(options: Option<Options>) -> Request {
 /// The packed token stream as a buffer JavaScript owns, or the error answer as JSON.
 type Answered = Either<JsArrayBuffer, String>;
 
-#[allow(deprecated)]
 fn answer(env: &Env, result: Result<Vec<u32>, String>) -> napi::Result<Answered> {
 	match result {
 		Ok(words) => {
