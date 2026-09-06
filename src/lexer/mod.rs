@@ -359,50 +359,7 @@ impl<'a> Lexer<'a> {
 		self.pos += len;
 		Ok(kind)
 	}
-}
 
-/// Whether `bytes` starts with a line separator or paragraph separator (U+2028, U+2029).
-pub(crate) fn is_separator(bytes: &[u8]) -> bool {
-	matches!(bytes, [0xe2, 0x80, 0xa8 | 0xa9, ..])
-}
-
-/// The length of `bytes` up to the first line terminator: `\n`, `\r`, U+2028 or U+2029.
-pub(crate) fn line_end(bytes: &[u8]) -> usize {
-	let mut i = 0;
-	loop {
-		i = scan::find(bytes, i, *b"\n\r\xe2", false);
-		if i == bytes.len() || bytes[i] != 0xe2 || is_separator(&bytes[i..]) {
-			return i;
-		}
-		i += 1;
-	}
-}
-
-/// Where `*/` starts in `text`, and whether a line terminator precedes it.
-pub(crate) fn comment_end(text: &str) -> Option<(usize, bool)> {
-	let mut from = 0;
-	loop {
-		let star = from + text[from..].find('*')?;
-		if text.as_bytes().get(star + 1) == Some(&b'/') {
-			let body = &text.as_bytes()[..star];
-			return Some((star, line_end(body) < body.len()));
-		}
-		from = star + 1;
-	}
-}
-
-pub(crate) fn is_new_line(c: char) -> bool {
-	matches!(c, '\n' | '\r' | '\u{2028}' | '\u{2029}')
-}
-
-pub(crate) fn is_whitespace(c: char) -> bool {
-	matches!(
-		c,
-		'\u{a0}' | '\u{1680}' | '\u{2000}'..='\u{200a}' | '\u{202f}' | '\u{205f}' | '\u{3000}' | '\u{feff}'
-	)
-}
-
-impl Lexer<'_> {
 	fn read_word(&mut self) -> Result<TokenKind> {
 		let start = self.pos;
 		let src = self.src;
@@ -488,18 +445,7 @@ impl Lexer<'_> {
 		};
 		Ok(TokenKind::PrivateName(name))
 	}
-}
 
-fn is_word_char(c: char, first: bool) -> bool {
-	match c {
-		'$' | '_' => true,
-		'\u{200c}' | '\u{200d}' => !first,
-		_ if first => is_id_start(c),
-		_ => is_id_continue(c),
-	}
-}
-
-impl Lexer<'_> {
 	fn read_number(&mut self, starts_with_dot: bool) -> Result<TokenKind> {
 		let start = self.pos;
 		if !starts_with_dot && self.byte() == Some(b'0') {
@@ -609,9 +555,7 @@ impl Lexer<'_> {
 		}
 		Ok(())
 	}
-}
 
-impl Lexer<'_> {
 	/// Re-reads a `/` or `/=` token as a regular expression literal.
 	pub(crate) fn read_regex(&mut self, token: Token) -> Result<Token> {
 		let start = token.start as usize;
@@ -667,9 +611,7 @@ impl Lexer<'_> {
 			escaped: false,
 		})
 	}
-}
 
-impl Lexer<'_> {
 	fn read_string(&mut self, quote: u8) -> Result<TokenKind> {
 		let start = self.pos;
 		self.pos += 1;
@@ -918,6 +860,56 @@ impl Lexer<'_> {
 			Some(v) => Ok(v),
 			None => self.error(digits, Code::BadCharacterEscape),
 		}
+	}
+}
+
+/// Whether `bytes` starts with a line separator or paragraph separator (U+2028, U+2029).
+pub(crate) fn is_separator(bytes: &[u8]) -> bool {
+	matches!(bytes, [0xe2, 0x80, 0xa8 | 0xa9, ..])
+}
+
+/// The length of `bytes` up to the first line terminator: `\n`, `\r`, U+2028 or U+2029.
+pub(crate) fn line_end(bytes: &[u8]) -> usize {
+	let mut i = 0;
+	loop {
+		i = scan::find(bytes, i, *b"\n\r\xe2", false);
+		if i == bytes.len() || bytes[i] != 0xe2 || is_separator(&bytes[i..]) {
+			return i;
+		}
+		i += 1;
+	}
+}
+
+/// Where `*/` starts in `text`, and whether a line terminator precedes it.
+pub(crate) fn comment_end(text: &str) -> Option<(usize, bool)> {
+	let mut from = 0;
+	loop {
+		let star = from + text[from..].find('*')?;
+		if text.as_bytes().get(star + 1) == Some(&b'/') {
+			let body = &text.as_bytes()[..star];
+			return Some((star, line_end(body) < body.len()));
+		}
+		from = star + 1;
+	}
+}
+
+pub(crate) fn is_new_line(c: char) -> bool {
+	matches!(c, '\n' | '\r' | '\u{2028}' | '\u{2029}')
+}
+
+pub(crate) fn is_whitespace(c: char) -> bool {
+	matches!(
+		c,
+		'\u{a0}' | '\u{1680}' | '\u{2000}'..='\u{200a}' | '\u{202f}' | '\u{205f}' | '\u{3000}' | '\u{feff}'
+	)
+}
+
+fn is_word_char(c: char, first: bool) -> bool {
+	match c {
+		'$' | '_' => true,
+		'\u{200c}' | '\u{200d}' => !first,
+		_ if first => is_id_start(c),
+		_ => is_id_continue(c),
 	}
 }
 
