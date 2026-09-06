@@ -138,7 +138,7 @@ impl Sink for Json {
 
 	fn float(&mut self, value: f64) {
 		self.sep();
-		write!(self.out, "{value}").unwrap();
+		write_number(&mut self.out, value);
 	}
 
 	fn bool(&mut self, value: bool) {
@@ -1467,6 +1467,47 @@ fn bigint_decimal(raw: &str) -> String {
 	out
 }
 
+/// A number as `JSON.stringify` writes it: the shortest digits that read back, in plain
+/// notation between 1e-7 and 1e21 and with an exponent outside, `null` when not finite.
+pub fn write_number(out: &mut String, value: f64) {
+	if !value.is_finite() {
+		out.push_str("null");
+		return;
+	}
+	if value == 0.0 {
+		out.push('0');
+		return;
+	}
+	let formatted = format!("{value:e}");
+	let (mantissa, exponent) = formatted.split_once('e').unwrap();
+	let (sign, mantissa) = mantissa.strip_prefix('-').map_or(("", mantissa), |m| ("-", m));
+	let digits: String = mantissa.chars().filter(|c| *c != '.').collect();
+	let k = digits.len() as i32;
+	let n = exponent.parse::<i32>().unwrap() + 1;
+	out.push_str(sign);
+	if k <= n && n <= 21 {
+		out.push_str(&digits);
+		out.extend(std::iter::repeat_n('0', (n - k) as usize));
+	} else if 0 < n && n <= 21 {
+		out.push_str(&digits[..n as usize]);
+		out.push('.');
+		out.push_str(&digits[n as usize..]);
+	} else if -6 < n && n <= 0 {
+		out.push_str("0.");
+		out.extend(std::iter::repeat_n('0', (-n) as usize));
+		out.push_str(&digits);
+	} else {
+		out.push_str(&digits[..1]);
+		if k > 1 {
+			out.push('.');
+			out.push_str(&digits[1..]);
+		}
+		out.push('e');
+		out.push(if n > 1 { '+' } else { '-' });
+		push_int(out, (n - 1).unsigned_abs());
+	}
+}
+
 pub fn write_json_string(out: &mut String, s: &str) {
 	out.push('"');
 	let mut from = 0;
@@ -1493,6 +1534,30 @@ pub fn write_json_string(out: &mut String, s: &str) {
 
 #[cfg(test)]
 mod tests {
+	#[test]
+	fn numbers_as_javascript_writes_them() {
+		for (value, text) in [
+			(1e-14, "1e-14"),
+			(1e-7, "1e-7"),
+			(0.000001, "0.000001"),
+			(0.1, "0.1"),
+			(1.5, "1.5"),
+			(123.456, "123.456"),
+			(100.0, "100"),
+			(1e20, "100000000000000000000"),
+			(1e21, "1e+21"),
+			(1.5e300, "1.5e+300"),
+			(5e-324, "5e-324"),
+			(-0.0, "0"),
+			(-2.5e-8, "-2.5e-8"),
+			(f64::INFINITY, "null"),
+		] {
+			let mut out = String::new();
+			super::write_number(&mut out, value);
+			assert_eq!(out, text, "{value:?}");
+		}
+	}
+
 	use super::Positions;
 
 	#[test]

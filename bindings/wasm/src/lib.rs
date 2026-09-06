@@ -22,23 +22,16 @@ pub extern "C" fn alloc(len: u32) -> *mut u8 {
 	ptr
 }
 
-/// A source held with its switches, the names of `teasel::json::FLAGS` separated by commas;
-/// both byte ranges come from `alloc` and are taken over here.
+/// A source held with its switches, `bits` being the request's with bit `i` for
+/// `json::FLAGS[i]`.
+///
+/// # Safety
+/// The bytes are `capacity` from `alloc`, filled up to `len`, and are taken over here.
 #[unsafe(no_mangle)]
-pub extern "C" fn source_new(
-	ptr: *mut u8,
-	len: u32,
-	capacity: u32,
-	flags: *mut u8,
-	flags_len: u32,
-	flags_capacity: u32,
-) -> u32 {
+pub unsafe extern "C" fn source_new(ptr: *mut u8, len: u32, capacity: u32, bits: u32) -> u32 {
 	let source = unsafe { Vec::from_raw_parts(ptr, len as usize, capacity as usize) };
-	let flags = unsafe { Vec::from_raw_parts(flags, flags_len as usize, flags_capacity as usize) };
 	let mut request = Request::new(Entry::Program, 0);
-	for flag in String::from_utf8_lossy(&flags).split(',') {
-		request.set(flag);
-	}
+	request.set_bits(bits);
 	let prepared = Prepared::new(String::from_utf8_lossy(&source).into_owned(), request);
 	Box::into_raw(Box::new(prepared)) as u32
 }
@@ -75,18 +68,11 @@ fn answer(result: Result<Vec<u32>, String>) -> u32 {
 	}
 }
 
-/// Parses at `entry` (0 program, 1 expression, 2 pattern, 3 parameters, 4 statement) from a
-/// UTF-16 `offset`; `until` is 1 when the host's `as` follows the expression.
+/// Parses `entry` (`json::Entry` by index) from a UTF-16 `offset`; `until` is 1 when the host's
+/// `as` follows the expression.
 #[unsafe(no_mangle)]
 pub extern "C" fn source_parse(handle: u32, entry: u32, offset: f64, until: u32) -> u32 {
-	let entry = match entry {
-		1 => Entry::Expression,
-		2 => Entry::Pattern,
-		3 => Entry::Params,
-		4 => Entry::Statement,
-		_ => Entry::Program,
-	};
-	answer(source(handle).binary(entry, offset, until == 1))
+	answer(source(handle).binary(Entry::from_index(entry), offset, until == 1))
 }
 
 /// Parses the program spanning `start..end` of the source; a negative `end` means its end.
