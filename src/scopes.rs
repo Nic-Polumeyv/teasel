@@ -357,7 +357,6 @@ pub struct Binder<'a, X> {
 	/// The scope a binding owns, for declarations that merge: namespaces and enums.
 	owned: FastMap<BindingId, ScopeId>,
 	arguments: Option<StrId>,
-	/// A TypeScript `this` parameter names no binding.
 	this_name: Option<StrId>,
 }
 
@@ -523,9 +522,6 @@ impl<'a, X: Bind> Binder<'a, X> {
 		let NodeKind::Identifier { name } = self.kind(node) else {
 			return;
 		};
-		if Some(name) == self.this_name {
-			return;
-		}
 		let mut scope = self.current();
 		if kind.is_var() {
 			while !self.out.scopes[scope as usize].kind.holds_var() {
@@ -644,7 +640,11 @@ impl<'a, X: Bind> Binder<'a, X> {
 		self.enter(ScopeKind::Function, Some(id), arrow);
 		let scope = self.current();
 		self.out.scopes[scope as usize].body_start = self.ast.node(body).start;
-		for &param in self.ast.list(params).iter().flatten() {
+		// a TypeScript `this` parameter, first in the list, is a type position and binds nothing
+		for (i, &param) in self.ast.list(params).iter().flatten().enumerate() {
+			if i == 0 && matches!(self.kind(param), NodeKind::Identifier { name } if Some(name) == self.this_name) {
+				continue;
+			}
 			self.visit_with(param, Mode::Declare(BindingKind::Param), false);
 		}
 		match self.kind(body) {
@@ -1149,7 +1149,7 @@ mod tests {
 
 	#[test]
 	fn typescript_declarations() {
-		let src = "import type { X } from 'm'; import { type Y, Z } from 'm'; export { type X }; enum E { A = 1, B = A } namespace N { export const n = 1; } namespace N { n; } export function f(): void; class C { m(@dec p) {} } function dec() {}";
+		let src = "import type { X } from 'm'; import { type Y, Z } from 'm'; export { type X }; enum E { A = 1, B = A } namespace N { export const n = 1; } namespace N { n; } export function f(): void; class C { m(@dec p) {} } function dec() {} function g(this: T, a) {} enum M { this = 1 }";
 		let mut ast = crate::typescript::parse(
 			src,
 			Options {
@@ -1178,7 +1178,11 @@ mod tests {
 				"f:function",
 				"C:class",
 				"p:param",
-				"dec:function"
+				"dec:function",
+				"g:function",
+				"a:param",
+				"M:enum",
+				"this:enum-member",
 			]
 		);
 		let unresolved = scopes.references.iter().filter(|r| r.binding.is_none()).count();

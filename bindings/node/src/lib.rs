@@ -2,7 +2,7 @@
 // the view spans the whole buffer: past an answer's words it shows the previous answer's
 use std::cell::Cell;
 
-use napi::bindgen_prelude::{Either, FromNapiValue, ToNapiValue, Uint8Array, Uint32Array};
+use napi::bindgen_prelude::{Either, FromNapiValue, ToNapiValue, Uint8Array, Uint8ArraySlice, Uint32Array};
 use napi::{Env, sys};
 use napi_derive::napi;
 use teasel::json::{Entry, Prepared, Request};
@@ -20,7 +20,7 @@ fn request(bits: u32) -> Request {
 	request
 }
 
-/// Over the caller's bytes while they are valid UTF-8, which V8's encoder makes them.
+// valid UTF-8 is parsed in place; anything else is made valid in a copy
 fn prepared(source: &[u8], bits: u32) -> Prepared<'_> {
 	match std::str::from_utf8(source) {
 		Ok(text) => Prepared::borrowed(text, request(bits)),
@@ -85,7 +85,7 @@ fn answer(env: &Env, result: Result<Vec<u32>, String>) -> Answer {
 }
 
 #[napi(catch_unwind, ts_return_type = "Uint32Array | string")]
-pub fn parse_at(env: Env, source: Uint8Array, bits: u32, entry: u32, offset: f64, until: bool) -> Answer {
+pub fn parse_at(env: Env, source: Uint8ArraySlice<'_>, bits: u32, entry: u32, offset: f64, until: bool) -> Answer {
 	answer(
 		&env,
 		prepared(&source, bits).binary(Entry::from_index(entry), offset, until),
@@ -93,7 +93,7 @@ pub fn parse_at(env: Env, source: Uint8Array, bits: u32, entry: u32, offset: f64
 }
 
 #[napi(catch_unwind)]
-pub fn parse_at_json(source: Uint8Array, bits: u32, entry: u32, offset: f64, until: bool) -> String {
+pub fn parse_at_json(source: Uint8ArraySlice<'_>, bits: u32, entry: u32, offset: f64, until: bool) -> String {
 	prepared(&source, bits).parse(Entry::from_index(entry), offset, until)
 }
 

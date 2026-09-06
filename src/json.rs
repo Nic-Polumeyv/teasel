@@ -146,12 +146,14 @@ pub struct Prepared<'a> {
 	request: Request,
 }
 
-impl<'a> Prepared<'a> {
+impl Prepared<'static> {
 	/// The request's entry and offset are ignored; `parse` takes them.
 	pub fn new(source: String, request: Request) -> Prepared<'static> {
 		Prepared::of(std::borrow::Cow::Owned(source), request)
 	}
+}
 
+impl<'a> Prepared<'a> {
 	/// The same over a source the caller keeps for the parses.
 	pub fn borrowed(source: &'a str, request: Request) -> Prepared<'a> {
 		Prepared::of(std::borrow::Cow::Borrowed(source), request)
