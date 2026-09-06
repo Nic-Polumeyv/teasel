@@ -663,7 +663,7 @@ fn erasure() {
 	assert_eq!(body, ["ExportNamedDeclaration"]);
 	assert!(kept.is_empty());
 	let (body, kept) = erase(
-		"enum E {} namespace N { export type X = 1 } namespace M { export const y = 1 } @dec class Z { constructor(public q: number) {} }",
+		"enum E {} namespace N { export type X = 1 } namespace M { export const y = 1 } @dec class Z { constructor(public q: number) {} accessor a = 1 }",
 	);
 	assert_eq!(body, ["TSEnumDeclaration", "TSModuleDeclaration", "ClassDeclaration"]);
 	assert_eq!(
@@ -672,7 +672,8 @@ fn erasure() {
 			"TSEnumDeclaration",
 			"TSModuleDeclaration",
 			"Decorator",
-			"TSParameterProperty"
+			"TSParameterProperty",
+			"AccessorProperty"
 		]
 	);
 	let (body, _) =

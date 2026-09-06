@@ -539,12 +539,13 @@ impl Emit for Data {
 		let extras = self.extras_of(id);
 		let extension = matches!(kind, NodeKind::Extension(_));
 		if w.output.erase {
-			// what JavaScript itself has: decorators and accessor fields
+			// proposals JavaScript itself has, which erasure keeps and lists: decorators and accessor fields
 			if let Some(decorators) = extras.decorators {
 				w.list("decorators", decorators);
 			}
 			if extras.accessor {
 				w.bool("accessor", true);
+				w.keep("AccessorProperty", id);
 			}
 			return;
 		}
