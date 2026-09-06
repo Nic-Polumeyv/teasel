@@ -553,7 +553,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 			until_as: UntilAs::Off,
 		};
 		E::init(&mut parser);
-		parser.tok = parser.lexer.next_token()?;
+		parser.lexer.next_token_into(&mut parser.tok)?;
 		Ok(parser)
 	}
 
@@ -620,7 +620,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 	pub(crate) fn relex(&mut self) -> Result<()> {
 		let newline_before = self.tok.newline_before;
 		self.lexer.set_pos(self.tok.start);
-		self.tok = self.lexer.next_token()?;
+		self.lexer.next_token_into(&mut self.tok)?;
 		self.tok.newline_before = newline_before;
 		Ok(())
 	}
@@ -755,7 +755,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 
 	pub(crate) fn next_liberal(&mut self) -> Result<()> {
 		self.prev_end = self.tok.end;
-		self.tok = self.lexer.next_token()?;
+		self.lexer.next_token_into(&mut self.tok)?;
 		Ok(())
 	}
 
