@@ -2,7 +2,7 @@
 /* eslint-disable */
 /** A source held with its switches, so many parses out of it pay for its tables once. */
 export declare class Source {
-  constructor(source: string, bits: number)
+  constructor(source: Uint8Array, bits: number)
   parseAt(entry: number, offset: number, until: boolean): Answer
   /** The program spanning `start..end` of the source, `end` defaulting to its end. */
   parseRange(start: number, end?: number | undefined | null): Answer
@@ -15,7 +15,7 @@ export declare function constants(): Array<string>
  * One parse of `entry` (`json::Entry` by index) at a UTF-16 `offset`; `until` says the host's
  * `as` follows the expression.
  */
-export declare function parseAt(source: string, bits: number, entry: number, offset: number, until: boolean): Answer
+export declare function parseAt(source: Uint8Array, bits: number, entry: number, offset: number, until: boolean): Answer
 
 /** The same answer as JSON text, for checking the decoder against. */
-export declare function parseAtJson(source: string, bits: number, entry: number, offset: number, until: boolean): string
+export declare function parseAtJson(source: Uint8Array, bits: number, entry: number, offset: number, until: boolean): string

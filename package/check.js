@@ -63,8 +63,8 @@ function report(name, difference) {
 
 /** The addon's answer decoded without links against its JSON: the same keys in the same order. */
 function json(name, source, b, entry, at) {
-	const answer = native.parseAt(source, b, entry, at, false);
-	const text = native.parseAtJson(source, b, entry, at, false);
+	const answer = native.parseAt(Buffer.from(source), b, entry, at, false);
+	const text = native.parseAtJson(Buffer.from(source), b, entry, at, false);
 	const tree = typeof answer === 'string' ? answer : JSON.stringify(decode(answer, source, native.constants, false));
 	report(name, tree === text ? null : `differs from the JSON at ${[...tree].findIndex((c, i) => c !== text[i])}`);
 }

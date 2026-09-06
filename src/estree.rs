@@ -235,15 +235,31 @@ pub fn constants() -> Vec<&'static str> {
 	CONSTANTS.with(|c| c.borrow().names.clone())
 }
 
+thread_local! {
+	/// The last id found for a name at each address slot: names are literals, so their address
+	/// is a cheaper key than their text, and a slot that misses falls back to the table.
+	static RECENT: std::cell::RefCell<[(usize, u32); 512]> = const { std::cell::RefCell::new([(0, 0); 512]) };
+}
+
 fn constant(value: &'static str) -> u32 {
-	CONSTANTS.with(|c| {
-		let mut c = c.borrow_mut();
-		if let Some(&id) = c.ids.get(value) {
-			return id;
+	let address = value.as_ptr() as usize;
+	let slot = (address >> 3) & 511;
+	RECENT.with(|recent| {
+		let mut table = recent.borrow_mut();
+		if table[slot].0 == address {
+			return table[slot].1;
 		}
-		let id = c.names.len() as u32;
-		c.names.push(value);
-		c.ids.insert(value, id);
+		let id = CONSTANTS.with(|c| {
+			let mut c = c.borrow_mut();
+			if let Some(&id) = c.ids.get(value) {
+				return id;
+			}
+			let id = c.names.len() as u32;
+			c.names.push(value);
+			c.ids.insert(value, id);
+			id
+		});
+		table[slot] = (address, id);
 		id
 	})
 }

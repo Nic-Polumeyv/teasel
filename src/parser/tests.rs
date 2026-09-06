@@ -589,3 +589,78 @@ fn undeclared_exports_can_be_allowed() {
 	};
 	assert!(parse("export { nope };", options).is_ok());
 }
+
+/// `TEASEL_BENCH=path cargo test --release phases -- --ignored --nocapture`: the phases of a
+/// program parse timed one by one, best of sixty.
+#[test]
+#[ignore]
+fn phases() {
+	use crate::estree::{Binary, Json, Output, Positions, program};
+	use crate::lexer::Lexer;
+	use crate::lexer::token::TokenKind;
+	let Ok(path) = std::env::var("TEASEL_BENCH") else { return };
+	let source = std::fs::read_to_string(path).unwrap();
+	let options = crate::Options { module: true, ..Default::default() };
+	for _ in 0..300 {
+		let _ = crate::parser::parse_range::<()>(&source, 0, source.len() as u32, options).unwrap();
+	}
+	let mut best = |name: &str, f: &mut dyn FnMut()| {
+		let mut m = f64::MAX;
+		for _ in 0..300 {
+			let t = std::time::Instant::now();
+			f();
+			m = m.min(t.elapsed().as_secs_f64() * 1e3);
+		}
+		eprintln!("{m:7.3} ms  {name}");
+	};
+	let mut tokens = 0;
+	let mut reached = 0;
+	best("lex every token", &mut || {
+		let mut lexer = Lexer::new(&source);
+		lexer.module = true;
+		tokens = 0;
+		while let Ok(token) = lexer.next_token() {
+			tokens += 1;
+			if token.kind == TokenKind::Eof {
+				break;
+			}
+		}
+		reached = lexer.pos();
+	});
+	eprintln!("          {tokens} tokens, lexer reached {reached} of {}", source.len());
+	best("parse", &mut || {
+		let _ = crate::parser::parse_range::<()>(&source, 0, source.len() as u32, options).unwrap();
+	});
+	best("parse + attach comments", &mut || {
+		let mut ast = crate::parser::parse_range::<()>(&source, 0, source.len() as u32, options).unwrap();
+		let root = ast.last();
+		crate::comments::attach(&mut ast, &source, root, 0);
+	});
+	best("parse + scopes", &mut || {
+		let mut ast = crate::parser::parse_range::<()>(&source, 0, source.len() as u32, options).unwrap();
+		let root = ast.last();
+		crate::scopes::analyze(&mut ast, root);
+	});
+	best("Positions::new, no lines", &mut || {
+		let _ = Positions::new(&source, false);
+	});
+	best("Positions::new, lines", &mut || {
+		let _ = Positions::new(&source, true);
+	});
+	let mut ast = crate::parser::parse_range::<()>(&source, 0, source.len() as u32, options).unwrap();
+	let root = ast.last();
+	crate::comments::attach(&mut ast, &source, root, 0);
+	let output = Output { comments: true, scopes: false, pattern: false, erase: false };
+	let flat = Positions::new(&source, false);
+	let lines = Positions::new(&source, true);
+	best("Binary encode, no loc", &mut || {
+		let _ = program(&ast, root, &source, &flat, output, Binary::new()).finish();
+	});
+	best("Binary encode, loc", &mut || {
+		let _ = program(&ast, root, &source, &lines, output, Binary::new()).finish();
+	});
+	best("Json write, loc", &mut || {
+		let _ = program(&ast, root, &source, &lines, output, Json::default()).finish();
+	});
+	eprintln!("nodes {} lists {} strings {} comments {}", ast.nodes.len(), ast.lists.len(), ast.strings.len(), ast.comments.len());
+}
