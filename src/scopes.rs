@@ -1028,7 +1028,7 @@ mod tests {
 	fn delete_and_wrappers() {
 		assert_eq!(
 			facts_in("delete x; delete y.z; delete (w).v;", false),
-			"x@7 -> global\ny@16 -> global mutate\nw@30 -> global mutate"
+			"x@7 -> global\ny@17 -> global mutate\nw@30 -> global mutate"
 		);
 		let src = "(a as any).b = 1; (c!).d = 2; (e as any) = 3;";
 		let mut ast = crate::typescript::parse(
