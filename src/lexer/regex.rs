@@ -1,6 +1,7 @@
 use super::identifier::is_word_char;
 use super::token::{Token, TokenKind};
 use super::{Lexer, Result, is_new_line};
+use crate::error::Code;
 
 impl Lexer<'_> {
 	/// Re-reads a `/` or `/=` token as a regular expression literal.
@@ -11,10 +12,10 @@ impl Lexer<'_> {
 		let mut in_class = false;
 		loop {
 			let Some(c) = self.char() else {
-				return self.error(start + 1, "Unterminated regular expression");
+				return self.error(start + 1, Code::UnterminatedRegexp);
 			};
 			if is_new_line(c) {
-				return self.error(start + 1, "Unterminated regular expression");
+				return self.error(start + 1, Code::UnterminatedRegexp);
 			}
 			if escaped {
 				escaped = false;
@@ -44,7 +45,7 @@ impl Lexer<'_> {
 			}
 		}
 		if escaped {
-			return self.error(flags_start, "Unexpected token");
+			return self.error(flags_start, Code::UnexpectedToken);
 		}
 		let flags_text = &self.src[flags_start..self.pos];
 		super::regexp::validate(start as u32 + 1, &self.src[start + 1..flags_start - 1], flags_text)?;

@@ -1,3 +1,4 @@
+use crate::error::Code;
 pub(crate) mod class;
 pub(crate) mod expression;
 mod pattern;
@@ -647,16 +648,28 @@ impl<'a, E: Extension> Parser<'a, E> {
 		self.lexer.source()
 	}
 
-	pub(crate) fn error<T>(&self, pos: u32, message: impl Into<String>) -> Result<T> {
-		Err(Box::new(SyntaxError::new(pos, message)))
+	/// An error at the current token spans it; one elsewhere is a point.
+	pub(crate) fn error<T>(&self, pos: u32, code: Code) -> Result<T> {
+		self.error_with(pos, code, code.message())
 	}
 
+	pub(crate) fn error_with<T>(&self, pos: u32, code: Code, message: impl Into<String>) -> Result<T> {
+		let end = if pos == self.tok.start { self.tok.end } else { pos };
+		Err(Box::new(SyntaxError::with(pos, code, message).to(end)))
+	}
+
+	/// The current token is not what the grammar allows; at the end of the input that is its own error.
 	pub(crate) fn unexpected<T>(&self) -> Result<T> {
-		self.unexpected_at(self.tok.start)
+		let code = if self.is(TokenKind::Eof) {
+			Code::UnexpectedEof
+		} else {
+			Code::UnexpectedToken
+		};
+		self.error(self.tok.start, code)
 	}
 
 	pub(crate) fn unexpected_at<T>(&self, pos: u32) -> Result<T> {
-		self.error(pos, "Unexpected token")
+		self.error(pos, Code::UnexpectedToken)
 	}
 
 	pub(crate) fn str(&self, id: StrId) -> &str {
@@ -709,7 +722,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 	pub(crate) fn enter(&mut self) -> Result<()> {
 		self.depth += 1;
 		if self.depth > MAX_DEPTH {
-			return self.error(self.tok.start, "Maximum nesting depth exceeded");
+			return self.error(self.tok.start, Code::NestingDepth);
 		}
 		Ok(())
 	}
@@ -721,7 +734,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 	/// Guards a loop that nests each iteration's node inside the previous one.
 	pub(crate) fn chain(&self, links: u32) -> Result<()> {
 		if links > MAX_CHAIN {
-			return self.error(self.tok.start, "Maximum nesting depth exceeded");
+			return self.error(self.tok.start, Code::NestingDepth);
 		}
 		Ok(())
 	}
@@ -733,8 +746,9 @@ impl<'a, E: Extension> Parser<'a, E> {
 		if self.tok.escaped
 			&& let TokenKind::Keyword(keyword) = self.tok.kind
 		{
-			return self.error(
+			return self.error_with(
 				self.tok.start,
+				Code::EscapeInKeyword,
 				format!("Escape sequence in keyword {}", keyword.as_str()),
 			);
 		}
@@ -845,13 +859,10 @@ impl<'a, E: Extension> Parser<'a, E> {
 			return Ok(has);
 		}
 		if let Some(pos) = errors.shorthand_assign {
-			return self.error(
-				pos,
-				"Shorthand property assignments are valid only in destructuring patterns",
-			);
+			return self.error(pos, Code::ShorthandAssignment);
 		}
 		if let Some(pos) = errors.double_proto {
-			return self.error(pos, "Redefinition of __proto__ property");
+			return self.error(pos, Code::DuplicateProto);
 		}
 		Ok(false)
 	}
@@ -859,7 +870,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 	pub(crate) fn check_pattern_errors(&self, errors: &Option<DestructuringErrors>, is_assign: bool) -> Result<()> {
 		let Some(errors) = errors else { return Ok(()) };
 		if let Some(pos) = errors.trailing_comma {
-			return self.error(pos, "Comma is not permitted after the rest element");
+			return self.error(pos, Code::CommaAfterRest);
 		}
 		let parens = if is_assign {
 			errors.parenthesized_assign
@@ -870,9 +881,9 @@ impl<'a, E: Extension> Parser<'a, E> {
 			return self.error(
 				pos,
 				if is_assign {
-					"Assigning to rvalue"
+					Code::InvalidAssignmentTarget
 				} else {
-					"Parenthesized pattern"
+					Code::ParenthesizedPattern
 				},
 			);
 		}
@@ -881,10 +892,10 @@ impl<'a, E: Extension> Parser<'a, E> {
 
 	pub(crate) fn check_yield_await_in_default_params(&self) -> Result<()> {
 		if self.yield_pos != 0 && (self.await_pos == 0 || self.yield_pos < self.await_pos) {
-			return self.error(self.yield_pos, "Yield expression cannot be a default value");
+			return self.error(self.yield_pos, Code::YieldInDefaultValue);
 		}
 		if self.await_pos != 0 {
-			return self.error(self.await_pos, "Await expression cannot be a default value");
+			return self.error(self.await_pos, Code::AwaitInDefaultValue);
 		}
 		Ok(())
 	}

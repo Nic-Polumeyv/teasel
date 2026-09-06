@@ -3,6 +3,7 @@
 use super::ast::{Keyword as TsKeyword, Modifier, SignatureKind, TsKind};
 use super::{Modifiers, TypeScript};
 use crate::ast::{List, NodeId, NodeKind};
+use crate::error::Code;
 use crate::lexer::token::{Keyword, TokenKind};
 use crate::parser::{ForInit, Parser, Result};
 
@@ -435,10 +436,7 @@ impl Parser<'_, TypeScript> {
 					| NodeKind::ObjectPattern { .. }
 					| NodeKind::ArrayPattern { .. }
 			) {
-				return self.error(
-					self.start_of(*param),
-					"Name in a signature must be an Identifier, ObjectPattern or ArrayPattern, instead got AssignmentPattern.",
-				);
+				return self.error(self.start_of(*param), Code::SignatureParameterDefault);
 			}
 		}
 		Ok(self.list(&params))
@@ -501,10 +499,7 @@ impl Parser<'_, TypeScript> {
 				self.ts_kind(type_annotation),
 				Some(TsKind::TupleType { .. } | TsKind::ArrayType { .. })
 			) {
-			return self.error(
-				start,
-				"'readonly' type modifier is only permitted on array and tuple literal types.",
-			);
+			return self.error(start, Code::ReadonlyTypeOperand);
 		}
 		Ok(self.ts(
 			TsKind::TypeOperator {
@@ -680,7 +675,7 @@ impl Parser<'_, TypeScript> {
 		self.expect_keyword(Keyword::Import)?;
 		self.expect(TokenKind::ParenL)?;
 		if !matches!(self.tok.kind, TokenKind::String(_)) {
-			return self.error(self.tok.start, "Argument in a type import must be a string literal.");
+			return self.error(self.tok.start, Code::TypeImportArgument);
 		}
 		let argument = self.parse_expr_atom(&mut None, ForInit::No, false)?;
 		self.expect(TokenKind::ParenR)?;
@@ -811,10 +806,7 @@ impl Parser<'_, TypeScript> {
 				Some(TsKind::OptionalType { .. } | TsKind::NamedTupleMember { optional: true, .. })
 			);
 			if seen_optional && !optional && !matches!(kind, Some(TsKind::RestType { .. })) {
-				return self.error(
-					self.start_of(element),
-					"A required element cannot follow an optional element.",
-				);
+				return self.error(self.start_of(element), Code::RequiredAfterOptional);
 			}
 			seen_optional |= optional;
 		}
@@ -834,10 +826,7 @@ impl Parser<'_, TypeScript> {
 					type_arguments: None,
 				}) if matches!(self.kind(type_name), NodeKind::Identifier { .. }) => type_name,
 				_ => {
-					return self.error(
-						self.start_of(ty),
-						"Tuple members must be labeled with a simple identifier.",
-					);
+					return self.error(self.start_of(ty), Code::TupleLabel);
 				}
 			};
 			let element_type = self.parse_type()?;
@@ -889,6 +878,7 @@ impl Parser<'_, TypeScript> {
 			TypeParameterModifiers::InOut => "'{}' modifier cannot appear on a type parameter.",
 			_ => "'{}' modifier can only appear on a type parameter of a class, interface or type alias.",
 		};
+		let error = Some((Code::TypeParameterModifier, error));
 		let parsed = self.parse_modifiers(allowed, disallowed, false, error)?;
 		let name = self.parse_type_parameter_name()?;
 		let constraint = self.eat_keyword_then_parse_type(Keyword::Extends)?;
@@ -918,7 +908,7 @@ impl Parser<'_, TypeScript> {
 		// Unlike type arguments, checked after the `>`: the error position follows the plugin.
 		self.expect(TokenKind::Gt)?;
 		if params.is_empty() {
-			return self.error(self.tok.start, "Type parameter list cannot be empty.");
+			return self.error(self.tok.start, Code::EmptyTypeParameters);
 		}
 		let params = self.list_of(&params);
 		Ok(self.ts(TsKind::TypeParameterDeclaration { params }, start))
@@ -939,7 +929,7 @@ impl Parser<'_, TypeScript> {
 			p.parse_delimited_list(ListKind::TypeParametersOrArguments, |p| p.parse_type())
 		})?;
 		if params.is_empty() {
-			return self.error(self.tok.start, "Type argument list cannot be empty.");
+			return self.error(self.tok.start, Code::EmptyTypeArguments);
 		}
 		self.expect(TokenKind::Gt)?;
 		let params = self.list_of(&params);
@@ -976,7 +966,7 @@ impl Parser<'_, TypeScript> {
 			))
 		})?;
 		if list.is_empty() {
-			return self.error(start, format!("'{token}' list cannot be empty."));
+			return self.error_with(start, Code::EmptyList, format!("'{token}' list cannot be empty."));
 		}
 		Ok(list)
 	}
@@ -1023,7 +1013,7 @@ impl Parser<'_, TypeScript> {
 				"override",
 			],
 			false,
-			"'{}' modifier cannot appear on a type member.",
+			Some((Code::TypeMemberModifier, Code::TypeMemberModifier.message())),
 		)?;
 		if let Some(signature) = self.try_parse_index_signature(start)? {
 			self.extras_mut(signature).readonly = modifiers.extras.readonly;
@@ -1072,30 +1062,32 @@ impl Parser<'_, TypeScript> {
 		let optional = self.eat(TokenKind::Question)?;
 		if self.is(TokenKind::ParenL) || self.is(TokenKind::Lt) {
 			if readonly {
-				return self.error(
-					start,
-					"'readonly' modifier can only appear on a property declaration or index signature.",
-				);
+				return self.error(start, Code::ReadonlyPlacement);
 			}
 			if kind.is_some() && self.is(TokenKind::Lt) {
-				return self.error(self.tok.start, "An accessor cannot have type parameters.");
+				return self.error(self.tok.start, Code::AccessorTypeParameters);
 			}
 			let (type_parameters, parameters, type_annotation) = self.fill_signature(TokenKind::Colon)?;
 			self.parse_type_member_semicolon()?;
 			let count = self.ast.list(parameters).len();
 			match kind {
 				Some(SignatureKind::Get) if count > 0 => {
-					return self.error(self.tok.start, "A 'get' accesor must not have any formal parameters.");
+					return self.error_with(
+						self.tok.start,
+						Code::GetterParams,
+						"A 'get' accesor must not have any formal parameters.",
+					);
 				}
 				Some(SignatureKind::Set) => {
 					if count != 1 {
-						return self.error(self.tok.start, "A 'get' accesor must not have any formal parameters.");
+						return self.error_with(
+							self.tok.start,
+							Code::SetterParams,
+							"A 'get' accesor must not have any formal parameters.",
+						);
 					}
 					if let Some(type_annotation) = type_annotation {
-						return self.error(
-							self.start_of(type_annotation),
-							"A 'set' accessor cannot have a return type annotation.",
-						);
+						return self.error(self.start_of(type_annotation), Code::SetterReturnType);
 					}
 				}
 				_ => {}
@@ -1209,14 +1201,14 @@ impl Parser<'_, TypeScript> {
 		allowed: &[&str],
 		disallowed: &[&str],
 		stop_on_static_block: bool,
-		disallowed_error: &str,
+		disallowed_error: Option<(Code, &str)>,
 	) -> Result<Modifiers> {
 		let mut modifiers = Modifiers::default();
 		while let Some((modifier, start)) = self.parse_modifier(allowed, disallowed, stop_on_static_block)? {
 			self.check_modifier(&modifiers, modifier, start)?;
 			modifiers.set(modifier);
-			if disallowed.contains(&modifier) {
-				return self.error(self.tok.start, disallowed_error.replace("{}", modifier));
+			if let Some((code, template)) = disallowed_error.filter(|_| disallowed.contains(&modifier)) {
+				return self.error_with(self.tok.start, code, template.replace("{}", modifier));
 			}
 		}
 		Ok(modifiers)
@@ -1226,20 +1218,28 @@ impl Parser<'_, TypeScript> {
 	fn check_modifier(&self, seen: &Modifiers, modifier: &str, start: u32) -> Result<()> {
 		let order = |before: &str, after: &str| -> Result<()> {
 			if modifier == before && seen.has(after) {
-				return self.error(start, format!("'{before}' modifier must precede '{after}' modifier."));
+				return self.error_with(
+					start,
+					Code::ModifierOrder,
+					format!("'{before}' modifier must precede '{after}' modifier."),
+				);
 			}
 			Ok(())
 		};
 		let conflict = |a: &str, b: &str| -> Result<()> {
 			if (seen.has(a) && modifier == b) || (seen.has(b) && modifier == a) {
-				return self.error(start, format!("'{a}' modifier cannot be used with '{b}' modifier."));
+				return self.error_with(
+					start,
+					Code::ConflictingModifiers,
+					format!("'{a}' modifier cannot be used with '{b}' modifier."),
+				);
 			}
 			Ok(())
 		};
 		match modifier {
 			"public" | "private" | "protected" => {
 				if seen.extras.accessibility.is_some() {
-					return self.error(start, "Accessibility modifier already seen.");
+					return self.error(start, Code::DuplicateAccessibility);
 				}
 				for after in ["override", "static", "readonly", "accessor"] {
 					order(modifier, after)?;
@@ -1247,13 +1247,13 @@ impl Parser<'_, TypeScript> {
 			}
 			"in" | "out" => {
 				if seen.has(modifier) {
-					return self.error(start, format!("Duplicate modifier: '{modifier}'."));
+					return self.error_with(start, Code::DuplicateModifier, Code::DuplicateModifier.with(modifier));
 				}
 				order("in", "out")?;
 			}
 			"accessor" => {
 				if seen.has(modifier) {
-					return self.error(start, format!("Duplicate modifier: '{modifier}'."));
+					return self.error_with(start, Code::DuplicateModifier, Code::DuplicateModifier.with(modifier));
 				}
 				for other in ["readonly", "static", "override"] {
 					conflict("accessor", other)?;
@@ -1261,12 +1261,12 @@ impl Parser<'_, TypeScript> {
 			}
 			"const" => {
 				if seen.has(modifier) {
-					return self.error(start, format!("Duplicate modifier: '{modifier}'."));
+					return self.error_with(start, Code::DuplicateModifier, Code::DuplicateModifier.with(modifier));
 				}
 			}
 			_ => {
 				if seen.has(modifier) {
-					return self.error(start, format!("Duplicate modifier: '{modifier}'."));
+					return self.error_with(start, Code::DuplicateModifier, Code::DuplicateModifier.with(modifier));
 				}
 				order("static", "readonly")?;
 				order("static", "override")?;

@@ -3,6 +3,7 @@
 
 use super::regexp_data::{BINARY_PROPERTIES, BINARY_PROPERTIES_OF_STRINGS, GENERAL_CATEGORY_VALUES, SCRIPT_VALUES};
 use super::unicode::{is_id_continue, is_id_start};
+use crate::error::Code;
 use crate::error::SyntaxError;
 use std::collections::HashMap;
 
@@ -80,14 +81,15 @@ impl<'a> State<'a> {
 	}
 
 	fn raise<T>(&self, message: &str) -> Result<T> {
-		Err(Box::new(SyntaxError::new(
+		Err(Box::new(SyntaxError::with(
 			self.start,
+			Code::InvalidRegexp,
 			format!("Invalid regular expression: /{}/: {message}", self.pattern),
 		)))
 	}
 
-	fn flag_error<T>(&self, message: &str) -> Result<T> {
-		Err(Box::new(SyntaxError::new(self.start, message)))
+	fn flag_error<T>(&self, code: Code) -> Result<T> {
+		Err(Box::new(SyntaxError::new(self.start, code)))
 	}
 
 	// Cursor
@@ -167,16 +169,16 @@ impl<'a> State<'a> {
 		let mut v = false;
 		for (i, flag) in self.flags.char_indices() {
 			if !"gimuysdv".contains(flag) {
-				return self.flag_error("Invalid regular expression flag");
+				return self.flag_error(Code::InvalidRegexpFlag);
 			}
 			if self.flags[i + flag.len_utf8()..].contains(flag) {
-				return self.flag_error("Duplicate regular expression flag");
+				return self.flag_error(Code::DuplicateRegexpFlag);
 			}
 			u |= flag == 'u';
 			v |= flag == 'v';
 		}
 		if u && v {
-			return self.flag_error("Invalid regular expression flag");
+			return self.flag_error(Code::InvalidRegexpFlag);
 		}
 		Ok(())
 	}

@@ -1,5 +1,6 @@
 //! TypeScript as an extension of the JavaScript grammar, matching `@sveltejs/acorn-typescript`.
 
+use crate::error::Code;
 pub mod ast;
 mod declarations;
 mod estree;
@@ -386,8 +387,9 @@ impl Parser<'_, TypeScript> {
 		} else if !self.is_keyword(Keyword::Class)
 			&& !(self.is_contextual("abstract") && self.peek_token()?.kind == TokenKind::Keyword(Keyword::Class))
 		{
-			return self.error(
+			return self.error_with(
 				self.tok.start,
+				Code::DecoratorPlacement,
 				"Leading decorators must be attached to a class declaration.",
 			);
 		}
@@ -417,8 +419,9 @@ impl Parser<'_, TypeScript> {
 		};
 		let depth = self.scope_depth();
 		if unique && self.ext.types.contains_at(depth, name) {
-			return self.error(
+			return self.error_with(
 				self.start_of(id),
+				Code::TypeRedeclaration,
 				format!("type '{}' has already been declared.", self.str(name)),
 			);
 		}
@@ -471,7 +474,7 @@ impl Parser<'_, TypeScript> {
 			type_name,
 		}) = self.ts_kind(reference)
 		{
-			return self.error(self.start_of(type_name), "Cannot find name 'const'.");
+			return self.error(self.start_of(type_name), Code::InvalidConst);
 		}
 		Ok(Some(reference))
 	}
@@ -564,7 +567,11 @@ impl Parser<'_, TypeScript> {
 		}
 		if self.is(TokenKind::Backquote) {
 			if chained {
-				return self.error(start, "Tagged Template Literals are not allowed in optionalChain.");
+				return self.error_with(
+					start,
+					Code::OptionalChainInTaggedTemplate,
+					"Tagged Template Literals are not allowed in optionalChain.",
+				);
 			}
 			let quasi = self.parse_template(true)?;
 			let node = self.add(NodeKind::TaggedTemplateExpression { tag: base, quasi }, start);
@@ -670,7 +677,7 @@ impl Parser<'_, TypeScript> {
 				_ => None,
 			};
 			if let Some(annotation) = annotation {
-				return self.error(self.start_of(annotation), "Did not expect a type annotation here.");
+				return self.error(self.start_of(annotation), Code::UnexpectedTypeAnnotation);
 			}
 		}
 		Ok(())
@@ -792,10 +799,7 @@ impl Extension for TypeScript {
 		if is_declare {
 			p.ext.ambient = true;
 			if p.is_contextual("declare") || !p.should_parse_export_statement() {
-				return p.error(
-					p.tok.start,
-					"'export declare' must be followed by an ambient declaration.",
-				);
+				return p.error(p.tok.start, Code::ExportDeclareWithoutDeclaration);
 			}
 		}
 		let declaration = match p.tok.kind {
@@ -886,10 +890,7 @@ impl Extension for TypeScript {
 				p.kind(p.ast.list(specifiers)[0].unwrap()),
 				NodeKind::ImportDefaultSpecifier { .. }
 			) {
-			return p.error(
-				p.start_of(node),
-				"A type-only import can specify a default import or named bindings, but not both.",
-			);
+			return p.error(p.start_of(node), Code::TypeImportDefaultAndNamed);
 		}
 		Ok(())
 	}
@@ -966,7 +967,7 @@ impl Extension for TypeScript {
 				&["public", "private", "protected", "override", "readonly"],
 				&[],
 				false,
-				"",
+				None,
 			)?;
 			let extras = modifiers.extras;
 			if extras.accessibility.is_some() || extras.readonly || extras.is_override {
@@ -983,20 +984,14 @@ impl Extension for TypeScript {
 	fn binding_annotation(p: &mut Parser<Self>, node: NodeId) -> Result<()> {
 		if p.eat(TokenKind::Question)? {
 			if !matches!(p.kind(node), NodeKind::Identifier { .. }) && !p.ext.ambient && !p.lexer.in_type {
-				return p.error(
-					p.start_of(node),
-					"A binding pattern parameter cannot be optional in an implementation signature.",
-				);
+				return p.error(p.start_of(node), Code::OptionalPatternParameter);
 			}
 			p.extras_mut(node).optional = true;
 		}
 		if p.is(TokenKind::Colon) {
 			let annotation = p.parse_type_annotation(true, None)?;
 			if matches!(p.kind(node), NodeKind::AssignmentPattern { .. }) {
-				return p.error(
-					p.start_of(annotation),
-					"Type annotations must come before default assignments, e.g. instead of `age = 25: number` use `age: number = 25`.",
-				);
+				return p.error(p.start_of(annotation), Code::TypeAnnotationAfterDefault);
 			}
 			p.extras_mut(node).type_annotation = Some(annotation);
 		}
@@ -1023,10 +1018,7 @@ impl Extension for TypeScript {
 			p.kind(item),
 			NodeKind::Identifier { .. } | NodeKind::AssignmentPattern { .. }
 		) {
-			return p.error(
-				start,
-				"A parameter property may not be declared using a binding pattern.",
-			);
+			return p.error(start, Code::ParameterPropertyPattern);
 		}
 		let node = p.ts(TsKind::ParameterProperty { parameter: item }, start);
 		p.extras_mut(node).merge(extras);
@@ -1102,7 +1094,7 @@ impl Extension for TypeScript {
 			return Ok(Some(p.ts(kind, start)));
 		}
 		if kind == FunctionKind::Declaration && p.ext.ambient {
-			return p.error(start, "An implementation cannot be declared in ambient contexts.");
+			return p.error(start, Code::ImplementationInAmbient);
 		}
 		Ok(None)
 	}
@@ -1126,8 +1118,9 @@ impl Extension for TypeScript {
 			&& element.extras.is_abstract
 		{
 			let name = p.element_name(*element);
-			return p.error(
+			return p.error_with(
 				element.start,
+				Code::AbstractWithImplementation,
 				format!("Method '{name}' cannot have an implementation because it is marked abstract."),
 			);
 		}
@@ -1223,11 +1216,14 @@ impl Extension for TypeScript {
 			],
 			&["in", "out"],
 			true,
-			"'{}' modifier can only appear on a type parameter of a class, interface or type alias.",
+			Some((
+				Code::TypeParameterModifier,
+				"'{}' modifier can only appear on a type parameter of a class, interface or type alias.",
+			)),
 		)?;
 		if !decorators.is_empty() {
 			if p.is(TokenKind::BraceR) {
-				return p.error(p.tok.end, "Decorators must be attached to a class element.");
+				return p.error(p.tok.end, Code::DecoratorPlacement);
 			}
 			modifiers.extras.decorators = Some(p.list_of(&decorators));
 		}
@@ -1237,7 +1233,7 @@ impl Extension for TypeScript {
 			p.next()?;
 			let inside = p.tok.start;
 			p.restore_tokens(snapshot);
-			return p.error(inside, "Static class blocks cannot have any modifier.");
+			return p.error(inside, Code::StaticBlockModifier);
 		}
 		let outer_ambient = modifiers
 			.extras
@@ -1258,23 +1254,25 @@ impl Extension for TypeScript {
 			let has_super = p.ext.classes.last().is_some_and(|c| c.has_super);
 			let extras = p.ext.elements.last().unwrap().extras;
 			if !p.ext.in_abstract_class && extras.is_abstract {
-				return p.error(start, "Abstract methods can only appear within an abstract class.");
+				return p.error(start, Code::AbstractOutsideAbstractClass);
 			}
 			if extras.is_override && !has_super {
-				return p.error(
-					start,
-					"This member cannot have an 'override' modifier because its containing class does not extend another class.",
-				);
+				return p.error(start, Code::OverrideWithoutExtends);
 			}
 			return Ok(None);
 		};
 		let extras = p.ext.elements.last().unwrap().extras;
 		if extras.is_abstract {
-			return p.error(start, "Index signatures cannot have the 'abstract' modifier.");
+			return p.error_with(
+				start,
+				Code::IndexSignatureModifier,
+				"Index signatures cannot have the 'abstract' modifier.",
+			);
 		}
 		if let Some(accessibility) = extras.accessibility {
-			return p.error(
+			return p.error_with(
 				start,
+				Code::IndexSignatureModifier,
 				format!(
 					"Index signatures cannot have an accessibility modifier ('{}').",
 					accessibility.as_str()
@@ -1282,10 +1280,18 @@ impl Extension for TypeScript {
 			);
 		}
 		if extras.declare {
-			return p.error(start, "Index signatures cannot have the 'declare' modifier.");
+			return p.error_with(
+				start,
+				Code::IndexSignatureModifier,
+				"Index signatures cannot have the 'declare' modifier.",
+			);
 		}
 		if extras.is_override {
-			return p.error(start, "'override' modifier cannot appear on an index signature.");
+			return p.error_with(
+				start,
+				Code::IndexSignatureModifier,
+				"'override' modifier cannot appear on an index signature.",
+			);
 		}
 		Ok(Some(signature))
 	}
@@ -1300,10 +1306,10 @@ impl Extension for TypeScript {
 			p.ext.elements.last_mut().unwrap().extras.optional = true;
 		}
 		if extras.readonly && p.is(TokenKind::ParenL) {
-			return p.error(start, "Class methods cannot have the 'readonly' modifier.");
+			return p.error(start, Code::ReadonlyOnMethod);
 		}
 		if extras.declare && p.is(TokenKind::ParenL) {
-			return p.error(start, "Class methods cannot have the 'declare' modifier.");
+			return p.error(start, Code::DeclareOnMethod);
 		}
 		Ok(())
 	}
@@ -1318,8 +1324,9 @@ impl Extension for TypeScript {
 		let key = element.key.unwrap();
 		if matches!(p.kind(key), NodeKind::PrivateIdentifier { .. }) {
 			if let Some(accessibility) = element.extras.accessibility {
-				return p.error(
+				return p.error_with(
 					element.start,
+					Code::PrivateModifier,
 					format!(
 						"Private methods cannot have an accessibility modifier ('{}').",
 						accessibility.as_str()
@@ -1331,10 +1338,7 @@ impl Extension for TypeScript {
 			&& !element.computed
 			&& matches!(p.kind(key), NodeKind::Identifier { name } | NodeKind::StringLiteral { value: name } if p.str(name) == "constructor")
 		{
-			return p.error(
-				p.start_of(type_parameters),
-				"Type parameters cannot appear on a constructor declaration.",
-			);
+			return p.error(p.start_of(type_parameters), Code::ConstructorTypeParameters);
 		}
 		p.ext.elements.last_mut().unwrap().extras.type_parameters = type_parameters;
 		Ok(())
@@ -1362,11 +1366,16 @@ impl Extension for TypeScript {
 			.is_some_and(|key| matches!(p.kind(key), NodeKind::PrivateIdentifier { .. }));
 		if private {
 			if element.extras.is_abstract {
-				return p.error(element.start, "Private elements cannot have the 'abstract' modifier.");
+				return p.error_with(
+					element.start,
+					Code::PrivateModifier,
+					"Private elements cannot have the 'abstract' modifier.",
+				);
 			}
 			if let Some(accessibility) = element.extras.accessibility {
-				return p.error(
+				return p.error_with(
 					element.start,
+					Code::PrivateModifier,
 					format!(
 						"Private elements cannot have an accessibility modifier ('{}').",
 						accessibility.as_str()
@@ -1375,12 +1384,13 @@ impl Extension for TypeScript {
 			}
 		} else if p.is(TokenKind::Eq) {
 			if p.ext.ambient && !(element.extras.readonly && type_annotation.is_none()) {
-				return p.error(p.tok.start, "Initializers are not allowed in ambient contexts.");
+				return p.error(p.tok.start, Code::InitializerInAmbient);
 			}
 			if element.extras.is_abstract {
 				let name = p.element_name(element);
-				return p.error(
+				return p.error_with(
 					p.tok.start,
+					Code::AbstractWithInitializer,
 					format!("Property '{name}' cannot have an initializer because it is marked abstract."),
 				);
 			}
@@ -1403,10 +1413,7 @@ impl Extension for TypeScript {
 			} = p.kind(node)
 				&& matches!(p.kind(value), NodeKind::FunctionExpression { .. })
 			{
-				return p.error(
-					start,
-					"Decorators can't be used with a constructor. Did you mean '@dec class { ... }'?",
-				);
+				return p.error(start, Code::DecoratorOnConstructor);
 			}
 		}
 		if frame.extras != Extras::default() {
@@ -1586,10 +1593,7 @@ impl Extension for TypeScript {
 					if matches!(p.ts_kind(node), Some(TsKind::InstantiationExpression { .. }))
 						&& (p.is(TokenKind::Dot) || (p.is(TokenKind::QuestionDot) && p.peek_char().0 != Some('(')))
 					{
-						return p.error(
-							p.tok.start,
-							"Invalid property access after an instantiation expression. You can either wrap the instantiation expression in parentheses, or delete the type arguments.",
-						);
+						return p.error(p.tok.start, Code::PropertyAfterInstantiation);
 					}
 					return Ok(Some((node, is_optional_call)));
 				}

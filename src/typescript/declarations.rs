@@ -5,6 +5,7 @@ use super::ast::{Kind, TsKind};
 use super::types::{ListKind, TypeParameterModifiers};
 use super::{ClassFrame, TypeScript};
 use crate::ast::{List, NodeId, NodeKind, VariableKind};
+use crate::error::Code;
 use crate::lexer::token::{Keyword, TokenKind};
 use crate::parser::class::ClassKind;
 use crate::parser::scope::Binding;
@@ -191,10 +192,7 @@ impl Parser<'_, TypeScript> {
 		}
 		self.expect_contextual("interface")?;
 		if !self.is_ident() {
-			return self.error(
-				self.tok.start,
-				"'interface' declarations must be followed by an identifier.",
-			);
+			return self.error(self.tok.start, Code::InterfaceWithoutName);
 		}
 		let id = self.parse_ident(false)?;
 		self.check_lval_simple(id, Binding::None, &mut None)?;
@@ -307,7 +305,7 @@ impl Parser<'_, TypeScript> {
 		};
 		let annotated = self.ext_data().extras(id).is_some_and(|e| e.type_annotation.is_some());
 		if kind != VariableKind::Const || annotated {
-			return self.error(self.start_of(init), "Initializers are not allowed in ambient contexts.");
+			return self.error(self.start_of(init), Code::InitializerInAmbient);
 		}
 		let literal = match self.kind(init) {
 			NodeKind::StringLiteral { .. }
@@ -326,10 +324,7 @@ impl Parser<'_, TypeScript> {
 			_ => false,
 		};
 		if !literal {
-			return self.error(
-				self.start_of(init),
-				"A 'const' initializer in an ambient context must be a string or numeric literal or literal enum reference.",
-			);
+			return self.error(self.start_of(init), Code::AmbientConstInitializer);
 		}
 		Ok(())
 	}
@@ -452,7 +447,7 @@ impl Parser<'_, TypeScript> {
 		} else {
 			let reference = self.parse_entity_name(false)?;
 			if import_kind == Kind::Type {
-				return self.error(self.start_of(reference), "An import alias can not use 'import type'.");
+				return self.error(self.start_of(reference), Code::ImportTypeAlias);
 			}
 			reference
 		};
@@ -510,8 +505,9 @@ impl Parser<'_, TypeScript> {
 			};
 		}
 		if has_type_specifier && in_type_only {
-			return self.error(
+			return self.error_with(
 				start,
+				Code::TypeModifierInTypeImport,
 				if is_import {
 					"The 'type' modifier cannot be used on a named import when 'import type' is used on its import statement."
 				} else {

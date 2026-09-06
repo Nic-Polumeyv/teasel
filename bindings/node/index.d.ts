@@ -30,9 +30,17 @@ export interface Options {
 	until?: 'as';
 }
 
-/** Thrown for a syntax error, with acorn's `pos` and `loc`. */
+/**
+ * Thrown for a syntax error. `code` names what went wrong, for a host to branch on, and
+ * `message` says it in words, without a position. An error at the token being read spans it
+ * with `pos` and `end`; one reported elsewhere, at a declaration seen earlier say, has `end`
+ * equal to `pos`. `unexpected_eof` is the end of what was parsed: the `end` of a range parse,
+ * else the end of the source. A bad offset from the host is an `invalid_request` without a `loc`.
+ */
 export interface ParseError extends SyntaxError {
+	code: string;
 	pos: number;
+	end: number;
 	loc?: { line: number; column: number };
 }
 

@@ -1,5 +1,6 @@
 use super::token::{Token, TokenKind};
 use super::{Lexer, Result};
+use crate::error::{Code, SyntaxError};
 
 impl Lexer<'_> {
 	pub(super) fn read_string(&mut self, quote: u8) -> Result<TokenKind> {
@@ -17,7 +18,7 @@ impl Lexer<'_> {
 				self.pos += 1;
 			}
 			let Some(c) = self.char() else {
-				return self.error(start, "Unterminated string constant");
+				return self.error(start, Code::UnterminatedString);
 			};
 			match c {
 				_ if c as u32 == quote as u32 => {
@@ -38,22 +39,18 @@ impl Lexer<'_> {
 						Escape::Code(code) => self.push_code(code, &mut pending),
 						Escape::Octal(c, pos, is_89) => {
 							if self.strict {
-								let message = if is_89 {
-									"Invalid escape sequence"
-								} else {
-									"Octal literal in strict mode"
-								};
-								return self.error(pos, message);
+								let code = if is_89 { Code::StrictEscape } else { Code::StrictOctal };
+								return self.error(pos, code);
 							}
 							self.flush(&mut pending);
 							self.buf.push(c);
 						}
 						Escape::Nothing => {}
-						Escape::Invalid(pos, message) => return self.error(pos, message),
+						Escape::Invalid(e) => return Err(e),
 					}
 					chunk_start = self.pos;
 				}
-				'\n' | '\r' => return self.error(start, "Unterminated string constant"),
+				'\n' | '\r' => return self.error(start, Code::UnterminatedString),
 				_ => self.pos += c.len_utf8(),
 			}
 		}
@@ -63,7 +60,7 @@ impl Lexer<'_> {
 	pub(crate) fn read_template(&mut self) -> Result<Token> {
 		let start = self.pos;
 		if start == self.src.len() {
-			return self.error(start, "Unterminated template literal");
+			return self.error_with(start, Code::UnterminatedTemplate, "Unterminated template literal");
 		}
 		self.buf.clear();
 		let mut valid = true;
@@ -72,7 +69,7 @@ impl Lexer<'_> {
 		let mut chunk_start = self.pos;
 		loop {
 			let Some(c) = self.char() else {
-				return self.error(start, "Unterminated template");
+				return self.error(start, Code::UnterminatedTemplate);
 			};
 			match c {
 				'`' | '$' if c == '`' || self.byte_at(1) == Some(b'{') => {
@@ -182,13 +179,13 @@ impl Lexer<'_> {
 				let digits = self.pos;
 				return Ok(match self.read_hex(2) {
 					Some(v) => Escape::Code(v),
-					None => Escape::Invalid(digits, "Bad character escape sequence".into()),
+					None => Escape::Invalid(Box::new(SyntaxError::new(digits as u32, Code::BadCharacterEscape))),
 				});
 			}
 			'u' => {
 				return Ok(match self.read_code_point() {
 					Ok(code) => Escape::Code(code),
-					Err(e) => Escape::Invalid(e.pos as usize, e.message),
+					Err(e) => Escape::Invalid(e),
 				});
 			}
 			'\r' => {
@@ -244,18 +241,18 @@ impl Lexer<'_> {
 				self.pos += 1;
 			}
 			if self.pos == digits || self.byte() != Some(b'}') {
-				return self.error(digits, "Bad character escape sequence");
+				return self.error(digits, Code::BadCharacterEscape);
 			}
 			self.pos += 1;
 			if value > 0x10ffff {
-				return self.error(digits, "Code point out of bounds");
+				return self.error(digits, Code::CodePointOutOfBounds);
 			}
 			return Ok(value);
 		}
 		let digits = self.pos;
 		match self.read_hex(4) {
 			Some(v) => Ok(v),
-			None => self.error(digits, "Bad character escape sequence"),
+			None => self.error(digits, Code::BadCharacterEscape),
 		}
 	}
 }
@@ -265,5 +262,5 @@ enum Escape {
 	Code(u32),
 	Octal(char, usize, bool),
 	Nothing,
-	Invalid(usize, String),
+	Invalid(Box<SyntaxError>),
 }

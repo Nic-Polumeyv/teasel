@@ -426,7 +426,8 @@ fn errors() {
 		module_error("function f(a, a) { 'use strict' }"),
 		"Argument name clash (14)"
 	);
-	assert_eq!(module_error("x = 1 +"), "Unexpected token (7)");
+	assert_eq!(module_error("x = 1 +"), "Unexpected end of input (7)");
+	assert_eq!(module_error("x = 1 + )"), "Unexpected token (8)");
 }
 
 fn script_error(src: &str) -> String {

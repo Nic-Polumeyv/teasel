@@ -1,8 +1,9 @@
 //! One entry for every front end: a request describes what to parse and how, and the answer is
-//! ESTree JSON, or a JSON object with an `error` the way acorn reports one.
+//! ESTree JSON, or a JSON object with an `error`: its code, message, span and location.
 
 use crate::ast::{Ast, NodeId};
 use crate::comments::{attach, attach_all};
+use crate::error::Code;
 use crate::estree::{Binary, Emit, Json, Output, Positions, Sink, error_to_json, node_at, params_at, program};
 use crate::{Options, SyntaxError};
 
@@ -80,10 +81,14 @@ impl Request {
 	}
 }
 
+/// The error answer for a request the parser never ran: a host's offsets or switches.
 pub fn error_json(message: &str, pos: u32) -> String {
-	let mut out = String::from("{\"error\":{\"message\":");
+	let mut out = format!(
+		"{{\"error\":{{\"code\":\"{}\",\"message\":",
+		Code::InvalidRequest.name()
+	);
 	crate::estree::write_json_string(&mut out, message);
-	out.push_str(&format!(",\"pos\":{pos}}}}}"));
+	out.push_str(&format!(",\"pos\":{pos},\"end\":{pos}}}}}"));
 	out
 }
 

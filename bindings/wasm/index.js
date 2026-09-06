@@ -26,11 +26,8 @@ function flags(options = {}) {
 function result(json) {
 	const value = JSON.parse(json);
 	if (value.error) {
-		const { message, pos, loc } = value.error;
-		const error = new SyntaxError(loc ? `${message} (${loc.line}:${loc.column})` : message);
-		error.pos = pos;
-		error.loc = loc;
-		throw error;
+		const { message, ...error } = value.error;
+		throw Object.assign(new SyntaxError(message), error);
 	}
 	return value;
 }

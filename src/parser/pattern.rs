@@ -1,6 +1,7 @@
 use super::expression::ForInit;
 use super::{DestructuringErrors, Extension, Parser, Result, Unwrap};
 use crate::ast::{AssignmentOperator, NodeId, NodeKind, PropertyKind};
+use crate::error::Code;
 use crate::interner::StrId;
 use crate::lexer::token::TokenKind;
 
@@ -18,7 +19,7 @@ impl<E: Extension> Parser<'_, E> {
 		match self.kind(id) {
 			NodeKind::Identifier { name } => {
 				if self.in_async() && self.str(name) == "await" {
-					return self.error(start, "Cannot use 'await' as identifier inside an async function");
+					return self.error(start, Code::AwaitAsIdentifier);
 				}
 			}
 			NodeKind::ObjectPattern { .. }
@@ -42,7 +43,7 @@ impl<E: Extension> Parser<'_, E> {
 			}
 			NodeKind::Property { key, value, kind, .. } => {
 				if kind != PropertyKind::Init {
-					return self.error(self.start_of(key), "Object pattern can't contain getter or setter");
+					return self.error(self.start_of(key), Code::AccessorInPattern);
 				}
 				let pattern = self.make_pattern(value, is_binding, &mut None)?;
 				if pattern != value
@@ -66,15 +67,12 @@ impl<E: Extension> Parser<'_, E> {
 				let argument = self.make_pattern(argument, is_binding, &mut None)?;
 				self.ast.node_mut(id).kind = NodeKind::RestElement { argument };
 				if matches!(self.kind(argument), NodeKind::AssignmentPattern { .. }) {
-					return self.error(self.start_of(argument), "Rest elements cannot have a default value");
+					return self.error(self.start_of(argument), Code::RestWithDefault);
 				}
 			}
 			NodeKind::AssignmentExpression { operator, left, right } => {
 				if operator != AssignmentOperator::Assign {
-					return self.error(
-						self.end_of(left),
-						"Only '=' operator can be used for specifying default value.",
-					);
+					return self.error(self.end_of(left), Code::InvalidDefaultOperator);
 				}
 				let left = self.make_pattern(left, is_binding, &mut None)?;
 				self.ast.node_mut(id).kind = NodeKind::AssignmentPattern { left, right };
@@ -84,16 +82,16 @@ impl<E: Extension> Parser<'_, E> {
 				return Ok(E::parenthesized_pattern(self, id, expression, pattern));
 			}
 			NodeKind::ChainExpression { .. } => {
-				return self.error(start, "Optional chaining cannot appear in left-hand side");
+				return self.error(start, Code::OptionalChainAssignment);
 			}
 			NodeKind::MemberExpression { .. } if !is_binding => {}
 			NodeKind::Extension(_) => {
 				return match E::make_pattern(self, id, is_binding, errors)? {
 					Some(pattern) => Ok(pattern),
-					None => self.error(start, "Assigning to rvalue"),
+					None => self.error(start, Code::InvalidAssignmentTarget),
 				};
 			}
-			_ => return self.error(start, "Assigning to rvalue"),
+			_ => return self.error(start, Code::InvalidAssignmentTarget),
 		}
 		Ok(id)
 	}
@@ -158,7 +156,7 @@ impl<E: Extension> Parser<'_, E> {
 				E::binding_annotation(self, rest)?;
 				elements.push(Some(rest));
 				if self.is(TokenKind::Comma) {
-					return self.error(self.tok.start, "Comma is not permitted after the rest element");
+					return self.error(self.tok.start, Code::CommaAfterRest);
 				}
 				self.expect(close)?;
 				break;
@@ -205,15 +203,15 @@ impl<E: Extension> Parser<'_, E> {
 				let text = self.str(name);
 				if self.strict && (self.is_reserved_word(text) || text == "eval" || text == "arguments") {
 					let verb = if is_bind { "Binding " } else { "Assigning to " };
-					return self.error(start, format!("{verb}{text} in strict mode"));
+					return self.error_with(start, Code::StrictBinding, format!("{verb}{text} in strict mode"));
 				}
 				if is_bind {
 					if binding == Binding::Lexical && text == "let" {
-						return self.error(start, "let is disallowed as a lexically bound name");
+						return self.error(start, Code::LetAsBinding);
 					}
 					if let Some(seen) = clashes {
 						if seen.contains(&name) {
-							return self.error(start, "Argument name clash");
+							return self.error(start, Code::DuplicateParameter);
 						}
 						seen.push(name);
 					}
@@ -223,16 +221,16 @@ impl<E: Extension> Parser<'_, E> {
 				}
 				Ok(())
 			}
-			NodeKind::ChainExpression { .. } => self.error(start, "Optional chaining cannot appear in left-hand side"),
+			NodeKind::ChainExpression { .. } => self.error(start, Code::OptionalChainAssignment),
 			NodeKind::MemberExpression { .. } => {
 				if is_bind {
-					return self.error(start, "Binding member expression");
+					return self.error(start, Code::BindingMemberExpression);
 				}
 				Ok(())
 			}
 			NodeKind::ParenthesizedExpression { expression } => {
 				if is_bind {
-					return self.error(start, "Binding parenthesized expression");
+					return self.error(start, Code::BindingParenthesized);
 				}
 				self.check_lval_simple(expression, binding, clashes)
 			}
@@ -242,9 +240,9 @@ impl<E: Extension> Parser<'_, E> {
 			_ => self.error(
 				start,
 				if is_bind {
-					"Binding rvalue"
+					Code::InvalidBindingTarget
 				} else {
-					"Assigning to rvalue"
+					Code::InvalidAssignmentTarget
 				},
 			),
 		}

@@ -13,7 +13,7 @@ pub mod parser;
 #[cfg(feature = "typescript")]
 pub mod typescript;
 
-pub use error::SyntaxError;
+pub use error::{Code, SyntaxError};
 pub use interner::{Interner, StrId};
 pub use parser::Options;
 
