@@ -1,88 +1,122 @@
-//! The WebAssembly module: the same five entry points, with the request's switches as a
-//! comma-separated list of the names in `teasel::json::FLAGS`, each returning ESTree JSON.
+//! The WebAssembly module: the same entry points as the Node addon over a plain ABI, no glue.
+//! The host writes the source into the module's memory once, and reads each answer, the packed
+//! token stream of `teasel::estree::Binary`, straight out of it: the words stay where the parser
+//! left them, in a buffer reused from one parse to the next, until the next call.
 
+use std::cell::RefCell;
 use teasel::json::{Entry, Prepared, Request};
-use wasm_bindgen::prelude::wasm_bindgen;
 
-fn request(flags: &str) -> Request {
+thread_local! {
+	/// The last answer's words.
+	static WORDS: RefCell<Vec<u32>> = const { RefCell::new(Vec::new()) };
+	/// The last answer's text: an error as JSON, or the constant names.
+	static TEXT: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Room for `len` bytes the host fills in; `source_new` takes them back.
+#[unsafe(no_mangle)]
+pub extern "C" fn alloc(len: u32) -> *mut u8 {
+	let mut bytes = Vec::<u8>::with_capacity(len as usize);
+	let ptr = bytes.as_mut_ptr();
+	std::mem::forget(bytes);
+	ptr
+}
+
+/// A source held with its switches, `bits` being the request's with bit `i` for
+/// `json::FLAGS[i]`.
+///
+/// # Safety
+/// The bytes are `capacity` from `alloc`, filled up to `len`, and are taken over here.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn source_new(ptr: *mut u8, len: u32, capacity: u32, bits: u32) -> u32 {
+	let source = unsafe { Vec::from_raw_parts(ptr, len as usize, capacity as usize) };
 	let mut request = Request::new(Entry::Program, 0);
-	for flag in flags.split(',') {
-		request.set(flag);
-	}
-	request
+	request.set_bits(bits);
+	let prepared = Prepared::new(String::from_utf8_lossy(&source).into_owned(), request);
+	Box::into_raw(Box::new(prepared)) as u32
 }
 
-fn run(source: String, entry: Entry, offset: f64, flags: &str) -> String {
-	Prepared::new(source, request(flags)).parse(entry, offset, false)
+#[unsafe(no_mangle)]
+pub extern "C" fn source_free(handle: u32) {
+	drop(unsafe { Box::from_raw(handle as *mut Prepared) });
 }
 
-/// A source held with its switches, so many parses out of it pay for its tables once.
-#[wasm_bindgen]
-pub struct Source {
-	prepared: Prepared,
+fn source(handle: u32) -> &'static Prepared {
+	unsafe { &*(handle as *const Prepared) }
 }
 
-#[wasm_bindgen]
-impl Source {
-	#[wasm_bindgen(constructor)]
-	pub fn new(source: String, flags: &str) -> Source {
-		Source {
-			prepared: Prepared::new(source, request(flags)),
+/// Keeps an answer: 0 for words the host reads with `words_ptr` and `words_len`, 1 for an error
+/// the host reads with `text_ptr` and `text_len`.
+fn answer(result: Result<Vec<u32>, String>) -> u32 {
+	match result {
+		Ok(words) => {
+			WORDS.with(|w| {
+				let mut w = w.borrow_mut();
+				w.clear();
+				w.extend_from_slice(&words);
+			});
+			0
+		}
+		Err(error) => {
+			TEXT.with(|t| {
+				let mut t = t.borrow_mut();
+				t.clear();
+				t.extend_from_slice(error.as_bytes());
+			});
+			1
 		}
 	}
+}
 
-	/// The whole source, or the program spanning `start..end` of it.
-	pub fn parse(&self, start: Option<f64>, end: Option<f64>) -> String {
-		match (start, end) {
-			(None, None) => self.prepared.parse(Entry::Program, 0.0, false),
-			(start, end) => self.prepared.parse_range(start.unwrap_or(0.0), end),
+/// Parses `entry` (`json::Entry` by index) from a UTF-16 `offset`; `until` is 1 when the host's
+/// `as` follows the expression.
+#[unsafe(no_mangle)]
+pub extern "C" fn source_parse(handle: u32, entry: u32, offset: f64, until: u32) -> u32 {
+	answer(source(handle).binary(Entry::from_index(entry), offset, until == 1))
+}
+
+/// Parses the program spanning `start..end` of the source; a negative `end` means its end.
+#[unsafe(no_mangle)]
+pub extern "C" fn source_parse_range(handle: u32, start: f64, end: f64) -> u32 {
+	answer(source(handle).binary_range(start, (end >= 0.0).then_some(end)))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn words_ptr() -> *const u32 {
+	WORDS.with(|w| w.borrow().as_ptr())
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn words_len() -> u32 {
+	WORDS.with(|w| w.borrow().len() as u32)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn text_ptr() -> *const u8 {
+	TEXT.with(|t| t.borrow().as_ptr())
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn text_len() -> u32 {
+	TEXT.with(|t| t.borrow().len() as u32)
+}
+
+/// The constant strings numbered so far, as a JSON list in the text, which a token stream refers
+/// to by id.
+#[unsafe(no_mangle)]
+pub extern "C" fn constants() {
+	let names = teasel::estree::constants();
+	let mut json = String::from("[");
+	for (i, name) in names.iter().enumerate() {
+		if i > 0 {
+			json.push(',');
 		}
+		teasel::estree::write_json_string(&mut json, name);
 	}
-
-	/// `until` is `"as"` when the host's `as` follows the expression.
-	#[wasm_bindgen(js_name = parseExpressionAt)]
-	pub fn parse_expression_at(&self, offset: f64, until: Option<String>) -> String {
-		self.prepared
-			.parse(Entry::Expression, offset, until.as_deref() == Some("as"))
-	}
-
-	#[wasm_bindgen(js_name = parsePatternAt)]
-	pub fn parse_pattern_at(&self, offset: f64) -> String {
-		self.prepared.parse(Entry::Pattern, offset, false)
-	}
-
-	#[wasm_bindgen(js_name = parseParamsAt)]
-	pub fn parse_params_at(&self, offset: f64) -> String {
-		self.prepared.parse(Entry::Params, offset, false)
-	}
-
-	#[wasm_bindgen(js_name = parseStatementAt)]
-	pub fn parse_statement_at(&self, offset: f64) -> String {
-		self.prepared.parse(Entry::Statement, offset, false)
-	}
-}
-
-#[wasm_bindgen]
-pub fn parse(source: String, flags: &str) -> String {
-	run(source, Entry::Program, 0.0, flags)
-}
-
-#[wasm_bindgen(js_name = parseExpressionAt)]
-pub fn parse_expression_at(source: String, offset: f64, flags: &str) -> String {
-	run(source, Entry::Expression, offset, flags)
-}
-
-#[wasm_bindgen(js_name = parsePatternAt)]
-pub fn parse_pattern_at(source: String, offset: f64, flags: &str) -> String {
-	run(source, Entry::Pattern, offset, flags)
-}
-
-#[wasm_bindgen(js_name = parseParamsAt)]
-pub fn parse_params_at(source: String, offset: f64, flags: &str) -> String {
-	run(source, Entry::Params, offset, flags)
-}
-
-#[wasm_bindgen(js_name = parseStatementAt)]
-pub fn parse_statement_at(source: String, offset: f64, flags: &str) -> String {
-	run(source, Entry::Statement, offset, flags)
+	json.push(']');
+	TEXT.with(|t| {
+		let mut t = t.borrow_mut();
+		t.clear();
+		t.extend_from_slice(json.as_bytes());
+	});
 }

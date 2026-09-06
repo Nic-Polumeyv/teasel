@@ -19,6 +19,19 @@ pub enum Entry {
 	Statement,
 }
 
+impl Entry {
+	/// The entry a binding names by its position here; anything else is a program.
+	pub fn from_index(index: u32) -> Entry {
+		match index {
+			1 => Entry::Expression,
+			2 => Entry::Pattern,
+			3 => Entry::Params,
+			4 => Entry::Statement,
+			_ => Entry::Program,
+		}
+	}
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Request {
 	pub entry: Entry,
@@ -63,6 +76,16 @@ impl Request {
 				..Options::default()
 			},
 			..Request::default()
+		}
+	}
+
+	/// Turns on the switches whose bit is set, bit `i` being `FLAGS[i]`, the way the bindings
+	/// pass them.
+	pub fn set_bits(&mut self, bits: u32) {
+		for (i, flag) in FLAGS.iter().enumerate() {
+			if bits & (1 << i) != 0 {
+				self.set(flag);
+			}
 		}
 	}
 

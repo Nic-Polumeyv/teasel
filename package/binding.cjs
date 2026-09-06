@@ -702,13 +702,5 @@ if (!nativeBinding) {
 module.exports = nativeBinding
 module.exports.Source = nativeBinding.Source
 module.exports.constants = nativeBinding.constants
-module.exports.parse = nativeBinding.parse
-module.exports.parseExpressionAt = nativeBinding.parseExpressionAt
-module.exports.parseExpressionAtJson = nativeBinding.parseExpressionAtJson
-module.exports.parseJson = nativeBinding.parseJson
-module.exports.parseParamsAt = nativeBinding.parseParamsAt
-module.exports.parseParamsAtJson = nativeBinding.parseParamsAtJson
-module.exports.parsePatternAt = nativeBinding.parsePatternAt
-module.exports.parsePatternAtJson = nativeBinding.parsePatternAtJson
-module.exports.parseStatementAt = nativeBinding.parseStatementAt
-module.exports.parseStatementAtJson = nativeBinding.parseStatementAtJson
+module.exports.parseAt = nativeBinding.parseAt
+module.exports.parseAtJson = nativeBinding.parseAtJson
