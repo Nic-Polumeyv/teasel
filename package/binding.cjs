@@ -704,3 +704,4 @@ module.exports.Source = nativeBinding.Source
 module.exports.constants = nativeBinding.constants
 module.exports.parseAt = nativeBinding.parseAt
 module.exports.parseAtJson = nativeBinding.parseAtJson
+module.exports.shapes = nativeBinding.shapes

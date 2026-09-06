@@ -60,6 +60,18 @@ pub trait Sink {
 	fn slice(&mut self, value: &str, start: u32, end: u32);
 	fn span(&mut self, start: u32, end: u32);
 	fn loc(&mut self, start_line: u32, start_column: u32, end_line: u32, end_column: u32);
+	/// The key of a scope table: the tables are a root's last entries, and a sink may place them
+	/// where a decoder finds them before the nodes that refer to them.
+	fn table(&mut self, key: &'static str) {
+		self.key(key);
+	}
+	fn ints(&mut self, values: &[u32]) {
+		self.list();
+		for &value in values {
+			self.int(value);
+		}
+		self.end();
+	}
 }
 
 /// JSON text.
@@ -191,31 +203,34 @@ impl Sink for Json {
 	}
 }
 
-/// The tags of the token stream a binding decodes; each is followed by the payload noted.
-pub mod token {
-	/// A node: the type as a constant id, then its entries.
-	pub const BEGIN: u32 = 1;
-	pub const END: u32 = 2;
-	pub const OBJECT: u32 = 3;
-	pub const LIST: u32 = 4;
-	/// A constant id.
-	pub const KEY: u32 = 5;
-	pub const INT: u32 = 6;
+/// What a shape's entry holds, read by a binding's decoder without a tag.
+pub mod kind {
+	/// A shape id then the shape's values; `NULL` alone for null.
+	pub const NODE: u32 = 0;
+	pub const INT: u32 = 1;
 	/// An index into the floats.
-	pub const FLOAT: u32 = 7;
-	pub const TRUE: u32 = 8;
-	pub const FALSE: u32 = 9;
-	pub const NULL: u32 = 10;
+	pub const FLOAT: u32 = 2;
+	/// 0 or 1.
+	pub const BOOL: u32 = 3;
 	/// A constant id.
-	pub const CONST: u32 = 11;
+	pub const CONST: u32 = 4;
 	/// An index into the answer's own strings.
-	pub const STR: u32 = 12;
+	pub const STR: u32 = 5;
 	/// Two UTF-16 offsets into the source.
-	pub const SLICE: u32 = 13;
-	/// `start` and `end`.
-	pub const SPAN: u32 = 14;
+	pub const SLICE: u32 = 6;
 	/// `loc`: start line and column, end line and column.
-	pub const LOC: u32 = 15;
+	pub const LOC: u32 = 7;
+	/// Nodes up to an `END`.
+	pub const NODES: u32 = 8;
+	/// A count, then that many ints.
+	pub const INTS: u32 = 9;
+
+	/// In a node's place.
+	pub const NULL: u32 = 0;
+	/// In a node's place, closing a list.
+	pub const END: u32 = 1;
+	/// The first shape id.
+	pub const FIRST: u32 = 2;
 }
 
 /// The strings the writer names itself, numbered once per thread for every answer: a binding
@@ -233,6 +248,65 @@ thread_local! {
 /// The constant strings numbered so far on this thread.
 pub fn constants() -> Vec<&'static str> {
 	CONSTANTS.with(|c| c.borrow().names.clone())
+}
+
+/// The shapes numbered so far on this thread, from `kind::FIRST`. A shape is what a node's
+/// entries hold: its record is its type's constant id plus one (0 for a plain object), then a
+/// word per entry, the key's constant id shifted left four with the value's `kind` in the low
+/// bits. The records lie back to back, each behind its length.
+struct Shapes {
+	words: Vec<u32>,
+	starts: Vec<u32>,
+	ids: FastMap<Box<[u32]>, u32>,
+	// the map lookup was a fifth of the encode; a hit here is a probe and a compare
+	recent: Box<[(u64, u32); 1024]>,
+}
+
+thread_local! {
+	static SHAPES: std::cell::RefCell<Shapes> = std::cell::RefCell::new(Shapes {
+		words: Vec::new(),
+		starts: vec![0; kind::FIRST as usize],
+		ids: FastMap::default(),
+		recent: Box::new([(0, 0); 1024]),
+	});
+}
+
+/// The shape records numbered so far on this thread.
+pub fn shapes() -> Vec<u32> {
+	SHAPES.with(|s| s.borrow().words.clone())
+}
+
+fn shape(record: &[u32]) -> u32 {
+	// a hit is checked against the record, so the hash only has to spread: a sum does
+	let mut hash = (record.len() as u64) << 32;
+	for &word in record {
+		hash = hash.wrapping_add(word as u64);
+	}
+	SHAPES.with(|s| {
+		let mut s = s.borrow_mut();
+		let slot = (hash.wrapping_mul(crate::interner::SEED) >> 54) as usize;
+		let (seen, id) = s.recent[slot];
+		if seen == hash && id != 0 {
+			let start = s.starts[id as usize] as usize;
+			if s.words[start] as usize == record.len() && s.words[start + 1..start + 1 + record.len()] == *record {
+				return id;
+			}
+		}
+		let id = match s.ids.get(record) {
+			Some(&id) => id,
+			None => {
+				let id = s.starts.len() as u32;
+				let start = s.words.len() as u32;
+				s.starts.push(start);
+				s.words.push(record.len() as u32);
+				s.words.extend_from_slice(record);
+				s.ids.insert(record.into(), id);
+				id
+			}
+		};
+		s.recent[slot] = (hash, id);
+		id
+	})
 }
 
 thread_local! {
@@ -263,17 +337,35 @@ fn constant(value: &'static str) -> u32 {
 	})
 }
 
-/// A token stream packed into one buffer of 32-bit words, what a binding's JavaScript turns into
-/// objects directly: a header of five counts (tokens, strings, floats, UTF-16 units of text,
-/// constants numbered when it was written), the tokens, the strings' UTF-16 ends, the text two
-/// units to a word, padding to an even word, then the floats two words each. The strings are the
-/// tree's interned ones first, then any text written for this answer. Words are the host's
-/// endianness, which every target the package builds for shares with the decoder's check.
+/// A tree packed into one buffer of 32-bit words, what a binding's JavaScript turns into objects
+/// directly. A node is its shape id then its values in the shape's order, each read as the
+/// shape's `kind` says. The header is seven counts: the tree's words, the strings, the floats,
+/// the bytes of text, the constants and the shapes numbered when it was written, and where the
+/// scope tables start in the tree's words, 0 for none. Then the tree, the strings' UTF-16 ends,
+/// the text as UTF-8 padded to a word, padding to an even word, then the floats two words each.
+/// The strings are the tree's interned ones first, then any text written for this answer. Words
+/// are the host's endianness, which every target the package builds for shares with the
+/// decoder's check.
 pub struct Binary {
 	words: Vec<u32>,
-	units: Vec<u16>,
+	text: Vec<u8>,
+	/// UTF-16 units of text so far.
+	units: u32,
 	ends: Vec<u32>,
 	floats: Vec<f64>,
+	frames: Vec<Frame>,
+	// the open nodes' records; a list or a table pushes a scratch word so a value never checks where it is
+	seq: Vec<u32>,
+	tables_at: u32,
+	tables: usize,
+	start: u32,
+	end: u32,
+	loc: u32,
+}
+
+enum Frame {
+	Node { slot: u32, record: u32 },
+	List,
 }
 
 impl Default for Binary {
@@ -283,35 +375,73 @@ impl Default for Binary {
 }
 
 impl Binary {
-	/// Starts with the header's five words, filled in by `finish`.
 	pub fn new() -> Self {
 		Binary {
-			words: vec![0; 5],
-			units: Vec::new(),
+			words: vec![0; 7],
+			text: Vec::new(),
+			units: 0,
 			ends: Vec::new(),
 			floats: Vec::new(),
+			frames: Vec::new(),
+			seq: vec![0],
+			tables_at: 0,
+			tables: 0,
+			start: constant("start") << 4 | kind::INT,
+			end: constant("end") << 4 | kind::INT,
+			loc: constant("loc") << 4 | kind::LOC,
 		}
 	}
 
 	fn push_text(&mut self, value: &str) -> u32 {
-		self.units.extend(value.encode_utf16());
-		self.ends.push(self.units.len() as u32);
+		self.text.extend_from_slice(value.as_bytes());
+		self.units += if value.is_ascii() {
+			value.len()
+		} else {
+			value.encode_utf16().count()
+		} as u32;
+		self.ends.push(self.units);
 		self.ends.len() as u32 - 1
 	}
 
+	fn value(&mut self, kind: u32) {
+		let last = self.seq.len() - 1;
+		self.seq[last] |= kind;
+	}
+
+	fn open(&mut self, ty: u32) {
+		self.value(kind::NODE);
+		self.frames.push(Frame::Node {
+			slot: self.words.len() as u32,
+			record: self.seq.len() as u32,
+		});
+		self.seq.push(ty);
+		self.words.push(0);
+	}
+
 	pub fn finish(mut self) -> Vec<u32> {
-		let tokens = self.words.len() as u32 - 5;
-		self.words[..5].copy_from_slice(&[
-			tokens,
+		debug_assert!(self.frames.is_empty() && self.seq.len() == 1);
+		let tree = self.words.len() as u32 - 7;
+		self.words[..7].copy_from_slice(&[
+			tree,
 			self.ends.len() as u32,
 			self.floats.len() as u32,
-			self.units.len() as u32,
+			self.text.len() as u32,
 			CONSTANTS.with(|c| c.borrow().names.len() as u32),
+			SHAPES.with(|s| s.borrow().starts.len() as u32),
+			self.tables_at,
 		]);
 		self.words.extend(&self.ends);
-		for pair in self.units.chunks(2) {
-			self.words
-				.push(pair[0] as u32 | (pair.get(1).copied().unwrap_or(0) as u32) << 16);
+		let mut chunks = self.text.chunks_exact(4);
+		self.words.extend(
+			chunks
+				.by_ref()
+				.map(|chunk| u32::from_ne_bytes(chunk.try_into().unwrap())),
+		);
+		let rest = chunks.remainder();
+		if !rest.is_empty() {
+			let mut last = [0; 4];
+			last[..rest.len()].copy_from_slice(rest);
+			self.words.push(u32::from_ne_bytes(last));
 		}
 		if self.words.len() % 2 == 1 {
 			self.words.push(0);
@@ -332,66 +462,103 @@ impl Sink for Binary {
 	}
 
 	fn begin(&mut self, ty: &'static str) {
-		self.words.extend([token::BEGIN, constant(ty)]);
+		self.open(constant(ty) + 1);
 	}
 
 	fn object(&mut self) {
-		self.words.push(token::OBJECT);
+		self.open(0);
 	}
 
 	fn list(&mut self) {
-		self.words.push(token::LIST);
+		self.value(kind::NODES);
+		self.frames.push(Frame::List);
+		self.seq.push(0);
 	}
 
 	fn end(&mut self) {
-		self.words.push(token::END);
+		match self.frames.pop().expect("a container is open") {
+			Frame::List => {
+				self.words.push(kind::END);
+				self.seq.pop();
+			}
+			Frame::Node { slot, record } => {
+				let stop = self.seq.len() - if self.frames.is_empty() { self.tables } else { 0 };
+				self.words[slot as usize] = shape(&self.seq[record as usize..stop]);
+				self.seq.truncate(record as usize);
+			}
+		}
 	}
 
 	fn key(&mut self, key: &'static str) {
-		self.words.extend([token::KEY, constant(key)]);
+		debug_assert!(self.tables_at == 0 || self.frames.len() > 1, "the tables come last");
+		self.seq.push(constant(key) << 4);
 	}
 
 	fn int(&mut self, value: u32) {
-		self.words.extend([token::INT, value]);
+		self.value(kind::INT);
+		self.words.push(value);
 	}
 
 	fn float(&mut self, value: f64) {
-		self.words.extend([token::FLOAT, self.floats.len() as u32]);
+		self.value(kind::FLOAT);
+		self.words.push(self.floats.len() as u32);
 		self.floats.push(value);
 	}
 
 	fn bool(&mut self, value: bool) {
-		self.words.push(if value { token::TRUE } else { token::FALSE });
+		self.value(kind::BOOL);
+		self.words.push(value as u32);
 	}
 
 	fn null(&mut self) {
-		self.words.push(token::NULL);
+		self.value(kind::NODE);
+		self.words.push(kind::NULL);
 	}
 
 	fn str(&mut self, value: &'static str) {
-		self.words.extend([token::CONST, constant(value)]);
+		self.value(kind::CONST);
+		self.words.push(constant(value));
 	}
 
 	fn text(&mut self, value: &str) {
+		self.value(kind::STR);
 		let id = self.push_text(value);
-		self.words.extend([token::STR, id]);
+		self.words.push(id);
 	}
 
 	fn interned(&mut self, id: StrId, _value: &str) {
-		self.words.extend([token::STR, id.0]);
+		self.value(kind::STR);
+		self.words.push(id.0);
 	}
 
 	fn slice(&mut self, _value: &str, start: u32, end: u32) {
-		self.words.extend([token::SLICE, start, end]);
+		self.value(kind::SLICE);
+		self.words.extend([start, end]);
 	}
 
 	fn span(&mut self, start: u32, end: u32) {
-		self.words.extend([token::SPAN, start, end]);
+		self.seq.extend([self.start, self.end]);
+		self.words.extend([start, end]);
 	}
 
 	fn loc(&mut self, start_line: u32, start_column: u32, end_line: u32, end_column: u32) {
-		self.words
-			.extend([token::LOC, start_line, start_column, end_line, end_column]);
+		self.seq.push(self.loc);
+		self.words.extend([start_line, start_column, end_line, end_column]);
+	}
+
+	fn table(&mut self, _key: &'static str) {
+		debug_assert!(self.frames.len() == 1, "a table is the root's entry");
+		if self.tables_at == 0 {
+			self.tables_at = self.words.len() as u32 - 7;
+		}
+		self.tables += 1;
+		self.seq.push(0);
+	}
+
+	fn ints(&mut self, values: &[u32]) {
+		self.value(kind::INTS);
+		self.words.push(values.len() as u32);
+		self.words.extend_from_slice(values);
 	}
 }
 
@@ -699,7 +866,7 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 	/// The scope and binding tables: what the `scope`, `declares` and `binding` numbers index.
 	fn all_scopes(&mut self) {
 		let Some(scopes) = &self.ast.scopes else { return };
-		self.key("scopes");
+		self.sink.table("scopes");
 		self.sink.list();
 		for scope in &scopes.scopes {
 			self.sink.object();
@@ -712,15 +879,11 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 			self.key("functionDepth");
 			self.sink.int(scope.function_depth);
 			self.key("through");
-			self.sink.list();
-			for &binding in &scope.through {
-				self.sink.int(binding);
-			}
-			self.sink.end();
+			self.sink.ints(&scope.through);
 			self.sink.end();
 		}
 		self.sink.end();
-		self.key("bindings");
+		self.sink.table("bindings");
 		self.sink.list();
 		for binding in &scopes.bindings {
 			self.sink.object();
@@ -1620,12 +1783,14 @@ mod tests {
 
 	#[test]
 	fn binary_layout() {
-		use super::{Binary, Sink, token};
+		use super::{Binary, Sink, constant, kind, shapes};
 		use crate::interner::Interner;
 		let mut interner = Interner::default();
 		interner.intern("a");
 		let mut b = Binary::new();
 		b.strings(&interner);
+		b.object();
+		b.key("node");
 		b.begin("Identifier");
 		b.span(1, 2);
 		b.key("name");
@@ -1634,20 +1799,58 @@ mod tests {
 		b.float(1.5);
 		b.key("raw");
 		b.text("\u{1F600}b");
+		b.key("list");
+		b.list();
+		b.int(3);
+		b.null();
+		b.end();
+		b.end();
+		b.table("scopes");
+		b.list();
+		b.object();
+		b.key("through");
+		b.ints(&[7]);
+		b.end();
+		b.end();
 		b.end();
 		let words = b.finish();
-		let [tokens, strings, floats, units, known] = words[..5] else {
+		let [tree, strings, floats, bytes, known, known_shapes, tables_at] = words[..7] else {
 			unreachable!()
 		};
-		assert_eq!((strings, floats, units), (2, 1, 4));
-		assert!(known >= 4);
-		let body = &words[5..5 + tokens as usize];
-		assert_eq!(body[0], token::BEGIN);
-		assert_eq!(&body[2..5], &[token::SPAN, 1, 2]);
-		let ends = &words[5 + tokens as usize..][..2];
+		assert_eq!((tree, strings, floats, bytes), (14, 2, 1, 6));
+		assert!(known >= 5 && known_shapes >= kind::FIRST + 3);
+		let body = &words[7..7 + tree as usize];
+		let (root, node, scope) = (body[0], body[1], body[10]);
+		assert_eq!(&body[2..10], &[1, 2, 0, 0, 1, 3, kind::NULL, kind::END]);
+		assert_eq!(&body[11..], &[1, 7, kind::END]);
+		assert_eq!(tables_at, 10);
+		let all = shapes();
+		let record = |id: u32| {
+			let mut at = 0;
+			for _ in kind::FIRST..id {
+				at += all[at] as usize + 1;
+			}
+			&all[at + 1..at + 1 + all[at] as usize]
+		};
+		assert_eq!(record(root), &[0, constant("node") << 4 | kind::NODE]);
+		assert_eq!(
+			record(node),
+			&[
+				constant("Identifier") + 1,
+				constant("start") << 4 | kind::INT,
+				constant("end") << 4 | kind::INT,
+				constant("name") << 4 | kind::STR,
+				constant("value") << 4 | kind::FLOAT,
+				constant("raw") << 4 | kind::STR,
+				constant("list") << 4 | kind::NODES,
+			]
+		);
+		assert_eq!(record(scope), &[0, constant("through") << 4 | kind::INTS]);
+		let ends = &words[7 + tree as usize..][..2];
 		assert_eq!(ends, &[1, 4]);
-		let text_at = 5 + tokens as usize + 2;
-		assert_eq!(words[text_at], 'a' as u32 | (0xd83d << 16));
+		let text_at = 7 + tree as usize + 2;
+		assert_eq!(&words[text_at].to_ne_bytes(), &[b'a', 0xf0, 0x9f, 0x98]);
+		assert_eq!(&words[text_at + 1].to_ne_bytes(), &[0x80, b'b', 0, 0]);
 		let floats_at = (text_at + 2).next_multiple_of(2);
 		let bits = words[floats_at] as u64 | (words[floats_at + 1] as u64) << 32;
 		assert_eq!(f64::from_bits(bits), 1.5);

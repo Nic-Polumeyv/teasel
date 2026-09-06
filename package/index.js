@@ -23,4 +23,5 @@ export const { parse, parseExpressionAt, parsePatternAt, parseParamsAt, parseSta
 	parse: (held, entry, offset, until) => held.parseAt(entry, offset, until),
 	parseRange: (held, start, end) => held.parseRange(start, end),
 	constants: native.constants,
+	shapes: native.shapes,
 });

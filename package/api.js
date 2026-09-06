@@ -40,6 +40,7 @@ const ENTRY = { program: 0, expression: 1, pattern: 2, params: 3, statement: 4 }
  * @property {(held: any, start: number, end: number | undefined) => Answer} parseRange
  * @property {(held: any) => void} [free]
  * @property {() => string[]} constants
+ * @property {() => ArrayLike<number>} shapes
  */
 
 /** @param {Engine} engine */
@@ -47,7 +48,7 @@ export function bind(engine) {
 	const registry = engine.free && typeof FinalizationRegistry !== 'undefined' ? new FinalizationRegistry(engine.free) : null;
 
 	function result(answer, source) {
-		if (typeof answer !== 'string') return decode(answer, source, engine.constants);
+		if (typeof answer !== 'string') return decode(answer, source, engine);
 		const { message, ...error } = JSON.parse(answer).error;
 		throw Object.assign(new SyntaxError(message), error);
 	}

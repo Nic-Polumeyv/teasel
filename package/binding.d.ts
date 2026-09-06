@@ -11,3 +11,5 @@ export declare function constants(): Array<string>
 export declare function parseAt(source: Uint8Array, bits: number, entry: number, offset: number, until: boolean): Uint32Array | string
 
 export declare function parseAtJson(source: Uint8Array, bits: number, entry: number, offset: number, until: boolean): string
+
+export declare function shapes(): Array<number>

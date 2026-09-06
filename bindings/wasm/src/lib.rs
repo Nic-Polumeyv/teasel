@@ -83,12 +83,20 @@ pub extern "C" fn text_len() -> u32 {
 	TEXT.with(|t| t.borrow().len() as u32)
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn constants() {
-	let json = teasel::json::constants_json();
+fn text(json: String) {
 	TEXT.with(|t| {
 		let mut t = t.borrow_mut();
 		t.clear();
 		t.extend_from_slice(json.as_bytes());
 	});
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn constants() {
+	text(teasel::json::constants_json());
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn shapes() {
+	text(teasel::json::shapes_json());
 }
