@@ -31,6 +31,8 @@ pub(crate) struct Lexer<'a> {
 	pub(crate) in_type: bool,
 	pub(crate) comments: Vec<Comment>,
 	pub(crate) strings: Interner,
+	/// `token::word` flags by string id, filled as ids appear.
+	word_flags: Vec<u8>,
 }
 
 impl<'a> Lexer<'a> {
@@ -45,8 +47,18 @@ impl<'a> Lexer<'a> {
 			at_sign: false,
 			in_type: false,
 			comments: Vec::new(),
-			strings: Interner::default(),
+			strings: Interner::sized(src.len()),
+			word_flags: Vec::with_capacity(src.len() / 32),
 		}
+	}
+
+	pub(crate) fn word_flags(&mut self, id: crate::interner::StrId) -> u8 {
+		let i = id.0 as usize;
+		while self.word_flags.len() <= i {
+			let flags = token::word::flags(self.strings.get(crate::interner::StrId(self.word_flags.len() as u32)));
+			self.word_flags.push(flags);
+		}
+		self.word_flags[i]
 	}
 
 	pub(crate) fn source(&self) -> &'a str {

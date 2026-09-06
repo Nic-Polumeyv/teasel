@@ -1397,29 +1397,34 @@ impl<E: Extension> Parser<'_, E> {
 		Ok(self.add(NodeKind::SpreadElement { argument }, start))
 	}
 
-	pub(crate) fn check_unreserved(&self, id: NodeId) -> Result<()> {
-		let NodeKind::Identifier { name } = self.kind(id) else {
+	pub(crate) fn check_unreserved(&mut self, id: NodeId) -> Result<()> {
+		use crate::lexer::token::word;
+		let NodeKind::Identifier { name: id_name } = self.kind(id) else {
 			return Ok(());
 		};
+		let flags = self.lexer.word_flags(id_name);
+		if flags == 0 {
+			return Ok(());
+		}
 		let start = self.start_of(id);
-		let name = self.str(name);
-		if self.in_generator() && name == "yield" {
+		let name = self.str(id_name);
+		if flags & word::YIELD != 0 && self.in_generator() {
 			return self.error(start, Code::YieldAsIdentifier);
 		}
-		if self.in_async() && name == "await" {
+		if flags & word::AWAIT != 0 && self.in_async() {
 			return self.error(start, Code::AwaitAsIdentifier);
 		}
-		if self.in_class_field_init() && name == "arguments" {
+		if flags & word::ARGUMENTS != 0 && self.in_class_field_init() {
 			return self.error(start, Code::ArgumentsInFieldInitializer);
 		}
-		if self.in_class_static_block() && (name == "arguments" || name == "await") {
+		if flags & (word::ARGUMENTS | word::AWAIT) != 0 && self.in_class_static_block() {
 			return self.error_with(
 				start,
 				Code::InvalidInStaticBlock,
 				format!("Cannot use {name} in class static initialization block"),
 			);
 		}
-		if Keyword::from_word(name).is_some() {
+		if flags & word::KEYWORD != 0 {
 			return self.error_with(start, Code::UnexpectedKeyword, format!("Unexpected keyword '{name}'"));
 		}
 		if self.is_reserved_word(name) {

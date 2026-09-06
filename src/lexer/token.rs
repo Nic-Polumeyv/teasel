@@ -143,6 +143,33 @@ pub(crate) enum Keyword {
 	With,
 }
 
+/// What a word is when it stands as an identifier, computed once per distinct string.
+pub(crate) mod word {
+	pub(crate) const YIELD: u8 = 1;
+	pub(crate) const AWAIT: u8 = 2;
+	pub(crate) const ARGUMENTS: u8 = 4;
+	pub(crate) const ENUM: u8 = 8;
+	/// Reserved in strict mode.
+	pub(crate) const STRICT: u8 = 16;
+	/// A keyword written with an escape, which the lexer read as a word.
+	pub(crate) const KEYWORD: u8 = 32;
+
+	pub(crate) fn flags(word: &str) -> u8 {
+		let mut flags = match word {
+			"yield" => YIELD | STRICT,
+			"await" => AWAIT,
+			"arguments" => ARGUMENTS,
+			"enum" => ENUM,
+			"implements" | "interface" | "let" | "package" | "private" | "protected" | "public" | "static" => STRICT,
+			_ => 0,
+		};
+		if super::Keyword::from_word(word).is_some() {
+			flags |= KEYWORD;
+		}
+		flags
+	}
+}
+
 impl Keyword {
 	pub(crate) fn from_word(word: &str) -> Option<Keyword> {
 		use Keyword::*;

@@ -534,7 +534,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 		lexer.module = options.module;
 		let mut parser = Self {
 			lexer,
-			ast: Ast::default(),
+			ast: Ast::sized(src.len()),
 			ext: E::default(),
 			options,
 			tok: Token::eof(offset),
