@@ -1,4 +1,4 @@
-import type { Expression, Pattern, Program, Statement } from 'estree';
+import type { Expression, Identifier, Node, Pattern, Program, Statement } from 'estree';
 
 export interface Options {
 	/** `script` by default, as in acorn. */
@@ -13,6 +13,13 @@ export interface Options {
 	typescript?: boolean | 'erase';
 	/** Attach `leadingComments`, `trailingComments` and `innerComments` to nodes. */
 	comments?: boolean;
+	/**
+	 * Scope analysis. Every node that opens a scope gets `scope`, every identifier that declares
+	 * something or refers to something gets `binding` (null for a global), with `write` when it
+	 * is assigned to and `mutate` when a member of its value is; the answer lists `scopes` and
+	 * `bindings`. TypeScript type positions bind nothing.
+	 */
+	scopes?: boolean;
 	/** Add `loc` with line and column to every node, as in acorn; off by default. */
 	locations?: boolean;
 	preserveParens?: boolean;
@@ -45,6 +52,72 @@ export interface ParseError extends SyntaxError {
 	loc?: { line: number; column: number };
 }
 
+/** A scope, as one of `scopes` on the answer. */
+export interface Scope {
+	kind:
+		| 'module'
+		| 'script'
+		| 'function'
+		| 'function-name'
+		| 'class'
+		| 'block'
+		| 'catch'
+		| 'for'
+		| 'switch'
+		| 'static-block'
+		| 'with'
+		| 'namespace'
+		| 'fragment';
+	/** The node that opens it; null for the scope around a parameter list parsed on its own. */
+	node: Node | null;
+	parent: Scope | null;
+	/** How many function scopes enclose it, itself included when it is one. */
+	functionDepth: number;
+	bindings: Binding[];
+	declarations: Map<string, Binding>;
+	/** The bindings of outer scopes that identifiers inside it resolve to, in first-use order. */
+	through: Binding[];
+}
+
+/** A binding, as one of `bindings` on the answer. */
+export interface Binding {
+	name: string;
+	kind:
+		| 'var'
+		| 'let'
+		| 'const'
+		| 'function'
+		| 'class'
+		| 'param'
+		| 'catch'
+		| 'import'
+		| 'function-name'
+		| 'class-name'
+		| 'arguments'
+		| 'enum'
+		| 'namespace';
+	scope: Scope;
+	/** The identifier that declares it; null for `arguments`. */
+	node: Identifier | null;
+	/** The identifiers that refer to it, the declaring one excluded, in source order. */
+	references: Identifier[];
+}
+
+declare module 'estree' {
+	interface BaseNode {
+		/** With `scopes`: the scope this node opens. */
+		scope?: Scope;
+	}
+	interface Identifier {
+		/** With `scopes`: what the identifier declares or refers to; null for a global. */
+		binding?: Binding | null;
+		/** With `scopes`: the identifier is assigned to, updated or bound by a destructuring assignment. */
+		write?: true;
+		/** With `scopes`: a member of the identifier's value is assigned to, updated or deleted. */
+		mutate?: true;
+	}
+}
+
 /** A comment, with `loc` when `locations` is on. */
 export interface Comment {
 	type: 'Line' | 'Block';
@@ -65,6 +138,9 @@ export interface Kept {
 /** What a parse at an offset returns. */
 export interface Parsed<T> {
 	node: T;
+	/** With `scopes`. */
+	scopes?: Scope[];
+	bindings?: Binding[];
 	/** The offset after everything the parse consumed: the node, its closing parens and the comments after it. */
 	end: number;
 	/** Every comment read, in source order; only with `comments`. */

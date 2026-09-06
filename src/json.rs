@@ -5,6 +5,7 @@ use crate::ast::{Ast, NodeId};
 use crate::comments::{attach, attach_all};
 use crate::error::Code;
 use crate::estree::{Binary, Emit, Json, Output, Positions, Sink, error_to_json, node_at, params_at, program};
+use crate::scopes::{self, Bind};
 use crate::{Options, SyntaxError};
 
 /// What to parse; everything but a program starts at the request's offset.
@@ -25,6 +26,8 @@ pub struct Request {
 	pub offset: u32,
 	pub typescript: bool,
 	pub comments: bool,
+	/// Scope analysis on the answer.
+	pub scopes: bool,
 	/// Line and column on every node, as acorn's `locations` option.
 	pub locations: bool,
 	/// TypeScript erased on output; see `estree::Output`.
@@ -35,9 +38,10 @@ pub struct Request {
 }
 
 /// The names front ends accept for the request's switches, as acorn spells them.
-pub const FLAGS: [&str; 11] = [
+pub const FLAGS: [&str; 12] = [
 	"typescript",
 	"comments",
+	"scopes",
 	"locations",
 	"script",
 	"preserveParens",
@@ -67,6 +71,7 @@ impl Request {
 		match flag {
 			"typescript" => self.typescript = true,
 			"comments" => self.comments = true,
+			"scopes" => self.scopes = true,
 			"locations" => self.locations = true,
 			"script" => self.options.module = false,
 			"preserveParens" => self.options.preserve_parens = true,
@@ -249,11 +254,12 @@ fn run<E: crate::parser::Extension, S: Sink>(
 	sink: S,
 ) -> Result<S, String>
 where
-	E::Data: Emit,
+	E::Data: Emit + Bind,
 {
 	let (offset, options, comments) = (request.offset, request.options, request.comments);
 	let output = Output {
 		comments,
+		scopes: request.scopes,
 		erase: request.erase && request.typescript,
 	};
 	let result = match request.entry {
@@ -263,6 +269,9 @@ where
 				let root = ast.last();
 				if comments {
 					attach(&mut ast, source, root, offset);
+				}
+				if output.scopes {
+					scopes::analyze(&mut ast, root);
 				}
 				program(&ast, root, source, positions, output, sink)
 			})
@@ -295,6 +304,9 @@ where
 			if comments {
 				attach_all(&mut ast, source, &ids, offset);
 			}
+			if output.scopes {
+				scopes::analyze_params(&mut ast, &ids);
+			}
 			params_at(&ast, &ids, end, source, positions, output, sink)
 		}),
 	};
@@ -302,7 +314,7 @@ where
 }
 
 /// One node parsed at an offset, into a sink.
-fn one<X: Emit, S: Sink>(
+fn one<X: Emit + Bind, S: Sink>(
 	result: Parsed<X>,
 	source: &str,
 	positions: &Positions,
@@ -313,6 +325,9 @@ fn one<X: Emit, S: Sink>(
 	result.map(|(mut ast, root, end)| {
 		if output.comments {
 			attach(&mut ast, source, root, offset);
+		}
+		if output.scopes {
+			scopes::analyze(&mut ast, root);
 		}
 		node_at(&ast, root, end, source, positions, output, sink)
 	})

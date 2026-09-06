@@ -20,6 +20,8 @@ pub struct Options {
 	/// With `typescript`: erase it from the output.
 	pub erase: Option<bool>,
 	pub comments: Option<bool>,
+	/// Scope analysis: `scope` on the nodes that open one, `binding` on identifiers, and the tables.
+	pub scopes: Option<bool>,
 	pub locations: Option<bool>,
 	pub preserve_parens: Option<bool>,
 	pub allow_return_outside_function: Option<bool>,
@@ -37,6 +39,7 @@ fn request(options: Option<Options>) -> Request {
 		("typescript", options.typescript),
 		("erase", options.erase),
 		("comments", options.comments),
+		("scopes", options.scopes),
 		("locations", options.locations),
 		("preserveParens", options.preserve_parens),
 		("allowReturnOutsideFunction", options.allow_return_outside_function),

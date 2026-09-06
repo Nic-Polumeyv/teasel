@@ -107,11 +107,13 @@ fn batch() -> io::Result<()> {
 		let undeclared_exports = mode_text.contains("+undeclared-exports");
 		let until_as = mode_text.contains("+until-as");
 		let erase = mode_text.contains("+erase");
+		let scopes = mode_text.contains("+scopes");
 		let mode_text = mode_text
 			.replace("+comments", "")
 			.replace("+undeclared-exports", "")
 			.replace("+until-as", "")
-			.replace("+erase", "");
+			.replace("+erase", "")
+			.replace("+scopes", "");
 		let mode_text = mode_text.as_str();
 		let mode = Mode::from_batch(mode_text);
 		let offset = mode_text.split_once(':').and_then(|(_, n)| n.parse().ok()).unwrap_or(0);
@@ -122,6 +124,7 @@ fn batch() -> io::Result<()> {
 			offset,
 			typescript,
 			comments,
+			scopes,
 			locations: true,
 			erase,
 			end: None,
@@ -150,6 +153,7 @@ fn main() -> ExitCode {
 	let mut module = false;
 	let mut typescript = false;
 	let mut comments = false;
+	let mut scopes = false;
 	let mut preserve_parens = false;
 	let mut erase = false;
 	let mut file = None;
@@ -159,6 +163,7 @@ fn main() -> ExitCode {
 			"--module" => module = true,
 			"--typescript" => typescript = true,
 			"--comments" => comments = true,
+			"--scopes" => scopes = true,
 			"--preserve-parens" => preserve_parens = true,
 			"--erase" => erase = true,
 			"--expression" => mode = Mode::Expression,
@@ -181,7 +186,7 @@ fn main() -> ExitCode {
 	options.preserve_parens |= preserve_parens;
 	let Some(file) = file else {
 		eprintln!(
-			"usage: teasel [--module] [--typescript] [--comments] [--expression|--pattern|--params|--statement] [--preserve-parens] [--erase] [--offset N] FILE"
+			"usage: teasel [--module] [--typescript] [--comments] [--scopes] [--expression|--pattern|--params|--statement] [--preserve-parens] [--erase] [--offset N] FILE"
 		);
 		return ExitCode::FAILURE;
 	};
@@ -197,6 +202,7 @@ fn main() -> ExitCode {
 		offset: offset.unwrap_or(0),
 		typescript,
 		comments,
+		scopes,
 		locations: true,
 		erase,
 		end: None,

@@ -64,6 +64,8 @@ pub struct Ast<X = ()> {
 	pub comments: Vec<Comment>,
 	/// Comments attached to nodes by `comments::attach`, as indices into `comments`.
 	pub attached: FastMap<NodeId, Attached>,
+	/// The scope analysis, when `scopes::analyze` ran.
+	pub scopes: Option<crate::scopes::Scopes>,
 	pub extension: X,
 }
 

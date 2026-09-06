@@ -2,6 +2,7 @@
 
 use crate::error::Code;
 pub mod ast;
+mod bind;
 mod declarations;
 mod estree;
 #[cfg(test)]

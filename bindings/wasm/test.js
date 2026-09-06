@@ -19,3 +19,11 @@ assert.equal(parse('let x: number = 1', { typescript: 'erase' }).body[0].declara
 assert.equal(new Source('<script>let a = 1</script>').parse(8, 17).body[0].end, 17);
 source.free();
 console.log('ok');
+
+{
+	const program = parse('let x = 1; x = 2;', { sourceType: 'module', scopes: true });
+	const [x] = program.bindings;
+	assert.equal(x.node, program.body[0].declarations[0].id);
+	assert.equal(x.references[0].write, true);
+	assert.equal(program.scope.kind, 'module');
+}
