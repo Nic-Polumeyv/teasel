@@ -1467,7 +1467,7 @@ fn bigint_decimal(raw: &str) -> String {
 	out
 }
 
-pub(crate) fn write_json_string(out: &mut String, s: &str) {
+pub fn write_json_string(out: &mut String, s: &str) {
 	out.push('"');
 	let mut from = 0;
 	for (i, b) in s.bytes().enumerate() {

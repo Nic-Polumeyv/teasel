@@ -1,5 +1,5 @@
 target/
 node_modules/
 /oracle/test262-parser-tests/
-/bindings/wasm/pkg/
+/bindings/wasm/teasel.wasm
 *.node

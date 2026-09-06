@@ -19,26 +19,37 @@ const LOC = 15;
 // the text is in the host's byte order like the words, and a leading U+FEFF is text, not a mark
 const utf16 = new TextDecoder(new Uint8Array(new Uint16Array([1]).buffer)[0] === 1 ? 'utf-16le' : 'utf-16be', { ignoreBOM: true });
 
-/** @type {string[]} */
-let constants = [];
+/** Each engine's constant strings, by the function that fetches them. @type {WeakMap<Function, string[]>} */
+const tables = new WeakMap();
+
+/** Floats at a byte offset a `Float64Array` cannot start at. */
+function unaligned_floats(buffer, start, count) {
+	const view = new DataView(buffer, start, count * 8);
+	const floats = new Float64Array(count);
+	for (let i = 0; i < count; i++) floats[i] = view.getFloat64(i * 8, true);
+	return floats;
+}
 
 /**
- * @param {ArrayBuffer} buffer
+ * @param {ArrayBuffer | Uint32Array} answer the words, or a view of them inside a larger buffer
  * @param {string} source
- * @param {() => string[]} fetch the addon's constant strings, when an answer refers past the known ones
+ * @param {() => string[]} fetch the constant strings, when an answer refers past the known ones
  * @param {boolean} [link] replace the scope and binding numbers with the objects they index
  */
-export function decode(buffer, source, fetch, link = true) {
-	const words = new Uint32Array(buffer);
+export function decode(answer, source, fetch, link = true) {
+	const words = answer instanceof Uint32Array ? answer : new Uint32Array(answer);
+	const { buffer, byteOffset } = words;
 	const [tokens_count, ends_count, floats_count, units, known] = words;
-	if (known > constants.length) constants = fetch();
+	let constants = tables.get(fetch);
+	if (constants === undefined || known > constants.length) tables.set(fetch, (constants = fetch()));
 	const tokens = words.subarray(5, 5 + tokens_count);
 	const ends = words.subarray(5 + tokens_count, 5 + tokens_count + ends_count);
 	const text_at = 5 + tokens_count + ends_count;
-	const text = units ? utf16.decode(new Uint16Array(buffer, text_at * 4, units)) : '';
+	const text = units ? utf16.decode(new Uint16Array(buffer, byteOffset + text_at * 4, units)) : '';
 	let floats_at = text_at + ((units + 1) >> 1);
 	if (floats_at % 2 === 1) floats_at++;
-	const floats = floats_count ? new Float64Array(buffer, floats_at * 4, floats_count) : null;
+	const floats_start = byteOffset + floats_at * 4;
+	const floats = !floats_count ? null : floats_start % 8 === 0 ? new Float64Array(buffer, floats_start, floats_count) : unaligned_floats(buffer, floats_start, floats_count);
 	const strings = new Array(ends_count);
 	let from = 0;
 	for (let i = 0; i < ends_count; i++) {
