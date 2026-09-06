@@ -122,7 +122,9 @@ export async function teasel(jobs) {
 
 function parse_line(line) {
 	try {
-		return JSON.parse(line);
+		const value = JSON.parse(line);
+		// parse-at answers wrap the node with the offset the parse stopped at
+		return 'node' in value && !('type' in value) ? value.node : value;
 	} catch {
 		return { error: { message: `bad output: ${line.slice(0, 80)}` } };
 	}

@@ -1,15 +1,17 @@
 //! Command line front end, mainly for the acorn conformance harness.
 //!
 //! `teasel [--module] [--typescript] [--comments] [--expression|--pattern|--params|--statement]
-//! [--preserve-parens] [--offset N] FILE` prints ESTree JSON. `--offset` alone parses an expression. The pattern,
-//! params and statement modes parse as a module, and params preserve parens, as an arrow's would.
+//! [--preserve-parens] [--offset N] FILE` prints ESTree JSON, wrapped with `end` for everything but
+//! a program. `--offset` alone parses an expression. The pattern, params and statement modes parse
+//! as a module.
 //!
 //! `teasel --batch` reads jobs from stdin, each a header line `MODE LENGTH` followed by LENGTH
 //! bytes of source, and prints one JSON line per job. MODE is `module`, `script`, `expr:OFFSET`,
-//! `pattern:OFFSET`, `params:OFFSET` (whose answer is `{"params": [...], "end": N}`) or
-//! `stmt:OFFSET`, with a `ts-` prefix for TypeScript and
-//! `+comments` to attach comments or `+undeclared-exports` to accept exports of names the source
-//! never declares. Offsets are byte offsets into the source; the JSON output reports UTF-16
+//! `pattern:OFFSET`, `params:OFFSET` or `stmt:OFFSET`, whose answers wrap the node or the parameters
+//! with `end`, the offset after what the parse consumed, with a `ts-` prefix for TypeScript and
+//! `+comments` to attach comments, `+undeclared-exports` to accept exports of names the source
+//! never declares or `+until-as` to end an expression at the host's `as`. In a batch, expressions
+//! preserve parens. Offsets are byte offsets into the source; the JSON output reports UTF-16
 //! offsets like acorn.
 
 use std::io::{self, BufRead, Read, Write};
@@ -55,12 +57,12 @@ impl Mode {
 				allow_undeclared_exports: undeclared_exports,
 				..Options::default()
 			},
-			Mode::Expression | Mode::Params => Options {
+			Mode::Expression => Options {
 				module: true,
 				preserve_parens: true,
 				..Options::default()
 			},
-			Mode::Pattern | Mode::Statement => Options {
+			Mode::Pattern | Mode::Params | Mode::Statement => Options {
 				module: true,
 				..Options::default()
 			},
@@ -102,17 +104,23 @@ fn batch() -> io::Result<()> {
 		};
 		let comments = mode_text.contains("+comments");
 		let undeclared_exports = mode_text.contains("+undeclared-exports");
-		let mode_text = mode_text.replace("+comments", "").replace("+undeclared-exports", "");
+		let until_as = mode_text.contains("+until-as");
+		let mode_text = mode_text
+			.replace("+comments", "")
+			.replace("+undeclared-exports", "")
+			.replace("+until-as", "");
 		let mode_text = mode_text.as_str();
 		let mode = Mode::from_batch(mode_text);
 		let offset = mode_text.split_once(':').and_then(|(_, n)| n.parse().ok()).unwrap_or(0);
+		let mut options = mode.options(mode_text, undeclared_exports);
+		options.until_as = until_as;
 		let request = Request {
 			entry: mode.entry(),
 			offset,
 			typescript,
 			comments,
 			locations: true,
-			options: mode.options(mode_text, undeclared_exports),
+			options,
 		};
 		let json = json::parse(&source, &request);
 		out.write_all(json.as_bytes())?;

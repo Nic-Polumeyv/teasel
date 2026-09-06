@@ -28,11 +28,24 @@ const MAX_CHAIN: u32 = 10_000;
 pub struct Options {
 	/// Parse as an ES module: strict mode, top-level `await`, `import` and `export`.
 	pub module: bool,
+	/// The host's own `as` follows the expression parsed at an offset, as a template loop's item
+	/// follows its list: the expression ends at the last top-level `as`, so TypeScript assertions
+	/// before it stay assertions.
+	pub until_as: bool,
 	pub allow_return_outside_function: bool,
 	pub allow_await_outside_function: bool,
 	pub allow_super_outside_method: bool,
 	pub allow_undeclared_exports: bool,
 	pub preserve_parens: bool,
+}
+
+/// How a top-level `as` is read under `until_as`: a first pass records every one it reads as an
+/// assertion, a second stops at the last of them, which is the host's.
+#[derive(Debug)]
+pub(crate) enum UntilAs {
+	Off,
+	Record(Vec<u32>),
+	Stop(u32),
 }
 
 /// What a function-shaped node is, for the extension hooks around its signature.
@@ -252,7 +265,13 @@ pub(crate) trait Extension: Default + Sized {
 		Ok(None)
 	}
 	/// At an operator position; `Some` is the new left operand.
-	fn expr_op(p: &mut Parser<Self>, left: NodeId, left_start: u32, min_prec: i8) -> Result<Option<NodeId>> {
+	fn expr_op(
+		p: &mut Parser<Self>,
+		left: NodeId,
+		left_start: u32,
+		min_prec: i8,
+		for_init: ForInit,
+	) -> Result<Option<NodeId>> {
 		Ok(None)
 	}
 	#[allow(clippy::too_many_arguments)]
@@ -334,15 +353,35 @@ pub(crate) fn parse<E: Extension>(src: &str, options: Options) -> Result<Ast<E::
 }
 
 /// Parses a single expression starting at `offset`, stopping where the expression ends.
+/// Returns the tree, the expression and the offset after everything it consumed.
 pub(crate) fn parse_expression_at<E: Extension>(
 	src: &str,
 	offset: u32,
 	options: Options,
-) -> Result<(Ast<E::Data>, NodeId)> {
+) -> Result<(Ast<E::Data>, NodeId, u32)> {
 	let mut parser = Parser::<E>::new(src, offset, options)?;
 	parser.enter_scope(SCOPE_TOP);
-	let expression = parser.parse_expression(false, &mut None)?;
-	Ok((parser.finish(), expression))
+	if !options.until_as {
+		let expression = parser.parse_sequence(ForInit::No, &mut None)?;
+		let end = parser.consumed_end();
+		return Ok((parser.finish(), expression, end));
+	}
+	parser.until_as = UntilAs::Record(Vec::new());
+	let first = parser.parse_sequence(ForInit::NoAs, &mut None);
+	let UntilAs::Record(recorded) = std::mem::replace(&mut parser.until_as, UntilAs::Off) else {
+		unreachable!()
+	};
+	let Some(&last) = recorded.last() else {
+		let expression = first?;
+		let end = parser.consumed_end();
+		return Ok((parser.finish(), expression, end));
+	};
+	let mut parser = Parser::<E>::new(src, offset, options)?;
+	parser.enter_scope(SCOPE_TOP);
+	parser.until_as = UntilAs::Stop(last);
+	let expression = parser.parse_sequence(ForInit::NoAs, &mut None)?;
+	let end = parser.consumed_end();
+	Ok((parser.finish(), expression, end))
 }
 
 /// Parses an assignment target starting at `offset`: an identifier or a destructuring pattern,
@@ -352,7 +391,7 @@ pub(crate) fn parse_pattern_at<E: Extension>(
 	src: &str,
 	offset: u32,
 	options: Options,
-) -> Result<(Ast<E::Data>, NodeId)> {
+) -> Result<(Ast<E::Data>, NodeId, u32)> {
 	let mut parser = Parser::<E>::new(src, offset, options)?;
 	parser.enter_scope(SCOPE_TOP);
 	let mut errors = Some(DestructuringErrors::default());
@@ -365,12 +404,13 @@ pub(crate) fn parse_pattern_at<E: Extension>(
 	let pattern = parser.make_pattern(expression, false, &mut errors)?;
 	parser.check_lval_pattern(pattern, scope::Binding::None, &mut None)?;
 	E::pattern_annotation(&mut parser, pattern)?;
-	Ok((parser.finish(), pattern))
+	let end = parser.consumed_end();
+	Ok((parser.finish(), pattern, end))
 }
 
 /// Parses a parenthesized parameter list starting at `offset` as the parameters of an arrow
 /// function would be read: as expressions in the enclosing scope, reinterpreted as patterns once
-/// the list is complete. Returns the parameters and the offset after the closing paren.
+/// the list is complete. Returns the parameters and the offset after everything they consumed.
 pub(crate) fn parse_params_at<E: Extension>(
 	src: &str,
 	offset: u32,
@@ -380,7 +420,7 @@ pub(crate) fn parse_params_at<E: Extension>(
 	parser.enter_scope(SCOPE_TOP);
 	parser.expect(TokenKind::ParenL)?;
 	let paren = parser.parse_paren_items()?;
-	let end = parser.prev_end;
+	let end = parser.consumed_end();
 	parser.check_pattern_errors(&paren.errors, false)?;
 	parser.check_yield_await_in_default_params()?;
 	parser.enter_scope(scope::function_flags(false, false) | scope::SCOPE_ARROW);
@@ -396,12 +436,13 @@ pub(crate) fn parse_statement_at<E: Extension>(
 	src: &str,
 	offset: u32,
 	options: Options,
-) -> Result<(Ast<E::Data>, NodeId)> {
+) -> Result<(Ast<E::Data>, NodeId, u32)> {
 	let mut parser = Parser::<E>::new(src, offset, options)?;
 	parser.enter_scope(SCOPE_TOP);
 	let mut exports = FastSet::default();
 	let statement = parser.parse_statement(statement::Context::None, true, Some(&mut exports))?;
-	Ok((parser.finish(), statement))
+	let end = parser.consumed_end();
+	Ok((parser.finish(), statement, end))
 }
 
 pub(crate) struct Parser<'a, E: Extension = ()> {
@@ -422,6 +463,7 @@ pub(crate) struct Parser<'a, E: Extension = ()> {
 	pub(crate) await_ident_pos: u32,
 	pub(crate) potential_arrow_at: u32,
 	potential_arrow_in_for_await: bool,
+	pub(crate) until_as: UntilAs,
 }
 
 pub(crate) struct Snapshot<E: Extension> {
@@ -502,6 +544,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 			await_ident_pos: 0,
 			potential_arrow_at: u32::MAX,
 			potential_arrow_in_for_await: false,
+			until_as: UntilAs::Off,
 		};
 		E::init(&mut parser);
 		parser.tok = parser.lexer.next_token()?;
@@ -574,6 +617,15 @@ impl<'a, E: Extension> Parser<'a, E> {
 		self.tok = self.lexer.next_token()?;
 		self.tok.newline_before = newline_before;
 		Ok(())
+	}
+
+	/// The offset after the last token read, or after the comments that follow it before the
+	/// next token: where a host embedding JavaScript resumes its own syntax.
+	fn consumed_end(&self) -> u32 {
+		match self.lexer.comments.last() {
+			Some(comment) if comment.start >= self.prev_end => comment.end,
+			_ => self.prev_end,
+		}
 	}
 
 	fn finish(self) -> Ast<E::Data> {

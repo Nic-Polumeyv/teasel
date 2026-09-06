@@ -700,6 +700,7 @@ if (!nativeBinding) {
 }
 
 module.exports = nativeBinding
+module.exports.Source = nativeBinding.Source
 module.exports.parse = nativeBinding.parse
 module.exports.parseExpressionAt = nativeBinding.parseExpressionAt
 module.exports.parseParamsAt = nativeBinding.parseParamsAt

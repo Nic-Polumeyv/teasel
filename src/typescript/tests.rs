@@ -92,7 +92,7 @@ fn expr(src: &str) -> String {
 		..Options::default()
 	};
 	match parse_expression_at(src, 0, options) {
-		Ok((ast, id)) => dump(&ast, id),
+		Ok((ast, id, _)) => dump(&ast, id),
 		Err(e) => format!("error {}: {}", e.pos, e.message),
 	}
 }
@@ -595,4 +595,24 @@ fn expression_entry_point() {
 		expr(r#"(a?) => a"#),
 		r#"ArrowFunctionExpression { params: [Identifier { name: "a" }], body: Identifier { name: "a" }, expression: true, is_async: false }"#
 	);
+}
+
+#[test]
+fn until_as() {
+	let options = Options {
+		module: true,
+		until_as: true,
+		..Options::default()
+	};
+	let end = |src: &str| parse_expression_at(src, 1, options).unwrap().2;
+	assert_eq!(end("{xs as item}"), 3);
+	assert_eq!(end("{xs as item, i (item.id)}"), 3);
+	assert_eq!(end("{xs as [a, b = 1]}"), 3);
+	assert_eq!(end("{xs as T[] as item}"), 10);
+	assert_eq!(end("{xs as T === y as item}"), 14);
+	assert_eq!(end("{xs as T, ys as item}"), 12);
+	assert_eq!(end("{xs as unknown as T[] as item: T, i}"), 21);
+	assert_eq!(end("{xs as const as item}"), 12);
+	assert_eq!(end("{f(x as T) as item}"), 10);
+	assert_eq!(end("{(xs as T) as item}"), 10);
 }

@@ -16,7 +16,7 @@ use crate::lexer::token::{Keyword, TokenKind};
 use crate::parser::class::ClassKind;
 use crate::parser::expression::starts_expression;
 use crate::parser::{
-	Context, DestructuringErrors, Errors, Extension, ForInit, FunctionKind, Options, Parser, Result, Unwrap,
+	Context, DestructuringErrors, Errors, Extension, ForInit, FunctionKind, Options, Parser, Result, UntilAs, Unwrap,
 };
 use ast::{Accessibility, Data, Extras, Kind, TsKind};
 use types::TypeParameterModifiers;
@@ -29,7 +29,7 @@ pub fn parse_expression_at(
 	src: &str,
 	offset: u32,
 	options: Options,
-) -> std::result::Result<(Ast<Data>, NodeId), SyntaxError> {
+) -> std::result::Result<(Ast<Data>, NodeId, u32), SyntaxError> {
 	crate::parser::parse_expression_at::<TypeScript>(src, offset, options).map_err(|e| *e)
 }
 
@@ -37,7 +37,7 @@ pub fn parse_pattern_at(
 	src: &str,
 	offset: u32,
 	options: Options,
-) -> std::result::Result<(Ast<Data>, NodeId), SyntaxError> {
+) -> std::result::Result<(Ast<Data>, NodeId, u32), SyntaxError> {
 	crate::parser::parse_pattern_at::<TypeScript>(src, offset, options).map_err(|e| *e)
 }
 
@@ -53,7 +53,7 @@ pub fn parse_statement_at(
 	src: &str,
 	offset: u32,
 	options: Options,
-) -> std::result::Result<(Ast<Data>, NodeId), SyntaxError> {
+) -> std::result::Result<(Ast<Data>, NodeId, u32), SyntaxError> {
 	crate::parser::parse_statement_at::<TypeScript>(src, offset, options).map_err(|e| *e)
 }
 
@@ -1509,13 +1509,27 @@ impl Extension for TypeScript {
 		Ok(None)
 	}
 
-	fn expr_op(p: &mut Parser<Self>, left: NodeId, left_start: u32, min_prec: i8) -> Result<Option<NodeId>> {
+	fn expr_op(
+		p: &mut Parser<Self>,
+		left: NodeId,
+		left_start: u32,
+		min_prec: i8,
+		for_init: ForInit,
+	) -> Result<Option<NodeId>> {
 		if 7 <= min_prec || p.tok.newline_before {
 			return Ok(None);
 		}
 		let is_as = p.is_contextual("as");
 		if !is_as && !p.is_contextual("satisfies") {
 			return Ok(None);
+		}
+		if is_as && for_init.no_as() {
+			let start = p.tok.start;
+			match &mut p.until_as {
+				UntilAs::Record(offsets) => offsets.push(start),
+				UntilAs::Stop(at) if *at == start => return Ok(None),
+				_ => {}
+			}
 		}
 		let type_annotation = match p.try_next_parse_constant_context()? {
 			Some(constant) => constant,

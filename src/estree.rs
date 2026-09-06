@@ -18,14 +18,53 @@ impl Emit for () {
 
 /// Serializes a node; `locations` adds acorn's `loc` to every node.
 pub fn to_json<X: Emit>(ast: &Ast<X>, root: NodeId, source: &str, locations: bool) -> String {
-	let mut w = Writer::new(ast, source, locations);
+	let positions = Positions::new(source, locations);
+	let mut w = Writer::new(ast, source, &positions);
 	w.node(root);
 	w.out
 }
 
-/// Serializes parameters as `{"params":[...],"end":N}`, `end` being the offset after the list.
-pub fn params_to_json<X: Emit>(ast: &Ast<X>, params: &[NodeId], end: u32, source: &str, locations: bool) -> String {
-	let mut w = Writer::new(ast, source, locations);
+/// Serializes a program; `comments` adds every comment to it as `comments`.
+pub fn program_to_json<X: Emit>(
+	ast: &Ast<X>,
+	root: NodeId,
+	source: &str,
+	positions: &Positions,
+	comments: bool,
+) -> String {
+	let mut w = Writer::new(ast, source, positions);
+	w.program_comments = comments;
+	w.node(root);
+	w.out
+}
+
+/// Serializes a node parsed at an offset as `{"node":...,"end":N}`, `end` being the offset after
+/// everything the parse consumed; `comments` adds every comment read as `comments`.
+pub fn node_to_json<X: Emit>(
+	ast: &Ast<X>,
+	root: NodeId,
+	end: u32,
+	source: &str,
+	positions: &Positions,
+	comments: bool,
+) -> String {
+	let mut w = Writer::new(ast, source, positions);
+	w.out.push_str("{\"node\":");
+	w.node(root);
+	w.tail(end, comments);
+	w.out
+}
+
+/// Serializes parameters as `{"params":[...],"end":N}` the way `node_to_json` does a node.
+pub fn params_to_json<X: Emit>(
+	ast: &Ast<X>,
+	params: &[NodeId],
+	end: u32,
+	source: &str,
+	positions: &Positions,
+	comments: bool,
+) -> String {
+	let mut w = Writer::new(ast, source, positions);
 	w.out.push_str("{\"params\":[");
 	for (i, &param) in params.iter().enumerate() {
 		if i > 0 {
@@ -33,17 +72,17 @@ pub fn params_to_json<X: Emit>(ast: &Ast<X>, params: &[NodeId], end: u32, source
 		}
 		w.node(param);
 	}
-	w.out.push_str("],\"end\":");
-	push_int(&mut w.out, w.positions.offset(end));
-	w.out.push('}');
+	w.out.push(']');
+	w.tail(end, comments);
 	w.out
 }
 
 /// Serializes a syntax error the way acorn reports one: UTF-16 `pos` plus a `loc`.
 pub fn error_to_json(error: &crate::SyntaxError, source: &str) -> String {
-	let mut positions = Positions::new(source, true);
-	let pos = positions.offset(error.pos);
-	let (line, column) = positions.line_column(error.pos, pos);
+	let positions = Positions::new(source, true);
+	let mut cursor = Cursor::default();
+	let pos = positions.offset(&mut cursor, error.pos);
+	let (line, column) = positions.line_column(&mut cursor, error.pos, pos);
 	let mut out = String::from("{\"error\":{\"message\":");
 	write_json_string(&mut out, &error.message);
 	write!(
@@ -58,27 +97,35 @@ pub struct Writer<'a, X = ()> {
 	ast: &'a Ast<X>,
 	source: &'a str,
 	out: String,
-	positions: Positions,
-	locations: bool,
+	positions: &'a Positions,
+	cursor: Cursor,
+	/// Whether the program lists every comment.
+	program_comments: bool,
 }
 
-/// Maps byte offsets to the UTF-16 offsets and line/column pairs that acorn reports.
-///
-/// Nodes serialize in source order, so each lookup first tries the entry the previous one found
-/// and its successor before falling back to a binary search.
-struct Positions {
+/// Maps byte offsets to the UTF-16 offsets and line/column pairs that acorn reports, and UTF-16
+/// offsets back to bytes. Built once per source; a host that parses many expressions out of one
+/// source keeps it.
+pub struct Positions {
 	/// After each non-ASCII character: its end byte offset and the bytes-minus-code-units gap so far.
 	gaps: Vec<(u32, u32)>,
-	/// Each line's start as a byte offset and a UTF-16 offset.
+	/// Each line's start as a byte offset and a UTF-16 offset; only with `lines`.
 	line_starts: Vec<(u32, u32)>,
 	len: u32,
+	lines: bool,
+}
+
+/// Where the last lookups landed: nodes serialize in source order, so each lookup first tries
+/// the entry the previous one found and its successor before falling back to a binary search.
+#[derive(Default)]
+struct Cursor {
 	gap: usize,
 	line: usize,
 }
 
 impl Positions {
 	/// `lines` builds the line table, which only `loc` needs.
-	fn new(source: &str, lines: bool) -> Self {
+	pub fn new(source: &str, lines: bool) -> Self {
 		let bytes = source.as_bytes();
 		let mut gaps = Vec::new();
 		let mut line_starts = vec![(0, 0)];
@@ -115,25 +162,43 @@ impl Positions {
 			gaps,
 			line_starts,
 			len: source.len() as u32,
-			gap: 0,
-			line: 1,
+			lines,
 		}
 	}
 
-	fn offset(&mut self, byte: u32) -> u32 {
+	/// The byte offset of a UTF-16 offset, or why there is none; a position inside a surrogate
+	/// pair maps to the byte after the character's first, which is not a character boundary.
+	pub fn byte_offset(&self, utf16: f64) -> Result<u32, String> {
+		if !(utf16 >= 0.0 && utf16.fract() == 0.0 && utf16 <= u32::MAX as f64) {
+			return Err(format!("offset {utf16} is not a valid position"));
+		}
+		let target = utf16 as u32;
+		let total_gap = self.gaps.last().map_or(0, |g| g.1);
+		if target > self.len - total_gap {
+			return Err(format!("offset {target} is past the end of the source"));
+		}
+		let i = self.gaps.partition_point(|g| g.0 - g.1 <= target);
+		Ok(target + if i == 0 { 0 } else { self.gaps[i - 1].1 })
+	}
+
+	fn offset(&self, cursor: &mut Cursor, byte: u32) -> u32 {
 		if self.gaps.is_empty() {
 			return byte.min(self.len);
 		}
 		let byte = byte.min(self.len);
-		self.gap = locate(&self.gaps, self.gap, byte, |g| g.0);
-		byte - if self.gap == 0 { 0 } else { self.gaps[self.gap - 1].1 }
+		cursor.gap = locate(&self.gaps, cursor.gap, byte, |g| g.0);
+		byte - if cursor.gap == 0 {
+			0
+		} else {
+			self.gaps[cursor.gap - 1].1
+		}
 	}
 
 	/// The line of `byte` and its column, given `byte` already mapped by `offset`.
-	fn line_column(&mut self, byte: u32, offset: u32) -> (usize, u32) {
+	fn line_column(&self, cursor: &mut Cursor, byte: u32, offset: u32) -> (usize, u32) {
 		let byte = byte.min(self.len);
-		self.line = locate(&self.line_starts, self.line, byte, |l| l.0);
-		(self.line, offset - self.line_starts[self.line - 1].1)
+		cursor.line = locate(&self.line_starts, cursor.line.max(1), byte, |l| l.0);
+		(cursor.line, offset - self.line_starts[cursor.line - 1].1)
 	}
 }
 
@@ -148,13 +213,14 @@ fn locate<T>(items: &[T], hint: usize, byte: u32, key: impl Fn(&T) -> u32) -> us
 }
 
 impl<'a, X: Emit> Writer<'a, X> {
-	fn new(ast: &'a Ast<X>, source: &'a str, locations: bool) -> Self {
+	fn new(ast: &'a Ast<X>, source: &'a str, positions: &'a Positions) -> Self {
 		Self {
 			ast,
 			source,
-			out: String::with_capacity(ast.nodes.len() * if locations { 160 } else { 80 }),
-			positions: Positions::new(source, locations),
-			locations,
+			out: String::with_capacity(ast.nodes.len() * if positions.lines { 160 } else { 80 }),
+			positions,
+			cursor: Cursor::default(),
+			program_comments: false,
 		}
 	}
 
@@ -173,10 +239,13 @@ impl<'a, X: Emit> Writer<'a, X> {
 	}
 
 	fn comments(&mut self, key: &str, comments: &[u32]) {
-		if comments.is_empty() {
-			return;
+		if !comments.is_empty() {
+			self.key(key);
+			self.comment_list(comments);
 		}
-		self.key(key);
+	}
+
+	fn comment_list(&mut self, comments: &[u32]) {
 		self.out.push('[');
 		for (i, &index) in comments.iter().enumerate() {
 			if i > 0 {
@@ -190,26 +259,43 @@ impl<'a, X: Emit> Writer<'a, X> {
 			});
 			self.key("value");
 			write_json_string(&mut self.out, &self.source[comment.text_range()]);
-			self.key("start");
-			push_int(&mut self.out, self.positions.offset(comment.start));
-			self.key("end");
-			push_int(&mut self.out, self.positions.offset(comment.end));
+			self.span(comment.start, comment.end);
 			self.out.push('}');
 		}
 		self.out.push(']');
 	}
 
+	/// Every comment read, in source order.
+	fn all_comments(&mut self) {
+		let all: Vec<u32> = (0..self.ast.comments.len() as u32).collect();
+		self.key("comments");
+		self.comment_list(&all);
+	}
+
+	/// Closes the object around a node parsed at an offset.
+	fn tail(&mut self, end: u32, comments: bool) {
+		self.out.push_str(",\"end\":");
+		push_int(&mut self.out, self.positions.offset(&mut self.cursor, end));
+		if comments {
+			self.all_comments();
+		}
+		self.out.push('}');
+	}
+
 	pub(crate) fn span(&mut self, start: u32, end: u32) {
-		let (start_offset, end_offset) = (self.positions.offset(start), self.positions.offset(end));
+		let (start_offset, end_offset) = (
+			self.positions.offset(&mut self.cursor, start),
+			self.positions.offset(&mut self.cursor, end),
+		);
 		self.out.push_str(",\"start\":");
 		push_int(&mut self.out, start_offset);
 		self.out.push_str(",\"end\":");
 		push_int(&mut self.out, end_offset);
-		if !self.locations {
+		if !self.positions.lines {
 			return;
 		}
-		let (sl, sc) = self.positions.line_column(start, start_offset);
-		let (el, ec) = self.positions.line_column(end, end_offset);
+		let (sl, sc) = self.positions.line_column(&mut self.cursor, start, start_offset);
+		let (el, ec) = self.positions.line_column(&mut self.cursor, end, end_offset);
 		self.out.push_str(",\"loc\":{\"start\":{\"line\":");
 		push_int(&mut self.out, sl as u32);
 		self.out.push_str(",\"column\":");
@@ -308,6 +394,9 @@ impl<'a, X: Emit> Writer<'a, X> {
 				self.begin("Program", id);
 				self.list("body", body);
 				self.string("sourceType", if module { "module" } else { "script" });
+				if self.program_comments {
+					self.all_comments();
+				}
 			}
 			Identifier { name } => {
 				self.begin("Identifier", id);
@@ -887,4 +976,19 @@ pub(crate) fn write_json_string(out: &mut String, s: &str) {
 	}
 	out.push_str(&s[from..]);
 	out.push('"');
+}
+
+#[cfg(test)]
+mod tests {
+	use super::Positions;
+
+	#[test]
+	fn byte_offsets() {
+		let positions = Positions::new("aé𝒳b", false);
+		let bytes: Vec<_> = (0..=6).map(|n| positions.byte_offset(n as f64).ok()).collect();
+		assert_eq!(bytes, [Some(0), Some(1), Some(3), Some(4), Some(7), Some(8), None]);
+		assert!(positions.byte_offset(-1.0).is_err());
+		assert!(positions.byte_offset(1.5).is_err());
+		assert_eq!(Positions::new("abc", true).byte_offset(3.0), Ok(3));
+	}
 }

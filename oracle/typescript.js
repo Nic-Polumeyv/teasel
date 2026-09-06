@@ -60,6 +60,8 @@ if (dts) {
 	const modules = join(root, 'node_modules/.pnpm');
 	for (const path of sources(modules, /\.d\.ts$/, true)) {
 		const name = relative(modules, path);
+		// a linked teasel package brings its own node_modules along
+		if (name.includes('/@teasel/')) continue;
 		if (filter && !name.includes(filter)) continue;
 		push(name, readFileSync(path, 'utf8'));
 	}
