@@ -2,11 +2,10 @@ import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import * as node from './index.js';
 import * as wasm from './wasm.js';
-import { scopeOf, bindingOf } from './decode.js';
 
 await wasm.init(readFileSync(new URL('./teasel.wasm', import.meta.url)));
 
-for (const [name, { Source, parse, parseExpressionAt, parseParamsAt, parseStatementAt, isIdentifierStart, isIdentifierChar }] of [['node', node], ['wasm', wasm]]) {
+for (const [name, { Source, parse, parseExpressionAt, parsePatternAt, parseParamsAt, parseStatementAt, isIdentifierStart, isIdentifierChar, scopeOf, bindingOf, referenceOf }] of [['node', node], ['wasm', wasm]]) {
 	const program = parse('let x: number = 1; // done', { sourceType: 'module', typescript: true, comments: true, locations: true });
 	assert.equal(program.sourceType, 'module');
 	assert.equal(program.body[0].declarations[0].id.typeAnnotation.typeAnnotation.type, 'TSNumberKeyword');
@@ -74,6 +73,19 @@ for (const [name, { Source, parse, parseExpressionAt, parseParamsAt, parseStatem
 		assert.equal(bindingOf(bare.node), null);
 		assert.equal(scopeOf(bare.node).kind, 'fragment');
 		assert.doesNotThrow(() => JSON.stringify(program.body));
+		assert.deepEqual(Object.keys(x.node), ['type', 'start', 'end', 'name']);
+		assert.equal(scopeOf(program.body[1]).kind, 'function');
+		const mutated = parse('let o = {}; o.x = 1; g = 2; h.k = 3;', { sourceType: 'module', scopes: true });
+		const [o] = mutated.bindings;
+		assert.equal(o.references[0].mutate, true);
+		assert.equal(o.references[0].write, false);
+		const g = mutated.body[2].expression.left;
+		assert.equal(bindingOf(g), null);
+		assert.deepEqual(referenceOf(g), { node: g, binding: null, write: true, mutate: false });
+		assert.equal(referenceOf(mutated.body[3].expression.left.object).mutate, true);
+		assert.equal(referenceOf(o.node), undefined);
+		assert.equal(bindingOf(null), undefined);
+		assert.equal(bindingOf(parsePatternAt('[a, b]', 0, { scopes: true }).node.elements[0]).kind, 'pattern');
 	}
 	assert.throws(() => parse('x', { sourceType: 'nonsense' }), TypeError);
 	assert.throws(() => parseExpressionAt('𝒳 + y', 1), (e) => e instanceof SyntaxError && /surrogate/.test(e.message));

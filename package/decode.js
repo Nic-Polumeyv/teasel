@@ -20,8 +20,19 @@ const LOC = 15;
 const little = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
 const utf16 = new TextDecoder(little ? 'utf-16le' : 'utf-16be', { ignoreBOM: true });
 
-/** @type {WeakMap<Function, string[]>} constants per engine, by the function that fetches them */
+/** @type {WeakMap<Function, { constants: string[], is_fact: Uint8Array }>} per engine, by the function that fetches its constants */
 const tables = new WeakMap();
+
+const FACTS = new Set(['scope', 'binding', 'declares', 'write', 'mutate']);
+
+function table_of(fetch, known) {
+	let table = tables.get(fetch);
+	if (table === undefined || known > table.constants.length) {
+		const constants = fetch();
+		tables.set(fetch, (table = { constants, is_fact: Uint8Array.from(constants, (name) => (FACTS.has(name) ? 1 : 0)) }));
+	}
+	return table;
+}
 
 function unaligned_floats(buffer, start, count) {
 	const view = new DataView(buffer, start, count * 8);
@@ -40,8 +51,7 @@ export function decode(answer, source, fetch, link = true) {
 	const words = answer instanceof Uint32Array ? answer : new Uint32Array(answer);
 	const { buffer, byteOffset } = words;
 	const [tokens_count, ends_count, floats_count, units, known] = words;
-	let constants = tables.get(fetch);
-	if (constants === undefined || known > constants.length) tables.set(fetch, (constants = fetch()));
+	const { constants, is_fact } = table_of(fetch, known);
 	const tokens = words.subarray(5, 5 + tokens_count);
 	const ends = words.subarray(5 + tokens_count, 5 + tokens_count + ends_count);
 	const text_at = 5 + tokens_count + ends_count;
@@ -102,9 +112,10 @@ export function decode(answer, source, fetch, link = true) {
 			const tag = tokens[at++];
 			if (tag === END) return object;
 			if (tag === KEY) {
-				const key = constants[tokens[at++]];
-				// a node's scope facts go to the side tables; the tables' own entries keep theirs
-				if (link && typeof object.type === 'string' && FACTS.has(key)) facts.push(object, key, value());
+				const id = tokens[at++];
+				const key = constants[id];
+				// a node's scope facts go under symbols; the tables' own entries keep theirs as keys
+				if (link && is_fact[id] === 1 && typeof object.type === 'string') facts.push(object, key, value());
 				else object[key] = value();
 			} else if (tag === SPAN) {
 				object.start = tokens[at++];
@@ -125,14 +136,17 @@ export function decode(answer, source, fetch, link = true) {
 	return root;
 }
 
-const FACTS = new Set(['scope', 'binding', 'declares', 'write', 'mutate']);
-const scopes_of = new WeakMap();
-const bindings_of = new WeakMap();
+// symbol keys: ten times cheaper than a WeakMap entry, and skipped by JSON, Object.keys and for-in
+const SCOPE = Symbol('scope');
+const BINDING = Symbol('binding');
+const REFERENCE = Symbol('reference');
 
 /** @param {import('estree').Node} node @returns {import('./index.js').Scope | undefined} the scope the node opens */
-export const scopeOf = (node) => scopes_of.get(node);
+export const scopeOf = (node) => (node == null ? undefined : node[SCOPE]);
 /** @param {import('estree').Node} node @returns {import('./index.js').Binding | null | undefined} what the identifier declares or refers to; null for a global, undefined when it names no value */
-export const bindingOf = (node) => bindings_of.get(node);
+export const bindingOf = (node) => (node == null ? undefined : node[BINDING]);
+/** @param {import('estree').Node} node @returns {import('./index.js').Reference | undefined} the reference an identifier makes, a global's included */
+export const referenceOf = (node) => (node == null ? undefined : node[REFERENCE]);
 
 /**
  * Turns the answer's scope and binding tables into objects and files each node's facts in the
@@ -154,28 +168,21 @@ export function linkScopes(answer, facts) {
 		binding.scope.bindings.push(binding);
 		binding.scope.declarations.set(binding.name, binding);
 	}
-	let reference = null;
 	for (let i = 0; i < facts.length; i += 3) {
 		const node = facts[i], key = facts[i + 1], value = facts[i + 2];
 		if (key === 'scope') {
-			const scope = scopes[value];
-			scopes_of.set(node, scope);
-			scope.node = node;
+			node[SCOPE] = scopes[value];
+			node[SCOPE].node = node;
 		} else if (key === 'declares') {
-			const binding = bindings[value];
-			bindings_of.set(node, binding);
-			if (binding.node === null) binding.node = node;
+			node[BINDING] = bindings[value];
+			if (node[BINDING].node === null) node[BINDING].node = node;
 		} else if (key === 'binding') {
-			reference = null;
-			if (value === null) {
-				bindings_of.set(node, null);
-			} else {
-				const binding = bindings[value];
-				bindings_of.set(node, binding);
-				binding.references.push((reference = { node, write: false, mutate: false }));
-			}
-		} else if (reference !== null) {
-			reference[key] = true;
+			const binding = value === null ? null : bindings[value];
+			node[BINDING] = binding;
+			node[REFERENCE] = { node, binding, write: false, mutate: false };
+			if (binding !== null) binding.references.push(node[REFERENCE]);
+		} else if (node[REFERENCE] !== undefined) {
+			node[REFERENCE][key] = true;
 		}
 	}
 	answer.scopes = scopes;
