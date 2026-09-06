@@ -102,24 +102,22 @@ export interface Binding {
 	scope: Scope;
 	/** The identifier that declares it; null for `arguments`. */
 	node: Identifier | null;
-	/** The identifiers that refer to it, the declaring one excluded, in source order. */
-	references: Identifier[];
+	/** The references to it, the declaring identifier excluded, in source order. */
+	references: Reference[];
 }
 
-declare module 'estree' {
-	interface BaseNode {
-		/** With `scopes`: the scope this node opens. */
-		scope?: Scope;
-	}
-	interface Identifier {
-		/** With `scopes`: what the identifier declares or refers to; null for a global. */
-		binding?: Binding | null;
-		/** With `scopes`: the identifier is assigned to, updated or bound by a destructuring assignment. */
-		write?: true;
-		/** With `scopes`: a member of the identifier's value is assigned to, updated or deleted. */
-		mutate?: true;
-	}
+export interface Reference {
+	node: Identifier;
+	/** The identifier is assigned to, updated or bound by a destructuring assignment. */
+	write: boolean;
+	/** A member of the identifier's value is assigned to, updated or deleted. */
+	mutate: boolean;
 }
+
+/** With `scopes`: the scope `node` opens, when it opens one. */
+export function scopeOf(node: Node): Scope | undefined;
+/** With `scopes`: what an identifier declares or refers to; null for a global, undefined when it names no value, a property key say. */
+export function bindingOf(node: Node): Binding | null | undefined;
 
 /** A comment, with `loc` when `locations` is on. */
 export interface Comment {

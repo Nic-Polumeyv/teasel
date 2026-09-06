@@ -57,8 +57,8 @@ export function decode(answer, source, fetch, link = true) {
 		from = ends[i];
 	}
 	let at = 0;
-	/** @type {any[]} nodes with a `scope`, `declares` or `binding` key, for `link` */
-	const indexed = [];
+	/** @type {any[]} node, key, value for every scope fact met, in stream order */
+	const facts = [];
 
 	function value() {
 		const tag = tokens[at++];
@@ -103,8 +103,9 @@ export function decode(answer, source, fetch, link = true) {
 			if (tag === END) return object;
 			if (tag === KEY) {
 				const key = constants[tokens[at++]];
-				object[key] = value();
-				if (key === 'scope' || key === 'binding' || key === 'declares') indexed.push(object);
+				// a node's scope facts go to the side tables; the tables' own entries keep theirs
+				if (link && typeof object.type === 'string' && FACTS.has(key)) facts.push(object, key, value());
+				else object[key] = value();
 			} else if (tag === SPAN) {
 				object.start = tokens[at++];
 				object.end = tokens[at++];
@@ -120,18 +121,27 @@ export function decode(answer, source, fetch, link = true) {
 	}
 
 	const root = value();
-	if (link) linkScopes(root, indexed);
+	if (link) linkScopes(root, facts);
 	return root;
 }
 
+const FACTS = new Set(['scope', 'binding', 'declares', 'write', 'mutate']);
+const scopes_of = new WeakMap();
+const bindings_of = new WeakMap();
+
+/** @param {import('estree').Node} node @returns {import('./index.js').Scope | undefined} the scope the node opens */
+export const scopeOf = (node) => scopes_of.get(node);
+/** @param {import('estree').Node} node @returns {import('./index.js').Binding | null | undefined} what the identifier declares or refers to; null for a global, undefined when it names no value */
+export const bindingOf = (node) => bindings_of.get(node);
+
 /**
- * Turns the answer's scope and binding tables into objects and the numbers on nodes into
- * references to them: `node.scope`, `identifier.binding`, `binding.node`, `binding.references`,
- * `scope.node`, `scope.parent`, `scope.bindings`, `scope.through`.
+ * Turns the answer's scope and binding tables into objects and files each node's facts in the
+ * side tables: `binding.node`, `binding.references`, `scope.node`, `scope.parent`,
+ * `scope.bindings`, `scope.declarations`, `scope.through`.
  * @param {any} answer a program or a parse-at answer carrying `scopes` and `bindings`
- * @param {any[]} indexed the nodes carrying a `scope`, `declares` or `binding` number
+ * @param {any[]} facts node, key, value triples in stream order
  */
-export function linkScopes(answer, indexed) {
+export function linkScopes(answer, facts) {
 	if (!answer || !answer.scopes) return;
 	const scopes = answer.scopes.map((scope) => ({ ...scope, node: null, bindings: [], declarations: new Map() }));
 	const bindings = answer.bindings.map((binding) => ({ ...binding, node: null, references: [] }));
@@ -144,21 +154,28 @@ export function linkScopes(answer, indexed) {
 		binding.scope.bindings.push(binding);
 		binding.scope.declarations.set(binding.name, binding);
 	}
-	for (const node of indexed) {
-		// the tables' own entries carry `scope` too, and are not nodes
-		if (typeof node.type !== 'string') continue;
-		if (node.scope !== undefined) {
-			node.scope = scopes[node.scope];
-			node.scope.node = node;
-		}
-		if (node.declares !== undefined) {
-			const binding = bindings[node.declares];
-			delete node.declares;
-			node.binding = binding;
+	let reference = null;
+	for (let i = 0; i < facts.length; i += 3) {
+		const node = facts[i], key = facts[i + 1], value = facts[i + 2];
+		if (key === 'scope') {
+			const scope = scopes[value];
+			scopes_of.set(node, scope);
+			scope.node = node;
+		} else if (key === 'declares') {
+			const binding = bindings[value];
+			bindings_of.set(node, binding);
 			if (binding.node === null) binding.node = node;
-		} else if (node.binding !== undefined && node.binding !== null) {
-			node.binding = bindings[node.binding];
-			node.binding.references.push(node);
+		} else if (key === 'binding') {
+			reference = null;
+			if (value === null) {
+				bindings_of.set(node, null);
+			} else {
+				const binding = bindings[value];
+				bindings_of.set(node, binding);
+				binding.references.push((reference = { node, write: false, mutate: false }));
+			}
+		} else if (reference !== null) {
+			reference[key] = true;
 		}
 	}
 	answer.scopes = scopes;

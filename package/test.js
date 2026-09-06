@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import * as node from './index.js';
 import * as wasm from './wasm.js';
+import { scopeOf, bindingOf } from './decode.js';
 
 await wasm.init(readFileSync(new URL('./teasel.wasm', import.meta.url)));
 
@@ -53,17 +54,26 @@ for (const [name, { Source, parse, parseExpressionAt, parseParamsAt, parseStatem
 	{
 		const program = parse('let x = 1; function f(y) { x = y; }', { sourceType: 'module', scopes: true });
 		const [x, f, y] = program.bindings;
-		assert.equal(program.scope, program.scopes[0]);
+		assert.equal(scopeOf(program), program.scopes[0]);
 		assert.equal(x.node, program.body[0].declarations[0].id);
-		assert.deepEqual(x.references.map((r) => r.start), [27]);
+		assert.equal(bindingOf(x.node), x);
+		assert.deepEqual(x.references.map((r) => r.node.start), [27]);
 		assert.equal(x.references[0].write, true);
+		assert.equal(bindingOf(x.references[0].node), x);
 		assert.equal(f.scope.kind, 'module');
 		assert.equal(y.scope.node, program.body[1]);
 		assert.equal(y.scope.through[0], x);
 		assert.equal(program.scopes[0].declarations.get('f'), f);
+		assert.equal('scope' in program, false);
+		assert.equal('binding' in x.node, false);
 		const at = parseExpressionAt('a + b', 0, { scopes: true });
-		assert.equal(at.node.left.binding, null);
+		assert.equal(bindingOf(at.node.left), null);
+		assert.equal(bindingOf(at.node), undefined);
 		assert.equal(at.scopes[0].kind, 'fragment');
+		const bare = parseExpressionAt('{count}', 1, { scopes: true });
+		assert.equal(bindingOf(bare.node), null);
+		assert.equal(scopeOf(bare.node).kind, 'fragment');
+		assert.doesNotThrow(() => JSON.stringify(program.body));
 	}
 	assert.throws(() => parse('x', { sourceType: 'nonsense' }), TypeError);
 	assert.throws(() => parseExpressionAt('𝒳 + y', 1), (e) => e instanceof SyntaxError && /surrogate/.test(e.message));
