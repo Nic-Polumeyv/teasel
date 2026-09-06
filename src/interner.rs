@@ -61,7 +61,8 @@ pub struct StrId(pub(crate) u32);
 #[derive(Debug, Default)]
 pub struct Interner {
 	text: String,
-	spans: Vec<(u32, u32)>,
+	/// Where each string starts, and where the next would.
+	starts: Vec<u32>,
 	hashes: Vec<u32>,
 	/// Slots hold an id plus one; zero is empty. Always a power of two, at most half full.
 	table: Vec<u32>,
@@ -70,46 +71,45 @@ pub struct Interner {
 fn hash(s: &str) -> u32 {
 	let mut hasher = FastHasher::default();
 	hasher.write(s.as_bytes());
-	hasher.finish() as u32
+	// the low half of the product depends on the first four bytes only; fold the high half in
+	let h = hasher.finish();
+	(h ^ (h >> 32)) as u32
 }
 
 impl Interner {
 	pub fn intern(&mut self, s: &str) -> StrId {
 		let hash = hash(s);
-		if let Some(id) = self.slot(s, hash) {
-			return id;
-		}
-		if self.table.len() < 2 * (self.spans.len() + 1) {
+		let mut slot = match self.probe(s, hash) {
+			Ok(id) => return id,
+			Err(slot) => slot,
+		};
+		if self.table.len() < 2 * self.len() + 2 {
 			self.grow();
+			slot = self.probe(s, hash).unwrap_err();
 		}
-		let id = self.spans.len() as u32;
-		let start = self.text.len() as u32;
+		let id = self.len() as u32;
 		self.text.push_str(s);
-		self.spans.push((start, start + s.len() as u32));
+		self.starts.push(self.text.len() as u32);
 		self.hashes.push(hash);
-		let mask = self.table.len() - 1;
-		let mut i = hash as usize & mask;
-		while self.table[i] != 0 {
-			i = (i + 1) & mask;
-		}
-		self.table[i] = id + 1;
+		self.table[slot] = id + 1;
 		StrId(id)
 	}
 
-	fn slot(&self, s: &str, hash: u32) -> Option<StrId> {
+	/// The id of `s`, or the empty slot it would take.
+	fn probe(&self, s: &str, hash: u32) -> Result<StrId, usize> {
 		if self.table.is_empty() {
-			return None;
+			return Err(0);
 		}
 		let mask = self.table.len() - 1;
 		let mut i = hash as usize & mask;
 		loop {
 			let entry = self.table[i];
 			if entry == 0 {
-				return None;
+				return Err(i);
 			}
 			let id = entry - 1;
 			if self.hashes[id as usize] == hash && self.get(StrId(id)) == s {
-				return Some(StrId(id));
+				return Ok(StrId(id));
 			}
 			i = (i + 1) & mask;
 		}
@@ -118,6 +118,9 @@ impl Interner {
 	fn grow(&mut self) {
 		let size = (self.table.len() * 2).max(64);
 		self.table = vec![0; size];
+		if self.starts.is_empty() {
+			self.starts.push(0);
+		}
 		let mask = size - 1;
 		for (id, &hash) in self.hashes.iter().enumerate() {
 			let mut i = hash as usize & mask;
@@ -129,19 +132,60 @@ impl Interner {
 	}
 
 	pub fn find(&self, s: &str) -> Option<StrId> {
-		self.slot(s, hash(s))
+		self.probe(s, hash(s)).ok()
 	}
 
 	pub fn get(&self, id: StrId) -> &str {
-		let (start, end) = self.spans[id.0 as usize];
-		&self.text[start as usize..end as usize]
+		let i = id.0 as usize;
+		&self.text[self.starts[i] as usize..self.starts[i + 1] as usize]
 	}
 
 	pub fn len(&self) -> usize {
-		self.spans.len()
+		self.starts.len().saturating_sub(1)
 	}
 
 	pub fn is_empty(&self) -> bool {
-		self.spans.is_empty()
+		self.len() == 0
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn interns_once_and_finds() {
+		let mut interner = Interner::default();
+		assert_eq!(interner.find(""), None);
+		assert_eq!(interner.find("x"), None);
+		let empty = interner.intern("");
+		assert_eq!(interner.get(empty), "");
+		assert_eq!(interner.intern(""), empty);
+		assert_eq!(interner.find(""), Some(empty));
+		let ids: Vec<_> = (0..500).map(|i| interner.intern(&format!("name{i}"))).collect();
+		for (i, &id) in ids.iter().enumerate() {
+			let name = format!("name{i}");
+			assert_eq!(interner.get(id), name);
+			assert_eq!(interner.find(&name), Some(id));
+			assert_eq!(interner.intern(&name), id);
+		}
+		assert_eq!(interner.find("nope"), None);
+		assert_eq!(interner.len(), 501);
+	}
+
+	#[test]
+	fn prefixes_and_collisions_stay_apart() {
+		let mut interner = Interner::default();
+		let names = [
+			"value", "value123", "length", "lengthy", "abcd", "abcdefg", "k100", "k1000",
+		];
+		let ids: Vec<_> = names.iter().map(|n| interner.intern(n)).collect();
+		for (name, id) in names.iter().zip(&ids) {
+			assert_eq!(interner.get(*id), *name);
+		}
+		assert_ne!(hash("value"), hash("value123"));
+		let mut sorted = ids.clone();
+		sorted.dedup();
+		assert_eq!(sorted.len(), names.len());
 	}
 }

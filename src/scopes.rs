@@ -191,6 +191,7 @@ impl Packed for ScopeId {
 	}
 }
 
+// ids stay below 2^31: a node count bounds them, and the source is u32 long
 impl Packed for Role {
 	fn pack(self) -> u32 {
 		match self {
@@ -220,6 +221,7 @@ impl<T: Packed> NodeTable<T> {
 	}
 
 	fn insert(&mut self, id: NodeId, value: T) {
+		debug_assert!((id.0 as usize) < self.0.len(), "nodes are numbered before analysis");
 		self.0[id.0 as usize] = value.pack() + 1;
 	}
 
@@ -998,6 +1000,21 @@ impl<X: Bind> Binder<'_, X> {
 
 #[cfg(test)]
 mod tests {
+	#[test]
+	fn node_tables() {
+		use super::{NodeTable, Role};
+		use crate::ast::NodeId;
+		let mut table: NodeTable<Role> = NodeTable::sized(3);
+		assert_eq!(table.get(NodeId(7)).is_none(), true);
+		table.insert_new(NodeId(1), Role::Declares(5));
+		table.insert_new(NodeId(1), Role::Reference(6));
+		assert!(matches!(table.get(NodeId(1)), Some(Role::Declares(5))));
+		table.insert(NodeId(2), Role::Reference(6));
+		assert!(matches!(table.get(NodeId(2)), Some(Role::Reference(6))));
+		assert_eq!(table.iter().count(), 2);
+		assert!(table.get(NodeId(0)).is_none());
+	}
+
 	use super::*;
 	use crate::parser::Options;
 
