@@ -163,26 +163,26 @@ impl Sink for Json {
 		self.text(value);
 	}
 
+	// the two entries every node has, written in one piece: a measurable share of the text
 	fn span(&mut self, start: u32, end: u32) {
-		self.key("start");
-		self.int(start);
-		self.key("end");
-		self.int(end);
+		self.sep();
+		self.out.push_str("\"start\":");
+		push_int(&mut self.out, start);
+		self.out.push_str(",\"end\":");
+		push_int(&mut self.out, end);
 	}
 
 	fn loc(&mut self, start_line: u32, start_column: u32, end_line: u32, end_column: u32) {
-		self.key("loc");
-		self.object();
-		for (key, line, column) in [("start", start_line, start_column), ("end", end_line, end_column)] {
-			self.key(key);
-			self.object();
-			self.key("line");
-			self.int(line);
-			self.key("column");
-			self.int(column);
-			self.end();
-		}
-		self.end();
+		self.sep();
+		self.out.push_str("\"loc\":{\"start\":{\"line\":");
+		push_int(&mut self.out, start_line);
+		self.out.push_str(",\"column\":");
+		push_int(&mut self.out, start_column);
+		self.out.push_str("},\"end\":{\"line\":");
+		push_int(&mut self.out, end_line);
+		self.out.push_str(",\"column\":");
+		push_int(&mut self.out, end_column);
+		self.out.push_str("}}");
 	}
 }
 
@@ -247,8 +247,8 @@ fn constant(value: &'static str) -> u32 {
 /// objects directly: a header of five counts (tokens, strings, floats, UTF-16 units of text,
 /// constants numbered when it was written), the tokens, the strings' UTF-16 ends, the text two
 /// units to a word, padding to an even word, then the floats two words each. The strings are the
-/// tree's interned ones first, then any text written for this answer.
-#[derive(Default)]
+/// tree's interned ones first, then any text written for this answer. Words are the host's
+/// endianness, which every target the package builds for shares with the decoder's check.
 pub struct Binary {
 	words: Vec<u32>,
 	units: Vec<u16>,
@@ -257,10 +257,13 @@ pub struct Binary {
 }
 
 impl Binary {
+	/// Starts with the header's five words, filled in by `finish`.
 	pub fn new() -> Self {
 		Binary {
 			words: vec![0; 5],
-			..Default::default()
+			units: Vec::new(),
+			ends: Vec::new(),
+			floats: Vec::new(),
 		}
 	}
 
@@ -1398,5 +1401,41 @@ mod tests {
 		assert!(positions.byte_offset(-1.0).is_err());
 		assert!(positions.byte_offset(1.5).is_err());
 		assert_eq!(Positions::new("abc", true).byte_offset(3.0), Ok(3));
+	}
+
+	#[test]
+	fn binary_layout() {
+		use super::{Binary, Sink, token};
+		use crate::interner::Interner;
+		let mut interner = Interner::default();
+		interner.intern("a");
+		let mut b = Binary::new();
+		b.strings(&interner);
+		b.begin("Identifier");
+		b.span(1, 2);
+		b.key("name");
+		b.interned(crate::interner::StrId(0), "a");
+		b.key("value");
+		b.float(1.5);
+		b.key("raw");
+		b.text("\u{1F600}b");
+		b.end();
+		let words = b.finish();
+		let [tokens, strings, floats, units, known] = words[..5] else {
+			unreachable!()
+		};
+		assert_eq!((strings, floats, units), (2, 1, 4));
+		assert!(known >= 4);
+		let body = &words[5..5 + tokens as usize];
+		assert_eq!(body[0], token::BEGIN);
+		assert_eq!(&body[2..5], &[token::SPAN, 1, 2]);
+		let ends = &words[5 + tokens as usize..][..2];
+		assert_eq!(ends, &[1, 4]);
+		let text_at = 5 + tokens as usize + 2;
+		assert_eq!(words[text_at], 'a' as u32 | (0xd83d << 16));
+		let floats_at = (text_at + 2).next_multiple_of(2);
+		let bits = words[floats_at] as u64 | (words[floats_at + 1] as u64) << 32;
+		assert_eq!(f64::from_bits(bits), 1.5);
+		assert_eq!(words.len(), floats_at + 2);
 	}
 }

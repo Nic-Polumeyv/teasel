@@ -20,7 +20,8 @@
 	},
 	"scripts": {
 		"build": "napi build --platform --release --js binding.cjs --dts binding.d.ts",
-		"test": "bun test.js"
+		"test": "bun test.js",
+		"check": "node check.js"
 	},
 	"dependencies": {
 		"@types/estree": "^1.0.6"

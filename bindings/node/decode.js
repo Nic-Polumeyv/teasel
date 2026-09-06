@@ -16,7 +16,8 @@ const SLICE = 13;
 const SPAN = 14;
 const LOC = 15;
 
-const utf16 = new TextDecoder('utf-16le');
+// the text is in the host's byte order like the words, and a leading U+FEFF is text, not a mark
+const utf16 = new TextDecoder(new Uint8Array(new Uint16Array([1]).buffer)[0] === 1 ? 'utf-16le' : 'utf-16be', { ignoreBOM: true });
 
 /** @type {string[]} */
 let constants = [];

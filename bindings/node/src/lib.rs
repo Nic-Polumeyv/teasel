@@ -59,9 +59,7 @@ fn request(options: Option<Options>) -> Request {
 }
 
 /// The packed token stream as a buffer JavaScript owns, or the error answer as JSON.
-type Answered = Either<JsArrayBuffer, String>;
-
-fn answer(env: &Env, result: Result<Vec<u32>, String>) -> napi::Result<Answered> {
+fn answer(env: &Env, result: Result<Vec<u32>, String>) -> napi::Result<Either<JsArrayBuffer, String>> {
 	match result {
 		Ok(words) => {
 			let mut buffer = env.create_arraybuffer(words.len() * 4)?;
@@ -78,7 +76,13 @@ pub fn constants() -> Vec<&'static str> {
 	teasel::estree::constants()
 }
 
-fn run(env: &Env, source: String, entry: Entry, offset: f64, options: Option<Options>) -> napi::Result<Answered> {
+fn run(
+	env: &Env,
+	source: String,
+	entry: Entry,
+	offset: f64,
+	options: Option<Options>,
+) -> napi::Result<Either<JsArrayBuffer, String>> {
 	answer(
 		env,
 		Prepared::new(source, request(options)).binary(entry, offset, false),
@@ -90,27 +94,47 @@ fn run_json(source: String, entry: Entry, offset: f64, options: Option<Options>)
 }
 
 #[napi(catch_unwind)]
-pub fn parse(env: Env, source: String, options: Option<Options>) -> napi::Result<Answered> {
+pub fn parse(env: Env, source: String, options: Option<Options>) -> napi::Result<Either<JsArrayBuffer, String>> {
 	run(&env, source, Entry::Program, 0.0, options)
 }
 
 #[napi(catch_unwind)]
-pub fn parse_expression_at(env: Env, source: String, offset: f64, options: Option<Options>) -> napi::Result<Answered> {
+pub fn parse_expression_at(
+	env: Env,
+	source: String,
+	offset: f64,
+	options: Option<Options>,
+) -> napi::Result<Either<JsArrayBuffer, String>> {
 	run(&env, source, Entry::Expression, offset, options)
 }
 
 #[napi(catch_unwind)]
-pub fn parse_pattern_at(env: Env, source: String, offset: f64, options: Option<Options>) -> napi::Result<Answered> {
+pub fn parse_pattern_at(
+	env: Env,
+	source: String,
+	offset: f64,
+	options: Option<Options>,
+) -> napi::Result<Either<JsArrayBuffer, String>> {
 	run(&env, source, Entry::Pattern, offset, options)
 }
 
 #[napi(catch_unwind)]
-pub fn parse_params_at(env: Env, source: String, offset: f64, options: Option<Options>) -> napi::Result<Answered> {
+pub fn parse_params_at(
+	env: Env,
+	source: String,
+	offset: f64,
+	options: Option<Options>,
+) -> napi::Result<Either<JsArrayBuffer, String>> {
 	run(&env, source, Entry::Params, offset, options)
 }
 
 #[napi(catch_unwind)]
-pub fn parse_statement_at(env: Env, source: String, offset: f64, options: Option<Options>) -> napi::Result<Answered> {
+pub fn parse_statement_at(
+	env: Env,
+	source: String,
+	offset: f64,
+	options: Option<Options>,
+) -> napi::Result<Either<JsArrayBuffer, String>> {
 	run(&env, source, Entry::Statement, offset, options)
 }
 
@@ -157,7 +181,7 @@ impl Source {
 
 	/// The whole source, or the program spanning `start..end` of it.
 	#[napi(catch_unwind)]
-	pub fn parse(&self, env: Env, start: Option<f64>, end: Option<f64>) -> napi::Result<Answered> {
+	pub fn parse(&self, env: Env, start: Option<f64>, end: Option<f64>) -> napi::Result<Either<JsArrayBuffer, String>> {
 		answer(
 			&env,
 			match (start, end) {
@@ -169,7 +193,12 @@ impl Source {
 
 	/// `until` is `"as"` when the host's `as` follows the expression.
 	#[napi(catch_unwind)]
-	pub fn parse_expression_at(&self, env: Env, offset: f64, until: Option<String>) -> napi::Result<Answered> {
+	pub fn parse_expression_at(
+		&self,
+		env: Env,
+		offset: f64,
+		until: Option<String>,
+	) -> napi::Result<Either<JsArrayBuffer, String>> {
 		answer(
 			&env,
 			self.prepared
@@ -178,23 +207,26 @@ impl Source {
 	}
 
 	#[napi(catch_unwind)]
-	pub fn parse_pattern_at(&self, env: Env, offset: f64) -> napi::Result<Answered> {
+	pub fn parse_pattern_at(&self, env: Env, offset: f64) -> napi::Result<Either<JsArrayBuffer, String>> {
 		answer(&env, self.prepared.binary(Entry::Pattern, offset, false))
 	}
 
 	#[napi(catch_unwind)]
-	pub fn parse_params_at(&self, env: Env, offset: f64) -> napi::Result<Answered> {
+	pub fn parse_params_at(&self, env: Env, offset: f64) -> napi::Result<Either<JsArrayBuffer, String>> {
 		answer(&env, self.prepared.binary(Entry::Params, offset, false))
 	}
 
 	#[napi(catch_unwind)]
-	pub fn parse_statement_at(&self, env: Env, offset: f64) -> napi::Result<Answered> {
+	pub fn parse_statement_at(&self, env: Env, offset: f64) -> napi::Result<Either<JsArrayBuffer, String>> {
 		answer(&env, self.prepared.binary(Entry::Statement, offset, false))
 	}
 }
 
+/// Words in the host's order, which `decode.js` reads back through typed arrays.
 fn fill(buffer: &mut JsArrayBufferValue, words: &[u32]) {
-	for (bytes, word) in buffer.as_mut().chunks_exact_mut(4).zip(words) {
-		bytes.copy_from_slice(&word.to_le_bytes());
+	let bytes = buffer.as_mut();
+	debug_assert_eq!(bytes.len(), words.len() * 4);
+	for (bytes, word) in bytes.chunks_exact_mut(4).zip(words) {
+		bytes.copy_from_slice(&word.to_ne_bytes());
 	}
 }
