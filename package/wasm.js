@@ -1,6 +1,7 @@
 import { bind } from './api.js';
 
 export { isIdentifierStart, isIdentifierChar } from './identifier.js';
+export { scopeOf, bindingOf, referenceOf } from './decode.js';
 
 const encoder = new TextEncoder();
 const utf8 = new TextDecoder();

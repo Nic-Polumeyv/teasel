@@ -5,7 +5,7 @@ import * as wasm from './wasm.js';
 
 await wasm.init(readFileSync(new URL('./teasel.wasm', import.meta.url)));
 
-for (const [name, { Source, parse, parseExpressionAt, parseParamsAt, parseStatementAt, isIdentifierStart, isIdentifierChar }] of [['node', node], ['wasm', wasm]]) {
+for (const [name, { Source, parse, parseExpressionAt, parsePatternAt, parseParamsAt, parseStatementAt, isIdentifierStart, isIdentifierChar, scopeOf, bindingOf, referenceOf }] of [['node', node], ['wasm', wasm]]) {
 	const program = parse('let x: number = 1; // done', { sourceType: 'module', typescript: true, comments: true, locations: true });
 	assert.equal(program.sourceType, 'module');
 	assert.equal(program.body[0].declarations[0].id.typeAnnotation.typeAnnotation.type, 'TSNumberKeyword');
@@ -53,17 +53,39 @@ for (const [name, { Source, parse, parseExpressionAt, parseParamsAt, parseStatem
 	{
 		const program = parse('let x = 1; function f(y) { x = y; }', { sourceType: 'module', scopes: true });
 		const [x, f, y] = program.bindings;
-		assert.equal(program.scope, program.scopes[0]);
+		assert.equal(scopeOf(program), program.scopes[0]);
 		assert.equal(x.node, program.body[0].declarations[0].id);
-		assert.deepEqual(x.references.map((r) => r.start), [27]);
+		assert.equal(bindingOf(x.node), x);
+		assert.deepEqual(x.references.map((r) => r.node.start), [27]);
 		assert.equal(x.references[0].write, true);
+		assert.equal(bindingOf(x.references[0].node), x);
 		assert.equal(f.scope.kind, 'module');
 		assert.equal(y.scope.node, program.body[1]);
 		assert.equal(y.scope.through[0], x);
 		assert.equal(program.scopes[0].declarations.get('f'), f);
+		assert.equal('scope' in program, false);
+		assert.equal('binding' in x.node, false);
 		const at = parseExpressionAt('a + b', 0, { scopes: true });
-		assert.equal(at.node.left.binding, null);
+		assert.equal(bindingOf(at.node.left), null);
+		assert.equal(bindingOf(at.node), undefined);
 		assert.equal(at.scopes[0].kind, 'fragment');
+		const bare = parseExpressionAt('{count}', 1, { scopes: true });
+		assert.equal(bindingOf(bare.node), null);
+		assert.equal(scopeOf(bare.node).kind, 'fragment');
+		assert.doesNotThrow(() => JSON.stringify(program.body));
+		assert.deepEqual(Object.keys(x.node), ['type', 'start', 'end', 'name']);
+		assert.equal(scopeOf(program.body[1]).kind, 'function');
+		const mutated = parse('let o = {}; o.x = 1; g = 2; h.k = 3;', { sourceType: 'module', scopes: true });
+		const [o] = mutated.bindings;
+		assert.equal(o.references[0].mutate, true);
+		assert.equal(o.references[0].write, false);
+		const g = mutated.body[2].expression.left;
+		assert.equal(bindingOf(g), null);
+		assert.deepEqual(referenceOf(g), { node: g, binding: null, write: true, mutate: false });
+		assert.equal(referenceOf(mutated.body[3].expression.left.object).mutate, true);
+		assert.equal(referenceOf(o.node), undefined);
+		assert.equal(bindingOf(null), undefined);
+		assert.equal(bindingOf(parsePatternAt('[a, b]', 0, { scopes: true }).node.elements[0]).kind, 'pattern');
 	}
 	assert.throws(() => parse('x', { sourceType: 'nonsense' }), TypeError);
 	assert.throws(() => parseExpressionAt('𝒳 + y', 1), (e) => e instanceof SyntaxError && /surrogate/.test(e.message));

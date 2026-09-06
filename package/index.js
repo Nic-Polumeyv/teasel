@@ -3,6 +3,7 @@ import { createRequire } from 'node:module';
 import { bind } from './api.js';
 
 export { isIdentifierStart, isIdentifierChar } from './identifier.js';
+export { scopeOf, bindingOf, referenceOf } from './decode.js';
 
 const native = createRequire(import.meta.url)('./binding.cjs');
 const encoder = new TextEncoder();

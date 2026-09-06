@@ -27,6 +27,7 @@ function outcome(fn) {
 	try {
 		return { value: fn() };
 	} catch (e) {
+		if (!(e instanceof SyntaxError)) throw e;
 		return { error: { code: e.code, message: e.message, pos: e.pos, end: e.end, loc: e.loc } };
 	}
 }
