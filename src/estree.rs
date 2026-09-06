@@ -3,6 +3,7 @@
 
 use crate::ast::{Ast, Function, List, MethodKind, NodeId, NodeKind, PropertyKind};
 use crate::interner::{FastMap, Interner, StrId};
+use crate::scopes::Role;
 use std::fmt::Write;
 
 /// How an extension's data serializes: its own nodes, and the keys it adds to JavaScript nodes.
@@ -21,6 +22,10 @@ pub trait Emit: crate::ast::Walk {
 pub struct Output {
 	/// The answer lists every comment read.
 	pub comments: bool,
+	/// Nodes carry their scope and identifiers their binding, and the answer lists both tables.
+	pub scopes: bool,
+	/// The node is a pattern parsed on its own, which declares what it names.
+	pub pattern: bool,
 	/// TypeScript is erased: annotations, type-only declarations and imports go, assertions give
 	/// way to their expression, and what erasure cannot express is listed as `typescript`.
 	pub erase: bool,
@@ -474,6 +479,8 @@ pub struct Writer<'a, X = (), S: Sink = Json> {
 	pub(crate) output: Output,
 	/// Whether the program carries the comment list and the erasure leftovers.
 	program_tail: bool,
+	/// The node being written names something bound by another node: no scope facts on it.
+	name_only: bool,
 	/// What erasure left in place, in emission order.
 	kept: Vec<(&'static str, NodeId)>,
 }
@@ -597,6 +604,7 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 			cursor: Cursor::default(),
 			output: Output::default(),
 			program_tail: false,
+			name_only: false,
 			kept: Vec::new(),
 		}
 	}
@@ -625,12 +633,84 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		let node = self.ast.node(id);
 		self.sink.begin(ty);
 		self.span(node.start, node.end);
+		self.scope_facts(id);
 		self.ast.extension.extras(self, id);
 		if let Some(attached) = self.ast.attached.get(&id) {
 			self.comments("leadingComments", &attached.leading);
 			self.comments("trailingComments", &attached.trailing);
 			self.comments("innerComments", &attached.inner);
 		}
+	}
+
+	/// The scope a node opens and what an identifier is: the binding it declares, or the one it
+	/// refers to (null for a global) and whether it writes to it or mutates its value.
+	fn scope_facts(&mut self, id: NodeId) {
+		let Some(scopes) = &self.ast.scopes else { return };
+		if self.name_only {
+			return;
+		}
+		if let Some(&scope) = scopes.of_node.get(&id) {
+			self.key("scope");
+			self.sink.int(scope);
+		}
+		match scopes.of_identifier.get(&id) {
+			Some(&Role::Declares(binding)) => {
+				self.key("declares");
+				self.sink.int(binding);
+			}
+			Some(&Role::Reference(reference)) => {
+				let reference = scopes.reference(reference);
+				self.key("binding");
+				match reference.binding {
+					Some(binding) => self.sink.int(binding),
+					None => self.sink.null(),
+				}
+				if reference.write {
+					self.bool("write", true);
+				}
+				if reference.mutate {
+					self.bool("mutate", true);
+				}
+			}
+			None => {}
+		}
+	}
+
+	/// The scope and binding tables: what the `scope`, `declares` and `binding` numbers index.
+	fn all_scopes(&mut self) {
+		let Some(scopes) = &self.ast.scopes else { return };
+		self.key("scopes");
+		self.sink.list();
+		for scope in &scopes.scopes {
+			self.sink.object();
+			self.string("kind", scope.kind.name());
+			self.key("parent");
+			match scope.parent {
+				Some(parent) => self.sink.int(parent),
+				None => self.sink.null(),
+			}
+			self.key("functionDepth");
+			self.sink.int(scope.function_depth);
+			self.key("through");
+			self.sink.list();
+			for &binding in &scope.through {
+				self.sink.int(binding);
+			}
+			self.sink.end();
+			self.sink.end();
+		}
+		self.sink.end();
+		self.key("bindings");
+		self.sink.list();
+		for binding in &scopes.bindings {
+			self.sink.object();
+			self.interned("name", binding.name);
+			self.string("kind", binding.kind.name());
+			self.key("scope");
+			self.sink.int(binding.scope);
+			self.sink.end();
+		}
+		self.sink.end();
 	}
 
 	fn comments(&mut self, key: &'static str, comments: &[u32]) {
@@ -672,6 +752,9 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		if self.output.erase {
 			self.all_kept();
 		}
+		if self.output.scopes {
+			self.all_scopes();
+		}
 		self.sink.end();
 	}
 
@@ -710,6 +793,15 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 	pub(crate) fn field(&mut self, key: &'static str, id: NodeId) {
 		self.key(key);
 		self.node(id);
+	}
+
+	/// A specifier's other name, which is the same node as the binding one in `import { a }`
+	/// and `export { a }`, and then only names: the binding facts stay on the binding one.
+	fn other_name(&mut self, key: &'static str, id: NodeId, binding: NodeId) {
+		let was = self.name_only;
+		self.name_only = id == binding;
+		self.field(key, id);
+		self.name_only = was;
 	}
 
 	pub(crate) fn kind(&self, id: NodeId) -> NodeKind {
@@ -816,6 +908,9 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 				}
 				if self.program_tail && self.output.erase {
 					self.all_kept();
+				}
+				if self.program_tail && self.output.scopes {
+					self.all_scopes();
 				}
 			}
 			Identifier { name } => {
@@ -1266,7 +1361,7 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 			}
 			ImportSpecifier { imported, local } => {
 				self.begin("ImportSpecifier", id);
-				self.field("imported", imported);
+				self.other_name("imported", imported, local);
 				self.field("local", local);
 			}
 			ImportDefaultSpecifier { local } => {
@@ -1297,7 +1392,7 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 			ExportSpecifier { local, exported } => {
 				self.begin("ExportSpecifier", id);
 				self.field("local", local);
-				self.field("exported", exported);
+				self.other_name("exported", exported, local);
 			}
 			ExportDefaultDeclaration { declaration } => {
 				self.begin("ExportDefaultDeclaration", id);

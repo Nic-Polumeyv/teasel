@@ -22,6 +22,8 @@ export interface Options {
   /** With `typescript`: erase it from the output. */
   erase?: boolean
   comments?: boolean
+  /** Scope analysis: `scope` on the nodes that open one, `binding` on identifiers, and the tables. */
+  scopes?: boolean
   locations?: boolean
   preserveParens?: boolean
   allowReturnOutsideFunction?: boolean

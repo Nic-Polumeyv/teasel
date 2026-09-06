@@ -1,10 +1,11 @@
 // The same API as `@teasel/parser` over the WebAssembly module; call `init` first.
 import init, * as wasm from './pkg/teasel.js';
+import { linkJson } from './scopes.js';
 
 export { init };
 export { isIdentifierStart, isIdentifierChar } from './identifier.js';
 
-const FLAGS = ['typescript', 'comments', 'locations', 'preserveParens', 'allowReturnOutsideFunction', 'allowAwaitOutsideFunction', 'allowSuperOutsideMethod', 'allowUndeclaredExports'];
+const FLAGS = ['typescript', 'comments', 'scopes', 'locations', 'preserveParens', 'allowReturnOutsideFunction', 'allowAwaitOutsideFunction', 'allowSuperOutsideMethod', 'allowUndeclaredExports'];
 
 function flags(options = {}) {
 	for (const key of ['ranges', 'onComment', 'onToken', 'onInsertedSemicolon', 'onTrailingComma']) {
@@ -29,6 +30,7 @@ function result(json) {
 		const { message, ...error } = value.error;
 		throw Object.assign(new SyntaxError(message), error);
 	}
+	if (value.scopes) linkJson(value);
 	return value;
 }
 

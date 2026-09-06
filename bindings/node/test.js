@@ -42,6 +42,21 @@ assert.throws(() => parse('x = ;'), (e) => e instanceof SyntaxError && e.code ==
 assert.throws(() => parse('x = '), (e) => e.code === 'unexpected_eof' && e.pos === 4 && e.end === 4);
 assert.throws(() => parse('/a', { locations: true }), (e) => e.code === 'unterminated_regexp' && e.pos === 1);
 assert.throws(() => parse('x', { ranges: true }), TypeError);
+{
+	const program = parse('let x = 1; function f(y) { x = y; }', { sourceType: 'module', scopes: true });
+	const [x, f, y] = program.bindings;
+	assert.equal(program.scope, program.scopes[0]);
+	assert.equal(x.node, program.body[0].declarations[0].id);
+	assert.deepEqual(x.references.map((r) => r.start), [27]);
+	assert.equal(x.references[0].write, true);
+	assert.equal(f.scope.kind, 'module');
+	assert.equal(y.scope.node, program.body[1]);
+	assert.equal(y.scope.through[0], x);
+	assert.equal(program.scopes[0].declarations.get('f'), f);
+	const at = parseExpressionAt('a + b', 0, { scopes: true });
+	assert.equal(at.node.left.binding, null);
+	assert.equal(at.scopes[0].kind, 'fragment');
+}
 assert.throws(() => parse('x', { sourceType: 'nonsense' }), TypeError);
 assert.throws(() => parseExpressionAt('𝒳 + y', 1), (e) => e instanceof SyntaxError && /surrogate/.test(e.message));
 assert.throws(() => parseExpressionAt('a + b', -1), SyntaxError);
