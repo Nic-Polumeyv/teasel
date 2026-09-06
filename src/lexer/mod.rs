@@ -9,7 +9,7 @@ mod tests;
 
 use crate::ast::{Comment, CommentKind};
 use crate::error::{Code, SyntaxError};
-use crate::interner::Interner;
+use crate::interner::{Interner, StrId};
 use token::{Keyword, Token, TokenKind};
 use unicode::{is_id_continue, is_id_start};
 
@@ -31,10 +31,18 @@ pub(crate) struct Lexer<'a> {
 	pub(crate) in_type: bool,
 	pub(crate) comments: Vec<Comment>,
 	pub(crate) strings: Interner,
+	/// `token::word` flags by string id, filled as ids appear.
+	word_flags: Vec<u8>,
 }
 
 impl<'a> Lexer<'a> {
+	#[cfg(test)]
 	pub(crate) fn new(src: &'a str) -> Self {
+		Self::sized(src, src.len())
+	}
+
+	/// `budget` is how much of `src` the parse will read, what the tables are sized for.
+	pub(crate) fn sized(src: &'a str, budget: usize) -> Self {
 		Self {
 			src,
 			pos: 0,
@@ -45,8 +53,18 @@ impl<'a> Lexer<'a> {
 			at_sign: false,
 			in_type: false,
 			comments: Vec::new(),
-			strings: Interner::default(),
+			strings: Interner::sized(budget),
+			word_flags: Vec::with_capacity(budget / 32),
 		}
+	}
+
+	pub(crate) fn word_flags(&mut self, id: StrId) -> u8 {
+		let i = id.0 as usize;
+		while self.word_flags.len() <= i {
+			let flags = token::word::flags(self.strings.get(StrId(self.word_flags.len() as u32)));
+			self.word_flags.push(flags);
+		}
+		self.word_flags[i]
 	}
 
 	pub(crate) fn source(&self) -> &'a str {
@@ -136,20 +154,26 @@ impl<'a> Lexer<'a> {
 	}
 
 	pub(crate) fn next_token(&mut self) -> Result<Token> {
-		let newline_before = self.skip_space()?;
+		let mut token = Token::eof(0);
+		self.next_token_into(&mut token)?;
+		Ok(token)
+	}
+
+	// in place: a `Result<Token>` is five words, moved at every `?`, and was 16% of a parse;
+	// an error leaves the token half written, and every caller then restores a snapshot or stops
+	pub(crate) fn next_token_into(&mut self, token: &mut Token) -> Result<()> {
+		token.newline_before = self.skip_space()?;
 		let start = self.pos;
 		self.escaped = false;
+		token.start = start as u32;
 		let Some(b) = self.byte() else {
-			return Ok(Token {
-				kind: TokenKind::Eof,
-				start: start as u32,
-				end: start as u32,
-				newline_before,
-				escaped: false,
-			});
+			token.kind = TokenKind::Eof;
+			token.end = start as u32;
+			token.escaped = false;
+			return Ok(());
 		};
 
-		let kind = match b {
+		token.kind = match b {
 			b'0'..=b'9' => self.read_number(false)?,
 			b'.' if self.byte_at(1).is_some_and(|b| b.is_ascii_digit()) => self.read_number(true)?,
 			b'"' | b'\'' => self.read_string(b)?,
@@ -170,13 +194,9 @@ impl<'a> Lexer<'a> {
 			}
 		};
 
-		Ok(Token {
-			kind,
-			start: start as u32,
-			end: self.pos as u32,
-			newline_before,
-			escaped: self.escaped,
-		})
+		token.end = self.pos as u32;
+		token.escaped = self.escaped;
+		Ok(())
 	}
 
 	fn skip_space(&mut self) -> Result<bool> {
@@ -187,6 +207,12 @@ impl<'a> Lexer<'a> {
 		}
 		let src = self.src;
 		let bytes = src.as_bytes();
+		if let Some(&b) = bytes.get(self.pos)
+			&& b < 0x80
+			&& scan::class(b) & scan::TRIVIA == 0
+		{
+			return Ok(false);
+		}
 		while let Some(&b) = bytes.get(self.pos) {
 			let class = scan::class(b);
 			if class & scan::SPACE != 0 {
@@ -664,6 +690,7 @@ impl<'a> Lexer<'a> {
 		self.buf.clear();
 		let mut valid = true;
 		let mut plain = true;
+		let mut returns = false;
 		let mut pending = None;
 		let mut chunk_start = self.pos;
 		loop {
@@ -679,7 +706,7 @@ impl<'a> Lexer<'a> {
 					let tail = c == '`';
 					self.pos += if tail { 1 } else { 2 };
 					let raw_text = &self.src[start..end];
-					let raw = if raw_text.contains('\r') {
+					let raw = if returns {
 						let normalized = raw_text.replace("\r\n", "\n").replace('\r', "\n");
 						self.strings.intern(&normalized)
 					} else {
@@ -705,6 +732,8 @@ impl<'a> Lexer<'a> {
 					plain = false;
 					self.push_chunk(chunk_start, &mut pending);
 					self.pos += 1;
+					// a line continuation eats its carriage return before the `\r` arm can see it
+					returns |= self.byte() == Some(b'\r');
 					match self.read_escape()? {
 						Escape::Char(c) => {
 							self.flush(&mut pending);
@@ -718,6 +747,7 @@ impl<'a> Lexer<'a> {
 				}
 				'\r' => {
 					plain = false;
+					returns = true;
 					self.push_chunk(chunk_start, &mut pending);
 					self.flush(&mut pending);
 					self.buf.push('\n');

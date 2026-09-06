@@ -19,3 +19,12 @@ members = ["bindings/node", "bindings/wasm"]
 lto = "fat"
 codegen-units = 1
 strip = true
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+pprof = { version = "0.15.0", features = ["flamegraph"] }
+rustc-demangle = "0.1.28"
+
+[profile.profiling]
+inherits = "release"
+debug = true
+strip = false

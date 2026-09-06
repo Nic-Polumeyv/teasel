@@ -77,6 +77,17 @@ pub struct Attached {
 	pub inner: Vec<u32>,
 }
 
+impl<X: Default> Ast<X> {
+	/// Room for the tree of `bytes` of source: about a node per eight bytes, a list per thirty.
+	pub(crate) fn sized(bytes: usize) -> Self {
+		Ast {
+			nodes: Vec::with_capacity(bytes / 8 + 16),
+			lists: Vec::with_capacity(bytes / 30 + 16),
+			..Ast::default()
+		}
+	}
+}
+
 /// How an extension's nodes join a walk over the tree.
 pub trait Walk: Sized {
 	/// Pushes the children of `id`, in any order; `Ast::children` sorts them. Plain nodes come from

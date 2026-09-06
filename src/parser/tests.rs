@@ -396,6 +396,50 @@ fn modules() {
 }
 
 #[test]
+fn reserved_words_by_context() {
+	use crate::Code;
+	let code = |src: &str, module: bool| {
+		crate::parse(
+			src,
+			Options {
+				module,
+				..Options::default()
+			},
+		)
+		.err()
+		.map(|e| e.code)
+	};
+	assert_eq!(
+		code("function* g() { var yield; }", false),
+		Some(Code::YieldAsIdentifier)
+	);
+	assert_eq!(
+		code("async function f() { var await; }", false),
+		Some(Code::AwaitAsIdentifier)
+	);
+	assert_eq!(
+		code("class C { x = arguments; }", false),
+		Some(Code::ArgumentsInFieldInitializer)
+	);
+	assert_eq!(
+		code("class C { static { await; } }", false),
+		Some(Code::InvalidInStaticBlock)
+	);
+	assert_eq!(code("var \\u0069f;", false), Some(Code::EscapeInKeyword));
+	assert_eq!(code("var enum;", false), Some(Code::ReservedWord));
+	assert_eq!(code("var \\u0065num;", false), Some(Code::ReservedWord));
+	assert_eq!(code("var let;", true), Some(Code::ReservedWord));
+	assert_eq!(code("var static;", true), Some(Code::ReservedWord));
+	assert_eq!(code("var await;", true), Some(Code::AwaitOutsideAsync));
+	assert_eq!(code("'use strict'; eval = 1;", false), Some(Code::StrictBinding));
+	assert_eq!(
+		code("var yield; var let; var static; var await; eval = 1;", false),
+		None
+	);
+	assert_eq!(code("var implements;", false), None);
+}
+
+#[test]
 fn errors() {
 	assert_eq!(module_error("export { nope };"), "Export 'nope' is not defined (9)");
 	assert_eq!(
@@ -721,4 +765,79 @@ fn phases() {
 		std::mem::size_of::<crate::ast::Node>(),
 		std::mem::size_of::<crate::lexer::token::Token>()
 	);
+}
+
+// TEASEL_BENCH=file cargo test --release profile -- --ignored --nocapture; writes target/parse.svg
+#[cfg(target_os = "linux")]
+#[test]
+#[ignore]
+fn profile() {
+	let Ok(path) = std::env::var("TEASEL_BENCH") else {
+		return;
+	};
+	let source = std::fs::read_to_string(path).unwrap();
+	let options = crate::Options {
+		module: true,
+		..Default::default()
+	};
+	let guard = pprof::ProfilerGuardBuilder::default()
+		.frequency(4000)
+		.blocklist(&["libc", "libgcc", "pthread", "vdso"])
+		.build()
+		.unwrap();
+	let mut sink = 0usize;
+	for _ in 0..3000 {
+		let ast = crate::parser::parse_range::<()>(&source, 0, source.len() as u32, options).unwrap();
+		sink = sink.wrapping_add(ast.nodes.len());
+	}
+	let report = guard.report().build().unwrap();
+	let file = std::fs::File::create("target/parse.svg").unwrap();
+	report.flamegraph(file).unwrap();
+	let mut by_frame: std::collections::HashMap<String, (usize, usize)> = std::collections::HashMap::new();
+	let mut total = 0usize;
+	for (frames, count) in &report.data {
+		total += *count as usize;
+		let names: Vec<String> = frames
+			.frames
+			.iter()
+			.flat_map(|f| {
+				f.iter().map(|s| {
+					s.name
+						.as_deref()
+						.map(|n| rustc_demangle::demangle(&String::from_utf8_lossy(n)).to_string())
+						.unwrap_or_default()
+				})
+			})
+			.collect();
+		if let Some(top) = names.first() {
+			by_frame.entry(top.clone()).or_default().0 += *count as usize;
+		}
+		let mut seen = std::collections::HashSet::new();
+		for name in &names {
+			if seen.insert(name.clone()) {
+				by_frame.entry(name.clone()).or_default().1 += *count as usize;
+			}
+		}
+	}
+	let mut rows: Vec<_> = by_frame.into_iter().collect();
+	rows.sort_by(|a, b| b.1.0.cmp(&a.1.0));
+	eprintln!(
+		"samples {total}, sink {sink}, token {} bytes, result {} bytes",
+		std::mem::size_of::<crate::lexer::token::Token>(),
+		std::mem::size_of::<std::result::Result<crate::lexer::token::Token, Box<crate::error::SyntaxError>>>()
+	);
+	eprintln!("{:>6} {:>6}  frame", "self%", "incl%");
+	for (name, (own, incl)) in rows.iter().take(8) {
+		eprintln!(
+			"{:6.1} {:6.1}  {}",
+			*own as f64 * 100.0 / total as f64,
+			*incl as f64 * 100.0 / total as f64,
+			name.replace("teasel::", "")
+				.replace("core::", "")
+				.replace("alloc::", "")
+				.chars()
+				.take(400)
+				.collect::<String>()
+		);
+	}
 }

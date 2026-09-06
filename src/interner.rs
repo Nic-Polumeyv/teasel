@@ -68,15 +68,48 @@ pub struct Interner {
 	table: Vec<u32>,
 }
 
+/// `FastHasher`'s mix over the length and then eight bytes at a time, the tail read as two
+/// overlapping words rather than copied into one; the low half of the product depends on the
+/// first bytes only, so the high half is folded in.
 fn hash(s: &str) -> u32 {
-	let mut hasher = FastHasher::default();
-	hasher.write(s.as_bytes());
-	// the low half of the product depends on the first four bytes only; fold the high half in
-	let h = hasher.finish();
+	let bytes = s.as_bytes();
+	let n = bytes.len();
+	let mix = |h: u64, word: u64| (h.rotate_left(5) ^ word).wrapping_mul(SEED);
+	let mut h = mix(0, n as u64);
+	let mut i = 0;
+	while i + 8 <= n {
+		h = mix(h, u64::from_le_bytes(bytes[i..i + 8].try_into().unwrap()));
+		i += 8;
+	}
+	if i < n {
+		let tail = if n - i >= 4 {
+			u32::from_le_bytes(bytes[i..i + 4].try_into().unwrap()) as u64
+				| (u32::from_le_bytes(bytes[n - 4..].try_into().unwrap()) as u64) << 32
+		} else if n - i >= 2 {
+			u16::from_le_bytes(bytes[i..i + 2].try_into().unwrap()) as u64
+				| (u16::from_le_bytes(bytes[n - 2..].try_into().unwrap()) as u64) << 16
+		} else {
+			bytes[i] as u64
+		};
+		h = mix(h, tail);
+	}
 	(h ^ (h >> 32)) as u32
 }
 
 impl Interner {
+	/// Room for the strings of `bytes` of source, so the table grows rarely.
+	pub(crate) fn sized(bytes: usize) -> Self {
+		let slots = (bytes / 16).next_power_of_two().clamp(64, 4096);
+		let mut starts = Vec::with_capacity(slots / 2 + 1);
+		starts.push(0);
+		Interner {
+			text: String::with_capacity(bytes / 32),
+			starts,
+			hashes: Vec::with_capacity(slots / 2),
+			table: vec![0; slots],
+		}
+	}
+
 	pub fn intern(&mut self, s: &str) -> StrId {
 		let hash = hash(s);
 		let mut slot = match self.probe(s, hash) {
@@ -137,7 +170,11 @@ impl Interner {
 
 	pub fn get(&self, id: StrId) -> &str {
 		let i = id.0 as usize;
-		&self.text[self.starts[i] as usize..self.starts[i + 1] as usize]
+		// every start is where a whole string was appended, so a character boundary
+		unsafe {
+			self.text
+				.get_unchecked(self.starts[i] as usize..self.starts[i + 1] as usize)
+		}
 	}
 
 	pub fn len(&self) -> usize {
@@ -171,6 +208,31 @@ mod tests {
 		}
 		assert_eq!(interner.find("nope"), None);
 		assert_eq!(interner.len(), 501);
+	}
+
+	#[test]
+	fn every_length_and_every_byte_counts() {
+		let mut interner = Interner::sized(1 << 12);
+		let mut ids = std::collections::HashSet::new();
+		for len in 1..=40 {
+			let base: String = "a".repeat(len);
+			for at in 0..len {
+				let mut bytes = base.clone().into_bytes();
+				bytes[at] = b'b';
+				let s = String::from_utf8(bytes).unwrap();
+				let id = interner.intern(&s);
+				assert!(ids.insert(id), "{s}");
+				assert_eq!(interner.get(id), s);
+				assert_eq!(interner.find(&s), Some(id));
+				assert_eq!(interner.intern(&s), id);
+			}
+		}
+		for s in ["é", "éé", "a\0b", "\0", "日本語の識別子"] {
+			let id = interner.intern(s);
+			assert_eq!(interner.get(id), s);
+			assert_eq!(interner.find(s), Some(id));
+		}
+		assert_eq!(interner.len(), ids.len() + 5);
 	}
 
 	#[test]
