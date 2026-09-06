@@ -716,4 +716,9 @@ fn phases() {
 		ast.strings.len(),
 		ast.comments.len()
 	);
+	eprintln!(
+		"node {} bytes, token {} bytes",
+		std::mem::size_of::<crate::ast::Node>(),
+		std::mem::size_of::<crate::lexer::token::Token>()
+	);
 }
