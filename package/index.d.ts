@@ -189,6 +189,8 @@ export class Source {
 	parsePatternAt(offset: number): Parsed<Pattern>;
 	parseParamsAt(offset: number): Params;
 	parseStatementAt(offset: number): Parsed<Statement>;
+	/** Releases what the engine holds for the source; the collector does it otherwise. */
+	free(): void;
 }
 
 /** Whether a code point can start an identifier, as acorn decides it. */

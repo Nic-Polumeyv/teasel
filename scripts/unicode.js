@@ -1,4 +1,4 @@
-// Regenerates src/lexer/unicode.rs and the bindings' identifier.js from the Unicode Character Database.
+// Regenerates src/lexer/unicode.rs and package/identifier.js from the Unicode Character Database.
 // Usage: bun scripts/unicode.js [version]
 
 const version = process.argv[2] ?? '17.0.0';
@@ -114,6 +114,5 @@ export function isIdentifierChar(code) {
 	return code === 0x200c || code === 0x200d || lookup(ID_CONTINUE, code);
 }
 `;
-await Bun.write(new URL('../bindings/node/identifier.js', import.meta.url), js);
-await Bun.write(new URL('../bindings/wasm/identifier.js', import.meta.url), js);
+await Bun.write(new URL('../package/identifier.js', import.meta.url), js);
 console.log(`ID_Start ${start.length} ranges, ID_Continue ${cont.length} ranges`);

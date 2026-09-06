@@ -505,3 +505,33 @@ fn unexpected_characters() {
 	assert_eq!(error("a ¬ b").0, "Unexpected character '¬'");
 	assert_eq!(error("\\").0, "Expecting Unicode escape sequence \\uXXXX");
 }
+
+#[test]
+fn line_end_finds_every_terminator() {
+	use super::line_end;
+	let cases: &[(&[u8], usize)] = &[
+		(b"abc\ndef", 3),
+		(b"abc\rdef", 3),
+		("ab\u{2028}cd".as_bytes(), 2),
+		("ab\u{2029}cd".as_bytes(), 2),
+		(b"no terminator here at all", 25),
+		(b"", 0),
+		(b"\n", 0),
+		("\u{e2}\u{80}x\n".as_bytes(), 5),
+		(b"\xe2\x80\xa7\n", 3),
+		("1234567\u{2028}".as_bytes(), 7),
+		("12345678\u{2028}".as_bytes(), 8),
+		(b"1234567\n", 7),
+		(b"12345678\n", 8),
+		(b"123456789012345\n", 15),
+		(b"\xe2\xe2\xe2\xe2\xe2\xe2\xe2\xe2\xe2\n", 9),
+	];
+	for &(bytes, end) in cases {
+		assert_eq!(
+			line_end(bytes),
+			end,
+			"{:?}",
+			std::string::String::from_utf8_lossy(bytes)
+		);
+	}
+}

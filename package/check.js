@@ -1,19 +1,15 @@
-// Every script under the directories, parsed every way: the Node addon's tree decoded from the
-// token stream is diffed against its JSON, the JSON the oracles are checked against, and the
-// WebAssembly module's tree against the addon's.
-//
-//   node check.js DIR...
+// node check.js DIR...
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
 import * as node from './index.js';
 import * as wasm from './wasm.js';
-import { bits } from './options.js';
+import { bits } from './api.js';
 import { decode } from './decode.js';
 
 const native = createRequire(import.meta.url)('./binding.cjs');
 await wasm.init(readFileSync(new URL('./teasel.wasm', import.meta.url)));
-const ENTRY = { expression: 1, pattern: 2, statement: 4 };
+const ENTRY = { expression: 1, pattern: 2, params: 3, statement: 4 };
 const files = [];
 function walk(dir) {
 	for (const name of readdirSync(dir)) {
@@ -27,7 +23,6 @@ for (const dir of process.argv.slice(2)) walk(dir);
 let checked = 0;
 let failed = 0;
 
-/** A tree or the error it throws, as data. */
 function outcome(fn) {
 	try {
 		return { value: fn() };
@@ -36,10 +31,7 @@ function outcome(fn) {
 	}
 }
 
-/**
- * The first difference between two trees, following links (scopes and bindings point back into
- * the tree) once: `assert.deepStrictEqual` renders both graphs on failure, which never ends.
- */
+// not assert.deepStrictEqual: it renders both graphs on failure, which never ends on linked scopes
 function differ(a, b, seen = new Map(), path = '$') {
 	if (a === b) return null;
 	if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return `${path}: ${JSON.stringify(a)} vs ${JSON.stringify(b)}`;
@@ -61,11 +53,10 @@ function report(name, difference) {
 	if (failed <= 20) console.log(`${name}: ${difference}`);
 }
 
-/** The addon's answer decoded without links against its JSON: the same keys in the same order. */
 function json(name, source, b, entry, at) {
-	const answer = native.parseAt(source, b, entry, at, false);
-	const text = native.parseAtJson(source, b, entry, at, false);
+	const answer = native.parseAt(Buffer.from(source), b, entry, at, false);
 	const tree = typeof answer === 'string' ? answer : JSON.stringify(decode(answer, source, native.constants, false));
+	const text = native.parseAtJson(Buffer.from(source), b, entry, at, false);
 	report(name, tree === text ? null : `differs from the JSON at ${[...tree].findIndex((c, i) => c !== text[i])}`);
 }
 
@@ -91,6 +82,10 @@ for (const file of files) {
 		const options = { sourceType: 'module', typescript: /lang=["']?ts/.test(text), locations: true, comments: true, scopes: true };
 		const held = new node.Source(text, options);
 		const twin = new wasm.Source(text, options);
+		for (const m of text.matchAll(script_re)) {
+			const start = m.index + m[0].indexOf('>') + 1;
+			report(`${file} script ${start} wasm`, differ(outcome(() => twin.parse(start, start + m[2].length)), outcome(() => held.parse(start, start + m[2].length))));
+		}
 		for (const match of text.matchAll(brace_re)) {
 			const at = match.index + 1;
 			for (const [entry, index] of Object.entries(ENTRY)) {

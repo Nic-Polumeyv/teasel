@@ -1,7 +1,5 @@
 use crate::error::Code;
-pub(crate) mod class;
 pub(crate) mod expression;
-mod pattern;
 pub(crate) mod scope;
 pub(crate) mod statement;
 

@@ -7,8 +7,8 @@ use super::{ClassFrame, TypeScript};
 use crate::ast::{List, NodeId, NodeKind, VariableKind};
 use crate::error::Code;
 use crate::lexer::token::{Keyword, TokenKind};
-use crate::parser::class::ClassKind;
 use crate::parser::scope::Binding;
+use crate::parser::statement::ClassKind;
 use crate::parser::statement::FUNC_STATEMENT;
 use crate::parser::{Context, ForInit, Parser, Result};
 

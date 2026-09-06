@@ -1,6 +1,3 @@
-// `@teasel/parser` anywhere: the API over the WebAssembly module, loaded by `init` first. The
-// module has no glue: the source goes into its memory once, and every answer is read straight
-// out of it.
 import { bind } from './api.js';
 
 export { isIdentifierStart, isIdentifierChar } from './identifier.js';
@@ -13,12 +10,12 @@ let wasm;
 /** @type {string[]} */
 let constants = [];
 
-/**
- * Instantiates the module: the bytes, a compiled `WebAssembly.Module`, or a `Response` (or a
- * promise of one) to stream it from; by default `teasel.wasm` next to this file is fetched.
- * @param {BufferSource | WebAssembly.Module | Response | Promise<Response>} [module]
- */
-export async function init(module = fetch(new URL('./teasel.wasm', import.meta.url))) {
+/** @param {BufferSource | WebAssembly.Module | Response | Promise<Response>} [module] `teasel.wasm` next to this file by default */
+export async function init(module) {
+	if (module === undefined) {
+		const url = new URL('./teasel.wasm', import.meta.url);
+		module = url.protocol === 'file:' ? (await import('node:fs/promises')).readFile(url) : fetch(url);
+	}
 	if (module instanceof Promise) module = await module;
 	const { instance } =
 		typeof Response !== 'undefined' && module instanceof Response
@@ -27,8 +24,8 @@ export async function init(module = fetch(new URL('./teasel.wasm', import.meta.u
 	wasm = /** @type {any} */ (instance.exports);
 }
 
-/** Writes a string into the module's memory as UTF-8 and hands the room to a source. */
 function create(source, bits) {
+	if (wasm === undefined) throw new Error('init() first');
 	const capacity = source.length * 3;
 	const ptr = wasm.alloc(capacity);
 	const { written } = encoder.encodeInto(source, new Uint8Array(wasm.memory.buffer, ptr, capacity));
@@ -38,10 +35,7 @@ function create(source, bits) {
 const text = () => utf8.decode(new Uint8Array(wasm.memory.buffer, wasm.text_ptr(), wasm.text_len()));
 const words = () => new Uint32Array(wasm.memory.buffer, wasm.words_ptr(), wasm.words_len());
 
-/**
- * The last answer: its words in place, or the error text. The constants are fetched first, as
- * writing them can grow the memory, which would detach a view taken before.
- */
+// the constants come first: writing them can grow the memory and detach a view taken before
 function answer(status) {
 	if (status !== 0) return text();
 	if (words()[4] > constants.length) {
@@ -52,7 +46,7 @@ function answer(status) {
 }
 
 export const { parse, parseExpressionAt, parsePatternAt, parseParamsAt, parseStatementAt, Source } = bind({
-	// the words outlive the source: they sit in the module's answer buffer until the next parse
+	// the words outlive the source: they sit in the answer buffer until the next parse
 	once(source, bits, entry, offset, until) {
 		const held = create(source, bits);
 		try {
@@ -63,7 +57,7 @@ export const { parse, parseExpressionAt, parsePatternAt, parseParamsAt, parseSta
 	},
 	create,
 	parse: (held, entry, offset, until) => answer(wasm.source_parse(held, entry, offset, until)),
-	parseRange: (held, start, end) => answer(wasm.source_parse_range(held, start, end ?? -1)),
+	parseRange: (held, start, end) => answer(wasm.source_parse_range(held, start, end ?? 0, end === undefined ? 0 : 1)),
 	free: (held) => wasm.source_free(held),
 	constants: () => constants,
 });

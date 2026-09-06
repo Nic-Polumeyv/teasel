@@ -17,16 +17,16 @@ const SPAN = 14;
 const LOC = 15;
 
 // the text is in the host's byte order like the words, and a leading U+FEFF is text, not a mark
-const utf16 = new TextDecoder(new Uint8Array(new Uint16Array([1]).buffer)[0] === 1 ? 'utf-16le' : 'utf-16be', { ignoreBOM: true });
+const little = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
+const utf16 = new TextDecoder(little ? 'utf-16le' : 'utf-16be', { ignoreBOM: true });
 
-/** Each engine's constant strings, by the function that fetches them. @type {WeakMap<Function, string[]>} */
+/** @type {WeakMap<Function, string[]>} constants per engine, by the function that fetches them */
 const tables = new WeakMap();
 
-/** Floats at a byte offset a `Float64Array` cannot start at. */
 function unaligned_floats(buffer, start, count) {
 	const view = new DataView(buffer, start, count * 8);
 	const floats = new Float64Array(count);
-	for (let i = 0; i < count; i++) floats[i] = view.getFloat64(i * 8, true);
+	for (let i = 0; i < count; i++) floats[i] = view.getFloat64(i * 8, little);
 	return floats;
 }
 

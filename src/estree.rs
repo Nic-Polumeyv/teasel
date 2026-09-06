@@ -235,15 +235,30 @@ pub fn constants() -> Vec<&'static str> {
 	CONSTANTS.with(|c| c.borrow().names.clone())
 }
 
+thread_local! {
+	// literals only: their address is a cheaper key than their text
+	static RECENT: std::cell::RefCell<[(usize, u32); 512]> = const { std::cell::RefCell::new([(0, 0); 512]) };
+}
+
 fn constant(value: &'static str) -> u32 {
-	CONSTANTS.with(|c| {
-		let mut c = c.borrow_mut();
-		if let Some(&id) = c.ids.get(value) {
-			return id;
+	let address = value.as_ptr() as usize;
+	let slot = (address >> 3) & 511;
+	RECENT.with(|recent| {
+		let mut table = recent.borrow_mut();
+		if table[slot].0 == address {
+			return table[slot].1;
 		}
-		let id = c.names.len() as u32;
-		c.names.push(value);
-		c.ids.insert(value, id);
+		let id = CONSTANTS.with(|c| {
+			let mut c = c.borrow_mut();
+			if let Some(&id) = c.ids.get(value) {
+				return id;
+			}
+			let id = c.names.len() as u32;
+			c.names.push(value);
+			c.ids.insert(value, id);
+			id
+		});
+		table[slot] = (address, id);
 		id
 	})
 }
@@ -517,7 +532,12 @@ impl Positions {
 			i = bytes.len();
 		}
 		while i < bytes.len() {
-			let b = bytes[i];
+			i = if lines {
+				crate::lexer::scan::find(bytes, i, *b"\n\r", true)
+			} else {
+				crate::lexer::scan::find(bytes, i, [], true)
+			};
+			let Some(&b) = bytes.get(i) else { break };
 			if b < 0x80 {
 				i += 1;
 				if lines && (b == b'\n' || (b == b'\r' && bytes.get(i) != Some(&b'\n'))) {
@@ -1467,8 +1487,6 @@ fn bigint_decimal(raw: &str) -> String {
 	out
 }
 
-/// A number as `JSON.stringify` writes it: the shortest digits that read back, in plain
-/// notation between 1e-7 and 1e21 and with an exponent outside, `null` when not finite.
 pub fn write_number(out: &mut String, value: f64) {
 	if !value.is_finite() {
 		out.push_str("null");
@@ -1481,7 +1499,7 @@ pub fn write_number(out: &mut String, value: f64) {
 	let formatted = format!("{value:e}");
 	let (mantissa, exponent) = formatted.split_once('e').unwrap();
 	let (sign, mantissa) = mantissa.strip_prefix('-').map_or(("", mantissa), |m| ("-", m));
-	let digits: String = mantissa.chars().filter(|c| *c != '.').collect();
+	let digits = even_on_tie(value.abs(), mantissa.chars().filter(|c| *c != '.').collect());
 	let k = digits.len() as i32;
 	let n = exponent.parse::<i32>().unwrap() + 1;
 	out.push_str(sign);
@@ -1508,7 +1526,34 @@ pub fn write_number(out: &mut String, value: f64) {
 	}
 }
 
-pub fn write_json_string(out: &mut String, s: &str) {
+/// Rust rounds the shortest digits away from zero on an exact tie; JavaScript takes the even ones.
+fn even_on_tie(value: f64, digits: String) -> String {
+	let k = digits.len();
+	if digits.as_bytes()[k - 1].is_multiple_of(2) {
+		return digits;
+	}
+	let exact = format!("{value:.*e}", 1100);
+	let all: Vec<u8> = exact
+		.split_once('e')
+		.unwrap()
+		.0
+		.bytes()
+		.filter(|b| *b != b'.')
+		.collect();
+	if all[k] != b'5' || all[k + 1..].iter().any(|&b| b != b'0') {
+		return digits;
+	}
+	let mut lower = digits.clone().into_bytes();
+	lower[k - 1] -= 1;
+	let lower = String::from_utf8(lower).unwrap();
+	let exponent = exact.split_once('e').unwrap().1;
+	match format!("{}.{}e{exponent}", &lower[..1], &lower[1..]).parse::<f64>() {
+		Ok(back) if back == value => lower,
+		_ => digits,
+	}
+}
+
+pub(crate) fn write_json_string(out: &mut String, s: &str) {
 	out.push('"');
 	let mut from = 0;
 	for (i, b) in s.bytes().enumerate() {
@@ -1550,6 +1595,9 @@ mod tests {
 			(5e-324, "5e-324"),
 			(-0.0, "0"),
 			(-2.5e-8, "-2.5e-8"),
+			(132405809496.45312, "132405809496.45312"),
+			(0.3, "0.3"),
+			(9007199254740993.0, "9007199254740992"),
 			(f64::INFINITY, "null"),
 		] {
 			let mut out = String::new();
