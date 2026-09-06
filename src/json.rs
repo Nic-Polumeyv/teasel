@@ -20,7 +20,6 @@ pub enum Entry {
 }
 
 impl Entry {
-	/// The entry a binding names by its position here; anything else is a program.
 	pub fn from_index(index: u32) -> Entry {
 		match index {
 			1 => Entry::Expression,
@@ -79,8 +78,6 @@ impl Request {
 		}
 	}
 
-	/// Turns on the switches whose bit is set, bit `i` being `FLAGS[i]`, the way the bindings
-	/// pass them.
 	pub fn set_bits(&mut self, bits: u32) {
 		for (i, flag) in FLAGS.iter().enumerate() {
 			if bits & (1 << i) != 0 {
@@ -118,6 +115,18 @@ pub fn error_json(message: &str, pos: u32) -> String {
 	crate::estree::write_json_string(&mut out, message);
 	out.push_str(&format!(",\"pos\":{pos},\"end\":{pos}}}}}"));
 	out
+}
+
+pub fn constants_json() -> String {
+	let mut json = String::from("[");
+	for (i, name) in crate::estree::constants().iter().enumerate() {
+		if i > 0 {
+			json.push(',');
+		}
+		crate::estree::write_json_string(&mut json, name);
+	}
+	json.push(']');
+	json
 }
 
 pub fn parse(source: &str, request: &Request) -> String {

@@ -1611,7 +1611,6 @@ enum Op {
 }
 
 impl<E: Extension> Parser<'_, E> {
-	/// Reinterprets an expression as an assignment or binding pattern, in place.
 	pub(crate) fn make_pattern(
 		&mut self,
 		id: NodeId,

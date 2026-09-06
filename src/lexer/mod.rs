@@ -369,7 +369,6 @@ impl<'a> Lexer<'a> {
 			pos = scan::run_of(bytes, pos + 1, scan::ID_CONTINUE);
 		}
 		self.pos = pos;
-		// nearly every word is ASCII and ends at an ASCII byte: nothing more to read
 		if pos > start && bytes.get(pos).is_none_or(|&b| b < 0x80 && b != b'\\') {
 			return Ok(self.word(&src[start..pos]));
 		}
@@ -403,7 +402,6 @@ impl<'a> Lexer<'a> {
 		}
 	}
 
-	/// A keyword, or the name interned.
 	fn word(&mut self, word: &str) -> TokenKind {
 		match Keyword::from_word(word) {
 			Some(keyword) => TokenKind::Keyword(keyword),
@@ -556,7 +554,6 @@ impl<'a> Lexer<'a> {
 		Ok(())
 	}
 
-	/// Re-reads a `/` or `/=` token as a regular expression literal.
 	pub(crate) fn read_regex(&mut self, token: Token) -> Result<Token> {
 		let start = token.start as usize;
 		self.pos = start + 1;
@@ -619,7 +616,6 @@ impl<'a> Lexer<'a> {
 		let mut pending = None;
 		let mut chunk_start = self.pos;
 		loop {
-			// everything else is string text, skipped eight bytes at a time
 			self.pos = scan::find(self.src.as_bytes(), self.pos, [quote, b'\\', b'\n', b'\r'], false);
 			let Some(c) = self.char() else {
 				return self.error(start, Code::UnterminatedString);
@@ -660,7 +656,6 @@ impl<'a> Lexer<'a> {
 		}
 	}
 
-	/// Reads a template chunk, leaving the position after the closing backquote or `${`.
 	pub(crate) fn read_template(&mut self) -> Result<Token> {
 		let start = self.pos;
 		if start == self.src.len() {
@@ -672,7 +667,6 @@ impl<'a> Lexer<'a> {
 		let mut pending = None;
 		let mut chunk_start = self.pos;
 		loop {
-			// everything else is template text, skipped eight bytes at a time
 			self.pos = scan::find(self.src.as_bytes(), self.pos, *b"`$\\\r", false);
 			let Some(c) = self.char() else {
 				return self.error(start, Code::UnterminatedTemplate);
@@ -745,7 +739,7 @@ impl<'a> Lexer<'a> {
 		}
 	}
 
-	/// Appends a code unit from an escape, pairing surrogates across escapes as JavaScript strings do.
+	// surrogates pair across escapes, as JavaScript strings do
 	fn push_code(&mut self, code: u32, pending: &mut Option<u32>) {
 		if let Some(high) = pending.take() {
 			if (0xdc00..0xe000).contains(&code) {
@@ -836,7 +830,6 @@ impl<'a> Lexer<'a> {
 		Some(value)
 	}
 
-	/// Reads the hex digits of a `\u` escape, returning a code point that may be a lone surrogate.
 	fn read_code_point(&mut self) -> Result<u32> {
 		if self.byte() == Some(b'{') {
 			self.pos += 1;
@@ -868,7 +861,6 @@ pub(crate) fn is_separator(bytes: &[u8]) -> bool {
 	matches!(bytes, [0xe2, 0x80, 0xa8 | 0xa9, ..])
 }
 
-/// The length of `bytes` up to the first line terminator: `\n`, `\r`, U+2028 or U+2029.
 pub(crate) fn line_end(bytes: &[u8]) -> usize {
 	let mut i = 0;
 	loop {

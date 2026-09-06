@@ -461,9 +461,6 @@ impl Keyword {
 	}
 }
 
-// TypeScript in the scope analysis: type positions bind nothing, and the declarations with a
-// runtime value join the value space.
-
 impl Data {
 	fn index(ast: &Ast<Self>, id: NodeId) -> Option<u32> {
 		match ast.node(id).kind {
@@ -472,7 +469,6 @@ impl Data {
 		}
 	}
 
-	/// The identifier at the root of a qualified name.
 	fn root(&self, ast: &Ast<Self>, mut id: NodeId) -> Option<NodeId> {
 		loop {
 			match ast.node(id).kind {
@@ -573,8 +569,6 @@ impl Bind for Data {
 		}
 	}
 }
-
-// The children of TypeScript nodes, and the ones TypeScript adds to JavaScript nodes.
 
 impl Walk for Data {
 	fn children(&self, ast: &Ast<Self>, id: NodeId, out: &mut Vec<NodeId>) {

@@ -1,6 +1,4 @@
-// `@teasel/parser` on Node: the API over the native addon. The source goes over as UTF-8 bytes,
-// which V8 encodes far faster than the addon could read a string, and the answer comes back as
-// a view of the addon's buffer, read before the next call.
+// the source goes over as bytes: V8's encoder is 14x faster than napi reading a string
 import { createRequire } from 'node:module';
 import { bind } from './api.js';
 
@@ -11,9 +9,11 @@ const encoder = new TextEncoder();
 let scratch = new Uint8Array(1 << 16);
 
 function bytes(text) {
-	if (scratch.length < text.length * 3) scratch = new Uint8Array(text.length * 3);
-	const { written } = encoder.encodeInto(text, scratch);
-	return scratch.subarray(0, written);
+	const size = text.length * 3;
+	if (scratch.length < size && size <= 1 << 20) scratch = new Uint8Array(size);
+	const room = size <= scratch.length ? scratch : new Uint8Array(size);
+	const { written } = encoder.encodeInto(text, room);
+	return room.subarray(0, written);
 }
 
 export const { parse, parseExpressionAt, parsePatternAt, parseParamsAt, parseStatementAt, Source } = bind({

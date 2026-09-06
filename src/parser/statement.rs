@@ -1314,7 +1314,6 @@ impl<E: Extension> Parser<'_, E> {
 		Ok(())
 	}
 
-	/// Returns whether the name conflicts with an earlier declaration.
 	fn declare_private_name(&mut self, name: StrId, kind: PrivateKind) -> bool {
 		let scope = self.private_names.last_mut().unwrap();
 		let Some(entry) = scope.declared.iter_mut().find(|(n, _)| *n == name) else {

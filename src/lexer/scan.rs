@@ -1,13 +1,9 @@
-//! Byte scanning for the lexer and the position tables: the class of every byte from one table,
-//! and a search for any of a few bytes that tests eight at a time.
-
 pub(crate) const SPACE: u8 = 1;
 pub(crate) const NEWLINE: u8 = 2;
 pub(crate) const ID_START: u8 = 4;
 pub(crate) const ID_CONTINUE: u8 = 8;
 pub(crate) const DIGIT: u8 = 16;
 
-/// The classes of every byte; bytes past ASCII have none and are read as characters.
 pub(crate) static CLASS: [u8; 256] = classes();
 
 const fn classes() -> [u8; 256] {
@@ -39,7 +35,6 @@ pub(crate) fn class(b: u8) -> u8 {
 	CLASS[b as usize]
 }
 
-/// The end of the run of bytes from `from` that all have `flag`.
 #[inline]
 pub(crate) fn run_of(bytes: &[u8], mut from: usize, flag: u8) -> usize {
 	while from < bytes.len() && CLASS[bytes[from] as usize] & flag != 0 {
@@ -51,17 +46,13 @@ pub(crate) fn run_of(bytes: &[u8], mut from: usize, flag: u8) -> usize {
 const ONES: u64 = 0x0101_0101_0101_0101;
 const HIGHS: u64 = 0x8080_8080_8080_8080;
 
-/// The bytes of `word` equal to `byte`, as their high bits: subtracting one from every byte
-/// borrows into the high bit of a byte that was zero, and only there once the bytes that had
-/// their high bit set are masked off. Bits above the first may be wrong; the first never is.
+// has-zero-byte trick: bits above the first hit may be wrong, the first never is
 #[inline]
 fn bytes_equal(word: u64, byte: u8) -> u64 {
 	let x = word ^ (ONES * byte as u64);
 	x.wrapping_sub(ONES) & !x & HIGHS
 }
 
-/// The first byte from `from` that is one of `needles`, or past ASCII when `high`; `bytes.len()`
-/// when there is none.
 #[inline]
 pub(crate) fn find<const N: usize>(bytes: &[u8], mut from: usize, needles: [u8; N], high: bool) -> usize {
 	while let Some(chunk) = bytes.get(from..from + 8) {

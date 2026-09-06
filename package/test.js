@@ -98,5 +98,15 @@ for (const [name, { Source, parse, parseExpressionAt, parseParamsAt, parseStatem
 	assert.equal(parse('"﻿a"; "bc"; zz').body[2].expression.name, 'zz');
 	source.free();
 	assert.throws(() => source.parseExpressionAt(1), TypeError);
+	assert.equal(new Source('{xs as x}', { typescript: true, until: 'as' }).parseExpressionAt(1).end, 3);
+	assert.throws(() => parse('x', { locations: 1 }), TypeError);
+	assert.throws(() => parse('x', { typescript: 'yes' }), TypeError);
+	assert.throws(() => new Source('a;b;c').parse(0, -1), (e) => e.code === 'invalid_request');
+	assert.throws(() => new Source('a;b;c').parse(0, NaN), (e) => e.code === 'invalid_request');
+	const wide = 'x;'.repeat(200000);
+	assert.equal(parse(wide).body.length, 200000);
+	assert.equal(parse('y;').body.length, 1);
+	assert.equal(parse(wide + wide).body.length, 400000);
+	assert.equal(parse('z;').body[0].expression.name, 'z');
 	console.log(name, 'ok');
 }

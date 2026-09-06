@@ -590,8 +590,7 @@ fn undeclared_exports_can_be_allowed() {
 	assert!(parse("export { nope };", options).is_ok());
 }
 
-/// `TEASEL_BENCH=path cargo test --release phases -- --ignored --nocapture`: the phases of a
-/// program parse timed one by one, best of sixty.
+// TEASEL_BENCH=file cargo test --release phases -- --ignored --nocapture
 #[test]
 #[ignore]
 fn phases() {
