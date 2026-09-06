@@ -925,10 +925,14 @@ mod tests {
 
 	/// Every identifier as `name@start` with what it declares or refers to.
 	fn facts(src: &str) -> String {
+		facts_in(src, true)
+	}
+
+	fn facts_in(src: &str, module: bool) -> String {
 		let mut ast = crate::parse(
 			src,
 			Options {
-				module: true,
+				module,
 				..Options::default()
 			},
 		)
@@ -1023,7 +1027,7 @@ mod tests {
 	#[test]
 	fn delete_and_wrappers() {
 		assert_eq!(
-			facts("delete x; delete y.z; delete (w).v;"),
+			facts_in("delete x; delete y.z; delete (w).v;", false),
 			"x@7 -> global\ny@16 -> global mutate\nw@30 -> global mutate"
 		);
 		let src = "(a as any).b = 1; (c!).d = 2; (e as any) = 3;";
