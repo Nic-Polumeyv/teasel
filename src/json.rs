@@ -140,15 +140,26 @@ pub fn binary(source: &str, request: &Request) -> Result<Vec<u32>, String> {
 
 /// A source with its position tables and switches, for hosts that parse many pieces of one
 /// source: offsets come in as UTF-16 the way acorn takes them.
-pub struct Prepared {
-	source: String,
+pub struct Prepared<'a> {
+	source: std::borrow::Cow<'a, str>,
 	positions: Positions,
 	request: Request,
 }
 
-impl Prepared {
+impl Prepared<'static> {
 	/// The request's entry and offset are ignored; `parse` takes them.
-	pub fn new(source: String, request: Request) -> Prepared {
+	pub fn new(source: String, request: Request) -> Prepared<'static> {
+		Prepared::of(std::borrow::Cow::Owned(source), request)
+	}
+}
+
+impl<'a> Prepared<'a> {
+	/// The same over a source the caller keeps for the parses.
+	pub fn borrowed(source: &'a str, request: Request) -> Prepared<'a> {
+		Prepared::of(std::borrow::Cow::Borrowed(source), request)
+	}
+
+	fn of(source: std::borrow::Cow<'a, str>, request: Request) -> Prepared<'a> {
 		let positions = Positions::new(&source, request.locations);
 		Prepared {
 			source,

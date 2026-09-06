@@ -28,11 +28,11 @@ pub unsafe extern "C" fn source_new(ptr: *mut u8, len: u32, capacity: u32, bits:
 
 #[unsafe(no_mangle)]
 pub extern "C" fn source_free(handle: u32) {
-	drop(unsafe { Box::from_raw(handle as *mut Prepared) });
+	drop(unsafe { Box::from_raw(handle as *mut Prepared<'static>) });
 }
 
-fn source(handle: u32) -> &'static Prepared {
-	unsafe { &*(handle as *const Prepared) }
+fn source(handle: u32) -> &'static Prepared<'static> {
+	unsafe { &*(handle as *const Prepared<'static>) }
 }
 
 // 0: words at `words_ptr`; 1: an error as JSON at `text_ptr`

@@ -2,7 +2,7 @@
 // the view spans the whole buffer: past an answer's words it shows the previous answer's
 use std::cell::Cell;
 
-use napi::bindgen_prelude::{Either, FromNapiValue, ToNapiValue, Uint8Array, Uint32Array};
+use napi::bindgen_prelude::{Either, FromNapiValue, ToNapiValue, Uint8Array, Uint8ArraySlice, Uint32Array};
 use napi::{Env, sys};
 use napi_derive::napi;
 use teasel::json::{Entry, Prepared, Request};
@@ -14,12 +14,22 @@ thread_local! {
 
 type Answer = napi::Result<Either<Uint32Array, String>>;
 
-fn prepared(source: &[u8], bits: u32) -> Prepared {
+fn request(bits: u32) -> Request {
 	let mut request = Request::new(Entry::Program, 0);
 	request.set_bits(bits);
-	let source =
-		String::from_utf8(source.to_vec()).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned());
-	Prepared::new(source, request)
+	request
+}
+
+// valid UTF-8 is parsed in place; anything else is made valid in a copy
+fn prepared(source: &[u8], bits: u32) -> Prepared<'_> {
+	match std::str::from_utf8(source) {
+		Ok(text) => Prepared::borrowed(text, request(bits)),
+		Err(_) => owned(source, bits),
+	}
+}
+
+fn owned(source: &[u8], bits: u32) -> Prepared<'static> {
+	Prepared::new(String::from_utf8_lossy(source).into_owned(), request(bits))
 }
 
 fn status(status: sys::napi_status, what: &str) -> napi::Result<()> {
@@ -75,7 +85,7 @@ fn answer(env: &Env, result: Result<Vec<u32>, String>) -> Answer {
 }
 
 #[napi(catch_unwind, ts_return_type = "Uint32Array | string")]
-pub fn parse_at(env: Env, source: Uint8Array, bits: u32, entry: u32, offset: f64, until: bool) -> Answer {
+pub fn parse_at(env: Env, source: Uint8ArraySlice<'_>, bits: u32, entry: u32, offset: f64, until: bool) -> Answer {
 	answer(
 		&env,
 		prepared(&source, bits).binary(Entry::from_index(entry), offset, until),
@@ -83,7 +93,7 @@ pub fn parse_at(env: Env, source: Uint8Array, bits: u32, entry: u32, offset: f64
 }
 
 #[napi(catch_unwind)]
-pub fn parse_at_json(source: Uint8Array, bits: u32, entry: u32, offset: f64, until: bool) -> String {
+pub fn parse_at_json(source: Uint8ArraySlice<'_>, bits: u32, entry: u32, offset: f64, until: bool) -> String {
 	prepared(&source, bits).parse(Entry::from_index(entry), offset, until)
 }
 
@@ -94,7 +104,7 @@ pub fn constants() -> Vec<&'static str> {
 
 #[napi]
 pub struct Source {
-	prepared: Prepared,
+	prepared: Prepared<'static>,
 }
 
 #[napi]
@@ -102,7 +112,7 @@ impl Source {
 	#[napi(constructor)]
 	pub fn new(source: Uint8Array, bits: u32) -> Self {
 		Self {
-			prepared: prepared(&source, bits),
+			prepared: owned(&source, bits),
 		}
 	}
 
