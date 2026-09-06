@@ -13,14 +13,15 @@
 			"default": "./index.js"
 		}
 	},
-	"files": ["index.js", "index.d.ts", "identifier.js", "binding.cjs", "binding.d.ts", "*.node"],
+	"files": ["index.js", "index.d.ts", "identifier.js", "decode.js", "binding.cjs", "binding.d.ts", "*.node"],
 	"napi": {
 		"binaryName": "teasel",
 		"targets": ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu", "x86_64-apple-darwin", "aarch64-apple-darwin", "x86_64-pc-windows-msvc"]
 	},
 	"scripts": {
 		"build": "napi build --platform --release --js binding.cjs --dts binding.d.ts",
-		"test": "bun test.js"
+		"test": "bun test.js",
+		"check": "node check.js"
 	},
 	"dependencies": {
 		"@types/estree": "^1.0.6"

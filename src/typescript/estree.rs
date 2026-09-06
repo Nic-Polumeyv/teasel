@@ -2,11 +2,11 @@
 
 use super::ast::{Data, Extras, Kind, Modifier, TsKind};
 use crate::ast::{List, NodeId, NodeKind};
-use crate::estree::{Emit, Writer};
+use crate::estree::{Emit, Sink, Writer};
 
 impl Data {
 	/// Whether every statement of a list erases to nothing.
-	fn all_erased(&self, w: &Writer<Self>, list: List) -> bool {
+	fn all_erased<S: Sink>(&self, w: &Writer<Self, S>, list: List) -> bool {
 		w.ast()
 			.list(list)
 			.iter()
@@ -20,13 +20,13 @@ impl Data {
 		self.extras(id).copied().unwrap_or_default()
 	}
 
-	fn is_ts(&self, w: &Writer<Self>, id: NodeId, test: impl Fn(TsKind) -> bool) -> bool {
+	fn is_ts<S: Sink>(&self, w: &Writer<Self, S>, id: NodeId, test: impl Fn(TsKind) -> bool) -> bool {
 		matches!(w.kind(id), NodeKind::Extension(index) if test(self.kind(index)))
 	}
 }
 
 impl Emit for Data {
-	fn erased(&self, w: &Writer<Self>, id: NodeId) -> bool {
+	fn erased<S: Sink>(&self, w: &Writer<Self, S>, id: NodeId) -> bool {
 		use TsKind::*;
 		let extras = self.extras_of(id);
 		if extras.declare {
@@ -78,7 +78,7 @@ impl Emit for Data {
 		}
 	}
 
-	fn node(&self, w: &mut Writer<Self>, id: NodeId, index: u32) {
+	fn node<S: Sink>(&self, w: &mut Writer<Self, S>, id: NodeId, index: u32) {
 		use TsKind::*;
 		if w.output.erase {
 			match self.kind(index) {
@@ -534,7 +534,7 @@ impl Emit for Data {
 		w.end();
 	}
 
-	fn extras(&self, w: &mut Writer<Self>, id: NodeId) {
+	fn extras<S: Sink>(&self, w: &mut Writer<Self, S>, id: NodeId) {
 		let kind = w.kind(id);
 		let extras = self.extras_of(id);
 		let extension = matches!(kind, NodeKind::Extension(_));
@@ -594,7 +594,7 @@ impl Emit for Data {
 	}
 }
 
-fn modifier(w: &mut Writer<Data>, key: &str, value: Option<Modifier>) {
+fn modifier<S: Sink>(w: &mut Writer<Data, S>, key: &'static str, value: Option<Modifier>) {
 	match value {
 		Some(Modifier::Plus) => w.string(key, "+"),
 		Some(Modifier::Minus) => w.string(key, "-"),

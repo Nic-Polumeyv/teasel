@@ -3,7 +3,7 @@
 
 use crate::ast::{Ast, NodeId};
 use crate::comments::{attach, attach_all};
-use crate::estree::{Emit, Output, Positions, error_to_json, node_to_json, params_to_json, program_to_json};
+use crate::estree::{Binary, Emit, Json, Output, Positions, Sink, error_to_json, node_at, params_at, program};
 use crate::{Options, SyntaxError};
 
 /// What to parse; everything but a program starts at the request's offset.
@@ -91,6 +91,11 @@ pub fn parse(source: &str, request: &Request) -> String {
 	parse_with(source, &Positions::new(source, request.locations), request)
 }
 
+/// The answer as a token stream for a binding to decode; the error answer stays JSON.
+pub fn binary(source: &str, request: &Request) -> Result<Vec<u32>, String> {
+	binary_with(source, &Positions::new(source, request.locations), request)
+}
+
 /// A source with its position tables and switches, for hosts that parse many pieces of one
 /// source: offsets come in as UTF-16 the way acorn takes them.
 pub struct Prepared {
@@ -110,40 +115,68 @@ impl Prepared {
 		}
 	}
 
-	/// `until_as` says the host's `as` follows this expression, on top of the source's options.
-	pub fn parse(&self, entry: Entry, utf16_offset: f64, until_as: bool) -> String {
-		let offset = match self.byte_offset(utf16_offset) {
-			Ok(offset) => offset,
-			Err(json) => return json,
-		};
+	/// The request for one entry at a UTF-16 offset; `until_as` says the host's `as` follows the
+	/// expression, on top of the source's options.
+	fn request(&self, entry: Entry, utf16_offset: f64, until_as: bool) -> Result<Request, String> {
 		let mut request = Request {
 			entry,
-			offset,
+			offset: self.byte_offset(utf16_offset)?,
 			..self.request
 		};
 		request.options.until_as |= until_as;
-		parse_with(&self.source, &self.positions, &request)
+		Ok(request)
 	}
 
-	/// The program that spans `start..end` of the source, both UTF-16 offsets; `end` defaults to
+	/// The request for the program spanning `start..end`, both UTF-16 offsets; `end` defaults to
 	/// the end of the source.
-	pub fn parse_range(&self, start: f64, end: Option<f64>) -> String {
-		let end_byte = match end {
-			Some(end) => self.byte_offset(end),
-			None => Ok(self.source.len() as u32),
+	fn range(&self, start: f64, end: Option<f64>) -> Result<Request, String> {
+		let from = self.byte_offset(start)?;
+		let to = match end {
+			Some(end) => self.byte_offset(end)?,
+			None => self.source.len() as u32,
 		};
-		let (start, end) = match (self.byte_offset(start), end_byte) {
-			(Ok(from), Ok(to)) if from <= to => (from, to),
-			(Ok(_), Ok(_)) => return error_json(&format!("offset {} is before {start}", end.unwrap_or(0.0)), 0),
-			(Err(json), _) | (_, Err(json)) => return json,
-		};
-		let request = Request {
+		if to < from {
+			return Err(error_json(
+				&format!("offset {} is before {start}", end.unwrap_or(0.0)),
+				0,
+			));
+		}
+		Ok(Request {
 			entry: Entry::Program,
-			offset: start,
-			end: Some(end),
+			offset: from,
+			end: Some(to),
 			..self.request
-		};
-		parse_with(&self.source, &self.positions, &request)
+		})
+	}
+
+	/// One entry at an offset, as JSON.
+	pub fn parse(&self, entry: Entry, utf16_offset: f64, until_as: bool) -> String {
+		match self.request(entry, utf16_offset, until_as) {
+			Ok(request) => parse_with(&self.source, &self.positions, &request),
+			Err(error) => error,
+		}
+	}
+
+	/// The program that spans `start..end`, as JSON.
+	pub fn parse_range(&self, start: f64, end: Option<f64>) -> String {
+		match self.range(start, end) {
+			Ok(request) => parse_with(&self.source, &self.positions, &request),
+			Err(error) => error,
+		}
+	}
+
+	/// One entry at an offset, as a token stream; the error answer stays JSON.
+	pub fn binary(&self, entry: Entry, utf16_offset: f64, until_as: bool) -> Result<Vec<u32>, String> {
+		binary_with(
+			&self.source,
+			&self.positions,
+			&self.request(entry, utf16_offset, until_as)?,
+		)
+	}
+
+	/// The program that spans `start..end`, as a token stream; the error answer stays JSON.
+	pub fn binary_range(&self, start: f64, end: Option<f64>) -> Result<Vec<u32>, String> {
+		binary_with(&self.source, &self.positions, &self.range(start, end)?)
 	}
 
 	/// A UTF-16 offset as a byte offset, or the error answer for it.
@@ -156,36 +189,60 @@ impl Prepared {
 	}
 }
 
-fn parse_with(source: &str, positions: &Positions, request: &Request) -> String {
+/// The checks every entry makes on its offsets, or the error answer.
+fn check(source: &str, request: &Request) -> Result<(), String> {
 	if !source.is_char_boundary(request.offset as usize) {
-		return error_json(
+		return Err(error_json(
 			&format!("offset {} is not a character boundary", request.offset),
 			request.offset,
-		);
+		));
 	}
 	if let Some(end) = request.end {
 		if !source.is_char_boundary(end as usize) {
-			return error_json(&format!("offset {end} is not a character boundary"), end);
+			return Err(error_json(&format!("offset {end} is not a character boundary"), end));
 		}
 		if end < request.offset {
-			return error_json(&format!("offset {end} is before {}", request.offset), end);
+			return Err(error_json(&format!("offset {end} is before {}", request.offset), end));
 		}
 	}
+	Ok(())
+}
+
+fn dispatch<S: Sink>(source: &str, positions: &Positions, request: &Request, sink: S) -> Result<S, String> {
+	check(source, request)?;
 	#[cfg(feature = "typescript")]
 	if request.typescript {
-		return run::<crate::typescript::TypeScript>(source, positions, request);
+		return run::<crate::typescript::TypeScript, S>(source, positions, request, sink);
 	}
 	#[cfg(not(feature = "typescript"))]
 	if request.typescript {
-		return error_json("built without TypeScript", 0);
+		return Err(error_json("built without TypeScript", 0));
 	}
-	run::<()>(source, positions, request)
+	run::<(), S>(source, positions, request, sink)
+}
+
+fn parse_with(source: &str, positions: &Positions, request: &Request) -> String {
+	match dispatch(source, positions, request, Json::default()) {
+		Ok(json) => json.finish(),
+		Err(error) => error,
+	}
+}
+
+/// The answer as a token stream, or the error answer as JSON.
+fn binary_with(source: &str, positions: &Positions, request: &Request) -> Result<Vec<u32>, String> {
+	dispatch(source, positions, request, Binary::new()).map(Binary::finish)
 }
 
 /// A tree, its root and the offset after what the parse consumed.
 type Parsed<D> = Result<(Ast<D>, NodeId, u32), Box<SyntaxError>>;
 
-fn run<E: crate::parser::Extension>(source: &str, positions: &Positions, request: &Request) -> String
+/// Runs a request into a sink; `Err` is the error answer as JSON.
+fn run<E: crate::parser::Extension, S: Sink>(
+	source: &str,
+	positions: &Positions,
+	request: &Request,
+	sink: S,
+) -> Result<S, String>
 where
 	E::Data: Emit,
 {
@@ -193,14 +250,6 @@ where
 	let output = Output {
 		comments,
 		erase: request.erase && request.typescript,
-	};
-	let one = |result: Parsed<E::Data>| {
-		result.map(|(mut ast, root, end)| {
-			if comments {
-				attach(&mut ast, source, root, offset);
-			}
-			node_to_json(&ast, root, end, source, positions, output)
-		})
 	};
 	let result = match request.entry {
 		Entry::Program => {
@@ -210,18 +259,56 @@ where
 				if comments {
 					attach(&mut ast, source, root, offset);
 				}
-				program_to_json(&ast, root, source, positions, output)
+				program(&ast, root, source, positions, output, sink)
 			})
 		}
-		Entry::Expression => one(crate::parser::parse_expression_at::<E>(source, offset, options)),
-		Entry::Pattern => one(crate::parser::parse_pattern_at::<E>(source, offset, options)),
-		Entry::Statement => one(crate::parser::parse_statement_at::<E>(source, offset, options)),
+		Entry::Expression => one(
+			crate::parser::parse_expression_at::<E>(source, offset, options),
+			source,
+			positions,
+			offset,
+			output,
+			sink,
+		),
+		Entry::Pattern => one(
+			crate::parser::parse_pattern_at::<E>(source, offset, options),
+			source,
+			positions,
+			offset,
+			output,
+			sink,
+		),
+		Entry::Statement => one(
+			crate::parser::parse_statement_at::<E>(source, offset, options),
+			source,
+			positions,
+			offset,
+			output,
+			sink,
+		),
 		Entry::Params => crate::parser::parse_params_at::<E>(source, offset, options).map(|(mut ast, ids, end)| {
 			if comments {
 				attach_all(&mut ast, source, &ids, offset);
 			}
-			params_to_json(&ast, &ids, end, source, positions, output)
+			params_at(&ast, &ids, end, source, positions, output, sink)
 		}),
 	};
-	result.unwrap_or_else(|error| error_to_json(&error, source))
+	result.map_err(|error| error_to_json(&error, source))
+}
+
+/// One node parsed at an offset, into a sink.
+fn one<X: Emit, S: Sink>(
+	result: Parsed<X>,
+	source: &str,
+	positions: &Positions,
+	offset: u32,
+	output: Output,
+	sink: S,
+) -> Result<S, Box<SyntaxError>> {
+	result.map(|(mut ast, root, end)| {
+		if output.comments {
+			attach(&mut ast, source, root, offset);
+		}
+		node_at(&ast, root, end, source, positions, output, sink)
+	})
 }

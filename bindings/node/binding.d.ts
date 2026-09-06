@@ -4,13 +4,16 @@
 export declare class Source {
   constructor(source: string, options?: Options | undefined | null)
   /** The whole source, or the program spanning `start..end` of it. */
-  parse(start?: number | undefined | null, end?: number | undefined | null): string
+  parse(start?: number | undefined | null, end?: number | undefined | null): ArrayBuffer | string
   /** `until` is `"as"` when the host's `as` follows the expression. */
-  parseExpressionAt(offset: number, until?: string | undefined | null): string
-  parsePatternAt(offset: number): string
-  parseParamsAt(offset: number): string
-  parseStatementAt(offset: number): string
+  parseExpressionAt(offset: number, until?: string | undefined | null): ArrayBuffer | string
+  parsePatternAt(offset: number): ArrayBuffer | string
+  parseParamsAt(offset: number): ArrayBuffer | string
+  parseStatementAt(offset: number): ArrayBuffer | string
 }
+
+/** The constant strings numbered so far, which a token stream refers to by id. */
+export declare function constants(): Array<string>
 
 export interface Options {
   /** `"script"` (the default, as in acorn) or `"module"`. */
@@ -29,12 +32,23 @@ export interface Options {
   until?: string
 }
 
-export declare function parse(source: string, options?: Options | undefined | null): string
+export declare function parse(source: string, options?: Options | undefined | null): ArrayBuffer | string
 
-export declare function parseExpressionAt(source: string, offset: number, options?: Options | undefined | null): string
+export declare function parseExpressionAt(source: string, offset: number, options?: Options | undefined | null): ArrayBuffer | string
 
-export declare function parseParamsAt(source: string, offset: number, options?: Options | undefined | null): string
+export declare function parseExpressionAtJson(source: string, offset: number, options?: Options | undefined | null): string
 
-export declare function parsePatternAt(source: string, offset: number, options?: Options | undefined | null): string
+/** The same answers as JSON text, for checking the decoder against. */
+export declare function parseJson(source: string, options?: Options | undefined | null): string
 
-export declare function parseStatementAt(source: string, offset: number, options?: Options | undefined | null): string
+export declare function parseParamsAt(source: string, offset: number, options?: Options | undefined | null): ArrayBuffer | string
+
+export declare function parseParamsAtJson(source: string, offset: number, options?: Options | undefined | null): string
+
+export declare function parsePatternAt(source: string, offset: number, options?: Options | undefined | null): ArrayBuffer | string
+
+export declare function parsePatternAtJson(source: string, offset: number, options?: Options | undefined | null): string
+
+export declare function parseStatementAt(source: string, offset: number, options?: Options | undefined | null): ArrayBuffer | string
+
+export declare function parseStatementAtJson(source: string, offset: number, options?: Options | undefined | null): string

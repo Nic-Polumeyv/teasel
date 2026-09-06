@@ -1,16 +1,17 @@
-//! Serializes an `Ast` to ESTree JSON, matching acorn's output shape.
+//! Serializes an `Ast` to ESTree, matching acorn's output shape: as JSON text, or as a token
+//! stream a binding hands to JavaScript without a text round trip.
 
 use crate::ast::{Ast, Function, List, MethodKind, NodeId, NodeKind, PropertyKind};
-use crate::interner::StrId;
+use crate::interner::{FastMap, Interner, StrId};
 use std::fmt::Write;
 
 /// How an extension's data serializes: its own nodes, and the keys it adds to JavaScript nodes.
 pub trait Emit: crate::ast::Walk {
 	/// Emits one of the extension's own nodes and closes it, or what erasing puts in its place.
-	fn node(&self, w: &mut Writer<Self>, id: NodeId, index: u32);
-	fn extras(&self, _w: &mut Writer<Self>, _id: NodeId) {}
+	fn node<S: Sink>(&self, w: &mut Writer<Self, S>, id: NodeId, index: u32);
+	fn extras<S: Sink>(&self, _w: &mut Writer<Self, S>, _id: NodeId) {}
 	/// Whether erasing leaves nothing of a node in a list: type-only declarations and imports.
-	fn erased(&self, _w: &Writer<Self>, _id: NodeId) -> bool {
+	fn erased<S: Sink>(&self, _w: &Writer<Self, S>, _id: NodeId) -> bool {
 		false
 	}
 }
@@ -26,78 +27,419 @@ pub struct Output {
 }
 
 impl Emit for () {
-	fn node(&self, _w: &mut Writer<Self>, _id: NodeId, _index: u32) {
+	fn node<S: Sink>(&self, _w: &mut Writer<Self, S>, _id: NodeId, _index: u32) {
 		unreachable!("the JavaScript parser adds no extension nodes")
+	}
+}
+
+/// Where the writer puts what it emits. Containers nest: a node begins with its type and ends
+/// like a plain object or a list; offsets in `slice`, `span` and `loc` are UTF-16. Strings the
+/// writer names itself are constants; a string computed for one tree is text.
+pub trait Sink {
+	/// The tree's interned strings, before anything refers to them.
+	fn strings(&mut self, _interner: &Interner) {}
+	fn begin(&mut self, ty: &'static str);
+	fn object(&mut self);
+	fn list(&mut self);
+	fn end(&mut self);
+	fn key(&mut self, key: &'static str);
+	fn int(&mut self, value: u32);
+	fn float(&mut self, value: f64);
+	fn bool(&mut self, value: bool);
+	fn null(&mut self);
+	fn str(&mut self, value: &'static str);
+	fn text(&mut self, value: &str);
+	/// A string of the tree's interner.
+	fn interned(&mut self, id: StrId, value: &str);
+	/// A string equal to the source between two offsets.
+	fn slice(&mut self, value: &str, start: u32, end: u32);
+	fn span(&mut self, start: u32, end: u32);
+	fn loc(&mut self, start_line: u32, start_column: u32, end_line: u32, end_column: u32);
+}
+
+/// JSON text.
+pub struct Json {
+	out: String,
+	/// Whether the next entry of the open container is its first.
+	first: bool,
+	/// The open containers, `true` for a list.
+	stack: Vec<bool>,
+}
+
+impl Default for Json {
+	fn default() -> Self {
+		Json {
+			out: String::new(),
+			first: true,
+			stack: Vec::new(),
+		}
+	}
+}
+
+impl Json {
+	pub fn finish(self) -> String {
+		self.out
+	}
+
+	fn sep(&mut self) {
+		if !self.first {
+			self.out.push(',');
+		}
+		self.first = false;
+	}
+
+	fn open(&mut self, list: bool) {
+		self.sep();
+		self.out.push(if list { '[' } else { '{' });
+		self.stack.push(list);
+		self.first = true;
+	}
+}
+
+impl Sink for Json {
+	fn begin(&mut self, ty: &'static str) {
+		self.open(false);
+		self.out.push_str("\"type\":\"");
+		self.out.push_str(ty);
+		self.out.push('"');
+		self.first = false;
+	}
+
+	fn object(&mut self) {
+		self.open(false);
+	}
+
+	fn list(&mut self) {
+		self.open(true);
+	}
+
+	fn end(&mut self) {
+		self.out.push(if self.stack.pop() == Some(true) { ']' } else { '}' });
+		self.first = false;
+	}
+
+	fn key(&mut self, key: &'static str) {
+		self.sep();
+		self.out.push('"');
+		self.out.push_str(key);
+		self.out.push_str("\":");
+		self.first = true;
+	}
+
+	fn int(&mut self, value: u32) {
+		self.sep();
+		push_int(&mut self.out, value);
+	}
+
+	fn float(&mut self, value: f64) {
+		self.sep();
+		write!(self.out, "{value}").unwrap();
+	}
+
+	fn bool(&mut self, value: bool) {
+		self.sep();
+		self.out.push_str(if value { "true" } else { "false" });
+	}
+
+	fn null(&mut self) {
+		self.sep();
+		self.out.push_str("null");
+	}
+
+	fn str(&mut self, value: &'static str) {
+		self.text(value);
+	}
+
+	fn text(&mut self, value: &str) {
+		self.sep();
+		write_json_string(&mut self.out, value);
+	}
+
+	fn interned(&mut self, _id: StrId, value: &str) {
+		self.text(value);
+	}
+
+	fn slice(&mut self, value: &str, _start: u32, _end: u32) {
+		self.text(value);
+	}
+
+	// the two entries every node has, written in one piece: a measurable share of the text
+	fn span(&mut self, start: u32, end: u32) {
+		self.sep();
+		self.out.push_str("\"start\":");
+		push_int(&mut self.out, start);
+		self.out.push_str(",\"end\":");
+		push_int(&mut self.out, end);
+	}
+
+	fn loc(&mut self, start_line: u32, start_column: u32, end_line: u32, end_column: u32) {
+		self.sep();
+		self.out.push_str("\"loc\":{\"start\":{\"line\":");
+		push_int(&mut self.out, start_line);
+		self.out.push_str(",\"column\":");
+		push_int(&mut self.out, start_column);
+		self.out.push_str("},\"end\":{\"line\":");
+		push_int(&mut self.out, end_line);
+		self.out.push_str(",\"column\":");
+		push_int(&mut self.out, end_column);
+		self.out.push_str("}}");
+	}
+}
+
+/// The tags of the token stream a binding decodes; each is followed by the payload noted.
+pub mod token {
+	/// A node: the type as a constant id, then its entries.
+	pub const BEGIN: u32 = 1;
+	pub const END: u32 = 2;
+	pub const OBJECT: u32 = 3;
+	pub const LIST: u32 = 4;
+	/// A constant id.
+	pub const KEY: u32 = 5;
+	pub const INT: u32 = 6;
+	/// An index into the floats.
+	pub const FLOAT: u32 = 7;
+	pub const TRUE: u32 = 8;
+	pub const FALSE: u32 = 9;
+	pub const NULL: u32 = 10;
+	/// A constant id.
+	pub const CONST: u32 = 11;
+	/// An index into the answer's own strings.
+	pub const STR: u32 = 12;
+	/// Two UTF-16 offsets into the source.
+	pub const SLICE: u32 = 13;
+	/// `start` and `end`.
+	pub const SPAN: u32 = 14;
+	/// `loc`: start line and column, end line and column.
+	pub const LOC: u32 = 15;
+}
+
+/// The strings the writer names itself, numbered once per thread for every answer: a binding
+/// fetches the list when an answer refers past what it has.
+#[derive(Default)]
+struct Constants {
+	names: Vec<&'static str>,
+	ids: FastMap<&'static str, u32>,
+}
+
+thread_local! {
+	static CONSTANTS: std::cell::RefCell<Constants> = std::cell::RefCell::new(Constants::default());
+}
+
+/// The constant strings numbered so far on this thread.
+pub fn constants() -> Vec<&'static str> {
+	CONSTANTS.with(|c| c.borrow().names.clone())
+}
+
+fn constant(value: &'static str) -> u32 {
+	CONSTANTS.with(|c| {
+		let mut c = c.borrow_mut();
+		if let Some(&id) = c.ids.get(value) {
+			return id;
+		}
+		let id = c.names.len() as u32;
+		c.names.push(value);
+		c.ids.insert(value, id);
+		id
+	})
+}
+
+/// A token stream packed into one buffer of 32-bit words, what a binding's JavaScript turns into
+/// objects directly: a header of five counts (tokens, strings, floats, UTF-16 units of text,
+/// constants numbered when it was written), the tokens, the strings' UTF-16 ends, the text two
+/// units to a word, padding to an even word, then the floats two words each. The strings are the
+/// tree's interned ones first, then any text written for this answer. Words are the host's
+/// endianness, which every target the package builds for shares with the decoder's check.
+pub struct Binary {
+	words: Vec<u32>,
+	units: Vec<u16>,
+	ends: Vec<u32>,
+	floats: Vec<f64>,
+}
+
+impl Binary {
+	/// Starts with the header's five words, filled in by `finish`.
+	pub fn new() -> Self {
+		Binary {
+			words: vec![0; 5],
+			units: Vec::new(),
+			ends: Vec::new(),
+			floats: Vec::new(),
+		}
+	}
+
+	fn push_text(&mut self, value: &str) -> u32 {
+		self.units.extend(value.encode_utf16());
+		self.ends.push(self.units.len() as u32);
+		self.ends.len() as u32 - 1
+	}
+
+	pub fn finish(mut self) -> Vec<u32> {
+		let tokens = self.words.len() as u32 - 5;
+		self.words[..5].copy_from_slice(&[
+			tokens,
+			self.ends.len() as u32,
+			self.floats.len() as u32,
+			self.units.len() as u32,
+			CONSTANTS.with(|c| c.borrow().names.len() as u32),
+		]);
+		self.words.extend(&self.ends);
+		for pair in self.units.chunks(2) {
+			self.words
+				.push(pair[0] as u32 | (pair.get(1).copied().unwrap_or(0) as u32) << 16);
+		}
+		if self.words.len() % 2 == 1 {
+			self.words.push(0);
+		}
+		for float in self.floats {
+			let bits = float.to_bits();
+			self.words.extend([bits as u32, (bits >> 32) as u32]);
+		}
+		self.words
+	}
+}
+
+impl Sink for Binary {
+	fn strings(&mut self, interner: &Interner) {
+		for i in 0..interner.len() {
+			self.push_text(interner.get(StrId(i as u32)));
+		}
+	}
+
+	fn begin(&mut self, ty: &'static str) {
+		self.words.extend([token::BEGIN, constant(ty)]);
+	}
+
+	fn object(&mut self) {
+		self.words.push(token::OBJECT);
+	}
+
+	fn list(&mut self) {
+		self.words.push(token::LIST);
+	}
+
+	fn end(&mut self) {
+		self.words.push(token::END);
+	}
+
+	fn key(&mut self, key: &'static str) {
+		self.words.extend([token::KEY, constant(key)]);
+	}
+
+	fn int(&mut self, value: u32) {
+		self.words.extend([token::INT, value]);
+	}
+
+	fn float(&mut self, value: f64) {
+		self.words.extend([token::FLOAT, self.floats.len() as u32]);
+		self.floats.push(value);
+	}
+
+	fn bool(&mut self, value: bool) {
+		self.words.push(if value { token::TRUE } else { token::FALSE });
+	}
+
+	fn null(&mut self) {
+		self.words.push(token::NULL);
+	}
+
+	fn str(&mut self, value: &'static str) {
+		self.words.extend([token::CONST, constant(value)]);
+	}
+
+	fn text(&mut self, value: &str) {
+		let id = self.push_text(value);
+		self.words.extend([token::STR, id]);
+	}
+
+	fn interned(&mut self, id: StrId, _value: &str) {
+		self.words.extend([token::STR, id.0]);
+	}
+
+	fn slice(&mut self, _value: &str, start: u32, end: u32) {
+		self.words.extend([token::SLICE, start, end]);
+	}
+
+	fn span(&mut self, start: u32, end: u32) {
+		self.words.extend([token::SPAN, start, end]);
+	}
+
+	fn loc(&mut self, start_line: u32, start_column: u32, end_line: u32, end_column: u32) {
+		self.words
+			.extend([token::LOC, start_line, start_column, end_line, end_column]);
 	}
 }
 
 /// Serializes a node; `locations` adds acorn's `loc` to every node.
 pub fn to_json<X: Emit>(ast: &Ast<X>, root: NodeId, source: &str, locations: bool) -> String {
 	let positions = Positions::new(source, locations);
-	let mut w = Writer::new(ast, source, &positions);
+	let mut w = Writer::new(ast, source, &positions, Json::default());
 	w.node(root);
-	w.out
+	w.sink.finish()
 }
 
-/// Serializes a program; `comments` adds every comment to it as `comments`.
-pub fn program_to_json<X: Emit>(
+/// Serializes a program into `sink`; `comments` adds every comment to it as `comments`.
+pub fn program<X: Emit, S: Sink>(
 	ast: &Ast<X>,
 	root: NodeId,
 	source: &str,
 	positions: &Positions,
 	output: Output,
-) -> String {
-	let mut w = Writer::new(ast, source, positions);
+	sink: S,
+) -> S {
+	let mut w = Writer::new(ast, source, positions, sink);
+	w.sink.strings(&ast.strings);
 	w.program_tail = true;
 	w.output = output;
 	w.node(root);
-	w.out
+	w.sink
 }
 
 /// Serializes a node parsed at an offset as `{"node":...,"end":N}`, `end` being the offset after
 /// everything the parse consumed; `comments` adds every comment read as `comments`.
-pub fn node_to_json<X: Emit>(
+pub fn node_at<X: Emit, S: Sink>(
 	ast: &Ast<X>,
 	root: NodeId,
 	end: u32,
 	source: &str,
 	positions: &Positions,
 	output: Output,
-) -> String {
-	let mut w = Writer::new(ast, source, positions);
+	sink: S,
+) -> S {
+	let mut w = Writer::new(ast, source, positions, sink);
+	w.sink.strings(&ast.strings);
 	w.output = output;
-	w.out.push_str("{\"node\":");
+	w.sink.object();
+	w.key("node");
 	w.node(root);
 	w.tail(end);
-	w.out
+	w.sink
 }
 
-/// Serializes parameters as `{"params":[...],"end":N}` the way `node_to_json` does a node.
-pub fn params_to_json<X: Emit>(
+/// Serializes parameters as `{"params":[...],"end":N}` the way `node_at` does a node.
+pub fn params_at<X: Emit, S: Sink>(
 	ast: &Ast<X>,
 	params: &[NodeId],
 	end: u32,
 	source: &str,
 	positions: &Positions,
 	output: Output,
-) -> String {
-	let mut w = Writer::new(ast, source, positions);
+	sink: S,
+) -> S {
+	let mut w = Writer::new(ast, source, positions, sink);
+	w.sink.strings(&ast.strings);
 	w.output = output;
-	w.out.push_str("{\"params\":[");
-	let mut first = true;
+	w.sink.object();
+	w.key("params");
+	w.sink.list();
 	for &param in params {
 		if w.output.erase && ast.extension.erased(&w, param) {
 			continue;
 		}
-		if !first {
-			w.out.push(',');
-		}
-		first = false;
 		w.node(param);
 	}
-	w.out.push(']');
+	w.sink.end();
 	w.tail(end);
-	w.out
+	w.sink
 }
 
 /// Serializes a syntax error the way acorn reports one: UTF-16 `pos` plus a `loc`.
@@ -116,10 +458,10 @@ pub fn error_to_json(error: &crate::SyntaxError, source: &str) -> String {
 	out
 }
 
-pub struct Writer<'a, X = ()> {
+pub struct Writer<'a, X = (), S: Sink = Json> {
 	ast: &'a Ast<X>,
 	source: &'a str,
-	out: String,
+	pub(crate) sink: S,
 	positions: &'a Positions,
 	cursor: Cursor,
 	pub(crate) output: Output,
@@ -238,12 +580,12 @@ fn locate<T>(items: &[T], hint: usize, byte: u32, key: impl Fn(&T) -> u32) -> us
 	items.partition_point(|item| key(item) <= byte)
 }
 
-impl<'a, X: Emit> Writer<'a, X> {
-	fn new(ast: &'a Ast<X>, source: &'a str, positions: &'a Positions) -> Self {
+impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
+	fn new(ast: &'a Ast<X>, source: &'a str, positions: &'a Positions, sink: S) -> Self {
 		Self {
 			ast,
 			source,
-			out: String::with_capacity(ast.nodes.len() * if positions.lines { 160 } else { 80 }),
+			sink,
 			positions,
 			cursor: Cursor::default(),
 			output: Output::default(),
@@ -257,31 +599,24 @@ impl<'a, X: Emit> Writer<'a, X> {
 		self.kept.push((ty, id));
 	}
 
-	/// What erasure left in place, as `typescript`.
+	/// What erasure left in place, as `typescript`, in source order.
 	fn all_kept(&mut self) {
 		self.key("typescript");
-		self.out.push('[');
+		self.sink.list();
 		let mut kept = std::mem::take(&mut self.kept);
 		kept.sort_by_key(|&(_, id)| self.ast.node(id).start);
-		for (i, &(ty, id)) in kept.iter().enumerate() {
-			if i > 0 {
-				self.out.push(',');
-			}
-			self.out.push_str("{\"type\":\"");
-			self.out.push_str(ty);
-			self.out.push('"');
+		for &(ty, id) in &kept {
+			self.sink.begin(ty);
 			let node = self.ast.node(id);
 			self.span(node.start, node.end);
-			self.out.push('}');
+			self.sink.end();
 		}
-		self.out.push(']');
+		self.sink.end();
 	}
 
-	pub(crate) fn begin(&mut self, ty: &str, id: NodeId) {
+	pub(crate) fn begin(&mut self, ty: &'static str, id: NodeId) {
 		let node = self.ast.node(id);
-		self.out.push_str("{\"type\":\"");
-		self.out.push_str(ty);
-		self.out.push('"');
+		self.sink.begin(ty);
 		self.span(node.start, node.end);
 		self.ast.extension.extras(self, id);
 		if let Some(attached) = self.ast.attached.get(&id) {
@@ -291,7 +626,7 @@ impl<'a, X: Emit> Writer<'a, X> {
 		}
 	}
 
-	fn comments(&mut self, key: &str, comments: &[u32]) {
+	fn comments(&mut self, key: &'static str, comments: &[u32]) {
 		if !comments.is_empty() {
 			self.key(key);
 			self.comment_list(comments);
@@ -299,23 +634,17 @@ impl<'a, X: Emit> Writer<'a, X> {
 	}
 
 	fn comment_list(&mut self, comments: &[u32]) {
-		self.out.push('[');
-		for (i, &index) in comments.iter().enumerate() {
-			if i > 0 {
-				self.out.push(',');
-			}
+		self.sink.list();
+		for &index in comments {
 			let comment = self.ast.comments[index as usize];
-			self.out.push_str(if comment.is_block() {
-				"{\"type\":\"Block\""
-			} else {
-				"{\"type\":\"Line\""
-			});
+			self.sink.begin(if comment.is_block() { "Block" } else { "Line" });
 			self.key("value");
-			write_json_string(&mut self.out, &self.source[comment.text_range()]);
+			let range = comment.text_range();
+			self.slice(range.start as u32, range.end as u32);
 			self.span(comment.start, comment.end);
-			self.out.push('}');
+			self.sink.end();
 		}
-		self.out.push(']');
+		self.sink.end();
 	}
 
 	/// Every comment read, in source order.
@@ -327,15 +656,16 @@ impl<'a, X: Emit> Writer<'a, X> {
 
 	/// Closes the object around a node parsed at an offset.
 	fn tail(&mut self, end: u32) {
-		self.out.push_str(",\"end\":");
-		push_int(&mut self.out, self.positions.offset(&mut self.cursor, end));
+		self.key("end");
+		let end = self.positions.offset(&mut self.cursor, end);
+		self.sink.int(end);
 		if self.output.comments {
 			self.all_comments();
 		}
 		if self.output.erase {
 			self.all_kept();
 		}
-		self.out.push('}');
+		self.sink.end();
 	}
 
 	pub(crate) fn span(&mut self, start: u32, end: u32) {
@@ -343,37 +673,34 @@ impl<'a, X: Emit> Writer<'a, X> {
 			self.positions.offset(&mut self.cursor, start),
 			self.positions.offset(&mut self.cursor, end),
 		);
-		self.out.push_str(",\"start\":");
-		push_int(&mut self.out, start_offset);
-		self.out.push_str(",\"end\":");
-		push_int(&mut self.out, end_offset);
+		self.sink.span(start_offset, end_offset);
 		if !self.positions.lines {
 			return;
 		}
 		let (sl, sc) = self.positions.line_column(&mut self.cursor, start, start_offset);
 		let (el, ec) = self.positions.line_column(&mut self.cursor, end, end_offset);
-		self.out.push_str(",\"loc\":{\"start\":{\"line\":");
-		push_int(&mut self.out, sl as u32);
-		self.out.push_str(",\"column\":");
-		push_int(&mut self.out, sc);
-		self.out.push_str("},\"end\":{\"line\":");
-		push_int(&mut self.out, el as u32);
-		self.out.push_str(",\"column\":");
-		push_int(&mut self.out, ec);
-		self.out.push_str("}}");
+		self.sink.loc(sl as u32, sc, el as u32, ec);
+	}
+
+	/// The source between two byte offsets, as a string value.
+	fn slice(&mut self, start: u32, end: u32) {
+		let (start_offset, end_offset) = (
+			self.positions.offset(&mut self.cursor, start),
+			self.positions.offset(&mut self.cursor, end),
+		);
+		self.sink
+			.slice(&self.source[start as usize..end as usize], start_offset, end_offset);
 	}
 
 	pub(crate) fn end(&mut self) {
-		self.out.push('}');
+		self.sink.end();
 	}
 
-	pub(crate) fn key(&mut self, key: &str) {
-		self.out.push_str(",\"");
-		self.out.push_str(key);
-		self.out.push_str("\":");
+	pub(crate) fn key(&mut self, key: &'static str) {
+		self.sink.key(key);
 	}
 
-	pub(crate) fn field(&mut self, key: &str, id: NodeId) {
+	pub(crate) fn field(&mut self, key: &'static str, id: NodeId) {
 		self.key(key);
 		self.node(id);
 	}
@@ -387,43 +714,38 @@ impl<'a, X: Emit> Writer<'a, X> {
 	}
 
 	/// The key only when there is a node, the way acorn leaves unset properties out.
-	pub(crate) fn opt_key(&mut self, key: &str, id: Option<NodeId>) {
+	pub(crate) fn opt_key(&mut self, key: &'static str, id: Option<NodeId>) {
 		if let Some(id) = id {
 			self.field(key, id);
 		}
 	}
 
-	pub(crate) fn opt(&mut self, key: &str, id: Option<NodeId>) {
+	pub(crate) fn opt(&mut self, key: &'static str, id: Option<NodeId>) {
 		self.key(key);
 		match id {
 			Some(id) => self.node(id),
-			None => self.out.push_str("null"),
+			None => self.sink.null(),
 		}
 	}
 
-	pub(crate) fn list(&mut self, key: &str, list: List) {
+	pub(crate) fn list(&mut self, key: &'static str, list: List) {
 		self.key(key);
-		self.out.push('[');
+		self.sink.list();
 		let ast = self.ast;
-		let mut first = true;
 		for item in ast.list(list) {
 			if self.output.erase && item.is_some_and(|id| ast.extension.erased(self, id)) {
 				continue;
 			}
-			if !first {
-				self.out.push(',');
-			}
-			first = false;
 			match item {
 				Some(id) => self.node(*id),
-				None => self.out.push_str("null"),
+				None => self.sink.null(),
 			}
 		}
-		self.out.push(']');
+		self.sink.end();
 	}
 
 	/// A parameter list; erasing drops TypeScript's `this` parameter.
-	pub(crate) fn params(&mut self, key: &str, list: List) {
+	pub(crate) fn params(&mut self, key: &'static str, list: List) {
 		if self.output.erase
 			&& let Some(&Some(first)) = self.ast.list(list).first()
 			&& let NodeKind::Identifier { name } = self.kind(first)
@@ -438,25 +760,31 @@ impl<'a, X: Emit> Writer<'a, X> {
 		self.list(key, list)
 	}
 
-	pub(crate) fn bool(&mut self, key: &str, value: bool) {
+	pub(crate) fn bool(&mut self, key: &'static str, value: bool) {
 		self.key(key);
-		self.out.push_str(if value { "true" } else { "false" });
+		self.sink.bool(value);
 	}
 
-	pub(crate) fn string(&mut self, key: &str, value: &str) {
+	pub(crate) fn string(&mut self, key: &'static str, value: &'static str) {
 		self.key(key);
-		write_json_string(&mut self.out, value);
+		self.sink.str(value);
 	}
 
-	pub(crate) fn interned(&mut self, key: &str, id: StrId) {
+	/// A string computed for this tree.
+	pub(crate) fn text(&mut self, key: &'static str, value: &str) {
 		self.key(key);
-		write_json_string(&mut self.out, self.ast.str(id));
+		self.sink.text(value);
+	}
+
+	pub(crate) fn interned(&mut self, key: &'static str, id: StrId) {
+		self.key(key);
+		self.sink.interned(id, self.ast.str(id));
 	}
 
 	pub(crate) fn raw(&mut self, id: NodeId) {
 		let node = self.ast.node(id);
 		self.key("raw");
-		write_json_string(&mut self.out, &self.source[node.start as usize..node.end as usize]);
+		self.slice(node.start, node.end);
 	}
 
 	fn function(&mut self, f: Function, expression: bool) {
@@ -495,21 +823,21 @@ impl<'a, X: Emit> Writer<'a, X> {
 				self.begin("Literal", id);
 				self.key("value");
 				if value.is_finite() {
-					write!(self.out, "{value}").unwrap();
+					self.sink.float(value);
 				} else {
-					self.out.push_str("null");
+					self.sink.null();
 				}
 				self.raw(id);
 			}
 			BigIntLiteral => {
 				self.begin("Literal", id);
 				self.key("value");
-				self.out.push_str("null");
+				self.sink.null();
 				self.raw(id);
 				let node = self.ast.node(id);
 				let raw = &self.source[node.start as usize..node.end as usize - 1];
 				let bigint = bigint_decimal(raw);
-				self.string("bigint", &bigint);
+				self.text("bigint", &bigint);
 			}
 			StringLiteral { value } => {
 				self.begin("Literal", id);
@@ -524,20 +852,19 @@ impl<'a, X: Emit> Writer<'a, X> {
 			NullLiteral => {
 				self.begin("Literal", id);
 				self.key("value");
-				self.out.push_str("null");
+				self.sink.null();
 				self.raw(id);
 			}
 			RegExpLiteral { pattern, flags } => {
 				self.begin("Literal", id);
 				self.key("value");
-				self.out.push_str("null");
+				self.sink.null();
 				self.raw(id);
 				self.key("regex");
-				self.out.push_str("{\"pattern\":");
-				write_json_string(&mut self.out, self.ast.str(pattern));
-				self.out.push_str(",\"flags\":");
-				write_json_string(&mut self.out, self.ast.str(flags));
-				self.out.push('}');
+				self.sink.object();
+				self.interned("pattern", pattern);
+				self.interned("flags", flags);
+				self.sink.end();
 			}
 			TemplateLiteral { quasis, expressions } => {
 				self.begin("TemplateLiteral", id);
@@ -547,14 +874,14 @@ impl<'a, X: Emit> Writer<'a, X> {
 			TemplateElement { cooked, raw, tail } => {
 				self.begin("TemplateElement", id);
 				self.key("value");
-				self.out.push_str("{\"raw\":");
-				write_json_string(&mut self.out, self.ast.str(raw));
-				self.out.push_str(",\"cooked\":");
+				self.sink.object();
+				self.interned("raw", raw);
+				self.key("cooked");
 				match cooked {
-					Some(cooked) => write_json_string(&mut self.out, self.ast.str(cooked)),
-					None => self.out.push_str("null"),
+					Some(cooked) => self.sink.interned(cooked, self.ast.str(cooked)),
+					None => self.sink.null(),
 				}
-				self.out.push('}');
+				self.sink.end();
 				self.bool("tail", tail);
 			}
 			TaggedTemplateExpression { tag, quasi } => {
@@ -690,7 +1017,7 @@ impl<'a, X: Emit> Writer<'a, X> {
 			} => {
 				self.begin("ArrowFunctionExpression", id);
 				self.key("id");
-				self.out.push_str("null");
+				self.sink.null();
 				self.bool("expression", expression);
 				self.bool("generator", false);
 				self.bool("async", is_async);
@@ -1074,5 +1401,41 @@ mod tests {
 		assert!(positions.byte_offset(-1.0).is_err());
 		assert!(positions.byte_offset(1.5).is_err());
 		assert_eq!(Positions::new("abc", true).byte_offset(3.0), Ok(3));
+	}
+
+	#[test]
+	fn binary_layout() {
+		use super::{Binary, Sink, token};
+		use crate::interner::Interner;
+		let mut interner = Interner::default();
+		interner.intern("a");
+		let mut b = Binary::new();
+		b.strings(&interner);
+		b.begin("Identifier");
+		b.span(1, 2);
+		b.key("name");
+		b.interned(crate::interner::StrId(0), "a");
+		b.key("value");
+		b.float(1.5);
+		b.key("raw");
+		b.text("\u{1F600}b");
+		b.end();
+		let words = b.finish();
+		let [tokens, strings, floats, units, known] = words[..5] else {
+			unreachable!()
+		};
+		assert_eq!((strings, floats, units), (2, 1, 4));
+		assert!(known >= 4);
+		let body = &words[5..5 + tokens as usize];
+		assert_eq!(body[0], token::BEGIN);
+		assert_eq!(&body[2..5], &[token::SPAN, 1, 2]);
+		let ends = &words[5 + tokens as usize..][..2];
+		assert_eq!(ends, &[1, 4]);
+		let text_at = 5 + tokens as usize + 2;
+		assert_eq!(words[text_at], 'a' as u32 | (0xd83d << 16));
+		let floats_at = (text_at + 2).next_multiple_of(2);
+		let bits = words[floats_at] as u64 | (words[floats_at + 1] as u64) << 32;
+		assert_eq!(f64::from_bits(bits), 1.5);
+		assert_eq!(words.len(), floats_at + 2);
 	}
 }
