@@ -357,6 +357,8 @@ pub struct Binder<'a, X> {
 	/// The scope a binding owns, for declarations that merge: namespaces and enums.
 	owned: FastMap<BindingId, ScopeId>,
 	arguments: Option<StrId>,
+	/// A TypeScript `this` parameter names no binding.
+	this_name: Option<StrId>,
 }
 
 impl<'a, X: Bind> Binder<'a, X> {
@@ -372,6 +374,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 			pending: Vec::new(),
 			owned: FastMap::default(),
 			arguments: ast.strings.find("arguments"),
+			this_name: ast.strings.find("this"),
 		}
 	}
 
@@ -520,6 +523,9 @@ impl<'a, X: Bind> Binder<'a, X> {
 		let NodeKind::Identifier { name } = self.kind(node) else {
 			return;
 		};
+		if Some(name) == self.this_name {
+			return;
+		}
 		let mut scope = self.current();
 		if kind.is_var() {
 			while !self.out.scopes[scope as usize].kind.holds_var() {

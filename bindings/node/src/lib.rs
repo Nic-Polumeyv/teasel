@@ -14,12 +14,22 @@ thread_local! {
 
 type Answer = napi::Result<Either<Uint32Array, String>>;
 
-fn prepared(source: &[u8], bits: u32) -> Prepared {
+fn request(bits: u32) -> Request {
 	let mut request = Request::new(Entry::Program, 0);
 	request.set_bits(bits);
-	let source =
-		String::from_utf8(source.to_vec()).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned());
-	Prepared::new(source, request)
+	request
+}
+
+/// Over the caller's bytes while they are valid UTF-8, which V8's encoder makes them.
+fn prepared(source: &[u8], bits: u32) -> Prepared<'_> {
+	match std::str::from_utf8(source) {
+		Ok(text) => Prepared::borrowed(text, request(bits)),
+		Err(_) => owned(source, bits),
+	}
+}
+
+fn owned(source: &[u8], bits: u32) -> Prepared<'static> {
+	Prepared::new(String::from_utf8_lossy(source).into_owned(), request(bits))
 }
 
 fn status(status: sys::napi_status, what: &str) -> napi::Result<()> {
@@ -94,7 +104,7 @@ pub fn constants() -> Vec<&'static str> {
 
 #[napi]
 pub struct Source {
-	prepared: Prepared,
+	prepared: Prepared<'static>,
 }
 
 #[napi]
@@ -102,7 +112,7 @@ impl Source {
 	#[napi(constructor)]
 	pub fn new(source: Uint8Array, bits: u32) -> Self {
 		Self {
-			prepared: prepared(&source, bits),
+			prepared: owned(&source, bits),
 		}
 	}
 
