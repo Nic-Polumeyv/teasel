@@ -631,6 +631,16 @@ fn phases() {
 	best("parse", &mut || {
 		let _ = crate::parser::parse_range::<()>(&source, 0, source.len() as u32, options).unwrap();
 	});
+	let mean = |name: &str, f: &mut dyn FnMut()| {
+		let t = std::time::Instant::now();
+		for _ in 0..300 {
+			f();
+		}
+		eprintln!("{:7.3} ms  {name} (mean of 300)", t.elapsed().as_secs_f64() * 1e3 / 300.0);
+	};
+	mean("parse", &mut || {
+		let _ = crate::parser::parse_range::<()>(&source, 0, source.len() as u32, options).unwrap();
+	});
 	best("parse + attach comments", &mut || {
 		let mut ast = crate::parser::parse_range::<()>(&source, 0, source.len() as u32, options).unwrap();
 		let root = ast.last();
