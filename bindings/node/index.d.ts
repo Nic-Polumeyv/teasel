@@ -6,8 +6,9 @@ export interface Options {
 	/**
 	 * Parse TypeScript. `'erase'` parses it and emits JavaScript: annotations, type-only
 	 * declarations and imports go, assertions give way to their expression, and what erasure
-	 * cannot express (enums, namespaces with values, parameter properties, decorators, `export =`,
-	 * `import =`) stays in the tree and is listed as `typescript` on the answer.
+	 * cannot express (enums, namespaces with values, parameter properties, `export =`, `import =`)
+	 * stays in the tree and is listed as `typescript` on the answer, as are the proposals
+	 * JavaScript itself has: decorators and accessor fields (`AccessorProperty`).
 	 */
 	typescript?: boolean | 'erase';
 	/** Attach `leadingComments`, `trailingComments` and `innerComments` to nodes. */
