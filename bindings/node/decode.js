@@ -153,23 +153,3 @@ export function linkScopes(answer, indexed) {
 	answer.scopes = scopes;
 	answer.bindings = bindings;
 }
-
-/** Finds the indexed nodes by walking, for answers that came as JSON. */
-export function linkJson(answer) {
-	const indexed = [];
-	const seen = new Set();
-	const walk = (value) => {
-		if (!value || typeof value !== 'object' || seen.has(value)) return;
-		seen.add(value);
-		if (Array.isArray(value)) {
-			for (const item of value) walk(item);
-			return;
-		}
-		if ('scope' in value || 'binding' in value || 'declares' in value) indexed.push(value);
-		for (const key in value) {
-			if (key !== 'scopes' && key !== 'bindings' && key !== 'loc') walk(value[key]);
-		}
-	};
-	walk(answer);
-	linkScopes(answer, indexed);
-}

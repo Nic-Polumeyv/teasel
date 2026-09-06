@@ -260,6 +260,7 @@ where
 	let output = Output {
 		comments,
 		scopes: request.scopes,
+		pattern: false,
 		erase: request.erase && request.typescript,
 	};
 	let result = match request.entry {
@@ -289,7 +290,10 @@ where
 			source,
 			positions,
 			offset,
-			output,
+			Output {
+				pattern: true,
+				..output
+			},
 			sink,
 		),
 		Entry::Statement => one(
@@ -326,7 +330,9 @@ fn one<X: Emit + Bind, S: Sink>(
 		if output.comments {
 			attach(&mut ast, source, root, offset);
 		}
-		if output.scopes {
+		if output.scopes && output.pattern {
+			scopes::analyze_pattern(&mut ast, root);
+		} else if output.scopes {
 			scopes::analyze(&mut ast, root);
 		}
 		node_at(&ast, root, end, source, positions, output, sink)

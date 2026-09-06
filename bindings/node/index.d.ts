@@ -67,8 +67,9 @@ export interface Scope {
 		| 'static-block'
 		| 'with'
 		| 'namespace'
+		| 'enum'
 		| 'fragment';
-	/** The node that opens it; null for the scope around a parameter list parsed on its own. */
+	/** The node that opens it; null for a function-name scope and for the scope around a parameter list parsed on its own. */
 	node: Node | null;
 	parent: Scope | null;
 	/** How many function scopes enclose it, itself included when it is one. */
@@ -95,7 +96,9 @@ export interface Binding {
 		| 'class-name'
 		| 'arguments'
 		| 'enum'
-		| 'namespace';
+		| 'enum-member'
+		| 'namespace'
+		| 'pattern';
 	scope: Scope;
 	/** The identifier that declares it; null for `arguments`. */
 	node: Identifier | null;
@@ -150,7 +153,7 @@ export interface Parsed<T> {
 }
 
 /** A program, with the comment list and the erasure leftovers when those options are on. */
-export type ParsedProgram = Program & { comments?: Comment[]; typescript?: Kept[] };
+export type ParsedProgram = Program & { comments?: Comment[]; typescript?: Kept[]; scopes?: Scope[]; bindings?: Binding[] };
 
 /** What `parseParamsAt` returns: the list rather than one node, otherwise as `Parsed`. */
 export interface Params {
@@ -158,6 +161,8 @@ export interface Params {
 	/** The offset after the closing paren and the comments after it. */
 	end: number;
 	comments?: Comment[];
+	scopes?: Scope[];
+	bindings?: Binding[];
 	typescript?: Kept[];
 }
 

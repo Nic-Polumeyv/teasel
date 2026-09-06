@@ -1,5 +1,5 @@
-// The scope and binding tables of an answer, linked into objects; a copy of the end of
-// `bindings/node/decode.js`.
+// The scope and binding tables of an answer, linked into objects: `linkScopes` is a copy of the
+// one in `bindings/node/decode.js`, `linkJson` finds the nodes in a tree that came as JSON.
 
 /**
  * Turns the answer's scope and binding tables into objects and the numbers on nodes into

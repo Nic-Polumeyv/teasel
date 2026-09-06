@@ -24,6 +24,8 @@ pub struct Output {
 	pub comments: bool,
 	/// Nodes carry their scope and identifiers their binding, and the answer lists both tables.
 	pub scopes: bool,
+	/// The node is a pattern parsed on its own, which declares what it names.
+	pub pattern: bool,
 	/// TypeScript is erased: annotations, type-only declarations and imports go, assertions give
 	/// way to their expression, and what erasure cannot express is listed as `typescript`.
 	pub erase: bool,
@@ -796,9 +798,10 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 	/// A specifier's other name, which is the same node as the binding one in `import { a }`
 	/// and `export { a }`, and then only names: the binding facts stay on the binding one.
 	fn other_name(&mut self, key: &'static str, id: NodeId, binding: NodeId) {
+		let was = self.name_only;
 		self.name_only = id == binding;
 		self.field(key, id);
-		self.name_only = false;
+		self.name_only = was;
 	}
 
 	pub(crate) fn kind(&self, id: NodeId) -> NodeKind {

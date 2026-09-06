@@ -24,6 +24,8 @@ pub enum ScopeKind {
 	With,
 	/// A TypeScript namespace body.
 	Namespace,
+	/// A TypeScript enum body, where the members are names.
+	Enum,
 	/// What a host parses at an offset: an expression, a statement, a pattern.
 	Fragment,
 }
@@ -43,6 +45,7 @@ impl ScopeKind {
 			ScopeKind::StaticBlock => "static-block",
 			ScopeKind::With => "with",
 			ScopeKind::Namespace => "namespace",
+			ScopeKind::Enum => "enum",
 			ScopeKind::Fragment => "fragment",
 		}
 	}
@@ -78,7 +81,10 @@ pub enum BindingKind {
 	/// `arguments` in a function that reads it.
 	Arguments,
 	Enum,
+	EnumMember,
 	Namespace,
+	/// What a pattern parsed on its own declares; the host says what kind of binding it is.
+	Pattern,
 }
 
 impl BindingKind {
@@ -96,7 +102,9 @@ impl BindingKind {
 			BindingKind::ClassName => "class-name",
 			BindingKind::Arguments => "arguments",
 			BindingKind::Enum => "enum",
+			BindingKind::EnumMember => "enum-member",
 			BindingKind::Namespace => "namespace",
+			BindingKind::Pattern => "pattern",
 		}
 	}
 
@@ -203,6 +211,10 @@ pub trait Bind: Walk {
 	fn wrapped(&self, _ast: &Ast<Self>, _id: NodeId) -> Option<NodeId> {
 		None
 	}
+	/// Whether an import or export declaration or specifier is type-only, binding no value.
+	fn types_only(&self, _ast: &Ast<Self>, _id: NodeId) -> bool {
+		false
+	}
 }
 
 impl Bind for () {
@@ -240,6 +252,16 @@ pub fn analyze<X: Bind>(ast: &mut Ast<X>, root: NodeId) {
 	ast.scopes = Some(out);
 }
 
+/// Analyzes a pattern parsed on its own: what it names are `pattern` bindings of a fragment scope.
+pub fn analyze_pattern<X: Bind>(ast: &mut Ast<X>, root: NodeId) {
+	let mut binder = Binder::new(ast);
+	binder.enter(ScopeKind::Fragment, Some(root), false);
+	binder.visit(root, Mode::Declare(BindingKind::Pattern));
+	binder.exit();
+	let out = binder.out;
+	ast.scopes = Some(out);
+}
+
 /// Analyzes a parameter list parsed on its own, as the parameters of a function scope.
 pub fn analyze_params<X: Bind>(ast: &mut Ast<X>, params: &[NodeId]) {
 	let mut binder = Binder::new(ast);
@@ -258,6 +280,8 @@ pub struct Binder<'a, X> {
 	stack: Vec<ScopeId>,
 	/// The references of each open scope not yet resolved, parallel to `stack`.
 	pending: Vec<Vec<ReferenceId>>,
+	/// The scope a binding owns, for declarations that merge: namespaces and enums.
+	owned: FastMap<BindingId, ScopeId>,
 }
 
 impl<'a, X: Bind> Binder<'a, X> {
@@ -267,6 +291,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 			out: Scopes::default(),
 			stack: Vec::new(),
 			pending: Vec::new(),
+			owned: FastMap::default(),
 		}
 	}
 
@@ -303,6 +328,29 @@ impl<'a, X: Bind> Binder<'a, X> {
 		}
 		self.stack.push(id);
 		self.pending.push(Vec::new());
+	}
+
+	/// Opens the scope a binding owns, or reopens it when the binding declared one before, as
+	/// the blocks of one namespace share their names.
+	pub fn enter_owned(&mut self, kind: ScopeKind, node: NodeId, binding: Option<BindingId>) {
+		if let Some(&scope) = binding.and_then(|b| self.owned.get(&b)) {
+			self.out.of_node.insert(node, scope);
+			self.stack.push(scope);
+			self.pending.push(Vec::new());
+			return;
+		}
+		self.enter(kind, Some(node), false);
+		if let Some(binding) = binding {
+			self.owned.insert(binding, self.current());
+		}
+	}
+
+	/// The binding an identifier declares, once declared.
+	pub fn declared_by(&self, node: NodeId) -> Option<BindingId> {
+		match self.out.of_identifier.get(&node) {
+			Some(&Role::Declares(binding)) => Some(binding),
+			_ => None,
+		}
 	}
 
 	/// Closes the scope: its references resolve here or move up.
@@ -454,6 +502,23 @@ impl<'a, X: Bind> Binder<'a, X> {
 		}
 	}
 
+	/// Whether an assignment target is a member expression, through parens and wrappers.
+	fn is_member(&self, mut id: NodeId) -> bool {
+		loop {
+			match self.kind(id) {
+				NodeKind::MemberExpression { .. } => return true,
+				NodeKind::ParenthesizedExpression { expression } | NodeKind::ChainExpression { expression } => {
+					id = expression
+				}
+				NodeKind::Extension(_) => match self.ast.extension.wrapped(self.ast, id) {
+					Some(inner) => id = inner,
+					None => return false,
+				},
+				_ => return false,
+			}
+		}
+	}
+
 	/// A member expression as an assignment target: its parts are read, its root mutated.
 	fn assign_member(&mut self, id: NodeId) {
 		let root = self.mutated_root(id);
@@ -486,10 +551,16 @@ impl<'a, X: Bind> Binder<'a, X> {
 	}
 
 	fn function(&mut self, id: NodeId, params: List, body: NodeId, arrow: bool) {
+		// a parameter's decorators are evaluated where the function is defined
+		for &param in self.ast.list(params).iter().flatten() {
+			self.ast.extension.bind_extras(self, param);
+		}
 		self.enter(ScopeKind::Function, Some(id), arrow);
 		let scope = self.current();
 		self.out.scopes[scope as usize].body_start = self.ast.node(body).start;
-		self.list(params, Mode::Declare(BindingKind::Param));
+		for &param in self.ast.list(params).iter().flatten() {
+			self.visit_with(param, Mode::Declare(BindingKind::Param), false);
+		}
 		match self.kind(body) {
 			NodeKind::BlockStatement { body } => self.statements(body),
 			_ => self.visit(body, Mode::Expression),
@@ -524,13 +595,22 @@ impl<'a, X: Bind> Binder<'a, X> {
 	}
 
 	pub fn visit(&mut self, id: NodeId, mode: Mode) {
+		self.visit_with(id, mode, true);
+	}
+
+	fn visit_with(&mut self, id: NodeId, mode: Mode, extras: bool) {
 		use NodeKind::*;
-		self.ast.extension.bind_extras(self, id);
+		if mode == Mode::Assign {
+			return self.target(id);
+		}
+		if extras {
+			self.ast.extension.bind_extras(self, id);
+		}
 		match self.kind(id) {
 			Identifier { .. } => match mode {
 				Mode::Expression => self.reference(id, false, false),
 				Mode::Declare(kind) => self.declare(id, kind),
-				Mode::Assign => self.reference(id, true, false),
+				Mode::Assign => unreachable!(),
 			},
 			Extension(_) => self.ast.extension.bind(self, id, mode),
 			Program { body, .. } => self.statements(body),
@@ -568,7 +648,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 			}
 			SpreadElement { argument } => self.visit(argument, mode),
 			UnaryExpression { argument, operator } => {
-				if operator == crate::ast::UnaryOperator::Delete && self.mutated_root(argument).is_some() {
+				if operator == crate::ast::UnaryOperator::Delete && self.is_member(argument) {
 					self.assign_member(argument);
 				} else {
 					self.visit(argument, Mode::Expression);
@@ -660,10 +740,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 				self.visit(source, Mode::Expression);
 				self.maybe(options, Mode::Expression);
 			}
-			ObjectPattern { properties } | ArrayPattern { elements: properties } => match mode {
-				Mode::Assign => self.targets(properties),
-				_ => self.list(properties, mode),
-			},
+			ObjectPattern { properties } | ArrayPattern { elements: properties } => self.list(properties, mode),
 			RestElement { argument } => self.visit(argument, mode),
 			AssignmentPattern { left, right } => {
 				self.visit(left, mode);
@@ -769,9 +846,15 @@ impl<'a, X: Bind> Binder<'a, X> {
 				self.visit(pattern, mode);
 				self.maybe(init, Mode::Expression);
 			}
-			ImportDeclaration { specifiers, .. } => self.list(specifiers, Mode::Expression),
+			ImportDeclaration { specifiers, .. } => {
+				if !self.ast.extension.types_only(self.ast, id) {
+					self.list(specifiers, Mode::Expression);
+				}
+			}
 			ImportSpecifier { local, .. } | ImportDefaultSpecifier { local } | ImportNamespaceSpecifier { local } => {
-				self.declare(local, BindingKind::Import)
+				if !self.ast.extension.types_only(self.ast, id) {
+					self.declare(local, BindingKind::Import);
+				}
 			}
 			ExportNamedDeclaration {
 				declaration,
@@ -780,12 +863,14 @@ impl<'a, X: Bind> Binder<'a, X> {
 				..
 			} => {
 				self.maybe(declaration, Mode::Expression);
-				if source.is_none() {
+				if source.is_none() && !self.ast.extension.types_only(self.ast, id) {
 					self.list(specifiers, Mode::Expression);
 				}
 			}
 			ExportSpecifier { local, .. } => {
-				if let Identifier { .. } = self.kind(local) {
+				if let Identifier { .. } = self.kind(local)
+					&& !self.ast.extension.types_only(self.ast, id)
+				{
 					self.reference(local, false, false);
 				}
 			}
@@ -936,6 +1021,69 @@ mod tests {
 	}
 
 	#[test]
+	fn delete_and_wrappers() {
+		assert_eq!(
+			facts("delete x; delete y.z; delete (w).v;"),
+			"x@7 -> global\ny@16 -> global mutate\nw@30 -> global mutate"
+		);
+		let src = "(a as any).b = 1; (c!).d = 2; (e as any) = 3;";
+		let mut ast = crate::typescript::parse(
+			src,
+			Options {
+				module: true,
+				..Options::default()
+			},
+		)
+		.unwrap();
+		let root = ast.last();
+		analyze(&mut ast, root);
+		let scopes = ast.scopes.as_ref().unwrap();
+		let flags: Vec<_> = scopes.references.iter().map(|r| (r.write, r.mutate)).collect();
+		assert_eq!(flags, [(false, true), (false, true), (true, false)]);
+	}
+
+	#[test]
+	fn typescript_declarations() {
+		let src = "import type { X } from 'm'; import { type Y, Z } from 'm'; export { type X }; enum E { A = 1, B = A } namespace N { export const n = 1; } namespace N { n; } export function f(): void; class C { m(@dec p) {} } function dec() {}";
+		let mut ast = crate::typescript::parse(
+			src,
+			Options {
+				module: true,
+				..Options::default()
+			},
+		)
+		.unwrap();
+		let root = ast.last();
+		analyze(&mut ast, root);
+		let scopes = ast.scopes.as_ref().unwrap();
+		let names: Vec<_> = scopes
+			.bindings
+			.iter()
+			.map(|b| format!("{}:{}", ast.str(b.name), b.kind.name()))
+			.collect();
+		assert_eq!(
+			names,
+			[
+				"Z:import",
+				"E:enum",
+				"A:enum-member",
+				"B:enum-member",
+				"N:namespace",
+				"n:const",
+				"f:function",
+				"C:class",
+				"p:param",
+				"dec:function"
+			]
+		);
+		let unresolved = scopes.references.iter().filter(|r| r.binding.is_none()).count();
+		assert_eq!(unresolved, 0);
+		let dec = scopes.bindings.iter().position(|b| ast.str(b.name) == "dec").unwrap() as BindingId;
+		let dec_reference = scopes.reference(scopes.binding(dec).references[0]);
+		assert_eq!(scopes.scope(dec_reference.scope).kind, ScopeKind::Class);
+	}
+
+	#[test]
 	fn typescript_values_and_types() {
 		let src = "enum E { A = x } namespace N { export const n: T = y as T; } let t: T; @d class C { constructor(public p: P) {} }";
 		let mut ast = crate::typescript::parse(
@@ -956,7 +1104,15 @@ mod tests {
 			.collect();
 		assert_eq!(
 			names,
-			["E:enum", "N:namespace", "n:const", "t:let", "C:class", "p:param"]
+			[
+				"E:enum",
+				"A:enum-member",
+				"N:namespace",
+				"n:const",
+				"t:let",
+				"C:class",
+				"p:param"
+			]
 		);
 		let globals: Vec<_> = scopes
 			.references

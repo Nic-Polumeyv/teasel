@@ -1,7 +1,7 @@
 //! TypeScript in the scope analysis: type positions bind nothing, and the declarations with a
 //! runtime value join the value space.
 
-use super::ast::{Data, TsKind};
+use super::ast::{Data, Kind, TsKind};
 use crate::ast::{Ast, NodeId, NodeKind};
 use crate::scopes::{Bind, Binder, BindingKind, Mode, ScopeKind};
 
@@ -43,7 +43,14 @@ impl Bind for Data {
 			Decorator { expression } | ExportAssignment { expression } => b.visit(expression, Mode::Expression),
 			EnumDeclaration { id: name, members, .. } => {
 				b.declare(name, BindingKind::Enum);
-				for &member in b.ast().list(members).iter().flatten() {
+				b.enter_owned(ScopeKind::Enum, id, b.declared_by(name));
+				let members: Vec<_> = b.ast().list(members).iter().flatten().copied().collect();
+				for &member in &members {
+					if let Some(EnumMember { id: name, .. }) = Self::index(b.ast(), member).map(|i| self.kind(i)) {
+						b.declare(name, BindingKind::EnumMember);
+					}
+				}
+				for &member in &members {
 					if let Some(EnumMember {
 						initializer: Some(initializer),
 						..
@@ -52,13 +59,14 @@ impl Bind for Data {
 						b.visit(initializer, Mode::Expression);
 					}
 				}
+				b.exit();
 			}
 			ModuleDeclaration { id: name, body, global } => {
 				if !global {
 					b.declare(name, BindingKind::Namespace);
 				}
 				if let Some(body) = body {
-					b.enter(ScopeKind::Namespace, Some(id), false);
+					b.enter_owned(ScopeKind::Namespace, id, b.declared_by(name));
 					b.visit(body, Mode::Expression);
 					b.exit();
 				}
@@ -74,9 +82,8 @@ impl Bind for Data {
 					b.reference(root, false, false);
 				}
 			}
-			DeclareFunction { id: Some(name), .. } if self.extras(id).is_some_and(|e| e.declare) => {
-				b.declare(name, BindingKind::Function);
-			}
+			// an overload or an ambient signature names the function like its implementation would
+			DeclareFunction { id: Some(name), .. } => b.declare(name, BindingKind::Function),
 			_ => {}
 		}
 	}
@@ -87,6 +94,11 @@ impl Bind for Data {
 				b.visit(decorator, Mode::Expression);
 			}
 		}
+	}
+
+	fn types_only(&self, _ast: &Ast<Self>, id: NodeId) -> bool {
+		self.extras(id)
+			.is_some_and(|e| e.import_kind == Some(Kind::Type) || e.export_kind == Some(Kind::Type))
 	}
 
 	fn wrapped(&self, ast: &Ast<Self>, id: NodeId) -> Option<NodeId> {

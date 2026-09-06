@@ -60,19 +60,20 @@ for (const file of files) {
 		for (const options of [
 			{ sourceType: 'module', typescript, locations: true, comments: true },
 			{ sourceType: 'module', typescript, erase: typescript },
+			{ sourceType: 'module', typescript, scopes: true },
 			{ typescript, preserveParens: true }
 		]) {
-			const answer = (value) => (typeof value === 'string' ? value : decode(value, source, native.constants));
+			const answer = (value) => (typeof value === 'string' ? value : decode(value, source, native.constants, false));
 			same(file, () => answer(native.parse(source, options)), () => native.parseJson(source, options));
 		}
 	}
 	// every brace in a component is somewhere an expression, a pattern or a statement might start
 	if (svelte) {
-		const options = { sourceType: 'module', typescript: /lang=["']?ts/.test(text), locations: true, comments: true };
+		const options = { sourceType: 'module', typescript: /lang=["']?ts/.test(text), locations: true, comments: true, scopes: true };
 		const held = new native.Source(text, options);
 		for (const match of text.matchAll(brace_re)) {
 			const at = match.index + 1;
-			const answer = (value) => (typeof value === 'string' ? value : decode(value, text, native.constants));
+			const answer = (value) => (typeof value === 'string' ? value : decode(value, text, native.constants, false));
 			same(`${file}@${at}`, () => answer(held.parseExpressionAt(at)), () => native.parseExpressionAtJson(text, at, options));
 			same(`${file}@${at} pattern`, () => answer(held.parsePatternAt(at)), () => native.parsePatternAtJson(text, at, options));
 			same(`${file}@${at} statement`, () => answer(held.parseStatementAt(at)), () => native.parseStatementAtJson(text, at, options));
