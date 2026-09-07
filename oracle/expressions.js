@@ -38,8 +38,8 @@ function* roots(node, key, parent, parent_is_estree, source) {
 }
 
 const jobs = [];
-const { list, skipped: skipped_files } = await components(filter);
-for (const { name, source, ast, ts, byte } of list) {
+const { each, stats } = await components(filter);
+for (const { name, source, ast, ts, byte } of each) {
 	for (const node of roots(ast.fragment, 'fragment', ast, false, source)) {
 		jobs.push({ name: `${name}@${node.start}`, source, mode: `${ts ? 'ts-' : ''}expr:${byte(node.start)}`, offset: node.start, ts });
 	}
@@ -47,4 +47,4 @@ for (const { name, source, ast, ts, byte } of list) {
 }
 
 const lines = await teasel(jobs);
-process.exit(compare(jobs, (job) => acorn_expression(job.source, job.offset, job.ts), lines, { verbose, skipped: skipped_files }) ? 0 : 1);
+process.exit(compare(jobs, (job) => acorn_expression(job.source, job.offset, job.ts), lines, { verbose, skipped: stats.skipped }) ? 0 : 1);

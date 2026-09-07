@@ -34,27 +34,28 @@ export function* scripts(text, ts) {
 	}
 }
 
-/// Every component of the corpus Svelte's own parser accepts, with its tree and a UTF-16 to byte
-/// offset map; `skipped` counts the rest.
+/// Every component of the corpus Svelte's own parser accepts, one at a time, with its tree and a
+/// UTF-16 to byte offset map; `stats.skipped` counts the rest so far.
 export async function components(filter) {
 	const { parse } = await import(`${root}/packages/svelte/src/compiler/index.js`);
-	const list = [];
-	let skipped = 0;
-	for (const path of files(corpus, /\.svelte$/)) {
-		const name = relative(corpus, path);
-		if (filter && !name.includes(filter)) continue;
-		const source = readFileSync(path, 'utf8');
-		let ast;
-		try {
-			ast = parse(source, { modern: true });
-		} catch {
-			skipped++;
-			continue;
+	const stats = { skipped: 0 };
+	function* each() {
+		for (const path of files(corpus, /\.svelte$/)) {
+			const name = relative(corpus, path);
+			if (filter && !name.includes(filter)) continue;
+			const source = readFileSync(path, 'utf8');
+			let ast;
+			try {
+				ast = parse(source, { modern: true });
+			} catch {
+				stats.skipped++;
+				continue;
+			}
+			const byte = (utf16) => Buffer.byteLength(source.slice(0, utf16), 'utf8');
+			yield { name, source, ast, ts: is_typescript(source), byte };
 		}
-		const byte = (utf16) => Buffer.byteLength(source.slice(0, utf16), 'utf8');
-		list.push({ name, source, ast, ts: is_typescript(source), byte });
 	}
-	return { list, skipped };
+	return { each: each(), stats };
 }
 
 /// The TypeScript of the Svelte and SvelteKit checkouts: every `.ts` file and `lang="ts"` script.

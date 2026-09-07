@@ -533,9 +533,6 @@ impl<'a> Lexer<'a> {
 		let start = self.pos;
 		let legacy_octal = maybe_legacy_octal && self.byte() == Some(b'0');
 		let mut last_was_separator = false;
-		if radix == 10 {
-			self.pos = scan::run_of(self.src.as_bytes(), self.pos, scan::DIGIT);
-		}
 		while let Some(b) = self.byte() {
 			if b == b'_' {
 				if legacy_octal {
@@ -556,6 +553,9 @@ impl<'a> Lexer<'a> {
 			}
 			last_was_separator = false;
 			self.pos += 1;
+			if radix == 10 {
+				self.pos = scan::run_of(self.src.as_bytes(), self.pos, scan::DIGIT);
+			}
 		}
 		if last_was_separator {
 			return self.error(self.pos - 1, Code::NumericSeparatorLast);

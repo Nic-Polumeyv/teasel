@@ -349,13 +349,14 @@ where
 			let (parse, output): (ParseAt<E::Data>, _) = match request.entry {
 				Entry::Expression => (crate::parser::parse_expression_at::<E>, output),
 				Entry::Statement => (crate::parser::parse_statement_at::<E>, output),
-				_ => (
+				Entry::Pattern => (
 					crate::parser::parse_pattern_at::<E>,
 					Output {
 						pattern: true,
 						..output
 					},
 				),
+				_ => unreachable!(),
 			};
 			one(parse(source, offset, options), source, positions, offset, output, sink)
 		}

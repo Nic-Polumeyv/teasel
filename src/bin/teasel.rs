@@ -9,11 +9,11 @@
 //! bytes of source, and prints one JSON line per job. MODE is `module`, `script`, `expr:OFFSET`,
 //! `pattern:OFFSET`, `params:OFFSET` or `stmt:OFFSET`, whose answers wrap the node or the parameters
 //! with `end`, the offset after what the parse consumed, with a `ts-` prefix for TypeScript and
-//! `+comments` to attach comments, `+undeclared-exports` to accept exports of names the source
-//! never declares, `+until-as` to end an expression at the host's `as` or `+erase` to erase
-//! TypeScript from the output. In a batch, expressions
-//! preserve parens. Offsets are byte offsets into the source; the JSON output reports UTF-16
-//! offsets like acorn.
+//! `+comments` to attach comments, `+scopes` for the scope analysis, `+undeclared-exports` to
+//! accept exports of names the source never declares, `+until-as` to end an expression at the
+//! host's `as` or `+erase` to erase TypeScript from the output. In a batch, expressions preserve
+//! parens. Offsets are byte offsets into the source; the JSON output reports UTF-16 offsets like
+//! acorn.
 
 use std::io::{self, BufRead, Read, Write};
 use std::process::ExitCode;

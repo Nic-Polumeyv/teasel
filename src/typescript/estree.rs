@@ -100,7 +100,8 @@ impl Emit for Data {
 						TypeAnnotation { .. } => "TSTypeAnnotation",
 						OptionalType { .. } => "TSOptionalType",
 						RestType { .. } => "TSRestType",
-						_ => "TSParenthesizedType",
+						ParenthesizedType { .. } => "TSParenthesizedType",
+						_ => unreachable!(),
 					},
 					id,
 				);
@@ -491,7 +492,8 @@ impl Emit for Data {
 					match kind {
 						AsExpression { .. } => "TSAsExpression",
 						SatisfiesExpression { .. } => "TSSatisfiesExpression",
-						_ => "TSTypeCastExpression",
+						TypeCastExpression { .. } => "TSTypeCastExpression",
+						_ => unreachable!(),
 					},
 					id,
 				);

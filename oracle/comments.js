@@ -108,8 +108,8 @@ function normalize(node, source, from, is_root, raw_values, ts) {
 }
 
 const jobs = [];
-const { list, skipped } = await components(filter);
-for (const { name, source, ast, ts: typescript, byte } of list) {
+const { each, stats } = await components(filter);
+for (const { name, source, ast, ts: typescript, byte } of each) {
 	const ts = typescript ? 'ts-' : '';
 	for (const script of [ast.instance, ast.module]) {
 		if (!script) continue;
@@ -132,4 +132,4 @@ const lines = (await teasel(jobs)).map((line, i) => {
 	delete node.comments;
 	return JSON.stringify(normalize(node, jobs[i].source, jobs[i].from, true, true, jobs[i].ts));
 });
-process.exit(compare(jobs, (job) => job.expected, lines, { verbose, label: 'comment attachment', skipped }) ? 0 : 1);
+process.exit(compare(jobs, (job) => job.expected, lines, { verbose, label: 'comment attachment', skipped: stats.skipped }) ? 0 : 1);

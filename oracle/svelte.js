@@ -54,8 +54,8 @@ function fix_loc(node, position) {
 }
 
 const jobs = [];
-const { list, skipped } = await components(filter);
-for (const { name, source, ast, ts, byte } of list) {
+const { each, stats } = await components(filter);
+for (const { name, source, ast, ts, byte } of each) {
 	const prefix = ts ? 'ts-' : '';
 	const position = locate(source);
 	const pattern = (node) => jobs.push({ name: `${name}@${node.start} pattern`, source, mode: `${prefix}pattern:${byte(node.start)}`, expected: fix_loc(strip(node), position) });
@@ -134,4 +134,4 @@ function actual(line, job) {
 }
 
 const lines = (await teasel(jobs)).map((line, i) => JSON.stringify(actual(line, jobs[i])));
-process.exit(compare(jobs, (job) => job.expected, lines, { verbose, label: 'svelte entry points', skipped }) ? 0 : 1);
+process.exit(compare(jobs, (job) => job.expected, lines, { verbose, label: 'svelte entry points', skipped: stats.skipped }) ? 0 : 1);
