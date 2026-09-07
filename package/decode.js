@@ -20,9 +20,6 @@ const TABLES = Symbol('tables');
 const THROUGH = Symbol('through');
 const OWN_BINDINGS = Symbol('bindings');
 const OWN_REFERENCES = Symbol('references');
-const DECLARATIONS = Symbol('declarations');
-const LINKED_THROUGH = Symbol('through');
-const REFERENCES = Symbol('references');
 
 /** @param {import('estree').Node} node @returns {import('./index.js').Scope | undefined} the scope the node opens */
 export const scopeOf = (node) => (node == null ? undefined : node[SCOPE]);
@@ -39,7 +36,6 @@ export function referenceOf(node) {
 	return reference;
 }
 
-
 /** One pass over an answer's tables, the first time anything derived from them is asked for. */
 function index(tables) {
 	if (tables.indexed) return;
@@ -51,41 +47,30 @@ function index(tables) {
 	}
 }
 
-// what a host reads is on the object; what it derives is a getter, paid once by whoever asks,
-// and kept under a symbol so the keys of a scope or binding never change
-const Scope = {
-	node: null,
-	get bindings() {
-		index(this[TABLES]);
-		return (this[OWN_BINDINGS] ??= []);
-	},
-	set bindings(value) {
-		this[OWN_BINDINGS] = value;
-	},
-	get declarations() {
-		return (this[DECLARATIONS] ??= new Map(this.bindings.map((b) => [b.name, b])));
-	},
-	set declarations(value) {
-		this[DECLARATIONS] = value;
-	},
-	get through() {
-		const { bindings } = this[TABLES];
-		return (this[LINKED_THROUGH] ??= this[THROUGH].map((i) => bindings[i]));
-	},
-	set through(value) {
-		this[LINKED_THROUGH] = value;
-	}
-};
-const Binding = {
-	node: null,
-	get references() {
-		index(this[TABLES]);
-		return (this[REFERENCES] ??= (this[OWN_REFERENCES] ?? []).map(referenceOf));
-	},
-	set references(value) {
-		this[REFERENCES] = value;
-	}
-};
+/**
+ * A property derived on first read and kept under a symbol, so the keys of a scope or binding
+ * never change; a host may assign its own.
+ * @param {object} proto @param {string} key @param {(self: any) => any} derive
+ */
+function derived(proto, key, derive) {
+	const slot = Symbol(key);
+	Object.defineProperty(proto, key, {
+		get() {
+			return (this[slot] ??= derive(this));
+		},
+		set(value) {
+			this[slot] = value;
+		}
+	});
+}
+
+// what a host reads is on the object; what it derives is paid once by whoever asks
+const Scope = { node: null };
+derived(Scope, 'bindings', (s) => (index(s[TABLES]), s[OWN_BINDINGS] ?? []));
+derived(Scope, 'declarations', (s) => new Map(s.bindings.map((b) => [b.name, b])));
+derived(Scope, 'through', (s) => s[THROUGH].map((i) => s[TABLES].bindings[i]));
+const Binding = { node: null };
+derived(Binding, 'references', (b) => (index(b[TABLES]), (b[OWN_REFERENCES] ?? []).map(referenceOf)));
 
 const FACT_KEYS = new Set(['scope', 'binding', 'declares', 'write', 'mutate']);
 

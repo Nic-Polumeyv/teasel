@@ -389,20 +389,7 @@ impl Drop for Binary {
 		let _ = SPARE.try_with(|s| {
 			let mut s = s.borrow_mut();
 			if s.is_none() {
-				*s = Some(Binary {
-					words: std::mem::take(&mut self.words),
-					text: std::mem::take(&mut self.text),
-					units: 0,
-					ends: std::mem::take(&mut self.ends),
-					floats: std::mem::take(&mut self.floats),
-					frames: std::mem::take(&mut self.frames),
-					seq: std::mem::take(&mut self.seq),
-					tables_at: 0,
-					tables: 0,
-					start: self.start,
-					end: self.end,
-					loc: self.loc,
-				});
+				*s = Some(std::mem::replace(self, Binary::empty()));
 			}
 		});
 	}
@@ -419,7 +406,13 @@ pub fn recycle(words: Vec<u32>) {
 
 impl Binary {
 	pub fn new() -> Self {
-		let mut binary = SPARE.with(|s| s.borrow_mut().take()).unwrap_or_else(|| Binary {
+		let mut binary = SPARE.with(|s| s.borrow_mut().take()).unwrap_or_else(Binary::empty);
+		binary.reset();
+		binary
+	}
+
+	fn empty() -> Self {
+		Binary {
 			words: Vec::new(),
 			text: Vec::new(),
 			units: 0,
@@ -432,19 +425,22 @@ impl Binary {
 			start: constant("start") << 4 | kind::INT,
 			end: constant("end") << 4 | kind::INT,
 			loc: constant("loc") << 4 | kind::LOC,
-		});
-		binary.words.clear();
-		binary.words.extend([0; 7]);
-		binary.text.clear();
-		binary.units = 0;
-		binary.ends.clear();
-		binary.floats.clear();
-		binary.frames.clear();
-		binary.seq.clear();
-		binary.seq.push(0);
-		binary.tables_at = 0;
-		binary.tables = 0;
-		binary
+		}
+	}
+
+	/// Ready for an answer: the header's room in `words`, the sentinel in `seq`, the rest empty.
+	fn reset(&mut self) {
+		self.words.clear();
+		self.words.extend([0; 7]);
+		self.text.clear();
+		self.units = 0;
+		self.ends.clear();
+		self.floats.clear();
+		self.frames.clear();
+		self.seq.clear();
+		self.seq.push(0);
+		self.tables_at = 0;
+		self.tables = 0;
 	}
 
 	fn push_text(&mut self, value: &str) -> u32 {
