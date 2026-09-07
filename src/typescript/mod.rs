@@ -188,42 +188,42 @@ pub(crate) struct Modifiers {
 	pub is_const: bool,
 }
 
-impl Modifiers {
-	fn has(&self, modifier: &str) -> bool {
-		match modifier {
-			"public" => self.extras.accessibility == Some(Accessibility::Public),
-			"private" => self.extras.accessibility == Some(Accessibility::Private),
-			"protected" => self.extras.accessibility == Some(Accessibility::Protected),
-			"declare" => self.extras.declare,
-			"abstract" => self.extras.is_abstract,
-			"override" => self.extras.is_override,
-			"readonly" => self.extras.readonly,
-			"accessor" => self.extras.accessor,
-			"static" => self.extras.is_static,
-			"in" => self.is_in,
-			"out" => self.is_out,
-			"const" => self.is_const,
-			_ => unreachable!(),
-		}
-	}
+/// The modifier words and the field each one sets.
+macro_rules! modifiers {
+	($($word:literal => $($field:ident).+ = $value:expr),* $(,)?) => {
+		pub(super) const MODIFIERS: &[&str] = &[$($word),*];
 
-	fn set(&mut self, modifier: &str) {
-		match modifier {
-			"public" => self.extras.accessibility = Some(Accessibility::Public),
-			"private" => self.extras.accessibility = Some(Accessibility::Private),
-			"protected" => self.extras.accessibility = Some(Accessibility::Protected),
-			"declare" => self.extras.declare = true,
-			"abstract" => self.extras.is_abstract = true,
-			"override" => self.extras.is_override = true,
-			"readonly" => self.extras.readonly = true,
-			"accessor" => self.extras.accessor = true,
-			"static" => self.extras.is_static = true,
-			"in" => self.is_in = true,
-			"out" => self.is_out = true,
-			"const" => self.is_const = true,
-			_ => unreachable!(),
+		impl Modifiers {
+			fn has(&self, modifier: &str) -> bool {
+				match modifier {
+					$($word => self.$($field).+ == $value,)*
+					_ => unreachable!(),
+				}
+			}
+
+			fn set(&mut self, modifier: &str) {
+				match modifier {
+					$($word => self.$($field).+ = $value,)*
+					_ => unreachable!(),
+				}
+			}
 		}
-	}
+	};
+}
+
+modifiers! {
+	"public" => extras.accessibility = Some(Accessibility::Public),
+	"private" => extras.accessibility = Some(Accessibility::Private),
+	"protected" => extras.accessibility = Some(Accessibility::Protected),
+	"declare" => extras.declare = true,
+	"abstract" => extras.is_abstract = true,
+	"override" => extras.is_override = true,
+	"readonly" => extras.readonly = true,
+	"accessor" => extras.accessor = true,
+	"static" => extras.is_static = true,
+	"in" => is_in = true,
+	"out" => is_out = true,
+	"const" => is_const = true,
 }
 
 impl Parser<'_, TypeScript> {

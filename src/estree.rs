@@ -1,7 +1,7 @@
 //! Serializes an `Ast` to ESTree, matching acorn's output shape: as JSON text, or as a token
 //! stream a binding hands to JavaScript without a text round trip.
 
-use crate::ast::{Ast, Function, List, MethodKind, NodeId, NodeKind, PropertyKind};
+use crate::ast::{Ast, Class, Function, List, MethodKind, NodeId, NodeKind, PropertyKind};
 use crate::interner::{FastMap, Interner, StrId};
 use crate::scopes::Role;
 use std::fmt::Write;
@@ -899,13 +899,13 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 	fn comments(&mut self, key: &'static str, comments: &[u32]) {
 		if !comments.is_empty() {
 			self.key(key);
-			self.comment_list(comments);
+			self.comment_list(comments.iter().copied());
 		}
 	}
 
-	fn comment_list(&mut self, comments: &[u32]) {
+	fn comment_list(&mut self, comments: impl IntoIterator<Item = u32>) {
 		self.sink.list();
-		for &index in comments {
+		for index in comments {
 			let comment = self.ast.comments[index as usize];
 			self.sink.begin(if comment.is_block() { "Block" } else { "Line" });
 			self.key("value");
@@ -917,20 +917,11 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		self.sink.end();
 	}
 
-	/// Every comment read, in source order.
-	fn all_comments(&mut self) {
-		let all: Vec<u32> = (0..self.ast.comments.len() as u32).collect();
-		self.key("comments");
-		self.comment_list(&all);
-	}
-
-	/// Closes the object around a node parsed at an offset.
-	fn tail(&mut self, end: u32) {
-		self.key("end");
-		let end = self.positions.offset(&mut self.cursor, end);
-		self.sink.int(end);
+	/// What the output's switches add after a root: every comment, what erasure kept, the scopes.
+	fn trailers(&mut self) {
 		if self.output.comments {
-			self.all_comments();
+			self.key("comments");
+			self.comment_list(0..self.ast.comments.len() as u32);
 		}
 		if self.output.erase {
 			self.all_kept();
@@ -938,6 +929,14 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		if self.output.scopes {
 			self.all_scopes();
 		}
+	}
+
+	/// Closes the object around a node parsed at an offset.
+	fn tail(&mut self, end: u32) {
+		self.key("end");
+		let end = self.positions.offset(&mut self.cursor, end);
+		self.sink.int(end);
+		self.trailers();
 		self.sink.end();
 	}
 
@@ -1069,6 +1068,12 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		self.slice(node.start, node.end);
 	}
 
+	fn class(&mut self, class: Class) {
+		self.opt("id", class.id);
+		self.opt("superClass", class.super_class);
+		self.field("body", class.body);
+	}
+
 	fn function(&mut self, f: Function, expression: bool) {
 		self.opt("id", f.id);
 		self.bool("expression", expression);
@@ -1086,14 +1091,8 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 				self.begin("Program", id);
 				self.list("body", body);
 				self.string("sourceType", if module { "module" } else { "script" });
-				if self.program_tail && self.output.comments {
-					self.all_comments();
-				}
-				if self.program_tail && self.output.erase {
-					self.all_kept();
-				}
-				if self.program_tail && self.output.scopes {
-					self.all_scopes();
+				if self.program_tail {
+					self.trailers();
 				}
 			}
 			Identifier { name } => {
@@ -1317,18 +1316,13 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 				self.begin("FunctionDeclaration", id);
 				self.function(function, false);
 			}
-			ClassExpression { class } | ClassDeclaration { class } => {
-				self.begin(
-					if matches!(kind, ClassExpression { .. }) {
-						"ClassExpression"
-					} else {
-						"ClassDeclaration"
-					},
-					id,
-				);
-				self.opt("id", class.id);
-				self.opt("superClass", class.super_class);
-				self.field("body", class.body);
+			ClassExpression { class } => {
+				self.begin("ClassExpression", id);
+				self.class(class);
+			}
+			ClassDeclaration { class } => {
+				self.begin("ClassDeclaration", id);
+				self.class(class);
 			}
 			ClassBody { body } => {
 				self.begin("ClassBody", id);

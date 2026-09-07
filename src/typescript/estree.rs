@@ -19,10 +19,6 @@ impl Data {
 		}
 		self.extras(id).copied().unwrap_or_default()
 	}
-
-	fn is_ts<S: Sink>(&self, w: &Writer<Self, S>, id: NodeId, test: impl Fn(TsKind) -> bool) -> bool {
-		matches!(w.kind(id), NodeKind::Extension(index) if test(self.kind(index)))
-	}
 }
 
 impl Emit for Data {
@@ -35,7 +31,9 @@ impl Emit for Data {
 		match w.kind(id) {
 			NodeKind::MethodDefinition { .. } | NodeKind::PropertyDefinition { .. } if extras.is_abstract => true,
 			// an overload signature: a method without a body
-			NodeKind::MethodDefinition { value, .. } => self.is_ts(w, value, |k| matches!(k, DeclareMethod { .. })),
+			NodeKind::MethodDefinition { value, .. } => {
+				matches!(self.ts_of(w.ast(), value), Some(DeclareMethod { .. }))
+			}
 			NodeKind::Extension(index) => match self.kind(index) {
 				InterfaceDeclaration { .. }
 				| TypeAliasDeclaration { .. }
@@ -43,15 +41,10 @@ impl Emit for Data {
 				| IndexSignature { .. }
 				| NamespaceExportDeclaration { .. } => true,
 				ImportEqualsDeclaration { import_kind, .. } => import_kind == Kind::Type,
-				ModuleDeclaration { body, .. } => match body {
-					None => true,
-					Some(block) => match w.kind(block) {
-						NodeKind::Extension(index) => match self.kind(index) {
-							ModuleBlock { body } => self.all_erased(w, body),
-							_ => false,
-						},
-						_ => false,
-					},
+				ModuleDeclaration { body: None, .. } => true,
+				ModuleDeclaration { body: Some(block), .. } => match self.ts_of(w.ast(), block) {
+					Some(ModuleBlock { body }) => self.all_erased(w, body),
+					_ => false,
 				},
 				_ => false,
 			},
@@ -59,15 +52,11 @@ impl Emit for Data {
 				extras.import_kind == Some(Kind::Type) || (specifiers.len > 0 && self.all_erased(w, specifiers))
 			}
 			NodeKind::ImportSpecifier { .. } => extras.import_kind == Some(Kind::Type),
-			NodeKind::ExportSpecifier { .. } => extras.export_kind == Some(Kind::Type),
-			NodeKind::ExportAllDeclaration { .. } => extras.export_kind == Some(Kind::Type),
-			NodeKind::ExportNamedDeclaration {
-				declaration,
-				specifiers,
-				..
-			} => {
-				// `export { type A }` keeps an `export {}`, as tsc keeps the file a module
-				let _ = specifiers;
+			NodeKind::ExportSpecifier { .. } | NodeKind::ExportAllDeclaration { .. } => {
+				extras.export_kind == Some(Kind::Type)
+			}
+			// `export { type A }` keeps an `export {}`, as tsc keeps the file a module
+			NodeKind::ExportNamedDeclaration { declaration, .. } => {
 				extras.export_kind == Some(Kind::Type)
 					|| declaration.is_some_and(|declaration| self.erased(w, declaration))
 			}
@@ -100,9 +89,21 @@ impl Emit for Data {
 				_ => {}
 			}
 		}
-		match self.kind(index) {
-			TypeAnnotation { type_annotation } => {
-				w.begin("TSTypeAnnotation", id);
+		let kind = self.kind(index);
+		match kind {
+			TypeAnnotation { type_annotation }
+			| OptionalType { type_annotation }
+			| RestType { type_annotation }
+			| ParenthesizedType { type_annotation } => {
+				w.begin(
+					match kind {
+						TypeAnnotation { .. } => "TSTypeAnnotation",
+						OptionalType { .. } => "TSOptionalType",
+						RestType { .. } => "TSRestType",
+						_ => "TSParenthesizedType",
+					},
+					id,
+				);
 				w.field("typeAnnotation", type_annotation);
 			}
 			Keyword(keyword) => w.begin(keyword.estree_type(), id),
@@ -130,12 +131,16 @@ impl Emit for Data {
 				w.field("left", left);
 				w.field("right", right);
 			}
-			TypeParameterInstantiation { params } => {
-				w.begin("TSTypeParameterInstantiation", id);
-				w.list("params", params);
-			}
-			TypeParameterDeclaration { params } => {
-				w.begin("TSTypeParameterDeclaration", id);
+			TypeParameterInstantiation { params } | TypeParameterDeclaration { params } => {
+				let instantiation = matches!(kind, TypeParameterInstantiation { .. });
+				w.begin(
+					if instantiation {
+						"TSTypeParameterInstantiation"
+					} else {
+						"TSTypeParameterDeclaration"
+					},
+					id,
+				);
 				w.list("params", params);
 			}
 			TypeParameter {
@@ -182,12 +187,9 @@ impl Emit for Data {
 				w.list("parameters", parameters);
 				w.field("typeAnnotation", type_annotation);
 			}
-			UnionType { types } => {
-				w.begin("TSUnionType", id);
-				w.list("types", types);
-			}
-			IntersectionType { types } => {
-				w.begin("TSIntersectionType", id);
+			UnionType { types } | IntersectionType { types } => {
+				let union = matches!(kind, UnionType { .. });
+				w.begin(if union { "TSUnionType" } else { "TSIntersectionType" }, id);
 				w.list("types", types);
 			}
 			TypeOperator {
@@ -252,22 +254,12 @@ impl Emit for Data {
 				w.field("label", label);
 				w.field("elementType", element_type);
 			}
-			OptionalType { type_annotation } => {
-				w.begin("TSOptionalType", id);
-				w.field("typeAnnotation", type_annotation);
-			}
-			RestType { type_annotation } => {
-				w.begin("TSRestType", id);
-				w.field("typeAnnotation", type_annotation);
-			}
+
 			TupleType { element_types } => {
 				w.begin("TSTupleType", id);
 				w.list("elementTypes", element_types);
 			}
-			ParenthesizedType { type_annotation } => {
-				w.begin("TSParenthesizedType", id);
-				w.field("typeAnnotation", type_annotation);
-			}
+
 			ArrayType { element_type } => {
 				w.begin("TSArrayType", id);
 				w.field("elementType", element_type);
@@ -304,18 +296,21 @@ impl Emit for Data {
 				type_parameters,
 				parameters,
 				type_annotation,
-			} => {
-				w.begin("TSCallSignatureDeclaration", id);
-				w.opt_key("typeParameters", type_parameters);
-				w.list("parameters", parameters);
-				w.opt_key("typeAnnotation", type_annotation);
 			}
-			ConstructSignatureDeclaration {
+			| ConstructSignatureDeclaration {
 				type_parameters,
 				parameters,
 				type_annotation,
 			} => {
-				w.begin("TSConstructSignatureDeclaration", id);
+				let call = matches!(kind, CallSignatureDeclaration { .. });
+				w.begin(
+					if call {
+						"TSCallSignatureDeclaration"
+					} else {
+						"TSConstructSignatureDeclaration"
+					},
+					id,
+				);
 				w.opt_key("typeParameters", type_parameters);
 				w.list("parameters", parameters);
 				w.opt_key("typeAnnotation", type_annotation);
@@ -454,25 +449,27 @@ impl Emit for Data {
 				w.field("id", name);
 			}
 			DeclareFunction {
-				id: name,
 				params,
 				is_async,
 				generator,
-			} => {
-				w.begin("TSDeclareFunction", id);
-				w.opt("id", name);
-				w.bool("generator", generator);
-				w.bool("async", is_async);
-				w.bool("expression", false);
-				w.list("params", params);
+				..
 			}
-			DeclareMethod {
+			| DeclareMethod {
 				params,
 				is_async,
 				generator,
 			} => {
-				w.begin("TSDeclareMethod", id);
-				w.opt("id", None);
+				let name = match kind {
+					DeclareFunction { id: name, .. } => {
+						w.begin("TSDeclareFunction", id);
+						name
+					}
+					_ => {
+						w.begin("TSDeclareMethod", id);
+						None
+					}
+				};
+				w.opt("id", name);
 				w.bool("generator", generator);
 				w.bool("async", is_async);
 				w.bool("expression", false);
@@ -481,16 +478,23 @@ impl Emit for Data {
 			AsExpression {
 				expression,
 				type_annotation,
-			} => {
-				w.begin("TSAsExpression", id);
-				w.field("expression", expression);
-				w.field("typeAnnotation", type_annotation);
 			}
-			SatisfiesExpression {
+			| SatisfiesExpression {
+				expression,
+				type_annotation,
+			}
+			| TypeCastExpression {
 				expression,
 				type_annotation,
 			} => {
-				w.begin("TSSatisfiesExpression", id);
+				w.begin(
+					match kind {
+						AsExpression { .. } => "TSAsExpression",
+						SatisfiesExpression { .. } => "TSSatisfiesExpression",
+						_ => "TSTypeCastExpression",
+					},
+					id,
+				);
 				w.field("expression", expression);
 				w.field("typeAnnotation", type_annotation);
 			}
@@ -506,14 +510,7 @@ impl Emit for Data {
 				w.field("typeAnnotation", type_annotation);
 				w.field("expression", expression);
 			}
-			TypeCastExpression {
-				expression,
-				type_annotation,
-			} => {
-				w.begin("TSTypeCastExpression", id);
-				w.field("expression", expression);
-				w.field("typeAnnotation", type_annotation);
-			}
+
 			InstantiationExpression {
 				expression,
 				type_arguments,

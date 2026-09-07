@@ -68,6 +68,14 @@ impl Parser<'_, TypeScript> {
 
 	// Namespaces
 
+	/// A module block in its own module scope.
+	fn parse_module_body(&mut self) -> Result<NodeId> {
+		self.enter_scope(SCOPE_TS_MODULE);
+		let body = self.parse_module_block();
+		self.exit_scope();
+		body
+	}
+
 	fn parse_module_block(&mut self) -> Result<NodeId> {
 		let start = self.tok.start;
 		self.enter_scope(SCOPE_TS_OTHER);
@@ -95,10 +103,7 @@ impl Parser<'_, TypeScript> {
 			return self.unexpected();
 		};
 		let body = if self.is(TokenKind::BraceL) {
-			self.enter_scope(SCOPE_TS_MODULE);
-			let body = self.parse_module_block()?;
-			self.exit_scope();
-			Some(body)
+			Some(self.parse_module_body()?)
 		} else {
 			self.semicolon()?;
 			None
@@ -123,10 +128,7 @@ impl Parser<'_, TypeScript> {
 			let inner_start = self.tok.start;
 			self.parse_module_or_namespace_declaration(inner_start, true)?
 		} else {
-			self.enter_scope(SCOPE_TS_MODULE);
-			let body = self.parse_module_block()?;
-			self.exit_scope();
-			body
+			self.parse_module_body()?
 		};
 		Ok(self.ts(
 			TsKind::ModuleDeclaration {
@@ -139,9 +141,7 @@ impl Parser<'_, TypeScript> {
 	}
 
 	fn parse_global_declaration(&mut self, start: u32, id: NodeId) -> Result<NodeId> {
-		self.enter_scope(SCOPE_TS_MODULE);
-		let body = self.parse_module_block()?;
-		self.exit_scope();
+		let body = self.parse_module_body()?;
 		Ok(self.ts(
 			TsKind::ModuleDeclaration {
 				id,
@@ -527,28 +527,26 @@ impl Parser<'_, TypeScript> {
 		}
 		let kind = if has_type_specifier { Kind::Type } else { Kind::Value };
 		let node = if is_import {
-			self.add(
+			let node = self.add(
 				NodeKind::ImportSpecifier {
 					imported: left,
 					local: right,
 				},
 				start,
-			)
+			);
+			self.extras_mut(node).import_kind = Some(kind);
+			node
 		} else {
-			self.add(
+			let node = self.add(
 				NodeKind::ExportSpecifier {
 					local: left,
 					exported: right,
 				},
 				start,
-			)
+			);
+			self.extras_mut(node).export_kind = Some(kind);
+			node
 		};
-		let extras = self.extras_mut(node);
-		if is_import {
-			extras.import_kind = Some(kind);
-		} else {
-			extras.export_kind = Some(kind);
-		}
 		Ok(node)
 	}
 
