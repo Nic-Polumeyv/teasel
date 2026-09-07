@@ -627,12 +627,23 @@ pub fn params_at<X: Emit, S: Sink>(
 	w.sink
 }
 
-/// Serializes a syntax error: its code and message, UTF-16 `pos` and `end`, and a `loc`.
-pub fn error_to_json(error: &crate::SyntaxError, source: &str) -> String {
-	let positions = Positions::new(source, true);
+/// Serializes a syntax error: its code and message, UTF-16 `pos` and `end`, and a `loc`; the
+/// line table is built up to the error when `positions` has none.
+pub fn error_to_json(error: &crate::SyntaxError, source: &str, positions: &Positions) -> String {
+	let upto;
+	let positions = if positions.lines {
+		positions
+	} else {
+		let mut end = (error.pos.max(error.end) as usize).min(source.len());
+		while !source.is_char_boundary(end) {
+			end += 1;
+		}
+		upto = Positions::new(&source[..end], true);
+		&upto
+	};
 	let mut cursor = Cursor::default();
 	let pos = positions.offset(&mut cursor, error.pos);
-	let (line, column) = positions.line_column(&mut cursor, error.pos, pos);
+	let (line, column) = positions.line_column(cursor.line, error.pos, pos);
 	let end = positions.offset(&mut cursor, error.end);
 	let mut out = format!("{{\"error\":{{\"code\":\"{}\",\"message\":", error.code.name());
 	write_json_string(&mut out, &error.message);
@@ -671,8 +682,8 @@ pub struct Positions {
 	lines: bool,
 }
 
-/// Where the last lookups landed: nodes serialize in source order, so each lookup first tries
-/// the entry the previous one found and its successor before falling back to a binary search.
+/// Where the last node's start landed: starts come in source order, and a node's end follows
+/// its start, so each lookup tries a few entries on from its hint before a binary search.
 #[derive(Default)]
 struct Cursor {
 	gap: usize,
@@ -743,30 +754,33 @@ impl Positions {
 	}
 
 	fn offset(&self, cursor: &mut Cursor, byte: u32) -> u32 {
-		if self.gaps.is_empty() {
-			return byte.min(self.len);
-		}
+		let (offset, gap) = self.offset_from(cursor.gap, byte);
+		cursor.gap = gap;
+		offset
+	}
+
+	/// The UTF-16 offset of `byte` and the gap entry it lies after, looked up from `hint`.
+	fn offset_from(&self, hint: usize, byte: u32) -> (u32, usize) {
 		let byte = byte.min(self.len);
-		cursor.gap = locate(&self.gaps, cursor.gap, byte, |g| g.0);
-		byte - if cursor.gap == 0 {
-			0
-		} else {
-			self.gaps[cursor.gap - 1].1
+		if self.gaps.is_empty() {
+			return (byte, 0);
 		}
+		let gap = locate(&self.gaps, hint, byte, |g| g.0);
+		(byte - if gap == 0 { 0 } else { self.gaps[gap - 1].1 }, gap)
 	}
 
 	/// The line of `byte` and its column, given `byte` already mapped by `offset`.
-	fn line_column(&self, cursor: &mut Cursor, byte: u32, offset: u32) -> (usize, u32) {
+	fn line_column(&self, hint: usize, byte: u32, offset: u32) -> (usize, u32) {
 		let byte = byte.min(self.len);
-		cursor.line = locate(&self.line_starts, cursor.line.max(1), byte, |l| l.0);
-		(cursor.line, offset - self.line_starts[cursor.line - 1].1)
+		let line = locate(&self.line_starts, hint.max(1), byte, |l| l.0);
+		(line, offset - self.line_starts[line - 1].1)
 	}
 }
 
-/// The number of `items` whose key is at most `byte`, trying `hint` and the next index first.
+/// The number of `items` whose key is at most `byte`, trying `hint` and the few after it first.
 fn locate<T>(items: &[T], hint: usize, byte: u32, key: impl Fn(&T) -> u32) -> usize {
-	for p in [hint, hint + 1] {
-		if p <= items.len() && (p == 0 || key(&items[p - 1]) <= byte) && (p == items.len() || key(&items[p]) > byte) {
+	for p in hint..=(hint + 3).min(items.len()) {
+		if (p == 0 || key(&items[p - 1]) <= byte) && (p == items.len() || key(&items[p]) > byte) {
 			return p;
 		}
 	}
@@ -934,16 +948,16 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 	}
 
 	pub(crate) fn span(&mut self, start: u32, end: u32) {
-		let (start_offset, end_offset) = (
-			self.positions.offset(&mut self.cursor, start),
-			self.positions.offset(&mut self.cursor, end),
-		);
+		let (start_offset, gap) = self.positions.offset_from(self.cursor.gap, start);
+		self.cursor.gap = gap;
+		let (end_offset, _) = self.positions.offset_from(gap, end);
 		self.sink.span(start_offset, end_offset);
 		if !self.positions.lines {
 			return;
 		}
-		let (sl, sc) = self.positions.line_column(&mut self.cursor, start, start_offset);
-		let (el, ec) = self.positions.line_column(&mut self.cursor, end, end_offset);
+		let (sl, sc) = self.positions.line_column(self.cursor.line, start, start_offset);
+		self.cursor.line = sl;
+		let (el, ec) = self.positions.line_column(sl, end, end_offset);
 		self.sink.loc(sl as u32, sc, el as u32, ec);
 	}
 

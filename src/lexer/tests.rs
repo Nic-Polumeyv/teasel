@@ -44,12 +44,12 @@ fn error_in(src: &str, strict: bool) -> SyntaxError {
 
 fn error(src: &str) -> (std::string::String, u32) {
 	let e = error_in(src, false);
-	(e.message, e.pos)
+	(e.message.into_owned(), e.pos)
 }
 
 fn strict_error(src: &str) -> (std::string::String, u32) {
 	let e = error_in(src, true);
-	(e.message, e.pos)
+	(e.message.into_owned(), e.pos)
 }
 
 fn single(src: &str) -> (Lexer<'_>, Token) {
@@ -362,11 +362,11 @@ fn template_newlines_normalise() {
 	let mut lexer = Lexer::new("`abc");
 	lexer.next_token().unwrap();
 	let e = lexer.read_template().unwrap_err();
-	assert_eq!((e.message.as_str(), e.pos), ("Unterminated template", 1));
+	assert_eq!((&*e.message, e.pos), ("Unterminated template", 1));
 	let mut lexer = Lexer::new("`");
 	lexer.next_token().unwrap();
 	let e = lexer.read_template().unwrap_err();
-	assert_eq!((e.message.as_str(), e.pos), ("Unterminated template literal", 1));
+	assert_eq!((&*e.message, e.pos), ("Unterminated template literal", 1));
 }
 
 #[test]
@@ -389,20 +389,20 @@ fn regex() {
 	let mut lexer = Lexer::new("/abc\n/");
 	let t = lexer.next_token().unwrap();
 	let e = lexer.read_regex(t).unwrap_err();
-	assert_eq!((e.message.as_str(), e.pos), ("Unterminated regular expression", 1));
+	assert_eq!((&*e.message, e.pos), ("Unterminated regular expression", 1));
 
 	let mut lexer = Lexer::new("/a/\\u0067");
 	let t = lexer.next_token().unwrap();
 	let e = lexer.read_regex(t).unwrap_err();
-	assert_eq!((e.message.as_str(), e.pos), ("Unexpected token", 3));
+	assert_eq!((&*e.message, e.pos), ("Unexpected token", 3));
 	let mut lexer = Lexer::new("/a/\\u{30}");
 	let t = lexer.next_token().unwrap();
 	let e = lexer.read_regex(t).unwrap_err();
-	assert_eq!((e.message.as_str(), e.pos), ("Invalid Unicode escape", 3));
+	assert_eq!((&*e.message, e.pos), ("Invalid Unicode escape", 3));
 	let mut lexer = Lexer::new("/a/\\ux");
 	let t = lexer.next_token().unwrap();
 	let e = lexer.read_regex(t).unwrap_err();
-	assert_eq!((e.message.as_str(), e.pos), ("Bad character escape sequence", 5));
+	assert_eq!((&*e.message, e.pos), ("Bad character escape sequence", 5));
 }
 
 #[test]
@@ -410,7 +410,10 @@ fn regex_validation() {
 	let regex = |src: &str| {
 		let mut lexer = Lexer::new(src);
 		let t = lexer.next_token().unwrap();
-		lexer.read_regex(t).map(|_| ()).map_err(|e| (e.message, e.pos))
+		lexer
+			.read_regex(t)
+			.map(|_| ())
+			.map_err(|e| (e.message.into_owned(), e.pos))
 	};
 	assert!(regex("/(?<a>x)|(?<a>y)/").is_ok());
 	assert!(regex("/[\\p{L}--[a-z]]/v").is_ok());

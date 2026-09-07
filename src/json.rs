@@ -370,7 +370,7 @@ where
 			params_at(&ast, &ids, end, source, positions, output, sink)
 		}),
 	};
-	result.map_err(|error| error_to_json(&error, source))
+	result.map_err(|error| error_to_json(&error, source, positions))
 }
 
 /// One node parsed at an offset, into a sink.

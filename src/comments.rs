@@ -80,19 +80,23 @@ impl<X: Walk> Attacher<'_, X> {
 		while self.peek().is_some_and(|c| self.start(c) < start) {
 			self.take(node, Place::Leading);
 		}
-		let base = self.scratch.len();
-		self.ast.children(node, &mut self.scratch);
-		let count = self.scratch.len() - base;
-		if count == 0 && self.body_of(node).is_some() {
-			while self.peek().is_some_and(|c| self.start(c) < end) {
-				self.take(node, Place::Inner);
+		let Some(next) = self.peek() else { return };
+		// a comment past the node reaches a descendant only over commas, parens and blanks
+		if self.start(next) < end || self.only_separators(end, self.start(next)) {
+			let base = self.scratch.len();
+			self.ast.children(node, &mut self.scratch);
+			let count = self.scratch.len() - base;
+			if count == 0 && self.body_of(node).is_some() {
+				while self.peek().is_some_and(|c| self.start(c) < end) {
+					self.take(node, Place::Inner);
+				}
 			}
+			for i in 0..count {
+				let child = self.scratch[base + i];
+				self.visit(child, Some(node));
+			}
+			self.scratch.truncate(base);
 		}
-		for i in 0..count {
-			let child = self.scratch[base + i];
-			self.visit(child, Some(node));
-		}
-		self.scratch.truncate(base);
 		let Some(comment) = self.peek() else { return };
 		let parent_end = parent.map(|p| self.ast.node(p).end);
 		if parent_end == Some(end) {
@@ -103,13 +107,15 @@ impl<X: Walk> Attacher<'_, X> {
 			while self.peek().is_some_and(|c| self.start(c) < parent_end) {
 				self.take(node, Place::Trailing);
 			}
-		} else if end <= self.start(comment)
-			&& self.source.as_bytes()[end as usize..self.start(comment) as usize]
-				.iter()
-				.all(|b| matches!(b, b',' | b')' | b' ' | b'\t'))
-		{
+		} else if end <= self.start(comment) && self.only_separators(end, self.start(comment)) {
 			self.take(node, Place::Trailing);
 		}
+	}
+
+	fn only_separators(&self, from: u32, to: u32) -> bool {
+		self.source.as_bytes()[from as usize..to as usize]
+			.iter()
+			.all(|b| matches!(b, b',' | b')' | b' ' | b'\t'))
 	}
 
 	/// The list a block, program, array or object literal encloses in brackets.

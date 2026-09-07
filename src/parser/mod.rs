@@ -681,7 +681,12 @@ impl<'a, E: Extension> Parser<'a, E> {
 		self.error_with(pos, code, code.message())
 	}
 
-	pub(crate) fn error_with<T>(&self, pos: u32, code: Code, message: impl Into<String>) -> Result<T> {
+	pub(crate) fn error_with<T>(
+		&self,
+		pos: u32,
+		code: Code,
+		message: impl Into<std::borrow::Cow<'static, str>>,
+	) -> Result<T> {
 		let end = if pos == self.tok.start { self.tok.end } else { pos };
 		Err(Box::new(SyntaxError::with(pos, code, message).to(end)))
 	}

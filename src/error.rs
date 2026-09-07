@@ -178,7 +178,8 @@ codes! {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SyntaxError {
 	pub code: Code,
-	pub message: String,
+	/// Borrowed from the message table unless the code fills a placeholder.
+	pub message: std::borrow::Cow<'static, str>,
 	/// Byte offset of the error, and of the end of the offending token when there is one.
 	pub pos: u32,
 	pub end: u32,
@@ -189,7 +190,7 @@ impl SyntaxError {
 		Self::with(pos, code, code.message())
 	}
 
-	pub fn with(pos: u32, code: Code, message: impl Into<String>) -> Self {
+	pub fn with(pos: u32, code: Code, message: impl Into<std::borrow::Cow<'static, str>>) -> Self {
 		Self {
 			code,
 			message: message.into(),

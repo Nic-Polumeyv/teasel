@@ -106,7 +106,7 @@ impl<X: Walk> Ast<X> {
 	pub fn children(&self, id: NodeId, out: &mut Vec<NodeId>) {
 		let from = out.len();
 		self.extension.children(self, id, out);
-		out[from..].sort_by_key(|&child| self.node(child).start);
+		debug_assert!(out[from..].is_sorted_by_key(|&child| self.node(child).start));
 	}
 }
 
@@ -134,8 +134,12 @@ impl<X> Ast<X> {
 			| DebuggerStatement
 			| Extension(_) => {}
 			TemplateLiteral { quasis, expressions } => {
-				list(quasis, out);
-				list(expressions, out);
+				for (i, quasi) in self.list(quasis).iter().flatten().enumerate() {
+					out.push(*quasi);
+					if (i as u32) < expressions.len {
+						out.extend(self.nth(expressions, i as u32));
+					}
+				}
 			}
 			TaggedTemplateExpression { tag, quasi } => out.extend([tag, quasi]),
 			ArrayExpression { elements } | ArrayPattern { elements } => list(elements, out),
