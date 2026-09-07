@@ -94,31 +94,27 @@ impl<'a> State<'a> {
 
 	// Cursor
 
+	/// The code point at `i`, a surrogate pair joined in unicode mode, and the index after it.
+	fn decode(&self, i: usize, force_u: bool) -> (i32, usize) {
+		let Some(&c) = self.source.get(i) else {
+			return (EOF, self.source.len());
+		};
+		if (force_u || self.switch_u)
+			&& (0xd800..0xdc00).contains(&c)
+			&& let Some(&next) = self.source.get(i + 1)
+			&& (0xdc00..0xe000).contains(&next)
+		{
+			return (0x10000 + (((c as i32) - 0xd800) << 10) + (next as i32 - 0xdc00), i + 2);
+		}
+		(c as i32, i + 1)
+	}
+
 	fn at(&self, i: usize, force_u: bool) -> i32 {
-		let Some(&c) = self.source.get(i) else { return EOF };
-		if !(force_u || self.switch_u) || !(0xd800..0xdc00).contains(&c) || i + 1 >= self.source.len() {
-			return c as i32;
-		}
-		let next = self.source[i + 1];
-		if (0xdc00..0xe000).contains(&next) {
-			0x10000 + (((c as i32) - 0xd800) << 10) + (next as i32 - 0xdc00)
-		} else {
-			c as i32
-		}
+		self.decode(i, force_u).0
 	}
 
 	fn next_index(&self, i: usize, force_u: bool) -> usize {
-		let Some(&c) = self.source.get(i) else {
-			return self.source.len();
-		};
-		if !(force_u || self.switch_u)
-			|| !(0xd800..0xdc00).contains(&c)
-			|| i + 1 >= self.source.len()
-			|| !(0xdc00..0xe000).contains(&self.source[i + 1])
-		{
-			return i + 1;
-		}
-		i + 2
+		self.decode(i, force_u).1
 	}
 
 	fn current(&self) -> i32 {
@@ -141,25 +137,19 @@ impl<'a> State<'a> {
 		self.pos = self.next_index(self.pos, force_u);
 	}
 
+	/// Eats an ASCII character, which is never half of a surrogate pair.
 	fn eat(&mut self, ch: char) -> bool {
-		if self.current() == ch as i32 {
-			self.advance();
-			true
-		} else {
-			false
-		}
+		debug_assert!(ch.is_ascii());
+		let eaten = self.source.get(self.pos) == Some(&(ch as u16));
+		self.pos += eaten as usize;
+		eaten
 	}
 
-	fn eat_chars(&mut self, chars: &[char]) -> bool {
-		let mut pos = self.pos;
-		for &ch in chars {
-			if self.at(pos, false) != ch as i32 {
-				return false;
-			}
-			pos = self.next_index(pos, false);
-		}
-		self.pos = pos;
-		true
+	fn eat2(&mut self, a: char, b: char) -> bool {
+		debug_assert!(a.is_ascii() && b.is_ascii());
+		let eaten = self.source.get(self.pos..self.pos + 2) == Some(&[a as u16, b as u16]);
+		self.pos += 2 * eaten as usize;
+		eaten
 	}
 
 	// Flags
@@ -523,7 +513,7 @@ impl<'a> State<'a> {
 			if !self.eat_group_name()? {
 				return self.raise("Invalid group");
 			}
-			let name = self.last_string_value.clone();
+			let name = std::mem::take(&mut self.last_string_value);
 			let branch = self.branch.unwrap();
 			if let Some(known) = self.group_names.get(&name) {
 				let bases = self.ancestor_bases(branch);
@@ -551,16 +541,13 @@ impl<'a> State<'a> {
 
 	fn eat_regexp_identifier_name(&mut self) -> Result<bool> {
 		self.last_string_value.clear();
-		if self.eat_regexp_identifier_part(true)? {
-			let mut name = String::new();
-			name.push(char::from_u32(self.last_int_value as u32).unwrap_or('\u{fffd}'));
-			while self.eat_regexp_identifier_part(false)? {
-				name.push(char::from_u32(self.last_int_value as u32).unwrap_or('\u{fffd}'));
-			}
-			self.last_string_value = name;
-			return Ok(true);
+		let mut first = true;
+		while self.eat_regexp_identifier_part(first)? {
+			let part = char::from_u32(self.last_int_value as u32).unwrap_or('\u{fffd}');
+			self.last_string_value.push(part);
+			first = false;
 		}
-		Ok(false)
+		Ok(!first)
 	}
 
 	fn eat_regexp_identifier_part(&mut self, first: bool) -> Result<bool> {
@@ -572,11 +559,10 @@ impl<'a> State<'a> {
 		}
 		let ok = match char::from_u32(ch as u32) {
 			Some(c) if ch >= 0 => {
-				c == '$'
-					|| c == '_' || if first {
+				if first {
 					is_id_start(c)
 				} else {
-					is_id_continue(c) || c == '\u{200c}' || c == '\u{200d}'
+					is_id_continue(c)
 				}
 			}
 			_ => false,
@@ -627,7 +613,7 @@ impl<'a> State<'a> {
 	fn eat_k_group_name(&mut self) -> Result<bool> {
 		if self.eat('k') {
 			if self.eat_group_name()? {
-				let name = self.last_string_value.clone();
+				let name = std::mem::take(&mut self.last_string_value);
 				self.back_reference_names.push(name);
 				return Ok(true);
 			}
@@ -786,15 +772,14 @@ impl<'a> State<'a> {
 	fn eat_unicode_property_value_expression(&mut self) -> Result<CharSet> {
 		let start = self.pos;
 		if self.eat_unicode_property_name() && self.eat('=') {
-			let name = self.last_string_value.clone();
+			let name = std::mem::take(&mut self.last_string_value);
 			if self.eat_unicode_property_value() {
-				let value = self.last_string_value.clone();
 				let values = match name.as_str() {
 					"General_Category" | "gc" => GENERAL_CATEGORY_VALUES,
 					"Script" | "sc" | "Script_Extensions" | "scx" => SCRIPT_VALUES,
 					_ => return self.raise("Invalid property name"),
 				};
-				if !values.contains(&value.as_str()) {
+				if !values.contains(&self.last_string_value.as_str()) {
 					return self.raise("Invalid property value");
 				}
 				return Ok(CharSet::Ok);
@@ -945,7 +930,7 @@ impl<'a> State<'a> {
 				result = CharSet::String;
 			}
 			let start = self.pos;
-			while self.eat_chars(&['&', '&']) {
+			while self.eat2('&', '&') {
 				if self.current() != '&' as i32
 					&& let Some(sub) = self.eat_class_set_operand()?
 				{
@@ -959,7 +944,7 @@ impl<'a> State<'a> {
 			if start != self.pos {
 				return Ok(result);
 			}
-			while self.eat_chars(&['-', '-']) {
+			while self.eat2('-', '-') {
 				if self.eat_class_set_operand()?.is_some() {
 					continue;
 				}
@@ -1035,7 +1020,7 @@ impl<'a> State<'a> {
 
 	fn eat_class_string_disjunction(&mut self) -> Result<Option<CharSet>> {
 		let start = self.pos;
-		if self.eat_chars(&['\\', 'q']) {
+		if self.eat2('\\', 'q') {
 			if self.eat('{') {
 				let result = self.class_string_disjunction_contents()?;
 				if self.eat('}') {
@@ -1196,29 +1181,29 @@ impl<'a> State<'a> {
 	}
 }
 
+/// A predicate on a code point, false past the end of the pattern.
+fn is(ch: i32, f: impl Fn(char) -> bool) -> bool {
+	char::from_u32(ch as u32).is_some_and(f)
+}
+
 fn is_syntax_character(ch: i32) -> bool {
-	ch == '$' as i32
-		|| (ch >= '(' as i32 && ch <= '+' as i32)
-		|| ch == '.' as i32
-		|| ch == '?' as i32
-		|| (ch >= '[' as i32 && ch <= '^' as i32)
-		|| (ch >= '{' as i32 && ch <= '}' as i32)
+	is(ch, |c| matches!(c, '$' | '('..='+' | '.' | '?' | '['..='^' | '{'..='}'))
 }
 
 fn is_control_letter(ch: i32) -> bool {
-	(ch >= 'A' as i32 && ch <= 'Z' as i32) || (ch >= 'a' as i32 && ch <= 'z' as i32)
+	is(ch, |c| c.is_ascii_alphabetic())
 }
 
 fn is_character_class_escape(ch: i32) -> bool {
-	matches!(ch, 0x64 | 0x44 | 0x73 | 0x53 | 0x77 | 0x57)
+	is(ch, |c| matches!(c, 'd' | 'D' | 's' | 'S' | 'w' | 'W'))
 }
 
 fn is_decimal_digit(ch: i32) -> bool {
-	ch >= '0' as i32 && ch <= '9' as i32
+	is(ch, |c| c.is_ascii_digit())
 }
 
 fn is_octal_digit(ch: i32) -> bool {
-	ch >= '0' as i32 && ch <= '7' as i32
+	is(ch, |c| matches!(c, '0'..='7'))
 }
 
 fn hex_value(ch: i32) -> Option<i64> {
@@ -1231,34 +1216,18 @@ fn hex_value(ch: i32) -> Option<i64> {
 }
 
 fn is_class_set_reserved_double_punctuator(ch: i32) -> bool {
-	ch == '!' as i32
-		|| (ch >= '#' as i32 && ch <= '&' as i32)
-		|| (ch >= '*' as i32 && ch <= ',' as i32)
-		|| ch == '.' as i32
-		|| (ch >= ':' as i32 && ch <= '@' as i32)
-		|| ch == '^' as i32
-		|| ch == '`' as i32
-		|| ch == '~' as i32
+	is(
+		ch,
+		|c| matches!(c, '!' | '#'..='&' | '*'..=',' | '.' | ':'..='@' | '^' | '`' | '~'),
+	)
 }
 
 fn is_class_set_syntax_character(ch: i32) -> bool {
-	ch == '(' as i32
-		|| ch == ')' as i32
-		|| ch == '-' as i32
-		|| ch == '/' as i32
-		|| (ch >= '[' as i32 && ch <= ']' as i32)
-		|| (ch >= '{' as i32 && ch <= '}' as i32)
+	is(ch, |c| matches!(c, '(' | ')' | '-' | '/' | '['..=']' | '{'..='}'))
 }
 
 fn is_class_set_reserved_punctuator(ch: i32) -> bool {
-	ch == '!' as i32
-		|| ch == '#' as i32
-		|| ch == '%' as i32
-		|| ch == '&' as i32
-		|| ch == ',' as i32
-		|| ch == '-' as i32
-		|| (ch >= ':' as i32 && ch <= '>' as i32)
-		|| ch == '@' as i32
-		|| ch == '`' as i32
-		|| ch == '~' as i32
+	is(ch, |c| {
+		matches!(c, '!' | '#' | '%' | '&' | ',' | '-' | ':'..='>' | '@' | '`' | '~')
+	})
 }

@@ -27,10 +27,10 @@ function ranges(property) {
 
 function table(name, rs) {
 	const rows = [];
-	for (let i = 0; i < rs.length; i += 4) {
-		rows.push('\t' + rs.slice(i, i + 4).map(([a, b]) => `(0x${a.toString(16)}, 0x${b.toString(16)})`).join(', ') + ',');
+	for (let i = 0; i < rs.length; i += 6) {
+		rows.push('\t' + rs.slice(i, i + 6).map(([a, b]) => `(0x${a.toString(16)}, 0x${b.toString(16)})`).join(', ') + ',');
 	}
-	return `static ${name}: &[(u32, u32)] = &[\n${rows.join('\n')}\n];\n`;
+	return `#[rustfmt::skip]\nstatic ${name}: &[(u32, u32)] = &[\n${rows.join('\n')}\n];\n`;
 }
 
 const start = ranges('ID_Start');
@@ -56,14 +56,14 @@ fn lookup(table: &[(u32, u32)], c: u32) -> bool {
 
 pub(crate) fn is_id_start(c: char) -> bool {
 	if c.is_ascii() {
-		return c.is_ascii_alphabetic();
+		return c.is_ascii_alphabetic() || c == '$' || c == '_';
 	}
 	lookup(ID_START, c as u32)
 }
 
 pub(crate) fn is_id_continue(c: char) -> bool {
 	if c.is_ascii() {
-		return c.is_ascii_alphanumeric();
+		return c.is_ascii_alphanumeric() || c == '$' || c == '_';
 	}
 	lookup(ID_CONTINUE, c as u32)
 }
@@ -111,7 +111,7 @@ export function isIdentifierStart(code) {
 /** Whether a code point can continue an identifier. @param {number} code */
 export function isIdentifierChar(code) {
 	if (code < 128) return (code >= 65 && code <= 90) || (code >= 97 && code <= 122) || (code >= 48 && code <= 57) || code === 36 || code === 95;
-	return code === 0x200c || code === 0x200d || lookup(ID_CONTINUE, code);
+	return lookup(ID_CONTINUE, code);
 }
 `;
 await Bun.write(new URL('../package/identifier.js', import.meta.url), js);

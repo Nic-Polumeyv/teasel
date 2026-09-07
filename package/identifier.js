@@ -214,5 +214,5 @@ export function isIdentifierStart(code) {
 /** Whether a code point can continue an identifier. @param {number} code */
 export function isIdentifierChar(code) {
 	if (code < 128) return (code >= 65 && code <= 90) || (code >= 97 && code <= 122) || (code >= 48 && code <= 57) || code === 36 || code === 95;
-	return code === 0x200c || code === 0x200d || lookup(ID_CONTINUE, code);
+	return lookup(ID_CONTINUE, code);
 }
