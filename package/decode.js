@@ -13,19 +13,59 @@ const utf8 = new TextDecoder('utf-8', { ignoreBOM: true });
 const SCOPE = Symbol('scope');
 const BINDING = Symbol('binding');
 const REFERENCE = Symbol('reference');
+// a reference's write and mutate bits, until someone asks for the reference
+const FACTS = Symbol('facts');
+// the answer's tables, on each scope and binding, for what they derive from them
+const TABLES = Symbol('tables');
+const THROUGH = Symbol('through');
 
 /** @param {import('estree').Node} node @returns {import('./index.js').Scope | undefined} the scope the node opens */
 export const scopeOf = (node) => (node == null ? undefined : node[SCOPE]);
 /** @param {import('estree').Node} node @returns {import('./index.js').Binding | null | undefined} what the identifier declares or refers to; null for a global, undefined when it names no value */
 export const bindingOf = (node) => (node == null ? undefined : node[BINDING]);
 /** @param {import('estree').Node} node @returns {import('./index.js').Reference | undefined} the reference an identifier makes, a global's included */
-export const referenceOf = (node) => (node == null ? undefined : node[REFERENCE]);
+export function referenceOf(node) {
+	if (node == null) return undefined;
+	let reference = node[REFERENCE];
+	if (reference === undefined && node[FACTS] !== undefined) {
+		const facts = node[FACTS];
+		reference = node[REFERENCE] = { node, binding: node[BINDING], write: (facts & 1) !== 0, mutate: (facts & 2) !== 0 };
+	}
+	return reference;
+}
 
-const FACTS = new Set(['scope', 'binding', 'declares', 'write', 'mutate']);
+/** Memoizes a derived value as an own property, so the getter runs once. */
+function memo(object, key, value) {
+	Object.defineProperty(object, key, { value, writable: true, configurable: true, enumerable: true });
+	return value;
+}
+
+// what Svelte reads is on the object; what it derives is a getter, paid by whoever asks
+const Scope = {
+	node: null,
+	get bindings() {
+		return memo(this, 'bindings', this[TABLES].bindings.filter((b) => b.scope === this));
+	},
+	get declarations() {
+		return memo(this, 'declarations', new Map(this.bindings.map((b) => [b.name, b])));
+	},
+	get through() {
+		const { bindings } = this[TABLES];
+		return memo(this, 'through', this[THROUGH].map((index) => bindings[index]));
+	}
+};
+const Binding = {
+	node: null,
+	get references() {
+		return memo(this, 'references', this[TABLES].references.filter((n) => n[BINDING] === this).map(referenceOf));
+	}
+};
+
+const FACT_KEYS = new Set(['scope', 'binding', 'declares', 'write', 'mutate']);
 
 /**
  * One decode at a time; the builders are generated once and read through this.
- * @type {{ w: Uint32Array, at: number, strings: string[], floats: Float64Array | null, source: string, constants: string[], scopes: any[], bindings: any[], build: (() => any)[] }}
+ * @type {{ w: Uint32Array, at: number, strings: string[], floats: Float64Array | null, source: string, constants: string[], scopes: any[], bindings: any[], references: any[], build: (() => any)[] }}
  */
 const S = {
 	w: new Uint32Array(0),
@@ -36,6 +76,7 @@ const S = {
 	constants: [],
 	scopes: [],
 	bindings: [],
+	references: [],
 	build: []
 };
 
@@ -80,11 +121,9 @@ function file(n, scope, declares, binding, write, mutate) {
 		if (d.node === null) d.node = n;
 	}
 	if (binding !== undefined) {
-		const b = binding === null ? null : S.bindings[binding];
-		n[BINDING] = b;
-		const r = { node: n, binding: b, write, mutate };
-		n[REFERENCE] = r;
-		if (b !== null) b.references.push(r);
+		n[BINDING] = binding === null ? null : S.bindings[binding];
+		n[FACTS] = (write ? 1 : 0) | (mutate ? 2 : 0);
+		S.references.push(n);
 	}
 }
 
@@ -101,33 +140,40 @@ const READERS = [node, () => S.w[S.at++], () => /** @type {Float64Array} */ (S.f
  */
 function generate({ type, keys, kinds }, link) {
 	let last = -1;
-	if (link && type !== null) for (let i = 0; i < keys.length; i++) if (FACTS.has(keys[i])) last = i;
+	if (link && type !== null) for (let i = 0; i < keys.length; i++) if (FACT_KEYS.has(keys[i])) last = i;
 	const lead = [];
-	const props = type === null ? [] : [`type: ${JSON.stringify(type)}`];
+	const row = link && type === null;
+	const props = row ? [`__proto__: ${row_proto(keys)}`] : type === null ? [] : [`type: ${JSON.stringify(type)}`];
 	const facts = { scope: 'undefined', declares: 'undefined', binding: 'undefined', write: 'false', mutate: 'false' };
+	const name = (key) => (row && key === 'through' ? '[THROUGH]' : JSON.stringify(key));
 	for (let i = 0; i < keys.length; i++) {
 		const key = keys[i];
-		if (i > last) props.push(`${JSON.stringify(key)}: ${READ[kinds[i]]}`);
+		if (i > last) props.push(`${name(key)}: ${READ[kinds[i]]}`);
 		else {
 			lead.push(`const v${i} = ${READ[kinds[i]]};`);
-			if (FACTS.has(key)) facts[key] = `v${i}`;
-			else props.push(`${JSON.stringify(key)}: v${i}`);
+			if (FACT_KEYS.has(key)) facts[key] = `v${i}`;
+			else props.push(`${name(key)}: v${i}`);
 		}
 	}
 	const body = `${lead.join(' ')} const n = { ${props.join(', ')} }; ${last < 0 ? '' : `file(n, ${facts.scope}, ${facts.declares}, ${facts.binding}, ${facts.write}, ${facts.mutate});`} return n;`;
-	return new Function('S', 'node', 'nodes', 'ints', 'file', `return () => { ${body} };`)(S, node, nodes, ints, file);
+	return new Function('S', 'node', 'nodes', 'ints', 'file', 'Scope', 'Binding', 'THROUGH', `return () => { ${body} };`)(S, node, nodes, ints, file, Scope, Binding, THROUGH);
 }
+
+/** A table row is a scope or a binding, told apart by a key only one of them has. */
+const row_proto = (keys) => (keys.includes('functionDepth') ? 'Scope' : 'Binding');
 
 /** The same without code generation, for a host whose policy forbids it. @param {Shape} shape @param {boolean} link */
 function interpret({ type, keys, kinds }, link) {
-	const facts = link && type !== null && keys.some((key) => FACTS.has(key));
+	const facts = link && type !== null && keys.some((key) => FACT_KEYS.has(key));
+	const proto = link && type === null ? (row_proto(keys) === 'Scope' ? Scope : Binding) : null;
 	return () => {
-		const n = type === null ? {} : { type };
+		const n = proto !== null ? Object.create(proto) : type === null ? {} : { type };
 		let scope, declares, binding, write = false, mutate = false;
 		for (let i = 0; i < keys.length; i++) {
 			const key = keys[i];
 			const value = READERS[kinds[i]]();
-			if (!facts || !FACTS.has(key)) n[key] = value;
+			if (proto !== null && key === 'through') n[THROUGH] = value;
+			else if (!facts || !FACT_KEYS.has(key)) n[key] = value;
 			else if (key === 'scope') scope = value;
 			else if (key === 'declares') declares = value;
 			else if (key === 'binding') binding = value;
@@ -196,20 +242,16 @@ function unaligned_floats(buffer, start, count) {
 
 /** @param {any[]} scopes @param {any[]} bindings */
 function link_tables(scopes, bindings) {
+	const tables = { bindings, references: [] };
 	for (const scope of scopes) {
 		scope.parent = scope.parent === null ? null : scopes[scope.parent];
-		scope.through = scope.through.map((index) => bindings[index]);
-		scope.node = null;
-		scope.bindings = [];
-		scope.declarations = new Map();
+		scope[TABLES] = tables;
 	}
 	for (const binding of bindings) {
 		binding.scope = scopes[binding.scope];
-		binding.scope.bindings.push(binding);
-		binding.scope.declarations.set(binding.name, binding);
-		binding.node = null;
-		binding.references = [];
+		binding[TABLES] = tables;
 	}
+	return tables.references;
 }
 
 /**
@@ -223,9 +265,8 @@ export function decode(answer, source, engine, link = true) {
 	const { buffer, byteOffset } = words;
 	const [tree, ends_count, floats_count, bytes, known, known_shapes, tables_at] = words;
 	const table = table_of(engine, known, known_shapes);
-	const ends = words.subarray(HEADER + tree, HEADER + tree + ends_count);
 	const text_at = HEADER + tree + ends_count;
-	const text = bytes ? utf8.decode(new Uint8Array(buffer, byteOffset + text_at * 4, bytes)) : '';
+	const text = bytes ? decode_text(buffer, byteOffset + text_at * 4, bytes) : '';
 	let floats_at = text_at + ((bytes + 3) >> 2);
 	if (floats_at % 2 === 1) floats_at++;
 	const floats_start = byteOffset + floats_at * 4;
@@ -233,8 +274,9 @@ export function decode(answer, source, engine, link = true) {
 	const strings = new Array(ends_count);
 	let from = 0;
 	for (let i = 0; i < ends_count; i++) {
-		strings[i] = text.slice(from, ends[i]);
-		from = ends[i];
+		const end = words[HEADER + tree + i];
+		strings[i] = text.slice(from, end);
+		from = end;
 	}
 	S.w = words;
 	S.strings = strings;
@@ -248,7 +290,7 @@ export function decode(answer, source, engine, link = true) {
 		S.at = HEADER + tables_at;
 		scopes = nodes();
 		bindings = nodes();
-		if (link) link_tables(scopes, bindings);
+		if (link) S.references = link_tables(scopes, bindings);
 		S.scopes = scopes;
 		S.bindings = bindings;
 	}
@@ -258,7 +300,24 @@ export function decode(answer, source, engine, link = true) {
 		root.scopes = scopes;
 		root.bindings = bindings;
 	}
-	S.strings = S.scopes = S.bindings = [];
+	S.strings = S.scopes = S.bindings = S.references = [];
 	S.source = '';
 	return root;
+}
+
+let bytes_view = new Uint8Array(0);
+
+/** The text block as a string; a short ASCII one is read byte by byte, under the decoder's fixed cost. */
+function decode_text(buffer, at, length) {
+	if (bytes_view.buffer !== buffer) bytes_view = new Uint8Array(buffer);
+	if (length <= 24) {
+		let text = '';
+		for (let i = at; i < at + length; i++) {
+			const byte = bytes_view[i];
+			if (byte >= 0x80) return utf8.decode(bytes_view.subarray(at, at + length));
+			text += String.fromCharCode(byte);
+		}
+		return text;
+	}
+	return utf8.decode(bytes_view.subarray(at, at + length));
 }
