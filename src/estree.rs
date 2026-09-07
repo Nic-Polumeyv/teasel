@@ -562,14 +562,6 @@ impl Sink for Binary {
 	}
 }
 
-/// Serializes a node; `locations` adds acorn's `loc` to every node.
-pub fn to_json<X: Emit>(ast: &Ast<X>, root: NodeId, source: &str, locations: bool) -> String {
-	let positions = Positions::new(source, locations);
-	let mut w = Writer::new(ast, source, &positions, Json::default());
-	w.node(root);
-	w.sink.finish()
-}
-
 /// Serializes a program into `sink`; `comments` adds every comment to it as `comments`.
 pub fn program<X: Emit, S: Sink>(
 	ast: &Ast<X>,
@@ -1592,7 +1584,7 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 	}
 }
 
-fn push_int(out: &mut String, mut value: u32) {
+pub(crate) fn push_int(out: &mut String, mut value: u32) {
 	const DIGITS: &[u8; 200] = b"0001020304050607080910111213141516171819\
 2021222324252627282930313233343536373839\
 4041424344454647484950515253545556575859\
