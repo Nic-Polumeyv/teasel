@@ -39,14 +39,17 @@ function differ(a, b, seen = new Map(), path = '$') {
 	if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return `${path}: ${JSON.stringify(a)} vs ${JSON.stringify(b)}`;
 	if (seen.has(a)) return seen.get(a) === b ? null : `${path}: identity differs`;
 	seen.set(a, b);
+	if (a instanceof Map || b instanceof Map) return differ([...a], [...b], seen, `${path}[map]`);
 	const ka = Object.keys(a), kb = Object.keys(b);
 	if (ka.length !== kb.length || ka.some((k) => !kb.includes(k))) return `${path}: keys ${ka} vs ${kb}`;
-	for (const k of ka) {
+	// what a scope or binding derives on demand is not an own key
+	for (const k of [...ka, ...DERIVED.filter((k) => k in a || k in b)]) {
 		const r = differ(a[k], b[k], seen, `${path}.${k}`);
 		if (r) return r;
 	}
 	return null;
 }
+const DERIVED = ['bindings', 'declarations', 'through', 'references'];
 
 function report(name, difference) {
 	checked++;

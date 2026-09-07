@@ -65,6 +65,15 @@ for (const [name, { Source, parse, parseExpressionAt, parsePatternAt, parseParam
 		assert.equal(y.scope.node, program.body[1]);
 		assert.equal(y.scope.through[0], x);
 		assert.equal(program.scopes[0].declarations.get('f'), f);
+		assert.deepEqual(Object.keys(program.scopes[0]), ['kind', 'parent', 'functionDepth', 'node']);
+		assert.deepEqual(Object.keys(x), ['name', 'kind', 'scope', 'node']);
+		assert.deepEqual(program.scopes[0].bindings, [x, f]);
+		x.references = [];
+		assert.deepEqual(x.references, []);
+		const literal = parse('let r = /a/g, t = `x${1}y`;', { scopes: true }).body[0].declarations;
+		assert.equal(Object.getPrototypeOf(literal[0].init.regex), Object.prototype);
+		assert.deepEqual(literal[1].init.quasis[0].value, { raw: 'x', cooked: 'x' });
+		assert.equal('references' in literal[0].init.regex, false);
 		assert.equal('scope' in program, false);
 		assert.equal('binding' in x.node, false);
 		const at = parseExpressionAt('a + b', 0, { scopes: true });

@@ -18,6 +18,11 @@ const FACTS = Symbol('facts');
 // the answer's tables, on each scope and binding, for what they derive from them
 const TABLES = Symbol('tables');
 const THROUGH = Symbol('through');
+const OWN_BINDINGS = Symbol('bindings');
+const OWN_REFERENCES = Symbol('references');
+const DECLARATIONS = Symbol('declarations');
+const LINKED_THROUGH = Symbol('through');
+const REFERENCES = Symbol('references');
 
 /** @param {import('estree').Node} node @returns {import('./index.js').Scope | undefined} the scope the node opens */
 export const scopeOf = (node) => (node == null ? undefined : node[SCOPE]);
@@ -34,30 +39,51 @@ export function referenceOf(node) {
 	return reference;
 }
 
-/** Memoizes a derived value as an own property, so the getter runs once. */
-function memo(object, key, value) {
-	Object.defineProperty(object, key, { value, writable: true, configurable: true, enumerable: true });
-	return value;
+
+/** One pass over an answer's tables, the first time anything derived from them is asked for. */
+function index(tables) {
+	if (tables.indexed) return;
+	tables.indexed = true;
+	for (const binding of tables.bindings) (binding.scope[OWN_BINDINGS] ??= []).push(binding);
+	for (const node of tables.references) {
+		const binding = node[BINDING];
+		if (binding !== null) (binding[OWN_REFERENCES] ??= []).push(node);
+	}
 }
 
-// what Svelte reads is on the object; what it derives is a getter, paid by whoever asks
+// what a host reads is on the object; what it derives is a getter, paid once by whoever asks,
+// and kept under a symbol so the keys of a scope or binding never change
 const Scope = {
 	node: null,
 	get bindings() {
-		return memo(this, 'bindings', this[TABLES].bindings.filter((b) => b.scope === this));
+		index(this[TABLES]);
+		return (this[OWN_BINDINGS] ??= []);
+	},
+	set bindings(value) {
+		this[OWN_BINDINGS] = value;
 	},
 	get declarations() {
-		return memo(this, 'declarations', new Map(this.bindings.map((b) => [b.name, b])));
+		return (this[DECLARATIONS] ??= new Map(this.bindings.map((b) => [b.name, b])));
+	},
+	set declarations(value) {
+		this[DECLARATIONS] = value;
 	},
 	get through() {
 		const { bindings } = this[TABLES];
-		return memo(this, 'through', this[THROUGH].map((index) => bindings[index]));
+		return (this[LINKED_THROUGH] ??= this[THROUGH].map((i) => bindings[i]));
+	},
+	set through(value) {
+		this[LINKED_THROUGH] = value;
 	}
 };
 const Binding = {
 	node: null,
 	get references() {
-		return memo(this, 'references', this[TABLES].references.filter((n) => n[BINDING] === this).map(referenceOf));
+		index(this[TABLES]);
+		return (this[REFERENCES] ??= (this[OWN_REFERENCES] ?? []).map(referenceOf));
+	},
+	set references(value) {
+		this[REFERENCES] = value;
 	}
 };
 
@@ -142,10 +168,10 @@ function generate({ type, keys, kinds }, link) {
 	let last = -1;
 	if (link && type !== null) for (let i = 0; i < keys.length; i++) if (FACT_KEYS.has(keys[i])) last = i;
 	const lead = [];
-	const row = link && type === null;
-	const props = row ? [`__proto__: ${row_proto(keys)}`] : type === null ? [] : [`type: ${JSON.stringify(type)}`];
+	const row = link && type === null ? row_proto(keys) : null;
+	const props = row !== null ? [`__proto__: ${row}`] : type === null ? [] : [`type: ${JSON.stringify(type)}`];
 	const facts = { scope: 'undefined', declares: 'undefined', binding: 'undefined', write: 'false', mutate: 'false' };
-	const name = (key) => (row && key === 'through' ? '[THROUGH]' : JSON.stringify(key));
+	const name = (key) => (row !== null && key === 'through' ? '[THROUGH]' : JSON.stringify(key));
 	for (let i = 0; i < keys.length; i++) {
 		const key = keys[i];
 		if (i > last) props.push(`${name(key)}: ${READ[kinds[i]]}`);
@@ -159,13 +185,15 @@ function generate({ type, keys, kinds }, link) {
 	return new Function('S', 'node', 'nodes', 'ints', 'file', 'Scope', 'Binding', 'THROUGH', `return () => { ${body} };`)(S, node, nodes, ints, file, Scope, Binding, THROUGH);
 }
 
-/** A table row is a scope or a binding, told apart by a key only one of them has. */
-const row_proto = (keys) => (keys.includes('functionDepth') ? 'Scope' : 'Binding');
+/** A shape without a type is a scope or binding row, or a plain object such as a literal's `regex`. */
+const ROWS = { 'kind,parent,functionDepth,through': 'Scope', 'name,kind,scope': 'Binding' };
+const row_proto = (keys) => ROWS[keys.join(',')] ?? null;
 
 /** The same without code generation, for a host whose policy forbids it. @param {Shape} shape @param {boolean} link */
 function interpret({ type, keys, kinds }, link) {
 	const facts = link && type !== null && keys.some((key) => FACT_KEYS.has(key));
-	const proto = link && type === null ? (row_proto(keys) === 'Scope' ? Scope : Binding) : null;
+	const row = link && type === null ? row_proto(keys) : null;
+	const proto = row === 'Scope' ? Scope : row === 'Binding' ? Binding : null;
 	return () => {
 		const n = proto !== null ? Object.create(proto) : type === null ? {} : { type };
 		let scope, declares, binding, write = false, mutate = false;
@@ -242,7 +270,7 @@ function unaligned_floats(buffer, start, count) {
 
 /** @param {any[]} scopes @param {any[]} bindings */
 function link_tables(scopes, bindings) {
-	const tables = { bindings, references: [] };
+	const tables = { bindings, references: [], indexed: false };
 	for (const scope of scopes) {
 		scope.parent = scope.parent === null ? null : scopes[scope.parent];
 		scope[TABLES] = tables;
@@ -300,7 +328,10 @@ export function decode(answer, source, engine, link = true) {
 		root.scopes = scopes;
 		root.bindings = bindings;
 	}
-	S.strings = S.scopes = S.bindings = S.references = [];
+	S.strings = [];
+	S.scopes = [];
+	S.bindings = [];
+	S.references = [];
 	S.source = '';
 	return root;
 }

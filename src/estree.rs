@@ -379,6 +379,35 @@ thread_local! {
 	static SPARE: std::cell::RefCell<Option<Binary>> = const { std::cell::RefCell::new(None) };
 }
 
+impl Drop for Binary {
+	fn drop(&mut self) {
+		let bytes = self.words.capacity() * 4 + self.text.capacity() + self.ends.capacity() * 4;
+		if bytes > 16 << 20 {
+			return;
+		}
+		// the thread's own spare drops after the thread local is gone
+		let _ = SPARE.try_with(|s| {
+			let mut s = s.borrow_mut();
+			if s.is_none() {
+				*s = Some(Binary {
+					words: std::mem::take(&mut self.words),
+					text: std::mem::take(&mut self.text),
+					units: 0,
+					ends: std::mem::take(&mut self.ends),
+					floats: std::mem::take(&mut self.floats),
+					frames: std::mem::take(&mut self.frames),
+					seq: std::mem::take(&mut self.seq),
+					tables_at: 0,
+					tables: 0,
+					start: self.start,
+					end: self.end,
+					loc: self.loc,
+				});
+			}
+		});
+	}
+}
+
 /// Hands an answer's words back for the next answer, once a front end has copied them out.
 pub fn recycle(words: Vec<u32>) {
 	SPARE.with(|s| {
@@ -444,7 +473,8 @@ impl Binary {
 		self.words.push(0);
 	}
 
-	pub fn finish(mut self) -> Vec<u32> {
+	/// The answer's words; the sink keeps its other buffers for the next answer.
+	pub fn finish(&mut self) -> Vec<u32> {
 		debug_assert!(self.frames.is_empty() && self.seq.len() == 1);
 		let tree = self.words.len() as u32 - 7;
 		self.words[..7].copy_from_slice(&[
@@ -476,9 +506,7 @@ impl Binary {
 			let bits = float.to_bits();
 			self.words.extend([bits as u32, (bits >> 32) as u32]);
 		}
-		let words = std::mem::take(&mut self.words);
-		SPARE.with(|s| *s.borrow_mut() = Some(self));
-		words
+		std::mem::take(&mut self.words)
 	}
 }
 

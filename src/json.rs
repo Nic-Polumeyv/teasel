@@ -307,7 +307,7 @@ fn parse_with(source: &str, positions: &Positions, request: &Request) -> String 
 
 /// The answer as a token stream, or the error answer as JSON.
 fn binary_with(source: &str, positions: &Positions, request: &Request) -> Result<Vec<u32>, String> {
-	dispatch(source, positions, request, Binary::new()).map(Binary::finish)
+	dispatch(source, positions, request, Binary::new()).map(|mut binary| binary.finish())
 }
 
 /// A tree, its root and the offset after what the parse consumed.
