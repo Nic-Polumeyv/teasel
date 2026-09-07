@@ -1,7 +1,7 @@
 import * as acorn from 'acorn';
 import { tsPlugin } from '@sveltejs/acorn-typescript';
-import { readdirSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { join, relative } from 'node:path';
 
 const TSParser = acorn.Parser.extend(tsPlugin());
 
@@ -9,12 +9,93 @@ export const root = process.env.SVELTE_DIR ?? join(process.env.HOME, 'Projects/s
 export const corpus = join(root, 'packages/svelte/tests');
 const binary = new URL('../target/release/teasel', import.meta.url).pathname;
 
-export function* files(dir, pattern) {
+/// The files under `dir` whose names match, outside `node_modules` unless `into_modules`.
+export function* files(dir, pattern, into_modules = false) {
 	for (const name of readdirSync(dir)) {
+		if ((name === 'node_modules' && !into_modules) || name === '.svelte-kit' || name.startsWith('.')) continue;
 		const path = join(dir, name);
-		if (statSync(path).isDirectory()) yield* files(path, pattern);
+		let stat;
+		try {
+			stat = statSync(path);
+		} catch {
+			continue;
+		}
+		if (stat.isDirectory()) yield* files(path, pattern, into_modules);
 		else if (pattern.test(name)) yield path;
 	}
+}
+
+const script_re = /<script((?:\s+(?:"[^"]*"|'[^']*'|[^>"'])*)?)>([\s\S]*?)<\/script>/g;
+
+/// The `<script>` blocks of a component that are TypeScript, or those that are not.
+export function* scripts(text, ts) {
+	for (const match of text.matchAll(script_re)) {
+		if (/lang=["']?ts/.test(match[1] ?? '') === ts) yield { index: match.index, source: match[2] };
+	}
+}
+
+/// Every component of the corpus Svelte's own parser accepts, with its tree and a UTF-16 to byte
+/// offset map; `skipped` counts the rest.
+export async function components(filter) {
+	const { parse } = await import(`${root}/packages/svelte/src/compiler/index.js`);
+	const list = [];
+	let skipped = 0;
+	for (const path of files(corpus, /\.svelte$/)) {
+		const name = relative(corpus, path);
+		if (filter && !name.includes(filter)) continue;
+		const source = readFileSync(path, 'utf8');
+		let ast;
+		try {
+			ast = parse(source, { modern: true });
+		} catch {
+			skipped++;
+			continue;
+		}
+		const byte = (utf16) => Buffer.byteLength(source.slice(0, utf16), 'utf8');
+		list.push({ name, source, ast, ts: is_typescript(source), byte });
+	}
+	return { list, skipped };
+}
+
+/// The TypeScript of the Svelte and SvelteKit checkouts: every `.ts` file and `lang="ts"` script.
+export function ts_jobs(mode, filter) {
+	const kit = process.env.KIT_DIR ?? join(process.env.HOME, 'Projects/kit');
+	const jobs = [];
+	for (const dir of [join(root, 'packages'), join(kit, 'packages')]) {
+		for (const path of files(dir, /\.(ts|svelte)$/)) {
+			const name = relative(dir, path);
+			if (filter && !name.includes(filter)) continue;
+			const text = readFileSync(path, 'utf8');
+			if (path.endsWith('.ts')) jobs.push({ name, source: text, mode });
+			else for (const { index, source } of scripts(text, true)) jobs.push({ name: `${name}#${index}`, source, mode });
+		}
+	}
+	return { jobs, label: `${root} + ${kit}` };
+}
+
+/// Cuts a job list at `--limit`; whether it is full.
+export function capped(jobs, limit) {
+	if (jobs.length < limit) return false;
+	jobs.length = limit;
+	return true;
+}
+
+/// Every node of a Svelte tree, in document order.
+export function* walk(node, skip = ['loc', 'metadata']) {
+	if (Array.isArray(node)) {
+		for (const item of node) yield* walk(item, skip);
+		return;
+	}
+	if (!node || typeof node !== 'object') return;
+	yield node;
+	for (const [k, v] of Object.entries(node)) {
+		if (!skip.includes(k)) yield* walk(v, skip);
+	}
+}
+
+// the plugin rejects every ambient initializer and misses declarations that satisfy an export
+export function plugin_rejects_valid(message) {
+	return message.startsWith("A 'const' initializer in an ambient context") || /^Export '.*' is not defined$/.test(message);
 }
 
 function normalize(key, value) {
@@ -57,10 +138,10 @@ export function normalize_ts(key, value) {
 }
 
 /// acorn reports an unexpected token at the end of the input, where teasel names the end; the rewrite is keyed on the offset alone.
-function acorn_error(e, source) {
+export function acorn_error(e, source, eof = true) {
 	if (!(e instanceof SyntaxError) || e.pos === undefined) return { error: { message: `acorn threw ${e.name}: ${e.message}`, pos: -1 } };
 	let message = e.message.replace(/ \(\d+:\d+\)$/, '');
-	if (e.pos === source.length && message === 'Unexpected token') message = 'Unexpected end of input';
+	if (eof && e.pos === source.length && message === 'Unexpected token') message = 'Unexpected end of input';
 	return { error: { message, pos: e.pos, loc: { line: e.loc.line, column: e.loc.column } } };
 }
 
@@ -120,7 +201,7 @@ export async function teasel(jobs) {
 	proc.stdin.write(input);
 	proc.stdin.end();
 	const output = await new Response(proc.stdout).text();
-	return output.split('\n');
+	return output.split('\n').slice(0, jobs.length);
 }
 
 function parse_line(line) {
@@ -131,7 +212,7 @@ function parse_line(line) {
 		// parse-at answers wrap the node with the offset the parse stopped at
 		return 'node' in value && !('type' in value) ? value.node : value;
 	} catch {
-		return { error: { message: `bad output: ${line.slice(0, 80)}` } };
+		return { error: { message: `bad output: ${String(line).slice(0, 80)}` } };
 	}
 }
 

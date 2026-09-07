@@ -7,10 +7,9 @@ import { readFileSync } from 'node:fs';
 import { relative } from 'node:path';
 import * as acorn from 'acorn';
 import * as eslintScope from 'eslint-scope';
-import { args, compare, corpus, files, teasel } from './lib.js';
+import { acorn_error, args, capped, compare, corpus, files, scripts, teasel } from './lib.js';
 
 const { verbose, limit, filter } = args();
-const script_re = /<script((?:\s+(?:"[^"]*"|'[^']*'|[^>"'])*)?)>([\s\S]*?)<\/script>/g;
 
 const jobs = [];
 for (const path of files(corpus, /\.(svelte|js)$/)) {
@@ -18,16 +17,8 @@ for (const path of files(corpus, /\.(svelte|js)$/)) {
 	if (filter && !name.includes(filter)) continue;
 	const text = readFileSync(path, 'utf8');
 	if (path.endsWith('.js')) jobs.push({ name, source: text, mode: 'module+scopes' });
-	else {
-		for (const match of text.matchAll(script_re)) {
-			if (/lang=["']?ts/.test(match[1] ?? '')) continue;
-			jobs.push({ name: `${name}#${match.index}`, source: match[2], mode: 'module+scopes' });
-		}
-	}
-	if (jobs.length >= limit) {
-		jobs.length = limit;
-		break;
-	}
+	else for (const { index, source } of scripts(text, false)) jobs.push({ name: `${name}#${index}`, source, mode: 'module+scopes' });
+	if (capped(jobs, limit)) break;
 }
 
 /// What both sides reduce to: references as [start, declaration start | null | 'implicit', write]
@@ -50,7 +41,7 @@ function expected(job) {
 	try {
 		ast = acorn.parse(job.source, { ecmaVersion: 16, sourceType: 'module', ranges: true });
 	} catch (e) {
-		return { error: { message: e.message.replace(/ \(\d+:\d+\)$/, ''), pos: e.pos, loc: { line: e.loc.line, column: e.loc.column } } };
+		return acorn_error(e, job.source, false);
 	}
 	const manager = eslintScope.analyze(ast, { ecmaVersion: 2022, sourceType: 'module' });
 	const references = [];
@@ -97,5 +88,5 @@ function actual(line) {
 	return JSON.stringify(summary(references, declarations));
 }
 
-const lines = (await teasel(jobs)).map((line, i) => (jobs[i] ? actual(line) : line));
+const lines = (await teasel(jobs)).map(actual);
 process.exit(compare(jobs, expected, lines, { verbose, label: 'scope analysis' }) ? 0 : 1);

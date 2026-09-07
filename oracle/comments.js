@@ -4,11 +4,8 @@
 //
 //   SVELTE_DIR=~/Projects/svelte bun comments.js [--verbose] [--limit N] [filter]
 
-import { readFileSync } from 'node:fs';
-import { relative } from 'node:path';
-import { args, compare, corpus, files, is_typescript, normalize_ts, root, teasel } from './lib.js';
+import { args, capped, compare, components, normalize_ts, teasel, walk } from './lib.js';
 
-const { parse } = await import(`${root}/packages/svelte/src/compiler/index.js`);
 const { verbose, limit, filter } = args();
 
 // Both sides lose a block comment's indentation before comparing; Svelte used to strip it.
@@ -46,7 +43,11 @@ function relocate(tree) {
 				if (k === 'leadingComments' || k === 'trailingComments') {
 					for (const c of v) {
 						const container = inside(c);
-						if (container && container !== node) (moved.get(container) ?? moved.set(container, []).get(container)).push(c);
+						if (container && container !== node) {
+							let list = moved.get(container);
+							if (!list) moved.set(container, (list = []));
+							list.push(c);
+						}
 					}
 				} else if (k !== 'loc') collect(v);
 			}
@@ -107,57 +108,28 @@ function normalize(node, source, from, is_root, raw_values, ts) {
 }
 
 const jobs = [];
-let skipped_files = 0;
-for (const path of files(corpus, /\.svelte$/)) {
-	const name = relative(corpus, path);
-	if (filter && !name.includes(filter)) continue;
-	const source = readFileSync(path, 'utf8');
-	let ast;
-	try {
-		ast = parse(source, { modern: true });
-	} catch {
-		skipped_files++;
-		continue;
-	}
-	const typescript = is_typescript(source);
+const { list, skipped } = await components(filter);
+for (const { name, source, ast, ts: typescript, byte } of list) {
 	const ts = typescript ? 'ts-' : '';
-	const byte = (utf16) => Buffer.byteLength(source.slice(0, utf16), 'utf8');
 	for (const script of [ast.instance, ast.module]) {
 		if (!script) continue;
 		const program = script.content;
 		const blank = source.slice(0, program.start).replace(/[^\n]/g, ' ') + source.slice(program.start, program.end);
 		jobs.push({ name: `${name}@${program.start} script`, source: blank, mode: `${ts}module+comments+undeclared-exports`, expected: normalize(relocate(program), source, program.start, true, false, typescript), from: program.start, ts: typescript });
 	}
-	for (const node of walk(ast.fragment)) {
+	for (const node of walk(ast.fragment, ['loc', 'metadata', 'expression'])) {
 		if (node.type !== 'ExpressionTag' || !node.expression) continue;
 		const expression = node.expression;
 		jobs.push({ name: `${name}@${expression.start}`, source, mode: `${ts}expr+comments:${byte(expression.start)}`, expected: normalize(relocate(expression), source, expression.start, false, false, typescript), from: expression.start, ts: typescript });
 	}
-	if (jobs.length >= limit) {
-		jobs.length = limit;
-		break;
-	}
-}
-
-function* walk(node) {
-	if (Array.isArray(node)) {
-		for (const item of node) yield* walk(item);
-		return;
-	}
-	if (!node || typeof node !== 'object') return;
-	yield node;
-	for (const [k, v] of Object.entries(node)) {
-		if (k === 'loc' || k === 'metadata' || k === 'expression') continue;
-		yield* walk(v);
-	}
+	if (capped(jobs, limit)) break;
 }
 
 const lines = (await teasel(jobs)).map((line, i) => {
-	if (!jobs[i]) return line;
 	const parsed = JSON.parse(line);
 	if (parsed.error) return line;
 	const node = parsed.node ?? parsed;
 	delete node.comments;
 	return JSON.stringify(normalize(node, jobs[i].source, jobs[i].from, true, true, jobs[i].ts));
 });
-process.exit(compare(jobs, (job) => job.expected, lines, { verbose, label: 'comment attachment', skipped: skipped_files }) ? 0 : 1);
+process.exit(compare(jobs, (job) => job.expected, lines, { verbose, label: 'comment attachment', skipped }) ? 0 : 1);
