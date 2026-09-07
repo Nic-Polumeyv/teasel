@@ -3,11 +3,7 @@
 //
 //   SVELTE_DIR=~/Projects/svelte bun expressions.js [--verbose] [--limit N] [filter]
 
-import { readFileSync } from 'node:fs';
-import { relative } from 'node:path';
-import { acorn_expression, args, compare, corpus, files, is_typescript, root, teasel } from './lib.js';
-
-const { parse } = await import(`${root}/packages/svelte/src/compiler/index.js`);
+import { acorn_expression, args, capped, compare, components, teasel } from './lib.js';
 
 const { verbose, limit, filter } = args();
 
@@ -42,28 +38,13 @@ function* roots(node, key, parent, parent_is_estree, source) {
 }
 
 const jobs = [];
-let skipped_files = 0;
-for (const path of files(corpus, /\.svelte$/)) {
-	const name = relative(corpus, path);
-	if (filter && !name.includes(filter)) continue;
-	const source = readFileSync(path, 'utf8');
-	const ts = is_typescript(source);
-	let ast;
-	try {
-		ast = parse(source, { modern: true });
-	} catch {
-		skipped_files++;
-		continue;
-	}
+const { each, stats } = await components(filter);
+for (const { name, source, ast, ts, byte } of each) {
 	for (const node of roots(ast.fragment, 'fragment', ast, false, source)) {
-		const offset = Buffer.byteLength(source.slice(0, node.start), 'utf8');
-		jobs.push({ name: `${name}@${node.start}`, source, mode: `${ts ? 'ts-' : ''}expr:${offset}`, offset: node.start, ts });
+		jobs.push({ name: `${name}@${node.start}`, source, mode: `${ts ? 'ts-' : ''}expr:${byte(node.start)}`, offset: node.start, ts });
 	}
-	if (jobs.length >= limit) {
-		jobs.length = limit;
-		break;
-	}
+	if (capped(jobs, limit)) break;
 }
 
 const lines = await teasel(jobs);
-process.exit(compare(jobs, (job) => acorn_expression(job.source, job.offset, job.ts), lines, { verbose, skipped: skipped_files }) ? 0 : 1);
+process.exit(compare(jobs, (job) => acorn_expression(job.source, job.offset, job.ts), lines, { verbose, skipped: stats.skipped }) ? 0 : 1);

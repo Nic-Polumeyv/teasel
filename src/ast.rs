@@ -296,6 +296,11 @@ impl<X> Ast<X> {
 		&self.lists[list.start as usize..(list.start + list.len) as usize]
 	}
 
+	/// The `i`th item of a list, for loops that mutate the tree between items.
+	pub fn nth(&self, list: List, i: u32) -> Option<NodeId> {
+		self.lists[(list.start + i) as usize]
+	}
+
 	pub fn add(&mut self, kind: NodeKind, start: u32, end: u32) -> NodeId {
 		self.nodes.push(Node { kind, start, end });
 		NodeId(self.nodes.len() as u32 - 1)

@@ -4,13 +4,13 @@ import { join } from 'node:path';
 import { createRequire } from 'node:module';
 import * as node from './index.js';
 import * as wasm from './wasm.js';
-import { bits } from './api.js';
+import { ENTRY as ENTRIES, bits } from './api.js';
 import { decode } from './decode.js';
 
 const native = createRequire(import.meta.url)('./binding.cjs');
 const engine = { constants: native.constants, shapes: native.shapes };
 await wasm.init(readFileSync(new URL('./teasel.wasm', import.meta.url)));
-const ENTRY = { expression: 1, pattern: 2, params: 3, statement: 4 };
+const { program, ...ENTRY } = ENTRIES;
 const files = [];
 function walk(dir) {
 	for (const name of readdirSync(dir)) {

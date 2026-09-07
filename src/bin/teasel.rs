@@ -9,66 +9,31 @@
 //! bytes of source, and prints one JSON line per job. MODE is `module`, `script`, `expr:OFFSET`,
 //! `pattern:OFFSET`, `params:OFFSET` or `stmt:OFFSET`, whose answers wrap the node or the parameters
 //! with `end`, the offset after what the parse consumed, with a `ts-` prefix for TypeScript and
-//! `+comments` to attach comments, `+undeclared-exports` to accept exports of names the source
-//! never declares, `+until-as` to end an expression at the host's `as` or `+erase` to erase
-//! TypeScript from the output. In a batch, expressions
-//! preserve parens. Offsets are byte offsets into the source; the JSON output reports UTF-16
-//! offsets like acorn.
+//! `+comments` to attach comments, `+scopes` for the scope analysis, `+undeclared-exports` to
+//! accept exports of names the source never declares, `+until-as` to end an expression at the
+//! host's `as` or `+erase` to erase TypeScript from the output. In a batch, expressions preserve
+//! parens. Offsets are byte offsets into the source; the JSON output reports UTF-16 offsets like
+//! acorn.
 
 use std::io::{self, BufRead, Read, Write};
 use std::process::ExitCode;
 use teasel::json::{Entry, Request};
 use teasel::{Options, json};
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Mode {
-	Program,
-	Expression,
-	Pattern,
-	Params,
-	Statement,
-}
-
-impl Mode {
-	fn from_batch(mode: &str) -> Mode {
-		match mode.split_once(':').map_or(mode, |(m, _)| m) {
-			"expr" => Mode::Expression,
-			"pattern" => Mode::Pattern,
-			"params" => Mode::Params,
-			"stmt" => Mode::Statement,
-			_ => Mode::Program,
-		}
-	}
-
-	fn entry(self) -> Entry {
-		match self {
-			Mode::Program => Entry::Program,
-			Mode::Expression => Entry::Expression,
-			Mode::Pattern => Entry::Pattern,
-			Mode::Params => Entry::Params,
-			Mode::Statement => Entry::Statement,
-		}
-	}
-
-	/// The options each entry point takes in a batch.
-	fn options(self, batch_mode: &str, undeclared_exports: bool) -> Options {
-		match self {
-			Mode::Program => Options {
-				module: batch_mode != "script",
-				allow_undeclared_exports: undeclared_exports,
-				..Options::default()
-			},
-			Mode::Expression => Options {
-				module: true,
-				preserve_parens: true,
-				..Options::default()
-			},
-			Mode::Pattern | Mode::Params | Mode::Statement => Options {
-				module: true,
-				..Options::default()
-			},
-		}
-	}
+/// A batch header's mode: its entry, offset and switches, which may come before or after the offset.
+fn batch_mode(mode: &str) -> (Entry, u32, impl Iterator<Item = &str>) {
+	let (head, tail) = mode.split_once(':').unwrap_or((mode, ""));
+	let digits = tail.len() - tail.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+	let mut head = head.split('+');
+	let entry = match head.next().unwrap_or("") {
+		"expr" => Entry::Expression,
+		"pattern" => Entry::Pattern,
+		"params" => Entry::Params,
+		"stmt" => Entry::Statement,
+		_ => Entry::Program,
+	};
+	let switches = head.chain(tail[digits..].split('+').skip(1));
+	(entry, tail[..digits].parse().unwrap_or(0), switches)
 }
 
 fn batch() -> io::Result<()> {
@@ -103,33 +68,29 @@ fn batch() -> io::Result<()> {
 			Some(rest) => (true, rest),
 			None => (false, mode_text),
 		};
-		let comments = mode_text.contains("+comments");
-		let undeclared_exports = mode_text.contains("+undeclared-exports");
-		let until_as = mode_text.contains("+until-as");
-		let erase = mode_text.contains("+erase");
-		let scopes = mode_text.contains("+scopes");
-		let mode_text = mode_text
-			.replace("+comments", "")
-			.replace("+undeclared-exports", "")
-			.replace("+until-as", "")
-			.replace("+erase", "")
-			.replace("+scopes", "");
-		let mode_text = mode_text.as_str();
-		let mode = Mode::from_batch(mode_text);
-		let offset = mode_text.split_once(':').and_then(|(_, n)| n.parse().ok()).unwrap_or(0);
-		let mut options = mode.options(mode_text, undeclared_exports);
-		options.until_as = until_as;
-		let request = Request {
-			entry: mode.entry(),
+		let (entry, offset, switches) = batch_mode(mode_text);
+		let mut request = Request {
+			entry,
 			offset,
 			typescript,
-			comments,
-			scopes,
 			locations: true,
-			erase,
-			end: None,
-			options,
+			options: Options {
+				module: !mode_text.starts_with("script"),
+				preserve_parens: entry == Entry::Expression,
+				..Options::default()
+			},
+			..Request::default()
 		};
+		for switch in switches {
+			match switch {
+				"comments" => request.comments = true,
+				"scopes" => request.scopes = true,
+				"erase" => request.erase = true,
+				"until-as" => request.options.until_as = true,
+				"undeclared-exports" if entry == Entry::Program => request.options.allow_undeclared_exports = true,
+				_ => {}
+			}
+		}
 		let json = json::parse(&source, &request);
 		out.write_all(json.as_bytes())?;
 		out.write_all(b"\n")?;
@@ -148,7 +109,7 @@ fn main() -> ExitCode {
 			}
 		};
 	}
-	let mut mode = Mode::Program;
+	let mut entry = Entry::Program;
 	let mut offset = None;
 	let mut module = false;
 	let mut typescript = false;
@@ -166,24 +127,22 @@ fn main() -> ExitCode {
 			"--scopes" => scopes = true,
 			"--preserve-parens" => preserve_parens = true,
 			"--erase" => erase = true,
-			"--expression" => mode = Mode::Expression,
-			"--pattern" => mode = Mode::Pattern,
-			"--params" => mode = Mode::Params,
-			"--statement" => mode = Mode::Statement,
+			"--expression" => entry = Entry::Expression,
+			"--pattern" => entry = Entry::Pattern,
+			"--params" => entry = Entry::Params,
+			"--statement" => entry = Entry::Statement,
 			"--offset" => offset = args.next().and_then(|n| n.parse().ok()),
 			_ => file = Some(arg),
 		}
 	}
-	if mode == Mode::Program && offset.is_some() {
-		mode = Mode::Expression;
+	if entry == Entry::Program && offset.is_some() {
+		entry = Entry::Expression;
 	}
-	let mut options = if mode == Mode::Program || mode == Mode::Expression {
-		Options::default()
-	} else {
-		mode.options("", false)
+	let options = Options {
+		module: module || !matches!(entry, Entry::Program | Entry::Expression),
+		preserve_parens,
+		..Options::default()
 	};
-	options.module |= module;
-	options.preserve_parens |= preserve_parens;
 	let Some(file) = file else {
 		eprintln!(
 			"usage: teasel [--module] [--typescript] [--comments] [--scopes] [--expression|--pattern|--params|--statement] [--preserve-parens] [--erase] [--offset N] FILE"
@@ -198,7 +157,7 @@ fn main() -> ExitCode {
 		}
 	};
 	let request = Request {
-		entry: mode.entry(),
+		entry,
 		offset: offset.unwrap_or(0),
 		typescript,
 		comments,

@@ -19,10 +19,7 @@ pub extern "C" fn alloc(len: u32) -> *mut u8 {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn source_new(ptr: *mut u8, len: u32, capacity: u32, bits: u32) -> u32 {
 	let source = unsafe { Vec::from_raw_parts(ptr, len as usize, capacity as usize) };
-	let mut request = Request::new(Entry::Program, 0);
-	request.set_bits(bits);
-	let source = String::from_utf8(source).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned());
-	let prepared = Prepared::new(source, request);
+	let prepared = Prepared::from_bytes(source, Request::from_bits(bits));
 	Box::into_raw(Box::new(prepared)) as u32
 }
 
@@ -43,11 +40,7 @@ fn answer(result: Result<Vec<u32>, String>) -> u32 {
 			0
 		}
 		Err(error) => {
-			TEXT.with(|t| {
-				let mut t = t.borrow_mut();
-				t.clear();
-				t.extend_from_slice(error.as_bytes());
-			});
+			text(error);
 			1
 		}
 	}

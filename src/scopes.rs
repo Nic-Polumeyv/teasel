@@ -127,14 +127,8 @@ pub struct Scope {
 	pub parent: Option<ScopeId>,
 	/// How many function scopes enclose this one, itself included when it is one.
 	pub function_depth: u32,
-	pub bindings: Vec<BindingId>,
 	/// The bindings of outer scopes that identifiers inside this scope resolve to, in first-use order.
 	pub through: Vec<BindingId>,
-	/// An arrow function has no `arguments` of its own.
-	arrow: bool,
-	/// Where a function's body starts: a parameter default cannot see what the body declares.
-	body_start: u32,
-	names: FastMap<StrId, BindingId>,
 }
 
 #[derive(Debug)]
@@ -144,7 +138,6 @@ pub struct Binding {
 	pub scope: ScopeId,
 	/// The identifier that declares it; `arguments` has none.
 	pub node: Option<NodeId>,
-	pub references: Vec<ReferenceId>,
 }
 
 #[derive(Debug)]
@@ -262,17 +255,6 @@ impl Scopes {
 	pub fn reference(&self, id: ReferenceId) -> &Reference {
 		&self.references[id as usize]
 	}
-
-	/// The binding `name` resolves to from inside `scope`.
-	pub fn lookup(&self, mut scope: ScopeId, name: StrId) -> Option<BindingId> {
-		loop {
-			let s = &self.scopes[scope as usize];
-			if let Some(&binding) = s.names.get(&name) {
-				return Some(binding);
-			}
-			scope = s.parent?;
-		}
-	}
 }
 
 /// How an extension's nodes join the analysis: which of their children are values, and what
@@ -303,57 +285,65 @@ pub enum Mode {
 	Expression,
 	/// A pattern that declares bindings of this kind.
 	Declare(BindingKind),
-	/// A pattern that assigns to what it names.
-	Assign,
+}
+
+/// Runs an analysis under one outermost scope and puts the answer on the tree.
+fn analyze_with<X: Bind>(ast: &mut Ast<X>, kind: ScopeKind, root: Option<NodeId>, f: impl FnOnce(&mut Binder<X>)) {
+	let mut binder = Binder::new(ast);
+	binder.enter(kind, root, false);
+	f(&mut binder);
+	binder.exit();
+	let out = binder.out;
+	ast.scopes = Some(out);
 }
 
 /// Analyzes the tree under `root`: a program opens its own scope, anything else a fragment scope.
 pub fn analyze<X: Bind>(ast: &mut Ast<X>, root: NodeId) {
-	let mut binder = Binder::new(ast);
-	match binder.ast.node(root).kind {
+	match ast.node(root).kind {
 		NodeKind::Program { body, module } => {
 			let kind = if module { ScopeKind::Module } else { ScopeKind::Script };
-			binder.enter(kind, Some(root), false);
-			binder.statements(body);
+			analyze_with(ast, kind, Some(root), |b| b.statements(body));
 		}
-		_ => {
-			binder.enter(ScopeKind::Fragment, Some(root), false);
-			binder.visit(root, Mode::Expression);
-		}
+		_ => analyze_with(ast, ScopeKind::Fragment, Some(root), |b| {
+			b.visit(root, Mode::Expression)
+		}),
 	}
-	binder.exit();
-	let out = binder.out;
-	ast.scopes = Some(out);
 }
 
 /// Analyzes a pattern parsed on its own: what it names are `pattern` bindings of a fragment scope.
 pub fn analyze_pattern<X: Bind>(ast: &mut Ast<X>, root: NodeId) {
-	let mut binder = Binder::new(ast);
-	binder.enter(ScopeKind::Fragment, Some(root), false);
-	binder.visit(root, Mode::Declare(BindingKind::Pattern));
-	binder.exit();
-	let out = binder.out;
-	ast.scopes = Some(out);
+	analyze_with(ast, ScopeKind::Fragment, Some(root), |b| {
+		b.visit(root, Mode::Declare(BindingKind::Pattern))
+	});
 }
 
 /// Analyzes a parameter list parsed on its own, as the parameters of a function scope.
 pub fn analyze_params<X: Bind>(ast: &mut Ast<X>, params: &[NodeId]) {
-	let mut binder = Binder::new(ast);
-	binder.enter(ScopeKind::Function, None, false);
-	for &param in params {
-		binder.visit(param, Mode::Declare(BindingKind::Param));
-	}
-	binder.exit();
-	let out = binder.out;
-	ast.scopes = Some(out);
+	analyze_with(ast, ScopeKind::Function, None, |b| {
+		for &param in params {
+			b.visit(param, Mode::Declare(BindingKind::Param));
+		}
+	});
+}
+
+/// What the analysis keeps about a scope while it runs, parallel to `Scopes::scopes`.
+#[derive(Default)]
+struct Open {
+	/// An arrow function has no `arguments` of its own.
+	arrow: bool,
+	/// Where a function's body starts: a parameter default cannot see what the body declares.
+	body_start: u32,
+	names: FastMap<StrId, BindingId>,
 }
 
 pub struct Binder<'a, X> {
 	ast: &'a Ast<X>,
 	out: Scopes,
 	stack: Vec<ScopeId>,
-	/// The references of each open scope not yet resolved, parallel to `stack`.
-	pending: Vec<Vec<ReferenceId>>,
+	open: Vec<Open>,
+	/// The references not yet resolved, those of each open scope after `pending_from`'s entry for it.
+	pending: Vec<ReferenceId>,
+	pending_from: Vec<usize>,
 	/// The scope a binding owns, for declarations that merge: namespaces and enums.
 	owned: FastMap<BindingId, ScopeId>,
 	arguments: Option<StrId>,
@@ -370,7 +360,9 @@ impl<'a, X: Bind> Binder<'a, X> {
 				..Scopes::default()
 			},
 			stack: Vec::new(),
+			open: Vec::new(),
 			pending: Vec::new(),
+			pending_from: Vec::new(),
 			owned: FastMap::default(),
 			arguments: ast.strings.find("arguments"),
 			this_name: ast.strings.find("this"),
@@ -399,17 +391,17 @@ impl<'a, X: Bind> Binder<'a, X> {
 			node,
 			parent,
 			function_depth,
-			bindings: Vec::new(),
 			through: Vec::new(),
+		});
+		self.open.push(Open {
 			arrow,
-			body_start: 0,
-			names: FastMap::default(),
+			..Open::default()
 		});
 		if let Some(node) = node {
 			self.out.of_node.insert(node, id);
 		}
 		self.stack.push(id);
-		self.pending.push(Vec::new());
+		self.pending_from.push(self.pending.len());
 	}
 
 	/// Opens the scope a binding owns, or reopens it when the binding declared one before, as
@@ -418,7 +410,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 		if let Some(&scope) = binding.and_then(|b| self.owned.get(&b)) {
 			self.out.of_node.insert(node, scope);
 			self.stack.push(scope);
-			self.pending.push(Vec::new());
+			self.pending_from.push(self.pending.len());
 			return;
 		}
 		self.enter(kind, Some(node), false);
@@ -435,17 +427,17 @@ impl<'a, X: Bind> Binder<'a, X> {
 		}
 	}
 
-	/// Closes the scope: its references resolve here or move up.
+	/// Closes the scope: its references resolve here or stay pending for the scope around it.
 	pub fn exit(&mut self) {
 		let scope = self.stack.pop().unwrap();
-		let pending = self.pending.pop().unwrap();
-		let mut up = Vec::new();
-		for reference in pending {
-			let name = match self.kind(self.out.references[reference as usize].node) {
-				NodeKind::Identifier { name } => name,
-				_ => unreachable!(),
+		let from = self.pending_from.pop().unwrap();
+		let mut kept = from;
+		for i in from..self.pending.len() {
+			let reference = self.pending[i];
+			let NodeKind::Identifier { name } = self.kind(self.out.references[reference as usize].node) else {
+				unreachable!()
 			};
-			let mut found = self.out.scopes[scope as usize].names.get(&name).copied();
+			let mut found = self.open[scope as usize].names.get(&name).copied();
 			if let Some(binding) = found
 				&& self.declared_in_body(scope, reference, binding)
 			{
@@ -453,30 +445,29 @@ impl<'a, X: Bind> Binder<'a, X> {
 			}
 			if found.is_none()
 				&& self.out.scopes[scope as usize].kind == ScopeKind::Function
-				&& !self.out.scopes[scope as usize].arrow
+				&& !self.open[scope as usize].arrow
 				&& Some(name) == self.arguments
 			{
 				found = Some(self.declare_in(scope, name, BindingKind::Arguments, None));
 			}
 			match found {
 				Some(binding) => self.resolve(reference, binding, scope),
-				None => up.push(reference),
-			}
-		}
-		match self.pending.last_mut() {
-			Some(parent) => parent.extend(up),
-			None => {
-				for reference in up {
-					self.out.references[reference as usize].binding = None;
+				None => {
+					self.pending[kept] = reference;
+					kept += 1;
 				}
 			}
+		}
+		self.pending.truncate(kept);
+		if self.pending_from.is_empty() {
+			self.pending.clear();
 		}
 	}
 
 	/// A reference in a function's parameters to a name the body declares: the body's binding is
 	/// not the one, the parameters see past the function.
 	fn declared_in_body(&self, scope: ScopeId, reference: ReferenceId, binding: BindingId) -> bool {
-		let body_start = self.out.scopes[scope as usize].body_start;
+		let body_start = self.open[scope as usize].body_start;
 		body_start > 0
 			&& self.ast.node(self.out.references[reference as usize].node).start < body_start
 			&& self.out.bindings[binding as usize]
@@ -486,7 +477,6 @@ impl<'a, X: Bind> Binder<'a, X> {
 
 	fn resolve(&mut self, reference: ReferenceId, binding: BindingId, at: ScopeId) {
 		self.out.references[reference as usize].binding = Some(binding);
-		self.out.bindings[binding as usize].references.push(reference);
 		let mut scope = self.out.references[reference as usize].scope;
 		while scope != at {
 			let s = &mut self.out.scopes[scope as usize];
@@ -504,11 +494,8 @@ impl<'a, X: Bind> Binder<'a, X> {
 			kind,
 			scope,
 			node,
-			references: Vec::new(),
 		});
-		let s = &mut self.out.scopes[scope as usize];
-		s.bindings.push(id);
-		s.names.insert(name, id);
+		self.open[scope as usize].names.insert(name, id);
 		// a class name declares the outer binding; the one inside its body shares the identifier
 		if let Some(node) = node {
 			self.out.of_identifier.insert_new(node, Role::Declares(id));
@@ -528,7 +515,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 				scope = self.out.scopes[scope as usize].parent.unwrap();
 			}
 		}
-		if let Some(&existing) = self.out.scopes[scope as usize].names.get(&name) {
+		if let Some(&existing) = self.open[scope as usize].names.get(&name) {
 			self.out.of_identifier.insert_new(node, Role::Declares(existing));
 			return;
 		}
@@ -546,13 +533,11 @@ impl<'a, X: Bind> Binder<'a, X> {
 			mutate,
 		});
 		self.out.of_identifier.insert(node, Role::Reference(id));
-		self.pending.last_mut().unwrap().push(id);
+		self.pending.push(id);
 	}
 
 	pub fn statements(&mut self, list: List) {
-		for &id in self.ast.list(list).iter().flatten() {
-			self.visit(id, Mode::Expression);
-		}
+		self.list(list, Mode::Expression);
 	}
 
 	fn list(&mut self, list: List, mode: Mode) {
@@ -639,7 +624,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 		}
 		self.enter(ScopeKind::Function, Some(id), arrow);
 		let scope = self.current();
-		self.out.scopes[scope as usize].body_start = self.ast.node(body).start;
+		self.open[scope as usize].body_start = self.ast.node(body).start;
 		// a TypeScript `this` parameter, first in the list, is a type position and binds nothing
 		for (i, &param) in self.ast.list(params).iter().flatten().enumerate() {
 			if i == 0 && matches!(self.kind(param), NodeKind::Identifier { name } if Some(name) == self.this_name) {
@@ -686,9 +671,6 @@ impl<'a, X: Bind> Binder<'a, X> {
 
 	fn visit_with(&mut self, id: NodeId, mode: Mode, extras: bool) {
 		use NodeKind::*;
-		if mode == Mode::Assign {
-			return self.target(id);
-		}
 		if extras {
 			self.ast.extension.bind_extras(self, id);
 		}
@@ -696,7 +678,6 @@ impl<'a, X: Bind> Binder<'a, X> {
 			Identifier { .. } => match mode {
 				Mode::Expression => self.reference(id, false, false),
 				Mode::Declare(kind) => self.declare(id, kind),
-				Mode::Assign => unreachable!(),
 			},
 			Extension(_) => self.ast.extension.bind(self, id, mode),
 			Program { body, .. } => self.statements(body),
@@ -994,9 +975,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 			_ => self.visit(id, Mode::Expression),
 		}
 	}
-}
 
-impl<X: Bind> Binder<'_, X> {
 	fn targets(&mut self, list: List) {
 		for &id in self.ast.list(list).iter().flatten() {
 			self.target(id);
@@ -1188,7 +1167,7 @@ mod tests {
 		let unresolved = scopes.references.iter().filter(|r| r.binding.is_none()).count();
 		assert_eq!(unresolved, 0);
 		let dec = scopes.bindings.iter().position(|b| ast.str(b.name) == "dec").unwrap() as BindingId;
-		let dec_reference = scopes.reference(scopes.binding(dec).references[0]);
+		let dec_reference = scopes.references.iter().find(|r| r.binding == Some(dec)).unwrap();
 		assert_eq!(scopes.scope(dec_reference.scope).kind, ScopeKind::Class);
 	}
 
@@ -1250,10 +1229,8 @@ mod tests {
 		let scopes = ast.scopes.as_ref().unwrap();
 		assert_eq!(scopes.scopes.len(), 3);
 		let a = &scopes.bindings[0];
-		assert_eq!(
-			(ast.str(a.name), a.kind, a.references.len()),
-			("a", BindingKind::Import, 2)
-		);
+		let references = scopes.references.iter().filter(|r| r.binding == Some(0)).count();
+		assert_eq!((ast.str(a.name), a.kind, references), ("a", BindingKind::Import, 2));
 		assert_eq!(scopes.scopes[1].through, [0]);
 		assert_eq!(scopes.scopes[2].through, [0]);
 		assert_eq!(scopes.scopes[2].function_depth, 2);

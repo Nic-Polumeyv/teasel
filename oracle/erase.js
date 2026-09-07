@@ -6,10 +6,9 @@
 
 import * as acorn from 'acorn';
 import { tsPlugin } from '@sveltejs/acorn-typescript';
-import { existsSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, unlinkSync, writeFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
-import { join, relative } from 'node:path';
-import { args, compare, normalize_ts, root, teasel } from './lib.js';
+import { acorn_error, args, compare, normalize_ts, plugin_rejects_valid, root, teasel, ts_jobs } from './lib.js';
 
 // the file lives on Svelte's main; a checkout on the teasel branch dropped it, so it is taken
 // from git and placed beside its imports for the duration of the run
@@ -21,24 +20,7 @@ if (temporary) unlinkSync(temporary);
 // Svelte's errors locate themselves in the current source
 const { set_source } = await import(`${root}/packages/svelte/src/compiler/state.js`);
 const Parser = acorn.Parser.extend(tsPlugin());
-const kit = process.env.KIT_DIR ?? join(process.env.HOME, 'Projects/kit');
 const { verbose, limit, filter } = args();
-const script_re = /<script((?:\s+(?:"[^"]*"|'[^']*'|[^>"'])*)?)>([\s\S]*?)<\/script>/g;
-
-function* sources(dir) {
-	for (const name of readdirSync(dir)) {
-		if (name === 'node_modules' || name === '.svelte-kit' || name.startsWith('.')) continue;
-		const path = join(dir, name);
-		let stat;
-		try {
-			stat = statSync(path);
-		} catch {
-			continue;
-		}
-		if (stat.isDirectory()) yield* sources(path);
-		else if (/\.(ts|svelte)$/.test(name)) yield path;
-	}
-}
 
 // Svelte rejects what erasure cannot express; teasel lists it instead.
 const REJECTED = new Set(['TSEnumDeclaration', 'TSModuleDeclaration', 'TSParameterProperty', 'Decorator']);
@@ -49,7 +31,7 @@ function reference(source) {
 	try {
 		ast = Parser.parse(source, { ecmaVersion: 16, sourceType: 'module', locations: true });
 	} catch (e) {
-		return { error: { message: e.message.replace(/ \(\d+:\d+\)$/, ''), pos: e.pos, loc: { line: e.loc.line, column: e.loc.column } } };
+		return acorn_error(e, source, false);
 	}
 	try {
 		set_source(source);
@@ -86,28 +68,14 @@ function normalize(node) {
 function known(expected, actual) {
 	if (!expected.error || actual.error) return false;
 	const message = expected.error.message;
-	if (message.startsWith("A 'const' initializer in an ambient context") || /^Export '.*' is not defined$/.test(message)) return true;
+	if (plugin_rejects_valid(message)) return true;
 	return message === 'typescript_invalid_feature' && JSON.stringify(actual).includes('"accessor":true');
 }
 
-const jobs = [];
-for (const dir of [join(root, 'packages'), join(kit, 'packages')]) {
-	for (const path of sources(dir)) {
-		const name = relative(dir, path);
-		if (filter && !name.includes(filter)) continue;
-		const text = readFileSync(path, 'utf8');
-		const push = (name, source) => jobs.push({ name, source, mode: 'ts-module+erase' });
-		if (path.endsWith('.ts')) push(name, text);
-		else for (const match of text.matchAll(script_re)) {
-			if (!/lang=["']?ts/.test(match[1] ?? '')) continue;
-			push(`${name}#${match.index}`, match[2]);
-		}
-	}
-}
+const { jobs } = ts_jobs('ts-module+erase', filter);
 if (jobs.length > limit) jobs.length = limit;
 
-const lines = (await teasel(jobs)).map((line, i) => {
-	if (!jobs[i]) return line;
+const lines = (await teasel(jobs)).map((line) => {
 	const answer = JSON.parse(line);
 	if (answer.error) return line;
 	if (answer.typescript.some((k) => REJECTED.has(k.type))) return JSON.stringify(rejected);

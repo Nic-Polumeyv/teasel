@@ -570,10 +570,7 @@ impl<E: Extension> Parser<'_, E> {
 		}
 		if !no_calls && self.eat(TokenKind::ParenL)? {
 			let mut errors = Some(DestructuringErrors::default());
-			let (old_yield, old_await, old_await_ident) = (self.yield_pos, self.await_pos, self.await_ident_pos);
-			self.yield_pos = 0;
-			self.await_pos = 0;
-			self.await_ident_pos = 0;
+			let old = self.take_yield_await();
 			E::paren_list_start(self);
 			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut errors)?;
 			E::paren_list_end(self);
@@ -583,23 +580,13 @@ impl<E: Extension> Parser<'_, E> {
 				if self.await_ident_pos > 0 {
 					return self.error(self.await_ident_pos, Code::AwaitAsIdentifier);
 				}
-				self.yield_pos = old_yield;
-				self.await_pos = old_await;
-				self.await_ident_pos = old_await_ident;
+				self.restore_yield_await(old);
 				let arrow = self.parse_arrow_expression(start, args, true, for_init)?;
 				return Ok((arrow, false));
 			}
 			self.check_expression_errors(&errors, true)?;
 			E::list_items(self, &args)?;
-			if old_yield != 0 {
-				self.yield_pos = old_yield;
-			}
-			if old_await != 0 {
-				self.await_pos = old_await;
-			}
-			if old_await_ident != 0 {
-				self.await_ident_pos = old_await_ident;
-			}
+			self.restore_yield_await_if_set(old);
 			let arguments = self.list(&args);
 			let node = self.add(
 				NodeKind::CallExpression {
@@ -673,34 +660,13 @@ impl<E: Extension> Parser<'_, E> {
 				}
 				Ok(id)
 			}
-			TokenKind::RegExp { pattern, flags } => {
-				self.next()?;
-				Ok(self.add(NodeKind::RegExpLiteral { pattern, flags }, start))
-			}
-			TokenKind::Number(value) => {
-				self.next()?;
-				Ok(self.add(NodeKind::NumberLiteral { value }, start))
-			}
-			TokenKind::BigInt => {
-				self.next()?;
-				Ok(self.add(NodeKind::BigIntLiteral, start))
-			}
-			TokenKind::String(value) => {
-				self.next()?;
-				Ok(self.add(NodeKind::StringLiteral { value }, start))
-			}
-			TokenKind::Keyword(Keyword::Null) => {
-				self.next()?;
-				Ok(self.add(NodeKind::NullLiteral, start))
-			}
-			TokenKind::Keyword(Keyword::True) => {
-				self.next()?;
-				Ok(self.add(NodeKind::BooleanLiteral { value: true }, start))
-			}
-			TokenKind::Keyword(Keyword::False) => {
-				self.next()?;
-				Ok(self.add(NodeKind::BooleanLiteral { value: false }, start))
-			}
+			TokenKind::RegExp { pattern, flags } => self.literal(NodeKind::RegExpLiteral { pattern, flags }, start),
+			TokenKind::Number(value) => self.literal(NodeKind::NumberLiteral { value }, start),
+			TokenKind::BigInt => self.literal(NodeKind::BigIntLiteral, start),
+			TokenKind::String(value) => self.literal(NodeKind::StringLiteral { value }, start),
+			TokenKind::Keyword(Keyword::Null) => self.literal(NodeKind::NullLiteral, start),
+			TokenKind::Keyword(Keyword::True) => self.literal(NodeKind::BooleanLiteral { value: true }, start),
+			TokenKind::Keyword(Keyword::False) => self.literal(NodeKind::BooleanLiteral { value: false }, start),
 			TokenKind::ParenL => {
 				let expr = self.parse_paren_and_distinguish_expression(can_be_arrow, for_init)?;
 				if let Some(e) = errors {
@@ -786,9 +752,16 @@ impl<E: Extension> Parser<'_, E> {
 		matches!(self.kind(id), NodeKind::Identifier { name: n } if self.str(n) == name)
 	}
 
+	/// One token that is a whole literal.
+	fn literal(&mut self, kind: NodeKind, start: u32) -> Result<NodeId> {
+		self.next()?;
+		Ok(self.add(kind, start))
+	}
+
 	fn parse_paren_and_distinguish_expression(&mut self, can_be_arrow: bool, for_init: ForInit) -> Result<NodeId> {
 		let start = self.tok.start;
 		self.next()?;
+		// not await_ident_pos: acorn keeps it across a parenthesized list
 		let (old_yield, old_await) = (self.yield_pos, self.await_pos);
 		self.yield_pos = 0;
 		self.await_pos = 0;
@@ -954,13 +927,8 @@ impl<E: Extension> Parser<'_, E> {
 		let mut has_proto = false;
 		self.next()?;
 		while !self.eat(TokenKind::BraceR)? {
-			if !first {
-				self.expect(TokenKind::Comma)?;
-				if self.after_trailing_comma(TokenKind::BraceR, false)? {
-					break;
-				}
-			} else {
-				first = false;
+			if self.list_comma(TokenKind::BraceR, &mut first, true)? {
+				break;
 			}
 			let prop = self.parse_property(is_pattern, errors)?;
 			if !is_pattern {
@@ -1217,10 +1185,7 @@ impl<E: Extension> Parser<'_, E> {
 		allow_direct_super: bool,
 		in_class: bool,
 	) -> Result<NodeId> {
-		let (old_yield, old_await, old_await_ident) = (self.yield_pos, self.await_pos, self.await_ident_pos);
-		self.yield_pos = 0;
-		self.await_pos = 0;
-		self.await_ident_pos = 0;
+		let old = self.take_yield_await();
 		self.enter_scope(
 			function_flags(is_async, generator) | SCOPE_SUPER | if allow_direct_super { SCOPE_DIRECT_SUPER } else { 0 },
 		);
@@ -1248,9 +1213,7 @@ impl<E: Extension> Parser<'_, E> {
 				self.add(NodeKind::FunctionExpression { function }, start)
 			}
 		};
-		self.yield_pos = old_yield;
-		self.await_pos = old_await;
-		self.await_ident_pos = old_await_ident;
+		self.restore_yield_await(old);
 		E::function_end(self, node)?;
 		Ok(node)
 	}
@@ -1262,18 +1225,13 @@ impl<E: Extension> Parser<'_, E> {
 		is_async: bool,
 		for_init: ForInit,
 	) -> Result<NodeId> {
-		let (old_yield, old_await, old_await_ident) = (self.yield_pos, self.await_pos, self.await_ident_pos);
+		let old = self.take_yield_await();
 		self.enter_scope(function_flags(is_async, false) | SCOPE_ARROW);
 		E::function_start(self, FunctionKind::Arrow)?;
-		self.yield_pos = 0;
-		self.await_pos = 0;
-		self.await_ident_pos = 0;
 		let params = self.make_patterns(params, true)?;
 		let params = self.list(&params);
 		let (body, expression) = self.parse_function_body(start, None, params, true, false, for_init)?;
-		self.yield_pos = old_yield;
-		self.await_pos = old_await;
-		self.await_ident_pos = old_await_ident;
+		self.restore_yield_await(old);
 		let node = self.add(
 			NodeKind::ArrowFunctionExpression {
 				params,
@@ -1346,7 +1304,7 @@ impl<E: Extension> Parser<'_, E> {
 	pub(crate) fn check_params(&mut self, params: List, allow_duplicates: bool) -> Result<()> {
 		let mut names = if allow_duplicates { None } else { Some(Vec::new()) };
 		for i in 0..params.len {
-			let param = self.ast.lists[(params.start + i) as usize].unwrap();
+			let param = self.nth(params, i).unwrap();
 			self.check_lval_inner_pattern(param, Binding::Var, &mut names)?;
 		}
 		Ok(())
@@ -1362,13 +1320,8 @@ impl<E: Extension> Parser<'_, E> {
 		let mut elements = Vec::new();
 		let mut first = true;
 		while !self.eat(close)? {
-			if !first {
-				self.expect(TokenKind::Comma)?;
-				if allow_trailing_comma && self.after_trailing_comma(close, false)? {
-					break;
-				}
-			} else {
-				first = false;
+			if self.list_comma(close, &mut first, allow_trailing_comma)? {
+				break;
 			}
 			let element = if allow_empty && self.is(TokenKind::Comma) {
 				None
@@ -1417,20 +1370,16 @@ impl<E: Extension> Parser<'_, E> {
 			return self.error(start, Code::ArgumentsInFieldInitializer);
 		}
 		if flags & (word::ARGUMENTS | word::AWAIT) != 0 && self.in_class_static_block() {
-			return self.error_with(
-				start,
-				Code::InvalidInStaticBlock,
-				format!("Cannot use {name} in class static initialization block"),
-			);
+			return self.error_arg(start, Code::InvalidInStaticBlock, name);
 		}
 		if flags & word::KEYWORD != 0 {
-			return self.error_with(start, Code::UnexpectedKeyword, format!("Unexpected keyword '{name}'"));
+			return self.error_arg(start, Code::UnexpectedKeyword, name);
 		}
 		if self.is_reserved_word(flags) {
 			if !self.in_async() && name == "await" {
 				return self.error(start, Code::AwaitOutsideAsync);
 			}
-			return self.error_with(start, Code::ReservedWord, format!("The keyword '{name}' is reserved"));
+			return self.error_arg(start, Code::ReservedWord, name);
 		}
 		Ok(())
 	}
@@ -1474,14 +1423,7 @@ impl<E: Extension> Parser<'_, E> {
 		match self.private_names.last_mut() {
 			Some(scope) => scope.used.push((name, start)),
 			None => {
-				return self.error_with(
-					start,
-					Code::UndeclaredPrivateName,
-					format!(
-						"Private field '#{}' must be declared in an enclosing class",
-						self.str(name)
-					),
-				);
+				return self.error_name(start, Code::UndeclaredPrivateName, name);
 			}
 		}
 		Ok(id)
@@ -1576,7 +1518,7 @@ fn skip_space(text: &str, mut pos: u32) -> u32 {
 				}
 			}
 			Some(&b) if b < 0x80 => {
-				if b.is_ascii_whitespace() {
+				if crate::lexer::scan::class(b) & (crate::lexer::scan::SPACE | crate::lexer::scan::NEWLINE) != 0 {
 					pos += 1;
 				} else {
 					return pos;
@@ -1633,7 +1575,7 @@ impl<E: Extension> Parser<'_, E> {
 				self.ast.node_mut(id).kind = NodeKind::ObjectPattern { properties };
 				self.check_pattern_errors(errors, true)?;
 				for i in 0..properties.len {
-					let prop = self.ast.lists[(properties.start + i) as usize].unwrap();
+					let prop = self.nth(properties, i).unwrap();
 					self.make_pattern(prop, is_binding, &mut None)?;
 					if let NodeKind::RestElement { argument } = self.kind(prop)
 						&& matches!(
@@ -1863,14 +1805,14 @@ impl<E: Extension> Parser<'_, E> {
 		match self.kind(id) {
 			NodeKind::ObjectPattern { properties } => {
 				for i in 0..properties.len {
-					let prop = self.ast.lists[(properties.start + i) as usize].unwrap();
+					let prop = self.nth(properties, i).unwrap();
 					self.check_lval_inner_pattern(prop, binding, clashes)?;
 				}
 				Ok(())
 			}
 			NodeKind::ArrayPattern { elements } => {
 				for i in 0..elements.len {
-					if let Some(element) = self.ast.lists[(elements.start + i) as usize] {
+					if let Some(element) = self.nth(elements, i) {
 						self.check_lval_inner_pattern(element, binding, clashes)?;
 					}
 				}

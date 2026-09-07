@@ -1,16 +1,6 @@
 // Turns the addon's shape-coded stream into ESTree objects: what `JSON.parse` did, without the
 // text. The layout is `teasel::estree::Binary`, the kinds `teasel::estree::kind`.
 const HEADER = 7;
-const NODE = 0;
-const INT = 1;
-const FLOAT = 2;
-const BOOL = 3;
-const CONST = 4;
-const STR = 5;
-const SLICE = 6;
-const LOC = 7;
-const NODES = 8;
-const INTS = 9;
 // in a node's place
 const NULL = 0;
 const END = 1;
@@ -70,34 +60,6 @@ function ints() {
 	return list;
 }
 
-/** @param {number} kind */
-function read(kind) {
-	switch (kind) {
-		case NODE:
-			return node();
-		case INT:
-			return S.w[S.at++];
-		case FLOAT:
-			return /** @type {Float64Array} */ (S.floats)[S.w[S.at++]];
-		case BOOL:
-			return S.w[S.at++] === 1;
-		case CONST:
-			return S.constants[S.w[S.at++]];
-		case STR:
-			return S.strings[S.w[S.at++]];
-		case SLICE:
-			return S.source.slice(S.w[S.at++], S.w[S.at++]);
-		case LOC:
-			return { start: { line: S.w[S.at++], column: S.w[S.at++] }, end: { line: S.w[S.at++], column: S.w[S.at++] } };
-		case NODES:
-			return nodes();
-		case INTS:
-			return ints();
-		default:
-			throw new Error(`bad kind ${kind}`);
-	}
-}
-
 /**
  * @param {any} n
  * @param {number | undefined} scope
@@ -128,7 +90,9 @@ function file(n, scope, declares, binding, write, mutate) {
 
 /** @typedef {{ type: string | null, keys: string[], kinds: number[] }} Shape */
 
+// one reader per kind, as source for the generated builders and as a function for the interpreter
 const READ = ['node()', 'S.w[S.at++]', 'S.floats[S.w[S.at++]]', 'S.w[S.at++] === 1', 'S.constants[S.w[S.at++]]', 'S.strings[S.w[S.at++]]', 'S.source.slice(S.w[S.at++], S.w[S.at++])', '{ start: { line: S.w[S.at++], column: S.w[S.at++] }, end: { line: S.w[S.at++], column: S.w[S.at++] } }', 'nodes()', 'ints()'];
+const READERS = [node, () => S.w[S.at++], () => /** @type {Float64Array} */ (S.floats)[S.w[S.at++]], () => S.w[S.at++] === 1, () => S.constants[S.w[S.at++]], () => S.strings[S.w[S.at++]], () => S.source.slice(S.w[S.at++], S.w[S.at++]), () => ({ start: { line: S.w[S.at++], column: S.w[S.at++] }, end: { line: S.w[S.at++], column: S.w[S.at++] } }), nodes, ints];
 
 /**
  * One object literal per shape: V8 allocates it in one hidden class. Facts, and everything the
@@ -162,7 +126,7 @@ function interpret({ type, keys, kinds }, link) {
 		let scope, declares, binding, write = false, mutate = false;
 		for (let i = 0; i < keys.length; i++) {
 			const key = keys[i];
-			const value = read(kinds[i]);
+			const value = READERS[kinds[i]]();
 			if (!facts || !FACTS.has(key)) n[key] = value;
 			else if (key === 'scope') scope = value;
 			else if (key === 'declares') declares = value;
@@ -218,7 +182,7 @@ function table_of(engine, known, known_shapes) {
 /** @param {ReturnType<typeof table_of>} table @param {boolean} link */
 function builders(table, link) {
 	const list = link ? table.linked : table.plain;
-	if (list.length === 0) list.push(() => null, () => []);
+	if (list.length === 0) list.push(null, null);
 	while (list.length < table.shapes.length) list.push(compile(/** @type {Shape} */ (table.shapes[list.length]), link));
 	return list;
 }

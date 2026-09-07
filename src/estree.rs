@@ -1,7 +1,7 @@
 //! Serializes an `Ast` to ESTree, matching acorn's output shape: as JSON text, or as a token
 //! stream a binding hands to JavaScript without a text round trip.
 
-use crate::ast::{Ast, Function, List, MethodKind, NodeId, NodeKind, PropertyKind};
+use crate::ast::{Ast, Class, Function, List, MethodKind, NodeId, NodeKind, PropertyKind};
 use crate::interner::{FastMap, Interner, StrId};
 use crate::scopes::Role;
 use std::fmt::Write;
@@ -562,14 +562,6 @@ impl Sink for Binary {
 	}
 }
 
-/// Serializes a node; `locations` adds acorn's `loc` to every node.
-pub fn to_json<X: Emit>(ast: &Ast<X>, root: NodeId, source: &str, locations: bool) -> String {
-	let positions = Positions::new(source, locations);
-	let mut w = Writer::new(ast, source, &positions, Json::default());
-	w.node(root);
-	w.sink.finish()
-}
-
 /// Serializes a program into `sink`; `comments` adds every comment to it as `comments`.
 pub fn program<X: Emit, S: Sink>(
 	ast: &Ast<X>,
@@ -917,20 +909,12 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		self.sink.end();
 	}
 
-	/// Every comment read, in source order.
-	fn all_comments(&mut self) {
-		let all: Vec<u32> = (0..self.ast.comments.len() as u32).collect();
-		self.key("comments");
-		self.comment_list(&all);
-	}
-
-	/// Closes the object around a node parsed at an offset.
-	fn tail(&mut self, end: u32) {
-		self.key("end");
-		let end = self.positions.offset(&mut self.cursor, end);
-		self.sink.int(end);
+	/// What the output's switches add after a root: every comment, what erasure kept, the scopes.
+	fn trailers(&mut self) {
 		if self.output.comments {
-			self.all_comments();
+			let all: Vec<u32> = (0..self.ast.comments.len() as u32).collect();
+			self.key("comments");
+			self.comment_list(&all);
 		}
 		if self.output.erase {
 			self.all_kept();
@@ -938,6 +922,14 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		if self.output.scopes {
 			self.all_scopes();
 		}
+	}
+
+	/// Closes the object around a node parsed at an offset.
+	fn tail(&mut self, end: u32) {
+		self.key("end");
+		let end = self.positions.offset(&mut self.cursor, end);
+		self.sink.int(end);
+		self.trailers();
 		self.sink.end();
 	}
 
@@ -1069,6 +1061,12 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		self.slice(node.start, node.end);
 	}
 
+	fn class(&mut self, class: Class) {
+		self.opt("id", class.id);
+		self.opt("superClass", class.super_class);
+		self.field("body", class.body);
+	}
+
 	fn function(&mut self, f: Function, expression: bool) {
 		self.opt("id", f.id);
 		self.bool("expression", expression);
@@ -1086,14 +1084,8 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 				self.begin("Program", id);
 				self.list("body", body);
 				self.string("sourceType", if module { "module" } else { "script" });
-				if self.program_tail && self.output.comments {
-					self.all_comments();
-				}
-				if self.program_tail && self.output.erase {
-					self.all_kept();
-				}
-				if self.program_tail && self.output.scopes {
-					self.all_scopes();
+				if self.program_tail {
+					self.trailers();
 				}
 			}
 			Identifier { name } => {
@@ -1317,18 +1309,13 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 				self.begin("FunctionDeclaration", id);
 				self.function(function, false);
 			}
-			ClassExpression { class } | ClassDeclaration { class } => {
-				self.begin(
-					if matches!(kind, ClassExpression { .. }) {
-						"ClassExpression"
-					} else {
-						"ClassDeclaration"
-					},
-					id,
-				);
-				self.opt("id", class.id);
-				self.opt("superClass", class.super_class);
-				self.field("body", class.body);
+			ClassExpression { class } => {
+				self.begin("ClassExpression", id);
+				self.class(class);
+			}
+			ClassDeclaration { class } => {
+				self.begin("ClassDeclaration", id);
+				self.class(class);
 			}
 			ClassBody { body } => {
 				self.begin("ClassBody", id);
@@ -1598,7 +1585,7 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 	}
 }
 
-fn push_int(out: &mut String, mut value: u32) {
+pub(crate) fn push_int(out: &mut String, mut value: u32) {
 	const DIGITS: &[u8; 200] = b"0001020304050607080910111213141516171819\
 2021222324252627282930313233343536373839\
 4041424344454647484950515253545556575859\

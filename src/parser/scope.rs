@@ -184,11 +184,7 @@ impl<E: Extension> Parser<'_, E> {
 			}
 		}
 		if redeclared {
-			return self.error_with(
-				pos,
-				Code::Redeclaration,
-				format!("Identifier '{}' has already been declared", self.str(name)),
-			);
+			return self.error_name(pos, Code::Redeclaration, name);
 		}
 		Ok(())
 	}

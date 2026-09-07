@@ -462,9 +462,10 @@ impl Keyword {
 }
 
 impl Data {
-	fn index(ast: &Ast<Self>, id: NodeId) -> Option<u32> {
+	/// The TypeScript node `id` is, if it is one.
+	pub(crate) fn ts_of(&self, ast: &Ast<Self>, id: NodeId) -> Option<TsKind> {
 		match ast.node(id).kind {
-			NodeKind::Extension(index) => Some(index),
+			NodeKind::Extension(index) => Some(self.kind(index)),
 			_ => None,
 		}
 	}
@@ -486,8 +487,8 @@ impl Data {
 impl Bind for Data {
 	fn bind(&self, b: &mut Binder<Self>, id: NodeId, mode: Mode) {
 		use TsKind::*;
-		let Some(index) = Self::index(b.ast(), id) else { return };
-		match self.kind(index) {
+		let Some(kind) = self.ts_of(b.ast(), id) else { return };
+		match kind {
 			AsExpression { expression, .. }
 			| SatisfiesExpression { expression, .. }
 			| NonNullExpression { expression }
@@ -501,7 +502,7 @@ impl Bind for Data {
 				b.enter_owned(ScopeKind::Enum, id, b.declared_by(name));
 				let members: Vec<_> = b.ast().list(members).iter().flatten().copied().collect();
 				for &member in &members {
-					if let Some(EnumMember { id: name, .. }) = Self::index(b.ast(), member).map(|i| self.kind(i)) {
+					if let Some(EnumMember { id: name, .. }) = self.ts_of(b.ast(), member) {
 						b.declare(name, BindingKind::EnumMember);
 					}
 				}
@@ -509,7 +510,7 @@ impl Bind for Data {
 					if let Some(EnumMember {
 						initializer: Some(initializer),
 						..
-					}) = Self::index(b.ast(), member).map(|i| self.kind(i))
+					}) = self.ts_of(b.ast(), member)
 					{
 						b.visit(initializer, Mode::Expression);
 					}
@@ -558,7 +559,7 @@ impl Bind for Data {
 
 	fn wrapped(&self, ast: &Ast<Self>, id: NodeId) -> Option<NodeId> {
 		use TsKind::*;
-		match self.kind(Self::index(ast, id)?) {
+		match self.ts_of(ast, id)? {
 			AsExpression { expression, .. }
 			| SatisfiesExpression { expression, .. }
 			| NonNullExpression { expression }
@@ -572,11 +573,7 @@ impl Bind for Data {
 
 impl Walk for Data {
 	fn children(&self, ast: &Ast<Self>, id: NodeId, out: &mut Vec<NodeId>) {
-		let list = |list: Option<List>, out: &mut Vec<NodeId>| {
-			if let Some(list) = list {
-				out.extend(ast.list(list).iter().flatten());
-			}
-		};
+		let list = |list: List, out: &mut Vec<NodeId>| out.extend(ast.list(list).iter().flatten());
 		let extras = self.extras(id).copied().unwrap_or_default();
 		match ast.node(id).kind {
 			NodeKind::Extension(index) => {
@@ -604,9 +601,7 @@ impl Walk for Data {
 						out.extend(type_arguments);
 					}
 					QualifiedName { left, right } => out.extend([left, right]),
-					TypeParameterInstantiation { params } | TypeParameterDeclaration { params } => {
-						list(Some(params), out)
-					}
+					TypeParameterInstantiation { params } | TypeParameterDeclaration { params } => list(params, out),
 					TypeParameter {
 						constraint, default, ..
 					} => {
@@ -625,10 +620,10 @@ impl Walk for Data {
 						..
 					} => {
 						out.extend(type_parameters);
-						list(Some(parameters), out);
+						list(parameters, out);
 						out.push(type_annotation);
 					}
-					UnionType { types } | IntersectionType { types } => list(Some(types), out),
+					UnionType { types } | IntersectionType { types } => list(types, out),
 					InferType { type_parameter } => out.push(type_parameter),
 					LiteralType { literal } => out.push(literal),
 					ImportType {
@@ -657,11 +652,11 @@ impl Walk for Data {
 						out.extend(name_type);
 						out.extend(type_annotation);
 					}
-					TypeLiteral { members } => list(Some(members), out),
+					TypeLiteral { members } => list(members, out),
 					NamedTupleMember {
 						label, element_type, ..
 					} => out.extend([label, element_type]),
-					TupleType { element_types } => list(Some(element_types), out),
+					TupleType { element_types } => list(element_types, out),
 					ArrayType { element_type } => out.push(element_type),
 					IndexedAccessType {
 						object_type,
@@ -677,7 +672,7 @@ impl Walk for Data {
 						parameters,
 						type_annotation,
 					} => {
-						list(Some(parameters), out);
+						list(parameters, out);
 						out.extend(type_annotation);
 					}
 					CallSignatureDeclaration {
@@ -691,7 +686,7 @@ impl Walk for Data {
 						type_annotation,
 					} => {
 						out.extend(type_parameters);
-						list(Some(parameters), out);
+						list(parameters, out);
 						out.extend(type_annotation);
 					}
 					MethodSignature {
@@ -703,7 +698,7 @@ impl Walk for Data {
 					} => {
 						out.push(key);
 						out.extend(type_parameters);
-						list(Some(parameters), out);
+						list(parameters, out);
 						out.extend(type_annotation);
 					}
 					PropertySignature {
@@ -720,10 +715,12 @@ impl Walk for Data {
 					} => {
 						out.push(id);
 						out.extend(type_parameters);
-						list(extends, out);
+						if let Some(extends) = extends {
+							list(extends, out);
+						}
 						out.push(body);
 					}
-					InterfaceBody { body } | ModuleBlock { body } => list(Some(body), out),
+					InterfaceBody { body } | ModuleBlock { body } => list(body, out),
 					ExpressionWithTypeArguments {
 						expression,
 						type_arguments,
@@ -733,7 +730,7 @@ impl Walk for Data {
 					}
 					EnumDeclaration { id, members, .. } => {
 						out.push(id);
-						list(Some(members), out);
+						list(members, out);
 					}
 					EnumMember { id, initializer } => {
 						out.push(id);
@@ -763,11 +760,11 @@ impl Walk for Data {
 					DeclareFunction { id, params, .. } => {
 						out.extend(id);
 						out.extend(extras.type_parameters);
-						list(Some(params), out);
+						list(params, out);
 						out.extend(extras.return_type);
 					}
 					DeclareMethod { params, .. } => {
-						list(Some(params), out);
+						list(params, out);
 						out.extend(extras.return_type);
 					}
 					AsExpression {
@@ -800,8 +797,9 @@ impl Walk for Data {
 				out.extend(extras.type_parameters);
 				out.extend(extras.type_arguments);
 				out.extend(extras.super_type_arguments);
-				list(extras.implements, out);
-				list(extras.decorators, out);
+				for list_of in [extras.implements, extras.decorators].into_iter().flatten() {
+					list(list_of, out);
+				}
 			}
 		}
 	}

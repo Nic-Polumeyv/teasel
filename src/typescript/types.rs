@@ -71,6 +71,14 @@ impl Parser<'_, TypeScript> {
 		result
 	}
 
+	/// The same for an `f` that only reads tokens.
+	pub(super) fn peek_tokens<T>(&mut self, f: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
+		let snapshot = self.token_snapshot();
+		let result = f(self);
+		self.restore_tokens(snapshot);
+		result
+	}
+
 	/// `next(); parse_type()` in a type context: the caller's current token opens the type.
 	pub(super) fn next_then_parse_type(&mut self) -> Result<NodeId> {
 		self.in_type(|p| {
@@ -85,10 +93,6 @@ impl Parser<'_, TypeScript> {
 		} else {
 			Ok(None)
 		}
-	}
-
-	fn eat_keyword_then_parse_type(&mut self, keyword: Keyword) -> Result<Option<NodeId>> {
-		self.eat_then_parse_type(TokenKind::Keyword(keyword))
 	}
 
 	// Lists
@@ -119,7 +123,7 @@ impl Parser<'_, TypeScript> {
 			if self.is_list_terminator(kind) {
 				break;
 			}
-			self.expect(TokenKind::Comma)?;
+			return self.unexpected();
 		}
 		Ok(result)
 	}
@@ -166,9 +170,9 @@ impl Parser<'_, TypeScript> {
 			p.expect(return_token)?;
 			let start = p.tok.start;
 			let asserts = p.try_parse(|p| p.parse_type_predicate_asserts())?.unwrap_or(false);
-			if asserts && p.is_keyword(Keyword::This) {
+			let predicate = if asserts && p.is_keyword(Keyword::This) {
 				let predicate = p.parse_this_type_or_this_type_predicate()?;
-				let predicate = match p.ts_kind(predicate) {
+				match p.ts_kind(predicate) {
 					Some(TsKind::ThisType) => p.ts(
 						TsKind::TypePredicate {
 							parameter_name: predicate,
@@ -184,48 +188,27 @@ impl Parser<'_, TypeScript> {
 						}
 						predicate
 					}
-				};
-				return Ok(p.ts(
-					TsKind::TypeAnnotation {
-						type_annotation: predicate,
-					},
-					annotation_start,
-				));
-			}
-			let variable = if p.is_ident() {
-				p.try_parse(|p| p.parse_type_predicate_prefix())?
-			} else {
-				None
-			};
-			let Some(parameter_name) = variable else {
-				if !asserts {
-					return p.parse_type_annotation(false, Some(annotation_start));
 				}
-				let parameter_name = p.parse_ident(false)?;
-				let predicate = p.ts(
+			} else {
+				let variable = if p.is_ident() {
+					p.try_parse(|p| p.parse_type_predicate_prefix())?
+				} else {
+					None
+				};
+				let (parameter_name, type_annotation) = match variable {
+					Some(name) => (name, Some(p.parse_type_annotation(false, None)?)),
+					None if asserts => (p.parse_ident(false)?, None),
+					None => return p.parse_type_annotation(false, Some(annotation_start)),
+				};
+				p.ts(
 					TsKind::TypePredicate {
 						parameter_name,
-						type_annotation: None,
+						type_annotation,
 						asserts,
 					},
 					start,
-				);
-				return Ok(p.ts(
-					TsKind::TypeAnnotation {
-						type_annotation: predicate,
-					},
-					annotation_start,
-				));
+				)
 			};
-			let type_annotation = p.parse_type_annotation(false, None)?;
-			let predicate = p.ts(
-				TsKind::TypePredicate {
-					parameter_name,
-					type_annotation: Some(type_annotation),
-					asserts,
-				},
-				start,
-			);
 			Ok(p.ts(
 				TsKind::TypeAnnotation {
 					type_annotation: predicate,
@@ -584,7 +567,7 @@ impl Parser<'_, TypeScript> {
 			TokenKind::Keyword(Keyword::Typeof) => self.parse_type_query(),
 			TokenKind::Keyword(Keyword::Import) => self.parse_import_type(),
 			TokenKind::BraceL => {
-				if self.lookahead(|p| p.is_start_of_mapped_type())? {
+				if self.peek_tokens(|p| p.is_start_of_mapped_type())? {
 					self.parse_mapped_type()
 				} else {
 					self.parse_type_literal()
@@ -881,7 +864,7 @@ impl Parser<'_, TypeScript> {
 		let error = Some((Code::TypeParameterModifier, error));
 		let parsed = self.parse_modifiers(allowed, disallowed, false, error)?;
 		let name = self.parse_type_parameter_name()?;
-		let constraint = self.eat_keyword_then_parse_type(Keyword::Extends)?;
+		let constraint = self.eat_then_parse_type(TokenKind::Keyword(Keyword::Extends))?;
 		let default = self.eat_then_parse_type(TokenKind::Eq)?;
 		Ok(self.ts(
 			TsKind::TypeParameter {
@@ -1121,7 +1104,7 @@ impl Parser<'_, TypeScript> {
 	}
 
 	pub(super) fn try_parse_index_signature(&mut self, start: u32) -> Result<Option<NodeId>> {
-		if !self.is(TokenKind::BracketL) || !self.lookahead(|p| p.is_unambiguously_index_signature())? {
+		if !self.is(TokenKind::BracketL) || !self.peek_tokens(|p| p.is_unambiguously_index_signature())? {
 			return Ok(None);
 		}
 		self.expect(TokenKind::BracketL)?;
@@ -1177,7 +1160,7 @@ impl Parser<'_, TypeScript> {
 			TokenKind::Keyword(Keyword::Const) => "const",
 			_ => return Ok(None),
 		};
-		let Some(&modifier) = MODIFIERS.iter().find(|m| **m == word) else {
+		let Some(&modifier) = super::MODIFIERS.iter().find(|m| **m == word) else {
 			return Ok(None);
 		};
 		if !allowed.contains(&modifier) && !disallowed.contains(&modifier) {
@@ -1236,38 +1219,27 @@ impl Parser<'_, TypeScript> {
 			}
 			Ok(())
 		};
+		let accessibility = matches!(modifier, "public" | "private" | "protected");
+		if accessibility && seen.extras.accessibility.is_some() {
+			return self.error(start, Code::DuplicateAccessibility);
+		}
+		if !accessibility && seen.has(modifier) {
+			return self.error_arg(start, Code::DuplicateModifier, modifier);
+		}
 		match modifier {
 			"public" | "private" | "protected" => {
-				if seen.extras.accessibility.is_some() {
-					return self.error(start, Code::DuplicateAccessibility);
-				}
 				for after in ["override", "static", "readonly", "accessor"] {
 					order(modifier, after)?;
 				}
 			}
-			"in" | "out" => {
-				if seen.has(modifier) {
-					return self.error_with(start, Code::DuplicateModifier, Code::DuplicateModifier.with(modifier));
-				}
-				order("in", "out")?;
-			}
+			"in" | "out" => order("in", "out")?,
 			"accessor" => {
-				if seen.has(modifier) {
-					return self.error_with(start, Code::DuplicateModifier, Code::DuplicateModifier.with(modifier));
-				}
 				for other in ["readonly", "static", "override"] {
 					conflict("accessor", other)?;
 				}
 			}
-			"const" => {
-				if seen.has(modifier) {
-					return self.error_with(start, Code::DuplicateModifier, Code::DuplicateModifier.with(modifier));
-				}
-			}
+			"const" => {}
 			_ => {
-				if seen.has(modifier) {
-					return self.error_with(start, Code::DuplicateModifier, Code::DuplicateModifier.with(modifier));
-				}
 				order("static", "readonly")?;
 				order("static", "override")?;
 				order("override", "readonly")?;
@@ -1279,18 +1251,3 @@ impl Parser<'_, TypeScript> {
 		Ok(())
 	}
 }
-
-const MODIFIERS: &[&str] = &[
-	"declare",
-	"private",
-	"public",
-	"protected",
-	"accessor",
-	"override",
-	"abstract",
-	"readonly",
-	"static",
-	"in",
-	"out",
-	"const",
-];

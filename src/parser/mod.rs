@@ -605,15 +605,45 @@ impl<'a, E: Extension> Parser<'a, E> {
 	}
 
 	pub(crate) fn peek_token(&mut self) -> Result<Token> {
-		let escaped = self.lexer.escaped();
-		let token = self.lexer.peek_token();
-		self.lexer.set_escaped(escaped);
-		token
+		self.lexer.peek_token()
 	}
 
-	#[allow(dead_code)]
-	fn peek_token_raw(&mut self) -> Result<Token> {
-		self.lexer.peek_token()
+	/// Between the items of a comma list: the comma after the first item, and whether a trailing
+	/// comma closed the list.
+	pub(crate) fn list_comma(&mut self, close: TokenKind, first: &mut bool, allow_trailing: bool) -> Result<bool> {
+		if std::mem::take(first) {
+			return Ok(false);
+		}
+		self.expect(TokenKind::Comma)?;
+		Ok(allow_trailing && self.after_trailing_comma(close, false)?)
+	}
+
+	/// Clears the pending yield and await positions for a nested parameter list.
+	pub(crate) fn take_yield_await(&mut self) -> (u32, u32, u32) {
+		let old = (self.yield_pos, self.await_pos, self.await_ident_pos);
+		(self.yield_pos, self.await_pos, self.await_ident_pos) = (0, 0, 0);
+		old
+	}
+
+	pub(crate) fn restore_yield_await(&mut self, (yield_pos, await_pos, await_ident_pos): (u32, u32, u32)) {
+		(self.yield_pos, self.await_pos, self.await_ident_pos) = (yield_pos, await_pos, await_ident_pos);
+	}
+
+	/// Restores what was set before; what the nested list found stays otherwise.
+	pub(crate) fn restore_yield_await_if_set(&mut self, (yield_pos, await_pos, await_ident_pos): (u32, u32, u32)) {
+		if yield_pos != 0 {
+			self.yield_pos = yield_pos;
+		}
+		if await_pos != 0 {
+			self.await_pos = await_pos;
+		}
+		if await_ident_pos != 0 {
+			self.await_ident_pos = await_ident_pos;
+		}
+	}
+
+	pub(crate) fn nth(&self, list: List, i: u32) -> Option<NodeId> {
+		self.ast.nth(list, i)
 	}
 
 	/// Re-reads the current token, after the lexer's mode changed under it.
@@ -654,6 +684,16 @@ impl<'a, E: Extension> Parser<'a, E> {
 	pub(crate) fn error_with<T>(&self, pos: u32, code: Code, message: impl Into<String>) -> Result<T> {
 		let end = if pos == self.tok.start { self.tok.end } else { pos };
 		Err(Box::new(SyntaxError::with(pos, code, message).to(end)))
+	}
+
+	/// The error for a code whose message has one placeholder.
+	pub(crate) fn error_arg<T>(&self, pos: u32, code: Code, arg: impl std::fmt::Display) -> Result<T> {
+		self.error_with(pos, code, code.with(&arg.to_string()))
+	}
+
+	/// The same with the name of an interned string.
+	pub(crate) fn error_name<T>(&self, pos: u32, code: Code, name: StrId) -> Result<T> {
+		self.error_arg(pos, code, self.str(name))
 	}
 
 	/// The current token is not what the grammar allows; at the end of the input that is its own error.
@@ -744,11 +784,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 		if self.tok.escaped
 			&& let TokenKind::Keyword(keyword) = self.tok.kind
 		{
-			return self.error_with(
-				self.tok.start,
-				Code::EscapeInKeyword,
-				format!("Escape sequence in keyword {}", keyword.as_str()),
-			);
+			return self.error_arg(self.tok.start, Code::EscapeInKeyword, keyword.as_str());
 		}
 		self.next_liberal()
 	}
@@ -870,22 +906,15 @@ impl<'a, E: Extension> Parser<'a, E> {
 		if let Some(pos) = errors.trailing_comma {
 			return self.error(pos, Code::CommaAfterRest);
 		}
-		let parens = if is_assign {
-			errors.parenthesized_assign
+		let (parens, code) = if is_assign {
+			(errors.parenthesized_assign, Code::InvalidAssignmentTarget)
 		} else {
-			errors.parenthesized_bind
+			(errors.parenthesized_bind, Code::ParenthesizedPattern)
 		};
-		if let Some(pos) = parens {
-			return self.error(
-				pos,
-				if is_assign {
-					Code::InvalidAssignmentTarget
-				} else {
-					Code::ParenthesizedPattern
-				},
-			);
+		match parens {
+			Some(pos) => self.error(pos, code),
+			None => Ok(()),
 		}
-		Ok(())
 	}
 
 	pub(crate) fn check_yield_await_in_default_params(&self) -> Result<()> {

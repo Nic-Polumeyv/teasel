@@ -29,7 +29,7 @@ export function bits(options) {
 }
 
 // `json::Entry` by index
-const ENTRY = { program: 0, expression: 1, pattern: 2, params: 3, statement: 4 };
+export const ENTRY = { program: 0, expression: 1, pattern: 2, params: 3, statement: 4 };
 
 /**
  * @typedef {ArrayBuffer | Uint32Array | string} Answer

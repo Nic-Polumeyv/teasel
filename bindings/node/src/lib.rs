@@ -1,5 +1,3 @@
-// the view's finalizer owns the buffer, so an outgrown one lives while JavaScript holds its view
-// the view spans the whole buffer: past an answer's words it shows the previous answer's
 use std::cell::Cell;
 
 use napi::bindgen_prelude::{Either, FromNapiValue, ToNapiValue, Uint8Array, Uint8ArraySlice, Uint32Array};
@@ -14,22 +12,16 @@ thread_local! {
 
 type Answer = napi::Result<Either<Uint32Array, String>>;
 
-fn request(bits: u32) -> Request {
-	let mut request = Request::new(Entry::Program, 0);
-	request.set_bits(bits);
-	request
-}
-
 // valid UTF-8 is parsed in place; anything else is made valid in a copy
 fn prepared(source: &[u8], bits: u32) -> Prepared<'_> {
 	match std::str::from_utf8(source) {
-		Ok(text) => Prepared::borrowed(text, request(bits)),
+		Ok(text) => Prepared::borrowed(text, Request::from_bits(bits)),
 		Err(_) => owned(source, bits),
 	}
 }
 
 fn owned(source: &[u8], bits: u32) -> Prepared<'static> {
-	Prepared::new(String::from_utf8_lossy(source).into_owned(), request(bits))
+	Prepared::from_bytes(source.to_vec(), Request::from_bits(bits))
 }
 
 fn status(status: sys::napi_status, what: &str) -> napi::Result<()> {
@@ -40,6 +32,8 @@ fn status(status: sys::napi_status, what: &str) -> napi::Result<()> {
 	}
 }
 
+// the view's finalizer owns the buffer, so an outgrown one lives while JavaScript holds its view
+// the view spans the whole buffer: past an answer's words it shows the previous answer's
 fn answer(env: &Env, result: Result<Vec<u32>, String>) -> Answer {
 	let words = match result {
 		Ok(words) => words,

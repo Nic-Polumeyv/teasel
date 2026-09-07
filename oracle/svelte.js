@@ -6,9 +6,7 @@
 //
 //   SVELTE_DIR=~/Projects/svelte bun svelte.js [--verbose] [--limit N] [filter]
 
-import { readFileSync } from 'node:fs';
-import { relative } from 'node:path';
-import { acorn_statement, args, compare, corpus, files, is_typescript, root, teasel } from './lib.js';
+import { acorn_statement, args, capped, compare, components, root, teasel, walk } from './lib.js';
 
 const { parse } = await import(`${root}/packages/svelte/src/compiler/index.js`);
 const { verbose, limit, filter } = args();
@@ -55,35 +53,10 @@ function fix_loc(node, position) {
 	return out;
 }
 
-function* walk(node) {
-	if (Array.isArray(node)) {
-		for (const item of node) yield* walk(item);
-		return;
-	}
-	if (!node || typeof node !== 'object') return;
-	yield node;
-	for (const [k, v] of Object.entries(node)) {
-		if (k === 'loc' || k === 'metadata') continue;
-		yield* walk(v);
-	}
-}
-
 const jobs = [];
-let skipped_files = 0;
-for (const path of files(corpus, /\.svelte$/)) {
-	const name = relative(corpus, path);
-	if (filter && !name.includes(filter)) continue;
-	const source = readFileSync(path, 'utf8');
-	const ts = is_typescript(source);
+const { each, stats } = await components(filter);
+for (const { name, source, ast, ts, byte } of each) {
 	const prefix = ts ? 'ts-' : '';
-	let ast;
-	try {
-		ast = parse(source, { modern: true });
-	} catch {
-		skipped_files++;
-		continue;
-	}
-	const byte = (utf16) => Buffer.byteLength(source.slice(0, utf16), 'utf8');
 	const position = locate(source);
 	const pattern = (node) => jobs.push({ name: `${name}@${node.start} pattern`, source, mode: `${prefix}pattern:${byte(node.start)}`, expected: fix_loc(strip(node), position) });
 	for (const node of walk(ast.fragment)) {
@@ -110,10 +83,7 @@ for (const path of files(corpus, /\.svelte$/)) {
 			jobs.push({ name: `${name}@${offset} const`, source, mode: `${prefix}stmt:${byte(offset)}`, expected: acorn_statement(source, offset, ts) });
 		}
 	}
-	if (jobs.length >= limit) {
-		jobs.length = limit;
-		break;
-	}
+	if (capped(jobs, limit)) break;
 }
 
 // Invalid inputs, compared against the error Svelte reports (which is acorn's, through the
@@ -163,5 +133,5 @@ function actual(line, job) {
 	return node.node ?? node;
 }
 
-const lines = (await teasel(jobs)).map((line, i) => (jobs[i] ? JSON.stringify(actual(line, jobs[i])) : line));
-process.exit(compare(jobs, (job) => job.expected, lines, { verbose, label: 'svelte entry points', skipped: skipped_files }) ? 0 : 1);
+const lines = (await teasel(jobs)).map((line, i) => JSON.stringify(actual(line, jobs[i])));
+process.exit(compare(jobs, (job) => job.expected, lines, { verbose, label: 'svelte entry points', skipped: stats.skipped }) ? 0 : 1);

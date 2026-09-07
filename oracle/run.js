@@ -4,10 +4,9 @@
 
 import { readFileSync } from 'node:fs';
 import { relative } from 'node:path';
-import { acorn_parse, args, compare, corpus, files, teasel } from './lib.js';
+import { acorn_parse, args, capped, compare, corpus, files, scripts, teasel } from './lib.js';
 
 const { verbose, limit, filter } = args();
-const script_re = /<script((?:\s+(?:"[^"]*"|'[^']*'|[^>"'])*)?)>([\s\S]*?)<\/script>/g;
 
 const jobs = [];
 for (const path of files(corpus, /\.(svelte|js)$/)) {
@@ -18,15 +17,9 @@ for (const path of files(corpus, /\.(svelte|js)$/)) {
 		jobs.push({ name, source: text, mode: 'module' });
 		if (!/^\s*(import|export)\b/m.test(text)) jobs.push({ name: `${name} (script)`, source: text, mode: 'script' });
 	} else {
-		for (const match of text.matchAll(script_re)) {
-			if (/lang=["']?ts/.test(match[1] ?? '')) continue;
-			jobs.push({ name: `${name}#${match.index}`, source: match[2], mode: 'module' });
-		}
+		for (const { index, source } of scripts(text, false)) jobs.push({ name: `${name}#${index}`, source, mode: 'module' });
 	}
-	if (jobs.length >= limit) {
-		jobs.length = limit;
-		break;
-	}
+	if (capped(jobs, limit)) break;
 }
 
 const lines = await teasel(jobs);

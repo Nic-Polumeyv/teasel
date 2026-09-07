@@ -78,6 +78,14 @@ impl Request {
 		}
 	}
 
+	/// A source's request, its switches as bits in the order of `FLAGS`; the entry and offset
+	/// come with each parse.
+	pub fn from_bits(bits: u32) -> Request {
+		let mut request = Request::new(Entry::Program, 0);
+		request.set_bits(bits);
+		request
+	}
+
 	pub fn set_bits(&mut self, bits: u32) {
 		for (i, flag) in FLAGS.iter().enumerate() {
 			if bits & (1 << i) != 0 {
@@ -108,12 +116,13 @@ impl Request {
 
 /// The error answer for a request the parser never ran: a host's offsets or switches.
 pub fn error_json(message: &str, pos: u32) -> String {
+	use std::fmt::Write;
 	let mut out = format!(
 		"{{\"error\":{{\"code\":\"{}\",\"message\":",
 		Code::InvalidRequest.name()
 	);
 	crate::estree::write_json_string(&mut out, message);
-	out.push_str(&format!(",\"pos\":{pos},\"end\":{pos}}}}}"));
+	write!(out, ",\"pos\":{pos},\"end\":{pos}}}}}").unwrap();
 	out
 }
 
@@ -137,7 +146,7 @@ pub fn shapes_json() -> String {
 		if i > 0 {
 			json.push(',');
 		}
-		json.push_str(&word.to_string());
+		crate::estree::push_int(&mut json, *word);
 	}
 	json.push(']');
 	json
@@ -145,11 +154,6 @@ pub fn shapes_json() -> String {
 
 pub fn parse(source: &str, request: &Request) -> String {
 	parse_with(source, &Positions::new(source, request.locations), request)
-}
-
-/// The answer as a token stream for a binding to decode; the error answer stays JSON.
-pub fn binary(source: &str, request: &Request) -> Result<Vec<u32>, String> {
-	binary_with(source, &Positions::new(source, request.locations), request)
 }
 
 /// A source with its position tables and switches, for hosts that parse many pieces of one
@@ -164,6 +168,12 @@ impl Prepared<'static> {
 	/// The request's entry and offset are ignored; `parse` takes them.
 	pub fn new(source: String, request: Request) -> Prepared<'static> {
 		Prepared::of(std::borrow::Cow::Owned(source), request)
+	}
+
+	/// The same over bytes a host hands over, made valid UTF-8 where they are not.
+	pub fn from_bytes(source: Vec<u8>, request: Request) -> Prepared<'static> {
+		let source = String::from_utf8(source).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned());
+		Prepared::new(source, request)
 	}
 }
 
@@ -302,6 +312,7 @@ fn binary_with(source: &str, positions: &Positions, request: &Request) -> Result
 
 /// A tree, its root and the offset after what the parse consumed.
 type Parsed<D> = Result<(Ast<D>, NodeId, u32), Box<SyntaxError>>;
+type ParseAt<D> = fn(&str, u32, Options) -> Parsed<D>;
 
 /// Runs a request into a sink; `Err` is the error answer as JSON.
 fn run<E: crate::parser::Extension, S: Sink>(
@@ -334,33 +345,21 @@ where
 				program(&ast, root, source, positions, output, sink)
 			})
 		}
-		Entry::Expression => one(
-			crate::parser::parse_expression_at::<E>(source, offset, options),
-			source,
-			positions,
-			offset,
-			output,
-			sink,
-		),
-		Entry::Pattern => one(
-			crate::parser::parse_pattern_at::<E>(source, offset, options),
-			source,
-			positions,
-			offset,
-			Output {
-				pattern: true,
-				..output
-			},
-			sink,
-		),
-		Entry::Statement => one(
-			crate::parser::parse_statement_at::<E>(source, offset, options),
-			source,
-			positions,
-			offset,
-			output,
-			sink,
-		),
+		Entry::Expression | Entry::Pattern | Entry::Statement => {
+			let (parse, output): (ParseAt<E::Data>, _) = match request.entry {
+				Entry::Expression => (crate::parser::parse_expression_at::<E>, output),
+				Entry::Statement => (crate::parser::parse_statement_at::<E>, output),
+				Entry::Pattern => (
+					crate::parser::parse_pattern_at::<E>,
+					Output {
+						pattern: true,
+						..output
+					},
+				),
+				_ => unreachable!(),
+			};
+			one(parse(source, offset, options), source, positions, offset, output, sink)
+		}
 		Entry::Params => crate::parser::parse_params_at::<E>(source, offset, options).map(|(mut ast, ids, end)| {
 			if comments {
 				attach_all(&mut ast, source, &ids, offset);

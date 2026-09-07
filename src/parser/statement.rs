@@ -6,11 +6,11 @@ use super::scope::{
 use super::{
 	DestructuringErrors, Extension, FunctionKind, Label, LabelKind, Parser, PrivateKind, PrivateNameScope, Result,
 };
-use crate::ast::{Class, Function, MethodKind, NodeId, NodeKind, VariableKind};
+use crate::ast::{Class, Function, List, MethodKind, NodeId, NodeKind, VariableKind};
 use crate::error::Code;
 use crate::interner::{FastSet, StrId};
 use crate::lexer::token::{Keyword, TokenKind};
-use crate::lexer::unicode::is_id_start;
+use crate::lexer::unicode::{is_id_continue, is_id_start};
 
 pub(crate) const FUNC_STATEMENT: u8 = 1;
 pub(crate) const FUNC_HANGING: u8 = 2;
@@ -50,11 +50,7 @@ impl<E: Extension> Parser<'_, E> {
 			&& !self.options.allow_undeclared_exports
 			&& let Some((&name, &(pos, _))) = self.undeclared_exports.iter().min_by_key(|(_, (_, order))| *order)
 		{
-			return self.error_with(
-				pos,
-				Code::UndefinedExport,
-				format!("Export '{}' is not defined", self.str(name)),
-			);
+			return self.error_name(pos, Code::UndefinedExport, name);
 		}
 		let body = self.list_of(&body);
 		self.adapt_directive_prologue(body);
@@ -62,9 +58,9 @@ impl<E: Extension> Parser<'_, E> {
 		Ok(self.add_with_end(NodeKind::Program { body, module }, start, self.tok.end))
 	}
 
-	pub(crate) fn adapt_directive_prologue(&mut self, statements: crate::ast::List) {
+	pub(crate) fn adapt_directive_prologue(&mut self, statements: List) {
 		for i in 0..statements.len {
-			let statement = self.ast.lists[(statements.start + i) as usize].unwrap();
+			let statement = self.nth(statements, i).unwrap();
 			let NodeKind::ExpressionStatement {
 				expression,
 				directive: None,
@@ -216,16 +212,9 @@ impl<E: Extension> Parser<'_, E> {
 		if next == '{' {
 			return true;
 		}
-		if next == '$' || next == '_' || is_id_start(next) {
+		if is_id_start(next) {
 			let rest = &self.source()[pos..];
-			let len = rest
-				.char_indices()
-				.find(|&(_, c)| {
-					!(c == '$'
-						|| c == '_' || crate::lexer::unicode::is_id_continue(c)
-						|| c == '\u{200c}' || c == '\u{200d}')
-				})
-				.map_or(rest.len(), |(i, _)| i);
+			let len = rest.find(|c| !is_id_continue(c)).unwrap_or(rest.len());
 			if rest[len..].starts_with('\\') {
 				return true;
 			}
@@ -244,11 +233,7 @@ impl<E: Extension> Parser<'_, E> {
 			return false;
 		}
 		let rest = &self.source()[pos..];
-		rest.starts_with("function")
-			&& !rest[8..]
-				.chars()
-				.next()
-				.is_some_and(|c| c == '$' || c == '_' || crate::lexer::unicode::is_id_continue(c))
+		rest.starts_with("function") && !rest[8..].chars().next().is_some_and(is_id_continue)
 	}
 
 	fn parse_break_continue(&mut self, start: u32, is_break: bool) -> Result<NodeId> {
@@ -272,11 +257,7 @@ impl<E: Extension> Parser<'_, E> {
 					|| (label.is_some() && is_break))
 		});
 		if !found {
-			return self.error_with(
-				start,
-				Code::Unsyntactic,
-				format!("Unsyntactic {}", if is_break { "break" } else { "continue" }),
-			);
+			return self.error_arg(start, Code::Unsyntactic, if is_break { "break" } else { "continue" });
 		}
 		let kind = if is_break {
 			NodeKind::BreakStatement { label }
@@ -428,11 +409,7 @@ impl<E: Extension> Parser<'_, E> {
 					|| !matches!(self.kind(id), NodeKind::Identifier { .. }))
 			{
 				let loop_kind = if is_for_in { "for-in" } else { "for-of" };
-				return self.error_with(
-					self.start_of(left),
-					Code::ForInOfInitializer,
-					format!("{loop_kind} loop variable declaration may not have an initializer"),
-				);
+				return self.error_arg(self.start_of(left), Code::ForInOfInitializer, loop_kind);
 			}
 		}
 		let right = if is_for_in {
@@ -478,10 +455,7 @@ impl<E: Extension> Parser<'_, E> {
 			}
 			id = Some(name);
 		}
-		let (old_yield, old_await, old_await_ident) = (self.yield_pos, self.await_pos, self.await_ident_pos);
-		self.yield_pos = 0;
-		self.await_pos = 0;
-		self.await_ident_pos = 0;
+		let old = self.take_yield_await();
 		self.enter_scope(function_flags(is_async, generator));
 		if !is_statement && matches!(self.tok.kind, TokenKind::Ident(_)) {
 			id = Some(self.parse_ident(false)?);
@@ -518,9 +492,7 @@ impl<E: Extension> Parser<'_, E> {
 				self.add(kind, start)
 			}
 		};
-		self.yield_pos = old_yield;
-		self.await_pos = old_await;
-		self.await_ident_pos = old_await_ident;
+		self.restore_yield_await(old);
 		if is_statement
 			&& flags & FUNC_HANGING == 0
 			&& E::DECLARES_FUNCTION_NAME_AFTER_BODY
@@ -597,9 +569,8 @@ impl<E: Extension> Parser<'_, E> {
 		while !self.is(TokenKind::BraceR) {
 			if self.is_keyword(Keyword::Case) || self.is_keyword(Keyword::Default) {
 				let is_case = self.is_keyword(Keyword::Case);
-				if let Some((case_start, test, consequent)) = current.take() {
-					let consequent = self.list_of(&consequent);
-					cases.push(self.add(NodeKind::SwitchCase { test, consequent }, case_start));
+				if let Some(case) = current.take() {
+					cases.push(self.switch_case(case));
 				}
 				let case_start = self.tok.start;
 				self.next()?;
@@ -622,14 +593,18 @@ impl<E: Extension> Parser<'_, E> {
 			}
 		}
 		self.exit_scope();
-		if let Some((case_start, test, consequent)) = current.take() {
-			let consequent = self.list_of(&consequent);
-			cases.push(self.add(NodeKind::SwitchCase { test, consequent }, case_start));
+		if let Some(case) = current.take() {
+			cases.push(self.switch_case(case));
 		}
 		self.next()?;
 		self.labels.pop();
 		let cases = self.list_of(&cases);
 		Ok(self.add(NodeKind::SwitchStatement { discriminant, cases }, start))
+	}
+
+	fn switch_case(&mut self, (start, test, consequent): (u32, Option<NodeId>, Vec<NodeId>)) -> NodeId {
+		let consequent = self.list_of(&consequent);
+		self.add(NodeKind::SwitchCase { test, consequent }, start)
 	}
 
 	fn parse_throw(&mut self, start: u32) -> Result<NodeId> {
@@ -716,11 +691,7 @@ impl<E: Extension> Parser<'_, E> {
 
 	fn parse_labeled(&mut self, start: u32, name: StrId, label: NodeId, context: Context) -> Result<NodeId> {
 		if self.labels.iter().any(|l| l.name == Some(name)) {
-			return self.error_with(
-				self.start_of(label),
-				Code::DuplicateLabel,
-				format!("Label '{}' is already declared", self.str(name)),
-			);
+			return self.error_name(self.start_of(label), Code::DuplicateLabel, name);
 		}
 		let kind = match self.tok.kind {
 			TokenKind::Keyword(Keyword::Do | Keyword::For | Keyword::While) => LabelKind::Loop,
@@ -884,13 +855,8 @@ impl<E: Extension> Parser<'_, E> {
 		self.expect(TokenKind::BraceL)?;
 		let mut first = true;
 		while !self.eat(TokenKind::BraceR)? {
-			if !first {
-				self.expect(TokenKind::Comma)?;
-				if self.after_trailing_comma(TokenKind::BraceR, false)? {
-					break;
-				}
-			} else {
-				first = false;
+			if self.list_comma(TokenKind::BraceR, &mut first, true)? {
+				break;
 			}
 			if let Some(node) = E::import_specifier(self)? {
 				nodes.push(node);
@@ -919,13 +885,8 @@ impl<E: Extension> Parser<'_, E> {
 		let mut first = true;
 		let mut seen: Vec<StrId> = Vec::new();
 		while !self.eat(TokenKind::BraceR)? {
-			if !first {
-				self.expect(TokenKind::Comma)?;
-				if self.after_trailing_comma(TokenKind::BraceR, false)? {
-					break;
-				}
-			} else {
-				first = false;
+			if self.list_comma(TokenKind::BraceR, &mut first, true)? {
+				break;
 			}
 			let start = self.tok.start;
 			let key = if matches!(self.tok.kind, TokenKind::String(_)) {
@@ -943,11 +904,7 @@ impl<E: Extension> Parser<'_, E> {
 				_ => unreachable!(),
 			};
 			if seen.contains(&key_name) {
-				return self.error_with(
-					self.start_of(key),
-					Code::DuplicateImportAttribute,
-					format!("Duplicate attribute key '{}'", self.str(key_name)),
-				);
+				return self.error_name(self.start_of(key), Code::DuplicateImportAttribute, key_name);
 			}
 			seen.push(key_name);
 			nodes.push(self.add(NodeKind::ImportAttribute { key, value }, start));
@@ -1012,7 +969,7 @@ impl<E: Extension> Parser<'_, E> {
 			match self.kind(declaration) {
 				NodeKind::VariableDeclaration { declarations, .. } => {
 					for i in 0..declarations.len {
-						let decl = self.ast.lists[(declarations.start + i) as usize].unwrap();
+						let decl = self.nth(declarations, i).unwrap();
 						let NodeKind::VariableDeclarator { id, .. } = self.kind(decl) else {
 							unreachable!()
 						};
@@ -1029,8 +986,7 @@ impl<E: Extension> Parser<'_, E> {
 				}
 				_ => {}
 			}
-			let specifiers = self.list_of(&[]);
-			let attributes = self.list_of(&[]);
+			let (specifiers, attributes) = (List::EMPTY, List::EMPTY);
 			let node = self.add(
 				NodeKind::ExportNamedDeclaration {
 					declaration: Some(declaration),
@@ -1066,7 +1022,7 @@ impl<E: Extension> Parser<'_, E> {
 				}
 			}
 			source = None;
-			attributes = self.list_of(&[]);
+			attributes = List::EMPTY;
 		}
 		self.semicolon()?;
 		let specifiers = self.list_of(&specifiers);
@@ -1119,13 +1075,8 @@ impl<E: Extension> Parser<'_, E> {
 		self.expect(TokenKind::BraceL)?;
 		let mut first = true;
 		while !self.eat(TokenKind::BraceR)? {
-			if !first {
-				self.expect(TokenKind::Comma)?;
-				if self.after_trailing_comma(TokenKind::BraceR, false)? {
-					break;
-				}
-			} else {
-				first = false;
+			if self.list_comma(TokenKind::BraceR, &mut first, true)? {
+				break;
 			}
 			if let Some(node) = E::export_specifier(self)? {
 				nodes.push(node);
@@ -1154,11 +1105,7 @@ impl<E: Extension> Parser<'_, E> {
 
 	fn check_export_name(&self, exports: &mut FastSet<StrId>, name: StrId, pos: u32) -> Result<()> {
 		if !exports.insert(name) && E::DUPLICATE_EXPORT_ERRORS {
-			return self.error_with(
-				pos,
-				Code::DuplicateExport,
-				format!("Duplicate export '{}'", self.str(name)),
-			);
+			return self.error_name(pos, Code::DuplicateExport, name);
 		}
 		Ok(())
 	}
@@ -1277,38 +1224,32 @@ impl<E: Extension> Parser<'_, E> {
 		let NodeKind::PrivateIdentifier { name } = self.kind(key) else {
 			unreachable!()
 		};
-		let private_kind = match (self.kind(element), is_static) {
-			(
-				NodeKind::MethodDefinition {
-					kind: MethodKind::Get, ..
-				},
-				false,
-			) => PrivateKind::InstanceGet,
-			(
-				NodeKind::MethodDefinition {
-					kind: MethodKind::Set, ..
-				},
-				false,
-			) => PrivateKind::InstanceSet,
-			(
-				NodeKind::MethodDefinition {
-					kind: MethodKind::Get, ..
-				},
-				true,
-			) => PrivateKind::StaticGet,
-			(
-				NodeKind::MethodDefinition {
-					kind: MethodKind::Set, ..
-				},
-				true,
-			) => PrivateKind::StaticSet,
+		let private_kind = match self.kind(element) {
+			NodeKind::MethodDefinition {
+				kind: MethodKind::Get, ..
+			} => {
+				if is_static {
+					PrivateKind::StaticGet
+				} else {
+					PrivateKind::InstanceGet
+				}
+			}
+			NodeKind::MethodDefinition {
+				kind: MethodKind::Set, ..
+			} => {
+				if is_static {
+					PrivateKind::StaticSet
+				} else {
+					PrivateKind::InstanceSet
+				}
+			}
 			_ => PrivateKind::Any,
 		};
 		if self.declare_private_name(name, private_kind) {
-			return self.error_with(
+			return self.error_arg(
 				self.start_of(key),
 				Code::Redeclaration,
-				format!("Identifier '#{}' has already been declared", self.str(name)),
+				format_args!("#{}", self.str(name)),
 			);
 		}
 		Ok(())
@@ -1339,14 +1280,7 @@ impl<E: Extension> Parser<'_, E> {
 			match self.private_names.last_mut() {
 				Some(parent) => parent.used.push((name, pos)),
 				None => {
-					return self.error_with(
-						pos,
-						Code::UndeclaredPrivateName,
-						format!(
-							"Private field '#{}' must be declared in an enclosing class",
-							self.str(name)
-						),
-					);
+					return self.error_name(pos, Code::UndeclaredPrivateName, name);
 				}
 			}
 		}

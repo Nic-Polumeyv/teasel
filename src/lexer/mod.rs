@@ -79,20 +79,12 @@ impl<'a> Lexer<'a> {
 		self.pos as u32
 	}
 
-	pub(crate) fn escaped(&self) -> bool {
-		self.escaped
-	}
-
-	pub(crate) fn set_escaped(&mut self, escaped: bool) {
-		self.escaped = escaped;
-	}
-
 	/// The token after the current one, leaving the lexer where it was.
 	pub(crate) fn peek_token(&mut self) -> Result<Token> {
-		let pos = self.pos;
-		let comments = self.comments.len();
+		let (pos, escaped, comments) = (self.pos, self.escaped, self.comments.len());
 		let token = self.next_token();
 		self.pos = pos;
+		self.escaped = escaped;
 		self.comments.truncate(comments);
 		token
 	}
@@ -153,6 +145,10 @@ impl<'a> Lexer<'a> {
 		Err(Box::new(SyntaxError::with(pos as u32, code, message)))
 	}
 
+	fn error_arg<T>(&self, pos: usize, code: Code, arg: impl std::fmt::Display) -> Result<T> {
+		self.error_with(pos, code, code.with(&arg.to_string()))
+	}
+
 	pub(crate) fn next_token(&mut self) -> Result<Token> {
 		let mut token = Token::eof(0);
 		self.next_token_into(&mut token)?;
@@ -189,7 +185,7 @@ impl<'a> Lexer<'a> {
 				if is_id_start(c) {
 					self.read_word()?
 				} else {
-					return self.error_with(start, Code::UnexpectedCharacter, format!("Unexpected character '{c}'"));
+					return self.error_arg(start, Code::UnexpectedCharacter, c);
 				}
 			}
 		};
@@ -375,11 +371,7 @@ impl<'a> Lexer<'a> {
 				_ => (Caret, 1),
 			},
 			_ => {
-				return self.error_with(
-					self.pos,
-					Code::UnexpectedCharacter,
-					format!("Unexpected character '{}'", b as char),
-				);
+				return self.error_arg(self.pos, Code::UnexpectedCharacter, b as char);
 			}
 		};
 		self.pos += len;
@@ -455,11 +447,7 @@ impl<'a> Lexer<'a> {
 			Some(c) if c == '\\' || is_word_char(c, true) => {}
 			next => {
 				let c = next.unwrap_or('\u{10000}');
-				return self.error_with(
-					self.pos,
-					Code::UnexpectedCharacter,
-					format!("Unexpected character '{c}'"),
-				);
+				return self.error_arg(self.pos, Code::UnexpectedCharacter, c);
 			}
 		}
 		let name = match self.read_word()? {
@@ -480,7 +468,7 @@ impl<'a> Lexer<'a> {
 				_ => {}
 			}
 		}
-		if !starts_with_dot && self.read_int(10, true)?.is_none() {
+		if !starts_with_dot && !self.read_digits(10, true)? {
 			return self.error(start, Code::InvalidNumber);
 		}
 		let legacy = self.pos - start >= 2 && self.src.as_bytes()[start] == b'0';
@@ -495,14 +483,14 @@ impl<'a> Lexer<'a> {
 		let octal = legacy && self.src[start..self.pos].bytes().all(|b| (b'0'..=b'7').contains(&b));
 		if !octal && self.byte() == Some(b'.') {
 			self.pos += 1;
-			self.read_int(10, false)?;
+			self.read_digits(10, false)?;
 		}
 		if !octal && matches!(self.byte(), Some(b'e' | b'E')) {
 			self.pos += 1;
 			if matches!(self.byte(), Some(b'+' | b'-')) {
 				self.pos += 1;
 			}
-			if self.read_int(10, false)?.is_none() {
+			if !self.read_digits(10, false)? {
 				return self.error(start, Code::InvalidNumber);
 			}
 		}
@@ -523,13 +511,15 @@ impl<'a> Lexer<'a> {
 
 	fn read_radix_number(&mut self, radix: u32) -> Result<TokenKind> {
 		self.pos += 2;
-		let Some(value) = self.read_int(radix, false)? else {
-			return self.error_with(
-				self.pos,
-				Code::ExpectedNumberInRadix,
-				format!("Expected number in radix {radix}"),
-			);
-		};
+		let start = self.pos;
+		if !self.read_digits(radix, false)? {
+			return self.error_arg(self.pos, Code::ExpectedNumberInRadix, radix);
+		}
+		let digit = |b: u8| (b as char).to_digit(radix).unwrap() as f64;
+		let value = self.src[start..self.pos]
+			.bytes()
+			.filter(|&b| b != b'_')
+			.fold(0.0, |total, b| total * radix as f64 + digit(b));
 		if self.byte() == Some(b'n') {
 			self.pos += 1;
 			return Ok(TokenKind::BigInt);
@@ -538,10 +528,10 @@ impl<'a> Lexer<'a> {
 		Ok(TokenKind::Number(value))
 	}
 
-	fn read_int(&mut self, radix: u32, maybe_legacy_octal: bool) -> Result<Option<f64>> {
+	/// Reads digits and separators; whether any digit was read.
+	fn read_digits(&mut self, radix: u32, maybe_legacy_octal: bool) -> Result<bool> {
 		let start = self.pos;
 		let legacy_octal = maybe_legacy_octal && self.byte() == Some(b'0');
-		let mut total = 0.0;
 		let mut last_was_separator = false;
 		while let Some(b) = self.byte() {
 			if b == b'_' {
@@ -558,17 +548,19 @@ impl<'a> Lexer<'a> {
 				self.pos += 1;
 				continue;
 			}
-			let Some(digit) = (b as char).to_digit(radix) else {
+			if !(b as char).is_digit(radix) {
 				break;
-			};
+			}
 			last_was_separator = false;
-			total = total * radix as f64 + digit as f64;
 			self.pos += 1;
+			if radix == 10 {
+				self.pos = scan::run_of(self.src.as_bytes(), self.pos, scan::DIGIT);
+			}
 		}
 		if last_was_separator {
 			return self.error(self.pos - 1, Code::NumericSeparatorLast);
 		}
-		Ok((self.pos > start).then_some(total))
+		Ok(self.pos > start)
 	}
 
 	fn check_after_number(&mut self) -> Result<()> {
@@ -927,12 +919,7 @@ pub(crate) fn is_whitespace(c: char) -> bool {
 }
 
 fn is_word_char(c: char, first: bool) -> bool {
-	match c {
-		'$' | '_' => true,
-		'\u{200c}' | '\u{200d}' => !first,
-		_ if first => is_id_start(c),
-		_ => is_id_continue(c),
-	}
+	if first { is_id_start(c) } else { is_id_continue(c) }
 }
 
 enum Escape {
