@@ -891,13 +891,13 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 	fn comments(&mut self, key: &'static str, comments: &[u32]) {
 		if !comments.is_empty() {
 			self.key(key);
-			self.comment_list(comments.iter().copied());
+			self.comment_list(comments);
 		}
 	}
 
-	fn comment_list(&mut self, comments: impl IntoIterator<Item = u32>) {
+	fn comment_list(&mut self, comments: &[u32]) {
 		self.sink.list();
-		for index in comments {
+		for &index in comments {
 			let comment = self.ast.comments[index as usize];
 			self.sink.begin(if comment.is_block() { "Block" } else { "Line" });
 			self.key("value");
@@ -912,8 +912,9 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 	/// What the output's switches add after a root: every comment, what erasure kept, the scopes.
 	fn trailers(&mut self) {
 		if self.output.comments {
+			let all: Vec<u32> = (0..self.ast.comments.len() as u32).collect();
 			self.key("comments");
-			self.comment_list(0..self.ast.comments.len() as u32);
+			self.comment_list(&all);
 		}
 		if self.output.erase {
 			self.all_kept();
