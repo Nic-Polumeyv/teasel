@@ -81,11 +81,16 @@ impl<X: Walk> Attacher<'_, X> {
 			self.take(node, Place::Leading);
 		}
 		let Some(next) = self.peek() else { return };
-		// a comment past the node reaches a descendant only over commas, parens and blanks
-		if self.start(next) < end || self.only_separators(end, self.start(next)) {
-			let base = self.scratch.len();
-			self.ast.children(node, &mut self.scratch);
-			let count = self.scratch.len() - base;
+		let base = self.scratch.len();
+		self.ast.children(node, &mut self.scratch);
+		let count = self.scratch.len() - base;
+		// a comment past the children reaches one only over commas, parens and blanks; a child
+		// can end past its parent (a rest parameter's annotation in an async arrow), so it is the
+		// children's reach that counts
+		let reach = self.scratch[base..]
+			.iter()
+			.fold(end, |reach, &c| reach.max(self.ast.node(c).end));
+		if self.start(next) < reach || self.only_separators(reach, self.start(next)) {
 			if count == 0 && self.body_of(node).is_some() {
 				while self.peek().is_some_and(|c| self.start(c) < end) {
 					self.take(node, Place::Inner);
@@ -95,8 +100,8 @@ impl<X: Walk> Attacher<'_, X> {
 				let child = self.scratch[base + i];
 				self.visit(child, Some(node));
 			}
-			self.scratch.truncate(base);
 		}
+		self.scratch.truncate(base);
 		let Some(comment) = self.peek() else { return };
 		let parent_end = parent.map(|p| self.ast.node(p).end);
 		if parent_end == Some(end) {
@@ -222,6 +227,23 @@ mod tests {
 				r#"NumberLiteral leading=[] trailing=[" b "]"#
 			]
 		);
+	}
+
+	#[cfg(feature = "typescript")]
+	#[test]
+	fn a_child_past_its_parent_still_takes_its_comment() {
+		let src = "async (...a: T[] /* c */) => {}";
+		let mut ast = crate::typescript::parse(
+			src,
+			Options {
+				module: true,
+				..Options::default()
+			},
+		)
+		.unwrap();
+		let root = ast.last();
+		super::attach(&mut ast, src, root, 0);
+		assert_eq!(attached(&ast, src), [r#"Extension leading=[] trailing=[" c "]"#]);
 	}
 
 	#[test]

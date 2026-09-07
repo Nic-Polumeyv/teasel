@@ -90,8 +90,7 @@ impl<X: Default> Ast<X> {
 
 /// How an extension's nodes join a walk over the tree.
 pub trait Walk: Sized {
-	/// Pushes the children of `id`, in any order; `Ast::children` sorts them. Plain nodes come from
-	/// `Ast::plain_children`.
+	/// Pushes the children of `id` in source order; plain nodes come from `Ast::plain_children`.
 	fn children(&self, ast: &Ast<Self>, id: NodeId, out: &mut Vec<NodeId>);
 }
 
@@ -134,6 +133,7 @@ impl<X> Ast<X> {
 			| DebuggerStatement
 			| Extension(_) => {}
 			TemplateLiteral { quasis, expressions } => {
+				debug_assert_eq!(quasis.len, expressions.len + 1);
 				for (i, quasi) in self.list(quasis).iter().flatten().enumerate() {
 					out.push(*quasi);
 					if (i as u32) < expressions.len {
