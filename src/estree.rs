@@ -374,22 +374,48 @@ impl Default for Binary {
 	}
 }
 
+thread_local! {
+	// the buffers of the last answer, so an answer allocates nothing once one its size went before
+	static SPARE: std::cell::RefCell<Option<Binary>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Hands an answer's words back for the next answer, once a front end has copied them out.
+pub fn recycle(words: Vec<u32>) {
+	SPARE.with(|s| {
+		if let Some(spare) = s.borrow_mut().as_mut() {
+			spare.words = words;
+		}
+	});
+}
+
 impl Binary {
 	pub fn new() -> Self {
-		Binary {
-			words: vec![0; 7],
+		let mut binary = SPARE.with(|s| s.borrow_mut().take()).unwrap_or_else(|| Binary {
+			words: Vec::new(),
 			text: Vec::new(),
 			units: 0,
 			ends: Vec::new(),
 			floats: Vec::new(),
 			frames: Vec::new(),
-			seq: vec![0],
+			seq: Vec::new(),
 			tables_at: 0,
 			tables: 0,
 			start: constant("start") << 4 | kind::INT,
 			end: constant("end") << 4 | kind::INT,
 			loc: constant("loc") << 4 | kind::LOC,
-		}
+		});
+		binary.words.clear();
+		binary.words.extend([0; 7]);
+		binary.text.clear();
+		binary.units = 0;
+		binary.ends.clear();
+		binary.floats.clear();
+		binary.frames.clear();
+		binary.seq.clear();
+		binary.seq.push(0);
+		binary.tables_at = 0;
+		binary.tables = 0;
+		binary
 	}
 
 	fn push_text(&mut self, value: &str) -> u32 {
@@ -446,11 +472,13 @@ impl Binary {
 		if self.words.len() % 2 == 1 {
 			self.words.push(0);
 		}
-		for float in self.floats {
+		for &float in &self.floats {
 			let bits = float.to_bits();
 			self.words.extend([bits as u32, (bits >> 32) as u32]);
 		}
-		self.words
+		let words = std::mem::take(&mut self.words);
+		SPARE.with(|s| *s.borrow_mut() = Some(self));
+		words
 	}
 }
 
