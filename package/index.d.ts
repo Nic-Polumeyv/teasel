@@ -79,6 +79,8 @@ export interface Scope {
 	through: Binding[];
 	/** An `await` or `for await` runs directly in it, no function around; only a program or fragment scope can say so. */
 	topLevelAwait: boolean;
+	/** The references made from inside it, nested scopes excluded, in source order. */
+	references: Reference[];
 }
 
 /** A binding, as one of `bindings` on the answer. */
@@ -111,12 +113,16 @@ export interface Binding {
 
 export interface Reference {
 	node: Identifier;
+	/** The scope the reference is made from. */
+	scope: Scope;
 	/** Null for a global. */
 	binding: Binding | null;
 	/** The identifier is assigned to, updated or bound by a destructuring assignment. */
 	write: boolean;
 	/** A member of the identifier's value is assigned to, updated or deleted. */
 	mutate: boolean;
+	/** The identifier's value is read: every reference but a plain assignment's target or a destructuring one's; a compound assignment or an update reads and writes. */
+	read: boolean;
 	/** What a write assigns: the right side of the assignment or the iterated expression of a `for-in` or `for-of`, as eslint-scope's `writeExpr`; null for an update. */
 	writeExpr: Expression | null;
 }

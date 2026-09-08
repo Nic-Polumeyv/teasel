@@ -157,6 +157,9 @@ pub struct Reference {
 	pub write: bool,
 	/// A member of the identifier's value is assigned to, updated or deleted.
 	pub mutate: bool,
+	/// The identifier's value is read: every reference but a plain assignment's target or a
+	/// destructuring one's; a compound assignment or an update reads and writes.
+	pub read: bool,
 	/// What a write assigns: the right side of the assignment or the iterated expression of a
 	/// `for-in` or `for-of`, as eslint-scope's `writeExpr`; none for an update.
 	pub write_expr: Option<NodeId>,
@@ -369,6 +372,8 @@ pub struct Binder<'a, X> {
 	declaring: Option<NodeId>,
 	/// What the target being visited is assigned, for `Reference::write_expr`.
 	writing: Option<NodeId>,
+	/// The target being visited is read as well: a compound assignment or an update.
+	compound: bool,
 	/// The references not yet resolved, those of each open scope after `pending_from`'s entry for it.
 	pending: Vec<ReferenceId>,
 	pending_from: Vec<usize>,
@@ -391,6 +396,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 			open: Vec::new(),
 			declaring: None,
 			writing: None,
+			compound: false,
 			pending: Vec::new(),
 			pending_from: Vec::new(),
 			owned: FastMap::default(),
@@ -553,11 +559,15 @@ impl<'a, X: Bind> Binder<'a, X> {
 		result
 	}
 
-	/// Runs `f` with `expression` as what the targets it visits are assigned.
-	fn writing<T>(&mut self, expression: Option<NodeId>, f: impl FnOnce(&mut Self) -> T) -> T {
-		let outer = std::mem::replace(&mut self.writing, expression);
+	/// Runs `f` with `expression` as what the targets it visits are assigned, `compound` when
+	/// they are read too.
+	fn writing<T>(&mut self, expression: Option<NodeId>, compound: bool, f: impl FnOnce(&mut Self) -> T) -> T {
+		let outer = (
+			std::mem::replace(&mut self.writing, expression),
+			std::mem::replace(&mut self.compound, compound),
+		);
 		let result = f(self);
-		self.writing = outer;
+		(self.writing, self.compound) = outer;
 		result
 	}
 
@@ -587,6 +597,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 			binding: None,
 			write,
 			mutate,
+			read: !write || self.compound,
 			write_expr: if write { self.writing } else { None },
 		});
 		self.out.of_identifier.insert(node, Role::Reference(id));
@@ -778,13 +789,14 @@ impl<'a, X: Bind> Binder<'a, X> {
 					self.visit(argument, Mode::Expression);
 				}
 			}
-			UpdateExpression { argument, .. } => self.writing(None, |b| b.target(argument)),
+			UpdateExpression { argument, .. } => self.writing(None, true, |b| b.target(argument)),
 			BinaryExpression { left, right, .. } | LogicalExpression { left, right, .. } => {
 				self.visit(left, Mode::Expression);
 				self.visit(right, Mode::Expression);
 			}
-			AssignmentExpression { left, right, .. } => {
-				self.writing(Some(right), |b| b.target(left));
+			AssignmentExpression { left, right, operator } => {
+				let compound = operator != crate::ast::AssignmentOperator::Assign;
+				self.writing(Some(right), compound, |b| b.target(left));
 				self.visit(right, Mode::Expression);
 			}
 			ConditionalExpression {
@@ -954,7 +966,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 				}
 				match self.kind(left) {
 					VariableDeclaration { .. } => self.visit(left, Mode::Expression),
-					_ => self.writing(Some(right), |b| b.target(left)),
+					_ => self.writing(Some(right), false, |b| b.target(left)),
 				}
 				self.visit(right, Mode::Expression);
 				self.visit(body, Mode::Expression);
@@ -1316,6 +1328,16 @@ mod tests {
 			.collect();
 		// `a = b + 1`, `a++`, `for (b of c)`, `g = p`
 		assert_eq!(writes, [(20, Some(24)), (31, None), (41, Some(46)), (68, Some(72))]);
+		let reads: Vec<_> = scopes
+			.references
+			.iter()
+			.map(|r| (ast.node(r.node).start, r.read))
+			.collect();
+		// only the update reads what it writes; the parameter read after `g =` is a plain read
+		assert_eq!(
+			&reads[..5],
+			[(17, true), (20, false), (24, true), (31, true), (41, false)]
+		);
 		assert!(scopes.scopes[0].top_level_await);
 		assert!(!scopes.scopes[1].top_level_await);
 	}

@@ -65,7 +65,7 @@ for (const [name, { Source, parse, parseExpressionAt, parsePatternAt, parseParam
 		assert.equal(y.scope.node, program.body[1]);
 		assert.equal(y.scope.through[0], x);
 		assert.equal(program.scopes[0].declarations.get('f'), f);
-		assert.deepEqual(Object.keys(program.scopes[0]), ['kind', 'parent', 'functionDepth', 'through', 'topLevelAwait', 'node', 'bindings', 'declarations']);
+		assert.deepEqual(Object.keys(program.scopes[0]), ['kind', 'parent', 'functionDepth', 'through', 'topLevelAwait', 'node', 'bindings', 'declarations', 'references']);
 		assert.deepEqual(Object.keys(x), ['name', 'kind', 'scope', 'node', 'declaration', 'references']);
 		assert.deepEqual(program.scopes[0].bindings.map((b) => b.name), ['x', 'f']);
 		assert.equal(x.declaration, program.body[0].declarations[0]);
@@ -79,6 +79,10 @@ for (const [name, { Source, parse, parseExpressionAt, parsePatternAt, parseParam
 		assert.equal(assigned.writeExpr, top.body[0].expression.right);
 		assert.equal(updated.writeExpr, null);
 		assert.equal(assigned.binding, null);
+		assert.deepEqual([assigned.read, updated.read, x.references[0].read, y.references[0].read], [false, true, false, true]);
+		assert.equal(assigned.scope, top.scopes[0]);
+		assert.deepEqual(top.scopes[0].references, [assigned, updated]);
+		assert.equal(top.references[0], assigned);
 		const literal = parse('let r = /a/g, t = `x${1}y`;', { scopes: true }).body[0].declarations;
 		assert.equal(Object.getPrototypeOf(literal[0].init.regex), Object.prototype);
 		assert.deepEqual(literal[1].init.quasis[0].value, { raw: 'x', cooked: 'x' });
@@ -101,7 +105,7 @@ for (const [name, { Source, parse, parseExpressionAt, parsePatternAt, parseParam
 		assert.equal(o.references[0].write, false);
 		const g = mutated.body[2].expression.left;
 		assert.equal(bindingOf(g), null);
-		assert.deepEqual(referenceOf(g), { node: g, binding: null, write: true, mutate: false, writeExpr: mutated.body[2].expression.right });
+		assert.deepEqual(referenceOf(g), { scope: mutated.scopes[0], binding: null, write: true, read: false, mutate: false, node: g, writeExpr: mutated.body[2].expression.right });
 		assert.equal(referenceOf(mutated.body[3].expression.left.object).mutate, true);
 		assert.equal(referenceOf(o.node), undefined);
 		assert.equal(bindingOf(null), undefined);

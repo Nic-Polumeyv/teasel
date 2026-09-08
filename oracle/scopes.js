@@ -22,7 +22,7 @@ for (const path of files(corpus, /\.(svelte|js)$/)) {
 }
 
 /// What both sides reduce to: references as [start, declaration start | null | 'implicit', write,
-/// writeExpr start | null] in source order, and declarations as [first declaring identifier start,
+/// writeExpr start | null, read] in source order, and declarations as [first declaring identifier start,
 /// declaration node start]. eslint-scope reports `{ c = 1 } = o` twice, for the key and the value,
 /// and a default in a pattern as a second write with the default as its expression; one identifier
 /// is one reference here, assigned the whole right side, which comes last in the source.
@@ -33,6 +33,7 @@ function summary(references, declarations) {
 		const last = once.at(-1);
 		if (last && last[0] === reference[0]) {
 			last[2] |= reference[2];
+			last[4] |= reference[4];
 			if (reference[3] !== null && (last[3] === null || reference[3] > last[3])) last[3] = reference[3];
 		} else once.push(reference);
 	}
@@ -65,7 +66,7 @@ function expected(job) {
 			if (declared.has(start)) continue;
 			const resolved = ref.resolved;
 			const declaration = resolved === null ? null : resolved.defs.length === 0 ? 'implicit' : resolved.defs[0].name.start;
-			references.push([start, declaration, ref.isWrite() ? 1 : 0, ref.isWrite() && ref.writeExpr ? ref.writeExpr.start : null]);
+			references.push([start, declaration, ref.isWrite() ? 1 : 0, ref.isWrite() && ref.writeExpr ? ref.writeExpr.start : null, ref.isRead() ? 1 : 0]);
 		}
 	}
 	return summary(references, declarations);
@@ -77,23 +78,28 @@ function actual(line) {
 	// a name declared twice has one binding and two declaring identifiers; the first is its position
 	const declared = new Map();
 	const declaration_of = new Map();
+	const write_expr = new Map();
 	const references = [];
 	const walk = (node) => {
 		if (!node || typeof node !== 'object') return;
 		if (Array.isArray(node)) return node.forEach(walk);
 		if (node.defines !== undefined) for (const b of node.defines) declaration_of.set(b, node.start);
-		// a write names its references by their number in emission order, which is this walk's
-		if (node.writes !== undefined) for (const i of node.writes) references[i][3] = node.start;
+		if (node.writes !== undefined) for (const i of node.writes) write_expr.set(i, node.start);
 		if (node.type === 'Identifier') {
 			if (node.declares !== undefined) {
 				if (!declared.has(node.declares)) declared.set(node.declares, node.start);
-			} else if (node.binding !== undefined) references.push([node.start, node.binding, node.write ? 1 : 0, null]);
+			} else if (node.reference !== undefined) {
+				const r = answer.references[node.reference];
+				references.push([node.start, r.binding, r.write ? 1 : 0, node.reference, r.read ? 1 : 0]);
+			}
 		}
-		for (const key in node) if (key !== 'loc' && key !== 'scopes' && key !== 'bindings') walk(node[key]);
+		for (const key in node) if (key !== 'loc' && key !== 'scopes' && key !== 'bindings' && key !== 'references') walk(node[key]);
 	};
 	walk(answer.body);
 	const declarations = [...declared].map(([b, start]) => [start, declaration_of.get(b) ?? null]);
 	for (const ref of references) {
+		// the assigned expression comes after its target, so its start is known only now
+		ref[3] = write_expr.get(ref[3]) ?? null;
 		if (ref[1] === null) continue;
 		const binding = answer.bindings[ref[1]];
 		ref[1] = binding.kind === 'arguments' ? 'implicit' : declared.get(ref[1]);

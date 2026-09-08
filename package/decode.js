@@ -13,26 +13,16 @@ const utf8 = new TextDecoder('utf-8', { ignoreBOM: true });
 const SCOPE = Symbol('scope');
 const BINDING = Symbol('binding');
 const REFERENCE = Symbol('reference');
-// a global's write and mutate bits, until someone asks for its reference: no binding lists it
-const GLOBAL = Symbol('global');
-const WRITE_EXPR = Symbol('writeExpr');
+
 
 /** @param {import('estree').Node} node @returns {import('./index.js').Scope | undefined} the scope the node opens */
 export const scopeOf = (node) => (node == null ? undefined : node[SCOPE]);
 /** @param {import('estree').Node} node @returns {import('./index.js').Binding | null | undefined} what the identifier declares or refers to; null for a global, undefined when it names no value */
 export const bindingOf = (node) => (node == null ? undefined : node[BINDING]);
 /** @param {import('estree').Node} node @returns {import('./index.js').Reference | undefined} the reference an identifier makes, a global's included */
-export function referenceOf(node) {
-	if (node == null) return undefined;
-	let reference = node[REFERENCE];
-	if (reference === undefined && node[GLOBAL] !== undefined) {
-		const facts = node[GLOBAL];
-		reference = node[REFERENCE] = { node, binding: null, write: (facts & 1) !== 0, mutate: (facts & 2) !== 0, writeExpr: node[WRITE_EXPR] ?? null };
-	}
-	return reference;
-}
+export const referenceOf = (node) => (node == null ? undefined : node[REFERENCE]);
 
-const FACTS = new Set(['scope', 'binding', 'declares', 'write', 'mutate', 'defines', 'writes']);
+const FACTS = new Set(['scope', 'declares', 'reference', 'defines', 'writes']);
 
 /**
  * One decode at a time; the builders are generated once and read through this.
@@ -65,13 +55,11 @@ function ints(S) {
  * @param {any} n
  * @param {number | undefined} scope
  * @param {number | undefined} declares
- * @param {number | null | undefined} binding
- * @param {boolean} write
- * @param {boolean} mutate
+ * @param {number | undefined} reference the reference `n`, an identifier, makes
  * @param {number[] | undefined} defines the bindings `n` declares
- * @param {number[] | undefined} writes the references, by emission number, `n` is assigned to
+ * @param {number[] | undefined} writes the references `n` is assigned to
  */
-function file(S, n, scope, declares, binding, write, mutate, defines, writes) {
+function file(S, n, scope, declares, reference, defines, writes) {
 	if (scope !== undefined) {
 		const s = S.scopes[scope];
 		n[SCOPE] = s;
@@ -82,26 +70,14 @@ function file(S, n, scope, declares, binding, write, mutate, defines, writes) {
 		n[BINDING] = d;
 		if (d.node === null) d.node = n;
 	}
-	if (binding === null) {
-		n[BINDING] = null;
-		n[GLOBAL] = (write ? 1 : 0) | (mutate ? 2 : 0);
-		S.references.push(n);
-	} else if (binding !== undefined) {
-		const b = S.bindings[binding];
-		n[BINDING] = b;
-		const r = { node: n, binding: b, write, mutate, writeExpr: null };
+	if (reference !== undefined) {
+		const r = S.references[reference];
+		r.node = n;
 		n[REFERENCE] = r;
-		b.references.push(r);
-		S.references.push(n);
+		n[BINDING] = r.binding;
 	}
 	if (defines !== undefined) for (let i = 0; i < defines.length; i++) S.bindings[defines[i]].declaration = n;
-	if (writes !== undefined) {
-		for (let i = 0; i < writes.length; i++) {
-			const target = S.references[writes[i]];
-			if (target[REFERENCE] !== undefined) target[REFERENCE].writeExpr = n;
-			else target[WRITE_EXPR] = n;
-		}
-	}
+	if (writes !== undefined) for (let i = 0; i < writes.length; i++) S.references[writes[i]].writeExpr = n;
 }
 
 /** @typedef {{ type: string | null, keys: string[], kinds: number[] }} Shape */
@@ -120,7 +96,7 @@ function generate({ type, keys, kinds }, link) {
 	if (link && type !== null) for (let i = 0; i < keys.length; i++) if (FACTS.has(keys[i])) last = i;
 	const lead = [];
 	const props = type === null ? [] : [`type: ${JSON.stringify(type)}`];
-	const facts = { scope: 'undefined', declares: 'undefined', binding: 'undefined', write: 'false', mutate: 'false', defines: 'undefined', writes: 'undefined' };
+	const facts = { scope: 'undefined', declares: 'undefined', reference: 'undefined', defines: 'undefined', writes: 'undefined' };
 	for (let i = 0; i < keys.length; i++) {
 		const key = keys[i];
 		if (i > last) props.push(`${JSON.stringify(key)}: ${READ[kinds[i]]}`);
@@ -130,7 +106,7 @@ function generate({ type, keys, kinds }, link) {
 			else props.push(`${JSON.stringify(key)}: v${i}`);
 		}
 	}
-	const body = `${lead.join(' ')} const n = { ${props.join(', ')} }; ${last < 0 ? '' : `file(S, n, ${facts.scope}, ${facts.declares}, ${facts.binding}, ${facts.write}, ${facts.mutate}, ${facts.defines}, ${facts.writes});`} return n;`;
+	const body = `${lead.join(' ')} const n = { ${props.join(', ')} }; ${last < 0 ? '' : `file(S, n, ${facts.scope}, ${facts.declares}, ${facts.reference}, ${facts.defines}, ${facts.writes});`} return n;`;
 	return new Function('node', 'nodes', 'ints', 'file', `return (S) => { ${body} };`)(node, nodes, ints, file);
 }
 
@@ -139,20 +115,18 @@ function interpret({ type, keys, kinds }, link) {
 	const facts = link && type !== null && keys.some((key) => FACTS.has(key));
 	return (S) => {
 		const n = type === null ? {} : { type };
-		let scope, declares, binding, defines, writes, write = false, mutate = false;
+		let scope, declares, reference, defines, writes;
 		for (let i = 0; i < keys.length; i++) {
 			const key = keys[i];
 			const value = READERS[kinds[i]](S);
 			if (!facts || !FACTS.has(key)) n[key] = value;
 			else if (key === 'scope') scope = value;
 			else if (key === 'declares') declares = value;
-			else if (key === 'binding') binding = value;
-			else if (key === 'write') write = value;
-			else if (key === 'mutate') mutate = value;
+			else if (key === 'reference') reference = value;
 			else if (key === 'defines') defines = value;
 			else writes = value;
 		}
-		if (facts) file(S, n, scope, declares, binding, write, mutate, defines, writes);
+		if (facts) file(S, n, scope, declares, reference, defines, writes);
 		return n;
 	};
 }
@@ -212,14 +186,15 @@ function unaligned_floats(buffer, start, count) {
 	return floats;
 }
 
-/** @param {any[]} scopes @param {any[]} bindings */
-function link_tables(scopes, bindings) {
+/** @param {any[]} scopes @param {any[]} bindings @param {any[]} references */
+function link_tables(scopes, bindings, references) {
 	for (const scope of scopes) {
 		scope.parent = scope.parent === null ? null : scopes[scope.parent];
 		if (scope.through.length !== 0) scope.through = scope.through.map((index) => bindings[index]);
 		scope.node = null;
 		scope.bindings = [];
 		scope.declarations = new Map();
+		scope.references = [];
 	}
 	for (const binding of bindings) {
 		binding.scope = scopes[binding.scope];
@@ -228,6 +203,14 @@ function link_tables(scopes, bindings) {
 		binding.node = null;
 		binding.declaration = null;
 		binding.references = [];
+	}
+	for (const reference of references) {
+		reference.scope = scopes[reference.scope];
+		reference.scope.references.push(reference);
+		reference.binding = reference.binding === null ? null : bindings[reference.binding];
+		if (reference.binding !== null) reference.binding.references.push(reference);
+		reference.node = null;
+		reference.writeExpr = null;
 	}
 }
 
@@ -257,22 +240,25 @@ export function decode(answer, source, engine, link = true) {
 		from = end;
 	}
 	// one state object per decode, young like everything it points at: no write barriers
-	const S = { w: words, at: HEADER, strings, floats, source, constants: table.constants, scopes: EMPTY, bindings: EMPTY, references: link ? [] : EMPTY, build: builders(table, link) };
-	let scopes = null, bindings = null;
+	const S = { w: words, at: HEADER, strings, floats, source, constants: table.constants, scopes: EMPTY, bindings: EMPTY, references: EMPTY, build: builders(table, link) };
+	let scopes = null, bindings = null, references = null;
 	if (tables_at !== 0) {
-		// the writer's `all_scopes` order; a third table would have to carry its key
+		// the writer's `all_scopes` order; a fourth table would have to carry its key
 		S.at = HEADER + tables_at;
 		scopes = nodes(S);
 		bindings = nodes(S);
-		if (link) link_tables(scopes, bindings);
+		references = nodes(S);
+		if (link) link_tables(scopes, bindings, references);
 		S.scopes = scopes;
 		S.bindings = bindings;
+		S.references = references;
 		S.at = HEADER;
 	}
 	const root = node(S);
 	if (scopes !== null) {
 		root.scopes = scopes;
 		root.bindings = bindings;
+		root.references = references;
 	}
 	return root;
 }
