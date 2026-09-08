@@ -1045,7 +1045,7 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 			self.key("line");
 			self.sink.int(line as u32);
 			self.key("column");
-			self.sink.int(column as u32);
+			self.sink.int(column);
 			self.sink.end();
 			self.sink.end();
 		}

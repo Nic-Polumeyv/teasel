@@ -1,5 +1,7 @@
-use crate::ast::{Ast, NodeId, NodeKind};
-use crate::{Options, parse, parse_expression_at, parse_params_at, parse_pattern_at, parse_statement_at};
+use crate::ast::{Ast, NodeId, NodeKind, Walk};
+use crate::{
+	Code, Options, SyntaxError, parse, parse_expression_at, parse_params_at, parse_pattern_at, parse_statement_at,
+};
 
 /// Renders a node as its Debug form with ids, strings and lists expanded inline; `extension`
 /// renders the nodes an extension owns.
@@ -647,8 +649,21 @@ fn svelte_entry_points() {
 		params_error("{#snippet row(a = await x)}"),
 		("Await expression cannot be a default value".into(), 18)
 	);
-	let deep = format!("({}a{})", "[".repeat(20_000), "]".repeat(20_000));
-	assert!(parse_params_at(&deep, 0, options, "").is_err());
+	// The nesting limit must fail before the stack does, on wasm's 1 MB; debug frames are far
+	// bigger, so the check gets a stack to match there.
+	let stack = if cfg!(debug_assertions) { 16 << 20 } else { 1 << 20 };
+	std::thread::Builder::new()
+		.stack_size(stack)
+		.spawn(move || {
+			let deep = format!("({}a{})", "[".repeat(20_000), "]".repeat(20_000));
+			assert_eq!(
+				parse_params_at(&deep, 0, options, "").unwrap_err().code,
+				Code::NestingDepth
+			);
+		})
+		.unwrap()
+		.join()
+		.unwrap();
 
 	let (ast, id, _) = parse_statement_at("{@const x = a + 1}", 2, options, "").unwrap();
 	assert_eq!(
@@ -656,6 +671,379 @@ fn svelte_entry_points() {
 		r#"VariableDeclaration { declarations: [VariableDeclarator { id: Identifier { name: "x" }, init: Some(BinaryExpression { operator: Add, left: Identifier { name: "a" }, right: NumberLiteral { value: 1.0 } }) }], kind: Const }"#
 	);
 	assert_eq!(ast.node(id).end, 17);
+}
+
+#[derive(Clone, Copy)]
+enum Entry {
+	Program,
+	Expression,
+	Pattern,
+	Params,
+	Statement,
+}
+
+/// The five entries of one extension.
+struct Api<X> {
+	program: fn(&str, Options) -> Result<Ast<X>, SyntaxError>,
+	expression: fn(&str, u32, Options, &str) -> Result<(Ast<X>, NodeId, u32), SyntaxError>,
+	pattern: fn(&str, u32, Options, &str) -> Result<(Ast<X>, NodeId, u32), SyntaxError>,
+	params: fn(&str, u32, Options, &str) -> Result<(Ast<X>, Vec<NodeId>, u32), SyntaxError>,
+	statement: fn(&str, u32, Options, &str) -> Result<(Ast<X>, NodeId, u32), SyntaxError>,
+}
+
+const JS: Api<()> = Api {
+	program: crate::parse,
+	expression: parse_expression_at,
+	pattern: parse_pattern_at,
+	params: parse_params_at,
+	statement: parse_statement_at,
+};
+
+const TS: Api<crate::typescript::ast::Data> = Api {
+	program: crate::typescript::parse,
+	expression: crate::typescript::parse_expression_at,
+	pattern: crate::typescript::parse_pattern_at,
+	params: crate::typescript::parse_params_at,
+	statement: crate::typescript::parse_statement_at,
+};
+
+impl<X: Walk> Api<X> {
+	fn run(
+		&self,
+		src: &str,
+		offset: u32,
+		entry: Entry,
+		options: Options,
+		stop: &str,
+	) -> Result<(Ast<X>, Vec<NodeId>, u32), SyntaxError> {
+		Ok(match entry {
+			Entry::Program => {
+				let ast = (self.program)(src, options)?;
+				let root = ast.last();
+				(ast, vec![root], src.len() as u32)
+			}
+			Entry::Expression => {
+				let (ast, id, end) = (self.expression)(src, offset, options, stop)?;
+				(ast, vec![id], end)
+			}
+			Entry::Pattern => {
+				let (ast, id, end) = (self.pattern)(src, offset, options, stop)?;
+				(ast, vec![id], end)
+			}
+			Entry::Params => (self.params)(src, offset, options, stop)?,
+			Entry::Statement => {
+				let (ast, id, end) = (self.statement)(src, offset, options, stop)?;
+				(ast, vec![id], end)
+			}
+		})
+	}
+
+	/// Parses under recovery and checks what the recovered tree promises: it never fails, its
+	/// roots end within what was consumed, a parent contains its children, a placeholder has no
+	/// width, and there are errors exactly when the strict parse throws.
+	fn recovered(
+		&self,
+		src: &str,
+		offset: u32,
+		entry: Entry,
+		options: Options,
+		stop: &str,
+	) -> (Ast<X>, Vec<NodeId>, u32) {
+		let throws = self.run(src, offset, entry, options, stop).is_err();
+		let recovering = Options {
+			error_recovery: true,
+			..options
+		};
+		let (ast, roots, end) = self
+			.run(src, offset, entry, recovering, stop)
+			.unwrap_or_else(|e| panic!("{src:?}: {e}"));
+		assert_eq!(!ast.errors.is_empty(), throws, "{src:?}: errors {:?}", ast.errors);
+		let mut stack = roots.clone();
+		let mut children = Vec::new();
+		for &root in &roots {
+			assert!(
+				ast.node(root).end <= end,
+				"{src:?}: root ends at {} after {end}",
+				ast.node(root).end
+			);
+		}
+		while let Some(id) = stack.pop() {
+			let node = ast.node(id);
+			assert!(
+				node.start <= node.end && node.end as usize <= src.len(),
+				"{src:?}: {:?} at {}..{}",
+				node.kind,
+				node.start,
+				node.end
+			);
+			if let NodeKind::Identifier { name } = node.kind
+				&& ast.str(name).is_empty()
+			{
+				assert_eq!(node.start, node.end, "{src:?}: a placeholder with width");
+			}
+			children.clear();
+			ast.children(id, &mut children);
+			for &child in &children {
+				let c = ast.node(child);
+				assert!(
+					node.start <= c.start && c.end <= node.end,
+					"{src:?}: {:?} at {}..{} outside {:?} at {}..{}",
+					c.kind,
+					c.start,
+					c.end,
+					node.kind,
+					node.start,
+					node.end
+				);
+			}
+			stack.extend_from_slice(&children);
+		}
+		(ast, roots, end)
+	}
+}
+
+#[test]
+fn recovery() {
+	let module = Options {
+		module: true,
+		..Options::default()
+	};
+	fn codes<X>(ast: &Ast<X>) -> Vec<String> {
+		ast.errors
+			.iter()
+			.map(|e| format!("{}@{}", e.code.name(), e.pos))
+			.collect()
+	}
+	let expr = |src: &str, stop: &str| {
+		let (ast, roots, end) = JS.recovered(src, 1, Entry::Expression, module, stop);
+		(
+			dump(&ast, roots[0], &plain),
+			end,
+			codes(&ast),
+			ast.unclosed.contains(&roots[0]),
+		)
+	};
+
+	// a missing operand or name: a placeholder where the token was expected
+	assert_eq!(
+		expr("{x.}", "}"),
+		(r#"MemberExpression { object: Identifier { name: "x" }, property: Identifier { name: "" }, computed: false, optional: false }"#.into(), 3, vec!["unexpected_token@3".into()], false)
+	);
+	assert_eq!(
+		expr("{obj. as item}", "as"),
+		(r#"MemberExpression { object: Identifier { name: "obj" }, property: Identifier { name: "" }, computed: false, optional: false }"#.into(), 6, vec!["unexpected_token@6".into()], false)
+	);
+	assert_eq!(
+		expr("{a + }", "}"),
+		(
+			r#"BinaryExpression { operator: Add, left: Identifier { name: "a" }, right: Identifier { name: "" } }"#
+				.into(),
+			5,
+			vec!["unexpected_token@5".into()],
+			false
+		)
+	);
+	// a missing closer: the node ends at the last token read, marked unclosed, the host's token kept
+	assert_eq!(
+		expr("{f(a, }", "}"),
+		(r#"CallExpression { callee: Identifier { name: "f" }, arguments: [Identifier { name: "a" }, Identifier { name: "" }], optional: false }"#.into(), 6, vec!["unexpected_token@6".into()], true)
+	);
+	let (dumped, end, errors, _) = expr("{[f(a, ]}", "}");
+	assert_eq!(
+		dumped,
+		r#"ArrayExpression { elements: [CallExpression { callee: Identifier { name: "f" }, arguments: [Identifier { name: "a" }, Identifier { name: "" }], optional: false }] }"#
+	);
+	assert_eq!((end, errors), (8, vec!["unexpected_token@7".into()]));
+	// nothing wrong: the strict tree, no errors
+	assert_eq!(expr("{a + b}", "}"), (super::tests::expr("a + b"), 6, vec![], false));
+
+	// the host's declaration tag: `let` is a declaration in strict code, its name a placeholder
+	let (ast, roots, end) = JS.recovered("{let }", 1, Entry::Statement, module, "}");
+	assert_eq!(
+		dump(&ast, roots[0], &plain),
+		r#"VariableDeclaration { declarations: [VariableDeclarator { id: Identifier { name: "" }, init: None }], kind: Let }"#
+	);
+	assert_eq!((end, codes(&ast)), (5, vec!["unexpected_token@5".into()]));
+	let (ast, roots, _) = JS.recovered("{const x}", 1, Entry::Statement, module, "}");
+	assert_eq!(
+		dump(&ast, roots[0], &plain),
+		r#"VariableDeclaration { declarations: [VariableDeclarator { id: Identifier { name: "x" }, init: None }], kind: Const }"#
+	);
+	assert_eq!(codes(&ast), ["unexpected_token@8"]);
+
+	// unterminated tokens run to the end of their line or of the source
+	let (ast, _, _) = JS.recovered("x = 'abc\ny = 1", 0, Entry::Program, module, "");
+	assert_eq!(codes(&ast), ["unterminated_string@4"]);
+	assert_eq!(
+		script_body(&ast),
+		[
+			r#"ExpressionStatement { expression: AssignmentExpression { operator: Assign, left: Identifier { name: "x" }, right: StringLiteral { value: "abc" } }, directive: None }"#,
+			r#"ExpressionStatement { expression: AssignmentExpression { operator: Assign, left: Identifier { name: "y" }, right: NumberLiteral { value: 1.0 } }, directive: None }"#
+		]
+	);
+	assert_eq!(ast.unclosed.len(), 1);
+	let (ast, _, _) = JS.recovered("f(`abc${x} ", 0, Entry::Program, module, "");
+	assert_eq!(codes(&ast), ["unterminated_template@10", "unexpected_eof@11"]);
+	assert_eq!(ast.unclosed.len(), 2);
+	let (ast, _, _) = JS.recovered("/* c", 0, Entry::Program, module, "");
+	assert_eq!(codes(&ast), ["unterminated_comment@0"]);
+	assert_eq!(ast.comments.len(), 1);
+
+	// a missing semicolon is recorded and the statement kept; a statement that fails is skipped
+	// to `;`, the closing brace or a keyword on a new line
+	let (ast, _, _) = JS.recovered(
+		"let x = ;\nfoo bar baz;\nlet y = (\nz = 1",
+		0,
+		Entry::Program,
+		module,
+		"",
+	);
+	assert_eq!(
+		codes(&ast),
+		[
+			"unexpected_token@8",
+			"unexpected_token@14",
+			"unexpected_token@18",
+			"unexpected_eof@38"
+		]
+	);
+	let body = script_body(&ast);
+	assert_eq!(body.len(), 5);
+	assert!(body[4].starts_with("VariableDeclaration"));
+	assert_eq!(ast.unclosed.len(), 1);
+	let (ast, _, _) = JS.recovered("f(;\nx = 1;\nlet y = )\nreturn", 0, Entry::Program, module, "");
+	assert_eq!(
+		codes(&ast),
+		[
+			"unexpected_token@2",
+			"unexpected_token@19",
+			"return_outside_function@21"
+		]
+	);
+	let body = script_body(&ast);
+	assert_eq!(body.len(), 2);
+	assert!(body[1].starts_with("VariableDeclaration"));
+	// unclosed blocks and class bodies end at the end of the input
+	let (ast, _, _) = JS.recovered("class A { m() { if (x) { y", 0, Entry::Program, module, "");
+	// a token no element starts, at the end: the body must not spin on it
+	JS.recovered("class A {\n/", 0, Entry::Program, module, "");
+	TS.recovered("namespace N {\n/", 0, Entry::Program, module, "");
+	TS.recovered("interface I {\n/", 0, Entry::Program, module, "");
+	TS.recovered("enum E {\n/", 0, Entry::Program, module, "");
+	assert_eq!(codes(&ast), ["unexpected_eof@26"]);
+	assert_eq!(ast.unclosed.len(), 3);
+	// a closer nothing opened is reported and skipped
+	let (ast, _, _) = JS.recovered("x; ) y", 0, Entry::Program, module, "");
+	assert_eq!(codes(&ast), ["unexpected_token@3"]);
+	assert_eq!(script_body(&ast).len(), 2);
+
+	// entries: what follows the root is the host's, as in strict mode; a parameter list that fails is empty
+	let (ast, roots, end) = JS.recovered("{a b}", 1, Entry::Expression, module, "}");
+	assert_eq!(
+		(dump(&ast, roots[0], &plain).as_str(), end, codes(&ast)),
+		(r#"Identifier { name: "a" }"#, 2, vec![])
+	);
+	let (ast, roots, end) = JS.recovered("(a, , b)", 0, Entry::Params, module, "");
+	assert_eq!(roots.len(), 3);
+	assert_eq!((end, codes(&ast)), (8, vec!["unexpected_token@4".into()]));
+	let (ast, roots, end) = JS.recovered("{#each xs as [a, }", 13, Entry::Pattern, module, "}");
+	assert_eq!(
+		dump(&ast, roots[0], &plain),
+		r#"ArrayPattern { elements: [Identifier { name: "a" }, Identifier { name: "" }] }"#
+	);
+	assert_eq!((end, codes(&ast)), (17, vec!["unexpected_token@17".into()]));
+
+	// a placeholder is neither a binding nor a reference
+	let (mut ast, roots, _) = JS.recovered("let = f(a, b", 0, Entry::Program, module, "");
+	crate::scopes::analyze(&mut ast, roots[0]);
+	let scopes = ast.scopes.as_ref().unwrap();
+	assert_eq!(scopes.bindings.len(), 0);
+	assert_eq!(
+		scopes
+			.references
+			.iter()
+			.map(|r| ast.node(r.node).start)
+			.collect::<Vec<_>>(),
+		[6, 8, 11]
+	);
+
+	// TypeScript: a speculation fails as in strict mode, so `g<A, B` is a sequence; a missing type
+	// is a placeholder
+	let (ast, _, end) = TS.recovered("{g<A, B }", 1, Entry::Expression, module, "}");
+	assert_eq!((end, codes(&ast)), (7, vec![]));
+	let (ast, _, _) = TS.recovered("let x: = 1", 0, Entry::Program, module, "");
+	assert_eq!(codes(&ast), ["unexpected_token@7"]);
+	assert_eq!(ast.node(ast.last()).end, 10);
+}
+
+fn script_body(ast: &Ast) -> Vec<String> {
+	let NodeKind::Program { body, .. } = ast.node(ast.last()).kind else {
+		panic!()
+	};
+	ast.list(body).iter().map(|s| dump(ast, s.unwrap(), &plain)).collect()
+}
+
+/// Every prefix of every JavaScript and TypeScript file of the Svelte test suite, as a program
+/// and as an expression, parses under recovery with the invariants `Api::recovered` checks.
+#[test]
+#[ignore]
+fn recovery_prefixes() {
+	let root =
+		std::env::var("SVELTE_DIR").unwrap_or_else(|_| format!("{}/Projects/svelte", std::env::var("HOME").unwrap()));
+	let mut files = Vec::new();
+	let mut dirs = vec![std::path::PathBuf::from(format!("{root}/packages/svelte/tests"))];
+	while let Some(dir) = dirs.pop() {
+		for entry in std::fs::read_dir(dir).unwrap().flatten() {
+			let path = entry.path();
+			let name = path.file_name().unwrap().to_string_lossy();
+			if name == "node_modules" || name.starts_with('.') {
+				continue;
+			}
+			if path.is_dir() {
+				dirs.push(path);
+			} else if name.ends_with(".js") || name.ends_with(".ts") {
+				files.push(path);
+			}
+		}
+	}
+	files.sort();
+	let module = Options {
+		module: true,
+		..Options::default()
+	};
+	let mut prefixes = 0;
+	let log = std::env::var("PREFIX_LOG").ok();
+	for path in &files {
+		let Ok(src) = std::fs::read_to_string(path) else {
+			continue;
+		};
+		if let Some(log) = &log {
+			std::fs::write(log, format!("{}\n", path.display())).unwrap();
+		}
+		let ts = path.to_string_lossy().ends_with(".ts");
+		let step = (src.len() / 1000).max(1);
+		let mut cut = 0;
+		while cut <= src.len() {
+			if src.is_char_boundary(cut) {
+				let prefix = &src[..cut];
+				let outcome = std::panic::catch_unwind(|| {
+					for entry in [Entry::Program, Entry::Expression] {
+						if ts {
+							TS.recovered(prefix, 0, entry, module, "");
+						} else {
+							JS.recovered(prefix, 0, entry, module, "");
+						}
+					}
+				});
+				if outcome.is_err() {
+					panic!("{}: prefix of {cut}", path.display());
+				}
+				prefixes += 1;
+			}
+			cut += step;
+		}
+	}
+	eprintln!("{} files, {prefixes} prefixes", files.len());
 }
 
 #[test]

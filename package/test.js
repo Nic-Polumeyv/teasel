@@ -48,6 +48,29 @@ for (const [name, { Source, parse, parseExpressionAt, parsePatternAt, parseParam
 	assert.equal(parseExpressionAt('{x />', 1, { stopAt: ['/>'] }).end, 2);
 	assert.equal(parsePatternAt('{[a, b], i}', 1, { stopAt: [','] }).end, 7);
 	assert.throws(() => parseExpressionAt('{a}', 1, { stopAt: 'as' }), TypeError);
+
+	const recovered = parseExpressionAt('{obj. as item}', 1, { stopAt: ['as'], errorRecovery: true });
+	assert.equal(recovered.node.type, 'MemberExpression');
+	assert.deepEqual(JSON.parse(JSON.stringify(recovered.node.property)), { type: 'Identifier', start: 6, end: 6, name: '' });
+	assert.equal(recovered.end, 6);
+	assert.deepEqual(recovered.errors, [{ code: 'unexpected_token', message: 'Unexpected token', pos: 6, end: 6, loc: { line: 1, column: 6 } }]);
+	const unclosed = parseExpressionAt('{f(a, }', 1, { stopAt: ['}'], errorRecovery: true });
+	assert.equal(unclosed.node.closed, false);
+	assert.equal('closed' in unclosed.node.callee, false);
+	assert.equal(unclosed.node.arguments[1].name, '');
+	assert.equal(unclosed.end, 6);
+	const declaration = parseStatementAt('{let }', 1, { sourceType: 'module', stopAt: ['}'], errorRecovery: true });
+	assert.equal(declaration.node.type, 'VariableDeclaration');
+	assert.deepEqual(JSON.parse(JSON.stringify(declaration.node.declarations[0].id)), { type: 'Identifier', start: 5, end: 5, name: '' });
+	assert.equal(parseExpressionAt('{a b}', 1, { stopAt: ['}'], errorRecovery: true }).errors, undefined);
+	const broken = parse('x = "abc\ny = ', { errorRecovery: true, locations: true });
+	assert.equal(broken.body[0].expression.right.closed, false);
+	assert.deepEqual(broken.errors.map((e) => [e.code, e.pos, e.loc.line]), [['unterminated_string', 4, 1], ['unexpected_eof', 13, 2]]);
+	assert.equal('errors' in parse('x', { errorRecovery: true }), false);
+	const scoped = parse('let = f(a, b', { errorRecovery: true, scopes: true, sourceType: 'module' });
+	assert.equal(scoped.bindings.length, 0);
+	assert.equal(bindingOf(scoped.body[0].declarations[0].id), undefined);
+	assert.equal(referenceOf(scoped.body[0].declarations[0].init.callee).binding, null);
 	assert.throws(() => parseExpressionAt('{a}', 1, { stopAt: ['a s'] }), TypeError);
 
 	const params = parseParamsAt('(a, b = 1) => a', 0);

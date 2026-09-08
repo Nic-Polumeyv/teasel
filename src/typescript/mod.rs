@@ -485,23 +485,23 @@ impl Parser<'_, TypeScript> {
 	fn parse_type_assertion(&mut self, for_init: ForInit) -> Result<NodeId> {
 		let start = self.tok.start;
 		let snapshot = self.snapshot();
-		let assertion: Result<NodeId> = (|| {
-			self.lexer.depth += 1;
-			let type_annotation = match self.try_next_parse_constant_context()? {
+		let assertion = self.speculate(|p| {
+			p.lexer.open(crate::lexer::ANGLE);
+			let type_annotation = match p.try_next_parse_constant_context()? {
 				Some(constant) => constant,
-				None => self.next_then_parse_type()?,
+				None => p.next_then_parse_type()?,
 			};
-			self.lexer.depth -= 1;
-			self.expect(TokenKind::Gt)?;
-			let expression = self.parse_maybe_unary(&mut None, false, false, for_init)?;
-			Ok(self.ts(
+			p.lexer.close_angle();
+			p.expect(TokenKind::Gt)?;
+			let expression = p.parse_maybe_unary(&mut None, false, false, for_init)?;
+			Ok(p.ts(
 				TsKind::TypeAssertion {
 					type_annotation,
 					expression,
 				},
 				start,
 			))
-		})();
+		});
 		match assertion {
 			Ok(node) => Ok(node),
 			Err(_) => {
@@ -523,18 +523,18 @@ impl Parser<'_, TypeScript> {
 		let old = self.ext.maybe_in_arrow_parameters;
 		self.ext.maybe_in_arrow_parameters = true;
 		let snapshot = self.snapshot();
-		let head: Result<(NodeId, Vec<Option<NodeId>>, Option<NodeId>)> = (|| {
-			let type_parameters = self.parse_type_parameters(TypeParameterModifiers::Const)?;
-			self.expect(TokenKind::ParenL)?;
-			let params = self.parse_binding_list(TokenKind::ParenR, false, true, false)?;
-			let return_type = if self.is(TokenKind::Colon) {
-				Some(self.parse_type_or_type_predicate_annotation(TokenKind::Colon)?)
+		let head = self.speculate(|p| {
+			let type_parameters = p.parse_type_parameters(TypeParameterModifiers::Const)?;
+			p.expect(TokenKind::ParenL)?;
+			let params = p.parse_binding_list(TokenKind::ParenR, false, true, false)?;
+			let return_type = if p.is(TokenKind::Colon) {
+				Some(p.parse_type_or_type_predicate_annotation(TokenKind::Colon)?)
 			} else {
 				None
 			};
-			self.expect(TokenKind::Arrow)?;
+			p.expect(TokenKind::Arrow)?;
 			Ok((type_parameters, params, return_type))
-		})();
+		});
 		self.ext.maybe_in_arrow_parameters = old;
 		let Ok((type_parameters, params, return_type)) = head else {
 			self.restore(snapshot);
@@ -659,7 +659,7 @@ impl Parser<'_, TypeScript> {
 			return Ok(true);
 		}
 		let snapshot = self.snapshot();
-		match self.parse_type_or_type_predicate_annotation(TokenKind::Colon) {
+		match self.speculate(|p| p.parse_type_or_type_predicate_annotation(TokenKind::Colon)) {
 			Ok(return_type) if !self.can_insert_semicolon() && self.is(TokenKind::Arrow) => {
 				self.ext.arrow_return_type = Some(return_type);
 				Ok(true)
@@ -1435,11 +1435,11 @@ impl Extension for TypeScript {
 		}
 		let snapshot = p.snapshot();
 		let saved_errors = *errors;
-		let attempt: Result<(NodeId, NodeId)> = (|| {
+		let attempt = p.speculate(|p| {
 			let type_parameters = p.parse_type_parameters(TypeParameterModifiers::Const)?;
 			let expr = p.parse_maybe_assign(for_init, errors)?;
 			Ok((type_parameters, expr))
-		})();
+		});
 		match attempt {
 			Ok((type_parameters, expr)) if p.is_arrow(expr) => {
 				let start = p.start_of(type_parameters);
@@ -1497,7 +1497,7 @@ impl Extension for TypeScript {
 			return Ok(None);
 		}
 		let snapshot = p.snapshot();
-		match p.parse_conditional(expr, start, for_init) {
+		match p.speculate(|p| p.parse_conditional(expr, start, for_init)) {
 			Ok(node) => Ok(Some(node)),
 			Err(_) => {
 				p.restore(snapshot);
@@ -1579,7 +1579,9 @@ impl Extension for TypeScript {
 			p.next()?;
 		}
 		if p.is(TokenKind::Lt) || p.is(TokenKind::LtLt) {
-			match p.parse_type_arguments_subscript(base, start, no_calls, chained, is_optional_call, for_init) {
+			match p.speculate(|p| {
+				p.parse_type_arguments_subscript(base, start, no_calls, chained, is_optional_call, for_init)
+			}) {
 				Ok(Some(node)) => {
 					if matches!(p.ts_kind(node), Some(TsKind::InstantiationExpression { .. }))
 						&& (p.is(TokenKind::Dot) || (p.is(TokenKind::QuestionDot) && p.peek_char().0 != Some('(')))

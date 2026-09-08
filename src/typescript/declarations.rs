@@ -83,10 +83,26 @@ impl Parser<'_, TypeScript> {
 		self.expect(TokenKind::BraceL)?;
 		let mut body = Vec::new();
 		let mut exports = crate::interner::FastSet::default();
+		let mut closed = true;
 		while !self.is(TokenKind::BraceR) {
-			body.push(self.parse_statement(Context::None, true, Some(&mut exports))?);
+			if self.missing_closer(TokenKind::BraceR)? {
+				closed = false;
+				break;
+			}
+			if self.is(TokenKind::BraceR) {
+				break;
+			}
+			let at = self.tok.start;
+			if let Some(statement) =
+				self.statement_recovered(|p| p.parse_statement(Context::None, true, Some(&mut exports)))?
+			{
+				body.push(statement);
+			}
+			self.ensure_progress(at)?;
 		}
-		self.next()?;
+		if closed {
+			self.next()?;
+		}
 		self.ext.module_blocks -= 1;
 		self.exit_scope();
 		let body = self.list_of(&body);

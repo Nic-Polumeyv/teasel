@@ -40,6 +40,7 @@ codes! {
 	ReservedWord "reserved_word" => "The keyword '{}' is reserved",
 	EscapeInKeyword "escape_in_keyword" => "Escape sequence in keyword {}",
 	NestingDepth "nesting_depth" => "Maximum nesting depth exceeded",
+	TreeSize "tree_size" => "Maximum tree size exceeded",
 	UnterminatedComment "unterminated_comment" => "Unterminated comment",
 	UnterminatedString "unterminated_string" => "Unterminated string constant",
 	UnterminatedTemplate "unterminated_template" => "Unterminated template",

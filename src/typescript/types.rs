@@ -66,7 +66,7 @@ impl Parser<'_, TypeScript> {
 	/// Runs `f` and puts the tokenizer back where it was, whatever `f` did.
 	pub(super) fn lookahead<T>(&mut self, f: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
 		let snapshot = self.snapshot();
-		let result = f(self);
+		let result = self.speculate(f);
 		self.restore(snapshot);
 		result
 	}
@@ -97,12 +97,12 @@ impl Parser<'_, TypeScript> {
 
 	// Lists
 
-	fn is_list_terminator(&self, kind: ListKind) -> bool {
+	fn list_end(kind: ListKind) -> TokenKind {
 		match kind {
-			ListKind::EnumMembers | ListKind::TypeMembers => self.is(TokenKind::BraceR),
-			ListKind::HeritageClause => self.is(TokenKind::BraceL),
-			ListKind::TupleElements => self.is(TokenKind::BracketR),
-			ListKind::TypeParametersOrArguments => self.is(TokenKind::Gt),
+			ListKind::EnumMembers | ListKind::TypeMembers => TokenKind::BraceR,
+			ListKind::HeritageClause => TokenKind::BraceL,
+			ListKind::TupleElements => TokenKind::BracketR,
+			ListKind::TypeParametersOrArguments => TokenKind::Gt,
 		}
 	}
 
@@ -111,16 +111,17 @@ impl Parser<'_, TypeScript> {
 		kind: ListKind,
 		mut element: impl FnMut(&mut Self) -> Result<NodeId>,
 	) -> Result<Vec<NodeId>> {
+		let end = Self::list_end(kind);
 		let mut result = Vec::new();
 		loop {
-			if self.is_list_terminator(kind) {
+			if self.is(end) {
 				break;
 			}
 			result.push(element(self)?);
 			if self.eat(TokenKind::Comma)? {
 				continue;
 			}
-			if self.is_list_terminator(kind) || self.missing_closer(TokenKind::Eof) {
+			if self.is(end) || self.missing_closer(end)? {
 				break;
 			}
 			return self.unexpected();
@@ -133,9 +134,12 @@ impl Parser<'_, TypeScript> {
 		kind: ListKind,
 		mut element: impl FnMut(&mut Self) -> Result<NodeId>,
 	) -> Result<Vec<NodeId>> {
+		let end = Self::list_end(kind);
 		let mut result = Vec::new();
-		while !self.is_list_terminator(kind) {
+		while !self.is(end) {
+			let at = self.tok.start;
 			result.push(element(self)?);
+			self.ensure_progress(at)?;
 		}
 		Ok(result)
 	}
@@ -221,7 +225,7 @@ impl Parser<'_, TypeScript> {
 	/// Runs `f`, keeping its result only when it is `Some`; otherwise the tokenizer goes back.
 	pub(super) fn try_parse<T>(&mut self, f: impl FnOnce(&mut Self) -> Result<Option<T>>) -> Result<Option<T>> {
 		let snapshot = self.snapshot();
-		let result = f(self)?;
+		let result = self.speculate(f)?;
 		if result.is_none() {
 			self.restore(snapshot);
 		}
@@ -884,13 +888,13 @@ impl Parser<'_, TypeScript> {
 		if !self.is(TokenKind::Lt) {
 			return self.unexpected();
 		}
-		self.lexer.depth += 1;
+		self.lexer.open(crate::lexer::ANGLE);
 		self.next()?;
 		let params = self.parse_delimited_list(ListKind::TypeParametersOrArguments, |p| {
 			p.parse_type_parameter(modifiers)
 		})?;
 		// Unlike type arguments, checked after the `>`: the error position follows the plugin.
-		self.lexer.depth -= 1;
+		self.lexer.close_angle();
 		self.expect(TokenKind::Gt)?;
 		if params.is_empty() {
 			return self.error(self.tok.start, Code::EmptyTypeParameters);
@@ -910,14 +914,14 @@ impl Parser<'_, TypeScript> {
 	pub(super) fn parse_type_arguments(&mut self) -> Result<NodeId> {
 		let start = self.tok.start;
 		let params = self.in_type(|p| {
-			p.lexer.depth += 1;
+			p.lexer.open(crate::lexer::ANGLE);
 			p.expect(TokenKind::Lt)?;
 			p.parse_delimited_list(ListKind::TypeParametersOrArguments, |p| p.parse_type())
 		})?;
 		if params.is_empty() {
 			return self.error(self.tok.start, Code::EmptyTypeArguments);
 		}
-		self.lexer.depth -= 1;
+		self.lexer.close_angle();
 		self.expect(TokenKind::Gt)?;
 		let params = self.list_of(&params);
 		Ok(self.ts(TsKind::TypeParameterInstantiation { params }, start))

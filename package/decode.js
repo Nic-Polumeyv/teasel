@@ -123,14 +123,15 @@ function generate({ type, keys, kinds }, link) {
 /** The same without code generation, for a host whose policy forbids it. @param {Shape} shape @param {boolean} link */
 function interpret({ type, keys, kinds }, link) {
 	const facts = link && type !== null && keys.some((key) => FACTS.has(key));
+	const parents = link && type !== null;
 	return (S) => {
 		const n = type === null ? {} : { type };
 		let scope, declares, reference, defines, writes;
 		for (let i = 0; i < keys.length; i++) {
 			const key = keys[i];
 			const value = READERS[kinds[i]](S);
-			if (link && kinds[i] === 0 && value !== null && value.type !== undefined) value[PARENT] = n;
-			else if (link && kinds[i] === 8) for (const child of value) if (child !== null) child[PARENT] = n;
+			if (parents && kinds[i] === 0 && value !== null && value.type !== undefined) value[PARENT] = n;
+			else if (parents && kinds[i] === 8) for (const child of value) if (child !== null) child[PARENT] = n;
 			if (!facts || !FACTS.has(key)) n[key] = value;
 			else if (key === 'scope') scope = value;
 			else if (key === 'declares') declares = value;

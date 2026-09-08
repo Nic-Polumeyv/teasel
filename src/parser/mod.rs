@@ -425,7 +425,6 @@ pub(crate) fn parse_params_at<E: Extension>(
 		}
 		result => result?,
 	};
-	parser.rest_is_unexpected();
 	let end = parser.consumed_end();
 	Ok((parser.finish(), params, end))
 }
@@ -470,6 +469,10 @@ pub(crate) struct Parser<'a, E: Extension = ()> {
 	pub(crate) errors: Vec<SyntaxError>,
 	/// A closing bracket was missing: the next node built is the one it would have closed.
 	pub(crate) unclosed: bool,
+	/// Inside a speculation, where the parse must fail as strict parsing would, not recover.
+	speculating: u32,
+	/// More nodes than this is a parse that stopped consuming input.
+	tree_limit: usize,
 }
 
 /// Enough to unwind the parser after an error inside a statement it recovers from.
@@ -478,6 +481,7 @@ struct Mark<E: Extension> {
 	labels: usize,
 	private_names: usize,
 	depth: u32,
+	brackets: (u32, u128),
 	strict: bool,
 	ext: E::Snapshot,
 }
@@ -492,11 +496,13 @@ pub(crate) struct TokenSnapshot {
 	pos: u32,
 	in_type: bool,
 	depth: u32,
+	open: u128,
 	stopped: bool,
 	unmatched: bool,
 	tok: Token,
 	prev_end: u32,
 	comments: usize,
+	errors: usize,
 }
 
 #[derive(Clone, Copy)]
@@ -568,6 +574,8 @@ impl<'a, E: Extension> Parser<'a, E> {
 			potential_arrow_in_for_await: false,
 			errors: Vec::new(),
 			unclosed: false,
+			speculating: 0,
+			tree_limit: 16 * src.len() + 256,
 		};
 		E::init(&mut parser);
 		parser.lexer.next_token_into(&mut parser.tok)?;
@@ -596,11 +604,13 @@ impl<'a, E: Extension> Parser<'a, E> {
 			pos: self.lexer.pos(),
 			in_type: self.lexer.in_type,
 			depth: self.lexer.depth,
+			open: self.lexer.open,
 			stopped: self.lexer.stopped,
 			unmatched: self.lexer.unmatched,
 			tok: self.tok,
 			prev_end: self.prev_end,
 			comments: self.lexer.comments.len(),
+			errors: self.lexer.errors.len(),
 		}
 	}
 
@@ -608,20 +618,44 @@ impl<'a, E: Extension> Parser<'a, E> {
 		self.lexer.set_pos(snapshot.pos);
 		self.lexer.in_type = snapshot.in_type;
 		self.lexer.depth = snapshot.depth;
+		self.lexer.open = snapshot.open;
 		self.lexer.stopped = snapshot.stopped;
 		self.lexer.unmatched = snapshot.unmatched;
 		self.tok = snapshot.tok;
 		self.prev_end = snapshot.prev_end;
 		self.lexer.comments.truncate(snapshot.comments);
+		self.lexer.errors.truncate(snapshot.errors);
+	}
+
+	/// A tree past what the source can hold is a loop that consumes nothing: it fails here,
+	/// cheaply, instead of growing until the machine runs out of memory.
+	pub(crate) fn within_limit(&self) -> Result<()> {
+		if self.ast.nodes.len() > self.tree_limit {
+			return self.error(self.tok.start, Code::TreeSize);
+		}
+		Ok(())
 	}
 
 	pub(crate) fn recovering(&self) -> bool {
-		self.options.error_recovery
+		self.options.error_recovery && self.speculating == 0
 	}
 
-	/// Records what `unexpected` would raise, once per position.
-	pub(crate) fn report_unexpected(&mut self) {
-		let error = self.unexpected::<()>().unwrap_err();
+	/// Runs `f` with recovery off, so it fails where strict parsing would and the caller can try
+	/// something else.
+	pub(crate) fn speculate<T>(&mut self, f: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
+		self.speculating += 1;
+		let result = f(self);
+		self.speculating -= 1;
+		result
+	}
+
+	/// Under recovery an error is recorded, once per position, and the parse goes on with the
+	/// tree it has.
+	pub(crate) fn record(&mut self, error: Result<()>) -> Result<()> {
+		let Err(error) = error else { return Ok(()) };
+		if !self.recovering() {
+			return Err(error);
+		}
 		if self
 			.errors
 			.last()
@@ -629,39 +663,49 @@ impl<'a, E: Extension> Parser<'a, E> {
 		{
 			self.errors.push(*error);
 		}
+		Ok(())
+	}
+
+	/// Records what `unexpected` would raise.
+	pub(crate) fn report_unexpected(&mut self) {
+		let error = self.unexpected();
+		self.record(error).unwrap();
 	}
 
 	/// Where the grammar needs a token it does not have: an empty identifier of no width there.
 	pub(crate) fn placeholder(&mut self) -> Result<NodeId> {
+		self.within_limit()?;
 		if !self.recovering() {
 			return self.unexpected();
 		}
 		self.report_unexpected();
 		let unclosed = std::mem::take(&mut self.unclosed);
 		let name = self.intern("");
-		// right after the last token read, so the node it completes still contains it
-		let at = self.prev_end.max(self.tok.start.min(self.prev_end));
+		let at = self.tok.start;
+		self.prev_end = at;
 		let id = self.add_with_end(NodeKind::Identifier { name }, at, at);
 		self.unclosed = unclosed;
 		Ok(id)
 	}
 
-	/// The input or a bracket nothing here opened stands where `close` should: under recovery the
-	/// construct closes without it, marked unclosed.
-	pub(crate) fn missing_closer(&mut self, close: TokenKind) -> bool {
-		if !self.recovering() || !(self.is(TokenKind::Eof) || is_closer(self.tok.kind)) {
-			return false;
+	/// Where `close` should be but is not, under recovery: a closer nothing opened is skipped;
+	/// at the end of the input or at the closer of an outer construct the construct closes
+	/// without its own, marked unclosed.
+	pub(crate) fn missing_closer(&mut self, close: TokenKind) -> Result<bool> {
+		self.within_limit()?;
+		if !self.recovering() {
+			return Ok(false);
+		}
+		while self.lexer.unmatched && !self.is(close) {
+			self.report_unexpected();
+			self.next()?;
+		}
+		if !self.is(TokenKind::Eof) && (!is_closer(self.tok.kind) || self.is(close)) {
+			return Ok(false);
 		}
 		self.report_unexpected();
 		self.unclosed = true;
-		// the bracket here belongs to something outside the construct that closes without its own
-		if !self.is(TokenKind::Eof) {
-			self.lexer.unmatched = true;
-			if is_closer(close) {
-				self.lexer.depth = self.lexer.depth.saturating_sub(1);
-			}
-		}
-		true
+		Ok(true)
 	}
 
 	fn mark(&self) -> Mark<E> {
@@ -670,6 +714,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 			labels: self.labels.len(),
 			private_names: self.private_names.len(),
 			depth: self.depth,
+			brackets: (self.lexer.depth, self.lexer.open),
 			strict: self.strict,
 			ext: self.ext.save(),
 		}
@@ -682,6 +727,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 		self.labels.truncate(mark.labels);
 		self.private_names.truncate(mark.private_names);
 		self.depth = mark.depth;
+		(self.lexer.depth, self.lexer.open) = mark.brackets;
 		self.set_strict(mark.strict);
 		self.ext.restore(mark.ext);
 		self.unclosed = false;
@@ -701,7 +747,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 		match f(self) {
 			Ok(statement) => Ok(Some(statement)),
 			Err(error) => {
-				self.errors.push(*error);
+				self.record(Err(error)).unwrap();
 				self.unwind(mark);
 				let mut skipped = self.tok.start != at;
 				loop {
@@ -722,27 +768,29 @@ impl<'a, E: Extension> Parser<'a, E> {
 		}
 	}
 
-	/// The root of a parse at an offset, under recovery: when the parse fails, what was read is
-	/// skipped and an empty identifier stands where it failed; what follows a root is skipped too.
-	fn recovered(&mut self, result: Result<NodeId>) -> Result<NodeId> {
-		let root = match result {
-			Err(error) if self.recovering() => {
-				let at = error.pos;
-				self.errors.push(*error);
-				self.skip_to_end();
-				let name = self.intern("");
-				self.add_with_end(NodeKind::Identifier { name }, at, at)
-			}
-			result => result?,
-		};
-		self.rest_is_unexpected();
-		Ok(root)
+	/// An element of a list that consumed nothing under recovery would repeat forever: its token
+	/// is skipped as unexpected.
+	pub(crate) fn ensure_progress(&mut self, at: u32) -> Result<()> {
+		if self.recovering() && self.tok.start == at && !self.is(TokenKind::Eof) && !is_closer(self.tok.kind) {
+			self.report_unexpected();
+			self.next()?;
+		}
+		Ok(())
 	}
 
-	fn rest_is_unexpected(&mut self) {
-		if self.recovering() && !self.is(TokenKind::Eof) && !self.lexer.unmatched {
-			self.report_unexpected();
-			self.skip_to_end();
+	/// The root of a parse at an offset, under recovery: when the parse fails, what was read is
+	/// skipped and an empty identifier stands where it failed.
+	fn recovered(&mut self, result: Result<NodeId>) -> Result<NodeId> {
+		match result {
+			Err(error) if self.recovering() => {
+				let at = error.pos;
+				self.record(Err(error)).unwrap();
+				self.skip_to_end();
+				self.prev_end = self.prev_end.max(at);
+				let name = self.intern("");
+				Ok(self.add_with_end(NodeKind::Identifier { name }, at, at))
+			}
+			result => result,
 		}
 	}
 
@@ -758,7 +806,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 	/// Runs `f`, undoing it when it fails.
 	pub(crate) fn attempt<T>(&mut self, f: impl FnOnce(&mut Self) -> Result<T>) -> Option<T> {
 		let snapshot = self.snapshot();
-		match f(self) {
+		match self.speculate(f) {
 			Ok(value) => Some(value),
 			Err(_) => {
 				self.restore(snapshot);
@@ -969,16 +1017,14 @@ impl<'a, E: Extension> Parser<'a, E> {
 		if self.tok.escaped
 			&& let TokenKind::Keyword(keyword) = self.tok.kind
 		{
-			let error = self.error_arg::<()>(self.tok.start, Code::EscapeInKeyword, keyword.as_str());
-			if !self.recovering() {
-				return error;
-			}
-			self.errors.push(*error.unwrap_err());
+			let error = self.error_arg(self.tok.start, Code::EscapeInKeyword, keyword.as_str());
+			self.record(error)?;
 		}
 		self.next_liberal()
 	}
 
 	pub(crate) fn next_liberal(&mut self) -> Result<()> {
+		self.within_limit()?;
 		self.prev_end = self.tok.end;
 		self.lexer.next_token_into(&mut self.tok)?;
 		Ok(())
@@ -993,6 +1039,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 	}
 
 	pub(crate) fn eat(&mut self, kind: TokenKind) -> Result<bool> {
+		self.within_limit()?;
 		if self.is(kind) {
 			self.next()?;
 			Ok(true)
@@ -1006,16 +1053,17 @@ impl<'a, E: Extension> Parser<'a, E> {
 	}
 
 	pub(crate) fn expect(&mut self, kind: TokenKind) -> Result<()> {
-		if self.eat(kind)?
-			|| (matches!(
-				kind,
-				TokenKind::ParenR | TokenKind::BracketR | TokenKind::BraceR | TokenKind::Gt
-			) && self.missing_closer(kind))
-		{
-			Ok(())
-		} else {
-			self.unexpected()
+		if self.eat(kind)? {
+			return Ok(());
 		}
+		if matches!(
+			kind,
+			TokenKind::ParenR | TokenKind::BracketR | TokenKind::BraceR | TokenKind::Gt
+		) && (self.missing_closer(kind)? || self.eat(kind)?)
+		{
+			return Ok(());
+		}
+		self.unexpected()
 	}
 
 	pub(crate) fn expect_keyword(&mut self, keyword: Keyword) -> Result<()> {
@@ -1065,7 +1113,8 @@ impl<'a, E: Extension> Parser<'a, E> {
 
 	pub(crate) fn semicolon(&mut self) -> Result<()> {
 		if !self.eat(TokenKind::Semi)? && !self.can_insert_semicolon() {
-			return self.unexpected();
+			let error = self.unexpected();
+			self.record(error)?;
 		}
 		Ok(())
 	}

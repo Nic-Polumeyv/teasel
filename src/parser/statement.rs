@@ -55,10 +55,7 @@ impl<E: Extension> Parser<'_, E> {
 			{
 				body.push(statement);
 			}
-			if self.recovering() && self.tok.start == at && !self.is(TokenKind::Eof) {
-				self.report_unexpected();
-				self.next()?;
-			}
+			self.ensure_progress(at)?;
 		}
 		if module
 			&& !self.options.allow_undeclared_exports
@@ -214,6 +211,9 @@ impl<E: Extension> Parser<'_, E> {
 	fn is_let(&self, context: Context) -> bool {
 		if !self.is_contextual("let") {
 			return false;
+		}
+		if self.strict && self.recovering() {
+			return true;
 		}
 		let (next, _, pos) = self.peek_char();
 		let Some(next) = next else { return false };
@@ -763,18 +763,18 @@ impl<E: Extension> Parser<'_, E> {
 		let mut body = Vec::new();
 		let mut closed = true;
 		while !self.is(TokenKind::BraceR) {
-			if self.missing_closer(TokenKind::BraceR) {
+			if self.missing_closer(TokenKind::BraceR)? {
 				closed = false;
+				break;
+			}
+			if self.is(TokenKind::BraceR) {
 				break;
 			}
 			let at = self.tok.start;
 			if let Some(statement) = self.statement_recovered(|p| p.parse_statement(Context::None, false, None))? {
 				body.push(statement);
 			}
-			if self.recovering() && self.tok.start == at && !self.is(TokenKind::BraceR) {
-				self.report_unexpected();
-				self.next()?;
-			}
+			self.ensure_progress(at)?;
 		}
 		if exit_strict {
 			self.set_strict(false);
@@ -807,10 +807,14 @@ impl<E: Extension> Parser<'_, E> {
 				let in_or_of = self.is_keyword(Keyword::In) || self.is_contextual("of");
 				let missing_allowed = E::allows_missing_initializer(self);
 				if kind == VariableKind::Const && !in_or_of && !missing_allowed {
-					return self.unexpected();
-				}
-				if !matches!(self.kind(id), NodeKind::Identifier { .. }) && !(is_for && in_or_of) && !missing_allowed {
-					return self.error(self.prev_end, Code::PatternWithoutInitializer);
+					let error = self.unexpected();
+					self.record(error)?;
+				} else if !matches!(self.kind(id), NodeKind::Identifier { .. })
+					&& !(is_for && in_or_of)
+					&& !missing_allowed
+				{
+					let error = self.error(self.prev_end, Code::PatternWithoutInitializer);
+					self.record(error)?;
 				}
 				None
 			};
@@ -1203,11 +1207,17 @@ impl<E: Extension> Parser<'_, E> {
 		self.expect(TokenKind::BraceL)?;
 		let mut closed = true;
 		while !self.is(TokenKind::BraceR) {
-			if self.missing_closer(TokenKind::BraceR) {
+			if self.missing_closer(TokenKind::BraceR)? {
 				closed = false;
 				break;
 			}
-			let Some(element) = self.parse_class_element(super_class.is_some())? else {
+			if self.is(TokenKind::BraceR) {
+				break;
+			}
+			let at = self.tok.start;
+			let element = self.parse_class_element(super_class.is_some())?;
+			self.ensure_progress(at)?;
+			let Some(element) = element else {
 				continue;
 			};
 			body.push(element);

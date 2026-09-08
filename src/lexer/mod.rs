@@ -16,6 +16,11 @@ use unicode::{is_id_continue, is_id_start};
 type Result<T> = std::result::Result<T, Box<SyntaxError>>;
 
 /// Positions are byte offsets into the source.
+pub(crate) const PAREN: u128 = 0;
+pub(crate) const BRACKET: u128 = 1;
+pub(crate) const BRACE: u128 = 2;
+pub(crate) const ANGLE: u128 = 3;
+
 pub(crate) struct Lexer<'a> {
 	src: &'a str,
 	pos: usize,
@@ -32,6 +37,8 @@ pub(crate) struct Lexer<'a> {
 	/// The host's tokens, space-separated: one read outside every bracket ends the input.
 	pub(crate) stops: &'a str,
 	pub(crate) depth: u32,
+	/// The brackets open inside the entry, two bits a level, the innermost lowest.
+	pub(crate) open: u128,
 	/// The last token read was one of `stops`.
 	pub(crate) stopped: bool,
 	/// The last token read closes a bracket nothing opened.
@@ -66,6 +73,7 @@ impl<'a> Lexer<'a> {
 			in_type: false,
 			stops: "",
 			depth: 0,
+			open: 0,
 			stopped: false,
 			unmatched: false,
 			recover: false,
@@ -100,13 +108,20 @@ impl<'a> Lexer<'a> {
 
 	/// The token after the current one, leaving the lexer where it was.
 	pub(crate) fn peek_token(&mut self) -> Result<Token> {
-		let (pos, escaped, depth, stopped, unmatched) =
-			(self.pos, self.escaped, self.depth, self.stopped, self.unmatched);
+		let (pos, escaped, depth, open, stopped, unmatched) = (
+			self.pos,
+			self.escaped,
+			self.depth,
+			self.open,
+			self.stopped,
+			self.unmatched,
+		);
 		let (comments, errors) = (self.comments.len(), self.errors.len());
 		let token = self.next_token();
 		self.pos = pos;
 		self.escaped = escaped;
 		self.depth = depth;
+		self.open = open;
 		self.stopped = stopped;
 		self.unmatched = unmatched;
 		self.comments.truncate(comments);
@@ -212,7 +227,14 @@ impl<'a> Lexer<'a> {
 				}
 				Err(error) => return Err(error),
 			};
-			if self.depth == 0 && !self.stops.is_empty() && self.stops_at(start, kind) {
+			let closing = match kind {
+				TokenKind::ParenR => Some(self.closing(PAREN)),
+				TokenKind::BracketR => Some(self.closing(BRACKET)),
+				TokenKind::BraceR => Some(self.closing(BRACE)),
+				_ => None,
+			};
+			let outside = closing.map_or(self.depth == 0, |closing| closing.is_none());
+			if outside && !self.stops.is_empty() && self.stops_at(start, kind) {
 				self.pos = start;
 				self.stopped = true;
 				token.kind = TokenKind::Eof;
@@ -221,19 +243,49 @@ impl<'a> Lexer<'a> {
 				token.unclosed = false;
 				return Ok(());
 			}
-			self.depth = match kind {
-				TokenKind::BraceL | TokenKind::ParenL | TokenKind::BracketL => self.depth + 1,
-				TokenKind::BraceR | TokenKind::ParenR | TokenKind::BracketR => {
-					self.unmatched = self.depth == 0;
-					self.depth.saturating_sub(1)
-				}
-				_ => self.depth,
-			};
+			match kind {
+				TokenKind::ParenL => self.open(PAREN),
+				TokenKind::BracketL => self.open(BRACKET),
+				TokenKind::BraceL => self.open(BRACE),
+				_ => {}
+			}
+			match closing {
+				Some(Some((open, depth))) => (self.open, self.depth) = (open, depth),
+				Some(None) => self.unmatched = true,
+				None => {}
+			}
 			token.kind = kind;
 			token.end = self.pos as u32;
 			token.escaped = self.escaped;
 			token.unclosed = self.unclosed;
 			return Ok(());
+		}
+	}
+
+	pub(crate) fn open(&mut self, kind: u128) {
+		self.open = (self.open << 2) | kind;
+		self.depth += 1;
+	}
+
+	/// The stack once the innermost bracket of `kind` closes, with whatever was left open inside
+	/// it; none when nothing here opened one.
+	fn closing(&self, kind: u128) -> Option<(u128, u32)> {
+		let (mut open, mut depth) = (self.open, self.depth);
+		while depth > 0 {
+			if open & 3 == kind {
+				return Some((open >> 2, depth - 1));
+			}
+			open >>= 2;
+			depth -= 1;
+		}
+		None
+	}
+
+	/// Closes a type argument list the parser opened, unless a bracket already closed over it.
+	pub(crate) fn close_angle(&mut self) {
+		if self.depth > 0 && self.open & 3 == ANGLE {
+			self.open >>= 2;
+			self.depth -= 1;
 		}
 	}
 
@@ -841,7 +893,7 @@ impl<'a> Lexer<'a> {
 						self.pos += if tail { 1 } else { 2 };
 					}
 					if !tail {
-						self.depth += 1;
+						self.open(BRACE);
 					}
 					let raw_text = &self.src[start..end];
 					let raw = if returns {
