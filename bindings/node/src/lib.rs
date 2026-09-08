@@ -75,6 +75,7 @@ fn answer(env: &Env, result: Result<Vec<u32>, String>) -> Answer {
 		)?;
 	}
 	unsafe { std::ptr::copy_nonoverlapping(words.as_ptr(), ptr, words.len()) };
+	teasel::estree::recycle(words);
 	Ok(Either::A(unsafe { Uint32Array::from_napi_value(env.raw(), value)? }))
 }
 

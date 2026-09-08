@@ -29,32 +29,34 @@ pub(crate) enum Binding {
 	Outside,
 }
 
+/// How a name was declared in a scope, as bits so one scan answers a question about several.
+const VAR: u8 = 1;
+const LEXICAL: u8 = 2;
+const FUNCTION: u8 = 4;
+
 pub(crate) struct Scope {
 	pub flags: u32,
-	pub var: Vec<StrId>,
-	pub lexical: Vec<StrId>,
-	pub functions: Vec<StrId>,
+	/// The names declared here, each with how, in declaration order.
+	names: Vec<(StrId, u8)>,
 }
 
 impl Scope {
-	fn new(flags: u32) -> Self {
-		Self {
-			flags,
-			var: Vec::new(),
-			lexical: Vec::new(),
-			functions: Vec::new(),
-		}
+	fn has(&self, name: StrId, kinds: u8) -> bool {
+		self.names.iter().any(|&(n, kind)| n == name && kind & kinds != 0)
 	}
 }
 
 impl<E: Extension> Parser<'_, E> {
 	pub(crate) fn enter_scope(&mut self, flags: u32) {
-		self.scopes.push(Scope::new(flags));
+		let names = self.spare_names.pop().unwrap_or_default();
+		self.scopes.push(Scope { flags, names });
 	}
 
 	pub(crate) fn exit_scope(&mut self) {
 		E::scope_exit(self);
-		self.scopes.pop();
+		let mut scope = self.scopes.pop().unwrap();
+		scope.names.clear();
+		self.spare_names.push(scope.names);
 	}
 
 	pub(crate) fn current_scope(&self) -> &Scope {
@@ -146,32 +148,31 @@ impl<E: Extension> Parser<'_, E> {
 		match binding {
 			Binding::Lexical => {
 				let scope = self.current_scope_mut();
-				redeclared =
-					scope.lexical.contains(&name) || scope.functions.contains(&name) || scope.var.contains(&name);
-				scope.lexical.push(name);
+				redeclared = scope.has(name, LEXICAL | FUNCTION | VAR);
+				scope.names.push((name, LEXICAL));
 				if self.current_scope().flags & SCOPE_TOP != 0 {
 					self.undeclared_exports.remove(&name);
 				}
 			}
-			Binding::SimpleCatch => self.current_scope_mut().lexical.push(name),
+			Binding::SimpleCatch => self.current_scope_mut().names.push((name, LEXICAL)),
 			Binding::Function => {
 				let as_var = self.treat_functions_as_var();
 				let scope = self.current_scope_mut();
-				redeclared = scope.lexical.contains(&name) || (!as_var && scope.var.contains(&name));
-				scope.functions.push(name);
+				redeclared = scope.has(name, LEXICAL | if as_var { 0 } else { VAR });
+				scope.names.push((name, FUNCTION));
 			}
 			_ => {
 				for i in (0..self.scopes.len()).rev() {
 					let as_var = self.treat_functions_as_var_in(&self.scopes[i]);
 					let scope = &mut self.scopes[i];
-					if (scope.lexical.contains(&name)
-						&& !(scope.flags & SCOPE_SIMPLE_CATCH != 0 && scope.lexical[0] == name))
-						|| (!as_var && scope.functions.contains(&name))
-					{
+					// the parameter of a simple catch clause, its first name, may be redeclared by var
+					let catch_param =
+						scope.flags & SCOPE_SIMPLE_CATCH != 0 && scope.names.first().map(|n| n.0) == Some(name);
+					if (!catch_param && scope.has(name, LEXICAL)) || (!as_var && scope.has(name, FUNCTION)) {
 						redeclared = true;
 						break;
 					}
-					scope.var.push(name);
+					scope.names.push((name, VAR));
 					let top = scope.flags & SCOPE_TOP != 0;
 					let stop = scope.flags & SCOPE_VAR != 0;
 					if top {
@@ -193,8 +194,7 @@ impl<E: Extension> Parser<'_, E> {
 		if E::declares_export(self, name) {
 			return;
 		}
-		let scope = &self.scopes[0];
-		if !scope.lexical.contains(&name) && !scope.var.contains(&name) && !scope.functions.contains(&name) {
+		if !self.scopes[0].has(name, VAR | LEXICAL | FUNCTION) {
 			let order = self.undeclared_exports.len();
 			self.undeclared_exports
 				.entry(name)

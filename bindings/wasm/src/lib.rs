@@ -36,7 +36,7 @@ fn source(handle: u32) -> &'static Prepared<'static> {
 fn answer(result: Result<Vec<u32>, String>) -> u32 {
 	match result {
 		Ok(words) => {
-			WORDS.with(|w| *w.borrow_mut() = words);
+			WORDS.with(|w| teasel::estree::recycle(std::mem::replace(&mut *w.borrow_mut(), words)));
 			0
 		}
 		Err(error) => {

@@ -80,17 +80,26 @@ impl<X: Walk> Attacher<'_, X> {
 		while self.peek().is_some_and(|c| self.start(c) < start) {
 			self.take(node, Place::Leading);
 		}
+		let Some(next) = self.peek() else { return };
 		let base = self.scratch.len();
 		self.ast.children(node, &mut self.scratch);
 		let count = self.scratch.len() - base;
-		if count == 0 && self.body_of(node).is_some() {
-			while self.peek().is_some_and(|c| self.start(c) < end) {
-				self.take(node, Place::Inner);
+		// a comment past the children reaches one only over commas, parens and blanks; a child
+		// can end past its parent (a rest parameter's annotation in an async arrow), so it is the
+		// children's reach that counts
+		let reach = self.scratch[base..]
+			.iter()
+			.fold(end, |reach, &c| reach.max(self.ast.node(c).end));
+		if self.start(next) < reach || self.only_separators(reach, self.start(next)) {
+			if count == 0 && self.body_of(node).is_some() {
+				while self.peek().is_some_and(|c| self.start(c) < end) {
+					self.take(node, Place::Inner);
+				}
 			}
-		}
-		for i in 0..count {
-			let child = self.scratch[base + i];
-			self.visit(child, Some(node));
+			for i in 0..count {
+				let child = self.scratch[base + i];
+				self.visit(child, Some(node));
+			}
 		}
 		self.scratch.truncate(base);
 		let Some(comment) = self.peek() else { return };
@@ -103,13 +112,15 @@ impl<X: Walk> Attacher<'_, X> {
 			while self.peek().is_some_and(|c| self.start(c) < parent_end) {
 				self.take(node, Place::Trailing);
 			}
-		} else if end <= self.start(comment)
-			&& self.source.as_bytes()[end as usize..self.start(comment) as usize]
-				.iter()
-				.all(|b| matches!(b, b',' | b')' | b' ' | b'\t'))
-		{
+		} else if end <= self.start(comment) && self.only_separators(end, self.start(comment)) {
 			self.take(node, Place::Trailing);
 		}
+	}
+
+	fn only_separators(&self, from: u32, to: u32) -> bool {
+		self.source.as_bytes()[from as usize..to as usize]
+			.iter()
+			.all(|b| matches!(b, b',' | b')' | b' ' | b'\t'))
 	}
 
 	/// The list a block, program, array or object literal encloses in brackets.
@@ -216,6 +227,23 @@ mod tests {
 				r#"NumberLiteral leading=[] trailing=[" b "]"#
 			]
 		);
+	}
+
+	#[cfg(feature = "typescript")]
+	#[test]
+	fn a_child_past_its_parent_still_takes_its_comment() {
+		let src = "async (...a: T[] /* c */) => {}";
+		let mut ast = crate::typescript::parse(
+			src,
+			Options {
+				module: true,
+				..Options::default()
+			},
+		)
+		.unwrap();
+		let root = ast.last();
+		super::attach(&mut ast, src, root, 0);
+		assert_eq!(attached(&ast, src), [r#"Extension leading=[] trailing=[" c "]"#]);
 	}
 
 	#[test]

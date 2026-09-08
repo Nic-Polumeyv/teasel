@@ -90,8 +90,7 @@ impl<X: Default> Ast<X> {
 
 /// How an extension's nodes join a walk over the tree.
 pub trait Walk: Sized {
-	/// Pushes the children of `id`, in any order; `Ast::children` sorts them. Plain nodes come from
-	/// `Ast::plain_children`.
+	/// Pushes the children of `id` in source order; plain nodes come from `Ast::plain_children`.
 	fn children(&self, ast: &Ast<Self>, id: NodeId, out: &mut Vec<NodeId>);
 }
 
@@ -106,7 +105,7 @@ impl<X: Walk> Ast<X> {
 	pub fn children(&self, id: NodeId, out: &mut Vec<NodeId>) {
 		let from = out.len();
 		self.extension.children(self, id, out);
-		out[from..].sort_by_key(|&child| self.node(child).start);
+		debug_assert!(out[from..].is_sorted_by_key(|&child| self.node(child).start));
 	}
 }
 
@@ -134,8 +133,13 @@ impl<X> Ast<X> {
 			| DebuggerStatement
 			| Extension(_) => {}
 			TemplateLiteral { quasis, expressions } => {
-				list(quasis, out);
-				list(expressions, out);
+				debug_assert_eq!(quasis.len, expressions.len + 1);
+				for (i, quasi) in self.list(quasis).iter().flatten().enumerate() {
+					out.push(*quasi);
+					if (i as u32) < expressions.len {
+						out.extend(self.nth(expressions, i as u32));
+					}
+				}
 			}
 			TaggedTemplateExpression { tag, quasi } => out.extend([tag, quasi]),
 			ArrayExpression { elements } | ArrayPattern { elements } => list(elements, out),

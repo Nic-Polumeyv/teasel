@@ -13,13 +13,23 @@ const utf8 = new TextDecoder('utf-8', { ignoreBOM: true });
 const SCOPE = Symbol('scope');
 const BINDING = Symbol('binding');
 const REFERENCE = Symbol('reference');
+// a global's write and mutate bits, until someone asks for its reference: no binding lists it
+const GLOBAL = Symbol('global');
 
 /** @param {import('estree').Node} node @returns {import('./index.js').Scope | undefined} the scope the node opens */
 export const scopeOf = (node) => (node == null ? undefined : node[SCOPE]);
 /** @param {import('estree').Node} node @returns {import('./index.js').Binding | null | undefined} what the identifier declares or refers to; null for a global, undefined when it names no value */
 export const bindingOf = (node) => (node == null ? undefined : node[BINDING]);
 /** @param {import('estree').Node} node @returns {import('./index.js').Reference | undefined} the reference an identifier makes, a global's included */
-export const referenceOf = (node) => (node == null ? undefined : node[REFERENCE]);
+export function referenceOf(node) {
+	if (node == null) return undefined;
+	let reference = node[REFERENCE];
+	if (reference === undefined && node[GLOBAL] !== undefined) {
+		const facts = node[GLOBAL];
+		reference = node[REFERENCE] = { node, binding: null, write: (facts & 1) !== 0, mutate: (facts & 2) !== 0 };
+	}
+	return reference;
+}
 
 const FACTS = new Set(['scope', 'binding', 'declares', 'write', 'mutate']);
 
@@ -27,33 +37,23 @@ const FACTS = new Set(['scope', 'binding', 'declares', 'write', 'mutate']);
  * One decode at a time; the builders are generated once and read through this.
  * @type {{ w: Uint32Array, at: number, strings: string[], floats: Float64Array | null, source: string, constants: string[], scopes: any[], bindings: any[], build: (() => any)[] }}
  */
-const S = {
-	w: new Uint32Array(0),
-	at: 0,
-	strings: [],
-	floats: null,
-	source: '',
-	constants: [],
-	scopes: [],
-	bindings: [],
-	build: []
-};
+const EMPTY = [];
 
-function node() {
+function node(S) {
 	const id = S.w[S.at++];
-	return id === NULL ? null : S.build[id]();
+	return id === NULL ? null : S.build[id](S);
 }
 
-function nodes() {
+function nodes(S) {
 	const list = [];
 	for (;;) {
 		const id = S.w[S.at++];
 		if (id === END) return list;
-		list.push(id === NULL ? null : S.build[id]());
+		list.push(id === NULL ? null : S.build[id](S));
 	}
 }
 
-function ints() {
+function ints(S) {
 	const n = S.w[S.at++];
 	const list = new Array(n);
 	for (let i = 0; i < n; i++) list[i] = S.w[S.at++];
@@ -68,7 +68,7 @@ function ints() {
  * @param {boolean} write
  * @param {boolean} mutate
  */
-function file(n, scope, declares, binding, write, mutate) {
+function file(S, n, scope, declares, binding, write, mutate) {
 	if (scope !== undefined) {
 		const s = S.scopes[scope];
 		n[SCOPE] = s;
@@ -79,20 +79,23 @@ function file(n, scope, declares, binding, write, mutate) {
 		n[BINDING] = d;
 		if (d.node === null) d.node = n;
 	}
-	if (binding !== undefined) {
-		const b = binding === null ? null : S.bindings[binding];
+	if (binding === null) {
+		n[BINDING] = null;
+		n[GLOBAL] = (write ? 1 : 0) | (mutate ? 2 : 0);
+	} else if (binding !== undefined) {
+		const b = S.bindings[binding];
 		n[BINDING] = b;
 		const r = { node: n, binding: b, write, mutate };
 		n[REFERENCE] = r;
-		if (b !== null) b.references.push(r);
+		b.references.push(r);
 	}
 }
 
 /** @typedef {{ type: string | null, keys: string[], kinds: number[] }} Shape */
 
 // one reader per kind, as source for the generated builders and as a function for the interpreter
-const READ = ['node()', 'S.w[S.at++]', 'S.floats[S.w[S.at++]]', 'S.w[S.at++] === 1', 'S.constants[S.w[S.at++]]', 'S.strings[S.w[S.at++]]', 'S.source.slice(S.w[S.at++], S.w[S.at++])', '{ start: { line: S.w[S.at++], column: S.w[S.at++] }, end: { line: S.w[S.at++], column: S.w[S.at++] } }', 'nodes()', 'ints()'];
-const READERS = [node, () => S.w[S.at++], () => /** @type {Float64Array} */ (S.floats)[S.w[S.at++]], () => S.w[S.at++] === 1, () => S.constants[S.w[S.at++]], () => S.strings[S.w[S.at++]], () => S.source.slice(S.w[S.at++], S.w[S.at++]), () => ({ start: { line: S.w[S.at++], column: S.w[S.at++] }, end: { line: S.w[S.at++], column: S.w[S.at++] } }), nodes, ints];
+const READ = ['node(S)', 'S.w[S.at++]', 'S.floats[S.w[S.at++]]', 'S.w[S.at++] === 1', 'S.constants[S.w[S.at++]]', 'S.strings[S.w[S.at++]]', 'S.source.slice(S.w[S.at++], S.w[S.at++])', '{ start: { line: S.w[S.at++], column: S.w[S.at++] }, end: { line: S.w[S.at++], column: S.w[S.at++] } }', 'nodes(S)', 'ints(S)'];
+const READERS = [node, (S) => S.w[S.at++], (S) => /** @type {Float64Array} */ (S.floats)[S.w[S.at++]], (S) => S.w[S.at++] === 1, (S) => S.constants[S.w[S.at++]], (S) => S.strings[S.w[S.at++]], (S) => S.source.slice(S.w[S.at++], S.w[S.at++]), (S) => ({ start: { line: S.w[S.at++], column: S.w[S.at++] }, end: { line: S.w[S.at++], column: S.w[S.at++] } }), nodes, ints];
 
 /**
  * One object literal per shape: V8 allocates it in one hidden class. Facts, and everything the
@@ -114,19 +117,19 @@ function generate({ type, keys, kinds }, link) {
 			else props.push(`${JSON.stringify(key)}: v${i}`);
 		}
 	}
-	const body = `${lead.join(' ')} const n = { ${props.join(', ')} }; ${last < 0 ? '' : `file(n, ${facts.scope}, ${facts.declares}, ${facts.binding}, ${facts.write}, ${facts.mutate});`} return n;`;
-	return new Function('S', 'node', 'nodes', 'ints', 'file', `return () => { ${body} };`)(S, node, nodes, ints, file);
+	const body = `${lead.join(' ')} const n = { ${props.join(', ')} }; ${last < 0 ? '' : `file(S, n, ${facts.scope}, ${facts.declares}, ${facts.binding}, ${facts.write}, ${facts.mutate});`} return n;`;
+	return new Function('node', 'nodes', 'ints', 'file', `return (S) => { ${body} };`)(node, nodes, ints, file);
 }
 
 /** The same without code generation, for a host whose policy forbids it. @param {Shape} shape @param {boolean} link */
 function interpret({ type, keys, kinds }, link) {
 	const facts = link && type !== null && keys.some((key) => FACTS.has(key));
-	return () => {
+	return (S) => {
 		const n = type === null ? {} : { type };
 		let scope, declares, binding, write = false, mutate = false;
 		for (let i = 0; i < keys.length; i++) {
 			const key = keys[i];
-			const value = READERS[kinds[i]]();
+			const value = READERS[kinds[i]](S);
 			if (!facts || !FACTS.has(key)) n[key] = value;
 			else if (key === 'scope') scope = value;
 			else if (key === 'declares') declares = value;
@@ -134,7 +137,7 @@ function interpret({ type, keys, kinds }, link) {
 			else if (key === 'write') write = value;
 			else mutate = value;
 		}
-		if (facts) file(n, scope, declares, binding, write, mutate);
+		if (facts) file(S, n, scope, declares, binding, write, mutate);
 		return n;
 	};
 }
@@ -198,7 +201,7 @@ function unaligned_floats(buffer, start, count) {
 function link_tables(scopes, bindings) {
 	for (const scope of scopes) {
 		scope.parent = scope.parent === null ? null : scopes[scope.parent];
-		scope.through = scope.through.map((index) => bindings[index]);
+		if (scope.through.length !== 0) scope.through = scope.through.map((index) => bindings[index]);
 		scope.node = null;
 		scope.bindings = [];
 		scope.declarations = new Map();
@@ -221,9 +224,9 @@ function link_tables(scopes, bindings) {
 export function decode(answer, source, engine, link = true) {
 	const words = answer instanceof Uint32Array ? answer : new Uint32Array(answer);
 	const { buffer, byteOffset } = words;
-	const [tree, ends_count, floats_count, bytes, known, known_shapes, tables_at] = words;
+	// read by index: destructuring a typed array goes through its iterator, a tenth of a small decode
+	const tree = words[0], ends_count = words[1], floats_count = words[2], bytes = words[3], known = words[4], known_shapes = words[5], tables_at = words[6];
 	const table = table_of(engine, known, known_shapes);
-	const ends = words.subarray(HEADER + tree, HEADER + tree + ends_count);
 	const text_at = HEADER + tree + ends_count;
 	const text = bytes ? utf8.decode(new Uint8Array(buffer, byteOffset + text_at * 4, bytes)) : '';
 	let floats_at = text_at + ((bytes + 3) >> 2);
@@ -233,32 +236,27 @@ export function decode(answer, source, engine, link = true) {
 	const strings = new Array(ends_count);
 	let from = 0;
 	for (let i = 0; i < ends_count; i++) {
-		strings[i] = text.slice(from, ends[i]);
-		from = ends[i];
+		const end = words[HEADER + tree + i];
+		strings[i] = text.slice(from, end);
+		from = end;
 	}
-	S.w = words;
-	S.strings = strings;
-	S.floats = floats;
-	S.source = source;
-	S.constants = table.constants;
-	S.build = builders(table, link);
+	// one state object per decode, young like everything it points at: no write barriers
+	const S = { w: words, at: HEADER, strings, floats, source, constants: table.constants, scopes: EMPTY, bindings: EMPTY, build: builders(table, link) };
 	let scopes = null, bindings = null;
 	if (tables_at !== 0) {
 		// the writer's `all_scopes` order; a third table would have to carry its key
 		S.at = HEADER + tables_at;
-		scopes = nodes();
-		bindings = nodes();
+		scopes = nodes(S);
+		bindings = nodes(S);
 		if (link) link_tables(scopes, bindings);
 		S.scopes = scopes;
 		S.bindings = bindings;
+		S.at = HEADER;
 	}
-	S.at = HEADER;
-	const root = node();
+	const root = node(S);
 	if (scopes !== null) {
 		root.scopes = scopes;
 		root.bindings = bindings;
 	}
-	S.strings = S.scopes = S.bindings = [];
-	S.source = '';
 	return root;
 }

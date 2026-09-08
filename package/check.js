@@ -39,6 +39,7 @@ function differ(a, b, seen = new Map(), path = '$') {
 	if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return `${path}: ${JSON.stringify(a)} vs ${JSON.stringify(b)}`;
 	if (seen.has(a)) return seen.get(a) === b ? null : `${path}: identity differs`;
 	seen.set(a, b);
+	if (a instanceof Map || b instanceof Map) return differ([...a], [...b], seen, `${path}[map]`);
 	const ka = Object.keys(a), kb = Object.keys(b);
 	if (ka.length !== kb.length || ka.some((k) => !kb.includes(k))) return `${path}: keys ${ka} vs ${kb}`;
 	for (const k of ka) {

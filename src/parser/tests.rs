@@ -440,6 +440,36 @@ fn reserved_words_by_context() {
 }
 
 #[test]
+fn a_var_may_redeclare_a_simple_catch_parameter() {
+	assert!(module("try {} catch (e) { var b; var e; }").contains("VariableDeclaration"));
+	assert_eq!(
+		module_error("try {} catch (e) { let e; }"),
+		"Identifier 'e' has already been declared (23)"
+	);
+}
+
+#[test]
+fn a_recycled_sink_writes_the_same_words() {
+	use crate::json::{Entry, Prepared, Request};
+	let mut request = Request::new(Entry::Program, 0);
+	for flag in ["comments", "locations", "scopes"] {
+		request.set(flag);
+	}
+	let source = "let x = /* a */ 1; function f(y) { return x + y; } // b";
+	let prepared = Prepared::borrowed(source, request);
+	let first = prepared.binary_range(0.0, None).unwrap();
+	let _ = Prepared::borrowed("a + b", request).binary(Entry::Expression, 0.0, false);
+	assert!(
+		Prepared::borrowed("a +", request)
+			.binary(Entry::Expression, 0.0, false)
+			.is_err()
+	);
+	let again = prepared.binary_range(0.0, None).unwrap();
+	// the header counts the constants and shapes known so far, which the parses between added to
+	assert_eq!((&first[..4], &first[6..]), (&again[..4], &again[6..]));
+}
+
+#[test]
 fn errors() {
 	assert_eq!(module_error("export { nope };"), "Export 'nope' is not defined (9)");
 	assert_eq!(

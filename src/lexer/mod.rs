@@ -141,7 +141,7 @@ impl<'a> Lexer<'a> {
 		Err(Box::new(SyntaxError::new(pos as u32, code)))
 	}
 
-	fn error_with<T>(&self, pos: usize, code: Code, message: impl Into<String>) -> Result<T> {
+	fn error_with<T>(&self, pos: usize, code: Code, message: impl Into<std::borrow::Cow<'static, str>>) -> Result<T> {
 		Err(Box::new(SyntaxError::with(pos as u32, code, message)))
 	}
 

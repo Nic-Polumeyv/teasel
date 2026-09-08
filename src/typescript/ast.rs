@@ -574,6 +574,7 @@ impl Bind for Data {
 impl Walk for Data {
 	fn children(&self, ast: &Ast<Self>, id: NodeId, out: &mut Vec<NodeId>) {
 		let list = |list: List, out: &mut Vec<NodeId>| out.extend(ast.list(list).iter().flatten());
+		let from = out.len();
 		let extras = self.extras(id).copied().unwrap_or_default();
 		match ast.node(id).kind {
 			NodeKind::Extension(index) => {
@@ -802,5 +803,6 @@ impl Walk for Data {
 				}
 			}
 		}
+		out[from..].sort_by_key(|&child| ast.node(child).start);
 	}
 }

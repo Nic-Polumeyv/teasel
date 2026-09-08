@@ -478,11 +478,13 @@ impl<'a, X: Bind> Binder<'a, X> {
 	fn resolve(&mut self, reference: ReferenceId, binding: BindingId, at: ScopeId) {
 		self.out.references[reference as usize].binding = Some(binding);
 		let mut scope = self.out.references[reference as usize].scope;
+		// `at` is the binding's own scope, so a scope that lists it already did so all the way up
 		while scope != at {
 			let s = &mut self.out.scopes[scope as usize];
-			if !s.through.contains(&binding) {
-				s.through.push(binding);
+			if s.through.contains(&binding) {
+				break;
 			}
+			s.through.push(binding);
 			scope = s.parent.unwrap();
 		}
 	}

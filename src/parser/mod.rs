@@ -461,6 +461,8 @@ pub(crate) struct Parser<'a, E: Extension = ()> {
 	pub(crate) strict: bool,
 	pub(crate) depth: u32,
 	pub(crate) scopes: Vec<Scope>,
+	/// Name vectors of scopes left, for the next scope entered.
+	spare_names: Vec<Vec<(StrId, u8)>>,
 	labels: Vec<Label>,
 	private_names: Vec<PrivateNameScope>,
 	pub(crate) undeclared_exports: FastMap<StrId, (u32, usize)>,
@@ -542,6 +544,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 			strict,
 			depth: 0,
 			scopes: Vec::new(),
+			spare_names: Vec::new(),
 			labels: Vec::new(),
 			private_names: Vec::new(),
 			undeclared_exports: FastMap::default(),
@@ -681,7 +684,12 @@ impl<'a, E: Extension> Parser<'a, E> {
 		self.error_with(pos, code, code.message())
 	}
 
-	pub(crate) fn error_with<T>(&self, pos: u32, code: Code, message: impl Into<String>) -> Result<T> {
+	pub(crate) fn error_with<T>(
+		&self,
+		pos: u32,
+		code: Code,
+		message: impl Into<std::borrow::Cow<'static, str>>,
+	) -> Result<T> {
 		let end = if pos == self.tok.start { self.tok.end } else { pos };
 		Err(Box::new(SyntaxError::with(pos, code, message).to(end)))
 	}
