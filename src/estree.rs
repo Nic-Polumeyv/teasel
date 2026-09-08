@@ -881,6 +881,9 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		let node = self.ast.node(id);
 		self.sink.begin(ty);
 		self.span(node.start, node.end);
+		if self.ast.unclosed.contains(&id) {
+			self.bool("closed", false);
+		}
 		self.scope_facts(id);
 		self.ast.extension.extras(self, id);
 		if let Some(attached) = self.ast.attached.get(&id) {
@@ -1004,6 +1007,51 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		self.sink.end();
 	}
 
+	/// The recovered errors as the thrown one would be: code, message, `pos`, `end` and a `loc`.
+	fn errors(&mut self) {
+		if self.ast.errors.is_empty() {
+			return;
+		}
+		let upto;
+		let positions = if self.positions.lines {
+			self.positions
+		} else {
+			let last = self.ast.errors.iter().map(|e| e.pos.max(e.end)).max().unwrap() as usize;
+			let mut end = last.min(self.source.len());
+			while !self.source.is_char_boundary(end) {
+				end += 1;
+			}
+			upto = Positions::new(&self.source[..end], true);
+			&upto
+		};
+		let mut cursor = Cursor::default();
+		self.key("errors");
+		self.sink.list();
+		for error in &self.ast.errors {
+			let pos = positions.offset(&mut cursor, error.pos);
+			let (line, column) = positions.line_column(cursor.line, error.pos, pos);
+			let end = positions.offset(&mut cursor, error.end);
+			self.sink.object();
+			self.key("code");
+			self.sink.str(error.code.name());
+			self.key("message");
+			self.sink.text(&error.message);
+			self.key("pos");
+			self.sink.int(pos);
+			self.key("end");
+			self.sink.int(end);
+			self.key("loc");
+			self.sink.object();
+			self.key("line");
+			self.sink.int(line as u32);
+			self.key("column");
+			self.sink.int(column as u32);
+			self.sink.end();
+			self.sink.end();
+		}
+		self.sink.end();
+	}
+
 	/// What the output's switches add after a root: every comment, what erasure kept, the scopes.
 	fn trailers(&mut self) {
 		if self.output.comments {
@@ -1011,6 +1059,7 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 			self.key("comments");
 			self.comment_list(&all);
 		}
+		self.errors();
 		if self.output.erase {
 			self.all_kept();
 		}

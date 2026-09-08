@@ -689,7 +689,7 @@ impl<E: Extension> Parser<'_, E> {
 			TokenKind::Keyword(Keyword::New) => self.parse_new(),
 			TokenKind::Backquote => self.parse_template(false),
 			TokenKind::Keyword(Keyword::Import) => self.parse_expr_import(for_new),
-			_ => self.unexpected(),
+			_ => self.placeholder(),
 		}
 	}
 
@@ -748,7 +748,9 @@ impl<E: Extension> Parser<'_, E> {
 
 	/// One token that is a whole literal.
 	fn literal(&mut self, kind: NodeKind, start: u32) -> Result<NodeId> {
+		let unclosed = self.tok.unclosed;
 		self.next()?;
+		self.unclosed |= unclosed;
 		Ok(self.add(kind, start))
 	}
 
@@ -811,6 +813,9 @@ impl<E: Extension> Parser<'_, E> {
 		let mut spread_start = None;
 		let mut errors = Some(DestructuringErrors::default());
 		while !self.is(TokenKind::ParenR) {
+			if self.missing_closer(TokenKind::ParenR) {
+				break;
+			}
 			if first {
 				first = false;
 			} else {
@@ -890,8 +895,13 @@ impl<E: Extension> Parser<'_, E> {
 				unreachable!()
 			};
 			if cooked.is_none() && !is_tagged {
-				return self.error(chunk.start, Code::BadTemplateEscape);
+				if !self.recovering() {
+					return self.error(chunk.start, Code::BadTemplateEscape);
+				}
+				self.errors
+					.push(*self.error::<()>(chunk.start, Code::BadTemplateEscape).unwrap_err());
 			}
+			self.unclosed |= chunk.unclosed;
 			quasis.push(self.add_with_end(NodeKind::TemplateElement { cooked, raw, tail }, chunk.start, chunk.end));
 			if tail {
 				self.prev_end = chunk.end + 1;
@@ -906,7 +916,22 @@ impl<E: Extension> Parser<'_, E> {
 			};
 			expressions.push(expression);
 			if !self.is(TokenKind::BraceR) {
-				return self.unexpected();
+				if !self.missing_closer(TokenKind::BraceR) {
+					return self.unexpected();
+				}
+				let at = self.tok.start;
+				let raw = self.intern("");
+				quasis.push(self.add_with_end(
+					NodeKind::TemplateElement {
+						cooked: Some(raw),
+						raw,
+						tail: true,
+					},
+					at,
+					at,
+				));
+				self.unclosed = true;
+				break;
 			}
 		}
 		let quasis = self.list_of(&quasis);
@@ -921,7 +946,7 @@ impl<E: Extension> Parser<'_, E> {
 		let mut has_proto = false;
 		self.next()?;
 		while !self.eat(TokenKind::BraceR)? {
-			if self.list_comma(TokenKind::BraceR, &mut first, true)? {
+			if self.missing_closer(TokenKind::BraceR) || self.list_comma(TokenKind::BraceR, &mut first, true)? {
 				break;
 			}
 			let prop = self.parse_property(is_pattern, errors)?;
@@ -1314,7 +1339,7 @@ impl<E: Extension> Parser<'_, E> {
 		let mut elements = Vec::new();
 		let mut first = true;
 		while !self.eat(close)? {
-			if self.list_comma(close, &mut first, allow_trailing_comma)? {
+			if self.missing_closer(close) || self.list_comma(close, &mut first, allow_trailing_comma)? {
 				break;
 			}
 			let element = if allow_empty && self.is(TokenKind::Comma) {
@@ -1390,7 +1415,7 @@ impl<E: Extension> Parser<'_, E> {
 		let name = match self.tok.kind {
 			TokenKind::Ident(name) => name,
 			TokenKind::Keyword(keyword) => self.intern(keyword.as_str()),
-			_ => return self.unexpected(),
+			_ => return self.placeholder(),
 		};
 		if liberal {
 			self.next_liberal()?;
@@ -1681,6 +1706,9 @@ impl<E: Extension> Parser<'_, E> {
 		let mut elements = Vec::new();
 		let mut first = true;
 		while !self.eat(close)? {
+			if self.missing_closer(close) {
+				break;
+			}
 			if first {
 				first = false;
 			} else {

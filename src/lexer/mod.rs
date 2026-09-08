@@ -34,6 +34,13 @@ pub(crate) struct Lexer<'a> {
 	pub(crate) depth: u32,
 	/// The last token read was one of `stops`.
 	pub(crate) stopped: bool,
+	/// The last token read closes a bracket nothing opened.
+	pub(crate) unmatched: bool,
+	/// Errors are recorded and reading goes on: an unterminated token runs to the end of its line
+	/// or of the source, anything else unreadable is skipped.
+	pub(crate) recover: bool,
+	pub(crate) errors: Vec<SyntaxError>,
+	unclosed: bool,
 	pub(crate) comments: Vec<Comment>,
 	pub(crate) strings: Interner,
 	/// `token::word` flags by string id, filled as ids appear.
@@ -60,6 +67,10 @@ impl<'a> Lexer<'a> {
 			stops: "",
 			depth: 0,
 			stopped: false,
+			unmatched: false,
+			recover: false,
+			errors: Vec::new(),
+			unclosed: false,
 			comments: Vec::new(),
 			strings: Interner::sized(budget),
 			word_flags: Vec::with_capacity(budget / 32),
@@ -89,14 +100,17 @@ impl<'a> Lexer<'a> {
 
 	/// The token after the current one, leaving the lexer where it was.
 	pub(crate) fn peek_token(&mut self) -> Result<Token> {
-		let (pos, escaped, depth, stopped, comments) =
-			(self.pos, self.escaped, self.depth, self.stopped, self.comments.len());
+		let (pos, escaped, depth, stopped, unmatched) =
+			(self.pos, self.escaped, self.depth, self.stopped, self.unmatched);
+		let (comments, errors) = (self.comments.len(), self.errors.len());
 		let token = self.next_token();
 		self.pos = pos;
 		self.escaped = escaped;
 		self.depth = depth;
 		self.stopped = stopped;
+		self.unmatched = unmatched;
 		self.comments.truncate(comments);
+		self.errors.truncate(errors);
 		token
 	}
 
@@ -170,18 +184,61 @@ impl<'a> Lexer<'a> {
 	// an error leaves the token half written, and every caller then restores a snapshot or stops
 	pub(crate) fn next_token_into(&mut self, token: &mut Token) -> Result<()> {
 		token.newline_before = self.skip_space()?;
-		let start = self.pos;
-		self.escaped = false;
 		self.stopped = false;
-		token.start = start as u32;
-		let Some(b) = self.byte() else {
-			token.kind = TokenKind::Eof;
-			token.end = start as u32;
-			token.escaped = false;
+		self.unmatched = false;
+		loop {
+			let start = self.pos;
+			self.escaped = false;
+			self.unclosed = false;
+			token.start = start as u32;
+			let Some(b) = self.byte() else {
+				token.kind = TokenKind::Eof;
+				token.end = start as u32;
+				token.escaped = false;
+				token.unclosed = false;
+				return Ok(());
+			};
+			let kind = match self.read_kind(b, start) {
+				Ok(kind) => kind,
+				Err(error) if self.recover => {
+					let mut after = (error.end as usize).max(self.pos).max(start + 1).min(self.src.len());
+					while !self.src.is_char_boundary(after) {
+						after += 1;
+					}
+					self.errors.push(*error);
+					self.pos = after;
+					token.newline_before |= self.skip_space()?;
+					continue;
+				}
+				Err(error) => return Err(error),
+			};
+			if self.depth == 0 && !self.stops.is_empty() && self.stops_at(start, kind) {
+				self.pos = start;
+				self.stopped = true;
+				token.kind = TokenKind::Eof;
+				token.end = start as u32;
+				token.escaped = false;
+				token.unclosed = false;
+				return Ok(());
+			}
+			self.depth = match kind {
+				TokenKind::BraceL | TokenKind::ParenL | TokenKind::BracketL => self.depth + 1,
+				TokenKind::BraceR | TokenKind::ParenR | TokenKind::BracketR => {
+					self.unmatched = self.depth == 0;
+					self.depth.saturating_sub(1)
+				}
+				_ => self.depth,
+			};
+			token.kind = kind;
+			token.end = self.pos as u32;
+			token.escaped = self.escaped;
+			token.unclosed = self.unclosed;
 			return Ok(());
-		};
+		}
+	}
 
-		let kind = match b {
+	fn read_kind(&mut self, b: u8, start: usize) -> Result<TokenKind> {
+		Ok(match b {
 			b'0'..=b'9' => self.read_number(false)?,
 			b'.' if self.byte_at(1).is_some_and(|b| b.is_ascii_digit()) => self.read_number(true)?,
 			b'"' | b'\'' => self.read_string(b)?,
@@ -200,24 +257,17 @@ impl<'a> Lexer<'a> {
 					return self.error_arg(start, Code::UnexpectedCharacter, c);
 				}
 			}
-		};
-		if self.depth == 0 && !self.stops.is_empty() && self.stops_at(start, kind) {
-			self.pos = start;
-			self.stopped = true;
-			token.kind = TokenKind::Eof;
-			token.end = start as u32;
-			token.escaped = false;
-			return Ok(());
+		})
+	}
+
+	/// Under `recover`, an unterminated token is recorded and finished by `finish`.
+	fn unterminated<T>(&mut self, pos: usize, code: Code, finish: impl FnOnce(&mut Self) -> T) -> Result<T> {
+		if !self.recover {
+			return self.error(pos, code);
 		}
-		self.depth = match kind {
-			TokenKind::BraceL | TokenKind::ParenL | TokenKind::BracketL => self.depth + 1,
-			TokenKind::BraceR | TokenKind::ParenR | TokenKind::BracketR => self.depth.saturating_sub(1),
-			_ => self.depth,
-		};
-		token.kind = kind;
-		token.end = self.pos as u32;
-		token.escaped = self.escaped;
-		Ok(())
+		self.errors.push(SyntaxError::new(pos as u32, code));
+		self.unclosed = true;
+		Ok(finish(self))
 	}
 
 	/// A word stop is the token's text; a punctuation stop is what the source continues with.
@@ -309,7 +359,16 @@ impl<'a> Lexer<'a> {
 	fn skip_block_comment(&mut self) -> Result<bool> {
 		let start = self.pos;
 		let Some((len, newline)) = comment_end(&self.src[start + 2..]) else {
-			return self.error(start, Code::UnterminatedComment);
+			let newline = self.src[start + 2..].chars().any(is_new_line);
+			return self.unterminated(start, Code::UnterminatedComment, |l| {
+				l.pos = l.src.len();
+				l.comments.push(Comment {
+					kind: CommentKind::Block,
+					start: start as u32,
+					end: l.pos as u32,
+				});
+				newline
+			});
 		};
 		let end = start + 2 + len + 2;
 		self.pos = end;
@@ -622,12 +681,25 @@ impl<'a> Lexer<'a> {
 		let mut escaped = false;
 		let mut in_class = false;
 		loop {
-			let Some(c) = self.char() else {
-				return self.error(start + 1, Code::UnterminatedRegexp);
+			let cut = match self.char() {
+				None => true,
+				Some(c) => is_new_line(c),
 			};
-			if is_new_line(c) {
-				return self.error(start + 1, Code::UnterminatedRegexp);
+			if cut {
+				return self.unterminated(start + 1, Code::UnterminatedRegexp, |l| {
+					let pattern = l.strings.intern(&l.src[start + 1..l.pos]);
+					let flags = l.strings.intern("");
+					Token {
+						kind: TokenKind::RegExp { pattern, flags },
+						start: start as u32,
+						end: l.pos as u32,
+						newline_before: token.newline_before,
+						escaped: false,
+						unclosed: true,
+					}
+				});
 			}
+			let c = self.char().unwrap();
 			if escaped {
 				escaped = false;
 			} else {
@@ -656,10 +728,19 @@ impl<'a> Lexer<'a> {
 			}
 		}
 		if escaped {
-			return self.error(flags_start, Code::UnexpectedToken);
+			if !self.recover {
+				return self.error(flags_start, Code::UnexpectedToken);
+			}
+			self.errors
+				.push(SyntaxError::new(flags_start as u32, Code::UnexpectedToken));
 		}
 		let flags_text = &self.src[flags_start..self.pos];
-		regexp::validate(start as u32 + 1, &self.src[start + 1..flags_start - 1], flags_text)?;
+		if let Err(error) = regexp::validate(start as u32 + 1, &self.src[start + 1..flags_start - 1], flags_text) {
+			if !self.recover {
+				return Err(error);
+			}
+			self.errors.push(*error);
+		}
 		let flags = self.strings.intern(flags_text);
 		let kind = TokenKind::RegExp { pattern, flags };
 		Ok(Token {
@@ -668,6 +749,7 @@ impl<'a> Lexer<'a> {
 			end: self.pos as u32,
 			newline_before: token.newline_before,
 			escaped: false,
+			unclosed: false,
 		})
 	}
 
@@ -679,9 +761,18 @@ impl<'a> Lexer<'a> {
 		let mut chunk_start = self.pos;
 		loop {
 			self.pos = scan::find(self.src.as_bytes(), self.pos, [quote, b'\\', b'\n', b'\r'], false);
-			let Some(c) = self.char() else {
-				return self.error(start, Code::UnterminatedString);
+			let cut = match self.char() {
+				None => true,
+				Some(c) => c == '\n' || c == '\r',
 			};
+			if cut {
+				return self.unterminated(start, Code::UnterminatedString, |l| {
+					l.push_chunk(chunk_start, &mut pending);
+					l.flush(&mut pending);
+					TokenKind::String(l.strings.intern(&l.buf))
+				});
+			}
+			let c = self.char().unwrap();
 			match c {
 				_ if c as u32 == quote as u32 => {
 					self.push_chunk(chunk_start, &mut pending);
@@ -712,7 +803,6 @@ impl<'a> Lexer<'a> {
 					}
 					chunk_start = self.pos;
 				}
-				'\n' | '\r' => return self.error(start, Code::UnterminatedString),
 				_ => self.pos += c.len_utf8(),
 			}
 		}
@@ -720,7 +810,7 @@ impl<'a> Lexer<'a> {
 
 	pub(crate) fn read_template(&mut self) -> Result<Token> {
 		let start = self.pos;
-		if start == self.src.len() {
+		if start == self.src.len() && !self.recover {
 			return self.error_with(start, Code::UnterminatedTemplate, "Unterminated template literal");
 		}
 		self.buf.clear();
@@ -731,8 +821,15 @@ impl<'a> Lexer<'a> {
 		let mut chunk_start = self.pos;
 		loop {
 			self.pos = scan::find(self.src.as_bytes(), self.pos, *b"`$\\\r", false);
-			let Some(c) = self.char() else {
-				return self.error(start, Code::UnterminatedTemplate);
+			let c = match self.char() {
+				Some(c) => c,
+				None if self.recover => {
+					self.errors
+						.push(SyntaxError::new(start as u32, Code::UnterminatedTemplate));
+					self.unclosed = true;
+					'`'
+				}
+				None => return self.error(start, Code::UnterminatedTemplate),
 			};
 			match c {
 				'`' | '$' if c == '`' || self.byte_at(1) == Some(b'{') => {
@@ -740,7 +837,9 @@ impl<'a> Lexer<'a> {
 					self.flush(&mut pending);
 					let end = self.pos;
 					let tail = c == '`';
-					self.pos += if tail { 1 } else { 2 };
+					if end < self.src.len() {
+						self.pos += if tail { 1 } else { 2 };
+					}
 					if !tail {
 						self.depth += 1;
 					}
@@ -765,6 +864,7 @@ impl<'a> Lexer<'a> {
 						end: end as u32,
 						newline_before: false,
 						escaped: false,
+						unclosed: self.unclosed,
 					});
 				}
 				'\\' => {

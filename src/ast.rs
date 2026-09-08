@@ -66,6 +66,10 @@ pub struct Ast<X = ()> {
 	pub attached: FastMap<NodeId, Attached>,
 	/// The scope analysis, when `scopes::analyze` ran.
 	pub scopes: Option<crate::scopes::Scopes>,
+	/// What went wrong, in source order, when errors are recovered from instead of thrown.
+	pub errors: Vec<crate::SyntaxError>,
+	/// Nodes whose closing bracket, quote or backquote is missing.
+	pub unclosed: crate::interner::FastSet<NodeId>,
 	pub extension: X,
 }
 

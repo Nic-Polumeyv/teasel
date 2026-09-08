@@ -120,7 +120,7 @@ impl Parser<'_, TypeScript> {
 			if self.eat(TokenKind::Comma)? {
 				continue;
 			}
-			if self.is_list_terminator(kind) {
+			if self.is_list_terminator(kind) || self.missing_closer(TokenKind::Eof) {
 				break;
 			}
 			return self.unexpected();
@@ -600,7 +600,7 @@ impl Parser<'_, TypeScript> {
 				}
 				self.parse_type_reference()
 			}
-			_ => self.unexpected(),
+			_ => self.placeholder(),
 		}
 	}
 

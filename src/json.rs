@@ -50,7 +50,7 @@ pub struct Request {
 }
 
 /// The names front ends accept for the request's switches, as acorn spells them.
-pub const FLAGS: [&str; 11] = [
+pub const FLAGS: [&str; 12] = [
 	"typescript",
 	"comments",
 	"scopes",
@@ -62,6 +62,7 @@ pub const FLAGS: [&str; 11] = [
 	"allowSuperOutsideMethod",
 	"allowUndeclaredExports",
 	"erase",
+	"errorRecovery",
 ];
 
 impl Request {
@@ -107,6 +108,7 @@ impl Request {
 			"allowSuperOutsideMethod" => self.options.allow_super_outside_method = true,
 			"allowUndeclaredExports" => self.options.allow_undeclared_exports = true,
 			"erase" => self.erase = true,
+			"errorRecovery" => self.options.error_recovery = true,
 			_ => {}
 		}
 	}

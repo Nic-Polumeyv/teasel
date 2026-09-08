@@ -44,7 +44,21 @@ impl<E: Extension> Parser<'_, E> {
 		let mut body = Vec::new();
 		let mut exports = FastSet::default();
 		while !self.is(TokenKind::Eof) {
-			body.push(self.parse_statement(Context::None, true, Some(&mut exports))?);
+			if self.recovering() && self.lexer.unmatched {
+				self.report_unexpected();
+				self.next()?;
+				continue;
+			}
+			let at = self.tok.start;
+			if let Some(statement) =
+				self.statement_recovered(|p| p.parse_statement(Context::None, true, Some(&mut exports)))?
+			{
+				body.push(statement);
+			}
+			if self.recovering() && self.tok.start == at && !self.is(TokenKind::Eof) {
+				self.report_unexpected();
+				self.next()?;
+			}
 		}
 		if module
 			&& !self.options.allow_undeclared_exports
@@ -747,13 +761,27 @@ impl<E: Extension> Parser<'_, E> {
 			self.enter_scope(0);
 		}
 		let mut body = Vec::new();
+		let mut closed = true;
 		while !self.is(TokenKind::BraceR) {
-			body.push(self.parse_statement(Context::None, false, None)?);
+			if self.missing_closer(TokenKind::BraceR) {
+				closed = false;
+				break;
+			}
+			let at = self.tok.start;
+			if let Some(statement) = self.statement_recovered(|p| p.parse_statement(Context::None, false, None))? {
+				body.push(statement);
+			}
+			if self.recovering() && self.tok.start == at && !self.is(TokenKind::BraceR) {
+				self.report_unexpected();
+				self.next()?;
+			}
 		}
 		if exit_strict {
 			self.set_strict(false);
 		}
-		self.next()?;
+		if closed {
+			self.next()?;
+		}
 		if new_scope {
 			self.exit_scope();
 		}
@@ -1173,7 +1201,12 @@ impl<E: Extension> Parser<'_, E> {
 		let mut body = Vec::new();
 		let mut had_constructor = false;
 		self.expect(TokenKind::BraceL)?;
+		let mut closed = true;
 		while !self.is(TokenKind::BraceR) {
+			if self.missing_closer(TokenKind::BraceR) {
+				closed = false;
+				break;
+			}
 			let Some(element) = self.parse_class_element(super_class.is_some())? else {
 				continue;
 			};
@@ -1205,7 +1238,9 @@ impl<E: Extension> Parser<'_, E> {
 			}
 		}
 		self.set_strict(old_strict);
-		self.next()?;
+		if closed {
+			self.next()?;
+		}
 		let body = self.list_of(&body);
 		let body = self.add(NodeKind::ClassBody { body }, body_start);
 		self.exit_class_body()?;

@@ -36,6 +36,14 @@ export interface Options {
 	 * a division.
 	 */
 	stopAt?: string[];
+	/**
+	 * Record syntax errors on the answer as `errors` instead of throwing the first: a missing
+	 * operand, name or pattern is an `Identifier` named `''` of no width where it was expected,
+	 * a node whose closing bracket, quote or backquote is missing ends at the last token read
+	 * and carries `closed: false`, and what fits nowhere is skipped to the next stop token or
+	 * unmatched closing bracket. Placeholders are neither bindings nor references.
+	 */
+	errorRecovery?: boolean;
 }
 
 /**
@@ -166,10 +174,21 @@ export interface Parsed<T> {
 	comments?: Comment[];
 	/** What erasure left in place; only with `typescript: 'erase'`. */
 	typescript?: Kept[];
+	/** The errors recovered from, in source order; only with `errorRecovery`, and absent when there were none. */
+	errors?: Recovered[];
+}
+
+/** A recovered error: what the thrown `SyntaxError` carries, as a plain object. */
+export interface Recovered {
+	code: string;
+	message: string;
+	pos: number;
+	end: number;
+	loc: { line: number; column: number };
 }
 
 /** A program, with the comment list and the erasure leftovers when those options are on. */
-export type ParsedProgram = Program & { comments?: Comment[]; typescript?: Kept[]; scopes?: Scope[]; bindings?: Binding[] };
+export type ParsedProgram = Program & { comments?: Comment[]; typescript?: Kept[]; scopes?: Scope[]; bindings?: Binding[]; errors?: Recovered[] };
 
 /** What `parseParamsAt` returns: the list rather than one node, otherwise as `Parsed`. */
 export interface Params {
@@ -180,6 +199,7 @@ export interface Params {
 	scopes?: Scope[];
 	bindings?: Binding[];
 	typescript?: Kept[];
+	errors?: Recovered[];
 }
 
 /** Parses a whole program; with `comments` it lists every comment as `comments`. */

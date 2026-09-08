@@ -575,6 +575,9 @@ impl<'a, X: Bind> Binder<'a, X> {
 		let NodeKind::Identifier { name } = self.kind(node) else {
 			return;
 		};
+		if self.ast.str(name).is_empty() {
+			return;
+		}
 		let mut scope = self.current();
 		if kind.is_var() {
 			while !self.out.scopes[scope as usize].kind.holds_var() {
@@ -589,6 +592,11 @@ impl<'a, X: Bind> Binder<'a, X> {
 	}
 
 	pub fn reference(&mut self, node: NodeId, write: bool, mutate: bool) {
+		if let NodeKind::Identifier { name } = self.kind(node)
+			&& self.ast.str(name).is_empty()
+		{
+			return;
+		}
 		let id = self.out.references.len() as ReferenceId;
 		let scope = self.current();
 		self.out.references.push(Reference {
