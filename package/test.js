@@ -7,7 +7,7 @@ const wasm = await import('./wasm.js');
 
 await wasm.init(readFileSync(new URL('./teasel.wasm', import.meta.url)));
 
-for (const [name, { Source, parse, parseExpressionAt, parsePatternAt, parseParamsAt, parseStatementAt, isIdentifierStart, isIdentifierChar, scopeOf, bindingOf, referenceOf }] of [['node', node], ['wasm', wasm]]) {
+for (const [name, { Source, parse, parseExpressionAt, parsePatternAt, parseParamsAt, parseStatementAt, isIdentifierStart, isIdentifierChar, scopeOf, bindingOf, referenceOf, parentOf }] of [['node', node], ['wasm', wasm]]) {
 	const program = parse('let x: number = 1; // done', { sourceType: 'module', typescript: true, comments: true, locations: true });
 	assert.equal(program.sourceType, 'module');
 	assert.equal(program.body[0].declarations[0].id.typeAnnotation.typeAnnotation.type, 'TSNumberKeyword');
@@ -32,15 +32,43 @@ for (const [name, { Source, parse, parseExpressionAt, parsePatternAt, parseParam
 	assert.equal(parens.node.trailingComments[0].start, 5);
 	assert.equal(parseStatementAt('{@const x = 1}', 2).end, 13);
 	assert.equal(parseExpressionAt('{items as item}', 1, { typescript: true }).node.type, 'TSAsExpression');
-	assert.equal(parseExpressionAt('{items as item}', 1, { typescript: true, until: 'as' }).end, 6);
-	assert.equal(parseExpressionAt('{f(x as T) as item}', 1, { typescript: true, until: 'as' }).end, 10);
-	assert.equal(parseExpressionAt('{xs as T[] as item}', 1, { typescript: true, until: 'as' }).end, 10);
-	assert.equal(parseExpressionAt('{xs as unknown as T[] as item: T, i}', 1, { typescript: true, until: 'as' }).end, 21);
-	assert.equal(parseExpressionAt('{xs as [a, b = 1]}', 1, { typescript: true, until: 'as' }).end, 3);
+	assert.equal(parseExpressionAt('{items as item}', 1, { typescript: true, stopAt: ['as'] }).end, 6);
+	assert.equal(parseExpressionAt('{f(x as T) as item}', 1, { typescript: true, stopAt: ['as'] }).end, 10);
+	assert.equal(parseExpressionAt('{(xs as T) as item}', 1, { typescript: true, stopAt: ['as'] }).end, 10);
+	assert.equal(parseExpressionAt('{xs as T[] as item}', 1, { typescript: true, stopAt: ['as'] }).end, 3);
+	assert.equal(parseExpressionAt('{xs as [a, b = 1]}', 1, { typescript: true, stopAt: ['as'] }).end, 3);
+	assert.equal(parseExpressionAt('{f<A, B>(), i}', 1, { typescript: true, stopAt: ['as', ','] }).end, 10);
 	assert.throws(() => parseExpressionAt('éé𝒳x', 3), (e) => e.message === 'offset 3 is inside a surrogate pair');
-	assert.equal(parseExpressionAt('{xs as T === y as item}', 1, { typescript: true, until: 'as' }).end, 14);
-	assert.equal(parseExpressionAt('{xs as const as item}', 1, { typescript: true, until: 'as' }).end, 12);
-	assert.throws(() => parseExpressionAt('{a}', 1, { until: 'in' }), TypeError);
+	assert.throws(() => parseExpressionAt('{obj. as item}', 1, { stopAt: ['as'] }), (e) => e.code === 'unexpected_token' && e.pos === 6);
+	assert.equal(parseExpressionAt('{x. then y}', 1, { typescript: true }).end, 8);
+	assert.equal(parseExpressionAt('{items, i}', 1, { stopAt: ['as', ','] }).end, 6);
+	assert.equal(parseExpressionAt('{f(a, b), i}', 1, { stopAt: [','] }).end, 8);
+	assert.equal(parseExpressionAt('{`${a}` as b}', 1, { stopAt: ['as'] }).end, 7);
+	assert.equal(parseExpressionAt('{{a:1} />', 1, { stopAt: ['/>'] }).end, 6);
+	assert.equal(parseExpressionAt('{x />', 1, { stopAt: ['/>'] }).end, 2);
+	assert.equal(parsePatternAt('{[a, b], i}', 1, { stopAt: [','] }).end, 7);
+	assert.throws(() => parseExpressionAt('{a}', 1, { stopAt: 'as' }), TypeError);
+
+	const recovered = parseExpressionAt('{obj. as item}', 1, { stopAt: ['as'], errorRecovery: true });
+	assert.equal(recovered.node.type, 'MemberExpression');
+	assert.deepEqual(JSON.parse(JSON.stringify(recovered.node.property)), { type: 'Identifier', start: 6, end: 6, name: '' });
+	assert.equal(recovered.end, 6);
+	assert.deepEqual(recovered.errors, [{ code: 'unexpected_token', message: 'Unexpected token', pos: 6, end: 6, loc: { line: 1, column: 6 } }]);
+	const unclosed = parseExpressionAt('{f(a, }', 1, { stopAt: ['}'], errorRecovery: true });
+	assert.deepEqual(JSON.parse(JSON.stringify(unclosed.node)), { type: 'Identifier', start: 6, end: 6, name: '' });
+	assert.equal(unclosed.end, 6);
+	const declaration = parseStatementAt('{let }', 1, { sourceType: 'module', stopAt: ['}'], errorRecovery: true });
+	assert.equal(declaration.node.type, 'VariableDeclaration');
+	assert.deepEqual(JSON.parse(JSON.stringify(declaration.node.declarations[0].id)), { type: 'Identifier', start: 5, end: 5, name: '' });
+	assert.equal(parseExpressionAt('{a b}', 1, { stopAt: ['}'], errorRecovery: true }).errors, undefined);
+	const broken = parse('x = "abc\ny = ', { errorRecovery: true, locations: true });
+	assert.deepEqual(broken.errors.map((e) => [e.code, e.pos, e.loc.line]), [['unterminated_string', 4, 1], ['unexpected_eof', 13, 2]]);
+	assert.equal('errors' in parse('x', { errorRecovery: true }), false);
+	const scoped = parse('let = f(a, b)', { errorRecovery: true, scopes: true, sourceType: 'module' });
+	assert.equal(scoped.bindings.length, 0);
+	assert.equal(bindingOf(scoped.body[0].declarations[0].id), undefined);
+	assert.equal(referenceOf(scoped.body[0].declarations[0].init.callee).binding, null);
+	assert.throws(() => parseExpressionAt('{a}', 1, { stopAt: ['a s'] }), TypeError);
 
 	const params = parseParamsAt('(a, b = 1) => a', 0);
 	assert.equal(params.params.length, 2);
@@ -65,9 +93,28 @@ for (const [name, { Source, parse, parseExpressionAt, parsePatternAt, parseParam
 		assert.equal(y.scope.node, program.body[1]);
 		assert.equal(y.scope.through[0], x);
 		assert.equal(program.scopes[0].declarations.get('f'), f);
-		assert.deepEqual(Object.keys(program.scopes[0]), ['kind', 'parent', 'functionDepth', 'through', 'node', 'bindings', 'declarations']);
-		assert.deepEqual(Object.keys(x), ['name', 'kind', 'scope', 'node', 'references']);
+		assert.deepEqual(Object.keys(program.scopes[0]), ['kind', 'parent', 'functionDepth', 'through', 'topLevelAwait', 'node', 'bindings', 'declarations', 'references']);
+		assert.deepEqual(Object.keys(x), ['name', 'kind', 'scope', 'node', 'declaration', 'references']);
 		assert.deepEqual(program.scopes[0].bindings.map((b) => b.name), ['x', 'f']);
+		assert.equal(x.declaration, program.body[0].declarations[0]);
+		assert.equal(f.declaration, program.body[1]);
+		assert.equal(y.declaration, program.body[1]);
+		assert.equal(x.references[0].writeExpr, y.references[0].node);
+		assert.equal(program.scopes[0].topLevelAwait, false);
+		const top = parse('g = await 1; g++;', { sourceType: 'module', scopes: true });
+		assert.equal(top.scopes[0].topLevelAwait, true);
+		const [assigned, updated] = top.body.map((s) => referenceOf(s.expression.left ?? s.expression.argument));
+		assert.equal(assigned.writeExpr, top.body[0].expression.right);
+		assert.equal(updated.writeExpr, null);
+		assert.equal(assigned.binding, null);
+		assert.deepEqual([assigned.read, updated.read, x.references[0].read, y.references[0].read], [false, true, false, true]);
+		assert.equal(assigned.scope, top.scopes[0]);
+		assert.deepEqual(top.scopes[0].references, [assigned, updated]);
+		assert.equal(top.references[0], assigned);
+		assert.equal(parentOf(assigned.node), top.body[0].expression);
+		assert.equal(parentOf(top.body[0]), top);
+		assert.equal(parentOf(top), undefined);
+		assert.equal(parentOf(parse('`x${1}`').body[0].expression.quasis[0].value), undefined);
 		const literal = parse('let r = /a/g, t = `x${1}y`;', { scopes: true }).body[0].declarations;
 		assert.equal(Object.getPrototypeOf(literal[0].init.regex), Object.prototype);
 		assert.deepEqual(literal[1].init.quasis[0].value, { raw: 'x', cooked: 'x' });
@@ -90,7 +137,7 @@ for (const [name, { Source, parse, parseExpressionAt, parsePatternAt, parseParam
 		assert.equal(o.references[0].write, false);
 		const g = mutated.body[2].expression.left;
 		assert.equal(bindingOf(g), null);
-		assert.deepEqual(referenceOf(g), { node: g, binding: null, write: true, mutate: false });
+		assert.deepEqual(referenceOf(g), { scope: mutated.scopes[0], binding: null, write: true, read: false, mutate: false, node: g, writeExpr: mutated.body[2].expression.right });
 		assert.equal(referenceOf(mutated.body[3].expression.left.object).mutate, true);
 		assert.equal(referenceOf(o.node), undefined);
 		assert.equal(bindingOf(null), undefined);
@@ -108,7 +155,7 @@ for (const [name, { Source, parse, parseExpressionAt, parsePatternAt, parseParam
 	assert.equal(isIdentifierChar('1'.codePointAt(0)) && !isIdentifierChar('-'.codePointAt(0)), true);
 	const source = new Source('{a} {"é"} {b /* c */}', { locations: true, comments: true });
 	assert.equal(source.parseExpressionAt(1).node.name, 'a');
-	assert.equal(new Source('{xs as x}', { typescript: true }).parseExpressionAt(1, 'as').end, 3);
+	assert.equal(new Source('{xs as x}', { typescript: true }).parseExpressionAt(1, ['as']).end, 3);
 	assert.equal(source.parseExpressionAt(11).end, 20);
 	assert.equal(source.parseExpressionAt(11).comments[0].loc.start.column, 13);
 	assert.throws(() => source.parseExpressionAt(99), SyntaxError);
@@ -129,7 +176,6 @@ for (const [name, { Source, parse, parseExpressionAt, parsePatternAt, parseParam
 	assert.equal(parse('"﻿a"; "bc"; zz').body[2].expression.name, 'zz');
 	source.free();
 	assert.throws(() => source.parseExpressionAt(1), TypeError);
-	assert.equal(new Source('{xs as x}', { typescript: true, until: 'as' }).parseExpressionAt(1).end, 3);
 	assert.throws(() => parse('x', { locations: 1 }), TypeError);
 	assert.throws(() => parse('x', { typescript: 'yes' }), TypeError);
 	assert.throws(() => new Source('a;b;c').parse(0, -1), (e) => e.code === 'invalid_request');

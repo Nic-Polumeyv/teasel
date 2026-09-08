@@ -8,6 +8,8 @@ pub(crate) struct Token {
 	pub(crate) newline_before: bool,
 	/// An identifier or keyword written with a unicode escape.
 	pub(crate) escaped: bool,
+	/// A string, template or regular expression the source ends or a line break cuts short.
+	pub(crate) unclosed: bool,
 }
 
 impl Token {
@@ -18,6 +20,7 @@ impl Token {
 			end: pos,
 			newline_before: false,
 			escaped: false,
+			unclosed: false,
 		}
 	}
 }

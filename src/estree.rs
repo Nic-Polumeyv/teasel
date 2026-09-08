@@ -720,6 +720,8 @@ pub struct Writer<'a, X = (), S: Sink = Json> {
 	name_only: bool,
 	/// What erasure left in place, in emission order.
 	kept: Vec<(&'static str, NodeId)>,
+	/// Nodes erasure skipped whose facts the next node written takes over.
+	adopted: Vec<NodeId>,
 }
 
 /// Maps byte offsets to the UTF-16 offsets and line/column pairs that acorn reports, and UTF-16
@@ -851,6 +853,7 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 			program_tail: false,
 			name_only: false,
 			kept: Vec::new(),
+			adopted: Vec::new(),
 		}
 	}
 
@@ -904,24 +907,32 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 				self.sink.int(binding);
 			}
 			Some(Role::Reference(reference)) => {
-				let reference = scopes.reference(reference);
-				self.key("binding");
-				match reference.binding {
-					Some(binding) => self.sink.int(binding),
-					None => self.sink.null(),
-				}
-				if reference.write {
-					self.bool("write", true);
-				}
-				if reference.mutate {
-					self.bool("mutate", true);
-				}
+				self.key("reference");
+				self.sink.int(reference);
 			}
 			None => {}
 		}
+		let adopted = std::mem::take(&mut self.adopted);
+		for node in adopted.iter().copied().chain([id]) {
+			if let Some(bindings) = scopes.declared_by.get(&node) {
+				self.key("defines");
+				self.sink.ints(bindings);
+			}
+			if let Some(references) = scopes.writes_of.get(&node) {
+				self.key("writes");
+				self.sink.ints(references);
+			}
+		}
 	}
 
-	/// The scope and binding tables: what the `scope`, `declares` and `binding` numbers index.
+	/// The facts of a node erasure leaves out go on the next node written, the one standing in
+	/// for it.
+	pub(crate) fn adopt(&mut self, id: NodeId) {
+		self.adopted.push(id);
+	}
+
+	/// The scope, binding and reference tables: what the `scope`, `declares`, `reference` and
+	/// `writes` numbers index.
 	fn all_scopes(&mut self) {
 		let Some(scopes) = &self.ast.scopes else { return };
 		self.sink.table("scopes");
@@ -938,6 +949,7 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 			self.sink.int(scope.function_depth);
 			self.key("through");
 			self.sink.ints(&scope.through);
+			self.bool("topLevelAwait", scope.top_level_await);
 			self.sink.end();
 		}
 		self.sink.end();
@@ -949,6 +961,23 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 			self.string("kind", binding.kind.name());
 			self.key("scope");
 			self.sink.int(binding.scope);
+			self.sink.end();
+		}
+		self.sink.end();
+		self.sink.table("references");
+		self.sink.list();
+		for reference in &scopes.references {
+			self.sink.object();
+			self.key("scope");
+			self.sink.int(reference.scope);
+			self.key("binding");
+			match reference.binding {
+				Some(binding) => self.sink.int(binding),
+				None => self.sink.null(),
+			}
+			self.bool("write", reference.write);
+			self.bool("read", reference.read);
+			self.bool("mutate", reference.mutate);
 			self.sink.end();
 		}
 		self.sink.end();
@@ -975,6 +1004,51 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		self.sink.end();
 	}
 
+	/// The recovered errors as the thrown one would be: code, message, `pos`, `end` and a `loc`.
+	fn errors(&mut self) {
+		if self.ast.errors.is_empty() {
+			return;
+		}
+		let upto;
+		let positions = if self.positions.lines {
+			self.positions
+		} else {
+			let last = self.ast.errors.iter().map(|e| e.pos.max(e.end)).max().unwrap() as usize;
+			let mut end = last.min(self.source.len());
+			while !self.source.is_char_boundary(end) {
+				end += 1;
+			}
+			upto = Positions::new(&self.source[..end], true);
+			&upto
+		};
+		let mut cursor = Cursor::default();
+		self.key("errors");
+		self.sink.list();
+		for error in &self.ast.errors {
+			let pos = positions.offset(&mut cursor, error.pos);
+			let (line, column) = positions.line_column(cursor.line, error.pos, pos);
+			let end = positions.offset(&mut cursor, error.end);
+			self.sink.object();
+			self.key("code");
+			self.sink.str(error.code.name());
+			self.key("message");
+			self.sink.text(&error.message);
+			self.key("pos");
+			self.sink.int(pos);
+			self.key("end");
+			self.sink.int(end);
+			self.key("loc");
+			self.sink.object();
+			self.key("line");
+			self.sink.int(line as u32);
+			self.key("column");
+			self.sink.int(column);
+			self.sink.end();
+			self.sink.end();
+		}
+		self.sink.end();
+	}
+
 	/// What the output's switches add after a root: every comment, what erasure kept, the scopes.
 	fn trailers(&mut self) {
 		if self.output.comments {
@@ -982,6 +1056,7 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 			self.key("comments");
 			self.comment_list(&all);
 		}
+		self.errors();
 		if self.output.erase {
 			self.all_kept();
 		}

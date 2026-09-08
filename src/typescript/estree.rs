@@ -76,7 +76,10 @@ impl Emit for Data {
 				| NonNullExpression { expression }
 				| TypeAssertion { expression, .. }
 				| TypeCastExpression { expression, .. }
-				| InstantiationExpression { expression, .. } => return w.node(expression),
+				| InstantiationExpression { expression, .. } => {
+					w.adopt(id);
+					return w.node(expression);
+				}
 				ParameterProperty { parameter } => {
 					w.keep("TSParameterProperty", id);
 					return w.node(parameter);

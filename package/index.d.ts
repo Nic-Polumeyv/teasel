@@ -29,12 +29,21 @@ export interface Options {
 	/** Accepted for acorn's sake and ignored: the latest ECMAScript is always parsed. */
 	ecmaVersion?: number | 'latest';
 	/**
-	 * For `parseExpressionAt` only: the host's own `as` follows the expression, as a template
-	 * loop's item follows its list. The expression ends at the last top-level `as`, so
-	 * TypeScript assertions before it stay assertions: `list as Type as item` ends before the
-	 * second `as`.
+	 * For the parse-at functions: the host's own tokens, words or punctuators, that follow what
+	 * is parsed. One read outside every bracket the parse opened ends it, whatever else it could
+	 * have been: `as` before a template loop's item is never TypeScript's assertion nor a
+	 * property name after `.`, `,` ends an expression before a sequence would, and `/>` is never
+	 * a division.
 	 */
-	until?: 'as';
+	stopAt?: string[];
+	/**
+	 * Record syntax errors on the answer as `errors` instead of throwing the first: a missing
+	 * operand, name or pattern is an `Identifier` named `''` of no width where it was expected,
+	 * and a statement or entry that cannot be read is skipped to the next stop token or
+	 * unmatched closing bracket, an empty identifier standing for it. Placeholders are neither
+	 * bindings nor references.
+	 */
+	errorRecovery?: boolean;
 }
 
 /**
@@ -77,6 +86,10 @@ export interface Scope {
 	declarations: Map<string, Binding>;
 	/** The bindings of outer scopes that identifiers inside it resolve to, in first-use order. */
 	through: Binding[];
+	/** An `await` or `for await` runs directly in it, no function around; only a program or fragment scope can say so. */
+	topLevelAwait: boolean;
+	/** The references made from inside it, nested scopes excluded, in source order. */
+	references: Reference[];
 }
 
 /** A binding, as one of `bindings` on the answer. */
@@ -101,20 +114,30 @@ export interface Binding {
 	scope: Scope;
 	/** The identifier that declares it; null for `arguments`. */
 	node: Identifier | null;
+	/** What declares it: the declarator, function, class, import specifier, catch clause or enum, as eslint-scope's definition node; null for `arguments` and for a pattern or parameter list parsed on its own. */
+	declaration: Node | null;
 	/** The references to it, the declaring identifier excluded, in source order. */
 	references: Reference[];
 }
 
 export interface Reference {
 	node: Identifier;
+	/** The scope the reference is made from. */
+	scope: Scope;
 	/** Null for a global. */
 	binding: Binding | null;
 	/** The identifier is assigned to, updated or bound by a destructuring assignment. */
 	write: boolean;
 	/** A member of the identifier's value is assigned to, updated or deleted. */
 	mutate: boolean;
+	/** The identifier's value is read: every reference but a plain assignment's target or a destructuring one's; a compound assignment or an update reads and writes. */
+	read: boolean;
+	/** What a write assigns: the right side of the assignment or the iterated expression of a `for-in` or `for-of`, as eslint-scope's `writeExpr`; null for an update. */
+	writeExpr: Expression | null;
 }
 
+/** The node `node` is a child of; undefined for the root of an answer. A literal's `regex` and a template element's `value` are not nodes and have none. */
+export function parentOf(node: Node): Node | undefined;
 /** With `scopes`: the scope `node` opens, when it opens one. */
 export function scopeOf(node: Node): Scope | undefined;
 /** With `scopes`: what an identifier declares or refers to; null for a global, undefined when it names no value, a property key say. */
@@ -151,10 +174,21 @@ export interface Parsed<T> {
 	comments?: Comment[];
 	/** What erasure left in place; only with `typescript: 'erase'`. */
 	typescript?: Kept[];
+	/** The errors recovered from, in source order; only with `errorRecovery`, and absent when there were none. */
+	errors?: Recovered[];
+}
+
+/** A recovered error: what the thrown `SyntaxError` carries, as a plain object. */
+export interface Recovered {
+	code: string;
+	message: string;
+	pos: number;
+	end: number;
+	loc: { line: number; column: number };
 }
 
 /** A program, with the comment list and the erasure leftovers when those options are on. */
-export type ParsedProgram = Program & { comments?: Comment[]; typescript?: Kept[]; scopes?: Scope[]; bindings?: Binding[] };
+export type ParsedProgram = Program & { comments?: Comment[]; typescript?: Kept[]; scopes?: Scope[]; bindings?: Binding[]; errors?: Recovered[] };
 
 /** What `parseParamsAt` returns: the list rather than one node, otherwise as `Parsed`. */
 export interface Params {
@@ -165,6 +199,7 @@ export interface Params {
 	scopes?: Scope[];
 	bindings?: Binding[];
 	typescript?: Kept[];
+	errors?: Recovered[];
 }
 
 /** Parses a whole program; with `comments` it lists every comment as `comments`. */
@@ -186,10 +221,10 @@ export class Source {
 	constructor(source: string, options?: Options);
 	/** The whole source, or the program that spans `start..end` of it; positions stay those of the whole source. */
 	parse(start?: number, end?: number): ParsedProgram;
-	parseExpressionAt(offset: number, until?: 'as'): Parsed<Expression>;
-	parsePatternAt(offset: number): Parsed<Pattern>;
-	parseParamsAt(offset: number): Params;
-	parseStatementAt(offset: number): Parsed<Statement>;
+	parseExpressionAt(offset: number, stopAt?: string[]): Parsed<Expression>;
+	parsePatternAt(offset: number, stopAt?: string[]): Parsed<Pattern>;
+	parseParamsAt(offset: number, stopAt?: string[]): Params;
+	parseStatementAt(offset: number, stopAt?: string[]): Parsed<Statement>;
 	/** Releases what the engine holds for the source; the collector does it otherwise. */
 	free(): void;
 }

@@ -10,8 +10,8 @@
 //! `pattern:OFFSET`, `params:OFFSET` or `stmt:OFFSET`, whose answers wrap the node or the parameters
 //! with `end`, the offset after what the parse consumed, with a `ts-` prefix for TypeScript and
 //! `+comments` to attach comments, `+scopes` for the scope analysis, `+undeclared-exports` to
-//! accept exports of names the source never declares, `+until-as` to end an expression at the
-//! host's `as` or `+erase` to erase TypeScript from the output. In a batch, expressions preserve
+//! accept exports of names the source never declares, `+stop:TOKEN` to end a parse-at entry at
+//! one of the host's tokens or `+erase` to erase TypeScript from the output. In a batch, expressions preserve
 //! parens. Offsets are byte offsets into the source; the JSON output reports UTF-16 offsets like
 //! acorn.
 
@@ -81,17 +81,23 @@ fn batch() -> io::Result<()> {
 			},
 			..Request::default()
 		};
+		let mut stop = String::new();
 		for switch in switches {
 			match switch {
 				"comments" => request.comments = true,
 				"scopes" => request.scopes = true,
 				"erase" => request.erase = true,
-				"until-as" => request.options.until_as = true,
+				_ if switch.starts_with("stop:") => {
+					if !stop.is_empty() {
+						stop.push(' ');
+					}
+					stop.push_str(&switch[5..]);
+				}
 				"undeclared-exports" if entry == Entry::Program => request.options.allow_undeclared_exports = true,
 				_ => {}
 			}
 		}
-		let json = json::parse(&source, &request);
+		let json = json::parse(&source, &request, &stop);
 		out.write_all(json.as_bytes())?;
 		out.write_all(b"\n")?;
 		out.flush()?;
@@ -167,6 +173,6 @@ fn main() -> ExitCode {
 		end: None,
 		options,
 	};
-	println!("{}", json::parse(&source, &request));
+	println!("{}", json::parse(&source, &request, ""));
 	ExitCode::SUCCESS
 }

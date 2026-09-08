@@ -61,8 +61,8 @@ pub const FLAGS: [&str; 12] = [
 	"allowAwaitOutsideFunction",
 	"allowSuperOutsideMethod",
 	"allowUndeclaredExports",
-	"untilAs",
 	"erase",
+	"errorRecovery",
 ];
 
 impl Request {
@@ -107,8 +107,8 @@ impl Request {
 			"allowAwaitOutsideFunction" => self.options.allow_await_outside_function = true,
 			"allowSuperOutsideMethod" => self.options.allow_super_outside_method = true,
 			"allowUndeclaredExports" => self.options.allow_undeclared_exports = true,
-			"untilAs" => self.options.until_as = true,
 			"erase" => self.erase = true,
+			"errorRecovery" => self.options.error_recovery = true,
 			_ => {}
 		}
 	}
@@ -152,8 +152,9 @@ pub fn shapes_json() -> String {
 	json
 }
 
-pub fn parse(source: &str, request: &Request) -> String {
-	parse_with(source, &Positions::new(source, request.locations), request)
+/// `stop` lists the host's tokens for a parse-at entry; see `parser::parse_expression_at`.
+pub fn parse(source: &str, request: &Request, stop: &str) -> String {
+	parse_with(source, &Positions::new(source, request.locations), request, stop)
 }
 
 /// A source with its position tables and switches, for hosts that parse many pieces of one
@@ -192,16 +193,13 @@ impl<'a> Prepared<'a> {
 		}
 	}
 
-	/// The request for one entry at a UTF-16 offset; `until_as` says the host's `as` follows the
-	/// expression, on top of the source's options.
-	fn request(&self, entry: Entry, utf16_offset: f64, until_as: bool) -> Result<Request, String> {
-		let mut request = Request {
+	/// The request for one entry at a UTF-16 offset, on top of the source's options.
+	fn request(&self, entry: Entry, utf16_offset: f64) -> Result<Request, String> {
+		Ok(Request {
 			entry,
 			offset: self.byte_offset(utf16_offset)?,
 			..self.request
-		};
-		request.options.until_as |= until_as;
-		Ok(request)
+		})
 	}
 
 	/// The request for the program spanning `start..end`, both UTF-16 offsets; `end` defaults to
@@ -227,9 +225,9 @@ impl<'a> Prepared<'a> {
 	}
 
 	/// One entry at an offset, as JSON.
-	pub fn parse(&self, entry: Entry, utf16_offset: f64, until_as: bool) -> String {
-		match self.request(entry, utf16_offset, until_as) {
-			Ok(request) => parse_with(&self.source, &self.positions, &request),
+	pub fn parse(&self, entry: Entry, utf16_offset: f64, stop: &str) -> String {
+		match self.request(entry, utf16_offset) {
+			Ok(request) => parse_with(&self.source, &self.positions, &request, stop),
 			Err(error) => error,
 		}
 	}
@@ -237,23 +235,19 @@ impl<'a> Prepared<'a> {
 	/// The program that spans `start..end`, as JSON.
 	pub fn parse_range(&self, start: f64, end: Option<f64>) -> String {
 		match self.range(start, end) {
-			Ok(request) => parse_with(&self.source, &self.positions, &request),
+			Ok(request) => parse_with(&self.source, &self.positions, &request, ""),
 			Err(error) => error,
 		}
 	}
 
 	/// One entry at an offset, as a token stream; the error answer stays JSON.
-	pub fn binary(&self, entry: Entry, utf16_offset: f64, until_as: bool) -> Result<Vec<u32>, String> {
-		binary_with(
-			&self.source,
-			&self.positions,
-			&self.request(entry, utf16_offset, until_as)?,
-		)
+	pub fn binary(&self, entry: Entry, utf16_offset: f64, stop: &str) -> Result<Vec<u32>, String> {
+		binary_with(&self.source, &self.positions, &self.request(entry, utf16_offset)?, stop)
 	}
 
 	/// The program that spans `start..end`, as a token stream; the error answer stays JSON.
 	pub fn binary_range(&self, start: f64, end: Option<f64>) -> Result<Vec<u32>, String> {
-		binary_with(&self.source, &self.positions, &self.range(start, end)?)
+		binary_with(&self.source, &self.positions, &self.range(start, end)?, "")
 	}
 
 	/// A UTF-16 offset as a byte offset, or the error answer for it.
@@ -285,40 +279,41 @@ fn check(source: &str, request: &Request) -> Result<(), String> {
 	Ok(())
 }
 
-fn dispatch<S: Sink>(source: &str, positions: &Positions, request: &Request, sink: S) -> Result<S, String> {
+fn dispatch<S: Sink>(source: &str, positions: &Positions, request: &Request, stop: &str, sink: S) -> Result<S, String> {
 	check(source, request)?;
 	#[cfg(feature = "typescript")]
 	if request.typescript {
-		return run::<crate::typescript::TypeScript, S>(source, positions, request, sink);
+		return run::<crate::typescript::TypeScript, S>(source, positions, request, stop, sink);
 	}
 	#[cfg(not(feature = "typescript"))]
 	if request.typescript {
 		return Err(error_json("built without TypeScript", 0));
 	}
-	run::<(), S>(source, positions, request, sink)
+	run::<(), S>(source, positions, request, stop, sink)
 }
 
-fn parse_with(source: &str, positions: &Positions, request: &Request) -> String {
-	match dispatch(source, positions, request, Json::default()) {
+fn parse_with(source: &str, positions: &Positions, request: &Request, stop: &str) -> String {
+	match dispatch(source, positions, request, stop, Json::default()) {
 		Ok(json) => json.finish(),
 		Err(error) => error,
 	}
 }
 
 /// The answer as a token stream, or the error answer as JSON.
-fn binary_with(source: &str, positions: &Positions, request: &Request) -> Result<Vec<u32>, String> {
-	dispatch(source, positions, request, Binary::new()).map(|mut binary| binary.finish())
+fn binary_with(source: &str, positions: &Positions, request: &Request, stop: &str) -> Result<Vec<u32>, String> {
+	dispatch(source, positions, request, stop, Binary::new()).map(|mut binary| binary.finish())
 }
 
 /// A tree, its root and the offset after what the parse consumed.
 type Parsed<D> = Result<(Ast<D>, NodeId, u32), Box<SyntaxError>>;
-type ParseAt<D> = fn(&str, u32, Options) -> Parsed<D>;
+type ParseAt<D> = fn(&str, u32, Options, &str) -> Parsed<D>;
 
 /// Runs a request into a sink; `Err` is the error answer as JSON.
 fn run<E: crate::parser::Extension, S: Sink>(
 	source: &str,
 	positions: &Positions,
 	request: &Request,
+	stop: &str,
 	sink: S,
 ) -> Result<S, String>
 where
@@ -358,17 +353,26 @@ where
 				),
 				_ => unreachable!(),
 			};
-			one(parse(source, offset, options), source, positions, offset, output, sink)
+			one(
+				parse(source, offset, options, stop),
+				source,
+				positions,
+				offset,
+				output,
+				sink,
+			)
 		}
-		Entry::Params => crate::parser::parse_params_at::<E>(source, offset, options).map(|(mut ast, ids, end)| {
-			if comments {
-				attach_all(&mut ast, source, &ids, offset);
-			}
-			if output.scopes {
-				scopes::analyze_params(&mut ast, &ids);
-			}
-			params_at(&ast, &ids, end, source, positions, output, sink)
-		}),
+		Entry::Params => {
+			crate::parser::parse_params_at::<E>(source, offset, options, stop).map(|(mut ast, ids, end)| {
+				if comments {
+					attach_all(&mut ast, source, &ids, offset);
+				}
+				if output.scopes {
+					scopes::analyze_params(&mut ast, &ids);
+				}
+				params_at(&ast, &ids, end, source, positions, output, sink)
+			})
+		}
 	};
 	result.map_err(|error| error_to_json(&error, source, positions))
 }

@@ -16,7 +16,7 @@ use crate::lexer::token::{Keyword, TokenKind};
 use crate::parser::expression::starts_expression;
 use crate::parser::statement::ClassKind;
 use crate::parser::{
-	Context, DestructuringErrors, Errors, Extension, ForInit, FunctionKind, Options, Parser, Result, UntilAs, Unwrap,
+	Context, DestructuringErrors, Errors, Extension, ForInit, FunctionKind, Options, Parser, Result, Unwrap,
 };
 use ast::{Accessibility, Data, Extras, Kind, TsKind};
 use types::TypeParameterModifiers;
@@ -29,32 +29,36 @@ pub fn parse_expression_at(
 	src: &str,
 	offset: u32,
 	options: Options,
+	stop: &str,
 ) -> std::result::Result<(Ast<Data>, NodeId, u32), SyntaxError> {
-	crate::parser::parse_expression_at::<TypeScript>(src, offset, options).map_err(|e| *e)
+	crate::parser::parse_expression_at::<TypeScript>(src, offset, options, stop).map_err(|e| *e)
 }
 
 pub fn parse_pattern_at(
 	src: &str,
 	offset: u32,
 	options: Options,
+	stop: &str,
 ) -> std::result::Result<(Ast<Data>, NodeId, u32), SyntaxError> {
-	crate::parser::parse_pattern_at::<TypeScript>(src, offset, options).map_err(|e| *e)
+	crate::parser::parse_pattern_at::<TypeScript>(src, offset, options, stop).map_err(|e| *e)
 }
 
 pub fn parse_params_at(
 	src: &str,
 	offset: u32,
 	options: Options,
+	stop: &str,
 ) -> std::result::Result<(Ast<Data>, Vec<NodeId>, u32), SyntaxError> {
-	crate::parser::parse_params_at::<TypeScript>(src, offset, options).map_err(|e| *e)
+	crate::parser::parse_params_at::<TypeScript>(src, offset, options, stop).map_err(|e| *e)
 }
 
 pub fn parse_statement_at(
 	src: &str,
 	offset: u32,
 	options: Options,
+	stop: &str,
 ) -> std::result::Result<(Ast<Data>, NodeId, u32), SyntaxError> {
-	crate::parser::parse_statement_at::<TypeScript>(src, offset, options).map_err(|e| *e)
+	crate::parser::parse_statement_at::<TypeScript>(src, offset, options, stop).map_err(|e| *e)
 }
 
 /// Parser state that only TypeScript needs. `State` is copied into every snapshot, so it stays
@@ -480,28 +484,26 @@ impl Parser<'_, TypeScript> {
 
 	fn parse_type_assertion(&mut self, for_init: ForInit) -> Result<NodeId> {
 		let start = self.tok.start;
-		let snapshot = self.snapshot();
-		let assertion: Result<NodeId> = (|| {
-			let type_annotation = match self.try_next_parse_constant_context()? {
+		let assertion = self.attempt(|p| {
+			p.lexer.depth += 1;
+			let type_annotation = match p.try_next_parse_constant_context()? {
 				Some(constant) => constant,
-				None => self.next_then_parse_type()?,
+				None => p.next_then_parse_type()?,
 			};
-			self.expect(TokenKind::Gt)?;
-			let expression = self.parse_maybe_unary(&mut None, false, false, for_init)?;
-			Ok(self.ts(
+			p.lexer.depth -= 1;
+			p.expect(TokenKind::Gt)?;
+			let expression = p.parse_maybe_unary(&mut None, false, false, for_init)?;
+			Ok(p.ts(
 				TsKind::TypeAssertion {
 					type_annotation,
 					expression,
 				},
 				start,
 			))
-		})();
+		});
 		match assertion {
-			Ok(node) => Ok(node),
-			Err(_) => {
-				self.restore(snapshot);
-				self.parse_type_parameters(TypeParameterModifiers::Const)
-			}
+			Some(node) => Ok(node),
+			None => self.parse_type_parameters(TypeParameterModifiers::Const),
 		}
 	}
 
@@ -516,22 +518,20 @@ impl Parser<'_, TypeScript> {
 	fn try_generic_async_arrow(&mut self, start: u32, for_init: ForInit) -> Result<Option<NodeId>> {
 		let old = self.ext.maybe_in_arrow_parameters;
 		self.ext.maybe_in_arrow_parameters = true;
-		let snapshot = self.snapshot();
-		let head: Result<(NodeId, Vec<Option<NodeId>>, Option<NodeId>)> = (|| {
-			let type_parameters = self.parse_type_parameters(TypeParameterModifiers::Const)?;
-			self.expect(TokenKind::ParenL)?;
-			let params = self.parse_binding_list(TokenKind::ParenR, false, true, false)?;
-			let return_type = if self.is(TokenKind::Colon) {
-				Some(self.parse_type_or_type_predicate_annotation(TokenKind::Colon)?)
+		let head = self.attempt(|p| {
+			let type_parameters = p.parse_type_parameters(TypeParameterModifiers::Const)?;
+			p.expect(TokenKind::ParenL)?;
+			let params = p.parse_binding_list(TokenKind::ParenR, false, true, false)?;
+			let return_type = if p.is(TokenKind::Colon) {
+				Some(p.parse_type_or_type_predicate_annotation(TokenKind::Colon)?)
 			} else {
 				None
 			};
-			self.expect(TokenKind::Arrow)?;
+			p.expect(TokenKind::Arrow)?;
 			Ok((type_parameters, params, return_type))
-		})();
+		});
 		self.ext.maybe_in_arrow_parameters = old;
-		let Ok((type_parameters, params, return_type)) = head else {
-			self.restore(snapshot);
+		let Some((type_parameters, params, return_type)) = head else {
 			return Ok(None);
 		};
 		self.ext.arrow_return_type = return_type;
@@ -652,22 +652,23 @@ impl Parser<'_, TypeScript> {
 		if !self.is(TokenKind::Colon) {
 			return Ok(true);
 		}
-		let snapshot = self.snapshot();
-		match self.parse_type_or_type_predicate_annotation(TokenKind::Colon) {
-			Ok(return_type) if !self.can_insert_semicolon() && self.is(TokenKind::Arrow) => {
-				self.ext.arrow_return_type = Some(return_type);
-				Ok(true)
+		let return_type = self.attempt(|p| {
+			let return_type = p.parse_type_or_type_predicate_annotation(TokenKind::Colon)?;
+			if p.can_insert_semicolon() || !p.is(TokenKind::Arrow) {
+				return p.unexpected();
 			}
-			_ => {
-				self.restore(snapshot);
-				Ok(false)
-			}
-		}
+			Ok(return_type)
+		});
+		self.ext.arrow_return_type = return_type;
+		Ok(return_type.is_some())
 	}
 
-	/// A type annotation in a list that is not becoming parameters is an error.
+	/// A type annotation or optional marker in a list that is not becoming parameters is an error.
 	fn no_type_casts(&self, items: &[Option<NodeId>]) -> Result<()> {
 		for item in items.iter().flatten() {
+			if self.ext_data().extras(*item).is_some_and(|e| e.optional) {
+				return self.error(self.ast.node(*item).end - 1, Code::UnexpectedToken);
+			}
 			let annotation = match self.ts_kind(*item) {
 				Some(TsKind::TypeCastExpression { type_annotation, .. }) => Some(type_annotation),
 				_ if matches!(self.kind(*item), NodeKind::SpreadElement { .. }) => {
@@ -1427,22 +1428,23 @@ impl Extension for TypeScript {
 		if !p.starts_with_lt() {
 			return Ok(None);
 		}
-		let snapshot = p.snapshot();
 		let saved_errors = *errors;
-		let attempt: Result<(NodeId, NodeId)> = (|| {
+		let arrow = p.attempt(|p| {
 			let type_parameters = p.parse_type_parameters(TypeParameterModifiers::Const)?;
 			let expr = p.parse_maybe_assign(for_init, errors)?;
+			if !p.is_arrow(expr) {
+				return p.unexpected();
+			}
 			Ok((type_parameters, expr))
-		})();
-		match attempt {
-			Ok((type_parameters, expr)) if p.is_arrow(expr) => {
+		});
+		match arrow {
+			Some((type_parameters, expr)) => {
 				let start = p.start_of(type_parameters);
 				p.ast.node_mut(expr).start = start;
 				p.extras_mut(expr).type_parameters = Some(type_parameters);
 				Ok(Some(expr))
 			}
-			_ => {
-				p.restore(snapshot);
+			None => {
 				*errors = saved_errors;
 				Ok(None)
 			}
@@ -1490,14 +1492,10 @@ impl Extension for TypeScript {
 		if !p.ext.maybe_in_arrow_parameters {
 			return Ok(None);
 		}
-		let snapshot = p.snapshot();
-		match p.parse_conditional(expr, start, for_init) {
-			Ok(node) => Ok(Some(node)),
-			Err(_) => {
-				p.restore(snapshot);
-				Ok(Some(expr))
-			}
-		}
+		Ok(Some(
+			p.attempt(|p| p.parse_conditional(expr, start, for_init))
+				.unwrap_or(expr),
+		))
 	}
 
 	fn unary(p: &mut Parser<Self>, for_init: ForInit) -> Result<Option<NodeId>> {
@@ -1515,27 +1513,13 @@ impl Extension for TypeScript {
 		Ok(None)
 	}
 
-	fn expr_op(
-		p: &mut Parser<Self>,
-		left: NodeId,
-		left_start: u32,
-		min_prec: i8,
-		for_init: ForInit,
-	) -> Result<Option<NodeId>> {
+	fn expr_op(p: &mut Parser<Self>, left: NodeId, left_start: u32, min_prec: i8) -> Result<Option<NodeId>> {
 		if 7 <= min_prec || p.tok.newline_before {
 			return Ok(None);
 		}
 		let is_as = p.is_contextual("as");
 		if !is_as && !p.is_contextual("satisfies") {
 			return Ok(None);
-		}
-		if is_as && for_init.no_as() {
-			let start = p.tok.start;
-			match &mut p.until_as {
-				UntilAs::Record(offsets) => offsets.push(start),
-				UntilAs::Stop(at) if *at == start => return Ok(None),
-				_ => {}
-			}
 		}
 		let type_annotation = match p.try_next_parse_constant_context()? {
 			Some(constant) => constant,
@@ -1575,31 +1559,30 @@ impl Extension for TypeScript {
 		if !optional_call && !p.is(TokenKind::Lt) && !p.is(TokenKind::LtLt) {
 			return Ok(None);
 		}
-		let mut chained = optional_chained;
-		let mut is_optional_call = false;
-		let snapshot = p.snapshot();
-		if optional_call {
-			if no_calls {
-				return Ok(Some((base, false)));
-			}
-			chained = true;
-			is_optional_call = true;
-			p.next()?;
+		if optional_call && no_calls {
+			return Ok(Some((base, false)));
 		}
-		if p.is(TokenKind::Lt) || p.is(TokenKind::LtLt) {
-			match p.parse_type_arguments_subscript(base, start, no_calls, chained, is_optional_call, for_init) {
-				Ok(Some(node)) => {
-					if matches!(p.ts_kind(node), Some(TsKind::InstantiationExpression { .. }))
-						&& (p.is(TokenKind::Dot) || (p.is(TokenKind::QuestionDot) && p.peek_char().0 != Some('(')))
-					{
-						return p.error(p.tok.start, Code::PropertyAfterInstantiation);
-					}
-					return Ok(Some((node, is_optional_call)));
-				}
-				Ok(None) | Err(_) => p.restore(snapshot),
+		let subscript = p.attempt(|p| {
+			let (mut chained, mut is_optional_call) = (optional_chained, false);
+			if optional_call {
+				chained = true;
+				is_optional_call = true;
+				p.next()?;
 			}
+			match p.parse_type_arguments_subscript(base, start, no_calls, chained, is_optional_call, for_init)? {
+				Some(node) => Ok((node, is_optional_call)),
+				None => p.unexpected(),
+			}
+		});
+		let Some((node, is_optional_call)) = subscript else {
+			return Ok(None);
+		};
+		if matches!(p.ts_kind(node), Some(TsKind::InstantiationExpression { .. }))
+			&& (p.is(TokenKind::Dot) || (p.is(TokenKind::QuestionDot) && p.peek_char().0 != Some('(')))
+		{
+			return p.error(p.tok.start, Code::PropertyAfterInstantiation);
 		}
-		Ok(None)
+		Ok(Some((node, is_optional_call)))
 	}
 
 	fn should_parse_arrow(p: &mut Parser<Self>, items: &[Option<NodeId>]) -> Result<bool> {

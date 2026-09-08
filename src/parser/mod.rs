@@ -27,24 +27,16 @@ const MAX_CHAIN: u32 = 10_000;
 pub struct Options {
 	/// Parse as an ES module: strict mode, top-level `await`, `import` and `export`.
 	pub module: bool,
-	/// The host's own `as` follows the expression parsed at an offset, as a template loop's item
-	/// follows its list: the expression ends at the last top-level `as`, so TypeScript assertions
-	/// before it stay assertions.
-	pub until_as: bool,
+	/// Errors are recorded on the tree instead of ending the parse: a missing operand, name or
+	/// pattern is an empty `Identifier` of no width where it was expected, and a statement or
+	/// entry that cannot be read is skipped to the next stop token or unmatched closer, an empty
+	/// `Identifier` standing for it.
+	pub error_recovery: bool,
 	pub allow_return_outside_function: bool,
 	pub allow_await_outside_function: bool,
 	pub allow_super_outside_method: bool,
 	pub allow_undeclared_exports: bool,
 	pub preserve_parens: bool,
-}
-
-/// How a top-level `as` is read under `until_as`: a first pass records every one it reads as an
-/// assertion, a second stops at the last of them, which is the host's.
-#[derive(Debug)]
-pub(crate) enum UntilAs {
-	Off,
-	Record(Vec<u32>),
-	Stop(u32),
 }
 
 /// What a function-shaped node is, for the extension hooks around its signature.
@@ -264,13 +256,7 @@ pub(crate) trait Extension: Default + Sized {
 		Ok(None)
 	}
 	/// At an operator position; `Some` is the new left operand.
-	fn expr_op(
-		p: &mut Parser<Self>,
-		left: NodeId,
-		left_start: u32,
-		min_prec: i8,
-		for_init: ForInit,
-	) -> Result<Option<NodeId>> {
+	fn expr_op(p: &mut Parser<Self>, left: NodeId, left_start: u32, min_prec: i8) -> Result<Option<NodeId>> {
 		Ok(None)
 	}
 	#[allow(clippy::too_many_arguments)]
@@ -352,40 +338,26 @@ pub(crate) fn parse<E: Extension>(src: &str, options: Options) -> Result<Ast<E::
 /// template: positions stay those of the whole source. The range is not a source of its own:
 /// a hashbang or an HTML comment at `start` is what it would be in the middle of a file.
 pub(crate) fn parse_range<E: Extension>(src: &str, start: u32, end: u32, options: Options) -> Result<Ast<E::Data>> {
-	let mut parser = Parser::<E>::new(&src[..end as usize], start, options, (end - start) as usize)?;
+	let mut parser = Parser::<E>::new(&src[..end as usize], start, options, (end - start) as usize, "")?;
 	let program = parser.parse_program()?;
 	debug_assert_eq!(program, parser.ast.last());
 	Ok(parser.finish())
 }
 
 /// Parses a single expression starting at `offset`, stopping where the expression ends.
-/// Returns the tree, the expression and the offset after everything it consumed.
+/// Returns the tree, the expression and the offset after everything it consumed. `stop` lists
+/// the host's own tokens, words or punctuators separated by spaces: one read outside every
+/// bracket the expression opened ends it, whatever else it could have been.
 pub(crate) fn parse_expression_at<E: Extension>(
 	src: &str,
 	offset: u32,
 	options: Options,
+	stop: &str,
 ) -> Result<(Ast<E::Data>, NodeId, u32)> {
-	let mut parser = Parser::<E>::new(src, offset, options, 0)?;
+	let mut parser = Parser::<E>::new(src, offset, options, 0, stop)?;
 	parser.enter_scope(SCOPE_TOP);
-	if !options.until_as {
-		let expression = parser.parse_sequence(ForInit::No, &mut None)?;
-		let end = parser.consumed_end();
-		return Ok((parser.finish(), expression, end));
-	}
-	parser.until_as = UntilAs::Record(Vec::new());
-	let first = parser.parse_sequence(ForInit::NoAs, &mut None);
-	let UntilAs::Record(recorded) = std::mem::replace(&mut parser.until_as, UntilAs::Off) else {
-		unreachable!()
-	};
-	let Some(&last) = recorded.last() else {
-		let expression = first?;
-		let end = parser.consumed_end();
-		return Ok((parser.finish(), expression, end));
-	};
-	let mut parser = Parser::<E>::new(src, offset, options, 0)?;
-	parser.enter_scope(SCOPE_TOP);
-	parser.until_as = UntilAs::Stop(last);
-	let expression = parser.parse_sequence(ForInit::NoAs, &mut None)?;
+	let result = parser.parse_sequence(ForInit::No, &mut None);
+	let expression = parser.recovered(result)?;
 	let end = parser.consumed_end();
 	Ok((parser.finish(), expression, end))
 }
@@ -397,19 +369,24 @@ pub(crate) fn parse_pattern_at<E: Extension>(
 	src: &str,
 	offset: u32,
 	options: Options,
+	stop: &str,
 ) -> Result<(Ast<E::Data>, NodeId, u32)> {
-	let mut parser = Parser::<E>::new(src, offset, options, 0)?;
+	let mut parser = Parser::<E>::new(src, offset, options, 0, stop)?;
 	parser.enter_scope(SCOPE_TOP);
 	let mut errors = Some(DestructuringErrors::default());
-	let expression = match parser.tok.kind {
-		TokenKind::BraceL | TokenKind::BracketL => {
-			parser.parse_expr_atom(&mut errors, expression::ForInit::No, false)?
-		}
-		_ => parser.parse_ident(false)?,
-	};
-	let pattern = parser.make_pattern(expression, false, &mut errors)?;
-	parser.check_lval_pattern(pattern, scope::Binding::None, &mut None)?;
-	E::pattern_annotation(&mut parser, pattern)?;
+	let result = (|| {
+		let expression = match parser.tok.kind {
+			TokenKind::BraceL | TokenKind::BracketL => {
+				parser.parse_expr_atom(&mut errors, expression::ForInit::No, false)?
+			}
+			_ => parser.parse_ident(false)?,
+		};
+		let pattern = parser.make_pattern(expression, false, &mut errors)?;
+		parser.check_lval_pattern(pattern, scope::Binding::None, &mut None)?;
+		E::pattern_annotation(&mut parser, pattern)?;
+		Ok(pattern)
+	})();
+	let pattern = parser.recovered(result)?;
 	let end = parser.consumed_end();
 	Ok((parser.finish(), pattern, end))
 }
@@ -421,19 +398,30 @@ pub(crate) fn parse_params_at<E: Extension>(
 	src: &str,
 	offset: u32,
 	options: Options,
+	stop: &str,
 ) -> Result<(Ast<E::Data>, Vec<NodeId>, u32)> {
-	let mut parser = Parser::<E>::new(src, offset, options, 0)?;
+	let mut parser = Parser::<E>::new(src, offset, options, 0, stop)?;
 	parser.enter_scope(SCOPE_TOP);
-	parser.expect(TokenKind::ParenL)?;
-	let paren = parser.parse_paren_items()?;
+	let result: Result<Vec<NodeId>> = (|| {
+		parser.expect(TokenKind::ParenL)?;
+		let paren = parser.parse_paren_items()?;
+		parser.check_pattern_errors(&paren.errors, false)?;
+		parser.check_yield_await_in_default_params()?;
+		parser.enter_scope(scope::function_flags(false, false) | scope::SCOPE_ARROW);
+		let params = parser.make_patterns(paren.items, true)?;
+		let list = parser.list(&params);
+		parser.check_params(list, false)?;
+		Ok(params.into_iter().flatten().collect())
+	})();
+	let params = match result {
+		Err(error) if parser.recovering() => {
+			parser.errors.push(*error);
+			parser.skip_to_end();
+			Vec::new()
+		}
+		result => result?,
+	};
 	let end = parser.consumed_end();
-	parser.check_pattern_errors(&paren.errors, false)?;
-	parser.check_yield_await_in_default_params()?;
-	parser.enter_scope(scope::function_flags(false, false) | scope::SCOPE_ARROW);
-	let params = parser.make_patterns(paren.items, true)?;
-	let list = parser.list(&params);
-	parser.check_params(list, false)?;
-	let params = params.into_iter().flatten().collect();
 	Ok((parser.finish(), params, end))
 }
 
@@ -442,11 +430,13 @@ pub(crate) fn parse_statement_at<E: Extension>(
 	src: &str,
 	offset: u32,
 	options: Options,
+	stop: &str,
 ) -> Result<(Ast<E::Data>, NodeId, u32)> {
-	let mut parser = Parser::<E>::new(src, offset, options, 0)?;
+	let mut parser = Parser::<E>::new(src, offset, options, 0, stop)?;
 	parser.enter_scope(SCOPE_TOP);
 	let mut exports = FastSet::default();
-	let statement = parser.parse_statement(statement::Context::None, true, Some(&mut exports))?;
+	let result = parser.parse_statement(statement::Context::None, true, Some(&mut exports));
+	let statement = parser.recovered(result)?;
 	let end = parser.consumed_end();
 	Ok((parser.finish(), statement, end))
 }
@@ -471,7 +461,23 @@ pub(crate) struct Parser<'a, E: Extension = ()> {
 	pub(crate) await_ident_pos: u32,
 	pub(crate) potential_arrow_at: u32,
 	potential_arrow_in_for_await: bool,
-	pub(crate) until_as: UntilAs,
+	/// Recovered errors; the lexer keeps its own until `finish`.
+	pub(crate) errors: Vec<SyntaxError>,
+	/// Inside a speculation, where the parse must fail as strict parsing would, not recover.
+	speculating: u32,
+	/// More nodes than this is a parse that stopped consuming input.
+	tree_limit: usize,
+}
+
+/// Enough to unwind the parser after an error inside a statement it recovers from.
+struct Mark<E: Extension> {
+	scopes: usize,
+	labels: usize,
+	private_names: usize,
+	depth: u32,
+	brackets: (u32, [u32; 3]),
+	strict: bool,
+	ext: E::Snapshot,
 }
 
 pub(crate) struct Snapshot<E: Extension> {
@@ -483,9 +489,14 @@ pub(crate) struct Snapshot<E: Extension> {
 pub(crate) struct TokenSnapshot {
 	pos: u32,
 	in_type: bool,
+	depth: u32,
+	open: [u32; 3],
+	stopped: bool,
+	unmatched: bool,
 	tok: Token,
 	prev_end: u32,
 	comments: usize,
+	errors: usize,
 }
 
 #[derive(Clone, Copy)]
@@ -528,9 +539,11 @@ pub(crate) struct DestructuringErrors {
 }
 
 impl<'a, E: Extension> Parser<'a, E> {
-	fn new(src: &'a str, offset: u32, options: Options, budget: usize) -> Result<Self> {
+	fn new(src: &'a str, offset: u32, options: Options, budget: usize, stop: &'a str) -> Result<Self> {
 		let mut lexer = Lexer::sized(src, budget);
 		lexer.set_pos(offset);
+		lexer.stops = stop;
+		lexer.recover = options.error_recovery;
 		let strict = options.module || expression::strict_directive(src, offset);
 		lexer.strict = strict;
 		lexer.module = options.module;
@@ -553,7 +566,9 @@ impl<'a, E: Extension> Parser<'a, E> {
 			await_ident_pos: 0,
 			potential_arrow_at: u32::MAX,
 			potential_arrow_in_for_await: false,
-			until_as: UntilAs::Off,
+			errors: Vec::new(),
+			speculating: 0,
+			tree_limit: 16 * src.len() + 256,
 		};
 		E::init(&mut parser);
 		parser.lexer.next_token_into(&mut parser.tok)?;
@@ -581,24 +596,189 @@ impl<'a, E: Extension> Parser<'a, E> {
 		TokenSnapshot {
 			pos: self.lexer.pos(),
 			in_type: self.lexer.in_type,
+			depth: self.lexer.depth,
+			open: self.lexer.open,
+			stopped: self.lexer.stopped,
+			unmatched: self.lexer.unmatched,
 			tok: self.tok,
 			prev_end: self.prev_end,
 			comments: self.lexer.comments.len(),
+			errors: self.lexer.errors.len(),
 		}
 	}
 
 	pub(crate) fn restore_tokens(&mut self, snapshot: TokenSnapshot) {
 		self.lexer.set_pos(snapshot.pos);
 		self.lexer.in_type = snapshot.in_type;
+		self.lexer.depth = snapshot.depth;
+		self.lexer.open = snapshot.open;
+		self.lexer.stopped = snapshot.stopped;
+		self.lexer.unmatched = snapshot.unmatched;
 		self.tok = snapshot.tok;
 		self.prev_end = snapshot.prev_end;
 		self.lexer.comments.truncate(snapshot.comments);
+		self.lexer.errors.truncate(snapshot.errors);
+	}
+
+	/// A tree past what the source can hold is a loop that consumes nothing: it fails here,
+	/// cheaply, instead of growing until the machine runs out of memory.
+	pub(crate) fn within_limit(&self) -> Result<()> {
+		if self.ast.nodes.len() > self.tree_limit {
+			return self.error(self.tok.start, Code::TreeSize);
+		}
+		Ok(())
+	}
+
+	pub(crate) fn recovering(&self) -> bool {
+		self.options.error_recovery && self.speculating == 0
+	}
+
+	/// Runs `f` with recovery off, so it fails where strict parsing would and the caller can try
+	/// something else.
+	pub(crate) fn speculate<T>(&mut self, f: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
+		self.speculating += 1;
+		let result = f(self);
+		self.speculating -= 1;
+		result
+	}
+
+	/// Under recovery an error is recorded, once per position, and the parse goes on with the
+	/// tree it has.
+	pub(crate) fn record(&mut self, error: Result<()>) -> Result<()> {
+		let Err(error) = error else { return Ok(()) };
+		if !self.recovering() {
+			return Err(error);
+		}
+		if self
+			.errors
+			.last()
+			.is_none_or(|last| (last.pos, last.code) != (error.pos, error.code))
+		{
+			self.errors.push(*error);
+		}
+		Ok(())
+	}
+
+	/// Records what `unexpected` would raise.
+	pub(crate) fn report_unexpected(&mut self) {
+		let error = self.unexpected();
+		self.record(error).unwrap();
+	}
+
+	/// Where the grammar needs a token it does not have: an empty identifier of no width there.
+	pub(crate) fn placeholder(&mut self) -> Result<NodeId> {
+		self.within_limit()?;
+		if !self.recovering() {
+			return self.unexpected();
+		}
+		self.report_unexpected();
+		let name = self.intern("");
+		let at = self.tok.start;
+		self.prev_end = at;
+		Ok(self.add_with_end(NodeKind::Identifier { name }, at, at))
+	}
+
+	fn mark(&self) -> Mark<E> {
+		Mark {
+			scopes: self.scopes.len(),
+			labels: self.labels.len(),
+			private_names: self.private_names.len(),
+			depth: self.depth,
+			brackets: (self.lexer.depth, self.lexer.open),
+			strict: self.strict,
+			ext: self.ext.save(),
+		}
+	}
+
+	fn unwind(&mut self, mark: Mark<E>) {
+		while self.scopes.len() > mark.scopes {
+			self.exit_scope();
+		}
+		self.labels.truncate(mark.labels);
+		self.private_names.truncate(mark.private_names);
+		self.depth = mark.depth;
+		(self.lexer.depth, self.lexer.open) = mark.brackets;
+		self.set_strict(mark.strict);
+		self.ext.restore(mark.ext);
+	}
+
+	/// A statement of a list, under recovery: when it fails, what was read is skipped up to the
+	/// next `;`, a line that starts with a keyword, or the bracket that closes the list.
+	pub(crate) fn statement_recovered(
+		&mut self,
+		f: impl FnOnce(&mut Self) -> Result<NodeId>,
+	) -> Result<Option<NodeId>> {
+		if !self.recovering() {
+			return f(self).map(Some);
+		}
+		let mark = self.mark();
+		let at = self.tok.start;
+		match f(self) {
+			Ok(statement) => Ok(Some(statement)),
+			Err(error) => {
+				self.record(Err(error)).unwrap();
+				self.unwind(mark);
+				let mut skipped = self.tok.start != at;
+				loop {
+					if self.is(TokenKind::Eof) || self.is(TokenKind::BraceR) {
+						break;
+					}
+					if self.eat(TokenKind::Semi)? {
+						break;
+					}
+					if skipped && self.tok.newline_before && matches!(self.tok.kind, TokenKind::Keyword(_)) {
+						break;
+					}
+					self.next_liberal()?;
+					skipped = true;
+				}
+				Ok(None)
+			}
+		}
+	}
+
+	/// An element of a list that consumed nothing under recovery would repeat forever: its token
+	/// is skipped as unexpected.
+	pub(crate) fn ensure_progress(&mut self, at: u32) -> Result<()> {
+		if self.recovering() && self.tok.start == at {
+			if self.is(TokenKind::Eof) {
+				return self.unexpected();
+			}
+			self.report_unexpected();
+			self.next()?;
+		}
+		Ok(())
+	}
+
+	/// The root of a parse at an offset, under recovery: when the parse fails, what was read is
+	/// skipped and an empty identifier stands where it failed.
+	fn recovered(&mut self, result: Result<NodeId>) -> Result<NodeId> {
+		match result {
+			Err(error) if self.recovering() => {
+				let at = error.pos;
+				self.record(Err(error)).unwrap();
+				self.skip_to_end();
+				self.prev_end = self.prev_end.max(at);
+				let name = self.intern("");
+				Ok(self.add_with_end(NodeKind::Identifier { name }, at, at))
+			}
+			result => result,
+		}
+	}
+
+	/// Skips to the end of the input, a stop token or a bracket nothing here opened.
+	pub(crate) fn skip_to_end(&mut self) {
+		while !self.is(TokenKind::Eof) && !self.lexer.unmatched {
+			if self.next_liberal().is_err() {
+				break;
+			}
+		}
 	}
 
 	/// Runs `f`, undoing it when it fails.
 	pub(crate) fn attempt<T>(&mut self, f: impl FnOnce(&mut Self) -> Result<T>) -> Option<T> {
 		let snapshot = self.snapshot();
-		match f(self) {
+		match self.speculate(f) {
 			Ok(value) => Some(value),
 			Err(_) => {
 				self.restore(snapshot);
@@ -651,6 +831,15 @@ impl<'a, E: Extension> Parser<'a, E> {
 
 	/// Re-reads the current token, after the lexer's mode changed under it.
 	pub(crate) fn relex(&mut self) -> Result<()> {
+		debug_assert!(!matches!(
+			self.tok.kind,
+			TokenKind::BraceL
+				| TokenKind::ParenL
+				| TokenKind::BracketL
+				| TokenKind::BraceR
+				| TokenKind::ParenR
+				| TokenKind::BracketR
+		));
 		let newline_before = self.tok.newline_before;
 		self.lexer.set_pos(self.tok.start);
 		self.lexer.next_token_into(&mut self.tok)?;
@@ -672,6 +861,9 @@ impl<'a, E: Extension> Parser<'a, E> {
 		let mut lexer = self.lexer;
 		ast.comments = std::mem::take(&mut lexer.comments);
 		ast.strings = std::mem::take(&mut lexer.strings);
+		ast.errors = self.errors;
+		ast.errors.append(&mut lexer.errors);
+		ast.errors.sort_by_key(|error| error.pos);
 		ast
 	}
 
@@ -706,7 +898,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 
 	/// The current token is not what the grammar allows; at the end of the input that is its own error.
 	pub(crate) fn unexpected<T>(&self) -> Result<T> {
-		let code = if self.is(TokenKind::Eof) {
+		let code = if self.is(TokenKind::Eof) && !self.lexer.stopped {
 			Code::UnexpectedEof
 		} else {
 			Code::UnexpectedToken
@@ -727,7 +919,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 	}
 
 	pub(crate) fn add(&mut self, kind: NodeKind, start: u32) -> NodeId {
-		self.ast.add(kind, start, self.prev_end)
+		self.add_with_end(kind, start, self.prev_end)
 	}
 
 	pub(crate) fn add_with_end(&mut self, kind: NodeKind, start: u32, end: u32) -> NodeId {
@@ -792,12 +984,14 @@ impl<'a, E: Extension> Parser<'a, E> {
 		if self.tok.escaped
 			&& let TokenKind::Keyword(keyword) = self.tok.kind
 		{
-			return self.error_arg(self.tok.start, Code::EscapeInKeyword, keyword.as_str());
+			let error = self.error_arg(self.tok.start, Code::EscapeInKeyword, keyword.as_str());
+			self.record(error)?;
 		}
 		self.next_liberal()
 	}
 
 	pub(crate) fn next_liberal(&mut self) -> Result<()> {
+		self.within_limit()?;
 		self.prev_end = self.tok.end;
 		self.lexer.next_token_into(&mut self.tok)?;
 		Ok(())
@@ -812,6 +1006,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 	}
 
 	pub(crate) fn eat(&mut self, kind: TokenKind) -> Result<bool> {
+		self.within_limit()?;
 		if self.is(kind) {
 			self.next()?;
 			Ok(true)
@@ -875,7 +1070,8 @@ impl<'a, E: Extension> Parser<'a, E> {
 
 	pub(crate) fn semicolon(&mut self) -> Result<()> {
 		if !self.eat(TokenKind::Semi)? && !self.can_insert_semicolon() {
-			return self.unexpected();
+			let error = self.unexpected();
+			self.record(error)?;
 		}
 		Ok(())
 	}

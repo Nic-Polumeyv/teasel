@@ -84,7 +84,13 @@ impl Parser<'_, TypeScript> {
 		let mut body = Vec::new();
 		let mut exports = crate::interner::FastSet::default();
 		while !self.is(TokenKind::BraceR) {
-			body.push(self.parse_statement(Context::None, true, Some(&mut exports))?);
+			let at = self.tok.start;
+			if let Some(statement) =
+				self.statement_recovered(|p| p.parse_statement(Context::None, true, Some(&mut exports)))?
+			{
+				body.push(statement);
+			}
+			self.ensure_progress(at)?;
 		}
 		self.next()?;
 		self.ext.module_blocks -= 1;

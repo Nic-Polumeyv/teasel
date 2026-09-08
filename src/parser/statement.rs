@@ -44,7 +44,18 @@ impl<E: Extension> Parser<'_, E> {
 		let mut body = Vec::new();
 		let mut exports = FastSet::default();
 		while !self.is(TokenKind::Eof) {
-			body.push(self.parse_statement(Context::None, true, Some(&mut exports))?);
+			if self.recovering() && self.lexer.unmatched {
+				self.report_unexpected();
+				self.next()?;
+				continue;
+			}
+			let at = self.tok.start;
+			if let Some(statement) =
+				self.statement_recovered(|p| p.parse_statement(Context::None, true, Some(&mut exports)))?
+			{
+				body.push(statement);
+			}
+			self.ensure_progress(at)?;
 		}
 		if module
 			&& !self.options.allow_undeclared_exports
@@ -200,6 +211,9 @@ impl<E: Extension> Parser<'_, E> {
 	fn is_let(&self, context: Context) -> bool {
 		if !self.is_contextual("let") {
 			return false;
+		}
+		if self.strict && self.recovering() {
+			return true;
 		}
 		let (next, _, pos) = self.peek_char();
 		let Some(next) = next else { return false };
@@ -748,7 +762,11 @@ impl<E: Extension> Parser<'_, E> {
 		}
 		let mut body = Vec::new();
 		while !self.is(TokenKind::BraceR) {
-			body.push(self.parse_statement(Context::None, false, None)?);
+			let at = self.tok.start;
+			if let Some(statement) = self.statement_recovered(|p| p.parse_statement(Context::None, false, None))? {
+				body.push(statement);
+			}
+			self.ensure_progress(at)?;
 		}
 		if exit_strict {
 			self.set_strict(false);
@@ -779,10 +797,14 @@ impl<E: Extension> Parser<'_, E> {
 				let in_or_of = self.is_keyword(Keyword::In) || self.is_contextual("of");
 				let missing_allowed = E::allows_missing_initializer(self);
 				if kind == VariableKind::Const && !in_or_of && !missing_allowed {
-					return self.unexpected();
-				}
-				if !matches!(self.kind(id), NodeKind::Identifier { .. }) && !(is_for && in_or_of) && !missing_allowed {
-					return self.error(self.prev_end, Code::PatternWithoutInitializer);
+					let error = self.unexpected();
+					self.record(error)?;
+				} else if !matches!(self.kind(id), NodeKind::Identifier { .. })
+					&& !(is_for && in_or_of)
+					&& !missing_allowed
+				{
+					let error = self.error(self.prev_end, Code::PatternWithoutInitializer);
+					self.record(error)?;
 				}
 				None
 			};
@@ -1174,7 +1196,10 @@ impl<E: Extension> Parser<'_, E> {
 		let mut had_constructor = false;
 		self.expect(TokenKind::BraceL)?;
 		while !self.is(TokenKind::BraceR) {
-			let Some(element) = self.parse_class_element(super_class.is_some())? else {
+			let at = self.tok.start;
+			let element = self.parse_class_element(super_class.is_some())?;
+			self.ensure_progress(at)?;
+			let Some(element) = element else {
 				continue;
 			};
 			body.push(element);

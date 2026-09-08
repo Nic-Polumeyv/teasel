@@ -1,9 +1,9 @@
 import { decode } from './decode.js';
 
 // bit i is `FLAGS[i]` of json.rs
-const FLAGS = ['typescript', 'comments', 'scopes', 'locations', 'script', 'preserveParens', 'allowReturnOutsideFunction', 'allowAwaitOutsideFunction', 'allowSuperOutsideMethod', 'allowUndeclaredExports', 'untilAs', 'erase'];
+const FLAGS = ['typescript', 'comments', 'scopes', 'locations', 'script', 'preserveParens', 'allowReturnOutsideFunction', 'allowAwaitOutsideFunction', 'allowSuperOutsideMethod', 'allowUndeclaredExports', 'erase', 'errorRecovery'];
 const BIT = Object.fromEntries(FLAGS.map((flag, i) => [flag, 1 << i]));
-const DERIVED = new Set(['script', 'untilAs']);
+const DERIVED = new Set(['script']);
 
 export function bits(options) {
 	if (options === undefined) return BIT.script;
@@ -13,11 +13,7 @@ export function bits(options) {
 	if ('sourceType' in options && options.sourceType !== 'script' && options.sourceType !== 'module') {
 		throw new TypeError(`sourceType must be "script" or "module", not ${JSON.stringify(options.sourceType)}`);
 	}
-	if ('until' in options && options.until !== 'as') {
-		throw new TypeError(`until must be "as", not ${JSON.stringify(options.until)}`);
-	}
 	let on = options.sourceType === 'module' ? 0 : BIT.script;
-	if (options.until === 'as') on |= BIT.untilAs;
 	for (const flag of FLAGS) {
 		const value = options[flag];
 		if (value === undefined || value === false || DERIVED.has(flag)) continue;
@@ -31,12 +27,21 @@ export function bits(options) {
 // `json::Entry` by index
 export const ENTRY = { program: 0, expression: 1, pattern: 2, params: 3, statement: 4 };
 
+// the engine takes the stop tokens as one string
+function stops(list) {
+	if (list === undefined) return '';
+	if (!Array.isArray(list) || !list.every((stop) => typeof stop === 'string' && stop !== '' && !/\s/.test(stop))) {
+		throw new TypeError('stopAt must be a list of words and punctuators');
+	}
+	return list.join(' ');
+}
+
 /**
  * @typedef {ArrayBuffer | Uint32Array | string} Answer
  * @typedef {object} Engine
- * @property {(source: string, bits: number, entry: number, offset: number, until: boolean) => Answer} once
+ * @property {(source: string, bits: number, entry: number, offset: number, stop: string) => Answer} once
  * @property {(source: string, bits: number) => any} create
- * @property {(held: any, entry: number, offset: number, until: boolean) => Answer} parse
+ * @property {(held: any, entry: number, offset: number, stop: string) => Answer} parse
  * @property {(held: any, start: number, end: number | undefined) => Answer} parseRange
  * @property {(held: any) => void} [free]
  * @property {() => string[]} constants
@@ -53,7 +58,7 @@ export function bind(engine) {
 		throw Object.assign(new SyntaxError(message), error);
 	}
 
-	const once = (source, options, entry, offset, until = false) => result(engine.once(source, bits(options), entry, offset, until), source);
+	const once = (source, options, entry, offset) => result(engine.once(source, bits(options), entry, offset, stops(options?.stopAt)), source);
 
 	class Source {
 		#held;
@@ -65,9 +70,9 @@ export function bind(engine) {
 			registry?.register(this, this.#held, this);
 		}
 
-		#at(entry, offset, until = false) {
+		#at(entry, offset, stopAt) {
 			if (this.#held === undefined) throw new TypeError('the source is freed');
-			return result(engine.parse(this.#held, entry, offset, until), this.#source);
+			return result(engine.parse(this.#held, entry, offset, stops(stopAt)), this.#source);
 		}
 
 		parse(start, end) {
@@ -76,21 +81,21 @@ export function bind(engine) {
 			return result(engine.parseRange(this.#held, start ?? 0, end), this.#source);
 		}
 
-		/** @param {number} offset @param {'as'} [until] */
-		parseExpressionAt(offset, until) {
-			return this.#at(ENTRY.expression, offset, until === 'as');
+		/** @param {number} offset @param {string[]} [stopAt] the host's tokens, where the parse ends */
+		parseExpressionAt(offset, stopAt) {
+			return this.#at(ENTRY.expression, offset, stopAt);
 		}
 
-		parsePatternAt(offset) {
-			return this.#at(ENTRY.pattern, offset);
+		parsePatternAt(offset, stopAt) {
+			return this.#at(ENTRY.pattern, offset, stopAt);
 		}
 
-		parseParamsAt(offset) {
-			return this.#at(ENTRY.params, offset);
+		parseParamsAt(offset, stopAt) {
+			return this.#at(ENTRY.params, offset, stopAt);
 		}
 
-		parseStatementAt(offset) {
-			return this.#at(ENTRY.statement, offset);
+		parseStatementAt(offset, stopAt) {
+			return this.#at(ENTRY.statement, offset, stopAt);
 		}
 
 		free() {
@@ -103,7 +108,7 @@ export function bind(engine) {
 
 	return {
 		parse: (source, options) => once(source, options, ENTRY.program, 0),
-		parseExpressionAt: (source, offset, options) => once(source, options, ENTRY.expression, offset, options?.until === 'as'),
+		parseExpressionAt: (source, offset, options) => once(source, options, ENTRY.expression, offset),
 		parsePatternAt: (source, offset, options) => once(source, options, ENTRY.pattern, offset),
 		parseParamsAt: (source, offset, options) => once(source, options, ENTRY.params, offset),
 		parseStatementAt: (source, offset, options) => once(source, options, ENTRY.statement, offset),

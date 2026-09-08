@@ -15,17 +15,11 @@ pub(crate) enum ForInit {
 	No,
 	Yes,
 	Await,
-	/// A host's expression that ends at the last top-level `as`, TypeScript's assertion operator.
-	NoAs,
 }
 
 impl ForInit {
 	fn no_in(self) -> bool {
 		matches!(self, ForInit::Yes | ForInit::Await)
-	}
-
-	pub(crate) fn no_as(self) -> bool {
-		self == ForInit::NoAs
 	}
 }
 
@@ -286,7 +280,7 @@ impl<E: Extension> Parser<'_, E> {
 		loop {
 			links += 1;
 			self.chain(links)?;
-			if let Some(expr) = E::expr_op(self, left, left_start, min_prec, for_init)? {
+			if let Some(expr) = E::expr_op(self, left, left_start, min_prec)? {
 				left = expr;
 				continue;
 			}
@@ -695,7 +689,7 @@ impl<E: Extension> Parser<'_, E> {
 			TokenKind::Keyword(Keyword::New) => self.parse_new(),
 			TokenKind::Backquote => self.parse_template(false),
 			TokenKind::Keyword(Keyword::Import) => self.parse_expr_import(for_new),
-			_ => self.unexpected(),
+			_ => self.placeholder(),
 		}
 	}
 
@@ -896,11 +890,12 @@ impl<E: Extension> Parser<'_, E> {
 				unreachable!()
 			};
 			if cooked.is_none() && !is_tagged {
-				return self.error(chunk.start, Code::BadTemplateEscape);
+				let error = self.error(chunk.start, Code::BadTemplateEscape);
+				self.record(error)?;
 			}
 			quasis.push(self.add_with_end(NodeKind::TemplateElement { cooked, raw, tail }, chunk.start, chunk.end));
 			if tail {
-				self.prev_end = chunk.end + 1;
+				self.prev_end = if chunk.unclosed { chunk.end } else { chunk.end + 1 };
 				self.lexer.next_token_into(&mut self.tok)?;
 				break;
 			}
@@ -1396,7 +1391,7 @@ impl<E: Extension> Parser<'_, E> {
 		let name = match self.tok.kind {
 			TokenKind::Ident(name) => name,
 			TokenKind::Keyword(keyword) => self.intern(keyword.as_str()),
-			_ => return self.unexpected(),
+			_ => return self.placeholder(),
 		};
 		if liberal {
 			self.next_liberal()?;

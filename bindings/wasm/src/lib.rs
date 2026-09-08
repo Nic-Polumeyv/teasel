@@ -46,9 +46,20 @@ fn answer(result: Result<Vec<u32>, String>) -> u32 {
 	}
 }
 
+/// # Safety
+/// `ptr` is `capacity` bytes from `alloc`, `len` of them the stop tokens; they are taken over here.
 #[unsafe(no_mangle)]
-pub extern "C" fn source_parse(handle: u32, entry: u32, offset: f64, until: u32) -> u32 {
-	answer(source(handle).binary(Entry::from_index(entry), offset, until == 1))
+pub unsafe extern "C" fn source_parse(
+	handle: u32,
+	entry: u32,
+	offset: f64,
+	ptr: *mut u8,
+	len: u32,
+	capacity: u32,
+) -> u32 {
+	let stop = unsafe { Vec::from_raw_parts(ptr, len as usize, capacity as usize) };
+	let stop = String::from_utf8_lossy(&stop);
+	answer(source(handle).binary(Entry::from_index(entry), offset, &stop))
 }
 
 #[unsafe(no_mangle)]
