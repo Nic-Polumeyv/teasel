@@ -27,24 +27,11 @@ const MAX_CHAIN: u32 = 10_000;
 pub struct Options {
 	/// Parse as an ES module: strict mode, top-level `await`, `import` and `export`.
 	pub module: bool,
-	/// The host's own `as` follows the expression parsed at an offset, as a template loop's item
-	/// follows its list: the expression ends at the last top-level `as`, so TypeScript assertions
-	/// before it stay assertions.
-	pub until_as: bool,
 	pub allow_return_outside_function: bool,
 	pub allow_await_outside_function: bool,
 	pub allow_super_outside_method: bool,
 	pub allow_undeclared_exports: bool,
 	pub preserve_parens: bool,
-}
-
-/// How a top-level `as` is read under `until_as`: a first pass records every one it reads as an
-/// assertion, a second stops at the last of them, which is the host's.
-#[derive(Debug)]
-pub(crate) enum UntilAs {
-	Off,
-	Record(Vec<u32>),
-	Stop(u32),
 }
 
 /// What a function-shaped node is, for the extension hooks around its signature.
@@ -264,13 +251,7 @@ pub(crate) trait Extension: Default + Sized {
 		Ok(None)
 	}
 	/// At an operator position; `Some` is the new left operand.
-	fn expr_op(
-		p: &mut Parser<Self>,
-		left: NodeId,
-		left_start: u32,
-		min_prec: i8,
-		for_init: ForInit,
-	) -> Result<Option<NodeId>> {
+	fn expr_op(p: &mut Parser<Self>, left: NodeId, left_start: u32, min_prec: i8) -> Result<Option<NodeId>> {
 		Ok(None)
 	}
 	#[allow(clippy::too_many_arguments)]
@@ -352,40 +333,25 @@ pub(crate) fn parse<E: Extension>(src: &str, options: Options) -> Result<Ast<E::
 /// template: positions stay those of the whole source. The range is not a source of its own:
 /// a hashbang or an HTML comment at `start` is what it would be in the middle of a file.
 pub(crate) fn parse_range<E: Extension>(src: &str, start: u32, end: u32, options: Options) -> Result<Ast<E::Data>> {
-	let mut parser = Parser::<E>::new(&src[..end as usize], start, options, (end - start) as usize)?;
+	let mut parser = Parser::<E>::new(&src[..end as usize], start, options, (end - start) as usize, "")?;
 	let program = parser.parse_program()?;
 	debug_assert_eq!(program, parser.ast.last());
 	Ok(parser.finish())
 }
 
 /// Parses a single expression starting at `offset`, stopping where the expression ends.
-/// Returns the tree, the expression and the offset after everything it consumed.
+/// Returns the tree, the expression and the offset after everything it consumed. `stop` lists
+/// the host's own tokens, words or punctuators separated by spaces: one read outside every
+/// bracket the expression opened ends it, whatever else it could have been.
 pub(crate) fn parse_expression_at<E: Extension>(
 	src: &str,
 	offset: u32,
 	options: Options,
+	stop: &str,
 ) -> Result<(Ast<E::Data>, NodeId, u32)> {
-	let mut parser = Parser::<E>::new(src, offset, options, 0)?;
+	let mut parser = Parser::<E>::new(src, offset, options, 0, stop)?;
 	parser.enter_scope(SCOPE_TOP);
-	if !options.until_as {
-		let expression = parser.parse_sequence(ForInit::No, &mut None)?;
-		let end = parser.consumed_end();
-		return Ok((parser.finish(), expression, end));
-	}
-	parser.until_as = UntilAs::Record(Vec::new());
-	let first = parser.parse_sequence(ForInit::NoAs, &mut None);
-	let UntilAs::Record(recorded) = std::mem::replace(&mut parser.until_as, UntilAs::Off) else {
-		unreachable!()
-	};
-	let Some(&last) = recorded.last() else {
-		let expression = first?;
-		let end = parser.consumed_end();
-		return Ok((parser.finish(), expression, end));
-	};
-	let mut parser = Parser::<E>::new(src, offset, options, 0)?;
-	parser.enter_scope(SCOPE_TOP);
-	parser.until_as = UntilAs::Stop(last);
-	let expression = parser.parse_sequence(ForInit::NoAs, &mut None)?;
+	let expression = parser.parse_sequence(ForInit::No, &mut None)?;
 	let end = parser.consumed_end();
 	Ok((parser.finish(), expression, end))
 }
@@ -397,8 +363,9 @@ pub(crate) fn parse_pattern_at<E: Extension>(
 	src: &str,
 	offset: u32,
 	options: Options,
+	stop: &str,
 ) -> Result<(Ast<E::Data>, NodeId, u32)> {
-	let mut parser = Parser::<E>::new(src, offset, options, 0)?;
+	let mut parser = Parser::<E>::new(src, offset, options, 0, stop)?;
 	parser.enter_scope(SCOPE_TOP);
 	let mut errors = Some(DestructuringErrors::default());
 	let expression = match parser.tok.kind {
@@ -421,8 +388,9 @@ pub(crate) fn parse_params_at<E: Extension>(
 	src: &str,
 	offset: u32,
 	options: Options,
+	stop: &str,
 ) -> Result<(Ast<E::Data>, Vec<NodeId>, u32)> {
-	let mut parser = Parser::<E>::new(src, offset, options, 0)?;
+	let mut parser = Parser::<E>::new(src, offset, options, 0, stop)?;
 	parser.enter_scope(SCOPE_TOP);
 	parser.expect(TokenKind::ParenL)?;
 	let paren = parser.parse_paren_items()?;
@@ -442,8 +410,9 @@ pub(crate) fn parse_statement_at<E: Extension>(
 	src: &str,
 	offset: u32,
 	options: Options,
+	stop: &str,
 ) -> Result<(Ast<E::Data>, NodeId, u32)> {
-	let mut parser = Parser::<E>::new(src, offset, options, 0)?;
+	let mut parser = Parser::<E>::new(src, offset, options, 0, stop)?;
 	parser.enter_scope(SCOPE_TOP);
 	let mut exports = FastSet::default();
 	let statement = parser.parse_statement(statement::Context::None, true, Some(&mut exports))?;
@@ -471,7 +440,6 @@ pub(crate) struct Parser<'a, E: Extension = ()> {
 	pub(crate) await_ident_pos: u32,
 	pub(crate) potential_arrow_at: u32,
 	potential_arrow_in_for_await: bool,
-	pub(crate) until_as: UntilAs,
 }
 
 pub(crate) struct Snapshot<E: Extension> {
@@ -483,6 +451,8 @@ pub(crate) struct Snapshot<E: Extension> {
 pub(crate) struct TokenSnapshot {
 	pos: u32,
 	in_type: bool,
+	depth: u32,
+	stopped: bool,
 	tok: Token,
 	prev_end: u32,
 	comments: usize,
@@ -528,9 +498,10 @@ pub(crate) struct DestructuringErrors {
 }
 
 impl<'a, E: Extension> Parser<'a, E> {
-	fn new(src: &'a str, offset: u32, options: Options, budget: usize) -> Result<Self> {
+	fn new(src: &'a str, offset: u32, options: Options, budget: usize, stop: &'a str) -> Result<Self> {
 		let mut lexer = Lexer::sized(src, budget);
 		lexer.set_pos(offset);
+		lexer.stops = stop;
 		let strict = options.module || expression::strict_directive(src, offset);
 		lexer.strict = strict;
 		lexer.module = options.module;
@@ -553,7 +524,6 @@ impl<'a, E: Extension> Parser<'a, E> {
 			await_ident_pos: 0,
 			potential_arrow_at: u32::MAX,
 			potential_arrow_in_for_await: false,
-			until_as: UntilAs::Off,
 		};
 		E::init(&mut parser);
 		parser.lexer.next_token_into(&mut parser.tok)?;
@@ -581,6 +551,8 @@ impl<'a, E: Extension> Parser<'a, E> {
 		TokenSnapshot {
 			pos: self.lexer.pos(),
 			in_type: self.lexer.in_type,
+			depth: self.lexer.depth,
+			stopped: self.lexer.stopped,
 			tok: self.tok,
 			prev_end: self.prev_end,
 			comments: self.lexer.comments.len(),
@@ -590,6 +562,8 @@ impl<'a, E: Extension> Parser<'a, E> {
 	pub(crate) fn restore_tokens(&mut self, snapshot: TokenSnapshot) {
 		self.lexer.set_pos(snapshot.pos);
 		self.lexer.in_type = snapshot.in_type;
+		self.lexer.depth = snapshot.depth;
+		self.lexer.stopped = snapshot.stopped;
 		self.tok = snapshot.tok;
 		self.prev_end = snapshot.prev_end;
 		self.lexer.comments.truncate(snapshot.comments);
@@ -651,6 +625,15 @@ impl<'a, E: Extension> Parser<'a, E> {
 
 	/// Re-reads the current token, after the lexer's mode changed under it.
 	pub(crate) fn relex(&mut self) -> Result<()> {
+		debug_assert!(!matches!(
+			self.tok.kind,
+			TokenKind::BraceL
+				| TokenKind::ParenL
+				| TokenKind::BracketL
+				| TokenKind::BraceR
+				| TokenKind::ParenR
+				| TokenKind::BracketR
+		));
 		let newline_before = self.tok.newline_before;
 		self.lexer.set_pos(self.tok.start);
 		self.lexer.next_token_into(&mut self.tok)?;
@@ -706,7 +689,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 
 	/// The current token is not what the grammar allows; at the end of the input that is its own error.
 	pub(crate) fn unexpected<T>(&self) -> Result<T> {
-		let code = if self.is(TokenKind::Eof) {
+		let code = if self.is(TokenKind::Eof) && !self.lexer.stopped {
 			Code::UnexpectedEof
 		} else {
 			Code::UnexpectedToken

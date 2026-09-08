@@ -58,7 +58,7 @@ fn plain(_: &Ast, _: NodeId, _: u32) -> String {
 }
 
 fn expr(src: &str) -> String {
-	let (ast, id, _) = parse_expression_at(src, 0, Options::default()).unwrap_or_else(|e| panic!("{src}: {e}"));
+	let (ast, id, _) = parse_expression_at(src, 0, Options::default(), "").unwrap_or_else(|e| panic!("{src}: {e}"));
 	dump(&ast, id, &plain)
 }
 
@@ -114,16 +114,19 @@ fn consumed_end() {
 		module: true,
 		..Options::default()
 	};
-	let end = |src: &str, at: u32| parse_expression_at(src, at, options).unwrap().2;
+	let end = |src: &str, at: u32| parse_expression_at(src, at, options, "").unwrap().2;
 	assert_eq!(end("{a /* c */ }", 1), 10);
 	assert_eq!(end("{(a) }", 1), 4);
 	assert_eq!(end("{a} /* c */", 1), 2);
-	assert_eq!(parse_statement_at("{@const x = 1}", 2, options).unwrap().2, 13);
-	assert_eq!(parse_params_at("{#snippet s(a) /* c */}", 11, options).unwrap().2, 22);
+	assert_eq!(parse_statement_at("{@const x = 1}", 2, options, "").unwrap().2, 13);
+	assert_eq!(
+		parse_params_at("{#snippet s(a) /* c */}", 11, options, "").unwrap().2,
+		22
+	);
 }
 
 fn span(src: &str) -> (u32, u32) {
-	let (ast, id, _) = parse_expression_at(src, 0, Options::default()).unwrap();
+	let (ast, id, _) = parse_expression_at(src, 0, Options::default(), "").unwrap();
 	(ast.node(id).start, ast.node(id).end)
 }
 
@@ -280,7 +283,7 @@ fn conditional_and_sequence() {
 fn expression_ends_where_it_ends() {
 	assert_eq!(span("a + b }"), (0, 5));
 	assert_eq!(span("  x"), (2, 3));
-	let (ast, id, _) = parse_expression_at("{ a.b }", 2, Options::default()).unwrap();
+	let (ast, id, _) = parse_expression_at("{ a.b }", 2, Options::default(), "").unwrap();
 	assert_eq!((ast.node(id).start, ast.node(id).end), (2, 5));
 }
 
@@ -293,6 +296,7 @@ fn preserve_parens() {
 			preserve_parens: true,
 			..Options::default()
 		},
+		"",
 	)
 	.unwrap();
 	assert_eq!(
@@ -458,10 +462,10 @@ fn a_recycled_sink_writes_the_same_words() {
 	let source = "let x = /* a */ 1; function f(y) { return x + y; } // b";
 	let prepared = Prepared::borrowed(source, request);
 	let first = prepared.binary_range(0.0, None).unwrap();
-	let _ = Prepared::borrowed("a + b", request).binary(Entry::Expression, 0.0, false);
+	let _ = Prepared::borrowed("a + b", request).binary(Entry::Expression, 0.0, "");
 	assert!(
 		Prepared::borrowed("a +", request)
-			.binary(Entry::Expression, 0.0, false)
+			.binary(Entry::Expression, 0.0, "")
 			.is_err()
 	);
 	let again = prepared.binary_range(0.0, None).unwrap();
@@ -601,18 +605,18 @@ fn svelte_entry_points() {
 		module: true,
 		..Options::default()
 	};
-	let (ast, id, _) = parse_pattern_at("{#each items as {a, b = 1}, i}", 16, options).unwrap();
+	let (ast, id, _) = parse_pattern_at("{#each items as {a, b = 1}, i}", 16, options, "").unwrap();
 	assert_eq!(
 		dump(&ast, id, &plain),
 		r#"ObjectPattern { properties: [Property { key: Identifier { name: "a" }, value: Identifier { name: "a" }, kind: Init, computed: false, method: false, shorthand: true }, Property { key: Identifier { name: "b" }, value: AssignmentPattern { left: Identifier { name: "b" }, right: NumberLiteral { value: 1.0 } }, kind: Init, computed: false, method: false, shorthand: true }] }"#
 	);
 	assert_eq!(ast.node(id).end, 26);
-	let (ast, id, _) = parse_pattern_at("{#each items as item (item.id)}", 16, options).unwrap();
+	let (ast, id, _) = parse_pattern_at("{#each items as item (item.id)}", 16, options, "").unwrap();
 	assert_eq!(dump(&ast, id, &plain), r#"Identifier { name: "item" }"#);
 	assert_eq!(ast.node(id).end, 20);
-	assert!(parse_pattern_at("{#each items as 1}", 16, options).is_err());
+	assert!(parse_pattern_at("{#each items as 1}", 16, options, "").is_err());
 
-	let (ast, params, end) = parse_params_at("{#snippet row(a, {b}, ...rest)}", 13, options).unwrap();
+	let (ast, params, end) = parse_params_at("{#snippet row(a, {b}, ...rest)}", 13, options, "").unwrap();
 	let dumped: Vec<String> = params.iter().map(|p| dump(&ast, *p, &plain)).collect();
 	assert_eq!(
 		dumped,
@@ -624,14 +628,14 @@ fn svelte_entry_points() {
 	);
 	assert_eq!(end, 30);
 	assert_eq!(
-		parse_params_at("{#snippet row(a, a)}", 13, options)
+		parse_params_at("{#snippet row(a, a)}", 13, options, "")
 			.unwrap_err()
 			.message,
 		"Argument name clash"
 	);
 	// Parameters are read as expressions first, so the errors are the ones acorn gives an arrow.
 	let params_error = |src: &str| {
-		let e = parse_params_at(src, 13, options).unwrap_err();
+		let e = parse_params_at(src, 13, options, "").unwrap_err();
 		(e.message, e.pos)
 	};
 	assert_eq!(params_error("{#snippet row(a.b)}"), ("Assigning to rvalue".into(), 14));
@@ -644,9 +648,9 @@ fn svelte_entry_points() {
 		("Await expression cannot be a default value".into(), 18)
 	);
 	let deep = format!("({}a{})", "[".repeat(20_000), "]".repeat(20_000));
-	assert!(parse_params_at(&deep, 0, options).is_err());
+	assert!(parse_params_at(&deep, 0, options, "").is_err());
 
-	let (ast, id, _) = parse_statement_at("{@const x = a + 1}", 2, options).unwrap();
+	let (ast, id, _) = parse_statement_at("{@const x = a + 1}", 2, options, "").unwrap();
 	assert_eq!(
 		dump(&ast, id, &plain),
 		r#"VariableDeclaration { declarations: [VariableDeclarator { id: Identifier { name: "x" }, init: Some(BinaryExpression { operator: Add, left: Identifier { name: "a" }, right: NumberLiteral { value: 1.0 } }) }], kind: Const }"#
@@ -779,12 +783,12 @@ fn phases() {
 		request.set_bits(0b10);
 		let prepared = crate::json::Prepared::borrowed(&source, request);
 		best("whole request: positions, parse, comments, encode, finish", &mut || {
-			let _ = prepared.binary(crate::json::Entry::Program, 0.0, false).unwrap();
+			let _ = prepared.binary(crate::json::Entry::Program, 0.0, "").unwrap();
 		});
 		request.set_bits(0b1110);
 		let prepared = crate::json::Prepared::borrowed(&source, request);
 		best("whole request with scopes and loc", &mut || {
-			let _ = prepared.binary(crate::json::Entry::Program, 0.0, false).unwrap();
+			let _ = prepared.binary(crate::json::Entry::Program, 0.0, "").unwrap();
 		});
 	}
 	best("Binary encode, no loc", &mut || {

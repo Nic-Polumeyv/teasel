@@ -29,12 +29,13 @@ export interface Options {
 	/** Accepted for acorn's sake and ignored: the latest ECMAScript is always parsed. */
 	ecmaVersion?: number | 'latest';
 	/**
-	 * For `parseExpressionAt` only: the host's own `as` follows the expression, as a template
-	 * loop's item follows its list. The expression ends at the last top-level `as`, so
-	 * TypeScript assertions before it stay assertions: `list as Type as item` ends before the
-	 * second `as`.
+	 * For the parse-at functions: the host's own tokens, words or punctuators, that follow what
+	 * is parsed. One read outside every bracket the parse opened ends it, whatever else it could
+	 * have been: `as` before a template loop's item is never TypeScript's assertion nor a
+	 * property name after `.`, `,` ends an expression before a sequence would, and `/>` is never
+	 * a division.
 	 */
-	until?: 'as';
+	stopAt?: string[];
 }
 
 /**
@@ -200,10 +201,10 @@ export class Source {
 	constructor(source: string, options?: Options);
 	/** The whole source, or the program that spans `start..end` of it; positions stay those of the whole source. */
 	parse(start?: number, end?: number): ParsedProgram;
-	parseExpressionAt(offset: number, until?: 'as'): Parsed<Expression>;
-	parsePatternAt(offset: number): Parsed<Pattern>;
-	parseParamsAt(offset: number): Params;
-	parseStatementAt(offset: number): Parsed<Statement>;
+	parseExpressionAt(offset: number, stopAt?: string[]): Parsed<Expression>;
+	parsePatternAt(offset: number, stopAt?: string[]): Parsed<Pattern>;
+	parseParamsAt(offset: number, stopAt?: string[]): Params;
+	parseStatementAt(offset: number, stopAt?: string[]): Parsed<Statement>;
 	/** Releases what the engine holds for the source; the collector does it otherwise. */
 	free(): void;
 }

@@ -29,6 +29,11 @@ pub(crate) struct Lexer<'a> {
 	pub(crate) at_sign: bool,
 	/// Reads `<` and `>` as single characters, so `>>` closes two type argument lists.
 	pub(crate) in_type: bool,
+	/// The host's tokens, space-separated: one read outside every bracket ends the input.
+	pub(crate) stops: &'a str,
+	pub(crate) depth: u32,
+	/// The last token read was one of `stops`.
+	pub(crate) stopped: bool,
 	pub(crate) comments: Vec<Comment>,
 	pub(crate) strings: Interner,
 	/// `token::word` flags by string id, filled as ids appear.
@@ -52,6 +57,9 @@ impl<'a> Lexer<'a> {
 			module: false,
 			at_sign: false,
 			in_type: false,
+			stops: "",
+			depth: 0,
+			stopped: false,
 			comments: Vec::new(),
 			strings: Interner::sized(budget),
 			word_flags: Vec::with_capacity(budget / 32),
@@ -81,10 +89,13 @@ impl<'a> Lexer<'a> {
 
 	/// The token after the current one, leaving the lexer where it was.
 	pub(crate) fn peek_token(&mut self) -> Result<Token> {
-		let (pos, escaped, comments) = (self.pos, self.escaped, self.comments.len());
+		let (pos, escaped, depth, stopped, comments) =
+			(self.pos, self.escaped, self.depth, self.stopped, self.comments.len());
 		let token = self.next_token();
 		self.pos = pos;
 		self.escaped = escaped;
+		self.depth = depth;
+		self.stopped = stopped;
 		self.comments.truncate(comments);
 		token
 	}
@@ -161,6 +172,7 @@ impl<'a> Lexer<'a> {
 		token.newline_before = self.skip_space()?;
 		let start = self.pos;
 		self.escaped = false;
+		self.stopped = false;
 		token.start = start as u32;
 		let Some(b) = self.byte() else {
 			token.kind = TokenKind::Eof;
@@ -169,7 +181,7 @@ impl<'a> Lexer<'a> {
 			return Ok(());
 		};
 
-		token.kind = match b {
+		let kind = match b {
 			b'0'..=b'9' => self.read_number(false)?,
 			b'.' if self.byte_at(1).is_some_and(|b| b.is_ascii_digit()) => self.read_number(true)?,
 			b'"' | b'\'' => self.read_string(b)?,
@@ -189,10 +201,42 @@ impl<'a> Lexer<'a> {
 				}
 			}
 		};
-
+		if self.depth == 0 && !self.stops.is_empty() && self.stops_at(start, kind) {
+			self.pos = start;
+			self.stopped = true;
+			token.kind = TokenKind::Eof;
+			token.end = start as u32;
+			token.escaped = false;
+			return Ok(());
+		}
+		self.depth = match kind {
+			TokenKind::BraceL | TokenKind::ParenL | TokenKind::BracketL => self.depth + 1,
+			TokenKind::BraceR | TokenKind::ParenR | TokenKind::BracketR => self.depth.saturating_sub(1),
+			_ => self.depth,
+		};
+		token.kind = kind;
 		token.end = self.pos as u32;
 		token.escaped = self.escaped;
 		Ok(())
+	}
+
+	/// A word stop is the token's text; a punctuation stop is what the source continues with.
+	fn stops_at(&self, start: usize, kind: TokenKind) -> bool {
+		use TokenKind::*;
+		let word = matches!(kind, Ident(_) | Keyword(_)) && !self.escaped;
+		let literal = matches!(
+			kind,
+			Ident(_) | Keyword(_) | PrivateName(_) | Number(_) | BigInt | String(_) | Template { .. } | RegExp { .. }
+		);
+		let text = &self.src[start..self.pos];
+		let rest = &self.src[start..];
+		self.stops.split_ascii_whitespace().any(|stop| {
+			if stop.starts_with(is_id_start) {
+				word && text == stop
+			} else {
+				!literal && rest.starts_with(stop)
+			}
+		})
 	}
 
 	fn skip_space(&mut self) -> Result<bool> {
@@ -697,6 +741,9 @@ impl<'a> Lexer<'a> {
 					let end = self.pos;
 					let tail = c == '`';
 					self.pos += if tail { 1 } else { 2 };
+					if !tail {
+						self.depth += 1;
+					}
 					let raw_text = &self.src[start..end];
 					let raw = if returns {
 						let normalized = raw_text.replace("\r\n", "\n").replace('\r', "\n");

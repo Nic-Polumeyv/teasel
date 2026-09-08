@@ -2,14 +2,14 @@
 /* eslint-disable */
 export declare class Source {
   constructor(source: Uint8Array, bits: number)
-  parseAt(entry: number, offset: number, until: boolean): Uint32Array | string
+  parseAt(entry: number, offset: number, stop: string): Uint32Array | string
   parseRange(start: number, end?: number | undefined | null): Uint32Array | string
 }
 
 export declare function constants(): Array<string>
 
-export declare function parseAt(source: Uint8Array, bits: number, entry: number, offset: number, until: boolean): Uint32Array | string
+export declare function parseAt(source: Uint8Array, bits: number, entry: number, offset: number, stop: string): Uint32Array | string
 
-export declare function parseAtJson(source: Uint8Array, bits: number, entry: number, offset: number, until: boolean): string
+export declare function parseAtJson(source: Uint8Array, bits: number, entry: number, offset: number, stop: string): string
 
 export declare function shapes(): Array<number>

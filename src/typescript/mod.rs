@@ -16,7 +16,7 @@ use crate::lexer::token::{Keyword, TokenKind};
 use crate::parser::expression::starts_expression;
 use crate::parser::statement::ClassKind;
 use crate::parser::{
-	Context, DestructuringErrors, Errors, Extension, ForInit, FunctionKind, Options, Parser, Result, UntilAs, Unwrap,
+	Context, DestructuringErrors, Errors, Extension, ForInit, FunctionKind, Options, Parser, Result, Unwrap,
 };
 use ast::{Accessibility, Data, Extras, Kind, TsKind};
 use types::TypeParameterModifiers;
@@ -29,32 +29,36 @@ pub fn parse_expression_at(
 	src: &str,
 	offset: u32,
 	options: Options,
+	stop: &str,
 ) -> std::result::Result<(Ast<Data>, NodeId, u32), SyntaxError> {
-	crate::parser::parse_expression_at::<TypeScript>(src, offset, options).map_err(|e| *e)
+	crate::parser::parse_expression_at::<TypeScript>(src, offset, options, stop).map_err(|e| *e)
 }
 
 pub fn parse_pattern_at(
 	src: &str,
 	offset: u32,
 	options: Options,
+	stop: &str,
 ) -> std::result::Result<(Ast<Data>, NodeId, u32), SyntaxError> {
-	crate::parser::parse_pattern_at::<TypeScript>(src, offset, options).map_err(|e| *e)
+	crate::parser::parse_pattern_at::<TypeScript>(src, offset, options, stop).map_err(|e| *e)
 }
 
 pub fn parse_params_at(
 	src: &str,
 	offset: u32,
 	options: Options,
+	stop: &str,
 ) -> std::result::Result<(Ast<Data>, Vec<NodeId>, u32), SyntaxError> {
-	crate::parser::parse_params_at::<TypeScript>(src, offset, options).map_err(|e| *e)
+	crate::parser::parse_params_at::<TypeScript>(src, offset, options, stop).map_err(|e| *e)
 }
 
 pub fn parse_statement_at(
 	src: &str,
 	offset: u32,
 	options: Options,
+	stop: &str,
 ) -> std::result::Result<(Ast<Data>, NodeId, u32), SyntaxError> {
-	crate::parser::parse_statement_at::<TypeScript>(src, offset, options).map_err(|e| *e)
+	crate::parser::parse_statement_at::<TypeScript>(src, offset, options, stop).map_err(|e| *e)
 }
 
 /// Parser state that only TypeScript needs. `State` is copied into every snapshot, so it stays
@@ -482,10 +486,12 @@ impl Parser<'_, TypeScript> {
 		let start = self.tok.start;
 		let snapshot = self.snapshot();
 		let assertion: Result<NodeId> = (|| {
+			self.lexer.depth += 1;
 			let type_annotation = match self.try_next_parse_constant_context()? {
 				Some(constant) => constant,
 				None => self.next_then_parse_type()?,
 			};
+			self.lexer.depth -= 1;
 			self.expect(TokenKind::Gt)?;
 			let expression = self.parse_maybe_unary(&mut None, false, false, for_init)?;
 			Ok(self.ts(
@@ -1515,27 +1521,13 @@ impl Extension for TypeScript {
 		Ok(None)
 	}
 
-	fn expr_op(
-		p: &mut Parser<Self>,
-		left: NodeId,
-		left_start: u32,
-		min_prec: i8,
-		for_init: ForInit,
-	) -> Result<Option<NodeId>> {
+	fn expr_op(p: &mut Parser<Self>, left: NodeId, left_start: u32, min_prec: i8) -> Result<Option<NodeId>> {
 		if 7 <= min_prec || p.tok.newline_before {
 			return Ok(None);
 		}
 		let is_as = p.is_contextual("as");
 		if !is_as && !p.is_contextual("satisfies") {
 			return Ok(None);
-		}
-		if is_as && for_init.no_as() {
-			let start = p.tok.start;
-			match &mut p.until_as {
-				UntilAs::Record(offsets) => offsets.push(start),
-				UntilAs::Stop(at) if *at == start => return Ok(None),
-				_ => {}
-			}
 		}
 		let type_annotation = match p.try_next_parse_constant_context()? {
 			Some(constant) => constant,

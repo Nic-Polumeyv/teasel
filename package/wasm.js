@@ -28,13 +28,20 @@ export async function init(module) {
 	wasm = /** @type {any} */ (instance.exports);
 }
 
+// the module takes the bytes over
+function bytes(text) {
+	const capacity = text.length * 3;
+	const ptr = wasm.alloc(capacity);
+	const { written } = encoder.encodeInto(text, new Uint8Array(wasm.memory.buffer, ptr, capacity));
+	return [ptr, written, capacity];
+}
+
 function create(source, bits) {
 	if (wasm === undefined) throw new Error('init() first');
-	const capacity = source.length * 3;
-	const ptr = wasm.alloc(capacity);
-	const { written } = encoder.encodeInto(source, new Uint8Array(wasm.memory.buffer, ptr, capacity));
-	return wasm.source_new(ptr, written, capacity, bits);
+	return wasm.source_new(...bytes(source), bits);
 }
+
+const parse_at = (held, entry, offset, stop) => answer(wasm.source_parse(held, entry, offset, ...bytes(stop)));
 
 const text = () => utf8.decode(new Uint8Array(wasm.memory.buffer, wasm.text_ptr(), wasm.text_len()));
 const words = () => new Uint32Array(wasm.memory.buffer, wasm.words_ptr(), wasm.words_len());
@@ -56,16 +63,16 @@ function answer(status) {
 
 export const { parse, parseExpressionAt, parsePatternAt, parseParamsAt, parseStatementAt, Source } = bind({
 	// the words outlive the source: they sit in the answer buffer until the next parse
-	once(source, bits, entry, offset, until) {
+	once(source, bits, entry, offset, stop) {
 		const held = create(source, bits);
 		try {
-			return answer(wasm.source_parse(held, entry, offset, until));
+			return parse_at(held, entry, offset, stop);
 		} finally {
 			wasm.source_free(held);
 		}
 	},
 	create,
-	parse: (held, entry, offset, until) => answer(wasm.source_parse(held, entry, offset, until)),
+	parse: parse_at,
 	parseRange: (held, start, end) => answer(wasm.source_parse_range(held, start, end ?? 0, end === undefined ? 0 : 1)),
 	free: (held) => wasm.source_free(held),
 	constants: () => constants,

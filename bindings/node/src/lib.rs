@@ -80,16 +80,16 @@ fn answer(env: &Env, result: Result<Vec<u32>, String>) -> Answer {
 }
 
 #[napi(catch_unwind, ts_return_type = "Uint32Array | string")]
-pub fn parse_at(env: Env, source: Uint8ArraySlice<'_>, bits: u32, entry: u32, offset: f64, until: bool) -> Answer {
+pub fn parse_at(env: Env, source: Uint8ArraySlice<'_>, bits: u32, entry: u32, offset: f64, stop: String) -> Answer {
 	answer(
 		&env,
-		prepared(&source, bits).binary(Entry::from_index(entry), offset, until),
+		prepared(&source, bits).binary(Entry::from_index(entry), offset, &stop),
 	)
 }
 
 #[napi(catch_unwind)]
-pub fn parse_at_json(source: Uint8ArraySlice<'_>, bits: u32, entry: u32, offset: f64, until: bool) -> String {
-	prepared(&source, bits).parse(Entry::from_index(entry), offset, until)
+pub fn parse_at_json(source: Uint8ArraySlice<'_>, bits: u32, entry: u32, offset: f64, stop: String) -> String {
+	prepared(&source, bits).parse(Entry::from_index(entry), offset, &stop)
 }
 
 #[napi]
@@ -117,8 +117,8 @@ impl Source {
 	}
 
 	#[napi(catch_unwind, ts_return_type = "Uint32Array | string")]
-	pub fn parse_at(&self, env: Env, entry: u32, offset: f64, until: bool) -> Answer {
-		answer(&env, self.prepared.binary(Entry::from_index(entry), offset, until))
+	pub fn parse_at(&self, env: Env, entry: u32, offset: f64, stop: String) -> Answer {
+		answer(&env, self.prepared.binary(Entry::from_index(entry), offset, &stop))
 	}
 
 	#[napi(catch_unwind, ts_return_type = "Uint32Array | string")]

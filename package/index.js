@@ -18,9 +18,9 @@ function bytes(text) {
 }
 
 export const { parse, parseExpressionAt, parsePatternAt, parseParamsAt, parseStatementAt, Source } = bind({
-	once: (source, bits, entry, offset, until) => native.parseAt(bytes(source), bits, entry, offset, until),
+	once: (source, bits, entry, offset, stop) => native.parseAt(bytes(source), bits, entry, offset, stop),
 	create: (source, bits) => new native.Source(bytes(source), bits),
-	parse: (held, entry, offset, until) => held.parseAt(entry, offset, until),
+	parse: (held, entry, offset, stop) => held.parseAt(entry, offset, stop),
 	parseRange: (held, start, end) => held.parseRange(start, end),
 	constants: native.constants,
 	shapes: native.shapes,

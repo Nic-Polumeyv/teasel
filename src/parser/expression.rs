@@ -15,17 +15,11 @@ pub(crate) enum ForInit {
 	No,
 	Yes,
 	Await,
-	/// A host's expression that ends at the last top-level `as`, TypeScript's assertion operator.
-	NoAs,
 }
 
 impl ForInit {
 	fn no_in(self) -> bool {
 		matches!(self, ForInit::Yes | ForInit::Await)
-	}
-
-	pub(crate) fn no_as(self) -> bool {
-		self == ForInit::NoAs
 	}
 }
 
@@ -286,7 +280,7 @@ impl<E: Extension> Parser<'_, E> {
 		loop {
 			links += 1;
 			self.chain(links)?;
-			if let Some(expr) = E::expr_op(self, left, left_start, min_prec, for_init)? {
+			if let Some(expr) = E::expr_op(self, left, left_start, min_prec)? {
 				left = expr;
 				continue;
 			}
