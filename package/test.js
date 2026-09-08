@@ -7,7 +7,7 @@ const wasm = await import('./wasm.js');
 
 await wasm.init(readFileSync(new URL('./teasel.wasm', import.meta.url)));
 
-for (const [name, { Source, parse, parseExpressionAt, parsePatternAt, parseParamsAt, parseStatementAt, isIdentifierStart, isIdentifierChar, scopeOf, bindingOf, referenceOf }] of [['node', node], ['wasm', wasm]]) {
+for (const [name, { Source, parse, parseExpressionAt, parsePatternAt, parseParamsAt, parseStatementAt, isIdentifierStart, isIdentifierChar, scopeOf, bindingOf, referenceOf, parentOf }] of [['node', node], ['wasm', wasm]]) {
 	const program = parse('let x: number = 1; // done', { sourceType: 'module', typescript: true, comments: true, locations: true });
 	assert.equal(program.sourceType, 'module');
 	assert.equal(program.body[0].declarations[0].id.typeAnnotation.typeAnnotation.type, 'TSNumberKeyword');
@@ -83,6 +83,10 @@ for (const [name, { Source, parse, parseExpressionAt, parsePatternAt, parseParam
 		assert.equal(assigned.scope, top.scopes[0]);
 		assert.deepEqual(top.scopes[0].references, [assigned, updated]);
 		assert.equal(top.references[0], assigned);
+		assert.equal(parentOf(assigned.node), top.body[0].expression);
+		assert.equal(parentOf(top.body[0]), top);
+		assert.equal(parentOf(top), undefined);
+		assert.equal(parentOf(parse('`x${1}`').body[0].expression.quasis[0].value), undefined);
 		const literal = parse('let r = /a/g, t = `x${1}y`;', { scopes: true }).body[0].declarations;
 		assert.equal(Object.getPrototypeOf(literal[0].init.regex), Object.prototype);
 		assert.deepEqual(literal[1].init.quasis[0].value, { raw: 'x', cooked: 'x' });

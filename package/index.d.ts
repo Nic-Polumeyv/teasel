@@ -127,6 +127,8 @@ export interface Reference {
 	writeExpr: Expression | null;
 }
 
+/** The node `node` is a child of; undefined for the root of an answer. A literal's `regex` and a template element's `value` are not nodes and have none. */
+export function parentOf(node: Node): Node | undefined;
 /** With `scopes`: the scope `node` opens, when it opens one. */
 export function scopeOf(node: Node): Scope | undefined;
 /** With `scopes`: what an identifier declares or refers to; null for a global, undefined when it names no value, a property key say. */

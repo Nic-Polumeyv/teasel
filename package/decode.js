@@ -13,6 +13,7 @@ const utf8 = new TextDecoder('utf-8', { ignoreBOM: true });
 const SCOPE = Symbol('scope');
 const BINDING = Symbol('binding');
 const REFERENCE = Symbol('reference');
+const PARENT = Symbol('parent');
 
 
 /** @param {import('estree').Node} node @returns {import('./index.js').Scope | undefined} the scope the node opens */
@@ -21,6 +22,8 @@ export const scopeOf = (node) => (node == null ? undefined : node[SCOPE]);
 export const bindingOf = (node) => (node == null ? undefined : node[BINDING]);
 /** @param {import('estree').Node} node @returns {import('./index.js').Reference | undefined} the reference an identifier makes, a global's included */
 export const referenceOf = (node) => (node == null ? undefined : node[REFERENCE]);
+/** @param {import('estree').Node} node @returns {import('estree').Node | undefined} the node it is a child of; undefined for the root of an answer */
+export const parentOf = (node) => (node == null ? undefined : node[PARENT]);
 
 const FACTS = new Set(['scope', 'declares', 'reference', 'defines', 'writes']);
 
@@ -93,21 +96,28 @@ const READERS = [node, (S) => S.w[S.at++], (S) => /** @type {Float64Array} */ (S
  */
 function generate({ type, keys, kinds }, link) {
 	let last = -1;
-	if (link && type !== null) for (let i = 0; i < keys.length; i++) if (FACTS.has(keys[i])) last = i;
+	if (link && type !== null) for (let i = 0; i < keys.length; i++) if (FACTS.has(keys[i]) || kinds[i] === 0 || kinds[i] === 8) last = i;
 	const lead = [];
 	const props = type === null ? [] : [`type: ${JSON.stringify(type)}`];
 	const facts = { scope: 'undefined', declares: 'undefined', reference: 'undefined', defines: 'undefined', writes: 'undefined' };
+	// a linked node is its children's parent
+	const parents = [];
 	for (let i = 0; i < keys.length; i++) {
 		const key = keys[i];
 		if (i > last) props.push(`${JSON.stringify(key)}: ${READ[kinds[i]]}`);
 		else {
 			lead.push(`const v${i} = ${READ[kinds[i]]};`);
 			if (FACTS.has(key)) facts[key] = `v${i}`;
-			else props.push(`${JSON.stringify(key)}: v${i}`);
+			else {
+				props.push(`${JSON.stringify(key)}: v${i}`);
+				// a child with a type is a node; a literal's regex or a template element's value is not
+				if (link && kinds[i] === 0) parents.push(`if (v${i} !== null && v${i}.type !== undefined) v${i}[PARENT] = n;`);
+				else if (link && kinds[i] === 8) parents.push(`for (let i = 0; i < v${i}.length; i++) if (v${i}[i] !== null) v${i}[i][PARENT] = n;`);
+			}
 		}
 	}
-	const body = `${lead.join(' ')} const n = { ${props.join(', ')} }; ${last < 0 ? '' : `file(S, n, ${facts.scope}, ${facts.declares}, ${facts.reference}, ${facts.defines}, ${facts.writes});`} return n;`;
-	return new Function('node', 'nodes', 'ints', 'file', `return (S) => { ${body} };`)(node, nodes, ints, file);
+	const body = `${lead.join(' ')} const n = { ${props.join(', ')} }; ${parents.join(' ')} ${last < 0 || type === null ? '' : `file(S, n, ${facts.scope}, ${facts.declares}, ${facts.reference}, ${facts.defines}, ${facts.writes});`} return n;`;
+	return new Function('node', 'nodes', 'ints', 'file', 'PARENT', `return (S) => { ${body} };`)(node, nodes, ints, file, PARENT);
 }
 
 /** The same without code generation, for a host whose policy forbids it. @param {Shape} shape @param {boolean} link */
@@ -119,6 +129,8 @@ function interpret({ type, keys, kinds }, link) {
 		for (let i = 0; i < keys.length; i++) {
 			const key = keys[i];
 			const value = READERS[kinds[i]](S);
+			if (link && kinds[i] === 0 && value !== null && value.type !== undefined) value[PARENT] = n;
+			else if (link && kinds[i] === 8) for (const child of value) if (child !== null) child[PARENT] = n;
 			if (!facts || !FACTS.has(key)) n[key] = value;
 			else if (key === 'scope') scope = value;
 			else if (key === 'declares') declares = value;
