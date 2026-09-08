@@ -211,7 +211,8 @@ function link_tables(scopes, bindings) {
 export function decode(answer, source, engine, link = true) {
 	const words = answer instanceof Uint32Array ? answer : new Uint32Array(answer);
 	const { buffer, byteOffset } = words;
-	const [tree, ends_count, floats_count, bytes, known, known_shapes, tables_at] = words;
+	// read by index: destructuring a typed array goes through its iterator, a tenth of a small decode
+	const tree = words[0], ends_count = words[1], floats_count = words[2], bytes = words[3], known = words[4], known_shapes = words[5], tables_at = words[6];
 	const table = table_of(engine, known, known_shapes);
 	const ends = words.subarray(HEADER + tree, HEADER + tree + ends_count);
 	const text_at = HEADER + tree + ends_count;
