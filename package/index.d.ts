@@ -39,9 +39,9 @@ export interface Options {
 	/**
 	 * Record syntax errors on the answer as `errors` instead of throwing the first: a missing
 	 * operand, name or pattern is an `Identifier` named `''` of no width where it was expected,
-	 * a node whose closing bracket, quote or backquote is missing ends at the last token read
-	 * and carries `closed: false`, and what fits nowhere is skipped to the next stop token or
-	 * unmatched closing bracket. Placeholders are neither bindings nor references.
+	 * and a statement or entry that cannot be read is skipped to the next stop token or
+	 * unmatched closing bracket, an empty identifier standing for it. Placeholders are neither
+	 * bindings nor references.
 	 */
 	errorRecovery?: boolean;
 }

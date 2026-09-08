@@ -69,7 +69,6 @@ pub struct Ast<X = ()> {
 	/// What went wrong, in source order, when errors are recovered from instead of thrown.
 	pub errors: Vec<crate::SyntaxError>,
 	/// Nodes whose closing bracket, quote or backquote is missing.
-	pub unclosed: crate::interner::FastSet<NodeId>,
 	pub extension: X,
 }
 

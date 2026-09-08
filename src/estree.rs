@@ -881,9 +881,6 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		let node = self.ast.node(id);
 		self.sink.begin(ty);
 		self.span(node.start, node.end);
-		if self.ast.unclosed.contains(&id) {
-			self.bool("closed", false);
-		}
 		self.scope_facts(id);
 		self.ast.extension.extras(self, id);
 		if let Some(attached) = self.ast.attached.get(&id) {

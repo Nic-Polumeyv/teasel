@@ -28,9 +28,9 @@ pub struct Options {
 	/// Parse as an ES module: strict mode, top-level `await`, `import` and `export`.
 	pub module: bool,
 	/// Errors are recorded on the tree instead of ending the parse: a missing operand, name or
-	/// pattern is an empty `Identifier` of no width where it was expected, a node whose closing
-	/// bracket is missing ends at the last token read and is marked unclosed, and what fits
-	/// nowhere is skipped to the next stop token or unmatched closer.
+	/// pattern is an empty `Identifier` of no width where it was expected, and a statement or
+	/// entry that cannot be read is skipped to the next stop token or unmatched closer, an empty
+	/// `Identifier` standing for it.
 	pub error_recovery: bool,
 	pub allow_return_outside_function: bool,
 	pub allow_await_outside_function: bool,
@@ -330,10 +330,6 @@ impl Extension for () {
 
 pub(crate) type Errors = Option<DestructuringErrors>;
 
-fn is_closer(kind: TokenKind) -> bool {
-	matches!(kind, TokenKind::ParenR | TokenKind::BracketR | TokenKind::BraceR)
-}
-
 pub(crate) fn parse<E: Extension>(src: &str, options: Options) -> Result<Ast<E::Data>> {
 	parse_range::<E>(src, 0, src.len() as u32, options)
 }
@@ -467,8 +463,6 @@ pub(crate) struct Parser<'a, E: Extension = ()> {
 	potential_arrow_in_for_await: bool,
 	/// Recovered errors; the lexer keeps its own until `finish`.
 	pub(crate) errors: Vec<SyntaxError>,
-	/// A closing bracket was missing: the next node built is the one it would have closed.
-	pub(crate) unclosed: bool,
 	/// Inside a speculation, where the parse must fail as strict parsing would, not recover.
 	speculating: u32,
 	/// More nodes than this is a parse that stopped consuming input.
@@ -481,7 +475,7 @@ struct Mark<E: Extension> {
 	labels: usize,
 	private_names: usize,
 	depth: u32,
-	brackets: (u32, u128),
+	brackets: (u32, [u32; 3]),
 	strict: bool,
 	ext: E::Snapshot,
 }
@@ -496,7 +490,7 @@ pub(crate) struct TokenSnapshot {
 	pos: u32,
 	in_type: bool,
 	depth: u32,
-	open: u128,
+	open: [u32; 3],
 	stopped: bool,
 	unmatched: bool,
 	tok: Token,
@@ -573,7 +567,6 @@ impl<'a, E: Extension> Parser<'a, E> {
 			potential_arrow_at: u32::MAX,
 			potential_arrow_in_for_await: false,
 			errors: Vec::new(),
-			unclosed: false,
 			speculating: 0,
 			tree_limit: 16 * src.len() + 256,
 		};
@@ -679,33 +672,10 @@ impl<'a, E: Extension> Parser<'a, E> {
 			return self.unexpected();
 		}
 		self.report_unexpected();
-		let unclosed = std::mem::take(&mut self.unclosed);
 		let name = self.intern("");
 		let at = self.tok.start;
 		self.prev_end = at;
-		let id = self.add_with_end(NodeKind::Identifier { name }, at, at);
-		self.unclosed = unclosed;
-		Ok(id)
-	}
-
-	/// Where `close` should be but is not, under recovery: a closer nothing opened is skipped;
-	/// at the end of the input or at the closer of an outer construct the construct closes
-	/// without its own, marked unclosed.
-	pub(crate) fn missing_closer(&mut self, close: TokenKind) -> Result<bool> {
-		self.within_limit()?;
-		if !self.recovering() {
-			return Ok(false);
-		}
-		while self.lexer.unmatched && !self.is(close) {
-			self.report_unexpected();
-			self.next()?;
-		}
-		if !self.is(TokenKind::Eof) && (!is_closer(self.tok.kind) || self.is(close)) {
-			return Ok(false);
-		}
-		self.report_unexpected();
-		self.unclosed = true;
-		Ok(true)
+		Ok(self.add_with_end(NodeKind::Identifier { name }, at, at))
 	}
 
 	fn mark(&self) -> Mark<E> {
@@ -730,7 +700,6 @@ impl<'a, E: Extension> Parser<'a, E> {
 		(self.lexer.depth, self.lexer.open) = mark.brackets;
 		self.set_strict(mark.strict);
 		self.ext.restore(mark.ext);
-		self.unclosed = false;
 	}
 
 	/// A statement of a list, under recovery: when it fails, what was read is skipped up to the
@@ -771,7 +740,10 @@ impl<'a, E: Extension> Parser<'a, E> {
 	/// An element of a list that consumed nothing under recovery would repeat forever: its token
 	/// is skipped as unexpected.
 	pub(crate) fn ensure_progress(&mut self, at: u32) -> Result<()> {
-		if self.recovering() && self.tok.start == at && !self.is(TokenKind::Eof) && !is_closer(self.tok.kind) {
+		if self.recovering() && self.tok.start == at {
+			if self.is(TokenKind::Eof) {
+				return self.unexpected();
+			}
 			self.report_unexpected();
 			self.next()?;
 		}
@@ -951,12 +923,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 	}
 
 	pub(crate) fn add_with_end(&mut self, kind: NodeKind, start: u32, end: u32) -> NodeId {
-		let id = self.ast.add(kind, start, end);
-		if self.unclosed {
-			self.unclosed = false;
-			self.ast.unclosed.insert(id);
-		}
-		id
+		self.ast.add(kind, start, end)
 	}
 
 	pub(crate) fn list(&mut self, items: &[Option<NodeId>]) -> List {
@@ -1053,17 +1020,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 	}
 
 	pub(crate) fn expect(&mut self, kind: TokenKind) -> Result<()> {
-		if self.eat(kind)? {
-			return Ok(());
-		}
-		if matches!(
-			kind,
-			TokenKind::ParenR | TokenKind::BracketR | TokenKind::BraceR | TokenKind::Gt
-		) && (self.missing_closer(kind)? || self.eat(kind)?)
-		{
-			return Ok(());
-		}
-		self.unexpected()
+		if self.eat(kind)? { Ok(()) } else { self.unexpected() }
 	}
 
 	pub(crate) fn expect_keyword(&mut self, keyword: Keyword) -> Result<()> {

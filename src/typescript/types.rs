@@ -121,7 +121,7 @@ impl Parser<'_, TypeScript> {
 			if self.eat(TokenKind::Comma)? {
 				continue;
 			}
-			if self.is(end) || self.missing_closer(end)? {
+			if self.is(end) {
 				break;
 			}
 			return self.unexpected();
@@ -888,13 +888,13 @@ impl Parser<'_, TypeScript> {
 		if !self.is(TokenKind::Lt) {
 			return self.unexpected();
 		}
-		self.lexer.open(crate::lexer::ANGLE);
+		self.lexer.depth += 1;
 		self.next()?;
 		let params = self.parse_delimited_list(ListKind::TypeParametersOrArguments, |p| {
 			p.parse_type_parameter(modifiers)
 		})?;
 		// Unlike type arguments, checked after the `>`: the error position follows the plugin.
-		self.lexer.close_angle();
+		self.lexer.depth -= 1;
 		self.expect(TokenKind::Gt)?;
 		if params.is_empty() {
 			return self.error(self.tok.start, Code::EmptyTypeParameters);
@@ -914,14 +914,14 @@ impl Parser<'_, TypeScript> {
 	pub(super) fn parse_type_arguments(&mut self) -> Result<NodeId> {
 		let start = self.tok.start;
 		let params = self.in_type(|p| {
-			p.lexer.open(crate::lexer::ANGLE);
+			p.lexer.depth += 1;
 			p.expect(TokenKind::Lt)?;
 			p.parse_delimited_list(ListKind::TypeParametersOrArguments, |p| p.parse_type())
 		})?;
 		if params.is_empty() {
 			return self.error(self.tok.start, Code::EmptyTypeArguments);
 		}
-		self.lexer.close_angle();
+		self.lexer.depth -= 1;
 		self.expect(TokenKind::Gt)?;
 		let params = self.list_of(&params);
 		Ok(self.ts(TsKind::TypeParameterInstantiation { params }, start))

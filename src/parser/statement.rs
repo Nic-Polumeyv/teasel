@@ -761,15 +761,7 @@ impl<E: Extension> Parser<'_, E> {
 			self.enter_scope(0);
 		}
 		let mut body = Vec::new();
-		let mut closed = true;
 		while !self.is(TokenKind::BraceR) {
-			if self.missing_closer(TokenKind::BraceR)? {
-				closed = false;
-				break;
-			}
-			if self.is(TokenKind::BraceR) {
-				break;
-			}
 			let at = self.tok.start;
 			if let Some(statement) = self.statement_recovered(|p| p.parse_statement(Context::None, false, None))? {
 				body.push(statement);
@@ -779,9 +771,7 @@ impl<E: Extension> Parser<'_, E> {
 		if exit_strict {
 			self.set_strict(false);
 		}
-		if closed {
-			self.next()?;
-		}
+		self.next()?;
 		if new_scope {
 			self.exit_scope();
 		}
@@ -1205,15 +1195,7 @@ impl<E: Extension> Parser<'_, E> {
 		let mut body = Vec::new();
 		let mut had_constructor = false;
 		self.expect(TokenKind::BraceL)?;
-		let mut closed = true;
 		while !self.is(TokenKind::BraceR) {
-			if self.missing_closer(TokenKind::BraceR)? {
-				closed = false;
-				break;
-			}
-			if self.is(TokenKind::BraceR) {
-				break;
-			}
 			let at = self.tok.start;
 			let element = self.parse_class_element(super_class.is_some())?;
 			self.ensure_progress(at)?;
@@ -1248,9 +1230,7 @@ impl<E: Extension> Parser<'_, E> {
 			}
 		}
 		self.set_strict(old_strict);
-		if closed {
-			self.next()?;
-		}
+		self.next()?;
 		let body = self.list_of(&body);
 		let body = self.add(NodeKind::ClassBody { body }, body_start);
 		self.exit_class_body()?;

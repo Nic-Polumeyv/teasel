@@ -816,22 +816,17 @@ fn recovery() {
 	}
 	let expr = |src: &str, stop: &str| {
 		let (ast, roots, end) = JS.recovered(src, 1, Entry::Expression, module, stop);
-		(
-			dump(&ast, roots[0], &plain),
-			end,
-			codes(&ast),
-			ast.unclosed.contains(&roots[0]),
-		)
+		(dump(&ast, roots[0], &plain), end, codes(&ast))
 	};
 
 	// a missing operand or name: a placeholder where the token was expected
 	assert_eq!(
 		expr("{x.}", "}"),
-		(r#"MemberExpression { object: Identifier { name: "x" }, property: Identifier { name: "" }, computed: false, optional: false }"#.into(), 3, vec!["unexpected_token@3".into()], false)
+		(r#"MemberExpression { object: Identifier { name: "x" }, property: Identifier { name: "" }, computed: false, optional: false }"#.into(), 3, vec!["unexpected_token@3".into()])
 	);
 	assert_eq!(
 		expr("{obj. as item}", "as"),
-		(r#"MemberExpression { object: Identifier { name: "obj" }, property: Identifier { name: "" }, computed: false, optional: false }"#.into(), 6, vec!["unexpected_token@6".into()], false)
+		(r#"MemberExpression { object: Identifier { name: "obj" }, property: Identifier { name: "" }, computed: false, optional: false }"#.into(), 6, vec!["unexpected_token@6".into()])
 	);
 	assert_eq!(
 		expr("{a + }", "}"),
@@ -840,22 +835,27 @@ fn recovery() {
 				.into(),
 			5,
 			vec!["unexpected_token@5".into()],
-			false
 		)
 	);
-	// a missing closer: the node ends at the last token read, marked unclosed, the host's token kept
+	// a missing closer: the expression fails, a placeholder stands for it, the host's token kept
 	assert_eq!(
 		expr("{f(a, }", "}"),
-		(r#"CallExpression { callee: Identifier { name: "f" }, arguments: [Identifier { name: "a" }, Identifier { name: "" }], optional: false }"#.into(), 6, vec!["unexpected_token@6".into()], true)
+		(
+			r#"Identifier { name: "" }"#.into(),
+			6,
+			vec!["unexpected_token@6".into()]
+		)
 	);
-	let (dumped, end, errors, _) = expr("{[f(a, ]}", "}");
 	assert_eq!(
-		dumped,
-		r#"ArrayExpression { elements: [CallExpression { callee: Identifier { name: "f" }, arguments: [Identifier { name: "a" }, Identifier { name: "" }], optional: false }] }"#
+		expr("{[f(a, ]}", "}"),
+		(
+			r#"Identifier { name: "" }"#.into(),
+			8,
+			vec!["unexpected_token@7".into()]
+		)
 	);
-	assert_eq!((end, errors), (8, vec!["unexpected_token@7".into()]));
 	// nothing wrong: the strict tree, no errors
-	assert_eq!(expr("{a + b}", "}"), (super::tests::expr("a + b"), 6, vec![], false));
+	assert_eq!(expr("{a + b}", "}"), (super::tests::expr("a + b"), 6, vec![]));
 
 	// the host's declaration tag: `let` is a declaration in strict code, its name a placeholder
 	let (ast, roots, end) = JS.recovered("{let }", 1, Entry::Statement, module, "}");
@@ -881,10 +881,8 @@ fn recovery() {
 			r#"ExpressionStatement { expression: AssignmentExpression { operator: Assign, left: Identifier { name: "y" }, right: NumberLiteral { value: 1.0 } }, directive: None }"#
 		]
 	);
-	assert_eq!(ast.unclosed.len(), 1);
 	let (ast, _, _) = JS.recovered("f(`abc${x} ", 0, Entry::Program, module, "");
 	assert_eq!(codes(&ast), ["unterminated_template@10", "unexpected_eof@11"]);
-	assert_eq!(ast.unclosed.len(), 2);
 	let (ast, _, _) = JS.recovered("/* c", 0, Entry::Program, module, "");
 	assert_eq!(codes(&ast), ["unterminated_comment@0"]);
 	assert_eq!(ast.comments.len(), 1);
@@ -907,10 +905,7 @@ fn recovery() {
 			"unexpected_eof@38"
 		]
 	);
-	let body = script_body(&ast);
-	assert_eq!(body.len(), 5);
-	assert!(body[4].starts_with("VariableDeclaration"));
-	assert_eq!(ast.unclosed.len(), 1);
+	assert_eq!(script_body(&ast).len(), 4);
 	let (ast, _, _) = JS.recovered("f(;\nx = 1;\nlet y = )\nreturn", 0, Entry::Program, module, "");
 	assert_eq!(
 		codes(&ast),
@@ -923,7 +918,7 @@ fn recovery() {
 	let body = script_body(&ast);
 	assert_eq!(body.len(), 2);
 	assert!(body[1].starts_with("VariableDeclaration"));
-	// unclosed blocks and class bodies end at the end of the input
+	// an unclosed body fails with the statement around it, which is skipped
 	let (ast, _, _) = JS.recovered("class A { m() { if (x) { y", 0, Entry::Program, module, "");
 	// a token no element starts, at the end: the body must not spin on it
 	JS.recovered("class A {\n/", 0, Entry::Program, module, "");
@@ -931,7 +926,6 @@ fn recovery() {
 	TS.recovered("interface I {\n/", 0, Entry::Program, module, "");
 	TS.recovered("enum E {\n/", 0, Entry::Program, module, "");
 	assert_eq!(codes(&ast), ["unexpected_eof@26"]);
-	assert_eq!(ast.unclosed.len(), 3);
 	// a closer nothing opened is reported and skipped
 	let (ast, _, _) = JS.recovered("x; ) y", 0, Entry::Program, module, "");
 	assert_eq!(codes(&ast), ["unexpected_token@3"]);
@@ -947,14 +941,11 @@ fn recovery() {
 	assert_eq!(roots.len(), 3);
 	assert_eq!((end, codes(&ast)), (8, vec!["unexpected_token@4".into()]));
 	let (ast, roots, end) = JS.recovered("{#each xs as [a, }", 13, Entry::Pattern, module, "}");
-	assert_eq!(
-		dump(&ast, roots[0], &plain),
-		r#"ArrayPattern { elements: [Identifier { name: "a" }, Identifier { name: "" }] }"#
-	);
+	assert_eq!(dump(&ast, roots[0], &plain), r#"Identifier { name: "" }"#);
 	assert_eq!((end, codes(&ast)), (17, vec!["unexpected_token@17".into()]));
 
 	// a placeholder is neither a binding nor a reference
-	let (mut ast, roots, _) = JS.recovered("let = f(a, b", 0, Entry::Program, module, "");
+	let (mut ast, roots, _) = JS.recovered("let = f(a, b)", 0, Entry::Program, module, "");
 	crate::scopes::analyze(&mut ast, roots[0]);
 	let scopes = ast.scopes.as_ref().unwrap();
 	assert_eq!(scopes.bindings.len(), 0);
