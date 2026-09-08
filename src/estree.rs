@@ -882,6 +882,9 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		self.sink.begin(ty);
 		self.span(node.start, node.end);
 		self.scope_facts(id);
+		if self.ast.parenthesized.contains(&id) {
+			self.bool("parenthesized", true);
+		}
 		self.ast.extension.extras(self, id);
 		if let Some(attached) = self.ast.attached.get(&id) {
 			self.comments("leadingComments", &attached.leading);

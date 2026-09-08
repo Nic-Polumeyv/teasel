@@ -50,13 +50,14 @@ pub struct Request {
 }
 
 /// The names front ends accept for the request's switches, as acorn spells them.
-pub const FLAGS: [&str; 12] = [
+pub const FLAGS: [&str; 13] = [
 	"typescript",
 	"comments",
 	"scopes",
 	"locations",
 	"script",
 	"preserveParens",
+	"parenthesized",
 	"allowReturnOutsideFunction",
 	"allowAwaitOutsideFunction",
 	"allowSuperOutsideMethod",
@@ -103,6 +104,7 @@ impl Request {
 			"locations" => self.locations = true,
 			"script" => self.options.module = false,
 			"preserveParens" => self.options.preserve_parens = true,
+			"parenthesized" => self.options.parenthesized = true,
 			"allowReturnOutsideFunction" => self.options.allow_return_outside_function = true,
 			"allowAwaitOutsideFunction" => self.options.allow_await_outside_function = true,
 			"allowSuperOutsideMethod" => self.options.allow_super_outside_method = true,

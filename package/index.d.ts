@@ -22,6 +22,8 @@ export interface Options {
 	/** Add `loc` with line and column to every node, as in acorn; off by default. */
 	locations?: boolean;
 	preserveParens?: boolean;
+	/** Mark a node the source wraps in parens with `parenthesized: true`, absent otherwise, instead of a `ParenthesizedExpression` around it. */
+	parenthesized?: boolean;
 	allowReturnOutsideFunction?: boolean;
 	allowAwaitOutsideFunction?: boolean;
 	allowSuperOutsideMethod?: boolean;

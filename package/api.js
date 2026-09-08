@@ -1,7 +1,7 @@
 import { decode } from './decode.js';
 
 // bit i is `FLAGS[i]` of json.rs
-const FLAGS = ['typescript', 'comments', 'scopes', 'locations', 'script', 'preserveParens', 'allowReturnOutsideFunction', 'allowAwaitOutsideFunction', 'allowSuperOutsideMethod', 'allowUndeclaredExports', 'erase', 'errorRecovery'];
+const FLAGS = ['typescript', 'comments', 'scopes', 'locations', 'script', 'preserveParens', 'parenthesized', 'allowReturnOutsideFunction', 'allowAwaitOutsideFunction', 'allowSuperOutsideMethod', 'allowUndeclaredExports', 'erase', 'errorRecovery'];
 const BIT = Object.fromEntries(FLAGS.map((flag, i) => [flag, 1 << i]));
 const DERIVED = new Set(['script']);
 
