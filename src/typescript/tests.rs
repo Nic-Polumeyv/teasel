@@ -619,6 +619,24 @@ fn stop_at() {
 	assert_eq!((error.code, error.pos), (crate::error::Code::UnexpectedToken, 6));
 }
 
+/// `?` marks an optional parameter, so it needs the arrow that makes the list parameters.
+#[test]
+fn optional_marker_needs_an_arrow() {
+	let options = Options {
+		module: true,
+		..Options::default()
+	};
+	let error = |src: &str| {
+		let error = parse_expression_at(src, 0, options, "").unwrap_err();
+		(error.code, error.pos)
+	};
+	assert_eq!(error("(a, b?)"), (crate::error::Code::UnexpectedToken, 5));
+	assert_eq!(error("(a?)"), (crate::error::Code::UnexpectedToken, 2));
+	assert_eq!(error("f(a?)"), (crate::error::Code::UnexpectedToken, 3));
+	assert!(parse_expression_at("(a, b?) => a", 0, options, "").is_ok());
+	assert!(parse_expression_at("f((a?) => a)", 0, options, "").is_ok());
+}
+
 /// The erased program's statements and what stayed TypeScript, from the JSON answer.
 fn erase(src: &str) -> (Vec<String>, Vec<String>) {
 	let mut request = crate::json::Request::new(crate::json::Entry::Program, 0);

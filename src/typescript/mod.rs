@@ -663,9 +663,12 @@ impl Parser<'_, TypeScript> {
 		Ok(return_type.is_some())
 	}
 
-	/// A type annotation in a list that is not becoming parameters is an error.
+	/// A type annotation or optional marker in a list that is not becoming parameters is an error.
 	fn no_type_casts(&self, items: &[Option<NodeId>]) -> Result<()> {
 		for item in items.iter().flatten() {
+			if self.ext_data().extras(*item).is_some_and(|e| e.optional) {
+				return self.error(self.ast.node(*item).end - 1, Code::UnexpectedToken);
+			}
 			let annotation = match self.ts_kind(*item) {
 				Some(TsKind::TypeCastExpression { type_annotation, .. }) => Some(type_annotation),
 				_ if matches!(self.kind(*item), NodeKind::SpreadElement { .. }) => {
