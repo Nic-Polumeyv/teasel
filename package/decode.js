@@ -13,13 +13,23 @@ const utf8 = new TextDecoder('utf-8', { ignoreBOM: true });
 const SCOPE = Symbol('scope');
 const BINDING = Symbol('binding');
 const REFERENCE = Symbol('reference');
+// a global's write and mutate bits, until someone asks for its reference: no binding lists it
+const GLOBAL = Symbol('global');
 
 /** @param {import('estree').Node} node @returns {import('./index.js').Scope | undefined} the scope the node opens */
 export const scopeOf = (node) => (node == null ? undefined : node[SCOPE]);
 /** @param {import('estree').Node} node @returns {import('./index.js').Binding | null | undefined} what the identifier declares or refers to; null for a global, undefined when it names no value */
 export const bindingOf = (node) => (node == null ? undefined : node[BINDING]);
 /** @param {import('estree').Node} node @returns {import('./index.js').Reference | undefined} the reference an identifier makes, a global's included */
-export const referenceOf = (node) => (node == null ? undefined : node[REFERENCE]);
+export function referenceOf(node) {
+	if (node == null) return undefined;
+	let reference = node[REFERENCE];
+	if (reference === undefined && node[GLOBAL] !== undefined) {
+		const facts = node[GLOBAL];
+		reference = node[REFERENCE] = { node, binding: null, write: (facts & 1) !== 0, mutate: (facts & 2) !== 0 };
+	}
+	return reference;
+}
 
 const FACTS = new Set(['scope', 'binding', 'declares', 'write', 'mutate']);
 
@@ -69,12 +79,15 @@ function file(S, n, scope, declares, binding, write, mutate) {
 		n[BINDING] = d;
 		if (d.node === null) d.node = n;
 	}
-	if (binding !== undefined) {
-		const b = binding === null ? null : S.bindings[binding];
+	if (binding === null) {
+		n[BINDING] = null;
+		n[GLOBAL] = (write ? 1 : 0) | (mutate ? 2 : 0);
+	} else if (binding !== undefined) {
+		const b = S.bindings[binding];
 		n[BINDING] = b;
 		const r = { node: n, binding: b, write, mutate };
 		n[REFERENCE] = r;
-		if (b !== null) b.references.push(r);
+		b.references.push(r);
 	}
 }
 
@@ -188,7 +201,7 @@ function unaligned_floats(buffer, start, count) {
 function link_tables(scopes, bindings) {
 	for (const scope of scopes) {
 		scope.parent = scope.parent === null ? null : scopes[scope.parent];
-		scope.through = scope.through.map((index) => bindings[index]);
+		if (scope.through.length !== 0) scope.through = scope.through.map((index) => bindings[index]);
 		scope.node = null;
 		scope.bindings = [];
 		scope.declarations = new Map();
@@ -214,7 +227,6 @@ export function decode(answer, source, engine, link = true) {
 	// read by index: destructuring a typed array goes through its iterator, a tenth of a small decode
 	const tree = words[0], ends_count = words[1], floats_count = words[2], bytes = words[3], known = words[4], known_shapes = words[5], tables_at = words[6];
 	const table = table_of(engine, known, known_shapes);
-	const ends = words.subarray(HEADER + tree, HEADER + tree + ends_count);
 	const text_at = HEADER + tree + ends_count;
 	const text = bytes ? utf8.decode(new Uint8Array(buffer, byteOffset + text_at * 4, bytes)) : '';
 	let floats_at = text_at + ((bytes + 3) >> 2);
@@ -224,8 +236,9 @@ export function decode(answer, source, engine, link = true) {
 	const strings = new Array(ends_count);
 	let from = 0;
 	for (let i = 0; i < ends_count; i++) {
-		strings[i] = text.slice(from, ends[i]);
-		from = ends[i];
+		const end = words[HEADER + tree + i];
+		strings[i] = text.slice(from, end);
+		from = end;
 	}
 	// one state object per decode, young like everything it points at: no write barriers
 	const S = { w: words, at: HEADER, strings, floats, source, constants: table.constants, scopes: EMPTY, bindings: EMPTY, build: builders(table, link) };
