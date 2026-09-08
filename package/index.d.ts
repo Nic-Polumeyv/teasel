@@ -77,6 +77,8 @@ export interface Scope {
 	declarations: Map<string, Binding>;
 	/** The bindings of outer scopes that identifiers inside it resolve to, in first-use order. */
 	through: Binding[];
+	/** An `await` or `for await` runs directly in it, no function around; only a program or fragment scope can say so. */
+	topLevelAwait: boolean;
 }
 
 /** A binding, as one of `bindings` on the answer. */
@@ -101,6 +103,8 @@ export interface Binding {
 	scope: Scope;
 	/** The identifier that declares it; null for `arguments`. */
 	node: Identifier | null;
+	/** What declares it: the declarator, function, class, import specifier, catch clause or enum, as eslint-scope's definition node; null for `arguments` and for a pattern or parameter list parsed on its own. */
+	declaration: Node | null;
 	/** The references to it, the declaring identifier excluded, in source order. */
 	references: Reference[];
 }
@@ -113,6 +117,8 @@ export interface Reference {
 	write: boolean;
 	/** A member of the identifier's value is assigned to, updated or deleted. */
 	mutate: boolean;
+	/** What a write assigns: the right side of the assignment or the iterated expression of a `for-in` or `for-of`, as eslint-scope's `writeExpr`; null for an update. */
+	writeExpr: Expression | null;
 }
 
 /** With `scopes`: the scope `node` opens, when it opens one. */

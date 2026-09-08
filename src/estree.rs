@@ -720,6 +720,12 @@ pub struct Writer<'a, X = (), S: Sink = Json> {
 	name_only: bool,
 	/// What erasure left in place, in emission order.
 	kept: Vec<(&'static str, NodeId)>,
+	/// Each reference's number in emission order, once its identifier is written; a `writes` fact
+	/// names references by it.
+	emitted: Vec<u32>,
+	references_emitted: u32,
+	/// Nodes erasure skipped whose facts the next node written takes over.
+	adopted: Vec<NodeId>,
 }
 
 /// Maps byte offsets to the UTF-16 offsets and line/column pairs that acorn reports, and UTF-16
@@ -851,6 +857,9 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 			program_tail: false,
 			name_only: false,
 			kept: Vec::new(),
+			emitted: Vec::new(),
+			references_emitted: 0,
+			adopted: Vec::new(),
 		}
 	}
 
@@ -904,6 +913,11 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 				self.sink.int(binding);
 			}
 			Some(Role::Reference(reference)) => {
+				if self.emitted.is_empty() {
+					self.emitted = vec![u32::MAX; scopes.references.len()];
+				}
+				self.emitted[reference as usize] = self.references_emitted;
+				self.references_emitted += 1;
 				let reference = scopes.reference(reference);
 				self.key("binding");
 				match reference.binding {
@@ -919,6 +933,26 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 			}
 			None => {}
 		}
+		let adopted = std::mem::take(&mut self.adopted);
+		for node in adopted.iter().copied().chain([id]) {
+			if let Some(bindings) = scopes.declared_by.get(&node) {
+				self.key("defines");
+				self.sink.ints(bindings);
+			}
+			if let Some(references) = scopes.writes_of.get(&node) {
+				// the target is written before what it is assigned, so its number is known
+				let numbers: Vec<u32> = references.iter().map(|&r| self.emitted[r as usize]).collect();
+				debug_assert!(numbers.iter().all(|&n| n != u32::MAX));
+				self.key("writes");
+				self.sink.ints(&numbers);
+			}
+		}
+	}
+
+	/// The facts of a node erasure leaves out go on the next node written, the one standing in
+	/// for it.
+	pub(crate) fn adopt(&mut self, id: NodeId) {
+		self.adopted.push(id);
 	}
 
 	/// The scope and binding tables: what the `scope`, `declares` and `binding` numbers index.
@@ -938,6 +972,7 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 			self.sink.int(scope.function_depth);
 			self.key("through");
 			self.sink.ints(&scope.through);
+			self.bool("topLevelAwait", scope.top_level_await);
 			self.sink.end();
 		}
 		self.sink.end();

@@ -498,12 +498,12 @@ impl Bind for Data {
 			| ParameterProperty { parameter: expression } => b.visit(expression, mode),
 			Decorator { expression } | ExportAssignment { expression } => b.visit(expression, Mode::Expression),
 			EnumDeclaration { id: name, members, .. } => {
-				b.declare(name, BindingKind::Enum);
+				b.declare_by(name, BindingKind::Enum, id);
 				b.enter_owned(ScopeKind::Enum, id, b.declared_by(name));
 				let members: Vec<_> = b.ast().list(members).iter().flatten().copied().collect();
 				for &member in &members {
 					if let Some(EnumMember { id: name, .. }) = self.ts_of(b.ast(), member) {
-						b.declare(name, BindingKind::EnumMember);
+						b.declare_by(name, BindingKind::EnumMember, member);
 					}
 				}
 				for &member in &members {
@@ -519,7 +519,7 @@ impl Bind for Data {
 			}
 			ModuleDeclaration { id: name, body, global } => {
 				if !global {
-					b.declare(name, BindingKind::Namespace);
+					b.declare_by(name, BindingKind::Namespace, id);
 				}
 				if let Some(body) = body {
 					b.enter_owned(ScopeKind::Namespace, id, b.declared_by(name));
@@ -533,13 +533,13 @@ impl Bind for Data {
 				module_reference,
 				..
 			} => {
-				b.declare(name, BindingKind::Import);
+				b.declare_by(name, BindingKind::Import, id);
 				if let Some(root) = self.root(b.ast(), module_reference) {
 					b.reference(root, false, false);
 				}
 			}
 			// an overload or an ambient signature names the function like its implementation would
-			DeclareFunction { id: Some(name), .. } => b.declare(name, BindingKind::Function),
+			DeclareFunction { id: Some(name), .. } => b.declare_by(name, BindingKind::Function, id),
 			_ => {}
 		}
 	}

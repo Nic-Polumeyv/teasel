@@ -129,6 +129,9 @@ pub struct Scope {
 	pub function_depth: u32,
 	/// The bindings of outer scopes that identifiers inside this scope resolve to, in first-use order.
 	pub through: Vec<BindingId>,
+	/// An `await` or `for await` runs directly in this scope, no function around it; only a
+	/// program or fragment scope can say so.
+	pub top_level_await: bool,
 }
 
 #[derive(Debug)]
@@ -138,6 +141,10 @@ pub struct Binding {
 	pub scope: ScopeId,
 	/// The identifier that declares it; `arguments` has none.
 	pub node: Option<NodeId>,
+	/// What declares it: the declarator, function, class, import specifier, catch clause or
+	/// enum, as eslint-scope's definition node; none for `arguments` and for a pattern or parameter
+	/// list parsed on its own.
+	pub declaration: Option<NodeId>,
 }
 
 #[derive(Debug)]
@@ -150,6 +157,9 @@ pub struct Reference {
 	pub write: bool,
 	/// A member of the identifier's value is assigned to, updated or deleted.
 	pub mutate: bool,
+	/// What a write assigns: the right side of the assignment or the iterated expression of a
+	/// `for-in` or `for-of`, as eslint-scope's `writeExpr`; none for an update.
+	pub write_expr: Option<NodeId>,
 }
 
 /// What an identifier is in the analysis.
@@ -241,6 +251,10 @@ pub struct Scopes {
 	pub references: Vec<Reference>,
 	pub of_node: NodeTable<ScopeId>,
 	pub of_identifier: NodeTable<Role>,
+	/// The bindings each declaring node declares, and the write references each expression is
+	/// assigned by: `Binding::declaration` and `Reference::write_expr` from the node's side.
+	pub declared_by: FastMap<NodeId, Vec<BindingId>>,
+	pub writes_of: FastMap<NodeId, Vec<ReferenceId>>,
 }
 
 impl Scopes {
@@ -293,7 +307,17 @@ fn analyze_with<X: Bind>(ast: &mut Ast<X>, kind: ScopeKind, root: Option<NodeId>
 	binder.enter(kind, root, false);
 	f(&mut binder);
 	binder.exit();
-	let out = binder.out;
+	let mut out = binder.out;
+	for (id, binding) in out.bindings.iter().enumerate() {
+		if let Some(declaration) = binding.declaration {
+			out.declared_by.entry(declaration).or_default().push(id as BindingId);
+		}
+	}
+	for (id, reference) in out.references.iter().enumerate() {
+		if let Some(expression) = reference.write_expr {
+			out.writes_of.entry(expression).or_default().push(id as ReferenceId);
+		}
+	}
 	ast.scopes = Some(out);
 }
 
@@ -341,6 +365,10 @@ pub struct Binder<'a, X> {
 	out: Scopes,
 	stack: Vec<ScopeId>,
 	open: Vec<Open>,
+	/// The node whose pattern is being declared, for `Binding::declaration`.
+	declaring: Option<NodeId>,
+	/// What the target being visited is assigned, for `Reference::write_expr`.
+	writing: Option<NodeId>,
 	/// The references not yet resolved, those of each open scope after `pending_from`'s entry for it.
 	pending: Vec<ReferenceId>,
 	pending_from: Vec<usize>,
@@ -361,6 +389,8 @@ impl<'a, X: Bind> Binder<'a, X> {
 			},
 			stack: Vec::new(),
 			open: Vec::new(),
+			declaring: None,
+			writing: None,
 			pending: Vec::new(),
 			pending_from: Vec::new(),
 			owned: FastMap::default(),
@@ -392,6 +422,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 			parent,
 			function_depth,
 			through: Vec::new(),
+			top_level_await: false,
 		});
 		self.open.push(Open {
 			arrow,
@@ -496,6 +527,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 			kind,
 			scope,
 			node,
+			declaration: node.and(self.declaring),
 		});
 		self.open[scope as usize].names.insert(name, id);
 		// a class name declares the outer binding; the one inside its body shares the identifier
@@ -505,9 +537,31 @@ impl<'a, X: Bind> Binder<'a, X> {
 		id
 	}
 
-	/// Declares `node`, an identifier, in the current scope, or for `var` in the nearest scope that
-	/// holds it. A name declared twice keeps its first binding.
-	pub fn declare(&mut self, node: NodeId, kind: BindingKind) {
+	/// Declares `node`, an identifier, as `declaration` does: in the current scope, or for `var` in
+	/// the nearest scope that holds it. A name declared twice keeps its first binding.
+	pub fn declare_by(&mut self, node: NodeId, kind: BindingKind, declaration: NodeId) {
+		let outer = self.declaring.replace(declaration);
+		self.declare(node, kind);
+		self.declaring = outer;
+	}
+
+	/// Runs `f` with `declaration` as what the patterns it visits declare.
+	fn declaring<T>(&mut self, declaration: NodeId, f: impl FnOnce(&mut Self) -> T) -> T {
+		let outer = self.declaring.replace(declaration);
+		let result = f(self);
+		self.declaring = outer;
+		result
+	}
+
+	/// Runs `f` with `expression` as what the targets it visits are assigned.
+	fn writing<T>(&mut self, expression: Option<NodeId>, f: impl FnOnce(&mut Self) -> T) -> T {
+		let outer = std::mem::replace(&mut self.writing, expression);
+		let result = f(self);
+		self.writing = outer;
+		result
+	}
+
+	fn declare(&mut self, node: NodeId, kind: BindingKind) {
 		let NodeKind::Identifier { name } = self.kind(node) else {
 			return;
 		};
@@ -533,6 +587,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 			binding: None,
 			write,
 			mutate,
+			write_expr: if write { self.writing } else { None },
 		});
 		self.out.of_identifier.insert(node, Role::Reference(id));
 		self.pending.push(id);
@@ -632,7 +687,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 			if i == 0 && matches!(self.kind(param), NodeKind::Identifier { name } if Some(name) == self.this_name) {
 				continue;
 			}
-			self.visit_with(param, Mode::Declare(BindingKind::Param), false);
+			self.declaring(id, |b| b.visit_with(param, Mode::Declare(BindingKind::Param), false));
 		}
 		match self.kind(body) {
 			NodeKind::BlockStatement { body } => self.statements(body),
@@ -646,7 +701,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 	fn class(&mut self, id: NodeId, class: crate::ast::Class, expression: bool) {
 		self.enter(ScopeKind::Class, Some(id), false);
 		if let (true, Some(name)) = (expression, class.id) {
-			self.declare(name, BindingKind::ClassName);
+			self.declare_by(name, BindingKind::ClassName, id);
 		}
 		self.maybe(class.super_class, Mode::Expression);
 		self.visit(class.body, Mode::Expression);
@@ -723,13 +778,13 @@ impl<'a, X: Bind> Binder<'a, X> {
 					self.visit(argument, Mode::Expression);
 				}
 			}
-			UpdateExpression { argument, .. } => self.target(argument),
+			UpdateExpression { argument, .. } => self.writing(None, |b| b.target(argument)),
 			BinaryExpression { left, right, .. } | LogicalExpression { left, right, .. } => {
 				self.visit(left, Mode::Expression);
 				self.visit(right, Mode::Expression);
 			}
 			AssignmentExpression { left, right, .. } => {
-				self.target(left);
+				self.writing(Some(right), |b| b.target(left));
 				self.visit(right, Mode::Expression);
 			}
 			ConditionalExpression {
@@ -762,7 +817,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 			FunctionExpression { function } => match function.id {
 				Some(name) => {
 					self.enter(ScopeKind::FunctionName, None, false);
-					self.declare(name, BindingKind::FunctionName);
+					self.declare_by(name, BindingKind::FunctionName, id);
 					self.function(id, function.params, function.body, false);
 					self.exit();
 				}
@@ -770,14 +825,14 @@ impl<'a, X: Bind> Binder<'a, X> {
 			},
 			FunctionDeclaration { function } => {
 				if let Some(name) = function.id {
-					self.declare(name, BindingKind::Function);
+					self.declare_by(name, BindingKind::Function, id);
 				}
 				self.function(id, function.params, function.body, false);
 			}
 			ClassExpression { class } => self.class(id, class, true),
 			ClassDeclaration { class } => {
 				if let Some(name) = class.id {
-					self.declare(name, BindingKind::Class);
+					self.declare_by(name, BindingKind::Class, id);
 				}
 				self.class(id, class, false);
 			}
@@ -804,7 +859,10 @@ impl<'a, X: Bind> Binder<'a, X> {
 				self.exit();
 			}
 			YieldExpression { argument, .. } => self.maybe(argument, Mode::Expression),
-			AwaitExpression { argument } => self.visit(argument, Mode::Expression),
+			AwaitExpression { argument } => {
+				self.awaits();
+				self.visit(argument, Mode::Expression)
+			}
 			ImportExpression { source, options } => {
 				self.visit(source, Mode::Expression);
 				self.maybe(options, Mode::Expression);
@@ -860,7 +918,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 			}
 			CatchClause { param, body } => {
 				self.enter(ScopeKind::Catch, Some(id), false);
-				self.maybe(param, Mode::Declare(BindingKind::CatchParam));
+				self.declaring(id, |b| b.maybe(param, Mode::Declare(BindingKind::CatchParam)));
 				self.visit(body, Mode::Expression);
 				self.exit();
 			}
@@ -887,13 +945,16 @@ impl<'a, X: Bind> Binder<'a, X> {
 				}
 			}
 			ForInStatement { left, right, body } | ForOfStatement { left, right, body, .. } => {
+				if matches!(self.kind(id), ForOfStatement { is_await: true, .. }) {
+					self.awaits();
+				}
 				let scoped = self.for_head_declares(Some(left));
 				if scoped {
 					self.enter(ScopeKind::For, Some(id), false);
 				}
 				match self.kind(left) {
 					VariableDeclaration { .. } => self.visit(left, Mode::Expression),
-					_ => self.target(left),
+					_ => self.writing(Some(right), |b| b.target(left)),
 				}
 				self.visit(right, Mode::Expression);
 				self.visit(body, Mode::Expression);
@@ -907,12 +968,12 @@ impl<'a, X: Bind> Binder<'a, X> {
 					let VariableDeclarator { id: pattern, init } = self.kind(declarator) else {
 						continue;
 					};
-					self.visit(pattern, Mode::Declare(kind));
+					self.declaring(declarator, |b| b.visit(pattern, Mode::Declare(kind)));
 					self.maybe(init, Mode::Expression);
 				}
 			}
 			VariableDeclarator { id: pattern, init } => {
-				self.visit(pattern, mode);
+				self.declaring(id, |b| b.visit(pattern, mode));
 				self.maybe(init, Mode::Expression);
 			}
 			ImportDeclaration { specifiers, .. } => {
@@ -922,7 +983,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 			}
 			ImportSpecifier { local, .. } | ImportDefaultSpecifier { local } | ImportNamespaceSpecifier { local } => {
 				if !self.ast.extension.types_only(self.ast, id) {
-					self.declare(local, BindingKind::Import);
+					self.declare_by(local, BindingKind::Import, id);
 				}
 			}
 			ExportNamedDeclaration {
@@ -981,6 +1042,13 @@ impl<'a, X: Bind> Binder<'a, X> {
 	fn targets(&mut self, list: List) {
 		for &id in self.ast.list(list).iter().flatten() {
 			self.target(id);
+		}
+	}
+
+	/// An `await` here: top-level when no function encloses it.
+	fn awaits(&mut self) {
+		if self.out.scopes[self.current() as usize].function_depth == 0 {
+			self.out.scopes[0].top_level_await = true;
 		}
 	}
 }
@@ -1214,6 +1282,42 @@ mod tests {
 			})
 			.collect();
 		assert_eq!(globals, ["x", "y", "d"]);
+	}
+
+	#[test]
+	fn declarations_writes_and_top_level_await() {
+		let src = "let [a = 1, b] = c; a = b + 1; a++; for (b of c) {} function f(p) { g = p; } await c;";
+		let mut ast = crate::parse(
+			src,
+			crate::Options {
+				module: true,
+				..Default::default()
+			},
+		)
+		.unwrap();
+		let root = ast.last();
+		analyze(&mut ast, root);
+		let scopes = ast.scopes.as_ref().unwrap();
+		let start = |id: Option<NodeId>| id.map(|id| ast.node(id).start);
+		let declarations: Vec<_> = scopes
+			.bindings
+			.iter()
+			.map(|b| (ast.str(b.name), start(b.declaration)))
+			.collect();
+		assert_eq!(
+			declarations,
+			[("a", Some(4)), ("b", Some(4)), ("f", Some(52)), ("p", Some(52))]
+		);
+		let writes: Vec<_> = scopes
+			.references
+			.iter()
+			.filter(|r| r.write)
+			.map(|r| (ast.node(r.node).start, start(r.write_expr)))
+			.collect();
+		// `a = b + 1`, `a++`, `for (b of c)`, `g = p`
+		assert_eq!(writes, [(20, Some(24)), (31, None), (41, Some(46)), (68, Some(72))]);
+		assert!(scopes.scopes[0].top_level_await);
+		assert!(!scopes.scopes[1].top_level_await);
 	}
 
 	#[test]

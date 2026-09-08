@@ -15,6 +15,7 @@ const BINDING = Symbol('binding');
 const REFERENCE = Symbol('reference');
 // a global's write and mutate bits, until someone asks for its reference: no binding lists it
 const GLOBAL = Symbol('global');
+const WRITE_EXPR = Symbol('writeExpr');
 
 /** @param {import('estree').Node} node @returns {import('./index.js').Scope | undefined} the scope the node opens */
 export const scopeOf = (node) => (node == null ? undefined : node[SCOPE]);
@@ -26,12 +27,12 @@ export function referenceOf(node) {
 	let reference = node[REFERENCE];
 	if (reference === undefined && node[GLOBAL] !== undefined) {
 		const facts = node[GLOBAL];
-		reference = node[REFERENCE] = { node, binding: null, write: (facts & 1) !== 0, mutate: (facts & 2) !== 0 };
+		reference = node[REFERENCE] = { node, binding: null, write: (facts & 1) !== 0, mutate: (facts & 2) !== 0, writeExpr: node[WRITE_EXPR] ?? null };
 	}
 	return reference;
 }
 
-const FACTS = new Set(['scope', 'binding', 'declares', 'write', 'mutate']);
+const FACTS = new Set(['scope', 'binding', 'declares', 'write', 'mutate', 'defines', 'writes']);
 
 /**
  * One decode at a time; the builders are generated once and read through this.
@@ -67,8 +68,10 @@ function ints(S) {
  * @param {number | null | undefined} binding
  * @param {boolean} write
  * @param {boolean} mutate
+ * @param {number[] | undefined} defines the bindings `n` declares
+ * @param {number[] | undefined} writes the references, by emission number, `n` is assigned to
  */
-function file(S, n, scope, declares, binding, write, mutate) {
+function file(S, n, scope, declares, binding, write, mutate, defines, writes) {
 	if (scope !== undefined) {
 		const s = S.scopes[scope];
 		n[SCOPE] = s;
@@ -82,12 +85,22 @@ function file(S, n, scope, declares, binding, write, mutate) {
 	if (binding === null) {
 		n[BINDING] = null;
 		n[GLOBAL] = (write ? 1 : 0) | (mutate ? 2 : 0);
+		S.references.push(n);
 	} else if (binding !== undefined) {
 		const b = S.bindings[binding];
 		n[BINDING] = b;
-		const r = { node: n, binding: b, write, mutate };
+		const r = { node: n, binding: b, write, mutate, writeExpr: null };
 		n[REFERENCE] = r;
 		b.references.push(r);
+		S.references.push(n);
+	}
+	if (defines !== undefined) for (let i = 0; i < defines.length; i++) S.bindings[defines[i]].declaration = n;
+	if (writes !== undefined) {
+		for (let i = 0; i < writes.length; i++) {
+			const target = S.references[writes[i]];
+			if (target[REFERENCE] !== undefined) target[REFERENCE].writeExpr = n;
+			else target[WRITE_EXPR] = n;
+		}
 	}
 }
 
@@ -107,7 +120,7 @@ function generate({ type, keys, kinds }, link) {
 	if (link && type !== null) for (let i = 0; i < keys.length; i++) if (FACTS.has(keys[i])) last = i;
 	const lead = [];
 	const props = type === null ? [] : [`type: ${JSON.stringify(type)}`];
-	const facts = { scope: 'undefined', declares: 'undefined', binding: 'undefined', write: 'false', mutate: 'false' };
+	const facts = { scope: 'undefined', declares: 'undefined', binding: 'undefined', write: 'false', mutate: 'false', defines: 'undefined', writes: 'undefined' };
 	for (let i = 0; i < keys.length; i++) {
 		const key = keys[i];
 		if (i > last) props.push(`${JSON.stringify(key)}: ${READ[kinds[i]]}`);
@@ -117,7 +130,7 @@ function generate({ type, keys, kinds }, link) {
 			else props.push(`${JSON.stringify(key)}: v${i}`);
 		}
 	}
-	const body = `${lead.join(' ')} const n = { ${props.join(', ')} }; ${last < 0 ? '' : `file(S, n, ${facts.scope}, ${facts.declares}, ${facts.binding}, ${facts.write}, ${facts.mutate});`} return n;`;
+	const body = `${lead.join(' ')} const n = { ${props.join(', ')} }; ${last < 0 ? '' : `file(S, n, ${facts.scope}, ${facts.declares}, ${facts.binding}, ${facts.write}, ${facts.mutate}, ${facts.defines}, ${facts.writes});`} return n;`;
 	return new Function('node', 'nodes', 'ints', 'file', `return (S) => { ${body} };`)(node, nodes, ints, file);
 }
 
@@ -126,7 +139,7 @@ function interpret({ type, keys, kinds }, link) {
 	const facts = link && type !== null && keys.some((key) => FACTS.has(key));
 	return (S) => {
 		const n = type === null ? {} : { type };
-		let scope, declares, binding, write = false, mutate = false;
+		let scope, declares, binding, defines, writes, write = false, mutate = false;
 		for (let i = 0; i < keys.length; i++) {
 			const key = keys[i];
 			const value = READERS[kinds[i]](S);
@@ -135,9 +148,11 @@ function interpret({ type, keys, kinds }, link) {
 			else if (key === 'declares') declares = value;
 			else if (key === 'binding') binding = value;
 			else if (key === 'write') write = value;
-			else mutate = value;
+			else if (key === 'mutate') mutate = value;
+			else if (key === 'defines') defines = value;
+			else writes = value;
 		}
-		if (facts) file(S, n, scope, declares, binding, write, mutate);
+		if (facts) file(S, n, scope, declares, binding, write, mutate, defines, writes);
 		return n;
 	};
 }
@@ -211,6 +226,7 @@ function link_tables(scopes, bindings) {
 		binding.scope.bindings.push(binding);
 		binding.scope.declarations.set(binding.name, binding);
 		binding.node = null;
+		binding.declaration = null;
 		binding.references = [];
 	}
 }
@@ -241,7 +257,7 @@ export function decode(answer, source, engine, link = true) {
 		from = end;
 	}
 	// one state object per decode, young like everything it points at: no write barriers
-	const S = { w: words, at: HEADER, strings, floats, source, constants: table.constants, scopes: EMPTY, bindings: EMPTY, build: builders(table, link) };
+	const S = { w: words, at: HEADER, strings, floats, source, constants: table.constants, scopes: EMPTY, bindings: EMPTY, references: link ? [] : EMPTY, build: builders(table, link) };
 	let scopes = null, bindings = null;
 	if (tables_at !== 0) {
 		// the writer's `all_scopes` order; a third table would have to carry its key
