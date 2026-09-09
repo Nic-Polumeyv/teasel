@@ -17,6 +17,7 @@ pub enum Entry {
 	Pattern,
 	Params,
 	Statement,
+	TypeParameters,
 }
 
 impl Entry {
@@ -26,6 +27,7 @@ impl Entry {
 			2 => Entry::Pattern,
 			3 => Entry::Params,
 			4 => Entry::Statement,
+			5 => Entry::TypeParameters,
 			_ => Entry::Program,
 		}
 	}
@@ -342,10 +344,11 @@ where
 				program(&ast, root, source, positions, output, sink)
 			})
 		}
-		Entry::Expression | Entry::Pattern | Entry::Statement => {
+		Entry::Expression | Entry::Pattern | Entry::Statement | Entry::TypeParameters => {
 			let (parse, output): (ParseAt<E::Data>, _) = match request.entry {
 				Entry::Expression => (crate::parser::parse_expression_at::<E>, output),
 				Entry::Statement => (crate::parser::parse_statement_at::<E>, output),
+				Entry::TypeParameters => (crate::parser::parse_type_parameters_at::<E>, output),
 				Entry::Pattern => (
 					crate::parser::parse_pattern_at::<E>,
 					Output {

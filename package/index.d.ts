@@ -214,6 +214,8 @@ export function parsePatternAt(source: string, offset: number, options?: Options
 export function parseParamsAt(source: string, offset: number, options?: Options): Params;
 /** Parses one statement starting at `offset`. */
 export function parseStatementAt(source: string, offset: number, options?: Options): Parsed<Statement>;
+/** Parses a type parameter list `<...>` starting at `offset`, a `TSTypeParameterDeclaration`; TypeScript only, `not_typescript` otherwise. */
+export function parseTypeParametersAt(source: string, offset: number, options?: Options): Parsed<Node>;
 
 /**
  * A source kept with its options: the parses out of it share the source copy and the position
@@ -227,6 +229,7 @@ export class Source {
 	parsePatternAt(offset: number, stopAt?: string[]): Parsed<Pattern>;
 	parseParamsAt(offset: number, stopAt?: string[]): Params;
 	parseStatementAt(offset: number, stopAt?: string[]): Parsed<Statement>;
+	parseTypeParametersAt(offset: number, stopAt?: string[]): Parsed<Node>;
 	/** Releases what the engine holds for the source; the collector does it otherwise. */
 	free(): void;
 }

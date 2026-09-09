@@ -41,6 +41,7 @@ codes! {
 	EscapeInKeyword "escape_in_keyword" => "Escape sequence in keyword {}",
 	NestingDepth "nesting_depth" => "Maximum nesting depth exceeded",
 	TreeSize "tree_size" => "Maximum tree size exceeded",
+	NotTypeScript "not_typescript" => "TypeScript syntax in JavaScript",
 	UnterminatedComment "unterminated_comment" => "Unterminated comment",
 	UnterminatedString "unterminated_string" => "Unterminated string constant",
 	UnterminatedTemplate "unterminated_template" => "Unterminated template",

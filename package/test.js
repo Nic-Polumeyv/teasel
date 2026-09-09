@@ -7,7 +7,7 @@ const wasm = await import('./wasm.js');
 
 await wasm.init(readFileSync(new URL('./teasel.wasm', import.meta.url)));
 
-for (const [name, { Source, parse, parseExpressionAt, parsePatternAt, parseParamsAt, parseStatementAt, isIdentifierStart, isIdentifierChar, scopeOf, bindingOf, referenceOf, parentOf }] of [['node', node], ['wasm', wasm]]) {
+for (const [name, { Source, parse, parseExpressionAt, parsePatternAt, parseParamsAt, parseStatementAt, parseTypeParametersAt, isIdentifierStart, isIdentifierChar, scopeOf, bindingOf, referenceOf, parentOf }] of [['node', node], ['wasm', wasm]]) {
 	const program = parse('let x: number = 1; // done', { sourceType: 'module', typescript: true, comments: true, locations: true });
 	assert.equal(program.sourceType, 'module');
 	assert.equal(program.body[0].declarations[0].id.typeAnnotation.typeAnnotation.type, 'TSNumberKeyword');
@@ -70,6 +70,12 @@ for (const [name, { Source, parse, parseExpressionAt, parsePatternAt, parseParam
 	assert.equal(referenceOf(scoped.body[0].declarations[0].init.callee).binding, null);
 	assert.throws(() => parseExpressionAt('{a}', 1, { stopAt: ['a s'] }), TypeError);
 
+	const ts = { typescript: true };
+	const generics = parseTypeParametersAt('foo<T extends () => void>(x: T)', 3, ts);
+	assert.equal(generics.node.type, 'TSTypeParameterDeclaration');
+	assert.equal(generics.end, 25);
+	assert.equal(parseTypeParametersAt("foo<T = '>'>()", 3, ts).end, 12);
+	assert.throws(() => parseTypeParametersAt('foo<T>()', 3), (e) => e.code === 'not_typescript');
 	const marked = { parenthesized: true };
 	assert.equal(parseExpressionAt('{(a, b)}', 1, marked).node.parenthesized, true);
 	assert.equal(parseExpressionAt('{((a))}', 1, marked).node.parenthesized, true);

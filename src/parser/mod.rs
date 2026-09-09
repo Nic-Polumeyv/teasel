@@ -212,6 +212,10 @@ pub(crate) trait Extension: Default + Sized {
 	fn class_index_signature(p: &mut Parser<Self>, start: u32) -> Result<Option<NodeId>> {
 		Ok(None)
 	}
+	/// A type parameter list `<...>` at the cursor, for the entry that parses one on its own.
+	fn type_parameters(p: &mut Parser<Self>) -> Result<NodeId> {
+		p.error(p.tok.start, Code::NotTypeScript)
+	}
 	/// After the key of a class element.
 	fn class_key_end(p: &mut Parser<Self>, key: NodeId, computed: bool) -> Result<()> {
 		Ok(())
@@ -362,6 +366,22 @@ pub(crate) fn parse_expression_at<E: Extension>(
 	let expression = parser.recovered(result)?;
 	let end = parser.consumed_end();
 	Ok((parser.finish(), expression, end))
+}
+
+/// Parses a type parameter list `<...>` starting at `offset`, for a host whose own syntax carries
+/// one, such as a generic snippet in Svelte; TypeScript only.
+pub(crate) fn parse_type_parameters_at<E: Extension>(
+	src: &str,
+	offset: u32,
+	options: Options,
+	stop: &str,
+) -> Result<(Ast<E::Data>, NodeId, u32)> {
+	let mut parser = Parser::<E>::new(src, offset, options, 0, stop)?;
+	parser.enter_scope(SCOPE_TOP);
+	let result = E::type_parameters(&mut parser);
+	let node = parser.recovered(result)?;
+	let end = parser.consumed_end();
+	Ok((parser.finish(), node, end))
 }
 
 /// Parses an assignment target starting at `offset`: an identifier or a destructuring pattern,

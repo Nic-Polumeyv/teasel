@@ -61,6 +61,15 @@ pub fn parse_statement_at(
 	crate::parser::parse_statement_at::<TypeScript>(src, offset, options, stop).map_err(|e| *e)
 }
 
+pub fn parse_type_parameters_at(
+	src: &str,
+	offset: u32,
+	options: Options,
+	stop: &str,
+) -> std::result::Result<(Ast<Data>, NodeId, u32), SyntaxError> {
+	crate::parser::parse_type_parameters_at::<TypeScript>(src, offset, options, stop).map_err(|e| *e)
+}
+
 /// Parser state that only TypeScript needs. `State` is copied into every snapshot, so it stays
 /// small; the name tables only grow within a scope and are truncated instead.
 #[derive(Default)]
@@ -1247,6 +1256,10 @@ impl Extension for TypeScript {
 			outer_ambient,
 		});
 		Ok(modifiers.extras.is_static)
+	}
+
+	fn type_parameters(p: &mut Parser<Self>) -> Result<NodeId> {
+		p.parse_type_parameters(TypeParameterModifiers::Const)
 	}
 
 	fn class_index_signature(p: &mut Parser<Self>, start: u32) -> Result<Option<NodeId>> {

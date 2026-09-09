@@ -750,3 +750,28 @@ fn program_in_a_range() {
 	assert!(prepared.parse_range(8.0, None).contains("\"end\":26"));
 	assert!(prepared.parse_range(22.0, Some(8.0)).contains("is before"));
 }
+
+/// A host's own syntax may carry a type parameter list, as a generic snippet does.
+#[test]
+fn type_parameters_entry() {
+	let options = Options {
+		module: true,
+		..Options::default()
+	};
+	let end = |src: &str| super::parse_type_parameters_at(src, 3, options, "").unwrap().2;
+	assert_eq!(end("foo<T extends () => void>(x: T)"), 25);
+	assert_eq!(end("foo<T = '>'>()"), 12);
+	assert_eq!(end("foo<const T, U extends T[]>"), 27);
+	assert_eq!(
+		super::parse_type_parameters_at("foo<>", 3, options, "")
+			.unwrap_err()
+			.code,
+		crate::error::Code::EmptyTypeParameters
+	);
+	assert_eq!(
+		crate::parser::parse_type_parameters_at::<()>("foo<T>", 3, options, "")
+			.unwrap_err()
+			.code,
+		crate::error::Code::NotTypeScript
+	);
+}
