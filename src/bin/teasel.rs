@@ -1,24 +1,23 @@
 //! Command line front end, mainly for the acorn conformance harness.
 //!
-//! `teasel [--module] [--typescript] [--comments] [--expression|--pattern|--params|--statement]
-//! [--preserve-parens] [--erase] [--offset N] FILE` prints ESTree JSON, wrapped with `end` for everything but
-//! a program. `--offset` alone parses an expression. The pattern, params and statement modes parse
-//! as a module.
+//! `teasel [--module] [--typescript] [--comments] [--scopes] [--expression|--pattern|--params|--statement|--type-parameters]
+//! [--parenthesized] [--erase] [--offset N] FILE` prints the answer as JSON: the node (or the
+//! parameters) as `node`, then `end`, the offset after what the parse consumed. `--offset` alone
+//! parses an expression. The pattern, params and statement modes parse as a module.
 //!
 //! `teasel --batch` reads jobs from stdin, each a header line `MODE LENGTH` followed by LENGTH
 //! bytes of source, and prints one JSON line per job. MODE is `module`, `script`, `expr:OFFSET`,
-//! `pattern:OFFSET`, `params:OFFSET`, `stmt:OFFSET` or `typeparams:OFFSET`, whose answers wrap the node or the parameters
-//! with `end`, the offset after what the parse consumed, with a `ts-` prefix for TypeScript and
-//! `+comments` to attach comments, `+scopes` for the scope analysis, `+undeclared-exports` to
-//! accept exports of names the source never declares, `+stop:TOKEN` to end a parse-at entry at
-//! one of the host's tokens or `+erase` to erase TypeScript from the output. In a batch, expressions preserve
-//! parens. Offsets are byte offsets into the source; the JSON output reports UTF-16 offsets like
-//! acorn.
+//! `pattern:OFFSET`, `params:OFFSET`, `stmt:OFFSET` or `typeparams:OFFSET`, with a `ts-` prefix
+//! for TypeScript and `+comments` to attach comments, `+scopes` for the scope analysis,
+//! `+parenthesized` to mark parenthesized nodes, `+undeclared-exports` to accept exports of names
+//! the source never declares, `+stop:TOKEN` to end a parse-at entry at one of the host's tokens or
+//! `+erase` to erase TypeScript from the output. Offsets are byte offsets into the source; the
+//! JSON output reports UTF-16 offsets like acorn.
 
 use std::io::{self, BufRead, Read, Write};
 use std::process::ExitCode;
-use teasel::json::{Entry, Request};
-use teasel::{Options, json};
+use teasel::json::Request;
+use teasel::{Entry, Options, json};
 
 /// A batch header's mode: its entry, offset and switches, which may come before or after the offset.
 fn batch_mode(mode: &str) -> (Entry, u32, impl Iterator<Item = &str>) {
@@ -77,7 +76,6 @@ fn batch() -> io::Result<()> {
 			locations: true,
 			options: Options {
 				module: !mode_text.starts_with("script"),
-				preserve_parens: entry == Entry::Expression,
 				..Options::default()
 			},
 			..Request::default()
@@ -88,6 +86,7 @@ fn batch() -> io::Result<()> {
 				"comments" => request.comments = true,
 				"scopes" => request.scopes = true,
 				"erase" => request.erase = true,
+				"parenthesized" => request.options.parenthesized = true,
 				_ if switch.starts_with("stop:") => {
 					if !stop.is_empty() {
 						stop.push(' ');
@@ -122,7 +121,7 @@ fn main() -> ExitCode {
 	let mut typescript = false;
 	let mut comments = false;
 	let mut scopes = false;
-	let mut preserve_parens = false;
+	let mut parenthesized = false;
 	let mut erase = false;
 	let mut file = None;
 	let mut args = args.into_iter();
@@ -132,12 +131,13 @@ fn main() -> ExitCode {
 			"--typescript" => typescript = true,
 			"--comments" => comments = true,
 			"--scopes" => scopes = true,
-			"--preserve-parens" => preserve_parens = true,
+			"--parenthesized" => parenthesized = true,
 			"--erase" => erase = true,
 			"--expression" => entry = Entry::Expression,
 			"--pattern" => entry = Entry::Pattern,
 			"--params" => entry = Entry::Params,
 			"--statement" => entry = Entry::Statement,
+			"--type-parameters" => entry = Entry::TypeParameters,
 			"--offset" => offset = args.next().and_then(|n| n.parse().ok()),
 			_ => file = Some(arg),
 		}
@@ -147,12 +147,12 @@ fn main() -> ExitCode {
 	}
 	let options = Options {
 		module: module || !matches!(entry, Entry::Program | Entry::Expression),
-		preserve_parens,
+		parenthesized,
 		..Options::default()
 	};
 	let Some(file) = file else {
 		eprintln!(
-			"usage: teasel [--module] [--typescript] [--comments] [--scopes] [--expression|--pattern|--params|--statement] [--preserve-parens] [--erase] [--offset N] FILE"
+			"usage: teasel [--module] [--typescript] [--comments] [--scopes] [--expression|--pattern|--params|--statement|--type-parameters] [--parenthesized] [--erase] [--offset N] FILE"
 		);
 		return ExitCode::FAILURE;
 	};

@@ -82,7 +82,6 @@ function normalize(node, source, from, is_root, raw_values, ts) {
 	if (typeof node === 'bigint') return null;
 	if (!node || typeof node !== 'object') return node;
 	// Svelte removes the parentheses acorn preserved in template expressions, comments and all.
-	if (raw_values && node.type === 'ParenthesizedExpression') return normalize(node.expression, source, from, is_root, raw_values, ts);
 	const out = {};
 	if (!raw_values && ts) node = normalize_ts(null, node);
 	// An empty program's comments are its inner comments here; Svelte calls them trailing.
@@ -92,6 +91,8 @@ function normalize(node, source, from, is_root, raw_values, ts) {
 	}
 	for (const [k, v] of Object.entries(node)) {
 		if (k === 'metadata' || k === 'character' || (is_root && node.type === 'Program' && (k === 'start' || k === 'end' || k === 'loc'))) continue;
+		// an expression is re-parsed from its own start, inside the parens the template wrapped it in
+		if (is_root && k === 'parenthesized') continue;
 		if (k === 'leadingComments' || k === 'trailingComments' || k === 'innerComments') {
 			// Svelte's walker visits the comments it just attached as if they were nodes, so the
 			// comments inside an empty block end up as the trailing comments of its leading one;
@@ -115,12 +116,12 @@ for (const { name, source, ast, ts: typescript, byte } of each) {
 		if (!script) continue;
 		const program = script.content;
 		const blank = source.slice(0, program.start).replace(/[^\n]/g, ' ') + source.slice(program.start, program.end);
-		jobs.push({ name: `${name}@${program.start} script`, source: blank, mode: `${ts}module+comments+undeclared-exports`, expected: normalize(relocate(program), source, program.start, true, false, typescript), from: program.start, ts: typescript });
+		jobs.push({ name: `${name}@${program.start} script`, source: blank, mode: `${ts}module+comments+parenthesized+undeclared-exports`, expected: normalize(relocate(program), source, program.start, true, false, typescript), from: program.start, ts: typescript });
 	}
 	for (const node of walk(ast.fragment, ['loc', 'metadata', 'expression'])) {
 		if (node.type !== 'ExpressionTag' || !node.expression) continue;
 		const expression = node.expression;
-		jobs.push({ name: `${name}@${expression.start}`, source, mode: `${ts}expr+comments:${byte(expression.start)}`, expected: normalize(relocate(expression), source, expression.start, false, false, typescript), from: expression.start, ts: typescript });
+		jobs.push({ name: `${name}@${expression.start}`, source, mode: `${ts}expr+comments+parenthesized:${byte(expression.start)}`, expected: normalize(relocate(expression), source, expression.start, true, false, typescript), from: expression.start, ts: typescript });
 	}
 	if (capped(jobs, limit)) break;
 }
@@ -128,8 +129,7 @@ for (const { name, source, ast, ts: typescript, byte } of each) {
 const lines = (await teasel(jobs)).map((line, i) => {
 	const parsed = JSON.parse(line);
 	if (parsed.error) return line;
-	const node = parsed.node ?? parsed;
-	delete node.comments;
+	const node = parsed.node;
 	return JSON.stringify(normalize(node, jobs[i].source, jobs[i].from, true, true, jobs[i].ts));
 });
 process.exit(compare(jobs, (job) => job.expected, lines, { verbose, label: 'comment attachment', skipped: stats.skipped }) ? 0 : 1);

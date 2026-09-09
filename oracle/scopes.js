@@ -95,7 +95,7 @@ function actual(line) {
 		}
 		for (const key in node) if (key !== 'loc' && key !== 'scopes' && key !== 'bindings' && key !== 'references') walk(node[key]);
 	};
-	walk(answer.body);
+	walk(answer.node.body);
 	const declarations = [...declared].map(([b, start]) => [start, declaration_of.get(b) ?? null]);
 	for (const ref of references) {
 		// the assigned expression comes after its target, so its start is known only now

@@ -11,35 +11,24 @@ export interface Options {
 	 * JavaScript itself has: decorators and accessor fields (`AccessorProperty`).
 	 */
 	typescript?: boolean | 'erase';
-	/** Attach `leadingComments`, `trailingComments` and `innerComments` to nodes. */
+	/** Attach `leadingComments`, `trailingComments` and `innerComments` to nodes, and list every comment read as `comments` on the answer. */
 	comments?: boolean;
 	/**
-	 * Scope analysis: the answer lists `scopes` and `bindings`, and `scopeOf`, `bindingOf` and
-	 * `referenceOf` answer for a node. The tree itself carries nothing, and a copy of a node
-	 * carries no facts. TypeScript type positions bind nothing.
+	 * Scope analysis: the answer lists `scopes`, `bindings` and `references`, and `scopeOf`,
+	 * `bindingOf` and `referenceOf` answer for a node. The tree itself carries nothing, and a copy
+	 * of a node carries no facts. TypeScript type positions bind nothing.
 	 */
 	scopes?: boolean;
 	/** Add `loc` with line and column to every node, as in acorn; off by default. */
 	locations?: boolean;
-	preserveParens?: boolean;
-	/** Mark a node the source wraps in parens with `parenthesized: true`, absent otherwise, instead of a `ParenthesizedExpression` around it. */
+	/** Mark a node the source wraps in parens with `parenthesized: true`, absent otherwise. */
 	parenthesized?: boolean;
 	allowReturnOutsideFunction?: boolean;
 	allowAwaitOutsideFunction?: boolean;
 	allowSuperOutsideMethod?: boolean;
 	allowUndeclaredExports?: boolean;
-	/** Accepted for acorn's sake and ignored: the latest ECMAScript is always parsed. */
-	ecmaVersion?: number | 'latest';
 	/**
-	 * For the parse-at functions: the host's own tokens, words or punctuators, that follow what
-	 * is parsed. One read outside every bracket the parse opened ends it, whatever else it could
-	 * have been: `as` before a template loop's item is never TypeScript's assertion nor a
-	 * property name after `.`, `,` ends an expression before a sequence would, and `/>` is never
-	 * a division.
-	 */
-	stopAt?: string[];
-	/**
-	 * Record syntax errors on the answer as `errors` instead of throwing the first: a missing
+	 * List syntax errors on the answer as `errors` instead of throwing the first: a missing
 	 * operand, name or pattern is an `Identifier` named `''` of no width where it was expected,
 	 * and a statement or entry that cannot be read is skipped to the next stop token or
 	 * unmatched closing bracket, an empty identifier standing for it. Placeholders are neither
@@ -52,7 +41,7 @@ export interface Options {
  * Thrown for a syntax error. `code` names what went wrong, for a host to branch on, and
  * `message` says it in words, without a position. An error at the token being read spans it
  * with `pos` and `end`; one reported elsewhere, at a declaration seen earlier say, has `end`
- * equal to `pos`. `unexpected_eof` is the end of what was parsed: the `end` of a range parse,
+ * equal to `pos`. `unexpected_eof` is the end of what was parsed: the `end` the parse was given,
  * else the end of the source. A bad offset from the host is an `invalid_request` without a `loc`.
  */
 export interface ParseError extends SyntaxError {
@@ -82,16 +71,8 @@ export interface Scope {
 	/** The node that opens it; null for a function-name scope and for the scope around a parameter list parsed on its own. */
 	node: Node | null;
 	parent: Scope | null;
-	/** How many function scopes enclose it, itself included when it is one. */
-	functionDepth: number;
-	bindings: Binding[];
-	declarations: Map<string, Binding>;
-	/** The bindings of outer scopes that identifiers inside it resolve to, in first-use order. */
-	through: Binding[];
 	/** An `await` or `for await` runs directly in it, no function around; only a program or fragment scope can say so. */
 	topLevelAwait: boolean;
-	/** The references made from inside it, nested scopes excluded, in source order. */
-	references: Reference[];
 }
 
 /** A binding, as one of `bindings` on the answer. */
@@ -118,10 +99,9 @@ export interface Binding {
 	node: Identifier | null;
 	/** What declares it: the declarator, function, class, import specifier, catch clause or enum, as eslint-scope's definition node; null for `arguments` and for a pattern or parameter list parsed on its own. */
 	declaration: Node | null;
-	/** The references to it, the declaring identifier excluded, in source order. */
-	references: Reference[];
 }
 
+/** A reference, as one of `references` on the answer. */
 export interface Reference {
 	node: Identifier;
 	/** The scope the reference is made from. */
@@ -147,89 +127,77 @@ export function bindingOf(node: Node): Binding | null | undefined;
 /** With `scopes`: the reference an identifier makes, with its `write` and `mutate`; a global's too, which no binding lists. */
 export function referenceOf(node: Node): Reference | undefined;
 
-/** A comment, with `loc` when `locations` is on. */
-export interface Comment {
+/** A range of the source, with `loc` when `locations` is on. */
+export interface Span {
+	start: number;
+	end: number;
+	loc?: { start: { line: number; column: number }; end: { line: number; column: number } };
+}
+
+export interface Comment extends Span {
 	type: 'Line' | 'Block';
 	value: string;
-	start: number;
-	end: number;
-	loc?: { start: { line: number; column: number }; end: { line: number; column: number } };
 }
 
-/** A node erasure left in place, by type and range. */
-export interface Kept {
+/** A node erasure left in place, by type. */
+export interface Kept extends Span {
 	type: string;
-	start: number;
-	end: number;
-	loc?: { start: { line: number; column: number }; end: { line: number; column: number } };
-}
-
-/** What a parse at an offset returns. */
-export interface Parsed<T> {
-	node: T;
-	/** With `scopes`. */
-	scopes?: Scope[];
-	bindings?: Binding[];
-	/** The offset after everything the parse consumed: the node, its closing parens and the comments after it. */
-	end: number;
-	/** Every comment read, in source order; only with `comments`. */
-	comments?: Comment[];
-	/** What erasure left in place; only with `typescript: 'erase'`. */
-	typescript?: Kept[];
-	/** The errors recovered from, in source order; only with `errorRecovery`, and absent when there were none. */
-	errors?: Recovered[];
 }
 
 /** A recovered error: what the thrown `SyntaxError` carries, as a plain object. */
-export interface Recovered {
-	code: string;
-	message: string;
-	pos: number;
-	end: number;
-	loc: { line: number; column: number };
-}
+export type Recovered = Pick<ParseError, 'code' | 'message' | 'pos' | 'end'> & { loc: { line: number; column: number } };
 
-/** A program, with the comment list and the erasure leftovers when those options are on. */
-export type ParsedProgram = Program & { comments?: Comment[]; typescript?: Kept[]; scopes?: Scope[]; bindings?: Binding[]; errors?: Recovered[] };
-
-/** What `parseParamsAt` returns: the list rather than one node, otherwise as `Parsed`. */
-export interface Params {
-	params: Pattern[];
-	/** The offset after the closing paren and the comments after it. */
+/** What a parse returns: the node, or the patterns of a parameter list, and what the options add; a key is there exactly when its option is on. */
+export interface Parsed<T> {
+	node: T;
+	/** The offset after everything the parse consumed: the node, its closing parens and the comments after it; a program's is the end it was given. */
 	end: number;
+	/** Every comment read, in source order; with `comments`. */
 	comments?: Comment[];
+	/** What erasure left in place; with `typescript: 'erase'`. */
+	typescript?: Kept[];
+	/** The errors recovered from, in source order; with `errorRecovery`. */
+	errors?: Recovered[];
+	/** With `scopes`. */
 	scopes?: Scope[];
 	bindings?: Binding[];
-	typescript?: Kept[];
-	errors?: Recovered[];
+	references?: Reference[];
 }
 
-/** Parses a whole program; with `comments` it lists every comment as `comments`. */
-export function parse(source: string, options?: Options): ParsedProgram;
-/** Parses one expression starting at `offset`, a UTF-16 offset into `source`. */
-export function parseExpressionAt(source: string, offset: number, options?: Options): Parsed<Expression>;
-/** Parses an assignment target starting at `offset`. */
-export function parsePatternAt(source: string, offset: number, options?: Options): Parsed<Pattern>;
-/** Parses a parenthesized parameter list starting at `offset`. */
-export function parseParamsAt(source: string, offset: number, options?: Options): Params;
-/** Parses one statement starting at `offset`. */
-export function parseStatementAt(source: string, offset: number, options?: Options): Parsed<Statement>;
-/** Parses a type parameter list `<...>` starting at `offset`, a `TSTypeParameterDeclaration`; TypeScript only, `not_typescript` otherwise. */
-export function parseTypeParametersAt(source: string, offset: number, options?: Options): Parsed<Node>;
+/**
+ * What a parse reads: a program, or what a host embedding JavaScript in a larger syntax reads at
+ * a point of it. A type parameter list `<...>` is TypeScript only, `not_typescript` otherwise.
+ */
+export type Entry = 'program' | 'expression' | 'pattern' | 'params' | 'statement' | 'typeParameters';
+
+export interface At {
+	/** Where the source is cut, a UTF-16 offset; the end of the source by default. A program reads to it. */
+	end?: number;
+	/**
+	 * The host's own tokens, words or punctuators, that follow what is parsed. One read outside
+	 * every bracket the parse opened ends it, whatever else it could have been: `as` before a
+	 * template loop's item is never TypeScript's assertion nor a property name after `.`, `,`
+	 * ends an expression before a sequence would, and `/>` is never a division.
+	 */
+	stopAt?: string[];
+}
 
 /**
  * A source kept with its options: the parses out of it share the source copy and the position
- * tables, which is what a host parsing every expression of a template wants.
+ * tables. Offsets are UTF-16, as in acorn; positions stay those of the whole source.
  */
 export class Source {
 	constructor(source: string, options?: Options);
-	/** The whole source, or the program that spans `start..end` of it; positions stay those of the whole source. */
-	parse(start?: number, end?: number): ParsedProgram;
-	parseExpressionAt(offset: number, stopAt?: string[]): Parsed<Expression>;
-	parsePatternAt(offset: number, stopAt?: string[]): Parsed<Pattern>;
-	parseParamsAt(offset: number, stopAt?: string[]): Params;
-	parseStatementAt(offset: number, stopAt?: string[]): Parsed<Statement>;
-	parseTypeParametersAt(offset: number, stopAt?: string[]): Parsed<Node>;
+	/** The program starting at `offset`, the whole source by default. */
+	parse(entry?: 'program', offset?: number, at?: At): Parsed<Program>;
+	parse(entry: 'expression', offset: number, at?: At): Parsed<Expression>;
+	/** An assignment target: an identifier or a destructuring pattern. */
+	parse(entry: 'pattern', offset: number, at?: At): Parsed<Pattern>;
+	/** A parenthesized parameter list, as an arrow function's is read. */
+	parse(entry: 'params', offset: number, at?: At): Parsed<Pattern[]>;
+	parse(entry: 'statement', offset: number, at?: At): Parsed<Statement>;
+	/** A `TSTypeParameterDeclaration`. */
+	parse(entry: 'typeParameters', offset: number, at?: At): Parsed<Node>;
 	/** Releases what the engine holds for the source; the collector does it otherwise. */
 	free(): void;
 }

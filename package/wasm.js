@@ -6,27 +6,19 @@ export { scopeOf, bindingOf, referenceOf, parentOf } from './decode.js';
 const encoder = new TextEncoder();
 const utf8 = new TextDecoder();
 
+// `teasel.wasm` next to this file, read where there is a file system and fetched elsewhere
+const url = new URL('./teasel.wasm', import.meta.url);
+const { instance } =
+	url.protocol === 'file:'
+		? await WebAssembly.instantiate(await (await import('node:fs/promises')).readFile(url), {})
+		: await WebAssembly.instantiateStreaming(fetch(url), {});
 /** @type {WebAssembly.Exports & Record<string, Function> & { memory: WebAssembly.Memory }} */
-let wasm;
+const wasm = /** @type {any} */ (instance.exports);
 /** @type {string[]} */
 let constants = [];
 /** @type {number[]} */
 let shapes = [];
 let shapes_known = 0;
-
-/** @param {BufferSource | WebAssembly.Module | Response | Promise<Response>} [module] `teasel.wasm` next to this file by default */
-export async function init(module) {
-	if (module === undefined) {
-		const url = new URL('./teasel.wasm', import.meta.url);
-		module = url.protocol === 'file:' ? (await import('node:fs/promises')).readFile(url) : fetch(url);
-	}
-	if (module instanceof Promise) module = await module;
-	const { instance } =
-		typeof Response !== 'undefined' && module instanceof Response
-			? await WebAssembly.instantiateStreaming(module, {})
-			: await WebAssembly.instantiate(module, {});
-	wasm = /** @type {any} */ (instance.exports);
-}
 
 // the module takes the bytes over
 function bytes(text) {
@@ -36,12 +28,9 @@ function bytes(text) {
 	return [ptr, written, capacity];
 }
 
-function create(source, bits) {
-	if (wasm === undefined) throw new Error('init() first');
-	return wasm.source_new(...bytes(source), bits);
+function create(source, names) {
+	return wasm.source_new(...bytes(source), ...bytes(names));
 }
-
-const parse_at = (held, entry, offset, stop) => answer(wasm.source_parse(held, entry, offset, ...bytes(stop)));
 
 const text = () => utf8.decode(new Uint8Array(wasm.memory.buffer, wasm.text_ptr(), wasm.text_len()));
 const words = () => new Uint32Array(wasm.memory.buffer, wasm.words_ptr(), wasm.words_len());
@@ -61,19 +50,10 @@ function answer(status) {
 	return words();
 }
 
-export const { parse, parseExpressionAt, parsePatternAt, parseParamsAt, parseStatementAt, parseTypeParametersAt, Source } = bind({
-	// the words outlive the source: they sit in the answer buffer until the next parse
-	once(source, bits, entry, offset, stop) {
-		const held = create(source, bits);
-		try {
-			return parse_at(held, entry, offset, stop);
-		} finally {
-			wasm.source_free(held);
-		}
-	},
+export const Source = bind({
 	create,
-	parse: parse_at,
-	parseRange: (held, start, end) => answer(wasm.source_parse_range(held, start, end ?? 0, end === undefined ? 0 : 1)),
+	// the words outlive the source: they sit in the answer buffer until the next parse
+	parse: (held, entry, offset, end, stop) => answer(wasm.source_parse(held, entry, offset, end ?? 0, end === undefined ? 0 : 1, ...bytes(stop))),
 	free: (held) => wasm.source_free(held),
 	constants: () => constants,
 	shapes: () => shapes,

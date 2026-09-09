@@ -1,8 +1,22 @@
 use super::ast::Data;
-use super::{parse, parse_expression_at};
+use crate::SyntaxError;
 use crate::ast::{Ast, NodeId, NodeKind};
-use crate::parser::Options;
-use crate::parser::tests::{dump as dump_with, expand};
+use crate::parser::tests::{dump as dump_with, expand, one};
+use crate::parser::{Entry, Options};
+
+fn at(
+	entry: Entry,
+	src: &str,
+	offset: u32,
+	options: Options,
+	stop: &str,
+) -> Result<(Ast<Data>, NodeId, u32), SyntaxError> {
+	one(super::parse_at(src, offset, None, entry, options, stop))
+}
+
+fn program(src: &str, options: Options) -> Result<Ast<Data>, SyntaxError> {
+	super::parse_at(src, 0, None, Entry::Program, options, "").map(|(ast, _, _)| ast)
+}
 
 fn extension(ast: &Ast<Data>, id: NodeId, index: u32) -> String {
 	let mut out = expand(ast, &format!("{:?}", ast.extension.kind(index)), &extension);
@@ -69,7 +83,7 @@ fn module(src: &str) -> String {
 		module: true,
 		..Options::default()
 	};
-	match parse(src, options) {
+	match program(src, options) {
 		Ok(ast) => {
 			let root = ast.last();
 			let NodeKind::Program { body, .. } = ast.node(root).kind else {
@@ -88,10 +102,9 @@ fn module(src: &str) -> String {
 fn expr(src: &str) -> String {
 	let options = Options {
 		module: true,
-		preserve_parens: true,
 		..Options::default()
 	};
-	match parse_expression_at(src, 0, options, "") {
+	match at(Entry::Expression, src, 0, options, "") {
 		Ok((ast, id, _)) => dump(&ast, id),
 		Err(e) => format!("error {}: {}", e.pos, e.message),
 	}
@@ -603,7 +616,7 @@ fn stop_at() {
 		module: true,
 		..Options::default()
 	};
-	let end = |src: &str, stop: &str| parse_expression_at(src, 1, options, stop).unwrap().2;
+	let end = |src: &str, stop: &str| at(Entry::Expression, src, 1, options, stop).unwrap().2;
 	assert_eq!(end("{xs as item}", "as"), 3);
 	assert_eq!(end("{xs as item, i (item.id)}", "as"), 3);
 	assert_eq!(end("{xs as [a, b = 1]}", "as"), 3);
@@ -615,7 +628,7 @@ fn stop_at() {
 	assert_eq!(end("{<T>x as y}", "as"), 5);
 	assert_eq!(end("{new Map<A, B>() as y}", "as ,"), 16);
 	assert_eq!(end("{x satisfies A<B, C>, i}", ","), 20);
-	let error = parse_expression_at("{obj. as item}", 1, options, "as").unwrap_err();
+	let error = at(Entry::Expression, "{obj. as item}", 1, options, "as").unwrap_err();
 	assert_eq!((error.code, error.pos), (crate::error::Code::UnexpectedToken, 6));
 }
 
@@ -627,19 +640,19 @@ fn optional_marker_needs_an_arrow() {
 		..Options::default()
 	};
 	let error = |src: &str| {
-		let error = parse_expression_at(src, 0, options, "").unwrap_err();
+		let error = at(Entry::Expression, src, 0, options, "").unwrap_err();
 		(error.code, error.pos)
 	};
 	assert_eq!(error("(a, b?)"), (crate::error::Code::UnexpectedToken, 5));
 	assert_eq!(error("(a?)"), (crate::error::Code::UnexpectedToken, 2));
 	assert_eq!(error("f(a?)"), (crate::error::Code::UnexpectedToken, 3));
-	assert!(parse_expression_at("(a, b?) => a", 0, options, "").is_ok());
-	assert!(parse_expression_at("f((a?) => a)", 0, options, "").is_ok());
+	assert!(at(Entry::Expression, "(a, b?) => a", 0, options, "").is_ok());
+	assert!(at(Entry::Expression, "f((a?) => a)", 0, options, "").is_ok());
 }
 
 /// The erased program's statements and what stayed TypeScript, from the JSON answer.
 fn erase(src: &str) -> (Vec<String>, Vec<String>) {
-	let mut request = crate::json::Request::new(crate::json::Entry::Program, 0);
+	let mut request = crate::json::Request::new(Entry::Program, 0);
 	request.typescript = true;
 	request.erase = true;
 	let json = crate::json::parse(src, &request, "");
@@ -699,7 +712,7 @@ fn erasure() {
 	let (body, _) =
 		erase("abstract class K implements I { declare d: number; abstract m(): void; p?: number; f(this: K) {} }");
 	assert_eq!(body, ["ClassDeclaration"]);
-	let mut request = crate::json::Request::new(crate::json::Entry::Program, 0);
+	let mut request = crate::json::Request::new(Entry::Program, 0);
 	request.typescript = true;
 	request.erase = true;
 	let json = crate::json::parse(
@@ -711,7 +724,7 @@ fn erasure() {
 	assert!(!json.contains("TSDeclareMethod"));
 	let json = crate::json::parse("export { type A }; type A = 1;", &request, "");
 	assert!(json.contains("\"specifiers\":[]"), "{json}");
-	let mut request = crate::json::Request::new(crate::json::Entry::Program, 0);
+	let mut request = crate::json::Request::new(Entry::Program, 0);
 	request.typescript = true;
 	request.erase = true;
 	let json = crate::json::parse("function f(this: Window, a?: number): void {}", &request, "");
@@ -724,31 +737,33 @@ fn erasure() {
 #[test]
 fn program_in_a_range() {
 	let src = "<script>let a: number = 1;</script>{a}";
-	let (ast, root) = {
-		let ast = crate::parser::parse_range::<super::TypeScript>(
-			src,
-			8,
-			26,
-			Options {
-				module: true,
-				..Options::default()
-			},
-		)
-		.unwrap();
-		let root = ast.last();
-		(ast, root)
-	};
+	let (ast, root, _) = one(super::parse_at(
+		src,
+		8,
+		Some(26),
+		Entry::Program,
+		Options {
+			module: true,
+			..Options::default()
+		},
+		"",
+	))
+	.unwrap();
 	assert_eq!((ast.node(root).start, ast.node(root).end), (8, 26));
 	assert_eq!(ast.comments.len(), 0);
-	let mut request = crate::json::Request::new(crate::json::Entry::Program, 8);
+	let mut request = crate::json::Request::new(Entry::Program, 8);
 	request.typescript = true;
 	request.end = Some(1000);
 	assert!(crate::json::parse(src, &request, "").contains("is not a character boundary"));
 	request.end = Some(2);
 	assert!(crate::json::parse(src, &request, "").contains("is before"));
 	let prepared = crate::json::Prepared::new(src[..26].to_string(), request);
-	assert!(prepared.parse_range(8.0, None).contains("\"end\":26"));
-	assert!(prepared.parse_range(22.0, Some(8.0)).contains("is before"));
+	assert!(prepared.parse(Entry::Program, 8.0, None, "").contains("\"end\":26"));
+	assert!(
+		prepared
+			.parse(Entry::Program, 22.0, Some(8.0), "")
+			.contains("is before")
+	);
 }
 
 /// A host's own syntax may carry a type parameter list, as a generic snippet does.
@@ -758,18 +773,16 @@ fn type_parameters_entry() {
 		module: true,
 		..Options::default()
 	};
-	let end = |src: &str| super::parse_type_parameters_at(src, 3, options, "").unwrap().2;
+	let end = |src: &str| at(Entry::TypeParameters, src, 3, options, "").unwrap().2;
 	assert_eq!(end("foo<T extends () => void>(x: T)"), 25);
 	assert_eq!(end("foo<T = '>'>()"), 12);
 	assert_eq!(end("foo<const T, U extends T[]>"), 27);
 	assert_eq!(
-		super::parse_type_parameters_at("foo<>", 3, options, "")
-			.unwrap_err()
-			.code,
+		at(Entry::TypeParameters, "foo<>", 3, options, "").unwrap_err().code,
 		crate::error::Code::EmptyTypeParameters
 	);
 	assert_eq!(
-		crate::parser::parse_type_parameters_at::<()>("foo<T>", 3, options, "")
+		crate::parse_at("foo<T>", 3, None, Entry::TypeParameters, options, "")
 			.unwrap_err()
 			.code,
 		crate::error::Code::NotTypeScript

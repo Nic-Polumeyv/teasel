@@ -1,9 +1,10 @@
 use std::cell::Cell;
 
-use napi::bindgen_prelude::{Either, FromNapiValue, ToNapiValue, Uint8Array, Uint8ArraySlice, Uint32Array};
+use napi::bindgen_prelude::{Either, FromNapiValue, ToNapiValue, Uint8Array, Uint32Array};
 use napi::{Env, sys};
 use napi_derive::napi;
-use teasel::json::{Entry, Prepared, Request};
+use teasel::Entry;
+use teasel::json::{Prepared, Request};
 
 thread_local! {
 	static WORDS: Cell<(*mut u32, usize)> = const { Cell::new((std::ptr::null_mut(), 0)) };
@@ -11,18 +12,6 @@ thread_local! {
 }
 
 type Answer = napi::Result<Either<Uint32Array, String>>;
-
-// valid UTF-8 is parsed in place; anything else is made valid in a copy
-fn prepared(source: &[u8], bits: u32) -> Prepared<'_> {
-	match std::str::from_utf8(source) {
-		Ok(text) => Prepared::borrowed(text, Request::from_bits(bits)),
-		Err(_) => owned(source, bits),
-	}
-}
-
-fn owned(source: &[u8], bits: u32) -> Prepared<'static> {
-	Prepared::from_bytes(source.to_vec(), Request::from_bits(bits))
-}
 
 fn status(status: sys::napi_status, what: &str) -> napi::Result<()> {
 	if status == sys::Status::napi_ok {
@@ -79,19 +68,6 @@ fn answer(env: &Env, result: Result<Vec<u32>, String>) -> Answer {
 	Ok(Either::A(unsafe { Uint32Array::from_napi_value(env.raw(), value)? }))
 }
 
-#[napi(catch_unwind, ts_return_type = "Uint32Array | string")]
-pub fn parse_at(env: Env, source: Uint8ArraySlice<'_>, bits: u32, entry: u32, offset: f64, stop: String) -> Answer {
-	answer(
-		&env,
-		prepared(&source, bits).binary(Entry::from_index(entry), offset, &stop),
-	)
-}
-
-#[napi(catch_unwind)]
-pub fn parse_at_json(source: Uint8ArraySlice<'_>, bits: u32, entry: u32, offset: f64, stop: String) -> String {
-	prepared(&source, bits).parse(Entry::from_index(entry), offset, &stop)
-}
-
 #[napi]
 pub fn constants() -> Vec<&'static str> {
 	teasel::estree::constants()
@@ -109,20 +85,16 @@ pub struct Source {
 
 #[napi]
 impl Source {
+	// the bytes V8 encoded, made valid UTF-8 where they are not; the options as their names
 	#[napi(constructor)]
-	pub fn new(source: Uint8Array, bits: u32) -> Self {
+	pub fn new(source: Uint8Array, options: String) -> Self {
 		Self {
-			prepared: owned(&source, bits),
+			prepared: Prepared::from_bytes(source.to_vec(), Request::from_names(&options)),
 		}
 	}
 
 	#[napi(catch_unwind, ts_return_type = "Uint32Array | string")]
-	pub fn parse_at(&self, env: Env, entry: u32, offset: f64, stop: String) -> Answer {
-		answer(&env, self.prepared.binary(Entry::from_index(entry), offset, &stop))
-	}
-
-	#[napi(catch_unwind, ts_return_type = "Uint32Array | string")]
-	pub fn parse_range(&self, env: Env, start: f64, end: Option<f64>) -> Answer {
-		answer(&env, self.prepared.binary_range(start, end))
+	pub fn parse(&self, env: Env, entry: u32, offset: f64, end: Option<f64>, stop: String) -> Answer {
+		answer(&env, self.prepared.binary(Entry::from_index(entry), offset, end, &stop))
 	}
 }

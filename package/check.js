@@ -1,16 +1,18 @@
-// node check.js DIR...
+// node check.js DIR...: every script under the directories, parsed three ways and the answers
+// diffed: the addon's decoded stream against the JSON the binary prints, and the wasm module's
+// against the addon's. `cargo build --release` first.
 import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
 import * as node from './index.js';
 import * as wasm from './wasm.js';
-import { ENTRY as ENTRIES, bits } from './api.js';
+import { ENTRY, names } from './api.js';
 import { decode } from './decode.js';
 
 const native = createRequire(import.meta.url)('./binding.cjs');
 const engine = { constants: native.constants, shapes: native.shapes };
-await wasm.init(readFileSync(new URL('./teasel.wasm', import.meta.url)));
-const { program, ...ENTRY } = ENTRIES;
+const binary = new URL('../target/release/teasel', import.meta.url).pathname;
 const files = [];
 function walk(dir) {
 	for (const name of readdirSync(dir)) {
@@ -39,7 +41,6 @@ function differ(a, b, seen = new Map(), path = '$') {
 	if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return `${path}: ${JSON.stringify(a)} vs ${JSON.stringify(b)}`;
 	if (seen.has(a)) return seen.get(a) === b ? null : `${path}: identity differs`;
 	seen.set(a, b);
-	if (a instanceof Map || b instanceof Map) return differ([...a], [...b], seen, `${path}[map]`);
 	const ka = Object.keys(a), kb = Object.keys(b);
 	if (ka.length !== kb.length || ka.some((k) => !kb.includes(k))) return `${path}: keys ${ka} vs ${kb}`;
 	for (const k of ka) {
@@ -56,11 +57,22 @@ function report(name, difference) {
 	if (failed <= 20) console.log(`${name}: ${difference}`);
 }
 
-function json(name, source, b, entry, at) {
-	const answer = native.parseAt(Buffer.from(source), b, entry, at, false);
+// the batch header the binary reads for the same parse: byte offsets, every switch of the options
+const MODE = { program: '', expression: 'expr', pattern: 'pattern', params: 'params', statement: 'stmt', typeParameters: 'typeparams' };
+function mode(source, options, entry, at) {
+	const switches = ['comments', 'scopes', 'parenthesized'].filter((flag) => options[flag]).map((flag) => `+${flag}`);
+	if (options.typescript === 'erase') switches.push('+erase');
+	const head = entry === 'program' ? (options.sourceType === 'module' ? 'module' : 'script') : MODE[entry];
+	const offset = entry === 'program' ? '' : `:${Buffer.byteLength(source.slice(0, at))}`;
+	return `${options.typescript ? 'ts-' : ''}${head}${switches.join('')}${offset}`;
+}
+
+/** The addon's answers as JSON, each with the batch job that asks the binary for the same. */
+const jobs = [];
+function json(name, source, options, entry, at) {
+	const answer = new native.Source(Buffer.from(source), names(options)).parse(ENTRY[entry], at, undefined, '');
 	const tree = typeof answer === 'string' ? answer : JSON.stringify(decode(answer, source, engine, false));
-	const text = native.parseAtJson(Buffer.from(source), b, entry, at, false);
-	report(name, tree === text ? null : `differs from the JSON at ${[...tree].findIndex((c, i) => c !== text[i])}`);
+	jobs.push({ name, source, mode: mode(source, options, entry, at), tree });
 }
 
 const script_re = /<script((?:\s+(?:"[^"]*"|'[^']*'|[^>"'])*)?)>([\s\S]*?)<\/script>/g;
@@ -72,12 +84,12 @@ for (const file of files) {
 	for (const [source, typescript] of sources) {
 		for (const options of [
 			{ sourceType: 'module', typescript, locations: true, comments: true },
-			{ sourceType: 'module', typescript, erase: typescript },
-			{ sourceType: 'module', typescript, scopes: true },
-			{ typescript, preserveParens: true },
+			{ sourceType: 'module', typescript: typescript ? 'erase' : false, locations: true },
+			{ sourceType: 'module', typescript, locations: true, scopes: true },
+			{ typescript, locations: true, parenthesized: true },
 		]) {
-			json(file, source, bits(options), 0, 0);
-			report(`${file} wasm`, differ(outcome(() => wasm.parse(source, options)), outcome(() => node.parse(source, options))));
+			json(file, source, options, 'program', 0);
+			report(`${file} wasm`, differ(outcome(() => new wasm.Source(source, options).parse()), outcome(() => new node.Source(source, options).parse())));
 		}
 	}
 	// every brace in a component is somewhere an expression, a pattern or a statement might start
@@ -87,17 +99,29 @@ for (const file of files) {
 		const twin = new wasm.Source(text, options);
 		for (const m of text.matchAll(script_re)) {
 			const start = m.index + m[0].indexOf('>') + 1;
-			report(`${file} script ${start} wasm`, differ(outcome(() => twin.parse(start, start + m[2].length)), outcome(() => held.parse(start, start + m[2].length))));
+			const at = { end: start + m[2].length };
+			report(`${file} script ${start} wasm`, differ(outcome(() => twin.parse('program', start, at)), outcome(() => held.parse('program', start, at))));
 		}
 		for (const match of text.matchAll(brace_re)) {
 			const at = match.index + 1;
-			for (const [entry, index] of Object.entries(ENTRY)) {
-				const method = `parse${entry[0].toUpperCase()}${entry.slice(1)}At`;
-				json(`${file}@${at} ${entry}`, text, bits(options), index, at);
-				report(`${file}@${at} ${entry} wasm`, differ(outcome(() => twin[method](at)), outcome(() => held[method](at))));
+			for (const entry of Object.keys(ENTRY)) {
+				if (entry === 'program') continue;
+				json(`${file}@${at} ${entry}`, text, options, entry, at);
+				report(`${file}@${at} ${entry} wasm`, differ(outcome(() => twin.parse(entry, at)), outcome(() => held.parse(entry, at))));
 			}
 		}
 		twin.free();
+	}
+}
+{
+	let input = '';
+	for (const job of jobs) input += `${job.mode} ${Buffer.byteLength(job.source, 'utf8')}\n${job.source}`;
+	const run = spawnSync(binary, ['--batch'], { input, maxBuffer: 1 << 30 });
+	if (run.status !== 0) throw new Error(`${binary}: ${run.stderr}`);
+	const lines = run.stdout.toString().split('\n');
+	for (const [i, job] of jobs.entries()) {
+		const text = lines[i];
+		report(job.name, job.tree === text ? null : `differs from the JSON at ${[...job.tree].findIndex((c, i) => c !== text[i])}`);
 	}
 }
 console.log(`${checked} answers compared, ${failed} differ`);

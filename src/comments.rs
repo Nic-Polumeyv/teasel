@@ -8,18 +8,14 @@
 use crate::ast::{Ast, Attached, List, NodeId, NodeKind, Walk};
 use crate::interner::FastMap;
 
-/// Attaches the comments at or after `from` to the tree under `root`, replacing any earlier
-/// attachment.
-pub fn attach<X: Walk>(ast: &mut Ast<X>, source: &str, root: NodeId, from: u32) {
-	attach_all(ast, source, &[root], from);
-}
-
-/// Attaches comments to several trees in order, such as a parameter list; what is left trails
-/// the last one.
-pub fn attach_all<X: Walk>(ast: &mut Ast<X>, source: &str, roots: &[NodeId], from: u32) {
+/// Attaches the comments at or after `from` to the trees under `roots`, in order, replacing any
+/// earlier attachment; what is left trails the last one.
+pub fn attach<X: Walk>(ast: &mut Ast<X>, source: &str, roots: List, from: u32) {
 	ast.attached.clear();
 	let first = ast.comments.partition_point(|c| c.start < from);
-	let Some(&last) = roots.last() else { return };
+	let Some(last) = ast.list(roots).last().copied().flatten() else {
+		return;
+	};
 	if first == ast.comments.len() {
 		return;
 	}
@@ -30,7 +26,8 @@ pub fn attach_all<X: Walk>(ast: &mut Ast<X>, source: &str, roots: &[NodeId], fro
 		attached: FastMap::default(),
 		scratch: Vec::new(),
 	};
-	for &root in roots {
+	for i in 0..roots.len {
+		let root = attacher.ast.nth(roots, i).unwrap();
 		attacher.visit(root, None);
 	}
 	let rest = attacher.next;
@@ -150,7 +147,7 @@ enum Place {
 #[cfg(test)]
 mod tests {
 	use crate::ast::{Ast, NodeId, Walk};
-	use crate::{Options, parse, parse_expression_at};
+	use crate::{Entry, Options};
 
 	/// Every node with comments, in source order: `Kind leading=[..] trailing=[..]`.
 	fn attached<X: Walk>(ast: &Ast<X>, src: &str) -> Vec<String> {
@@ -182,27 +179,20 @@ mod tests {
 	}
 
 	fn module(src: &str) -> Vec<String> {
-		let mut ast = parse(
-			src,
-			Options {
-				module: true,
-				..Options::default()
-			},
-		)
-		.unwrap();
-		let root = ast.last();
-		super::attach(&mut ast, src, root, 0);
-		attached(&ast, src)
+		at(Entry::Program, src, 0)
 	}
 
 	fn expression(src: &str, offset: u32) -> Vec<String> {
+		at(Entry::Expression, src, offset)
+	}
+
+	fn at(entry: Entry, src: &str, offset: u32) -> Vec<String> {
 		let options = Options {
 			module: true,
-			preserve_parens: true,
 			..Options::default()
 		};
-		let (mut ast, root, _) = parse_expression_at(src, offset, options, "").unwrap();
-		super::attach(&mut ast, src, root, offset);
+		let (mut ast, roots, _) = crate::parse_at(src, offset, None, entry, options, "").unwrap();
+		super::attach(&mut ast, src, roots, offset);
 		attached(&ast, src)
 	}
 
@@ -233,16 +223,12 @@ mod tests {
 	#[test]
 	fn a_child_past_its_parent_still_takes_its_comment() {
 		let src = "async (...a: T[] /* c */) => {}";
-		let mut ast = crate::typescript::parse(
-			src,
-			Options {
-				module: true,
-				..Options::default()
-			},
-		)
-		.unwrap();
-		let root = ast.last();
-		super::attach(&mut ast, src, root, 0);
+		let options = Options {
+			module: true,
+			..Options::default()
+		};
+		let (mut ast, roots, _) = crate::typescript::parse_at(src, 0, None, Entry::Program, options, "").unwrap();
+		super::attach(&mut ast, src, roots, 0);
 		assert_eq!(attached(&ast, src), [r#"Extension leading=[] trailing=[" c "]"#]);
 	}
 
@@ -278,7 +264,7 @@ mod tests {
 		);
 		assert_eq!(
 			expression("{a ? /* c */ (b) : d}", 1),
-			[r#"ParenthesizedExpression leading=[" c "] trailing=[]"#]
+			[r#"Identifier leading=[" c "] trailing=[]"#]
 		);
 	}
 

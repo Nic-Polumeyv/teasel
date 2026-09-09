@@ -105,6 +105,15 @@ function normalize(key, value) {
 	return value;
 }
 
+// acorn's `preserveParens` wraps a node; teasel marks it with `parenthesized: true` instead
+function unwrap(value) {
+	if (!value || value.type !== 'ParenthesizedExpression') return value;
+	while (value.type === 'ParenthesizedExpression') value = value.expression;
+	return { ...value, parenthesized: true };
+}
+const parenthesized = (key, value) => unwrap(normalize(key, value));
+const parenthesized_ts = (key, value) => unwrap(normalize_ts(key, value));
+
 // acorn-typescript bundles older acorn code paths and leaves a few keys out that acorn sets;
 // teasel follows acorn there, so the expected side is brought in line before comparing.
 export function normalize_ts(key, value) {
@@ -159,13 +168,13 @@ export function acorn_expression(source, offset, ts = false) {
 	try {
 		const parser = ts ? TSParser : acorn.Parser;
 		const ast = parser.parseExpressionAt(source, offset, { ecmaVersion: 16, sourceType: 'module', locations: true, preserveParens: true });
-		return JSON.parse(JSON.stringify(ast, ts ? normalize_ts : normalize));
+		return JSON.parse(JSON.stringify(ast, ts ? parenthesized_ts : parenthesized));
 	} catch (e) {
 		return acorn_error(e, source);
 	}
 }
 
-/// The way Svelte's parse_statement_at drives acorn: a parser started at `offset`, one statement.
+/// The way Svelte drove acorn for a statement: a parser started at `offset`, one statement.
 export function acorn_statement(source, offset, ts = false) {
 	try {
 		const parser = new (ts ? TSParser : acorn.Parser)({ ecmaVersion: 16, sourceType: 'module', locations: true }, source, offset);
@@ -194,7 +203,7 @@ export function diff(a, b, path = '') {
 }
 
 /// Runs every job through one teasel process and returns its output lines, one JSON document
-/// per job, unparsed. A job is { source, mode } where mode is 'module', 'script' or 'expr:BYTE_OFFSET'.
+/// per job, unparsed. A job is { source, mode } where mode is a batch header of `src/bin/teasel.rs`.
 export async function teasel(jobs) {
 	const proc = Bun.spawn([binary, '--batch'], { stdin: 'pipe', stdout: 'pipe', stderr: 'inherit' });
 	let input = '';
@@ -210,7 +219,7 @@ function parse_line(line) {
 		const value = JSON.parse(line);
 		// acorn's errors have no code or end
 		if (value.error) return { error: { message: value.error.message, pos: value.error.pos, loc: value.error.loc } };
-		// parse-at answers wrap the node with the offset the parse stopped at
+		// an answer wraps the node with the offset the parse stopped at; a harness may hand over what it made of one instead
 		return 'node' in value && !('type' in value) ? value.node : value;
 	} catch {
 		return { error: { message: `bad output: ${String(line).slice(0, 80)}` } };

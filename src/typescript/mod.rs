@@ -16,58 +16,21 @@ use crate::lexer::token::{Keyword, TokenKind};
 use crate::parser::expression::starts_expression;
 use crate::parser::statement::ClassKind;
 use crate::parser::{
-	Context, DestructuringErrors, Errors, Extension, ForInit, FunctionKind, Options, Parser, Result, Unwrap,
+	Context, DestructuringErrors, Entry, Errors, Extension, ForInit, FunctionKind, Options, Parser, Result, Unwrap,
 };
 use ast::{Accessibility, Data, Extras, Kind, TsKind};
 use types::TypeParameterModifiers;
 
-pub fn parse(src: &str, options: Options) -> std::result::Result<Ast<Data>, SyntaxError> {
-	crate::parser::parse::<TypeScript>(src, options).map_err(|e| *e)
-}
-
-pub fn parse_expression_at(
+/// Parses one `entry` of TypeScript at `start` of `src` cut at `end`; see `parser::parse_at`.
+pub fn parse_at(
 	src: &str,
-	offset: u32,
+	start: u32,
+	end: Option<u32>,
+	entry: Entry,
 	options: Options,
 	stop: &str,
-) -> std::result::Result<(Ast<Data>, NodeId, u32), SyntaxError> {
-	crate::parser::parse_expression_at::<TypeScript>(src, offset, options, stop).map_err(|e| *e)
-}
-
-pub fn parse_pattern_at(
-	src: &str,
-	offset: u32,
-	options: Options,
-	stop: &str,
-) -> std::result::Result<(Ast<Data>, NodeId, u32), SyntaxError> {
-	crate::parser::parse_pattern_at::<TypeScript>(src, offset, options, stop).map_err(|e| *e)
-}
-
-pub fn parse_params_at(
-	src: &str,
-	offset: u32,
-	options: Options,
-	stop: &str,
-) -> std::result::Result<(Ast<Data>, Vec<NodeId>, u32), SyntaxError> {
-	crate::parser::parse_params_at::<TypeScript>(src, offset, options, stop).map_err(|e| *e)
-}
-
-pub fn parse_statement_at(
-	src: &str,
-	offset: u32,
-	options: Options,
-	stop: &str,
-) -> std::result::Result<(Ast<Data>, NodeId, u32), SyntaxError> {
-	crate::parser::parse_statement_at::<TypeScript>(src, offset, options, stop).map_err(|e| *e)
-}
-
-pub fn parse_type_parameters_at(
-	src: &str,
-	offset: u32,
-	options: Options,
-	stop: &str,
-) -> std::result::Result<(Ast<Data>, NodeId, u32), SyntaxError> {
-	crate::parser::parse_type_parameters_at::<TypeScript>(src, offset, options, stop).map_err(|e| *e)
+) -> std::result::Result<(Ast<Data>, List, u32), SyntaxError> {
+	crate::parser::parse_at::<TypeScript>(src, start, end, entry, options, stop).map_err(|e| *e)
 }
 
 /// Parser state that only TypeScript needs. `State` is copied into every snapshot, so it stays
@@ -344,14 +307,7 @@ impl Parser<'_, TypeScript> {
 			self.next()?;
 			let inner = self.parse_expression(false, &mut None)?;
 			self.expect(TokenKind::ParenR)?;
-			if self.options.preserve_parens {
-				self.add(
-					NodeKind::ParenthesizedExpression { expression: inner },
-					expression_start,
-				)
-			} else {
-				inner
-			}
+			inner
 		} else {
 			let mut expression = self.parse_ident(false)?;
 			while self.eat(TokenKind::Dot)? {
@@ -643,7 +599,6 @@ impl Parser<'_, TypeScript> {
 				.iter()
 				.all(|element| element.is_none_or(|e| self.is_assignable(e, false))),
 			NodeKind::AssignmentExpression { operator, .. } => operator == crate::ast::AssignmentOperator::Assign,
-			NodeKind::ParenthesizedExpression { expression } => self.is_assignable(expression, false),
 			NodeKind::MemberExpression { .. } => !is_binding,
 			NodeKind::Extension(_) => match self.ts_kind(id) {
 				Some(TsKind::TypeCastExpression { expression, .. }) => self.is_assignable(expression, is_binding),
@@ -1695,20 +1650,6 @@ impl Extension for TypeScript {
 				*item = p.type_cast_to_parameter(*item);
 			}
 		}
-	}
-
-	/// Parentheses around a type wrapper or more parentheses drop away as an assignment target.
-	fn parenthesized_pattern(p: &mut Parser<Self>, paren: NodeId, inner: NodeId, pattern: NodeId) -> NodeId {
-		let wrapper = matches!(
-			p.ts_kind(inner),
-			Some(
-				TsKind::AsExpression { .. }
-					| TsKind::SatisfiesExpression { .. }
-					| TsKind::NonNullExpression { .. }
-					| TsKind::TypeAssertion { .. }
-			)
-		) || matches!(p.kind(inner), NodeKind::ParenthesizedExpression { .. });
-		if wrapper { pattern } else { paren }
 	}
 
 	fn unwrap(p: &Parser<Self>, id: NodeId, context: Unwrap) -> Option<NodeId> {

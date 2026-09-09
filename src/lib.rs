@@ -16,44 +16,16 @@ pub mod typescript;
 
 pub use error::{Code, SyntaxError};
 pub use interner::{Interner, StrId};
-pub use parser::Options;
+pub use parser::{Entry, Options};
 
-pub fn parse(src: &str, options: Options) -> Result<ast::Ast, SyntaxError> {
-	parser::parse::<()>(src, options).map_err(|e| *e)
-}
-
-pub fn parse_expression_at(
+/// Parses one `entry` at `start` of `src` cut at `end`; see `parser::parse_at`.
+pub fn parse_at(
 	src: &str,
-	offset: u32,
+	start: u32,
+	end: Option<u32>,
+	entry: Entry,
 	options: Options,
 	stop: &str,
-) -> Result<(ast::Ast, ast::NodeId, u32), SyntaxError> {
-	parser::parse_expression_at::<()>(src, offset, options, stop).map_err(|e| *e)
-}
-
-pub fn parse_pattern_at(
-	src: &str,
-	offset: u32,
-	options: Options,
-	stop: &str,
-) -> Result<(ast::Ast, ast::NodeId, u32), SyntaxError> {
-	parser::parse_pattern_at::<()>(src, offset, options, stop).map_err(|e| *e)
-}
-
-pub fn parse_params_at(
-	src: &str,
-	offset: u32,
-	options: Options,
-	stop: &str,
-) -> Result<(ast::Ast, Vec<ast::NodeId>, u32), SyntaxError> {
-	parser::parse_params_at::<()>(src, offset, options, stop).map_err(|e| *e)
-}
-
-pub fn parse_statement_at(
-	src: &str,
-	offset: u32,
-	options: Options,
-	stop: &str,
-) -> Result<(ast::Ast, ast::NodeId, u32), SyntaxError> {
-	parser::parse_statement_at::<()>(src, offset, options, stop).map_err(|e| *e)
+) -> Result<(ast::Ast, ast::List, u32), SyntaxError> {
+	parser::parse_at::<()>(src, start, end, entry, options, stop).map_err(|e| *e)
 }
