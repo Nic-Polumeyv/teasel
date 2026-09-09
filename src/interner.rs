@@ -110,6 +110,15 @@ impl Interner {
 		}
 	}
 
+	/// Forgets every string, keeping the room for the next source.
+	pub fn clear(&mut self) {
+		self.text.clear();
+		self.starts.clear();
+		self.starts.push(0);
+		self.hashes.clear();
+		self.table.fill(0);
+	}
+
 	pub fn intern(&mut self, s: &str) -> StrId {
 		let hash = hash(s);
 		let mut slot = match self.probe(s, hash) {

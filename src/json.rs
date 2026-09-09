@@ -2,6 +2,7 @@
 //! ESTree JSON, or a JSON object with an `error`: its code, message, span and location.
 
 use crate::Options;
+use crate::ast::{Ast, Reuse};
 use crate::comments::attach;
 use crate::error::Code;
 use crate::estree::{Binary, Emit, Json, Output, Positions, Sink, answer, error_to_json};
@@ -110,7 +111,13 @@ pub fn shapes_json() -> String {
 
 /// `stop` lists the host's tokens for an entry at an offset; see `parser::parse_at`.
 pub fn parse(source: &str, request: &Request, stop: &str) -> String {
-	parse_with(source, &Positions::new(source, request.locations), request, stop)
+	parse_with(
+		source,
+		&Positions::new(source, request.locations),
+		request,
+		stop,
+		&Default::default(),
+	)
 }
 
 /// A source with its position tables and switches, for hosts that parse many pieces of one
@@ -119,6 +126,41 @@ pub struct Prepared<'a> {
 	source: std::borrow::Cow<'a, str>,
 	positions: Positions,
 	request: Request,
+	/// The last parse's tree, emptied, for the next one: a host parsing every expression of a
+	/// template allocates its arenas once.
+	pool: std::cell::RefCell<Pool>,
+}
+
+#[derive(Default)]
+pub struct Pool {
+	js: Option<Ast<()>>,
+	#[cfg(feature = "typescript")]
+	ts: Option<Ast<crate::typescript::ast::Data>>,
+}
+
+/// Which slot of the pool an extension's tree takes.
+pub trait Pooled: Sized {
+	fn take(pool: &mut Pool) -> Option<Ast<Self>>;
+	fn give(pool: &mut Pool, ast: Ast<Self>);
+}
+
+impl Pooled for () {
+	fn take(pool: &mut Pool) -> Option<Ast<Self>> {
+		pool.js.take()
+	}
+	fn give(pool: &mut Pool, ast: Ast<Self>) {
+		pool.js = Some(ast);
+	}
+}
+
+#[cfg(feature = "typescript")]
+impl Pooled for crate::typescript::ast::Data {
+	fn take(pool: &mut Pool) -> Option<Ast<Self>> {
+		pool.ts.take()
+	}
+	fn give(pool: &mut Pool, ast: Ast<Self>) {
+		pool.ts = Some(ast);
+	}
 }
 
 impl Prepared<'static> {
@@ -146,6 +188,7 @@ impl<'a> Prepared<'a> {
 			source,
 			positions,
 			request,
+			pool: Default::default(),
 		}
 	}
 
@@ -168,14 +211,20 @@ impl<'a> Prepared<'a> {
 	/// One entry at an offset, as JSON.
 	pub fn parse(&self, entry: Entry, start: f64, end: Option<f64>, stop: &str) -> String {
 		match self.request(entry, start, end) {
-			Ok(request) => parse_with(&self.source, &self.positions, &request, stop),
+			Ok(request) => parse_with(&self.source, &self.positions, &request, stop, &self.pool),
 			Err(error) => error,
 		}
 	}
 
 	/// One entry at an offset, as a token stream; the error answer stays JSON.
 	pub fn binary(&self, entry: Entry, start: f64, end: Option<f64>, stop: &str) -> Result<Vec<u32>, String> {
-		binary_with(&self.source, &self.positions, &self.request(entry, start, end)?, stop)
+		binary_with(
+			&self.source,
+			&self.positions,
+			&self.request(entry, start, end)?,
+			stop,
+			&self.pool,
+		)
 	}
 
 	/// A UTF-16 offset as a byte offset, or the error answer for it.
@@ -207,29 +256,48 @@ fn check(source: &str, request: &Request) -> Result<(), String> {
 	Ok(())
 }
 
-fn dispatch<S: Sink>(source: &str, positions: &Positions, request: &Request, stop: &str, sink: S) -> Result<S, String> {
+fn dispatch<S: Sink>(
+	source: &str,
+	positions: &Positions,
+	request: &Request,
+	stop: &str,
+	sink: S,
+	pool: &std::cell::RefCell<Pool>,
+) -> Result<S, String> {
 	check(source, request)?;
 	#[cfg(feature = "typescript")]
 	if request.typescript {
-		return run::<crate::typescript::TypeScript, S>(source, positions, request, stop, sink);
+		return run::<crate::typescript::TypeScript, S>(source, positions, request, stop, sink, pool);
 	}
 	#[cfg(not(feature = "typescript"))]
 	if request.typescript {
 		return Err(error_json("built without TypeScript", 0));
 	}
-	run::<(), S>(source, positions, request, stop, sink)
+	run::<(), S>(source, positions, request, stop, sink, pool)
 }
 
-fn parse_with(source: &str, positions: &Positions, request: &Request, stop: &str) -> String {
-	match dispatch(source, positions, request, stop, Json::default()) {
+fn parse_with(
+	source: &str,
+	positions: &Positions,
+	request: &Request,
+	stop: &str,
+	pool: &std::cell::RefCell<Pool>,
+) -> String {
+	match dispatch(source, positions, request, stop, Json::default(), pool) {
 		Ok(json) => json.finish(),
 		Err(error) => error,
 	}
 }
 
 /// The answer as a token stream, or the error answer as JSON.
-fn binary_with(source: &str, positions: &Positions, request: &Request, stop: &str) -> Result<Vec<u32>, String> {
-	dispatch(source, positions, request, stop, Binary::new()).map(|mut binary| binary.finish())
+fn binary_with(
+	source: &str,
+	positions: &Positions,
+	request: &Request,
+	stop: &str,
+	pool: &std::cell::RefCell<Pool>,
+) -> Result<Vec<u32>, String> {
+	dispatch(source, positions, request, stop, Binary::new(), pool).map(|mut binary| binary.finish())
 }
 
 /// Runs a request into a sink; `Err` is the error answer as JSON.
@@ -239,9 +307,10 @@ fn run<E: crate::parser::Extension, S: Sink>(
 	request: &Request,
 	stop: &str,
 	sink: S,
+	pool: &std::cell::RefCell<Pool>,
 ) -> Result<S, String>
 where
-	E::Data: Emit + Bind,
+	E::Data: Emit + Bind + Reuse + Pooled,
 {
 	let output = Output {
 		comments: request.comments,
@@ -249,6 +318,7 @@ where
 		erase: request.erase && request.typescript,
 		errors: request.options.error_recovery,
 	};
+	let reused = Pooled::take(&mut pool.borrow_mut());
 	parse_at::<E>(
 		source,
 		request.offset,
@@ -256,6 +326,7 @@ where
 		request.entry,
 		request.options,
 		stop,
+		reused,
 	)
 	.map(|(mut ast, roots, end)| {
 		if output.comments {
@@ -264,7 +335,10 @@ where
 		if output.scopes {
 			scopes::analyze(&mut ast, request.entry, roots);
 		}
-		answer(&ast, request.entry, roots, end, source, positions, output, sink)
+		let sink = answer(&ast, request.entry, roots, end, source, positions, output, sink);
+		ast.clear();
+		Pooled::give(&mut pool.borrow_mut(), ast);
+		sink
 	})
 	.map_err(|error| error_to_json(&error, source, positions))
 }

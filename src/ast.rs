@@ -81,6 +81,31 @@ pub struct Attached {
 	pub inner: Vec<u32>,
 }
 
+/// What an extension's data does to be reused for the next parse.
+pub trait Reuse: Default {
+	/// Forgets everything, keeping the room.
+	fn clear(&mut self);
+}
+
+impl Reuse for () {
+	fn clear(&mut self) {}
+}
+
+impl<X: Reuse> Ast<X> {
+	/// Empties the tree for the next parse; the room stays allocated.
+	pub fn clear(&mut self) {
+		self.nodes.clear();
+		self.lists.clear();
+		self.strings.clear();
+		self.comments.clear();
+		self.attached.clear();
+		self.scopes = None;
+		self.errors.clear();
+		self.parenthesized.clear();
+		self.extension.clear();
+	}
+}
+
 impl<X: Default> Ast<X> {
 	/// Room for the tree of `bytes` of source: about a node per eight bytes, a list per thirty.
 	pub(crate) fn sized(bytes: usize) -> Self {

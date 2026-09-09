@@ -368,7 +368,7 @@ impl Entry {
 /// host's own tokens separated by spaces, read outside every bracket the parse opened where the
 /// expression could end (an extension may read one as its own, see `Extension::reads_stop`). Returns
 /// the tree, its roots (one node, or the patterns of a parameter list) and the offset after
-/// everything the parse consumed.
+/// everything the parse consumed. `reused` is an emptied tree from an earlier parse, its room kept.
 pub(crate) fn parse_at<E: Extension>(
 	src: &str,
 	start: u32,
@@ -376,6 +376,7 @@ pub(crate) fn parse_at<E: Extension>(
 	entry: Entry,
 	options: Options,
 	stop: &str,
+	reused: Option<Ast<E::Data>>,
 ) -> Result<(Ast<E::Data>, List, u32)> {
 	let end = end.unwrap_or(src.len() as u32);
 	let src = &src[..end as usize];
@@ -384,7 +385,8 @@ pub(crate) fn parse_at<E: Extension>(
 	} else {
 		0
 	};
-	let mut parser = Parser::<E>::new(src, start, options, budget, stop)?;
+	let ast = reused.unwrap_or_else(|| Ast::sized(budget));
+	let mut parser = Parser::<E>::new(src, start, options, budget, stop, ast)?;
 	let roots = if entry == Entry::Program {
 		let program = parser.parse_program()?;
 		vec![program]
@@ -527,7 +529,14 @@ pub(crate) struct DestructuringErrors {
 }
 
 impl<'a, E: Extension> Parser<'a, E> {
-	fn new(src: &'a str, offset: u32, options: Options, budget: usize, stop: &'a str) -> Result<Self> {
+	fn new(
+		src: &'a str,
+		offset: u32,
+		options: Options,
+		budget: usize,
+		stop: &'a str,
+		ast: Ast<E::Data>,
+	) -> Result<Self> {
 		let mut lexer = Lexer::sized(src, budget);
 		lexer.set_pos(offset);
 		lexer.stops = stop;
@@ -537,7 +546,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 		lexer.module = options.module;
 		let mut parser = Self {
 			lexer,
-			ast: Ast::sized(budget),
+			ast,
 			ext: E::default(),
 			options,
 			tok: Token::eof(offset),

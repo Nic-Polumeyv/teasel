@@ -27,5 +27,9 @@ pub fn parse_at(
 	options: Options,
 	stop: &str,
 ) -> Result<(ast::Ast, ast::List, u32), SyntaxError> {
-	parser::parse_at::<()>(src, start, end, entry, options, stop).map_err(|e| *e)
+	parser::parse_at::<()>(src, start, end, entry, options, stop, None).map_err(|e| *e)
 }
+
+#[cfg(test)]
+#[global_allocator]
+static COUNTING: parser::tests::Counting = parser::tests::Counting;
