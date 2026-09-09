@@ -61,7 +61,7 @@ function answer(status) {
 	return words();
 }
 
-export const { parse, parseExpressionAt, parsePatternAt, parseParamsAt, parseStatementAt, Source } = bind({
+export const { parse, parseExpressionAt, parsePatternAt, parseParamsAt, parseStatementAt, parseTypeParametersAt, Source } = bind({
 	// the words outlive the source: they sit in the answer buffer until the next parse
 	once(source, bits, entry, offset, stop) {
 		const held = create(source, bits);

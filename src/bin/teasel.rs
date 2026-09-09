@@ -7,7 +7,7 @@
 //!
 //! `teasel --batch` reads jobs from stdin, each a header line `MODE LENGTH` followed by LENGTH
 //! bytes of source, and prints one JSON line per job. MODE is `module`, `script`, `expr:OFFSET`,
-//! `pattern:OFFSET`, `params:OFFSET` or `stmt:OFFSET`, whose answers wrap the node or the parameters
+//! `pattern:OFFSET`, `params:OFFSET`, `stmt:OFFSET` or `typeparams:OFFSET`, whose answers wrap the node or the parameters
 //! with `end`, the offset after what the parse consumed, with a `ts-` prefix for TypeScript and
 //! `+comments` to attach comments, `+scopes` for the scope analysis, `+undeclared-exports` to
 //! accept exports of names the source never declares, `+stop:TOKEN` to end a parse-at entry at
@@ -30,6 +30,7 @@ fn batch_mode(mode: &str) -> (Entry, u32, impl Iterator<Item = &str>) {
 		"pattern" => Entry::Pattern,
 		"params" => Entry::Params,
 		"stmt" => Entry::Statement,
+		"typeparams" => Entry::TypeParameters,
 		_ => Entry::Program,
 	};
 	let switches = head.chain(tail[digits..].split('+').skip(1));

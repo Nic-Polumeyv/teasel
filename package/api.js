@@ -25,7 +25,7 @@ export function bits(options) {
 }
 
 // `json::Entry` by index
-export const ENTRY = { program: 0, expression: 1, pattern: 2, params: 3, statement: 4 };
+export const ENTRY = { program: 0, expression: 1, pattern: 2, params: 3, statement: 4, typeParameters: 5 };
 
 // the engine takes the stop tokens as one string
 function stops(list) {
@@ -98,6 +98,10 @@ export function bind(engine) {
 			return this.#at(ENTRY.statement, offset, stopAt);
 		}
 
+		parseTypeParametersAt(offset, stopAt) {
+			return this.#at(ENTRY.typeParameters, offset, stopAt);
+		}
+
 		free() {
 			if (this.#held === undefined) return;
 			registry?.unregister(this);
@@ -112,6 +116,7 @@ export function bind(engine) {
 		parsePatternAt: (source, offset, options) => once(source, options, ENTRY.pattern, offset),
 		parseParamsAt: (source, offset, options) => once(source, options, ENTRY.params, offset),
 		parseStatementAt: (source, offset, options) => once(source, options, ENTRY.statement, offset),
+		parseTypeParametersAt: (source, offset, options) => once(source, options, ENTRY.typeParameters, offset),
 		Source,
 	};
 }
