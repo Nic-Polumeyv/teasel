@@ -785,9 +785,10 @@ fn recovery() {
 		expr("{x.}", "}"),
 		(r#"MemberExpression { object: Identifier { name: "x" }, property: Identifier { name: "" }, computed: false, optional: false }"#.into(), 3, vec!["unexpected_token@3".into()])
 	);
+	// a stop word after `.` is a property name: the host's syntax cannot start there
 	assert_eq!(
 		expr("{obj. as item}", "as"),
-		(r#"MemberExpression { object: Identifier { name: "obj" }, property: Identifier { name: "" }, computed: false, optional: false }"#.into(), 6, vec!["unexpected_token@6".into()])
+		(r#"MemberExpression { object: Identifier { name: "obj" }, property: Identifier { name: "as" }, computed: false, optional: false }"#.into(), 8, vec![])
 	);
 	assert_eq!(
 		expr("{a + }", "}"),

@@ -290,11 +290,13 @@ impl Parser<'_, TypeScript> {
 		}
 	}
 
-	/// Re-reads a `<` or `>` left by a type context, where they are single characters.
+	/// Re-reads a `<` or `>` left by a type context, where they are single characters; a type
+	/// context ends an operand, so the token after it may be the host's.
 	fn rescan_lt_gt(&mut self) -> Result<()> {
 		if self.is(TokenKind::Lt) || self.is(TokenKind::Gt) {
 			self.relex()?;
 		}
+		self.stop_after_operand();
 		Ok(())
 	}
 
@@ -1481,6 +1483,10 @@ impl Extension for TypeScript {
 		Ok(None)
 	}
 
+	fn reads_stop(p: &Parser<Self>) -> bool {
+		p.is_contextual("as") || p.is_contextual("satisfies")
+	}
+
 	fn expr_op(p: &mut Parser<Self>, left: NodeId, left_start: u32, min_prec: i8) -> Result<Option<NodeId>> {
 		if 7 <= min_prec || p.tok.newline_before {
 			return Ok(None);
@@ -1489,24 +1495,23 @@ impl Extension for TypeScript {
 		if !is_as && !p.is_contextual("satisfies") {
 			return Ok(None);
 		}
-		let type_annotation = match p.try_next_parse_constant_context()? {
-			Some(constant) => constant,
-			None => p.next_then_parse_type()?,
-		};
-		let kind = if is_as {
-			TsKind::AsExpression {
-				expression: left,
-				type_annotation,
+		if p.tok.stop {
+			// the host's word, unless the same word follows the assertion: `xs as T[] as item`
+			let word = if is_as { "as" } else { "satisfies" };
+			let assertion = p.attempt(|p| {
+				let node = assertion(p, left, left_start, is_as)?;
+				if p.tok.stop && p.is_contextual(word) {
+					Ok(node)
+				} else {
+					p.error(p.tok.start, Code::UnexpectedToken)
+				}
+			});
+			if assertion.is_none() {
+				p.stop_here();
 			}
-		} else {
-			TsKind::SatisfiesExpression {
-				expression: left,
-				type_annotation,
-			}
-		};
-		let node = p.ts(kind, left_start);
-		p.rescan_lt_gt()?;
-		Ok(Some(node))
+			return Ok(assertion);
+		}
+		assertion(p, left, left_start, is_as).map(Some)
 	}
 
 	fn subscript(
@@ -1520,6 +1525,7 @@ impl Extension for TypeScript {
 	) -> Result<Option<(NodeId, bool)>> {
 		if !p.tok.newline_before && p.is(TokenKind::Bang) {
 			p.next()?;
+			p.stop_after_operand();
 			let node = p.ts(TsKind::NonNullExpression { expression: base }, start);
 			return Ok(Some((node, false)));
 		}
@@ -1661,4 +1667,26 @@ impl Extension for TypeScript {
 			_ => None,
 		}
 	}
+}
+
+/// `left as T` or `left satisfies T`, the word being the current token.
+fn assertion(p: &mut Parser<TypeScript>, left: NodeId, left_start: u32, is_as: bool) -> Result<NodeId> {
+	let type_annotation = match p.try_next_parse_constant_context()? {
+		Some(constant) => constant,
+		None => p.next_then_parse_type()?,
+	};
+	let kind = if is_as {
+		TsKind::AsExpression {
+			expression: left,
+			type_annotation,
+		}
+	} else {
+		TsKind::SatisfiesExpression {
+			expression: left,
+			type_annotation,
+		}
+	};
+	let node = p.ts(kind, left_start);
+	p.rescan_lt_gt()?;
+	Ok(node)
 }

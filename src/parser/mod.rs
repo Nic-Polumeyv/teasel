@@ -81,6 +81,11 @@ pub(crate) trait Extension: Default + Sized {
 
 	// Statements and modules
 
+	/// Whether the current token, one of the host's stop tokens, is one the extension's grammar
+	/// reads after an expression; it then decides where the host's syntax starts.
+	fn reads_stop(p: &Parser<Self>) -> bool {
+		false
+	}
 	/// First look at a statement; `Some` replaces it entirely.
 	fn statement(p: &mut Parser<Self>, context: Context, top_level: bool) -> Result<Option<NodeId>> {
 		Ok(None)
@@ -360,7 +365,8 @@ impl Entry {
 /// a program, or what a host embedding JavaScript in a larger syntax reads at a point of it. A
 /// program reads to `end`, where a hashbang or an HTML comment at `start` is what it would be in
 /// the middle of a file; anything else stops where its grammar ends, or at one of `stop`, the
-/// host's own tokens separated by spaces, read outside every bracket the parse opened. Returns
+/// host's own tokens separated by spaces, read outside every bracket the parse opened where the
+/// expression could end (an extension may read one as its own, see `Extension::reads_stop`). Returns
 /// the tree, its roots (one node, or the patterns of a parameter list) and the offset after
 /// everything the parse consumed.
 pub(crate) fn parse_at<E: Extension>(
@@ -986,9 +992,28 @@ impl<'a, E: Extension> Parser<'a, E> {
 
 	pub(crate) fn next_liberal(&mut self) -> Result<()> {
 		self.within_limit()?;
+		let boundary = self.tok.ends_operand();
 		self.prev_end = self.tok.end;
 		self.lexer.next_token_into(&mut self.tok)?;
+		if boundary {
+			self.stop_after_operand();
+		}
 		Ok(())
+	}
+
+	/// Ends the parse when the current token is the host's: one of its stop tokens, after an
+	/// operand, that the grammar does not read as its own.
+	pub(crate) fn stop_after_operand(&mut self) {
+		if self.tok.stop && !E::reads_stop(self) {
+			self.stop_here();
+		}
+	}
+
+	/// Ends the parse at the current token: the host's own syntax starts there.
+	pub(crate) fn stop_here(&mut self) {
+		self.lexer.set_pos(self.tok.start);
+		self.lexer.stopped = true;
+		self.tok = Token::eof(self.tok.start);
 	}
 
 	pub(crate) fn is(&self, kind: TokenKind) -> bool {

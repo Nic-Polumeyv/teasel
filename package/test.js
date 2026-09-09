@@ -37,11 +37,13 @@ for (const [name, { Source, isIdentifierStart, isIdentifierChar, scopeOf, bindin
 	assert.equal(at('expression', '{items as item}', 1, ts, ['as']).end, 6);
 	assert.equal(at('expression', '{f(x as T) as item}', 1, ts, ['as']).end, 10);
 	assert.equal(at('expression', '{(xs as T) as item}', 1, ts, ['as']).end, 10);
-	assert.equal(at('expression', '{xs as T[] as item}', 1, ts, ['as']).end, 3);
+	assert.equal(at('expression', '{xs as T[] as item}', 1, ts, ['as']).end, 10);
+	assert.equal(at('expression', '{xs as T[] as item, i}', 1, ts, ['as', ',']).end, 10);
+	assert.equal(at('expression', '{p.then(f) then r}', 1, undefined, ['then', 'catch']).end, 10);
 	assert.equal(at('expression', '{xs as [a, b = 1]}', 1, ts, ['as']).end, 3);
 	assert.equal(at('expression', '{f<A, B>(), i}', 1, ts, ['as', ',']).end, 10);
 	assert.throws(() => at('expression', 'éé𝒳x', 3), (e) => e.message === 'offset 3 is inside a surrogate pair');
-	assert.throws(() => at('expression', '{obj. as item}', 1, undefined, ['as']), (e) => e.code === 'unexpected_token' && e.pos === 6);
+	assert.equal(at('expression', '{obj. as item}', 1, undefined, ['as']).end, 8);
 	assert.equal(at('expression', '{x. then y}', 1, ts).end, 8);
 	assert.equal(at('expression', '{items, i}', 1, undefined, ['as', ',']).end, 6);
 	assert.equal(at('expression', '{f(a, b), i}', 1, undefined, [',']).end, 8);
@@ -54,11 +56,11 @@ for (const [name, { Source, isIdentifierStart, isIdentifierChar, scopeOf, bindin
 	assert.throws(() => at('nonsense', '{a}', 1), TypeError);
 
 	const loose = { errorRecovery: true };
-	const recovered = at('expression', '{obj. as item}', 1, loose, ['as']);
+	const recovered = at('expression', '{obj.}', 1, loose, ['}']);
 	assert.equal(recovered.node.type, 'MemberExpression');
-	assert.deepEqual(JSON.parse(JSON.stringify(recovered.node.property)), { type: 'Identifier', start: 6, end: 6, name: '' });
-	assert.equal(recovered.end, 6);
-	assert.deepEqual(recovered.errors, [{ code: 'unexpected_token', message: 'Unexpected token', pos: 6, end: 6, loc: { line: 1, column: 6 } }]);
+	assert.deepEqual(JSON.parse(JSON.stringify(recovered.node.property)), { type: 'Identifier', start: 5, end: 5, name: '' });
+	assert.equal(recovered.end, 5);
+	assert.deepEqual(recovered.errors, [{ code: 'unexpected_token', message: 'Unexpected token', pos: 5, end: 5, loc: { line: 1, column: 5 } }]);
 	const unclosed = at('expression', '{f(a, }', 1, loose, ['}']);
 	assert.deepEqual(JSON.parse(JSON.stringify(unclosed.node)), { type: 'Identifier', start: 6, end: 6, name: '' });
 	assert.equal(unclosed.end, 6);

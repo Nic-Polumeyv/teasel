@@ -175,9 +175,10 @@ export interface At {
 	end?: number;
 	/**
 	 * The host's own tokens, words or punctuators, that follow what is parsed. One read outside
-	 * every bracket the parse opened ends it, whatever else it could have been: `as` before a
-	 * template loop's item is never TypeScript's assertion nor a property name after `.`, `,`
-	 * ends an expression before a sequence would, and `/>` is never a division.
+	 * every bracket the parse opened, where the expression could end, ends it: `,` ends an
+	 * expression before a sequence would, and `/>` is never a division. A `then` after `.` is a
+	 * property name. A TypeScript `as` is the host's unless another `as` follows the assertion,
+	 * so `xs as T[] as item` ends after the type.
 	 */
 	stopAt?: string[];
 }

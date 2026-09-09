@@ -10,6 +10,8 @@ pub(crate) struct Token {
 	pub(crate) escaped: bool,
 	/// A string, template or regular expression the source ends or a line break cuts short.
 	pub(crate) unclosed: bool,
+	/// One of the host's stop tokens, read outside every bracket the parse opened.
+	pub(crate) stop: bool,
 }
 
 impl Token {
@@ -21,6 +23,26 @@ impl Token {
 			newline_before: false,
 			escaped: false,
 			unclosed: false,
+			stop: false,
+		}
+	}
+
+	/// Whether an expression could end after this token: it is an operand or closes one, so
+	/// what follows is an operator, a subscript, or the host's own syntax.
+	pub(crate) fn ends_operand(&self) -> bool {
+		use TokenKind::*;
+		match self.kind {
+			Ident(_) | PrivateName(_) | Number(_) | BigInt | String(_) | Template { .. } | RegExp { .. } => true,
+			ParenR | BracketR | BraceR | PlusPlus | MinusMinus => true,
+			Keyword(k) => matches!(
+				k,
+				self::Keyword::This
+					| self::Keyword::Null
+					| self::Keyword::True
+					| self::Keyword::False
+					| self::Keyword::Super
+			),
+			_ => false,
 		}
 	}
 }

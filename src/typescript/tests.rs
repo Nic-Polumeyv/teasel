@@ -620,16 +620,22 @@ fn stop_at() {
 	assert_eq!(end("{xs as item}", "as"), 3);
 	assert_eq!(end("{xs as item, i (item.id)}", "as"), 3);
 	assert_eq!(end("{xs as [a, b = 1]}", "as"), 3);
-	assert_eq!(end("{xs as T[] as item}", "as"), 3);
-	assert_eq!(end("{xs as const as item}", "as"), 3);
+	// an assertion before the host's `as` is read as such: the host's is the last of the run
+	assert_eq!(end("{xs as T[] as item}", "as"), 10);
+	assert_eq!(end("{xs as const as item}", "as"), 12);
+	assert_eq!(end("{xs as T[] as item, i}", "as ,"), 10);
+	assert_eq!(end("{xs as [''] as item: string, i (item)}", "as ,"), 11);
+	assert_eq!(end("{p.then(f) then r}", "then catch"), 10);
+	assert_eq!(end("{x.as as y}", "as"), 5);
 	assert_eq!(end("{f(x as T) as item}", "as"), 10);
 	assert_eq!(end("{(xs as T) as item}", "as"), 10);
 	assert_eq!(end("{f<A, B>(), i}", "as ,"), 10);
 	assert_eq!(end("{<T>x as y}", "as"), 5);
 	assert_eq!(end("{new Map<A, B>() as y}", "as ,"), 16);
 	assert_eq!(end("{x satisfies A<B, C>, i}", ","), 20);
-	let error = at(Entry::Expression, "{obj. as item}", 1, options, "as").unwrap_err();
-	assert_eq!((error.code, error.pos), (crate::error::Code::UnexpectedToken, 6));
+	assert_eq!(end("{xs!, i}", ","), 4);
+	assert_eq!(end("{xs! as T as item}", "as"), 9);
+	assert_eq!(end("{obj. as item}", "as"), 8);
 }
 
 /// `?` marks an optional parameter, so it needs the arrow that makes the list parameters.
