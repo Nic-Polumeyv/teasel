@@ -99,7 +99,9 @@ impl<X: Reuse> Ast<X> {
 		self.strings.clear();
 		self.comments.clear();
 		self.attached.clear();
-		self.scopes = None;
+		if let Some(scopes) = &mut self.scopes {
+			scopes.clear(0);
+		}
 		self.errors.clear();
 		self.parenthesized.clear();
 		self.extension.clear();

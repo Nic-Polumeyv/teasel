@@ -218,6 +218,11 @@ impl<T: Packed> NodeTable<T> {
 		NodeTable(vec![0; nodes], std::marker::PhantomData)
 	}
 
+	fn reset(&mut self, nodes: usize) {
+		self.0.clear();
+		self.0.resize(nodes, 0);
+	}
+
 	pub fn get(&self, id: NodeId) -> Option<T> {
 		match self.0.get(id.0 as usize) {
 			Some(&word) if word != 0 => Some(T::unpack(word - 1)),
@@ -260,6 +265,17 @@ pub struct Scopes {
 }
 
 impl Scopes {
+	/// Empties the tables for a tree of `nodes` nodes, keeping the room.
+	pub fn clear(&mut self, nodes: usize) {
+		self.scopes.clear();
+		self.bindings.clear();
+		self.references.clear();
+		self.of_node.reset(nodes);
+		self.of_identifier.reset(nodes);
+		self.declared_by.clear();
+		self.writes_of.clear();
+	}
+
 	pub fn scope(&self, id: ScopeId) -> &Scope {
 		&self.scopes[id as usize]
 	}
@@ -305,7 +321,8 @@ pub enum Mode {
 
 /// Runs an analysis under one outermost scope and puts the answer on the tree.
 fn analyze_with<X: Bind>(ast: &mut Ast<X>, kind: ScopeKind, root: Option<NodeId>, f: impl FnOnce(&mut Binder<X>)) {
-	let mut binder = Binder::new(ast);
+	let reused = ast.scopes.take();
+	let mut binder = Binder::new(ast, reused);
 	binder.enter(kind, root, false);
 	f(&mut binder);
 	binder.exit();
@@ -382,14 +399,21 @@ pub struct Binder<'a, X> {
 }
 
 impl<'a, X: Bind> Binder<'a, X> {
-	fn new(ast: &'a Ast<X>) -> Self {
-		Binder {
-			ast,
-			out: Scopes {
+	fn new(ast: &'a Ast<X>, reused: Option<Scopes>) -> Self {
+		let out = match reused {
+			Some(mut scopes) => {
+				scopes.clear(ast.nodes.len());
+				scopes
+			}
+			None => Scopes {
 				of_node: NodeTable::sized(ast.nodes.len()),
 				of_identifier: NodeTable::sized(ast.nodes.len()),
 				..Scopes::default()
 			},
+		};
+		Binder {
+			ast,
+			out,
 			stack: Vec::new(),
 			open: Vec::new(),
 			declaring: None,
