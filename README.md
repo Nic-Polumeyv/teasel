@@ -8,10 +8,6 @@
 
 <br>
 
-Named after the plant whose dried heads were used to tease apart wool fibres and raise the nap on cloth.
-
-## One call
-
 ```js
 import { Source } from '@teasel/parser';
 
@@ -136,3 +132,7 @@ bun test.js
 ```
 
 Node resolves `@teasel/parser` to the addon and everything else to the WebAssembly module, with the same API.
+
+<br>
+
+<p align="center"><sub>Named after the plant whose dried heads were used to tease apart wool fibres and raise the nap on cloth.</sub></p>
