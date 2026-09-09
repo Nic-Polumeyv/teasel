@@ -1285,3 +1285,21 @@ fn profile() {
 		);
 	}
 }
+
+#[test]
+fn parenthesized_fact() {
+	let options = Options {
+		parenthesized: true,
+		..Options::default()
+	};
+	let marked = |src: &str| {
+		let (ast, id, _) = parse_expression_at(src, 0, options, "").unwrap();
+		ast.parenthesized.contains(&id)
+	};
+	assert!(marked("(a, b)"));
+	assert!(marked("((a))"));
+	assert!(!marked("a, b"));
+	assert!(!marked("(a) => a"));
+	let (ast, _, _) = parse_expression_at("(a, b)", 0, Options::default(), "").unwrap();
+	assert!(ast.parenthesized.is_empty());
+}

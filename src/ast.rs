@@ -1,4 +1,4 @@
-use crate::interner::{FastMap, Interner, StrId};
+use crate::interner::{FastMap, FastSet, Interner, StrId};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Comment {
@@ -68,7 +68,8 @@ pub struct Ast<X = ()> {
 	pub scopes: Option<crate::scopes::Scopes>,
 	/// What went wrong, in source order, when errors are recovered from instead of thrown.
 	pub errors: Vec<crate::SyntaxError>,
-	/// Nodes whose closing bracket, quote or backquote is missing.
+	/// Nodes the source wraps in parens, when the option asks and no wrapper node stands for them.
+	pub parenthesized: FastSet<NodeId>,
 	pub extension: X,
 }
 

@@ -37,6 +37,8 @@ pub struct Options {
 	pub allow_super_outside_method: bool,
 	pub allow_undeclared_exports: bool,
 	pub preserve_parens: bool,
+	/// Mark a node the source wraps in parens with the fact `parenthesized`, instead of a wrapper node.
+	pub parenthesized: bool,
 }
 
 /// What a function-shaped node is, for the extension hooks around its signature.

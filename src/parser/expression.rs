@@ -797,6 +797,9 @@ impl<E: Extension> Parser<'_, E> {
 		if self.options.preserve_parens {
 			return Ok(self.add(NodeKind::ParenthesizedExpression { expression: value }, start));
 		}
+		if self.options.parenthesized {
+			self.ast.parenthesized.insert(value);
+		}
 		Ok(value)
 	}
 

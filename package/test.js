@@ -70,6 +70,12 @@ for (const [name, { Source, parse, parseExpressionAt, parsePatternAt, parseParam
 	assert.equal(referenceOf(scoped.body[0].declarations[0].init.callee).binding, null);
 	assert.throws(() => parseExpressionAt('{a}', 1, { stopAt: ['a s'] }), TypeError);
 
+	const marked = { parenthesized: true };
+	assert.equal(parseExpressionAt('{(a, b)}', 1, marked).node.parenthesized, true);
+	assert.equal(parseExpressionAt('{((a))}', 1, marked).node.parenthesized, true);
+	assert.equal(parseExpressionAt('{f((a))}', 1, marked).node.arguments[0].parenthesized, true);
+	assert.equal('parenthesized' in parseExpressionAt('{(a) => a}', 1, marked).node, false);
+	assert.equal('parenthesized' in parseExpressionAt('{(a, b)}', 1).node, false);
 	const params = parseParamsAt('(a, b = 1) => a', 0);
 	assert.equal(params.params.length, 2);
 	assert.equal(params.end, 10);
