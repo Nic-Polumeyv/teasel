@@ -1,7 +1,7 @@
 {
 	"name": "@teasel/parser",
-	"version": "0.0.0",
-	"description": "A JavaScript and TypeScript parser in Rust, with acorn's ESTree output",
+	"version": "0.1.0",
+	"description": "A JavaScript and TypeScript parser in Rust. It answers in ESTree.",
 	"license": "MIT",
 	"repository": "github:Nic-Polumeyv/teasel",
 	"type": "module",
@@ -9,16 +9,42 @@
 	"types": "index.d.ts",
 	"exports": {
 		".": {
-			"node": { "types": "./index.d.ts", "default": "./index.js" },
-			"default": { "types": "./wasm.d.ts", "default": "./wasm.js" }
+			"node": {
+				"types": "./index.d.ts",
+				"default": "./index.js"
+			},
+			"default": {
+				"types": "./wasm.d.ts",
+				"default": "./wasm.js"
+			}
 		},
-		"./wasm": { "types": "./wasm.d.ts", "default": "./wasm.js" },
+		"./wasm": {
+			"types": "./wasm.d.ts",
+			"default": "./wasm.js"
+		},
 		"./teasel.wasm": "./teasel.wasm"
 	},
-	"files": ["index.js", "index.d.ts", "wasm.js", "wasm.d.ts", "api.js", "decode.js", "identifier.js", "binding.cjs", "binding.d.ts", "*.node", "teasel.wasm"],
+	"files": [
+		"index.js",
+		"index.d.ts",
+		"wasm.js",
+		"wasm.d.ts",
+		"api.js",
+		"decode.js",
+		"identifier.js",
+		"binding.cjs",
+		"binding.d.ts",
+		"teasel.wasm"
+	],
 	"napi": {
 		"binaryName": "teasel",
-		"targets": ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu", "x86_64-apple-darwin", "aarch64-apple-darwin", "x86_64-pc-windows-msvc"]
+		"targets": [
+			"x86_64-unknown-linux-gnu",
+			"aarch64-unknown-linux-gnu",
+			"x86_64-apple-darwin",
+			"aarch64-apple-darwin",
+			"x86_64-pc-windows-msvc"
+		]
 	},
 	"scripts": {
 		"build": "napi build --platform --release --manifest-path ../bindings/node/Cargo.toml --package-json-path package.json -o . --js binding.cjs --dts binding.d.ts",
