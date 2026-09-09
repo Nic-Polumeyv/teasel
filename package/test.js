@@ -60,7 +60,7 @@ for (const [name, { Source, isIdentifierStart, isIdentifierChar, scopeOf, bindin
 	assert.equal(recovered.node.type, 'MemberExpression');
 	assert.deepEqual(JSON.parse(JSON.stringify(recovered.node.property)), { type: 'Identifier', start: 5, end: 5, name: '' });
 	assert.equal(recovered.end, 5);
-	assert.deepEqual(recovered.errors, [{ code: 'unexpected_token', message: 'Unexpected token', pos: 5, end: 5, loc: { line: 1, column: 5 } }]);
+	assert.deepEqual(recovered.errors, [{ code: 'unexpected_token', message: 'Unexpected token', pos: 5, end: 6, loc: { line: 1, column: 5 } }]);
 	const unclosed = at('expression', '{f(a, }', 1, loose, ['}']);
 	assert.deepEqual(JSON.parse(JSON.stringify(unclosed.node)), { type: 'Identifier', start: 6, end: 6, name: '' });
 	assert.equal(unclosed.end, 6);
