@@ -560,6 +560,8 @@ impl<'a, E: Extension> Parser<'a, E> {
 		};
 		E::init(&mut parser);
 		parser.lexer.next_token_into(&mut parser.tok)?;
+		// the host's token first: nothing to read, which is the host's to report
+		parser.stop_after_operand();
 		Ok(parser)
 	}
 
