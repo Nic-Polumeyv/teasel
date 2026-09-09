@@ -17,11 +17,9 @@ function bytes(text) {
 	return room.subarray(0, written);
 }
 
-export const { parse, parseExpressionAt, parsePatternAt, parseParamsAt, parseStatementAt, parseTypeParametersAt, Source } = bind({
-	once: (source, bits, entry, offset, stop) => native.parseAt(bytes(source), bits, entry, offset, stop),
+export const Source = bind({
 	create: (source, bits) => new native.Source(bytes(source), bits),
-	parse: (held, entry, offset, stop) => held.parseAt(entry, offset, stop),
-	parseRange: (held, start, end) => held.parseRange(start, end),
+	parse: (held, entry, offset, end, stop) => held.parse(entry, offset, end, stop),
 	constants: native.constants,
 	shapes: native.shapes,
 });

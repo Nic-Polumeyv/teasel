@@ -41,8 +41,6 @@ function create(source, bits) {
 	return wasm.source_new(...bytes(source), bits);
 }
 
-const parse_at = (held, entry, offset, stop) => answer(wasm.source_parse(held, entry, offset, ...bytes(stop)));
-
 const text = () => utf8.decode(new Uint8Array(wasm.memory.buffer, wasm.text_ptr(), wasm.text_len()));
 const words = () => new Uint32Array(wasm.memory.buffer, wasm.words_ptr(), wasm.words_len());
 
@@ -61,19 +59,10 @@ function answer(status) {
 	return words();
 }
 
-export const { parse, parseExpressionAt, parsePatternAt, parseParamsAt, parseStatementAt, parseTypeParametersAt, Source } = bind({
-	// the words outlive the source: they sit in the answer buffer until the next parse
-	once(source, bits, entry, offset, stop) {
-		const held = create(source, bits);
-		try {
-			return parse_at(held, entry, offset, stop);
-		} finally {
-			wasm.source_free(held);
-		}
-	},
+export const Source = bind({
 	create,
-	parse: parse_at,
-	parseRange: (held, start, end) => answer(wasm.source_parse_range(held, start, end ?? 0, end === undefined ? 0 : 1)),
+	// the words outlive the source: they sit in the answer buffer until the next parse
+	parse: (held, entry, offset, end, stop) => answer(wasm.source_parse(held, entry, offset, end ?? 0, end === undefined ? 0 : 1, ...bytes(stop))),
 	free: (held) => wasm.source_free(held),
 	constants: () => constants,
 	shapes: () => shapes,

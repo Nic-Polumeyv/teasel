@@ -169,9 +169,7 @@ impl<X> Ast<X> {
 				out.push(callee);
 				list(arguments, out);
 			}
-			ChainExpression { expression }
-			| ParenthesizedExpression { expression }
-			| ExpressionStatement { expression, .. } => out.push(expression),
+			ChainExpression { expression } | ExpressionStatement { expression, .. } => out.push(expression),
 			SequenceExpression { expressions } => list(expressions, out),
 			ArrowFunctionExpression { params, body, .. } => {
 				list(params, out);
@@ -438,9 +436,6 @@ pub enum NodeKind {
 	},
 	SequenceExpression {
 		expressions: List,
-	},
-	ParenthesizedExpression {
-		expression: NodeId,
 	},
 	ArrowFunctionExpression {
 		params: List,

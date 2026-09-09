@@ -36,7 +36,6 @@ pub struct Options {
 	pub allow_await_outside_function: bool,
 	pub allow_super_outside_method: bool,
 	pub allow_undeclared_exports: bool,
-	pub preserve_parens: bool,
 	/// Mark a node the source wraps in parens with the fact `parenthesized`, instead of a wrapper node.
 	pub parenthesized: bool,
 }
@@ -155,7 +154,7 @@ pub(crate) trait Extension: Default + Sized {
 	fn catch_param(p: &mut Parser<Self>, param: NodeId) -> Result<()> {
 		Ok(())
 	}
-	/// After a pattern read on its own through `parse_pattern_at`.
+	/// After a pattern read on its own, the `Pattern` entry.
 	fn pattern_annotation(p: &mut Parser<Self>, pattern: NodeId) -> Result<()> {
 		Ok(())
 	}
@@ -315,10 +314,6 @@ pub(crate) trait Extension: Default + Sized {
 	}
 	/// Replaces the items of a list about to become patterns.
 	fn convert_items(p: &mut Parser<Self>, items: &mut [Option<NodeId>]) {}
-	/// What a parenthesized expression becomes as a pattern, given what its inner one became.
-	fn parenthesized_pattern(p: &mut Parser<Self>, paren: NodeId, inner: NodeId, pattern: NodeId) -> NodeId {
-		paren
-	}
 	/// The plain node an extension wrapper stands for in a check, if any.
 	fn unwrap(p: &Parser<Self>, id: NodeId, context: Unwrap) -> Option<NodeId> {
 		None
@@ -336,131 +331,96 @@ impl Extension for () {
 
 pub(crate) type Errors = Option<DestructuringErrors>;
 
-pub(crate) fn parse<E: Extension>(src: &str, options: Options) -> Result<Ast<E::Data>> {
-	parse_range::<E>(src, 0, src.len() as u32, options)
+/// What a parse reads at its offset.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Entry {
+	#[default]
+	Program,
+	Expression,
+	Pattern,
+	Params,
+	Statement,
+	TypeParameters,
 }
 
-/// Parses the program that spans `start..end` of a larger source, such as a script in a
-/// template: positions stay those of the whole source. The range is not a source of its own:
-/// a hashbang or an HTML comment at `start` is what it would be in the middle of a file.
-pub(crate) fn parse_range<E: Extension>(src: &str, start: u32, end: u32, options: Options) -> Result<Ast<E::Data>> {
-	let mut parser = Parser::<E>::new(&src[..end as usize], start, options, (end - start) as usize, "")?;
-	let program = parser.parse_program()?;
-	debug_assert_eq!(program, parser.ast.last());
-	Ok(parser.finish())
-}
-
-/// Parses a single expression starting at `offset`, stopping where the expression ends.
-/// Returns the tree, the expression and the offset after everything it consumed. `stop` lists
-/// the host's own tokens, words or punctuators separated by spaces: one read outside every
-/// bracket the expression opened ends it, whatever else it could have been.
-pub(crate) fn parse_expression_at<E: Extension>(
-	src: &str,
-	offset: u32,
-	options: Options,
-	stop: &str,
-) -> Result<(Ast<E::Data>, NodeId, u32)> {
-	let mut parser = Parser::<E>::new(src, offset, options, 0, stop)?;
-	parser.enter_scope(SCOPE_TOP);
-	let result = parser.parse_sequence(ForInit::No, &mut None);
-	let expression = parser.recovered(result)?;
-	let end = parser.consumed_end();
-	Ok((parser.finish(), expression, end))
-}
-
-/// Parses a type parameter list `<...>` starting at `offset`, for a host whose own syntax carries
-/// one, such as a generic snippet in Svelte; TypeScript only.
-pub(crate) fn parse_type_parameters_at<E: Extension>(
-	src: &str,
-	offset: u32,
-	options: Options,
-	stop: &str,
-) -> Result<(Ast<E::Data>, NodeId, u32)> {
-	let mut parser = Parser::<E>::new(src, offset, options, 0, stop)?;
-	parser.enter_scope(SCOPE_TOP);
-	let result = E::type_parameters(&mut parser);
-	let node = parser.recovered(result)?;
-	let end = parser.consumed_end();
-	Ok((parser.finish(), node, end))
-}
-
-/// Parses an assignment target starting at `offset`: an identifier or a destructuring pattern,
-/// as it would appear on the left of `=`. Compilers that embed JavaScript in a larger syntax, such
-/// as Svelte's `{#each list as pattern}`, read it directly instead of through a wrapper.
-pub(crate) fn parse_pattern_at<E: Extension>(
-	src: &str,
-	offset: u32,
-	options: Options,
-	stop: &str,
-) -> Result<(Ast<E::Data>, NodeId, u32)> {
-	let mut parser = Parser::<E>::new(src, offset, options, 0, stop)?;
-	parser.enter_scope(SCOPE_TOP);
-	let mut errors = Some(DestructuringErrors::default());
-	let result = (|| {
-		let expression = match parser.tok.kind {
-			TokenKind::BraceL | TokenKind::BracketL => {
-				parser.parse_expr_atom(&mut errors, expression::ForInit::No, false)?
-			}
-			_ => parser.parse_ident(false)?,
-		};
-		let pattern = parser.make_pattern(expression, false, &mut errors)?;
-		parser.check_lval_pattern(pattern, scope::Binding::None, &mut None)?;
-		E::pattern_annotation(&mut parser, pattern)?;
-		Ok(pattern)
-	})();
-	let pattern = parser.recovered(result)?;
-	let end = parser.consumed_end();
-	Ok((parser.finish(), pattern, end))
-}
-
-/// Parses a parenthesized parameter list starting at `offset` as the parameters of an arrow
-/// function would be read: as expressions in the enclosing scope, reinterpreted as patterns once
-/// the list is complete. Returns the parameters and the offset after everything they consumed.
-pub(crate) fn parse_params_at<E: Extension>(
-	src: &str,
-	offset: u32,
-	options: Options,
-	stop: &str,
-) -> Result<(Ast<E::Data>, Vec<NodeId>, u32)> {
-	let mut parser = Parser::<E>::new(src, offset, options, 0, stop)?;
-	parser.enter_scope(SCOPE_TOP);
-	let result: Result<Vec<NodeId>> = (|| {
-		parser.expect(TokenKind::ParenL)?;
-		let paren = parser.parse_paren_items()?;
-		parser.check_pattern_errors(&paren.errors, false)?;
-		parser.check_yield_await_in_default_params()?;
-		parser.enter_scope(scope::function_flags(false, false) | scope::SCOPE_ARROW);
-		let params = parser.make_patterns(paren.items, true)?;
-		let list = parser.list(&params);
-		parser.check_params(list, false)?;
-		Ok(params.into_iter().flatten().collect())
-	})();
-	let params = match result {
-		Err(error) if parser.recovering() => {
-			parser.errors.push(*error);
-			parser.skip_to_end();
-			Vec::new()
+impl Entry {
+	pub fn from_index(index: u32) -> Entry {
+		match index {
+			1 => Entry::Expression,
+			2 => Entry::Pattern,
+			3 => Entry::Params,
+			4 => Entry::Statement,
+			5 => Entry::TypeParameters,
+			_ => Entry::Program,
 		}
-		result => result?,
-	};
-	let end = parser.consumed_end();
-	Ok((parser.finish(), params, end))
+	}
 }
 
-/// Parses a single statement starting at `offset`, as if at the top level of a module.
-pub(crate) fn parse_statement_at<E: Extension>(
+/// Parses one `entry` starting at `start` of a source cut at `end`, with positions of the whole:
+/// a program, or what a host embedding JavaScript in a larger syntax reads at a point of it. A
+/// program reads to `end`, where a hashbang or an HTML comment at `start` is what it would be in
+/// the middle of a file; anything else stops where its grammar ends, or at one of `stop`, the
+/// host's own tokens separated by spaces, read outside every bracket the parse opened. Returns
+/// the tree, its roots (one node, or the patterns of a parameter list) and the offset after
+/// everything the parse consumed.
+pub(crate) fn parse_at<E: Extension>(
 	src: &str,
-	offset: u32,
+	start: u32,
+	end: Option<u32>,
+	entry: Entry,
 	options: Options,
 	stop: &str,
-) -> Result<(Ast<E::Data>, NodeId, u32)> {
-	let mut parser = Parser::<E>::new(src, offset, options, 0, stop)?;
-	parser.enter_scope(SCOPE_TOP);
-	let mut exports = FastSet::default();
-	let result = parser.parse_statement(statement::Context::None, true, Some(&mut exports));
-	let statement = parser.recovered(result)?;
-	let end = parser.consumed_end();
-	Ok((parser.finish(), statement, end))
+) -> Result<(Ast<E::Data>, List, u32)> {
+	let end = end.unwrap_or(src.len() as u32);
+	let src = &src[..end as usize];
+	let budget = if entry == Entry::Program {
+		(end - start) as usize
+	} else {
+		0
+	};
+	let mut parser = Parser::<E>::new(src, start, options, budget, stop)?;
+	let roots = if entry == Entry::Program {
+		let program = parser.parse_program()?;
+		vec![program]
+	} else {
+		parser.enter_scope(SCOPE_TOP);
+		let result = match entry {
+			Entry::Expression => parser.parse_sequence(ForInit::No, &mut None).map(|id| vec![id]),
+			Entry::Pattern => parser.parse_pattern_root().map(|id| vec![id]),
+			Entry::Params => parser.parse_params_root(),
+			Entry::Statement => {
+				let mut exports = FastSet::default();
+				parser
+					.parse_statement(statement::Context::None, true, Some(&mut exports))
+					.map(|id| vec![id])
+			}
+			Entry::TypeParameters => E::type_parameters(&mut parser).map(|id| vec![id]),
+			Entry::Program => unreachable!(),
+		};
+		match result {
+			// under recovery, what was read is skipped and an empty identifier stands where it failed
+			Err(error) if parser.recovering() => {
+				let at = error.pos;
+				parser.record(Err(error)).unwrap();
+				parser.skip_to_end();
+				parser.prev_end = parser.prev_end.max(at);
+				if entry == Entry::Params {
+					Vec::new()
+				} else {
+					let name = parser.intern("");
+					vec![parser.add_with_end(NodeKind::Identifier { name }, at, at)]
+				}
+			}
+			result => result?,
+		}
+	};
+	let roots = parser.list_of(&roots);
+	let end = if entry == Entry::Program {
+		end
+	} else {
+		parser.consumed_end()
+	};
+	Ok((parser.finish(), roots, end))
 }
 
 pub(crate) struct Parser<'a, E: Extension = ()> {
@@ -772,20 +732,32 @@ impl<'a, E: Extension> Parser<'a, E> {
 		Ok(())
 	}
 
-	/// The root of a parse at an offset, under recovery: when the parse fails, what was read is
-	/// skipped and an empty identifier stands where it failed.
-	fn recovered(&mut self, result: Result<NodeId>) -> Result<NodeId> {
-		match result {
-			Err(error) if self.recovering() => {
-				let at = error.pos;
-				self.record(Err(error)).unwrap();
-				self.skip_to_end();
-				self.prev_end = self.prev_end.max(at);
-				let name = self.intern("");
-				Ok(self.add_with_end(NodeKind::Identifier { name }, at, at))
-			}
-			result => result,
-		}
+	/// An assignment target on its own: an identifier or a destructuring pattern, as it would
+	/// appear on the left of `=`.
+	fn parse_pattern_root(&mut self) -> Result<NodeId> {
+		let mut errors = Some(DestructuringErrors::default());
+		let expression = match self.tok.kind {
+			TokenKind::BraceL | TokenKind::BracketL => self.parse_expr_atom(&mut errors, ForInit::No, false)?,
+			_ => self.parse_ident(false)?,
+		};
+		let pattern = self.make_pattern(expression, false, &mut errors)?;
+		self.check_lval_pattern(pattern, scope::Binding::None, &mut None)?;
+		E::pattern_annotation(self, pattern)?;
+		Ok(pattern)
+	}
+
+	/// A parenthesized parameter list on its own, read as an arrow function's would be: as
+	/// expressions in the enclosing scope, reinterpreted as patterns once the list is complete.
+	fn parse_params_root(&mut self) -> Result<Vec<NodeId>> {
+		self.expect(TokenKind::ParenL)?;
+		let paren = self.parse_paren_items()?;
+		self.check_pattern_errors(&paren.errors, false)?;
+		self.check_yield_await_in_default_params()?;
+		self.enter_scope(scope::function_flags(false, false) | scope::SCOPE_ARROW);
+		let params = self.make_patterns(paren.items, true)?;
+		let list = self.list(&params);
+		self.check_params(list, false)?;
+		Ok(params.into_iter().flatten().collect())
 	}
 
 	/// Skips to the end of the input, a stop token or a bracket nothing here opened.
@@ -1155,7 +1127,6 @@ impl<'a, E: Extension> Parser<'a, E> {
 
 	pub(crate) fn is_simple_assign_target(&self, id: NodeId) -> bool {
 		match self.kind(id) {
-			NodeKind::ParenthesizedExpression { expression } => self.is_simple_assign_target(expression),
 			NodeKind::Identifier { .. } | NodeKind::MemberExpression { .. } => true,
 			NodeKind::Extension(_) => {
 				E::unwrap(self, id, Unwrap::Simple).is_some_and(|inner| self.is_simple_assign_target(inner))

@@ -3,6 +3,7 @@
 
 use crate::ast::{Ast, Class, Function, List, MethodKind, NodeId, NodeKind, PropertyKind};
 use crate::interner::{FastMap, Interner, StrId};
+use crate::parser::Entry;
 use crate::scopes::Role;
 use std::fmt::Write;
 
@@ -24,8 +25,6 @@ pub struct Output {
 	pub comments: bool,
 	/// Nodes carry their scope and identifiers their binding, and the answer lists both tables.
 	pub scopes: bool,
-	/// The node is a pattern parsed on its own, which declares what it names.
-	pub pattern: bool,
 	/// TypeScript is erased: annotations, type-only declarations and imports go, assertions give
 	/// way to their expression, and what erasure cannot express is listed as `typescript`.
 	pub erase: bool,
@@ -614,28 +613,13 @@ impl Sink for Binary {
 	}
 }
 
-/// Serializes a program into `sink`; `comments` adds every comment to it as `comments`.
-pub fn program<X: Emit, S: Sink>(
+/// Serializes an answer into `sink`: the roots as `node`, one node or the patterns of a
+/// parameter list, then `end` and what the options add.
+#[allow(clippy::too_many_arguments)]
+pub fn answer<X: Emit, S: Sink>(
 	ast: &Ast<X>,
-	root: NodeId,
-	source: &str,
-	positions: &Positions,
-	output: Output,
-	sink: S,
-) -> S {
-	let mut w = Writer::new(ast, source, positions, sink);
-	w.sink.strings(&ast.strings);
-	w.program_tail = true;
-	w.output = output;
-	w.node(root);
-	w.sink
-}
-
-/// Serializes a node parsed at an offset as `{"node":...,"end":N}`, `end` being the offset after
-/// everything the parse consumed; `comments` adds every comment read as `comments`.
-pub fn node_at<X: Emit, S: Sink>(
-	ast: &Ast<X>,
-	root: NodeId,
+	entry: Entry,
+	roots: List,
 	end: u32,
 	source: &str,
 	positions: &Positions,
@@ -646,36 +630,16 @@ pub fn node_at<X: Emit, S: Sink>(
 	w.sink.strings(&ast.strings);
 	w.output = output;
 	w.sink.object();
-	w.key("node");
-	w.node(root);
-	w.tail(end);
-	w.sink
-}
-
-/// Serializes parameters as `{"params":[...],"end":N}` the way `node_at` does a node.
-pub fn params_at<X: Emit, S: Sink>(
-	ast: &Ast<X>,
-	params: &[NodeId],
-	end: u32,
-	source: &str,
-	positions: &Positions,
-	output: Output,
-	sink: S,
-) -> S {
-	let mut w = Writer::new(ast, source, positions, sink);
-	w.sink.strings(&ast.strings);
-	w.output = output;
-	w.sink.object();
-	w.key("params");
-	w.sink.list();
-	for &param in params {
-		if w.output.erase && ast.extension.erased(&w, param) {
-			continue;
-		}
-		w.node(param);
+	if entry == Entry::Params {
+		w.list("node", roots);
+	} else {
+		w.field("node", ast.list(roots)[0].unwrap());
 	}
+	w.key("end");
+	let end = w.positions.offset(&mut w.cursor, end);
+	w.sink.int(end);
+	w.trailers();
 	w.sink.end();
-	w.tail(end);
 	w.sink
 }
 
@@ -714,8 +678,6 @@ pub struct Writer<'a, X = (), S: Sink = Json> {
 	positions: &'a Positions,
 	cursor: Cursor,
 	pub(crate) output: Output,
-	/// Whether the program carries the comment list and the erasure leftovers.
-	program_tail: bool,
 	/// The node being written names something bound by another node: no scope facts on it.
 	name_only: bool,
 	/// What erasure left in place, in emission order.
@@ -850,7 +812,6 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 			positions,
 			cursor: Cursor::default(),
 			output: Output::default(),
-			program_tail: false,
 			name_only: false,
 			kept: Vec::new(),
 			adopted: Vec::new(),
@@ -948,10 +909,6 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 				Some(parent) => self.sink.int(parent),
 				None => self.sink.null(),
 			}
-			self.key("functionDepth");
-			self.sink.int(scope.function_depth);
-			self.key("through");
-			self.sink.ints(&scope.through);
 			self.bool("topLevelAwait", scope.top_level_await);
 			self.sink.end();
 		}
@@ -1066,15 +1023,6 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		if self.output.scopes {
 			self.all_scopes();
 		}
-	}
-
-	/// Closes the object around a node parsed at an offset.
-	fn tail(&mut self, end: u32) {
-		self.key("end");
-		let end = self.positions.offset(&mut self.cursor, end);
-		self.sink.int(end);
-		self.trailers();
-		self.sink.end();
 	}
 
 	pub(crate) fn span(&mut self, start: u32, end: u32) {
@@ -1228,9 +1176,6 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 				self.begin("Program", id);
 				self.list("body", body);
 				self.string("sourceType", if module { "module" } else { "script" });
-				if self.program_tail {
-					self.trailers();
-				}
 			}
 			Identifier { name } => {
 				self.begin("Identifier", id);
@@ -1425,10 +1370,6 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 			SequenceExpression { expressions } => {
 				self.begin("SequenceExpression", id);
 				self.list("expressions", expressions);
-			}
-			ParenthesizedExpression { expression } => {
-				self.begin("ParenthesizedExpression", id);
-				self.field("expression", expression);
 			}
 			ArrowFunctionExpression {
 				params,

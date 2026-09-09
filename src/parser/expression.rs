@@ -437,11 +437,7 @@ impl<E: Extension> Parser<'_, E> {
 	}
 
 	fn is_local_variable_access(&self, id: NodeId) -> bool {
-		match self.kind(id) {
-			NodeKind::Identifier { .. } => true,
-			NodeKind::ParenthesizedExpression { expression } => self.is_local_variable_access(expression),
-			_ => false,
-		}
+		matches!(self.kind(id), NodeKind::Identifier { .. })
 	}
 
 	fn is_private_field_access(&self, id: NodeId) -> bool {
@@ -450,7 +446,6 @@ impl<E: Extension> Parser<'_, E> {
 				matches!(self.kind(property), NodeKind::PrivateIdentifier { .. })
 			}
 			NodeKind::ChainExpression { expression } => self.is_private_field_access(expression),
-			NodeKind::ParenthesizedExpression { expression } => self.is_private_field_access(expression),
 			_ => false,
 		}
 	}
@@ -794,9 +789,6 @@ impl<E: Extension> Parser<'_, E> {
 		} else {
 			paren.items[0].unwrap()
 		};
-		if self.options.preserve_parens {
-			return Ok(self.add(NodeKind::ParenthesizedExpression { expression: value }, start));
-		}
 		if self.options.parenthesized {
 			self.ast.parenthesized.insert(value);
 		}
@@ -1620,10 +1612,6 @@ impl<E: Extension> Parser<'_, E> {
 				let left = self.make_pattern(left, is_binding, &mut None)?;
 				self.ast.node_mut(id).kind = NodeKind::AssignmentPattern { left, right };
 			}
-			NodeKind::ParenthesizedExpression { expression } => {
-				let pattern = self.make_pattern(expression, is_binding, errors)?;
-				return Ok(E::parenthesized_pattern(self, id, expression, pattern));
-			}
 			NodeKind::ChainExpression { .. } => {
 				return self.error(start, Code::OptionalChainAssignment);
 			}
@@ -1773,12 +1761,6 @@ impl<E: Extension> Parser<'_, E> {
 					return self.error(start, Code::BindingMemberExpression);
 				}
 				Ok(())
-			}
-			NodeKind::ParenthesizedExpression { expression } => {
-				if is_bind {
-					return self.error(start, Code::BindingParenthesized);
-				}
-				self.check_lval_simple(expression, binding, clashes)
 			}
 			NodeKind::Extension(_) if let Some(inner) = E::unwrap(self, id, Unwrap::Simple) => {
 				self.check_lval_simple(inner, binding, clashes)

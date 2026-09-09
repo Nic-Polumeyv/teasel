@@ -79,6 +79,6 @@ const lines = (await teasel(jobs)).map((line) => {
 	const answer = JSON.parse(line);
 	if (answer.error) return line;
 	if (answer.typescript.some((k) => REJECTED.has(k.type))) return JSON.stringify(rejected);
-	return JSON.stringify(normalize(answer));
+	return JSON.stringify(normalize(answer.node));
 });
 process.exit(compare(jobs, (job) => reference(job.source), lines, { verbose, label: 'typescript erasure', known }) ? 0 : 1);

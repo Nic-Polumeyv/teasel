@@ -1,5 +1,6 @@
 use std::cell::RefCell;
-use teasel::json::{Entry, Prepared, Request};
+use teasel::Entry;
+use teasel::json::{Prepared, Request};
 
 thread_local! {
 	static WORDS: RefCell<Vec<u32>> = const { RefCell::new(Vec::new()) };
@@ -53,18 +54,16 @@ pub unsafe extern "C" fn source_parse(
 	handle: u32,
 	entry: u32,
 	offset: f64,
+	end: f64,
+	has_end: u32,
 	ptr: *mut u8,
 	len: u32,
 	capacity: u32,
 ) -> u32 {
 	let stop = unsafe { Vec::from_raw_parts(ptr, len as usize, capacity as usize) };
 	let stop = String::from_utf8_lossy(&stop);
-	answer(source(handle).binary(Entry::from_index(entry), offset, &stop))
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn source_parse_range(handle: u32, start: f64, end: f64, has_end: u32) -> u32 {
-	answer(source(handle).binary_range(start, (has_end == 1).then_some(end)))
+	let end = (has_end == 1).then_some(end);
+	answer(source(handle).binary(Entry::from_index(entry), offset, end, &stop))
 }
 
 #[unsafe(no_mangle)]

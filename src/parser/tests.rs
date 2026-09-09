@@ -1,7 +1,42 @@
-use crate::ast::{Ast, NodeId, NodeKind, Walk};
-use crate::{
-	Code, Options, SyntaxError, parse, parse_expression_at, parse_params_at, parse_pattern_at, parse_statement_at,
-};
+use crate::ast::{Ast, List, NodeId, NodeKind, Walk};
+use crate::{Code, Entry, Options, SyntaxError};
+
+/// One entry of one extension, as `parse_at` reads it.
+pub(crate) type ParseAt<X> =
+	fn(&str, u32, Option<u32>, Entry, Options, &str) -> Result<(Ast<X>, List, u32), SyntaxError>;
+
+/// The roots of an answer as a vector.
+pub(crate) fn roots<X>(
+	result: Result<(Ast<X>, List, u32), SyntaxError>,
+) -> Result<(Ast<X>, Vec<NodeId>, u32), SyntaxError> {
+	result.map(|(ast, list, end)| {
+		let roots = ast.list(list).iter().flatten().copied().collect();
+		(ast, roots, end)
+	})
+}
+
+/// The one root of an answer.
+pub(crate) fn one<X>(result: Result<(Ast<X>, List, u32), SyntaxError>) -> Result<(Ast<X>, NodeId, u32), SyntaxError> {
+	roots(result).map(|(ast, roots, end)| (ast, roots[0], end))
+}
+
+fn at(entry: Entry, src: &str, offset: u32, options: Options, stop: &str) -> Result<(Ast, NodeId, u32), SyntaxError> {
+	one(crate::parse_at(src, offset, None, entry, options, stop))
+}
+
+fn params(src: &str, offset: u32, options: Options, stop: &str) -> Result<(Ast, Vec<NodeId>, u32), SyntaxError> {
+	roots(crate::parse_at(src, offset, None, Entry::Params, options, stop))
+}
+
+fn program(src: &str, options: Options) -> Result<Ast, SyntaxError> {
+	crate::parse_at(src, 0, None, Entry::Program, options, "").map(|(ast, _, _)| ast)
+}
+
+/// A whole source as a program, with the list holding its root.
+fn whole(src: &str, options: Options) -> (Ast, List) {
+	let (ast, roots, _) = crate::parse_at(src, 0, None, Entry::Program, options, "").unwrap();
+	(ast, roots)
+}
 
 /// Renders a node as its Debug form with ids, strings and lists expanded inline; `extension`
 /// renders the nodes an extension owns.
@@ -60,12 +95,12 @@ fn plain(_: &Ast, _: NodeId, _: u32) -> String {
 }
 
 fn expr(src: &str) -> String {
-	let (ast, id, _) = parse_expression_at(src, 0, Options::default(), "").unwrap_or_else(|e| panic!("{src}: {e}"));
+	let (ast, id, _) = at(Entry::Expression, src, 0, Options::default(), "").unwrap_or_else(|e| panic!("{src}: {e}"));
 	dump(&ast, id, &plain)
 }
 
 fn module(src: &str) -> String {
-	let ast = parse(
+	let ast = program(
 		src,
 		Options {
 			module: true,
@@ -85,7 +120,7 @@ fn module(src: &str) -> String {
 }
 
 fn script(src: &str) -> String {
-	let ast = parse(src, Options::default()).unwrap_or_else(|e| panic!("{src}: {e}"));
+	let ast = program(src, Options::default()).unwrap_or_else(|e| panic!("{src}: {e}"));
 	let root = ast.last();
 	let NodeKind::Program { body, .. } = ast.node(root).kind else {
 		panic!()
@@ -98,7 +133,7 @@ fn script(src: &str) -> String {
 }
 
 fn module_error(src: &str) -> String {
-	match parse(
+	match program(
 		src,
 		Options {
 			module: true,
@@ -116,19 +151,16 @@ fn consumed_end() {
 		module: true,
 		..Options::default()
 	};
-	let end = |src: &str, at: u32| parse_expression_at(src, at, options, "").unwrap().2;
+	let end = |src: &str, offset: u32| at(Entry::Expression, src, offset, options, "").unwrap().2;
 	assert_eq!(end("{a /* c */ }", 1), 10);
 	assert_eq!(end("{(a) }", 1), 4);
 	assert_eq!(end("{a} /* c */", 1), 2);
-	assert_eq!(parse_statement_at("{@const x = 1}", 2, options, "").unwrap().2, 13);
-	assert_eq!(
-		parse_params_at("{#snippet s(a) /* c */}", 11, options, "").unwrap().2,
-		22
-	);
+	assert_eq!(at(Entry::Statement, "{@const x = 1}", 2, options, "").unwrap().2, 13);
+	assert_eq!(params("{#snippet s(a) /* c */}", 11, options, "").unwrap().2, 22);
 }
 
 fn span(src: &str) -> (u32, u32) {
-	let (ast, id, _) = parse_expression_at(src, 0, Options::default(), "").unwrap();
+	let (ast, id, _) = at(Entry::Expression, src, 0, Options::default(), "").unwrap();
 	(ast.node(id).start, ast.node(id).end)
 }
 
@@ -185,7 +217,6 @@ fn unary_and_update() {
 		expr("--a"),
 		r#"UpdateExpression { operator: Decrement, prefix: true, argument: Identifier { name: "a" } }"#
 	);
-	assert!(!expr("(-a) ** 2").contains("ParenthesizedExpression"));
 }
 
 #[test]
@@ -285,26 +316,8 @@ fn conditional_and_sequence() {
 fn expression_ends_where_it_ends() {
 	assert_eq!(span("a + b }"), (0, 5));
 	assert_eq!(span("  x"), (2, 3));
-	let (ast, id, _) = parse_expression_at("{ a.b }", 2, Options::default(), "").unwrap();
+	let (ast, id, _) = at(Entry::Expression, "{ a.b }", 2, Options::default(), "").unwrap();
 	assert_eq!((ast.node(id).start, ast.node(id).end), (2, 5));
-}
-
-#[test]
-fn preserve_parens() {
-	let (ast, id, _) = parse_expression_at(
-		"(a)",
-		0,
-		Options {
-			preserve_parens: true,
-			..Options::default()
-		},
-		"",
-	)
-	.unwrap();
-	assert_eq!(
-		dump(&ast, id, &plain),
-		r#"ParenthesizedExpression { expression: Identifier { name: "a" } }"#
-	);
 }
 
 #[test]
@@ -405,7 +418,7 @@ fn modules() {
 fn reserved_words_by_context() {
 	use crate::Code;
 	let code = |src: &str, module: bool| {
-		crate::parse(
+		program(
 			src,
 			Options {
 				module,
@@ -456,21 +469,21 @@ fn a_var_may_redeclare_a_simple_catch_parameter() {
 
 #[test]
 fn a_recycled_sink_writes_the_same_words() {
-	use crate::json::{Entry, Prepared, Request};
+	use crate::json::{Prepared, Request};
 	let mut request = Request::new(Entry::Program, 0);
 	for flag in ["comments", "locations", "scopes"] {
 		request.set(flag);
 	}
 	let source = "let x = /* a */ 1; function f(y) { return x + y; } // b";
 	let prepared = Prepared::borrowed(source, request);
-	let first = prepared.binary_range(0.0, None).unwrap();
-	let _ = Prepared::borrowed("a + b", request).binary(Entry::Expression, 0.0, "");
+	let first = prepared.binary(Entry::Program, 0.0, None, "").unwrap();
+	let _ = Prepared::borrowed("a + b", request).binary(Entry::Expression, 0.0, None, "");
 	assert!(
 		Prepared::borrowed("a +", request)
-			.binary(Entry::Expression, 0.0, "")
+			.binary(Entry::Expression, 0.0, None, "")
 			.is_err()
 	);
-	let again = prepared.binary_range(0.0, None).unwrap();
+	let again = prepared.binary(Entry::Program, 0.0, None, "").unwrap();
 	// the header counts the constants and shapes known so far, which the parses between added to
 	assert_eq!((&first[..4], &first[6..]), (&again[..4], &again[6..]));
 }
@@ -511,7 +524,7 @@ fn errors() {
 }
 
 fn script_error(src: &str) -> String {
-	match parse(src, Options::default()) {
+	match program(src, Options::default()) {
 		Ok(_) => panic!("no error for {src:?}"),
 		Err(e) => format!("{} ({})", e.message, e.pos),
 	}
@@ -523,9 +536,9 @@ fn review_fixes() {
 	assert_eq!(module_error("() => {} ** 2"), "Unexpected token (9)");
 	assert_eq!(script_error("'use strict'; with (x) {}"), "'with' in strict mode (14)");
 	assert_eq!(script_error("'use strict'; 010"), "Invalid number (14)");
-	assert!(parse("with (x) {}", Options::default()).is_ok());
+	assert!(program("with (x) {}", Options::default()).is_ok());
 	assert!(
-		parse(
+		program(
 			"export {a}; { var a; }",
 			Options {
 				module: true,
@@ -535,7 +548,7 @@ fn review_fixes() {
 		.is_ok()
 	);
 	assert!(
-		parse(
+		program(
 			"export default class A {} export {A}",
 			Options {
 				module: true,
@@ -569,14 +582,14 @@ fn review_fixes() {
 		module_error("export {a}; export {a as b};"),
 		"Export 'a' is not defined (20)"
 	);
-	assert!(parse("({ \\u0069f: 1 }); x.\\u0074his; ({ i\\u0066: 1 })", Options::default()).is_ok());
+	assert!(program("({ \\u0069f: 1 }); x.\\u0074his; ({ i\\u0066: 1 })", Options::default()).is_ok());
 	assert_eq!(script_error("\\u0069f (x) {}"), "Escape sequence in keyword if (0)");
 	assert_eq!(
 		script_error("import /* unterminated"),
 		"'import' and 'export' may appear only with 'sourceType: module' (0)"
 	);
 	assert_eq!(script_error("if (x) let \\u0061 = 1"), "Unexpected token (7)");
-	assert!(parse("function f(){ \u{2000}'use strict'; with(x){} }", Options::default()).is_err());
+	assert!(program("function f(){ \u{2000}'use strict'; with(x){} }", Options::default()).is_err());
 	assert_eq!(
 		module_error("async function f(){ for await (-x of y); }"),
 		"Unexpected token (31)"
@@ -586,9 +599,9 @@ fn review_fixes() {
 		.spawn(|| {
 			let deep = format!("{}1{}", "(".repeat(2000), ")".repeat(2000));
 			assert_eq!(module_error(&deep).as_str(), "Maximum nesting depth exceeded (499)");
-			assert!(parse(&format!("{}1{}", "(".repeat(400), ")".repeat(400)), Options::default()).is_ok());
+			assert!(program(&format!("{}1{}", "(".repeat(400), ")".repeat(400)), Options::default()).is_ok());
 			let chain = format!("x = 1{}", " + 1".repeat(9000));
-			assert!(parse(&chain, Options::default()).is_ok());
+			assert!(program(&chain, Options::default()).is_ok());
 			let chain = format!("x = 1{}", " + 1".repeat(20000));
 			assert_eq!(module_error(&chain).as_str(), "Maximum nesting depth exceeded (40006)");
 		})
@@ -607,19 +620,19 @@ fn svelte_entry_points() {
 		module: true,
 		..Options::default()
 	};
-	let (ast, id, _) = parse_pattern_at("{#each items as {a, b = 1}, i}", 16, options, "").unwrap();
+	let (ast, id, _) = at(Entry::Pattern, "{#each items as {a, b = 1}, i}", 16, options, "").unwrap();
 	assert_eq!(
 		dump(&ast, id, &plain),
 		r#"ObjectPattern { properties: [Property { key: Identifier { name: "a" }, value: Identifier { name: "a" }, kind: Init, computed: false, method: false, shorthand: true }, Property { key: Identifier { name: "b" }, value: AssignmentPattern { left: Identifier { name: "b" }, right: NumberLiteral { value: 1.0 } }, kind: Init, computed: false, method: false, shorthand: true }] }"#
 	);
 	assert_eq!(ast.node(id).end, 26);
-	let (ast, id, _) = parse_pattern_at("{#each items as item (item.id)}", 16, options, "").unwrap();
+	let (ast, id, _) = at(Entry::Pattern, "{#each items as item (item.id)}", 16, options, "").unwrap();
 	assert_eq!(dump(&ast, id, &plain), r#"Identifier { name: "item" }"#);
 	assert_eq!(ast.node(id).end, 20);
-	assert!(parse_pattern_at("{#each items as 1}", 16, options, "").is_err());
+	assert!(at(Entry::Pattern, "{#each items as 1}", 16, options, "").is_err());
 
-	let (ast, params, end) = parse_params_at("{#snippet row(a, {b}, ...rest)}", 13, options, "").unwrap();
-	let dumped: Vec<String> = params.iter().map(|p| dump(&ast, *p, &plain)).collect();
+	let (ast, list, end) = params("{#snippet row(a, {b}, ...rest)}", 13, options, "").unwrap();
+	let dumped: Vec<String> = list.iter().map(|p| dump(&ast, *p, &plain)).collect();
 	assert_eq!(
 		dumped,
 		[
@@ -630,14 +643,12 @@ fn svelte_entry_points() {
 	);
 	assert_eq!(end, 30);
 	assert_eq!(
-		parse_params_at("{#snippet row(a, a)}", 13, options, "")
-			.unwrap_err()
-			.message,
+		params("{#snippet row(a, a)}", 13, options, "").unwrap_err().message,
 		"Argument name clash"
 	);
 	// Parameters are read as expressions first, so the errors are the ones acorn gives an arrow.
 	let params_error = |src: &str| {
-		let e = parse_params_at(src, 13, options, "").unwrap_err();
+		let e = params(src, 13, options, "").unwrap_err();
 		(e.message, e.pos)
 	};
 	assert_eq!(params_error("{#snippet row(a.b)}"), ("Assigning to rvalue".into(), 14));
@@ -656,16 +667,13 @@ fn svelte_entry_points() {
 		.stack_size(stack)
 		.spawn(move || {
 			let deep = format!("({}a{})", "[".repeat(20_000), "]".repeat(20_000));
-			assert_eq!(
-				parse_params_at(&deep, 0, options, "").unwrap_err().code,
-				Code::NestingDepth
-			);
+			assert_eq!(params(&deep, 0, options, "").unwrap_err().code, Code::NestingDepth);
 		})
 		.unwrap()
 		.join()
 		.unwrap();
 
-	let (ast, id, _) = parse_statement_at("{@const x = a + 1}", 2, options, "").unwrap();
+	let (ast, id, _) = at(Entry::Statement, "{@const x = a + 1}", 2, options, "").unwrap();
 	assert_eq!(
 		dump(&ast, id, &plain),
 		r#"VariableDeclaration { declarations: [VariableDeclarator { id: Identifier { name: "x" }, init: Some(BinaryExpression { operator: Add, left: Identifier { name: "a" }, right: NumberLiteral { value: 1.0 } }) }], kind: Const }"#
@@ -673,39 +681,11 @@ fn svelte_entry_points() {
 	assert_eq!(ast.node(id).end, 17);
 }
 
-#[derive(Clone, Copy)]
-enum Entry {
-	Program,
-	Expression,
-	Pattern,
-	Params,
-	Statement,
-}
+/// One extension's parse, with the checks tests make of recovery.
+struct Api<X>(ParseAt<X>);
 
-/// The five entries of one extension.
-struct Api<X> {
-	program: fn(&str, Options) -> Result<Ast<X>, SyntaxError>,
-	expression: fn(&str, u32, Options, &str) -> Result<(Ast<X>, NodeId, u32), SyntaxError>,
-	pattern: fn(&str, u32, Options, &str) -> Result<(Ast<X>, NodeId, u32), SyntaxError>,
-	params: fn(&str, u32, Options, &str) -> Result<(Ast<X>, Vec<NodeId>, u32), SyntaxError>,
-	statement: fn(&str, u32, Options, &str) -> Result<(Ast<X>, NodeId, u32), SyntaxError>,
-}
-
-const JS: Api<()> = Api {
-	program: crate::parse,
-	expression: parse_expression_at,
-	pattern: parse_pattern_at,
-	params: parse_params_at,
-	statement: parse_statement_at,
-};
-
-const TS: Api<crate::typescript::ast::Data> = Api {
-	program: crate::typescript::parse,
-	expression: crate::typescript::parse_expression_at,
-	pattern: crate::typescript::parse_pattern_at,
-	params: crate::typescript::parse_params_at,
-	statement: crate::typescript::parse_statement_at,
-};
+const JS: Api<()> = Api(crate::parse_at);
+const TS: Api<crate::typescript::ast::Data> = Api(crate::typescript::parse_at);
 
 impl<X: Walk> Api<X> {
 	fn run(
@@ -716,26 +696,7 @@ impl<X: Walk> Api<X> {
 		options: Options,
 		stop: &str,
 	) -> Result<(Ast<X>, Vec<NodeId>, u32), SyntaxError> {
-		Ok(match entry {
-			Entry::Program => {
-				let ast = (self.program)(src, options)?;
-				let root = ast.last();
-				(ast, vec![root], src.len() as u32)
-			}
-			Entry::Expression => {
-				let (ast, id, end) = (self.expression)(src, offset, options, stop)?;
-				(ast, vec![id], end)
-			}
-			Entry::Pattern => {
-				let (ast, id, end) = (self.pattern)(src, offset, options, stop)?;
-				(ast, vec![id], end)
-			}
-			Entry::Params => (self.params)(src, offset, options, stop)?,
-			Entry::Statement => {
-				let (ast, id, end) = (self.statement)(src, offset, options, stop)?;
-				(ast, vec![id], end)
-			}
-		})
+		roots((self.0)(src, offset, None, entry, options, stop))
 	}
 
 	/// Parses under recovery and checks what the recovered tree promises: it never fails, its
@@ -946,7 +907,8 @@ fn recovery() {
 
 	// a placeholder is neither a binding nor a reference
 	let (mut ast, roots, _) = JS.recovered("let = f(a, b)", 0, Entry::Program, module, "");
-	crate::scopes::analyze(&mut ast, roots[0]);
+	let roots = ast.add_list(&[Some(roots[0])]);
+	crate::scopes::analyze(&mut ast, Entry::Program, roots);
 	let scopes = ast.scopes.as_ref().unwrap();
 	assert_eq!(scopes.bindings.len(), 0);
 	assert_eq!(
@@ -1044,14 +1006,14 @@ fn undeclared_exports_can_be_allowed() {
 		allow_undeclared_exports: true,
 		..Options::default()
 	};
-	assert!(parse("export { nope };", options).is_ok());
+	assert!(program("export { nope };", options).is_ok());
 }
 
 // TEASEL_BENCH=file cargo test --release phases -- --ignored --nocapture
 #[test]
 #[ignore]
 fn phases() {
-	use crate::estree::{Binary, Json, Output, Positions, program};
+	use crate::estree::{Binary, Json, Output, Positions, answer};
 	use crate::lexer::Lexer;
 	use crate::lexer::token::TokenKind;
 	let Ok(path) = std::env::var("TEASEL_BENCH") else {
@@ -1063,7 +1025,7 @@ fn phases() {
 		..Default::default()
 	};
 	for _ in 0..300 {
-		let _ = crate::parser::parse_range::<()>(&source, 0, source.len() as u32, options).unwrap();
+		let _ = whole(&source, options);
 	}
 	let best = |name: &str, f: &mut dyn FnMut()| {
 		let mut m = f64::MAX;
@@ -1090,7 +1052,7 @@ fn phases() {
 	});
 	eprintln!("          {tokens} tokens, lexer reached {reached} of {}", source.len());
 	best("parse", &mut || {
-		let _ = crate::parser::parse_range::<()>(&source, 0, source.len() as u32, options).unwrap();
+		let _ = whole(&source, options);
 	});
 	let mean = |name: &str, f: &mut dyn FnMut()| {
 		let t = std::time::Instant::now();
@@ -1103,32 +1065,29 @@ fn phases() {
 		);
 	};
 	mean("parse", &mut || {
-		let _ = crate::parser::parse_range::<()>(&source, 0, source.len() as u32, options).unwrap();
+		let _ = whole(&source, options);
 	});
 	best("parse + attach comments", &mut || {
-		let mut ast = crate::parser::parse_range::<()>(&source, 0, source.len() as u32, options).unwrap();
-		let root = ast.last();
-		crate::comments::attach(&mut ast, &source, root, 0);
+		let (mut ast, roots) = whole(&source, options);
+		crate::comments::attach(&mut ast, &source, roots, 0);
 	});
 	best("parse + scopes", &mut || {
-		let mut ast = crate::parser::parse_range::<()>(&source, 0, source.len() as u32, options).unwrap();
-		let root = ast.last();
-		crate::scopes::analyze(&mut ast, root);
+		let (mut ast, roots) = whole(&source, options);
+		crate::scopes::analyze(&mut ast, Entry::Program, roots);
 	});
 	{
-		let mut ast = crate::parser::parse_range::<()>(&source, 0, source.len() as u32, options).unwrap();
-		let root = ast.last();
-		crate::comments::attach(&mut ast, &source, root, 0);
-		crate::scopes::analyze(&mut ast, root);
+		let (mut ast, roots) = whole(&source, options);
+		crate::comments::attach(&mut ast, &source, roots, 0);
+		crate::scopes::analyze(&mut ast, Entry::Program, roots);
 		let scoped = Output {
 			comments: true,
 			scopes: true,
-			pattern: false,
 			erase: false,
 		};
 		let flat = Positions::new(&source, false);
+		let end = source.len() as u32;
 		best("Binary encode with scopes", &mut || {
-			let _ = program(&ast, root, &source, &flat, scoped, Binary::new()).finish();
+			let _ = answer(&ast, Entry::Program, roots, end, &source, &flat, scoped, Binary::new()).finish();
 		});
 		let s = ast.scopes.as_ref().unwrap();
 		eprintln!(
@@ -1146,38 +1105,47 @@ fn phases() {
 	best("Positions::new, lines", &mut || {
 		let _ = Positions::new(&source, true);
 	});
-	let mut ast = crate::parser::parse_range::<()>(&source, 0, source.len() as u32, options).unwrap();
-	let root = ast.last();
-	crate::comments::attach(&mut ast, &source, root, 0);
+	let (mut ast, roots) = whole(&source, options);
+	crate::comments::attach(&mut ast, &source, roots, 0);
 	let output = Output {
 		comments: true,
 		scopes: false,
-		pattern: false,
 		erase: false,
 	};
+	let end = source.len() as u32;
 	let flat = Positions::new(&source, false);
 	let lines = Positions::new(&source, true);
 	{
-		let mut request = crate::json::Request::new(crate::json::Entry::Program, 0);
+		let mut request = crate::json::Request::new(Entry::Program, 0);
 		request.set_bits(0b10);
 		let prepared = crate::json::Prepared::borrowed(&source, request);
 		best("whole request: positions, parse, comments, encode, finish", &mut || {
-			let _ = prepared.binary(crate::json::Entry::Program, 0.0, "").unwrap();
+			let _ = prepared.binary(Entry::Program, 0.0, None, "").unwrap();
 		});
 		request.set_bits(0b1110);
 		let prepared = crate::json::Prepared::borrowed(&source, request);
 		best("whole request with scopes and loc", &mut || {
-			let _ = prepared.binary(crate::json::Entry::Program, 0.0, "").unwrap();
+			let _ = prepared.binary(Entry::Program, 0.0, None, "").unwrap();
 		});
 	}
 	best("Binary encode, no loc", &mut || {
-		let _ = program(&ast, root, &source, &flat, output, Binary::new()).finish();
+		let _ = answer(&ast, Entry::Program, roots, end, &source, &flat, output, Binary::new()).finish();
 	});
 	best("Binary encode, loc", &mut || {
-		let _ = program(&ast, root, &source, &lines, output, Binary::new()).finish();
+		let _ = answer(&ast, Entry::Program, roots, end, &source, &lines, output, Binary::new()).finish();
 	});
 	best("Json write, loc", &mut || {
-		let _ = program(&ast, root, &source, &lines, output, Json::default()).finish();
+		let _ = answer(
+			&ast,
+			Entry::Program,
+			roots,
+			end,
+			&source,
+			&lines,
+			output,
+			Json::default(),
+		)
+		.finish();
 	});
 	eprintln!(
 		"nodes {} lists {} strings {} comments {}",
@@ -1213,24 +1181,33 @@ fn profile() {
 		.unwrap();
 	let mut sink = 0usize;
 	if std::env::var("TEASEL_PROFILE").is_ok_and(|what| what == "encode") {
-		use crate::estree::{Binary, Output, Positions, program};
-		let mut ast = crate::parser::parse_range::<()>(&source, 0, source.len() as u32, options).unwrap();
-		let root = ast.last();
-		crate::comments::attach(&mut ast, &source, root, 0);
+		use crate::estree::{Binary, Output, Positions, answer};
+		let (mut ast, roots) = whole(&source, options);
+		crate::comments::attach(&mut ast, &source, roots, 0);
 		let output = Output {
 			comments: true,
 			scopes: false,
-			pattern: false,
 			erase: false,
 		};
 		let positions = Positions::new(&source, false);
+		let end = source.len() as u32;
 		for _ in 0..30000 {
-			let words = program(&ast, root, &source, &positions, output, Binary::new()).finish();
+			let words = answer(
+				&ast,
+				Entry::Program,
+				roots,
+				end,
+				&source,
+				&positions,
+				output,
+				Binary::new(),
+			)
+			.finish();
 			sink = sink.wrapping_add(words.len());
 		}
 	} else {
 		for _ in 0..3000 {
-			let ast = crate::parser::parse_range::<()>(&source, 0, source.len() as u32, options).unwrap();
+			let (ast, _) = whole(&source, options);
 			sink = sink.wrapping_add(ast.nodes.len());
 		}
 	}
@@ -1293,13 +1270,13 @@ fn parenthesized_fact() {
 		..Options::default()
 	};
 	let marked = |src: &str| {
-		let (ast, id, _) = parse_expression_at(src, 0, options, "").unwrap();
+		let (ast, id, _) = at(Entry::Expression, src, 0, options, "").unwrap();
 		ast.parenthesized.contains(&id)
 	};
 	assert!(marked("(a, b)"));
 	assert!(marked("((a))"));
 	assert!(!marked("a, b"));
 	assert!(!marked("(a) => a"));
-	let (ast, _, _) = parse_expression_at("(a, b)", 0, Options::default(), "").unwrap();
+	let (ast, _, _) = at(Entry::Expression, "(a, b)", 0, Options::default(), "").unwrap();
 	assert!(ast.parenthesized.is_empty());
 }

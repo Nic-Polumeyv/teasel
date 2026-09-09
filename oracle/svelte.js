@@ -1,6 +1,6 @@
-// Differential test for the entry points the Svelte compiler needs beyond parseExpressionAt:
-// each-block contexts and await-block patterns (parse_pattern_at), snippet parameters
-// (parse_params_at) and declaration tags (parse_statement_at). The expected side is what
+// Differential test for the entries the Svelte compiler needs beyond an expression:
+// each-block contexts and await-block patterns (`pattern`), snippet parameters (`params`) and
+// declaration tags (`statement`). The expected side is what
 // Svelte's own parser produced, since Svelte builds those nodes with acorn through string
 // wrappers, plus a table of invalid inputs to check the errors those wrappers surface.
 //
@@ -58,7 +58,7 @@ const { each, stats } = await components(filter);
 for (const { name, source, ast, ts, byte } of each) {
 	const prefix = ts ? 'ts-' : '';
 	const position = locate(source);
-	const pattern = (node) => jobs.push({ name: `${name}@${node.start} pattern`, source, mode: `${prefix}pattern:${byte(node.start)}`, expected: fix_loc(strip(node), position) });
+	const pattern = (node) => jobs.push({ name: `${name}@${node.start} pattern`, source, mode: `${prefix}pattern+parenthesized:${byte(node.start)}`, expected: fix_loc(strip(node), position) });
 	for (const node of walk(ast.fragment)) {
 		if (node.type === 'EachBlock' && node.context) pattern(node.context);
 		if (node.type === 'AwaitBlock') {
@@ -66,13 +66,14 @@ for (const { name, source, ast, ts, byte } of each) {
 			if (node.error) pattern(node.error);
 		}
 		if (node.type === 'SnippetBlock' && node.parameters.length) {
-			const open = source.indexOf('(', node.expression.end);
-			jobs.push({ name: `${name}@${open} params`, source, mode: `${prefix}params:${byte(open)}`, expected: strip(node.parameters) });
+			// the paren before the first parameter: a type parameter list may hold parens of its own
+			const open = source.lastIndexOf('(', node.parameters[0].start);
+			jobs.push({ name: `${name}@${open} params`, source, mode: `${prefix}params+parenthesized:${byte(open)}`, expected: strip(node.parameters) });
 		}
 		// Svelte hands the declaration of `{const x = 1}` back unchanged, so this is its own node.
 		if (node.type === 'DeclarationTag') {
 			const offset = node.declaration.start;
-			jobs.push({ name: `${name}@${offset} declaration`, source, mode: `${prefix}stmt:${byte(offset)}`, expected: strip(node.declaration) });
+			jobs.push({ name: `${name}@${offset} declaration`, source, mode: `${prefix}stmt+parenthesized:${byte(offset)}`, expected: strip(node.declaration) });
 		}
 		// Svelte rebuilds the declaration of `{@const x = 1}`, so the expected side is acorn driven
 		// the way Svelte drives it, from the `const` or `let` keyword after the `@`.
@@ -129,8 +130,7 @@ for (const [marked, mode] of invalid) {
 function actual(line, job) {
 	const node = JSON.parse(line);
 	if (node.error && job.error_only) return { error: { message: node.error.message, pos: node.error.pos } };
-	if (job.mode.startsWith('params:') || job.mode.startsWith('ts-params:')) return node.error ? node : node.params;
-	return node.node ?? node;
+	return node.node;
 }
 
 const lines = (await teasel(jobs)).map((line, i) => JSON.stringify(actual(line, jobs[i])));

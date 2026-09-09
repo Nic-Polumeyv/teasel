@@ -4,6 +4,7 @@
 
 use crate::ast::{Ast, List, NodeId, NodeKind, VariableKind, Walk};
 use crate::interner::{FastMap, StrId};
+use crate::parser::Entry;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ScopeKind {
@@ -127,8 +128,6 @@ pub struct Scope {
 	pub parent: Option<ScopeId>,
 	/// How many function scopes enclose this one, itself included when it is one.
 	pub function_depth: u32,
-	/// The bindings of outer scopes that identifiers inside this scope resolve to, in first-use order.
-	pub through: Vec<BindingId>,
 	/// An `await` or `for await` runs directly in this scope, no function around it; only a
 	/// program or fragment scope can say so.
 	pub top_level_await: bool,
@@ -324,33 +323,32 @@ fn analyze_with<X: Bind>(ast: &mut Ast<X>, kind: ScopeKind, root: Option<NodeId>
 	ast.scopes = Some(out);
 }
 
-/// Analyzes the tree under `root`: a program opens its own scope, anything else a fragment scope.
-pub fn analyze<X: Bind>(ast: &mut Ast<X>, root: NodeId) {
-	match ast.node(root).kind {
-		NodeKind::Program { body, module } => {
+/// Analyzes an answer: a program opens its own scope, a parameter list a function scope whose
+/// patterns declare `param` bindings, a pattern a fragment scope whose names are `pattern`
+/// bindings, and anything else a fragment scope.
+pub fn analyze<X: Bind>(ast: &mut Ast<X>, entry: Entry, roots: List) {
+	let root = ast.list(roots).first().copied().flatten();
+	match entry {
+		Entry::Program => {
+			let NodeKind::Program { body, module } = ast.node(root.unwrap()).kind else {
+				unreachable!()
+			};
 			let kind = if module { ScopeKind::Module } else { ScopeKind::Script };
-			analyze_with(ast, kind, Some(root), |b| b.statements(body));
+			analyze_with(ast, kind, root, |b| b.statements(body));
 		}
-		_ => analyze_with(ast, ScopeKind::Fragment, Some(root), |b| {
-			b.visit(root, Mode::Expression)
+		Entry::Pattern => analyze_with(ast, ScopeKind::Fragment, root, |b| {
+			b.visit(root.unwrap(), Mode::Declare(BindingKind::Pattern))
+		}),
+		Entry::Params => analyze_with(ast, ScopeKind::Function, None, |b| {
+			let ast = b.ast;
+			for &param in ast.list(roots).iter().flatten() {
+				b.visit(param, Mode::Declare(BindingKind::Param));
+			}
+		}),
+		_ => analyze_with(ast, ScopeKind::Fragment, root, |b| {
+			b.visit(root.unwrap(), Mode::Expression)
 		}),
 	}
-}
-
-/// Analyzes a pattern parsed on its own: what it names are `pattern` bindings of a fragment scope.
-pub fn analyze_pattern<X: Bind>(ast: &mut Ast<X>, root: NodeId) {
-	analyze_with(ast, ScopeKind::Fragment, Some(root), |b| {
-		b.visit(root, Mode::Declare(BindingKind::Pattern))
-	});
-}
-
-/// Analyzes a parameter list parsed on its own, as the parameters of a function scope.
-pub fn analyze_params<X: Bind>(ast: &mut Ast<X>, params: &[NodeId]) {
-	analyze_with(ast, ScopeKind::Function, None, |b| {
-		for &param in params {
-			b.visit(param, Mode::Declare(BindingKind::Param));
-		}
-	});
 }
 
 /// What the analysis keeps about a scope while it runs, parallel to `Scopes::scopes`.
@@ -427,7 +425,6 @@ impl<'a, X: Bind> Binder<'a, X> {
 			node,
 			parent,
 			function_depth,
-			through: Vec::new(),
 			top_level_await: false,
 		});
 		self.open.push(Open {
@@ -488,7 +485,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 				found = Some(self.declare_in(scope, name, BindingKind::Arguments, None));
 			}
 			match found {
-				Some(binding) => self.resolve(reference, binding, scope),
+				Some(binding) => self.resolve(reference, binding),
 				None => {
 					self.pending[kept] = reference;
 					kept += 1;
@@ -512,18 +509,8 @@ impl<'a, X: Bind> Binder<'a, X> {
 				.is_some_and(|node| self.ast.node(node).start >= body_start)
 	}
 
-	fn resolve(&mut self, reference: ReferenceId, binding: BindingId, at: ScopeId) {
+	fn resolve(&mut self, reference: ReferenceId, binding: BindingId) {
 		self.out.references[reference as usize].binding = Some(binding);
-		let mut scope = self.out.references[reference as usize].scope;
-		// `at` is the binding's own scope, so a scope that lists it already did so all the way up
-		while scope != at {
-			let s = &mut self.out.scopes[scope as usize];
-			if s.through.contains(&binding) {
-				break;
-			}
-			s.through.push(binding);
-			scope = s.parent.unwrap();
-		}
 	}
 
 	fn declare_in(&mut self, scope: ScopeId, name: StrId, kind: BindingKind, node: Option<NodeId>) -> BindingId {
@@ -634,9 +621,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 			match self.kind(id) {
 				NodeKind::Identifier { .. } => return Some(id),
 				NodeKind::MemberExpression { object, .. } => id = object,
-				NodeKind::ParenthesizedExpression { expression } | NodeKind::ChainExpression { expression } => {
-					id = expression
-				}
+				NodeKind::ChainExpression { expression } => id = expression,
 				NodeKind::Extension(_) => {
 					id = self.ast.extension.wrapped(self.ast, id)?;
 				}
@@ -650,9 +635,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 		loop {
 			match self.kind(id) {
 				NodeKind::MemberExpression { .. } => return true,
-				NodeKind::ParenthesizedExpression { expression } | NodeKind::ChainExpression { expression } => {
-					id = expression
-				}
+				NodeKind::ChainExpression { expression } => id = expression,
 				NodeKind::Extension(_) => match self.ast.extension.wrapped(self.ast, id) {
 					Some(inner) => id = inner,
 					None => return false,
@@ -682,9 +665,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 					self.visit(property, Mode::Expression);
 				}
 			}
-			NodeKind::ParenthesizedExpression { expression } | NodeKind::ChainExpression { expression } => {
-				self.visit_member_target(expression, root)
-			}
+			NodeKind::ChainExpression { expression } => self.visit_member_target(expression, root),
 			NodeKind::Extension(_) => match self.ast.extension.wrapped(self.ast, id) {
 				Some(inner) => self.visit_member_target(inner, root),
 				None => self.visit(id, Mode::Expression),
@@ -831,7 +812,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 				self.visit(callee, Mode::Expression);
 				self.list(arguments, Mode::Expression);
 			}
-			ChainExpression { expression } | ParenthesizedExpression { expression } => self.visit(expression, mode),
+			ChainExpression { expression } => self.visit(expression, mode),
 			SequenceExpression { expressions } => self.list(expressions, Mode::Expression),
 			ArrowFunctionExpression { params, body, .. } => self.function(id, params, body, true),
 			FunctionExpression { function } => match function.id {
@@ -1050,7 +1031,6 @@ impl<'a, X: Bind> Binder<'a, X> {
 				}
 				self.target(value);
 			}
-			NodeKind::ParenthesizedExpression { expression } => self.target(expression),
 			NodeKind::Extension(_) => match self.ast.extension.wrapped(self.ast, id) {
 				Some(inner) => self.target(inner),
 				None => self.visit(id, Mode::Expression),
@@ -1091,7 +1071,14 @@ mod tests {
 	}
 
 	use super::*;
+	use crate::SyntaxError;
 	use crate::parser::Options;
+
+	fn analyzed<X: Bind>(result: Result<(Ast<X>, List, u32), SyntaxError>) -> Ast<X> {
+		let (mut ast, roots, _) = result.unwrap();
+		analyze(&mut ast, Entry::Program, roots);
+		ast
+	}
 
 	/// Every identifier as `name@start` with what it declares or refers to.
 	fn facts(src: &str) -> String {
@@ -1099,16 +1086,17 @@ mod tests {
 	}
 
 	fn facts_in(src: &str, module: bool) -> String {
-		let mut ast = crate::parse(
+		let ast = analyzed(crate::parse_at(
 			src,
+			0,
+			None,
+			Entry::Program,
 			Options {
 				module,
 				..Options::default()
 			},
-		)
-		.unwrap();
-		let root = ast.last();
-		analyze(&mut ast, root);
+			"",
+		));
 		let scopes = ast.scopes.as_ref().unwrap();
 		let mut ids: Vec<_> = scopes.of_identifier.iter().collect();
 		ids.sort_by_key(|&(id, _)| ast.node(id).start);
@@ -1201,16 +1189,17 @@ mod tests {
 			"x@7 -> global\ny@17 -> global mutate\nw@30 -> global mutate"
 		);
 		let src = "(a as any).b = 1; (c!).d = 2; (e as any) = 3;";
-		let mut ast = crate::typescript::parse(
+		let ast = analyzed(crate::typescript::parse_at(
 			src,
+			0,
+			None,
+			Entry::Program,
 			Options {
 				module: true,
 				..Options::default()
 			},
-		)
-		.unwrap();
-		let root = ast.last();
-		analyze(&mut ast, root);
+			"",
+		));
 		let scopes = ast.scopes.as_ref().unwrap();
 		let flags: Vec<_> = scopes.references.iter().map(|r| (r.write, r.mutate)).collect();
 		assert_eq!(flags, [(false, true), (false, true), (true, false)]);
@@ -1219,16 +1208,17 @@ mod tests {
 	#[test]
 	fn typescript_declarations() {
 		let src = "import type { X } from 'm'; import { type Y, Z } from 'm'; export { type X }; enum E { A = 1, B = A } namespace N { export const n = 1; } namespace N { n; } export function f(): void; class C { m(@dec p) {} } function dec() {} function g(this: T, a) {} enum M { this = 1 }";
-		let mut ast = crate::typescript::parse(
+		let ast = analyzed(crate::typescript::parse_at(
 			src,
+			0,
+			None,
+			Entry::Program,
 			Options {
 				module: true,
 				..Options::default()
 			},
-		)
-		.unwrap();
-		let root = ast.last();
-		analyze(&mut ast, root);
+			"",
+		));
 		let scopes = ast.scopes.as_ref().unwrap();
 		let names: Vec<_> = scopes
 			.bindings
@@ -1264,16 +1254,17 @@ mod tests {
 	#[test]
 	fn typescript_values_and_types() {
 		let src = "enum E { A = x } namespace N { export const n: T = y as T; } let t: T; @d class C { constructor(public p: P) {} }";
-		let mut ast = crate::typescript::parse(
+		let ast = analyzed(crate::typescript::parse_at(
 			src,
+			0,
+			None,
+			Entry::Program,
 			Options {
 				module: true,
 				..Options::default()
 			},
-		)
-		.unwrap();
-		let root = ast.last();
-		analyze(&mut ast, root);
+			"",
+		));
 		let scopes = ast.scopes.as_ref().unwrap();
 		let names: Vec<_> = scopes
 			.bindings
@@ -1307,16 +1298,17 @@ mod tests {
 	#[test]
 	fn declarations_writes_and_top_level_await() {
 		let src = "let [a = 1, b] = c; a = b + 1; a++; for (b of c) {} function f(p) { g = p; } await c;";
-		let mut ast = crate::parse(
+		let ast = analyzed(crate::parse_at(
 			src,
-			crate::Options {
+			0,
+			None,
+			Entry::Program,
+			Options {
 				module: true,
 				..Default::default()
 			},
-		)
-		.unwrap();
-		let root = ast.last();
-		analyze(&mut ast, root);
+			"",
+		));
 		let scopes = ast.scopes.as_ref().unwrap();
 		let start = |id: Option<NodeId>| id.map(|id| ast.node(id).start);
 		let declarations: Vec<_> = scopes
@@ -1351,24 +1343,23 @@ mod tests {
 	}
 
 	#[test]
-	fn imports_exports_and_through() {
-		let mut ast = crate::parse(
+	fn imports_and_exports() {
+		let ast = analyzed(crate::parse_at(
 			"import { a } from 'a'; export { a as b }; function f() { return () => a; }",
+			0,
+			None,
+			Entry::Program,
 			Options {
 				module: true,
 				..Options::default()
 			},
-		)
-		.unwrap();
-		let root = ast.last();
-		analyze(&mut ast, root);
+			"",
+		));
 		let scopes = ast.scopes.as_ref().unwrap();
 		assert_eq!(scopes.scopes.len(), 3);
 		let a = &scopes.bindings[0];
 		let references = scopes.references.iter().filter(|r| r.binding == Some(0)).count();
 		assert_eq!((ast.str(a.name), a.kind, references), ("a", BindingKind::Import, 2));
-		assert_eq!(scopes.scopes[1].through, [0]);
-		assert_eq!(scopes.scopes[2].through, [0]);
 		assert_eq!(scopes.scopes[2].function_depth, 2);
 	}
 }

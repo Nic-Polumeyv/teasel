@@ -203,25 +203,16 @@ function unaligned_floats(buffer, start, count) {
 function link_tables(scopes, bindings, references) {
 	for (const scope of scopes) {
 		scope.parent = scope.parent === null ? null : scopes[scope.parent];
-		if (scope.through.length !== 0) scope.through = scope.through.map((index) => bindings[index]);
 		scope.node = null;
-		scope.bindings = [];
-		scope.declarations = new Map();
-		scope.references = [];
 	}
 	for (const binding of bindings) {
 		binding.scope = scopes[binding.scope];
-		binding.scope.bindings.push(binding);
-		binding.scope.declarations.set(binding.name, binding);
 		binding.node = null;
 		binding.declaration = null;
-		binding.references = [];
 	}
 	for (const reference of references) {
 		reference.scope = scopes[reference.scope];
-		reference.scope.references.push(reference);
 		reference.binding = reference.binding === null ? null : bindings[reference.binding];
-		if (reference.binding !== null) reference.binding.references.push(reference);
 		reference.node = null;
 		reference.writeExpr = null;
 	}
