@@ -1,4 +1,8 @@
-<p align="center"><img src="teasel.svg" width="150" alt=""></p>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="banner-dark.svg">
+  <img src="banner.svg" width="100%" alt="">
+</picture>
+
 <h1 align="center">teasel</h1>
 <p align="center">A JavaScript and TypeScript parser in Rust. It answers in ESTree.</p>
 
