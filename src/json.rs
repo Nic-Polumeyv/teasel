@@ -26,22 +26,6 @@ pub struct Request {
 	pub options: Options,
 }
 
-/// The names front ends accept for the request's switches, as acorn spells them.
-pub const FLAGS: [&str; 12] = [
-	"typescript",
-	"comments",
-	"scopes",
-	"locations",
-	"script",
-	"parenthesized",
-	"allowReturnOutsideFunction",
-	"allowAwaitOutsideFunction",
-	"allowSuperOutsideMethod",
-	"allowUndeclaredExports",
-	"erase",
-	"errorRecovery",
-];
-
 impl Request {
 	pub fn new(entry: Entry, offset: u32) -> Request {
 		Request {
@@ -55,30 +39,25 @@ impl Request {
 		}
 	}
 
-	/// A source's request, its switches as bits in the order of `FLAGS`; the entry and offset
-	/// come with each parse.
-	pub fn from_bits(bits: u32) -> Request {
-		let mut request = Request::new(Entry::Program, 0);
-		request.set_bits(bits);
+	/// A source's request from its switches named, separated by spaces, as acorn spells them and
+	/// `module` for `sourceType: 'module'`; a script otherwise. The entry and offset come with
+	/// each parse.
+	pub fn from_names(names: &str) -> Request {
+		let mut request = Request::default();
+		for name in names.split_ascii_whitespace() {
+			request.set(name);
+		}
 		request
 	}
 
-	pub fn set_bits(&mut self, bits: u32) {
-		for (i, flag) in FLAGS.iter().enumerate() {
-			if bits & (1 << i) != 0 {
-				self.set(flag);
-			}
-		}
-	}
-
-	/// Turns on one of `FLAGS`; anything else is ignored.
+	/// Turns on one switch by name; anything else is ignored.
 	pub fn set(&mut self, flag: &str) {
 		match flag {
 			"typescript" => self.typescript = true,
 			"comments" => self.comments = true,
 			"scopes" => self.scopes = true,
 			"locations" => self.locations = true,
-			"script" => self.options.module = false,
+			"module" => self.options.module = true,
 			"parenthesized" => self.options.parenthesized = true,
 			"allowReturnOutsideFunction" => self.options.allow_return_outside_function = true,
 			"allowAwaitOutsideFunction" => self.options.allow_await_outside_function = true,
@@ -268,6 +247,7 @@ where
 		comments: request.comments,
 		scopes: request.scopes,
 		erase: request.erase && request.typescript,
+		errors: request.options.error_recovery,
 	};
 	parse_at::<E>(
 		source,

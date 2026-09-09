@@ -1,11 +1,8 @@
 // `bun test.js interpret` runs the decoder without code generation, as a host forbidding it would
-import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 if (process.argv[2] === 'interpret') globalThis.Function = /** @type {any} */ (() => { throw new EvalError('blocked'); });
 const node = await import('./index.js');
 const wasm = await import('./wasm.js');
-
-await wasm.init(readFileSync(new URL('./teasel.wasm', import.meta.url)));
 
 for (const [name, { Source, isIdentifierStart, isIdentifierChar, scopeOf, bindingOf, referenceOf, parentOf }] of [['node', node], ['wasm', wasm]]) {
 	const parse = (source, options) => new Source(source, options).parse();
@@ -68,10 +65,11 @@ for (const [name, { Source, isIdentifierStart, isIdentifierChar, scopeOf, bindin
 	const declaration = at('statement', '{let }', 1, { sourceType: 'module', errorRecovery: true }, ['}']);
 	assert.equal(declaration.node.type, 'VariableDeclaration');
 	assert.deepEqual(JSON.parse(JSON.stringify(declaration.node.declarations[0].id)), { type: 'Identifier', start: 5, end: 5, name: '' });
-	assert.equal(at('expression', '{a b}', 1, loose, ['}']).errors, undefined);
+	assert.deepEqual(at('expression', '{a b}', 1, loose, ['}']).errors, []);
 	const broken = parse('x = "abc\ny = ', { errorRecovery: true, locations: true });
 	assert.deepEqual(broken.errors.map((e) => [e.code, e.pos, e.loc.line]), [['unterminated_string', 4, 1], ['unexpected_eof', 13, 2]]);
-	assert.equal('errors' in parse('x', loose), false);
+	assert.deepEqual(parse('x', loose).errors, []);
+	assert.equal('errors' in parse('x'), false);
 	const scoped = parse('let = f(a, b)', { errorRecovery: true, scopes: true, sourceType: 'module' });
 	assert.equal(scoped.bindings.length, 0);
 	assert.equal(bindingOf(scoped.node.body[0].declarations[0].id), undefined);

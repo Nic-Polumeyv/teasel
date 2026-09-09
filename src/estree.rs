@@ -28,6 +28,8 @@ pub struct Output {
 	/// TypeScript is erased: annotations, type-only declarations and imports go, assertions give
 	/// way to their expression, and what erasure cannot express is listed as `typescript`.
 	pub erase: bool,
+	/// The answer lists the errors recovered from, as `errors`.
+	pub errors: bool,
 }
 
 impl Emit for () {
@@ -966,11 +968,8 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 
 	/// The recovered errors as the thrown one would be: code, message, `pos`, `end` and a `loc`.
 	fn errors(&mut self) {
-		if self.ast.errors.is_empty() {
-			return;
-		}
 		let upto;
-		let positions = if self.positions.lines {
+		let positions = if self.positions.lines || self.ast.errors.is_empty() {
 			self.positions
 		} else {
 			let last = self.ast.errors.iter().map(|e| e.pos.max(e.end)).max().unwrap() as usize;
@@ -1016,7 +1015,9 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 			self.key("comments");
 			self.comment_list(&all);
 		}
-		self.errors();
+		if self.output.errors {
+			self.errors();
+		}
 		if self.output.erase {
 			self.all_kept();
 		}

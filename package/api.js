@@ -1,27 +1,24 @@
 import { decode } from './decode.js';
 
-// bit i is `FLAGS[i]` of json.rs
-const FLAGS = ['typescript', 'comments', 'scopes', 'locations', 'script', 'parenthesized', 'allowReturnOutsideFunction', 'allowAwaitOutsideFunction', 'allowSuperOutsideMethod', 'allowUndeclaredExports', 'erase', 'errorRecovery'];
-const BIT = Object.fromEntries(FLAGS.map((flag, i) => [flag, 1 << i]));
-const KNOWN = new Set([...FLAGS, 'sourceType']);
+// acorn's option names, which `Request::set` of json.rs takes as they are
+const OPTIONS = new Set(['sourceType', 'typescript', 'comments', 'scopes', 'locations', 'parenthesized', 'allowReturnOutsideFunction', 'allowAwaitOutsideFunction', 'allowSuperOutsideMethod', 'allowUndeclaredExports', 'errorRecovery']);
 
-export function bits(options) {
-	if (options === undefined) return BIT.script;
+// the engine takes the options that are on as their names
+export function names(options) {
+	if (options === undefined) return '';
+	const on = [];
 	for (const key in options) {
-		if (!KNOWN.has(key) || key === 'script' || key === 'erase') throw new TypeError(`${key} is not an option`);
-	}
-	if ('sourceType' in options && options.sourceType !== 'script' && options.sourceType !== 'module') {
-		throw new TypeError(`sourceType must be "script" or "module", not ${JSON.stringify(options.sourceType)}`);
-	}
-	let on = options.sourceType === 'module' ? 0 : BIT.script;
-	for (const flag of FLAGS) {
-		const value = options[flag];
+		const value = options[key];
+		if (!OPTIONS.has(key)) throw new TypeError(`${key} is not an option`);
 		if (value === undefined || value === false) continue;
-		if (value === true) on |= BIT[flag];
-		else if (flag === 'typescript' && value === 'erase') on |= BIT.typescript | BIT.erase;
-		else throw new TypeError(`${flag} must be a boolean, not ${JSON.stringify(value)}`);
+		if (key === 'sourceType') {
+			if (value !== 'script' && value !== 'module') throw new TypeError(`sourceType must be "script" or "module", not ${JSON.stringify(value)}`);
+			if (value === 'module') on.push('module');
+		} else if (value === true) on.push(key);
+		else if (key === 'typescript' && value === 'erase') on.push('typescript', 'erase');
+		else throw new TypeError(`${key} must be a boolean, not ${JSON.stringify(value)}`);
 	}
-	return on;
+	return on.join(' ');
 }
 
 // `Entry` of parser/mod.rs by index
@@ -39,7 +36,7 @@ function stops(list) {
 /**
  * @typedef {ArrayBuffer | Uint32Array | string} Answer
  * @typedef {object} Engine
- * @property {(source: string, bits: number) => any} create
+ * @property {(source: string, names: string) => any} create
  * @property {(held: any, entry: number, offset: number, end: number | undefined, stop: string) => Answer} parse
  * @property {(held: any) => void} [free]
  * @property {() => string[]} constants
@@ -61,7 +58,7 @@ export function bind(engine) {
 		#source;
 
 		constructor(source, options) {
-			this.#held = engine.create(source, bits(options));
+			this.#held = engine.create(source, names(options));
 			this.#source = source;
 			registry?.register(this, this.#held, this);
 		}

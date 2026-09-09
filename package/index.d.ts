@@ -28,7 +28,7 @@ export interface Options {
 	allowSuperOutsideMethod?: boolean;
 	allowUndeclaredExports?: boolean;
 	/**
-	 * Record syntax errors on the answer as `errors` instead of throwing the first: a missing
+	 * List syntax errors on the answer as `errors` instead of throwing the first: a missing
 	 * operand, name or pattern is an `Identifier` named `''` of no width where it was expected,
 	 * and a statement or entry that cannot be read is skipped to the next stop token or
 	 * unmatched closing bracket, an empty identifier standing for it. Placeholders are neither
@@ -127,42 +127,36 @@ export function bindingOf(node: Node): Binding | null | undefined;
 /** With `scopes`: the reference an identifier makes, with its `write` and `mutate`; a global's too, which no binding lists. */
 export function referenceOf(node: Node): Reference | undefined;
 
-/** A comment, with `loc` when `locations` is on. */
-export interface Comment {
-	type: 'Line' | 'Block';
-	value: string;
+/** A range of the source, with `loc` when `locations` is on. */
+export interface Span {
 	start: number;
 	end: number;
 	loc?: { start: { line: number; column: number }; end: { line: number; column: number } };
 }
 
-/** A node erasure left in place, by type and range. */
-export interface Kept {
+export interface Comment extends Span {
+	type: 'Line' | 'Block';
+	value: string;
+}
+
+/** A node erasure left in place, by type. */
+export interface Kept extends Span {
 	type: string;
-	start: number;
-	end: number;
-	loc?: { start: { line: number; column: number }; end: { line: number; column: number } };
 }
 
 /** A recovered error: what the thrown `SyntaxError` carries, as a plain object. */
-export interface Recovered {
-	code: string;
-	message: string;
-	pos: number;
-	end: number;
-	loc: { line: number; column: number };
-}
+export type Recovered = Pick<ParseError, 'code' | 'message' | 'pos' | 'end'> & { loc: { line: number; column: number } };
 
-/** What a parse returns: the node, or the patterns of a parameter list, and what the options add. */
+/** What a parse returns: the node, or the patterns of a parameter list, and what the options add; a key is there exactly when its option is on. */
 export interface Parsed<T> {
 	node: T;
 	/** The offset after everything the parse consumed: the node, its closing parens and the comments after it; a program's is the end it was given. */
 	end: number;
-	/** Every comment read, in source order; only with `comments`. */
+	/** Every comment read, in source order; with `comments`. */
 	comments?: Comment[];
-	/** What erasure left in place; only with `typescript: 'erase'`. */
+	/** What erasure left in place; with `typescript: 'erase'`. */
 	typescript?: Kept[];
-	/** The errors recovered from, in source order; only with `errorRecovery`, and absent when there were none. */
+	/** The errors recovered from, in source order; with `errorRecovery`. */
 	errors?: Recovered[];
 	/** With `scopes`. */
 	scopes?: Scope[];

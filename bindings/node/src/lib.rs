@@ -85,11 +85,11 @@ pub struct Source {
 
 #[napi]
 impl Source {
-	// the bytes V8 encoded, made valid UTF-8 in place where they are not
+	// the bytes V8 encoded, made valid UTF-8 where they are not; the options as their names
 	#[napi(constructor)]
-	pub fn new(source: Uint8Array, bits: u32) -> Self {
+	pub fn new(source: Uint8Array, options: String) -> Self {
 		Self {
-			prepared: Prepared::from_bytes(source.to_vec(), Request::from_bits(bits)),
+			prepared: Prepared::from_bytes(source.to_vec(), Request::from_names(&options)),
 		}
 	}
 

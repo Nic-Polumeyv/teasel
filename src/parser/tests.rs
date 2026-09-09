@@ -1083,6 +1083,7 @@ fn phases() {
 			comments: true,
 			scopes: true,
 			erase: false,
+			errors: false,
 		};
 		let flat = Positions::new(&source, false);
 		let end = source.len() as u32;
@@ -1111,18 +1112,21 @@ fn phases() {
 		comments: true,
 		scopes: false,
 		erase: false,
+		errors: false,
 	};
 	let end = source.len() as u32;
 	let flat = Positions::new(&source, false);
 	let lines = Positions::new(&source, true);
 	{
 		let mut request = crate::json::Request::new(Entry::Program, 0);
-		request.set_bits(0b10);
+		request.set("comments");
 		let prepared = crate::json::Prepared::borrowed(&source, request);
 		best("whole request: positions, parse, comments, encode, finish", &mut || {
 			let _ = prepared.binary(Entry::Program, 0.0, None, "").unwrap();
 		});
-		request.set_bits(0b1110);
+		for flag in ["scopes", "locations"] {
+			request.set(flag);
+		}
 		let prepared = crate::json::Prepared::borrowed(&source, request);
 		best("whole request with scopes and loc", &mut || {
 			let _ = prepared.binary(Entry::Program, 0.0, None, "").unwrap();
@@ -1188,6 +1192,7 @@ fn profile() {
 			comments: true,
 			scopes: false,
 			erase: false,
+			errors: false,
 		};
 		let positions = Positions::new(&source, false);
 		let end = source.len() as u32;

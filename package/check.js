@@ -7,13 +7,12 @@ import { join } from 'node:path';
 import { createRequire } from 'node:module';
 import * as node from './index.js';
 import * as wasm from './wasm.js';
-import { ENTRY, bits } from './api.js';
+import { ENTRY, names } from './api.js';
 import { decode } from './decode.js';
 
 const native = createRequire(import.meta.url)('./binding.cjs');
 const engine = { constants: native.constants, shapes: native.shapes };
 const binary = new URL('../target/release/teasel', import.meta.url).pathname;
-await wasm.init(readFileSync(new URL('./teasel.wasm', import.meta.url)));
 const files = [];
 function walk(dir) {
 	for (const name of readdirSync(dir)) {
@@ -71,7 +70,7 @@ function mode(source, options, entry, at) {
 /** The addon's answers as JSON, each with the batch job that asks the binary for the same. */
 const jobs = [];
 function json(name, source, options, entry, at) {
-	const answer = new native.Source(Buffer.from(source), bits(options)).parse(ENTRY[entry], at, undefined, '');
+	const answer = new native.Source(Buffer.from(source), names(options)).parse(ENTRY[entry], at, undefined, '');
 	const tree = typeof answer === 'string' ? answer : JSON.stringify(decode(answer, source, engine, false));
 	jobs.push({ name, source, mode: mode(source, options, entry, at), tree });
 }
