@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "invalid_unicode_escape",
+		"message": "Invalid Unicode escape",
+		"pos": 0,
+		"end": 0,
+		"loc": {
+			"line": 1,
+			"column": 0
+		}
+	}
+}

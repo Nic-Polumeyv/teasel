@@ -1,0 +1,82 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 36,
+		"scope": 0,
+		"body": [
+			{
+				"type": "ExpressionStatement",
+				"start": 0,
+				"end": 12,
+				"expression": {
+					"type": "Literal",
+					"start": 0,
+					"end": 11,
+					"value": 105000000000,
+					"raw": "1_0.5_0e1_0"
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 13,
+				"end": 19,
+				"expression": {
+					"type": "Literal",
+					"start": 13,
+					"end": 18,
+					"value": 255,
+					"raw": "0xF_F"
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 20,
+				"end": 24,
+				"expression": {
+					"type": "Literal",
+					"start": 20,
+					"end": 23,
+					"value": 15,
+					"raw": "017"
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 25,
+				"end": 28,
+				"expression": {
+					"type": "Literal",
+					"start": 25,
+					"end": 27,
+					"value": 8,
+					"raw": "08"
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 29,
+				"end": 35,
+				"expression": {
+					"type": "Literal",
+					"start": 29,
+					"end": 34,
+					"value": 2,
+					"raw": "0b1_0"
+				}
+			}
+		],
+		"sourceType": "script"
+	},
+	"end": 36,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "script",
+			"parent": null,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [],
+	"references": []
+}

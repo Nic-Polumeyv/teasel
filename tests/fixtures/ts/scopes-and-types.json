@@ -1,0 +1,546 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 210,
+		"scope": 0,
+		"body": [
+			{
+				"type": "ImportDeclaration",
+				"start": 0,
+				"end": 27,
+				"importKind": "type",
+				"specifiers": [
+					{
+						"type": "ImportSpecifier",
+						"start": 14,
+						"end": 15,
+						"importKind": "value",
+						"imported": {
+							"type": "Identifier",
+							"start": 14,
+							"end": 15,
+							"name": "A"
+						},
+						"local": {
+							"type": "Identifier",
+							"start": 14,
+							"end": 15,
+							"name": "A"
+						}
+					}
+				],
+				"source": {
+					"type": "Literal",
+					"start": 23,
+					"end": 26,
+					"value": "a",
+					"raw": "'a'"
+				},
+				"attributes": []
+			},
+			{
+				"type": "ImportDeclaration",
+				"start": 28,
+				"end": 50,
+				"importKind": "value",
+				"specifiers": [
+					{
+						"type": "ImportSpecifier",
+						"start": 37,
+						"end": 38,
+						"defines": [
+							0
+						],
+						"importKind": "value",
+						"imported": {
+							"type": "Identifier",
+							"start": 37,
+							"end": 38,
+							"name": "B"
+						},
+						"local": {
+							"type": "Identifier",
+							"start": 37,
+							"end": 38,
+							"declares": 0,
+							"name": "B"
+						}
+					}
+				],
+				"source": {
+					"type": "Literal",
+					"start": 46,
+					"end": 49,
+					"value": "b",
+					"raw": "'b'"
+				},
+				"attributes": []
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 51,
+				"end": 64,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 55,
+						"end": 63,
+						"defines": [
+							1
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 55,
+							"end": 59,
+							"declares": 1,
+							"typeAnnotation": {
+								"type": "TSTypeAnnotation",
+								"start": 56,
+								"end": 59,
+								"typeAnnotation": {
+									"type": "TSTypeReference",
+									"start": 58,
+									"end": 59,
+									"typeName": {
+										"type": "Identifier",
+										"start": 58,
+										"end": 59,
+										"name": "A"
+									}
+								}
+							},
+							"name": "c"
+						},
+						"init": {
+							"type": "Identifier",
+							"start": 62,
+							"end": 63,
+							"reference": 0,
+							"name": "B"
+						}
+					}
+				],
+				"kind": "let"
+			},
+			{
+				"type": "TSTypeAliasDeclaration",
+				"start": 65,
+				"end": 83,
+				"id": {
+					"type": "Identifier",
+					"start": 70,
+					"end": 71,
+					"name": "D"
+				},
+				"typeAnnotation": {
+					"type": "TSTypeQuery",
+					"start": 74,
+					"end": 82,
+					"exprName": {
+						"type": "Identifier",
+						"start": 81,
+						"end": 82,
+						"name": "c"
+					}
+				}
+			},
+			{
+				"type": "FunctionDeclaration",
+				"start": 84,
+				"end": 120,
+				"scope": 1,
+				"defines": [
+					2,
+					3
+				],
+				"returnType": {
+					"type": "TSTypeAnnotation",
+					"start": 103,
+					"end": 106,
+					"typeAnnotation": {
+						"type": "TSTypeReference",
+						"start": 105,
+						"end": 106,
+						"typeName": {
+							"type": "Identifier",
+							"start": 105,
+							"end": 106,
+							"name": "T"
+						}
+					}
+				},
+				"typeParameters": {
+					"type": "TSTypeParameterDeclaration",
+					"start": 94,
+					"end": 97,
+					"params": [
+						{
+							"type": "TSTypeParameter",
+							"start": 95,
+							"end": 96,
+							"name": "T"
+						}
+					]
+				},
+				"id": {
+					"type": "Identifier",
+					"start": 93,
+					"end": 94,
+					"declares": 2,
+					"name": "f"
+				},
+				"expression": false,
+				"generator": false,
+				"async": false,
+				"params": [
+					{
+						"type": "Identifier",
+						"start": 98,
+						"end": 102,
+						"declares": 3,
+						"typeAnnotation": {
+							"type": "TSTypeAnnotation",
+							"start": 99,
+							"end": 102,
+							"typeAnnotation": {
+								"type": "TSTypeReference",
+								"start": 101,
+								"end": 102,
+								"typeName": {
+									"type": "Identifier",
+									"start": 101,
+									"end": 102,
+									"name": "T"
+								}
+							}
+						},
+						"name": "t"
+					}
+				],
+				"body": {
+					"type": "BlockStatement",
+					"start": 107,
+					"end": 120,
+					"body": [
+						{
+							"type": "ReturnStatement",
+							"start": 109,
+							"end": 118,
+							"argument": {
+								"type": "Identifier",
+								"start": 116,
+								"end": 117,
+								"reference": 1,
+								"name": "t"
+							}
+						}
+					]
+				}
+			},
+			{
+				"type": "TSModuleDeclaration",
+				"start": 121,
+				"end": 156,
+				"scope": 2,
+				"defines": [
+					4
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 131,
+					"end": 132,
+					"declares": 4,
+					"name": "N"
+				},
+				"body": {
+					"type": "TSModuleBlock",
+					"start": 133,
+					"end": 156,
+					"body": [
+						{
+							"type": "ExportNamedDeclaration",
+							"start": 135,
+							"end": 154,
+							"exportKind": "value",
+							"declaration": {
+								"type": "VariableDeclaration",
+								"start": 142,
+								"end": 154,
+								"declarations": [
+									{
+										"type": "VariableDeclarator",
+										"start": 148,
+										"end": 153,
+										"defines": [
+											5
+										],
+										"id": {
+											"type": "Identifier",
+											"start": 148,
+											"end": 149,
+											"declares": 5,
+											"name": "g"
+										},
+										"init": {
+											"type": "Literal",
+											"start": 152,
+											"end": 153,
+											"value": 1,
+											"raw": "1"
+										}
+									}
+								],
+								"kind": "const"
+							},
+							"specifiers": [],
+							"source": null,
+							"attributes": []
+						}
+					]
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 157,
+				"end": 161,
+				"expression": {
+					"type": "MemberExpression",
+					"start": 157,
+					"end": 160,
+					"object": {
+						"type": "Identifier",
+						"start": 157,
+						"end": 158,
+						"reference": 2,
+						"name": "N"
+					},
+					"property": {
+						"type": "Identifier",
+						"start": 159,
+						"end": 160,
+						"name": "g"
+					},
+					"computed": false,
+					"optional": false
+				}
+			},
+			{
+				"type": "TSEnumDeclaration",
+				"start": 162,
+				"end": 181,
+				"scope": 3,
+				"defines": [
+					6
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 167,
+					"end": 168,
+					"declares": 6,
+					"name": "E"
+				},
+				"members": [
+					{
+						"type": "TSEnumMember",
+						"start": 171,
+						"end": 172,
+						"defines": [
+							7
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 171,
+							"end": 172,
+							"declares": 7,
+							"name": "X"
+						}
+					},
+					{
+						"type": "TSEnumMember",
+						"start": 174,
+						"end": 179,
+						"defines": [
+							8
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 174,
+							"end": 175,
+							"declares": 8,
+							"name": "Y"
+						},
+						"initializer": {
+							"type": "Identifier",
+							"start": 178,
+							"end": 179,
+							"reference": 3,
+							"name": "X"
+						}
+					}
+				]
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 182,
+				"end": 206,
+				"declare": true,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 196,
+						"end": 205,
+						"defines": [
+							9
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 196,
+							"end": 205,
+							"declares": 9,
+							"typeAnnotation": {
+								"type": "TSTypeAnnotation",
+								"start": 197,
+								"end": 205,
+								"typeAnnotation": {
+									"type": "TSNumberKeyword",
+									"start": 199,
+									"end": 205
+								}
+							},
+							"name": "h"
+						},
+						"init": null
+					}
+				],
+				"kind": "const"
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 207,
+				"end": 209,
+				"expression": {
+					"type": "Identifier",
+					"start": 207,
+					"end": 208,
+					"reference": 4,
+					"name": "h"
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 210,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "namespace",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "enum",
+			"parent": 0,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "B",
+			"kind": "import",
+			"scope": 0
+		},
+		{
+			"name": "c",
+			"kind": "let",
+			"scope": 0
+		},
+		{
+			"name": "f",
+			"kind": "function",
+			"scope": 0
+		},
+		{
+			"name": "t",
+			"kind": "param",
+			"scope": 1
+		},
+		{
+			"name": "N",
+			"kind": "namespace",
+			"scope": 0
+		},
+		{
+			"name": "g",
+			"kind": "const",
+			"scope": 2
+		},
+		{
+			"name": "E",
+			"kind": "enum",
+			"scope": 0
+		},
+		{
+			"name": "X",
+			"kind": "enum-member",
+			"scope": 3
+		},
+		{
+			"name": "Y",
+			"kind": "enum-member",
+			"scope": 3
+		},
+		{
+			"name": "h",
+			"kind": "const",
+			"scope": 0
+		}
+	],
+	"references": [
+		{
+			"scope": 0,
+			"binding": 0,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 1,
+			"binding": 3,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": 4,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 3,
+			"binding": 7,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": 9,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

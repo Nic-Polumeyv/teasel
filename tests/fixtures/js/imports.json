@@ -1,0 +1,437 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 234,
+		"scope": 0,
+		"body": [
+			{
+				"type": "ImportDeclaration",
+				"start": 0,
+				"end": 18,
+				"specifiers": [
+					{
+						"type": "ImportDefaultSpecifier",
+						"start": 7,
+						"end": 8,
+						"defines": [
+							0
+						],
+						"local": {
+							"type": "Identifier",
+							"start": 7,
+							"end": 8,
+							"declares": 0,
+							"name": "a"
+						}
+					}
+				],
+				"source": {
+					"type": "Literal",
+					"start": 14,
+					"end": 17,
+					"value": "a",
+					"raw": "'a'"
+				},
+				"attributes": []
+			},
+			{
+				"type": "ImportDeclaration",
+				"start": 19,
+				"end": 42,
+				"specifiers": [
+					{
+						"type": "ImportNamespaceSpecifier",
+						"start": 26,
+						"end": 32,
+						"defines": [
+							1
+						],
+						"local": {
+							"type": "Identifier",
+							"start": 31,
+							"end": 32,
+							"declares": 1,
+							"name": "b"
+						}
+					}
+				],
+				"source": {
+					"type": "Literal",
+					"start": 38,
+					"end": 41,
+					"value": "b",
+					"raw": "'b'"
+				},
+				"attributes": []
+			},
+			{
+				"type": "ImportDeclaration",
+				"start": 43,
+				"end": 83,
+				"specifiers": [
+					{
+						"type": "ImportSpecifier",
+						"start": 52,
+						"end": 53,
+						"defines": [
+							2
+						],
+						"imported": {
+							"type": "Identifier",
+							"start": 52,
+							"end": 53,
+							"name": "c"
+						},
+						"local": {
+							"type": "Identifier",
+							"start": 52,
+							"end": 53,
+							"declares": 2,
+							"name": "c"
+						}
+					},
+					{
+						"type": "ImportSpecifier",
+						"start": 55,
+						"end": 61,
+						"defines": [
+							3
+						],
+						"imported": {
+							"type": "Identifier",
+							"start": 55,
+							"end": 56,
+							"name": "d"
+						},
+						"local": {
+							"type": "Identifier",
+							"start": 60,
+							"end": 61,
+							"declares": 3,
+							"name": "e"
+						}
+					},
+					{
+						"type": "ImportSpecifier",
+						"start": 63,
+						"end": 71,
+						"defines": [
+							4
+						],
+						"imported": {
+							"type": "Literal",
+							"start": 63,
+							"end": 66,
+							"value": "f",
+							"raw": "'f'"
+						},
+						"local": {
+							"type": "Identifier",
+							"start": 70,
+							"end": 71,
+							"declares": 4,
+							"name": "g"
+						}
+					}
+				],
+				"source": {
+					"type": "Literal",
+					"start": 79,
+					"end": 82,
+					"value": "c",
+					"raw": "'c'"
+				},
+				"attributes": []
+			},
+			{
+				"type": "ImportDeclaration",
+				"start": 84,
+				"end": 109,
+				"specifiers": [
+					{
+						"type": "ImportDefaultSpecifier",
+						"start": 91,
+						"end": 92,
+						"defines": [
+							5
+						],
+						"local": {
+							"type": "Identifier",
+							"start": 91,
+							"end": 92,
+							"declares": 5,
+							"name": "h"
+						}
+					},
+					{
+						"type": "ImportSpecifier",
+						"start": 96,
+						"end": 97,
+						"defines": [
+							6
+						],
+						"imported": {
+							"type": "Identifier",
+							"start": 96,
+							"end": 97,
+							"name": "i"
+						},
+						"local": {
+							"type": "Identifier",
+							"start": 96,
+							"end": 97,
+							"declares": 6,
+							"name": "i"
+						}
+					}
+				],
+				"source": {
+					"type": "Literal",
+					"start": 105,
+					"end": 108,
+					"value": "d",
+					"raw": "'d'"
+				},
+				"attributes": []
+			},
+			{
+				"type": "ImportDeclaration",
+				"start": 110,
+				"end": 121,
+				"specifiers": [],
+				"source": {
+					"type": "Literal",
+					"start": 117,
+					"end": 120,
+					"value": "e",
+					"raw": "'e'"
+				},
+				"attributes": []
+			},
+			{
+				"type": "ImportDeclaration",
+				"start": 122,
+				"end": 162,
+				"specifiers": [
+					{
+						"type": "ImportDefaultSpecifier",
+						"start": 129,
+						"end": 130,
+						"defines": [
+							7
+						],
+						"local": {
+							"type": "Identifier",
+							"start": 129,
+							"end": 130,
+							"declares": 7,
+							"name": "j"
+						}
+					}
+				],
+				"source": {
+					"type": "Literal",
+					"start": 136,
+					"end": 139,
+					"value": "f",
+					"raw": "'f'"
+				},
+				"attributes": [
+					{
+						"type": "ImportAttribute",
+						"start": 147,
+						"end": 159,
+						"key": {
+							"type": "Identifier",
+							"start": 147,
+							"end": 151,
+							"name": "type"
+						},
+						"value": {
+							"type": "Literal",
+							"start": 153,
+							"end": 159,
+							"value": "json",
+							"raw": "'json'"
+						}
+					}
+				]
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 163,
+				"end": 179,
+				"expression": {
+					"type": "MemberExpression",
+					"start": 163,
+					"end": 178,
+					"object": {
+						"type": "MetaProperty",
+						"start": 163,
+						"end": 174,
+						"meta": {
+							"type": "Identifier",
+							"start": 163,
+							"end": 169,
+							"name": "import"
+						},
+						"property": {
+							"type": "Identifier",
+							"start": 170,
+							"end": 174,
+							"name": "meta"
+						}
+					},
+					"property": {
+						"type": "Identifier",
+						"start": 175,
+						"end": 178,
+						"name": "url"
+					},
+					"computed": false,
+					"optional": false
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 180,
+				"end": 192,
+				"expression": {
+					"type": "ImportExpression",
+					"start": 180,
+					"end": 191,
+					"source": {
+						"type": "Literal",
+						"start": 187,
+						"end": 190,
+						"value": "g",
+						"raw": "'g'"
+					},
+					"options": null
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 193,
+				"end": 233,
+				"expression": {
+					"type": "ImportExpression",
+					"start": 193,
+					"end": 232,
+					"source": {
+						"type": "Literal",
+						"start": 200,
+						"end": 203,
+						"value": "h",
+						"raw": "'h'"
+					},
+					"options": {
+						"type": "ObjectExpression",
+						"start": 205,
+						"end": 231,
+						"properties": [
+							{
+								"type": "Property",
+								"start": 207,
+								"end": 229,
+								"method": false,
+								"shorthand": false,
+								"computed": false,
+								"key": {
+									"type": "Identifier",
+									"start": 207,
+									"end": 211,
+									"name": "with"
+								},
+								"value": {
+									"type": "ObjectExpression",
+									"start": 213,
+									"end": 229,
+									"properties": [
+										{
+											"type": "Property",
+											"start": 215,
+											"end": 227,
+											"method": false,
+											"shorthand": false,
+											"computed": false,
+											"key": {
+												"type": "Identifier",
+												"start": 215,
+												"end": 219,
+												"name": "type"
+											},
+											"value": {
+												"type": "Literal",
+												"start": 221,
+												"end": 227,
+												"value": "json",
+												"raw": "'json'"
+											},
+											"kind": "init"
+										}
+									]
+								},
+								"kind": "init"
+							}
+						]
+					}
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 234,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "a",
+			"kind": "import",
+			"scope": 0
+		},
+		{
+			"name": "b",
+			"kind": "import",
+			"scope": 0
+		},
+		{
+			"name": "c",
+			"kind": "import",
+			"scope": 0
+		},
+		{
+			"name": "e",
+			"kind": "import",
+			"scope": 0
+		},
+		{
+			"name": "g",
+			"kind": "import",
+			"scope": 0
+		},
+		{
+			"name": "h",
+			"kind": "import",
+			"scope": 0
+		},
+		{
+			"name": "i",
+			"kind": "import",
+			"scope": 0
+		},
+		{
+			"name": "j",
+			"kind": "import",
+			"scope": 0
+		}
+	],
+	"references": []
+}

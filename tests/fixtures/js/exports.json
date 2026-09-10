@@ -1,0 +1,306 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 186,
+		"scope": 0,
+		"body": [
+			{
+				"type": "ExportNamedDeclaration",
+				"start": 0,
+				"end": 19,
+				"declaration": {
+					"type": "VariableDeclaration",
+					"start": 7,
+					"end": 19,
+					"declarations": [
+						{
+							"type": "VariableDeclarator",
+							"start": 13,
+							"end": 18,
+							"defines": [
+								0
+							],
+							"id": {
+								"type": "Identifier",
+								"start": 13,
+								"end": 14,
+								"declares": 0,
+								"name": "a"
+							},
+							"init": {
+								"type": "Literal",
+								"start": 17,
+								"end": 18,
+								"value": 1,
+								"raw": "1"
+							}
+						}
+					],
+					"kind": "const"
+				},
+				"specifiers": [],
+				"source": null,
+				"attributes": []
+			},
+			{
+				"type": "ExportNamedDeclaration",
+				"start": 20,
+				"end": 42,
+				"declaration": {
+					"type": "FunctionDeclaration",
+					"start": 27,
+					"end": 42,
+					"scope": 1,
+					"defines": [
+						1
+					],
+					"id": {
+						"type": "Identifier",
+						"start": 36,
+						"end": 37,
+						"declares": 1,
+						"name": "b"
+					},
+					"expression": false,
+					"generator": false,
+					"async": false,
+					"params": [],
+					"body": {
+						"type": "BlockStatement",
+						"start": 40,
+						"end": 42,
+						"body": []
+					}
+				},
+				"specifiers": [],
+				"source": null,
+				"attributes": []
+			},
+			{
+				"type": "ExportNamedDeclaration",
+				"start": 43,
+				"end": 60,
+				"declaration": {
+					"type": "ClassDeclaration",
+					"start": 50,
+					"end": 60,
+					"scope": 2,
+					"defines": [
+						2
+					],
+					"id": {
+						"type": "Identifier",
+						"start": 56,
+						"end": 57,
+						"declares": 2,
+						"name": "C"
+					},
+					"superClass": null,
+					"body": {
+						"type": "ClassBody",
+						"start": 58,
+						"end": 60,
+						"body": []
+					}
+				},
+				"specifiers": [],
+				"source": null,
+				"attributes": []
+			},
+			{
+				"type": "ExportNamedDeclaration",
+				"start": 61,
+				"end": 89,
+				"declaration": null,
+				"specifiers": [
+					{
+						"type": "ExportSpecifier",
+						"start": 70,
+						"end": 76,
+						"local": {
+							"type": "Identifier",
+							"start": 70,
+							"end": 71,
+							"reference": 0,
+							"name": "a"
+						},
+						"exported": {
+							"type": "Identifier",
+							"start": 75,
+							"end": 76,
+							"name": "d"
+						}
+					},
+					{
+						"type": "ExportSpecifier",
+						"start": 78,
+						"end": 86,
+						"local": {
+							"type": "Identifier",
+							"start": 78,
+							"end": 79,
+							"reference": 1,
+							"name": "b"
+						},
+						"exported": {
+							"type": "Literal",
+							"start": 83,
+							"end": 86,
+							"value": "e",
+							"raw": "'e'"
+						}
+					}
+				],
+				"source": null,
+				"attributes": []
+			},
+			{
+				"type": "ExportAllDeclaration",
+				"start": 90,
+				"end": 108,
+				"exported": null,
+				"source": {
+					"type": "Literal",
+					"start": 104,
+					"end": 107,
+					"value": "f",
+					"raw": "'f'"
+				},
+				"attributes": []
+			},
+			{
+				"type": "ExportAllDeclaration",
+				"start": 109,
+				"end": 132,
+				"exported": {
+					"type": "Identifier",
+					"start": 121,
+					"end": 122,
+					"name": "g"
+				},
+				"source": {
+					"type": "Literal",
+					"start": 128,
+					"end": 131,
+					"value": "g",
+					"raw": "'g'"
+				},
+				"attributes": []
+			},
+			{
+				"type": "ExportNamedDeclaration",
+				"start": 133,
+				"end": 155,
+				"declaration": null,
+				"specifiers": [
+					{
+						"type": "ExportSpecifier",
+						"start": 142,
+						"end": 143,
+						"local": {
+							"type": "Identifier",
+							"start": 142,
+							"end": 143,
+							"name": "h"
+						},
+						"exported": {
+							"type": "Identifier",
+							"start": 142,
+							"end": 143,
+							"name": "h"
+						}
+					}
+				],
+				"source": {
+					"type": "Literal",
+					"start": 151,
+					"end": 154,
+					"value": "h",
+					"raw": "'h'"
+				},
+				"attributes": []
+			},
+			{
+				"type": "ExportDefaultDeclaration",
+				"start": 156,
+				"end": 185,
+				"declaration": {
+					"type": "FunctionDeclaration",
+					"start": 171,
+					"end": 185,
+					"scope": 3,
+					"id": null,
+					"expression": false,
+					"generator": false,
+					"async": false,
+					"params": [],
+					"body": {
+						"type": "BlockStatement",
+						"start": 183,
+						"end": 185,
+						"body": []
+					}
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 186,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "class",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "a",
+			"kind": "const",
+			"scope": 0
+		},
+		{
+			"name": "b",
+			"kind": "function",
+			"scope": 0
+		},
+		{
+			"name": "C",
+			"kind": "class",
+			"scope": 0
+		}
+	],
+	"references": [
+		{
+			"scope": 0,
+			"binding": 0,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": 1,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

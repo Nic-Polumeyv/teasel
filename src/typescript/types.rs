@@ -477,6 +477,9 @@ impl Parser<'_, TypeScript> {
 		let start = self.tok.start;
 		let operator = self.ident_name().unwrap();
 		self.next()?;
+		if self.str(operator) == "unique" && !self.is_contextual("symbol") {
+			return self.error_arg(self.tok.start, Code::Expected, "symbol");
+		}
 		self.enter()?;
 		let type_annotation = self.parse_type_operator_or_higher();
 		self.leave();
@@ -1239,10 +1242,11 @@ impl Parser<'_, TypeScript> {
 				for after in ["override", "static", "readonly", "accessor"] {
 					order(modifier, after)?;
 				}
+				conflict("private", "abstract")?;
 			}
 			"in" | "out" => order("in", "out")?,
 			"accessor" => {
-				for other in ["readonly", "static", "override"] {
+				for other in ["readonly", "declare"] {
 					conflict("accessor", other)?;
 				}
 			}
@@ -1250,10 +1254,13 @@ impl Parser<'_, TypeScript> {
 			_ => {
 				order("static", "readonly")?;
 				order("static", "override")?;
+				order("static", "accessor")?;
+				order("override", "accessor")?;
 				order("override", "readonly")?;
 				order("abstract", "override")?;
 				conflict("declare", "override")?;
 				conflict("static", "abstract")?;
+				conflict("private", "abstract")?;
 			}
 		}
 		Ok(())

@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "readonly_on_method",
+		"message": "Class methods cannot have the 'readonly' modifier.",
+		"pos": 10,
+		"end": 10,
+		"loc": {
+			"line": 1,
+			"column": 10
+		}
+	}
+}

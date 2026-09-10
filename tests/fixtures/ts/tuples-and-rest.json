@@ -1,0 +1,216 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 133,
+		"scope": 0,
+		"body": [
+			{
+				"type": "TSTypeAliasDeclaration",
+				"start": 0,
+				"end": 41,
+				"id": {
+					"type": "Identifier",
+					"start": 5,
+					"end": 6,
+					"name": "A"
+				},
+				"typeAnnotation": {
+					"type": "TSTupleType",
+					"start": 9,
+					"end": 40,
+					"elementTypes": [
+						{
+							"type": "TSStringKeyword",
+							"start": 10,
+							"end": 16
+						},
+						{
+							"type": "TSOptionalType",
+							"start": 18,
+							"end": 25,
+							"typeAnnotation": {
+								"type": "TSNumberKeyword",
+								"start": 18,
+								"end": 24
+							}
+						},
+						{
+							"type": "TSRestType",
+							"start": 27,
+							"end": 39,
+							"typeAnnotation": {
+								"type": "TSArrayType",
+								"start": 30,
+								"end": 39,
+								"elementType": {
+									"type": "TSBooleanKeyword",
+									"start": 30,
+									"end": 37
+								}
+							}
+						}
+					]
+				}
+			},
+			{
+				"type": "TSTypeAliasDeclaration",
+				"start": 42,
+				"end": 91,
+				"id": {
+					"type": "Identifier",
+					"start": 47,
+					"end": 48,
+					"name": "B"
+				},
+				"typeAnnotation": {
+					"type": "TSTypeOperator",
+					"start": 51,
+					"end": 90,
+					"operator": "readonly",
+					"typeAnnotation": {
+						"type": "TSTupleType",
+						"start": 60,
+						"end": 90,
+						"elementTypes": [
+							{
+								"type": "TSNamedTupleMember",
+								"start": 61,
+								"end": 70,
+								"optional": false,
+								"label": {
+									"type": "Identifier",
+									"start": 61,
+									"end": 62,
+									"name": "a"
+								},
+								"elementType": {
+									"type": "TSStringKeyword",
+									"start": 64,
+									"end": 70
+								}
+							},
+							{
+								"type": "TSRestType",
+								"start": 72,
+								"end": 89,
+								"typeAnnotation": {
+									"type": "TSNamedTupleMember",
+									"start": 75,
+									"end": 89,
+									"optional": false,
+									"label": {
+										"type": "Identifier",
+										"start": 75,
+										"end": 79,
+										"name": "rest"
+									},
+									"elementType": {
+										"type": "TSArrayType",
+										"start": 81,
+										"end": 89,
+										"elementType": {
+											"type": "TSNumberKeyword",
+											"start": 81,
+											"end": 87
+										}
+									}
+								}
+							}
+						]
+					}
+				}
+			},
+			{
+				"type": "FunctionDeclaration",
+				"start": 92,
+				"end": 132,
+				"scope": 1,
+				"defines": [
+					0,
+					1
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 101,
+					"end": 102,
+					"declares": 0,
+					"name": "f"
+				},
+				"expression": false,
+				"generator": false,
+				"async": false,
+				"params": [
+					{
+						"type": "RestElement",
+						"start": 103,
+						"end": 128,
+						"typeAnnotation": {
+							"type": "TSTypeAnnotation",
+							"start": 110,
+							"end": 128,
+							"typeAnnotation": {
+								"type": "TSTupleType",
+								"start": 112,
+								"end": 128,
+								"elementTypes": [
+									{
+										"type": "TSStringKeyword",
+										"start": 113,
+										"end": 119
+									},
+									{
+										"type": "TSNumberKeyword",
+										"start": 121,
+										"end": 127
+									}
+								]
+							}
+						},
+						"argument": {
+							"type": "Identifier",
+							"start": 106,
+							"end": 110,
+							"declares": 1,
+							"name": "args"
+						}
+					}
+				],
+				"body": {
+					"type": "BlockStatement",
+					"start": 130,
+					"end": 132,
+					"body": []
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 133,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "f",
+			"kind": "function",
+			"scope": 0
+		},
+		{
+			"name": "args",
+			"kind": "param",
+			"scope": 1
+		}
+	],
+	"references": []
+}

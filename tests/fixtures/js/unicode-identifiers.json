@@ -1,0 +1,128 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 52,
+		"scope": 0,
+		"body": [
+			{
+				"type": "VariableDeclaration",
+				"start": 0,
+				"end": 18,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 6,
+						"end": 17,
+						"defines": [
+							0
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 6,
+							"end": 13,
+							"declares": 0,
+							"name": "ünïcödé"
+						},
+						"init": {
+							"type": "Literal",
+							"start": 16,
+							"end": 17,
+							"value": 1,
+							"raw": "1"
+						}
+					}
+				],
+				"kind": "const"
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 19,
+				"end": 37,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 25,
+						"end": 36,
+						"defines": [
+							1
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 25,
+							"end": 32,
+							"declares": 1,
+							"name": "ab"
+						},
+						"init": {
+							"type": "Literal",
+							"start": 35,
+							"end": 36,
+							"value": 2,
+							"raw": "2"
+						}
+					}
+				],
+				"kind": "const"
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 38,
+				"end": 51,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 44,
+						"end": 50,
+						"defines": [
+							2
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 44,
+							"end": 46,
+							"declares": 2,
+							"name": "𝒳"
+						},
+						"init": {
+							"type": "Literal",
+							"start": 49,
+							"end": 50,
+							"value": 3,
+							"raw": "3"
+						}
+					}
+				],
+				"kind": "const"
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 52,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "ünïcödé",
+			"kind": "const",
+			"scope": 0
+		},
+		{
+			"name": "ab",
+			"kind": "const",
+			"scope": 0
+		},
+		{
+			"name": "𝒳",
+			"kind": "const",
+			"scope": 0
+		}
+	],
+	"references": []
+}

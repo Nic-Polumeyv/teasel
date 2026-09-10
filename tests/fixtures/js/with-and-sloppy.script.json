@@ -1,0 +1,236 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 90,
+		"scope": 0,
+		"body": [
+			{
+				"type": "WithStatement",
+				"start": 0,
+				"end": 15,
+				"scope": 1,
+				"object": {
+					"type": "Identifier",
+					"start": 6,
+					"end": 7,
+					"reference": 0,
+					"name": "o"
+				},
+				"body": {
+					"type": "BlockStatement",
+					"start": 9,
+					"end": 15,
+					"scope": 2,
+					"body": [
+						{
+							"type": "ExpressionStatement",
+							"start": 11,
+							"end": 13,
+							"expression": {
+								"type": "Identifier",
+								"start": 11,
+								"end": 12,
+								"reference": 1,
+								"name": "a"
+							}
+						}
+					]
+				}
+			},
+			{
+				"type": "FunctionDeclaration",
+				"start": 16,
+				"end": 46,
+				"scope": 3,
+				"defines": [
+					0
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 25,
+					"end": 26,
+					"declares": 0,
+					"name": "f"
+				},
+				"expression": false,
+				"generator": false,
+				"async": false,
+				"params": [],
+				"body": {
+					"type": "BlockStatement",
+					"start": 29,
+					"end": 46,
+					"body": [
+						{
+							"type": "ExpressionStatement",
+							"start": 31,
+							"end": 44,
+							"expression": {
+								"type": "Literal",
+								"start": 31,
+								"end": 43,
+								"value": "use strict",
+								"raw": "'use strict'"
+							},
+							"directive": "use strict"
+						}
+					]
+				}
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 47,
+				"end": 59,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 51,
+						"end": 58,
+						"defines": [
+							1
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 51,
+							"end": 54,
+							"declares": 1,
+							"name": "let"
+						},
+						"init": {
+							"type": "Literal",
+							"start": 57,
+							"end": 58,
+							"value": 1,
+							"raw": "1"
+						}
+					}
+				],
+				"kind": "var"
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 60,
+				"end": 74,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 64,
+						"end": 73,
+						"defines": [
+							2
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 64,
+							"end": 69,
+							"declares": 2,
+							"name": "yield"
+						},
+						"init": {
+							"type": "Literal",
+							"start": 72,
+							"end": 73,
+							"value": 2,
+							"raw": "2"
+						}
+					}
+				],
+				"kind": "var"
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 75,
+				"end": 89,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 79,
+						"end": 88,
+						"defines": [
+							3
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 79,
+							"end": 84,
+							"declares": 3,
+							"name": "await"
+						},
+						"init": {
+							"type": "Literal",
+							"start": 87,
+							"end": 88,
+							"value": 3,
+							"raw": "3"
+						}
+					}
+				],
+				"kind": "var"
+			}
+		],
+		"sourceType": "script"
+	},
+	"end": 90,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "script",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "with",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 1,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "f",
+			"kind": "function",
+			"scope": 0
+		},
+		{
+			"name": "let",
+			"kind": "var",
+			"scope": 0
+		},
+		{
+			"name": "yield",
+			"kind": "var",
+			"scope": 0
+		},
+		{
+			"name": "await",
+			"kind": "var",
+			"scope": 0
+		}
+	],
+	"references": [
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 2,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

@@ -1,0 +1,410 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 90,
+		"scope": 0,
+		"body": [
+			{
+				"type": "ExpressionStatement",
+				"start": 0,
+				"end": 89,
+				"expression": {
+					"type": "AssignmentExpression",
+					"start": 0,
+					"end": 88,
+					"operator": "=",
+					"left": {
+						"type": "Identifier",
+						"start": 0,
+						"end": 1,
+						"reference": 0,
+						"name": "a"
+					},
+					"right": {
+						"type": "AssignmentExpression",
+						"start": 4,
+						"end": 88,
+						"writes": [
+							0
+						],
+						"operator": "+=",
+						"left": {
+							"type": "Identifier",
+							"start": 4,
+							"end": 5,
+							"reference": 1,
+							"name": "b"
+						},
+						"right": {
+							"type": "AssignmentExpression",
+							"start": 9,
+							"end": 88,
+							"writes": [
+								1
+							],
+							"operator": "-=",
+							"left": {
+								"type": "Identifier",
+								"start": 9,
+								"end": 10,
+								"reference": 2,
+								"name": "c"
+							},
+							"right": {
+								"type": "AssignmentExpression",
+								"start": 14,
+								"end": 88,
+								"writes": [
+									2
+								],
+								"operator": "*=",
+								"left": {
+									"type": "Identifier",
+									"start": 14,
+									"end": 15,
+									"reference": 3,
+									"name": "d"
+								},
+								"right": {
+									"type": "AssignmentExpression",
+									"start": 19,
+									"end": 88,
+									"writes": [
+										3
+									],
+									"operator": "/=",
+									"left": {
+										"type": "Identifier",
+										"start": 19,
+										"end": 20,
+										"reference": 4,
+										"name": "e"
+									},
+									"right": {
+										"type": "AssignmentExpression",
+										"start": 24,
+										"end": 88,
+										"writes": [
+											4
+										],
+										"operator": "%=",
+										"left": {
+											"type": "Identifier",
+											"start": 24,
+											"end": 25,
+											"reference": 5,
+											"name": "f"
+										},
+										"right": {
+											"type": "AssignmentExpression",
+											"start": 29,
+											"end": 88,
+											"writes": [
+												5
+											],
+											"operator": "**=",
+											"left": {
+												"type": "Identifier",
+												"start": 29,
+												"end": 30,
+												"reference": 6,
+												"name": "g"
+											},
+											"right": {
+												"type": "AssignmentExpression",
+												"start": 35,
+												"end": 88,
+												"writes": [
+													6
+												],
+												"operator": "<<=",
+												"left": {
+													"type": "Identifier",
+													"start": 35,
+													"end": 36,
+													"reference": 7,
+													"name": "h"
+												},
+												"right": {
+													"type": "AssignmentExpression",
+													"start": 41,
+													"end": 88,
+													"writes": [
+														7
+													],
+													"operator": ">>=",
+													"left": {
+														"type": "Identifier",
+														"start": 41,
+														"end": 42,
+														"reference": 8,
+														"name": "i"
+													},
+													"right": {
+														"type": "AssignmentExpression",
+														"start": 47,
+														"end": 88,
+														"writes": [
+															8
+														],
+														"operator": ">>>=",
+														"left": {
+															"type": "Identifier",
+															"start": 47,
+															"end": 48,
+															"reference": 9,
+															"name": "j"
+														},
+														"right": {
+															"type": "AssignmentExpression",
+															"start": 54,
+															"end": 88,
+															"writes": [
+																9
+															],
+															"operator": "&=",
+															"left": {
+																"type": "Identifier",
+																"start": 54,
+																"end": 55,
+																"reference": 10,
+																"name": "k"
+															},
+															"right": {
+																"type": "AssignmentExpression",
+																"start": 59,
+																"end": 88,
+																"writes": [
+																	10
+																],
+																"operator": "|=",
+																"left": {
+																	"type": "Identifier",
+																	"start": 59,
+																	"end": 60,
+																	"reference": 11,
+																	"name": "l"
+																},
+																"right": {
+																	"type": "AssignmentExpression",
+																	"start": 64,
+																	"end": 88,
+																	"writes": [
+																		11
+																	],
+																	"operator": "^=",
+																	"left": {
+																		"type": "Identifier",
+																		"start": 64,
+																		"end": 65,
+																		"reference": 12,
+																		"name": "m"
+																	},
+																	"right": {
+																		"type": "AssignmentExpression",
+																		"start": 69,
+																		"end": 88,
+																		"writes": [
+																			12
+																		],
+																		"operator": "&&=",
+																		"left": {
+																			"type": "Identifier",
+																			"start": 69,
+																			"end": 70,
+																			"reference": 13,
+																			"name": "n"
+																		},
+																		"right": {
+																			"type": "AssignmentExpression",
+																			"start": 75,
+																			"end": 88,
+																			"writes": [
+																				13
+																			],
+																			"operator": "||=",
+																			"left": {
+																				"type": "Identifier",
+																				"start": 75,
+																				"end": 76,
+																				"reference": 14,
+																				"name": "o"
+																			},
+																			"right": {
+																				"type": "AssignmentExpression",
+																				"start": 81,
+																				"end": 88,
+																				"writes": [
+																					14
+																				],
+																				"operator": "??=",
+																				"left": {
+																					"type": "Identifier",
+																					"start": 81,
+																					"end": 82,
+																					"reference": 15,
+																					"name": "p"
+																				},
+																				"right": {
+																					"type": "Identifier",
+																					"start": 87,
+																					"end": 88,
+																					"reference": 16,
+																					"writes": [
+																						15
+																					],
+																					"name": "q"
+																				}
+																			}
+																		}
+																	}
+																}
+															}
+														}
+													}
+												}
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 90,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [],
+	"references": [
+		{
+			"scope": 0,
+			"binding": null,
+			"write": true,
+			"read": false,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": true,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": true,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": true,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": true,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": true,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": true,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": true,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": true,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": true,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": true,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": true,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": true,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": true,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": true,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": true,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

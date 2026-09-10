@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "empty_type_parameters",
+		"message": "Type parameter list cannot be empty.",
+		"pos": 12,
+		"end": 13,
+		"loc": {
+			"line": 1,
+			"column": 12
+		}
+	}
+}

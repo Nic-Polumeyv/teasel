@@ -1,0 +1,184 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 66,
+		"scope": 0,
+		"body": [
+			{
+				"type": "ExpressionStatement",
+				"start": 26,
+				"end": 26,
+				"expression": {
+					"type": "Identifier",
+					"start": 26,
+					"end": 26,
+					"name": ""
+				}
+			},
+			{
+				"type": "FunctionDeclaration",
+				"start": 28,
+				"end": 43,
+				"scope": 1,
+				"defines": [
+					0
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 37,
+					"end": 37,
+					"name": ""
+				},
+				"expression": false,
+				"generator": false,
+				"async": false,
+				"params": [
+					{
+						"type": "Identifier",
+						"start": 38,
+						"end": 39,
+						"declares": 0,
+						"name": "x"
+					}
+				],
+				"body": {
+					"type": "BlockStatement",
+					"start": 41,
+					"end": 43,
+					"body": []
+				}
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 53,
+				"end": 65,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 59,
+						"end": 64,
+						"defines": [
+							1
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 59,
+							"end": 60,
+							"declares": 1,
+							"name": "d"
+						},
+						"init": {
+							"type": "Literal",
+							"start": 63,
+							"end": 64,
+							"value": 2,
+							"raw": "2"
+						}
+					}
+				],
+				"kind": "const"
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 66,
+	"comments": [],
+	"errors": [
+		{
+			"code": "unexpected_token",
+			"message": "Unexpected token",
+			"pos": 6,
+			"end": 7,
+			"loc": {
+				"line": 1,
+				"column": 6
+			}
+		},
+		{
+			"code": "unexpected_token",
+			"message": "Unexpected token",
+			"pos": 14,
+			"end": 15,
+			"loc": {
+				"line": 3,
+				"column": 0
+			}
+		},
+		{
+			"code": "unexpected_token",
+			"message": "Unexpected token",
+			"pos": 22,
+			"end": 23,
+			"loc": {
+				"line": 4,
+				"column": 6
+			}
+		},
+		{
+			"code": "unexpected_token",
+			"message": "Unexpected token",
+			"pos": 26,
+			"end": 27,
+			"loc": {
+				"line": 4,
+				"column": 10
+			}
+		},
+		{
+			"code": "unexpected_token",
+			"message": "Unexpected token",
+			"pos": 37,
+			"end": 38,
+			"loc": {
+				"line": 5,
+				"column": 9
+			}
+		},
+		{
+			"code": "unexpected_token",
+			"message": "Unexpected token",
+			"pos": 50,
+			"end": 51,
+			"loc": {
+				"line": 6,
+				"column": 6
+			}
+		},
+		{
+			"code": "unexpected_token",
+			"message": "Unexpected token",
+			"pos": 51,
+			"end": 52,
+			"loc": {
+				"line": 6,
+				"column": 7
+			}
+		}
+	],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "x",
+			"kind": "param",
+			"scope": 1
+		},
+		{
+			"name": "d",
+			"kind": "const",
+			"scope": 0
+		}
+	],
+	"references": []
+}

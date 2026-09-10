@@ -1,0 +1,351 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 198,
+		"scope": 0,
+		"body": [
+			{
+				"type": "TSModuleDeclaration",
+				"start": 0,
+				"end": 75,
+				"scope": 1,
+				"defines": [
+					0
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 10,
+					"end": 11,
+					"declares": 0,
+					"name": "N"
+				},
+				"body": {
+					"type": "TSModuleBlock",
+					"start": 12,
+					"end": 75,
+					"body": [
+						{
+							"type": "ExportNamedDeclaration",
+							"start": 14,
+							"end": 33,
+							"exportKind": "value",
+							"declaration": {
+								"type": "VariableDeclaration",
+								"start": 21,
+								"end": 33,
+								"declarations": [
+									{
+										"type": "VariableDeclarator",
+										"start": 27,
+										"end": 32,
+										"defines": [
+											1
+										],
+										"id": {
+											"type": "Identifier",
+											"start": 27,
+											"end": 28,
+											"declares": 1,
+											"name": "a"
+										},
+										"init": {
+											"type": "Literal",
+											"start": 31,
+											"end": 32,
+											"value": 1,
+											"raw": "1"
+										}
+									}
+								],
+								"kind": "const"
+							},
+							"specifiers": [],
+							"source": null,
+							"attributes": []
+						},
+						{
+							"type": "TSModuleDeclaration",
+							"start": 34,
+							"end": 73,
+							"scope": 2,
+							"defines": [
+								2
+							],
+							"id": {
+								"type": "Identifier",
+								"start": 44,
+								"end": 45,
+								"declares": 2,
+								"name": "M"
+							},
+							"body": {
+								"type": "TSModuleBlock",
+								"start": 46,
+								"end": 73,
+								"body": [
+									{
+										"type": "ExportNamedDeclaration",
+										"start": 48,
+										"end": 71,
+										"exportKind": "type",
+										"declaration": {
+											"type": "TSTypeAliasDeclaration",
+											"start": 55,
+											"end": 71,
+											"id": {
+												"type": "Identifier",
+												"start": 60,
+												"end": 61,
+												"name": "T"
+											},
+											"typeAnnotation": {
+												"type": "TSStringKeyword",
+												"start": 64,
+												"end": 70
+											}
+										},
+										"specifiers": [],
+										"source": null,
+										"attributes": []
+									}
+								]
+							}
+						}
+					]
+				}
+			},
+			{
+				"type": "TSModuleDeclaration",
+				"start": 76,
+				"end": 90,
+				"scope": 3,
+				"defines": [
+					3
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 83,
+					"end": 84,
+					"declares": 3,
+					"name": "Q"
+				},
+				"body": {
+					"type": "TSModuleDeclaration",
+					"start": 85,
+					"end": 90,
+					"scope": 4,
+					"defines": [
+						4
+					],
+					"id": {
+						"type": "Identifier",
+						"start": 85,
+						"end": 86,
+						"declares": 4,
+						"name": "R"
+					},
+					"body": {
+						"type": "TSModuleBlock",
+						"start": 87,
+						"end": 90,
+						"body": []
+					}
+				}
+			},
+			{
+				"type": "TSModuleDeclaration",
+				"start": 91,
+				"end": 147,
+				"scope": 5,
+				"declare": true,
+				"id": {
+					"type": "Literal",
+					"start": 106,
+					"end": 116,
+					"value": "external",
+					"raw": "'external'"
+				},
+				"body": {
+					"type": "TSModuleBlock",
+					"start": 117,
+					"end": 147,
+					"body": [
+						{
+							"type": "ExportNamedDeclaration",
+							"start": 119,
+							"end": 145,
+							"exportKind": "value",
+							"declaration": {
+								"type": "TSDeclareFunction",
+								"start": 126,
+								"end": 145,
+								"defines": [
+									5
+								],
+								"returnType": {
+									"type": "TSTypeAnnotation",
+									"start": 138,
+									"end": 144,
+									"typeAnnotation": {
+										"type": "TSVoidKeyword",
+										"start": 140,
+										"end": 144
+									}
+								},
+								"id": {
+									"type": "Identifier",
+									"start": 135,
+									"end": 136,
+									"declares": 5,
+									"name": "f"
+								},
+								"generator": false,
+								"async": false,
+								"expression": false,
+								"params": []
+							},
+							"specifiers": [],
+							"source": null,
+							"attributes": []
+						}
+					]
+				}
+			},
+			{
+				"type": "TSModuleDeclaration",
+				"start": 148,
+				"end": 197,
+				"scope": 6,
+				"declare": true,
+				"global": true,
+				"id": {
+					"type": "Identifier",
+					"start": 156,
+					"end": 162,
+					"name": "global"
+				},
+				"body": {
+					"type": "TSModuleBlock",
+					"start": 163,
+					"end": 197,
+					"body": [
+						{
+							"type": "TSInterfaceDeclaration",
+							"start": 165,
+							"end": 195,
+							"id": {
+								"type": "Identifier",
+								"start": 175,
+								"end": 181,
+								"name": "Window"
+							},
+							"body": {
+								"type": "TSInterfaceBody",
+								"start": 182,
+								"end": 195,
+								"body": [
+									{
+										"type": "TSPropertySignature",
+										"start": 184,
+										"end": 193,
+										"key": {
+											"type": "Identifier",
+											"start": 184,
+											"end": 185,
+											"name": "x"
+										},
+										"computed": false,
+										"typeAnnotation": {
+											"type": "TSTypeAnnotation",
+											"start": 185,
+											"end": 193,
+											"typeAnnotation": {
+												"type": "TSNumberKeyword",
+												"start": 187,
+												"end": 193
+											}
+										}
+									}
+								]
+							}
+						}
+					]
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 198,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "namespace",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "namespace",
+			"parent": 1,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "namespace",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "namespace",
+			"parent": 3,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "namespace",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "namespace",
+			"parent": 0,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "N",
+			"kind": "namespace",
+			"scope": 0
+		},
+		{
+			"name": "a",
+			"kind": "const",
+			"scope": 1
+		},
+		{
+			"name": "M",
+			"kind": "namespace",
+			"scope": 1
+		},
+		{
+			"name": "Q",
+			"kind": "namespace",
+			"scope": 0
+		},
+		{
+			"name": "R",
+			"kind": "namespace",
+			"scope": 3
+		},
+		{
+			"name": "f",
+			"kind": "function",
+			"scope": 5
+		}
+	],
+	"references": []
+}

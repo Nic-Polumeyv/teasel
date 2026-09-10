@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "bad_template_escape",
+		"message": "Bad escape sequence in untagged template literal",
+		"pos": 1,
+		"end": 1,
+		"loc": {
+			"line": 1,
+			"column": 1
+		}
+	}
+}

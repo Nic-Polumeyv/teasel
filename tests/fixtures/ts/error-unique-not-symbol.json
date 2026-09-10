@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "expected",
+		"message": "Expected symbol",
+		"pos": 14,
+		"end": 20,
+		"loc": {
+			"line": 1,
+			"column": 14
+		}
+	}
+}

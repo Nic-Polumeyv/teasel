@@ -1,0 +1,106 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 37,
+		"scope": 0,
+		"body": [
+			{
+				"type": "FunctionDeclaration",
+				"start": 0,
+				"end": 36,
+				"scope": 1,
+				"defines": [
+					0,
+					1,
+					2
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 9,
+					"end": 10,
+					"declares": 0,
+					"name": "f"
+				},
+				"expression": false,
+				"generator": false,
+				"async": false,
+				"params": [
+					{
+						"type": "Identifier",
+						"start": 11,
+						"end": 20,
+						"declares": 1,
+						"typeAnnotation": {
+							"type": "TSTypeAnnotation",
+							"start": 12,
+							"end": 20,
+							"typeAnnotation": {
+								"type": "TSNumberKeyword",
+								"start": 14,
+								"end": 20
+							}
+						},
+						"name": "a"
+					},
+					{
+						"type": "Identifier",
+						"start": 22,
+						"end": 32,
+						"declares": 2,
+						"typeAnnotation": {
+							"type": "TSTypeAnnotation",
+							"start": 26,
+							"end": 32,
+							"typeAnnotation": {
+								"type": "TSVoidKeyword",
+								"start": 28,
+								"end": 32
+							}
+						},
+						"name": "this"
+					}
+				],
+				"body": {
+					"type": "BlockStatement",
+					"start": 34,
+					"end": 36,
+					"body": []
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 37,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "f",
+			"kind": "function",
+			"scope": 0
+		},
+		{
+			"name": "a",
+			"kind": "param",
+			"scope": 1
+		},
+		{
+			"name": "this",
+			"kind": "param",
+			"scope": 1
+		}
+	],
+	"references": []
+}

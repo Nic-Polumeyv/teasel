@@ -1,0 +1,313 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 160,
+		"scope": 0,
+		"body": [
+			{
+				"type": "TSTypeAliasDeclaration",
+				"start": 0,
+				"end": 89,
+				"id": {
+					"type": "Identifier",
+					"start": 5,
+					"end": 6,
+					"name": "A"
+				},
+				"typeParameters": {
+					"type": "TSTypeParameterDeclaration",
+					"start": 6,
+					"end": 9,
+					"params": [
+						{
+							"type": "TSTypeParameter",
+							"start": 7,
+							"end": 8,
+							"name": "T"
+						}
+					]
+				},
+				"typeAnnotation": {
+					"type": "TSMappedType",
+					"start": 12,
+					"end": 88,
+					"readonly": "-",
+					"typeParameter": {
+						"type": "TSTypeParameter",
+						"start": 25,
+						"end": 37,
+						"name": "K",
+						"constraint": {
+							"type": "TSTypeOperator",
+							"start": 30,
+							"end": 37,
+							"operator": "keyof",
+							"typeAnnotation": {
+								"type": "TSTypeReference",
+								"start": 36,
+								"end": 37,
+								"typeName": {
+									"type": "Identifier",
+									"start": 36,
+									"end": 37,
+									"name": "T"
+								}
+							}
+						}
+					},
+					"nameType": {
+						"type": "TSLiteralType",
+						"start": 41,
+						"end": 71,
+						"literal": {
+							"type": "TemplateLiteral",
+							"start": 41,
+							"end": 71,
+							"expressions": [
+								{
+									"type": "TSTypeReference",
+									"start": 47,
+									"end": 69,
+									"typeName": {
+										"type": "Identifier",
+										"start": 47,
+										"end": 57,
+										"name": "Capitalize"
+									},
+									"typeArguments": {
+										"type": "TSTypeParameterInstantiation",
+										"start": 57,
+										"end": 69,
+										"params": [
+											{
+												"type": "TSIntersectionType",
+												"start": 58,
+												"end": 68,
+												"types": [
+													{
+														"type": "TSTypeReference",
+														"start": 58,
+														"end": 59,
+														"typeName": {
+															"type": "Identifier",
+															"start": 58,
+															"end": 59,
+															"name": "K"
+														}
+													},
+													{
+														"type": "TSStringKeyword",
+														"start": 62,
+														"end": 68
+													}
+												]
+											}
+										]
+									}
+								}
+							],
+							"quasis": [
+								{
+									"type": "TemplateElement",
+									"start": 42,
+									"end": 45,
+									"value": {
+										"raw": "get",
+										"cooked": "get"
+									},
+									"tail": false
+								},
+								{
+									"type": "TemplateElement",
+									"start": 70,
+									"end": 70,
+									"value": {
+										"raw": "",
+										"cooked": ""
+									},
+									"tail": true
+								}
+							]
+						}
+					},
+					"optional": "-",
+					"typeAnnotation": {
+						"type": "TSFunctionType",
+						"start": 76,
+						"end": 86,
+						"parameters": [],
+						"typeAnnotation": {
+							"type": "TSTypeAnnotation",
+							"start": 79,
+							"end": 86,
+							"typeAnnotation": {
+								"type": "TSIndexedAccessType",
+								"start": 82,
+								"end": 86,
+								"objectType": {
+									"type": "TSTypeReference",
+									"start": 82,
+									"end": 83,
+									"typeName": {
+										"type": "Identifier",
+										"start": 82,
+										"end": 83,
+										"name": "T"
+									}
+								},
+								"indexType": {
+									"type": "TSTypeReference",
+									"start": 84,
+									"end": 85,
+									"typeName": {
+										"type": "Identifier",
+										"start": 84,
+										"end": 85,
+										"name": "K"
+									}
+								}
+							}
+						}
+					}
+				}
+			},
+			{
+				"type": "TSTypeAliasDeclaration",
+				"start": 90,
+				"end": 159,
+				"id": {
+					"type": "Identifier",
+					"start": 95,
+					"end": 96,
+					"name": "B"
+				},
+				"typeParameters": {
+					"type": "TSTypeParameterDeclaration",
+					"start": 96,
+					"end": 99,
+					"params": [
+						{
+							"type": "TSTypeParameter",
+							"start": 97,
+							"end": 98,
+							"name": "T"
+						}
+					]
+				},
+				"typeAnnotation": {
+					"type": "TSConditionalType",
+					"start": 102,
+					"end": 158,
+					"checkType": {
+						"type": "TSTypeReference",
+						"start": 102,
+						"end": 103,
+						"typeName": {
+							"type": "Identifier",
+							"start": 102,
+							"end": 103,
+							"name": "T"
+						}
+					},
+					"extendsType": {
+						"type": "TSFunctionType",
+						"start": 112,
+						"end": 141,
+						"parameters": [
+							{
+								"type": "RestElement",
+								"start": 113,
+								"end": 129,
+								"typeAnnotation": {
+									"type": "TSTypeAnnotation",
+									"start": 120,
+									"end": 129,
+									"typeAnnotation": {
+										"type": "TSInferType",
+										"start": 122,
+										"end": 129,
+										"typeParameter": {
+											"type": "TSTypeParameter",
+											"start": 128,
+											"end": 129,
+											"name": "P"
+										}
+									}
+								},
+								"argument": {
+									"type": "Identifier",
+									"start": 116,
+									"end": 120,
+									"name": "args"
+								}
+							}
+						],
+						"typeAnnotation": {
+							"type": "TSTypeAnnotation",
+							"start": 131,
+							"end": 141,
+							"typeAnnotation": {
+								"type": "TSInferType",
+								"start": 134,
+								"end": 141,
+								"typeParameter": {
+									"type": "TSTypeParameter",
+									"start": 140,
+									"end": 141,
+									"name": "R"
+								}
+							}
+						}
+					},
+					"trueType": {
+						"type": "TSTupleType",
+						"start": 144,
+						"end": 150,
+						"elementTypes": [
+							{
+								"type": "TSTypeReference",
+								"start": 145,
+								"end": 146,
+								"typeName": {
+									"type": "Identifier",
+									"start": 145,
+									"end": 146,
+									"name": "P"
+								}
+							},
+							{
+								"type": "TSTypeReference",
+								"start": 148,
+								"end": 149,
+								"typeName": {
+									"type": "Identifier",
+									"start": 148,
+									"end": 149,
+									"name": "R"
+								}
+							}
+						]
+					},
+					"falseType": {
+						"type": "TSNeverKeyword",
+						"start": 153,
+						"end": 158
+					}
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 160,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [],
+	"references": []
+}

@@ -1,0 +1,278 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 80,
+		"scope": 0,
+		"body": [
+			{
+				"type": "TSEnumDeclaration",
+				"start": 0,
+				"end": 39,
+				"scope": 1,
+				"defines": [
+					0
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 5,
+					"end": 6,
+					"declares": 0,
+					"name": "E"
+				},
+				"members": [
+					{
+						"type": "TSEnumMember",
+						"start": 9,
+						"end": 10,
+						"defines": [
+							1
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 9,
+							"end": 10,
+							"declares": 1,
+							"name": "A"
+						}
+					},
+					{
+						"type": "TSEnumMember",
+						"start": 12,
+						"end": 17,
+						"defines": [
+							2
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 12,
+							"end": 13,
+							"declares": 2,
+							"name": "B"
+						},
+						"initializer": {
+							"type": "Literal",
+							"start": 16,
+							"end": 17,
+							"value": 2,
+							"raw": "2"
+						}
+					},
+					{
+						"type": "TSEnumMember",
+						"start": 19,
+						"end": 28,
+						"defines": [
+							3
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 19,
+							"end": 20,
+							"declares": 3,
+							"name": "C"
+						},
+						"initializer": {
+							"type": "BinaryExpression",
+							"start": 23,
+							"end": 28,
+							"left": {
+								"type": "Identifier",
+								"start": 23,
+								"end": 24,
+								"reference": 0,
+								"name": "A"
+							},
+							"operator": "|",
+							"right": {
+								"type": "Identifier",
+								"start": 27,
+								"end": 28,
+								"reference": 1,
+								"name": "B"
+							}
+						}
+					},
+					{
+						"type": "TSEnumMember",
+						"start": 30,
+						"end": 37,
+						"defines": [
+							4
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 30,
+							"end": 31,
+							"declares": 4,
+							"name": "D"
+						},
+						"initializer": {
+							"type": "Literal",
+							"start": 34,
+							"end": 37,
+							"value": "d",
+							"raw": "'d'"
+						}
+					}
+				]
+			},
+			{
+				"type": "TSEnumDeclaration",
+				"start": 40,
+				"end": 58,
+				"scope": 2,
+				"defines": [
+					5
+				],
+				"const": true,
+				"id": {
+					"type": "Identifier",
+					"start": 51,
+					"end": 52,
+					"declares": 5,
+					"name": "F"
+				},
+				"members": [
+					{
+						"type": "TSEnumMember",
+						"start": 55,
+						"end": 56,
+						"defines": [
+							6
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 55,
+							"end": 56,
+							"declares": 6,
+							"name": "X"
+						}
+					}
+				]
+			},
+			{
+				"type": "TSEnumDeclaration",
+				"start": 59,
+				"end": 79,
+				"scope": 3,
+				"defines": [
+					7
+				],
+				"declare": true,
+				"id": {
+					"type": "Identifier",
+					"start": 72,
+					"end": 73,
+					"declares": 7,
+					"name": "G"
+				},
+				"members": [
+					{
+						"type": "TSEnumMember",
+						"start": 76,
+						"end": 77,
+						"defines": [
+							8
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 76,
+							"end": 77,
+							"declares": 8,
+							"name": "Y"
+						}
+					}
+				]
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 80,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "enum",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "enum",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "enum",
+			"parent": 0,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "E",
+			"kind": "enum",
+			"scope": 0
+		},
+		{
+			"name": "A",
+			"kind": "enum-member",
+			"scope": 1
+		},
+		{
+			"name": "B",
+			"kind": "enum-member",
+			"scope": 1
+		},
+		{
+			"name": "C",
+			"kind": "enum-member",
+			"scope": 1
+		},
+		{
+			"name": "D",
+			"kind": "enum-member",
+			"scope": 1
+		},
+		{
+			"name": "F",
+			"kind": "enum",
+			"scope": 0
+		},
+		{
+			"name": "X",
+			"kind": "enum-member",
+			"scope": 2
+		},
+		{
+			"name": "G",
+			"kind": "enum",
+			"scope": 0
+		},
+		{
+			"name": "Y",
+			"kind": "enum-member",
+			"scope": 3
+		}
+	],
+	"references": [
+		{
+			"scope": 1,
+			"binding": 1,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 1,
+			"binding": 2,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

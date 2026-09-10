@@ -1,0 +1,126 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 70,
+		"scope": 0,
+		"body": [
+			{
+				"type": "VariableDeclaration",
+				"start": 0,
+				"end": 24,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 6,
+						"end": 24,
+						"defines": [
+							0
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 6,
+							"end": 7,
+							"declares": 0,
+							"name": "a"
+						},
+						"init": {
+							"type": "Literal",
+							"start": 10,
+							"end": 24,
+							"value": "unterminated;",
+							"raw": "'unterminated;"
+						}
+					}
+				],
+				"kind": "const"
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 25,
+				"end": 70,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 31,
+						"end": 70,
+						"defines": [
+							1
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 31,
+							"end": 32,
+							"declares": 1,
+							"name": "b"
+						},
+						"init": {
+							"type": "TemplateLiteral",
+							"start": 35,
+							"end": 70,
+							"expressions": [],
+							"quasis": [
+								{
+									"type": "TemplateElement",
+									"start": 36,
+									"end": 70,
+									"value": {
+										"raw": "template\nconst c = /re;\n/* comment",
+										"cooked": "template\nconst c = /re;\n/* comment"
+									},
+									"tail": true
+								}
+							]
+						}
+					}
+				],
+				"kind": "const"
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 70,
+	"comments": [],
+	"errors": [
+		{
+			"code": "unterminated_string",
+			"message": "Unterminated string constant",
+			"pos": 10,
+			"end": 10,
+			"loc": {
+				"line": 1,
+				"column": 10
+			}
+		},
+		{
+			"code": "unterminated_template",
+			"message": "Unterminated template",
+			"pos": 36,
+			"end": 36,
+			"loc": {
+				"line": 2,
+				"column": 11
+			}
+		}
+	],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "a",
+			"kind": "const",
+			"scope": 0
+		},
+		{
+			"name": "b",
+			"kind": "const",
+			"scope": 0
+		}
+	],
+	"references": []
+}

@@ -1,0 +1,374 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 130,
+		"scope": 0,
+		"body": [
+			{
+				"type": "VariableDeclaration",
+				"start": 0,
+				"end": 22,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 6,
+						"end": 21,
+						"defines": [
+							0
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 6,
+							"end": 7,
+							"declares": 0,
+							"name": "a"
+						},
+						"init": {
+							"type": "TSAsExpression",
+							"start": 10,
+							"end": 21,
+							"expression": {
+								"type": "Identifier",
+								"start": 10,
+								"end": 11,
+								"reference": 0,
+								"name": "b"
+							},
+							"typeAnnotation": {
+								"type": "TSStringKeyword",
+								"start": 15,
+								"end": 21
+							}
+						}
+					}
+				],
+				"kind": "const"
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 23,
+				"end": 43,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 29,
+						"end": 42,
+						"defines": [
+							1
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 29,
+							"end": 30,
+							"declares": 1,
+							"name": "c"
+						},
+						"init": {
+							"type": "TSTypeAssertion",
+							"start": 33,
+							"end": 42,
+							"typeAnnotation": {
+								"type": "TSNumberKeyword",
+								"start": 34,
+								"end": 40
+							},
+							"expression": {
+								"type": "Identifier",
+								"start": 41,
+								"end": 42,
+								"reference": 1,
+								"name": "d"
+							}
+						}
+					}
+				],
+				"kind": "const"
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 44,
+				"end": 57,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 50,
+						"end": 56,
+						"defines": [
+							2
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 50,
+							"end": 51,
+							"declares": 2,
+							"name": "e"
+						},
+						"init": {
+							"type": "TSNonNullExpression",
+							"start": 54,
+							"end": 56,
+							"expression": {
+								"type": "Identifier",
+								"start": 54,
+								"end": 55,
+								"reference": 2,
+								"name": "f"
+							}
+						}
+					}
+				],
+				"kind": "const"
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 58,
+				"end": 82,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 64,
+						"end": 81,
+						"defines": [
+							3
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 64,
+							"end": 65,
+							"declares": 3,
+							"name": "g"
+						},
+						"init": {
+							"type": "TSSatisfiesExpression",
+							"start": 68,
+							"end": 81,
+							"expression": {
+								"type": "Identifier",
+								"start": 68,
+								"end": 69,
+								"reference": 3,
+								"name": "h"
+							},
+							"typeAnnotation": {
+								"type": "TSTypeReference",
+								"start": 80,
+								"end": 81,
+								"typeName": {
+									"type": "Identifier",
+									"start": 80,
+									"end": 81,
+									"name": "I"
+								}
+							}
+						}
+					}
+				],
+				"kind": "const"
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 83,
+				"end": 104,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 89,
+						"end": 103,
+						"defines": [
+							4
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 89,
+							"end": 90,
+							"declares": 4,
+							"name": "j"
+						},
+						"init": {
+							"type": "TSAsExpression",
+							"start": 93,
+							"end": 103,
+							"expression": {
+								"type": "Identifier",
+								"start": 93,
+								"end": 94,
+								"reference": 4,
+								"name": "k"
+							},
+							"typeAnnotation": {
+								"type": "TSTypeReference",
+								"start": 98,
+								"end": 103,
+								"typeName": {
+									"type": "Identifier",
+									"start": 98,
+									"end": 103,
+									"name": "const"
+								}
+							}
+						}
+					}
+				],
+				"kind": "const"
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 105,
+				"end": 129,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 109,
+						"end": 128,
+						"defines": [
+							5
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 109,
+							"end": 110,
+							"declares": 5,
+							"name": "l"
+						},
+						"init": {
+							"type": "MemberExpression",
+							"start": 113,
+							"end": 128,
+							"object": {
+								"type": "TSNonNullExpression",
+								"start": 113,
+								"end": 126,
+								"expression": {
+									"type": "MemberExpression",
+									"start": 113,
+									"end": 125,
+									"object": {
+										"type": "TSAsExpression",
+										"start": 114,
+										"end": 122,
+										"expression": {
+											"type": "Identifier",
+											"start": 114,
+											"end": 115,
+											"reference": 5,
+											"name": "m"
+										},
+										"typeAnnotation": {
+											"type": "TSAnyKeyword",
+											"start": 119,
+											"end": 122
+										}
+									},
+									"property": {
+										"type": "Identifier",
+										"start": 124,
+										"end": 125,
+										"name": "n"
+									},
+									"computed": false,
+									"optional": false
+								}
+							},
+							"property": {
+								"type": "Identifier",
+								"start": 127,
+								"end": 128,
+								"name": "o"
+							},
+							"computed": false,
+							"optional": false
+						}
+					}
+				],
+				"kind": "let"
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 130,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "a",
+			"kind": "const",
+			"scope": 0
+		},
+		{
+			"name": "c",
+			"kind": "const",
+			"scope": 0
+		},
+		{
+			"name": "e",
+			"kind": "const",
+			"scope": 0
+		},
+		{
+			"name": "g",
+			"kind": "const",
+			"scope": 0
+		},
+		{
+			"name": "j",
+			"kind": "const",
+			"scope": 0
+		},
+		{
+			"name": "l",
+			"kind": "let",
+			"scope": 0
+		}
+	],
+	"references": [
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

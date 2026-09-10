@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "modifier_order",
+		"message": "'private' modifier must precede 'static' modifier.",
+		"pos": 17,
+		"end": 17,
+		"loc": {
+			"line": 1,
+			"column": 17
+		}
+	}
+}

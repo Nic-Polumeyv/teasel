@@ -1,0 +1,277 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 58,
+		"scope": 0,
+		"body": [
+			{
+				"type": "ExpressionStatement",
+				"start": 0,
+				"end": 4,
+				"expression": {
+					"type": "Identifier",
+					"start": 1,
+					"end": 2,
+					"reference": 0,
+					"name": "a"
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 5,
+				"end": 19,
+				"expression": {
+					"type": "BinaryExpression",
+					"start": 5,
+					"end": 18,
+					"left": {
+						"type": "BinaryExpression",
+						"start": 7,
+						"end": 12,
+						"left": {
+							"type": "Identifier",
+							"start": 7,
+							"end": 8,
+							"reference": 1,
+							"name": "b"
+						},
+						"operator": "+",
+						"right": {
+							"type": "Identifier",
+							"start": 11,
+							"end": 12,
+							"reference": 2,
+							"name": "c"
+						}
+					},
+					"operator": "*",
+					"right": {
+						"type": "Identifier",
+						"start": 17,
+						"end": 18,
+						"reference": 3,
+						"name": "d"
+					}
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 20,
+				"end": 28,
+				"expression": {
+					"type": "AssignmentExpression",
+					"start": 20,
+					"end": 27,
+					"operator": "=",
+					"left": {
+						"type": "Identifier",
+						"start": 21,
+						"end": 22,
+						"reference": 4,
+						"name": "e"
+					},
+					"right": {
+						"type": "Literal",
+						"start": 26,
+						"end": 27,
+						"writes": [
+							4
+						],
+						"value": 1,
+						"raw": "1"
+					}
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 29,
+				"end": 39,
+				"expression": {
+					"type": "AssignmentExpression",
+					"start": 29,
+					"end": 38,
+					"operator": "=",
+					"left": {
+						"type": "ArrayPattern",
+						"start": 29,
+						"end": 34,
+						"elements": [
+							{
+								"type": "Identifier",
+								"start": 31,
+								"end": 32,
+								"reference": 5,
+								"name": "f"
+							}
+						]
+					},
+					"right": {
+						"type": "Identifier",
+						"start": 37,
+						"end": 38,
+						"reference": 6,
+						"writes": [
+							5
+						],
+						"name": "g"
+					}
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 40,
+				"end": 49,
+				"expression": {
+					"type": "ArrowFunctionExpression",
+					"start": 40,
+					"end": 48,
+					"scope": 1,
+					"defines": [
+						0
+					],
+					"id": null,
+					"expression": true,
+					"generator": false,
+					"async": false,
+					"params": [
+						{
+							"type": "Identifier",
+							"start": 41,
+							"end": 42,
+							"declares": 0,
+							"name": "h"
+						}
+					],
+					"body": {
+						"type": "Identifier",
+						"start": 47,
+						"end": 48,
+						"reference": 7,
+						"name": "i"
+					}
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 50,
+				"end": 57,
+				"expression": {
+					"type": "SequenceExpression",
+					"start": 51,
+					"end": 55,
+					"expressions": [
+						{
+							"type": "Identifier",
+							"start": 51,
+							"end": 52,
+							"reference": 8,
+							"name": "j"
+						},
+						{
+							"type": "Identifier",
+							"start": 54,
+							"end": 55,
+							"reference": 9,
+							"name": "k"
+						}
+					]
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 58,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "h",
+			"kind": "param",
+			"scope": 1
+		}
+	],
+	"references": [
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": true,
+			"read": false,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": true,
+			"read": false,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 1,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

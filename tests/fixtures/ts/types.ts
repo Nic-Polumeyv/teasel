@@ -1,0 +1,13 @@
+type A = string | number & boolean;
+type B<T> = T extends string ? 'yes' : 'no';
+type C = keyof typeof obj;
+type D = { [K in keyof E]?: E[K] };
+type F = [a: number, b?: string, ...rest: boolean[]];
+type G = `prefix-${string}`;
+type H = typeof import('x');
+type I = A[] | Array<B<C>>;
+type J = (x: number) => void;
+type K = new () => L;
+type M = unique symbol;
+type N = readonly string[];
+type O = infer_ extends (infer U)[] ? U : never;

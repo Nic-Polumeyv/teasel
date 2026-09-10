@@ -1,0 +1,245 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 99,
+		"scope": 0,
+		"body": [
+			{
+				"type": "FunctionDeclaration",
+				"start": 0,
+				"end": 28,
+				"scope": 1,
+				"defines": [
+					0
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 9,
+					"end": 10,
+					"declares": 0,
+					"name": "f"
+				},
+				"expression": false,
+				"generator": false,
+				"async": false,
+				"params": [],
+				"body": {
+					"type": "BlockStatement",
+					"start": 13,
+					"end": 28,
+					"body": [
+						{
+							"type": "ExpressionStatement",
+							"start": 15,
+							"end": 26,
+							"expression": {
+								"type": "MetaProperty",
+								"start": 15,
+								"end": 25,
+								"meta": {
+									"type": "Identifier",
+									"start": 15,
+									"end": 18,
+									"name": "new"
+								},
+								"property": {
+									"type": "Identifier",
+									"start": 19,
+									"end": 25,
+									"name": "target"
+								}
+							}
+						}
+					]
+				}
+			},
+			{
+				"type": "ClassDeclaration",
+				"start": 29,
+				"end": 98,
+				"scope": 2,
+				"defines": [
+					1
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 35,
+					"end": 36,
+					"declares": 1,
+					"name": "A"
+				},
+				"superClass": {
+					"type": "Identifier",
+					"start": 45,
+					"end": 46,
+					"reference": 0,
+					"name": "B"
+				},
+				"body": {
+					"type": "ClassBody",
+					"start": 47,
+					"end": 98,
+					"body": [
+						{
+							"type": "MethodDefinition",
+							"start": 49,
+							"end": 96,
+							"static": false,
+							"computed": false,
+							"key": {
+								"type": "Identifier",
+								"start": 49,
+								"end": 60,
+								"name": "constructor"
+							},
+							"kind": "constructor",
+							"value": {
+								"type": "FunctionExpression",
+								"start": 60,
+								"end": 96,
+								"scope": 3,
+								"id": null,
+								"expression": false,
+								"generator": false,
+								"async": false,
+								"params": [],
+								"body": {
+									"type": "BlockStatement",
+									"start": 63,
+									"end": 96,
+									"body": [
+										{
+											"type": "ExpressionStatement",
+											"start": 65,
+											"end": 73,
+											"expression": {
+												"type": "CallExpression",
+												"start": 65,
+												"end": 72,
+												"callee": {
+													"type": "Super",
+													"start": 65,
+													"end": 70
+												},
+												"arguments": [],
+												"optional": false
+											}
+										},
+										{
+											"type": "ExpressionStatement",
+											"start": 74,
+											"end": 82,
+											"expression": {
+												"type": "MemberExpression",
+												"start": 74,
+												"end": 81,
+												"object": {
+													"type": "Super",
+													"start": 74,
+													"end": 79
+												},
+												"property": {
+													"type": "Identifier",
+													"start": 80,
+													"end": 81,
+													"name": "x"
+												},
+												"computed": false,
+												"optional": false
+											}
+										},
+										{
+											"type": "ExpressionStatement",
+											"start": 83,
+											"end": 94,
+											"expression": {
+												"type": "CallExpression",
+												"start": 83,
+												"end": 93,
+												"callee": {
+													"type": "MemberExpression",
+													"start": 83,
+													"end": 91,
+													"object": {
+														"type": "Super",
+														"start": 83,
+														"end": 88
+													},
+													"property": {
+														"type": "Identifier",
+														"start": 89,
+														"end": 90,
+														"reference": 1,
+														"name": "y"
+													},
+													"computed": true,
+													"optional": false
+												},
+												"arguments": [],
+												"optional": false
+											}
+										}
+									]
+								}
+							}
+						}
+					]
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 99,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "class",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 2,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "f",
+			"kind": "function",
+			"scope": 0
+		},
+		{
+			"name": "A",
+			"kind": "class",
+			"scope": 0
+		}
+	],
+	"references": [
+		{
+			"scope": 2,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 3,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

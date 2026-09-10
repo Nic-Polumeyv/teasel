@@ -1,0 +1,169 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 82,
+		"scope": 0,
+		"body": [
+			{
+				"type": "ExpressionStatement",
+				"start": 0,
+				"end": 12,
+				"expression": {
+					"type": "Literal",
+					"start": 0,
+					"end": 11,
+					"value": null,
+					"raw": "/[a-z\\d]+/v",
+					"regex": {
+						"pattern": "[a-z\\d]+",
+						"flags": "v"
+					}
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 13,
+				"end": 35,
+				"expression": {
+					"type": "Literal",
+					"start": 13,
+					"end": 34,
+					"value": null,
+					"raw": "/(?<name>x)\\k<name>/u",
+					"regex": {
+						"pattern": "(?<name>x)\\k<name>",
+						"flags": "u"
+					}
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 36,
+				"end": 47,
+				"expression": {
+					"type": "Literal",
+					"start": 36,
+					"end": 46,
+					"value": null,
+					"raw": "/a/dgimsuy",
+					"regex": {
+						"pattern": "a",
+						"flags": "dgimsuy"
+					}
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 48,
+				"end": 66,
+				"expression": {
+					"type": "Literal",
+					"start": 48,
+					"end": 65,
+					"value": null,
+					"raw": "/[\\p{L}--[a-z]]/v",
+					"regex": {
+						"pattern": "[\\p{L}--[a-z]]",
+						"flags": "v"
+					}
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 67,
+				"end": 81,
+				"expression": {
+					"type": "AssignmentExpression",
+					"start": 67,
+					"end": 80,
+					"operator": "=",
+					"left": {
+						"type": "Identifier",
+						"start": 67,
+						"end": 68,
+						"reference": 0,
+						"name": "x"
+					},
+					"right": {
+						"type": "BinaryExpression",
+						"start": 71,
+						"end": 80,
+						"writes": [
+							0
+						],
+						"left": {
+							"type": "BinaryExpression",
+							"start": 71,
+							"end": 76,
+							"left": {
+								"type": "Identifier",
+								"start": 71,
+								"end": 72,
+								"reference": 1,
+								"name": "a"
+							},
+							"operator": "/",
+							"right": {
+								"type": "Identifier",
+								"start": 75,
+								"end": 76,
+								"reference": 2,
+								"name": "b"
+							}
+						},
+						"operator": "/",
+						"right": {
+							"type": "Identifier",
+							"start": 79,
+							"end": 80,
+							"reference": 3,
+							"name": "c"
+						}
+					}
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 82,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [],
+	"references": [
+		{
+			"scope": 0,
+			"binding": null,
+			"write": true,
+			"read": false,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

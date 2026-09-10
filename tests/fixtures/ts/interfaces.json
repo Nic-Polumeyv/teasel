@@ -1,0 +1,371 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 200,
+		"scope": 0,
+		"body": [
+			{
+				"type": "TSInterfaceDeclaration",
+				"start": 0,
+				"end": 199,
+				"id": {
+					"type": "Identifier",
+					"start": 10,
+					"end": 11,
+					"name": "A"
+				},
+				"typeParameters": {
+					"type": "TSTypeParameterDeclaration",
+					"start": 11,
+					"end": 23,
+					"params": [
+						{
+							"type": "TSTypeParameter",
+							"start": 12,
+							"end": 22,
+							"name": "T",
+							"default": {
+								"type": "TSStringKeyword",
+								"start": 16,
+								"end": 22
+							}
+						}
+					]
+				},
+				"extends": [
+					{
+						"type": "TSExpressionWithTypeArguments",
+						"start": 32,
+						"end": 33,
+						"expression": {
+							"type": "Identifier",
+							"start": 32,
+							"end": 33,
+							"name": "B"
+						}
+					},
+					{
+						"type": "TSExpressionWithTypeArguments",
+						"start": 35,
+						"end": 39,
+						"expression": {
+							"type": "Identifier",
+							"start": 35,
+							"end": 36,
+							"name": "C"
+						},
+						"typeParameters": {
+							"type": "TSTypeParameterInstantiation",
+							"start": 36,
+							"end": 39,
+							"params": [
+								{
+									"type": "TSTypeReference",
+									"start": 37,
+									"end": 38,
+									"typeName": {
+										"type": "Identifier",
+										"start": 37,
+										"end": 38,
+										"name": "T"
+									}
+								}
+							]
+						}
+					}
+				],
+				"body": {
+					"type": "TSInterfaceBody",
+					"start": 40,
+					"end": 199,
+					"body": [
+						{
+							"type": "TSPropertySignature",
+							"start": 43,
+							"end": 53,
+							"key": {
+								"type": "Identifier",
+								"start": 43,
+								"end": 44,
+								"name": "x"
+							},
+							"computed": false,
+							"typeAnnotation": {
+								"type": "TSTypeAnnotation",
+								"start": 44,
+								"end": 52,
+								"typeAnnotation": {
+									"type": "TSNumberKeyword",
+									"start": 46,
+									"end": 52
+								}
+							}
+						},
+						{
+							"type": "TSPropertySignature",
+							"start": 55,
+							"end": 75,
+							"key": {
+								"type": "Identifier",
+								"start": 64,
+								"end": 65,
+								"name": "y"
+							},
+							"computed": false,
+							"optional": true,
+							"readonly": true,
+							"typeAnnotation": {
+								"type": "TSTypeAnnotation",
+								"start": 66,
+								"end": 74,
+								"typeAnnotation": {
+									"type": "TSStringKeyword",
+									"start": 68,
+									"end": 74
+								}
+							}
+						},
+						{
+							"type": "TSMethodSignature",
+							"start": 77,
+							"end": 91,
+							"key": {
+								"type": "Identifier",
+								"start": 77,
+								"end": 78,
+								"name": "m"
+							},
+							"computed": false,
+							"kind": "method",
+							"parameters": [
+								{
+									"type": "Identifier",
+									"start": 79,
+									"end": 83,
+									"typeAnnotation": {
+										"type": "TSTypeAnnotation",
+										"start": 80,
+										"end": 83,
+										"typeAnnotation": {
+											"type": "TSTypeReference",
+											"start": 82,
+											"end": 83,
+											"typeName": {
+												"type": "Identifier",
+												"start": 82,
+												"end": 83,
+												"name": "T"
+											}
+										}
+									},
+									"name": "a"
+								}
+							],
+							"typeAnnotation": {
+								"type": "TSTypeAnnotation",
+								"start": 84,
+								"end": 90,
+								"typeAnnotation": {
+									"type": "TSVoidKeyword",
+									"start": 86,
+									"end": 90
+								}
+							}
+						},
+						{
+							"type": "TSConstructSignatureDeclaration",
+							"start": 93,
+							"end": 115,
+							"parameters": [
+								{
+									"type": "Identifier",
+									"start": 98,
+									"end": 107,
+									"typeAnnotation": {
+										"type": "TSTypeAnnotation",
+										"start": 99,
+										"end": 107,
+										"typeAnnotation": {
+											"type": "TSNumberKeyword",
+											"start": 101,
+											"end": 107
+										}
+									},
+									"name": "b"
+								}
+							],
+							"typeAnnotation": {
+								"type": "TSTypeAnnotation",
+								"start": 108,
+								"end": 114,
+								"typeAnnotation": {
+									"type": "TSTypeReference",
+									"start": 110,
+									"end": 114,
+									"typeName": {
+										"type": "Identifier",
+										"start": 110,
+										"end": 111,
+										"name": "A"
+									},
+									"typeArguments": {
+										"type": "TSTypeParameterInstantiation",
+										"start": 111,
+										"end": 114,
+										"params": [
+											{
+												"type": "TSTypeReference",
+												"start": 112,
+												"end": 113,
+												"typeName": {
+													"type": "Identifier",
+													"start": 112,
+													"end": 113,
+													"name": "T"
+												}
+											}
+										]
+									}
+								}
+							}
+						},
+						{
+							"type": "TSCallSignatureDeclaration",
+							"start": 117,
+							"end": 135,
+							"parameters": [
+								{
+									"type": "Identifier",
+									"start": 118,
+									"end": 127,
+									"typeAnnotation": {
+										"type": "TSTypeAnnotation",
+										"start": 119,
+										"end": 127,
+										"typeAnnotation": {
+											"type": "TSStringKeyword",
+											"start": 121,
+											"end": 127
+										}
+									},
+									"name": "c"
+								}
+							],
+							"typeAnnotation": {
+								"type": "TSTypeAnnotation",
+								"start": 128,
+								"end": 134,
+								"typeAnnotation": {
+									"type": "TSVoidKeyword",
+									"start": 130,
+									"end": 134
+								}
+							}
+						},
+						{
+							"type": "TSIndexSignature",
+							"start": 137,
+							"end": 160,
+							"parameters": [
+								{
+									"type": "Identifier",
+									"start": 138,
+									"end": 149,
+									"typeAnnotation": {
+										"type": "TSTypeAnnotation",
+										"start": 141,
+										"end": 149,
+										"typeAnnotation": {
+											"type": "TSStringKeyword",
+											"start": 143,
+											"end": 149
+										}
+									},
+									"name": "key"
+								}
+							],
+							"typeAnnotation": {
+								"type": "TSTypeAnnotation",
+								"start": 150,
+								"end": 159,
+								"typeAnnotation": {
+									"type": "TSUnknownKeyword",
+									"start": 152,
+									"end": 159
+								}
+							}
+						},
+						{
+							"type": "TSMethodSignature",
+							"start": 162,
+							"end": 178,
+							"key": {
+								"type": "Identifier",
+								"start": 166,
+								"end": 167,
+								"name": "g"
+							},
+							"computed": false,
+							"kind": "get",
+							"parameters": [],
+							"typeAnnotation": {
+								"type": "TSTypeAnnotation",
+								"start": 169,
+								"end": 177,
+								"typeAnnotation": {
+									"type": "TSNumberKeyword",
+									"start": 171,
+									"end": 177
+								}
+							}
+						},
+						{
+							"type": "TSMethodSignature",
+							"start": 180,
+							"end": 197,
+							"key": {
+								"type": "Identifier",
+								"start": 184,
+								"end": 185,
+								"name": "g"
+							},
+							"computed": false,
+							"kind": "set",
+							"parameters": [
+								{
+									"type": "Identifier",
+									"start": 186,
+									"end": 195,
+									"typeAnnotation": {
+										"type": "TSTypeAnnotation",
+										"start": 187,
+										"end": 195,
+										"typeAnnotation": {
+											"type": "TSNumberKeyword",
+											"start": 189,
+											"end": 195
+										}
+									},
+									"name": "v"
+								}
+							]
+						}
+					]
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 200,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [],
+	"references": []
+}

@@ -1,0 +1,397 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 217,
+		"scope": 0,
+		"body": [
+			{
+				"type": "TSDeclareFunction",
+				"start": 0,
+				"end": 28,
+				"defines": [
+					0
+				],
+				"returnType": {
+					"type": "TSTypeAnnotation",
+					"start": 21,
+					"end": 27,
+					"typeAnnotation": {
+						"type": "TSVoidKeyword",
+						"start": 23,
+						"end": 27
+					}
+				},
+				"id": {
+					"type": "Identifier",
+					"start": 9,
+					"end": 10,
+					"declares": 0,
+					"name": "f"
+				},
+				"generator": false,
+				"async": false,
+				"expression": false,
+				"params": [
+					{
+						"type": "Identifier",
+						"start": 11,
+						"end": 20,
+						"typeAnnotation": {
+							"type": "TSTypeAnnotation",
+							"start": 12,
+							"end": 20,
+							"typeAnnotation": {
+								"type": "TSStringKeyword",
+								"start": 14,
+								"end": 20
+							}
+						},
+						"name": "a"
+					}
+				]
+			},
+			{
+				"type": "TSDeclareFunction",
+				"start": 29,
+				"end": 57,
+				"returnType": {
+					"type": "TSTypeAnnotation",
+					"start": 50,
+					"end": 56,
+					"typeAnnotation": {
+						"type": "TSVoidKeyword",
+						"start": 52,
+						"end": 56
+					}
+				},
+				"id": {
+					"type": "Identifier",
+					"start": 38,
+					"end": 39,
+					"declares": 0,
+					"name": "f"
+				},
+				"generator": false,
+				"async": false,
+				"expression": false,
+				"params": [
+					{
+						"type": "Identifier",
+						"start": 40,
+						"end": 49,
+						"typeAnnotation": {
+							"type": "TSTypeAnnotation",
+							"start": 41,
+							"end": 49,
+							"typeAnnotation": {
+								"type": "TSNumberKeyword",
+								"start": 43,
+								"end": 49
+							}
+						},
+						"name": "a"
+					}
+				]
+			},
+			{
+				"type": "FunctionDeclaration",
+				"start": 58,
+				"end": 79,
+				"scope": 1,
+				"defines": [
+					1
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 67,
+					"end": 68,
+					"declares": 0,
+					"name": "f"
+				},
+				"expression": false,
+				"generator": false,
+				"async": false,
+				"params": [
+					{
+						"type": "Identifier",
+						"start": 69,
+						"end": 75,
+						"declares": 1,
+						"typeAnnotation": {
+							"type": "TSTypeAnnotation",
+							"start": 70,
+							"end": 75,
+							"typeAnnotation": {
+								"type": "TSAnyKeyword",
+								"start": 72,
+								"end": 75
+							}
+						},
+						"name": "a"
+					}
+				],
+				"body": {
+					"type": "BlockStatement",
+					"start": 77,
+					"end": 79,
+					"body": []
+				}
+			},
+			{
+				"type": "TSDeclareFunction",
+				"start": 80,
+				"end": 107,
+				"defines": [
+					2
+				],
+				"returnType": {
+					"type": "TSTypeAnnotation",
+					"start": 100,
+					"end": 106,
+					"typeAnnotation": {
+						"type": "TSVoidKeyword",
+						"start": 102,
+						"end": 106
+					}
+				},
+				"declare": true,
+				"id": {
+					"type": "Identifier",
+					"start": 97,
+					"end": 98,
+					"declares": 2,
+					"name": "g"
+				},
+				"generator": false,
+				"async": false,
+				"expression": false,
+				"params": []
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 108,
+				"end": 132,
+				"declare": true,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 122,
+						"end": 131,
+						"defines": [
+							3
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 122,
+							"end": 131,
+							"declares": 3,
+							"typeAnnotation": {
+								"type": "TSTypeAnnotation",
+								"start": 123,
+								"end": 131,
+								"typeAnnotation": {
+									"type": "TSNumberKeyword",
+									"start": 125,
+									"end": 131
+								}
+							},
+							"name": "h"
+						},
+						"init": null
+					}
+				],
+				"kind": "const"
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 133,
+				"end": 155,
+				"declare": true,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 145,
+						"end": 154,
+						"defines": [
+							4
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 145,
+							"end": 154,
+							"declares": 4,
+							"typeAnnotation": {
+								"type": "TSTypeAnnotation",
+								"start": 146,
+								"end": 154,
+								"typeAnnotation": {
+									"type": "TSStringKeyword",
+									"start": 148,
+									"end": 154
+								}
+							},
+							"name": "i"
+						},
+						"init": null
+					}
+				],
+				"kind": "let"
+			},
+			{
+				"type": "ClassDeclaration",
+				"start": 156,
+				"end": 186,
+				"scope": 2,
+				"defines": [
+					5
+				],
+				"declare": true,
+				"id": {
+					"type": "Identifier",
+					"start": 170,
+					"end": 171,
+					"declares": 5,
+					"name": "J"
+				},
+				"superClass": null,
+				"body": {
+					"type": "ClassBody",
+					"start": 172,
+					"end": 186,
+					"body": [
+						{
+							"type": "MethodDefinition",
+							"start": 174,
+							"end": 184,
+							"static": false,
+							"computed": false,
+							"key": {
+								"type": "Identifier",
+								"start": 174,
+								"end": 175,
+								"name": "m"
+							},
+							"kind": "method",
+							"value": {
+								"type": "TSDeclareMethod",
+								"start": 175,
+								"end": 184,
+								"returnType": {
+									"type": "TSTypeAnnotation",
+									"start": 177,
+									"end": 183,
+									"typeAnnotation": {
+										"type": "TSVoidKeyword",
+										"start": 179,
+										"end": 183
+									}
+								},
+								"id": null,
+								"generator": false,
+								"async": false,
+								"expression": false,
+								"params": []
+							}
+						}
+					]
+				}
+			},
+			{
+				"type": "ExportNamedDeclaration",
+				"start": 187,
+				"end": 216,
+				"exportKind": "value",
+				"declaration": {
+					"type": "TSModuleDeclaration",
+					"start": 194,
+					"end": 216,
+					"scope": 3,
+					"defines": [
+						6
+					],
+					"declare": true,
+					"id": {
+						"type": "Identifier",
+						"start": 212,
+						"end": 213,
+						"declares": 6,
+						"name": "K"
+					},
+					"body": {
+						"type": "TSModuleBlock",
+						"start": 214,
+						"end": 216,
+						"body": []
+					}
+				},
+				"specifiers": [],
+				"source": null,
+				"attributes": []
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 217,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "class",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "namespace",
+			"parent": 0,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "f",
+			"kind": "function",
+			"scope": 0
+		},
+		{
+			"name": "a",
+			"kind": "param",
+			"scope": 1
+		},
+		{
+			"name": "g",
+			"kind": "function",
+			"scope": 0
+		},
+		{
+			"name": "h",
+			"kind": "const",
+			"scope": 0
+		},
+		{
+			"name": "i",
+			"kind": "let",
+			"scope": 0
+		},
+		{
+			"name": "J",
+			"kind": "class",
+			"scope": 0
+		},
+		{
+			"name": "K",
+			"kind": "namespace",
+			"scope": 0
+		}
+	],
+	"references": []
+}

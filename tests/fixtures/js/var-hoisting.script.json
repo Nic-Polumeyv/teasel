@@ -1,0 +1,245 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 81,
+		"scope": 0,
+		"body": [
+			{
+				"type": "ExpressionStatement",
+				"start": 0,
+				"end": 4,
+				"expression": {
+					"type": "CallExpression",
+					"start": 0,
+					"end": 3,
+					"callee": {
+						"type": "Identifier",
+						"start": 0,
+						"end": 1,
+						"reference": 0,
+						"name": "f"
+					},
+					"arguments": [],
+					"optional": false
+				}
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 5,
+				"end": 15,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 9,
+						"end": 14,
+						"defines": [
+							0
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 9,
+							"end": 10,
+							"declares": 0,
+							"name": "x"
+						},
+						"init": {
+							"type": "Literal",
+							"start": 13,
+							"end": 14,
+							"value": 1,
+							"raw": "1"
+						}
+					}
+				],
+				"kind": "var"
+			},
+			{
+				"type": "FunctionDeclaration",
+				"start": 16,
+				"end": 42,
+				"scope": 1,
+				"defines": [
+					1
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 25,
+					"end": 26,
+					"declares": 1,
+					"name": "f"
+				},
+				"expression": false,
+				"generator": false,
+				"async": false,
+				"params": [],
+				"body": {
+					"type": "BlockStatement",
+					"start": 29,
+					"end": 42,
+					"body": [
+						{
+							"type": "ReturnStatement",
+							"start": 31,
+							"end": 40,
+							"argument": {
+								"type": "Identifier",
+								"start": 38,
+								"end": 39,
+								"reference": 1,
+								"name": "x"
+							}
+						}
+					]
+				}
+			},
+			{
+				"type": "BlockStatement",
+				"start": 43,
+				"end": 57,
+				"scope": 2,
+				"body": [
+					{
+						"type": "VariableDeclaration",
+						"start": 45,
+						"end": 55,
+						"declarations": [
+							{
+								"type": "VariableDeclarator",
+								"start": 49,
+								"end": 54,
+								"defines": [
+									2
+								],
+								"id": {
+									"type": "Identifier",
+									"start": 49,
+									"end": 50,
+									"declares": 2,
+									"name": "y"
+								},
+								"init": {
+									"type": "Literal",
+									"start": 53,
+									"end": 54,
+									"value": 2,
+									"raw": "2"
+								}
+							}
+						],
+						"kind": "var"
+					}
+				]
+			},
+			{
+				"type": "IfStatement",
+				"start": 58,
+				"end": 80,
+				"test": {
+					"type": "Identifier",
+					"start": 62,
+					"end": 63,
+					"reference": 2,
+					"name": "a"
+				},
+				"consequent": {
+					"type": "FunctionDeclaration",
+					"start": 65,
+					"end": 80,
+					"scope": 3,
+					"defines": [
+						3
+					],
+					"id": {
+						"type": "Identifier",
+						"start": 74,
+						"end": 75,
+						"declares": 3,
+						"name": "g"
+					},
+					"expression": false,
+					"generator": false,
+					"async": false,
+					"params": [],
+					"body": {
+						"type": "BlockStatement",
+						"start": 78,
+						"end": 80,
+						"body": []
+					}
+				},
+				"alternate": null
+			}
+		],
+		"sourceType": "script"
+	},
+	"end": 81,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "script",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "x",
+			"kind": "var",
+			"scope": 0
+		},
+		{
+			"name": "f",
+			"kind": "function",
+			"scope": 0
+		},
+		{
+			"name": "y",
+			"kind": "var",
+			"scope": 0
+		},
+		{
+			"name": "g",
+			"kind": "function",
+			"scope": 0
+		}
+	],
+	"references": [
+		{
+			"scope": 0,
+			"binding": 1,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 1,
+			"binding": 0,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

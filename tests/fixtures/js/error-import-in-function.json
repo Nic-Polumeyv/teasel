@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "import_export_not_top_level",
+		"message": "'import' and 'export' may only appear at the top level",
+		"pos": 15,
+		"end": 21,
+		"loc": {
+			"line": 1,
+			"column": 15
+		}
+	}
+}

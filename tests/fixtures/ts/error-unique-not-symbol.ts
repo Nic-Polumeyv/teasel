@@ -1,0 +1,1 @@
+let x: unique number;

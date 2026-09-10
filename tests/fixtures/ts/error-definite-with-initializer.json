@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "definite_with_initializer",
+		"message": "Declarations with initializers cannot also have definite assignment assertions.",
+		"pos": 4,
+		"end": 4,
+		"loc": {
+			"line": 1,
+			"column": 4
+		}
+	}
+}

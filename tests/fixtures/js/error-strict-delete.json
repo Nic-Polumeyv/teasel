@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "strict_delete",
+		"message": "Deleting local variable in strict mode",
+		"pos": 14,
+		"end": 14,
+		"loc": {
+			"line": 1,
+			"column": 14
+		}
+	}
+}

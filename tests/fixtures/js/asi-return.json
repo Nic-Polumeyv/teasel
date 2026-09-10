@@ -1,0 +1,78 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 28,
+		"scope": 0,
+		"body": [
+			{
+				"type": "FunctionDeclaration",
+				"start": 0,
+				"end": 27,
+				"scope": 1,
+				"defines": [
+					0
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 9,
+					"end": 10,
+					"declares": 0,
+					"name": "f"
+				},
+				"expression": false,
+				"generator": false,
+				"async": false,
+				"params": [],
+				"body": {
+					"type": "BlockStatement",
+					"start": 13,
+					"end": 27,
+					"body": [
+						{
+							"type": "ReturnStatement",
+							"start": 16,
+							"end": 22,
+							"argument": null
+						},
+						{
+							"type": "ExpressionStatement",
+							"start": 24,
+							"end": 25,
+							"expression": {
+								"type": "Literal",
+								"start": 24,
+								"end": 25,
+								"value": 1,
+								"raw": "1"
+							}
+						}
+					]
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 28,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "f",
+			"kind": "function",
+			"scope": 0
+		}
+	],
+	"references": []
+}

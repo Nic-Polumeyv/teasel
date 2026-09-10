@@ -1,0 +1,82 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 46,
+		"scope": 0,
+		"body": [
+			{
+				"type": "ClassDeclaration",
+				"start": 0,
+				"end": 45,
+				"scope": 1,
+				"defines": [
+					0
+				],
+				"declare": true,
+				"id": {
+					"type": "Identifier",
+					"start": 14,
+					"end": 15,
+					"declares": 0,
+					"name": "C"
+				},
+				"superClass": null,
+				"body": {
+					"type": "ClassBody",
+					"start": 16,
+					"end": 45,
+					"body": [
+						{
+							"type": "PropertyDefinition",
+							"start": 18,
+							"end": 43,
+							"typeAnnotation": {
+								"type": "TSTypeAnnotation",
+								"start": 34,
+								"end": 42,
+								"typeAnnotation": {
+									"type": "TSNumberKeyword",
+									"start": 36,
+									"end": 42
+								}
+							},
+							"static": true,
+							"computed": false,
+							"key": {
+								"type": "Identifier",
+								"start": 25,
+								"end": 34,
+								"name": "prototype"
+							},
+							"value": null
+						}
+					]
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 46,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "class",
+			"parent": 0,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "C",
+			"kind": "class",
+			"scope": 0
+		}
+	],
+	"references": []
+}

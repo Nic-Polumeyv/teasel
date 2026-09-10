@@ -1,0 +1,246 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 131,
+		"scope": 0,
+		"body": [
+			{
+				"type": "VariableDeclaration",
+				"start": 11,
+				"end": 23,
+				"leadingComments": [
+					{
+						"type": "Line",
+						"value": " leading",
+						"start": 0,
+						"end": 10
+					}
+				],
+				"trailingComments": [
+					{
+						"type": "Line",
+						"value": " trailing",
+						"start": 24,
+						"end": 35
+					}
+				],
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 17,
+						"end": 22,
+						"defines": [
+							0
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 17,
+							"end": 18,
+							"declares": 0,
+							"name": "a"
+						},
+						"init": {
+							"type": "Literal",
+							"start": 21,
+							"end": 22,
+							"value": 1,
+							"raw": "1"
+						}
+					}
+				],
+				"kind": "const"
+			},
+			{
+				"type": "FunctionDeclaration",
+				"start": 49,
+				"end": 79,
+				"scope": 1,
+				"defines": [
+					1
+				],
+				"leadingComments": [
+					{
+						"type": "Block",
+						"value": " before ",
+						"start": 36,
+						"end": 48
+					}
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 58,
+					"end": 59,
+					"declares": 1,
+					"name": "f"
+				},
+				"expression": false,
+				"generator": false,
+				"async": false,
+				"params": [],
+				"body": {
+					"type": "BlockStatement",
+					"start": 62,
+					"end": 79,
+					"innerComments": [
+						{
+							"type": "Block",
+							"value": " inside ",
+							"start": 65,
+							"end": 77
+						}
+					],
+					"body": []
+				}
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 80,
+				"end": 108,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 86,
+						"end": 107,
+						"defines": [
+							2
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 86,
+							"end": 87,
+							"declares": 2,
+							"name": "o"
+						},
+						"init": {
+							"type": "ObjectExpression",
+							"start": 90,
+							"end": 107,
+							"innerComments": [
+								{
+									"type": "Line",
+									"value": " in object",
+									"start": 93,
+									"end": 105
+								}
+							],
+							"properties": []
+						}
+					}
+				],
+				"kind": "const"
+			},
+			{
+				"type": "ClassDeclaration",
+				"start": 120,
+				"end": 130,
+				"scope": 2,
+				"defines": [
+					3
+				],
+				"leadingComments": [
+					{
+						"type": "Block",
+						"value": "* doc ",
+						"start": 109,
+						"end": 119
+					}
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 126,
+					"end": 127,
+					"declares": 3,
+					"name": "C"
+				},
+				"superClass": null,
+				"body": {
+					"type": "ClassBody",
+					"start": 128,
+					"end": 130,
+					"body": []
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 131,
+	"comments": [
+		{
+			"type": "Line",
+			"value": " leading",
+			"start": 0,
+			"end": 10
+		},
+		{
+			"type": "Line",
+			"value": " trailing",
+			"start": 24,
+			"end": 35
+		},
+		{
+			"type": "Block",
+			"value": " before ",
+			"start": 36,
+			"end": 48
+		},
+		{
+			"type": "Block",
+			"value": " inside ",
+			"start": 65,
+			"end": 77
+		},
+		{
+			"type": "Line",
+			"value": " in object",
+			"start": 93,
+			"end": 105
+		},
+		{
+			"type": "Block",
+			"value": "* doc ",
+			"start": 109,
+			"end": 119
+		}
+	],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "class",
+			"parent": 0,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "a",
+			"kind": "const",
+			"scope": 0
+		},
+		{
+			"name": "f",
+			"kind": "function",
+			"scope": 0
+		},
+		{
+			"name": "o",
+			"kind": "const",
+			"scope": 0
+		},
+		{
+			"name": "C",
+			"kind": "class",
+			"scope": 0
+		}
+	],
+	"references": []
+}

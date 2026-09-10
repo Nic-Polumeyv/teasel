@@ -1,0 +1,517 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 228,
+		"scope": 0,
+		"body": [
+			{
+				"type": "VariableDeclaration",
+				"start": 0,
+				"end": 18,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 4,
+						"end": 17,
+						"defines": [
+							0
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 4,
+							"end": 13,
+							"declares": 0,
+							"typeAnnotation": {
+								"type": "TSTypeAnnotation",
+								"start": 5,
+								"end": 13,
+								"typeAnnotation": {
+									"type": "TSNumberKeyword",
+									"start": 7,
+									"end": 13
+								}
+							},
+							"name": "a"
+						},
+						"init": {
+							"type": "Literal",
+							"start": 16,
+							"end": 17,
+							"value": 1,
+							"raw": "1"
+						}
+					}
+				],
+				"kind": "let"
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 19,
+				"end": 40,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 23,
+						"end": 39,
+						"defines": [
+							1
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 23,
+							"end": 39,
+							"declares": 1,
+							"typeAnnotation": {
+								"type": "TSTypeAnnotation",
+								"start": 24,
+								"end": 39,
+								"typeAnnotation": {
+									"type": "TSUnionType",
+									"start": 26,
+									"end": 39,
+									"types": [
+										{
+											"type": "TSStringKeyword",
+											"start": 26,
+											"end": 32
+										},
+										{
+											"type": "TSNullKeyword",
+											"start": 35,
+											"end": 39
+										}
+									]
+								}
+							},
+							"name": "b"
+						},
+						"init": null
+					}
+				],
+				"kind": "let"
+			},
+			{
+				"type": "FunctionDeclaration",
+				"start": 41,
+				"end": 84,
+				"scope": 1,
+				"defines": [
+					2,
+					3,
+					4
+				],
+				"returnType": {
+					"type": "TSTypeAnnotation",
+					"start": 75,
+					"end": 81,
+					"typeAnnotation": {
+						"type": "TSVoidKeyword",
+						"start": 77,
+						"end": 81
+					}
+				},
+				"id": {
+					"type": "Identifier",
+					"start": 50,
+					"end": 51,
+					"declares": 2,
+					"name": "f"
+				},
+				"expression": false,
+				"generator": false,
+				"async": false,
+				"params": [
+					{
+						"type": "Identifier",
+						"start": 52,
+						"end": 62,
+						"declares": 3,
+						"typeAnnotation": {
+							"type": "TSTypeAnnotation",
+							"start": 53,
+							"end": 62,
+							"typeAnnotation": {
+								"type": "TSBooleanKeyword",
+								"start": 55,
+								"end": 62
+							}
+						},
+						"name": "c"
+					},
+					{
+						"type": "Identifier",
+						"start": 64,
+						"end": 74,
+						"declares": 4,
+						"typeAnnotation": {
+							"type": "TSTypeAnnotation",
+							"start": 66,
+							"end": 74,
+							"typeAnnotation": {
+								"type": "TSStringKeyword",
+								"start": 68,
+								"end": 74
+							}
+						},
+						"optional": true,
+						"name": "d"
+					}
+				],
+				"body": {
+					"type": "BlockStatement",
+					"start": 82,
+					"end": 84,
+					"body": []
+				}
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 85,
+				"end": 120,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 91,
+						"end": 119,
+						"defines": [
+							5
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 91,
+							"end": 92,
+							"declares": 5,
+							"name": "e"
+						},
+						"init": {
+							"type": "ArrowFunctionExpression",
+							"start": 95,
+							"end": 119,
+							"scope": 2,
+							"defines": [
+								6
+							],
+							"returnType": {
+								"type": "TSTypeAnnotation",
+								"start": 106,
+								"end": 114,
+								"typeAnnotation": {
+									"type": "TSNumberKeyword",
+									"start": 108,
+									"end": 114
+								}
+							},
+							"id": null,
+							"expression": true,
+							"generator": false,
+							"async": false,
+							"params": [
+								{
+									"type": "Identifier",
+									"start": 96,
+									"end": 105,
+									"declares": 6,
+									"typeAnnotation": {
+										"type": "TSTypeAnnotation",
+										"start": 97,
+										"end": 105,
+										"typeAnnotation": {
+											"type": "TSNumberKeyword",
+											"start": 99,
+											"end": 105
+										}
+									},
+									"name": "g"
+								}
+							],
+							"body": {
+								"type": "Identifier",
+								"start": 118,
+								"end": 119,
+								"reference": 0,
+								"name": "g"
+							}
+						}
+					}
+				],
+				"kind": "const"
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 121,
+				"end": 150,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 125,
+						"end": 149,
+						"defines": [
+							7
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 125,
+							"end": 149,
+							"declares": 7,
+							"typeAnnotation": {
+								"type": "TSTypeAnnotation",
+								"start": 126,
+								"end": 149,
+								"typeAnnotation": {
+									"type": "TSFunctionType",
+									"start": 128,
+									"end": 149,
+									"parameters": [
+										{
+											"type": "Identifier",
+											"start": 129,
+											"end": 138,
+											"typeAnnotation": {
+												"type": "TSTypeAnnotation",
+												"start": 130,
+												"end": 138,
+												"typeAnnotation": {
+													"type": "TSNumberKeyword",
+													"start": 132,
+													"end": 138
+												}
+											},
+											"name": "i"
+										}
+									],
+									"typeAnnotation": {
+										"type": "TSTypeAnnotation",
+										"start": 140,
+										"end": 149,
+										"typeAnnotation": {
+											"type": "TSStringKeyword",
+											"start": 143,
+											"end": 149
+										}
+									}
+								}
+							},
+							"name": "h"
+						},
+						"init": null
+					}
+				],
+				"kind": "let"
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 151,
+				"end": 227,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 155,
+						"end": 226,
+						"defines": [
+							8
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 155,
+							"end": 226,
+							"declares": 8,
+							"typeAnnotation": {
+								"type": "TSTypeAnnotation",
+								"start": 156,
+								"end": 226,
+								"typeAnnotation": {
+									"type": "TSTypeLiteral",
+									"start": 158,
+									"end": 226,
+									"members": [
+										{
+											"type": "TSPropertySignature",
+											"start": 160,
+											"end": 170,
+											"key": {
+												"type": "Identifier",
+												"start": 160,
+												"end": 161,
+												"name": "k"
+											},
+											"computed": false,
+											"typeAnnotation": {
+												"type": "TSTypeAnnotation",
+												"start": 161,
+												"end": 169,
+												"typeAnnotation": {
+													"type": "TSNumberKeyword",
+													"start": 163,
+													"end": 169
+												}
+											}
+										},
+										{
+											"type": "TSPropertySignature",
+											"start": 171,
+											"end": 182,
+											"key": {
+												"type": "Identifier",
+												"start": 171,
+												"end": 172,
+												"name": "l"
+											},
+											"computed": false,
+											"optional": true,
+											"typeAnnotation": {
+												"type": "TSTypeAnnotation",
+												"start": 173,
+												"end": 181,
+												"typeAnnotation": {
+													"type": "TSStringKeyword",
+													"start": 175,
+													"end": 181
+												}
+											}
+										},
+										{
+											"type": "TSPropertySignature",
+											"start": 183,
+											"end": 203,
+											"key": {
+												"type": "Identifier",
+												"start": 192,
+												"end": 193,
+												"name": "m"
+											},
+											"computed": false,
+											"readonly": true,
+											"typeAnnotation": {
+												"type": "TSTypeAnnotation",
+												"start": 193,
+												"end": 202,
+												"typeAnnotation": {
+													"type": "TSBooleanKeyword",
+													"start": 195,
+													"end": 202
+												}
+											}
+										},
+										{
+											"type": "TSIndexSignature",
+											"start": 204,
+											"end": 224,
+											"parameters": [
+												{
+													"type": "Identifier",
+													"start": 205,
+													"end": 214,
+													"typeAnnotation": {
+														"type": "TSTypeAnnotation",
+														"start": 206,
+														"end": 214,
+														"typeAnnotation": {
+															"type": "TSStringKeyword",
+															"start": 208,
+															"end": 214
+														}
+													},
+													"name": "n"
+												}
+											],
+											"typeAnnotation": {
+												"type": "TSTypeAnnotation",
+												"start": 215,
+												"end": 224,
+												"typeAnnotation": {
+													"type": "TSUnknownKeyword",
+													"start": 217,
+													"end": 224
+												}
+											}
+										}
+									]
+								}
+							},
+							"name": "j"
+						},
+						"init": null
+					}
+				],
+				"kind": "let"
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 228,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "a",
+			"kind": "let",
+			"scope": 0
+		},
+		{
+			"name": "b",
+			"kind": "let",
+			"scope": 0
+		},
+		{
+			"name": "f",
+			"kind": "function",
+			"scope": 0
+		},
+		{
+			"name": "c",
+			"kind": "param",
+			"scope": 1
+		},
+		{
+			"name": "d",
+			"kind": "param",
+			"scope": 1
+		},
+		{
+			"name": "e",
+			"kind": "const",
+			"scope": 0
+		},
+		{
+			"name": "g",
+			"kind": "param",
+			"scope": 2
+		},
+		{
+			"name": "h",
+			"kind": "let",
+			"scope": 0
+		},
+		{
+			"name": "j",
+			"kind": "let",
+			"scope": 0
+		}
+	],
+	"references": [
+		{
+			"scope": 2,
+			"binding": 6,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

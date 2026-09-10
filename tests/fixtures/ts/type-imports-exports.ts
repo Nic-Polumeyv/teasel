@@ -1,0 +1,11 @@
+import type { A } from 'a';
+import { type B, C } from 'b';
+import type D from 'd';
+export type { E };
+export { type F, G };
+export type H = string;
+import I = require('i');
+import J = K.L;
+export = M;
+export as namespace N;
+import type * as O from 'o';

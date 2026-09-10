@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "conflicting_modifiers",
+		"message": "'private' modifier cannot be used with 'abstract' modifier.",
+		"pos": 27,
+		"end": 27,
+		"loc": {
+			"line": 1,
+			"column": 27
+		}
+	}
+}

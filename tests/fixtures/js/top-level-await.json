@@ -1,0 +1,115 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 37,
+		"scope": 0,
+		"body": [
+			{
+				"type": "ExpressionStatement",
+				"start": 0,
+				"end": 8,
+				"expression": {
+					"type": "AwaitExpression",
+					"start": 0,
+					"end": 7,
+					"argument": {
+						"type": "Identifier",
+						"start": 6,
+						"end": 7,
+						"reference": 0,
+						"name": "a"
+					}
+				}
+			},
+			{
+				"type": "ForOfStatement",
+				"start": 9,
+				"end": 36,
+				"scope": 1,
+				"await": true,
+				"left": {
+					"type": "VariableDeclaration",
+					"start": 20,
+					"end": 27,
+					"declarations": [
+						{
+							"type": "VariableDeclarator",
+							"start": 26,
+							"end": 27,
+							"defines": [
+								0
+							],
+							"id": {
+								"type": "Identifier",
+								"start": 26,
+								"end": 27,
+								"declares": 0,
+								"name": "b"
+							},
+							"init": null
+						}
+					],
+					"kind": "const"
+				},
+				"right": {
+					"type": "Identifier",
+					"start": 31,
+					"end": 32,
+					"reference": 1,
+					"name": "c"
+				},
+				"body": {
+					"type": "BlockStatement",
+					"start": 34,
+					"end": 36,
+					"scope": 2,
+					"body": []
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 37,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": true
+		},
+		{
+			"kind": "for",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 1,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "b",
+			"kind": "const",
+			"scope": 1
+		}
+	],
+	"references": [
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 1,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

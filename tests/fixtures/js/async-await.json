@@ -1,0 +1,341 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 138,
+		"scope": 0,
+		"body": [
+			{
+				"type": "FunctionDeclaration",
+				"start": 0,
+				"end": 137,
+				"scope": 1,
+				"defines": [
+					0
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 15,
+					"end": 16,
+					"declares": 0,
+					"name": "f"
+				},
+				"expression": false,
+				"generator": false,
+				"async": true,
+				"params": [],
+				"body": {
+					"type": "BlockStatement",
+					"start": 19,
+					"end": 137,
+					"body": [
+						{
+							"type": "ExpressionStatement",
+							"start": 22,
+							"end": 32,
+							"expression": {
+								"type": "AwaitExpression",
+								"start": 22,
+								"end": 31,
+								"argument": {
+									"type": "CallExpression",
+									"start": 28,
+									"end": 31,
+									"callee": {
+										"type": "Identifier",
+										"start": 28,
+										"end": 29,
+										"reference": 0,
+										"name": "g"
+									},
+									"arguments": [],
+									"optional": false
+								}
+							}
+						},
+						{
+							"type": "VariableDeclaration",
+							"start": 34,
+							"end": 79,
+							"declarations": [
+								{
+									"type": "VariableDeclarator",
+									"start": 40,
+									"end": 78,
+									"defines": [
+										1,
+										2
+									],
+									"id": {
+										"type": "ArrayPattern",
+										"start": 40,
+										"end": 46,
+										"elements": [
+											{
+												"type": "Identifier",
+												"start": 41,
+												"end": 42,
+												"declares": 1,
+												"name": "a"
+											},
+											{
+												"type": "Identifier",
+												"start": 44,
+												"end": 45,
+												"declares": 2,
+												"name": "b"
+											}
+										]
+									},
+									"init": {
+										"type": "AwaitExpression",
+										"start": 49,
+										"end": 78,
+										"argument": {
+											"type": "CallExpression",
+											"start": 55,
+											"end": 78,
+											"callee": {
+												"type": "MemberExpression",
+												"start": 55,
+												"end": 66,
+												"object": {
+													"type": "Identifier",
+													"start": 55,
+													"end": 62,
+													"reference": 1,
+													"name": "Promise"
+												},
+												"property": {
+													"type": "Identifier",
+													"start": 63,
+													"end": 66,
+													"name": "all"
+												},
+												"computed": false,
+												"optional": false
+											},
+											"arguments": [
+												{
+													"type": "ArrayExpression",
+													"start": 67,
+													"end": 77,
+													"elements": [
+														{
+															"type": "CallExpression",
+															"start": 68,
+															"end": 71,
+															"callee": {
+																"type": "Identifier",
+																"start": 68,
+																"end": 69,
+																"reference": 2,
+																"name": "h"
+															},
+															"arguments": [],
+															"optional": false
+														},
+														{
+															"type": "CallExpression",
+															"start": 73,
+															"end": 76,
+															"callee": {
+																"type": "Identifier",
+																"start": 73,
+																"end": 74,
+																"reference": 3,
+																"name": "i"
+															},
+															"arguments": [],
+															"optional": false
+														}
+													]
+												}
+											],
+											"optional": false
+										}
+									}
+								}
+							],
+							"kind": "const"
+						},
+						{
+							"type": "ForOfStatement",
+							"start": 81,
+							"end": 108,
+							"scope": 2,
+							"await": true,
+							"left": {
+								"type": "VariableDeclaration",
+								"start": 92,
+								"end": 99,
+								"declarations": [
+									{
+										"type": "VariableDeclarator",
+										"start": 98,
+										"end": 99,
+										"defines": [
+											3
+										],
+										"id": {
+											"type": "Identifier",
+											"start": 98,
+											"end": 99,
+											"declares": 3,
+											"name": "x"
+										},
+										"init": null
+									}
+								],
+								"kind": "const"
+							},
+							"right": {
+								"type": "Identifier",
+								"start": 103,
+								"end": 104,
+								"reference": 4,
+								"name": "y"
+							},
+							"body": {
+								"type": "BlockStatement",
+								"start": 106,
+								"end": 108,
+								"scope": 3,
+								"body": []
+							}
+						},
+						{
+							"type": "ExpressionStatement",
+							"start": 110,
+							"end": 135,
+							"expression": {
+								"type": "ArrowFunctionExpression",
+								"start": 110,
+								"end": 134,
+								"scope": 4,
+								"id": null,
+								"expression": false,
+								"generator": false,
+								"async": true,
+								"params": [],
+								"body": {
+									"type": "BlockStatement",
+									"start": 122,
+									"end": 134,
+									"body": [
+										{
+											"type": "ExpressionStatement",
+											"start": 124,
+											"end": 132,
+											"expression": {
+												"type": "AwaitExpression",
+												"start": 124,
+												"end": 131,
+												"argument": {
+													"type": "Literal",
+													"start": 130,
+													"end": 131,
+													"value": 1,
+													"raw": "1"
+												}
+											}
+										}
+									]
+								}
+							}
+						}
+					]
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 138,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "for",
+			"parent": 1,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 1,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "f",
+			"kind": "function",
+			"scope": 0
+		},
+		{
+			"name": "a",
+			"kind": "const",
+			"scope": 1
+		},
+		{
+			"name": "b",
+			"kind": "const",
+			"scope": 1
+		},
+		{
+			"name": "x",
+			"kind": "const",
+			"scope": 2
+		}
+	],
+	"references": [
+		{
+			"scope": 1,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 1,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 1,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 1,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 2,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

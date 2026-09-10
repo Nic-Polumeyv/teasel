@@ -470,7 +470,14 @@ impl Parser<'_, TypeScript> {
 		});
 		match assertion {
 			Some(node) => Ok(node),
-			None => self.parse_type_parameters(TypeParameterModifiers::Const),
+			// not an assertion: the type parameters of a generic arrow, whose parameters must follow
+			None => {
+				let type_parameters = self.parse_type_parameters(TypeParameterModifiers::Const)?;
+				if !self.is(TokenKind::ParenL) {
+					return self.unexpected();
+				}
+				Ok(type_parameters)
+			}
 		}
 	}
 
@@ -868,6 +875,14 @@ impl Extension for TypeScript {
 		Ok(None)
 	}
 
+	fn exports_in_script(p: &Parser<Self>) -> bool {
+		p.ext.module_blocks > 0
+	}
+
+	fn in_ambient(p: &Parser<Self>) -> bool {
+		p.ext.ambient
+	}
+
 	fn declares_export(p: &mut Parser<Self>, name: StrId) -> bool {
 		p.ext.module_blocks > 0 || p.ext.types.contains(name) || p.ext.export_only.contains(name)
 	}
@@ -898,6 +913,9 @@ impl Extension for TypeScript {
 	fn var_declarator(p: &mut Parser<Self>, node: NodeId, kind: VariableKind) -> Result<()> {
 		if p.ext.definite.pop() == Some(true) {
 			p.extras_mut(node).definite = true;
+			if let NodeKind::VariableDeclarator { init: Some(_), .. } = p.kind(node) {
+				return p.error(p.start_of(node), Code::DefiniteWithInitializer);
+			}
 		}
 		if p.ext.ambient {
 			p.check_ambient_initializer(node, kind)?;
@@ -1053,13 +1071,19 @@ impl Extension for TypeScript {
 			}),
 			_ => None,
 		};
+		if generator && p.ext.ambient && bodiless.is_some() {
+			return p.error(start, Code::GeneratorInAmbient);
+		}
 		if let Some(kind) = bodiless
 			&& !p.is(TokenKind::BraceL)
 			&& p.is_line_terminator()?
 		{
+			if generator {
+				return p.error(start, Code::GeneratorSignature);
+			}
 			return Ok(Some(p.ts(kind, start)));
 		}
-		if kind == FunctionKind::Declaration && p.ext.ambient {
+		if p.ext.ambient && bodiless.is_some() {
 			return p.error(start, Code::ImplementationInAmbient);
 		}
 		Ok(None)

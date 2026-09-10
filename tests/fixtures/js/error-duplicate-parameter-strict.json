@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "duplicate_parameter",
+		"message": "Argument name clash",
+		"pos": 14,
+		"end": 14,
+		"loc": {
+			"line": 1,
+			"column": 14
+		}
+	}
+}
