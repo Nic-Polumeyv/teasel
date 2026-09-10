@@ -25,7 +25,11 @@ pub enum Item {
 	Literal(&'static str),
 	/// `field=entry`; `field?=entry` leaves the field out when the entry was not read, where the
 	/// plain form gives it null.
-	Entry { field: &'static str, entry: Entry, omit: bool },
+	Entry {
+		field: &'static str,
+		entry: Entry,
+		omit: bool,
+	},
 	/// `[ a | b ]`: at most one alternative, tried in order.
 	Optional(Vec<Alternative>),
 }
@@ -140,7 +144,9 @@ pub struct TagRule {
 pub enum RootField {
 	Fragment,
 	/// The script, the module one when `module`.
-	Script { module: bool },
+	Script {
+		module: bool,
+	},
 	Style,
 	/// Every comment read.
 	Comments,
@@ -387,7 +393,12 @@ impl Grammar {
 	}
 
 	fn line(&mut self, tokens: &[String], indented: bool) -> Result<(), String> {
-		let word = |i: usize| tokens.get(i).map(String::as_str).ok_or_else(|| format!("the line ends early"));
+		let word = |i: usize| {
+			tokens
+				.get(i)
+				.map(String::as_str)
+				.ok_or_else(|| "the line ends early".to_string())
+		};
 		let head = tokens[0].as_str();
 		if indented {
 			let block = self.blocks.last_mut().ok_or("an indented line belongs to a block")?;
@@ -612,7 +623,10 @@ mod tests {
 		let grammar = Grammar::read(include_str!("../../hosts/svelte.grammar")).unwrap();
 		assert_eq!(grammar.name, "svelte");
 		assert_eq!(grammar.document.ty, "Root");
-		assert_eq!(grammar.document.fields[5], ("instance", RootField::Script { module: false }, true));
+		assert_eq!(
+			grammar.document.fields[5],
+			("instance", RootField::Script { module: false }, true)
+		);
 		assert_eq!(grammar.elements.len(), 14);
 		assert_eq!(grammar.directives.len(), 10);
 		let each = grammar.block("each").unwrap();
@@ -622,7 +636,9 @@ mod tests {
 		assert_eq!(body.declares.len(), 2);
 		assert!(matches!(each.open.items[1], Item::Optional(ref alternatives) if alternatives.len() == 1));
 		let await_ = grammar.block("await").unwrap();
-		let Item::Optional(alternatives) = &await_.open.items[1] else { panic!() };
+		let Item::Optional(alternatives) = &await_.open.items[1] else {
+			panic!()
+		};
 		assert_eq!(alternatives.len(), 2);
 		assert_eq!(alternatives[0].body.as_ref().unwrap().field, "then");
 		assert_eq!(await_.branches[1].words, ["catch"]);

@@ -73,6 +73,14 @@ pub trait Sink {
 		}
 		self.end();
 	}
+	/// A list of the tree's interned strings.
+	fn strs(&mut self, strings: &[(StrId, &str)]) {
+		self.list();
+		for &(id, value) in strings {
+			self.interned(id, value);
+		}
+		self.end();
+	}
 }
 
 /// JSON text.
@@ -225,6 +233,8 @@ pub mod kind {
 	pub const NODES: u32 = 8;
 	/// A count, then that many ints.
 	pub const INTS: u32 = 9;
+	/// A count, then that many indexes into the answer's strings.
+	pub const STRS: u32 = 10;
 
 	/// In a node's place.
 	pub const NULL: u32 = 0;
@@ -606,6 +616,12 @@ impl Sink for Binary {
 		}
 		self.tables += 1;
 		self.seq.push(0);
+	}
+
+	fn strs(&mut self, strings: &[(StrId, &str)]) {
+		self.value(kind::STRS);
+		self.words.push(strings.len() as u32);
+		self.words.extend(strings.iter().map(|(id, _)| id.0));
 	}
 
 	fn ints(&mut self, values: &[u32]) {
@@ -1686,7 +1702,9 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 						Value::Nodes(children) => self.list(key, children),
 						Value::Str(string) => self.interned(key, string),
 						Value::Name(child) => {
-							let NodeKind::Identifier { name } = self.ast.node(child).kind else { unreachable!() };
+							let NodeKind::Identifier { name } = self.ast.node(child).kind else {
+								unreachable!()
+							};
 							self.interned(key, name);
 						}
 						Value::Slice(start, end) => {
@@ -1694,13 +1712,12 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 							self.slice(start, end);
 						}
 						Value::Strs(start, len) => {
+							let strings: Vec<(StrId, &str)> = self.ast.host_strings[start as usize..(start + len) as usize]
+								.iter()
+								.map(|&string| (string, self.ast.str(string)))
+								.collect();
 							self.key(key);
-							self.sink.list();
-							for j in start..start + len {
-								let string = self.ast.host_strings[j as usize];
-								self.sink.interned(string, self.ast.str(string));
-							}
-							self.sink.end();
+							self.sink.strs(&strings);
 						}
 						Value::Bool(value) => self.bool(key, value),
 						Value::Int(value) => {

@@ -124,7 +124,13 @@ pub fn parse_document(source: &str, grammar: &str, request: &Request) -> String 
 			let mut request = *request;
 			request.entry = Entry::Program;
 			request.typescript |= host::typescript(source, &grammar);
-			parse_with(source, &Positions::new(source, request.locations), &request, "", Some(&grammar))
+			parse_with(
+				source,
+				&Positions::new(source, request.locations),
+				&request,
+				"",
+				Some(&grammar),
+			)
 		}
 		Err(message) => error_json(&message, 0),
 	}
@@ -258,7 +264,13 @@ impl<'a> Prepared<'a> {
 
 	/// One entry at an offset, as a token stream; the error answer stays JSON.
 	pub fn binary(&self, entry: Entry, start: f64, end: Option<f64>, stop: &str) -> Result<Vec<u32>, String> {
-		binary_with(&self.source, &self.positions, &self.request(entry, start, end)?, stop, self.grammar(entry))
+		binary_with(
+			&self.source,
+			&self.positions,
+			&self.request(entry, start, end)?,
+			stop,
+			self.grammar(entry),
+		)
 	}
 
 	fn grammar(&self, entry: Entry) -> Option<&Grammar> {
@@ -366,17 +378,18 @@ where
 			reused,
 		),
 	};
-	parsed.map(|(mut ast, roots, end)| {
-		if output.comments {
-			attach(&mut ast, source, roots, request.offset);
-		}
-		if output.scopes {
-			scopes::analyze(&mut ast, request.entry, roots);
-		}
-		let sink = answer(&ast, request.entry, roots, end, source, positions, output, sink);
-		ast.clear();
-		POOL.with(|pool| Pooled::give(&mut pool.borrow_mut(), ast));
-		sink
-	})
-	.map_err(|error| error_to_json(&error, source, positions))
+	parsed
+		.map(|(mut ast, roots, end)| {
+			if output.comments {
+				attach(&mut ast, source, roots, request.offset);
+			}
+			if output.scopes {
+				scopes::analyze(&mut ast, request.entry, roots);
+			}
+			let sink = answer(&ast, request.entry, roots, end, source, positions, output, sink);
+			ast.clear();
+			POOL.with(|pool| Pooled::give(&mut pool.borrow_mut(), ast));
+			sink
+		})
+		.map_err(|error| error_to_json(&error, source, positions))
 }

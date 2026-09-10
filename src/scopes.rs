@@ -348,7 +348,9 @@ pub fn analyze<X: Bind>(ast: &mut Ast<X>, entry: Entry, roots: List) {
 	match entry {
 		Entry::Program => {
 			if let NodeKind::Host(_) = ast.node(root.unwrap()).kind {
-				return analyze_with(ast, ScopeKind::Module, root, |b| b.visit(root.unwrap(), Mode::Expression));
+				return analyze_with(ast, ScopeKind::Module, root, |b| {
+					b.visit(root.unwrap(), Mode::Expression)
+				});
 			}
 			let NodeKind::Program { body, module } = ast.node(root.unwrap()).kind else {
 				unreachable!()

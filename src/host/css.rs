@@ -72,10 +72,10 @@ fn nth_of(rest: &str) -> Option<usize> {
 		heads.push(3);
 	} else if let Some(after) = rest.strip_prefix('-') {
 		let n = digits(after);
-		if after[n..].starts_with('n') {
-			if let Some(o) = offset(&after[n + 1..], b"+") {
-				heads.push(1 + n + 1 + o);
-			}
+		if after[n..].starts_with('n')
+			&& let Some(o) = offset(&after[n + 1..], b"+")
+		{
+			heads.push(1 + n + 1 + o);
 		}
 	} else {
 		let plus = usize::from(rest.starts_with('+'));
@@ -95,7 +95,9 @@ fn nth_of(rest: &str) -> Option<usize> {
 			}
 		}
 	}
-	heads.into_iter().find_map(|head| suffix(&rest[head..]).map(|tail| head + tail))
+	heads
+		.into_iter()
+		.find_map(|head| suffix(&rest[head..]).map(|tail| head + tail))
 }
 
 /// `\d+(\.\d+)?%` at the start of `rest`: its length.
@@ -158,7 +160,10 @@ impl<'a, E: Extension> Walker<'a, E> {
 			"",
 			content_start,
 			content_end,
-			vec![("styles", Value::Slice(content_start, content_end)), ("comment", Value::Null)],
+			vec![
+				("styles", Value::Slice(content_start, content_end)),
+				("comment", Value::Null),
+			],
 			None,
 			true,
 		);
@@ -229,7 +234,11 @@ impl<'a, E: Extension> Walker<'a, E> {
 			"Atrule",
 			start,
 			self.at,
-			vec![("name", Value::Str(name)), ("prelude", Value::Str(prelude)), ("block", block)],
+			vec![
+				("name", Value::Str(name)),
+				("prelude", Value::Str(prelude)),
+				("block", block),
+			],
 			None,
 			true,
 		))
@@ -259,7 +268,14 @@ impl<'a, E: Extension> Walker<'a, E> {
 			self.css_space(comments, true)?;
 			if self.matches(if inside_pseudo { ")" } else { "{" }) {
 				let children = self.list(&children);
-				return Ok(self.host("SelectorList", start, end, vec![("children", Value::Nodes(children))], None, true));
+				return Ok(self.host(
+					"SelectorList",
+					start,
+					end,
+					vec![("children", Value::Nodes(children))],
+					None,
+					true,
+				));
 			}
 			self.expect(",")?;
 			self.css_space(comments, true)?;
@@ -278,14 +294,25 @@ impl<'a, E: Extension> Walker<'a, E> {
 			let start = self.at;
 			if self.eat("&") {
 				let name = self.intern("&");
-				selectors.push(self.host("NestingSelector", start, self.at, vec![("name", Value::Str(name))], None, true));
+				selectors.push(self.host(
+					"NestingSelector",
+					start,
+					self.at,
+					vec![("name", Value::Str(name))],
+					None,
+					true,
+				));
 			} else if self.eat("*") {
 				let mut fields = Vec::new();
 				let mut name = String::from("*");
 				if self.eat("|") {
 					let namespace = self.intern("*");
 					fields.push(("namespace", Value::Str(namespace)));
-					name = if self.eat("*") { String::from("*") } else { self.css_identifier()? };
+					name = if self.eat("*") {
+						String::from("*")
+					} else {
+						self.css_identifier()?
+					};
 				}
 				let name = self.intern(&name);
 				fields.insert(0, ("name", Value::Str(name)));
@@ -293,11 +320,25 @@ impl<'a, E: Extension> Walker<'a, E> {
 			} else if self.eat("#") {
 				let name = self.css_identifier()?;
 				let name = self.intern(&name);
-				selectors.push(self.host("IdSelector", start, self.at, vec![("name", Value::Str(name))], None, true));
+				selectors.push(self.host(
+					"IdSelector",
+					start,
+					self.at,
+					vec![("name", Value::Str(name))],
+					None,
+					true,
+				));
 			} else if self.eat(".") {
 				let name = self.css_identifier()?;
 				let name = self.intern(&name);
-				selectors.push(self.host("ClassSelector", start, self.at, vec![("name", Value::Str(name))], None, true));
+				selectors.push(self.host(
+					"ClassSelector",
+					start,
+					self.at,
+					vec![("name", Value::Str(name))],
+					None,
+					true,
+				));
 			} else if self.eat("::") {
 				let name = self.css_identifier()?;
 				let name = self.intern(&name);
@@ -365,23 +406,46 @@ impl<'a, E: Extension> Walker<'a, E> {
 					"AttributeSelector",
 					start,
 					self.at,
-					vec![("name", Value::Str(name)), ("matcher", matcher), ("value", value), ("flags", flags)],
+					vec![
+						("name", Value::Str(name)),
+						("matcher", matcher),
+						("value", value),
+						("flags", flags),
+					],
 					None,
 					true,
 				));
 			} else if let Some(len) = nth_of(self.rest()).filter(|_| inside_pseudo) {
 				self.at += len as u32;
-				selectors.push(self.host("Nth", start, self.at, vec![("value", Value::Slice(start, self.at))], None, true));
+				selectors.push(self.host(
+					"Nth",
+					start,
+					self.at,
+					vec![("value", Value::Slice(start, self.at))],
+					None,
+					true,
+				));
 			} else if let Some(len) = percentage(self.rest()) {
 				self.at += len as u32;
-				selectors.push(self.host("Percentage", start, self.at, vec![("value", Value::Slice(start, self.at))], None, true));
+				selectors.push(self.host(
+					"Percentage",
+					start,
+					self.at,
+					vec![("value", Value::Slice(start, self.at))],
+					None,
+					true,
+				));
 			} else if combinator(self.rest()).is_none() {
 				let mut name = self.css_identifier()?;
 				let mut fields = Vec::new();
 				if self.eat("|") {
 					let namespace = self.intern(&name);
 					fields.push(("namespace", Value::Str(namespace)));
-					name = if self.eat("*") { String::from("*") } else { self.css_identifier()? };
+					name = if self.eat("*") {
+						String::from("*")
+					} else {
+						self.css_identifier()?
+					};
 				}
 				let name = self.intern(&name);
 				fields.insert(0, ("name", Value::Str(name)));
@@ -445,11 +509,25 @@ impl<'a, E: Extension> Walker<'a, E> {
 			let end = self.at;
 			self.space();
 			let name = self.intern(name);
-			return Ok(Some(self.host("Combinator", index, end, vec![("name", Value::Str(name))], None, true)));
+			return Ok(Some(self.host(
+				"Combinator",
+				index,
+				end,
+				vec![("name", Value::Str(name))],
+				None,
+				true,
+			)));
 		}
 		if self.at != start {
 			let name = self.intern(" ");
-			return Ok(Some(self.host("Combinator", start, self.at, vec![("name", Value::Str(name))], None, true)));
+			return Ok(Some(self.host(
+				"Combinator",
+				start,
+				self.at,
+				vec![("name", Value::Str(name))],
+				None,
+				true,
+			)));
 		}
 		Ok(None)
 	}
@@ -467,7 +545,14 @@ impl<'a, E: Extension> Walker<'a, E> {
 		}
 		self.expect("}")?;
 		let children = self.list(&children);
-		Ok(self.host("Block", start, self.at, vec![("children", Value::Nodes(children))], None, true))
+		Ok(self.host(
+			"Block",
+			start,
+			self.at,
+			vec![("children", Value::Nodes(children))],
+			None,
+			true,
+		))
 	}
 
 	/// A declaration, a rule or an at-rule: a look ahead to the next `{` or `;` tells which.
@@ -479,12 +564,19 @@ impl<'a, E: Extension> Walker<'a, E> {
 		self.css_value(&mut Vec::new(), false)?;
 		let opens = self.byte() == Some(b'{');
 		self.at = start;
-		if opens { self.rule(comments) } else { self.declaration(comments) }
+		if opens {
+			self.rule(comments)
+		} else {
+			self.declaration(comments)
+		}
 	}
 
 	fn declaration(&mut self, comments: &mut Vec<CssComment>) -> Result<NodeId> {
 		let start = self.at;
-		let len = self.rest().find(|c: char| is_space(c) || c == ':').unwrap_or(self.rest().len());
+		let len = self
+			.rest()
+			.find(|c: char| is_space(c) || c == ':')
+			.unwrap_or(self.rest().len());
 		let property = &self.src[start as usize..start as usize + len];
 		self.at += len as u32;
 		self.space();
@@ -504,7 +596,10 @@ impl<'a, E: Extension> Walker<'a, E> {
 			"Declaration",
 			start,
 			end,
-			vec![("property", Value::Slice(start, start + len as u32)), ("value", Value::Str(value))],
+			vec![
+				("property", Value::Slice(start, start + len as u32)),
+				("value", Value::Str(value)),
+			],
 			None,
 			true,
 		))
@@ -598,7 +693,10 @@ impl<'a, E: Extension> Walker<'a, E> {
 	fn css_identifier(&mut self) -> Result<String> {
 		let start = self.at;
 		let rest = self.rest();
-		let digit_first = rest.strip_prefix('-').unwrap_or(rest).starts_with(|c: char| c.is_ascii_digit());
+		let digit_first = rest
+			.strip_prefix('-')
+			.unwrap_or(rest)
+			.starts_with(|c: char| c.is_ascii_digit());
 		if digit_first {
 			return fail(start, start, Code::Expected, Some("a valid CSS identifier"));
 		}

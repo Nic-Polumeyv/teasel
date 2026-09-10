@@ -30,22 +30,23 @@ fn closes(current: &str, next: &str) -> bool {
 	match current {
 		"li" => next == "li",
 		"dt" | "dd" => matches!(next, "dt" | "dd"),
-		"p" => matches!(
-			next,
-			"address"
-				| "article" | "aside"
-				| "blockquote" | "div"
-				| "dl" | "fieldset"
-				| "footer" | "form"
-				| "h1" | "h2" | "h3"
-				| "h4" | "h5" | "h6"
-				| "header" | "hgroup"
-				| "hr" | "main"
-				| "menu" | "nav"
-				| "ol" | "p" | "pre"
-				| "section" | "table"
-				| "ul"
-		),
+		"p" => {
+			matches!(
+				next,
+				"address"
+					| "article" | "aside"
+					| "blockquote" | "div"
+					| "dl" | "fieldset"
+					| "footer" | "form"
+					| "h1" | "h2" | "h3"
+					| "h4" | "h5" | "h6"
+					| "header" | "hgroup"
+					| "hr" | "main" | "menu"
+					| "nav" | "ol" | "p"
+					| "pre" | "section"
+					| "table" | "ul"
+			)
+		}
 		"rt" | "rp" => matches!(next, "rt" | "rp"),
 		"optgroup" => next == "optgroup",
 		"option" => matches!(next, "option" | "optgroup"),
@@ -89,9 +90,7 @@ fn valid_name(name: &str) -> bool {
 	for c in chars {
 		if c == '-' {
 			seen_dash = true;
-		} else if c.is_ascii_alphanumeric() {
-		} else if seen_dash && (c == '.' || c == '_' || c == '\u{b7}' || c as u32 >= 0xc0) {
-		} else {
+		} else if !c.is_ascii_alphanumeric() && !(seen_dash && (c == '.' || c == '_' || c == '\u{b7}' || c as u32 >= 0xc0)) {
 			return false;
 		}
 	}
@@ -100,8 +99,8 @@ fn valid_name(name: &str) -> bool {
 
 // code points a browser repairs when a reference names them
 const WINDOWS_1252: [u32; 32] = [
-	8364, 129, 8218, 402, 8222, 8230, 8224, 8225, 710, 8240, 352, 8249, 338, 141, 381, 143, 144, 8216, 8217, 8220, 8221,
-	8226, 8211, 8212, 732, 8482, 353, 8250, 339, 157, 382, 376,
+	8364, 129, 8218, 402, 8222, 8230, 8224, 8225, 710, 8240, 352, 8249, 338, 141, 381, 143, 144, 8216, 8217, 8220,
+	8221, 8226, 8211, 8212, 732, 8482, 353, 8250, 339, 157, 382, 376,
 ];
 
 fn valid_code(code: u32, attribute: bool) -> u32 {
@@ -168,7 +167,9 @@ fn decode(raw: &str, attribute: bool) -> Cow<'_, str> {
 				let candidate = &rest[..try_len + usize::from(with)];
 				if let Ok(found) = entities::ENTITIES.binary_search_by(|(name, _)| name.cmp(&candidate)) {
 					let after = rest.as_bytes().get(try_len);
-					if attribute && !with && after.is_some_and(|b| *b == b'=' || b.is_ascii_alphanumeric() || *b == b'_') {
+					if attribute
+						&& !with && after.is_some_and(|b| *b == b'=' || b.is_ascii_alphanumeric() || *b == b'_')
+					{
 						try_len -= 1;
 						continue;
 					}
@@ -214,14 +215,18 @@ pub fn typescript(src: &str, grammar: &Grammar) -> bool {
 			rest = after.find("-->").map_or("", |j| &after[j + 3..]);
 			continue;
 		}
-		let Some(after) = rest.strip_prefix(script.name) else { continue };
+		let Some(after) = rest.strip_prefix(script.name) else {
+			continue;
+		};
 		if !after.starts_with(is_space) {
 			continue;
 		}
 		let tag_end = after.find('>').unwrap_or(after.len());
 		let mut attributes = after[..tag_end].trim_start_matches(is_space);
 		while !attributes.is_empty() {
-			let name_len = attributes.find(|c: char| is_space(c) || c == '=' || c == '/').unwrap_or(attributes.len());
+			let name_len = attributes
+				.find(|c: char| is_space(c) || c == '=' || c == '/')
+				.unwrap_or(attributes.len());
 			let name = &attributes[..name_len];
 			attributes = attributes[name_len..].trim_start_matches(is_space);
 			let mut value = None;
@@ -242,7 +247,11 @@ pub fn typescript(src: &str, grammar: &Grammar) -> bool {
 			} else if name.is_empty() {
 				attributes = &attributes[1..];
 			}
-			if script.typescript.iter().any(|&(attribute, wanted)| name == attribute && wanted.is_none_or(|w| value == Some(w))) {
+			if script
+				.typescript
+				.iter()
+				.any(|&(attribute, wanted)| name == attribute && wanted.is_none_or(|w| value == Some(w)))
+			{
 				return true;
 			}
 		}
@@ -479,7 +488,9 @@ impl<'a, E: Extension> Walker<'a, E> {
 
 	fn field_of(&self, id: NodeId, key: &str) -> Option<Value> {
 		let ast = self.tree();
-		let NodeKind::Host(index) = ast.node(id).kind else { return None };
+		let NodeKind::Host(index) = ast.node(id).kind else {
+			return None;
+		};
 		let host = ast.hosts[index as usize];
 		ast.host_fields[host.fields.0 as usize..(host.fields.0 + host.fields.1) as usize]
 			.iter()
@@ -525,7 +536,9 @@ impl<'a, E: Extension> Walker<'a, E> {
 
 	/// The text of `name="text"`.
 	fn attribute_text(&self, id: NodeId) -> Option<&str> {
-		let Value::Nodes(_) = self.field_of(id, "value")? else { return None };
+		let Value::Nodes(_) = self.field_of(id, "value")? else {
+			return None;
+		};
 		let chunk = self.attribute_chunk(id)?;
 		if self.host_type(chunk) != "Text" {
 			return None;
@@ -638,14 +651,21 @@ impl<'a, E: Extension> Walker<'a, E> {
 			self.space();
 			self.expect(">")?;
 			if is_void(name) {
-				return fail(start, start + 1, Code::Placement, Some("A closing tag of a void element"));
+				return fail(
+					start,
+					start + 1,
+					Code::Placement,
+					Some("A closing tag of a void element"),
+				);
 			}
 			return self.close_element(start, name);
 		}
 		let name = self.tag_name(false)?;
 		let name_span = (start + 1, self.at);
 		let rule = self.grammar.element(name);
-		let namespaced = name.split_once(':').is_some_and(|(prefix, _)| prefix == self.grammar.name);
+		let namespaced = name
+			.split_once(':')
+			.is_some_and(|(prefix, _)| prefix == self.grammar.name);
 		let Some(rule) = rule.filter(|rule| rule.name != Match::Any || (!namespaced && valid_name(name))) else {
 			return fail(name_span.0, name_span.1, Code::InvalidName, Some(name));
 		};
@@ -660,17 +680,27 @@ impl<'a, E: Extension> Walker<'a, E> {
 		}
 		let plain = self.grammar.element("*").map_or(rule.ty, |any| any.ty);
 		let mut ty = rule.ty;
-		if let Some(inside) = rule.inside {
-			if !self.nearest_element_is(inside) {
-				ty = plain;
-			}
+		if let Some(inside) = rule.inside
+			&& !self.nearest_element_is(inside)
+		{
+			ty = plain;
 		}
-		if rule.outside.is_some() && self.frames.iter().any(|frame| matches!(frame, Frame::Element { shadowroot: true, .. })) {
+		if rule.outside.is_some()
+			&& self
+				.frames
+				.iter()
+				.any(|frame| matches!(frame, Frame::Element { shadowroot: true, .. }))
+		{
 			ty = plain;
 		}
 		self.space();
 		// the browser closes the open element when this one cannot sit inside it
-		if let Some(Frame::Element { name: parent, ty: parent_ty, .. }) = self.frames.last() {
+		if let Some(Frame::Element {
+			name: parent,
+			ty: parent_ty,
+			..
+		}) = self.frames.last()
+		{
 			let parent_name = &self.src[parent.0 as usize..parent.1 as usize];
 			if *parent_ty == plain && closes(parent_name, name) {
 				self.close_top(start);
@@ -688,13 +718,18 @@ impl<'a, E: Extension> Walker<'a, E> {
 			} else {
 				self.attribute()?
 			};
-			let Some((node, kind, attribute_name)) = attribute else { break };
+			let Some((node, kind, attribute_name)) = attribute else {
+				break;
+			};
 			if let Some(attribute_name) = attribute_name {
 				if kind == "Attribute" && attribute_name == "shadowrootmode" && ty == plain {
 					shadowroot = true;
 				}
 				let key = if kind == "BindDirective" { "Attribute" } else { kind };
-				if matches!(kind, "Attribute" | "BindDirective" | "StyleDirective" | "ClassDirective") {
+				if matches!(
+					kind,
+					"Attribute" | "BindDirective" | "StyleDirective" | "ClassDirective"
+				) {
 					if seen.iter().any(|(k, n)| *k == key && *n == attribute_name) {
 						let node = self.tree().node(node);
 						return fail(node.start, node.end, Code::Duplicate, Some(&attribute_name));
@@ -716,7 +751,9 @@ impl<'a, E: Extension> Walker<'a, E> {
 			let value = match self.attribute_expression(this) {
 				Some(expression) => expression,
 				None => {
-					let chunk = self.attribute_chunk(this).filter(|&chunk| text && self.host_type(chunk) == "Text");
+					let chunk = self
+						.attribute_chunk(this)
+						.filter(|&chunk| text && self.host_type(chunk) == "Text");
 					let Some(chunk) = chunk else {
 						let node = self.tree().node(this);
 						return fail(node.start, node.end, Code::Expected, Some("an expression as this"));
@@ -750,11 +787,21 @@ impl<'a, E: Extension> Walker<'a, E> {
 					match value {
 						Some(value) if self.attribute_text(id) != Some(value) => {
 							let node = self.tree().node(id);
-							return fail(node.start, node.end, Code::Expected, Some(&format!("{attribute} to be \"{value}\"")));
+							return fail(
+								node.start,
+								node.end,
+								Code::Expected,
+								Some(&format!("{attribute} to be \"{value}\"")),
+							);
 						}
 						None if !matches!(self.field_of(id, "value"), Some(Value::Bool(true))) => {
 							let node = self.tree().node(id);
-							return fail(node.start, node.end, Code::Expected, Some(&format!("{attribute} without a value")));
+							return fail(
+								node.start,
+								node.end,
+								Code::Expected,
+								Some(&format!("{attribute} without a value")),
+							);
 						}
 						_ => module = true,
 					}
@@ -774,7 +821,14 @@ impl<'a, E: Extension> Walker<'a, E> {
 				None,
 				true,
 			);
-			let Some(Frame::Root { instance, module: module_slot, .. }) = self.frames.first_mut() else { unreachable!() };
+			let Some(Frame::Root {
+				instance,
+				module: module_slot,
+				..
+			}) = self.frames.first_mut()
+			else {
+				unreachable!()
+			};
 			let slot = if module { module_slot } else { instance };
 			if slot.is_some() {
 				return fail(start, start + 1, Code::Duplicate, Some(name));
@@ -785,7 +839,9 @@ impl<'a, E: Extension> Walker<'a, E> {
 		if style.is_some() {
 			self.expect(">")?;
 			let node = self.style_sheet(start, name, attributes)?;
-			let Some(Frame::Root { css, .. }) = self.frames.first_mut() else { unreachable!() };
+			let Some(Frame::Root { css, .. }) = self.frames.first_mut() else {
+				unreachable!()
+			};
 			if css.is_some() {
 				return fail(start, start + 1, Code::Duplicate, Some(name));
 			}
@@ -826,7 +882,10 @@ impl<'a, E: Extension> Walker<'a, E> {
 				"Text",
 				content_start,
 				close,
-				vec![("raw", Value::Slice(content_start, close)), ("data", Value::Slice(content_start, close))],
+				vec![
+					("raw", Value::Slice(content_start, close)),
+					("data", Value::Slice(content_start, close)),
+				],
 				None,
 				true,
 			);
@@ -835,7 +894,6 @@ impl<'a, E: Extension> Walker<'a, E> {
 			finish(self, vec![node], end);
 			return Ok(());
 		}
-		drop(finish);
 		self.frames.push(Frame::Element {
 			start,
 			name: name_span,
@@ -854,10 +912,10 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let mut from = 0;
 		while let Some(i) = rest[from..].find("</") {
 			let at = from + i + 2;
-			if let Some(after) = rest[at..].strip_prefix(name) {
-				if after.trim_start_matches(is_space).starts_with('>') {
-					return Some(self.at + (from + i) as u32);
-				}
+			if let Some(after) = rest[at..].strip_prefix(name)
+				&& after.trim_start_matches(is_space).starts_with('>')
+			{
+				return Some(self.at + (from + i) as u32);
 			}
 			from = at;
 		}
@@ -951,7 +1009,10 @@ impl<'a, E: Extension> Walker<'a, E> {
 					raw
 				}
 				None => {
-					let len = self.rest().find(|c: char| c == '>' || is_space(c)).unwrap_or(self.rest().len());
+					let len = self
+						.rest()
+						.find(|c: char| c == '>' || is_space(c))
+						.unwrap_or(self.rest().len());
 					if len == 0 {
 						return fail(value_start, value_start, Code::Expected, Some("an attribute value"));
 					}
@@ -983,7 +1044,10 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let (kind, len) = if self.matches("//") {
 			(CommentKind::Line, self.rest().find('\n').unwrap_or(self.rest().len()))
 		} else if self.matches("/*") {
-			(CommentKind::Block, self.rest()[2..].find("*/").map_or(self.rest().len(), |i| i + 4))
+			(
+				CommentKind::Block,
+				self.rest()[2..].find("*/").map_or(self.rest().len(), |i| i + 4),
+			)
 		} else {
 			return false;
 		};
@@ -1002,16 +1066,16 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let start = self.at;
 		if self.eat("{") {
 			self.space();
-			if let Some(ty) = self.grammar.attach {
-				if self.eat("@") {
-					self.expect("attach")?;
-					self.require_space()?;
-					let expression = self.expression("")?;
-					self.space();
-					self.expect("}")?;
-					let node = self.host(ty, start, self.at, vec![("expression", Value::Node(expression))], None, true);
-					return Ok(Some((node, ty, None)));
-				}
+			if let Some(ty) = self.grammar.attach
+				&& self.eat("@")
+			{
+				self.expect("attach")?;
+				self.require_space()?;
+				let expression = self.expression("")?;
+				self.space();
+				self.expect("}")?;
+				let node = self.host(ty, start, self.at, vec![("expression", Value::Node(expression))], None, true);
+				return Ok(Some((node, ty, None)));
 			}
 			if self.eat("...") {
 				let Some(ty) = self.grammar.spread else {
@@ -1020,7 +1084,14 @@ impl<'a, E: Extension> Walker<'a, E> {
 				let expression = self.expression("")?;
 				self.space();
 				self.expect("}")?;
-				let node = self.host(ty, start, self.at, vec![("expression", Value::Node(expression))], None, true);
+				let node = self.host(
+					ty,
+					start,
+					self.at,
+					vec![("expression", Value::Node(expression))],
+					None,
+					true,
+				);
 				return Ok(Some((node, ty, None)));
 			}
 			let id_start = self.at;
@@ -1032,7 +1103,14 @@ impl<'a, E: Extension> Walker<'a, E> {
 			}
 			self.space();
 			self.expect("}")?;
-			let tag = self.host("ExpressionTag", id_start, id_end, vec![("expression", Value::Node(id))], None, true);
+			let tag = self.host(
+				"ExpressionTag",
+				id_start,
+				id_end,
+				vec![("expression", Value::Node(id))],
+				None,
+				true,
+			);
 			let name_id = self.intern(&name);
 			let node = self.host(
 				"Attribute",
@@ -1085,7 +1163,12 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let mut modifiers = rest.split('|');
 		let directive_name = modifiers.next().unwrap_or("");
 		if directive_name.is_empty() {
-			return fail(start, start + (name.len() - rest.len()) as u32, Code::Expected, Some("a directive name"));
+			return fail(
+				start,
+				start + (name.len() - rest.len()) as u32,
+				Code::Expected,
+				Some("a directive name"),
+			);
 		}
 		let name_id = self.intern(directive_name);
 		let mut fields = vec![("name", Value::Str(name_id))];
@@ -1099,7 +1182,10 @@ impl<'a, E: Extension> Walker<'a, E> {
 		fields.push(("modifiers", Value::Strs(from, count)));
 		match rule.value {
 			DirectiveValue::Value => fields.push(("value", value)),
-			DirectiveValue::Expression { optional, name: own_name } => {
+			DirectiveValue::Expression {
+				optional,
+				name: own_name,
+			} => {
 				let expression = match value {
 					Value::Bool(true) => None,
 					Value::Node(tag) => match self.field_of(tag, "expression") {
@@ -1161,8 +1247,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			None => self.sequence(
 				|w| {
 					w.matches("/>")
-						|| w
-							.char()
+						|| w.char()
 							.is_none_or(|c| is_space(c) || matches!(c, '"' | '\'' | '=' | '<' | '>' | '`'))
 				},
 				"an attribute value",
@@ -1198,14 +1283,26 @@ impl<'a, E: Extension> Walker<'a, E> {
 			if self.eat("{") {
 				let start = self.at - 1;
 				if self.matches("#") || self.matches("@") {
-					return fail(start, start + 1, Code::Placement, Some(&format!("A block or tag in {place}")));
+					return fail(
+						start,
+						start + 1,
+						Code::Placement,
+						Some(&format!("A block or tag in {place}")),
+					);
 				}
 				self.flush_text(chunk_start, start, &mut chunks);
 				self.space();
 				let expression = self.expression("")?;
 				self.space();
 				self.expect("}")?;
-				let tag = self.host("ExpressionTag", start, self.at, vec![("expression", Value::Node(expression))], None, true);
+				let tag = self.host(
+					"ExpressionTag",
+					start,
+					self.at,
+					vec![("expression", Value::Node(expression))],
+					None,
+					true,
+				);
 				chunks.push(tag);
 				chunk_start = self.at;
 			} else {
@@ -1249,10 +1346,20 @@ impl<'a, E: Extension> Walker<'a, E> {
 				let statement = self.js(JsEntry::Statement, "")?[0];
 				let kind = self.tree().node(statement).kind;
 				match kind {
-					NodeKind::VariableDeclaration { kind, .. } if matches!(kind, VariableKind::Let | VariableKind::Const) => {
+					NodeKind::VariableDeclaration {
+						kind: VariableKind::Let | VariableKind::Const,
+						..
+					} => {
 						self.space();
 						self.expect("}")?;
-						let node = self.host(rule.ty, start, self.at, vec![("declaration", Value::Node(statement))], None, true);
+						let node = self.host(
+							rule.ty,
+							start,
+							self.at,
+							vec![("declaration", Value::Node(statement))],
+							None,
+							true,
+						);
 						self.append(node);
 						return Ok(());
 					}
@@ -1263,7 +1370,12 @@ impl<'a, E: Extension> Walker<'a, E> {
 					}
 					_ => {
 						let node = self.tree().node(statement);
-						return fail(node.start, node.end, Code::Placement, Some("A declaration of that kind"));
+						return fail(
+							node.start,
+							node.end,
+							Code::Placement,
+							Some("A declaration of that kind"),
+						);
 					}
 				}
 			}
@@ -1274,7 +1386,14 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let expression = self.expression("")?;
 		self.space();
 		self.expect("}")?;
-		let node = self.host(rule.ty, start, self.at, vec![("expression", Value::Node(expression))], None, true);
+		let node = self.host(
+			rule.ty,
+			start,
+			self.at,
+			vec![("expression", Value::Node(expression))],
+			None,
+			true,
+		);
 		self.append(node);
 		Ok(())
 	}
@@ -1406,7 +1525,12 @@ impl<'a, E: Extension> Walker<'a, E> {
 			unreachable!()
 		};
 		if done.iter().any(|(field, _)| *field == body.field) {
-			return fail(start, start + 1, Code::Duplicate, Some(&format!("{{:{}}}", branch.words.join(" "))));
+			return fail(
+				start,
+				start + 1,
+				Code::Duplicate,
+				Some(&format!("{{:{}}}", branch.words.join(" "))),
+			);
 		}
 		fields.extend(read.fields.iter().copied());
 		*current = (body.field, body.omit);
@@ -1434,11 +1558,15 @@ impl<'a, E: Extension> Walker<'a, E> {
 
 	/// Closes the open body of the block on top: its nodes become a fragment under its field.
 	fn finish_body(&mut self) {
-		let Some(Frame::Block { nodes, body, .. }) = self.frames.last_mut() else { unreachable!() };
+		let Some(Frame::Block { nodes, body, .. }) = self.frames.last_mut() else {
+			unreachable!()
+		};
 		let nodes = std::mem::take(nodes);
 		let field = body.0;
 		let fragment = self.fragment(nodes);
-		let Some(Frame::Block { done, .. }) = self.frames.last_mut() else { unreachable!() };
+		let Some(Frame::Block { done, .. }) = self.frames.last_mut() else {
+			unreachable!()
+		};
 		done.push((field, fragment));
 	}
 
@@ -1473,7 +1601,9 @@ impl<'a, E: Extension> Walker<'a, E> {
 			match chain {
 				Some(field) => {
 					let fragment = self.fragment(vec![node]);
-					let Some(Frame::Block { done, .. }) = self.frames.last_mut() else { unreachable!() };
+					let Some(Frame::Block { done, .. }) = self.frames.last_mut() else {
+						unreachable!()
+					};
 					done.push((field, fragment));
 				}
 				None => {
@@ -1547,7 +1677,13 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let rule: &'a TagRule = rule;
 		self.keyword = name_at;
 		let mut read = Read::default();
-		let lists_names = matches!(rule.form.items.first(), Some(Item::Entry { entry: Entry::Identifiers, .. }));
+		let lists_names = matches!(
+			rule.form.items.first(),
+			Some(Item::Entry {
+				entry: Entry::Identifiers,
+				..
+			})
+		);
 		if !rule.form.items.is_empty() && !lists_names {
 			self.require_space()?;
 		}
@@ -1629,7 +1765,11 @@ impl<'a, E: Extension> Walker<'a, E> {
 		Ok(match entry {
 			Entry::Expression => {
 				// a token that continues an expression is JavaScript's before it is the host's
-				let stop: Vec<&str> = stops.iter().copied().filter(|s| !matches!(*s, "(" | "[" | "." | "?." | "`")).collect();
+				let stop: Vec<&str> = stops
+					.iter()
+					.copied()
+					.filter(|s| !matches!(*s, "(" | "[" | "." | "?." | "`"))
+					.collect();
 				Value::Node(self.js(JsEntry::Expression, &stop.join(" "))?[0])
 			}
 			Entry::Pattern => Value::Node(self.js(JsEntry::Pattern, &stop)?[0]),
@@ -1675,11 +1815,20 @@ impl<'a, E: Extension> Walker<'a, E> {
 				if matches!(init_node.kind, NodeKind::SequenceExpression { .. })
 					&& !self.src[init_at as usize..init_node.start as usize].contains('(')
 				{
-					return fail(init_node.start, init_node.end, Code::Expected, Some("a single declaration"));
+					return fail(
+						init_node.start,
+						init_node.end,
+						Code::Expected,
+						Some("a single declaration"),
+					);
 				}
 				self.space();
 				let end = self.at;
-				let declarator = self.ast().add(NodeKind::VariableDeclarator { id, init: Some(init) }, id_start, declarator_end);
+				let declarator = self.ast().add(
+					NodeKind::VariableDeclarator { id, init: Some(init) },
+					id_start,
+					declarator_end,
+				);
 				let declarations = self.list(&[declarator]);
 				let keyword = self.keyword;
 				Value::Node(self.ast().add(

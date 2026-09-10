@@ -8,6 +8,9 @@ import { relative } from 'node:path';
 import { args, capped, corpus, diff, files, is_typescript, normalize_ts, root, teasel } from './lib.js';
 
 const { parse } = await import(`${root}/packages/svelte/src/compiler/index.js`);
+// `<svelte:options>` is Svelte's to read: the host reads the element, Svelte makes its options of it
+const { default: read_options } = await import(`${root}/packages/svelte/src/compiler/phases/1-parse/read/options.js`);
+const { disallow_children } = await import(`${root}/packages/svelte/src/compiler/phases/2-analyze/visitors/shared/special-element.js`);
 const { verbose, limit, filter } = args();
 const grammar = new URL('../hosts/svelte.grammar', import.meta.url).pathname;
 
@@ -69,20 +72,21 @@ function replacer(key, value) {
 	return value;
 }
 
-// `<svelte:options>` becomes `options` on Svelte's side; teasel leaves the element in the fragment
-// for now. A TypeScript component's scripts come from acorn-typescript, brought in line with acorn.
+// A TypeScript component's scripts come from acorn-typescript, brought in line with acorn.
 function tree(ast, ours, ts, source) {
-	const out = normal(JSON.parse(JSON.stringify(ast, ts && !ours ? normalize_ts : replacer)), ours ? null : source);
+	const raw = JSON.parse(JSON.stringify(ast, ts && !ours ? normalize_ts : replacer));
+	if (ours) {
+		const i = raw.fragment.nodes.findIndex((n) => n.type === 'SvelteOptions');
+		if (i !== -1) {
+			const [node] = raw.fragment.nodes.splice(i, 1);
+			disallow_children(node);
+			raw.options = read_options(node);
+		}
+	}
+	const out = normal(raw, ours ? null : source);
 	// the comment before a style element is the fragment's node, which the tree lists once
 	if (out.css) out.css.content.comment = null;
-	if (ours) {
-		out.comments = out.comments.map((c) => dedent(c, source, out));
-		const i = out.fragment.nodes.findIndex((n) => n.type === 'SvelteOptions');
-		if (i !== -1) {
-			out.fragment.nodes.splice(i, 1);
-			out.options = 'present';
-		}
-	} else out.options = out.options ? 'present' : null;
+	if (ours) out.comments = out.comments.map((c) => dedent(c, source, out));
 	return out;
 }
 
@@ -111,8 +115,8 @@ for (const [i, job] of jobs.entries()) {
 	try {
 		const value = JSON.parse(lines[i]);
 		a = value.error ? value : tree(value.node, true, false, job.source);
-	} catch {
-		a = { error: { message: `bad output: ${String(lines[i]).slice(0, 80)}` } };
+	} catch (error) {
+		a = { error: { message: error.code ? error.message : `bad output: ${String(lines[i]).slice(0, 80)}` } };
 	}
 	if (e.error && a.error) stats.both_error++;
 	else if (a.error && known(job.source, a.error)) stats.oracle_bug++;
