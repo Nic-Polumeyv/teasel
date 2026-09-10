@@ -3,3 +3,4 @@ node_modules/
 /tests/test262-parser-tests/
 /package/teasel.wasm
 *.node
+/tests/TypeScript/
