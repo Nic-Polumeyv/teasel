@@ -1,0 +1,97 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 40,
+		"scope": 0,
+		"body": [
+			{
+				"type": "ExportDefaultDeclaration",
+				"start": 0,
+				"end": 25,
+				"declaration": {
+					"type": "ClassDeclaration",
+					"start": 15,
+					"end": 25,
+					"scope": 1,
+					"defines": [
+						0
+					],
+					"id": {
+						"type": "Identifier",
+						"start": 21,
+						"end": 22,
+						"declares": 0,
+						"name": "A"
+					},
+					"superClass": null,
+					"body": {
+						"type": "ClassBody",
+						"start": 23,
+						"end": 25,
+						"body": []
+					}
+				}
+			},
+			{
+				"type": "ExportNamedDeclaration",
+				"start": 26,
+				"end": 39,
+				"declaration": null,
+				"specifiers": [
+					{
+						"type": "ExportSpecifier",
+						"start": 35,
+						"end": 36,
+						"local": {
+							"type": "Identifier",
+							"start": 35,
+							"end": 36,
+							"reference": 0,
+							"name": "A"
+						},
+						"exported": {
+							"type": "Identifier",
+							"start": 35,
+							"end": 36,
+							"name": "A"
+						}
+					}
+				],
+				"source": null,
+				"attributes": []
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 40,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "class",
+			"parent": 0,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "A",
+			"kind": "class",
+			"scope": 0
+		}
+	],
+	"references": [
+		{
+			"scope": 0,
+			"binding": 0,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

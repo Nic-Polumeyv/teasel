@@ -7,3 +7,4 @@ import j from 'f' with { type: 'json' };
 import.meta.url;
 import('g');
 import('h', { with: { type: 'json' } });
+import * as ns from 'm' with { type: 'json' };

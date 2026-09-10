@@ -2,7 +2,7 @@
 	"node": {
 		"type": "Program",
 		"start": 0,
-		"end": 234,
+		"end": 281,
 		"scope": 0,
 		"body": [
 			{
@@ -378,11 +378,60 @@
 						]
 					}
 				}
+			},
+			{
+				"type": "ImportDeclaration",
+				"start": 234,
+				"end": 280,
+				"specifiers": [
+					{
+						"type": "ImportNamespaceSpecifier",
+						"start": 241,
+						"end": 248,
+						"defines": [
+							8
+						],
+						"local": {
+							"type": "Identifier",
+							"start": 246,
+							"end": 248,
+							"declares": 8,
+							"name": "ns"
+						}
+					}
+				],
+				"source": {
+					"type": "Literal",
+					"start": 254,
+					"end": 257,
+					"value": "m",
+					"raw": "'m'"
+				},
+				"attributes": [
+					{
+						"type": "ImportAttribute",
+						"start": 265,
+						"end": 277,
+						"key": {
+							"type": "Identifier",
+							"start": 265,
+							"end": 269,
+							"name": "type"
+						},
+						"value": {
+							"type": "Literal",
+							"start": 271,
+							"end": 277,
+							"value": "json",
+							"raw": "'json'"
+						}
+					}
+				]
 			}
 		],
 		"sourceType": "module"
 	},
-	"end": 234,
+	"end": 281,
 	"comments": [],
 	"scopes": [
 		{
@@ -429,6 +478,11 @@
 		},
 		{
 			"name": "j",
+			"kind": "import",
+			"scope": 0
+		},
+		{
+			"name": "ns",
 			"kind": "import",
 			"scope": 0
 		}

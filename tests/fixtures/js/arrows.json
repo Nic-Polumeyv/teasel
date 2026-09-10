@@ -2,7 +2,7 @@
 	"node": {
 		"type": "Program",
 		"start": 0,
-		"end": 102,
+		"end": 112,
 		"scope": 0,
 		"body": [
 			{
@@ -269,11 +269,38 @@
 						"name": "a"
 					}
 				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 102,
+				"end": 111,
+				"expression": {
+					"type": "CallExpression",
+					"start": 102,
+					"end": 110,
+					"callee": {
+						"type": "Identifier",
+						"start": 102,
+						"end": 107,
+						"reference": 5,
+						"name": "async"
+					},
+					"arguments": [
+						{
+							"type": "Identifier",
+							"start": 108,
+							"end": 109,
+							"reference": 6,
+							"name": "x"
+						}
+					],
+					"optional": false
+				}
 			}
 		],
 		"sourceType": "module"
 	},
-	"end": 102,
+	"end": 112,
 	"comments": [],
 	"scopes": [
 		{
@@ -381,6 +408,20 @@
 		{
 			"scope": 6,
 			"binding": 6,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
 			"write": false,
 			"read": true,
 			"mutate": false

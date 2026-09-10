@@ -11,3 +11,8 @@ type K = new () => L;
 type M = unique symbol;
 type N = readonly string[];
 type O = infer_ extends (infer U)[] ? U : never;
+type P = typeof import('x').y<Z>;
+type Q = abstract new () => R;
+type S = this;
+type U = intrinsic;
+type V = -1 | 'a' | true | null | undefined | void;

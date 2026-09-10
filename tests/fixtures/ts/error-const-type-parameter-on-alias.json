@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "unexpected_keyword",
+		"message": "Unexpected keyword 'const'",
+		"pos": 7,
+		"end": 7,
+		"loc": {
+			"line": 1,
+			"column": 7
+		}
+	}
+}

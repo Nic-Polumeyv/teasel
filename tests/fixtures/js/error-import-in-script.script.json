@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "import_export_in_script",
+		"message": "'import' and 'export' may appear only with 'sourceType: module'",
+		"pos": 0,
+		"end": 6,
+		"loc": {
+			"line": 1,
+			"column": 0
+		}
+	}
+}

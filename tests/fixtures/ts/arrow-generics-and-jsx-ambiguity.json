@@ -2,7 +2,7 @@
 	"node": {
 		"type": "Program",
 		"start": 0,
-		"end": 100,
+		"end": 144,
 		"scope": 0,
 		"body": [
 			{
@@ -252,16 +252,136 @@
 					}
 				],
 				"kind": "const"
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 100,
+				"end": 143,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 106,
+						"end": 142,
+						"defines": [
+							6
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 106,
+							"end": 107,
+							"declares": 6,
+							"name": "i"
+						},
+						"init": {
+							"type": "ArrowFunctionExpression",
+							"start": 110,
+							"end": 142,
+							"scope": 4,
+							"defines": [
+								7
+							],
+							"returnType": {
+								"type": "TSTypeAnnotation",
+								"start": 125,
+								"end": 137,
+								"typeAnnotation": {
+									"type": "TSTypeReference",
+									"start": 127,
+									"end": 137,
+									"typeName": {
+										"type": "Identifier",
+										"start": 127,
+										"end": 134,
+										"name": "Promise"
+									},
+									"typeArguments": {
+										"type": "TSTypeParameterInstantiation",
+										"start": 134,
+										"end": 137,
+										"params": [
+											{
+												"type": "TSTypeReference",
+												"start": 135,
+												"end": 136,
+												"typeName": {
+													"type": "Identifier",
+													"start": 135,
+													"end": 136,
+													"name": "T"
+												}
+											}
+										]
+									}
+								}
+							},
+							"typeParameters": {
+								"type": "TSTypeParameterDeclaration",
+								"start": 116,
+								"end": 119,
+								"params": [
+									{
+										"type": "TSTypeParameter",
+										"start": 117,
+										"end": 118,
+										"name": "T"
+									}
+								]
+							},
+							"id": null,
+							"expression": true,
+							"generator": false,
+							"async": true,
+							"params": [
+								{
+									"type": "Identifier",
+									"start": 120,
+									"end": 124,
+									"declares": 7,
+									"typeAnnotation": {
+										"type": "TSTypeAnnotation",
+										"start": 121,
+										"end": 124,
+										"typeAnnotation": {
+											"type": "TSTypeReference",
+											"start": 123,
+											"end": 124,
+											"typeName": {
+												"type": "Identifier",
+												"start": 123,
+												"end": 124,
+												"name": "T"
+											}
+										}
+									},
+									"name": "x"
+								}
+							],
+							"body": {
+								"type": "Identifier",
+								"start": 141,
+								"end": 142,
+								"reference": 3,
+								"name": "x"
+							}
+						}
+					}
+				],
+				"kind": "const"
 			}
 		],
 		"sourceType": "module"
 	},
-	"end": 100,
+	"end": 144,
 	"comments": [],
 	"scopes": [
 		{
 			"kind": "module",
 			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
 			"topLevelAwait": false
 		},
 		{
@@ -310,6 +430,16 @@
 			"name": "x",
 			"kind": "param",
 			"scope": 3
+		},
+		{
+			"name": "i",
+			"kind": "const",
+			"scope": 0
+		},
+		{
+			"name": "x",
+			"kind": "param",
+			"scope": 4
 		}
 	],
 	"references": [
@@ -330,6 +460,13 @@
 		{
 			"scope": 3,
 			"binding": 5,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 4,
+			"binding": 7,
 			"write": false,
 			"read": true,
 			"mutate": false

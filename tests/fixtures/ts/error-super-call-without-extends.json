@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "super_call_outside_constructor",
+		"message": "super() call outside constructor of a subclass",
+		"pos": 26,
+		"end": 26,
+		"loc": {
+			"line": 1,
+			"column": 26
+		}
+	}
+}

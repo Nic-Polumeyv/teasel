@@ -1,12 +1,157 @@
 {
-	"error": {
-		"code": "unexpected_token",
-		"message": "Unexpected token",
-		"pos": 25,
-		"end": 26,
-		"loc": {
-			"line": 4,
-			"column": 4
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 39,
+		"scope": 0,
+		"body": [
+			{
+				"type": "ExpressionStatement",
+				"start": 0,
+				"end": 4,
+				"expression": {
+					"type": "Identifier",
+					"start": 0,
+					"end": 3,
+					"reference": 0,
+					"name": "let"
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 5,
+				"end": 13,
+				"expression": {
+					"type": "AssignmentExpression",
+					"start": 5,
+					"end": 12,
+					"operator": "=",
+					"left": {
+						"type": "Identifier",
+						"start": 5,
+						"end": 8,
+						"reference": 1,
+						"name": "let"
+					},
+					"right": {
+						"type": "Literal",
+						"start": 11,
+						"end": 12,
+						"writes": [
+							1
+						],
+						"value": 1,
+						"raw": "1"
+					}
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 14,
+				"end": 20,
+				"expression": {
+					"type": "MemberExpression",
+					"start": 14,
+					"end": 19,
+					"object": {
+						"type": "Identifier",
+						"start": 14,
+						"end": 17,
+						"reference": 2,
+						"name": "let"
+					},
+					"property": {
+						"type": "Identifier",
+						"start": 18,
+						"end": 19,
+						"name": "x"
+					},
+					"computed": false,
+					"optional": false
+				}
+			},
+			{
+				"type": "ForInStatement",
+				"start": 21,
+				"end": 38,
+				"left": {
+					"type": "Identifier",
+					"start": 26,
+					"end": 29,
+					"reference": 3,
+					"name": "let"
+				},
+				"right": {
+					"type": "Identifier",
+					"start": 33,
+					"end": 34,
+					"reference": 4,
+					"writes": [
+						3
+					],
+					"name": "o"
+				},
+				"body": {
+					"type": "BlockStatement",
+					"start": 36,
+					"end": 38,
+					"scope": 1,
+					"body": []
+				}
+			}
+		],
+		"sourceType": "script"
+	},
+	"end": 39,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "script",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 0,
+			"topLevelAwait": false
 		}
-	}
+	],
+	"bindings": [],
+	"references": [
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": true,
+			"read": false,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": true,
+			"read": false,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
 }

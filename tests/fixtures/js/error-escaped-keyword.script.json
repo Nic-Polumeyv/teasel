@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "escape_in_keyword",
+		"message": "Escape sequence in keyword if",
+		"pos": 0,
+		"end": 7,
+		"loc": {
+			"line": 1,
+			"column": 0
+		}
+	}
+}

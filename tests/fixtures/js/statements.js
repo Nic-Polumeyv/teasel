@@ -12,3 +12,4 @@ throw new Error();
 debugger;
 ;
 { }
+for (k in o) ;

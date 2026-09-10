@@ -2,7 +2,7 @@
 	"node": {
 		"type": "Program",
 		"start": 0,
-		"end": 90,
+		"end": 132,
 		"scope": 0,
 		"body": [
 			{
@@ -167,11 +167,93 @@
 					}
 				],
 				"kind": "var"
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 90,
+				"end": 105,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 94,
+						"end": 104,
+						"defines": [
+							4
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 94,
+							"end": 100,
+							"declares": 4,
+							"name": "static"
+						},
+						"init": {
+							"type": "Literal",
+							"start": 103,
+							"end": 104,
+							"value": 4,
+							"raw": "4"
+						}
+					}
+				],
+				"kind": "var"
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 106,
+				"end": 115,
+				"expression": {
+					"type": "AssignmentExpression",
+					"start": 106,
+					"end": 114,
+					"operator": "=",
+					"left": {
+						"type": "Identifier",
+						"start": 106,
+						"end": 110,
+						"reference": 2,
+						"name": "eval"
+					},
+					"right": {
+						"type": "Literal",
+						"start": 113,
+						"end": 114,
+						"writes": [
+							2
+						],
+						"value": 5,
+						"raw": "5"
+					}
+				}
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 116,
+				"end": 131,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 120,
+						"end": 130,
+						"defines": [
+							5
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 120,
+							"end": 130,
+							"declares": 5,
+							"name": "implements"
+						},
+						"init": null
+					}
+				],
+				"kind": "var"
 			}
 		],
 		"sourceType": "script"
 	},
-	"end": 90,
+	"end": 132,
 	"comments": [],
 	"scopes": [
 		{
@@ -215,6 +297,16 @@
 			"name": "await",
 			"kind": "var",
 			"scope": 0
+		},
+		{
+			"name": "static",
+			"kind": "var",
+			"scope": 0
+		},
+		{
+			"name": "implements",
+			"kind": "var",
+			"scope": 0
 		}
 	],
 	"references": [
@@ -230,6 +322,13 @@
 			"binding": null,
 			"write": false,
 			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": true,
+			"read": false,
 			"mutate": false
 		}
 	]

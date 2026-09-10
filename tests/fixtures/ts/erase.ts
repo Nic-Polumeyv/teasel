@@ -1,5 +1,6 @@
 import type { A } from 'a';
 import { type B, C } from 'c';
+type D = number;
 export type { D };
 interface E {}
 type F = string;

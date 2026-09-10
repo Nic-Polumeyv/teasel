@@ -1,0 +1,123 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 49,
+		"scope": 0,
+		"body": [
+			{
+				"type": "ExpressionStatement",
+				"start": 0,
+				"end": 17,
+				"expression": {
+					"type": "ObjectExpression",
+					"start": 1,
+					"end": 15,
+					"properties": [
+						{
+							"type": "Property",
+							"start": 3,
+							"end": 13,
+							"method": false,
+							"shorthand": false,
+							"computed": false,
+							"key": {
+								"type": "Identifier",
+								"start": 3,
+								"end": 10,
+								"name": "if"
+							},
+							"value": {
+								"type": "Literal",
+								"start": 12,
+								"end": 13,
+								"value": 1,
+								"raw": "1"
+							},
+							"kind": "init"
+						}
+					]
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 18,
+				"end": 30,
+				"expression": {
+					"type": "MemberExpression",
+					"start": 18,
+					"end": 29,
+					"object": {
+						"type": "Identifier",
+						"start": 18,
+						"end": 19,
+						"reference": 0,
+						"name": "x"
+					},
+					"property": {
+						"type": "Identifier",
+						"start": 20,
+						"end": 29,
+						"name": "this"
+					},
+					"computed": false,
+					"optional": false
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 31,
+				"end": 48,
+				"expression": {
+					"type": "ObjectExpression",
+					"start": 32,
+					"end": 46,
+					"properties": [
+						{
+							"type": "Property",
+							"start": 34,
+							"end": 44,
+							"method": false,
+							"shorthand": false,
+							"computed": false,
+							"key": {
+								"type": "Identifier",
+								"start": 34,
+								"end": 41,
+								"name": "if"
+							},
+							"value": {
+								"type": "Literal",
+								"start": 43,
+								"end": 44,
+								"value": 1,
+								"raw": "1"
+							},
+							"kind": "init"
+						}
+					]
+				}
+			}
+		],
+		"sourceType": "script"
+	},
+	"end": 49,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "script",
+			"parent": null,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [],
+	"references": [
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

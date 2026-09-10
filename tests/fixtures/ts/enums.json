@@ -2,7 +2,7 @@
 	"node": {
 		"type": "Program",
 		"start": 0,
-		"end": 80,
+		"end": 105,
 		"scope": 0,
 		"body": [
 			{
@@ -184,16 +184,88 @@
 						}
 					}
 				]
+			},
+			{
+				"type": "TSEnumDeclaration",
+				"start": 80,
+				"end": 104,
+				"scope": 4,
+				"defines": [
+					9
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 85,
+					"end": 86,
+					"declares": 9,
+					"name": "H"
+				},
+				"members": [
+					{
+						"type": "TSEnumMember",
+						"start": 89,
+						"end": 94,
+						"defines": [
+							10
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 89,
+							"end": 90,
+							"declares": 10,
+							"name": "A"
+						},
+						"initializer": {
+							"type": "Literal",
+							"start": 93,
+							"end": 94,
+							"value": 1,
+							"raw": "1"
+						}
+					},
+					{
+						"type": "TSEnumMember",
+						"start": 96,
+						"end": 97,
+						"defines": [
+							11
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 96,
+							"end": 97,
+							"declares": 11,
+							"name": "B"
+						}
+					},
+					{
+						"type": "TSEnumMember",
+						"start": 99,
+						"end": 102,
+						"id": {
+							"type": "Literal",
+							"start": 99,
+							"end": 102,
+							"value": "C",
+							"raw": "'C'"
+						}
+					}
+				]
 			}
 		],
 		"sourceType": "module"
 	},
-	"end": 80,
+	"end": 105,
 	"comments": [],
 	"scopes": [
 		{
 			"kind": "module",
 			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "enum",
+			"parent": 0,
 			"topLevelAwait": false
 		},
 		{
@@ -257,6 +329,21 @@
 			"name": "Y",
 			"kind": "enum-member",
 			"scope": 3
+		},
+		{
+			"name": "H",
+			"kind": "enum",
+			"scope": 0
+		},
+		{
+			"name": "A",
+			"kind": "enum-member",
+			"scope": 4
+		},
+		{
+			"name": "B",
+			"kind": "enum-member",
+			"scope": 4
 		}
 	],
 	"references": [

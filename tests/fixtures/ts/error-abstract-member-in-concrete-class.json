@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "abstract_outside_abstract_class",
+		"message": "Abstract methods can only appear within an abstract class.",
+		"pos": 10,
+		"end": 10,
+		"loc": {
+			"line": 1,
+			"column": 10
+		}
+	}
+}

@@ -1,12 +1,188 @@
 {
-	"error": {
-		"code": "initializer_in_ambient",
-		"message": "Initializers are not allowed in ambient contexts.",
-		"pos": 44,
-		"end": 44,
-		"loc": {
-			"line": 2,
-			"column": 23
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 87,
+		"scope": 0,
+		"body": [
+			{
+				"type": "VariableDeclaration",
+				"start": 0,
+				"end": 20,
+				"declare": true,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 14,
+						"end": 19,
+						"defines": [
+							0
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 14,
+							"end": 15,
+							"declares": 0,
+							"name": "a"
+						},
+						"init": {
+							"type": "Literal",
+							"start": 18,
+							"end": 19,
+							"value": 1,
+							"raw": "1"
+						}
+					}
+				],
+				"kind": "const"
+			},
+			{
+				"type": "TSEnumDeclaration",
+				"start": 21,
+				"end": 45,
+				"scope": 1,
+				"defines": [
+					1
+				],
+				"declare": true,
+				"id": {
+					"type": "Identifier",
+					"start": 34,
+					"end": 35,
+					"declares": 1,
+					"name": "E"
+				},
+				"members": [
+					{
+						"type": "TSEnumMember",
+						"start": 38,
+						"end": 43,
+						"defines": [
+							2
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 38,
+							"end": 39,
+							"declares": 2,
+							"name": "A"
+						},
+						"initializer": {
+							"type": "Literal",
+							"start": 42,
+							"end": 43,
+							"value": 1,
+							"raw": "1"
+						}
+					}
+				]
+			},
+			{
+				"type": "TSModuleDeclaration",
+				"start": 46,
+				"end": 86,
+				"scope": 2,
+				"defines": [
+					3
+				],
+				"declare": true,
+				"id": {
+					"type": "Identifier",
+					"start": 64,
+					"end": 65,
+					"declares": 3,
+					"name": "N"
+				},
+				"body": {
+					"type": "TSModuleBlock",
+					"start": 66,
+					"end": 86,
+					"body": [
+						{
+							"type": "VariableDeclaration",
+							"start": 68,
+							"end": 84,
+							"declarations": [
+								{
+									"type": "VariableDeclarator",
+									"start": 74,
+									"end": 83,
+									"defines": [
+										4
+									],
+									"id": {
+										"type": "Identifier",
+										"start": 74,
+										"end": 83,
+										"declares": 4,
+										"typeAnnotation": {
+											"type": "TSTypeAnnotation",
+											"start": 75,
+											"end": 83,
+											"typeAnnotation": {
+												"type": "TSNumberKeyword",
+												"start": 77,
+												"end": 83
+											}
+										},
+										"name": "c"
+									},
+									"init": null
+								}
+							],
+							"kind": "const"
+						}
+					]
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 87,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "enum",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "namespace",
+			"parent": 0,
+			"topLevelAwait": false
 		}
-	}
+	],
+	"bindings": [
+		{
+			"name": "a",
+			"kind": "const",
+			"scope": 0
+		},
+		{
+			"name": "E",
+			"kind": "enum",
+			"scope": 0
+		},
+		{
+			"name": "A",
+			"kind": "enum-member",
+			"scope": 1
+		},
+		{
+			"name": "N",
+			"kind": "namespace",
+			"scope": 0
+		},
+		{
+			"name": "c",
+			"kind": "const",
+			"scope": 2
+		}
+	],
+	"references": []
 }

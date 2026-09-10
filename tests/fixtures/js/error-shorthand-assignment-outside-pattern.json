@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "shorthand_assignment",
+		"message": "Shorthand property assignments are valid only in destructuring patterns",
+		"pos": 5,
+		"end": 5,
+		"loc": {
+			"line": 1,
+			"column": 5
+		}
+	}
+}

@@ -2,7 +2,7 @@
 	"node": {
 		"type": "Program",
 		"start": 0,
-		"end": 352,
+		"end": 367,
 		"scope": 0,
 		"body": [
 			{
@@ -584,11 +584,38 @@
 				"end": 351,
 				"scope": 16,
 				"body": []
+			},
+			{
+				"type": "ForInStatement",
+				"start": 352,
+				"end": 366,
+				"left": {
+					"type": "Identifier",
+					"start": 357,
+					"end": 358,
+					"reference": 18,
+					"name": "k"
+				},
+				"right": {
+					"type": "Identifier",
+					"start": 362,
+					"end": 363,
+					"reference": 19,
+					"writes": [
+						18
+					],
+					"name": "o"
+				},
+				"body": {
+					"type": "EmptyStatement",
+					"start": 365,
+					"end": 366
+				}
 			}
 		],
 		"sourceType": "module"
 	},
-	"end": 352,
+	"end": 367,
 	"comments": [],
 	"scopes": [
 		{
@@ -817,6 +844,20 @@
 			"binding": null,
 			"write": false,
 			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": true,
+			"read": false,
 			"mutate": false
 		},
 		{

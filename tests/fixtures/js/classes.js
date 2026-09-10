@@ -8,7 +8,6 @@ class A extends B {
 	static { A.s++; }
 	async *m() {}
 	static async #q() {}
-	accessor a = 1;
+	static t() { return #p in obj; }
 }
 const C = class {};
-#p in obj;

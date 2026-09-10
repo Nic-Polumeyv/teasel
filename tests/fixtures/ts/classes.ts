@@ -1,4 +1,4 @@
-abstract class A<T> implements B, C {
+abstract class A<T> extends Base implements B, C {
 	private x: number = 1;
 	protected readonly y?: string;
 	public static z: T;
@@ -10,3 +10,5 @@ abstract class A<T> implements B, C {
 	get g(): number { return 1; }
 	static #p: number;
 }
+class D<T> extends E<T> implements F, G {}
+class H { constructor(); constructor(x?: number) {} m(): void; }

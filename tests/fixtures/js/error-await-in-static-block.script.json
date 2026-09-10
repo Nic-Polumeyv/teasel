@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "invalid_in_static_block",
+		"message": "Cannot use await in class static initialization block",
+		"pos": 19,
+		"end": 19,
+		"loc": {
+			"line": 1,
+			"column": 19
+		}
+	}
+}

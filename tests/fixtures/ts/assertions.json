@@ -2,7 +2,7 @@
 	"node": {
 		"type": "Program",
 		"start": 0,
-		"end": 130,
+		"end": 221,
 		"scope": 0,
 		"body": [
 			{
@@ -282,16 +282,244 @@
 					}
 				],
 				"kind": "let"
+			},
+			{
+				"type": "ForOfStatement",
+				"start": 130,
+				"end": 160,
+				"scope": 1,
+				"await": false,
+				"left": {
+					"type": "VariableDeclaration",
+					"start": 135,
+					"end": 142,
+					"declarations": [
+						{
+							"type": "VariableDeclarator",
+							"start": 141,
+							"end": 142,
+							"defines": [
+								6
+							],
+							"id": {
+								"type": "Identifier",
+								"start": 141,
+								"end": 142,
+								"declares": 6,
+								"name": "x"
+							},
+							"init": null
+						}
+					],
+					"kind": "const"
+				},
+				"right": {
+					"type": "TSAsExpression",
+					"start": 146,
+					"end": 156,
+					"expression": {
+						"type": "Identifier",
+						"start": 146,
+						"end": 147,
+						"reference": 6,
+						"name": "y"
+					},
+					"typeAnnotation": {
+						"type": "TSArrayType",
+						"start": 151,
+						"end": 156,
+						"elementType": {
+							"type": "TSAnyKeyword",
+							"start": 151,
+							"end": 154
+						}
+					}
+				},
+				"body": {
+					"type": "BlockStatement",
+					"start": 158,
+					"end": 160,
+					"scope": 2,
+					"body": []
+				}
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 161,
+				"end": 184,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 165,
+						"end": 183,
+						"defines": [
+							7
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 165,
+							"end": 166,
+							"declares": 7,
+							"name": "n"
+						},
+						"init": {
+							"type": "AssignmentExpression",
+							"start": 169,
+							"end": 183,
+							"operator": "=",
+							"left": {
+								"type": "Identifier",
+								"start": 170,
+								"end": 171,
+								"reference": 7,
+								"name": "a"
+							},
+							"right": {
+								"type": "Literal",
+								"start": 182,
+								"end": 183,
+								"writes": [
+									7
+								],
+								"value": 1,
+								"raw": "1"
+							}
+						}
+					}
+				],
+				"kind": "let"
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 185,
+				"end": 205,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 189,
+						"end": 204,
+						"defines": [
+							8
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 189,
+							"end": 190,
+							"declares": 8,
+							"name": "o"
+						},
+						"init": {
+							"type": "BinaryExpression",
+							"start": 193,
+							"end": 204,
+							"left": {
+								"type": "TSAsExpression",
+								"start": 193,
+								"end": 199,
+								"expression": {
+									"type": "Identifier",
+									"start": 193,
+									"end": 194,
+									"reference": 8,
+									"name": "y"
+								},
+								"typeAnnotation": {
+									"type": "TSTypeReference",
+									"start": 198,
+									"end": 199,
+									"typeName": {
+										"type": "Identifier",
+										"start": 198,
+										"end": 199,
+										"name": "T"
+									}
+								}
+							},
+							"operator": ">>",
+							"right": {
+								"type": "Literal",
+								"start": 203,
+								"end": 204,
+								"value": 2,
+								"raw": "2"
+							}
+						}
+					}
+				],
+				"kind": "let"
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 206,
+				"end": 220,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 210,
+						"end": 219,
+						"defines": [
+							9
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 210,
+							"end": 211,
+							"declares": 9,
+							"name": "p"
+						},
+						"init": {
+							"type": "TSNonNullExpression",
+							"start": 214,
+							"end": 219,
+							"expression": {
+								"type": "MemberExpression",
+								"start": 214,
+								"end": 218,
+								"object": {
+									"type": "TSNonNullExpression",
+									"start": 214,
+									"end": 216,
+									"expression": {
+										"type": "Identifier",
+										"start": 214,
+										"end": 215,
+										"reference": 9,
+										"name": "q"
+									}
+								},
+								"property": {
+									"type": "Identifier",
+									"start": 217,
+									"end": 218,
+									"name": "r"
+								},
+								"computed": false,
+								"optional": false
+							}
+						}
+					}
+				],
+				"kind": "let"
 			}
 		],
 		"sourceType": "module"
 	},
-	"end": 130,
+	"end": 221,
 	"comments": [],
 	"scopes": [
 		{
 			"kind": "module",
 			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "for",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 1,
 			"topLevelAwait": false
 		}
 	],
@@ -325,6 +553,26 @@
 			"name": "l",
 			"kind": "let",
 			"scope": 0
+		},
+		{
+			"name": "x",
+			"kind": "const",
+			"scope": 1
+		},
+		{
+			"name": "n",
+			"kind": "let",
+			"scope": 0
+		},
+		{
+			"name": "o",
+			"kind": "let",
+			"scope": 0
+		},
+		{
+			"name": "p",
+			"kind": "let",
+			"scope": 0
 		}
 	],
 	"references": [
@@ -354,6 +602,34 @@
 			"binding": null,
 			"write": false,
 			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 1,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": 0,
+			"write": true,
+			"read": false,
 			"mutate": false
 		},
 		{

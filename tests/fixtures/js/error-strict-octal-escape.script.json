@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "strict_octal",
+		"message": "Octal literal in strict mode",
+		"pos": 26,
+		"end": 26,
+		"loc": {
+			"line": 1,
+			"column": 26
+		}
+	}
+}

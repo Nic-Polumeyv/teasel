@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "strict_binding",
+		"message": "Assigning to eval in strict mode",
+		"pos": 14,
+		"end": 14,
+		"loc": {
+			"line": 1,
+			"column": 14
+		}
+	}
+}

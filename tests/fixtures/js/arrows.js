@@ -4,3 +4,4 @@ x => x;
 async (a) => await a;
 async x => x;
 ({ a }) => a;
+async(x);
