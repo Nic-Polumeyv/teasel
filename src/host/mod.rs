@@ -339,6 +339,8 @@ struct Walker<'a, E: Extension> {
 	once: Vec<&'static str>,
 	/// Where the current tag's word starts, for a declaration spelled without its keyword.
 	keyword: u32,
+	/// The element the browser closed last, what closed it and how deep the stack was then.
+	autoclosed: Option<(&'a str, &'a str, usize)>,
 	/// How many open elements made their subtree verbatim.
 	verbatim: u32,
 	/// The patterns the directives of the element being read declare.
@@ -375,6 +377,7 @@ pub(crate) fn parse_document<E: Extension>(
 		}],
 		once: Vec::new(),
 		keyword: 0,
+		autoclosed: None,
 		verbatim: 0,
 		declared: Vec::new(),
 	};
@@ -880,7 +883,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		self.at += 1;
 		if self.eat("!--") {
 			let Some(len) = self.rest().find("-->") else {
-				return fail(self.len(), self.len(), Code::UnexpectedEof, None);
+				return fail(self.len(), self.len(), Code::Expected, Some("-->"));
 			};
 			let data_start = self.at;
 			self.at += len as u32 + 3;
@@ -955,9 +958,11 @@ impl<'a, E: Extension> Walker<'a, E> {
 				..
 			}) = self.frames.last()
 		{
-			let parent_name = &self.src[parent.0 as usize..parent.1 as usize];
+			let src = self.src;
+			let parent_name = &src[parent.0 as usize..parent.1 as usize];
 			if *parent_ty == plain && closes(parent_name, name) {
 				self.close_top(start);
+				self.autoclosed = Some((parent_name, name, self.frames.len()));
 			}
 		}
 		let at_root = self.frames.len() == 1;
@@ -1284,6 +1289,15 @@ impl<'a, E: Extension> Walker<'a, E> {
 
 	fn close_element(&mut self, start: u32, name: &str) -> Result<()> {
 		let plain = self.grammar.element("*").map(|any| any.ty);
+		if let Some((_, _, depth)) = self.autoclosed
+			&& self.frames.len() < depth
+		{
+			self.autoclosed = None;
+		}
+		let closed = match self.autoclosed {
+			Some((closed, by, _)) if closed == name => format!("{name}, closed by {by}"),
+			_ => name.to_string(),
+		};
 		// under recovery a closing tag that closes nothing is skipped, and one that closes an
 		// element further out closes what is open inside it
 		let opens = |w: &Self| {
@@ -1292,7 +1306,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			)
 		};
 		if self.recovering() && !opens(self) {
-			return self.report(error(start, start + 1, Code::UnexpectedClose, Some(name)));
+			return self.report(error(start, start + 1, Code::UnexpectedClose, Some(&closed)));
 		}
 		loop {
 			match self.frames.last() {
@@ -1321,7 +1335,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 					}
 					self.pop_block(start);
 				}
-				_ => return fail(start, start + 1, Code::UnexpectedClose, Some(name)),
+				_ => return fail(start, start + 1, Code::UnexpectedClose, Some(&closed)),
 			}
 		}
 	}
@@ -1499,6 +1513,9 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let start = self.at;
 		if expressions && self.eat("{") {
 			self.space();
+			if self.matches("/>") || self.matches(">") {
+				return fail(self.at, self.at, Code::Expected, Some("}"));
+			}
 			if let Some(sigils) = &self.grammar.sigils
 				&& self.eat(sigils.tag)
 			{
@@ -1882,6 +1899,9 @@ impl<'a, E: Extension> Walker<'a, E> {
 				}
 				self.flush_text(chunk_start, start, &mut chunks);
 				self.space();
+				if self.matches("/>") || self.matches(">") {
+					return fail(self.at, self.at, Code::Expected, Some(close));
+				}
 				let expression = self.js(entry, "")?[0];
 				self.space();
 				self.expect(close)?;
@@ -2003,6 +2023,10 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let name_at = self.at;
 		let name = self.lowercase_word();
 		let Some(rule) = self.grammar.block(name) else {
+			if let Some(known) = self.grammar.blocks.iter().find(|rule| name.starts_with(rule.name)) {
+				let at = name_at + known.name.len() as u32;
+				return fail(at, at, Code::Expected, Some("whitespace"));
+			}
 			self.report(error(name_at, self.at, Code::Expected, Some("a block name")))?;
 			self.skip_tag();
 			return Ok(());
@@ -2072,7 +2096,13 @@ impl<'a, E: Extension> Walker<'a, E> {
 		}
 		let Some(branch) = found else {
 			self.at = at;
-			return fail(start, start + 1, Code::Expected, Some("a branch of the block"));
+			let names = rule
+				.branches
+				.iter()
+				.map(|b| b.words.join(" "))
+				.collect::<Vec<_>>()
+				.join(" or ");
+			return fail(start, start + 1, Code::Expected, Some(&names));
 		};
 		let body = branch.form.body.clone().unwrap();
 		self.finish_body();
@@ -2383,6 +2413,10 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let name_at = self.at;
 		let name = self.lowercase_word();
 		let Some(rule) = self.grammar.tag(name) else {
+			if let Some(known) = self.grammar.tags.iter().find(|rule| name.starts_with(rule.name)) {
+				let at = name_at + known.name.len() as u32;
+				return fail(at, at, Code::Expected, Some("whitespace"));
+			}
 			return fail(name_at, self.at, Code::Expected, Some("a tag name"));
 		};
 		let rule: &'a TagRule = rule;

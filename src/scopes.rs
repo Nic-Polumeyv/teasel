@@ -769,7 +769,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 			return;
 		};
 		for &pattern in self.ast.list(opens.outside).iter().flatten() {
-			self.visit(pattern, Mode::Declare(BindingKind::Let));
+			self.visit(pattern, Mode::Declare(BindingKind::Pattern));
 		}
 		let depth = self.host_declared.len();
 		self.host_declared.push(opens.outside);
@@ -784,7 +784,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 				let group = groups[next];
 				self.enter(ScopeKind::Block, Some(group.node.unwrap_or(id)), false);
 				for &pattern in self.ast.list(group.inside).iter().flatten() {
-					self.visit(pattern, Mode::Declare(BindingKind::Let));
+					self.visit(pattern, Mode::Declare(BindingKind::Pattern));
 				}
 				self.host_declared.push(group.inside);
 				open.push(next);
