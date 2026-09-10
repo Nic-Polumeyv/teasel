@@ -28,8 +28,10 @@ function bytes(text) {
 	return [ptr, written, capacity];
 }
 
-function create(source, names) {
-	return wasm.source_new(...bytes(source), ...bytes(names));
+function create(source, names, host) {
+	const handle = wasm.source_new(...bytes(source), ...bytes(names), ...bytes(host));
+	if (handle === 0) throw new Error(JSON.parse(text()).error.message);
+	return handle;
 }
 
 const text = () => utf8.decode(new Uint8Array(wasm.memory.buffer, wasm.text_ptr(), wasm.text_len()));

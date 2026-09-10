@@ -10,6 +10,10 @@ export function names(options) {
 	const on = [];
 	for (const key in options) {
 		const value = options[key];
+		if (key === 'host') {
+			if (value !== undefined && typeof value !== 'string') throw new TypeError('host must be the grammar as a string');
+			continue;
+		}
 		if (!OPTIONS.has(key)) throw new TypeError(`${key} is not an option`);
 		if (value === undefined || value === false) continue;
 		if (key === 'sourceType') {
@@ -37,7 +41,7 @@ function stops(list) {
 /**
  * @typedef {ArrayBuffer | Uint32Array | string} Answer
  * @typedef {object} Engine
- * @property {(source: string, names: string) => any} create
+ * @property {(source: string, names: string, host: string) => any} create
  * @property {(held: any, entry: number, offset: number, end: number | undefined, stop: string) => Answer} parse
  * @property {(held: any) => void} [free]
  * @property {() => string[]} constants
@@ -103,7 +107,7 @@ export function bind(engine) {
 		#lines;
 
 		constructor(source, options) {
-			this.#held = engine.create(source, names(options));
+			this.#held = engine.create(source, names(options), options?.host ?? '');
 			this.#source = source;
 			this.#options = options ?? {};
 			registry?.register(this, this.#held, this);
@@ -119,6 +123,7 @@ export function bind(engine) {
 			const index = ENTRY[entry];
 			if (index === undefined) throw new TypeError(`${JSON.stringify(entry)} is not an entry`);
 			const stop = stops(stopAt);
+			if (this.#options.host !== undefined && index === ENTRY.program) return result(engine.parse(this.#held, index, 0, undefined, ''), this.#source);
 			if ((index === ENTRY.expression || index === ENTRY.pattern) && Number.isInteger(offset) && offset >= 0) {
 				const cut = end === undefined ? this.#source.length : end;
 				const found = Number.isInteger(cut) && cut <= this.#source.length && offset <= cut ? bare(this.#source, offset, cut, index === ENTRY.pattern ? [',', '(', ':', '='] : stopAt, !!this.#options.typescript) : null;

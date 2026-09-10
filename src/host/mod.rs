@@ -13,7 +13,7 @@ use crate::interner::StrId;
 use crate::lexer::unicode::{is_id_continue, is_id_start};
 use crate::parser::{Entry as JsEntry, Extension, Options, Parser, Result};
 pub use grammar::Grammar;
-use grammar::{Alternative, BlockRule, Body, DirectiveValue, Entry, Form, Item, Match, TagRule};
+use grammar::{Alternative, BlockRule, Body, DirectiveValue, Entry, Form, Item, Match, RootField, TagRule};
 
 const VOID: [&str; 16] = [
 	"area", "base", "br", "col", "command", "embed", "hr", "img", "input", "keygen", "link", "meta", "param", "source",
@@ -558,21 +558,34 @@ impl<'a, E: Extension> Walker<'a, E> {
 			unreachable!()
 		};
 		let fragment = self.fragment(nodes);
-		let mut fields = vec![
-			("css", css.map_or(Value::Null, Value::Node)),
-			("js", Value::Nodes(List::EMPTY)),
-			("fragment", Value::Node(fragment)),
-			("options", Value::Null),
-			("comments", Value::Comments),
-		];
-		if let Some(instance) = instance {
-			fields.push(("instance", Value::Node(instance)));
-		}
-		if let Some(module) = module {
-			fields.push(("module", Value::Node(module)));
+		let mut fields = Vec::new();
+		for &(field, holds, omit) in &self.grammar.document.fields {
+			let value = match holds {
+				RootField::Fragment => Some(fragment),
+				RootField::Script { module: false } => instance,
+				RootField::Script { module: true } => module,
+				RootField::Style => css,
+				RootField::Comments => {
+					fields.push((field, Value::Comments));
+					continue;
+				}
+				RootField::EmptyList => {
+					fields.push((field, Value::Nodes(List::EMPTY)));
+					continue;
+				}
+				RootField::Null => {
+					fields.push((field, Value::Null));
+					continue;
+				}
+			};
+			match value {
+				Some(node) => fields.push((field, Value::Node(node))),
+				None if !omit => fields.push((field, Value::Null)),
+				None => {}
+			}
 		}
 		let full = self.full;
-		Ok(self.host("Root", 0, full, fields, None, true))
+		Ok(self.host(self.grammar.document.ty, 0, full, fields, None, true))
 	}
 
 	fn text_node(&mut self) {

@@ -126,7 +126,7 @@ pub fn parse_document(source: &str, grammar: &str, request: &Request) -> String 
 			request.typescript |= host::typescript(source, &grammar);
 			parse_with(source, &Positions::new(source, request.locations), &request, "", Some(&grammar))
 		}
-		Err(error) => error,
+		Err(message) => error_json(&message, 0),
 	}
 }
 
@@ -148,14 +148,14 @@ thread_local! {
 	static GRAMMARS: std::cell::RefCell<Vec<(String, Rc<Grammar>)>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
-/// The grammar of a text, read once per thread; the error answer names the line it stopped at.
+/// The grammar of a text, read once per thread; the error names the line it stopped at.
 fn grammar_named(text: &str) -> Result<Rc<Grammar>, String> {
 	GRAMMARS.with(|grammars| {
 		let mut grammars = grammars.borrow_mut();
 		if let Some((_, grammar)) = grammars.iter().find(|(known, _)| known == text) {
 			return Ok(grammar.clone());
 		}
-		let grammar = Rc::new(Grammar::read(text).map_err(|message| error_json(&message, 0))?);
+		let grammar = Rc::new(Grammar::read(text)?);
 		grammars.push((text.to_string(), grammar.clone()));
 		Ok(grammar)
 	})
@@ -223,8 +223,8 @@ impl<'a> Prepared<'a> {
 	}
 
 	/// Reads the whole source as a document of the host language `grammar` describes when a
-	/// program is asked for; the other entries read JavaScript at an offset as before. `Err` is
-	/// the error answer for a grammar that cannot be read.
+	/// program is asked for; the other entries read JavaScript at an offset as before. `Err` says
+	/// where the grammar could not be read.
 	pub fn host(mut self, grammar: &str) -> Result<Prepared<'a>, String> {
 		let grammar = grammar_named(grammar)?;
 		self.request.typescript |= host::typescript(&self.source, &grammar);

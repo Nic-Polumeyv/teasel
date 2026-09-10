@@ -85,12 +85,15 @@ pub struct Source {
 
 #[napi]
 impl Source {
-	// the bytes V8 encoded, made valid UTF-8 where they are not; the options as their names
+	// the bytes V8 encoded, made valid UTF-8 where they are not; the options as their names; the
+	// grammar of the host language the whole source is a document of, or nothing
 	#[napi(constructor)]
-	pub fn new(source: Uint8Array, options: String) -> Self {
-		Self {
-			prepared: Prepared::from_bytes(source.to_vec(), Request::from_names(&options)),
+	pub fn new(source: Uint8Array, options: String, host: String) -> napi::Result<Self> {
+		let mut prepared = Prepared::from_bytes(source.to_vec(), Request::from_names(&options));
+		if !host.is_empty() {
+			prepared = prepared.host(&host).map_err(napi::Error::from_reason)?;
 		}
+		Ok(Self { prepared })
 	}
 
 	#[napi(catch_unwind, ts_return_type = "Uint32Array | string")]

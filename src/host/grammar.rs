@@ -135,9 +135,30 @@ pub struct TagRule {
 	pub form: Form,
 }
 
+/// What a field of the document's root holds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RootField {
+	Fragment,
+	/// The script, the module one when `module`.
+	Script { module: bool },
+	Style,
+	/// Every comment read.
+	Comments,
+	EmptyList,
+	Null,
+}
+
+#[derive(Clone, Debug)]
+pub struct DocumentRule {
+	pub ty: &'static str,
+	/// Each field, what it holds, and whether it is left out rather than null when there is nothing.
+	pub fields: Vec<(&'static str, RootField, bool)>,
+}
+
 #[derive(Debug)]
 pub struct Grammar {
 	pub name: &'static str,
+	pub document: DocumentRule,
 	pub elements: Vec<ElementRule>,
 	pub script: Option<ScriptRule>,
 	pub style: Option<&'static str>,
@@ -333,6 +354,10 @@ impl Grammar {
 	pub fn read(text: &str) -> Result<Grammar, String> {
 		let mut grammar = Grammar {
 			name: "",
+			document: DocumentRule {
+				ty: "Document",
+				fields: vec![("fragment", RootField::Fragment, false)],
+			},
 			elements: Vec::new(),
 			script: None,
 			style: None,
@@ -396,6 +421,33 @@ impl Grammar {
 		}
 		match head {
 			"host" => self.name = keep(word(1)?),
+			"document" => {
+				let mut fields = Vec::new();
+				for token in &tokens[2..] {
+					let (field, holds) = token
+						.split_once('=')
+						.ok_or_else(|| format!("unexpected {token} on the document"))?;
+					let (field, omit) = match field.strip_suffix('?') {
+						Some(field) => (field, true),
+						None => (field, false),
+					};
+					let holds = match holds {
+						"fragment" => RootField::Fragment,
+						"script" => RootField::Script { module: false },
+						"script:module" => RootField::Script { module: true },
+						"style" => RootField::Style,
+						"comments" => RootField::Comments,
+						"list" => RootField::EmptyList,
+						"null" => RootField::Null,
+						other => return Err(format!("the document cannot hold {other}")),
+					};
+					fields.push((keep(field), holds, omit));
+				}
+				self.document = DocumentRule {
+					ty: keep(word(1)?),
+					fields,
+				};
+			}
 			"element" => {
 				let name = match word(1)? {
 					"component" => Match::Component,
@@ -559,6 +611,8 @@ mod tests {
 	fn reads_the_svelte_grammar() {
 		let grammar = Grammar::read(include_str!("../../hosts/svelte.grammar")).unwrap();
 		assert_eq!(grammar.name, "svelte");
+		assert_eq!(grammar.document.ty, "Root");
+		assert_eq!(grammar.document.fields[5], ("instance", RootField::Script { module: false }, true));
 		assert_eq!(grammar.elements.len(), 14);
 		assert_eq!(grammar.directives.len(), 10);
 		let each = grammar.block("each").unwrap();

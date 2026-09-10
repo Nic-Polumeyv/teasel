@@ -1,5 +1,7 @@
 host svelte
 
+document Root  css=style  js=list  fragment=fragment  options=null  comments=comments  instance?=script  module?=script:module
+
 element svelte:element    SvelteElement    this=tag:text
 element svelte:component  SvelteComponent  this=expression
 element svelte:self       SvelteSelf
