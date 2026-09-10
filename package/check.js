@@ -77,7 +77,7 @@ function mode(source, options, entry, at) {
 /** The addon's answers as JSON, each with the batch job that asks the binary for the same. */
 const jobs = [];
 function json(name, source, options, entry, at) {
-	const answer = new native.Source(Buffer.from(source), names(options)).parse(ENTRY[entry], at, undefined, '');
+	const answer = new native.Source(Buffer.from(source), names(options), '').parse(ENTRY[entry], at, undefined, '');
 	const tree = typeof answer === 'string' ? answer : JSON.stringify(decode(answer, source, engine, false));
 	jobs.push({ name, source, mode: mode(source, options, entry, at), tree });
 }

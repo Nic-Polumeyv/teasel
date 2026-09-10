@@ -384,7 +384,7 @@ impl<'a> Lexer<'a> {
 			return self.unterminated(start, Code::UnterminatedComment, |l| {
 				l.pos = l.src.len();
 				l.comments.push(Comment {
-					kind: CommentKind::Block,
+					kind: CommentKind::Unclosed,
 					start: start as u32,
 					end: l.pos as u32,
 				});

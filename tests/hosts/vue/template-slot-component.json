@@ -1,0 +1,162 @@
+{
+	"node": {
+		"type": "Root",
+		"start": 0,
+		"end": 112,
+		"scope": 0,
+		"children": [
+			{
+				"type": "Template",
+				"start": 0,
+				"end": 58,
+				"tag": "template",
+				"props": [
+					{
+						"type": "Directive",
+						"start": 10,
+						"end": 17,
+						"name": "slot",
+						"rawName": "#header",
+						"arg": "header",
+						"modifiers": []
+					}
+				],
+				"children": [
+					{
+						"type": "Slot",
+						"start": 18,
+						"end": 47,
+						"tag": "slot",
+						"props": [
+							{
+								"type": "Attribute",
+								"start": 24,
+								"end": 32,
+								"name": "name",
+								"value": [
+									{
+										"type": "Text",
+										"start": 30,
+										"end": 31,
+										"content": "s"
+									}
+								]
+							},
+							{
+								"type": "Directive",
+								"start": 33,
+								"end": 39,
+								"name": "bind",
+								"rawName": ":x",
+								"arg": "x",
+								"exp": {
+									"type": "Literal",
+									"start": 37,
+									"end": 38,
+									"value": 1,
+									"raw": "1"
+								},
+								"modifiers": []
+							}
+						],
+						"children": []
+					}
+				]
+			},
+			{
+				"type": "Text",
+				"start": 58,
+				"end": 59,
+				"content": "\n"
+			},
+			{
+				"type": "Element",
+				"start": 59,
+				"end": 79,
+				"tag": "My-Comp",
+				"props": [
+					{
+						"type": "Directive",
+						"start": 68,
+						"end": 76,
+						"name": "if",
+						"rawName": "v-if",
+						"arg": null,
+						"exp": {
+							"type": "Identifier",
+							"start": 74,
+							"end": 75,
+							"reference": 0,
+							"name": "a"
+						},
+						"modifiers": []
+					}
+				],
+				"children": []
+			},
+			{
+				"type": "Text",
+				"start": 79,
+				"end": 80,
+				"content": "\n"
+			},
+			{
+				"type": "Component",
+				"start": 80,
+				"end": 111,
+				"tag": "component",
+				"props": [
+					{
+						"type": "Directive",
+						"start": 91,
+						"end": 98,
+						"name": "bind",
+						"rawName": ":is",
+						"arg": "is",
+						"exp": {
+							"type": "Identifier",
+							"start": 96,
+							"end": 97,
+							"reference": 1,
+							"name": "c"
+						},
+						"modifiers": []
+					}
+				],
+				"children": []
+			},
+			{
+				"type": "Text",
+				"start": 111,
+				"end": 112,
+				"content": "\n"
+			}
+		]
+	},
+	"end": 112,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [],
+	"references": [
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

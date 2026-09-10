@@ -1,0 +1,346 @@
+{
+	"node": {
+		"type": "Root",
+		"start": 0,
+		"end": 123,
+		"scope": 0,
+		"css": null,
+		"js": [],
+		"options": null,
+		"comments": [],
+		"fragment": {
+			"type": "Fragment",
+			"scope": 2,
+			"nodes": [
+				{
+					"type": "KeyBlock",
+					"start": 0,
+					"end": 22,
+					"expression": {
+						"type": "Identifier",
+						"start": 6,
+						"end": 7,
+						"reference": 0,
+						"name": "k"
+					},
+					"fragment": {
+						"type": "Fragment",
+						"scope": 3,
+						"nodes": [
+							{
+								"type": "Component",
+								"start": 8,
+								"end": 16,
+								"name": "Comp",
+								"attributes": [],
+								"fragment": {
+									"type": "Fragment",
+									"scope": 4,
+									"nodes": []
+								}
+							}
+						]
+					}
+				},
+				{
+					"type": "Text",
+					"start": 22,
+					"end": 23,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "SnippetBlock",
+					"start": 23,
+					"end": 83,
+					"expression": {
+						"type": "Identifier",
+						"start": 33,
+						"end": 36,
+						"declares": 0,
+						"name": "row"
+					},
+					"parameters": [
+						{
+							"type": "Identifier",
+							"start": 37,
+							"end": 41,
+							"declares": 1,
+							"name": "item"
+						},
+						{
+							"type": "AssignmentPattern",
+							"start": 43,
+							"end": 48,
+							"left": {
+								"type": "Identifier",
+								"start": 43,
+								"end": 44,
+								"declares": 2,
+								"name": "i"
+							},
+							"right": {
+								"type": "Literal",
+								"start": 47,
+								"end": 48,
+								"value": 0,
+								"raw": "0"
+							}
+						}
+					],
+					"body": {
+						"type": "Fragment",
+						"scope": 5,
+						"nodes": [
+							{
+								"type": "Text",
+								"start": 50,
+								"end": 52,
+								"raw": "\n\t",
+								"data": "\n\t"
+							},
+							{
+								"type": "RegularElement",
+								"start": 52,
+								"end": 72,
+								"name": "li",
+								"attributes": [],
+								"fragment": {
+									"type": "Fragment",
+									"scope": 6,
+									"nodes": [
+										{
+											"type": "ExpressionTag",
+											"start": 56,
+											"end": 59,
+											"expression": {
+												"type": "Identifier",
+												"start": 57,
+												"end": 58,
+												"reference": 1,
+												"name": "i"
+											}
+										},
+										{
+											"type": "Text",
+											"start": 59,
+											"end": 61,
+											"raw": ": ",
+											"data": ": "
+										},
+										{
+											"type": "ExpressionTag",
+											"start": 61,
+											"end": 67,
+											"expression": {
+												"type": "Identifier",
+												"start": 62,
+												"end": 66,
+												"reference": 2,
+												"name": "item"
+											}
+										}
+									]
+								}
+							},
+							{
+								"type": "Text",
+								"start": 72,
+								"end": 73,
+								"raw": "\n",
+								"data": "\n"
+							}
+						]
+					}
+				},
+				{
+					"type": "Text",
+					"start": 83,
+					"end": 84,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "RenderTag",
+					"start": 84,
+					"end": 103,
+					"expression": {
+						"type": "CallExpression",
+						"start": 93,
+						"end": 102,
+						"callee": {
+							"type": "Identifier",
+							"start": 93,
+							"end": 96,
+							"reference": 3,
+							"name": "row"
+						},
+						"arguments": [
+							{
+								"type": "Identifier",
+								"start": 97,
+								"end": 98,
+								"reference": 4,
+								"name": "x"
+							},
+							{
+								"type": "Literal",
+								"start": 100,
+								"end": 101,
+								"value": 1,
+								"raw": "1"
+							}
+						],
+						"optional": false
+					}
+				},
+				{
+					"type": "Text",
+					"start": 103,
+					"end": 104,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "RenderTag",
+					"start": 104,
+					"end": 122,
+					"expression": {
+						"type": "ChainExpression",
+						"start": 113,
+						"end": 121,
+						"expression": {
+							"type": "CallExpression",
+							"start": 113,
+							"end": 121,
+							"callee": {
+								"type": "Identifier",
+								"start": 113,
+								"end": 116,
+								"reference": 5,
+								"name": "row"
+							},
+							"arguments": [
+								{
+									"type": "Identifier",
+									"start": 119,
+									"end": 120,
+									"reference": 6,
+									"name": "y"
+								}
+							],
+							"optional": true
+						}
+					}
+				}
+			]
+		}
+	},
+	"end": 123,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 1,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 3,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 5,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "row",
+			"kind": "pattern",
+			"scope": 2
+		},
+		{
+			"name": "item",
+			"kind": "pattern",
+			"scope": 5
+		},
+		{
+			"name": "i",
+			"kind": "pattern",
+			"scope": 5
+		}
+	],
+	"references": [
+		{
+			"scope": 2,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 6,
+			"binding": 2,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 6,
+			"binding": 1,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 2,
+			"binding": 0,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 2,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 2,
+			"binding": 0,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 2,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

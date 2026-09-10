@@ -1,0 +1,80 @@
+{
+	"node": {
+		"type": "Root",
+		"start": 0,
+		"end": 50,
+		"scope": 0,
+		"children": [
+			{
+				"type": "Element",
+				"start": 0,
+				"end": 49,
+				"tag": "div",
+				"props": [
+					{
+						"type": "Attribute",
+						"start": 5,
+						"end": 10,
+						"name": "v-pre",
+						"value": true
+					}
+				],
+				"children": [
+					{
+						"type": "Text",
+						"start": 11,
+						"end": 28,
+						"content": "{{ not parsed }} "
+					},
+					{
+						"type": "Element",
+						"start": 28,
+						"end": 43,
+						"tag": "b",
+						"props": [
+							{
+								"type": "Attribute",
+								"start": 31,
+								"end": 37,
+								"name": ":a",
+								"value": [
+									{
+										"type": "Text",
+										"start": 35,
+										"end": 36,
+										"content": "1"
+									}
+								]
+							}
+						],
+						"children": [
+							{
+								"type": "Text",
+								"start": 38,
+								"end": 39,
+								"content": "x"
+							}
+						]
+					}
+				]
+			},
+			{
+				"type": "Text",
+				"start": 49,
+				"end": 50,
+				"content": "\n"
+			}
+		]
+	},
+	"end": 50,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [],
+	"references": []
+}

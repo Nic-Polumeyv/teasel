@@ -1,0 +1,117 @@
+{
+	"node": {
+		"type": "Root",
+		"start": 0,
+		"end": 98,
+		"scope": 0,
+		"children": [
+			{
+				"type": "Element",
+				"start": 0,
+				"end": 4,
+				"tag": "br",
+				"props": [],
+				"children": []
+			},
+			{
+				"type": "Element",
+				"start": 4,
+				"end": 17,
+				"tag": "img",
+				"props": [
+					{
+						"type": "Attribute",
+						"start": 9,
+						"end": 16,
+						"name": "src",
+						"value": [
+							{
+								"type": "Text",
+								"start": 14,
+								"end": 15,
+								"content": "x"
+							}
+						]
+					}
+				],
+				"children": []
+			},
+			{
+				"type": "Element",
+				"start": 17,
+				"end": 45,
+				"tag": "textarea",
+				"props": [],
+				"children": [
+					{
+						"type": "Interpolation",
+						"start": 27,
+						"end": 34,
+						"content": {
+							"type": "Identifier",
+							"start": 30,
+							"end": 31,
+							"reference": 0,
+							"name": "a"
+						}
+					}
+				]
+			},
+			{
+				"type": "Element",
+				"start": 45,
+				"end": 78,
+				"tag": "script",
+				"props": [],
+				"children": [
+					{
+						"type": "Text",
+						"start": 53,
+						"end": 69,
+						"content": "let x = \"<div>\";"
+					}
+				]
+			},
+			{
+				"type": "Element",
+				"start": 78,
+				"end": 97,
+				"tag": "style",
+				"props": [],
+				"children": [
+					{
+						"type": "Text",
+						"start": 85,
+						"end": 89,
+						"content": ".a{}"
+					}
+				]
+			},
+			{
+				"type": "Text",
+				"start": 97,
+				"end": 98,
+				"content": "\n"
+			}
+		]
+	},
+	"end": 98,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [],
+	"references": [
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

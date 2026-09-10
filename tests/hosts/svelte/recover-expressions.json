@@ -1,0 +1,263 @@
+{
+	"node": {
+		"type": "Root",
+		"start": 0,
+		"end": 41,
+		"scope": 0,
+		"css": null,
+		"js": [],
+		"options": null,
+		"comments": [],
+		"fragment": {
+			"type": "Fragment",
+			"scope": 2,
+			"nodes": [
+				{
+					"type": "Component",
+					"start": 0,
+					"end": 23,
+					"name": "Comp",
+					"attributes": [
+						{
+							"type": "Attribute",
+							"start": 6,
+							"end": 10,
+							"name": "a",
+							"value": {
+								"type": "ExpressionTag",
+								"start": 8,
+								"end": 10,
+								"expression": {
+									"type": "Identifier",
+									"start": 9,
+									"end": 9,
+									"name": ""
+								}
+							}
+						},
+						{
+							"type": "Attribute",
+							"start": 11,
+							"end": 17,
+							"name": "b",
+							"value": {
+								"type": "ExpressionTag",
+								"start": 13,
+								"end": 17,
+								"expression": {
+									"type": "MemberExpression",
+									"start": 14,
+									"end": 16,
+									"object": {
+										"type": "Identifier",
+										"start": 14,
+										"end": 15,
+										"reference": 0,
+										"name": "x"
+									},
+									"property": {
+										"type": "Identifier",
+										"start": 16,
+										"end": 16,
+										"name": ""
+									},
+									"computed": false,
+									"optional": false
+								}
+							}
+						},
+						{
+							"type": "Attribute",
+							"start": 18,
+							"end": 20,
+							"name": "",
+							"value": {
+								"type": "ExpressionTag",
+								"start": 19,
+								"end": 19,
+								"expression": {
+									"type": "Identifier",
+									"start": 19,
+									"end": 19,
+									"name": ""
+								}
+							}
+						}
+					],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 3,
+						"nodes": []
+					}
+				},
+				{
+					"type": "Text",
+					"start": 23,
+					"end": 24,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "ConstTag",
+					"start": 24,
+					"end": 33,
+					"declaration": {
+						"type": "VariableDeclaration",
+						"start": 26,
+						"end": 32,
+						"declarations": [
+							{
+								"type": "VariableDeclarator",
+								"start": 32,
+								"end": 32,
+								"id": {
+									"type": "Identifier",
+									"start": 32,
+									"end": 32,
+									"name": ""
+								},
+								"init": {
+									"type": "Identifier",
+									"start": 32,
+									"end": 32,
+									"name": ""
+								}
+							}
+						],
+						"kind": "const"
+					}
+				},
+				{
+					"type": "Text",
+					"start": 33,
+					"end": 34,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "Component",
+					"start": 34,
+					"end": 40,
+					"name": "comp.",
+					"attributes": [],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 4,
+						"nodes": []
+					}
+				}
+			]
+		}
+	},
+	"end": 41,
+	"comments": [],
+	"errors": [
+		{
+			"code": "unexpected_token",
+			"message": "Unexpected token",
+			"pos": 9,
+			"end": 10,
+			"loc": {
+				"line": 1,
+				"column": 9
+			}
+		},
+		{
+			"code": "unexpected_token",
+			"message": "Unexpected token",
+			"pos": 16,
+			"end": 17,
+			"loc": {
+				"line": 1,
+				"column": 16
+			}
+		},
+		{
+			"code": "expected",
+			"message": "Expected an identifier",
+			"pos": 19,
+			"end": 19,
+			"loc": {
+				"line": 1,
+				"column": 19
+			}
+		},
+		{
+			"code": "unexpected_token",
+			"message": "Unexpected token",
+			"pos": 32,
+			"end": 33,
+			"loc": {
+				"line": 2,
+				"column": 8
+			}
+		},
+		{
+			"code": "expected",
+			"message": "Expected =",
+			"pos": 32,
+			"end": 32,
+			"loc": {
+				"line": 2,
+				"column": 8
+			}
+		},
+		{
+			"code": "unexpected_token",
+			"message": "Unexpected token",
+			"pos": 32,
+			"end": 33,
+			"loc": {
+				"line": 2,
+				"column": 8
+			}
+		},
+		{
+			"code": "expected",
+			"message": "Expected >",
+			"pos": 40,
+			"end": 40,
+			"loc": {
+				"line": 3,
+				"column": 6
+			}
+		}
+	],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 1,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [],
+	"references": [
+		{
+			"scope": 2,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

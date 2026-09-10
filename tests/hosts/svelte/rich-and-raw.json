@@ -1,0 +1,185 @@
+{
+	"node": {
+		"type": "Root",
+		"start": 0,
+		"end": 114,
+		"scope": 0,
+		"css": null,
+		"js": [],
+		"options": null,
+		"comments": [],
+		"fragment": {
+			"type": "Fragment",
+			"scope": 2,
+			"nodes": [
+				{
+					"type": "RegularElement",
+					"start": 0,
+					"end": 35,
+					"name": "textarea",
+					"attributes": [],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 3,
+						"nodes": [
+							{
+								"type": "ExpressionTag",
+								"start": 10,
+								"end": 13,
+								"expression": {
+									"type": "Identifier",
+									"start": 11,
+									"end": 12,
+									"reference": 0,
+									"name": "x"
+								}
+							},
+							{
+								"type": "Text",
+								"start": 13,
+								"end": 17,
+								"raw": " <b>",
+								"data": " <b>"
+							},
+							{
+								"type": "ExpressionTag",
+								"start": 17,
+								"end": 20,
+								"expression": {
+									"type": "Identifier",
+									"start": 18,
+									"end": 19,
+									"reference": 1,
+									"name": "y"
+								}
+							},
+							{
+								"type": "Text",
+								"start": 20,
+								"end": 24,
+								"raw": "</b>",
+								"data": "</b>"
+							}
+						]
+					}
+				},
+				{
+					"type": "Text",
+					"start": 35,
+					"end": 36,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "RegularElement",
+					"start": 36,
+					"end": 113,
+					"name": "div",
+					"attributes": [],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 4,
+						"nodes": [
+							{
+								"type": "RegularElement",
+								"start": 41,
+								"end": 75,
+								"name": "script",
+								"attributes": [],
+								"fragment": {
+									"type": "Fragment",
+									"scope": 5,
+									"nodes": [
+										{
+											"type": "Text",
+											"start": 49,
+											"end": 66,
+											"raw": "let a = \"</div>\";",
+											"data": "let a = \"</div>\";"
+										}
+									]
+								}
+							},
+							{
+								"type": "RegularElement",
+								"start": 75,
+								"end": 107,
+								"name": "style",
+								"attributes": [],
+								"fragment": {
+									"type": "Fragment",
+									"scope": 6,
+									"nodes": [
+										{
+											"type": "Text",
+											"start": 82,
+											"end": 99,
+											"raw": ".a { color: red }",
+											"data": ".a { color: red }"
+										}
+									]
+								}
+							}
+						]
+					}
+				}
+			]
+		}
+	},
+	"end": 114,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 1,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 4,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 4,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [],
+	"references": [
+		{
+			"scope": 3,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 3,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

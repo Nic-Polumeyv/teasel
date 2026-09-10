@@ -1,0 +1,225 @@
+{
+	"node": {
+		"type": "Root",
+		"start": 0,
+		"end": 58,
+		"scope": 0,
+		"css": null,
+		"js": [],
+		"options": null,
+		"comments": [],
+		"fragment": {
+			"type": "Fragment",
+			"scope": 2,
+			"nodes": [
+				{
+					"type": "RegularElement",
+					"start": 0,
+					"end": 4,
+					"name": "p",
+					"attributes": [],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 3,
+						"nodes": [
+							{
+								"type": "Text",
+								"start": 3,
+								"end": 4,
+								"raw": "a",
+								"data": "a"
+							}
+						]
+					}
+				},
+				{
+					"type": "RegularElement",
+					"start": 4,
+					"end": 9,
+					"name": "p",
+					"attributes": [],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 4,
+						"nodes": [
+							{
+								"type": "Text",
+								"start": 7,
+								"end": 9,
+								"raw": "b\n",
+								"data": "b\n"
+							}
+						]
+					}
+				},
+				{
+					"type": "RegularElement",
+					"start": 9,
+					"end": 32,
+					"name": "ul",
+					"attributes": [],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 5,
+						"nodes": [
+							{
+								"type": "RegularElement",
+								"start": 13,
+								"end": 20,
+								"name": "li",
+								"attributes": [],
+								"fragment": {
+									"type": "Fragment",
+									"scope": 6,
+									"nodes": [
+										{
+											"type": "Text",
+											"start": 17,
+											"end": 20,
+											"raw": "one",
+											"data": "one"
+										}
+									]
+								}
+							},
+							{
+								"type": "RegularElement",
+								"start": 20,
+								"end": 27,
+								"name": "li",
+								"attributes": [],
+								"fragment": {
+									"type": "Fragment",
+									"scope": 7,
+									"nodes": [
+										{
+											"type": "Text",
+											"start": 24,
+											"end": 27,
+											"raw": "two",
+											"data": "two"
+										}
+									]
+								}
+							}
+						]
+					}
+				},
+				{
+					"type": "Text",
+					"start": 32,
+					"end": 33,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "RegularElement",
+					"start": 33,
+					"end": 57,
+					"name": "table",
+					"attributes": [],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 8,
+						"nodes": [
+							{
+								"type": "RegularElement",
+								"start": 40,
+								"end": 49,
+								"name": "tr",
+								"attributes": [],
+								"fragment": {
+									"type": "Fragment",
+									"scope": 9,
+									"nodes": [
+										{
+											"type": "RegularElement",
+											"start": 44,
+											"end": 49,
+											"name": "td",
+											"attributes": [],
+											"fragment": {
+												"type": "Fragment",
+												"scope": 10,
+												"nodes": [
+													{
+														"type": "Text",
+														"start": 48,
+														"end": 49,
+														"raw": "x",
+														"data": "x"
+													}
+												]
+											}
+										}
+									]
+								}
+							}
+						]
+					}
+				}
+			]
+		}
+	},
+	"end": 58,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 1,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 5,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 5,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 8,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 9,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [],
+	"references": []
+}

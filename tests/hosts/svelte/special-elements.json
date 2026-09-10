@@ -1,0 +1,543 @@
+{
+	"node": {
+		"type": "Root",
+		"start": 0,
+		"end": 405,
+		"scope": 0,
+		"css": null,
+		"js": [],
+		"options": null,
+		"comments": [],
+		"fragment": {
+			"type": "Fragment",
+			"scope": 2,
+			"nodes": [
+				{
+					"type": "SvelteOptions",
+					"start": 0,
+					"end": 24,
+					"name": "svelte:options",
+					"attributes": [
+						{
+							"type": "Attribute",
+							"start": 16,
+							"end": 21,
+							"name": "runes",
+							"value": true
+						}
+					],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 3,
+						"nodes": []
+					}
+				},
+				{
+					"type": "Text",
+					"start": 24,
+					"end": 25,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "SvelteHead",
+					"start": 25,
+					"end": 70,
+					"name": "svelte:head",
+					"attributes": [],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 4,
+						"nodes": [
+							{
+								"type": "TitleElement",
+								"start": 38,
+								"end": 56,
+								"name": "title",
+								"attributes": [],
+								"fragment": {
+									"type": "Fragment",
+									"scope": 5,
+									"nodes": [
+										{
+											"type": "ExpressionTag",
+											"start": 45,
+											"end": 48,
+											"expression": {
+												"type": "Identifier",
+												"start": 46,
+												"end": 47,
+												"reference": 0,
+												"name": "t"
+											}
+										}
+									]
+								}
+							}
+						]
+					}
+				},
+				{
+					"type": "Text",
+					"start": 70,
+					"end": 71,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "SvelteWindow",
+					"start": 71,
+					"end": 102,
+					"name": "svelte:window",
+					"attributes": [
+						{
+							"type": "OnDirective",
+							"start": 86,
+							"end": 99,
+							"name": "resize",
+							"expression": {
+								"type": "Identifier",
+								"start": 97,
+								"end": 98,
+								"reference": 1,
+								"name": "r"
+							},
+							"modifiers": []
+						}
+					],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 6,
+						"nodes": []
+					}
+				},
+				{
+					"type": "Text",
+					"start": 102,
+					"end": 103,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "SvelteDocument",
+					"start": 103,
+					"end": 122,
+					"name": "svelte:document",
+					"attributes": [],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 7,
+						"nodes": []
+					}
+				},
+				{
+					"type": "Text",
+					"start": 122,
+					"end": 123,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "SvelteBody",
+					"start": 123,
+					"end": 138,
+					"name": "svelte:body",
+					"attributes": [],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 8,
+						"nodes": []
+					}
+				},
+				{
+					"type": "Text",
+					"start": 138,
+					"end": 139,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "SvelteElement",
+					"start": 139,
+					"end": 167,
+					"name": "svelte:element",
+					"tag": {
+						"type": "Literal",
+						"start": 161,
+						"end": 163,
+						"value": "h1",
+						"raw": "h1"
+					},
+					"attributes": [],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 9,
+						"nodes": []
+					}
+				},
+				{
+					"type": "Text",
+					"start": 167,
+					"end": 168,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "SvelteElement",
+					"start": 168,
+					"end": 213,
+					"name": "svelte:element",
+					"tag": {
+						"type": "Identifier",
+						"start": 190,
+						"end": 193,
+						"reference": 2,
+						"name": "tag"
+					},
+					"attributes": [],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 10,
+						"nodes": [
+							{
+								"type": "Text",
+								"start": 195,
+								"end": 196,
+								"raw": "x",
+								"data": "x"
+							}
+						]
+					}
+				},
+				{
+					"type": "Text",
+					"start": 213,
+					"end": 214,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "SvelteComponent",
+					"start": 214,
+					"end": 252,
+					"name": "svelte:component",
+					"expression": {
+						"type": "Identifier",
+						"start": 238,
+						"end": 239,
+						"reference": 3,
+						"name": "C"
+					},
+					"attributes": [
+						{
+							"type": "Attribute",
+							"start": 241,
+							"end": 249,
+							"name": "prop",
+							"value": {
+								"type": "ExpressionTag",
+								"start": 246,
+								"end": 249,
+								"expression": {
+									"type": "Literal",
+									"start": 247,
+									"end": 248,
+									"value": 1,
+									"raw": "1"
+								}
+							}
+						}
+					],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 11,
+						"nodes": []
+					}
+				},
+				{
+					"type": "Text",
+					"start": 252,
+					"end": 253,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "SvelteSelf",
+					"start": 253,
+					"end": 278,
+					"name": "svelte:self",
+					"attributes": [
+						{
+							"type": "Attribute",
+							"start": 266,
+							"end": 275,
+							"name": "depth",
+							"value": {
+								"type": "ExpressionTag",
+								"start": 272,
+								"end": 275,
+								"expression": {
+									"type": "Identifier",
+									"start": 273,
+									"end": 274,
+									"reference": 4,
+									"name": "d"
+								}
+							}
+						}
+					],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 12,
+						"nodes": []
+					}
+				},
+				{
+					"type": "Text",
+					"start": 278,
+					"end": 279,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "SvelteFragment",
+					"start": 279,
+					"end": 328,
+					"name": "svelte:fragment",
+					"attributes": [
+						{
+							"type": "Attribute",
+							"start": 296,
+							"end": 308,
+							"name": "slot",
+							"value": [
+								{
+									"type": "Text",
+									"start": 302,
+									"end": 307,
+									"raw": "named",
+									"data": "named"
+								}
+							]
+						}
+					],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 13,
+						"nodes": [
+							{
+								"type": "Text",
+								"start": 309,
+								"end": 310,
+								"raw": "y",
+								"data": "y"
+							}
+						]
+					}
+				},
+				{
+					"type": "Text",
+					"start": 328,
+					"end": 329,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "SvelteBoundary",
+					"start": 329,
+					"end": 373,
+					"name": "svelte:boundary",
+					"attributes": [],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 14,
+						"nodes": [
+							{
+								"type": "Component",
+								"start": 346,
+								"end": 355,
+								"name": "Inner",
+								"attributes": [],
+								"fragment": {
+									"type": "Fragment",
+									"scope": 15,
+									"nodes": []
+								}
+							}
+						]
+					}
+				},
+				{
+					"type": "Text",
+					"start": 373,
+					"end": 374,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "SlotElement",
+					"start": 374,
+					"end": 404,
+					"name": "slot",
+					"attributes": [
+						{
+							"type": "Attribute",
+							"start": 380,
+							"end": 388,
+							"name": "name",
+							"value": [
+								{
+									"type": "Text",
+									"start": 386,
+									"end": 387,
+									"raw": "s",
+									"data": "s"
+								}
+							]
+						}
+					],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 16,
+						"nodes": [
+							{
+								"type": "Text",
+								"start": 389,
+								"end": 397,
+								"raw": "fallback",
+								"data": "fallback"
+							}
+						]
+					}
+				}
+			]
+		}
+	},
+	"end": 405,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 1,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 4,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 14,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [],
+	"references": [
+		{
+			"scope": 5,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 2,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 2,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 2,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 2,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

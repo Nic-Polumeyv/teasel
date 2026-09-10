@@ -1,0 +1,145 @@
+{
+	"node": {
+		"type": "Root",
+		"start": 0,
+		"end": 52,
+		"scope": 0,
+		"css": null,
+		"js": [],
+		"options": null,
+		"comments": [],
+		"fragment": {
+			"type": "Fragment",
+			"scope": 2,
+			"nodes": [
+				{
+					"type": "IfBlock",
+					"start": 0,
+					"end": 51,
+					"test": {
+						"type": "Identifier",
+						"start": 5,
+						"end": 6,
+						"reference": 0,
+						"name": "a"
+					},
+					"elseif": false,
+					"consequent": {
+						"type": "Fragment",
+						"scope": 3,
+						"nodes": [
+							{
+								"type": "Text",
+								"start": 7,
+								"end": 13,
+								"raw": "\n\tone\n",
+								"data": "\n\tone\n"
+							}
+						]
+					},
+					"alternate": {
+						"type": "Fragment",
+						"scope": 4,
+						"nodes": [
+							{
+								"type": "IfBlock",
+								"start": 13,
+								"end": 51,
+								"test": {
+									"type": "Identifier",
+									"start": 23,
+									"end": 24,
+									"reference": 1,
+									"name": "b"
+								},
+								"elseif": true,
+								"consequent": {
+									"type": "Fragment",
+									"scope": 5,
+									"nodes": [
+										{
+											"type": "Text",
+											"start": 25,
+											"end": 31,
+											"raw": "\n\ttwo\n",
+											"data": "\n\ttwo\n"
+										}
+									]
+								},
+								"alternate": {
+									"type": "Fragment",
+									"scope": 6,
+									"nodes": [
+										{
+											"type": "Text",
+											"start": 38,
+											"end": 46,
+											"raw": "\n\tthree\n",
+											"data": "\n\tthree\n"
+										}
+									]
+								}
+							}
+						]
+					}
+				}
+			]
+		}
+	},
+	"end": 52,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 1,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 4,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 4,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [],
+	"references": [
+		{
+			"scope": 2,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 4,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

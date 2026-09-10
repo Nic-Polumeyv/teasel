@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "unclosed",
+		"message": "div is not closed",
+		"pos": 0,
+		"end": 1,
+		"loc": {
+			"line": 1,
+			"column": 0
+		}
+	}
+}

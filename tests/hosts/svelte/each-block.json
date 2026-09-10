@@ -1,0 +1,382 @@
+{
+	"node": {
+		"type": "Root",
+		"start": 0,
+		"end": 136,
+		"scope": 0,
+		"css": null,
+		"js": [],
+		"options": null,
+		"comments": [],
+		"fragment": {
+			"type": "Fragment",
+			"scope": 2,
+			"nodes": [
+				{
+					"type": "EachBlock",
+					"start": 0,
+					"end": 69,
+					"expression": {
+						"type": "Identifier",
+						"start": 7,
+						"end": 12,
+						"reference": 0,
+						"name": "items"
+					},
+					"context": {
+						"type": "Identifier",
+						"start": 16,
+						"end": 20,
+						"declares": 0,
+						"name": "item"
+					},
+					"index": {
+						"type": "Identifier",
+						"start": 22,
+						"end": 23,
+						"declares": 1,
+						"name": "i"
+					},
+					"key": {
+						"type": "MemberExpression",
+						"start": 25,
+						"end": 32,
+						"object": {
+							"type": "Identifier",
+							"start": 25,
+							"end": 29,
+							"reference": 1,
+							"name": "item"
+						},
+						"property": {
+							"type": "Identifier",
+							"start": 30,
+							"end": 32,
+							"name": "id"
+						},
+						"computed": false,
+						"optional": false
+					},
+					"body": {
+						"type": "Fragment",
+						"scope": 3,
+						"nodes": [
+							{
+								"type": "Text",
+								"start": 34,
+								"end": 36,
+								"raw": "\n\t",
+								"data": "\n\t"
+							},
+							{
+								"type": "ExpressionTag",
+								"start": 36,
+								"end": 39,
+								"expression": {
+									"type": "Identifier",
+									"start": 37,
+									"end": 38,
+									"reference": 2,
+									"name": "i"
+								}
+							},
+							{
+								"type": "Text",
+								"start": 39,
+								"end": 41,
+								"raw": ": ",
+								"data": ": "
+							},
+							{
+								"type": "ExpressionTag",
+								"start": 41,
+								"end": 47,
+								"expression": {
+									"type": "Identifier",
+									"start": 42,
+									"end": 46,
+									"reference": 3,
+									"name": "item"
+								}
+							},
+							{
+								"type": "Text",
+								"start": 47,
+								"end": 48,
+								"raw": "\n",
+								"data": "\n"
+							}
+						]
+					},
+					"fallback": {
+						"type": "Fragment",
+						"scope": 4,
+						"nodes": [
+							{
+								"type": "Text",
+								"start": 55,
+								"end": 62,
+								"raw": "\n\tnone\n",
+								"data": "\n\tnone\n"
+							}
+						]
+					}
+				},
+				{
+					"type": "Text",
+					"start": 69,
+					"end": 70,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "EachBlock",
+					"start": 70,
+					"end": 117,
+					"expression": {
+						"type": "Identifier",
+						"start": 77,
+						"end": 81,
+						"reference": 4,
+						"name": "list"
+					},
+					"context": {
+						"type": "ObjectPattern",
+						"start": 85,
+						"end": 106,
+						"properties": [
+							{
+								"type": "Property",
+								"start": 87,
+								"end": 88,
+								"method": false,
+								"shorthand": true,
+								"computed": false,
+								"key": {
+									"type": "Identifier",
+									"start": 87,
+									"end": 88,
+									"name": "a"
+								},
+								"value": {
+									"type": "Identifier",
+									"start": 87,
+									"end": 88,
+									"declares": 2,
+									"name": "a"
+								},
+								"kind": "init"
+							},
+							{
+								"type": "Property",
+								"start": 90,
+								"end": 95,
+								"method": false,
+								"shorthand": true,
+								"computed": false,
+								"key": {
+									"type": "Identifier",
+									"start": 90,
+									"end": 91,
+									"name": "b"
+								},
+								"value": {
+									"type": "AssignmentPattern",
+									"start": 90,
+									"end": 95,
+									"left": {
+										"type": "Identifier",
+										"start": 90,
+										"end": 91,
+										"declares": 3,
+										"name": "b"
+									},
+									"right": {
+										"type": "Literal",
+										"start": 94,
+										"end": 95,
+										"value": 2,
+										"raw": "2"
+									}
+								},
+								"kind": "init"
+							},
+							{
+								"type": "RestElement",
+								"start": 97,
+								"end": 104,
+								"argument": {
+									"type": "Identifier",
+									"start": 100,
+									"end": 104,
+									"declares": 4,
+									"name": "rest"
+								}
+							}
+						]
+					},
+					"body": {
+						"type": "Fragment",
+						"scope": 5,
+						"nodes": [
+							{
+								"type": "ExpressionTag",
+								"start": 107,
+								"end": 110,
+								"expression": {
+									"type": "Identifier",
+									"start": 108,
+									"end": 109,
+									"reference": 5,
+									"name": "a"
+								}
+							}
+						]
+					}
+				},
+				{
+					"type": "Text",
+					"start": 117,
+					"end": 118,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "EachBlock",
+					"start": 118,
+					"end": 135,
+					"expression": {
+						"type": "Identifier",
+						"start": 125,
+						"end": 127,
+						"reference": 6,
+						"name": "xs"
+					},
+					"context": null,
+					"body": {
+						"type": "Fragment",
+						"scope": 6,
+						"nodes": []
+					}
+				}
+			]
+		}
+	},
+	"end": 136,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 1,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "item",
+			"kind": "pattern",
+			"scope": 3
+		},
+		{
+			"name": "i",
+			"kind": "pattern",
+			"scope": 3
+		},
+		{
+			"name": "a",
+			"kind": "pattern",
+			"scope": 5
+		},
+		{
+			"name": "b",
+			"kind": "pattern",
+			"scope": 5
+		},
+		{
+			"name": "rest",
+			"kind": "pattern",
+			"scope": 5
+		}
+	],
+	"references": [
+		{
+			"scope": 2,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 3,
+			"binding": 0,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 3,
+			"binding": 1,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 3,
+			"binding": 0,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 2,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 5,
+			"binding": 2,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 2,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}
