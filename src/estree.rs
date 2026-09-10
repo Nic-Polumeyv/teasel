@@ -1668,7 +1668,12 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 			Extension(index) => return self.ast.extension.node(self, id, index),
 			Host(index) => {
 				let host = self.ast.hosts[index as usize];
-				if host.span {
+				if host.ty.is_empty() {
+					// an object of the host's without a type, positions and all
+					let node = self.ast.node(id);
+					self.sink.object();
+					self.span(node.start, node.end);
+				} else if host.span {
 					self.begin(host.ty, id);
 				} else {
 					self.sink.begin(host.ty);
@@ -1698,6 +1703,10 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 							self.sink.end();
 						}
 						Value::Bool(value) => self.bool(key, value),
+						Value::Int(value) => {
+							self.key(key);
+							self.sink.int(value);
+						}
 						Value::Null => {
 							self.key(key);
 							self.sink.null();

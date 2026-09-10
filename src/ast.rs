@@ -90,6 +90,7 @@ pub enum Value {
 	/// Interned strings, a run of `Ast::host_strings`.
 	Strs(u32, u32),
 	Bool(bool),
+	Int(u32),
 	Null,
 	/// Every comment read, as the answer lists them.
 	Comments,

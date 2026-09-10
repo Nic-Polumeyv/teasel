@@ -2,6 +2,7 @@
 //! the parser, one tree for both. The walker knows what every such language shares, tags and
 //! text and where JavaScript begins; the grammar says the rest.
 
+mod css;
 pub mod entities;
 pub mod grammar;
 
@@ -783,33 +784,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		}
 		if style.is_some() {
 			self.expect(">")?;
-			let content_start = self.at;
-			let Some(close) = self.find_closing(name) else {
-				return fail(self.len(), self.len(), Code::Unclosed, Some(name));
-			};
-			self.at = close;
-			self.close_tag(name)?;
-			let attributes = self.list(&attributes);
-			let content = self.host(
-				"Content",
-				content_start,
-				close,
-				vec![("styles", Value::Slice(content_start, close)), ("comment", Value::Null)],
-				None,
-				true,
-			);
-			let node = self.host(
-				"StyleSheet",
-				start,
-				self.at,
-				vec![
-					("attributes", Value::Nodes(attributes)),
-					("children", Value::Nodes(List::EMPTY)),
-					("content", Value::Node(content)),
-				],
-				None,
-				true,
-			);
+			let node = self.style_sheet(start, name, attributes)?;
 			let Some(Frame::Root { css, .. }) = self.frames.first_mut() else { unreachable!() };
 			if css.is_some() {
 				return fail(start, start + 1, Code::Duplicate, Some(name));

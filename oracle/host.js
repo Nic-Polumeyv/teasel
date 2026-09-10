@@ -73,7 +73,8 @@ function replacer(key, value) {
 // for now. A TypeScript component's scripts come from acorn-typescript, brought in line with acorn.
 function tree(ast, ours, ts, source) {
 	const out = normal(JSON.parse(JSON.stringify(ast, ts && !ours ? normalize_ts : replacer)), ours ? null : source);
-	out.css = out.css ? 'present' : null;
+	// the comment before a style element is the fragment's node, which the tree lists once
+	if (out.css) out.css.content.comment = null;
 	if (ours) {
 		out.comments = out.comments.map((c) => dedent(c, source, out));
 		const i = out.fragment.nodes.findIndex((n) => n.type === 'SvelteOptions');
