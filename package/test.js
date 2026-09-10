@@ -251,3 +251,29 @@ for (const { Source, scopeOf, bindingOf, parentOf } of [node, wasm]) {
 	assert.throws(() => new Source('x', { host: 'element div' }), /grammar line 1/);
 	assert.throws(() => new Source('<div>', { host: grammar }).parse(), { code: 'unclosed', pos: 0 });
 }
+
+// a second host: the same walker, Vue's grammar
+const vue = readFileSync(new URL('../hosts/vue.grammar', import.meta.url), 'utf8');
+for (const { Source, parentOf } of [node, wasm]) {
+	const source = '<ul :class="{ on }">\n\t<li v-for="(item, i) in items" :key="item.id" @click.stop="select(item)">{{ item.name }} #{{ i }}</li>\n</ul>\n';
+	const root = new Source(source, { host: vue, sourceType: 'module' }).parse().node;
+	assert.equal(root.type, 'Root');
+	const ul = root.children[0];
+	assert.equal(ul.tag, 'ul');
+	assert.deepEqual(ul.props[0], { ...ul.props[0], type: 'Directive', name: 'bind', rawName: ':class', arg: 'class', modifiers: [] });
+	assert.equal(ul.props[0].exp.type, 'ObjectExpression');
+	const li = ul.children[1];
+	const [each, key, click] = li.props;
+	assert.equal(each.name, 'for');
+	assert.equal(each.value.name, 'item');
+	assert.equal(each.key.name, 'i');
+	assert.equal(each.source.name, 'items');
+	assert.equal(key.exp.type, 'MemberExpression');
+	assert.deepEqual(click.modifiers, ['stop']);
+	assert.equal(click.handler.type, 'CallExpression');
+	assert.equal(li.children[0].type, 'Interpolation');
+	assert.equal(li.children[0].content.property.name, 'name');
+	assert.equal(li.children[1].content, ' #');
+	assert.equal(parentOf(li.children[2].content), li.children[2]);
+	assert.throws(() => new Source('<div v-for="x items">', { host: vue }).parse(), { code: 'expected', message: 'Expected in or of' });
+}

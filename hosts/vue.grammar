@@ -1,0 +1,31 @@
+host vue
+
+document Root  children=fragment
+delimiters {{ }}
+void area base br col embed hr img input link meta param source track wbr
+elements name=tag attributes=props children=children
+text Text content=data
+comment Comment content=data
+verbatim v-pre
+
+element slot       Slot
+element template   Template
+element component       Component
+element textarea   Element  rcdata
+element title      Element  rcdata
+element script     Element  raw
+element style      Element  raw
+element component-name  Component
+element *          Element
+
+directives prefix=v- arg=: modifier=. dynamic=[] field:name=name field:arg=arg field:modifiers=modifiers field:raw=rawName unique=raw
+shorthand :  bind
+shorthand @  on
+shorthand #  slot
+shorthand .  bind  .prop
+directive for   Directive  [ ( [ value?=pattern ] [ , [ key?=pattern ] [ , [ index?=pattern ] ] ] ) | [ value?=pattern ] [ , [ key?=pattern ] [ , [ index?=pattern ] ] ] ] { in | of } source=expression
+directive slot  Directive  props?=pattern
+directive on    Directive  handler?=code
+directive *     Directive  exp?=expression
+
+expression  Interpolation  content=expression

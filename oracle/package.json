@@ -7,6 +7,9 @@
 	},
 	"devDependencies": {
 		"@sveltejs/acorn-typescript": "1.0.10",
+		"@vue/compiler-core": "^3.5.42",
+		"@vue/compiler-dom": "^3.5.42",
+		"@vue/compiler-sfc": "^3.5.42",
 		"acorn": "^8.15.0",
 		"eslint-scope": "8"
 	}

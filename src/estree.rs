@@ -1712,7 +1712,8 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 							self.slice(start, end);
 						}
 						Value::Strs(start, len) => {
-							let strings: Vec<(StrId, &str)> = self.ast.host_strings[start as usize..(start + len) as usize]
+							let strings: Vec<(StrId, &str)> = self.ast.host_strings
+								[start as usize..(start + len) as usize]
 								.iter()
 								.map(|&string| (string, self.ast.str(string)))
 								.collect();
