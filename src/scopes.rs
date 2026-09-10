@@ -347,6 +347,9 @@ pub fn analyze<X: Bind>(ast: &mut Ast<X>, entry: Entry, roots: List) {
 	let root = ast.list(roots).first().copied().flatten();
 	match entry {
 		Entry::Program => {
+			if let NodeKind::Host(_) = ast.node(root.unwrap()).kind {
+				return analyze_with(ast, ScopeKind::Module, root, |b| b.visit(root.unwrap(), Mode::Expression));
+			}
 			let NodeKind::Program { body, module } = ast.node(root.unwrap()).kind else {
 				unreachable!()
 			};
@@ -750,12 +753,56 @@ impl<'a, X: Bind> Binder<'a, X> {
 		self.visit_with(id, mode, true);
 	}
 
+	/// A host node: its fields in order, inside the scope it opens from `Opens::from` on.
+	fn host(&mut self, id: NodeId, index: u32) {
+		let host = self.ast.hosts[index as usize];
+		let (from, len) = host.fields;
+		let declared = |b: &Self, child: NodeId| match host.scope {
+			Some(opens) => {
+				b.ast.list(opens.inside).contains(&Some(child)) || b.ast.list(opens.outside).contains(&Some(child))
+			}
+			None => false,
+		};
+		let field = |b: &mut Self, i: u32| match b.ast.host_fields[i as usize].1 {
+			crate::ast::Value::Node(child) if !declared(b, child) => b.visit(child, Mode::Expression),
+			crate::ast::Value::Nodes(children) => {
+				for &child in b.ast.list(children).iter().flatten() {
+					if !declared(b, child) {
+						b.visit(child, Mode::Expression);
+					}
+				}
+			}
+			_ => {}
+		};
+		let Some(opens) = host.scope else {
+			for i in from..from + len {
+				field(self, i);
+			}
+			return;
+		};
+		for &pattern in self.ast.list(opens.outside).iter().flatten() {
+			self.visit(pattern, Mode::Declare(BindingKind::Let));
+		}
+		for i in from..from + opens.from {
+			field(self, i);
+		}
+		self.enter(ScopeKind::Block, Some(id), false);
+		for &pattern in self.ast.list(opens.inside).iter().flatten() {
+			self.visit(pattern, Mode::Declare(BindingKind::Let));
+		}
+		for i in from + opens.from..from + len {
+			field(self, i);
+		}
+		self.exit();
+	}
+
 	fn visit_with(&mut self, id: NodeId, mode: Mode, extras: bool) {
 		use NodeKind::*;
 		if extras {
 			self.ast.extension.bind_extras(self, id);
 		}
 		match self.kind(id) {
+			Host(index) => self.host(id, index),
 			Identifier { .. } => match mode {
 				Mode::Expression => self.reference(id, false, false),
 				Mode::Declare(kind) => self.declare(id, kind),

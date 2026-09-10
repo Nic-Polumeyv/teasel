@@ -1,11 +1,14 @@
 //! One entry for every front end: a request describes what to parse and how, and the answer is
 //! ESTree JSON, or a JSON object with an `error`: its code, message, span and location.
 
+use std::rc::Rc;
+
 use crate::Options;
 use crate::ast::{Ast, Reuse};
 use crate::comments::attach;
 use crate::error::Code;
 use crate::estree::{Binary, Emit, Json, Output, Positions, Sink, answer, error_to_json};
+use crate::host::{self, Grammar};
 use crate::parser::{Entry, parse_at};
 use crate::scopes::{self, Bind};
 
@@ -111,7 +114,20 @@ pub fn shapes_json() -> String {
 
 /// `stop` lists the host's tokens for an entry at an offset; see `parser::parse_at`.
 pub fn parse(source: &str, request: &Request, stop: &str) -> String {
-	parse_with(source, &Positions::new(source, request.locations), request, stop)
+	parse_with(source, &Positions::new(source, request.locations), request, stop, None)
+}
+
+/// A whole document of a host language by its grammar, as JSON; see `host::parse_document`.
+pub fn parse_document(source: &str, grammar: &str, request: &Request) -> String {
+	match grammar_named(grammar) {
+		Ok(grammar) => {
+			let mut request = *request;
+			request.entry = Entry::Program;
+			request.typescript |= host::typescript(source, &grammar);
+			parse_with(source, &Positions::new(source, request.locations), &request, "", Some(&grammar))
+		}
+		Err(error) => error,
+	}
 }
 
 /// A source with its position tables and switches, for hosts that parse many pieces of one
@@ -120,12 +136,29 @@ pub struct Prepared<'a> {
 	source: std::borrow::Cow<'a, str>,
 	positions: Positions,
 	request: Request,
+	/// The grammar a program entry reads the whole source by.
+	host: Option<Rc<Grammar>>,
 }
 
 thread_local! {
 	/// The last parse's tree, emptied, for the next one: a host parsing every expression of
 	/// every template allocates its arenas once per thread.
 	static POOL: std::cell::RefCell<Pool> = std::cell::RefCell::new(Pool::default());
+	/// Grammars by their text, read once each.
+	static GRAMMARS: std::cell::RefCell<Vec<(String, Rc<Grammar>)>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// The grammar of a text, read once per thread; the error answer names the line it stopped at.
+fn grammar_named(text: &str) -> Result<Rc<Grammar>, String> {
+	GRAMMARS.with(|grammars| {
+		let mut grammars = grammars.borrow_mut();
+		if let Some((_, grammar)) = grammars.iter().find(|(known, _)| known == text) {
+			return Ok(grammar.clone());
+		}
+		let grammar = Rc::new(Grammar::read(text).map_err(|message| error_json(&message, 0))?);
+		grammars.push((text.to_string(), grammar.clone()));
+		Ok(grammar)
+	})
 }
 
 #[derive(Default)]
@@ -185,7 +218,18 @@ impl<'a> Prepared<'a> {
 			source,
 			positions,
 			request,
+			host: None,
 		}
+	}
+
+	/// Reads the whole source as a document of the host language `grammar` describes when a
+	/// program is asked for; the other entries read JavaScript at an offset as before. `Err` is
+	/// the error answer for a grammar that cannot be read.
+	pub fn host(mut self, grammar: &str) -> Result<Prepared<'a>, String> {
+		let grammar = grammar_named(grammar)?;
+		self.request.typescript |= host::typescript(&self.source, &grammar);
+		self.host = Some(grammar);
+		Ok(self)
 	}
 
 	/// The request for one entry at a UTF-16 offset, the source cut at `end`, on top of the
@@ -207,14 +251,18 @@ impl<'a> Prepared<'a> {
 	/// One entry at an offset, as JSON.
 	pub fn parse(&self, entry: Entry, start: f64, end: Option<f64>, stop: &str) -> String {
 		match self.request(entry, start, end) {
-			Ok(request) => parse_with(&self.source, &self.positions, &request, stop),
+			Ok(request) => parse_with(&self.source, &self.positions, &request, stop, self.grammar(entry)),
 			Err(error) => error,
 		}
 	}
 
 	/// One entry at an offset, as a token stream; the error answer stays JSON.
 	pub fn binary(&self, entry: Entry, start: f64, end: Option<f64>, stop: &str) -> Result<Vec<u32>, String> {
-		binary_with(&self.source, &self.positions, &self.request(entry, start, end)?, stop)
+		binary_with(&self.source, &self.positions, &self.request(entry, start, end)?, stop, self.grammar(entry))
+	}
+
+	fn grammar(&self, entry: Entry) -> Option<&Grammar> {
+		self.host.as_deref().filter(|_| entry == Entry::Program)
 	}
 
 	/// A UTF-16 offset as a byte offset, or the error answer for it.
@@ -246,29 +294,42 @@ fn check(source: &str, request: &Request) -> Result<(), String> {
 	Ok(())
 }
 
-fn dispatch<S: Sink>(source: &str, positions: &Positions, request: &Request, stop: &str, sink: S) -> Result<S, String> {
+fn dispatch<S: Sink>(
+	source: &str,
+	positions: &Positions,
+	request: &Request,
+	stop: &str,
+	host: Option<&Grammar>,
+	sink: S,
+) -> Result<S, String> {
 	check(source, request)?;
 	#[cfg(feature = "typescript")]
 	if request.typescript {
-		return run::<crate::typescript::TypeScript, S>(source, positions, request, stop, sink);
+		return run::<crate::typescript::TypeScript, S>(source, positions, request, stop, host, sink);
 	}
 	#[cfg(not(feature = "typescript"))]
 	if request.typescript {
 		return Err(error_json("built without TypeScript", 0));
 	}
-	run::<(), S>(source, positions, request, stop, sink)
+	run::<(), S>(source, positions, request, stop, host, sink)
 }
 
-fn parse_with(source: &str, positions: &Positions, request: &Request, stop: &str) -> String {
-	match dispatch(source, positions, request, stop, Json::default()) {
+fn parse_with(source: &str, positions: &Positions, request: &Request, stop: &str, host: Option<&Grammar>) -> String {
+	match dispatch(source, positions, request, stop, host, Json::default()) {
 		Ok(json) => json.finish(),
 		Err(error) => error,
 	}
 }
 
 /// The answer as a token stream, or the error answer as JSON.
-fn binary_with(source: &str, positions: &Positions, request: &Request, stop: &str) -> Result<Vec<u32>, String> {
-	dispatch(source, positions, request, stop, Binary::new()).map(|mut binary| binary.finish())
+fn binary_with(
+	source: &str,
+	positions: &Positions,
+	request: &Request,
+	stop: &str,
+	host: Option<&Grammar>,
+) -> Result<Vec<u32>, String> {
+	dispatch(source, positions, request, stop, host, Binary::new()).map(|mut binary| binary.finish())
 }
 
 /// Runs a request into a sink; `Err` is the error answer as JSON.
@@ -277,6 +338,7 @@ fn run<E: crate::parser::Extension, S: Sink>(
 	positions: &Positions,
 	request: &Request,
 	stop: &str,
+	host: Option<&Grammar>,
 	sink: S,
 ) -> Result<S, String>
 where
@@ -289,16 +351,22 @@ where
 		errors: request.options.error_recovery,
 	};
 	let reused = POOL.with(|pool| Pooled::take(&mut pool.borrow_mut()));
-	parse_at::<E>(
-		source,
-		request.offset,
-		request.end,
-		request.entry,
-		request.options,
-		stop,
-		reused,
-	)
-	.map(|(mut ast, roots, end)| {
+	let parsed = match host {
+		Some(grammar) => host::parse_document::<E>(source, grammar, request.options, reused).map(|(mut ast, root)| {
+			let roots = ast.add_list(&[Some(root)]);
+			(ast, roots, source.len() as u32)
+		}),
+		None => parse_at::<E>(
+			source,
+			request.offset,
+			request.end,
+			request.entry,
+			request.options,
+			stop,
+			reused,
+		),
+	};
+	parsed.map(|(mut ast, roots, end)| {
 		if output.comments {
 			attach(&mut ast, source, roots, request.offset);
 		}

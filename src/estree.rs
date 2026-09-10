@@ -1,7 +1,7 @@
 //! Serializes an `Ast` to ESTree, matching acorn's output shape: as JSON text, or as a token
 //! stream a binding hands to JavaScript without a text round trip.
 
-use crate::ast::{Ast, Class, Function, List, MethodKind, NodeId, NodeKind, PropertyKind};
+use crate::ast::{Ast, Class, Function, List, MethodKind, NodeId, NodeKind, PropertyKind, Value};
 use crate::interner::{FastMap, Interner, StrId};
 use crate::parser::Entry;
 use crate::scopes::Role;
@@ -1666,6 +1666,50 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 			}
 			// the extension closes its own node, since erasing may put another in its place
 			Extension(index) => return self.ast.extension.node(self, id, index),
+			Host(index) => {
+				let host = self.ast.hosts[index as usize];
+				if host.span {
+					self.begin(host.ty, id);
+				} else {
+					self.sink.begin(host.ty);
+				}
+				let (from, len) = host.fields;
+				for i in from..from + len {
+					let (key, value) = self.ast.host_fields[i as usize];
+					match value {
+						Value::Node(child) => self.field(key, child),
+						Value::Nodes(children) => self.list(key, children),
+						Value::Str(string) => self.interned(key, string),
+						Value::Name(child) => {
+							let NodeKind::Identifier { name } = self.ast.node(child).kind else { unreachable!() };
+							self.interned(key, name);
+						}
+						Value::Slice(start, end) => {
+							self.key(key);
+							self.slice(start, end);
+						}
+						Value::Strs(start, len) => {
+							self.key(key);
+							self.sink.list();
+							for j in start..start + len {
+								let string = self.ast.host_strings[j as usize];
+								self.sink.interned(string, self.ast.str(string));
+							}
+							self.sink.end();
+						}
+						Value::Bool(value) => self.bool(key, value),
+						Value::Null => {
+							self.key(key);
+							self.sink.null();
+						}
+						Value::Comments => {
+							let all: Vec<u32> = (0..self.ast.comments.len() as u32).collect();
+							self.key(key);
+							self.comment_list(&all);
+						}
+					}
+				}
+			}
 		}
 		self.end();
 	}

@@ -52,11 +52,12 @@ pub(crate) struct Lexer<'a> {
 impl<'a> Lexer<'a> {
 	#[cfg(test)]
 	pub(crate) fn new(src: &'a str) -> Self {
-		Self::sized(src, src.len())
+		Self::with(src, src.len(), Interner::sized(src.len()))
 	}
 
-	/// `budget` is how much of `src` the parse will read, what the tables are sized for.
-	pub(crate) fn sized(src: &'a str, budget: usize) -> Self {
+	/// `budget` is how much of `src` the parse will read, what the tables are sized for;
+	/// `strings` is the tree's own interner, so ids from an earlier read of it stay valid.
+	pub(crate) fn with(src: &'a str, budget: usize, strings: Interner) -> Self {
 		Self {
 			src,
 			pos: 0,
@@ -75,7 +76,7 @@ impl<'a> Lexer<'a> {
 			errors: Vec::new(),
 			unclosed: false,
 			comments: Vec::new(),
-			strings: Interner::sized(budget),
+			strings,
 			word_flags: Vec::with_capacity(budget / 32),
 		}
 	}

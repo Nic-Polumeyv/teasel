@@ -6,6 +6,7 @@ pub mod ast;
 pub mod comments;
 pub mod error;
 pub mod estree;
+pub mod host;
 pub mod interner;
 pub mod json;
 pub(crate) mod lexer;

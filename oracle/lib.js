@@ -204,8 +204,8 @@ export function diff(a, b, path = '') {
 
 /// Runs every job through one teasel process and returns its output lines, one JSON document
 /// per job, unparsed. A job is { source, mode } where mode is a batch header of `src/bin/teasel.rs`.
-export async function teasel(jobs) {
-	const proc = Bun.spawn([binary, '--batch'], { stdin: 'pipe', stdout: 'pipe', stderr: 'inherit' });
+export async function teasel(jobs, extra = []) {
+	const proc = Bun.spawn([binary, '--batch', ...extra], { stdin: 'pipe', stdout: 'pipe', stderr: 'inherit' });
 	let input = '';
 	for (const job of jobs) input += `${job.mode} ${Buffer.byteLength(job.source, 'utf8')}\n${job.source}`;
 	proc.stdin.write(input);

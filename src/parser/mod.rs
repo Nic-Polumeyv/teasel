@@ -391,20 +391,7 @@ pub(crate) fn parse_at<E: Extension>(
 		let program = parser.parse_program()?;
 		vec![program]
 	} else {
-		parser.enter_scope(SCOPE_TOP);
-		let result = match entry {
-			Entry::Expression => parser.parse_sequence(ForInit::No, &mut None).map(|id| vec![id]),
-			Entry::Pattern => parser.parse_pattern_root().map(|id| vec![id]),
-			Entry::Params => parser.parse_params_root(),
-			Entry::Statement => {
-				let mut exports = FastSet::default();
-				parser
-					.parse_statement(statement::Context::None, true, Some(&mut exports))
-					.map(|id| vec![id])
-			}
-			Entry::TypeParameters => E::type_parameters(&mut parser).map(|id| vec![id]),
-			Entry::Program => unreachable!(),
-		};
+		let result = parser.read_entry(entry);
 		match result {
 			// under recovery, what was read is skipped and an empty identifier stands where it failed
 			Err(error) if parser.recovering() => {
@@ -529,15 +516,16 @@ pub(crate) struct DestructuringErrors {
 }
 
 impl<'a, E: Extension> Parser<'a, E> {
-	fn new(
+	pub(crate) fn new(
 		src: &'a str,
 		offset: u32,
 		options: Options,
 		budget: usize,
 		stop: &'a str,
-		ast: Ast<E::Data>,
+		mut ast: Ast<E::Data>,
 	) -> Result<Self> {
-		let mut lexer = Lexer::sized(src, budget);
+		let mut lexer = Lexer::with(src, budget, std::mem::take(&mut ast.strings));
+		lexer.comments = std::mem::take(&mut ast.comments);
 		lexer.set_pos(offset);
 		lexer.stops = stop;
 		lexer.recover = options.error_recovery;
@@ -749,6 +737,23 @@ impl<'a, E: Extension> Parser<'a, E> {
 		Ok(())
 	}
 
+	/// Reads one entry other than a program at the current token, in a scope of its own.
+	pub(crate) fn read_entry(&mut self, entry: Entry) -> Result<Vec<NodeId>> {
+		self.enter_scope(SCOPE_TOP);
+		match entry {
+			Entry::Expression => self.parse_sequence(ForInit::No, &mut None).map(|id| vec![id]),
+			Entry::Pattern => self.parse_pattern_root().map(|id| vec![id]),
+			Entry::Params => self.parse_params_root(),
+			Entry::Statement => {
+				let mut exports = FastSet::default();
+				self.parse_statement(statement::Context::None, true, Some(&mut exports))
+					.map(|id| vec![id])
+			}
+			Entry::TypeParameters => E::type_parameters(self).map(|id| vec![id]),
+			Entry::Program => unreachable!(),
+		}
+	}
+
 	/// An assignment target on its own: an identifier or a destructuring pattern, as it would
 	/// appear on the left of `=`.
 	fn parse_pattern_root(&mut self) -> Result<NodeId> {
@@ -860,19 +865,20 @@ impl<'a, E: Extension> Parser<'a, E> {
 
 	/// The offset after the last token read, or after the comments that follow it before the
 	/// next token: where a host embedding JavaScript resumes its own syntax.
-	fn consumed_end(&self) -> u32 {
+	pub(crate) fn consumed_end(&self) -> u32 {
 		match self.lexer.comments.last() {
 			Some(comment) if comment.start >= self.prev_end => comment.end,
 			_ => self.prev_end,
 		}
 	}
 
-	fn finish(self) -> Ast<E::Data> {
+	pub(crate) fn finish(self) -> Ast<E::Data> {
 		let mut ast = self.ast;
 		let mut lexer = self.lexer;
 		ast.comments = std::mem::take(&mut lexer.comments);
 		ast.strings = std::mem::take(&mut lexer.strings);
-		ast.errors = self.errors;
+		let mut errors = self.errors;
+		ast.errors.append(&mut errors);
 		ast.errors.append(&mut lexer.errors);
 		ast.errors.sort_by_key(|error| error.pos);
 		ast
