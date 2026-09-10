@@ -123,6 +123,18 @@ pub(crate) trait Extension: Default + Sized {
 		Ok(None)
 	}
 	/// Whether the extension declared `name` in a way that satisfies a local `export { name }`.
+	/// Whether an `export` here belongs to the extension's own scoping, a namespace body say, so
+	/// the script goal does not forbid it.
+	fn exports_in_script(p: &Parser<Self>) -> bool {
+		let _ = p;
+		false
+	}
+	/// Whether the code describes rather than defines, an ambient declaration's body, where a
+	/// definition's rules do not apply.
+	fn in_ambient(p: &Parser<Self>) -> bool {
+		let _ = p;
+		false
+	}
 	fn declares_export(p: &mut Parser<Self>, name: StrId) -> bool {
 		false
 	}

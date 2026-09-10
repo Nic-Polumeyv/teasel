@@ -177,7 +177,7 @@ impl<E: Extension> Parser<'_, E> {
 				if !top_level {
 					return self.error(start, Code::ImportExportNotTopLevel);
 				}
-				if !self.options.module {
+				if !self.options.module && !E::exports_in_script(self) {
 					return self.error(start, Code::ImportExportInScript);
 				}
 				if is_import {
@@ -1501,7 +1501,7 @@ impl<E: Extension> Parser<'_, E> {
 			if is_async {
 				return self.error(self.start_of(key), Code::AsyncConstructor);
 			}
-		} else if is_static && self.check_key_name(key, computed, "prototype") {
+		} else if is_static && !E::in_ambient(self) && self.check_key_name(key, computed, "prototype") {
 			return self.error_with(
 				self.start_of(key),
 				Code::StaticPrototype,
@@ -1531,7 +1531,7 @@ impl<E: Extension> Parser<'_, E> {
 		if self.check_key_name(key, computed, "constructor") {
 			return self.error(self.start_of(key), Code::ConstructorField);
 		}
-		if is_static && self.check_key_name(key, computed, "prototype") {
+		if is_static && !E::in_ambient(self) && self.check_key_name(key, computed, "prototype") {
 			return self.error(self.start_of(key), Code::StaticPrototype);
 		}
 		E::class_field_annotation(self)?;

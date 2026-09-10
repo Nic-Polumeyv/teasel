@@ -178,6 +178,11 @@ codes! {
 	OptionalPatternParameter "optional_pattern_parameter" => "A binding pattern parameter cannot be optional in an implementation signature.",
 	ParameterPropertyPattern "parameter_property_pattern" => "A parameter property may not be declared using a binding pattern.",
 	SignatureParameterDefault "signature_parameter_default" => "Name in a signature must be an Identifier, ObjectPattern or ArrayPattern, instead got AssignmentPattern.",
+	DefiniteWithInitializer "definite_with_initializer" => "Declarations with initializers cannot also have definite assignment assertions.",
+	GeneratorInAmbient "generator_in_ambient" => "Generators are not allowed in an ambient context.",
+	GeneratorSignature "generator_signature" => "An overload signature cannot be declared as a generator.",
+	DeclareInAmbient "declare_in_ambient" => "A 'declare' modifier cannot be used in an already ambient context.",
+	StatementInAmbient "statement_in_ambient" => "Statements are not allowed in ambient contexts.",
 	// A host's offsets or switches, with the message given where it is raised.
 	InvalidRequest "invalid_request" => "",
 	PropertyAfterInstantiation "property_after_instantiation" => "Invalid property access after an instantiation expression. You can either wrap the instantiation expression in parentheses, or delete the type arguments.",

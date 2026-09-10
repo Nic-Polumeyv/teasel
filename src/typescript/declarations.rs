@@ -76,6 +76,21 @@ impl Parser<'_, TypeScript> {
 		body
 	}
 
+	/// A statement an ambient body may hold: what declares, not what runs.
+	fn is_declaration(&self, statement: NodeId) -> bool {
+		matches!(
+			self.kind(statement),
+			NodeKind::VariableDeclaration { .. }
+				| NodeKind::FunctionDeclaration { .. }
+				| NodeKind::ClassDeclaration { .. }
+				| NodeKind::ImportDeclaration { .. }
+				| NodeKind::ExportNamedDeclaration { .. }
+				| NodeKind::ExportDefaultDeclaration { .. }
+				| NodeKind::ExportAllDeclaration { .. }
+				| NodeKind::Extension(_)
+		)
+	}
+
 	fn parse_module_block(&mut self) -> Result<NodeId> {
 		let start = self.tok.start;
 		self.enter_scope(SCOPE_TS_OTHER);
@@ -88,6 +103,9 @@ impl Parser<'_, TypeScript> {
 			if let Some(statement) =
 				self.statement_recovered(|p| p.parse_statement(Context::None, true, Some(&mut exports)))?
 			{
+				if self.ext.ambient && !self.is_declaration(statement) {
+					return self.error(at, Code::StatementInAmbient);
+				}
 				body.push(statement);
 			}
 			self.ensure_progress(at)?;
@@ -255,6 +273,9 @@ impl Parser<'_, TypeScript> {
 	pub(super) fn try_parse_declare(&mut self, start: u32) -> Result<Option<NodeId>> {
 		if self.is_line_terminator()? {
 			return Ok(None);
+		}
+		if self.ext.ambient {
+			return self.error(start, Code::DeclareInAmbient);
 		}
 		self.ambient(|p| {
 			let const_enum = p.is_keyword(Keyword::Const) && p.peek_is_contextual("enum")?;
