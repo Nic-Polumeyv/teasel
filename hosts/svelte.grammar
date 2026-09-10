@@ -2,7 +2,8 @@ host svelte
 
 document Root  css=style  js=list  options=null  comments=comments  module?=script:module  { instance?=script  { fragment=fragment } }
 delimiters { }
-attributes expressions
+attributes expressions shorthand
+sigils open=# branch=: close=/ tag=@
 autoclose
 trim
 void area base br col command embed hr img input keygen link meta param source track wbr
@@ -45,7 +46,6 @@ directive animate     AnimateDirective     expression?
 directive let         LetDirective         pattern?name  declares
 
 spread  SpreadAttribute  expression
-attach  AttachTag        expression
 
 block if  IfBlock  chain=elseif
   open    test=expression  -> consequent
@@ -71,6 +71,7 @@ tag html    HtmlTag    expression=expression
 tag debug   DebugTag   identifiers=identifiers
 tag const   ConstTag   declaration=const
 tag render  RenderTag  expression=expression
+tag attach  AttachTag  expression=expression  attribute
 
 declaration  DeclarationTag  declaration=statement
 expression   ExpressionTag   expression=expression

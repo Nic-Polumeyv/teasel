@@ -17,6 +17,8 @@ pub enum Entry {
 	Const,
 	/// Identifiers separated by commas, possibly none.
 	Identifiers,
+	/// The text up to the closing delimiter, unread, for a host that reads its expressions later.
+	Text,
 }
 
 /// One step of a form.
@@ -190,6 +192,18 @@ pub struct TagRule {
 	pub name: &'static str,
 	pub ty: &'static str,
 	pub form: Form,
+	/// The tag stands among an element's attributes rather than in content.
+	pub attribute: bool,
+}
+
+/// The characters after the opening delimiter that make a tag a block, a branch, a close or a
+/// special tag: `{#if}`, `{:else}`, `{/if}`, `{@html}`.
+#[derive(Clone, Debug)]
+pub struct Sigils {
+	pub open: &'static str,
+	pub branch: &'static str,
+	pub close: &'static str,
+	pub tag: &'static str,
 }
 
 /// What a field of the document's root holds.
@@ -252,6 +266,9 @@ pub struct Grammar {
 	pub delimiters: (&'static str, &'static str),
 	/// Attribute values hold expressions between the delimiters, as text does.
 	pub attribute_expressions: bool,
+	/// `{name}` among the attributes is `name={name}`.
+	pub attribute_shorthand: bool,
+	pub sigils: Option<Sigils>,
 	/// An element the browser would close when another opens is closed there.
 	pub autoclose: bool,
 	/// Whitespace at the end of the source is not part of the document.
@@ -273,7 +290,6 @@ pub struct Grammar {
 	pub shorthands: Vec<Shorthand>,
 	pub directives: Vec<DirectiveRule>,
 	pub spread: Option<&'static str>,
-	pub attach: Option<&'static str>,
 	pub blocks: Vec<BlockRule>,
 	pub tags: Vec<TagRule>,
 	pub declaration: Option<TagRule>,
@@ -374,6 +390,7 @@ fn entry(name: &str) -> Option<Entry> {
 		"code" => Entry::Code,
 		"const" => Entry::Const,
 		"identifiers" => Entry::Identifiers,
+		"text" => Entry::Text,
 		_ => return None,
 	})
 }
@@ -521,6 +538,8 @@ impl Grammar {
 			},
 			delimiters: ("{", "}"),
 			attribute_expressions: false,
+			attribute_shorthand: false,
+			sigils: None,
 			autoclose: false,
 			trim: false,
 			void: Vec::new(),
@@ -548,7 +567,6 @@ impl Grammar {
 			shorthands: Vec::new(),
 			directives: Vec::new(),
 			spread: None,
-			attach: None,
 			blocks: Vec::new(),
 			tags: Vec::new(),
 			declaration: None,
@@ -633,10 +651,36 @@ impl Grammar {
 				};
 			}
 			"delimiters" => self.delimiters = (keep(word(1)?), keep(word(2)?)),
-			"attributes" => match word(1)? {
-				"expressions" => self.attribute_expressions = true,
-				other => return Err(format!("unexpected {other} on attributes")),
-			},
+			"attributes" => {
+				for token in &tokens[1..] {
+					match token.as_str() {
+						"expressions" => self.attribute_expressions = true,
+						"shorthand" => self.attribute_shorthand = true,
+						other => return Err(format!("unexpected {other} on attributes")),
+					}
+				}
+			}
+			"sigils" => {
+				let mut sigils = Sigils {
+					open: "",
+					branch: "",
+					close: "",
+					tag: "",
+				};
+				for token in &tokens[1..] {
+					match token.split_once('=') {
+						Some(("open", s)) => sigils.open = keep(s),
+						Some(("branch", s)) => sigils.branch = keep(s),
+						Some(("close", s)) => sigils.close = keep(s),
+						Some(("tag", s)) => sigils.tag = keep(s),
+						_ => return Err(format!("unexpected {token} on sigils")),
+					}
+				}
+				if [sigils.open, sigils.branch, sigils.close, sigils.tag].contains(&"") {
+					return Err("sigils need open, branch, close and tag".into());
+				}
+				self.sigils = Some(sigils);
+			}
 			"autoclose" => self.autoclose = true,
 			"trim" => self.trim = true,
 			"void" => self.void = tokens[1..].iter().map(|name| keep(name)).collect(),
@@ -870,7 +914,6 @@ impl Grammar {
 				});
 			}
 			"spread" => self.spread = Some(keep(word(1)?)),
-			"attach" => self.attach = Some(keep(word(1)?)),
 			"block" => {
 				let mut chain_flag = None;
 				for token in &tokens[3..] {
@@ -889,14 +932,17 @@ impl Grammar {
 			}
 			"tag" | "declaration" | "expression" => {
 				let named = head == "tag";
+				let attribute = named && tokens.last().is_some_and(|t| t == "attribute");
+				let end = tokens.len() - usize::from(attribute);
 				let mut reader = Reader {
-					tokens: &tokens[if named { 3 } else { 2 }..],
+					tokens: &tokens[if named { 3 } else { 2 }..end],
 					at: 0,
 				};
 				let rule = TagRule {
 					name: if named { keep(word(1)?) } else { "" },
 					ty: keep(word(if named { 2 } else { 1 })?),
 					form: reader.form()?,
+					attribute,
 				};
 				match head {
 					"tag" => self.tags.push(rule),
@@ -954,7 +1000,9 @@ mod tests {
 		assert_eq!(grammar.directive("let").unwrap().declares, Some(vec![]));
 		assert_eq!(grammar.fragment, Some(("Fragment", "nodes")));
 		assert!(grammar.fragment_scope);
-		assert!(grammar.attribute_expressions && grammar.autoclose && grammar.trim);
+		assert!(grammar.attribute_expressions && grammar.attribute_shorthand && grammar.autoclose && grammar.trim);
+		assert_eq!(grammar.sigils.as_ref().unwrap().tag, "@");
+		assert!(grammar.tag("attach").unwrap().attribute && !grammar.tag("html").unwrap().attribute);
 		assert!(grammar.is_void("br") && grammar.is_void("!DOCTYPE") && !grammar.is_void("div"));
 		assert_eq!(grammar.elements.len(), 17);
 		assert!(grammar.element("textarea").unwrap().rcdata);

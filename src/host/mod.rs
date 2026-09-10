@@ -1395,23 +1395,19 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let start = self.at;
 		if expressions && self.eat("{") {
 			self.space();
-			if let Some(ty) = self.grammar.attach
-				&& self.eat("@")
+			if let Some(sigils) = &self.grammar.sigils
+				&& self.eat(sigils.tag)
 			{
-				self.expect("attach")?;
-				self.require_space()?;
-				let expression = self.expression("")?;
-				self.space();
-				self.expect("}")?;
-				let node = self.host(
-					ty,
-					start,
-					self.at,
-					vec![("expression", Value::Node(expression))],
-					None,
-					true,
-				);
-				return Ok(Some((node, ty, None)));
+				let (node, rule) = self.tag_node(start)?;
+				if !rule.attribute {
+					return fail(
+						start,
+						self.at,
+						Code::Placement,
+						Some(&format!("A {} tag among attributes", rule.name)),
+					);
+				}
+				return Ok(Some((node, rule.ty, None)));
 			}
 			if self.eat("...") {
 				let Some(ty) = self.grammar.spread else {
@@ -1429,6 +1425,9 @@ impl<'a, E: Extension> Walker<'a, E> {
 					true,
 				);
 				return Ok(Some((node, ty, None)));
+			}
+			if !self.grammar.attribute_shorthand {
+				return fail(start, start + 1, Code::UnexpectedToken, None);
 			}
 			let id_start = self.at;
 			let id = self.identifier()?;
@@ -1754,7 +1753,9 @@ impl<'a, E: Extension> Walker<'a, E> {
 			}
 			if self.verbatim == 0 && self.eat(open) {
 				let start = self.at - open.len() as u32;
-				if open == "{" && (self.matches("#") || self.matches("@")) {
+				if let Some(sigils) = &self.grammar.sigils
+					&& (self.matches(sigils.open) || self.matches(sigils.tag))
+				{
 					return fail(
 						start,
 						start + 1,
@@ -1790,19 +1791,19 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let start = self.at;
 		self.at += open.len() as u32;
 		self.space();
-		let blocks = open == "{" && !(self.grammar.blocks.is_empty() && self.grammar.tags.is_empty());
-		if blocks {
-			if self.eat("#") {
+		if let Some(sigils) = &self.grammar.sigils {
+			if self.eat(sigils.open) {
 				return self.open_block(start);
 			}
-			if self.eat(":") {
+			if self.eat(sigils.branch) {
 				return self.branch(start);
 			}
-			if self.matches("/") && !self.matches("/*") && !self.matches("//") {
-				self.at += 1;
+			// a `/` that starts a comment is the expression's
+			let comment = sigils.close == "/" && (self.matches("/*") || self.matches("//"));
+			if !comment && self.eat(sigils.close) {
 				return self.close_block(start);
 			}
-			if self.eat("@") {
+			if self.eat(sigils.tag) {
 				return self.special(start);
 			}
 		}
@@ -2192,6 +2193,21 @@ impl<'a, E: Extension> Walker<'a, E> {
 	}
 
 	fn special(&mut self, start: u32) -> Result<()> {
+		let (node, rule) = self.tag_node(start)?;
+		if rule.attribute {
+			return fail(
+				start,
+				self.at,
+				Code::Placement,
+				Some(&format!("A {} tag in content", rule.name)),
+			);
+		}
+		self.append(node);
+		Ok(())
+	}
+
+	/// A special tag after its sigil: its node, and its rule.
+	fn tag_node(&mut self, start: u32) -> Result<(NodeId, &'a TagRule)> {
 		let close = self.grammar.delimiters.1;
 		let name_at = self.at;
 		let name = self.lowercase_word();
@@ -2215,8 +2231,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		self.space();
 		self.expect(close)?;
 		let node = self.host(rule.ty, start, self.at, read.fields, None, true);
-		self.append(node);
-		Ok(())
+		Ok((node, rule))
 	}
 
 	/// Runs a form at the cursor: every literal in place, every entry read, the first fitting
@@ -2358,6 +2373,16 @@ impl<'a, E: Extension> Walker<'a, E> {
 				Value::Nodes(list)
 			}
 			Entry::Identifier => Value::Node(self.identifier()?),
+			Entry::Text => {
+				let close = self.grammar.delimiters.1;
+				let rest = &self.src[self.at as usize..self.limit as usize];
+				let len = rest.find(close).unwrap_or(rest.len());
+				let text = &rest[..len];
+				let start = self.at + (text.len() - text.trim_start_matches(is_space).len()) as u32;
+				let end = self.at + text.trim_end_matches(is_space).len() as u32;
+				self.at += len as u32;
+				Value::Slice(start, end.max(start))
+			}
 			Entry::Identifiers => {
 				let close = self.grammar.delimiters.1;
 				let mut ids = Vec::new();
