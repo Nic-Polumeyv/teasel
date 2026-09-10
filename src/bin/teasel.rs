@@ -88,6 +88,7 @@ fn batch(grammar: Option<String>) -> io::Result<()> {
 				"scopes" => request.scopes = true,
 				"erase" => request.erase = true,
 				"parenthesized" => request.options.parenthesized = true,
+				"recover" => request.options.error_recovery = true,
 				_ if switch.starts_with("stop:") => {
 					if !stop.is_empty() {
 						stop.push(' ');

@@ -144,7 +144,7 @@ function tree(ast, ours, ts, source) {
 
 function expected(source) {
 	try {
-		return tree(parse(source, { modern: true }), false, is_typescript(source), source);
+		return tree(parse(source, { modern: true, loose: !!process.env.LOOSE }), false, is_typescript(source), source);
 	} catch (e) {
 		return { error: { message: e.message, code: e.code, pos: e.position?.[0] } };
 	}
@@ -154,7 +154,7 @@ const jobs = [];
 for (const path of files(corpus, /\.svelte$/)) {
 	const name = relative(corpus, path);
 	if (filter && !name.includes(filter)) continue;
-	jobs.push({ name, source: readFileSync(path, 'utf8'), mode: process.env.KEEP_COMMENTS ? 'doc+comments' : 'doc' });
+	jobs.push({ name, source: readFileSync(path, 'utf8'), mode: `doc${process.env.KEEP_COMMENTS ? '+comments' : ''}${process.env.LOOSE ? '+recover' : ''}` });
 	if (capped(jobs, limit)) break;
 }
 
@@ -167,6 +167,8 @@ for (const [i, job] of jobs.entries()) {
 	try {
 		const value = JSON.parse(lines[i]);
 		a = value.error ? value : tree(value.node, true, false, job.source);
+		// under recovery the answer lists what went wrong; the tree is what is compared
+		if (a.errors) delete a.errors;
 	} catch (error) {
 		a = { error: { message: error.code ? error.message : `bad output: ${String(lines[i]).slice(0, 80)}` } };
 	}

@@ -190,12 +190,16 @@ fn decode(raw: &str, attribute: bool) -> Cow<'_, str> {
 	Cow::Owned(out)
 }
 
-fn fail<T>(pos: u32, end: u32, code: Code, arg: Option<&str>) -> Result<T> {
+fn error(pos: u32, end: u32, code: Code, arg: Option<&str>) -> Box<SyntaxError> {
 	let message: Cow<'static, str> = match arg {
 		Some(arg) => code.with(arg).into(),
 		None => code.message().into(),
 	};
-	Err(Box::new(SyntaxError::with(pos, code, message).to(end)))
+	Box::new(SyntaxError::with(pos, code, message).to(end))
+}
+
+fn fail<T>(pos: u32, end: u32, code: Code, arg: Option<&str>) -> Result<T> {
+	Err(error(pos, end, code, arg))
 }
 
 /// Whether the document is TypeScript by its script tags, the way the grammar tells.
@@ -425,7 +429,32 @@ impl<'a, E: Extension> Walker<'a, E> {
 		if self.eat(s) {
 			Ok(())
 		} else {
-			fail(self.at, self.at, Code::Expected, Some(s))
+			self.report(error(self.at, self.at, Code::Expected, Some(s)))
+		}
+	}
+
+	fn recovering(&self) -> bool {
+		self.options.error_recovery
+	}
+
+	/// Under recovery the error is recorded on the tree and reading goes on; otherwise it ends
+	/// the parse.
+	fn report(&mut self, error: Box<SyntaxError>) -> Result<()> {
+		if self.recovering() {
+			self.ast().errors.push(*error);
+			Ok(())
+		} else {
+			Err(error)
+		}
+	}
+
+	/// The delimiter that closes the tag being read, skipped to under recovery.
+	fn skip_tag(&mut self) {
+		let close = self.grammar.delimiters.1;
+		if let Some(i) = self.rest().find(close) {
+			self.at += (i + close.len()) as u32;
+		} else {
+			self.at = self.len();
 		}
 	}
 
@@ -673,21 +702,38 @@ impl<'a, E: Extension> Walker<'a, E> {
 	fn run(&mut self) -> Result<NodeId> {
 		let open = self.grammar.delimiters.0;
 		while self.at < self.len() {
-			if self.byte() == Some(b'<') && self.tag_start(self.at as usize) {
-				self.element()?;
+			let before = self.at;
+			let result = if self.byte() == Some(b'<') && self.tag_start(self.at as usize) {
+				self.element()
 			} else if self.verbatim == 0 && self.matches(open) {
-				self.tag()?;
+				self.tag()
 			} else {
 				self.text_node();
+				Ok(())
+			};
+			if let Err(error) = result {
+				self.report(error)?;
+				// whatever could not be read, something is
+				if self.at == before {
+					self.at += self.char().map_or(1, |c| c.len_utf8() as u32);
+				}
 			}
 		}
-		if self.frames.len() > 1 {
+		while self.frames.len() > 1 {
 			let (start, what) = match self.frames.last().unwrap() {
 				Frame::Element { start, name, .. } => (*start, &self.src[name.0 as usize..name.1 as usize]),
 				Frame::Block { start, rule, .. } => (*start, rule.name),
 				Frame::Root { .. } => unreachable!(),
 			};
-			return fail(start, start + 1, Code::Unclosed, Some(what));
+			self.report(error(start, start + 1, Code::Unclosed, Some(what)))?;
+			// under recovery, what is open ends with the source
+			let end = self.len();
+			match self.frames.last().unwrap() {
+				Frame::Element { .. } => self.close_top(end),
+				_ => {
+					self.pop_block(end);
+				}
+			}
 		}
 		let Some(Frame::Root {
 			nodes,
@@ -1059,7 +1105,10 @@ impl<'a, E: Extension> Walker<'a, E> {
 			return Ok(());
 		}
 		let self_closing = self.eat("/") || self.grammar.is_void(name);
-		self.expect(">")?;
+		let unclosed = !self.eat(">");
+		if unclosed {
+			self.report(error(self.at, self.at, Code::Expected, Some(">")))?;
+		}
 		let name_id = self.intern(name);
 		let names = &self.grammar.element_fields;
 		fields.insert(0, (names.name, Value::Str(name_id)));
@@ -1075,8 +1124,14 @@ impl<'a, E: Extension> Walker<'a, E> {
 				w.verbatim -= 1;
 			}
 		};
-		if self_closing {
-			let end = self.at;
+		if self_closing || unclosed {
+			let end = if unclosed {
+				attributes
+					.last()
+					.map_or(name_span.1, |&last| self.tree().node(last).end)
+			} else {
+				self.at
+			};
 			finish(self, fields, Vec::new(), end);
 			return Ok(());
 		}
@@ -1202,6 +1257,16 @@ impl<'a, E: Extension> Walker<'a, E> {
 
 	fn close_element(&mut self, start: u32, name: &str) -> Result<()> {
 		let plain = self.grammar.element("*").map(|any| any.ty);
+		// under recovery a closing tag that closes nothing is skipped, and one that closes an
+		// element further out closes what is open inside it
+		let opens = |w: &Self| {
+			w.frames.iter().any(
+				|frame| matches!(frame, Frame::Element { name: span, .. } if &w.src[span.0 as usize..span.1 as usize] == name),
+			)
+		};
+		if self.recovering() && !opens(self) {
+			return self.report(error(start, start + 1, Code::UnexpectedClose, Some(name)));
+		}
 		loop {
 			match self.frames.last() {
 				Some(Frame::Element { name: span, ty, .. }) => {
@@ -1212,10 +1277,15 @@ impl<'a, E: Extension> Walker<'a, E> {
 						return Ok(());
 					}
 					if Some(*ty) != plain {
-						return fail(start, start + 1, Code::UnexpectedClose, Some(name));
+						self.report(error(start, start + 1, Code::UnexpectedClose, Some(name)))?;
 					}
 					// the browser closes it here
 					self.close_top(start);
+				}
+				Some(Frame::Block { .. }) if self.recovering() => {
+					self.report(error(start, start + 1, Code::UnexpectedClose, Some(name)))?;
+					let end = start;
+					self.pop_block(end);
 				}
 				_ => return fail(start, start + 1, Code::UnexpectedClose, Some(name)),
 			}
@@ -1426,6 +1496,15 @@ impl<'a, E: Extension> Walker<'a, E> {
 				);
 				return Ok(Some((node, ty, None)));
 			}
+			if self.recovering()
+				&& let Some(sigils) = &self.grammar.sigils
+				&& [sigils.open, sigils.branch, sigils.close, sigils.tag]
+					.iter()
+					.any(|s| self.matches(s))
+			{
+				self.at = start;
+				return Ok(None);
+			}
 			if !self.grammar.attribute_shorthand {
 				return fail(start, start + 1, Code::UnexpectedToken, None);
 			}
@@ -1451,7 +1530,8 @@ impl<'a, E: Extension> Walker<'a, E> {
 			return Ok(Some((node, "Attribute", Some(("Attribute", name)))));
 		}
 		let name = self.tag_name(true)?;
-		if name.is_empty() {
+		if name.is_empty() || (self.recovering() && name.starts_with('<')) {
+			self.at = start;
 			return Ok(None);
 		}
 		let name_end = self.at;
@@ -1744,7 +1824,10 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let mut chunk_start = self.at;
 		loop {
 			if self.at >= self.len() {
-				return fail(self.len(), self.len(), Code::UnexpectedEof, None);
+				self.report(error(self.len(), self.len(), Code::UnexpectedEof, None))?;
+				let at = self.at;
+				self.flush_text(chunk_start, at, &mut chunks);
+				return Ok(chunks);
 			}
 			if done(self) {
 				let at = self.at;
@@ -1886,7 +1969,9 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let name_at = self.at;
 		let name = self.lowercase_word();
 		let Some(rule) = self.grammar.block(name) else {
-			return fail(name_at, self.at, Code::Expected, Some("a block name"));
+			self.report(error(name_at, self.at, Code::Expected, Some("a block name")))?;
+			self.skip_tag();
+			return Ok(());
 		};
 		self.keyword = name_at;
 		if !rule.open.items.is_empty() {
@@ -1918,7 +2003,14 @@ impl<'a, E: Extension> Walker<'a, E> {
 	fn branch(&mut self, start: u32) -> Result<()> {
 		let close = self.grammar.delimiters.1;
 		let Some(Frame::Block { rule, .. }) = self.frames.last() else {
-			return fail(start, start + 1, Code::Placement, Some("A branch outside its block"));
+			self.report(error(
+				start,
+				start + 1,
+				Code::Placement,
+				Some("A branch outside its block"),
+			))?;
+			self.skip_tag();
+			return Ok(());
 		};
 		let rule: &'a BlockRule = rule;
 		// the longest run of words first: `else if` before `else`
@@ -2076,40 +2168,51 @@ impl<'a, E: Extension> Walker<'a, E> {
 		self.space();
 		self.expect(close)?;
 		let end = self.at;
-		loop {
-			let Some(Frame::Block { rule, .. }) = self.frames.last() else {
-				return fail(start, start + 1, Code::UnexpectedClose, Some(name));
-			};
-			if rule.name != name {
-				return fail(name_at, name_at + name.len() as u32, Code::UnexpectedClose, Some(name));
+		let Some(Frame::Block { rule, .. }) = self.frames.last() else {
+			return self.report(error(start, start + 1, Code::UnexpectedClose, Some(name)));
+		};
+		if rule.name != name {
+			return self.report(error(
+				name_at,
+				name_at + name.len() as u32,
+				Code::UnexpectedClose,
+				Some(name),
+			));
+		}
+		while !self.pop_block(end) {}
+		Ok(())
+	}
+
+	/// Closes the block on top at `end`; whether it stood on its own rather than in a chain,
+	/// whose parent is then still open.
+	fn pop_block(&mut self, end: u32) -> bool {
+		self.finish_body();
+		let Some(Frame::Block {
+			start: block_start,
+			rule,
+			fields,
+			done,
+			groups,
+			outside,
+			chain,
+			..
+		}) = self.frames.pop()
+		else {
+			unreachable!()
+		};
+		let node = self.block_node(rule, block_start, end, fields, done, groups, outside, chain.is_some());
+		match chain {
+			Some(field) => {
+				let children = self.children(vec![node]);
+				let Some(Frame::Block { done, .. }) = self.frames.last_mut() else {
+					unreachable!()
+				};
+				done.push((field, children));
+				false
 			}
-			self.finish_body();
-			let Some(Frame::Block {
-				start: block_start,
-				rule,
-				fields,
-				done,
-				groups,
-				outside,
-				chain,
-				..
-			}) = self.frames.pop()
-			else {
-				unreachable!()
-			};
-			let node = self.block_node(rule, block_start, end, fields, done, groups, outside, chain.is_some());
-			match chain {
-				Some(field) => {
-					let children = self.children(vec![node]);
-					let Some(Frame::Block { done, .. }) = self.frames.last_mut() else {
-						unreachable!()
-					};
-					done.push((field, children));
-				}
-				None => {
-					self.append(node);
-					return Ok(());
-				}
+			None => {
+				self.append(node);
+				true
 			}
 		}
 	}
@@ -2451,7 +2554,22 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let ast = self.ast.take().unwrap();
 		let src = &self.src[..self.limit as usize];
 		let mut parser = Parser::<E>::new(src, self.at, self.options, 0, stop, ast)?;
-		let roots = parser.read_entry(entry);
+		let roots = match parser.read_entry(entry) {
+			// under recovery, what was read is skipped and an empty identifier stands where it failed
+			Err(error) if parser.recovering() => {
+				let at = error.pos;
+				parser.record(Err(error)).unwrap();
+				parser.skip_to_end();
+				parser.prev_end = parser.prev_end.max(at);
+				if entry == JsEntry::Params {
+					Ok(Vec::new())
+				} else {
+					let name = parser.intern("");
+					Ok(vec![parser.add_with_end(NodeKind::Identifier { name }, at, at)])
+				}
+			}
+			result => result,
+		};
 		let end = parser.consumed_end();
 		self.ast = Some(parser.finish());
 		let roots = roots?;
@@ -2476,7 +2594,12 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let start = self.at;
 		match self.char() {
 			Some(c) if is_id_start(c) => self.at += c.len_utf8() as u32,
-			_ => return fail(start, start, Code::Expected, Some("an identifier")),
+			_ => {
+				// under recovery an empty identifier stands where one was expected
+				self.report(error(start, start, Code::Expected, Some("an identifier")))?;
+				let name = self.intern("");
+				return Ok(self.ast().add(NodeKind::Identifier { name }, start, start));
+			}
 		}
 		while let Some(c) = self.char() {
 			if !is_id_continue(c) {
