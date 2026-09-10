@@ -1,0 +1,200 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 58,
+		"scope": 0,
+		"body": [
+			{
+				"type": "VariableDeclaration",
+				"start": 0,
+				"end": 57,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 4,
+						"end": 56,
+						"defines": [
+							0
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 4,
+							"end": 5,
+							"declares": 0,
+							"name": "o"
+						},
+						"init": {
+							"type": "ObjectExpression",
+							"start": 8,
+							"end": 56,
+							"properties": [
+								{
+									"type": "Property",
+									"start": 10,
+									"end": 23,
+									"method": true,
+									"shorthand": false,
+									"computed": false,
+									"key": {
+										"type": "Identifier",
+										"start": 10,
+										"end": 11,
+										"name": "m"
+									},
+									"value": {
+										"type": "FunctionExpression",
+										"start": 14,
+										"end": 23,
+										"scope": 1,
+										"defines": [
+											1
+										],
+										"typeParameters": {
+											"type": "TSTypeParameterDeclaration",
+											"start": 11,
+											"end": 14,
+											"params": [
+												{
+													"type": "TSTypeParameter",
+													"start": 12,
+													"end": 13,
+													"name": "T"
+												}
+											]
+										},
+										"id": null,
+										"expression": false,
+										"generator": false,
+										"async": false,
+										"params": [
+											{
+												"type": "Identifier",
+												"start": 15,
+												"end": 19,
+												"declares": 1,
+												"typeAnnotation": {
+													"type": "TSTypeAnnotation",
+													"start": 16,
+													"end": 19,
+													"typeAnnotation": {
+														"type": "TSTypeReference",
+														"start": 18,
+														"end": 19,
+														"typeName": {
+															"type": "Identifier",
+															"start": 18,
+															"end": 19,
+															"name": "T"
+														}
+													}
+												},
+												"name": "x"
+											}
+										],
+										"body": {
+											"type": "BlockStatement",
+											"start": 21,
+											"end": 23,
+											"body": []
+										}
+									},
+									"kind": "init"
+								},
+								{
+									"type": "Property",
+									"start": 25,
+									"end": 54,
+									"method": false,
+									"shorthand": false,
+									"computed": false,
+									"key": {
+										"type": "Identifier",
+										"start": 29,
+										"end": 30,
+										"name": "g"
+									},
+									"value": {
+										"type": "FunctionExpression",
+										"start": 30,
+										"end": 54,
+										"scope": 2,
+										"returnType": {
+											"type": "TSTypeAnnotation",
+											"start": 32,
+											"end": 40,
+											"typeAnnotation": {
+												"type": "TSNumberKeyword",
+												"start": 34,
+												"end": 40
+											}
+										},
+										"id": null,
+										"expression": false,
+										"generator": false,
+										"async": false,
+										"params": [],
+										"body": {
+											"type": "BlockStatement",
+											"start": 41,
+											"end": 54,
+											"body": [
+												{
+													"type": "ReturnStatement",
+													"start": 43,
+													"end": 52,
+													"argument": {
+														"type": "Literal",
+														"start": 50,
+														"end": 51,
+														"value": 1,
+														"raw": "1"
+													}
+												}
+											]
+										}
+									},
+									"kind": "get"
+								}
+							]
+						}
+					}
+				],
+				"kind": "let"
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 58,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "o",
+			"kind": "let",
+			"scope": 0
+		},
+		{
+			"name": "x",
+			"kind": "param",
+			"scope": 1
+		}
+	],
+	"references": []
+}

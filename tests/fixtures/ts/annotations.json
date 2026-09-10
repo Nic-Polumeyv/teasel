@@ -2,7 +2,7 @@
 	"node": {
 		"type": "Program",
 		"start": 0,
-		"end": 228,
+		"end": 291,
 		"scope": 0,
 		"body": [
 			{
@@ -435,11 +435,124 @@
 					}
 				],
 				"kind": "let"
+			},
+			{
+				"type": "TryStatement",
+				"start": 228,
+				"end": 256,
+				"block": {
+					"type": "BlockStatement",
+					"start": 232,
+					"end": 234,
+					"scope": 3,
+					"body": []
+				},
+				"handler": {
+					"type": "CatchClause",
+					"start": 235,
+					"end": 256,
+					"scope": 4,
+					"defines": [
+						9
+					],
+					"param": {
+						"type": "Identifier",
+						"start": 242,
+						"end": 252,
+						"declares": 9,
+						"typeAnnotation": {
+							"type": "TSTypeAnnotation",
+							"start": 243,
+							"end": 252,
+							"typeAnnotation": {
+								"type": "TSUnknownKeyword",
+								"start": 245,
+								"end": 252
+							}
+						},
+						"name": "e"
+					},
+					"body": {
+						"type": "BlockStatement",
+						"start": 254,
+						"end": 256,
+						"scope": 5,
+						"body": []
+					}
+				},
+				"finalizer": null
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 257,
+				"end": 290,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 261,
+						"end": 289,
+						"defines": [
+							10,
+							11
+						],
+						"id": {
+							"type": "ArrayPattern",
+							"start": 261,
+							"end": 285,
+							"typeAnnotation": {
+								"type": "TSTypeAnnotation",
+								"start": 267,
+								"end": 285,
+								"typeAnnotation": {
+									"type": "TSTupleType",
+									"start": 269,
+									"end": 285,
+									"elementTypes": [
+										{
+											"type": "TSNumberKeyword",
+											"start": 270,
+											"end": 276
+										},
+										{
+											"type": "TSStringKeyword",
+											"start": 278,
+											"end": 284
+										}
+									]
+								}
+							},
+							"elements": [
+								{
+									"type": "Identifier",
+									"start": 262,
+									"end": 263,
+									"declares": 10,
+									"name": "t"
+								},
+								{
+									"type": "Identifier",
+									"start": 265,
+									"end": 266,
+									"declares": 11,
+									"name": "u"
+								}
+							]
+						},
+						"init": {
+							"type": "Identifier",
+							"start": 288,
+							"end": 289,
+							"reference": 1,
+							"name": "w"
+						}
+					}
+				],
+				"kind": "let"
 			}
 		],
 		"sourceType": "module"
 	},
-	"end": 228,
+	"end": 291,
 	"comments": [],
 	"scopes": [
 		{
@@ -455,6 +568,21 @@
 		{
 			"kind": "function",
 			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "catch",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 4,
 			"topLevelAwait": false
 		}
 	],
@@ -503,12 +631,34 @@
 			"name": "j",
 			"kind": "let",
 			"scope": 0
+		},
+		{
+			"name": "e",
+			"kind": "catch",
+			"scope": 4
+		},
+		{
+			"name": "t",
+			"kind": "let",
+			"scope": 0
+		},
+		{
+			"name": "u",
+			"kind": "let",
+			"scope": 0
 		}
 	],
 	"references": [
 		{
 			"scope": 2,
 			"binding": 6,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
 			"write": false,
 			"read": true,
 			"mutate": false

@@ -1,0 +1,63 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 35,
+		"scope": 0,
+		"body": [
+			{
+				"type": "ExportDefaultDeclaration",
+				"start": 0,
+				"end": 34,
+				"exportKind": "value",
+				"declaration": {
+					"type": "ClassDeclaration",
+					"start": 15,
+					"end": 34,
+					"scope": 1,
+					"defines": [
+						0
+					],
+					"abstract": true,
+					"id": {
+						"type": "Identifier",
+						"start": 30,
+						"end": 31,
+						"declares": 0,
+						"name": "A"
+					},
+					"superClass": null,
+					"body": {
+						"type": "ClassBody",
+						"start": 32,
+						"end": 34,
+						"body": []
+					}
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 35,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "class",
+			"parent": 0,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "A",
+			"kind": "class",
+			"scope": 0
+		}
+	],
+	"references": []
+}

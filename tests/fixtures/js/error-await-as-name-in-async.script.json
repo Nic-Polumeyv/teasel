@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "await_as_identifier",
+		"message": "Cannot use 'await' as identifier inside an async function",
+		"pos": 25,
+		"end": 25,
+		"loc": {
+			"line": 1,
+			"column": 25
+		}
+	}
+}

@@ -1,0 +1,188 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 61,
+		"scope": 0,
+		"body": [
+			{
+				"type": "TryStatement",
+				"start": 0,
+				"end": 60,
+				"block": {
+					"type": "BlockStatement",
+					"start": 4,
+					"end": 6,
+					"scope": 1,
+					"body": []
+				},
+				"handler": {
+					"type": "CatchClause",
+					"start": 7,
+					"end": 60,
+					"scope": 2,
+					"defines": [
+						0
+					],
+					"param": {
+						"type": "Identifier",
+						"start": 14,
+						"end": 15,
+						"declares": 0,
+						"name": "a"
+					},
+					"body": {
+						"type": "BlockStatement",
+						"start": 17,
+						"end": 60,
+						"scope": 3,
+						"body": [
+							{
+								"type": "ForInStatement",
+								"start": 19,
+								"end": 36,
+								"left": {
+									"type": "VariableDeclaration",
+									"start": 24,
+									"end": 29,
+									"declarations": [
+										{
+											"type": "VariableDeclarator",
+											"start": 28,
+											"end": 29,
+											"defines": [
+												1
+											],
+											"id": {
+												"type": "Identifier",
+												"start": 28,
+												"end": 29,
+												"declares": 1,
+												"name": "a"
+											},
+											"init": null
+										}
+									],
+									"kind": "var"
+								},
+								"right": {
+									"type": "Identifier",
+									"start": 33,
+									"end": 34,
+									"reference": 0,
+									"name": "x"
+								},
+								"body": {
+									"type": "EmptyStatement",
+									"start": 35,
+									"end": 36
+								}
+							},
+							{
+								"type": "ForStatement",
+								"start": 37,
+								"end": 51,
+								"init": {
+									"type": "VariableDeclaration",
+									"start": 42,
+									"end": 47,
+									"declarations": [
+										{
+											"type": "VariableDeclarator",
+											"start": 46,
+											"end": 47,
+											"id": {
+												"type": "Identifier",
+												"start": 46,
+												"end": 47,
+												"declares": 1,
+												"name": "a"
+											},
+											"init": null
+										}
+									],
+									"kind": "var"
+								},
+								"test": null,
+								"update": null,
+								"body": {
+									"type": "EmptyStatement",
+									"start": 50,
+									"end": 51
+								}
+							},
+							{
+								"type": "VariableDeclaration",
+								"start": 52,
+								"end": 58,
+								"declarations": [
+									{
+										"type": "VariableDeclarator",
+										"start": 56,
+										"end": 57,
+										"id": {
+											"type": "Identifier",
+											"start": 56,
+											"end": 57,
+											"declares": 1,
+											"name": "a"
+										},
+										"init": null
+									}
+								],
+								"kind": "var"
+							}
+						]
+					}
+				},
+				"finalizer": null
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 61,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "catch",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 2,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "a",
+			"kind": "catch",
+			"scope": 2
+		},
+		{
+			"name": "a",
+			"kind": "var",
+			"scope": 0
+		}
+	],
+	"references": [
+		{
+			"scope": 3,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

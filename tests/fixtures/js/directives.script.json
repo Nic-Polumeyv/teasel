@@ -2,7 +2,7 @@
 	"node": {
 		"type": "Program",
 		"start": 0,
-		"end": 71,
+		"end": 92,
 		"scope": 0,
 		"body": [
 			{
@@ -95,11 +95,23 @@
 						}
 					]
 				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 71,
+				"end": 91,
+				"expression": {
+					"type": "Literal",
+					"start": 72,
+					"end": 89,
+					"value": "not a directive",
+					"raw": "'not a directive'"
+				}
 			}
 		],
 		"sourceType": "script"
 	},
-	"end": 71,
+	"end": 92,
 	"comments": [],
 	"scopes": [
 		{

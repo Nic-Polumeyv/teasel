@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "reserved_word",
+		"message": "The keyword 'static' is reserved",
+		"pos": 4,
+		"end": 4,
+		"loc": {
+			"line": 1,
+			"column": 4
+		}
+	}
+}

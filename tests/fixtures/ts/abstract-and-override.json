@@ -2,7 +2,7 @@
 	"node": {
 		"type": "Program",
 		"start": 0,
-		"end": 173,
+		"end": 201,
 		"scope": 0,
 		"body": [
 			{
@@ -252,11 +252,36 @@
 						}
 					]
 				}
+			},
+			{
+				"type": "ClassDeclaration",
+				"start": 173,
+				"end": 200,
+				"scope": 5,
+				"defines": [
+					2
+				],
+				"declare": true,
+				"abstract": true,
+				"id": {
+					"type": "Identifier",
+					"start": 196,
+					"end": 197,
+					"declares": 2,
+					"name": "D"
+				},
+				"superClass": null,
+				"body": {
+					"type": "ClassBody",
+					"start": 198,
+					"end": 200,
+					"body": []
+				}
 			}
 		],
 		"sourceType": "module"
 	},
-	"end": 173,
+	"end": 201,
 	"comments": [],
 	"scopes": [
 		{
@@ -283,6 +308,11 @@
 			"kind": "function",
 			"parent": 2,
 			"topLevelAwait": false
+		},
+		{
+			"kind": "class",
+			"parent": 0,
+			"topLevelAwait": false
 		}
 	],
 	"bindings": [
@@ -293,6 +323,11 @@
 		},
 		{
 			"name": "B",
+			"kind": "class",
+			"scope": 0
+		},
+		{
+			"name": "D",
 			"kind": "class",
 			"scope": 0
 		}

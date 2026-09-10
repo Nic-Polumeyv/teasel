@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "strict_binding",
+		"message": "Binding eval in strict mode",
+		"pos": 7,
+		"end": 7,
+		"loc": {
+			"line": 1,
+			"column": 7
+		}
+	}
+}

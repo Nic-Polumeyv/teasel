@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "initializer_in_ambient",
+		"message": "Initializers are not allowed in ambient contexts.",
+		"pos": 23,
+		"end": 23,
+		"loc": {
+			"line": 1,
+			"column": 23
+		}
+	}
+}

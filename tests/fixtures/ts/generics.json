@@ -2,7 +2,7 @@
 	"node": {
 		"type": "Program",
 		"start": 0,
-		"end": 209,
+		"end": 432,
 		"scope": 0,
 		"body": [
 			{
@@ -495,11 +495,599 @@
 					"arguments": [],
 					"optional": false
 				}
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 209,
+				"end": 234,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 213,
+						"end": 233,
+						"defines": [
+							6
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 213,
+							"end": 229,
+							"declares": 6,
+							"typeAnnotation": {
+								"type": "TSTypeAnnotation",
+								"start": 217,
+								"end": 229,
+								"typeAnnotation": {
+									"type": "TSTypeReference",
+									"start": 219,
+									"end": 229,
+									"typeName": {
+										"type": "Identifier",
+										"start": 219,
+										"end": 220,
+										"name": "A"
+									},
+									"typeArguments": {
+										"type": "TSTypeParameterInstantiation",
+										"start": 220,
+										"end": 229,
+										"params": [
+											{
+												"type": "TSTypeReference",
+												"start": 221,
+												"end": 228,
+												"typeName": {
+													"type": "Identifier",
+													"start": 221,
+													"end": 222,
+													"name": "B"
+												},
+												"typeArguments": {
+													"type": "TSTypeParameterInstantiation",
+													"start": 222,
+													"end": 228,
+													"params": [
+														{
+															"type": "TSTypeReference",
+															"start": 223,
+															"end": 227,
+															"typeName": {
+																"type": "Identifier",
+																"start": 223,
+																"end": 224,
+																"name": "C"
+															},
+															"typeArguments": {
+																"type": "TSTypeParameterInstantiation",
+																"start": 224,
+																"end": 227,
+																"params": [
+																	{
+																		"type": "TSTypeReference",
+																		"start": 225,
+																		"end": 226,
+																		"typeName": {
+																			"type": "Identifier",
+																			"start": 225,
+																			"end": 226,
+																			"name": "D"
+																		}
+																	}
+																]
+															}
+														}
+													]
+												}
+											}
+										]
+									}
+								}
+							},
+							"name": "deep"
+						},
+						"init": {
+							"type": "Literal",
+							"start": 232,
+							"end": 233,
+							"value": 1,
+							"raw": "1"
+						}
+					}
+				],
+				"kind": "let"
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 235,
+				"end": 262,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 239,
+						"end": 261,
+						"defines": [
+							7
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 239,
+							"end": 241,
+							"declares": 7,
+							"name": "fe"
+						},
+						"init": {
+							"type": "FunctionExpression",
+							"start": 244,
+							"end": 261,
+							"scope": 4,
+							"typeParameters": {
+								"type": "TSTypeParameterDeclaration",
+								"start": 253,
+								"end": 256,
+								"params": [
+									{
+										"type": "TSTypeParameter",
+										"start": 254,
+										"end": 255,
+										"name": "T"
+									}
+								]
+							},
+							"id": null,
+							"expression": false,
+							"generator": false,
+							"async": false,
+							"params": [],
+							"body": {
+								"type": "BlockStatement",
+								"start": 259,
+								"end": 261,
+								"body": []
+							}
+						}
+					}
+				],
+				"kind": "let"
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 263,
+				"end": 296,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 269,
+						"end": 295,
+						"defines": [
+							8
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 269,
+							"end": 271,
+							"declares": 8,
+							"name": "cf"
+						},
+						"init": {
+							"type": "ArrowFunctionExpression",
+							"start": 274,
+							"end": 295,
+							"scope": 5,
+							"defines": [
+								9
+							],
+							"typeParameters": {
+								"type": "TSTypeParameterDeclaration",
+								"start": 274,
+								"end": 284,
+								"params": [
+									{
+										"type": "TSTypeParameter",
+										"start": 275,
+										"end": 282,
+										"const": true,
+										"name": "T"
+									}
+								]
+							},
+							"id": null,
+							"expression": true,
+							"generator": false,
+							"async": false,
+							"params": [
+								{
+									"type": "Identifier",
+									"start": 285,
+									"end": 289,
+									"declares": 9,
+									"typeAnnotation": {
+										"type": "TSTypeAnnotation",
+										"start": 286,
+										"end": 289,
+										"typeAnnotation": {
+											"type": "TSTypeReference",
+											"start": 288,
+											"end": 289,
+											"typeName": {
+												"type": "Identifier",
+												"start": 288,
+												"end": 289,
+												"name": "T"
+											}
+										}
+									},
+									"name": "x"
+								}
+							],
+							"body": {
+								"type": "Identifier",
+								"start": 294,
+								"end": 295,
+								"reference": 7,
+								"name": "x"
+							}
+						}
+					}
+				],
+				"kind": "const"
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 297,
+				"end": 316,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 301,
+						"end": 315,
+						"defines": [
+							10
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 301,
+							"end": 305,
+							"declares": 10,
+							"name": "call"
+						},
+						"init": {
+							"type": "CallExpression",
+							"start": 308,
+							"end": 315,
+							"typeArguments": {
+								"type": "TSTypeParameterInstantiation",
+								"start": 309,
+								"end": 312,
+								"params": [
+									{
+										"type": "TSTypeReference",
+										"start": 310,
+										"end": 311,
+										"typeName": {
+											"type": "Identifier",
+											"start": 310,
+											"end": 311,
+											"name": "T"
+										}
+									}
+								]
+							},
+							"callee": {
+								"type": "Identifier",
+								"start": 308,
+								"end": 309,
+								"reference": 8,
+								"name": "f"
+							},
+							"arguments": [
+								{
+									"type": "Identifier",
+									"start": 313,
+									"end": 314,
+									"reference": 9,
+									"name": "y"
+								}
+							],
+							"optional": false
+						}
+					}
+				],
+				"kind": "let"
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 317,
+				"end": 336,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 321,
+						"end": 335,
+						"defines": [
+							11
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 321,
+							"end": 323,
+							"declares": 11,
+							"name": "lt"
+						},
+						"init": {
+							"type": "BinaryExpression",
+							"start": 326,
+							"end": 335,
+							"left": {
+								"type": "BinaryExpression",
+								"start": 326,
+								"end": 331,
+								"left": {
+									"type": "Identifier",
+									"start": 326,
+									"end": 327,
+									"reference": 10,
+									"name": "a"
+								},
+								"operator": "<",
+								"right": {
+									"type": "Identifier",
+									"start": 330,
+									"end": 331,
+									"reference": 11,
+									"name": "b"
+								}
+							},
+							"operator": ">",
+							"right": {
+								"type": "Identifier",
+								"start": 334,
+								"end": 335,
+								"reference": 12,
+								"name": "c"
+							}
+						}
+					}
+				],
+				"kind": "let"
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 337,
+				"end": 356,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 341,
+						"end": 355,
+						"defines": [
+							12
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 341,
+							"end": 346,
+							"declares": 12,
+							"name": "shift"
+						},
+						"init": {
+							"type": "BinaryExpression",
+							"start": 349,
+							"end": 355,
+							"left": {
+								"type": "Identifier",
+								"start": 349,
+								"end": 350,
+								"reference": 13,
+								"name": "a"
+							},
+							"operator": "<",
+							"right": {
+								"type": "BinaryExpression",
+								"start": 351,
+								"end": 355,
+								"left": {
+									"type": "Identifier",
+									"start": 351,
+									"end": 352,
+									"reference": 14,
+									"name": "b"
+								},
+								"operator": ">>",
+								"right": {
+									"type": "Identifier",
+									"start": 354,
+									"end": 355,
+									"reference": 15,
+									"name": "c"
+								}
+							}
+						}
+					}
+				],
+				"kind": "let"
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 357,
+				"end": 381,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 361,
+						"end": 380,
+						"defines": [
+							13
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 361,
+							"end": 365,
+							"declares": 13,
+							"name": "inst"
+						},
+						"init": {
+							"type": "NewExpression",
+							"start": 368,
+							"end": 380,
+							"typeArguments": {
+								"type": "TSTypeParameterInstantiation",
+								"start": 375,
+								"end": 378,
+								"params": [
+									{
+										"type": "TSTypeReference",
+										"start": 376,
+										"end": 377,
+										"typeName": {
+											"type": "Identifier",
+											"start": 376,
+											"end": 377,
+											"name": "T"
+										}
+									}
+								]
+							},
+							"callee": {
+								"type": "Identifier",
+								"start": 372,
+								"end": 375,
+								"reference": 16,
+								"name": "Foo"
+							},
+							"arguments": []
+						}
+					}
+				],
+				"kind": "let"
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 382,
+				"end": 405,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 386,
+						"end": 404,
+						"defines": [
+							14
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 386,
+							"end": 392,
+							"declares": 14,
+							"name": "tagged"
+						},
+						"init": {
+							"type": "TaggedTemplateExpression",
+							"start": 395,
+							"end": 404,
+							"typeArguments": {
+								"type": "TSTypeParameterInstantiation",
+								"start": 396,
+								"end": 399,
+								"params": [
+									{
+										"type": "TSTypeReference",
+										"start": 397,
+										"end": 398,
+										"typeName": {
+											"type": "Identifier",
+											"start": 397,
+											"end": 398,
+											"name": "T"
+										}
+									}
+								]
+							},
+							"tag": {
+								"type": "Identifier",
+								"start": 395,
+								"end": 396,
+								"reference": 17,
+								"name": "f"
+							},
+							"quasi": {
+								"type": "TemplateLiteral",
+								"start": 399,
+								"end": 404,
+								"expressions": [],
+								"quasis": [
+									{
+										"type": "TemplateElement",
+										"start": 400,
+										"end": 403,
+										"value": {
+											"raw": "tpl",
+											"cooked": "tpl"
+										},
+										"tail": true
+									}
+								]
+							}
+						}
+					}
+				],
+				"kind": "let"
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 406,
+				"end": 431,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 410,
+						"end": 430,
+						"defines": [
+							15
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 410,
+							"end": 423,
+							"declares": 15,
+							"name": "instantiation"
+						},
+						"init": {
+							"type": "TSInstantiationExpression",
+							"start": 426,
+							"end": 430,
+							"expression": {
+								"type": "Identifier",
+								"start": 426,
+								"end": 427,
+								"reference": 18,
+								"name": "A"
+							},
+							"typeArguments": {
+								"type": "TSTypeParameterInstantiation",
+								"start": 427,
+								"end": 430,
+								"params": [
+									{
+										"type": "TSTypeReference",
+										"start": 428,
+										"end": 429,
+										"typeName": {
+											"type": "Identifier",
+											"start": 428,
+											"end": 429,
+											"name": "B"
+										}
+									}
+								]
+							}
+						}
+					}
+				],
+				"kind": "let"
 			}
 		],
 		"sourceType": "module"
 	},
-	"end": 209,
+	"end": 432,
 	"comments": [],
 	"scopes": [
 		{
@@ -519,6 +1107,16 @@
 		},
 		{
 			"kind": "class",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
 			"parent": 0,
 			"topLevelAwait": false
 		}
@@ -552,6 +1150,56 @@
 		{
 			"name": "C",
 			"kind": "class",
+			"scope": 0
+		},
+		{
+			"name": "deep",
+			"kind": "let",
+			"scope": 0
+		},
+		{
+			"name": "fe",
+			"kind": "let",
+			"scope": 0
+		},
+		{
+			"name": "cf",
+			"kind": "const",
+			"scope": 0
+		},
+		{
+			"name": "x",
+			"kind": "param",
+			"scope": 5
+		},
+		{
+			"name": "call",
+			"kind": "let",
+			"scope": 0
+		},
+		{
+			"name": "lt",
+			"kind": "let",
+			"scope": 0
+		},
+		{
+			"name": "shift",
+			"kind": "let",
+			"scope": 0
+		},
+		{
+			"name": "inst",
+			"kind": "let",
+			"scope": 0
+		},
+		{
+			"name": "tagged",
+			"kind": "let",
+			"scope": 0
+		},
+		{
+			"name": "instantiation",
+			"kind": "let",
 			"scope": 0
 		}
 	],
@@ -594,6 +1242,90 @@
 		{
 			"scope": 0,
 			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 5,
+			"binding": 9,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": 0,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": 0,
 			"write": false,
 			"read": true,
 			"mutate": false

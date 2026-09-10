@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "redeclaration",
+		"message": "Identifier 'A' has already been declared",
+		"pos": 32,
+		"end": 32,
+		"loc": {
+			"line": 2,
+			"column": 21
+		}
+	}
+}

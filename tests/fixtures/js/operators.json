@@ -1,12 +1,716 @@
 {
-	"error": {
-		"code": "mixed_coalesce",
-		"message": "Logical expressions and coalesce expressions cannot be mixed. Wrap either by parentheses",
-		"pos": 79,
-		"end": 81,
-		"loc": {
-			"line": 4,
-			"column": 12
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 154,
+		"scope": 0,
+		"body": [
+			{
+				"type": "ExpressionStatement",
+				"start": 0,
+				"end": 32,
+				"expression": {
+					"type": "BinaryExpression",
+					"start": 0,
+					"end": 31,
+					"left": {
+						"type": "BinaryExpression",
+						"start": 0,
+						"end": 19,
+						"left": {
+							"type": "Identifier",
+							"start": 0,
+							"end": 1,
+							"reference": 0,
+							"name": "a"
+						},
+						"operator": "+",
+						"right": {
+							"type": "BinaryExpression",
+							"start": 4,
+							"end": 19,
+							"left": {
+								"type": "Identifier",
+								"start": 4,
+								"end": 5,
+								"reference": 1,
+								"name": "b"
+							},
+							"operator": "*",
+							"right": {
+								"type": "BinaryExpression",
+								"start": 8,
+								"end": 19,
+								"left": {
+									"type": "Identifier",
+									"start": 8,
+									"end": 9,
+									"reference": 2,
+									"name": "c"
+								},
+								"operator": "**",
+								"right": {
+									"type": "BinaryExpression",
+									"start": 13,
+									"end": 19,
+									"left": {
+										"type": "Identifier",
+										"start": 13,
+										"end": 14,
+										"reference": 3,
+										"name": "d"
+									},
+									"operator": "**",
+									"right": {
+										"type": "Identifier",
+										"start": 18,
+										"end": 19,
+										"reference": 4,
+										"name": "e"
+									}
+								}
+							}
+						}
+					},
+					"operator": "-",
+					"right": {
+						"type": "BinaryExpression",
+						"start": 22,
+						"end": 31,
+						"left": {
+							"type": "BinaryExpression",
+							"start": 22,
+							"end": 27,
+							"left": {
+								"type": "Identifier",
+								"start": 22,
+								"end": 23,
+								"reference": 5,
+								"name": "f"
+							},
+							"operator": "/",
+							"right": {
+								"type": "Identifier",
+								"start": 26,
+								"end": 27,
+								"reference": 6,
+								"name": "g"
+							}
+						},
+						"operator": "%",
+						"right": {
+							"type": "Identifier",
+							"start": 30,
+							"end": 31,
+							"reference": 7,
+							"name": "h"
+						}
+					}
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 33,
+				"end": 51,
+				"expression": {
+					"type": "BinaryExpression",
+					"start": 33,
+					"end": 50,
+					"left": {
+						"type": "BinaryExpression",
+						"start": 33,
+						"end": 44,
+						"left": {
+							"type": "BinaryExpression",
+							"start": 33,
+							"end": 39,
+							"left": {
+								"type": "Identifier",
+								"start": 33,
+								"end": 34,
+								"reference": 8,
+								"name": "a"
+							},
+							"operator": "<<",
+							"right": {
+								"type": "Identifier",
+								"start": 38,
+								"end": 39,
+								"reference": 9,
+								"name": "b"
+							}
+						},
+						"operator": ">>",
+						"right": {
+							"type": "Identifier",
+							"start": 43,
+							"end": 44,
+							"reference": 10,
+							"name": "c"
+						}
+					},
+					"operator": ">>>",
+					"right": {
+						"type": "Identifier",
+						"start": 49,
+						"end": 50,
+						"reference": 11,
+						"name": "d"
+					}
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 52,
+				"end": 66,
+				"expression": {
+					"type": "BinaryExpression",
+					"start": 52,
+					"end": 65,
+					"left": {
+						"type": "BinaryExpression",
+						"start": 52,
+						"end": 57,
+						"left": {
+							"type": "Identifier",
+							"start": 52,
+							"end": 53,
+							"reference": 12,
+							"name": "a"
+						},
+						"operator": "&",
+						"right": {
+							"type": "Identifier",
+							"start": 56,
+							"end": 57,
+							"reference": 13,
+							"name": "b"
+						}
+					},
+					"operator": "|",
+					"right": {
+						"type": "BinaryExpression",
+						"start": 60,
+						"end": 65,
+						"left": {
+							"type": "Identifier",
+							"start": 60,
+							"end": 61,
+							"reference": 14,
+							"name": "c"
+						},
+						"operator": "^",
+						"right": {
+							"type": "Identifier",
+							"start": 64,
+							"end": 65,
+							"reference": 15,
+							"name": "d"
+						}
+					}
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 67,
+				"end": 79,
+				"expression": {
+					"type": "LogicalExpression",
+					"start": 67,
+					"end": 78,
+					"left": {
+						"type": "LogicalExpression",
+						"start": 67,
+						"end": 73,
+						"left": {
+							"type": "Identifier",
+							"start": 67,
+							"end": 68,
+							"reference": 16,
+							"name": "a"
+						},
+						"operator": "&&",
+						"right": {
+							"type": "Identifier",
+							"start": 72,
+							"end": 73,
+							"reference": 17,
+							"name": "b"
+						}
+					},
+					"operator": "||",
+					"right": {
+						"type": "Identifier",
+						"start": 77,
+						"end": 78,
+						"reference": 18,
+						"name": "c"
+					}
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 80,
+				"end": 87,
+				"expression": {
+					"type": "LogicalExpression",
+					"start": 80,
+					"end": 86,
+					"left": {
+						"type": "Identifier",
+						"start": 80,
+						"end": 81,
+						"reference": 19,
+						"name": "e"
+					},
+					"operator": "??",
+					"right": {
+						"type": "Identifier",
+						"start": 85,
+						"end": 86,
+						"reference": 20,
+						"name": "f"
+					}
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 88,
+				"end": 91,
+				"expression": {
+					"type": "UnaryExpression",
+					"start": 88,
+					"end": 90,
+					"operator": "!",
+					"prefix": true,
+					"argument": {
+						"type": "Identifier",
+						"start": 89,
+						"end": 90,
+						"reference": 21,
+						"name": "a"
+					}
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 92,
+				"end": 95,
+				"expression": {
+					"type": "UnaryExpression",
+					"start": 92,
+					"end": 94,
+					"operator": "-",
+					"prefix": true,
+					"argument": {
+						"type": "Identifier",
+						"start": 93,
+						"end": 94,
+						"reference": 22,
+						"name": "b"
+					}
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 96,
+				"end": 99,
+				"expression": {
+					"type": "UnaryExpression",
+					"start": 96,
+					"end": 98,
+					"operator": "+",
+					"prefix": true,
+					"argument": {
+						"type": "Identifier",
+						"start": 97,
+						"end": 98,
+						"reference": 23,
+						"name": "c"
+					}
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 100,
+				"end": 103,
+				"expression": {
+					"type": "UnaryExpression",
+					"start": 100,
+					"end": 102,
+					"operator": "~",
+					"prefix": true,
+					"argument": {
+						"type": "Identifier",
+						"start": 101,
+						"end": 102,
+						"reference": 24,
+						"name": "d"
+					}
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 104,
+				"end": 113,
+				"expression": {
+					"type": "UnaryExpression",
+					"start": 104,
+					"end": 112,
+					"operator": "typeof",
+					"prefix": true,
+					"argument": {
+						"type": "Identifier",
+						"start": 111,
+						"end": 112,
+						"reference": 25,
+						"name": "e"
+					}
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 114,
+				"end": 121,
+				"expression": {
+					"type": "UnaryExpression",
+					"start": 114,
+					"end": 120,
+					"operator": "void",
+					"prefix": true,
+					"argument": {
+						"type": "Identifier",
+						"start": 119,
+						"end": 120,
+						"reference": 26,
+						"name": "f"
+					}
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 122,
+				"end": 133,
+				"expression": {
+					"type": "UnaryExpression",
+					"start": 122,
+					"end": 132,
+					"operator": "delete",
+					"prefix": true,
+					"argument": {
+						"type": "MemberExpression",
+						"start": 129,
+						"end": 132,
+						"object": {
+							"type": "Identifier",
+							"start": 129,
+							"end": 130,
+							"reference": 27,
+							"name": "g"
+						},
+						"property": {
+							"type": "Identifier",
+							"start": 131,
+							"end": 132,
+							"name": "h"
+						},
+						"computed": false,
+						"optional": false
+					}
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 134,
+				"end": 142,
+				"expression": {
+					"type": "AwaitExpression",
+					"start": 134,
+					"end": 141,
+					"argument": {
+						"type": "Identifier",
+						"start": 140,
+						"end": 141,
+						"reference": 28,
+						"name": "i"
+					}
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 143,
+				"end": 153,
+				"expression": {
+					"type": "BinaryExpression",
+					"start": 143,
+					"end": 152,
+					"left": {
+						"type": "BinaryExpression",
+						"start": 143,
+						"end": 148,
+						"left": {
+							"type": "Identifier",
+							"start": 143,
+							"end": 144,
+							"reference": 29,
+							"name": "a"
+						},
+						"operator": "-",
+						"right": {
+							"type": "Identifier",
+							"start": 147,
+							"end": 148,
+							"reference": 30,
+							"name": "b"
+						}
+					},
+					"operator": "-",
+					"right": {
+						"type": "Identifier",
+						"start": 151,
+						"end": 152,
+						"reference": 31,
+						"name": "c"
+					}
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 154,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": true
 		}
-	}
+	],
+	"bindings": [],
+	"references": [
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": true
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
 }

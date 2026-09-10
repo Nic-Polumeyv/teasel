@@ -1,12 +1,564 @@
 {
-	"error": {
-		"code": "undefined_export",
-		"message": "Export 'E' is not defined",
-		"pos": 97,
-		"end": 97,
-		"loc": {
-			"line": 4,
-			"column": 14
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 383,
+		"scope": 0,
+		"body": [
+			{
+				"type": "ImportDeclaration",
+				"start": 0,
+				"end": 27,
+				"importKind": "type",
+				"specifiers": [
+					{
+						"type": "ImportSpecifier",
+						"start": 14,
+						"end": 15,
+						"importKind": "value",
+						"imported": {
+							"type": "Identifier",
+							"start": 14,
+							"end": 15,
+							"name": "A"
+						},
+						"local": {
+							"type": "Identifier",
+							"start": 14,
+							"end": 15,
+							"name": "A"
+						}
+					}
+				],
+				"source": {
+					"type": "Literal",
+					"start": 23,
+					"end": 26,
+					"value": "a",
+					"raw": "'a'"
+				},
+				"attributes": []
+			},
+			{
+				"type": "ImportDeclaration",
+				"start": 28,
+				"end": 58,
+				"importKind": "value",
+				"specifiers": [
+					{
+						"type": "ImportSpecifier",
+						"start": 37,
+						"end": 43,
+						"importKind": "type",
+						"imported": {
+							"type": "Identifier",
+							"start": 42,
+							"end": 43,
+							"name": "B"
+						},
+						"local": {
+							"type": "Identifier",
+							"start": 42,
+							"end": 43,
+							"name": "B"
+						}
+					},
+					{
+						"type": "ImportSpecifier",
+						"start": 45,
+						"end": 46,
+						"defines": [
+							0
+						],
+						"importKind": "value",
+						"imported": {
+							"type": "Identifier",
+							"start": 45,
+							"end": 46,
+							"name": "C"
+						},
+						"local": {
+							"type": "Identifier",
+							"start": 45,
+							"end": 46,
+							"declares": 0,
+							"name": "C"
+						}
+					}
+				],
+				"source": {
+					"type": "Literal",
+					"start": 54,
+					"end": 57,
+					"value": "b",
+					"raw": "'b'"
+				},
+				"attributes": []
+			},
+			{
+				"type": "ImportDeclaration",
+				"start": 59,
+				"end": 82,
+				"importKind": "type",
+				"specifiers": [
+					{
+						"type": "ImportDefaultSpecifier",
+						"start": 71,
+						"end": 72,
+						"local": {
+							"type": "Identifier",
+							"start": 71,
+							"end": 72,
+							"name": "D"
+						}
+					}
+				],
+				"source": {
+					"type": "Literal",
+					"start": 78,
+					"end": 81,
+					"value": "d",
+					"raw": "'d'"
+				},
+				"attributes": []
+			},
+			{
+				"type": "TSTypeAliasDeclaration",
+				"start": 83,
+				"end": 99,
+				"id": {
+					"type": "Identifier",
+					"start": 88,
+					"end": 89,
+					"name": "E"
+				},
+				"typeAnnotation": {
+					"type": "TSStringKeyword",
+					"start": 92,
+					"end": 98
+				}
+			},
+			{
+				"type": "ExportNamedDeclaration",
+				"start": 100,
+				"end": 118,
+				"exportKind": "type",
+				"declaration": null,
+				"specifiers": [
+					{
+						"type": "ExportSpecifier",
+						"start": 114,
+						"end": 115,
+						"exportKind": "value",
+						"local": {
+							"type": "Identifier",
+							"start": 114,
+							"end": 115,
+							"name": "E"
+						},
+						"exported": {
+							"type": "Identifier",
+							"start": 114,
+							"end": 115,
+							"name": "E"
+						}
+					}
+				],
+				"source": null,
+				"attributes": []
+			},
+			{
+				"type": "TSTypeAliasDeclaration",
+				"start": 119,
+				"end": 135,
+				"id": {
+					"type": "Identifier",
+					"start": 124,
+					"end": 125,
+					"name": "F"
+				},
+				"typeAnnotation": {
+					"type": "TSNumberKeyword",
+					"start": 128,
+					"end": 134
+				}
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 136,
+				"end": 148,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 142,
+						"end": 147,
+						"defines": [
+							1
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 142,
+							"end": 143,
+							"declares": 1,
+							"name": "G"
+						},
+						"init": {
+							"type": "Literal",
+							"start": 146,
+							"end": 147,
+							"value": 1,
+							"raw": "1"
+						}
+					}
+				],
+				"kind": "const"
+			},
+			{
+				"type": "ExportNamedDeclaration",
+				"start": 149,
+				"end": 170,
+				"exportKind": "value",
+				"declaration": null,
+				"specifiers": [
+					{
+						"type": "ExportSpecifier",
+						"start": 158,
+						"end": 164,
+						"exportKind": "type",
+						"local": {
+							"type": "Identifier",
+							"start": 163,
+							"end": 164,
+							"name": "F"
+						},
+						"exported": {
+							"type": "Identifier",
+							"start": 163,
+							"end": 164,
+							"name": "F"
+						}
+					},
+					{
+						"type": "ExportSpecifier",
+						"start": 166,
+						"end": 167,
+						"exportKind": "value",
+						"local": {
+							"type": "Identifier",
+							"start": 166,
+							"end": 167,
+							"reference": 0,
+							"name": "G"
+						},
+						"exported": {
+							"type": "Identifier",
+							"start": 166,
+							"end": 167,
+							"name": "G"
+						}
+					}
+				],
+				"source": null,
+				"attributes": []
+			},
+			{
+				"type": "ExportNamedDeclaration",
+				"start": 171,
+				"end": 194,
+				"exportKind": "type",
+				"declaration": {
+					"type": "TSTypeAliasDeclaration",
+					"start": 178,
+					"end": 194,
+					"id": {
+						"type": "Identifier",
+						"start": 183,
+						"end": 184,
+						"name": "H"
+					},
+					"typeAnnotation": {
+						"type": "TSStringKeyword",
+						"start": 187,
+						"end": 193
+					}
+				},
+				"specifiers": [],
+				"source": null,
+				"attributes": []
+			},
+			{
+				"type": "TSImportEqualsDeclaration",
+				"start": 195,
+				"end": 219,
+				"defines": [
+					2
+				],
+				"importKind": "value",
+				"isExport": false,
+				"id": {
+					"type": "Identifier",
+					"start": 202,
+					"end": 203,
+					"declares": 2,
+					"name": "I"
+				},
+				"moduleReference": {
+					"type": "TSExternalModuleReference",
+					"start": 206,
+					"end": 218,
+					"expression": {
+						"type": "Literal",
+						"start": 214,
+						"end": 217,
+						"value": "i",
+						"raw": "'i'"
+					}
+				}
+			},
+			{
+				"type": "TSImportEqualsDeclaration",
+				"start": 220,
+				"end": 235,
+				"defines": [
+					3
+				],
+				"importKind": "value",
+				"isExport": false,
+				"id": {
+					"type": "Identifier",
+					"start": 227,
+					"end": 228,
+					"declares": 3,
+					"name": "J"
+				},
+				"moduleReference": {
+					"type": "TSQualifiedName",
+					"start": 231,
+					"end": 234,
+					"left": {
+						"type": "Identifier",
+						"start": 231,
+						"end": 232,
+						"reference": 1,
+						"name": "K"
+					},
+					"right": {
+						"type": "Identifier",
+						"start": 233,
+						"end": 234,
+						"name": "L"
+					}
+				}
+			},
+			{
+				"type": "TSExportAssignment",
+				"start": 236,
+				"end": 247,
+				"expression": {
+					"type": "Identifier",
+					"start": 245,
+					"end": 246,
+					"reference": 2,
+					"name": "M"
+				}
+			},
+			{
+				"type": "TSNamespaceExportDeclaration",
+				"start": 248,
+				"end": 270,
+				"id": {
+					"type": "Identifier",
+					"start": 268,
+					"end": 269,
+					"name": "N"
+				}
+			},
+			{
+				"type": "ImportDeclaration",
+				"start": 271,
+				"end": 299,
+				"importKind": "type",
+				"specifiers": [
+					{
+						"type": "ImportNamespaceSpecifier",
+						"start": 283,
+						"end": 289,
+						"local": {
+							"type": "Identifier",
+							"start": 288,
+							"end": 289,
+							"name": "O"
+						}
+					}
+				],
+				"source": {
+					"type": "Literal",
+					"start": 295,
+					"end": 298,
+					"value": "o",
+					"raw": "'o'"
+				},
+				"attributes": []
+			},
+			{
+				"type": "ExportDefaultDeclaration",
+				"start": 300,
+				"end": 329,
+				"exportKind": "value",
+				"declaration": {
+					"type": "TSInterfaceDeclaration",
+					"start": 315,
+					"end": 329,
+					"id": {
+						"type": "Identifier",
+						"start": 325,
+						"end": 326,
+						"name": "Q"
+					},
+					"body": {
+						"type": "TSInterfaceBody",
+						"start": 327,
+						"end": 329,
+						"body": []
+					}
+				}
+			},
+			{
+				"type": "TSImportEqualsDeclaration",
+				"start": 330,
+				"end": 352,
+				"defines": [
+					4
+				],
+				"importKind": "value",
+				"isExport": true,
+				"id": {
+					"type": "Identifier",
+					"start": 344,
+					"end": 345,
+					"declares": 4,
+					"name": "r"
+				},
+				"moduleReference": {
+					"type": "TSQualifiedName",
+					"start": 348,
+					"end": 351,
+					"left": {
+						"type": "Identifier",
+						"start": 348,
+						"end": 349,
+						"reference": 3,
+						"name": "N"
+					},
+					"right": {
+						"type": "Identifier",
+						"start": 350,
+						"end": 351,
+						"name": "y"
+					}
+				}
+			},
+			{
+				"type": "TSImportEqualsDeclaration",
+				"start": 353,
+				"end": 382,
+				"defines": [
+					5
+				],
+				"importKind": "type",
+				"isExport": false,
+				"id": {
+					"type": "Identifier",
+					"start": 365,
+					"end": 366,
+					"declares": 5,
+					"name": "s"
+				},
+				"moduleReference": {
+					"type": "TSExternalModuleReference",
+					"start": 369,
+					"end": 381,
+					"expression": {
+						"type": "Literal",
+						"start": 377,
+						"end": 380,
+						"value": "s",
+						"raw": "'s'"
+					}
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 383,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
 		}
-	}
+	],
+	"bindings": [
+		{
+			"name": "C",
+			"kind": "import",
+			"scope": 0
+		},
+		{
+			"name": "G",
+			"kind": "const",
+			"scope": 0
+		},
+		{
+			"name": "I",
+			"kind": "import",
+			"scope": 0
+		},
+		{
+			"name": "J",
+			"kind": "import",
+			"scope": 0
+		},
+		{
+			"name": "r",
+			"kind": "import",
+			"scope": 0
+		},
+		{
+			"name": "s",
+			"kind": "import",
+			"scope": 0
+		}
+	],
+	"references": [
+		{
+			"scope": 0,
+			"binding": 1,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
 }

@@ -1,12 +1,199 @@
 {
-	"error": {
-		"code": "unexpected_token",
-		"message": "Unexpected token",
-		"pos": 78,
-		"end": 79,
-		"loc": {
-			"line": 5,
-			"column": 21
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 72,
+		"scope": 0,
+		"body": [
+			{
+				"type": "FunctionDeclaration",
+				"start": 0,
+				"end": 71,
+				"scope": 1,
+				"defines": [
+					0
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 10,
+					"end": 11,
+					"declares": 0,
+					"name": "g"
+				},
+				"expression": false,
+				"generator": true,
+				"async": false,
+				"params": [],
+				"body": {
+					"type": "BlockStatement",
+					"start": 14,
+					"end": 71,
+					"body": [
+						{
+							"type": "VariableDeclaration",
+							"start": 17,
+							"end": 33,
+							"declarations": [
+								{
+									"type": "VariableDeclarator",
+									"start": 23,
+									"end": 32,
+									"defines": [
+										1
+									],
+									"id": {
+										"type": "Identifier",
+										"start": 23,
+										"end": 24,
+										"declares": 1,
+										"name": "x"
+									},
+									"init": {
+										"type": "YieldExpression",
+										"start": 27,
+										"end": 32,
+										"delegate": false,
+										"argument": null
+									}
+								}
+							],
+							"kind": "const"
+						},
+						{
+							"type": "ExpressionStatement",
+							"start": 35,
+							"end": 43,
+							"expression": {
+								"type": "YieldExpression",
+								"start": 35,
+								"end": 42,
+								"delegate": false,
+								"argument": {
+									"type": "Identifier",
+									"start": 41,
+									"end": 42,
+									"reference": 0,
+									"name": "x"
+								}
+							}
+						},
+						{
+							"type": "ExpressionStatement",
+							"start": 45,
+							"end": 56,
+							"expression": {
+								"type": "YieldExpression",
+								"start": 45,
+								"end": 55,
+								"delegate": true,
+								"argument": {
+									"type": "CallExpression",
+									"start": 52,
+									"end": 55,
+									"callee": {
+										"type": "Identifier",
+										"start": 52,
+										"end": 53,
+										"reference": 1,
+										"name": "g"
+									},
+									"arguments": [],
+									"optional": false
+								}
+							}
+						},
+						{
+							"type": "ExpressionStatement",
+							"start": 58,
+							"end": 69,
+							"expression": {
+								"type": "SequenceExpression",
+								"start": 58,
+								"end": 68,
+								"expressions": [
+									{
+										"type": "YieldExpression",
+										"start": 58,
+										"end": 65,
+										"delegate": false,
+										"argument": {
+											"type": "Identifier",
+											"start": 64,
+											"end": 65,
+											"reference": 2,
+											"name": "a"
+										}
+									},
+									{
+										"type": "Identifier",
+										"start": 67,
+										"end": 68,
+										"reference": 3,
+										"name": "b"
+									}
+								]
+							}
+						}
+					]
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 72,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
 		}
-	}
+	],
+	"bindings": [
+		{
+			"name": "g",
+			"kind": "function",
+			"scope": 0
+		},
+		{
+			"name": "x",
+			"kind": "const",
+			"scope": 1
+		}
+	],
+	"references": [
+		{
+			"scope": 1,
+			"binding": 1,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 1,
+			"binding": 0,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 1,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 1,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
 }

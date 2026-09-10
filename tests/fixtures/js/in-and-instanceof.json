@@ -1,12 +1,275 @@
 {
-	"error": {
-		"code": "for_in_of_initializer",
-		"message": "for-in loop variable declaration may not have an initializer",
-		"pos": 58,
-		"end": 58,
-		"loc": {
-			"line": 4,
-			"column": 5
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 81,
+		"scope": 0,
+		"body": [
+			{
+				"type": "ExpressionStatement",
+				"start": 0,
+				"end": 7,
+				"expression": {
+					"type": "BinaryExpression",
+					"start": 0,
+					"end": 6,
+					"left": {
+						"type": "Identifier",
+						"start": 0,
+						"end": 1,
+						"reference": 0,
+						"name": "a"
+					},
+					"operator": "in",
+					"right": {
+						"type": "Identifier",
+						"start": 5,
+						"end": 6,
+						"reference": 1,
+						"name": "b"
+					}
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 8,
+				"end": 23,
+				"expression": {
+					"type": "BinaryExpression",
+					"start": 8,
+					"end": 22,
+					"left": {
+						"type": "Identifier",
+						"start": 8,
+						"end": 9,
+						"reference": 2,
+						"name": "c"
+					},
+					"operator": "instanceof",
+					"right": {
+						"type": "Identifier",
+						"start": 21,
+						"end": 22,
+						"reference": 3,
+						"name": "d"
+					}
+				}
+			},
+			{
+				"type": "ForInStatement",
+				"start": 24,
+				"end": 52,
+				"scope": 1,
+				"left": {
+					"type": "VariableDeclaration",
+					"start": 29,
+					"end": 36,
+					"declarations": [
+						{
+							"type": "VariableDeclarator",
+							"start": 35,
+							"end": 36,
+							"defines": [
+								0
+							],
+							"id": {
+								"type": "Identifier",
+								"start": 35,
+								"end": 36,
+								"declares": 0,
+								"name": "e"
+							},
+							"init": null
+						}
+					],
+					"kind": "const"
+				},
+				"right": {
+					"type": "BinaryExpression",
+					"start": 41,
+					"end": 47,
+					"left": {
+						"type": "Identifier",
+						"start": 41,
+						"end": 42,
+						"reference": 4,
+						"name": "f"
+					},
+					"operator": "in",
+					"right": {
+						"type": "Identifier",
+						"start": 46,
+						"end": 47,
+						"reference": 5,
+						"name": "g"
+					}
+				},
+				"body": {
+					"type": "BlockStatement",
+					"start": 50,
+					"end": 52,
+					"scope": 2,
+					"body": []
+				}
+			},
+			{
+				"type": "ForStatement",
+				"start": 53,
+				"end": 80,
+				"scope": 3,
+				"init": {
+					"type": "VariableDeclaration",
+					"start": 58,
+					"end": 74,
+					"declarations": [
+						{
+							"type": "VariableDeclarator",
+							"start": 62,
+							"end": 74,
+							"defines": [
+								1
+							],
+							"id": {
+								"type": "Identifier",
+								"start": 62,
+								"end": 63,
+								"declares": 1,
+								"name": "h"
+							},
+							"init": {
+								"type": "BinaryExpression",
+								"start": 67,
+								"end": 73,
+								"left": {
+									"type": "Identifier",
+									"start": 67,
+									"end": 68,
+									"reference": 6,
+									"name": "i"
+								},
+								"operator": "in",
+								"right": {
+									"type": "Identifier",
+									"start": 72,
+									"end": 73,
+									"reference": 7,
+									"name": "j"
+								}
+							}
+						}
+					],
+					"kind": "let"
+				},
+				"test": null,
+				"update": null,
+				"body": {
+					"type": "BlockStatement",
+					"start": 78,
+					"end": 80,
+					"scope": 4,
+					"body": []
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 81,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "for",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 1,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "for",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 3,
+			"topLevelAwait": false
 		}
-	}
+	],
+	"bindings": [
+		{
+			"name": "e",
+			"kind": "const",
+			"scope": 1
+		},
+		{
+			"name": "h",
+			"kind": "let",
+			"scope": 3
+		}
+	],
+	"references": [
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 1,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 1,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 3,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 3,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
 }

@@ -2,7 +2,7 @@
 	"node": {
 		"type": "Program",
 		"start": 0,
-		"end": 437,
+		"end": 589,
 		"scope": 0,
 		"body": [
 			{
@@ -638,11 +638,205 @@
 						"end": 435
 					}
 				}
+			},
+			{
+				"type": "TSTypeAliasDeclaration",
+				"start": 437,
+				"end": 470,
+				"id": {
+					"type": "Identifier",
+					"start": 442,
+					"end": 443,
+					"name": "P"
+				},
+				"typeAnnotation": {
+					"type": "TSTypeQuery",
+					"start": 446,
+					"end": 469,
+					"exprName": {
+						"type": "TSImportType",
+						"start": 453,
+						"end": 469,
+						"argument": {
+							"type": "Literal",
+							"start": 460,
+							"end": 463,
+							"value": "x",
+							"raw": "'x'"
+						},
+						"qualifier": {
+							"type": "Identifier",
+							"start": 465,
+							"end": 466,
+							"name": "y"
+						},
+						"typeArguments": {
+							"type": "TSTypeParameterInstantiation",
+							"start": 466,
+							"end": 469,
+							"params": [
+								{
+									"type": "TSTypeReference",
+									"start": 467,
+									"end": 468,
+									"typeName": {
+										"type": "Identifier",
+										"start": 467,
+										"end": 468,
+										"name": "Z"
+									}
+								}
+							]
+						}
+					}
+				}
+			},
+			{
+				"type": "TSTypeAliasDeclaration",
+				"start": 471,
+				"end": 501,
+				"id": {
+					"type": "Identifier",
+					"start": 476,
+					"end": 477,
+					"name": "Q"
+				},
+				"typeAnnotation": {
+					"type": "TSConstructorType",
+					"start": 480,
+					"end": 500,
+					"abstract": true,
+					"parameters": [],
+					"typeAnnotation": {
+						"type": "TSTypeAnnotation",
+						"start": 496,
+						"end": 500,
+						"typeAnnotation": {
+							"type": "TSTypeReference",
+							"start": 499,
+							"end": 500,
+							"typeName": {
+								"type": "Identifier",
+								"start": 499,
+								"end": 500,
+								"name": "R"
+							}
+						}
+					}
+				}
+			},
+			{
+				"type": "TSTypeAliasDeclaration",
+				"start": 502,
+				"end": 516,
+				"id": {
+					"type": "Identifier",
+					"start": 507,
+					"end": 508,
+					"name": "S"
+				},
+				"typeAnnotation": {
+					"type": "TSThisType",
+					"start": 511,
+					"end": 515
+				}
+			},
+			{
+				"type": "TSTypeAliasDeclaration",
+				"start": 517,
+				"end": 536,
+				"id": {
+					"type": "Identifier",
+					"start": 522,
+					"end": 523,
+					"name": "U"
+				},
+				"typeAnnotation": {
+					"type": "TSIntrinsicKeyword",
+					"start": 526,
+					"end": 535
+				}
+			},
+			{
+				"type": "TSTypeAliasDeclaration",
+				"start": 537,
+				"end": 588,
+				"id": {
+					"type": "Identifier",
+					"start": 542,
+					"end": 543,
+					"name": "V"
+				},
+				"typeAnnotation": {
+					"type": "TSUnionType",
+					"start": 546,
+					"end": 587,
+					"types": [
+						{
+							"type": "TSLiteralType",
+							"start": 546,
+							"end": 548,
+							"literal": {
+								"type": "UnaryExpression",
+								"start": 546,
+								"end": 548,
+								"operator": "-",
+								"prefix": true,
+								"argument": {
+									"type": "Literal",
+									"start": 547,
+									"end": 548,
+									"value": 1,
+									"raw": "1"
+								}
+							}
+						},
+						{
+							"type": "TSLiteralType",
+							"start": 551,
+							"end": 554,
+							"literal": {
+								"type": "Literal",
+								"start": 551,
+								"end": 554,
+								"value": "a",
+								"raw": "'a'"
+							}
+						},
+						{
+							"type": "TSLiteralType",
+							"start": 557,
+							"end": 561,
+							"literal": {
+								"type": "Literal",
+								"start": 557,
+								"end": 561,
+								"value": true,
+								"raw": "true"
+							}
+						},
+						{
+							"type": "TSNullKeyword",
+							"start": 564,
+							"end": 568
+						},
+						{
+							"type": "TSUndefinedKeyword",
+							"start": 571,
+							"end": 580
+						},
+						{
+							"type": "TSVoidKeyword",
+							"start": 583,
+							"end": 587
+						}
+					]
+				}
 			}
 		],
 		"sourceType": "module"
 	},
-	"end": 437,
+	"end": 589,
 	"comments": [],
 	"scopes": [
 		{

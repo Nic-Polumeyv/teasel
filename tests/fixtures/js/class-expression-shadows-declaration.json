@@ -1,0 +1,94 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 25,
+		"scope": 0,
+		"body": [
+			{
+				"type": "ClassDeclaration",
+				"start": 0,
+				"end": 10,
+				"scope": 1,
+				"defines": [
+					0
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 6,
+					"end": 7,
+					"declares": 0,
+					"name": "A"
+				},
+				"superClass": null,
+				"body": {
+					"type": "ClassBody",
+					"start": 8,
+					"end": 10,
+					"body": []
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 11,
+				"end": 24,
+				"expression": {
+					"type": "ClassExpression",
+					"start": 12,
+					"end": 22,
+					"scope": 2,
+					"defines": [
+						1
+					],
+					"id": {
+						"type": "Identifier",
+						"start": 18,
+						"end": 19,
+						"declares": 1,
+						"name": "A"
+					},
+					"superClass": null,
+					"body": {
+						"type": "ClassBody",
+						"start": 20,
+						"end": 22,
+						"body": []
+					}
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 25,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "class",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "class",
+			"parent": 0,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "A",
+			"kind": "class",
+			"scope": 0
+		},
+		{
+			"name": "A",
+			"kind": "class-name",
+			"scope": 2
+		}
+	],
+	"references": []
+}

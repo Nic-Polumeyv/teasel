@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "property_after_instantiation",
+		"message": "Invalid property access after an instantiation expression. You can either wrap the instantiation expression in parentheses, or delete the type arguments.",
+		"pos": 12,
+		"end": 13,
+		"loc": {
+			"line": 1,
+			"column": 12
+		}
+	}
+}
