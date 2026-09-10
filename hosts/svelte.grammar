@@ -1,6 +1,6 @@
 host svelte
 
-document Root  css=style  js=list  fragment=fragment  options=null  comments=comments  instance?=script  module?=script:module
+document Root  css=style  js=list  options=null  comments=comments  module?=script:module  { instance?=script  { fragment=fragment } }
 delimiters { }
 attributes expressions
 autoclose
@@ -42,7 +42,7 @@ directive transition  TransitionDirective  expression?  intro outro
 directive in          TransitionDirective  expression?  intro !outro
 directive out         TransitionDirective  expression?  !intro outro
 directive animate     AnimateDirective     expression?
-directive let         LetDirective         expression?
+directive let         LetDirective         pattern?name  declares
 
 spread  SpreadAttribute  expression
 attach  AttachTag        expression

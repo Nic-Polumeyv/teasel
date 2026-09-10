@@ -15,7 +15,8 @@ use crate::lexer::unicode::{is_id_continue, is_id_start};
 use crate::parser::{Entry as JsEntry, Extension, Options, Parser, Result};
 pub use grammar::Grammar;
 use grammar::{
-	Alternative, BlockRule, Body, DirectiveRule, DirectiveValue, Entry, Form, Item, Match, RootField, TagRule, Unique,
+	Alternative, BlockRule, Body, DirectiveRule, DirectiveValue, DocField, Entry, Form, Item, Match, RootField,
+	TagRule, Unique,
 };
 
 /// Whether the browser closes `current` when `next` opens inside it.
@@ -273,6 +274,8 @@ enum Frame<'a> {
 		shadowroot: bool,
 		/// The element made its subtree verbatim.
 		verbatim: bool,
+		/// The patterns its directives declare in its scope.
+		declared: Vec<NodeId>,
 	},
 	Block {
 		start: u32,
@@ -334,6 +337,8 @@ struct Walker<'a, E: Extension> {
 	keyword: u32,
 	/// How many open elements made their subtree verbatim.
 	verbatim: u32,
+	/// The patterns the directives of the element being read declare.
+	declared: Vec<NodeId>,
 }
 
 /// Parses a document by its grammar: the host's tree with the JavaScript inside it, positions
@@ -367,6 +372,7 @@ pub(crate) fn parse_document<E: Extension>(
 		once: Vec::new(),
 		keyword: 0,
 		verbatim: 0,
+		declared: Vec::new(),
 	};
 	let root = walker.run()?;
 	Ok((walker.ast.take().unwrap(), root))
@@ -506,27 +512,42 @@ impl<'a, E: Extension> Walker<'a, E> {
 		}
 	}
 
-	/// The scope a list of children opens when the grammar says every fragment is one: over
-	/// the field at `index` of the fields about to make a host node.
-	fn fragment_scope(&mut self, fields: &[(&'static str, Value)], index: usize) -> Option<Opens> {
-		if !self.grammar.fragment_scope {
-			return None;
-		}
+	/// The scopes an element opens, over the fields about to make its node: one for what its
+	/// directives declare, over its attributes and children, and one for its children when the
+	/// grammar says every fragment is a scope.
+	fn element_scope(&mut self, fields: &[(&'static str, Value)], declared: &[NodeId]) -> Option<Opens> {
+		let names = &self.grammar.element_fields;
+		let attributes = fields.iter().position(|(f, _)| *f == names.attributes);
+		let children = fields.iter().position(|(f, _)| *f == names.children);
 		let base = self.ast().host_fields.len() as u32;
-		let node = match fields[index].1 {
-			Value::Node(fragment) => Some(fragment),
-			_ => None,
-		};
 		let at = self.ast().host_groups.len() as u32;
-		self.ast().host_groups.push(HostGroup {
-			inside: List::EMPTY,
-			from: base + index as u32,
-			until: base + index as u32 + 1,
-			node,
-		});
-		Some(Opens {
+		let mut count = 0;
+		if let (false, Some(attributes), Some(children)) = (declared.is_empty(), attributes, children) {
+			let inside = self.list(declared);
+			self.ast().host_groups.push(HostGroup {
+				inside,
+				from: base + attributes as u32,
+				until: base + children as u32 + 1,
+				node: None,
+			});
+			count += 1;
+		}
+		if let (true, Some(children)) = (self.grammar.fragment_scope, children) {
+			let node = match fields[children].1 {
+				Value::Node(fragment) => Some(fragment),
+				_ => None,
+			};
+			self.ast().host_groups.push(HostGroup {
+				inside: List::EMPTY,
+				from: base + children as u32,
+				until: base + children as u32 + 1,
+				node,
+			});
+			count += 1;
+		}
+		(count > 0).then_some(Opens {
 			outside: List::EMPTY,
-			groups: (at, 1),
+			groups: (at, count),
 		})
 	}
 
@@ -679,37 +700,90 @@ impl<'a, E: Extension> Walker<'a, E> {
 		};
 		let children = self.children(nodes);
 		let mut fields = Vec::new();
-		for &(field, holds, omit) in &self.grammar.document.fields {
-			let value = match holds {
-				RootField::Fragment => {
-					fields.push((field, children));
-					continue;
+		// (from, until, node) of each scope the document line opens, over the fields it holds
+		let mut scopes: Vec<(usize, usize, Option<NodeId>)> = Vec::new();
+		fn place<E: Extension>(
+			w: &mut Walker<E>,
+			items: &[DocField],
+			fields: &mut Vec<(&'static str, Value)>,
+			scopes: &mut Vec<(usize, usize, Option<NodeId>)>,
+			held: (Value, Option<NodeId>, Option<NodeId>, Option<NodeId>),
+		) {
+			let (children, instance, module, css) = held;
+			for item in items {
+				match item {
+					DocField::Scope(inner) => {
+						let from = fields.len();
+						place(w, inner, fields, scopes, held);
+						let until = fields.len();
+						if until == from {
+							continue;
+						}
+						// the scope belongs to the fragment it starts with, or to a script's program
+						let node = match fields[from].1 {
+							Value::Node(id) if matches!(children, Value::Node(fragment) if fragment == id) => Some(id),
+							Value::Node(id) if w.host_type(id) == "Script" => match w.field_of(id, "content") {
+								Some(Value::Node(program)) => Some(program),
+								_ => None,
+							},
+							_ => None,
+						};
+						scopes.push((from, until, node));
+					}
+					&DocField::Field(field, holds, omit) => {
+						let value = match holds {
+							RootField::Fragment => {
+								fields.push((field, children));
+								continue;
+							}
+							RootField::Script { module: false } => instance,
+							RootField::Script { module: true } => module,
+							RootField::Style => css,
+							RootField::Comments => {
+								fields.push((field, Value::Comments));
+								continue;
+							}
+							RootField::EmptyList => {
+								fields.push((field, Value::Nodes(List::EMPTY)));
+								continue;
+							}
+							RootField::Null => {
+								fields.push((field, Value::Null));
+								continue;
+							}
+						};
+						match value {
+							Some(node) => fields.push((field, Value::Node(node))),
+							None if !omit => fields.push((field, Value::Null)),
+							None => {}
+						}
+					}
 				}
-				RootField::Script { module: false } => instance,
-				RootField::Script { module: true } => module,
-				RootField::Style => css,
-				RootField::Comments => {
-					fields.push((field, Value::Comments));
-					continue;
-				}
-				RootField::EmptyList => {
-					fields.push((field, Value::Nodes(List::EMPTY)));
-					continue;
-				}
-				RootField::Null => {
-					fields.push((field, Value::Null));
-					continue;
-				}
-			};
-			match value {
-				Some(node) => fields.push((field, Value::Node(node))),
-				None if !omit => fields.push((field, Value::Null)),
-				None => {}
 			}
 		}
+		let document = self.grammar.document.fields.clone();
+		place(
+			self,
+			&document,
+			&mut fields,
+			&mut scopes,
+			(children, instance, module, css),
+		);
 		let full = self.full;
-		let fragment_at = fields.iter().position(|(_, value)| *value == children);
-		let scope = fragment_at.and_then(|index| self.fragment_scope(&fields, index));
+		let base = self.ast().host_fields.len() as u32;
+		let at = self.ast().host_groups.len() as u32;
+		for &(from, until, node) in &scopes {
+			self.ast().host_groups.push(HostGroup {
+				inside: List::EMPTY,
+				from: base + from as u32,
+				until: base + until as u32,
+				node,
+			});
+		}
+		let scope = (!scopes.is_empty()).then_some(Opens {
+			outside: List::EMPTY,
+			groups: (at, scopes.len() as u32),
+		});
 		Ok(self.host(self.grammar.document.ty, 0, full, fields, scope, true))
 	}
 
@@ -842,6 +916,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let mut attributes = Vec::new();
 		let mut seen: Vec<(&'static str, String)> = Vec::new();
 		let mut shadowroot = false;
+		self.declared.clear();
 		loop {
 			let attribute = if script.is_some() || style.is_some() || self.verbatim > 0 {
 				self.static_attribute()?
@@ -857,6 +932,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 					attributes.clear();
 					seen.clear();
 					shadowroot = false;
+					self.declared.clear();
 					continue;
 				}
 				if kind == "Attribute" && key == "shadowrootmode" && ty == plain {
@@ -875,6 +951,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			self.space();
 		}
 		let verbatim_here = self.verbatim > verbatim_before;
+		let declared = std::mem::take(&mut self.declared);
 		let mut fields = Vec::new();
 		if let Some((field, text)) = rule.this {
 			let Some(position) = attributes.iter().position(|&id| self.attribute_named(id, "this")) else {
@@ -991,7 +1068,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			fields.push((names.attributes, Value::Nodes(attributes)));
 			let children = w.children(nodes);
 			fields.push((names.children, children));
-			let scope = w.fragment_scope(&fields, fields.len() - 1);
+			let scope = w.element_scope(&fields, &declared);
 			let node = w.host(ty, start, end, fields, scope, true);
 			w.append(node);
 			if verbatim_here {
@@ -1004,7 +1081,11 @@ impl<'a, E: Extension> Walker<'a, E> {
 			return Ok(());
 		}
 		if rule.rcdata {
-			let nodes = self.sequence(|w| closing_tag(w.rest(), name).is_some(), "rich text")?;
+			let nodes = self.sequence(
+				|w| closing_tag(w.rest(), name).is_some(),
+				"rich text",
+				JsEntry::Expression,
+			)?;
 			self.at += closing_tag(self.rest(), name).unwrap() as u32;
 			let end = self.at;
 			finish(self, fields, nodes, end);
@@ -1049,6 +1130,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			nodes: Vec::new(),
 			shadowroot,
 			verbatim: verbatim_here,
+			declared,
 		});
 		Ok(())
 	}
@@ -1099,6 +1181,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			mut fields,
 			nodes,
 			verbatim,
+			declared,
 			..
 		}) = self.frames.pop()
 		else {
@@ -1109,7 +1192,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		fields.push((names.attributes, Value::Nodes(attributes)));
 		let children = self.children(nodes);
 		fields.push((names.children, children));
-		let scope = self.fragment_scope(&fields, fields.len() - 1);
+		let scope = self.element_scope(&fields, &declared);
 		let node = self.host(ty, start, end, fields, scope, true);
 		self.append(node);
 		if verbatim {
@@ -1429,6 +1512,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			};
 			fields.push((field, value));
 		}
+		let declares = rule.declares.as_deref();
 		match &rule.value {
 			DirectiveValue::Value => {
 				let value = if has_value {
@@ -1444,9 +1528,18 @@ impl<'a, E: Extension> Walker<'a, E> {
 			DirectiveValue::Expression {
 				optional,
 				name: own_name,
+			}
+			| DirectiveValue::Pattern {
+				optional,
+				name: own_name,
 			} => {
+				let entry = if matches!(rule.value, DirectiveValue::Pattern { .. }) {
+					JsEntry::Pattern
+				} else {
+					JsEntry::Expression
+				};
 				let value = if has_value {
-					self.plain_value()?
+					self.plain_value_as(entry)?
 				} else {
 					Value::Bool(true)
 				};
@@ -1481,6 +1574,9 @@ impl<'a, E: Extension> Walker<'a, E> {
 					None if *optional => Value::Null,
 					None => return fail(start, end, Code::Expected, Some("a value")),
 				};
+				if let (Some([]), Value::Node(pattern)) = (declares, expression) {
+					self.declared.push(pattern);
+				}
 				fields.push(("expression", expression));
 			}
 			DirectiveValue::Form(form) => {
@@ -1514,6 +1610,21 @@ impl<'a, E: Extension> Walker<'a, E> {
 						read.fields.push((field, Value::Null));
 					}
 				}
+				if let Some(names) = declares {
+					for &(field, value) in &read.fields {
+						if !names.contains(&field) {
+							continue;
+						}
+						match value {
+							Value::Node(pattern) => self.declared.push(pattern),
+							Value::Nodes(list) => {
+								let patterns: Vec<NodeId> = self.tree().list(list).iter().flatten().copied().collect();
+								self.declared.extend(patterns);
+							}
+							_ => {}
+						}
+					}
+				}
 				fields.extend(read.fields);
 			}
 		}
@@ -1544,6 +1655,11 @@ impl<'a, E: Extension> Walker<'a, E> {
 
 	/// An attribute value as the grammar reads one: text with expressions, or text.
 	fn plain_value(&mut self) -> Result<Value> {
+		self.plain_value_as(JsEntry::Expression)
+	}
+
+	/// The same, its expressions read as `entry`.
+	fn plain_value_as(&mut self, entry: JsEntry) -> Result<Value> {
 		if !self.grammar.attribute_expressions {
 			return self.text_value();
 		}
@@ -1555,7 +1671,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			let list = self.list(&[text]);
 			return Ok(Value::Nodes(list));
 		}
-		self.attribute_value()
+		self.attribute_value(entry)
 	}
 
 	/// The span of the attribute value at the cursor, quoted or bare, and where the cursor goes
@@ -1584,7 +1700,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 	}
 
 	/// A quoted or bare attribute value: text with expressions, or one expression on its own.
-	fn attribute_value(&mut self) -> Result<Value> {
+	fn attribute_value(&mut self, entry: JsEntry) -> Result<Value> {
 		let quote = self.char().filter(|c| matches!(c, '"' | '\''));
 		if let Some(q) = quote {
 			self.at += 1;
@@ -1597,7 +1713,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			}
 		}
 		let chunks = match quote {
-			Some(q) => self.sequence(move |w| w.char() == Some(q), "an attribute value")?,
+			Some(q) => self.sequence(move |w| w.char() == Some(q), "an attribute value", entry)?,
 			None => self.sequence(
 				|w| {
 					w.matches("/>")
@@ -1605,6 +1721,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 							.is_none_or(|c| is_space(c) || matches!(c, '"' | '\'' | '=' | '<' | '>' | '`'))
 				},
 				"an attribute value",
+				entry,
 			)?,
 		};
 		if chunks.is_empty() && quote.is_none() {
@@ -1622,7 +1739,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 	}
 
 	/// Text and expression chunks up to where `done` says.
-	fn sequence(&mut self, done: impl Fn(&Self) -> bool, place: &str) -> Result<Vec<NodeId>> {
+	fn sequence(&mut self, done: impl Fn(&Self) -> bool, place: &str, entry: JsEntry) -> Result<Vec<NodeId>> {
 		let (open, close) = self.grammar.delimiters;
 		let mut chunks = Vec::new();
 		let mut chunk_start = self.at;
@@ -1647,7 +1764,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 				}
 				self.flush_text(chunk_start, start, &mut chunks);
 				self.space();
-				let expression = self.expression("")?;
+				let expression = self.js(entry, "")?[0];
 				self.space();
 				self.expect(close)?;
 				let tag = self.expression_tag(start, self.at, expression)?;

@@ -249,7 +249,9 @@ for (const { Source, scopeOf, bindingOf, parentOf } of [node, wasm]) {
 	assert.equal(scopeOf(each.body).node, each.body);
 	assert.equal(bindingOf(tag.expression).scope, scopeOf(each.body));
 	assert.equal(scopeOf(each.body).parent, scopeOf(root.fragment));
-	assert.equal(scopeOf(root.fragment).parent, scopeOf(root));
+	// the template sees the instance script, which sees the module script, which is the root's
+	assert.equal(scopeOf(root.fragment).parent, scopeOf(root.instance.content));
+	assert.equal(scopeOf(root.instance.content).parent, scopeOf(root));
 	assert.equal(scopeOf(each.fallback).parent, scopeOf(root.fragment));
 	assert.throws(() => new Source('x', { host: 'element div' }), /grammar line 1/);
 	assert.throws(() => new Source('<div>', { host: grammar }).parse(), { code: 'unclosed', pos: 0 });

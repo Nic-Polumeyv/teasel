@@ -23,7 +23,7 @@ shorthand :  bind
 shorthand @  on
 shorthand #  slot
 shorthand .  bind  .prop
-directive for   Directive  [ ( [ value?=pattern ] [ , [ key?=pattern ] [ , [ index?=pattern ] ] ] ) | [ value?=pattern ] [ , [ key?=pattern ] [ , [ index?=pattern ] ] ] ] { in | of } source=expression
+directive for   Directive  [ ( [ value?=pattern ] [ , [ key?=pattern ] [ , [ index?=pattern ] ] ] ) | [ value?=pattern ] [ , [ key?=pattern ] [ , [ index?=pattern ] ] ] ] { in | of } source=expression  declares value key index
 directive slot  Directive  props?=pattern
 directive on    Directive  handler?=code
 directive *     Directive  exp?=expression

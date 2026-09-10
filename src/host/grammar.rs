@@ -139,6 +139,8 @@ pub enum DirectiveValue {
 		/// Without a value, the directive's own argument is the expression: `bind:value`.
 		name: bool,
 	},
+	/// The one pattern of the attribute value, `let:item={{ id }}`.
+	Pattern { optional: bool, name: bool },
 	/// The attribute value as it is, text and expressions.
 	Value,
 	/// The attribute value read by a form, `v-for="item in items"`.
@@ -162,6 +164,9 @@ pub struct DirectiveRule {
 	pub value: DirectiveValue,
 	pub flags: Vec<(&'static str, bool)>,
 	pub unique: Unique,
+	/// What the directive declares in the scope of its element: the fields of its form, or,
+	/// with none named, its value.
+	pub declares: Option<Vec<&'static str>>,
 }
 
 #[derive(Clone, Debug)]
@@ -203,11 +208,18 @@ pub enum RootField {
 	Null,
 }
 
+/// A field of the document's root, or a scope around fields: `{ instance?=script { fragment=fragment } }`.
+#[derive(Clone, Debug)]
+pub enum DocField {
+	/// A field, what it holds, and whether it is left out rather than null when there is nothing.
+	Field(&'static str, RootField, bool),
+	Scope(Vec<DocField>),
+}
+
 #[derive(Clone, Debug)]
 pub struct DocumentRule {
 	pub ty: &'static str,
-	/// Each field, what it holds, and whether it is left out rather than null when there is nothing.
-	pub fields: Vec<(&'static str, RootField, bool)>,
+	pub fields: Vec<DocField>,
 }
 
 /// The fields of every element node.
@@ -287,6 +299,48 @@ pub fn component_name(name: &str) -> bool {
 	let mut parts = name.split('.');
 	parts.next().is_some_and(|part| part.chars().all(is_id_continue))
 		&& parts.all(|part| !part.is_empty() && part.chars().all(is_id_continue))
+}
+
+/// The fields of a document line from `at`, a `{` opening a scope of them up to its `}`.
+fn doc_fields(tokens: &[String], at: &mut usize) -> Result<Vec<DocField>, String> {
+	let mut fields = Vec::new();
+	while *at < tokens.len() {
+		let token = tokens[*at].as_str();
+		match token {
+			"{" => {
+				*at += 1;
+				let inner = doc_fields(tokens, at)?;
+				if tokens.get(*at).map(String::as_str) != Some("}") {
+					return Err("a scope of the document is not closed".into());
+				}
+				*at += 1;
+				fields.push(DocField::Scope(inner));
+			}
+			"}" => break,
+			_ => {
+				let (field, holds) = token
+					.split_once('=')
+					.ok_or_else(|| format!("unexpected {token} on the document"))?;
+				let (field, omit) = match field.strip_suffix('?') {
+					Some(field) => (field, true),
+					None => (field, false),
+				};
+				let holds = match holds {
+					"fragment" => RootField::Fragment,
+					"script" => RootField::Script { module: false },
+					"script:module" => RootField::Script { module: true },
+					"style" => RootField::Style,
+					"comments" => RootField::Comments,
+					"list" => RootField::EmptyList,
+					"null" => RootField::Null,
+					other => return Err(format!("the document cannot hold {other}")),
+				};
+				fields.push(DocField::Field(keep(field), holds, omit));
+				*at += 1;
+			}
+		}
+	}
+	Ok(fields)
 }
 
 fn tokens(line: &str) -> Vec<String> {
@@ -463,7 +517,7 @@ impl Grammar {
 			name: "",
 			document: DocumentRule {
 				ty: "Document",
-				fields: vec![("children", RootField::Fragment, false)],
+				fields: vec![DocField::Field("children", RootField::Fragment, false)],
 			},
 			delimiters: ("{", "}"),
 			attribute_expressions: false,
@@ -568,26 +622,10 @@ impl Grammar {
 		match head {
 			"host" => self.name = keep(word(1)?),
 			"document" => {
-				let mut fields = Vec::new();
-				for token in &tokens[2..] {
-					let (field, holds) = token
-						.split_once('=')
-						.ok_or_else(|| format!("unexpected {token} on the document"))?;
-					let (field, omit) = match field.strip_suffix('?') {
-						Some(field) => (field, true),
-						None => (field, false),
-					};
-					let holds = match holds {
-						"fragment" => RootField::Fragment,
-						"script" => RootField::Script { module: false },
-						"script:module" => RootField::Script { module: true },
-						"style" => RootField::Style,
-						"comments" => RootField::Comments,
-						"list" => RootField::EmptyList,
-						"null" => RootField::Null,
-						other => return Err(format!("the document cannot hold {other}")),
-					};
-					fields.push((keep(field), holds, omit));
+				let mut at = 2;
+				let fields = doc_fields(tokens, &mut at)?;
+				if at < tokens.len() {
+					return Err(format!("unexpected {} on the document", tokens[at]));
 				}
 				self.document = DocumentRule {
 					ty: keep(word(1)?),
@@ -759,13 +797,23 @@ impl Grammar {
 				};
 				let mut flags = Vec::new();
 				let mut unique = Unique::No;
-				let mut flag = |token: &str| match token {
-					"unique" => unique = Unique::Kind,
-					"unique:attribute" => unique = Unique::Attribute,
-					_ => match token.strip_prefix('!') {
-						Some(name) => flags.push((keep(name), false)),
-						None => flags.push((keep(token), true)),
-					},
+				let mut declares = None;
+				// the trailing words: flags, then what the directive declares
+				let mut trailing = |tokens: &[String]| {
+					for (i, token) in tokens.iter().enumerate() {
+						match token.as_str() {
+							"declares" => {
+								declares = Some(tokens[i + 1..].iter().map(|name| keep(name)).collect());
+								break;
+							}
+							"unique" => unique = Unique::Kind,
+							"unique:attribute" => unique = Unique::Attribute,
+							token => match token.strip_prefix('!') {
+								Some(name) => flags.push((keep(name), false)),
+								None => flags.push((keep(token), true)),
+							},
+						}
+					}
 				};
 				let value = match word(3)? {
 					"expression" => DirectiveValue::Expression {
@@ -777,6 +825,18 @@ impl Grammar {
 						name: false,
 					},
 					"expression?name" => DirectiveValue::Expression {
+						optional: true,
+						name: true,
+					},
+					"pattern" => DirectiveValue::Pattern {
+						optional: false,
+						name: false,
+					},
+					"pattern?" => DirectiveValue::Pattern {
+						optional: true,
+						name: false,
+					},
+					"pattern?name" => DirectiveValue::Pattern {
 						optional: true,
 						name: true,
 					},
@@ -793,16 +853,12 @@ impl Grammar {
 							at: 0,
 						};
 						let form = reader.form()?;
-						for token in &tokens[end..] {
-							flag(token);
-						}
+						trailing(&tokens[end..]);
 						DirectiveValue::Form(form)
 					}
 				};
 				if !matches!(value, DirectiveValue::Form(_)) {
-					for token in &tokens[4..] {
-						flag(token);
-					}
+					trailing(&tokens[4..]);
 				}
 				self.directives.push(DirectiveRule {
 					name,
@@ -810,6 +866,7 @@ impl Grammar {
 					value,
 					flags,
 					unique,
+					declares,
 				});
 			}
 			"spread" => self.spread = Some(keep(word(1)?)),
@@ -891,10 +948,10 @@ mod tests {
 		let grammar = Grammar::read(include_str!("../../hosts/svelte.grammar")).unwrap();
 		assert_eq!(grammar.name, "svelte");
 		assert_eq!(grammar.document.ty, "Root");
-		assert_eq!(
-			grammar.document.fields[5],
-			("instance", RootField::Script { module: false }, true)
+		assert!(
+			matches!(&grammar.document.fields[5], DocField::Scope(inner) if matches!(inner[0], DocField::Field("instance", RootField::Script { module: false }, true)))
 		);
+		assert_eq!(grammar.directive("let").unwrap().declares, Some(vec![]));
 		assert_eq!(grammar.fragment, Some(("Fragment", "nodes")));
 		assert!(grammar.fragment_scope);
 		assert!(grammar.attribute_expressions && grammar.autoclose && grammar.trim);
@@ -956,6 +1013,7 @@ mod tests {
 		};
 		assert!(matches!(form.items[1], Item::Group { required: true, .. }));
 		assert_eq!(grammar.directive("anything").unwrap().name, Match::Any);
+		assert_eq!(for_.declares, Some(vec!["value", "key", "index"]));
 		assert_eq!(grammar.verbatim, Some("v-pre"));
 	}
 }

@@ -69,6 +69,22 @@ function known(source, error) {
 	return /<svelte:element[^>]*\sthis="[^"{]*\{/.test(source) && /an expression as this/.test(error.message);
 }
 
+function pattern(node) {
+	if (!node || typeof node !== 'object') return node;
+	switch (node.type) {
+		case 'ObjectExpression':
+			return { ...node, type: 'ObjectPattern', properties: node.properties.map((p) => (p.type === 'Property' ? { ...p, value: pattern(p.value) } : { ...p, type: 'RestElement' })) };
+		case 'ArrayExpression':
+			return { ...node, type: 'ArrayPattern', elements: node.elements.map(pattern) };
+		case 'AssignmentExpression':
+			return { type: 'AssignmentPattern', start: node.start, end: node.end, left: pattern(node.left), right: node.right };
+		case 'SpreadElement':
+			return { ...node, type: 'RestElement', argument: pattern(node.argument) };
+		default:
+			return node;
+	}
+}
+
 function replacer(key, value) {
 	if (typeof value === 'bigint' || value instanceof RegExp) return null;
 	return value;
@@ -92,6 +108,18 @@ function tree(ast, ours, ts, source) {
 			raw.options = read_options(node);
 		}
 	}
+	// `let:x` declares x: Svelte leaves the expression null and makes up an identifier for its
+	// scopes, teasel gives the identifier; a destructuring there is a pattern, which Svelte reads
+	// as an object or array expression
+	(function lets(node) {
+		if (Array.isArray(node)) return node.forEach(lets);
+		if (!node || typeof node !== 'object') return;
+		if (node.type === 'LetDirective') {
+			if (ours && node.expression?.type === 'Identifier' && node.expression.name === node.name && node.expression.start === node.start + 4) node.expression = null;
+			if (!ours) node.expression = pattern(node.expression);
+		}
+		for (const v of Object.values(node)) lets(v);
+	})(raw);
 	const out = normal(raw, ours ? null : source);
 	// the comment before a style element is the fragment's node, which the tree lists once
 	if (out.css) out.css.content.comment = null;

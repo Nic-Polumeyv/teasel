@@ -388,6 +388,8 @@ pub struct Binder<'a, X> {
 	out: Scopes,
 	stack: Vec<ScopeId>,
 	open: Vec<Open>,
+	/// The patterns the open host scopes declare, which their fields do not reference.
+	host_declared: Vec<List>,
 	/// The node whose pattern is being declared, for `Binding::declaration`.
 	declaring: Option<NodeId>,
 	/// What the target being visited is assigned, for `Reference::write_expr`.
@@ -421,6 +423,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 			out,
 			stack: Vec::new(),
 			open: Vec::new(),
+			host_declared: Vec::new(),
 			declaring: None,
 			writing: None,
 			compound: false,
@@ -761,39 +764,52 @@ impl<'a, X: Bind> Binder<'a, X> {
 		let (from, len) = host.fields;
 		let Some(opens) = host.scope else {
 			for i in from..from + len {
-				self.host_field(i, None);
+				self.host_field(i);
 			}
 			return;
 		};
 		for &pattern in self.ast.list(opens.outside).iter().flatten() {
 			self.visit(pattern, Mode::Declare(BindingKind::Let));
 		}
-		let groups = self.ast.host_groups[opens.groups.0 as usize..(opens.groups.0 + opens.groups.1) as usize].to_vec();
-		let mut i = from;
-		for group in groups {
-			while i < group.from {
-				self.host_field(i, Some(opens.outside));
-				i += 1;
+		let depth = self.host_declared.len();
+		self.host_declared.push(opens.outside);
+		// groups nest: the outer one opens first at a field and closes last
+		let mut groups =
+			self.ast.host_groups[opens.groups.0 as usize..(opens.groups.0 + opens.groups.1) as usize].to_vec();
+		groups.sort_by_key(|group| (group.from, std::cmp::Reverse(group.until)));
+		let mut next = 0;
+		let mut open: Vec<usize> = Vec::new();
+		for i in from..from + len {
+			while next < groups.len() && groups[next].from == i {
+				let group = groups[next];
+				self.enter(ScopeKind::Block, Some(group.node.unwrap_or(id)), false);
+				for &pattern in self.ast.list(group.inside).iter().flatten() {
+					self.visit(pattern, Mode::Declare(BindingKind::Let));
+				}
+				self.host_declared.push(group.inside);
+				open.push(next);
+				next += 1;
 			}
-			self.enter(ScopeKind::Block, Some(group.node.unwrap_or(id)), false);
-			for &pattern in self.ast.list(group.inside).iter().flatten() {
-				self.visit(pattern, Mode::Declare(BindingKind::Let));
+			self.host_field(i);
+			while let Some(&g) = open.last() {
+				if groups[g].until != i + 1 {
+					break;
+				}
+				self.exit();
+				open.pop();
+				self.host_declared.pop();
 			}
-			while i < group.until {
-				self.host_field(i, Some(group.inside));
-				i += 1;
-			}
-			self.exit();
 		}
-		while i < from + len {
-			self.host_field(i, Some(opens.outside));
-			i += 1;
-		}
+		self.host_declared.truncate(depth);
 	}
 
-	/// A host node's field as an expression, its declared patterns left to their scope.
-	fn host_field(&mut self, i: u32, declared: Option<List>) {
-		let declared = |b: &Self, child: NodeId| declared.is_some_and(|list| b.ast.list(list).contains(&Some(child)));
+	/// A host node's field as an expression, the patterns the open host scopes declare left to them.
+	fn host_field(&mut self, i: u32) {
+		let declared = |b: &Self, child: NodeId| {
+			b.host_declared
+				.iter()
+				.any(|list| b.ast.list(*list).contains(&Some(child)))
+		};
 		match self.ast.host_fields[i as usize].1 {
 			crate::ast::Value::Node(child) if !declared(self, child) => self.visit(child, Mode::Expression),
 			crate::ast::Value::Nodes(children) => {
