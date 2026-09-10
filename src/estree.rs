@@ -1,7 +1,7 @@
 //! Serializes an `Ast` to ESTree, matching acorn's output shape: as JSON text, or as a token
 //! stream a binding hands to JavaScript without a text round trip.
 
-use crate::ast::{Ast, Class, Function, List, MethodKind, NodeId, NodeKind, PropertyKind};
+use crate::ast::{Ast, Class, Function, List, MethodKind, NodeId, NodeKind, PropertyKind, Value};
 use crate::interner::{FastMap, Interner, StrId};
 use crate::parser::Entry;
 use crate::scopes::Role;
@@ -70,6 +70,14 @@ pub trait Sink {
 		self.list();
 		for &value in values {
 			self.int(value);
+		}
+		self.end();
+	}
+	/// A list of the tree's interned strings.
+	fn strs(&mut self, strings: &[(StrId, &str)]) {
+		self.list();
+		for &(id, value) in strings {
+			self.interned(id, value);
 		}
 		self.end();
 	}
@@ -225,6 +233,8 @@ pub mod kind {
 	pub const NODES: u32 = 8;
 	/// A count, then that many ints.
 	pub const INTS: u32 = 9;
+	/// A count, then that many indexes into the answer's strings.
+	pub const STRS: u32 = 10;
 
 	/// In a node's place.
 	pub const NULL: u32 = 0;
@@ -606,6 +616,12 @@ impl Sink for Binary {
 		}
 		self.tables += 1;
 		self.seq.push(0);
+	}
+
+	fn strs(&mut self, strings: &[(StrId, &str)]) {
+		self.value(kind::STRS);
+		self.words.push(strings.len() as u32);
+		self.words.extend(strings.iter().map(|(id, _)| id.0));
 	}
 
 	fn ints(&mut self, values: &[u32]) {
@@ -1666,6 +1682,60 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 			}
 			// the extension closes its own node, since erasing may put another in its place
 			Extension(index) => return self.ast.extension.node(self, id, index),
+			Host(index) => {
+				let host = self.ast.hosts[index as usize];
+				if host.ty.is_empty() {
+					// an object of the host's without a type, positions and all
+					let node = self.ast.node(id);
+					self.sink.object();
+					self.span(node.start, node.end);
+				} else if host.span {
+					self.begin(host.ty, id);
+				} else {
+					self.sink.begin(host.ty);
+				}
+				let (from, len) = host.fields;
+				for i in from..from + len {
+					let (key, value) = self.ast.host_fields[i as usize];
+					match value {
+						Value::Node(child) => self.field(key, child),
+						Value::Nodes(children) => self.list(key, children),
+						Value::Str(string) => self.interned(key, string),
+						Value::Name(child) => {
+							let NodeKind::Identifier { name } = self.ast.node(child).kind else {
+								unreachable!()
+							};
+							self.interned(key, name);
+						}
+						Value::Slice(start, end) => {
+							self.key(key);
+							self.slice(start, end);
+						}
+						Value::Strs(start, len) => {
+							let strings: Vec<(StrId, &str)> = self.ast.host_strings[start as usize..(start + len) as usize]
+								.iter()
+								.map(|&string| (string, self.ast.str(string)))
+								.collect();
+							self.key(key);
+							self.sink.strs(&strings);
+						}
+						Value::Bool(value) => self.bool(key, value),
+						Value::Int(value) => {
+							self.key(key);
+							self.sink.int(value);
+						}
+						Value::Null => {
+							self.key(key);
+							self.sink.null();
+						}
+						Value::Comments => {
+							let all: Vec<u32> = (0..self.ast.comments.len() as u32).collect();
+							self.key(key);
+							self.comment_list(&all);
+						}
+					}
+				}
+			}
 		}
 		self.end();
 	}

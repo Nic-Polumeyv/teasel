@@ -218,6 +218,11 @@ impl<T: Packed> NodeTable<T> {
 		NodeTable(vec![0; nodes], std::marker::PhantomData)
 	}
 
+	fn reset(&mut self, nodes: usize) {
+		self.0.clear();
+		self.0.resize(nodes, 0);
+	}
+
 	pub fn get(&self, id: NodeId) -> Option<T> {
 		match self.0.get(id.0 as usize) {
 			Some(&word) if word != 0 => Some(T::unpack(word - 1)),
@@ -260,6 +265,17 @@ pub struct Scopes {
 }
 
 impl Scopes {
+	/// Empties the tables for a tree of `nodes` nodes, keeping the room.
+	pub fn clear(&mut self, nodes: usize) {
+		self.scopes.clear();
+		self.bindings.clear();
+		self.references.clear();
+		self.of_node.reset(nodes);
+		self.of_identifier.reset(nodes);
+		self.declared_by.clear();
+		self.writes_of.clear();
+	}
+
 	pub fn scope(&self, id: ScopeId) -> &Scope {
 		&self.scopes[id as usize]
 	}
@@ -305,7 +321,8 @@ pub enum Mode {
 
 /// Runs an analysis under one outermost scope and puts the answer on the tree.
 fn analyze_with<X: Bind>(ast: &mut Ast<X>, kind: ScopeKind, root: Option<NodeId>, f: impl FnOnce(&mut Binder<X>)) {
-	let mut binder = Binder::new(ast);
+	let reused = ast.scopes.take();
+	let mut binder = Binder::new(ast, reused);
 	binder.enter(kind, root, false);
 	f(&mut binder);
 	binder.exit();
@@ -330,6 +347,11 @@ pub fn analyze<X: Bind>(ast: &mut Ast<X>, entry: Entry, roots: List) {
 	let root = ast.list(roots).first().copied().flatten();
 	match entry {
 		Entry::Program => {
+			if let NodeKind::Host(_) = ast.node(root.unwrap()).kind {
+				return analyze_with(ast, ScopeKind::Module, root, |b| {
+					b.visit(root.unwrap(), Mode::Expression)
+				});
+			}
 			let NodeKind::Program { body, module } = ast.node(root.unwrap()).kind else {
 				unreachable!()
 			};
@@ -382,14 +404,21 @@ pub struct Binder<'a, X> {
 }
 
 impl<'a, X: Bind> Binder<'a, X> {
-	fn new(ast: &'a Ast<X>) -> Self {
-		Binder {
-			ast,
-			out: Scopes {
+	fn new(ast: &'a Ast<X>, reused: Option<Scopes>) -> Self {
+		let out = match reused {
+			Some(mut scopes) => {
+				scopes.clear(ast.nodes.len());
+				scopes
+			}
+			None => Scopes {
 				of_node: NodeTable::sized(ast.nodes.len()),
 				of_identifier: NodeTable::sized(ast.nodes.len()),
 				..Scopes::default()
 			},
+		};
+		Binder {
+			ast,
+			out,
 			stack: Vec::new(),
 			open: Vec::new(),
 			declaring: None,
@@ -726,12 +755,56 @@ impl<'a, X: Bind> Binder<'a, X> {
 		self.visit_with(id, mode, true);
 	}
 
+	/// A host node: its fields in order, inside the scope it opens from `Opens::from` on.
+	fn host(&mut self, id: NodeId, index: u32) {
+		let host = self.ast.hosts[index as usize];
+		let (from, len) = host.fields;
+		let declared = |b: &Self, child: NodeId| match host.scope {
+			Some(opens) => {
+				b.ast.list(opens.inside).contains(&Some(child)) || b.ast.list(opens.outside).contains(&Some(child))
+			}
+			None => false,
+		};
+		let field = |b: &mut Self, i: u32| match b.ast.host_fields[i as usize].1 {
+			crate::ast::Value::Node(child) if !declared(b, child) => b.visit(child, Mode::Expression),
+			crate::ast::Value::Nodes(children) => {
+				for &child in b.ast.list(children).iter().flatten() {
+					if !declared(b, child) {
+						b.visit(child, Mode::Expression);
+					}
+				}
+			}
+			_ => {}
+		};
+		let Some(opens) = host.scope else {
+			for i in from..from + len {
+				field(self, i);
+			}
+			return;
+		};
+		for &pattern in self.ast.list(opens.outside).iter().flatten() {
+			self.visit(pattern, Mode::Declare(BindingKind::Let));
+		}
+		for i in from..from + opens.from {
+			field(self, i);
+		}
+		self.enter(ScopeKind::Block, Some(id), false);
+		for &pattern in self.ast.list(opens.inside).iter().flatten() {
+			self.visit(pattern, Mode::Declare(BindingKind::Let));
+		}
+		for i in from + opens.from..from + len {
+			field(self, i);
+		}
+		self.exit();
+	}
+
 	fn visit_with(&mut self, id: NodeId, mode: Mode, extras: bool) {
 		use NodeKind::*;
 		if extras {
 			self.ast.extension.bind_extras(self, id);
 		}
 		match self.kind(id) {
+			Host(index) => self.host(id, index),
 			Identifier { .. } => match mode {
 				Mode::Expression => self.reference(id, false, false),
 				Mode::Declare(kind) => self.declare(id, kind),

@@ -34,6 +34,12 @@ macro_rules! codes {
 
 codes! {
 	UnexpectedToken "unexpected_token" => "Unexpected token",
+	Expected "expected" => "Expected {}",
+	Unclosed "unclosed" => "{} is not closed",
+	UnexpectedClose "unexpected_close" => "Unexpected closing {}",
+	InvalidName "invalid_name" => "Invalid name {}",
+	Duplicate "duplicate" => "Duplicate {}",
+	Placement "placement" => "{} is not allowed here",
 	UnexpectedEof "unexpected_eof" => "Unexpected end of input",
 	UnexpectedCharacter "unexpected_character" => "Unexpected character '{}'",
 	UnexpectedKeyword "unexpected_keyword" => "Unexpected keyword '{}'",

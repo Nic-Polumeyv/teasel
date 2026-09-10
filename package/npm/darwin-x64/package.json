@@ -1,0 +1,17 @@
+{
+  "name": "@teasel/parser-darwin-x64",
+  "version": "0.1.0",
+  "cpu": [
+    "x64"
+  ],
+  "main": "teasel.darwin-x64.node",
+  "files": [
+    "teasel.darwin-x64.node"
+  ],
+  "description": "A JavaScript and TypeScript parser in Rust. It answers in ESTree.",
+  "license": "MIT",
+  "repository": "github:Nic-Polumeyv/teasel",
+  "os": [
+    "darwin"
+  ]
+}

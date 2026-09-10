@@ -1,4 +1,20 @@
 use crate::ast::{Ast, List, NodeId, NodeKind, Walk};
+
+/// How many allocations the test binary made, for the bench.
+pub(crate) static ALLOCATIONS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+pub(crate) struct Counting;
+
+unsafe impl std::alloc::GlobalAlloc for Counting {
+	unsafe fn alloc(&self, layout: std::alloc::Layout) -> *mut u8 {
+		ALLOCATIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+		unsafe { std::alloc::System.alloc(layout) }
+	}
+	unsafe fn dealloc(&self, ptr: *mut u8, layout: std::alloc::Layout) {
+		unsafe { std::alloc::System.dealloc(ptr, layout) }
+	}
+}
+
 use crate::{Code, Entry, Options, SyntaxError};
 
 /// One entry of one extension, as `parse_at` reads it.
@@ -785,9 +801,10 @@ fn recovery() {
 		expr("{x.}", "}"),
 		(r#"MemberExpression { object: Identifier { name: "x" }, property: Identifier { name: "" }, computed: false, optional: false }"#.into(), 3, vec!["unexpected_token@3".into()])
 	);
+	// a stop word after `.` is a property name: the host's syntax cannot start there
 	assert_eq!(
 		expr("{obj. as item}", "as"),
-		(r#"MemberExpression { object: Identifier { name: "obj" }, property: Identifier { name: "" }, computed: false, optional: false }"#.into(), 6, vec!["unexpected_token@6".into()])
+		(r#"MemberExpression { object: Identifier { name: "obj" }, property: Identifier { name: "as" }, computed: false, optional: false }"#.into(), 8, vec![])
 	);
 	assert_eq!(
 		expr("{a + }", "}"),
@@ -1029,12 +1046,15 @@ fn phases() {
 	}
 	let best = |name: &str, f: &mut dyn FnMut()| {
 		let mut m = f64::MAX;
+		let mut allocations = 0;
 		for _ in 0..300 {
+			let before = ALLOCATIONS.load(std::sync::atomic::Ordering::Relaxed);
 			let t = std::time::Instant::now();
 			f();
-			m = m.min(t.elapsed().as_secs_f64() * 1e3);
+			m = m.min(t.elapsed().as_secs_f64() * 1e6);
+			allocations = ALLOCATIONS.load(std::sync::atomic::Ordering::Relaxed) - before;
 		}
-		eprintln!("{m:7.3} ms  {name}");
+		eprintln!("{m:9.2} µs  {allocations:4} allocs  {name}");
 	};
 	let mut tokens = 0;
 	let mut reached = 0;

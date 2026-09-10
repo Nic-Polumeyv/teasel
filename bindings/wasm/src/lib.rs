@@ -16,8 +16,9 @@ pub extern "C" fn alloc(len: u32) -> *mut u8 {
 }
 
 /// # Safety
-/// `ptr` and `names` are each `capacity` bytes from `alloc`, `len` of them written: the source
-/// and the option names; both are taken over here.
+/// `ptr`, `names` and `host` are each `capacity` bytes from `alloc`, `len` of them written: the
+/// source, the option names and the host grammar, empty for none; all are taken over here. The
+/// handle is 0 when the grammar cannot be read, the error as JSON at `text_ptr`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn source_new(
 	ptr: *mut u8,
@@ -26,10 +27,23 @@ pub unsafe extern "C" fn source_new(
 	names: *mut u8,
 	names_len: u32,
 	names_capacity: u32,
+	host: *mut u8,
+	host_len: u32,
+	host_capacity: u32,
 ) -> u32 {
 	let source = unsafe { Vec::from_raw_parts(ptr, len as usize, capacity as usize) };
 	let names = unsafe { Vec::from_raw_parts(names, names_len as usize, names_capacity as usize) };
-	let prepared = Prepared::from_bytes(source, Request::from_names(&String::from_utf8_lossy(&names)));
+	let host = unsafe { Vec::from_raw_parts(host, host_len as usize, host_capacity as usize) };
+	let mut prepared = Prepared::from_bytes(source, Request::from_names(&String::from_utf8_lossy(&names)));
+	if !host.is_empty() {
+		prepared = match prepared.host(&String::from_utf8_lossy(&host)) {
+			Ok(prepared) => prepared,
+			Err(message) => {
+				text(teasel::json::error_json(&message, 0));
+				return 0;
+			}
+		};
+	}
 	Box::into_raw(Box::new(prepared)) as u32
 }
 

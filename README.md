@@ -43,7 +43,7 @@ const { node, end } = source.parse('expression', 3, { stopAt: ['as', ','] });
 // end   8
 ```
 
-`stopAt` lists the host's own tokens. One read outside every bracket the parse opened ends the parse, whatever else it could have been: `as` stays the host's, `,` does not start a sequence, `/>` is not a division.
+`stopAt` lists the host's own tokens. One read outside every bracket the parse opened, where the expression could end, ends the parse: `,` does not start a sequence, `/>` is not a division. A `then` after `.` is a property name. A TypeScript `as` is the host's unless another `as` follows the assertion, so `xs as T[] as item` ends after the type.
 
 ## What the options add
 

@@ -81,6 +81,11 @@ pub(crate) trait Extension: Default + Sized {
 
 	// Statements and modules
 
+	/// Whether the current token, one of the host's stop tokens, is one the extension's grammar
+	/// reads after an expression; it then decides where the host's syntax starts.
+	fn reads_stop(p: &Parser<Self>) -> bool {
+		false
+	}
 	/// First look at a statement; `Some` replaces it entirely.
 	fn statement(p: &mut Parser<Self>, context: Context, top_level: bool) -> Result<Option<NodeId>> {
 		Ok(None)
@@ -360,9 +365,10 @@ impl Entry {
 /// a program, or what a host embedding JavaScript in a larger syntax reads at a point of it. A
 /// program reads to `end`, where a hashbang or an HTML comment at `start` is what it would be in
 /// the middle of a file; anything else stops where its grammar ends, or at one of `stop`, the
-/// host's own tokens separated by spaces, read outside every bracket the parse opened. Returns
+/// host's own tokens separated by spaces, read outside every bracket the parse opened where the
+/// expression could end (an extension may read one as its own, see `Extension::reads_stop`). Returns
 /// the tree, its roots (one node, or the patterns of a parameter list) and the offset after
-/// everything the parse consumed.
+/// everything the parse consumed. `reused` is an emptied tree from an earlier parse, its room kept.
 pub(crate) fn parse_at<E: Extension>(
 	src: &str,
 	start: u32,
@@ -370,6 +376,7 @@ pub(crate) fn parse_at<E: Extension>(
 	entry: Entry,
 	options: Options,
 	stop: &str,
+	reused: Option<Ast<E::Data>>,
 ) -> Result<(Ast<E::Data>, List, u32)> {
 	let end = end.unwrap_or(src.len() as u32);
 	let src = &src[..end as usize];
@@ -378,25 +385,13 @@ pub(crate) fn parse_at<E: Extension>(
 	} else {
 		0
 	};
-	let mut parser = Parser::<E>::new(src, start, options, budget, stop)?;
+	let ast = reused.unwrap_or_else(|| Ast::sized(budget));
+	let mut parser = Parser::<E>::new(src, start, options, budget, stop, ast)?;
 	let roots = if entry == Entry::Program {
 		let program = parser.parse_program()?;
 		vec![program]
 	} else {
-		parser.enter_scope(SCOPE_TOP);
-		let result = match entry {
-			Entry::Expression => parser.parse_sequence(ForInit::No, &mut None).map(|id| vec![id]),
-			Entry::Pattern => parser.parse_pattern_root().map(|id| vec![id]),
-			Entry::Params => parser.parse_params_root(),
-			Entry::Statement => {
-				let mut exports = FastSet::default();
-				parser
-					.parse_statement(statement::Context::None, true, Some(&mut exports))
-					.map(|id| vec![id])
-			}
-			Entry::TypeParameters => E::type_parameters(&mut parser).map(|id| vec![id]),
-			Entry::Program => unreachable!(),
-		};
+		let result = parser.read_entry(entry);
 		match result {
 			// under recovery, what was read is skipped and an empty identifier stands where it failed
 			Err(error) if parser.recovering() => {
@@ -521,8 +516,16 @@ pub(crate) struct DestructuringErrors {
 }
 
 impl<'a, E: Extension> Parser<'a, E> {
-	fn new(src: &'a str, offset: u32, options: Options, budget: usize, stop: &'a str) -> Result<Self> {
-		let mut lexer = Lexer::sized(src, budget);
+	pub(crate) fn new(
+		src: &'a str,
+		offset: u32,
+		options: Options,
+		budget: usize,
+		stop: &'a str,
+		mut ast: Ast<E::Data>,
+	) -> Result<Self> {
+		let mut lexer = Lexer::with(src, budget, std::mem::take(&mut ast.strings));
+		lexer.comments = std::mem::take(&mut ast.comments);
 		lexer.set_pos(offset);
 		lexer.stops = stop;
 		lexer.recover = options.error_recovery;
@@ -531,7 +534,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 		lexer.module = options.module;
 		let mut parser = Self {
 			lexer,
-			ast: Ast::sized(budget),
+			ast,
 			ext: E::default(),
 			options,
 			tok: Token::eof(offset),
@@ -554,6 +557,8 @@ impl<'a, E: Extension> Parser<'a, E> {
 		};
 		E::init(&mut parser);
 		parser.lexer.next_token_into(&mut parser.tok)?;
+		// the host's token first: nothing to read, which is the host's to report
+		parser.stop_after_operand();
 		Ok(parser)
 	}
 
@@ -732,6 +737,23 @@ impl<'a, E: Extension> Parser<'a, E> {
 		Ok(())
 	}
 
+	/// Reads one entry other than a program at the current token, in a scope of its own.
+	pub(crate) fn read_entry(&mut self, entry: Entry) -> Result<Vec<NodeId>> {
+		self.enter_scope(SCOPE_TOP);
+		match entry {
+			Entry::Expression => self.parse_sequence(ForInit::No, &mut None).map(|id| vec![id]),
+			Entry::Pattern => self.parse_pattern_root().map(|id| vec![id]),
+			Entry::Params => self.parse_params_root(),
+			Entry::Statement => {
+				let mut exports = FastSet::default();
+				self.parse_statement(statement::Context::None, true, Some(&mut exports))
+					.map(|id| vec![id])
+			}
+			Entry::TypeParameters => E::type_parameters(self).map(|id| vec![id]),
+			Entry::Program => unreachable!(),
+		}
+	}
+
 	/// An assignment target on its own: an identifier or a destructuring pattern, as it would
 	/// appear on the left of `=`.
 	fn parse_pattern_root(&mut self) -> Result<NodeId> {
@@ -843,19 +865,20 @@ impl<'a, E: Extension> Parser<'a, E> {
 
 	/// The offset after the last token read, or after the comments that follow it before the
 	/// next token: where a host embedding JavaScript resumes its own syntax.
-	fn consumed_end(&self) -> u32 {
+	pub(crate) fn consumed_end(&self) -> u32 {
 		match self.lexer.comments.last() {
 			Some(comment) if comment.start >= self.prev_end => comment.end,
 			_ => self.prev_end,
 		}
 	}
 
-	fn finish(self) -> Ast<E::Data> {
+	pub(crate) fn finish(self) -> Ast<E::Data> {
 		let mut ast = self.ast;
 		let mut lexer = self.lexer;
 		ast.comments = std::mem::take(&mut lexer.comments);
 		ast.strings = std::mem::take(&mut lexer.strings);
-		ast.errors = self.errors;
+		let mut errors = self.errors;
+		ast.errors.append(&mut errors);
 		ast.errors.append(&mut lexer.errors);
 		ast.errors.sort_by_key(|error| error.pos);
 		ast
@@ -986,9 +1009,28 @@ impl<'a, E: Extension> Parser<'a, E> {
 
 	pub(crate) fn next_liberal(&mut self) -> Result<()> {
 		self.within_limit()?;
+		let boundary = self.tok.ends_operand();
 		self.prev_end = self.tok.end;
 		self.lexer.next_token_into(&mut self.tok)?;
+		if boundary {
+			self.stop_after_operand();
+		}
 		Ok(())
+	}
+
+	/// Ends the parse when the current token is the host's: one of its stop tokens, after an
+	/// operand, that the grammar does not read as its own.
+	pub(crate) fn stop_after_operand(&mut self) {
+		if self.tok.stop && !E::reads_stop(self) {
+			self.stop_here();
+		}
+	}
+
+	/// Ends the parse at the current token: the host's own syntax starts there.
+	pub(crate) fn stop_here(&mut self) {
+		self.lexer.set_pos(self.tok.start);
+		self.lexer.stopped = true;
+		self.tok = Token::eof(self.tok.start);
 	}
 
 	pub(crate) fn is(&self, kind: TokenKind) -> bool {

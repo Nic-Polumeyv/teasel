@@ -55,11 +55,55 @@ pub struct Node {
 	pub end: u32,
 }
 
+/// A node of a host's grammar: its type and its fields are the grammar's, held by name.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Host {
+	pub ty: &'static str,
+	/// The node's fields, a run of `Ast::host_fields` in source order.
+	pub fields: (u32, u32),
+	/// Whether the node has a span; a fragment has none.
+	pub span: bool,
+	/// The scope the node opens, when it opens one.
+	pub scope: Option<Opens>,
+}
+
+/// A scope a host node opens: the patterns it declares inside, those it declares around
+/// itself, and the first of its fields that sits inside the scope.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Opens {
+	pub inside: List,
+	pub outside: List,
+	pub from: u32,
+}
+
+/// A host node's field.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Value {
+	Node(NodeId),
+	Nodes(List),
+	/// An identifier written as its name alone, which the scope it opens still declares.
+	Name(NodeId),
+	/// An interned string.
+	Str(StrId),
+	/// A slice of the source.
+	Slice(u32, u32),
+	/// Interned strings, a run of `Ast::host_strings`.
+	Strs(u32, u32),
+	Bool(bool),
+	Int(u32),
+	Null,
+	/// Every comment read, as the answer lists them.
+	Comments,
+}
+
 /// `X` is the data an extension attaches to the tree; the plain JavaScript parser attaches none.
 #[derive(Debug, Default)]
 pub struct Ast<X = ()> {
 	pub nodes: Vec<Node>,
 	pub lists: Vec<Option<NodeId>>,
+	pub hosts: Vec<Host>,
+	pub host_fields: Vec<(&'static str, Value)>,
+	pub host_strings: Vec<StrId>,
 	pub strings: Interner,
 	pub comments: Vec<Comment>,
 	/// Comments attached to nodes by `comments::attach`, as indices into `comments`.
@@ -81,12 +125,43 @@ pub struct Attached {
 	pub inner: Vec<u32>,
 }
 
+/// What an extension's data does to be reused for the next parse.
+pub trait Reuse: Default {
+	/// Forgets everything, keeping the room.
+	fn clear(&mut self);
+}
+
+impl Reuse for () {
+	fn clear(&mut self) {}
+}
+
+impl<X: Reuse> Ast<X> {
+	/// Empties the tree for the next parse; the room stays allocated.
+	pub fn clear(&mut self) {
+		self.hosts.clear();
+		self.host_fields.clear();
+		self.host_strings.clear();
+		self.nodes.clear();
+		self.lists.clear();
+		self.strings.clear();
+		self.comments.clear();
+		self.attached.clear();
+		if let Some(scopes) = &mut self.scopes {
+			scopes.clear(0);
+		}
+		self.errors.clear();
+		self.parenthesized.clear();
+		self.extension.clear();
+	}
+}
+
 impl<X: Default> Ast<X> {
 	/// Room for the tree of `bytes` of source: about a node per eight bytes, a list per thirty.
 	pub(crate) fn sized(bytes: usize) -> Self {
 		Ast {
 			nodes: Vec::with_capacity(bytes / 8 + 16),
 			lists: Vec::with_capacity(bytes / 30 + 16),
+			strings: Interner::sized(bytes),
 			..Ast::default()
 		}
 	}
@@ -136,6 +211,18 @@ impl<X> Ast<X> {
 			| EmptyStatement
 			| DebuggerStatement
 			| Extension(_) => {}
+			Host(index) => {
+				let from = out.len();
+				let host = self.hosts[index as usize];
+				for &(_, value) in &self.host_fields[host.fields.0 as usize..(host.fields.0 + host.fields.1) as usize] {
+					match value {
+						Value::Node(child) => out.push(child),
+						Value::Nodes(children) => list(children, out),
+						_ => {}
+					}
+				}
+				out[from..].sort_by_key(|&child| self.nodes[child.0 as usize].start);
+			}
 			TemplateLiteral { quasis, expressions } => {
 				debug_assert_eq!(quasis.len, expressions.len + 1);
 				for (i, quasi) in self.list(quasis).iter().flatten().enumerate() {
@@ -629,6 +716,8 @@ pub enum NodeKind {
 
 	/// A node owned by a parser extension, indexed into its own data.
 	Extension(u32),
+	/// A node of the host's grammar, indexed into `Ast::hosts`.
+	Host(u32),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

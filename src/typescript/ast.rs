@@ -29,6 +29,14 @@ pub struct ExtrasTable {
 
 const NONE: u32 = u32::MAX;
 
+impl crate::ast::Reuse for Data {
+	fn clear(&mut self) {
+		self.nodes.clear();
+		self.extras.slots.clear();
+		self.extras.list.clear();
+	}
+}
+
 impl ExtrasTable {
 	pub fn get(&self, id: NodeId) -> Option<&Extras> {
 		match self.slots.get(id.0 as usize) {

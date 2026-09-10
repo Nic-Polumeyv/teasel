@@ -1,6 +1,14 @@
-import type { Expression, Identifier, Node, Pattern, Program, Statement } from 'estree';
+import type { Expression, Identifier, Node, Pattern, Program, SourceLocation, Statement } from 'estree';
 
 export interface Options {
+	/**
+	 * The grammar of a host language the whole source is a document of: a template language
+	 * with JavaScript inside it. The program entry then answers with the document's root, the
+	 * host's own nodes around the JavaScript ones, in one tree; the other entries read
+	 * JavaScript at an offset as before. TypeScript turns on by what the grammar says of a
+	 * script tag.
+	 */
+	host?: string;
 	/** `script` by default, as in acorn. */
 	sourceType?: 'script' | 'module';
 	/**
@@ -175,21 +183,35 @@ export interface At {
 	end?: number;
 	/**
 	 * The host's own tokens, words or punctuators, that follow what is parsed. One read outside
-	 * every bracket the parse opened ends it, whatever else it could have been: `as` before a
-	 * template loop's item is never TypeScript's assertion nor a property name after `.`, `,`
-	 * ends an expression before a sequence would, and `/>` is never a division.
+	 * every bracket the parse opened, where the expression could end, ends it: `,` ends an
+	 * expression before a sequence would, and `/>` is never a division. A `then` after `.` is a
+	 * property name. A TypeScript `as` is the host's unless another `as` follows the assertion,
+	 * so `xs as T[] as item` ends after the type.
 	 */
 	stopAt?: string[];
 }
 
 /**
- * A source kept with its options: the parses out of it share the source copy and the position
- * tables. Offsets are UTF-16, as in acorn; positions stay those of the whole source.
+ * A node of a host language, as its grammar names the type and the fields; the JavaScript under
+ * it is ESTree.
  */
-export class Source {
+export interface HostNode {
+	type: string;
+	start: number;
+	end: number;
+	loc?: SourceLocation;
+	[field: string]: unknown;
+}
+
+/**
+ * A source kept with its options: the parses out of it share the source copy and the position
+ * tables. Offsets are UTF-16, as in acorn; positions stay those of the whole source. `Root` is
+ * what the program entry answers with: the program, or the document's root with a `host`.
+ */
+export class Source<Root = Program> {
 	constructor(source: string, options?: Options);
-	/** The program starting at `offset`, the whole source by default. */
-	parse(entry?: 'program', offset?: number, at?: At): Parsed<Program>;
+	/** The program starting at `offset`, the whole source by default; the document with a `host`. */
+	parse(entry?: 'program', offset?: number, at?: At): Parsed<Root>;
 	parse(entry: 'expression', offset: number, at?: At): Parsed<Expression>;
 	/** An assignment target: an identifier or a destructuring pattern. */
 	parse(entry: 'pattern', offset: number, at?: At): Parsed<Pattern>;

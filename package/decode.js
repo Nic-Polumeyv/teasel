@@ -27,6 +27,14 @@ export const parentOf = (node) => (node == null ? undefined : node[PARENT]);
 
 const FACTS = new Set(['scope', 'declares', 'reference', 'defines', 'writes']);
 
+/** Files a node built outside the stream as the decoder would: no parent, and its facts when it has them. */
+export function facts(node, scope, binding, reference) {
+	node[PARENT] = undefined;
+	if (scope !== undefined) node[SCOPE] = scope;
+	if (node.type === 'Identifier' || binding !== undefined) node[BINDING] = binding === null ? null : binding;
+	if (node.type === 'Identifier' || reference !== undefined) node[REFERENCE] = reference === null ? undefined : reference;
+}
+
 /**
  * One decode at a time; the builders are generated once and read through this.
  * @type {{ w: Uint32Array, at: number, strings: string[], floats: Float64Array | null, source: string, constants: string[], scopes: any[], bindings: any[], build: (() => any)[] }}
@@ -54,44 +62,23 @@ function ints(S) {
 	return list;
 }
 
-/**
- * @param {any} n
- * @param {number | undefined} scope
- * @param {number | undefined} declares
- * @param {number | undefined} reference the reference `n`, an identifier, makes
- * @param {number[] | undefined} defines the bindings `n` declares
- * @param {number[] | undefined} writes the references `n` is assigned to
- */
-function file(S, n, scope, declares, reference, defines, writes) {
-	if (scope !== undefined) {
-		const s = S.scopes[scope];
-		n[SCOPE] = s;
-		s.node = n;
-	}
-	if (declares !== undefined) {
-		const d = S.bindings[declares];
-		n[BINDING] = d;
-		if (d.node === null) d.node = n;
-	}
-	if (reference !== undefined) {
-		const r = S.references[reference];
-		r.node = n;
-		n[REFERENCE] = r;
-		n[BINDING] = r.binding;
-	}
-	if (defines !== undefined) for (let i = 0; i < defines.length; i++) S.bindings[defines[i]].declaration = n;
-	if (writes !== undefined) for (let i = 0; i < writes.length; i++) S.references[writes[i]].writeExpr = n;
+function strs(S) {
+	const n = S.w[S.at++];
+	const list = new Array(n);
+	for (let i = 0; i < n; i++) list[i] = S.strings[S.w[S.at++]];
+	return list;
 }
 
 /** @typedef {{ type: string | null, keys: string[], kinds: number[] }} Shape */
 
 // one reader per kind, as source for the generated builders and as a function for the interpreter
-const READ = ['node(S)', 'S.w[S.at++]', 'S.floats[S.w[S.at++]]', 'S.w[S.at++] === 1', 'S.constants[S.w[S.at++]]', 'S.strings[S.w[S.at++]]', 'S.source.slice(S.w[S.at++], S.w[S.at++])', '{ start: { line: S.w[S.at++], column: S.w[S.at++] }, end: { line: S.w[S.at++], column: S.w[S.at++] } }', 'nodes(S)', 'ints(S)'];
-const READERS = [node, (S) => S.w[S.at++], (S) => /** @type {Float64Array} */ (S.floats)[S.w[S.at++]], (S) => S.w[S.at++] === 1, (S) => S.constants[S.w[S.at++]], (S) => S.strings[S.w[S.at++]], (S) => S.source.slice(S.w[S.at++], S.w[S.at++]), (S) => ({ start: { line: S.w[S.at++], column: S.w[S.at++] }, end: { line: S.w[S.at++], column: S.w[S.at++] } }), nodes, ints];
+const READ = ['node(S)', 'S.w[S.at++]', 'S.floats[S.w[S.at++]]', 'S.w[S.at++] === 1', 'S.constants[S.w[S.at++]]', 'S.strings[S.w[S.at++]]', 'S.source.slice(S.w[S.at++], S.w[S.at++])', '{ start: { line: S.w[S.at++], column: S.w[S.at++] }, end: { line: S.w[S.at++], column: S.w[S.at++] } }', 'nodes(S)', 'ints(S)', 'strs(S)'];
+const READERS = [node, (S) => S.w[S.at++], (S) => /** @type {Float64Array} */ (S.floats)[S.w[S.at++]], (S) => S.w[S.at++] === 1, (S) => S.constants[S.w[S.at++]], (S) => S.strings[S.w[S.at++]], (S) => S.source.slice(S.w[S.at++], S.w[S.at++]), (S) => ({ start: { line: S.w[S.at++], column: S.w[S.at++] }, end: { line: S.w[S.at++], column: S.w[S.at++] } }), nodes, ints, strs];
 
 /**
- * One object literal per shape: V8 allocates it in one hidden class. Facts, and everything the
- * stream puts before the last of them, are read into locals first, so the object never holds them.
+ * One object literal per shape, its facts and its parent link as symbol slots of the literal:
+ * V8 allocates it in one hidden class with nothing added later. Facts, and everything the stream
+ * puts before the last of them, are read into locals first.
  * @param {Shape} shape @param {boolean} link
  */
 function generate({ type, keys, kinds }, link) {
@@ -99,47 +86,55 @@ function generate({ type, keys, kinds }, link) {
 	if (link && type !== null) for (let i = 0; i < keys.length; i++) if (FACTS.has(keys[i]) || kinds[i] === 0 || kinds[i] === 8) last = i;
 	const lead = [];
 	const props = type === null ? [] : [`type: ${JSON.stringify(type)}`];
-	const facts = { scope: 'undefined', declares: 'undefined', reference: 'undefined', defines: 'undefined', writes: 'undefined' };
-	// a linked node is its children's parent
-	const parents = [];
+	// what the node points at, set once it exists
+	const after = [];
+	let scope = null, binding = null, reference = null;
 	for (let i = 0; i < keys.length; i++) {
 		const key = keys[i];
 		if (i > last) props.push(`${JSON.stringify(key)}: ${READ[kinds[i]]}`);
 		else {
 			lead.push(`const v${i} = ${READ[kinds[i]]};`);
-			if (FACTS.has(key)) facts[key] = `v${i}`;
+			if (key === 'scope') { scope = `S.scopes[v${i}]`; lead.push(`const s = ${scope};`); after.push('s.node = n;'); }
+			else if (key === 'declares') { binding = 'd'; lead.push(`const d = S.bindings[v${i}];`); after.push('if (d.node === null) d.node = n;'); }
+			else if (key === 'reference') { reference = 'r'; binding = 'r.binding'; lead.push(`const r = S.references[v${i}];`); after.push('r.node = n;'); }
+			else if (key === 'defines') after.push(`for (let i = 0; i < v${i}.length; i++) S.bindings[v${i}[i]].declaration = n;`);
+			else if (key === 'writes') after.push(`for (let i = 0; i < v${i}.length; i++) S.references[v${i}[i]].writeExpr = n;`);
 			else {
 				props.push(`${JSON.stringify(key)}: v${i}`);
 				// a child with a type is a node; a literal's regex or a template element's value is not
-				if (link && kinds[i] === 0) parents.push(`if (v${i} !== null && v${i}.type !== undefined) v${i}[PARENT] = n;`);
-				else if (link && kinds[i] === 8) parents.push(`for (let i = 0; i < v${i}.length; i++) if (v${i}[i] !== null) v${i}[i][PARENT] = n;`);
+				if (link && kinds[i] === 0) after.push(`if (v${i} !== null && v${i}.type !== undefined) v${i}[PARENT] = n;`);
+				else if (link && kinds[i] === 8) after.push(`for (let i = 0; i < v${i}.length; i++) if (v${i}[i] !== null) v${i}[i][PARENT] = n;`);
 			}
 		}
 	}
-	const body = `${lead.join(' ')} const n = { ${props.join(', ')} }; ${parents.join(' ')} ${last < 0 || type === null ? '' : `file(S, n, ${facts.scope}, ${facts.declares}, ${facts.reference}, ${facts.defines}, ${facts.writes});`} return n;`;
-	return new Function('node', 'nodes', 'ints', 'file', 'PARENT', `return (S) => { ${body} };`)(node, nodes, ints, file, PARENT);
+	if (link && type !== null) {
+		props.push('[PARENT]: undefined');
+		if (scope !== null) props.push('[SCOPE]: s');
+		// every identifier has the two slots, so those with facts and those without share a class
+		if (type === 'Identifier' || binding !== null) props.push(`[BINDING]: ${binding ?? 'undefined'}`);
+		if (type === 'Identifier' || reference !== null) props.push(`[REFERENCE]: ${reference ?? 'undefined'}`);
+	}
+	const body = `${lead.join(' ')} const n = { ${props.join(', ')} }; ${after.join(' ')} return n;`;
+	return new Function('node', 'nodes', 'ints', 'strs', 'PARENT', 'SCOPE', 'BINDING', 'REFERENCE', `return (S) => { ${body} };`)(node, nodes, ints, strs, PARENT, SCOPE, BINDING, REFERENCE);
 }
 
 /** The same without code generation, for a host whose policy forbids it. @param {Shape} shape @param {boolean} link */
 function interpret({ type, keys, kinds }, link) {
-	const facts = link && type !== null && keys.some((key) => FACTS.has(key));
-	const parents = link && type !== null;
+	const linked = link && type !== null;
 	return (S) => {
-		const n = type === null ? {} : { type };
-		let scope, declares, reference, defines, writes;
+		const n = type === null ? {} : linked ? { type, [PARENT]: undefined, [SCOPE]: undefined, [BINDING]: undefined, [REFERENCE]: undefined } : { type };
 		for (let i = 0; i < keys.length; i++) {
 			const key = keys[i];
 			const value = READERS[kinds[i]](S);
-			if (parents && kinds[i] === 0 && value !== null && value.type !== undefined) value[PARENT] = n;
-			else if (parents && kinds[i] === 8) for (const child of value) if (child !== null) child[PARENT] = n;
-			if (!facts || !FACTS.has(key)) n[key] = value;
-			else if (key === 'scope') scope = value;
-			else if (key === 'declares') declares = value;
-			else if (key === 'reference') reference = value;
-			else if (key === 'defines') defines = value;
-			else writes = value;
+			if (linked && kinds[i] === 0 && value !== null && value.type !== undefined) value[PARENT] = n;
+			else if (linked && kinds[i] === 8) for (const child of value) if (child !== null) child[PARENT] = n;
+			if (!linked || !FACTS.has(key)) n[key] = value;
+			else if (key === 'scope') { const s = S.scopes[value]; n[SCOPE] = s; s.node = n; }
+			else if (key === 'declares') { const d = S.bindings[value]; n[BINDING] = d; if (d.node === null) d.node = n; }
+			else if (key === 'reference') { const r = S.references[value]; n[REFERENCE] = r; n[BINDING] = r.binding; r.node = n; }
+			else if (key === 'defines') for (const b of value) S.bindings[b].declaration = n;
+			else for (const w of value) S.references[w].writeExpr = n;
 		}
-		if (facts) file(S, n, scope, declares, reference, defines, writes);
 		return n;
 	};
 }

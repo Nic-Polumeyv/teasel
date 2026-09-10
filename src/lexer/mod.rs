@@ -52,11 +52,12 @@ pub(crate) struct Lexer<'a> {
 impl<'a> Lexer<'a> {
 	#[cfg(test)]
 	pub(crate) fn new(src: &'a str) -> Self {
-		Self::sized(src, src.len())
+		Self::with(src, src.len(), Interner::sized(src.len()))
 	}
 
-	/// `budget` is how much of `src` the parse will read, what the tables are sized for.
-	pub(crate) fn sized(src: &'a str, budget: usize) -> Self {
+	/// `budget` is how much of `src` the parse will read, what the tables are sized for;
+	/// `strings` is the tree's own interner, so ids from an earlier read of it stay valid.
+	pub(crate) fn with(src: &'a str, budget: usize, strings: Interner) -> Self {
 		Self {
 			src,
 			pos: 0,
@@ -75,7 +76,7 @@ impl<'a> Lexer<'a> {
 			errors: Vec::new(),
 			unclosed: false,
 			comments: Vec::new(),
-			strings: Interner::sized(budget),
+			strings,
 			word_flags: Vec::with_capacity(budget / 32),
 		}
 	}
@@ -194,6 +195,7 @@ impl<'a> Lexer<'a> {
 	// an error leaves the token half written, and every caller then restores a snapshot or stops
 	pub(crate) fn next_token_into(&mut self, token: &mut Token) -> Result<()> {
 		token.newline_before = self.skip_space()?;
+		token.stop = false;
 		self.stopped = false;
 		self.unmatched = false;
 		loop {
@@ -229,15 +231,7 @@ impl<'a> Lexer<'a> {
 				_ => None,
 			};
 			let outside = closes.map_or(self.depth == 0, |kind| self.open[kind] == 0);
-			if outside && !self.stops.is_empty() && self.stops_at(start, kind) {
-				self.pos = start;
-				self.stopped = true;
-				token.kind = TokenKind::Eof;
-				token.end = start as u32;
-				token.escaped = false;
-				token.unclosed = false;
-				return Ok(());
-			}
+			token.stop = outside && !self.stops.is_empty() && self.stops_at(start, kind);
 			match kind {
 				TokenKind::ParenL => self.open_bracket(0),
 				TokenKind::BracketL => self.open_bracket(1),
@@ -723,6 +717,7 @@ impl<'a> Lexer<'a> {
 						newline_before: token.newline_before,
 						escaped: false,
 						unclosed: true,
+						stop: false,
 					}
 				});
 			}
@@ -777,6 +772,7 @@ impl<'a> Lexer<'a> {
 			newline_before: token.newline_before,
 			escaped: false,
 			unclosed: false,
+			stop: false,
 		})
 	}
 
@@ -892,6 +888,7 @@ impl<'a> Lexer<'a> {
 						newline_before: false,
 						escaped: false,
 						unclosed: self.unclosed,
+						stop: false,
 					});
 				}
 				'\\' => {

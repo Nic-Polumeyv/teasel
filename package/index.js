@@ -18,7 +18,7 @@ function bytes(text) {
 }
 
 export const Source = bind({
-	create: (source, names) => new native.Source(bytes(source), names),
+	create: (source, names, host) => new native.Source(bytes(source), names, host),
 	parse: (held, entry, offset, end, stop) => held.parse(entry, offset, end, stop),
 	constants: native.constants,
 	shapes: native.shapes,
