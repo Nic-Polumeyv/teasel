@@ -16,6 +16,7 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - uses: oven-sh/setup-bun@v2
+      - run: git clone --depth 1 https://github.com/tc39/test262-parser-tests tests/test262-parser-tests
       - run: cargo test --release
       - run: bun install --frozen-lockfile
         working-directory: package

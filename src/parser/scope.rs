@@ -190,6 +190,19 @@ impl<E: Extension> Parser<'_, E> {
 		Ok(())
 	}
 
+	/// Whether a simple catch clause around the current scope, inside the nearest function, binds `name`.
+	pub(crate) fn rebinds_catch_param(&self, name: StrId) -> bool {
+		for scope in self.scopes.iter().rev() {
+			if scope.flags & SCOPE_SIMPLE_CATCH != 0 && scope.names.first().map(|n| n.0) == Some(name) {
+				return true;
+			}
+			if scope.flags & SCOPE_VAR != 0 {
+				return false;
+			}
+		}
+		false
+	}
+
 	pub(crate) fn check_local_export(&mut self, name: StrId, pos: u32) {
 		if E::declares_export(self, name) {
 			return;

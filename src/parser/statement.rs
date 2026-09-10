@@ -5,6 +5,7 @@ use super::scope::{
 };
 use super::{
 	DestructuringErrors, Extension, FunctionKind, Label, LabelKind, Parser, PrivateKind, PrivateNameScope, Result,
+	Unwrap,
 };
 use crate::ast::{Class, Function, List, MethodKind, NodeId, NodeKind, VariableKind};
 use crate::error::Code;
@@ -331,6 +332,9 @@ impl<E: Extension> Parser<'_, E> {
 			let NodeKind::VariableDeclaration { declarations, .. } = self.kind(init) else {
 				unreachable!()
 			};
+			if kind == VariableKind::Var && self.is_contextual("of") {
+				self.check_for_of_var(declarations)?;
+			}
 			if (self.is_keyword(Keyword::In) || self.is_contextual("of")) && declarations.len == 1 {
 				let is_await = if self.is_keyword(Keyword::In) {
 					if let Some(pos) = await_at {
@@ -779,6 +783,37 @@ impl<E: Extension> Parser<'_, E> {
 		Ok(self.add(NodeKind::BlockStatement { body }, start))
 	}
 
+	/// Annex B.3.4 lets a var redeclare the parameter of a simple catch clause, except the binding
+	/// of a for-of, which is checked once the `of` is seen.
+	fn check_for_of_var(&mut self, declarations: List) -> Result<()> {
+		let mut stack: Vec<NodeId> = (0..declarations.len)
+			.filter_map(|i| self.nth(declarations, i))
+			.collect();
+		while let Some(id) = stack.pop() {
+			match self.kind(id) {
+				NodeKind::Identifier { name } => {
+					if self.rebinds_catch_param(name) {
+						return self.error_name(self.start_of(id), Code::Redeclaration, name);
+					}
+				}
+				NodeKind::VariableDeclarator { id, .. } => stack.push(id),
+				NodeKind::ObjectPattern { properties: list } | NodeKind::ArrayPattern { elements: list } => {
+					stack.extend((0..list.len).filter_map(|i| self.nth(list, i)));
+				}
+				NodeKind::Property { value, .. } => stack.push(value),
+				NodeKind::RestElement { argument } => stack.push(argument),
+				NodeKind::AssignmentPattern { left, .. } => stack.push(left),
+				NodeKind::Extension(_) => {
+					if let Some(inner) = E::unwrap(self, id, Unwrap::InnerPattern) {
+						stack.push(inner);
+					}
+				}
+				_ => {}
+			}
+		}
+		Ok(())
+	}
+
 	fn parse_var(&mut self, start: u32, is_for: bool, kind: VariableKind) -> Result<NodeId> {
 		let mut declarations = Vec::new();
 		loop {
@@ -1173,9 +1208,13 @@ impl<E: Extension> Parser<'_, E> {
 			&& !(kind == ClassKind::Expression && E::starts_class_heritage(self))
 		{
 			let id = self.parse_ident(false)?;
-			if kind != ClassKind::Expression {
-				self.check_lval_simple(id, Binding::Lexical, &mut None)?;
-			}
+			// a class expression binds its name inside its own strict body, nowhere else
+			let binding = if kind == ClassKind::Expression {
+				Binding::Outside
+			} else {
+				Binding::Lexical
+			};
+			self.check_lval_simple(id, binding, &mut None)?;
 			Some(id)
 		} else {
 			if kind == ClassKind::Declaration {

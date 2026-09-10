@@ -148,6 +148,19 @@ fn script(src: &str) -> String {
 		.join("\n")
 }
 
+/// The code of the first error, for a program of either goal; none when it parses.
+fn code(src: &str, module: bool) -> Option<Code> {
+	program(
+		src,
+		Options {
+			module,
+			..Options::default()
+		},
+	)
+	.err()
+	.map(|e| e.code)
+}
+
 fn module_error(src: &str) -> String {
 	match program(
 		src,
@@ -433,17 +446,6 @@ fn modules() {
 #[test]
 fn reserved_words_by_context() {
 	use crate::Code;
-	let code = |src: &str, module: bool| {
-		program(
-			src,
-			Options {
-				module,
-				..Options::default()
-			},
-		)
-		.err()
-		.map(|e| e.code)
-	};
 	assert_eq!(
 		code("function* g() { var yield; }", false),
 		Some(Code::YieldAsIdentifier)
@@ -481,6 +483,25 @@ fn a_var_may_redeclare_a_simple_catch_parameter() {
 		module_error("try {} catch (e) { let e; }"),
 		"Identifier 'e' has already been declared (23)"
 	);
+	// Annex B.3.4 exempts every var but the binding of a for-of
+	assert!(code("try {} catch (a) { for (var a in x); for (var a;;); var a; }", false).is_none());
+	assert_eq!(
+		code("try {} catch (a) { for (var a of x); }", false),
+		Some(Code::Redeclaration)
+	);
+	assert_eq!(
+		code("try {} catch (a) { for (var [b, a] of x); }", false),
+		Some(Code::Redeclaration)
+	);
+	// a destructured parameter is no simple one: nothing exempts a var from it
+	assert_eq!(code("try {} catch ([a]) { var a; }", false), Some(Code::Redeclaration));
+}
+
+#[test]
+fn a_class_expression_name_is_a_strict_binding() {
+	assert_eq!(code("(class eval {})", false), Some(Code::StrictBinding));
+	assert_eq!(code("(class arguments {})", false), Some(Code::StrictBinding));
+	assert!(code("class A {} (class A {})", false).is_none());
 }
 
 #[test]
