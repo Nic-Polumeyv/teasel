@@ -8,7 +8,7 @@ pub mod grammar;
 
 use std::borrow::Cow;
 
-use crate::ast::{Ast, Comment, CommentKind, Host, List, NodeId, NodeKind, Opens, Value, VariableKind};
+use crate::ast::{Ast, Comment, CommentKind, Host, HostGroup, List, NodeId, NodeKind, Opens, Value, VariableKind};
 use crate::error::{Code, SyntaxError};
 use crate::interner::StrId;
 use crate::lexer::unicode::{is_id_continue, is_id_start};
@@ -283,7 +283,8 @@ enum Frame<'a> {
 		nodes: Vec<NodeId>,
 		/// Bodies closed so far, each as its children.
 		done: Vec<(&'static str, Value)>,
-		inside: Vec<NodeId>,
+		/// The scope of each body read so far.
+		groups: Vec<BodyGroup>,
 		outside: Vec<NodeId>,
 		/// The parent's field this block fills as a chained branch, `{:else if}`.
 		chain: Option<&'static str>,
@@ -295,6 +296,14 @@ enum Frame<'a> {
 struct Read {
 	fields: Vec<(&'static str, Value)>,
 	body: Option<Body>,
+}
+
+/// A body's scope as its form read it: the body's field, the entry fields the scope holds, and
+/// the patterns declared in it.
+struct BodyGroup {
+	body: &'static str,
+	fields: Vec<&'static str>,
+	inside: Vec<NodeId>,
 }
 
 /// What reading an attribute gives: its node, its type, and the kind and name it must not
@@ -485,9 +494,40 @@ impl<'a, E: Extension> Walker<'a, E> {
 	fn children(&mut self, nodes: Vec<NodeId>) -> Value {
 		let list = self.list(&nodes);
 		match self.grammar.fragment {
-			Some((ty, field)) => Value::Node(self.host(ty, 0, 0, vec![(field, Value::Nodes(list))], None, false)),
+			Some((ty, field)) => {
+				// positions for the walks that order nodes, though none are written
+				let (start, end) = match (nodes.first(), nodes.last()) {
+					(Some(&first), Some(&last)) => (self.tree().node(first).start, self.tree().node(last).end),
+					_ => (self.at, self.at),
+				};
+				Value::Node(self.host(ty, start, end, vec![(field, Value::Nodes(list))], None, false))
+			}
 			None => Value::Nodes(list),
 		}
+	}
+
+	/// The scope a list of children opens when the grammar says every fragment is one: over
+	/// the field at `index` of the fields about to make a host node.
+	fn fragment_scope(&mut self, fields: &[(&'static str, Value)], index: usize) -> Option<Opens> {
+		if !self.grammar.fragment_scope {
+			return None;
+		}
+		let base = self.ast().host_fields.len() as u32;
+		let node = match fields[index].1 {
+			Value::Node(fragment) => Some(fragment),
+			_ => None,
+		};
+		let at = self.ast().host_groups.len() as u32;
+		self.ast().host_groups.push(HostGroup {
+			inside: List::EMPTY,
+			from: base + index as u32,
+			until: base + index as u32 + 1,
+			node,
+		});
+		Some(Opens {
+			outside: List::EMPTY,
+			groups: (at, 1),
+		})
 	}
 
 	fn list(&mut self, nodes: &[NodeId]) -> List {
@@ -668,7 +708,9 @@ impl<'a, E: Extension> Walker<'a, E> {
 			}
 		}
 		let full = self.full;
-		Ok(self.host(self.grammar.document.ty, 0, full, fields, None, true))
+		let fragment_at = fields.iter().position(|(_, value)| *value == children);
+		let scope = fragment_at.and_then(|index| self.fragment_scope(&fields, index));
+		Ok(self.host(self.grammar.document.ty, 0, full, fields, scope, true))
 	}
 
 	fn text_node(&mut self) {
@@ -691,12 +733,18 @@ impl<'a, E: Extension> Walker<'a, E> {
 	/// Whether the nearest element around the cursor, past blocks and meta elements, is `name`.
 	fn nearest_element_is(&self, name: &str) -> bool {
 		let plain = self.grammar.element("*").map(|any| any.ty);
+		let component = self
+			.grammar
+			.elements
+			.iter()
+			.find(|rule| rule.name == Match::Component)
+			.map(|rule| rule.ty);
 		for frame in self.frames.iter().rev() {
 			if let Frame::Element { name: span, ty, .. } = frame {
 				if &self.src[span.0 as usize..span.1 as usize] == name {
 					return true;
 				}
-				if Some(*ty) == plain || *ty == "Component" {
+				if Some(*ty) == plain || Some(*ty) == component {
 					return false;
 				}
 			}
@@ -707,23 +755,6 @@ impl<'a, E: Extension> Walker<'a, E> {
 	fn element(&mut self) -> Result<()> {
 		let start = self.at;
 		self.at += 1;
-		if self.eat("![CDATA[") {
-			let Some(len) = self.rest().find("]]>") else {
-				return fail(self.len(), self.len(), Code::UnexpectedEof, None);
-			};
-			let data_start = self.at;
-			self.at += len as u32;
-			let rule = &self.grammar.text;
-			let mut fields = Vec::with_capacity(2);
-			if let Some(raw) = rule.raw {
-				fields.push((raw, Value::Slice(data_start, self.at)));
-			}
-			fields.push((rule.data, Value::Slice(data_start, self.at)));
-			let node = self.host(rule.ty, data_start, self.at, fields, None, true);
-			self.at += 3;
-			self.append(node);
-			return Ok(());
-		}
 		if self.eat("!--") {
 			let Some(len) = self.rest().find("-->") else {
 				return fail(self.len(), self.len(), Code::UnexpectedEof, None);
@@ -960,7 +991,8 @@ impl<'a, E: Extension> Walker<'a, E> {
 			fields.push((names.attributes, Value::Nodes(attributes)));
 			let children = w.children(nodes);
 			fields.push((names.children, children));
-			let node = w.host(ty, start, end, fields, None, true);
+			let scope = w.fragment_scope(&fields, fields.len() - 1);
+			let node = w.host(ty, start, end, fields, scope, true);
 			w.append(node);
 			if verbatim_here {
 				w.verbatim -= 1;
@@ -1077,7 +1109,8 @@ impl<'a, E: Extension> Walker<'a, E> {
 		fields.push((names.attributes, Value::Nodes(attributes)));
 		let children = self.children(nodes);
 		fields.push((names.children, children));
-		let node = self.host(ty, start, end, fields, None, true);
+		let scope = self.fragment_scope(&fields, fields.len() - 1);
+		let node = self.host(ty, start, end, fields, scope, true);
 		self.append(node);
 		if verbatim {
 			self.verbatim -= 1;
@@ -1748,9 +1781,8 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let Some(body) = read.body.take().or_else(|| rule.open.body.clone()) else {
 			return fail(start, start + 1, Code::Placement, Some("A block without a body"));
 		};
-		let mut inside = Vec::new();
 		let mut outside = Vec::new();
-		self.declares(&read, &body, &mut inside, &mut outside);
+		let group = self.group_of(&read, &body, &mut outside);
 		self.frames.push(Frame::Block {
 			start,
 			rule,
@@ -1758,7 +1790,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			body: (body.field, body.omit),
 			nodes: Vec::new(),
 			done: Vec::new(),
-			inside,
+			groups: vec![group],
 			outside,
 			chain: None,
 		});
@@ -1801,7 +1833,10 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let body = branch.form.body.clone().unwrap();
 		self.finish_body();
 		if let Some(child_field) = body.chain {
-			// the branch opens a block of its own inside the parent's field
+			// the branch opens a block of its own inside the parent's field, which closes with it
+			if let Some(Frame::Block { body: current, .. }) = self.frames.last_mut() {
+				*current = ("", true);
+			}
 			self.keyword = at;
 			if !branch.form.items.is_empty() {
 				self.require_space()?;
@@ -1816,9 +1851,8 @@ impl<'a, E: Extension> Walker<'a, E> {
 				chain: None,
 				declares: body.declares.clone(),
 			};
-			let mut inside = Vec::new();
 			let mut outside = Vec::new();
-			self.declares(&read, &child, &mut inside, &mut outside);
+			let group = self.group_of(&read, &child, &mut outside);
 			self.frames.push(Frame::Block {
 				start,
 				rule,
@@ -1826,7 +1860,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 				body: (child_field, false),
 				nodes: Vec::new(),
 				done: Vec::new(),
-				inside,
+				groups: vec![group],
 				outside,
 				chain: Some(body.field),
 			});
@@ -1836,14 +1870,13 @@ impl<'a, E: Extension> Walker<'a, E> {
 		self.form(&branch.form, &mut read)?;
 		self.space();
 		self.expect(close)?;
-		let mut inside = Vec::new();
 		let mut outside = Vec::new();
-		self.declares(&read, &body, &mut inside, &mut outside);
+		let group = self.group_of(&read, &body, &mut outside);
 		let Some(Frame::Block {
 			fields,
 			body: current,
 			done,
-			inside: all_inside,
+			groups,
 			outside: all_outside,
 			..
 		}) = self.frames.last_mut()
@@ -1860,26 +1893,45 @@ impl<'a, E: Extension> Walker<'a, E> {
 		}
 		fields.extend(read.fields.iter().copied());
 		*current = (body.field, body.omit);
-		all_inside.extend(inside);
+		groups.push(group);
 		all_outside.extend(outside);
 		Ok(())
 	}
 
 	/// The patterns a body declares, by the fields that hold them.
-	fn declares(&self, read: &Read, body: &Body, inside: &mut Vec<NodeId>, outside: &mut Vec<NodeId>) {
-		for declare in &body.declares {
-			for &(field, value) in &read.fields {
-				if field != declare.field {
-					continue;
+	/// The scope a body opens, as its form read it: the patterns the body declares, those the
+	/// block declares around itself, and the entries read after the first declared one, a key
+	/// after the context of an each block, which the scope holds too.
+	fn group_of(&self, read: &Read, body: &Body, outside: &mut Vec<NodeId>) -> BodyGroup {
+		let mut group = BodyGroup {
+			body: body.field,
+			fields: Vec::new(),
+			inside: Vec::new(),
+		};
+		let mut opened = false;
+		for &(field, value) in &read.fields {
+			match body.declares.iter().find(|declare| declare.field == field) {
+				Some(declare) => {
+					let target = if declare.outside {
+						&mut *outside
+					} else {
+						&mut group.inside
+					};
+					match value {
+						Value::Node(id) => target.push(id),
+						Value::Nodes(list) => target.extend(self.tree().list(list).iter().flatten()),
+						_ => {}
+					}
+					if !declare.outside {
+						group.fields.push(field);
+						opened = true;
+					}
 				}
-				let target = if declare.outside { &mut *outside } else { &mut *inside };
-				match value {
-					Value::Node(id) | Value::Name(id) => target.push(id),
-					Value::Nodes(list) => target.extend(self.tree().list(list).iter().flatten()),
-					_ => {}
-				}
+				None if opened => group.fields.push(field),
+				None => {}
 			}
 		}
+		group
 	}
 
 	/// Closes the open body of the block on top: its nodes become the children under its field.
@@ -1889,6 +1941,9 @@ impl<'a, E: Extension> Walker<'a, E> {
 		};
 		let nodes = std::mem::take(nodes);
 		let field = body.0;
+		if field.is_empty() {
+			return;
+		}
 		let children = self.children(nodes);
 		let Some(Frame::Block { done, .. }) = self.frames.last_mut() else {
 			unreachable!()
@@ -1916,7 +1971,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 				rule,
 				fields,
 				done,
-				inside,
+				groups,
 				outside,
 				chain,
 				..
@@ -1924,7 +1979,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			else {
 				unreachable!()
 			};
-			let node = self.block_node(rule, block_start, end, fields, done, inside, outside, chain.is_some());
+			let node = self.block_node(rule, block_start, end, fields, done, groups, outside, chain.is_some());
 			match chain {
 				Some(field) => {
 					let children = self.children(vec![node]);
@@ -1949,7 +2004,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		end: u32,
 		mut fields: Vec<(&'static str, Value)>,
 		done: Vec<(&'static str, Value)>,
-		inside: Vec<NodeId>,
+		groups: Vec<BodyGroup>,
 		outside: Vec<NodeId>,
 		chained: bool,
 	) -> NodeId {
@@ -1967,32 +2022,56 @@ impl<'a, E: Extension> Walker<'a, E> {
 		if let Some(flag) = rule.chain_flag {
 			fields.push((flag, Value::Bool(chained)));
 		}
-		// the scope opens at the first field it declares; the bodies are inside it
-		let declared_inside = |value: Value| match value {
-			Value::Node(id) | Value::Name(id) => inside.contains(&id),
-			Value::Nodes(list) => self.tree().list(list).iter().flatten().any(|id| inside.contains(id)),
-			_ => false,
-		};
-		let from = fields
-			.iter()
-			.position(|&(_, value)| declared_inside(value))
-			.unwrap_or(fields.len()) as u32;
+		// the fields outside every scope first, then each body's scope: its fields, then the body
+		let grouped: Vec<&'static str> = groups.iter().flat_map(|group| group.fields.iter().copied()).collect();
+		let mut ordered: Vec<(&'static str, Value)> =
+			fields.iter().copied().filter(|(f, _)| !grouped.contains(f)).collect();
 		let mut bodies: Vec<(&'static str, bool)> = Vec::new();
 		collect_bodies(&rule.open, &mut bodies);
 		for branch in &rule.branches {
 			collect_bodies(&branch.form, &mut bodies);
 		}
 		for (field, omit) in bodies {
-			if let Some(&(_, children)) = done.iter().find(|(k, _)| *k == field) {
-				fields.push((field, children));
-			} else if !omit {
-				fields.push((field, Value::Null));
+			if !omit && !done.iter().any(|(k, _)| *k == field) {
+				ordered.push((field, Value::Null));
 			}
 		}
-		let inside = self.list(&inside);
+		let base = self.ast().host_fields.len() as u32;
+		let groups_at = self.ast().host_groups.len() as u32;
+		let mut count = 0;
+		for (body, children) in done {
+			let from = ordered.len() as u32;
+			let group = groups.iter().find(|group| group.body == body);
+			if let Some(group) = group {
+				for &field in &group.fields {
+					if let Some(&entry) = fields.iter().find(|(f, _)| *f == field) {
+						ordered.push(entry);
+					}
+				}
+			}
+			ordered.push((body, children));
+			let inside: &[NodeId] = group.map_or(&[], |group| &group.inside);
+			if self.grammar.fragment_scope || !inside.is_empty() {
+				let inside = self.list(inside);
+				let node = match children {
+					Value::Node(fragment) if self.grammar.fragment.is_some() => Some(fragment),
+					_ => None,
+				};
+				self.ast().host_groups.push(HostGroup {
+					inside,
+					from: base + from,
+					until: base + ordered.len() as u32,
+					node,
+				});
+				count += 1;
+			}
+		}
 		let outside = self.list(&outside);
-		let scope = Some(Opens { inside, outside, from });
-		self.host(rule.ty, start, end, fields, scope, true)
+		let scope = Some(Opens {
+			outside,
+			groups: (groups_at, count),
+		});
+		self.host(rule.ty, start, end, ordered, scope, true)
 	}
 
 	fn special(&mut self, start: u32) -> Result<()> {
@@ -2110,7 +2189,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		match entry {
 			Entry::TypeParameters => self.matches("<"),
 			Entry::Params => self.matches("("),
-			Entry::Identifier | Entry::Name => self.char().is_some_and(is_id_start),
+			Entry::Identifier => self.char().is_some_and(is_id_start),
 			Entry::Pattern => self.char().is_some_and(|c| is_id_start(c) || c == '[' || c == '{'),
 			_ => {
 				!self.matches(close)
@@ -2162,7 +2241,6 @@ impl<'a, E: Extension> Walker<'a, E> {
 				Value::Nodes(list)
 			}
 			Entry::Identifier => Value::Node(self.identifier()?),
-			Entry::Name => Value::Name(self.identifier()?),
 			Entry::Identifiers => {
 				let close = self.grammar.delimiters.1;
 				let mut ids = Vec::new();

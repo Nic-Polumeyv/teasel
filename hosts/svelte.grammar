@@ -6,7 +6,7 @@ attributes expressions
 autoclose
 trim
 void area base br col command embed hr img input keygen link meta param source track wbr
-fragment Fragment nodes
+fragment Fragment nodes scope
 elements name=name attributes=attributes children=fragment
 text Text data=data raw=raw
 comment Comment data=data
@@ -53,7 +53,7 @@ block if  IfBlock  chain=elseif
   branch  else  -> alternate
 
 block each  EachBlock
-  open    expression=expression [ as context=pattern ] [ , index?=name ] [ ( key?=expression ) ]  -> body declares context index
+  open    expression=expression [ as context=pattern ] [ , index?=identifier ] [ ( key?=expression ) ]  -> body declares context index
   branch  else  -> fallback?
 
 block await  AwaitBlock

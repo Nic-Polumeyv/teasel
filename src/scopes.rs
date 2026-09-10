@@ -759,43 +759,52 @@ impl<'a, X: Bind> Binder<'a, X> {
 	fn host(&mut self, id: NodeId, index: u32) {
 		let host = self.ast.hosts[index as usize];
 		let (from, len) = host.fields;
-		let declared = |b: &Self, child: NodeId| match host.scope {
-			Some(opens) => {
-				b.ast.list(opens.inside).contains(&Some(child)) || b.ast.list(opens.outside).contains(&Some(child))
-			}
-			None => false,
-		};
-		let field = |b: &mut Self, i: u32| match b.ast.host_fields[i as usize].1 {
-			crate::ast::Value::Node(child) if !declared(b, child) => b.visit(child, Mode::Expression),
-			crate::ast::Value::Nodes(children) => {
-				for &child in b.ast.list(children).iter().flatten() {
-					if !declared(b, child) {
-						b.visit(child, Mode::Expression);
-					}
-				}
-			}
-			_ => {}
-		};
 		let Some(opens) = host.scope else {
 			for i in from..from + len {
-				field(self, i);
+				self.host_field(i, None);
 			}
 			return;
 		};
 		for &pattern in self.ast.list(opens.outside).iter().flatten() {
 			self.visit(pattern, Mode::Declare(BindingKind::Let));
 		}
-		for i in from..from + opens.from {
-			field(self, i);
+		let groups = self.ast.host_groups[opens.groups.0 as usize..(opens.groups.0 + opens.groups.1) as usize].to_vec();
+		let mut i = from;
+		for group in groups {
+			while i < group.from {
+				self.host_field(i, Some(opens.outside));
+				i += 1;
+			}
+			self.enter(ScopeKind::Block, Some(group.node.unwrap_or(id)), false);
+			for &pattern in self.ast.list(group.inside).iter().flatten() {
+				self.visit(pattern, Mode::Declare(BindingKind::Let));
+			}
+			while i < group.until {
+				self.host_field(i, Some(group.inside));
+				i += 1;
+			}
+			self.exit();
 		}
-		self.enter(ScopeKind::Block, Some(id), false);
-		for &pattern in self.ast.list(opens.inside).iter().flatten() {
-			self.visit(pattern, Mode::Declare(BindingKind::Let));
+		while i < from + len {
+			self.host_field(i, Some(opens.outside));
+			i += 1;
 		}
-		for i in from + opens.from..from + len {
-			field(self, i);
+	}
+
+	/// A host node's field as an expression, its declared patterns left to their scope.
+	fn host_field(&mut self, i: u32, declared: Option<List>) {
+		let declared = |b: &Self, child: NodeId| declared.is_some_and(|list| b.ast.list(list).contains(&Some(child)));
+		match self.ast.host_fields[i as usize].1 {
+			crate::ast::Value::Node(child) if !declared(self, child) => self.visit(child, Mode::Expression),
+			crate::ast::Value::Nodes(children) => {
+				for &child in self.ast.list(children).iter().flatten() {
+					if !declared(self, child) {
+						self.visit(child, Mode::Expression);
+					}
+				}
+			}
+			_ => {}
 		}
-		self.exit();
 	}
 
 	fn visit_with(&mut self, id: NodeId, mode: Mode, extras: bool) {

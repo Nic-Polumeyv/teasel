@@ -229,7 +229,7 @@ for (const { Source, scopeOf, bindingOf, parentOf } of [node, wasm]) {
 	assert.equal(root.instance.content.body[0].declarations[0].id.typeAnnotation.type, 'TSTypeAnnotation');
 	assert.equal('module' in root, false);
 	const each = root.fragment.nodes.find((n) => n.type === 'EachBlock');
-	assert.equal(each.index, 'i');
+	assert.equal(each.index.name, 'i');
 	assert.equal(each.context.name, 'item');
 	assert.equal(each.key.name, 'item');
 	assert.equal(each.fallback.nodes[0].data, '\n\tnone\n');
@@ -245,9 +245,12 @@ for (const { Source, scopeOf, bindingOf, parentOf } of [node, wasm]) {
 	assert.equal(bindingOf(tag.expression).node, each.context);
 	assert.equal(bindingOf(p.attributes[0].expression.left).name, 'i');
 	assert.equal(bindingOf(each.expression).kind, 'let');
-	assert.equal(scopeOf(each).node, each);
-	assert.equal(bindingOf(tag.expression).scope, scopeOf(each));
-	assert.equal(scopeOf(each).parent, scopeOf(root));
+	// every fragment is a scope of its own; the block's body declares its context and index
+	assert.equal(scopeOf(each.body).node, each.body);
+	assert.equal(bindingOf(tag.expression).scope, scopeOf(each.body));
+	assert.equal(scopeOf(each.body).parent, scopeOf(root.fragment));
+	assert.equal(scopeOf(root.fragment).parent, scopeOf(root));
+	assert.equal(scopeOf(each.fallback).parent, scopeOf(root.fragment));
 	assert.throws(() => new Source('x', { host: 'element div' }), /grammar line 1/);
 	assert.throws(() => new Source('<div>', { host: grammar }).parse(), { code: 'unclosed', pos: 0 });
 }

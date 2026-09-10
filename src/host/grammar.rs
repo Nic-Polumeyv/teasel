@@ -15,8 +15,6 @@ pub enum Entry {
 	Code,
 	/// `pattern = expression`, a const declaration the host spells without the keyword.
 	Const,
-	/// An identifier kept as its name, which the body still declares.
-	Name,
 	/// Identifiers separated by commas, possibly none.
 	Identifiers,
 }
@@ -249,6 +247,8 @@ pub struct Grammar {
 	pub void: Vec<&'static str>,
 	/// A node wrapping every list of children, and its field: Svelte's `Fragment`.
 	pub fragment: Option<(&'static str, &'static str)>,
+	/// Every list of children opens a scope of its own.
+	pub fragment_scope: bool,
 	pub element_fields: ElementFields,
 	pub text: TextRule,
 	pub comment: CommentRule,
@@ -320,7 +320,6 @@ fn entry(name: &str) -> Option<Entry> {
 		"code" => Entry::Code,
 		"const" => Entry::Const,
 		"identifiers" => Entry::Identifiers,
-		"name" => Entry::Name,
 		_ => return None,
 	})
 }
@@ -472,6 +471,7 @@ impl Grammar {
 			trim: false,
 			void: Vec::new(),
 			fragment: None,
+			fragment_scope: false,
 			element_fields: ElementFields {
 				name: "name",
 				attributes: "attributes",
@@ -602,7 +602,15 @@ impl Grammar {
 			"autoclose" => self.autoclose = true,
 			"trim" => self.trim = true,
 			"void" => self.void = tokens[1..].iter().map(|name| keep(name)).collect(),
-			"fragment" => self.fragment = Some((keep(word(1)?), keep(word(2)?))),
+			"fragment" => {
+				self.fragment = Some((keep(word(1)?), keep(word(2)?)));
+				for token in &tokens[3..] {
+					match token.as_str() {
+						"scope" => self.fragment_scope = true,
+						other => return Err(format!("unexpected {other} on fragment")),
+					}
+				}
+			}
 			"elements" => {
 				for token in &tokens[1..] {
 					match token.split_once('=') {
@@ -888,6 +896,7 @@ mod tests {
 			("instance", RootField::Script { module: false }, true)
 		);
 		assert_eq!(grammar.fragment, Some(("Fragment", "nodes")));
+		assert!(grammar.fragment_scope);
 		assert!(grammar.attribute_expressions && grammar.autoclose && grammar.trim);
 		assert!(grammar.is_void("br") && grammar.is_void("!DOCTYPE") && !grammar.is_void("div"));
 		assert_eq!(grammar.elements.len(), 17);
