@@ -963,6 +963,10 @@ impl Grammar {
 		})
 	}
 
+	pub fn component(&self) -> Option<&ElementRule> {
+		self.elements.iter().find(|rule| rule.name == Match::Component)
+	}
+
 	/// The rule of a directive by its name; `*` when the grammar takes any.
 	pub fn directive(&self, name: &str) -> Option<&DirectiveRule> {
 		self.directives.iter().find(|rule| match rule.name {

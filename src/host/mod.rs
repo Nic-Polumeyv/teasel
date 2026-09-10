@@ -16,7 +16,7 @@ use crate::parser::{Entry as JsEntry, Extension, Options, Parser, Result};
 pub use grammar::Grammar;
 use grammar::{
 	Alternative, BlockRule, Body, DirectiveRule, DirectiveValue, DocField, Entry, Form, Item, Match, RootField,
-	TagRule, Unique,
+	TagRule, Unique, component_name,
 };
 
 /// Whether the browser closes `current` when `next` opens inside it.
@@ -735,6 +735,9 @@ impl<'a, E: Extension> Walker<'a, E> {
 				}
 			}
 		}
+		let errors = &mut self.ast().errors;
+		errors.sort_by_key(|error| error.pos);
+		errors.dedup_by(|a, b| a.pos == b.pos && a.code == b.code);
 		let Some(Frame::Root {
 			nodes,
 			instance,
@@ -898,12 +901,12 @@ impl<'a, E: Extension> Walker<'a, E> {
 			self.space();
 			self.expect(">")?;
 			if self.grammar.is_void(name) {
-				return fail(
+				return self.report(error(
 					start,
 					start + 1,
 					Code::Placement,
 					Some("A closing tag of a void element"),
-				);
+				));
 			}
 			return self.close_element(start, name);
 		}
@@ -913,17 +916,20 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let namespaced = name
 			.split_once(':')
 			.is_some_and(|(prefix, _)| prefix == self.grammar.name);
-		let Some(rule) = rule.filter(|rule| rule.name != Match::Any || (!namespaced && valid_name(name))) else {
+		let rule = rule.filter(|rule| rule.name != Match::Any || (!namespaced && valid_name(name)));
+		let typing = self.recovering() && name.ends_with('.') && component_name(&format!("{name}_"));
+		let Some(rule) = rule.or_else(|| typing.then(|| self.grammar.component()).flatten()) else {
 			return fail(name_span.0, name_span.1, Code::InvalidName, Some(name));
 		};
 		if rule.root && self.frames.len() > 1 {
-			return fail(start, start + 1, Code::Placement, Some(name));
+			self.report(error(start, start + 1, Code::Placement, Some(name)))?;
 		}
 		if rule.once {
 			if self.once.contains(&rule.ty) {
-				return fail(start, start + 1, Code::Duplicate, Some(name));
+				self.report(error(start, start + 1, Code::Duplicate, Some(name)))?;
+			} else {
+				self.once.push(rule.ty);
 			}
-			self.once.push(rule.ty);
 		}
 		let plain = self.grammar.element("*").map_or(rule.ty, |any| any.ty);
 		let mut ty = rule.ty;
@@ -985,8 +991,8 @@ impl<'a, E: Extension> Walker<'a, E> {
 					shadowroot = true;
 				}
 				if seen.iter().any(|(k, n)| *k == kind && *n == key) {
-					let node = self.tree().node(node);
-					return fail(node.start, node.end, Code::Duplicate, Some(&key));
+					let (at, end) = (self.tree().node(node).start, self.tree().node(node).end);
+					self.report(error(at, end, Code::Duplicate, Some(&key)))?;
 				}
 				if key != "this" {
 					seen.push((kind, key));
@@ -1000,27 +1006,43 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let declared = std::mem::take(&mut self.declared);
 		let mut fields = Vec::new();
 		if let Some((field, text)) = rule.this {
-			let Some(position) = attributes.iter().position(|&id| self.attribute_named(id, "this")) else {
-				return fail(start, start + 1, Code::Expected, Some("a this attribute"));
-			};
-			let this = attributes.remove(position);
-			let value = match self.attribute_expression(this) {
-				Some(expression) => expression,
+			let position = attributes.iter().position(|&id| self.attribute_named(id, "this"));
+			let value = match position {
 				None => {
-					let chunk = self
-						.attribute_chunk(this)
-						.filter(|&chunk| text && self.host_type(chunk) == self.grammar.text.ty);
-					let Some(chunk) = chunk else {
-						let node = self.tree().node(this);
-						return fail(node.start, node.end, Code::Expected, Some("an expression as this"));
-					};
-					let node = *self.tree().node(chunk);
-					let value = match self.field_of(chunk, self.grammar.text.data) {
-						Some(Value::Str(s)) => s,
-						Some(Value::Slice(a, b)) => self.intern(&self.src[a as usize..b as usize]),
-						_ => unreachable!(),
-					};
-					self.ast().add(NodeKind::StringLiteral { value }, node.start, node.end)
+					self.report(error(start, start + 1, Code::Expected, Some("a this attribute")))?;
+					self.placeholder(name_span.1, name_span.1)
+				}
+				Some(position) => {
+					let this = attributes.remove(position);
+					match self.attribute_expression(this) {
+						Some(expression) => expression,
+						None => {
+							let chunk = self
+								.attribute_chunk(this)
+								.filter(|&chunk| text && self.host_type(chunk) == self.grammar.text.ty);
+							match chunk {
+								Some(chunk) => {
+									let node = *self.tree().node(chunk);
+									let value = match self.field_of(chunk, self.grammar.text.data) {
+										Some(Value::Str(s)) => s,
+										Some(Value::Slice(a, b)) => self.intern(&self.src[a as usize..b as usize]),
+										_ => unreachable!(),
+									};
+									self.ast().add(NodeKind::StringLiteral { value }, node.start, node.end)
+								}
+								None => {
+									let node = *self.tree().node(this);
+									self.report(error(
+										node.start,
+										node.end,
+										Code::Expected,
+										Some("an expression as this"),
+									))?;
+									self.placeholder(node.start, node.end)
+								}
+							}
+						}
+					}
 				}
 			};
 			fields.push((field, Value::Node(value)));
@@ -1028,12 +1050,18 @@ impl<'a, E: Extension> Walker<'a, E> {
 		if let Some(script) = script {
 			self.expect(">")?;
 			let content_start = self.at;
-			let Some(close) = self.find_closing(name) else {
-				return fail(self.len(), self.len(), Code::Unclosed, Some(name));
+			let close = match self.find_closing(name) {
+				Some(close) => close,
+				None => {
+					self.report(error(self.len(), self.len(), Code::Unclosed, Some(name)))?;
+					self.len()
+				}
 			};
 			let program = self.program(content_start, close)?;
 			self.at = close;
-			self.close_tag(name)?;
+			if close < self.len() {
+				self.close_tag(name)?;
+			}
 			let mut module = false;
 			for &id in &attributes {
 				for &(attribute, value) in &script.module {
@@ -1042,22 +1070,22 @@ impl<'a, E: Extension> Walker<'a, E> {
 					}
 					match value {
 						Some(value) if self.attribute_text(id) != Some(value) => {
-							let node = self.tree().node(id);
-							return fail(
+							let node = *self.tree().node(id);
+							self.report(error(
 								node.start,
 								node.end,
 								Code::Expected,
 								Some(&format!("{attribute} to be \"{value}\"")),
-							);
+							))?;
 						}
 						None if !matches!(self.field_of(id, "value"), Some(Value::Bool(true))) => {
-							let node = self.tree().node(id);
-							return fail(
+							let node = *self.tree().node(id);
+							self.report(error(
 								node.start,
 								node.end,
 								Code::Expected,
 								Some(&format!("{attribute} without a value")),
-							);
+							))?;
 						}
 						_ => module = true,
 					}
@@ -1086,11 +1114,11 @@ impl<'a, E: Extension> Walker<'a, E> {
 				unreachable!()
 			};
 			let slot = if module { module_slot } else { instance };
-			if slot.is_some() {
-				return fail(start, start + 1, Code::Duplicate, Some(name));
+			if slot.is_none() {
+				*slot = Some(node);
+				return Ok(());
 			}
-			*slot = Some(node);
-			return Ok(());
+			return self.report(error(start, start + 1, Code::Duplicate, Some(name)));
 		}
 		if style.is_some() {
 			self.expect(">")?;
@@ -1098,11 +1126,11 @@ impl<'a, E: Extension> Walker<'a, E> {
 			let Some(Frame::Root { css, .. }) = self.frames.first_mut() else {
 				unreachable!()
 			};
-			if css.is_some() {
-				return fail(start, start + 1, Code::Duplicate, Some(name));
+			if css.is_none() {
+				*css = Some(node);
+				return Ok(());
 			}
-			*css = Some(node);
-			return Ok(());
+			return self.report(error(start, start + 1, Code::Duplicate, Some(name)));
 		}
 		let self_closing = self.eat("/") || self.grammar.is_void(name);
 		let unclosed = !self.eat(">");
@@ -1125,13 +1153,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			}
 		};
 		if self_closing || unclosed {
-			let end = if unclosed {
-				attributes
-					.last()
-					.map_or(name_span.1, |&last| self.tree().node(last).end)
-			} else {
-				self.at
-			};
+			let end = self.at;
 			finish(self, fields, Vec::new(), end);
 			return Ok(());
 		}
@@ -1141,7 +1163,9 @@ impl<'a, E: Extension> Walker<'a, E> {
 				"rich text",
 				JsEntry::Expression,
 			)?;
-			self.at += closing_tag(self.rest(), name).unwrap() as u32;
+			if let Some(len) = closing_tag(self.rest(), name) {
+				self.at += len as u32;
+			}
 			let end = self.at;
 			finish(self, fields, nodes, end);
 			return Ok(());
@@ -1170,7 +1194,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			let node = self.host(rule.ty, content_start, close, text_fields, None, true);
 			match closing_tag(self.rest(), name) {
 				Some(len) => self.at += len as u32,
-				None => return fail(self.len(), self.len(), Code::Unclosed, Some(name)),
+				None => self.report(error(self.len(), self.len(), Code::Unclosed, Some(name)))?,
 			}
 			let end = self.at;
 			finish(self, fields, vec![node], end);
@@ -1216,6 +1240,9 @@ impl<'a, E: Extension> Walker<'a, E> {
 	fn tag_name(&mut self, attribute: bool) -> Result<&'a str> {
 		let start = self.at;
 		if start >= self.len() {
+			if attribute && self.recovering() {
+				return Ok("");
+			}
 			return fail(self.len(), self.len(), Code::UnexpectedEof, None);
 		}
 		while let Some(c) = self.char() {
@@ -1282,10 +1309,17 @@ impl<'a, E: Extension> Walker<'a, E> {
 					// the browser closes it here
 					self.close_top(start);
 				}
-				Some(Frame::Block { .. }) if self.recovering() => {
-					self.report(error(start, start + 1, Code::UnexpectedClose, Some(name)))?;
-					let end = start;
-					self.pop_block(end);
+				Some(Frame::Block {
+					start: block_start,
+					rule,
+					chain,
+					..
+				}) if self.recovering() => {
+					let (block_start, what, chained) = (*block_start, rule.name, chain.is_some());
+					if !chained {
+						self.report(error(block_start, block_start + 1, Code::Unclosed, Some(what)))?;
+					}
+					self.pop_block(start);
 				}
 				_ => return fail(start, start + 1, Code::UnexpectedClose, Some(name)),
 			}
@@ -2168,16 +2202,50 @@ impl<'a, E: Extension> Walker<'a, E> {
 		self.space();
 		self.expect(close)?;
 		let end = self.at;
-		let Some(Frame::Block { rule, .. }) = self.frames.last() else {
-			return self.report(error(start, start + 1, Code::UnexpectedClose, Some(name)));
-		};
-		if rule.name != name {
-			return self.report(error(
-				name_at,
-				name_at + name.len() as u32,
-				Code::UnexpectedClose,
-				Some(name),
-			));
+		let open = self
+			.frames
+			.iter()
+			.any(|frame| matches!(frame, Frame::Block { rule, .. } if rule.name == name));
+		if !self.recovering() || !open {
+			match self.frames.last() {
+				Some(Frame::Block { rule, .. }) if rule.name == name => {}
+				Some(Frame::Block { .. }) => {
+					return self.report(error(
+						name_at,
+						name_at + name.len() as u32,
+						Code::UnexpectedClose,
+						Some(name),
+					));
+				}
+				_ => return self.report(error(start, start + 1, Code::UnexpectedClose, Some(name))),
+			}
+		}
+		loop {
+			match self.frames.last() {
+				Some(Frame::Block { rule, .. }) if rule.name == name => break,
+				Some(Frame::Block {
+					start: block_start,
+					rule,
+					chain,
+					..
+				}) => {
+					let (block_start, what, chained) = (*block_start, rule.name, chain.is_some());
+					if !chained {
+						self.report(error(block_start, block_start + 1, Code::Unclosed, Some(what)))?;
+					}
+					self.pop_block(start);
+				}
+				Some(Frame::Element {
+					start: element_start,
+					name: span,
+					..
+				}) => {
+					let (element_start, what) = (*element_start, &self.src[span.0 as usize..span.1 as usize]);
+					self.report(error(element_start, element_start + 1, Code::Unclosed, Some(what)))?;
+					self.close_top(start);
+				}
+				_ => unreachable!(),
+			}
 		}
 		while !self.pop_block(end) {}
 		Ok(())
@@ -2554,8 +2622,9 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let ast = self.ast.take().unwrap();
 		let src = &self.src[..self.limit as usize];
 		let mut parser = Parser::<E>::new(src, self.at, self.options, 0, stop, ast)?;
+		let first = parser.tok.start;
 		let roots = match parser.read_entry(entry) {
-			// under recovery, what was read is skipped and an empty identifier stands where it failed
+			// the placeholder spans what was read: a host copies an expression's text by its range
 			Err(error) if parser.recovering() => {
 				let at = error.pos;
 				parser.record(Err(error)).unwrap();
@@ -2565,7 +2634,8 @@ impl<'a, E: Extension> Walker<'a, E> {
 					Ok(Vec::new())
 				} else {
 					let name = parser.intern("");
-					Ok(vec![parser.add_with_end(NodeKind::Identifier { name }, at, at)])
+					let end = parser.consumed_end().max(first);
+					Ok(vec![parser.add_with_end(NodeKind::Identifier { name }, first, end)])
 				}
 			}
 			result => result,
@@ -2589,6 +2659,12 @@ impl<'a, E: Extension> Walker<'a, E> {
 		program
 	}
 
+	/// An empty identifier standing where one could not be read.
+	fn placeholder(&mut self, start: u32, end: u32) -> NodeId {
+		let name = self.intern("");
+		self.ast().add(NodeKind::Identifier { name }, start, end)
+	}
+
 	/// An identifier the host reads itself, as a node.
 	fn identifier(&mut self) -> Result<NodeId> {
 		let start = self.at;
@@ -2597,8 +2673,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			_ => {
 				// under recovery an empty identifier stands where one was expected
 				self.report(error(start, start, Code::Expected, Some("an identifier")))?;
-				let name = self.intern("");
-				return Ok(self.ast().add(NodeKind::Identifier { name }, start, start));
+				return Ok(self.placeholder(start, start));
 			}
 		}
 		while let Some(c) = self.char() {

@@ -257,13 +257,13 @@ for (const { Source, scopeOf, bindingOf, parentOf } of [node, wasm]) {
 	assert.throws(() => new Source('<div>', { host: grammar }).parse(), { code: 'unclosed', pos: 0 });
 	// under recovery the tree is what could be read, the errors listed with it
 	const loose = new Source('<div>{#if }<Comp foo={bar}\n</div>', { host: grammar, errorRecovery: true }).parse();
-	assert.deepEqual(loose.errors.map((e) => e.code), ['unexpected_token', 'expected', 'unexpected_close']);
+	assert.deepEqual(loose.errors.map((e) => e.code), ['unclosed', 'unexpected_token', 'expected']);
 	const div = loose.node.fragment.nodes[0];
 	assert.equal(div.end, 33);
 	const block = div.fragment.nodes[0];
 	assert.equal(block.test.name, '');
 	assert.equal(block.consequent.nodes[0].name, 'Comp');
-	assert.equal(block.consequent.nodes[0].end, 26);
+	assert.equal(block.consequent.nodes[0].end, 27);
 }
 
 // a second host: the same walker, Vue's grammar
