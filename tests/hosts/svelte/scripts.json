@@ -1,0 +1,295 @@
+{
+	"node": {
+		"type": "Root",
+		"start": 0,
+		"end": 141,
+		"scope": 0,
+		"css": null,
+		"js": [],
+		"options": null,
+		"comments": [],
+		"module": {
+			"type": "Script",
+			"start": 0,
+			"end": 51,
+			"context": "module",
+			"content": {
+				"type": "Program",
+				"start": 15,
+				"end": 42,
+				"body": [
+					{
+						"type": "ExportNamedDeclaration",
+						"start": 17,
+						"end": 41,
+						"exportKind": "value",
+						"declaration": {
+							"type": "VariableDeclaration",
+							"start": 24,
+							"end": 41,
+							"declarations": [
+								{
+									"type": "VariableDeclarator",
+									"start": 30,
+									"end": 40,
+									"defines": [
+										0
+									],
+									"id": {
+										"type": "Identifier",
+										"start": 30,
+										"end": 36,
+										"declares": 0,
+										"name": "shared"
+									},
+									"init": {
+										"type": "Literal",
+										"start": 39,
+										"end": 40,
+										"value": 1,
+										"raw": "1"
+									}
+								}
+							],
+							"kind": "const"
+						},
+						"specifiers": [],
+						"source": null,
+						"attributes": []
+					}
+				],
+				"sourceType": "module"
+			},
+			"attributes": [
+				{
+					"type": "Attribute",
+					"start": 8,
+					"end": 14,
+					"name": "module",
+					"value": true
+				}
+			]
+		},
+		"instance": {
+			"type": "Script",
+			"start": 52,
+			"end": 129,
+			"context": "default",
+			"content": {
+				"type": "Program",
+				"start": 70,
+				"end": 120,
+				"scope": 1,
+				"body": [
+					{
+						"type": "VariableDeclaration",
+						"start": 72,
+						"end": 95,
+						"declarations": [
+							{
+								"type": "VariableDeclarator",
+								"start": 76,
+								"end": 94,
+								"defines": [
+									1
+								],
+								"id": {
+									"type": "Identifier",
+									"start": 76,
+									"end": 85,
+									"declares": 1,
+									"typeAnnotation": {
+										"type": "TSTypeAnnotation",
+										"start": 77,
+										"end": 85,
+										"typeAnnotation": {
+											"type": "TSNumberKeyword",
+											"start": 79,
+											"end": 85
+										}
+									},
+									"name": "n"
+								},
+								"init": {
+									"type": "Identifier",
+									"start": 88,
+									"end": 94,
+									"reference": 0,
+									"name": "shared"
+								}
+							}
+						],
+						"kind": "let"
+					},
+					{
+						"type": "ExportNamedDeclaration",
+						"start": 97,
+						"end": 119,
+						"exportKind": "value",
+						"declaration": {
+							"type": "VariableDeclaration",
+							"start": 104,
+							"end": 119,
+							"declarations": [
+								{
+									"type": "VariableDeclarator",
+									"start": 108,
+									"end": 118,
+									"defines": [
+										2
+									],
+									"id": {
+										"type": "Identifier",
+										"start": 108,
+										"end": 112,
+										"declares": 2,
+										"name": "name"
+									},
+									"init": {
+										"type": "Literal",
+										"start": 115,
+										"end": 118,
+										"value": "x",
+										"raw": "'x'"
+									}
+								}
+							],
+							"kind": "let"
+						},
+						"specifiers": [],
+						"source": null,
+						"attributes": []
+					}
+				],
+				"sourceType": "module"
+			},
+			"attributes": [
+				{
+					"type": "Attribute",
+					"start": 60,
+					"end": 69,
+					"name": "lang",
+					"value": [
+						{
+							"type": "Text",
+							"start": 66,
+							"end": 68,
+							"raw": "ts",
+							"data": "ts"
+						}
+					]
+				}
+			]
+		},
+		"fragment": {
+			"type": "Fragment",
+			"scope": 2,
+			"nodes": [
+				{
+					"type": "Text",
+					"start": 51,
+					"end": 52,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "Text",
+					"start": 129,
+					"end": 130,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "ExpressionTag",
+					"start": 130,
+					"end": 133,
+					"expression": {
+						"type": "Identifier",
+						"start": 131,
+						"end": 132,
+						"reference": 1,
+						"name": "n"
+					}
+				},
+				{
+					"type": "Text",
+					"start": 133,
+					"end": 134,
+					"raw": " ",
+					"data": " "
+				},
+				{
+					"type": "ExpressionTag",
+					"start": 134,
+					"end": 140,
+					"expression": {
+						"type": "Identifier",
+						"start": 135,
+						"end": 139,
+						"reference": 2,
+						"name": "name"
+					}
+				}
+			]
+		}
+	},
+	"end": 141,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "script",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 1,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "shared",
+			"kind": "const",
+			"scope": 0
+		},
+		{
+			"name": "n",
+			"kind": "let",
+			"scope": 1
+		},
+		{
+			"name": "name",
+			"kind": "let",
+			"scope": 1
+		}
+	],
+	"references": [
+		{
+			"scope": 1,
+			"binding": 0,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 2,
+			"binding": 1,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 2,
+			"binding": 2,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

@@ -1,0 +1,484 @@
+{
+	"node": {
+		"type": "Root",
+		"start": 0,
+		"end": 290,
+		"scope": 0,
+		"css": null,
+		"js": [],
+		"options": null,
+		"comments": [],
+		"fragment": {
+			"type": "Fragment",
+			"scope": 2,
+			"nodes": [
+				{
+					"type": "RegularElement",
+					"start": 0,
+					"end": 207,
+					"name": "input",
+					"attributes": [
+						{
+							"type": "BindDirective",
+							"start": 7,
+							"end": 17,
+							"name": "value",
+							"expression": {
+								"type": "Identifier",
+								"start": 12,
+								"end": 17,
+								"reference": 0,
+								"name": "value"
+							},
+							"modifiers": []
+						},
+						{
+							"type": "BindDirective",
+							"start": 18,
+							"end": 34,
+							"name": "checked",
+							"expression": {
+								"type": "Identifier",
+								"start": 32,
+								"end": 33,
+								"reference": 1,
+								"name": "c"
+							},
+							"modifiers": []
+						},
+						{
+							"type": "ClassDirective",
+							"start": 35,
+							"end": 43,
+							"name": "on",
+							"expression": {
+								"type": "Identifier",
+								"start": 41,
+								"end": 43,
+								"reference": 2,
+								"name": "on"
+							},
+							"modifiers": []
+						},
+						{
+							"type": "ClassDirective",
+							"start": 44,
+							"end": 59,
+							"name": "off",
+							"expression": {
+								"type": "UnaryExpression",
+								"start": 55,
+								"end": 58,
+								"operator": "!",
+								"prefix": true,
+								"argument": {
+									"type": "Identifier",
+									"start": 56,
+									"end": 58,
+									"reference": 3,
+									"name": "on"
+								}
+							},
+							"modifiers": []
+						},
+						{
+							"type": "StyleDirective",
+							"start": 60,
+							"end": 71,
+							"name": "color",
+							"value": true,
+							"modifiers": []
+						},
+						{
+							"type": "StyleDirective",
+							"start": 72,
+							"end": 87,
+							"name": "width",
+							"value": {
+								"type": "ExpressionTag",
+								"start": 84,
+								"end": 87,
+								"expression": {
+									"type": "Identifier",
+									"start": 85,
+									"end": 86,
+									"reference": 4,
+									"name": "w"
+								}
+							},
+							"modifiers": []
+						},
+						{
+							"type": "StyleDirective",
+							"start": 88,
+							"end": 116,
+							"name": "height",
+							"value": [
+								{
+									"type": "Text",
+									"start": 112,
+									"end": 115,
+									"raw": "1px",
+									"data": "1px"
+								}
+							],
+							"modifiers": [
+								"important"
+							]
+						},
+						{
+							"type": "OnDirective",
+							"start": 117,
+							"end": 149,
+							"name": "click",
+							"expression": {
+								"type": "Identifier",
+								"start": 147,
+								"end": 148,
+								"reference": 5,
+								"name": "f"
+							},
+							"modifiers": [
+								"once",
+								"preventDefault"
+							]
+						},
+						{
+							"type": "UseDirective",
+							"start": 150,
+							"end": 161,
+							"name": "act",
+							"expression": {
+								"type": "Identifier",
+								"start": 159,
+								"end": 160,
+								"reference": 6,
+								"name": "o"
+							},
+							"modifiers": []
+						},
+						{
+							"type": "TransitionDirective",
+							"start": 162,
+							"end": 180,
+							"name": "t",
+							"expression": null,
+							"modifiers": [
+								"local"
+							],
+							"intro": true,
+							"outro": true
+						},
+						{
+							"type": "TransitionDirective",
+							"start": 181,
+							"end": 185,
+							"name": "i",
+							"expression": null,
+							"modifiers": [],
+							"intro": true,
+							"outro": false
+						},
+						{
+							"type": "TransitionDirective",
+							"start": 186,
+							"end": 191,
+							"name": "o",
+							"expression": null,
+							"modifiers": [],
+							"intro": false,
+							"outro": true
+						},
+						{
+							"type": "AnimateDirective",
+							"start": 192,
+							"end": 204,
+							"name": "flip",
+							"expression": null,
+							"modifiers": []
+						}
+					],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 3,
+						"nodes": []
+					}
+				},
+				{
+					"type": "Text",
+					"start": 207,
+					"end": 208,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "Component",
+					"start": 208,
+					"end": 289,
+					"scope": 4,
+					"name": "Comp",
+					"attributes": [
+						{
+							"type": "LetDirective",
+							"start": 214,
+							"end": 222,
+							"name": "item",
+							"expression": {
+								"type": "Identifier",
+								"start": 218,
+								"end": 222,
+								"declares": 0,
+								"name": "item"
+							},
+							"modifiers": []
+						},
+						{
+							"type": "LetDirective",
+							"start": 223,
+							"end": 236,
+							"name": "index",
+							"expression": {
+								"type": "Identifier",
+								"start": 234,
+								"end": 235,
+								"declares": 1,
+								"name": "i"
+							},
+							"modifiers": []
+						},
+						{
+							"type": "LetDirective",
+							"start": 237,
+							"end": 256,
+							"name": "pair",
+							"expression": {
+								"type": "ObjectPattern",
+								"start": 247,
+								"end": 255,
+								"properties": [
+									{
+										"type": "Property",
+										"start": 249,
+										"end": 250,
+										"method": false,
+										"shorthand": true,
+										"computed": false,
+										"key": {
+											"type": "Identifier",
+											"start": 249,
+											"end": 250,
+											"name": "a"
+										},
+										"value": {
+											"type": "Identifier",
+											"start": 249,
+											"end": 250,
+											"declares": 2,
+											"name": "a"
+										},
+										"kind": "init"
+									},
+									{
+										"type": "Property",
+										"start": 252,
+										"end": 253,
+										"method": false,
+										"shorthand": true,
+										"computed": false,
+										"key": {
+											"type": "Identifier",
+											"start": 252,
+											"end": 253,
+											"name": "b"
+										},
+										"value": {
+											"type": "Identifier",
+											"start": 252,
+											"end": 253,
+											"declares": 3,
+											"name": "b"
+										},
+										"kind": "init"
+									}
+								]
+							},
+							"modifiers": []
+						},
+						{
+							"type": "SpreadAttribute",
+							"start": 257,
+							"end": 266,
+							"expression": {
+								"type": "Identifier",
+								"start": 261,
+								"end": 265,
+								"reference": 7,
+								"name": "rest"
+							}
+						},
+						{
+							"type": "AttachTag",
+							"start": 267,
+							"end": 286,
+							"expression": {
+								"type": "CallExpression",
+								"start": 276,
+								"end": 285,
+								"callee": {
+									"type": "Identifier",
+									"start": 276,
+									"end": 282,
+									"reference": 8,
+									"name": "attach"
+								},
+								"arguments": [
+									{
+										"type": "Identifier",
+										"start": 283,
+										"end": 284,
+										"reference": 9,
+										"name": "x"
+									}
+								],
+								"optional": false
+							}
+						}
+					],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 5,
+						"nodes": []
+					}
+				}
+			]
+		}
+	},
+	"end": 290,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 1,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 4,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "item",
+			"kind": "pattern",
+			"scope": 4
+		},
+		{
+			"name": "i",
+			"kind": "pattern",
+			"scope": 4
+		},
+		{
+			"name": "a",
+			"kind": "pattern",
+			"scope": 4
+		},
+		{
+			"name": "b",
+			"kind": "pattern",
+			"scope": 4
+		}
+	],
+	"references": [
+		{
+			"scope": 2,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 2,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 2,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 2,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 2,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 2,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 2,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 4,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 4,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 4,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

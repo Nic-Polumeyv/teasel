@@ -1,0 +1,254 @@
+{
+	"node": {
+		"type": "Root",
+		"start": 0,
+		"end": 72,
+		"scope": 0,
+		"css": null,
+		"js": [],
+		"options": null,
+		"comments": [],
+		"fragment": {
+			"type": "Fragment",
+			"scope": 2,
+			"nodes": [
+				{
+					"type": "RegularElement",
+					"start": 0,
+					"end": 18,
+					"name": "div",
+					"attributes": [],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 3,
+						"nodes": [
+							{
+								"type": "IfBlock",
+								"start": 5,
+								"end": 12,
+								"test": {
+									"type": "Identifier",
+									"start": 10,
+									"end": 11,
+									"reference": 0,
+									"name": "a"
+								},
+								"elseif": false,
+								"alternate": null,
+								"consequent": {
+									"type": "Fragment",
+									"scope": 4,
+									"nodes": []
+								}
+							}
+						]
+					}
+				},
+				{
+					"type": "Text",
+					"start": 18,
+					"end": 19,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "IfBlock",
+					"start": 19,
+					"end": 46,
+					"test": {
+						"type": "Identifier",
+						"start": 24,
+						"end": 25,
+						"reference": 1,
+						"name": "b"
+					},
+					"elseif": false,
+					"alternate": null,
+					"consequent": {
+						"type": "Fragment",
+						"scope": 5,
+						"nodes": [
+							{
+								"type": "EachBlock",
+								"start": 26,
+								"end": 41,
+								"expression": {
+									"type": "Identifier",
+									"start": 33,
+									"end": 35,
+									"reference": 2,
+									"name": "xs"
+								},
+								"context": {
+									"type": "Identifier",
+									"start": 39,
+									"end": 40,
+									"declares": 0,
+									"name": "x"
+								},
+								"body": {
+									"type": "Fragment",
+									"scope": 6,
+									"nodes": []
+								}
+							}
+						]
+					}
+				},
+				{
+					"type": "Text",
+					"start": 46,
+					"end": 47,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "Text",
+					"start": 54,
+					"end": 55,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "Text",
+					"start": 62,
+					"end": 63,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "HtmlTag",
+					"start": 63,
+					"end": 71,
+					"expression": {
+						"type": "Identifier",
+						"start": 70,
+						"end": 70,
+						"name": ""
+					}
+				}
+			]
+		}
+	},
+	"end": 72,
+	"comments": [],
+	"errors": [
+		{
+			"code": "unclosed",
+			"message": "if is not closed",
+			"pos": 5,
+			"end": 6,
+			"loc": {
+				"line": 1,
+				"column": 5
+			}
+		},
+		{
+			"code": "unclosed",
+			"message": "each is not closed",
+			"pos": 26,
+			"end": 27,
+			"loc": {
+				"line": 2,
+				"column": 7
+			}
+		},
+		{
+			"code": "placement",
+			"message": "A branch outside its block is not allowed here",
+			"pos": 47,
+			"end": 48,
+			"loc": {
+				"line": 3,
+				"column": 0
+			}
+		},
+		{
+			"code": "unexpected_close",
+			"message": "Unexpected closing each",
+			"pos": 55,
+			"end": 56,
+			"loc": {
+				"line": 4,
+				"column": 0
+			}
+		},
+		{
+			"code": "unexpected_token",
+			"message": "Unexpected token",
+			"pos": 70,
+			"end": 71,
+			"loc": {
+				"line": 5,
+				"column": 7
+			}
+		}
+	],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 1,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 3,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 5,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "x",
+			"kind": "pattern",
+			"scope": 6
+		}
+	],
+	"references": [
+		{
+			"scope": 3,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 2,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 5,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

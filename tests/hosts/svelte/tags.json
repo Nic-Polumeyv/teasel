@@ -1,0 +1,283 @@
+{
+	"node": {
+		"type": "Root",
+		"start": 0,
+		"end": 86,
+		"scope": 0,
+		"css": null,
+		"js": [],
+		"options": null,
+		"comments": [],
+		"fragment": {
+			"type": "Fragment",
+			"scope": 2,
+			"nodes": [
+				{
+					"type": "HtmlTag",
+					"start": 0,
+					"end": 11,
+					"expression": {
+						"type": "Identifier",
+						"start": 7,
+						"end": 10,
+						"reference": 0,
+						"name": "raw"
+					}
+				},
+				{
+					"type": "Text",
+					"start": 11,
+					"end": 12,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "DebugTag",
+					"start": 12,
+					"end": 25,
+					"identifiers": [
+						{
+							"type": "Identifier",
+							"start": 20,
+							"end": 21,
+							"reference": 1,
+							"name": "a"
+						},
+						{
+							"type": "Identifier",
+							"start": 23,
+							"end": 24,
+							"reference": 2,
+							"name": "b"
+						}
+					]
+				},
+				{
+					"type": "Text",
+					"start": 25,
+					"end": 26,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "DebugTag",
+					"start": 26,
+					"end": 34,
+					"identifiers": []
+				},
+				{
+					"type": "Text",
+					"start": 34,
+					"end": 35,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "ConstTag",
+					"start": 35,
+					"end": 59,
+					"declaration": {
+						"type": "VariableDeclaration",
+						"start": 37,
+						"end": 58,
+						"declarations": [
+							{
+								"type": "VariableDeclarator",
+								"start": 43,
+								"end": 58,
+								"defines": [
+									0
+								],
+								"id": {
+									"type": "Identifier",
+									"start": 43,
+									"end": 50,
+									"declares": 0,
+									"name": "doubled"
+								},
+								"init": {
+									"type": "BinaryExpression",
+									"start": 53,
+									"end": 58,
+									"left": {
+										"type": "Identifier",
+										"start": 53,
+										"end": 54,
+										"reference": 3,
+										"name": "n"
+									},
+									"operator": "*",
+									"right": {
+										"type": "Literal",
+										"start": 57,
+										"end": 58,
+										"value": 2,
+										"raw": "2"
+									}
+								}
+							}
+						],
+						"kind": "const"
+					}
+				},
+				{
+					"type": "Text",
+					"start": 59,
+					"end": 60,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "DeclarationTag",
+					"start": 60,
+					"end": 71,
+					"declaration": {
+						"type": "VariableDeclaration",
+						"start": 61,
+						"end": 70,
+						"declarations": [
+							{
+								"type": "VariableDeclarator",
+								"start": 65,
+								"end": 70,
+								"defines": [
+									1
+								],
+								"id": {
+									"type": "Identifier",
+									"start": 65,
+									"end": 66,
+									"declares": 1,
+									"name": "x"
+								},
+								"init": {
+									"type": "Literal",
+									"start": 69,
+									"end": 70,
+									"value": 1,
+									"raw": "1"
+								}
+							}
+						],
+						"kind": "let"
+					}
+				},
+				{
+					"type": "Text",
+					"start": 71,
+					"end": 72,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "DeclarationTag",
+					"start": 72,
+					"end": 85,
+					"declaration": {
+						"type": "VariableDeclaration",
+						"start": 73,
+						"end": 84,
+						"declarations": [
+							{
+								"type": "VariableDeclarator",
+								"start": 79,
+								"end": 84,
+								"defines": [
+									2
+								],
+								"id": {
+									"type": "Identifier",
+									"start": 79,
+									"end": 80,
+									"declares": 2,
+									"name": "y"
+								},
+								"init": {
+									"type": "Identifier",
+									"start": 83,
+									"end": 84,
+									"reference": 4,
+									"name": "x"
+								}
+							}
+						],
+						"kind": "const"
+					}
+				}
+			]
+		}
+	},
+	"end": 86,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 1,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "doubled",
+			"kind": "const",
+			"scope": 2
+		},
+		{
+			"name": "x",
+			"kind": "let",
+			"scope": 2
+		},
+		{
+			"name": "y",
+			"kind": "const",
+			"scope": 2
+		}
+	],
+	"references": [
+		{
+			"scope": 2,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 2,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 2,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 2,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 2,
+			"binding": 1,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

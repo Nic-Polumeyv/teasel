@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "duplicate",
+		"message": "Duplicate script",
+		"pos": 18,
+		"end": 19,
+		"loc": {
+			"line": 2,
+			"column": 0
+		}
+	}
+}

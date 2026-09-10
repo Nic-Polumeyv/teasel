@@ -1,0 +1,3 @@
+<div v-if="ok" v-for="(item, index) in items" :key="item.id" @click.stop="go(item)" v-bind:title="t" v-on:keyup.enter="k" v-model.trim="m" #default="{ x }" v-slot:named="props" .prop="v" v-html="h"></div>
+<li v-for="x of xs">{{ x }}</li>
+<li v-for="(v, k, i) in obj">{{ k }}</li>

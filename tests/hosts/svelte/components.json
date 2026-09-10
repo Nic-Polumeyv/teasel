@@ -1,0 +1,163 @@
+{
+	"node": {
+		"type": "Root",
+		"start": 0,
+		"end": 67,
+		"scope": 0,
+		"css": null,
+		"js": [],
+		"options": null,
+		"comments": [],
+		"fragment": {
+			"type": "Fragment",
+			"scope": 2,
+			"nodes": [
+				{
+					"type": "Component",
+					"start": 0,
+					"end": 26,
+					"name": "Comp",
+					"attributes": [
+						{
+							"type": "Attribute",
+							"start": 6,
+							"end": 11,
+							"name": "a",
+							"value": {
+								"type": "ExpressionTag",
+								"start": 8,
+								"end": 11,
+								"expression": {
+									"type": "Literal",
+									"start": 9,
+									"end": 10,
+									"value": 1,
+									"raw": "1"
+								}
+							}
+						}
+					],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 3,
+						"nodes": [
+							{
+								"type": "Text",
+								"start": 12,
+								"end": 19,
+								"raw": "content",
+								"data": "content"
+							}
+						]
+					}
+				},
+				{
+					"type": "Text",
+					"start": 26,
+					"end": 27,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "Component",
+					"start": 27,
+					"end": 36,
+					"name": "a.b.c",
+					"attributes": [],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 4,
+						"nodes": []
+					}
+				},
+				{
+					"type": "Text",
+					"start": 36,
+					"end": 37,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "Component",
+					"start": 37,
+					"end": 51,
+					"name": "Comp.Sub",
+					"attributes": [
+						{
+							"type": "Attribute",
+							"start": 47,
+							"end": 48,
+							"name": "x",
+							"value": true
+						}
+					],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 5,
+						"nodes": []
+					}
+				},
+				{
+					"type": "Text",
+					"start": 51,
+					"end": 52,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "RegularElement",
+					"start": 52,
+					"end": 66,
+					"name": "lower-case",
+					"attributes": [],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 6,
+						"nodes": []
+					}
+				}
+			]
+		}
+	},
+	"end": 67,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 1,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [],
+	"references": []
+}

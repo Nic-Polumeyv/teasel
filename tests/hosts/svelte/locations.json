@@ -1,0 +1,151 @@
+{
+	"node": {
+		"type": "Root",
+		"start": 0,
+		"end": 18,
+		"loc": {
+			"start": {
+				"line": 1,
+				"column": 0
+			},
+			"end": {
+				"line": 4,
+				"column": 0
+			}
+		},
+		"scope": 0,
+		"css": null,
+		"js": [],
+		"options": null,
+		"comments": [],
+		"fragment": {
+			"type": "Fragment",
+			"scope": 2,
+			"nodes": [
+				{
+					"type": "RegularElement",
+					"start": 0,
+					"end": 17,
+					"loc": {
+						"start": {
+							"line": 1,
+							"column": 0
+						},
+						"end": {
+							"line": 3,
+							"column": 6
+						}
+					},
+					"name": "div",
+					"attributes": [],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 3,
+						"nodes": [
+							{
+								"type": "Text",
+								"start": 5,
+								"end": 7,
+								"loc": {
+									"start": {
+										"line": 1,
+										"column": 5
+									},
+									"end": {
+										"line": 2,
+										"column": 1
+									}
+								},
+								"raw": "\n\t",
+								"data": "\n\t"
+							},
+							{
+								"type": "ExpressionTag",
+								"start": 7,
+								"end": 10,
+								"loc": {
+									"start": {
+										"line": 2,
+										"column": 1
+									},
+									"end": {
+										"line": 2,
+										"column": 4
+									}
+								},
+								"expression": {
+									"type": "Identifier",
+									"start": 8,
+									"end": 9,
+									"loc": {
+										"start": {
+											"line": 2,
+											"column": 2
+										},
+										"end": {
+											"line": 2,
+											"column": 3
+										}
+									},
+									"reference": 0,
+									"name": "a"
+								}
+							},
+							{
+								"type": "Text",
+								"start": 10,
+								"end": 11,
+								"loc": {
+									"start": {
+										"line": 2,
+										"column": 4
+									},
+									"end": {
+										"line": 3,
+										"column": 0
+									}
+								},
+								"raw": "\n",
+								"data": "\n"
+							}
+						]
+					}
+				}
+			]
+		}
+	},
+	"end": 18,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 1,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [],
+	"references": [
+		{
+			"scope": 3,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

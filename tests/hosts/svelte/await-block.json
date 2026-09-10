@@ -1,0 +1,345 @@
+{
+	"node": {
+		"type": "Root",
+		"start": 0,
+		"end": 143,
+		"scope": 0,
+		"css": null,
+		"js": [],
+		"options": null,
+		"comments": [],
+		"fragment": {
+			"type": "Fragment",
+			"scope": 2,
+			"nodes": [
+				{
+					"type": "AwaitBlock",
+					"start": 0,
+					"end": 83,
+					"expression": {
+						"type": "Identifier",
+						"start": 8,
+						"end": 9,
+						"reference": 0,
+						"name": "p"
+					},
+					"pending": {
+						"type": "Fragment",
+						"scope": 3,
+						"nodes": [
+							{
+								"type": "Text",
+								"start": 10,
+								"end": 20,
+								"raw": "\n\twaiting\n",
+								"data": "\n\twaiting\n"
+							}
+						]
+					},
+					"value": {
+						"type": "Identifier",
+						"start": 27,
+						"end": 32,
+						"declares": 0,
+						"name": "value"
+					},
+					"then": {
+						"type": "Fragment",
+						"scope": 4,
+						"nodes": [
+							{
+								"type": "Text",
+								"start": 33,
+								"end": 35,
+								"raw": "\n\t",
+								"data": "\n\t"
+							},
+							{
+								"type": "ExpressionTag",
+								"start": 35,
+								"end": 42,
+								"expression": {
+									"type": "Identifier",
+									"start": 36,
+									"end": 41,
+									"reference": 1,
+									"name": "value"
+								}
+							},
+							{
+								"type": "Text",
+								"start": 42,
+								"end": 43,
+								"raw": "\n",
+								"data": "\n"
+							}
+						]
+					},
+					"error": {
+						"type": "Identifier",
+						"start": 51,
+						"end": 56,
+						"declares": 1,
+						"name": "error"
+					},
+					"catch": {
+						"type": "Fragment",
+						"scope": 5,
+						"nodes": [
+							{
+								"type": "Text",
+								"start": 57,
+								"end": 59,
+								"raw": "\n\t",
+								"data": "\n\t"
+							},
+							{
+								"type": "ExpressionTag",
+								"start": 59,
+								"end": 74,
+								"expression": {
+									"type": "MemberExpression",
+									"start": 60,
+									"end": 73,
+									"object": {
+										"type": "Identifier",
+										"start": 60,
+										"end": 65,
+										"reference": 2,
+										"name": "error"
+									},
+									"property": {
+										"type": "Identifier",
+										"start": 66,
+										"end": 73,
+										"name": "message"
+									},
+									"computed": false,
+									"optional": false
+								}
+							},
+							{
+								"type": "Text",
+								"start": 74,
+								"end": 75,
+								"raw": "\n",
+								"data": "\n"
+							}
+						]
+					}
+				},
+				{
+					"type": "Text",
+					"start": 83,
+					"end": 84,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "AwaitBlock",
+					"start": 84,
+					"end": 112,
+					"expression": {
+						"type": "Identifier",
+						"start": 92,
+						"end": 93,
+						"reference": 3,
+						"name": "p"
+					},
+					"error": null,
+					"pending": null,
+					"catch": null,
+					"value": {
+						"type": "Identifier",
+						"start": 99,
+						"end": 100,
+						"declares": 2,
+						"name": "v"
+					},
+					"then": {
+						"type": "Fragment",
+						"scope": 6,
+						"nodes": [
+							{
+								"type": "ExpressionTag",
+								"start": 101,
+								"end": 104,
+								"expression": {
+									"type": "Identifier",
+									"start": 102,
+									"end": 103,
+									"reference": 4,
+									"name": "v"
+								}
+							}
+						]
+					}
+				},
+				{
+					"type": "Text",
+					"start": 112,
+					"end": 113,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "AwaitBlock",
+					"start": 113,
+					"end": 142,
+					"expression": {
+						"type": "Identifier",
+						"start": 121,
+						"end": 122,
+						"reference": 5,
+						"name": "p"
+					},
+					"value": null,
+					"pending": null,
+					"then": null,
+					"error": {
+						"type": "Identifier",
+						"start": 129,
+						"end": 130,
+						"declares": 3,
+						"name": "e"
+					},
+					"catch": {
+						"type": "Fragment",
+						"scope": 7,
+						"nodes": [
+							{
+								"type": "ExpressionTag",
+								"start": 131,
+								"end": 134,
+								"expression": {
+									"type": "Identifier",
+									"start": 132,
+									"end": 133,
+									"reference": 6,
+									"name": "e"
+								}
+							}
+						]
+					}
+				}
+			]
+		}
+	},
+	"end": 143,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 1,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "value",
+			"kind": "pattern",
+			"scope": 4
+		},
+		{
+			"name": "error",
+			"kind": "pattern",
+			"scope": 5
+		},
+		{
+			"name": "v",
+			"kind": "pattern",
+			"scope": 6
+		},
+		{
+			"name": "e",
+			"kind": "pattern",
+			"scope": 7
+		}
+	],
+	"references": [
+		{
+			"scope": 2,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 4,
+			"binding": 0,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 5,
+			"binding": 1,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 2,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 6,
+			"binding": 2,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 2,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 7,
+			"binding": 3,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

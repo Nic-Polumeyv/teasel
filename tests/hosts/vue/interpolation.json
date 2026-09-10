@@ -1,0 +1,101 @@
+{
+	"node": {
+		"type": "Root",
+		"start": 0,
+		"end": 32,
+		"scope": 0,
+		"children": [
+			{
+				"type": "Element",
+				"start": 0,
+				"end": 31,
+				"tag": "p",
+				"props": [],
+				"children": [
+					{
+						"type": "Interpolation",
+						"start": 3,
+						"end": 14,
+						"content": {
+							"type": "BinaryExpression",
+							"start": 6,
+							"end": 11,
+							"left": {
+								"type": "Identifier",
+								"start": 6,
+								"end": 7,
+								"reference": 0,
+								"name": "a"
+							},
+							"operator": "+",
+							"right": {
+								"type": "Identifier",
+								"start": 10,
+								"end": 11,
+								"reference": 1,
+								"name": "b"
+							}
+						}
+					},
+					{
+						"type": "Text",
+						"start": 14,
+						"end": 20,
+						"content": " text "
+					},
+					{
+						"type": "Interpolation",
+						"start": 20,
+						"end": 27,
+						"content": {
+							"type": "Identifier",
+							"start": 23,
+							"end": 24,
+							"reference": 2,
+							"name": "c"
+						}
+					}
+				]
+			},
+			{
+				"type": "Text",
+				"start": 31,
+				"end": 32,
+				"content": "\n"
+			}
+		]
+	},
+	"end": 32,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [],
+	"references": [
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

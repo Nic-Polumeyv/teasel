@@ -1,0 +1,464 @@
+{
+	"node": {
+		"type": "Root",
+		"start": 0,
+		"end": 156,
+		"scope": 0,
+		"css": null,
+		"js": [],
+		"options": null,
+		"comments": [],
+		"instance": {
+			"type": "Script",
+			"start": 0,
+			"end": 64,
+			"context": "default",
+			"content": {
+				"type": "Program",
+				"start": 8,
+				"end": 55,
+				"scope": 1,
+				"body": [
+					{
+						"type": "VariableDeclaration",
+						"start": 10,
+						"end": 27,
+						"declarations": [
+							{
+								"type": "VariableDeclarator",
+								"start": 14,
+								"end": 19,
+								"defines": [
+									0
+								],
+								"id": {
+									"type": "Identifier",
+									"start": 14,
+									"end": 15,
+									"declares": 0,
+									"name": "a"
+								},
+								"init": {
+									"type": "Literal",
+									"start": 18,
+									"end": 19,
+									"value": 1,
+									"raw": "1"
+								}
+							},
+							{
+								"type": "VariableDeclarator",
+								"start": 21,
+								"end": 26,
+								"defines": [
+									1
+								],
+								"id": {
+									"type": "Identifier",
+									"start": 21,
+									"end": 22,
+									"declares": 1,
+									"name": "b"
+								},
+								"init": {
+									"type": "Literal",
+									"start": 25,
+									"end": 26,
+									"value": 2,
+									"raw": "2"
+								}
+							}
+						],
+						"kind": "let"
+					},
+					{
+						"type": "FunctionDeclaration",
+						"start": 29,
+						"end": 54,
+						"scope": 2,
+						"defines": [
+							2
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 38,
+							"end": 39,
+							"declares": 2,
+							"name": "f"
+						},
+						"expression": false,
+						"generator": false,
+						"async": false,
+						"params": [],
+						"body": {
+							"type": "BlockStatement",
+							"start": 42,
+							"end": 54,
+							"body": [
+								{
+									"type": "ReturnStatement",
+									"start": 44,
+									"end": 52,
+									"argument": {
+										"type": "Identifier",
+										"start": 51,
+										"end": 52,
+										"reference": 0,
+										"name": "a"
+									}
+								}
+							]
+						}
+					}
+				],
+				"sourceType": "module"
+			},
+			"attributes": []
+		},
+		"fragment": {
+			"type": "Fragment",
+			"scope": 3,
+			"nodes": [
+				{
+					"type": "Text",
+					"start": 64,
+					"end": 65,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "EachBlock",
+					"start": 65,
+					"end": 93,
+					"expression": {
+						"type": "Identifier",
+						"start": 72,
+						"end": 74,
+						"reference": 1,
+						"name": "xs"
+					},
+					"context": {
+						"type": "Identifier",
+						"start": 78,
+						"end": 79,
+						"declares": 3,
+						"name": "a"
+					},
+					"body": {
+						"type": "Fragment",
+						"scope": 4,
+						"nodes": [
+							{
+								"type": "ExpressionTag",
+								"start": 80,
+								"end": 83,
+								"expression": {
+									"type": "Identifier",
+									"start": 81,
+									"end": 82,
+									"reference": 2,
+									"name": "a"
+								}
+							},
+							{
+								"type": "ExpressionTag",
+								"start": 83,
+								"end": 86,
+								"expression": {
+									"type": "Identifier",
+									"start": 84,
+									"end": 85,
+									"reference": 3,
+									"name": "b"
+								}
+							}
+						]
+					}
+				},
+				{
+					"type": "Text",
+					"start": 93,
+					"end": 94,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "Component",
+					"start": 94,
+					"end": 119,
+					"scope": 5,
+					"name": "Comp",
+					"attributes": [
+						{
+							"type": "LetDirective",
+							"start": 100,
+							"end": 105,
+							"name": "a",
+							"expression": {
+								"type": "Identifier",
+								"start": 104,
+								"end": 105,
+								"declares": 4,
+								"name": "a"
+							},
+							"modifiers": []
+						}
+					],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 6,
+						"nodes": [
+							{
+								"type": "ExpressionTag",
+								"start": 106,
+								"end": 109,
+								"expression": {
+									"type": "Identifier",
+									"start": 107,
+									"end": 108,
+									"reference": 4,
+									"name": "a"
+								}
+							},
+							{
+								"type": "ExpressionTag",
+								"start": 109,
+								"end": 112,
+								"expression": {
+									"type": "Identifier",
+									"start": 110,
+									"end": 111,
+									"reference": 5,
+									"name": "f"
+								}
+							}
+						]
+					}
+				},
+				{
+					"type": "Text",
+					"start": 119,
+					"end": 120,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "SnippetBlock",
+					"start": 120,
+					"end": 151,
+					"expression": {
+						"type": "Identifier",
+						"start": 130,
+						"end": 131,
+						"declares": 5,
+						"name": "s"
+					},
+					"parameters": [
+						{
+							"type": "Identifier",
+							"start": 132,
+							"end": 133,
+							"declares": 6,
+							"name": "b"
+						}
+					],
+					"body": {
+						"type": "Fragment",
+						"scope": 7,
+						"nodes": [
+							{
+								"type": "ExpressionTag",
+								"start": 135,
+								"end": 138,
+								"expression": {
+									"type": "Identifier",
+									"start": 136,
+									"end": 137,
+									"reference": 6,
+									"name": "b"
+								}
+							},
+							{
+								"type": "ExpressionTag",
+								"start": 138,
+								"end": 141,
+								"expression": {
+									"type": "Identifier",
+									"start": 139,
+									"end": 140,
+									"reference": 7,
+									"name": "a"
+								}
+							}
+						]
+					}
+				},
+				{
+					"type": "Text",
+					"start": 151,
+					"end": 152,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "ExpressionTag",
+					"start": 152,
+					"end": 155,
+					"expression": {
+						"type": "Identifier",
+						"start": 153,
+						"end": 154,
+						"reference": 8,
+						"name": "a"
+					}
+				}
+			]
+		}
+	},
+	"end": 156,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "script",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 1,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 1,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 3,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 3,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 5,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 3,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "a",
+			"kind": "let",
+			"scope": 1
+		},
+		{
+			"name": "b",
+			"kind": "let",
+			"scope": 1
+		},
+		{
+			"name": "f",
+			"kind": "function",
+			"scope": 1
+		},
+		{
+			"name": "a",
+			"kind": "pattern",
+			"scope": 4
+		},
+		{
+			"name": "a",
+			"kind": "pattern",
+			"scope": 5
+		},
+		{
+			"name": "s",
+			"kind": "pattern",
+			"scope": 3
+		},
+		{
+			"name": "b",
+			"kind": "pattern",
+			"scope": 7
+		}
+	],
+	"references": [
+		{
+			"scope": 2,
+			"binding": 0,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 3,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 4,
+			"binding": 3,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 4,
+			"binding": 1,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 6,
+			"binding": 4,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 6,
+			"binding": 2,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 7,
+			"binding": 6,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 7,
+			"binding": 0,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 3,
+			"binding": 0,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

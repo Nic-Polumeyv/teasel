@@ -1,0 +1,396 @@
+{
+	"node": {
+		"type": "Root",
+		"start": 0,
+		"end": 172,
+		"scope": 0,
+		"css": {
+			"type": "StyleSheet",
+			"start": 0,
+			"end": 141,
+			"attributes": [],
+			"children": [
+				{
+					"type": "Rule",
+					"start": 9,
+					"end": 52,
+					"prelude": {
+						"type": "SelectorList",
+						"start": 9,
+						"end": 26,
+						"children": [
+							{
+								"type": "ComplexSelector",
+								"start": 9,
+								"end": 12,
+								"children": [
+									{
+										"type": "RelativeSelector",
+										"start": 9,
+										"end": 12,
+										"combinator": null,
+										"selectors": [
+											{
+												"type": "TypeSelector",
+												"start": 9,
+												"end": 12,
+												"name": "div"
+											}
+										]
+									}
+								]
+							},
+							{
+								"type": "ComplexSelector",
+								"start": 14,
+								"end": 26,
+								"children": [
+									{
+										"type": "RelativeSelector",
+										"start": 14,
+										"end": 16,
+										"combinator": null,
+										"selectors": [
+											{
+												"type": "ClassSelector",
+												"start": 14,
+												"end": 16,
+												"name": "a"
+											}
+										]
+									},
+									{
+										"type": "RelativeSelector",
+										"start": 17,
+										"end": 26,
+										"combinator": {
+											"type": "Combinator",
+											"start": 17,
+											"end": 18,
+											"name": ">"
+										},
+										"selectors": [
+											{
+												"type": "TypeSelector",
+												"start": 19,
+												"end": 20,
+												"name": "p"
+											},
+											{
+												"type": "PseudoClassSelector",
+												"start": 20,
+												"end": 26,
+												"name": "hover",
+												"args": null
+											}
+										]
+									}
+								]
+							}
+						]
+					},
+					"block": {
+						"type": "Block",
+						"start": 27,
+						"end": 52,
+						"children": [
+							{
+								"type": "Declaration",
+								"start": 29,
+								"end": 39,
+								"property": "color",
+								"value": "red"
+							},
+							{
+								"type": "Declaration",
+								"start": 41,
+								"end": 51,
+								"property": "margin",
+								"value": "0"
+							}
+						]
+					}
+				},
+				{
+					"type": "Atrule",
+					"start": 54,
+					"end": 112,
+					"name": "media",
+					"prelude": "(min-width: 10px)",
+					"block": {
+						"type": "Block",
+						"start": 79,
+						"end": 112,
+						"children": [
+							{
+								"type": "Rule",
+								"start": 81,
+								"end": 110,
+								"prelude": {
+									"type": "SelectorList",
+									"start": 81,
+									"end": 92,
+									"children": [
+										{
+											"type": "ComplexSelector",
+											"start": 81,
+											"end": 92,
+											"children": [
+												{
+													"type": "RelativeSelector",
+													"start": 81,
+													"end": 92,
+													"combinator": null,
+													"selectors": [
+														{
+															"type": "PseudoClassSelector",
+															"start": 81,
+															"end": 92,
+															"name": "global",
+															"args": {
+																"type": "SelectorList",
+																"start": 89,
+																"end": 91,
+																"children": [
+																	{
+																		"type": "ComplexSelector",
+																		"start": 89,
+																		"end": 91,
+																		"children": [
+																			{
+																				"type": "RelativeSelector",
+																				"start": 89,
+																				"end": 91,
+																				"combinator": null,
+																				"selectors": [
+																					{
+																						"type": "ClassSelector",
+																						"start": 89,
+																						"end": 91,
+																						"name": "b"
+																					}
+																				]
+																			}
+																		]
+																	}
+																]
+															}
+														}
+													]
+												}
+											]
+										}
+									]
+								},
+								"block": {
+									"type": "Block",
+									"start": 93,
+									"end": 110,
+									"children": [
+										{
+											"type": "Declaration",
+											"start": 95,
+											"end": 109,
+											"property": "display",
+											"value": "none"
+										}
+									]
+								}
+							}
+						]
+					}
+				},
+				{
+					"type": "Rule",
+					"start": 114,
+					"end": 132,
+					"prelude": {
+						"type": "SelectorList",
+						"start": 114,
+						"end": 116,
+						"children": [
+							{
+								"type": "ComplexSelector",
+								"start": 114,
+								"end": 116,
+								"children": [
+									{
+										"type": "RelativeSelector",
+										"start": 114,
+										"end": 116,
+										"combinator": null,
+										"selectors": [
+											{
+												"type": "ClassSelector",
+												"start": 114,
+												"end": 116,
+												"name": "c"
+											}
+										]
+									}
+								]
+							}
+						]
+					},
+					"block": {
+						"type": "Block",
+						"start": 117,
+						"end": 132,
+						"children": [
+							{
+								"type": "Rule",
+								"start": 119,
+								"end": 130,
+								"prelude": {
+									"type": "SelectorList",
+									"start": 119,
+									"end": 121,
+									"children": [
+										{
+											"type": "ComplexSelector",
+											"start": 119,
+											"end": 121,
+											"children": [
+												{
+													"type": "RelativeSelector",
+													"start": 119,
+													"end": 121,
+													"combinator": null,
+													"selectors": [
+														{
+															"type": "ClassSelector",
+															"start": 119,
+															"end": 121,
+															"name": "d"
+														}
+													]
+												}
+											]
+										}
+									]
+								},
+								"block": {
+									"type": "Block",
+									"start": 122,
+									"end": 130,
+									"children": [
+										{
+											"type": "Declaration",
+											"start": 124,
+											"end": 129,
+											"property": "x",
+											"value": "y"
+										}
+									]
+								}
+							}
+						]
+					}
+				}
+			],
+			"comments": [],
+			"content": {
+				"start": 7,
+				"end": 133,
+				"styles": "\n\tdiv, .a > p:hover { color: red; margin: 0 }\n\t@media (min-width: 10px) { :global(.b) { display: none } }\n\t.c { .d { x: y } }\n",
+				"comment": null
+			}
+		},
+		"js": [],
+		"options": null,
+		"comments": [],
+		"fragment": {
+			"type": "Fragment",
+			"scope": 2,
+			"nodes": [
+				{
+					"type": "Text",
+					"start": 141,
+					"end": 142,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "RegularElement",
+					"start": 142,
+					"end": 171,
+					"name": "div",
+					"attributes": [
+						{
+							"type": "Attribute",
+							"start": 147,
+							"end": 156,
+							"name": "class",
+							"value": [
+								{
+									"type": "Text",
+									"start": 154,
+									"end": 155,
+									"raw": "a",
+									"data": "a"
+								}
+							]
+						}
+					],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 3,
+						"nodes": [
+							{
+								"type": "RegularElement",
+								"start": 157,
+								"end": 165,
+								"name": "p",
+								"attributes": [],
+								"fragment": {
+									"type": "Fragment",
+									"scope": 4,
+									"nodes": [
+										{
+											"type": "Text",
+											"start": 160,
+											"end": 161,
+											"raw": "x",
+											"data": "x"
+										}
+									]
+								}
+							}
+						]
+					}
+				}
+			]
+		}
+	},
+	"end": 172,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 1,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 3,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [],
+	"references": []
+}
