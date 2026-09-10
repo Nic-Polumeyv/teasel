@@ -1,0 +1,389 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 102,
+		"scope": 0,
+		"body": [
+			{
+				"type": "ExpressionStatement",
+				"start": 0,
+				"end": 8,
+				"expression": {
+					"type": "ArrowFunctionExpression",
+					"start": 0,
+					"end": 7,
+					"scope": 1,
+					"id": null,
+					"expression": true,
+					"generator": false,
+					"async": false,
+					"params": [],
+					"body": {
+						"type": "Literal",
+						"start": 6,
+						"end": 7,
+						"value": 1,
+						"raw": "1"
+					}
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 9,
+				"end": 16,
+				"expression": {
+					"type": "ArrowFunctionExpression",
+					"start": 9,
+					"end": 15,
+					"scope": 2,
+					"defines": [
+						0
+					],
+					"id": null,
+					"expression": true,
+					"generator": false,
+					"async": false,
+					"params": [
+						{
+							"type": "Identifier",
+							"start": 9,
+							"end": 10,
+							"declares": 0,
+							"name": "x"
+						}
+					],
+					"body": {
+						"type": "Identifier",
+						"start": 14,
+						"end": 15,
+						"reference": 0,
+						"name": "x"
+					}
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 17,
+				"end": 51,
+				"expression": {
+					"type": "ArrowFunctionExpression",
+					"start": 17,
+					"end": 50,
+					"scope": 3,
+					"defines": [
+						1,
+						2,
+						3
+					],
+					"id": null,
+					"expression": false,
+					"generator": false,
+					"async": false,
+					"params": [
+						{
+							"type": "Identifier",
+							"start": 18,
+							"end": 19,
+							"declares": 1,
+							"name": "a"
+						},
+						{
+							"type": "AssignmentPattern",
+							"start": 21,
+							"end": 26,
+							"left": {
+								"type": "Identifier",
+								"start": 21,
+								"end": 22,
+								"declares": 2,
+								"name": "b"
+							},
+							"right": {
+								"type": "Literal",
+								"start": 25,
+								"end": 26,
+								"value": 1,
+								"raw": "1"
+							}
+						},
+						{
+							"type": "RestElement",
+							"start": 28,
+							"end": 32,
+							"argument": {
+								"type": "Identifier",
+								"start": 31,
+								"end": 32,
+								"declares": 3,
+								"name": "c"
+							}
+						}
+					],
+					"body": {
+						"type": "BlockStatement",
+						"start": 37,
+						"end": 50,
+						"body": [
+							{
+								"type": "ReturnStatement",
+								"start": 39,
+								"end": 48,
+								"argument": {
+									"type": "Identifier",
+									"start": 46,
+									"end": 47,
+									"reference": 1,
+									"name": "a"
+								}
+							}
+						]
+					}
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 52,
+				"end": 73,
+				"expression": {
+					"type": "ArrowFunctionExpression",
+					"start": 52,
+					"end": 72,
+					"scope": 4,
+					"defines": [
+						4
+					],
+					"id": null,
+					"expression": true,
+					"generator": false,
+					"async": true,
+					"params": [
+						{
+							"type": "Identifier",
+							"start": 59,
+							"end": 60,
+							"declares": 4,
+							"name": "a"
+						}
+					],
+					"body": {
+						"type": "AwaitExpression",
+						"start": 65,
+						"end": 72,
+						"argument": {
+							"type": "Identifier",
+							"start": 71,
+							"end": 72,
+							"reference": 2,
+							"name": "a"
+						}
+					}
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 74,
+				"end": 87,
+				"expression": {
+					"type": "ArrowFunctionExpression",
+					"start": 74,
+					"end": 86,
+					"scope": 5,
+					"defines": [
+						5
+					],
+					"id": null,
+					"expression": true,
+					"generator": false,
+					"async": true,
+					"params": [
+						{
+							"type": "Identifier",
+							"start": 80,
+							"end": 81,
+							"declares": 5,
+							"name": "x"
+						}
+					],
+					"body": {
+						"type": "Identifier",
+						"start": 85,
+						"end": 86,
+						"reference": 3,
+						"name": "x"
+					}
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 88,
+				"end": 101,
+				"expression": {
+					"type": "ArrowFunctionExpression",
+					"start": 88,
+					"end": 100,
+					"scope": 6,
+					"defines": [
+						6
+					],
+					"id": null,
+					"expression": true,
+					"generator": false,
+					"async": false,
+					"params": [
+						{
+							"type": "ObjectPattern",
+							"start": 89,
+							"end": 94,
+							"properties": [
+								{
+									"type": "Property",
+									"start": 91,
+									"end": 92,
+									"method": false,
+									"shorthand": true,
+									"computed": false,
+									"key": {
+										"type": "Identifier",
+										"start": 91,
+										"end": 92,
+										"name": "a"
+									},
+									"value": {
+										"type": "Identifier",
+										"start": 91,
+										"end": 92,
+										"declares": 6,
+										"name": "a"
+									},
+									"kind": "init"
+								}
+							]
+						}
+					],
+					"body": {
+						"type": "Identifier",
+						"start": 99,
+						"end": 100,
+						"reference": 4,
+						"name": "a"
+					}
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 102,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "x",
+			"kind": "param",
+			"scope": 2
+		},
+		{
+			"name": "a",
+			"kind": "param",
+			"scope": 3
+		},
+		{
+			"name": "b",
+			"kind": "param",
+			"scope": 3
+		},
+		{
+			"name": "c",
+			"kind": "param",
+			"scope": 3
+		},
+		{
+			"name": "a",
+			"kind": "param",
+			"scope": 4
+		},
+		{
+			"name": "x",
+			"kind": "param",
+			"scope": 5
+		},
+		{
+			"name": "a",
+			"kind": "param",
+			"scope": 6
+		}
+	],
+	"references": [
+		{
+			"scope": 2,
+			"binding": 0,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 3,
+			"binding": 1,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 4,
+			"binding": 4,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 5,
+			"binding": 5,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 6,
+			"binding": 6,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "duplicate_regexp_flag",
+		"message": "Duplicate regular expression flag",
+		"pos": 1,
+		"end": 1,
+		"loc": {
+			"line": 1,
+			"column": 1
+		}
+	}
+}

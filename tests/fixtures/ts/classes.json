@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "override_without_extends",
+		"message": "This member cannot have an 'override' modifier because its containing class does not extend another class.",
+		"pos": 136,
+		"end": 136,
+		"loc": {
+			"line": 6,
+			"column": 1
+		}
+	}
+}

@@ -1,0 +1,145 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 61,
+		"scope": 0,
+		"body": [
+			{
+				"type": "TSModuleDeclaration",
+				"start": 0,
+				"end": 60,
+				"scope": 1,
+				"defines": [
+					0
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 10,
+					"end": 11,
+					"declares": 0,
+					"name": "N"
+				},
+				"body": {
+					"type": "TSModuleBlock",
+					"start": 12,
+					"end": 60,
+					"body": [
+						{
+							"type": "ExportNamedDeclaration",
+							"start": 15,
+							"end": 34,
+							"exportKind": "value",
+							"declaration": {
+								"type": "VariableDeclaration",
+								"start": 22,
+								"end": 34,
+								"declarations": [
+									{
+										"type": "VariableDeclarator",
+										"start": 28,
+										"end": 33,
+										"defines": [
+											1
+										],
+										"id": {
+											"type": "Identifier",
+											"start": 28,
+											"end": 29,
+											"declares": 1,
+											"name": "a"
+										},
+										"init": {
+											"type": "Literal",
+											"start": 32,
+											"end": 33,
+											"value": 1,
+											"raw": "1"
+										}
+									}
+								],
+								"kind": "const"
+							},
+							"specifiers": [],
+							"source": null,
+							"attributes": []
+						},
+						{
+							"type": "ExportNamedDeclaration",
+							"start": 36,
+							"end": 58,
+							"exportKind": "value",
+							"declaration": {
+								"type": "FunctionDeclaration",
+								"start": 43,
+								"end": 58,
+								"scope": 2,
+								"defines": [
+									2
+								],
+								"id": {
+									"type": "Identifier",
+									"start": 52,
+									"end": 53,
+									"declares": 2,
+									"name": "f"
+								},
+								"expression": false,
+								"generator": false,
+								"async": false,
+								"params": [],
+								"body": {
+									"type": "BlockStatement",
+									"start": 56,
+									"end": 58,
+									"body": []
+								}
+							},
+							"specifiers": [],
+							"source": null,
+							"attributes": []
+						}
+					]
+				}
+			}
+		],
+		"sourceType": "script"
+	},
+	"end": 61,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "script",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "namespace",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 1,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "N",
+			"kind": "namespace",
+			"scope": 0
+		},
+		{
+			"name": "a",
+			"kind": "const",
+			"scope": 1
+		},
+		{
+			"name": "f",
+			"kind": "function",
+			"scope": 1
+		}
+	],
+	"references": []
+}

@@ -1,0 +1,259 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 126,
+		"scope": 0,
+		"body": [
+			{
+				"type": "LabeledStatement",
+				"start": 0,
+				"end": 101,
+				"body": {
+					"type": "ForOfStatement",
+					"start": 7,
+					"end": 101,
+					"scope": 1,
+					"await": false,
+					"left": {
+						"type": "VariableDeclaration",
+						"start": 12,
+						"end": 19,
+						"declarations": [
+							{
+								"type": "VariableDeclarator",
+								"start": 18,
+								"end": 19,
+								"defines": [
+									0
+								],
+								"id": {
+									"type": "Identifier",
+									"start": 18,
+									"end": 19,
+									"declares": 0,
+									"name": "a"
+								},
+								"init": null
+							}
+						],
+						"kind": "const"
+					},
+					"right": {
+						"type": "Identifier",
+						"start": 23,
+						"end": 24,
+						"reference": 0,
+						"name": "b"
+					},
+					"body": {
+						"type": "BlockStatement",
+						"start": 26,
+						"end": 101,
+						"scope": 2,
+						"body": [
+							{
+								"type": "LabeledStatement",
+								"start": 29,
+								"end": 99,
+								"body": {
+									"type": "ForOfStatement",
+									"start": 36,
+									"end": 99,
+									"scope": 3,
+									"await": false,
+									"left": {
+										"type": "VariableDeclaration",
+										"start": 41,
+										"end": 48,
+										"declarations": [
+											{
+												"type": "VariableDeclarator",
+												"start": 47,
+												"end": 48,
+												"defines": [
+													1
+												],
+												"id": {
+													"type": "Identifier",
+													"start": 47,
+													"end": 48,
+													"declares": 1,
+													"name": "c"
+												},
+												"init": null
+											}
+										],
+										"kind": "const"
+									},
+									"right": {
+										"type": "Identifier",
+										"start": 52,
+										"end": 53,
+										"reference": 1,
+										"name": "d"
+									},
+									"body": {
+										"type": "BlockStatement",
+										"start": 55,
+										"end": 99,
+										"scope": 4,
+										"body": [
+											{
+												"type": "IfStatement",
+												"start": 59,
+												"end": 81,
+												"test": {
+													"type": "Identifier",
+													"start": 63,
+													"end": 64,
+													"reference": 2,
+													"name": "c"
+												},
+												"consequent": {
+													"type": "ContinueStatement",
+													"start": 66,
+													"end": 81,
+													"label": {
+														"type": "Identifier",
+														"start": 75,
+														"end": 80,
+														"name": "outer"
+													}
+												},
+												"alternate": null
+											},
+											{
+												"type": "BreakStatement",
+												"start": 84,
+												"end": 96,
+												"label": {
+													"type": "Identifier",
+													"start": 90,
+													"end": 95,
+													"name": "inner"
+												}
+											}
+										]
+									}
+								},
+								"label": {
+									"type": "Identifier",
+									"start": 29,
+									"end": 34,
+									"name": "inner"
+								}
+							}
+						]
+					}
+				},
+				"label": {
+					"type": "Identifier",
+					"start": 0,
+					"end": 5,
+					"name": "outer"
+				}
+			},
+			{
+				"type": "LabeledStatement",
+				"start": 102,
+				"end": 125,
+				"body": {
+					"type": "BlockStatement",
+					"start": 109,
+					"end": 125,
+					"scope": 5,
+					"body": [
+						{
+							"type": "BreakStatement",
+							"start": 111,
+							"end": 123,
+							"label": {
+								"type": "Identifier",
+								"start": 117,
+								"end": 122,
+								"name": "block"
+							}
+						}
+					]
+				},
+				"label": {
+					"type": "Identifier",
+					"start": 102,
+					"end": 107,
+					"name": "block"
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 126,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "for",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 1,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "for",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 3,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 0,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "a",
+			"kind": "const",
+			"scope": 1
+		},
+		{
+			"name": "c",
+			"kind": "const",
+			"scope": 3
+		}
+	],
+	"references": [
+		{
+			"scope": 1,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 3,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 4,
+			"binding": 1,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

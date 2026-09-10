@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "unterminated_template",
+		"message": "Unterminated template",
+		"pos": 1,
+		"end": 1,
+		"loc": {
+			"line": 1,
+			"column": 1
+		}
+	}
+}

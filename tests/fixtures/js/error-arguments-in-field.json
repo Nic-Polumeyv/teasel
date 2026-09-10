@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "arguments_in_field_initializer",
+		"message": "Cannot use 'arguments' in class field initializer",
+		"pos": 14,
+		"end": 14,
+		"loc": {
+			"line": 1,
+			"column": 14
+		}
+	}
+}

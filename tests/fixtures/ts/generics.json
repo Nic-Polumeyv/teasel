@@ -1,0 +1,609 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 209,
+		"scope": 0,
+		"body": [
+			{
+				"type": "FunctionDeclaration",
+				"start": 0,
+				"end": 77,
+				"scope": 1,
+				"defines": [
+					0,
+					1,
+					2
+				],
+				"returnType": {
+					"type": "TSTypeAnnotation",
+					"start": 54,
+					"end": 60,
+					"typeAnnotation": {
+						"type": "TSIndexedAccessType",
+						"start": 56,
+						"end": 60,
+						"objectType": {
+							"type": "TSTypeReference",
+							"start": 56,
+							"end": 57,
+							"typeName": {
+								"type": "Identifier",
+								"start": 56,
+								"end": 57,
+								"name": "T"
+							}
+						},
+						"indexType": {
+							"type": "TSTypeReference",
+							"start": 58,
+							"end": 59,
+							"typeName": {
+								"type": "Identifier",
+								"start": 58,
+								"end": 59,
+								"name": "U"
+							}
+						}
+					}
+				},
+				"typeParameters": {
+					"type": "TSTypeParameterDeclaration",
+					"start": 10,
+					"end": 42,
+					"params": [
+						{
+							"type": "TSTypeParameter",
+							"start": 11,
+							"end": 12,
+							"name": "T"
+						},
+						{
+							"type": "TSTypeParameter",
+							"start": 14,
+							"end": 41,
+							"name": "U",
+							"constraint": {
+								"type": "TSTypeOperator",
+								"start": 24,
+								"end": 31,
+								"operator": "keyof",
+								"typeAnnotation": {
+									"type": "TSTypeReference",
+									"start": 30,
+									"end": 31,
+									"typeName": {
+										"type": "Identifier",
+										"start": 30,
+										"end": 31,
+										"name": "T"
+									}
+								}
+							},
+							"default": {
+								"type": "TSTypeOperator",
+								"start": 34,
+								"end": 41,
+								"operator": "keyof",
+								"typeAnnotation": {
+									"type": "TSTypeReference",
+									"start": 40,
+									"end": 41,
+									"typeName": {
+										"type": "Identifier",
+										"start": 40,
+										"end": 41,
+										"name": "T"
+									}
+								}
+							}
+						}
+					]
+				},
+				"id": {
+					"type": "Identifier",
+					"start": 9,
+					"end": 10,
+					"declares": 0,
+					"name": "f"
+				},
+				"expression": false,
+				"generator": false,
+				"async": false,
+				"params": [
+					{
+						"type": "Identifier",
+						"start": 43,
+						"end": 47,
+						"declares": 1,
+						"typeAnnotation": {
+							"type": "TSTypeAnnotation",
+							"start": 44,
+							"end": 47,
+							"typeAnnotation": {
+								"type": "TSTypeReference",
+								"start": 46,
+								"end": 47,
+								"typeName": {
+									"type": "Identifier",
+									"start": 46,
+									"end": 47,
+									"name": "T"
+								}
+							}
+						},
+						"name": "t"
+					},
+					{
+						"type": "Identifier",
+						"start": 49,
+						"end": 53,
+						"declares": 2,
+						"typeAnnotation": {
+							"type": "TSTypeAnnotation",
+							"start": 50,
+							"end": 53,
+							"typeAnnotation": {
+								"type": "TSTypeReference",
+								"start": 52,
+								"end": 53,
+								"typeName": {
+									"type": "Identifier",
+									"start": 52,
+									"end": 53,
+									"name": "U"
+								}
+							}
+						},
+						"name": "u"
+					}
+				],
+				"body": {
+					"type": "BlockStatement",
+					"start": 61,
+					"end": 77,
+					"body": [
+						{
+							"type": "ReturnStatement",
+							"start": 63,
+							"end": 75,
+							"argument": {
+								"type": "MemberExpression",
+								"start": 70,
+								"end": 74,
+								"object": {
+									"type": "Identifier",
+									"start": 70,
+									"end": 71,
+									"reference": 0,
+									"name": "t"
+								},
+								"property": {
+									"type": "Identifier",
+									"start": 72,
+									"end": 73,
+									"reference": 1,
+									"name": "u"
+								},
+								"computed": true,
+								"optional": false
+							}
+						}
+					]
+				}
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 78,
+				"end": 104,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 84,
+						"end": 103,
+						"defines": [
+							3
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 84,
+							"end": 85,
+							"declares": 3,
+							"name": "g"
+						},
+						"init": {
+							"type": "ArrowFunctionExpression",
+							"start": 88,
+							"end": 103,
+							"scope": 2,
+							"defines": [
+								4
+							],
+							"typeParameters": {
+								"type": "TSTypeParameterDeclaration",
+								"start": 88,
+								"end": 92,
+								"params": [
+									{
+										"type": "TSTypeParameter",
+										"start": 89,
+										"end": 90,
+										"name": "T"
+									}
+								]
+							},
+							"id": null,
+							"expression": true,
+							"generator": false,
+							"async": false,
+							"params": [
+								{
+									"type": "Identifier",
+									"start": 93,
+									"end": 97,
+									"declares": 4,
+									"typeAnnotation": {
+										"type": "TSTypeAnnotation",
+										"start": 94,
+										"end": 97,
+										"typeAnnotation": {
+											"type": "TSTypeReference",
+											"start": 96,
+											"end": 97,
+											"typeName": {
+												"type": "Identifier",
+												"start": 96,
+												"end": 97,
+												"name": "T"
+											}
+										}
+									},
+									"name": "x"
+								}
+							],
+							"body": {
+								"type": "Identifier",
+								"start": 102,
+								"end": 103,
+								"reference": 2,
+								"name": "x"
+							}
+						}
+					}
+				],
+				"kind": "const"
+			},
+			{
+				"type": "ClassDeclaration",
+				"start": 105,
+				"end": 125,
+				"scope": 3,
+				"defines": [
+					5
+				],
+				"typeParameters": {
+					"type": "TSTypeParameterDeclaration",
+					"start": 112,
+					"end": 122,
+					"params": [
+						{
+							"type": "TSTypeParameter",
+							"start": 113,
+							"end": 121,
+							"in": true,
+							"out": true,
+							"name": "T"
+						}
+					]
+				},
+				"id": {
+					"type": "Identifier",
+					"start": 111,
+					"end": 112,
+					"declares": 5,
+					"name": "C"
+				},
+				"superClass": null,
+				"body": {
+					"type": "ClassBody",
+					"start": 123,
+					"end": 125,
+					"body": []
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 126,
+				"end": 161,
+				"expression": {
+					"type": "CallExpression",
+					"start": 126,
+					"end": 160,
+					"typeArguments": {
+						"type": "TSTypeParameterInstantiation",
+						"start": 127,
+						"end": 145,
+						"params": [
+							{
+								"type": "TSStringKeyword",
+								"start": 128,
+								"end": 134
+							},
+							{
+								"type": "TSLiteralType",
+								"start": 136,
+								"end": 144,
+								"literal": {
+									"type": "Literal",
+									"start": 136,
+									"end": 144,
+									"value": "length",
+									"raw": "'length'"
+								}
+							}
+						]
+					},
+					"callee": {
+						"type": "Identifier",
+						"start": 126,
+						"end": 127,
+						"reference": 3,
+						"name": "f"
+					},
+					"arguments": [
+						{
+							"type": "Literal",
+							"start": 146,
+							"end": 149,
+							"value": "x",
+							"raw": "'x'"
+						},
+						{
+							"type": "Literal",
+							"start": 151,
+							"end": 159,
+							"value": "length",
+							"raw": "'length'"
+						}
+					],
+					"optional": false
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 162,
+				"end": 188,
+				"expression": {
+					"type": "NewExpression",
+					"start": 162,
+					"end": 187,
+					"typeArguments": {
+						"type": "TSTypeParameterInstantiation",
+						"start": 169,
+						"end": 185,
+						"params": [
+							{
+								"type": "TSStringKeyword",
+								"start": 170,
+								"end": 176
+							},
+							{
+								"type": "TSNumberKeyword",
+								"start": 178,
+								"end": 184
+							}
+						]
+					},
+					"callee": {
+						"type": "Identifier",
+						"start": 166,
+						"end": 169,
+						"reference": 4,
+						"name": "Map"
+					},
+					"arguments": []
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 189,
+				"end": 198,
+				"expression": {
+					"type": "ChainExpression",
+					"start": 189,
+					"end": 197,
+					"expression": {
+						"type": "CallExpression",
+						"start": 189,
+						"end": 197,
+						"typeArguments": {
+							"type": "TSTypeParameterInstantiation",
+							"start": 192,
+							"end": 195,
+							"params": [
+								{
+									"type": "TSTypeReference",
+									"start": 193,
+									"end": 194,
+									"typeName": {
+										"type": "Identifier",
+										"start": 193,
+										"end": 194,
+										"name": "T"
+									}
+								}
+							]
+						},
+						"callee": {
+							"type": "Identifier",
+							"start": 189,
+							"end": 190,
+							"reference": 5,
+							"name": "a"
+						},
+						"arguments": [],
+						"optional": true
+					}
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 199,
+				"end": 208,
+				"expression": {
+					"type": "CallExpression",
+					"start": 199,
+					"end": 207,
+					"typeArguments": {
+						"type": "TSTypeParameterInstantiation",
+						"start": 202,
+						"end": 205,
+						"params": [
+							{
+								"type": "TSTypeReference",
+								"start": 203,
+								"end": 204,
+								"typeName": {
+									"type": "Identifier",
+									"start": 203,
+									"end": 204,
+									"name": "D"
+								}
+							}
+						]
+					},
+					"callee": {
+						"type": "MemberExpression",
+						"start": 199,
+						"end": 202,
+						"object": {
+							"type": "Identifier",
+							"start": 199,
+							"end": 200,
+							"reference": 6,
+							"name": "b"
+						},
+						"property": {
+							"type": "Identifier",
+							"start": 201,
+							"end": 202,
+							"name": "c"
+						},
+						"computed": false,
+						"optional": false
+					},
+					"arguments": [],
+					"optional": false
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 209,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "class",
+			"parent": 0,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "f",
+			"kind": "function",
+			"scope": 0
+		},
+		{
+			"name": "t",
+			"kind": "param",
+			"scope": 1
+		},
+		{
+			"name": "u",
+			"kind": "param",
+			"scope": 1
+		},
+		{
+			"name": "g",
+			"kind": "const",
+			"scope": 0
+		},
+		{
+			"name": "x",
+			"kind": "param",
+			"scope": 2
+		},
+		{
+			"name": "C",
+			"kind": "class",
+			"scope": 0
+		}
+	],
+	"references": [
+		{
+			"scope": 1,
+			"binding": 1,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 1,
+			"binding": 2,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 2,
+			"binding": 4,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": 0,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

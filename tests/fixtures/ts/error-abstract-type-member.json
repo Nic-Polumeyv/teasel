@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "type_member_modifier",
+		"message": "'abstract' modifier cannot appear on a type member.",
+		"pos": 23,
+		"end": 24,
+		"loc": {
+			"line": 1,
+			"column": 23
+		}
+	}
+}

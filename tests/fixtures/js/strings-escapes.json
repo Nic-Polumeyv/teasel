@@ -1,0 +1,48 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 41,
+		"scope": 0,
+		"body": [
+			{
+				"type": "ExpressionStatement",
+				"start": 0,
+				"end": 21,
+				"expression": {
+					"type": "Literal",
+					"start": 0,
+					"end": 20,
+					"value": "AAA\u0000",
+					"raw": "'\\x41\\u0041\\u{41}\\0'"
+				},
+				"directive": "\\x41\\u0041\\u{41}\\0"
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 22,
+				"end": 40,
+				"expression": {
+					"type": "Literal",
+					"start": 22,
+					"end": 39,
+					"value": "linecontinued",
+					"raw": "'line\\\ncontinued'"
+				},
+				"directive": "line\\\ncontinued"
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 41,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [],
+	"references": []
+}

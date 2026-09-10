@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "generator_in_ambient",
+		"message": "Generators are not allowed in an ambient context.",
+		"pos": 0,
+		"end": 0,
+		"loc": {
+			"line": 1,
+			"column": 0
+		}
+	}
+}

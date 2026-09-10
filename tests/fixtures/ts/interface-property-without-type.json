@@ -1,0 +1,52 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 18,
+		"scope": 0,
+		"body": [
+			{
+				"type": "TSInterfaceDeclaration",
+				"start": 0,
+				"end": 17,
+				"id": {
+					"type": "Identifier",
+					"start": 10,
+					"end": 11,
+					"name": "A"
+				},
+				"body": {
+					"type": "TSInterfaceBody",
+					"start": 12,
+					"end": 17,
+					"body": [
+						{
+							"type": "TSPropertySignature",
+							"start": 14,
+							"end": 15,
+							"key": {
+								"type": "Identifier",
+								"start": 14,
+								"end": 15,
+								"name": "x"
+							},
+							"computed": false
+						}
+					]
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 18,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [],
+	"references": []
+}

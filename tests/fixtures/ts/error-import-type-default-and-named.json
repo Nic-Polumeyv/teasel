@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "type_import_default_and_named",
+		"message": "A type-only import can specify a default import or named bindings, but not both.",
+		"pos": 0,
+		"end": 0,
+		"loc": {
+			"line": 1,
+			"column": 0
+		}
+	}
+}

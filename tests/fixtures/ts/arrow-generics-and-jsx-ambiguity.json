@@ -1,0 +1,338 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 100,
+		"scope": 0,
+		"body": [
+			{
+				"type": "VariableDeclaration",
+				"start": 0,
+				"end": 25,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 6,
+						"end": 24,
+						"defines": [
+							0
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 6,
+							"end": 7,
+							"declares": 0,
+							"name": "f"
+						},
+						"init": {
+							"type": "ArrowFunctionExpression",
+							"start": 10,
+							"end": 24,
+							"scope": 1,
+							"defines": [
+								1
+							],
+							"typeParameters": {
+								"type": "TSTypeParameterDeclaration",
+								"start": 10,
+								"end": 13,
+								"params": [
+									{
+										"type": "TSTypeParameter",
+										"start": 11,
+										"end": 12,
+										"name": "T"
+									}
+								]
+							},
+							"id": null,
+							"expression": true,
+							"generator": false,
+							"async": false,
+							"params": [
+								{
+									"type": "Identifier",
+									"start": 14,
+									"end": 18,
+									"declares": 1,
+									"typeAnnotation": {
+										"type": "TSTypeAnnotation",
+										"start": 15,
+										"end": 18,
+										"typeAnnotation": {
+											"type": "TSTypeReference",
+											"start": 17,
+											"end": 18,
+											"typeName": {
+												"type": "Identifier",
+												"start": 17,
+												"end": 18,
+												"name": "T"
+											}
+										}
+									},
+									"name": "x"
+								}
+							],
+							"body": {
+								"type": "Identifier",
+								"start": 23,
+								"end": 24,
+								"reference": 0,
+								"name": "x"
+							}
+						}
+					}
+				],
+				"kind": "const"
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 26,
+				"end": 67,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 32,
+						"end": 66,
+						"defines": [
+							2
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 32,
+							"end": 33,
+							"declares": 2,
+							"name": "g"
+						},
+						"init": {
+							"type": "ArrowFunctionExpression",
+							"start": 36,
+							"end": 66,
+							"scope": 2,
+							"defines": [
+								3
+							],
+							"typeParameters": {
+								"type": "TSTypeParameterDeclaration",
+								"start": 36,
+								"end": 55,
+								"params": [
+									{
+										"type": "TSTypeParameter",
+										"start": 37,
+										"end": 54,
+										"name": "T",
+										"constraint": {
+											"type": "TSUnknownKeyword",
+											"start": 47,
+											"end": 54
+										}
+									}
+								]
+							},
+							"id": null,
+							"expression": true,
+							"generator": false,
+							"async": false,
+							"params": [
+								{
+									"type": "Identifier",
+									"start": 56,
+									"end": 60,
+									"declares": 3,
+									"typeAnnotation": {
+										"type": "TSTypeAnnotation",
+										"start": 57,
+										"end": 60,
+										"typeAnnotation": {
+											"type": "TSTypeReference",
+											"start": 59,
+											"end": 60,
+											"typeName": {
+												"type": "Identifier",
+												"start": 59,
+												"end": 60,
+												"name": "T"
+											}
+										}
+									},
+									"name": "x"
+								}
+							],
+							"body": {
+								"type": "Identifier",
+								"start": 65,
+								"end": 66,
+								"reference": 1,
+								"name": "x"
+							}
+						}
+					}
+				],
+				"kind": "const"
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 68,
+				"end": 99,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 74,
+						"end": 98,
+						"defines": [
+							4
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 74,
+							"end": 75,
+							"declares": 4,
+							"name": "h"
+						},
+						"init": {
+							"type": "ArrowFunctionExpression",
+							"start": 78,
+							"end": 98,
+							"scope": 3,
+							"defines": [
+								5
+							],
+							"typeParameters": {
+								"type": "TSTypeParameterDeclaration",
+								"start": 84,
+								"end": 87,
+								"params": [
+									{
+										"type": "TSTypeParameter",
+										"start": 85,
+										"end": 86,
+										"name": "T"
+									}
+								]
+							},
+							"id": null,
+							"expression": true,
+							"generator": false,
+							"async": true,
+							"params": [
+								{
+									"type": "Identifier",
+									"start": 88,
+									"end": 92,
+									"declares": 5,
+									"typeAnnotation": {
+										"type": "TSTypeAnnotation",
+										"start": 89,
+										"end": 92,
+										"typeAnnotation": {
+											"type": "TSTypeReference",
+											"start": 91,
+											"end": 92,
+											"typeName": {
+												"type": "Identifier",
+												"start": 91,
+												"end": 92,
+												"name": "T"
+											}
+										}
+									},
+									"name": "x"
+								}
+							],
+							"body": {
+								"type": "Identifier",
+								"start": 97,
+								"end": 98,
+								"reference": 2,
+								"name": "x"
+							}
+						}
+					}
+				],
+				"kind": "const"
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 100,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "f",
+			"kind": "const",
+			"scope": 0
+		},
+		{
+			"name": "x",
+			"kind": "param",
+			"scope": 1
+		},
+		{
+			"name": "g",
+			"kind": "const",
+			"scope": 0
+		},
+		{
+			"name": "x",
+			"kind": "param",
+			"scope": 2
+		},
+		{
+			"name": "h",
+			"kind": "const",
+			"scope": 0
+		},
+		{
+			"name": "x",
+			"kind": "param",
+			"scope": 3
+		}
+	],
+	"references": [
+		{
+			"scope": 1,
+			"binding": 1,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 2,
+			"binding": 3,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 3,
+			"binding": 5,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

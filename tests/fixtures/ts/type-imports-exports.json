@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "undefined_export",
+		"message": "Export 'E' is not defined",
+		"pos": 97,
+		"end": 97,
+		"loc": {
+			"line": 4,
+			"column": 14
+		}
+	}
+}

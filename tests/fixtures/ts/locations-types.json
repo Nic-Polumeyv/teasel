@@ -1,0 +1,185 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 30,
+		"loc": {
+			"start": {
+				"line": 1,
+				"column": 0
+			},
+			"end": {
+				"line": 4,
+				"column": 0
+			}
+		},
+		"scope": 0,
+		"body": [
+			{
+				"type": "VariableDeclaration",
+				"start": 0,
+				"end": 29,
+				"loc": {
+					"start": {
+						"line": 1,
+						"column": 0
+					},
+					"end": {
+						"line": 3,
+						"column": 7
+					}
+				},
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 4,
+						"end": 28,
+						"loc": {
+							"start": {
+								"line": 1,
+								"column": 4
+							},
+							"end": {
+								"line": 3,
+								"column": 6
+							}
+						},
+						"defines": [
+							0
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 4,
+							"end": 23,
+							"loc": {
+								"start": {
+									"line": 1,
+									"column": 4
+								},
+								"end": {
+									"line": 3,
+									"column": 1
+								}
+							},
+							"declares": 0,
+							"typeAnnotation": {
+								"type": "TSTypeAnnotation",
+								"start": 5,
+								"end": 23,
+								"loc": {
+									"start": {
+										"line": 1,
+										"column": 5
+									},
+									"end": {
+										"line": 3,
+										"column": 1
+									}
+								},
+								"typeAnnotation": {
+									"type": "TSTypeReference",
+									"start": 7,
+									"end": 23,
+									"loc": {
+										"start": {
+											"line": 1,
+											"column": 7
+										},
+										"end": {
+											"line": 3,
+											"column": 1
+										}
+									},
+									"typeName": {
+										"type": "Identifier",
+										"start": 7,
+										"end": 12,
+										"loc": {
+											"start": {
+												"line": 1,
+												"column": 7
+											},
+											"end": {
+												"line": 1,
+												"column": 12
+											}
+										},
+										"name": "Array"
+									},
+									"typeArguments": {
+										"type": "TSTypeParameterInstantiation",
+										"start": 12,
+										"end": 23,
+										"loc": {
+											"start": {
+												"line": 1,
+												"column": 12
+											},
+											"end": {
+												"line": 3,
+												"column": 1
+											}
+										},
+										"params": [
+											{
+												"type": "TSStringKeyword",
+												"start": 15,
+												"end": 21,
+												"loc": {
+													"start": {
+														"line": 2,
+														"column": 1
+													},
+													"end": {
+														"line": 2,
+														"column": 7
+													}
+												}
+											}
+										]
+									}
+								}
+							},
+							"name": "a"
+						},
+						"init": {
+							"type": "ArrayExpression",
+							"start": 26,
+							"end": 28,
+							"loc": {
+								"start": {
+									"line": 3,
+									"column": 4
+								},
+								"end": {
+									"line": 3,
+									"column": 6
+								}
+							},
+							"elements": []
+						}
+					}
+				],
+				"kind": "let"
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 30,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "a",
+			"kind": "let",
+			"scope": 0
+		}
+	],
+	"references": []
+}

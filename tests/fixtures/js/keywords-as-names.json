@@ -1,0 +1,480 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 161,
+		"scope": 0,
+		"body": [
+			{
+				"type": "VariableDeclaration",
+				"start": 0,
+				"end": 58,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 6,
+						"end": 57,
+						"defines": [
+							0
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 6,
+							"end": 7,
+							"declares": 0,
+							"name": "o"
+						},
+						"init": {
+							"type": "ObjectExpression",
+							"start": 10,
+							"end": 57,
+							"properties": [
+								{
+									"type": "Property",
+									"start": 12,
+									"end": 17,
+									"method": false,
+									"shorthand": false,
+									"computed": false,
+									"key": {
+										"type": "Identifier",
+										"start": 12,
+										"end": 14,
+										"name": "if"
+									},
+									"value": {
+										"type": "Literal",
+										"start": 16,
+										"end": 17,
+										"value": 1,
+										"raw": "1"
+									},
+									"kind": "init"
+								},
+								{
+									"type": "Property",
+									"start": 19,
+									"end": 27,
+									"method": false,
+									"shorthand": false,
+									"computed": false,
+									"key": {
+										"type": "Identifier",
+										"start": 19,
+										"end": 24,
+										"name": "class"
+									},
+									"value": {
+										"type": "Literal",
+										"start": 26,
+										"end": 27,
+										"value": 2,
+										"raw": "2"
+									},
+									"kind": "init"
+								},
+								{
+									"type": "Property",
+									"start": 29,
+									"end": 35,
+									"method": false,
+									"shorthand": false,
+									"computed": false,
+									"key": {
+										"type": "Identifier",
+										"start": 29,
+										"end": 32,
+										"name": "let"
+									},
+									"value": {
+										"type": "Literal",
+										"start": 34,
+										"end": 35,
+										"value": 3,
+										"raw": "3"
+									},
+									"kind": "init"
+								},
+								{
+									"type": "Property",
+									"start": 37,
+									"end": 45,
+									"method": false,
+									"shorthand": false,
+									"computed": false,
+									"key": {
+										"type": "Identifier",
+										"start": 37,
+										"end": 42,
+										"name": "await"
+									},
+									"value": {
+										"type": "Literal",
+										"start": 44,
+										"end": 45,
+										"value": 4,
+										"raw": "4"
+									},
+									"kind": "init"
+								},
+								{
+									"type": "Property",
+									"start": 47,
+									"end": 55,
+									"method": false,
+									"shorthand": false,
+									"computed": false,
+									"key": {
+										"type": "Identifier",
+										"start": 47,
+										"end": 52,
+										"name": "yield"
+									},
+									"value": {
+										"type": "Literal",
+										"start": 54,
+										"end": 55,
+										"value": 5,
+										"raw": "5"
+									},
+									"kind": "init"
+								}
+							]
+						}
+					}
+				],
+				"kind": "const"
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 59,
+				"end": 64,
+				"expression": {
+					"type": "MemberExpression",
+					"start": 59,
+					"end": 63,
+					"object": {
+						"type": "Identifier",
+						"start": 59,
+						"end": 60,
+						"reference": 0,
+						"name": "o"
+					},
+					"property": {
+						"type": "Identifier",
+						"start": 61,
+						"end": 63,
+						"name": "if"
+					},
+					"computed": false,
+					"optional": false
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 65,
+				"end": 73,
+				"expression": {
+					"type": "MemberExpression",
+					"start": 65,
+					"end": 72,
+					"object": {
+						"type": "Identifier",
+						"start": 65,
+						"end": 66,
+						"reference": 1,
+						"name": "o"
+					},
+					"property": {
+						"type": "Identifier",
+						"start": 67,
+						"end": 72,
+						"name": "class"
+					},
+					"computed": false,
+					"optional": false
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 74,
+				"end": 80,
+				"expression": {
+					"type": "MemberExpression",
+					"start": 74,
+					"end": 79,
+					"object": {
+						"type": "Identifier",
+						"start": 74,
+						"end": 75,
+						"reference": 2,
+						"name": "o"
+					},
+					"property": {
+						"type": "Identifier",
+						"start": 76,
+						"end": 79,
+						"name": "let"
+					},
+					"computed": false,
+					"optional": false
+				}
+			},
+			{
+				"type": "ClassDeclaration",
+				"start": 81,
+				"end": 116,
+				"scope": 1,
+				"defines": [
+					1
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 87,
+					"end": 88,
+					"declares": 1,
+					"name": "C"
+				},
+				"superClass": null,
+				"body": {
+					"type": "ClassBody",
+					"start": 89,
+					"end": 116,
+					"body": [
+						{
+							"type": "MethodDefinition",
+							"start": 91,
+							"end": 105,
+							"static": true,
+							"computed": false,
+							"key": {
+								"type": "Identifier",
+								"start": 98,
+								"end": 100,
+								"name": "if"
+							},
+							"kind": "method",
+							"value": {
+								"type": "FunctionExpression",
+								"start": 100,
+								"end": 105,
+								"scope": 2,
+								"id": null,
+								"expression": false,
+								"generator": false,
+								"async": false,
+								"params": [],
+								"body": {
+									"type": "BlockStatement",
+									"start": 103,
+									"end": 105,
+									"body": []
+								}
+							}
+						},
+						{
+							"type": "MethodDefinition",
+							"start": 106,
+							"end": 114,
+							"static": false,
+							"computed": false,
+							"key": {
+								"type": "Identifier",
+								"start": 106,
+								"end": 109,
+								"name": "let"
+							},
+							"kind": "method",
+							"value": {
+								"type": "FunctionExpression",
+								"start": 109,
+								"end": 114,
+								"scope": 3,
+								"id": null,
+								"expression": false,
+								"generator": false,
+								"async": false,
+								"params": [],
+								"body": {
+									"type": "BlockStatement",
+									"start": 112,
+									"end": 114,
+									"body": []
+								}
+							}
+						}
+					]
+				}
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 117,
+				"end": 131,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 121,
+						"end": 130,
+						"defines": [
+							2
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 121,
+							"end": 126,
+							"declares": 2,
+							"name": "async"
+						},
+						"init": {
+							"type": "Literal",
+							"start": 129,
+							"end": 130,
+							"value": 1,
+							"raw": "1"
+						}
+					}
+				],
+				"kind": "let"
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 132,
+				"end": 138,
+				"expression": {
+					"type": "Identifier",
+					"start": 132,
+					"end": 137,
+					"reference": 3,
+					"name": "async"
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 139,
+				"end": 144,
+				"expression": {
+					"type": "Identifier",
+					"start": 139,
+					"end": 144,
+					"reference": 4,
+					"name": "async"
+				}
+			},
+			{
+				"type": "FunctionDeclaration",
+				"start": 145,
+				"end": 160,
+				"scope": 4,
+				"defines": [
+					3
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 154,
+					"end": 155,
+					"declares": 3,
+					"name": "f"
+				},
+				"expression": false,
+				"generator": false,
+				"async": false,
+				"params": [],
+				"body": {
+					"type": "BlockStatement",
+					"start": 158,
+					"end": 160,
+					"body": []
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 161,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "class",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 1,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 1,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "o",
+			"kind": "const",
+			"scope": 0
+		},
+		{
+			"name": "C",
+			"kind": "class",
+			"scope": 0
+		},
+		{
+			"name": "async",
+			"kind": "let",
+			"scope": 0
+		},
+		{
+			"name": "f",
+			"kind": "function",
+			"scope": 0
+		}
+	],
+	"references": [
+		{
+			"scope": 0,
+			"binding": 0,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": 0,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": 0,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": 2,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": 2,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

@@ -1,0 +1,111 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 21,
+		"scope": 0,
+		"body": [
+			{
+				"type": "VariableDeclaration",
+				"start": 0,
+				"end": 20,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 6,
+						"end": 19,
+						"defines": [
+							0
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 6,
+							"end": 7,
+							"declares": 0,
+							"name": "f"
+						},
+						"init": {
+							"type": "ArrowFunctionExpression",
+							"start": 10,
+							"end": 19,
+							"scope": 1,
+							"defines": [
+								1
+							],
+							"typeParameters": {
+								"type": "TSTypeParameterDeclaration",
+								"start": 10,
+								"end": 13,
+								"params": [
+									{
+										"type": "TSTypeParameter",
+										"start": 11,
+										"end": 12,
+										"name": "T"
+									}
+								]
+							},
+							"id": null,
+							"expression": true,
+							"generator": false,
+							"async": false,
+							"params": [
+								{
+									"type": "Identifier",
+									"start": 13,
+									"end": 14,
+									"declares": 1,
+									"name": "x"
+								}
+							],
+							"body": {
+								"type": "Identifier",
+								"start": 18,
+								"end": 19,
+								"reference": 0,
+								"name": "x"
+							}
+						}
+					}
+				],
+				"kind": "const"
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 21,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "f",
+			"kind": "const",
+			"scope": 0
+		},
+		{
+			"name": "x",
+			"kind": "param",
+			"scope": 1
+		}
+	],
+	"references": [
+		{
+			"scope": 1,
+			"binding": 1,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

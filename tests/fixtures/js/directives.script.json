@@ -1,0 +1,124 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 71,
+		"scope": 0,
+		"body": [
+			{
+				"type": "ExpressionStatement",
+				"start": 0,
+				"end": 13,
+				"expression": {
+					"type": "Literal",
+					"start": 0,
+					"end": 12,
+					"value": "use strict",
+					"raw": "'use strict'"
+				},
+				"directive": "use strict"
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 14,
+				"end": 24,
+				"expression": {
+					"type": "Literal",
+					"start": 14,
+					"end": 23,
+					"value": "another",
+					"raw": "\"another\""
+				},
+				"directive": "another"
+			},
+			{
+				"type": "FunctionDeclaration",
+				"start": 25,
+				"end": 70,
+				"scope": 1,
+				"defines": [
+					0
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 34,
+					"end": 35,
+					"declares": 0,
+					"name": "f"
+				},
+				"expression": false,
+				"generator": false,
+				"async": false,
+				"params": [],
+				"body": {
+					"type": "BlockStatement",
+					"start": 38,
+					"end": 70,
+					"body": [
+						{
+							"type": "ExpressionStatement",
+							"start": 40,
+							"end": 53,
+							"expression": {
+								"type": "Literal",
+								"start": 40,
+								"end": 52,
+								"value": "use strict",
+								"raw": "'use strict'"
+							},
+							"directive": "use strict"
+						},
+						{
+							"type": "ExpressionStatement",
+							"start": 54,
+							"end": 58,
+							"expression": {
+								"type": "Literal",
+								"start": 54,
+								"end": 57,
+								"value": "x",
+								"raw": "'x'"
+							},
+							"directive": "x"
+						},
+						{
+							"type": "ReturnStatement",
+							"start": 59,
+							"end": 68,
+							"argument": {
+								"type": "Literal",
+								"start": 66,
+								"end": 67,
+								"value": 1,
+								"raw": "1"
+							}
+						}
+					]
+				}
+			}
+		],
+		"sourceType": "script"
+	},
+	"end": 71,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "script",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "f",
+			"kind": "function",
+			"scope": 0
+		}
+	],
+	"references": []
+}

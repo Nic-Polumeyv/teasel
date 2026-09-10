@@ -1,0 +1,402 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 160,
+		"scope": 0,
+		"body": [
+			{
+				"type": "TSEnumDeclaration",
+				"start": 0,
+				"end": 12,
+				"scope": 1,
+				"defines": [
+					0
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 5,
+					"end": 6,
+					"declares": 0,
+					"name": "E"
+				},
+				"members": [
+					{
+						"type": "TSEnumMember",
+						"start": 9,
+						"end": 10,
+						"defines": [
+							1
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 9,
+							"end": 10,
+							"declares": 1,
+							"name": "A"
+						}
+					}
+				]
+			},
+			{
+				"type": "TSModuleDeclaration",
+				"start": 13,
+				"end": 48,
+				"scope": 2,
+				"defines": [
+					2
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 23,
+					"end": 24,
+					"declares": 2,
+					"name": "N"
+				},
+				"body": {
+					"type": "TSModuleBlock",
+					"start": 25,
+					"end": 48,
+					"body": [
+						{
+							"type": "ExportNamedDeclaration",
+							"start": 27,
+							"end": 46,
+							"declaration": {
+								"type": "VariableDeclaration",
+								"start": 34,
+								"end": 46,
+								"declarations": [
+									{
+										"type": "VariableDeclarator",
+										"start": 40,
+										"end": 45,
+										"defines": [
+											3
+										],
+										"id": {
+											"type": "Identifier",
+											"start": 40,
+											"end": 41,
+											"declares": 3,
+											"name": "x"
+										},
+										"init": {
+											"type": "Literal",
+											"start": 44,
+											"end": 45,
+											"value": 1,
+											"raw": "1"
+										}
+									}
+								],
+								"kind": "const"
+							},
+							"specifiers": [],
+							"source": null,
+							"attributes": []
+						}
+					]
+				}
+			},
+			{
+				"type": "ClassDeclaration",
+				"start": 49,
+				"end": 122,
+				"scope": 3,
+				"defines": [
+					4
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 55,
+					"end": 56,
+					"declares": 4,
+					"name": "C"
+				},
+				"superClass": null,
+				"body": {
+					"type": "ClassBody",
+					"start": 57,
+					"end": 122,
+					"body": [
+						{
+							"type": "MethodDefinition",
+							"start": 59,
+							"end": 92,
+							"static": false,
+							"computed": false,
+							"key": {
+								"type": "Identifier",
+								"start": 59,
+								"end": 70,
+								"name": "constructor"
+							},
+							"kind": "constructor",
+							"value": {
+								"type": "FunctionExpression",
+								"start": 70,
+								"end": 92,
+								"scope": 4,
+								"defines": [
+									5
+								],
+								"id": null,
+								"expression": false,
+								"generator": false,
+								"async": false,
+								"params": [
+									{
+										"type": "Identifier",
+										"start": 79,
+										"end": 88,
+										"declares": 5,
+										"name": "a"
+									}
+								],
+								"body": {
+									"type": "BlockStatement",
+									"start": 90,
+									"end": 92,
+									"body": []
+								}
+							}
+						},
+						{
+							"type": "MethodDefinition",
+							"start": 93,
+							"end": 104,
+							"decorators": [
+								{
+									"type": "Decorator",
+									"start": 93,
+									"end": 97,
+									"expression": {
+										"type": "Identifier",
+										"start": 94,
+										"end": 97,
+										"reference": 0,
+										"name": "dec"
+									}
+								}
+							],
+							"static": false,
+							"computed": false,
+							"key": {
+								"type": "Identifier",
+								"start": 98,
+								"end": 99,
+								"name": "m"
+							},
+							"kind": "method",
+							"value": {
+								"type": "FunctionExpression",
+								"start": 99,
+								"end": 104,
+								"scope": 5,
+								"id": null,
+								"expression": false,
+								"generator": false,
+								"async": false,
+								"params": [],
+								"body": {
+									"type": "BlockStatement",
+									"start": 102,
+									"end": 104,
+									"body": []
+								}
+							}
+						},
+						{
+							"type": "PropertyDefinition",
+							"start": 105,
+							"end": 120,
+							"accessor": true,
+							"static": false,
+							"computed": false,
+							"key": {
+								"type": "Identifier",
+								"start": 114,
+								"end": 115,
+								"name": "b"
+							},
+							"value": {
+								"type": "Literal",
+								"start": 118,
+								"end": 119,
+								"value": 1,
+								"raw": "1"
+							}
+						}
+					]
+				}
+			},
+			{
+				"type": "TSExportAssignment",
+				"start": 123,
+				"end": 134,
+				"expression": {
+					"type": "Identifier",
+					"start": 132,
+					"end": 133,
+					"reference": 1,
+					"name": "C"
+				}
+			},
+			{
+				"type": "TSImportEqualsDeclaration",
+				"start": 135,
+				"end": 159,
+				"defines": [
+					6
+				],
+				"importKind": "value",
+				"isExport": false,
+				"id": {
+					"type": "Identifier",
+					"start": 142,
+					"end": 143,
+					"declares": 6,
+					"name": "R"
+				},
+				"moduleReference": {
+					"type": "TSExternalModuleReference",
+					"start": 146,
+					"end": 158,
+					"expression": {
+						"type": "Literal",
+						"start": 154,
+						"end": 157,
+						"value": "r",
+						"raw": "'r'"
+					}
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 160,
+	"comments": [],
+	"typescript": [
+		{
+			"type": "TSEnumDeclaration",
+			"start": 0,
+			"end": 12
+		},
+		{
+			"type": "TSModuleDeclaration",
+			"start": 13,
+			"end": 48
+		},
+		{
+			"type": "TSParameterProperty",
+			"start": 71,
+			"end": 88
+		},
+		{
+			"type": "Decorator",
+			"start": 93,
+			"end": 97
+		},
+		{
+			"type": "AccessorProperty",
+			"start": 105,
+			"end": 120
+		},
+		{
+			"type": "TSExportAssignment",
+			"start": 123,
+			"end": 134
+		},
+		{
+			"type": "TSImportEqualsDeclaration",
+			"start": 135,
+			"end": 159
+		}
+	],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "enum",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "namespace",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "class",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 3,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 3,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "E",
+			"kind": "enum",
+			"scope": 0
+		},
+		{
+			"name": "A",
+			"kind": "enum-member",
+			"scope": 1
+		},
+		{
+			"name": "N",
+			"kind": "namespace",
+			"scope": 0
+		},
+		{
+			"name": "x",
+			"kind": "const",
+			"scope": 2
+		},
+		{
+			"name": "C",
+			"kind": "class",
+			"scope": 0
+		},
+		{
+			"name": "a",
+			"kind": "param",
+			"scope": 4
+		},
+		{
+			"name": "R",
+			"kind": "import",
+			"scope": 0
+		}
+	],
+	"references": [
+		{
+			"scope": 3,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": 4,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

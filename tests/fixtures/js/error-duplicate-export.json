@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "duplicate_export",
+		"message": "Duplicate export 'b'",
+		"pos": 42,
+		"end": 42,
+		"loc": {
+			"line": 1,
+			"column": 42
+		}
+	}
+}

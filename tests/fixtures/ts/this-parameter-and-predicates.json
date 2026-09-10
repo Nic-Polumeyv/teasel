@@ -1,0 +1,297 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 147,
+		"scope": 0,
+		"body": [
+			{
+				"type": "FunctionDeclaration",
+				"start": 0,
+				"end": 66,
+				"scope": 1,
+				"defines": [
+					0,
+					1
+				],
+				"returnType": {
+					"type": "TSTypeAnnotation",
+					"start": 36,
+					"end": 49,
+					"typeAnnotation": {
+						"type": "TSTypePredicate",
+						"start": 38,
+						"end": 49,
+						"parameterName": {
+							"type": "Identifier",
+							"start": 38,
+							"end": 39,
+							"name": "x"
+						},
+						"typeAnnotation": {
+							"type": "TSTypeAnnotation",
+							"start": 43,
+							"end": 49,
+							"typeAnnotation": {
+								"type": "TSStringKeyword",
+								"start": 43,
+								"end": 49
+							}
+						},
+						"asserts": false
+					}
+				},
+				"id": {
+					"type": "Identifier",
+					"start": 9,
+					"end": 10,
+					"declares": 0,
+					"name": "f"
+				},
+				"expression": false,
+				"generator": false,
+				"async": false,
+				"params": [
+					{
+						"type": "Identifier",
+						"start": 11,
+						"end": 23,
+						"typeAnnotation": {
+							"type": "TSTypeAnnotation",
+							"start": 15,
+							"end": 23,
+							"typeAnnotation": {
+								"type": "TSTypeReference",
+								"start": 17,
+								"end": 23,
+								"typeName": {
+									"type": "Identifier",
+									"start": 17,
+									"end": 23,
+									"name": "Window"
+								}
+							}
+						},
+						"name": "this"
+					},
+					{
+						"type": "Identifier",
+						"start": 25,
+						"end": 35,
+						"declares": 1,
+						"typeAnnotation": {
+							"type": "TSTypeAnnotation",
+							"start": 26,
+							"end": 35,
+							"typeAnnotation": {
+								"type": "TSUnknownKeyword",
+								"start": 28,
+								"end": 35
+							}
+						},
+						"name": "x"
+					}
+				],
+				"body": {
+					"type": "BlockStatement",
+					"start": 50,
+					"end": 66,
+					"body": [
+						{
+							"type": "ReturnStatement",
+							"start": 52,
+							"end": 64,
+							"argument": {
+								"type": "Literal",
+								"start": 59,
+								"end": 63,
+								"value": true,
+								"raw": "true"
+							}
+						}
+					]
+				}
+			},
+			{
+				"type": "FunctionDeclaration",
+				"start": 67,
+				"end": 111,
+				"scope": 2,
+				"defines": [
+					2
+				],
+				"returnType": {
+					"type": "TSTypeAnnotation",
+					"start": 89,
+					"end": 108,
+					"typeAnnotation": {
+						"type": "TSTypePredicate",
+						"start": 91,
+						"end": 108,
+						"parameterName": {
+							"type": "TSThisType",
+							"start": 99,
+							"end": 103
+						},
+						"typeAnnotation": {
+							"type": "TSTypeAnnotation",
+							"start": 107,
+							"end": 108,
+							"typeAnnotation": {
+								"type": "TSTypeReference",
+								"start": 107,
+								"end": 108,
+								"typeName": {
+									"type": "Identifier",
+									"start": 107,
+									"end": 108,
+									"name": "A"
+								}
+							}
+						},
+						"asserts": true
+					}
+				},
+				"id": {
+					"type": "Identifier",
+					"start": 76,
+					"end": 77,
+					"declares": 2,
+					"name": "g"
+				},
+				"expression": false,
+				"generator": false,
+				"async": false,
+				"params": [
+					{
+						"type": "Identifier",
+						"start": 78,
+						"end": 88,
+						"typeAnnotation": {
+							"type": "TSTypeAnnotation",
+							"start": 82,
+							"end": 88,
+							"typeAnnotation": {
+								"type": "TSVoidKeyword",
+								"start": 84,
+								"end": 88
+							}
+						},
+						"name": "this"
+					}
+				],
+				"body": {
+					"type": "BlockStatement",
+					"start": 109,
+					"end": 111,
+					"body": []
+				}
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 112,
+				"end": 146,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 118,
+						"end": 145,
+						"defines": [
+							3
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 118,
+							"end": 119,
+							"declares": 3,
+							"name": "h"
+						},
+						"init": {
+							"type": "FunctionExpression",
+							"start": 122,
+							"end": 145,
+							"scope": 3,
+							"id": null,
+							"expression": false,
+							"generator": false,
+							"async": false,
+							"params": [
+								{
+									"type": "Identifier",
+									"start": 132,
+									"end": 141,
+									"typeAnnotation": {
+										"type": "TSTypeAnnotation",
+										"start": 136,
+										"end": 141,
+										"typeAnnotation": {
+											"type": "TSAnyKeyword",
+											"start": 138,
+											"end": 141
+										}
+									},
+									"name": "this"
+								}
+							],
+							"body": {
+								"type": "BlockStatement",
+								"start": 143,
+								"end": 145,
+								"body": []
+							}
+						}
+					}
+				],
+				"kind": "const"
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 147,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "f",
+			"kind": "function",
+			"scope": 0
+		},
+		{
+			"name": "x",
+			"kind": "param",
+			"scope": 1
+		},
+		{
+			"name": "g",
+			"kind": "function",
+			"scope": 0
+		},
+		{
+			"name": "h",
+			"kind": "const",
+			"scope": 0
+		}
+	],
+	"references": []
+}

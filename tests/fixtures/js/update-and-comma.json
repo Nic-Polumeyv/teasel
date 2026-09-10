@@ -1,0 +1,169 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 28,
+		"scope": 0,
+		"body": [
+			{
+				"type": "ExpressionStatement",
+				"start": 0,
+				"end": 4,
+				"expression": {
+					"type": "UpdateExpression",
+					"start": 0,
+					"end": 3,
+					"operator": "++",
+					"prefix": false,
+					"argument": {
+						"type": "Identifier",
+						"start": 0,
+						"end": 1,
+						"reference": 0,
+						"name": "a"
+					}
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 5,
+				"end": 9,
+				"expression": {
+					"type": "UpdateExpression",
+					"start": 5,
+					"end": 8,
+					"operator": "--",
+					"prefix": true,
+					"argument": {
+						"type": "Identifier",
+						"start": 7,
+						"end": 8,
+						"reference": 1,
+						"name": "b"
+					}
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 10,
+				"end": 19,
+				"expression": {
+					"type": "SequenceExpression",
+					"start": 10,
+					"end": 18,
+					"expressions": [
+						{
+							"type": "UpdateExpression",
+							"start": 10,
+							"end": 13,
+							"operator": "++",
+							"prefix": false,
+							"argument": {
+								"type": "Identifier",
+								"start": 10,
+								"end": 11,
+								"reference": 2,
+								"name": "c"
+							}
+						},
+						{
+							"type": "UpdateExpression",
+							"start": 15,
+							"end": 18,
+							"operator": "++",
+							"prefix": true,
+							"argument": {
+								"type": "Identifier",
+								"start": 17,
+								"end": 18,
+								"reference": 3,
+								"name": "d"
+							}
+						}
+					]
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 20,
+				"end": 27,
+				"expression": {
+					"type": "SequenceExpression",
+					"start": 21,
+					"end": 25,
+					"expressions": [
+						{
+							"type": "Identifier",
+							"start": 21,
+							"end": 22,
+							"reference": 4,
+							"name": "x"
+						},
+						{
+							"type": "Identifier",
+							"start": 24,
+							"end": 25,
+							"reference": 5,
+							"name": "y"
+						}
+					]
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 28,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [],
+	"references": [
+		{
+			"scope": 0,
+			"binding": null,
+			"write": true,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": true,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": true,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": true,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

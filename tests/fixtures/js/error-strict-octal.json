@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "invalid_number",
+		"message": "Invalid number",
+		"pos": 14,
+		"end": 14,
+		"loc": {
+			"line": 1,
+			"column": 14
+		}
+	}
+}

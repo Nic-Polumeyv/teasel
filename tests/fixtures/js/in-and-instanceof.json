@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "for_in_of_initializer",
+		"message": "for-in loop variable declaration may not have an initializer",
+		"pos": 58,
+		"end": 58,
+		"loc": {
+			"line": 4,
+			"column": 5
+		}
+	}
+}

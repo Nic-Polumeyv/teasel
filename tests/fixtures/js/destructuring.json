@@ -1,0 +1,534 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 130,
+		"scope": 0,
+		"body": [
+			{
+				"type": "VariableDeclaration",
+				"start": 0,
+				"end": 36,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 6,
+						"end": 35,
+						"defines": [
+							0,
+							1,
+							2
+						],
+						"id": {
+							"type": "ObjectPattern",
+							"start": 6,
+							"end": 31,
+							"properties": [
+								{
+									"type": "Property",
+									"start": 8,
+									"end": 9,
+									"method": false,
+									"shorthand": true,
+									"computed": false,
+									"key": {
+										"type": "Identifier",
+										"start": 8,
+										"end": 9,
+										"name": "a"
+									},
+									"value": {
+										"type": "Identifier",
+										"start": 8,
+										"end": 9,
+										"declares": 0,
+										"name": "a"
+									},
+									"kind": "init"
+								},
+								{
+									"type": "Property",
+									"start": 11,
+									"end": 23,
+									"method": false,
+									"shorthand": false,
+									"computed": false,
+									"key": {
+										"type": "Identifier",
+										"start": 11,
+										"end": 12,
+										"name": "b"
+									},
+									"value": {
+										"type": "ObjectPattern",
+										"start": 14,
+										"end": 23,
+										"properties": [
+											{
+												"type": "Property",
+												"start": 16,
+												"end": 21,
+												"method": false,
+												"shorthand": true,
+												"computed": false,
+												"key": {
+													"type": "Identifier",
+													"start": 16,
+													"end": 17,
+													"name": "c"
+												},
+												"value": {
+													"type": "AssignmentPattern",
+													"start": 16,
+													"end": 21,
+													"left": {
+														"type": "Identifier",
+														"start": 16,
+														"end": 17,
+														"declares": 1,
+														"name": "c"
+													},
+													"right": {
+														"type": "Literal",
+														"start": 20,
+														"end": 21,
+														"value": 1,
+														"raw": "1"
+													}
+												},
+												"kind": "init"
+											}
+										]
+									},
+									"kind": "init"
+								},
+								{
+									"type": "RestElement",
+									"start": 25,
+									"end": 29,
+									"argument": {
+										"type": "Identifier",
+										"start": 28,
+										"end": 29,
+										"declares": 2,
+										"name": "d"
+									}
+								}
+							]
+						},
+						"init": {
+							"type": "Identifier",
+							"start": 34,
+							"end": 35,
+							"reference": 0,
+							"name": "o"
+						}
+					}
+				],
+				"kind": "const"
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 37,
+				"end": 64,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 41,
+						"end": 63,
+						"defines": [
+							3,
+							4,
+							5
+						],
+						"id": {
+							"type": "ArrayPattern",
+							"start": 41,
+							"end": 59,
+							"elements": [
+								{
+									"type": "Identifier",
+									"start": 42,
+									"end": 43,
+									"declares": 3,
+									"name": "e"
+								},
+								null,
+								{
+									"type": "AssignmentPattern",
+									"start": 47,
+									"end": 52,
+									"left": {
+										"type": "Identifier",
+										"start": 47,
+										"end": 48,
+										"declares": 4,
+										"name": "f"
+									},
+									"right": {
+										"type": "Literal",
+										"start": 51,
+										"end": 52,
+										"value": 2,
+										"raw": "2"
+									}
+								},
+								{
+									"type": "RestElement",
+									"start": 54,
+									"end": 58,
+									"argument": {
+										"type": "Identifier",
+										"start": 57,
+										"end": 58,
+										"declares": 5,
+										"name": "g"
+									}
+								}
+							]
+						},
+						"init": {
+							"type": "Identifier",
+							"start": 62,
+							"end": 63,
+							"reference": 1,
+							"name": "h"
+						}
+					}
+				],
+				"kind": "let"
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 65,
+				"end": 81,
+				"expression": {
+					"type": "AssignmentExpression",
+					"start": 65,
+					"end": 80,
+					"operator": "=",
+					"left": {
+						"type": "ArrayPattern",
+						"start": 65,
+						"end": 71,
+						"elements": [
+							{
+								"type": "Identifier",
+								"start": 66,
+								"end": 67,
+								"reference": 2,
+								"name": "i"
+							},
+							{
+								"type": "Identifier",
+								"start": 69,
+								"end": 70,
+								"reference": 3,
+								"name": "j"
+							}
+						]
+					},
+					"right": {
+						"type": "ArrayExpression",
+						"start": 74,
+						"end": 80,
+						"writes": [
+							2,
+							3
+						],
+						"elements": [
+							{
+								"type": "Identifier",
+								"start": 75,
+								"end": 76,
+								"reference": 4,
+								"name": "j"
+							},
+							{
+								"type": "Identifier",
+								"start": 78,
+								"end": 79,
+								"reference": 5,
+								"name": "i"
+							}
+						]
+					}
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 82,
+				"end": 102,
+				"expression": {
+					"type": "AssignmentExpression",
+					"start": 83,
+					"end": 100,
+					"operator": "=",
+					"left": {
+						"type": "ObjectPattern",
+						"start": 83,
+						"end": 96,
+						"properties": [
+							{
+								"type": "Property",
+								"start": 85,
+								"end": 86,
+								"method": false,
+								"shorthand": true,
+								"computed": false,
+								"key": {
+									"type": "Identifier",
+									"start": 85,
+									"end": 86,
+									"name": "k"
+								},
+								"value": {
+									"type": "Identifier",
+									"start": 85,
+									"end": 86,
+									"reference": 6,
+									"name": "k"
+								},
+								"kind": "init"
+							},
+							{
+								"type": "Property",
+								"start": 88,
+								"end": 94,
+								"method": false,
+								"shorthand": false,
+								"computed": false,
+								"key": {
+									"type": "Identifier",
+									"start": 88,
+									"end": 89,
+									"name": "l"
+								},
+								"value": {
+									"type": "ArrayPattern",
+									"start": 91,
+									"end": 94,
+									"elements": [
+										{
+											"type": "Identifier",
+											"start": 92,
+											"end": 93,
+											"reference": 7,
+											"name": "m"
+										}
+									]
+								},
+								"kind": "init"
+							}
+						]
+					},
+					"right": {
+						"type": "Identifier",
+						"start": 99,
+						"end": 100,
+						"reference": 8,
+						"writes": [
+							6,
+							7
+						],
+						"name": "n"
+					}
+				}
+			},
+			{
+				"type": "ForOfStatement",
+				"start": 103,
+				"end": 129,
+				"scope": 1,
+				"await": false,
+				"left": {
+					"type": "VariableDeclaration",
+					"start": 108,
+					"end": 120,
+					"declarations": [
+						{
+							"type": "VariableDeclarator",
+							"start": 114,
+							"end": 120,
+							"defines": [
+								6,
+								7
+							],
+							"id": {
+								"type": "ArrayPattern",
+								"start": 114,
+								"end": 120,
+								"elements": [
+									{
+										"type": "Identifier",
+										"start": 115,
+										"end": 116,
+										"declares": 6,
+										"name": "o"
+									},
+									{
+										"type": "Identifier",
+										"start": 118,
+										"end": 119,
+										"declares": 7,
+										"name": "p"
+									}
+								]
+							},
+							"init": null
+						}
+					],
+					"kind": "const"
+				},
+				"right": {
+					"type": "Identifier",
+					"start": 124,
+					"end": 125,
+					"reference": 9,
+					"name": "q"
+				},
+				"body": {
+					"type": "BlockStatement",
+					"start": 127,
+					"end": 129,
+					"scope": 2,
+					"body": []
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 130,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "for",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 1,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "a",
+			"kind": "const",
+			"scope": 0
+		},
+		{
+			"name": "c",
+			"kind": "const",
+			"scope": 0
+		},
+		{
+			"name": "d",
+			"kind": "const",
+			"scope": 0
+		},
+		{
+			"name": "e",
+			"kind": "let",
+			"scope": 0
+		},
+		{
+			"name": "f",
+			"kind": "let",
+			"scope": 0
+		},
+		{
+			"name": "g",
+			"kind": "let",
+			"scope": 0
+		},
+		{
+			"name": "o",
+			"kind": "const",
+			"scope": 1
+		},
+		{
+			"name": "p",
+			"kind": "const",
+			"scope": 1
+		}
+	],
+	"references": [
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": true,
+			"read": false,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": true,
+			"read": false,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": true,
+			"read": false,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": true,
+			"read": false,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 1,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

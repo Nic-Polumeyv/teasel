@@ -1,0 +1,181 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 35,
+		"scope": 0,
+		"body": [
+			{
+				"type": "ExpressionStatement",
+				"start": 0,
+				"end": 18,
+				"expression": {
+					"type": "ConditionalExpression",
+					"start": 0,
+					"end": 17,
+					"test": {
+						"type": "Identifier",
+						"start": 0,
+						"end": 1,
+						"reference": 0,
+						"name": "a"
+					},
+					"consequent": {
+						"type": "Identifier",
+						"start": 4,
+						"end": 5,
+						"reference": 1,
+						"name": "b"
+					},
+					"alternate": {
+						"type": "ConditionalExpression",
+						"start": 8,
+						"end": 17,
+						"test": {
+							"type": "Identifier",
+							"start": 8,
+							"end": 9,
+							"reference": 2,
+							"name": "c"
+						},
+						"consequent": {
+							"type": "Identifier",
+							"start": 12,
+							"end": 13,
+							"reference": 3,
+							"name": "d"
+						},
+						"alternate": {
+							"type": "Identifier",
+							"start": 16,
+							"end": 17,
+							"reference": 4,
+							"name": "e"
+						}
+					}
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 19,
+				"end": 34,
+				"expression": {
+					"type": "ConditionalExpression",
+					"start": 19,
+					"end": 33,
+					"test": {
+						"type": "Identifier",
+						"start": 19,
+						"end": 20,
+						"reference": 5,
+						"name": "f"
+					},
+					"consequent": {
+						"type": "SequenceExpression",
+						"start": 24,
+						"end": 28,
+						"expressions": [
+							{
+								"type": "Identifier",
+								"start": 24,
+								"end": 25,
+								"reference": 6,
+								"name": "g"
+							},
+							{
+								"type": "Identifier",
+								"start": 27,
+								"end": 28,
+								"reference": 7,
+								"name": "h"
+							}
+						]
+					},
+					"alternate": {
+						"type": "Identifier",
+						"start": 32,
+						"end": 33,
+						"reference": 8,
+						"name": "i"
+					}
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 35,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [],
+	"references": [
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

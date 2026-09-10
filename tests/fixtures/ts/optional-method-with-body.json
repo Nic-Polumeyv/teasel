@@ -1,0 +1,94 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 20,
+		"scope": 0,
+		"body": [
+			{
+				"type": "ClassDeclaration",
+				"start": 0,
+				"end": 19,
+				"scope": 1,
+				"defines": [
+					0
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 6,
+					"end": 7,
+					"declares": 0,
+					"name": "A"
+				},
+				"superClass": null,
+				"body": {
+					"type": "ClassBody",
+					"start": 8,
+					"end": 19,
+					"body": [
+						{
+							"type": "MethodDefinition",
+							"start": 10,
+							"end": 17,
+							"optional": true,
+							"static": false,
+							"computed": false,
+							"key": {
+								"type": "Identifier",
+								"start": 10,
+								"end": 11,
+								"name": "m"
+							},
+							"kind": "method",
+							"value": {
+								"type": "FunctionExpression",
+								"start": 12,
+								"end": 17,
+								"scope": 2,
+								"id": null,
+								"expression": false,
+								"generator": false,
+								"async": false,
+								"params": [],
+								"body": {
+									"type": "BlockStatement",
+									"start": 15,
+									"end": 17,
+									"body": []
+								}
+							}
+						}
+					]
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 20,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "class",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 1,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "A",
+			"kind": "class",
+			"scope": 0
+		}
+	],
+	"references": []
+}

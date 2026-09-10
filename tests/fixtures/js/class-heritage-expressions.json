@@ -1,0 +1,215 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 77,
+		"scope": 0,
+		"body": [
+			{
+				"type": "ClassDeclaration",
+				"start": 0,
+				"end": 30,
+				"scope": 1,
+				"defines": [
+					0
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 6,
+					"end": 7,
+					"declares": 0,
+					"name": "A"
+				},
+				"superClass": {
+					"type": "ConditionalExpression",
+					"start": 17,
+					"end": 26,
+					"test": {
+						"type": "Identifier",
+						"start": 17,
+						"end": 18,
+						"reference": 0,
+						"name": "b"
+					},
+					"consequent": {
+						"type": "Identifier",
+						"start": 21,
+						"end": 22,
+						"reference": 1,
+						"name": "C"
+					},
+					"alternate": {
+						"type": "Identifier",
+						"start": 25,
+						"end": 26,
+						"reference": 2,
+						"name": "D"
+					}
+				},
+				"body": {
+					"type": "ClassBody",
+					"start": 28,
+					"end": 30,
+					"body": []
+				}
+			},
+			{
+				"type": "ClassDeclaration",
+				"start": 31,
+				"end": 53,
+				"scope": 2,
+				"defines": [
+					1
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 37,
+					"end": 38,
+					"declares": 1,
+					"name": "E"
+				},
+				"superClass": {
+					"type": "CallExpression",
+					"start": 47,
+					"end": 50,
+					"callee": {
+						"type": "Identifier",
+						"start": 47,
+						"end": 48,
+						"reference": 3,
+						"name": "f"
+					},
+					"arguments": [],
+					"optional": false
+				},
+				"body": {
+					"type": "ClassBody",
+					"start": 51,
+					"end": 53,
+					"body": []
+				}
+			},
+			{
+				"type": "ClassDeclaration",
+				"start": 54,
+				"end": 76,
+				"scope": 3,
+				"defines": [
+					2
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 60,
+					"end": 61,
+					"declares": 2,
+					"name": "G"
+				},
+				"superClass": {
+					"type": "MemberExpression",
+					"start": 70,
+					"end": 73,
+					"object": {
+						"type": "Identifier",
+						"start": 70,
+						"end": 71,
+						"reference": 4,
+						"name": "h"
+					},
+					"property": {
+						"type": "Identifier",
+						"start": 72,
+						"end": 73,
+						"name": "i"
+					},
+					"computed": false,
+					"optional": false
+				},
+				"body": {
+					"type": "ClassBody",
+					"start": 74,
+					"end": 76,
+					"body": []
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 77,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "class",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "class",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "class",
+			"parent": 0,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "A",
+			"kind": "class",
+			"scope": 0
+		},
+		{
+			"name": "E",
+			"kind": "class",
+			"scope": 0
+		},
+		{
+			"name": "G",
+			"kind": "class",
+			"scope": 0
+		}
+	],
+	"references": [
+		{
+			"scope": 1,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 1,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 1,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 2,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 3,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

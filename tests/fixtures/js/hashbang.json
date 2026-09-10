@@ -1,0 +1,49 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 23,
+		"scope": 0,
+		"body": [
+			{
+				"type": "ExpressionStatement",
+				"start": 20,
+				"end": 22,
+				"leadingComments": [
+					{
+						"type": "Line",
+						"value": "/usr/bin/env node",
+						"start": 0,
+						"end": 19
+					}
+				],
+				"expression": {
+					"type": "Literal",
+					"start": 20,
+					"end": 21,
+					"value": 1,
+					"raw": "1"
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 23,
+	"comments": [
+		{
+			"type": "Line",
+			"value": "/usr/bin/env node",
+			"start": 0,
+			"end": 19
+		}
+	],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [],
+	"references": []
+}

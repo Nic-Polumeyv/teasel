@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "super_outside_method",
+		"message": "'super' keyword outside a method",
+		"pos": 0,
+		"end": 5,
+		"loc": {
+			"line": 1,
+			"column": 0
+		}
+	}
+}

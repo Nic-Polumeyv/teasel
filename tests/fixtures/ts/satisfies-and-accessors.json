@@ -1,0 +1,193 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 108,
+		"scope": 0,
+		"body": [
+			{
+				"type": "VariableDeclaration",
+				"start": 0,
+				"end": 52,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 6,
+						"end": 51,
+						"defines": [
+							0
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 6,
+							"end": 7,
+							"declares": 0,
+							"name": "a"
+						},
+						"init": {
+							"type": "TSSatisfiesExpression",
+							"start": 10,
+							"end": 51,
+							"expression": {
+								"type": "ObjectExpression",
+								"start": 10,
+								"end": 18,
+								"properties": [
+									{
+										"type": "Property",
+										"start": 12,
+										"end": 16,
+										"method": false,
+										"shorthand": false,
+										"computed": false,
+										"key": {
+											"type": "Identifier",
+											"start": 12,
+											"end": 13,
+											"name": "b"
+										},
+										"value": {
+											"type": "Literal",
+											"start": 15,
+											"end": 16,
+											"value": 1,
+											"raw": "1"
+										},
+										"kind": "init"
+									}
+								]
+							},
+							"typeAnnotation": {
+								"type": "TSTypeReference",
+								"start": 29,
+								"end": 51,
+								"typeName": {
+									"type": "Identifier",
+									"start": 29,
+									"end": 35,
+									"name": "Record"
+								},
+								"typeArguments": {
+									"type": "TSTypeParameterInstantiation",
+									"start": 35,
+									"end": 51,
+									"params": [
+										{
+											"type": "TSStringKeyword",
+											"start": 36,
+											"end": 42
+										},
+										{
+											"type": "TSNumberKeyword",
+											"start": 44,
+											"end": 50
+										}
+									]
+								}
+							}
+						}
+					}
+				],
+				"kind": "const"
+			},
+			{
+				"type": "ClassDeclaration",
+				"start": 53,
+				"end": 107,
+				"scope": 1,
+				"defines": [
+					1
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 59,
+					"end": 60,
+					"declares": 1,
+					"name": "C"
+				},
+				"superClass": null,
+				"body": {
+					"type": "ClassBody",
+					"start": 61,
+					"end": 107,
+					"body": [
+						{
+							"type": "PropertyDefinition",
+							"start": 63,
+							"end": 78,
+							"accessor": true,
+							"static": false,
+							"computed": false,
+							"key": {
+								"type": "Identifier",
+								"start": 72,
+								"end": 73,
+								"name": "d"
+							},
+							"value": {
+								"type": "Literal",
+								"start": 76,
+								"end": 77,
+								"value": 1,
+								"raw": "1"
+							}
+						},
+						{
+							"type": "PropertyDefinition",
+							"start": 79,
+							"end": 105,
+							"typeAnnotation": {
+								"type": "TSTypeAnnotation",
+								"start": 96,
+								"end": 104,
+								"typeAnnotation": {
+									"type": "TSNumberKeyword",
+									"start": 98,
+									"end": 104
+								}
+							},
+							"accessor": true,
+							"static": true,
+							"computed": false,
+							"key": {
+								"type": "Identifier",
+								"start": 95,
+								"end": 96,
+								"name": "e"
+							},
+							"value": null
+						}
+					]
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 108,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "class",
+			"parent": 0,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "a",
+			"kind": "const",
+			"scope": 0
+		},
+		{
+			"name": "C",
+			"kind": "class",
+			"scope": 0
+		}
+	],
+	"references": []
+}

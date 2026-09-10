@@ -1,0 +1,234 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 52,
+		"scope": 0,
+		"body": [
+			{
+				"type": "ExpressionStatement",
+				"start": 0,
+				"end": 24,
+				"expression": {
+					"type": "TemplateLiteral",
+					"start": 0,
+					"end": 23,
+					"expressions": [
+						{
+							"type": "Identifier",
+							"start": 4,
+							"end": 5,
+							"reference": 0,
+							"name": "b"
+						},
+						{
+							"type": "BinaryExpression",
+							"start": 9,
+							"end": 20,
+							"left": {
+								"type": "Identifier",
+								"start": 9,
+								"end": 10,
+								"reference": 1,
+								"name": "d"
+							},
+							"operator": "+",
+							"right": {
+								"type": "TemplateLiteral",
+								"start": 13,
+								"end": 20,
+								"expressions": [
+									{
+										"type": "Identifier",
+										"start": 17,
+										"end": 18,
+										"reference": 2,
+										"name": "f"
+									}
+								],
+								"quasis": [
+									{
+										"type": "TemplateElement",
+										"start": 14,
+										"end": 15,
+										"value": {
+											"raw": "e",
+											"cooked": "e"
+										},
+										"tail": false
+									},
+									{
+										"type": "TemplateElement",
+										"start": 19,
+										"end": 19,
+										"value": {
+											"raw": "",
+											"cooked": ""
+										},
+										"tail": true
+									}
+								]
+							}
+						}
+					],
+					"quasis": [
+						{
+							"type": "TemplateElement",
+							"start": 1,
+							"end": 2,
+							"value": {
+								"raw": "a",
+								"cooked": "a"
+							},
+							"tail": false
+						},
+						{
+							"type": "TemplateElement",
+							"start": 6,
+							"end": 7,
+							"value": {
+								"raw": "c",
+								"cooked": "c"
+							},
+							"tail": false
+						},
+						{
+							"type": "TemplateElement",
+							"start": 21,
+							"end": 22,
+							"value": {
+								"raw": "g",
+								"cooked": "g"
+							},
+							"tail": true
+						}
+					]
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 25,
+				"end": 36,
+				"expression": {
+					"type": "TaggedTemplateExpression",
+					"start": 25,
+					"end": 35,
+					"tag": {
+						"type": "Identifier",
+						"start": 25,
+						"end": 28,
+						"reference": 3,
+						"name": "tag"
+					},
+					"quasi": {
+						"type": "TemplateLiteral",
+						"start": 28,
+						"end": 35,
+						"expressions": [
+							{
+								"type": "Identifier",
+								"start": 32,
+								"end": 33,
+								"reference": 4,
+								"name": "y"
+							}
+						],
+						"quasis": [
+							{
+								"type": "TemplateElement",
+								"start": 29,
+								"end": 30,
+								"value": {
+									"raw": "x",
+									"cooked": "x"
+								},
+								"tail": false
+							},
+							{
+								"type": "TemplateElement",
+								"start": 34,
+								"end": 34,
+								"value": {
+									"raw": "",
+									"cooked": ""
+								},
+								"tail": true
+							}
+						]
+					}
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 37,
+				"end": 51,
+				"expression": {
+					"type": "TemplateLiteral",
+					"start": 37,
+					"end": 50,
+					"expressions": [],
+					"quasis": [
+						{
+							"type": "TemplateElement",
+							"start": 38,
+							"end": 49,
+							"value": {
+								"raw": "\\n\\u{1F600}",
+								"cooked": "\n😀"
+							},
+							"tail": true
+						}
+					]
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 52,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [],
+	"references": [
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

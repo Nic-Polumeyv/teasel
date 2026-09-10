@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "optional_chain_in_tagged_template",
+		"message": "Optional chaining cannot appear in the tag of tagged template expressions",
+		"pos": 3,
+		"end": 4,
+		"loc": {
+			"line": 1,
+			"column": 3
+		}
+	}
+}
