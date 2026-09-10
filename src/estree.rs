@@ -1693,6 +1693,7 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 					self.begin(host.ty, id);
 				} else {
 					self.sink.begin(host.ty);
+					self.scope_facts(id);
 				}
 				let (from, len) = host.fields;
 				for i in from..from + len {
@@ -1701,18 +1702,13 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 						Value::Node(child) => self.field(key, child),
 						Value::Nodes(children) => self.list(key, children),
 						Value::Str(string) => self.interned(key, string),
-						Value::Name(child) => {
-							let NodeKind::Identifier { name } = self.ast.node(child).kind else {
-								unreachable!()
-							};
-							self.interned(key, name);
-						}
 						Value::Slice(start, end) => {
 							self.key(key);
 							self.slice(start, end);
 						}
 						Value::Strs(start, len) => {
-							let strings: Vec<(StrId, &str)> = self.ast.host_strings[start as usize..(start + len) as usize]
+							let strings: Vec<(StrId, &str)> = self.ast.host_strings
+								[start as usize..(start + len) as usize]
 								.iter()
 								.map(|&string| (string, self.ast.str(string)))
 								.collect();

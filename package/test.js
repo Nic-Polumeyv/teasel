@@ -229,7 +229,7 @@ for (const { Source, scopeOf, bindingOf, parentOf } of [node, wasm]) {
 	assert.equal(root.instance.content.body[0].declarations[0].id.typeAnnotation.type, 'TSTypeAnnotation');
 	assert.equal('module' in root, false);
 	const each = root.fragment.nodes.find((n) => n.type === 'EachBlock');
-	assert.equal(each.index, 'i');
+	assert.equal(each.index.name, 'i');
 	assert.equal(each.context.name, 'item');
 	assert.equal(each.key.name, 'item');
 	assert.equal(each.fallback.nodes[0].data, '\n\tnone\n');
@@ -245,9 +245,49 @@ for (const { Source, scopeOf, bindingOf, parentOf } of [node, wasm]) {
 	assert.equal(bindingOf(tag.expression).node, each.context);
 	assert.equal(bindingOf(p.attributes[0].expression.left).name, 'i');
 	assert.equal(bindingOf(each.expression).kind, 'let');
-	assert.equal(scopeOf(each).node, each);
-	assert.equal(bindingOf(tag.expression).scope, scopeOf(each));
-	assert.equal(scopeOf(each).parent, scopeOf(root));
+	// every fragment is a scope of its own; the block's body declares its context and index
+	assert.equal(scopeOf(each.body).node, each.body);
+	assert.equal(bindingOf(tag.expression).scope, scopeOf(each.body));
+	assert.equal(scopeOf(each.body).parent, scopeOf(root.fragment));
+	// the template sees the instance script, which sees the module script, which is the root's
+	assert.equal(scopeOf(root.fragment).parent, scopeOf(root.instance.content));
+	assert.equal(scopeOf(root.instance.content).parent, scopeOf(root));
+	assert.equal(scopeOf(each.fallback).parent, scopeOf(root.fragment));
 	assert.throws(() => new Source('x', { host: 'element div' }), /grammar line 1/);
 	assert.throws(() => new Source('<div>', { host: grammar }).parse(), { code: 'unclosed', pos: 0 });
+	// under recovery the tree is what could be read, the errors listed with it
+	const loose = new Source('<div>{#if }<Comp foo={bar}\n</div>', { host: grammar, errorRecovery: true }).parse();
+	assert.deepEqual(loose.errors.map((e) => e.code), ['unclosed', 'unexpected_token', 'expected']);
+	const div = loose.node.fragment.nodes[0];
+	assert.equal(div.end, 33);
+	const block = div.fragment.nodes[0];
+	assert.equal(block.test.name, '');
+	assert.equal(block.consequent.nodes[0].name, 'Comp');
+	assert.equal(block.consequent.nodes[0].end, 27);
+}
+
+// a second host: the same walker, Vue's grammar
+const vue = readFileSync(new URL('../hosts/vue.grammar', import.meta.url), 'utf8');
+for (const { Source, parentOf } of [node, wasm]) {
+	const source = '<ul :class="{ on }">\n\t<li v-for="(item, i) in items" :key="item.id" @click.stop="select(item)">{{ item.name }} #{{ i }}</li>\n</ul>\n';
+	const root = new Source(source, { host: vue, sourceType: 'module' }).parse().node;
+	assert.equal(root.type, 'Root');
+	const ul = root.children[0];
+	assert.equal(ul.tag, 'ul');
+	assert.deepEqual(ul.props[0], { ...ul.props[0], type: 'Directive', name: 'bind', rawName: ':class', arg: 'class', modifiers: [] });
+	assert.equal(ul.props[0].exp.type, 'ObjectExpression');
+	const li = ul.children[1];
+	const [each, key, click] = li.props;
+	assert.equal(each.name, 'for');
+	assert.equal(each.value.name, 'item');
+	assert.equal(each.key.name, 'i');
+	assert.equal(each.source.name, 'items');
+	assert.equal(key.exp.type, 'MemberExpression');
+	assert.deepEqual(click.modifiers, ['stop']);
+	assert.equal(click.handler.type, 'CallExpression');
+	assert.equal(li.children[0].type, 'Interpolation');
+	assert.equal(li.children[0].content.property.name, 'name');
+	assert.equal(li.children[1].content, ' #');
+	assert.equal(parentOf(li.children[2].content), li.children[2]);
+	assert.throws(() => new Source('<div v-for="x items">', { host: vue }).parse(), { code: 'expected', message: 'Expected in or of' });
 }

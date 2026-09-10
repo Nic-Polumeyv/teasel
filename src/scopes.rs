@@ -3,6 +3,7 @@
 //! after every declaration in it is known, so hoisting needs no second pass.
 
 use crate::ast::{Ast, List, NodeId, NodeKind, VariableKind, Walk};
+use crate::error::{Code, SyntaxError};
 use crate::interner::{FastMap, StrId};
 use crate::parser::Entry;
 
@@ -262,6 +263,8 @@ pub struct Scopes {
 	/// assigned by: `Binding::declaration` and `Reference::write_expr` from the node's side.
 	pub declared_by: FastMap<NodeId, Vec<BindingId>>,
 	pub writes_of: FastMap<NodeId, Vec<ReferenceId>>,
+	/// A name declared twice in one of the host's scopes, which are lexical like a block's.
+	pub errors: Vec<SyntaxError>,
 }
 
 impl Scopes {
@@ -274,6 +277,7 @@ impl Scopes {
 		self.of_identifier.reset(nodes);
 		self.declared_by.clear();
 		self.writes_of.clear();
+		self.errors.clear();
 	}
 
 	pub fn scope(&self, id: ScopeId) -> &Scope {
@@ -388,6 +392,8 @@ pub struct Binder<'a, X> {
 	out: Scopes,
 	stack: Vec<ScopeId>,
 	open: Vec<Open>,
+	/// The patterns the open host scopes declare, which their fields do not reference.
+	host_declared: Vec<List>,
 	/// The node whose pattern is being declared, for `Binding::declaration`.
 	declaring: Option<NodeId>,
 	/// What the target being visited is assigned, for `Reference::write_expr`.
@@ -421,6 +427,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 			out,
 			stack: Vec::new(),
 			open: Vec::new(),
+			host_declared: Vec::new(),
 			declaring: None,
 			writing: None,
 			compound: false,
@@ -601,6 +608,25 @@ impl<'a, X: Bind> Binder<'a, X> {
 			}
 		}
 		if let Some(&existing) = self.open[scope as usize].names.get(&name) {
+			let opened_by_host = match self.out.scopes[scope as usize] {
+				Scope {
+					kind: ScopeKind::Fragment,
+					..
+				} => true,
+				Scope {
+					kind: ScopeKind::Block,
+					node: Some(n),
+					..
+				} => matches!(self.kind(n), NodeKind::Host(_)),
+				_ => false,
+			};
+			if opened_by_host && !kind.is_var() && !self.out.bindings[existing as usize].kind.is_var() {
+				let n = *self.ast.node(node);
+				let message: std::borrow::Cow<'static, str> = Code::Redeclaration.with(self.ast.str(name)).into();
+				self.out
+					.errors
+					.push(SyntaxError::with(n.start, Code::Redeclaration, message).to(n.end));
+			}
 			self.out.of_identifier.insert_new(node, Role::Declares(existing));
 			return;
 		}
@@ -759,43 +785,72 @@ impl<'a, X: Bind> Binder<'a, X> {
 	fn host(&mut self, id: NodeId, index: u32) {
 		let host = self.ast.hosts[index as usize];
 		let (from, len) = host.fields;
-		let declared = |b: &Self, child: NodeId| match host.scope {
-			Some(opens) => {
-				b.ast.list(opens.inside).contains(&Some(child)) || b.ast.list(opens.outside).contains(&Some(child))
-			}
-			None => false,
-		};
-		let field = |b: &mut Self, i: u32| match b.ast.host_fields[i as usize].1 {
-			crate::ast::Value::Node(child) if !declared(b, child) => b.visit(child, Mode::Expression),
-			crate::ast::Value::Nodes(children) => {
-				for &child in b.ast.list(children).iter().flatten() {
-					if !declared(b, child) {
-						b.visit(child, Mode::Expression);
-					}
-				}
-			}
-			_ => {}
-		};
 		let Some(opens) = host.scope else {
 			for i in from..from + len {
-				field(self, i);
+				self.host_field(i);
 			}
 			return;
 		};
 		for &pattern in self.ast.list(opens.outside).iter().flatten() {
-			self.visit(pattern, Mode::Declare(BindingKind::Let));
+			self.visit(pattern, Mode::Declare(BindingKind::Pattern));
 		}
-		for i in from..from + opens.from {
-			field(self, i);
+		let depth = self.host_declared.len();
+		self.host_declared.push(opens.outside);
+		// groups nest: the outer one opens first at a field and closes last
+		let mut groups =
+			self.ast.host_groups[opens.groups.0 as usize..(opens.groups.0 + opens.groups.1) as usize].to_vec();
+		groups.sort_by_key(|group| (group.from, std::cmp::Reverse(group.until)));
+		let mut next = 0;
+		let mut open: Vec<usize> = Vec::new();
+		for i in from..from + len {
+			while next < groups.len() && groups[next].from == i {
+				let group = groups[next];
+				// a script's program hoists `var` like a script; a fragment is where a template's expressions sit
+				let node = group.node.unwrap_or(id);
+				let kind = match self.ast.node(node).kind {
+					NodeKind::Program { .. } => ScopeKind::Script,
+					NodeKind::Host(inner) if !self.ast.hosts[inner as usize].span => ScopeKind::Fragment,
+					_ => ScopeKind::Block,
+				};
+				self.enter(kind, Some(node), false);
+				for &pattern in self.ast.list(group.inside).iter().flatten() {
+					self.visit(pattern, Mode::Declare(BindingKind::Pattern));
+				}
+				self.host_declared.push(group.inside);
+				open.push(next);
+				next += 1;
+			}
+			self.host_field(i);
+			while let Some(&g) = open.last() {
+				if groups[g].until != i + 1 {
+					break;
+				}
+				self.exit();
+				open.pop();
+				self.host_declared.pop();
+			}
 		}
-		self.enter(ScopeKind::Block, Some(id), false);
-		for &pattern in self.ast.list(opens.inside).iter().flatten() {
-			self.visit(pattern, Mode::Declare(BindingKind::Let));
+		self.host_declared.truncate(depth);
+	}
+
+	/// A host node's field as an expression, the patterns the open host scopes declare left to them.
+	fn host_field(&mut self, i: u32) {
+		let declared = |b: &Self, child: NodeId| {
+			b.host_declared
+				.iter()
+				.any(|list| b.ast.list(*list).contains(&Some(child)))
+		};
+		match self.ast.host_fields[i as usize].1 {
+			crate::ast::Value::Node(child) if !declared(self, child) => self.visit(child, Mode::Expression),
+			crate::ast::Value::Nodes(children) => {
+				for &child in self.ast.list(children).iter().flatten() {
+					if !declared(self, child) {
+						self.visit(child, Mode::Expression);
+					}
+				}
+			}
+			_ => {}
 		}
-		for i in from + opens.from..from + len {
-			field(self, i);
-		}
-		self.exit();
 	}
 
 	fn visit_with(&mut self, id: NodeId, mode: Mode, extras: bool) {
@@ -1118,11 +1173,22 @@ impl<'a, X: Bind> Binder<'a, X> {
 		}
 	}
 
-	/// An `await` here: top-level when no function encloses it.
+	/// An `await` here: top-level when no function encloses it, for the program or fragment it runs in.
 	fn awaits(&mut self) {
-		if self.out.scopes[self.current() as usize].function_depth == 0 {
-			self.out.scopes[0].top_level_await = true;
+		let mut scope = self.current();
+		if self.out.scopes[scope as usize].function_depth != 0 {
+			return;
 		}
+		while !matches!(
+			self.out.scopes[scope as usize].kind,
+			ScopeKind::Module | ScopeKind::Script | ScopeKind::Fragment
+		) {
+			let Some(parent) = self.out.scopes[scope as usize].parent else {
+				break;
+			};
+			scope = parent;
+		}
+		self.out.scopes[scope as usize].top_level_await = true;
 	}
 }
 

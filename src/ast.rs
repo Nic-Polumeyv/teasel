@@ -67,13 +67,23 @@ pub struct Host {
 	pub scope: Option<Opens>,
 }
 
-/// A scope a host node opens: the patterns it declares inside, those it declares around
-/// itself, and the first of its fields that sits inside the scope.
+/// The scopes a host node opens: the patterns it declares around itself, and its groups, a run
+/// of `Ast::host_groups`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Opens {
-	pub inside: List,
 	pub outside: List,
+	pub groups: (u32, u32),
+}
+
+/// One scope a host node opens over a run of its fields: the patterns declared in it, the
+/// fields inside it, and the node the scope belongs to when it is not the host node itself, a
+/// body's fragment say.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HostGroup {
+	pub inside: List,
 	pub from: u32,
+	pub until: u32,
+	pub node: Option<NodeId>,
 }
 
 /// A host node's field.
@@ -81,8 +91,6 @@ pub struct Opens {
 pub enum Value {
 	Node(NodeId),
 	Nodes(List),
-	/// An identifier written as its name alone, which the scope it opens still declares.
-	Name(NodeId),
 	/// An interned string.
 	Str(StrId),
 	/// A slice of the source.
@@ -104,6 +112,7 @@ pub struct Ast<X = ()> {
 	pub hosts: Vec<Host>,
 	pub host_fields: Vec<(&'static str, Value)>,
 	pub host_strings: Vec<StrId>,
+	pub host_groups: Vec<HostGroup>,
 	pub strings: Interner,
 	pub comments: Vec<Comment>,
 	/// Comments attached to nodes by `comments::attach`, as indices into `comments`.
@@ -141,6 +150,7 @@ impl<X: Reuse> Ast<X> {
 		self.hosts.clear();
 		self.host_fields.clear();
 		self.host_strings.clear();
+		self.host_groups.clear();
 		self.nodes.clear();
 		self.lists.clear();
 		self.strings.clear();
@@ -189,6 +199,22 @@ impl<X: Walk> Ast<X> {
 }
 
 impl<X> Ast<X> {
+	/// The nodes under a host node's fields; a child that is a fragment, a node without a span
+	/// of its own, is walked through, so a document's nodes come in source order around its scripts.
+	fn host_children(&self, index: u32, out: &mut Vec<NodeId>) {
+		let host = self.hosts[index as usize];
+		for &(_, value) in &self.host_fields[host.fields.0 as usize..(host.fields.0 + host.fields.1) as usize] {
+			match value {
+				Value::Node(child) => match self.node(child).kind {
+					NodeKind::Host(inner) if !self.hosts[inner as usize].span => self.host_children(inner, out),
+					_ => out.push(child),
+				},
+				Value::Nodes(children) => out.extend(self.list(children).iter().flatten()),
+				_ => {}
+			}
+		}
+	}
+
 	/// The children of a plain JavaScript node; an extension node has none here.
 	pub fn plain_children(&self, id: NodeId, out: &mut Vec<NodeId>) {
 		use NodeKind::*;
@@ -213,14 +239,7 @@ impl<X> Ast<X> {
 			| Extension(_) => {}
 			Host(index) => {
 				let from = out.len();
-				let host = self.hosts[index as usize];
-				for &(_, value) in &self.host_fields[host.fields.0 as usize..(host.fields.0 + host.fields.1) as usize] {
-					match value {
-						Value::Node(child) => out.push(child),
-						Value::Nodes(children) => list(children, out),
-						_ => {}
-					}
-				}
+				self.host_children(index, out);
 				out[from..].sort_by_key(|&child| self.nodes[child.0 as usize].start);
 			}
 			TemplateLiteral { quasis, expressions } => {

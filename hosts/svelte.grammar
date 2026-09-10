@@ -1,6 +1,16 @@
 host svelte
 
-document Root  css=style  js=list  fragment=fragment  options=null  comments=comments  instance?=script  module?=script:module
+document Root  css=style  js=list  options=null  comments=comments  module?=script:module  { instance?=script  { fragment=fragment } }
+delimiters { }
+attributes expressions shorthand
+sigils open=# branch=: close=/ tag=@
+autoclose
+trim
+void area base br col command embed hr img input keygen link meta param source track wbr
+fragment Fragment nodes scope
+elements name=name attributes=attributes children=fragment
+text Text data=data raw=raw
+comment Comment data=data
 
 element svelte:element    SvelteElement    this=tag:text
 element svelte:component  SvelteComponent  this=expression
@@ -14,25 +24,28 @@ element svelte:fragment   SvelteFragment
 element svelte:boundary   SvelteBoundary
 element title             TitleElement     inside svelte:head
 element slot              SlotElement      outside shadowrootmode
-element component         Component
+element textarea          RegularElement   rcdata
+element script            RegularElement   raw
+element style             RegularElement   raw
+element component-name    Component
 element *                 RegularElement
 
 script script  module=context:module  module=module  typescript=lang:ts
 style  style
 
-directive bind        BindDirective        expression?name
+directives arg=: modifier=| field:arg=name field:modifiers=modifiers
+directive bind        BindDirective        expression?name  unique:attribute
 directive on          OnDirective          expression?
 directive use         UseDirective         expression?
-directive class       ClassDirective       expression?name
-directive style       StyleDirective       value
+directive class       ClassDirective       expression?name  unique
+directive style       StyleDirective       value  unique
 directive transition  TransitionDirective  expression?  intro outro
 directive in          TransitionDirective  expression?  intro !outro
 directive out         TransitionDirective  expression?  !intro outro
 directive animate     AnimateDirective     expression?
-directive let         LetDirective         expression?
+directive let         LetDirective         pattern?name  declares
 
 spread  SpreadAttribute  expression
-attach  AttachTag        expression
 
 block if  IfBlock  chain=elseif
   open    test=expression  -> consequent
@@ -40,7 +53,7 @@ block if  IfBlock  chain=elseif
   branch  else  -> alternate
 
 block each  EachBlock
-  open    expression=expression [ as context=pattern ] [ , index?=name ] [ ( key?=expression ) ]  -> body declares context index
+  open    expression=expression [ as context=pattern ] [ , index?=identifier ] [ ( key?=expression ) ]  -> body declares context index
   branch  else  -> fallback?
 
 block await  AwaitBlock
@@ -58,6 +71,7 @@ tag html    HtmlTag    expression=expression
 tag debug   DebugTag   identifiers=identifiers
 tag const   ConstTag   declaration=const
 tag render  RenderTag  expression=expression
+tag attach  AttachTag  expression=expression  attribute
 
 declaration  DeclarationTag  declaration=statement
 expression   ExpressionTag   expression=expression

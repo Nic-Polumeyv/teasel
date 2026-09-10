@@ -28,7 +28,7 @@ pub fn attach<X: Walk>(ast: &mut Ast<X>, source: &str, roots: List, from: u32) {
 	};
 	for i in 0..roots.len {
 		let root = attacher.ast.nth(roots, i).unwrap();
-		attacher.visit(root, None);
+		attacher.visit(root, None, u32::MAX);
 	}
 	let rest = attacher.next;
 	let mut attached = attacher.attached;
@@ -69,7 +69,8 @@ impl<X: Walk> Attacher<'_, X> {
 		self.next += 1;
 	}
 
-	fn visit(&mut self, node: NodeId, parent: Option<NodeId>) {
+	/// `limit` is where the parent's own syntax resumes after `node`: the next child, or its end.
+	fn visit(&mut self, node: NodeId, parent: Option<NodeId>, limit: u32) {
 		let (start, end) = {
 			let n = self.ast.node(node);
 			(n.start, n.end)
@@ -95,7 +96,12 @@ impl<X: Walk> Attacher<'_, X> {
 			}
 			for i in 0..count {
 				let child = self.scratch[base + i];
-				self.visit(child, Some(node));
+				let limit = if i + 1 < count {
+					self.ast.node(self.scratch[base + i + 1]).start
+				} else {
+					end
+				};
+				self.visit(child, Some(node), limit);
 			}
 		}
 		self.scratch.truncate(base);
@@ -109,9 +115,18 @@ impl<X: Walk> Attacher<'_, X> {
 			while self.peek().is_some_and(|c| self.start(c) < parent_end) {
 				self.take(node, Place::Trailing);
 			}
+		} else if parent.is_some_and(|p| self.is_host(p)) && !self.is_host(node) {
+			// the last JavaScript before the host's own syntax resumes takes what lies between
+			while self.peek().is_some_and(|c| self.start(c) < limit) {
+				self.take(node, Place::Trailing);
+			}
 		} else if end <= self.start(comment) && self.only_separators(end, self.start(comment)) {
 			self.take(node, Place::Trailing);
 		}
+	}
+
+	fn is_host(&self, node: NodeId) -> bool {
+		matches!(self.ast.node(node).kind, NodeKind::Host(_))
 	}
 
 	fn only_separators(&self, from: u32, to: u32) -> bool {

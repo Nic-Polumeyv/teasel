@@ -15,7 +15,9 @@ const { verbose, limit, filter } = args();
 const grammar = new URL('../hosts/svelte.grammar', import.meta.url).pathname;
 
 // positions as line and column, Svelte's own metadata, and the CSS tree, which teasel does not build yet
-const DROP = new Set(['loc', 'name_loc', 'metadata', 'character', 'leadingComments', 'trailingComments']);
+// with KEEP_COMMENTS the comments attached inside scripts are compared too; the ones inside empty
+// bodies are teasel's alone, and the HTML comment Svelte hangs on a script's program is its own
+const DROP = new Set(['loc', 'name_loc', 'metadata', 'character', 'innerComments', ...(process.env.KEEP_COMMENTS ? [] : ['leadingComments', 'trailingComments'])]);
 
 // Svelte keeps acorn's paren wrappers in snippet parameters alone; `this="h1"` on a dynamic
 // element is a literal Svelte quotes by hand
@@ -67,6 +69,22 @@ function known(source, error) {
 	return /<svelte:element[^>]*\sthis="[^"{]*\{/.test(source) && /an expression as this/.test(error.message);
 }
 
+function pattern(node) {
+	if (!node || typeof node !== 'object') return node;
+	switch (node.type) {
+		case 'ObjectExpression':
+			return { ...node, type: 'ObjectPattern', properties: node.properties.map((p) => (p.type === 'Property' ? { ...p, value: pattern(p.value) } : { ...p, type: 'RestElement' })) };
+		case 'ArrayExpression':
+			return { ...node, type: 'ArrayPattern', elements: node.elements.map(pattern) };
+		case 'AssignmentExpression':
+			return { type: 'AssignmentPattern', start: node.start, end: node.end, left: pattern(node.left), right: node.right };
+		case 'SpreadElement':
+			return { ...node, type: 'RestElement', argument: pattern(node.argument) };
+		default:
+			return node;
+	}
+}
+
 function replacer(key, value) {
 	if (typeof value === 'bigint' || value instanceof RegExp) return null;
 	return value;
@@ -76,6 +94,13 @@ function replacer(key, value) {
 function tree(ast, ours, ts, source) {
 	const raw = JSON.parse(JSON.stringify(ast, ts && !ours ? normalize_ts : replacer));
 	if (ours) {
+		// the index of an each block is a node, which Svelte keeps as its name
+		(function names(node) {
+			if (Array.isArray(node)) return node.forEach(names);
+			if (!node || typeof node !== 'object') return;
+			if (node.type === 'EachBlock' && node.index && typeof node.index === 'object') node.index = node.index.name;
+			for (const v of Object.values(node)) names(v);
+		})(raw);
 		const i = raw.fragment.nodes.findIndex((n) => n.type === 'SvelteOptions');
 		if (i !== -1) {
 			const [node] = raw.fragment.nodes.splice(i, 1);
@@ -83,16 +108,43 @@ function tree(ast, ours, ts, source) {
 			raw.options = read_options(node);
 		}
 	}
+	// `let:x` declares x: Svelte leaves the expression null and makes up an identifier for its
+	// scopes, teasel gives the identifier; a destructuring there is a pattern, which Svelte reads
+	// as an object or array expression
+	(function lets(node) {
+		if (Array.isArray(node)) return node.forEach(lets);
+		if (!node || typeof node !== 'object') return;
+		if (node.type === 'LetDirective') {
+			if (ours && node.expression?.type === 'Identifier' && node.expression.name === node.name && node.expression.start === node.start + 4) node.expression = null;
+			if (!ours) node.expression = pattern(node.expression);
+		}
+		for (const v of Object.values(node)) lets(v);
+	})(raw);
 	const out = normal(raw, ours ? null : source);
 	// the comment before a style element is the fragment's node, which the tree lists once
 	if (out.css) out.css.content.comment = null;
-	if (ours) out.comments = out.comments.map((c) => dedent(c, source, out));
+	// the HTML comment Svelte hangs on a script's program, and the comments of an empty script,
+	// which Svelte trails on the program where teasel holds them inside it
+	for (const script of [out.instance, out.module]) {
+		if (!script || ours) continue;
+		delete script.content.leadingComments;
+		if (script.content.body.length === 0) delete script.content.trailingComments;
+	}
+	if (ours) {
+		out.comments = out.comments.map((c) => dedent(c, source, out));
+		(function attached(node) {
+			if (Array.isArray(node)) return node.forEach(attached);
+			if (!node || typeof node !== 'object') return;
+			for (const key of ['leadingComments', 'trailingComments']) if (node[key]) node[key] = node[key].map((c) => dedent(c, source, out));
+			for (const v of Object.values(node)) attached(v);
+		})(out);
+	}
 	return out;
 }
 
 function expected(source) {
 	try {
-		return tree(parse(source, { modern: true }), false, is_typescript(source), source);
+		return tree(parse(source, { modern: true, loose: !!process.env.LOOSE }), false, is_typescript(source), source);
 	} catch (e) {
 		return { error: { message: e.message, code: e.code, pos: e.position?.[0] } };
 	}
@@ -102,7 +154,7 @@ const jobs = [];
 for (const path of files(corpus, /\.svelte$/)) {
 	const name = relative(corpus, path);
 	if (filter && !name.includes(filter)) continue;
-	jobs.push({ name, source: readFileSync(path, 'utf8'), mode: 'doc' });
+	jobs.push({ name, source: readFileSync(path, 'utf8'), mode: `doc${process.env.KEEP_COMMENTS ? '+comments' : ''}${process.env.LOOSE ? '+recover' : ''}` });
 	if (capped(jobs, limit)) break;
 }
 
@@ -115,6 +167,8 @@ for (const [i, job] of jobs.entries()) {
 	try {
 		const value = JSON.parse(lines[i]);
 		a = value.error ? value : tree(value.node, true, false, job.source);
+		// under recovery the answer lists what went wrong; the tree is what is compared
+		if (a.errors) delete a.errors;
 	} catch (error) {
 		a = { error: { message: error.code ? error.message : `bad output: ${String(lines[i]).slice(0, 80)}` } };
 	}
