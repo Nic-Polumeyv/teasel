@@ -3,6 +3,7 @@
 //! after every declaration in it is known, so hoisting needs no second pass.
 
 use crate::ast::{Ast, List, NodeId, NodeKind, VariableKind, Walk};
+use crate::error::{Code, SyntaxError};
 use crate::interner::{FastMap, StrId};
 use crate::parser::Entry;
 
@@ -262,6 +263,8 @@ pub struct Scopes {
 	/// assigned by: `Binding::declaration` and `Reference::write_expr` from the node's side.
 	pub declared_by: FastMap<NodeId, Vec<BindingId>>,
 	pub writes_of: FastMap<NodeId, Vec<ReferenceId>>,
+	/// A name declared twice in one of the host's scopes, which are lexical like a block's.
+	pub errors: Vec<SyntaxError>,
 }
 
 impl Scopes {
@@ -274,6 +277,7 @@ impl Scopes {
 		self.of_identifier.reset(nodes);
 		self.declared_by.clear();
 		self.writes_of.clear();
+		self.errors.clear();
 	}
 
 	pub fn scope(&self, id: ScopeId) -> &Scope {
@@ -604,6 +608,25 @@ impl<'a, X: Bind> Binder<'a, X> {
 			}
 		}
 		if let Some(&existing) = self.open[scope as usize].names.get(&name) {
+			let opened_by_host = match self.out.scopes[scope as usize] {
+				Scope {
+					kind: ScopeKind::Fragment,
+					..
+				} => true,
+				Scope {
+					kind: ScopeKind::Block,
+					node: Some(n),
+					..
+				} => matches!(self.kind(n), NodeKind::Host(_)),
+				_ => false,
+			};
+			if opened_by_host && !kind.is_var() && !self.out.bindings[existing as usize].kind.is_var() {
+				let n = *self.ast.node(node);
+				let message: std::borrow::Cow<'static, str> = Code::Redeclaration.with(self.ast.str(name)).into();
+				self.out
+					.errors
+					.push(SyntaxError::with(n.start, Code::Redeclaration, message).to(n.end));
+			}
 			self.out.of_identifier.insert_new(node, Role::Declares(existing));
 			return;
 		}
@@ -782,7 +805,14 @@ impl<'a, X: Bind> Binder<'a, X> {
 		for i in from..from + len {
 			while next < groups.len() && groups[next].from == i {
 				let group = groups[next];
-				self.enter(ScopeKind::Block, Some(group.node.unwrap_or(id)), false);
+				// a script's program hoists `var` like a script; a fragment is where a template's expressions sit
+				let node = group.node.unwrap_or(id);
+				let kind = match self.ast.node(node).kind {
+					NodeKind::Program { .. } => ScopeKind::Script,
+					NodeKind::Host(inner) if !self.ast.hosts[inner as usize].span => ScopeKind::Fragment,
+					_ => ScopeKind::Block,
+				};
+				self.enter(kind, Some(node), false);
 				for &pattern in self.ast.list(group.inside).iter().flatten() {
 					self.visit(pattern, Mode::Declare(BindingKind::Pattern));
 				}
@@ -1143,11 +1173,22 @@ impl<'a, X: Bind> Binder<'a, X> {
 		}
 	}
 
-	/// An `await` here: top-level when no function encloses it.
+	/// An `await` here: top-level when no function encloses it, for the program or fragment it runs in.
 	fn awaits(&mut self) {
-		if self.out.scopes[self.current() as usize].function_depth == 0 {
-			self.out.scopes[0].top_level_await = true;
+		let mut scope = self.current();
+		if self.out.scopes[scope as usize].function_depth != 0 {
+			return;
 		}
+		while !matches!(
+			self.out.scopes[scope as usize].kind,
+			ScopeKind::Module | ScopeKind::Script | ScopeKind::Fragment
+		) {
+			let Some(parent) = self.out.scopes[scope as usize].parent else {
+				break;
+			};
+			scope = parent;
+		}
+		self.out.scopes[scope as usize].top_level_await = true;
 	}
 }
 

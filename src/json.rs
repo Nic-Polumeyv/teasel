@@ -379,17 +379,25 @@ where
 		),
 	};
 	parsed
-		.map(|(mut ast, roots, end)| {
+		.and_then(|(mut ast, roots, end)| {
 			if output.comments {
 				attach(&mut ast, source, roots, request.offset);
 			}
 			if output.scopes {
 				scopes::analyze(&mut ast, request.entry, roots);
+				let errors = std::mem::take(&mut ast.scopes.as_mut().unwrap().errors);
+				if !errors.is_empty() {
+					if !output.errors {
+						return Err(Box::new(errors.into_iter().next().unwrap()));
+					}
+					ast.errors.extend(errors);
+					ast.errors.sort_by_key(|error| error.pos);
+				}
 			}
 			let sink = answer(&ast, request.entry, roots, end, source, positions, output, sink);
 			ast.clear();
 			POOL.with(|pool| Pooled::give(&mut pool.borrow_mut(), ast));
-			sink
+			Ok(sink)
 		})
 		.map_err(|error| error_to_json(&error, source, positions))
 }

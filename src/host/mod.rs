@@ -1165,7 +1165,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		if rule.rcdata {
 			let nodes = self.sequence(
 				|w| closing_tag(w.rest(), name).is_some(),
-				"rich text",
+				&format!("<{name}>"),
 				JsEntry::Expression,
 			)?;
 			if let Some(len) = closing_tag(self.rest(), name) {
@@ -1945,8 +1945,14 @@ impl<'a, E: Extension> Walker<'a, E> {
 			}
 		}
 		if let Some(rule) = &self.grammar.declaration {
-			if self.word("var") || self.word("interface") || self.word("enum") {
-				return fail(self.at, self.at, Code::Placement, Some("A declaration of that kind"));
+			if let Some(word) = ["var", "interface", "enum"].into_iter().find(|w| self.word(w)) {
+				let at = self.at;
+				return fail(
+					at,
+					at + word.len() as u32,
+					Code::Placement,
+					Some("A declaration of that kind"),
+				);
 			}
 			if self.word("let") || self.word("const") || self.word("type") {
 				let at = self.at;
