@@ -478,7 +478,10 @@ fn reserved_words_by_context() {
 
 #[test]
 fn a_var_may_redeclare_a_simple_catch_parameter() {
-	assert!(module("try {} catch (e) { var b; var e; }").contains("VariableDeclaration"));
+	assert_eq!(
+		module("try {} catch (e) { var b; var e; }"),
+		"TryStatement { block: BlockStatement { body: [] }, handler: Some(CatchClause { param: Some(Identifier { name: \"e\" }), body: BlockStatement { body: [VariableDeclaration { declarations: [VariableDeclarator { id: Identifier { name: \"b\" }, init: None }], kind: Var }, VariableDeclaration { declarations: [VariableDeclarator { id: Identifier { name: \"e\" }, init: None }], kind: Var }] } }), finalizer: None }"
+	);
 	assert_eq!(
 		module_error("try {} catch (e) { let e; }"),
 		"Identifier 'e' has already been declared (23)"
@@ -495,6 +498,17 @@ fn a_var_may_redeclare_a_simple_catch_parameter() {
 	);
 	// a destructured parameter is no simple one: nothing exempts a var from it
 	assert_eq!(code("try {} catch ([a]) { var a; }", false), Some(Code::Redeclaration));
+}
+
+#[test]
+fn an_unterminated_block_comment_keeps_its_text_under_recovery() {
+	let mut request = crate::json::Request::new(Entry::Program, 0);
+	request.set("errorRecovery");
+	request.set("comments");
+	let json = crate::json::parse("/* x", &request, "");
+	assert!(json.contains(r#""type":"Block","value":" x""#), "{json}");
+	assert!(json.contains("unterminated_comment"), "{json}");
+	assert!(crate::json::parse("/*", &request, "").contains(r#""value":"""#));
 }
 
 #[test]

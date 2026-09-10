@@ -11,6 +11,8 @@ pub struct Comment {
 pub enum CommentKind {
 	Line,
 	Block,
+	/// A block comment the input ends inside, kept under recovery.
+	Unclosed,
 	Hashbang,
 	HtmlOpen,
 	HtmlClose,
@@ -18,13 +20,13 @@ pub enum CommentKind {
 
 impl Comment {
 	pub fn is_block(&self) -> bool {
-		self.kind == CommentKind::Block
+		matches!(self.kind, CommentKind::Block | CommentKind::Unclosed)
 	}
 
 	/// Byte range of the comment text, without its delimiters.
 	pub fn text_range(&self) -> std::ops::Range<usize> {
 		let (prefix, suffix) = match self.kind {
-			CommentKind::Line | CommentKind::Hashbang => (2, 0),
+			CommentKind::Line | CommentKind::Hashbang | CommentKind::Unclosed => (2, 0),
 			CommentKind::Block => (2, 2),
 			CommentKind::HtmlOpen => (4, 0),
 			CommentKind::HtmlClose => (3, 0),
