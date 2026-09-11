@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "decorator_placement",
+		"message": "A decorator cannot decorate an abstract or declared field.",
+		"pos": 10,
+		"end": 10,
+		"loc": {
+			"line": 1,
+			"column": 10
+		}
+	}
+}

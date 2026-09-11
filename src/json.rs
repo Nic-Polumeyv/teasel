@@ -9,7 +9,7 @@ use crate::comments::attach;
 use crate::error::Code;
 use crate::estree::{Binary, Emit, Json, Output, Positions, Sink, answer, error_to_json};
 use crate::host::{self, Grammar};
-use crate::parser::{Entry, parse_at};
+use crate::parser::{Decorators, Entry, parse_at};
 use crate::scopes::{self, Bind};
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -63,6 +63,8 @@ impl Request {
 			"locations" => self.locations = true,
 			"module" => self.options.module = true,
 			"parenthesized" => self.options.parenthesized = true,
+			"legacyDecorators" => self.options.decorators = Decorators::Legacy,
+			"proposalDecorators" => self.options.decorators = Decorators::Proposal,
 			"allowReturnOutsideFunction" => self.options.allow_return_outside_function = true,
 			"allowAwaitOutsideFunction" => self.options.allow_await_outside_function = true,
 			"allowSuperOutsideMethod" => self.options.allow_super_outside_method = true,

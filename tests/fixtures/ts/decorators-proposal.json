@@ -1,0 +1,290 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 98,
+		"scope": 0,
+		"body": [
+			{
+				"type": "VariableDeclaration",
+				"start": 0,
+				"end": 97,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 6,
+						"end": 96,
+						"defines": [
+							0
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 6,
+							"end": 7,
+							"declares": 0,
+							"name": "D"
+						},
+						"init": {
+							"type": "ClassExpression",
+							"start": 11,
+							"end": 95,
+							"scope": 1,
+							"decorators": [
+								{
+									"type": "Decorator",
+									"start": 11,
+									"end": 15,
+									"expression": {
+										"type": "Identifier",
+										"start": 12,
+										"end": 15,
+										"reference": 0,
+										"name": "dec"
+									}
+								}
+							],
+							"id": null,
+							"superClass": null,
+							"body": {
+								"type": "ClassBody",
+								"start": 22,
+								"end": 95,
+								"body": [
+									{
+										"type": "MethodDefinition",
+										"start": 25,
+										"end": 36,
+										"decorators": [
+											{
+												"type": "Decorator",
+												"start": 25,
+												"end": 29,
+												"expression": {
+													"type": "Identifier",
+													"start": 26,
+													"end": 29,
+													"reference": 1,
+													"name": "dec"
+												}
+											}
+										],
+										"static": false,
+										"computed": false,
+										"key": {
+											"type": "Identifier",
+											"start": 30,
+											"end": 31,
+											"name": "m"
+										},
+										"kind": "method",
+										"value": {
+											"type": "FunctionExpression",
+											"start": 31,
+											"end": 36,
+											"scope": 2,
+											"id": null,
+											"expression": false,
+											"generator": false,
+											"async": false,
+											"params": [],
+											"body": {
+												"type": "BlockStatement",
+												"start": 34,
+												"end": 36,
+												"body": []
+											}
+										}
+									},
+									{
+										"type": "PropertyDefinition",
+										"start": 38,
+										"end": 50,
+										"decorators": [
+											{
+												"type": "Decorator",
+												"start": 38,
+												"end": 42,
+												"expression": {
+													"type": "Identifier",
+													"start": 39,
+													"end": 42,
+													"reference": 2,
+													"name": "dec"
+												}
+											}
+										],
+										"static": false,
+										"computed": false,
+										"key": {
+											"type": "PrivateIdentifier",
+											"start": 43,
+											"end": 45,
+											"name": "x"
+										},
+										"value": {
+											"type": "Literal",
+											"start": 48,
+											"end": 49,
+											"value": 1,
+											"raw": "1"
+										}
+									},
+									{
+										"type": "PropertyDefinition",
+										"start": 52,
+										"end": 73,
+										"decorators": [
+											{
+												"type": "Decorator",
+												"start": 52,
+												"end": 56,
+												"expression": {
+													"type": "Identifier",
+													"start": 53,
+													"end": 56,
+													"reference": 3,
+													"name": "dec"
+												}
+											}
+										],
+										"accessor": true,
+										"static": false,
+										"computed": false,
+										"key": {
+											"type": "PrivateIdentifier",
+											"start": 66,
+											"end": 68,
+											"name": "a"
+										},
+										"value": {
+											"type": "Literal",
+											"start": 71,
+											"end": 72,
+											"value": 1,
+											"raw": "1"
+										}
+									},
+									{
+										"type": "MethodDefinition",
+										"start": 75,
+										"end": 93,
+										"decorators": [
+											{
+												"type": "Decorator",
+												"start": 75,
+												"end": 79,
+												"expression": {
+													"type": "Identifier",
+													"start": 76,
+													"end": 79,
+													"reference": 4,
+													"name": "dec"
+												}
+											}
+										],
+										"static": true,
+										"computed": false,
+										"key": {
+											"type": "Identifier",
+											"start": 87,
+											"end": 88,
+											"name": "m"
+										},
+										"kind": "method",
+										"value": {
+											"type": "FunctionExpression",
+											"start": 88,
+											"end": 93,
+											"scope": 3,
+											"id": null,
+											"expression": false,
+											"generator": false,
+											"async": false,
+											"params": [],
+											"body": {
+												"type": "BlockStatement",
+												"start": 91,
+												"end": 93,
+												"body": []
+											}
+										}
+									}
+								]
+							}
+						}
+					}
+				],
+				"kind": "const"
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 98,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "class",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 1,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 1,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "D",
+			"kind": "const",
+			"scope": 0
+		}
+	],
+	"references": [
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 1,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 1,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 1,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 1,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

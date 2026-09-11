@@ -19,6 +19,12 @@ export interface Options {
 	 * JavaScript itself has: decorators and accessor fields (`AccessorProperty`).
 	 */
 	typescript?: boolean | 'erase';
+	/**
+	 * Which decorators are read. 'legacy' refuses decorators on private elements, class
+	 * expressions and their members; 'proposal' refuses parameter decorators and decorators
+	 * on abstract or declared fields. Unset reads both syntaxes.
+	 */
+	decorators?: 'legacy' | 'proposal';
 	/** Attach `leadingComments`, `trailingComments` and `innerComments` to nodes, and list every comment read as `comments` on the answer. */
 	comments?: boolean;
 	/**

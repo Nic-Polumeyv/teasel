@@ -1,9 +1,10 @@
 //! Command line front end: one file, or a batch of jobs, answered as JSON.
 //!
 //! `teasel [--module] [--typescript] [--comments] [--scopes] [--expression|--pattern|--params|--statement|--type-parameters]
-//! [--parenthesized] [--erase] [--offset N] FILE` prints the answer as JSON: the node (or the
-//! parameters) as `node`, then `end`, the offset after what the parse consumed. `--offset` alone
-//! parses an expression. The pattern, params and statement modes parse as a module.
+//! [--parenthesized] [--erase] [--legacy-decorators|--proposal-decorators] [--offset N] FILE` prints
+//! the answer as JSON: the node (or the parameters) as `node`, then `end`, the offset after what
+//! the parse consumed. `--offset` alone parses an expression. The pattern, params and statement
+//! modes parse as a module.
 //!
 //! `teasel --batch [--host GRAMMAR]` reads jobs from stdin, each a header line `MODE LENGTH` followed by LENGTH
 //! bytes of source, and prints one JSON line per job. MODE is `module`, `script`, `expr:OFFSET`,
@@ -12,12 +13,14 @@
 //! for TypeScript and `+comments` to attach comments, `+scopes` for the scope analysis,
 //! `+parenthesized` to mark parenthesized nodes, `+undeclared-exports` to accept exports of names
 //! the source never declares, `+stop:TOKEN` to end a parse-at entry at one of the host's tokens or
-//! `+erase` to erase TypeScript from the output. Offsets are byte offsets into the source; the
+//! `+erase` to erase TypeScript from the output. `+legacyDecorators` and `+proposalDecorators`
+//! select which decorators are read. Offsets are byte offsets into the source; the
 //! JSON output reports UTF-16 offsets, as JavaScript counts them.
 
 use std::io::{self, BufRead, Read, Write};
 use std::process::ExitCode;
 use teasel::json::Request;
+use teasel::parser::Decorators;
 use teasel::{Entry, Options, json};
 
 /// A batch header's mode: its entry, offset and switches, which may come before or after the offset.
@@ -88,6 +91,7 @@ fn batch(grammar: Option<String>) -> io::Result<()> {
 				"scopes" => request.scopes = true,
 				"erase" => request.erase = true,
 				"parenthesized" => request.options.parenthesized = true,
+				"legacyDecorators" | "proposalDecorators" => request.set(switch),
 				"recover" => request.options.error_recovery = true,
 				_ if switch.starts_with("stop:") => {
 					if !stop.is_empty() {
@@ -132,6 +136,7 @@ fn main() -> ExitCode {
 	let mut comments = false;
 	let mut scopes = false;
 	let mut parenthesized = false;
+	let mut decorators = Decorators::Any;
 	let mut erase = false;
 	let mut host = None;
 	let mut file = None;
@@ -143,6 +148,8 @@ fn main() -> ExitCode {
 			"--comments" => comments = true,
 			"--scopes" => scopes = true,
 			"--parenthesized" => parenthesized = true,
+			"--legacy-decorators" => decorators = Decorators::Legacy,
+			"--proposal-decorators" => decorators = Decorators::Proposal,
 			"--erase" => erase = true,
 			"--expression" => entry = Entry::Expression,
 			"--pattern" => entry = Entry::Pattern,
@@ -160,11 +167,12 @@ fn main() -> ExitCode {
 	let options = Options {
 		module: module || !matches!(entry, Entry::Program | Entry::Expression),
 		parenthesized,
+		decorators,
 		..Options::default()
 	};
 	let Some(file) = file else {
 		eprintln!(
-			"usage: teasel [--module] [--typescript] [--comments] [--scopes] [--expression|--pattern|--params|--statement|--type-parameters] [--parenthesized] [--erase] [--offset N] FILE"
+			"usage: teasel [--module] [--typescript] [--comments] [--scopes] [--expression|--pattern|--params|--statement|--type-parameters] [--parenthesized] [--erase] [--legacy-decorators|--proposal-decorators] [--offset N] FILE"
 		);
 		return ExitCode::FAILURE;
 	};
