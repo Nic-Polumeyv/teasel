@@ -3,7 +3,6 @@ use teasel::Entry;
 use teasel::json::{Prepared, Request};
 
 thread_local! {
-	static WORDS: RefCell<Vec<u32>> = const { RefCell::new(Vec::new()) };
 	static TEXT: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
 }
 
@@ -57,12 +56,9 @@ fn source(handle: u32) -> &'static Prepared<'static> {
 }
 
 // 0: words at `words_ptr`; 1: an error as JSON at `text_ptr`
-fn answer(result: Result<Vec<u32>, String>) -> u32 {
+fn answer(result: Result<(), String>) -> u32 {
 	match result {
-		Ok(words) => {
-			WORDS.with(|w| teasel::estree::recycle(std::mem::replace(&mut *w.borrow_mut(), words)));
-			0
-		}
+		Ok(()) => 0,
 		Err(error) => {
 			text(error);
 			1
@@ -91,12 +87,12 @@ pub unsafe extern "C" fn source_parse(
 
 #[unsafe(no_mangle)]
 pub extern "C" fn words_ptr() -> *const u32 {
-	WORDS.with(|w| w.borrow().as_ptr())
+	teasel::json::words(|w| w.as_ptr())
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn words_len() -> u32 {
-	WORDS.with(|w| w.borrow().len() as u32)
+	teasel::json::words(|w| w.len() as u32)
 }
 
 #[unsafe(no_mangle)]

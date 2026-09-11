@@ -7,7 +7,7 @@ use crate::Options;
 use crate::ast::{Ast, Reuse};
 use crate::comments::attach;
 use crate::error::Code;
-use crate::estree::{Binary, Emit, Json, Output, Positions, Sink, answer, error_to_json};
+use crate::estree::{Binary, Emit, Json, Output, Positions, Sink, Words, answer, error_to_json};
 use crate::host::{self, Grammar};
 use crate::parser::{Decorators, Entry, parse_at};
 use crate::scopes::{self, Bind};
@@ -148,12 +148,22 @@ pub struct Prepared<'a> {
 	host: Option<Rc<Grammar>>,
 }
 
+/// What every parse on a thread reuses: the trees, emptied, and the answer's buffers.
+#[derive(Default)]
+struct Session {
+	pool: Pool,
+	binary: Binary,
+}
+
 thread_local! {
-	/// The last parse's tree, emptied, for the next one: a host parsing every expression of
-	/// every template allocates its arenas once per thread.
-	static POOL: std::cell::RefCell<Pool> = std::cell::RefCell::new(Pool::default());
+	static SESSION: std::cell::RefCell<Session> = std::cell::RefCell::new(Session::default());
 	/// Grammars by their text, read once each.
 	static GRAMMARS: std::cell::RefCell<Vec<(String, Rc<Grammar>)>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// The words of the last binary answer on this thread, where they were written.
+pub fn words<R>(f: impl FnOnce(&mut Words) -> R) -> R {
+	SESSION.with(|session| f(session.borrow_mut().binary.words()))
 }
 
 /// The grammar of a text, read once per thread; the error names the line it stopped at.
@@ -264,8 +274,8 @@ impl<'a> Prepared<'a> {
 		}
 	}
 
-	/// One entry at an offset, as a token stream; the error answer stays JSON.
-	pub fn binary(&self, entry: Entry, start: f64, end: Option<f64>, stop: &str) -> Result<Vec<u32>, String> {
+	/// One entry at an offset, as a token stream at `words`; the error answer stays JSON.
+	pub fn binary(&self, entry: Entry, start: f64, end: Option<f64>, stop: &str) -> Result<(), String> {
 		binary_with(
 			&self.source,
 			&self.positions,
@@ -314,36 +324,62 @@ fn dispatch<S: Sink>(
 	request: &Request,
 	stop: &str,
 	host: Option<&Grammar>,
+	pool: &mut Pool,
 	sink: S,
 ) -> Result<S, String> {
 	check(source, request)?;
 	#[cfg(feature = "typescript")]
 	if request.typescript {
-		return run::<crate::typescript::TypeScript, S>(source, positions, request, stop, host, sink);
+		return run::<crate::typescript::TypeScript, S>(source, positions, request, stop, host, pool, sink);
 	}
 	#[cfg(not(feature = "typescript"))]
 	if request.typescript {
 		return Err(error_json("built without TypeScript", 0));
 	}
-	run::<(), S>(source, positions, request, stop, host, sink)
+	run::<(), S>(source, positions, request, stop, host, pool, sink)
 }
 
 fn parse_with(source: &str, positions: &Positions, request: &Request, stop: &str, host: Option<&Grammar>) -> String {
-	match dispatch(source, positions, request, stop, host, Json::default()) {
-		Ok(json) => json.finish(),
-		Err(error) => error,
-	}
+	SESSION.with(|session| {
+		let session = &mut *session.borrow_mut();
+		match dispatch(
+			source,
+			positions,
+			request,
+			stop,
+			host,
+			&mut session.pool,
+			Json::default(),
+		) {
+			Ok(json) => json.finish(),
+			Err(error) => error,
+		}
+	})
 }
 
-/// The answer as a token stream, or the error answer as JSON.
+/// The answer as a token stream at `words`, or the error answer as JSON.
 fn binary_with(
 	source: &str,
 	positions: &Positions,
 	request: &Request,
 	stop: &str,
 	host: Option<&Grammar>,
-) -> Result<Vec<u32>, String> {
-	dispatch(source, positions, request, stop, host, Binary::new()).map(|mut binary| binary.finish())
+) -> Result<(), String> {
+	SESSION.with(|session| {
+		let session = &mut *session.borrow_mut();
+		session.binary.reset();
+		dispatch(
+			source,
+			positions,
+			request,
+			stop,
+			host,
+			&mut session.pool,
+			&mut session.binary,
+		)?;
+		session.binary.finish();
+		Ok(())
+	})
 }
 
 /// Runs a request into a sink; `Err` is the error answer as JSON.
@@ -353,6 +389,7 @@ fn run<E: crate::parser::Extension, S: Sink>(
 	request: &Request,
 	stop: &str,
 	host: Option<&Grammar>,
+	pool: &mut Pool,
 	sink: S,
 ) -> Result<S, String>
 where
@@ -364,7 +401,7 @@ where
 		erase: request.erase && request.typescript,
 		errors: request.options.error_recovery,
 	};
-	let reused = POOL.with(|pool| Pooled::take(&mut pool.borrow_mut()));
+	let reused = Pooled::take(pool);
 	let parsed = match host {
 		Some(grammar) => host::parse_document::<E>(source, grammar, request.options, reused).map(|(mut ast, root)| {
 			let roots = ast.add_list(&[Some(root)]);
@@ -398,7 +435,7 @@ where
 			}
 			let sink = answer(&ast, request.entry, roots, end, source, positions, output, sink);
 			ast.clear();
-			POOL.with(|pool| Pooled::give(&mut pool.borrow_mut(), ast));
+			Pooled::give(pool, ast);
 			Ok(sink)
 		})
 		.map_err(|error| error_to_json(&error, source, positions))

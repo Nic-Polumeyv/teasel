@@ -156,7 +156,7 @@ fn expression_ends_where_it_ends() {
 }
 
 #[test]
-fn a_recycled_sink_writes_the_same_words() {
+fn the_session_writes_the_same_words_again() {
 	use crate::json::{Prepared, Request};
 	let mut request = Request::new(Entry::Program, 0);
 	for flag in ["comments", "locations", "scopes"] {
@@ -164,14 +164,17 @@ fn a_recycled_sink_writes_the_same_words() {
 	}
 	let source = "let x = /* a */ 1; function f(y) { return x + y; } // b";
 	let prepared = Prepared::borrowed(source, request);
-	let first = prepared.binary(Entry::Program, 0.0, None, "").unwrap();
+	let words = || crate::json::words(|words| words.to_vec());
+	prepared.binary(Entry::Program, 0.0, None, "").unwrap();
+	let first = words();
 	let _ = Prepared::borrowed("a + b", request).binary(Entry::Expression, 0.0, None, "");
 	assert!(
 		Prepared::borrowed("a +", request)
 			.binary(Entry::Expression, 0.0, None, "")
 			.is_err()
 	);
-	let again = prepared.binary(Entry::Program, 0.0, None, "").unwrap();
+	prepared.binary(Entry::Program, 0.0, None, "").unwrap();
+	let again = words();
 	// the header counts the constants and shapes known so far, which the parses between added to
 	assert_eq!((&first[..4], &first[6..]), (&again[..4], &again[6..]));
 }
@@ -672,8 +675,10 @@ fn phases() {
 		};
 		let flat = Positions::new(&source, false);
 		let end = source.len() as u32;
+		let mut binary = Binary::new();
 		best("Binary encode with scopes", &mut || {
-			let _ = answer(&ast, Entry::Program, roots, end, &source, &flat, scoped, Binary::new()).finish();
+			binary.reset();
+			answer(&ast, Entry::Program, roots, end, &source, &flat, scoped, &mut binary).finish();
 		});
 		let s = ast.scopes.as_ref().unwrap();
 		eprintln!(
@@ -717,11 +722,14 @@ fn phases() {
 			let _ = prepared.binary(Entry::Program, 0.0, None, "").unwrap();
 		});
 	}
+	let mut binary = Binary::new();
 	best("Binary encode, no loc", &mut || {
-		let _ = answer(&ast, Entry::Program, roots, end, &source, &flat, output, Binary::new()).finish();
+		binary.reset();
+		answer(&ast, Entry::Program, roots, end, &source, &flat, output, &mut binary).finish();
 	});
 	best("Binary encode, loc", &mut || {
-		let _ = answer(&ast, Entry::Program, roots, end, &source, &lines, output, Binary::new()).finish();
+		binary.reset();
+		answer(&ast, Entry::Program, roots, end, &source, &lines, output, &mut binary).finish();
 	});
 	best("Json write, loc", &mut || {
 		let _ = answer(
@@ -781,8 +789,10 @@ fn profile() {
 		};
 		let positions = Positions::new(&source, false);
 		let end = source.len() as u32;
+		let mut binary = Binary::new();
 		for _ in 0..30000 {
-			let words = answer(
+			binary.reset();
+			answer(
 				&ast,
 				Entry::Program,
 				roots,
@@ -790,10 +800,10 @@ fn profile() {
 				&source,
 				&positions,
 				output,
-				Binary::new(),
+				&mut binary,
 			)
 			.finish();
-			sink = sink.wrapping_add(words.len());
+			sink = sink.wrapping_add(binary.words().len());
 		}
 	} else {
 		for _ in 0..3000 {
