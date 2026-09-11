@@ -1131,7 +1131,7 @@ impl Extension for TypeScript {
 		}
 	}
 
-	fn class_start(p: &mut Parser<Self>) -> Result<()> {
+	fn class_start(p: &mut Parser<Self>, _kind: ClassKind) -> Result<()> {
 		let mut frame = std::mem::take(&mut p.ext.next_class);
 		if let Some(decorators) = p.take_decorators() {
 			frame.decorators = Some(decorators);

@@ -1296,7 +1296,7 @@ impl<E: Extension> Parser<'_, E> {
 	pub(crate) fn parse_class(&mut self, kind: ClassKind) -> Result<NodeId> {
 		let start = self.tok.start;
 		self.next()?;
-		E::class_start(self)?;
+		E::class_start(self, kind)?;
 		let old_strict = self.strict;
 		self.set_strict(true);
 		let id = if matches!(self.tok.kind, TokenKind::Ident(_))
