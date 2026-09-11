@@ -69,7 +69,9 @@ fn host_phases() {
 	}
 	for (name, source) in &documents {
 		for flags in ["module", "module scopes comments locations"] {
-			let prepared = Prepared::borrowed(source, Request::from_names(flags)).host(&grammar).unwrap();
+			let prepared = Prepared::borrowed(source, Request::from_names(flags))
+				.host(&grammar)
+				.unwrap();
 			let mut best = f64::MAX;
 			for _ in 0..300 {
 				let t = std::time::Instant::now();
