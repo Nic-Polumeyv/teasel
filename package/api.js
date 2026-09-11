@@ -2,7 +2,7 @@ import { decode, facts } from './decode.js';
 import { isIdentifierStart, isIdentifierChar } from './identifier.js';
 
 // acorn's option names, which `Request::set` of json.rs takes as they are
-const OPTIONS = new Set(['sourceType', 'typescript', 'comments', 'scopes', 'locations', 'parenthesized', 'allowReturnOutsideFunction', 'allowAwaitOutsideFunction', 'allowSuperOutsideMethod', 'allowUndeclaredExports', 'errorRecovery']);
+const OPTIONS = new Set(['sourceType', 'typescript', 'decorators', 'comments', 'scopes', 'locations', 'parenthesized', 'allowReturnOutsideFunction', 'allowAwaitOutsideFunction', 'allowSuperOutsideMethod', 'allowUndeclaredExports', 'errorRecovery']);
 
 // the engine takes the options that are on as their names
 export function names(options) {
@@ -15,8 +15,11 @@ export function names(options) {
 			continue;
 		}
 		if (!OPTIONS.has(key)) throw new TypeError(`${key} is not an option`);
-		if (value === undefined || value === false) continue;
-		if (key === 'sourceType') {
+		if (value === undefined || (value === false && key !== 'decorators')) continue;
+		if (key === 'decorators') {
+			if (value !== 'legacy' && value !== 'proposal') throw new TypeError(`decorators must be "legacy" or "proposal", not ${JSON.stringify(value)}`);
+			on.push(`${value}Decorators`);
+		} else if (key === 'sourceType') {
 			if (value !== 'script' && value !== 'module') throw new TypeError(`sourceType must be "script" or "module", not ${JSON.stringify(value)}`);
 			if (value === 'module') on.push('module');
 		} else if (value === true) on.push(key);

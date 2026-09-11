@@ -34,6 +34,12 @@ for (const [name, { Source, isIdentifierStart, isIdentifierChar, scopeOf, bindin
 	assert.equal(parens.node.trailingComments[0].start, 5);
 	assert.equal(at('statement', '{@const x = 1}', 2).end, 13);
 	const ts = { typescript: true };
+	assert.throws(() => parse('class C { @dec #x = 1 }', { ...ts, decorators: 'legacy' }), (e) => e.code === 'decorator_placement');
+	assert.doesNotThrow(() => parse('class C { m(@dec p) {} }', { ...ts, decorators: 'legacy' }));
+	assert.throws(() => parse('class C { m(@dec p) {} }', { ...ts, decorators: 'proposal' }), (e) => e.code === 'decorator_placement');
+	assert.doesNotThrow(() => parse('class C { @dec #x = 1 }', { ...ts, decorators: 'proposal' }));
+	assert.doesNotThrow(() => parse('class C { @dec #x = 1 }', ts));
+	assert.doesNotThrow(() => parse('class C { m(@dec p) {} }', ts));
 	assert.equal(at('expression', '{items as item}', 1, ts).node.type, 'TSAsExpression');
 	assert.equal(at('expression', '{items as item}', 1, ts, ['as']).end, 6);
 	assert.equal(at('expression', '{f(x as T) as item}', 1, ts, ['as']).end, 10);

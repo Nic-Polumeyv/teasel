@@ -16,7 +16,8 @@ use crate::lexer::token::{Keyword, TokenKind};
 use crate::parser::expression::starts_expression;
 use crate::parser::statement::{ClassKind, StatementPlace};
 use crate::parser::{
-	Context, DestructuringErrors, Entry, Errors, Extension, ForInit, FunctionKind, Options, Parser, Result, Unwrap,
+	Context, Decorators, DestructuringErrors, Entry, Errors, Extension, ForInit, FunctionKind, Options, Parser, Result,
+	Unwrap,
 };
 use ast::{Accessibility, Data, Extras, Kind, TsKind};
 use types::TypeParameterModifiers;
@@ -1052,6 +1053,15 @@ impl Extension for TypeScript {
 		} else {
 			Some(p.list_of(&decorators))
 		};
+		if p.options.decorators == Decorators::Proposal
+			&& let Some(decorators) = decorators
+		{
+			return p.error_with(
+				p.start_of(p.ast.list(decorators)[0].unwrap()),
+				Code::DecoratorPlacement,
+				"Parameter decorators are not part of the decorators proposal.",
+			);
+		}
 		if !allow_modifiers
 			&& !p.is_keyword(Keyword::This)
 			&& let Some(decorators) = decorators
@@ -1322,8 +1332,16 @@ impl Extension for TypeScript {
 		let mut frame = std::mem::take(&mut p.ext.next_class);
 		frame.is_declaration = kind != ClassKind::Expression;
 		if let Some(decorators) = p.take_decorators() {
+			let start = p.start_of(p.ast.list(decorators)[0].unwrap());
+			if p.options.decorators == Decorators::Legacy && !frame.is_declaration {
+				return p.error_with(
+					start,
+					Code::DecoratorPlacement,
+					"Legacy decorators cannot decorate a class expression.",
+				);
+			}
 			frame.decorators = Some(decorators);
-			frame.start = Some(p.start_of(p.ast.list(decorators)[0].unwrap()));
+			frame.start = Some(start);
 		}
 		frame.outer_abstract = p.ext.in_abstract_class;
 		p.ext.in_abstract_class = frame.is_abstract;
@@ -1629,6 +1647,35 @@ impl Extension for TypeScript {
 					start,
 					Code::DecoratorPlacement,
 					"Decorators cannot be applied to an index signature.",
+				);
+			}
+			if p.options.decorators == Decorators::Legacy {
+				if !p.ext.classes.last().unwrap().is_declaration {
+					return p.error_with(
+						start,
+						Code::DecoratorPlacement,
+						"Legacy decorators cannot decorate a member of a class expression.",
+					);
+				}
+				if frame
+					.key
+					.is_some_and(|key| matches!(p.kind(key), NodeKind::PrivateIdentifier { .. }))
+				{
+					return p.error_with(
+						start,
+						Code::DecoratorPlacement,
+						"Legacy decorators cannot decorate a private element.",
+					);
+				}
+			}
+			if p.options.decorators == Decorators::Proposal
+				&& matches!(p.kind(node), NodeKind::PropertyDefinition { .. })
+				&& (frame.extras.is_abstract || frame.extras.declare)
+			{
+				return p.error_with(
+					start,
+					Code::DecoratorPlacement,
+					"A decorator cannot decorate an abstract or declared field.",
 				);
 			}
 		}

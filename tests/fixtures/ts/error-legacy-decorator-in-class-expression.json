@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "decorator_placement",
+		"message": "Legacy decorators cannot decorate a member of a class expression.",
+		"pos": 18,
+		"end": 18,
+		"loc": {
+			"line": 1,
+			"column": 18
+		}
+	}
+}

@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "decorator_placement",
+		"message": "Parameter decorators are not part of the decorators proposal.",
+		"pos": 12,
+		"end": 12,
+		"loc": {
+			"line": 1,
+			"column": 12
+		}
+	}
+}

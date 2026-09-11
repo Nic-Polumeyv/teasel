@@ -1,8 +1,8 @@
 //! A file for each feature of the language under `tests/fixtures/js` and `tests/fixtures/ts`,
 //! its answer pinned beside it as `NAME.json`: the tree with comments and scopes, or the error.
 //! A file is a module unless its name ends in `.script.js` or `.script.ts`; a name says what else is on:
-//! `locations`, `erase`, or `recover` for `errorRecovery`. `UPDATE=1` rewrites the pins once a
-//! change is meant.
+//! `locations`, `erase`, `recover` for `errorRecovery`, or `legacy` and `proposal` for decorators.
+//! `UPDATE=1` rewrites the pins once a change is meant.
 
 mod common;
 
@@ -31,6 +31,8 @@ fn files() {
 				("locations", "locations"),
 				("erase", "erase"),
 				("recover", "errorRecovery"),
+				("legacy", "legacyDecorators"),
+				("proposal", "proposalDecorators"),
 			] {
 				if stem.contains(word) {
 					request.set(flag);

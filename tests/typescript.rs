@@ -58,12 +58,6 @@ const CHECKER: &[(&str, &str)] = &[
 	("1344", "a label on a var statement: ECMAScript allows it"),
 ];
 
-/// Grammar the parser does not check yet.
-const NOT_YET: &[(&str, &str)] = &[(
-	"1206",
-	"decorators on parameters, private names, class expressions, abstract and declare members: an option the runner does not read",
-)];
-
 /// Cases decided by name: what the parser rejects on ECMAScript's rules, which TypeScript does
 /// not apply, and what it does not read yet.
 const BY_NAME: &[(&str, &str)] = &[
@@ -112,6 +106,18 @@ fn has_several_files(source: &str) -> bool {
 		line.trim_start()
 			.strip_prefix("//")
 			.is_some_and(|after| after.trim_start().to_ascii_lowercase().starts_with("@filename"))
+	})
+}
+
+fn legacy_decorators(source: &str) -> bool {
+	source.lines().any(|line| {
+		line.trim_start()
+			.strip_prefix("//")
+			.and_then(|after| after.trim_start().split_once(':'))
+			.is_some_and(|(key, value)| {
+				key.trim_end().eq_ignore_ascii_case("@experimentalDecorators")
+					&& value.trim().eq_ignore_ascii_case("true")
+			})
 	})
 }
 
@@ -166,11 +172,16 @@ fn conformance() {
 		// TypeScript reports early errors from its binder and checker, redeclarations say, so a
 		// rejection is wrong only when the baseline is clean; a parse is wrong when the baseline has
 		// a grammar diagnostic the parser could see
-		let excused = |c: &String| CHECKER.iter().chain(NOT_YET).any(|(code, _)| code == c);
+		let excused = |c: &String| CHECKER.iter().any(|(code, _)| code == c);
 		let grammar_error = codes.iter().any(|c| c.starts_with('1') && c.len() == 4 && !excused(c));
 		let any_error = !codes.is_empty();
 		let mut request = Request::new(Entry::Program, 0);
 		request.set("typescript");
+		request.set(if legacy_decorators(&source) {
+			"legacyDecorators"
+		} else {
+			"proposalDecorators"
+		});
 		request.options.module = is_module(&source);
 		let answer = parse(&source, &request, "");
 		let failed = answer.starts_with("{\"error\"");
