@@ -83,6 +83,66 @@ pub trait Sink {
 	}
 }
 
+impl<S: Sink> Sink for &mut S {
+	fn strings(&mut self, interner: &Interner) {
+		(**self).strings(interner)
+	}
+	fn begin(&mut self, ty: &'static str) {
+		(**self).begin(ty)
+	}
+	fn object(&mut self) {
+		(**self).object()
+	}
+	fn list(&mut self) {
+		(**self).list()
+	}
+	fn end(&mut self) {
+		(**self).end()
+	}
+	fn key(&mut self, key: &'static str) {
+		(**self).key(key)
+	}
+	fn int(&mut self, value: u32) {
+		(**self).int(value)
+	}
+	fn float(&mut self, value: f64) {
+		(**self).float(value)
+	}
+	fn bool(&mut self, value: bool) {
+		(**self).bool(value)
+	}
+	fn null(&mut self) {
+		(**self).null()
+	}
+	fn str(&mut self, value: &'static str) {
+		(**self).str(value)
+	}
+	fn text(&mut self, value: &str) {
+		(**self).text(value)
+	}
+	fn interned(&mut self, id: StrId, value: &str) {
+		(**self).interned(id, value)
+	}
+	fn slice(&mut self, value: &str, start: u32, end: u32) {
+		(**self).slice(value, start, end)
+	}
+	fn span(&mut self, start: u32, end: u32) {
+		(**self).span(start, end)
+	}
+	fn loc(&mut self, start_line: u32, start_column: u32, end_line: u32, end_column: u32) {
+		(**self).loc(start_line, start_column, end_line, end_column)
+	}
+	fn table(&mut self, key: &'static str) {
+		(**self).table(key)
+	}
+	fn ints(&mut self, values: &[u32]) {
+		(**self).ints(values)
+	}
+	fn strs(&mut self, strings: &[(StrId, &str)]) {
+		(**self).strs(strings)
+	}
+}
+
 /// JSON text.
 pub struct Json {
 	out: String,
@@ -357,8 +417,119 @@ fn constant(value: &'static str) -> u32 {
 /// The strings are the tree's interned ones first, then any text written for this answer. Words
 /// are the host's endianness, which every target the package builds for shares with the
 /// decoder's check.
+/// The answer's words. A front end may take the allocation over and read the answer where it was
+/// written; a growth after that leaves the allocation to its holder instead of freeing it.
+pub struct Words {
+	vec: Vec<u32>,
+	owned: bool,
+}
+
+impl Words {
+	const LEAST: usize = 1 << 16;
+
+	pub fn new() -> Self {
+		Words {
+			vec: Vec::new(),
+			owned: true,
+		}
+	}
+
+	pub fn as_ptr(&self) -> *const u32 {
+		self.vec.as_ptr()
+	}
+
+	pub fn capacity(&self) -> usize {
+		self.vec.capacity()
+	}
+
+	fn clear(&mut self) {
+		self.vec.clear();
+	}
+
+	#[inline(always)]
+	fn room(&mut self, more: usize) {
+		if self.vec.capacity() - self.vec.len() < more {
+			self.grow(more);
+		}
+	}
+
+	#[inline(always)]
+	fn push(&mut self, word: u32) {
+		self.room(1);
+		self.vec.push(word);
+	}
+
+	#[inline(always)]
+	fn extend_from_slice(&mut self, words: &[u32]) {
+		self.room(words.len());
+		self.vec.extend_from_slice(words);
+	}
+
+	fn grow(&mut self, more: usize) {
+		let cap = (self.vec.capacity() * 2).max(self.vec.len() + more).max(Self::LEAST);
+		let mut next = Vec::with_capacity(cap);
+		next.extend_from_slice(&self.vec);
+		let old = std::mem::replace(&mut self.vec, next);
+		if !self.owned {
+			std::mem::forget(old);
+		}
+		self.owned = true;
+	}
+
+	/// Hands the allocation to the caller, who frees it as a `Vec<u32>` of that capacity;
+	/// None when a caller already holds it.
+	pub fn release(&mut self) -> Option<(*mut u32, usize)> {
+		if !self.owned {
+			return None;
+		}
+		if self.vec.capacity() == 0 {
+			self.grow(0);
+		}
+		self.owned = false;
+		Some((self.vec.as_mut_ptr(), self.vec.capacity()))
+	}
+
+	/// Starts the next answer on a fresh allocation of at least `cap` words.
+	pub fn renew(&mut self, cap: usize) {
+		let old = std::mem::replace(&mut self.vec, Vec::with_capacity(cap.max(Self::LEAST)));
+		if !self.owned {
+			std::mem::forget(old);
+		}
+		self.owned = true;
+	}
+}
+
+impl Drop for Words {
+	fn drop(&mut self) {
+		if !self.owned {
+			std::mem::forget(std::mem::take(&mut self.vec));
+		}
+	}
+}
+
+impl std::ops::Deref for Words {
+	type Target = [u32];
+	fn deref(&self) -> &[u32] {
+		&self.vec
+	}
+}
+
+impl std::ops::DerefMut for Words {
+	fn deref_mut(&mut self) -> &mut [u32] {
+		&mut self.vec
+	}
+}
+
+impl Extend<u32> for Words {
+	fn extend<I: IntoIterator<Item = u32>>(&mut self, iter: I) {
+		let iter = iter.into_iter();
+		self.room(iter.size_hint().0);
+		self.vec.extend(iter);
+	}
+}
+
 pub struct Binary {
-	words: Vec<u32>,
+	words: Words,
 	text: Vec<u8>,
 	/// UTF-16 units of text so far.
 	units: u32,
@@ -385,46 +556,10 @@ impl Default for Binary {
 	}
 }
 
-thread_local! {
-	// the buffers of the last answer, so an answer allocates nothing once one its size went before
-	static SPARE: std::cell::RefCell<Option<Binary>> = const { std::cell::RefCell::new(None) };
-}
-
-impl Drop for Binary {
-	fn drop(&mut self) {
-		let bytes = self.words.capacity() * 4 + self.text.capacity() + self.ends.capacity() * 4;
-		if bytes > 16 << 20 {
-			return;
-		}
-		// the thread's own spare drops after the thread local is gone
-		let _ = SPARE.try_with(|s| {
-			let mut s = s.borrow_mut();
-			if s.is_none() {
-				*s = Some(std::mem::replace(self, Binary::empty()));
-			}
-		});
-	}
-}
-
-/// Hands an answer's words back for the next answer, once a front end has copied them out.
-pub fn recycle(words: Vec<u32>) {
-	SPARE.with(|s| {
-		if let Some(spare) = s.borrow_mut().as_mut() {
-			spare.words = words;
-		}
-	});
-}
-
 impl Binary {
 	pub fn new() -> Self {
-		let mut binary = SPARE.with(|s| s.borrow_mut().take()).unwrap_or_else(Binary::empty);
-		binary.reset();
-		binary
-	}
-
-	fn empty() -> Self {
-		Binary {
-			words: Vec::new(),
+		let mut binary = Binary {
+			words: Words::new(),
 			text: Vec::new(),
 			units: 0,
 			ends: Vec::new(),
@@ -436,13 +571,19 @@ impl Binary {
 			start: constant("start") << 4 | kind::INT,
 			end: constant("end") << 4 | kind::INT,
 			loc: constant("loc") << 4 | kind::LOC,
-		}
+		};
+		binary.reset();
+		binary
+	}
+
+	pub fn words(&mut self) -> &mut Words {
+		&mut self.words
 	}
 
 	/// Ready for an answer: the header's room in `words`, the sentinel in `seq`, the rest empty.
-	fn reset(&mut self) {
+	pub fn reset(&mut self) {
 		self.words.clear();
-		self.words.extend([0; 7]);
+		self.words.extend_from_slice(&[0; 7]);
 		self.text.clear();
 		self.units = 0;
 		self.ends.clear();
@@ -480,8 +621,8 @@ impl Binary {
 		self.words.push(0);
 	}
 
-	/// The answer's words; the sink keeps its other buffers for the next answer.
-	pub fn finish(&mut self) -> Vec<u32> {
+	/// Completes the answer in `words`: the header, then the strings and floats after the tree.
+	pub fn finish(&mut self) {
 		debug_assert!(self.frames.is_empty() && self.seq.len() == 1);
 		let tree = self.words.len() as u32 - 7;
 		self.words[..7].copy_from_slice(&[
@@ -493,7 +634,7 @@ impl Binary {
 			SHAPES.with(|s| s.borrow().starts.len() as u32),
 			self.tables_at,
 		]);
-		self.words.extend(&self.ends);
+		self.words.extend_from_slice(&self.ends);
 		let mut chunks = self.text.chunks_exact(4);
 		self.words.extend(
 			chunks
@@ -511,9 +652,8 @@ impl Binary {
 		}
 		for &float in &self.floats {
 			let bits = float.to_bits();
-			self.words.extend([bits as u32, (bits >> 32) as u32]);
+			self.words.extend_from_slice(&[bits as u32, (bits >> 32) as u32]);
 		}
-		std::mem::take(&mut self.words)
 	}
 }
 
@@ -596,17 +736,18 @@ impl Sink for Binary {
 
 	fn slice(&mut self, _value: &str, start: u32, end: u32) {
 		self.value(kind::SLICE);
-		self.words.extend([start, end]);
+		self.words.extend_from_slice(&[start, end]);
 	}
 
 	fn span(&mut self, start: u32, end: u32) {
 		self.seq.extend([self.start, self.end]);
-		self.words.extend([start, end]);
+		self.words.extend_from_slice(&[start, end]);
 	}
 
 	fn loc(&mut self, start_line: u32, start_column: u32, end_line: u32, end_column: u32) {
 		self.seq.push(self.loc);
-		self.words.extend([start_line, start_column, end_line, end_column]);
+		self.words
+			.extend_from_slice(&[start_line, start_column, end_line, end_column]);
 	}
 
 	fn table(&mut self, _key: &'static str) {
@@ -1976,7 +2117,8 @@ mod tests {
 		b.end();
 		b.end();
 		b.end();
-		let words = b.finish();
+		b.finish();
+		let words = b.words().to_vec();
 		let [tree, strings, floats, bytes, known, known_shapes, tables_at] = words[..7] else {
 			unreachable!()
 		};
