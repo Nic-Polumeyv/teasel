@@ -25,15 +25,33 @@ impl Data {
 pub struct ExtrasTable {
 	slots: Vec<u32>,
 	list: Vec<Extras>,
+	/// The node of each entry of `list`, to unhook when the entry is forgotten.
+	owners: Vec<NodeId>,
 }
 
 const NONE: u32 = u32::MAX;
 
 impl crate::ast::Reuse for Data {
+	type Mark = (usize, usize);
+
 	fn clear(&mut self) {
 		self.nodes.clear();
 		self.extras.slots.clear();
 		self.extras.list.clear();
+		self.extras.owners.clear();
+	}
+
+	fn mark(&self) -> Self::Mark {
+		(self.nodes.len(), self.extras.list.len())
+	}
+
+	fn truncate(&mut self, (nodes, extras): Self::Mark) {
+		self.nodes.truncate(nodes);
+		for &owner in &self.extras.owners[extras..] {
+			self.extras.slots[owner.0 as usize] = NONE;
+		}
+		self.extras.list.truncate(extras);
+		self.extras.owners.truncate(extras);
 	}
 }
 
@@ -53,6 +71,7 @@ impl ExtrasTable {
 		if self.slots[index] == NONE {
 			self.slots[index] = self.list.len() as u32;
 			self.list.push(Extras::default());
+			self.owners.push(id);
 		}
 		&mut self.list[self.slots[index] as usize]
 	}

@@ -1002,7 +1002,7 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		self.sink.begin(ty);
 		self.span(node.start, node.end);
 		self.scope_facts(id);
-		if self.ast.parenthesized.contains(&id) {
+		if self.ast.parenthesized.binary_search(&id).is_ok() {
 			self.bool("parenthesized", true);
 		}
 		self.ast.extension.extras(self, id);

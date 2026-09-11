@@ -790,7 +790,8 @@ impl<E: Extension> Parser<'_, E> {
 			paren.items[0].unwrap()
 		};
 		if self.options.parenthesized {
-			self.ast.parenthesized.insert(value);
+			debug_assert!(self.ast.parenthesized.last().is_none_or(|&last| last <= value));
+			self.ast.parenthesized.push(value);
 		}
 		Ok(value)
 	}
