@@ -1,5 +1,5 @@
-//! Serializes an `Ast` to ESTree, matching acorn's output shape: as JSON text, or as a token
-//! stream a binding hands to JavaScript without a text round trip.
+//! Serializes an `Ast` to ESTree: as JSON text, or as a token stream a binding hands to
+//! JavaScript without a text round trip.
 
 use crate::ast::{Ast, Class, Function, List, MethodKind, NodeId, NodeKind, PropertyKind, Value};
 use crate::interner::{FastMap, Interner, StrId};
@@ -18,7 +18,7 @@ pub trait Emit: crate::ast::Walk {
 	}
 }
 
-/// How a tree serializes beyond acorn's shape.
+/// What the answer carries beyond the tree.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Output {
 	/// The answer lists every comment read.
@@ -704,8 +704,8 @@ pub struct Writer<'a, X = (), S: Sink = Json> {
 	adopted: Vec<NodeId>,
 }
 
-/// Maps byte offsets to the UTF-16 offsets and line/column pairs that acorn reports, and UTF-16
-/// offsets back to bytes. Built once per source; a host that parses many expressions out of one
+/// Maps byte offsets to UTF-16 offsets and line/column pairs, the positions JavaScript counts,
+/// and UTF-16 offsets back to bytes. Built once per source; a host that parses many expressions out of one
 /// source keeps it.
 pub struct Positions {
 	/// After each non-ASCII character: its end byte offset and the bytes-minus-code-units gap so far.
@@ -1120,7 +1120,7 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		self.ast
 	}
 
-	/// The key only when there is a node, the way acorn leaves unset properties out.
+	/// The key only when there is a node; an unset property is left out.
 	pub(crate) fn opt_key(&mut self, key: &'static str, id: Option<NodeId>) {
 		if let Some(id) = id {
 			self.field(key, id);

@@ -1,4 +1,4 @@
-//! TypeScript as an extension of the JavaScript grammar, matching `@sveltejs/acorn-typescript`.
+//! TypeScript as an extension of the JavaScript grammar.
 
 use crate::error::Code;
 pub mod ast;

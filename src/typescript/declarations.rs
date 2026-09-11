@@ -12,7 +12,7 @@ use crate::parser::statement::FUNC_STATEMENT;
 use crate::parser::statement::{ClassKind, StatementPlace};
 use crate::parser::{Context, ForInit, Parser, Result};
 
-/// The scope flags acorn-typescript gives module blocks; the inner one is also the class field
+/// The scope flags of a module block; the inner one is also the class field
 /// initializer flag, so `arguments` is rejected inside namespaces the same way.
 const SCOPE_TS_MODULE: u32 = 1024;
 const SCOPE_TS_OTHER: u32 = 512;

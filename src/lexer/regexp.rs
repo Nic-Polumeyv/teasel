@@ -1,5 +1,5 @@
-//! Validates regular expression literals against the ES2025 grammar, including Annex B, the
-//! way acorn does: no matcher is built, only early errors are reported.
+//! Validates regular expression literals against the ES2025 grammar, including Annex B: no
+//! matcher is built, only early errors are reported.
 
 use super::regexp_data::{BINARY_PROPERTIES, BINARY_PROPERTIES_OF_STRINGS, GENERAL_CATEGORY_VALUES, SCRIPT_VALUES};
 use super::unicode::{is_id_continue, is_id_start};

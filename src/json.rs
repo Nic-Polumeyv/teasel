@@ -15,13 +15,13 @@ use crate::scopes::{self, Bind};
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Request {
 	pub entry: Entry,
-	/// Byte offset into the source; the JSON reports UTF-16 offsets like acorn.
+	/// Byte offset into the source; the JSON reports UTF-16 offsets.
 	pub offset: u32,
 	pub typescript: bool,
 	pub comments: bool,
 	/// Scope analysis on the answer.
 	pub scopes: bool,
-	/// Line and column on every node, as acorn's `locations` option.
+	/// Line and column on every node, as `loc`.
 	pub locations: bool,
 	/// TypeScript erased on output; see `estree::Output`.
 	pub erase: bool,
@@ -43,7 +43,7 @@ impl Request {
 		}
 	}
 
-	/// A source's request from its switches named, separated by spaces, as acorn spells them and
+	/// A source's request from its switches named, separated by spaces, as the package's options spell them, and
 	/// `module` for `sourceType: 'module'`; a script otherwise. The entry and offset come with
 	/// each parse.
 	pub fn from_names(names: &str) -> Request {
@@ -137,7 +137,7 @@ pub fn parse_document(source: &str, grammar: &str, request: &Request) -> String 
 }
 
 /// A source with its position tables and switches, for hosts that parse many pieces of one
-/// source: offsets come in as UTF-16 the way acorn takes them.
+/// source: offsets come in as UTF-16, as JavaScript counts them.
 pub struct Prepared<'a> {
 	source: std::borrow::Cow<'a, str>,
 	positions: Positions,

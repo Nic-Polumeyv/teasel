@@ -1,4 +1,4 @@
-//! Command line front end, mainly for the acorn conformance harness.
+//! Command line front end: one file, or a batch of jobs, answered as JSON.
 //!
 //! `teasel [--module] [--typescript] [--comments] [--scopes] [--expression|--pattern|--params|--statement|--type-parameters]
 //! [--parenthesized] [--erase] [--offset N] FILE` prints the answer as JSON: the node (or the
@@ -13,7 +13,7 @@
 //! `+parenthesized` to mark parenthesized nodes, `+undeclared-exports` to accept exports of names
 //! the source never declares, `+stop:TOKEN` to end a parse-at entry at one of the host's tokens or
 //! `+erase` to erase TypeScript from the output. Offsets are byte offsets into the source; the
-//! JSON output reports UTF-16 offsets like acorn.
+//! JSON output reports UTF-16 offsets, as JavaScript counts them.
 
 use std::io::{self, BufRead, Read, Write};
 use std::process::ExitCode;
