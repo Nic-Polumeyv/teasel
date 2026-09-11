@@ -5,8 +5,8 @@ use crate::interner::StrId;
 use crate::lexer::token::{Keyword, TokenKind, word};
 
 use crate::ast::{
-	AssignmentOperator, BinaryOperator, Function, List, LogicalOperator, NodeId, NodeKind, PropertyKind, UnaryOperator,
-	UpdateOperator,
+	AssignmentOperator, BinaryOperator, Function, List, LogicalOperator, MethodKind, NodeId, NodeKind, PropertyKind,
+	UnaryOperator, UpdateOperator,
 };
 
 /// Whether the expression is the init of a `for` statement, where `in` is not an operator.
@@ -1052,7 +1052,7 @@ impl<E: Extension> Parser<'_, E> {
 				return self.unexpected();
 			}
 			method = true;
-			value = self.parse_method(generator, is_async, false, false)?;
+			value = self.parse_method(generator, is_async, false, false, MethodKind::Method)?;
 		} else if !is_pattern
 			&& !escaped
 			&& !computed
@@ -1070,7 +1070,17 @@ impl<E: Extension> Parser<'_, E> {
 				PropertyKind::Set
 			};
 			let (accessor_key, accessor_computed) = self.parse_property_name()?;
-			let func = self.parse_method(false, false, false, false)?;
+			let func = self.parse_method(
+				false,
+				false,
+				false,
+				false,
+				if kind == PropertyKind::Get {
+					MethodKind::Get
+				} else {
+					MethodKind::Set
+				},
+			)?;
 			self.check_accessor_params(func, kind == PropertyKind::Get, false)?;
 			return Ok(self.add(
 				NodeKind::Property {
@@ -1174,12 +1184,13 @@ impl<E: Extension> Parser<'_, E> {
 		is_async: bool,
 		allow_direct_super: bool,
 		in_class: bool,
+		kind: MethodKind,
 	) -> Result<NodeId> {
 		let old = self.take_yield_await();
 		self.enter_scope(
 			function_flags(is_async, generator) | SCOPE_SUPER | if allow_direct_super { SCOPE_DIRECT_SUPER } else { 0 },
 		);
-		let kind = FunctionKind::Method { in_class };
+		let kind = FunctionKind::Method { in_class, kind };
 		E::function_start(self, kind)?;
 		let start = self.tok.start;
 		self.expect(TokenKind::ParenL)?;

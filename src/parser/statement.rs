@@ -1603,8 +1603,8 @@ impl<E: Extension> Parser<'_, E> {
 				"Classes may not have a static property named prototype",
 			);
 		}
-		E::class_method_start(self)?;
-		let value = self.parse_method(generator, is_async, allows_direct_super, true)?;
+		E::class_method_start(self, kind)?;
+		let value = self.parse_method(generator, is_async, allows_direct_super, true, kind)?;
 		if kind == MethodKind::Get || kind == MethodKind::Set {
 			self.check_accessor_params(value, kind == MethodKind::Get, true)?;
 		}

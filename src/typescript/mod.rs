@@ -1068,7 +1068,7 @@ impl Extension for TypeScript {
 
 	fn function_start(p: &mut Parser<Self>, kind: FunctionKind) -> Result<()> {
 		let mut frame = FunctionFrame {
-			in_class_method: kind == FunctionKind::Method { in_class: true },
+			in_class_method: matches!(kind, FunctionKind::Method { in_class: true, .. }),
 			arrow_parameters: p.ext.maybe_in_arrow_parameters,
 			..FunctionFrame::default()
 		};
@@ -1101,7 +1101,7 @@ impl Extension for TypeScript {
 				is_async,
 				generator,
 			}),
-			FunctionKind::Method { in_class: true } => Some(TsKind::DeclareMethod {
+			FunctionKind::Method { in_class: true, .. } => Some(TsKind::DeclareMethod {
 				params,
 				is_async,
 				generator,
@@ -1350,7 +1350,7 @@ impl Extension for TypeScript {
 		p.is(TokenKind::Lt)
 	}
 
-	fn class_method_start(p: &mut Parser<Self>) -> Result<()> {
+	fn class_method_start(p: &mut Parser<Self>, _kind: MethodKind) -> Result<()> {
 		let type_parameters = p.try_parse_type_parameters(TypeParameterModifiers::Const)?;
 		let element = *p.ext.elements.last().unwrap();
 		let key = element.key.unwrap();
@@ -1697,7 +1697,7 @@ impl Extension for TypeScript {
 		if is_pattern {
 			return p.unexpected();
 		}
-		let value = p.parse_method(generator, is_async, false, false)?;
+		let value = p.parse_method(generator, is_async, false, false, MethodKind::Method)?;
 		Ok(Some(p.add(
 			NodeKind::Property {
 				key,
