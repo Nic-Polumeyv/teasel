@@ -175,7 +175,7 @@ export function bind(engine) {
 			return { line: lo + 1, column: offset - this.#lines[lo] };
 		}
 
-		free() {
+		[Symbol.dispose]() {
 			if (this.#held === undefined) return;
 			registry?.unregister(this);
 			engine.free?.(this.#held);

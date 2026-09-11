@@ -1,5 +1,11 @@
 import type { Expression, Identifier, Node, Pattern, Program, SourceLocation, Statement } from 'estree';
 
+declare global {
+	interface SymbolConstructor {
+		readonly dispose: unique symbol;
+	}
+}
+
 export interface Options {
 	/**
 	 * The grammar of a host language the whole source is a document of: a template language
@@ -240,8 +246,8 @@ export class Source<Root = Program> {
 	parse(entry: 'statement', offset: number, at?: At): Parsed<Statement>;
 	/** A `TSTypeParameterDeclaration`. */
 	parse(entry: 'typeParameters', offset: number, at?: At): Parsed<Node>;
-	/** Releases what the engine holds for the source; the collector does it otherwise. */
-	free(): void;
+	/** Releases what the engine holds for the source, as `using` does at the end of its block; the collector does it otherwise. */
+	[Symbol.dispose](): void;
 }
 
 /** Whether a code point can start an identifier, as acorn decides it. */

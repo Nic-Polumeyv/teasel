@@ -15,7 +15,7 @@ const source = new Source(text, { typescript: true, scopes: true });
 const { node } = source.parse();
 ```
 
-Every parse is `source.parse(entry, offset, { end, stopAt })`. Every answer is `{ node, end }` and what the options add.
+Every parse is `source.parse(entry, offset, { end, stopAt })`. Every answer is `{ node, end }` and what the options add. A source is disposable: `using source = new Source(text)` releases what the engine holds for it at the end of the block, and the collector does otherwise.
 
 ```
 source.parse()                                Program
