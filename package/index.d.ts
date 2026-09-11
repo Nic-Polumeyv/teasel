@@ -90,6 +90,8 @@ export interface Binding {
 		| 'var'
 		| 'let'
 		| 'const'
+		| 'using'
+		| 'await using'
 		| 'function'
 		| 'class'
 		| 'param'

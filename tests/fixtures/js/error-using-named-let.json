@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "reserved_word",
+		"message": "The keyword 'let' is reserved",
+		"pos": 8,
+		"end": 8,
+		"loc": {
+			"line": 1,
+			"column": 8
+		}
+	}
+}

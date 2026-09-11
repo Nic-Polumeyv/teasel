@@ -2,7 +2,7 @@
 	"node": {
 		"type": "Program",
 		"start": 0,
-		"end": 66,
+		"end": 152,
 		"scope": 0,
 		"body": [
 			{
@@ -78,11 +78,154 @@
 					}
 				],
 				"kind": "const"
+			},
+			{
+				"type": "BlockStatement",
+				"start": 66,
+				"end": 103,
+				"scope": 2,
+				"body": [
+					{
+						"type": "VariableDeclaration",
+						"start": 68,
+						"end": 101,
+						"declarations": [
+							{
+								"type": "VariableDeclarator",
+								"start": 74,
+								"end": 91,
+								"defines": [
+									2
+								],
+								"id": {
+									"type": "Identifier",
+									"start": 74,
+									"end": 82,
+									"declares": 2,
+									"name": "resource"
+								},
+								"init": {
+									"type": "Identifier",
+									"start": 85,
+									"end": 91,
+									"reference": 0,
+									"name": "source"
+								}
+							},
+							{
+								"type": "VariableDeclarator",
+								"start": 93,
+								"end": 100,
+								"defines": [
+									3
+								],
+								"id": {
+									"type": "ArrayPattern",
+									"start": 93,
+									"end": 96,
+									"elements": [
+										{
+											"type": "Identifier",
+											"start": 94,
+											"end": 95,
+											"declares": 3,
+											"name": "a"
+										}
+									]
+								},
+								"init": {
+									"type": "Identifier",
+									"start": 99,
+									"end": 100,
+									"reference": 1,
+									"name": "b"
+								}
+							}
+						],
+						"kind": "using"
+					}
+				]
+			},
+			{
+				"type": "BlockStatement",
+				"start": 104,
+				"end": 122,
+				"scope": 3,
+				"body": [
+					{
+						"type": "VariableDeclaration",
+						"start": 106,
+						"end": 120,
+						"declarations": [
+							{
+								"type": "VariableDeclarator",
+								"start": 112,
+								"end": 119,
+								"defines": [
+									4
+								],
+								"id": {
+									"type": "Identifier",
+									"start": 112,
+									"end": 119,
+									"declares": 4,
+									"name": "missing"
+								},
+								"init": null
+							}
+						],
+						"kind": "using"
+					}
+				]
+			},
+			{
+				"type": "ForInStatement",
+				"start": 123,
+				"end": 151,
+				"scope": 4,
+				"left": {
+					"type": "VariableDeclaration",
+					"start": 128,
+					"end": 138,
+					"declarations": [
+						{
+							"type": "VariableDeclarator",
+							"start": 134,
+							"end": 138,
+							"defines": [
+								5
+							],
+							"id": {
+								"type": "Identifier",
+								"start": 134,
+								"end": 138,
+								"declares": 5,
+								"name": "item"
+							},
+							"init": null
+						}
+					],
+					"kind": "using"
+				},
+				"right": {
+					"type": "Identifier",
+					"start": 142,
+					"end": 147,
+					"reference": 2,
+					"name": "items"
+				},
+				"body": {
+					"type": "BlockStatement",
+					"start": 149,
+					"end": 151,
+					"scope": 5,
+					"body": []
+				}
 			}
 		],
 		"sourceType": "module"
 	},
-	"end": 66,
+	"end": 152,
 	"comments": [],
 	"errors": [
 		{
@@ -154,6 +297,36 @@
 				"line": 6,
 				"column": 7
 			}
+		},
+		{
+			"code": "using_pattern",
+			"message": "'using' declarations may not have binding patterns",
+			"pos": 93,
+			"end": 93,
+			"loc": {
+				"line": 8,
+				"column": 27
+			}
+		},
+		{
+			"code": "using_without_initializer",
+			"message": "Missing initializer in using declaration",
+			"pos": 119,
+			"end": 120,
+			"loc": {
+				"line": 9,
+				"column": 15
+			}
+		},
+		{
+			"code": "using_in_for_in",
+			"message": "The left-hand side of a for-in loop may not be a using declaration",
+			"pos": 128,
+			"end": 128,
+			"loc": {
+				"line": 10,
+				"column": 5
+			}
 		}
 	],
 	"scopes": [
@@ -165,6 +338,26 @@
 		{
 			"kind": "function",
 			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "for",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 4,
 			"topLevelAwait": false
 		}
 	],
@@ -178,7 +371,49 @@
 			"name": "d",
 			"kind": "const",
 			"scope": 0
+		},
+		{
+			"name": "resource",
+			"kind": "using",
+			"scope": 2
+		},
+		{
+			"name": "a",
+			"kind": "using",
+			"scope": 2
+		},
+		{
+			"name": "missing",
+			"kind": "using",
+			"scope": 3
+		},
+		{
+			"name": "item",
+			"kind": "using",
+			"scope": 4
 		}
 	],
-	"references": []
+	"references": [
+		{
+			"scope": 2,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 2,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 4,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
 }

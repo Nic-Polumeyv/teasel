@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "using_without_initializer",
+		"message": "Missing initializer in using declaration",
+		"pos": 9,
+		"end": 10,
+		"loc": {
+			"line": 1,
+			"column": 9
+		}
+	}
+}

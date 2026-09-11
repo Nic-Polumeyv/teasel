@@ -13,7 +13,7 @@ use crate::lexer::Lexer;
 use crate::lexer::token::{Keyword, Token, TokenKind};
 pub(crate) use expression::ForInit;
 use scope::{SCOPE_TOP, Scope};
-pub(crate) use statement::Context;
+pub(crate) use statement::{Context, StatementPlace};
 
 /// Errors travel boxed so every `Result` stays two words wide.
 pub(crate) type Result<T> = std::result::Result<T, Box<SyntaxError>>;
@@ -87,7 +87,7 @@ pub(crate) trait Extension: Default + Sized {
 		false
 	}
 	/// First look at a statement; `Some` replaces it entirely.
-	fn statement(p: &mut Parser<Self>, context: Context, top_level: bool) -> Result<Option<NodeId>> {
+	fn statement(p: &mut Parser<Self>, context: Context, place: StatementPlace) -> Result<Option<NodeId>> {
 		Ok(None)
 	}
 	/// An expression statement whose expression is a bare identifier may be a declaration instead.
@@ -758,7 +758,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 			Entry::Params => self.parse_params_root(),
 			Entry::Statement => {
 				let mut exports = FastSet::default();
-				self.parse_statement(statement::Context::None, true, Some(&mut exports))
+				self.parse_statement(statement::Context::None, StatementPlace::TopLevel, Some(&mut exports))
 					.map(|id| vec![id])
 			}
 			Entry::TypeParameters => E::type_parameters(self).map(|id| vec![id]),

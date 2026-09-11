@@ -1,0 +1,1 @@
+declare using y: T;

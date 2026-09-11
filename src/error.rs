@@ -124,6 +124,10 @@ codes! {
 	AccessorInPattern "accessor_in_pattern" => "Object pattern can't contain getter or setter",
 	ShorthandAssignment "shorthand_assignment" => "Shorthand property assignments are valid only in destructuring patterns",
 	PatternWithoutInitializer "pattern_without_initializer" => "Complex binding patterns require an initialization value",
+	UsingPattern "using_pattern" => "'{}' declarations may not have binding patterns",
+	UsingWithoutInitializer "using_without_initializer" => "Missing initializer in {} declaration",
+	UsingInForIn "using_in_for_in" => "The left-hand side of a for-in loop may not be a {} declaration",
+	UsingOutsideBlock "using_outside_block" => "A {} declaration at the top level of a script or in a case clause must be inside a block",
 	InvalidDefaultOperator "invalid_default_operator" => "Only '=' operator can be used for specifying default value.",
 	GetterParams "getter_params" => "getter should have no params",
 	SetterParams "setter_params" => "setter should have exactly one param",
@@ -183,6 +187,7 @@ codes! {
 	GeneratorSignature "generator_signature" => "An overload signature cannot be declared as a generator.",
 	DeclareInAmbient "declare_in_ambient" => "A 'declare' modifier cannot be used in an already ambient context.",
 	StatementInAmbient "statement_in_ambient" => "Statements are not allowed in ambient contexts.",
+	UsingInAmbient "using_in_ambient" => "'{}' declarations are not allowed in ambient contexts",
 	// A host's offsets or switches, with the message given where it is raised.
 	InvalidRequest "invalid_request" => "",
 	PropertyAfterInstantiation "property_after_instantiation" => "Invalid property access after an instantiation expression. You can either wrap the instantiation expression in parentheses, or delete the type arguments.",

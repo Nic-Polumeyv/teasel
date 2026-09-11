@@ -14,7 +14,7 @@ use crate::interner::FastMap;
 use crate::interner::StrId;
 use crate::lexer::token::{Keyword, TokenKind};
 use crate::parser::expression::starts_expression;
-use crate::parser::statement::ClassKind;
+use crate::parser::statement::{ClassKind, StatementPlace};
 use crate::parser::{
 	Context, DestructuringErrors, Entry, Errors, Extension, ForInit, FunctionKind, Options, Parser, Result, Unwrap,
 };
@@ -694,7 +694,7 @@ impl Extension for TypeScript {
 
 	// Statements and modules
 
-	fn statement(p: &mut Parser<Self>, _context: Context, _top_level: bool) -> Result<Option<NodeId>> {
+	fn statement(p: &mut Parser<Self>, _context: Context, _place: StatementPlace) -> Result<Option<NodeId>> {
 		if p.is(TokenKind::At) {
 			p.parse_decorators(true)?;
 		}
@@ -781,7 +781,7 @@ impl Extension for TypeScript {
 		};
 		let declaration = match declaration {
 			Some(declaration) => declaration,
-			None => p.parse_statement(Context::None, false, None)?,
+			None => p.parse_statement(Context::None, StatementPlace::Block, None)?,
 		};
 		p.ext.ambient = old_ambient;
 		if matches!(

@@ -127,7 +127,11 @@ impl<'a> Lexer<'a> {
 
 	/// The next significant character, whether a line break precedes it, and its position.
 	pub(crate) fn peek_char(&self) -> (Option<char>, bool, usize) {
-		let mut pos = self.pos;
+		self.peek_char_from(self.pos)
+	}
+
+	/// The next significant character from a source position, without tokenizing.
+	pub(crate) fn peek_char_from(&self, mut pos: usize) -> (Option<char>, bool, usize) {
 		let mut newline = false;
 		let bytes = self.src.as_bytes();
 		loop {

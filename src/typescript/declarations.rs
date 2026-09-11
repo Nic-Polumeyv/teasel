@@ -8,8 +8,8 @@ use crate::ast::{List, NodeId, NodeKind, VariableKind};
 use crate::error::Code;
 use crate::lexer::token::{Keyword, TokenKind};
 use crate::parser::scope::Binding;
-use crate::parser::statement::ClassKind;
 use crate::parser::statement::FUNC_STATEMENT;
+use crate::parser::statement::{ClassKind, StatementPlace};
 use crate::parser::{Context, ForInit, Parser, Result};
 
 /// The scope flags acorn-typescript gives module blocks; the inner one is also the class field
@@ -100,9 +100,9 @@ impl Parser<'_, TypeScript> {
 		let mut exports = crate::interner::FastSet::default();
 		while !self.is(TokenKind::BraceR) {
 			let at = self.tok.start;
-			if let Some(statement) =
-				self.statement_recovered(|p| p.parse_statement(Context::None, true, Some(&mut exports)))?
-			{
+			if let Some(statement) = self.statement_recovered(|p| {
+				p.parse_statement(Context::None, StatementPlace::TopLevel, Some(&mut exports))
+			})? {
 				if self.ext.ambient && !self.is_declaration(statement) {
 					return self.error(at, Code::StatementInAmbient);
 				}

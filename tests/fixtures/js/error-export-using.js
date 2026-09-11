@@ -1,0 +1,1 @@
+export using a = b;

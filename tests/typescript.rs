@@ -7,7 +7,7 @@
 //!   git clone --depth 1 --filter=blob:none --sparse https://github.com/microsoft/TypeScript tests/TypeScript
 //!   git -C tests/TypeScript sparse-checkout set --no-cone '/tsc/testdata/tests/cases/conformance/**' '/tsc/testdata/baselines/reference/conformance/*.errors.txt'
 //!
-//! A case with several files (`// @filename`), a `.d.ts` file, or one with `using` declarations is left out.
+//! A case with several files (`// @filename`) or a `.d.ts` file is left out.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -116,24 +116,6 @@ const BY_NAME: &[(&str, &str)] = &[
 	),
 ];
 
-/// `using` declarations are not read yet.
-fn uses_using(source: &str) -> bool {
-	source.lines().any(|line| {
-		let line = line.trim_start();
-		if line.starts_with("//") {
-			return false;
-		}
-		let rest = line
-			.strip_prefix("for (")
-			.or_else(|| line.strip_prefix("for await ("))
-			.unwrap_or(line)
-			.trim_start();
-		let rest = rest.strip_prefix("await ").map(str::trim_start).unwrap_or(rest);
-		rest.strip_prefix("using ")
-			.is_some_and(|after| after.starts_with(|c: char| c.is_alphabetic() || c == '_' || c == '$'))
-	})
-}
-
 /// A file TypeScript treats as a module: one with an import or export of its own, or `import.meta`.
 fn is_module(source: &str) -> bool {
 	source.contains("import.meta")
@@ -183,11 +165,7 @@ fn conformance() {
 		let source = String::from_utf8_lossy(&fs::read(&file).unwrap()).into_owned();
 		let name = file.file_name().unwrap().to_str().unwrap();
 		// a .d.ts file is ambient by its name, which the parser is not told
-		if name.ends_with(".d.ts")
-			|| has_several_files(&source)
-			|| uses_using(&source)
-			|| BY_NAME.iter().any(|(n, _)| *n == name)
-		{
+		if name.ends_with(".d.ts") || has_several_files(&source) || BY_NAME.iter().any(|(n, _)| *n == name) {
 			left_out += 1;
 			continue;
 		}
