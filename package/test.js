@@ -223,8 +223,15 @@ for (const [name, { Source, isIdentifierStart, isIdentifierChar, scopeOf, bindin
 	assert.equal(template.parse('program', 24).node.body[0].type, 'ExpressionStatement');
 	assert.equal(template.parse('expression', 33, { end: 34 }).node.name, 'a');
 	assert.equal(program('"﻿a"; "bc"; zz').body[2].expression.name, 'zz');
-	source.free();
+	source[Symbol.dispose]();
 	assert.throws(() => source.parse('expression', 1), TypeError);
+	let escaped;
+	{
+		using inner = new Source('x');
+		escaped = inner;
+		assert.equal(inner.parse('expression', 0).node.name, 'x');
+	}
+	assert.throws(() => escaped.parse('expression', 0), TypeError);
 	assert.throws(() => parse('x', { locations: 1 }), TypeError);
 	assert.throws(() => parse('x', { typescript: 'yes' }), TypeError);
 	assert.throws(() => new Source('a;b;c').parse('program', 0, { end: -1 }), (e) => e.code === 'invalid_request');

@@ -102,8 +102,8 @@ for (const file of files) {
 	// every brace in a component is somewhere an expression, a pattern or a statement might start
 	if (svelte) {
 		const options = { sourceType: 'module', typescript: /lang=["']?ts/.test(text), locations: true, comments: true, scopes: true };
-		const held = new node.Source(text, options);
-		const twin = new wasm.Source(text, options);
+		using held = new node.Source(text, options);
+		using twin = new wasm.Source(text, options);
 		for (const m of text.matchAll(script_re)) {
 			const start = m.index + m[0].indexOf('>') + 1;
 			const at = { end: start + m[2].length };
@@ -120,7 +120,6 @@ for (const file of files) {
 				report(`${file}@${at} ${entry} engine`, differ(outcome(() => held.parse(entry, at)), outcome(() => result(raw.parse(ENTRY[entry], at, undefined, ''), text))));
 			}
 		}
-		twin.free();
 	}
 }
 {
