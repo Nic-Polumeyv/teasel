@@ -241,3 +241,48 @@ fn type_parameters_entry() {
 		crate::error::Code::NotTypeScript
 	);
 }
+
+#[test]
+fn failed_attempts_leave_nothing() {
+	let options = Options {
+		module: true,
+		parenthesized: true,
+		..Options::default()
+	};
+	// every `<` tries type arguments over the rest of the list
+	let list = (0..300).map(|i| format!("a{i} < b{i}")).collect::<Vec<_>>().join(", ");
+	let (ast, _, _) = at(Entry::Expression, &format!("[{list}]"), 0, options, "").unwrap();
+	assert!(ast.nodes.len() < 4 * 300 + 8, "{} nodes", ast.nodes.len());
+	assert!(ast.extension.nodes.is_empty());
+	assert!(ast.extension.extras.is_empty());
+	// a generic arrow is tried first: the parens it saw go with it
+	let (ast, root, _) = at(Entry::Expression, "<T>(a)", 0, options, "").unwrap();
+	let NodeKind::Extension(index) = ast.node(root).kind else {
+		panic!()
+	};
+	let super::ast::TsKind::TypeAssertion { expression, .. } = ast.extension.kind(index) else {
+		panic!()
+	};
+	assert_eq!(ast.parenthesized, [expression]);
+}
+
+#[test]
+fn failed_attempt_leaves_no_scope() {
+	let options = Options {
+		module: true,
+		error_recovery: true,
+		..Options::default()
+	};
+	let src = "let b; <T>(x) => { let a; let a; }; let b;";
+	let (ast, _, _) = one(super::parse_at(src, 0, None, Entry::Program, options, "")).unwrap();
+	let redeclared: Vec<u32> = ast
+		.errors
+		.iter()
+		.filter(|e| e.code == crate::error::Code::Redeclaration)
+		.map(|e| e.pos)
+		.collect();
+	assert_eq!(
+		redeclared,
+		[src.rfind("a;").unwrap() as u32, src.rfind("b;").unwrap() as u32]
+	);
+}

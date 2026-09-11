@@ -6,7 +6,7 @@ pub(crate) mod statement;
 #[cfg(test)]
 pub(crate) mod tests;
 
-use crate::ast::{Ast, List, MethodKind, NodeId, NodeKind, VariableKind};
+use crate::ast::{Ast, List, MethodKind, NodeId, NodeKind, Reuse, VariableKind};
 use crate::error::SyntaxError;
 use crate::interner::{FastMap, FastSet, StrId};
 use crate::lexer::Lexer;
@@ -74,7 +74,7 @@ pub(crate) enum Unwrap {
 /// tree lives in `Data`.
 #[allow(unused_variables)]
 pub(crate) trait Extension: Default + Sized {
-	type Data: Default;
+	type Data: Reuse;
 	/// What a speculative parse needs to put the extension's state back.
 	type Snapshot;
 
@@ -473,7 +473,8 @@ pub(crate) struct Parser<'a, E: Extension = ()> {
 	tree_limit: usize,
 }
 
-/// Enough to unwind the parser after an error inside a statement it recovers from.
+/// Enough to unwind the parser after an error inside a statement it recovers from: what the
+/// failed parse built is forgotten with it.
 struct Mark<E: Extension> {
 	scopes: usize,
 	labels: usize,
@@ -482,12 +483,13 @@ struct Mark<E: Extension> {
 	brackets: (u32, [u32; 3]),
 	strict: bool,
 	ext: E::Snapshot,
+	ast: crate::ast::Mark<<E::Data as Reuse>::Mark>,
 }
 
+/// Enough to retry a speculative parse from here: the mark, and the tokens back at it.
 pub(crate) struct Snapshot<E: Extension> {
 	tokens: TokenSnapshot,
-	depth: u32,
-	ext: E::Snapshot,
+	mark: Mark<E>,
 }
 
 pub(crate) struct TokenSnapshot {
@@ -589,20 +591,16 @@ impl<'a, E: Extension> Parser<'a, E> {
 		Ok(parser)
 	}
 
-	/// Enough state to retry a speculative parse from here. Nodes built by a failed attempt stay
-	/// in the arena, unreferenced.
 	pub(crate) fn snapshot(&self) -> Snapshot<E> {
 		Snapshot {
 			tokens: self.token_snapshot(),
-			depth: self.depth,
-			ext: self.ext.save(),
+			mark: self.mark(),
 		}
 	}
 
 	pub(crate) fn restore(&mut self, snapshot: Snapshot<E>) {
 		self.restore_tokens(snapshot.tokens);
-		self.depth = snapshot.depth;
-		self.ext.restore(snapshot.ext);
+		self.unwind(snapshot.mark);
 	}
 
 	/// The tokenizer alone, enough for a lookahead that parses nothing.
@@ -701,6 +699,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 			brackets: (self.lexer.depth, self.lexer.open),
 			strict: self.strict,
 			ext: self.ext.save(),
+			ast: self.ast.mark(),
 		}
 	}
 
@@ -714,6 +713,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 		(self.lexer.depth, self.lexer.open) = mark.brackets;
 		self.set_strict(mark.strict);
 		self.ext.restore(mark.ext);
+		self.ast.truncate(mark.ast);
 	}
 
 	/// A statement of a list, under recovery: when it fails, what was read is skipped up to the

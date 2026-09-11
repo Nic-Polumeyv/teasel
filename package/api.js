@@ -51,8 +51,9 @@ function stops(list) {
  * @property {() => ArrayLike<number>} shapes
  */
 
-// words the engine has to judge: keywords, the strict-mode reserved words and the contextual ones
-const KEYWORD = new Set('await break case catch class const continue debugger default delete do else enum export extends false finally for function if implements import in instanceof interface let new null package private protected public return static super switch this throw true try typeof var void while with yield'.split(' '));
+// words the engine has to judge: keywords, the strict-mode reserved words, the contextual ones,
+// and the two names strict mode refuses to bind
+const KEYWORD = new Set('arguments await break case catch class const continue debugger default delete do else enum eval export extends false finally for function if implements import in instanceof interface let new null package private protected public return static super switch this throw true try typeof var void while with yield'.split(' '));
 
 /**
  * The offset after an identifier the host's syntax follows directly, so the answer needs no
@@ -63,6 +64,7 @@ const KEYWORD = new Set('await break case catch class const continue debugger de
  * @returns {[number, number] | null} the identifier's end and where the parse ends
  */
 function bare(source, at, end, stopAt, typescript) {
+	if (at >= end) return null;
 	let i = at;
 	const first = source.codePointAt(i);
 	if (first === undefined || !isIdentifierStart(first) || first === 0x5c) return null;
@@ -85,7 +87,7 @@ function bare(source, at, end, stopAt, typescript) {
 			const after = source.codePointAt(i + stop.length);
 			if (isIdentifierStart(/** @type {number} */ (stop.codePointAt(0))) && after !== undefined && isIdentifierChar(after)) continue;
 			// a stop TypeScript reads as its own is the engine's to judge
-			if (typescript && (stop === 'as' || stop === 'satisfies')) return null;
+			if (typescript && (stop === 'as' || stop === 'satisfies' || stop === ':')) return null;
 			return [name_end, name_end];
 		}
 	}
@@ -130,7 +132,7 @@ export function bind(engine) {
 			if ((index === ENTRY.expression || index === ENTRY.pattern) && Number.isInteger(offset) && offset >= 0) {
 				const cut = end === undefined ? this.#source.length : end;
 				const found = Number.isInteger(cut) && cut <= this.#source.length && offset <= cut ? bare(this.#source, offset, cut, index === ENTRY.pattern ? [',', '(', ':', '='] : stopAt, !!this.#options.typescript) : null;
-				if (found !== null && (index === ENTRY.expression || !this.#source.startsWith(':', found[0]))) return this.#identifier(offset, found[0], index === ENTRY.pattern);
+				if (found !== null) return this.#identifier(offset, found[0], index === ENTRY.pattern);
 			}
 			return result(engine.parse(this.#held, index, offset, end, stop), this.#source);
 		}
@@ -164,7 +166,7 @@ export function bind(engine) {
 		#position(offset) {
 			if (this.#lines === undefined) {
 				this.#lines = [0];
-				for (let i = this.#source.indexOf('\n'); i !== -1; i = this.#source.indexOf('\n', i + 1)) this.#lines.push(i + 1);
+				for (const m of this.#source.matchAll(/\r\n?|[\n\u2028\u2029]/g)) this.#lines.push(m.index + m[0].length);
 			}
 			let lo = 0, hi = this.#lines.length - 1;
 			while (lo < hi) {

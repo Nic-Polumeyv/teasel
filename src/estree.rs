@@ -1002,7 +1002,7 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		self.sink.begin(ty);
 		self.span(node.start, node.end);
 		self.scope_facts(id);
-		if self.ast.parenthesized.contains(&id) {
+		if self.ast.parenthesized.binary_search(&id).is_ok() {
 			self.bool("parenthesized", true);
 		}
 		self.ast.extension.extras(self, id);
@@ -1996,7 +1996,8 @@ pub fn write_number(out: &mut String, value: f64) {
 /// Rust rounds the shortest digits away from zero on an exact tie; JavaScript takes the even ones.
 fn even_on_tie(value: f64, digits: String) -> String {
 	let k = digits.len();
-	if digits.as_bytes()[k - 1].is_multiple_of(2) {
+	// two shortest forms sit at the same distance only at the edge of what a double resolves
+	if k < 16 || digits.as_bytes()[k - 1].is_multiple_of(2) {
 		return digits;
 	}
 	let exact = format!("{value:.*e}", 1100);
@@ -2047,6 +2048,7 @@ pub(crate) fn write_json_string(out: &mut String, s: &str) {
 #[cfg(test)]
 mod tests {
 	#[test]
+	#[allow(clippy::excessive_precision)]
 	fn numbers_as_javascript_writes_them() {
 		for (value, text) in [
 			(1e-14, "1e-14"),
@@ -2065,6 +2067,8 @@ mod tests {
 			(132405809496.45312, "132405809496.45312"),
 			(0.3, "0.3"),
 			(9007199254740993.0, "9007199254740992"),
+			(1658206780088562.25, "1658206780088562.2"),
+			(662936471232937.25, "662936471232937.2"),
 			(f64::INFINITY, "null"),
 		] {
 			let mut out = String::new();

@@ -1,4 +1,4 @@
-use crate::interner::{FastMap, FastSet, Interner, StrId};
+use crate::interner::{FastMap, Interner, StrId};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Comment {
@@ -36,7 +36,7 @@ impl Comment {
 }
 
 /// Index of a node in `Ast::nodes`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NodeId(pub u32);
 
 /// A contiguous run of node ids in `Ast::lists`.
@@ -123,8 +123,9 @@ pub struct Ast<X = ()> {
 	pub scopes: Option<crate::scopes::Scopes>,
 	/// What went wrong, in source order, when errors are recovered from instead of thrown.
 	pub errors: Vec<crate::SyntaxError>,
-	/// Nodes the source wraps in parens, when the option asks and no wrapper node stands for them.
-	pub parenthesized: FastSet<NodeId>,
+	/// Nodes the source wraps in parens, when the option asks and no wrapper node stands for them;
+	/// each is marked as its parens close, so the ids come in order.
+	pub parenthesized: Vec<NodeId>,
 	pub extension: X,
 }
 
@@ -136,14 +137,31 @@ pub struct Attached {
 	pub inner: Vec<u32>,
 }
 
-/// What an extension's data does to be reused for the next parse.
+/// What an extension's data does to be reused for the next parse, and to forget what a failed
+/// attempt built.
 pub trait Reuse: Default {
+	/// Where the data stood, to cut back to.
+	type Mark: Copy;
 	/// Forgets everything, keeping the room.
 	fn clear(&mut self);
+	fn mark(&self) -> Self::Mark;
+	fn truncate(&mut self, mark: Self::Mark);
 }
 
 impl Reuse for () {
+	type Mark = ();
 	fn clear(&mut self) {}
+	fn mark(&self) {}
+	fn truncate(&mut self, _: ()) {}
+}
+
+/// Where a tree stood, to forget what was built after.
+#[derive(Clone, Copy)]
+pub(crate) struct Mark<M> {
+	nodes: usize,
+	lists: usize,
+	parenthesized: usize,
+	extension: M,
 }
 
 impl<X: Reuse> Ast<X> {
@@ -164,6 +182,23 @@ impl<X: Reuse> Ast<X> {
 		self.errors.clear();
 		self.parenthesized.clear();
 		self.extension.clear();
+	}
+
+	pub(crate) fn mark(&self) -> Mark<X::Mark> {
+		Mark {
+			nodes: self.nodes.len(),
+			lists: self.lists.len(),
+			parenthesized: self.parenthesized.len(),
+			extension: self.extension.mark(),
+		}
+	}
+
+	/// Forgets the nodes built since `mark`; their ids are reused, so nothing may still hold one.
+	pub(crate) fn truncate(&mut self, mark: Mark<X::Mark>) {
+		self.nodes.truncate(mark.nodes);
+		self.lists.truncate(mark.lists);
+		self.parenthesized.truncate(mark.parenthesized);
+		self.extension.truncate(mark.extension);
 	}
 }
 

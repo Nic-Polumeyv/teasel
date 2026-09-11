@@ -1,6 +1,6 @@
 use super::{Extension, Parser, Result};
 use crate::error::Code;
-use crate::interner::StrId;
+use crate::interner::{FastMap, StrId};
 
 pub(crate) const SCOPE_TOP: u32 = 1;
 pub(crate) const SCOPE_FUNCTION: u32 = 2;
@@ -38,18 +38,44 @@ pub(crate) struct Scope {
 	pub flags: u32,
 	/// The names declared here, each with how, in declaration order.
 	names: Vec<(StrId, u8)>,
+	/// The same by name, once the list is long enough that a scan costs more than a lookup.
+	index: Option<FastMap<StrId, u8>>,
 }
+
+const INDEXED: usize = 64;
 
 impl Scope {
 	fn has(&self, name: StrId, kinds: u8) -> bool {
-		self.names.iter().any(|&(n, kind)| n == name && kind & kinds != 0)
+		match &self.index {
+			Some(index) => index.get(&name).is_some_and(|kind| kind & kinds != 0),
+			None => self.names.iter().any(|&(n, kind)| n == name && kind & kinds != 0),
+		}
+	}
+
+	fn push(&mut self, name: StrId, kind: u8) {
+		self.names.push((name, kind));
+		match &mut self.index {
+			Some(index) => *index.entry(name).or_default() |= kind,
+			None if self.names.len() == INDEXED => {
+				let mut index = FastMap::default();
+				for &(n, k) in &self.names {
+					*index.entry(n).or_default() |= k;
+				}
+				self.index = Some(index);
+			}
+			None => {}
+		}
 	}
 }
 
 impl<E: Extension> Parser<'_, E> {
 	pub(crate) fn enter_scope(&mut self, flags: u32) {
 		let names = self.spare_names.pop().unwrap_or_default();
-		self.scopes.push(Scope { flags, names });
+		self.scopes.push(Scope {
+			flags,
+			names,
+			index: None,
+		});
 	}
 
 	pub(crate) fn exit_scope(&mut self) {
@@ -149,17 +175,17 @@ impl<E: Extension> Parser<'_, E> {
 			Binding::Lexical => {
 				let scope = self.current_scope_mut();
 				redeclared = scope.has(name, LEXICAL | FUNCTION | VAR);
-				scope.names.push((name, LEXICAL));
+				scope.push(name, LEXICAL);
 				if self.current_scope().flags & SCOPE_TOP != 0 {
 					self.undeclared_exports.remove(&name);
 				}
 			}
-			Binding::SimpleCatch => self.current_scope_mut().names.push((name, LEXICAL)),
+			Binding::SimpleCatch => self.current_scope_mut().push(name, LEXICAL),
 			Binding::Function => {
 				let as_var = self.treat_functions_as_var();
 				let scope = self.current_scope_mut();
 				redeclared = scope.has(name, LEXICAL | if as_var { 0 } else { VAR });
-				scope.names.push((name, FUNCTION));
+				scope.push(name, FUNCTION);
 			}
 			_ => {
 				for i in (0..self.scopes.len()).rev() {
@@ -172,7 +198,7 @@ impl<E: Extension> Parser<'_, E> {
 						redeclared = true;
 						break;
 					}
-					scope.names.push((name, VAR));
+					scope.push(name, VAR);
 					let top = scope.flags & SCOPE_TOP != 0;
 					let stop = scope.flags & SCOPE_VAR != 0;
 					if top {

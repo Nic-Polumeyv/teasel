@@ -17,10 +17,12 @@ function bytes(text) {
 	return room.subarray(0, written);
 }
 
-export const Source = bind({
+export const engine = {
 	create: (source, names, host) => native.create(bytes(source), names, host),
 	parse: native.parse,
 	free: native.free,
 	constants: native.constants,
 	shapes: native.shapes,
-});
+};
+
+export const Source = bind(engine);
