@@ -153,7 +153,7 @@ fn stop_at() {
 	assert_eq!(end("{xs as [a, b = 1]}", "as"), 3);
 	// an assertion before the host's `as` is read as such: the host's is the last of the run
 	assert_eq!(end("{xs as T[] as item}", "as"), 10);
-	assert_eq!(end("{xs as const as item}", "as"), 12);
+	assert_eq!(end("{xs.ys as const as item}", "as"), 15);
 	assert_eq!(end("{xs as T[] as item, i}", "as ,"), 10);
 	assert_eq!(end("{xs as [''] as item: string, i (item)}", "as ,"), 11);
 	assert_eq!(end("{p.then(f) then r}", "then catch"), 10);

@@ -7,7 +7,7 @@ use super::{ClassFrame, TypeScript};
 use crate::ast::{List, NodeId, NodeKind, VariableKind};
 use crate::error::Code;
 use crate::lexer::token::{Keyword, TokenKind};
-use crate::parser::scope::Binding;
+use crate::parser::scope::{Binding, SCOPE_FUNCTION};
 use crate::parser::statement::FUNC_STATEMENT;
 use crate::parser::statement::{ClassKind, StatementPlace};
 use crate::parser::{Context, ForInit, Parser, Result};
@@ -59,7 +59,10 @@ impl Parser<'_, TypeScript> {
 			self.parse_ident(true)?
 		};
 		let initializer = if self.eat(TokenKind::Eq)? {
-			Some(self.parse_maybe_assign(ForInit::No, &mut None)?)
+			self.enter_scope(SCOPE_FUNCTION);
+			let initializer = self.parse_maybe_assign(ForInit::No, &mut None);
+			self.exit_scope();
+			Some(initializer?)
 		} else {
 			None
 		};
@@ -69,9 +72,9 @@ impl Parser<'_, TypeScript> {
 	// Namespaces
 
 	/// A module block in its own module scope.
-	fn parse_module_body(&mut self) -> Result<NodeId> {
+	fn parse_module_body(&mut self, namespace: bool) -> Result<NodeId> {
 		self.enter_scope(SCOPE_TS_MODULE);
-		let body = self.parse_module_block();
+		let body = self.parse_module_block(namespace);
 		self.exit_scope();
 		body
 	}
@@ -91,10 +94,11 @@ impl Parser<'_, TypeScript> {
 		)
 	}
 
-	fn parse_module_block(&mut self) -> Result<NodeId> {
+	fn parse_module_block(&mut self, namespace: bool) -> Result<NodeId> {
 		let start = self.tok.start;
 		self.enter_scope(SCOPE_TS_OTHER);
 		self.ext.module_blocks += 1;
+		let in_namespace = std::mem::replace(&mut self.ext.in_namespace, namespace);
 		self.expect(TokenKind::BraceL)?;
 		let mut body = Vec::new();
 		let mut exports = crate::interner::FastSet::default();
@@ -112,6 +116,7 @@ impl Parser<'_, TypeScript> {
 		}
 		self.next()?;
 		self.ext.module_blocks -= 1;
+		self.ext.in_namespace = in_namespace;
 		self.exit_scope();
 		let body = self.list_of(&body);
 		Ok(self.ts(TsKind::ModuleBlock { body }, start))
@@ -122,12 +127,15 @@ impl Parser<'_, TypeScript> {
 		let id = if global {
 			self.parse_ident(false)?
 		} else if matches!(self.tok.kind, TokenKind::String(_)) {
+			if !self.ext.ambient {
+				return self.error(self.tok.start, Code::QuotedModuleName);
+			}
 			self.parse_expr_atom(&mut None, ForInit::No, false)?
 		} else {
 			return self.unexpected();
 		};
 		let body = if self.is(TokenKind::BraceL) {
-			Some(self.parse_module_body()?)
+			Some(self.parse_module_body(false)?)
 		} else {
 			self.semicolon()?;
 			None
@@ -152,7 +160,7 @@ impl Parser<'_, TypeScript> {
 			let inner_start = self.tok.start;
 			self.parse_module_or_namespace_declaration(inner_start, true)?
 		} else {
-			self.parse_module_body()?
+			self.parse_module_body(true)?
 		};
 		Ok(self.ts(
 			TsKind::ModuleDeclaration {
@@ -165,7 +173,7 @@ impl Parser<'_, TypeScript> {
 	}
 
 	fn parse_global_declaration(&mut self, start: u32, id: NodeId) -> Result<NodeId> {
-		let body = self.parse_module_body()?;
+		let body = self.parse_module_body(false)?;
 		Ok(self.ts(
 			TsKind::ModuleDeclaration {
 				id,
@@ -258,13 +266,7 @@ impl Parser<'_, TypeScript> {
 			};
 			return self.parse_class(ClassKind::Declaration).map(Some);
 		}
-		if self.is_contextual("interface") {
-			if !self.has_following_line_break() {
-				return self.parse_interface_declaration(start, false, true);
-			}
-			return Ok(None);
-		}
-		self.unexpected_at(start)
+		self.error(start, Code::AbstractPlacement)
 	}
 
 	// Ambient declarations
@@ -412,7 +414,14 @@ impl Parser<'_, TypeScript> {
 			return Ok(None);
 		}
 		match word {
-			Word::Abstract if self.is_keyword(Keyword::Class) || self.is_ident() => {
+			Word::Abstract
+				if self.is_keyword(Keyword::Class)
+					|| self.is_ident()
+					|| matches!(
+						self.tok.kind,
+						TokenKind::Keyword(Keyword::Function | Keyword::Const | Keyword::Var)
+					) =>
+			{
 				self.parse_abstract_declaration(start)
 			}
 			Word::Module if matches!(self.tok.kind, TokenKind::String(_)) => {

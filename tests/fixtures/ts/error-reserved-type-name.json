@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "reserved_word",
+		"message": "The keyword 'public' is reserved",
+		"pos": 15,
+		"end": 15,
+		"loc": {
+			"line": 1,
+			"column": 15
+		}
+	}
+}

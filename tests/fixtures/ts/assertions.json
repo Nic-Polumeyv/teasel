@@ -2,7 +2,7 @@
 	"node": {
 		"type": "Program",
 		"start": 0,
-		"end": 221,
+		"end": 223,
 		"scope": 0,
 		"body": [
 			{
@@ -169,12 +169,12 @@
 			{
 				"type": "VariableDeclaration",
 				"start": 83,
-				"end": 104,
+				"end": 106,
 				"declarations": [
 					{
 						"type": "VariableDeclarator",
 						"start": 89,
-						"end": 103,
+						"end": 105,
 						"defines": [
 							4
 						],
@@ -188,22 +188,35 @@
 						"init": {
 							"type": "TSAsExpression",
 							"start": 93,
-							"end": 103,
+							"end": 105,
 							"expression": {
-								"type": "Identifier",
+								"type": "MemberExpression",
 								"start": 93,
-								"end": 94,
-								"reference": 4,
-								"name": "k"
+								"end": 96,
+								"object": {
+									"type": "Identifier",
+									"start": 93,
+									"end": 94,
+									"reference": 4,
+									"name": "k"
+								},
+								"property": {
+									"type": "Identifier",
+									"start": 95,
+									"end": 96,
+									"name": "l"
+								},
+								"computed": false,
+								"optional": false
 							},
 							"typeAnnotation": {
 								"type": "TSTypeReference",
-								"start": 98,
-								"end": 103,
+								"start": 100,
+								"end": 105,
 								"typeName": {
 									"type": "Identifier",
-									"start": 98,
-									"end": 103,
+									"start": 100,
+									"end": 105,
 									"name": "const"
 								}
 							}
@@ -214,56 +227,56 @@
 			},
 			{
 				"type": "VariableDeclaration",
-				"start": 105,
-				"end": 129,
+				"start": 107,
+				"end": 131,
 				"declarations": [
 					{
 						"type": "VariableDeclarator",
-						"start": 109,
-						"end": 128,
+						"start": 111,
+						"end": 130,
 						"defines": [
 							5
 						],
 						"id": {
 							"type": "Identifier",
-							"start": 109,
-							"end": 110,
+							"start": 111,
+							"end": 112,
 							"declares": 5,
 							"name": "l"
 						},
 						"init": {
 							"type": "MemberExpression",
-							"start": 113,
-							"end": 128,
+							"start": 115,
+							"end": 130,
 							"object": {
 								"type": "TSNonNullExpression",
-								"start": 113,
-								"end": 126,
+								"start": 115,
+								"end": 128,
 								"expression": {
 									"type": "MemberExpression",
-									"start": 113,
-									"end": 125,
+									"start": 115,
+									"end": 127,
 									"object": {
 										"type": "TSAsExpression",
-										"start": 114,
-										"end": 122,
+										"start": 116,
+										"end": 124,
 										"expression": {
 											"type": "Identifier",
-											"start": 114,
-											"end": 115,
+											"start": 116,
+											"end": 117,
 											"reference": 5,
 											"name": "m"
 										},
 										"typeAnnotation": {
 											"type": "TSAnyKeyword",
-											"start": 119,
-											"end": 122
+											"start": 121,
+											"end": 124
 										}
 									},
 									"property": {
 										"type": "Identifier",
-										"start": 124,
-										"end": 125,
+										"start": 126,
+										"end": 127,
 										"name": "n"
 									},
 									"computed": false,
@@ -272,8 +285,8 @@
 							},
 							"property": {
 								"type": "Identifier",
-								"start": 127,
-								"end": 128,
+								"start": 129,
+								"end": 130,
 								"name": "o"
 							},
 							"computed": false,
@@ -285,26 +298,26 @@
 			},
 			{
 				"type": "ForOfStatement",
-				"start": 130,
-				"end": 160,
+				"start": 132,
+				"end": 162,
 				"scope": 1,
 				"await": false,
 				"left": {
 					"type": "VariableDeclaration",
-					"start": 135,
-					"end": 142,
+					"start": 137,
+					"end": 144,
 					"declarations": [
 						{
 							"type": "VariableDeclarator",
-							"start": 141,
-							"end": 142,
+							"start": 143,
+							"end": 144,
 							"defines": [
 								6
 							],
 							"id": {
 								"type": "Identifier",
-								"start": 141,
-								"end": 142,
+								"start": 143,
+								"end": 144,
 								"declares": 6,
 								"name": "x"
 							},
@@ -315,69 +328,69 @@
 				},
 				"right": {
 					"type": "TSAsExpression",
-					"start": 146,
-					"end": 156,
+					"start": 148,
+					"end": 158,
 					"expression": {
 						"type": "Identifier",
-						"start": 146,
-						"end": 147,
+						"start": 148,
+						"end": 149,
 						"reference": 6,
 						"name": "y"
 					},
 					"typeAnnotation": {
 						"type": "TSArrayType",
-						"start": 151,
-						"end": 156,
+						"start": 153,
+						"end": 158,
 						"elementType": {
 							"type": "TSAnyKeyword",
-							"start": 151,
-							"end": 154
+							"start": 153,
+							"end": 156
 						}
 					}
 				},
 				"body": {
 					"type": "BlockStatement",
-					"start": 158,
-					"end": 160,
+					"start": 160,
+					"end": 162,
 					"scope": 2,
 					"body": []
 				}
 			},
 			{
 				"type": "VariableDeclaration",
-				"start": 161,
-				"end": 184,
+				"start": 163,
+				"end": 186,
 				"declarations": [
 					{
 						"type": "VariableDeclarator",
-						"start": 165,
-						"end": 183,
+						"start": 167,
+						"end": 185,
 						"defines": [
 							7
 						],
 						"id": {
 							"type": "Identifier",
-							"start": 165,
-							"end": 166,
+							"start": 167,
+							"end": 168,
 							"declares": 7,
 							"name": "n"
 						},
 						"init": {
 							"type": "AssignmentExpression",
-							"start": 169,
-							"end": 183,
+							"start": 171,
+							"end": 185,
 							"operator": "=",
 							"left": {
 								"type": "Identifier",
-								"start": 170,
-								"end": 171,
+								"start": 172,
+								"end": 173,
 								"reference": 7,
 								"name": "a"
 							},
 							"right": {
 								"type": "Literal",
-								"start": 182,
-								"end": 183,
+								"start": 184,
+								"end": 185,
 								"writes": [
 									7
 								],
@@ -391,46 +404,46 @@
 			},
 			{
 				"type": "VariableDeclaration",
-				"start": 185,
-				"end": 205,
+				"start": 187,
+				"end": 207,
 				"declarations": [
 					{
 						"type": "VariableDeclarator",
-						"start": 189,
-						"end": 204,
+						"start": 191,
+						"end": 206,
 						"defines": [
 							8
 						],
 						"id": {
 							"type": "Identifier",
-							"start": 189,
-							"end": 190,
+							"start": 191,
+							"end": 192,
 							"declares": 8,
 							"name": "o"
 						},
 						"init": {
 							"type": "BinaryExpression",
-							"start": 193,
-							"end": 204,
+							"start": 195,
+							"end": 206,
 							"left": {
 								"type": "TSAsExpression",
-								"start": 193,
-								"end": 199,
+								"start": 195,
+								"end": 201,
 								"expression": {
 									"type": "Identifier",
-									"start": 193,
-									"end": 194,
+									"start": 195,
+									"end": 196,
 									"reference": 8,
 									"name": "y"
 								},
 								"typeAnnotation": {
 									"type": "TSTypeReference",
-									"start": 198,
-									"end": 199,
+									"start": 200,
+									"end": 201,
 									"typeName": {
 										"type": "Identifier",
-										"start": 198,
-										"end": 199,
+										"start": 200,
+										"end": 201,
 										"name": "T"
 									}
 								}
@@ -438,8 +451,8 @@
 							"operator": ">>",
 							"right": {
 								"type": "Literal",
-								"start": 203,
-								"end": 204,
+								"start": 205,
+								"end": 206,
 								"value": 2,
 								"raw": "2"
 							}
@@ -450,47 +463,47 @@
 			},
 			{
 				"type": "VariableDeclaration",
-				"start": 206,
-				"end": 220,
+				"start": 208,
+				"end": 222,
 				"declarations": [
 					{
 						"type": "VariableDeclarator",
-						"start": 210,
-						"end": 219,
+						"start": 212,
+						"end": 221,
 						"defines": [
 							9
 						],
 						"id": {
 							"type": "Identifier",
-							"start": 210,
-							"end": 211,
+							"start": 212,
+							"end": 213,
 							"declares": 9,
 							"name": "p"
 						},
 						"init": {
 							"type": "TSNonNullExpression",
-							"start": 214,
-							"end": 219,
+							"start": 216,
+							"end": 221,
 							"expression": {
 								"type": "MemberExpression",
-								"start": 214,
-								"end": 218,
+								"start": 216,
+								"end": 220,
 								"object": {
 									"type": "TSNonNullExpression",
-									"start": 214,
-									"end": 216,
+									"start": 216,
+									"end": 218,
 									"expression": {
 										"type": "Identifier",
-										"start": 214,
-										"end": 215,
+										"start": 216,
+										"end": 217,
 										"reference": 9,
 										"name": "q"
 									}
 								},
 								"property": {
 									"type": "Identifier",
-									"start": 217,
-									"end": 218,
+									"start": 219,
+									"end": 220,
 									"name": "r"
 								},
 								"computed": false,
@@ -504,7 +517,7 @@
 		],
 		"sourceType": "module"
 	},
-	"end": 221,
+	"end": 223,
 	"comments": [],
 	"scopes": [
 		{

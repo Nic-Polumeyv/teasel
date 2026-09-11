@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "reserved_word",
+		"message": "The keyword 'interface' is reserved",
+		"pos": 5,
+		"end": 5,
+		"loc": {
+			"line": 1,
+			"column": 5
+		}
+	}
+}

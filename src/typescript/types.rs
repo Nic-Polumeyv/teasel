@@ -168,31 +168,31 @@ impl Parser<'_, TypeScript> {
 	}
 
 	/// A return type after `return_token`, which may be a type predicate.
-	pub(super) fn parse_type_or_type_predicate_annotation(&mut self, return_token: TokenKind) -> Result<NodeId> {
-		self.in_type(|p| {
+	pub(super) fn parse_type_or_type_predicate_annotation(
+		&mut self,
+		return_token: TokenKind,
+		allow_predicate: bool,
+	) -> Result<NodeId> {
+		let annotation = self.in_type(|p| {
 			let annotation_start = p.tok.start;
 			p.expect(return_token)?;
 			let start = p.tok.start;
 			let asserts = p.try_parse(|p| p.parse_type_predicate_asserts())?.unwrap_or(false);
-			let predicate = if asserts && p.is_keyword(Keyword::This) {
-				let predicate = p.parse_this_type_or_this_type_predicate()?;
-				match p.ts_kind(predicate) {
-					Some(TsKind::ThisType) => p.ts(
-						TsKind::TypePredicate {
-							parameter_name: predicate,
-							type_annotation: None,
-							asserts: true,
-						},
-						start,
-					),
-					_ => {
-						p.ast.node_mut(predicate).start = start;
-						if let Some(TsKind::TypePredicate { asserts, .. }) = p.ts_kind_mut(predicate) {
-							*asserts = true;
-						}
-						predicate
-					}
-				}
+			let predicate = if p.is_keyword(Keyword::This) && (asserts || p.peek_is_contextual("is")?) {
+				let parameter_name = p.parse_this_type_node()?;
+				let type_annotation = if p.eat_contextual("is")? {
+					Some(p.parse_type_annotation(false, None)?)
+				} else {
+					None
+				};
+				p.ts(
+					TsKind::TypePredicate {
+						parameter_name,
+						type_annotation,
+						asserts,
+					},
+					start,
+				)
 			} else {
 				let variable = if p.is_ident() {
 					p.try_parse(|p| p.parse_type_predicate_prefix())?
@@ -219,7 +219,14 @@ impl Parser<'_, TypeScript> {
 				},
 				annotation_start,
 			))
-		})
+		})?;
+		if !allow_predicate
+			&& let Some(TsKind::TypeAnnotation { type_annotation }) = self.ts_kind(annotation)
+			&& matches!(self.ts_kind(type_annotation), Some(TsKind::TypePredicate { .. }))
+		{
+			return self.error(self.start_of(type_annotation), Code::PredicatePlacement);
+		}
+		Ok(annotation)
 	}
 
 	/// Runs `f`, keeping its result only when it is `Some`; otherwise the tokenizer goes back.
@@ -258,24 +265,6 @@ impl Parser<'_, TypeScript> {
 		Ok(self.ts(TsKind::ThisType, start))
 	}
 
-	fn parse_this_type_or_this_type_predicate(&mut self) -> Result<NodeId> {
-		let this = self.parse_this_type_node()?;
-		if self.is_contextual("is") && !self.tok.newline_before {
-			self.next()?;
-			let type_annotation = self.parse_type_annotation(false, None)?;
-			let start = self.start_of(this);
-			return Ok(self.ts(
-				TsKind::TypePredicate {
-					parameter_name: this,
-					type_annotation: Some(type_annotation),
-					asserts: false,
-				},
-				start,
-			));
-		}
-		Ok(this)
-	}
-
 	// Types
 
 	pub(super) fn parse_type(&mut self) -> Result<NodeId> {
@@ -291,7 +280,10 @@ impl Parser<'_, TypeScript> {
 		if self.ext.disallow_conditional_types || self.tok.newline_before || !self.eat_keyword(Keyword::Extends)? {
 			return Ok(check_type);
 		}
-		let extends_type = self.disallow_conditional_types(|p| p.parse_non_conditional_type())?;
+		self.ext.infer_depth += 1;
+		let extends_type = self.disallow_conditional_types(|p| p.parse_non_conditional_type());
+		self.ext.infer_depth -= 1;
+		let extends_type = extends_type?;
 		self.expect(TokenKind::Question)?;
 		let true_type = self.allow_conditional_types(|p| p.parse_type())?;
 		self.expect(TokenKind::Colon)?;
@@ -380,7 +372,7 @@ impl Parser<'_, TypeScript> {
 			self.next()?;
 		}
 		let (type_parameters, parameters, type_annotation) =
-			self.allow_conditional_types(|p| p.fill_signature(TokenKind::Arrow))?;
+			self.allow_conditional_types(|p| p.fill_signature(TokenKind::Arrow, !constructor))?;
 		let type_annotation = type_annotation.unwrap();
 		let kind = if constructor {
 			TsKind::ConstructorType {
@@ -401,12 +393,16 @@ impl Parser<'_, TypeScript> {
 
 	/// Type parameters, parameters and the return type after `return_token`, which is required
 	/// when it is `=>`.
-	pub(super) fn fill_signature(&mut self, return_token: TokenKind) -> Result<(Option<NodeId>, List, Option<NodeId>)> {
+	pub(super) fn fill_signature(
+		&mut self,
+		return_token: TokenKind,
+		allow_predicate: bool,
+	) -> Result<(Option<NodeId>, List, Option<NodeId>)> {
 		let type_parameters = self.try_parse_type_parameters(TypeParameterModifiers::None)?;
 		self.expect(TokenKind::ParenL)?;
 		let parameters = self.parse_binding_list_for_signature()?;
 		let type_annotation = if return_token == TokenKind::Arrow || self.is(return_token) {
-			Some(self.parse_type_or_type_predicate_annotation(return_token)?)
+			Some(self.parse_type_or_type_predicate_annotation(return_token, allow_predicate)?)
 		} else {
 			None
 		};
@@ -504,6 +500,9 @@ impl Parser<'_, TypeScript> {
 
 	fn parse_infer_type(&mut self) -> Result<NodeId> {
 		let start = self.tok.start;
+		if self.ext.infer_depth == 0 {
+			return self.error(start, Code::InferPlacement);
+		}
 		self.expect_contextual("infer")?;
 		let parameter_start = self.tok.start;
 		let name = self.parse_type_parameter_name()?;
@@ -572,7 +571,7 @@ impl Parser<'_, TypeScript> {
 				let literal = self.parse_maybe_unary(&mut None, false, false, ForInit::No)?;
 				Ok(self.ts(TsKind::LiteralType { literal }, start))
 			}
-			TokenKind::Keyword(Keyword::This) => self.parse_this_type_or_this_type_predicate(),
+			TokenKind::Keyword(Keyword::This) => self.parse_this_type_node(),
 			TokenKind::Keyword(Keyword::Typeof) => self.parse_type_query(),
 			TokenKind::Keyword(Keyword::Import) => self.parse_import_type(),
 			TokenKind::BraceL => {
@@ -595,7 +594,7 @@ impl Parser<'_, TypeScript> {
 					self.next()?;
 					return Ok(self.ts(TsKind::Keyword(keyword), start));
 				}
-				self.parse_type_reference()
+				self.parse_type_reference(false)
 			}
 			TokenKind::Keyword(Keyword::Void) | TokenKind::Keyword(Keyword::Null) => {
 				let keyword = if self.is_keyword(Keyword::Void) {
@@ -607,15 +606,15 @@ impl Parser<'_, TypeScript> {
 					self.next()?;
 					return Ok(self.ts(TsKind::Keyword(keyword), start));
 				}
-				self.parse_type_reference()
+				self.parse_type_reference(false)
 			}
 			_ => self.placeholder(),
 		}
 	}
 
-	pub(super) fn parse_type_reference(&mut self) -> Result<NodeId> {
+	pub(super) fn parse_type_reference(&mut self, allow_reserved_words: bool) -> Result<NodeId> {
 		let start = self.tok.start;
-		let type_name = self.parse_entity_name(true)?;
+		let type_name = self.parse_entity_name(allow_reserved_words)?;
 		let type_arguments = if !self.tok.newline_before && self.is(TokenKind::Lt) {
 			Some(self.parse_type_arguments()?)
 		} else {
@@ -634,7 +633,7 @@ impl Parser<'_, TypeScript> {
 		let mut entity = self.parse_ident(allow_reserved_words)?;
 		while self.eat(TokenKind::Dot)? {
 			let start = self.start_of(entity);
-			let right = self.parse_ident(allow_reserved_words)?;
+			let right = self.parse_ident(true)?;
 			entity = self.ts(TsKind::QualifiedName { left: entity, right }, start);
 		}
 		Ok(entity)
@@ -645,8 +644,10 @@ impl Parser<'_, TypeScript> {
 		self.expect_keyword(Keyword::Typeof)?;
 		let expr_name = if self.is_keyword(Keyword::Import) {
 			self.parse_import_type()?
-		} else {
+		} else if self.is_keyword(Keyword::This) {
 			self.parse_entity_name(true)?
+		} else {
+			self.parse_entity_name(false)?
 		};
 		let type_arguments = if !self.tok.newline_before && self.is(TokenKind::Lt) {
 			Some(self.parse_type_arguments()?)
@@ -951,7 +952,7 @@ impl Parser<'_, TypeScript> {
 		let start = self.tok.start;
 		let list = self.parse_delimited_list(ListKind::HeritageClause, |p| {
 			let start = p.tok.start;
-			let expression = p.parse_entity_name(true)?;
+			let expression = p.parse_entity_name(false)?;
 			let type_arguments = if p.is(TokenKind::Lt) {
 				Some(p.parse_type_arguments()?)
 			} else {
@@ -1033,7 +1034,7 @@ impl Parser<'_, TypeScript> {
 	}
 
 	fn parse_signature_member(&mut self, start: u32, construct: bool) -> Result<NodeId> {
-		let (type_parameters, parameters, type_annotation) = self.fill_signature(TokenKind::Colon)?;
+		let (type_parameters, parameters, type_annotation) = self.fill_signature(TokenKind::Colon, !construct)?;
 		self.parse_type_member_semicolon()?;
 		let kind = if construct {
 			TsKind::ConstructSignatureDeclaration {
@@ -1067,7 +1068,8 @@ impl Parser<'_, TypeScript> {
 			if kind.is_some() && self.is(TokenKind::Lt) {
 				return self.error(self.tok.start, Code::AccessorTypeParameters);
 			}
-			let (type_parameters, parameters, type_annotation) = self.fill_signature(TokenKind::Colon)?;
+			let (type_parameters, parameters, type_annotation) =
+				self.fill_signature(TokenKind::Colon, kind != Some(SignatureKind::Get))?;
 			self.parse_type_member_semicolon()?;
 			let count = self.ast.list(parameters).len();
 			match kind {

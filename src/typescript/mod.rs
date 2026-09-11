@@ -8,7 +8,7 @@ mod estree;
 mod tests;
 mod types;
 
-use crate::ast::{Ast, List, MethodKind, NodeId, NodeKind, VariableKind};
+use crate::ast::{Ast, List, MethodKind, NodeId, NodeKind, UnaryOperator, VariableKind};
 use crate::error::SyntaxError;
 use crate::interner::FastMap;
 use crate::interner::StrId;
@@ -59,7 +59,10 @@ impl std::ops::DerefMut for TypeScript {
 #[derive(Clone, Default)]
 pub struct State {
 	disallow_conditional_types: bool,
+	infer_depth: u32,
 	ambient: bool,
+	/// The innermost module body is a namespace's, not a quoted module's or global's.
+	in_namespace: bool,
 	in_abstract_class: bool,
 	/// Inside a parenthesized list that may turn out to be arrow parameters.
 	maybe_in_arrow_parameters: bool,
@@ -219,11 +222,6 @@ impl Parser<'_, TypeScript> {
 
 	fn ts_kind(&self, id: NodeId) -> Option<TsKind> {
 		Some(self.ast.extension.nodes[self.ts_index(id)?])
-	}
-
-	fn ts_kind_mut(&mut self, id: NodeId) -> Option<&mut TsKind> {
-		let index = self.ts_index(id)?;
-		Some(&mut self.ast.extension.nodes[index])
 	}
 
 	fn extras_mut(&mut self, id: NodeId) -> &mut Extras {
@@ -492,7 +490,7 @@ impl Parser<'_, TypeScript> {
 			return Ok(None);
 		}
 		self.next()?;
-		let reference = self.parse_type_reference()?;
+		let reference = self.parse_type_reference(true)?;
 		if let Some(TsKind::TypeReference {
 			type_arguments: Some(_),
 			type_name,
@@ -501,6 +499,35 @@ impl Parser<'_, TypeScript> {
 			return self.error(self.start_of(type_name), Code::InvalidConst);
 		}
 		Ok(Some(reference))
+	}
+
+	fn check_const_assertion(&self, expression: NodeId, type_annotation: NodeId) -> Result<()> {
+		if !matches!(self.ts_kind(type_annotation), Some(TsKind::TypeReference { type_name, .. }) if self.ident_is(type_name, "const"))
+		{
+			return Ok(());
+		}
+		let valid = match self.kind(expression) {
+			NodeKind::StringLiteral { .. }
+			| NodeKind::NumberLiteral { .. }
+			| NodeKind::BigIntLiteral
+			| NodeKind::BooleanLiteral { .. }
+			| NodeKind::TemplateLiteral { .. }
+			| NodeKind::ArrayExpression { .. }
+			| NodeKind::ObjectExpression { .. }
+			| NodeKind::MemberExpression { .. } => true,
+			NodeKind::UnaryExpression {
+				operator: UnaryOperator::Plus | UnaryOperator::Minus,
+				argument,
+			} => matches!(
+				self.kind(argument),
+				NodeKind::NumberLiteral { .. } | NodeKind::BigIntLiteral
+			),
+			_ => false,
+		};
+		if !valid {
+			return self.error(self.start_of(expression), Code::ConstAssertionTarget);
+		}
+		Ok(())
 	}
 
 	fn parse_type_assertion(&mut self, for_init: ForInit) -> Result<NodeId> {
@@ -523,7 +550,17 @@ impl Parser<'_, TypeScript> {
 			))
 		});
 		match assertion {
-			Some(node) => Ok(node),
+			Some(node) => {
+				let Some(TsKind::TypeAssertion {
+					expression,
+					type_annotation,
+				}) = self.ts_kind(node)
+				else {
+					unreachable!()
+				};
+				self.check_const_assertion(expression, type_annotation)?;
+				Ok(node)
+			}
 			// not an assertion: the type parameters of a generic arrow, whose parameters must follow
 			None => {
 				let type_parameters = self.parse_type_parameters(TypeParameterModifiers::Const)?;
@@ -551,7 +588,7 @@ impl Parser<'_, TypeScript> {
 			p.expect(TokenKind::ParenL)?;
 			let params = p.parse_binding_list(TokenKind::ParenR, false, true, false)?;
 			let return_type = if p.is(TokenKind::Colon) {
-				Some(p.parse_type_or_type_predicate_annotation(TokenKind::Colon)?)
+				Some(p.parse_type_or_type_predicate_annotation(TokenKind::Colon, true)?)
 			} else {
 				None
 			};
@@ -680,7 +717,7 @@ impl Parser<'_, TypeScript> {
 			return Ok(true);
 		}
 		let return_type = self.attempt(|p| {
-			let return_type = p.parse_type_or_type_predicate_annotation(TokenKind::Colon)?;
+			let return_type = p.parse_type_or_type_predicate_annotation(TokenKind::Colon, true)?;
 			if p.can_insert_semicolon() || !p.is(TokenKind::Arrow) {
 				return p.unexpected();
 			}
@@ -748,7 +785,10 @@ impl Extension for TypeScript {
 
 	// Statements and modules
 
-	fn statement(p: &mut Parser<Self>, _context: Context, _place: StatementPlace) -> Result<Option<NodeId>> {
+	fn statement(p: &mut Parser<Self>, context: Context, _place: StatementPlace) -> Result<Option<NodeId>> {
+		if context != Context::None {
+			return Ok(None);
+		}
 		if p.is(TokenKind::At) {
 			p.parse_decorators(true)?;
 		}
@@ -770,8 +810,11 @@ impl Extension for TypeScript {
 		p: &mut Parser<Self>,
 		start: u32,
 		expression: NodeId,
-		_context: Context,
+		context: Context,
 	) -> Result<Option<NodeId>> {
+		if context != Context::None {
+			return Ok(None);
+		}
 		p.parse_declaration_statement(start, expression)
 	}
 
@@ -804,6 +847,9 @@ impl Extension for TypeScript {
 			return Ok(Some(node));
 		}
 		if p.eat(TokenKind::Eq)? {
+			if p.ext.in_namespace {
+				return p.error(start, Code::ExportAssignmentInNamespace);
+			}
 			let expression = p.parse_expression(false, &mut None)?;
 			p.semicolon()?;
 			return Ok(Some(p.ts(TsKind::ExportAssignment { expression }, start)));
@@ -1090,6 +1136,15 @@ impl Extension for TypeScript {
 	fn catch_param(p: &mut Parser<Self>, param: NodeId) -> Result<()> {
 		if p.is(TokenKind::Colon) {
 			let annotation = p.parse_type_annotation(true, None)?;
+			let Some(TsKind::TypeAnnotation { type_annotation }) = p.ts_kind(annotation) else {
+				unreachable!()
+			};
+			if !matches!(
+				p.ts_kind(type_annotation),
+				Some(TsKind::Keyword(ast::Keyword::Any | ast::Keyword::Unknown))
+			) {
+				return p.error(p.start_of(type_annotation), Code::CatchClauseType);
+			}
 			p.extras_mut(param).type_annotation = Some(annotation);
 			p.ast.node_mut(param).end = p.prev_end;
 		}
@@ -1162,7 +1217,14 @@ impl Extension for TypeScript {
 			}
 		}
 		if p.is(TokenKind::Colon) {
-			let return_type = p.parse_type_or_type_predicate_annotation(TokenKind::Colon)?;
+			let allow_predicate = !matches!(
+				kind,
+				FunctionKind::Method {
+					kind: MethodKind::Get,
+					..
+				}
+			);
+			let return_type = p.parse_type_or_type_predicate_annotation(TokenKind::Colon, allow_predicate)?;
 			match kind {
 				FunctionKind::Method {
 					kind: MethodKind::Set, ..
@@ -1537,6 +1599,9 @@ impl Extension for TypeScript {
 			&& matches!(kind, MethodKind::Constructor | MethodKind::Method)
 			&& matches!(p.kind(key), NodeKind::Identifier { name } | NodeKind::StringLiteral { value: name } if p.str(name) == "constructor")
 		{
+			if frame.extras.is_abstract {
+				return p.error(frame.start, Code::AbstractPlacement);
+			}
 			let modifier = if frame.extras.is_static {
 				Some("static")
 			} else if frame.extras.is_override {
@@ -1874,6 +1939,7 @@ fn assertion(p: &mut Parser<TypeScript>, left: NodeId, left_start: u32, is_as: b
 		None => p.next_then_parse_type()?,
 	};
 	let kind = if is_as {
+		p.check_const_assertion(left, type_annotation)?;
 		TsKind::AsExpression {
 			expression: left,
 			type_annotation,

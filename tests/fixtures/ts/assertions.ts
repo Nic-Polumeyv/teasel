@@ -2,7 +2,7 @@ const a = b as string;
 const c = <number>d;
 const e = f!;
 const g = h satisfies I;
-const j = k as const;
+const j = k.l as const;
 let l = (m as any).n!.o;
 for (const x of y as any[]) {}
 let n = (a as any) = 1;

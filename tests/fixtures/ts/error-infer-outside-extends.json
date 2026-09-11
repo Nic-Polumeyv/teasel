@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "infer_placement",
+		"message": "'infer' declarations are only permitted in the 'extends' clause of a conditional type",
+		"pos": 9,
+		"end": 14,
+		"loc": {
+			"line": 1,
+			"column": 9
+		}
+	}
+}

@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "quoted_module_name",
+		"message": "Only ambient modules can use quoted names",
+		"pos": 7,
+		"end": 10,
+		"loc": {
+			"line": 1,
+			"column": 7
+		}
+	}
+}

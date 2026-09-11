@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "abstract_placement",
+		"message": "'abstract' modifier can only appear on a class, method, or property declaration",
+		"pos": 0,
+		"end": 0,
+		"loc": {
+			"line": 1,
+			"column": 0
+		}
+	}
+}
