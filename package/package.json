@@ -3,7 +3,10 @@
 	"version": "0.0.1",
 	"description": "A JavaScript and TypeScript parser in Rust. It answers in ESTree.",
 	"license": "MIT",
-	"repository": "github:Nic-Polumeyv/teasel",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/Nic-Polumeyv/teasel.git"
+	},
 	"type": "module",
 	"main": "index.js",
 	"types": "index.d.ts",
@@ -29,33 +32,19 @@
 		"index.d.ts",
 		"wasm.js",
 		"wasm.d.ts",
+		"native.js",
 		"api.js",
 		"decode.js",
 		"identifier.js",
-		"binding.cjs",
-		"binding.d.ts",
 		"teasel.wasm"
 	],
-	"napi": {
-		"binaryName": "teasel",
-		"targets": [
-			"x86_64-unknown-linux-gnu",
-			"aarch64-unknown-linux-gnu",
-			"x86_64-apple-darwin",
-			"aarch64-apple-darwin",
-			"x86_64-pc-windows-msvc"
-		]
-	},
 	"scripts": {
-		"build": "napi build --platform --release --manifest-path ../bindings/node/Cargo.toml --package-json-path package.json -o . --js binding.cjs --dts binding.d.ts",
+		"build": "bun addon.js",
 		"build:wasm": "cargo build --release -p teasel-wasm --target wasm32-unknown-unknown && cp ../target/wasm32-unknown-unknown/release/teasel_wasm.wasm teasel.wasm",
 		"test": "bun test.js && bun test.js interpret",
 		"check": "node check.js"
 	},
 	"dependencies": {
 		"@types/estree": "^1.0.6"
-	},
-	"devDependencies": {
-		"@napi-rs/cli": "^3.9.0"
 	}
 }

@@ -11,6 +11,3 @@ crate-type = ["cdylib"]
 teasel = { path = "../.." }
 napi = { version = "3", default-features = false, features = ["napi9", "compat-mode"] }
 napi-derive = "3"
-
-[build-dependencies]
-napi-build = "2"

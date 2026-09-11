@@ -4,13 +4,13 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
-import { createRequire } from 'node:module';
 import * as node from './index.js';
 import * as wasm from './wasm.js';
 import { ENTRY, names } from './api.js';
 import { decode } from './decode.js';
+import { load } from './native.js';
 
-const native = createRequire(import.meta.url)('./binding.cjs');
+const native = load();
 const engine = { constants: native.constants, shapes: native.shapes };
 const binary = new URL('../target/release/teasel', import.meta.url).pathname;
 const files = [];
