@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "this_parameter_modifiers",
+		"message": "Neither decorators nor modifiers may be applied to 'this' parameters",
+		"pos": 19,
+		"end": 19,
+		"loc": {
+			"line": 1,
+			"column": 19
+		}
+	}
+}

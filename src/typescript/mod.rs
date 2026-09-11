@@ -8,7 +8,7 @@ mod estree;
 mod tests;
 mod types;
 
-use crate::ast::{Ast, List, NodeId, NodeKind, VariableKind};
+use crate::ast::{Ast, List, MethodKind, NodeId, NodeKind, VariableKind};
 use crate::error::SyntaxError;
 use crate::interner::FastMap;
 use crate::interner::StrId;
@@ -137,6 +137,7 @@ struct FunctionFrame {
 pub(crate) struct ClassFrame {
 	is_abstract: bool,
 	declare: bool,
+	is_declaration: bool,
 	decorators: Option<List>,
 	start: Option<u32>,
 	type_parameters: Option<NodeId>,
@@ -346,6 +347,18 @@ impl Parser<'_, TypeScript> {
 
 	/// Decorators before a class, kept until the class takes them.
 	fn parse_decorators(&mut self, allow_export: bool) -> Result<()> {
+		if self
+			.ext
+			.decorators
+			.last()
+			.is_some_and(|decorators| !decorators.is_empty())
+		{
+			return self.error_with(
+				self.tok.start,
+				Code::DecoratorPlacement,
+				"Decorators must all precede 'export' or all follow it.",
+			);
+		}
 		let mut decorators = Vec::new();
 		while self.is(TokenKind::At) {
 			decorators.push(self.parse_decorator()?);
@@ -377,6 +390,14 @@ impl Parser<'_, TypeScript> {
 		}
 		let decorators = std::mem::take(pending);
 		Some(self.list_of(&decorators))
+	}
+
+	fn parameter_decorator_error<T>(&self, decorators: List) -> Result<T> {
+		self.error_with(
+			self.start_of(self.ast.list(decorators)[0].unwrap()),
+			Code::DecoratorPlacement,
+			"A parameter decorator belongs on a parameter of a constructor, method or set accessor with a body, in a class declaration.",
+		)
 	}
 
 	fn scope_depth(&self) -> usize {
@@ -798,6 +819,9 @@ impl Extension for TypeScript {
 	}
 
 	fn export_default(p: &mut Parser<Self>) -> Result<Option<NodeId>> {
+		if p.is(TokenKind::At) {
+			p.parse_decorators(false)?;
+		}
 		let start = p.tok.start;
 		if p.is_contextual("abstract") && p.peek_token()?.kind == TokenKind::Keyword(Keyword::Class) {
 			p.next()?;
@@ -944,6 +968,12 @@ impl Extension for TypeScript {
 		} else {
 			Some(p.list_of(&decorators))
 		};
+		if !allow_modifiers
+			&& !p.is_keyword(Keyword::This)
+			&& let Some(decorators) = decorators
+		{
+			return p.parameter_decorator_error(decorators);
+		}
 		let start = p.tok.start;
 		let mut entry = None;
 		if allow_modifiers {
@@ -992,6 +1022,13 @@ impl Extension for TypeScript {
 
 	fn binding_item_end(p: &mut Parser<Self>, item: NodeId) -> Result<NodeId> {
 		let head = p.ext.parameter_modifiers.pop().unwrap();
+		let binding = match p.kind(item) {
+			NodeKind::AssignmentPattern { left, .. } => left,
+			_ => item,
+		};
+		if (head.decorators.is_some() || head.modifiers.is_some()) && p.ident_is(binding, "this") {
+			return p.error(p.start_of(binding), Code::ThisParameterModifiers);
+		}
 		if head.decorators.is_some() {
 			p.extras_mut(item).decorators = head.decorators;
 		}
@@ -1131,8 +1168,9 @@ impl Extension for TypeScript {
 		}
 	}
 
-	fn class_start(p: &mut Parser<Self>, _kind: ClassKind) -> Result<()> {
+	fn class_start(p: &mut Parser<Self>, kind: ClassKind) -> Result<()> {
 		let mut frame = std::mem::take(&mut p.ext.next_class);
+		frame.is_declaration = kind != ClassKind::Expression;
 		if let Some(decorators) = p.take_decorators() {
 			frame.decorators = Some(decorators);
 			frame.start = Some(p.start_of(p.ast.list(decorators)[0].unwrap()));
@@ -1400,14 +1438,37 @@ impl Extension for TypeScript {
 		if let Some(decorators) = frame.extras.decorators {
 			let start = p.start_of(p.ast.list(decorators)[0].unwrap());
 			p.ast.node_mut(node).start = start;
-			if let NodeKind::MethodDefinition {
-				kind: crate::ast::MethodKind::Constructor,
-				value,
-				..
-			} = p.kind(node)
-				&& matches!(p.kind(value), NodeKind::FunctionExpression { .. })
-			{
-				return p.error(start, Code::DecoratorOnConstructor);
+			if let NodeKind::MethodDefinition { kind, value, .. } = p.kind(node) {
+				if kind == MethodKind::Constructor {
+					return p.error(start, Code::DecoratorOnConstructor);
+				}
+				if matches!(p.ts_kind(value), Some(TsKind::DeclareMethod { .. })) {
+					return p.error(start, Code::DecoratorWithoutBody);
+				}
+			}
+			if matches!(p.ts_kind(node), Some(TsKind::IndexSignature { .. })) {
+				return p.error_with(
+					start,
+					Code::DecoratorPlacement,
+					"Decorators cannot be applied to an index signature.",
+				);
+			}
+		}
+		if let NodeKind::MethodDefinition { kind, value, .. } = p.kind(node) {
+			let (params, has_body) = match p.kind(value) {
+				NodeKind::FunctionExpression { function } => (function.params, true),
+				_ => (Self::function_params(p, value).unwrap(), false),
+			};
+			if !has_body || kind == MethodKind::Get || !p.ext.classes.last().unwrap().is_declaration {
+				for param in p.ast.list(params).iter().flatten() {
+					let param = match p.ts_kind(*param) {
+						Some(TsKind::ParameterProperty { parameter }) => parameter,
+						_ => *param,
+					};
+					if let Some(decorators) = p.ext_data().extras(param).and_then(|extras| extras.decorators) {
+						return p.parameter_decorator_error(decorators);
+					}
+				}
 			}
 		}
 		if frame.extras != Extras::default() {

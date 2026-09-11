@@ -159,6 +159,8 @@ codes! {
 	SetterReturnType "setter_return_type" => "A 'set' accessor cannot have a return type annotation.",
 	DecoratorPlacement "decorator_placement" => "Decorators must be attached to a class element.",
 	DecoratorOnConstructor "decorator_on_constructor" => "Decorators can't be used with a constructor. Did you mean '@dec class { ... }'?",
+	DecoratorWithoutBody "decorator_without_body" => "A decorator can only decorate a method or accessor with a body",
+	ThisParameterModifiers "this_parameter_modifiers" => "Neither decorators nor modifiers may be applied to 'this' parameters",
 	ImplementationInAmbient "implementation_in_ambient" => "An implementation cannot be declared in ambient contexts.",
 	InitializerInAmbient "initializer_in_ambient" => "Initializers are not allowed in ambient contexts.",
 	AmbientConstInitializer "ambient_const_initializer" => "A 'const' initializer in an ambient context must be a string or numeric literal or literal enum reference.",
