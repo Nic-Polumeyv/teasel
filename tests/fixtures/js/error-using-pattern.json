@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "using_pattern",
+		"message": "'using' declarations may not have binding patterns",
+		"pos": 27,
+		"end": 27,
+		"loc": {
+			"line": 1,
+			"column": 27
+		}
+	}
+}

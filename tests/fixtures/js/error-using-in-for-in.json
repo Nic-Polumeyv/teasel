@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "using_in_for_in",
+		"message": "The left-hand side of a for-in loop may not be a using declaration",
+		"pos": 5,
+		"end": 5,
+		"loc": {
+			"line": 1,
+			"column": 5
+		}
+	}
+}

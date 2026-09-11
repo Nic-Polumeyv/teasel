@@ -1,0 +1,1199 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 609,
+		"scope": 0,
+		"body": [
+			{
+				"type": "VariableDeclaration",
+				"start": 0,
+				"end": 24,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 6,
+						"end": 23,
+						"defines": [
+							0
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 6,
+							"end": 14,
+							"declares": 0,
+							"name": "resource"
+						},
+						"init": {
+							"type": "Identifier",
+							"start": 17,
+							"end": 23,
+							"reference": 0,
+							"name": "source"
+						}
+					}
+				],
+				"kind": "using"
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 25,
+				"end": 34,
+				"expression": {
+					"type": "Identifier",
+					"start": 25,
+					"end": 33,
+					"reference": 1,
+					"name": "resource"
+				}
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 35,
+				"end": 69,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 47,
+						"end": 68,
+						"defines": [
+							1
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 47,
+							"end": 59,
+							"declares": 1,
+							"name": "asynchronous"
+						},
+						"init": {
+							"type": "Identifier",
+							"start": 62,
+							"end": 68,
+							"reference": 2,
+							"name": "source"
+						}
+					}
+				],
+				"kind": "await using"
+			},
+			{
+				"type": "BlockStatement",
+				"start": 70,
+				"end": 135,
+				"scope": 1,
+				"body": [
+					{
+						"type": "VariableDeclaration",
+						"start": 73,
+						"end": 110,
+						"declarations": [
+							{
+								"type": "VariableDeclarator",
+								"start": 79,
+								"end": 93,
+								"defines": [
+									2
+								],
+								"id": {
+									"type": "Identifier",
+									"start": 79,
+									"end": 84,
+									"declares": 2,
+									"name": "first"
+								},
+								"init": {
+									"type": "Identifier",
+									"start": 87,
+									"end": 93,
+									"reference": 3,
+									"name": "source"
+								}
+							},
+							{
+								"type": "VariableDeclarator",
+								"start": 95,
+								"end": 109,
+								"defines": [
+									3
+								],
+								"id": {
+									"type": "Identifier",
+									"start": 95,
+									"end": 101,
+									"declares": 3,
+									"name": "second"
+								},
+								"init": {
+									"type": "Identifier",
+									"start": 104,
+									"end": 109,
+									"reference": 4,
+									"name": "first"
+								}
+							}
+						],
+						"kind": "using"
+					},
+					{
+						"type": "VariableDeclaration",
+						"start": 112,
+						"end": 133,
+						"declarations": [
+							{
+								"type": "VariableDeclarator",
+								"start": 118,
+								"end": 132,
+								"defines": [
+									4
+								],
+								"id": {
+									"type": "Identifier",
+									"start": 118,
+									"end": 123,
+									"declares": 4,
+									"name": "using"
+								},
+								"init": {
+									"type": "Identifier",
+									"start": 126,
+									"end": 132,
+									"reference": 5,
+									"name": "source"
+								}
+							}
+						],
+						"kind": "using"
+					}
+				]
+			},
+			{
+				"type": "FunctionDeclaration",
+				"start": 136,
+				"end": 190,
+				"scope": 2,
+				"defines": [
+					5
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 145,
+					"end": 146,
+					"declares": 5,
+					"name": "f"
+				},
+				"expression": false,
+				"generator": false,
+				"async": false,
+				"params": [],
+				"body": {
+					"type": "BlockStatement",
+					"start": 149,
+					"end": 190,
+					"body": [
+						{
+							"type": "VariableDeclaration",
+							"start": 152,
+							"end": 173,
+							"declarations": [
+								{
+									"type": "VariableDeclarator",
+									"start": 158,
+									"end": 172,
+									"defines": [
+										6
+									],
+									"id": {
+										"type": "Identifier",
+										"start": 158,
+										"end": 163,
+										"declares": 6,
+										"name": "local"
+									},
+									"init": {
+										"type": "Identifier",
+										"start": 166,
+										"end": 172,
+										"reference": 6,
+										"name": "source"
+									}
+								}
+							],
+							"kind": "using"
+						},
+						{
+							"type": "ReturnStatement",
+							"start": 175,
+							"end": 188,
+							"argument": {
+								"type": "Identifier",
+								"start": 182,
+								"end": 187,
+								"reference": 7,
+								"name": "local"
+							}
+						}
+					]
+				}
+			},
+			{
+				"type": "ClassDeclaration",
+				"start": 191,
+				"end": 248,
+				"scope": 3,
+				"defines": [
+					7
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 197,
+					"end": 198,
+					"declares": 7,
+					"name": "C"
+				},
+				"superClass": null,
+				"body": {
+					"type": "ClassBody",
+					"start": 199,
+					"end": 248,
+					"body": [
+						{
+							"type": "StaticBlock",
+							"start": 202,
+							"end": 246,
+							"scope": 4,
+							"body": [
+								{
+									"type": "VariableDeclaration",
+									"start": 213,
+									"end": 234,
+									"declarations": [
+										{
+											"type": "VariableDeclarator",
+											"start": 219,
+											"end": 233,
+											"defines": [
+												8
+											],
+											"id": {
+												"type": "Identifier",
+												"start": 219,
+												"end": 224,
+												"declares": 8,
+												"name": "local"
+											},
+											"init": {
+												"type": "Identifier",
+												"start": 227,
+												"end": 233,
+												"reference": 8,
+												"name": "source"
+											}
+										}
+									],
+									"kind": "using"
+								},
+								{
+									"type": "ExpressionStatement",
+									"start": 237,
+									"end": 243,
+									"expression": {
+										"type": "Identifier",
+										"start": 237,
+										"end": 242,
+										"reference": 9,
+										"name": "local"
+									}
+								}
+							]
+						}
+					]
+				}
+			},
+			{
+				"type": "SwitchStatement",
+				"start": 249,
+				"end": 315,
+				"scope": 5,
+				"discriminant": {
+					"type": "Identifier",
+					"start": 257,
+					"end": 263,
+					"reference": 10,
+					"name": "choice"
+				},
+				"cases": [
+					{
+						"type": "SwitchCase",
+						"start": 268,
+						"end": 313,
+						"consequent": [
+							{
+								"type": "BlockStatement",
+								"start": 276,
+								"end": 313,
+								"scope": 6,
+								"body": [
+									{
+										"type": "VariableDeclaration",
+										"start": 280,
+										"end": 301,
+										"declarations": [
+											{
+												"type": "VariableDeclarator",
+												"start": 286,
+												"end": 300,
+												"defines": [
+													9
+												],
+												"id": {
+													"type": "Identifier",
+													"start": 286,
+													"end": 291,
+													"declares": 9,
+													"name": "local"
+												},
+												"init": {
+													"type": "Identifier",
+													"start": 294,
+													"end": 300,
+													"reference": 11,
+													"name": "source"
+												}
+											}
+										],
+										"kind": "using"
+									},
+									{
+										"type": "ExpressionStatement",
+										"start": 304,
+										"end": 310,
+										"expression": {
+											"type": "Identifier",
+											"start": 304,
+											"end": 309,
+											"reference": 12,
+											"name": "local"
+										}
+									}
+								]
+							}
+						],
+						"test": {
+							"type": "Literal",
+							"start": 273,
+							"end": 274,
+							"value": 0,
+							"raw": "0"
+						}
+					}
+				]
+			},
+			{
+				"type": "ForOfStatement",
+				"start": 316,
+				"end": 351,
+				"scope": 7,
+				"await": false,
+				"left": {
+					"type": "VariableDeclaration",
+					"start": 321,
+					"end": 331,
+					"declarations": [
+						{
+							"type": "VariableDeclarator",
+							"start": 327,
+							"end": 331,
+							"defines": [
+								10
+							],
+							"id": {
+								"type": "Identifier",
+								"start": 327,
+								"end": 331,
+								"declares": 10,
+								"name": "item"
+							},
+							"init": null
+						}
+					],
+					"kind": "using"
+				},
+				"right": {
+					"type": "Identifier",
+					"start": 335,
+					"end": 340,
+					"reference": 13,
+					"name": "items"
+				},
+				"body": {
+					"type": "BlockStatement",
+					"start": 342,
+					"end": 351,
+					"scope": 8,
+					"body": [
+						{
+							"type": "ExpressionStatement",
+							"start": 344,
+							"end": 349,
+							"expression": {
+								"type": "Identifier",
+								"start": 344,
+								"end": 348,
+								"reference": 14,
+								"name": "item"
+							}
+						}
+					]
+				}
+			},
+			{
+				"type": "ForStatement",
+				"start": 352,
+				"end": 389,
+				"scope": 9,
+				"init": {
+					"type": "VariableDeclaration",
+					"start": 357,
+					"end": 376,
+					"declarations": [
+						{
+							"type": "VariableDeclarator",
+							"start": 363,
+							"end": 376,
+							"defines": [
+								11
+							],
+							"id": {
+								"type": "Identifier",
+								"start": 363,
+								"end": 367,
+								"declares": 11,
+								"name": "item"
+							},
+							"init": {
+								"type": "Identifier",
+								"start": 370,
+								"end": 376,
+								"reference": 15,
+								"name": "source"
+							}
+						}
+					],
+					"kind": "using"
+				},
+				"test": null,
+				"update": null,
+				"body": {
+					"type": "BlockStatement",
+					"start": 380,
+					"end": 389,
+					"scope": 10,
+					"body": [
+						{
+							"type": "ExpressionStatement",
+							"start": 382,
+							"end": 387,
+							"expression": {
+								"type": "Identifier",
+								"start": 382,
+								"end": 386,
+								"reference": 16,
+								"name": "item"
+							}
+						}
+					]
+				}
+			},
+			{
+				"type": "ForStatement",
+				"start": 390,
+				"end": 423,
+				"scope": 11,
+				"init": {
+					"type": "VariableDeclaration",
+					"start": 395,
+					"end": 412,
+					"declarations": [
+						{
+							"type": "VariableDeclarator",
+							"start": 401,
+							"end": 412,
+							"defines": [
+								12
+							],
+							"id": {
+								"type": "Identifier",
+								"start": 401,
+								"end": 403,
+								"declares": 12,
+								"name": "of"
+							},
+							"init": {
+								"type": "Identifier",
+								"start": 406,
+								"end": 412,
+								"reference": 17,
+								"name": "source"
+							}
+						}
+					],
+					"kind": "using"
+				},
+				"test": null,
+				"update": null,
+				"body": {
+					"type": "BlockStatement",
+					"start": 416,
+					"end": 423,
+					"scope": 12,
+					"body": [
+						{
+							"type": "ExpressionStatement",
+							"start": 418,
+							"end": 421,
+							"expression": {
+								"type": "Identifier",
+								"start": 418,
+								"end": 420,
+								"reference": 18,
+								"name": "of"
+							}
+						}
+					]
+				}
+			},
+			{
+				"type": "FunctionDeclaration",
+				"start": 424,
+				"end": 608,
+				"scope": 13,
+				"defines": [
+					13
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 439,
+					"end": 440,
+					"declares": 13,
+					"name": "g"
+				},
+				"expression": false,
+				"generator": false,
+				"async": true,
+				"params": [],
+				"body": {
+					"type": "BlockStatement",
+					"start": 443,
+					"end": 608,
+					"body": [
+						{
+							"type": "VariableDeclaration",
+							"start": 446,
+							"end": 473,
+							"declarations": [
+								{
+									"type": "VariableDeclarator",
+									"start": 458,
+									"end": 472,
+									"defines": [
+										14
+									],
+									"id": {
+										"type": "Identifier",
+										"start": 458,
+										"end": 463,
+										"declares": 14,
+										"name": "local"
+									},
+									"init": {
+										"type": "Identifier",
+										"start": 466,
+										"end": 472,
+										"reference": 19,
+										"name": "source"
+									}
+								}
+							],
+							"kind": "await using"
+						},
+						{
+							"type": "ExpressionStatement",
+							"start": 475,
+							"end": 481,
+							"expression": {
+								"type": "Identifier",
+								"start": 475,
+								"end": 480,
+								"reference": 20,
+								"name": "local"
+							}
+						},
+						{
+							"type": "ForOfStatement",
+							"start": 483,
+							"end": 524,
+							"scope": 14,
+							"await": true,
+							"left": {
+								"type": "VariableDeclaration",
+								"start": 494,
+								"end": 504,
+								"declarations": [
+									{
+										"type": "VariableDeclarator",
+										"start": 500,
+										"end": 504,
+										"defines": [
+											15
+										],
+										"id": {
+											"type": "Identifier",
+											"start": 500,
+											"end": 504,
+											"declares": 15,
+											"name": "item"
+										},
+										"init": null
+									}
+								],
+								"kind": "using"
+							},
+							"right": {
+								"type": "Identifier",
+								"start": 508,
+								"end": 513,
+								"reference": 21,
+								"name": "items"
+							},
+							"body": {
+								"type": "BlockStatement",
+								"start": 515,
+								"end": 524,
+								"scope": 15,
+								"body": [
+									{
+										"type": "ExpressionStatement",
+										"start": 517,
+										"end": 522,
+										"expression": {
+											"type": "Identifier",
+											"start": 517,
+											"end": 521,
+											"reference": 22,
+											"name": "item"
+										}
+									}
+								]
+							}
+						},
+						{
+							"type": "ForOfStatement",
+							"start": 526,
+							"end": 567,
+							"scope": 16,
+							"await": false,
+							"left": {
+								"type": "VariableDeclaration",
+								"start": 531,
+								"end": 547,
+								"declarations": [
+									{
+										"type": "VariableDeclarator",
+										"start": 543,
+										"end": 547,
+										"defines": [
+											16
+										],
+										"id": {
+											"type": "Identifier",
+											"start": 543,
+											"end": 547,
+											"declares": 16,
+											"name": "item"
+										},
+										"init": null
+									}
+								],
+								"kind": "await using"
+							},
+							"right": {
+								"type": "Identifier",
+								"start": 551,
+								"end": 556,
+								"reference": 23,
+								"name": "items"
+							},
+							"body": {
+								"type": "BlockStatement",
+								"start": 558,
+								"end": 567,
+								"scope": 17,
+								"body": [
+									{
+										"type": "ExpressionStatement",
+										"start": 560,
+										"end": 565,
+										"expression": {
+											"type": "Identifier",
+											"start": 560,
+											"end": 564,
+											"reference": 24,
+											"name": "item"
+										}
+									}
+								]
+							}
+						},
+						{
+							"type": "ForOfStatement",
+							"start": 569,
+							"end": 606,
+							"scope": 18,
+							"await": false,
+							"left": {
+								"type": "VariableDeclaration",
+								"start": 574,
+								"end": 588,
+								"declarations": [
+									{
+										"type": "VariableDeclarator",
+										"start": 586,
+										"end": 588,
+										"defines": [
+											17
+										],
+										"id": {
+											"type": "Identifier",
+											"start": 586,
+											"end": 588,
+											"declares": 17,
+											"name": "of"
+										},
+										"init": null
+									}
+								],
+								"kind": "await using"
+							},
+							"right": {
+								"type": "Identifier",
+								"start": 592,
+								"end": 597,
+								"reference": 25,
+								"name": "items"
+							},
+							"body": {
+								"type": "BlockStatement",
+								"start": 599,
+								"end": 606,
+								"scope": 19,
+								"body": [
+									{
+										"type": "ExpressionStatement",
+										"start": 601,
+										"end": 604,
+										"expression": {
+											"type": "Identifier",
+											"start": 601,
+											"end": 603,
+											"reference": 26,
+											"name": "of"
+										}
+									}
+								]
+							}
+						}
+					]
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 609,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": true
+		},
+		{
+			"kind": "block",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "class",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "static-block",
+			"parent": 3,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "switch",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 5,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "for",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 7,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "for",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 9,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "for",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 11,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "for",
+			"parent": 13,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 14,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "for",
+			"parent": 13,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 16,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "for",
+			"parent": 13,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 18,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "resource",
+			"kind": "using",
+			"scope": 0
+		},
+		{
+			"name": "asynchronous",
+			"kind": "await using",
+			"scope": 0
+		},
+		{
+			"name": "first",
+			"kind": "using",
+			"scope": 1
+		},
+		{
+			"name": "second",
+			"kind": "using",
+			"scope": 1
+		},
+		{
+			"name": "using",
+			"kind": "using",
+			"scope": 1
+		},
+		{
+			"name": "f",
+			"kind": "function",
+			"scope": 0
+		},
+		{
+			"name": "local",
+			"kind": "using",
+			"scope": 2
+		},
+		{
+			"name": "C",
+			"kind": "class",
+			"scope": 0
+		},
+		{
+			"name": "local",
+			"kind": "using",
+			"scope": 4
+		},
+		{
+			"name": "local",
+			"kind": "using",
+			"scope": 6
+		},
+		{
+			"name": "item",
+			"kind": "using",
+			"scope": 7
+		},
+		{
+			"name": "item",
+			"kind": "using",
+			"scope": 9
+		},
+		{
+			"name": "of",
+			"kind": "using",
+			"scope": 11
+		},
+		{
+			"name": "g",
+			"kind": "function",
+			"scope": 0
+		},
+		{
+			"name": "local",
+			"kind": "await using",
+			"scope": 13
+		},
+		{
+			"name": "item",
+			"kind": "using",
+			"scope": 14
+		},
+		{
+			"name": "item",
+			"kind": "await using",
+			"scope": 16
+		},
+		{
+			"name": "of",
+			"kind": "await using",
+			"scope": 18
+		}
+	],
+	"references": [
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": 0,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 1,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 1,
+			"binding": 2,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 1,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 2,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 2,
+			"binding": 6,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 4,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 4,
+			"binding": 8,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 6,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 6,
+			"binding": 9,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 7,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 8,
+			"binding": 10,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 9,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 10,
+			"binding": 11,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 11,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 12,
+			"binding": 12,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 13,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 13,
+			"binding": 14,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 14,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 15,
+			"binding": 15,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 16,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 17,
+			"binding": 16,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 18,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 19,
+			"binding": 17,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

@@ -71,6 +71,8 @@ pub enum BindingKind {
 	Var,
 	Let,
 	Const,
+	Using,
+	AwaitUsing,
 	Function,
 	Class,
 	Param,
@@ -95,6 +97,8 @@ impl BindingKind {
 			BindingKind::Var => "var",
 			BindingKind::Let => "let",
 			BindingKind::Const => "const",
+			BindingKind::Using => "using",
+			BindingKind::AwaitUsing => "await using",
 			BindingKind::Function => "function",
 			BindingKind::Class => "class",
 			BindingKind::Param => "param",
@@ -768,6 +772,8 @@ impl<'a, X: Bind> Binder<'a, X> {
 			VariableKind::Var => BindingKind::Var,
 			VariableKind::Let => BindingKind::Let,
 			VariableKind::Const => BindingKind::Const,
+			VariableKind::Using => BindingKind::Using,
+			VariableKind::AwaitUsing => BindingKind::AwaitUsing,
 		}
 	}
 
@@ -1092,6 +1098,9 @@ impl<'a, X: Bind> Binder<'a, X> {
 				}
 			}
 			VariableDeclaration { declarations, kind } => {
+				if kind == VariableKind::AwaitUsing {
+					self.awaits();
+				}
 				let kind = Self::declaration_kind(kind);
 				for &declarator in self.ast.list(declarations).iter().flatten() {
 					let VariableDeclarator { id: pattern, init } = self.kind(declarator) else {

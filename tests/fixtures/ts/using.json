@@ -1,0 +1,457 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 187,
+		"scope": 0,
+		"body": [
+			{
+				"type": "VariableDeclaration",
+				"start": 0,
+				"end": 27,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 6,
+						"end": 26,
+						"defines": [
+							0
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 6,
+							"end": 17,
+							"declares": 0,
+							"typeAnnotation": {
+								"type": "TSTypeAnnotation",
+								"start": 14,
+								"end": 17,
+								"typeAnnotation": {
+									"type": "TSTypeReference",
+									"start": 16,
+									"end": 17,
+									"typeName": {
+										"type": "Identifier",
+										"start": 16,
+										"end": 17,
+										"name": "T"
+									}
+								}
+							},
+							"name": "resource"
+						},
+						"init": {
+							"type": "Identifier",
+							"start": 20,
+							"end": 26,
+							"reference": 0,
+							"name": "source"
+						}
+					}
+				],
+				"kind": "using"
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 28,
+				"end": 65,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 40,
+						"end": 64,
+						"defines": [
+							1
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 40,
+							"end": 55,
+							"declares": 1,
+							"typeAnnotation": {
+								"type": "TSTypeAnnotation",
+								"start": 52,
+								"end": 55,
+								"typeAnnotation": {
+									"type": "TSTypeReference",
+									"start": 54,
+									"end": 55,
+									"typeName": {
+										"type": "Identifier",
+										"start": 54,
+										"end": 55,
+										"name": "T"
+									}
+								}
+							},
+							"name": "asynchronous"
+						},
+						"init": {
+							"type": "Identifier",
+							"start": 58,
+							"end": 64,
+							"reference": 1,
+							"name": "source"
+						}
+					}
+				],
+				"kind": "await using"
+			},
+			{
+				"type": "TSModuleDeclaration",
+				"start": 66,
+				"end": 115,
+				"scope": 1,
+				"defines": [
+					2
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 76,
+					"end": 77,
+					"declares": 2,
+					"name": "N"
+				},
+				"body": {
+					"type": "TSModuleBlock",
+					"start": 78,
+					"end": 115,
+					"body": [
+						{
+							"type": "VariableDeclaration",
+							"start": 81,
+							"end": 105,
+							"declarations": [
+								{
+									"type": "VariableDeclarator",
+									"start": 87,
+									"end": 104,
+									"defines": [
+										3
+									],
+									"id": {
+										"type": "Identifier",
+										"start": 87,
+										"end": 95,
+										"declares": 3,
+										"typeAnnotation": {
+											"type": "TSTypeAnnotation",
+											"start": 92,
+											"end": 95,
+											"typeAnnotation": {
+												"type": "TSTypeReference",
+												"start": 94,
+												"end": 95,
+												"typeName": {
+													"type": "Identifier",
+													"start": 94,
+													"end": 95,
+													"name": "T"
+												}
+											}
+										},
+										"name": "local"
+									},
+									"init": {
+										"type": "Identifier",
+										"start": 98,
+										"end": 104,
+										"reference": 2,
+										"name": "source"
+									}
+								}
+							],
+							"kind": "using"
+						},
+						{
+							"type": "ExpressionStatement",
+							"start": 107,
+							"end": 113,
+							"expression": {
+								"type": "Identifier",
+								"start": 107,
+								"end": 112,
+								"reference": 3,
+								"name": "local"
+							}
+						}
+					]
+				}
+			},
+			{
+				"type": "ForOfStatement",
+				"start": 116,
+				"end": 149,
+				"scope": 2,
+				"await": false,
+				"left": {
+					"type": "VariableDeclaration",
+					"start": 121,
+					"end": 132,
+					"declarations": [
+						{
+							"type": "VariableDeclarator",
+							"start": 127,
+							"end": 132,
+							"defines": [
+								4
+							],
+							"definite": true,
+							"id": {
+								"type": "Identifier",
+								"start": 127,
+								"end": 132,
+								"declares": 4,
+								"typeAnnotation": {
+									"type": "TSTypeAnnotation",
+									"start": 129,
+									"end": 132,
+									"typeAnnotation": {
+										"type": "TSTypeReference",
+										"start": 131,
+										"end": 132,
+										"typeName": {
+											"type": "Identifier",
+											"start": 131,
+											"end": 132,
+											"name": "T"
+										}
+									}
+								},
+								"name": "x"
+							},
+							"init": null
+						}
+					],
+					"kind": "using"
+				},
+				"right": {
+					"type": "Identifier",
+					"start": 136,
+					"end": 141,
+					"reference": 4,
+					"name": "items"
+				},
+				"body": {
+					"type": "BlockStatement",
+					"start": 143,
+					"end": 149,
+					"scope": 3,
+					"body": [
+						{
+							"type": "ExpressionStatement",
+							"start": 145,
+							"end": 147,
+							"expression": {
+								"type": "Identifier",
+								"start": 145,
+								"end": 146,
+								"reference": 5,
+								"name": "x"
+							}
+						}
+					]
+				}
+			},
+			{
+				"type": "ForStatement",
+				"start": 150,
+				"end": 186,
+				"scope": 4,
+				"init": {
+					"type": "VariableDeclaration",
+					"start": 155,
+					"end": 175,
+					"declarations": [
+						{
+							"type": "VariableDeclarator",
+							"start": 161,
+							"end": 175,
+							"defines": [
+								5
+							],
+							"id": {
+								"type": "Identifier",
+								"start": 161,
+								"end": 166,
+								"declares": 5,
+								"typeAnnotation": {
+									"type": "TSTypeAnnotation",
+									"start": 163,
+									"end": 166,
+									"typeAnnotation": {
+										"type": "TSTypeReference",
+										"start": 165,
+										"end": 166,
+										"typeName": {
+											"type": "Identifier",
+											"start": 165,
+											"end": 166,
+											"name": "T"
+										}
+									}
+								},
+								"name": "of"
+							},
+							"init": {
+								"type": "Identifier",
+								"start": 169,
+								"end": 175,
+								"reference": 6,
+								"name": "source"
+							}
+						}
+					],
+					"kind": "using"
+				},
+				"test": null,
+				"update": null,
+				"body": {
+					"type": "BlockStatement",
+					"start": 179,
+					"end": 186,
+					"scope": 5,
+					"body": [
+						{
+							"type": "ExpressionStatement",
+							"start": 181,
+							"end": 184,
+							"expression": {
+								"type": "Identifier",
+								"start": 181,
+								"end": 183,
+								"reference": 7,
+								"name": "of"
+							}
+						}
+					]
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 187,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": true
+		},
+		{
+			"kind": "namespace",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "for",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "for",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 4,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "resource",
+			"kind": "using",
+			"scope": 0
+		},
+		{
+			"name": "asynchronous",
+			"kind": "await using",
+			"scope": 0
+		},
+		{
+			"name": "N",
+			"kind": "namespace",
+			"scope": 0
+		},
+		{
+			"name": "local",
+			"kind": "using",
+			"scope": 1
+		},
+		{
+			"name": "x",
+			"kind": "using",
+			"scope": 2
+		},
+		{
+			"name": "of",
+			"kind": "using",
+			"scope": 4
+		}
+	],
+	"references": [
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 1,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 1,
+			"binding": 3,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 2,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 3,
+			"binding": 4,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 4,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 5,
+			"binding": 5,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

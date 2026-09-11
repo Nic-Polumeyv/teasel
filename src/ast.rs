@@ -777,6 +777,8 @@ pub enum VariableKind {
 	Var,
 	Let,
 	Const,
+	Using,
+	AwaitUsing,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -935,11 +937,17 @@ impl AssignmentOperator {
 }
 
 impl VariableKind {
+	pub(crate) fn is_using(self) -> bool {
+		matches!(self, Self::Using | Self::AwaitUsing)
+	}
+
 	pub fn as_str(self) -> &'static str {
 		match self {
 			Self::Var => "var",
 			Self::Let => "let",
 			Self::Const => "const",
+			Self::Using => "using",
+			Self::AwaitUsing => "await using",
 		}
 	}
 }

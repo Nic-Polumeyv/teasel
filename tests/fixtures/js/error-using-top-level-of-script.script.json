@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "using_outside_block",
+		"message": "A using declaration at the top level of a script or in a case clause must be inside a block",
+		"pos": 0,
+		"end": 5,
+		"loc": {
+			"line": 1,
+			"column": 0
+		}
+	}
+}

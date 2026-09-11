@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "unexpected_token",
+		"message": "Unexpected token",
+		"pos": 13,
+		"end": 14,
+		"loc": {
+			"line": 1,
+			"column": 13
+		}
+	}
+}

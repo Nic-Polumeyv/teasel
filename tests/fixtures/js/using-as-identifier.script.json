@@ -1,0 +1,528 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 186,
+		"scope": 0,
+		"body": [
+			{
+				"type": "ExpressionStatement",
+				"start": 0,
+				"end": 10,
+				"expression": {
+					"type": "AssignmentExpression",
+					"start": 0,
+					"end": 9,
+					"operator": "=",
+					"left": {
+						"type": "Identifier",
+						"start": 0,
+						"end": 5,
+						"reference": 0,
+						"name": "using"
+					},
+					"right": {
+						"type": "Literal",
+						"start": 8,
+						"end": 9,
+						"writes": [
+							0
+						],
+						"value": 1,
+						"raw": "1"
+					}
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 11,
+				"end": 19,
+				"expression": {
+					"type": "MemberExpression",
+					"start": 11,
+					"end": 18,
+					"object": {
+						"type": "Identifier",
+						"start": 11,
+						"end": 16,
+						"reference": 1,
+						"name": "using"
+					},
+					"property": {
+						"type": "Identifier",
+						"start": 17,
+						"end": 18,
+						"name": "x"
+					},
+					"computed": false,
+					"optional": false
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 20,
+				"end": 34,
+				"expression": {
+					"type": "AssignmentExpression",
+					"start": 20,
+					"end": 33,
+					"operator": "=",
+					"left": {
+						"type": "MemberExpression",
+						"start": 20,
+						"end": 29,
+						"object": {
+							"type": "Identifier",
+							"start": 20,
+							"end": 25,
+							"reference": 2,
+							"name": "using"
+						},
+						"property": {
+							"type": "Identifier",
+							"start": 27,
+							"end": 28,
+							"reference": 3,
+							"name": "a"
+						},
+						"computed": true,
+						"optional": false
+					},
+					"right": {
+						"type": "Identifier",
+						"start": 32,
+						"end": 33,
+						"reference": 4,
+						"name": "b"
+					}
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 35,
+				"end": 43,
+				"expression": {
+					"type": "CallExpression",
+					"start": 35,
+					"end": 42,
+					"callee": {
+						"type": "Identifier",
+						"start": 35,
+						"end": 40,
+						"reference": 5,
+						"name": "using"
+					},
+					"arguments": [],
+					"optional": false
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 44,
+				"end": 55,
+				"expression": {
+					"type": "BinaryExpression",
+					"start": 44,
+					"end": 54,
+					"left": {
+						"type": "Identifier",
+						"start": 44,
+						"end": 49,
+						"reference": 6,
+						"name": "using"
+					},
+					"operator": "in",
+					"right": {
+						"type": "Identifier",
+						"start": 53,
+						"end": 54,
+						"reference": 7,
+						"name": "o"
+					}
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 56,
+				"end": 75,
+				"expression": {
+					"type": "BinaryExpression",
+					"start": 56,
+					"end": 74,
+					"left": {
+						"type": "Identifier",
+						"start": 56,
+						"end": 61,
+						"reference": 8,
+						"name": "using"
+					},
+					"operator": "instanceof",
+					"right": {
+						"type": "Identifier",
+						"start": 73,
+						"end": 74,
+						"reference": 9,
+						"name": "C"
+					}
+				}
+			},
+			{
+				"type": "ForOfStatement",
+				"start": 76,
+				"end": 96,
+				"await": false,
+				"left": {
+					"type": "Identifier",
+					"start": 81,
+					"end": 86,
+					"reference": 10,
+					"name": "using"
+				},
+				"right": {
+					"type": "Identifier",
+					"start": 90,
+					"end": 92,
+					"reference": 11,
+					"writes": [
+						10
+					],
+					"name": "xs"
+				},
+				"body": {
+					"type": "BlockStatement",
+					"start": 94,
+					"end": 96,
+					"scope": 1,
+					"body": []
+				}
+			},
+			{
+				"type": "ForInStatement",
+				"start": 97,
+				"end": 116,
+				"left": {
+					"type": "Identifier",
+					"start": 102,
+					"end": 107,
+					"reference": 12,
+					"name": "using"
+				},
+				"right": {
+					"type": "Identifier",
+					"start": 111,
+					"end": 112,
+					"reference": 13,
+					"writes": [
+						12
+					],
+					"name": "o"
+				},
+				"body": {
+					"type": "BlockStatement",
+					"start": 114,
+					"end": 116,
+					"scope": 2,
+					"body": []
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 117,
+				"end": 122,
+				"expression": {
+					"type": "Identifier",
+					"start": 117,
+					"end": 122,
+					"reference": 14,
+					"name": "using"
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 123,
+				"end": 129,
+				"expression": {
+					"type": "AssignmentExpression",
+					"start": 123,
+					"end": 128,
+					"operator": "=",
+					"left": {
+						"type": "Identifier",
+						"start": 123,
+						"end": 124,
+						"reference": 15,
+						"name": "x"
+					},
+					"right": {
+						"type": "Literal",
+						"start": 127,
+						"end": 128,
+						"writes": [
+							15
+						],
+						"value": 1,
+						"raw": "1"
+					}
+				}
+			},
+			{
+				"type": "FunctionDeclaration",
+				"start": 130,
+				"end": 169,
+				"scope": 3,
+				"defines": [
+					0
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 145,
+					"end": 146,
+					"declares": 0,
+					"name": "f"
+				},
+				"expression": false,
+				"generator": false,
+				"async": true,
+				"params": [],
+				"body": {
+					"type": "BlockStatement",
+					"start": 149,
+					"end": 169,
+					"body": [
+						{
+							"type": "ExpressionStatement",
+							"start": 152,
+							"end": 163,
+							"expression": {
+								"type": "AwaitExpression",
+								"start": 152,
+								"end": 163,
+								"argument": {
+									"type": "Identifier",
+									"start": 158,
+									"end": 163,
+									"reference": 16,
+									"name": "using"
+								}
+							}
+						},
+						{
+							"type": "ExpressionStatement",
+							"start": 165,
+							"end": 167,
+							"expression": {
+								"type": "Identifier",
+								"start": 165,
+								"end": 166,
+								"reference": 17,
+								"name": "y"
+							}
+						}
+					]
+				}
+			},
+			{
+				"type": "BlockStatement",
+				"start": 170,
+				"end": 185,
+				"scope": 4,
+				"body": [
+					{
+						"type": "VariableDeclaration",
+						"start": 173,
+						"end": 183,
+						"declarations": [
+							{
+								"type": "VariableDeclarator",
+								"start": 177,
+								"end": 182,
+								"defines": [
+									1
+								],
+								"id": {
+									"type": "Identifier",
+									"start": 177,
+									"end": 182,
+									"declares": 1,
+									"name": "using"
+								},
+								"init": null
+							}
+						],
+						"kind": "let"
+					}
+				]
+			}
+		],
+		"sourceType": "script"
+	},
+	"end": 186,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "script",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 0,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "f",
+			"kind": "function",
+			"scope": 0
+		},
+		{
+			"name": "using",
+			"kind": "let",
+			"scope": 4
+		}
+	],
+	"references": [
+		{
+			"scope": 0,
+			"binding": null,
+			"write": true,
+			"read": false,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": true
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": true,
+			"read": false,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": true,
+			"read": false,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": true,
+			"read": false,
+			"mutate": false
+		},
+		{
+			"scope": 3,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 3,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	]
+}

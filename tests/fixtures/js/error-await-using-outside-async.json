@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "await_outside_async",
+		"message": "Cannot use keyword 'await' outside an async function",
+		"pos": 15,
+		"end": 15,
+		"loc": {
+			"line": 1,
+			"column": 15
+		}
+	}
+}

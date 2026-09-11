@@ -27,6 +27,14 @@ pub(crate) enum Context {
 	Other,
 }
 
+/// The statement list a statement appears directly in.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StatementPlace {
+	TopLevel,
+	Block,
+	Case,
+}
+
 impl Context {
 	fn with_label(self) -> Context {
 		match self {
@@ -51,9 +59,9 @@ impl<E: Extension> Parser<'_, E> {
 				continue;
 			}
 			let at = self.tok.start;
-			if let Some(statement) =
-				self.statement_recovered(|p| p.parse_statement(Context::None, true, Some(&mut exports)))?
-			{
+			if let Some(statement) = self.statement_recovered(|p| {
+				p.parse_statement(Context::None, StatementPlace::TopLevel, Some(&mut exports))
+			})? {
 				body.push(statement);
 			}
 			self.ensure_progress(at)?;
@@ -100,11 +108,11 @@ impl<E: Extension> Parser<'_, E> {
 	pub(crate) fn parse_statement(
 		&mut self,
 		context: Context,
-		top_level: bool,
+		place: StatementPlace,
 		exports: Option<&mut FastSet<StrId>>,
 	) -> Result<NodeId> {
 		self.enter()?;
-		let result = self.parse_statement_inner(context, top_level, exports);
+		let result = self.parse_statement_inner(context, place, exports);
 		self.leave();
 		result
 	}
@@ -112,10 +120,10 @@ impl<E: Extension> Parser<'_, E> {
 	fn parse_statement_inner(
 		&mut self,
 		context: Context,
-		top_level: bool,
+		place: StatementPlace,
 		exports: Option<&mut FastSet<StrId>>,
 	) -> Result<NodeId> {
-		if let Some(statement) = E::statement(self, context, top_level)? {
+		if let Some(statement) = E::statement(self, context, place)? {
 			return Ok(statement);
 		}
 		let start = self.tok.start;
@@ -124,6 +132,17 @@ impl<E: Extension> Parser<'_, E> {
 				return self.unexpected();
 			}
 			return self.parse_var_statement(start, VariableKind::Let);
+		}
+		if context == Context::None
+			&& let Some(kind) = self.using_kind(false)
+		{
+			if place == StatementPlace::Case
+				|| (place == StatementPlace::TopLevel && !self.options.module && !E::exports_in_script(self))
+			{
+				let error = self.error_arg(start, Code::UsingOutsideBlock, kind.as_str());
+				self.record(error)?;
+			}
+			return self.parse_var_statement(start, kind);
 		}
 		match self.tok.kind {
 			TokenKind::Keyword(Keyword::Break) => self.parse_break_continue(start, true),
@@ -174,7 +193,7 @@ impl<E: Extension> Parser<'_, E> {
 					let expression = self.parse_expression(false, &mut None)?;
 					return self.parse_expression_statement(start, expression);
 				}
-				if !top_level {
+				if place != StatementPlace::TopLevel {
 					return self.error(start, Code::ImportExportNotTopLevel);
 				}
 				if !self.options.module && !E::exports_in_script(self) {
@@ -227,8 +246,15 @@ impl<E: Extension> Parser<'_, E> {
 		if next == '{' {
 			return true;
 		}
-		if is_id_start(next) {
-			let rest = &self.source()[pos..];
+		self.starts_binding_identifier(pos)
+	}
+
+	fn starts_binding_identifier(&self, pos: usize) -> bool {
+		let rest = &self.source()[pos..];
+		if rest.starts_with('\\') {
+			return true;
+		}
+		if rest.chars().next().is_some_and(is_id_start) {
 			let len = rest.find(|c| !is_id_continue(c)).unwrap_or(rest.len());
 			if rest[len..].starts_with('\\') {
 				return true;
@@ -237,6 +263,52 @@ impl<E: Extension> Parser<'_, E> {
 			return word != "in" && word != "instanceof";
 		}
 		false
+	}
+
+	/// Whether `using` or `await using` here starts a declaration: a binding name follows on the
+	/// same line, and in a for head `using of` is a declaration only when what follows `of` says so.
+	fn using_kind(&self, is_for: bool) -> Option<VariableKind> {
+		let kind = if self.is_contextual("using") {
+			VariableKind::Using
+		} else if self.can_await() && self.is_contextual("await") {
+			VariableKind::AwaitUsing
+		} else {
+			return None;
+		};
+		let (_, newline, mut pos) = self.peek_char();
+		if newline {
+			return None;
+		}
+		if kind == VariableKind::AwaitUsing {
+			let rest = self.source()[pos..].strip_prefix("using")?;
+			if rest.starts_with('\\') || rest.chars().next().is_some_and(is_id_continue) {
+				return None;
+			}
+			let (_, newline, binding) = self.lexer.peek_char_from(pos + 5);
+			if newline {
+				return None;
+			}
+			pos = binding;
+		}
+		if !self.starts_binding_identifier(pos) {
+			return None;
+		}
+		if is_for
+			&& kind == VariableKind::Using
+			&& let Some(rest) = self.source()[pos..].strip_prefix("of")
+			&& !rest.starts_with('\\')
+			&& !rest.chars().next().is_some_and(is_id_continue)
+		{
+			let (next, _, pos) = self.lexer.peek_char_from(pos + 2);
+			let after = self.source().as_bytes().get(pos + 1);
+			if !matches!(next, Some(';' | ':'))
+				&& !(next == Some('=') && !matches!(after, Some(b'=' | b'>')))
+				&& !(next == Some('!') && after != Some(&b'='))
+			{
+				return None;
+			}
+		}
+		Some(kind)
 	}
 
 	fn is_async_function(&self) -> bool {
@@ -293,7 +365,7 @@ impl<E: Extension> Parser<'_, E> {
 	fn parse_do(&mut self, start: u32) -> Result<NodeId> {
 		self.next()?;
 		self.push_label(LabelKind::Loop);
-		let body = self.parse_statement(Context::Other, false, None)?;
+		let body = self.parse_statement(Context::Other, StatementPlace::Block, None)?;
 		self.labels.pop();
 		self.expect_keyword(Keyword::While)?;
 		let test = self.parse_paren_expression()?;
@@ -318,16 +390,18 @@ impl<E: Extension> Parser<'_, E> {
 			return self.parse_for_rest(start, None);
 		}
 		let is_let = self.is_let(Context::None);
-		if self.is_keyword(Keyword::Var) || self.is_keyword(Keyword::Const) || is_let {
+		let using = self.using_kind(true);
+		if self.is_keyword(Keyword::Var) || self.is_keyword(Keyword::Const) || is_let || using.is_some() {
 			let init_start = self.tok.start;
-			let kind = if is_let {
+			let kind = if let Some(kind) = using {
+				kind
+			} else if is_let {
 				VariableKind::Let
 			} else if self.is_keyword(Keyword::Var) {
 				VariableKind::Var
 			} else {
 				VariableKind::Const
 			};
-			self.next()?;
 			let init = self.parse_var(init_start, true, kind)?;
 			let NodeKind::VariableDeclaration { declarations, .. } = self.kind(init) else {
 				unreachable!()
@@ -399,7 +473,7 @@ impl<E: Extension> Parser<'_, E> {
 			Some(self.parse_expression(false, &mut None)?)
 		};
 		self.expect(TokenKind::ParenR)?;
-		let body = self.parse_statement(Context::Other, false, None)?;
+		let body = self.parse_statement(Context::Other, StatementPlace::Block, None)?;
 		self.exit_scope();
 		self.labels.pop();
 		Ok(self.add(
@@ -417,6 +491,10 @@ impl<E: Extension> Parser<'_, E> {
 		let is_for_in = self.is_keyword(Keyword::In);
 		self.next()?;
 		if let NodeKind::VariableDeclaration { declarations, kind } = self.kind(left) {
+			if is_for_in && kind.is_using() {
+				let error = self.error_arg(self.start_of(left), Code::UsingInForIn, kind.as_str());
+				self.record(error)?;
+			}
 			let first = self.ast.list(declarations)[0].unwrap();
 			let NodeKind::VariableDeclarator { id, init } = self.kind(first) else {
 				unreachable!()
@@ -436,7 +514,7 @@ impl<E: Extension> Parser<'_, E> {
 			self.parse_maybe_assign(ForInit::No, &mut None)?
 		};
 		self.expect(TokenKind::ParenR)?;
-		let body = self.parse_statement(Context::Other, false, None)?;
+		let body = self.parse_statement(Context::Other, StatementPlace::Block, None)?;
 		self.exit_scope();
 		self.labels.pop();
 		let kind = if is_for_in {
@@ -542,9 +620,9 @@ impl<E: Extension> Parser<'_, E> {
 	fn parse_if(&mut self, start: u32) -> Result<NodeId> {
 		self.next()?;
 		let test = self.parse_paren_expression()?;
-		let consequent = self.parse_statement(Context::If, false, None)?;
+		let consequent = self.parse_statement(Context::If, StatementPlace::Block, None)?;
 		let alternate = if self.eat_keyword(Keyword::Else)? {
-			Some(self.parse_statement(Context::If, false, None)?)
+			Some(self.parse_statement(Context::If, StatementPlace::Block, None)?)
 		} else {
 			None
 		};
@@ -607,7 +685,8 @@ impl<E: Extension> Parser<'_, E> {
 				let Some(current) = current.as_mut() else {
 					return self.unexpected();
 				};
-				current.2.push(self.parse_statement(Context::None, false, None)?);
+				let statement = self.parse_statement(Context::None, StatementPlace::Case, None)?;
+				current.2.push(statement);
 			}
 		}
 		self.exit_scope();
@@ -681,7 +760,6 @@ impl<E: Extension> Parser<'_, E> {
 	}
 
 	pub(crate) fn parse_var_statement(&mut self, start: u32, kind: VariableKind) -> Result<NodeId> {
-		self.next()?;
 		let node = self.parse_var(start, false, kind)?;
 		self.semicolon()?;
 		self.ast.node_mut(node).end = self.prev_end;
@@ -692,7 +770,7 @@ impl<E: Extension> Parser<'_, E> {
 		self.next()?;
 		let test = self.parse_paren_expression()?;
 		self.push_label(LabelKind::Loop);
-		let body = self.parse_statement(Context::Other, false, None)?;
+		let body = self.parse_statement(Context::Other, StatementPlace::Block, None)?;
 		self.labels.pop();
 		Ok(self.add(NodeKind::WhileStatement { test, body }, start))
 	}
@@ -703,7 +781,7 @@ impl<E: Extension> Parser<'_, E> {
 		}
 		self.next()?;
 		let object = self.parse_paren_expression()?;
-		let body = self.parse_statement(Context::Other, false, None)?;
+		let body = self.parse_statement(Context::Other, StatementPlace::Block, None)?;
 		Ok(self.add(NodeKind::WithStatement { object, body }, start))
 	}
 
@@ -730,7 +808,7 @@ impl<E: Extension> Parser<'_, E> {
 			kind,
 			statement_start,
 		});
-		let body = self.parse_statement(context.with_label(), false, None)?;
+		let body = self.parse_statement(context.with_label(), StatementPlace::Block, None)?;
 		self.labels.pop();
 		Ok(self.add(NodeKind::LabeledStatement { label, body }, start))
 	}
@@ -767,7 +845,9 @@ impl<E: Extension> Parser<'_, E> {
 		let mut body = Vec::new();
 		while !self.is(TokenKind::BraceR) {
 			let at = self.tok.start;
-			if let Some(statement) = self.statement_recovered(|p| p.parse_statement(Context::None, false, None))? {
+			if let Some(statement) =
+				self.statement_recovered(|p| p.parse_statement(Context::None, StatementPlace::Block, None))?
+			{
 				body.push(statement);
 			}
 			self.ensure_progress(at)?;
@@ -815,10 +895,22 @@ impl<E: Extension> Parser<'_, E> {
 	}
 
 	fn parse_var(&mut self, start: u32, is_for: bool, kind: VariableKind) -> Result<NodeId> {
+		if kind.is_using() && E::in_ambient(self) {
+			let error = self.error_arg(start, Code::UsingInAmbient, kind.as_str());
+			self.record(error)?;
+		}
+		self.next()?;
+		if kind == VariableKind::AwaitUsing {
+			self.next()?;
+		}
 		let mut declarations = Vec::new();
 		loop {
 			let decl_start = self.tok.start;
 			let id = self.parse_binding_atom()?;
+			if kind.is_using() && !matches!(self.kind(id), NodeKind::Identifier { .. }) {
+				let error = self.error_arg(decl_start, Code::UsingPattern, kind.as_str());
+				self.record(error)?;
+			}
 			let binding = if kind == VariableKind::Var {
 				Binding::Var
 			} else {
@@ -831,7 +923,10 @@ impl<E: Extension> Parser<'_, E> {
 			} else {
 				let in_or_of = self.is_keyword(Keyword::In) || self.is_contextual("of");
 				let missing_allowed = E::allows_missing_initializer(self);
-				if kind == VariableKind::Const && !in_or_of && !missing_allowed {
+				if kind.is_using() && !(is_for && in_or_of) && !missing_allowed {
+					let error = self.error_arg(self.prev_end, Code::UsingWithoutInitializer, kind.as_str());
+					self.record(error)?;
+				} else if kind == VariableKind::Const && !in_or_of && !missing_allowed {
 					let error = self.unexpected();
 					self.record(error)?;
 				} else if !matches!(self.kind(id), NodeKind::Identifier { .. })
@@ -1021,7 +1116,7 @@ impl<E: Extension> Parser<'_, E> {
 		if self.should_parse_export_statement() {
 			let declaration = match E::export_declaration(self)? {
 				Some(declaration) => declaration,
-				None => self.parse_statement(Context::None, false, None)?,
+				None => self.parse_statement(Context::None, StatementPlace::Block, None)?,
 			};
 			match self.kind(declaration) {
 				NodeKind::VariableDeclaration { declarations, .. } => {
@@ -1562,7 +1657,7 @@ impl<E: Extension> Parser<'_, E> {
 		self.enter_scope(SCOPE_CLASS_STATIC_BLOCK | SCOPE_SUPER);
 		let mut body = Vec::new();
 		while !self.is(TokenKind::BraceR) {
-			body.push(self.parse_statement(Context::None, false, None)?);
+			body.push(self.parse_statement(Context::None, StatementPlace::Block, None)?);
 		}
 		self.next()?;
 		self.exit_scope();
