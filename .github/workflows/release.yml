@@ -89,7 +89,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          registry-url: https://registry.npmjs.org
+      - run: npm install -g npm@latest
       - run: bun install --frozen-lockfile
         working-directory: package
       - uses: actions/download-artifact@v4
@@ -101,11 +101,9 @@ jobs:
           name: wasm
           path: package
       - run: cp README.md package/README.md
-      - run: bunx napi artifacts -d artifacts && bunx napi pre-publish -t npm
+      - run: bunx napi artifacts -d artifacts && bunx napi pre-publish -t npm --no-gh-release
         working-directory: package
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: true
       - run: npm publish --access public --provenance
         working-directory: package
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
