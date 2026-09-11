@@ -1,6 +1,6 @@
 {
   "name": "@teasel/parser-darwin-arm64",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "cpu": [
     "arm64"
   ],
@@ -13,5 +13,8 @@
   "repository": "github:Nic-Polumeyv/teasel",
   "os": [
     "darwin"
-  ]
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
 }
