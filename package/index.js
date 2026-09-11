@@ -1,4 +1,4 @@
-// the source goes over as bytes: V8's encoder is 14x faster than napi reading a string
+// the source goes over as bytes: V8's encoder is 14x faster than the host reading a string out
 import { bind } from './api.js';
 import { load } from './native.js';
 
@@ -18,8 +18,9 @@ function bytes(text) {
 }
 
 export const Source = bind({
-	create: (source, names, host) => new native.Source(bytes(source), names, host),
-	parse: (held, entry, offset, end, stop) => held.parse(entry, offset, end, stop),
+	create: (source, names, host) => native.create(bytes(source), names, host),
+	parse: native.parse,
+	free: native.free,
 	constants: native.constants,
 	shapes: native.shapes,
 });
