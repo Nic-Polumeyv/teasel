@@ -18,6 +18,7 @@
 				"start": 18,
 				"end": 96,
 				"scope": 1,
+				"root": 0,
 				"body": [
 					{
 						"type": "VariableDeclaration",
@@ -143,6 +144,7 @@
 						"type": "MemberExpression",
 						"start": 107,
 						"end": 110,
+						"root": 1,
 						"object": {
 							"type": "Identifier",
 							"start": 107,
@@ -202,6 +204,38 @@
 			"write": false,
 			"read": true,
 			"mutate": false
+		}
+	],
+	"roots": [
+		{
+			"scope": 1,
+			"scopes": [
+				2,
+				2
+			],
+			"bindings": [
+				0,
+				2
+			],
+			"references": [
+				0,
+				0
+			]
+		},
+		{
+			"scope": 2,
+			"scopes": [
+				3,
+				3
+			],
+			"bindings": [
+				2,
+				2
+			],
+			"references": [
+				0,
+				1
+			]
 		}
 	]
 }

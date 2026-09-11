@@ -896,6 +896,10 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		}
 		let adopted = std::mem::take(&mut self.adopted);
 		for node in adopted.iter().copied().chain([id]) {
+			if let Some(&root) = scopes.root_of.get(&node) {
+				self.key("root");
+				self.sink.int(root);
+			}
 			if let Some(bindings) = scopes.declared_by.get(&node) {
 				self.key("defines");
 				self.sink.ints(bindings);
@@ -956,6 +960,26 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 			self.bool("write", reference.write);
 			self.bool("read", reference.read);
 			self.bool("mutate", reference.mutate);
+			self.sink.end();
+		}
+		self.sink.end();
+		if self.ast.hosts.is_empty() {
+			return;
+		}
+		self.sink.table("roots");
+		self.sink.list();
+		for root in &scopes.roots {
+			self.sink.object();
+			self.key("scope");
+			self.sink.int(root.scope);
+			for (key, (from, to)) in [
+				("scopes", root.scopes),
+				("bindings", root.bindings),
+				("references", root.references),
+			] {
+				self.key(key);
+				self.sink.ints(&[from, to]);
+			}
 			self.sink.end();
 		}
 		self.sink.end();

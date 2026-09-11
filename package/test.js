@@ -102,6 +102,22 @@ for (const [name, { Source, isIdentifierStart, isIdentifierChar, scopeOf, bindin
 	assert.throws(() => parse('return', { sourceType: 'module' }), SyntaxError);
 	assert.equal(program('return', { allowReturnOutsideFunction: true }).body[0].type, 'ReturnStatement');
 	{
+		// a document's answer lists each piece of JavaScript the host read, with its share of the tables
+		const host = readFileSync(new URL('../hosts/svelte.grammar', import.meta.url), 'utf8');
+		const answer = parse('<script>let a = 1;</script>{a + b}', { host, sourceType: 'module', scopes: true });
+		const [script, expression] = answer.roots;
+		assert.equal(answer.roots.length, 2);
+		assert.equal(script.node.type, 'Program');
+		assert.equal(script.scope, scopeOf(script.node));
+		assert.deepEqual(script.bindings.map((b) => b.name), ['a']);
+		assert.equal(expression.node.type, 'BinaryExpression');
+		assert.equal(expression.scope.kind, 'fragment');
+		assert.deepEqual(expression.scopes, []);
+		assert.deepEqual(expression.references.map((r) => r.node.name), ['a', 'b']);
+		assert.equal(expression.references[0].binding, script.bindings[0]);
+		assert.equal(referenceOf(expression.node.left), expression.references[0]);
+	}
+	{
 		const answer = parse('let x = 1; function f(y) { x = y; }', { sourceType: 'module', scopes: true });
 		const tree = answer.node;
 		const [x, f, y] = answer.bindings;

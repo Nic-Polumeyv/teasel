@@ -52,6 +52,7 @@
 							"start": 30,
 							"end": 31,
 							"reference": 0,
+							"root": 0,
 							"name": "a"
 						}
 					}
@@ -112,6 +113,23 @@
 			"write": false,
 			"read": true,
 			"mutate": false
+		}
+	],
+	"roots": [
+		{
+			"scope": 0,
+			"scopes": [
+				1,
+				1
+			],
+			"bindings": [
+				0,
+				0
+			],
+			"references": [
+				0,
+				1
+			]
 		}
 	]
 }

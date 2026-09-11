@@ -31,6 +31,7 @@
 									"type": "Literal",
 									"start": 9,
 									"end": 10,
+									"root": 0,
 									"value": 1,
 									"raw": "1"
 								}
@@ -159,5 +160,22 @@
 		}
 	],
 	"bindings": [],
-	"references": []
+	"references": [],
+	"roots": [
+		{
+			"scope": 2,
+			"scopes": [
+				3,
+				3
+			],
+			"bindings": [
+				0,
+				0
+			],
+			"references": [
+				0,
+				0
+			]
+		}
+	]
 }

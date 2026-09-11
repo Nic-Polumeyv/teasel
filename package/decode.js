@@ -25,7 +25,7 @@ export const referenceOf = (node) => (node == null ? undefined : node[REFERENCE]
 /** @param {import('estree').Node} node @returns {import('estree').Node | undefined} the node it is a child of; undefined for the root of an answer */
 export const parentOf = (node) => (node == null ? undefined : node[PARENT]);
 
-const FACTS = new Set(['scope', 'declares', 'reference', 'defines', 'writes']);
+const FACTS = new Set(['scope', 'declares', 'reference', 'defines', 'writes', 'root']);
 
 /** Files a node built outside the stream as the decoder would: no parent, and its facts when it has them. */
 export function facts(node, scope, binding, reference) {
@@ -99,6 +99,7 @@ function generate({ type, keys, kinds }, link) {
 			else if (key === 'reference') { reference = 'r'; binding = 'r.binding'; lead.push(`const r = S.references[v${i}];`); after.push('r.node = n;'); }
 			else if (key === 'defines') after.push(`for (let i = 0; i < v${i}.length; i++) S.bindings[v${i}[i]].declaration = n;`);
 			else if (key === 'writes') after.push(`for (let i = 0; i < v${i}.length; i++) S.references[v${i}[i]].writeExpr = n;`);
+			else if (key === 'root') after.push(`S.roots[v${i}].node = n;`);
 			else {
 				props.push(`${JSON.stringify(key)}: v${i}`);
 				// a child with a type is a node; a literal's regex or a template element's value is not
@@ -133,6 +134,7 @@ function interpret({ type, keys, kinds }, link) {
 			else if (key === 'declares') { const d = S.bindings[value]; n[BINDING] = d; if (d.node === null) d.node = n; }
 			else if (key === 'reference') { const r = S.references[value]; n[REFERENCE] = r; n[BINDING] = r.binding; r.node = n; }
 			else if (key === 'defines') for (const b of value) S.bindings[b].declaration = n;
+			else if (key === 'root') S.roots[value].node = n;
 			else for (const w of value) S.references[w].writeExpr = n;
 		}
 		return n;
@@ -213,6 +215,17 @@ function link_tables(scopes, bindings, references) {
 	}
 }
 
+/** @param {any[]} roots @param {any[]} scopes @param {any[]} bindings @param {any[]} references */
+function link_roots(roots, scopes, bindings, references) {
+	for (const root of roots) {
+		root.node = null;
+		root.scope = scopes[root.scope];
+		root.scopes = scopes.slice(root.scopes[0], root.scopes[1]);
+		root.bindings = bindings.slice(root.bindings[0], root.bindings[1]);
+		root.references = references.slice(root.references[0], root.references[1]);
+	}
+}
+
 /**
  * @param {ArrayBuffer | Uint32Array} answer the words, or a view of them inside a larger buffer
  * @param {string} source
@@ -239,18 +252,23 @@ export function decode(answer, source, engine, link = true) {
 		from = end;
 	}
 	// one state object per decode, young like everything it points at: no write barriers
-	const S = { w: words, at: HEADER, strings, floats, source, constants: table.constants, scopes: EMPTY, bindings: EMPTY, references: EMPTY, build: builders(table, link) };
-	let scopes = null, bindings = null, references = null;
+	const S = { w: words, at: HEADER, strings, floats, source, constants: table.constants, scopes: EMPTY, bindings: EMPTY, references: EMPTY, roots: EMPTY, build: builders(table, link) };
+	let scopes = null, bindings = null, references = null, roots = null;
 	if (tables_at !== 0) {
-		// the writer's `all_scopes` order; a fourth table would have to carry its key
+		// the writer's `all_scopes` order; the roots table is there when a host document has pieces of JavaScript
 		S.at = HEADER + tables_at;
 		scopes = nodes(S);
 		bindings = nodes(S);
 		references = nodes(S);
-		if (link) link_tables(scopes, bindings, references);
+		if (S.at < HEADER + tree) roots = nodes(S);
+		if (link) {
+			link_tables(scopes, bindings, references);
+			if (roots !== null) link_roots(roots, scopes, bindings, references);
+		}
 		S.scopes = scopes;
 		S.bindings = bindings;
 		S.references = references;
+		if (roots !== null) S.roots = roots;
 		S.at = HEADER;
 	}
 	const root = node(S);
@@ -258,6 +276,7 @@ export function decode(answer, source, engine, link = true) {
 		root.scopes = scopes;
 		root.bindings = bindings;
 		root.references = references;
+		if (roots !== null) root.roots = roots;
 	}
 	return root;
 }

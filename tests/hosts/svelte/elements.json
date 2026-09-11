@@ -92,6 +92,7 @@
 										"start": 48,
 										"end": 49,
 										"reference": 0,
+										"root": 0,
 										"name": "y"
 									}
 								},
@@ -118,6 +119,7 @@
 									"start": 55,
 									"end": 64,
 									"reference": 1,
+									"root": 1,
 									"name": "shorthand"
 								}
 							}
@@ -136,6 +138,7 @@
 									"start": 73,
 									"end": 74,
 									"reference": 2,
+									"root": 2,
 									"name": "v"
 								}
 							}
@@ -324,6 +327,53 @@
 			"write": false,
 			"read": true,
 			"mutate": false
+		}
+	],
+	"roots": [
+		{
+			"scope": 2,
+			"scopes": [
+				3,
+				3
+			],
+			"bindings": [
+				0,
+				0
+			],
+			"references": [
+				0,
+				1
+			]
+		},
+		{
+			"scope": 2,
+			"scopes": [
+				3,
+				3
+			],
+			"bindings": [
+				0,
+				0
+			],
+			"references": [
+				1,
+				2
+			]
+		},
+		{
+			"scope": 2,
+			"scopes": [
+				3,
+				3
+			],
+			"bindings": [
+				0,
+				0
+			],
+			"references": [
+				2,
+				3
+			]
 		}
 	]
 }

@@ -221,5 +221,6 @@
 		}
 	],
 	"bindings": [],
-	"references": []
+	"references": [],
+	"roots": []
 }

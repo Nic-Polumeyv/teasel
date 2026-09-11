@@ -49,6 +49,7 @@
 												"start": 18,
 												"end": 21,
 												"reference": 0,
+												"root": 0,
 												"name": "bar"
 											}
 										}
@@ -79,6 +80,7 @@
 						"start": 35,
 						"end": 36,
 						"reference": 1,
+						"root": 1,
 						"name": "x"
 					},
 					"elseif": false,
@@ -188,6 +190,38 @@
 			"write": false,
 			"read": true,
 			"mutate": false
+		}
+	],
+	"roots": [
+		{
+			"scope": 3,
+			"scopes": [
+				4,
+				4
+			],
+			"bindings": [
+				0,
+				0
+			],
+			"references": [
+				0,
+				1
+			]
+		},
+		{
+			"scope": 2,
+			"scopes": [
+				5,
+				5
+			],
+			"bindings": [
+				0,
+				0
+			],
+			"references": [
+				1,
+				2
+			]
 		}
 	]
 }

@@ -90,6 +90,7 @@
 									"start": 53,
 									"end": 54,
 									"reference": 0,
+									"root": 0,
 									"leadingComments": [
 										{
 											"type": "Block",
@@ -127,6 +128,7 @@
 								"start": 72,
 								"end": 73,
 								"reference": 1,
+								"root": 1,
 								"name": "r"
 							}
 						}
@@ -151,6 +153,7 @@
 									"start": 102,
 									"end": 103,
 									"reference": 2,
+									"root": 2,
 									"leadingComments": [
 										{
 											"type": "Block",
@@ -266,6 +269,53 @@
 			"write": false,
 			"read": true,
 			"mutate": false
+		}
+	],
+	"roots": [
+		{
+			"scope": 2,
+			"scopes": [
+				3,
+				3
+			],
+			"bindings": [
+				0,
+				0
+			],
+			"references": [
+				0,
+				1
+			]
+		},
+		{
+			"scope": 2,
+			"scopes": [
+				3,
+				3
+			],
+			"bindings": [
+				0,
+				0
+			],
+			"references": [
+				1,
+				2
+			]
+		},
+		{
+			"scope": 3,
+			"scopes": [
+				4,
+				4
+			],
+			"bindings": [
+				0,
+				0
+			],
+			"references": [
+				2,
+				3
+			]
 		}
 	]
 }

@@ -53,6 +53,7 @@
 									"type": "Literal",
 									"start": 37,
 									"end": 38,
+									"root": 0,
 									"value": 1,
 									"raw": "1"
 								},
@@ -87,6 +88,7 @@
 							"start": 74,
 							"end": 75,
 							"reference": 0,
+							"root": 1,
 							"name": "a"
 						},
 						"modifiers": []
@@ -118,6 +120,7 @@
 							"start": 96,
 							"end": 97,
 							"reference": 1,
+							"root": 2,
 							"name": "c"
 						},
 						"modifiers": []
@@ -157,6 +160,53 @@
 			"write": false,
 			"read": true,
 			"mutate": false
+		}
+	],
+	"roots": [
+		{
+			"scope": 0,
+			"scopes": [
+				1,
+				1
+			],
+			"bindings": [
+				0,
+				0
+			],
+			"references": [
+				0,
+				0
+			]
+		},
+		{
+			"scope": 0,
+			"scopes": [
+				1,
+				1
+			],
+			"bindings": [
+				0,
+				0
+			],
+			"references": [
+				0,
+				1
+			]
+		},
+		{
+			"scope": 0,
+			"scopes": [
+				1,
+				1
+			],
+			"bindings": [
+				0,
+				0
+			],
+			"references": [
+				1,
+				2
+			]
 		}
 	]
 }
