@@ -1041,11 +1041,13 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 				self.key("root");
 				self.sink.int(root);
 			}
-			if let Some(bindings) = scopes.declared_by.get(&node) {
+			let bindings = scopes.declared_by.get(node);
+			if !bindings.is_empty() {
 				self.key("defines");
 				self.sink.ints(bindings);
 			}
-			if let Some(references) = scopes.writes_of.get(&node) {
+			let references = scopes.writes_of.get(node);
+			if !references.is_empty() {
 				self.key("writes");
 				self.sink.ints(references);
 			}
