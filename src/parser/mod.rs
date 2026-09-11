@@ -91,7 +91,12 @@ pub(crate) trait Extension: Default + Sized {
 		Ok(None)
 	}
 	/// An expression statement whose expression is a bare identifier may be a declaration instead.
-	fn expression_statement(p: &mut Parser<Self>, start: u32, expression: NodeId) -> Result<Option<NodeId>> {
+	fn expression_statement(
+		p: &mut Parser<Self>,
+		start: u32,
+		expression: NodeId,
+		context: Context,
+	) -> Result<Option<NodeId>> {
 		Ok(None)
 	}
 	fn starts_export_declaration(p: &mut Parser<Self>) -> bool {

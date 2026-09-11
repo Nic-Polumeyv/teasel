@@ -1,0 +1,68 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 15,
+		"scope": 0,
+		"body": [
+			{
+				"type": "VariableDeclaration",
+				"start": 0,
+				"end": 14,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 4,
+						"end": 13,
+						"defines": [
+							0
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 4,
+							"end": 13,
+							"declares": 0,
+							"typeAnnotation": {
+								"type": "TSTypeAnnotation",
+								"start": 5,
+								"end": 13,
+								"typeAnnotation": {
+									"type": "TSTypeReference",
+									"start": 7,
+									"end": 13,
+									"typeName": {
+										"type": "Identifier",
+										"start": 7,
+										"end": 13,
+										"name": "public"
+									}
+								}
+							},
+							"name": "x"
+						},
+						"init": null
+					}
+				],
+				"kind": "let"
+			}
+		],
+		"sourceType": "script"
+	},
+	"end": 15,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "script",
+			"parent": null,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "x",
+			"kind": "let",
+			"scope": 0
+		}
+	],
+	"references": []
+}

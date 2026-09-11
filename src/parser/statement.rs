@@ -191,7 +191,7 @@ impl<E: Extension> Parser<'_, E> {
 				let is_import = self.is_keyword(Keyword::Import);
 				if is_import && matches!(self.peek_char().0, Some('(' | '.')) {
 					let expression = self.parse_expression(false, &mut None)?;
-					return self.parse_expression_statement(start, expression);
+					return self.parse_expression_statement(start, expression, context);
 				}
 				if place != StatementPlace::TopLevel {
 					return self.error(start, Code::ImportExportNotTopLevel);
@@ -222,7 +222,7 @@ impl<E: Extension> Parser<'_, E> {
 				{
 					return self.parse_labeled(start, name, expression, context);
 				}
-				self.parse_expression_statement(start, expression)
+				self.parse_expression_statement(start, expression, context)
 			}
 		}
 	}
@@ -813,9 +813,9 @@ impl<E: Extension> Parser<'_, E> {
 		Ok(self.add(NodeKind::LabeledStatement { label, body }, start))
 	}
 
-	fn parse_expression_statement(&mut self, start: u32, expression: NodeId) -> Result<NodeId> {
+	fn parse_expression_statement(&mut self, start: u32, expression: NodeId, context: Context) -> Result<NodeId> {
 		if matches!(self.kind(expression), NodeKind::Identifier { .. })
-			&& let Some(statement) = E::expression_statement(self, start, expression)?
+			&& let Some(statement) = E::expression_statement(self, start, expression, context)?
 		{
 			return Ok(statement);
 		}

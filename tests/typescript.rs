@@ -55,26 +55,14 @@ const CHECKER: &[(&str, &str)] = &[
 	("1319", "a default export under a module kind: an option"),
 	("1337", "index signature parameter types"),
 	("1489", "a decimal with leading zeros: Annex B allows it in sloppy code"),
+	("1344", "a label on a var statement: ECMAScript allows it"),
 ];
 
 /// Grammar the parser does not check yet.
-const NOT_YET: &[(&str, &str)] = &[
-	(
-		"1206",
-		"decorators on parameters, private names, class expressions, abstract and declare members: an option the runner does not read",
-	),
-	("1228", "type predicates outside return types"),
-	("1338", "infer outside a conditional's extends clause"),
-	("1308", "await in an enum initializer"),
-	("1163", "yield in an enum initializer"),
-	("1355", "what a const assertion may apply to"),
-	("1196", "the type a catch variable may have"),
-	("1063", "an export assignment in a namespace"),
-	("1035", "a quoted module name without declare"),
-	("1344", "a label on a declaration"),
-	("1213", "strict-mode reserved words as type names in a class"),
-	("1242", "abstract on what is not a class"),
-];
+const NOT_YET: &[(&str, &str)] = &[(
+	"1206",
+	"decorators on parameters, private names, class expressions, abstract and declare members: an option the runner does not read",
+)];
 
 /// Cases decided by name: what the parser rejects on ECMAScript's rules, which TypeScript does
 /// not apply, and what it does not read yet.

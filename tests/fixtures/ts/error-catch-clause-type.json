@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "catch_clause_type",
+		"message": "Catch clause variable type annotation must be 'any' or 'unknown' if specified",
+		"pos": 17,
+		"end": 17,
+		"loc": {
+			"line": 1,
+			"column": 17
+		}
+	}
+}
