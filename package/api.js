@@ -15,7 +15,7 @@ export function names(options) {
 			continue;
 		}
 		if (!OPTIONS.has(key)) throw new TypeError(`${key} is not an option`);
-		if (value === undefined || (value === false && key !== 'decorators')) continue;
+		if (value === undefined || value === false) continue;
 		if (key === 'decorators') {
 			if (value !== 'legacy' && value !== 'proposal') throw new TypeError(`decorators must be "legacy" or "proposal", not ${JSON.stringify(value)}`);
 			on.push(`${value}Decorators`);
