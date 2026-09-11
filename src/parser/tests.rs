@@ -195,7 +195,7 @@ fn nesting_limits() {
 }
 
 #[test]
-fn svelte_entry_points() {
+fn entry_points() {
 	let options = Options {
 		module: true,
 		..Options::default()
@@ -226,7 +226,7 @@ fn svelte_entry_points() {
 		params("{#snippet row(a, a)}", 13, options, "").unwrap_err().message,
 		"Argument name clash"
 	);
-	// Parameters are read as expressions first, so the errors are the ones acorn gives an arrow.
+	// Parameters are read as expressions first, so the errors are an arrow's.
 	let params_error = |src: &str| {
 		let e = params(src, 13, options, "").unwrap_err();
 		(e.message, e.pos)
@@ -517,15 +517,16 @@ fn script_body(ast: &Ast) -> Vec<String> {
 	ast.list(body).iter().map(|s| dump(ast, s.unwrap(), &plain)).collect()
 }
 
-/// Every prefix of every JavaScript and TypeScript file of the Svelte test suite, as a program
-/// and as an expression, parses under recovery with the invariants `Api::recovered` checks.
+/// Every prefix of every JavaScript and TypeScript file under `CORPUS_DIR`, as a program and as
+/// an expression, parses under recovery with the invariants `Api::recovered` checks.
 #[test]
 #[ignore]
 fn recovery_prefixes() {
-	let root =
-		std::env::var("SVELTE_DIR").unwrap_or_else(|_| format!("{}/Projects/svelte", std::env::var("HOME").unwrap()));
+	let Ok(root) = std::env::var("CORPUS_DIR") else {
+		return;
+	};
 	let mut files = Vec::new();
-	let mut dirs = vec![std::path::PathBuf::from(format!("{root}/packages/svelte/tests"))];
+	let mut dirs = vec![std::path::PathBuf::from(root)];
 	while let Some(dir) = dirs.pop() {
 		for entry in std::fs::read_dir(dir).unwrap().flatten() {
 			let path = entry.path();

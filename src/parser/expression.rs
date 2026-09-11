@@ -750,7 +750,7 @@ impl<E: Extension> Parser<'_, E> {
 	fn parse_paren_and_distinguish_expression(&mut self, can_be_arrow: bool, for_init: ForInit) -> Result<NodeId> {
 		let start = self.tok.start;
 		self.next()?;
-		// not await_ident_pos: acorn keeps it across a parenthesized list
+		// await_ident_pos stays: an `await` used as a name before the list still counts after it
 		let (old_yield, old_await) = (self.yield_pos, self.await_pos);
 		self.yield_pos = 0;
 		self.await_pos = 0;

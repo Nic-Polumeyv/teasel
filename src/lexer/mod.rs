@@ -21,7 +21,7 @@ pub(crate) struct Lexer<'a> {
 	pos: usize,
 	buf: String,
 	escaped: bool,
-	/// Strict mode rejects legacy octal literals and escapes while scanning, as acorn does.
+	/// Strict mode rejects legacy octal literals and escapes while scanning.
 	pub(crate) strict: bool,
 	/// Modules have no HTML-style comments.
 	pub(crate) module: bool,
