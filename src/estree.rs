@@ -963,7 +963,7 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 			self.sink.end();
 		}
 		self.sink.end();
-		if scopes.roots.is_empty() {
+		if self.ast.hosts.is_empty() {
 			return;
 		}
 		self.sink.table("roots");
