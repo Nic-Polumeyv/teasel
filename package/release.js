@@ -6,7 +6,13 @@ import { platforms } from './native.js';
 const root = JSON.parse(readFileSync('package.json', 'utf8'));
 const { version, description, license, repository } = root;
 
-function publish(cwd) {
+// a version the registry has is left alone, so a run that died halfway can be run again
+async function publish(cwd, name) {
+	const { ok } = await fetch(`https://registry.npmjs.org/${name}/${version}`);
+	if (ok) {
+		console.log(`${name}@${version} is published`);
+		return;
+	}
 	const { status } = spawnSync('npm', ['publish', '--access', 'public', '--provenance'], { stdio: 'inherit', cwd });
 	if (status !== 0) process.exit(status ?? 1);
 }
@@ -19,9 +25,9 @@ for (const [tag, { target, os, cpu, libc }] of Object.entries(platforms)) {
 	copyFileSync(`artifacts/binding-${target}/${file}`, `${dir}/${file}`);
 	const manifest = { name, version, description, license, repository, os: [os], cpu: [cpu], ...(libc && { libc: [libc] }), main: file, files: [file] };
 	writeFileSync(`${dir}/package.json`, JSON.stringify(manifest, null, '\t') + '\n');
-	publish(dir);
+	await publish(dir, name);
 }
 
 root.optionalDependencies = Object.fromEntries(Object.keys(platforms).map((tag) => [`@teasel/parser-${tag}`, version]));
 writeFileSync('package.json', JSON.stringify(root, null, '\t') + '\n');
-publish('.');
+await publish('.', root.name);

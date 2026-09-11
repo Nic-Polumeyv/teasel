@@ -1,0 +1,33 @@
+name: version
+
+# Turns pending changesets into a Version Packages PR: bumps package.json, syncs the crates,
+# writes the changelog. Merging that PR touches Cargo.toml on main, which wakes release.yml.
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  version:
+    if: github.repository == 'Nic-Polumeyv/teasel'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+        working-directory: package
+      - uses: changesets/action@v2
+        with:
+          cwd: package
+          version-script: bun run changeset:version
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

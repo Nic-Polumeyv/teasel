@@ -1,98 +1,57 @@
 name: release
 
+# Fires on a main push that touches Cargo.toml; the gate lets the rest run only when that version
+# is not on npm yet. The Version Packages PR is what bumps Cargo.toml, so merging it is the release.
+# The tag marks the release and is created after npm has it, never before.
 on:
   push:
     branches: [main]
-    tags: ['v*']
-  pull_request:
+    paths: ['Cargo.toml']
   workflow_dispatch:
 
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+
 jobs:
-  test:
+  gate:
+    if: github.repository == 'Nic-Polumeyv/teasel'
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      new: ${{ steps.v.outputs.new }}
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-      - uses: oven-sh/setup-bun@v2
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-      - run: git clone --depth 1 https://github.com/tc39/test262-parser-tests tests/test262-parser-tests
-      - run: git clone --depth 1 --filter=blob:none --sparse https://github.com/microsoft/TypeScript tests/TypeScript && git -C tests/TypeScript sparse-checkout set --no-cone '/tsc/testdata/tests/cases/conformance/**' '/tsc/testdata/baselines/reference/conformance/*.errors.txt'
-      - run: cargo test --release
-      - run: bun install --frozen-lockfile
-        working-directory: package
-      - run: bun run build && bun run build:wasm && bun run test && node check.js ../tests/test262-parser-tests/pass ../tests/test262-parser-tests/pass-explicit
-        working-directory: package
+      - id: v
+        run: |
+          version=$(jq -r .version package/package.json)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if curl -sf -o /dev/null "https://registry.npmjs.org/@teasel%2Fparser/$version"; then
+            echo "$version is on npm, nothing to release"
+            echo "new=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "new=true" >> "$GITHUB_OUTPUT"
+          fi
 
-  build:
-    needs: test
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-          - os: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-gnu
-          - os: macos-latest
-            target: aarch64-apple-darwin
-          - os: macos-latest
-            target: x86_64-apple-darwin
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-      - uses: oven-sh/setup-bun@v2
-      - run: bun install --frozen-lockfile
-        working-directory: package
-      - run: bun run build -- --target ${{ matrix.target }}
-        working-directory: package
-      - uses: actions/upload-artifact@v4
-        with:
-          name: binding-${{ matrix.target }}
-          path: package/*.node
-          if-no-files-found: error
+  ci:
+    needs: gate
+    if: needs.gate.outputs.new == 'true'
+    uses: ./.github/workflows/ci.yml
 
-  wasm:
-    needs: test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-      - uses: oven-sh/setup-bun@v2
-      - run: bun install --frozen-lockfile
-        working-directory: package
-      - run: bun run build:wasm
-        working-directory: package
-      - uses: actions/upload-artifact@v4
-        with:
-          name: wasm
-          path: package/teasel.wasm
-          if-no-files-found: error
-
-  publish:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build, wasm]
+  release:
+    needs: [gate, ci]
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       id-token: write
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
-      - run: npm install -g npm@latest
+          node-version: 26
       - run: bun install --frozen-lockfile
         working-directory: package
       - uses: actions/download-artifact@v4
@@ -106,3 +65,9 @@ jobs:
       - run: cp README.md package/README.md
       - run: bun release.js
         working-directory: package
+      - run: |
+          tag="v${{ needs.gate.outputs.version }}"
+          git ls-remote --exit-code --tags origin "$tag" || { git tag "$tag" && git push origin "$tag"; }
+          gh release view "$tag" || gh release create "$tag" --title "$tag" --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
