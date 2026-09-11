@@ -630,7 +630,9 @@ impl<'a> Lexer<'a> {
 				Err(_) => text.bytes().fold(0.0, |acc, b| acc * 8.0 + (b - b'0') as f64),
 			}
 		} else if text.contains('_') {
-			text.replace('_', "").parse().unwrap()
+			self.buf.clear();
+			self.buf.extend(text.chars().filter(|c| *c != '_'));
+			self.buf.parse().unwrap()
 		} else {
 			text.parse().unwrap()
 		};
@@ -802,10 +804,14 @@ impl<'a> Lexer<'a> {
 			let c = self.char().unwrap();
 			match c {
 				_ if c as u32 == quote as u32 => {
-					self.push_chunk(chunk_start, &mut pending);
-					self.flush(&mut pending);
+					let value = if chunk_start == start + 1 {
+						self.strings.intern(&self.src[chunk_start..self.pos])
+					} else {
+						self.push_chunk(chunk_start, &mut pending);
+						self.flush(&mut pending);
+						self.strings.intern(&self.buf)
+					};
 					self.pos += 1;
-					let value = self.strings.intern(&self.buf);
 					return Ok(TokenKind::String(value));
 				}
 				'\\' => {
