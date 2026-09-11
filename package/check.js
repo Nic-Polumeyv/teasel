@@ -77,7 +77,7 @@ function mode(source, options, entry, at) {
 /** The addon's answers as JSON, each with the batch job that asks the binary for the same. */
 const jobs = [];
 function json(name, source, options, entry, at) {
-	const answer = new native.Source(Buffer.from(source), names(options), '').parse(ENTRY[entry], at, undefined, '');
+	const answer = native.parse(native.create(Buffer.from(source), names(options), ''), ENTRY[entry], at, undefined, '');
 	const tree = typeof answer === 'string' ? answer : JSON.stringify(decode(answer, source, engine, false));
 	jobs.push({ name, source, mode: mode(source, options, entry, at), tree });
 }
@@ -109,7 +109,7 @@ for (const file of files) {
 			const at = { end: start + m[2].length };
 			report(`${file} script ${start} wasm`, differ(outcome(() => twin.parse('program', start, at)), outcome(() => held.parse('program', start, at))));
 		}
-		const raw = new native.Source(Buffer.from(text), bits_of(options));
+		const raw = native.create(Buffer.from(text), bits_of(options), '');
 		for (const match of text.matchAll(brace_re)) {
 			const at = match.index + 1;
 			for (const entry of Object.keys(ENTRY)) {
@@ -117,7 +117,7 @@ for (const file of files) {
 				json(`${file}@${at} ${entry}`, text, options, entry, at);
 				report(`${file}@${at} ${entry} wasm`, differ(outcome(() => twin.parse(entry, at)), outcome(() => held.parse(entry, at))));
 				// the package answers a bare identifier itself; it must say what the engine says
-				report(`${file}@${at} ${entry} engine`, differ(outcome(() => held.parse(entry, at)), outcome(() => result(raw.parse(ENTRY[entry], at, undefined, ''), text))));
+				report(`${file}@${at} ${entry} engine`, differ(outcome(() => held.parse(entry, at)), outcome(() => result(native.parse(raw, ENTRY[entry], at, undefined, ''), text))));
 			}
 		}
 	}
