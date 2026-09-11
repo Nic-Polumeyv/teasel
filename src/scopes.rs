@@ -1355,6 +1355,20 @@ mod tests {
 		assert!(table.get(NodeId(0)).is_none());
 	}
 
+	#[test]
+	fn ids_by_node() {
+		let mut by_node = ByNode::default();
+		for (node, id) in [(5, 0), (2, 1), (5, 2), (9, 3)] {
+			by_node.pairs.push((NodeId(node), id));
+		}
+		by_node.finish(10);
+		assert_eq!(by_node.get(NodeId(5)), [0, 2]);
+		assert_eq!(by_node.get(NodeId(2)), [1]);
+		assert_eq!(by_node.get(NodeId(9)), [3]);
+		assert!(by_node.get(NodeId(0)).is_empty());
+		assert!(by_node.get(NodeId(3)).is_empty());
+	}
+
 	use super::*;
 	use crate::SyntaxError;
 	use crate::parser::Options;
