@@ -52,11 +52,13 @@ function answer(status) {
 	return words();
 }
 
-export const Source = bind({
+export const engine = {
 	create,
 	// the words outlive the source: they sit in the answer buffer until the next parse
 	parse: (held, entry, offset, end, stop) => answer(wasm.source_parse(held, entry, offset, end ?? 0, end === undefined ? 0 : 1, ...bytes(stop))),
 	free: (held) => wasm.source_free(held),
 	constants: () => constants,
 	shapes: () => shapes,
-});
+};
+
+export const Source = bind(engine);
