@@ -41,6 +41,7 @@ const CHECKER: &[(&str, &str)] = &[
 	("1203", "export assignments under an ES module target: an option"),
 	("1207", "decorator signatures"),
 	("1238", "decorator signatures"),
+	("1239", "resolving a parameter decorator's call signature"),
 	("1240", "decorator signatures"),
 	("1241", "decorator signatures"),
 	("1329", "decorator signatures"),
@@ -59,12 +60,12 @@ const CHECKER: &[(&str, &str)] = &[
 /// Grammar the parser does not check yet.
 const NOT_YET: &[(&str, &str)] = &[
 	("1094", "type parameters on accessors"),
-	("1206", "where decorators may sit"),
-	("1249", "decorators on overload signatures"),
-	("1433", "decorators on this parameters"),
+	(
+		"1206",
+		"decorators on parameters, private names, class expressions, abstract and declare members: an option the runner does not read",
+	),
 	("1228", "type predicates outside return types"),
 	("1338", "infer outside a conditional's extends clause"),
-	("1239", "where decorators may sit"),
 	("1308", "await in an enum initializer"),
 	("1163", "yield in an enum initializer"),
 	("1355", "what a const assertion may apply to"),

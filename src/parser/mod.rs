@@ -13,7 +13,7 @@ use crate::lexer::Lexer;
 use crate::lexer::token::{Keyword, Token, TokenKind};
 pub(crate) use expression::ForInit;
 use scope::{SCOPE_TOP, Scope};
-pub(crate) use statement::{Context, StatementPlace};
+pub(crate) use statement::{ClassKind, Context, StatementPlace};
 
 /// Errors travel boxed so every `Result` stays two words wide.
 pub(crate) type Result<T> = std::result::Result<T, Box<SyntaxError>>;
@@ -207,7 +207,7 @@ pub(crate) trait Extension: Default + Sized {
 	fn function_params(p: &Parser<Self>, node: NodeId) -> Option<List> {
 		None
 	}
-	fn class_start(p: &mut Parser<Self>) -> Result<()> {
+	fn class_start(p: &mut Parser<Self>, kind: ClassKind) -> Result<()> {
 		Ok(())
 	}
 	/// Whether the token after `class` opens a heritage clause rather than naming the class.

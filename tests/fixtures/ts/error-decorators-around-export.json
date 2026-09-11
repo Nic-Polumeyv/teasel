@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "decorator_placement",
+		"message": "Decorators must all precede 'export' or all follow it.",
+		"pos": 12,
+		"end": 13,
+		"loc": {
+			"line": 1,
+			"column": 12
+		}
+	}
+}
