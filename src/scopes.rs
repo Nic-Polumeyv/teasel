@@ -333,9 +333,13 @@ struct Scratch {
 	pending: Vec<ReferenceId>,
 	pending_from: Vec<usize>,
 	owned: FastMap<BindingId, ScopeId>,
-	/// The name maps of scopes closed by earlier analyses, emptied.
+	/// The name maps of earlier analyses by scope id, emptied: a document of the same shape finds
+	/// each scope's map back where it was, so a root's room never lands on a small scope.
 	names: Vec<FastMap<StrId, BindingId>>,
 }
+
+/// A name map with room for more than this is freed rather than kept.
+const POOLED_NAMES: usize = 1024;
 
 impl Scopes {
 	/// Empties the tables for a tree of `nodes` nodes, keeping the room.
@@ -426,10 +430,17 @@ fn analyze_with<X: Bind>(ast: &mut Ast<X>, kind: ScopeKind, root: Option<NodeId>
 	out.declared_by.finish(ast.nodes.len());
 	out.writes_of.finish(ast.nodes.len());
 	let mut names = std::mem::take(&mut out.scratch.names);
-	names.extend(open.drain(..).map(|mut open| {
+	if names.len() < open.len() {
+		names.resize_with(open.len(), FastMap::default);
+	}
+	for (i, mut open) in open.drain(..).enumerate() {
 		open.names.clear();
-		open.names
-	}));
+		names[i] = if open.names.capacity() > POOLED_NAMES {
+			FastMap::default()
+		} else {
+			open.names
+		};
+	}
 	out.scratch = Scratch {
 		stack,
 		open,
@@ -573,7 +584,13 @@ impl<'a, X: Bind> Binder<'a, X> {
 		});
 		self.open.push(Open {
 			arrow,
-			names: self.out.scratch.names.pop().unwrap_or_default(),
+			names: self
+				.out
+				.scratch
+				.names
+				.get_mut(id as usize)
+				.map(std::mem::take)
+				.unwrap_or_default(),
 			..Open::default()
 		});
 		if let Some(node) = node {
@@ -1660,5 +1677,35 @@ mod tests {
 		let references = scopes.references.iter().filter(|r| r.binding == Some(0)).count();
 		assert_eq!((ast.str(a.name), a.kind, references), ("a", BindingKind::Import, 2));
 		assert_eq!(scopes.scopes[2].function_depth, 2);
+	}
+
+	#[test]
+	fn pooled_maps_stay_where_they_were() {
+		let document = |functions: usize| {
+			let mut src: String = (0..300).map(|i| format!("let v{i};")).collect();
+			for f in 0..functions {
+				src.push_str(&format!("function f{f}(x) {{ return x; }}"));
+			}
+			src
+		};
+		let mut pool = None;
+		let mut room = Vec::new();
+		for round in 0..12 {
+			let (mut ast, roots, _) = crate::parse_at(
+				&document(5 + round % 2),
+				0,
+				None,
+				Entry::Program,
+				Options::default(),
+				"",
+			)
+			.unwrap();
+			ast.scopes = pool.take();
+			analyze(&mut ast, Entry::Program, roots);
+			let scopes = ast.scopes.take().unwrap();
+			room.push(scopes.scratch.names.iter().map(|m| m.capacity()).sum::<usize>());
+			pool = Some(scopes);
+		}
+		assert_eq!(room[2..].iter().max(), room[2..].iter().min(), "{room:?}");
 	}
 }
