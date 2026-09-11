@@ -265,6 +265,8 @@ impl<E: Extension> Parser<'_, E> {
 		false
 	}
 
+	/// Whether `using` or `await using` here starts a declaration: a binding name follows on the
+	/// same line, and in a for head `using of` is a declaration only when what follows `of` says so.
 	fn using_kind(&self, is_for: bool) -> Option<VariableKind> {
 		let kind = if self.is_contextual("using") {
 			VariableKind::Using
@@ -683,9 +685,8 @@ impl<E: Extension> Parser<'_, E> {
 				let Some(current) = current.as_mut() else {
 					return self.unexpected();
 				};
-				current
-					.2
-					.push(self.parse_statement(Context::None, StatementPlace::Case, None)?);
+				let statement = self.parse_statement(Context::None, StatementPlace::Case, None)?;
+				current.2.push(statement);
 			}
 		}
 		self.exit_scope();
