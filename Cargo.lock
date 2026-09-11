@@ -761,7 +761,6 @@ name = "teasel-node"
 version = "0.0.1"
 dependencies = [
  "napi",
- "napi-build",
  "napi-derive",
  "teasel",
 ]

@@ -1,11 +1,11 @@
 // the source goes over as bytes: V8's encoder is 14x faster than napi reading a string
-import { createRequire } from 'node:module';
 import { bind } from './api.js';
+import { load } from './native.js';
 
 export { isIdentifierStart, isIdentifierChar } from './identifier.js';
 export { scopeOf, bindingOf, referenceOf, parentOf } from './decode.js';
 
-const native = createRequire(import.meta.url)('./binding.cjs');
+const native = load();
 const encoder = new TextEncoder();
 let scratch = new Uint8Array(1 << 16);
 
