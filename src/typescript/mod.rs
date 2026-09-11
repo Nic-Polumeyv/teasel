@@ -766,7 +766,12 @@ impl Extension for TypeScript {
 		Ok(None)
 	}
 
-	fn expression_statement(p: &mut Parser<Self>, start: u32, expression: NodeId) -> Result<Option<NodeId>> {
+	fn expression_statement(
+		p: &mut Parser<Self>,
+		start: u32,
+		expression: NodeId,
+		_context: Context,
+	) -> Result<Option<NodeId>> {
 		p.parse_declaration_statement(start, expression)
 	}
 
