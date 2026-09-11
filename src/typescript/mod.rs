@@ -234,6 +234,39 @@ impl Parser<'_, TypeScript> {
 		&self.ast.extension
 	}
 
+	fn check_parameter_list(&self, params: List) -> Result<()> {
+		let mut seen_optional = false;
+		for param in self.ast.list(params).iter().flatten() {
+			let param = match self.ts_kind(*param) {
+				Some(TsKind::ParameterProperty { parameter }) => parameter,
+				_ => *param,
+			};
+			let binding = match self.kind(param) {
+				NodeKind::AssignmentPattern { left, .. } => left,
+				_ => param,
+			};
+			if self.ident_is(binding, "this") {
+				continue;
+			}
+			let optional = self.ext_data().extras(binding).is_some_and(|extras| extras.optional);
+			if matches!(self.kind(param), NodeKind::RestElement { .. }) {
+				if optional {
+					return self.error(self.start_of(param), Code::OptionalRest);
+				}
+				continue;
+			}
+			let initialized = matches!(self.kind(param), NodeKind::AssignmentPattern { .. });
+			if optional && initialized {
+				return self.error(self.start_of(param), Code::OptionalWithInitializer);
+			}
+			if seen_optional && !optional && !initialized {
+				return self.error(self.start_of(param), Code::RequiredAfterOptional);
+			}
+			seen_optional |= optional;
+		}
+		Ok(())
+	}
+
 	fn is_ident(&self) -> bool {
 		matches!(self.tok.kind, TokenKind::Ident(_))
 	}
@@ -997,6 +1030,9 @@ impl Extension for TypeScript {
 
 	fn binding_annotation(p: &mut Parser<Self>, node: NodeId) -> Result<()> {
 		if p.eat(TokenKind::Question)? {
+			if matches!(p.kind(node), NodeKind::RestElement { .. }) {
+				return p.error(p.start_of(node), Code::OptionalRest);
+			}
 			if !matches!(p.kind(node), NodeKind::Identifier { .. }) && !p.ext.ambient && !p.lexer.in_type {
 				return p.error(p.start_of(node), Code::OptionalPatternParameter);
 			}
@@ -1068,7 +1104,7 @@ impl Extension for TypeScript {
 
 	fn function_start(p: &mut Parser<Self>, kind: FunctionKind) -> Result<()> {
 		let mut frame = FunctionFrame {
-			in_class_method: kind == FunctionKind::Method { in_class: true },
+			in_class_method: matches!(kind, FunctionKind::Method { in_class: true, .. }),
 			arrow_parameters: p.ext.maybe_in_arrow_parameters,
 			..FunctionFrame::default()
 		};
@@ -1076,6 +1112,16 @@ impl Extension for TypeScript {
 		match kind {
 			FunctionKind::Arrow => frame.return_type = p.ext.arrow_return_type.take(),
 			_ => frame.type_parameters = p.try_parse_type_parameters(TypeParameterModifiers::Const)?,
+		}
+		if matches!(
+			kind,
+			FunctionKind::Method {
+				kind: MethodKind::Get | MethodKind::Set,
+				..
+			}
+		) && let Some(type_parameters) = frame.type_parameters
+		{
+			return p.error(p.start_of(type_parameters), Code::AccessorTypeParameters);
 		}
 		p.ext.functions.push(frame);
 		Ok(())
@@ -1090,8 +1136,42 @@ impl Extension for TypeScript {
 		generator: bool,
 		kind: FunctionKind,
 	) -> Result<Option<NodeId>> {
+		p.check_parameter_list(params)?;
+		if matches!(
+			kind,
+			FunctionKind::Method {
+				kind: MethodKind::Set,
+				..
+			}
+		) {
+			for param in p.ast.list(params).iter().flatten() {
+				if p.ident_is(*param, "this") {
+					continue;
+				}
+				if p.ext_data().extras(*param).is_some_and(|extras| extras.optional) {
+					return p.error(p.start_of(*param), Code::SetterOptionalParameter);
+				}
+				if matches!(p.kind(*param), NodeKind::AssignmentPattern { .. }) {
+					return p.error(p.start_of(*param), Code::SetterParameterInitializer);
+				}
+			}
+		}
 		if p.is(TokenKind::Colon) {
 			let return_type = p.parse_type_or_type_predicate_annotation(TokenKind::Colon)?;
+			match kind {
+				FunctionKind::Method {
+					kind: MethodKind::Set, ..
+				} => {
+					return p.error(p.start_of(return_type), Code::SetterReturnType);
+				}
+				FunctionKind::Method {
+					kind: MethodKind::Constructor,
+					..
+				} => {
+					return p.error(p.start_of(return_type), Code::ConstructorReturnType);
+				}
+				_ => {}
+			}
 			p.ext.functions.last_mut().unwrap().return_type = Some(return_type);
 		}
 		let bodiless = match kind {
@@ -1101,7 +1181,7 @@ impl Extension for TypeScript {
 				is_async,
 				generator,
 			}),
-			FunctionKind::Method { in_class: true } => Some(TsKind::DeclareMethod {
+			FunctionKind::Method { in_class: true, .. } => Some(TsKind::DeclareMethod {
 				params,
 				is_async,
 				generator,
@@ -1127,6 +1207,9 @@ impl Extension for TypeScript {
 	}
 
 	fn function_end(p: &mut Parser<Self>, node: NodeId) -> Result<()> {
+		if let NodeKind::ArrowFunctionExpression { params, .. } = p.kind(node) {
+			p.check_parameter_list(params)?;
+		}
 		let frame = p.ext.functions.pop().unwrap();
 		p.ext.maybe_in_arrow_parameters = frame.arrow_parameters;
 		if let Some(TsKind::DeclareFunction { id: Some(id), .. }) = p.ts_kind(node) {
@@ -1350,8 +1433,13 @@ impl Extension for TypeScript {
 		p.is(TokenKind::Lt)
 	}
 
-	fn class_method_start(p: &mut Parser<Self>) -> Result<()> {
+	fn class_method_start(p: &mut Parser<Self>, kind: MethodKind) -> Result<()> {
 		let type_parameters = p.try_parse_type_parameters(TypeParameterModifiers::Const)?;
+		if matches!(kind, MethodKind::Get | MethodKind::Set)
+			&& let Some(type_parameters) = type_parameters
+		{
+			return p.error(p.start_of(type_parameters), Code::AccessorTypeParameters);
+		}
 		let element = *p.ext.elements.last().unwrap();
 		let key = element.key.unwrap();
 		if matches!(p.kind(key), NodeKind::PrivateIdentifier { .. }) {
@@ -1434,6 +1522,26 @@ impl Extension for TypeScript {
 		let frame = p.ext.elements.pop().unwrap();
 		if let Some(outer) = frame.outer_ambient {
 			p.ext.ambient = outer;
+		}
+		if let NodeKind::MethodDefinition {
+			key,
+			kind,
+			computed: false,
+			..
+		} = p.kind(node)
+			&& matches!(kind, MethodKind::Constructor | MethodKind::Method)
+			&& matches!(p.kind(key), NodeKind::Identifier { name } | NodeKind::StringLiteral { value: name } if p.str(name) == "constructor")
+		{
+			let modifier = if frame.extras.is_static {
+				Some("static")
+			} else if frame.extras.is_override {
+				Some("override")
+			} else {
+				None
+			};
+			if let Some(modifier) = modifier {
+				return p.error_arg(frame.start, Code::ConstructorModifier, modifier);
+			}
 		}
 		if let Some(decorators) = frame.extras.decorators {
 			let start = p.start_of(p.ast.list(decorators)[0].unwrap());
@@ -1697,7 +1805,7 @@ impl Extension for TypeScript {
 		if is_pattern {
 			return p.unexpected();
 		}
-		let value = p.parse_method(generator, is_async, false, false)?;
+		let value = p.parse_method(generator, is_async, false, false, MethodKind::Method)?;
 		Ok(Some(p.add(
 			NodeKind::Property {
 				key,

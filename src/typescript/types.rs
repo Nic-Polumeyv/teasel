@@ -415,7 +415,9 @@ impl Parser<'_, TypeScript> {
 
 	fn parse_binding_list_for_signature(&mut self) -> Result<List> {
 		let params = self.parse_binding_list(TokenKind::ParenR, true, true, false)?;
-		for param in params.iter().flatten() {
+		let params = self.list(&params);
+		self.check_parameter_list(params)?;
+		for param in self.ast.list(params).iter().flatten() {
 			if !matches!(
 				self.kind(*param),
 				NodeKind::Identifier { .. }
@@ -426,7 +428,7 @@ impl Parser<'_, TypeScript> {
 				return self.error(self.start_of(*param), Code::SignatureParameterDefault);
 			}
 		}
-		Ok(self.list(&params))
+		Ok(params)
 	}
 
 	fn parse_union_type_or_higher(&mut self) -> Result<NodeId> {
@@ -796,7 +798,11 @@ impl Parser<'_, TypeScript> {
 				Some(TsKind::OptionalType { .. } | TsKind::NamedTupleMember { optional: true, .. })
 			);
 			if seen_optional && !optional && !matches!(kind, Some(TsKind::RestType { .. })) {
-				return self.error(self.start_of(element), Code::RequiredAfterOptional);
+				return self.error_with(
+					self.start_of(element),
+					Code::RequiredAfterOptional,
+					"A required element cannot follow an optional element.",
+				);
 			}
 			seen_optional |= optional;
 		}
@@ -1126,6 +1132,9 @@ impl Parser<'_, TypeScript> {
 		self.expect(TokenKind::BracketR)?;
 		let parameters = self.list_of(&[id]);
 		let type_annotation = self.try_parse_type_annotation()?;
+		if type_annotation.is_none() {
+			return self.error(self.tok.start, Code::IndexSignatureType);
+		}
 		self.parse_type_member_semicolon()?;
 		Ok(Some(self.ts(
 			TsKind::IndexSignature {

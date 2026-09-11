@@ -6,7 +6,7 @@ pub(crate) mod statement;
 #[cfg(test)]
 pub(crate) mod tests;
 
-use crate::ast::{Ast, List, NodeId, NodeKind, VariableKind};
+use crate::ast::{Ast, List, MethodKind, NodeId, NodeKind, VariableKind};
 use crate::error::SyntaxError;
 use crate::interner::{FastMap, FastSet, StrId};
 use crate::lexer::Lexer;
@@ -45,7 +45,7 @@ pub struct Options {
 pub(crate) enum FunctionKind {
 	Declaration,
 	Expression,
-	Method { in_class: bool },
+	Method { in_class: bool, kind: MethodKind },
 	Arrow,
 }
 
@@ -239,7 +239,7 @@ pub(crate) trait Extension: Default + Sized {
 	fn starts_class_method(p: &mut Parser<Self>) -> bool {
 		false
 	}
-	fn class_method_start(p: &mut Parser<Self>) -> Result<()> {
+	fn class_method_start(p: &mut Parser<Self>, kind: MethodKind) -> Result<()> {
 		Ok(())
 	}
 	/// After the key of a class field, before its initializer.

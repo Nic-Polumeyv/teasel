@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "index_signature_type",
+		"message": "An index signature must have a type annotation",
+		"pos": 21,
+		"end": 22,
+		"loc": {
+			"line": 1,
+			"column": 21
+		}
+	}
+}

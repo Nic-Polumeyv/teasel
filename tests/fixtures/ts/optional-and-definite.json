@@ -2,7 +2,7 @@
 	"node": {
 		"type": "Program",
 		"start": 0,
-		"end": 103,
+		"end": 97,
 		"scope": 0,
 		"body": [
 			{
@@ -82,7 +82,7 @@
 			{
 				"type": "FunctionDeclaration",
 				"start": 36,
-				"end": 79,
+				"end": 73,
 				"scope": 2,
 				"defines": [
 					1,
@@ -119,89 +119,77 @@
 						"name": "a"
 					},
 					{
-						"type": "AssignmentPattern",
+						"type": "Identifier",
 						"start": 59,
-						"end": 75,
-						"left": {
-							"type": "Identifier",
-							"start": 59,
+						"end": 69,
+						"declares": 3,
+						"typeAnnotation": {
+							"type": "TSTypeAnnotation",
+							"start": 61,
 							"end": 69,
-							"declares": 3,
 							"typeAnnotation": {
-								"type": "TSTypeAnnotation",
-								"start": 61,
-								"end": 69,
-								"typeAnnotation": {
-									"type": "TSStringKeyword",
-									"start": 63,
-									"end": 69
-								}
-							},
-							"optional": true,
-							"name": "b"
+								"type": "TSStringKeyword",
+								"start": 63,
+								"end": 69
+							}
 						},
-						"right": {
-							"type": "Literal",
-							"start": 72,
-							"end": 75,
-							"value": "x",
-							"raw": "'x'"
-						}
+						"optional": true,
+						"name": "b"
 					}
 				],
 				"body": {
 					"type": "BlockStatement",
-					"start": 77,
-					"end": 79,
+					"start": 71,
+					"end": 73,
 					"body": []
 				}
 			},
 			{
 				"type": "VariableDeclaration",
-				"start": 80,
-				"end": 102,
+				"start": 74,
+				"end": 96,
 				"declarations": [
 					{
 						"type": "VariableDeclarator",
-						"start": 84,
-						"end": 101,
+						"start": 78,
+						"end": 95,
 						"defines": [
 							4
 						],
 						"id": {
 							"type": "Identifier",
-							"start": 84,
-							"end": 101,
+							"start": 78,
+							"end": 95,
 							"declares": 4,
 							"typeAnnotation": {
 								"type": "TSTypeAnnotation",
-								"start": 85,
-								"end": 101,
+								"start": 79,
+								"end": 95,
 								"typeAnnotation": {
 									"type": "TSTypeLiteral",
-									"start": 87,
-									"end": 101,
+									"start": 81,
+									"end": 95,
 									"members": [
 										{
 											"type": "TSPropertySignature",
-											"start": 89,
-											"end": 99,
+											"start": 83,
+											"end": 93,
 											"key": {
 												"type": "Identifier",
-												"start": 89,
-												"end": 90,
+												"start": 83,
+												"end": 84,
 												"name": "a"
 											},
 											"computed": false,
 											"optional": true,
 											"typeAnnotation": {
 												"type": "TSTypeAnnotation",
-												"start": 91,
-												"end": 99,
+												"start": 85,
+												"end": 93,
 												"typeAnnotation": {
 													"type": "TSNumberKeyword",
-													"start": 93,
-													"end": 99
+													"start": 87,
+													"end": 93
 												}
 											}
 										}
@@ -218,7 +206,7 @@
 		],
 		"sourceType": "module"
 	},
-	"end": 103,
+	"end": 97,
 	"comments": [],
 	"scopes": [
 		{
