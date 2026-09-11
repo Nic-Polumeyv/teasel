@@ -31,6 +31,7 @@
 									"type": "Identifier",
 									"start": 9,
 									"end": 9,
+									"root": 0,
 									"name": ""
 								}
 							}
@@ -48,6 +49,7 @@
 									"type": "MemberExpression",
 									"start": 14,
 									"end": 16,
+									"root": 1,
 									"object": {
 										"type": "Identifier",
 										"start": 14,
@@ -79,6 +81,7 @@
 									"type": "Identifier",
 									"start": 19,
 									"end": 19,
+									"root": 2,
 									"name": ""
 								}
 							}
@@ -105,6 +108,7 @@
 						"type": "VariableDeclaration",
 						"start": 26,
 						"end": 32,
+						"root": 3,
 						"declarations": [
 							{
 								"type": "VariableDeclarator",
@@ -258,6 +262,68 @@
 			"write": false,
 			"read": true,
 			"mutate": false
+		}
+	],
+	"roots": [
+		{
+			"scope": 2,
+			"scopes": [
+				3,
+				3
+			],
+			"bindings": [
+				0,
+				0
+			],
+			"references": [
+				0,
+				0
+			]
+		},
+		{
+			"scope": 2,
+			"scopes": [
+				3,
+				3
+			],
+			"bindings": [
+				0,
+				0
+			],
+			"references": [
+				0,
+				1
+			]
+		},
+		{
+			"scope": 2,
+			"scopes": [
+				3,
+				3
+			],
+			"bindings": [
+				0,
+				0
+			],
+			"references": [
+				1,
+				1
+			]
+		},
+		{
+			"scope": 2,
+			"scopes": [
+				4,
+				4
+			],
+			"bindings": [
+				0,
+				0
+			],
+			"references": [
+				1,
+				1
+			]
 		}
 	]
 }

@@ -28,6 +28,7 @@
 						"start": 13,
 						"end": 17,
 						"reference": 0,
+						"root": 0,
 						"name": "name"
 					}
 				},
@@ -46,6 +47,7 @@
 						"type": "BinaryExpression",
 						"start": 21,
 						"end": 26,
+						"root": 1,
 						"left": {
 							"type": "Identifier",
 							"start": 21,
@@ -107,6 +109,38 @@
 			"write": false,
 			"read": true,
 			"mutate": false
+		}
+	],
+	"roots": [
+		{
+			"scope": 2,
+			"scopes": [
+				3,
+				3
+			],
+			"bindings": [
+				0,
+				0
+			],
+			"references": [
+				0,
+				1
+			]
+		},
+		{
+			"scope": 2,
+			"scopes": [
+				3,
+				3
+			],
+			"bindings": [
+				0,
+				0
+			],
+			"references": [
+				1,
+				3
+			]
 		}
 	]
 }

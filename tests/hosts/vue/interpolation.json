@@ -20,6 +20,7 @@
 							"type": "BinaryExpression",
 							"start": 6,
 							"end": 11,
+							"root": 0,
 							"left": {
 								"type": "Identifier",
 								"start": 6,
@@ -52,6 +53,7 @@
 							"start": 23,
 							"end": 24,
 							"reference": 2,
+							"root": 1,
 							"name": "c"
 						}
 					}
@@ -96,6 +98,38 @@
 			"write": false,
 			"read": true,
 			"mutate": false
+		}
+	],
+	"roots": [
+		{
+			"scope": 0,
+			"scopes": [
+				1,
+				1
+			],
+			"bindings": [
+				0,
+				0
+			],
+			"references": [
+				0,
+				2
+			]
+		},
+		{
+			"scope": 0,
+			"scopes": [
+				1,
+				1
+			],
+			"bindings": [
+				0,
+				0
+			],
+			"references": [
+				2,
+				3
+			]
 		}
 	]
 }

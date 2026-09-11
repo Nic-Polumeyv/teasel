@@ -256,11 +256,26 @@ impl<T: Packed> NodeTable<T> {
 	}
 }
 
+/// A piece of JavaScript a host read on its own, and what the tables hold for it: the scope it
+/// sits in, and the scopes opened, the bindings declared and the references made inside it, each
+/// a range of its table since a piece is visited in one go.
+#[derive(Debug)]
+pub struct Root {
+	pub node: NodeId,
+	pub scope: ScopeId,
+	pub scopes: (u32, u32),
+	pub bindings: (u32, u32),
+	pub references: (u32, u32),
+}
+
 #[derive(Debug, Default)]
 pub struct Scopes {
 	pub scopes: Vec<Scope>,
 	pub bindings: Vec<Binding>,
 	pub references: Vec<Reference>,
+	/// The pieces of JavaScript in a host's document, in source order; empty for a plain parse.
+	pub roots: Vec<Root>,
+	pub root_of: FastMap<NodeId, u32>,
 	pub of_node: NodeTable<ScopeId>,
 	pub of_identifier: NodeTable<Role>,
 	/// The bindings each declaring node declares, and the write references each expression is
@@ -277,6 +292,8 @@ impl Scopes {
 		self.scopes.clear();
 		self.bindings.clear();
 		self.references.clear();
+		self.roots.clear();
+		self.root_of.clear();
 		self.of_node.reset(nodes);
 		self.of_identifier.reset(nodes);
 		self.declared_by.clear();
@@ -798,7 +815,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 			return;
 		};
 		for &pattern in self.ast.list(opens.outside).iter().flatten() {
-			self.visit(pattern, Mode::Declare(BindingKind::Pattern));
+			self.root(pattern, |b| b.visit(pattern, Mode::Declare(BindingKind::Pattern)));
 		}
 		let depth = self.host_declared.len();
 		self.host_declared.push(opens.outside);
@@ -820,7 +837,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 				};
 				self.enter(kind, Some(node), false);
 				for &pattern in self.ast.list(group.inside).iter().flatten() {
-					self.visit(pattern, Mode::Declare(BindingKind::Pattern));
+					self.root(pattern, |b| b.visit(pattern, Mode::Declare(BindingKind::Pattern)));
 				}
 				self.host_declared.push(group.inside);
 				open.push(next);
@@ -847,16 +864,48 @@ impl<'a, X: Bind> Binder<'a, X> {
 				.any(|list| b.ast.list(*list).contains(&Some(child)))
 		};
 		match self.ast.host_fields[i as usize].1 {
-			crate::ast::Value::Node(child) if !declared(self, child) => self.visit(child, Mode::Expression),
+			crate::ast::Value::Node(child) if !declared(self, child) => self.field_value(child),
 			crate::ast::Value::Nodes(children) => {
 				for &child in self.ast.list(children).iter().flatten() {
 					if !declared(self, child) {
-						self.visit(child, Mode::Expression);
+						self.field_value(child);
 					}
 				}
 			}
 			_ => {}
 		}
+	}
+
+	/// A host field's value: a host node visited as such, JavaScript as a root of its own.
+	fn field_value(&mut self, child: NodeId) {
+		if matches!(self.kind(child), NodeKind::Host(_)) {
+			self.visit(child, Mode::Expression);
+		} else {
+			self.root(child, |b| b.visit(child, Mode::Expression));
+		}
+	}
+
+	/// Visits a piece of JavaScript the host read on its own, recording what the tables gain for it.
+	fn root(&mut self, node: NodeId, f: impl FnOnce(&mut Self)) {
+		let index = self.out.roots.len() as u32;
+		let from = (
+			self.out.scopes.len() as u32,
+			self.out.bindings.len() as u32,
+			self.out.references.len() as u32,
+		);
+		self.out.roots.push(Root {
+			node,
+			scope: self.current(),
+			scopes: (from.0, from.0),
+			bindings: (from.1, from.1),
+			references: (from.2, from.2),
+		});
+		self.out.root_of.insert(node, index);
+		f(self);
+		let root = &mut self.out.roots[index as usize];
+		root.scopes.1 = self.out.scopes.len() as u32;
+		root.bindings.1 = self.out.bindings.len() as u32;
+		root.references.1 = self.out.references.len() as u32;
 	}
 
 	fn visit_with(&mut self, id: NodeId, mode: Mode, extras: bool) {

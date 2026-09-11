@@ -111,6 +111,16 @@ export interface Binding {
 	declaration: Node | null;
 }
 
+/** A piece of JavaScript a host read on its own, as one of `roots` on a document's answer, with what the tables hold for it. */
+export interface Root {
+	node: Node;
+	/** The scope the piece sits in. */
+	scope: Scope;
+	/** The scopes opened inside it, the bindings declared and the references made there. */
+	scopes: Scope[];
+	bindings: Binding[];
+	references: Reference[];
+}
 /** A reference, as one of `references` on the answer. */
 export interface Reference {
 	node: Identifier;
@@ -172,6 +182,8 @@ export interface Parsed<T> {
 	scopes?: Scope[];
 	bindings?: Binding[];
 	references?: Reference[];
+	/** With `scopes`, for a document read by a host grammar: its pieces of JavaScript in source order. */
+	roots?: Root[];
 }
 
 /**

@@ -23,6 +23,7 @@
 							"type": "MemberExpression",
 							"start": 9,
 							"end": 11,
+							"root": 1,
 							"object": {
 								"type": "Identifier",
 								"start": 9,
@@ -52,6 +53,7 @@
 							"type": "Identifier",
 							"start": 21,
 							"end": 23,
+							"root": 2,
 							"name": ""
 						},
 						"modifiers": []
@@ -68,12 +70,14 @@
 							"start": 32,
 							"end": 33,
 							"declares": 0,
+							"root": 0,
 							"name": "a"
 						},
 						"source": {
 							"type": "Identifier",
 							"start": 36,
 							"end": 36,
+							"root": 3,
 							"name": ""
 						},
 						"modifiers": []
@@ -88,6 +92,7 @@
 							"type": "BinaryExpression",
 							"start": 41,
 							"end": 45,
+							"root": 4,
 							"left": {
 								"type": "Identifier",
 								"start": 41,
@@ -199,6 +204,83 @@
 			"write": false,
 			"read": true,
 			"mutate": false
+		}
+	],
+	"roots": [
+		{
+			"scope": 1,
+			"scopes": [
+				2,
+				2
+			],
+			"bindings": [
+				0,
+				1
+			],
+			"references": [
+				0,
+				0
+			]
+		},
+		{
+			"scope": 1,
+			"scopes": [
+				2,
+				2
+			],
+			"bindings": [
+				1,
+				1
+			],
+			"references": [
+				0,
+				1
+			]
+		},
+		{
+			"scope": 1,
+			"scopes": [
+				2,
+				2
+			],
+			"bindings": [
+				1,
+				1
+			],
+			"references": [
+				1,
+				1
+			]
+		},
+		{
+			"scope": 1,
+			"scopes": [
+				2,
+				2
+			],
+			"bindings": [
+				1,
+				1
+			],
+			"references": [
+				1,
+				1
+			]
+		},
+		{
+			"scope": 1,
+			"scopes": [
+				2,
+				2
+			],
+			"bindings": [
+				1,
+				1
+			],
+			"references": [
+				1,
+				2
+			]
 		}
 	]
 }

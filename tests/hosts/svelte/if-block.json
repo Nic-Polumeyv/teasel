@@ -21,6 +21,7 @@
 						"start": 5,
 						"end": 6,
 						"reference": 0,
+						"root": 0,
 						"name": "a"
 					},
 					"elseif": false,
@@ -50,6 +51,7 @@
 									"start": 23,
 									"end": 24,
 									"reference": 1,
+									"root": 1,
 									"name": "b"
 								},
 								"elseif": true,
@@ -140,6 +142,38 @@
 			"write": false,
 			"read": true,
 			"mutate": false
+		}
+	],
+	"roots": [
+		{
+			"scope": 2,
+			"scopes": [
+				3,
+				3
+			],
+			"bindings": [
+				0,
+				0
+			],
+			"references": [
+				0,
+				1
+			]
+		},
+		{
+			"scope": 4,
+			"scopes": [
+				5,
+				5
+			],
+			"bindings": [
+				0,
+				0
+			],
+			"references": [
+				1,
+				2
+			]
 		}
 	]
 }

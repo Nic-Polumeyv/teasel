@@ -31,6 +31,7 @@
 									"start": 11,
 									"end": 12,
 									"reference": 0,
+									"root": 0,
 									"name": "x"
 								}
 							},
@@ -50,6 +51,7 @@
 									"start": 18,
 									"end": 19,
 									"reference": 1,
+									"root": 1,
 									"name": "y"
 								}
 							},
@@ -180,6 +182,38 @@
 			"write": false,
 			"read": true,
 			"mutate": false
+		}
+	],
+	"roots": [
+		{
+			"scope": 3,
+			"scopes": [
+				4,
+				4
+			],
+			"bindings": [
+				0,
+				0
+			],
+			"references": [
+				0,
+				1
+			]
+		},
+		{
+			"scope": 3,
+			"scopes": [
+				4,
+				4
+			],
+			"bindings": [
+				0,
+				0
+			],
+			"references": [
+				1,
+				2
+			]
 		}
 	]
 }
