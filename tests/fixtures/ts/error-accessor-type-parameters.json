@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "accessor_type_parameters",
+		"message": "An accessor cannot have type parameters.",
+		"pos": 15,
+		"end": 15,
+		"loc": {
+			"line": 1,
+			"column": 15
+		}
+	}
+}

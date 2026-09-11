@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "constructor_modifier",
+		"message": "'static' modifier cannot appear on a constructor declaration",
+		"pos": 10,
+		"end": 10,
+		"loc": {
+			"line": 1,
+			"column": 10
+		}
+	}
+}

@@ -59,7 +59,6 @@ const CHECKER: &[(&str, &str)] = &[
 
 /// Grammar the parser does not check yet.
 const NOT_YET: &[(&str, &str)] = &[
-	("1094", "type parameters on accessors"),
 	(
 		"1206",
 		"decorators on parameters, private names, class expressions, abstract and declare members: an option the runner does not read",
@@ -69,18 +68,9 @@ const NOT_YET: &[(&str, &str)] = &[
 	("1308", "await in an enum initializer"),
 	("1163", "yield in an enum initializer"),
 	("1355", "what a const assertion may apply to"),
-	("1095", "a return type on a set accessor"),
 	("1196", "the type a catch variable may have"),
-	("1093", "a return type on a constructor"),
-	("1089", "modifiers on a constructor"),
 	("1063", "an export assignment in a namespace"),
-	("1021", "an index signature without a type"),
-	("1052", "an initializer on a set accessor's parameter"),
-	("1051", "an optional set accessor parameter"),
 	("1035", "a quoted module name without declare"),
-	("1047", "an optional rest parameter"),
-	("1015", "a parameter both optional and initialized"),
-	("1016", "a required parameter after an optional one"),
 	("1344", "a label on a declaration"),
 	("1213", "strict-mode reserved words as type names in a class"),
 	("1242", "abstract on what is not a class"),
