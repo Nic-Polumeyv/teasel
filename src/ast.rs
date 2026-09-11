@@ -36,7 +36,7 @@ impl Comment {
 }
 
 /// Index of a node in `Ast::nodes`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NodeId(pub u32);
 
 /// A contiguous run of node ids in `Ast::lists`.

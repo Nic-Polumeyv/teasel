@@ -280,10 +280,61 @@ pub struct Scopes {
 	pub of_identifier: NodeTable<Role>,
 	/// The bindings each declaring node declares, and the write references each expression is
 	/// assigned by: `Binding::declaration` and `Reference::write_expr` from the node's side.
-	pub declared_by: FastMap<NodeId, Vec<BindingId>>,
-	pub writes_of: FastMap<NodeId, Vec<ReferenceId>>,
+	pub declared_by: ByNode,
+	pub writes_of: ByNode,
 	/// A name declared twice in one of the host's scopes, which are lexical like a block's.
 	pub errors: Vec<SyntaxError>,
+	scratch: Scratch,
+}
+
+/// Ids grouped by node: one sorted list, and where each node's run starts in it.
+#[derive(Debug, Default)]
+pub struct ByNode {
+	pairs: Vec<(NodeId, u32)>,
+	ids: Vec<u32>,
+	starts: NodeTable<u32>,
+}
+
+impl ByNode {
+	fn finish(&mut self, nodes: usize) {
+		self.pairs.sort_unstable();
+		self.ids.clear();
+		self.ids.extend(self.pairs.iter().map(|&(_, id)| id));
+		self.starts.reset(nodes);
+		for (i, &(node, _)) in self.pairs.iter().enumerate() {
+			if i == 0 || self.pairs[i - 1].0 != node {
+				self.starts.insert(node, i as u32);
+			}
+		}
+	}
+
+	pub fn get(&self, node: NodeId) -> &[u32] {
+		let Some(from) = self.starts.get(node) else {
+			return &[];
+		};
+		let from = from as usize;
+		let to = from + self.pairs[from..].partition_point(|&(n, _)| n == node);
+		&self.ids[from..to]
+	}
+
+	fn clear(&mut self) {
+		self.pairs.clear();
+		self.ids.clear();
+		self.starts.reset(0);
+	}
+}
+
+/// The binder's working storage, kept between analyses.
+#[derive(Debug, Default)]
+struct Scratch {
+	stack: Vec<ScopeId>,
+	open: Vec<Open>,
+	host_declared: Vec<List>,
+	pending: Vec<ReferenceId>,
+	pending_from: Vec<usize>,
+	owned: FastMap<BindingId, ScopeId>,
+	/// The name maps of scopes closed by earlier analyses, emptied.
+	names: Vec<FastMap<StrId, BindingId>>,
 }
 
 impl Scopes {
@@ -299,6 +350,7 @@ impl Scopes {
 		self.declared_by.clear();
 		self.writes_of.clear();
 		self.errors.clear();
+		self.scratch.owned.clear();
 	}
 
 	pub fn scope(&self, id: ScopeId) -> &Scope {
@@ -351,17 +403,42 @@ fn analyze_with<X: Bind>(ast: &mut Ast<X>, kind: ScopeKind, root: Option<NodeId>
 	binder.enter(kind, root, false);
 	f(&mut binder);
 	binder.exit();
-	let mut out = binder.out;
+	let Binder {
+		mut out,
+		stack,
+		mut open,
+		host_declared,
+		pending,
+		pending_from,
+		owned,
+		..
+	} = binder;
 	for (id, binding) in out.bindings.iter().enumerate() {
 		if let Some(declaration) = binding.declaration {
-			out.declared_by.entry(declaration).or_default().push(id as BindingId);
+			out.declared_by.pairs.push((declaration, id as BindingId));
 		}
 	}
 	for (id, reference) in out.references.iter().enumerate() {
 		if let Some(expression) = reference.write_expr {
-			out.writes_of.entry(expression).or_default().push(id as ReferenceId);
+			out.writes_of.pairs.push((expression, id as ReferenceId));
 		}
 	}
+	out.declared_by.finish(ast.nodes.len());
+	out.writes_of.finish(ast.nodes.len());
+	let mut names = std::mem::take(&mut out.scratch.names);
+	names.extend(open.drain(..).map(|mut open| {
+		open.names.clear();
+		open.names
+	}));
+	out.scratch = Scratch {
+		stack,
+		open,
+		host_declared,
+		pending,
+		pending_from,
+		owned,
+		names,
+	};
 	ast.scopes = Some(out);
 }
 
@@ -399,7 +476,7 @@ pub fn analyze<X: Bind>(ast: &mut Ast<X>, entry: Entry, roots: List) {
 }
 
 /// What the analysis keeps about a scope while it runs, parallel to `Scopes::scopes`.
-#[derive(Default)]
+#[derive(Debug, Default)]
 struct Open {
 	/// An arrow function has no `arguments` of its own.
 	arrow: bool,
@@ -432,7 +509,7 @@ pub struct Binder<'a, X> {
 
 impl<'a, X: Bind> Binder<'a, X> {
 	fn new(ast: &'a Ast<X>, reused: Option<Scopes>) -> Self {
-		let out = match reused {
+		let mut out = match reused {
 			Some(mut scopes) => {
 				scopes.clear(ast.nodes.len());
 				scopes
@@ -443,18 +520,28 @@ impl<'a, X: Bind> Binder<'a, X> {
 				..Scopes::default()
 			},
 		};
+		let Scratch {
+			stack,
+			open,
+			host_declared,
+			pending,
+			pending_from,
+			owned,
+			names,
+		} = std::mem::take(&mut out.scratch);
+		out.scratch.names = names;
 		Binder {
 			ast,
 			out,
-			stack: Vec::new(),
-			open: Vec::new(),
-			host_declared: Vec::new(),
+			stack,
+			open,
+			host_declared,
 			declaring: None,
 			writing: None,
 			compound: false,
-			pending: Vec::new(),
-			pending_from: Vec::new(),
-			owned: FastMap::default(),
+			pending,
+			pending_from,
+			owned,
 			arguments: ast.strings.find("arguments"),
 			this_name: ast.strings.find("this"),
 		}
@@ -486,6 +573,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 		});
 		self.open.push(Open {
 			arrow,
+			names: self.out.scratch.names.pop().unwrap_or_default(),
 			..Open::default()
 		});
 		if let Some(node) = node {
