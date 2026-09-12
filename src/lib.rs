@@ -28,7 +28,8 @@ pub fn parse_at(
 	options: Options,
 	stop: &str,
 ) -> Result<(ast::Ast, ast::List, u32), SyntaxError> {
-	parser::parse_at::<()>(src, start, end, entry, options, stop, None).map_err(|e| *e)
+	let (ast, parsed) = parser::parse_at::<()>(src, start, end, entry, options, stop, None);
+	parsed.map(|(roots, end)| (ast, roots, end)).map_err(|e| *e)
 }
 
 #[cfg(test)]

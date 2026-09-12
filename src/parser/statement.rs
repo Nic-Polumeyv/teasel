@@ -96,6 +96,11 @@ impl<E: Extension> Parser<'_, E> {
 				break;
 			}
 			let (start, end) = (self.start_of(expression), self.end_of(expression));
+			// under recovery the string may end with the input, its quote never closed
+			if end < start + 2 || self.source().as_bytes()[end as usize - 1] != self.source().as_bytes()[start as usize]
+			{
+				break;
+			}
 			let raw = &self.source()[start as usize + 1..end as usize - 1];
 			let directive = self.intern(raw);
 			self.ast.node_mut(statement).kind = NodeKind::ExpressionStatement {

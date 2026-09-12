@@ -50,11 +50,12 @@
 						"rawName": "@click",
 						"arg": "click",
 						"handler": {
-							"type": "Identifier",
+							"type": "Program",
 							"start": 21,
 							"end": 23,
 							"root": 2,
-							"name": ""
+							"body": [],
+							"sourceType": "module"
 						},
 						"modifiers": []
 					},

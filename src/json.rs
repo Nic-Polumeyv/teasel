@@ -402,11 +402,12 @@ where
 		errors: request.options.error_recovery,
 	};
 	let reused = Pooled::take(pool);
-	let parsed = match host {
-		Some(grammar) => host::parse_document::<E>(source, grammar, request.options, reused).map(|(mut ast, root)| {
-			let roots = ast.add_list(&[Some(root)]);
-			(ast, roots, source.len() as u32)
-		}),
+	let (mut ast, parsed) = match host {
+		Some(grammar) => {
+			let (mut ast, root) = host::parse_document::<E>(source, grammar, request.options, reused);
+			let parsed = root.map(|root| (ast.add_list(&[Some(root)]), source.len() as u32));
+			(ast, parsed)
+		}
 		None => parse_at::<E>(
 			source,
 			request.offset,
@@ -417,26 +418,40 @@ where
 			reused,
 		),
 	};
-	parsed
-		.and_then(|(mut ast, roots, end)| {
-			if output.comments {
-				attach(&mut ast, source, roots, request.offset);
+	let (roots, end) = match parsed {
+		Ok(parsed) => parsed,
+		Err(error) => return Err(recycle(pool, ast, &error, source, positions)),
+	};
+	if output.comments {
+		attach(&mut ast, source, roots, request.offset);
+	}
+	if output.scopes {
+		scopes::analyze(&mut ast, request.entry, roots);
+		let errors = std::mem::take(&mut ast.scopes.as_mut().unwrap().errors);
+		if !errors.is_empty() {
+			if !output.errors {
+				let error = errors.into_iter().next().unwrap();
+				return Err(recycle(pool, ast, &error, source, positions));
 			}
-			if output.scopes {
-				scopes::analyze(&mut ast, request.entry, roots);
-				let errors = std::mem::take(&mut ast.scopes.as_mut().unwrap().errors);
-				if !errors.is_empty() {
-					if !output.errors {
-						return Err(Box::new(errors.into_iter().next().unwrap()));
-					}
-					ast.errors.extend(errors);
-					ast.errors.sort_by_key(|error| error.pos);
-				}
-			}
-			let sink = answer(&ast, request.entry, roots, end, source, positions, output, sink);
-			ast.clear();
-			Pooled::give(pool, ast);
-			Ok(sink)
-		})
-		.map_err(|error| error_to_json(&error, source, positions))
+			ast.errors.extend(errors);
+			ast.errors.sort_by_key(|error| error.pos);
+		}
+	}
+	let sink = answer(&ast, request.entry, roots, end, source, positions, output, sink);
+	ast.clear();
+	Pooled::give(pool, ast);
+	Ok(sink)
+}
+
+/// The tree of a failed request goes back to the pool; the error is the answer.
+fn recycle<X: Reuse + Pooled>(
+	pool: &mut Pool,
+	mut ast: Ast<X>,
+	error: &crate::SyntaxError,
+	source: &str,
+	positions: &Positions,
+) -> String {
+	ast.clear();
+	Pooled::give(pool, ast);
+	error_to_json(error, source, positions)
 }

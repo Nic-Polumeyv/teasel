@@ -50,6 +50,62 @@ fn documents() {
 	);
 }
 
+/// Every prefix of every host document, strict and recovering: unfinished input is an answer or
+/// an error, never a panic.
+#[test]
+fn every_prefix_answers() {
+	let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+	for name in ["svelte", "vue"] {
+		let grammar = fs::read_to_string(root.join("hosts").join(format!("{name}.grammar"))).unwrap();
+		for file in common::inputs(&root.join("tests/hosts").join(name)) {
+			let source = fs::read_to_string(&file).unwrap();
+			for (end, _) in source.char_indices().chain([(source.len(), ' ')]) {
+				for recover in [false, true] {
+					let mut request = Request::new(Entry::Program, 0);
+					request.set("comments");
+					request.set("scopes");
+					if recover {
+						request.set("errorRecovery");
+					}
+					parse_document(&source[..end], &grammar, &request);
+				}
+			}
+		}
+	}
+}
+
+/// The unfinished and odd inputs the audit found panicking, and the fallback from one expression
+/// to statements, which must not settle for what recovery makes of the expression.
+#[test]
+fn unfinished_input() {
+	let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+	let svelte = fs::read_to_string(root.join("hosts/svelte.grammar")).unwrap();
+	let vue = fs::read_to_string(root.join("hosts/vue.grammar")).unwrap();
+	let parse = |source: &str, grammar: &str, recover: bool| {
+		let mut request = Request::new(Entry::Program, 0);
+		request.set("comments");
+		if recover {
+			request.set("errorRecovery");
+		}
+		parse_document(source, grammar, &request)
+	};
+	assert!(parse("<a x=\"", &svelte, true).contains("\"type\":\"Root\""));
+	let comment = parse("<a /*xx", &svelte, true);
+	assert!(comment.contains("\"value\":\"xx\""), "{comment}");
+	assert!(parse("<script>\"</script>", &svelte, true).contains("\"type\":\"Root\""));
+	assert!(parse("<a @x=\"@\"/>", &vue, false).contains("\"error\""));
+	let program = parse("<button @click=\"let x = 1\"/>", &vue, true);
+	assert!(
+		program.contains("\"type\":\"VariableDeclaration\"") && !program.contains("\"errors\":[{"),
+		"{program}"
+	);
+	let program = parse("<button @click=\"if (ok) foo()\"/>", &vue, true);
+	assert!(
+		program.contains("\"type\":\"IfStatement\"") && !program.contains("\"errors\":[{"),
+		"{program}"
+	);
+}
+
 // cargo test --release --test hosts host_phases -- --ignored --nocapture; TEASEL_HOST_BENCH=file adds a document of its own
 #[test]
 #[ignore]
