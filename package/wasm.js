@@ -8,17 +8,34 @@ const utf8 = new TextDecoder();
 
 // `teasel.wasm` next to this file, read where there is a file system and fetched elsewhere
 const url = new URL('./teasel.wasm', import.meta.url);
-const { instance } =
+const { module, instance } =
 	url.protocol === 'file:'
 		? await WebAssembly.instantiate(await (await import('node:fs/promises')).readFile(url), {})
 		: await WebAssembly.instantiateStreaming(fetch(url), {});
 /** @type {WebAssembly.Exports & Record<string, Function> & { memory: WebAssembly.Memory }} */
-const wasm = /** @type {any} */ (instance.exports);
+let wasm = /** @type {any} */ (instance.exports);
 /** @type {string[]} */
 let constants = [];
 /** @type {number[]} */
 let shapes = [];
 let shapes_known = 0;
+// a panic traps the instance for good: a fresh one takes over, and the sources held by the old one are gone
+let generation = 0;
+
+/** @template T @param {() => T} f @returns {T} */
+function guarded(f) {
+	try {
+		return f();
+	} catch (error) {
+		if (!(error instanceof WebAssembly.RuntimeError)) throw error;
+		wasm = /** @type {any} */ (new WebAssembly.Instance(module, {}).exports);
+		constants = [];
+		shapes = [];
+		shapes_known = 0;
+		generation++;
+		throw new Error('the engine panicked and started over; the sources it held are gone', { cause: error });
+	}
+}
 
 // the module takes the bytes over
 function bytes(text) {
@@ -29,9 +46,15 @@ function bytes(text) {
 }
 
 function create(source, names, host) {
-	const handle = wasm.source_new(...bytes(source), ...bytes(names), ...bytes(host));
+	const handle = guarded(() => wasm.source_new(...bytes(source), ...bytes(names), ...bytes(host)));
 	if (handle === 0) throw new Error(JSON.parse(text()).error.message);
-	return handle;
+	return { handle, generation };
+}
+
+/** @param {{ handle: number, generation: number }} held */
+function handle(held) {
+	if (held.generation !== generation) throw new Error('the source was held by an engine that panicked and started over');
+	return held.handle;
 }
 
 const text = () => utf8.decode(new Uint8Array(wasm.memory.buffer, wasm.text_ptr(), wasm.text_len()));
@@ -55,8 +78,10 @@ function answer(status) {
 export const engine = {
 	create,
 	// the words outlive the source: they sit in the answer buffer until the next parse
-	parse: (held, entry, offset, end, stop) => answer(wasm.source_parse(held, entry, offset, end ?? 0, end === undefined ? 0 : 1, ...bytes(stop))),
-	free: (held) => wasm.source_free(held),
+	parse: (held, entry, offset, end, stop) => answer(guarded(() => wasm.source_parse(handle(held), entry, offset, end ?? 0, end === undefined ? 0 : 1, ...bytes(stop)))),
+	free: (held) => {
+		if (held.generation === generation) wasm.source_free(held.handle);
+	},
 	constants: () => constants,
 	shapes: () => shapes,
 };

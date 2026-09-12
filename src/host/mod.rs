@@ -369,7 +369,7 @@ pub(crate) fn parse_document<E: Extension>(
 	grammar: &Grammar,
 	options: Options,
 	reused: Option<Ast<E::Data>>,
-) -> Result<(Ast<E::Data>, NodeId)> {
+) -> (Ast<E::Data>, Result<NodeId>) {
 	let full = src.len() as u32;
 	let cut = if grammar.trim {
 		src.trim_end_matches(is_space)
@@ -396,8 +396,8 @@ pub(crate) fn parse_document<E: Extension>(
 		verbatim: 0,
 		declared: Vec::new(),
 	};
-	let root = walker.run()?;
-	Ok((walker.ast.take().unwrap(), root))
+	let root = walker.run();
+	(walker.ast.take().unwrap(), root)
 }
 
 impl<'a, E: Extension> Walker<'a, E> {
@@ -1419,10 +1419,10 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let (kind, len) = if self.matches("//") {
 			(CommentKind::Line, self.rest().find('\n').unwrap_or(self.rest().len()))
 		} else if self.matches("/*") {
-			(
-				CommentKind::Block,
-				self.rest()[2..].find("*/").map_or(self.rest().len(), |i| i + 4),
-			)
+			match self.rest()[2..].find("*/") {
+				Some(i) => (CommentKind::Block, i + 4),
+				None => (CommentKind::Unclosed, self.rest().len()),
+			}
 		} else {
 			return false;
 		};
@@ -1872,7 +1872,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		if chunks.is_empty() && quote.is_none() {
 			return fail(self.at, self.at, Code::Expected, Some("an attribute value"));
 		}
-		if quote.is_some() {
+		if quote.is_some() && self.char() == quote {
 			self.at += 1;
 		}
 		if quote.is_some() || chunks.len() > 1 || self.host_type(chunks[0]) == self.grammar.text.ty {
@@ -2575,15 +2575,20 @@ impl<'a, E: Extension> Walker<'a, E> {
 			Entry::Code => {
 				let (start, end) = (self.at, self.limit);
 				let comments = self.tree().comments.len();
-				if let Ok(roots) = self.js(JsEntry::Expression, "") {
+				let mark = self.tree().mark();
+				// one expression, read strictly so that recovery cannot stand in for the statements
+				let recovering = std::mem::replace(&mut self.options.error_recovery, false);
+				let expression = self.js(JsEntry::Expression, "");
+				self.options.error_recovery = recovering;
+				if let Ok(roots) = expression {
 					self.space_to(end);
 					if self.at >= end {
 						return Ok(Value::Node(roots[0]));
 					}
 				}
-				// not one expression: statements, then
 				self.at = start;
 				self.ast().comments.truncate(comments);
+				self.ast().truncate(mark);
 				let program = self.program(start, end)?;
 				self.at = end;
 				Value::Node(program)
@@ -2676,9 +2681,9 @@ impl<'a, E: Extension> Walker<'a, E> {
 	fn js(&mut self, entry: JsEntry, stop: &str) -> Result<Vec<NodeId>> {
 		let ast = self.ast.take().unwrap();
 		let src = &self.src[..self.limit as usize];
-		let mut parser = Parser::<E>::new(src, self.at, self.options, 0, stop, ast)?;
+		let mut parser = Parser::<E>::new(src, self.at, self.options, 0, stop, ast);
 		let first = parser.tok.start;
-		let roots = match parser.read_entry(entry) {
+		let roots = match parser.start().and_then(|()| parser.read_entry(entry)) {
 			// the placeholder spans what was read: a host copies an expression's text by its range
 			Err(error) if parser.recovering() => {
 				let at = error.pos;
@@ -2708,8 +2713,8 @@ impl<'a, E: Extension> Walker<'a, E> {
 		// the template may declare what the script exports
 		let mut options = self.options;
 		options.allow_undeclared_exports = true;
-		let mut parser = Parser::<E>::new(src, start, options, (end - start) as usize, "", ast)?;
-		let program = parser.parse_program();
+		let mut parser = Parser::<E>::new(src, start, options, (end - start) as usize, "", ast);
+		let program = parser.start().and_then(|()| parser.parse_program());
 		self.ast = Some(parser.finish());
 		program
 	}
