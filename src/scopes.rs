@@ -357,6 +357,9 @@ struct Env {
 	arrow: bool,
 	/// The function's own `arguments`, once referred to.
 	arguments: Option<BindingId>,
+	/// The environments of the references named `arguments` this function is the nearest to; when
+	/// it closes, each has found a declaration on its way or is the function's own.
+	wants_arguments: Vec<u32>,
 	/// A function's body, whose names come after its parameters'.
 	body: bool,
 	/// A namespace block's own names; what it exports goes to the parent.
@@ -427,7 +430,21 @@ fn analyze_with<X: Bind>(ast: &mut Ast<X>, kind: ScopeKind, root: Option<NodeId>
 	binder.enter(kind, root, false);
 	f(&mut binder);
 	binder.exit();
+	let walked = (
+		binder.out.scopes.len(),
+		binder.out.bindings.len(),
+		binder.out.references.len(),
+	);
 	binder.resolve_all();
+	debug_assert_eq!(
+		walked,
+		(
+			binder.out.scopes.len(),
+			binder.out.bindings.len(),
+			binder.out.references.len()
+		),
+		"resolution links what the walk declared, it declares nothing"
+	);
 	let Binder {
 		mut out,
 		mut envs,
@@ -678,13 +695,53 @@ impl<'a, X: Bind> Binder<'a, X> {
 	pub fn exit(&mut self) {
 		while let Some(env) = self.open.pop() {
 			if self.envs[env as usize].opens {
+				if self.envs[env as usize].parameters && !self.envs[env as usize].arrow {
+					self.settle_arguments(env);
+				}
 				break;
 			}
 		}
 	}
 
+	/// The function at `function` is complete, so are the declarations between it and each
+	/// reference to `arguments` it is the nearest function to: the reference that meets none on
+	/// its way is the function's own, declared here, while the piece of the tree is still being
+	/// walked.
+	fn settle_arguments(&mut self, function: u32) {
+		let (Some(name), wants) = (
+			self.arguments,
+			std::mem::take(&mut self.envs[function as usize].wants_arguments),
+		) else {
+			return;
+		};
+		for mut env in wants {
+			let implicit = loop {
+				if self.envs[env as usize].names.contains_key(&name) {
+					break false;
+				}
+				if env == function {
+					break true;
+				}
+				env = self.envs[env as usize].parent.unwrap();
+			};
+			if implicit {
+				self.implicit_arguments(function);
+			}
+		}
+	}
+
+	/// The nearest function around here that has an `arguments` of its own.
+	fn nearest_function(&self) -> Option<u32> {
+		self.open
+			.iter()
+			.rev()
+			.copied()
+			.find(|&env| self.envs[env as usize].parameters && !self.envs[env as usize].arrow)
+	}
+
 	/// Every reference resolved, once everything is declared: through its environment and those
 	/// around it, to the function's own `arguments` at a parameter boundary, else to nothing.
+	/// Nothing is declared here: the walk declared everything, the implicit `arguments` included.
 	fn resolve_all(&mut self) {
 		for i in 0..self.out.references.len() {
 			let NodeKind::Identifier { name } = self.kind(self.out.references[i].node) else {
@@ -693,12 +750,13 @@ impl<'a, X: Bind> Binder<'a, X> {
 			let mut env = Some(self.env_of[i]);
 			let binding = loop {
 				let Some(at) = env else { break None };
-				if let Some(&binding) = self.envs[at as usize].names.get(&name) {
+				let here = &self.envs[at as usize];
+				if let Some(&binding) = here.names.get(&name) {
 					break Some(binding);
 				}
-				let here = &self.envs[at as usize];
 				if here.parameters && !here.arrow && Some(name) == self.arguments {
-					break Some(self.implicit_arguments(at));
+					debug_assert!(here.arguments.is_some(), "an `arguments` the walk did not settle");
+					break here.arguments;
 				}
 				env = here.parent;
 			};
@@ -706,9 +764,9 @@ impl<'a, X: Bind> Binder<'a, X> {
 		}
 	}
 
-	fn implicit_arguments(&mut self, env: u32) -> BindingId {
-		if let Some(binding) = self.envs[env as usize].arguments {
-			return binding;
+	fn implicit_arguments(&mut self, env: u32) {
+		if self.envs[env as usize].arguments.is_some() {
+			return;
 		}
 		let id = self.out.bindings.len() as BindingId;
 		self.out.bindings.push(Binding {
@@ -719,7 +777,6 @@ impl<'a, X: Bind> Binder<'a, X> {
 			declaration: None,
 		});
 		self.envs[env as usize].arguments = Some(id);
-		id
 	}
 
 	fn declare_in(&mut self, env: u32, name: StrId, kind: BindingKind, node: Option<NodeId>) -> BindingId {
@@ -851,6 +908,13 @@ impl<'a, X: Bind> Binder<'a, X> {
 			write_expr: if write { self.writing } else { None },
 		});
 		self.env_of.push(self.env());
+		if let NodeKind::Identifier { name } = self.kind(node)
+			&& Some(name) == self.arguments
+			&& let Some(function) = self.nearest_function()
+		{
+			let env = self.env();
+			self.envs[function as usize].wants_arguments.push(env);
+		}
 		self.out.of_identifier.insert(node, Role::Reference(id));
 	}
 
@@ -1587,6 +1651,91 @@ mod tests {
 			facts("let {a, b: [c = d], ...e} = o; [a, c.x] = p; for (const i of a) i; for (a in o);"),
 			"a@5 declares let in module\nc@12 declares let in module\nd@16 -> global\ne@23 declares let in module\no@28 -> global\na@32 -> @5 write\nc@35 -> @12 mutate\np@42 -> global\ni@56 declares const in for\na@61 -> @5\ni@64 -> @56\na@72 -> @5 write\no@77 -> global"
 		);
+	}
+
+	/// The walk declares a function's own `arguments` when the function closes, so a host's root
+	/// lists it with the rest of the piece, and resolution declares nothing.
+	#[test]
+	fn arguments_is_declared_by_the_walk() {
+		// nothing to settle: sources without the word, a parameter list on its own
+		assert_eq!(
+			facts_in("function f(a) { return a; }", false),
+			"f@9 declares function in script\na@11 declares param in function\na@25 -> @11"
+		);
+		let (mut ast, roots, _) =
+			crate::parse_at("(a, b = a)", 0, None, Entry::Params, Options::default(), "").unwrap();
+		analyze(&mut ast, Entry::Params, roots);
+		assert_eq!(ast.scopes.as_ref().unwrap().bindings.len(), 2);
+		// a declaration on the way, even a later one, is what a reference means
+		for (src, expected) in [
+			(
+				"function f() { arguments; let arguments; }",
+				"f@9 declares function in script\narguments@15 -> @30\narguments@30 declares let in function",
+			),
+			(
+				"function f() { arguments; var arguments; }",
+				"f@9 declares function in script\narguments@15 -> @30\narguments@30 declares var in function",
+			),
+			(
+				"function f() { { let arguments; arguments; } arguments; }",
+				"f@9 declares function in script\narguments@21 declares let in block\narguments@32 -> @21\narguments@45 -> arguments",
+			),
+			(
+				"function f() { try {} catch (arguments) { arguments } arguments }",
+				"f@9 declares function in script\narguments@29 declares catch in catch\narguments@42 -> @29\narguments@54 -> arguments",
+			),
+			(
+				"function f(arguments) { arguments }",
+				"f@9 declares function in script\narguments@11 declares param in function\narguments@24 -> @11",
+			),
+			(
+				"function f() { return () => { function g() { return () => arguments } return arguments } }",
+				"f@9 declares function in script\ng@44 declares function in block\narguments@61 -> arguments\narguments@80 -> arguments",
+			),
+			(
+				"(function arguments() { arguments })",
+				"arguments@10 declares function-name in function-name\narguments@24 -> arguments",
+			),
+		] {
+			assert_eq!(facts_in(src, false), expected, "{src}");
+		}
+		// a class field or static block cannot say `arguments` at all
+		for src in ["class C { x = arguments }", "class C { static { arguments } }"] {
+			assert!(
+				crate::parse_at(src, 0, None, Entry::Program, Options::default(), "").is_err(),
+				"{src}"
+			);
+		}
+		// a host document: each piece's root lists the `arguments` of the functions inside it
+		let grammar = crate::host::grammar::Grammar::read(
+			&std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/hosts/svelte.grammar")).unwrap(),
+		)
+		.unwrap();
+		let src = "<script>let n = 1; function f() { return arguments; }</script>\n{(function () { return arguments + n; })()}";
+		let (mut ast, root) = crate::host::parse_document::<()>(src, &grammar, Options::default(), None);
+		let roots = ast.add_list(&[Some(root.unwrap())]);
+		analyze(&mut ast, Entry::Program, roots);
+		let scopes = ast.scopes.as_ref().unwrap();
+		let mut implicit = 0;
+		for (i, binding) in scopes.bindings.iter().enumerate() {
+			if binding.kind != BindingKind::Arguments {
+				continue;
+			}
+			implicit += 1;
+			let function = ast.node(scopes.scope(binding.scope).node.unwrap());
+			let root = scopes
+				.roots
+				.iter()
+				.find(|r| (r.bindings.0 as usize..r.bindings.1 as usize).contains(&i))
+				.expect("in a root");
+			let piece = ast.node(root.node);
+			assert!(
+				piece.start <= function.start && function.end <= piece.end,
+				"{i} listed by the wrong piece"
+			);
+		}
+		assert_eq!(implicit, 2);
+		assert!(scopes.references.iter().all(|r| r.binding.is_some()));
 	}
 
 	#[test]
