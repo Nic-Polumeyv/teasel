@@ -33,6 +33,8 @@ pub(crate) struct Lexer<'a> {
 	pub(crate) in_type: bool,
 	/// The host's tokens, space-separated: one read outside every bracket ends the input.
 	pub(crate) stops: &'a str,
+	/// Each stop token's range in `stops` and whether it is a word, split once per parse.
+	pub(crate) stop_ranges: Vec<(u32, u32, bool)>,
 	pub(crate) depth: u32,
 	/// How many parens, brackets and braces are open, so a closer of another kind is unmatched.
 	pub(crate) open: [u32; 3],
@@ -68,6 +70,7 @@ impl<'a> Lexer<'a> {
 			at_sign: false,
 			in_type: false,
 			stops: "",
+			stop_ranges: Vec::new(),
 			depth: 0,
 			open: [0; 3],
 			stopped: false,
@@ -304,13 +307,26 @@ impl<'a> Lexer<'a> {
 		);
 		let text = &self.src[start..self.pos];
 		let rest = &self.src[start..];
-		self.stops.split_ascii_whitespace().any(|stop| {
-			if stop.starts_with(is_id_start) {
+		self.stop_ranges.iter().any(|&(from, to, is_word)| {
+			let stop = &self.stops[from as usize..to as usize];
+			if is_word {
 				word && text == stop
 			} else {
 				!literal && rest.starts_with(stop)
 			}
 		})
+	}
+
+	/// Splits the stop tokens once; `stops_at` then reads them per token.
+	pub(crate) fn set_stops(&mut self, stops: &'a str) {
+		self.stops = stops;
+		self.stop_ranges.clear();
+		let base = stops.as_ptr() as usize;
+		for stop in stops.split_ascii_whitespace() {
+			let from = (stop.as_ptr() as usize - base) as u32;
+			self.stop_ranges
+				.push((from, from + stop.len() as u32, stop.starts_with(is_id_start)));
+		}
 	}
 
 	fn skip_space(&mut self) -> Result<bool> {
@@ -323,9 +339,18 @@ impl<'a> Lexer<'a> {
 		let bytes = src.as_bytes();
 		if let Some(&b) = bytes.get(self.pos)
 			&& b < 0x80
-			&& scan::class(b) & scan::TRIVIA == 0
 		{
-			return Ok(false);
+			if scan::class(b) & scan::TRIVIA == 0 {
+				return Ok(false);
+			}
+			// the common case: spaces, then the token
+			if b == b' ' {
+				let after = scan::run_of(bytes, self.pos + 1, scan::SPACE);
+				if bytes.get(after).is_some_and(|&b| b < 0x80 && scan::class(b) & scan::TRIVIA == 0) {
+					self.pos = after;
+					return Ok(false);
+				}
+			}
 		}
 		while let Some(&b) = bytes.get(self.pos) {
 			let class = scan::class(b);
