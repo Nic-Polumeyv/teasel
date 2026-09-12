@@ -1021,10 +1021,10 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 			self.bool("parenthesized", true);
 		}
 		self.ast.extension.extras(self, id);
-		if let Some(attached) = self.ast.attached.get(&id) {
-			self.comments("leadingComments", &attached.leading);
-			self.comments("trailingComments", &attached.trailing);
-			self.comments("innerComments", &attached.inner);
+		if let Some(&attached) = self.ast.attached.get(&id) {
+			self.comments("leadingComments", attached.leading);
+			self.comments("trailingComments", attached.trailing);
+			self.comments("innerComments", attached.inner);
 		}
 	}
 
@@ -1143,10 +1143,10 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		self.sink.end();
 	}
 
-	fn comments(&mut self, key: &'static str, comments: &[u32]) {
+	fn comments(&mut self, key: &'static str, comments: crate::ast::Run) {
 		if !comments.is_empty() {
 			self.key(key);
-			self.comment_list(comments.iter().copied());
+			self.comment_list(comments.indices());
 		}
 	}
 
@@ -1980,15 +1980,22 @@ pub fn write_number(out: &mut String, value: f64) {
 		out.push('0');
 		return;
 	}
-	let formatted = format!("{value:e}");
-	let (mantissa, exponent) = formatted.split_once('e').unwrap();
+	let mut formatted = Digits::<32>::new();
+	write!(formatted, "{value:e}").unwrap();
+	let (mantissa, exponent) = formatted.as_str().split_once('e').unwrap();
 	let (sign, mantissa) = mantissa.strip_prefix('-').map_or(("", mantissa), |m| ("-", m));
-	let digits = even_on_tie(value.abs(), mantissa.chars().filter(|c| *c != '.').collect());
+	let mut digits = Digits::<32>::new();
+	for byte in mantissa.bytes().filter(|b| *b != b'.') {
+		digits.buf[digits.len] = byte;
+		digits.len += 1;
+	}
+	even_on_tie(value.abs(), &mut digits.buf[..digits.len]);
+	let digits = digits.as_str();
 	let k = digits.len() as i32;
 	let n = exponent.parse::<i32>().unwrap() + 1;
 	out.push_str(sign);
 	if k <= n && n <= 21 {
-		out.push_str(&digits);
+		out.push_str(digits);
 		out.extend(std::iter::repeat_n('0', (n - k) as usize));
 	} else if 0 < n && n <= 21 {
 		out.push_str(&digits[..n as usize]);
@@ -1997,7 +2004,7 @@ pub fn write_number(out: &mut String, value: f64) {
 	} else if -6 < n && n <= 0 {
 		out.push_str("0.");
 		out.extend(std::iter::repeat_n('0', (-n) as usize));
-		out.push_str(&digits);
+		out.push_str(digits);
 	} else {
 		out.push_str(&digits[..1]);
 		if k > 1 {
@@ -2010,12 +2017,40 @@ pub fn write_number(out: &mut String, value: f64) {
 	}
 }
 
+/// The digits of one number, written on the stack.
+struct Digits<const N: usize> {
+	buf: [u8; N],
+	len: usize,
+}
+
+impl<const N: usize> Digits<N> {
+	fn new() -> Self {
+		Digits { buf: [0; N], len: 0 }
+	}
+
+	fn as_str(&self) -> &str {
+		std::str::from_utf8(&self.buf[..self.len]).unwrap()
+	}
+}
+
+impl<const N: usize> std::fmt::Write for Digits<N> {
+	fn write_str(&mut self, s: &str) -> std::fmt::Result {
+		let end = self.len + s.len();
+		if end > N {
+			return Err(std::fmt::Error);
+		}
+		self.buf[self.len..end].copy_from_slice(s.as_bytes());
+		self.len = end;
+		Ok(())
+	}
+}
+
 /// Rust rounds the shortest digits away from zero on an exact tie; JavaScript takes the even ones.
-fn even_on_tie(value: f64, digits: String) -> String {
+fn even_on_tie(value: f64, digits: &mut [u8]) {
 	let k = digits.len();
 	// two shortest forms sit at the same distance only at the edge of what a double resolves
-	if k < 16 || digits.as_bytes()[k - 1].is_multiple_of(2) {
-		return digits;
+	if k < 16 || digits[k - 1].is_multiple_of(2) {
+		return;
 	}
 	let exact = format!("{value:.*e}", 1100);
 	let all: Vec<u8> = exact
@@ -2026,15 +2061,16 @@ fn even_on_tie(value: f64, digits: String) -> String {
 		.filter(|b| *b != b'.')
 		.collect();
 	if all[k] != b'5' || all[k + 1..].iter().any(|&b| b != b'0') {
-		return digits;
+		return;
 	}
-	let mut lower = digits.clone().into_bytes();
+	let mut lower = digits.to_vec();
 	lower[k - 1] -= 1;
-	let lower = String::from_utf8(lower).unwrap();
+	let lower = std::str::from_utf8(&lower).unwrap();
 	let exponent = exact.split_once('e').unwrap().1;
-	match format!("{}.{}e{exponent}", &lower[..1], &lower[1..]).parse::<f64>() {
-		Ok(back) if back == value => lower,
-		_ => digits,
+	if let Ok(back) = format!("{}.{}e{exponent}", &lower[..1], &lower[1..]).parse::<f64>()
+		&& back == value
+	{
+		digits[k - 1] -= 1;
 	}
 }
 

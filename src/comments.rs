@@ -11,19 +11,22 @@ use crate::interner::FastMap;
 /// Attaches the comments at or after `from` to the trees under `roots`, in order, replacing any
 /// earlier attachment; what is left trails the last one.
 pub fn attach<X: Walk>(ast: &mut Ast<X>, source: &str, roots: List, from: u32) {
-	ast.attached.clear();
+	let mut attached = std::mem::take(&mut ast.attached);
+	attached.clear();
 	let first = ast.comments.partition_point(|c| c.start < from);
 	let Some(last) = ast.list(roots).last().copied().flatten() else {
+		ast.attached = attached;
 		return;
 	};
 	if first == ast.comments.len() {
+		ast.attached = attached;
 		return;
 	}
 	let mut attacher = Attacher {
 		ast,
 		source,
 		next: first as u32,
-		attached: FastMap::default(),
+		attached,
 		scratch: Vec::new(),
 	};
 	for i in 0..roots.len {
@@ -37,8 +40,10 @@ pub fn attach<X: Walk>(ast: &mut Ast<X>, source: &str, roots: List, from: u32) {
 		&& !matches!(last_node.kind, NodeKind::Host(_))
 		&& (ast.comments[rest as usize].start >= last_node.end || matches!(last_node.kind, NodeKind::Program { .. }))
 	{
-		let all = rest..ast.comments.len() as u32;
-		attached.entry(last).or_default().trailing.extend(all);
+		let trailing = &mut attached.entry(last).or_default().trailing;
+		for index in rest..ast.comments.len() as u32 {
+			trailing.push(index);
+		}
 	}
 	ast.attached = attached;
 }
@@ -187,10 +192,9 @@ mod tests {
 	fn attached<X: Walk>(ast: &Ast<X>, src: &str) -> Vec<String> {
 		let mut nodes: Vec<(&NodeId, &crate::ast::Attached)> = ast.attached.iter().collect();
 		nodes.sort_by_key(|(id, _)| (ast.node(**id).start, id.0));
-		let values = |indices: &[u32]| -> Vec<&str> {
-			indices
-				.iter()
-				.map(|&i| &src[ast.comments[i as usize].text_range()])
+		let values = |run: crate::ast::Run| -> Vec<&str> {
+			run.indices()
+				.map(|i| &src[ast.comments[i as usize].text_range()])
 				.collect()
 		};
 		nodes
@@ -201,12 +205,12 @@ mod tests {
 				let inner = if a.inner.is_empty() {
 					String::new()
 				} else {
-					format!(" inner={:?}", values(&a.inner))
+					format!(" inner={:?}", values(a.inner))
 				};
 				format!(
 					"{kind} leading={:?} trailing={:?}{inner}",
-					values(&a.leading),
-					values(&a.trailing)
+					values(a.leading),
+					values(a.trailing)
 				)
 			})
 			.collect()

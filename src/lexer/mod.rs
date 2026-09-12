@@ -20,6 +20,8 @@ pub(crate) struct Lexer<'a> {
 	src: &'a str,
 	pos: usize,
 	buf: String,
+	/// What the regular expression validator fills, kept from one literal to the next.
+	regexp: regexp::Scratch,
 	escaped: bool,
 	/// Strict mode rejects legacy octal literals and escapes while scanning.
 	pub(crate) strict: bool,
@@ -62,6 +64,7 @@ impl<'a> Lexer<'a> {
 			src,
 			pos: 0,
 			buf: String::new(),
+			regexp: regexp::Scratch::default(),
 			escaped: false,
 			strict: false,
 			module: false,
@@ -763,7 +766,12 @@ impl<'a> Lexer<'a> {
 				.push(SyntaxError::new(flags_start as u32, Code::UnexpectedToken));
 		}
 		let flags_text = &self.src[flags_start..self.pos];
-		if let Err(error) = regexp::validate(start as u32 + 1, &self.src[start + 1..flags_start - 1], flags_text) {
+		if let Err(error) = regexp::validate(
+			start as u32 + 1,
+			&self.src[start + 1..flags_start - 1],
+			flags_text,
+			&mut self.regexp,
+		) {
 			if !self.recover {
 				return Err(error);
 			}

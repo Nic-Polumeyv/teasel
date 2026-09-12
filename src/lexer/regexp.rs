@@ -10,10 +10,32 @@ use std::collections::HashMap;
 type Result<T> = std::result::Result<T, Box<SyntaxError>>;
 
 /// Validates `pattern` and `flags` for a literal whose pattern starts at byte `start`.
-pub(super) fn validate(start: u32, pattern: &str, flags: &str) -> Result<()> {
-	let mut state = State::new(start, pattern, flags);
-	state.validate_flags()?;
-	state.validate_pattern()
+pub(super) fn validate(start: u32, pattern: &str, flags: &str, scratch: &mut Scratch) -> Result<()> {
+	let mut state = State::new(start, pattern, flags, std::mem::take(scratch));
+	let result = state.validate_flags().and_then(|()| state.validate_pattern());
+	*scratch = state.scratch;
+	scratch.clear();
+	result
+}
+
+/// What a validation fills and the next one reuses.
+#[derive(Default)]
+pub(super) struct Scratch {
+	source: Vec<u16>,
+	last_string_value: String,
+	group_names: HashMap<String, Vec<usize>>,
+	back_reference_names: Vec<String>,
+	branches: Vec<Branch>,
+}
+
+impl Scratch {
+	fn clear(&mut self) {
+		self.source.clear();
+		self.last_string_value.clear();
+		self.group_names.clear();
+		self.back_reference_names.clear();
+		self.branches.clear();
+	}
 }
 
 const EOF: i32 = -1;
@@ -36,20 +58,16 @@ struct Branch {
 struct State<'a> {
 	start: u32,
 	pattern: &'a str,
-	source: Vec<u16>,
 	flags: &'a str,
+	scratch: Scratch,
 	switch_u: bool,
 	switch_v: bool,
 	switch_n: bool,
 	pos: usize,
 	last_int_value: f64,
-	last_string_value: String,
 	last_assertion_is_quantifiable: bool,
 	num_capturing_parens: f64,
 	max_back_reference: f64,
-	group_names: HashMap<String, Vec<usize>>,
-	back_reference_names: Vec<String>,
-	branches: Vec<Branch>,
 	branch: Option<usize>,
 	class_depth: usize,
 	/// How many groups the pattern is inside here; `branches` holds every branch ever opened.
@@ -57,26 +75,23 @@ struct State<'a> {
 }
 
 impl<'a> State<'a> {
-	fn new(start: u32, pattern: &'a str, flags: &'a str) -> Self {
+	fn new(start: u32, pattern: &'a str, flags: &'a str, mut scratch: Scratch) -> Self {
 		let unicode_sets = flags.contains('v');
 		let unicode = flags.contains('u');
+		scratch.source.extend(pattern.encode_utf16());
 		Self {
 			start,
 			pattern,
-			source: pattern.encode_utf16().collect(),
 			flags,
+			scratch,
 			switch_u: unicode_sets || unicode,
 			switch_v: unicode_sets,
 			switch_n: unicode_sets || unicode,
 			pos: 0,
 			last_int_value: 0.0,
-			last_string_value: String::new(),
 			last_assertion_is_quantifiable: false,
 			num_capturing_parens: 0.0,
 			max_back_reference: 0.0,
-			group_names: HashMap::new(),
-			back_reference_names: Vec::new(),
-			branches: Vec::new(),
 			branch: None,
 			class_depth: 0,
 			depth: 0,
@@ -99,12 +114,12 @@ impl<'a> State<'a> {
 
 	/// The code point at `i`, a surrogate pair joined in unicode mode, and the index after it.
 	fn decode(&self, i: usize, force_u: bool) -> (i32, usize) {
-		let Some(&c) = self.source.get(i) else {
-			return (EOF, self.source.len());
+		let Some(&c) = self.scratch.source.get(i) else {
+			return (EOF, self.scratch.source.len());
 		};
 		if (force_u || self.switch_u)
 			&& (0xd800..0xdc00).contains(&c)
-			&& let Some(&next) = self.source.get(i + 1)
+			&& let Some(&next) = self.scratch.source.get(i + 1)
 			&& (0xdc00..0xe000).contains(&next)
 		{
 			return (0x10000 + (((c as i32) - 0xd800) << 10) + (next as i32 - 0xdc00), i + 2);
@@ -143,14 +158,14 @@ impl<'a> State<'a> {
 	/// Eats an ASCII character, which is never half of a surrogate pair.
 	fn eat(&mut self, ch: char) -> bool {
 		debug_assert!(ch.is_ascii());
-		let eaten = self.source.get(self.pos) == Some(&(ch as u16));
+		let eaten = self.scratch.source.get(self.pos) == Some(&(ch as u16));
 		self.pos += eaten as usize;
 		eaten
 	}
 
 	fn eat2(&mut self, a: char, b: char) -> bool {
 		debug_assert!(a.is_ascii() && b.is_ascii());
-		let eaten = self.source.get(self.pos..self.pos + 2) == Some(&[a as u16, b as u16]);
+		let eaten = self.scratch.source.get(self.pos..self.pos + 2) == Some(&[a as u16, b as u16]);
 		self.pos += 2 * eaten as usize;
 		eaten
 	}
@@ -180,7 +195,7 @@ impl<'a> State<'a> {
 
 	fn validate_pattern(&mut self) -> Result<()> {
 		self.pattern()?;
-		if !self.switch_n && !self.group_names.is_empty() {
+		if !self.switch_n && !self.scratch.group_names.is_empty() {
 			self.switch_n = true;
 			self.pattern()?;
 		}
@@ -190,19 +205,19 @@ impl<'a> State<'a> {
 	fn pattern(&mut self) -> Result<()> {
 		self.pos = 0;
 		self.last_int_value = 0.0;
-		self.last_string_value.clear();
+		self.scratch.last_string_value.clear();
 		self.last_assertion_is_quantifiable = false;
 		self.num_capturing_parens = 0.0;
 		self.max_back_reference = 0.0;
-		self.group_names.clear();
-		self.back_reference_names.clear();
-		self.branches.clear();
+		self.scratch.group_names.clear();
+		self.scratch.back_reference_names.clear();
+		self.scratch.branches.clear();
 		self.branch = None;
 		self.depth = 0;
 
 		self.disjunction()?;
 
-		if self.pos != self.source.len() {
+		if self.pos != self.scratch.source.len() {
 			if self.eat(')') {
 				return self.raise("Unmatched ')'");
 			}
@@ -213,8 +228,8 @@ impl<'a> State<'a> {
 		if self.max_back_reference > self.num_capturing_parens {
 			return self.raise("Invalid escape");
 		}
-		for name in &self.back_reference_names {
-			if !self.group_names.contains_key(name) {
+		for name in &self.scratch.back_reference_names {
+			if !self.scratch.group_names.contains_key(name) {
 				return self.raise("Invalid named capture referenced");
 			}
 		}
@@ -222,8 +237,8 @@ impl<'a> State<'a> {
 	}
 
 	fn push_branch(&mut self) {
-		let id = self.branches.len();
-		self.branches.push(Branch {
+		let id = self.scratch.branches.len();
+		self.scratch.branches.push(Branch {
 			parent: self.branch,
 			base: id,
 		});
@@ -231,9 +246,9 @@ impl<'a> State<'a> {
 	}
 
 	fn sibling_branch(&mut self) {
-		let current = self.branches[self.branch.unwrap()];
-		let id = self.branches.len();
-		self.branches.push(Branch {
+		let current = self.scratch.branches[self.branch.unwrap()];
+		let id = self.scratch.branches.len();
+		self.scratch.branches.push(Branch {
 			parent: current.parent,
 			base: current.base,
 		});
@@ -245,8 +260,8 @@ impl<'a> State<'a> {
 		let mut bases = HashMap::new();
 		let mut x = Some(branch);
 		while let Some(i) = x {
-			bases.insert(self.branches[i].base, i);
-			x = self.branches[i].parent;
+			bases.insert(self.scratch.branches[i].base, i);
+			x = self.scratch.branches[i].parent;
 		}
 		bases
 	}
@@ -255,12 +270,12 @@ impl<'a> State<'a> {
 	fn separated(&self, bases: &HashMap<usize, usize>, other: usize) -> bool {
 		let mut y = Some(other);
 		while let Some(j) = y {
-			if let Some(&i) = bases.get(&self.branches[j].base)
+			if let Some(&i) = bases.get(&self.scratch.branches[j].base)
 				&& i != j
 			{
 				return true;
 			}
-			y = self.branches[j].parent;
+			y = self.scratch.branches[j].parent;
 		}
 		false
 	}
@@ -276,7 +291,7 @@ impl<'a> State<'a> {
 			self.sibling_branch();
 			self.alternative()?;
 		}
-		self.branch = self.branches[self.branch.unwrap()].parent;
+		self.branch = self.scratch.branches[self.branch.unwrap()].parent;
 		self.depth -= 1;
 
 		if self.eat_quantifier(true)? {
@@ -289,7 +304,7 @@ impl<'a> State<'a> {
 	}
 
 	fn alternative(&mut self) -> Result<()> {
-		while self.pos < self.source.len() && self.eat_term()? {}
+		while self.pos < self.scratch.source.len() && self.eat_term()? {}
 		Ok(())
 	}
 
@@ -519,9 +534,9 @@ impl<'a> State<'a> {
 			if !self.eat_group_name()? {
 				return self.raise("Invalid group");
 			}
-			let name = std::mem::take(&mut self.last_string_value);
+			let name = std::mem::take(&mut self.scratch.last_string_value);
 			let branch = self.branch.unwrap();
-			if let Some(known) = self.group_names.get(&name) {
+			if let Some(known) = self.scratch.group_names.get(&name) {
 				let bases = self.ancestor_bases(branch);
 				for &other in known {
 					if !self.separated(&bases, other) {
@@ -529,13 +544,13 @@ impl<'a> State<'a> {
 					}
 				}
 			}
-			self.group_names.entry(name).or_default().push(branch);
+			self.scratch.group_names.entry(name).or_default().push(branch);
 		}
 		Ok(())
 	}
 
 	fn eat_group_name(&mut self) -> Result<bool> {
-		self.last_string_value.clear();
+		self.scratch.last_string_value.clear();
 		if self.eat('<') {
 			if self.eat_regexp_identifier_name()? && self.eat('>') {
 				return Ok(true);
@@ -546,11 +561,11 @@ impl<'a> State<'a> {
 	}
 
 	fn eat_regexp_identifier_name(&mut self) -> Result<bool> {
-		self.last_string_value.clear();
+		self.scratch.last_string_value.clear();
 		let mut first = true;
 		while self.eat_regexp_identifier_part(first)? {
 			let part = char::from_u32(self.last_int_value as u32).unwrap_or('\u{fffd}');
-			self.last_string_value.push(part);
+			self.scratch.last_string_value.push(part);
 			first = false;
 		}
 		Ok(!first)
@@ -619,8 +634,8 @@ impl<'a> State<'a> {
 	fn eat_k_group_name(&mut self) -> Result<bool> {
 		if self.eat('k') {
 			if self.eat_group_name()? {
-				let name = std::mem::take(&mut self.last_string_value);
-				self.back_reference_names.push(name);
+				let name = std::mem::take(&mut self.scratch.last_string_value);
+				self.scratch.back_reference_names.push(name);
 				return Ok(true);
 			}
 			return self.raise("Invalid named reference");
@@ -778,14 +793,14 @@ impl<'a> State<'a> {
 	fn eat_unicode_property_value_expression(&mut self) -> Result<CharSet> {
 		let start = self.pos;
 		if self.eat_unicode_property_name() && self.eat('=') {
-			let name = std::mem::take(&mut self.last_string_value);
+			let name = std::mem::take(&mut self.scratch.last_string_value);
 			if self.eat_unicode_property_value() {
 				let values = match name.as_str() {
 					"General_Category" | "gc" => GENERAL_CATEGORY_VALUES,
 					"Script" | "sc" | "Script_Extensions" | "scx" => SCRIPT_VALUES,
 					_ => return self.raise("Invalid property name"),
 				};
-				if !values.contains(&self.last_string_value.as_str()) {
+				if !values.contains(&self.scratch.last_string_value.as_str()) {
 					return self.raise("Invalid property value");
 				}
 				return Ok(CharSet::Ok);
@@ -793,7 +808,7 @@ impl<'a> State<'a> {
 		}
 		self.pos = start;
 		if self.eat_unicode_property_value() {
-			let name = self.last_string_value.as_str();
+			let name = self.scratch.last_string_value.as_str();
 			if BINARY_PROPERTIES.contains(&name) || GENERAL_CATEGORY_VALUES.contains(&name) {
 				return Ok(CharSet::Ok);
 			}
@@ -806,31 +821,31 @@ impl<'a> State<'a> {
 	}
 
 	fn eat_unicode_property_name(&mut self) -> bool {
-		self.last_string_value.clear();
+		self.scratch.last_string_value.clear();
 		loop {
 			let ch = self.current();
 			if is_control_letter(ch) || ch == '_' as i32 {
-				self.last_string_value.push(ch as u8 as char);
+				self.scratch.last_string_value.push(ch as u8 as char);
 				self.advance();
 			} else {
 				break;
 			}
 		}
-		!self.last_string_value.is_empty()
+		!self.scratch.last_string_value.is_empty()
 	}
 
 	fn eat_unicode_property_value(&mut self) -> bool {
-		self.last_string_value.clear();
+		self.scratch.last_string_value.clear();
 		loop {
 			let ch = self.current();
 			if is_control_letter(ch) || ch == '_' as i32 || is_decimal_digit(ch) {
-				self.last_string_value.push(ch as u8 as char);
+				self.scratch.last_string_value.push(ch as u8 as char);
 				self.advance();
 			} else {
 				break;
 			}
 		}
-		!self.last_string_value.is_empty()
+		!self.scratch.last_string_value.is_empty()
 	}
 
 	fn eat_character_class(&mut self) -> Result<bool> {
