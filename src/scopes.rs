@@ -1667,7 +1667,7 @@ mod tests {
 		analyze(&mut ast, Entry::Params, roots);
 		assert_eq!(ast.scopes.as_ref().unwrap().bindings.len(), 2);
 		// a declaration on the way, even a later one, is what a reference means
-		for (src, expected) in [
+		let cases = [
 			(
 				"function f() { arguments; let arguments; }",
 				"f@9 declares function in script\narguments@15 -> @30\narguments@30 declares let in function",
@@ -1690,15 +1690,16 @@ mod tests {
 			),
 			(
 				"function f() { return () => { function g() { return () => arguments } return arguments } }",
-				"f@9 declares function in script\ng@44 declares function in block\narguments@61 -> arguments\narguments@80 -> arguments",
+				"f@9 declares function in script\ng@39 declares function in function\narguments@58 -> arguments\narguments@77 -> arguments",
 			),
 			(
 				"(function arguments() { arguments })",
 				"arguments@10 declares function-name in function-name\narguments@24 -> arguments",
 			),
-		] {
-			assert_eq!(facts_in(src, false), expected, "{src}");
-		}
+		];
+		let actual: Vec<String> = cases.iter().map(|(src, _)| facts_in(src, false)).collect();
+		let expected: Vec<String> = cases.iter().map(|(_, e)| e.to_string()).collect();
+		assert_eq!(actual, expected);
 		// a class field or static block cannot say `arguments` at all
 		for src in ["class C { x = arguments }", "class C { static { arguments } }"] {
 			assert!(
