@@ -346,7 +346,10 @@ impl<'a> Lexer<'a> {
 			// the common case: spaces, then the token
 			if b == b' ' {
 				let after = scan::run_of(bytes, self.pos + 1, scan::SPACE);
-				if bytes.get(after).is_some_and(|&b| b < 0x80 && scan::class(b) & scan::TRIVIA == 0) {
+				if bytes
+					.get(after)
+					.is_some_and(|&b| b < 0x80 && scan::class(b) & scan::TRIVIA == 0)
+				{
 					self.pos = after;
 					return Ok(false);
 				}
