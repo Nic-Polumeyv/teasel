@@ -73,9 +73,14 @@ pub(crate) fn expand<X>(ast: &Ast<X>, text: &str, extension: &dyn Fn(&Ast<X>, No
 		let tail = &rest[i..];
 		if let Some(r) = tail.strip_prefix("NodeId(") {
 			let end = r.find(')').unwrap();
-			let child = NodeId(r[..end].parse().unwrap());
+			let child = NodeId::at(r[..end].parse().unwrap());
 			out.push_str(&dump(ast, child, extension));
 			rest = &r[end + 1..];
+		} else if let Some(r) = tail.strip_prefix("NumberLiteral { value: ") {
+			let end = r.find(" }").unwrap();
+			let value = ast.numbers[r[..end].parse::<usize>().unwrap()];
+			out.push_str(&format!("NumberLiteral {{ value: {value:?} }}"));
+			rest = &r[end + 2..];
 		} else if let Some(r) = tail.strip_prefix("StrId(") {
 			let end = r.find(')').unwrap();
 			let s = ast.str(crate::interner::StrId(r[..end].parse().unwrap()));
@@ -868,7 +873,7 @@ fn profile() {
 		std::mem::size_of::<std::result::Result<crate::lexer::token::Token, Box<crate::error::SyntaxError>>>()
 	);
 	eprintln!("{:>6} {:>6}  frame", "self%", "incl%");
-	for (name, (own, incl)) in rows.iter().take(8) {
+	for (name, (own, incl)) in rows.iter().take(40) {
 		eprintln!(
 			"{:6.1} {:6.1}  {}",
 			*own as f64 * 100.0 / total as f64,
@@ -891,7 +896,7 @@ fn parenthesized_fact() {
 	};
 	let marked = |src: &str| {
 		let (ast, id, _) = at(Entry::Expression, src, 0, options, "").unwrap();
-		ast.parenthesized.contains(&id)
+		ast.is_parenthesized(id)
 	};
 	assert!(marked("(a, b)"));
 	assert!(marked("((a))"));
@@ -991,4 +996,36 @@ fn host_alloc_probe() {
 			(allocs as f64 - base as f64) / n as f64
 		);
 	}
+}
+
+#[test]
+fn layout_sizes() {
+	use std::mem::size_of;
+	eprintln!(
+		"Node {} NodeKind {} Option<NodeId> {} Token {} TokenKind {}",
+		size_of::<crate::ast::Node>(),
+		size_of::<crate::ast::NodeKind>(),
+		size_of::<Option<NodeId>>(),
+		size_of::<crate::lexer::token::Token>(),
+		size_of::<crate::lexer::token::TokenKind>()
+	);
+	eprintln!(
+		"Scope {} Binding {} Reference {} Comment {} Host {} Attached {} TokenSnapshot {}",
+		size_of::<crate::scopes::Scope>(),
+		size_of::<crate::scopes::Binding>(),
+		size_of::<crate::scopes::Reference>(),
+		size_of::<crate::ast::Comment>(),
+		size_of::<crate::ast::Host>(),
+		size_of::<crate::ast::Attached>(),
+		size_of::<super::TokenSnapshot>()
+	);
+}
+
+#[test]
+fn parenthesized_bits() {
+	let request = crate::json::Request::from_names("module parenthesized");
+	let json = crate::json::parse("(a).b; (x, y); c; ((d));", &request, "");
+	assert_eq!(json.matches("\"parenthesized\":true").count(), 3, "{json}");
+	let json = crate::json::parse("(a, b) => a; (c);", &request, "");
+	assert_eq!(json.matches("\"parenthesized\":true").count(), 1, "{json}");
 }

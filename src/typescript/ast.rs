@@ -48,7 +48,7 @@ impl crate::ast::Reuse for Data {
 	fn truncate(&mut self, (nodes, extras): Self::Mark) {
 		self.nodes.truncate(nodes);
 		for &owner in &self.extras.owners[extras..] {
-			self.extras.slots[owner.0 as usize] = NONE;
+			self.extras.slots[owner.index() as usize] = NONE;
 		}
 		self.extras.list.truncate(extras);
 		self.extras.owners.truncate(extras);
@@ -57,14 +57,14 @@ impl crate::ast::Reuse for Data {
 
 impl ExtrasTable {
 	pub fn get(&self, id: NodeId) -> Option<&Extras> {
-		match self.slots.get(id.0 as usize) {
+		match self.slots.get(id.index() as usize) {
 			Some(&slot) if slot != NONE => Some(&self.list[slot as usize]),
 			_ => None,
 		}
 	}
 
 	pub fn get_or_insert(&mut self, id: NodeId) -> &mut Extras {
-		let index = id.0 as usize;
+		let index = id.index() as usize;
 		if index >= self.slots.len() {
 			self.slots.resize(index + 1, NONE);
 		}

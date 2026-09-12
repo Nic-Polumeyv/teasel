@@ -87,6 +87,7 @@ impl Parser<'_, TypeScript> {
 				| NodeKind::FunctionDeclaration { .. }
 				| NodeKind::ClassDeclaration { .. }
 				| NodeKind::ImportDeclaration { .. }
+				| NodeKind::ExportDeclaration { .. }
 				| NodeKind::ExportNamedDeclaration { .. }
 				| NodeKind::ExportDefaultDeclaration { .. }
 				| NodeKind::ExportAllDeclaration { .. }

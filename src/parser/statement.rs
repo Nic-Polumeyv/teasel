@@ -1144,16 +1144,7 @@ impl<E: Extension> Parser<'_, E> {
 				}
 				_ => {}
 			}
-			let (specifiers, attributes) = (List::EMPTY, List::EMPTY);
-			let node = self.add(
-				NodeKind::ExportNamedDeclaration {
-					declaration: Some(declaration),
-					specifiers,
-					source: None,
-					attributes,
-				},
-				start,
-			);
+			let node = self.add(NodeKind::ExportDeclaration { declaration }, start);
 			E::export_end(self, node);
 			return Ok(node);
 		}
@@ -1185,7 +1176,6 @@ impl<E: Extension> Parser<'_, E> {
 		let specifiers = self.list_from(specifiers);
 		let node = self.add(
 			NodeKind::ExportNamedDeclaration {
-				declaration: None,
 				specifiers,
 				source,
 				attributes,

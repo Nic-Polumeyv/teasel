@@ -655,7 +655,10 @@ impl<E: Extension> Parser<'_, E> {
 				Ok(id)
 			}
 			TokenKind::RegExp { pattern, flags } => self.literal(NodeKind::RegExpLiteral { pattern, flags }, start),
-			TokenKind::Number(value) => self.literal(NodeKind::NumberLiteral { value }, start),
+			TokenKind::Number(value) => {
+				let value = self.ast.number(value);
+				self.literal(NodeKind::NumberLiteral { value }, start)
+			}
 			TokenKind::BigInt => self.literal(NodeKind::BigIntLiteral, start),
 			TokenKind::String(value) => self.literal(NodeKind::StringLiteral { value }, start),
 			TokenKind::Keyword(Keyword::Null) => self.literal(NodeKind::NullLiteral, start),
@@ -797,8 +800,7 @@ impl<E: Extension> Parser<'_, E> {
 			value
 		};
 		if self.options.parenthesized {
-			debug_assert!(self.ast.parenthesized.last().is_none_or(|&last| last <= value));
-			self.ast.parenthesized.push(value);
+			self.ast.set_parenthesized(value);
 		}
 		Ok(value)
 	}

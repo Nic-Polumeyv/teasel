@@ -35,9 +35,25 @@ impl Comment {
 	}
 }
 
-/// Index of a node in `Ast::nodes`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct NodeId(pub u32);
+/// Index of a node in `Ast::nodes`, kept plus one so an `Option<NodeId>` is the same four bytes.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct NodeId(std::num::NonZero<u32>);
+
+impl NodeId {
+	pub fn at(index: u32) -> Self {
+		NodeId(std::num::NonZero::new(index + 1).unwrap())
+	}
+
+	pub fn index(self) -> u32 {
+		self.0.get() - 1
+	}
+}
+
+impl std::fmt::Debug for NodeId {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "NodeId({})", self.index())
+	}
+}
 
 /// A contiguous run of node ids in `Ast::lists`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -110,6 +126,8 @@ pub enum Value {
 #[derive(Debug, Default)]
 pub struct Ast<X = ()> {
 	pub nodes: Vec<Node>,
+	/// The values of the number literals, by `NumberLiteral::value`.
+	pub numbers: Vec<f64>,
 	pub lists: Vec<Option<NodeId>>,
 	pub hosts: Vec<Host>,
 	pub host_fields: Vec<(&'static str, Value)>,
@@ -125,9 +143,8 @@ pub struct Ast<X = ()> {
 	pub scopes: Option<crate::scopes::Scopes>,
 	/// What went wrong, in source order, when errors are recovered from instead of thrown.
 	pub errors: Vec<crate::SyntaxError>,
-	/// Nodes the source wraps in parens, when the option asks and no wrapper node stands for them;
-	/// each is marked as its parens close, so the ids come in order.
-	pub parenthesized: Vec<NodeId>,
+	/// One bit per node: whether it was written in parentheses, when `Options::parenthesized` asks.
+	pub parenthesized: Vec<u64>,
 	pub extension: X,
 }
 
@@ -186,8 +203,8 @@ impl Reuse for () {
 #[derive(Clone, Copy)]
 pub(crate) struct Mark<M> {
 	nodes: usize,
+	numbers: usize,
 	lists: usize,
-	parenthesized: usize,
 	extension: M,
 }
 
@@ -199,6 +216,7 @@ impl<X: Reuse> Ast<X> {
 		self.host_strings.clear();
 		self.host_groups.clear();
 		self.nodes.clear();
+		self.numbers.clear();
 		self.lists.clear();
 		self.strings.clear();
 		self.comments.clear();
@@ -214,8 +232,8 @@ impl<X: Reuse> Ast<X> {
 	pub(crate) fn mark(&self) -> Mark<X::Mark> {
 		Mark {
 			nodes: self.nodes.len(),
+			numbers: self.numbers.len(),
 			lists: self.lists.len(),
-			parenthesized: self.parenthesized.len(),
 			extension: self.extension.mark(),
 		}
 	}
@@ -223,8 +241,14 @@ impl<X: Reuse> Ast<X> {
 	/// Forgets the nodes built since `mark`; their ids are reused, so nothing may still hold one.
 	pub(crate) fn truncate(&mut self, mark: Mark<X::Mark>) {
 		self.nodes.truncate(mark.nodes);
+		self.numbers.truncate(mark.numbers);
 		self.lists.truncate(mark.lists);
-		self.parenthesized.truncate(mark.parenthesized);
+		self.parenthesized.truncate(mark.nodes.div_ceil(64));
+		if let Some(last) = self.parenthesized.last_mut()
+			&& mark.nodes % 64 != 0
+		{
+			*last &= (1u64 << (mark.nodes % 64)) - 1;
+		}
 		self.extension.truncate(mark.extension);
 	}
 }
@@ -304,7 +328,7 @@ impl<X> Ast<X> {
 			Host(index) => {
 				let from = out.len();
 				self.host_children(index, out);
-				out[from..].sort_unstable_by_key(|&child| self.nodes[child.0 as usize].start);
+				out[from..].sort_unstable_by_key(|&child| self.nodes[child.index() as usize].start);
 			}
 			TemplateLiteral { quasis, expressions } => {
 				debug_assert_eq!(quasis.len, expressions.len + 1);
@@ -431,13 +455,12 @@ impl<X> Ast<X> {
 			ImportSpecifier { imported, local } => out.extend([imported, local]),
 			ImportDefaultSpecifier { local } | ImportNamespaceSpecifier { local } => out.push(local),
 			ImportAttribute { key, value } => out.extend([key, value]),
+			ExportDeclaration { declaration } => out.push(declaration),
 			ExportNamedDeclaration {
-				declaration,
 				specifiers,
 				source,
 				attributes,
 			} => {
-				out.extend(declaration);
 				list(specifiers, out);
 				out.extend(source);
 				list(attributes, out);
@@ -457,11 +480,11 @@ impl<X> Ast<X> {
 	}
 
 	pub fn node(&self, id: NodeId) -> &Node {
-		&self.nodes[id.0 as usize]
+		&self.nodes[id.index() as usize]
 	}
 
 	pub fn node_mut(&mut self, id: NodeId) -> &mut Node {
-		&mut self.nodes[id.0 as usize]
+		&mut self.nodes[id.index() as usize]
 	}
 
 	pub fn str(&self, id: StrId) -> &str {
@@ -479,12 +502,33 @@ impl<X> Ast<X> {
 
 	pub fn add(&mut self, kind: NodeKind, start: u32, end: u32) -> NodeId {
 		self.nodes.push(Node { kind, start, end });
-		NodeId(self.nodes.len() as u32 - 1)
+		NodeId::at(self.nodes.len() as u32 - 1)
 	}
 
 	/// The last node added, which is the root after a whole-program parse.
 	pub fn last(&self) -> NodeId {
-		NodeId(self.nodes.len() as u32 - 1)
+		NodeId::at(self.nodes.len() as u32 - 1)
+	}
+
+	pub fn set_parenthesized(&mut self, id: NodeId) {
+		let index = id.index() as usize;
+		if self.parenthesized.len() <= index / 64 {
+			self.parenthesized.resize(index / 64 + 1, 0);
+		}
+		self.parenthesized[index / 64] |= 1 << (index % 64);
+	}
+
+	pub fn is_parenthesized(&self, id: NodeId) -> bool {
+		let index = id.index() as usize;
+		self.parenthesized
+			.get(index / 64)
+			.is_some_and(|word| word & (1 << (index % 64)) != 0)
+	}
+
+	/// A number literal's value, kept beside the tree so a node stays four-byte aligned.
+	pub fn number(&mut self, value: f64) -> u32 {
+		self.numbers.push(value);
+		self.numbers.len() as u32 - 1
 	}
 
 	pub fn add_list_from(&mut self, items: impl ExactSizeIterator<Item = Option<NodeId>>) -> List {
@@ -518,7 +562,8 @@ pub enum NodeKind {
 		name: StrId,
 	},
 	NumberLiteral {
-		value: f64,
+		/// Into `Ast::numbers`.
+		value: u32,
 	},
 	BigIntLiteral,
 	StringLiteral {
@@ -785,8 +830,12 @@ pub enum NodeKind {
 		key: NodeId,
 		value: NodeId,
 	},
+	/// `export declaration`, an ExportNamedDeclaration whose only child is what it declares.
+	ExportDeclaration {
+		declaration: NodeId,
+	},
+	/// `export { specifiers } from source with { attributes }`.
 	ExportNamedDeclaration {
-		declaration: Option<NodeId>,
 		specifiers: List,
 		source: Option<NodeId>,
 		attributes: List,
