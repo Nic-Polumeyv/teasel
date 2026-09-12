@@ -50,7 +50,7 @@ impl<E: Extension> Parser<'_, E> {
 		let start = self.prev_end;
 		let module = self.options.module;
 		self.enter_scope(SCOPE_TOP);
-		let mut body = Vec::new();
+		let mut body = self.items();
 		let mut exports = FastSet::default();
 		while !self.is(TokenKind::Eof) {
 			if self.recovering() && self.lexer.unmatched {
@@ -62,7 +62,7 @@ impl<E: Extension> Parser<'_, E> {
 			if let Some(statement) = self.statement_recovered(|p| {
 				p.parse_statement(Context::None, StatementPlace::TopLevel, Some(&mut exports))
 			})? {
-				body.push(statement);
+				body.push(Some(statement));
 			}
 			self.ensure_progress(at)?;
 		}
@@ -72,7 +72,7 @@ impl<E: Extension> Parser<'_, E> {
 		{
 			return self.error_name(pos, Code::UndefinedExport, name);
 		}
-		let body = self.list_of(&body);
+		let body = self.list_from(body);
 		self.adapt_directive_prologue(body);
 		self.exit_scope();
 		Ok(self.add_with_end(NodeKind::Program { body, module }, start, self.tok.end))
@@ -570,7 +570,7 @@ impl<E: Extension> Parser<'_, E> {
 		self.expect(TokenKind::ParenL)?;
 		let params = self.parse_binding_list(TokenKind::ParenR, false, true, false)?;
 		self.check_yield_await_in_default_params()?;
-		let params = self.list(&params);
+		let params = self.list_from(params);
 		let node = match E::function_body(self, start, id, params, is_async, generator, kind)? {
 			Some(node) => {
 				self.exit_scope();
@@ -664,14 +664,14 @@ impl<E: Extension> Parser<'_, E> {
 		self.expect(TokenKind::BraceL)?;
 		self.push_label(LabelKind::Switch);
 		self.enter_scope(0);
-		let mut cases = Vec::new();
-		let mut current: Option<(u32, Option<NodeId>, Vec<NodeId>)> = None;
+		let mut cases = self.items();
+		let mut current: Option<(u32, Option<NodeId>, Vec<Option<NodeId>>)> = None;
 		let mut saw_default = false;
 		while !self.is(TokenKind::BraceR) {
 			if self.is_keyword(Keyword::Case) || self.is_keyword(Keyword::Default) {
 				let is_case = self.is_keyword(Keyword::Case);
 				if let Some(case) = current.take() {
-					cases.push(self.switch_case(case));
+					cases.push(Some(self.switch_case(case)));
 				}
 				let case_start = self.tok.start;
 				self.next()?;
@@ -685,27 +685,27 @@ impl<E: Extension> Parser<'_, E> {
 					None
 				};
 				self.expect(TokenKind::Colon)?;
-				current = Some((case_start, test, Vec::new()));
+				current = Some((case_start, test, self.items()));
 			} else {
 				let Some(current) = current.as_mut() else {
 					return self.unexpected();
 				};
 				let statement = self.parse_statement(Context::None, StatementPlace::Case, None)?;
-				current.2.push(statement);
+				current.2.push(Some(statement));
 			}
 		}
 		self.exit_scope();
 		if let Some(case) = current.take() {
-			cases.push(self.switch_case(case));
+			cases.push(Some(self.switch_case(case)));
 		}
 		self.next()?;
 		self.labels.pop();
-		let cases = self.list_of(&cases);
+		let cases = self.list_from(cases);
 		Ok(self.add(NodeKind::SwitchStatement { discriminant, cases }, start))
 	}
 
-	fn switch_case(&mut self, (start, test, consequent): (u32, Option<NodeId>, Vec<NodeId>)) -> NodeId {
-		let consequent = self.list_of(&consequent);
+	fn switch_case(&mut self, (start, test, consequent): (u32, Option<NodeId>, Vec<Option<NodeId>>)) -> NodeId {
+		let consequent = self.list_from(consequent);
 		self.add(NodeKind::SwitchCase { test, consequent }, start)
 	}
 
@@ -847,13 +847,13 @@ impl<E: Extension> Parser<'_, E> {
 		if new_scope {
 			self.enter_scope(0);
 		}
-		let mut body = Vec::new();
+		let mut body = self.items();
 		while !self.is(TokenKind::BraceR) {
 			let at = self.tok.start;
 			if let Some(statement) =
 				self.statement_recovered(|p| p.parse_statement(Context::None, StatementPlace::Block, None))?
 			{
-				body.push(statement);
+				body.push(Some(statement));
 			}
 			self.ensure_progress(at)?;
 		}
@@ -864,38 +864,39 @@ impl<E: Extension> Parser<'_, E> {
 		if new_scope {
 			self.exit_scope();
 		}
-		let body = self.list_of(&body);
+		let body = self.list_from(body);
 		Ok(self.add(NodeKind::BlockStatement { body }, start))
 	}
 
 	/// Annex B.3.4 lets a var redeclare the parameter of a simple catch clause, except the binding
 	/// of a for-of, which is checked once the `of` is seen.
 	fn check_for_of_var(&mut self, declarations: List) -> Result<()> {
-		let mut stack: Vec<NodeId> = (0..declarations.len)
-			.filter_map(|i| self.nth(declarations, i))
-			.collect();
-		while let Some(id) = stack.pop() {
+		let mut stack = self.items();
+		stack.extend_from_slice(self.ast.list(declarations));
+		while let Some(item) = stack.pop() {
+			let Some(id) = item else { continue };
 			match self.kind(id) {
 				NodeKind::Identifier { name } => {
 					if self.rebinds_catch_param(name) {
 						return self.error_name(self.start_of(id), Code::Redeclaration, name);
 					}
 				}
-				NodeKind::VariableDeclarator { id, .. } => stack.push(id),
+				NodeKind::VariableDeclarator { id, .. } => stack.push(Some(id)),
 				NodeKind::ObjectPattern { properties: list } | NodeKind::ArrayPattern { elements: list } => {
-					stack.extend((0..list.len).filter_map(|i| self.nth(list, i)));
+					stack.extend_from_slice(self.ast.list(list));
 				}
-				NodeKind::Property { value, .. } => stack.push(value),
-				NodeKind::RestElement { argument } => stack.push(argument),
-				NodeKind::AssignmentPattern { left, .. } => stack.push(left),
+				NodeKind::Property { value, .. } => stack.push(Some(value)),
+				NodeKind::RestElement { argument } => stack.push(Some(argument)),
+				NodeKind::AssignmentPattern { left, .. } => stack.push(Some(left)),
 				NodeKind::Extension(_) => {
 					if let Some(inner) = E::unwrap(self, id, Unwrap::InnerPattern) {
-						stack.push(inner);
+						stack.push(Some(inner));
 					}
 				}
 				_ => {}
 			}
 		}
+		self.recycle(stack);
 		Ok(())
 	}
 
@@ -908,7 +909,7 @@ impl<E: Extension> Parser<'_, E> {
 		if kind == VariableKind::AwaitUsing {
 			self.next()?;
 		}
-		let mut declarations = Vec::new();
+		let mut declarations = self.items();
 		loop {
 			let decl_start = self.tok.start;
 			let id = self.parse_binding_atom()?;
@@ -945,12 +946,12 @@ impl<E: Extension> Parser<'_, E> {
 			};
 			let declarator = self.add(NodeKind::VariableDeclarator { id, init }, decl_start);
 			E::var_declarator(self, declarator, kind)?;
-			declarations.push(declarator);
+			declarations.push(Some(declarator));
 			if !self.eat(TokenKind::Comma)? {
 				break;
 			}
 		}
-		let declarations = self.list_of(&declarations);
+		let declarations = self.list_from(declarations);
 		Ok(self.add(NodeKind::VariableDeclaration { declarations, kind }, start))
 	}
 
@@ -964,7 +965,7 @@ impl<E: Extension> Parser<'_, E> {
 		let specifiers;
 		let source;
 		if matches!(self.tok.kind, TokenKind::String(_)) {
-			specifiers = Vec::new();
+			specifiers = self.items();
 			source = self.parse_expr_atom(&mut None, ForInit::No, false)?;
 		} else {
 			specifiers = self.parse_import_specifiers()?;
@@ -976,7 +977,7 @@ impl<E: Extension> Parser<'_, E> {
 		}
 		let attributes = self.parse_with_clause()?;
 		self.semicolon()?;
-		let specifiers = self.list_of(&specifiers);
+		let specifiers = self.list_from(specifiers);
 		let node = self.add(
 			NodeKind::ImportDeclaration {
 				specifiers,
@@ -989,13 +990,13 @@ impl<E: Extension> Parser<'_, E> {
 		Ok(node)
 	}
 
-	fn parse_import_specifiers(&mut self) -> Result<Vec<NodeId>> {
-		let mut nodes = Vec::new();
+	fn parse_import_specifiers(&mut self) -> Result<Vec<Option<NodeId>>> {
+		let mut nodes = self.items();
 		if matches!(self.tok.kind, TokenKind::Ident(_)) {
 			let start = self.tok.start;
 			let local = self.parse_ident(false)?;
 			self.check_lval_simple(local, Binding::Lexical, &mut None)?;
-			nodes.push(self.add(NodeKind::ImportDefaultSpecifier { local }, start));
+			nodes.push(Some(self.add(NodeKind::ImportDefaultSpecifier { local }, start)));
 			if !self.eat(TokenKind::Comma)? {
 				return Ok(nodes);
 			}
@@ -1006,7 +1007,7 @@ impl<E: Extension> Parser<'_, E> {
 			self.expect_contextual("as")?;
 			let local = self.parse_ident(false)?;
 			self.check_lval_simple(local, Binding::Lexical, &mut None)?;
-			nodes.push(self.add(NodeKind::ImportNamespaceSpecifier { local }, start));
+			nodes.push(Some(self.add(NodeKind::ImportNamespaceSpecifier { local }, start)));
 			return Ok(nodes);
 		}
 		self.expect(TokenKind::BraceL)?;
@@ -1016,7 +1017,7 @@ impl<E: Extension> Parser<'_, E> {
 				break;
 			}
 			if let Some(node) = E::import_specifier(self)? {
-				nodes.push(node);
+				nodes.push(Some(node));
 				continue;
 			}
 			let start = self.tok.start;
@@ -1028,16 +1029,16 @@ impl<E: Extension> Parser<'_, E> {
 				imported
 			};
 			self.check_lval_simple(local, Binding::Lexical, &mut None)?;
-			nodes.push(self.add(NodeKind::ImportSpecifier { imported, local }, start));
+			nodes.push(Some(self.add(NodeKind::ImportSpecifier { imported, local }, start)));
 		}
 		Ok(nodes)
 	}
 
 	fn parse_with_clause(&mut self) -> Result<crate::ast::List> {
-		let mut nodes = Vec::new();
 		if !self.eat_keyword(Keyword::With)? {
-			return Ok(self.list_of(&nodes));
+			return Ok(List::EMPTY);
 		}
+		let mut nodes = self.items();
 		self.expect(TokenKind::BraceL)?;
 		let mut first = true;
 		let mut seen: Vec<StrId> = Vec::new();
@@ -1064,9 +1065,9 @@ impl<E: Extension> Parser<'_, E> {
 				return self.error_name(self.start_of(key), Code::DuplicateImportAttribute, key_name);
 			}
 			seen.push(key_name);
-			nodes.push(self.add(NodeKind::ImportAttribute { key, value }, start));
+			nodes.push(Some(self.add(NodeKind::ImportAttribute { key, value }, start)));
 		}
-		Ok(self.list_of(&nodes))
+		Ok(self.list_from(nodes))
 	}
 
 	pub(crate) fn parse_module_export_name(&mut self) -> Result<NodeId> {
@@ -1166,7 +1167,7 @@ impl<E: Extension> Parser<'_, E> {
 				self.parse_with_clause()?,
 			)
 		} else {
-			for &spec in &specifiers {
+			for &spec in specifiers.iter().flatten() {
 				let NodeKind::ExportSpecifier { local, .. } = self.kind(spec) else {
 					unreachable!()
 				};
@@ -1181,7 +1182,7 @@ impl<E: Extension> Parser<'_, E> {
 			(None, List::EMPTY)
 		};
 		self.semicolon()?;
-		let specifiers = self.list_of(&specifiers);
+		let specifiers = self.list_from(specifiers);
 		let node = self.add(
 			NodeKind::ExportNamedDeclaration {
 				declaration: None,
@@ -1226,8 +1227,8 @@ impl<E: Extension> Parser<'_, E> {
 			|| E::starts_export_declaration(self)
 	}
 
-	fn parse_export_specifiers(&mut self, exports: &mut FastSet<StrId>) -> Result<Vec<NodeId>> {
-		let mut nodes = Vec::new();
+	fn parse_export_specifiers(&mut self, exports: &mut FastSet<StrId>) -> Result<Vec<Option<NodeId>>> {
+		let mut nodes = self.items();
 		self.expect(TokenKind::BraceL)?;
 		let mut first = true;
 		while !self.eat(TokenKind::BraceR)? {
@@ -1235,7 +1236,7 @@ impl<E: Extension> Parser<'_, E> {
 				break;
 			}
 			if let Some(node) = E::export_specifier(self)? {
-				nodes.push(node);
+				nodes.push(Some(node));
 				continue;
 			}
 			let start = self.tok.start;
@@ -1246,7 +1247,7 @@ impl<E: Extension> Parser<'_, E> {
 				local
 			};
 			self.check_export(exports, exported, self.start_of(exported))?;
-			nodes.push(self.add(NodeKind::ExportSpecifier { local, exported }, start));
+			nodes.push(Some(self.add(NodeKind::ExportSpecifier { local, exported }, start)));
 		}
 		Ok(nodes)
 	}
@@ -1330,7 +1331,7 @@ impl<E: Extension> Parser<'_, E> {
 		E::class_heritage(self, super_class.is_some())?;
 		self.private_names.push(PrivateNameScope::default());
 		let body_start = self.tok.start;
-		let mut body = Vec::new();
+		let mut body = self.items();
 		let mut had_constructor = false;
 		self.expect(TokenKind::BraceL)?;
 		while !self.is(TokenKind::BraceR) {
@@ -1340,7 +1341,7 @@ impl<E: Extension> Parser<'_, E> {
 			let Some(element) = element else {
 				continue;
 			};
-			body.push(element);
+			body.push(Some(element));
 			match self.kind(element) {
 				NodeKind::MethodDefinition {
 					kind: MethodKind::Constructor,
@@ -1369,7 +1370,7 @@ impl<E: Extension> Parser<'_, E> {
 		}
 		self.set_strict(old_strict);
 		self.next()?;
-		let body = self.list_of(&body);
+		let body = self.list_from(body);
 		let body = self.add(NodeKind::ClassBody { body }, body_start);
 		self.exit_class_body()?;
 		let class = Class { id, super_class, body };
@@ -1659,14 +1660,18 @@ impl<E: Extension> Parser<'_, E> {
 	fn parse_class_static_block(&mut self, start: u32) -> Result<NodeId> {
 		let old_labels = std::mem::take(&mut self.labels);
 		self.enter_scope(SCOPE_CLASS_STATIC_BLOCK | SCOPE_SUPER);
-		let mut body = Vec::new();
+		let mut body = self.items();
 		while !self.is(TokenKind::BraceR) {
-			body.push(self.parse_statement(Context::None, StatementPlace::Block, None)?);
+			body.push(Some(self.parse_statement(
+				Context::None,
+				StatementPlace::Block,
+				None,
+			)?));
 		}
 		self.next()?;
 		self.exit_scope();
 		self.labels = old_labels;
-		let body = self.list_of(&body);
+		let body = self.list_from(body);
 		Ok(self.add(NodeKind::StaticBlock { body }, start))
 	}
 }

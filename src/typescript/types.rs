@@ -411,7 +411,7 @@ impl Parser<'_, TypeScript> {
 
 	fn parse_binding_list_for_signature(&mut self) -> Result<List> {
 		let params = self.parse_binding_list(TokenKind::ParenR, true, true, false)?;
-		let params = self.list(&params);
+		let params = self.list_from(params);
 		self.check_parameter_list(params)?;
 		for param in self.ast.list(params).iter().flatten() {
 			if !matches!(

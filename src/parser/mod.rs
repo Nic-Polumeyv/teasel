@@ -465,6 +465,9 @@ pub(crate) struct Parser<'a, E: Extension = ()> {
 	pub(crate) scopes: Vec<Scope>,
 	/// Name vectors of scopes left, for the next scope entered.
 	spare_names: Vec<Vec<(StrId, u8)>>,
+	/// List buffers earlier lists gave back: a list costs no allocation after the first at its depth.
+	spare_lists: Vec<Vec<Option<NodeId>>>,
+	param_names: Vec<StrId>,
 	labels: Vec<Label>,
 	private_names: Vec<PrivateNameScope>,
 	pub(crate) undeclared_exports: FastMap<StrId, (u32, usize)>,
@@ -479,6 +482,25 @@ pub(crate) struct Parser<'a, E: Extension = ()> {
 	speculating: u32,
 	/// More nodes than this is a parse that stopped consuming input.
 	tree_limit: usize,
+}
+
+/// The buffers a parse works in, handed on through the tree so the next parse allocates none.
+#[derive(Default)]
+pub struct Spare {
+	scopes: Vec<Scope>,
+	names: Vec<Vec<(StrId, u8)>>,
+	lists: Vec<Vec<Option<NodeId>>>,
+	param_names: Vec<StrId>,
+	labels: Vec<Label>,
+	private_names: Vec<PrivateNameScope>,
+	errors: Vec<SyntaxError>,
+	regexp: crate::lexer::regexp::Scratch,
+}
+
+impl std::fmt::Debug for Spare {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.write_str("Spare")
+	}
 }
 
 /// Enough to unwind the parser after an error inside a statement it recovers from: what the
@@ -569,6 +591,8 @@ impl<'a, E: Extension> Parser<'a, E> {
 		let strict = options.module || expression::strict_directive(src, offset);
 		lexer.strict = strict;
 		lexer.module = options.module;
+		let spare = std::mem::take(&mut ast.spare);
+		lexer.regexp = spare.regexp;
 		let mut parser = Self {
 			lexer,
 			ast,
@@ -578,17 +602,19 @@ impl<'a, E: Extension> Parser<'a, E> {
 			prev_end: offset,
 			strict,
 			depth: 0,
-			scopes: Vec::new(),
-			spare_names: Vec::new(),
-			labels: Vec::new(),
-			private_names: Vec::new(),
+			scopes: spare.scopes,
+			spare_names: spare.names,
+			spare_lists: spare.lists,
+			param_names: spare.param_names,
+			labels: spare.labels,
+			private_names: spare.private_names,
 			undeclared_exports: FastMap::default(),
 			yield_pos: 0,
 			await_pos: 0,
 			await_ident_pos: 0,
 			potential_arrow_at: u32::MAX,
 			potential_arrow_in_for_await: false,
-			errors: Vec::new(),
+			errors: spare.errors,
 			speculating: 0,
 			tree_limit: 16 * src.len() + 256,
 		};
@@ -921,6 +947,22 @@ impl<'a, E: Extension> Parser<'a, E> {
 		ast.errors.append(&mut errors);
 		ast.errors.append(&mut lexer.errors);
 		ast.errors.sort_by_key(|error| error.pos);
+		let mut scopes = self.scopes;
+		scopes.clear();
+		let mut labels = self.labels;
+		labels.clear();
+		let mut private_names = self.private_names;
+		private_names.clear();
+		ast.spare = Spare {
+			scopes,
+			names: self.spare_names,
+			lists: self.spare_lists,
+			param_names: self.param_names,
+			labels,
+			private_names,
+			errors,
+			regexp: std::mem::take(&mut lexer.regexp),
+		};
 		ast
 	}
 
@@ -985,6 +1027,23 @@ impl<'a, E: Extension> Parser<'a, E> {
 
 	pub(crate) fn list(&mut self, items: &[Option<NodeId>]) -> List {
 		self.ast.add_list(items)
+	}
+
+	pub(crate) fn items(&mut self) -> Vec<Option<NodeId>> {
+		self.spare_lists.pop().unwrap_or_default()
+	}
+
+	pub(crate) fn recycle(&mut self, mut items: Vec<Option<NodeId>>) {
+		items.clear();
+		if self.spare_lists.len() < 32 {
+			self.spare_lists.push(items);
+		}
+	}
+
+	pub(crate) fn list_from(&mut self, items: Vec<Option<NodeId>>) -> List {
+		let list = self.list(&items);
+		self.recycle(items);
+		list
 	}
 
 	pub(crate) fn list_of(&mut self, items: &[NodeId]) -> List {

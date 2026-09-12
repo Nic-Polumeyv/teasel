@@ -119,6 +119,8 @@ pub struct Ast<X = ()> {
 	pub comments: Vec<Comment>,
 	/// Comments attached to nodes by `comments::attach`, as indices into `comments`.
 	pub attached: FastMap<NodeId, Attached>,
+	/// The buffers the last parse worked in, for the next one.
+	pub spare: crate::parser::Spare,
 	/// The scope analysis, when `scopes::analyze` ran.
 	pub scopes: Option<crate::scopes::Scopes>,
 	/// What went wrong, in source order, when errors are recovered from instead of thrown.
@@ -129,12 +131,37 @@ pub struct Ast<X = ()> {
 	pub extension: X,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct Attached {
-	pub leading: Vec<u32>,
-	pub trailing: Vec<u32>,
+	pub leading: Run,
+	pub trailing: Run,
 	/// Inside an empty block, program, array or object.
-	pub inner: Vec<u32>,
+	pub inner: Run,
+}
+
+/// `len` comments from `start` on: a node takes each of its comments one after the other.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct Run {
+	pub start: u32,
+	pub len: u32,
+}
+
+impl Run {
+	pub fn is_empty(self) -> bool {
+		self.len == 0
+	}
+
+	pub fn indices(self) -> std::ops::Range<u32> {
+		self.start..self.start + self.len
+	}
+
+	pub(crate) fn push(&mut self, index: u32) {
+		if self.len == 0 {
+			self.start = index;
+		}
+		debug_assert_eq!(self.start + self.len, index);
+		self.len += 1;
+	}
 }
 
 /// What an extension's data does to be reused for the next parse, and to forget what a failed
