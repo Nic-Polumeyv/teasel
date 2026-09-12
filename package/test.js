@@ -321,6 +321,20 @@ for (const { Source, scopeOf, bindingOf, parentOf } of [node, wasm]) {
 	assert.equal(block.consequent.nodes[0].end, 27);
 }
 
+// unfinished input under recovery is an answer, never a panic; a strict error is a SyntaxError
+const grammars = Object.fromEntries(['svelte', 'vue'].map((name) => [name, readFileSync(new URL(`../hosts/${name}.grammar`, import.meta.url), 'utf8')]));
+for (const [label, { Source }] of [['node', node], ['wasm', wasm]]) {
+	for (const text of ['<a x="', '<a /*', '<script>"</script>', '{#if', '<div class="{a']) {
+		assert.equal(new Source(text, { host: grammars.svelte, errorRecovery: true, comments: true, scopes: true }).parse().node.type, 'Root', `${label} ${text}`);
+	}
+	assert.throws(() => new Source('<a @x="@"/>', { host: grammars.vue }).parse(), (e) => e instanceof SyntaxError, `${label}`);
+	const handler = new Source('<button @click="let x = 1"/>', { host: grammars.vue, errorRecovery: true }).parse();
+	assert.equal(handler.node.children[0].props[0].handler.type, 'Program', label);
+	assert.deepEqual(handler.errors, [], label);
+}
+// a source held by an engine that panicked and started over says so
+assert.throws(() => wasm.engine.parse({ handle: 0, generation: -1 }, 1, 0, undefined, ''), /started over/);
+
 // a second host: the same walker, Vue's grammar
 const vue = readFileSync(new URL('../hosts/vue.grammar', import.meta.url), 'utf8');
 for (const { Source, parentOf } of [node, wasm]) {

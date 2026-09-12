@@ -396,6 +396,8 @@ impl Entry {
 /// expression could end (an extension may read one as its own, see `Extension::reads_stop`). Returns
 /// the tree, its roots (one node, or the patterns of a parameter list) and the offset after
 /// everything the parse consumed. `reused` is an emptied tree from an earlier parse, its room kept.
+/// The tree, whether the parse succeeded or not, so the next parse can reuse it; with the roots
+/// read and where the parse ended.
 pub(crate) fn parse_at<E: Extension>(
 	src: &str,
 	start: u32,
@@ -404,7 +406,7 @@ pub(crate) fn parse_at<E: Extension>(
 	options: Options,
 	stop: &str,
 	reused: Option<Ast<E::Data>>,
-) -> Result<(Ast<E::Data>, List, u32)> {
+) -> (Ast<E::Data>, Result<(List, u32)>) {
 	let end = end.unwrap_or(src.len() as u32);
 	let src = &src[..end as usize];
 	let budget = if entry == Entry::Program {
@@ -413,36 +415,42 @@ pub(crate) fn parse_at<E: Extension>(
 		0
 	};
 	let ast = reused.unwrap_or_else(|| Ast::sized(budget));
-	let mut parser = Parser::<E>::new(src, start, options, budget, stop, ast)?;
-	let roots = if entry == Entry::Program {
-		let program = parser.parse_program()?;
-		vec![program]
-	} else {
-		let result = parser.read_entry(entry);
-		match result {
+	let mut parser = Parser::<E>::new(src, start, options, budget, stop, ast);
+	let roots = parser.read_roots(entry).map(|roots| {
+		let roots = parser.list_of(&roots);
+		let end = if entry == Entry::Program {
+			end
+		} else {
+			parser.consumed_end()
+		};
+		(roots, end)
+	});
+	(parser.finish(), roots)
+}
+
+impl<E: Extension> Parser<'_, E> {
+	fn read_roots(&mut self, entry: Entry) -> Result<Vec<NodeId>> {
+		self.start()?;
+		if entry == Entry::Program {
+			return Ok(vec![self.parse_program()?]);
+		}
+		match self.read_entry(entry) {
 			// under recovery, what was read is skipped and an empty identifier stands where it failed
-			Err(error) if parser.recovering() => {
+			Err(error) if self.recovering() => {
 				let at = error.pos;
-				parser.record(Err(error)).unwrap();
-				parser.skip_to_end();
-				parser.prev_end = parser.prev_end.max(at);
+				self.record(Err(error)).unwrap();
+				self.skip_to_end();
+				self.prev_end = self.prev_end.max(at);
 				if entry == Entry::Params {
-					Vec::new()
+					Ok(Vec::new())
 				} else {
-					let name = parser.intern("");
-					vec![parser.add_with_end(NodeKind::Identifier { name }, at, at)]
+					let name = self.intern("");
+					Ok(vec![self.add_with_end(NodeKind::Identifier { name }, at, at)])
 				}
 			}
-			result => result?,
+			result => result,
 		}
-	};
-	let roots = parser.list_of(&roots);
-	let end = if entry == Entry::Program {
-		end
-	} else {
-		parser.consumed_end()
-	};
-	Ok((parser.finish(), roots, end))
+	}
 }
 
 pub(crate) struct Parser<'a, E: Extension = ()> {
@@ -552,7 +560,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 		budget: usize,
 		stop: &'a str,
 		mut ast: Ast<E::Data>,
-	) -> Result<Self> {
+	) -> Self {
 		let mut lexer = Lexer::with(src, budget, std::mem::take(&mut ast.strings));
 		lexer.comments = std::mem::take(&mut ast.comments);
 		lexer.set_pos(offset);
@@ -585,10 +593,15 @@ impl<'a, E: Extension> Parser<'a, E> {
 			tree_limit: 16 * src.len() + 256,
 		};
 		E::init(&mut parser);
-		parser.lexer.next_token_into(&mut parser.tok)?;
+		parser
+	}
+
+	/// The first token, read before anything is parsed.
+	pub(crate) fn start(&mut self) -> Result<()> {
+		self.lexer.next_token_into(&mut self.tok)?;
 		// the host's token first: nothing to read, which is the host's to report
-		parser.stop_after_operand();
-		Ok(parser)
+		self.stop_after_operand();
+		Ok(())
 	}
 
 	pub(crate) fn snapshot(&self) -> Snapshot<E> {
