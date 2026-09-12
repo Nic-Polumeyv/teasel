@@ -16,11 +16,10 @@ impl FastHasher {
 
 impl Hasher for FastHasher {
 	fn write(&mut self, bytes: &[u8]) {
-		let mut chunks = bytes.chunks_exact(8);
-		for chunk in &mut chunks {
-			self.add(u64::from_le_bytes(chunk.try_into().unwrap()));
+		let (chunks, rest) = bytes.as_chunks::<8>();
+		for chunk in chunks {
+			self.add(u64::from_le_bytes(*chunk));
 		}
-		let rest = chunks.remainder();
 		if !rest.is_empty() {
 			let mut buf = [0u8; 8];
 			buf[..rest.len()].copy_from_slice(rest);
@@ -76,18 +75,16 @@ fn hash(s: &str) -> u32 {
 	let n = bytes.len();
 	let mix = |h: u64, word: u64| (h.rotate_left(5) ^ word).wrapping_mul(SEED);
 	let mut h = mix(0, n as u64);
-	let mut i = 0;
-	while i + 8 <= n {
-		h = mix(h, u64::from_le_bytes(bytes[i..i + 8].try_into().unwrap()));
-		i += 8;
+	let (chunks, rest) = bytes.as_chunks::<8>();
+	for chunk in chunks {
+		h = mix(h, u64::from_le_bytes(*chunk));
 	}
+	let i = n - rest.len();
 	if i < n {
-		let tail = if n - i >= 4 {
-			u32::from_le_bytes(bytes[i..i + 4].try_into().unwrap()) as u64
-				| (u32::from_le_bytes(bytes[n - 4..].try_into().unwrap()) as u64) << 32
-		} else if n - i >= 2 {
-			u16::from_le_bytes(bytes[i..i + 2].try_into().unwrap()) as u64
-				| (u16::from_le_bytes(bytes[n - 2..].try_into().unwrap()) as u64) << 16
+		let tail = if let (Some(head), Some(last)) = (rest.first_chunk::<4>(), bytes.last_chunk::<4>()) {
+			u32::from_le_bytes(*head) as u64 | (u32::from_le_bytes(*last) as u64) << 32
+		} else if let (Some(head), Some(last)) = (rest.first_chunk::<2>(), bytes.last_chunk::<2>()) {
+			u16::from_le_bytes(*head) as u64 | (u16::from_le_bytes(*last) as u64) << 16
 		} else {
 			bytes[i] as u64
 		};

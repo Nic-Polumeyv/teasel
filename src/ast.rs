@@ -277,7 +277,7 @@ impl<X> Ast<X> {
 			Host(index) => {
 				let from = out.len();
 				self.host_children(index, out);
-				out[from..].sort_by_key(|&child| self.nodes[child.0 as usize].start);
+				out[from..].sort_unstable_by_key(|&child| self.nodes[child.0 as usize].start);
 			}
 			TemplateLiteral { quasis, expressions } => {
 				debug_assert_eq!(quasis.len, expressions.len + 1);

@@ -1259,11 +1259,10 @@ impl<E: Extension> Parser<'_, E> {
 	) -> Result<(NodeId, bool)> {
 		let is_expression = is_arrow && !self.is(TokenKind::BraceL);
 		let old_strict = self.strict;
-		let result;
-		if is_expression {
+		let result = if is_expression {
 			let body = self.parse_maybe_assign(for_init, &mut None)?;
 			self.check_params(params, false)?;
-			result = (body, true);
+			(body, true)
 		} else {
 			let simple = self.is_simple_param_list(params);
 			let mut use_strict = false;
@@ -1289,8 +1288,8 @@ impl<E: Extension> Parser<'_, E> {
 			};
 			self.adapt_directive_prologue(statements);
 			self.labels = old_labels;
-			result = (body, false);
-		}
+			(body, false)
+		};
 		self.exit_scope();
 		self.set_strict(old_strict);
 		Ok(result)

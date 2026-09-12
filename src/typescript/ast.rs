@@ -831,6 +831,6 @@ impl Walk for Data {
 				}
 			}
 		}
-		out[from..].sort_by_key(|&child| ast.node(child).start);
+		out[from..].sort_unstable_by_key(|&child| ast.node(child).start);
 	}
 }

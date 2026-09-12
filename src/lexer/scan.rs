@@ -60,8 +60,9 @@ fn bytes_equal(word: u64, byte: u8) -> u64 {
 
 #[inline]
 pub(crate) fn find<const N: usize>(bytes: &[u8], mut from: usize, needles: [u8; N], high: bool) -> usize {
-	while let Some(chunk) = bytes.get(from..from + 8) {
-		let word = u64::from_le_bytes(chunk.try_into().unwrap());
+	let (chunks, _) = bytes.get(from..).unwrap_or_default().as_chunks::<8>();
+	for chunk in chunks {
+		let word = u64::from_le_bytes(*chunk);
 		let mut hits = if high { word & HIGHS } else { 0 };
 		for needle in needles {
 			hits |= bytes_equal(word, needle);
@@ -87,18 +88,18 @@ mod tests {
 
 	#[test]
 	fn finds_the_first_needle_or_high_byte() {
-		assert_eq!(find(b"abcdefghij\nk", 0, [b'\n'], false), 10);
-		assert_eq!(find(b"abc", 0, [b'\n'], false), 3);
-		assert_eq!(find(b"", 0, [b'\n'], false), 0);
-		assert_eq!(find(b"\n", 0, [b'\n', b'\r'], false), 0);
-		assert_eq!(find(b"1234567\r", 0, [b'\n', b'\r'], false), 7);
-		assert_eq!(find(b"12345678\r", 0, [b'\n', b'\r'], false), 8);
+		assert_eq!(find(b"abcdefghij\nk", 0, *b"\n", false), 10);
+		assert_eq!(find(b"abc", 0, *b"\n", false), 3);
+		assert_eq!(find(b"", 0, *b"\n", false), 0);
+		assert_eq!(find(b"\n", 0, *b"\n\r", false), 0);
+		assert_eq!(find(b"1234567\r", 0, *b"\n\r", false), 7);
+		assert_eq!(find(b"12345678\r", 0, *b"\n\r", false), 8);
 		assert_eq!(find("abcdefgh\u{e9}x".as_bytes(), 0, [], true), 8);
 		assert_eq!(find(b"\x80", 0, [], true), 0);
 		assert_eq!(find(b"\x80", 0, [], false), 1);
-		assert_eq!(find(b"0123456789", 3, [b'5'], false), 5);
-		assert_eq!(find(b"aaaaaaaaaaaaaaaab", 0, [b'b'], false), 16);
-		assert_eq!(find(b"\x81\x01\xff\x00\n", 0, [b'\n'], false), 4);
+		assert_eq!(find(b"0123456789", 3, *b"5", false), 5);
+		assert_eq!(find(b"aaaaaaaaaaaaaaaab", 0, *b"b", false), 16);
+		assert_eq!(find(b"\x81\x01\xff\x00\n", 0, *b"\n", false), 4);
 	}
 
 	#[test]

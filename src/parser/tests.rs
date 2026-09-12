@@ -719,14 +719,14 @@ fn phases() {
 		request.set("comments");
 		let prepared = crate::json::Prepared::borrowed(&source, request);
 		best("whole request: positions, parse, comments, encode, finish", &mut || {
-			let _ = prepared.binary(Entry::Program, 0.0, None, "").unwrap();
+			prepared.binary(Entry::Program, 0.0, None, "").unwrap();
 		});
 		for flag in ["scopes", "locations"] {
 			request.set(flag);
 		}
 		let prepared = crate::json::Prepared::borrowed(&source, request);
 		best("whole request with scopes and loc", &mut || {
-			let _ = prepared.binary(Entry::Program, 0.0, None, "").unwrap();
+			prepared.binary(Entry::Program, 0.0, None, "").unwrap();
 		});
 	}
 	let mut binary = Binary::new();
@@ -848,7 +848,7 @@ fn profile() {
 		}
 	}
 	let mut rows: Vec<_> = by_frame.into_iter().collect();
-	rows.sort_by(|a, b| b.1.0.cmp(&a.1.0));
+	rows.sort_by_key(|row| std::cmp::Reverse(row.1.0));
 	eprintln!(
 		"samples {total}, sink {sink}, token {} bytes, result {} bytes",
 		std::mem::size_of::<crate::lexer::token::Token>(),
