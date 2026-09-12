@@ -304,24 +304,45 @@ pub mod kind {
 	pub const FIRST: u32 = 2;
 }
 
-/// The strings the writer names itself, numbered once per thread for every answer: a binding
+/// The strings the writer names itself, numbered once per writer for every answer: a binding
 /// fetches the list when an answer refers past what it has.
-#[derive(Default)]
 struct Constants {
 	names: Vec<&'static str>,
 	ids: FastMap<&'static str, u32>,
+	// literals only: their address is a cheaper key than their text
+	recent: Box<[(usize, u32); 512]>,
 }
 
-thread_local! {
-	static CONSTANTS: std::cell::RefCell<Constants> = std::cell::RefCell::new(Constants::default());
+impl Constants {
+	fn new() -> Self {
+		Constants {
+			names: Vec::new(),
+			ids: FastMap::default(),
+			recent: Box::new([(0, 0); 512]),
+		}
+	}
+
+	fn id(&mut self, value: &'static str) -> u32 {
+		let address = value.as_ptr() as usize;
+		let slot = (address.wrapping_mul(crate::interner::SEED as usize) >> 55) & 511;
+		if self.recent[slot].0 == address {
+			return self.recent[slot].1;
+		}
+		let id = match self.ids.get(value) {
+			Some(&id) => id,
+			None => {
+				let id = self.names.len() as u32;
+				self.names.push(value);
+				self.ids.insert(value, id);
+				id
+			}
+		};
+		self.recent[slot] = (address, id);
+		id
+	}
 }
 
-/// The constant strings numbered so far on this thread.
-pub fn constants() -> Vec<&'static str> {
-	CONSTANTS.with(|c| c.borrow().names.clone())
-}
-
-/// The shapes numbered so far on this thread, from `kind::FIRST`. A shape is what a node's
+/// The shapes numbered so far by a writer, from `kind::FIRST`. A shape is what a node's
 /// entries hold: its record is its type's constant id plus one (0 for a plain object), then a
 /// word per entry, the key's constant id shifted left four with the value's `kind` in the low
 /// bits. The records lie back to back, each behind its length.
@@ -330,82 +351,50 @@ struct Shapes {
 	starts: Vec<u32>,
 	ids: FastMap<Box<[u32]>, u32>,
 	// the map lookup was a fifth of the encode; a hit here is a probe and a compare
-	recent: Box<[(u64, u32); 1024]>,
+	recent: Box<[(u32, u32); 1024]>,
 }
 
-thread_local! {
-	static SHAPES: std::cell::RefCell<Shapes> = std::cell::RefCell::new(Shapes {
-		words: Vec::new(),
-		starts: vec![0; kind::FIRST as usize],
-		ids: FastMap::default(),
-		recent: Box::new([(0, 0); 1024]),
-	});
-}
-
-/// The shape records numbered so far on this thread.
-pub fn shapes() -> Vec<u32> {
-	SHAPES.with(|s| s.borrow().words.clone())
-}
-
-fn shape(record: &[u32]) -> u32 {
-	// a hit is checked against the record, so the hash only has to spread: a sum does
-	let mut hash = (record.len() as u64) << 32;
-	for &word in record {
-		hash = hash.wrapping_add(word as u64);
+impl Shapes {
+	fn new() -> Self {
+		Shapes {
+			words: Vec::new(),
+			starts: vec![0; kind::FIRST as usize],
+			ids: FastMap::default(),
+			recent: Box::new([(0, 0); 1024]),
+		}
 	}
-	SHAPES.with(|s| {
-		let mut s = s.borrow_mut();
-		let slot = (hash.wrapping_mul(crate::interner::SEED) >> 54) as usize;
-		let (seen, id) = s.recent[slot];
+
+	fn id(&mut self, record: &[u32]) -> u32 {
+		// a hit is checked against the record, so the hash only has to spread: a sum does
+		let mut hash = (record.len() as u64) << 32;
+		for &word in record {
+			hash = hash.wrapping_add(word as u64);
+		}
+		let hash = (hash.wrapping_mul(crate::interner::SEED) >> 32) as u32;
+		let slot = (hash >> 22) as usize;
+		let (seen, id) = self.recent[slot];
 		if seen == hash && id != 0 {
-			let start = s.starts[id as usize] as usize;
-			if s.words[start] as usize == record.len() && s.words[start + 1..start + 1 + record.len()] == *record {
+			let start = self.starts[id as usize] as usize;
+			if self.words[start] as usize == record.len() && self.words[start + 1..start + 1 + record.len()] == *record
+			{
 				return id;
 			}
 		}
-		let id = match s.ids.get(record) {
+		let id = match self.ids.get(record) {
 			Some(&id) => id,
 			None => {
-				let id = s.starts.len() as u32;
-				let start = s.words.len() as u32;
-				s.starts.push(start);
-				s.words.push(record.len() as u32);
-				s.words.extend_from_slice(record);
-				s.ids.insert(record.into(), id);
+				let id = self.starts.len() as u32;
+				let start = self.words.len() as u32;
+				self.starts.push(start);
+				self.words.push(record.len() as u32);
+				self.words.extend_from_slice(record);
+				self.ids.insert(record.into(), id);
 				id
 			}
 		};
-		s.recent[slot] = (hash, id);
+		self.recent[slot] = (hash, id);
 		id
-	})
-}
-
-thread_local! {
-	// literals only: their address is a cheaper key than their text
-	static RECENT: std::cell::RefCell<[(usize, u32); 512]> = const { std::cell::RefCell::new([(0, 0); 512]) };
-}
-
-fn constant(value: &'static str) -> u32 {
-	let address = value.as_ptr() as usize;
-	let slot = (address >> 3) & 511;
-	RECENT.with(|recent| {
-		let mut table = recent.borrow_mut();
-		if table[slot].0 == address {
-			return table[slot].1;
-		}
-		let id = CONSTANTS.with(|c| {
-			let mut c = c.borrow_mut();
-			if let Some(&id) = c.ids.get(value) {
-				return id;
-			}
-			let id = c.names.len() as u32;
-			c.names.push(value);
-			c.ids.insert(value, id);
-			id
-		});
-		table[slot] = (address, id);
-		id
-	})
+	}
 }
 
 /// A tree packed into one buffer of 32-bit words, what a binding's JavaScript turns into objects
@@ -563,6 +552,8 @@ pub struct Binary {
 	start: u32,
 	end: u32,
 	loc: u32,
+	constants: Constants,
+	shapes: Shapes,
 }
 
 enum Frame {
@@ -588,12 +579,31 @@ impl Binary {
 			seq: Vec::new(),
 			tables_at: 0,
 			tables: 0,
-			start: constant("start") << 4 | kind::INT,
-			end: constant("end") << 4 | kind::INT,
-			loc: constant("loc") << 4 | kind::LOC,
+			start: 0,
+			end: 0,
+			loc: 0,
+			constants: Constants::new(),
+			shapes: Shapes::new(),
 		};
+		binary.start = binary.constant("start") << 4 | kind::INT;
+		binary.end = binary.constant("end") << 4 | kind::INT;
+		binary.loc = binary.constant("loc") << 4 | kind::LOC;
 		binary.reset();
 		binary
+	}
+
+	pub(crate) fn constant(&mut self, value: &'static str) -> u32 {
+		self.constants.id(value)
+	}
+
+	/// The constant strings numbered so far.
+	pub fn constants(&self) -> &[&'static str] {
+		&self.constants.names
+	}
+
+	/// The shape records numbered so far.
+	pub fn shapes(&self) -> &[u32] {
+		&self.shapes.words
 	}
 
 	pub fn words(&mut self) -> &mut Words {
@@ -650,8 +660,8 @@ impl Binary {
 			self.ends.len() as u32,
 			self.floats.len() as u32,
 			self.text.len() as u32,
-			CONSTANTS.with(|c| c.borrow().names.len() as u32),
-			SHAPES.with(|s| s.borrow().starts.len() as u32),
+			self.constants.names.len() as u32,
+			self.shapes.starts.len() as u32,
 			self.tables_at,
 		]);
 		self.words.extend_from_slice(&self.ends);
@@ -680,7 +690,8 @@ impl Sink for Binary {
 	}
 
 	fn begin(&mut self, ty: &'static str) {
-		self.open(constant(ty) + 1);
+		let id = self.constants.id(ty);
+		self.open(id + 1);
 	}
 
 	fn object(&mut self) {
@@ -701,7 +712,7 @@ impl Sink for Binary {
 			}
 			Frame::Node { slot, record } => {
 				let stop = self.seq.len() - if self.frames.is_empty() { self.tables } else { 0 };
-				self.words[slot as usize] = shape(&self.seq[record as usize..stop]);
+				self.words[slot as usize] = self.shapes.id(&self.seq[record as usize..stop]);
 				self.seq.truncate(record as usize);
 			}
 		}
@@ -709,7 +720,8 @@ impl Sink for Binary {
 
 	fn key(&mut self, key: &'static str) {
 		debug_assert!(self.tables_at == 0 || self.frames.len() > 1, "the tables come last");
-		self.seq.push(constant(key) << 4);
+		let id = self.constants.id(key);
+		self.seq.push(id << 4);
 	}
 
 	fn int(&mut self, value: u32) {
@@ -735,7 +747,8 @@ impl Sink for Binary {
 
 	fn str(&mut self, value: &'static str) {
 		self.value(kind::CONST);
-		self.words.push(constant(value));
+		let id = self.constants.id(value);
+		self.words.push(id);
 	}
 
 	fn text(&mut self, value: &str) {
@@ -2151,7 +2164,7 @@ mod tests {
 
 	#[test]
 	fn binary_layout() {
-		use super::{Binary, Sink, constant, kind, shapes};
+		use super::{Binary, Sink, kind};
 		use crate::interner::Interner;
 		let mut interner = Interner::default();
 		interner.intern("a");
@@ -2193,7 +2206,7 @@ mod tests {
 		assert_eq!(&body[2..10], &[1, 2, 0, 0, 1, 3, kind::NULL, kind::END]);
 		assert_eq!(&body[11..], &[1, 7, kind::END]);
 		assert_eq!(tables_at, 10);
-		let all = shapes();
+		let all = b.shapes().to_vec();
 		let record = |id: u32| {
 			let mut at = 0;
 			for _ in kind::FIRST..id {
@@ -2201,20 +2214,20 @@ mod tests {
 			}
 			&all[at + 1..at + 1 + all[at] as usize]
 		};
-		assert_eq!(record(root), &[0, constant("node") << 4 | kind::NODE]);
+		assert_eq!(record(root), &[0, b.constant("node") << 4 | kind::NODE]);
 		assert_eq!(
 			record(node),
 			&[
-				constant("Identifier") + 1,
-				constant("start") << 4 | kind::INT,
-				constant("end") << 4 | kind::INT,
-				constant("name") << 4 | kind::STR,
-				constant("value") << 4 | kind::FLOAT,
-				constant("raw") << 4 | kind::STR,
-				constant("list") << 4 | kind::NODES,
+				b.constant("Identifier") + 1,
+				b.constant("start") << 4 | kind::INT,
+				b.constant("end") << 4 | kind::INT,
+				b.constant("name") << 4 | kind::STR,
+				b.constant("value") << 4 | kind::FLOAT,
+				b.constant("raw") << 4 | kind::STR,
+				b.constant("list") << 4 | kind::NODES,
 			]
 		);
-		assert_eq!(record(scope), &[0, constant("through") << 4 | kind::INTS]);
+		assert_eq!(record(scope), &[0, b.constant("through") << 4 | kind::INTS]);
 		let ends = &words[7 + tree as usize..][..2];
 		assert_eq!(ends, &[1, 4]);
 		let text_at = 7 + tree as usize + 2;
@@ -2230,32 +2243,33 @@ mod tests {
 	#[test]
 	#[ignore]
 	fn hot_paths() {
-		use super::{constant, kind, shape};
+		use super::{Binary, kind};
+		let mut b = Binary::new();
 		let record = [
-			constant("Identifier") + 1,
-			constant("start") << 4 | kind::INT,
-			constant("end") << 4 | kind::INT,
-			constant("binding") << 4 | kind::INT,
-			constant("name") << 4 | kind::STR,
+			b.constant("Identifier") + 1,
+			b.constant("start") << 4 | kind::INT,
+			b.constant("end") << 4 | kind::INT,
+			b.constant("binding") << 4 | kind::INT,
+			b.constant("name") << 4 | kind::STR,
 		];
 		let other = [
-			constant("Literal") + 1,
-			constant("start") << 4 | kind::INT,
-			constant("end") << 4 | kind::INT,
-			constant("value") << 4 | kind::STR,
-			constant("raw") << 4 | kind::SLICE,
+			b.constant("Literal") + 1,
+			b.constant("start") << 4 | kind::INT,
+			b.constant("end") << 4 | kind::INT,
+			b.constant("value") << 4 | kind::STR,
+			b.constant("raw") << 4 | kind::SLICE,
 		];
 		let n = 10_000_000u32;
 		let mut sink = 0u32;
 		let t = std::time::Instant::now();
 		for i in 0..n {
-			sink = sink.wrapping_add(shape(if i & 1 == 0 { &record } else { &other }));
+			sink = sink.wrapping_add(b.shapes.id(if i & 1 == 0 { &record } else { &other }));
 		}
 		eprintln!("shape hit {:.1} ns", t.elapsed().as_nanos() as f64 / n as f64);
 		let keys = ["name", "start", "end", "body", "expression", "value", "raw", "id"];
 		let t = std::time::Instant::now();
 		for i in 0..n {
-			sink = sink.wrapping_add(constant(keys[(i & 7) as usize]));
+			sink = sink.wrapping_add(b.constant(keys[(i & 7) as usize]));
 		}
 		eprintln!(
 			"constant hit {:.1} ns  ({sink})",

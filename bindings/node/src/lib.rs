@@ -185,7 +185,7 @@ unsafe extern "C" fn parse(env: Env, info: CallbackInfo) -> Value {
 
 unsafe extern "C" fn constants(env: Env, _: CallbackInfo) -> Value {
 	guard(env, || {
-		let names = teasel::estree::constants();
+		let names = teasel::json::constants();
 		let mut array = std::ptr::null_mut();
 		check(
 			unsafe { node_api::napi_create_array_with_length(env, names.len(), &mut array) },
@@ -203,7 +203,7 @@ unsafe extern "C" fn constants(env: Env, _: CallbackInfo) -> Value {
 
 unsafe extern "C" fn shapes(env: Env, _: CallbackInfo) -> Value {
 	guard(env, || {
-		let words = teasel::estree::shapes();
+		let words = teasel::json::shapes();
 		let mut array = std::ptr::null_mut();
 		check(
 			unsafe { node_api::napi_create_array_with_length(env, words.len(), &mut array) },

@@ -88,9 +88,19 @@ pub fn error_json(message: &str, pos: u32) -> String {
 	out
 }
 
+/// The constant strings this thread's writer has numbered so far.
+pub fn constants() -> Vec<&'static str> {
+	SESSION.with(|session| session.borrow().binary.constants().to_vec())
+}
+
+/// The shape records this thread's writer has numbered so far.
+pub fn shapes() -> Vec<u32> {
+	SESSION.with(|session| session.borrow().binary.shapes().to_vec())
+}
+
 pub fn constants_json() -> String {
 	let mut json = String::from("[");
-	for (i, name) in crate::estree::constants().iter().enumerate() {
+	for (i, name) in constants().iter().enumerate() {
 		if i > 0 {
 			json.push(',');
 		}
@@ -101,7 +111,7 @@ pub fn constants_json() -> String {
 }
 
 pub fn shapes_json() -> String {
-	let words = crate::estree::shapes();
+	let words = shapes();
 	let mut json = String::with_capacity(words.len() * 8 + 2);
 	json.push('[');
 	for (i, word) in words.iter().enumerate() {
