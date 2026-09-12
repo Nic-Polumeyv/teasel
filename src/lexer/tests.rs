@@ -416,6 +416,9 @@ fn regex_validation() {
 			.map_err(|e| (e.message.into_owned(), e.pos))
 	};
 	assert!(regex("/(?<a>x)|(?<a>y)/").is_ok());
+	// groups side by side are not nested
+	assert!(regex(&format!("/{}/", "()".repeat(1000))).is_ok());
+	assert!(regex(&format!("/{}{}/", "(".repeat(1001), ")".repeat(1001))).is_err());
 	assert!(regex("/[\\p{L}--[a-z]]/v").is_ok());
 	assert!(regex("/(?i:a)b/").is_ok());
 	assert!(regex("/\\1(a)/").is_ok());

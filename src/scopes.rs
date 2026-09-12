@@ -483,6 +483,9 @@ struct Open {
 	/// Where a function's body starts: a parameter default cannot see what the body declares.
 	body_start: u32,
 	names: FastMap<StrId, BindingId>,
+	/// The function's own `arguments`, once referred to; kept out of `names`, which a body
+	/// declaration of the same name may hold.
+	arguments: Option<BindingId>,
 }
 
 pub struct Binder<'a, X> {
@@ -627,7 +630,18 @@ impl<'a, X: Bind> Binder<'a, X> {
 				&& !self.open[scope as usize].arrow
 				&& Some(name) == self.arguments
 			{
-				found = Some(self.declare_in(scope, name, BindingKind::Arguments, None));
+				found = Some(self.open[scope as usize].arguments.unwrap_or_else(|| {
+					let id = self.out.bindings.len() as BindingId;
+					self.out.bindings.push(Binding {
+						name,
+						kind: BindingKind::Arguments,
+						scope,
+						node: None,
+						declaration: None,
+					});
+					self.open[scope as usize].arguments = Some(id);
+					id
+				}));
 			}
 			match found {
 				Some(binding) => self.resolve(reference, binding),
@@ -1463,6 +1477,14 @@ mod tests {
 			facts("const A = class B { static { B; } }; () => arguments;"),
 			"A@6 declares const in module\nB@16 declares class-name in class\nB@29 -> @16\narguments@43 -> global"
 		);
+		// a parameter default sees the function's own `arguments`; the body sees what it declares
+		assert_eq!(
+			facts_in(
+				"function f(a = arguments) { let arguments = 2; return arguments; }",
+				false
+			),
+			"f@9 declares function in script\na@11 declares param in function\narguments@15 -> arguments\narguments@32 declares let in function\narguments@54 -> @32"
+		);
 	}
 
 	#[test]
@@ -1487,24 +1509,28 @@ mod tests {
 			facts_in("delete x; delete y.z; delete (w).v;", false),
 			"x@7 -> global\ny@17 -> global mutate\nw@30 -> global mutate"
 		);
-		let src = "(a as any).b = 1; (c!).d = 2; (e as any) = 3;";
-		let ast = analyzed(crate::typescript::parse_at(
-			src,
-			0,
-			None,
-			Entry::Program,
-			Options {
-				module: true,
-				..Options::default()
-			},
-			"",
-		));
-		let scopes = ast.scopes.as_ref().unwrap();
-		let flags: Vec<_> = scopes.references.iter().map(|r| (r.write, r.mutate)).collect();
-		assert_eq!(flags, [(false, true), (false, true), (true, false)]);
+		#[cfg(feature = "typescript")]
+		{
+			let src = "(a as any).b = 1; (c!).d = 2; (e as any) = 3;";
+			let ast = analyzed(crate::typescript::parse_at(
+				src,
+				0,
+				None,
+				Entry::Program,
+				Options {
+					module: true,
+					..Options::default()
+				},
+				"",
+			));
+			let scopes = ast.scopes.as_ref().unwrap();
+			let flags: Vec<_> = scopes.references.iter().map(|r| (r.write, r.mutate)).collect();
+			assert_eq!(flags, [(false, true), (false, true), (true, false)]);
+		}
 	}
 
 	#[test]
+	#[cfg(feature = "typescript")]
 	fn typescript_declarations() {
 		let src = "import type { X } from 'm'; import { type Y, Z } from 'm'; export { type X }; enum E { A = 1, B = A } namespace N { export const n = 1; } namespace N { n; } export function f(): void; class C { m(@dec p) {} } function dec() {} function g(this: T, a) {} enum M { this = 1 }";
 		let ast = analyzed(crate::typescript::parse_at(
@@ -1551,6 +1577,7 @@ mod tests {
 	}
 
 	#[test]
+	#[cfg(feature = "typescript")]
 	fn typescript_values_and_types() {
 		let src = "enum E { A = x } namespace N { export const n: T = y as T; } let t: T; @d class C { constructor(public p: P) {} }";
 		let ast = analyzed(crate::typescript::parse_at(

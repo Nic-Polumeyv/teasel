@@ -268,6 +268,7 @@ fn entry_points() {
 struct Api<X>(ParseAt<X>);
 
 const JS: Api<()> = Api(crate::parse_at);
+#[cfg(feature = "typescript")]
 const TS: Api<crate::typescript::ast::Data> = Api(crate::typescript::parse_at);
 
 impl<X: Walk> Api<X> {
@@ -467,9 +468,10 @@ fn recovery() {
 	let (ast, _, _) = JS.recovered("class A { m() { if (x) { y", 0, Entry::Program, module, "");
 	// a token no element starts, at the end: the body must not spin on it
 	JS.recovered("class A {\n/", 0, Entry::Program, module, "");
-	TS.recovered("namespace N {\n/", 0, Entry::Program, module, "");
-	TS.recovered("interface I {\n/", 0, Entry::Program, module, "");
-	TS.recovered("enum E {\n/", 0, Entry::Program, module, "");
+	#[cfg(feature = "typescript")]
+	for src in ["namespace N {\n/", "interface I {\n/", "enum E {\n/"] {
+		TS.recovered(src, 0, Entry::Program, module, "");
+	}
 	assert_eq!(codes(&ast), ["unexpected_eof@26"]);
 	// a closer nothing opened is reported and skipped
 	let (ast, _, _) = JS.recovered("x; ) y", 0, Entry::Program, module, "");
@@ -506,11 +508,14 @@ fn recovery() {
 
 	// TypeScript: a speculation fails as in strict mode, so `g<A, B` is a sequence; a missing type
 	// is a placeholder
-	let (ast, _, end) = TS.recovered("{g<A, B }", 1, Entry::Expression, module, "}");
-	assert_eq!((end, codes(&ast)), (7, vec![]));
-	let (ast, _, _) = TS.recovered("let x: = 1", 0, Entry::Program, module, "");
-	assert_eq!(codes(&ast), ["unexpected_token@7"]);
-	assert_eq!(ast.node(ast.last()).end, 10);
+	#[cfg(feature = "typescript")]
+	{
+		let (ast, _, end) = TS.recovered("{g<A, B }", 1, Entry::Expression, module, "}");
+		assert_eq!((end, codes(&ast)), (7, vec![]));
+		let (ast, _, _) = TS.recovered("let x: = 1", 0, Entry::Program, module, "");
+		assert_eq!(codes(&ast), ["unexpected_token@7"]);
+		assert_eq!(ast.node(ast.last()).end, 10);
+	}
 }
 
 fn script_body(ast: &Ast) -> Vec<String> {
@@ -558,6 +563,7 @@ fn recovery_prefixes() {
 		if let Some(log) = &log {
 			std::fs::write(log, format!("{}\n", path.display())).unwrap();
 		}
+		#[cfg(feature = "typescript")]
 		let ts = path.to_string_lossy().ends_with(".ts");
 		let step = (src.len() / 1000).max(1);
 		let mut cut = 0;
@@ -566,11 +572,12 @@ fn recovery_prefixes() {
 				let prefix = &src[..cut];
 				let outcome = std::panic::catch_unwind(|| {
 					for entry in [Entry::Program, Entry::Expression] {
+						#[cfg(feature = "typescript")]
 						if ts {
 							TS.recovered(prefix, 0, entry, module, "");
-						} else {
-							JS.recovered(prefix, 0, entry, module, "");
+							continue;
 						}
+						JS.recovered(prefix, 0, entry, module, "");
 					}
 				});
 				if outcome.is_err() {

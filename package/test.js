@@ -23,7 +23,7 @@ for (const [label, { Source, engine }] of [['node', node], ['wasm', wasm]]) {
 	};
 	const texts = ['x}', 'x }', ' x}', '\rx}', '\r\nx}', '\u2028x}', 'x: T}', 'x : T}', 'x = 1}', 'x, y}', 'x(y)}', 'x.y}', 'eval}', 'arguments}', 'let}', 'await}', 'yield}', 'x as T}', 'x satisfies T}', '𝒳}', 'x\\u0041}', 'x)', 'x]', 'x'];
 	const optionSets = [{}, { sourceType: 'module' }, { typescript: true }, { sourceType: 'module', typescript: true, locations: true, scopes: true, comments: true }, { typescript: 'erase', errorRecovery: true }];
-	for (const text of texts) for (const options of optionSets) for (const entry of ['expression', 'pattern']) for (const stopAt of [undefined, ['as', ':']]) for (const end of [undefined, 0]) {
+	for (const text of texts) for (const options of optionSets) for (const entry of ['expression', 'pattern']) for (const stopAt of [undefined, ['as', ':']]) for (const end of [undefined, 0, 1]) {
 		const offset = text.search(/[^\s]/);
 		const fast = (() => { try { return summary(new Source(text, options).parse(entry, offset, { end, stopAt })); } catch (e) { return { error: e.code }; } })();
 		const full = engineAnswer(text, options, entry, offset, end, stopAt);
@@ -319,6 +319,15 @@ for (const { Source, scopeOf, bindingOf, parentOf } of [node, wasm]) {
 	assert.equal(block.test.name, '');
 	assert.equal(block.consequent.nodes[0].name, 'Comp');
 	assert.equal(block.consequent.nodes[0].end, 27);
+}
+
+// the answer follows the options the source was prepared with, and an entry is one of the names
+for (const [label, { Source }] of [['node', node], ['wasm', wasm]]) {
+	const options = {};
+	const source = new Source('x}', options);
+	options.locations = true;
+	assert.equal('loc' in source.parse('expression', 0).node, false, label);
+	assert.throws(() => source.parse('toString'), TypeError, label);
 }
 
 // a second host: the same walker, Vue's grammar
