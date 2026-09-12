@@ -453,13 +453,12 @@ impl<X> Ast<X> {
 			ImportSpecifier { imported, local } => out.extend([imported, local]),
 			ImportDefaultSpecifier { local } | ImportNamespaceSpecifier { local } => out.push(local),
 			ImportAttribute { key, value } => out.extend([key, value]),
+			ExportDeclaration { declaration } => out.push(declaration),
 			ExportNamedDeclaration {
-				declaration,
 				specifiers,
 				source,
 				attributes,
 			} => {
-				out.extend(declaration);
 				list(specifiers, out);
 				out.extend(source);
 				list(attributes, out);
@@ -814,8 +813,12 @@ pub enum NodeKind {
 		key: NodeId,
 		value: NodeId,
 	},
+	/// `export declaration`, an ExportNamedDeclaration whose only child is what it declares.
+	ExportDeclaration {
+		declaration: NodeId,
+	},
+	/// `export { specifiers } from source with { attributes }`.
 	ExportNamedDeclaration {
-		declaration: Option<NodeId>,
 		specifiers: List,
 		source: Option<NodeId>,
 		attributes: List,

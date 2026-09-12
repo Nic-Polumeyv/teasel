@@ -56,10 +56,10 @@ impl Emit for Data {
 				extras.export_kind == Some(Kind::Type)
 			}
 			// `export { type A }` keeps an `export {}`, as tsc keeps the file a module
-			NodeKind::ExportNamedDeclaration { declaration, .. } => {
-				extras.export_kind == Some(Kind::Type)
-					|| declaration.is_some_and(|declaration| self.erased(w, declaration))
+			NodeKind::ExportDeclaration { declaration } => {
+				extras.export_kind == Some(Kind::Type) || self.erased(w, declaration)
 			}
+			NodeKind::ExportNamedDeclaration { .. } => extras.export_kind == Some(Kind::Type),
 			NodeKind::ExportDefaultDeclaration { declaration } => {
 				extras.export_kind == Some(Kind::Type) || self.erased(w, declaration)
 			}
@@ -555,7 +555,8 @@ impl Emit for Data {
 			NodeKind::ImportDeclaration { .. } | NodeKind::ImportSpecifier { .. } => {
 				w.string("importKind", extras.import_kind.unwrap_or(Kind::Value).as_str());
 			}
-			NodeKind::ExportNamedDeclaration { .. }
+			NodeKind::ExportDeclaration { .. }
+			| NodeKind::ExportNamedDeclaration { .. }
 			| NodeKind::ExportDefaultDeclaration { .. }
 			| NodeKind::ExportAllDeclaration { .. }
 			| NodeKind::ExportSpecifier { .. } => {

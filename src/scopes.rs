@@ -1436,13 +1436,8 @@ impl<'a, X: Bind> Binder<'a, X> {
 					self.declare_by(local, BindingKind::Import, id);
 				}
 			}
-			ExportNamedDeclaration {
-				declaration,
-				specifiers,
-				source,
-				..
-			} => {
-				self.exported(|b| b.maybe(declaration, Mode::Expression));
+			ExportDeclaration { declaration } => self.exported(|b| b.visit(declaration, Mode::Expression)),
+			ExportNamedDeclaration { specifiers, source, .. } => {
 				if source.is_none() && !self.ast.extension.types_only(self.ast, id) {
 					self.list(specifiers, Mode::Expression);
 				}

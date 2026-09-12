@@ -1831,14 +1831,20 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 				self.field("key", key);
 				self.field("value", value);
 			}
+			ExportDeclaration { declaration } => {
+				self.begin("ExportNamedDeclaration", id);
+				self.field("declaration", declaration);
+				self.list("specifiers", List::EMPTY);
+				self.opt("source", None);
+				self.list("attributes", List::EMPTY);
+			}
 			ExportNamedDeclaration {
-				declaration,
 				specifiers,
 				source,
 				attributes,
 			} => {
 				self.begin("ExportNamedDeclaration", id);
-				self.opt("declaration", declaration);
+				self.opt("declaration", None);
 				self.list("specifiers", specifiers);
 				self.opt("source", source);
 				self.list("attributes", attributes);
