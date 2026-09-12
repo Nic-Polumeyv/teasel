@@ -1,6 +1,6 @@
 {
 	"name": "@teasel/parser",
-	"version": "0.0.3",
+	"version": "0.0.4",
 	"description": "A JavaScript and TypeScript parser in Rust. It answers in ESTree.",
 	"license": "MIT",
 	"repository": {
