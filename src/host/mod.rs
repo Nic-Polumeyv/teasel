@@ -541,7 +541,14 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let data = self.text(start, end, data);
 		let rule = &self.grammar.text;
 		match rule.raw {
-			Some(raw) => self.host(rule.ty, start, end, &[(raw, Value::Slice(start, end)), (rule.data, data)], None, true),
+			Some(raw) => self.host(
+				rule.ty,
+				start,
+				end,
+				&[(raw, Value::Slice(start, end)), (rule.data, data)],
+				None,
+				true,
+			),
 			None => self.host(rule.ty, start, end, &[(rule.data, data)], None, true),
 		}
 	}
@@ -1184,7 +1191,11 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let name_id = self.intern(name);
 		let names = &self.grammar.element_fields;
 		fields.insert(0, (names.name, Value::Str(name_id)));
-		let finish = |w: &mut Self, attributes: Vec<NodeId>, mut fields: Vec<(&'static str, Value)>, nodes: Vec<NodeId>, end: u32| {
+		let finish = |w: &mut Self,
+		              attributes: Vec<NodeId>,
+		              mut fields: Vec<(&'static str, Value)>,
+		              nodes: Vec<NodeId>,
+		              end: u32| {
 			let list = w.list(&attributes);
 			w.recycle_nodes(attributes);
 			fields.push((names.attributes, Value::Nodes(list)));
@@ -1760,9 +1771,9 @@ impl<'a, E: Extension> Walker<'a, E> {
 			}
 			DirectiveValue::Form(form) => {
 				let mut read = Read {
-			fields: self.fields(),
-			body: None,
-		};
+					fields: self.fields(),
+					body: None,
+				};
 				if has_value {
 					let (value_start, value_end, after) = self.value_range()?;
 					if value_end > value_start {
@@ -1785,9 +1796,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 					self.at = after;
 					end = after;
 				}
-				let mut entries = Vec::new();
-				collect_entries(&form.items, &mut entries);
-				for (field, omit) in entries {
+				for &(field, omit) in &form.entries {
 					if !omit && !read.fields.iter().any(|(k, _)| *k == field) {
 						read.fields.push((field, Value::Null));
 					}
@@ -2059,14 +2068,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			Some(Item::Entry { field, .. }) => field,
 			_ => "expression",
 		};
-		let node = self.host(
-			rule.ty,
-			start,
-			self.at,
-			&[(field, Value::Node(expression))],
-			None,
-			true,
-		);
+		let node = self.host(rule.ty, start, self.at, &[(field, Value::Node(expression))], None, true);
 		self.append(node);
 		Ok(())
 	}
@@ -2181,9 +2183,9 @@ impl<'a, E: Extension> Walker<'a, E> {
 				self.require_space()?;
 			}
 			let mut read = Read {
-			fields: self.fields(),
-			body: None,
-		};
+				fields: self.fields(),
+				body: None,
+			};
 			self.form(&branch.form, &mut read)?;
 			self.space();
 			self.expect(close)?;
@@ -2402,12 +2404,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		chained: bool,
 	) -> NodeId {
 		// every entry the block could have read, null unless left out on purpose
-		let mut entries = Vec::new();
-		collect_entries(&rule.open.items, &mut entries);
-		for branch in &rule.branches {
-			collect_entries(&branch.form.items, &mut entries);
-		}
-		for (field, omit) in entries {
+		for &(field, omit) in &rule.entries {
 			if !omit && !fields.iter().any(|(k, _)| *k == field) {
 				fields.push((field, Value::Null));
 			}
@@ -2423,12 +2420,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 				.copied()
 				.filter(|(f, _)| !groups.iter().any(|group| group.fields.contains(f))),
 		);
-		let mut bodies: Vec<(&'static str, bool)> = Vec::new();
-		collect_bodies(&rule.open, &mut bodies);
-		for branch in &rule.branches {
-			collect_bodies(&branch.form, &mut bodies);
-		}
-		for (field, omit) in bodies {
+		for &(field, omit) in &rule.bodies {
 			if !omit && !done.iter().any(|(k, _)| *k == field) {
 				ordered.push((field, Value::Null));
 			}
@@ -2529,11 +2521,11 @@ impl<'a, E: Extension> Walker<'a, E> {
 	/// Runs a form at the cursor: every literal in place, every entry read, the first fitting
 	/// alternative of a group taken.
 	fn form(&mut self, form: &Form, read: &mut Read) -> Result<()> {
-		self.items(&form.items, &[], read)
+		self.items(&form.items, read)
 	}
 
-	fn items(&mut self, items: &[Item], follow: &[&'static str], read: &mut Read) -> Result<()> {
-		for (i, item) in items.iter().enumerate() {
+	fn items(&mut self, items: &[Item], read: &mut Read) -> Result<()> {
+		for item in items {
 			match item {
 				Item::Literal(literal) => {
 					self.space();
@@ -2542,19 +2534,23 @@ impl<'a, E: Extension> Walker<'a, E> {
 					}
 					self.at += literal.len() as u32;
 				}
-				Item::Entry { field, entry, .. } => {
+				Item::Entry {
+					field, entry, stops, ..
+				} => {
 					self.space();
-					let stops = first_literals(&items[i + 1..], follow);
-					let value = self.entry(*entry, &stops)?;
+					let value = self.entry(*entry, stops)?;
 					read.fields.push((field, value));
 				}
-				Item::Group { alternatives, required } => {
+				Item::Group {
+					alternatives,
+					required,
+					after,
+				} => {
 					self.space();
-					let after = first_literals(&items[i + 1..], follow);
 					let mut taken = false;
 					for alternative in alternatives {
-						if self.alternative_here(alternative, &after) {
-							self.items(&alternative.items, &after, read)?;
+						if self.alternative_here(alternative, after) {
+							self.items(&alternative.items, read)?;
 							if let Some(body) = &alternative.body {
 								read.body = Some(body.clone());
 							}
@@ -2565,7 +2561,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 					if !taken && *required {
 						let mut names = Vec::new();
 						for alternative in alternatives {
-							names.extend(first_literals(&alternative.items, &[]));
+							names.extend(grammar::first_literals(&alternative.items, &[]));
 						}
 						return fail(self.at, self.at, Code::Expected, Some(&names.join(" or ")));
 					}
@@ -2591,7 +2587,10 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let mut items = alternative.items.iter();
 		loop {
 			let item = items.next();
-			if let Some(Item::Group { alternatives, required }) = item {
+			if let Some(Item::Group {
+				alternatives, required, ..
+			}) = item
+			{
 				if alternatives.iter().any(|a| self.alternative_here(a, after)) {
 					return true;
 				}
@@ -2624,25 +2623,18 @@ impl<'a, E: Extension> Walker<'a, E> {
 		}
 	}
 
-	fn entry(&mut self, entry: Entry, stops: &[&'static str]) -> Result<Value> {
-		let stop = stops.join(" ");
+	fn entry(&mut self, entry: Entry, stops: &grammar::Stops) -> Result<Value> {
 		Ok(match entry {
 			Entry::Expression => {
-				// a token that continues an expression is JavaScript's before it is the host's
-				let stop: Vec<&str> = stops
-					.iter()
-					.copied()
-					.filter(|s| !matches!(*s, "(" | "[" | "." | "?." | "`"))
-					.collect();
-				let roots = self.js(JsEntry::Expression, &stop.join(" "))?;
+				let roots = self.js(JsEntry::Expression, stops.expression)?;
 				Value::Node(self.first(roots))
 			}
 			Entry::Pattern => {
-				let roots = self.js(JsEntry::Pattern, &stop)?;
+				let roots = self.js(JsEntry::Pattern, stops.joined)?;
 				Value::Node(self.first(roots))
 			}
 			Entry::Statement => {
-				let roots = self.js(JsEntry::Statement, &stop)?;
+				let roots = self.js(JsEntry::Statement, stops.joined)?;
 				Value::Node(self.first(roots))
 			}
 			Entry::Code => {
@@ -2667,14 +2659,12 @@ impl<'a, E: Extension> Walker<'a, E> {
 				Value::Node(program)
 			}
 			Entry::TypeParameters => {
-				let node = self.js(JsEntry::TypeParameters, &stop)?;
+				let node = self.js(JsEntry::TypeParameters, stops.joined)?;
 				let node = self.first(node);
 				let node = self.tree().node(node);
 				Value::Slice(node.start + 1, node.end - 1)
 			}
-			Entry::Params => {
-				Value::Nodes(self.js(JsEntry::Params, &stop)?)
-			}
+			Entry::Params => Value::Nodes(self.js(JsEntry::Params, stops.joined)?),
 			Entry::Identifier => Value::Node(self.identifier()?),
 			Entry::Text => {
 				let close = self.grammar.delimiters.1;
@@ -2850,62 +2840,4 @@ fn closing_tag(rest: &str, name: &str) -> Option<usize> {
 		return None;
 	}
 	tail.find('>').map(|i| head + i + 1)
-}
-
-/// The literals that can come first after a point in a form: what an entry before it stops at.
-fn first_literals(items: &[Item], follow: &[&'static str]) -> Vec<&'static str> {
-	let mut out = Vec::new();
-	for item in items {
-		match item {
-			Item::Literal(literal) => {
-				out.push(*literal);
-				return out;
-			}
-			Item::Entry { .. } => return out,
-			Item::Group { alternatives, required } => {
-				for alternative in alternatives {
-					out.extend(first_literals(&alternative.items, &[]));
-				}
-				if *required {
-					return out;
-				}
-			}
-		}
-	}
-	out.extend_from_slice(follow);
-	out
-}
-
-fn collect_entries(items: &[Item], out: &mut Vec<(&'static str, bool)>) {
-	for item in items {
-		match item {
-			Item::Entry { field, omit, .. } => out.push((field, *omit)),
-			Item::Group { alternatives, .. } => {
-				for alternative in alternatives {
-					collect_entries(&alternative.items, out);
-				}
-			}
-			Item::Literal(_) => {}
-		}
-	}
-}
-
-fn collect_bodies(form: &Form, out: &mut Vec<(&'static str, bool)>) {
-	let mut push = |body: &Body| {
-		if !out.iter().any(|(f, _)| *f == body.field) {
-			out.push((body.field, body.omit));
-		}
-	};
-	if let Some(body) = &form.body {
-		push(body);
-	}
-	for item in &form.items {
-		if let Item::Group { alternatives, .. } = item {
-			for alternative in alternatives {
-				if let Some(body) = &alternative.body {
-					push(body);
-				}
-			}
-		}
-	}
 }

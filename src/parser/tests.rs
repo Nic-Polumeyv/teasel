@@ -946,3 +946,43 @@ fn alloc_probe() {
 		);
 	}
 }
+
+#[test]
+#[ignore]
+fn host_alloc_probe() {
+	let grammar = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/hosts/svelte.grammar")).unwrap();
+	let count = |src: &str| {
+		let prepared = crate::json::Prepared::borrowed(src, crate::json::Request::from_names("module"))
+			.host(&grammar)
+			.unwrap();
+		prepared.binary(Entry::Program, 0.0, None, "").unwrap();
+		let before = ALLOCATIONS.load(std::sync::atomic::Ordering::Relaxed);
+		prepared.binary(Entry::Program, 0.0, None, "").unwrap();
+		ALLOCATIONS.load(std::sync::atomic::Ordering::Relaxed) - before
+	};
+	let base = count("");
+	for (name, unit) in [
+		("text", "hello\n"),
+		("element", "<p></p>\n"),
+		("element attr", "<p class=\"row\"></p>\n"),
+		("element 2 attrs", "<p class=\"row\" id=\"x\"></p>\n"),
+		("expression tag", "{item}\n"),
+		("event attr", "<p onclick={f}></p>\n"),
+		("each", "{#each items as item}{/each}\n"),
+		("each keyed", "{#each items as item (item.id)}{/each}\n"),
+		("if", "{#if a}{/if}\n"),
+		("if else", "{#if a}{:else}{/if}\n"),
+		("component", "<Foo bar={x} />\n"),
+		("directive", "<p use:act={x}></p>\n"),
+		("html comment", "<!-- c -->\n"),
+		("snippet", "{#snippet s(a)}{/snippet}\n"),
+	] {
+		let n = 100;
+		let src = unit.repeat(n);
+		let allocs = count(&src);
+		eprintln!(
+			"{:>7.2} allocs per unit  {name}",
+			(allocs as f64 - base as f64) / n as f64
+		);
+	}
+}

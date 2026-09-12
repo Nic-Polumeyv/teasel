@@ -327,14 +327,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			} else if self.eat("#") {
 				let name = self.css_identifier()?;
 				let name = self.intern(&name);
-				selectors.push(self.host(
-					"IdSelector",
-					start,
-					self.at,
-					&[("name", Value::Str(name))],
-					None,
-					true,
-				));
+				selectors.push(self.host("IdSelector", start, self.at, &[("name", Value::Str(name))], None, true));
 			} else if self.eat(".") {
 				let name = self.css_identifier()?;
 				let name = self.intern(&name);
@@ -353,7 +346,14 @@ impl<'a, E: Extension> Walker<'a, E> {
 				let node = if self.eat("(") {
 					let args = self.selector_list(comments, true)?;
 					self.expect(")")?;
-					self.host("PseudoElementSelector", start, self.at, &[name, ("args", Value::Node(args))], None, true)
+					self.host(
+						"PseudoElementSelector",
+						start,
+						self.at,
+						&[name, ("args", Value::Node(args))],
+						None,
+						true,
+					)
 				} else {
 					self.host("PseudoElementSelector", start, self.at, &[name], None, true)
 				};
