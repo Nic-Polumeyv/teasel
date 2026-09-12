@@ -65,6 +65,9 @@ fn bytes(env: Env, value: Value) -> Result<Vec<u8>> {
 	if kind != node_api::UINT8_ARRAY {
 		return Err("a Uint8Array expected".into());
 	}
+	if length == 0 || data.is_null() {
+		return Ok(Vec::new());
+	}
 	Ok(unsafe { std::slice::from_raw_parts(data.cast::<u8>(), length) }.to_vec())
 }
 
@@ -82,7 +85,7 @@ fn string(env: Env, value: Value) -> Result<String> {
 		"a string",
 	)?;
 	buffer.truncate(length);
-	Ok(String::from_utf8_lossy(&buffer).into_owned())
+	Ok(String::from_utf8(buffer).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned()))
 }
 
 fn number(env: Env, value: Value) -> Result<f64> {
@@ -242,7 +245,7 @@ fn guard(env: Env, f: impl FnOnce() -> Result<Value> + std::panic::UnwindSafe) -
 }
 
 unsafe extern "C" fn release(_: Env, data: *mut c_void, capacity: *mut c_void) {
-	drop(unsafe { Vec::from_raw_parts(data.cast::<u32>(), 0, capacity as usize) });
+	drop(unsafe { Vec::from_raw_parts(data.cast::<u32>(), 0, capacity.addr()) });
 }
 
 // the view owns the words' allocation and frees it when JavaScript lets the view go; the answer
@@ -267,7 +270,7 @@ fn view(env: Env) -> Result<Value> {
 						ptr.cast(),
 						capacity * 4,
 						Some(release),
-						capacity as *mut c_void,
+						std::ptr::without_provenance_mut(capacity),
 						&mut buffer,
 					)
 				},
@@ -309,6 +312,8 @@ fn fresh(env: Env) {
 	}
 }
 
+/// # Safety
+/// Called by Node once per load with a live `env` and the module's `exports` object.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn napi_register_module_v1(env: Env, exports: Value) -> Value {
 	#[cfg(windows)]

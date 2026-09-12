@@ -428,6 +428,10 @@ impl Words {
 	const LEAST: usize = 1 << 16;
 
 	pub fn new() -> Self {
+		Self::default()
+	}
+
+	fn fresh() -> Self {
 		Words {
 			vec: Vec::new(),
 			owned: true,
@@ -499,6 +503,12 @@ impl Words {
 	}
 }
 
+impl Default for Words {
+	fn default() -> Self {
+		Self::fresh()
+	}
+}
+
 impl Drop for Words {
 	fn drop(&mut self) {
 		if !self.owned {
@@ -523,8 +533,18 @@ impl std::ops::DerefMut for Words {
 impl Extend<u32> for Words {
 	fn extend<I: IntoIterator<Item = u32>>(&mut self, iter: I) {
 		let iter = iter.into_iter();
-		self.room(iter.size_hint().0);
-		self.vec.extend(iter);
+		match iter.size_hint() {
+			// an exact size fills the room in one copy; a loose one must not let the Vec grow itself
+			(lower, Some(upper)) if lower == upper => {
+				self.room(upper);
+				self.vec.extend(iter);
+			}
+			_ => {
+				for word in iter {
+					self.push(word);
+				}
+			}
+		}
 	}
 }
 
@@ -635,13 +655,8 @@ impl Binary {
 			self.tables_at,
 		]);
 		self.words.extend_from_slice(&self.ends);
-		let mut chunks = self.text.chunks_exact(4);
-		self.words.extend(
-			chunks
-				.by_ref()
-				.map(|chunk| u32::from_ne_bytes(chunk.try_into().unwrap())),
-		);
-		let rest = chunks.remainder();
+		let (chunks, rest) = self.text.as_chunks::<4>();
+		self.words.extend(chunks.iter().map(|chunk| u32::from_ne_bytes(*chunk)));
 		if !rest.is_empty() {
 			let mut last = [0; 4];
 			last[..rest.len()].copy_from_slice(rest);
@@ -987,7 +1002,7 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		self.key("typescript");
 		self.sink.list();
 		let mut kept = std::mem::take(&mut self.kept);
-		kept.sort_by_key(|&(_, id)| self.ast.node(id).start);
+		kept.sort_unstable_by_key(|&(_, id)| self.ast.node(id).start);
 		for &(ty, id) in &kept {
 			self.sink.begin(ty);
 			let node = self.ast.node(id);
@@ -1002,7 +1017,7 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		self.sink.begin(ty);
 		self.span(node.start, node.end);
 		self.scope_facts(id);
-		if self.ast.parenthesized.binary_search(&id).is_ok() {
+		if !self.ast.parenthesized.is_empty() && self.ast.parenthesized.binary_search(&id).is_ok() {
 			self.bool("parenthesized", true);
 		}
 		self.ast.extension.extras(self, id);
@@ -1131,13 +1146,13 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 	fn comments(&mut self, key: &'static str, comments: &[u32]) {
 		if !comments.is_empty() {
 			self.key(key);
-			self.comment_list(comments);
+			self.comment_list(comments.iter().copied());
 		}
 	}
 
-	fn comment_list(&mut self, comments: &[u32]) {
+	fn comment_list(&mut self, comments: impl IntoIterator<Item = u32>) {
 		self.sink.list();
-		for &index in comments {
+		for index in comments {
 			let comment = self.ast.comments[index as usize];
 			self.sink.begin(if comment.is_block() { "Block" } else { "Line" });
 			self.key("value");
@@ -1194,9 +1209,8 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 	/// What the output's switches add after a root: every comment, what erasure kept, the scopes.
 	fn trailers(&mut self) {
 		if self.output.comments {
-			let all: Vec<u32> = (0..self.ast.comments.len() as u32).collect();
 			self.key("comments");
-			self.comment_list(&all);
+			self.comment_list(0..self.ast.comments.len() as u32);
 		}
 		if self.output.errors {
 			self.errors();
@@ -1892,9 +1906,8 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 							self.sink.null();
 						}
 						Value::Comments => {
-							let all: Vec<u32> = (0..self.ast.comments.len() as u32).collect();
 							self.key(key);
-							self.comment_list(&all);
+							self.comment_list(0..self.ast.comments.len() as u32);
 						}
 					}
 				}
@@ -1949,9 +1962,11 @@ fn bigint_decimal(raw: &str) -> String {
 			limbs.push(carry as u32);
 		}
 	}
-	let mut out = limbs.last().unwrap().to_string();
+	use std::fmt::Write;
+	let mut out = String::with_capacity(limbs.len() * 9);
+	write!(out, "{}", limbs.last().unwrap()).unwrap();
 	for limb in limbs.iter().rev().skip(1) {
-		out.push_str(&format!("{limb:09}"));
+		write!(out, "{limb:09}").unwrap();
 	}
 	out
 }

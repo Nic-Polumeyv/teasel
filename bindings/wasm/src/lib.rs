@@ -11,7 +11,28 @@ pub extern "C" fn alloc(len: u32) -> *mut u8 {
 	if len == 0 {
 		return std::ptr::NonNull::dangling().as_ptr();
 	}
-	unsafe { std::alloc::alloc(std::alloc::Layout::array::<u8>(len as usize).unwrap()) }
+	let layout = std::alloc::Layout::array::<u8>(len as usize).unwrap();
+	let ptr = unsafe { std::alloc::alloc(layout) };
+	if ptr.is_null() {
+		std::alloc::handle_alloc_error(layout);
+	}
+	ptr
+}
+
+// a panic must not trap the instance: it becomes an error, the next call still answers
+fn guard(on_panic: u32, f: impl FnOnce() -> u32) -> u32 {
+	match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
+		Ok(answer) => answer,
+		Err(panic) => {
+			let message = panic
+				.downcast_ref::<&str>()
+				.map(|s| s.to_string())
+				.or_else(|| panic.downcast_ref::<String>().cloned())
+				.unwrap_or_else(|| "panic".into());
+			text(teasel::json::error_json(&message, 0));
+			on_panic
+		}
+	}
 }
 
 /// # Safety
@@ -33,17 +54,19 @@ pub unsafe extern "C" fn source_new(
 	let source = unsafe { Vec::from_raw_parts(ptr, len as usize, capacity as usize) };
 	let names = unsafe { Vec::from_raw_parts(names, names_len as usize, names_capacity as usize) };
 	let host = unsafe { Vec::from_raw_parts(host, host_len as usize, host_capacity as usize) };
-	let mut prepared = Prepared::from_bytes(source, Request::from_names(&String::from_utf8_lossy(&names)));
-	if !host.is_empty() {
-		prepared = match prepared.host(&String::from_utf8_lossy(&host)) {
-			Ok(prepared) => prepared,
-			Err(message) => {
-				text(teasel::json::error_json(&message, 0));
-				return 0;
-			}
-		};
-	}
-	Box::into_raw(Box::new(prepared)) as u32
+	guard(0, || {
+		let mut prepared = Prepared::from_bytes(source, Request::from_names(&String::from_utf8_lossy(&names)));
+		if !host.is_empty() {
+			prepared = match prepared.host(&String::from_utf8_lossy(&host)) {
+				Ok(prepared) => prepared,
+				Err(message) => {
+					text(teasel::json::error_json(&message, 0));
+					return 0;
+				}
+			};
+		}
+		Box::into_raw(Box::new(prepared)) as u32
+	})
 }
 
 #[unsafe(no_mangle)]
@@ -80,9 +103,10 @@ pub unsafe extern "C" fn source_parse(
 	capacity: u32,
 ) -> u32 {
 	let stop = unsafe { Vec::from_raw_parts(ptr, len as usize, capacity as usize) };
-	let stop = String::from_utf8_lossy(&stop);
 	let end = (has_end == 1).then_some(end);
-	answer(source(handle).binary(Entry::from_index(entry), offset, end, &stop))
+	guard(1, || {
+		answer(source(handle).binary(Entry::from_index(entry), offset, end, &String::from_utf8_lossy(&stop)))
+	})
 }
 
 #[unsafe(no_mangle)]

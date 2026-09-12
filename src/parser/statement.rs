@@ -1157,14 +1157,14 @@ impl<E: Extension> Parser<'_, E> {
 			return Ok(node);
 		}
 		let specifiers = self.parse_export_specifiers(exports)?;
-		let source;
-		let attributes;
-		if self.eat_contextual("from")? {
+		let (source, attributes) = if self.eat_contextual("from")? {
 			if !matches!(self.tok.kind, TokenKind::String(_)) {
 				return self.unexpected();
 			}
-			source = Some(self.parse_expr_atom(&mut None, ForInit::No, false)?);
-			attributes = self.parse_with_clause()?;
+			(
+				Some(self.parse_expr_atom(&mut None, ForInit::No, false)?),
+				self.parse_with_clause()?,
+			)
 		} else {
 			for &spec in &specifiers {
 				let NodeKind::ExportSpecifier { local, .. } = self.kind(spec) else {
@@ -1178,9 +1178,8 @@ impl<E: Extension> Parser<'_, E> {
 					}
 				}
 			}
-			source = None;
-			attributes = List::EMPTY;
-		}
+			(None, List::EMPTY)
+		};
 		self.semicolon()?;
 		let specifiers = self.list_of(&specifiers);
 		let node = self.add(

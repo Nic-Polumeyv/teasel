@@ -1309,7 +1309,8 @@ impl<'a, E: Extension> Walker<'a, E> {
 		{
 			self.autoclosed = None;
 		}
-		let closed = match self.autoclosed {
+		let autoclosed = self.autoclosed;
+		let closed = move || match autoclosed {
 			Some((closed, by, _)) if closed == name => format!("{name}, closed by {by}"),
 			_ => name.to_string(),
 		};
@@ -1321,7 +1322,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			)
 		};
 		if self.recovering() && !opens(self) {
-			return self.report(error(start, start + 1, Code::UnexpectedClose, Some(&closed)));
+			return self.report(error(start, start + 1, Code::UnexpectedClose, Some(&closed())));
 		}
 		loop {
 			match self.frames.last() {
@@ -1350,7 +1351,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 					}
 					self.pop_block(start);
 				}
-				_ => return fail(start, start + 1, Code::UnexpectedClose, Some(&closed)),
+				_ => return fail(start, start + 1, Code::UnexpectedClose, Some(&closed())),
 			}
 		}
 	}

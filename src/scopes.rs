@@ -1064,7 +1064,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 		// groups nest: the outer one opens first at a field and closes last
 		let mut groups =
 			self.ast.host_groups[opens.groups.0 as usize..(opens.groups.0 + opens.groups.1) as usize].to_vec();
-		groups.sort_by_key(|group| (group.from, std::cmp::Reverse(group.until)));
+		groups.sort_unstable_by_key(|group| (group.from, std::cmp::Reverse(group.until)));
 		let mut next = 0;
 		let mut open: Vec<usize> = Vec::new();
 		for i in from..from + len {
@@ -1086,12 +1086,8 @@ impl<'a, X: Bind> Binder<'a, X> {
 				next += 1;
 			}
 			self.host_field(i);
-			while let Some(&g) = open.last() {
-				if groups[g].until != i + 1 {
-					break;
-				}
+			while open.pop_if(|&mut g| groups[g].until == i + 1).is_some() {
 				self.exit();
-				open.pop();
 				self.host_declared.pop();
 			}
 		}
@@ -1499,7 +1495,7 @@ mod tests {
 		use super::{NodeTable, Role};
 		use crate::ast::NodeId;
 		let mut table: NodeTable<Role> = NodeTable::sized(3);
-		assert_eq!(table.get(NodeId(7)).is_none(), true);
+		assert!(table.get(NodeId(7)).is_none());
 		table.insert_new(NodeId(1), Role::Declares(5));
 		table.insert_new(NodeId(1), Role::Reference(6));
 		assert!(matches!(table.get(NodeId(1)), Some(Role::Declares(5))));
