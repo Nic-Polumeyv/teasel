@@ -467,6 +467,7 @@ pub(crate) struct Parser<'a, E: Extension = ()> {
 	spare_names: Vec<Vec<(StrId, u8)>>,
 	/// List buffers earlier lists gave back: a list costs no allocation after the first at its depth.
 	spare_lists: Vec<Vec<Option<NodeId>>>,
+	param_names: Vec<StrId>,
 	labels: Vec<Label>,
 	private_names: Vec<PrivateNameScope>,
 	pub(crate) undeclared_exports: FastMap<StrId, (u32, usize)>,
@@ -583,6 +584,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 			scopes: Vec::new(),
 			spare_names: Vec::new(),
 			spare_lists: Vec::new(),
+			param_names: Vec::new(),
 			labels: Vec::new(),
 			private_names: Vec::new(),
 			undeclared_exports: FastMap::default(),

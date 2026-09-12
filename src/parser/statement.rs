@@ -871,31 +871,32 @@ impl<E: Extension> Parser<'_, E> {
 	/// Annex B.3.4 lets a var redeclare the parameter of a simple catch clause, except the binding
 	/// of a for-of, which is checked once the `of` is seen.
 	fn check_for_of_var(&mut self, declarations: List) -> Result<()> {
-		let mut stack: Vec<NodeId> = (0..declarations.len)
-			.filter_map(|i| self.nth(declarations, i))
-			.collect();
-		while let Some(id) = stack.pop() {
+		let mut stack = self.items();
+		stack.extend_from_slice(self.ast.list(declarations));
+		while let Some(item) = stack.pop() {
+			let Some(id) = item else { continue };
 			match self.kind(id) {
 				NodeKind::Identifier { name } => {
 					if self.rebinds_catch_param(name) {
 						return self.error_name(self.start_of(id), Code::Redeclaration, name);
 					}
 				}
-				NodeKind::VariableDeclarator { id, .. } => stack.push(id),
+				NodeKind::VariableDeclarator { id, .. } => stack.push(Some(id)),
 				NodeKind::ObjectPattern { properties: list } | NodeKind::ArrayPattern { elements: list } => {
-					stack.extend((0..list.len).filter_map(|i| self.nth(list, i)));
+					stack.extend_from_slice(self.ast.list(list));
 				}
-				NodeKind::Property { value, .. } => stack.push(value),
-				NodeKind::RestElement { argument } => stack.push(argument),
-				NodeKind::AssignmentPattern { left, .. } => stack.push(left),
+				NodeKind::Property { value, .. } => stack.push(Some(value)),
+				NodeKind::RestElement { argument } => stack.push(Some(argument)),
+				NodeKind::AssignmentPattern { left, .. } => stack.push(Some(left)),
 				NodeKind::Extension(_) => {
 					if let Some(inner) = E::unwrap(self, id, Unwrap::InnerPattern) {
-						stack.push(inner);
+						stack.push(Some(inner));
 					}
 				}
 				_ => {}
 			}
 		}
+		self.recycle(stack);
 		Ok(())
 	}
 

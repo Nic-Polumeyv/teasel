@@ -887,3 +887,49 @@ fn parenthesized_fact() {
 	let (ast, _, _) = at(Entry::Expression, "(a, b)", 0, Options::default(), "").unwrap();
 	assert!(ast.parenthesized.is_empty());
 }
+
+#[test]
+#[ignore]
+fn alloc_probe() {
+	let options = crate::Options {
+		module: true,
+		..Default::default()
+	};
+	let count = |src: &str| {
+		let _ = whole(src, options);
+		let before = ALLOCATIONS.load(std::sync::atomic::Ordering::Relaxed);
+		let _ = whole(src, options);
+		ALLOCATIONS.load(std::sync::atomic::Ordering::Relaxed) - before
+	};
+	let base = count("");
+	for (name, unit) in [
+		("statement", "x;\n"),
+		("function 0 params", "function f§() {}\n"),
+		("function 2 params", "function f§(a, b) { return a + b; }\n"),
+		("arrow", "x = (a, b) => a;\n"),
+		("call 2 args", "f(a, b);\n"),
+		("array", "x = [a, b];\n"),
+		("object", "x = { a, b };\n"),
+		("sequence", "x = (a, b);\n"),
+		("regex", "x = /ab+c/g;\n"),
+		("string", "x = 'abc';\n"),
+		("template", "x = `a${b}c`;\n"),
+		("var decl", "var a = 1, b = 2;\n"),
+		("if block", "if (a) { b; } else { c; }\n"),
+		("for", "for (let i = 0; i < n; i++) { f(i); }\n"),
+		("class", "class A§ { m() {} }\n"),
+		("comment", "// hi\nx;\n"),
+		("block comment", "/* hi */ x;\n"),
+		("new ident", "abcdefghij;\n"),
+		("label+loop", "a: while (x) { break a; }\n"),
+		("try", "try { a; } catch (e) { b; }\n"),
+	] {
+		let n = 100;
+		let src: String = (0..n).map(|i| unit.replace('§', &i.to_string())).collect();
+		let allocs = count(&src);
+		eprintln!(
+			"{:>7.2} allocs per unit  {name}",
+			(allocs as f64 - base as f64) / n as f64
+		);
+	}
+}

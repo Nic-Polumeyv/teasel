@@ -124,11 +124,12 @@ impl<E: Extension> Parser<'_, E> {
 		let start = self.tok.start;
 		let expr = self.parse_maybe_assign(for_init, errors)?;
 		if self.is(TokenKind::Comma) {
-			let mut expressions = vec![expr];
+			let mut expressions = self.items();
+			expressions.push(Some(expr));
 			while self.eat(TokenKind::Comma)? {
-				expressions.push(self.parse_maybe_assign(for_init, errors)?);
+				expressions.push(Some(self.parse_maybe_assign(for_init, errors)?));
 			}
-			let expressions = self.list_of(&expressions);
+			let expressions = self.list_from(expressions);
 			return Ok(self.add(NodeKind::SequenceExpression { expressions }, start));
 		}
 		Ok(expr)
@@ -576,7 +577,7 @@ impl<E: Extension> Parser<'_, E> {
 			self.check_expression_errors(&errors, true)?;
 			E::list_items(self, &args)?;
 			self.restore_yield_await_if_set(old);
-			let arguments = self.list(&args);
+			let arguments = self.list_from(args);
 			let node = self.add(
 				NodeKind::CallExpression {
 					callee: base,
@@ -634,7 +635,9 @@ impl<E: Extension> Parser<'_, E> {
 				}
 				if can_be_arrow && !self.can_insert_semicolon() {
 					if self.eat(TokenKind::Arrow)? {
-						return self.parse_arrow_expression(start, vec![Some(id)], false, for_init);
+						let mut params = self.items();
+						params.push(Some(id));
+						return self.parse_arrow_expression(start, params, false, for_init);
 					}
 					if is_async
 						&& matches!(self.tok.kind, TokenKind::Ident(_))
@@ -644,7 +647,9 @@ impl<E: Extension> Parser<'_, E> {
 						if self.can_insert_semicolon() || !self.eat(TokenKind::Arrow)? {
 							return self.unexpected();
 						}
-						return self.parse_arrow_expression(start, vec![Some(param)], true, for_init);
+						let mut params = self.items();
+						params.push(Some(param));
+						return self.parse_arrow_expression(start, params, true, for_init);
 					}
 				}
 				Ok(id)
@@ -1309,10 +1314,14 @@ impl<E: Extension> Parser<'_, E> {
 	}
 
 	pub(crate) fn check_params(&mut self, params: List, allow_duplicates: bool) -> Result<()> {
-		let mut names = if allow_duplicates { None } else { Some(Vec::new()) };
+		let mut names = (!allow_duplicates).then(|| std::mem::take(&mut self.param_names));
 		for i in 0..params.len {
 			let param = self.nth(params, i).unwrap();
 			self.check_lval_inner_pattern(param, Binding::Var, &mut names)?;
+		}
+		if let Some(mut names) = names {
+			names.clear();
+			self.param_names = names;
 		}
 		Ok(())
 	}
@@ -1607,13 +1616,15 @@ impl<E: Extension> Parser<'_, E> {
 			NodeKind::ArrayExpression { elements } => {
 				self.ast.node_mut(id).kind = NodeKind::ArrayPattern { elements };
 				self.check_pattern_errors(errors, true)?;
-				let mut items = self.ast.list(elements).to_vec();
+				let mut items = self.items();
+				items.extend_from_slice(self.ast.list(elements));
 				E::convert_items(self, &mut items);
 				self.ast.lists[elements.start as usize..(elements.start + elements.len) as usize]
 					.copy_from_slice(&items);
-				for element in items.into_iter().flatten() {
-					self.make_pattern(element, is_binding, &mut None)?;
+				for element in items.iter().flatten() {
+					self.make_pattern(*element, is_binding, &mut None)?;
 				}
+				self.recycle(items);
 			}
 			NodeKind::SpreadElement { argument } => {
 				let argument = self.make_pattern(argument, is_binding, &mut None)?;
