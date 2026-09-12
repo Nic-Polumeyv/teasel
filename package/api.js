@@ -69,6 +69,7 @@ function bare(source, at, end, stopAt, typescript) {
 	const first = source.codePointAt(i);
 	if (first === undefined || !isIdentifierStart(first) || first === 0x5c) return null;
 	i += first > 0xffff ? 2 : 1;
+	if (i > end) return null;
 	while (i < end) {
 		const code = /** @type {number} */ (source.codePointAt(i));
 		if (code === 0x5c) return null;
@@ -114,7 +115,8 @@ export function bind(engine) {
 		constructor(source, options) {
 			this.#held = engine.create(source, names(options), options?.host ?? '');
 			this.#source = source;
-			this.#options = options ?? {};
+			// what the engine was prepared with, however the caller's object changes after
+			this.#options = { ...options };
 			registry?.register(this, this.#held, this);
 		}
 
@@ -125,7 +127,7 @@ export function bind(engine) {
 		 */
 		parse(entry = 'program', offset = 0, { end, stopAt } = {}) {
 			if (this.#held === undefined) throw new TypeError('the source is freed');
-			const index = ENTRY[entry];
+			const index = Object.hasOwn(ENTRY, entry) ? ENTRY[entry] : undefined;
 			if (index === undefined) throw new TypeError(`${JSON.stringify(entry)} is not an entry`);
 			const stop = stops(stopAt);
 			if (this.#options.host !== undefined && index === ENTRY.program) return result(engine.parse(this.#held, index, 0, undefined, ''), this.#source);

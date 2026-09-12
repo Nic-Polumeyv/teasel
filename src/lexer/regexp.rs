@@ -52,6 +52,8 @@ struct State<'a> {
 	branches: Vec<Branch>,
 	branch: Option<usize>,
 	class_depth: usize,
+	/// How many groups the pattern is inside here; `branches` holds every branch ever opened.
+	depth: usize,
 }
 
 impl<'a> State<'a> {
@@ -77,6 +79,7 @@ impl<'a> State<'a> {
 			branches: Vec::new(),
 			branch: None,
 			class_depth: 0,
+			depth: 0,
 		}
 	}
 
@@ -195,6 +198,7 @@ impl<'a> State<'a> {
 		self.back_reference_names.clear();
 		self.branches.clear();
 		self.branch = None;
+		self.depth = 0;
 
 		self.disjunction()?;
 
@@ -262,7 +266,8 @@ impl<'a> State<'a> {
 	}
 
 	fn disjunction(&mut self) -> Result<()> {
-		if self.branches.len() >= MAX_DEPTH {
+		self.depth += 1;
+		if self.depth > MAX_DEPTH {
 			return self.raise("Regular expression nested too deeply");
 		}
 		self.push_branch();
@@ -272,6 +277,7 @@ impl<'a> State<'a> {
 			self.alternative()?;
 		}
 		self.branch = self.branches[self.branch.unwrap()].parent;
+		self.depth -= 1;
 
 		if self.eat_quantifier(true)? {
 			return self.raise("Nothing to repeat");

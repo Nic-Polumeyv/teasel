@@ -202,6 +202,21 @@ fn fail<T>(pos: u32, end: u32, code: Code, arg: Option<&str>) -> Result<T> {
 	Err(error(pos, end, code, arg))
 }
 
+/// Where the tag ends: the first `>` outside quotes, or the end.
+fn tag_end(after: &str) -> usize {
+	let mut quote = None;
+	for (i, c) in after.char_indices() {
+		match quote {
+			Some(q) if c == q => quote = None,
+			Some(_) => {}
+			None if c == '"' || c == '\'' => quote = Some(c),
+			None if c == '>' => return i,
+			None => {}
+		}
+	}
+	after.len()
+}
+
 /// Whether the document is TypeScript by its script tags, the way the grammar tells.
 pub fn typescript(src: &str, grammar: &Grammar) -> bool {
 	let Some(script) = &grammar.script else { return false };
@@ -221,7 +236,7 @@ pub fn typescript(src: &str, grammar: &Grammar) -> bool {
 		if !after.starts_with(is_space) {
 			continue;
 		}
-		let tag_end = after.find('>').unwrap_or(after.len());
+		let tag_end = tag_end(after);
 		let mut attributes = after[..tag_end].trim_start_matches(is_space);
 		while !attributes.is_empty() {
 			let name_len = attributes
