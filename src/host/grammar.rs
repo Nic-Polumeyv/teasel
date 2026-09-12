@@ -31,12 +31,126 @@ pub enum Item {
 		field: &'static str,
 		entry: Entry,
 		omit: bool,
+		stops: Stops,
 	},
 	/// `[ a | b ]`: at most one alternative, tried in order; `{ a | b }`: exactly one.
 	Group {
 		alternatives: Vec<Alternative>,
 		required: bool,
+		/// The literals that may follow the group.
+		after: &'static [&'static str],
 	},
+}
+
+/// The literals that may follow an entry, as the parser takes them: all of them, and for an
+/// expression without the tokens that continue one, which are JavaScript's before the host's.
+#[derive(Clone, Copy, Debug)]
+pub struct Stops {
+	pub list: &'static [&'static str],
+	pub joined: &'static str,
+	pub expression: &'static str,
+}
+
+impl Stops {
+	const NONE: Stops = Stops {
+		list: &[],
+		joined: "",
+		expression: "",
+	};
+
+	fn of(list: Vec<&'static str>) -> Stops {
+		let joined = keep(&list.join(" "));
+		let expression: Vec<&str> = list
+			.iter()
+			.copied()
+			.filter(|s| !matches!(*s, "(" | "[" | "." | "?." | "`"))
+			.collect();
+		Stops {
+			joined,
+			expression: keep(&expression.join(" ")),
+			list: Vec::leak(list),
+		}
+	}
+}
+
+/// Gives every entry and group of `items` what may follow it, `follow` following them all.
+fn resolve(items: &mut [Item], follow: &[&'static str]) {
+	for i in 0..items.len() {
+		let (head, rest) = items.split_at_mut(i + 1);
+		match head.last_mut().unwrap() {
+			Item::Literal(_) => {}
+			Item::Entry { stops, .. } => *stops = Stops::of(first_literals(rest, follow)),
+			Item::Group {
+				alternatives, after, ..
+			} => {
+				let following = first_literals(rest, follow);
+				for alternative in alternatives.iter_mut() {
+					resolve(&mut alternative.items, &following);
+				}
+				*after = Vec::leak(following);
+			}
+		}
+	}
+}
+
+/// The literals that can start what `items` read, then `follow` if they can read nothing.
+pub(super) fn first_literals(items: &[Item], follow: &[&'static str]) -> Vec<&'static str> {
+	let mut out = Vec::new();
+	for item in items {
+		match item {
+			Item::Literal(literal) => {
+				out.push(*literal);
+				return out;
+			}
+			Item::Entry { .. } => return out,
+			Item::Group {
+				alternatives, required, ..
+			} => {
+				for alternative in alternatives {
+					out.extend(first_literals(&alternative.items, &[]));
+				}
+				if *required {
+					return out;
+				}
+			}
+		}
+	}
+	out.extend_from_slice(follow);
+	out
+}
+
+fn collect_entries(items: &[Item], out: &mut Vec<(&'static str, bool)>) {
+	for item in items {
+		match item {
+			Item::Entry { field, omit, .. } => out.push((field, *omit)),
+			Item::Group { alternatives, .. } => {
+				for alternative in alternatives {
+					collect_entries(&alternative.items, out);
+				}
+			}
+			Item::Literal(_) => {}
+		}
+	}
+}
+
+fn collect_bodies(form: &Form, out: &mut Vec<(&'static str, bool)>) {
+	let mut push = |body: &Body| {
+		if !out.iter().any(|(f, _)| *f == body.field) {
+			out.push((body.field, body.omit));
+		}
+	};
+	if let Some(body) = &form.body {
+		push(body);
+	}
+	for item in &form.items {
+		if let Item::Group { alternatives, .. } = item {
+			for alternative in alternatives {
+				if let Some(body) = &alternative.body {
+					push(body);
+				}
+			}
+		}
+	}
 }
 
 #[derive(Clone, Debug)]
@@ -69,6 +183,8 @@ pub struct Declare {
 pub struct Form {
 	pub items: Vec<Item>,
 	pub body: Option<Body>,
+	/// Every entry the form can read, and whether its field is left out when it was not.
+	pub entries: Vec<(&'static str, bool)>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -179,6 +295,9 @@ pub struct BlockRule {
 	pub branches: Vec<BranchRule>,
 	/// The boolean field that says the block was opened by a chained branch.
 	pub chain_flag: Option<&'static str>,
+	/// Every entry the block's forms can read, and every body they can open.
+	pub entries: Vec<(&'static str, bool)>,
+	pub bodies: Vec<(&'static str, bool)>,
 }
 
 #[derive(Clone, Debug)]
@@ -493,7 +612,11 @@ impl Reader<'_> {
 							_ => return Err("a group is not closed".into()),
 						}
 					}
-					items.push(Item::Group { alternatives, required });
+					items.push(Item::Group {
+						alternatives,
+						required,
+						after: &[],
+					});
 				}
 				token => {
 					let item = match token.split_once('=') {
@@ -506,6 +629,7 @@ impl Reader<'_> {
 								field: keep(field),
 								entry: entry(kind).ok_or_else(|| format!("no entry named {kind}"))?,
 								omit,
+								stops: Stops::NONE,
 							}
 						}
 						_ => Item::Literal(keep(token)),
@@ -519,11 +643,14 @@ impl Reader<'_> {
 	}
 
 	fn form(&mut self) -> Result<Form, String> {
-		let (items, body) = self.items()?;
+		let (mut items, body) = self.items()?;
 		if let Some(extra) = self.peek() {
 			return Err(format!("unexpected {extra} after a form"));
 		}
-		Ok(Form { items, body })
+		resolve(&mut items, &[]);
+		let mut entries = Vec::new();
+		collect_entries(&items, &mut entries);
+		Ok(Form { items, body, entries })
 	}
 }
 
@@ -595,6 +722,17 @@ impl Grammar {
 		}
 		if grammar.name.is_empty() {
 			return Err("a grammar starts with its host's name".into());
+		}
+		for block in &mut grammar.blocks {
+			let mut entries = block.open.entries.clone();
+			let mut bodies = Vec::new();
+			collect_bodies(&block.open, &mut bodies);
+			for branch in &block.branches {
+				entries.extend_from_slice(&branch.form.entries);
+				collect_bodies(&branch.form, &mut bodies);
+			}
+			block.entries = entries;
+			block.bodies = bodies;
 		}
 		Ok(grammar)
 	}
@@ -928,6 +1066,8 @@ impl Grammar {
 					open: Form::default(),
 					branches: Vec::new(),
 					chain_flag,
+					entries: Vec::new(),
+					bodies: Vec::new(),
 				})
 			}
 			"tag" | "declaration" | "expression" => {
@@ -1027,7 +1167,7 @@ mod tests {
 		assert_eq!(body.field, "body");
 		assert_eq!(body.declares.len(), 2);
 		assert!(
-			matches!(each.open.items[1], Item::Group { ref alternatives, required: false } if alternatives.len() == 1)
+			matches!(each.open.items[1], Item::Group { ref alternatives, required: false, .. } if alternatives.len() == 1)
 		);
 		let await_ = grammar.block("await").unwrap();
 		let Item::Group { alternatives, .. } = &await_.open.items[1] else {

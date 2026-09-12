@@ -330,6 +330,9 @@ struct Scratch {
 	envs: Vec<Env>,
 	open: Vec<u32>,
 	host_declared: Vec<List>,
+	/// The groups of the host nodes being walked, each node's sorted behind the ones outside it.
+	host_groups: Vec<crate::ast::HostGroup>,
+	open_groups: Vec<usize>,
 	env_of: Vec<u32>,
 	owned: FastMap<BindingId, u32>,
 	/// The name maps of earlier analyses by environment id, emptied: a document of the same shape
@@ -450,6 +453,8 @@ fn analyze_with<X: Bind>(ast: &mut Ast<X>, kind: ScopeKind, root: Option<NodeId>
 		mut envs,
 		open,
 		host_declared,
+		host_groups,
+		open_groups,
 		mut env_of,
 		owned,
 		..
@@ -483,6 +488,8 @@ fn analyze_with<X: Bind>(ast: &mut Ast<X>, kind: ScopeKind, root: Option<NodeId>
 		envs,
 		open,
 		host_declared,
+		host_groups,
+		open_groups,
 		env_of,
 		owned,
 		names,
@@ -531,6 +538,8 @@ pub struct Binder<'a, X> {
 	open: Vec<u32>,
 	/// The patterns the open host scopes declare, which their fields do not reference.
 	host_declared: Vec<List>,
+	host_groups: Vec<crate::ast::HostGroup>,
+	open_groups: Vec<usize>,
 	/// The node whose pattern is being declared, for `Binding::declaration`.
 	declaring: Option<NodeId>,
 	/// What the target being visited is assigned, for `Reference::write_expr`.
@@ -564,6 +573,8 @@ impl<'a, X: Bind> Binder<'a, X> {
 			envs,
 			open,
 			host_declared,
+			host_groups,
+			open_groups,
 			env_of,
 			owned,
 			names,
@@ -575,6 +586,8 @@ impl<'a, X: Bind> Binder<'a, X> {
 			envs,
 			open,
 			host_declared,
+			host_groups,
+			open_groups,
 			declaring: None,
 			writing: None,
 			compound: false,
@@ -1062,14 +1075,16 @@ impl<'a, X: Bind> Binder<'a, X> {
 		let depth = self.host_declared.len();
 		self.host_declared.push(opens.outside);
 		// groups nest: the outer one opens first at a field and closes last
-		let mut groups =
-			self.ast.host_groups[opens.groups.0 as usize..(opens.groups.0 + opens.groups.1) as usize].to_vec();
-		groups.sort_unstable_by_key(|group| (group.from, std::cmp::Reverse(group.until)));
-		let mut next = 0;
-		let mut open: Vec<usize> = Vec::new();
+		let base = self.host_groups.len();
+		let open_base = self.open_groups.len();
+		self.host_groups.extend_from_slice(
+			&self.ast.host_groups[opens.groups.0 as usize..(opens.groups.0 + opens.groups.1) as usize],
+		);
+		self.host_groups[base..].sort_unstable_by_key(|group| (group.from, std::cmp::Reverse(group.until)));
+		let mut next = base;
 		for i in from..from + len {
-			while next < groups.len() && groups[next].from == i {
-				let group = groups[next];
+			while next < self.host_groups.len() && self.host_groups[next].from == i {
+				let group = self.host_groups[next];
 				// a script's program hoists `var` like a script; a fragment is where a template's expressions sit
 				let node = group.node.unwrap_or(id);
 				let kind = match self.ast.node(node).kind {
@@ -1082,15 +1097,22 @@ impl<'a, X: Bind> Binder<'a, X> {
 					self.root(pattern, |b| b.visit(pattern, Mode::Declare(BindingKind::Pattern)));
 				}
 				self.host_declared.push(group.inside);
-				open.push(next);
+				self.open_groups.push(next);
 				next += 1;
 			}
 			self.host_field(i);
-			while open.pop_if(|&mut g| groups[g].until == i + 1).is_some() {
+			while self.open_groups.len() > open_base
+				&& self
+					.open_groups
+					.pop_if(|&mut g| self.host_groups[g].until == i + 1)
+					.is_some()
+			{
 				self.exit();
 				self.host_declared.pop();
 			}
 		}
+		self.open_groups.truncate(open_base);
+		self.host_groups.truncate(base);
 		self.host_declared.truncate(depth);
 	}
 

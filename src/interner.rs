@@ -65,6 +65,8 @@ pub struct Interner {
 	hashes: Vec<u32>,
 	/// Slots hold an id plus one; zero is empty. Always a power of two, at most half full.
 	table: Vec<u32>,
+	/// What the lexer knows of each word by id, filled as words are met; see `token::word`.
+	pub(crate) word_flags: Vec<u8>,
 }
 
 /// `FastHasher`'s mix over the length and then eight bytes at a time, the tail read as two
@@ -104,6 +106,7 @@ impl Interner {
 			starts,
 			hashes: Vec::with_capacity(slots / 2),
 			table: vec![0; slots],
+			word_flags: Vec::new(),
 		}
 	}
 
@@ -114,6 +117,7 @@ impl Interner {
 		self.starts.push(0);
 		self.hashes.clear();
 		self.table.fill(0);
+		self.word_flags.clear();
 	}
 
 	pub fn intern(&mut self, s: &str) -> StrId {

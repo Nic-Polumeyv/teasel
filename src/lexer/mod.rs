@@ -47,19 +47,16 @@ pub(crate) struct Lexer<'a> {
 	unclosed: bool,
 	pub(crate) comments: Vec<Comment>,
 	pub(crate) strings: Interner,
-	/// `token::word` flags by string id, filled as ids appear.
-	word_flags: Vec<u8>,
 }
 
 impl<'a> Lexer<'a> {
 	#[cfg(test)]
 	pub(crate) fn new(src: &'a str) -> Self {
-		Self::with(src, src.len(), Interner::sized(src.len()))
+		Self::with(src, Interner::sized(src.len()))
 	}
 
-	/// `budget` is how much of `src` the parse will read, what the tables are sized for;
 	/// `strings` is the tree's own interner, so ids from an earlier read of it stay valid.
-	pub(crate) fn with(src: &'a str, budget: usize, strings: Interner) -> Self {
+	pub(crate) fn with(src: &'a str, strings: Interner) -> Self {
 		Self {
 			src,
 			pos: 0,
@@ -80,17 +77,16 @@ impl<'a> Lexer<'a> {
 			unclosed: false,
 			comments: Vec::new(),
 			strings,
-			word_flags: Vec::with_capacity(budget / 32),
 		}
 	}
 
 	pub(crate) fn word_flags(&mut self, id: StrId) -> u8 {
 		let i = id.0 as usize;
-		while self.word_flags.len() <= i {
-			let flags = token::word::flags(self.strings.get(StrId(self.word_flags.len() as u32)));
-			self.word_flags.push(flags);
+		while self.strings.word_flags.len() <= i {
+			let flags = token::word::flags(self.strings.get(StrId(self.strings.word_flags.len() as u32)));
+			self.strings.word_flags.push(flags);
 		}
-		self.word_flags[i]
+		self.strings.word_flags[i]
 	}
 
 	pub(crate) fn source(&self) -> &'a str {
