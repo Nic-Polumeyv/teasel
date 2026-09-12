@@ -20,7 +20,7 @@ pub(super) fn validate(start: u32, pattern: &str, flags: &str, scratch: &mut Scr
 
 /// What a validation fills and the next one reuses.
 #[derive(Default)]
-pub(super) struct Scratch {
+pub(crate) struct Scratch {
 	source: Vec<u16>,
 	last_string_value: String,
 	group_names: HashMap<String, Vec<usize>>,

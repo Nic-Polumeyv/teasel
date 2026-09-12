@@ -738,6 +738,19 @@ fn phases() {
 		binary.reset();
 		answer(&ast, Entry::Program, roots, end, &source, &lines, output, &mut binary).finish();
 	});
+	let grammar = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/hosts/svelte.grammar")).unwrap();
+	let document = format!(
+		"<script>let items = [1,2,3];</script>\n{}",
+		"{#each items as item}<p class=\"row\" onclick={() => f(item)}>{item + 1}</p>{/each}\n".repeat(200)
+	);
+	for flags in ["module", "module scopes comments locations"] {
+		let prepared = crate::json::Prepared::borrowed(&document, crate::json::Request::from_names(flags))
+			.host(&grammar)
+			.unwrap();
+		best(&format!("host: 200 each blocks, {flags}"), &mut || {
+			prepared.binary(Entry::Program, 0.0, None, "").unwrap();
+		});
+	}
 	best("Json write, loc", &mut || {
 		let _ = answer(
 			&ast,

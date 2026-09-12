@@ -119,6 +119,8 @@ pub struct Ast<X = ()> {
 	pub comments: Vec<Comment>,
 	/// Comments attached to nodes by `comments::attach`, as indices into `comments`.
 	pub attached: FastMap<NodeId, Attached>,
+	/// The buffers the last parse worked in, for the next one.
+	pub spare: crate::parser::Spare,
 	/// The scope analysis, when `scopes::analyze` ran.
 	pub scopes: Option<crate::scopes::Scopes>,
 	/// What went wrong, in source order, when errors are recovered from instead of thrown.

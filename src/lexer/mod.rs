@@ -1,4 +1,4 @@
-mod regexp;
+pub(crate) mod regexp;
 mod regexp_data;
 pub(crate) mod scan;
 pub(crate) mod token;
@@ -21,7 +21,7 @@ pub(crate) struct Lexer<'a> {
 	pos: usize,
 	buf: String,
 	/// What the regular expression validator fills, kept from one literal to the next.
-	regexp: regexp::Scratch,
+	pub(crate) regexp: regexp::Scratch,
 	escaped: bool,
 	/// Strict mode rejects legacy octal literals and escapes while scanning.
 	pub(crate) strict: bool,
