@@ -315,9 +315,9 @@ enum Frame<'a> {
 
 /// What a form read: its fields, and the body its alternatives chose.
 #[derive(Default)]
-struct Read {
+struct Read<'a> {
 	fields: Vec<(&'static str, Value)>,
-	body: Option<Body>,
+	body: Option<&'a Body>,
 }
 
 /// A body's scope as its form read it: the body's field, the entry fields the scope holds, and
@@ -330,7 +330,7 @@ struct BodyGroup {
 
 /// What reading an attribute gives: its node, its type, and the kind and name it must not
 /// repeat on the element, when it has such a name.
-type Attribute = (NodeId, &'static str, Option<(&'static str, String)>);
+type Attribute = (NodeId, &'static str, Option<(&'static str, StrId)>);
 
 /// An attribute name read as a directive: its rule, name, argument and modifiers.
 struct Directive<'a> {
@@ -1017,7 +1017,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let attributes_at = self.at;
 		let verbatim_before = self.verbatim;
 		let mut attributes = self.nodes();
-		let mut seen: Vec<(&'static str, String)> = Vec::new();
+		let mut seen: Vec<(&'static str, StrId)> = Vec::new();
 		let mut shadowroot = false;
 		self.declared.clear();
 		loop {
@@ -1028,7 +1028,8 @@ impl<'a, E: Extension> Walker<'a, E> {
 			};
 			let Some((node, kind, key)) = attribute else { break };
 			if let Some((kind, key)) = key {
-				if self.verbatim == verbatim_before && Some(key.as_str()) == self.grammar.verbatim {
+				let text = self.tree().strings.get(key);
+				if self.verbatim == verbatim_before && Some(text) == self.grammar.verbatim {
 					// what came before is read again as plain attributes
 					self.verbatim += 1;
 					self.at = attributes_at;
@@ -1038,14 +1039,16 @@ impl<'a, E: Extension> Walker<'a, E> {
 					self.declared.clear();
 					continue;
 				}
-				if kind == "Attribute" && key == "shadowrootmode" && ty == plain {
+				if kind == "Attribute" && text == "shadowrootmode" && ty == plain {
 					shadowroot = true;
 				}
-				if seen.iter().any(|(k, n)| *k == kind && *n == key) {
+				let this = text == "this";
+				if seen.contains(&(kind, key)) {
 					let (at, end) = (self.tree().node(node).start, self.tree().node(node).end);
-					self.report(error(at, end, Code::Duplicate, Some(&key)))?;
+					let text = text.to_string();
+					self.report(error(at, end, Code::Duplicate, Some(&text)))?;
 				}
-				if key != "this" {
+				if !this {
 					seen.push((kind, key));
 				}
 			}
@@ -1456,7 +1459,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			None,
 			true,
 		);
-		Ok(Some((node, "Attribute", Some(("Attribute", name.to_string())))))
+		Ok(Some((node, "Attribute", Some(("Attribute", name_id)))))
 	}
 
 	fn comment_between_attributes(&mut self) -> bool {
@@ -1622,14 +1625,14 @@ impl<'a, E: Extension> Walker<'a, E> {
 			let id_start = self.at;
 			let id = self.identifier()?;
 			let id_end = self.at;
-			let name = self.src[id_start as usize..id_end as usize].to_string();
-			if reserved(&name) {
-				return fail(id_start, id_end, Code::ReservedWord, Some(&name));
+			let name = &self.src[id_start as usize..id_end as usize];
+			if reserved(name) {
+				return fail(id_start, id_end, Code::ReservedWord, Some(name));
 			}
 			self.space();
 			self.expect("}")?;
 			let tag = self.expression_tag(id_start, id_end, id)?;
-			let name_id = self.intern(&name);
+			let name_id = self.intern(name);
 			let node = self.host(
 				"Attribute",
 				start,
@@ -1638,7 +1641,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 				None,
 				true,
 			);
-			return Ok(Some((node, "Attribute", Some(("Attribute", name)))));
+			return Ok(Some((node, "Attribute", Some(("Attribute", name_id)))));
 		}
 		let name = self.tag_name(true)?;
 		if name.is_empty() || (self.recovering() && name.starts_with('<')) {
@@ -1674,7 +1677,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 				None,
 				true,
 			);
-			return Ok(Some((node, "Attribute", Some(("Attribute", name.to_string())))));
+			return Ok(Some((node, "Attribute", Some(("Attribute", name_id)))));
 		};
 		let syntax = self.grammar.directive_syntax.as_ref().unwrap();
 		let rule = directive.rule;
@@ -1834,11 +1837,11 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let node = self.host(rule.ty, start, end, &fields, None, true);
 		self.recycle_fields(fields);
 		let key = if syntax.unique {
-			Some(("Attribute", name.to_string()))
+			Some(("Attribute", self.intern(name)))
 		} else {
 			match (rule.unique, directive.arg) {
-				(Unique::Kind, Some((text, ..))) => Some((rule.ty, text.to_string())),
-				(Unique::Attribute, Some((text, ..))) => Some(("Attribute", text.to_string())),
+				(Unique::Kind, Some((text, ..))) => Some((rule.ty, self.intern(text))),
+				(Unique::Attribute, Some((text, ..))) => Some(("Attribute", self.intern(text))),
 				_ => None,
 			}
 		};
@@ -2105,11 +2108,11 @@ impl<'a, E: Extension> Walker<'a, E> {
 		self.form(&rule.open, &mut read)?;
 		self.space();
 		self.expect(close)?;
-		let Some(body) = read.body.take().or_else(|| rule.open.body.clone()) else {
+		let Some(body) = read.body.take().or(rule.open.body.as_ref()) else {
 			return fail(start, start + 1, Code::Placement, Some("A block without a body"));
 		};
 		let mut outside = self.nodes();
-		let group = self.group_of(&read, &body, &mut outside);
+		let group = self.group_of(&read, body, &mut outside);
 		let (nodes, done) = (self.nodes(), self.fields());
 		self.frames.push(Frame::Block {
 			start,
@@ -2171,7 +2174,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 				.join(" or ");
 			return fail(start, start + 1, Code::Expected, Some(&names));
 		};
-		let body = branch.form.body.clone().unwrap();
+		let body = branch.form.body.as_ref().unwrap();
 		self.finish_body();
 		if let Some(child_field) = body.chain {
 			// the branch opens a block of its own inside the parent's field, which closes with it
@@ -2219,7 +2222,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		self.space();
 		self.expect(close)?;
 		let mut outside = self.nodes();
-		let group = self.group_of(&read, &body, &mut outside);
+		let group = self.group_of(&read, body, &mut outside);
 		let Some(Frame::Block {
 			fields,
 			body: current,
@@ -2250,7 +2253,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 	/// The scope a body opens, as its form read it: the patterns the body declares, those the
 	/// block declares around itself, and the entries read after the first declared one, a key
 	/// after the context of an each block, which the scope holds too.
-	fn group_of(&self, read: &Read, body: &Body, outside: &mut Vec<NodeId>) -> BodyGroup {
+	fn group_of(&self, read: &Read<'_>, body: &Body, outside: &mut Vec<NodeId>) -> BodyGroup {
 		let mut group = BodyGroup {
 			body: body.field,
 			fields: Vec::new(),
@@ -2520,11 +2523,11 @@ impl<'a, E: Extension> Walker<'a, E> {
 
 	/// Runs a form at the cursor: every literal in place, every entry read, the first fitting
 	/// alternative of a group taken.
-	fn form(&mut self, form: &Form, read: &mut Read) -> Result<()> {
+	fn form(&mut self, form: &'a Form, read: &mut Read<'a>) -> Result<()> {
 		self.items(&form.items, read)
 	}
 
-	fn items(&mut self, items: &[Item], read: &mut Read) -> Result<()> {
+	fn items(&mut self, items: &'a [Item], read: &mut Read<'a>) -> Result<()> {
 		for item in items {
 			match item {
 				Item::Literal(literal) => {
@@ -2552,7 +2555,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 						if self.alternative_here(alternative, after) {
 							self.items(&alternative.items, read)?;
 							if let Some(body) = &alternative.body {
-								read.body = Some(body.clone());
+								read.body = Some(body);
 							}
 							taken = true;
 							break;
