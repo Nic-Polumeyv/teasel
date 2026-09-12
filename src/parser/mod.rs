@@ -415,7 +415,7 @@ pub(crate) fn parse_at<E: Extension>(
 		0
 	};
 	let ast = reused.unwrap_or_else(|| Ast::sized(budget));
-	let mut parser = Parser::<E>::new(src, start, options, budget, stop, ast);
+	let mut parser = Parser::<E>::new(src, start, options, stop, ast);
 	let roots = parser.read_roots(entry).map(|roots| {
 		let end = if entry == Entry::Program {
 			end
@@ -576,15 +576,8 @@ pub(crate) struct DestructuringErrors {
 }
 
 impl<'a, E: Extension> Parser<'a, E> {
-	pub(crate) fn new(
-		src: &'a str,
-		offset: u32,
-		options: Options,
-		budget: usize,
-		stop: &'a str,
-		mut ast: Ast<E::Data>,
-	) -> Self {
-		let mut lexer = Lexer::with(src, budget, std::mem::take(&mut ast.strings));
+	pub(crate) fn new(src: &'a str, offset: u32, options: Options, stop: &'a str, mut ast: Ast<E::Data>) -> Self {
+		let mut lexer = Lexer::with(src, std::mem::take(&mut ast.strings));
 		lexer.comments = std::mem::take(&mut ast.comments);
 		lexer.set_pos(offset);
 		lexer.stops = stop;
