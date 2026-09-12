@@ -487,6 +487,13 @@ impl<X> Ast<X> {
 		NodeId(self.nodes.len() as u32 - 1)
 	}
 
+	pub fn add_list_from(&mut self, items: impl ExactSizeIterator<Item = Option<NodeId>>) -> List {
+		let start = self.lists.len() as u32;
+		let len = items.len() as u32;
+		self.lists.extend(items);
+		List { start, len }
+	}
+
 	pub fn add_list(&mut self, items: &[Option<NodeId>]) -> List {
 		let start = self.lists.len() as u32;
 		self.lists.extend_from_slice(items);
