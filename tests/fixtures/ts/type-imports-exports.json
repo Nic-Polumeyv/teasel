@@ -462,16 +462,12 @@
 				"type": "TSImportEqualsDeclaration",
 				"start": 353,
 				"end": 382,
-				"defines": [
-					5
-				],
 				"importKind": "type",
 				"isExport": false,
 				"id": {
 					"type": "Identifier",
 					"start": 365,
 					"end": 366,
-					"declares": 5,
 					"name": "s"
 				},
 				"moduleReference": {
@@ -522,11 +518,6 @@
 		},
 		{
 			"name": "r",
-			"kind": "import",
-			"scope": 0
-		},
-		{
-			"name": "s",
 			"kind": "import",
 			"scope": 0
 		}

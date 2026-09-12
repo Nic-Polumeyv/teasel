@@ -558,8 +558,9 @@ impl Bind for Data {
 			ImportEqualsDeclaration {
 				id: name,
 				module_reference,
+				import_kind,
 				..
-			} => {
+			} if import_kind != Kind::Type => {
 				b.declare_by(name, BindingKind::Import, id);
 				if let Some(root) = self.root(b.ast(), module_reference) {
 					b.reference(root, false, false);
