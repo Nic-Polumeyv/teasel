@@ -417,7 +417,6 @@ pub(crate) fn parse_at<E: Extension>(
 	let ast = reused.unwrap_or_else(|| Ast::sized(budget));
 	let mut parser = Parser::<E>::new(src, start, options, budget, stop, ast);
 	let roots = parser.read_roots(entry).map(|roots| {
-		let roots = parser.list_of(&roots);
 		let end = if entry == Entry::Program {
 			end
 		} else {
@@ -429,10 +428,11 @@ pub(crate) fn parse_at<E: Extension>(
 }
 
 impl<E: Extension> Parser<'_, E> {
-	fn read_roots(&mut self, entry: Entry) -> Result<Vec<NodeId>> {
+	fn read_roots(&mut self, entry: Entry) -> Result<List> {
 		self.start()?;
 		if entry == Entry::Program {
-			return Ok(vec![self.parse_program()?]);
+			let program = self.parse_program()?;
+			return Ok(self.list_of(&[program]));
 		}
 		match self.read_entry(entry) {
 			// under recovery, what was read is skipped and an empty identifier stands where it failed
@@ -442,10 +442,11 @@ impl<E: Extension> Parser<'_, E> {
 				self.skip_to_end();
 				self.prev_end = self.prev_end.max(at);
 				if entry == Entry::Params {
-					Ok(Vec::new())
+					Ok(List::EMPTY)
 				} else {
 					let name = self.intern("");
-					Ok(vec![self.add_with_end(NodeKind::Identifier { name }, at, at)])
+					let placeholder = self.add_with_end(NodeKind::Identifier { name }, at, at);
+					Ok(self.list_of(&[placeholder]))
 				}
 			}
 			result => result,
@@ -804,20 +805,20 @@ impl<'a, E: Extension> Parser<'a, E> {
 	}
 
 	/// Reads one entry other than a program at the current token, in a scope of its own.
-	pub(crate) fn read_entry(&mut self, entry: Entry) -> Result<Vec<NodeId>> {
+	pub(crate) fn read_entry(&mut self, entry: Entry) -> Result<List> {
 		self.enter_scope(SCOPE_TOP);
-		match entry {
-			Entry::Expression => self.parse_sequence(ForInit::No, &mut None).map(|id| vec![id]),
-			Entry::Pattern => self.parse_pattern_root().map(|id| vec![id]),
-			Entry::Params => self.parse_params_root(),
+		let root = match entry {
+			Entry::Expression => self.parse_sequence(ForInit::No, &mut None)?,
+			Entry::Pattern => self.parse_pattern_root()?,
+			Entry::Params => return self.parse_params_root(),
 			Entry::Statement => {
 				let mut exports = FastSet::default();
-				self.parse_statement(statement::Context::None, StatementPlace::TopLevel, Some(&mut exports))
-					.map(|id| vec![id])
+				self.parse_statement(statement::Context::None, StatementPlace::TopLevel, Some(&mut exports))?
 			}
-			Entry::TypeParameters => E::type_parameters(self).map(|id| vec![id]),
+			Entry::TypeParameters => E::type_parameters(self)?,
 			Entry::Program => unreachable!(),
-		}
+		};
+		Ok(self.list_of(&[root]))
 	}
 
 	/// An assignment target on its own: an identifier or a destructuring pattern, as it would
@@ -836,16 +837,16 @@ impl<'a, E: Extension> Parser<'a, E> {
 
 	/// A parenthesized parameter list on its own, read as an arrow function's would be: as
 	/// expressions in the enclosing scope, reinterpreted as patterns once the list is complete.
-	fn parse_params_root(&mut self) -> Result<Vec<NodeId>> {
+	fn parse_params_root(&mut self) -> Result<List> {
 		self.expect(TokenKind::ParenL)?;
 		let paren = self.parse_paren_items()?;
 		self.check_pattern_errors(&paren.errors, false)?;
 		self.check_yield_await_in_default_params()?;
 		self.enter_scope(scope::function_flags(false, false) | scope::SCOPE_ARROW);
 		let params = self.make_patterns(paren.items, true)?;
-		let list = self.list(&params);
+		let list = self.list_from(params);
 		self.check_params(list, false)?;
-		Ok(params.into_iter().flatten().collect())
+		Ok(list)
 	}
 
 	/// Skips to the end of the input, a stop token or a bracket nothing here opened.

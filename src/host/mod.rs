@@ -1918,7 +1918,8 @@ impl<'a, E: Extension> Walker<'a, E> {
 				if self.matches("/>") || self.matches(">") {
 					return fail(self.at, self.at, Code::Expected, Some(close));
 				}
-				let expression = self.js(entry, "")?[0];
+				let expression = self.js(entry, "")?;
+				let expression = self.first(expression);
 				self.space();
 				self.expect(close)?;
 				let tag = self.expression_tag(start, self.at, expression)?;
@@ -1973,7 +1974,8 @@ impl<'a, E: Extension> Walker<'a, E> {
 			if self.word("let") || self.word("const") || self.word("type") {
 				let at = self.at;
 				let comments = self.tree().comments.len();
-				let statement = self.js(JsEntry::Statement, "")?[0];
+				let statement = self.js(JsEntry::Statement, "")?;
+				let statement = self.first(statement);
 				let kind = self.tree().node(statement).kind;
 				match kind {
 					NodeKind::VariableDeclaration {
@@ -2569,10 +2571,17 @@ impl<'a, E: Extension> Walker<'a, E> {
 					.copied()
 					.filter(|s| !matches!(*s, "(" | "[" | "." | "?." | "`"))
 					.collect();
-				Value::Node(self.js(JsEntry::Expression, &stop.join(" "))?[0])
+				let roots = self.js(JsEntry::Expression, &stop.join(" "))?;
+				Value::Node(self.first(roots))
 			}
-			Entry::Pattern => Value::Node(self.js(JsEntry::Pattern, &stop)?[0]),
-			Entry::Statement => Value::Node(self.js(JsEntry::Statement, &stop)?[0]),
+			Entry::Pattern => {
+				let roots = self.js(JsEntry::Pattern, &stop)?;
+				Value::Node(self.first(roots))
+			}
+			Entry::Statement => {
+				let roots = self.js(JsEntry::Statement, &stop)?;
+				Value::Node(self.first(roots))
+			}
 			Entry::Code => {
 				let (start, end) = (self.at, self.limit);
 				let comments = self.tree().comments.len();
@@ -2584,7 +2593,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 				if let Ok(roots) = expression {
 					self.space_to(end);
 					if self.at >= end {
-						return Ok(Value::Node(roots[0]));
+						return Ok(Value::Node(self.first(roots)));
 					}
 				}
 				self.at = start;
@@ -2595,14 +2604,13 @@ impl<'a, E: Extension> Walker<'a, E> {
 				Value::Node(program)
 			}
 			Entry::TypeParameters => {
-				let node = self.js(JsEntry::TypeParameters, &stop)?[0];
+				let node = self.js(JsEntry::TypeParameters, &stop)?;
+				let node = self.first(node);
 				let node = self.tree().node(node);
 				Value::Slice(node.start + 1, node.end - 1)
 			}
 			Entry::Params => {
-				let params = self.js(JsEntry::Params, &stop)?;
-				let list = self.list(&params);
-				Value::Nodes(list)
+				Value::Nodes(self.js(JsEntry::Params, &stop)?)
 			}
 			Entry::Identifier => Value::Node(self.identifier()?),
 			Entry::Text => {
@@ -2633,13 +2641,15 @@ impl<'a, E: Extension> Walker<'a, E> {
 				Value::Nodes(list)
 			}
 			Entry::Const => {
-				let id = self.js(JsEntry::Pattern, "=")?[0];
+				let id = self.js(JsEntry::Pattern, "=")?;
+				let id = self.first(id);
 				let id_start = self.tree().node(id).start;
 				self.space();
 				self.expect("=")?;
 				self.space();
 				let init_at = self.at;
-				let init = self.js(JsEntry::Expression, "")?[0];
+				let init = self.js(JsEntry::Expression, "")?;
+				let init = self.first(init);
 				let declarator_end = self.at;
 				let init_node = *self.tree().node(init);
 				if matches!(init_node.kind, NodeKind::SequenceExpression { .. })
@@ -2674,12 +2684,13 @@ impl<'a, E: Extension> Walker<'a, E> {
 	}
 
 	fn expression(&mut self, stop: &str) -> Result<NodeId> {
-		Ok(self.js(JsEntry::Expression, stop)?[0])
+		let roots = self.js(JsEntry::Expression, stop)?;
+		Ok(self.first(roots))
 	}
 
 	/// The JavaScript at the cursor, read by the parser into the same tree up to the limit; the
 	/// cursor moves past it.
-	fn js(&mut self, entry: JsEntry, stop: &str) -> Result<Vec<NodeId>> {
+	fn js(&mut self, entry: JsEntry, stop: &str) -> Result<List> {
 		let ast = self.ast.take().unwrap();
 		let src = &self.src[..self.limit as usize];
 		let mut parser = Parser::<E>::new(src, self.at, self.options, 0, stop, ast);
@@ -2692,11 +2703,12 @@ impl<'a, E: Extension> Walker<'a, E> {
 				parser.skip_to_end();
 				parser.prev_end = parser.prev_end.max(at);
 				if entry == JsEntry::Params {
-					Ok(Vec::new())
+					Ok(List::EMPTY)
 				} else {
 					let name = parser.intern("");
 					let end = parser.consumed_end().max(first);
-					Ok(vec![parser.add_with_end(NodeKind::Identifier { name }, first, end)])
+					let placeholder = parser.add_with_end(NodeKind::Identifier { name }, first, end);
+					Ok(parser.list_of(&[placeholder]))
 				}
 			}
 			result => result,
@@ -2706,6 +2718,11 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let roots = roots?;
 		self.at = end;
 		Ok(roots)
+	}
+
+	/// The one root a JavaScript entry read.
+	fn first(&self, roots: List) -> NodeId {
+		self.tree().nth(roots, 0).unwrap()
 	}
 
 	fn program(&mut self, start: u32, end: u32) -> Result<NodeId> {
