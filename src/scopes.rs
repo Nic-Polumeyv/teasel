@@ -1,6 +1,6 @@
 //! Scope analysis over a parsed tree: the scopes, the bindings each declares, and every
-//! identifier resolved to the binding it names. References are resolved when their scope closes,
-//! after every declaration in it is known, so hoisting needs no second pass.
+//! identifier resolved to the binding it names. Names are declared first, in the environment each
+//! belongs to, and every reference is resolved after, so hoisting and merging need nothing special.
 
 use crate::ast::{Ast, List, NodeId, NodeKind, VariableKind, Walk};
 use crate::error::{Code, SyntaxError};
@@ -327,19 +327,41 @@ impl ByNode {
 /// The binder's working storage, kept between analyses.
 #[derive(Debug, Default)]
 struct Scratch {
-	stack: Vec<ScopeId>,
-	open: Vec<Open>,
+	envs: Vec<Env>,
+	open: Vec<u32>,
 	host_declared: Vec<List>,
-	pending: Vec<ReferenceId>,
-	pending_from: Vec<usize>,
-	owned: FastMap<BindingId, ScopeId>,
-	/// The name maps of earlier analyses by scope id, emptied: a document of the same shape finds
-	/// each scope's map back where it was, so a root's room never lands on a small scope.
+	env_of: Vec<u32>,
+	owned: FastMap<BindingId, u32>,
+	/// The name maps of earlier analyses by environment id, emptied: a document of the same shape
+	/// finds each environment's map back where it was, so a root's room never lands on a small scope.
 	names: Vec<FastMap<StrId, BindingId>>,
 }
 
 /// A name map with room for more than this is freed rather than kept.
 const POOLED_NAMES: usize = 1024;
+
+/// Where names live while the analysis runs. A scope is one environment, but a function's
+/// parameters and its body are two, so a default sees past what the body declares, and a
+/// namespace block keeps what it does not export to itself, under the environment its blocks share.
+#[derive(Debug, Default)]
+struct Env {
+	scope: ScopeId,
+	parent: Option<u32>,
+	names: FastMap<StrId, BindingId>,
+	/// Where `var` stops.
+	holds_var: bool,
+	/// The first environment of its scope: leaving it leaves the scope.
+	opens: bool,
+	/// A function's parameters, where `arguments` is found unless the function is an arrow.
+	parameters: bool,
+	arrow: bool,
+	/// The function's own `arguments`, once referred to.
+	arguments: Option<BindingId>,
+	/// A function's body, whose names come after its parameters'.
+	body: bool,
+	/// A namespace block's own names; what it exports goes to the parent.
+	local: bool,
+}
 
 impl Scopes {
 	/// Empties the tables for a tree of `nodes` nodes, keeping the room.
@@ -370,8 +392,6 @@ impl Scopes {
 	}
 }
 
-/// How an extension's nodes join the analysis: which of their children are values, and what
-/// they declare.
 pub trait Bind: Walk {
 	fn bind(&self, binder: &mut Binder<Self>, id: NodeId, mode: Mode);
 	/// The value-space parts an extension attaches to a plain node: decorators.
@@ -407,13 +427,13 @@ fn analyze_with<X: Bind>(ast: &mut Ast<X>, kind: ScopeKind, root: Option<NodeId>
 	binder.enter(kind, root, false);
 	f(&mut binder);
 	binder.exit();
+	binder.resolve_all();
 	let Binder {
 		mut out,
-		stack,
-		mut open,
+		mut envs,
+		open,
 		host_declared,
-		pending,
-		pending_from,
+		mut env_of,
 		owned,
 		..
 	} = binder;
@@ -430,23 +450,23 @@ fn analyze_with<X: Bind>(ast: &mut Ast<X>, kind: ScopeKind, root: Option<NodeId>
 	out.declared_by.finish(ast.nodes.len());
 	out.writes_of.finish(ast.nodes.len());
 	let mut names = std::mem::take(&mut out.scratch.names);
-	if names.len() < open.len() {
-		names.resize_with(open.len(), FastMap::default);
+	if names.len() < envs.len() {
+		names.resize_with(envs.len(), FastMap::default);
 	}
-	for (i, mut open) in open.drain(..).enumerate() {
-		open.names.clear();
-		names[i] = if open.names.capacity() > POOLED_NAMES {
+	for (i, mut env) in envs.drain(..).enumerate() {
+		env.names.clear();
+		names[i] = if env.names.capacity() > POOLED_NAMES {
 			FastMap::default()
 		} else {
-			open.names
+			env.names
 		};
 	}
+	env_of.clear();
 	out.scratch = Scratch {
-		stack,
+		envs,
 		open,
 		host_declared,
-		pending,
-		pending_from,
+		env_of,
 		owned,
 		names,
 	};
@@ -486,24 +506,12 @@ pub fn analyze<X: Bind>(ast: &mut Ast<X>, entry: Entry, roots: List) {
 	}
 }
 
-/// What the analysis keeps about a scope while it runs, parallel to `Scopes::scopes`.
-#[derive(Debug, Default)]
-struct Open {
-	/// An arrow function has no `arguments` of its own.
-	arrow: bool,
-	/// Where a function's body starts: a parameter default cannot see what the body declares.
-	body_start: u32,
-	names: FastMap<StrId, BindingId>,
-	/// The function's own `arguments`, once referred to; kept out of `names`, which a body
-	/// declaration of the same name may hold.
-	arguments: Option<BindingId>,
-}
-
 pub struct Binder<'a, X> {
 	ast: &'a Ast<X>,
 	out: Scopes,
-	stack: Vec<ScopeId>,
-	open: Vec<Open>,
+	envs: Vec<Env>,
+	/// The environments open here, innermost last.
+	open: Vec<u32>,
 	/// The patterns the open host scopes declare, which their fields do not reference.
 	host_declared: Vec<List>,
 	/// The node whose pattern is being declared, for `Binding::declaration`.
@@ -512,11 +520,12 @@ pub struct Binder<'a, X> {
 	writing: Option<NodeId>,
 	/// The target being visited is read as well: a compound assignment or an update.
 	compound: bool,
-	/// The references not yet resolved, those of each open scope after `pending_from`'s entry for it.
-	pending: Vec<ReferenceId>,
-	pending_from: Vec<usize>,
-	/// The scope a binding owns, for declarations that merge: namespaces and enums.
-	owned: FastMap<BindingId, ScopeId>,
+	/// The environment an `export` was met in: what it declares there is the namespace's to share.
+	exporting: Option<u32>,
+	/// The environment of each reference, parallel to `Scopes::references`.
+	env_of: Vec<u32>,
+	/// The shared environment a binding owns, for declarations that merge: namespaces and enums.
+	owned: FastMap<BindingId, u32>,
 	arguments: Option<StrId>,
 	this_name: Option<StrId>,
 }
@@ -535,11 +544,10 @@ impl<'a, X: Bind> Binder<'a, X> {
 			},
 		};
 		let Scratch {
-			stack,
+			envs,
 			open,
 			host_declared,
-			pending,
-			pending_from,
+			env_of,
 			owned,
 			names,
 		} = std::mem::take(&mut out.scratch);
@@ -547,14 +555,14 @@ impl<'a, X: Bind> Binder<'a, X> {
 		Binder {
 			ast,
 			out,
-			stack,
+			envs,
 			open,
 			host_declared,
 			declaring: None,
 			writing: None,
 			compound: false,
-			pending,
-			pending_from,
+			exporting: None,
+			env_of,
 			owned,
 			arguments: ast.strings.find("arguments"),
 			this_name: ast.strings.find("this"),
@@ -569,12 +577,16 @@ impl<'a, X: Bind> Binder<'a, X> {
 		self.ast.node(id).kind
 	}
 
+	fn env(&self) -> u32 {
+		*self.open.last().unwrap()
+	}
+
 	fn current(&self) -> ScopeId {
-		*self.stack.last().unwrap()
+		self.envs[self.env() as usize].scope
 	}
 
 	pub fn enter(&mut self, kind: ScopeKind, node: Option<NodeId>, arrow: bool) {
-		let parent = self.stack.last().copied();
+		let parent = self.open.last().map(|&env| self.envs[env as usize].scope);
 		let function_depth =
 			parent.map_or(0, |p| self.out.scopes[p as usize].function_depth) + u32::from(kind == ScopeKind::Function);
 		let id = self.out.scopes.len() as ScopeId;
@@ -585,36 +597,72 @@ impl<'a, X: Bind> Binder<'a, X> {
 			function_depth,
 			top_level_await: false,
 		});
-		self.open.push(Open {
-			arrow,
-			names: self
-				.out
-				.scratch
-				.names
-				.get_mut(id as usize)
-				.map(std::mem::take)
-				.unwrap_or_default(),
-			..Open::default()
-		});
 		if let Some(node) = node {
 			self.out.of_node.insert(node, id);
 		}
-		self.stack.push(id);
-		self.pending_from.push(self.pending.len());
+		let function = kind == ScopeKind::Function;
+		self.open_env(Env {
+			scope: id,
+			holds_var: kind.holds_var() && !function,
+			opens: true,
+			parameters: function,
+			arrow,
+			..Env::default()
+		});
+	}
+
+	fn open_env(&mut self, mut env: Env) {
+		let id = self.envs.len() as u32;
+		env.parent = self.open.last().copied();
+		env.names = self
+			.out
+			.scratch
+			.names
+			.get_mut(id as usize)
+			.map(std::mem::take)
+			.unwrap_or_default();
+		self.envs.push(env);
+		self.open.push(id);
+	}
+
+	/// A function's body, after its parameters.
+	fn open_body(&mut self) {
+		let scope = self.current();
+		self.open_env(Env {
+			scope,
+			holds_var: true,
+			body: true,
+			..Env::default()
+		});
+	}
+
+	/// A namespace block's own environment, under the one its blocks share, which is open.
+	fn open_local(&mut self, shared: u32) {
+		let scope = self.envs[shared as usize].scope;
+		self.open_env(Env {
+			scope,
+			holds_var: true,
+			local: true,
+			..Env::default()
+		});
 	}
 
 	/// Opens the scope a binding owns, or reopens it when the binding declared one before, as
-	/// the blocks of one namespace share their names.
+	/// the blocks of one namespace share what they export.
 	pub fn enter_owned(&mut self, kind: ScopeKind, node: NodeId, binding: Option<BindingId>) {
-		if let Some(&scope) = binding.and_then(|b| self.owned.get(&b)) {
-			self.out.of_node.insert(node, scope);
-			self.stack.push(scope);
-			self.pending_from.push(self.pending.len());
+		if let Some(&shared) = binding.and_then(|b| self.owned.get(&b)) {
+			self.out.of_node.insert(node, self.envs[shared as usize].scope);
+			self.open.push(shared);
+			self.open_local(shared);
 			return;
 		}
 		self.enter(kind, Some(node), false);
+		let shared = self.env();
 		if let Some(binding) = binding {
-			self.owned.insert(binding, self.current());
+			self.owned.insert(binding, shared);
+		}
+		if kind == ScopeKind::Namespace {
+			self.open_local(shared);
 		}
 	}
 
@@ -626,79 +674,64 @@ impl<'a, X: Bind> Binder<'a, X> {
 		}
 	}
 
-	/// Closes the scope: its references resolve here or stay pending for the scope around it.
+	/// Leaves the scope: its environments close, the one that opened it last.
 	pub fn exit(&mut self) {
-		let scope = self.stack.pop().unwrap();
-		let from = self.pending_from.pop().unwrap();
-		let mut kept = from;
-		for i in from..self.pending.len() {
-			let reference = self.pending[i];
-			let NodeKind::Identifier { name } = self.kind(self.out.references[reference as usize].node) else {
+		while let Some(env) = self.open.pop() {
+			if self.envs[env as usize].opens {
+				break;
+			}
+		}
+	}
+
+	/// Every reference resolved, once everything is declared: through its environment and those
+	/// around it, to the function's own `arguments` at a parameter boundary, else to nothing.
+	fn resolve_all(&mut self) {
+		for i in 0..self.out.references.len() {
+			let NodeKind::Identifier { name } = self.kind(self.out.references[i].node) else {
 				unreachable!()
 			};
-			let mut found = self.open[scope as usize].names.get(&name).copied();
-			if let Some(binding) = found
-				&& self.declared_in_body(scope, reference, binding)
-			{
-				found = None;
-			}
-			if found.is_none()
-				&& self.out.scopes[scope as usize].kind == ScopeKind::Function
-				&& !self.open[scope as usize].arrow
-				&& Some(name) == self.arguments
-			{
-				found = Some(self.open[scope as usize].arguments.unwrap_or_else(|| {
-					let id = self.out.bindings.len() as BindingId;
-					self.out.bindings.push(Binding {
-						name,
-						kind: BindingKind::Arguments,
-						scope,
-						node: None,
-						declaration: None,
-					});
-					self.open[scope as usize].arguments = Some(id);
-					id
-				}));
-			}
-			match found {
-				Some(binding) => self.resolve(reference, binding),
-				None => {
-					self.pending[kept] = reference;
-					kept += 1;
+			let mut env = Some(self.env_of[i]);
+			let binding = loop {
+				let Some(at) = env else { break None };
+				if let Some(&binding) = self.envs[at as usize].names.get(&name) {
+					break Some(binding);
 				}
-			}
+				let here = &self.envs[at as usize];
+				if here.parameters && !here.arrow && Some(name) == self.arguments {
+					break Some(self.implicit_arguments(at));
+				}
+				env = here.parent;
+			};
+			self.out.references[i].binding = binding;
 		}
-		self.pending.truncate(kept);
-		if self.pending_from.is_empty() {
-			self.pending.clear();
+	}
+
+	fn implicit_arguments(&mut self, env: u32) -> BindingId {
+		if let Some(binding) = self.envs[env as usize].arguments {
+			return binding;
 		}
+		let id = self.out.bindings.len() as BindingId;
+		self.out.bindings.push(Binding {
+			name: self.arguments.unwrap(),
+			kind: BindingKind::Arguments,
+			scope: self.envs[env as usize].scope,
+			node: None,
+			declaration: None,
+		});
+		self.envs[env as usize].arguments = Some(id);
+		id
 	}
 
-	/// A reference in a function's parameters to a name the body declares: the body's binding is
-	/// not the one, the parameters see past the function.
-	fn declared_in_body(&self, scope: ScopeId, reference: ReferenceId, binding: BindingId) -> bool {
-		let body_start = self.open[scope as usize].body_start;
-		body_start > 0
-			&& self.ast.node(self.out.references[reference as usize].node).start < body_start
-			&& self.out.bindings[binding as usize]
-				.node
-				.is_some_and(|node| self.ast.node(node).start >= body_start)
-	}
-
-	fn resolve(&mut self, reference: ReferenceId, binding: BindingId) {
-		self.out.references[reference as usize].binding = Some(binding);
-	}
-
-	fn declare_in(&mut self, scope: ScopeId, name: StrId, kind: BindingKind, node: Option<NodeId>) -> BindingId {
+	fn declare_in(&mut self, env: u32, name: StrId, kind: BindingKind, node: Option<NodeId>) -> BindingId {
 		let id = self.out.bindings.len() as BindingId;
 		self.out.bindings.push(Binding {
 			name,
 			kind,
-			scope,
+			scope: self.envs[env as usize].scope,
 			node,
 			declaration: node.and(self.declaring),
 		});
-		self.open[scope as usize].names.insert(name, id);
+		self.envs[env as usize].names.insert(name, id);
 		// a class name declares the outer binding; the one inside its body shares the identifier
 		if let Some(node) = node {
 			self.out.of_identifier.insert_new(node, Role::Declares(id));
@@ -734,6 +767,31 @@ impl<'a, X: Bind> Binder<'a, X> {
 		result
 	}
 
+	/// Runs `f` under an `export`: what it declares right here, a namespace block shares.
+	fn exported<T>(&mut self, f: impl FnOnce(&mut Self) -> T) -> T {
+		let outer = self.exporting.replace(self.env());
+		let result = f(self);
+		self.exporting = outer;
+		result
+	}
+
+	/// The environment a declaration here goes to.
+	fn declaring_env(&self, var: bool) -> u32 {
+		let mut env = self.env();
+		if self.exporting == Some(env) && self.envs[env as usize].local {
+			env = self.envs[env as usize].parent.unwrap();
+		}
+		if var {
+			while !self.envs[env as usize].holds_var {
+				match self.envs[env as usize].parent {
+					Some(parent) => env = parent,
+					None => break,
+				}
+			}
+		}
+		env
+	}
+
 	fn declare(&mut self, node: NodeId, kind: BindingKind) {
 		let NodeKind::Identifier { name } = self.kind(node) else {
 			return;
@@ -741,13 +799,16 @@ impl<'a, X: Bind> Binder<'a, X> {
 		if self.ast.str(name).is_empty() {
 			return;
 		}
-		let mut scope = self.current();
-		if kind.is_var() {
-			while !self.out.scopes[scope as usize].kind.holds_var() {
-				scope = self.out.scopes[scope as usize].parent.unwrap();
-			}
-		}
-		if let Some(&existing) = self.open[scope as usize].names.get(&name) {
+		let env = self.declaring_env(kind.is_var());
+		let here = &self.envs[env as usize];
+		// a body that declares a parameter's name again keeps the parameter's binding
+		let existing = here.names.get(&name).copied().or_else(|| {
+			here.body
+				.then(|| self.envs[here.parent.unwrap() as usize].names.get(&name).copied())
+				.flatten()
+		});
+		if let Some(existing) = existing {
+			let scope = here.scope;
 			let opened_by_host = match self.out.scopes[scope as usize] {
 				Scope {
 					kind: ScopeKind::Fragment,
@@ -770,7 +831,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 			self.out.of_identifier.insert_new(node, Role::Declares(existing));
 			return;
 		}
-		self.declare_in(scope, name, kind, Some(node));
+		self.declare_in(env, name, kind, Some(node));
 	}
 
 	pub fn reference(&mut self, node: NodeId, write: bool, mutate: bool) {
@@ -780,18 +841,17 @@ impl<'a, X: Bind> Binder<'a, X> {
 			return;
 		}
 		let id = self.out.references.len() as ReferenceId;
-		let scope = self.current();
 		self.out.references.push(Reference {
 			node,
-			scope,
+			scope: self.current(),
 			binding: None,
 			write,
 			mutate,
 			read: !write || self.compound,
 			write_expr: if write { self.writing } else { None },
 		});
+		self.env_of.push(self.env());
 		self.out.of_identifier.insert(node, Role::Reference(id));
-		self.pending.push(id);
 	}
 
 	pub fn statements(&mut self, list: List) {
@@ -875,8 +935,6 @@ impl<'a, X: Bind> Binder<'a, X> {
 			self.ast.extension.bind_extras(self, param);
 		}
 		self.enter(ScopeKind::Function, Some(id), arrow);
-		let scope = self.current();
-		self.open[scope as usize].body_start = self.ast.node(body).start;
 		// a TypeScript `this` parameter, first in the list, is a type position and binds nothing
 		for (i, &param) in self.ast.list(params).iter().flatten().enumerate() {
 			if i == 0 && matches!(self.kind(param), NodeKind::Identifier { name } if Some(name) == self.this_name) {
@@ -884,6 +942,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 			}
 			self.declaring(id, |b| b.visit_with(param, Mode::Declare(BindingKind::Param), false));
 		}
+		self.open_body();
 		match self.kind(body) {
 			NodeKind::BlockStatement { body } => self.statements(body),
 			_ => self.visit(body, Mode::Expression),
@@ -1298,7 +1357,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 				source,
 				..
 			} => {
-				self.maybe(declaration, Mode::Expression);
+				self.exported(|b| b.maybe(declaration, Mode::Expression));
 				if source.is_none() && !self.ast.extension.types_only(self.ast, id) {
 					self.list(specifiers, Mode::Expression);
 				}
@@ -1416,7 +1475,7 @@ mod tests {
 	}
 
 	fn facts_in(src: &str, module: bool) -> String {
-		let ast = analyzed(crate::parse_at(
+		facts_of(&analyzed(crate::parse_at(
 			src,
 			0,
 			None,
@@ -1426,7 +1485,25 @@ mod tests {
 				..Options::default()
 			},
 			"",
-		));
+		)))
+	}
+
+	#[cfg(feature = "typescript")]
+	fn ts_facts(src: &str) -> String {
+		facts_of(&analyzed(crate::typescript::parse_at(
+			src,
+			0,
+			None,
+			Entry::Program,
+			Options {
+				module: true,
+				..Options::default()
+			},
+			"",
+		)))
+	}
+
+	fn facts_of<X: Bind>(ast: &Ast<X>) -> String {
 		let scopes = ast.scopes.as_ref().unwrap();
 		let mut ids: Vec<_> = scopes.of_identifier.iter().collect();
 		ids.sort_by_key(|&(id, _)| ast.node(id).start);
@@ -1591,6 +1668,24 @@ mod tests {
 		let dec = scopes.bindings.iter().position(|b| ast.str(b.name) == "dec").unwrap() as BindingId;
 		let dec_reference = scopes.references.iter().find(|r| r.binding == Some(dec)).unwrap();
 		assert_eq!(scopes.scope(dec_reference.scope).kind, ScopeKind::Class);
+	}
+
+	/// A namespace's blocks share what they export and keep the rest to themselves; a type-only
+	/// import-equals binds nothing.
+	#[test]
+	#[cfg(feature = "typescript")]
+	fn namespaces_merge() {
+		let cases = [
+			"const x = 0; namespace N { const x = 1; } namespace N { export const y = x; }",
+			"const x = 0; namespace N { export const read = () => x; } namespace N { export const x = 1; }",
+			"namespace N { const x = 1; x; } namespace N { const x = 2; x; }",
+			"import type X = require('m'); X;",
+		];
+		let facts: Vec<String> = cases.iter().map(|src| ts_facts(src)).collect();
+		assert_eq!(
+			facts.join("\n\n"),
+			"x@6 declares const in module\nN@23 declares namespace in module\nx@33 declares const in namespace\nN@52 declares namespace in module\ny@69 declares const in namespace\nx@73 -> @6\n\nx@6 declares const in module\nN@23 declares namespace in module\nread@40 declares const in namespace\nx@53 -> @85\nN@68 declares namespace in module\nx@85 declares const in namespace\n\nN@10 declares namespace in module\nx@20 declares const in namespace\nx@27 -> @20\nN@42 declares namespace in module\nx@52 declares const in namespace\nx@59 -> @52\n\nX@30 -> global"
+		);
 	}
 
 	#[test]
