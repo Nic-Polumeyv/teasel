@@ -272,7 +272,9 @@ mod bench {
 	#[test]
 	#[ignore]
 	fn intern_words() {
-		let Ok(path) = std::env::var("TEASEL_BENCH") else { return };
+		let Ok(path) = std::env::var("TEASEL_BENCH") else {
+			return;
+		};
 		let source = std::fs::read_to_string(path).unwrap();
 		let words: Vec<&str> = source
 			.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '$'))
