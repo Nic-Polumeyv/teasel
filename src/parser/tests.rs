@@ -896,7 +896,7 @@ fn parenthesized_fact() {
 	};
 	let marked = |src: &str| {
 		let (ast, id, _) = at(Entry::Expression, src, 0, options, "").unwrap();
-		ast.parenthesized.contains(&id)
+		ast.is_parenthesized(id)
 	};
 	assert!(marked("(a, b)"));
 	assert!(marked("((a))"));
@@ -1009,4 +1009,23 @@ fn layout_sizes() {
 		size_of::<crate::lexer::token::Token>(),
 		size_of::<crate::lexer::token::TokenKind>()
 	);
+	eprintln!(
+		"Scope {} Binding {} Reference {} Comment {} Host {} Attached {} TokenSnapshot {}",
+		size_of::<crate::scopes::Scope>(),
+		size_of::<crate::scopes::Binding>(),
+		size_of::<crate::scopes::Reference>(),
+		size_of::<crate::ast::Comment>(),
+		size_of::<crate::ast::Host>(),
+		size_of::<crate::ast::Attached>(),
+		size_of::<super::TokenSnapshot>()
+	);
+}
+
+#[test]
+fn parenthesized_bits() {
+	let request = crate::json::Request::from_names("module parenthesized");
+	let json = crate::json::parse("(a).b; (x, y); c; ((d));", &request, "");
+	assert_eq!(json.matches("\"parenthesized\":true").count(), 3, "{json}");
+	let json = crate::json::parse("(a, b) => a; (c);", &request, "");
+	assert_eq!(json.matches("\"parenthesized\":true").count(), 1, "{json}");
 }

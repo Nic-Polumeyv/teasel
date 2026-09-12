@@ -143,9 +143,8 @@ pub struct Ast<X = ()> {
 	pub scopes: Option<crate::scopes::Scopes>,
 	/// What went wrong, in source order, when errors are recovered from instead of thrown.
 	pub errors: Vec<crate::SyntaxError>,
-	/// Nodes the source wraps in parens, when the option asks and no wrapper node stands for them;
-	/// each is marked as its parens close, so the ids come in order.
-	pub parenthesized: Vec<NodeId>,
+	/// One bit per node: whether it was written in parentheses, when `Options::parenthesized` asks.
+	pub parenthesized: Vec<u64>,
 	pub extension: X,
 }
 
@@ -206,7 +205,6 @@ pub(crate) struct Mark<M> {
 	nodes: usize,
 	numbers: usize,
 	lists: usize,
-	parenthesized: usize,
 	extension: M,
 }
 
@@ -236,7 +234,6 @@ impl<X: Reuse> Ast<X> {
 			nodes: self.nodes.len(),
 			numbers: self.numbers.len(),
 			lists: self.lists.len(),
-			parenthesized: self.parenthesized.len(),
 			extension: self.extension.mark(),
 		}
 	}
@@ -246,7 +243,12 @@ impl<X: Reuse> Ast<X> {
 		self.nodes.truncate(mark.nodes);
 		self.numbers.truncate(mark.numbers);
 		self.lists.truncate(mark.lists);
-		self.parenthesized.truncate(mark.parenthesized);
+		self.parenthesized.truncate(mark.nodes.div_ceil(64));
+		if let Some(last) = self.parenthesized.last_mut()
+			&& mark.nodes % 64 != 0
+		{
+			*last &= (1u64 << (mark.nodes % 64)) - 1;
+		}
 		self.extension.truncate(mark.extension);
 	}
 }
@@ -506,6 +508,21 @@ impl<X> Ast<X> {
 	/// The last node added, which is the root after a whole-program parse.
 	pub fn last(&self) -> NodeId {
 		NodeId::at(self.nodes.len() as u32 - 1)
+	}
+
+	pub fn set_parenthesized(&mut self, id: NodeId) {
+		let index = id.index() as usize;
+		if self.parenthesized.len() <= index / 64 {
+			self.parenthesized.resize(index / 64 + 1, 0);
+		}
+		self.parenthesized[index / 64] |= 1 << (index % 64);
+	}
+
+	pub fn is_parenthesized(&self, id: NodeId) -> bool {
+		let index = id.index() as usize;
+		self.parenthesized
+			.get(index / 64)
+			.is_some_and(|word| word & (1 << (index % 64)) != 0)
 	}
 
 	/// A number literal's value, kept beside the tree so a node stays four-byte aligned.

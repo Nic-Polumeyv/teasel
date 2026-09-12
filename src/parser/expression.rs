@@ -800,8 +800,7 @@ impl<E: Extension> Parser<'_, E> {
 			value
 		};
 		if self.options.parenthesized {
-			debug_assert!(self.ast.parenthesized.last().is_none_or(|&last| last <= value));
-			self.ast.parenthesized.push(value);
+			self.ast.set_parenthesized(value);
 		}
 		Ok(value)
 	}

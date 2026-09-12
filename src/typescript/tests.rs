@@ -263,7 +263,8 @@ fn failed_attempts_leave_nothing() {
 	let super::ast::TsKind::TypeAssertion { expression, .. } = ast.extension.kind(index) else {
 		panic!()
 	};
-	assert_eq!(ast.parenthesized, [expression]);
+	assert!(ast.is_parenthesized(expression));
+	assert_eq!(ast.parenthesized.iter().map(|w| w.count_ones()).sum::<u32>(), 1);
 }
 
 #[test]
