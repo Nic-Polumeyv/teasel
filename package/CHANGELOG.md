@@ -1,5 +1,11 @@
 # @teasel/parser
 
+## 0.0.4
+
+### Patch Changes
+
+- [#71](https://github.com/Nic-Polumeyv/teasel/pull/71) [`eccfba8`](https://github.com/Nic-Polumeyv/teasel/commit/eccfba852bfeb50d7a994a5ebdcbc1307ed00f8d) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - a function's own `arguments` binding is declared while its piece of the document is read, so a root's tables list it again as they did before 0.0.3
+
 ## 0.0.3
 
 ### Patch Changes
