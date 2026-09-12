@@ -62,9 +62,10 @@ pub struct Interner {
 	text: String,
 	/// Where each string starts, and where the next would.
 	starts: Vec<u32>,
-	hashes: Vec<u32>,
-	/// Slots hold an id plus one; zero is empty. Always a power of two, at most half full.
-	table: Vec<u32>,
+	/// Slots hold the string's hash in the high half and its id plus one in the low; zero is
+	/// empty. Always a power of two, at most half full. The hash sits beside the id so a probe
+	/// touches one line before it reads the text.
+	table: Vec<u64>,
 	/// What the lexer knows of each word by id, filled as words are met; see `token::word`.
 	pub(crate) word_flags: Vec<u8>,
 }
@@ -104,7 +105,6 @@ impl Interner {
 		Interner {
 			text: String::with_capacity(bytes / 32),
 			starts,
-			hashes: Vec::with_capacity(slots / 2),
 			table: vec![0; slots],
 			word_flags: Vec::new(),
 		}
@@ -115,7 +115,6 @@ impl Interner {
 		self.text.clear();
 		self.starts.clear();
 		self.starts.push(0);
-		self.hashes.clear();
 		self.table.fill(0);
 		self.word_flags.clear();
 	}
@@ -133,9 +132,12 @@ impl Interner {
 		let id = self.len() as u32;
 		self.text.push_str(s);
 		self.starts.push(self.text.len() as u32);
-		self.hashes.push(hash);
-		self.table[slot] = id + 1;
+		self.table[slot] = Self::entry(hash, id);
 		StrId(id)
+	}
+
+	fn entry(hash: u32, id: u32) -> u64 {
+		(hash as u64) << 32 | (id + 1) as u64
 	}
 
 	/// The id of `s`, or the empty slot it would take.
@@ -150,9 +152,11 @@ impl Interner {
 			if entry == 0 {
 				return Err(i);
 			}
-			let id = entry - 1;
-			if self.hashes[id as usize] == hash && self.get(StrId(id)) == s {
-				return Ok(StrId(id));
+			if (entry >> 32) as u32 == hash {
+				let id = entry as u32 - 1;
+				if self.get(StrId(id)) == s {
+					return Ok(StrId(id));
+				}
 			}
 			i = (i + 1) & mask;
 		}
@@ -160,17 +164,17 @@ impl Interner {
 
 	fn grow(&mut self) {
 		let size = (self.table.len() * 2).max(64);
-		self.table = vec![0; size];
+		let old = std::mem::replace(&mut self.table, vec![0; size]);
 		if self.starts.is_empty() {
 			self.starts.push(0);
 		}
 		let mask = size - 1;
-		for (id, &hash) in self.hashes.iter().enumerate() {
-			let mut i = hash as usize & mask;
+		for entry in old.into_iter().filter(|&entry| entry != 0) {
+			let mut i = (entry >> 32) as usize & mask;
 			while self.table[i] != 0 {
 				i = (i + 1) & mask;
 			}
-			self.table[i] = id as u32 + 1;
+			self.table[i] = entry;
 		}
 	}
 
@@ -259,5 +263,33 @@ mod tests {
 		let mut sorted = ids.clone();
 		sorted.dedup();
 		assert_eq!(sorted.len(), names.len());
+	}
+}
+
+#[cfg(test)]
+mod bench {
+	// TEASEL_BENCH=file cargo test --release intern_words -- --ignored --nocapture
+	#[test]
+	#[ignore]
+	fn intern_words() {
+		let Ok(path) = std::env::var("TEASEL_BENCH") else { return };
+		let source = std::fs::read_to_string(path).unwrap();
+		let words: Vec<&str> = source
+			.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '$'))
+			.filter(|w| !w.is_empty() && !w.as_bytes()[0].is_ascii_digit())
+			.collect();
+		let mut interner = super::Interner::sized(source.len());
+		let mut best = f64::MAX;
+		let mut distinct = 0;
+		for _ in 0..200 {
+			interner.clear();
+			let t = std::time::Instant::now();
+			for &w in &words {
+				interner.intern(w);
+			}
+			best = best.min(t.elapsed().as_secs_f64() * 1e6);
+			distinct = interner.len();
+		}
+		eprintln!("{best:9.2} µs  intern {} words, {distinct} distinct", words.len());
 	}
 }
