@@ -1384,6 +1384,7 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 				self.interned("name", name);
 			}
 			NumberLiteral { value } => {
+				let value = self.ast.numbers[value as usize];
 				self.begin("Literal", id);
 				self.key("value");
 				if value.is_finite() {

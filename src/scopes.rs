@@ -229,19 +229,22 @@ impl<T: Packed> NodeTable<T> {
 	}
 
 	pub fn get(&self, id: NodeId) -> Option<T> {
-		match self.0.get(id.0 as usize) {
+		match self.0.get(id.index() as usize) {
 			Some(&word) if word != 0 => Some(T::unpack(word - 1)),
 			_ => None,
 		}
 	}
 
 	fn insert(&mut self, id: NodeId, value: T) {
-		debug_assert!((id.0 as usize) < self.0.len(), "nodes are numbered before analysis");
-		self.0[id.0 as usize] = value.pack() + 1;
+		debug_assert!(
+			(id.index() as usize) < self.0.len(),
+			"nodes are numbered before analysis"
+		);
+		self.0[id.index() as usize] = value.pack() + 1;
 	}
 
 	fn insert_new(&mut self, id: NodeId, value: T) {
-		let slot = &mut self.0[id.0 as usize];
+		let slot = &mut self.0[id.index() as usize];
 		if *slot == 0 {
 			*slot = value.pack() + 1;
 		}
@@ -252,7 +255,7 @@ impl<T: Packed> NodeTable<T> {
 			.iter()
 			.enumerate()
 			.filter(|(_, w)| **w != 0)
-			.map(|(i, w)| (NodeId(i as u32), T::unpack(w - 1)))
+			.map(|(i, w)| (NodeId::at(i as u32), T::unpack(w - 1)))
 	}
 }
 
@@ -1517,28 +1520,28 @@ mod tests {
 		use super::{NodeTable, Role};
 		use crate::ast::NodeId;
 		let mut table: NodeTable<Role> = NodeTable::sized(3);
-		assert!(table.get(NodeId(7)).is_none());
-		table.insert_new(NodeId(1), Role::Declares(5));
-		table.insert_new(NodeId(1), Role::Reference(6));
-		assert!(matches!(table.get(NodeId(1)), Some(Role::Declares(5))));
-		table.insert(NodeId(2), Role::Reference(6));
-		assert!(matches!(table.get(NodeId(2)), Some(Role::Reference(6))));
+		assert!(table.get(NodeId::at(7)).is_none());
+		table.insert_new(NodeId::at(1), Role::Declares(5));
+		table.insert_new(NodeId::at(1), Role::Reference(6));
+		assert!(matches!(table.get(NodeId::at(1)), Some(Role::Declares(5))));
+		table.insert(NodeId::at(2), Role::Reference(6));
+		assert!(matches!(table.get(NodeId::at(2)), Some(Role::Reference(6))));
 		assert_eq!(table.iter().count(), 2);
-		assert!(table.get(NodeId(0)).is_none());
+		assert!(table.get(NodeId::at(0)).is_none());
 	}
 
 	#[test]
 	fn ids_by_node() {
 		let mut by_node = ByNode::default();
 		for (node, id) in [(5, 0), (2, 1), (5, 2), (9, 3)] {
-			by_node.pairs.push((NodeId(node), id));
+			by_node.pairs.push((NodeId::at(node), id));
 		}
 		by_node.finish(10);
-		assert_eq!(by_node.get(NodeId(5)), [0, 2]);
-		assert_eq!(by_node.get(NodeId(2)), [1]);
-		assert_eq!(by_node.get(NodeId(9)), [3]);
-		assert!(by_node.get(NodeId(0)).is_empty());
-		assert!(by_node.get(NodeId(3)).is_empty());
+		assert_eq!(by_node.get(NodeId::at(5)), [0, 2]);
+		assert_eq!(by_node.get(NodeId::at(2)), [1]);
+		assert_eq!(by_node.get(NodeId::at(9)), [3]);
+		assert!(by_node.get(NodeId::at(0)).is_empty());
+		assert!(by_node.get(NodeId::at(3)).is_empty());
 	}
 
 	use super::*;

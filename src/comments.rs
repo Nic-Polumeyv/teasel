@@ -191,7 +191,7 @@ mod tests {
 	/// Every node with comments, in source order: `Kind leading=[..] trailing=[..]`.
 	fn attached<X: Walk>(ast: &Ast<X>, src: &str) -> Vec<String> {
 		let mut nodes: Vec<(&NodeId, &crate::ast::Attached)> = ast.attached.iter().collect();
-		nodes.sort_by_key(|(id, _)| (ast.node(**id).start, id.0));
+		nodes.sort_by_key(|(id, _)| (ast.node(**id).start, id.index()));
 		let values = |run: crate::ast::Run| -> Vec<&str> {
 			run.indices()
 				.map(|i| &src[ast.comments[i as usize].text_range()])

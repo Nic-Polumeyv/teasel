@@ -655,7 +655,10 @@ impl<E: Extension> Parser<'_, E> {
 				Ok(id)
 			}
 			TokenKind::RegExp { pattern, flags } => self.literal(NodeKind::RegExpLiteral { pattern, flags }, start),
-			TokenKind::Number(value) => self.literal(NodeKind::NumberLiteral { value }, start),
+			TokenKind::Number(value) => {
+				let value = self.ast.number(value);
+				self.literal(NodeKind::NumberLiteral { value }, start)
+			}
 			TokenKind::BigInt => self.literal(NodeKind::BigIntLiteral, start),
 			TokenKind::String(value) => self.literal(NodeKind::StringLiteral { value }, start),
 			TokenKind::Keyword(Keyword::Null) => self.literal(NodeKind::NullLiteral, start),
