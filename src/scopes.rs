@@ -1660,7 +1660,7 @@ mod tests {
 		// nothing to settle: sources without the word, a parameter list on its own
 		assert_eq!(
 			facts_in("function f(a) { return a; }", false),
-			"f@9 declares function in script\na@11 declares param in function\na@25 -> @11"
+			"f@9 declares function in script\na@11 declares param in function\na@23 -> @11"
 		);
 		let (mut ast, roots, _) =
 			crate::parse_at("(a, b = a)", 0, None, Entry::Params, Options::default(), "").unwrap();
