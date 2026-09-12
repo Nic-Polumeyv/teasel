@@ -1,5 +1,19 @@
 # @teasel/parser
 
+## 0.0.5
+
+### Patch Changes
+
+- [#73](https://github.com/Nic-Polumeyv/teasel/pull/73) [`5686d36`](https://github.com/Nic-Polumeyv/teasel/commit/5686d36b7826e393e1a9c83b83f4fff490188213) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - a host's own nodes carry no comments, those stay in the list; a comment between a JavaScript node and the host's next syntax trails the node only over blanks, commas and closing parens, so what follows a parenthesis leads the next node
+
+- [#77](https://github.com/Nic-Polumeyv/teasel/pull/77) [`0f324ad`](https://github.com/Nic-Polumeyv/teasel/commit/0f324adf06d37098f2d4dee4583999b06c82d997) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - a host document parses with almost no allocation: the grammar knows what follows each entry before any document is read, a host node's fields are a slice, frames and body groups borrow their buffers, attribute keys are interned, and the scope walk keeps its group stacks
+
+- [#75](https://github.com/Nic-Polumeyv/teasel/pull/75) [`993e232`](https://github.com/Nic-Polumeyv/teasel/commit/993e2326dd63dc7b4ab12b7447de48349929cbc8) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - the wasm build answers a panic with an error like the native one, instead of trapping the instance for every later parse
+
+- [#78](https://github.com/Nic-Polumeyv/teasel/pull/78) [`5321ab8`](https://github.com/Nic-Polumeyv/teasel/commit/5321ab82367eab559c21444b825017b137f10c38) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - a node is 32 bytes instead of 40 and an optional node id four: node ids keep a niche, number values sit beside the tree, and an export of a declaration is its own kind; the writer owns its constant and shape numbering instead of a thread-local, and parenthesized nodes are a bitset
+
+- [#76](https://github.com/Nic-Polumeyv/teasel/pull/76) [`abba63c`](https://github.com/Nic-Polumeyv/teasel/commit/abba63c2015514f3305eef40c96e2c1d69aeec54) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - a parse allocates almost nothing after the first: list buffers, parameter names, the regular expression validator's state and the comment attachments travel with the tree, and numbers are written without a heap string
+
 ## 0.0.4
 
 ### Patch Changes

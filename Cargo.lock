@@ -585,7 +585,7 @@ dependencies = [
 
 [[package]]
 name = "teasel"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "pprof",
  "rustc-demangle",
@@ -593,14 +593,14 @@ dependencies = [
 
 [[package]]
 name = "teasel-node"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "teasel",
 ]
 
 [[package]]
 name = "teasel-wasm"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "teasel",
 ]
