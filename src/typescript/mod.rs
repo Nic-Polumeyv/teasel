@@ -363,7 +363,7 @@ impl Parser<'_, TypeScript> {
 		if self.eat(TokenKind::ParenL)? {
 			let args = self.parse_expr_list(TokenKind::ParenR, false, false, &mut None)?;
 			self.no_type_casts(&args)?;
-			let arguments = self.list(&args);
+			let arguments = self.list_from(args);
 			let callee_start = self.start_of(expression);
 			expression = self.add(
 				NodeKind::CallExpression {
@@ -648,7 +648,7 @@ impl Parser<'_, TypeScript> {
 			let mut errors = Some(DestructuringErrors::default());
 			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut errors)?;
 			self.no_type_casts(&args)?;
-			let arguments = self.list(&args);
+			let arguments = self.list_from(args);
 			let node = self.add(
 				NodeKind::CallExpression {
 					callee: base,

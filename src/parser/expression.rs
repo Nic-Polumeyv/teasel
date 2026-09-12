@@ -672,7 +672,7 @@ impl<E: Extension> Parser<'_, E> {
 				self.next()?;
 				let elements = self.parse_expr_list(TokenKind::BracketR, true, true, errors)?;
 				E::list_items(self, &elements)?;
-				let elements = self.list(&elements);
+				let elements = self.list_from(elements);
 				Ok(self.add(NodeKind::ArrayExpression { elements }, start))
 			}
 			TokenKind::BraceL => self.parse_obj(false, errors),
@@ -780,14 +780,16 @@ impl<E: Extension> Parser<'_, E> {
 		}
 
 		let value = if paren.items.len() > 1 {
-			let expressions = self.list(&paren.items);
+			let expressions = self.list_from(paren.items);
 			self.add_with_end(
 				NodeKind::SequenceExpression { expressions },
 				paren.inner_start,
 				paren.inner_end,
 			)
 		} else {
-			paren.items[0].unwrap()
+			let value = paren.items[0].unwrap();
+			self.recycle(paren.items);
+			value
 		};
 		if self.options.parenthesized {
 			debug_assert!(self.ast.parenthesized.last().is_none_or(|&last| last <= value));
@@ -801,7 +803,7 @@ impl<E: Extension> Parser<'_, E> {
 	pub(crate) fn parse_paren_items(&mut self) -> Result<ParenItems> {
 		E::paren_list_start(self);
 		let inner_start = self.tok.start;
-		let mut items: Vec<Option<NodeId>> = Vec::new();
+		let mut items = self.items();
 		let mut first = true;
 		let mut last_is_comma = false;
 		let mut spread_start = None;
@@ -867,7 +869,7 @@ impl<E: Extension> Parser<'_, E> {
 		let arguments = if self.eat(TokenKind::ParenL)? {
 			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut None)?;
 			E::list_items(self, &args)?;
-			self.list(&args)
+			self.list_from(args)
 		} else {
 			List::EMPTY
 		};
@@ -878,8 +880,8 @@ impl<E: Extension> Parser<'_, E> {
 
 	pub(crate) fn parse_template(&mut self, is_tagged: bool) -> Result<NodeId> {
 		let start = self.tok.start;
-		let mut quasis = Vec::new();
-		let mut expressions = Vec::new();
+		let mut quasis = self.items();
+		let mut expressions = self.items();
 		loop {
 			let chunk = self.lexer.read_template()?;
 			let TokenKind::Template { cooked, raw, tail } = chunk.kind else {
@@ -889,7 +891,11 @@ impl<E: Extension> Parser<'_, E> {
 				let error = self.error(chunk.start, Code::BadTemplateEscape);
 				self.record(error)?;
 			}
-			quasis.push(self.add_with_end(NodeKind::TemplateElement { cooked, raw, tail }, chunk.start, chunk.end));
+			quasis.push(Some(self.add_with_end(
+				NodeKind::TemplateElement { cooked, raw, tail },
+				chunk.start,
+				chunk.end,
+			)));
 			if tail {
 				self.prev_end = if chunk.unclosed { chunk.end } else { chunk.end + 1 };
 				self.lexer.next_token_into(&mut self.tok)?;
@@ -901,19 +907,19 @@ impl<E: Extension> Parser<'_, E> {
 				Some(expression) => expression,
 				None => self.parse_expression(false, &mut None)?,
 			};
-			expressions.push(expression);
+			expressions.push(Some(expression));
 			if !self.is(TokenKind::BraceR) {
 				return self.unexpected();
 			}
 		}
-		let quasis = self.list_of(&quasis);
-		let expressions = self.list_of(&expressions);
+		let quasis = self.list_from(quasis);
+		let expressions = self.list_from(expressions);
 		Ok(self.add(NodeKind::TemplateLiteral { quasis, expressions }, start))
 	}
 
 	pub(crate) fn parse_obj(&mut self, is_pattern: bool, errors: &mut Errors) -> Result<NodeId> {
 		let start = self.tok.start;
-		let mut properties = Vec::new();
+		let mut properties = self.items();
 		let mut first = true;
 		let mut has_proto = false;
 		self.next()?;
@@ -925,9 +931,9 @@ impl<E: Extension> Parser<'_, E> {
 			if !is_pattern {
 				self.check_prop_clash(prop, &mut has_proto, errors)?;
 			}
-			properties.push(prop);
+			properties.push(Some(prop));
 		}
-		let properties = self.list_of(&properties);
+		let properties = self.list_from(properties);
 		let kind = if is_pattern {
 			NodeKind::ObjectPattern { properties }
 		} else {
@@ -1197,7 +1203,7 @@ impl<E: Extension> Parser<'_, E> {
 		self.expect(TokenKind::ParenL)?;
 		let params = self.parse_binding_list(TokenKind::ParenR, false, true, in_class)?;
 		self.check_yield_await_in_default_params()?;
-		let params = self.list(&params);
+		let params = self.list_from(params);
 		let node = match E::function_body(self, start, None, params, is_async, generator, kind)? {
 			Some(node) => {
 				self.exit_scope();
@@ -1231,7 +1237,7 @@ impl<E: Extension> Parser<'_, E> {
 		self.enter_scope(function_flags(is_async, false) | SCOPE_ARROW);
 		E::function_start(self, FunctionKind::Arrow)?;
 		let params = self.make_patterns(params, true)?;
-		let params = self.list(&params);
+		let params = self.list_from(params);
 		let (body, expression) = self.parse_function_body(start, None, params, true, false, for_init)?;
 		self.restore_yield_await(old);
 		let node = self.add(
@@ -1318,7 +1324,7 @@ impl<E: Extension> Parser<'_, E> {
 		allow_empty: bool,
 		errors: &mut Errors,
 	) -> Result<Vec<Option<NodeId>>> {
-		let mut elements = Vec::new();
+		let mut elements = self.items();
 		let mut first = true;
 		while !self.eat(close)? {
 			if self.list_comma(close, &mut first, allow_trailing_comma)? {
@@ -1666,7 +1672,7 @@ impl<E: Extension> Parser<'_, E> {
 				let start = self.tok.start;
 				self.next()?;
 				let elements = self.parse_binding_list(TokenKind::BracketR, true, true, false)?;
-				let elements = self.list(&elements);
+				let elements = self.list_from(elements);
 				Ok(self.add(NodeKind::ArrayPattern { elements }, start))
 			}
 			TokenKind::BraceL => self.parse_obj(true, &mut None),
@@ -1681,7 +1687,7 @@ impl<E: Extension> Parser<'_, E> {
 		allow_trailing_comma: bool,
 		allow_modifiers: bool,
 	) -> Result<Vec<Option<NodeId>>> {
-		let mut elements = Vec::new();
+		let mut elements = self.items();
 		let mut first = true;
 		while !self.eat(close)? {
 			if first {

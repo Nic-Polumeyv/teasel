@@ -465,6 +465,8 @@ pub(crate) struct Parser<'a, E: Extension = ()> {
 	pub(crate) scopes: Vec<Scope>,
 	/// Name vectors of scopes left, for the next scope entered.
 	spare_names: Vec<Vec<(StrId, u8)>>,
+	/// List buffers earlier lists gave back: a list costs no allocation after the first at its depth.
+	spare_lists: Vec<Vec<Option<NodeId>>>,
 	labels: Vec<Label>,
 	private_names: Vec<PrivateNameScope>,
 	pub(crate) undeclared_exports: FastMap<StrId, (u32, usize)>,
@@ -580,6 +582,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 			depth: 0,
 			scopes: Vec::new(),
 			spare_names: Vec::new(),
+			spare_lists: Vec::new(),
 			labels: Vec::new(),
 			private_names: Vec::new(),
 			undeclared_exports: FastMap::default(),
@@ -985,6 +988,23 @@ impl<'a, E: Extension> Parser<'a, E> {
 
 	pub(crate) fn list(&mut self, items: &[Option<NodeId>]) -> List {
 		self.ast.add_list(items)
+	}
+
+	pub(crate) fn items(&mut self) -> Vec<Option<NodeId>> {
+		self.spare_lists.pop().unwrap_or_default()
+	}
+
+	pub(crate) fn recycle(&mut self, mut items: Vec<Option<NodeId>>) {
+		items.clear();
+		if self.spare_lists.len() < 32 {
+			self.spare_lists.push(items);
+		}
+	}
+
+	pub(crate) fn list_from(&mut self, items: Vec<Option<NodeId>>) -> List {
+		let list = self.list(&items);
+		self.recycle(items);
+		list
 	}
 
 	pub(crate) fn list_of(&mut self, items: &[NodeId]) -> List {
