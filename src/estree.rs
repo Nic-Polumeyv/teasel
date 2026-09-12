@@ -324,7 +324,7 @@ impl Constants {
 
 	fn id(&mut self, value: &'static str) -> u32 {
 		let address = value.as_ptr() as usize;
-		let slot = (address.wrapping_mul(crate::interner::SEED as usize) >> 55) & 511;
+		let slot = ((address as u64).wrapping_mul(crate::interner::SEED) >> 55) as usize & 511;
 		if self.recent[slot].0 == address {
 			return self.recent[slot].1;
 		}

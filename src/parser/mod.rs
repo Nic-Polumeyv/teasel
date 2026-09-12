@@ -496,6 +496,7 @@ pub struct Spare {
 	private_names: Vec<PrivateNameScope>,
 	errors: Vec<SyntaxError>,
 	regexp: crate::lexer::regexp::Scratch,
+	stop_ranges: Vec<(u32, u32, bool)>,
 }
 
 impl std::fmt::Debug for Spare {
@@ -580,13 +581,14 @@ impl<'a, E: Extension> Parser<'a, E> {
 		let mut lexer = Lexer::with(src, std::mem::take(&mut ast.strings));
 		lexer.comments = std::mem::take(&mut ast.comments);
 		lexer.set_pos(offset);
-		lexer.stops = stop;
 		lexer.recover = options.error_recovery;
 		let strict = options.module || expression::strict_directive(src, offset);
 		lexer.strict = strict;
 		lexer.module = options.module;
 		let spare = std::mem::take(&mut ast.spare);
 		lexer.regexp = spare.regexp;
+		lexer.stop_ranges = spare.stop_ranges;
+		lexer.set_stops(stop);
 		let mut parser = Self {
 			lexer,
 			ast,
@@ -956,6 +958,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 			private_names,
 			errors,
 			regexp: std::mem::take(&mut lexer.regexp),
+			stop_ranges: std::mem::take(&mut lexer.stop_ranges),
 		};
 		ast
 	}
