@@ -1,7 +1,15 @@
 # Changesets
 
-Every user-visible change lands with a changeset: in `package/`, run `npx changeset`, pick a
-bump, write one line. Merging to main opens or updates a Version Packages PR; merging that PR
-releases.
+Every user-visible change lands with a file in this folder, named anything, saying the bump and
+one line for the changelog:
 
-Docs: https://github.com/changesets/changesets
+```md
+---
+"@teasel/parser": patch
+---
+
+what changed, as the changelog should say it
+```
+
+Merging to main runs `.github/version.js`, which opens or updates a Version Packages PR;
+merging that PR releases.
