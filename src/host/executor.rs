@@ -6,7 +6,7 @@ use super::plan::{
 	SpanPolicy, Stop,
 };
 use super::{closing_tag, decode, error, fail, is_space, valid_name};
-use crate::ast::{Ast, Host, List, NodeId, NodeKind, Value, VariableKind};
+use crate::ast::{Ast, Host, HostBinding, HostParent, HostRegion, List, NodeId, NodeKind, Value, VariableKind};
 use crate::error::Code;
 use crate::interner::StrId;
 use crate::lexer::unicode::{is_id_continue, is_id_start};
@@ -26,6 +26,9 @@ enum Datum {
 	Array(Rc<Vec<Datum>>),
 	Object(Rc<BTreeMap<Rc<str>, Datum>>),
 	Record(usize),
+	Scopes(usize),
+	Region(usize, usize),
+	Incoming(usize),
 }
 
 impl Datum {
@@ -42,6 +45,7 @@ impl Datum {
 
 #[derive(Clone)]
 struct Record {
+	parent: Option<usize>,
 	rule: usize,
 	ty: Rc<str>,
 	slots: Vec<Datum>,
@@ -99,12 +103,15 @@ pub(crate) fn execute<E: Extension>(
 		active: Vec::new(),
 		iteration: Vec::new(),
 		bindings: Vec::new(),
+		region_slots: Vec::new(),
+		resolving: Vec::new(),
 	};
 	let result = w.call(plan.document, Datum::Missing, None).and_then(|node| {
 		if w.at != w.limit {
 			return fail(w.at, w.at, Code::UnexpectedToken, None);
 		}
 		w.ast().nodes[node.index() as usize].end = w.full;
+		w.regions()?;
 		Ok(node)
 	});
 	(w.ast.take().unwrap(), result)
@@ -123,6 +130,8 @@ struct Walker<'a, E: Extension> {
 	active: Vec<usize>,
 	iteration: Vec<Vec<(Rc<str>, Datum)>>,
 	bindings: Vec<(Rc<str>, Datum)>,
+	region_slots: Vec<Vec<Option<Vec<HostParent>>>>,
+	resolving: Vec<(usize, usize)>,
 }
 
 impl<'a, E: Extension> Walker<'a, E> {
@@ -255,9 +264,15 @@ impl<'a, E: Extension> Walker<'a, E> {
 						false,
 					),
 					"header" => self.property(rec.event.clone(), path),
+					"scopes" => Datum::Scopes(index),
 					_ => self.slot(index, key).map_or(Datum::Missing, |i| rec.slots[i].clone()),
 				}
 			}
+			Datum::Scopes(index) => self.plan.rules[self.records[index].rule]
+				.regions
+				.iter()
+				.position(|r| r.id.as_ref() == key.as_ref())
+				.map_or(Datum::Missing, |r| Datum::Region(index, r)),
 			Datum::Span(a, b, dynamic) => match key.as_ref() {
 				"start" => Datum::Number(a as f64),
 				"end" => Datum::Number(b as f64),
@@ -341,7 +356,8 @@ impl<'a, E: Extension> Walker<'a, E> {
 								.map(Datum::Record)
 								.collect(),
 						),
-						"incoming" | "scopes" => Datum::Missing,
+						"incoming" => Datum::Incoming(record),
+						"scopes" => Datum::Scopes(record),
 						_ => self
 							.bindings
 							.iter()
@@ -438,7 +454,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 	}
 	fn output(&mut self, value: &Datum) -> Result<Value> {
 		Ok(match value {
-			Datum::Missing | Datum::Null => Value::Null,
+			Datum::Missing | Datum::Null | Datum::Scopes(_) | Datum::Region(..) | Datum::Incoming(_) => Value::Null,
 			Datum::Bool(v) => Value::Bool(*v),
 			Datum::Number(v) if *v >= 0.0 && *v <= u32::MAX as f64 && v.fract() == 0.0 => Value::Int(*v as u32),
 			Datum::Number(v) => Value::Float(*v),
@@ -562,6 +578,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let schema = &self.plan.rules[rule];
 		let record = self.records.len();
 		self.records.push(Record {
+			parent: self.active.last().copied(),
 			rule,
 			ty: ty.unwrap_or(&schema.node_type).into(),
 			slots: vec![Datum::Missing; schema.fields.len() + schema.locals.len()],
@@ -1135,7 +1152,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 				lexer.set_stops(close);
 				loop {
 					let token = lexer.next_token()?;
-					if token.kind == crate::lexer::token::TokenKind::Eof {
+					if token.stop || token.kind == crate::lexer::token::TokenKind::Eof {
 						self.at = token.start;
 						break;
 					}
@@ -1244,6 +1261,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		]);
 		let dispatch = self.records.len();
 		self.records.push(Record {
+			parent: None,
 			rule: self.plan.document,
 			ty: "".into(),
 			slots: Vec::new(),
@@ -1532,5 +1550,171 @@ impl<'a, E: Extension> Walker<'a, E> {
 			("children", Datum::Nodes(children)),
 			("comments", Datum::Nodes(comments)),
 		]))
+	}
+	fn roots(&self, value: &Datum, roots: &mut Vec<NodeId>) {
+		match value {
+			Datum::Node(id) => {
+				if !roots.contains(id) {
+					roots.push(*id);
+				}
+			}
+			Datum::Nodes(list) => {
+				for id in self.tree().list(*list).iter().flatten() {
+					if !roots.contains(id) {
+						roots.push(*id);
+					}
+				}
+			}
+			Datum::Array(items) => {
+				for item in items.iter() {
+					self.roots(item, roots);
+				}
+			}
+			_ => {}
+		}
+	}
+	fn region_target(&mut self, value: Datum) -> Result<HostParent> {
+		match value {
+			Datum::Null => Ok(HostParent::Root),
+			Datum::Incoming(record) => Ok(self.records[record].node.map_or(HostParent::Root, HostParent::Incoming)),
+			Datum::Region(record, region) => {
+				let targets = self.region(record, region)?;
+				if targets.len() != 1 {
+					return fail(self.at, self.at, Code::Expected, Some("one parent region"));
+				}
+				Ok(targets[0])
+			}
+			_ => fail(self.at, self.at, Code::Expected, Some("a region")),
+		}
+	}
+	fn region(&mut self, record: usize, index: usize) -> Result<Vec<HostParent>> {
+		if let Some(targets) = &self.region_slots[record][index] {
+			return Ok(targets.clone());
+		}
+		if self.resolving.contains(&(record, index)) {
+			return fail(self.at, self.at, Code::Expected, Some("acyclic regions"));
+		}
+		self.resolving.push((record, index));
+		let region = &self.plan.rules[self.records[record].rule].regions[index];
+		let items = if let Some(each) = &region.each {
+			let list = self.eval(&each.list, record)?;
+			self.items(&list)
+		} else {
+			vec![Datum::Missing]
+		};
+		let mut targets = Vec::new();
+		for item in items {
+			if let Some(each) = &region.each {
+				self.bindings.push((each.binding.as_ref().into(), item));
+			}
+			let parent = self.eval(&region.parent, record)?;
+			let parent = self.region_target(parent)?;
+			if region
+				.when
+				.as_ref()
+				.map(|when| self.eval(when, record).map(|v| v.yes()))
+				.transpose()?
+				.unwrap_or(true)
+			{
+				let covers = self.eval(&region.covers, record)?;
+				let mut roots = Vec::new();
+				self.roots(&covers, &mut roots);
+				let owner = self.records[record].node.unwrap();
+				let node = roots
+					.iter()
+					.find(|id| match self.tree().node(**id).kind {
+						NodeKind::Program { .. } => true,
+						NodeKind::Host(i) => !self.tree().hosts[i as usize].span,
+						_ => false,
+					})
+					.copied();
+				let id = self.tree().host_regions.len() as u32;
+				self.ast().host_regions.push(HostRegion {
+					parent,
+					kind: region.kind,
+					owner,
+					node,
+				});
+				self.ast().host_region_owners.entry(owner).push(id);
+				for root in roots {
+					self.ast().host_coverage.entry(root).push(id);
+				}
+				targets.push(HostParent::Region(id));
+			} else {
+				targets.push(parent);
+			}
+			if region.each.is_some() {
+				self.bindings.pop();
+			}
+		}
+		self.resolving.pop();
+		self.region_slots[record][index] = Some(targets.clone());
+		Ok(targets)
+	}
+	fn binding_leaves(&mut self, node: NodeId, binding: HostBinding) {
+		match self.tree().node(node).kind {
+			NodeKind::Identifier { .. } => self.ast().host_bindings.insert(node, binding),
+			NodeKind::ArrayPattern { elements } | NodeKind::ObjectPattern { properties: elements } => {
+				let nodes = self.tree().list(elements).iter().flatten().copied().collect::<Vec<_>>();
+				for node in nodes {
+					self.binding_leaves(node, binding);
+				}
+			}
+			NodeKind::Property { value, .. } => self.binding_leaves(value, binding),
+			NodeKind::AssignmentPattern { left, .. } => self.binding_leaves(left, binding),
+			NodeKind::RestElement { argument } => self.binding_leaves(argument, binding),
+			_ => {}
+		}
+	}
+	fn regions(&mut self) -> Result<()> {
+		self.ast().host_plan = true;
+		self.region_slots = self
+			.records
+			.iter()
+			.map(|r| vec![None; self.plan.rules[r.rule].regions.len()])
+			.collect();
+		for record in 0..self.records.len() {
+			let Some(node) = self.records[record].node else {
+				continue;
+			};
+			let rule = &self.plan.rules[self.records[record].rule];
+			let mut hidden = Vec::new();
+			for value in &self.records[record].slots[rule.fields.len()..] {
+				self.roots(value, &mut hidden);
+			}
+			hidden.retain(|id| !matches!(self.tree().node(*id).kind, NodeKind::Host(_)));
+			if !hidden.is_empty() {
+				self.ast().host_hidden.insert(node, hidden);
+			}
+			if let Some(parent) = self.records[record].parent.and_then(|r| self.records[r].node) {
+				self.ast().host_occurrences.insert(node, parent);
+			}
+			for region in 0..self.plan.rules[self.records[record].rule].regions.len() {
+				self.region(record, region)?;
+			}
+		}
+		for record in 0..self.records.len() {
+			if self.records[record].node.is_none() {
+				continue;
+			}
+			for declaration in &self.plan.rules[self.records[record].rule].declares {
+				let target = self.eval(&declaration.into, record)?;
+				let target = self.region_target(target)?;
+				let patterns = self.eval(&declaration.patterns, record)?;
+				let mut roots = Vec::new();
+				self.roots(&patterns, &mut roots);
+				for pattern in roots {
+					self.binding_leaves(
+						pattern,
+						HostBinding {
+							target,
+							kind: declaration.kind,
+							pattern,
+						},
+					);
+				}
+			}
+		}
+		Ok(())
 	}
 }

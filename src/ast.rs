@@ -85,10 +85,19 @@ impl NodeSet {
 
 /// A few nodes' values: a bit per node says whether the map holds one, so the nodes without cost
 /// a bit test and never a hash.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct NodeMap<T> {
 	set: NodeSet,
 	map: FastMap<NodeId, T>,
+}
+
+impl<T> Default for NodeMap<T> {
+	fn default() -> Self {
+		Self {
+			set: NodeSet::default(),
+			map: FastMap::default(),
+		}
+	}
 }
 
 impl<T> NodeMap<T> {
@@ -170,6 +179,28 @@ pub struct HostGroup {
 	pub node: Option<NodeId>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HostParent {
+	Root,
+	Incoming(NodeId),
+	Region(u32),
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct HostRegion {
+	pub parent: HostParent,
+	pub kind: crate::host::plan::RegionKind,
+	pub owner: NodeId,
+	pub node: Option<NodeId>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct HostBinding {
+	pub target: HostParent,
+	pub kind: crate::host::plan::DeclareKind,
+	pub pattern: NodeId,
+}
+
 /// A host node's field.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Value {
@@ -202,6 +233,13 @@ pub struct Ast<X = ()> {
 	pub host_strings: Vec<StrId>,
 	pub host_values: Vec<Value>,
 	pub host_groups: Vec<HostGroup>,
+	pub host_plan: bool,
+	pub host_regions: Vec<HostRegion>,
+	pub host_coverage: NodeMap<Vec<u32>>,
+	pub host_region_owners: NodeMap<Vec<u32>>,
+	pub host_bindings: NodeMap<HostBinding>,
+	pub host_occurrences: NodeMap<NodeId>,
+	pub host_hidden: NodeMap<Vec<NodeId>>,
 	pub strings: Interner,
 	pub comments: Vec<Comment>,
 	/// Comments attached to nodes by `comments::attach`, as indices into `comments`.
@@ -292,6 +330,13 @@ impl<X: Reuse> Ast<X> {
 		self.host_strings.clear();
 		self.host_values.clear();
 		self.host_groups.clear();
+		self.host_plan = false;
+		self.host_regions.clear();
+		self.host_coverage.clear();
+		self.host_region_owners.clear();
+		self.host_bindings.clear();
+		self.host_occurrences.clear();
+		self.host_hidden.clear();
 		self.nodes.clear();
 		self.numbers.clear();
 		self.lists.clear();

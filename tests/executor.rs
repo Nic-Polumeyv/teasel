@@ -169,3 +169,75 @@ fn supplied_svelte_forms() {
 		);
 	}
 }
+
+fn references(plan: &Plan, source: &str, name: &str) -> Vec<(u32, bool)> {
+	let (mut ast, root) = executor::parse(source, plan, Options::default());
+	let root = root.unwrap_or_else(|error| panic!("{source}: {error:?}"));
+	let roots = ast.add_list_from([Some(root)].into_iter());
+	teasel::scopes::analyze(&mut ast, teasel::Entry::Program, roots);
+	let mut refs = ast
+		.scopes
+		.as_ref()
+		.unwrap()
+		.references
+		.iter()
+		.filter(|r| matches!(ast.node(r.node).kind,NodeKind::Identifier{name:id} if ast.str(id)==name))
+		.map(|r| (ast.node(r.node).start, r.binding.is_some()))
+		.collect::<Vec<_>>();
+	refs.sort();
+	refs
+}
+
+#[test]
+fn component_inputs_and_named_children_have_separate_regions() {
+	let plan = Plan::read(include_str!("hosts/svelte/plan.json")).unwrap();
+	let source = "<Comp let:x p={x}>{x}<p slot=\"named\">{x}</p><p slot=\"other\">{x}</p><p>{x}</p></Comp>";
+	assert_eq!(
+		references(&plan, source, "x")
+			.iter()
+			.map(|(_, bound)| *bound)
+			.collect::<Vec<_>>(),
+		[false, true, false, false, true]
+	);
+	let (ast, root) = executor::parse(source, &plan, Options::default());
+	root.unwrap();
+	assert!(
+		ast.host_regions
+			.iter()
+			.filter(|r| r.kind == teasel::host::plan::RegionKind::Fragment)
+			.count() >= 5
+	);
+}
+
+#[test]
+fn vue_loop_sources_and_slot_inputs_stay_outside() {
+	let plan = Plan::read(include_str!("hosts/vue/plan.json")).unwrap();
+	assert_eq!(
+		references(&plan, "<div v-for=\"item in item\" :p=\"item\">{{item}}</div>", "item")
+			.iter()
+			.map(|(_, b)| *b)
+			.collect::<Vec<_>>(),
+		[false, true, true]
+	);
+	assert_eq!(
+		references(&plan, "<Comp v-slot=\"{x}\" :p=\"x\">{{x}}</Comp>", "x")
+			.iter()
+			.map(|(_, b)| *b)
+			.collect::<Vec<_>>(),
+		[false, true]
+	);
+}
+
+#[test]
+fn pattern_defaults_use_coverage_and_aliases_are_visited_once() {
+	let plan = Plan::read(include_str!("hosts/svelte/plan.json")).unwrap();
+	let source = "{#each xs as {x = outside}}{x}{outside}{/each}";
+	assert_eq!(references(&plan, source, "x").len(), 1);
+	assert_eq!(
+		references(&plan, source, "outside")
+			.iter()
+			.map(|(_, b)| *b)
+			.collect::<Vec<_>>(),
+		[false, false]
+	);
+}
