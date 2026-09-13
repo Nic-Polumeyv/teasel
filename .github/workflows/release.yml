@@ -62,7 +62,7 @@ jobs:
           name: wasm
           path: package
       - run: cp README.md package/README.md
-      - run: node release.js publish
+      - run: node release.js
         working-directory: package
       - run: |
           tag="v${{ needs.gate.outputs.version }}"
