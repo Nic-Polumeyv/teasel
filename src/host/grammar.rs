@@ -133,6 +133,19 @@ fn collect_entries(items: &[Item], out: &mut Vec<(&'static str, bool)>) {
 	}
 }
 
+fn collect_alternative_bodies<'a>(items: &'a [Item], out: &mut Vec<&'a Body>) {
+	for item in items {
+		if let Item::Group { alternatives, .. } = item {
+			for alternative in alternatives {
+				if let Some(body) = &alternative.body {
+					out.push(body);
+				}
+				collect_alternative_bodies(&alternative.items, out);
+			}
+		}
+	}
+}
+
 fn collect_bodies(form: &Form, out: &mut Vec<(&'static str, bool)>) {
 	let mut push = |body: &Body| {
 		if !out.iter().any(|(f, _)| *f == body.field) {
@@ -650,6 +663,21 @@ impl Reader<'_> {
 		resolve(&mut items, &[]);
 		let mut entries = Vec::new();
 		collect_entries(&items, &mut entries);
+		let mut bodies = Vec::new();
+		if let Some(body) = &body {
+			bodies.push(body);
+		}
+		collect_alternative_bodies(&items, &mut bodies);
+		for body in bodies {
+			for declare in &body.declares {
+				if !entries.iter().any(|(field, _)| *field == declare.field) {
+					return Err(format!(
+						"`{}` declares `{}`, which no entry of the form reads",
+						body.field, declare.field
+					));
+				}
+			}
+		}
 		Ok(Form { items, body, entries })
 	}
 }
@@ -1131,6 +1159,19 @@ impl Grammar {
 
 #[cfg(test)]
 mod tests {
+	#[test]
+	fn a_body_declares_only_what_the_form_reads() {
+		let good = "host t\ndelimiters { }\nsigils open=# branch=: close=/ tag=@\nfragment Fragment nodes\nelements name=name attributes=attributes children=fragment\ntext Text data=data\nblock each EachBlock\n  open expression=expression as context=pattern -> body declares context\n";
+		assert!(
+			super::Grammar::read(good).is_ok(),
+			"{:?}",
+			super::Grammar::read(good).err()
+		);
+		let typo = good.replace("declares context", "declares contexxt");
+		let error = super::Grammar::read(&typo).unwrap_err();
+		assert!(error.contains("contexxt"), "{error}");
+	}
+
 	use super::*;
 
 	#[test]

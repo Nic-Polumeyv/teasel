@@ -1795,7 +1795,7 @@ impl Extension for TypeScript {
 	}
 
 	fn reads_stop(p: &Parser<Self>) -> bool {
-		p.is_contextual("as") || p.is_contextual("satisfies")
+		(p.is_contextual("as") || p.is_contextual("satisfies")) && p.forced_stop != Some(p.tok.start)
 	}
 
 	fn expr_op(p: &mut Parser<Self>, left: NodeId, left_start: u32, min_prec: i8) -> Result<Option<NodeId>> {
@@ -1807,20 +1807,12 @@ impl Extension for TypeScript {
 			return Ok(None);
 		}
 		if p.tok.stop {
-			// the host's word, unless the same word follows the assertion: `xs as T[] as item`
-			let word = if is_as { "as" } else { "satisfies" };
-			let assertion = p.attempt(|p| {
-				let node = assertion(p, left, left_start, is_as)?;
-				if p.tok.stop && p.is_contextual(word) {
-					Ok(node)
-				} else {
-					p.error(p.tok.start, Code::UnexpectedToken)
-				}
-			});
-			if assertion.is_none() {
+			if p.forced_stop == Some(p.tok.start) {
 				p.stop_here();
+				return Ok(None);
 			}
-			return Ok(assertion);
+			// read as the assertion for now; the entry decides afterwards which one was the host's
+			p.stop_word_at = Some(p.tok.start);
 		}
 		assertion(p, left, left_start, is_as).map(Some)
 	}

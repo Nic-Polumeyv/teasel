@@ -479,6 +479,10 @@ pub(crate) struct Parser<'a, E: Extension = ()> {
 	potential_arrow_in_for_await: bool,
 	/// Recovered errors; the lexer keeps its own until `finish`.
 	pub(crate) errors: Vec<SyntaxError>,
+	/// Where the extension last read a host stop word as its own, at bracket depth zero: the host
+	/// gets the last one, so the entry is read again with it as a stop.
+	pub(crate) stop_word_at: Option<u32>,
+	pub(crate) forced_stop: Option<u32>,
 	/// Inside a speculation, where the parse must fail as strict parsing would, not recover.
 	speculating: u32,
 	/// More nodes than this is a parse that stopped consuming input.
@@ -611,6 +615,8 @@ impl<'a, E: Extension> Parser<'a, E> {
 			potential_arrow_at: u32::MAX,
 			potential_arrow_in_for_await: false,
 			errors: spare.errors,
+			stop_word_at: None,
+			forced_stop: None,
 			speculating: 0,
 			tree_limit: 16 * src.len() + 256,
 		};
@@ -803,7 +809,19 @@ impl<'a, E: Extension> Parser<'a, E> {
 	pub(crate) fn read_entry(&mut self, entry: Entry) -> Result<List> {
 		self.enter_scope(SCOPE_TOP);
 		let root = match entry {
-			Entry::Expression => self.parse_sequence(ForInit::No, &mut None)?,
+			Entry::Expression => {
+				let before = self.snapshot();
+				let first = self.parse_sequence(ForInit::No, &mut None);
+				match self.stop_word_at.take() {
+					None => first?,
+					// a word both the host and the extension read is the host's at its last use
+					Some(at) => {
+						self.restore(before);
+						self.forced_stop = Some(at);
+						self.parse_sequence(ForInit::No, &mut None)?
+					}
+				}
+			}
 			Entry::Pattern => self.parse_pattern_root()?,
 			Entry::Params => return self.parse_params_root(),
 			Entry::Statement => {
