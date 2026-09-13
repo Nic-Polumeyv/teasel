@@ -10,6 +10,7 @@ pub mod host;
 pub mod interner;
 pub mod json;
 pub(crate) mod lexer;
+pub mod names;
 pub mod parser;
 pub mod scopes;
 #[cfg(feature = "typescript")]

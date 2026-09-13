@@ -1,4 +1,5 @@
 use crate::interner::{FastMap, Interner, StrId};
+use crate::names::{Name, c};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Comment {
@@ -970,87 +971,107 @@ pub enum AssignmentOperator {
 }
 
 impl UnaryOperator {
-	pub fn as_str(self) -> &'static str {
+	pub fn name(self) -> Name {
 		match self {
-			Self::Minus => "-",
-			Self::Plus => "+",
-			Self::Not => "!",
-			Self::BitNot => "~",
-			Self::Typeof => "typeof",
-			Self::Void => "void",
-			Self::Delete => "delete",
+			Self::Minus => c!("-"),
+			Self::Plus => c!("+"),
+			Self::Not => c!("!"),
+			Self::BitNot => c!("~"),
+			Self::Typeof => c!("typeof"),
+			Self::Void => c!("void"),
+			Self::Delete => c!("delete"),
 		}
+	}
+
+	pub fn as_str(self) -> &'static str {
+		self.name().text
 	}
 }
 
 impl UpdateOperator {
-	pub fn as_str(self) -> &'static str {
+	pub fn name(self) -> Name {
 		match self {
-			Self::Increment => "++",
-			Self::Decrement => "--",
+			Self::Increment => c!("++"),
+			Self::Decrement => c!("--"),
 		}
+	}
+
+	pub fn as_str(self) -> &'static str {
+		self.name().text
 	}
 }
 
 impl BinaryOperator {
-	pub fn as_str(self) -> &'static str {
+	pub fn name(self) -> Name {
 		match self {
-			Self::Eq => "==",
-			Self::NotEq => "!=",
-			Self::StrictEq => "===",
-			Self::StrictNotEq => "!==",
-			Self::Lt => "<",
-			Self::LtEq => "<=",
-			Self::Gt => ">",
-			Self::GtEq => ">=",
-			Self::Shl => "<<",
-			Self::Shr => ">>",
-			Self::UShr => ">>>",
-			Self::Add => "+",
-			Self::Sub => "-",
-			Self::Mul => "*",
-			Self::Div => "/",
-			Self::Mod => "%",
-			Self::Exp => "**",
-			Self::BitOr => "|",
-			Self::BitXor => "^",
-			Self::BitAnd => "&",
-			Self::In => "in",
-			Self::Instanceof => "instanceof",
+			Self::Eq => c!("=="),
+			Self::NotEq => c!("!="),
+			Self::StrictEq => c!("==="),
+			Self::StrictNotEq => c!("!=="),
+			Self::Lt => c!("<"),
+			Self::LtEq => c!("<="),
+			Self::Gt => c!(">"),
+			Self::GtEq => c!(">="),
+			Self::Shl => c!("<<"),
+			Self::Shr => c!(">>"),
+			Self::UShr => c!(">>>"),
+			Self::Add => c!("+"),
+			Self::Sub => c!("-"),
+			Self::Mul => c!("*"),
+			Self::Div => c!("/"),
+			Self::Mod => c!("%"),
+			Self::Exp => c!("**"),
+			Self::BitOr => c!("|"),
+			Self::BitXor => c!("^"),
+			Self::BitAnd => c!("&"),
+			Self::In => c!("in"),
+			Self::Instanceof => c!("instanceof"),
 		}
+	}
+
+	pub fn as_str(self) -> &'static str {
+		self.name().text
 	}
 }
 
 impl LogicalOperator {
-	pub fn as_str(self) -> &'static str {
+	pub fn name(self) -> Name {
 		match self {
-			Self::Or => "||",
-			Self::And => "&&",
-			Self::Nullish => "??",
+			Self::Or => c!("||"),
+			Self::And => c!("&&"),
+			Self::Nullish => c!("??"),
 		}
+	}
+
+	pub fn as_str(self) -> &'static str {
+		self.name().text
 	}
 }
 
 impl AssignmentOperator {
-	pub fn as_str(self) -> &'static str {
+	pub fn name(self) -> Name {
 		match self {
-			Self::Assign => "=",
-			Self::Add => "+=",
-			Self::Sub => "-=",
-			Self::Mul => "*=",
-			Self::Div => "/=",
-			Self::Mod => "%=",
-			Self::Exp => "**=",
-			Self::Shl => "<<=",
-			Self::Shr => ">>=",
-			Self::UShr => ">>>=",
-			Self::BitOr => "|=",
-			Self::BitXor => "^=",
-			Self::BitAnd => "&=",
-			Self::Or => "||=",
-			Self::And => "&&=",
-			Self::Nullish => "??=",
+			Self::Assign => c!("="),
+			Self::Add => c!("+="),
+			Self::Sub => c!("-="),
+			Self::Mul => c!("*="),
+			Self::Div => c!("/="),
+			Self::Mod => c!("%="),
+			Self::Exp => c!("**="),
+			Self::Shl => c!("<<="),
+			Self::Shr => c!(">>="),
+			Self::UShr => c!(">>>="),
+			Self::BitOr => c!("|="),
+			Self::BitXor => c!("^="),
+			Self::BitAnd => c!("&="),
+			Self::Or => c!("||="),
+			Self::And => c!("&&="),
+			Self::Nullish => c!("??="),
 		}
+	}
+
+	pub fn as_str(self) -> &'static str {
+		self.name().text
 	}
 }
 
@@ -1059,13 +1080,17 @@ impl VariableKind {
 		matches!(self, Self::Using | Self::AwaitUsing)
 	}
 
-	pub fn as_str(self) -> &'static str {
+	pub fn name(self) -> Name {
 		match self {
-			Self::Var => "var",
-			Self::Let => "let",
-			Self::Const => "const",
-			Self::Using => "using",
-			Self::AwaitUsing => "await using",
+			Self::Var => c!("var"),
+			Self::Let => c!("let"),
+			Self::Const => c!("const"),
+			Self::Using => c!("using"),
+			Self::AwaitUsing => c!("await using"),
 		}
+	}
+
+	pub fn as_str(self) -> &'static str {
+		self.name().text
 	}
 }

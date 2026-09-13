@@ -17,6 +17,13 @@ macro_rules! codes {
 				}
 			}
 
+			/// The name as the writer emits it.
+			pub fn label(self) -> crate::names::Name {
+				match self {
+					$(Code::$name => crate::names::c!($code),)*
+				}
+			}
+
 			/// The message with its `{}` placeholders, when it has any.
 			pub fn message(self) -> &'static str {
 				match self {
