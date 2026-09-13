@@ -24,11 +24,11 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 26
-      - run: node .github/version.js > body.md
+      - run: node .github/version.js > "$RUNNER_TEMP/body.md"
         env:
           GH_TOKEN: ${{ github.token }}
       - run: |
-          [ -s body.md ] || { echo "no changesets"; exit 0; }
+          [ -s "$RUNNER_TEMP/body.md" ] || { echo "no changesets"; exit 0; }
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git checkout -B changeset-release/main
@@ -36,7 +36,7 @@ jobs:
           git commit -m 'Version Packages'
           git push --force origin changeset-release/main
           number=$(gh pr list --head changeset-release/main --base main --state open --json number --jq '.[0].number')
-          if [ -n "$number" ]; then gh pr edit "$number" --title 'Version Packages' --body-file body.md
-          else gh pr create --head changeset-release/main --base main --title 'Version Packages' --body-file body.md; fi
+          if [ -n "$number" ]; then gh pr edit "$number" --title 'Version Packages' --body-file "$RUNNER_TEMP/body.md"
+          else gh pr create --head changeset-release/main --base main --title 'Version Packages' --body-file "$RUNNER_TEMP/body.md"; fi
         env:
           GH_TOKEN: ${{ github.token }}

@@ -24,7 +24,8 @@ function lookup(t, c) {
 	let chunk;
 	if (c < 0x800) chunk = c >> 6;
 	else if (c < 0x10000) return bit(t.r3, t.r2[(c >> 6) - 32], c);
-	else return bit(t.r6, t.r5[(t.r4[(c >> 12) - 16] << 6) | ((c >> 6) & 63)], c);
+	else if (c < 0x110000) return bit(t.r6, t.r5[(t.r4[(c >> 12) - 16] << 6) | ((c >> 6) & 63)], c);
+	else return false;
 	return bit(t.r1, chunk, c);
 }
 /** @param {Uint32Array} chunks @param {number} chunk @param {number} c */

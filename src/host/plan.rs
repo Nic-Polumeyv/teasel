@@ -1889,10 +1889,9 @@ fn leading_calls(form: &Form, rules: &[bool], content: &[PrefixDispatch], edges:
 			}
 		}
 		Form::Choice { alternatives, .. } => {
+			// an alternative that cannot succeed still runs its leading calls before it fails
 			for f in alternatives {
-				if can_succeed(f) {
-					leading_calls(f, rules, content, edges);
-				}
+				leading_calls(f, rules, content, edges);
 			}
 		}
 		Form::Repeat { body, max, .. } if *max != Some(0) => leading_calls(body, rules, content, edges),
@@ -2226,8 +2225,12 @@ fn prefixes(form: &Form, rules: &[Rule], active: &mut BTreeSet<usize>, budget: u
 }
 
 fn distinct(left: &Prefix, right: &Prefix) -> bool {
-	let left_text = left.text.trim_start_matches([' ', '\t', '\r', '\n']);
-	let right_text = right.text.trim_start_matches([' ', '\t', '\r', '\n']);
+	let left_text = left
+		.text
+		.trim_start_matches(|c: char| c.is_whitespace() || c == '\u{feff}');
+	let right_text = right
+		.text
+		.trim_start_matches(|c: char| c.is_whitespace() || c == '\u{feff}');
 	let common = left_text.len().min(right_text.len());
 	if left_text.as_bytes()[..common] != right_text.as_bytes()[..common] {
 		return true;
@@ -2357,6 +2360,9 @@ impl Plan {
 			let mut parents = vec![BTreeSet::new(); rule.regions.len()];
 			for (i, region) in rule.regions.iter().enumerate() {
 				parent_dependencies(&region.parent, rule, &mut BTreeSet::new(), &mut parents[i]);
+				if let Some(each) = &region.each {
+					parent_dependencies(&each.list, rule, &mut BTreeSet::new(), &mut parents[i]);
+				}
 			}
 			if let Some(i) = cycle(&parents) {
 				return Err(error(

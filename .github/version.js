@@ -3,18 +3,20 @@
 // prints the pull request body. Prints nothing and changes nothing when there are no changesets.
 import { readFileSync, writeFileSync, readdirSync, unlinkSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 
 const root = new URL('../', import.meta.url);
 const at = (path) => new URL(path, root);
 const repo = process.env.GITHUB_REPOSITORY ?? 'Nic-Polumeyv/teasel';
 const name = '@teasel/parser';
-const dir = at('package/.changeset/');
+const dir = fileURLToPath(at('package/.changeset/'));
 
 const changesets = readdirSync(dir)
 	.filter((file) => file.endsWith('.md') && file !== 'README.md')
 	.sort()
 	.map((file) => {
-		const text = readFileSync(new URL(file, dir), 'utf8');
+		const text = readFileSync(join(dir, file), 'utf8');
 		const match = /^---\r?\n([^]*?)\r?\n---\r?\n([^]*)$/.exec(text.trim());
 		if (!match) throw new Error(`${file}: a changeset starts with a --- frontmatter naming the bump`);
 		const bump = match[1].match(new RegExp(`^["']?${name}["']?:\\s*(major|minor|patch)\\s*$`, 'm'))?.[1];
@@ -55,7 +57,8 @@ const sections = order
 	.join('\n\n');
 
 const changelog = at('package/CHANGELOG.md');
-writeFileSync(changelog, readFileSync(changelog, 'utf8').replace(`# ${name}\n`, `# ${name}\n\n## ${version}\n\n${sections}\n`));
+// a replacer function: a summary may contain `$&` or `$1`, which a replacement string would expand
+writeFileSync(changelog, readFileSync(changelog, 'utf8').replace(`# ${name}\n`, () => `# ${name}\n\n## ${version}\n\n${sections}\n`));
 manifest.version = version;
 writeFileSync(at('package/package.json'), JSON.stringify(manifest, null, '\t') + '\n');
 const patchFile = (path, from, to) => {
@@ -69,7 +72,7 @@ for (const file of ['Cargo.toml', 'bindings/node/Cargo.toml', 'bindings/wasm/Car
 for (const crate of ['teasel', 'teasel-node', 'teasel-wasm']) {
 	patchFile('Cargo.lock', new RegExp(`(\\[\\[package\\]\\]\\nname = "${crate}"\\nversion = ")[^"]*`), `$1${version}`);
 }
-for (const { file } of changesets) unlinkSync(new URL(file, dir));
+for (const { file } of changesets) unlinkSync(join(dir, file));
 
 process.stdout.write(
 	`Merging this releases ${name}@${version}. Changesets that land on main meanwhile are added to it.\n\n# Releases\n\n## ${name}@${version}\n\n${sections}\n`,

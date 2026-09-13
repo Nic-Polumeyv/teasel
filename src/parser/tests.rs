@@ -743,7 +743,8 @@ fn phases() {
 		binary.reset();
 		answer(&ast, Entry::Program, roots, end, &source, &lines, output, &mut binary).finish();
 	});
-	let grammar = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/hosts/svelte.grammar")).unwrap();
+	let grammar =
+		std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/host.grammar")).unwrap();
 	let document = format!(
 		"<script>let items = [1,2,3];</script>\n{}",
 		"{#each items as item}<p class=\"row\" onclick={() => f(item)}>{item + 1}</p>{/each}\n".repeat(200)
@@ -955,7 +956,8 @@ fn alloc_probe() {
 #[test]
 #[ignore]
 fn host_alloc_probe() {
-	let grammar = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/hosts/svelte.grammar")).unwrap();
+	let grammar =
+		std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/host.grammar")).unwrap();
 	let count = |src: &str| {
 		let prepared = crate::json::Prepared::borrowed(src, crate::json::Request::from_names("module"))
 			.host(&grammar)

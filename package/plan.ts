@@ -45,8 +45,11 @@ export interface Form<out W = unknown> {
 export type Write<N extends string, K extends string> = { into: N; kind: K };
 type Wrote<Fs extends readonly Form[]> = Form<Fs[number][typeof out]>;
 type Kind<R extends Reader> = R extends { kind: 'javascript' | 'html-single'; entry: infer E } ? E : R['kind'];
-// emitted values count: Vue's v-for declares fields it copied out of a sub-rule, and Rust checks their shape
-type Bindable<W> = W extends Write<infer N, 'pattern' | 'bindingIdentifier' | 'params' | 'value'> ? N : never;
+// every write of the field must bind: emitted values count, since Vue's v-for declares fields it copied
+// out of a sub-rule and Rust checks their shape
+type Written<W> = W extends Write<infer N, string> ? N : never;
+type Bindable<W> = BindableOf<W, Written<W>>;
+type BindableOf<W, N> = N extends string ? (Kinds<W, N> extends 'pattern' | 'bindingIdentifier' | 'params' | 'value' ? N : never) : never;
 
 export interface Region<out Id extends string, out F extends string> {
 	readonly id: Id;
@@ -128,9 +131,10 @@ export const filter = (list: V, as: string, predicate: V<boolean>) =>
 	flatMap(list, as, choose(predicate, array(get(as)), array()));
 export const map = (list: V, as: string, value: V) => flatMap(list, as, array(value));
 export const any = (list: V) => less(constant(0), length(list));
+// helper bindings start with `$$`, a prefix an author's own aliases must not use
 export const member = (value: V, literals: JSONValue[]) =>
-	any(filter(constant(literals), '$candidate', equal(get('$candidate'), value)));
-export const concat = (...lists: V[]) => flatMap(array(...lists), '$list', get('$list'));
+	any(filter(constant(literals), '$$candidate', equal(get('$$candidate'), value)));
+export const concat = (...lists: V[]) => flatMap(array(...lists), '$$list', get('$$list'));
 export const scope = (name: string) => get('scopes', name);
 export const incoming = get('incoming');
 export const isType = (value: V, ...types: string[]) => member(get(value, 'type'), types);
@@ -139,8 +143,8 @@ export const attributes = (node: V): V<unknown[]> =>
 export const attr = (node: V, name: string) =>
 	filter(
 		attributes(node),
-		'$attribute',
-		and(equal(get('$attribute', 'kind'), constant('ordinary')), equal(get('$attribute', 'name'), constant(name))),
+		'$$attribute',
+		and(equal(get('$$attribute', 'kind'), constant('ordinary')), equal(get('$$attribute', 'name'), constant(name))),
 	);
 export const hasAttribute = (node: V, name: string) => any(attr(node, name));
 export const staticAttribute = (node: V, name: string) => get(at(attr(node, name), 0), 'staticText');
@@ -169,13 +173,14 @@ export const js = <E extends JS, N extends string = never>(
 	boundary?: 'last-shared-word',
 ) => read({ kind: 'javascript', entry, ...(boundary && { boundary }) }, into, input);
 const item = slot('iteration', 'item');
-export const repeat = <N extends string>(
-	build: (r: { readonly item: Slot<'item'> }) => Form,
+type Repeated<B extends Form> = [Kinds<B[typeof out], 'item'>] extends [never] ? 'value' : Kinds<B[typeof out], 'item'>;
+export const repeat = <N extends string, B extends Form>(
+	build: (r: { readonly item: Slot<'item'> }) => B,
 	into: Slot<N>,
 	value: V = item,
 	min = 0,
 	max: number | null = null,
-): Form<Write<N, 'repeat'>> =>
+): Form<Write<N, Repeated<B>>> =>
 	data({ op: 'repeat', body: build({ item }), min, max, locals: ['item'], yield: value, into: into.name });
 export const many = <N extends string>(name: string, into: Slot<N>, min: number, max: number | null) =>
 	repeat((r) => call(name, r.item), into, item, min, max);
@@ -199,8 +204,8 @@ export const declare = <N extends string, const R extends string | Expr>(
 	});
 
 // a chain, not one call with an options object: TypeScript fixes W before a deferred form callback runs
-export class Rule<Type extends string, S extends Schema, L extends readonly string[], W, R extends string> {
-	declare readonly [out]: { type: Type; fields: S; writes: W };
+export class Rule<Type extends string, S extends Schema, L extends readonly string[], W, R extends string, P extends RuleData['span'] = undefined> {
+	declare readonly [out]: { type: Type; fields: S; writes: W; span: P };
 	readonly #data: RuleData;
 	readonly #slots: Slots<S, L>;
 	constructor(type: Type, fields: S, locals: L) {
@@ -212,13 +217,13 @@ export class Rule<Type extends string, S extends Schema, L extends readonly stri
 			]),
 		);
 	}
-	form<W2 extends Write<Names<S, L>, string>>(build: (f: Slots<S, L>) => Form<W2>): Rule<Type, S, L, W2, R> {
+	form<W2 extends Write<Names<S, L>, string>>(build: (f: Slots<S, L>) => Form<W2>): Rule<Type, S, L, W2, R, P> {
 		this.#data.form = build(this.#slots);
 		return data(this);
 	}
 	regions<const Rs extends readonly Region<string, Names<S, L>>[]>(
 		build: (f: Slots<S, L>) => Rs,
-	): Rule<Type, S, L, W, R | Rs[number]['id']> {
+	): Rule<Type, S, L, W, R | Rs[number]['id'], P> {
 		this.#data.regions = [...(this.#data.regions ?? []), ...build(this.#slots)];
 		return data(this);
 	}
@@ -226,9 +231,9 @@ export class Rule<Type extends string, S extends Schema, L extends readonly stri
 		this.#data.declares = [...(this.#data.declares ?? []), ...build(this.#slots)];
 		return this;
 	}
-	span(policy: RuleData['span']): this {
+	span<P2 extends NonNullable<RuleData['span']>>(policy: P2): Rule<Type, S, L, W, R, P2> {
 		this.#data.span = policy;
-		return this;
+		return data(this);
 	}
 	toJSON() {
 		return this.#data;
@@ -253,11 +258,9 @@ interface Nodes {
 type Kinds<W, N> = W extends Write<infer M, infer K> ? ([M] extends [never] ? never : M extends N ? K : never) : never;
 type Node<W, N> = Kinds<W, N> extends infer K ? (K extends keyof Nodes ? Nodes[K] : unknown) : never;
 /** The node a rule produces: `null` fields are required and nullable, `omit` fields optional. */
-export type Infer<Rl extends { readonly [out]: { type: string; fields: Schema; writes: unknown } }> = {
+export type Infer<Rl extends { readonly [out]: { type: string; fields: Schema; writes: unknown; span: RuleData['span'] } }> = {
 	type: Rl[typeof out]['type'];
-	start: number;
-	end: number;
-} & {
+} & (Rl[typeof out]['span'] extends 'none' ? {} : { start: number; end: number }) & {
 	[N in keyof Rl[typeof out]['fields'] as Rl[typeof out]['fields'][N] extends 'null' ? N : never]: Node<
 		Rl[typeof out]['writes'],
 		N
