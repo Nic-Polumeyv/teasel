@@ -138,7 +138,7 @@ fn decode(raw: &str, attribute: bool) -> Cow<'_, str> {
 		}
 		let rest = &raw[i + 1..];
 		let mut code = None;
-		let mut mark = 0;
+		let mut mark = None;
 		let mut consumed = 0;
 		if let Some(number) = rest.strip_prefix('#') {
 			let (digits, hex) = match number.strip_prefix(['x', 'X']) {
@@ -157,33 +157,33 @@ fn decode(raw: &str, attribute: bool) -> Cow<'_, str> {
 				}
 			}
 		} else {
-			let len = rest.bytes().take_while(|b| b.is_ascii_alphanumeric()).count().min(32);
-			let mut try_len = len;
-			while try_len > 0 {
-				let with = rest.as_bytes().get(try_len) == Some(&b';');
-				let candidate = &rest[..try_len + usize::from(with)];
-				if let Ok(found) = entities::ENTITIES.binary_search_by(|(name, ..)| name.cmp(&candidate)) {
-					let after = rest.as_bytes().get(try_len);
-					if attribute
-						&& !with && after.is_some_and(|b| *b == b'=' || b.is_ascii_alphanumeric() || *b == b'_')
-					{
-						try_len -= 1;
-						continue;
-					}
-					code = Some(entities::ENTITIES[found].1);
-					mark = entities::ENTITIES[found].2;
-					consumed = try_len + usize::from(with);
-					break;
+			let len = rest
+				.bytes()
+				.take(entities::LONGEST)
+				.take_while(|b| b.is_ascii_alphanumeric())
+				.count();
+			let with = rest.as_bytes().get(len) == Some(&b';');
+			let bare = (1..=len.min(entities::LONGEST_BARE)).rev();
+			for try_len in with.then_some(len + 1).into_iter().chain(bare) {
+				let Some((found, found_mark)) = entities::lookup(&rest[..try_len]) else {
+					continue;
+				};
+				let after = rest.as_bytes().get(try_len);
+				if try_len <= len
+					&& attribute && after.is_some_and(|b| *b == b'=' || b.is_ascii_alphanumeric() || *b == b'_')
+				{
+					continue;
 				}
-				try_len -= 1;
+				code = Some(found);
+				mark = found_mark;
+				consumed = try_len;
+				break;
 			}
 		}
 		match code.filter(|&c| c != 0) {
 			Some(code) => {
 				out.push(char::from_u32(valid_code(code, attribute)).unwrap_or('\0'));
-				if let Some(mark) = char::from_u32(mark).filter(|_| mark != 0) {
-					out.push(mark);
-				}
+				out.extend(mark);
 				i += 1 + consumed;
 			}
 			None => {
