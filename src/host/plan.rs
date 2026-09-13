@@ -2808,10 +2808,6 @@ impl<T: Ord> Set<T> {
 		self.0.len()
 	}
 	#[cold]
-	fn iter(&self) -> std::slice::Iter<'_, T> {
-		self.0.iter()
-	}
-	#[cold]
 	fn extend(&mut self, values: impl IntoIterator<Item = T>) {
 		for value in values {
 			self.insert(value);

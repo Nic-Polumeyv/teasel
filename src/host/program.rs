@@ -610,6 +610,8 @@ impl<'a> Compiler<'a, '_> {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+// a property named key is a key of the event, and the variant says so
+#[allow(clippy::enum_variant_names)]
 pub(super) enum Key {
 	Other,
 	IsAwait,

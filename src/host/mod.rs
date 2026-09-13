@@ -2922,7 +2922,7 @@ impl<'a> Walker<'a> {
 				if !rule.regions[region].when.is_some_and(
 					|code| matches!(self.plan.program.exprs[code.index()],Expr::Constant(value) if !value.yes()),
 				) {
-					self.region(record as usize, region as usize)?;
+					self.region(record, region)?;
 				}
 			}
 		}
