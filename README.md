@@ -127,9 +127,9 @@ teasel --typescript --scopes file.ts
 ```
 cargo build --release
 cd package
-bun run build          # the Node addon
-bun run build:wasm     # the WebAssembly module
-bun test.js
+npm run build          # the Node addon
+npm run build:wasm     # the WebAssembly module
+node test.js
 ```
 
 Node resolves `@teasel/parser` to the addon and everything else to the WebAssembly module, with the same API.
