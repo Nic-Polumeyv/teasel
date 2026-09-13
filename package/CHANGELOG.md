@@ -1,5 +1,17 @@
 # @teasel/parser
 
+## 0.0.6
+
+### Patch Changes
+
+- [#83](https://github.com/Nic-Polumeyv/teasel/pull/83) [`d2350e6`](https://github.com/Nic-Polumeyv/teasel/commit/d2350e694091fad9db88781aead746bfeb08b1df) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - named character references that stand for two code points, like `&nvlt;`, decode to both
+
+- [#82](https://github.com/Nic-Polumeyv/teasel/pull/82) [`809f31b`](https://github.com/Nic-Polumeyv/teasel/commit/809f31bf17f02c40a1b7bb2fbc12e2fcb71558d0) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - a word both the host and TypeScript read, `as` before an each block's context, is the host's at its last use, so `xs as T[] || [] as item` parses as it does upstream; a host identifier cannot be a reserved word; an identifier list cannot end in a comma; a grammar whose body declares a field no entry reads fails to load
+
+- [#84](https://github.com/Nic-Polumeyv/teasel/pull/84) [`3830814`](https://github.com/Nic-Polumeyv/teasel/commit/3830814c3c42028c1ef1e2814b6680a3f0a8be61) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - named character references resolve through a hash index built at compile time; a `&word` with no `;` no longer tries every length
+
+- [#80](https://github.com/Nic-Polumeyv/teasel/pull/80) [`c5aff2d`](https://github.com/Nic-Polumeyv/teasel/commit/c5aff2db0395d47e7cb71952b24dea9fc8bafca2) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - the interner keeps each string's hash beside its id, so a lookup touches one line before it reads the text
+
 ## 0.0.5
 
 ### Patch Changes
