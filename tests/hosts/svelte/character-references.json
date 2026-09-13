@@ -1,0 +1,81 @@
+{
+	"node": {
+		"type": "Root",
+		"start": 0,
+		"end": 105,
+		"scope": 0,
+		"css": null,
+		"js": [],
+		"options": null,
+		"comments": [],
+		"fragment": {
+			"type": "Fragment",
+			"scope": 2,
+			"nodes": [
+				{
+					"type": "RegularElement",
+					"start": 0,
+					"end": 104,
+					"name": "p",
+					"attributes": [
+						{
+							"type": "Attribute",
+							"start": 3,
+							"end": 28,
+							"name": "title",
+							"value": [
+								{
+									"type": "Text",
+									"start": 10,
+									"end": 27,
+									"raw": "a &nvlt; b &amp c",
+									"data": "a <⃒ b & c"
+								}
+							]
+						}
+					],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 3,
+						"nodes": [
+							{
+								"type": "Text",
+								"start": 29,
+								"end": 100,
+								"raw": "&nvlt; &acE; &NotEqualTilde; &lt; &nbsp;&copy &#x3C; &notanentity; &amp",
+								"data": "<⃒ ∾̳ ≂̸ <  © < ¬anentity; &"
+							}
+						]
+					}
+				}
+			]
+		}
+	},
+	"end": 105,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 1,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [],
+	"references": [],
+	"roots": []
+}
