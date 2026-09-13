@@ -6,7 +6,7 @@
 		"moduleResolution": "bundler",
 		"noEmit": true,
 		"skipLibCheck": true,
-		"types": [],
+		"types": ["node"],
 		"allowImportingTsExtensions": true
 	},
 	"files": ["plan.ts", "../tests/hosts/plans.mts", "../tests/hosts/svelte/plan.mts", "../tests/hosts/vue/plan.mts"]
