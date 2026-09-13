@@ -1,0 +1,13 @@
+{
+	"compilerOptions": {
+		"strict": true,
+		"target": "es2022",
+		"module": "esnext",
+		"moduleResolution": "bundler",
+		"noEmit": true,
+		"skipLibCheck": true,
+		"types": ["node"],
+		"allowImportingTsExtensions": true
+	},
+	"files": ["plan.ts", "../tests/hosts/plans.mts", "../tests/hosts/svelte/plan.mts", "../tests/hosts/vue/plan.mts"]
+}

@@ -1726,7 +1726,7 @@ mod tests {
 		}
 		// a host document: each piece's root lists the `arguments` of the functions inside it
 		let grammar = crate::host::grammar::Grammar::read(
-			&std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/hosts/svelte.grammar")).unwrap(),
+			&std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/host.grammar")).unwrap(),
 		)
 		.unwrap();
 		let src = "<script>let n = 1; function f() { return arguments; }</script>\n{(function () { return arguments + n; })()}";

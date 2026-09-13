@@ -51,6 +51,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 26
+      - run: npm install -g typescript@7
       - run: npm ci
         working-directory: package
       - uses: actions/download-artifact@v4

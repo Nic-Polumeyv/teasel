@@ -1176,7 +1176,7 @@ mod tests {
 
 	#[test]
 	fn reads_the_svelte_grammar() {
-		let grammar = Grammar::read(include_str!("../../hosts/svelte.grammar")).unwrap();
+		let grammar = Grammar::read(include_str!("../../tests/hosts/svelte/host.grammar")).unwrap();
 		assert_eq!(grammar.name, "svelte");
 		assert_eq!(grammar.document.ty, "Root");
 		assert!(
@@ -1229,7 +1229,7 @@ mod tests {
 
 	#[test]
 	fn reads_the_vue_grammar() {
-		let grammar = Grammar::read(include_str!("../../hosts/vue.grammar")).unwrap();
+		let grammar = Grammar::read(include_str!("../../tests/hosts/vue/host.grammar")).unwrap();
 		assert_eq!(grammar.delimiters, ("{{", "}}"));
 		assert!(!grammar.attribute_expressions && !grammar.autoclose && grammar.fragment.is_none());
 		assert_eq!(grammar.element_fields.children, "children");
