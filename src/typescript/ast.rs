@@ -1,5 +1,6 @@
 use crate::ast::{Ast, List, NodeId, NodeKind, Walk};
 use crate::interner::StrId;
+use crate::names::{Name, c};
 use crate::scopes::{Bind, Binder, BindingKind, Mode, ScopeKind};
 
 /// What the TypeScript extension hands back with a tree: its own nodes, indexed by the
@@ -89,11 +90,15 @@ pub enum Kind {
 }
 
 impl Kind {
-	pub fn as_str(self) -> &'static str {
+	pub fn name(self) -> Name {
 		match self {
-			Kind::Value => "value",
-			Kind::Type => "type",
+			Kind::Value => c!("value"),
+			Kind::Type => c!("type"),
 		}
+	}
+
+	pub fn as_str(self) -> &'static str {
+		self.name().text
 	}
 }
 
@@ -105,12 +110,16 @@ pub enum Accessibility {
 }
 
 impl Accessibility {
-	pub fn as_str(self) -> &'static str {
+	pub fn name(self) -> Name {
 		match self {
-			Accessibility::Public => "public",
-			Accessibility::Private => "private",
-			Accessibility::Protected => "protected",
+			Accessibility::Public => c!("public"),
+			Accessibility::Private => c!("private"),
+			Accessibility::Protected => c!("protected"),
 		}
+	}
+
+	pub fn as_str(self) -> &'static str {
+		self.name().text
 	}
 }
 
@@ -130,12 +139,16 @@ pub enum SignatureKind {
 }
 
 impl SignatureKind {
-	pub fn as_str(self) -> &'static str {
+	pub fn name(self) -> Name {
 		match self {
-			SignatureKind::Method => "method",
-			SignatureKind::Get => "get",
-			SignatureKind::Set => "set",
+			SignatureKind::Method => c!("method"),
+			SignatureKind::Get => c!("get"),
+			SignatureKind::Set => c!("set"),
 		}
+	}
+
+	pub fn as_str(self) -> &'static str {
+		self.name().text
 	}
 }
 
@@ -469,21 +482,21 @@ impl Keyword {
 		})
 	}
 
-	pub fn estree_type(self) -> &'static str {
+	pub fn estree_type(self) -> Name {
 		match self {
-			Keyword::Any => "TSAnyKeyword",
-			Keyword::Boolean => "TSBooleanKeyword",
-			Keyword::BigInt => "TSBigIntKeyword",
-			Keyword::Never => "TSNeverKeyword",
-			Keyword::Number => "TSNumberKeyword",
-			Keyword::Object => "TSObjectKeyword",
-			Keyword::String => "TSStringKeyword",
-			Keyword::Symbol => "TSSymbolKeyword",
-			Keyword::Undefined => "TSUndefinedKeyword",
-			Keyword::Unknown => "TSUnknownKeyword",
-			Keyword::Void => "TSVoidKeyword",
-			Keyword::Null => "TSNullKeyword",
-			Keyword::Intrinsic => "TSIntrinsicKeyword",
+			Keyword::Any => c!("TSAnyKeyword"),
+			Keyword::Boolean => c!("TSBooleanKeyword"),
+			Keyword::BigInt => c!("TSBigIntKeyword"),
+			Keyword::Never => c!("TSNeverKeyword"),
+			Keyword::Number => c!("TSNumberKeyword"),
+			Keyword::Object => c!("TSObjectKeyword"),
+			Keyword::String => c!("TSStringKeyword"),
+			Keyword::Symbol => c!("TSSymbolKeyword"),
+			Keyword::Undefined => c!("TSUndefinedKeyword"),
+			Keyword::Unknown => c!("TSUnknownKeyword"),
+			Keyword::Void => c!("TSVoidKeyword"),
+			Keyword::Null => c!("TSNullKeyword"),
+			Keyword::Intrinsic => c!("TSIntrinsicKeyword"),
 		}
 	}
 }

@@ -3,6 +3,7 @@
 use super::ast::{Data, Extras, Kind, Modifier, TsKind};
 use crate::ast::{List, NodeId, NodeKind};
 use crate::estree::{Emit, Sink, Writer};
+use crate::names::{Name, c};
 
 impl Data {
 	/// Whether every statement of a list erases to nothing.
@@ -81,14 +82,14 @@ impl Emit for Data {
 					return w.node(expression);
 				}
 				ParameterProperty { parameter } => {
-					w.keep("TSParameterProperty", id);
+					w.keep(c!("TSParameterProperty"), id);
 					return w.node(parameter);
 				}
-				EnumDeclaration { .. } => w.keep("TSEnumDeclaration", id),
-				ModuleDeclaration { .. } => w.keep("TSModuleDeclaration", id),
-				ExportAssignment { .. } => w.keep("TSExportAssignment", id),
-				ImportEqualsDeclaration { .. } => w.keep("TSImportEqualsDeclaration", id),
-				Decorator { .. } => w.keep("Decorator", id),
+				EnumDeclaration { .. } => w.keep(c!("TSEnumDeclaration"), id),
+				ModuleDeclaration { .. } => w.keep(c!("TSModuleDeclaration"), id),
+				ExportAssignment { .. } => w.keep(c!("TSExportAssignment"), id),
+				ImportEqualsDeclaration { .. } => w.keep(c!("TSImportEqualsDeclaration"), id),
+				Decorator { .. } => w.keep(c!("Decorator"), id),
 				_ => {}
 			}
 		}
@@ -100,52 +101,52 @@ impl Emit for Data {
 			| ParenthesizedType { type_annotation } => {
 				w.begin(
 					match kind {
-						TypeAnnotation { .. } => "TSTypeAnnotation",
-						OptionalType { .. } => "TSOptionalType",
-						RestType { .. } => "TSRestType",
-						ParenthesizedType { .. } => "TSParenthesizedType",
+						TypeAnnotation { .. } => c!("TSTypeAnnotation"),
+						OptionalType { .. } => c!("TSOptionalType"),
+						RestType { .. } => c!("TSRestType"),
+						ParenthesizedType { .. } => c!("TSParenthesizedType"),
 						_ => unreachable!(),
 					},
 					id,
 				);
-				w.field("typeAnnotation", type_annotation);
+				w.field(c!("typeAnnotation"), type_annotation);
 			}
 			Keyword(keyword) => w.begin(keyword.estree_type(), id),
-			ThisType => w.begin("TSThisType", id),
+			ThisType => w.begin(c!("TSThisType"), id),
 			TypePredicate {
 				parameter_name,
 				type_annotation,
 				asserts,
 			} => {
-				w.begin("TSTypePredicate", id);
-				w.field("parameterName", parameter_name);
-				w.opt("typeAnnotation", type_annotation);
-				w.bool("asserts", asserts);
+				w.begin(c!("TSTypePredicate"), id);
+				w.field(c!("parameterName"), parameter_name);
+				w.opt(c!("typeAnnotation"), type_annotation);
+				w.bool(c!("asserts"), asserts);
 			}
 			TypeReference {
 				type_name,
 				type_arguments,
 			} => {
-				w.begin("TSTypeReference", id);
-				w.field("typeName", type_name);
-				w.opt_key("typeArguments", type_arguments);
+				w.begin(c!("TSTypeReference"), id);
+				w.field(c!("typeName"), type_name);
+				w.opt_key(c!("typeArguments"), type_arguments);
 			}
 			QualifiedName { left, right } => {
-				w.begin("TSQualifiedName", id);
-				w.field("left", left);
-				w.field("right", right);
+				w.begin(c!("TSQualifiedName"), id);
+				w.field(c!("left"), left);
+				w.field(c!("right"), right);
 			}
 			TypeParameterInstantiation { params } | TypeParameterDeclaration { params } => {
 				let instantiation = matches!(kind, TypeParameterInstantiation { .. });
 				w.begin(
 					if instantiation {
-						"TSTypeParameterInstantiation"
+						c!("TSTypeParameterInstantiation")
 					} else {
-						"TSTypeParameterDeclaration"
+						c!("TSTypeParameterDeclaration")
 					},
 					id,
 				);
-				w.list("params", params);
+				w.list(c!("params"), params);
 			}
 			TypeParameter {
 				name,
@@ -155,29 +156,29 @@ impl Emit for Data {
 				is_out,
 				is_const,
 			} => {
-				w.begin("TSTypeParameter", id);
+				w.begin(c!("TSTypeParameter"), id);
 				if is_in {
-					w.bool("in", true);
+					w.bool(c!("in"), true);
 				}
 				if is_out {
-					w.bool("out", true);
+					w.bool(c!("out"), true);
 				}
 				if is_const {
-					w.bool("const", true);
+					w.bool(c!("const"), true);
 				}
-				w.interned("name", name);
-				w.opt_key("constraint", constraint);
-				w.opt_key("default", default);
+				w.interned(c!("name"), name);
+				w.opt_key(c!("constraint"), constraint);
+				w.opt_key(c!("default"), default);
 			}
 			FunctionType {
 				type_parameters,
 				parameters,
 				type_annotation,
 			} => {
-				w.begin("TSFunctionType", id);
-				w.opt_key("typeParameters", type_parameters);
-				w.list("parameters", parameters);
-				w.field("typeAnnotation", type_annotation);
+				w.begin(c!("TSFunctionType"), id);
+				w.opt_key(c!("typeParameters"), type_parameters);
+				w.list(c!("parameters"), parameters);
+				w.field(c!("typeAnnotation"), type_annotation);
 			}
 			ConstructorType {
 				type_parameters,
@@ -185,50 +186,57 @@ impl Emit for Data {
 				type_annotation,
 				is_abstract,
 			} => {
-				w.begin("TSConstructorType", id);
-				w.bool("abstract", is_abstract);
-				w.opt_key("typeParameters", type_parameters);
-				w.list("parameters", parameters);
-				w.field("typeAnnotation", type_annotation);
+				w.begin(c!("TSConstructorType"), id);
+				w.bool(c!("abstract"), is_abstract);
+				w.opt_key(c!("typeParameters"), type_parameters);
+				w.list(c!("parameters"), parameters);
+				w.field(c!("typeAnnotation"), type_annotation);
 			}
 			UnionType { types } | IntersectionType { types } => {
 				let union = matches!(kind, UnionType { .. });
-				w.begin(if union { "TSUnionType" } else { "TSIntersectionType" }, id);
-				w.list("types", types);
+				w.begin(
+					if union {
+						c!("TSUnionType")
+					} else {
+						c!("TSIntersectionType")
+					},
+					id,
+				);
+				w.list(c!("types"), types);
 			}
 			TypeOperator {
 				operator,
 				type_annotation,
 			} => {
-				w.begin("TSTypeOperator", id);
-				w.interned("operator", operator);
-				w.field("typeAnnotation", type_annotation);
+				w.begin(c!("TSTypeOperator"), id);
+				w.interned(c!("operator"), operator);
+				w.field(c!("typeAnnotation"), type_annotation);
 			}
 			InferType { type_parameter } => {
-				w.begin("TSInferType", id);
-				w.field("typeParameter", type_parameter);
+				w.begin(c!("TSInferType"), id);
+				w.field(c!("typeParameter"), type_parameter);
 			}
 			LiteralType { literal } => {
-				w.begin("TSLiteralType", id);
-				w.field("literal", literal);
+				w.begin(c!("TSLiteralType"), id);
+				w.field(c!("literal"), literal);
 			}
 			ImportType {
 				argument,
 				qualifier,
 				type_arguments,
 			} => {
-				w.begin("TSImportType", id);
-				w.field("argument", argument);
-				w.opt_key("qualifier", qualifier);
-				w.opt_key("typeArguments", type_arguments);
+				w.begin(c!("TSImportType"), id);
+				w.field(c!("argument"), argument);
+				w.opt_key(c!("qualifier"), qualifier);
+				w.opt_key(c!("typeArguments"), type_arguments);
 			}
 			TypeQuery {
 				expr_name,
 				type_arguments,
 			} => {
-				w.begin("TSTypeQuery", id);
-				w.field("exprName", expr_name);
-				w.opt_key("typeArguments", type_arguments);
+				w.begin(c!("TSTypeQuery"), id);
+				w.field(c!("exprName"), expr_name);
+				w.opt_key(c!("typeArguments"), type_arguments);
 			}
 			MappedType {
 				readonly,
@@ -237,44 +245,44 @@ impl Emit for Data {
 				optional,
 				type_annotation,
 			} => {
-				w.begin("TSMappedType", id);
-				modifier(w, "readonly", readonly);
-				w.field("typeParameter", type_parameter);
-				w.opt("nameType", name_type);
-				modifier(w, "optional", optional);
-				w.opt_key("typeAnnotation", type_annotation);
+				w.begin(c!("TSMappedType"), id);
+				modifier(w, c!("readonly"), readonly);
+				w.field(c!("typeParameter"), type_parameter);
+				w.opt(c!("nameType"), name_type);
+				modifier(w, c!("optional"), optional);
+				w.opt_key(c!("typeAnnotation"), type_annotation);
 			}
 			TypeLiteral { members } => {
-				w.begin("TSTypeLiteral", id);
-				w.list("members", members);
+				w.begin(c!("TSTypeLiteral"), id);
+				w.list(c!("members"), members);
 			}
 			NamedTupleMember {
 				label,
 				optional,
 				element_type,
 			} => {
-				w.begin("TSNamedTupleMember", id);
-				w.bool("optional", optional);
-				w.field("label", label);
-				w.field("elementType", element_type);
+				w.begin(c!("TSNamedTupleMember"), id);
+				w.bool(c!("optional"), optional);
+				w.field(c!("label"), label);
+				w.field(c!("elementType"), element_type);
 			}
 
 			TupleType { element_types } => {
-				w.begin("TSTupleType", id);
-				w.list("elementTypes", element_types);
+				w.begin(c!("TSTupleType"), id);
+				w.list(c!("elementTypes"), element_types);
 			}
 
 			ArrayType { element_type } => {
-				w.begin("TSArrayType", id);
-				w.field("elementType", element_type);
+				w.begin(c!("TSArrayType"), id);
+				w.field(c!("elementType"), element_type);
 			}
 			IndexedAccessType {
 				object_type,
 				index_type,
 			} => {
-				w.begin("TSIndexedAccessType", id);
-				w.field("objectType", object_type);
-				w.field("indexType", index_type);
+				w.begin(c!("TSIndexedAccessType"), id);
+				w.field(c!("objectType"), object_type);
+				w.field(c!("indexType"), index_type);
 			}
 			ConditionalType {
 				check_type,
@@ -282,19 +290,19 @@ impl Emit for Data {
 				true_type,
 				false_type,
 			} => {
-				w.begin("TSConditionalType", id);
-				w.field("checkType", check_type);
-				w.field("extendsType", extends_type);
-				w.field("trueType", true_type);
-				w.field("falseType", false_type);
+				w.begin(c!("TSConditionalType"), id);
+				w.field(c!("checkType"), check_type);
+				w.field(c!("extendsType"), extends_type);
+				w.field(c!("trueType"), true_type);
+				w.field(c!("falseType"), false_type);
 			}
 			IndexSignature {
 				parameters,
 				type_annotation,
 			} => {
-				w.begin("TSIndexSignature", id);
-				w.list("parameters", parameters);
-				w.opt_key("typeAnnotation", type_annotation);
+				w.begin(c!("TSIndexSignature"), id);
+				w.list(c!("parameters"), parameters);
+				w.opt_key(c!("typeAnnotation"), type_annotation);
 			}
 			CallSignatureDeclaration {
 				type_parameters,
@@ -309,15 +317,15 @@ impl Emit for Data {
 				let call = matches!(kind, CallSignatureDeclaration { .. });
 				w.begin(
 					if call {
-						"TSCallSignatureDeclaration"
+						c!("TSCallSignatureDeclaration")
 					} else {
-						"TSConstructSignatureDeclaration"
+						c!("TSConstructSignatureDeclaration")
 					},
 					id,
 				);
-				w.opt_key("typeParameters", type_parameters);
-				w.list("parameters", parameters);
-				w.opt_key("typeAnnotation", type_annotation);
+				w.opt_key(c!("typeParameters"), type_parameters);
+				w.list(c!("parameters"), parameters);
+				w.opt_key(c!("typeAnnotation"), type_annotation);
 			}
 			MethodSignature {
 				key,
@@ -328,16 +336,16 @@ impl Emit for Data {
 				parameters,
 				type_annotation,
 			} => {
-				w.begin("TSMethodSignature", id);
-				w.field("key", key);
-				w.bool("computed", computed);
+				w.begin(c!("TSMethodSignature"), id);
+				w.field(c!("key"), key);
+				w.bool(c!("computed"), computed);
 				if optional {
-					w.bool("optional", true);
+					w.bool(c!("optional"), true);
 				}
-				w.string("kind", kind.as_str());
-				w.opt_key("typeParameters", type_parameters);
-				w.list("parameters", parameters);
-				w.opt_key("typeAnnotation", type_annotation);
+				w.string(c!("kind"), kind.name());
+				w.opt_key(c!("typeParameters"), type_parameters);
+				w.list(c!("parameters"), parameters);
+				w.opt_key(c!("typeAnnotation"), type_annotation);
 			}
 			PropertySignature {
 				key,
@@ -347,21 +355,21 @@ impl Emit for Data {
 				kind,
 				type_annotation,
 			} => {
-				w.begin("TSPropertySignature", id);
-				w.field("key", key);
+				w.begin(c!("TSPropertySignature"), id);
+				w.field(c!("key"), key);
 				if let Some(computed) = computed {
-					w.bool("computed", computed);
+					w.bool(c!("computed"), computed);
 				}
 				if optional {
-					w.bool("optional", true);
+					w.bool(c!("optional"), true);
 				}
 				if readonly {
-					w.bool("readonly", true);
+					w.bool(c!("readonly"), true);
 				}
 				if let Some(kind) = kind {
-					w.string("kind", kind.as_str());
+					w.string(c!("kind"), kind.name());
 				}
-				w.opt_key("typeAnnotation", type_annotation);
+				w.opt_key(c!("typeAnnotation"), type_annotation);
 			}
 			InterfaceDeclaration {
 				id: name,
@@ -369,64 +377,64 @@ impl Emit for Data {
 				extends,
 				body,
 			} => {
-				w.begin("TSInterfaceDeclaration", id);
-				w.field("id", name);
-				w.opt_key("typeParameters", type_parameters);
+				w.begin(c!("TSInterfaceDeclaration"), id);
+				w.field(c!("id"), name);
+				w.opt_key(c!("typeParameters"), type_parameters);
 				if let Some(extends) = extends {
-					w.list("extends", extends);
+					w.list(c!("extends"), extends);
 				}
-				w.field("body", body);
+				w.field(c!("body"), body);
 			}
 			InterfaceBody { body } => {
-				w.begin("TSInterfaceBody", id);
-				w.list("body", body);
+				w.begin(c!("TSInterfaceBody"), id);
+				w.list(c!("body"), body);
 			}
 			ExpressionWithTypeArguments {
 				expression,
 				type_arguments,
 			} => {
-				w.begin("TSExpressionWithTypeArguments", id);
-				w.field("expression", expression);
-				w.opt_key("typeParameters", type_arguments);
+				w.begin(c!("TSExpressionWithTypeArguments"), id);
+				w.field(c!("expression"), expression);
+				w.opt_key(c!("typeParameters"), type_arguments);
 			}
 			EnumDeclaration {
 				id: name,
 				members,
 				is_const,
 			} => {
-				w.begin("TSEnumDeclaration", id);
+				w.begin(c!("TSEnumDeclaration"), id);
 				if is_const {
-					w.bool("const", true);
+					w.bool(c!("const"), true);
 				}
-				w.field("id", name);
-				w.list("members", members);
+				w.field(c!("id"), name);
+				w.list(c!("members"), members);
 			}
 			EnumMember { id: name, initializer } => {
-				w.begin("TSEnumMember", id);
-				w.field("id", name);
-				w.opt_key("initializer", initializer);
+				w.begin(c!("TSEnumMember"), id);
+				w.field(c!("id"), name);
+				w.opt_key(c!("initializer"), initializer);
 			}
 			ModuleDeclaration { id: name, body, global } => {
-				w.begin("TSModuleDeclaration", id);
+				w.begin(c!("TSModuleDeclaration"), id);
 				if global {
-					w.bool("global", true);
+					w.bool(c!("global"), true);
 				}
-				w.field("id", name);
-				w.opt_key("body", body);
+				w.field(c!("id"), name);
+				w.opt_key(c!("body"), body);
 			}
 			ModuleBlock { body } => {
-				w.begin("TSModuleBlock", id);
-				w.list("body", body);
+				w.begin(c!("TSModuleBlock"), id);
+				w.list(c!("body"), body);
 			}
 			TypeAliasDeclaration {
 				id: name,
 				type_parameters,
 				type_annotation,
 			} => {
-				w.begin("TSTypeAliasDeclaration", id);
-				w.field("id", name);
-				w.opt_key("typeParameters", type_parameters);
-				w.field("typeAnnotation", type_annotation);
+				w.begin(c!("TSTypeAliasDeclaration"), id);
+				w.field(c!("id"), name);
+				w.opt_key(c!("typeParameters"), type_parameters);
+				w.field(c!("typeAnnotation"), type_annotation);
 			}
 			ImportEqualsDeclaration {
 				id: name,
@@ -434,23 +442,23 @@ impl Emit for Data {
 				is_export,
 				import_kind,
 			} => {
-				w.begin("TSImportEqualsDeclaration", id);
-				w.string("importKind", import_kind.as_str());
-				w.bool("isExport", is_export);
-				w.field("id", name);
-				w.field("moduleReference", module_reference);
+				w.begin(c!("TSImportEqualsDeclaration"), id);
+				w.string(c!("importKind"), import_kind.name());
+				w.bool(c!("isExport"), is_export);
+				w.field(c!("id"), name);
+				w.field(c!("moduleReference"), module_reference);
 			}
 			ExternalModuleReference { expression } => {
-				w.begin("TSExternalModuleReference", id);
-				w.field("expression", expression);
+				w.begin(c!("TSExternalModuleReference"), id);
+				w.field(c!("expression"), expression);
 			}
 			ExportAssignment { expression } => {
-				w.begin("TSExportAssignment", id);
-				w.field("expression", expression);
+				w.begin(c!("TSExportAssignment"), id);
+				w.field(c!("expression"), expression);
 			}
 			NamespaceExportDeclaration { id: name } => {
-				w.begin("TSNamespaceExportDeclaration", id);
-				w.field("id", name);
+				w.begin(c!("TSNamespaceExportDeclaration"), id);
+				w.field(c!("id"), name);
 			}
 			DeclareFunction {
 				params,
@@ -465,19 +473,19 @@ impl Emit for Data {
 			} => {
 				let name = match kind {
 					DeclareFunction { id: name, .. } => {
-						w.begin("TSDeclareFunction", id);
+						w.begin(c!("TSDeclareFunction"), id);
 						name
 					}
 					_ => {
-						w.begin("TSDeclareMethod", id);
+						w.begin(c!("TSDeclareMethod"), id);
 						None
 					}
 				};
-				w.opt("id", name);
-				w.bool("generator", generator);
-				w.bool("async", is_async);
-				w.bool("expression", false);
-				w.list("params", params);
+				w.opt(c!("id"), name);
+				w.bool(c!("generator"), generator);
+				w.bool(c!("async"), is_async);
+				w.bool(c!("expression"), false);
+				w.list(c!("params"), params);
 			}
 			AsExpression {
 				expression,
@@ -493,44 +501,44 @@ impl Emit for Data {
 			} => {
 				w.begin(
 					match kind {
-						AsExpression { .. } => "TSAsExpression",
-						SatisfiesExpression { .. } => "TSSatisfiesExpression",
-						TypeCastExpression { .. } => "TSTypeCastExpression",
+						AsExpression { .. } => c!("TSAsExpression"),
+						SatisfiesExpression { .. } => c!("TSSatisfiesExpression"),
+						TypeCastExpression { .. } => c!("TSTypeCastExpression"),
 						_ => unreachable!(),
 					},
 					id,
 				);
-				w.field("expression", expression);
-				w.field("typeAnnotation", type_annotation);
+				w.field(c!("expression"), expression);
+				w.field(c!("typeAnnotation"), type_annotation);
 			}
 			NonNullExpression { expression } => {
-				w.begin("TSNonNullExpression", id);
-				w.field("expression", expression);
+				w.begin(c!("TSNonNullExpression"), id);
+				w.field(c!("expression"), expression);
 			}
 			TypeAssertion {
 				type_annotation,
 				expression,
 			} => {
-				w.begin("TSTypeAssertion", id);
-				w.field("typeAnnotation", type_annotation);
-				w.field("expression", expression);
+				w.begin(c!("TSTypeAssertion"), id);
+				w.field(c!("typeAnnotation"), type_annotation);
+				w.field(c!("expression"), expression);
 			}
 
 			InstantiationExpression {
 				expression,
 				type_arguments,
 			} => {
-				w.begin("TSInstantiationExpression", id);
-				w.field("expression", expression);
-				w.field("typeArguments", type_arguments);
+				w.begin(c!("TSInstantiationExpression"), id);
+				w.field(c!("expression"), expression);
+				w.field(c!("typeArguments"), type_arguments);
 			}
 			ParameterProperty { parameter } => {
-				w.begin("TSParameterProperty", id);
-				w.field("parameter", parameter);
+				w.begin(c!("TSParameterProperty"), id);
+				w.field(c!("parameter"), parameter);
 			}
 			Decorator { expression } => {
-				w.begin("Decorator", id);
-				w.field("expression", expression);
+				w.begin(c!("Decorator"), id);
+				w.field(c!("expression"), expression);
 			}
 		}
 		w.end();
@@ -543,53 +551,53 @@ impl Emit for Data {
 		if w.output.erase {
 			// proposals JavaScript itself has, which erasure keeps and lists: decorators and accessor fields
 			if let Some(decorators) = extras.decorators {
-				w.list("decorators", decorators);
+				w.list(c!("decorators"), decorators);
 			}
 			if extras.accessor {
-				w.bool("accessor", true);
-				w.keep("AccessorProperty", id);
+				w.bool(c!("accessor"), true);
+				w.keep(c!("AccessorProperty"), id);
 			}
 			return;
 		}
 		match kind {
 			NodeKind::ImportDeclaration { .. } | NodeKind::ImportSpecifier { .. } => {
-				w.string("importKind", extras.import_kind.unwrap_or(Kind::Value).as_str());
+				w.string(c!("importKind"), extras.import_kind.unwrap_or(Kind::Value).name());
 			}
 			NodeKind::ExportDeclaration { .. }
 			| NodeKind::ExportNamedDeclaration { .. }
 			| NodeKind::ExportDefaultDeclaration { .. }
 			| NodeKind::ExportAllDeclaration { .. }
 			| NodeKind::ExportSpecifier { .. } => {
-				w.string("exportKind", extras.export_kind.unwrap_or(Kind::Value).as_str());
+				w.string(c!("exportKind"), extras.export_kind.unwrap_or(Kind::Value).name());
 			}
 			_ => {}
 		}
 		if extras == Extras::default() {
 			return;
 		}
-		w.opt_key("typeAnnotation", extras.type_annotation);
-		w.opt_key("returnType", extras.return_type);
-		w.opt_key("typeParameters", extras.type_parameters);
-		w.opt_key("typeArguments", extras.type_arguments);
-		w.opt_key("superTypeParameters", extras.super_type_arguments);
+		w.opt_key(c!("typeAnnotation"), extras.type_annotation);
+		w.opt_key(c!("returnType"), extras.return_type);
+		w.opt_key(c!("typeParameters"), extras.type_parameters);
+		w.opt_key(c!("typeArguments"), extras.type_arguments);
+		w.opt_key(c!("superTypeParameters"), extras.super_type_arguments);
 		if let Some(implements) = extras.implements {
-			w.list("implements", implements);
+			w.list(c!("implements"), implements);
 		}
 		if let Some(decorators) = extras.decorators {
-			w.list("decorators", decorators);
+			w.list(c!("decorators"), decorators);
 		}
 		if let Some(accessibility) = extras.accessibility {
-			w.string("accessibility", accessibility.as_str());
+			w.string(c!("accessibility"), accessibility.name());
 		}
 		for (key, set) in [
-			("optional", extras.optional),
-			("definite", extras.definite),
-			("declare", extras.declare),
-			("abstract", extras.is_abstract),
-			("readonly", extras.readonly),
-			("override", extras.is_override),
-			("accessor", extras.accessor),
-			("static", extras.is_static && extension),
+			(c!("optional"), extras.optional),
+			(c!("definite"), extras.definite),
+			(c!("declare"), extras.declare),
+			(c!("abstract"), extras.is_abstract),
+			(c!("readonly"), extras.readonly),
+			(c!("override"), extras.is_override),
+			(c!("accessor"), extras.accessor),
+			(c!("static"), extras.is_static && extension),
 		] {
 			if set {
 				w.bool(key, true);
@@ -598,10 +606,10 @@ impl Emit for Data {
 	}
 }
 
-fn modifier<S: Sink>(w: &mut Writer<Data, S>, key: &'static str, value: Option<Modifier>) {
+fn modifier<S: Sink>(w: &mut Writer<Data, S>, key: Name, value: Option<Modifier>) {
 	match value {
-		Some(Modifier::Plus) => w.string(key, "+"),
-		Some(Modifier::Minus) => w.string(key, "-"),
+		Some(Modifier::Plus) => w.string(key, c!("+")),
+		Some(Modifier::Minus) => w.string(key, c!("-")),
 		Some(Modifier::True) => w.bool(key, true),
 		None => {}
 	}
