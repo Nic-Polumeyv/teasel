@@ -3,7 +3,10 @@ import tailwindcss from '@tailwindcss/vite';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+	// sheer-ui ships TypeScript sources: the optimizer cannot pre-bundle them, so Vite serves them as source in dev
+	optimizeDeps: { exclude: ['sheer-ui'] },
+	ssr: { noExternal: command === 'build' ? true : ['sheer-ui'] },
 	plugins: [
 		tailwindcss(),
 		sveltekit({
@@ -14,4 +17,4 @@ export default defineConfig({
 			adapter: adapter()
 		})
 	]
-});
+}));
