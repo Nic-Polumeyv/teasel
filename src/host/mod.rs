@@ -107,6 +107,12 @@ struct Record {
 	regions: usize,
 }
 
+/// A region's targets while its parent chain is being resolved: meeting it again is a cycle.
+const RESOLVING: Run = Run {
+	start: u32::MAX,
+	len: 0,
+};
+
 #[derive(Clone, Copy, Debug)]
 struct Element {
 	record: usize,
@@ -196,9 +202,9 @@ pub(crate) struct Spare {
 	arrays: Vec<Vec<Datum>>,
 	follows: Vec<String>,
 	failures: Vec<Rejection>,
+	/// Each record's regions' targets once resolved; `RESOLVING` while one is.
 	region_slots: Vec<Option<Run>>,
 	targets: Vec<HostParent>,
-	resolving: Vec<(usize, usize)>,
 	node_records: Vec<usize>,
 	/// The tree's id for each plan string once a node carries it.
 	ids: Vec<u32>,
@@ -354,14 +360,16 @@ impl<E: Extension> Native for NativeReader<E> {
 }
 
 pub fn parse(src: &str, plan: &Plan, options: Options) -> (Ast, std::result::Result<NodeId, Box<crate::SyntaxError>>) {
-	parse_document::<()>(src, plan, options, None)
+	parse_document::<()>(src, plan, options, None, true)
 }
 
+/// `regions` resolves the plan's regions and declarations, the input of scope analysis.
 pub(crate) fn parse_document<E: Extension>(
 	src: &str,
 	plan: &Plan,
 	options: Options,
 	reused: Option<Ast<E::Data>>,
+	regions: bool,
 ) -> (Ast<E::Data>, Result<NodeId>) {
 	let cut = if plan.html.trim_end {
 		src.trim_end_matches(is_space)
@@ -387,7 +395,6 @@ pub(crate) fn parse_document<E: Extension>(
 	spare.failures.clear();
 	spare.region_slots.clear();
 	spare.targets.clear();
-	spare.resolving.clear();
 	spare.node_records.clear();
 	let (ast, data) = ast.split();
 	let mut native = NativeReader::<E> {
@@ -413,10 +420,13 @@ pub(crate) fn parse_document<E: Extension>(
 			return fail(w.at, w.at, Code::UnexpectedToken, None);
 		}
 		w.ast().nodes[node.index() as usize].end = w.full;
-		w.regions()?;
+		if regions {
+			w.regions()?;
+		}
 		Ok(node)
 	});
 	w.finish_ids();
+
 	let errors = &mut w.ast().errors;
 	errors.sort_by_key(|error| error.pos);
 	errors.dedup_by(|a, b| a.pos == b.pos && a.code == b.code);
@@ -535,15 +545,28 @@ impl<'a> Walker<'a> {
 	}
 	/// Host types and keys are plan ids while the walk reads them back; the tree gets its own once.
 	fn finish_ids(&mut self) {
-		for i in 0..self.tree().hosts.len() {
-			let ty = self.tree().hosts[i].ty;
-			let ty = self.tree_id(ty);
-			self.ast().hosts[i].ty = ty;
+		let plan = self.plan;
+		let ids = &mut self.spare.ids;
+		let crate::ast::Core {
+			hosts,
+			host_fields,
+			strings,
+			..
+		} = &mut **self.ast.as_mut().unwrap();
+		let mut map = |id: StrId| {
+			let known = ids[id.0 as usize];
+			if known != u32::MAX {
+				return StrId(known);
+			}
+			let tree = strings.intern(&plan.program.strings[id.0 as usize]);
+			ids[id.0 as usize] = tree.0;
+			tree
+		};
+		for host in hosts.iter_mut() {
+			host.ty = map(host.ty);
 		}
-		for i in 0..self.tree().host_fields.len() {
-			let key = self.tree().host_fields[i].0;
-			let key = self.tree_id(key);
-			self.ast().host_fields[i].0 = key;
+		for (key, _) in host_fields.iter_mut() {
+			*key = map(*key);
 		}
 	}
 	fn list(&mut self, nodes: &[NodeId]) -> List {
@@ -855,7 +878,10 @@ impl<'a> Walker<'a> {
 				}
 			}
 			Expr::Member { needle, strings } => {
-				let needle = self.eval(needle, record)?;
+				let needle = match &self.plan.program.exprs[needle.index()] {
+					Expr::Get { base, path } if path.len == 1 => self.get1(*base, path.start, record)?,
+					_ => self.eval(needle, record)?,
+				};
 				let strings = &self.plan.program.sets[strings.indices()];
 				if let Datum::Text(id) = needle {
 					strings.binary_search_by_key(&id.0, |s| s.0).is_ok()
@@ -899,6 +925,57 @@ impl<'a> Walker<'a> {
 			_ => self.eval(code, record)?.yes(),
 		})
 	}
+	fn base_value(&mut self, base: Base, record: usize) -> Result<Datum> {
+		Ok(match base {
+			Base::Value(v) => self.eval(&v, record)?,
+			Base::Record => Datum::Record(record),
+			Base::Event => self.records[record].event,
+			Base::Owner => self.records[record].owner.map_or(Datum::Missing, Datum::Record),
+			Base::Ancestors => Datum::Ancestors(record),
+			Base::Incoming => Datum::Incoming(record),
+			Base::Scopes => Datum::Scopes(record),
+			Base::Iteration => self
+				.iteration
+				.len()
+				.checked_sub(1)
+				.map_or(Datum::Missing, Datum::Iteration),
+			Base::Slot(Slot::Record(i)) => self.slots[self.records[record].slots + i as usize],
+			Base::Slot(Slot::Iteration(i)) => self
+				.iteration
+				.last()
+				.map_or(Datum::Missing, |r| self.iteration_slots[r.start as usize + i as usize]),
+			Base::Region(i) => Datum::Region(record as u32, i),
+			Base::Binding(i) => self.bindings[self.bindings.len() - 1 - i as usize],
+			Base::Missing | Base::Slot(Slot::Missing) => Datum::Missing,
+		})
+	}
+	/// Whether a node's type is one of a plan's strings.
+	fn type_in(&mut self, id: NodeId, strings: &[StrId]) -> bool {
+		let ty = match self.tree().node(id).kind {
+			NodeKind::Host(i) => Datum::Text(self.tree().hosts[i as usize].ty),
+			_ => self.native_property(id, Key::Type),
+		};
+		match ty {
+			Datum::Text(id) => strings.binary_search_by_key(&id.0, |s| s.0).is_ok(),
+			other => self.text_of(&other).is_some_and(|text| {
+				strings
+					.iter()
+					.any(|id| self.plan.program.strings[id.0 as usize].as_ref() == text)
+			}),
+		}
+	}
+	/// One property of a base: a host node's type without the general walk.
+	fn get1(&mut self, base: Base, path: u32, record: usize) -> Result<Datum> {
+		let value = self.base_value(base, record)?;
+		let part = &self.plan.program.paths[path as usize];
+		if let (Path::Name(prop), Datum::Node(id)) = (part, value)
+			&& prop.key == Key::Type
+			&& let NodeKind::Host(i) = self.tree().node(id).kind
+		{
+			return Ok(Datum::Text(self.tree().hosts[i as usize].ty));
+		}
+		Ok(self.property(value, part))
+	}
 	fn eval_complex(&mut self, code: &ExprCode, record: usize) -> Result<Datum> {
 		use program::Expr as V;
 		Ok(match &self.plan.program.exprs[code.index()] {
@@ -914,28 +991,7 @@ impl<'a> Walker<'a> {
 			}
 			V::Constant(value) => *value,
 			V::Get { base, path } => {
-				let mut value = match base {
-					Base::Value(v) => self.eval(v, record)?,
-					Base::Record => Datum::Record(record),
-					Base::Event => self.records[record].event,
-					Base::Owner => self.records[record].owner.map_or(Datum::Missing, Datum::Record),
-					Base::Ancestors => Datum::Ancestors(record),
-					Base::Incoming => Datum::Incoming(record),
-					Base::Scopes => Datum::Scopes(record),
-					Base::Iteration => self
-						.iteration
-						.len()
-						.checked_sub(1)
-						.map_or(Datum::Missing, Datum::Iteration),
-					Base::Slot(Slot::Record(i)) => self.slots[self.records[record].slots + *i as usize],
-					Base::Slot(Slot::Iteration(i)) => self
-						.iteration
-						.last()
-						.map_or(Datum::Missing, |r| self.iteration_slots[r.start as usize + *i as usize]),
-					Base::Region(i) => Datum::Region(record as u32, *i),
-					Base::Binding(i) => self.bindings[self.bindings.len() - 1 - *i as usize],
-					Base::Missing | Base::Slot(Slot::Missing) => Datum::Missing,
-				};
+				let mut value = self.base_value(*base, record)?;
 				for part in &self.plan.program.paths[path.indices()] {
 					value = self.property(value, part);
 				}
@@ -945,7 +1001,7 @@ impl<'a> Walker<'a> {
 				let condition = self.test(condition, record)?;
 				self.eval(if condition { yes } else { no }, record)?
 			}
-			V::FlatMap { .. } | V::Filter { .. } | V::Concat(_) => {
+			V::FlatMap { .. } | V::Filter { .. } | V::TypeFilter { .. } | V::Concat(_) => {
 				let mut out = self.take_values();
 				self.eval_list(code, record, &mut |_, value| {
 					out.push(value);
@@ -1048,6 +1104,16 @@ impl<'a> Walker<'a> {
 				Ok(true)
 			}
 
+			V::TypeFilter { list, strings, negate } => self.eval_list(list, record, &mut |this, item| {
+				let keep = match item {
+					Datum::Node(id) => {
+						let strings = &this.plan.program.sets[strings.indices()];
+						this.type_in(id, strings) != *negate
+					}
+					_ => false,
+				};
+				if keep { emit(this, item) } else { Ok(true) }
+			}),
 			V::Filter { list, predicate } => self.eval_list(list, record, &mut |this, item| {
 				this.bindings.push(item);
 				let yes = this.test(predicate, record);
@@ -1076,6 +1142,15 @@ impl<'a> Walker<'a> {
 			}
 			_ => {
 				let list = self.eval(code, record)?;
+				if let Datum::Nodes(nodes) = list {
+					for i in 0..nodes.len {
+						let item = self.tree().nth(nodes, i).map_or(Datum::Null, Datum::Node);
+						if !emit(self, item)? {
+							return Ok(false);
+						}
+					}
+					return Ok(true);
+				}
 				for i in 0..self.count(&list) {
 					let item = self.item(&list, i);
 					if !emit(self, item)? {
@@ -2967,6 +3042,17 @@ impl<'a> Walker<'a> {
 		if nodes.len() < 2 {
 			return;
 		}
+		if nodes.len() <= 8 {
+			let mut i = 1;
+			while i < nodes.len() {
+				if nodes[..i].contains(&nodes[i]) {
+					nodes.remove(i);
+				} else {
+					i += 1;
+				}
+			}
+			return;
+		}
 		self.cover_seen.clear();
 		nodes.retain(|id| {
 			let fresh = !self.cover_seen.contains(*id);
@@ -2981,11 +3067,45 @@ impl<'a> Walker<'a> {
 					self.cover(item, record, roots)?;
 				}
 			}
-			Expr::Filter { .. } => {
-				self.eval_list(code, record, &mut |this, value| {
-					this.roots(&value, roots);
-					Ok(true)
-				})?;
+			Expr::TypeFilter { list, strings, negate } => {
+				let items = self.eval(list, record)?;
+				if let Datum::Nodes(nodes) = items {
+					let strings = &self.plan.program.sets[strings.indices()];
+					for i in 0..nodes.len {
+						let Some(id) = self.tree().nth(nodes, i) else {
+							continue;
+						};
+						if self.type_in(id, strings) != *negate {
+							roots.push(id);
+						}
+					}
+				} else {
+					self.eval_list(code, record, &mut |this, value| {
+						this.roots(&value, roots);
+						Ok(true)
+					})?;
+				}
+			}
+			Expr::Filter { list, predicate } => {
+				let items = self.eval(list, record)?;
+				if let Datum::Nodes(nodes) = items {
+					for i in 0..nodes.len {
+						let Some(id) = self.tree().nth(nodes, i) else {
+							continue;
+						};
+						self.bindings.push(Datum::Node(id));
+						let yes = self.test(predicate, record);
+						self.bindings.pop();
+						if yes? {
+							roots.push(id);
+						}
+					}
+				} else {
+					self.eval_list(code, record, &mut |this, value| {
+						this.roots(&value, roots);
+						Ok(true)
+					})?;
+				}
 			}
 			Expr::FlatMap { list, body } => {
 				self.eval_list(list, record, &mut |this, value| {
@@ -3028,12 +3148,12 @@ impl<'a> Walker<'a> {
 	fn region(&mut self, record: usize, index: usize) -> Result<Run> {
 		let slot = self.records[record].regions + index;
 		if let Some(targets) = self.region_slots[slot] {
+			if targets.start == RESOLVING.start {
+				return fail(self.at, self.at, Code::Expected, Some("acyclic regions"));
+			}
 			return Ok(targets);
 		}
-		if self.resolving.contains(&(record, index)) {
-			return fail(self.at, self.at, Code::Expected, Some("acyclic regions"));
-		}
-		self.resolving.push((record, index));
+		self.region_slots[slot] = Some(RESOLVING);
 		let region = &self.plan.program.rules[self.records[record].rule].regions[index];
 		// a guard that ignores the item is tested once, and a false one spares the each list
 		let guard = if region.when_item {
@@ -3048,13 +3168,21 @@ impl<'a> Walker<'a> {
 		};
 		let count = items.as_ref().map_or(1, |v| self.count(v));
 		let start = self.targets.len();
-		self.targets.resize(start + count, HostParent::Root);
+		if count != 1 {
+			self.targets.resize(start + count, HostParent::Root);
+		}
 		for i in 0..count {
 			if let Some(items) = &items {
 				let item = self.item(items, i);
 				self.bindings.push(item);
 			}
-			let parent = self.eval(&region.parent, record)?;
+			let parent = match &self.plan.program.exprs[region.parent.index()] {
+				Expr::Get {
+					base: Base::Incoming,
+					path,
+				} if path.len == 0 => Datum::Incoming(record),
+				_ => self.eval(&region.parent, record)?,
+			};
 			let parent = self.region_target(parent)?;
 			let covered = match guard {
 				Some(v) => v,
@@ -3102,12 +3230,15 @@ impl<'a> Walker<'a> {
 			} else {
 				parent
 			};
-			self.targets[start + i] = target;
+			if count == 1 {
+				self.targets.push(target);
+			} else {
+				self.targets[start + i] = target;
+			}
 			if items.is_some() {
 				self.bindings.pop();
 			}
 		}
-		self.resolving.pop();
 		let run = Run {
 			start: start as u32,
 			len: count as u32,

@@ -511,14 +511,22 @@ impl<'a> Compiler<'a, '_> {
 				self.bindings.push(binding);
 				let body = Box::new(self.expr(body));
 				self.bindings.pop();
+				let empty = |v: &ExprTree| {
+					matches!(v, ExprTree::Constant(Datum::Constants(_, 0)))
+						|| matches!(v, ExprTree::Construct(ConstructTree::Array(items)) if items.is_empty())
+				};
+				let item = |v: &ExprTree| matches!(v, ExprTree::Construct(ConstructTree::Array(items)) if matches!(items.as_slice(), [ExprTree::Get { base: BaseTree::Binding(0), path }] if path.is_empty()));
 				if let ExprTree::Choose { condition, yes, no } = body.as_ref()
-					&& matches!(no.as_ref(),ExprTree::Construct(ConstructTree::Array(items)) if items.is_empty())
-					&& matches!(yes.as_ref(),ExprTree::Construct(ConstructTree::Array(items)) if matches!(items.as_slice(),[ExprTree::Get {base:BaseTree::Binding(0),path}] if path.is_empty()))
+					&& empty(no) && item(yes)
 				{
 					return ExprTree::Filter {
 						list,
 						predicate: condition.clone(),
 					};
+				}
+				// a map of each item to itself is the list
+				if item(&body) {
+					return *list;
 				}
 				if matches!(body.as_ref(),ExprTree::Get {base:BaseTree::Binding(0),path} if path.is_empty())
 					&& let ExprTree::Construct(ConstructTree::Array(items)) = *list
@@ -1407,6 +1415,12 @@ pub(super) enum Expr {
 		list: Code,
 		predicate: Code,
 	},
+	/// `filter(list, isType(item, strings))`, or its negation: the item's type decides, no binding.
+	TypeFilter {
+		list: Code,
+		strings: Range,
+		negate: bool,
+	},
 	FlatMap {
 		list: Code,
 		body: Code,
@@ -1467,24 +1481,17 @@ impl Program {
 				.map(|r| {
 					let when_item = r.when.as_ref().is_some_and(refers_binding);
 					let covers = p.expr(r.covers);
-					let slots = match &p.exprs[covers.index()] {
-						Expr::Construct(Construct::Array(items)) => p.args[items.indices()]
-							.iter()
-							.map(|code| match p.exprs[code.index()] {
-								Expr::Slot(i) => Some(i),
-								_ => None,
-							})
-							.collect::<Option<Vec<u32>>>()
-							.map(Vec::into_boxed_slice),
-						_ => None,
-					};
+					let slots = p.plain_slots(covers).map(Vec::into_boxed_slice);
 					RegionCode {
 						parent: p.expr(r.parent),
 						kind: r.kind,
 						covers,
 						slots,
 						when_item,
-						when: r.when.map(|v| p.expr(v)),
+						when: r
+							.when
+							.map(|v| p.expr(v))
+							.filter(|code| !matches!(p.exprs[code.index()], Expr::Constant(Datum::Bool(true)))),
 						each: r.each.map(|v| p.expr(v)),
 					}
 				})
@@ -1580,11 +1587,49 @@ impl Program {
 		for row in &plan.html.content {
 			stop(&row.prefix);
 		}
+		if std::env::var("TEASEL_EXPRS").is_ok() {
+			let mut counts = std::collections::BTreeMap::new();
+			for e in &p.exprs {
+				let name = format!("{e:?}");
+				let name = name.split(|c: char| !c.is_alphanumeric()).next().unwrap().to_string();
+				*counts.entry(name).or_insert(0) += 1;
+			}
+			eprintln!("{counts:?}");
+			for (i, e) in p.exprs.iter().enumerate() {
+				eprintln!("expr {i}: {e:?}");
+			}
+			for (i, a) in p.args.iter().enumerate() {
+				eprintln!("arg {i}: {a:?}");
+			}
+			for (i, rule) in p.rules.iter().enumerate() {
+				for (j, r) in rule.regions.iter().enumerate() {
+					eprintln!(
+						"rule {i} region {j}: covers {:?} when {:?} slots {:?}",
+						p.exprs[r.covers.index()],
+						r.when.map(|w| p.exprs[w.index()]),
+						r.slots
+					);
+				}
+			}
+		}
 		p.interner = Interner::sized(p.strings.len() * 16);
 		for text in &p.strings {
 			p.interner.intern(text);
 		}
 		p
+	}
+	/// The slots a covers expression names when it is only fields, singly or in lists.
+	#[cold]
+	fn plain_slots(&self, code: Code) -> Option<Vec<u32>> {
+		match &self.exprs[code.index()] {
+			Expr::Slot(i) => Some(vec![*i]),
+			Expr::Construct(Construct::Array(items)) | Expr::Concat(items) => self.args[items.indices()]
+				.iter()
+				.map(|code| self.plain_slots(*code))
+				.collect::<Option<Vec<Vec<u32>>>>()
+				.map(|lists| lists.concat()),
+			_ => None,
+		}
 	}
 	#[cold]
 	fn args(&mut self, items: Vec<ExprTree>) -> Range {
@@ -1658,10 +1703,42 @@ impl Program {
 					},
 				}
 			}
-			ExprTree::Filter { list, predicate } => Expr::Filter {
-				list: self.expr(*list),
-				predicate: self.expr(*predicate),
-			},
+			ExprTree::Filter { list, predicate } => {
+				let (negate, test) = match predicate.as_ref() {
+					ExprTree::Choose { condition, yes, no }
+						if matches!(yes.as_ref(), ExprTree::Constant(Datum::Bool(false)))
+							&& matches!(no.as_ref(), ExprTree::Constant(Datum::Bool(true))) =>
+					{
+						(true, condition.as_ref())
+					}
+					other => (false, other),
+				};
+				if let ExprTree::Member { needle, strings } = test
+					&& let ExprTree::Get {
+						base: BaseTree::Binding(0),
+						path,
+					} = needle.as_ref()
+					&& let [Path::Name(prop)] = path.as_slice()
+					&& prop.key == Key::Type
+				{
+					let range = Range {
+						start: self.sets.len() as u32,
+						len: strings.len() as u32,
+					};
+					self.sets.extend(strings.iter().copied());
+					let list = self.expr(*list);
+					Expr::TypeFilter {
+						list,
+						strings: range,
+						negate,
+					}
+				} else {
+					Expr::Filter {
+						list: self.expr(*list),
+						predicate: self.expr(*predicate),
+					}
+				}
+			}
 			ExprTree::FlatMap { list, body } => Expr::FlatMap {
 				list: self.expr(*list),
 				body: self.expr(*body),

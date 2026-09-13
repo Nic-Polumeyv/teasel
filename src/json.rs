@@ -420,7 +420,7 @@ where
 	let reused = Pooled::take(pool);
 	let (mut ast, parsed) = match host {
 		Some(plan) => {
-			let (mut ast, root) = host::parse_document::<E>(source, plan, request.options, reused);
+			let (mut ast, root) = host::parse_document::<E>(source, plan, request.options, reused, request.scopes);
 			let parsed = root.map(|root| (ast.add_list(&[Some(root)]), source.len() as u32));
 			(ast, parsed)
 		}

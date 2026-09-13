@@ -1076,7 +1076,7 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		}
 		let adopted = std::mem::take(&mut self.adopted);
 		for node in adopted.iter().copied().chain([id]) {
-			if let Some(&root) = scopes.root_of.get(node) {
+			if let Some(root) = scopes.root_of.get(node) {
 				self.emitted_roots.insert(node);
 				self.key(c!("root"));
 				self.sink.int(root);

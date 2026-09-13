@@ -804,9 +804,12 @@ fn profile() {
 	let mut sink = 0usize;
 	if let Ok(plan) = std::env::var("TEASEL_HOST_PLAN") {
 		let plan = std::fs::read_to_string(plan).unwrap();
-		let prepared = crate::json::Prepared::borrowed(&source, crate::json::Request::from_names("module"))
-			.host(&plan)
-			.unwrap();
+		let prepared = crate::json::Prepared::borrowed(
+			&source,
+			crate::json::Request::from_names(&std::env::var("TEASEL_FLAGS").unwrap_or("module".into())),
+		)
+		.host(&plan)
+		.unwrap();
 		let iters = std::env::var("TEASEL_ITERS")
 			.ok()
 			.and_then(|s| s.parse().ok())
@@ -978,9 +981,12 @@ fn alloc_probe() {
 fn host_alloc_probe() {
 	let plan = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/plan.json")).unwrap();
 	let count = |src: &str| {
-		let prepared = crate::json::Prepared::borrowed(src, crate::json::Request::from_names("module"))
-			.host(&plan)
-			.unwrap();
+		let prepared = crate::json::Prepared::borrowed(
+			src,
+			crate::json::Request::from_names(&std::env::var("TEASEL_FLAGS").unwrap_or("module".into())),
+		)
+		.host(&plan)
+		.unwrap();
 		prepared.binary(Entry::Program, 0.0, None, "").unwrap();
 		let before = ALLOCATIONS.load(std::sync::atomic::Ordering::Relaxed);
 		prepared.binary(Entry::Program, 0.0, None, "").unwrap();

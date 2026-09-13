@@ -124,6 +124,38 @@ impl<T> NodeMap<T> {
 	}
 }
 
+/// A value for some nodes, found by node without hashing: the index is dense, the values are not.
+#[derive(Debug)]
+pub struct NodeValues<T> {
+	index: Vec<u32>,
+	values: Vec<T>,
+}
+impl<T> Default for NodeValues<T> {
+	fn default() -> Self {
+		Self {
+			index: Vec::new(),
+			values: Vec::new(),
+		}
+	}
+}
+impl<T> NodeValues<T> {
+	pub fn insert(&mut self, id: NodeId, value: T) {
+		let index = id.index() as usize;
+		if self.index.len() <= index {
+			self.index.resize(index + 1, u32::MAX);
+		}
+		self.index[index] = self.values.len() as u32;
+		self.values.push(value);
+	}
+	pub fn get(&self, id: NodeId) -> Option<&T> {
+		self.values.get(*self.index.get(id.index() as usize)? as usize)
+	}
+	pub fn clear(&mut self) {
+		self.index.clear();
+		self.values.clear();
+	}
+}
+
 /// One node per node, dense: an occurrence for most nodes of a host document, so a map would hash them all.
 #[derive(Debug, Default)]
 pub struct NodeIndex(Vec<u32>);
@@ -303,7 +335,7 @@ pub struct Core {
 	pub host_regions: Vec<HostRegion>,
 	pub host_coverage: NodeLists<u32>,
 	pub host_region_owners: NodeLists<u32>,
-	pub host_bindings: NodeMap<HostBinding>,
+	pub host_bindings: NodeValues<HostBinding>,
 	pub host_occurrences: NodeIndex,
 	pub host_hidden: NodeLists<NodeId>,
 	pub strings: Interner,

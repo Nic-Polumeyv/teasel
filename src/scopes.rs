@@ -2,7 +2,7 @@
 //! identifier resolved to the binding it names. Names are declared first, in the environment each
 //! belongs to, and every reference is resolved after, so hoisting and merging need nothing special.
 
-use crate::ast::{Ast, HostParent, List, NodeId, NodeKind, NodeMap, NodeSet, VariableKind, Walk};
+use crate::ast::{Ast, HostParent, List, NodeId, NodeKind, NodeSet, VariableKind, Walk};
 use crate::error::{Code, SyntaxError};
 use crate::interner::{FastMap, StrId};
 use crate::names::{Name, c};
@@ -279,7 +279,7 @@ pub struct Scopes {
 	pub references: Vec<Reference>,
 	/// The pieces of JavaScript in a host's document, in source order; empty for a plain parse.
 	pub roots: Vec<Root>,
-	pub root_of: NodeMap<u32>,
+	pub root_of: NodeTable<u32>,
 	pub of_node: NodeTable<ScopeId>,
 	pub of_identifier: NodeTable<Role>,
 	/// The bindings each declaring node declares, and the write references each expression is
@@ -333,7 +333,7 @@ impl ByNode {
 struct Scratch {
 	host_children: Vec<NodeId>,
 	region_envs: Vec<Option<u32>>,
-	host_incoming: NodeMap<u32>,
+	host_incoming: NodeTable<u32>,
 	host_seen: NodeSet,
 	envs: Vec<Env>,
 	open: Vec<u32>,
@@ -380,7 +380,7 @@ impl Scopes {
 		self.bindings.clear();
 		self.references.clear();
 		self.roots.clear();
-		self.root_of.clear();
+		self.root_of.reset(nodes);
 		self.of_node.reset(nodes);
 		self.of_identifier.reset(nodes);
 		self.declared_by.clear();
@@ -539,7 +539,7 @@ pub fn analyze<X: Bind>(ast: &mut Ast<X>, entry: Entry, roots: List) {
 pub struct Binder<'a, X> {
 	host_children: Vec<NodeId>,
 	region_envs: Vec<Option<u32>>,
-	host_incoming: NodeMap<u32>,
+	host_incoming: NodeTable<u32>,
 	host_seen: NodeSet,
 	ast: &'a Ast<X>,
 	out: Scopes,
@@ -570,6 +570,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 				scopes
 			}
 			None => Scopes {
+				root_of: NodeTable::sized(ast.nodes.len()),
 				of_node: NodeTable::sized(ast.nodes.len()),
 				of_identifier: NodeTable::sized(ast.nodes.len()),
 				..Scopes::default()
@@ -589,7 +590,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 		out.scratch.names = names;
 		region_envs.clear();
 		region_envs.resize(ast.host_regions.len(), None);
-		host_incoming.clear();
+		host_incoming.reset(ast.nodes.len());
 		host_seen.clear();
 		Binder {
 			host_children,
@@ -1145,7 +1146,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 			HostParent::Region(region) => self.region_env(region),
 			HostParent::Incoming(mut node) => loop {
 				if let Some(env) = self.host_incoming.get(node) {
-					return *env;
+					return env;
 				}
 				let Some(parent) = self.ast.host_occurrences.get(node) else {
 					return self.env();
@@ -1251,7 +1252,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 		});
 		self.out.root_of.insert(node, index);
 		f(self);
-		let scope = self.host_incoming.get(node).map(|env| self.envs[*env as usize].scope);
+		let scope = self.host_incoming.get(node).map(|env| self.envs[env as usize].scope);
 		let root = &mut self.out.roots[index as usize];
 		if let Some(scope) = scope {
 			root.scope = scope;
@@ -1819,7 +1820,7 @@ mod tests {
 		)
 		.unwrap();
 		let src = "<script>let n = 1; function f() { return arguments; }</script>\n{(function () { return arguments + n; })()}";
-		let (mut ast, root) = crate::host::parse_document::<()>(src, &plan, Options::default(), None);
+		let (mut ast, root) = crate::host::parse_document::<()>(src, &plan, Options::default(), None, true);
 		let roots = ast.add_list(&[Some(root.unwrap())]);
 		analyze(&mut ast, Entry::Program, roots);
 		let scopes = ast.scopes.as_ref().unwrap();
