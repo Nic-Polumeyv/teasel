@@ -1,5 +1,5 @@
-// bun tests/hosts/plans.ts: writes each host's plan.json beside its plan.ts. The bottom half
-// misuses the helpers on purpose; `bun run types` in package/ fails if any line stops erroring.
+// node tests/hosts/plans.mts: writes each host's plan.json beside its plan.mts. The bottom half
+// misuses the helpers on purpose; `npm run types` in package/ fails if any line stops erroring.
 import { writeFileSync } from 'node:fs';
 import { rule, seq, js, region, declare, incoming, type Infer, type Slot } from '../../package/plan.ts';
 
@@ -13,7 +13,7 @@ const print = (plan: object) => {
 if (import.meta.main) {
 	for (const name of ['svelte', 'vue']) {
 		const dir = new URL(`./${name}/`, import.meta.url);
-		const { [name]: plan } = await import(new URL('plan.ts', dir).href);
+		const { [name]: plan } = await import(new URL('plan.mts', dir).href);
 		writeFileSync(new URL('plan.json', dir), print(plan));
 	}
 }

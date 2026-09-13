@@ -48,11 +48,10 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
       - uses: actions/setup-node@v7
         with:
           node-version: 26
-      - run: bun install --frozen-lockfile
+      - run: npm ci
         working-directory: package
       - uses: actions/download-artifact@v4
         with:
@@ -63,7 +62,7 @@ jobs:
           name: wasm
           path: package
       - run: cp README.md package/README.md
-      - run: bun release.js publish
+      - run: node release.js publish
         working-directory: package
       - run: |
           tag="v${{ needs.gate.outputs.version }}"

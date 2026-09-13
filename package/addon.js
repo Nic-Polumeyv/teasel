@@ -1,4 +1,4 @@
-// bun addon.js [--target TRIPLE]: builds the addon for this machine, or for the target given, into teasel.<platform>.node
+// node addon.js [--target TRIPLE]: builds the addon for this machine, or for the target given, into teasel.<platform>.node
 import { copyFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { here, platforms } from './native.js';

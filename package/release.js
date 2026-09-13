@@ -1,6 +1,6 @@
-// bun release.js versions: carries the version changesets wrote into package.json over to the crates, so
+// node release.js versions: carries the version changesets wrote into package.json over to the crates, so
 //   the Version Packages PR holds every number and the release gate reads the one the changelog announces
-// bun release.js publish: publishes the platform packages from the addons under artifacts/, then this package
+// node release.js publish: publishes the platform packages from the addons under artifacts/, then this package
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { platforms } from './native.js';
@@ -52,5 +52,5 @@ if (command === 'versions') {
 	writeFileSync('package.json', JSON.stringify(root, null, '\t') + '\n');
 	await publish('.', root.name);
 } else {
-	throw new Error(`bun release.js versions | publish, not ${command}`);
+	throw new Error(`node release.js versions | publish, not ${command}`);
 }

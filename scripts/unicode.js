@@ -1,5 +1,5 @@
 // Regenerates src/lexer/unicode.rs and package/identifier.js from the Unicode Character Database.
-// Usage: bun scripts/unicode.js [version]
+// Usage: node scripts/unicode.js [version]
 
 const version = process.argv[2] ?? '17.0.0';
 const url = `https://www.unicode.org/Public/${version}/ucd/DerivedCoreProperties.txt`;
