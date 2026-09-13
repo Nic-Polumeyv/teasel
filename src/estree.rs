@@ -58,6 +58,10 @@ pub trait Sink {
 	fn text(&mut self, value: &str);
 	/// A string of the tree's interner.
 	fn interned(&mut self, id: StrId, value: &str);
+	/// A host node's type or key, an interned string: a sink may number it once per id.
+	fn host_name<'s>(&mut self, _id: StrId, text: &'s str) -> Name<'s> {
+		Name::dynamic(text)
+	}
 	/// A string equal to the source between two offsets.
 	fn slice(&mut self, value: &str, start: u32, end: u32);
 	fn span(&mut self, start: u32, end: u32);
@@ -90,6 +94,9 @@ impl<S: Sink> Sink for &mut S {
 	}
 	fn begin(&mut self, ty: Name) {
 		(**self).begin(ty)
+	}
+	fn host_name<'s>(&mut self, id: StrId, text: &'s str) -> Name<'s> {
+		(**self).host_name(id, text)
 	}
 	fn object(&mut self) {
 		(**self).object()
@@ -559,6 +566,8 @@ pub struct Binary {
 	tables: usize,
 	constants: Constants,
 	shapes: Shapes,
+	/// Each interned string's constant id once a host node carried it; the text is compared once.
+	names: Vec<u32>,
 }
 
 const START: u32 = c!("start").id << 4 | kind::INT;
@@ -590,6 +599,7 @@ impl Binary {
 			tables: 0,
 			constants: Constants::new(),
 			shapes: Shapes::new(),
+			names: Vec::new(),
 		};
 		binary.reset();
 		binary
@@ -632,6 +642,7 @@ impl Binary {
 		self.seq.push(0);
 		self.tables_at = 0;
 		self.tables = 0;
+		self.names.clear();
 	}
 
 	fn push_text(&mut self, value: &str) -> u32 {
@@ -701,6 +712,21 @@ impl Sink for Binary {
 	fn begin(&mut self, ty: Name) {
 		let id = self.constants.id(ty);
 		self.open(id + 1);
+	}
+
+	fn host_name<'s>(&mut self, id: StrId, text: &'s str) -> Name<'s> {
+		let i = id.0 as usize;
+		if let Some(&known) = self.names.get(i)
+			&& known != u32::MAX
+		{
+			return Name { text, id: known };
+		}
+		let constant = self.constants.id(Name::dynamic(text));
+		if self.names.len() <= i {
+			self.names.resize(i + 1, u32::MAX);
+		}
+		self.names[i] = constant;
+		Name { text, id: constant }
 	}
 
 	fn object(&mut self) {
@@ -1961,15 +1987,17 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 						self.span(node.start, node.end);
 					}
 				} else if host.span {
-					self.begin(Name::dynamic(self.ast.str(host.ty)), id);
+					let ty = self.sink.host_name(host.ty, self.ast.str(host.ty));
+					self.begin(ty, id);
 				} else {
-					self.sink.begin(Name::dynamic(self.ast.str(host.ty)));
+					let ty = self.sink.host_name(host.ty, self.ast.str(host.ty));
+					self.sink.begin(ty);
 					self.scope_facts(id);
 				}
 				let (from, len) = host.fields;
 				for i in from..from + len {
 					let (key, value) = self.ast.host_fields[i as usize];
-					let key = Name::dynamic(self.ast.str(key));
+					let key = self.sink.host_name(key, self.ast.str(key));
 					match value {
 						Value::Node(child) => self.field(key, child),
 						Value::Nodes(children) => self.list(key, children),

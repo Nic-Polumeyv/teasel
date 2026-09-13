@@ -67,7 +67,9 @@ enum Event {
 	Element {
 		name: (u32, u32),
 		id: Option<StrId>,
-		header: Run,
+		/// The attributes as scanned, on the first read; `after_name` is where the scan starts.
+		header: Option<Run>,
+		after_name: u32,
 		facts: u8,
 		at_document: bool,
 		raw: Datum,
@@ -1442,6 +1444,11 @@ impl<'a> Walker<'a> {
 				let value = match self.slots[slots + i] {
 					Datum::Missing if *absence == Absence::Null => Value::Null,
 					Datum::Missing => continue,
+					Datum::Node(id) => Value::Node(id),
+					Datum::Nodes(list) => Value::Nodes(list),
+					Datum::Null => Value::Null,
+					Datum::Slice(a, b) => Value::Slice(a, b),
+					Datum::Bool(v) => Value::Bool(v),
 					value => self.output(&value)?,
 				};
 				let key = *key;
@@ -1596,14 +1603,14 @@ impl<'a> Walker<'a> {
 		}
 	}
 	#[inline]
-	fn event_field(&self, record: usize, key: Key) -> Datum {
+	fn event_field(&mut self, record: usize, key: Key) -> Datum {
 		if let Datum::Event(i) = self.records[record].event {
 			self.event_value(i, key)
 		} else {
 			Datum::Missing
 		}
 	}
-	fn event_value(&self, i: usize, key: Key) -> Datum {
+	fn event_value(&mut self, i: usize, key: Key) -> Datum {
 		match self.events[i] {
 			Event::Stylesheet(children, comments) => match key {
 				Key::Children => Datum::Nodes(children),
@@ -1625,6 +1632,7 @@ impl<'a> Walker<'a> {
 			Event::Element {
 				name,
 				header,
+				after_name,
 				at_document,
 				raw,
 				..
@@ -1632,7 +1640,20 @@ impl<'a> Walker<'a> {
 				Key::Name => Datum::Slice(name.0, name.1),
 				Key::NameFacts => Datum::NameFacts(i),
 				Key::AtDocument => Datum::Bool(at_document),
-				Key::Header => Datum::Header(header),
+				Key::Header => match header {
+					Some(run) => Datum::Header(run),
+					None => {
+						// the attributes reader has read this header already, so the scan does not fail
+						let (at, limit) = (self.at, self.limit);
+						self.at = after_name;
+						let run = self.scan_header().unwrap_or(Run { start: 0, len: 0 });
+						(self.at, self.limit) = (at, limit);
+						if let Event::Element { header, .. } = &mut self.events[i] {
+							*header = Some(run);
+						}
+						Datum::Header(run)
+					}
+				},
 				Key::RawChildren => raw,
 				_ => Datum::Missing,
 			},
@@ -2662,13 +2683,13 @@ impl<'a> Walker<'a> {
 							&& name.ends_with('.')
 							&& name[..name.len() - 1].split('.').all(identifier)),
 			) << 3);
-		let header = self.scan_header()?;
 		let at_document = self.active.len() == 1 || self.active.len() == 2 && self.elements.is_empty();
 		let id = self.plan.program.interner.find(name);
 		let event = self.event(Event::Element {
 			name: span,
 			id,
-			header,
+			header: None,
+			after_name: self.at,
 			facts,
 			at_document,
 			raw: Datum::Missing,
