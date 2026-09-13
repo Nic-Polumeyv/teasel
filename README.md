@@ -128,7 +128,7 @@ teasel --typescript --scopes file.ts
 cargo build --release
 cd package
 npm run build          # the Node addon; tsc 7 on the PATH for the plan types
-npm run build:wasm     # the WebAssembly module
+npm run build:wasm     # the WebAssembly module; wasm-opt (binaryen) on the PATH
 node test.js
 ```
 

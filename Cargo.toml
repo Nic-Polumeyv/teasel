@@ -20,6 +20,7 @@ members = ["bindings/node", "bindings/wasm"]
 lto = "fat"
 codegen-units = 1
 strip = true
+panic = "abort"
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]
 pprof = { version = "0.15.0", features = ["flamegraph"] }
