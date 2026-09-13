@@ -874,14 +874,23 @@ fn profile() {
 		}
 	}
 	let mut rows: Vec<_> = by_frame.into_iter().collect();
-	rows.sort_by_key(|row| std::cmp::Reverse(row.1.0));
+	rows.sort_by_key(|row| {
+		std::cmp::Reverse(if std::env::var("TEASEL_INCL").is_ok() {
+			row.1.1
+		} else {
+			row.1.0
+		})
+	});
 	eprintln!(
 		"samples {total}, sink {sink}, token {} bytes, result {} bytes",
 		std::mem::size_of::<crate::lexer::token::Token>(),
 		std::mem::size_of::<std::result::Result<crate::lexer::token::Token, Box<crate::error::SyntaxError>>>()
 	);
 	eprintln!("{:>6} {:>6}  frame", "self%", "incl%");
-	for (name, (own, incl)) in rows.iter().take(40) {
+	for (name, (own, incl)) in rows
+		.iter()
+		.take(if std::env::var("TEASEL_INCL").is_ok() { 140 } else { 40 })
+	{
 		eprintln!(
 			"{:6.1} {:6.1}  {}",
 			*own as f64 * 100.0 / total as f64,

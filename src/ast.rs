@@ -124,6 +124,30 @@ impl<T> NodeMap<T> {
 	}
 }
 
+/// One node per node, dense: an occurrence for most nodes of a host document, so a map would hash them all.
+#[derive(Debug, Default)]
+pub struct NodeIndex(Vec<u32>);
+
+impl NodeIndex {
+	pub fn insert(&mut self, id: NodeId, value: NodeId) {
+		let index = id.index() as usize;
+		if self.0.len() <= index {
+			self.0.resize(index + 1, u32::MAX);
+		}
+		self.0[index] = value.index();
+	}
+	pub fn get(&self, id: NodeId) -> Option<NodeId> {
+		self.0
+			.get(id.index() as usize)
+			.copied()
+			.filter(|v| *v != u32::MAX)
+			.map(NodeId::at)
+	}
+	pub fn clear(&mut self) {
+		self.0.clear();
+	}
+}
+
 #[derive(Debug)]
 pub struct NodeLists<T> {
 	heads: Vec<(u32, u32)>,
@@ -280,7 +304,7 @@ pub struct Core {
 	pub host_coverage: NodeLists<u32>,
 	pub host_region_owners: NodeLists<u32>,
 	pub host_bindings: NodeMap<HostBinding>,
-	pub host_occurrences: NodeMap<NodeId>,
+	pub host_occurrences: NodeIndex,
 	pub host_hidden: NodeLists<NodeId>,
 	pub strings: Interner,
 	pub comments: Vec<Comment>,

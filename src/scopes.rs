@@ -1150,7 +1150,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 				let Some(parent) = self.ast.host_occurrences.get(node) else {
 					return self.env();
 				};
-				node = *parent;
+				node = parent;
 			},
 		}
 	}

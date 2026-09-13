@@ -1236,12 +1236,16 @@ pub(super) struct Rule {
 	pub regions: Vec<RegionCode>,
 	pub declares: Vec<DeclareCode>,
 	pub span: Option<SpanPolicy>,
+	/// Field index and event key for a rule whose form only copies event facts; run without a form.
+	pub leaf: Option<Box<[(u32, Key)]>>,
 }
 #[derive(Clone, Debug)]
 pub(super) struct RegionCode {
 	pub parent: Code,
 	pub kind: plan::RegionKind,
 	pub covers: Code,
+	/// The slots `covers` names when it is a plain list of fields: read them, no evaluation.
+	pub slots: Option<Box<[u32]>>,
 	pub when: Option<Code>,
 	pub each: Option<Code>,
 }
@@ -1410,18 +1414,33 @@ impl Program {
 			let form = p.form(rule.form);
 			let mut strict = p.form(rule.strict);
 			strict.fuse(&p);
-			let regions = rule
+			let regions: Vec<RegionCode> = rule
 				.regions
 				.into_iter()
-				.map(|r| RegionCode {
-					parent: p.expr(r.parent),
-					kind: r.kind,
-					covers: p.expr(r.covers),
-					when: r.when.map(|v| p.expr(v)),
-					each: r.each.map(|v| p.expr(v)),
+				.map(|r| {
+					let covers = p.expr(r.covers);
+					let slots = match &p.exprs[covers.index()] {
+						Expr::Construct(Construct::Array(items)) => p.args[items.indices()]
+							.iter()
+							.map(|code| match p.exprs[code.index()] {
+								Expr::Slot(i) => Some(i),
+								_ => None,
+							})
+							.collect::<Option<Vec<u32>>>()
+							.map(Vec::into_boxed_slice),
+						_ => None,
+					};
+					RegionCode {
+						parent: p.expr(r.parent),
+						kind: r.kind,
+						covers,
+						slots,
+						when: r.when.map(|v| p.expr(v)),
+						each: r.each.map(|v| p.expr(v)),
+					}
 				})
 				.collect();
-			let declares = rule
+			let declares: Vec<DeclareCode> = rule
 				.declares
 				.into_iter()
 				.map(|d| DeclareCode {
@@ -1430,6 +1449,33 @@ impl Program {
 					kind: d.kind,
 				})
 				.collect();
+			let leaf = if regions.is_empty()
+				&& declares.is_empty()
+				&& rule.slots == rule.fields.len()
+				&& !p.strings[rule.ty.0 as usize].starts_with("js.")
+			{
+				let items: &[Form] = match &form {
+					Form::Seq(items) => items,
+					Form::Emit { .. } => std::slice::from_ref(&form),
+					_ => &[],
+				};
+				let copies: Option<Vec<(u32, Key)>> = items
+					.iter()
+					.map(|item| match item {
+						Form::Emit {
+							into: Slot::Record(i),
+							value,
+						} => match p.exprs[value.index()] {
+							Expr::Event(key) => Some((*i, key)),
+							_ => None,
+						},
+						_ => None,
+					})
+					.collect();
+				copies.filter(|c| !c.is_empty()).map(Vec::into_boxed_slice)
+			} else {
+				None
+			};
 			p.rules.push(Rule {
 				source: rule.source,
 				ty: rule.ty,
@@ -1442,6 +1488,7 @@ impl Program {
 				regions,
 				declares,
 				span: rule.span,
+				leaf,
 			});
 		}
 		for dispatch in b.dispatch {

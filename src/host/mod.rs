@@ -1190,6 +1190,9 @@ impl<'a> Walker<'a> {
 		let schema = &self.plan.program.rules[rule];
 		let record = self.records.len();
 		let slots = self.slots.len();
+		if let Some(leaf) = &schema.leaf {
+			return Ok(self.leaf(rule, record, event, ty, leaf));
+		}
 		self.slots.resize(slots + schema.slots, Datum::Missing);
 		let owner = self
 			.elements
@@ -1269,11 +1272,6 @@ impl<'a> Walker<'a> {
 				}
 			}
 		}
-		for (i, (_, absence)) in schema.fields.iter().enumerate() {
-			if self.slots[slots + i] == Datum::Missing && *absence == Absence::Null {
-				self.slots[slots + i] = Datum::Null;
-			}
-		}
 		let start = self.records[record].start;
 		let end = if schema.span == Some(SpanPolicy::ThroughNextTokenStart) {
 			let at = self.at;
@@ -1287,6 +1285,11 @@ impl<'a> Walker<'a> {
 		let ty = &self.plan.program.strings[ty_id.0 as usize];
 		let span = schema.span != Some(SpanPolicy::None);
 		let node = if ty.starts_with("js.") {
+			for (i, (_, absence)) in schema.fields.iter().enumerate() {
+				if self.slots[slots + i] == Datum::Missing && *absence == Absence::Null {
+					self.slots[slots + i] = Datum::Null;
+				}
+			}
 			let fields: Vec<_> = schema
 				.fields
 				.iter()
@@ -1295,26 +1298,152 @@ impl<'a> Walker<'a> {
 				.collect();
 			self.make(ty, start, end, &fields, span)?
 		} else {
-			let len = (0..schema.fields.len())
-				.filter(|i| self.slots[slots + i] != Datum::Missing)
-				.count();
 			let from = self.tree().host_fields.len();
-			self.ast().host_fields.resize(from + len, (StrId(0), Value::Null));
-			let mut n = from;
-			for (i, (key, _)) in schema.fields.iter().enumerate() {
-				let value = self.slots[slots + i];
-				if value == Datum::Missing {
-					continue;
-				}
+			for (i, (key, absence)) in schema.fields.iter().enumerate() {
+				let value = match self.slots[slots + i] {
+					Datum::Missing if *absence == Absence::Null => Value::Null,
+					Datum::Missing => continue,
+					value => self.output(&value)?,
+				};
 				let key = *key;
-				let value = self.output(&value)?;
-				self.ast().host_fields[n] = (key, value);
-				n += 1;
+				self.ast().host_fields.push((key, value));
 			}
+			let len = self.tree().host_fields.len() - from;
 			self.host_id(ty_id, start, end, from, len, span)
 		};
 		self.records[record].node = Some(node);
 		Ok(node)
+	}
+	fn leaf(&mut self, rule: usize, record: usize, event: Datum, ty: Option<StrId>, leaf: &[(u32, Key)]) -> NodeId {
+		let schema = &self.plan.program.rules[rule];
+		let ty_id = ty.unwrap_or(schema.ty);
+		let start = self.at;
+		let parent = self.active.last().copied();
+		let slots = self.slots.len();
+		let owner = self.elements.last().map(|e| e.record);
+		self.records.push(Record {
+			failure: None,
+			body_end: None,
+			children_end: None,
+			aborted: false,
+			parent,
+			rule,
+			ty: ty_id,
+			slots,
+			event,
+			owner,
+			start,
+			node: None,
+			regions: 0,
+		});
+		let from = self.tree().host_fields.len();
+		for (i, (key, absence)) in schema.fields.iter().enumerate() {
+			let value =
+				leaf.iter()
+					.find(|(slot, _)| *slot as usize == i)
+					.map_or(Datum::Missing, |(_, key)| match event {
+						Datum::Event(e) => self.event_value(e, *key),
+						_ => Datum::Missing,
+					});
+			let value = match value {
+				Datum::Missing if *absence == Absence::Null => Value::Null,
+				Datum::Missing => continue,
+				Datum::Node(id) => Value::Node(id),
+				Datum::Nodes(list) => Value::Nodes(list),
+				Datum::Slice(a, b) => Value::Slice(a, b),
+				Datum::Text(id) | Datum::Interned(id) => Value::Str(id),
+				Datum::Bool(v) => Value::Bool(v),
+				Datum::Strings(a, n) => Value::Strs(a, n),
+				value => self.output(&value).unwrap_or(Value::Null),
+			};
+			let key = *key;
+			self.ast().host_fields.push((key, value));
+		}
+		let len = self.tree().host_fields.len() - from;
+		let span = schema.span != Some(SpanPolicy::None);
+		let node = self.host_id(ty_id, start, self.at, from, len, span);
+		self.records[record].node = Some(node);
+		node
+	}
+	fn leading_mismatch(&self, form: &Form) -> Option<Rejection> {
+		// the leading tokens of an alternative, read without side effects: the first that is not
+		// here yields the rejection the alternative would have produced there
+		let mut at = self.at;
+		let mut items: &[Form] = std::slice::from_ref(form);
+		while let [Form::Seq(inner), ..] = items {
+			items = inner;
+		}
+		for item in items {
+			let tokens: &[Token] = match item {
+				Form::Tokens(tokens) => tokens,
+				Form::Read {
+					reader, input: None, ..
+				} => match &self.plan.program.readers[*reader as usize] {
+					Reader::Token {
+						text,
+						expected,
+						gap,
+						word,
+					} => {
+						if let Err(error) = self.token_here(&mut at, *text, *expected, *gap, *word) {
+							return Some(error);
+						}
+						continue;
+					}
+					Reader::Space { min } => {
+						if let Err(error) = self.space_here(&mut at, *min) {
+							return Some(error);
+						}
+						continue;
+					}
+					_ => return None,
+				},
+				_ => return None,
+			};
+			for token in tokens {
+				let read = match token {
+					Token::Text { text, gap, word, .. } => self.token_here(&mut at, *text, *text, *gap, *word),
+					Token::Space { min, .. } => self.space_here(&mut at, *min),
+				};
+				if let Err(error) = read {
+					return Some(error);
+				}
+			}
+		}
+		None
+	}
+	fn space_here(&self, at: &mut u32, min: usize) -> std::result::Result<(), Rejection> {
+		let start = *at;
+		let rest = &self.src[start as usize..self.limit as usize];
+		*at = start + (rest.len() - rest.trim_start_matches(is_space).len()) as u32;
+		if (*at - start) < min as u32 {
+			return Err(Rejection::Space(start, start));
+		}
+		Ok(())
+	}
+	fn token_here(
+		&self,
+		at: &mut u32,
+		text: StrId,
+		expected: StrId,
+		gap: Gap,
+		word: bool,
+	) -> std::result::Result<(), Rejection> {
+		let text = &self.plan.program.strings[text.0 as usize];
+		if gap == Gap::Space {
+			let rest = &self.src[*at as usize..self.limit as usize];
+			*at += (rest.len() - rest.trim_start_matches(is_space).len()) as u32;
+		}
+		let rest = &self.src[*at as usize..self.limit as usize];
+		if !rest.starts_with(text.as_ref()) {
+			return Err(Rejection::Expected(*at, *at, expected));
+		}
+		let end = *at + text.len() as u32;
+		if word && rest[text.len()..].starts_with(is_id_continue) {
+			return Err(Rejection::Space(end, end));
+		}
+		*at = end;
+		Ok(())
 	}
 	fn remember(&mut self, record: usize, error: Rejection) {
 		if self.records[record]
@@ -1589,6 +1718,24 @@ impl<'a> Walker<'a> {
 					let mut matched = false;
 					let start = self.at;
 					for (i, alternative) in alternatives.iter().enumerate() {
+						// an alternative whose first token is not here fails there without running: same rejection, no checkpoint
+						if !self.options.error_recovery
+							&& let Some(error) = self.leading_mismatch(alternative)
+						{
+							if failure.as_ref().is_none_or(|prior| prior.pos() < error.pos()) {
+								failure = Some(error);
+								failed_native = false;
+								failed = i;
+							}
+							continue;
+						}
+						if !self.options.error_recovery
+							&& let Form::Seq(items) = alternative
+							&& items.is_empty()
+						{
+							matched = true;
+							break;
+						}
 						let checkpoint = self.checkpoint(record);
 						let reads = self.native_reads;
 						match self.strict(alternative, record, follow) {
@@ -2741,6 +2888,9 @@ impl<'a> Walker<'a> {
 		}
 	}
 	fn unique_nodes(&mut self, nodes: &mut Vec<NodeId>) {
+		if nodes.len() < 2 {
+			return;
+		}
 		self.cover_seen.clear();
 		nodes.retain(|id| {
 			let fresh = !self.cover_seen.contains(*id);
@@ -2828,7 +2978,14 @@ impl<'a> Walker<'a> {
 				.unwrap_or(true)
 			{
 				let mut roots = self.take_nodes();
-				self.cover(&region.covers, record, &mut roots)?;
+				if let Some(slots) = &region.slots {
+					let base = self.records[record].slots;
+					for i in slots {
+						self.roots(&self.slots[base + *i as usize], &mut roots);
+					}
+				} else {
+					self.cover(&region.covers, record, &mut roots)?;
+				}
 				self.unique_nodes(&mut roots);
 				let owner = self.records[record].node.unwrap();
 				let node = roots
@@ -2904,17 +3061,19 @@ impl<'a> Walker<'a> {
 				continue;
 			};
 			let rule = &self.plan.program.rules[rec.rule];
-			let mut hidden = self.take_nodes();
-			for i in rule.fields.len()..rule.slots {
-				self.roots(&self.slots[rec.slots + i], &mut hidden);
+			if rule.slots > rule.fields.len() {
+				let mut hidden = self.take_nodes();
+				for i in rule.fields.len()..rule.slots {
+					self.roots(&self.slots[rec.slots + i], &mut hidden);
+				}
+				self.unique_nodes(&mut hidden);
+				hidden.retain(|id| !matches!(self.tree().node(*id).kind, NodeKind::Host(_)));
+				for child in &hidden {
+					self.ast().host_hidden.push(node, *child);
+				}
+				hidden.clear();
+				self.nodes.push(hidden);
 			}
-			self.unique_nodes(&mut hidden);
-			hidden.retain(|id| !matches!(self.tree().node(*id).kind, NodeKind::Host(_)));
-			for child in &hidden {
-				self.ast().host_hidden.push(node, *child);
-			}
-			hidden.clear();
-			self.nodes.push(hidden);
 			if let Some(parent) = rec.parent.and_then(|r| self.records[r].node) {
 				self.ast().host_occurrences.insert(node, parent);
 			}
