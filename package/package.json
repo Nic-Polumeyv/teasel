@@ -17,12 +17,12 @@
 				"default": "./index.js"
 			},
 			"default": {
-				"types": "./wasm.d.ts",
+				"types": "./index.d.ts",
 				"default": "./wasm.js"
 			}
 		},
 		"./wasm": {
-			"types": "./wasm.d.ts",
+			"types": "./index.d.ts",
 			"default": "./wasm.js"
 		},
 		"./teasel.wasm": "./teasel.wasm",
@@ -35,24 +35,22 @@
 		"index.js",
 		"index.d.ts",
 		"wasm.js",
-		"wasm.d.ts",
 		"native.js",
 		"api.js",
-		"decode.js",
 		"identifier.js",
 		"plan.js",
 		"plan.d.ts",
 		"teasel.wasm"
 	],
 	"scripts": {
-		"build": "bun run build:plan && bun addon.js",
+		"build": "bun run build:plan && bun release.js build",
 		"build:plan": "tsc --ignoreConfig plan.ts --declaration --strict --target es2022 --module esnext --moduleResolution bundler --skipLibCheck",
 		"build:wasm": "cargo build --release -p teasel-wasm --target wasm32-unknown-unknown && cp ../target/wasm32-unknown-unknown/release/teasel_wasm.wasm teasel.wasm",
 		"test": "bun test.js && bun test.js interpret",
 		"types": "tsc -p tsconfig.json",
-		"check": "node check.js",
+		"check": "node test.js check",
 		"prepublishOnly": "bun run build:plan",
-		"changeset:version": "changeset version && bun versions.js && git add --all"
+		"changeset:version": "changeset version && bun release.js versions && git add --all"
 	},
 	"dependencies": {
 		"@types/estree": "^1.0.6"
