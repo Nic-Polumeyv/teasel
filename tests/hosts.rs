@@ -56,7 +56,7 @@ fn documents() {
 fn every_prefix_answers() {
 	let root = Path::new(env!("CARGO_MANIFEST_DIR"));
 	for name in ["svelte", "vue"] {
-		let grammar = fs::read_to_string(root.join("tests/hosts").join(&name).join("host.grammar")).unwrap();
+		let grammar = fs::read_to_string(root.join("tests/hosts").join(name).join("host.grammar")).unwrap();
 		for file in sources(&root.join("tests/hosts").join(name)) {
 			let source = fs::read_to_string(&file).unwrap();
 			for (end, _) in source.char_indices().chain([(source.len(), ' ')]) {
