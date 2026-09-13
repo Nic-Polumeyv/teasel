@@ -6,3 +6,4 @@ node_modules/
 /tests/TypeScript/
 /package/plan.js
 /package/plan.d.ts
+/target*/
