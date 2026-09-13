@@ -226,6 +226,7 @@ for (const [name, { Source, isIdentifierStart, isIdentifierChar, scopeOf, bindin
 	assert.equal(unicode.start, 6);
 	assert.equal(isIdentifierStart('a'.codePointAt(0)) && isIdentifierStart('é'.codePointAt(0)) && !isIdentifierStart('1'.codePointAt(0)), true);
 	assert.equal(isIdentifierChar('1'.codePointAt(0)) && !isIdentifierChar('-'.codePointAt(0)), true);
+	assert.equal(isIdentifierStart(0x110000) || isIdentifierChar(0x110000) || isIdentifierChar(Infinity), false);
 	const source = new Source('{a} {"é"} {b /* c */}', { locations: true, comments: true });
 	assert.equal(source.parse('expression', 1).node.name, 'a');
 	assert.equal(new Source('{xs as x}', ts).parse('expression', 1, { stopAt: ['as'] }).end, 3);

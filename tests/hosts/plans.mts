@@ -1,7 +1,7 @@
 // node tests/hosts/plans.mts: writes each host's plan.json beside its plan.mts. The bottom half
 // misuses the helpers on purpose; `npm run types` in package/ fails if any line stops erroring.
 import { writeFileSync } from 'node:fs';
-import { rule, seq, js, region, declare, incoming, type Infer, type Slot } from '../../package/plan.ts';
+import { rule, seq, choice, js, read, repeat, region, declare, incoming, type Infer, type Slot } from '../../package/plan.ts';
 
 // one rule per line keeps the generated file diffable
 const print = (plan: object) => {
@@ -44,4 +44,19 @@ rule('Q', { p: 'null' })
 	.form((f) => js('pattern', f.p))
 	// @ts-expect-error a slot of another rule cannot be covered here
 	.regions(() => [region('r', incoming, [null! as Slot<'other'>])]);
-void wrongOmitted, missingNull;
+const fragment = rule('Fragment', { nodes: 'null' })
+	.form((f) => read({ kind: 'html-children', mode: 'normal', stop: { documentEnd: true } }, f.nodes))
+	.span('none');
+const spanless: Infer<typeof fragment> = { type: 'Fragment', nodes: null };
+// @ts-expect-error a spanless rule's node has no positions
+const positioned: Infer<typeof fragment> = { type: 'Fragment', nodes: null, start: 0 };
+rule('R', { p: 'null' })
+	.form((f) => repeat((r) => js('pattern', r.item), f.p))
+	.regions((f) => [region('s', incoming, [f.p])])
+	.declares((f) => [declare([f.p], 's')]);
+rule('C', { p: 'null' })
+	.form((f) => choice(js('pattern', f.p), js('expression', f.p)))
+	.regions((f) => [region('s', incoming, [f.p])])
+	// @ts-expect-error one alternative reads an expression, so the field cannot be declared
+	.declares((f) => [declare([f.p], 's')]);
+void wrongOmitted, missingNull, spanless, positioned;

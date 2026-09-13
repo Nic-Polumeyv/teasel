@@ -35,6 +35,16 @@ fn invalid_plans() {
 			"unknown field \"typo\"",
 		),
 		(
+			"recursion before a failing test",
+			r#""Each":{"type":"Each","fields":{},"form":{"op":"choice","alternatives":[{"op":"seq","items":[{"op":"read","reader":{"kind":"rule","name":"Each"}},{"op":"read","reader":{"kind":"test","value":{"op":"constant","value":false}}}]},{"op":"read","reader":{"kind":"token","text":"x","gap":"space*","word":true}}]}}"#,
+			"recursion that can loop without consuming input",
+		),
+		(
+			"region cycle through its own iterator",
+			r#""Each":{"type":"Each","fields":{"a":"null"},"form":{"op":"read","reader":{"kind":"javascript","entry":"pattern"},"into":"a"},"regions":[{"id":"r","parent":{"op":"get","base":"$p","path":[]},"kind":"fragment","covers":{"op":"construct","shape":"array","items":[{"op":"get","base":"record","path":["a"]}]},"each":{"list":{"op":"construct","shape":"array","items":[{"op":"get","base":"scopes","path":["r"]}]},"as":"$p"}}]}"#,
+			"region parents form a cycle",
+		),
+		(
 			"unknown output",
 			r#""Each":{"type":"Each","fields":{},"form":{"op":"emit","into":"contxt","value":{"op":"constant","value":null}}}"#,
 			"field \"contxt\" is emitted but not declared",
@@ -761,4 +771,15 @@ fn first_tokens_respect_gaps_and_boundaries() {
 		};
 		assert_eq!(*disjoint, expected, "{left} / {right}");
 	}
+}
+
+#[test]
+fn a_token_starting_with_skipped_whitespace_is_not_disjoint() {
+	let rules = r#""Each":{"type":"Each","fields":{},"form":{"op":"choice","alternatives":[{"op":"read","reader":{"kind":"token","text":"\fx","gap":"none","word":true}},{"op":"read","reader":{"kind":"token","text":"x","gap":"space*","word":true}}]}}"#;
+	let plan = Plan::read(&plan(rules)).unwrap();
+	let each = plan.rules.iter().find(|r| r.name.as_ref() == "Each").unwrap();
+	let Form::Choice { disjoint, .. } = &each.form else {
+		panic!()
+	};
+	assert!(!disjoint);
 }
