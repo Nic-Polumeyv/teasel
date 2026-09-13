@@ -1,4 +1,4 @@
-// bun versions.js: carries the version changesets wrote into package.json over to the crates, so
+// node versions.js: carries the version changesets wrote into package.json over to the crates, so
 // the Version Packages PR holds every number and the release gate reads the one the changelog announces
 import { readFileSync, writeFileSync } from 'node:fs';
 

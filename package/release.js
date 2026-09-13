@@ -1,4 +1,4 @@
-// bun release.js: publishes the platform packages from the addons under artifacts/, then this package
+// node release.js: publishes the platform packages from the addons under artifacts/, then this package
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { platforms } from './native.js';

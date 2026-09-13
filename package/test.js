@@ -1,4 +1,4 @@
-// `bun test.js interpret` runs the decoder without code generation, as a host forbidding it would
+// `node test.js interpret` runs the decoder without code generation, as a host forbidding it would
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 if (process.argv[2] === 'interpret') globalThis.Function = /** @type {any} */ (() => { throw new EvalError('blocked'); });
