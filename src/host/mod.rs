@@ -2856,6 +2856,9 @@ impl<'a> Walker<'a> {
 		self.at = b;
 		let name = &self.src[a as usize..b as usize];
 		self.space();
+		if self.char().is_some_and(|c| matches!(c, '\'' | '"')) {
+			return fail(self.at, self.at, Code::Expected, Some("="));
+		}
 		let value = if self.eat("=") {
 			self.space();
 			Some(self.value_span(mode == AttributeMode::Normal && self.plan.html.attribute_interpolations)?)
