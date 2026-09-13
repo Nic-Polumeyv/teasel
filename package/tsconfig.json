@@ -6,8 +6,8 @@
 		"moduleResolution": "bundler",
 		"noEmit": true,
 		"skipLibCheck": true,
-		"types": [],
+		"types": ["bun"],
 		"allowImportingTsExtensions": true
 	},
-	"files": ["plan.d.ts", "plan.test-d.ts", "../tests/hosts/svelte/plan.ts", "../tests/hosts/vue/plan.ts"]
+	"files": ["plan.ts", "../tests/hosts/plans.ts", "../tests/hosts/svelte/plan.ts", "../tests/hosts/vue/plan.ts"]
 }

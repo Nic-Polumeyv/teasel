@@ -4,3 +4,5 @@ node_modules/
 /package/teasel.wasm
 *.node
 /tests/TypeScript/
+/package/plan.js
+/package/plan.d.ts

@@ -17,6 +17,7 @@ fn documents() {
 	let mut grammars: Vec<_> = fs::read_dir(root.join("tests/hosts"))
 		.unwrap()
 		.map(|e| e.unwrap().path())
+		.filter(|p| p.is_dir())
 		.collect();
 	grammars.sort();
 	for dir in grammars {

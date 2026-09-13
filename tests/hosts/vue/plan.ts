@@ -3,7 +3,7 @@ import {
 	rule, seq, choice, optional, read, emit, token, js, get, constant, equal,
 	scope, incoming, region, declare, array, concat, filter, map,
 	and, or, not, any, isType, member, hasAttribute, present, test,
-} from '../../../package/plan.js';
+} from '../../../package/plan.ts';
 
 const rules: Plan['rules'] = {};
 rules.Text = rule('Text', { content: 'null' }).form((f) => emit(f.content, get('event', 'decoded')));

@@ -45,11 +45,13 @@
 		"teasel.wasm"
 	],
 	"scripts": {
-		"build": "bun addon.js",
+		"build": "bun run build:plan && bun addon.js",
+		"build:plan": "tsc --ignoreConfig plan.ts --declaration --strict --target es2022 --module esnext --moduleResolution bundler --skipLibCheck",
 		"build:wasm": "cargo build --release -p teasel-wasm --target wasm32-unknown-unknown && cp ../target/wasm32-unknown-unknown/release/teasel_wasm.wasm teasel.wasm",
 		"test": "bun test.js && bun test.js interpret",
 		"types": "tsc -p tsconfig.json",
 		"check": "node check.js",
+		"prepublishOnly": "bun run build:plan",
 		"changeset:version": "changeset version && bun versions.js && git add --all"
 	},
 	"dependencies": {
@@ -58,6 +60,7 @@
 	"devDependencies": {
 		"@changesets/changelog-github": "^1.0.0",
 		"@changesets/cli": "^3.0.1",
+		"@types/bun": "^1.4.2",
 		"typescript": "^7.0.2"
 	}
 }
