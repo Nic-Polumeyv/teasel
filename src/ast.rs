@@ -50,6 +50,71 @@ impl NodeId {
 	}
 }
 
+/// A bit per node.
+#[derive(Debug, Default)]
+pub struct NodeSet(Vec<u64>);
+
+impl NodeSet {
+	pub fn insert(&mut self, id: NodeId) {
+		let index = id.index() as usize;
+		if self.0.len() <= index / 64 {
+			self.0.resize(index / 64 + 1, 0);
+		}
+		self.0[index / 64] |= 1 << (index % 64);
+	}
+
+	pub fn contains(&self, id: NodeId) -> bool {
+		let index = id.index() as usize;
+		self.0
+			.get(index / 64)
+			.is_some_and(|word| word & (1 << (index % 64)) != 0)
+	}
+
+	pub fn clear(&mut self) {
+		self.0.clear();
+	}
+
+	/// Keeps the bits of the first `nodes` nodes.
+	pub fn truncate(&mut self, nodes: usize) {
+		self.0.truncate(nodes.div_ceil(64));
+		if let Some(last) = self.0.get_mut(nodes / 64) {
+			*last &= (1 << (nodes % 64)) - 1;
+		}
+	}
+}
+
+/// A few nodes' values: a bit per node says whether the map holds one, so the nodes without cost
+/// a bit test and never a hash.
+#[derive(Debug, Default)]
+pub struct NodeMap<T> {
+	set: NodeSet,
+	map: FastMap<NodeId, T>,
+}
+
+impl<T> NodeMap<T> {
+	pub fn get(&self, id: NodeId) -> Option<&T> {
+		if self.set.contains(id) { self.map.get(&id) } else { None }
+	}
+
+	pub fn insert(&mut self, id: NodeId, value: T) {
+		self.set.insert(id);
+		self.map.insert(id, value);
+	}
+
+	pub fn entry(&mut self, id: NodeId) -> &mut T
+	where
+		T: Default,
+	{
+		self.set.insert(id);
+		self.map.entry(id).or_default()
+	}
+
+	pub fn clear(&mut self) {
+		self.set.clear();
+		self.map.clear();
+	}
+}
+
 impl std::fmt::Debug for NodeId {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		write!(f, "NodeId({})", self.index())
@@ -137,15 +202,15 @@ pub struct Ast<X = ()> {
 	pub strings: Interner,
 	pub comments: Vec<Comment>,
 	/// Comments attached to nodes by `comments::attach`, as indices into `comments`.
-	pub attached: FastMap<NodeId, Attached>,
+	pub attached: NodeMap<Attached>,
 	/// The buffers the last parse worked in, for the next one.
 	pub spare: crate::parser::Spare,
 	/// The scope analysis, when `scopes::analyze` ran.
 	pub scopes: Option<crate::scopes::Scopes>,
 	/// What went wrong, in source order, when errors are recovered from instead of thrown.
 	pub errors: Vec<crate::SyntaxError>,
-	/// One bit per node: whether it was written in parentheses, when `Options::parenthesized` asks.
-	pub parenthesized: Vec<u64>,
+	/// Whether a node was written in parentheses, when `Options::parenthesized` asks.
+	pub parenthesized: NodeSet,
 	pub extension: X,
 }
 
@@ -244,12 +309,7 @@ impl<X: Reuse> Ast<X> {
 		self.nodes.truncate(mark.nodes);
 		self.numbers.truncate(mark.numbers);
 		self.lists.truncate(mark.lists);
-		self.parenthesized.truncate(mark.nodes.div_ceil(64));
-		if let Some(last) = self.parenthesized.last_mut()
-			&& mark.nodes % 64 != 0
-		{
-			*last &= (1u64 << (mark.nodes % 64)) - 1;
-		}
+		self.parenthesized.truncate(mark.nodes);
 		self.extension.truncate(mark.extension);
 	}
 }
@@ -512,18 +572,11 @@ impl<X> Ast<X> {
 	}
 
 	pub fn set_parenthesized(&mut self, id: NodeId) {
-		let index = id.index() as usize;
-		if self.parenthesized.len() <= index / 64 {
-			self.parenthesized.resize(index / 64 + 1, 0);
-		}
-		self.parenthesized[index / 64] |= 1 << (index % 64);
+		self.parenthesized.insert(id);
 	}
 
 	pub fn is_parenthesized(&self, id: NodeId) -> bool {
-		let index = id.index() as usize;
-		self.parenthesized
-			.get(index / 64)
-			.is_some_and(|word| word & (1 << (index % 64)) != 0)
+		self.parenthesized.contains(id)
 	}
 
 	/// A number literal's value, kept beside the tree so a node stays four-byte aligned.
@@ -1092,5 +1145,20 @@ impl VariableKind {
 
 	pub fn as_str(self) -> &'static str {
 		self.name().text
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn a_set_truncated_past_its_last_word_keeps_the_word() {
+		let mut set = NodeSet::default();
+		set.insert(NodeId::at(63));
+		set.truncate(65);
+		assert!(set.contains(NodeId::at(63)));
+		set.truncate(63);
+		assert!(!set.contains(NodeId::at(63)));
 	}
 }

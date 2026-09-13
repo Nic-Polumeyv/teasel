@@ -903,7 +903,7 @@ fn parenthesized_fact() {
 	assert!(!marked("a, b"));
 	assert!(!marked("(a) => a"));
 	let (ast, _, _) = at(Entry::Expression, "(a, b)", 0, Options::default(), "").unwrap();
-	assert!(ast.parenthesized.is_empty());
+	assert!((0..ast.nodes.len() as u32).all(|i| !ast.is_parenthesized(NodeId::at(i))));
 }
 
 #[test]

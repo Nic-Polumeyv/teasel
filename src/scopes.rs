@@ -2,7 +2,7 @@
 //! identifier resolved to the binding it names. Names are declared first, in the environment each
 //! belongs to, and every reference is resolved after, so hoisting and merging need nothing special.
 
-use crate::ast::{Ast, List, NodeId, NodeKind, VariableKind, Walk};
+use crate::ast::{Ast, List, NodeId, NodeKind, NodeMap, VariableKind, Walk};
 use crate::error::{Code, SyntaxError};
 use crate::interner::{FastMap, StrId};
 use crate::names::{Name, c};
@@ -279,7 +279,7 @@ pub struct Scopes {
 	pub references: Vec<Reference>,
 	/// The pieces of JavaScript in a host's document, in source order; empty for a plain parse.
 	pub roots: Vec<Root>,
-	pub root_of: FastMap<NodeId, u32>,
+	pub root_of: NodeMap<u32>,
 	pub of_node: NodeTable<ScopeId>,
 	pub of_identifier: NodeTable<Role>,
 	/// The bindings each declaring node declares, and the write references each expression is
