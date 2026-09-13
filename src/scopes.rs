@@ -34,7 +34,7 @@ pub enum ScopeKind {
 }
 
 impl ScopeKind {
-	pub fn name(self) -> Name {
+	pub fn name(self) -> Name<'static> {
 		match self {
 			ScopeKind::Module => c!("module"),
 			ScopeKind::Script => c!("script"),
@@ -93,7 +93,7 @@ pub enum BindingKind {
 }
 
 impl BindingKind {
-	pub fn name(self) -> Name {
+	pub fn name(self) -> Name<'static> {
 		match self {
 			BindingKind::Var => c!("var"),
 			BindingKind::Let => c!("let"),

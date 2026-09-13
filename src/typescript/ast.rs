@@ -90,7 +90,7 @@ pub enum Kind {
 }
 
 impl Kind {
-	pub fn name(self) -> Name {
+	pub fn name(self) -> Name<'static> {
 		match self {
 			Kind::Value => c!("value"),
 			Kind::Type => c!("type"),
@@ -110,7 +110,7 @@ pub enum Accessibility {
 }
 
 impl Accessibility {
-	pub fn name(self) -> Name {
+	pub fn name(self) -> Name<'static> {
 		match self {
 			Accessibility::Public => c!("public"),
 			Accessibility::Private => c!("private"),
@@ -139,7 +139,7 @@ pub enum SignatureKind {
 }
 
 impl SignatureKind {
-	pub fn name(self) -> Name {
+	pub fn name(self) -> Name<'static> {
 		match self {
 			SignatureKind::Method => c!("method"),
 			SignatureKind::Get => c!("get"),
@@ -482,7 +482,7 @@ impl Keyword {
 		})
 	}
 
-	pub fn estree_type(self) -> Name {
+	pub fn estree_type(self) -> Name<'static> {
 		match self {
 			Keyword::Any => c!("TSAnyKeyword"),
 			Keyword::Boolean => c!("TSBooleanKeyword"),

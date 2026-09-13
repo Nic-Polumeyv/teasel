@@ -1,5 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+#[path = "fold.rs"]
+mod fold;
+
 type Name = Box<str>;
 type Result<T> = std::result::Result<T, String>;
 
@@ -143,6 +146,7 @@ pub enum Value {
 		relation: Relation,
 		left: Box<Value>,
 		right: Option<Box<Value>>,
+		set: Option<ConstantSet>,
 	},
 	Choose {
 		condition: Box<Value>,
@@ -160,6 +164,12 @@ pub enum Value {
 		index: Box<Value>,
 	},
 	Construct(Construct),
+}
+
+#[derive(Clone, Debug)]
+pub struct ConstantSet {
+	pub needle: Box<Value>,
+	pub strings: BTreeSet<Box<str>>,
 }
 
 #[derive(Clone, Debug)]
@@ -644,6 +654,7 @@ impl Decode<'_> {
 					relation,
 					left: val("left")?,
 					right,
+					set: None,
 				}
 			}
 			"choose" => Value::Choose {
@@ -1065,6 +1076,7 @@ impl Plan {
 			html: decode.html(node.required("html", "plan")?)?,
 		};
 		plan.validate()?;
+		fold::plan(&mut plan);
 		Ok(plan)
 	}
 }
@@ -1437,7 +1449,9 @@ impl Validator<'_> {
 				}
 				ty
 			}
-			Value::Compare { relation, left, right } => {
+			Value::Compare {
+				relation, left, right, ..
+			} => {
 				let left = eval(left)?;
 				let right = right.as_ref().map(|r| eval(r)).transpose()?;
 				if *relation == Relation::Less {

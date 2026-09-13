@@ -89,8 +89,16 @@ pub fn error_json(message: &str, pos: u32) -> String {
 }
 
 /// The constant strings this thread's writer has numbered so far.
-pub fn constants() -> Vec<&'static str> {
-	SESSION.with(|session| session.borrow().binary.constants().to_vec())
+pub fn constants() -> Vec<String> {
+	SESSION.with(|session| {
+		session
+			.borrow()
+			.binary
+			.constants()
+			.into_iter()
+			.map(str::to_owned)
+			.collect()
+	})
 }
 
 /// The shape records this thread's writer has numbered so far.

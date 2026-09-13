@@ -142,7 +142,7 @@ pub struct Node {
 /// A node of a host's grammar: its type and its fields are the grammar's, held by name.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Host {
-	pub ty: &'static str,
+	pub ty: StrId,
 	/// The node's fields, a run of `Ast::host_fields` in source order.
 	pub fields: (u32, u32),
 	/// Whether the node has a span; a fragment has none.
@@ -183,6 +183,8 @@ pub enum Value {
 	Strs(u32, u32),
 	Bool(bool),
 	Int(u32),
+	Float(f64),
+	Array(u32, u32),
 	Null,
 	/// Every comment read, as the answer lists them.
 	Comments,
@@ -196,8 +198,9 @@ pub struct Ast<X = ()> {
 	pub numbers: Vec<f64>,
 	pub lists: Vec<Option<NodeId>>,
 	pub hosts: Vec<Host>,
-	pub host_fields: Vec<(&'static str, Value)>,
+	pub host_fields: Vec<(StrId, Value)>,
 	pub host_strings: Vec<StrId>,
+	pub host_values: Vec<Value>,
 	pub host_groups: Vec<HostGroup>,
 	pub strings: Interner,
 	pub comments: Vec<Comment>,
@@ -280,6 +283,7 @@ impl<X: Reuse> Ast<X> {
 		self.hosts.clear();
 		self.host_fields.clear();
 		self.host_strings.clear();
+		self.host_values.clear();
 		self.host_groups.clear();
 		self.nodes.clear();
 		self.numbers.clear();
@@ -1024,7 +1028,7 @@ pub enum AssignmentOperator {
 }
 
 impl UnaryOperator {
-	pub fn name(self) -> Name {
+	pub fn name(self) -> Name<'static> {
 		match self {
 			Self::Minus => c!("-"),
 			Self::Plus => c!("+"),
@@ -1042,7 +1046,7 @@ impl UnaryOperator {
 }
 
 impl UpdateOperator {
-	pub fn name(self) -> Name {
+	pub fn name(self) -> Name<'static> {
 		match self {
 			Self::Increment => c!("++"),
 			Self::Decrement => c!("--"),
@@ -1055,7 +1059,7 @@ impl UpdateOperator {
 }
 
 impl BinaryOperator {
-	pub fn name(self) -> Name {
+	pub fn name(self) -> Name<'static> {
 		match self {
 			Self::Eq => c!("=="),
 			Self::NotEq => c!("!="),
@@ -1088,7 +1092,7 @@ impl BinaryOperator {
 }
 
 impl LogicalOperator {
-	pub fn name(self) -> Name {
+	pub fn name(self) -> Name<'static> {
 		match self {
 			Self::Or => c!("||"),
 			Self::And => c!("&&"),
@@ -1102,7 +1106,7 @@ impl LogicalOperator {
 }
 
 impl AssignmentOperator {
-	pub fn name(self) -> Name {
+	pub fn name(self) -> Name<'static> {
 		match self {
 			Self::Assign => c!("="),
 			Self::Add => c!("+="),
@@ -1133,7 +1137,7 @@ impl VariableKind {
 		matches!(self, Self::Using | Self::AwaitUsing)
 	}
 
-	pub fn name(self) -> Name {
+	pub fn name(self) -> Name<'static> {
 		match self {
 			Self::Var => c!("var"),
 			Self::Let => c!("let"),

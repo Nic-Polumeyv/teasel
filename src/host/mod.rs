@@ -4,6 +4,7 @@
 
 mod css;
 pub mod entities;
+pub mod executor;
 pub mod grammar;
 pub mod plan;
 
@@ -438,6 +439,47 @@ pub(crate) fn parse_document<E: Extension>(
 }
 
 impl<'a, E: Extension> Walker<'a, E> {
+	fn style_sheet(&mut self, start: u32, name: &str, attributes: Vec<NodeId>) -> Result<NodeId> {
+		let closer = format!("</{name}");
+		let content_start = self.at;
+		let (children, comments) = css::read(
+			self.src,
+			&mut self.at,
+			self.limit,
+			self.ast.as_mut().unwrap(),
+			Some(&closer),
+		)?;
+		let content_end = self.at;
+		self.expect(&closer)?;
+		self.space();
+		self.expect(">")?;
+		let attributes = self.list(&attributes);
+		let content = self.host(
+			"",
+			content_start,
+			content_end,
+			&[
+				("styles", Value::Slice(content_start, content_end)),
+				("comment", Value::Null),
+			],
+			None,
+			true,
+		);
+		Ok(self.host(
+			"StyleSheet",
+			start,
+			self.at,
+			&[
+				("attributes", Value::Nodes(attributes)),
+				("children", Value::Nodes(children)),
+				("comments", Value::Nodes(comments)),
+				("content", Value::Node(content)),
+			],
+			None,
+			true,
+		))
+	}
+
 	fn ast(&mut self) -> &mut Ast<E::Data> {
 		self.ast.as_mut().unwrap()
 	}
@@ -556,7 +598,11 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let ast = self.ast();
 		let from = ast.host_fields.len() as u32;
 		let len = fields.len() as u32;
-		ast.host_fields.extend_from_slice(fields);
+		for &(name, value) in fields {
+			let name = ast.strings.intern(name);
+			ast.host_fields.push((name, value));
+		}
+		let ty = ast.strings.intern(ty);
 		let index = ast.hosts.len() as u32;
 		ast.hosts.push(Host {
 			ty,
@@ -652,10 +698,10 @@ impl<'a, E: Extension> Walker<'a, E> {
 		}
 	}
 
-	fn host_type(&self, id: NodeId) -> &'static str {
+	fn host_type(&self, id: NodeId) -> &str {
 		let ast = self.tree();
 		match ast.node(id).kind {
-			NodeKind::Host(index) => ast.hosts[index as usize].ty,
+			NodeKind::Host(index) => ast.str(ast.hosts[index as usize].ty),
 			_ => "",
 		}
 	}
@@ -668,7 +714,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let host = ast.hosts[index as usize];
 		ast.host_fields[host.fields.0 as usize..(host.fields.0 + host.fields.1) as usize]
 			.iter()
-			.find(|(k, _)| *k == key)
+			.find(|(k, _)| ast.str(*k) == key)
 			.map(|&(_, v)| v)
 	}
 

@@ -18,7 +18,7 @@ macro_rules! codes {
 			}
 
 			/// The name as the writer emits it.
-			pub fn label(self) -> crate::names::Name {
+			pub fn label(self) -> crate::names::Name<'static> {
 				match self {
 					$(Code::$name => crate::names::c!($code),)*
 				}

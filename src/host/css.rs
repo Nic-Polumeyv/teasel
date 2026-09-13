@@ -120,16 +120,106 @@ fn combinator(rest: &str) -> Option<&'static str> {
 	["||", "+", "~", ">"].into_iter().find(|c| rest.starts_with(c))
 }
 
-impl<'a, E: Extension> Walker<'a, E> {
-	/// A style element's sheet, from the content at the cursor through the closing tag.
-	pub(super) fn style_sheet(&mut self, start: u32, name: &str, attributes: Vec<NodeId>) -> Result<NodeId> {
-		let closer = format!("</{name}");
-		let content_start = self.at;
+pub(super) fn read<X>(
+	src: &str,
+	at: &mut u32,
+	limit: u32,
+	ast: &mut Ast<X>,
+	closer: Option<&str>,
+) -> Result<(List, List)> {
+	let mut css = Css {
+		src,
+		at: *at,
+		limit,
+		ast,
+	};
+	let result = css.css_content(closer);
+	*at = css.at;
+	result
+}
+
+struct Css<'a, 'b, X> {
+	src: &'a str,
+	at: u32,
+	limit: u32,
+	ast: &'b mut Ast<X>,
+}
+
+impl<'a, X> Css<'a, '_, X> {
+	fn tree(&self) -> &Ast<X> {
+		self.ast
+	}
+	fn len(&self) -> u32 {
+		self.limit
+	}
+	fn rest(&self) -> &'a str {
+		&self.src[self.at as usize..self.limit as usize]
+	}
+	fn byte(&self) -> Option<u8> {
+		self.rest().as_bytes().first().copied()
+	}
+	fn char(&self) -> Option<char> {
+		self.rest().chars().next()
+	}
+	fn matches(&self, text: &str) -> bool {
+		self.rest().starts_with(text)
+	}
+	fn eat(&mut self, text: &str) -> bool {
+		if !self.matches(text) {
+			return false;
+		}
+		self.at += text.len() as u32;
+		true
+	}
+	fn expect(&mut self, text: &str) -> Result<()> {
+		if self.eat(text) {
+			Ok(())
+		} else {
+			fail(self.at, self.at, Code::Expected, Some(text))
+		}
+	}
+	fn space(&mut self) {
+		while let Some(c) = self.char().filter(|c| is_space(*c)) {
+			self.at += c.len_utf8() as u32;
+		}
+	}
+	fn intern(&mut self, text: &str) -> StrId {
+		self.ast.strings.intern(text)
+	}
+	fn list(&mut self, nodes: &[NodeId]) -> List {
+		self.ast.add_list_from(nodes.iter().copied().map(Some))
+	}
+	fn host(
+		&mut self,
+		ty: &str,
+		start: u32,
+		end: u32,
+		fields: &[(&str, Value)],
+		_: Option<Opens>,
+		span: bool,
+	) -> NodeId {
+		let from = self.ast.host_fields.len() as u32;
+		for (key, value) in fields {
+			let key = self.intern(key);
+			self.ast.host_fields.push((key, *value));
+		}
+		let ty = self.intern(ty);
+		let index = self.ast.hosts.len() as u32;
+		self.ast.hosts.push(Host {
+			ty,
+			fields: (from, fields.len() as u32),
+			span,
+			scope: None,
+		});
+		self.ast.add(NodeKind::Host(index), start, end)
+	}
+
+	pub(super) fn css_content(&mut self, closer: Option<&str>) -> Result<(List, List)> {
 		let mut comments = Vec::new();
 		let mut children = Vec::new();
 		loop {
 			self.css_space(&mut comments, true)?;
-			if self.matches(&closer) || self.at >= self.len() {
+			if closer.is_some_and(|closer| self.matches(closer)) || self.at >= self.len() {
 				break;
 			}
 			children.push(if self.matches("@") {
@@ -138,11 +228,6 @@ impl<'a, E: Extension> Walker<'a, E> {
 				self.rule(&mut comments)?
 			});
 		}
-		let content_end = self.at;
-		self.expect(&closer)?;
-		self.space();
-		self.expect(">")?;
-		let end = self.at;
 		let comments: Vec<NodeId> = comments
 			.into_iter()
 			.map(|comment| {
@@ -160,33 +245,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 				}
 			})
 			.collect();
-		let attributes = self.list(&attributes);
-		let children = self.list(&children);
-		let comments = self.list(&comments);
-		let content = self.host(
-			"",
-			content_start,
-			content_end,
-			&[
-				("styles", Value::Slice(content_start, content_end)),
-				("comment", Value::Null),
-			],
-			None,
-			true,
-		);
-		Ok(self.host(
-			"StyleSheet",
-			start,
-			end,
-			&[
-				("attributes", Value::Nodes(attributes)),
-				("children", Value::Nodes(children)),
-				("comments", Value::Nodes(comments)),
-				("content", Value::Node(content)),
-			],
-			None,
-			true,
-		))
+		Ok((self.list(&children), self.list(&comments)))
 	}
 
 	/// Whitespace, comments and HTML comment markers; `capture` keeps the comments.
