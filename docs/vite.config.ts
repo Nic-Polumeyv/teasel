@@ -4,6 +4,8 @@ import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
+	// lightningcss cannot parse sheer-ui's `@container anchored()` tooltip queries yet; sheer-ui builds with the same flag
+	css: { lightningcss: { errorRecovery: true } },
 	plugins: [
 		tailwindcss(),
 		sveltekit({

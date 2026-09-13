@@ -4,12 +4,19 @@
 @source '../../node_modules/sheer-ui/dist/blocks/Footer.svelte';
 @source '../../node_modules/sheer-ui/dist/blocks/Header.svelte';
 @source '../../node_modules/sheer-ui/dist/blocks/MobileNav.svelte';
+@source '../../node_modules/sheer-ui/dist/blocks/copy-button';
+@source '../../node_modules/sheer-ui/dist/components/badge';
+@source '../../node_modules/sheer-ui/dist/components/breadcrumb';
 @source '../../node_modules/sheer-ui/dist/components/button';
+@source '../../node_modules/sheer-ui/dist/components/card';
 @source '../../node_modules/sheer-ui/dist/components/separator';
+@source '../../node_modules/sheer-ui/dist/components/sidebar';
 @source '../../node_modules/sheer-ui/dist/components/theme-toggle';
+@source '../../node_modules/sheer-ui/dist/components/tooltip';
 @source '../../node_modules/sheer-ui/dist/internal';
 @import '@fontsource-variable/ibm-plex-sans';
 @import '@fontsource-variable/newsreader';
+@import '@fontsource-variable/newsreader/wght-italic.css';
 @import '@fontsource/ibm-plex-mono/400.css';
 @import '@fontsource/ibm-plex-mono/500.css';
 
@@ -60,8 +67,8 @@
 /* Wheat ground, sage for what acts, rust for what warns; every neutral leans to one of them. */
 :root {
 	color-scheme: light;
-	--background: oklch(0.975 0.012 90);
-	--foreground: oklch(0.25 0.025 150);
+	--background: oklch(0.965 0.016 88);
+	--foreground: oklch(0.27 0.03 120);
 	--card: oklch(0.99 0.008 90);
 	--card-foreground: oklch(0.25 0.025 150);
 	--popover: oklch(0.99 0.008 90);
@@ -75,15 +82,15 @@
 	--accent: oklch(0.92 0.035 150);
 	--accent-foreground: oklch(0.28 0.05 150);
 	--destructive: oklch(0.55 0.16 35);
-	--border: oklch(0.885 0.025 90);
-	--input: oklch(0.885 0.025 90);
+	--border: oklch(0.86 0.03 88);
+	--input: oklch(0.86 0.03 88);
 	--ring: oklch(0.62 0.07 150);
 	--chart-1: oklch(0.62 0.07 150);
 	--chart-2: oklch(0.8 0.1 88);
 	--chart-3: oklch(0.6 0.14 35);
 	--chart-4: oklch(0.42 0.06 150);
 	--chart-5: oklch(0.7 0.08 75);
-	--radius: 0.5rem;
+	--radius: 0.125rem;
 	--sidebar: oklch(0.955 0.018 90);
 	--sidebar-foreground: oklch(0.25 0.025 150);
 	--sidebar-primary: oklch(0.5 0.07 150);
@@ -92,6 +99,9 @@
 	--sidebar-accent-foreground: oklch(0.28 0.05 150);
 	--sidebar-border: oklch(0.885 0.025 90);
 	--sidebar-ring: oklch(0.62 0.07 150);
+	--cloth: oklch(0.9 0.07 88);
+	--warp: oklch(0.5 0.07 150 / 55%);
+	--weft: oklch(0.55 0.16 35 / 60%);
 }
 
 .dark {
@@ -127,20 +137,26 @@
 	--sidebar-accent-foreground: oklch(0.93 0.025 90);
 	--sidebar-border: oklch(1 0 0 / 10%);
 	--sidebar-ring: oklch(0.62 0.07 150);
+	--cloth: oklch(0.36 0.05 80);
+	--warp: oklch(0.74 0.08 150 / 40%);
+	--weft: oklch(0.68 0.16 35 / 45%);
 }
 
 @layer base {
 	* {
 		@apply border-border outline-ring/50;
 	}
-	body {
-		@apply bg-background text-foreground;
-	}
-	html {
-		@apply font-sans;
-	}
-	h1,
-	h2 {
-		@apply font-serif tracking-tight;
-	}
+}
+
+/* Fuller's teasel raised the nap on woven wool; the cloth is the site's one ornament. */
+@utility plaid {
+	background-color: var(--cloth);
+	background-image:
+		repeating-linear-gradient(90deg, var(--warp) 0 5px, transparent 5px 13px, var(--weft) 13px 15px, transparent 15px 24px),
+		repeating-linear-gradient(0deg, var(--warp) 0 5px, transparent 5px 13px, var(--weft) 13px 15px, transparent 15px 24px);
+}
+
+@utility label {
+	font-variant-caps: all-small-caps;
+	letter-spacing: 0.08em;
 }
