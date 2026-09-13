@@ -264,7 +264,12 @@ fn failed_attempts_leave_nothing() {
 		panic!()
 	};
 	assert!(ast.is_parenthesized(expression));
-	assert_eq!(ast.parenthesized.iter().count(), 1);
+	assert_eq!(
+		(0..ast.nodes.len() as u32)
+			.filter(|&i| ast.is_parenthesized(NodeId::at(i)))
+			.count(),
+		1
+	);
 }
 
 #[test]

@@ -74,25 +74,10 @@ impl NodeSet {
 		self.0.clear();
 	}
 
-	pub fn is_empty(&self) -> bool {
-		self.0.iter().all(|&word| word == 0)
-	}
-
-	/// The nodes in the set, in order.
-	pub fn iter(&self) -> impl Iterator<Item = NodeId> + '_ {
-		self.0.iter().enumerate().flat_map(|(i, &word)| {
-			(0..64)
-				.filter(move |bit| word & (1 << bit) != 0)
-				.map(move |bit| NodeId::at((i * 64 + bit) as u32))
-		})
-	}
-
 	/// Keeps the bits of the first `nodes` nodes.
 	pub fn truncate(&mut self, nodes: usize) {
 		self.0.truncate(nodes.div_ceil(64));
-		if let Some(last) = self.0.last_mut()
-			&& !nodes.is_multiple_of(64)
-		{
+		if let Some(last) = self.0.get_mut(nodes / 64) {
 			*last &= (1 << (nodes % 64)) - 1;
 		}
 	}
@@ -127,10 +112,6 @@ impl<T> NodeMap<T> {
 	pub fn clear(&mut self) {
 		self.set.clear();
 		self.map.clear();
-	}
-
-	pub fn iter(&self) -> impl Iterator<Item = (&NodeId, &T)> {
-		self.map.iter()
 	}
 }
 
@@ -1164,5 +1145,20 @@ impl VariableKind {
 
 	pub fn as_str(self) -> &'static str {
 		self.name().text
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn a_set_truncated_past_its_last_word_keeps_the_word() {
+		let mut set = NodeSet::default();
+		set.insert(NodeId::at(63));
+		set.truncate(65);
+		assert!(set.contains(NodeId::at(63)));
+		set.truncate(63);
+		assert!(!set.contains(NodeId::at(63)));
 	}
 }

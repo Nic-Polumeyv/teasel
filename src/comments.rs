@@ -189,8 +189,11 @@ mod tests {
 
 	/// Every node with comments, in source order: `Kind leading=[..] trailing=[..]`.
 	fn attached<X: Walk>(ast: &Ast<X>, src: &str) -> Vec<String> {
-		let mut nodes: Vec<(&NodeId, &crate::ast::Attached)> = ast.attached.iter().collect();
-		nodes.sort_by_key(|(id, _)| (ast.node(**id).start, id.index()));
+		let mut nodes: Vec<(NodeId, &crate::ast::Attached)> = (0..ast.nodes.len() as u32)
+			.map(NodeId::at)
+			.filter_map(|id| ast.attached.get(id).map(|a| (id, a)))
+			.collect();
+		nodes.sort_by_key(|(id, _)| (ast.node(*id).start, id.index()));
 		let values = |run: crate::ast::Run| -> Vec<&str> {
 			run.indices()
 				.map(|i| &src[ast.comments[i as usize].text_range()])
@@ -199,7 +202,7 @@ mod tests {
 		nodes
 			.into_iter()
 			.map(|(id, a)| {
-				let kind = format!("{:?}", ast.node(*id).kind);
+				let kind = format!("{:?}", ast.node(id).kind);
 				let kind = kind.split([' ', '(']).next().unwrap();
 				let inner = if a.inner.is_empty() {
 					String::new()
