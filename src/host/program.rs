@@ -1,5 +1,5 @@
 use super::{Datum, plan};
-use crate::interner::StrId;
+use crate::interner::{Interner, StrId};
 use plan::{Absence, AttributeMode, Boundary, Gap, Js, Mode, Relation, SpanPolicy, Stop};
 
 #[derive(Clone, Debug, Default)]
@@ -137,6 +137,30 @@ enum ExprTree {
 		index: Box<ExprTree>,
 	},
 	Construct(ConstructTree),
+}
+
+fn refers_binding(tree: &ExprTree) -> bool {
+	use ExprTree as T;
+	match tree {
+		T::Slot(_) | T::Iteration(_) | T::Event(_) | T::RecordType | T::NameEq(_) | T::Constant(_) => false,
+		T::Filter { list, predicate } => refers_binding(list) || refers_binding(predicate),
+		T::Exists(inner) | T::Length(inner) => refers_binding(inner),
+		T::Concat(items) => items.iter().any(refers_binding),
+		T::Get { base, .. } => match base {
+			BaseTree::Binding(_) => true,
+			BaseTree::Value(inner) => refers_binding(inner),
+			_ => false,
+		},
+		T::Compare { left, right, .. } => refers_binding(left) || right.as_deref().is_some_and(refers_binding),
+		T::Member { needle, .. } => refers_binding(needle),
+		T::Choose { condition, yes, no } => refers_binding(condition) || refers_binding(yes) || refers_binding(no),
+		T::FlatMap { list, body } => refers_binding(list) || refers_binding(body),
+		T::At { list, index } => refers_binding(list) || refers_binding(index),
+		T::Construct(ConstructTree::Array(items)) => items.iter().any(refers_binding),
+		T::Construct(ConstructTree::Record { fields, span, .. }) => {
+			fields.iter().any(|(_, v)| refers_binding(v)) || refers_binding(span)
+		}
+	}
 }
 
 #[derive(Clone, Debug)]
@@ -1205,6 +1229,13 @@ impl Range {
 #[derive(Clone, Debug, Default)]
 pub(super) struct Program {
 	pub strings: Vec<Box<str>>,
+	/// The strings by text; a tree interns one of them the first time a node carries it.
+	pub interner: Interner,
+	/// The strings the walker's own nodes carry.
+	pub keys: Keys,
+	pub css: super::css::Names,
+	/// The bytes a text run stops at to look closer: a tag, a delimiter, or a content prefix.
+	pub text_stops: [u64; 4],
 	pub constants: Vec<Datum>,
 	pub objects: Vec<Vec<(Property, Datum)>>,
 	pub rules: Vec<Rule>,
@@ -1222,6 +1253,20 @@ pub(super) struct Program {
 	pub dispatch_names: Vec<Range>,
 	pub dispatch_other: Range,
 	pub dispatch_rows: Vec<(u32, Code)>,
+}
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) struct Keys {
+	pub start: StrId,
+	pub end: StrId,
+	pub pattern: StrId,
+	pub flags: StrId,
+	pub raw: StrId,
+	pub cooked: StrId,
+	pub children: StrId,
+	pub comments: StrId,
+	pub attribute: StrId,
+	pub name: StrId,
+	pub value: StrId,
 }
 #[derive(Clone, Debug)]
 pub(super) struct Rule {
@@ -1247,6 +1292,8 @@ pub(super) struct RegionCode {
 	/// The slots `covers` names when it is a plain list of fields: read them, no evaluation.
 	pub slots: Option<Box<[u32]>>,
 	pub when: Option<Code>,
+	/// `when` reads the iterated item, so it is tested per item; otherwise once, before `each` runs.
+	pub when_item: bool,
 	pub each: Option<Code>,
 }
 #[derive(Clone, Debug)]
@@ -1418,6 +1465,7 @@ impl Program {
 				.regions
 				.into_iter()
 				.map(|r| {
+					let when_item = r.when.as_ref().is_some_and(refers_binding);
 					let covers = p.expr(r.covers);
 					let slots = match &p.exprs[covers.index()] {
 						Expr::Construct(Construct::Array(items)) => p.args[items.indices()]
@@ -1435,6 +1483,7 @@ impl Program {
 						kind: r.kind,
 						covers,
 						slots,
+						when_item,
 						when: r.when.map(|v| p.expr(v)),
 						each: r.each.map(|v| p.expr(v)),
 					}
@@ -1500,6 +1549,41 @@ impl Program {
 			p.dispatch_names.push(range);
 		}
 		p.dispatch_other = p.dispatch_for(None);
+		let mut name = |text: &str| match p.strings.iter().position(|s| s.as_ref() == text) {
+			Some(i) => StrId(i as u32),
+			None => {
+				p.strings.push(text.into());
+				StrId(p.strings.len() as u32 - 1)
+			}
+		};
+		p.keys = Keys {
+			start: name("start"),
+			end: name("end"),
+			pattern: name("pattern"),
+			flags: name("flags"),
+			raw: name("raw"),
+			cooked: name("cooked"),
+			children: name("children"),
+			comments: name("comments"),
+			attribute: name(&plan.html.plain_attribute.node_type),
+			name: name(&plan.html.plain_attribute.name),
+			value: name(&plan.html.plain_attribute.value),
+		};
+		p.css = super::css::Names::new(&mut name);
+		let mut stop = |text: &str| {
+			if let Some(&b) = text.as_bytes().first() {
+				p.text_stops[b as usize / 64] |= 1 << (b % 64);
+			}
+		};
+		stop("<");
+		stop(&plan.html.delimiters[0]);
+		for row in &plan.html.content {
+			stop(&row.prefix);
+		}
+		p.interner = Interner::sized(p.strings.len() * 16);
+		for text in &p.strings {
+			p.interner.intern(text);
+		}
 		p
 	}
 	#[cold]

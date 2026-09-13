@@ -807,7 +807,11 @@ fn profile() {
 		let prepared = crate::json::Prepared::borrowed(&source, crate::json::Request::from_names("module"))
 			.host(&plan)
 			.unwrap();
-		for _ in 0..3000 {
+		let iters = std::env::var("TEASEL_ITERS")
+			.ok()
+			.and_then(|s| s.parse().ok())
+			.unwrap_or(3000);
+		for _ in 0..iters {
 			prepared.binary(Entry::Program, 0.0, None, "").unwrap();
 		}
 	} else if std::env::var("TEASEL_PROFILE").is_ok_and(|what| what == "encode") {

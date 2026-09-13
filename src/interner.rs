@@ -52,12 +52,12 @@ pub type FastMap<K, V> = HashMap<K, V, BuildHasherDefault<FastHasher>>;
 pub type FastSet<K> = std::collections::HashSet<K, BuildHasherDefault<FastHasher>>;
 
 /// Index of an interned string.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct StrId(pub(crate) u32);
 
 /// Strings back to back in one text, found through an open-addressing table by hash: no
 /// allocation per string and one hash per lookup, which `HashMap<Rc<str>>` paid twice on a miss.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct Interner {
 	text: String,
 	/// Where each string starts, and where the next would.

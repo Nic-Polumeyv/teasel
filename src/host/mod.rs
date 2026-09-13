@@ -66,7 +66,7 @@ enum Event {
 	Comment(Datum),
 	Element {
 		name: (u32, u32),
-		id: StrId,
+		id: Option<StrId>,
 		header: Run,
 		facts: u8,
 		at_document: bool,
@@ -200,6 +200,8 @@ pub(crate) struct Spare {
 	targets: Vec<HostParent>,
 	resolving: Vec<(usize, usize)>,
 	node_records: Vec<usize>,
+	/// The tree's id for each plan string once a node carries it.
+	ids: Vec<u32>,
 	cover_seen: crate::ast::NodeSet,
 	scan_strings: crate::interner::Interner,
 	scan_stops: Vec<(u32, u32, bool)>,
@@ -367,11 +369,9 @@ pub(crate) fn parse_document<E: Extension>(
 		src
 	};
 	let mut ast = reused.unwrap_or_else(|| Ast::sized(src.len()));
-	for (i, text) in plan.program.strings.iter().enumerate() {
-		let id = ast.strings.intern(text);
-		debug_assert_eq!(id, StrId(i as u32));
-	}
 	let mut spare = ast.host_spare.take().unwrap_or_default();
+	spare.ids.clear();
+	spare.ids.resize(plan.program.strings.len(), u32::MAX);
 	spare.records.clear();
 	spare.slots.clear();
 	spare.elements.clear();
@@ -416,6 +416,7 @@ pub(crate) fn parse_document<E: Extension>(
 		w.regions()?;
 		Ok(node)
 	});
+	w.finish_ids();
 	let errors = &mut w.ast().errors;
 	errors.sort_by_key(|error| error.pos);
 	errors.dedup_by(|a, b| a.pos == b.pos && a.code == b.code);
@@ -461,6 +462,29 @@ impl<'a> Walker<'a> {
 	fn rest(&self) -> &'a str {
 		&self.src[self.at as usize..self.limit as usize]
 	}
+	/// Moves past the text bytes that cannot start a tag, a delimiter, or a content prefix; every
+	/// stop byte is ASCII, so this never lands inside a character.
+	fn skip_text(&mut self) {
+		let stops = &self.plan.program.text_stops;
+		let bytes = self.src.as_bytes();
+		while self.at < self.limit {
+			let b = bytes[self.at as usize];
+			if stops[b as usize / 64] & (1 << (b % 64)) != 0 {
+				break;
+			}
+			self.at += 1;
+		}
+	}
+	/// Moves to the closing tag of `name`, or the limit.
+	fn skip_raw(&mut self, name: &str) {
+		let bytes = self.src.as_bytes();
+		while self.at < self.limit {
+			if bytes[self.at as usize] == b'<' && closing_tag(self.rest(), name).is_some() {
+				return;
+			}
+			self.at += 1;
+		}
+	}
 	fn char(&self) -> Option<char> {
 		self.rest().chars().next()
 	}
@@ -496,6 +520,31 @@ impl<'a> Walker<'a> {
 	}
 	fn intern(&mut self, text: &str) -> StrId {
 		self.ast().strings.intern(text)
+	}
+	/// The tree's id of a plan string, interned on first use.
+	fn tree_id(&mut self, id: StrId) -> StrId {
+		let i = id.0 as usize;
+		let known = self.ids[i];
+		if known != u32::MAX {
+			return StrId(known);
+		}
+		let plan = self.plan;
+		let tree = self.ast().strings.intern(&plan.program.strings[i]);
+		self.spare.ids[i] = tree.0;
+		tree
+	}
+	/// Host types and keys are plan ids while the walk reads them back; the tree gets its own once.
+	fn finish_ids(&mut self) {
+		for i in 0..self.tree().hosts.len() {
+			let ty = self.tree().hosts[i].ty;
+			let ty = self.tree_id(ty);
+			self.ast().hosts[i].ty = ty;
+		}
+		for i in 0..self.tree().host_fields.len() {
+			let key = self.tree().host_fields[i].0;
+			let key = self.tree_id(key);
+			self.ast().host_fields[i].0 = key;
+		}
 	}
 	fn list(&mut self, nodes: &[NodeId]) -> List {
 		self.ast().add_list_from(nodes.iter().copied().map(Some))
@@ -727,7 +776,7 @@ impl<'a> Walker<'a> {
 				if let NodeKind::Host(i) = node.kind {
 					let host = &self.tree().hosts[i as usize];
 					if key == Key::Type {
-						return Datum::Interned(host.ty);
+						return Datum::Text(host.ty);
 					}
 					self.tree().host_fields[host.fields.0 as usize..(host.fields.0 + host.fields.1) as usize]
 						.iter()
@@ -749,8 +798,12 @@ impl<'a> Walker<'a> {
 					.zip(b)
 					.all(|((ka, va), (kb, vb))| ka.name == kb.name && self.equal(va, vb));
 		}
-		if let (Datum::Text(a) | Datum::Interned(a), Datum::Text(b) | Datum::Interned(b)) = (a, b) {
-			return a == b;
+		match (a, b) {
+			(Datum::Text(a), Datum::Text(b)) | (Datum::Interned(a), Datum::Interned(b)) => return a == b,
+			(Datum::Text(p), Datum::Interned(t)) | (Datum::Interned(t), Datum::Text(p)) => {
+				return self.plan.program.strings[p.0 as usize].as_ref() == self.tree().str(*t);
+			}
+			_ => {}
 		}
 		if matches!(
 			a,
@@ -791,7 +844,7 @@ impl<'a> Walker<'a> {
 			Expr::NameEq(id) => {
 				if let Datum::Event(i) = self.records[record].event {
 					match self.events[i] {
-						Event::Element { id: actual, .. } => actual == *id,
+						Event::Element { id: actual, .. } => actual == Some(*id),
 						_ => {
 							let name = self.event_field(record, Key::Name);
 							self.equal(&name, &Datum::Text(*id))
@@ -804,7 +857,7 @@ impl<'a> Walker<'a> {
 			Expr::Member { needle, strings } => {
 				let needle = self.eval(needle, record)?;
 				let strings = &self.plan.program.sets[strings.indices()];
-				if let Datum::Text(id) | Datum::Interned(id) = needle {
+				if let Datum::Text(id) = needle {
 					strings.binary_search_by_key(&id.0, |s| s.0).is_ok()
 				} else {
 					self.text_of(&needle).is_some_and(|text| {
@@ -955,7 +1008,8 @@ impl<'a> Walker<'a> {
 						.zip(&values)
 						.map(|((name, _), value)| (self.plan.program.strings[name.0 as usize].as_ref(), *value))
 						.collect();
-					self.make(ty, start, end, &output, span != Datum::Null)?
+					let kind = self.native_construct(ty, start, end, &output)?;
+					self.ast().add(kind, start, end)
 				} else {
 					let len = values.iter().filter(|v| **v != Datum::Missing).count();
 					let from = self.tree().host_fields.len();
@@ -1038,7 +1092,7 @@ impl<'a> Walker<'a> {
 			Datum::Bool(v) => Value::Bool(v),
 			Datum::Number(v) if v >= 0.0 && v <= u32::MAX as f64 && v.fract() == 0.0 => Value::Int(v as u32),
 			Datum::Number(v) => Value::Float(v),
-			Datum::Text(id) => Value::Str(id),
+			Datum::Text(id) => Value::Str(self.tree_id(id)),
 			Datum::Interned(id) => Value::Str(id),
 			Datum::Slice(a, b) => Value::Slice(a, b),
 			Datum::Node(id) => Value::Node(id),
@@ -1092,44 +1146,60 @@ impl<'a> Walker<'a> {
 					let value = self.output(value)?;
 					self.ast().host_fields[start + n] = (key, value);
 				}
-				Value::Node(self.host("", self.at, self.at, start, fields.len(), false))
+				Value::Node(self.host_id(Symbol::Empty.id(), self.at, self.at, start, fields.len(), false))
 			}
 			Datum::Record(rec) => self.records[rec].node.map_or(Value::Null, Value::Node),
-			Datum::Span(a, b, _) => Value::Node(self.make(
-				"",
-				a,
-				b,
-				&[("start", Datum::Number(a as f64)), ("end", Datum::Number(b as f64))],
-				false,
-			)?),
-			Datum::Regex(pattern, flags) => Value::Node(self.make(
-				"",
-				self.at,
-				self.at,
-				&[("pattern", Datum::Interned(pattern)), ("flags", Datum::Interned(flags))],
-				false,
-			)?),
-			Datum::Template(raw, cooked) => Value::Node(self.make(
-				"",
-				self.at,
-				self.at,
-				&[
-					("raw", Datum::Interned(raw)),
-					("cooked", cooked.map_or(Datum::Null, Datum::Interned)),
-				],
-				false,
-			)?),
+			Datum::Span(a, b, _) => {
+				let keys = self.plan.program.keys;
+				Value::Node(self.make(
+					Symbol::Empty.id(),
+					a,
+					b,
+					&[
+						(keys.start, Datum::Number(a as f64)),
+						(keys.end, Datum::Number(b as f64)),
+					],
+					false,
+				)?)
+			}
+			Datum::Regex(pattern, flags) => {
+				let keys = self.plan.program.keys;
+				Value::Node(self.make(
+					Symbol::Empty.id(),
+					self.at,
+					self.at,
+					&[
+						(keys.pattern, Datum::Interned(pattern)),
+						(keys.flags, Datum::Interned(flags)),
+					],
+					false,
+				)?)
+			}
+			Datum::Template(raw, cooked) => {
+				let keys = self.plan.program.keys;
+				Value::Node(self.make(
+					Symbol::Empty.id(),
+					self.at,
+					self.at,
+					&[
+						(keys.raw, Datum::Interned(raw)),
+						(keys.cooked, cooked.map_or(Datum::Null, Datum::Interned)),
+					],
+					false,
+				)?)
+			}
 			Datum::Stylesheet(i) => {
 				let Event::Stylesheet(children, comments) = self.events[i] else {
 					unreachable!()
 				};
+				let keys = self.plan.program.keys;
 				Value::Node(self.make(
-					"",
+					Symbol::Empty.id(),
 					self.at,
 					self.at,
 					&[
-						("children", Datum::Nodes(children)),
-						("comments", Datum::Nodes(comments)),
+						(keys.children, Datum::Nodes(children)),
+						(keys.comments, Datum::Nodes(comments)),
 					],
 					false,
 				)?)
@@ -1140,14 +1210,10 @@ impl<'a> Walker<'a> {
 	fn string(&mut self, value: Datum) -> StrId {
 		match value {
 			Datum::Interned(id) => id,
-			Datum::Text(id) => id,
+			Datum::Text(id) => self.tree_id(id),
 			Datum::Slice(a, b) => self.intern(&self.src[a as usize..b as usize]),
 			_ => self.intern(""),
 		}
-	}
-	fn host(&mut self, ty: &str, start: u32, end: u32, from: usize, len: usize, span: bool) -> NodeId {
-		let ty = self.tree().strings.find(ty).unwrap_or_else(|| self.intern(ty));
-		self.host_id(ty, start, end, from, len, span)
 	}
 	fn host_id(&mut self, ty: StrId, start: u32, end: u32, from: usize, len: usize, span: bool) -> NodeId {
 		let index = self.tree().hosts.len() as u32;
@@ -1158,20 +1224,17 @@ impl<'a> Walker<'a> {
 		});
 		self.ast().add(NodeKind::Host(index), start, end)
 	}
-	fn make(&mut self, ty: &str, start: u32, end: u32, fields: &[(&str, Datum)], span: bool) -> Result<NodeId> {
-		if ty.starts_with("js.") {
-			let kind = self.native_construct(ty, start, end, fields)?;
-			return Ok(self.ast().add(kind, start, end));
-		}
-		let len = fields.iter().filter(|(_, v)| *v != Datum::Missing).count();
+	fn make(&mut self, ty: StrId, start: u32, end: u32, fields: &[(StrId, Datum)], span: bool) -> Result<NodeId> {
 		let from = self.tree().host_fields.len();
-		self.ast().host_fields.resize(from + len, (StrId(0), Value::Null));
-		for (i, (key, value)) in fields.iter().filter(|(_, v)| *v != Datum::Missing).enumerate() {
-			let key = self.intern(key);
+		for (key, value) in fields {
+			if *value == Datum::Missing {
+				continue;
+			}
 			let value = self.output(value)?;
-			self.ast().host_fields[from + i] = (key, value);
+			self.ast().host_fields.push((*key, value));
 		}
-		Ok(self.host(ty, start, end, from, len, span))
+		let len = self.tree().host_fields.len() - from;
+		Ok(self.host_id(ty, start, end, from, len, span))
 	}
 	fn call(&mut self, rule: usize, event: Datum, ty: Option<StrId>, follow: &str) -> Result<NodeId> {
 		self.call_form(rule, event, ty, follow)
@@ -1296,7 +1359,8 @@ impl<'a> Walker<'a> {
 				.enumerate()
 				.map(|(i, (k, _))| (self.plan.program.strings[k.0 as usize].as_ref(), self.slots[slots + i]))
 				.collect();
-			self.make(ty, start, end, &fields, span)?
+			let kind = self.native_construct(ty, start, end, &fields)?;
+			self.ast().add(kind, start, end)
 		} else {
 			let from = self.tree().host_fields.len();
 			for (i, (key, absence)) in schema.fields.iter().enumerate() {
@@ -1351,7 +1415,8 @@ impl<'a> Walker<'a> {
 				Datum::Node(id) => Value::Node(id),
 				Datum::Nodes(list) => Value::Nodes(list),
 				Datum::Slice(a, b) => Value::Slice(a, b),
-				Datum::Text(id) | Datum::Interned(id) => Value::Str(id),
+				Datum::Text(id) => Value::Str(self.tree_id(id)),
+				Datum::Interned(id) => Value::Str(id),
 				Datum::Bool(v) => Value::Bool(v),
 				Datum::Strings(a, n) => Value::Strs(a, n),
 				value => self.output(&value).unwrap_or(Value::Null),
@@ -2228,8 +2293,9 @@ impl<'a> Walker<'a> {
 			}
 			if mode == Mode::Raw {
 				let start = self.at;
-				while self.at < self.limit && !name.is_some_and(|name| closing_tag(self.rest(), name).is_some()) {
-					self.at += self.char().unwrap().len_utf8() as u32;
+				match name {
+					Some(name) => self.skip_raw(name),
+					None => self.at = self.limit,
 				}
 				nodes.push(self.text_chunk(start, self.at, false, true)?);
 				continue;
@@ -2291,7 +2357,11 @@ impl<'a> Walker<'a> {
 			}
 			let start = self.at;
 			self.at += self.char().unwrap().len_utf8() as u32;
-			while self.at < self.limit {
+			loop {
+				self.skip_text();
+				if self.at >= self.limit {
+					break;
+				}
 				if mode != Mode::Verbatim
 					&& (self.matches(&self.plan.html.delimiters[0])
 						|| self.plan.html.content.iter().any(|p| self.matches(&p.prefix)))
@@ -2519,7 +2589,7 @@ impl<'a> Walker<'a> {
 			) << 3);
 		let header = self.scan_header()?;
 		let at_document = self.active.len() == 1 || self.active.len() == 2 && self.elements.is_empty();
-		let id = self.intern(name);
+		let id = self.plan.program.interner.find(name);
 		let event = self.event(Event::Element {
 			name: span,
 			id,
@@ -2555,7 +2625,7 @@ impl<'a> Walker<'a> {
 			.plan
 			.program
 			.dispatch_names
-			.get(id.0 as usize)
+			.get(id.map_or(usize::MAX, |id| id.0 as usize))
 			.copied()
 			.unwrap_or(self.plan.program.dispatch_other);
 		for (i, code) in &self.plan.program.dispatch_rows[range.indices()] {
@@ -2636,10 +2706,9 @@ impl<'a> Walker<'a> {
 			element.attributes = Some(list);
 			if element.content == Mode::Raw {
 				let start = self.at;
-				let mut end = start;
-				while end < self.limit && closing_tag(&self.src[end as usize..self.limit as usize], name).is_none() {
-					end += self.src[end as usize..].chars().next().unwrap().len_utf8() as u32;
-				}
+				self.skip_raw(name);
+				let end = self.at;
+				self.at = start;
 				if end == self.limit && !self.options.error_recovery {
 					return fail(end, end, Code::Unclosed, Some(name));
 				}
@@ -2809,12 +2878,12 @@ impl<'a> Walker<'a> {
 		} else {
 			Datum::Bool(true)
 		};
-		let plain = &self.plan.html.plain_attribute;
+		let keys = self.plan.program.keys;
 		self.make(
-			&plain.node_type,
+			keys.attribute,
 			start,
 			end,
-			&[(&plain.name, Datum::Slice(a, b)), (&plain.value, value)],
+			&[(keys.name, Datum::Slice(a, b)), (keys.value, value)],
 			true,
 		)
 	}
@@ -2873,7 +2942,14 @@ impl<'a> Walker<'a> {
 		Ok(value)
 	}
 	fn stylesheet(&mut self) -> Result<Datum> {
-		let (children, comments) = css::read(self.src, &mut self.at, self.limit, self.ast.as_mut().unwrap(), None)?;
+		let (children, comments) = css::read(
+			self.src,
+			&mut self.at,
+			self.limit,
+			self.ast.as_mut().unwrap(),
+			self.plan.program.css,
+			None,
+		)?;
 		let i = self.events.len();
 		self.events.push(Event::Stylesheet(children, comments));
 		Ok(Datum::Stylesheet(i))
@@ -2959,7 +3035,17 @@ impl<'a> Walker<'a> {
 		}
 		self.resolving.push((record, index));
 		let region = &self.plan.program.rules[self.records[record].rule].regions[index];
-		let items = region.each.as_ref().map(|e| self.eval(e, record)).transpose()?;
+		// a guard that ignores the item is tested once, and a false one spares the each list
+		let guard = if region.when_item {
+			None
+		} else {
+			region.when.as_ref().map(|w| self.test(w, record)).transpose()?
+		};
+		let items = if guard == Some(false) {
+			None
+		} else {
+			region.each.as_ref().map(|e| self.eval(e, record)).transpose()?
+		};
 		let count = items.as_ref().map_or(1, |v| self.count(v));
 		let start = self.targets.len();
 		self.targets.resize(start + count, HostParent::Root);
@@ -2970,13 +3056,16 @@ impl<'a> Walker<'a> {
 			}
 			let parent = self.eval(&region.parent, record)?;
 			let parent = self.region_target(parent)?;
-			let target = if region
-				.when
-				.as_ref()
-				.map(|e| self.test(e, record))
-				.transpose()?
-				.unwrap_or(true)
-			{
+			let covered = match guard {
+				Some(v) => v,
+				None => region
+					.when
+					.as_ref()
+					.map(|e| self.test(e, record))
+					.transpose()?
+					.unwrap_or(true),
+			};
+			let target = if covered {
 				let mut roots = self.take_nodes();
 				if let Some(slots) = &region.slots {
 					let base = self.records[record].slots;
