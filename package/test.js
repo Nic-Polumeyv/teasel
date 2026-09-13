@@ -135,7 +135,7 @@ for (const [name, { Source, isIdentifierStart, isIdentifierChar, scopeOf, bindin
 	assert.equal(program('return', { allowReturnOutsideFunction: true }).body[0].type, 'ReturnStatement');
 	{
 		// a document's answer lists each piece of JavaScript the host read, with its share of the tables
-		const host = readFileSync(new URL('../hosts/svelte.grammar', import.meta.url), 'utf8');
+		const host = readFileSync(new URL('../tests/hosts/svelte/host.grammar', import.meta.url), 'utf8');
 		const answer = parse('<script>let a = 1;</script>{a + b}', { host, sourceType: 'module', scopes: true });
 		const [script, expression] = answer.roots;
 		assert.equal(answer.roots.length, 2);
@@ -271,7 +271,7 @@ for (const [name, { Source, isIdentifierStart, isIdentifierChar, scopeOf, bindin
 }
 
 // a document of a host language: the host's nodes around the JavaScript ones, one tree
-const grammar = readFileSync(new URL('../hosts/svelte.grammar', import.meta.url), 'utf8');
+const grammar = readFileSync(new URL('../tests/hosts/svelte/host.grammar', import.meta.url), 'utf8');
 for (const { Source, scopeOf, bindingOf, parentOf } of [node, wasm]) {
 	const source = '<script lang="ts">\n\tlet items: string[] = [];\n</script>\n\n{#each items as item, i (item)}\n\t<p class:odd={i % 2} on:click={() => item}>{item}</p>\n{:else}\n\tnone\n{/each}\n';
 	const doc = new Source(source, { host: grammar, sourceType: 'module', scopes: true, comments: true }).parse();
@@ -331,7 +331,7 @@ for (const [label, { Source }] of [['node', node], ['wasm', wasm]]) {
 }
 
 // unfinished input under recovery is an answer, never a panic; a strict error is a SyntaxError
-const grammars = Object.fromEntries(['svelte', 'vue'].map((name) => [name, readFileSync(new URL(`../hosts/${name}.grammar`, import.meta.url), 'utf8')]));
+const grammars = Object.fromEntries(['svelte', 'vue'].map((name) => [name, readFileSync(new URL(`../tests/hosts/${name}/host.grammar`, import.meta.url), 'utf8')]));
 for (const [label, { Source }] of [['node', node], ['wasm', wasm]]) {
 	for (const text of ['<a x="', '<a /*', '<script>"</script>', '{#if', '<div class="{a']) {
 		assert.equal(new Source(text, { host: grammars.svelte, errorRecovery: true, comments: true, scopes: true }).parse().node.type, 'Root', `${label} ${text}`);
@@ -345,7 +345,7 @@ for (const [label, { Source }] of [['node', node], ['wasm', wasm]]) {
 assert.throws(() => wasm.engine.parse({ handle: 0, generation: -1 }, 1, 0, undefined, ''), /started over/);
 
 // a second host: the same walker, Vue's grammar
-const vue = readFileSync(new URL('../hosts/vue.grammar', import.meta.url), 'utf8');
+const vue = readFileSync(new URL('../tests/hosts/vue/host.grammar', import.meta.url), 'utf8');
 for (const { Source, parentOf } of [node, wasm]) {
 	const source = '<ul :class="{ on }">\n\t<li v-for="(item, i) in items" :key="item.id" @click.stop="select(item)">{{ item.name }} #{{ i }}</li>\n</ul>\n';
 	const root = new Source(source, { host: vue, sourceType: 'module' }).parse().node;

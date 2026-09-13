@@ -3,7 +3,7 @@ import {
   rule, seq, choice, optional, read, emit, token, js, get, constant, equal,
   field, scope, incoming, region, declare, array, concat, filter, map,
   and, or, not, any, isType, member, hasAttribute, present, test,
-} from './plan';
+} from '../../../package/plan';
 
 const rules: Record<string, Rule> = {};
 rules.Text = rule('Text', ['content'], emit('content', get('event', 'decoded')));

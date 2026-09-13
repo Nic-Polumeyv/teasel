@@ -3,7 +3,7 @@ import {
   equal, present, choose, at, array, record, not, and, or, filter, map, any, member, concat, field, scope,
   incoming, isType, hasAttribute, staticAttribute, seq, choice, optional, read, emit, token, space, test,
   call, js, fields, rule, region, declare, repeat, many,
-} from './plan';
+} from '../../../package/plan';
 
 const named = (node: V) => present(staticAttribute(node, 'slot'));
 const component = (node: V) => isType(node, 'Component', 'SvelteComponent', 'SvelteSelf');

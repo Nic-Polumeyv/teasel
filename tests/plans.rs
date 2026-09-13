@@ -3,8 +3,8 @@ use teasel::host::plan::{Form, Js, Plan, Reader};
 #[test]
 fn checked_in_plans() {
 	for (name, text) in [
-		("svelte", include_str!("../hosts/svelte.json")),
-		("vue", include_str!("../hosts/vue.json")),
+		("svelte", include_str!("hosts/svelte/plan.json")),
+		("vue", include_str!("hosts/vue/plan.json")),
 	] {
 		Plan::read(text).unwrap_or_else(|error| panic!("{name}: {error}"));
 	}
@@ -470,7 +470,7 @@ fn expression_program_choice(form: &Form) -> Option<bool> {
 
 #[test]
 fn header_choices() {
-	let text = include_str!("../hosts/svelte.json");
+	let text = include_str!("hosts/svelte/plan.json");
 	let header = r#""Headers": {"type":"Header","fields":{},"form":{"op":"choice","alternatives":[
         {"op":"read","reader":{"kind":"rule","name":"If"}},
         {"op":"read","reader":{"kind":"rule","name":"Each"}},
@@ -495,7 +495,7 @@ fn header_choices() {
 		};
 		assert_eq!(plan.rules[*index].name.as_ref(), expected);
 	}
-	let vue = Plan::read(include_str!("../hosts/vue.json")).unwrap();
+	let vue = Plan::read(include_str!("hosts/vue/plan.json")).unwrap();
 	let on = vue.rules.iter().find(|r| r.name.as_ref() == "On").unwrap();
 	assert_eq!(expression_program_choice(&on.form), Some(false));
 }
