@@ -101,6 +101,7 @@ pub enum Form {
 	Choice {
 		alternatives: Vec<Form>,
 		disjoint: bool,
+		first: Vec<Vec<Prefix>>,
 	},
 	Repeat {
 		body: Box<Form>,
@@ -810,6 +811,7 @@ impl Decode<'_> {
 				Form::Choice {
 					alternatives,
 					disjoint: false,
+					first: Vec::new(),
 				}
 			}
 			"repeat" => {
@@ -2103,11 +2105,11 @@ fn parent_dependencies(value: &Value, rule: &Rule, seen: &mut BTreeSet<Name>, de
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct Prefix {
-	text: String,
-	word: bool,
+pub struct Prefix {
+	pub(crate) text: String,
+	pub(crate) word: bool,
 	complete: bool,
-	tight: bool,
+	pub(crate) tight: bool,
 }
 
 fn prefixes(form: &Form, rules: &[Rule], active: &mut BTreeSet<usize>, budget: usize) -> Vec<Prefix> {
@@ -2259,7 +2261,11 @@ fn distinct(left: &Prefix, right: &Prefix) -> bool {
 
 fn mark_choices(form: &mut Form, rules: &[Rule]) {
 	match form {
-		Form::Choice { alternatives, disjoint } => {
+		Form::Choice {
+			alternatives,
+			disjoint,
+			first: compiled,
+		} => {
 			let first: Vec<_> = alternatives
 				.iter()
 				.map(|f| prefixes(f, rules, &mut BTreeSet::new(), 32))
@@ -2269,6 +2275,7 @@ fn mark_choices(form: &mut Form, rules: &[Rule]) {
 					.iter()
 					.all(|b| a.iter().all(|a| b.iter().all(|b| distinct(a, b))))
 			});
+			*compiled = first;
 			for f in alternatives {
 				mark_choices(f, rules);
 			}

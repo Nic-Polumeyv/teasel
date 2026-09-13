@@ -451,7 +451,9 @@ fn invalid_plans() {
 
 fn expression_program_choice(form: &Form) -> Option<bool> {
 	match form {
-		Form::Choice { alternatives, disjoint } => {
+		Form::Choice {
+			alternatives, disjoint, ..
+		} => {
 			if matches!(
 				alternatives.as_slice(),
 				[
@@ -491,7 +493,10 @@ fn header_choices() {
 	let text = text.replacen("\"rules\": {", &format!("\"rules\": {{{header}"), 1);
 	let plan = Plan::read(&text).unwrap();
 	let headers = plan.rules.iter().find(|r| r.name.as_ref() == "Headers").unwrap();
-	let Form::Choice { alternatives, disjoint } = &headers.form else {
+	let Form::Choice {
+		alternatives, disjoint, ..
+	} = &headers.form
+	else {
 		panic!()
 	};
 	assert!(disjoint);

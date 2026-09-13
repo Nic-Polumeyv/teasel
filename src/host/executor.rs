@@ -61,6 +61,16 @@ struct Element {
 	content: Mode,
 }
 
+struct Checkpoint<M> {
+	ast: crate::ast::Mark<M>,
+	at: u32,
+	limit: u32,
+	records: usize,
+	record: Record,
+	elements: Vec<Element>,
+	iteration: Vec<Vec<(Rc<str>, Datum)>>,
+}
+
 pub fn parse(src: &str, plan: &Plan, options: Options) -> (Ast, std::result::Result<NodeId, Box<crate::SyntaxError>>) {
 	execute::<()>(src, plan, options, None)
 }
@@ -142,7 +152,15 @@ impl<'a, E: Extension> Walker<'a, E> {
 		if self.eat(text) {
 			Ok(())
 		} else {
-			fail(self.at, self.at, Code::Expected, Some(text))
+			self.report(error(self.at, self.at, Code::Expected, Some(text)))
+		}
+	}
+	fn report(&mut self, error: Box<crate::SyntaxError>) -> Result<()> {
+		if self.options.error_recovery {
+			self.ast().errors.push(*error);
+			Ok(())
+		} else {
+			Err(error)
 		}
 	}
 	fn space(&mut self) {
@@ -564,7 +582,18 @@ impl<'a, E: Extension> Walker<'a, E> {
 			node: None,
 		});
 		self.active.push(record);
-		let result = self.form(&schema.form, record, "");
+		let result = if self.options.error_recovery {
+			let checkpoint = self.checkpoint(record);
+			match self.strict(&schema.form, record, "") {
+				Ok(()) => Ok(()),
+				Err(_) => {
+					self.restore(record, checkpoint);
+					self.form(&schema.form, record, "")
+				}
+			}
+		} else {
+			self.form(&schema.form, record, "")
+		};
 		self.active.pop();
 		result?;
 		if self
@@ -615,6 +644,33 @@ impl<'a, E: Extension> Walker<'a, E> {
 		self.records[record].node = Some(node);
 		Ok(node)
 	}
+	fn checkpoint(&self, record: usize) -> Checkpoint<<E::Data as crate::ast::Reuse>::Mark> {
+		Checkpoint {
+			ast: self.tree().mark(),
+			at: self.at,
+			limit: self.limit,
+			records: self.records.len(),
+			record: self.records[record].clone(),
+			elements: self.elements.clone(),
+			iteration: self.iteration.clone(),
+		}
+	}
+	fn restore(&mut self, record: usize, checkpoint: Checkpoint<<E::Data as crate::ast::Reuse>::Mark>) {
+		self.ast().truncate(checkpoint.ast);
+		self.at = checkpoint.at;
+		self.limit = checkpoint.limit;
+		self.records.truncate(checkpoint.records);
+		self.records[record] = checkpoint.record;
+		self.elements = checkpoint.elements;
+		self.iteration = checkpoint.iteration;
+	}
+	fn strict(&mut self, form: &Form, record: usize, follow: &str) -> Result<()> {
+		let recover = std::mem::replace(&mut self.options.error_recovery, false);
+		let result = self.form(form, record, follow);
+		self.options.error_recovery = recover;
+		result
+	}
+
 	fn form(&mut self, form: &Form, record: usize, follow: &str) -> Result<()> {
 		match form {
 			Form::Seq(items) => {
@@ -640,13 +696,58 @@ impl<'a, E: Extension> Walker<'a, E> {
 					self.write(record, into, value);
 				}
 			}
-			Form::Choice { alternatives, .. } => {
-				let choice = alternatives
-					.iter()
-					.find(|form| self.first(form, self.at, 0) != Some(false))
-					.ok_or_else(|| error(self.at, self.at, Code::UnexpectedToken, None))?;
-				self.form(choice, record, follow)?;
+			Form::Choice {
+				alternatives,
+				disjoint,
+				first,
+			} => {
+				if *disjoint {
+					let rest = self.rest();
+					let selected = first
+						.iter()
+						.position(|prefixes| {
+							prefixes.iter().any(|p| {
+								let rest = if p.tight {
+									rest
+								} else {
+									rest.trim_start_matches(is_space)
+								};
+								rest.starts_with(&p.text)
+									&& (!p.word || !rest[p.text.len()..].starts_with(is_id_continue))
+							})
+						})
+						.ok_or_else(|| error(self.at, self.at, Code::UnexpectedToken, None))?;
+					self.form(&alternatives[selected], record, follow)?;
+				} else {
+					let mut failure: Option<Box<crate::SyntaxError>> = None;
+					let mut failed = 0;
+					let mut matched = false;
+					for (i, alternative) in alternatives.iter().enumerate() {
+						let checkpoint = self.checkpoint(record);
+						match self.strict(alternative, record, follow) {
+							Ok(()) => {
+								matched = true;
+								break;
+							}
+							Err(error) => {
+								self.restore(record, checkpoint);
+								if failure.as_ref().is_none_or(|prior| prior.pos < error.pos) {
+									failure = Some(error);
+									failed = i;
+								}
+							}
+						}
+					}
+					if !matched {
+						if self.options.error_recovery {
+							self.form(&alternatives[failed], record, follow)?;
+						} else {
+							return Err(failure.unwrap());
+						}
+					}
+				}
 			}
+
 			Form::Repeat {
 				body,
 				min,
@@ -656,22 +757,31 @@ impl<'a, E: Extension> Walker<'a, E> {
 				into,
 			} => {
 				let mut values = Vec::new();
-				while max.is_none_or(|max| values.len() < max) && self.first(body, self.at, 0) != Some(false) {
-					if self.at >= self.limit && values.len() >= *min {
-						break;
-					}
+
+				while max.is_none_or(|max| values.len() < max) {
+					let checkpoint = self.checkpoint(record);
 					let start = self.at;
 					self.iteration
 						.push(locals.iter().map(|key| (key.as_ref().into(), Datum::Missing)).collect());
 					let result = self
-						.form(body, record, follow)
+						.strict(body, record, follow)
 						.and_then(|()| self.eval(yield_value, record));
 					self.iteration.pop();
-					values.push(result?);
+					match result {
+						Ok(value) => values.push(value),
+						Err(error) => {
+							self.restore(record, checkpoint);
+							if values.len() < *min {
+								return Err(error);
+							}
+							break;
+						}
+					}
 					if self.at == start && max.is_none() {
 						return fail(start, start, Code::TreeSize, None);
 					}
 				}
+
 				if values.len() < *min {
 					return fail(self.at, self.at, Code::UnexpectedToken, None);
 				}
@@ -719,35 +829,6 @@ impl<'a, E: Extension> Walker<'a, E> {
 				} => {}
 				_ => break,
 			}
-		}
-	}
-	fn first(&self, form: &Form, at: u32, depth: usize) -> Option<bool> {
-		if depth > 32 {
-			return None;
-		}
-		let rest = &self.src[at as usize..self.limit as usize];
-		match form {
-			Form::Read {
-				reader: Reader::Token { text, gap, word },
-				..
-			} => {
-				let rest = if *gap == Gap::Space {
-					rest.trim_start_matches(is_space)
-				} else {
-					rest
-				};
-				Some(rest.starts_with(text.as_ref()) && (!*word || !rest[text.len()..].starts_with(is_id_continue)))
-			}
-			Form::Read {
-				reader: Reader::Rule(rule),
-				..
-			} => self.first(&self.plan.rules[*rule].form, at, depth + 1),
-			Form::Read {
-				reader: Reader::Space { min },
-				..
-			} if *min > 0 => Some(rest.starts_with(is_space)),
-			Form::Seq(items) => items.iter().find_map(|f| self.first(f, at, depth + 1)),
-			_ => None,
 		}
 	}
 	fn read(&mut self, reader: &Reader, record: usize, input: Option<Datum>, follow: &str) -> Result<Datum> {
@@ -838,6 +919,22 @@ impl<'a, E: Extension> Walker<'a, E> {
 				boundary == Some(Boundary::LastSharedWord),
 			),
 		});
+		let result = match result {
+			Err(error) if parser.recovering() => {
+				let start = parser.tok.start;
+				parser.record(Err(error)).unwrap();
+				parser.skip_to_end();
+				if entry == Js::Params {
+					Ok(List::EMPTY)
+				} else {
+					let name = parser.intern("");
+					let node =
+						parser.add_with_end(NodeKind::Identifier { name }, start, parser.consumed_end().max(start));
+					Ok(parser.list_of(&[node]))
+				}
+			}
+			result => result,
+		};
 		let end = parser.consumed_end();
 		self.ast = Some(parser.finish());
 		let roots = result?;

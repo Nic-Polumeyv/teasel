@@ -1031,3 +1031,17 @@ fn parenthesized_bits() {
 	let json = crate::json::parse("(a, b) => a; (c);", &request, "");
 	assert_eq!(json.matches("\"parenthesized\":true").count(), 1, "{json}");
 }
+
+#[test]
+fn snapshot_restores_shared_word_boundaries() {
+	let mut parser = super::Parser::<()>::new("a", 0, Options::default(), "as", Default::default());
+	parser.start().unwrap();
+	parser.stop_word_at = Some(3);
+	parser.forced_stop = Some(5);
+	let before = parser.snapshot();
+	parser.stop_word_at = Some(8);
+	parser.forced_stop = None;
+	parser.restore(before);
+	assert_eq!(parser.stop_word_at, Some(3));
+	assert_eq!(parser.forced_stop, Some(5));
+}

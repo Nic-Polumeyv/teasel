@@ -275,6 +275,13 @@ pub(crate) struct Mark<M> {
 	numbers: usize,
 	lists: usize,
 	extension: M,
+	hosts: usize,
+	host_fields: usize,
+	host_strings: usize,
+	host_values: usize,
+	host_groups: usize,
+	comments: usize,
+	errors: usize,
 }
 
 impl<X: Reuse> Ast<X> {
@@ -305,6 +312,13 @@ impl<X: Reuse> Ast<X> {
 			numbers: self.numbers.len(),
 			lists: self.lists.len(),
 			extension: self.extension.mark(),
+			hosts: self.hosts.len(),
+			host_fields: self.host_fields.len(),
+			host_strings: self.host_strings.len(),
+			host_values: self.host_values.len(),
+			host_groups: self.host_groups.len(),
+			comments: self.comments.len(),
+			errors: self.errors.len(),
 		}
 	}
 
@@ -315,6 +329,13 @@ impl<X: Reuse> Ast<X> {
 		self.lists.truncate(mark.lists);
 		self.parenthesized.truncate(mark.nodes);
 		self.extension.truncate(mark.extension);
+		self.hosts.truncate(mark.hosts);
+		self.host_fields.truncate(mark.host_fields);
+		self.host_strings.truncate(mark.host_strings);
+		self.host_values.truncate(mark.host_values);
+		self.host_groups.truncate(mark.host_groups);
+		self.comments.truncate(mark.comments);
+		self.errors.truncate(mark.errors);
 	}
 }
 
