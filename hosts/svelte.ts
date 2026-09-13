@@ -50,12 +50,9 @@ const element = (type: string, childRule = 'NormalChildren'): Rule => {
       each: { list: filter(nodes, '$candidateChild', named(get('$candidateChild'))), as: '$child' } }
   ] });
 };
-for (const type of ['SvelteElement', 'SvelteComponent', 'SvelteSelf', 'SvelteWindow', 'SvelteDocument',
-  'SvelteBody', 'SvelteHead', 'SvelteOptions', 'SvelteFragment', 'SvelteBoundary', 'TitleElement', 'SlotElement', 'Component', 'RegularElement']) {
-  rules[type] = element(type);
-}
-rules.RawElement = element('RegularElement', 'RawChildren');
-rules.RcdataElement = element('RegularElement', 'RcdataChildren');
+rules.Element = element('Element');
+rules.RawElement = element('Element', 'RawChildren');
+rules.RcdataElement = element('Element', 'RcdataChildren');
 const event = get('event');
 rules.Script = rule('Script', ['context', 'content', 'attributes'], seq(
   read({ kind: 'html-attributes', mode: 'static' }, 'attributes'),
@@ -178,15 +175,15 @@ const elements: Dispatch[] = [
 ];
 for (const [name, type] of Object.entries({ element: 'SvelteElement', component: 'SvelteComponent', self: 'SvelteSelf',
   window: 'SvelteWindow', document: 'SvelteDocument', body: 'SvelteBody', head: 'SvelteHead', options: 'SvelteOptions',
-  fragment: 'SvelteFragment', boundary: 'SvelteBoundary' })) elements.push({ when: nameIs('svelte:' + name), rule: type });
+  fragment: 'SvelteFragment', boundary: 'SvelteBoundary' })) elements.push({ when: nameIs('svelte:' + name), rule: 'Element', type });
 elements.push(
-  { when: and(nameIs('title'), equal(get(nearestHeadBoundary, 'name'), constant('svelte:head'))), rule: 'TitleElement' },
+  { when: and(nameIs('title'), equal(get(nearestHeadBoundary, 'name'), constant('svelte:head'))), rule: 'Element', type: 'TitleElement' },
   { when: and(nameIs('slot'), not(any(filter(get('ancestors'), '$ancestor', and(isType(get('$ancestor'), 'RegularElement'),
-    hasAttribute(get('$ancestor'), 'shadowrootmode')))))), rule: 'SlotElement' },
-  { when: nameIs('textarea'), rule: 'RcdataElement', content: 'rcdata' },
-  { when: member(get('event', 'name'), ['script', 'style']), rule: 'RawElement', content: 'raw' },
-  { when: or(and(get('event', 'nameFacts', 'uppercaseInitial'), get('event', 'nameFacts', 'identifier')), get('event', 'nameFacts', 'dottedIdentifier')), rule: 'Component' },
-  { when: get('event', 'nameFacts', 'validHtmlName'), rule: 'RegularElement' }
+    hasAttribute(get('$ancestor'), 'shadowrootmode')))))), rule: 'Element', type: 'SlotElement' },
+  { when: nameIs('textarea'), rule: 'RcdataElement', type: 'RegularElement', content: 'rcdata' },
+  { when: member(get('event', 'name'), ['script', 'style']), rule: 'RawElement', type: 'RegularElement', content: 'raw' },
+  { when: or(and(get('event', 'nameFacts', 'uppercaseInitial'), get('event', 'nameFacts', 'identifier')), get('event', 'nameFacts', 'dottedIdentifier')), rule: 'Element', type: 'Component' },
+  { when: get('event', 'nameFacts', 'validHtmlName'), rule: 'Element', type: 'RegularElement' }
 );
 export const svelte: Plan = {
   version: 1, document: 'Document', rules,

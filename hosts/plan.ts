@@ -45,7 +45,7 @@ export type Rule = {
 };
 export type Declare = { patterns: V; into: V; kind: 'pattern' | 'param' };
 export type Html = Plan['html'];
-export type Dispatch = { when: V; rule: string; attributes?: 'static'; content?: Mode };
+export type Dispatch = { when: V; rule: string; type?: string; attributes?: 'static'; content?: Mode };
 export type Plan = {
   version: 1; document: string; rules: Record<string, Rule>;
   html: {

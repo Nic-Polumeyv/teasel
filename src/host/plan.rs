@@ -74,6 +74,7 @@ pub struct DirectiveNames {
 pub struct Dispatch {
 	pub when: Value,
 	pub rule: usize,
+	pub node_type: Option<Name>,
 	pub attributes: Option<AttributeMode>,
 	pub content: Option<Mode>,
 }
@@ -980,7 +981,7 @@ impl Decode<'_> {
 				.array(c)?
 				.iter()
 				.map(|n| {
-					n.properties(c, &["when", "rule", "attributes", "content"])?;
+					n.properties(c, &["when", "rule", "type", "attributes", "content"])?;
 					let attributes = n
 						.optional("attributes", c)?
 						.map(|n| AttributeMode::read(n, c))
@@ -991,6 +992,7 @@ impl Decode<'_> {
 					Ok(Dispatch {
 						when: self.value(n.required("when", c)?)?,
 						rule: self.reference(n.required("rule", c)?)?,
+						node_type: n.optional("type", c)?.map(|n| n.name(c)).transpose()?,
 						attributes,
 						content: n.optional("content", c)?.map(|n| Mode::read(n, c)).transpose()?,
 					})

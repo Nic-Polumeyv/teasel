@@ -11,8 +11,6 @@ pub mod interner;
 pub mod json;
 pub(crate) mod lexer;
 pub mod parser;
-#[path = "host/plan.rs"]
-pub mod plan;
 pub mod scopes;
 #[cfg(feature = "typescript")]
 pub mod typescript;

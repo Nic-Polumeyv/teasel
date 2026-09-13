@@ -1,4 +1,4 @@
-use teasel::plan::{Form, Js, Plan, Reader};
+use teasel::host::plan::{Form, Js, Plan, Reader};
 
 #[test]
 fn checked_in_plans() {
@@ -648,7 +648,7 @@ fn valid_capture_and_region_paths() {
 
 #[test]
 fn json_syntax_and_locations() {
-	use teasel::plan::{Json, Value};
+	use teasel::host::plan::{Json, Value};
 	let text = plan(
 		r#""Each":{"type":"\u0045ach","fields":{"value":"null"},"form":{"op":"emit","into":"value","value":{"op":"constant","value":[null,true,false,-12.5e+30,"\"\\\/\b\f\n\r\t\uD83D\uDE00é",{"key":1E400}]}}}"#,
 	);

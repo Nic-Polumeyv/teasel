@@ -34,10 +34,8 @@ const element = (type: string, mode: Mode = 'normal', staticAttributes = false) 
   read({ kind: 'html-attributes', mode: staticAttributes ? 'static' : 'normal' }, 'props'),
   read({ kind: 'html-children', mode, stop: { matchingElement: true } }, 'children'),
 ), { regions });
-for (const type of ['Slot', 'Template', 'Component', 'Element']) {
-  rules[type] = element(type);
-  rules['Verbatim' + type] = element(type, 'verbatim', true);
-}
+rules.Element = element('Element');
+rules.VerbatimElement = element('Element', 'verbatim', true);
 rules.RawElement = element('Element', 'raw');
 rules.RcdataElement = element('Element', 'rcdata');
 
@@ -100,19 +98,18 @@ for (const [key, name, prop] of [['Directive', undefined, false], ['Bind', 'bind
 
 const nameIs = (name: string) => equal(get('event', 'name'), constant(name));
 const elementKinds: Dispatch[] = [
-  { when: nameIs('slot'), rule: 'Slot' },
-  { when: nameIs('template'), rule: 'Template' },
-  { when: nameIs('component'), rule: 'Component' },
-  { when: member(get('event', 'name'), ['textarea', 'title']), rule: 'RcdataElement', content: 'rcdata' },
-  { when: member(get('event', 'name'), ['script', 'style']), rule: 'RawElement', content: 'raw' },
+  { when: nameIs('slot'), rule: 'Element', type: 'Slot' },
+  { when: nameIs('template'), rule: 'Element', type: 'Template' },
+  { when: nameIs('component'), rule: 'Element', type: 'Component' },
+  { when: member(get('event', 'name'), ['textarea', 'title']), rule: 'RcdataElement', type: 'Element', content: 'rcdata' },
+  { when: member(get('event', 'name'), ['script', 'style']), rule: 'RawElement', type: 'Element', content: 'raw' },
   { when: or(and(get('event', 'nameFacts', 'uppercaseInitial'), get('event', 'nameFacts', 'identifier')),
-    get('event', 'nameFacts', 'dottedIdentifier')), rule: 'Component' },
-  { when: constant(true), rule: 'Element' },
+    get('event', 'nameFacts', 'dottedIdentifier')), rule: 'Element', type: 'Component' },
+  { when: constant(true), rule: 'Element', type: 'Element' },
 ];
 const elements: Dispatch[] = elementKinds.map(row => ({
   when: and(hasAttribute(get('event'), 'v-pre'), row.when),
-  rule: 'Verbatim' + (row.rule.endsWith('Element') ? 'Element' : row.rule),
-  attributes: 'static', content: 'verbatim',
+  rule: 'VerbatimElement', type: row.type, attributes: 'static', content: 'verbatim',
 }));
 elements.push(...elementKinds);
 export const vue: Plan = {
