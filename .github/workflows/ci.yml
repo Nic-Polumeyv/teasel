@@ -21,6 +21,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 26
+      - run: npm install -g typescript@7
       - run: git clone --depth 1 https://github.com/tc39/test262-parser-tests tests/test262-parser-tests
       - run: git clone --depth 1 --filter=blob:none --sparse https://github.com/microsoft/TypeScript tests/TypeScript && git -C tests/TypeScript sparse-checkout set --no-cone '/tsc/testdata/tests/cases/conformance/**' '/tsc/testdata/baselines/reference/conformance/*.errors.txt'
       - run: cargo test --release
@@ -54,6 +55,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 26
+      - run: npm install -g typescript@7
       - run: npm ci
         working-directory: package
       - run: npm run build -- --target ${{ matrix.target }}
