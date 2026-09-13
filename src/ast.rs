@@ -124,6 +124,55 @@ impl<T> NodeMap<T> {
 	}
 }
 
+#[derive(Debug)]
+pub struct NodeLists<T> {
+	heads: Vec<(u32, u32)>,
+	items: Vec<(T, u32)>,
+}
+impl<T> Default for NodeLists<T> {
+	fn default() -> Self {
+		Self {
+			heads: Vec::new(),
+			items: Vec::new(),
+		}
+	}
+}
+impl<T> NodeLists<T> {
+	pub fn push(&mut self, node: NodeId, value: T) {
+		let node = node.index() as usize;
+		if self.heads.len() <= node {
+			self.heads.resize(node + 1, (u32::MAX, u32::MAX));
+		}
+		let head = &mut self.heads[node];
+		let index = self.items.len() as u32;
+		if head.0 == u32::MAX {
+			head.0 = index;
+		} else {
+			self.items[head.1 as usize].1 = index;
+		}
+		head.1 = index;
+		self.items.push((value, u32::MAX));
+	}
+	pub fn get(&self, node: NodeId) -> Option<impl Iterator<Item = &T>> {
+		let &(mut index, _) = self.heads.get(node.index() as usize)?;
+		if index == u32::MAX {
+			return None;
+		}
+		Some(std::iter::from_fn(move || {
+			if index == u32::MAX {
+				return None;
+			}
+			let (value, next) = &self.items[index as usize];
+			index = *next;
+			Some(value)
+		}))
+	}
+	pub fn clear(&mut self) {
+		self.heads.clear();
+		self.items.clear();
+	}
+}
+
 impl std::fmt::Debug for NodeId {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		write!(f, "NodeId({})", self.index())
@@ -202,6 +251,22 @@ pub enum Value {
 /// `X` is the data an extension attaches to the tree; the plain JavaScript parser attaches none.
 #[derive(Debug, Default)]
 pub struct Ast<X = ()> {
+	core: Box<Core>,
+	pub extension: X,
+}
+impl<X> std::ops::Deref for Ast<X> {
+	type Target = Core;
+	fn deref(&self) -> &Core {
+		&self.core
+	}
+}
+impl<X> std::ops::DerefMut for Ast<X> {
+	fn deref_mut(&mut self) -> &mut Core {
+		&mut self.core
+	}
+}
+#[derive(Debug, Default)]
+pub struct Core {
 	pub nodes: Vec<Node>,
 	/// The values of the number literals, by `NumberLiteral::value`.
 	pub numbers: Vec<f64>,
@@ -212,24 +277,24 @@ pub struct Ast<X = ()> {
 	pub host_values: Vec<Value>,
 	pub host_plan: bool,
 	pub host_regions: Vec<HostRegion>,
-	pub host_coverage: NodeMap<Vec<u32>>,
-	pub host_region_owners: NodeMap<Vec<u32>>,
+	pub host_coverage: NodeLists<u32>,
+	pub host_region_owners: NodeLists<u32>,
 	pub host_bindings: NodeMap<HostBinding>,
 	pub host_occurrences: NodeMap<NodeId>,
-	pub host_hidden: NodeMap<Vec<NodeId>>,
+	pub host_hidden: NodeLists<NodeId>,
 	pub strings: Interner,
 	pub comments: Vec<Comment>,
 	/// Comments attached to nodes by `comments::attach`, as indices into `comments`.
 	pub attached: NodeMap<Attached>,
 	/// The buffers the last parse worked in, for the next one.
 	pub spare: crate::parser::Spare,
+	pub(crate) host_spare: Option<Box<crate::host::Spare>>,
 	/// The scope analysis, when `scopes::analyze` ran.
 	pub scopes: Option<crate::scopes::Scopes>,
 	/// What went wrong, in source order, when errors are recovered from instead of thrown.
 	pub errors: Vec<crate::SyntaxError>,
 	/// Whether a node was written in parentheses, when `Options::parenthesized` asks.
 	pub parenthesized: NodeSet,
-	pub extension: X,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -241,7 +306,7 @@ pub struct Attached {
 }
 
 /// `len` comments from `start` on: a node takes each of its comments one after the other.
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct Run {
 	pub start: u32,
 	pub len: u32,
@@ -361,10 +426,13 @@ impl<X: Default> Ast<X> {
 	/// Room for the tree of `bytes` of source: about a node per eight bytes, a list per thirty.
 	pub(crate) fn sized(bytes: usize) -> Self {
 		Ast {
-			nodes: Vec::with_capacity(bytes / 8 + 16),
-			lists: Vec::with_capacity(bytes / 30 + 16),
-			strings: Interner::sized(bytes),
-			..Ast::default()
+			core: Box::new(Core {
+				nodes: Vec::with_capacity(bytes / 8 + 16),
+				lists: Vec::with_capacity(bytes / 30 + 16),
+				strings: Interner::sized(bytes),
+				..Core::default()
+			}),
+			extension: X::default(),
 		}
 	}
 }
@@ -391,6 +459,22 @@ impl<X: Walk> Ast<X> {
 }
 
 impl<X> Ast<X> {
+	pub(crate) fn split(self) -> (Ast, X) {
+		(
+			Ast {
+				core: self.core,
+				extension: (),
+			},
+			self.extension,
+		)
+	}
+	pub(crate) fn with_extension<Y>(self, extension: Y) -> Ast<Y> {
+		Ast {
+			core: self.core,
+			extension,
+		}
+	}
+
 	/// The nodes under a host node's fields; a child that is a fragment, a node without a span
 	/// of its own, is walked through, so a document's nodes come in source order around its scripts.
 	fn host_children(&self, index: u32, out: &mut Vec<NodeId>) {

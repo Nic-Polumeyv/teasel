@@ -2,77 +2,112 @@ mod css;
 pub mod entities;
 mod native;
 pub mod plan;
+mod program;
 
 use std::borrow::Cow;
 
-use std::collections::BTreeMap;
-use std::rc::Rc;
-
-use self::plan::{
-	Absence, AttributeMode, Base, Boundary, Construct, Form, Gap, Js, Mode, Path, Plan, Reader, Relation, SpanPolicy,
-	Stop,
+use self::plan::{Absence, AttributeMode, Boundary, Gap, Js, Mode, Plan, Relation, SpanPolicy, Stop};
+use self::program::{
+	Base, Choice, Code as ExprCode, Construct, Expr, Form, Key, Path, Property, Reader, Repeat, Slot, Symbol, Token,
 };
-use crate::ast::{Ast, Host, HostBinding, HostParent, HostRegion, List, NodeId, NodeKind, Value};
+use crate::ast::{Ast, Host, HostBinding, HostParent, HostRegion, List, NodeId, NodeKind, Run, Value};
 use crate::error::{Code, SyntaxError};
 use crate::interner::StrId;
 use crate::lexer::unicode::{is_id_continue, is_id_start};
 use crate::parser::{Entry, Extension, ForInit, Options, Parser, Result};
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum Datum {
 	Missing,
 	Null,
 	Bool(bool),
 	Number(f64),
-	Text(Rc<str>),
+	Text(StrId),
 	Interned(StrId),
-	Static(&'static str),
 	Slice(u32, u32),
 	Span(u32, u32, bool),
 	Node(NodeId),
 	Nodes(List),
-	Array(Rc<Vec<Datum>>),
-	Object(Rc<BTreeMap<Rc<str>, Datum>>),
-	Facts(Rc<Vec<(&'static str, Datum)>>),
+	Array(u32, u32),
+	Constants(u32, u32),
+	Strings(u32, u32),
+	Values(u32, u32),
+	Object(usize),
+	Event(usize),
+	Header(Run),
+	Attribute(usize),
+	NameFacts(usize),
 	Record(usize),
 	Scopes(usize),
-	Region(usize, usize),
+	Region(u32, u32),
 	Incoming(usize),
+	Ancestors(usize),
+	Iteration(usize),
+	Regex(StrId, StrId),
+	Template(StrId, Option<StrId>),
+	Stylesheet(usize),
 }
+
+const _: () = assert!(std::mem::size_of::<Datum>() <= 16);
 
 impl Datum {
 	fn yes(&self) -> bool {
 		matches!(self, Self::Bool(true))
 	}
-	fn facts(fields: impl IntoIterator<Item = (&'static str, Datum)>) -> Self {
-		Self::Facts(Rc::new(fields.into_iter().collect()))
-	}
-	fn object(fields: impl IntoIterator<Item = (impl Into<Rc<str>>, Datum)>) -> Self {
-		Self::Object(Rc::new(fields.into_iter().map(|(k, v)| (k.into(), v)).collect()))
-	}
-	fn array(items: Vec<Datum>) -> Self {
-		Self::Array(Rc::new(items))
-	}
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy, Debug)]
+enum Event {
+	Stylesheet(List, List),
+	Text {
+		raw: Datum,
+		decoded: Datum,
+	},
+	Comment(Datum),
+	Element {
+		name: (u32, u32),
+		id: StrId,
+		header: Run,
+		facts: u8,
+		at_document: bool,
+		raw: Datum,
+	},
+	Directive {
+		name: (u32, u32),
+		raw: (u32, u32),
+		argument: Datum,
+		modifiers: Run,
+		value: Datum,
+		quoted: bool,
+	},
+}
+
+#[derive(Clone, Copy, Debug)]
+struct HeaderAttribute {
+	name: Datum,
+	boolean: bool,
+	text: Datum,
+	expression: bool,
+}
+
+#[derive(Clone, Copy, Debug)]
 struct Record {
-	failure: Option<Box<SyntaxError>>,
+	failure: Option<usize>,
 	body_end: Option<u32>,
 	children_end: Option<u32>,
 	aborted: bool,
 	parent: Option<usize>,
 	rule: usize,
-	ty: Rc<str>,
-	slots: Vec<Datum>,
+	ty: StrId,
+	slots: usize,
 	event: Datum,
 	owner: Option<usize>,
-	ancestors: Vec<usize>,
 	start: u32,
 	node: Option<NodeId>,
+	regions: usize,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy, Debug)]
 struct Element {
 	record: usize,
 	name: (u32, u32),
@@ -81,22 +116,239 @@ struct Element {
 	content: Mode,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 struct Autoclosed {
 	previous: (u32, u32),
 	by: (u32, u32),
 	depth: usize,
 }
 
-struct Checkpoint<M> {
-	ast: crate::ast::Mark<M>,
+#[derive(Clone, Debug)]
+enum Rejection {
+	Expected(u32, u32, StrId),
+	Space(u32, u32),
+	Message(u32, u32, Code),
+	Error(Box<SyntaxError>),
+}
+impl From<Box<SyntaxError>> for Rejection {
+	fn from(error: Box<SyntaxError>) -> Self {
+		Self::Error(error)
+	}
+}
+impl Rejection {
+	fn pos(&self) -> u32 {
+		match self {
+			Self::Expected(pos, ..) | Self::Space(pos, ..) | Self::Message(pos, ..) => *pos,
+			Self::Error(error) => error.pos,
+		}
+	}
+	fn code(&self) -> Code {
+		match self {
+			Self::Expected(..) | Self::Space(..) => Code::Expected,
+			Self::Message(_, _, code) => *code,
+			Self::Error(error) => error.code,
+		}
+	}
+	fn boxed(self, plan: &Plan) -> Box<SyntaxError> {
+		match self {
+			Self::Error(error) => error,
+			Self::Expected(pos, end, id) => error(pos, end, Code::Expected, Some(&plan.program.strings[id.0 as usize])),
+			Self::Space(pos, end) => error(pos, end, Code::Expected, Some("whitespace")),
+			Self::Message(pos, end, code) => Box::new(SyntaxError::with(pos, code, code.message()).to(end)),
+		}
+	}
+}
+
+struct Checkpoint {
+	ast: crate::ast::Mark<()>,
+	native: usize,
 	at: u32,
 	limit: u32,
 	records: usize,
 	record: Record,
-	elements: Vec<Element>,
-	iteration: Vec<Vec<(Rc<str>, Datum)>>,
+	slots: usize,
+	saved: usize,
+	elements: usize,
+	element: Option<Element>,
+	iteration: usize,
+	iteration_slots: usize,
+	events: usize,
+	event: Option<Event>,
+	attributes: usize,
+	values: usize,
 	autoclosed: Option<Autoclosed>,
+}
+
+#[derive(Default)]
+pub(crate) struct Spare {
+	records: Vec<Record>,
+	slots: Vec<Datum>,
+	elements: Vec<Element>,
+	active: Vec<usize>,
+	iteration: Vec<Run>,
+	iteration_slots: Vec<Datum>,
+	bindings: Vec<Datum>,
+	events: Vec<Event>,
+	attributes: Vec<HeaderAttribute>,
+	values: Vec<Datum>,
+	saved: Vec<Datum>,
+	nodes: Vec<Vec<NodeId>>,
+	arrays: Vec<Vec<Datum>>,
+	follows: Vec<String>,
+	failures: Vec<Rejection>,
+	region_slots: Vec<Option<Run>>,
+	targets: Vec<HostParent>,
+	resolving: Vec<(usize, usize)>,
+	node_records: Vec<usize>,
+	cover_seen: crate::ast::NodeSet,
+	scan_strings: crate::interner::Interner,
+	scan_stops: Vec<(u32, u32, bool)>,
+	scan_templates: Vec<u32>,
+	scan_regexp: crate::lexer::regexp::Scratch,
+}
+
+impl std::fmt::Debug for Spare {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("Spare").finish_non_exhaustive()
+	}
+}
+
+struct NativeInput<'a> {
+	src: &'a str,
+	at: u32,
+	limit: u32,
+	options: Options,
+	entry: Js,
+	boundary: Option<Boundary>,
+	follow: &'a str,
+}
+trait Native {
+	fn read(&mut self, input: NativeInput<'_>, ast: Ast) -> (Ast, std::result::Result<Datum, Rejection>, u32);
+	fn mark(&mut self) -> usize;
+	fn restore(&mut self, mark: usize);
+	fn release(&mut self, mark: usize);
+}
+struct NativeReader<E: Extension> {
+	data: E::Data,
+	marks: Vec<<E::Data as crate::ast::Reuse>::Mark>,
+}
+impl<E: Extension> Native for NativeReader<E> {
+	fn read(&mut self, input: NativeInput<'_>, ast: Ast) -> (Ast, std::result::Result<Datum, Rejection>, u32) {
+		let NativeInput {
+			src,
+			at,
+			limit,
+			options,
+			entry,
+			boundary,
+			follow,
+		} = input;
+		let mut parser = Parser::<E>::new(
+			&src[..limit as usize],
+			at,
+			options,
+			follow,
+			ast.with_extension(std::mem::take(&mut self.data)),
+		);
+		let token = parser.lexer.next_token_into(&mut parser.tok);
+		if token.is_ok() && entry == Js::TypeParameters && !E::TYPE_PARAMETERS {
+			let error = Rejection::Message(parser.tok.start, parser.tok.end, Code::NotTypeScript);
+			let (ast, data) = parser.finish().split();
+			self.data = data;
+			return (ast, Err(error), at);
+		}
+		let result = token.and_then(|()| match entry {
+			Js::Program => parser.parse_program().map(|id| parser.list_of(&[id])),
+			Js::AssignmentExpression => {
+				parser.enter_scope(crate::parser::scope::SCOPE_TOP);
+				parser
+					.parse_maybe_assign(ForInit::No, &mut None)
+					.map(|id| parser.list_of(&[id]))
+			}
+			Js::BindingIdentifier | Js::IdentifierReference => {
+				if !matches!(
+					parser.tok.kind,
+					crate::lexer::token::TokenKind::Ident(_) | crate::lexer::token::TokenKind::Keyword(_)
+				) {
+					return fail(
+						parser.tok.start,
+						parser.tok.start,
+						Code::Expected,
+						Some("an identifier"),
+					);
+				}
+				let token_end = parser.tok.end;
+				parser.parse_ident(false).map(|id| parser.list_of(&[id])).map_err(|e| {
+					if e.code == Code::UnexpectedKeyword {
+						error(
+							e.pos,
+							token_end,
+							Code::ReservedWord,
+							Some(&src[e.pos as usize..token_end as usize]),
+						)
+					} else {
+						e
+					}
+				})
+			}
+			_ => parser.read_entry_boundary(
+				match entry {
+					Js::Expression => Entry::Expression,
+					Js::Pattern => Entry::Pattern,
+					Js::Params => Entry::Params,
+					Js::TypeParameters => Entry::TypeParameters,
+					Js::Statement => Entry::Statement,
+					_ => unreachable!(),
+				},
+				boundary == Some(Boundary::LastSharedWord),
+			),
+		});
+		let result = match result {
+			Err(error) if parser.recovering() => {
+				let start = at;
+				let at = error.pos;
+				parser.record(Err(error)).unwrap();
+				parser.skip_to_end();
+				parser.prev_end = parser.prev_end.max(at);
+				if entry == Js::Params {
+					Ok(List::EMPTY)
+				} else {
+					let name = parser.intern("");
+					let node =
+						parser.add_with_end(NodeKind::Identifier { name }, start, parser.consumed_end().max(start));
+					Ok(parser.list_of(&[node]))
+				}
+			}
+			result => result,
+		};
+		let end = parser.consumed_end();
+		let (ast, data) = parser.finish().split();
+		self.data = data;
+		let value = result
+			.map(|roots| {
+				if entry == Js::Params {
+					Datum::Nodes(roots)
+				} else {
+					Datum::Node(ast.nth(roots, 0).unwrap())
+				}
+			})
+			.map_err(Into::into);
+		(ast, value, end)
+	}
+	fn mark(&mut self) -> usize {
+		use crate::ast::Reuse;
+		let index = self.marks.len();
+		self.marks.push(self.data.mark());
+		index
+	}
+	fn restore(&mut self, mark: usize) {
+		use crate::ast::Reuse;
+		self.data.truncate(self.marks[mark]);
+		self.marks.truncate(mark);
+	}
+	fn release(&mut self, mark: usize) {
+		self.marks.truncate(mark);
+	}
 }
 
 pub fn parse(src: &str, plan: &Plan, options: Options) -> (Ast, std::result::Result<NodeId, Box<crate::SyntaxError>>) {
@@ -114,22 +366,44 @@ pub(crate) fn parse_document<E: Extension>(
 	} else {
 		src
 	};
-	let mut w = Walker::<E> {
+	let mut ast = reused.unwrap_or_else(|| Ast::sized(src.len()));
+	for (i, text) in plan.program.strings.iter().enumerate() {
+		let id = ast.strings.intern(text);
+		debug_assert_eq!(id, StrId(i as u32));
+	}
+	let mut spare = ast.host_spare.take().unwrap_or_default();
+	spare.records.clear();
+	spare.slots.clear();
+	spare.elements.clear();
+	spare.active.clear();
+	spare.iteration.clear();
+	spare.iteration_slots.clear();
+	spare.bindings.clear();
+	spare.events.clear();
+	spare.scan_strings.clear();
+	spare.attributes.clear();
+	spare.values.clear();
+	spare.saved.clear();
+	spare.failures.clear();
+	spare.region_slots.clear();
+	spare.targets.clear();
+	spare.resolving.clear();
+	spare.node_records.clear();
+	let (ast, data) = ast.split();
+	let mut native = NativeReader::<E> {
+		data,
+		marks: Vec::with_capacity(plan.program.checkpoint_depth),
+	};
+	let mut w = Walker {
 		src: cut,
 		full: src.len() as u32,
 		plan,
 		options,
-		ast: Some(reused.unwrap_or_else(|| Ast::sized(src.len()))),
+		ast: Some(ast),
+		native: &mut native,
 		at: 0,
 		limit: cut.len() as u32,
-		records: Vec::new(),
-		elements: Vec::new(),
-		active: Vec::new(),
-		iteration: Vec::new(),
-		bindings: Vec::new(),
-		region_slots: Vec::new(),
-		resolving: Vec::new(),
-		node_records: Default::default(),
+		spare,
 		recovering_form: false,
 		native_reads: 0,
 		autoclosed: None,
@@ -145,35 +419,43 @@ pub(crate) fn parse_document<E: Extension>(
 	let errors = &mut w.ast().errors;
 	errors.sort_by_key(|error| error.pos);
 	errors.dedup_by(|a, b| a.pos == b.pos && a.code == b.code);
-	(w.ast.take().unwrap(), result)
+	let mut ast = w.ast.take().unwrap();
+	ast.host_spare = Some(w.spare);
+	(ast.with_extension(native.data), result)
 }
 
-struct Walker<'a, E: Extension> {
+struct Walker<'a> {
 	src: &'a str,
 	full: u32,
 	plan: &'a Plan,
 	options: Options,
-	ast: Option<Ast<E::Data>>,
 	at: u32,
 	limit: u32,
-	records: Vec<Record>,
-	elements: Vec<Element>,
-	active: Vec<usize>,
-	iteration: Vec<Vec<(Rc<str>, Datum)>>,
-	bindings: Vec<(Rc<str>, Datum)>,
-	region_slots: Vec<Vec<Option<Vec<HostParent>>>>,
-	resolving: Vec<(usize, usize)>,
-	node_records: crate::ast::NodeMap<usize>,
+	spare: Box<Spare>,
 	recovering_form: bool,
 	native_reads: usize,
 	autoclosed: Option<Autoclosed>,
+	ast: Option<Ast>,
+	native: &'a mut dyn Native,
 }
 
-impl<'a, E: Extension> Walker<'a, E> {
-	fn ast(&mut self) -> &mut Ast<E::Data> {
+impl std::ops::Deref for Walker<'_> {
+	type Target = Spare;
+	fn deref(&self) -> &Spare {
+		&self.spare
+	}
+}
+impl std::ops::DerefMut for Walker<'_> {
+	fn deref_mut(&mut self) -> &mut Spare {
+		&mut self.spare
+	}
+}
+
+impl<'a> Walker<'a> {
+	fn ast(&mut self) -> &mut Ast {
 		self.ast.as_mut().unwrap()
 	}
-	fn tree(&self) -> &Ast<E::Data> {
+	fn tree(&self) -> &Ast {
 		self.ast.as_ref().unwrap()
 	}
 	fn rest(&self) -> &'a str {
@@ -218,56 +500,101 @@ impl<'a, E: Extension> Walker<'a, E> {
 	fn list(&mut self, nodes: &[NodeId]) -> List {
 		self.ast().add_list_from(nodes.iter().copied().map(Some))
 	}
+	fn event(&mut self, event: Event) -> Datum {
+		let id = self.events.len();
+		self.events.push(event);
+		Datum::Event(id)
+	}
+	fn array(&mut self, values: Vec<Datum>) -> Datum {
+		let start = self.values.len() as u32;
+		self.values.extend_from_slice(&values);
+		let count = values.len() as u32;
+		self.recycle_values(values);
+		Datum::Array(start, count)
+	}
+	fn take_values(&mut self) -> Vec<Datum> {
+		self.arrays.pop().unwrap_or_default()
+	}
+	fn recycle_values(&mut self, mut values: Vec<Datum>) {
+		values.clear();
+		self.arrays.push(values);
+	}
+	fn take_nodes(&mut self) -> Vec<NodeId> {
+		self.nodes.pop().unwrap_or_default()
+	}
+	fn finish_nodes(&mut self, mut nodes: Vec<NodeId>) -> List {
+		let list = self.list(&nodes);
+		nodes.clear();
+		self.nodes.push(nodes);
+		list
+	}
+	fn decoded(&mut self, start: u32, end: u32, attribute: bool) -> Datum {
+		match decode(&self.src[start as usize..end as usize], attribute) {
+			Cow::Borrowed(_) => Datum::Slice(start, end),
+			Cow::Owned(s) => Datum::Interned(self.intern(&s)),
+		}
+	}
 	fn text_of<'b>(&'b self, value: &'b Datum) -> Option<&'b str> {
 		match value {
-			Datum::Text(s) => Some(s),
+			Datum::Text(id) => Some(&self.plan.program.strings[id.0 as usize]),
 			Datum::Interned(id) => Some(self.tree().str(*id)),
-			Datum::Static(s) => Some(s),
 			Datum::Slice(a, b) => self.src.get(*a as usize..*b as usize),
 			_ => None,
 		}
 	}
 	fn count(&self, value: &Datum) -> usize {
 		match value {
-			Datum::Array(items) => items.len(),
+			Datum::Array(_, n) | Datum::Constants(_, n) | Datum::Strings(_, n) | Datum::Values(_, n) => *n as usize,
 			Datum::Nodes(list) => list.len as usize,
+			Datum::Header(run) => run.len as usize,
+			Datum::Ancestors(record) => {
+				let mut owner = self.records[*record].owner;
+				let mut n = 0;
+				while let Some(i) = owner {
+					n += 1;
+					owner = self.records[i].owner;
+				}
+				n
+			}
 			_ => 0,
 		}
 	}
 	fn item(&self, value: &Datum, index: usize) -> Datum {
-		match value {
-			Datum::Array(items) => items.get(index).cloned().unwrap_or(Datum::Missing),
-			Datum::Nodes(list) => self
-				.tree()
-				.list(*list)
-				.get(index)
-				.map_or(Datum::Missing, |node| node.map_or(Datum::Null, Datum::Node)),
+		if index >= self.count(value) {
+			return Datum::Missing;
+		}
+		match *value {
+			Datum::Array(a, _) => self.values[a as usize + index],
+			Datum::Constants(a, _) => self.plan.program.constants[a as usize + index],
+			Datum::Strings(a, _) => Datum::Interned(self.tree().host_strings[a as usize + index]),
+			Datum::Values(a, _) => self.datum(self.tree().host_values[a as usize + index]),
+			Datum::Nodes(list) => self.tree().list(list)[index].map_or(Datum::Null, Datum::Node),
+			Datum::Header(run) => Datum::Attribute(run.start as usize + index),
+			Datum::Ancestors(record) => {
+				let mut owner = self.records[record].owner;
+				for _ in 0..index {
+					owner = owner.and_then(|i| self.records[i].owner);
+				}
+				owner.map_or(Datum::Missing, Datum::Record)
+			}
 			_ => Datum::Missing,
 		}
 	}
-	fn items(&self, value: &Datum) -> Vec<Datum> {
-		(0..self.count(value)).map(|i| self.item(value, i)).collect()
-	}
-
-	fn slot(&self, record: usize, name: &str) -> Option<usize> {
-		let rule = &self.plan.rules[self.records[record].rule];
-		rule.fields.keys().position(|key| key.as_ref() == name).or_else(|| {
-			rule.locals
-				.iter()
-				.position(|key| key.as_ref() == name)
-				.map(|i| i + rule.fields.len())
-		})
-	}
-	fn write(&mut self, record: usize, name: &str, value: Datum) {
+	fn write(&mut self, record: usize, slot: &Slot, value: Datum) {
 		if value == Datum::Missing {
 			return;
 		}
-		if let Some(index) = self.slot(record, name) {
-			self.records[record].slots[index] = value;
-		} else if let Some(slots) = self.iteration.last_mut()
-			&& let Some((_, slot)) = slots.iter_mut().find(|(key, _)| key.as_ref() == name)
-		{
-			*slot = value;
+		match *slot {
+			Slot::Record(i) => {
+				let i = self.records[record].slots + i as usize;
+				self.slots[i] = value;
+			}
+			Slot::Iteration(i) => {
+				if let Some(run) = self.iteration.last().copied() {
+					self.iteration_slots[run.start as usize + i as usize] = value;
+				}
+			}
+			Slot::Missing => {}
 		}
 	}
 	fn datum(&self, value: Value) -> Datum {
@@ -276,67 +603,103 @@ impl<'a, E: Extension> Walker<'a, E> {
 			Value::Nodes(list) => Datum::Nodes(list),
 			Value::Str(id) => Datum::Interned(id),
 			Value::Slice(a, b) => Datum::Slice(a, b),
-			Value::Strs(a, n) => Datum::array(
-				self.tree().host_strings[a as usize..(a + n) as usize]
-					.iter()
-					.map(|id| Datum::Interned(*id))
-					.collect(),
-			),
+			Value::Strs(a, n) => Datum::Strings(a, n),
+			Value::Array(a, n) => Datum::Values(a, n),
 			Value::Float(v) => Datum::Number(v),
-			Value::Array(a, n) => Datum::array(
-				self.tree().host_values[a as usize..(a + n) as usize]
-					.iter()
-					.map(|v| self.datum(*v))
-					.collect(),
-			),
 			Value::Bool(v) => Datum::Bool(v),
 			Value::Int(v) => Datum::Number(v as f64),
 			Value::Null | Value::Comments => Datum::Null,
 		}
 	}
-	fn property(&self, value: Datum, path: &Path) -> Datum {
-		let Path::Name(key) = path else {
-			let Path::Index(index) = path else { unreachable!() };
-			return self.item(&value, *index);
+	fn property(&mut self, value: Datum, path: &Path) -> Datum {
+		let Path::Name(prop) = path else {
+			let Path::Index(i) = path else { unreachable!() };
+			return self.item(&value, *i);
 		};
+		let key = prop.key;
 		match value {
-			Datum::Object(fields) => fields.get(key.as_ref()).cloned().unwrap_or(Datum::Missing),
-			Datum::Facts(fields) => fields
+			Datum::Object(i) => self.plan.program.objects[i]
 				.iter()
-				.find(|(k, _)| *k == key.as_ref())
-				.map_or(Datum::Missing, |(_, v)| v.clone()),
-			Datum::Record(index) => {
-				let rec = &self.records[index];
-				match key.as_ref() {
-					"type" => Datum::Text(rec.ty.clone()),
-					"span" => Datum::Span(
+				.find(|(k, _)| k.name == prop.name)
+				.map_or(Datum::Missing, |(_, v)| *v),
+			Datum::Record(i) => {
+				let rec = self.records[i];
+				match key {
+					Key::Type => Datum::Text(rec.ty),
+					Key::Span => Datum::Span(
 						rec.start,
 						rec.node.map_or(self.at, |id| self.tree().node(id).end),
 						false,
 					),
-					"header" => self.property(rec.event.clone(), path),
-					"scopes" => Datum::Scopes(index),
-					_ => self.slot(index, key).map_or(Datum::Missing, |i| rec.slots[i].clone()),
+					Key::Header => self.property(rec.event, path),
+					Key::Scopes => Datum::Scopes(i),
+					_ => self.plan.program.rules[rec.rule].lookup[prop.name.0 as usize]
+						.map_or(Datum::Missing, |n| self.slots[rec.slots + n]),
 				}
 			}
-			Datum::Scopes(index) => self.plan.rules[self.records[index].rule]
-				.regions
-				.iter()
-				.position(|r| r.id.as_ref() == key.as_ref())
-				.map_or(Datum::Missing, |r| Datum::Region(index, r)),
-			Datum::Span(a, b, dynamic) => match key.as_ref() {
-				"start" => Datum::Number(a as f64),
-				"end" => Datum::Number(b as f64),
-				"span" => Datum::Span(a, b, dynamic),
-				"text" => Datum::Slice(a, b),
-				"dynamic" => Datum::Bool(dynamic),
+			Datum::Scopes(i) => self.plan.program.rules[self.records[i].rule].scopes[prop.name.0 as usize]
+				.map_or(Datum::Missing, |r| Datum::Region(i as u32, r as u32)),
+			Datum::Span(a, b, dynamic) => match key {
+				Key::Start => Datum::Number(a as f64),
+				Key::End => Datum::Number(b as f64),
+				Key::Span => value,
+				Key::Text => Datum::Slice(a, b),
+				Key::Dynamic => Datum::Bool(dynamic),
 				_ => Datum::Missing,
 			},
+			Datum::Event(i) => self.event_value(i, key),
+			Datum::Header(run) => {
+				if key == Key::Attributes {
+					Datum::Header(run)
+				} else {
+					Datum::Missing
+				}
+			}
+			Datum::Attribute(i) => {
+				let a = self.attributes[i];
+				match key {
+					Key::Kind => Datum::Text(if a.expression {
+						Symbol::WordExpression.id()
+					} else {
+						Symbol::WordOrdinary.id()
+					}),
+					Key::Name if !a.expression => a.name,
+					Key::Boolean if !a.expression => Datum::Bool(a.boolean),
+					Key::StaticText if !a.expression => a.text,
+					_ => Datum::Missing,
+				}
+			}
+			Datum::NameFacts(i) => {
+				let Event::Element { name, facts, .. } = self.events[i] else {
+					unreachable!()
+				};
+				match key {
+					Key::ValidHtmlName => Datum::Bool(facts & 1 != 0),
+					Key::Identifier => Datum::Bool(facts & 2 != 0),
+					Key::UppercaseInitial => Datum::Bool(facts & 4 != 0),
+					Key::DottedIdentifier => Datum::Bool(facts & 8 != 0),
+					Key::Namespace => self.src[name.0 as usize..name.1 as usize]
+						.find(':')
+						.map_or(Datum::Missing, |n| Datum::Slice(name.0, name.0 + n as u32)),
+					_ => Datum::Missing,
+				}
+			}
+			Datum::Regex(pattern, flags) => match key {
+				Key::Pattern => Datum::Interned(pattern),
+				Key::Flags => Datum::Interned(flags),
+				_ => Datum::Missing,
+			},
+			Datum::Template(raw, cooked) => match key {
+				Key::Raw => Datum::Interned(raw),
+				Key::Cooked => cooked.map_or(Datum::Null, Datum::Interned),
+				_ => Datum::Missing,
+			},
+			Datum::Stylesheet(i) => self.event_value(i, key),
 			Datum::Node(id) => {
 				let node = self.tree().node(id);
-				match key.as_ref() {
-					"span" => return Datum::Span(node.start, node.end, false),
-					"raw"
+				match key {
+					Key::Span => return Datum::Span(node.start, node.end, false),
+					Key::Raw
 						if matches!(
 							node.kind,
 							NodeKind::NumberLiteral { .. }
@@ -348,47 +711,54 @@ impl<'a, E: Extension> Walker<'a, E> {
 					{
 						return Datum::Slice(node.start, node.end);
 					}
-					"start" => return Datum::Number(node.start as f64),
-					"end" => return Datum::Number(node.end as f64),
-					"innerSource" if node.end > node.start + 1 => return Datum::Slice(node.start + 1, node.end - 1),
-					"header" => {
-						return self.node_records.get(id).map_or(Datum::Missing, |index| {
-							self.property(self.records[*index].event.clone(), path)
-						});
+					Key::Start => return Datum::Number(node.start as f64),
+					Key::End => return Datum::Number(node.end as f64),
+					Key::InnerSource if node.end > node.start + 1 => return Datum::Slice(node.start + 1, node.end - 1),
+					Key::Header => {
+						return self
+							.node_records
+							.get(id.index() as usize)
+							.copied()
+							.filter(|i| *i != usize::MAX)
+							.map_or(Datum::Missing, |i| self.property(self.records[i].event, path));
 					}
 					_ => {}
 				}
-				match node.kind {
-					NodeKind::Host(index) => {
-						let host = &self.tree().hosts[index as usize];
-						if key.as_ref() == "type" {
-							return Datum::Interned(host.ty);
-						}
-						self.tree().host_fields[host.fields.0 as usize..(host.fields.0 + host.fields.1) as usize]
-							.iter()
-							.find(|(k, _)| self.tree().str(*k) == key.as_ref())
-							.map_or(Datum::Missing, |(_, v)| self.datum(*v))
+				if let NodeKind::Host(i) = node.kind {
+					let host = &self.tree().hosts[i as usize];
+					if key == Key::Type {
+						return Datum::Interned(host.ty);
 					}
-					NodeKind::Identifier { name } if key.as_ref() == "name" => Datum::Interned(name),
-					_ => self.native_property(id, key),
+					self.tree().host_fields[host.fields.0 as usize..(host.fields.0 + host.fields.1) as usize]
+						.iter()
+						.find(|(k, _)| *k == prop.name)
+						.map_or(Datum::Missing, |(_, v)| self.datum(*v))
+				} else {
+					self.native_property(id, key)
 				}
 			}
 			_ => Datum::Missing,
 		}
 	}
-	fn constant(value: &plan::Json) -> Datum {
-		match value {
-			plan::Json::Null => Datum::Null,
-			plan::Json::Bool(v) => Datum::Bool(*v),
-			plan::Json::Number(v) => Datum::Number(v.parse().unwrap_or(0.0)),
-			plan::Json::String(v) => Datum::Text(v.clone()),
-			plan::Json::Array(v) if v.is_empty() => Datum::Nodes(List::EMPTY),
-			plan::Json::Array(v) => Datum::array(v.iter().map(Self::constant).collect()),
-			plan::Json::Object(v) => Datum::object(v.iter().map(|(k, v)| (k.as_ref(), Self::constant(v)))),
-		}
-	}
 	fn equal(&self, a: &Datum, b: &Datum) -> bool {
-		if matches!(a, Datum::Array(_) | Datum::Nodes(_)) && matches!(b, Datum::Array(_) | Datum::Nodes(_)) {
+		if let (Datum::Object(a), Datum::Object(b)) = (a, b) {
+			let a = &self.plan.program.objects[*a];
+			let b = &self.plan.program.objects[*b];
+			return a.len() == b.len()
+				&& a.iter()
+					.zip(b)
+					.all(|((ka, va), (kb, vb))| ka.name == kb.name && self.equal(va, vb));
+		}
+		if let (Datum::Text(a) | Datum::Interned(a), Datum::Text(b) | Datum::Interned(b)) = (a, b) {
+			return a == b;
+		}
+		if matches!(
+			a,
+			Datum::Array(..) | Datum::Constants(..) | Datum::Strings(..) | Datum::Values(..) | Datum::Nodes(_)
+		) && matches!(
+			b,
+			Datum::Array(..) | Datum::Constants(..) | Datum::Strings(..) | Datum::Values(..) | Datum::Nodes(_)
+		) {
 			return self.count(a) == self.count(b)
 				&& (0..self.count(a)).all(|i| self.equal(&self.item(a, i), &self.item(b, i)));
 		}
@@ -397,57 +767,56 @@ impl<'a, E: Extension> Walker<'a, E> {
 			_ => a == b,
 		}
 	}
-	fn eval(&mut self, expr: &plan::Value, record: usize) -> Result<Datum> {
-		use plan::Value as V;
-		Ok(match expr {
-			V::Constant(value) => Self::constant(value),
-			V::Get { base, path } => {
-				let mut value = match base {
-					Base::Value(value) => self.eval(value, record)?,
-					Base::Name(name) => match name.as_ref() {
-						"record" => Datum::Record(record),
-						"event" => self.records[record].event.clone(),
-						"locals" => Datum::Record(record),
-						"iteration" => Datum::object(self.iteration.last().into_iter().flatten().cloned()),
-						"owner" => self.records[record].owner.map_or(Datum::Missing, Datum::Record),
-						"ancestors" => Datum::array(
-							self.records[record]
-								.ancestors
-								.iter()
-								.rev()
-								.copied()
-								.map(Datum::Record)
-								.collect(),
-						),
-						"incoming" => Datum::Incoming(record),
-						"scopes" => Datum::Scopes(record),
-						_ => self
-							.bindings
-							.iter()
-							.rev()
-							.find(|(key, _)| key.as_ref() == name.as_ref())
-							.map_or(Datum::Missing, |(_, v)| v.clone()),
-					},
-				};
-				for part in path {
-					value = self.property(value, part);
+	#[inline]
+	fn eval(&mut self, code: &ExprCode, record: usize) -> Result<Datum> {
+		Ok(match &self.plan.program.exprs[code.index()] {
+			Expr::Constant(value) => *value,
+			Expr::Slot(i) => self.slots[self.records[record].slots + *i as usize],
+			Expr::Iteration(i) => self
+				.iteration
+				.last()
+				.map_or(Datum::Missing, |r| self.iteration_slots[r.start as usize + *i as usize]),
+			Expr::Event(key) => self.event_field(record, *key),
+			Expr::RecordType => Datum::Text(self.records[record].ty),
+			Expr::Get {
+				base: Base::Binding(i),
+				path,
+			} if path.len == 0 => self.bindings[self.bindings.len() - 1 - *i as usize],
+			_ => return self.eval_complex(code, record),
+		})
+	}
+	fn test(&mut self, code: &ExprCode, record: usize) -> Result<bool> {
+		Ok(match &self.plan.program.exprs[code.index()] {
+			Expr::Constant(value) => value.yes(),
+			Expr::NameEq(id) => {
+				if let Datum::Event(i) = self.records[record].event {
+					match self.events[i] {
+						Event::Element { id: actual, .. } => actual == *id,
+						_ => {
+							let name = self.event_field(record, Key::Name);
+							self.equal(&name, &Datum::Text(*id))
+						}
+					}
+				} else {
+					false
 				}
-				value
 			}
-			V::Compare {
-				relation,
-				left,
-				right,
-				set,
-			} => {
-				if let Some(set) = set {
-					let needle = self.eval(&set.needle, record)?;
-					return Ok(Datum::Bool(
-						self.text_of(&needle).is_some_and(|s| set.strings.contains(s)),
-					));
+			Expr::Member { needle, strings } => {
+				let needle = self.eval(needle, record)?;
+				let strings = &self.plan.program.sets[strings.indices()];
+				if let Datum::Text(id) | Datum::Interned(id) = needle {
+					strings.binary_search_by_key(&id.0, |s| s.0).is_ok()
+				} else {
+					self.text_of(&needle).is_some_and(|text| {
+						strings
+							.iter()
+							.any(|id| self.plan.program.strings[id.0 as usize].as_ref() == text)
+					})
 				}
+			}
+			Expr::Compare { relation, left, right } => {
 				let left = self.eval(left, record)?;
-				let yes = match relation {
+				match relation {
 					Relation::Present => left != Datum::Missing,
 					Relation::Equal => {
 						let right = self.eval(right.as_ref().unwrap(), record)?;
@@ -457,20 +826,79 @@ impl<'a, E: Extension> Walker<'a, E> {
 						let right = self.eval(right.as_ref().unwrap(), record)?;
 						matches!((left,right),(Datum::Number(a),Datum::Number(b)) if a<b)
 					}
+				}
+			}
+			Expr::Not(value) => !self.test(value, record)?,
+			Expr::And(left, right) => self.test(left, record)? && self.test(right, record)?,
+			Expr::Or(left, right) => self.test(left, record)? || self.test(right, record)?,
+			Expr::Choose { condition, yes, no } => {
+				let condition = self.test(condition, record)?;
+				return self.test(if condition { yes } else { no }, record);
+			}
+			Expr::Exists(list) => {
+				let mut found = false;
+				self.eval_list(list, record, &mut |_, _| {
+					found = true;
+					Ok(false)
+				})?;
+				found
+			}
+			_ => self.eval(code, record)?.yes(),
+		})
+	}
+	fn eval_complex(&mut self, code: &ExprCode, record: usize) -> Result<Datum> {
+		use program::Expr as V;
+		Ok(match &self.plan.program.exprs[code.index()] {
+			V::Slot(i) => self.slots[self.records[record].slots + *i as usize],
+			V::Iteration(i) => self
+				.iteration
+				.last()
+				.map_or(Datum::Missing, |r| self.iteration_slots[r.start as usize + *i as usize]),
+			V::Event(key) => self.event_field(record, *key),
+			V::RecordType => Datum::Text(self.records[record].ty),
+			V::Not(_) | V::And(..) | V::Or(..) | V::NameEq(_) | V::Exists(_) | V::Member { .. } | V::Compare { .. } => {
+				Datum::Bool(self.test(code, record)?)
+			}
+			V::Constant(value) => *value,
+			V::Get { base, path } => {
+				let mut value = match base {
+					Base::Value(v) => self.eval(v, record)?,
+					Base::Record => Datum::Record(record),
+					Base::Event => self.records[record].event,
+					Base::Owner => self.records[record].owner.map_or(Datum::Missing, Datum::Record),
+					Base::Ancestors => Datum::Ancestors(record),
+					Base::Incoming => Datum::Incoming(record),
+					Base::Scopes => Datum::Scopes(record),
+					Base::Iteration => self
+						.iteration
+						.len()
+						.checked_sub(1)
+						.map_or(Datum::Missing, Datum::Iteration),
+					Base::Slot(Slot::Record(i)) => self.slots[self.records[record].slots + *i as usize],
+					Base::Slot(Slot::Iteration(i)) => self
+						.iteration
+						.last()
+						.map_or(Datum::Missing, |r| self.iteration_slots[r.start as usize + *i as usize]),
+					Base::Region(i) => Datum::Region(record as u32, *i),
+					Base::Binding(i) => self.bindings[self.bindings.len() - 1 - *i as usize],
+					Base::Missing | Base::Slot(Slot::Missing) => Datum::Missing,
 				};
-				Datum::Bool(yes)
+				for part in &self.plan.program.paths[path.indices()] {
+					value = self.property(value, part);
+				}
+				value
 			}
 			V::Choose { condition, yes, no } => {
-				let condition = self.eval(condition, record)?.yes();
+				let condition = self.test(condition, record)?;
 				self.eval(if condition { yes } else { no }, record)?
 			}
-			V::FlatMap { .. } => {
-				let mut out = Vec::new();
-				self.eval_list(expr, record, &mut |_, value| {
+			V::FlatMap { .. } | V::Filter { .. } | V::Concat(_) => {
+				let mut out = self.take_values();
+				self.eval_list(code, record, &mut |_, value| {
 					out.push(value);
 					Ok(true)
 				})?;
-				Datum::array(out)
+				self.array(out)
 			}
 			V::Length(list) => {
 				let mut count = 0;
@@ -499,52 +927,92 @@ impl<'a, E: Extension> Walker<'a, E> {
 				out
 			}
 			V::Construct(Construct::Array(items)) => {
-				Datum::array(items.iter().map(|v| self.eval(v, record)).collect::<Result<_>>()?)
+				let mut values = self.take_values();
+				for item in &self.plan.program.args[items.indices()] {
+					values.push(self.eval(item, record)?);
+				}
+				self.array(values)
 			}
 			V::Construct(Construct::Record {
 				node_type,
 				fields,
 				span,
 			}) => {
+				let fields = &self.plan.program.fields[fields.indices()];
 				let span = self.eval(span, record)?;
 				let (start, end) = match span {
 					Datum::Span(a, b, _) => (a, b),
 					_ => (self.at, self.at),
 				};
-				let fields = fields
-					.iter()
-					.map(|(k, v)| Ok((k.as_ref(), self.eval(v, record)?)))
-					.collect::<Result<Vec<_>>>()?;
-				Datum::Node(self.make(
-					node_type.as_deref().unwrap_or(""),
-					start,
-					end,
-					&fields,
-					span != Datum::Null,
-				)?)
+				let mut values = self.take_values();
+				for (_, expr) in fields {
+					values.push(self.eval(expr, record)?);
+				}
+				let ty = &self.plan.program.strings[node_type.0 as usize];
+				let node = if ty.starts_with("js.") {
+					let output: Vec<_> = fields
+						.iter()
+						.zip(&values)
+						.map(|((name, _), value)| (self.plan.program.strings[name.0 as usize].as_ref(), *value))
+						.collect();
+					self.make(ty, start, end, &output, span != Datum::Null)?
+				} else {
+					let len = values.iter().filter(|v| **v != Datum::Missing).count();
+					let from = self.tree().host_fields.len();
+					self.ast().host_fields.resize(from + len, (StrId(0), Value::Null));
+					let mut n = from;
+					for ((name, _), value) in fields.iter().zip(&values) {
+						if *value == Datum::Missing {
+							continue;
+						}
+						let key = *name;
+						let value = self.output(value)?;
+						self.ast().host_fields[n] = (key, value);
+						n += 1;
+					}
+					self.host_id(*node_type, start, end, from, len, span != Datum::Null)
+				};
+				self.recycle_values(values);
+				Datum::Node(node)
 			}
 		})
 	}
 	fn eval_list(
 		&mut self,
-		expr: &plan::Value,
+		code: &ExprCode,
 		record: usize,
 		emit: &mut dyn FnMut(&mut Self, Datum) -> Result<bool>,
 	) -> Result<bool> {
-		use plan::Value as V;
-		match expr {
-			V::FlatMap { list, binding, body } => self.eval_list(list, record, &mut |this, item| {
-				this.bindings.push((binding.clone(), item));
+		use program::Expr as V;
+		match &self.plan.program.exprs[code.index()] {
+			V::Concat(items) => {
+				for item in &self.plan.program.args[items.indices()] {
+					if !self.eval_list(item, record, emit)? {
+						return Ok(false);
+					}
+				}
+				Ok(true)
+			}
+
+			V::Filter { list, predicate } => self.eval_list(list, record, &mut |this, item| {
+				this.bindings.push(item);
+				let yes = this.test(predicate, record);
+				this.bindings.pop();
+				if yes? { emit(this, item) } else { Ok(true) }
+			}),
+
+			V::FlatMap { list, body } => self.eval_list(list, record, &mut |this, item| {
+				this.bindings.push(item);
 				let result = this.eval_list(body, record, emit);
 				this.bindings.pop();
 				result
 			}),
 			V::Choose { condition, yes, no } => {
-				let condition = self.eval(condition, record)?.yes();
+				let condition = self.test(condition, record)?;
 				self.eval_list(if condition { yes } else { no }, record, emit)
 			}
 			V::Construct(Construct::Array(items)) => {
-				for item in items {
+				for item in &self.plan.program.args[items.indices()] {
 					let item = self.eval(item, record)?;
 					if !emit(self, item)? {
 						return Ok(false);
@@ -553,7 +1021,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 				Ok(true)
 			}
 			_ => {
-				let list = self.eval(expr, record)?;
+				let list = self.eval(code, record)?;
 				for i in 0..self.count(&list) {
 					let item = self.item(&list, i);
 					if !emit(self, item)? {
@@ -565,116 +1033,196 @@ impl<'a, E: Extension> Walker<'a, E> {
 		}
 	}
 	fn output(&mut self, value: &Datum) -> Result<Value> {
-		Ok(match value {
+		Ok(match *value {
 			Datum::Missing | Datum::Null | Datum::Scopes(_) | Datum::Region(..) | Datum::Incoming(_) => Value::Null,
-			Datum::Bool(v) => Value::Bool(*v),
-			Datum::Number(v) if *v >= 0.0 && *v <= u32::MAX as f64 && v.fract() == 0.0 => Value::Int(*v as u32),
-			Datum::Number(v) => Value::Float(*v),
-			Datum::Text(v) => Value::Str(self.intern(v)),
-			Datum::Interned(id) => Value::Str(*id),
-			Datum::Static(v) => Value::Str(self.intern(v)),
-			Datum::Slice(a, b) => Value::Slice(*a, *b),
-			Datum::Node(id) => Value::Node(*id),
-			Datum::Nodes(list) => Value::Nodes(*list),
-			Datum::Array(items) => {
-				if !items.is_empty() && items.iter().all(|v| self.text_of(v).is_some()) {
+			Datum::Bool(v) => Value::Bool(v),
+			Datum::Number(v) if v >= 0.0 && v <= u32::MAX as f64 && v.fract() == 0.0 => Value::Int(v as u32),
+			Datum::Number(v) => Value::Float(v),
+			Datum::Text(id) => Value::Str(id),
+			Datum::Interned(id) => Value::Str(id),
+			Datum::Slice(a, b) => Value::Slice(a, b),
+			Datum::Node(id) => Value::Node(id),
+			Datum::Nodes(list) => Value::Nodes(list),
+			Datum::Strings(a, n) => Value::Strs(a, n),
+			Datum::Values(a, n) => Value::Array(a, n),
+			Datum::Array(..) | Datum::Constants(..) => {
+				let count = self.count(value);
+				if count > 0 && (0..count).all(|i| self.text_of(&self.item(value, i)).is_some()) {
 					let start = self.tree().host_strings.len() as u32;
-					for v in items.iter() {
-						let text = self.text_of(v).unwrap().to_owned();
-						let id = self.intern(&text);
+					for i in 0..count {
+						let item = self.item(value, i);
+						let id = self.string(item);
 						self.ast().host_strings.push(id);
 					}
-					Value::Strs(start, items.len() as u32)
-				} else if !items
-					.iter()
-					.all(|v| matches!(v, Datum::Node(_) | Datum::Null | Datum::Missing))
+					Value::Strs(start, count as u32)
+				} else if (0..count)
+					.all(|i| matches!(self.item(value, i), Datum::Node(_) | Datum::Null | Datum::Missing))
 				{
-					let values = items.iter().map(|v| self.output(v)).collect::<Result<Vec<_>>>()?;
-					let start = self.tree().host_values.len() as u32;
-					self.ast().host_values.extend(values);
-					Value::Array(start, items.len() as u32)
-				} else {
-					let nodes = items
-						.iter()
-						.map(|v| match v {
-							Datum::Node(id) => Some(*id),
+					let start = self.tree().lists.len() as u32;
+					for i in 0..count {
+						let node = match self.item(value, i) {
+							Datum::Node(id) => Some(id),
 							_ => None,
-						})
-						.collect::<Vec<_>>();
-					Value::Nodes(self.ast().add_list_from(nodes.into_iter()))
+						};
+						self.ast().lists.push(node);
+					}
+					Value::Nodes(List {
+						start,
+						len: count as u32,
+					})
+				} else {
+					let start = self.tree().host_values.len();
+					self.ast().host_values.resize(start + count, Value::Null);
+					for i in 0..count {
+						let item = self.item(value, i);
+						let value = self.output(&item)?;
+						self.ast().host_values[start + i] = value;
+					}
+					Value::Array(start as u32, count as u32)
 				}
 			}
-			Datum::Facts(fields) => Value::Node(self.make("", self.at, self.at, fields, false)?),
-			Datum::Object(fields) => {
-				let fields = fields.iter().map(|(k, v)| (k.as_ref(), v.clone())).collect::<Vec<_>>();
-				Value::Node(self.make("", self.at, self.at, &fields, false)?)
+			Datum::Object(i) => {
+				let fields = &self.plan.program.objects[i];
+				let start = self.tree().host_fields.len();
+				self.ast()
+					.host_fields
+					.resize(start + fields.len(), (StrId(0), Value::Null));
+				for (n, (prop, value)) in fields.iter().enumerate() {
+					let key = prop.name;
+					let value = self.output(value)?;
+					self.ast().host_fields[start + n] = (key, value);
+				}
+				Value::Node(self.host("", self.at, self.at, start, fields.len(), false))
 			}
-			Datum::Record(rec) => self.records[*rec].node.map_or(Value::Null, Value::Node),
-			Datum::Span(a, b, _) => {
-				let fields = [("start", Datum::Number(*a as f64)), ("end", Datum::Number(*b as f64))];
-				Value::Node(self.make("", *a, *b, &fields, false)?)
+			Datum::Record(rec) => self.records[rec].node.map_or(Value::Null, Value::Node),
+			Datum::Span(a, b, _) => Value::Node(self.make(
+				"",
+				a,
+				b,
+				&[("start", Datum::Number(a as f64)), ("end", Datum::Number(b as f64))],
+				false,
+			)?),
+			Datum::Regex(pattern, flags) => Value::Node(self.make(
+				"",
+				self.at,
+				self.at,
+				&[("pattern", Datum::Interned(pattern)), ("flags", Datum::Interned(flags))],
+				false,
+			)?),
+			Datum::Template(raw, cooked) => Value::Node(self.make(
+				"",
+				self.at,
+				self.at,
+				&[
+					("raw", Datum::Interned(raw)),
+					("cooked", cooked.map_or(Datum::Null, Datum::Interned)),
+				],
+				false,
+			)?),
+			Datum::Stylesheet(i) => {
+				let Event::Stylesheet(children, comments) = self.events[i] else {
+					unreachable!()
+				};
+				Value::Node(self.make(
+					"",
+					self.at,
+					self.at,
+					&[
+						("children", Datum::Nodes(children)),
+						("comments", Datum::Nodes(comments)),
+					],
+					false,
+				)?)
 			}
+			_ => Value::Null,
 		})
+	}
+	fn string(&mut self, value: Datum) -> StrId {
+		match value {
+			Datum::Interned(id) => id,
+			Datum::Text(id) => id,
+			Datum::Slice(a, b) => self.intern(&self.src[a as usize..b as usize]),
+			_ => self.intern(""),
+		}
+	}
+	fn host(&mut self, ty: &str, start: u32, end: u32, from: usize, len: usize, span: bool) -> NodeId {
+		let ty = self.tree().strings.find(ty).unwrap_or_else(|| self.intern(ty));
+		self.host_id(ty, start, end, from, len, span)
+	}
+	fn host_id(&mut self, ty: StrId, start: u32, end: u32, from: usize, len: usize, span: bool) -> NodeId {
+		let index = self.tree().hosts.len() as u32;
+		self.ast().hosts.push(Host {
+			ty,
+			fields: (from as u32, len as u32),
+			span,
+		});
+		self.ast().add(NodeKind::Host(index), start, end)
 	}
 	fn make(&mut self, ty: &str, start: u32, end: u32, fields: &[(&str, Datum)], span: bool) -> Result<NodeId> {
 		if ty.starts_with("js.") {
 			let kind = self.native_construct(ty, start, end, fields)?;
 			return Ok(self.ast().add(kind, start, end));
 		}
-		let mut values = Vec::with_capacity(fields.len());
-		for (key, value) in fields {
-			if *value != Datum::Missing {
-				values.push((self.intern(key), self.output(value)?));
-			}
+		let len = fields.iter().filter(|(_, v)| *v != Datum::Missing).count();
+		let from = self.tree().host_fields.len();
+		self.ast().host_fields.resize(from + len, (StrId(0), Value::Null));
+		for (i, (key, value)) in fields.iter().filter(|(_, v)| *v != Datum::Missing).enumerate() {
+			let key = self.intern(key);
+			let value = self.output(value)?;
+			self.ast().host_fields[from + i] = (key, value);
 		}
-		let from = self.tree().host_fields.len() as u32;
-		self.ast().host_fields.extend(values);
-		let len = self.tree().host_fields.len() as u32 - from;
-		let ty = self.intern(ty);
-		let index = self.tree().hosts.len() as u32;
-		self.ast().hosts.push(Host {
-			ty,
-			fields: (from, len),
-			span,
-		});
-		Ok(self.ast().add(NodeKind::Host(index), start, end))
+		Ok(self.host(ty, start, end, from, len, span))
 	}
-	fn call(&mut self, rule: usize, event: Datum, ty: Option<&str>, follow: &str) -> Result<NodeId> {
+	fn call(&mut self, rule: usize, event: Datum, ty: Option<StrId>, follow: &str) -> Result<NodeId> {
+		self.call_form(rule, event, ty, follow)
+			.map_err(|error| error.boxed(self.plan))
+	}
+	fn call_form(
+		&mut self,
+		rule: usize,
+		event: Datum,
+		ty: Option<StrId>,
+		follow: &str,
+	) -> std::result::Result<NodeId, Rejection> {
 		if self.active.len() > 256 {
-			return fail(self.at, self.at, Code::TreeSize, None);
+			return fail(self.at, self.at, Code::TreeSize, None).map_err(Into::into);
 		}
-		let schema = &self.plan.rules[rule];
+		let schema = &self.plan.program.rules[rule];
 		let record = self.records.len();
+		let slots = self.slots.len();
+		self.slots.resize(slots + schema.slots, Datum::Missing);
+		let owner = self
+			.elements
+			.iter()
+			.rev()
+			.find(|e| e.record != record)
+			.map(|e| e.record);
+		let ty_id = ty.unwrap_or(schema.ty);
+		let parent = self.active.last().copied();
+		let start = self.at;
 		self.records.push(Record {
 			failure: None,
 			body_end: None,
 			children_end: None,
 			aborted: false,
-			parent: self.active.last().copied(),
+			parent,
 			rule,
-			ty: ty.unwrap_or(&schema.node_type).into(),
-			slots: vec![Datum::Missing; schema.fields.len() + schema.locals.len()],
+			ty: ty_id,
+			slots,
 			event,
-			owner: self
-				.elements
-				.iter()
-				.rev()
-				.find(|e| e.record != record)
-				.map(|e| e.record),
-			ancestors: self
-				.elements
-				.iter()
-				.filter(|e| e.record != record)
-				.map(|e| e.record)
-				.collect(),
-			start: self.at,
+			owner,
+			start,
 			node: None,
+			regions: 0,
 		});
 		self.active.push(record);
 		let result = if self.options.error_recovery && !self.recovering_form {
 			let checkpoint = self.checkpoint(record);
-			match self.strict(&schema.form, record, follow) {
-				Ok(()) => Ok(()),
+			match self.strict(&schema.strict, record, follow) {
+				Ok(()) => {
+					self.release(&checkpoint);
+					Ok(())
+				}
 				Err(_) => {
 					self.restore(record, checkpoint);
 					self.recovering_form = true;
@@ -684,22 +1232,30 @@ impl<'a, E: Extension> Walker<'a, E> {
 				}
 			}
 		} else {
-			self.form(&schema.form, record, follow)
+			self.form(
+				if self.options.error_recovery {
+					&schema.form
+				} else {
+					&schema.strict
+				},
+				record,
+				follow,
+			)
 		};
 		self.active.pop();
 		result.map_err(|error| {
 			self.records[record]
 				.failure
 				.take()
-				.filter(|failure| failure.pos > error.pos)
-				.unwrap_or(error)
+				.filter(|i| self.failures[*i].pos() > error.pos())
+				.map_or(error, |i| self.failures[i].clone())
 		})?;
 		if self
 			.elements
 			.last()
 			.is_some_and(|e| e.record == record && e.content == Mode::Raw)
 		{
-			let raw = self.property(self.records[record].event.clone(), &Path::Name("rawChildren".into()));
+			let raw = self.event_field(record, Key::RawChildren);
 			if let Datum::Span(_, end, _) = raw
 				&& self.at <= end
 			{
@@ -713,9 +1269,9 @@ impl<'a, E: Extension> Walker<'a, E> {
 				}
 			}
 		}
-		for (i, absence) in schema.fields.values().enumerate() {
-			if self.records[record].slots[i] == Datum::Missing && *absence == Absence::Null {
-				self.records[record].slots[i] = Datum::Null;
+		for (i, (_, absence)) in schema.fields.iter().enumerate() {
+			if self.slots[slots + i] == Datum::Missing && *absence == Absence::Null {
+				self.slots[slots + i] = Datum::Null;
 			}
 		}
 		let start = self.records[record].start;
@@ -728,29 +1284,105 @@ impl<'a, E: Extension> Walker<'a, E> {
 		} else {
 			self.at
 		};
-		let fields = schema
-			.fields
-			.keys()
-			.enumerate()
-			.map(|(i, k)| (k.as_ref(), self.records[record].slots[i].clone()))
-			.collect::<Vec<_>>();
-		let node = self.make(
-			ty.unwrap_or(&schema.node_type),
-			start,
-			end,
-			&fields,
-			schema.span != Some(SpanPolicy::None),
-		)?;
+		let ty = &self.plan.program.strings[ty_id.0 as usize];
+		let span = schema.span != Some(SpanPolicy::None);
+		let node = if ty.starts_with("js.") {
+			let fields: Vec<_> = schema
+				.fields
+				.iter()
+				.enumerate()
+				.map(|(i, (k, _))| (self.plan.program.strings[k.0 as usize].as_ref(), self.slots[slots + i]))
+				.collect();
+			self.make(ty, start, end, &fields, span)?
+		} else {
+			let len = (0..schema.fields.len())
+				.filter(|i| self.slots[slots + i] != Datum::Missing)
+				.count();
+			let from = self.tree().host_fields.len();
+			self.ast().host_fields.resize(from + len, (StrId(0), Value::Null));
+			let mut n = from;
+			for (i, (key, _)) in schema.fields.iter().enumerate() {
+				let value = self.slots[slots + i];
+				if value == Datum::Missing {
+					continue;
+				}
+				let key = *key;
+				let value = self.output(&value)?;
+				self.ast().host_fields[n] = (key, value);
+				n += 1;
+			}
+			self.host_id(ty_id, start, end, from, len, span)
+		};
 		self.records[record].node = Some(node);
 		Ok(node)
 	}
-	fn remember(&mut self, record: usize, error: Box<SyntaxError>) {
+	fn remember(&mut self, record: usize, error: Rejection) {
 		if self.records[record]
 			.failure
-			.as_ref()
-			.is_none_or(|prior| prior.pos < error.pos)
+			.is_none_or(|i| self.failures[i].pos() < error.pos())
 		{
-			self.records[record].failure = Some(error);
+			let i = self.failures.len();
+			self.failures.push(error);
+			self.records[record].failure = Some(i);
+		}
+	}
+	#[inline]
+	fn event_field(&self, record: usize, key: Key) -> Datum {
+		if let Datum::Event(i) = self.records[record].event {
+			self.event_value(i, key)
+		} else {
+			Datum::Missing
+		}
+	}
+	fn event_value(&self, i: usize, key: Key) -> Datum {
+		match self.events[i] {
+			Event::Stylesheet(children, comments) => match key {
+				Key::Children => Datum::Nodes(children),
+				Key::Comments => Datum::Nodes(comments),
+				_ => Datum::Missing,
+			},
+			Event::Text { raw, decoded } => match key {
+				Key::Raw => raw,
+				Key::Decoded => decoded,
+				_ => Datum::Missing,
+			},
+			Event::Comment(data) => {
+				if key == Key::Data {
+					data
+				} else {
+					Datum::Missing
+				}
+			}
+			Event::Element {
+				name,
+				header,
+				at_document,
+				raw,
+				..
+			} => match key {
+				Key::Name => Datum::Slice(name.0, name.1),
+				Key::NameFacts => Datum::NameFacts(i),
+				Key::AtDocument => Datum::Bool(at_document),
+				Key::Header => Datum::Header(header),
+				Key::RawChildren => raw,
+				_ => Datum::Missing,
+			},
+			Event::Directive {
+				name,
+				raw,
+				argument,
+				modifiers,
+				value,
+				quoted,
+			} => match key {
+				Key::Name => Datum::Slice(name.0, name.1),
+				Key::RawName => Datum::Slice(raw.0, raw.1),
+				Key::Argument => argument,
+				Key::Modifiers => Datum::Strings(modifiers.start, modifiers.len),
+				Key::Value => value,
+				Key::Quoted => Datum::Bool(quoted),
+				_ => Datum::Missing,
+			},
 		}
 	}
 	fn structural_stop(&self) -> bool {
@@ -764,40 +1396,93 @@ impl<'a, E: Extension> Walker<'a, E> {
 		self.plan.stops.iter().any(|prefix| self.matches(prefix))
 	}
 
-	fn checkpoint(&self, record: usize) -> Checkpoint<<E::Data as crate::ast::Reuse>::Mark> {
+	fn checkpoint(&mut self, record: usize) -> Checkpoint {
+		let rec = self.records[record];
+		let len = self.plan.program.rules[rec.rule].slots;
+		let saved = self.saved.len();
+		self.spare
+			.saved
+			.extend_from_slice(&self.spare.slots[rec.slots..rec.slots + len]);
+		if let Some(run) = self.iteration.last().copied() {
+			self.spare
+				.saved
+				.extend_from_slice(&self.spare.iteration_slots[run.start as usize..(run.start + run.len) as usize]);
+		}
 		Checkpoint {
 			ast: self.tree().mark(),
+			native: self.native.mark(),
 			at: self.at,
 			limit: self.limit,
 			records: self.records.len(),
-			record: self.records[record].clone(),
-			elements: self.elements.clone(),
-			iteration: self.iteration.clone(),
+			record: rec,
+			slots: self.slots.len(),
+			saved,
+			elements: self.elements.len(),
+			element: self.elements.last().copied(),
+			iteration: self.iteration.len(),
+			iteration_slots: self.iteration_slots.len(),
+			events: self.events.len(),
+			event: match rec.event {
+				Datum::Event(i) => Some(self.events[i]),
+				_ => None,
+			},
+			attributes: self.attributes.len(),
+			values: self.values.len(),
 			autoclosed: self.autoclosed,
 		}
 	}
-	fn restore(&mut self, record: usize, checkpoint: Checkpoint<<E::Data as crate::ast::Reuse>::Mark>) {
+	fn release(&mut self, checkpoint: &Checkpoint) {
+		self.saved.truncate(checkpoint.saved);
+		self.native.release(checkpoint.native);
+	}
+	fn restore(&mut self, record: usize, checkpoint: Checkpoint) {
 		self.ast().truncate(checkpoint.ast);
+		self.native.restore(checkpoint.native);
 		self.at = checkpoint.at;
 		self.limit = checkpoint.limit;
 		self.records.truncate(checkpoint.records);
 		self.records[record] = checkpoint.record;
-		self.elements = checkpoint.elements;
-		self.iteration = checkpoint.iteration;
+		self.slots.truncate(checkpoint.slots);
+		let start = checkpoint.record.slots;
+		let len = self.plan.program.rules[checkpoint.record.rule].slots;
+		self.spare.slots[start..start + len]
+			.copy_from_slice(&self.spare.saved[checkpoint.saved..checkpoint.saved + len]);
+		self.elements.truncate(checkpoint.elements);
+		if let Some(element) = checkpoint.element {
+			*self.spare.elements.last_mut().unwrap() = element;
+		}
+		self.iteration.truncate(checkpoint.iteration);
+		self.iteration_slots.truncate(checkpoint.iteration_slots);
+		if let Some(run) = self.iteration.last().copied() {
+			self.spare.iteration_slots[run.start as usize..(run.start + run.len) as usize]
+				.copy_from_slice(&self.spare.saved[checkpoint.saved + len..checkpoint.saved + len + run.len as usize]);
+		}
+		self.events.truncate(checkpoint.events);
+		if let (Datum::Event(i), Some(event)) = (checkpoint.record.event, checkpoint.event) {
+			self.events[i] = event;
+		}
+		self.attributes.truncate(checkpoint.attributes);
+		self.values.truncate(checkpoint.values);
+		self.saved.truncate(checkpoint.saved);
 		self.autoclosed = checkpoint.autoclosed;
 	}
-	fn strict(&mut self, form: &Form, record: usize, follow: &str) -> Result<()> {
+	fn strict(&mut self, form: &Form, record: usize, follow: &str) -> std::result::Result<(), Rejection> {
 		let recover = std::mem::replace(&mut self.options.error_recovery, false);
 		let result = self.form(form, record, follow);
 		self.options.error_recovery = recover;
 		result
 	}
 
-	fn form(&mut self, form: &Form, record: usize, follow: &str) -> Result<()> {
+	fn form(&mut self, form: &Form, record: usize, follow: &str) -> std::result::Result<(), Rejection> {
 		if self.records[record].aborted && !matches!(form, Form::Seq(_) | Form::Emit { .. }) {
 			return Ok(());
 		}
 		match form {
+			Form::Tokens(tokens) => {
+				for token in tokens {
+					self.token(token, record)?;
+				}
+			}
 			Form::Seq(items) => {
 				for item in items {
 					let next = follow;
@@ -810,18 +1495,24 @@ impl<'a, E: Extension> Walker<'a, E> {
 						let checkpoint = self.checkpoint(record);
 						let start = self.at;
 						match self.strict(item, record, next) {
-							Ok(()) => continue,
+							Ok(()) => {
+								self.release(&checkpoint);
+								continue;
+							}
 							Err(err) => {
 								self.restore(record, checkpoint);
 								let header_end =
 									start + self.rest().find(self.plan.html.delimiters[1].as_ref()).unwrap_or(0) as u32;
-								if (err.pos < header_end
+								if (err.pos() < header_end
 									&& !self.rest().starts_with(&format!("{}:", self.plan.html.delimiters[0])))
 									|| self.matches("</") || self.at == self.limit
 								{
 									self.records[record].aborted = true;
 									let pos = self.records[record].start;
-									let name = self.plan.rules[self.records[record].rule].name.to_ascii_lowercase();
+									let name = self.plan.rules
+										[self.plan.program.rules[self.records[record].rule].source]
+										.name
+										.to_ascii_lowercase();
 									self.report(error(pos, pos + 1, Code::Unclosed, Some(&name)))?;
 									continue;
 								}
@@ -841,27 +1532,23 @@ impl<'a, E: Extension> Walker<'a, E> {
 				input,
 				follow: local,
 			} => {
-				let next;
-				let follow: &str = if local.is_empty() || !matches!(reader, Reader::Rule(_) | Reader::Javascript { .. })
-				{
-					follow
-				} else if follow.is_empty() {
-					local
-				} else {
-					next = format!("{local} {follow}");
-					&next
-				};
-				let input = input.as_ref().map(|v| self.eval(v, record)).transpose()?;
-				let value = self.read(reader, record, input, follow)?;
-				if let Some(into) = into {
-					self.write(record, into, value);
-				}
+				self.read_form(
+					&self.plan.program.readers[*reader as usize],
+					record,
+					into,
+					input,
+					&self.plan.program.follows[*local as usize],
+					follow,
+				)?;
 			}
-			Form::Choice {
-				alternatives,
-				disjoint,
-				first,
-			} => {
+
+			Form::Choice(choice) => {
+				let Choice {
+					alternatives,
+					disjoint,
+					first,
+					expected,
+				} = choice.as_ref();
 				if *disjoint {
 					let rest = self.rest();
 					let selected = first
@@ -892,17 +1579,11 @@ impl<'a, E: Extension> Walker<'a, E> {
 						.ok_or_else(|| {
 							let pos =
 								self.at + (self.rest().len() - self.rest().trim_start_matches(is_space).len()) as u32;
-							let expected = first
-								.iter()
-								.flatten()
-								.map(|p| p.text.as_str())
-								.collect::<Vec<_>>()
-								.join(" or ");
-							error(pos, pos, Code::Expected, Some(&expected))
+							Rejection::Expected(pos, pos, *expected)
 						})?;
 					self.form(&alternatives[selected], record, follow)?;
 				} else {
-					let mut failure: Option<Box<crate::SyntaxError>> = None;
+					let mut failure: Option<Rejection> = None;
 					let mut failed = 0;
 					let mut failed_native = false;
 					let mut matched = false;
@@ -914,10 +1595,12 @@ impl<'a, E: Extension> Walker<'a, E> {
 							Ok(()) => {
 								if self.options.error_recovery
 									&& self.at == start && failed_native
-									&& failure.as_ref().is_some_and(|e| e.pos > start)
+									&& failure.as_ref().is_some_and(|e| e.pos() > start)
 								{
 									self.restore(record, checkpoint);
 									self.form(&alternatives[failed], record, follow)?;
+								} else {
+									self.release(&checkpoint);
 								}
 								matched = true;
 								break;
@@ -925,11 +1608,20 @@ impl<'a, E: Extension> Walker<'a, E> {
 							Err(error) => {
 								self.restore(record, checkpoint);
 								if failure.as_ref().is_none_or(|prior| {
-									prior.pos < error.pos
+									prior.pos() < error.pos()
 										|| self.options.error_recovery
-											&& prior.pos == error.pos && (native_form(alternative, Js::Program)
-											|| matches!(error.code, Code::ReservedWord | Code::UnexpectedKeyword)
-												&& native_form(alternative, Js::Statement))
+											&& prior.pos() == error.pos() && (native_form(
+											alternative,
+											Js::Program,
+											&self.plan.program,
+										) || matches!(
+											error.code(),
+											Code::ReservedWord | Code::UnexpectedKeyword
+										) && native_form(
+											alternative,
+											Js::Statement,
+											&self.plan.program,
+										))
 								}) {
 									failure = Some(error);
 									failed_native = self.native_reads > reads;
@@ -951,38 +1643,40 @@ impl<'a, E: Extension> Walker<'a, E> {
 				}
 			}
 
-			Form::Repeat {
-				body,
-				min,
-				max,
-				locals,
-				yield_value,
-				into,
-			} => {
-				let mut values = Vec::new();
+			Form::Repeat(repeat) => {
+				let Repeat {
+					body,
+					min,
+					max,
+					locals,
+					yield_value,
+					into,
+				} = repeat.as_ref();
+				let mut values = self.take_values();
 
 				while max.is_none_or(|max| values.len() < max) {
 					let checkpoint = self.checkpoint(record);
 					let start = self.at;
-					self.iteration
-						.push(locals.iter().map(|key| (key.as_ref().into(), Datum::Missing)).collect());
+					self.push_iteration(*locals);
 					let result = self
 						.strict(body, record, follow)
-						.and_then(|()| self.eval(yield_value, record));
-					self.iteration.pop();
+						.and_then(|()| self.eval(yield_value, record).map_err(Into::into));
+					self.pop_iteration();
 					match result {
-						Ok(value) => values.push(value),
+						Ok(value) => {
+							self.release(&checkpoint);
+							values.push(value);
+						}
 						Err(error) => {
 							self.restore(record, checkpoint);
 							if values.len() < *min {
 								if !self.options.error_recovery {
 									return Err(error);
 								}
-								self.iteration
-									.push(locals.iter().map(|key| (key.as_ref().into(), Datum::Missing)).collect());
+								self.push_iteration(*locals);
 								self.form(body, record, follow)?;
 								values.push(self.eval(yield_value, record)?);
-								self.iteration.pop();
+								self.pop_iteration();
 								continue;
 							}
 							self.remember(record, error);
@@ -990,19 +1684,162 @@ impl<'a, E: Extension> Walker<'a, E> {
 						}
 					}
 					if self.at == start && max.is_none() {
-						return fail(start, start, Code::TreeSize, None);
+						return fail(start, start, Code::TreeSize, None).map_err(Into::into);
 					}
 				}
 
 				if values.len() < *min {
-					return fail(self.at, self.at, Code::UnexpectedToken, None);
+					return fail(self.at, self.at, Code::UnexpectedToken, None).map_err(Into::into);
 				}
-				self.write(record, into, Datum::array(values));
+				let value = self.array(values);
+				self.write(record, into, value);
 			}
 		}
 		Ok(())
 	}
 
+	fn token(&mut self, token: &Token, record: usize) -> std::result::Result<(), Rejection> {
+		let (start, into) = match token {
+			Token::Text { text, gap, word, into } => {
+				let id = *text;
+				let text = &self.plan.program.strings[id.0 as usize];
+				if *gap == Gap::Space {
+					self.space();
+				}
+				let start = self.at;
+				if !self.matches(text) {
+					return Err(Rejection::Expected(start, start, id));
+				}
+				let end = start + text.len() as u32;
+				if *word && self.rest()[text.len()..].starts_with(is_id_continue) {
+					return Err(Rejection::Space(end, end));
+				}
+				self.at = end;
+				(start, into)
+			}
+			Token::Space { min, into } => {
+				let start = self.at;
+				self.space();
+				if self.at - start < *min as u32 {
+					return Err(Rejection::Space(start, start));
+				}
+				(start, into)
+			}
+		};
+		if let Some(into) = into {
+			self.write(record, into, Datum::Span(start, self.at, false));
+		}
+		Ok(())
+	}
+	fn read_form(
+		&mut self,
+		reader: &Reader,
+		record: usize,
+		into: &Option<Slot>,
+		input: &Option<ExprCode>,
+		local: &str,
+		follow: &str,
+	) -> std::result::Result<(), Rejection> {
+		if local.is_empty() || !matches!(reader, Reader::Rule(_) | Reader::Javascript { .. }) {
+			return self.read_value(reader, record, into, input, follow);
+		}
+		if follow.is_empty() {
+			return self.read_value(reader, record, into, input, local);
+		}
+		let mut joined = self.follows.pop().unwrap_or_default();
+		joined.push_str(local);
+		joined.push(' ');
+		joined.push_str(follow);
+		let result = self.read_value(reader, record, into, input, &joined);
+		joined.clear();
+		self.follows.push(joined);
+		result
+	}
+	fn read_value(
+		&mut self,
+		reader: &Reader,
+		record: usize,
+		into: &Option<Slot>,
+		input: &Option<ExprCode>,
+		follow: &str,
+	) -> std::result::Result<(), Rejection> {
+		if input.is_none() && !self.options.error_recovery {
+			match reader {
+				Reader::Token {
+					text,
+					expected,
+					gap,
+					word,
+				} => {
+					let text = &self.plan.program.strings[text.0 as usize];
+					if *gap == Gap::Space {
+						self.space();
+					}
+					if *word && self.matches(text) && self.rest()[text.len()..].starts_with(is_id_continue) {
+						let end = self.at + text.len() as u32;
+						return Err(Rejection::Space(end, end));
+					}
+					let start = self.at;
+					if !self.eat(text) {
+						return Err(Rejection::Expected(self.at, self.at, *expected));
+					}
+					if let Some(into) = into {
+						self.write(record, into, Datum::Span(start, self.at, false));
+					}
+					return Ok(());
+				}
+				Reader::Space { min } => {
+					let start = self.at;
+					self.space();
+					if self.at - start < *min as u32 {
+						return Err(Rejection::Space(start, start));
+					}
+					if let Some(into) = into {
+						self.write(record, into, Datum::Span(start, self.at, false));
+					}
+					return Ok(());
+				}
+				_ => {}
+			}
+		}
+		let input = input.as_ref().map(|v| self.eval(v, record)).transpose()?;
+		let value = if input.is_none()
+			&& let Reader::Rule(rule) = reader
+		{
+			let child = self.records.len();
+			let event = match self.records[record].event {
+				Datum::Event(i) => self.event(self.events[i]),
+				other => other,
+			};
+			let node = self.call_form(*rule, event, None, follow)?;
+			if let Some(end) = self.records[child].children_end {
+				self.records[record].body_end = Some(end);
+			}
+			Datum::Node(node)
+		} else if input.is_none()
+			&& let Reader::Javascript { entry, boundary } = reader
+		{
+			self.javascript(*entry, *boundary, follow)?
+		} else {
+			self.read(reader, record, input, follow)?
+		};
+		if let Some(into) = into {
+			self.write(record, into, value);
+		}
+		Ok(())
+	}
+	fn push_iteration(&mut self, len: usize) {
+		let start = self.iteration_slots.len();
+		self.iteration_slots.resize(start + len, Datum::Missing);
+		self.iteration.push(Run {
+			start: start as u32,
+			len: len as u32,
+		});
+	}
+	fn pop_iteration(&mut self) {
+		let run = self.iteration.pop().unwrap();
+		self.iteration_slots.truncate(run.start as usize);
+	}
 	fn read(&mut self, reader: &Reader, record: usize, input: Option<Datum>, follow: &str) -> Result<Datum> {
 		let saved = (self.at, self.limit);
 		if let Some(input) = &input {
@@ -1014,7 +1851,8 @@ impl<'a, E: Extension> Walker<'a, E> {
 		}
 		let result = (|| {
 			Ok(match reader {
-				Reader::Token { text, gap, word } => {
+				Reader::Token { text, gap, word, .. } => {
+					let text = &self.plan.program.strings[text.0 as usize];
 					if *gap == Gap::Space {
 						self.space();
 					}
@@ -1035,23 +1873,25 @@ impl<'a, E: Extension> Walker<'a, E> {
 					Datum::Span(start, self.at, false)
 				}
 				Reader::Test(value) => {
-					if !self.eval(value, record)?.yes() {
+					if !self.test(value, record)? {
 						return fail(self.at, self.at, Code::UnexpectedToken, None);
 					}
 					Datum::Missing
 				}
 				Reader::Rule(rule) => {
 					let child = self.records.len();
-					let node = self.call(*rule, self.records[record].event.clone(), None, follow)?;
+					let node = self.call(*rule, self.records[record].event, None, follow)?;
 					if let Some(end) = self.records[child].children_end {
 						self.records[record].body_end = Some(end);
 					}
 					Datum::Node(node)
 				}
-				Reader::Javascript { entry, boundary } => self.javascript(*entry, *boundary, follow)?,
+				Reader::Javascript { entry, boundary } => self
+					.javascript(*entry, *boundary, follow)
+					.map_err(|error| error.boxed(self.plan))?,
 				Reader::HtmlChildren { mode, stop } => {
 					let nodes = self.children(*mode, stop)?;
-					if matches!(stop, Stop::Prefixes(_)) {
+					if matches!(stop.as_ref(), Stop::Prefixes(_)) {
 						self.records[record].children_end = Some(self.at);
 					}
 					Datum::Nodes(nodes)
@@ -1083,111 +1923,65 @@ impl<'a, E: Extension> Walker<'a, E> {
 		}
 		result
 	}
-	fn javascript(&mut self, entry: Js, boundary: Option<Boundary>, follow: &str) -> Result<Datum> {
-		self.native_reads += 1;
-		let stops = if entry == Js::Expression {
-			follow
-				.split_ascii_whitespace()
-				.filter(|s| !matches!(*s, "(" | "[" | "." | "?." | "?"))
-				.collect::<Vec<_>>()
-				.join(" ")
-		} else {
-			follow.to_owned()
-		};
-		let mut parser = Parser::<E>::new(
-			&self.src[..self.limit as usize],
-			self.at,
-			self.options,
-			&stops,
-			self.ast.take().unwrap(),
-		);
-		let result = parser
-			.lexer
-			.next_token_into(&mut parser.tok)
-			.and_then(|()| match entry {
-				Js::Program => parser.parse_program().map(|id| parser.list_of(&[id])),
-				Js::AssignmentExpression => {
-					parser.enter_scope(crate::parser::scope::SCOPE_TOP);
-					parser
-						.parse_maybe_assign(ForInit::No, &mut None)
-						.map(|id| parser.list_of(&[id]))
-				}
-				Js::BindingIdentifier | Js::IdentifierReference => {
-					if !matches!(
-						parser.tok.kind,
-						crate::lexer::token::TokenKind::Ident(_) | crate::lexer::token::TokenKind::Keyword(_)
-					) {
-						return fail(
-							parser.tok.start,
-							parser.tok.start,
-							Code::Expected,
-							Some("an identifier"),
-						);
-					}
-					let token_end = parser.tok.end;
-					parser.parse_ident(false).map(|id| parser.list_of(&[id])).map_err(|e| {
-						if e.code == Code::UnexpectedKeyword {
-							error(
-								e.pos,
-								token_end,
-								Code::ReservedWord,
-								Some(&self.src[e.pos as usize..token_end as usize]),
-							)
-						} else {
-							e
-						}
-					})
-				}
-				_ => parser.read_entry_boundary(
-					match entry {
-						Js::Expression => Entry::Expression,
-						Js::Pattern => Entry::Pattern,
-						Js::Params => Entry::Params,
-						Js::TypeParameters => Entry::TypeParameters,
-						Js::Statement => Entry::Statement,
-						_ => unreachable!(),
-					},
-					boundary == Some(Boundary::LastSharedWord),
-				),
-			});
-		let result = match result {
-			Err(error) if parser.recovering() => {
-				let start = self.at;
-				let at = error.pos;
-				parser.record(Err(error)).unwrap();
-				parser.skip_to_end();
-				parser.prev_end = parser.prev_end.max(at);
-				if entry == Js::Params {
-					Ok(List::EMPTY)
-				} else {
-					let name = parser.intern("");
-					let node =
-						parser.add_with_end(NodeKind::Identifier { name }, start, parser.consumed_end().max(start));
-					Ok(parser.list_of(&[node]))
-				}
+	fn javascript(
+		&mut self,
+		entry: Js,
+		boundary: Option<Boundary>,
+		follow: &str,
+	) -> std::result::Result<Datum, Rejection> {
+		let excluded = |s: &str| matches!(s, "(" | "[" | "." | "?." | "?");
+		if entry != Js::Expression || !follow.split_ascii_whitespace().any(excluded) {
+			return self.native_read(entry, boundary, follow);
+		}
+		let mut stops = self.follows.pop().unwrap_or_default();
+		for stop in follow.split_ascii_whitespace().filter(|s| !excluded(s)) {
+			if !stops.is_empty() {
+				stops.push(' ');
 			}
-			result => result,
-		};
-		let end = parser.consumed_end();
-		self.ast = Some(parser.finish());
-		let roots = result?;
-		self.at = end;
-		Ok(if entry == Js::Params {
-			Datum::Nodes(roots)
-		} else {
-			Datum::Node(self.tree().nth(roots, 0).unwrap())
-		})
+			stops.push_str(stop);
+		}
+		let result = self.native_read(entry, boundary, &stops);
+		stops.clear();
+		self.follows.push(stops);
+		result
+	}
+	fn native_read(
+		&mut self,
+		entry: Js,
+		boundary: Option<Boundary>,
+		follow: &str,
+	) -> std::result::Result<Datum, Rejection> {
+		self.native_reads += 1;
+		let ast = self.ast.take().unwrap();
+		let (ast, result, end) = self.native.read(
+			NativeInput {
+				src: self.src,
+				at: self.at,
+				limit: self.limit,
+				options: self.options,
+				entry,
+				boundary,
+				follow,
+			},
+			ast,
+		);
+		self.ast = Some(ast);
+		if result.is_ok() {
+			self.at = end;
+		}
+		result
 	}
 	fn text_chunk(&mut self, start: u32, end: u32, attribute: bool, raw: bool) -> Result<NodeId> {
+		let raw_value = Datum::Slice(start, end);
 		let decoded = if raw {
-			Datum::Slice(start, end)
+			raw_value
 		} else {
-			match decode(&self.src[start as usize..end as usize], attribute) {
-				std::borrow::Cow::Borrowed(_) => Datum::Slice(start, end),
-				std::borrow::Cow::Owned(s) => Datum::Text(s.into()),
-			}
+			self.decoded(start, end, attribute)
 		};
-		let event = Datum::facts([("raw", Datum::Slice(start, end)), ("decoded", decoded)]);
+		let event = self.event(Event::Text {
+			raw: raw_value,
+			decoded,
+		});
 		let at = self.at;
 		self.at = start;
 		let node = self.call(self.plan.html.text, event, None, "");
@@ -1210,7 +2004,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let name = element
 			.as_ref()
 			.map(|e| &self.src[e.name.0 as usize..e.name.1 as usize]);
-		let mut nodes = Vec::new();
+		let mut nodes = self.take_nodes();
 		let mut closed = false;
 		while self.at < self.limit {
 			if let Stop::Prefixes(prefixes) = stop
@@ -1310,7 +2104,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 						.find("-->")
 						.ok_or_else(|| error(self.limit, self.limit, Code::Expected, Some("-->")))?;
 					let end = self.at + len as u32 + 3;
-					let event = Datum::facts([("data", Datum::Slice(data, end - 3))]);
+					let event = self.event(Event::Comment(Datum::Slice(data, end - 3)));
 					self.at = start;
 					let node = self.call(self.plan.html.comment, event, None, "")?;
 					self.ast().nodes[node.index() as usize].end = end;
@@ -1378,7 +2172,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			self.report(error(start, start + 1, Code::Unclosed, name))?;
 		}
 
-		Ok(self.list(&nodes))
+		Ok(self.finish_nodes(nodes))
 	}
 	fn peek_name(&self, start: u32, attribute: bool) -> (u32, u32) {
 		let mut end = start;
@@ -1429,12 +2223,16 @@ impl<'a, E: Extension> Walker<'a, E> {
 		self.at += self.plan.html.delimiters[0].len() as u32;
 		let close = &self.plan.html.delimiters[1];
 		use crate::lexer::token::TokenKind;
-		let mut lexer = crate::lexer::Lexer::with(&self.src[..self.limit as usize], Default::default());
+		let strings = std::mem::take(&mut self.scan_strings);
+		let mut lexer = crate::lexer::Lexer::with(&self.src[..self.limit as usize], strings);
+		lexer.stop_ranges = std::mem::take(&mut self.scan_stops);
+		lexer.regexp = std::mem::take(&mut self.scan_regexp);
 		lexer.set_pos(self.at);
 		lexer.set_stops(close);
 		lexer.recover = self.options.error_recovery;
 		lexer.at_sign = true;
-		let mut templates = Vec::new();
+		let mut templates = std::mem::take(&mut self.scan_templates);
+		templates.clear();
 		let mut operand = false;
 		loop {
 			let mut token = lexer.next_token()?;
@@ -1465,13 +2263,17 @@ impl<'a, E: Extension> Walker<'a, E> {
 			}
 			operand = token.ends_operand();
 		}
+		self.scan_strings = lexer.strings;
+		self.scan_stops = lexer.stop_ranges;
+		self.scan_templates = templates;
+		self.scan_regexp = lexer.regexp;
 		self.expect(close)?;
 		Ok(())
 	}
-	fn scan_header(&mut self) -> Result<Datum> {
+	fn scan_header(&mut self) -> Result<Run> {
 		let saved = self.at;
 		let result = (|| {
-			let mut attributes = Vec::new();
+			let from = self.attributes.len() as u32;
 			loop {
 				self.space();
 				if self.at >= self.limit
@@ -1500,7 +2302,12 @@ impl<'a, E: Extension> Walker<'a, E> {
 				}
 				if self.plan.html.attribute.iter().any(|row| self.matches(&row.prefix)) {
 					self.interpolation_span()?;
-					attributes.push(Datum::facts([("kind", Datum::Static("expression"))]));
+					self.attributes.push(HeaderAttribute {
+						name: Datum::Missing,
+						boolean: false,
+						text: Datum::Missing,
+						expression: true,
+					});
 					continue;
 				}
 				let (start, end) = self.peek_name(self.at, true);
@@ -1518,22 +2325,24 @@ impl<'a, E: Extension> Walker<'a, E> {
 				} else {
 					None
 				};
-				let mut fields = vec![
-					("kind", Datum::Static("ordinary")),
-					("name", Datum::Slice(start, end)),
-					("boolean", Datum::Bool(value.is_none())),
-				];
-				if let Some((a, b, _, _)) = value
+				let text = if let Some((a, b, _, _)) = value
 					&& !self.src[a as usize..b as usize].contains(self.plan.html.delimiters[0].as_ref())
 				{
-					fields.push((
-						"staticText",
-						Datum::Text(decode(&self.src[a as usize..b as usize], true).as_ref().into()),
-					));
-				}
-				attributes.push(Datum::facts(fields));
+					self.decoded(a, b, true)
+				} else {
+					Datum::Missing
+				};
+				self.attributes.push(HeaderAttribute {
+					name: Datum::Slice(start, end),
+					boolean: value.is_none(),
+					text,
+					expression: false,
+				});
 			}
-			Ok(Datum::facts([("attributes", Datum::array(attributes))]))
+			Ok(Run {
+				start: from,
+				len: self.attributes.len() as u32 - from,
+			})
 		})();
 		self.at = saved;
 		result
@@ -1551,63 +2360,66 @@ impl<'a, E: Extension> Walker<'a, E> {
 			let mut chars = s.chars();
 			chars.next().is_some_and(is_id_start) && chars.all(is_id_continue)
 		};
-		let facts = Datum::facts([
-			("validHtmlName", Datum::Bool(valid_name(name))),
-			("identifier", Datum::Bool(identifier(name))),
-			(
-				"uppercaseInitial",
-				Datum::Bool(name.starts_with(|c: char| c.is_uppercase())),
-			),
-			(
-				"dottedIdentifier",
-				Datum::Bool(
-					name.contains('.')
-						&& (name.split('.').all(identifier)
-							|| self.options.error_recovery
-								&& name.ends_with('.') && name[..name.len() - 1].split('.').all(identifier)),
-				),
-			),
-			(
-				"namespace",
-				name.split_once(':')
-					.map_or(Datum::Missing, |(p, _)| Datum::Text(p.into())),
-			),
-		]);
+		let facts = u8::from(valid_name(name))
+			| (u8::from(identifier(name)) << 1)
+			| (u8::from(name.starts_with(|c: char| c.is_uppercase())) << 2)
+			| (u8::from(
+				name.contains('.')
+					&& (name.split('.').all(identifier)
+						|| self.options.error_recovery
+							&& name.ends_with('.')
+							&& name[..name.len() - 1].split('.').all(identifier)),
+			) << 3);
 		let header = self.scan_header()?;
-		let event = Datum::facts([
-			("name", Datum::Slice(span.0, span.1)),
-			("nameFacts", facts),
-			(
-				"atDocument",
-				Datum::Bool(self.active.len() == 1 || self.active.len() == 2 && self.elements.is_empty()),
-			),
-			("header", header),
-		]);
+		let at_document = self.active.len() == 1 || self.active.len() == 2 && self.elements.is_empty();
+		let id = self.intern(name);
+		let event = self.event(Event::Element {
+			name: span,
+			id,
+			header,
+			facts,
+			at_document,
+			raw: Datum::Missing,
+		});
 		let dispatch = self.records.len();
+		let owner = self.elements.last().map(|e| e.record);
+		let rule = self.plan.document;
+		let slots = self.slots.len();
+		self.spare
+			.slots
+			.resize(slots + self.plan.program.rules[rule].slots, Datum::Missing);
 		self.records.push(Record {
 			failure: None,
 			body_end: None,
 			children_end: None,
 			aborted: false,
 			parent: None,
-			rule: self.plan.document,
-			ty: "".into(),
-			slots: Vec::new(),
-			event: event.clone(),
-			owner: self.elements.last().map(|e| e.record),
-			ancestors: self.elements.iter().map(|e| e.record).collect(),
+			rule,
+			ty: StrId(0),
+			slots,
+			event,
+			owner,
 			start,
 			node: None,
+			regions: 0,
 		});
 		let mut selected = None;
-		for row in &self.plan.html.elements {
-			if self.eval(&row.when, dispatch)?.yes() {
-				selected = Some(row);
+		let range = self
+			.plan
+			.program
+			.dispatch_names
+			.get(id.0 as usize)
+			.copied()
+			.unwrap_or(self.plan.program.dispatch_other);
+		for (i, code) in &self.plan.program.dispatch_rows[range.indices()] {
+			if self.test(code, dispatch)? {
+				selected = Some((*i as usize, &self.plan.html.elements[*i as usize]));
 				break;
 			}
 		}
 		self.records.pop();
-		let row = selected.ok_or_else(|| error(span.0, span.1, Code::InvalidName, Some(name)))?;
+		self.slots.truncate(slots);
+		let (selected, row) = selected.ok_or_else(|| error(span.0, span.1, Code::InvalidName, Some(name)))?;
 		let record = self.records.len();
 		self.elements.push(Element {
 			record,
@@ -1616,7 +2428,12 @@ impl<'a, E: Extension> Walker<'a, E> {
 			attributes: None,
 			content: row.content.unwrap_or(Mode::Normal),
 		});
-		let result = self.call(row.rule, event, row.node_type.as_deref(), "");
+		let result = self.call(
+			self.plan.program.dispatch_rules[selected],
+			event,
+			self.plan.program.types[selected],
+			"",
+		);
 		self.elements.pop();
 		if let Ok(node) = result {
 			self.ast().nodes[node.index() as usize].start = start;
@@ -1632,7 +2449,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		if let Some(list) = self.elements.last().and_then(|e| e.attributes) {
 			return Ok(list);
 		}
-		let mut nodes = Vec::new();
+		let mut nodes = self.take_nodes();
 		loop {
 			self.space();
 			if self.at >= self.limit
@@ -1664,8 +2481,8 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let empty = self.eat("/");
 		let unclosed = !self.matches(">");
 		self.expect(">")?;
-		let list = self.list(&nodes);
-		if let Some(element) = self.elements.last_mut() {
+		let list = self.finish_nodes(nodes);
+		if let Some(element) = self.spare.elements.last_mut() {
 			let name = &self.src[element.name.0 as usize..element.name.1 as usize];
 			element.empty =
 				empty || unclosed || name.starts_with('!') || self.plan.html.void.iter().any(|s| s.as_ref() == name);
@@ -1679,10 +2496,13 @@ impl<'a, E: Extension> Walker<'a, E> {
 				if end == self.limit && !self.options.error_recovery {
 					return fail(end, end, Code::Unclosed, Some(name));
 				}
-				let Datum::Facts(event) = &mut self.records[record].event else {
+				let Datum::Event(i) = self.records[record].event else {
 					unreachable!()
 				};
-				Rc::make_mut(event).push(("rawChildren", Datum::Span(start, end, false)));
+				let Event::Element { raw, .. } = &mut self.events[i] else {
+					unreachable!()
+				};
+				*raw = Datum::Span(start, end, false);
 			}
 		}
 		Ok(list)
@@ -1796,24 +2616,30 @@ impl<'a, E: Extension> Walker<'a, E> {
 			if syntax.require_argument && argument == Datum::Missing {
 				return fail(a, b, Code::Expected, Some("a directive name"));
 			}
-			let modifiers = Datum::array(
-				after
-					.split(syntax.modifier.as_ref())
-					.filter(|s| !s.is_empty())
-					.map(|s| Datum::Text(s.into()))
-					.collect(),
-			);
-			let event = Datum::facts([
-				("name", Datum::Text(key.into())),
-				("rawName", Datum::Slice(a, b)),
-				("argument", argument),
-				("modifiers", modifiers),
-				(
-					"value",
-					value.map_or(Datum::Missing, |(a, b, _, _)| Datum::Span(a, b, false)),
-				),
-				("quoted", Datum::Bool(value.is_some_and(|v| v.3))),
-			]);
+			let modifiers_start = self.tree().host_strings.len() as u32;
+			for modifier in after.split(syntax.modifier.as_ref()).filter(|s| !s.is_empty()) {
+				let id = self.intern(modifier);
+				self.ast().host_strings.push(id);
+			}
+			let modifiers = Run {
+				start: modifiers_start,
+				len: self.tree().host_strings.len() as u32 - modifiers_start,
+			};
+			let key_start = if key.as_ptr() as usize >= self.src.as_ptr() as usize
+				&& (key.as_ptr() as usize) < self.src.as_ptr() as usize + self.src.len()
+			{
+				key.as_ptr() as usize - self.src.as_ptr() as usize
+			} else {
+				a as usize
+			};
+			let event = self.event(Event::Directive {
+				name: (key_start as u32, (key_start + key.len()) as u32),
+				raw: (a, b),
+				argument,
+				modifiers,
+				value: value.map_or(Datum::Missing, |(a, b, _, _)| Datum::Span(a, b, false)),
+				quoted: value.is_some_and(|v| v.3),
+			});
 			let at = self.at;
 			self.at = start;
 			let node = self.call(row.rule, event, None, "");
@@ -1841,12 +2667,12 @@ impl<'a, E: Extension> Walker<'a, E> {
 			&plain.node_type,
 			start,
 			end,
-			&[(&plain.name, Datum::Text(name.into())), (&plain.value, value)],
+			&[(&plain.name, Datum::Slice(a, b)), (&plain.value, value)],
 			true,
 		)
 	}
 	fn parts(&mut self, interpolate: bool, quoted: bool) -> Result<Datum> {
-		let mut nodes = Vec::new();
+		let mut nodes = self.take_nodes();
 		let mut text_only = true;
 		if self.at == self.limit {
 			nodes.push(self.text_chunk(self.at, self.at, true, false)?);
@@ -1864,19 +2690,20 @@ impl<'a, E: Extension> Walker<'a, E> {
 			}
 		}
 		Ok(if !quoted && !text_only && nodes.len() == 1 {
-			Datum::Node(nodes[0])
+			let node = nodes[0];
+			nodes.clear();
+			self.nodes.push(nodes);
+			Datum::Node(node)
 		} else {
-			Datum::Nodes(self.list(&nodes))
+			Datum::Nodes(self.finish_nodes(nodes))
 		})
 	}
 	fn attribute_parts(&mut self, record: usize) -> Result<Datum> {
-		let value = self.property(self.records[record].event.clone(), &Path::Name("value".into()));
+		let value = self.event_field(record, Key::Value);
 		let Datum::Span(a, b, _) = value else {
 			return Ok(Datum::Bool(true));
 		};
-		let quoted = self
-			.property(self.records[record].event.clone(), &Path::Name("quoted".into()))
-			.yes();
+		let quoted = self.event_field(record, Key::Quoted).yes();
 		let saved = (self.at, self.limit);
 		self.at = a;
 		self.limit = b;
@@ -1891,86 +2718,118 @@ impl<'a, E: Extension> Walker<'a, E> {
 		}
 		let close = &self.plan.html.delimiters[1];
 		self.expect(open)?;
-		let value = self.javascript(entry, None, close)?;
+		let value = self
+			.javascript(entry, None, close)
+			.map_err(|error| error.boxed(self.plan))?;
 		self.space();
 		self.expect(close)?;
 		Ok(value)
 	}
 	fn stylesheet(&mut self) -> Result<Datum> {
 		let (children, comments) = css::read(self.src, &mut self.at, self.limit, self.ast.as_mut().unwrap(), None)?;
-		Ok(Datum::facts([
-			("children", Datum::Nodes(children)),
-			("comments", Datum::Nodes(comments)),
-		]))
+		let i = self.events.len();
+		self.events.push(Event::Stylesheet(children, comments));
+		Ok(Datum::Stylesheet(i))
 	}
 	fn roots(&self, value: &Datum, roots: &mut Vec<NodeId>) {
-		match value {
-			Datum::Node(id) => {
-				if !roots.contains(id) {
-					roots.push(*id);
-				}
+		if let Datum::Node(id) = value {
+			roots.push(*id);
+		} else {
+			for i in 0..self.count(value) {
+				self.roots(&self.item(value, i), roots);
 			}
-			Datum::Nodes(list) => {
-				for id in self.tree().list(*list).iter().flatten() {
-					if !roots.contains(id) {
-						roots.push(*id);
-					}
-				}
-			}
-			Datum::Array(items) => {
-				for item in items.iter() {
-					self.roots(item, roots);
-				}
-			}
-			_ => {}
 		}
+	}
+	fn unique_nodes(&mut self, nodes: &mut Vec<NodeId>) {
+		self.cover_seen.clear();
+		nodes.retain(|id| {
+			let fresh = !self.cover_seen.contains(*id);
+			self.cover_seen.insert(*id);
+			fresh
+		});
+	}
+	fn cover(&mut self, code: &ExprCode, record: usize, roots: &mut Vec<NodeId>) -> Result<()> {
+		match &self.plan.program.exprs[code.index()] {
+			Expr::Concat(items) => {
+				for item in &self.plan.program.args[items.indices()] {
+					self.cover(item, record, roots)?;
+				}
+			}
+			Expr::Filter { .. } => {
+				self.eval_list(code, record, &mut |this, value| {
+					this.roots(&value, roots);
+					Ok(true)
+				})?;
+			}
+			Expr::FlatMap { list, body } => {
+				self.eval_list(list, record, &mut |this, value| {
+					this.bindings.push(value);
+					let result = this.cover(body, record, roots);
+					this.bindings.pop();
+					result.map(|()| true)
+				})?;
+			}
+			Expr::Choose { condition, yes, no } => {
+				let condition = self.test(condition, record)?;
+				self.cover(if condition { yes } else { no }, record, roots)?;
+			}
+			Expr::Construct(Construct::Array(items)) => {
+				for item in &self.plan.program.args[items.indices()] {
+					self.cover(item, record, roots)?;
+				}
+			}
+			_ => {
+				let value = self.eval(code, record)?;
+				self.roots(&value, roots);
+			}
+		}
+		Ok(())
 	}
 	fn region_target(&mut self, value: Datum) -> Result<HostParent> {
 		match value {
 			Datum::Null => Ok(HostParent::Root),
 			Datum::Incoming(record) => Ok(self.records[record].node.map_or(HostParent::Root, HostParent::Incoming)),
 			Datum::Region(record, region) => {
-				let targets = self.region(record, region)?;
-				if targets.len() != 1 {
+				let targets = self.region(record as usize, region as usize)?;
+				if targets.len != 1 {
 					return fail(self.at, self.at, Code::Expected, Some("one parent region"));
 				}
-				Ok(targets[0])
+				Ok(self.targets[targets.start as usize])
 			}
 			_ => fail(self.at, self.at, Code::Expected, Some("a region")),
 		}
 	}
-	fn region(&mut self, record: usize, index: usize) -> Result<Vec<HostParent>> {
-		if let Some(targets) = &self.region_slots[record][index] {
-			return Ok(targets.clone());
+	fn region(&mut self, record: usize, index: usize) -> Result<Run> {
+		let slot = self.records[record].regions + index;
+		if let Some(targets) = self.region_slots[slot] {
+			return Ok(targets);
 		}
 		if self.resolving.contains(&(record, index)) {
 			return fail(self.at, self.at, Code::Expected, Some("acyclic regions"));
 		}
 		self.resolving.push((record, index));
-		let region = &self.plan.rules[self.records[record].rule].regions[index];
-		let items = if let Some(each) = &region.each {
-			let list = self.eval(&each.list, record)?;
-			self.items(&list)
-		} else {
-			vec![Datum::Missing]
-		};
-		let mut targets = Vec::new();
-		for item in items {
-			if let Some(each) = &region.each {
-				self.bindings.push((each.binding.clone(), item));
+		let region = &self.plan.program.rules[self.records[record].rule].regions[index];
+		let items = region.each.as_ref().map(|e| self.eval(e, record)).transpose()?;
+		let count = items.as_ref().map_or(1, |v| self.count(v));
+		let start = self.targets.len();
+		self.targets.resize(start + count, HostParent::Root);
+		for i in 0..count {
+			if let Some(items) = &items {
+				let item = self.item(items, i);
+				self.bindings.push(item);
 			}
 			let parent = self.eval(&region.parent, record)?;
 			let parent = self.region_target(parent)?;
-			if region
+			let target = if region
 				.when
 				.as_ref()
-				.map(|when| self.eval(when, record).map(|v| v.yes()))
+				.map(|e| self.test(e, record))
 				.transpose()?
 				.unwrap_or(true)
 			{
-				let covers = self.eval(&region.covers, record)?;
-				let mut roots = Vec::new();
-				self.roots(&covers, &mut roots);
+				let mut roots = self.take_nodes();
+				self.cover(&region.covers, record, &mut roots)?;
+				self.unique_nodes(&mut roots);
 				let owner = self.records[record].node.unwrap();
 				let node = roots
 					.iter()
@@ -1987,29 +2846,37 @@ impl<'a, E: Extension> Walker<'a, E> {
 					owner,
 					node,
 				});
-				self.ast().host_region_owners.entry(owner).push(id);
-				for root in roots {
-					self.ast().host_coverage.entry(root).push(id);
+				self.ast().host_region_owners.push(owner, id);
+				for root in &roots {
+					self.ast().host_coverage.push(*root, id);
 				}
-				targets.push(HostParent::Region(id));
+				roots.clear();
+				self.nodes.push(roots);
+				HostParent::Region(id)
 			} else {
-				targets.push(parent);
-			}
-			if region.each.is_some() {
+				parent
+			};
+			self.targets[start + i] = target;
+			if items.is_some() {
 				self.bindings.pop();
 			}
 		}
 		self.resolving.pop();
-		self.region_slots[record][index] = Some(targets.clone());
-		Ok(targets)
+		let run = Run {
+			start: start as u32,
+			len: count as u32,
+		};
+		self.region_slots[slot] = Some(run);
+		Ok(run)
 	}
 	fn binding_leaves(&mut self, node: NodeId, binding: HostBinding) {
 		match self.tree().node(node).kind {
 			NodeKind::Identifier { .. } => self.ast().host_bindings.insert(node, binding),
 			NodeKind::ArrayPattern { elements } | NodeKind::ObjectPattern { properties: elements } => {
-				let nodes = self.tree().list(elements).iter().flatten().copied().collect::<Vec<_>>();
-				for node in nodes {
-					self.binding_leaves(node, binding);
+				for i in 0..elements.len {
+					if let Some(node) = self.tree().nth(elements, i) {
+						self.binding_leaves(node, binding);
+					}
 				}
 			}
 			NodeKind::Property { value, .. } => self.binding_leaves(value, binding),
@@ -2019,56 +2886,67 @@ impl<'a, E: Extension> Walker<'a, E> {
 		}
 	}
 	fn regions(&mut self) -> Result<()> {
-		for (i, record) in self.records.iter().enumerate() {
-			if let Some(node) = record.node {
-				self.node_records.insert(node, i);
+		let count = self.tree().nodes.len();
+		self.node_records.resize(count, usize::MAX);
+		for i in 0..self.records.len() {
+			if let Some(node) = self.records[i].node {
+				self.node_records[node.index() as usize] = i;
 			}
+			let start = self.region_slots.len();
+			self.records[i].regions = start;
+			let count = self.plan.program.rules[self.records[i].rule].regions.len();
+			self.region_slots.resize(start + count, None);
 		}
 		self.ast().host_plan = true;
-		self.region_slots = self
-			.records
-			.iter()
-			.map(|r| vec![None; self.plan.rules[r.rule].regions.len()])
-			.collect();
 		for record in 0..self.records.len() {
-			let Some(node) = self.records[record].node else {
+			let rec = self.records[record];
+			let Some(node) = rec.node else {
 				continue;
 			};
-			let rule = &self.plan.rules[self.records[record].rule];
-			let mut hidden = Vec::new();
-			for value in &self.records[record].slots[rule.fields.len()..] {
-				self.roots(value, &mut hidden);
+			let rule = &self.plan.program.rules[rec.rule];
+			let mut hidden = self.take_nodes();
+			for i in rule.fields.len()..rule.slots {
+				self.roots(&self.slots[rec.slots + i], &mut hidden);
 			}
+			self.unique_nodes(&mut hidden);
 			hidden.retain(|id| !matches!(self.tree().node(*id).kind, NodeKind::Host(_)));
-			if !hidden.is_empty() {
-				self.ast().host_hidden.insert(node, hidden);
+			for child in &hidden {
+				self.ast().host_hidden.push(node, *child);
 			}
-			if let Some(parent) = self.records[record].parent.and_then(|r| self.records[r].node) {
+			hidden.clear();
+			self.nodes.push(hidden);
+			if let Some(parent) = rec.parent.and_then(|r| self.records[r].node) {
 				self.ast().host_occurrences.insert(node, parent);
 			}
-			for region in 0..self.plan.rules[self.records[record].rule].regions.len() {
-				self.region(record, region)?;
+			for region in 0..rule.regions.len() {
+				if !rule.regions[region].when.is_some_and(
+					|code| matches!(self.plan.program.exprs[code.index()],Expr::Constant(value) if !value.yes()),
+				) {
+					self.region(record as usize, region as usize)?;
+				}
 			}
 		}
 		for record in 0..self.records.len() {
 			if self.records[record].node.is_none() {
 				continue;
 			}
-			for declaration in &self.plan.rules[self.records[record].rule].declares {
+			for declaration in &self.plan.program.rules[self.records[record].rule].declares {
 				let target = self.eval(&declaration.into, record)?;
 				let target = self.region_target(target)?;
-				let patterns = self.eval(&declaration.patterns, record)?;
-				let mut roots = Vec::new();
-				self.roots(&patterns, &mut roots);
-				for pattern in roots {
+				let mut roots = self.take_nodes();
+				self.cover(&declaration.patterns, record, &mut roots)?;
+				self.unique_nodes(&mut roots);
+				for pattern in &roots {
 					self.binding_leaves(
-						pattern,
+						*pattern,
 						HostBinding {
 							target,
 							kind: declaration.kind,
 						},
 					);
 				}
+				roots.clear();
+				self.nodes.push(roots);
 			}
 		}
 		Ok(())
@@ -2275,13 +3153,12 @@ fn closing_tag(rest: &str, name: &str) -> Option<usize> {
 	tail.find('>').map(|i| head + i + 1)
 }
 
-fn native_form(form: &Form, entry: Js) -> bool {
+fn native_form(form: &Form, entry: Js, program: &program::Program) -> bool {
 	match form {
-		Form::Read {
-			reader: Reader::Javascript { entry: read, .. },
-			..
-		} => *read == entry,
-		Form::Seq(items) => items.iter().any(|form| native_form(form, entry)),
+		Form::Read { reader, .. } => {
+			matches!(program.readers[*reader as usize],Reader::Javascript {entry:read,..} if read == entry)
+		}
+		Form::Seq(items) => items.iter().any(|form| native_form(form, entry, program)),
 		_ => false,
 	}
 }

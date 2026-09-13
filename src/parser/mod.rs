@@ -74,6 +74,7 @@ pub(crate) enum Unwrap {
 /// tree lives in `Data`.
 #[allow(unused_variables)]
 pub(crate) trait Extension: Default + Sized {
+	const TYPE_PARAMETERS: bool = false;
 	type Data: Reuse;
 	/// What a speculative parse needs to put the extension's state back.
 	type Snapshot;

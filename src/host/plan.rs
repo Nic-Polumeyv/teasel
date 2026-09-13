@@ -1,5 +1,25 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+#[cold]
+#[inline(never)]
+fn map<T>(values: &mut dyn Iterator<Item = (Name, T)>) -> BTreeMap<Name, T> {
+	let mut out = BTreeMap::new();
+	for (key, value) in values {
+		out.insert(key, value);
+	}
+	out
+}
+#[cold]
+#[inline(never)]
+fn try_map<T>(values: &mut dyn Iterator<Item = Result<(Name, T)>>) -> Result<BTreeMap<Name, T>> {
+	let mut out = BTreeMap::new();
+	for value in values {
+		let (key, value) = value?;
+		out.insert(key, value);
+	}
+	Ok(out)
+}
+
 #[path = "fold.rs"]
 mod fold;
 
@@ -23,6 +43,7 @@ pub struct Plan {
 	pub rules: Vec<Rule>,
 	pub html: Html,
 	pub(crate) stops: Vec<Name>,
+	pub(super) program: super::program::Program,
 }
 
 #[derive(Clone, Debug)]
@@ -232,6 +253,7 @@ macro_rules! enums {
         #[derive(Clone, Copy, Debug, PartialEq, Eq)]
         pub enum $name { $($variant),+ }
         impl $name {
+            #[cold]
             fn read(node: &Node, context: &str) -> Result<Self> {
                 match node.string(context)? {
                     $($text => Ok(Self::$variant),)+
@@ -272,10 +294,11 @@ struct Node {
 enum NodeKind {
 	Scalar(Json),
 	Array(Vec<Node>),
-	Object(BTreeMap<Name, Node>),
+	Object(Map<Node>),
 }
 
 impl Node {
+	#[cold]
 	fn error(&self, context: &str, reason: &str) -> String {
 		let field = self
 			.field
@@ -286,6 +309,7 @@ impl Node {
 		format!("{}:{}: {context}: {field}{reason}", self.location.0, self.location.1)
 	}
 
+	#[cold]
 	fn string(&self, context: &str) -> Result<&str> {
 		if let NodeKind::Scalar(Json::String(s)) = &self.kind {
 			Ok(s)
@@ -294,10 +318,12 @@ impl Node {
 		}
 	}
 
+	#[cold]
 	fn name(&self, context: &str) -> Result<Name> {
 		self.string(context).map(Into::into)
 	}
 
+	#[cold]
 	fn boolean(&self, context: &str) -> Result<bool> {
 		if let NodeKind::Scalar(Json::Bool(b)) = self.kind {
 			Ok(b)
@@ -306,6 +332,7 @@ impl Node {
 		}
 	}
 
+	#[cold]
 	fn integer(&self, context: &str) -> Result<usize> {
 		if let NodeKind::Scalar(Json::Number(n)) = &self.kind
 			&& let Ok(n) = n.parse()
@@ -315,10 +342,12 @@ impl Node {
 		Err(self.error(context, "expected nonnegative integer"))
 	}
 
+	#[cold]
 	fn null(&self) -> bool {
 		matches!(self.kind, NodeKind::Scalar(Json::Null))
 	}
 
+	#[cold]
 	fn array(&self, context: &str) -> Result<&[Node]> {
 		if let NodeKind::Array(a) = &self.kind {
 			Ok(a)
@@ -327,17 +356,20 @@ impl Node {
 		}
 	}
 
+	#[cold]
 	fn names(&self, context: &str) -> Result<Vec<Name>> {
 		self.array(context)?.iter().map(|n| n.name(context)).collect()
 	}
 
+	#[cold]
 	fn pair(&self, context: &str) -> Result<[Name; 2]> {
 		self.names(context)?
 			.try_into()
 			.map_err(|_| self.error(context, "expected two strings"))
 	}
 
-	fn object(&self, context: &str) -> Result<&BTreeMap<Name, Node>> {
+	#[cold]
+	fn object(&self, context: &str) -> Result<&Map<Node>> {
 		if let NodeKind::Object(o) = &self.kind {
 			Ok(o)
 		} else {
@@ -345,6 +377,7 @@ impl Node {
 		}
 	}
 
+	#[cold]
 	fn properties(&self, context: &str, names: &[&str]) -> Result<()> {
 		for key in self.object(context)?.keys() {
 			if !names.contains(&key.as_ref()) {
@@ -354,20 +387,23 @@ impl Node {
 		Ok(())
 	}
 
+	#[cold]
 	fn optional(&self, key: &str, context: &str) -> Result<Option<&Node>> {
 		Ok(self.object(context)?.get(key))
 	}
 
+	#[cold]
 	fn required(&self, key: &str, context: &str) -> Result<&Node> {
 		self.optional(key, context)?
 			.ok_or_else(|| self.error(context, &format!("missing field {key:?}")))
 	}
 
+	#[cold]
 	fn json(&self) -> Json {
 		match &self.kind {
 			NodeKind::Scalar(j) => j.clone(),
 			NodeKind::Array(a) => Json::Array(a.iter().map(Self::json).collect()),
-			NodeKind::Object(o) => Json::Object(o.iter().map(|(k, v)| (k.clone(), v.json())).collect()),
+			NodeKind::Object(o) => Json::Object(map(&mut o.iter().map(|(k, v)| (k.clone(), v.json())))),
 		}
 	}
 }
@@ -381,6 +417,7 @@ struct JsonReader<'a> {
 }
 
 impl<'a> JsonReader<'a> {
+	#[cold]
 	fn error(&self, reason: &str) -> String {
 		format!(
 			"{}:{}: {}: {reason}",
@@ -394,10 +431,12 @@ impl<'a> JsonReader<'a> {
 		)
 	}
 
+	#[cold]
 	fn peek(&self) -> Option<char> {
 		self.text[self.offset..].chars().next()
 	}
 
+	#[cold]
 	fn bump(&mut self) -> Option<char> {
 		let c = self.peek()?;
 		self.offset += c.len_utf8();
@@ -410,12 +449,14 @@ impl<'a> JsonReader<'a> {
 		Some(c)
 	}
 
+	#[cold]
 	fn whitespace(&mut self) {
 		while matches!(self.peek(), Some(' ' | '\n' | '\r' | '\t')) {
 			self.bump();
 		}
 	}
 
+	#[cold]
 	fn expect(&mut self, ch: char) -> Result<()> {
 		if self.peek() == Some(ch) {
 			self.bump();
@@ -425,6 +466,7 @@ impl<'a> JsonReader<'a> {
 		}
 	}
 
+	#[cold]
 	fn hex(&mut self) -> Result<u32> {
 		let mut value = 0;
 		for _ in 0..4 {
@@ -438,6 +480,7 @@ impl<'a> JsonReader<'a> {
 		Ok(value)
 	}
 
+	#[cold]
 	fn string(&mut self) -> Result<Name> {
 		self.expect('"')?;
 		let mut value = String::new();
@@ -477,6 +520,7 @@ impl<'a> JsonReader<'a> {
 		}
 	}
 
+	#[cold]
 	fn number(&mut self) -> Result<Json> {
 		let start = self.offset;
 		if self.peek() == Some('-') {
@@ -507,6 +551,7 @@ impl<'a> JsonReader<'a> {
 		Ok(Json::Number(self.text[start..self.offset].into()))
 	}
 
+	#[cold]
 	fn digits(&mut self) -> Result<()> {
 		if !matches!(self.peek(), Some('0'..='9')) {
 			return Err(self.error("expected digit"));
@@ -517,6 +562,7 @@ impl<'a> JsonReader<'a> {
 		Ok(())
 	}
 
+	#[cold]
 	fn value(&mut self, depth: usize) -> Result<Node> {
 		self.whitespace();
 		if depth > 128 {
@@ -546,7 +592,7 @@ impl<'a> JsonReader<'a> {
 			Some('{') => {
 				self.bump();
 				self.whitespace();
-				let mut fields = BTreeMap::new();
+				let mut fields = Map::default();
 				if self.peek() != Some('}') {
 					loop {
 						self.whitespace();
@@ -595,6 +641,7 @@ struct Decode<'a> {
 }
 
 impl Decode<'_> {
+	#[cold]
 	fn reference(&self, node: &Node) -> Result<usize> {
 		let name = node.string(&self.context)?;
 		self.rules
@@ -603,6 +650,7 @@ impl Decode<'_> {
 			.ok_or_else(|| node.error(&self.context, &format!("unknown rule {name:?}")))
 	}
 
+	#[cold]
 	fn value(&self, node: &Node) -> Result<Value> {
 		let context = &self.context;
 		let get = |key| node.required(key, context);
@@ -688,17 +736,19 @@ impl Decode<'_> {
 				} else {
 					Some(get("type")?.name(context)?)
 				},
-				fields: get("fields")?
-					.object(context)?
-					.iter()
-					.map(|(k, v)| Ok((k.clone(), self.value(v)?)))
-					.collect::<Result<_>>()?,
+				fields: try_map(
+					&mut get("fields")?
+						.object(context)?
+						.iter()
+						.map(|(k, v)| Ok((k.clone(), self.value(v)?))),
+				)?,
 				span: val("span")?,
 			}),
 			_ => unreachable!(),
 		})
 	}
 
+	#[cold]
 	fn reader(&self, node: &Node) -> Result<Reader> {
 		let c = &self.context;
 		let get = |key| node.required(key, c);
@@ -778,6 +828,7 @@ impl Decode<'_> {
 		})
 	}
 
+	#[cold]
 	fn form(&self, node: &Node) -> Result<Form> {
 		let c = &self.context;
 		let get = |key| node.required(key, c);
@@ -849,6 +900,7 @@ impl Decode<'_> {
 		})
 	}
 
+	#[cold]
 	fn region(&self, node: &Node) -> Result<Region> {
 		let c = &self.context;
 		node.properties(c, &["id", "parent", "kind", "covers", "when", "each"])?;
@@ -872,6 +924,7 @@ impl Decode<'_> {
 		})
 	}
 
+	#[cold]
 	fn rule(&self, name: &str, node: &Node) -> Result<Rule> {
 		let c = &self.context;
 		node.properties(c, &["type", "fields", "locals", "form", "regions", "declares", "span"])?;
@@ -879,11 +932,12 @@ impl Decode<'_> {
 		Ok(Rule {
 			name: name.into(),
 			node_type: get("type")?.name(c)?,
-			fields: get("fields")?
-				.object(c)?
-				.iter()
-				.map(|(k, v)| Ok((k.clone(), Absence::read(v, &format!("{c}: field {k:?}"))?)))
-				.collect::<Result<_>>()?,
+			fields: try_map(
+				&mut get("fields")?
+					.object(c)?
+					.iter()
+					.map(|(k, v)| Ok((k.clone(), Absence::read(v, &format!("{c}: field {k:?}"))?))),
+			)?,
 			locals: node
 				.optional("locals", c)?
 				.map(|n| n.names(c))
@@ -917,6 +971,7 @@ impl Decode<'_> {
 		})
 	}
 
+	#[cold]
 	fn prefixes(&self, node: &Node) -> Result<Vec<PrefixDispatch>> {
 		let c = &self.context;
 		node.array(c)?
@@ -935,6 +990,7 @@ impl Decode<'_> {
 			.collect()
 	}
 
+	#[cold]
 	fn html(&self, node: &Node) -> Result<Html> {
 		let c = &self.context;
 		node.properties(
@@ -1042,6 +1098,7 @@ impl Decode<'_> {
 }
 
 impl Plan {
+	#[cold]
 	pub fn read(text: &str) -> Result<Self> {
 		let mut reader = JsonReader {
 			text,
@@ -1060,7 +1117,7 @@ impl Plan {
 			return Err(node.error("plan", "unsupported version"));
 		}
 		let nodes = node.required("rules", "plan")?.object("plan rules")?;
-		let names: BTreeMap<_, _> = nodes.keys().enumerate().map(|(i, n)| (n.clone(), i)).collect();
+		let names: BTreeMap<_, _> = map(&mut nodes.keys().enumerate().map(|(i, n)| (n.clone(), i)));
 		let decode = Decode {
 			rules: &names,
 			context: "plan".into(),
@@ -1080,10 +1137,12 @@ impl Plan {
 				.collect::<Result<_>>()?,
 			html: decode.html(node.required("html", "plan")?)?,
 			stops: Vec::new(),
+			program: Default::default(),
 		};
 		plan.validate()?;
 		fold::plan(&mut plan);
 		compile(&mut plan);
+		plan.program = super::program::Program::lower(&plan);
 		Ok(plan)
 	}
 }
@@ -1102,12 +1161,13 @@ enum Type {
 	Native(Js),
 	Node(usize),
 	List(Box<Type>),
-	Record(BTreeMap<Name, Type>),
+	Record(Types),
 	Union(Vec<Type>),
 	Unknown,
 }
 
 impl Type {
+	#[cold]
 	fn union(types: impl IntoIterator<Item = Self>) -> Self {
 		let mut unique = Vec::new();
 		for ty in types {
@@ -1129,14 +1189,19 @@ impl Type {
 		}
 	}
 
+	#[cold]
 	fn list(item: Self) -> Self {
 		Self::List(Box::new(item))
 	}
 
+	#[cold]
 	fn record(fields: &[(&str, Self)]) -> Self {
-		Self::Record(fields.iter().map(|(name, ty)| ((*name).into(), ty.clone())).collect())
+		Self::Record(Types::read(
+			&mut fields.iter().map(|(name, ty)| ((*name).into(), ty.clone())),
+		))
 	}
 
+	#[cold]
 	fn members(&self) -> &[Self] {
 		if let Self::Union(members) = self {
 			members
@@ -1145,10 +1210,12 @@ impl Type {
 		}
 	}
 
+	#[cold]
 	fn all(&self, predicate: impl Fn(&Self) -> bool) -> bool {
 		self.members().iter().all(|t| *t == Self::Missing || predicate(t))
 	}
 
+	#[cold]
 	fn item(&self) -> Result<Self> {
 		let mut items = Vec::new();
 		for ty in self.members() {
@@ -1161,6 +1228,7 @@ impl Type {
 		Ok(Self::union(items))
 	}
 
+	#[cold]
 	fn patterns(&self) -> bool {
 		self.members().iter().all(|ty| match ty {
 			Self::Missing | Self::Null => true,
@@ -1170,6 +1238,7 @@ impl Type {
 		})
 	}
 
+	#[cold]
 	fn roots(&self) -> bool {
 		self.members().iter().all(|ty| match ty {
 			Self::Missing | Self::Null | Self::Native(_) | Self::Node(_) => true,
@@ -1179,6 +1248,7 @@ impl Type {
 		})
 	}
 
+	#[cold]
 	fn constant(value: &Json) -> Self {
 		match value {
 			Json::Null => Self::Null,
@@ -1186,7 +1256,7 @@ impl Type {
 			Json::Number(_) => Self::Number,
 			Json::String(_) => Self::String,
 			Json::Array(a) => Self::list(Self::union(a.iter().map(Self::constant))),
-			Json::Object(o) => Self::Record(o.iter().map(|(k, v)| (k.clone(), Self::constant(v))).collect()),
+			Json::Object(o) => Self::Record(Types::read(&mut o.iter().map(|(k, v)| (k.clone(), Self::constant(v))))),
 		}
 	}
 }
@@ -1210,15 +1280,15 @@ struct Context {
 
 #[derive(Clone, Default, PartialEq, Eq)]
 struct Captures {
-	fields: BTreeMap<Name, Type>,
-	locals: BTreeMap<Name, Type>,
+	fields: Types,
+	locals: Types,
 }
 
 #[derive(Clone)]
 struct Environment {
 	captures: Captures,
-	iteration: Option<BTreeMap<Name, Type>>,
-	bindings: BTreeMap<Name, Type>,
+	iteration: Option<Types>,
+	bindings: Types,
 	context: Option<Context>,
 	successful: bool,
 }
@@ -1231,6 +1301,7 @@ struct Validator<'a> {
 }
 
 impl Validator<'_> {
+	#[cold]
 	fn error(&self, field: &str, reason: &str) -> String {
 		let rule = &self.plan.rules[self.rule];
 		format!(
@@ -1239,6 +1310,7 @@ impl Validator<'_> {
 		)
 	}
 
+	#[cold]
 	fn check(&self, valid: bool, field: &str, reason: &str) -> Result<()> {
 		if !self.strict || valid {
 			Ok(())
@@ -1247,10 +1319,12 @@ impl Validator<'_> {
 		}
 	}
 
+	#[cold]
 	fn elements(&self) -> Type {
 		Type::union(self.plan.html.elements.iter().map(|d| Type::Node(d.rule)))
 	}
 
+	#[cold]
 	fn nodes(&self) -> Type {
 		Type::union(
 			[Type::Node(self.plan.html.text), Type::Node(self.plan.html.comment)]
@@ -1260,9 +1334,10 @@ impl Validator<'_> {
 		)
 	}
 
+	#[cold]
 	fn attributes(&self) -> Type {
 		let plain = &self.plan.html.plain_attribute;
-		let ordinary = Type::Record(BTreeMap::from([
+		let ordinary = Type::Record(Types::from([
 			("type".into(), Type::String),
 			("span".into(), Type::Span),
 			(plain.name.clone(), Type::String),
@@ -1276,6 +1351,7 @@ impl Validator<'_> {
 		))
 	}
 
+	#[cold]
 	fn attribute_parts(&self) -> Type {
 		Type::union([
 			Type::Bool,
@@ -1286,6 +1362,7 @@ impl Validator<'_> {
 		])
 	}
 
+	#[cold]
 	fn header() -> Type {
 		Type::record(&[(
 			"attributes",
@@ -1300,8 +1377,9 @@ impl Validator<'_> {
 		)])
 	}
 
+	#[cold]
 	fn event(context: Option<Context>) -> Type {
-		let mut fields = BTreeMap::new();
+		let mut fields = Types::default();
 		let channel = context.map(|c| c.channel);
 		if channel.is_none() || channel == Some(Channel::Text) {
 			fields.extend([("decoded".into(), Type::String), ("raw".into(), Type::String)]);
@@ -1339,16 +1417,17 @@ impl Validator<'_> {
 		Type::Record(fields)
 	}
 
+	#[cold]
 	fn scopes(&self, rule: usize) -> Type {
-		Type::Record(
-			self.plan.rules[rule]
+		Type::Record(Types::read(
+			&mut self.plan.rules[rule]
 				.regions
 				.iter()
-				.map(|r| (r.id.clone(), Type::Scope))
-				.collect(),
-		)
+				.map(|r| (r.id.clone(), Type::Scope)),
+		))
 	}
 
+	#[cold]
 	fn property(&self, base: &Type, part: &Path) -> Result<Type> {
 		let mut values = Vec::new();
 		let mut absent = false;
@@ -1407,6 +1486,7 @@ impl Validator<'_> {
 		Ok(Type::union(values))
 	}
 
+	#[cold]
 	fn value(&self, value: &Value, env: &Environment, field: &str) -> Result<Type> {
 		let result = self.value_inner(value, env, field);
 		if !self.strict {
@@ -1421,6 +1501,7 @@ impl Validator<'_> {
 		})
 	}
 
+	#[cold]
 	fn value_inner(&self, value: &Value, env: &Environment, field: &str) -> Result<Type> {
 		let eval = |v| self.value(v, env, field);
 		Ok(match value {
@@ -1431,10 +1512,18 @@ impl Validator<'_> {
 					Base::Name(name) => match name.as_ref() {
 						"record" => {
 							let mut fields = env.captures.fields.clone();
-							fields.entry("type".into()).or_insert(Type::String);
-							fields.entry("span".into()).or_insert(Type::Span);
-							fields.entry("header".into()).or_insert_with(Self::header);
-							fields.entry("scopes".into()).or_insert_with(|| self.scopes(self.rule));
+							if !fields.contains_key("type") {
+								fields.insert("type".into(), Type::String);
+							}
+							if !fields.contains_key("span") {
+								fields.insert("span".into(), Type::Span);
+							}
+							if !fields.contains_key("header") {
+								fields.insert("header".into(), Self::header());
+							}
+							if !fields.contains_key("scopes") {
+								fields.insert("scopes".into(), self.scopes(self.rule));
+							}
 							Type::Record(fields)
 						}
 						"locals" => Type::Record(env.captures.locals.clone()),
@@ -1515,10 +1604,7 @@ impl Validator<'_> {
 					field,
 					"construct span must be a span or null",
 				)?;
-				let mut fields: BTreeMap<_, _> = fields
-					.iter()
-					.map(|(k, v)| Ok((k.clone(), eval(v)?)))
-					.collect::<Result<_>>()?;
+				let mut fields: Types = Types::try_read(&mut fields.iter().map(|(k, v)| Ok((k.clone(), eval(v)?))))?;
 				if node_type.is_some() {
 					fields.insert("type".into(), Type::String);
 				}
@@ -1528,6 +1614,7 @@ impl Validator<'_> {
 		})
 	}
 
+	#[cold]
 	fn binding(&self, env: &mut Environment, name: &str, ty: Type, field: &str) -> Result<()> {
 		self.check(
 			!matches!(
@@ -1541,6 +1628,7 @@ impl Validator<'_> {
 		Ok(())
 	}
 
+	#[cold]
 	fn read_type(&self, reader: &Reader) -> Type {
 		match reader {
 			Reader::Token { .. } | Reader::Space { .. } | Reader::Test(_) => Type::Missing,
@@ -1565,6 +1653,7 @@ impl Validator<'_> {
 		}
 	}
 
+	#[cold]
 	fn reader(&self, reader: &Reader, input: &Option<Value>, env: &Environment, field: &str) -> Result<Type> {
 		let input = input.as_ref().map(|v| self.value(v, env, field)).transpose()?;
 		let context = env.context;
@@ -1673,7 +1762,8 @@ impl Validator<'_> {
 		Ok(self.read_type(reader))
 	}
 
-	fn write(&self, env: &mut Environment, written: &mut BTreeSet<Name>, into: &str, ty: Type) -> Result<()> {
+	#[cold]
+	fn write(&self, env: &mut Environment, written: &mut Set<Name>, into: &str, ty: Type) -> Result<()> {
 		let slots = if let Some(iteration) = &mut env.iteration {
 			iteration
 		} else if env.captures.fields.contains_key(into) {
@@ -1695,7 +1785,8 @@ impl Validator<'_> {
 		Ok(())
 	}
 
-	fn form(&self, form: &Form, env: &mut Environment, written: &mut BTreeSet<Name>) -> Result<()> {
+	#[cold]
+	fn form(&self, form: &Form, env: &mut Environment, written: &mut Set<Name>) -> Result<()> {
 		match form {
 			Form::Seq(items) => {
 				for form in items {
@@ -1704,7 +1795,7 @@ impl Validator<'_> {
 			}
 			Form::Choice { alternatives, .. } => {
 				let mut branches = Vec::new();
-				let mut writes = BTreeSet::new();
+				let mut writes = Set::new();
 				for alternative in alternatives {
 					let mut branch = env.clone();
 					branch.successful &= can_succeed(alternative);
@@ -1737,10 +1828,10 @@ impl Validator<'_> {
 			} => {
 				let mut nested = env.clone();
 				nested.successful &= can_succeed(body);
-				let slots: BTreeMap<_, _> = locals.iter().map(|n| (n.clone(), Type::Missing)).collect();
+				let slots: Types = Types::read(&mut locals.iter().map(|n| (n.clone(), Type::Missing)));
 				self.check(slots.len() == locals.len(), into, "repeat has duplicate locals")?;
 				nested.iteration = Some(slots);
-				self.form(body, &mut nested, &mut BTreeSet::new())?;
+				self.form(body, &mut nested, &mut Set::new())?;
 				let item = self.value(yield_value, &nested, "yield")?;
 				self.write(env, written, into, Type::list(item))?;
 			}
@@ -1760,20 +1851,22 @@ impl Validator<'_> {
 		Ok(())
 	}
 
+	#[cold]
 	fn environment(&self, context: Option<Context>) -> Environment {
 		let rule = &self.plan.rules[self.rule];
 		Environment {
 			captures: Captures {
-				fields: rule.fields.keys().map(|n| (n.clone(), Type::Missing)).collect(),
-				locals: rule.locals.iter().map(|n| (n.clone(), Type::Missing)).collect(),
+				fields: Types::read(&mut rule.fields.keys().map(|n| (n.clone(), Type::Missing))),
+				locals: Types::read(&mut rule.locals.iter().map(|n| (n.clone(), Type::Missing))),
 			},
 			iteration: None,
-			bindings: BTreeMap::new(),
+			bindings: Types::default(),
 			context,
 			successful: can_succeed(&rule.form),
 		}
 	}
 
+	#[cold]
 	fn validate(&self, context: Option<Context>) -> Result<Captures> {
 		let rule = &self.plan.rules[self.rule];
 		let mut env = self.environment(context);
@@ -1785,13 +1878,13 @@ impl Validator<'_> {
 		for name in &rule.locals {
 			self.check(!rule.fields.contains_key(name), name, "is both a field and a local")?;
 		}
-		let regions: BTreeSet<_> = rule.regions.iter().map(|r| &r.id).collect();
+		let regions: Set<_> = rule.regions.iter().map(|r| &r.id).collect();
 		self.check(
 			regions.len() == rule.regions.len(),
 			"regions",
 			"contains duplicate region names",
 		)?;
-		self.form(&rule.form, &mut env, &mut BTreeSet::new())?;
+		self.form(&rule.form, &mut env, &mut Set::new())?;
 		for (name, absence) in &rule.fields {
 			if *absence == Absence::Null && env.captures.fields[name] == Type::Missing {
 				env.captures.fields.insert(name.clone(), Type::Null);
@@ -1841,6 +1934,7 @@ impl Validator<'_> {
 	}
 }
 
+#[cold]
 fn can_succeed(form: &Form) -> bool {
 	match form {
 		Form::Read {
@@ -1854,6 +1948,7 @@ fn can_succeed(form: &Form) -> bool {
 	}
 }
 
+#[cold]
 fn nullable(form: &Form, rules: &[bool]) -> bool {
 	if !can_succeed(form) {
 		return false;
@@ -1881,6 +1976,7 @@ fn nullable(form: &Form, rules: &[bool]) -> bool {
 	}
 }
 
+#[cold]
 fn calls(form: &Form, visit: &mut impl FnMut(usize, bool)) {
 	match form {
 		Form::Seq(items)
@@ -1901,7 +1997,8 @@ fn calls(form: &Form, visit: &mut impl FnMut(usize, bool)) {
 	}
 }
 
-fn leading_calls(form: &Form, rules: &[bool], content: &[PrefixDispatch], edges: &mut BTreeSet<usize>) {
+#[cold]
+fn leading_calls(form: &Form, rules: &[bool], content: &[PrefixDispatch], edges: &mut Set<usize>) {
 	match form {
 		Form::Seq(items) => {
 			for f in items {
@@ -1950,8 +2047,10 @@ fn leading_calls(form: &Form, rules: &[bool], content: &[PrefixDispatch], edges:
 	}
 }
 
-fn cycle(edges: &[BTreeSet<usize>]) -> Option<usize> {
-	fn visit(node: usize, edges: &[BTreeSet<usize>], states: &mut [u8]) -> Option<usize> {
+#[cold]
+fn cycle(edges: &[Set<usize>]) -> Option<usize> {
+	#[cold]
+	fn visit(node: usize, edges: &[Set<usize>], states: &mut [u8]) -> Option<usize> {
 		if states[node] == 1 {
 			return Some(node);
 		}
@@ -1971,9 +2070,10 @@ fn cycle(edges: &[BTreeSet<usize>]) -> Option<usize> {
 	(0..edges.len()).find_map(|node| visit(node, edges, &mut states))
 }
 
-fn reaches(edges: &[BTreeSet<usize>], start: usize, target: usize) -> bool {
+#[cold]
+fn reaches(edges: &[Set<usize>], start: usize, target: usize) -> bool {
 	let mut pending = vec![start];
-	let mut seen = BTreeSet::new();
+	let mut seen = Set::new();
 	while let Some(node) = pending.pop() {
 		if node == target {
 			return true;
@@ -1985,6 +2085,7 @@ fn reaches(edges: &[BTreeSet<usize>], start: usize, target: usize) -> bool {
 	false
 }
 
+#[cold]
 fn repeat_progress(form: &Form, rules: &[bool]) -> Result<()> {
 	match form {
 		Form::Seq(items)
@@ -2006,6 +2107,7 @@ fn repeat_progress(form: &Form, rules: &[bool]) -> Result<()> {
 	Ok(())
 }
 
+#[cold]
 fn value_children(value: &Value, visit: &mut impl FnMut(&Value)) {
 	match value {
 		Value::Constant(_) => {}
@@ -2048,6 +2150,7 @@ fn value_children(value: &Value, visit: &mut impl FnMut(&Value)) {
 	}
 }
 
+#[cold]
 fn get_path<'a>(value: &'a Value, path: &mut Vec<&'a Path>) -> Option<&'a str> {
 	let Value::Get { base, path: parts } = value else {
 		return None;
@@ -2060,6 +2163,7 @@ fn get_path<'a>(value: &'a Value, path: &mut Vec<&'a Path>) -> Option<&'a str> {
 	name
 }
 
+#[cold]
 fn emit_values<'a>(form: &'a Form, name: &str, values: &mut Vec<&'a Value>) {
 	match form {
 		Form::Seq(items)
@@ -2075,7 +2179,8 @@ fn emit_values<'a>(form: &'a Form, name: &str, values: &mut Vec<&'a Value>) {
 	}
 }
 
-fn parent_dependencies(value: &Value, rule: &Rule, seen: &mut BTreeSet<Name>, dependencies: &mut BTreeSet<usize>) {
+#[cold]
+fn parent_dependencies(value: &Value, rule: &Rule, seen: &mut Set<Name>, dependencies: &mut Set<usize>) {
 	let mut path = Vec::new();
 	if let Some(base) = get_path(value, &mut path) {
 		let parts: Vec<_> = path
@@ -2119,7 +2224,8 @@ pub struct Prefix {
 	pub(crate) tight: bool,
 }
 
-fn prefixes(form: &Form, rules: &[Rule], active: &mut BTreeSet<usize>, budget: usize) -> Vec<Prefix> {
+#[cold]
+fn prefixes(form: &Form, rules: &[Rule], active: &mut Set<usize>, budget: usize) -> Vec<Prefix> {
 	let empty = || {
 		vec![Prefix {
 			text: String::new(),
@@ -2247,6 +2353,7 @@ fn prefixes(form: &Form, rules: &[Rule], active: &mut BTreeSet<usize>, budget: u
 	}
 }
 
+#[cold]
 fn distinct(left: &Prefix, right: &Prefix) -> bool {
 	let left_text = left
 		.text
@@ -2266,6 +2373,7 @@ fn distinct(left: &Prefix, right: &Prefix) -> bool {
 	short.word && long[common..].starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_')
 }
 
+#[cold]
 fn mark_choices(form: &mut Form, rules: &[Rule]) {
 	match form {
 		Form::Choice {
@@ -2275,7 +2383,7 @@ fn mark_choices(form: &mut Form, rules: &[Rule]) {
 		} => {
 			let first: Vec<_> = alternatives
 				.iter()
-				.map(|f| prefixes(f, rules, &mut BTreeSet::new(), 32))
+				.map(|f| prefixes(f, rules, &mut Set::new(), 32))
 				.collect();
 			*disjoint = first.iter().enumerate().all(|(i, a)| {
 				first[i + 1..]
@@ -2298,8 +2406,9 @@ fn mark_choices(form: &mut Form, rules: &[Rule]) {
 }
 
 impl Plan {
-	fn contexts(&self) -> Vec<BTreeSet<Context>> {
-		let mut contexts = vec![BTreeSet::new(); self.rules.len()];
+	#[cold]
+	fn contexts(&self) -> Vec<Set<Context>> {
+		let mut contexts = vec![Set::new(); self.rules.len()];
 		let mut seed = |rule: usize, channel| {
 			contexts[rule].insert(Context {
 				channel,
@@ -2342,6 +2451,7 @@ impl Plan {
 		}
 	}
 
+	#[cold]
 	fn validate(&mut self) -> Result<()> {
 		let mut nullable_rules = vec![false; self.rules.len()];
 		loop {
@@ -2351,7 +2461,7 @@ impl Plan {
 			}
 			nullable_rules = next;
 		}
-		let mut edges = vec![BTreeSet::new(); self.rules.len()];
+		let mut edges = vec![Set::new(); self.rules.len()];
 		for (i, rule) in self.rules.iter().enumerate() {
 			leading_calls(&rule.form, &nullable_rules, &self.html.content, &mut edges[i]);
 		}
@@ -2361,7 +2471,7 @@ impl Plan {
 				self.rules[i].location.0, self.rules[i].location.1, self.rules[i].name
 			));
 		}
-		let mut all_edges = vec![BTreeSet::new(); self.rules.len()];
+		let mut all_edges = vec![Set::new(); self.rules.len()];
 		for (i, rule) in self.rules.iter().enumerate() {
 			calls(&rule.form, &mut |j, _| {
 				all_edges[i].insert(j);
@@ -2385,11 +2495,11 @@ impl Plan {
 					"recursive bounded read can loop without consuming input",
 				));
 			}
-			let mut parents = vec![BTreeSet::new(); rule.regions.len()];
+			let mut parents = vec![Set::new(); rule.regions.len()];
 			for (i, region) in rule.regions.iter().enumerate() {
-				parent_dependencies(&region.parent, rule, &mut BTreeSet::new(), &mut parents[i]);
+				parent_dependencies(&region.parent, rule, &mut Set::new(), &mut parents[i]);
 				if let Some(each) = &region.each {
-					parent_dependencies(&each.list, rule, &mut BTreeSet::new(), &mut parents[i]);
+					parent_dependencies(&each.list, rule, &mut Set::new(), &mut parents[i]);
 				}
 			}
 			if let Some(i) = cycle(&parents) {
@@ -2401,8 +2511,8 @@ impl Plan {
 		}
 		let mut types = vec![Captures::default(); self.rules.len()];
 		for (i, rule) in self.rules.iter().enumerate() {
-			types[i].fields = rule.fields.keys().map(|n| (n.clone(), Type::Missing)).collect();
-			types[i].locals = rule.locals.iter().map(|n| (n.clone(), Type::Missing)).collect();
+			types[i].fields = Types::read(&mut rule.fields.keys().map(|n| (n.clone(), Type::Missing)));
+			types[i].locals = Types::read(&mut rule.locals.iter().map(|n| (n.clone(), Type::Missing)));
 		}
 		let mut converged = false;
 		for _ in 0..self.rules.len() * 4 + 16 {
@@ -2475,6 +2585,7 @@ impl Plan {
 	}
 }
 
+#[cold]
 fn follow(rules: &[Rule], forms: &[Form], out: &mut Vec<String>, depth: usize) {
 	if depth > 32 {
 		return;
@@ -2516,7 +2627,9 @@ fn follow(rules: &[Rule], forms: &[Form], out: &mut Vec<String>, depth: usize) {
 		}
 	}
 }
+#[cold]
 fn compile(plan: &mut Plan) {
+	#[cold]
 	fn form(f: &mut Form, rules: &[Rule], suffix: &str, stops: &mut Vec<Name>) {
 		match f {
 			Form::Seq(items) => {
@@ -2559,4 +2672,173 @@ fn compile(plan: &mut Plan) {
 	}
 	plan.stops.sort();
 	plan.stops.dedup();
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Map<T>(Vec<(Name, T)>);
+type Types = Map<Type>;
+impl<T> Map<T> {
+	#[cold]
+	fn read(values: &mut dyn Iterator<Item = (Name, T)>) -> Self {
+		let mut out = Self::default();
+		for (name, ty) in values {
+			out.insert(name, ty);
+		}
+		out
+	}
+	#[cold]
+	fn try_read(values: &mut dyn Iterator<Item = Result<(Name, T)>>) -> Result<Self> {
+		let mut out = Self::default();
+		for value in values {
+			let (name, ty) = value?;
+			out.insert(name, ty);
+		}
+		Ok(out)
+	}
+	#[cold]
+	fn find(&self, name: &str) -> std::result::Result<usize, usize> {
+		self.0.binary_search_by(|(key, _)| key.as_ref().cmp(name))
+	}
+	#[cold]
+	fn get(&self, name: &str) -> Option<&T> {
+		self.find(name).ok().map(|i| &self.0[i].1)
+	}
+	#[cold]
+	fn contains_key(&self, name: &str) -> bool {
+		self.find(name).is_ok()
+	}
+	#[cold]
+	fn insert(&mut self, name: Name, ty: T) -> Option<T> {
+		match self.find(&name) {
+			Ok(i) => Some(std::mem::replace(&mut self.0[i].1, ty)),
+			Err(i) => {
+				self.0.insert(i, (name, ty));
+				None
+			}
+		}
+	}
+	#[cold]
+	fn len(&self) -> usize {
+		self.0.len()
+	}
+	#[cold]
+	fn keys(&self) -> impl Iterator<Item = &Name> {
+		self.0.iter().map(|(name, _)| name)
+	}
+	#[cold]
+	fn extend(&mut self, values: impl IntoIterator<Item = (Name, T)>) {
+		for (name, ty) in values {
+			self.insert(name, ty);
+		}
+	}
+}
+impl<T, const N: usize> From<[(Name, T); N]> for Map<T> {
+	#[cold]
+	fn from(values: [(Name, T); N]) -> Self {
+		Self::read(&mut values.into_iter())
+	}
+}
+impl<T> std::ops::Index<&Name> for Map<T> {
+	type Output = T;
+	#[cold]
+	fn index(&self, name: &Name) -> &T {
+		self.get(name).unwrap()
+	}
+}
+impl<'a, T> IntoIterator for &'a mut Map<T> {
+	type Item = (&'a Name, &'a mut T);
+	type IntoIter = std::iter::Map<std::slice::IterMut<'a, (Name, T)>, fn(&'a mut (Name, T)) -> Self::Item>;
+	#[cold]
+	fn into_iter(self) -> Self::IntoIter {
+		self.0.iter_mut().map(|(name, ty)| (&*name, ty))
+	}
+}
+
+impl<T> Default for Map<T> {
+	fn default() -> Self {
+		Self(Vec::new())
+	}
+}
+impl<T> Map<T> {
+	#[cold]
+	fn iter(&self) -> impl Iterator<Item = (&Name, &T)> {
+		self.0.iter().map(|(name, value)| (name, value))
+	}
+}
+
+#[derive(Clone)]
+struct Set<T>(Vec<T>);
+impl<T: Ord> Set<T> {
+	#[cold]
+	fn new() -> Self {
+		Self(Vec::new())
+	}
+	#[cold]
+	fn insert(&mut self, value: T) -> bool {
+		match self.0.binary_search(&value) {
+			Ok(_) => false,
+			Err(i) => {
+				self.0.insert(i, value);
+				true
+			}
+		}
+	}
+	#[cold]
+	fn contains<Q: Ord + ?Sized>(&self, value: &Q) -> bool
+	where
+		T: std::borrow::Borrow<Q>,
+	{
+		self.0.binary_search_by(|v| v.borrow().cmp(value)).is_ok()
+	}
+	#[cold]
+	fn remove<Q: Ord + ?Sized>(&mut self, value: &Q) -> bool
+	where
+		T: std::borrow::Borrow<Q>,
+	{
+		match self.0.binary_search_by(|v| v.borrow().cmp(value)) {
+			Ok(i) => {
+				self.0.remove(i);
+				true
+			}
+			Err(_) => false,
+		}
+	}
+	#[cold]
+	fn len(&self) -> usize {
+		self.0.len()
+	}
+	#[cold]
+	fn iter(&self) -> std::slice::Iter<'_, T> {
+		self.0.iter()
+	}
+	#[cold]
+	fn extend(&mut self, values: impl IntoIterator<Item = T>) {
+		for value in values {
+			self.insert(value);
+		}
+	}
+}
+impl<T: Ord> FromIterator<T> for Set<T> {
+	#[cold]
+	fn from_iter<I: IntoIterator<Item = T>>(values: I) -> Self {
+		let mut set = Self::new();
+		set.extend(values);
+		set
+	}
+}
+impl<T> IntoIterator for Set<T> {
+	type Item = T;
+	type IntoIter = std::vec::IntoIter<T>;
+	#[cold]
+	fn into_iter(self) -> Self::IntoIter {
+		self.0.into_iter()
+	}
+}
+impl<'a, T> IntoIterator for &'a Set<T> {
+	type Item = &'a T;
+	type IntoIter = std::slice::Iter<'a, T>;
+	#[cold]
+	fn into_iter(self) -> Self::IntoIter {
+		self.0.iter()
+	}
 }

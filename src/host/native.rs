@@ -1,104 +1,104 @@
 use super::*;
 
-impl<E: Extension> Walker<'_, E> {
-	pub(super) fn native_property(&self, node: NodeId, field_name: &str) -> Datum {
+impl Walker<'_> {
+	pub(super) fn native_property(&mut self, node: NodeId, field_name: Key) -> Datum {
 		match self.tree().node(node).kind {
 			NodeKind::Program { body, module } => match field_name {
-				"type" => Datum::Static("Program"),
-				"body" => Datum::Nodes(body),
-				"sourceType" => Datum::Text(if module { "module" } else { "script" }.into()),
+				Key::Type => Datum::Text(Symbol::TypeProgram.id()),
+				Key::Body => Datum::Nodes(body),
+				Key::SourceType => Datum::Text(if module {
+					Symbol::WordModule.id()
+				} else {
+					Symbol::WordScript.id()
+				}),
 				_ => Datum::Missing,
 			},
 			NodeKind::Identifier { name } => match field_name {
-				"type" => Datum::Static("Identifier"),
-				"name" => Datum::Interned(name),
+				Key::Type => Datum::Text(Symbol::TypeIdentifier.id()),
+				Key::Name => Datum::Interned(name),
 				_ => Datum::Missing,
 			},
 			NodeKind::PrivateIdentifier { name } => match field_name {
-				"type" => Datum::Static("PrivateIdentifier"),
-				"name" => Datum::Interned(name),
+				Key::Type => Datum::Text(Symbol::TypePrivateIdentifier.id()),
+				Key::Name => Datum::Interned(name),
 				_ => Datum::Missing,
 			},
 			NodeKind::NumberLiteral { value } => match field_name {
-				"type" => Datum::Static("Literal"),
-				"value" => Datum::Number(self.tree().numbers[value as usize]),
+				Key::Type => Datum::Text(Symbol::TypeLiteral.id()),
+				Key::Value => Datum::Number(self.tree().numbers[value as usize]),
 				_ => Datum::Missing,
 			},
 			NodeKind::BigIntLiteral => match field_name {
-				"type" => Datum::Static("Literal"),
-				"value" => Datum::Null,
-				"bigint" => Datum::Text(
-					crate::estree::bigint_decimal(
-						&self.src[self.tree().node(node).start as usize..self.tree().node(node).end as usize - 1],
-					)
-					.into(),
-				),
+				Key::Type => Datum::Text(Symbol::TypeLiteral.id()),
+				Key::Value => Datum::Null,
+				Key::Bigint => {
+					let n = self.tree().node(node);
+					let text = crate::estree::bigint_decimal(&self.src[n.start as usize..n.end as usize - 1]);
+					Datum::Interned(self.intern(&text))
+				}
 				_ => Datum::Missing,
 			},
 			NodeKind::StringLiteral { value } => match field_name {
-				"type" => Datum::Static("Literal"),
-				"value" => Datum::Interned(value),
+				Key::Type => Datum::Text(Symbol::TypeLiteral.id()),
+				Key::Value => Datum::Interned(value),
 				_ => Datum::Missing,
 			},
 			NodeKind::BooleanLiteral { value } => match field_name {
-				"type" => Datum::Static("Literal"),
-				"value" => Datum::Bool(value),
+				Key::Type => Datum::Text(Symbol::TypeLiteral.id()),
+				Key::Value => Datum::Bool(value),
 				_ => Datum::Missing,
 			},
 			NodeKind::NullLiteral => match field_name {
-				"type" => Datum::Static("Literal"),
-				"value" => Datum::Null,
+				Key::Type => Datum::Text(Symbol::TypeLiteral.id()),
+				Key::Value => Datum::Null,
 				_ => Datum::Missing,
 			},
 			NodeKind::RegExpLiteral { pattern, flags } => match field_name {
-				"type" => Datum::Static("Literal"),
-				"value" => Datum::Null,
-				"regex" => Datum::facts([("pattern", Datum::Interned(pattern)), ("flags", Datum::Interned(flags))]),
-				"pattern" => Datum::Interned(pattern),
-				"flags" => Datum::Interned(flags),
+				Key::Type => Datum::Text(Symbol::TypeLiteral.id()),
+				Key::Value => Datum::Null,
+				Key::Regex => Datum::Regex(pattern, flags),
+				Key::Pattern => Datum::Interned(pattern),
+				Key::Flags => Datum::Interned(flags),
 				_ => Datum::Missing,
 			},
 			NodeKind::TemplateLiteral { quasis, expressions } => match field_name {
-				"type" => Datum::Static("TemplateLiteral"),
-				"quasis" => Datum::Nodes(quasis),
-				"expressions" => Datum::Nodes(expressions),
+				Key::Type => Datum::Text(Symbol::TypeTemplateLiteral.id()),
+				Key::Quasis => Datum::Nodes(quasis),
+				Key::Expressions => Datum::Nodes(expressions),
 				_ => Datum::Missing,
 			},
 			NodeKind::TemplateElement { cooked, raw, tail } => match field_name {
-				"type" => Datum::Static("TemplateElement"),
-				"value" => Datum::facts([
-					("raw", Datum::Interned(raw)),
-					("cooked", cooked.map_or(Datum::Null, Datum::Interned)),
-				]),
-				"cooked" => cooked.map_or(Datum::Null, Datum::Interned),
-				"raw" => Datum::Interned(raw),
-				"tail" => Datum::Bool(tail),
+				Key::Type => Datum::Text(Symbol::TypeTemplateElement.id()),
+				Key::Value => Datum::Template(raw, cooked),
+				Key::Cooked => cooked.map_or(Datum::Null, Datum::Interned),
+				Key::Raw => Datum::Interned(raw),
+				Key::Tail => Datum::Bool(tail),
 				_ => Datum::Missing,
 			},
 			NodeKind::TaggedTemplateExpression { tag, quasi } => match field_name {
-				"type" => Datum::Static("TaggedTemplateExpression"),
-				"tag" => Datum::Node(tag),
-				"quasi" => Datum::Node(quasi),
+				Key::Type => Datum::Text(Symbol::TypeTaggedTemplateExpression.id()),
+				Key::Tag => Datum::Node(tag),
+				Key::Quasi => Datum::Node(quasi),
 				_ => Datum::Missing,
 			},
 			NodeKind::ThisExpression => match field_name {
-				"type" => Datum::Static("ThisExpression"),
+				Key::Type => Datum::Text(Symbol::TypeThisExpression.id()),
 
 				_ => Datum::Missing,
 			},
 			NodeKind::Super => match field_name {
-				"type" => Datum::Static("Super"),
+				Key::Type => Datum::Text(Symbol::TypeSuper.id()),
 
 				_ => Datum::Missing,
 			},
 			NodeKind::ArrayExpression { elements } => match field_name {
-				"type" => Datum::Static("ArrayExpression"),
-				"elements" => Datum::Nodes(elements),
+				Key::Type => Datum::Text(Symbol::TypeArrayExpression.id()),
+				Key::Elements => Datum::Nodes(elements),
 				_ => Datum::Missing,
 			},
 			NodeKind::ObjectExpression { properties } => match field_name {
-				"type" => Datum::Static("ObjectExpression"),
-				"properties" => Datum::Nodes(properties),
+				Key::Type => Datum::Text(Symbol::TypeObjectExpression.id()),
+				Key::Properties => Datum::Nodes(properties),
 				_ => Datum::Missing,
 			},
 			NodeKind::Property {
@@ -109,32 +109,29 @@ impl<E: Extension> Walker<'_, E> {
 				method,
 				shorthand,
 			} => match field_name {
-				"type" => Datum::Static("Property"),
-				"key" => Datum::Node(key),
-				"value" => Datum::Node(value),
-				"kind" => Datum::Text(
-					match kind {
-						crate::ast::PropertyKind::Init => "init",
-						crate::ast::PropertyKind::Get => "get",
-						crate::ast::PropertyKind::Set => "set",
-					}
-					.into(),
-				),
-				"computed" => Datum::Bool(computed),
-				"method" => Datum::Bool(method),
-				"shorthand" => Datum::Bool(shorthand),
+				Key::Type => Datum::Text(Symbol::TypeProperty.id()),
+				Key::Key => Datum::Node(key),
+				Key::Value => Datum::Node(value),
+				Key::Kind => Datum::Text(match kind {
+					crate::ast::PropertyKind::Init => Symbol::WordInit.id(),
+					crate::ast::PropertyKind::Get => Symbol::WordGet.id(),
+					crate::ast::PropertyKind::Set => Symbol::WordSet.id(),
+				}),
+				Key::Computed => Datum::Bool(computed),
+				Key::Method => Datum::Bool(method),
+				Key::Shorthand => Datum::Bool(shorthand),
 				_ => Datum::Missing,
 			},
 			NodeKind::SpreadElement { argument } => match field_name {
-				"type" => Datum::Static("SpreadElement"),
-				"argument" => Datum::Node(argument),
+				Key::Type => Datum::Text(Symbol::TypeSpreadElement.id()),
+				Key::Argument => Datum::Node(argument),
 				_ => Datum::Missing,
 			},
 			NodeKind::UnaryExpression { operator, argument } => match field_name {
-				"type" => Datum::Static("UnaryExpression"),
-				"operator" => Datum::Static(operator.name().text),
-				"argument" => Datum::Node(argument),
-				"prefix" => Datum::Bool(true),
+				Key::Type => Datum::Text(Symbol::TypeUnaryExpression.id()),
+				Key::Operator => Datum::Interned(self.intern(operator.name().text)),
+				Key::Argument => Datum::Node(argument),
+				Key::Prefix => Datum::Bool(true),
 				_ => Datum::Missing,
 			},
 			NodeKind::UpdateExpression {
@@ -142,31 +139,31 @@ impl<E: Extension> Walker<'_, E> {
 				prefix,
 				argument,
 			} => match field_name {
-				"type" => Datum::Static("UpdateExpression"),
-				"operator" => Datum::Static(operator.name().text),
-				"prefix" => Datum::Bool(prefix),
-				"argument" => Datum::Node(argument),
+				Key::Type => Datum::Text(Symbol::TypeUpdateExpression.id()),
+				Key::Operator => Datum::Interned(self.intern(operator.name().text)),
+				Key::Prefix => Datum::Bool(prefix),
+				Key::Argument => Datum::Node(argument),
 				_ => Datum::Missing,
 			},
 			NodeKind::BinaryExpression { operator, left, right } => match field_name {
-				"type" => Datum::Static("BinaryExpression"),
-				"operator" => Datum::Static(operator.name().text),
-				"left" => Datum::Node(left),
-				"right" => Datum::Node(right),
+				Key::Type => Datum::Text(Symbol::TypeBinaryExpression.id()),
+				Key::Operator => Datum::Interned(self.intern(operator.name().text)),
+				Key::Left => Datum::Node(left),
+				Key::Right => Datum::Node(right),
 				_ => Datum::Missing,
 			},
 			NodeKind::LogicalExpression { operator, left, right } => match field_name {
-				"type" => Datum::Static("LogicalExpression"),
-				"operator" => Datum::Static(operator.name().text),
-				"left" => Datum::Node(left),
-				"right" => Datum::Node(right),
+				Key::Type => Datum::Text(Symbol::TypeLogicalExpression.id()),
+				Key::Operator => Datum::Interned(self.intern(operator.name().text)),
+				Key::Left => Datum::Node(left),
+				Key::Right => Datum::Node(right),
 				_ => Datum::Missing,
 			},
 			NodeKind::AssignmentExpression { operator, left, right } => match field_name {
-				"type" => Datum::Static("AssignmentExpression"),
-				"operator" => Datum::Static(operator.name().text),
-				"left" => Datum::Node(left),
-				"right" => Datum::Node(right),
+				Key::Type => Datum::Text(Symbol::TypeAssignmentExpression.id()),
+				Key::Operator => Datum::Interned(self.intern(operator.name().text)),
+				Key::Left => Datum::Node(left),
+				Key::Right => Datum::Node(right),
 				_ => Datum::Missing,
 			},
 			NodeKind::ConditionalExpression {
@@ -174,10 +171,10 @@ impl<E: Extension> Walker<'_, E> {
 				consequent,
 				alternate,
 			} => match field_name {
-				"type" => Datum::Static("ConditionalExpression"),
-				"test" => Datum::Node(test),
-				"consequent" => Datum::Node(consequent),
-				"alternate" => Datum::Node(alternate),
+				Key::Type => Datum::Text(Symbol::TypeConditionalExpression.id()),
+				Key::Test => Datum::Node(test),
+				Key::Consequent => Datum::Node(consequent),
+				Key::Alternate => Datum::Node(alternate),
 				_ => Datum::Missing,
 			},
 			NodeKind::MemberExpression {
@@ -186,11 +183,11 @@ impl<E: Extension> Walker<'_, E> {
 				computed,
 				optional,
 			} => match field_name {
-				"type" => Datum::Static("MemberExpression"),
-				"object" => Datum::Node(object),
-				"property" => Datum::Node(property),
-				"computed" => Datum::Bool(computed),
-				"optional" => Datum::Bool(optional),
+				Key::Type => Datum::Text(Symbol::TypeMemberExpression.id()),
+				Key::Object => Datum::Node(object),
+				Key::Property => Datum::Node(property),
+				Key::Computed => Datum::Bool(computed),
+				Key::Optional => Datum::Bool(optional),
 				_ => Datum::Missing,
 			},
 			NodeKind::CallExpression {
@@ -198,26 +195,26 @@ impl<E: Extension> Walker<'_, E> {
 				arguments,
 				optional,
 			} => match field_name {
-				"type" => Datum::Static("CallExpression"),
-				"callee" => Datum::Node(callee),
-				"arguments" => Datum::Nodes(arguments),
-				"optional" => Datum::Bool(optional),
+				Key::Type => Datum::Text(Symbol::TypeCallExpression.id()),
+				Key::Callee => Datum::Node(callee),
+				Key::Arguments => Datum::Nodes(arguments),
+				Key::Optional => Datum::Bool(optional),
 				_ => Datum::Missing,
 			},
 			NodeKind::ChainExpression { expression } => match field_name {
-				"type" => Datum::Static("ChainExpression"),
-				"expression" => Datum::Node(expression),
+				Key::Type => Datum::Text(Symbol::TypeChainExpression.id()),
+				Key::Expression => Datum::Node(expression),
 				_ => Datum::Missing,
 			},
 			NodeKind::NewExpression { callee, arguments } => match field_name {
-				"type" => Datum::Static("NewExpression"),
-				"callee" => Datum::Node(callee),
-				"arguments" => Datum::Nodes(arguments),
+				Key::Type => Datum::Text(Symbol::TypeNewExpression.id()),
+				Key::Callee => Datum::Node(callee),
+				Key::Arguments => Datum::Nodes(arguments),
 				_ => Datum::Missing,
 			},
 			NodeKind::SequenceExpression { expressions } => match field_name {
-				"type" => Datum::Static("SequenceExpression"),
-				"expressions" => Datum::Nodes(expressions),
+				Key::Type => Datum::Text(Symbol::TypeSequenceExpression.id()),
+				Key::Expressions => Datum::Nodes(expressions),
 				_ => Datum::Missing,
 			},
 			NodeKind::ArrowFunctionExpression {
@@ -226,50 +223,50 @@ impl<E: Extension> Walker<'_, E> {
 				expression,
 				is_async,
 			} => match field_name {
-				"type" => Datum::Static("ArrowFunctionExpression"),
-				"params" => Datum::Nodes(params),
-				"body" => Datum::Node(body),
-				"expression" => Datum::Bool(expression),
-				"async" => Datum::Bool(is_async),
+				Key::Type => Datum::Text(Symbol::TypeArrowFunctionExpression.id()),
+				Key::Params => Datum::Nodes(params),
+				Key::Body => Datum::Node(body),
+				Key::Expression => Datum::Bool(expression),
+				Key::Async => Datum::Bool(is_async),
 				_ => Datum::Missing,
 			},
 			NodeKind::FunctionExpression { function } => match field_name {
-				"type" => Datum::Static("FunctionExpression"),
-				"id" => function.id.map_or(Datum::Null, Datum::Node),
-				"body" => Datum::Node(function.body),
-				"params" => Datum::Nodes(function.params),
-				"async" => Datum::Bool(function.is_async),
-				"generator" => Datum::Bool(function.generator),
-				"expression" => Datum::Bool(false),
+				Key::Type => Datum::Text(Symbol::TypeFunctionExpression.id()),
+				Key::Id => function.id.map_or(Datum::Null, Datum::Node),
+				Key::Body => Datum::Node(function.body),
+				Key::Params => Datum::Nodes(function.params),
+				Key::Async => Datum::Bool(function.is_async),
+				Key::Generator => Datum::Bool(function.generator),
+				Key::Expression => Datum::Bool(false),
 				_ => Datum::Missing,
 			},
 			NodeKind::FunctionDeclaration { function } => match field_name {
-				"type" => Datum::Static("FunctionDeclaration"),
-				"id" => function.id.map_or(Datum::Null, Datum::Node),
-				"body" => Datum::Node(function.body),
-				"params" => Datum::Nodes(function.params),
-				"async" => Datum::Bool(function.is_async),
-				"generator" => Datum::Bool(function.generator),
-				"expression" => Datum::Bool(false),
+				Key::Type => Datum::Text(Symbol::TypeFunctionDeclaration.id()),
+				Key::Id => function.id.map_or(Datum::Null, Datum::Node),
+				Key::Body => Datum::Node(function.body),
+				Key::Params => Datum::Nodes(function.params),
+				Key::Async => Datum::Bool(function.is_async),
+				Key::Generator => Datum::Bool(function.generator),
+				Key::Expression => Datum::Bool(false),
 				_ => Datum::Missing,
 			},
 			NodeKind::ClassExpression { class } => match field_name {
-				"type" => Datum::Static("ClassExpression"),
-				"id" => class.id.map_or(Datum::Null, Datum::Node),
-				"body" => Datum::Node(class.body),
-				"superClass" => class.super_class.map_or(Datum::Null, Datum::Node),
+				Key::Type => Datum::Text(Symbol::TypeClassExpression.id()),
+				Key::Id => class.id.map_or(Datum::Null, Datum::Node),
+				Key::Body => Datum::Node(class.body),
+				Key::SuperClass => class.super_class.map_or(Datum::Null, Datum::Node),
 				_ => Datum::Missing,
 			},
 			NodeKind::ClassDeclaration { class } => match field_name {
-				"type" => Datum::Static("ClassDeclaration"),
-				"id" => class.id.map_or(Datum::Null, Datum::Node),
-				"body" => Datum::Node(class.body),
-				"superClass" => class.super_class.map_or(Datum::Null, Datum::Node),
+				Key::Type => Datum::Text(Symbol::TypeClassDeclaration.id()),
+				Key::Id => class.id.map_or(Datum::Null, Datum::Node),
+				Key::Body => Datum::Node(class.body),
+				Key::SuperClass => class.super_class.map_or(Datum::Null, Datum::Node),
 				_ => Datum::Missing,
 			},
 			NodeKind::ClassBody { body } => match field_name {
-				"type" => Datum::Static("ClassBody"),
-				"body" => Datum::Nodes(body),
+				Key::Type => Datum::Text(Symbol::TypeClassBody.id()),
+				Key::Body => Datum::Nodes(body),
 				_ => Datum::Missing,
 			},
 			NodeKind::MethodDefinition {
@@ -279,20 +276,17 @@ impl<E: Extension> Walker<'_, E> {
 				computed,
 				is_static,
 			} => match field_name {
-				"type" => Datum::Static("MethodDefinition"),
-				"key" => Datum::Node(key),
-				"value" => Datum::Node(value),
-				"kind" => Datum::Text(
-					match kind {
-						crate::ast::MethodKind::Constructor => "constructor",
-						crate::ast::MethodKind::Method => "method",
-						crate::ast::MethodKind::Get => "get",
-						crate::ast::MethodKind::Set => "set",
-					}
-					.into(),
-				),
-				"computed" => Datum::Bool(computed),
-				"static" => Datum::Bool(is_static),
+				Key::Type => Datum::Text(Symbol::TypeMethodDefinition.id()),
+				Key::Key => Datum::Node(key),
+				Key::Value => Datum::Node(value),
+				Key::Kind => Datum::Text(match kind {
+					crate::ast::MethodKind::Constructor => Symbol::WordConstructor.id(),
+					crate::ast::MethodKind::Method => Symbol::WordMethod.id(),
+					crate::ast::MethodKind::Get => Symbol::WordGet.id(),
+					crate::ast::MethodKind::Set => Symbol::WordSet.id(),
+				}),
+				Key::Computed => Datum::Bool(computed),
+				Key::Static => Datum::Bool(is_static),
 				_ => Datum::Missing,
 			},
 			NodeKind::PropertyDefinition {
@@ -301,108 +295,108 @@ impl<E: Extension> Walker<'_, E> {
 				computed,
 				is_static,
 			} => match field_name {
-				"type" => Datum::Static("PropertyDefinition"),
-				"key" => Datum::Node(key),
-				"value" => value.map_or(Datum::Null, Datum::Node),
-				"computed" => Datum::Bool(computed),
-				"static" => Datum::Bool(is_static),
+				Key::Type => Datum::Text(Symbol::TypePropertyDefinition.id()),
+				Key::Key => Datum::Node(key),
+				Key::Value => value.map_or(Datum::Null, Datum::Node),
+				Key::Computed => Datum::Bool(computed),
+				Key::Static => Datum::Bool(is_static),
 				_ => Datum::Missing,
 			},
 			NodeKind::StaticBlock { body } => match field_name {
-				"type" => Datum::Static("StaticBlock"),
-				"body" => Datum::Nodes(body),
+				Key::Type => Datum::Text(Symbol::TypeStaticBlock.id()),
+				Key::Body => Datum::Nodes(body),
 				_ => Datum::Missing,
 			},
 			NodeKind::YieldExpression { argument, delegate } => match field_name {
-				"type" => Datum::Static("YieldExpression"),
-				"argument" => argument.map_or(Datum::Null, Datum::Node),
-				"delegate" => Datum::Bool(delegate),
+				Key::Type => Datum::Text(Symbol::TypeYieldExpression.id()),
+				Key::Argument => argument.map_or(Datum::Null, Datum::Node),
+				Key::Delegate => Datum::Bool(delegate),
 				_ => Datum::Missing,
 			},
 			NodeKind::AwaitExpression { argument } => match field_name {
-				"type" => Datum::Static("AwaitExpression"),
-				"argument" => Datum::Node(argument),
+				Key::Type => Datum::Text(Symbol::TypeAwaitExpression.id()),
+				Key::Argument => Datum::Node(argument),
 				_ => Datum::Missing,
 			},
 			NodeKind::MetaProperty { meta, property } => match field_name {
-				"type" => Datum::Static("MetaProperty"),
-				"meta" => Datum::Node(meta),
-				"property" => Datum::Node(property),
+				Key::Type => Datum::Text(Symbol::TypeMetaProperty.id()),
+				Key::Meta => Datum::Node(meta),
+				Key::Property => Datum::Node(property),
 				_ => Datum::Missing,
 			},
 			NodeKind::ImportExpression { source, options } => match field_name {
-				"type" => Datum::Static("ImportExpression"),
-				"source" => Datum::Node(source),
-				"options" => options.map_or(Datum::Null, Datum::Node),
+				Key::Type => Datum::Text(Symbol::TypeImportExpression.id()),
+				Key::Source => Datum::Node(source),
+				Key::Options => options.map_or(Datum::Null, Datum::Node),
 				_ => Datum::Missing,
 			},
 			NodeKind::ObjectPattern { properties } => match field_name {
-				"type" => Datum::Static("ObjectPattern"),
-				"properties" => Datum::Nodes(properties),
+				Key::Type => Datum::Text(Symbol::TypeObjectPattern.id()),
+				Key::Properties => Datum::Nodes(properties),
 				_ => Datum::Missing,
 			},
 			NodeKind::ArrayPattern { elements } => match field_name {
-				"type" => Datum::Static("ArrayPattern"),
-				"elements" => Datum::Nodes(elements),
+				Key::Type => Datum::Text(Symbol::TypeArrayPattern.id()),
+				Key::Elements => Datum::Nodes(elements),
 				_ => Datum::Missing,
 			},
 			NodeKind::RestElement { argument } => match field_name {
-				"type" => Datum::Static("RestElement"),
-				"argument" => Datum::Node(argument),
+				Key::Type => Datum::Text(Symbol::TypeRestElement.id()),
+				Key::Argument => Datum::Node(argument),
 				_ => Datum::Missing,
 			},
 			NodeKind::AssignmentPattern { left, right } => match field_name {
-				"type" => Datum::Static("AssignmentPattern"),
-				"left" => Datum::Node(left),
-				"right" => Datum::Node(right),
+				Key::Type => Datum::Text(Symbol::TypeAssignmentPattern.id()),
+				Key::Left => Datum::Node(left),
+				Key::Right => Datum::Node(right),
 				_ => Datum::Missing,
 			},
 			NodeKind::ExpressionStatement { expression, directive } => match field_name {
-				"type" => Datum::Static("ExpressionStatement"),
-				"expression" => Datum::Node(expression),
-				"directive" => directive.map_or(Datum::Null, Datum::Interned),
+				Key::Type => Datum::Text(Symbol::TypeExpressionStatement.id()),
+				Key::Expression => Datum::Node(expression),
+				Key::Directive => directive.map_or(Datum::Null, Datum::Interned),
 				_ => Datum::Missing,
 			},
 			NodeKind::BlockStatement { body } => match field_name {
-				"type" => Datum::Static("BlockStatement"),
-				"body" => Datum::Nodes(body),
+				Key::Type => Datum::Text(Symbol::TypeBlockStatement.id()),
+				Key::Body => Datum::Nodes(body),
 				_ => Datum::Missing,
 			},
 			NodeKind::EmptyStatement => match field_name {
-				"type" => Datum::Static("EmptyStatement"),
+				Key::Type => Datum::Text(Symbol::TypeEmptyStatement.id()),
 
 				_ => Datum::Missing,
 			},
 			NodeKind::DebuggerStatement => match field_name {
-				"type" => Datum::Static("DebuggerStatement"),
+				Key::Type => Datum::Text(Symbol::TypeDebuggerStatement.id()),
 
 				_ => Datum::Missing,
 			},
 			NodeKind::WithStatement { object, body } => match field_name {
-				"type" => Datum::Static("WithStatement"),
-				"object" => Datum::Node(object),
-				"body" => Datum::Node(body),
+				Key::Type => Datum::Text(Symbol::TypeWithStatement.id()),
+				Key::Object => Datum::Node(object),
+				Key::Body => Datum::Node(body),
 				_ => Datum::Missing,
 			},
 			NodeKind::ReturnStatement { argument } => match field_name {
-				"type" => Datum::Static("ReturnStatement"),
-				"argument" => argument.map_or(Datum::Null, Datum::Node),
+				Key::Type => Datum::Text(Symbol::TypeReturnStatement.id()),
+				Key::Argument => argument.map_or(Datum::Null, Datum::Node),
 				_ => Datum::Missing,
 			},
 			NodeKind::LabeledStatement { label, body } => match field_name {
-				"type" => Datum::Static("LabeledStatement"),
-				"label" => Datum::Node(label),
-				"body" => Datum::Node(body),
+				Key::Type => Datum::Text(Symbol::TypeLabeledStatement.id()),
+				Key::Label => Datum::Node(label),
+				Key::Body => Datum::Node(body),
 				_ => Datum::Missing,
 			},
 			NodeKind::BreakStatement { label } => match field_name {
-				"type" => Datum::Static("BreakStatement"),
-				"label" => label.map_or(Datum::Null, Datum::Node),
+				Key::Type => Datum::Text(Symbol::TypeBreakStatement.id()),
+				Key::Label => label.map_or(Datum::Null, Datum::Node),
 				_ => Datum::Missing,
 			},
 			NodeKind::ContinueStatement { label } => match field_name {
-				"type" => Datum::Static("ContinueStatement"),
-				"label" => label.map_or(Datum::Null, Datum::Node),
+				Key::Type => Datum::Text(Symbol::TypeContinueStatement.id()),
+				Key::Label => label.map_or(Datum::Null, Datum::Node),
 				_ => Datum::Missing,
 			},
 			NodeKind::IfStatement {
@@ -410,27 +404,27 @@ impl<E: Extension> Walker<'_, E> {
 				consequent,
 				alternate,
 			} => match field_name {
-				"type" => Datum::Static("IfStatement"),
-				"test" => Datum::Node(test),
-				"consequent" => Datum::Node(consequent),
-				"alternate" => alternate.map_or(Datum::Null, Datum::Node),
+				Key::Type => Datum::Text(Symbol::TypeIfStatement.id()),
+				Key::Test => Datum::Node(test),
+				Key::Consequent => Datum::Node(consequent),
+				Key::Alternate => alternate.map_or(Datum::Null, Datum::Node),
 				_ => Datum::Missing,
 			},
 			NodeKind::SwitchStatement { discriminant, cases } => match field_name {
-				"type" => Datum::Static("SwitchStatement"),
-				"discriminant" => Datum::Node(discriminant),
-				"cases" => Datum::Nodes(cases),
+				Key::Type => Datum::Text(Symbol::TypeSwitchStatement.id()),
+				Key::Discriminant => Datum::Node(discriminant),
+				Key::Cases => Datum::Nodes(cases),
 				_ => Datum::Missing,
 			},
 			NodeKind::SwitchCase { test, consequent } => match field_name {
-				"type" => Datum::Static("SwitchCase"),
-				"test" => test.map_or(Datum::Null, Datum::Node),
-				"consequent" => Datum::Nodes(consequent),
+				Key::Type => Datum::Text(Symbol::TypeSwitchCase.id()),
+				Key::Test => test.map_or(Datum::Null, Datum::Node),
+				Key::Consequent => Datum::Nodes(consequent),
 				_ => Datum::Missing,
 			},
 			NodeKind::ThrowStatement { argument } => match field_name {
-				"type" => Datum::Static("ThrowStatement"),
-				"argument" => Datum::Node(argument),
+				Key::Type => Datum::Text(Symbol::TypeThrowStatement.id()),
+				Key::Argument => Datum::Node(argument),
 				_ => Datum::Missing,
 			},
 			NodeKind::TryStatement {
@@ -438,28 +432,28 @@ impl<E: Extension> Walker<'_, E> {
 				handler,
 				finalizer,
 			} => match field_name {
-				"type" => Datum::Static("TryStatement"),
-				"block" => Datum::Node(block),
-				"handler" => handler.map_or(Datum::Null, Datum::Node),
-				"finalizer" => finalizer.map_or(Datum::Null, Datum::Node),
+				Key::Type => Datum::Text(Symbol::TypeTryStatement.id()),
+				Key::Block => Datum::Node(block),
+				Key::Handler => handler.map_or(Datum::Null, Datum::Node),
+				Key::Finalizer => finalizer.map_or(Datum::Null, Datum::Node),
 				_ => Datum::Missing,
 			},
 			NodeKind::CatchClause { param, body } => match field_name {
-				"type" => Datum::Static("CatchClause"),
-				"param" => param.map_or(Datum::Null, Datum::Node),
-				"body" => Datum::Node(body),
+				Key::Type => Datum::Text(Symbol::TypeCatchClause.id()),
+				Key::Param => param.map_or(Datum::Null, Datum::Node),
+				Key::Body => Datum::Node(body),
 				_ => Datum::Missing,
 			},
 			NodeKind::WhileStatement { test, body } => match field_name {
-				"type" => Datum::Static("WhileStatement"),
-				"test" => Datum::Node(test),
-				"body" => Datum::Node(body),
+				Key::Type => Datum::Text(Symbol::TypeWhileStatement.id()),
+				Key::Test => Datum::Node(test),
+				Key::Body => Datum::Node(body),
 				_ => Datum::Missing,
 			},
 			NodeKind::DoWhileStatement { body, test } => match field_name {
-				"type" => Datum::Static("DoWhileStatement"),
-				"body" => Datum::Node(body),
-				"test" => Datum::Node(test),
+				Key::Type => Datum::Text(Symbol::TypeDoWhileStatement.id()),
+				Key::Body => Datum::Node(body),
+				Key::Test => Datum::Node(test),
 				_ => Datum::Missing,
 			},
 			NodeKind::ForStatement {
@@ -468,18 +462,18 @@ impl<E: Extension> Walker<'_, E> {
 				update,
 				body,
 			} => match field_name {
-				"type" => Datum::Static("ForStatement"),
-				"init" => init.map_or(Datum::Null, Datum::Node),
-				"test" => test.map_or(Datum::Null, Datum::Node),
-				"update" => update.map_or(Datum::Null, Datum::Node),
-				"body" => Datum::Node(body),
+				Key::Type => Datum::Text(Symbol::TypeForStatement.id()),
+				Key::Init => init.map_or(Datum::Null, Datum::Node),
+				Key::Test => test.map_or(Datum::Null, Datum::Node),
+				Key::Update => update.map_or(Datum::Null, Datum::Node),
+				Key::Body => Datum::Node(body),
 				_ => Datum::Missing,
 			},
 			NodeKind::ForInStatement { left, right, body } => match field_name {
-				"type" => Datum::Static("ForInStatement"),
-				"left" => Datum::Node(left),
-				"right" => Datum::Node(right),
-				"body" => Datum::Node(body),
+				Key::Type => Datum::Text(Symbol::TypeForInStatement.id()),
+				Key::Left => Datum::Node(left),
+				Key::Right => Datum::Node(right),
+				Key::Body => Datum::Node(body),
 				_ => Datum::Missing,
 			},
 			NodeKind::ForOfStatement {
@@ -488,23 +482,23 @@ impl<E: Extension> Walker<'_, E> {
 				body,
 				is_await,
 			} => match field_name {
-				"type" => Datum::Static("ForOfStatement"),
-				"left" => Datum::Node(left),
-				"right" => Datum::Node(right),
-				"body" => Datum::Node(body),
-				"is_await" => Datum::Bool(is_await),
+				Key::Type => Datum::Text(Symbol::TypeForOfStatement.id()),
+				Key::Left => Datum::Node(left),
+				Key::Right => Datum::Node(right),
+				Key::Body => Datum::Node(body),
+				Key::IsAwait => Datum::Bool(is_await),
 				_ => Datum::Missing,
 			},
 			NodeKind::VariableDeclaration { declarations, kind } => match field_name {
-				"type" => Datum::Static("VariableDeclaration"),
-				"declarations" => Datum::Nodes(declarations),
-				"kind" => Datum::Text(kind.name().text.into()),
+				Key::Type => Datum::Text(Symbol::TypeVariableDeclaration.id()),
+				Key::Declarations => Datum::Nodes(declarations),
+				Key::Kind => Datum::Interned(self.intern(kind.name().text)),
 				_ => Datum::Missing,
 			},
 			NodeKind::VariableDeclarator { id, init } => match field_name {
-				"type" => Datum::Static("VariableDeclarator"),
-				"id" => Datum::Node(id),
-				"init" => init.map_or(Datum::Null, Datum::Node),
+				Key::Type => Datum::Text(Symbol::TypeVariableDeclarator.id()),
+				Key::Id => Datum::Node(id),
+				Key::Init => init.map_or(Datum::Null, Datum::Node),
 				_ => Datum::Missing,
 			},
 			NodeKind::ImportDeclaration {
@@ -512,37 +506,37 @@ impl<E: Extension> Walker<'_, E> {
 				source,
 				attributes,
 			} => match field_name {
-				"type" => Datum::Static("ImportDeclaration"),
-				"specifiers" => Datum::Nodes(specifiers),
-				"source" => Datum::Node(source),
-				"attributes" => Datum::Nodes(attributes),
+				Key::Type => Datum::Text(Symbol::TypeImportDeclaration.id()),
+				Key::Specifiers => Datum::Nodes(specifiers),
+				Key::Source => Datum::Node(source),
+				Key::Attributes => Datum::Nodes(attributes),
 				_ => Datum::Missing,
 			},
 			NodeKind::ImportSpecifier { imported, local } => match field_name {
-				"type" => Datum::Static("ImportSpecifier"),
-				"imported" => Datum::Node(imported),
-				"local" => Datum::Node(local),
+				Key::Type => Datum::Text(Symbol::TypeImportSpecifier.id()),
+				Key::Imported => Datum::Node(imported),
+				Key::Local => Datum::Node(local),
 				_ => Datum::Missing,
 			},
 			NodeKind::ImportDefaultSpecifier { local } => match field_name {
-				"type" => Datum::Static("ImportDefaultSpecifier"),
-				"local" => Datum::Node(local),
+				Key::Type => Datum::Text(Symbol::TypeImportDefaultSpecifier.id()),
+				Key::Local => Datum::Node(local),
 				_ => Datum::Missing,
 			},
 			NodeKind::ImportNamespaceSpecifier { local } => match field_name {
-				"type" => Datum::Static("ImportNamespaceSpecifier"),
-				"local" => Datum::Node(local),
+				Key::Type => Datum::Text(Symbol::TypeImportNamespaceSpecifier.id()),
+				Key::Local => Datum::Node(local),
 				_ => Datum::Missing,
 			},
 			NodeKind::ImportAttribute { key, value } => match field_name {
-				"type" => Datum::Static("ImportAttribute"),
-				"key" => Datum::Node(key),
-				"value" => Datum::Node(value),
+				Key::Type => Datum::Text(Symbol::TypeImportAttribute.id()),
+				Key::Key => Datum::Node(key),
+				Key::Value => Datum::Node(value),
 				_ => Datum::Missing,
 			},
 			NodeKind::ExportDeclaration { declaration } => match field_name {
-				"type" => Datum::Static("ExportNamedDeclaration"),
-				"declaration" => Datum::Node(declaration),
+				Key::Type => Datum::Text(Symbol::TypeExportNamedDeclaration.id()),
+				Key::Declaration => Datum::Node(declaration),
 				_ => Datum::Missing,
 			},
 			NodeKind::ExportNamedDeclaration {
@@ -550,21 +544,21 @@ impl<E: Extension> Walker<'_, E> {
 				source,
 				attributes,
 			} => match field_name {
-				"type" => Datum::Static("ExportNamedDeclaration"),
-				"specifiers" => Datum::Nodes(specifiers),
-				"source" => source.map_or(Datum::Null, Datum::Node),
-				"attributes" => Datum::Nodes(attributes),
+				Key::Type => Datum::Text(Symbol::TypeExportNamedDeclaration.id()),
+				Key::Specifiers => Datum::Nodes(specifiers),
+				Key::Source => source.map_or(Datum::Null, Datum::Node),
+				Key::Attributes => Datum::Nodes(attributes),
 				_ => Datum::Missing,
 			},
 			NodeKind::ExportSpecifier { local, exported } => match field_name {
-				"type" => Datum::Static("ExportSpecifier"),
-				"local" => Datum::Node(local),
-				"exported" => Datum::Node(exported),
+				Key::Type => Datum::Text(Symbol::TypeExportSpecifier.id()),
+				Key::Local => Datum::Node(local),
+				Key::Exported => Datum::Node(exported),
 				_ => Datum::Missing,
 			},
 			NodeKind::ExportDefaultDeclaration { declaration } => match field_name {
-				"type" => Datum::Static("ExportDefaultDeclaration"),
-				"declaration" => Datum::Node(declaration),
+				Key::Type => Datum::Text(Symbol::TypeExportDefaultDeclaration.id()),
+				Key::Declaration => Datum::Node(declaration),
 				_ => Datum::Missing,
 			},
 			NodeKind::ExportAllDeclaration {
@@ -572,10 +566,10 @@ impl<E: Extension> Walker<'_, E> {
 				source,
 				attributes,
 			} => match field_name {
-				"type" => Datum::Static("ExportAllDeclaration"),
-				"exported" => exported.map_or(Datum::Null, Datum::Node),
-				"source" => Datum::Node(source),
-				"attributes" => Datum::Nodes(attributes),
+				Key::Type => Datum::Text(Symbol::TypeExportAllDeclaration.id()),
+				Key::Exported => exported.map_or(Datum::Null, Datum::Node),
+				Key::Source => Datum::Node(source),
+				Key::Attributes => Datum::Nodes(attributes),
 				_ => Datum::Missing,
 			},
 			_ => Datum::Missing,
@@ -604,11 +598,9 @@ impl<E: Extension> Walker<'_, E> {
 		};
 		let node = |name: &str| optional(name).ok_or_else(|| error(start, end, Code::Expected, Some(name)));
 		let string = |this: &mut Self, name: &str| -> Result<StrId> {
-			let value = this
-				.text_of(get(name))
-				.ok_or_else(|| error(start, end, Code::Expected, Some(name)))?
-				.to_owned();
-			Ok(this.intern(&value))
+			this.text_of(get(name))
+				.ok_or_else(|| error(start, end, Code::Expected, Some(name)))?;
+			Ok(this.string(*get(name)))
 		};
 		let list = |this: &mut Self, name: &str| {
 			let value = get(name);
@@ -993,12 +985,24 @@ impl<E: Extension> Walker<'_, E> {
 			}
 			"js.TemplateElement" => {
 				let value = get("value");
-				let raw = self.property(value.clone(), &Path::Name("raw".into()));
+				let raw = self.property(
+					*value,
+					&Path::Name(Property {
+						key: Key::Raw,
+						name: Symbol::WordRaw.id(),
+					}),
+				);
 				let raw = self
 					.text_of(&raw)
 					.ok_or_else(|| error(start, end, Code::Expected, Some("raw")))?
 					.to_owned();
-				let cooked = self.property(value.clone(), &Path::Name("cooked".into()));
+				let cooked = self.property(
+					*value,
+					&Path::Name(Property {
+						key: Key::Cooked,
+						name: Symbol::WordCooked.id(),
+					}),
+				);
 				let cooked = self.text_of(&cooked).map(str::to_owned).map(|s| self.intern(&s));
 				NodeKind::TemplateElement {
 					raw: self.intern(&raw),
@@ -1009,8 +1013,20 @@ impl<E: Extension> Walker<'_, E> {
 			"js.Literal" => {
 				if !matches!(get("regex"), Datum::Missing | Datum::Null) {
 					let value = get("regex");
-					let pattern = self.property(value.clone(), &Path::Name("pattern".into()));
-					let flags = self.property(value.clone(), &Path::Name("flags".into()));
+					let pattern = self.property(
+						*value,
+						&Path::Name(Property {
+							key: Key::Pattern,
+							name: Symbol::WordPattern.id(),
+						}),
+					);
+					let flags = self.property(
+						*value,
+						&Path::Name(Property {
+							key: Key::Flags,
+							name: Symbol::WordFlags.id(),
+						}),
+					);
 					let pattern = self
 						.text_of(&pattern)
 						.ok_or_else(|| error(start, end, Code::Expected, Some("pattern")))?

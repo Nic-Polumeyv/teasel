@@ -802,7 +802,15 @@ fn profile() {
 		.build()
 		.unwrap();
 	let mut sink = 0usize;
-	if std::env::var("TEASEL_PROFILE").is_ok_and(|what| what == "encode") {
+	if let Ok(plan) = std::env::var("TEASEL_HOST_PLAN") {
+		let plan = std::fs::read_to_string(plan).unwrap();
+		let prepared = crate::json::Prepared::borrowed(&source, crate::json::Request::from_names("module"))
+			.host(&plan)
+			.unwrap();
+		for _ in 0..3000 {
+			prepared.binary(Entry::Program, 0.0, None, "").unwrap();
+		}
+	} else if std::env::var("TEASEL_PROFILE").is_ok_and(|what| what == "encode") {
 		use crate::estree::{Binary, Output, Positions, answer};
 		let (mut ast, roots) = whole(&source, options);
 		crate::comments::attach(&mut ast, &source, roots, 0);

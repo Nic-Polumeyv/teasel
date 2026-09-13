@@ -1,5 +1,6 @@
 use super::*;
 
+#[cold]
 pub(super) fn plan(plan: &mut Plan) {
 	for rule in &mut plan.rules {
 		form(&mut rule.form);
@@ -23,6 +24,7 @@ pub(super) fn plan(plan: &mut Plan) {
 	}
 }
 
+#[cold]
 fn form(f: &mut Form) {
 	match f {
 		Form::Seq(items)
@@ -45,6 +47,7 @@ fn form(f: &mut Form) {
 	}
 }
 
+#[cold]
 fn member(expr: &Value) -> Option<ConstantSet> {
 	let Value::Compare {
 		relation: Relation::Less,
@@ -99,6 +102,7 @@ fn member(expr: &Value) -> Option<ConstantSet> {
 	} else {
 		return None;
 	};
+	#[cold]
 	fn depends(value: &Value, binding: &str) -> bool {
 		if matches!(value, Value::Get {base: Base::Name(name),..} if name.as_ref() == binding) {
 			return true;
@@ -118,6 +122,7 @@ fn member(expr: &Value) -> Option<ConstantSet> {
 	Some(ConstantSet { needle, strings })
 }
 
+#[cold]
 fn value(v: &mut Value) {
 	let compiled_set = member(v);
 	match v {
@@ -163,6 +168,7 @@ fn value(v: &mut Value) {
 	}
 }
 
+#[cold]
 fn constant(v: &Value) -> Option<Json> {
 	Some(match v {
 		Value::Constant(v) => v.clone(),

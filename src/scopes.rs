@@ -331,6 +331,10 @@ impl ByNode {
 /// The binder's working storage, kept between analyses.
 #[derive(Debug, Default)]
 struct Scratch {
+	host_children: Vec<NodeId>,
+	region_envs: Vec<Option<u32>>,
+	host_incoming: NodeMap<u32>,
+	host_seen: NodeSet,
 	envs: Vec<Env>,
 	open: Vec<u32>,
 	env_of: Vec<u32>,
@@ -449,6 +453,10 @@ fn analyze_with<X: Bind>(ast: &mut Ast<X>, kind: ScopeKind, root: Option<NodeId>
 		"resolution links what the walk declared, it declares nothing"
 	);
 	let Binder {
+		host_children,
+		region_envs,
+		host_incoming,
+		host_seen,
 		mut out,
 		mut envs,
 		open,
@@ -482,6 +490,10 @@ fn analyze_with<X: Bind>(ast: &mut Ast<X>, kind: ScopeKind, root: Option<NodeId>
 	}
 	env_of.clear();
 	out.scratch = Scratch {
+		host_children,
+		region_envs,
+		host_incoming,
+		host_seen,
 		envs,
 		open,
 		env_of,
@@ -525,6 +537,7 @@ pub fn analyze<X: Bind>(ast: &mut Ast<X>, entry: Entry, roots: List) {
 }
 
 pub struct Binder<'a, X> {
+	host_children: Vec<NodeId>,
 	region_envs: Vec<Option<u32>>,
 	host_incoming: NodeMap<u32>,
 	host_seen: NodeSet,
@@ -563,6 +576,10 @@ impl<'a, X: Bind> Binder<'a, X> {
 			},
 		};
 		let Scratch {
+			host_children,
+			mut region_envs,
+			mut host_incoming,
+			mut host_seen,
 			envs,
 			open,
 			env_of,
@@ -570,10 +587,15 @@ impl<'a, X: Bind> Binder<'a, X> {
 			names,
 		} = std::mem::take(&mut out.scratch);
 		out.scratch.names = names;
+		region_envs.clear();
+		region_envs.resize(ast.host_regions.len(), None);
+		host_incoming.clear();
+		host_seen.clear();
 		Binder {
-			region_envs: vec![None; ast.host_regions.len()],
-			host_incoming: NodeMap::default(),
-			host_seen: NodeSet::default(),
+			host_children,
+			region_envs,
+			host_incoming,
+			host_seen,
 			ast,
 			out,
 			envs,
@@ -1165,15 +1187,21 @@ impl<'a, X: Bind> Binder<'a, X> {
 	fn host(&mut self, id: NodeId, index: u32) {
 		let host = self.ast.hosts[index as usize];
 		let (from, len) = host.fields;
-		let mut children = Vec::new();
+		let start = self.host_children.len();
 		for i in from..from + len {
-			self.host_roots(self.ast.host_fields[i as usize].1, &mut children);
+			Self::host_roots(self.ast, self.ast.host_fields[i as usize].1, &mut self.host_children);
 		}
-		children.sort_by_key(|id| self.ast.node(*id).start);
-		children.dedup();
-		for child in children {
-			self.field_value(child);
+		self.host_children[start..].sort_by_key(|id| self.ast.node(*id).start);
+		let end = self.host_children.len();
+		let mut previous = None;
+		for i in start..end {
+			let child = self.host_children[i];
+			if previous != Some(child) {
+				self.field_value(child);
+			}
+			previous = Some(child);
 		}
+		self.host_children.truncate(start);
 		if let Some(hidden) = self.ast.host_hidden.get(id) {
 			for child in hidden {
 				self.field_value(*child);
@@ -1181,13 +1209,13 @@ impl<'a, X: Bind> Binder<'a, X> {
 		}
 	}
 
-	fn host_roots(&self, value: crate::ast::Value, out: &mut Vec<NodeId>) {
+	fn host_roots(ast: &Ast<X>, value: crate::ast::Value, out: &mut Vec<NodeId>) {
 		match value {
 			crate::ast::Value::Node(id) => out.push(id),
-			crate::ast::Value::Nodes(list) => out.extend(self.ast.list(list).iter().flatten().copied()),
+			crate::ast::Value::Nodes(list) => out.extend(ast.list(list).iter().flatten().copied()),
 			crate::ast::Value::Array(a, n) => {
-				for value in &self.ast.host_values[a as usize..(a + n) as usize] {
-					self.host_roots(*value, out);
+				for value in &ast.host_values[a as usize..(a + n) as usize] {
+					Self::host_roots(ast, *value, out);
 				}
 			}
 			_ => {}
