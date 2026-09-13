@@ -27,7 +27,7 @@ jobs:
       - run: cargo test --release
       - run: bun install --frozen-lockfile
         working-directory: package
-      - run: bun run types && bun run build && bun run build:wasm && bun run test && node test.js check ../tests/test262-parser-tests/pass ../tests/test262-parser-tests/pass-explicit
+      - run: bun run types && bun run build && bun run build:wasm && bun run test && node check.js ../tests/test262-parser-tests/pass ../tests/test262-parser-tests/pass-explicit
         working-directory: package
 
   build:

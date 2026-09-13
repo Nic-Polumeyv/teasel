@@ -1,23 +1,12 @@
-// bun release.js build [--target TRIPLE]: builds the addon for this machine, or the target given, into teasel.<platform>.node
 // bun release.js versions: carries the version changesets wrote into package.json over to the crates, so
 //   the Version Packages PR holds every number and the release gate reads the one the changelog announces
 // bun release.js publish: publishes the platform packages from the addons under artifacts/, then this package
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { here, platforms } from './native.js';
+import { platforms } from './native.js';
 
 const command = process.argv[2];
-if (command === 'build') {
-	const at = process.argv.indexOf('--target');
-	const target = at === -1 ? platforms[here].target : process.argv[at + 1];
-	const [tag, { os }] = Object.entries(platforms).find(([, p]) => p.target === target) ?? [];
-	if (tag === undefined) throw new Error(`no platform builds for ${target}`);
-
-	const { status } = spawnSync('cargo', ['build', '--release', '-p', 'teasel-node', '--target', target], { stdio: 'inherit', cwd: '..' });
-	if (status !== 0) process.exit(status ?? 1);
-	const lib = os === 'win32' ? 'teasel_node.dll' : os === 'darwin' ? 'libteasel_node.dylib' : 'libteasel_node.so';
-	copyFileSync(`../target/${target}/release/${lib}`, `teasel.${tag}.node`);
-} else if (command === 'versions') {
+if (command === 'versions') {
 	const { version } = JSON.parse(readFileSync('package.json', 'utf8'));
 
 	function patch(file, from, to) {
@@ -63,5 +52,5 @@ if (command === 'build') {
 	writeFileSync('package.json', JSON.stringify(root, null, '\t') + '\n');
 	await publish('.', root.name);
 } else {
-	throw new Error(`bun release.js build | versions | publish, not ${command}`);
+	throw new Error(`bun release.js versions | publish, not ${command}`);
 }
