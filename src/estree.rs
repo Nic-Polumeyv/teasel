@@ -380,8 +380,9 @@ impl Shapes {
 		let (seen, id) = self.recent[slot];
 		if seen == hash && id != 0 {
 			let start = self.starts[id as usize] as usize;
-			if self.words[start] as usize == record.len() && self.words[start + 1..start + 1 + record.len()] == *record
-			{
+			// bcmp costs a call; a record is a handful of words
+			let stored = &self.words[start..];
+			if stored[0] as usize == record.len() && record.iter().zip(&stored[1..]).all(|(a, b)| a == b) {
 				return id;
 			}
 		}
