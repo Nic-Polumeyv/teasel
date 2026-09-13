@@ -161,6 +161,11 @@ impl<T> NodeValues<T> {
 pub struct NodeIndex(Vec<u32>);
 
 impl NodeIndex {
+	pub fn reserve(&mut self, nodes: usize) {
+		if self.0.len() < nodes {
+			self.0.resize(nodes, u32::MAX);
+		}
+	}
 	pub fn insert(&mut self, id: NodeId, value: NodeId) {
 		let index = id.index() as usize;
 		if self.0.len() <= index {
@@ -194,6 +199,12 @@ impl<T> Default for NodeLists<T> {
 	}
 }
 impl<T> NodeLists<T> {
+	/// Room for `nodes` nodes, so a push never grows the heads.
+	pub fn reserve(&mut self, nodes: usize) {
+		if self.heads.len() < nodes {
+			self.heads.resize(nodes, (u32::MAX, u32::MAX));
+		}
+	}
 	pub fn push(&mut self, node: NodeId, value: T) {
 		let node = node.index() as usize;
 		if self.heads.len() <= node {

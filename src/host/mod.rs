@@ -3290,21 +3290,35 @@ impl<'a> Walker<'a> {
 	fn regions(&mut self) -> Result<()> {
 		let count = self.tree().nodes.len();
 		self.node_records.resize(count, usize::MAX);
-		for i in 0..self.records.len() {
-			if let Some(node) = self.records[i].node {
-				self.node_records[node.index() as usize] = i;
+		{
+			let ast = self.ast.as_mut().unwrap();
+			ast.host_coverage.reserve(count);
+			ast.host_region_owners.reserve(count);
+			ast.host_occurrences.reserve(count);
+		}
+		let plan = self.plan;
+		let Spare {
+			records,
+			node_records,
+			region_slots,
+			..
+		} = &mut *self.spare;
+		for (i, record) in records.iter_mut().enumerate() {
+			if let Some(node) = record.node {
+				node_records[node.index() as usize] = i;
 			}
-			let start = self.region_slots.len();
-			self.records[i].regions = start;
-			let count = self.plan.program.rules[self.records[i].rule].regions.len();
-			self.region_slots.resize(start + count, None);
+			record.regions = region_slots.len();
+			let count = plan.program.rules[record.rule].regions.len();
+			if count != 0 {
+				region_slots.resize(record.regions + count, None);
+			}
 		}
 		self.ast().host_plan = true;
 		for record in 0..self.records.len() {
-			let rec = self.records[record];
-			let Some(node) = rec.node else {
+			let Some(node) = self.records[record].node else {
 				continue;
 			};
+			let rec = self.records[record];
 			let rule = &self.plan.program.rules[rec.rule];
 			if rule.slots > rule.fields.len() {
 				let mut hidden = self.take_nodes();
