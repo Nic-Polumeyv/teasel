@@ -1,5 +1,7 @@
 // node tests/hosts/plans.mts: writes each host's plan.json beside its plan.mts. The bottom half
 // misuses the helpers on purpose; `npm run types` in package/ fails if any line stops erroring.
+// the only node call in a type-checked file; node's types stay out of the package for one signature
+// @ts-expect-error
 import { writeFileSync } from 'node:fs';
 import { rule, seq, js, region, declare, incoming, type Infer, type Slot } from '../../package/plan.ts';
 
@@ -10,7 +12,7 @@ const print = (plan: object) => {
 	const top = Object.entries(rest).map(([key, value]) => `${JSON.stringify(key)}: ${JSON.stringify(value)}`);
 	return `{${top.slice(0, 2).join(', ')}, "rules": {\n${lines.join(',\n')}\n}, ${top.slice(2).join(', ')}}\n`;
 };
-if (import.meta.main) {
+if ((import.meta as { main?: boolean }).main) {
 	for (const name of ['svelte', 'vue']) {
 		const dir = new URL(`./${name}/`, import.meta.url);
 		const { [name]: plan } = await import(new URL('plan.mts', dir).href);
