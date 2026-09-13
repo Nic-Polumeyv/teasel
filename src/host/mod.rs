@@ -158,22 +158,23 @@ fn decode(raw: &str, attribute: bool) -> Cow<'_, str> {
 			}
 		} else {
 			let len = rest.bytes().take_while(|b| b.is_ascii_alphanumeric()).count().min(32);
-			let mut try_len = len;
-			while try_len > 0 {
-				let with = rest.as_bytes().get(try_len) == Some(&b';');
-				let candidate = &rest[..try_len + usize::from(with)];
-				if let Ok(found) = entities::ENTITIES.binary_search_by(|(name, ..)| name.cmp(&candidate)) {
+			let with = rest.as_bytes().get(len) == Some(&b';');
+			if with && let Some((found, found_mark)) = entities::lookup(&rest[..len + 1]) {
+				code = Some(found);
+				mark = found_mark;
+				consumed = len + 1;
+			}
+			let mut try_len = len.min(entities::LONGEST_BARE);
+			while code.is_none() && try_len > 0 {
+				if let Some((found, found_mark)) = entities::lookup(&rest[..try_len]) {
 					let after = rest.as_bytes().get(try_len);
-					if attribute
-						&& !with && after.is_some_and(|b| *b == b'=' || b.is_ascii_alphanumeric() || *b == b'_')
-					{
+					if attribute && after.is_some_and(|b| *b == b'=' || b.is_ascii_alphanumeric() || *b == b'_') {
 						try_len -= 1;
 						continue;
 					}
-					code = Some(entities::ENTITIES[found].1);
-					mark = entities::ENTITIES[found].2;
-					consumed = try_len + usize::from(with);
-					break;
+					code = Some(found);
+					mark = found_mark;
+					consumed = try_len;
 				}
 				try_len -= 1;
 			}

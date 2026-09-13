@@ -1,8 +1,65 @@
-//! HTML named character references from the WHATWG table, sorted by name; a name keeps its `;` when it has one.
+//! HTML named character references from the WHATWG table; a name keeps its `;` when it has one.
 
-/// Each name with its code points, sorted for a binary search; the second is 0 for all but the 93
-/// names that decode to a base character and a combining mark.
-pub(crate) static ENTITIES: [(&str, u32, u32); 2231] = [
+/// The code points of a name: the second is 0 for all but the 93 names that decode to a base
+/// character and a combining mark.
+pub(crate) fn lookup(name: &str) -> Option<(u32, u32)> {
+	let mut slot = hash(name.as_bytes());
+	loop {
+		let i = INDEX[slot];
+		if i == u16::MAX {
+			return None;
+		}
+		let (found, code, mark) = ENTITIES[i as usize];
+		if found == name {
+			return Some((code, mark));
+		}
+		slot = (slot + 1) % SLOTS;
+	}
+}
+
+const SLOTS: usize = 4096;
+
+/// The longest name that resolves without its `;`: a bare candidate past this length cannot match.
+pub(crate) const LONGEST_BARE: usize = {
+	let mut longest = 0;
+	let mut i = 0;
+	while i < ENTITIES.len() {
+		let name = ENTITIES[i].0.as_bytes();
+		if name[name.len() - 1] != b';' && name.len() > longest {
+			longest = name.len();
+		}
+		i += 1;
+	}
+	longest
+};
+
+// Open addressing at a load under 0.55; a binary search over the names cost 11 string compares per
+// try and a `&word` without `;` tries every length.
+static INDEX: [u16; SLOTS] = {
+	let mut slots = [u16::MAX; SLOTS];
+	let mut i = 0;
+	while i < ENTITIES.len() {
+		let mut slot = hash(ENTITIES[i].0.as_bytes());
+		while slots[slot] != u16::MAX {
+			slot = (slot + 1) % SLOTS;
+		}
+		slots[slot] = i as u16;
+		i += 1;
+	}
+	slots
+};
+
+const fn hash(bytes: &[u8]) -> usize {
+	let mut h: u64 = 0;
+	let mut i = 0;
+	while i < bytes.len() {
+		h = (h.rotate_left(5) ^ bytes[i] as u64).wrapping_mul(0x517c_c1b7_2722_0a95);
+		i += 1;
+	}
+	(h >> 52) as usize
+}
+
+static ENTITIES: [(&str, u32, u32); 2231] = [
 	("AElig", 198, 0),
 	("AElig;", 198, 0),
 	("AMP", 38, 0),
