@@ -50,15 +50,12 @@
 		"test": "node test.js && node test.js interpret",
 		"types": "tsc -p tsconfig.json",
 		"check": "node check.js",
-		"changeset:version": "changeset version && node versions.js && git add --all",
 		"prepublishOnly": "npm run build:plan"
 	},
 	"dependencies": {
 		"@types/estree": "^1.0.6"
 	},
 	"devDependencies": {
-		"@changesets/changelog-github": "^1.0.0",
-		"@changesets/cli": "^3.0.1",
 		"@types/node": "^26.0.0"
 	}
 }

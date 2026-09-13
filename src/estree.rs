@@ -3,6 +3,7 @@
 
 use crate::ast::{Ast, Class, Function, List, MethodKind, NodeId, NodeKind, PropertyKind, Value};
 use crate::interner::{FastMap, Interner, StrId};
+use crate::names::{NAMES, Name, c};
 use crate::parser::Entry;
 use crate::scopes::Role;
 use std::fmt::Write;
@@ -44,16 +45,16 @@ impl Emit for () {
 pub trait Sink {
 	/// The tree's interned strings, before anything refers to them.
 	fn strings(&mut self, _interner: &Interner) {}
-	fn begin(&mut self, ty: &'static str);
+	fn begin(&mut self, ty: Name);
 	fn object(&mut self);
 	fn list(&mut self);
 	fn end(&mut self);
-	fn key(&mut self, key: &'static str);
+	fn key(&mut self, key: Name);
 	fn int(&mut self, value: u32);
 	fn float(&mut self, value: f64);
 	fn bool(&mut self, value: bool);
 	fn null(&mut self);
-	fn str(&mut self, value: &'static str);
+	fn str(&mut self, value: Name);
 	fn text(&mut self, value: &str);
 	/// A string of the tree's interner.
 	fn interned(&mut self, id: StrId, value: &str);
@@ -63,7 +64,7 @@ pub trait Sink {
 	fn loc(&mut self, start_line: u32, start_column: u32, end_line: u32, end_column: u32);
 	/// The key of a scope table: the tables are a root's last entries, and a sink may place them
 	/// where a decoder finds them before the nodes that refer to them.
-	fn table(&mut self, key: &'static str) {
+	fn table(&mut self, key: Name) {
 		self.key(key);
 	}
 	fn ints(&mut self, values: &[u32]) {
@@ -87,7 +88,7 @@ impl<S: Sink> Sink for &mut S {
 	fn strings(&mut self, interner: &Interner) {
 		(**self).strings(interner)
 	}
-	fn begin(&mut self, ty: &'static str) {
+	fn begin(&mut self, ty: Name) {
 		(**self).begin(ty)
 	}
 	fn object(&mut self) {
@@ -99,7 +100,7 @@ impl<S: Sink> Sink for &mut S {
 	fn end(&mut self) {
 		(**self).end()
 	}
-	fn key(&mut self, key: &'static str) {
+	fn key(&mut self, key: Name) {
 		(**self).key(key)
 	}
 	fn int(&mut self, value: u32) {
@@ -114,7 +115,7 @@ impl<S: Sink> Sink for &mut S {
 	fn null(&mut self) {
 		(**self).null()
 	}
-	fn str(&mut self, value: &'static str) {
+	fn str(&mut self, value: Name) {
 		(**self).str(value)
 	}
 	fn text(&mut self, value: &str) {
@@ -132,7 +133,7 @@ impl<S: Sink> Sink for &mut S {
 	fn loc(&mut self, start_line: u32, start_column: u32, end_line: u32, end_column: u32) {
 		(**self).loc(start_line, start_column, end_line, end_column)
 	}
-	fn table(&mut self, key: &'static str) {
+	fn table(&mut self, key: Name) {
 		(**self).table(key)
 	}
 	fn ints(&mut self, values: &[u32]) {
@@ -183,10 +184,10 @@ impl Json {
 }
 
 impl Sink for Json {
-	fn begin(&mut self, ty: &'static str) {
+	fn begin(&mut self, ty: Name) {
 		self.open(false);
 		self.out.push_str("\"type\":\"");
-		self.out.push_str(ty);
+		self.out.push_str(ty.text);
 		self.out.push('"');
 		self.first = false;
 	}
@@ -204,10 +205,10 @@ impl Sink for Json {
 		self.first = false;
 	}
 
-	fn key(&mut self, key: &'static str) {
+	fn key(&mut self, key: Name) {
 		self.sep();
 		self.out.push('"');
-		self.out.push_str(key);
+		self.out.push_str(key.text);
 		self.out.push_str("\":");
 		self.first = true;
 	}
@@ -232,8 +233,8 @@ impl Sink for Json {
 		self.out.push_str("null");
 	}
 
-	fn str(&mut self, value: &'static str) {
-		self.text(value);
+	fn str(&mut self, value: Name) {
+		self.text(value.text);
 	}
 
 	fn text(&mut self, value: &str) {
@@ -306,10 +307,11 @@ pub mod kind {
 
 /// The strings the writer names itself, numbered once per writer for every answer: a binding
 /// fetches the list when an answer refers past what it has.
+/// Strings outside `NAMES`, numbered after it in the order met.
 struct Constants {
 	names: Vec<&'static str>,
 	ids: FastMap<&'static str, u32>,
-	// literals only: their address is a cheaper key than their text
+	// a grammar's strings live for the process, so their address is a cheaper key than their text
 	recent: Box<[(usize, u32); 512]>,
 }
 
@@ -322,18 +324,21 @@ impl Constants {
 		}
 	}
 
-	fn id(&mut self, value: &'static str) -> u32 {
-		let address = value.as_ptr() as usize;
+	fn id(&mut self, name: Name) -> u32 {
+		if name.id != u32::MAX {
+			return name.id;
+		}
+		let address = name.text.as_ptr() as usize;
 		let slot = ((address as u64).wrapping_mul(crate::interner::SEED) >> 55) as usize & 511;
 		if self.recent[slot].0 == address {
 			return self.recent[slot].1;
 		}
-		let id = match self.ids.get(value) {
+		let id = match self.ids.get(name.text) {
 			Some(&id) => id,
 			None => {
-				let id = self.names.len() as u32;
-				self.names.push(value);
-				self.ids.insert(value, id);
+				let id = (NAMES.len() + self.names.len()) as u32;
+				self.names.push(name.text);
+				self.ids.insert(name.text, id);
 				id
 			}
 		};
@@ -375,8 +380,9 @@ impl Shapes {
 		let (seen, id) = self.recent[slot];
 		if seen == hash && id != 0 {
 			let start = self.starts[id as usize] as usize;
-			if self.words[start] as usize == record.len() && self.words[start + 1..start + 1 + record.len()] == *record
-			{
+			// bcmp costs a call; a record is a handful of words
+			let stored = &self.words[start..];
+			if stored[0] as usize == record.len() && record.iter().zip(&stored[1..]).all(|(a, b)| a == b) {
 				return id;
 			}
 		}
@@ -549,12 +555,13 @@ pub struct Binary {
 	seq: Vec<u32>,
 	tables_at: u32,
 	tables: usize,
-	start: u32,
-	end: u32,
-	loc: u32,
 	constants: Constants,
 	shapes: Shapes,
 }
+
+const START: u32 = c!("start").id << 4 | kind::INT;
+const END: u32 = c!("end").id << 4 | kind::INT;
+const LOC: u32 = c!("loc").id << 4 | kind::LOC;
 
 enum Frame {
 	Node { slot: u32, record: u32 },
@@ -579,26 +586,21 @@ impl Binary {
 			seq: Vec::new(),
 			tables_at: 0,
 			tables: 0,
-			start: 0,
-			end: 0,
-			loc: 0,
 			constants: Constants::new(),
 			shapes: Shapes::new(),
 		};
-		binary.start = binary.constant("start") << 4 | kind::INT;
-		binary.end = binary.constant("end") << 4 | kind::INT;
-		binary.loc = binary.constant("loc") << 4 | kind::LOC;
 		binary.reset();
 		binary
 	}
 
-	pub(crate) fn constant(&mut self, value: &'static str) -> u32 {
-		self.constants.id(value)
+	#[cfg(test)]
+	pub(crate) fn constant(&mut self, name: Name) -> u32 {
+		self.constants.id(name)
 	}
 
-	/// The constant strings numbered so far.
-	pub fn constants(&self) -> &[&'static str] {
-		&self.constants.names
+	/// The constant strings numbered so far: `NAMES`, then the ones met outside it.
+	pub fn constants(&self) -> Vec<&'static str> {
+		NAMES.iter().chain(&self.constants.names).copied().collect()
 	}
 
 	/// The shape records numbered so far.
@@ -660,7 +662,7 @@ impl Binary {
 			self.ends.len() as u32,
 			self.floats.len() as u32,
 			self.text.len() as u32,
-			self.constants.names.len() as u32,
+			(NAMES.len() + self.constants.names.len()) as u32,
 			self.shapes.starts.len() as u32,
 			self.tables_at,
 		]);
@@ -689,7 +691,7 @@ impl Sink for Binary {
 		}
 	}
 
-	fn begin(&mut self, ty: &'static str) {
+	fn begin(&mut self, ty: Name) {
 		let id = self.constants.id(ty);
 		self.open(id + 1);
 	}
@@ -718,7 +720,7 @@ impl Sink for Binary {
 		}
 	}
 
-	fn key(&mut self, key: &'static str) {
+	fn key(&mut self, key: Name) {
 		debug_assert!(self.tables_at == 0 || self.frames.len() > 1, "the tables come last");
 		let id = self.constants.id(key);
 		self.seq.push(id << 4);
@@ -745,7 +747,7 @@ impl Sink for Binary {
 		self.words.push(kind::NULL);
 	}
 
-	fn str(&mut self, value: &'static str) {
+	fn str(&mut self, value: Name) {
 		self.value(kind::CONST);
 		let id = self.constants.id(value);
 		self.words.push(id);
@@ -768,17 +770,17 @@ impl Sink for Binary {
 	}
 
 	fn span(&mut self, start: u32, end: u32) {
-		self.seq.extend([self.start, self.end]);
+		self.seq.extend([START, END]);
 		self.words.extend_from_slice(&[start, end]);
 	}
 
 	fn loc(&mut self, start_line: u32, start_column: u32, end_line: u32, end_column: u32) {
-		self.seq.push(self.loc);
+		self.seq.push(LOC);
 		self.words
 			.extend_from_slice(&[start_line, start_column, end_line, end_column]);
 	}
 
-	fn table(&mut self, _key: &'static str) {
+	fn table(&mut self, _key: Name) {
 		debug_assert!(self.frames.len() == 1, "a table is the root's entry");
 		if self.tables_at == 0 {
 			self.tables_at = self.words.len() as u32 - 7;
@@ -818,11 +820,11 @@ pub fn answer<X: Emit, S: Sink>(
 	w.output = output;
 	w.sink.object();
 	if entry == Entry::Params {
-		w.list("node", roots);
+		w.list(c!("node"), roots);
 	} else {
-		w.field("node", ast.list(roots)[0].unwrap());
+		w.field(c!("node"), ast.list(roots)[0].unwrap());
 	}
-	w.key("end");
+	w.key(c!("end"));
 	let end = w.positions.offset(&mut w.cursor, end);
 	w.sink.int(end);
 	w.trailers();
@@ -868,7 +870,7 @@ pub struct Writer<'a, X = (), S: Sink = Json> {
 	/// The node being written names something bound by another node: no scope facts on it.
 	name_only: bool,
 	/// What erasure left in place, in emission order.
-	kept: Vec<(&'static str, NodeId)>,
+	kept: Vec<(Name, NodeId)>,
 	/// Nodes erasure skipped whose facts the next node written takes over.
 	adopted: Vec<NodeId>,
 }
@@ -1006,13 +1008,13 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 	}
 
 	/// Records a node erasure had to leave in place.
-	pub(crate) fn keep(&mut self, ty: &'static str, id: NodeId) {
+	pub(crate) fn keep(&mut self, ty: Name, id: NodeId) {
 		self.kept.push((ty, id));
 	}
 
 	/// What erasure left in place, as `typescript`, in source order.
 	fn all_kept(&mut self) {
-		self.key("typescript");
+		self.key(c!("typescript"));
 		self.sink.list();
 		let mut kept = std::mem::take(&mut self.kept);
 		kept.sort_unstable_by_key(|&(_, id)| self.ast.node(id).start);
@@ -1025,19 +1027,19 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		self.sink.end();
 	}
 
-	pub(crate) fn begin(&mut self, ty: &'static str, id: NodeId) {
+	pub(crate) fn begin(&mut self, ty: Name, id: NodeId) {
 		let node = self.ast.node(id);
 		self.sink.begin(ty);
 		self.span(node.start, node.end);
 		self.scope_facts(id);
 		if self.ast.is_parenthesized(id) {
-			self.bool("parenthesized", true);
+			self.bool(c!("parenthesized"), true);
 		}
 		self.ast.extension.extras(self, id);
 		if let Some(&attached) = self.ast.attached.get(&id) {
-			self.comments("leadingComments", attached.leading);
-			self.comments("trailingComments", attached.trailing);
-			self.comments("innerComments", attached.inner);
+			self.comments(c!("leadingComments"), attached.leading);
+			self.comments(c!("trailingComments"), attached.trailing);
+			self.comments(c!("innerComments"), attached.inner);
 		}
 	}
 
@@ -1049,16 +1051,16 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 			return;
 		}
 		if let Some(scope) = scopes.of_node.get(id) {
-			self.key("scope");
+			self.key(c!("scope"));
 			self.sink.int(scope);
 		}
 		match scopes.of_identifier.get(id) {
 			Some(Role::Declares(binding)) => {
-				self.key("declares");
+				self.key(c!("declares"));
 				self.sink.int(binding);
 			}
 			Some(Role::Reference(reference)) => {
-				self.key("reference");
+				self.key(c!("reference"));
 				self.sink.int(reference);
 			}
 			None => {}
@@ -1066,17 +1068,17 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		let adopted = std::mem::take(&mut self.adopted);
 		for node in adopted.iter().copied().chain([id]) {
 			if let Some(&root) = scopes.root_of.get(&node) {
-				self.key("root");
+				self.key(c!("root"));
 				self.sink.int(root);
 			}
 			let bindings = scopes.declared_by.get(node);
 			if !bindings.is_empty() {
-				self.key("defines");
+				self.key(c!("defines"));
 				self.sink.ints(bindings);
 			}
 			let references = scopes.writes_of.get(node);
 			if !references.is_empty() {
-				self.key("writes");
+				self.key(c!("writes"));
 				self.sink.ints(references);
 			}
 		}
@@ -1092,61 +1094,61 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 	/// `writes` numbers index.
 	fn all_scopes(&mut self) {
 		let Some(scopes) = &self.ast.scopes else { return };
-		self.sink.table("scopes");
+		self.sink.table(c!("scopes"));
 		self.sink.list();
 		for scope in &scopes.scopes {
 			self.sink.object();
-			self.string("kind", scope.kind.name());
-			self.key("parent");
+			self.string(c!("kind"), scope.kind.name());
+			self.key(c!("parent"));
 			match scope.parent {
 				Some(parent) => self.sink.int(parent),
 				None => self.sink.null(),
 			}
-			self.bool("topLevelAwait", scope.top_level_await);
+			self.bool(c!("topLevelAwait"), scope.top_level_await);
 			self.sink.end();
 		}
 		self.sink.end();
-		self.sink.table("bindings");
+		self.sink.table(c!("bindings"));
 		self.sink.list();
 		for binding in &scopes.bindings {
 			self.sink.object();
-			self.interned("name", binding.name);
-			self.string("kind", binding.kind.name());
-			self.key("scope");
+			self.interned(c!("name"), binding.name);
+			self.string(c!("kind"), binding.kind.name());
+			self.key(c!("scope"));
 			self.sink.int(binding.scope);
 			self.sink.end();
 		}
 		self.sink.end();
-		self.sink.table("references");
+		self.sink.table(c!("references"));
 		self.sink.list();
 		for reference in &scopes.references {
 			self.sink.object();
-			self.key("scope");
+			self.key(c!("scope"));
 			self.sink.int(reference.scope);
-			self.key("binding");
+			self.key(c!("binding"));
 			match reference.binding {
 				Some(binding) => self.sink.int(binding),
 				None => self.sink.null(),
 			}
-			self.bool("write", reference.write);
-			self.bool("read", reference.read);
-			self.bool("mutate", reference.mutate);
+			self.bool(c!("write"), reference.write);
+			self.bool(c!("read"), reference.read);
+			self.bool(c!("mutate"), reference.mutate);
 			self.sink.end();
 		}
 		self.sink.end();
 		if self.ast.hosts.is_empty() {
 			return;
 		}
-		self.sink.table("roots");
+		self.sink.table(c!("roots"));
 		self.sink.list();
 		for root in &scopes.roots {
 			self.sink.object();
-			self.key("scope");
+			self.key(c!("scope"));
 			self.sink.int(root.scope);
 			for (key, (from, to)) in [
-				("scopes", root.scopes),
-				("bindings", root.bindings),
-				("references", root.references),
+				(c!("scopes"), root.scopes),
+				(c!("bindings"), root.bindings),
+				(c!("references"), root.references),
 			] {
 				self.key(key);
 				self.sink.ints(&[from, to]);
@@ -1156,7 +1158,7 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		self.sink.end();
 	}
 
-	fn comments(&mut self, key: &'static str, comments: crate::ast::Run) {
+	fn comments(&mut self, key: Name, comments: crate::ast::Run) {
 		if !comments.is_empty() {
 			self.key(key);
 			self.comment_list(comments.indices());
@@ -1167,8 +1169,9 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		self.sink.list();
 		for index in comments {
 			let comment = self.ast.comments[index as usize];
-			self.sink.begin(if comment.is_block() { "Block" } else { "Line" });
-			self.key("value");
+			self.sink
+				.begin(if comment.is_block() { c!("Block") } else { c!("Line") });
+			self.key(c!("value"));
 			let range = comment.text_range();
 			self.slice(range.start as u32, range.end as u32);
 			self.span(comment.start, comment.end);
@@ -1192,26 +1195,26 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 			&upto
 		};
 		let mut cursor = Cursor::default();
-		self.key("errors");
+		self.key(c!("errors"));
 		self.sink.list();
 		for error in &self.ast.errors {
 			let pos = positions.offset(&mut cursor, error.pos);
 			let (line, column) = positions.line_column(cursor.line, error.pos, pos);
 			let end = positions.offset(&mut cursor, error.end);
 			self.sink.object();
-			self.key("code");
-			self.sink.str(error.code.name());
-			self.key("message");
+			self.key(c!("code"));
+			self.sink.str(error.code.label());
+			self.key(c!("message"));
 			self.sink.text(&error.message);
-			self.key("pos");
+			self.key(c!("pos"));
 			self.sink.int(pos);
-			self.key("end");
+			self.key(c!("end"));
 			self.sink.int(end);
-			self.key("loc");
+			self.key(c!("loc"));
 			self.sink.object();
-			self.key("line");
+			self.key(c!("line"));
 			self.sink.int(line as u32);
-			self.key("column");
+			self.key(c!("column"));
 			self.sink.int(column);
 			self.sink.end();
 			self.sink.end();
@@ -1222,7 +1225,7 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 	/// What the output's switches add after a root: every comment, what erasure kept, the scopes.
 	fn trailers(&mut self) {
 		if self.output.comments {
-			self.key("comments");
+			self.key(c!("comments"));
 			self.comment_list(0..self.ast.comments.len() as u32);
 		}
 		if self.output.errors {
@@ -1264,18 +1267,18 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		self.sink.end();
 	}
 
-	pub(crate) fn key(&mut self, key: &'static str) {
+	pub(crate) fn key(&mut self, key: Name) {
 		self.sink.key(key);
 	}
 
-	pub(crate) fn field(&mut self, key: &'static str, id: NodeId) {
+	pub(crate) fn field(&mut self, key: Name, id: NodeId) {
 		self.key(key);
 		self.node(id);
 	}
 
 	/// A specifier's other name, which is the same node as the binding one in `import { a }`
 	/// and `export { a }`, and then only names: the binding facts stay on the binding one.
-	fn other_name(&mut self, key: &'static str, id: NodeId, binding: NodeId) {
+	fn other_name(&mut self, key: Name, id: NodeId, binding: NodeId) {
 		let was = self.name_only;
 		self.name_only = id == binding;
 		self.field(key, id);
@@ -1291,13 +1294,13 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 	}
 
 	/// The key only when there is a node; an unset property is left out.
-	pub(crate) fn opt_key(&mut self, key: &'static str, id: Option<NodeId>) {
+	pub(crate) fn opt_key(&mut self, key: Name, id: Option<NodeId>) {
 		if let Some(id) = id {
 			self.field(key, id);
 		}
 	}
 
-	pub(crate) fn opt(&mut self, key: &'static str, id: Option<NodeId>) {
+	pub(crate) fn opt(&mut self, key: Name, id: Option<NodeId>) {
 		self.key(key);
 		match id {
 			Some(id) => self.node(id),
@@ -1305,7 +1308,7 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		}
 	}
 
-	pub(crate) fn list(&mut self, key: &'static str, list: List) {
+	pub(crate) fn list(&mut self, key: Name, list: List) {
 		self.key(key);
 		self.sink.list();
 		let ast = self.ast;
@@ -1322,7 +1325,7 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 	}
 
 	/// A parameter list; erasing drops TypeScript's `this` parameter.
-	pub(crate) fn params(&mut self, key: &'static str, list: List) {
+	pub(crate) fn params(&mut self, key: Name, list: List) {
 		if self.output.erase
 			&& let Some(&Some(first)) = self.ast.list(list).first()
 			&& let NodeKind::Identifier { name } = self.kind(first)
@@ -1337,46 +1340,46 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		self.list(key, list)
 	}
 
-	pub(crate) fn bool(&mut self, key: &'static str, value: bool) {
+	pub(crate) fn bool(&mut self, key: Name, value: bool) {
 		self.key(key);
 		self.sink.bool(value);
 	}
 
-	pub(crate) fn string(&mut self, key: &'static str, value: &'static str) {
+	pub(crate) fn string(&mut self, key: Name, value: Name) {
 		self.key(key);
 		self.sink.str(value);
 	}
 
 	/// A string computed for this tree.
-	pub(crate) fn text(&mut self, key: &'static str, value: &str) {
+	pub(crate) fn text(&mut self, key: Name, value: &str) {
 		self.key(key);
 		self.sink.text(value);
 	}
 
-	pub(crate) fn interned(&mut self, key: &'static str, id: StrId) {
+	pub(crate) fn interned(&mut self, key: Name, id: StrId) {
 		self.key(key);
 		self.sink.interned(id, self.ast.str(id));
 	}
 
 	pub(crate) fn raw(&mut self, id: NodeId) {
 		let node = self.ast.node(id);
-		self.key("raw");
+		self.key(c!("raw"));
 		self.slice(node.start, node.end);
 	}
 
 	fn class(&mut self, class: Class) {
-		self.opt("id", class.id);
-		self.opt("superClass", class.super_class);
-		self.field("body", class.body);
+		self.opt(c!("id"), class.id);
+		self.opt(c!("superClass"), class.super_class);
+		self.field(c!("body"), class.body);
 	}
 
 	fn function(&mut self, f: Function, expression: bool) {
-		self.opt("id", f.id);
-		self.bool("expression", expression);
-		self.bool("generator", f.generator);
-		self.bool("async", f.is_async);
-		self.params("params", f.params);
-		self.field("body", f.body);
+		self.opt(c!("id"), f.id);
+		self.bool(c!("expression"), expression);
+		self.bool(c!("generator"), f.generator);
+		self.bool(c!("async"), f.is_async);
+		self.params(c!("params"), f.params);
+		self.field(c!("body"), f.body);
 	}
 
 	pub(crate) fn node(&mut self, id: NodeId) {
@@ -1384,22 +1387,22 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		let kind = self.ast.node(id).kind;
 		match kind {
 			Program { body, module } => {
-				self.begin("Program", id);
-				self.list("body", body);
-				self.string("sourceType", if module { "module" } else { "script" });
+				self.begin(c!("Program"), id);
+				self.list(c!("body"), body);
+				self.string(c!("sourceType"), if module { c!("module") } else { c!("script") });
 			}
 			Identifier { name } => {
-				self.begin("Identifier", id);
-				self.interned("name", name);
+				self.begin(c!("Identifier"), id);
+				self.interned(c!("name"), name);
 			}
 			PrivateIdentifier { name } => {
-				self.begin("PrivateIdentifier", id);
-				self.interned("name", name);
+				self.begin(c!("PrivateIdentifier"), id);
+				self.interned(c!("name"), name);
 			}
 			NumberLiteral { value } => {
 				let value = self.ast.numbers[value as usize];
-				self.begin("Literal", id);
-				self.key("value");
+				self.begin(c!("Literal"), id);
+				self.key(c!("value"));
 				if value.is_finite() {
 					self.sink.float(value);
 				} else {
@@ -1408,74 +1411,74 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 				self.raw(id);
 			}
 			BigIntLiteral => {
-				self.begin("Literal", id);
-				self.key("value");
+				self.begin(c!("Literal"), id);
+				self.key(c!("value"));
 				self.sink.null();
 				self.raw(id);
 				let node = self.ast.node(id);
 				let raw = &self.source[node.start as usize..node.end as usize - 1];
 				let bigint = bigint_decimal(raw);
-				self.text("bigint", &bigint);
+				self.text(c!("bigint"), &bigint);
 			}
 			StringLiteral { value } => {
-				self.begin("Literal", id);
-				self.interned("value", value);
+				self.begin(c!("Literal"), id);
+				self.interned(c!("value"), value);
 				self.raw(id);
 			}
 			BooleanLiteral { value } => {
-				self.begin("Literal", id);
-				self.bool("value", value);
+				self.begin(c!("Literal"), id);
+				self.bool(c!("value"), value);
 				self.raw(id);
 			}
 			NullLiteral => {
-				self.begin("Literal", id);
-				self.key("value");
+				self.begin(c!("Literal"), id);
+				self.key(c!("value"));
 				self.sink.null();
 				self.raw(id);
 			}
 			RegExpLiteral { pattern, flags } => {
-				self.begin("Literal", id);
-				self.key("value");
+				self.begin(c!("Literal"), id);
+				self.key(c!("value"));
 				self.sink.null();
 				self.raw(id);
-				self.key("regex");
+				self.key(c!("regex"));
 				self.sink.object();
-				self.interned("pattern", pattern);
-				self.interned("flags", flags);
+				self.interned(c!("pattern"), pattern);
+				self.interned(c!("flags"), flags);
 				self.sink.end();
 			}
 			TemplateLiteral { quasis, expressions } => {
-				self.begin("TemplateLiteral", id);
-				self.list("expressions", expressions);
-				self.list("quasis", quasis);
+				self.begin(c!("TemplateLiteral"), id);
+				self.list(c!("expressions"), expressions);
+				self.list(c!("quasis"), quasis);
 			}
 			TemplateElement { cooked, raw, tail } => {
-				self.begin("TemplateElement", id);
-				self.key("value");
+				self.begin(c!("TemplateElement"), id);
+				self.key(c!("value"));
 				self.sink.object();
-				self.interned("raw", raw);
-				self.key("cooked");
+				self.interned(c!("raw"), raw);
+				self.key(c!("cooked"));
 				match cooked {
 					Some(cooked) => self.sink.interned(cooked, self.ast.str(cooked)),
 					None => self.sink.null(),
 				}
 				self.sink.end();
-				self.bool("tail", tail);
+				self.bool(c!("tail"), tail);
 			}
 			TaggedTemplateExpression { tag, quasi } => {
-				self.begin("TaggedTemplateExpression", id);
-				self.field("tag", tag);
-				self.field("quasi", quasi);
+				self.begin(c!("TaggedTemplateExpression"), id);
+				self.field(c!("tag"), tag);
+				self.field(c!("quasi"), quasi);
 			}
-			ThisExpression => self.begin("ThisExpression", id),
-			Super => self.begin("Super", id),
+			ThisExpression => self.begin(c!("ThisExpression"), id),
+			Super => self.begin(c!("Super"), id),
 			ArrayExpression { elements } => {
-				self.begin("ArrayExpression", id);
-				self.list("elements", elements);
+				self.begin(c!("ArrayExpression"), id);
+				self.list(c!("elements"), elements);
 			}
 			ObjectExpression { properties } => {
-				self.begin("ObjectExpression", id);
-				self.list("properties", properties);
+				self.begin(c!("ObjectExpression"), id);
+				self.list(c!("properties"), properties);
 			}
 			Property {
 				key,
@@ -1485,68 +1488,68 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 				method,
 				shorthand,
 			} => {
-				self.begin("Property", id);
-				self.bool("method", method);
-				self.bool("shorthand", shorthand);
-				self.bool("computed", computed);
-				self.field("key", key);
-				self.field("value", value);
+				self.begin(c!("Property"), id);
+				self.bool(c!("method"), method);
+				self.bool(c!("shorthand"), shorthand);
+				self.bool(c!("computed"), computed);
+				self.field(c!("key"), key);
+				self.field(c!("value"), value);
 				self.string(
-					"kind",
+					c!("kind"),
 					match kind {
-						PropertyKind::Init => "init",
-						PropertyKind::Get => "get",
-						PropertyKind::Set => "set",
+						PropertyKind::Init => c!("init"),
+						PropertyKind::Get => c!("get"),
+						PropertyKind::Set => c!("set"),
 					},
 				);
 			}
 			SpreadElement { argument } => {
-				self.begin("SpreadElement", id);
-				self.field("argument", argument);
+				self.begin(c!("SpreadElement"), id);
+				self.field(c!("argument"), argument);
 			}
 			UnaryExpression { operator, argument } => {
-				self.begin("UnaryExpression", id);
-				self.string("operator", operator.as_str());
-				self.bool("prefix", true);
-				self.field("argument", argument);
+				self.begin(c!("UnaryExpression"), id);
+				self.string(c!("operator"), operator.name());
+				self.bool(c!("prefix"), true);
+				self.field(c!("argument"), argument);
 			}
 			UpdateExpression {
 				operator,
 				prefix,
 				argument,
 			} => {
-				self.begin("UpdateExpression", id);
-				self.string("operator", operator.as_str());
-				self.bool("prefix", prefix);
-				self.field("argument", argument);
+				self.begin(c!("UpdateExpression"), id);
+				self.string(c!("operator"), operator.name());
+				self.bool(c!("prefix"), prefix);
+				self.field(c!("argument"), argument);
 			}
 			BinaryExpression { operator, left, right } => {
-				self.begin("BinaryExpression", id);
-				self.field("left", left);
-				self.string("operator", operator.as_str());
-				self.field("right", right);
+				self.begin(c!("BinaryExpression"), id);
+				self.field(c!("left"), left);
+				self.string(c!("operator"), operator.name());
+				self.field(c!("right"), right);
 			}
 			LogicalExpression { operator, left, right } => {
-				self.begin("LogicalExpression", id);
-				self.field("left", left);
-				self.string("operator", operator.as_str());
-				self.field("right", right);
+				self.begin(c!("LogicalExpression"), id);
+				self.field(c!("left"), left);
+				self.string(c!("operator"), operator.name());
+				self.field(c!("right"), right);
 			}
 			AssignmentExpression { operator, left, right } => {
-				self.begin("AssignmentExpression", id);
-				self.string("operator", operator.as_str());
-				self.field("left", left);
-				self.field("right", right);
+				self.begin(c!("AssignmentExpression"), id);
+				self.string(c!("operator"), operator.name());
+				self.field(c!("left"), left);
+				self.field(c!("right"), right);
 			}
 			ConditionalExpression {
 				test,
 				consequent,
 				alternate,
 			} => {
-				self.begin("ConditionalExpression", id);
-				self.field("test", test);
-				self.field("consequent", consequent);
-				self.field("alternate", alternate);
+				self.begin(c!("ConditionalExpression"), id);
+				self.field(c!("test"), test);
+				self.field(c!("consequent"), consequent);
+				self.field(c!("alternate"), alternate);
 			}
 			MemberExpression {
 				object,
@@ -1554,34 +1557,34 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 				computed,
 				optional,
 			} => {
-				self.begin("MemberExpression", id);
-				self.field("object", object);
-				self.field("property", property);
-				self.bool("computed", computed);
-				self.bool("optional", optional);
+				self.begin(c!("MemberExpression"), id);
+				self.field(c!("object"), object);
+				self.field(c!("property"), property);
+				self.bool(c!("computed"), computed);
+				self.bool(c!("optional"), optional);
 			}
 			CallExpression {
 				callee,
 				arguments,
 				optional,
 			} => {
-				self.begin("CallExpression", id);
-				self.field("callee", callee);
-				self.list("arguments", arguments);
-				self.bool("optional", optional);
+				self.begin(c!("CallExpression"), id);
+				self.field(c!("callee"), callee);
+				self.list(c!("arguments"), arguments);
+				self.bool(c!("optional"), optional);
 			}
 			ChainExpression { expression } => {
-				self.begin("ChainExpression", id);
-				self.field("expression", expression);
+				self.begin(c!("ChainExpression"), id);
+				self.field(c!("expression"), expression);
 			}
 			NewExpression { callee, arguments } => {
-				self.begin("NewExpression", id);
-				self.field("callee", callee);
-				self.list("arguments", arguments);
+				self.begin(c!("NewExpression"), id);
+				self.field(c!("callee"), callee);
+				self.list(c!("arguments"), arguments);
 			}
 			SequenceExpression { expressions } => {
-				self.begin("SequenceExpression", id);
-				self.list("expressions", expressions);
+				self.begin(c!("SequenceExpression"), id);
+				self.list(c!("expressions"), expressions);
 			}
 			ArrowFunctionExpression {
 				params,
@@ -1589,34 +1592,34 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 				expression,
 				is_async,
 			} => {
-				self.begin("ArrowFunctionExpression", id);
-				self.key("id");
+				self.begin(c!("ArrowFunctionExpression"), id);
+				self.key(c!("id"));
 				self.sink.null();
-				self.bool("expression", expression);
-				self.bool("generator", false);
-				self.bool("async", is_async);
-				self.params("params", params);
-				self.field("body", body);
+				self.bool(c!("expression"), expression);
+				self.bool(c!("generator"), false);
+				self.bool(c!("async"), is_async);
+				self.params(c!("params"), params);
+				self.field(c!("body"), body);
 			}
 			FunctionExpression { function } => {
-				self.begin("FunctionExpression", id);
+				self.begin(c!("FunctionExpression"), id);
 				self.function(function, false);
 			}
 			FunctionDeclaration { function } => {
-				self.begin("FunctionDeclaration", id);
+				self.begin(c!("FunctionDeclaration"), id);
 				self.function(function, false);
 			}
 			ClassExpression { class } => {
-				self.begin("ClassExpression", id);
+				self.begin(c!("ClassExpression"), id);
 				self.class(class);
 			}
 			ClassDeclaration { class } => {
-				self.begin("ClassDeclaration", id);
+				self.begin(c!("ClassDeclaration"), id);
 				self.class(class);
 			}
 			ClassBody { body } => {
-				self.begin("ClassBody", id);
-				self.list("body", body);
+				self.begin(c!("ClassBody"), id);
+				self.list(c!("body"), body);
 			}
 			MethodDefinition {
 				key,
@@ -1625,20 +1628,20 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 				computed,
 				is_static,
 			} => {
-				self.begin("MethodDefinition", id);
-				self.bool("static", is_static);
-				self.bool("computed", computed);
-				self.field("key", key);
+				self.begin(c!("MethodDefinition"), id);
+				self.bool(c!("static"), is_static);
+				self.bool(c!("computed"), computed);
+				self.field(c!("key"), key);
 				self.string(
-					"kind",
+					c!("kind"),
 					match kind {
-						MethodKind::Constructor => "constructor",
-						MethodKind::Method => "method",
-						MethodKind::Get => "get",
-						MethodKind::Set => "set",
+						MethodKind::Constructor => c!("constructor"),
+						MethodKind::Method => c!("method"),
+						MethodKind::Get => c!("get"),
+						MethodKind::Set => c!("set"),
 					},
 				);
-				self.field("value", value);
+				self.field(c!("value"), value);
 			}
 			PropertyDefinition {
 				key,
@@ -1646,135 +1649,135 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 				computed,
 				is_static,
 			} => {
-				self.begin("PropertyDefinition", id);
-				self.bool("static", is_static);
-				self.bool("computed", computed);
-				self.field("key", key);
-				self.opt("value", value);
+				self.begin(c!("PropertyDefinition"), id);
+				self.bool(c!("static"), is_static);
+				self.bool(c!("computed"), computed);
+				self.field(c!("key"), key);
+				self.opt(c!("value"), value);
 			}
 			StaticBlock { body } => {
-				self.begin("StaticBlock", id);
-				self.list("body", body);
+				self.begin(c!("StaticBlock"), id);
+				self.list(c!("body"), body);
 			}
 			YieldExpression { argument, delegate } => {
-				self.begin("YieldExpression", id);
-				self.bool("delegate", delegate);
-				self.opt("argument", argument);
+				self.begin(c!("YieldExpression"), id);
+				self.bool(c!("delegate"), delegate);
+				self.opt(c!("argument"), argument);
 			}
 			AwaitExpression { argument } => {
-				self.begin("AwaitExpression", id);
-				self.field("argument", argument);
+				self.begin(c!("AwaitExpression"), id);
+				self.field(c!("argument"), argument);
 			}
 			MetaProperty { meta, property } => {
-				self.begin("MetaProperty", id);
-				self.field("meta", meta);
-				self.field("property", property);
+				self.begin(c!("MetaProperty"), id);
+				self.field(c!("meta"), meta);
+				self.field(c!("property"), property);
 			}
 			ImportExpression { source, options } => {
-				self.begin("ImportExpression", id);
-				self.field("source", source);
-				self.opt("options", options);
+				self.begin(c!("ImportExpression"), id);
+				self.field(c!("source"), source);
+				self.opt(c!("options"), options);
 			}
 			ObjectPattern { properties } => {
-				self.begin("ObjectPattern", id);
-				self.list("properties", properties);
+				self.begin(c!("ObjectPattern"), id);
+				self.list(c!("properties"), properties);
 			}
 			ArrayPattern { elements } => {
-				self.begin("ArrayPattern", id);
-				self.list("elements", elements);
+				self.begin(c!("ArrayPattern"), id);
+				self.list(c!("elements"), elements);
 			}
 			RestElement { argument } => {
-				self.begin("RestElement", id);
-				self.field("argument", argument);
+				self.begin(c!("RestElement"), id);
+				self.field(c!("argument"), argument);
 			}
 			AssignmentPattern { left, right } => {
-				self.begin("AssignmentPattern", id);
-				self.field("left", left);
-				self.field("right", right);
+				self.begin(c!("AssignmentPattern"), id);
+				self.field(c!("left"), left);
+				self.field(c!("right"), right);
 			}
 			ExpressionStatement { expression, directive } => {
-				self.begin("ExpressionStatement", id);
-				self.field("expression", expression);
+				self.begin(c!("ExpressionStatement"), id);
+				self.field(c!("expression"), expression);
 				if let Some(directive) = directive {
-					self.interned("directive", directive);
+					self.interned(c!("directive"), directive);
 				}
 			}
 			BlockStatement { body } => {
-				self.begin("BlockStatement", id);
-				self.list("body", body);
+				self.begin(c!("BlockStatement"), id);
+				self.list(c!("body"), body);
 			}
-			EmptyStatement => self.begin("EmptyStatement", id),
-			DebuggerStatement => self.begin("DebuggerStatement", id),
+			EmptyStatement => self.begin(c!("EmptyStatement"), id),
+			DebuggerStatement => self.begin(c!("DebuggerStatement"), id),
 			WithStatement { object, body } => {
-				self.begin("WithStatement", id);
-				self.field("object", object);
-				self.field("body", body);
+				self.begin(c!("WithStatement"), id);
+				self.field(c!("object"), object);
+				self.field(c!("body"), body);
 			}
 			ReturnStatement { argument } => {
-				self.begin("ReturnStatement", id);
-				self.opt("argument", argument);
+				self.begin(c!("ReturnStatement"), id);
+				self.opt(c!("argument"), argument);
 			}
 			LabeledStatement { label, body } => {
-				self.begin("LabeledStatement", id);
-				self.field("body", body);
-				self.field("label", label);
+				self.begin(c!("LabeledStatement"), id);
+				self.field(c!("body"), body);
+				self.field(c!("label"), label);
 			}
 			BreakStatement { label } => {
-				self.begin("BreakStatement", id);
-				self.opt("label", label);
+				self.begin(c!("BreakStatement"), id);
+				self.opt(c!("label"), label);
 			}
 			ContinueStatement { label } => {
-				self.begin("ContinueStatement", id);
-				self.opt("label", label);
+				self.begin(c!("ContinueStatement"), id);
+				self.opt(c!("label"), label);
 			}
 			IfStatement {
 				test,
 				consequent,
 				alternate,
 			} => {
-				self.begin("IfStatement", id);
-				self.field("test", test);
-				self.field("consequent", consequent);
-				self.opt("alternate", alternate);
+				self.begin(c!("IfStatement"), id);
+				self.field(c!("test"), test);
+				self.field(c!("consequent"), consequent);
+				self.opt(c!("alternate"), alternate);
 			}
 			SwitchStatement { discriminant, cases } => {
-				self.begin("SwitchStatement", id);
-				self.field("discriminant", discriminant);
-				self.list("cases", cases);
+				self.begin(c!("SwitchStatement"), id);
+				self.field(c!("discriminant"), discriminant);
+				self.list(c!("cases"), cases);
 			}
 			SwitchCase { test, consequent } => {
-				self.begin("SwitchCase", id);
-				self.list("consequent", consequent);
-				self.opt("test", test);
+				self.begin(c!("SwitchCase"), id);
+				self.list(c!("consequent"), consequent);
+				self.opt(c!("test"), test);
 			}
 			ThrowStatement { argument } => {
-				self.begin("ThrowStatement", id);
-				self.field("argument", argument);
+				self.begin(c!("ThrowStatement"), id);
+				self.field(c!("argument"), argument);
 			}
 			TryStatement {
 				block,
 				handler,
 				finalizer,
 			} => {
-				self.begin("TryStatement", id);
-				self.field("block", block);
-				self.opt("handler", handler);
-				self.opt("finalizer", finalizer);
+				self.begin(c!("TryStatement"), id);
+				self.field(c!("block"), block);
+				self.opt(c!("handler"), handler);
+				self.opt(c!("finalizer"), finalizer);
 			}
 			CatchClause { param, body } => {
-				self.begin("CatchClause", id);
-				self.opt("param", param);
-				self.field("body", body);
+				self.begin(c!("CatchClause"), id);
+				self.opt(c!("param"), param);
+				self.field(c!("body"), body);
 			}
 			WhileStatement { test, body } => {
-				self.begin("WhileStatement", id);
-				self.field("test", test);
-				self.field("body", body);
+				self.begin(c!("WhileStatement"), id);
+				self.field(c!("test"), test);
+				self.field(c!("body"), body);
 			}
 			DoWhileStatement { body, test } => {
-				self.begin("DoWhileStatement", id);
-				self.field("body", body);
-				self.field("test", test);
+				self.begin(c!("DoWhileStatement"), id);
+				self.field(c!("body"), body);
+				self.field(c!("test"), test);
 			}
 			ForStatement {
 				init,
@@ -1782,17 +1785,17 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 				update,
 				body,
 			} => {
-				self.begin("ForStatement", id);
-				self.opt("init", init);
-				self.opt("test", test);
-				self.opt("update", update);
-				self.field("body", body);
+				self.begin(c!("ForStatement"), id);
+				self.opt(c!("init"), init);
+				self.opt(c!("test"), test);
+				self.opt(c!("update"), update);
+				self.field(c!("body"), body);
 			}
 			ForInStatement { left, right, body } => {
-				self.begin("ForInStatement", id);
-				self.field("left", left);
-				self.field("right", right);
-				self.field("body", body);
+				self.begin(c!("ForInStatement"), id);
+				self.field(c!("left"), left);
+				self.field(c!("right"), right);
+				self.field(c!("body"), body);
 			}
 			ForOfStatement {
 				left,
@@ -1800,86 +1803,86 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 				body,
 				is_await,
 			} => {
-				self.begin("ForOfStatement", id);
-				self.bool("await", is_await);
-				self.field("left", left);
-				self.field("right", right);
-				self.field("body", body);
+				self.begin(c!("ForOfStatement"), id);
+				self.bool(c!("await"), is_await);
+				self.field(c!("left"), left);
+				self.field(c!("right"), right);
+				self.field(c!("body"), body);
 			}
 			VariableDeclaration { declarations, kind } => {
-				self.begin("VariableDeclaration", id);
-				self.list("declarations", declarations);
-				self.string("kind", kind.as_str());
+				self.begin(c!("VariableDeclaration"), id);
+				self.list(c!("declarations"), declarations);
+				self.string(c!("kind"), kind.name());
 			}
 			VariableDeclarator { id: pattern, init } => {
-				self.begin("VariableDeclarator", id);
-				self.field("id", pattern);
-				self.opt("init", init);
+				self.begin(c!("VariableDeclarator"), id);
+				self.field(c!("id"), pattern);
+				self.opt(c!("init"), init);
 			}
 			ImportDeclaration {
 				specifiers,
 				source,
 				attributes,
 			} => {
-				self.begin("ImportDeclaration", id);
-				self.list("specifiers", specifiers);
-				self.field("source", source);
-				self.list("attributes", attributes);
+				self.begin(c!("ImportDeclaration"), id);
+				self.list(c!("specifiers"), specifiers);
+				self.field(c!("source"), source);
+				self.list(c!("attributes"), attributes);
 			}
 			ImportSpecifier { imported, local } => {
-				self.begin("ImportSpecifier", id);
-				self.other_name("imported", imported, local);
-				self.field("local", local);
+				self.begin(c!("ImportSpecifier"), id);
+				self.other_name(c!("imported"), imported, local);
+				self.field(c!("local"), local);
 			}
 			ImportDefaultSpecifier { local } => {
-				self.begin("ImportDefaultSpecifier", id);
-				self.field("local", local);
+				self.begin(c!("ImportDefaultSpecifier"), id);
+				self.field(c!("local"), local);
 			}
 			ImportNamespaceSpecifier { local } => {
-				self.begin("ImportNamespaceSpecifier", id);
-				self.field("local", local);
+				self.begin(c!("ImportNamespaceSpecifier"), id);
+				self.field(c!("local"), local);
 			}
 			ImportAttribute { key, value } => {
-				self.begin("ImportAttribute", id);
-				self.field("key", key);
-				self.field("value", value);
+				self.begin(c!("ImportAttribute"), id);
+				self.field(c!("key"), key);
+				self.field(c!("value"), value);
 			}
 			ExportDeclaration { declaration } => {
-				self.begin("ExportNamedDeclaration", id);
-				self.field("declaration", declaration);
-				self.list("specifiers", List::EMPTY);
-				self.opt("source", None);
-				self.list("attributes", List::EMPTY);
+				self.begin(c!("ExportNamedDeclaration"), id);
+				self.field(c!("declaration"), declaration);
+				self.list(c!("specifiers"), List::EMPTY);
+				self.opt(c!("source"), None);
+				self.list(c!("attributes"), List::EMPTY);
 			}
 			ExportNamedDeclaration {
 				specifiers,
 				source,
 				attributes,
 			} => {
-				self.begin("ExportNamedDeclaration", id);
-				self.opt("declaration", None);
-				self.list("specifiers", specifiers);
-				self.opt("source", source);
-				self.list("attributes", attributes);
+				self.begin(c!("ExportNamedDeclaration"), id);
+				self.opt(c!("declaration"), None);
+				self.list(c!("specifiers"), specifiers);
+				self.opt(c!("source"), source);
+				self.list(c!("attributes"), attributes);
 			}
 			ExportSpecifier { local, exported } => {
-				self.begin("ExportSpecifier", id);
-				self.field("local", local);
-				self.other_name("exported", exported, local);
+				self.begin(c!("ExportSpecifier"), id);
+				self.field(c!("local"), local);
+				self.other_name(c!("exported"), exported, local);
 			}
 			ExportDefaultDeclaration { declaration } => {
-				self.begin("ExportDefaultDeclaration", id);
-				self.field("declaration", declaration);
+				self.begin(c!("ExportDefaultDeclaration"), id);
+				self.field(c!("declaration"), declaration);
 			}
 			ExportAllDeclaration {
 				exported,
 				source,
 				attributes,
 			} => {
-				self.begin("ExportAllDeclaration", id);
-				self.opt("exported", exported);
-				self.field("source", source);
-				self.list("attributes", attributes);
+				self.begin(c!("ExportAllDeclaration"), id);
+				self.opt(c!("exported"), exported);
+				self.field(c!("source"), source);
+				self.list(c!("attributes"), attributes);
 			}
 			// the extension closes its own node, since erasing may put another in its place
 			Extension(index) => return self.ast.extension.node(self, id, index),
@@ -1891,14 +1894,15 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 					self.sink.object();
 					self.span(node.start, node.end);
 				} else if host.span {
-					self.begin(host.ty, id);
+					self.begin(Name::dynamic(host.ty), id);
 				} else {
-					self.sink.begin(host.ty);
+					self.sink.begin(Name::dynamic(host.ty));
 					self.scope_facts(id);
 				}
 				let (from, len) = host.fields;
 				for i in from..from + len {
 					let (key, value) = self.ast.host_fields[i as usize];
+					let key = Name::dynamic(key);
 					match value {
 						Value::Node(child) => self.field(key, child),
 						Value::Nodes(children) => self.list(key, children),
@@ -2120,6 +2124,7 @@ pub(crate) fn write_json_string(out: &mut String, s: &str) {
 
 #[cfg(test)]
 mod tests {
+	use crate::names::{Name, c};
 	#[test]
 	#[allow(clippy::excessive_precision)]
 	fn numbers_as_javascript_writes_them() {
@@ -2171,25 +2176,25 @@ mod tests {
 		let mut b = Binary::new();
 		b.strings(&interner);
 		b.object();
-		b.key("node");
-		b.begin("Identifier");
+		b.key(c!("node"));
+		b.begin(c!("Identifier"));
 		b.span(1, 2);
-		b.key("name");
+		b.key(c!("name"));
 		b.interned(crate::interner::StrId(0), "a");
-		b.key("value");
+		b.key(c!("value"));
 		b.float(1.5);
-		b.key("raw");
+		b.key(c!("raw"));
 		b.text("\u{1F600}b");
-		b.key("list");
+		b.key(Name::dynamic("list"));
 		b.list();
 		b.int(3);
 		b.null();
 		b.end();
 		b.end();
-		b.table("scopes");
+		b.table(c!("scopes"));
 		b.list();
 		b.object();
-		b.key("through");
+		b.key(Name::dynamic("through"));
 		b.ints(&[7]);
 		b.end();
 		b.end();
@@ -2214,20 +2219,23 @@ mod tests {
 			}
 			&all[at + 1..at + 1 + all[at] as usize]
 		};
-		assert_eq!(record(root), &[0, b.constant("node") << 4 | kind::NODE]);
+		assert_eq!(record(root), &[0, b.constant(c!("node")) << 4 | kind::NODE]);
 		assert_eq!(
 			record(node),
 			&[
-				b.constant("Identifier") + 1,
-				b.constant("start") << 4 | kind::INT,
-				b.constant("end") << 4 | kind::INT,
-				b.constant("name") << 4 | kind::STR,
-				b.constant("value") << 4 | kind::FLOAT,
-				b.constant("raw") << 4 | kind::STR,
-				b.constant("list") << 4 | kind::NODES,
+				b.constant(c!("Identifier")) + 1,
+				b.constant(c!("start")) << 4 | kind::INT,
+				b.constant(c!("end")) << 4 | kind::INT,
+				b.constant(c!("name")) << 4 | kind::STR,
+				b.constant(c!("value")) << 4 | kind::FLOAT,
+				b.constant(c!("raw")) << 4 | kind::STR,
+				b.constant(Name::dynamic("list")) << 4 | kind::NODES,
 			]
 		);
-		assert_eq!(record(scope), &[0, b.constant("through") << 4 | kind::INTS]);
+		assert_eq!(
+			record(scope),
+			&[0, b.constant(Name::dynamic("through")) << 4 | kind::INTS]
+		);
 		let ends = &words[7 + tree as usize..][..2];
 		assert_eq!(ends, &[1, 4]);
 		let text_at = 7 + tree as usize + 2;
@@ -2246,18 +2254,18 @@ mod tests {
 		use super::{Binary, kind};
 		let mut b = Binary::new();
 		let record = [
-			b.constant("Identifier") + 1,
-			b.constant("start") << 4 | kind::INT,
-			b.constant("end") << 4 | kind::INT,
-			b.constant("binding") << 4 | kind::INT,
-			b.constant("name") << 4 | kind::STR,
+			b.constant(Name::dynamic("Identifier")) + 1,
+			b.constant(Name::dynamic("start")) << 4 | kind::INT,
+			b.constant(Name::dynamic("end")) << 4 | kind::INT,
+			b.constant(Name::dynamic("binding")) << 4 | kind::INT,
+			b.constant(Name::dynamic("name")) << 4 | kind::STR,
 		];
 		let other = [
-			b.constant("Literal") + 1,
-			b.constant("start") << 4 | kind::INT,
-			b.constant("end") << 4 | kind::INT,
-			b.constant("value") << 4 | kind::STR,
-			b.constant("raw") << 4 | kind::SLICE,
+			b.constant(Name::dynamic("Literal")) + 1,
+			b.constant(Name::dynamic("start")) << 4 | kind::INT,
+			b.constant(Name::dynamic("end")) << 4 | kind::INT,
+			b.constant(Name::dynamic("value")) << 4 | kind::STR,
+			b.constant(Name::dynamic("raw")) << 4 | kind::SLICE,
 		];
 		let n = 10_000_000u32;
 		let mut sink = 0u32;
@@ -2269,7 +2277,7 @@ mod tests {
 		let keys = ["name", "start", "end", "body", "expression", "value", "raw", "id"];
 		let t = std::time::Instant::now();
 		for i in 0..n {
-			sink = sink.wrapping_add(b.constant(keys[(i & 7) as usize]));
+			sink = sink.wrapping_add(b.constant(Name::dynamic(keys[(i & 7) as usize])));
 		}
 		eprintln!(
 			"constant hit {:.1} ns  ({sink})",

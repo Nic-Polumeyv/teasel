@@ -428,7 +428,7 @@ pub struct Grammar {
 	pub expression: Option<TagRule>,
 }
 
-// the writer's constants are keyed by address, so a grammar's names live for the process
+// a grammar's names reach the writer as `&'static str`, so they live for the process
 fn keep(s: &str) -> &'static str {
 	Box::leak(s.to_owned().into_boxed_str())
 }

@@ -5,6 +5,7 @@
 use crate::ast::{Ast, List, NodeId, NodeKind, VariableKind, Walk};
 use crate::error::{Code, SyntaxError};
 use crate::interner::{FastMap, StrId};
+use crate::names::{Name, c};
 use crate::parser::Entry;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -33,22 +34,22 @@ pub enum ScopeKind {
 }
 
 impl ScopeKind {
-	pub fn name(self) -> &'static str {
+	pub fn name(self) -> Name {
 		match self {
-			ScopeKind::Module => "module",
-			ScopeKind::Script => "script",
-			ScopeKind::Function => "function",
-			ScopeKind::FunctionName => "function-name",
-			ScopeKind::Class => "class",
-			ScopeKind::Block => "block",
-			ScopeKind::Catch => "catch",
-			ScopeKind::For => "for",
-			ScopeKind::Switch => "switch",
-			ScopeKind::StaticBlock => "static-block",
-			ScopeKind::With => "with",
-			ScopeKind::Namespace => "namespace",
-			ScopeKind::Enum => "enum",
-			ScopeKind::Fragment => "fragment",
+			ScopeKind::Module => c!("module"),
+			ScopeKind::Script => c!("script"),
+			ScopeKind::Function => c!("function"),
+			ScopeKind::FunctionName => c!("function-name"),
+			ScopeKind::Class => c!("class"),
+			ScopeKind::Block => c!("block"),
+			ScopeKind::Catch => c!("catch"),
+			ScopeKind::For => c!("for"),
+			ScopeKind::Switch => c!("switch"),
+			ScopeKind::StaticBlock => c!("static-block"),
+			ScopeKind::With => c!("with"),
+			ScopeKind::Namespace => c!("namespace"),
+			ScopeKind::Enum => c!("enum"),
+			ScopeKind::Fragment => c!("fragment"),
 		}
 	}
 
@@ -92,25 +93,25 @@ pub enum BindingKind {
 }
 
 impl BindingKind {
-	pub fn name(self) -> &'static str {
+	pub fn name(self) -> Name {
 		match self {
-			BindingKind::Var => "var",
-			BindingKind::Let => "let",
-			BindingKind::Const => "const",
-			BindingKind::Using => "using",
-			BindingKind::AwaitUsing => "await using",
-			BindingKind::Function => "function",
-			BindingKind::Class => "class",
-			BindingKind::Param => "param",
-			BindingKind::CatchParam => "catch",
-			BindingKind::Import => "import",
-			BindingKind::FunctionName => "function-name",
-			BindingKind::ClassName => "class-name",
-			BindingKind::Arguments => "arguments",
-			BindingKind::Enum => "enum",
-			BindingKind::EnumMember => "enum-member",
-			BindingKind::Namespace => "namespace",
-			BindingKind::Pattern => "pattern",
+			BindingKind::Var => c!("var"),
+			BindingKind::Let => c!("let"),
+			BindingKind::Const => c!("const"),
+			BindingKind::Using => c!("using"),
+			BindingKind::AwaitUsing => c!("await using"),
+			BindingKind::Function => c!("function"),
+			BindingKind::Class => c!("class"),
+			BindingKind::Param => c!("param"),
+			BindingKind::CatchParam => c!("catch"),
+			BindingKind::Import => c!("import"),
+			BindingKind::FunctionName => c!("function-name"),
+			BindingKind::ClassName => c!("class-name"),
+			BindingKind::Arguments => c!("arguments"),
+			BindingKind::Enum => c!("enum"),
+			BindingKind::EnumMember => c!("enum-member"),
+			BindingKind::Namespace => c!("namespace"),
+			BindingKind::Pattern => c!("pattern"),
 		}
 	}
 
@@ -1599,8 +1600,8 @@ mod tests {
 					let binding = scopes.binding(b);
 					line += &format!(
 						"declares {} in {}",
-						binding.kind.name(),
-						scopes.scope(binding.scope).kind.name()
+						binding.kind.name().text,
+						scopes.scope(binding.scope).kind.name().text
 					);
 				}
 				Role::Reference(r) => {
@@ -1608,7 +1609,7 @@ mod tests {
 					line += &match reference.binding {
 						Some(b) => match scopes.binding(b).node {
 							Some(node) => format!("-> @{}", ast.node(node).start),
-							None => format!("-> {}", scopes.binding(b).kind.name()),
+							None => format!("-> {}", scopes.binding(b).kind.name().text),
 						},
 						None => "-> global".into(),
 					};
@@ -1808,7 +1809,7 @@ mod tests {
 		let names: Vec<_> = scopes
 			.bindings
 			.iter()
-			.map(|b| format!("{}:{}", ast.str(b.name), b.kind.name()))
+			.map(|b| format!("{}:{}", ast.str(b.name), b.kind.name().text))
 			.collect();
 		assert_eq!(
 			names,
@@ -1873,7 +1874,7 @@ mod tests {
 		let names: Vec<_> = scopes
 			.bindings
 			.iter()
-			.map(|b| format!("{}:{}", ast.str(b.name), b.kind.name()))
+			.map(|b| format!("{}:{}", ast.str(b.name), b.kind.name().text))
 			.collect();
 		assert_eq!(
 			names,
