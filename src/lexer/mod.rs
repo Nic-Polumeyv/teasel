@@ -32,7 +32,7 @@ pub(crate) struct Lexer<'a> {
 	/// Reads `<` and `>` as single characters, so `>>` closes two type argument lists.
 	pub(crate) in_type: bool,
 	/// The host's tokens, space-separated: one read outside every bracket ends the input.
-	pub(crate) stops: &'a str,
+	pub(crate) stops: String,
 	/// Each stop token's range in `stops` and whether it is a word, split once per parse.
 	pub(crate) stop_ranges: Vec<(u32, u32, bool)>,
 	pub(crate) depth: u32,
@@ -69,7 +69,7 @@ impl<'a> Lexer<'a> {
 			module: false,
 			at_sign: false,
 			in_type: false,
-			stops: "",
+			stops: String::new(),
 			stop_ranges: Vec::new(),
 			depth: 0,
 			open: [0; 3],
@@ -318,8 +318,24 @@ impl<'a> Lexer<'a> {
 	}
 
 	/// Splits the stop tokens once; `stops_at` then reads them per token.
-	pub(crate) fn set_stops(&mut self, stops: &'a str) {
-		self.stops = stops;
+	/// Readies the lexer for another read of the same document.
+	pub(crate) fn reset(&mut self, src: &'a str, pos: u32, stops: &str) {
+		self.src = src;
+		self.pos = pos as usize;
+		self.buf.clear();
+		self.escaped = false;
+		self.in_type = false;
+		self.depth = 0;
+		self.open = [0; 3];
+		self.stopped = false;
+		self.unmatched = false;
+		self.unclosed = false;
+		self.set_stops(stops);
+	}
+
+	pub(crate) fn set_stops(&mut self, stops: &str) {
+		self.stops.clear();
+		self.stops.push_str(stops);
 		self.stop_ranges.clear();
 		let base = stops.as_ptr() as usize;
 		for stop in stops.split_ascii_whitespace() {

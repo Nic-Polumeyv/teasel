@@ -210,6 +210,8 @@ pub(crate) struct Spare {
 	node_records: Vec<usize>,
 	/// The tree's id for each plan string once a node carries it.
 	ids: Vec<u32>,
+	/// The tree the document's parser holds between reads.
+	native: Option<Ast>,
 	cover_seen: crate::ast::NodeSet,
 	scan_strings: crate::interner::Interner,
 	scan_stops: Vec<(u32, u32, bool)>,
@@ -224,7 +226,6 @@ impl std::fmt::Debug for Spare {
 }
 
 struct NativeInput<'a> {
-	src: &'a str,
 	at: u32,
 	limit: u32,
 	options: Options,
@@ -238,33 +239,31 @@ trait Native {
 	fn restore(&mut self, mark: usize);
 	fn release(&mut self, mark: usize);
 }
-struct NativeReader<E: Extension> {
-	data: E::Data,
+/// One parser for the document: each read attaches the tree, resets, and detaches.
+struct NativeReader<'a, E: Extension> {
+	parser: Parser<'a, E>,
+	src: &'a str,
 	marks: Vec<<E::Data as crate::ast::Reuse>::Mark>,
 }
-impl<E: Extension> Native for NativeReader<E> {
-	fn read(&mut self, input: NativeInput<'_>, ast: Ast) -> (Ast, std::result::Result<Datum, Rejection>, u32) {
+impl<'a, E: Extension> Native for NativeReader<'a, E> {
+	fn read(&mut self, input: NativeInput<'_>, mut ast: Ast) -> (Ast, std::result::Result<Datum, Rejection>, u32) {
 		let NativeInput {
-			src,
 			at,
 			limit,
 			options,
 			entry,
 			boundary,
 			follow,
+			..
 		} = input;
-		let mut parser = Parser::<E>::new(
-			&src[..limit as usize],
-			at,
-			options,
-			follow,
-			ast.with_extension(std::mem::take(&mut self.data)),
-		);
+		let src = self.src;
+		let parser = &mut self.parser;
+		parser.attach(&mut ast);
+		parser.reset(&src[..limit as usize], at, options, follow);
 		let token = parser.lexer.next_token_into(&mut parser.tok);
 		if token.is_ok() && entry == Js::TypeParameters && !E::TYPE_PARAMETERS {
 			let error = Rejection::Message(parser.tok.start, parser.tok.end, Code::NotTypeScript);
-			let (ast, data) = parser.finish().split();
-			self.data = data;
+			parser.detach(&mut ast);
 			return (ast, Err(error), at);
 		}
 		let result = token.and_then(|()| match entry {
@@ -332,8 +331,7 @@ impl<E: Extension> Native for NativeReader<E> {
 			result => result,
 		};
 		let end = parser.consumed_end();
-		let (ast, data) = parser.finish().split();
-		self.data = data;
+		parser.detach(&mut ast);
 		let value = result
 			.map(|roots| {
 				if entry == Js::Params {
@@ -348,12 +346,12 @@ impl<E: Extension> Native for NativeReader<E> {
 	fn mark(&mut self) -> usize {
 		use crate::ast::Reuse;
 		let index = self.marks.len();
-		self.marks.push(self.data.mark());
+		self.marks.push(self.parser.ast.extension.mark());
 		index
 	}
 	fn restore(&mut self, mark: usize) {
 		use crate::ast::Reuse;
-		self.data.truncate(self.marks[mark]);
+		self.parser.ast.extension.truncate(self.marks[mark]);
 		self.marks.truncate(mark);
 	}
 	fn release(&mut self, mark: usize) {
@@ -398,9 +396,12 @@ pub(crate) fn parse_document<E: Extension>(
 	spare.region_slots.clear();
 	spare.targets.clear();
 	spare.node_records.clear();
-	let (ast, data) = ast.split();
+	let (mut ast, data) = ast.split();
+	let mut placeholder = spare.native.take().unwrap_or_else(|| Ast::sized(0));
+	placeholder.spare = std::mem::take(&mut ast.spare);
 	let mut native = NativeReader::<E> {
-		data,
+		parser: Parser::new(src, 0, options, "", placeholder.with_extension(data)),
+		src,
 		marks: Vec::with_capacity(plan.program.checkpoint_depth),
 	};
 	let mut w = Walker {
@@ -433,8 +434,12 @@ pub(crate) fn parse_document<E: Extension>(
 	errors.sort_by_key(|error| error.pos);
 	errors.dedup_by(|a, b| a.pos == b.pos && a.code == b.code);
 	let mut ast = w.ast.take().unwrap();
-	ast.host_spare = Some(w.spare);
-	(ast.with_extension(native.data), result)
+	let mut spare = w.spare;
+	let (mut placeholder, data) = native.parser.finish().split();
+	ast.spare = std::mem::take(&mut placeholder.spare);
+	spare.native = Some(placeholder);
+	ast.host_spare = Some(spare);
+	(ast.with_extension(data), result)
 }
 
 struct Walker<'a> {
@@ -2263,7 +2268,6 @@ impl<'a> Walker<'a> {
 		let ast = self.ast.take().unwrap();
 		let (ast, result, end) = self.native.read(
 			NativeInput {
-				src: self.src,
 				at: self.at,
 				limit: self.limit,
 				options: self.options,

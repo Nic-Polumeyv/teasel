@@ -515,6 +515,10 @@ impl<X: Walk> Ast<X> {
 }
 
 impl<X> Ast<X> {
+	/// Trades trees with another, each keeping its extension.
+	pub(crate) fn swap_core<Y>(&mut self, other: &mut Ast<Y>) {
+		std::mem::swap(&mut self.core, &mut other.core);
+	}
 	pub(crate) fn split(self) -> (Ast, X) {
 		(
 			Ast {

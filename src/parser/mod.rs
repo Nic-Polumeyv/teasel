@@ -587,7 +587,7 @@ pub(crate) struct DestructuringErrors {
 }
 
 impl<'a, E: Extension> Parser<'a, E> {
-	pub(crate) fn new(src: &'a str, offset: u32, options: Options, stop: &'a str, mut ast: Ast<E::Data>) -> Self {
+	pub(crate) fn new(src: &'a str, offset: u32, options: Options, stop: &str, mut ast: Ast<E::Data>) -> Self {
 		let mut lexer = Lexer::with(src, std::mem::take(&mut ast.strings));
 		lexer.comments = std::mem::take(&mut ast.comments);
 		lexer.set_pos(offset);
@@ -628,6 +628,50 @@ impl<'a, E: Extension> Parser<'a, E> {
 		};
 		E::init(&mut parser);
 		parser
+	}
+
+	/// Readies the parser for another entry of the document, the tree attached.
+	pub(crate) fn reset(&mut self, src: &'a str, offset: u32, options: Options, stop: &str) {
+		self.lexer.reset(src, offset, stop);
+		self.options = options;
+		self.lexer.recover = options.error_recovery;
+		self.lexer.module = options.module;
+		self.strict = options.module || expression::strict_directive(src, offset);
+		self.lexer.strict = self.strict;
+		self.tok = Token::eof(offset);
+		self.prev_end = offset;
+		self.depth = 0;
+		self.scopes.clear();
+		self.labels.clear();
+		self.private_names.clear();
+		self.undeclared_exports.clear();
+		self.yield_pos = 0;
+		self.await_pos = 0;
+		self.await_ident_pos = 0;
+		self.potential_arrow_at = u32::MAX;
+		self.potential_arrow_in_for_await = false;
+		self.stop_word_at = None;
+		self.forced_stop = None;
+		self.speculating = 0;
+		self.tree_limit = 16 * src.len() + 256;
+		self.ext = E::default();
+		E::init(self);
+	}
+
+	/// Takes a tree to read into, with its strings and comments; `detach` gives it back.
+	pub(crate) fn attach<Y>(&mut self, ast: &mut Ast<Y>) {
+		self.ast.swap_core(ast);
+		std::mem::swap(&mut self.lexer.strings, &mut self.ast.strings);
+		std::mem::swap(&mut self.lexer.comments, &mut self.ast.comments);
+	}
+
+	pub(crate) fn detach<Y>(&mut self, ast: &mut Ast<Y>) {
+		std::mem::swap(&mut self.lexer.strings, &mut self.ast.strings);
+		std::mem::swap(&mut self.lexer.comments, &mut self.ast.comments);
+		self.ast.errors.append(&mut self.errors);
+		self.ast.errors.append(&mut self.lexer.errors);
+		self.ast.errors.sort_by_key(|error| error.pos);
+		self.ast.swap_core(ast);
 	}
 
 	/// The first token, read before anything is parsed.
