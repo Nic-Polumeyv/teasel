@@ -24,12 +24,19 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 26
-      - run: npm ci
-        working-directory: package
-      - uses: changesets/action@v2
-        with:
-          cwd: package
-          version-script: npm run changeset:version
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - run: node .github/version.js > body.md
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+      - run: |
+          [ -s body.md ] || { echo "no changesets"; exit 0; }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git checkout -B changeset-release/main
+          git add --all
+          git commit -m 'Version Packages'
+          git push --force origin changeset-release/main
+          number=$(gh pr list --head changeset-release/main --base main --state open --json number --jq '.[0].number')
+          if [ -n "$number" ]; then gh pr edit "$number" --title 'Version Packages' --body-file body.md
+          else gh pr create --head changeset-release/main --base main --title 'Version Packages' --body-file body.md; fi
+        env:
+          GH_TOKEN: ${{ github.token }}
