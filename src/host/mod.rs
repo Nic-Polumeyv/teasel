@@ -138,6 +138,7 @@ fn decode(raw: &str, attribute: bool) -> Cow<'_, str> {
 		}
 		let rest = &raw[i + 1..];
 		let mut code = None;
+		let mut mark = 0;
 		let mut consumed = 0;
 		if let Some(number) = rest.strip_prefix('#') {
 			let (digits, hex) = match number.strip_prefix(['x', 'X']) {
@@ -161,7 +162,7 @@ fn decode(raw: &str, attribute: bool) -> Cow<'_, str> {
 			while try_len > 0 {
 				let with = rest.as_bytes().get(try_len) == Some(&b';');
 				let candidate = &rest[..try_len + usize::from(with)];
-				if let Ok(found) = entities::ENTITIES.binary_search_by(|(name, _)| name.cmp(&candidate)) {
+				if let Ok(found) = entities::ENTITIES.binary_search_by(|(name, ..)| name.cmp(&candidate)) {
 					let after = rest.as_bytes().get(try_len);
 					if attribute
 						&& !with && after.is_some_and(|b| *b == b'=' || b.is_ascii_alphanumeric() || *b == b'_')
@@ -170,6 +171,7 @@ fn decode(raw: &str, attribute: bool) -> Cow<'_, str> {
 						continue;
 					}
 					code = Some(entities::ENTITIES[found].1);
+					mark = entities::ENTITIES[found].2;
 					consumed = try_len + usize::from(with);
 					break;
 				}
@@ -179,6 +181,9 @@ fn decode(raw: &str, attribute: bool) -> Cow<'_, str> {
 		match code.filter(|&c| c != 0) {
 			Some(code) => {
 				out.push(char::from_u32(valid_code(code, attribute)).unwrap_or('\0'));
+				if let Some(mark) = char::from_u32(mark).filter(|_| mark != 0) {
+					out.push(mark);
+				}
 				i += 1 + consumed;
 			}
 			None => {
