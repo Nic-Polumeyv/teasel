@@ -1587,31 +1587,6 @@ impl Program {
 		for row in &plan.html.content {
 			stop(&row.prefix);
 		}
-		if std::env::var("TEASEL_EXPRS").is_ok() {
-			let mut counts = std::collections::BTreeMap::new();
-			for e in &p.exprs {
-				let name = format!("{e:?}");
-				let name = name.split(|c: char| !c.is_alphanumeric()).next().unwrap().to_string();
-				*counts.entry(name).or_insert(0) += 1;
-			}
-			eprintln!("{counts:?}");
-			for (i, e) in p.exprs.iter().enumerate() {
-				eprintln!("expr {i}: {e:?}");
-			}
-			for (i, a) in p.args.iter().enumerate() {
-				eprintln!("arg {i}: {a:?}");
-			}
-			for (i, rule) in p.rules.iter().enumerate() {
-				for (j, r) in rule.regions.iter().enumerate() {
-					eprintln!(
-						"rule {i} region {j}: covers {:?} when {:?} slots {:?}",
-						p.exprs[r.covers.index()],
-						r.when.map(|w| p.exprs[w.index()]),
-						r.slots
-					);
-				}
-			}
-		}
 		p.interner = Interner::sized(p.strings.len() * 16);
 		for text in &p.strings {
 			p.interner.intern(text);
