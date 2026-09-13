@@ -1,5 +1,6 @@
 // Regenerates src/lexer/unicode.rs and package/identifier.js from the Unicode Character Database.
 // Usage: node scripts/unicode.js [version]
+import { writeFileSync } from 'node:fs';
 
 const version = process.argv[2] ?? '17.0.0';
 const url = `https://www.unicode.org/Public/${version}/ucd/DerivedCoreProperties.txt`;
@@ -69,7 +70,7 @@ pub(crate) fn is_id_continue(c: char) -> bool {
 }
 `;
 
-await Bun.write(new URL('../src/lexer/unicode.rs', import.meta.url), src);
+writeFileSync(new URL('../src/lexer/unicode.rs', import.meta.url), src);
 
 function flat(rs) {
 	const rows = [];
@@ -114,5 +115,5 @@ export function isIdentifierChar(code) {
 	return lookup(ID_CONTINUE, code);
 }
 `;
-await Bun.write(new URL('../package/identifier.js', import.meta.url), js);
+writeFileSync(new URL('../package/identifier.js', import.meta.url), js);
 console.log(`ID_Start ${start.length} ranges, ID_Continue ${cont.length} ranges`);
