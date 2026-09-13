@@ -1,0 +1,1297 @@
+{
+	"node": {
+		"type": "Root",
+		"start": 0,
+		"end": 391,
+		"scope": 0,
+		"css": null,
+		"js": [],
+		"options": null,
+		"comments": [],
+		"instance": {
+			"type": "Script",
+			"start": 0,
+			"end": 109,
+			"context": "default",
+			"content": {
+				"type": "Program",
+				"start": 18,
+				"end": 100,
+				"scope": 1,
+				"root": 0,
+				"body": [
+					{
+						"type": "VariableDeclaration",
+						"start": 20,
+						"end": 42,
+						"declarations": [
+							{
+								"type": "VariableDeclarator",
+								"start": 24,
+								"end": 41,
+								"defines": [
+									0
+								],
+								"id": {
+									"type": "Identifier",
+									"start": 24,
+									"end": 36,
+									"declares": 0,
+									"typeAnnotation": {
+										"type": "TSTypeAnnotation",
+										"start": 26,
+										"end": 36,
+										"typeAnnotation": {
+											"type": "TSArrayType",
+											"start": 28,
+											"end": 36,
+											"elementType": {
+												"type": "TSNumberKeyword",
+												"start": 28,
+												"end": 34
+											}
+										}
+									},
+									"name": "xs"
+								},
+								"init": {
+									"type": "ArrayExpression",
+									"start": 39,
+									"end": 41,
+									"elements": []
+								}
+							}
+						],
+						"kind": "let"
+					},
+					{
+						"type": "VariableDeclaration",
+						"start": 44,
+						"end": 66,
+						"declarations": [
+							{
+								"type": "VariableDeclarator",
+								"start": 48,
+								"end": 65,
+								"defines": [
+									1
+								],
+								"id": {
+									"type": "Identifier",
+									"start": 48,
+									"end": 60,
+									"declares": 1,
+									"typeAnnotation": {
+										"type": "TSTypeAnnotation",
+										"start": 50,
+										"end": 60,
+										"typeAnnotation": {
+											"type": "TSArrayType",
+											"start": 52,
+											"end": 60,
+											"elementType": {
+												"type": "TSNumberKeyword",
+												"start": 52,
+												"end": 58
+											}
+										}
+									},
+									"name": "ys"
+								},
+								"init": {
+									"type": "ArrayExpression",
+									"start": 63,
+									"end": 65,
+									"elements": []
+								}
+							}
+						],
+						"kind": "let"
+					},
+					{
+						"type": "VariableDeclaration",
+						"start": 68,
+						"end": 81,
+						"declarations": [
+							{
+								"type": "VariableDeclarator",
+								"start": 72,
+								"end": 80,
+								"defines": [
+									2
+								],
+								"id": {
+									"type": "Identifier",
+									"start": 72,
+									"end": 73,
+									"declares": 2,
+									"name": "c"
+								},
+								"init": {
+									"type": "Literal",
+									"start": 76,
+									"end": 80,
+									"value": true,
+									"raw": "true"
+								}
+							}
+						],
+						"kind": "let"
+					},
+					{
+						"type": "TSTypeAliasDeclaration",
+						"start": 83,
+						"end": 99,
+						"id": {
+							"type": "Identifier",
+							"start": 88,
+							"end": 89,
+							"name": "T"
+						},
+						"typeAnnotation": {
+							"type": "TSNumberKeyword",
+							"start": 92,
+							"end": 98
+						}
+					}
+				],
+				"sourceType": "module"
+			},
+			"attributes": [
+				{
+					"type": "Attribute",
+					"start": 8,
+					"end": 17,
+					"name": "lang",
+					"value": [
+						{
+							"type": "Text",
+							"start": 14,
+							"end": 16,
+							"raw": "ts",
+							"data": "ts"
+						}
+					]
+				}
+			]
+		},
+		"fragment": {
+			"type": "Fragment",
+			"scope": 2,
+			"nodes": [
+				{
+					"type": "Text",
+					"start": 109,
+					"end": 111,
+					"raw": "\n\n",
+					"data": "\n\n"
+				},
+				{
+					"type": "EachBlock",
+					"start": 111,
+					"end": 155,
+					"expression": {
+						"type": "LogicalExpression",
+						"start": 118,
+						"end": 133,
+						"root": 1,
+						"left": {
+							"type": "TSAsExpression",
+							"start": 118,
+							"end": 127,
+							"expression": {
+								"type": "Identifier",
+								"start": 118,
+								"end": 120,
+								"reference": 0,
+								"name": "xs"
+							},
+							"typeAnnotation": {
+								"type": "TSArrayType",
+								"start": 124,
+								"end": 127,
+								"elementType": {
+									"type": "TSTypeReference",
+									"start": 124,
+									"end": 125,
+									"typeName": {
+										"type": "Identifier",
+										"start": 124,
+										"end": 125,
+										"name": "T"
+									}
+								}
+							}
+						},
+						"operator": "||",
+						"right": {
+							"type": "ArrayExpression",
+							"start": 131,
+							"end": 133,
+							"elements": []
+						}
+					},
+					"context": {
+						"type": "Identifier",
+						"start": 137,
+						"end": 141,
+						"declares": 3,
+						"root": 2,
+						"name": "item"
+					},
+					"body": {
+						"type": "Fragment",
+						"scope": 3,
+						"nodes": [
+							{
+								"type": "ExpressionTag",
+								"start": 142,
+								"end": 148,
+								"expression": {
+									"type": "Identifier",
+									"start": 143,
+									"end": 147,
+									"reference": 1,
+									"root": 3,
+									"name": "item"
+								}
+							}
+						]
+					}
+				},
+				{
+					"type": "Text",
+					"start": 155,
+					"end": 156,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "EachBlock",
+					"start": 156,
+					"end": 199,
+					"expression": {
+						"type": "BinaryExpression",
+						"start": 163,
+						"end": 177,
+						"root": 4,
+						"left": {
+							"type": "TSAsExpression",
+							"start": 163,
+							"end": 172,
+							"expression": {
+								"type": "Identifier",
+								"start": 163,
+								"end": 165,
+								"reference": 2,
+								"name": "xs"
+							},
+							"typeAnnotation": {
+								"type": "TSArrayType",
+								"start": 169,
+								"end": 172,
+								"elementType": {
+									"type": "TSTypeReference",
+									"start": 169,
+									"end": 170,
+									"typeName": {
+										"type": "Identifier",
+										"start": 169,
+										"end": 170,
+										"name": "T"
+									}
+								}
+							}
+						},
+						"operator": "+",
+						"right": {
+							"type": "Identifier",
+							"start": 175,
+							"end": 177,
+							"reference": 3,
+							"name": "ys"
+						}
+					},
+					"context": {
+						"type": "Identifier",
+						"start": 181,
+						"end": 185,
+						"declares": 4,
+						"root": 5,
+						"name": "item"
+					},
+					"body": {
+						"type": "Fragment",
+						"scope": 4,
+						"nodes": [
+							{
+								"type": "ExpressionTag",
+								"start": 186,
+								"end": 192,
+								"expression": {
+									"type": "Identifier",
+									"start": 187,
+									"end": 191,
+									"reference": 4,
+									"root": 6,
+									"name": "item"
+								}
+							}
+						]
+					}
+				},
+				{
+					"type": "Text",
+					"start": 199,
+					"end": 200,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "EachBlock",
+					"start": 200,
+					"end": 247,
+					"expression": {
+						"type": "ConditionalExpression",
+						"start": 207,
+						"end": 225,
+						"root": 7,
+						"test": {
+							"type": "Identifier",
+							"start": 207,
+							"end": 208,
+							"reference": 5,
+							"name": "c"
+						},
+						"consequent": {
+							"type": "TSAsExpression",
+							"start": 211,
+							"end": 220,
+							"expression": {
+								"type": "Identifier",
+								"start": 211,
+								"end": 213,
+								"reference": 6,
+								"name": "xs"
+							},
+							"typeAnnotation": {
+								"type": "TSArrayType",
+								"start": 217,
+								"end": 220,
+								"elementType": {
+									"type": "TSTypeReference",
+									"start": 217,
+									"end": 218,
+									"typeName": {
+										"type": "Identifier",
+										"start": 217,
+										"end": 218,
+										"name": "T"
+									}
+								}
+							}
+						},
+						"alternate": {
+							"type": "Identifier",
+							"start": 223,
+							"end": 225,
+							"reference": 7,
+							"name": "ys"
+						}
+					},
+					"context": {
+						"type": "Identifier",
+						"start": 229,
+						"end": 233,
+						"declares": 5,
+						"root": 8,
+						"name": "item"
+					},
+					"body": {
+						"type": "Fragment",
+						"scope": 5,
+						"nodes": [
+							{
+								"type": "ExpressionTag",
+								"start": 234,
+								"end": 240,
+								"expression": {
+									"type": "Identifier",
+									"start": 235,
+									"end": 239,
+									"reference": 8,
+									"root": 9,
+									"name": "item"
+								}
+							}
+						]
+					}
+				},
+				{
+					"type": "Text",
+					"start": 247,
+					"end": 248,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "EachBlock",
+					"start": 248,
+					"end": 299,
+					"expression": {
+						"type": "TSAsExpression",
+						"start": 255,
+						"end": 264,
+						"root": 10,
+						"expression": {
+							"type": "Identifier",
+							"start": 255,
+							"end": 257,
+							"reference": 9,
+							"name": "xs"
+						},
+						"typeAnnotation": {
+							"type": "TSArrayType",
+							"start": 261,
+							"end": 264,
+							"elementType": {
+								"type": "TSTypeReference",
+								"start": 261,
+								"end": 262,
+								"typeName": {
+									"type": "Identifier",
+									"start": 261,
+									"end": 262,
+									"name": "T"
+								}
+							}
+						}
+					},
+					"context": {
+						"type": "Identifier",
+						"start": 268,
+						"end": 272,
+						"declares": 6,
+						"root": 11,
+						"name": "item"
+					},
+					"index": {
+						"type": "Identifier",
+						"start": 274,
+						"end": 275,
+						"declares": 7,
+						"root": 12,
+						"name": "i"
+					},
+					"key": {
+						"type": "Identifier",
+						"start": 277,
+						"end": 281,
+						"reference": 10,
+						"root": 13,
+						"name": "item"
+					},
+					"body": {
+						"type": "Fragment",
+						"scope": 6,
+						"nodes": [
+							{
+								"type": "ExpressionTag",
+								"start": 283,
+								"end": 289,
+								"expression": {
+									"type": "Identifier",
+									"start": 284,
+									"end": 288,
+									"reference": 11,
+									"root": 14,
+									"name": "item"
+								}
+							},
+							{
+								"type": "ExpressionTag",
+								"start": 289,
+								"end": 292,
+								"expression": {
+									"type": "Identifier",
+									"start": 290,
+									"end": 291,
+									"reference": 12,
+									"root": 15,
+									"name": "i"
+								}
+							}
+						]
+					}
+				},
+				{
+					"type": "Text",
+					"start": 299,
+					"end": 300,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "EachBlock",
+					"start": 300,
+					"end": 337,
+					"expression": {
+						"type": "Identifier",
+						"start": 307,
+						"end": 309,
+						"reference": 13,
+						"root": 16,
+						"name": "xs"
+					},
+					"context": {
+						"type": "Identifier",
+						"start": 313,
+						"end": 317,
+						"declares": 8,
+						"root": 17,
+						"name": "item"
+					},
+					"index": {
+						"type": "Identifier",
+						"start": 319,
+						"end": 320,
+						"declares": 9,
+						"root": 18,
+						"name": "i"
+					},
+					"body": {
+						"type": "Fragment",
+						"scope": 7,
+						"nodes": [
+							{
+								"type": "ExpressionTag",
+								"start": 321,
+								"end": 327,
+								"expression": {
+									"type": "Identifier",
+									"start": 322,
+									"end": 326,
+									"reference": 14,
+									"root": 19,
+									"name": "item"
+								}
+							},
+							{
+								"type": "ExpressionTag",
+								"start": 327,
+								"end": 330,
+								"expression": {
+									"type": "Identifier",
+									"start": 328,
+									"end": 329,
+									"reference": 15,
+									"root": 20,
+									"name": "i"
+								}
+							}
+						]
+					}
+				},
+				{
+					"type": "Text",
+					"start": 337,
+					"end": 338,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "EachBlock",
+					"start": 338,
+					"end": 390,
+					"expression": {
+						"type": "CallExpression",
+						"start": 345,
+						"end": 368,
+						"root": 21,
+						"callee": {
+							"type": "MemberExpression",
+							"start": 345,
+							"end": 360,
+							"object": {
+								"type": "TSAsExpression",
+								"start": 346,
+								"end": 355,
+								"expression": {
+									"type": "Identifier",
+									"start": 346,
+									"end": 348,
+									"reference": 16,
+									"name": "xs"
+								},
+								"typeAnnotation": {
+									"type": "TSArrayType",
+									"start": 352,
+									"end": 355,
+									"elementType": {
+										"type": "TSTypeReference",
+										"start": 352,
+										"end": 353,
+										"typeName": {
+											"type": "Identifier",
+											"start": 352,
+											"end": 353,
+											"name": "T"
+										}
+									}
+								}
+							},
+							"property": {
+								"type": "Identifier",
+								"start": 357,
+								"end": 360,
+								"name": "map"
+							},
+							"computed": false,
+							"optional": false
+						},
+						"arguments": [
+							{
+								"type": "Identifier",
+								"start": 361,
+								"end": 367,
+								"reference": 17,
+								"name": "Number"
+							}
+						],
+						"optional": false
+					},
+					"context": {
+						"type": "Identifier",
+						"start": 372,
+						"end": 376,
+						"declares": 10,
+						"root": 22,
+						"name": "item"
+					},
+					"body": {
+						"type": "Fragment",
+						"scope": 8,
+						"nodes": [
+							{
+								"type": "ExpressionTag",
+								"start": 377,
+								"end": 383,
+								"expression": {
+									"type": "Identifier",
+									"start": 378,
+									"end": 382,
+									"reference": 18,
+									"root": 23,
+									"name": "item"
+								}
+							}
+						]
+					}
+				}
+			]
+		}
+	},
+	"end": 391,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "script",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 1,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "xs",
+			"kind": "let",
+			"scope": 1
+		},
+		{
+			"name": "ys",
+			"kind": "let",
+			"scope": 1
+		},
+		{
+			"name": "c",
+			"kind": "let",
+			"scope": 1
+		},
+		{
+			"name": "item",
+			"kind": "pattern",
+			"scope": 3
+		},
+		{
+			"name": "item",
+			"kind": "pattern",
+			"scope": 4
+		},
+		{
+			"name": "item",
+			"kind": "pattern",
+			"scope": 5
+		},
+		{
+			"name": "item",
+			"kind": "pattern",
+			"scope": 6
+		},
+		{
+			"name": "i",
+			"kind": "pattern",
+			"scope": 6
+		},
+		{
+			"name": "item",
+			"kind": "pattern",
+			"scope": 7
+		},
+		{
+			"name": "i",
+			"kind": "pattern",
+			"scope": 7
+		},
+		{
+			"name": "item",
+			"kind": "pattern",
+			"scope": 8
+		}
+	],
+	"references": [
+		{
+			"scope": 2,
+			"binding": 0,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 3,
+			"binding": 3,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 2,
+			"binding": 0,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 2,
+			"binding": 1,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 4,
+			"binding": 4,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 2,
+			"binding": 2,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 2,
+			"binding": 0,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 2,
+			"binding": 1,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 5,
+			"binding": 5,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 2,
+			"binding": 0,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 6,
+			"binding": 6,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 6,
+			"binding": 6,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 6,
+			"binding": 7,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 2,
+			"binding": 0,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 7,
+			"binding": 8,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 7,
+			"binding": 9,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 2,
+			"binding": 0,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 2,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false
+		},
+		{
+			"scope": 8,
+			"binding": 10,
+			"write": false,
+			"read": true,
+			"mutate": false
+		}
+	],
+	"roots": [
+		{
+			"scope": 1,
+			"scopes": [
+				2,
+				2
+			],
+			"bindings": [
+				0,
+				3
+			],
+			"references": [
+				0,
+				0
+			]
+		},
+		{
+			"scope": 2,
+			"scopes": [
+				3,
+				3
+			],
+			"bindings": [
+				3,
+				3
+			],
+			"references": [
+				0,
+				1
+			]
+		},
+		{
+			"scope": 3,
+			"scopes": [
+				4,
+				4
+			],
+			"bindings": [
+				3,
+				4
+			],
+			"references": [
+				1,
+				1
+			]
+		},
+		{
+			"scope": 3,
+			"scopes": [
+				4,
+				4
+			],
+			"bindings": [
+				4,
+				4
+			],
+			"references": [
+				1,
+				2
+			]
+		},
+		{
+			"scope": 2,
+			"scopes": [
+				4,
+				4
+			],
+			"bindings": [
+				4,
+				4
+			],
+			"references": [
+				2,
+				4
+			]
+		},
+		{
+			"scope": 4,
+			"scopes": [
+				5,
+				5
+			],
+			"bindings": [
+				4,
+				5
+			],
+			"references": [
+				4,
+				4
+			]
+		},
+		{
+			"scope": 4,
+			"scopes": [
+				5,
+				5
+			],
+			"bindings": [
+				5,
+				5
+			],
+			"references": [
+				4,
+				5
+			]
+		},
+		{
+			"scope": 2,
+			"scopes": [
+				5,
+				5
+			],
+			"bindings": [
+				5,
+				5
+			],
+			"references": [
+				5,
+				8
+			]
+		},
+		{
+			"scope": 5,
+			"scopes": [
+				6,
+				6
+			],
+			"bindings": [
+				5,
+				6
+			],
+			"references": [
+				8,
+				8
+			]
+		},
+		{
+			"scope": 5,
+			"scopes": [
+				6,
+				6
+			],
+			"bindings": [
+				6,
+				6
+			],
+			"references": [
+				8,
+				9
+			]
+		},
+		{
+			"scope": 2,
+			"scopes": [
+				6,
+				6
+			],
+			"bindings": [
+				6,
+				6
+			],
+			"references": [
+				9,
+				10
+			]
+		},
+		{
+			"scope": 6,
+			"scopes": [
+				7,
+				7
+			],
+			"bindings": [
+				6,
+				7
+			],
+			"references": [
+				10,
+				10
+			]
+		},
+		{
+			"scope": 6,
+			"scopes": [
+				7,
+				7
+			],
+			"bindings": [
+				7,
+				8
+			],
+			"references": [
+				10,
+				10
+			]
+		},
+		{
+			"scope": 6,
+			"scopes": [
+				7,
+				7
+			],
+			"bindings": [
+				8,
+				8
+			],
+			"references": [
+				10,
+				11
+			]
+		},
+		{
+			"scope": 6,
+			"scopes": [
+				7,
+				7
+			],
+			"bindings": [
+				8,
+				8
+			],
+			"references": [
+				11,
+				12
+			]
+		},
+		{
+			"scope": 6,
+			"scopes": [
+				7,
+				7
+			],
+			"bindings": [
+				8,
+				8
+			],
+			"references": [
+				12,
+				13
+			]
+		},
+		{
+			"scope": 2,
+			"scopes": [
+				7,
+				7
+			],
+			"bindings": [
+				8,
+				8
+			],
+			"references": [
+				13,
+				14
+			]
+		},
+		{
+			"scope": 7,
+			"scopes": [
+				8,
+				8
+			],
+			"bindings": [
+				8,
+				9
+			],
+			"references": [
+				14,
+				14
+			]
+		},
+		{
+			"scope": 7,
+			"scopes": [
+				8,
+				8
+			],
+			"bindings": [
+				9,
+				10
+			],
+			"references": [
+				14,
+				14
+			]
+		},
+		{
+			"scope": 7,
+			"scopes": [
+				8,
+				8
+			],
+			"bindings": [
+				10,
+				10
+			],
+			"references": [
+				14,
+				15
+			]
+		},
+		{
+			"scope": 7,
+			"scopes": [
+				8,
+				8
+			],
+			"bindings": [
+				10,
+				10
+			],
+			"references": [
+				15,
+				16
+			]
+		},
+		{
+			"scope": 2,
+			"scopes": [
+				8,
+				8
+			],
+			"bindings": [
+				10,
+				10
+			],
+			"references": [
+				16,
+				18
+			]
+		},
+		{
+			"scope": 8,
+			"scopes": [
+				9,
+				9
+			],
+			"bindings": [
+				10,
+				11
+			],
+			"references": [
+				18,
+				18
+			]
+		},
+		{
+			"scope": 8,
+			"scopes": [
+				9,
+				9
+			],
+			"bindings": [
+				11,
+				11
+			],
+			"references": [
+				18,
+				19
+			]
+		}
+	]
+}

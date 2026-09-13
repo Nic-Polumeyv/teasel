@@ -2712,6 +2712,10 @@ impl<'a, E: Extension> Walker<'a, E> {
 					if !self.eat(",") {
 						break;
 					}
+					self.space();
+					if self.matches(close) || self.at >= self.limit {
+						return fail(self.at, self.at, Code::Expected, Some("an identifier"));
+					}
 				}
 				let list = self.list(&ids);
 				Value::Nodes(list)
@@ -2837,7 +2841,11 @@ impl<'a, E: Extension> Walker<'a, E> {
 			self.at += c.len_utf8() as u32;
 		}
 		let end = self.at;
-		let name = self.intern(&self.src[start as usize..end as usize]);
+		let word = &self.src[start as usize..end as usize];
+		if reserved(word) || (self.options.module && word == "await") {
+			self.report(error(start, end, Code::ReservedWord, Some(word)))?;
+		}
+		let name = self.intern(word);
 		Ok(self.ast().add(NodeKind::Identifier { name }, start, end))
 	}
 }
