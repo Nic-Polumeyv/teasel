@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "expected",
+		"message": "Expected whitespace",
+		"pos": 12,
+		"end": 12,
+		"loc": {
+			"line": 1,
+			"column": 12
+		}
+	}
+}

@@ -135,7 +135,7 @@ fn handle(env: Env, value: Value) -> Result<*mut Prepared<'static>> {
 }
 
 // the bytes V8 encoded, made valid UTF-8 where they are not; the options as their names; the
-// grammar of the host language the whole source is a document of, or nothing
+// plan of the host language the whole source is a document of, or nothing
 unsafe extern "C" fn create(env: Env, info: CallbackInfo) -> Value {
 	guard(env, || {
 		let [source, names, host] = args::<3>(env, info)?;

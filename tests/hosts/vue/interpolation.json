@@ -9,8 +9,6 @@
 				"type": "Element",
 				"start": 0,
 				"end": 31,
-				"tag": "p",
-				"props": [],
 				"children": [
 					{
 						"type": "Interpolation",
@@ -57,7 +55,9 @@
 							"name": "c"
 						}
 					}
-				]
+				],
+				"props": [],
+				"tag": "p"
 			},
 			{
 				"type": "Text",

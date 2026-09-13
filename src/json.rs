@@ -8,7 +8,7 @@ use crate::ast::{Ast, Reuse};
 use crate::comments::attach;
 use crate::error::Code;
 use crate::estree::{Binary, Emit, Json, Output, Positions, Sink, Words, answer, error_to_json};
-use crate::host::{self, Grammar};
+use crate::host::{self, plan::Plan};
 use crate::parser::{Decorators, Entry, parse_at};
 use crate::scopes::{self, Bind};
 
@@ -137,19 +137,18 @@ pub fn parse(source: &str, request: &Request, stop: &str) -> String {
 	parse_with(source, &Positions::new(source, request.locations), request, stop, None)
 }
 
-/// A whole document of a host language by its grammar, as JSON; see `host::parse_document`.
-pub fn parse_document(source: &str, grammar: &str, request: &Request) -> String {
-	match grammar_named(grammar) {
-		Ok(grammar) => {
+/// A whole document of a host language by its plan, as JSON; see `host::parse_document`.
+pub fn parse_document(source: &str, plan: &str, request: &Request) -> String {
+	match plan_named(plan) {
+		Ok(plan) => {
 			let mut request = *request;
 			request.entry = Entry::Program;
-			request.typescript |= host::typescript(source, &grammar);
 			parse_with(
 				source,
 				&Positions::new(source, request.locations),
 				&request,
 				"",
-				Some(&grammar),
+				Some(&plan),
 			)
 		}
 		Err(message) => error_json(&message, 0),
@@ -162,8 +161,8 @@ pub struct Prepared<'a> {
 	source: std::borrow::Cow<'a, str>,
 	positions: Positions,
 	request: Request,
-	/// The grammar a program entry reads the whole source by.
-	host: Option<Rc<Grammar>>,
+	/// The plan a program entry reads the whole source by.
+	host: Option<Rc<Plan>>,
 }
 
 /// What every parse on a thread reuses: the trees, emptied, and the answer's buffers.
@@ -175,8 +174,8 @@ struct Session {
 
 thread_local! {
 	static SESSION: std::cell::RefCell<Session> = std::cell::RefCell::new(Session::default());
-	/// Grammars by their text, read once each.
-	static GRAMMARS: std::cell::RefCell<Vec<(String, Rc<Grammar>)>> = const { std::cell::RefCell::new(Vec::new()) };
+	/// Plans by their text, read once each.
+	static PLANS: std::cell::RefCell<Vec<(String, Rc<Plan>)>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
 /// The words of the last binary answer on this thread, where they were written.
@@ -184,16 +183,16 @@ pub fn words<R>(f: impl FnOnce(&mut Words) -> R) -> R {
 	SESSION.with(|session| f(session.borrow_mut().binary.words()))
 }
 
-/// The grammar of a text, read once per thread; the error names the line it stopped at.
-fn grammar_named(text: &str) -> Result<Rc<Grammar>, String> {
-	GRAMMARS.with(|grammars| {
-		let mut grammars = grammars.borrow_mut();
-		if let Some((_, grammar)) = grammars.iter().find(|(known, _)| known == text) {
-			return Ok(grammar.clone());
+/// The plan of a text, read once per thread; the error names the line it stopped at.
+fn plan_named(text: &str) -> Result<Rc<Plan>, String> {
+	PLANS.with(|plans| {
+		let mut plans = plans.borrow_mut();
+		if let Some((_, plan)) = plans.iter().find(|(known, _)| known == text) {
+			return Ok(plan.clone());
 		}
-		let grammar = Rc::new(Grammar::read(text)?);
-		grammars.push((text.to_string(), grammar.clone()));
-		Ok(grammar)
+		let plan = Rc::new(Plan::read(text)?);
+		plans.push((text.to_string(), plan.clone()));
+		Ok(plan)
 	})
 }
 
@@ -258,13 +257,12 @@ impl<'a> Prepared<'a> {
 		}
 	}
 
-	/// Reads the whole source as a document of the host language `grammar` describes when a
+	/// Reads the whole source as a document of the host language `plan` describes when a
 	/// program is asked for; the other entries read JavaScript at an offset as before. `Err` says
-	/// where the grammar could not be read.
-	pub fn host(mut self, grammar: &str) -> Result<Prepared<'a>, String> {
-		let grammar = grammar_named(grammar)?;
-		self.request.typescript |= host::typescript(&self.source, &grammar);
-		self.host = Some(grammar);
+	/// where the plan could not be read.
+	pub fn host(mut self, plan: &str) -> Result<Prepared<'a>, String> {
+		let plan = plan_named(plan)?;
+		self.host = Some(plan);
 		Ok(self)
 	}
 
@@ -287,7 +285,7 @@ impl<'a> Prepared<'a> {
 	/// One entry at an offset, as JSON.
 	pub fn parse(&self, entry: Entry, start: f64, end: Option<f64>, stop: &str) -> String {
 		match self.request(entry, start, end) {
-			Ok(request) => parse_with(&self.source, &self.positions, &request, stop, self.grammar(entry)),
+			Ok(request) => parse_with(&self.source, &self.positions, &request, stop, self.plan(entry)),
 			Err(error) => error,
 		}
 	}
@@ -299,11 +297,11 @@ impl<'a> Prepared<'a> {
 			&self.positions,
 			&self.request(entry, start, end)?,
 			stop,
-			self.grammar(entry),
+			self.plan(entry),
 		)
 	}
 
-	fn grammar(&self, entry: Entry) -> Option<&Grammar> {
+	fn plan(&self, entry: Entry) -> Option<&Plan> {
 		self.host.as_deref().filter(|_| entry == Entry::Program)
 	}
 
@@ -341,7 +339,7 @@ fn dispatch<S: Sink>(
 	positions: &Positions,
 	request: &Request,
 	stop: &str,
-	host: Option<&Grammar>,
+	host: Option<&Plan>,
 	pool: &mut Pool,
 	sink: S,
 ) -> Result<S, String> {
@@ -357,7 +355,7 @@ fn dispatch<S: Sink>(
 	run::<(), S>(source, positions, request, stop, host, pool, sink)
 }
 
-fn parse_with(source: &str, positions: &Positions, request: &Request, stop: &str, host: Option<&Grammar>) -> String {
+fn parse_with(source: &str, positions: &Positions, request: &Request, stop: &str, host: Option<&Plan>) -> String {
 	SESSION.with(|session| {
 		let session = &mut *session.borrow_mut();
 		match dispatch(
@@ -381,7 +379,7 @@ fn binary_with(
 	positions: &Positions,
 	request: &Request,
 	stop: &str,
-	host: Option<&Grammar>,
+	host: Option<&Plan>,
 ) -> Result<(), String> {
 	SESSION.with(|session| {
 		let session = &mut *session.borrow_mut();
@@ -406,7 +404,7 @@ fn run<E: crate::parser::Extension, S: Sink>(
 	positions: &Positions,
 	request: &Request,
 	stop: &str,
-	host: Option<&Grammar>,
+	host: Option<&Plan>,
 	pool: &mut Pool,
 	sink: S,
 ) -> Result<S, String>
@@ -421,8 +419,8 @@ where
 	};
 	let reused = Pooled::take(pool);
 	let (mut ast, parsed) = match host {
-		Some(grammar) => {
-			let (mut ast, root) = host::parse_document::<E>(source, grammar, request.options, reused);
+		Some(plan) => {
+			let (mut ast, root) = host::parse_document::<E>(source, plan, request.options, reused);
 			let parsed = root.map(|root| (ast.add_list(&[Some(root)]), source.len() as u32));
 			(ast, parsed)
 		}

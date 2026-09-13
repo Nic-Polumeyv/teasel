@@ -4,28 +4,29 @@
 		"start": 0,
 		"end": 72,
 		"scope": 0,
-		"css": null,
-		"js": [],
-		"options": null,
-		"comments": [],
 		"fragment": {
 			"type": "Fragment",
-			"scope": 2,
 			"nodes": [
 				{
 					"type": "RegularElement",
 					"start": 0,
 					"end": 18,
-					"name": "div",
 					"attributes": [],
 					"fragment": {
 						"type": "Fragment",
-						"scope": 3,
+						"scope": 4,
 						"nodes": [
 							{
 								"type": "IfBlock",
 								"start": 5,
 								"end": 12,
+								"alternate": null,
+								"consequent": {
+									"type": "Fragment",
+									"scope": 5,
+									"nodes": []
+								},
+								"elseif": false,
 								"test": {
 									"type": "Identifier",
 									"start": 10,
@@ -33,54 +34,36 @@
 									"reference": 0,
 									"root": 0,
 									"name": "a"
-								},
-								"elseif": false,
-								"alternate": null,
-								"consequent": {
-									"type": "Fragment",
-									"scope": 4,
-									"nodes": []
 								}
 							}
 						]
-					}
+					},
+					"name": "div"
 				},
 				{
 					"type": "Text",
 					"start": 18,
 					"end": 19,
-					"raw": "\n",
-					"data": "\n"
+					"data": "\n",
+					"raw": "\n"
 				},
 				{
 					"type": "IfBlock",
 					"start": 19,
 					"end": 46,
-					"test": {
-						"type": "Identifier",
-						"start": 24,
-						"end": 25,
-						"reference": 1,
-						"root": 1,
-						"name": "b"
-					},
-					"elseif": false,
 					"alternate": null,
 					"consequent": {
 						"type": "Fragment",
-						"scope": 5,
+						"scope": 7,
 						"nodes": [
 							{
 								"type": "EachBlock",
 								"start": 26,
 								"end": 41,
-								"expression": {
-									"type": "Identifier",
-									"start": 33,
-									"end": 35,
-									"reference": 2,
-									"root": 2,
-									"name": "xs"
+								"body": {
+									"type": "Fragment",
+									"scope": 9,
+									"nodes": []
 								},
 								"context": {
 									"type": "Identifier",
@@ -90,35 +73,47 @@
 									"root": 3,
 									"name": "x"
 								},
-								"body": {
-									"type": "Fragment",
-									"scope": 6,
-									"nodes": []
+								"expression": {
+									"type": "Identifier",
+									"start": 33,
+									"end": 35,
+									"reference": 2,
+									"root": 2,
+									"name": "xs"
 								}
 							}
 						]
+					},
+					"elseif": false,
+					"test": {
+						"type": "Identifier",
+						"start": 24,
+						"end": 25,
+						"reference": 1,
+						"root": 1,
+						"name": "b"
 					}
 				},
 				{
 					"type": "Text",
 					"start": 46,
 					"end": 47,
-					"raw": "\n",
-					"data": "\n"
+					"data": "\n",
+					"raw": "\n"
 				},
 				{
 					"type": "Text",
 					"start": 54,
 					"end": 55,
-					"raw": "\n",
-					"data": "\n"
+					"data": "\n",
+					"raw": "\n"
 				},
 				{
 					"type": "Text",
 					"start": 62,
 					"end": 63,
-					"raw": "\n",
-					"data": "\n"
+					"data": "\n",
+					"raw": "\n"
 				},
 				{
 					"type": "HtmlTag",
@@ -196,7 +191,7 @@
 			"topLevelAwait": false
 		},
 		{
-			"kind": "fragment",
+			"kind": "script",
 			"parent": 0,
 			"topLevelAwait": false
 		},
@@ -206,7 +201,7 @@
 			"topLevelAwait": false
 		},
 		{
-			"kind": "fragment",
+			"kind": "block",
 			"parent": 2,
 			"topLevelAwait": false
 		},
@@ -217,12 +212,32 @@
 		},
 		{
 			"kind": "fragment",
+			"parent": 4,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 4,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
 			"parent": 2,
 			"topLevelAwait": false
 		},
 		{
 			"kind": "fragment",
-			"parent": 5,
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 7,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 7,
 			"topLevelAwait": false
 		}
 	],
@@ -230,12 +245,12 @@
 		{
 			"name": "x",
 			"kind": "pattern",
-			"scope": 6
+			"scope": 9
 		}
 	],
 	"references": [
 		{
-			"scope": 3,
+			"scope": 4,
 			"binding": null,
 			"write": false,
 			"read": true,
@@ -249,7 +264,7 @@
 			"mutate": false
 		},
 		{
-			"scope": 5,
+			"scope": 7,
 			"binding": null,
 			"write": false,
 			"read": true,
@@ -258,10 +273,10 @@
 	],
 	"roots": [
 		{
-			"scope": 3,
+			"scope": 4,
 			"scopes": [
-				4,
-				4
+				7,
+				7
 			],
 			"bindings": [
 				0,
@@ -275,8 +290,8 @@
 		{
 			"scope": 2,
 			"scopes": [
-				5,
-				5
+				9,
+				9
 			],
 			"bindings": [
 				0,
@@ -288,10 +303,10 @@
 			]
 		},
 		{
-			"scope": 5,
+			"scope": 7,
 			"scopes": [
-				6,
-				6
+				11,
+				11
 			],
 			"bindings": [
 				0,
@@ -303,10 +318,10 @@
 			]
 		},
 		{
-			"scope": 6,
+			"scope": 9,
 			"scopes": [
-				7,
-				7
+				11,
+				11
 			],
 			"bindings": [
 				0,
@@ -320,8 +335,8 @@
 		{
 			"scope": 2,
 			"scopes": [
-				7,
-				7
+				11,
+				11
 			],
 			"bindings": [
 				1,

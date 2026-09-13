@@ -4,19 +4,13 @@
 		"start": 0,
 		"end": 67,
 		"scope": 0,
-		"css": null,
-		"js": [],
-		"options": null,
-		"comments": [],
 		"fragment": {
 			"type": "Fragment",
-			"scope": 2,
 			"nodes": [
 				{
 					"type": "Component",
 					"start": 0,
 					"end": 26,
-					"name": "Comp",
 					"attributes": [
 						{
 							"type": "Attribute",
@@ -40,49 +34,47 @@
 					],
 					"fragment": {
 						"type": "Fragment",
-						"scope": 3,
 						"nodes": [
 							{
 								"type": "Text",
 								"start": 12,
 								"end": 19,
-								"raw": "content",
-								"data": "content"
+								"data": "content",
+								"raw": "content"
 							}
 						]
-					}
+					},
+					"name": "Comp"
 				},
 				{
 					"type": "Text",
 					"start": 26,
 					"end": 27,
-					"raw": "\n",
-					"data": "\n"
+					"data": "\n",
+					"raw": "\n"
 				},
 				{
 					"type": "Component",
 					"start": 27,
 					"end": 36,
-					"name": "a.b.c",
 					"attributes": [],
 					"fragment": {
 						"type": "Fragment",
-						"scope": 4,
 						"nodes": []
-					}
+					},
+					"name": "a.b.c"
 				},
 				{
 					"type": "Text",
 					"start": 36,
 					"end": 37,
-					"raw": "\n",
-					"data": "\n"
+					"data": "\n",
+					"raw": "\n"
 				},
 				{
 					"type": "Component",
 					"start": 37,
 					"end": 51,
-					"name": "Comp.Sub",
 					"attributes": [
 						{
 							"type": "Attribute",
@@ -94,28 +86,28 @@
 					],
 					"fragment": {
 						"type": "Fragment",
-						"scope": 5,
 						"nodes": []
-					}
+					},
+					"name": "Comp.Sub"
 				},
 				{
 					"type": "Text",
 					"start": 51,
 					"end": 52,
-					"raw": "\n",
-					"data": "\n"
+					"data": "\n",
+					"raw": "\n"
 				},
 				{
 					"type": "RegularElement",
 					"start": 52,
 					"end": 66,
-					"name": "lower-case",
 					"attributes": [],
 					"fragment": {
 						"type": "Fragment",
-						"scope": 6,
+						"scope": 7,
 						"nodes": []
-					}
+					},
+					"name": "lower-case"
 				}
 			]
 		}
@@ -129,7 +121,7 @@
 			"topLevelAwait": false
 		},
 		{
-			"kind": "fragment",
+			"kind": "script",
 			"parent": 0,
 			"topLevelAwait": false
 		},
@@ -154,8 +146,13 @@
 			"topLevelAwait": false
 		},
 		{
-			"kind": "fragment",
+			"kind": "block",
 			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 6,
 			"topLevelAwait": false
 		}
 	],
@@ -165,8 +162,8 @@
 		{
 			"scope": 2,
 			"scopes": [
-				3,
-				3
+				4,
+				4
 			],
 			"bindings": [
 				0,

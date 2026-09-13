@@ -4,23 +4,18 @@
 		"start": 0,
 		"end": 28,
 		"scope": 0,
-		"css": null,
-		"js": [],
-		"options": null,
-		"comments": [],
 		"fragment": {
 			"type": "Fragment",
-			"scope": 2,
 			"nodes": [
 				{
 					"type": "Text",
 					"start": 0,
 					"end": 12,
-					"raw": "Hello &amp; ",
-					"data": "Hello & "
+					"data": "Hello & ",
+					"raw": "Hello &amp; "
 				},
 				{
-					"type": "ExpressionTag",
+					"type": "UnmarkedTag",
 					"start": 12,
 					"end": 18,
 					"expression": {
@@ -36,11 +31,11 @@
 					"type": "Text",
 					"start": 18,
 					"end": 20,
-					"raw": "!\n",
-					"data": "!\n"
+					"data": "!\n",
+					"raw": "!\n"
 				},
 				{
-					"type": "ExpressionTag",
+					"type": "UnmarkedTag",
 					"start": 20,
 					"end": 27,
 					"expression": {
@@ -77,7 +72,7 @@
 			"topLevelAwait": false
 		},
 		{
-			"kind": "fragment",
+			"kind": "script",
 			"parent": 0,
 			"topLevelAwait": false
 		},

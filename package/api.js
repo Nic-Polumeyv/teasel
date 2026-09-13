@@ -11,7 +11,7 @@ export function names(options) {
 	for (const key in options) {
 		const value = options[key];
 		if (key === 'host') {
-			if (value !== undefined && typeof value !== 'string') throw new TypeError('host must be the grammar as a string');
+			if (value !== undefined && typeof value !== 'string') throw new TypeError('host must be the plan as a string');
 			continue;
 		}
 		if (!OPTIONS.has(key)) throw new TypeError(`${key} is not an option`);
@@ -58,7 +58,7 @@ const KEYWORD = new Set('arguments await break case catch class const continue d
 /**
  * The offset after an identifier the host's syntax follows directly, so the answer needs no
  * engine: a name, then optional space, then an unmatched closer, the cut, or one of `stopAt`.
- * Anything the grammar could continue with, a dot or an operator or a TypeScript `as`, and any
+ * Anything the plan could continue with, a dot or an operator or a TypeScript `as`, and any
  * word the engine has to judge, is left to it.
  * @param {string} source @param {number} at @param {number} end @param {string[] | undefined} stopAt
  * @returns {[number, number] | null} the identifier's end and where the parse ends

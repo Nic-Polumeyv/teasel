@@ -1,12 +1,65 @@
 {
-	"error": {
-		"code": "expected",
-		"message": "Expected a this attribute",
-		"pos": 0,
-		"end": 1,
-		"loc": {
-			"line": 1,
-			"column": 0
+	"node": {
+		"type": "Root",
+		"start": 0,
+		"end": 35,
+		"scope": 0,
+		"fragment": {
+			"type": "Fragment",
+			"nodes": [
+				{
+					"type": "SvelteElement",
+					"start": 0,
+					"end": 34,
+					"attributes": [],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 4,
+						"nodes": [
+							{
+								"type": "Text",
+								"start": 16,
+								"end": 17,
+								"data": "x",
+								"raw": "x"
+							}
+						]
+					},
+					"name": "svelte:element"
+				}
+			]
 		}
-	}
+	},
+	"end": 35,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "script",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 1,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 3,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [],
+	"references": [],
+	"roots": []
 }

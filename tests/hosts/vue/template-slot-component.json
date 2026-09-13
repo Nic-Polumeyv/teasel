@@ -9,24 +9,12 @@
 				"type": "Template",
 				"start": 0,
 				"end": 58,
-				"tag": "template",
-				"props": [
-					{
-						"type": "Directive",
-						"start": 10,
-						"end": 17,
-						"name": "slot",
-						"rawName": "#header",
-						"arg": "header",
-						"modifiers": []
-					}
-				],
 				"children": [
 					{
 						"type": "Slot",
 						"start": 18,
 						"end": 47,
-						"tag": "slot",
+						"children": [],
 						"props": [
 							{
 								"type": "Attribute",
@@ -46,8 +34,6 @@
 								"type": "Directive",
 								"start": 33,
 								"end": 39,
-								"name": "bind",
-								"rawName": ":x",
 								"arg": "x",
 								"exp": {
 									"type": "Literal",
@@ -57,12 +43,27 @@
 									"value": 1,
 									"raw": "1"
 								},
-								"modifiers": []
+								"modifiers": [],
+								"name": "bind",
+								"rawName": ":x"
 							}
 						],
-						"children": []
+						"tag": "slot"
 					}
-				]
+				],
+				"props": [
+					{
+						"type": "Directive",
+						"start": 10,
+						"end": 17,
+						"arg": "header",
+						"modifiers": [],
+						"name": "slot",
+						"props": null,
+						"rawName": "#header"
+					}
+				],
+				"tag": "template"
 			},
 			{
 				"type": "Text",
@@ -74,14 +75,12 @@
 				"type": "Element",
 				"start": 59,
 				"end": 79,
-				"tag": "My-Comp",
+				"children": [],
 				"props": [
 					{
 						"type": "Directive",
 						"start": 68,
 						"end": 76,
-						"name": "if",
-						"rawName": "v-if",
 						"arg": null,
 						"exp": {
 							"type": "Identifier",
@@ -91,10 +90,12 @@
 							"root": 1,
 							"name": "a"
 						},
-						"modifiers": []
+						"modifiers": [],
+						"name": "if",
+						"rawName": "v-if"
 					}
 				],
-				"children": []
+				"tag": "My-Comp"
 			},
 			{
 				"type": "Text",
@@ -106,14 +107,12 @@
 				"type": "Component",
 				"start": 80,
 				"end": 111,
-				"tag": "component",
+				"children": [],
 				"props": [
 					{
 						"type": "Directive",
 						"start": 91,
 						"end": 98,
-						"name": "bind",
-						"rawName": ":is",
 						"arg": "is",
 						"exp": {
 							"type": "Identifier",
@@ -123,10 +122,12 @@
 							"root": 2,
 							"name": "c"
 						},
-						"modifiers": []
+						"modifiers": [],
+						"name": "bind",
+						"rawName": ":is"
 					}
 				],
-				"children": []
+				"tag": "component"
 			},
 			{
 				"type": "Text",
@@ -142,6 +143,11 @@
 		{
 			"kind": "module",
 			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
 			"topLevelAwait": false
 		}
 	],
@@ -164,10 +170,10 @@
 	],
 	"roots": [
 		{
-			"scope": 0,
+			"scope": 1,
 			"scopes": [
-				1,
-				1
+				2,
+				2
 			],
 			"bindings": [
 				0,
@@ -181,8 +187,8 @@
 		{
 			"scope": 0,
 			"scopes": [
-				1,
-				1
+				2,
+				2
 			],
 			"bindings": [
 				0,
@@ -196,8 +202,8 @@
 		{
 			"scope": 0,
 			"scopes": [
-				1,
-				1
+				2,
+				2
 			],
 			"bindings": [
 				0,

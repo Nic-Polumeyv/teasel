@@ -79,8 +79,7 @@ fn member(expr: &Value) -> Option<ConstantSet> {
 	if !no.is_empty() || yes.len() != 1 {
 		return None;
 	}
-	let bound =
-		|v: &Value| matches!(v, Value::Get { base: Base::Name(name), path } if name == binding && path.is_empty());
+	let bound = |v: &Value| matches!(v, Value::Get { base: Base::Name(name), path } if name.as_ref() == binding.as_ref() && path.is_empty());
 	if !bound(&yes[0]) {
 		return None;
 	}
@@ -100,6 +99,18 @@ fn member(expr: &Value) -> Option<ConstantSet> {
 	} else {
 		return None;
 	};
+	fn depends(value: &Value, binding: &str) -> bool {
+		if matches!(value, Value::Get {base: Base::Name(name),..} if name.as_ref() == binding) {
+			return true;
+		}
+		let mut found = false;
+		value_children(value, &mut |child| found |= depends(child, binding));
+		found
+	}
+	if depends(&needle, binding) {
+		return None;
+	}
+
 	let strings = items
 		.iter()
 		.map(|v| if let Json::String(v) = v { Some(v.clone()) } else { None })
@@ -175,7 +186,13 @@ fn constant(v: &Value) -> Option<Json> {
 			let left = constant(left)?;
 			Json::Bool(match relation {
 				Relation::Present => true,
-				Relation::Equal => left == constant(right.as_ref()?)?,
+				Relation::Equal => {
+					let right = constant(right.as_ref()?)?;
+					match (&left, &right) {
+						(Json::Number(a), Json::Number(b)) => a.parse::<f64>().ok()? == b.parse::<f64>().ok()?,
+						_ => left == right,
+					}
+				}
 				Relation::Less => {
 					let (Json::Number(a), Json::Number(b)) = (left, constant(right.as_ref()?)?) else {
 						return None;

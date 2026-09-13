@@ -135,7 +135,7 @@ for (const [name, { Source, isIdentifierStart, isIdentifierChar, scopeOf, bindin
 	assert.equal(program('return', { allowReturnOutsideFunction: true }).body[0].type, 'ReturnStatement');
 	{
 		// a document's answer lists each piece of JavaScript the host read, with its share of the tables
-		const host = readFileSync(new URL('../tests/hosts/svelte/host.grammar', import.meta.url), 'utf8');
+		const host = readFileSync(new URL('../tests/hosts/svelte/plan.json', import.meta.url), 'utf8');
 		const answer = parse('<script>let a = 1;</script>{a + b}', { host, sourceType: 'module', scopes: true });
 		const [script, expression] = answer.roots;
 		assert.equal(answer.roots.length, 2);
@@ -148,6 +148,11 @@ for (const [name, { Source, isIdentifierStart, isIdentifierChar, scopeOf, bindin
 		assert.deepEqual(expression.references.map((r) => r.node.name), ['a', 'b']);
 		assert.equal(expression.references[0].binding, script.bindings[0]);
 		assert.equal(referenceOf(expression.node.left), expression.references[0]);
+        const snippet = parse('{#snippet f<T>(x: T)}{x}{/snippet}', {host, typescript: true, scopes: true});
+        assert.ok(snippet.roots.every(root => root.node));
+        assert.equal(new Set(snippet.roots.map(root => root.node)).size, snippet.roots.length);
+        assert.equal(snippet.captures[0].type, 'TSTypeParameterDeclaration');
+        assert.ok(snippet.roots.some(root => root.node === snippet.captures[0]));
 	}
 	{
 		const answer = parse('let x = 1; function f(y) { x = y; }', { sourceType: 'module', scopes: true });
@@ -272,17 +277,18 @@ for (const [name, { Source, isIdentifierStart, isIdentifierChar, scopeOf, bindin
 }
 
 // a document of a host language: the host's nodes around the JavaScript ones, one tree
-const grammar = readFileSync(new URL('../tests/hosts/svelte/host.grammar', import.meta.url), 'utf8');
+const plan = readFileSync(new URL('../tests/hosts/svelte/plan.json', import.meta.url), 'utf8');
 for (const { Source, scopeOf, bindingOf, parentOf } of [node, wasm]) {
 	const source = '<script lang="ts">\n\tlet items: string[] = [];\n</script>\n\n{#each items as item, i (item)}\n\t<p class:odd={i % 2} on:click={() => item}>{item}</p>\n{:else}\n\tnone\n{/each}\n';
-	const doc = new Source(source, { host: grammar, sourceType: 'module', scopes: true, comments: true }).parse();
+	const doc = new Source(source, { host: plan, sourceType: 'module', typescript: true, scopes: true, comments: true }).parse();
 	const root = doc.node;
 	assert.equal(root.type, 'Root');
 	assert.equal(root.end, source.length);
 	assert.equal(doc.end, source.length);
 	assert.deepEqual(doc.comments, []);
-	assert.equal(root.instance.context, 'default');
-	assert.equal(root.instance.content.body[0].declarations[0].id.typeAnnotation.type, 'TSTypeAnnotation');
+	const instance = root.fragment.nodes.find(n => n.type === 'Script');
+	assert.equal(instance.context, 'default');
+	assert.equal(instance.content.body[0].declarations[0].id.typeAnnotation.type, 'TSTypeAnnotation');
 	assert.equal('module' in root, false);
 	const each = root.fragment.nodes.find((n) => n.type === 'EachBlock');
 	assert.equal(each.index.name, 'i');
@@ -297,22 +303,22 @@ for (const { Source, scopeOf, bindingOf, parentOf } of [node, wasm]) {
 	assert.equal(parentOf(each.context), each);
 	// the block declares its context and index; the script declares the list
 	const tag = p.fragment.nodes[0];
-	assert.equal(tag.type, 'ExpressionTag');
+	assert.equal(tag.type, 'UnmarkedTag');
 	assert.equal(bindingOf(tag.expression).node, each.context);
 	assert.equal(bindingOf(p.attributes[0].expression.left).name, 'i');
 	assert.equal(bindingOf(each.expression).kind, 'let');
 	// every fragment is a scope of its own; the block's body declares its context and index
 	assert.equal(scopeOf(each.body).node, each.body);
 	assert.equal(bindingOf(tag.expression).scope, scopeOf(each.body));
-	assert.equal(scopeOf(each.body).parent, scopeOf(root.fragment));
+	assert.equal(scopeOf(each.body).parent, doc.scopes.find(s => s.kind === 'fragment' && s.parent === scopeOf(instance.content)));
 	// the template sees the instance script, which sees the module script, which is the root's
-	assert.equal(scopeOf(root.fragment).parent, scopeOf(root.instance.content));
-	assert.equal(scopeOf(root.instance.content).parent, scopeOf(root));
-	assert.equal(scopeOf(each.fallback).parent, scopeOf(root.fragment));
-	assert.throws(() => new Source('x', { host: 'element div' }), /grammar line 1/);
-	assert.throws(() => new Source('<div>', { host: grammar }).parse(), { code: 'unclosed', pos: 0 });
+	assert.equal(doc.scopes.find(s => s.kind === 'fragment' && s.parent === scopeOf(instance.content)).parent, scopeOf(instance.content));
+	assert.equal(scopeOf(instance.content).parent, scopeOf(root));
+	assert.equal(scopeOf(each.fallback).parent, doc.scopes.find(s => s.kind === 'fragment' && s.parent === scopeOf(instance.content)));
+	assert.throws(() => new Source('x', { host: 'element div' }), /JSON/);
+	assert.throws(() => new Source('<div>', { host: plan }).parse(), { code: 'unclosed', pos: 0 });
 	// under recovery the tree is what could be read, the errors listed with it
-	const loose = new Source('<div>{#if }<Comp foo={bar}\n</div>', { host: grammar, errorRecovery: true }).parse();
+	const loose = new Source('<div>{#if }<Comp foo={bar}\n</div>', { host: plan, errorRecovery: true }).parse();
 	assert.deepEqual(loose.errors.map((e) => e.code), ['unclosed', 'unexpected_token', 'expected']);
 	const div = loose.node.fragment.nodes[0];
 	assert.equal(div.end, 33);
@@ -332,21 +338,21 @@ for (const [label, { Source }] of [['node', node], ['wasm', wasm]]) {
 }
 
 // unfinished input under recovery is an answer, never a panic; a strict error is a SyntaxError
-const grammars = Object.fromEntries(['svelte', 'vue'].map((name) => [name, readFileSync(new URL(`../tests/hosts/${name}/host.grammar`, import.meta.url), 'utf8')]));
+const plans = Object.fromEntries(['svelte', 'vue'].map((name) => [name, readFileSync(new URL(`../tests/hosts/${name}/plan.json`, import.meta.url), 'utf8')]));
 for (const [label, { Source }] of [['node', node], ['wasm', wasm]]) {
 	for (const text of ['<a x="', '<a /*', '<script>"</script>', '{#if', '<div class="{a']) {
-		assert.equal(new Source(text, { host: grammars.svelte, errorRecovery: true, comments: true, scopes: true }).parse().node.type, 'Root', `${label} ${text}`);
+		assert.equal(new Source(text, { host: plans.svelte, errorRecovery: true, comments: true, scopes: true }).parse().node.type, 'Root', `${label} ${text}`);
 	}
-	assert.throws(() => new Source('<a @x="@"/>', { host: grammars.vue }).parse(), (e) => e instanceof SyntaxError, `${label}`);
-	const handler = new Source('<button @click="let x = 1"/>', { host: grammars.vue, errorRecovery: true }).parse();
+	assert.throws(() => new Source('<a @x="@"/>', { host: plans.vue }).parse(), (e) => e instanceof SyntaxError, `${label}`);
+	const handler = new Source('<button @click="let x = 1"/>', { host: plans.vue, errorRecovery: true }).parse();
 	assert.equal(handler.node.children[0].props[0].handler.type, 'Program', label);
 	assert.deepEqual(handler.errors, [], label);
 }
 // a source held by an engine that panicked and started over says so
 assert.throws(() => wasm.engine.parse({ handle: 0, generation: -1 }, 1, 0, undefined, ''), /started over/);
 
-// a second host: the same walker, Vue's grammar
-const vue = readFileSync(new URL('../tests/hosts/vue/host.grammar', import.meta.url), 'utf8');
+// a second host: the same walker, Vue's plan
+const vue = readFileSync(new URL('../tests/hosts/vue/plan.json', import.meta.url), 'utf8');
 for (const { Source, parentOf } of [node, wasm]) {
 	const source = '<ul :class="{ on }">\n\t<li v-for="(item, i) in items" :key="item.id" @click.stop="select(item)">{{ item.name }} #{{ i }}</li>\n</ul>\n';
 	const root = new Source(source, { host: vue, sourceType: 'module' }).parse().node;

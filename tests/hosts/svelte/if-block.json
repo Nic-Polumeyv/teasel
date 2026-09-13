@@ -4,40 +4,13 @@
 		"start": 0,
 		"end": 52,
 		"scope": 0,
-		"css": null,
-		"js": [],
-		"options": null,
-		"comments": [],
 		"fragment": {
 			"type": "Fragment",
-			"scope": 2,
 			"nodes": [
 				{
 					"type": "IfBlock",
 					"start": 0,
 					"end": 51,
-					"test": {
-						"type": "Identifier",
-						"start": 5,
-						"end": 6,
-						"reference": 0,
-						"root": 0,
-						"name": "a"
-					},
-					"elseif": false,
-					"consequent": {
-						"type": "Fragment",
-						"scope": 3,
-						"nodes": [
-							{
-								"type": "Text",
-								"start": 7,
-								"end": 13,
-								"raw": "\n\tone\n",
-								"data": "\n\tone\n"
-							}
-						]
-					},
 					"alternate": {
 						"type": "Fragment",
 						"scope": 4,
@@ -46,28 +19,6 @@
 								"type": "IfBlock",
 								"start": 13,
 								"end": 51,
-								"test": {
-									"type": "Identifier",
-									"start": 23,
-									"end": 24,
-									"reference": 1,
-									"root": 1,
-									"name": "b"
-								},
-								"elseif": true,
-								"consequent": {
-									"type": "Fragment",
-									"scope": 5,
-									"nodes": [
-										{
-											"type": "Text",
-											"start": 25,
-											"end": 31,
-											"raw": "\n\ttwo\n",
-											"data": "\n\ttwo\n"
-										}
-									]
-								},
 								"alternate": {
 									"type": "Fragment",
 									"scope": 6,
@@ -76,13 +27,57 @@
 											"type": "Text",
 											"start": 38,
 											"end": 46,
-											"raw": "\n\tthree\n",
-											"data": "\n\tthree\n"
+											"data": "\n\tthree\n",
+											"raw": "\n\tthree\n"
 										}
 									]
+								},
+								"consequent": {
+									"type": "Fragment",
+									"scope": 5,
+									"nodes": [
+										{
+											"type": "Text",
+											"start": 25,
+											"end": 31,
+											"data": "\n\ttwo\n",
+											"raw": "\n\ttwo\n"
+										}
+									]
+								},
+								"elseif": true,
+								"test": {
+									"type": "Identifier",
+									"start": 23,
+									"end": 24,
+									"reference": 1,
+									"root": 1,
+									"name": "b"
 								}
 							}
 						]
+					},
+					"consequent": {
+						"type": "Fragment",
+						"scope": 3,
+						"nodes": [
+							{
+								"type": "Text",
+								"start": 7,
+								"end": 13,
+								"data": "\n\tone\n",
+								"raw": "\n\tone\n"
+							}
+						]
+					},
+					"elseif": false,
+					"test": {
+						"type": "Identifier",
+						"start": 5,
+						"end": 6,
+						"reference": 0,
+						"root": 0,
+						"name": "a"
 					}
 				}
 			]
@@ -97,7 +92,7 @@
 			"topLevelAwait": false
 		},
 		{
-			"kind": "fragment",
+			"kind": "script",
 			"parent": 0,
 			"topLevelAwait": false
 		},
@@ -148,8 +143,8 @@
 		{
 			"scope": 2,
 			"scopes": [
-				3,
-				3
+				5,
+				5
 			],
 			"bindings": [
 				0,
@@ -163,8 +158,8 @@
 		{
 			"scope": 4,
 			"scopes": [
-				5,
-				5
+				7,
+				7
 			],
 			"bindings": [
 				0,

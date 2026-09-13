@@ -37,8 +37,8 @@ fn guard(on_panic: u32, f: impl FnOnce() -> u32) -> u32 {
 
 /// # Safety
 /// `ptr`, `names` and `host` are each `capacity` bytes from `alloc`, `len` of them written: the
-/// source, the option names and the host grammar, empty for none; all are taken over here. The
-/// handle is 0 when the grammar cannot be read, the error as JSON at `text_ptr`.
+/// source, the option names and the host plan, empty for none; all are taken over here. The
+/// handle is 0 when the plan cannot be read, the error as JSON at `text_ptr`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn source_new(
 	ptr: *mut u8,

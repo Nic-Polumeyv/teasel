@@ -1,5 +1,5 @@
 //! The strings a writer names itself, numbered once for the stream: a literal resolves to its
-//! number at compile time through `c!`, and a string from outside the table, a host grammar's, gets
+//! number at compile time through `c!`, and a string from outside the table, a host plan's, gets
 //! its number from the writer that meets it.
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -10,7 +10,7 @@ pub struct Name<'a> {
 }
 
 impl<'a> Name<'a> {
-	/// A string met at run time, a host grammar's: the writer numbers it by its address.
+	/// A string met at run time, a host plan's: the writer numbers it by its address.
 	pub const fn dynamic(text: &'a str) -> Name<'a> {
 		Name { id: u32::MAX, text }
 	}

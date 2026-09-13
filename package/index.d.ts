@@ -8,10 +8,10 @@ declare global {
 
 export interface Options {
 	/**
-	 * The grammar of a host language the whole source is a document of: a template language
+	 * The plan of a host language the whole source is a document of: a template language
 	 * with JavaScript inside it. The program entry then answers with the document's root, the
 	 * host's own nodes around the JavaScript ones, in one tree; the other entries read
-	 * JavaScript at an offset as before. TypeScript turns on by what the grammar says of a
+	 * JavaScript at an offset as before. TypeScript turns on by what the plan says of a
 	 * script tag.
 	 */
 	host?: string;
@@ -194,8 +194,9 @@ export interface Parsed<T> {
 	scopes?: Scope[];
 	bindings?: Binding[];
 	references?: Reference[];
-	/** With `scopes`, for a document read by a host grammar: its pieces of JavaScript in source order. */
+	/** With `scopes`, for a document read by a host plan: its pieces of JavaScript in source order. */
 	roots?: Root[];
+	captures?: Node[];
 }
 
 /**
@@ -218,7 +219,7 @@ export interface At {
 }
 
 /**
- * A node of a host language, as its grammar names the type and the fields; the JavaScript under
+ * A node of a host language, as its plan names the type and the fields; the JavaScript under
  * it is ESTree.
  */
 export interface HostNode {

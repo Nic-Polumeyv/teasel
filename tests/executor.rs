@@ -1,6 +1,6 @@
 use teasel::Options;
 use teasel::ast::{Ast, NodeId, NodeKind, Value};
-use teasel::host::{executor, plan::Plan};
+use teasel::host::{self as executor, plan::Plan};
 
 fn field(ast: &Ast, node: NodeId, name: &str) -> Option<Value> {
 	let NodeKind::Host(index) = ast.node(node).kind else {
@@ -240,4 +240,75 @@ fn pattern_defaults_use_coverage_and_aliases_are_visited_once() {
 			.collect::<Vec<_>>(),
 		[false, false]
 	);
+}
+
+#[test]
+fn native_values_preserve_node_handles() {
+	let plan = document(
+		r#"{"type":"Root","fields":{"expression":"null","nodeType":"null","name":"null"},"form":{"op":"seq","items":[
+        {"op":"read","reader":{"kind":"token","text":"x","word":true,"gap":"none"}},
+        {"op":"read","reader":{"kind":"javascript","entry":"expression"},"into":"expression"},
+        {"op":"read","reader":{"kind":"token","text":";","word":false,"gap":"none"}},
+        {"op":"emit","into":"nodeType","value":{"op":"get","base":"record","path":["expression","type"]}},
+        {"op":"emit","into":"name","value":{"op":"get","base":"record","path":["expression","right","name"]}}
+    ]}}"#,
+	);
+	let (ast, root) = executor::parse("x a+b;", &plan, Options::default());
+	let Some(Value::Nodes(children)) = field(&ast, root.unwrap(), "children") else {
+		panic!()
+	};
+	let node = ast.nth(children, 0).unwrap();
+	let Some(Value::Str(name)) = field(&ast, node, "name") else {
+		panic!()
+	};
+	assert_eq!(ast.str(name), "b");
+	let Some(Value::Str(ty)) = field(&ast, node, "nodeType") else {
+		panic!()
+	};
+	assert_eq!(ast.str(ty), "BinaryExpression");
+}
+
+#[test]
+fn unrelated_region_overlap_is_rejected() {
+	let plan = document(
+		r#"{"type":"Root","fields":{"value":"null"},"form":{"op":"seq","items":[
+        {"op":"read","reader":{"kind":"token","text":"x","word":true,"gap":"none"}},
+        {"op":"read","reader":{"kind":"javascript","entry":"expression"},"into":"value"}
+    ]},"regions":[
+        {"id":"one","kind":"block","parent":{"op":"get","base":"incoming","path":[]},"covers":{"op":"get","base":"record","path":["value"]}},
+        {"id":"two","kind":"block","parent":{"op":"get","base":"incoming","path":[]},"covers":{"op":"get","base":"record","path":["value"]}}
+    ]}"#,
+	);
+	let (mut ast, root) = executor::parse("x value", &plan, Options::default());
+	let roots = ast.add_list(&[Some(root.unwrap())]);
+	teasel::scopes::analyze(&mut ast, teasel::Entry::Program, roots);
+	assert_eq!(ast.scopes.as_ref().unwrap().errors.len(), 1);
+	assert!(
+		ast.scopes.as_ref().unwrap().errors[0]
+			.message
+			.contains("overlapping regions")
+	);
+}
+
+#[test]
+fn constructed_native_nodes_keep_native_traversal() {
+	let plan = document(
+		r#"{"type":"Root","fields":{"value":"null"},"form":{"op":"emit","into":"value","value":{"op":"construct","shape":"record","type":"js.BinaryExpression","span":{"op":"constant","value":null},"fields":{
+        "operator":{"op":"constant","value":"+"},
+        "left":{"op":"construct","shape":"record","type":"js.Identifier","span":{"op":"constant","value":null},"fields":{"name":{"op":"constant","value":"outside"}}},
+        "right":{"op":"construct","shape":"record","type":"js.Literal","span":{"op":"constant","value":null},"fields":{"value":{"op":"constant","value":2}}}
+    }}}}"#,
+	);
+	let (mut ast, root) = executor::parse("", &plan, Options::default());
+	let root = root.unwrap();
+	let Some(Value::Node(value)) = field(&ast, root, "value") else {
+		panic!()
+	};
+	let NodeKind::BinaryExpression { right, .. } = ast.node(value).kind else {
+		panic!()
+	};
+	assert!(matches!(ast.node(right).kind, NodeKind::NumberLiteral {value} if ast.numbers[value as usize] == 2.0));
+	let roots = ast.add_list_from([Some(root)].into_iter());
+	teasel::scopes::analyze(&mut ast, teasel::Entry::Program, roots);
+	assert_eq!(ast.scopes.as_ref().unwrap().references.len(), 1);
 }

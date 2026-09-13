@@ -189,15 +189,7 @@ impl<'a, X> Css<'a, '_, X> {
 	fn list(&mut self, nodes: &[NodeId]) -> List {
 		self.ast.add_list_from(nodes.iter().copied().map(Some))
 	}
-	fn host(
-		&mut self,
-		ty: &str,
-		start: u32,
-		end: u32,
-		fields: &[(&str, Value)],
-		_: Option<Opens>,
-		span: bool,
-	) -> NodeId {
+	fn host(&mut self, ty: &str, start: u32, end: u32, fields: &[(&str, Value)], span: bool) -> NodeId {
 		let from = self.ast.host_fields.len() as u32;
 		for (key, value) in fields {
 			let key = self.intern(key);
@@ -209,7 +201,6 @@ impl<'a, X> Css<'a, '_, X> {
 			ty,
 			fields: (from, fields.len() as u32),
 			span,
-			scope: None,
 		});
 		self.ast.add(NodeKind::Host(index), start, end)
 	}
@@ -238,10 +229,9 @@ impl<'a, X> Css<'a, '_, X> {
 						comment.start,
 						comment.end,
 						&[value, ("position", Value::Int(position))],
-						None,
 						true,
 					),
-					None => self.host("CSSComment", comment.start, comment.end, &[value], None, true),
+					None => self.host("CSSComment", comment.start, comment.end, &[value], true),
 				}
 			})
 			.collect();
@@ -305,7 +295,6 @@ impl<'a, X> Css<'a, '_, X> {
 				("prelude", Value::Str(prelude)),
 				("block", block),
 			],
-			None,
 			true,
 		))
 	}
@@ -319,7 +308,6 @@ impl<'a, X> Css<'a, '_, X> {
 			start,
 			self.at,
 			&[("prelude", Value::Node(prelude)), ("block", Value::Node(block))],
-			None,
 			true,
 		))
 	}
@@ -339,7 +327,6 @@ impl<'a, X> Css<'a, '_, X> {
 					start,
 					end,
 					&[("children", Value::Nodes(children))],
-					None,
 					true,
 				));
 			}
@@ -360,14 +347,7 @@ impl<'a, X> Css<'a, '_, X> {
 			let start = self.at;
 			if self.eat("&") {
 				let name = self.intern("&");
-				selectors.push(self.host(
-					"NestingSelector",
-					start,
-					self.at,
-					&[("name", Value::Str(name))],
-					None,
-					true,
-				));
+				selectors.push(self.host("NestingSelector", start, self.at, &[("name", Value::Str(name))], true));
 			} else if self.eat("*") {
 				let mut fields = Vec::new();
 				let mut name = String::from("*");
@@ -382,22 +362,15 @@ impl<'a, X> Css<'a, '_, X> {
 				}
 				let name = self.intern(&name);
 				fields.insert(0, ("name", Value::Str(name)));
-				selectors.push(self.host("TypeSelector", start, self.at, &fields, None, true));
+				selectors.push(self.host("TypeSelector", start, self.at, &fields, true));
 			} else if self.eat("#") {
 				let name = self.css_identifier()?;
 				let name = self.intern(&name);
-				selectors.push(self.host("IdSelector", start, self.at, &[("name", Value::Str(name))], None, true));
+				selectors.push(self.host("IdSelector", start, self.at, &[("name", Value::Str(name))], true));
 			} else if self.eat(".") {
 				let name = self.css_identifier()?;
 				let name = self.intern(&name);
-				selectors.push(self.host(
-					"ClassSelector",
-					start,
-					self.at,
-					&[("name", Value::Str(name))],
-					None,
-					true,
-				));
+				selectors.push(self.host("ClassSelector", start, self.at, &[("name", Value::Str(name))], true));
 			} else if self.eat("::") {
 				let name = self.css_identifier()?;
 				let name = self.intern(&name);
@@ -410,11 +383,10 @@ impl<'a, X> Css<'a, '_, X> {
 						start,
 						self.at,
 						&[name, ("args", Value::Node(args))],
-						None,
 						true,
 					)
 				} else {
-					self.host("PseudoElementSelector", start, self.at, &[name], None, true)
+					self.host("PseudoElementSelector", start, self.at, &[name], true)
 				};
 				selectors.push(node);
 			} else if self.eat(":") {
@@ -432,7 +404,6 @@ impl<'a, X> Css<'a, '_, X> {
 					start,
 					self.at,
 					&[("name", Value::Str(name)), ("args", args)],
-					None,
 					true,
 				));
 			} else if self.eat("[") {
@@ -480,19 +451,11 @@ impl<'a, X> Css<'a, '_, X> {
 						("value", value),
 						("flags", flags),
 					],
-					None,
 					true,
 				));
 			} else if let Some(len) = nth_of(self.rest()).filter(|_| inside_pseudo) {
 				self.at += len as u32;
-				selectors.push(self.host(
-					"Nth",
-					start,
-					self.at,
-					&[("value", Value::Slice(start, self.at))],
-					None,
-					true,
-				));
+				selectors.push(self.host("Nth", start, self.at, &[("value", Value::Slice(start, self.at))], true));
 			} else if let Some(len) = percentage(self.rest()) {
 				self.at += len as u32;
 				selectors.push(self.host(
@@ -500,7 +463,6 @@ impl<'a, X> Css<'a, '_, X> {
 					start,
 					self.at,
 					&[("value", Value::Slice(start, self.at))],
-					None,
 					true,
 				));
 			} else if combinator(self.rest()).is_none() {
@@ -517,7 +479,7 @@ impl<'a, X> Css<'a, '_, X> {
 				}
 				let name = self.intern(&name);
 				fields.insert(0, ("name", Value::Str(name)));
-				selectors.push(self.host("TypeSelector", start, self.at, &fields, None, true));
+				selectors.push(self.host("TypeSelector", start, self.at, &fields, true));
 			}
 			let index = self.at;
 			self.css_space(comments, false)?;
@@ -531,7 +493,6 @@ impl<'a, X> Css<'a, '_, X> {
 					list_start,
 					index,
 					&[("children", Value::Nodes(children))],
-					None,
 					true,
 				));
 			}
@@ -563,7 +524,6 @@ impl<'a, X> Css<'a, '_, X> {
 				("combinator", combinator.map_or(Value::Null, Value::Node)),
 				("selectors", Value::Nodes(selectors)),
 			],
-			None,
 			true,
 		)
 	}
@@ -582,7 +542,6 @@ impl<'a, X> Css<'a, '_, X> {
 				index,
 				end,
 				&[("name", Value::Str(name))],
-				None,
 				true,
 			)));
 		}
@@ -593,7 +552,6 @@ impl<'a, X> Css<'a, '_, X> {
 				start,
 				self.at,
 				&[("name", Value::Str(name))],
-				None,
 				true,
 			)));
 		}
@@ -613,14 +571,7 @@ impl<'a, X> Css<'a, '_, X> {
 		}
 		self.expect("}")?;
 		let children = self.list(&children);
-		Ok(self.host(
-			"Block",
-			start,
-			self.at,
-			&[("children", Value::Nodes(children))],
-			None,
-			true,
-		))
+		Ok(self.host("Block", start, self.at, &[("children", Value::Nodes(children))], true))
 	}
 
 	/// A declaration, a rule or an at-rule: a look ahead to the next `{` or `;` tells which.
@@ -668,7 +619,6 @@ impl<'a, X> Css<'a, '_, X> {
 				("property", Value::Slice(start, start + len as u32)),
 				("value", Value::Str(value)),
 			],
-			None,
 			true,
 		))
 	}

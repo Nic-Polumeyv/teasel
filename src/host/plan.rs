@@ -11,7 +11,7 @@ pub enum Json {
 	Null,
 	Bool(bool),
 	Number(Name),
-	String(Name),
+	String(std::rc::Rc<str>),
 	Array(Vec<Json>),
 	Object(BTreeMap<Name, Json>),
 }
@@ -22,6 +22,7 @@ pub struct Plan {
 	pub document: usize,
 	pub rules: Vec<Rule>,
 	pub html: Html,
+	pub(crate) stops: Vec<Name>,
 }
 
 #[derive(Clone, Debug)]
@@ -112,6 +113,7 @@ pub enum Form {
 		into: Name,
 	},
 	Read {
+		follow: Name,
 		reader: Reader,
 		into: Option<Name>,
 		input: Option<Value>,
@@ -156,7 +158,7 @@ pub enum Value {
 	},
 	FlatMap {
 		list: Box<Value>,
-		binding: Name,
+		binding: std::rc::Rc<str>,
 		body: Box<Value>,
 	},
 	Length(Box<Value>),
@@ -170,7 +172,7 @@ pub enum Value {
 #[derive(Clone, Debug)]
 pub struct ConstantSet {
 	pub needle: Box<Value>,
-	pub strings: BTreeSet<Box<str>>,
+	pub strings: BTreeSet<std::rc::Rc<str>>,
 }
 
 #[derive(Clone, Debug)]
@@ -208,7 +210,7 @@ pub struct Region {
 #[derive(Clone, Debug)]
 pub struct Each {
 	pub list: Value,
-	pub binding: Name,
+	pub binding: std::rc::Rc<str>,
 }
 
 #[derive(Clone, Debug)]
@@ -523,7 +525,7 @@ impl<'a> JsonReader<'a> {
 		let location = (self.line, self.column);
 		let field = self.path.last().cloned();
 		let kind = match self.peek() {
-			Some('"') => NodeKind::Scalar(Json::String(self.string()?)),
+			Some('"') => NodeKind::Scalar(Json::String(self.string()?.into())),
 			Some('[') => {
 				self.bump();
 				self.whitespace();
@@ -665,7 +667,7 @@ impl Decode<'_> {
 			},
 			"flatMap" => Value::FlatMap {
 				list: val("list")?,
-				binding: get("as")?.name(context)?,
+				binding: get("as")?.name(context)?.into(),
 				body: val("body")?,
 			},
 			"length" => Value::Length(val("list")?),
@@ -834,6 +836,7 @@ impl Decode<'_> {
 				}
 			}
 			"read" => Form::Read {
+				follow: "".into(),
 				reader: self.reader(get("reader")?)?,
 				into: node.optional("into", c)?.map(|n| n.name(c)).transpose()?,
 				input: node.optional("input", c)?.map(|n| self.value(n)).transpose()?,
@@ -862,7 +865,7 @@ impl Decode<'_> {
 					n.properties(c, &["list", "as"])?;
 					Ok::<_, String>(Each {
 						list: self.value(n.required("list", c)?)?,
-						binding: n.required("as", c)?.name(c)?,
+						binding: n.required("as", c)?.name(c)?.into(),
 					})
 				})
 				.transpose()?,
@@ -1076,9 +1079,11 @@ impl Plan {
 				})
 				.collect::<Result<_>>()?,
 			html: decode.html(node.required("html", "plan")?)?,
+			stops: Vec::new(),
 		};
 		plan.validate()?;
 		fold::plan(&mut plan);
+		compile(&mut plan);
 		Ok(plan)
 	}
 }
@@ -1739,7 +1744,9 @@ impl Validator<'_> {
 				let item = self.value(yield_value, &nested, "yield")?;
 				self.write(env, written, into, Type::list(item))?;
 			}
-			Form::Read { reader, input, into } => {
+			Form::Read {
+				reader, input, into, ..
+			} => {
 				let ty = self.reader(reader, input, env, into.as_deref().unwrap_or("reader"))?;
 				if let Some(into) = into {
 					self.write(env, written, into, ty)?;
@@ -2466,4 +2473,90 @@ impl Plan {
 		}
 		Ok(())
 	}
+}
+
+fn follow(rules: &[Rule], forms: &[Form], out: &mut Vec<String>, depth: usize) {
+	if depth > 32 {
+		return;
+	}
+	for form in forms {
+		match form {
+			Form::Read {
+				reader: Reader::Token { text, .. },
+				..
+			} => {
+				out.push(text.to_string());
+				break;
+			}
+			Form::Read {
+				reader: Reader::Rule(rule),
+				..
+			} => {
+				follow(rules, std::slice::from_ref(&rules[*rule].form), out, depth + 1);
+				break;
+			}
+			Form::Seq(items) => {
+				follow(rules, items, out, depth + 1);
+				if !items.is_empty() {
+					break;
+				}
+			}
+			Form::Choice { alternatives, .. } => {
+				for f in alternatives {
+					follow(rules, std::slice::from_ref(f), out, depth + 1);
+				}
+			}
+			Form::Repeat { body, .. } => follow(rules, std::slice::from_ref(body), out, depth + 1),
+			Form::Emit { .. }
+			| Form::Read {
+				reader: Reader::Space { .. } | Reader::Test(_),
+				..
+			} => {}
+			_ => break,
+		}
+	}
+}
+fn compile(plan: &mut Plan) {
+	fn form(f: &mut Form, rules: &[Rule], suffix: &str, stops: &mut Vec<Name>) {
+		match f {
+			Form::Seq(items) => {
+				let suffixes = (0..items.len())
+					.map(|i| {
+						let mut next = Vec::new();
+						follow(rules, &items[i + 1..], &mut next, 0);
+						if !suffix.is_empty() {
+							next.push(suffix.to_owned());
+						}
+						next.join(" ")
+					})
+					.collect::<Vec<_>>();
+				for (item, next) in items.iter_mut().zip(suffixes) {
+					form(item, rules, &next, stops);
+				}
+			}
+			Form::Choice { alternatives, .. } => {
+				for item in alternatives {
+					form(item, rules, suffix, stops);
+				}
+			}
+			Form::Repeat { body, .. } => form(body, rules, suffix, stops),
+			Form::Read { reader, follow, .. } => {
+				*follow = suffix.into();
+				if let Reader::HtmlChildren {
+					stop: Stop::Prefixes(prefixes),
+					..
+				} = reader
+				{
+					stops.extend(prefixes.iter().cloned());
+				}
+			}
+			Form::Emit { .. } => {}
+		}
+	}
+	let rules = plan.rules.clone();
+	for rule in &mut plan.rules {
+		form(&mut rule.form, &rules, "", &mut plan.stops);
+	}
+	plan.stops.sort();
+	plan.stops.dedup();
 }

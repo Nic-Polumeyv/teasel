@@ -333,10 +333,6 @@ impl ByNode {
 struct Scratch {
 	envs: Vec<Env>,
 	open: Vec<u32>,
-	host_declared: Vec<List>,
-	/// The groups of the host nodes being walked, each node's sorted behind the ones outside it.
-	host_groups: Vec<crate::ast::HostGroup>,
-	open_groups: Vec<usize>,
 	env_of: Vec<u32>,
 	owned: FastMap<BindingId, u32>,
 	/// The name maps of earlier analyses by environment id, emptied: a document of the same shape
@@ -456,9 +452,6 @@ fn analyze_with<X: Bind>(ast: &mut Ast<X>, kind: ScopeKind, root: Option<NodeId>
 		mut out,
 		mut envs,
 		open,
-		host_declared,
-		host_groups,
-		open_groups,
 		mut env_of,
 		owned,
 		..
@@ -491,9 +484,6 @@ fn analyze_with<X: Bind>(ast: &mut Ast<X>, kind: ScopeKind, root: Option<NodeId>
 	out.scratch = Scratch {
 		envs,
 		open,
-		host_declared,
-		host_groups,
-		open_groups,
 		env_of,
 		owned,
 		names,
@@ -543,10 +533,6 @@ pub struct Binder<'a, X> {
 	envs: Vec<Env>,
 	/// The environments open here, innermost last.
 	open: Vec<u32>,
-	/// The patterns the open host scopes declare, which their fields do not reference.
-	host_declared: Vec<List>,
-	host_groups: Vec<crate::ast::HostGroup>,
-	open_groups: Vec<usize>,
 	/// The node whose pattern is being declared, for `Binding::declaration`.
 	declaring: Option<NodeId>,
 	/// What the target being visited is assigned, for `Reference::write_expr`.
@@ -579,9 +565,6 @@ impl<'a, X: Bind> Binder<'a, X> {
 		let Scratch {
 			envs,
 			open,
-			host_declared,
-			host_groups,
-			open_groups,
 			env_of,
 			owned,
 			names,
@@ -595,9 +578,6 @@ impl<'a, X: Bind> Binder<'a, X> {
 			out,
 			envs,
 			open,
-			host_declared,
-			host_groups,
-			open_groups,
 			declaring: None,
 			writing: None,
 			compound: false,
@@ -1083,10 +1063,26 @@ impl<'a, X: Bind> Binder<'a, X> {
 				let env = self.region_env(*region);
 				if selected.is_none_or(|previous| self.env_contains(previous, env)) {
 					selected = Some(env);
+				} else if let Some(previous) = selected
+					&& !self.env_contains(env, previous)
+				{
+					self.out.errors.push(SyntaxError::with(
+						self.ast.node(id).start,
+						Code::Expected,
+						Code::Expected.with("one parent chain for overlapping regions"),
+					));
 				}
 			}
 			if let Some(env) = selected {
-				self.open.push(env);
+				if self.env_contains(incoming, env) {
+					self.open.push(env);
+				} else if !self.env_contains(env, incoming) {
+					self.out.errors.push(SyntaxError::with(
+						self.ast.node(id).start,
+						Code::Expected,
+						Code::Expected.with("one parent chain for overlapping regions"),
+					));
+				}
 			}
 		}
 		let incoming = self.env();
@@ -1104,7 +1100,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 				crate::host::plan::DeclareKind::Pattern => BindingKind::Pattern,
 				crate::host::plan::DeclareKind::Param => BindingKind::Param,
 			};
-			self.declare_by(id, kind, binding.pattern);
+			self.declare(id, kind);
 		} else {
 			self.visit_with(id, mode, true);
 		}
@@ -1166,78 +1162,23 @@ impl<'a, X: Bind> Binder<'a, X> {
 		env
 	}
 
-	/// A host node: its fields in order, inside the scope it opens from `Opens::from` on.
 	fn host(&mut self, id: NodeId, index: u32) {
 		let host = self.ast.hosts[index as usize];
 		let (from, len) = host.fields;
-		if self.ast.host_plan {
-			let mut children = Vec::new();
-			for i in from..from + len {
-				self.host_roots(self.ast.host_fields[i as usize].1, &mut children);
-			}
-			children.sort_by_key(|id| self.ast.node(*id).start);
-			children.dedup();
-			for child in children {
-				self.field_value(child);
-			}
-			if let Some(hidden) = self.ast.host_hidden.get(id) {
-				for child in hidden {
-					self.field_value(*child);
-				}
-			}
-			return;
-		}
-		let Some(opens) = host.scope else {
-			for i in from..from + len {
-				self.host_field(i);
-			}
-			return;
-		};
-		for &pattern in self.ast.list(opens.outside).iter().flatten() {
-			self.root(pattern, |b| b.visit(pattern, Mode::Declare(BindingKind::Pattern)));
-		}
-		let depth = self.host_declared.len();
-		self.host_declared.push(opens.outside);
-		// groups nest: the outer one opens first at a field and closes last
-		let base = self.host_groups.len();
-		let open_base = self.open_groups.len();
-		self.host_groups.extend_from_slice(
-			&self.ast.host_groups[opens.groups.0 as usize..(opens.groups.0 + opens.groups.1) as usize],
-		);
-		self.host_groups[base..].sort_unstable_by_key(|group| (group.from, std::cmp::Reverse(group.until)));
-		let mut next = base;
+		let mut children = Vec::new();
 		for i in from..from + len {
-			while next < self.host_groups.len() && self.host_groups[next].from == i {
-				let group = self.host_groups[next];
-				// a script's program hoists `var` like a script; a fragment is where a template's expressions sit
-				let node = group.node.unwrap_or(id);
-				let kind = match self.ast.node(node).kind {
-					NodeKind::Program { .. } => ScopeKind::Script,
-					NodeKind::Host(inner) if !self.ast.hosts[inner as usize].span => ScopeKind::Fragment,
-					_ => ScopeKind::Block,
-				};
-				self.enter(kind, Some(node), false);
-				for &pattern in self.ast.list(group.inside).iter().flatten() {
-					self.root(pattern, |b| b.visit(pattern, Mode::Declare(BindingKind::Pattern)));
-				}
-				self.host_declared.push(group.inside);
-				self.open_groups.push(next);
-				next += 1;
-			}
-			self.host_field(i);
-			while self.open_groups.len() > open_base
-				&& self
-					.open_groups
-					.pop_if(|&mut g| self.host_groups[g].until == i + 1)
-					.is_some()
-			{
-				self.exit();
-				self.host_declared.pop();
+			self.host_roots(self.ast.host_fields[i as usize].1, &mut children);
+		}
+		children.sort_by_key(|id| self.ast.node(*id).start);
+		children.dedup();
+		for child in children {
+			self.field_value(child);
+		}
+		if let Some(hidden) = self.ast.host_hidden.get(id) {
+			for child in hidden {
+				self.field_value(*child);
 			}
 		}
-		self.open_groups.truncate(open_base);
-		self.host_groups.truncate(base);
-		self.host_declared.truncate(depth);
 	}
 
 	fn host_roots(&self, value: crate::ast::Value, out: &mut Vec<NodeId>) {
@@ -1247,26 +1188,6 @@ impl<'a, X: Bind> Binder<'a, X> {
 			crate::ast::Value::Array(a, n) => {
 				for value in &self.ast.host_values[a as usize..(a + n) as usize] {
 					self.host_roots(*value, out);
-				}
-			}
-			_ => {}
-		}
-	}
-
-	/// A host node's field as an expression, the patterns the open host scopes declare left to them.
-	fn host_field(&mut self, i: u32) {
-		let declared = |b: &Self, child: NodeId| {
-			b.host_declared
-				.iter()
-				.any(|list| b.ast.list(*list).contains(&Some(child)))
-		};
-		match self.ast.host_fields[i as usize].1 {
-			crate::ast::Value::Node(child) if !declared(self, child) => self.field_value(child),
-			crate::ast::Value::Nodes(children) => {
-				for &child in self.ast.list(children).iter().flatten() {
-					if !declared(self, child) {
-						self.field_value(child);
-					}
 				}
 			}
 			_ => {}
@@ -1865,12 +1786,12 @@ mod tests {
 			);
 		}
 		// a host document: each piece's root lists the `arguments` of the functions inside it
-		let grammar = crate::host::grammar::Grammar::read(
-			&std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/host.grammar")).unwrap(),
+		let plan = crate::host::plan::Plan::read(
+			&std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/plan.json")).unwrap(),
 		)
 		.unwrap();
 		let src = "<script>let n = 1; function f() { return arguments; }</script>\n{(function () { return arguments + n; })()}";
-		let (mut ast, root) = crate::host::parse_document::<()>(src, &grammar, Options::default(), None);
+		let (mut ast, root) = crate::host::parse_document::<()>(src, &plan, Options::default(), None);
 		let roots = ast.add_list(&[Some(root.unwrap())]);
 		analyze(&mut ast, Entry::Program, roots);
 		let scopes = ast.scopes.as_ref().unwrap();

@@ -9,15 +9,15 @@
 				"type": "Element",
 				"start": 0,
 				"end": 4,
-				"tag": "br",
+				"children": [],
 				"props": [],
-				"children": []
+				"tag": "br"
 			},
 			{
 				"type": "Element",
 				"start": 4,
 				"end": 17,
-				"tag": "img",
+				"children": [],
 				"props": [
 					{
 						"type": "Attribute",
@@ -34,14 +34,12 @@
 						]
 					}
 				],
-				"children": []
+				"tag": "img"
 			},
 			{
 				"type": "Element",
 				"start": 17,
 				"end": 45,
-				"tag": "textarea",
-				"props": [],
 				"children": [
 					{
 						"type": "Interpolation",
@@ -56,14 +54,14 @@
 							"name": "a"
 						}
 					}
-				]
+				],
+				"props": [],
+				"tag": "textarea"
 			},
 			{
 				"type": "Element",
 				"start": 45,
 				"end": 78,
-				"tag": "script",
-				"props": [],
 				"children": [
 					{
 						"type": "Text",
@@ -71,14 +69,14 @@
 						"end": 69,
 						"content": "let x = \"<div>\";"
 					}
-				]
+				],
+				"props": [],
+				"tag": "script"
 			},
 			{
 				"type": "Element",
 				"start": 78,
 				"end": 97,
-				"tag": "style",
-				"props": [],
 				"children": [
 					{
 						"type": "Text",
@@ -86,7 +84,9 @@
 						"end": 89,
 						"content": ".a{}"
 					}
-				]
+				],
+				"props": [],
+				"tag": "style"
 			},
 			{
 				"type": "Text",

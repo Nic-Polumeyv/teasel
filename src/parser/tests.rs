@@ -743,15 +743,14 @@ fn phases() {
 		binary.reset();
 		answer(&ast, Entry::Program, roots, end, &source, &lines, output, &mut binary).finish();
 	});
-	let grammar =
-		std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/host.grammar")).unwrap();
+	let plan = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/plan.json")).unwrap();
 	let document = format!(
 		"<script>let items = [1,2,3];</script>\n{}",
 		"{#each items as item}<p class=\"row\" onclick={() => f(item)}>{item + 1}</p>{/each}\n".repeat(200)
 	);
 	for flags in ["module", "module scopes comments locations"] {
 		let prepared = crate::json::Prepared::borrowed(&document, crate::json::Request::from_names(flags))
-			.host(&grammar)
+			.host(&plan)
 			.unwrap();
 		best(&format!("host: 200 each blocks, {flags}"), &mut || {
 			prepared.binary(Entry::Program, 0.0, None, "").unwrap();
@@ -956,11 +955,10 @@ fn alloc_probe() {
 #[test]
 #[ignore]
 fn host_alloc_probe() {
-	let grammar =
-		std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/host.grammar")).unwrap();
+	let plan = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/plan.json")).unwrap();
 	let count = |src: &str| {
 		let prepared = crate::json::Prepared::borrowed(src, crate::json::Request::from_names("module"))
-			.host(&grammar)
+			.host(&plan)
 			.unwrap();
 		prepared.binary(Entry::Program, 0.0, None, "").unwrap();
 		let before = ALLOCATIONS.load(std::sync::atomic::Ordering::Relaxed);

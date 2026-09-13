@@ -4,19 +4,13 @@
 		"start": 0,
 		"end": 405,
 		"scope": 0,
-		"css": null,
-		"js": [],
-		"options": null,
-		"comments": [],
 		"fragment": {
 			"type": "Fragment",
-			"scope": 2,
 			"nodes": [
 				{
 					"type": "SvelteOptions",
 					"start": 0,
 					"end": 24,
-					"name": "svelte:options",
 					"attributes": [
 						{
 							"type": "Attribute",
@@ -28,39 +22,38 @@
 					],
 					"fragment": {
 						"type": "Fragment",
-						"scope": 3,
+						"scope": 4,
 						"nodes": []
-					}
+					},
+					"name": "svelte:options"
 				},
 				{
 					"type": "Text",
 					"start": 24,
 					"end": 25,
-					"raw": "\n",
-					"data": "\n"
+					"data": "\n",
+					"raw": "\n"
 				},
 				{
 					"type": "SvelteHead",
 					"start": 25,
 					"end": 70,
-					"name": "svelte:head",
 					"attributes": [],
 					"fragment": {
 						"type": "Fragment",
-						"scope": 4,
+						"scope": 6,
 						"nodes": [
 							{
 								"type": "TitleElement",
 								"start": 38,
 								"end": 56,
-								"name": "title",
 								"attributes": [],
 								"fragment": {
 									"type": "Fragment",
-									"scope": 5,
+									"scope": 8,
 									"nodes": [
 										{
-											"type": "ExpressionTag",
+											"type": "UnmarkedTag",
 											"start": 45,
 											"end": 48,
 											"expression": {
@@ -73,29 +66,29 @@
 											}
 										}
 									]
-								}
+								},
+								"name": "title"
 							}
 						]
-					}
+					},
+					"name": "svelte:head"
 				},
 				{
 					"type": "Text",
 					"start": 70,
 					"end": 71,
-					"raw": "\n",
-					"data": "\n"
+					"data": "\n",
+					"raw": "\n"
 				},
 				{
 					"type": "SvelteWindow",
 					"start": 71,
 					"end": 102,
-					"name": "svelte:window",
 					"attributes": [
 						{
 							"type": "OnDirective",
 							"start": 86,
 							"end": 99,
-							"name": "resize",
 							"expression": {
 								"type": "Identifier",
 								"start": 97,
@@ -104,136 +97,168 @@
 								"root": 1,
 								"name": "r"
 							},
-							"modifiers": []
+							"modifiers": [],
+							"name": "resize"
 						}
 					],
 					"fragment": {
 						"type": "Fragment",
-						"scope": 6,
+						"scope": 10,
 						"nodes": []
-					}
+					},
+					"name": "svelte:window"
 				},
 				{
 					"type": "Text",
 					"start": 102,
 					"end": 103,
-					"raw": "\n",
-					"data": "\n"
+					"data": "\n",
+					"raw": "\n"
 				},
 				{
 					"type": "SvelteDocument",
 					"start": 103,
 					"end": 122,
-					"name": "svelte:document",
 					"attributes": [],
 					"fragment": {
 						"type": "Fragment",
-						"scope": 7,
+						"scope": 12,
 						"nodes": []
-					}
+					},
+					"name": "svelte:document"
 				},
 				{
 					"type": "Text",
 					"start": 122,
 					"end": 123,
-					"raw": "\n",
-					"data": "\n"
+					"data": "\n",
+					"raw": "\n"
 				},
 				{
 					"type": "SvelteBody",
 					"start": 123,
 					"end": 138,
-					"name": "svelte:body",
 					"attributes": [],
 					"fragment": {
 						"type": "Fragment",
-						"scope": 8,
+						"scope": 14,
 						"nodes": []
-					}
+					},
+					"name": "svelte:body"
 				},
 				{
 					"type": "Text",
 					"start": 138,
 					"end": 139,
-					"raw": "\n",
-					"data": "\n"
+					"data": "\n",
+					"raw": "\n"
 				},
 				{
 					"type": "SvelteElement",
 					"start": 139,
 					"end": 167,
-					"name": "svelte:element",
-					"tag": {
-						"type": "Literal",
-						"start": 161,
-						"end": 163,
-						"root": 2,
-						"value": "h1",
-						"raw": "h1"
-					},
-					"attributes": [],
+					"attributes": [
+						{
+							"type": "Attribute",
+							"start": 155,
+							"end": 164,
+							"name": "this",
+							"value": [
+								{
+									"type": "Text",
+									"start": 161,
+									"end": 163,
+									"data": "h1",
+									"raw": "h1"
+								}
+							]
+						}
+					],
 					"fragment": {
 						"type": "Fragment",
-						"scope": 9,
+						"scope": 16,
 						"nodes": []
-					}
+					},
+					"name": "svelte:element"
 				},
 				{
 					"type": "Text",
 					"start": 167,
 					"end": 168,
-					"raw": "\n",
-					"data": "\n"
+					"data": "\n",
+					"raw": "\n"
 				},
 				{
 					"type": "SvelteElement",
 					"start": 168,
 					"end": 213,
-					"name": "svelte:element",
-					"tag": {
-						"type": "Identifier",
-						"start": 190,
-						"end": 193,
-						"reference": 2,
-						"root": 3,
-						"name": "tag"
-					},
-					"attributes": [],
+					"attributes": [
+						{
+							"type": "Attribute",
+							"start": 184,
+							"end": 194,
+							"name": "this",
+							"value": {
+								"type": "ExpressionTag",
+								"start": 189,
+								"end": 194,
+								"expression": {
+									"type": "Identifier",
+									"start": 190,
+									"end": 193,
+									"reference": 2,
+									"root": 2,
+									"name": "tag"
+								}
+							}
+						}
+					],
 					"fragment": {
 						"type": "Fragment",
-						"scope": 10,
+						"scope": 18,
 						"nodes": [
 							{
 								"type": "Text",
 								"start": 195,
 								"end": 196,
-								"raw": "x",
-								"data": "x"
+								"data": "x",
+								"raw": "x"
 							}
 						]
-					}
+					},
+					"name": "svelte:element"
 				},
 				{
 					"type": "Text",
 					"start": 213,
 					"end": 214,
-					"raw": "\n",
-					"data": "\n"
+					"data": "\n",
+					"raw": "\n"
 				},
 				{
 					"type": "SvelteComponent",
 					"start": 214,
 					"end": 252,
-					"name": "svelte:component",
-					"expression": {
-						"type": "Identifier",
-						"start": 238,
-						"end": 239,
-						"reference": 3,
-						"root": 4,
-						"name": "C"
-					},
 					"attributes": [
+						{
+							"type": "Attribute",
+							"start": 232,
+							"end": 240,
+							"name": "this",
+							"value": {
+								"type": "ExpressionTag",
+								"start": 237,
+								"end": 240,
+								"expression": {
+									"type": "Identifier",
+									"start": 238,
+									"end": 239,
+									"reference": 3,
+									"root": 3,
+									"name": "C"
+								}
+							}
+						},
 						{
 							"type": "Attribute",
 							"start": 241,
@@ -247,7 +272,7 @@
 									"type": "Literal",
 									"start": 247,
 									"end": 248,
-									"root": 5,
+									"root": 4,
 									"value": 1,
 									"raw": "1"
 								}
@@ -256,22 +281,21 @@
 					],
 					"fragment": {
 						"type": "Fragment",
-						"scope": 11,
 						"nodes": []
-					}
+					},
+					"name": "svelte:component"
 				},
 				{
 					"type": "Text",
 					"start": 252,
 					"end": 253,
-					"raw": "\n",
-					"data": "\n"
+					"data": "\n",
+					"raw": "\n"
 				},
 				{
 					"type": "SvelteSelf",
 					"start": 253,
 					"end": 278,
-					"name": "svelte:self",
 					"attributes": [
 						{
 							"type": "Attribute",
@@ -287,7 +311,7 @@
 									"start": 273,
 									"end": 274,
 									"reference": 4,
-									"root": 6,
+									"root": 5,
 									"name": "d"
 								}
 							}
@@ -295,22 +319,21 @@
 					],
 					"fragment": {
 						"type": "Fragment",
-						"scope": 12,
 						"nodes": []
-					}
+					},
+					"name": "svelte:self"
 				},
 				{
 					"type": "Text",
 					"start": 278,
 					"end": 279,
-					"raw": "\n",
-					"data": "\n"
+					"data": "\n",
+					"raw": "\n"
 				},
 				{
 					"type": "SvelteFragment",
 					"start": 279,
 					"end": 328,
-					"name": "svelte:fragment",
 					"attributes": [
 						{
 							"type": "Attribute",
@@ -322,70 +345,69 @@
 									"type": "Text",
 									"start": 302,
 									"end": 307,
-									"raw": "named",
-									"data": "named"
+									"data": "named",
+									"raw": "named"
 								}
 							]
 						}
 					],
 					"fragment": {
 						"type": "Fragment",
-						"scope": 13,
+						"scope": 22,
 						"nodes": [
 							{
 								"type": "Text",
 								"start": 309,
 								"end": 310,
-								"raw": "y",
-								"data": "y"
+								"data": "y",
+								"raw": "y"
 							}
 						]
-					}
+					},
+					"name": "svelte:fragment"
 				},
 				{
 					"type": "Text",
 					"start": 328,
 					"end": 329,
-					"raw": "\n",
-					"data": "\n"
+					"data": "\n",
+					"raw": "\n"
 				},
 				{
 					"type": "SvelteBoundary",
 					"start": 329,
 					"end": 373,
-					"name": "svelte:boundary",
 					"attributes": [],
 					"fragment": {
 						"type": "Fragment",
-						"scope": 14,
+						"scope": 24,
 						"nodes": [
 							{
 								"type": "Component",
 								"start": 346,
 								"end": 355,
-								"name": "Inner",
 								"attributes": [],
 								"fragment": {
 									"type": "Fragment",
-									"scope": 15,
 									"nodes": []
-								}
+								},
+								"name": "Inner"
 							}
 						]
-					}
+					},
+					"name": "svelte:boundary"
 				},
 				{
 					"type": "Text",
 					"start": 373,
 					"end": 374,
-					"raw": "\n",
-					"data": "\n"
+					"data": "\n",
+					"raw": "\n"
 				},
 				{
 					"type": "SlotElement",
 					"start": 374,
 					"end": 404,
-					"name": "slot",
 					"attributes": [
 						{
 							"type": "Attribute",
@@ -397,25 +419,26 @@
 									"type": "Text",
 									"start": 386,
 									"end": 387,
-									"raw": "s",
-									"data": "s"
+									"data": "s",
+									"raw": "s"
 								}
 							]
 						}
 					],
 					"fragment": {
 						"type": "Fragment",
-						"scope": 16,
+						"scope": 27,
 						"nodes": [
 							{
 								"type": "Text",
 								"start": 389,
 								"end": 397,
-								"raw": "fallback",
-								"data": "fallback"
+								"data": "fallback",
+								"raw": "fallback"
 							}
 						]
-					}
+					},
+					"name": "slot"
 				}
 			]
 		}
@@ -429,7 +452,7 @@
 			"topLevelAwait": false
 		},
 		{
-			"kind": "fragment",
+			"kind": "script",
 			"parent": 0,
 			"topLevelAwait": false
 		},
@@ -439,6 +462,86 @@
 			"topLevelAwait": false
 		},
 		{
+			"kind": "block",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 3,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 5,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 6,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 7,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 9,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 11,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 13,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 15,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 17,
+			"topLevelAwait": false
+		},
+		{
 			"kind": "fragment",
 			"parent": 2,
 			"topLevelAwait": false
@@ -449,77 +552,52 @@
 			"topLevelAwait": false
 		},
 		{
-			"kind": "fragment",
-			"parent": 4,
-			"topLevelAwait": false
-		},
-		{
-			"kind": "fragment",
+			"kind": "block",
 			"parent": 2,
 			"topLevelAwait": false
 		},
 		{
 			"kind": "fragment",
+			"parent": 21,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
 			"parent": 2,
 			"topLevelAwait": false
 		},
 		{
 			"kind": "fragment",
+			"parent": 23,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 24,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
 			"parent": 2,
 			"topLevelAwait": false
 		},
 		{
 			"kind": "fragment",
-			"parent": 2,
-			"topLevelAwait": false
-		},
-		{
-			"kind": "fragment",
-			"parent": 2,
-			"topLevelAwait": false
-		},
-		{
-			"kind": "fragment",
-			"parent": 2,
-			"topLevelAwait": false
-		},
-		{
-			"kind": "fragment",
-			"parent": 2,
-			"topLevelAwait": false
-		},
-		{
-			"kind": "fragment",
-			"parent": 2,
-			"topLevelAwait": false
-		},
-		{
-			"kind": "fragment",
-			"parent": 2,
-			"topLevelAwait": false
-		},
-		{
-			"kind": "fragment",
-			"parent": 14,
-			"topLevelAwait": false
-		},
-		{
-			"kind": "fragment",
-			"parent": 2,
+			"parent": 26,
 			"topLevelAwait": false
 		}
 	],
 	"bindings": [],
 	"references": [
 		{
-			"scope": 5,
+			"scope": 8,
 			"binding": null,
 			"write": false,
 			"read": true,
 			"mutate": false
 		},
 		{
-			"scope": 2,
+			"scope": 9,
 			"binding": null,
 			"write": false,
 			"read": true,
@@ -549,10 +627,10 @@
 	],
 	"roots": [
 		{
-			"scope": 5,
+			"scope": 8,
 			"scopes": [
-				6,
-				6
+				9,
+				9
 			],
 			"bindings": [
 				0,
@@ -564,10 +642,10 @@
 			]
 		},
 		{
-			"scope": 2,
+			"scope": 9,
 			"scopes": [
-				6,
-				6
+				11,
+				11
 			],
 			"bindings": [
 				0,
@@ -581,23 +659,8 @@
 		{
 			"scope": 2,
 			"scopes": [
-				9,
-				9
-			],
-			"bindings": [
-				0,
-				0
-			],
-			"references": [
-				2,
-				2
-			]
-		},
-		{
-			"scope": 2,
-			"scopes": [
-				10,
-				10
+				19,
+				19
 			],
 			"bindings": [
 				0,
@@ -611,8 +674,8 @@
 		{
 			"scope": 2,
 			"scopes": [
-				11,
-				11
+				20,
+				20
 			],
 			"bindings": [
 				0,
@@ -626,8 +689,8 @@
 		{
 			"scope": 2,
 			"scopes": [
-				11,
-				11
+				20,
+				20
 			],
 			"bindings": [
 				0,
@@ -641,8 +704,8 @@
 		{
 			"scope": 2,
 			"scopes": [
-				12,
-				12
+				21,
+				21
 			],
 			"bindings": [
 				0,

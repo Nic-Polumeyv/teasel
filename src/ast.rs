@@ -148,7 +148,7 @@ pub struct Node {
 	pub end: u32,
 }
 
-/// A node of a host's grammar: its type and its fields are the grammar's, held by name.
+/// A node of a host's plan: its type and its fields are the plan's, held by name.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Host {
 	pub ty: StrId,
@@ -156,27 +156,6 @@ pub struct Host {
 	pub fields: (u32, u32),
 	/// Whether the node has a span; a fragment has none.
 	pub span: bool,
-	/// The scope the node opens, when it opens one.
-	pub scope: Option<Opens>,
-}
-
-/// The scopes a host node opens: the patterns it declares around itself, and its groups, a run
-/// of `Ast::host_groups`.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Opens {
-	pub outside: List,
-	pub groups: (u32, u32),
-}
-
-/// One scope a host node opens over a run of its fields: the patterns declared in it, the
-/// fields inside it, and the node the scope belongs to when it is not the host node itself, a
-/// body's fragment say.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct HostGroup {
-	pub inside: List,
-	pub from: u32,
-	pub until: u32,
-	pub node: Option<NodeId>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -198,7 +177,6 @@ pub struct HostRegion {
 pub struct HostBinding {
 	pub target: HostParent,
 	pub kind: crate::host::plan::DeclareKind,
-	pub pattern: NodeId,
 }
 
 /// A host node's field.
@@ -232,7 +210,6 @@ pub struct Ast<X = ()> {
 	pub host_fields: Vec<(StrId, Value)>,
 	pub host_strings: Vec<StrId>,
 	pub host_values: Vec<Value>,
-	pub host_groups: Vec<HostGroup>,
 	pub host_plan: bool,
 	pub host_regions: Vec<HostRegion>,
 	pub host_coverage: NodeMap<Vec<u32>>,
@@ -317,7 +294,6 @@ pub(crate) struct Mark<M> {
 	host_fields: usize,
 	host_strings: usize,
 	host_values: usize,
-	host_groups: usize,
 	comments: usize,
 	errors: usize,
 }
@@ -329,7 +305,6 @@ impl<X: Reuse> Ast<X> {
 		self.host_fields.clear();
 		self.host_strings.clear();
 		self.host_values.clear();
-		self.host_groups.clear();
 		self.host_plan = false;
 		self.host_regions.clear();
 		self.host_coverage.clear();
@@ -361,7 +336,6 @@ impl<X: Reuse> Ast<X> {
 			host_fields: self.host_fields.len(),
 			host_strings: self.host_strings.len(),
 			host_values: self.host_values.len(),
-			host_groups: self.host_groups.len(),
 			comments: self.comments.len(),
 			errors: self.errors.len(),
 		}
@@ -378,7 +352,6 @@ impl<X: Reuse> Ast<X> {
 		self.host_fields.truncate(mark.host_fields);
 		self.host_strings.truncate(mark.host_strings);
 		self.host_values.truncate(mark.host_values);
-		self.host_groups.truncate(mark.host_groups);
 		self.comments.truncate(mark.comments);
 		self.errors.truncate(mark.errors);
 	}
@@ -423,14 +396,22 @@ impl<X> Ast<X> {
 	fn host_children(&self, index: u32, out: &mut Vec<NodeId>) {
 		let host = self.hosts[index as usize];
 		for &(_, value) in &self.host_fields[host.fields.0 as usize..(host.fields.0 + host.fields.1) as usize] {
-			match value {
-				Value::Node(child) => match self.node(child).kind {
-					NodeKind::Host(inner) if !self.hosts[inner as usize].span => self.host_children(inner, out),
-					_ => out.push(child),
-				},
-				Value::Nodes(children) => out.extend(self.list(children).iter().flatten()),
-				_ => {}
+			self.host_value_children(value, out);
+		}
+	}
+	fn host_value_children(&self, value: Value, out: &mut Vec<NodeId>) {
+		match value {
+			Value::Node(child) => match self.node(child).kind {
+				NodeKind::Host(inner) if !self.hosts[inner as usize].span => self.host_children(inner, out),
+				_ => out.push(child),
+			},
+			Value::Nodes(children) => out.extend(self.list(children).iter().flatten()),
+			Value::Array(start, len) => {
+				for &value in &self.host_values[start as usize..(start + len) as usize] {
+					self.host_value_children(value, out);
+				}
 			}
+			_ => {}
 		}
 	}
 
@@ -979,7 +960,7 @@ pub enum NodeKind {
 
 	/// A node owned by a parser extension, indexed into its own data.
 	Extension(u32),
-	/// A node of the host's grammar, indexed into `Ast::hosts`.
+	/// A node of the host's plan, indexed into `Ast::hosts`.
 	Host(u32),
 }
 

@@ -1,27 +1,2080 @@
-//! The host layer: a template language read by its grammar, the JavaScript inside it read by
-//! the parser, one tree for both. The walker knows what every such language shares, tags and
-//! text and where JavaScript begins; the grammar says the rest.
-
 mod css;
 pub mod entities;
-pub mod executor;
-pub mod grammar;
+mod native;
 pub mod plan;
 
 use std::borrow::Cow;
 
-use crate::ast::{Ast, Comment, CommentKind, Host, HostGroup, List, NodeId, NodeKind, Opens, Value, VariableKind};
+use std::collections::BTreeMap;
+use std::rc::Rc;
+
+use self::plan::{
+	Absence, AttributeMode, Base, Boundary, Construct, Form, Gap, Js, Mode, Path, Plan, Reader, Relation, SpanPolicy,
+	Stop,
+};
+use crate::ast::{Ast, Host, HostBinding, HostParent, HostRegion, List, NodeId, NodeKind, Value};
 use crate::error::{Code, SyntaxError};
 use crate::interner::StrId;
 use crate::lexer::unicode::{is_id_continue, is_id_start};
-use crate::parser::{Entry as JsEntry, Extension, Options, Parser, Result};
-pub use grammar::Grammar;
-use grammar::{
-	Alternative, BlockRule, Body, DirectiveRule, DirectiveValue, DocField, Entry, Form, Item, Match, RootField,
-	TagRule, Unique, component_name,
-};
+use crate::parser::{Entry, Extension, ForInit, Options, Parser, Result};
 
-/// Whether the browser closes `current` when `next` opens inside it.
+#[derive(Clone, Debug, PartialEq)]
+enum Datum {
+	Missing,
+	Null,
+	Bool(bool),
+	Number(f64),
+	Text(Rc<str>),
+	Interned(StrId),
+	Static(&'static str),
+	Slice(u32, u32),
+	Span(u32, u32, bool),
+	Node(NodeId),
+	Nodes(List),
+	Array(Rc<Vec<Datum>>),
+	Object(Rc<BTreeMap<Rc<str>, Datum>>),
+	Facts(Rc<Vec<(&'static str, Datum)>>),
+	Record(usize),
+	Scopes(usize),
+	Region(usize, usize),
+	Incoming(usize),
+}
+
+impl Datum {
+	fn yes(&self) -> bool {
+		matches!(self, Self::Bool(true))
+	}
+	fn facts(fields: impl IntoIterator<Item = (&'static str, Datum)>) -> Self {
+		Self::Facts(Rc::new(fields.into_iter().collect()))
+	}
+	fn object(fields: impl IntoIterator<Item = (impl Into<Rc<str>>, Datum)>) -> Self {
+		Self::Object(Rc::new(fields.into_iter().map(|(k, v)| (k.into(), v)).collect()))
+	}
+	fn array(items: Vec<Datum>) -> Self {
+		Self::Array(Rc::new(items))
+	}
+}
+
+#[derive(Clone)]
+struct Record {
+	failure: Option<Box<SyntaxError>>,
+	body_end: Option<u32>,
+	children_end: Option<u32>,
+	aborted: bool,
+	parent: Option<usize>,
+	rule: usize,
+	ty: Rc<str>,
+	slots: Vec<Datum>,
+	event: Datum,
+	owner: Option<usize>,
+	ancestors: Vec<usize>,
+	start: u32,
+	node: Option<NodeId>,
+}
+
+#[derive(Clone)]
+struct Element {
+	record: usize,
+	name: (u32, u32),
+	empty: bool,
+	attributes: Option<List>,
+	content: Mode,
+}
+
+#[derive(Clone, Copy)]
+struct Autoclosed {
+	previous: (u32, u32),
+	by: (u32, u32),
+	depth: usize,
+}
+
+struct Checkpoint<M> {
+	ast: crate::ast::Mark<M>,
+	at: u32,
+	limit: u32,
+	records: usize,
+	record: Record,
+	elements: Vec<Element>,
+	iteration: Vec<Vec<(Rc<str>, Datum)>>,
+	autoclosed: Option<Autoclosed>,
+}
+
+pub fn parse(src: &str, plan: &Plan, options: Options) -> (Ast, std::result::Result<NodeId, Box<crate::SyntaxError>>) {
+	parse_document::<()>(src, plan, options, None)
+}
+
+pub(crate) fn parse_document<E: Extension>(
+	src: &str,
+	plan: &Plan,
+	options: Options,
+	reused: Option<Ast<E::Data>>,
+) -> (Ast<E::Data>, Result<NodeId>) {
+	let cut = if plan.html.trim_end {
+		src.trim_end_matches(is_space)
+	} else {
+		src
+	};
+	let mut w = Walker::<E> {
+		src: cut,
+		full: src.len() as u32,
+		plan,
+		options,
+		ast: Some(reused.unwrap_or_else(|| Ast::sized(src.len()))),
+		at: 0,
+		limit: cut.len() as u32,
+		records: Vec::new(),
+		elements: Vec::new(),
+		active: Vec::new(),
+		iteration: Vec::new(),
+		bindings: Vec::new(),
+		region_slots: Vec::new(),
+		resolving: Vec::new(),
+		node_records: Default::default(),
+		recovering_form: false,
+		native_reads: 0,
+		autoclosed: None,
+	};
+	let result = w.call(plan.document, Datum::Missing, None, "").and_then(|node| {
+		if w.at != w.limit {
+			return fail(w.at, w.at, Code::UnexpectedToken, None);
+		}
+		w.ast().nodes[node.index() as usize].end = w.full;
+		w.regions()?;
+		Ok(node)
+	});
+	let errors = &mut w.ast().errors;
+	errors.sort_by_key(|error| error.pos);
+	errors.dedup_by(|a, b| a.pos == b.pos && a.code == b.code);
+	(w.ast.take().unwrap(), result)
+}
+
+struct Walker<'a, E: Extension> {
+	src: &'a str,
+	full: u32,
+	plan: &'a Plan,
+	options: Options,
+	ast: Option<Ast<E::Data>>,
+	at: u32,
+	limit: u32,
+	records: Vec<Record>,
+	elements: Vec<Element>,
+	active: Vec<usize>,
+	iteration: Vec<Vec<(Rc<str>, Datum)>>,
+	bindings: Vec<(Rc<str>, Datum)>,
+	region_slots: Vec<Vec<Option<Vec<HostParent>>>>,
+	resolving: Vec<(usize, usize)>,
+	node_records: crate::ast::NodeMap<usize>,
+	recovering_form: bool,
+	native_reads: usize,
+	autoclosed: Option<Autoclosed>,
+}
+
+impl<'a, E: Extension> Walker<'a, E> {
+	fn ast(&mut self) -> &mut Ast<E::Data> {
+		self.ast.as_mut().unwrap()
+	}
+	fn tree(&self) -> &Ast<E::Data> {
+		self.ast.as_ref().unwrap()
+	}
+	fn rest(&self) -> &'a str {
+		&self.src[self.at as usize..self.limit as usize]
+	}
+	fn char(&self) -> Option<char> {
+		self.rest().chars().next()
+	}
+	fn matches(&self, text: &str) -> bool {
+		self.rest().starts_with(text)
+	}
+	fn eat(&mut self, text: &str) -> bool {
+		if !self.matches(text) {
+			return false;
+		}
+		self.at += text.len() as u32;
+		true
+	}
+	fn expect(&mut self, text: &str) -> Result<()> {
+		if self.eat(text) {
+			Ok(())
+		} else {
+			self.report(error(self.at, self.at, Code::Expected, Some(text)))
+		}
+	}
+	fn report(&mut self, error: Box<crate::SyntaxError>) -> Result<()> {
+		if self.options.error_recovery {
+			self.ast().errors.push(*error);
+			Ok(())
+		} else {
+			Err(error)
+		}
+	}
+	fn space(&mut self) {
+		while let Some(c) = self.char().filter(|c| is_space(*c)) {
+			self.at += c.len_utf8() as u32;
+		}
+	}
+	fn intern(&mut self, text: &str) -> StrId {
+		self.ast().strings.intern(text)
+	}
+	fn list(&mut self, nodes: &[NodeId]) -> List {
+		self.ast().add_list_from(nodes.iter().copied().map(Some))
+	}
+	fn text_of<'b>(&'b self, value: &'b Datum) -> Option<&'b str> {
+		match value {
+			Datum::Text(s) => Some(s),
+			Datum::Interned(id) => Some(self.tree().str(*id)),
+			Datum::Static(s) => Some(s),
+			Datum::Slice(a, b) => self.src.get(*a as usize..*b as usize),
+			_ => None,
+		}
+	}
+	fn count(&self, value: &Datum) -> usize {
+		match value {
+			Datum::Array(items) => items.len(),
+			Datum::Nodes(list) => list.len as usize,
+			_ => 0,
+		}
+	}
+	fn item(&self, value: &Datum, index: usize) -> Datum {
+		match value {
+			Datum::Array(items) => items.get(index).cloned().unwrap_or(Datum::Missing),
+			Datum::Nodes(list) => self
+				.tree()
+				.list(*list)
+				.get(index)
+				.map_or(Datum::Missing, |node| node.map_or(Datum::Null, Datum::Node)),
+			_ => Datum::Missing,
+		}
+	}
+	fn items(&self, value: &Datum) -> Vec<Datum> {
+		(0..self.count(value)).map(|i| self.item(value, i)).collect()
+	}
+
+	fn slot(&self, record: usize, name: &str) -> Option<usize> {
+		let rule = &self.plan.rules[self.records[record].rule];
+		rule.fields.keys().position(|key| key.as_ref() == name).or_else(|| {
+			rule.locals
+				.iter()
+				.position(|key| key.as_ref() == name)
+				.map(|i| i + rule.fields.len())
+		})
+	}
+	fn write(&mut self, record: usize, name: &str, value: Datum) {
+		if value == Datum::Missing {
+			return;
+		}
+		if let Some(index) = self.slot(record, name) {
+			self.records[record].slots[index] = value;
+		} else if let Some(slots) = self.iteration.last_mut()
+			&& let Some((_, slot)) = slots.iter_mut().find(|(key, _)| key.as_ref() == name)
+		{
+			*slot = value;
+		}
+	}
+	fn datum(&self, value: Value) -> Datum {
+		match value {
+			Value::Node(id) => Datum::Node(id),
+			Value::Nodes(list) => Datum::Nodes(list),
+			Value::Str(id) => Datum::Interned(id),
+			Value::Slice(a, b) => Datum::Slice(a, b),
+			Value::Strs(a, n) => Datum::array(
+				self.tree().host_strings[a as usize..(a + n) as usize]
+					.iter()
+					.map(|id| Datum::Interned(*id))
+					.collect(),
+			),
+			Value::Float(v) => Datum::Number(v),
+			Value::Array(a, n) => Datum::array(
+				self.tree().host_values[a as usize..(a + n) as usize]
+					.iter()
+					.map(|v| self.datum(*v))
+					.collect(),
+			),
+			Value::Bool(v) => Datum::Bool(v),
+			Value::Int(v) => Datum::Number(v as f64),
+			Value::Null | Value::Comments => Datum::Null,
+		}
+	}
+	fn property(&self, value: Datum, path: &Path) -> Datum {
+		let Path::Name(key) = path else {
+			let Path::Index(index) = path else { unreachable!() };
+			return self.item(&value, *index);
+		};
+		match value {
+			Datum::Object(fields) => fields.get(key.as_ref()).cloned().unwrap_or(Datum::Missing),
+			Datum::Facts(fields) => fields
+				.iter()
+				.find(|(k, _)| *k == key.as_ref())
+				.map_or(Datum::Missing, |(_, v)| v.clone()),
+			Datum::Record(index) => {
+				let rec = &self.records[index];
+				match key.as_ref() {
+					"type" => Datum::Text(rec.ty.clone()),
+					"span" => Datum::Span(
+						rec.start,
+						rec.node.map_or(self.at, |id| self.tree().node(id).end),
+						false,
+					),
+					"header" => self.property(rec.event.clone(), path),
+					"scopes" => Datum::Scopes(index),
+					_ => self.slot(index, key).map_or(Datum::Missing, |i| rec.slots[i].clone()),
+				}
+			}
+			Datum::Scopes(index) => self.plan.rules[self.records[index].rule]
+				.regions
+				.iter()
+				.position(|r| r.id.as_ref() == key.as_ref())
+				.map_or(Datum::Missing, |r| Datum::Region(index, r)),
+			Datum::Span(a, b, dynamic) => match key.as_ref() {
+				"start" => Datum::Number(a as f64),
+				"end" => Datum::Number(b as f64),
+				"span" => Datum::Span(a, b, dynamic),
+				"text" => Datum::Slice(a, b),
+				"dynamic" => Datum::Bool(dynamic),
+				_ => Datum::Missing,
+			},
+			Datum::Node(id) => {
+				let node = self.tree().node(id);
+				match key.as_ref() {
+					"span" => return Datum::Span(node.start, node.end, false),
+					"raw"
+						if matches!(
+							node.kind,
+							NodeKind::NumberLiteral { .. }
+								| NodeKind::StringLiteral { .. }
+								| NodeKind::BooleanLiteral { .. }
+								| NodeKind::NullLiteral | NodeKind::BigIntLiteral
+								| NodeKind::RegExpLiteral { .. }
+						) =>
+					{
+						return Datum::Slice(node.start, node.end);
+					}
+					"start" => return Datum::Number(node.start as f64),
+					"end" => return Datum::Number(node.end as f64),
+					"innerSource" if node.end > node.start + 1 => return Datum::Slice(node.start + 1, node.end - 1),
+					"header" => {
+						return self.node_records.get(id).map_or(Datum::Missing, |index| {
+							self.property(self.records[*index].event.clone(), path)
+						});
+					}
+					_ => {}
+				}
+				match node.kind {
+					NodeKind::Host(index) => {
+						let host = &self.tree().hosts[index as usize];
+						if key.as_ref() == "type" {
+							return Datum::Interned(host.ty);
+						}
+						self.tree().host_fields[host.fields.0 as usize..(host.fields.0 + host.fields.1) as usize]
+							.iter()
+							.find(|(k, _)| self.tree().str(*k) == key.as_ref())
+							.map_or(Datum::Missing, |(_, v)| self.datum(*v))
+					}
+					NodeKind::Identifier { name } if key.as_ref() == "name" => Datum::Interned(name),
+					_ => self.native_property(id, key),
+				}
+			}
+			_ => Datum::Missing,
+		}
+	}
+	fn constant(value: &plan::Json) -> Datum {
+		match value {
+			plan::Json::Null => Datum::Null,
+			plan::Json::Bool(v) => Datum::Bool(*v),
+			plan::Json::Number(v) => Datum::Number(v.parse().unwrap_or(0.0)),
+			plan::Json::String(v) => Datum::Text(v.clone()),
+			plan::Json::Array(v) if v.is_empty() => Datum::Nodes(List::EMPTY),
+			plan::Json::Array(v) => Datum::array(v.iter().map(Self::constant).collect()),
+			plan::Json::Object(v) => Datum::object(v.iter().map(|(k, v)| (k.as_ref(), Self::constant(v)))),
+		}
+	}
+	fn equal(&self, a: &Datum, b: &Datum) -> bool {
+		if matches!(a, Datum::Array(_) | Datum::Nodes(_)) && matches!(b, Datum::Array(_) | Datum::Nodes(_)) {
+			return self.count(a) == self.count(b)
+				&& (0..self.count(a)).all(|i| self.equal(&self.item(a, i), &self.item(b, i)));
+		}
+		match (self.text_of(a), self.text_of(b)) {
+			(Some(a), Some(b)) => a == b,
+			_ => a == b,
+		}
+	}
+	fn eval(&mut self, expr: &plan::Value, record: usize) -> Result<Datum> {
+		use plan::Value as V;
+		Ok(match expr {
+			V::Constant(value) => Self::constant(value),
+			V::Get { base, path } => {
+				let mut value = match base {
+					Base::Value(value) => self.eval(value, record)?,
+					Base::Name(name) => match name.as_ref() {
+						"record" => Datum::Record(record),
+						"event" => self.records[record].event.clone(),
+						"locals" => Datum::Record(record),
+						"iteration" => Datum::object(self.iteration.last().into_iter().flatten().cloned()),
+						"owner" => self.records[record].owner.map_or(Datum::Missing, Datum::Record),
+						"ancestors" => Datum::array(
+							self.records[record]
+								.ancestors
+								.iter()
+								.rev()
+								.copied()
+								.map(Datum::Record)
+								.collect(),
+						),
+						"incoming" => Datum::Incoming(record),
+						"scopes" => Datum::Scopes(record),
+						_ => self
+							.bindings
+							.iter()
+							.rev()
+							.find(|(key, _)| key.as_ref() == name.as_ref())
+							.map_or(Datum::Missing, |(_, v)| v.clone()),
+					},
+				};
+				for part in path {
+					value = self.property(value, part);
+				}
+				value
+			}
+			V::Compare {
+				relation,
+				left,
+				right,
+				set,
+			} => {
+				if let Some(set) = set {
+					let needle = self.eval(&set.needle, record)?;
+					return Ok(Datum::Bool(
+						self.text_of(&needle).is_some_and(|s| set.strings.contains(s)),
+					));
+				}
+				let left = self.eval(left, record)?;
+				let yes = match relation {
+					Relation::Present => left != Datum::Missing,
+					Relation::Equal => {
+						let right = self.eval(right.as_ref().unwrap(), record)?;
+						self.equal(&left, &right)
+					}
+					Relation::Less => {
+						let right = self.eval(right.as_ref().unwrap(), record)?;
+						matches!((left,right),(Datum::Number(a),Datum::Number(b)) if a<b)
+					}
+				};
+				Datum::Bool(yes)
+			}
+			V::Choose { condition, yes, no } => {
+				let condition = self.eval(condition, record)?.yes();
+				self.eval(if condition { yes } else { no }, record)?
+			}
+			V::FlatMap { .. } => {
+				let mut out = Vec::new();
+				self.eval_list(expr, record, &mut |_, value| {
+					out.push(value);
+					Ok(true)
+				})?;
+				Datum::array(out)
+			}
+			V::Length(list) => {
+				let mut count = 0;
+				self.eval_list(list, record, &mut |_, _| {
+					count += 1;
+					Ok(true)
+				})?;
+				Datum::Number(count as f64)
+			}
+			V::At { list, index } => {
+				let index = self.eval(index, record)?;
+				let mut out = Datum::Missing;
+				if let Datum::Number(index) = index
+					&& index >= 0.0 && index.fract() == 0.0
+				{
+					let mut n = 0;
+					self.eval_list(list, record, &mut |_, value| {
+						if n == index as usize {
+							out = value;
+							return Ok(false);
+						}
+						n += 1;
+						Ok(true)
+					})?;
+				}
+				out
+			}
+			V::Construct(Construct::Array(items)) => {
+				Datum::array(items.iter().map(|v| self.eval(v, record)).collect::<Result<_>>()?)
+			}
+			V::Construct(Construct::Record {
+				node_type,
+				fields,
+				span,
+			}) => {
+				let span = self.eval(span, record)?;
+				let (start, end) = match span {
+					Datum::Span(a, b, _) => (a, b),
+					_ => (self.at, self.at),
+				};
+				let fields = fields
+					.iter()
+					.map(|(k, v)| Ok((k.as_ref(), self.eval(v, record)?)))
+					.collect::<Result<Vec<_>>>()?;
+				Datum::Node(self.make(
+					node_type.as_deref().unwrap_or(""),
+					start,
+					end,
+					&fields,
+					span != Datum::Null,
+				)?)
+			}
+		})
+	}
+	fn eval_list(
+		&mut self,
+		expr: &plan::Value,
+		record: usize,
+		emit: &mut dyn FnMut(&mut Self, Datum) -> Result<bool>,
+	) -> Result<bool> {
+		use plan::Value as V;
+		match expr {
+			V::FlatMap { list, binding, body } => self.eval_list(list, record, &mut |this, item| {
+				this.bindings.push((binding.clone(), item));
+				let result = this.eval_list(body, record, emit);
+				this.bindings.pop();
+				result
+			}),
+			V::Choose { condition, yes, no } => {
+				let condition = self.eval(condition, record)?.yes();
+				self.eval_list(if condition { yes } else { no }, record, emit)
+			}
+			V::Construct(Construct::Array(items)) => {
+				for item in items {
+					let item = self.eval(item, record)?;
+					if !emit(self, item)? {
+						return Ok(false);
+					}
+				}
+				Ok(true)
+			}
+			_ => {
+				let list = self.eval(expr, record)?;
+				for i in 0..self.count(&list) {
+					let item = self.item(&list, i);
+					if !emit(self, item)? {
+						return Ok(false);
+					}
+				}
+				Ok(true)
+			}
+		}
+	}
+	fn output(&mut self, value: &Datum) -> Result<Value> {
+		Ok(match value {
+			Datum::Missing | Datum::Null | Datum::Scopes(_) | Datum::Region(..) | Datum::Incoming(_) => Value::Null,
+			Datum::Bool(v) => Value::Bool(*v),
+			Datum::Number(v) if *v >= 0.0 && *v <= u32::MAX as f64 && v.fract() == 0.0 => Value::Int(*v as u32),
+			Datum::Number(v) => Value::Float(*v),
+			Datum::Text(v) => Value::Str(self.intern(v)),
+			Datum::Interned(id) => Value::Str(*id),
+			Datum::Static(v) => Value::Str(self.intern(v)),
+			Datum::Slice(a, b) => Value::Slice(*a, *b),
+			Datum::Node(id) => Value::Node(*id),
+			Datum::Nodes(list) => Value::Nodes(*list),
+			Datum::Array(items) => {
+				if !items.is_empty() && items.iter().all(|v| self.text_of(v).is_some()) {
+					let start = self.tree().host_strings.len() as u32;
+					for v in items.iter() {
+						let text = self.text_of(v).unwrap().to_owned();
+						let id = self.intern(&text);
+						self.ast().host_strings.push(id);
+					}
+					Value::Strs(start, items.len() as u32)
+				} else if !items
+					.iter()
+					.all(|v| matches!(v, Datum::Node(_) | Datum::Null | Datum::Missing))
+				{
+					let values = items.iter().map(|v| self.output(v)).collect::<Result<Vec<_>>>()?;
+					let start = self.tree().host_values.len() as u32;
+					self.ast().host_values.extend(values);
+					Value::Array(start, items.len() as u32)
+				} else {
+					let nodes = items
+						.iter()
+						.map(|v| match v {
+							Datum::Node(id) => Some(*id),
+							_ => None,
+						})
+						.collect::<Vec<_>>();
+					Value::Nodes(self.ast().add_list_from(nodes.into_iter()))
+				}
+			}
+			Datum::Facts(fields) => Value::Node(self.make("", self.at, self.at, fields, false)?),
+			Datum::Object(fields) => {
+				let fields = fields.iter().map(|(k, v)| (k.as_ref(), v.clone())).collect::<Vec<_>>();
+				Value::Node(self.make("", self.at, self.at, &fields, false)?)
+			}
+			Datum::Record(rec) => self.records[*rec].node.map_or(Value::Null, Value::Node),
+			Datum::Span(a, b, _) => {
+				let fields = [("start", Datum::Number(*a as f64)), ("end", Datum::Number(*b as f64))];
+				Value::Node(self.make("", *a, *b, &fields, false)?)
+			}
+		})
+	}
+	fn make(&mut self, ty: &str, start: u32, end: u32, fields: &[(&str, Datum)], span: bool) -> Result<NodeId> {
+		if ty.starts_with("js.") {
+			let kind = self.native_construct(ty, start, end, fields)?;
+			return Ok(self.ast().add(kind, start, end));
+		}
+		let mut values = Vec::with_capacity(fields.len());
+		for (key, value) in fields {
+			if *value != Datum::Missing {
+				values.push((self.intern(key), self.output(value)?));
+			}
+		}
+		let from = self.tree().host_fields.len() as u32;
+		self.ast().host_fields.extend(values);
+		let len = self.tree().host_fields.len() as u32 - from;
+		let ty = self.intern(ty);
+		let index = self.tree().hosts.len() as u32;
+		self.ast().hosts.push(Host {
+			ty,
+			fields: (from, len),
+			span,
+		});
+		Ok(self.ast().add(NodeKind::Host(index), start, end))
+	}
+	fn call(&mut self, rule: usize, event: Datum, ty: Option<&str>, follow: &str) -> Result<NodeId> {
+		if self.active.len() > 256 {
+			return fail(self.at, self.at, Code::TreeSize, None);
+		}
+		let schema = &self.plan.rules[rule];
+		let record = self.records.len();
+		self.records.push(Record {
+			failure: None,
+			body_end: None,
+			children_end: None,
+			aborted: false,
+			parent: self.active.last().copied(),
+			rule,
+			ty: ty.unwrap_or(&schema.node_type).into(),
+			slots: vec![Datum::Missing; schema.fields.len() + schema.locals.len()],
+			event,
+			owner: self
+				.elements
+				.iter()
+				.rev()
+				.find(|e| e.record != record)
+				.map(|e| e.record),
+			ancestors: self
+				.elements
+				.iter()
+				.filter(|e| e.record != record)
+				.map(|e| e.record)
+				.collect(),
+			start: self.at,
+			node: None,
+		});
+		self.active.push(record);
+		let result = if self.options.error_recovery && !self.recovering_form {
+			let checkpoint = self.checkpoint(record);
+			match self.strict(&schema.form, record, follow) {
+				Ok(()) => Ok(()),
+				Err(_) => {
+					self.restore(record, checkpoint);
+					self.recovering_form = true;
+					let result = self.form(&schema.form, record, follow);
+					self.recovering_form = false;
+					result
+				}
+			}
+		} else {
+			self.form(&schema.form, record, follow)
+		};
+		self.active.pop();
+		result.map_err(|error| {
+			self.records[record]
+				.failure
+				.take()
+				.filter(|failure| failure.pos > error.pos)
+				.unwrap_or(error)
+		})?;
+		if self
+			.elements
+			.last()
+			.is_some_and(|e| e.record == record && e.content == Mode::Raw)
+		{
+			let raw = self.property(self.records[record].event.clone(), &Path::Name("rawChildren".into()));
+			if let Datum::Span(_, end, _) = raw
+				&& self.at <= end
+			{
+				self.at = end;
+				let element = self.elements.last().unwrap();
+				let name = &self.src[element.name.0 as usize..element.name.1 as usize];
+				if let Some(len) = closing_tag(self.rest(), name) {
+					self.at += len as u32;
+				} else {
+					self.report(error(self.at, self.at, Code::Unclosed, Some(name)))?;
+				}
+			}
+		}
+		for (i, absence) in schema.fields.values().enumerate() {
+			if self.records[record].slots[i] == Datum::Missing && *absence == Absence::Null {
+				self.records[record].slots[i] = Datum::Null;
+			}
+		}
+		let start = self.records[record].start;
+		let end = if schema.span == Some(SpanPolicy::ThroughNextTokenStart) {
+			let at = self.at;
+			self.space();
+			let end = self.at;
+			self.at = at;
+			end
+		} else {
+			self.at
+		};
+		let fields = schema
+			.fields
+			.keys()
+			.enumerate()
+			.map(|(i, k)| (k.as_ref(), self.records[record].slots[i].clone()))
+			.collect::<Vec<_>>();
+		let node = self.make(
+			ty.unwrap_or(&schema.node_type),
+			start,
+			end,
+			&fields,
+			schema.span != Some(SpanPolicy::None),
+		)?;
+		self.records[record].node = Some(node);
+		Ok(node)
+	}
+	fn remember(&mut self, record: usize, error: Box<SyntaxError>) {
+		if self.records[record]
+			.failure
+			.as_ref()
+			.is_none_or(|prior| prior.pos < error.pos)
+		{
+			self.records[record].failure = Some(error);
+		}
+	}
+	fn structural_stop(&self) -> bool {
+		let tail = self
+			.rest()
+			.strip_prefix(self.plan.html.delimiters[0].as_ref())
+			.unwrap_or("");
+		if tail.starts_with("/*") || tail.starts_with("//") {
+			return false;
+		}
+		self.plan.stops.iter().any(|prefix| self.matches(prefix))
+	}
+
+	fn checkpoint(&self, record: usize) -> Checkpoint<<E::Data as crate::ast::Reuse>::Mark> {
+		Checkpoint {
+			ast: self.tree().mark(),
+			at: self.at,
+			limit: self.limit,
+			records: self.records.len(),
+			record: self.records[record].clone(),
+			elements: self.elements.clone(),
+			iteration: self.iteration.clone(),
+			autoclosed: self.autoclosed,
+		}
+	}
+	fn restore(&mut self, record: usize, checkpoint: Checkpoint<<E::Data as crate::ast::Reuse>::Mark>) {
+		self.ast().truncate(checkpoint.ast);
+		self.at = checkpoint.at;
+		self.limit = checkpoint.limit;
+		self.records.truncate(checkpoint.records);
+		self.records[record] = checkpoint.record;
+		self.elements = checkpoint.elements;
+		self.iteration = checkpoint.iteration;
+		self.autoclosed = checkpoint.autoclosed;
+	}
+	fn strict(&mut self, form: &Form, record: usize, follow: &str) -> Result<()> {
+		let recover = std::mem::replace(&mut self.options.error_recovery, false);
+		let result = self.form(form, record, follow);
+		self.options.error_recovery = recover;
+		result
+	}
+
+	fn form(&mut self, form: &Form, record: usize, follow: &str) -> Result<()> {
+		if self.records[record].aborted && !matches!(form, Form::Seq(_) | Form::Emit { .. }) {
+			return Ok(());
+		}
+		match form {
+			Form::Seq(items) => {
+				for item in items {
+					let next = follow;
+					if self.options.error_recovery
+						&& self.records[record].body_end == Some(self.at)
+						&& !self.records[record].aborted
+						&& !matches!(item, Form::Emit { .. })
+						&& (self.at == self.limit || self.matches("</") || self.structural_stop())
+					{
+						let checkpoint = self.checkpoint(record);
+						let start = self.at;
+						match self.strict(item, record, next) {
+							Ok(()) => continue,
+							Err(err) => {
+								self.restore(record, checkpoint);
+								let header_end =
+									start + self.rest().find(self.plan.html.delimiters[1].as_ref()).unwrap_or(0) as u32;
+								if (err.pos < header_end
+									&& !self.rest().starts_with(&format!("{}:", self.plan.html.delimiters[0])))
+									|| self.matches("</") || self.at == self.limit
+								{
+									self.records[record].aborted = true;
+									let pos = self.records[record].start;
+									let name = self.plan.rules[self.records[record].rule].name.to_ascii_lowercase();
+									self.report(error(pos, pos + 1, Code::Unclosed, Some(&name)))?;
+									continue;
+								}
+							}
+						}
+					}
+					self.form(item, record, next)?;
+				}
+			}
+			Form::Emit { into, value } => {
+				let value = self.eval(value, record)?;
+				self.write(record, into, value);
+			}
+			Form::Read {
+				reader,
+				into,
+				input,
+				follow: local,
+			} => {
+				let next;
+				let follow: &str = if local.is_empty() || !matches!(reader, Reader::Rule(_) | Reader::Javascript { .. })
+				{
+					follow
+				} else if follow.is_empty() {
+					local
+				} else {
+					next = format!("{local} {follow}");
+					&next
+				};
+				let input = input.as_ref().map(|v| self.eval(v, record)).transpose()?;
+				let value = self.read(reader, record, input, follow)?;
+				if let Some(into) = into {
+					self.write(record, into, value);
+				}
+			}
+			Form::Choice {
+				alternatives,
+				disjoint,
+				first,
+			} => {
+				if *disjoint {
+					let rest = self.rest();
+					let selected = first
+						.iter()
+						.position(|prefixes| {
+							prefixes.iter().any(|p| {
+								let rest = if p.tight {
+									rest
+								} else {
+									rest.trim_start_matches(is_space)
+								};
+								rest.starts_with(&p.text)
+									&& (!p.word || !rest[p.text.len()..].starts_with(is_id_continue))
+							})
+						})
+						.or_else(|| {
+							self.options.error_recovery.then(|| {
+								first
+									.iter()
+									.position(|prefixes| {
+										prefixes
+											.iter()
+											.any(|p| p.text.as_str() == self.plan.html.delimiters[1].as_ref())
+									})
+									.unwrap_or(0)
+							})
+						})
+						.ok_or_else(|| {
+							let pos =
+								self.at + (self.rest().len() - self.rest().trim_start_matches(is_space).len()) as u32;
+							let expected = first
+								.iter()
+								.flatten()
+								.map(|p| p.text.as_str())
+								.collect::<Vec<_>>()
+								.join(" or ");
+							error(pos, pos, Code::Expected, Some(&expected))
+						})?;
+					self.form(&alternatives[selected], record, follow)?;
+				} else {
+					let mut failure: Option<Box<crate::SyntaxError>> = None;
+					let mut failed = 0;
+					let mut failed_native = false;
+					let mut matched = false;
+					let start = self.at;
+					for (i, alternative) in alternatives.iter().enumerate() {
+						let checkpoint = self.checkpoint(record);
+						let reads = self.native_reads;
+						match self.strict(alternative, record, follow) {
+							Ok(()) => {
+								if self.options.error_recovery
+									&& self.at == start && failed_native
+									&& failure.as_ref().is_some_and(|e| e.pos > start)
+								{
+									self.restore(record, checkpoint);
+									self.form(&alternatives[failed], record, follow)?;
+								}
+								matched = true;
+								break;
+							}
+							Err(error) => {
+								self.restore(record, checkpoint);
+								if failure.as_ref().is_none_or(|prior| {
+									prior.pos < error.pos
+										|| self.options.error_recovery
+											&& prior.pos == error.pos && (native_form(alternative, Js::Program)
+											|| matches!(error.code, Code::ReservedWord | Code::UnexpectedKeyword)
+												&& native_form(alternative, Js::Statement))
+								}) {
+									failure = Some(error);
+									failed_native = self.native_reads > reads;
+									failed = i;
+								}
+							}
+						}
+					}
+					if matched && let Some(error) = failure.as_ref() {
+						self.remember(record, error.clone());
+					}
+					if !matched {
+						if self.options.error_recovery {
+							self.form(&alternatives[failed], record, follow)?;
+						} else {
+							return Err(failure.unwrap());
+						}
+					}
+				}
+			}
+
+			Form::Repeat {
+				body,
+				min,
+				max,
+				locals,
+				yield_value,
+				into,
+			} => {
+				let mut values = Vec::new();
+
+				while max.is_none_or(|max| values.len() < max) {
+					let checkpoint = self.checkpoint(record);
+					let start = self.at;
+					self.iteration
+						.push(locals.iter().map(|key| (key.as_ref().into(), Datum::Missing)).collect());
+					let result = self
+						.strict(body, record, follow)
+						.and_then(|()| self.eval(yield_value, record));
+					self.iteration.pop();
+					match result {
+						Ok(value) => values.push(value),
+						Err(error) => {
+							self.restore(record, checkpoint);
+							if values.len() < *min {
+								if !self.options.error_recovery {
+									return Err(error);
+								}
+								self.iteration
+									.push(locals.iter().map(|key| (key.as_ref().into(), Datum::Missing)).collect());
+								self.form(body, record, follow)?;
+								values.push(self.eval(yield_value, record)?);
+								self.iteration.pop();
+								continue;
+							}
+							self.remember(record, error);
+							break;
+						}
+					}
+					if self.at == start && max.is_none() {
+						return fail(start, start, Code::TreeSize, None);
+					}
+				}
+
+				if values.len() < *min {
+					return fail(self.at, self.at, Code::UnexpectedToken, None);
+				}
+				self.write(record, into, Datum::array(values));
+			}
+		}
+		Ok(())
+	}
+
+	fn read(&mut self, reader: &Reader, record: usize, input: Option<Datum>, follow: &str) -> Result<Datum> {
+		let saved = (self.at, self.limit);
+		if let Some(input) = &input {
+			let Datum::Span(a, b, _) = input else {
+				return fail(self.at, self.at, Code::Expected, Some("an input span"));
+			};
+			self.at = *a;
+			self.limit = *b;
+		}
+		let result = (|| {
+			Ok(match reader {
+				Reader::Token { text, gap, word } => {
+					if *gap == Gap::Space {
+						self.space();
+					}
+					if *word && self.matches(text) && self.rest()[text.len()..].starts_with(is_id_continue) {
+						let end = self.at + text.len() as u32;
+						return fail(end, end, Code::Expected, Some("whitespace"));
+					}
+					let start = self.at;
+					self.expect(text)?;
+					Datum::Span(start, self.at, false)
+				}
+				Reader::Space { min } => {
+					let start = self.at;
+					self.space();
+					if (self.at - start) < *min as u32 {
+						self.report(error(start, start, Code::Expected, Some("whitespace")))?;
+					}
+					Datum::Span(start, self.at, false)
+				}
+				Reader::Test(value) => {
+					if !self.eval(value, record)?.yes() {
+						return fail(self.at, self.at, Code::UnexpectedToken, None);
+					}
+					Datum::Missing
+				}
+				Reader::Rule(rule) => {
+					let child = self.records.len();
+					let node = self.call(*rule, self.records[record].event.clone(), None, follow)?;
+					if let Some(end) = self.records[child].children_end {
+						self.records[record].body_end = Some(end);
+					}
+					Datum::Node(node)
+				}
+				Reader::Javascript { entry, boundary } => self.javascript(*entry, *boundary, follow)?,
+				Reader::HtmlChildren { mode, stop } => {
+					let nodes = self.children(*mode, stop)?;
+					if matches!(stop, Stop::Prefixes(_)) {
+						self.records[record].children_end = Some(self.at);
+					}
+					Datum::Nodes(nodes)
+				}
+				Reader::HtmlAttributes(mode) => Datum::Nodes(self.attributes(*mode, record)?),
+				Reader::HtmlAttributeParts => self.attribute_parts(record)?,
+				Reader::HtmlSingle(entry) => self.single(*entry)?,
+				Reader::CssStylesheet => self.stylesheet()?,
+			})
+		})();
+		let result = if result.is_ok() && input.is_some() {
+			self.space();
+			if self.at != self.limit {
+				if self.options.error_recovery {
+					self.report(error(self.at, self.at, Code::UnexpectedToken, None))?;
+					self.at = self.limit;
+					result
+				} else {
+					fail(self.at, self.at, Code::UnexpectedToken, None)
+				}
+			} else {
+				result
+			}
+		} else {
+			result
+		};
+		if input.is_some() {
+			(self.at, self.limit) = saved;
+		}
+		result
+	}
+	fn javascript(&mut self, entry: Js, boundary: Option<Boundary>, follow: &str) -> Result<Datum> {
+		self.native_reads += 1;
+		let stops = if entry == Js::Expression {
+			follow
+				.split_ascii_whitespace()
+				.filter(|s| !matches!(*s, "(" | "[" | "." | "?." | "?"))
+				.collect::<Vec<_>>()
+				.join(" ")
+		} else {
+			follow.to_owned()
+		};
+		let mut parser = Parser::<E>::new(
+			&self.src[..self.limit as usize],
+			self.at,
+			self.options,
+			&stops,
+			self.ast.take().unwrap(),
+		);
+		let result = parser
+			.lexer
+			.next_token_into(&mut parser.tok)
+			.and_then(|()| match entry {
+				Js::Program => parser.parse_program().map(|id| parser.list_of(&[id])),
+				Js::AssignmentExpression => {
+					parser.enter_scope(crate::parser::scope::SCOPE_TOP);
+					parser
+						.parse_maybe_assign(ForInit::No, &mut None)
+						.map(|id| parser.list_of(&[id]))
+				}
+				Js::BindingIdentifier | Js::IdentifierReference => {
+					if !matches!(
+						parser.tok.kind,
+						crate::lexer::token::TokenKind::Ident(_) | crate::lexer::token::TokenKind::Keyword(_)
+					) {
+						return fail(
+							parser.tok.start,
+							parser.tok.start,
+							Code::Expected,
+							Some("an identifier"),
+						);
+					}
+					let token_end = parser.tok.end;
+					parser.parse_ident(false).map(|id| parser.list_of(&[id])).map_err(|e| {
+						if e.code == Code::UnexpectedKeyword {
+							error(
+								e.pos,
+								token_end,
+								Code::ReservedWord,
+								Some(&self.src[e.pos as usize..token_end as usize]),
+							)
+						} else {
+							e
+						}
+					})
+				}
+				_ => parser.read_entry_boundary(
+					match entry {
+						Js::Expression => Entry::Expression,
+						Js::Pattern => Entry::Pattern,
+						Js::Params => Entry::Params,
+						Js::TypeParameters => Entry::TypeParameters,
+						Js::Statement => Entry::Statement,
+						_ => unreachable!(),
+					},
+					boundary == Some(Boundary::LastSharedWord),
+				),
+			});
+		let result = match result {
+			Err(error) if parser.recovering() => {
+				let start = self.at;
+				let at = error.pos;
+				parser.record(Err(error)).unwrap();
+				parser.skip_to_end();
+				parser.prev_end = parser.prev_end.max(at);
+				if entry == Js::Params {
+					Ok(List::EMPTY)
+				} else {
+					let name = parser.intern("");
+					let node =
+						parser.add_with_end(NodeKind::Identifier { name }, start, parser.consumed_end().max(start));
+					Ok(parser.list_of(&[node]))
+				}
+			}
+			result => result,
+		};
+		let end = parser.consumed_end();
+		self.ast = Some(parser.finish());
+		let roots = result?;
+		self.at = end;
+		Ok(if entry == Js::Params {
+			Datum::Nodes(roots)
+		} else {
+			Datum::Node(self.tree().nth(roots, 0).unwrap())
+		})
+	}
+	fn text_chunk(&mut self, start: u32, end: u32, attribute: bool, raw: bool) -> Result<NodeId> {
+		let decoded = if raw {
+			Datum::Slice(start, end)
+		} else {
+			match decode(&self.src[start as usize..end as usize], attribute) {
+				std::borrow::Cow::Borrowed(_) => Datum::Slice(start, end),
+				std::borrow::Cow::Owned(s) => Datum::Text(s.into()),
+			}
+		};
+		let event = Datum::facts([("raw", Datum::Slice(start, end)), ("decoded", decoded)]);
+		let at = self.at;
+		self.at = start;
+		let node = self.call(self.plan.html.text, event, None, "");
+		self.at = at;
+		if let Ok(id) = node {
+			self.ast().nodes[id.index() as usize].end = end;
+		}
+		node
+	}
+	fn children(&mut self, mode: Mode, stop: &Stop) -> Result<List> {
+		let element = self.elements.last().cloned();
+		if matches!(stop, Stop::MatchingElement) && element.as_ref().is_some_and(|e| e.empty) {
+			return Ok(List::EMPTY);
+		}
+		let mode = if self.elements.iter().any(|e| e.content == Mode::Verbatim) {
+			Mode::Verbatim
+		} else {
+			mode
+		};
+		let name = element
+			.as_ref()
+			.map(|e| &self.src[e.name.0 as usize..e.name.1 as usize]);
+		let mut nodes = Vec::new();
+		let mut closed = false;
+		while self.at < self.limit {
+			if let Stop::Prefixes(prefixes) = stop
+				&& prefixes.iter().any(|p| self.matches(p))
+				&& self.structural_stop()
+			{
+				break;
+			}
+			if self.matches("</")
+				&& (matches!(mode, Mode::Normal | Mode::Verbatim)
+					|| name.is_some_and(|name| closing_tag(self.rest(), name).is_some()))
+			{
+				if let Some(name) = name
+					&& let Some(len) = closing_tag(self.rest(), name)
+				{
+					if matches!(stop, Stop::MatchingElement) {
+						if nodes.is_empty() && mode == Mode::Raw {
+							nodes.push(self.text_chunk(self.at, self.at, false, true)?);
+						}
+						self.at += len as u32;
+						closed = true;
+						break;
+					}
+					break;
+				}
+				if matches!(stop, Stop::MatchingElement) && (self.plan.html.autoclose || self.options.error_recovery) {
+					closed = true;
+					break;
+				}
+				let (_, end) = self.peek_name(self.at + 2, false);
+				let close = &self.src[(self.at + 2) as usize..end as usize];
+				if self.plan.html.void.iter().any(|name| name.as_ref() == close) {
+					return fail(
+						self.at,
+						self.at + 1,
+						Code::Placement,
+						Some("A closing tag of a void element"),
+					);
+				}
+				let close = if let Some(Autoclosed { previous, by, depth }) = self.autoclosed
+					&& depth == self.elements.len()
+					&& self.src[previous.0 as usize..previous.1 as usize] == *close
+				{
+					format!("{close}, closed by {}", &self.src[by.0 as usize..by.1 as usize])
+				} else {
+					close.to_owned()
+				};
+				return fail(self.at, self.at + 1, Code::UnexpectedClose, Some(&close));
+			}
+			if mode != Mode::Verbatim && self.structural_stop() {
+				if self.options.error_recovery && matches!(stop, Stop::MatchingElement) {
+					closed = true;
+					break;
+				}
+				let start = self.at;
+				let open = self.plan.html.delimiters[0].len();
+				let tail = &self.rest()[open..];
+				let closing = tail.starts_with('/');
+				let end = tail.find(self.plan.html.delimiters[1].as_ref()).unwrap_or(tail.len());
+				let name = tail.get(1..end).unwrap_or("");
+				self.report(error(
+					start,
+					start + 1,
+					if closing {
+						Code::UnexpectedClose
+					} else {
+						Code::Placement
+					},
+					Some(if closing { name } else { "A branch outside its block" }),
+				))?;
+				self.at += (open + end) as u32;
+				self.eat(&self.plan.html.delimiters[1]);
+				continue;
+			}
+			if mode == Mode::Raw {
+				let start = self.at;
+				while self.at < self.limit && !name.is_some_and(|name| closing_tag(self.rest(), name).is_some()) {
+					self.at += self.char().unwrap().len_utf8() as u32;
+				}
+				nodes.push(self.text_chunk(start, self.at, false, true)?);
+				continue;
+			}
+			if mode != Mode::Rcdata
+				&& self.matches("<")
+				&& self
+					.rest()
+					.as_bytes()
+					.get(1)
+					.is_none_or(|b| b.is_ascii_alphabetic() || *b == b'!')
+			{
+				if self.matches("<!--") {
+					let start = self.at;
+					self.at += 4;
+					let data = self.at;
+					let len = self
+						.rest()
+						.find("-->")
+						.ok_or_else(|| error(self.limit, self.limit, Code::Expected, Some("-->")))?;
+					let end = self.at + len as u32 + 3;
+					let event = Datum::facts([("data", Datum::Slice(data, end - 3))]);
+					self.at = start;
+					let node = self.call(self.plan.html.comment, event, None, "")?;
+					self.ast().nodes[node.index() as usize].end = end;
+					self.at = end;
+					nodes.push(node);
+					continue;
+				}
+				let next = self.peek_name(self.at + 1, false);
+				if let Some(name) = name
+					&& self.plan.html.autoclose
+					&& closes(name, &self.src[next.0 as usize..next.1 as usize])
+				{
+					self.autoclosed = Some(Autoclosed {
+						previous: element.as_ref().unwrap().name,
+						by: next,
+						depth: self.elements.len() - 1,
+					});
+					closed = true;
+					break;
+				}
+				nodes.push(self.element()?);
+				continue;
+			}
+			if mode != Mode::Verbatim
+				&& (self.matches(&self.plan.html.delimiters[0])
+					|| self.plan.html.content.iter().any(|p| self.matches(&p.prefix)))
+			{
+				let row = self
+					.plan
+					.html
+					.content
+					.iter()
+					.find(|p| self.matches(&p.prefix))
+					.ok_or_else(|| error(self.at, self.at, Code::UnexpectedToken, None))?;
+				nodes.push(self.call(row.rule, Datum::Missing, None, "")?);
+				continue;
+			}
+			let start = self.at;
+			self.at += self.char().unwrap().len_utf8() as u32;
+			while self.at < self.limit {
+				if mode != Mode::Verbatim
+					&& (self.matches(&self.plan.html.delimiters[0])
+						|| self.plan.html.content.iter().any(|p| self.matches(&p.prefix)))
+				{
+					break;
+				}
+				if (self.matches("</")
+					&& (mode != Mode::Rcdata || name.is_some_and(|name| closing_tag(self.rest(), name).is_some())))
+					|| (mode != Mode::Rcdata
+						&& self.matches("<")
+						&& self
+							.rest()
+							.as_bytes()
+							.get(1)
+							.is_none_or(|b| b.is_ascii_alphabetic() || *b == b'!'))
+				{
+					break;
+				}
+				self.at += self.char().unwrap().len_utf8() as u32;
+			}
+			nodes.push(self.text_chunk(start, self.at, false, false)?);
+		}
+		if self.at == self.limit && matches!(stop, Stop::MatchingElement) && !closed {
+			let start = element.as_ref().map_or(self.at, |e| e.name.0 - 1);
+			self.report(error(start, start + 1, Code::Unclosed, name))?;
+		}
+
+		Ok(self.list(&nodes))
+	}
+	fn peek_name(&self, start: u32, attribute: bool) -> (u32, u32) {
+		let mut end = start;
+		let mut brackets = 0;
+		for c in self.src[start as usize..self.limit as usize].chars() {
+			if attribute && c == '[' {
+				brackets += 1;
+			}
+			if brackets == 0 && (is_space(c) || c == '/' || c == '>' || (attribute && matches!(c, '"' | '\'' | '='))) {
+				break;
+			}
+			if c == ']' && brackets > 0 {
+				brackets -= 1;
+			}
+			end += c.len_utf8() as u32;
+		}
+		(start, end)
+	}
+	fn value_span(&mut self, interpolate: bool) -> Result<(u32, u32, u32, bool)> {
+		let start = self.at;
+		let quote = self.char().filter(|c| matches!(c, '"' | '\''));
+		if quote.is_some() {
+			self.at += 1;
+		}
+		let content = self.at;
+		while self.at < self.limit {
+			if let Some(q) = quote {
+				if self.char() == Some(q) {
+					let end = self.at;
+					self.at += 1;
+					return Ok((content, end, self.at, true));
+				}
+			} else if self.char().is_some_and(|c| is_space(c) || c == '>') || self.matches("/>") && self.at > content {
+				break;
+			}
+			if interpolate && self.matches(&self.plan.html.delimiters[0]) {
+				self.interpolation_span()?;
+			} else {
+				self.at += self.char().unwrap().len_utf8() as u32;
+			}
+		}
+		if quote.is_some() || self.at == content {
+			self.report(error(start, start, Code::Expected, Some("an attribute value")))?;
+		}
+		Ok((content, self.at, self.at, quote.is_some()))
+	}
+	fn interpolation_span(&mut self) -> Result<()> {
+		self.at += self.plan.html.delimiters[0].len() as u32;
+		let close = &self.plan.html.delimiters[1];
+		use crate::lexer::token::TokenKind;
+		let mut lexer = crate::lexer::Lexer::with(&self.src[..self.limit as usize], Default::default());
+		lexer.set_pos(self.at);
+		lexer.set_stops(close);
+		lexer.recover = self.options.error_recovery;
+		lexer.at_sign = true;
+		let mut templates = Vec::new();
+		let mut operand = false;
+		loop {
+			let mut token = lexer.next_token()?;
+			if self.src[token.start as usize..].starts_with("/>") {
+				self.at = token.start;
+				break;
+			}
+			if token.stop || token.kind == TokenKind::Eof {
+				self.at = token.start;
+				break;
+			}
+			if matches!(token.kind, TokenKind::Slash | TokenKind::SlashEq) && !operand {
+				token = lexer.read_regex(token)?;
+			}
+			if token.kind == TokenKind::Backquote
+				|| token.kind == TokenKind::BraceR && templates.last() == Some(&lexer.depth)
+			{
+				if token.kind == TokenKind::BraceR {
+					templates.pop();
+				}
+				let depth = lexer.depth;
+				token = lexer.read_template()?;
+				if matches!(token.kind, TokenKind::Template { tail: false, .. }) {
+					templates.push(depth);
+					operand = false;
+					continue;
+				}
+			}
+			operand = token.ends_operand();
+		}
+		self.expect(close)?;
+		Ok(())
+	}
+	fn scan_header(&mut self) -> Result<Datum> {
+		let saved = self.at;
+		let result = (|| {
+			let mut attributes = Vec::new();
+			loop {
+				self.space();
+				if self.at >= self.limit
+					|| self.matches(">")
+					|| self.matches("/>")
+					|| (self.options.error_recovery
+						&& (self.matches("<")
+							|| (self.matches(&self.plan.html.delimiters[0])
+								&& (self.structural_stop()
+									|| self.plan.html.content.iter().any(|row| {
+										row.prefix.len() > self.plan.html.delimiters[0].len()
+											&& self.matches(&row.prefix)
+									}))))) {
+					break;
+				}
+				if self.plan.html.attribute_comments == plan::AttributeComments::Javascript
+					&& (self.matches("//") || self.matches("/*"))
+				{
+					if self.eat("//") {
+						self.at += self.rest().find('\n').unwrap_or(self.rest().len()) as u32;
+					} else {
+						self.at += 2;
+						self.at += self.rest().find("*/").map_or(self.rest().len(), |n| n + 2) as u32;
+					}
+					continue;
+				}
+				if self.plan.html.attribute.iter().any(|row| self.matches(&row.prefix)) {
+					self.interpolation_span()?;
+					attributes.push(Datum::facts([("kind", Datum::Static("expression"))]));
+					continue;
+				}
+				let (start, end) = self.peek_name(self.at, true);
+				if start == end {
+					break;
+				}
+				self.at = end;
+				self.space();
+				if self.char().is_some_and(|c| matches!(c, '\'' | '"')) {
+					return fail(self.at, self.at, Code::Expected, Some("="));
+				}
+				let value = if self.eat("=") {
+					self.space();
+					Some(self.value_span(self.plan.html.attribute_interpolations)?)
+				} else {
+					None
+				};
+				let mut fields = vec![
+					("kind", Datum::Static("ordinary")),
+					("name", Datum::Slice(start, end)),
+					("boolean", Datum::Bool(value.is_none())),
+				];
+				if let Some((a, b, _, _)) = value
+					&& !self.src[a as usize..b as usize].contains(self.plan.html.delimiters[0].as_ref())
+				{
+					fields.push((
+						"staticText",
+						Datum::Text(decode(&self.src[a as usize..b as usize], true).as_ref().into()),
+					));
+				}
+				attributes.push(Datum::facts(fields));
+			}
+			Ok(Datum::facts([("attributes", Datum::array(attributes))]))
+		})();
+		self.at = saved;
+		result
+	}
+	fn element(&mut self) -> Result<NodeId> {
+		let start = self.at;
+		self.at += 1;
+		let span = self.peek_name(self.at, false);
+		self.at = span.1;
+		if span.0 == span.1 || self.at == self.limit && !self.options.error_recovery {
+			return fail(self.at, self.at, Code::UnexpectedEof, None);
+		}
+		let name = &self.src[span.0 as usize..span.1 as usize];
+		let identifier = |s: &str| {
+			let mut chars = s.chars();
+			chars.next().is_some_and(is_id_start) && chars.all(is_id_continue)
+		};
+		let facts = Datum::facts([
+			("validHtmlName", Datum::Bool(valid_name(name))),
+			("identifier", Datum::Bool(identifier(name))),
+			(
+				"uppercaseInitial",
+				Datum::Bool(name.starts_with(|c: char| c.is_uppercase())),
+			),
+			(
+				"dottedIdentifier",
+				Datum::Bool(
+					name.contains('.')
+						&& (name.split('.').all(identifier)
+							|| self.options.error_recovery
+								&& name.ends_with('.') && name[..name.len() - 1].split('.').all(identifier)),
+				),
+			),
+			(
+				"namespace",
+				name.split_once(':')
+					.map_or(Datum::Missing, |(p, _)| Datum::Text(p.into())),
+			),
+		]);
+		let header = self.scan_header()?;
+		let event = Datum::facts([
+			("name", Datum::Slice(span.0, span.1)),
+			("nameFacts", facts),
+			(
+				"atDocument",
+				Datum::Bool(self.active.len() == 1 || self.active.len() == 2 && self.elements.is_empty()),
+			),
+			("header", header),
+		]);
+		let dispatch = self.records.len();
+		self.records.push(Record {
+			failure: None,
+			body_end: None,
+			children_end: None,
+			aborted: false,
+			parent: None,
+			rule: self.plan.document,
+			ty: "".into(),
+			slots: Vec::new(),
+			event: event.clone(),
+			owner: self.elements.last().map(|e| e.record),
+			ancestors: self.elements.iter().map(|e| e.record).collect(),
+			start,
+			node: None,
+		});
+		let mut selected = None;
+		for row in &self.plan.html.elements {
+			if self.eval(&row.when, dispatch)?.yes() {
+				selected = Some(row);
+				break;
+			}
+		}
+		self.records.pop();
+		let row = selected.ok_or_else(|| error(span.0, span.1, Code::InvalidName, Some(name)))?;
+		let record = self.records.len();
+		self.elements.push(Element {
+			record,
+			name: span,
+			empty: false,
+			attributes: None,
+			content: row.content.unwrap_or(Mode::Normal),
+		});
+		let result = self.call(row.rule, event, row.node_type.as_deref(), "");
+		self.elements.pop();
+		if let Ok(node) = result {
+			self.ast().nodes[node.index() as usize].start = start;
+		}
+		result
+	}
+	fn attributes(&mut self, mode: AttributeMode, record: usize) -> Result<List> {
+		let mode = if self.elements.iter().any(|e| e.content == Mode::Verbatim) {
+			AttributeMode::Static
+		} else {
+			mode
+		};
+		if let Some(list) = self.elements.last().and_then(|e| e.attributes) {
+			return Ok(list);
+		}
+		let mut nodes = Vec::new();
+		loop {
+			self.space();
+			if self.at >= self.limit
+				|| self.matches(">")
+				|| self.matches("/>")
+				|| (self.options.error_recovery
+					&& (self.matches("<")
+						|| (self.matches(&self.plan.html.delimiters[0])
+							&& (self.structural_stop()
+								|| self.plan.html.content.iter().any(|row| {
+									row.prefix.len() > self.plan.html.delimiters[0].len() && self.matches(&row.prefix)
+								}))))) {
+				break;
+			}
+			if self.plan.html.attribute_comments == plan::AttributeComments::Javascript && self.attribute_comment() {
+				continue;
+			}
+			if mode == AttributeMode::Normal
+				&& let Some(row) = self.plan.html.attribute.iter().find(|p| self.matches(&p.prefix))
+			{
+				nodes.push(self.call(row.rule, Datum::Missing, None, "")?);
+				continue;
+			}
+			nodes.push(self.attribute(mode)?);
+		}
+		if self.at == self.limit && !self.options.error_recovery {
+			return fail(self.at, self.at, Code::UnexpectedEof, None);
+		}
+		let empty = self.eat("/");
+		let unclosed = !self.matches(">");
+		self.expect(">")?;
+		let list = self.list(&nodes);
+		if let Some(element) = self.elements.last_mut() {
+			let name = &self.src[element.name.0 as usize..element.name.1 as usize];
+			element.empty =
+				empty || unclosed || name.starts_with('!') || self.plan.html.void.iter().any(|s| s.as_ref() == name);
+			element.attributes = Some(list);
+			if element.content == Mode::Raw {
+				let start = self.at;
+				let mut end = start;
+				while end < self.limit && closing_tag(&self.src[end as usize..self.limit as usize], name).is_none() {
+					end += self.src[end as usize..].chars().next().unwrap().len_utf8() as u32;
+				}
+				if end == self.limit && !self.options.error_recovery {
+					return fail(end, end, Code::Unclosed, Some(name));
+				}
+				let Datum::Facts(event) = &mut self.records[record].event else {
+					unreachable!()
+				};
+				Rc::make_mut(event).push(("rawChildren", Datum::Span(start, end, false)));
+			}
+		}
+		Ok(list)
+	}
+	fn attribute_comment(&mut self) -> bool {
+		use crate::ast::{Comment, CommentKind};
+		let start = self.at;
+		let kind = if self.eat("//") {
+			self.at += self.rest().find('\n').unwrap_or(self.rest().len()) as u32;
+			CommentKind::Line
+		} else if self.eat("/*") {
+			match self.rest().find("*/") {
+				Some(n) => {
+					self.at += n as u32 + 2;
+					CommentKind::Block
+				}
+				None => {
+					self.at = self.limit;
+					CommentKind::Unclosed
+				}
+			}
+		} else {
+			return false;
+		};
+		let end = self.at;
+		self.ast().comments.push(Comment { kind, start, end });
+		true
+	}
+	fn attribute(&mut self, mode: AttributeMode) -> Result<NodeId> {
+		let start = self.at;
+		let (a, b) = self.peek_name(start, true);
+		if a == b {
+			return fail(start, start, Code::UnexpectedToken, None);
+		}
+		self.at = b;
+		let name = &self.src[a as usize..b as usize];
+		self.space();
+		let value = if self.eat("=") {
+			self.space();
+			Some(self.value_span(mode == AttributeMode::Normal && self.plan.html.attribute_interpolations)?)
+		} else {
+			None
+		};
+		let end = value.map_or(b, |v| v.2);
+		let syntax = &self.plan.html.directive_names;
+		let selected = if mode == AttributeMode::Static {
+			None
+		} else {
+			let shorthand = self.plan.html.directives.iter().find(|row| {
+				!row.name.chars().next().is_some_and(is_id_start)
+					&& row.name.as_ref() != "*"
+					&& name.starts_with(row.name.as_ref())
+			});
+			if let Some(row) = shorthand {
+				Some((
+					row,
+					row.name.as_ref(),
+					&name[row.name.len()..],
+					a + row.name.len() as u32,
+				))
+			} else if let Some(tail) = name.strip_prefix(syntax.prefix.as_ref()) {
+				let n = tail
+					.find([
+						syntax.argument.chars().next().unwrap_or('\0'),
+						syntax.modifier.chars().next().unwrap_or('\0'),
+					])
+					.unwrap_or(tail.len());
+				let key = &tail[..n];
+				let row = self
+					.plan
+					.html
+					.directives
+					.iter()
+					.find(|r| r.name.as_ref() == key)
+					.or_else(|| {
+						(syntax.unknown == plan::UnknownDirective::WildcardRule)
+							.then(|| self.plan.html.directives.iter().find(|r| r.name.as_ref() == "*"))
+							.flatten()
+					});
+				row.filter(|_| !syntax.prefix.is_empty() || tail[n..].starts_with(syntax.argument.as_ref()))
+					.map(|row| {
+						let rest = tail[n..].strip_prefix(syntax.argument.as_ref()).unwrap_or(&tail[n..]);
+						(row, key, rest, b - rest.len() as u32)
+					})
+			} else {
+				None
+			}
+		};
+		if let Some((row, key, rest, offset)) = selected {
+			let (argument, after) = if let Some([open, close]) = &syntax.dynamic
+				&& let Some(tail) = rest.strip_prefix(open.as_ref())
+			{
+				let n = tail
+					.find(close.as_ref())
+					.ok_or_else(|| error(a, b, Code::Expected, Some(close)))?;
+				(
+					Datum::Span(offset + open.len() as u32, offset + (open.len() + n) as u32, true),
+					&tail[n + close.len()..],
+				)
+			} else {
+				let n = rest.find(syntax.modifier.as_ref()).unwrap_or(rest.len());
+				(
+					if n == 0 {
+						Datum::Missing
+					} else {
+						Datum::Span(offset, offset + n as u32, false)
+					},
+					&rest[n..],
+				)
+			};
+			if syntax.require_argument && argument == Datum::Missing {
+				return fail(a, b, Code::Expected, Some("a directive name"));
+			}
+			let modifiers = Datum::array(
+				after
+					.split(syntax.modifier.as_ref())
+					.filter(|s| !s.is_empty())
+					.map(|s| Datum::Text(s.into()))
+					.collect(),
+			);
+			let event = Datum::facts([
+				("name", Datum::Text(key.into())),
+				("rawName", Datum::Slice(a, b)),
+				("argument", argument),
+				("modifiers", modifiers),
+				(
+					"value",
+					value.map_or(Datum::Missing, |(a, b, _, _)| Datum::Span(a, b, false)),
+				),
+				("quoted", Datum::Bool(value.is_some_and(|v| v.3))),
+			]);
+			let at = self.at;
+			self.at = start;
+			let node = self.call(row.rule, event, None, "");
+			self.at = at;
+			if let Ok(id) = node {
+				self.ast().nodes[id.index() as usize].end = end;
+			}
+			return node;
+		}
+		let value = if let Some((a, b, _, quoted)) = value {
+			let saved = (self.at, self.limit);
+			self.at = a;
+			self.limit = b;
+			let result = self.parts(
+				mode == AttributeMode::Normal && self.plan.html.attribute_interpolations,
+				quoted,
+			);
+			(self.at, self.limit) = saved;
+			result?
+		} else {
+			Datum::Bool(true)
+		};
+		let plain = &self.plan.html.plain_attribute;
+		self.make(
+			&plain.node_type,
+			start,
+			end,
+			&[(&plain.name, Datum::Text(name.into())), (&plain.value, value)],
+			true,
+		)
+	}
+	fn parts(&mut self, interpolate: bool, quoted: bool) -> Result<Datum> {
+		let mut nodes = Vec::new();
+		let mut text_only = true;
+		if self.at == self.limit {
+			nodes.push(self.text_chunk(self.at, self.at, true, false)?);
+		}
+		while self.at < self.limit {
+			if interpolate && self.matches(&self.plan.html.delimiters[0]) {
+				nodes.push(self.call(self.plan.html.plain_attribute.expression, Datum::Missing, None, "")?);
+				text_only = false;
+			} else {
+				let start = self.at;
+				while self.at < self.limit && !(interpolate && self.matches(&self.plan.html.delimiters[0])) {
+					self.at += self.char().unwrap().len_utf8() as u32;
+				}
+				nodes.push(self.text_chunk(start, self.at, true, false)?);
+			}
+		}
+		Ok(if !quoted && !text_only && nodes.len() == 1 {
+			Datum::Node(nodes[0])
+		} else {
+			Datum::Nodes(self.list(&nodes))
+		})
+	}
+	fn attribute_parts(&mut self, record: usize) -> Result<Datum> {
+		let value = self.property(self.records[record].event.clone(), &Path::Name("value".into()));
+		let Datum::Span(a, b, _) = value else {
+			return Ok(Datum::Bool(true));
+		};
+		let quoted = self
+			.property(self.records[record].event.clone(), &Path::Name("quoted".into()))
+			.yes();
+		let saved = (self.at, self.limit);
+		self.at = a;
+		self.limit = b;
+		let value = self.parts(self.plan.html.attribute_interpolations, quoted);
+		(self.at, self.limit) = saved;
+		value
+	}
+	fn single(&mut self, entry: Js) -> Result<Datum> {
+		let open = &self.plan.html.delimiters[0];
+		if !self.matches(open) {
+			return fail(self.at, self.at, Code::Expected, Some("an expression, not text"));
+		}
+		let close = &self.plan.html.delimiters[1];
+		self.expect(open)?;
+		let value = self.javascript(entry, None, close)?;
+		self.space();
+		self.expect(close)?;
+		Ok(value)
+	}
+	fn stylesheet(&mut self) -> Result<Datum> {
+		let (children, comments) = css::read(self.src, &mut self.at, self.limit, self.ast.as_mut().unwrap(), None)?;
+		Ok(Datum::facts([
+			("children", Datum::Nodes(children)),
+			("comments", Datum::Nodes(comments)),
+		]))
+	}
+	fn roots(&self, value: &Datum, roots: &mut Vec<NodeId>) {
+		match value {
+			Datum::Node(id) => {
+				if !roots.contains(id) {
+					roots.push(*id);
+				}
+			}
+			Datum::Nodes(list) => {
+				for id in self.tree().list(*list).iter().flatten() {
+					if !roots.contains(id) {
+						roots.push(*id);
+					}
+				}
+			}
+			Datum::Array(items) => {
+				for item in items.iter() {
+					self.roots(item, roots);
+				}
+			}
+			_ => {}
+		}
+	}
+	fn region_target(&mut self, value: Datum) -> Result<HostParent> {
+		match value {
+			Datum::Null => Ok(HostParent::Root),
+			Datum::Incoming(record) => Ok(self.records[record].node.map_or(HostParent::Root, HostParent::Incoming)),
+			Datum::Region(record, region) => {
+				let targets = self.region(record, region)?;
+				if targets.len() != 1 {
+					return fail(self.at, self.at, Code::Expected, Some("one parent region"));
+				}
+				Ok(targets[0])
+			}
+			_ => fail(self.at, self.at, Code::Expected, Some("a region")),
+		}
+	}
+	fn region(&mut self, record: usize, index: usize) -> Result<Vec<HostParent>> {
+		if let Some(targets) = &self.region_slots[record][index] {
+			return Ok(targets.clone());
+		}
+		if self.resolving.contains(&(record, index)) {
+			return fail(self.at, self.at, Code::Expected, Some("acyclic regions"));
+		}
+		self.resolving.push((record, index));
+		let region = &self.plan.rules[self.records[record].rule].regions[index];
+		let items = if let Some(each) = &region.each {
+			let list = self.eval(&each.list, record)?;
+			self.items(&list)
+		} else {
+			vec![Datum::Missing]
+		};
+		let mut targets = Vec::new();
+		for item in items {
+			if let Some(each) = &region.each {
+				self.bindings.push((each.binding.clone(), item));
+			}
+			let parent = self.eval(&region.parent, record)?;
+			let parent = self.region_target(parent)?;
+			if region
+				.when
+				.as_ref()
+				.map(|when| self.eval(when, record).map(|v| v.yes()))
+				.transpose()?
+				.unwrap_or(true)
+			{
+				let covers = self.eval(&region.covers, record)?;
+				let mut roots = Vec::new();
+				self.roots(&covers, &mut roots);
+				let owner = self.records[record].node.unwrap();
+				let node = roots
+					.iter()
+					.find(|id| match self.tree().node(**id).kind {
+						NodeKind::Program { .. } => true,
+						NodeKind::Host(i) => !self.tree().hosts[i as usize].span,
+						_ => false,
+					})
+					.copied();
+				let id = self.tree().host_regions.len() as u32;
+				self.ast().host_regions.push(HostRegion {
+					parent,
+					kind: region.kind,
+					owner,
+					node,
+				});
+				self.ast().host_region_owners.entry(owner).push(id);
+				for root in roots {
+					self.ast().host_coverage.entry(root).push(id);
+				}
+				targets.push(HostParent::Region(id));
+			} else {
+				targets.push(parent);
+			}
+			if region.each.is_some() {
+				self.bindings.pop();
+			}
+		}
+		self.resolving.pop();
+		self.region_slots[record][index] = Some(targets.clone());
+		Ok(targets)
+	}
+	fn binding_leaves(&mut self, node: NodeId, binding: HostBinding) {
+		match self.tree().node(node).kind {
+			NodeKind::Identifier { .. } => self.ast().host_bindings.insert(node, binding),
+			NodeKind::ArrayPattern { elements } | NodeKind::ObjectPattern { properties: elements } => {
+				let nodes = self.tree().list(elements).iter().flatten().copied().collect::<Vec<_>>();
+				for node in nodes {
+					self.binding_leaves(node, binding);
+				}
+			}
+			NodeKind::Property { value, .. } => self.binding_leaves(value, binding),
+			NodeKind::AssignmentPattern { left, .. } => self.binding_leaves(left, binding),
+			NodeKind::RestElement { argument } => self.binding_leaves(argument, binding),
+			_ => {}
+		}
+	}
+	fn regions(&mut self) -> Result<()> {
+		for (i, record) in self.records.iter().enumerate() {
+			if let Some(node) = record.node {
+				self.node_records.insert(node, i);
+			}
+		}
+		self.ast().host_plan = true;
+		self.region_slots = self
+			.records
+			.iter()
+			.map(|r| vec![None; self.plan.rules[r.rule].regions.len()])
+			.collect();
+		for record in 0..self.records.len() {
+			let Some(node) = self.records[record].node else {
+				continue;
+			};
+			let rule = &self.plan.rules[self.records[record].rule];
+			let mut hidden = Vec::new();
+			for value in &self.records[record].slots[rule.fields.len()..] {
+				self.roots(value, &mut hidden);
+			}
+			hidden.retain(|id| !matches!(self.tree().node(*id).kind, NodeKind::Host(_)));
+			if !hidden.is_empty() {
+				self.ast().host_hidden.insert(node, hidden);
+			}
+			if let Some(parent) = self.records[record].parent.and_then(|r| self.records[r].node) {
+				self.ast().host_occurrences.insert(node, parent);
+			}
+			for region in 0..self.plan.rules[self.records[record].rule].regions.len() {
+				self.region(record, region)?;
+			}
+		}
+		for record in 0..self.records.len() {
+			if self.records[record].node.is_none() {
+				continue;
+			}
+			for declaration in &self.plan.rules[self.records[record].rule].declares {
+				let target = self.eval(&declaration.into, record)?;
+				let target = self.region_target(target)?;
+				let patterns = self.eval(&declaration.patterns, record)?;
+				let mut roots = Vec::new();
+				self.roots(&patterns, &mut roots);
+				for pattern in roots {
+					self.binding_leaves(
+						pattern,
+						HostBinding {
+							target,
+							kind: declaration.kind,
+						},
+					);
+				}
+			}
+		}
+		Ok(())
+	}
+}
+
 fn closes(current: &str, next: &str) -> bool {
 	match current {
 		"li" => next == "li",
@@ -66,7 +2119,6 @@ fn is_space(c: char) -> bool {
 	)
 }
 
-/// A valid element name: a doctype, a namespaced name, or a tag name as HTML spells one.
 fn valid_name(name: &str) -> bool {
 	let mut chars = name.chars();
 	let Some(first) = chars.next() else { return false };
@@ -120,8 +2172,6 @@ fn valid_code(code: u32, attribute: bool) -> u32 {
 	0
 }
 
-/// Character references decoded as the browser would: the longest named reference wins, and in
-/// an attribute one without its `;` stays text before `=` or a word character.
 fn decode(raw: &str, attribute: bool) -> Cow<'_, str> {
 	if !raw.contains('&') {
 		return Cow::Borrowed(raw);
@@ -209,2706 +2259,6 @@ fn fail<T>(pos: u32, end: u32, code: Code, arg: Option<&str>) -> Result<T> {
 	Err(error(pos, end, code, arg))
 }
 
-/// Where the tag ends: the first `>` outside quotes, or the end.
-fn tag_end(after: &str) -> usize {
-	let mut quote = None;
-	for (i, c) in after.char_indices() {
-		match quote {
-			Some(q) if c == q => quote = None,
-			Some(_) => {}
-			None if c == '"' || c == '\'' => quote = Some(c),
-			None if c == '>' => return i,
-			None => {}
-		}
-	}
-	after.len()
-}
-
-/// Whether the document is TypeScript by its script tags, the way the grammar tells.
-pub fn typescript(src: &str, grammar: &Grammar) -> bool {
-	let Some(script) = &grammar.script else { return false };
-	if script.typescript.is_empty() {
-		return false;
-	}
-	let mut rest = src;
-	while let Some(i) = rest.find('<') {
-		rest = &rest[i + 1..];
-		if let Some(after) = rest.strip_prefix("!--") {
-			rest = after.find("-->").map_or("", |j| &after[j + 3..]);
-			continue;
-		}
-		let Some(after) = rest.strip_prefix(script.name) else {
-			continue;
-		};
-		if !after.starts_with(is_space) {
-			continue;
-		}
-		let tag_end = tag_end(after);
-		let mut attributes = after[..tag_end].trim_start_matches(is_space);
-		while !attributes.is_empty() {
-			let name_len = attributes
-				.find(|c: char| is_space(c) || c == '=' || c == '/')
-				.unwrap_or(attributes.len());
-			let name = &attributes[..name_len];
-			attributes = attributes[name_len..].trim_start_matches(is_space);
-			let mut value = None;
-			if let Some(after) = attributes.strip_prefix('=') {
-				let after = after.trim_start_matches(is_space);
-				let (text, len) = match after.chars().next() {
-					Some(q @ ('"' | '\'')) => {
-						let close = after[1..].find(q).unwrap_or(after.len() - 1);
-						(&after[1..1 + close], (1 + close + 1).min(after.len()))
-					}
-					_ => {
-						let len = after.find(is_space).unwrap_or(after.len());
-						(&after[..len], len)
-					}
-				};
-				value = Some(text);
-				attributes = after[len..].trim_start_matches(is_space);
-			} else if name.is_empty() {
-				attributes = &attributes[1..];
-			}
-			if script
-				.typescript
-				.iter()
-				.any(|&(attribute, wanted)| name == attribute && wanted.is_none_or(|w| value == Some(w)))
-			{
-				return true;
-			}
-		}
-		rest = &after[tag_end..];
-	}
-	false
-}
-
-/// What the walker is inside: the document, an element, or a block.
-enum Frame<'a> {
-	Root {
-		nodes: Vec<NodeId>,
-		instance: Option<NodeId>,
-		module: Option<NodeId>,
-		css: Option<NodeId>,
-	},
-	Element {
-		start: u32,
-		name: (u32, u32),
-		ty: &'static str,
-		attributes: Vec<NodeId>,
-		fields: Vec<(&'static str, Value)>,
-		nodes: Vec<NodeId>,
-		shadowroot: bool,
-		/// The element made its subtree verbatim.
-		verbatim: bool,
-		/// The patterns its directives declare in its scope.
-		declared: Vec<NodeId>,
-	},
-	Block {
-		start: u32,
-		rule: &'a BlockRule,
-		fields: Vec<(&'static str, Value)>,
-		/// The open body: its field and whether it is left out of blocks that never opened it.
-		body: (&'static str, bool),
-		nodes: Vec<NodeId>,
-		/// Bodies closed so far, each as its children.
-		done: Vec<(&'static str, Value)>,
-		/// The scope of each body read so far.
-		groups: Vec<BodyGroup>,
-		outside: Vec<NodeId>,
-		/// The parent's field this block fills as a chained branch, `{:else if}`.
-		chain: Option<&'static str>,
-	},
-}
-
-/// What a form read: its fields, and the body its alternatives chose.
-#[derive(Default)]
-struct Read<'a> {
-	fields: Vec<(&'static str, Value)>,
-	body: Option<&'a Body>,
-}
-
-/// A body's scope as its form read it: the body's field, the entry fields the scope holds, and
-/// the patterns declared in it.
-struct BodyGroup {
-	body: &'static str,
-	fields: Vec<&'static str>,
-	inside: Vec<NodeId>,
-}
-
-/// What reading an attribute gives: its node, its type, and the kind and name it must not
-/// repeat on the element, when it has such a name.
-type Attribute = (NodeId, &'static str, Option<(&'static str, StrId)>);
-
-/// An attribute name read as a directive: its rule, name, argument and modifiers.
-struct Directive<'a> {
-	rule: &'a DirectiveRule,
-	name: &'a str,
-	/// The argument's text and span, and whether it is an expression in brackets.
-	arg: Option<(&'a str, u32, u32, bool)>,
-	modifiers: Vec<&'a str>,
-}
-
-struct Walker<'a, E: Extension> {
-	src: &'a str,
-	full: u32,
-	grammar: &'a Grammar,
-	options: Options,
-	ast: Option<Ast<E::Data>>,
-	at: u32,
-	/// Where the JavaScript read at the cursor must end: the source, or an attribute value.
-	limit: u32,
-	frames: Vec<Frame<'a>>,
-	once: Vec<&'static str>,
-	/// Where the current tag's word starts, for a declaration spelled without its keyword.
-	keyword: u32,
-	/// The element the browser closed last, what closed it and how deep the stack was then.
-	autoclosed: Option<(&'a str, &'a str, usize)>,
-	/// How many open elements made their subtree verbatim.
-	verbatim: u32,
-	/// The patterns the directives of the element being read declare.
-	declared: Vec<NodeId>,
-	/// Buffers given back once used, for the next of their kind.
-	fields: Pool<(&'static str, Value)>,
-	nodes: Pool<NodeId>,
-	names: Pool<&'static str>,
-	groups: Pool<BodyGroup>,
-	/// The kinds and names the attributes of the element being read must not repeat.
-	seen: Vec<(&'static str, StrId)>,
-}
-
-struct Pool<T>(Vec<Vec<T>>);
-
-impl<T> Default for Pool<T> {
-	fn default() -> Self {
-		Pool(Vec::new())
-	}
-}
-
-impl<T> Pool<T> {
-	fn take(&mut self) -> Vec<T> {
-		self.0.pop().unwrap_or_default()
-	}
-
-	fn give(&mut self, mut buffer: Vec<T>) {
-		buffer.clear();
-		self.0.push(buffer);
-	}
-}
-
-/// Parses a document by its grammar: the host's tree with the JavaScript inside it, positions
-/// of the whole source. Returns the tree and its root.
-pub(crate) fn parse_document<E: Extension>(
-	src: &str,
-	grammar: &Grammar,
-	options: Options,
-	reused: Option<Ast<E::Data>>,
-) -> (Ast<E::Data>, Result<NodeId>) {
-	let full = src.len() as u32;
-	let cut = if grammar.trim {
-		src.trim_end_matches(is_space)
-	} else {
-		src
-	};
-	let mut walker = Walker::<E> {
-		src: cut,
-		full,
-		grammar,
-		options,
-		ast: Some(reused.unwrap_or_else(|| Ast::sized(src.len()))),
-		at: 0,
-		limit: cut.len() as u32,
-		frames: vec![Frame::Root {
-			nodes: Vec::new(),
-			instance: None,
-			module: None,
-			css: None,
-		}],
-		once: Vec::new(),
-		keyword: 0,
-		autoclosed: None,
-		verbatim: 0,
-		declared: Vec::new(),
-		fields: Pool::default(),
-		nodes: Pool::default(),
-		names: Pool::default(),
-		groups: Pool::default(),
-		seen: Vec::new(),
-	};
-	let root = walker.run();
-	(walker.ast.take().unwrap(), root)
-}
-
-impl<'a, E: Extension> Walker<'a, E> {
-	fn style_sheet(&mut self, start: u32, name: &str, attributes: Vec<NodeId>) -> Result<NodeId> {
-		let closer = format!("</{name}");
-		let content_start = self.at;
-		let (children, comments) = css::read(
-			self.src,
-			&mut self.at,
-			self.limit,
-			self.ast.as_mut().unwrap(),
-			Some(&closer),
-		)?;
-		let content_end = self.at;
-		self.expect(&closer)?;
-		self.space();
-		self.expect(">")?;
-		let attributes = self.list(&attributes);
-		let content = self.host(
-			"",
-			content_start,
-			content_end,
-			&[
-				("styles", Value::Slice(content_start, content_end)),
-				("comment", Value::Null),
-			],
-			None,
-			true,
-		);
-		Ok(self.host(
-			"StyleSheet",
-			start,
-			self.at,
-			&[
-				("attributes", Value::Nodes(attributes)),
-				("children", Value::Nodes(children)),
-				("comments", Value::Nodes(comments)),
-				("content", Value::Node(content)),
-			],
-			None,
-			true,
-		))
-	}
-
-	fn ast(&mut self) -> &mut Ast<E::Data> {
-		self.ast.as_mut().unwrap()
-	}
-
-	fn tree(&self) -> &Ast<E::Data> {
-		self.ast.as_ref().unwrap()
-	}
-
-	fn len(&self) -> u32 {
-		self.src.len() as u32
-	}
-
-	fn rest(&self) -> &'a str {
-		&self.src[self.at as usize..]
-	}
-
-	fn byte(&self) -> Option<u8> {
-		self.src.as_bytes().get(self.at as usize).copied()
-	}
-
-	fn char(&self) -> Option<char> {
-		self.rest().chars().next()
-	}
-
-	fn matches(&self, s: &str) -> bool {
-		self.rest().starts_with(s)
-	}
-
-	/// A word of the host's, followed by nothing that continues an identifier.
-	fn word(&self, s: &str) -> bool {
-		self.matches(s) && !self.rest()[s.len()..].starts_with(is_id_continue)
-	}
-
-	fn eat(&mut self, s: &str) -> bool {
-		if self.matches(s) {
-			self.at += s.len() as u32;
-			true
-		} else {
-			false
-		}
-	}
-
-	fn expect(&mut self, s: &str) -> Result<()> {
-		if self.eat(s) {
-			Ok(())
-		} else {
-			self.report(error(self.at, self.at, Code::Expected, Some(s)))
-		}
-	}
-
-	fn recovering(&self) -> bool {
-		self.options.error_recovery
-	}
-
-	/// Under recovery the error is recorded on the tree and reading goes on; otherwise it ends
-	/// the parse.
-	fn report(&mut self, error: Box<SyntaxError>) -> Result<()> {
-		if self.recovering() {
-			self.ast().errors.push(*error);
-			Ok(())
-		} else {
-			Err(error)
-		}
-	}
-
-	/// The delimiter that closes the tag being read, skipped to under recovery.
-	fn skip_tag(&mut self) {
-		let close = self.grammar.delimiters.1;
-		if let Some(i) = self.rest().find(close) {
-			self.at += (i + close.len()) as u32;
-		} else {
-			self.at = self.len();
-		}
-	}
-
-	fn space(&mut self) {
-		while let Some(c) = self.char() {
-			if !is_space(c) {
-				break;
-			}
-			self.at += c.len_utf8() as u32;
-		}
-	}
-
-	fn require_space(&mut self) -> Result<()> {
-		match self.char() {
-			Some(c) if is_space(c) => {
-				self.space();
-				Ok(())
-			}
-			_ => fail(self.at, self.at, Code::Expected, Some("whitespace")),
-		}
-	}
-
-	fn intern(&mut self, s: &str) -> StrId {
-		self.ast().strings.intern(s)
-	}
-
-	/// A string field: a slice of the source where the text is the source's, interned otherwise.
-	fn text(&mut self, start: u32, end: u32, value: Cow<str>) -> Value {
-		match value {
-			Cow::Borrowed(_) => Value::Slice(start, end),
-			Cow::Owned(owned) => Value::Str(self.intern(&owned)),
-		}
-	}
-
-	fn host(
-		&mut self,
-		ty: &'static str,
-		start: u32,
-		end: u32,
-		fields: &[(&'static str, Value)],
-		scope: Option<Opens>,
-		span: bool,
-	) -> NodeId {
-		let ast = self.ast();
-		let from = ast.host_fields.len() as u32;
-		let len = fields.len() as u32;
-		for &(name, value) in fields {
-			let name = ast.strings.intern(name);
-			ast.host_fields.push((name, value));
-		}
-		let ty = ast.strings.intern(ty);
-		let index = ast.hosts.len() as u32;
-		ast.hosts.push(Host {
-			ty,
-			fields: (from, len),
-			span,
-			scope,
-		});
-		ast.add(NodeKind::Host(index), start, end)
-	}
-
-	fn text_chunk(&mut self, start: u32, end: u32, attribute: bool) -> NodeId {
-		let raw = &self.src[start as usize..end as usize];
-		let data = decode(raw, attribute);
-		let data = self.text(start, end, data);
-		let rule = &self.grammar.text;
-		match rule.raw {
-			Some(raw) => self.host(
-				rule.ty,
-				start,
-				end,
-				&[(raw, Value::Slice(start, end)), (rule.data, data)],
-				None,
-				true,
-			),
-			None => self.host(rule.ty, start, end, &[(rule.data, data)], None, true),
-		}
-	}
-
-	/// A list of nodes as the grammar holds one: wrapped in its fragment node, or bare.
-	fn children(&mut self, nodes: Vec<NodeId>) -> Value {
-		let list = self.list(&nodes);
-		let value = match self.grammar.fragment {
-			Some((ty, field)) => {
-				// positions for the walks that order nodes, though none are written
-				let (start, end) = match (nodes.first(), nodes.last()) {
-					(Some(&first), Some(&last)) => (self.tree().node(first).start, self.tree().node(last).end),
-					_ => (self.at, self.at),
-				};
-				Value::Node(self.host(ty, start, end, &[(field, Value::Nodes(list))], None, false))
-			}
-			None => Value::Nodes(list),
-		};
-		self.nodes.give(nodes);
-		value
-	}
-
-	/// The scopes an element opens, over the fields about to make its node: one for what its
-	/// directives declare, over its attributes and children, and one for its children when the
-	/// grammar says every fragment is a scope.
-	fn element_scope(&mut self, fields: &[(&'static str, Value)], declared: &[NodeId]) -> Option<Opens> {
-		let names = &self.grammar.element_fields;
-		let attributes = fields.iter().position(|(f, _)| *f == names.attributes);
-		let children = fields.iter().position(|(f, _)| *f == names.children);
-		let base = self.ast().host_fields.len() as u32;
-		let at = self.ast().host_groups.len() as u32;
-		let mut count = 0;
-		if let (false, Some(attributes), Some(children)) = (declared.is_empty(), attributes, children) {
-			let inside = self.list(declared);
-			self.ast().host_groups.push(HostGroup {
-				inside,
-				from: base + attributes as u32,
-				until: base + children as u32 + 1,
-				node: None,
-			});
-			count += 1;
-		}
-		if let (true, Some(children)) = (self.grammar.fragment_scope, children) {
-			let node = match fields[children].1 {
-				Value::Node(fragment) => Some(fragment),
-				_ => None,
-			};
-			self.ast().host_groups.push(HostGroup {
-				inside: List::EMPTY,
-				from: base + children as u32,
-				until: base + children as u32 + 1,
-				node,
-			});
-			count += 1;
-		}
-		(count > 0).then_some(Opens {
-			outside: List::EMPTY,
-			groups: (at, count),
-		})
-	}
-
-	fn list(&mut self, nodes: &[NodeId]) -> List {
-		self.ast().add_list_from(nodes.iter().map(|&id| Some(id)))
-	}
-
-	fn append(&mut self, node: NodeId) {
-		match self.frames.last_mut().unwrap() {
-			Frame::Root { nodes, .. } | Frame::Element { nodes, .. } | Frame::Block { nodes, .. } => nodes.push(node),
-		}
-	}
-
-	fn host_type(&self, id: NodeId) -> &str {
-		let ast = self.tree();
-		match ast.node(id).kind {
-			NodeKind::Host(index) => ast.str(ast.hosts[index as usize].ty),
-			_ => "",
-		}
-	}
-
-	fn field_of(&self, id: NodeId, key: &str) -> Option<Value> {
-		let ast = self.tree();
-		let NodeKind::Host(index) = ast.node(id).kind else {
-			return None;
-		};
-		let host = ast.hosts[index as usize];
-		ast.host_fields[host.fields.0 as usize..(host.fields.0 + host.fields.1) as usize]
-			.iter()
-			.find(|(k, _)| ast.str(*k) == key)
-			.map(|&(_, v)| v)
-	}
-
-	fn string_of(&self, value: Value) -> Option<&str> {
-		match value {
-			Value::Str(s) => Some(self.tree().str(s)),
-			Value::Slice(a, b) => Some(&self.src[a as usize..b as usize]),
-			_ => None,
-		}
-	}
-
-	fn attribute_named(&self, id: NodeId, name: &str) -> bool {
-		self.host_type(id) == "Attribute" && self.field_of(id, "name").and_then(|v| self.string_of(v)) == Some(name)
-	}
-
-	/// The one chunk of an attribute's value, when it has one.
-	fn attribute_chunk(&self, id: NodeId) -> Option<NodeId> {
-		match self.field_of(id, "value")? {
-			Value::Node(tag) => Some(tag),
-			Value::Nodes(list) => match self.tree().list(list) {
-				[Some(chunk)] => Some(*chunk),
-				_ => None,
-			},
-			_ => None,
-		}
-	}
-
-	fn expression_type(&self) -> &'static str {
-		self.grammar.expression.as_ref().map_or("Expression", |rule| rule.ty)
-	}
-
-	/// The expression node of a chunk written as one, `{expression}`.
-	fn chunk_expression(&self, chunk: NodeId) -> Option<NodeId> {
-		if self.host_type(chunk) != self.expression_type() {
-			return None;
-		}
-		let rule = self.grammar.expression.as_ref()?;
-		let Some(Item::Entry { field, .. }) = rule.form.items.first() else {
-			return None;
-		};
-		match self.field_of(chunk, field)? {
-			Value::Node(expression) => Some(expression),
-			_ => None,
-		}
-	}
-
-	/// The expression of `name={expression}`, quoted or not.
-	fn attribute_expression(&self, id: NodeId) -> Option<NodeId> {
-		self.chunk_expression(self.attribute_chunk(id)?)
-	}
-
-	/// The text of `name="text"`.
-	fn attribute_text(&self, id: NodeId) -> Option<&str> {
-		let Value::Nodes(_) = self.field_of(id, "value")? else {
-			return None;
-		};
-		let chunk = self.attribute_chunk(id)?;
-		if self.host_type(chunk) != self.grammar.text.ty {
-			return None;
-		}
-		self.string_of(self.field_of(chunk, self.grammar.text.data)?)
-	}
-
-	/// An expression chunk, `{expression}`, as the grammar's expression node.
-	fn expression_tag(&mut self, start: u32, end: u32, expression: NodeId) -> Result<NodeId> {
-		let Some(rule) = &self.grammar.expression else {
-			return fail(start, end, Code::UnexpectedToken, None);
-		};
-		let field = match rule.form.items.first() {
-			Some(Item::Entry { field, .. }) => field,
-			_ => "expression",
-		};
-		Ok(self.host(rule.ty, start, end, &[(field, Value::Node(expression))], None, true))
-	}
-
-	/// Whether a `<` at `i` starts a tag: a name, a closing tag or a comment follows.
-	fn tag_start(&self, i: usize) -> bool {
-		let bytes = self.src.as_bytes();
-		bytes[i] == b'<' && !matches!(bytes.get(i + 1), Some(b) if !b.is_ascii_alphabetic() && *b != b'/' && *b != b'!')
-	}
-
-	/// Skips whitespace up to `limit`.
-	fn space_to(&mut self, limit: u32) {
-		while self.at < limit {
-			match self.char() {
-				Some(c) if is_space(c) => self.at += c.len_utf8() as u32,
-				_ => break,
-			}
-		}
-	}
-
-	fn run(&mut self) -> Result<NodeId> {
-		let open = self.grammar.delimiters.0;
-		while self.at < self.len() {
-			let before = self.at;
-			let result = if self.byte() == Some(b'<') && self.tag_start(self.at as usize) {
-				self.element()
-			} else if self.verbatim == 0 && self.matches(open) {
-				self.tag()
-			} else {
-				self.text_node();
-				Ok(())
-			};
-			if let Err(error) = result {
-				self.report(error)?;
-				// whatever could not be read, something is
-				if self.at == before {
-					self.at += self.char().map_or(1, |c| c.len_utf8() as u32);
-				}
-			}
-		}
-		while self.frames.len() > 1 {
-			let (start, what) = match self.frames.last().unwrap() {
-				Frame::Element { start, name, .. } => (*start, &self.src[name.0 as usize..name.1 as usize]),
-				Frame::Block { start, rule, .. } => (*start, rule.name),
-				Frame::Root { .. } => unreachable!(),
-			};
-			self.report(error(start, start + 1, Code::Unclosed, Some(what)))?;
-			// under recovery, what is open ends with the source
-			let end = self.len();
-			match self.frames.last().unwrap() {
-				Frame::Element { .. } => self.close_top(end),
-				_ => {
-					self.pop_block(end);
-				}
-			}
-		}
-		let errors = &mut self.ast().errors;
-		errors.sort_by_key(|error| error.pos);
-		errors.dedup_by(|a, b| a.pos == b.pos && a.code == b.code);
-		let Some(Frame::Root {
-			nodes,
-			instance,
-			module,
-			css,
-		}) = self.frames.pop()
-		else {
-			unreachable!()
-		};
-		let children = self.children(nodes);
-		let mut fields = self.fields.take();
-		// (from, until, node) of each scope the document line opens, over the fields it holds
-		let mut scopes: Vec<(usize, usize, Option<NodeId>)> = Vec::new();
-		fn place<E: Extension>(
-			w: &mut Walker<E>,
-			items: &[DocField],
-			fields: &mut Vec<(&'static str, Value)>,
-			scopes: &mut Vec<(usize, usize, Option<NodeId>)>,
-			held: (Value, Option<NodeId>, Option<NodeId>, Option<NodeId>),
-		) {
-			let (children, instance, module, css) = held;
-			for item in items {
-				match item {
-					DocField::Scope(inner) => {
-						let from = fields.len();
-						place(w, inner, fields, scopes, held);
-						let until = fields.len();
-						if until == from {
-							continue;
-						}
-						// the scope belongs to the fragment it starts with, or to a script's program
-						let node = match fields[from].1 {
-							Value::Node(id) if matches!(children, Value::Node(fragment) if fragment == id) => Some(id),
-							Value::Node(id) if w.host_type(id) == "Script" => match w.field_of(id, "content") {
-								Some(Value::Node(program)) => Some(program),
-								_ => None,
-							},
-							_ => None,
-						};
-						scopes.push((from, until, node));
-					}
-					&DocField::Field(field, holds, omit) => {
-						let value = match holds {
-							RootField::Fragment => {
-								fields.push((field, children));
-								continue;
-							}
-							RootField::Script { module: false } => instance,
-							RootField::Script { module: true } => module,
-							RootField::Style => css,
-							RootField::Comments => {
-								fields.push((field, Value::Comments));
-								continue;
-							}
-							RootField::EmptyList => {
-								fields.push((field, Value::Nodes(List::EMPTY)));
-								continue;
-							}
-							RootField::Null => {
-								fields.push((field, Value::Null));
-								continue;
-							}
-						};
-						match value {
-							Some(node) => fields.push((field, Value::Node(node))),
-							None if !omit => fields.push((field, Value::Null)),
-							None => {}
-						}
-					}
-				}
-			}
-		}
-		let document = self.grammar.document.fields.clone();
-		place(
-			self,
-			&document,
-			&mut fields,
-			&mut scopes,
-			(children, instance, module, css),
-		);
-		let full = self.full;
-		let base = self.ast().host_fields.len() as u32;
-		let at = self.ast().host_groups.len() as u32;
-		for &(from, until, node) in &scopes {
-			self.ast().host_groups.push(HostGroup {
-				inside: List::EMPTY,
-				from: base + from as u32,
-				until: base + until as u32,
-				node,
-			});
-		}
-		let scope = (!scopes.is_empty()).then_some(Opens {
-			outside: List::EMPTY,
-			groups: (at, scopes.len() as u32),
-		});
-		let node = self.host(self.grammar.document.ty, 0, full, &fields, scope, true);
-		self.fields.give(fields);
-		Ok(node)
-	}
-
-	fn text_node(&mut self) {
-		let start = self.at;
-		let bytes = self.src.as_bytes();
-		let open = self.grammar.delimiters.0.as_bytes();
-		// the first character is text whatever it is
-		let mut i = self.at as usize + self.char().map_or(1, char::len_utf8);
-		while i < bytes.len() {
-			if (bytes[i] == b'<' && self.tag_start(i)) || (self.verbatim == 0 && bytes[i..].starts_with(open)) {
-				break;
-			}
-			i += 1;
-		}
-		self.at = i as u32;
-		let node = self.text_chunk(start, self.at, false);
-		self.append(node);
-	}
-
-	/// Whether the nearest element around the cursor, past blocks and meta elements, is `name`.
-	fn nearest_element_is(&self, name: &str) -> bool {
-		let plain = self.grammar.element("*").map(|any| any.ty);
-		let component = self
-			.grammar
-			.elements
-			.iter()
-			.find(|rule| rule.name == Match::Component)
-			.map(|rule| rule.ty);
-		for frame in self.frames.iter().rev() {
-			if let Frame::Element { name: span, ty, .. } = frame {
-				if &self.src[span.0 as usize..span.1 as usize] == name {
-					return true;
-				}
-				if Some(*ty) == plain || Some(*ty) == component {
-					return false;
-				}
-			}
-		}
-		false
-	}
-
-	fn element(&mut self) -> Result<()> {
-		let start = self.at;
-		self.at += 1;
-		if self.eat("!--") {
-			let Some(len) = self.rest().find("-->") else {
-				return fail(self.len(), self.len(), Code::Expected, Some("-->"));
-			};
-			let data_start = self.at;
-			self.at += len as u32 + 3;
-			let rule = &self.grammar.comment;
-			let node = self.host(
-				rule.ty,
-				start,
-				self.at,
-				&[(rule.data, Value::Slice(data_start, self.at - 3))],
-				None,
-				true,
-			);
-			self.append(node);
-			return Ok(());
-		}
-		if self.eat("/") {
-			let name = self.tag_name(false)?;
-			self.space();
-			self.expect(">")?;
-			if self.grammar.is_void(name) {
-				return self.report(error(
-					start,
-					start + 1,
-					Code::Placement,
-					Some("A closing tag of a void element"),
-				));
-			}
-			return self.close_element(start, name);
-		}
-		let name = self.tag_name(false)?;
-		let name_span = (start + 1, self.at);
-		let rule = self.grammar.element(name);
-		let namespaced = name
-			.split_once(':')
-			.is_some_and(|(prefix, _)| prefix == self.grammar.name);
-		let rule = rule.filter(|rule| rule.name != Match::Any || (!namespaced && valid_name(name)));
-		let typing = self.recovering() && name.ends_with('.') && component_name(&format!("{name}_"));
-		let Some(rule) = rule.or_else(|| typing.then(|| self.grammar.component()).flatten()) else {
-			return fail(name_span.0, name_span.1, Code::InvalidName, Some(name));
-		};
-		if rule.root && self.frames.len() > 1 {
-			self.report(error(start, start + 1, Code::Placement, Some(name)))?;
-		}
-		if rule.once {
-			if self.once.contains(&rule.ty) {
-				self.report(error(start, start + 1, Code::Duplicate, Some(name)))?;
-			} else {
-				self.once.push(rule.ty);
-			}
-		}
-		let plain = self.grammar.element("*").map_or(rule.ty, |any| any.ty);
-		let mut ty = rule.ty;
-		if let Some(inside) = rule.inside
-			&& !self.nearest_element_is(inside)
-		{
-			ty = plain;
-		}
-		if rule.outside.is_some()
-			&& self
-				.frames
-				.iter()
-				.any(|frame| matches!(frame, Frame::Element { shadowroot: true, .. }))
-		{
-			ty = plain;
-		}
-		self.space();
-		// the browser closes the open element when this one cannot sit inside it
-		if self.grammar.autoclose
-			&& let Some(Frame::Element {
-				name: parent,
-				ty: parent_ty,
-				..
-			}) = self.frames.last()
-		{
-			let src = self.src;
-			let parent_name = &src[parent.0 as usize..parent.1 as usize];
-			if *parent_ty == plain && closes(parent_name, name) {
-				self.close_top(start);
-				self.autoclosed = Some((parent_name, name, self.frames.len()));
-			}
-		}
-		let at_root = self.frames.len() == 1;
-		let script = self.grammar.script.as_ref().filter(|s| s.name == name && at_root);
-		let style = self.grammar.style.filter(|s| *s == name && at_root);
-		let attributes_at = self.at;
-		let verbatim_before = self.verbatim;
-		let mut attributes = self.nodes.take();
-		let mut seen = std::mem::take(&mut self.seen);
-		seen.clear();
-		let mut shadowroot = false;
-		self.declared.clear();
-		loop {
-			let attribute = if script.is_some() || style.is_some() || self.verbatim > 0 {
-				self.static_attribute()?
-			} else {
-				self.attribute()?
-			};
-			let Some((node, kind, key)) = attribute else { break };
-			if let Some((kind, key)) = key {
-				let text = self.tree().strings.get(key);
-				if self.verbatim == verbatim_before && Some(text) == self.grammar.verbatim {
-					// what came before is read again as plain attributes
-					self.verbatim += 1;
-					self.at = attributes_at;
-					attributes.clear();
-					seen.clear();
-					shadowroot = false;
-					self.declared.clear();
-					continue;
-				}
-				if kind == "Attribute" && text == "shadowrootmode" && ty == plain {
-					shadowroot = true;
-				}
-				let this = text == "this";
-				if seen.contains(&(kind, key)) {
-					let (at, end) = (self.tree().node(node).start, self.tree().node(node).end);
-					let text = text.to_string();
-					self.report(error(at, end, Code::Duplicate, Some(&text)))?;
-				}
-				if !this {
-					seen.push((kind, key));
-				}
-			}
-			let _ = kind;
-			attributes.push(node);
-			self.space();
-		}
-		self.seen = seen;
-		let verbatim_here = self.verbatim > verbatim_before;
-		let declared = std::mem::take(&mut self.declared);
-		let mut fields = self.fields.take();
-		if let Some((field, text)) = rule.this {
-			let position = attributes.iter().position(|&id| self.attribute_named(id, "this"));
-			let value = match position {
-				None => {
-					self.report(error(start, start + 1, Code::Expected, Some("a this attribute")))?;
-					self.placeholder(name_span.1, name_span.1)
-				}
-				Some(position) => {
-					let this = attributes.remove(position);
-					match self.attribute_expression(this) {
-						Some(expression) => expression,
-						None => {
-							let chunk = self
-								.attribute_chunk(this)
-								.filter(|&chunk| text && self.host_type(chunk) == self.grammar.text.ty);
-							match chunk {
-								Some(chunk) => {
-									let node = *self.tree().node(chunk);
-									let value = match self.field_of(chunk, self.grammar.text.data) {
-										Some(Value::Str(s)) => s,
-										Some(Value::Slice(a, b)) => self.intern(&self.src[a as usize..b as usize]),
-										_ => unreachable!(),
-									};
-									self.ast().add(NodeKind::StringLiteral { value }, node.start, node.end)
-								}
-								None => {
-									let node = *self.tree().node(this);
-									self.report(error(
-										node.start,
-										node.end,
-										Code::Expected,
-										Some("an expression as this"),
-									))?;
-									self.placeholder(node.start, node.end)
-								}
-							}
-						}
-					}
-				}
-			};
-			fields.push((field, Value::Node(value)));
-		}
-		if let Some(script) = script {
-			self.expect(">")?;
-			let content_start = self.at;
-			let close = match self.find_closing(name) {
-				Some(close) => close,
-				None => {
-					self.report(error(self.len(), self.len(), Code::Unclosed, Some(name)))?;
-					self.len()
-				}
-			};
-			let program = self.program(content_start, close)?;
-			self.at = close;
-			if close < self.len() {
-				self.close_tag(name)?;
-			}
-			let mut module = false;
-			for &id in &attributes {
-				for &(attribute, value) in &script.module {
-					if !self.attribute_named(id, attribute) {
-						continue;
-					}
-					match value {
-						Some(value) if self.attribute_text(id) != Some(value) => {
-							let node = *self.tree().node(id);
-							self.report(error(
-								node.start,
-								node.end,
-								Code::Expected,
-								Some(&format!("{attribute} to be \"{value}\"")),
-							))?;
-						}
-						None if !matches!(self.field_of(id, "value"), Some(Value::Bool(true))) => {
-							let node = *self.tree().node(id);
-							self.report(error(
-								node.start,
-								node.end,
-								Code::Expected,
-								Some(&format!("{attribute} without a value")),
-							))?;
-						}
-						_ => module = true,
-					}
-				}
-			}
-			let context = self.intern(if module { "module" } else { "default" });
-			let attributes = self.list(&attributes);
-			let node = self.host(
-				"Script",
-				start,
-				self.at,
-				&[
-					("context", Value::Str(context)),
-					("content", Value::Node(program)),
-					("attributes", Value::Nodes(attributes)),
-				],
-				None,
-				true,
-			);
-			let Some(Frame::Root {
-				instance,
-				module: module_slot,
-				..
-			}) = self.frames.first_mut()
-			else {
-				unreachable!()
-			};
-			let slot = if module { module_slot } else { instance };
-			if slot.is_none() {
-				*slot = Some(node);
-				return Ok(());
-			}
-			return self.report(error(start, start + 1, Code::Duplicate, Some(name)));
-		}
-		if style.is_some() {
-			self.expect(">")?;
-			let node = self.style_sheet(start, name, attributes)?;
-			let Some(Frame::Root { css, .. }) = self.frames.first_mut() else {
-				unreachable!()
-			};
-			if css.is_none() {
-				*css = Some(node);
-				return Ok(());
-			}
-			return self.report(error(start, start + 1, Code::Duplicate, Some(name)));
-		}
-		let self_closing = self.eat("/") || self.grammar.is_void(name);
-		let unclosed = !self.eat(">");
-		if unclosed {
-			self.report(error(self.at, self.at, Code::Expected, Some(">")))?;
-		}
-		let name_id = self.intern(name);
-		let names = &self.grammar.element_fields;
-		fields.insert(0, (names.name, Value::Str(name_id)));
-		let finish = |w: &mut Self,
-		              attributes: Vec<NodeId>,
-		              mut fields: Vec<(&'static str, Value)>,
-		              nodes: Vec<NodeId>,
-		              end: u32| {
-			let list = w.list(&attributes);
-			w.nodes.give(attributes);
-			fields.push((names.attributes, Value::Nodes(list)));
-			let children = w.children(nodes);
-			fields.push((names.children, children));
-			let scope = w.element_scope(&fields, &declared);
-			let node = w.host(ty, start, end, &fields, scope, true);
-			w.fields.give(fields);
-			w.append(node);
-			if verbatim_here {
-				w.verbatim -= 1;
-			}
-		};
-		if self_closing || unclosed {
-			let end = self.at;
-			let nodes = self.nodes.take();
-			finish(self, attributes, fields, nodes, end);
-			return Ok(());
-		}
-		if rule.rcdata {
-			let nodes = self.sequence(
-				|w| closing_tag(w.rest(), name).is_some(),
-				&format!("<{name}>"),
-				JsEntry::Expression,
-			)?;
-			if let Some(len) = closing_tag(self.rest(), name) {
-				self.at += len as u32;
-			}
-			let end = self.at;
-			finish(self, attributes, fields, nodes, end);
-			return Ok(());
-		}
-		if rule.raw {
-			let content_start = self.at;
-			let mut close = self.at;
-			loop {
-				let Some(i) = self.src[close as usize..].find("</") else {
-					close = self.len();
-					break;
-				};
-				close += i as u32;
-				if closing_tag(&self.src[close as usize..], name).is_some() {
-					break;
-				}
-				close += 2;
-			}
-			self.at = close;
-			let rule = &self.grammar.text;
-			let mut text_fields = self.fields.take();
-			if let Some(raw) = rule.raw {
-				text_fields.push((raw, Value::Slice(content_start, close)));
-			}
-			text_fields.push((rule.data, Value::Slice(content_start, close)));
-			let node = self.host(rule.ty, content_start, close, &text_fields, None, true);
-			self.fields.give(text_fields);
-			match closing_tag(self.rest(), name) {
-				Some(len) => self.at += len as u32,
-				None => self.report(error(self.len(), self.len(), Code::Unclosed, Some(name)))?,
-			}
-			let end = self.at;
-			let mut nodes = self.nodes.take();
-			nodes.push(node);
-			finish(self, attributes, fields, nodes, end);
-			return Ok(());
-		}
-		let nodes = self.nodes.take();
-		self.frames.push(Frame::Element {
-			start,
-			name: name_span,
-			ty,
-			attributes,
-			fields,
-			nodes,
-			shadowroot,
-			verbatim: verbatim_here,
-			declared,
-		});
-		Ok(())
-	}
-
-	/// `</name`, optional space and `>`, from the cursor.
-	fn find_closing(&self, name: &str) -> Option<u32> {
-		let rest = self.rest();
-		let mut from = 0;
-		while let Some(i) = rest[from..].find("</") {
-			let at = from + i + 2;
-			if let Some(after) = rest[at..].strip_prefix(name)
-				&& after.trim_start_matches(is_space).starts_with('>')
-			{
-				return Some(self.at + (from + i) as u32);
-			}
-			from = at;
-		}
-		None
-	}
-
-	fn close_tag(&mut self, name: &str) -> Result<()> {
-		self.expect("</")?;
-		self.expect(name)?;
-		self.space();
-		self.expect(">")
-	}
-
-	fn tag_name(&mut self, attribute: bool) -> Result<&'a str> {
-		let start = self.at;
-		if start >= self.len() {
-			if attribute && self.recovering() {
-				return Ok("");
-			}
-			return fail(self.len(), self.len(), Code::UnexpectedEof, None);
-		}
-		while let Some(c) = self.char() {
-			if is_space(c) || c == '/' || c == '>' || (attribute && matches!(c, '"' | '\'' | '=')) {
-				break;
-			}
-			self.at += c.len_utf8() as u32;
-		}
-		Ok(&self.src[start as usize..self.at as usize])
-	}
-
-	/// Closes the element on top of the stack at `end`.
-	fn close_top(&mut self, end: u32) {
-		let Some(Frame::Element {
-			start,
-			ty,
-			attributes,
-			mut fields,
-			nodes,
-			verbatim,
-			declared,
-			..
-		}) = self.frames.pop()
-		else {
-			unreachable!()
-		};
-		let names = &self.grammar.element_fields;
-		let list = self.list(&attributes);
-		self.nodes.give(attributes);
-		fields.push((names.attributes, Value::Nodes(list)));
-		let children = self.children(nodes);
-		fields.push((names.children, children));
-		let scope = self.element_scope(&fields, &declared);
-		let node = self.host(ty, start, end, &fields, scope, true);
-		self.fields.give(fields);
-		self.append(node);
-		if verbatim {
-			self.verbatim -= 1;
-		}
-	}
-
-	fn close_element(&mut self, start: u32, name: &str) -> Result<()> {
-		let plain = self.grammar.element("*").map(|any| any.ty);
-		if let Some((_, _, depth)) = self.autoclosed
-			&& self.frames.len() < depth
-		{
-			self.autoclosed = None;
-		}
-		let autoclosed = self.autoclosed;
-		let closed = move || match autoclosed {
-			Some((closed, by, _)) if closed == name => format!("{name}, closed by {by}"),
-			_ => name.to_string(),
-		};
-		// under recovery a closing tag that closes nothing is skipped, and one that closes an
-		// element further out closes what is open inside it
-		let opens = |w: &Self| {
-			w.frames.iter().any(
-				|frame| matches!(frame, Frame::Element { name: span, .. } if &w.src[span.0 as usize..span.1 as usize] == name),
-			)
-		};
-		if self.recovering() && !opens(self) {
-			return self.report(error(start, start + 1, Code::UnexpectedClose, Some(&closed())));
-		}
-		loop {
-			match self.frames.last() {
-				Some(Frame::Element { name: span, ty, .. }) => {
-					let open = &self.src[span.0 as usize..span.1 as usize];
-					if open == name {
-						let end = self.at;
-						self.close_top(end);
-						return Ok(());
-					}
-					if Some(*ty) != plain {
-						self.report(error(start, start + 1, Code::UnexpectedClose, Some(name)))?;
-					}
-					// the browser closes it here
-					self.close_top(start);
-				}
-				Some(Frame::Block {
-					start: block_start,
-					rule,
-					chain,
-					..
-				}) if self.recovering() => {
-					let (block_start, what, chained) = (*block_start, rule.name, chain.is_some());
-					if !chained {
-						self.report(error(block_start, block_start + 1, Code::Unclosed, Some(what)))?;
-					}
-					self.pop_block(start);
-				}
-				_ => return fail(start, start + 1, Code::UnexpectedClose, Some(&closed())),
-			}
-		}
-	}
-
-	/// A quoted or bare text value after `=`, as one text chunk.
-	fn text_value(&mut self) -> Result<Value> {
-		let value_start = self.at;
-		let quote = self.char().filter(|c| matches!(c, '"' | '\''));
-		let (raw_start, raw_end) = match quote {
-			Some(q) => {
-				self.at += 1;
-				let Some(len) = self.rest().find(q) else {
-					return fail(value_start, value_start, Code::Expected, Some("an attribute value"));
-				};
-				let raw = (self.at, self.at + len as u32);
-				self.at += len as u32 + 1;
-				raw
-			}
-			None => {
-				let len = self
-					.rest()
-					.find(|c: char| c == '>' || is_space(c))
-					.unwrap_or(self.rest().len());
-				if len == 0 {
-					return fail(value_start, value_start, Code::Expected, Some("an attribute value"));
-				}
-				self.at += len as u32;
-				(value_start, self.at)
-			}
-		};
-		let text = self.text_chunk(raw_start, raw_end, true);
-		let list = self.list(&[text]);
-		Ok(Value::Nodes(list))
-	}
-
-	/// `name`, `name=value` or `name="text"`: a plain attribute, as a script tag or a verbatim
-	/// element takes them.
-	fn static_attribute(&mut self) -> Result<Option<Attribute>> {
-		let start = self.at;
-		let name = self.tag_name(true)?;
-		if name.is_empty() {
-			return Ok(None);
-		}
-		let mut value = Value::Bool(true);
-		if self.eat("=") {
-			self.space();
-			value = self.text_value()?;
-		}
-		if self.char().is_some_and(|c| c == '"' || c == '\'') {
-			return fail(self.at, self.at, Code::Expected, Some("="));
-		}
-		let name_id = self.intern(name);
-		let node = self.host(
-			"Attribute",
-			start,
-			self.at,
-			&[("name", Value::Str(name_id)), ("value", value)],
-			None,
-			true,
-		);
-		Ok(Some((node, "Attribute", Some(("Attribute", name_id)))))
-	}
-
-	fn comment_between_attributes(&mut self) -> bool {
-		let start = self.at;
-		let (kind, len) = if self.matches("//") {
-			(CommentKind::Line, self.rest().find('\n').unwrap_or(self.rest().len()))
-		} else if self.matches("/*") {
-			match self.rest()[2..].find("*/") {
-				Some(i) => (CommentKind::Block, i + 4),
-				None => (CommentKind::Unclosed, self.rest().len()),
-			}
-		} else {
-			return false;
-		};
-		self.at += len as u32;
-		let end = self.at;
-		self.ast().comments.push(Comment { kind, start, end });
-		true
-	}
-
-	/// The attribute name at `start` read as a directive, when the grammar's syntax says it is one.
-	fn directive_of(&self, name: &'a str, start: u32) -> Result<Option<Directive<'a>>> {
-		let Some(syntax) = &self.grammar.directive_syntax else {
-			return Ok(None);
-		};
-		let mut base_modifiers: &[&'static str] = &[];
-		let (directive, rest, rest_at): (&'a str, &'a str, usize) = if let Some(shorthand) = self
-			.grammar
-			.shorthands
-			.iter()
-			.find(|s| name.starts_with(s.token) && syntax.prefix.is_none_or(|p| !name.starts_with(p)))
-		{
-			base_modifiers = &shorthand.modifiers;
-			(shorthand.name, &name[shorthand.token.len()..], shorthand.token.len())
-		} else if let Some(prefix) = syntax.prefix {
-			let Some(after) = name.strip_prefix(prefix) else {
-				return Ok(None);
-			};
-			let len = after
-				.find(|c: char| syntax.arg.starts_with(c) || syntax.modifier.starts_with(c))
-				.unwrap_or(after.len());
-			let rest = after[len..].strip_prefix(syntax.arg).unwrap_or(&after[len..]);
-			(&after[..len], rest, name.len() - rest.len())
-		} else {
-			let Some((head, tail)) = name.split_once(syntax.arg) else {
-				return Ok(None);
-			};
-			if self.grammar.directive(head).is_none() {
-				return Ok(None);
-			}
-			(head, tail, head.len() + syntax.arg.len())
-		};
-		if directive.is_empty() {
-			return fail(
-				start,
-				start + name.len() as u32,
-				Code::Expected,
-				Some("a directive name"),
-			);
-		}
-		let Some(rule) = self.grammar.directive(directive) else {
-			return Ok(None);
-		};
-		// the argument, in brackets when it is an expression, then the modifiers
-		let mut modifiers = Vec::new();
-		let mut arg = None;
-		let after = if let Some((open, close)) = syntax.dynamic
-			&& let Some(inner) = rest.strip_prefix(open)
-		{
-			let Some(len) = inner.find(close) else {
-				return fail(start, start + name.len() as u32, Code::Expected, Some(close));
-			};
-			let inner_at = rest_at + open.len();
-			arg = Some((&inner[..len], inner_at, inner_at + len, true));
-			&inner[len + close.len()..]
-		} else {
-			let len = rest.find(syntax.modifier).unwrap_or(rest.len());
-			if len > 0 {
-				arg = Some((&rest[..len], rest_at, rest_at + len, false));
-			} else if syntax.prefix.is_none() {
-				return fail(
-					start,
-					start + name.len() as u32,
-					Code::Expected,
-					Some("a directive name"),
-				);
-			}
-			&rest[len..]
-		};
-		for modifier in after.split(syntax.modifier) {
-			if !modifier.is_empty() {
-				modifiers.push(modifier);
-			}
-		}
-		let mut all: Vec<&'a str> = base_modifiers.to_vec();
-		all.extend(modifiers);
-		Ok(Some(Directive {
-			rule,
-			name: directive,
-			arg: arg.map(|(text, s, e, dynamic)| (text, start + s as u32, start + e as u32, dynamic)),
-			modifiers: all,
-		}))
-	}
-
-	/// One attribute: a plain one, a shorthand, a spread, an attachment or a directive; the node,
-	/// its type, and the key it must not repeat.
-	fn attribute(&mut self) -> Result<Option<Attribute>> {
-		let expressions = self.grammar.attribute_expressions;
-		if expressions {
-			while self.comment_between_attributes() {
-				self.space();
-			}
-		}
-		let start = self.at;
-		if expressions && self.eat("{") {
-			self.space();
-			if self.matches("/>") || self.matches(">") {
-				return fail(self.at, self.at, Code::Expected, Some("}"));
-			}
-			if let Some(sigils) = &self.grammar.sigils
-				&& self.eat(sigils.tag)
-			{
-				let (node, rule) = self.tag_node(start)?;
-				if !rule.attribute {
-					return fail(
-						start,
-						self.at,
-						Code::Placement,
-						Some(&format!("A {} tag among attributes", rule.name)),
-					);
-				}
-				return Ok(Some((node, rule.ty, None)));
-			}
-			if self.eat("...") {
-				let Some(ty) = self.grammar.spread else {
-					return fail(start, start + 1, Code::UnexpectedToken, None);
-				};
-				let expression = self.expression("")?;
-				self.space();
-				self.expect("}")?;
-				let node = self.host(
-					ty,
-					start,
-					self.at,
-					&[("expression", Value::Node(expression))],
-					None,
-					true,
-				);
-				return Ok(Some((node, ty, None)));
-			}
-			if self.recovering()
-				&& let Some(sigils) = &self.grammar.sigils
-				&& [sigils.open, sigils.branch, sigils.close, sigils.tag]
-					.iter()
-					.any(|s| self.matches(s))
-			{
-				self.at = start;
-				return Ok(None);
-			}
-			if !self.grammar.attribute_shorthand {
-				return fail(start, start + 1, Code::UnexpectedToken, None);
-			}
-			let id_start = self.at;
-			let id = self.identifier()?;
-			let id_end = self.at;
-			let name = &self.src[id_start as usize..id_end as usize];
-			if reserved(name) {
-				return fail(id_start, id_end, Code::ReservedWord, Some(name));
-			}
-			self.space();
-			self.expect("}")?;
-			let tag = self.expression_tag(id_start, id_end, id)?;
-			let name_id = self.intern(name);
-			let node = self.host(
-				"Attribute",
-				start,
-				self.at,
-				&[("name", Value::Str(name_id)), ("value", Value::Node(tag))],
-				None,
-				true,
-			);
-			return Ok(Some((node, "Attribute", Some(("Attribute", name_id)))));
-		}
-		let name = self.tag_name(true)?;
-		if name.is_empty() || (self.recovering() && name.starts_with('<')) {
-			self.at = start;
-			return Ok(None);
-		}
-		let name_end = self.at;
-		let directive = self.directive_of(name, start)?;
-		let mut end = name_end;
-		self.space();
-		let has_value = self.eat("=");
-		if !has_value && self.char().is_some_and(|c| c == '"' || c == '\'') {
-			return fail(self.at, self.at, Code::Expected, Some("="));
-		}
-		if has_value {
-			self.space();
-		}
-		let Some(directive) = directive else {
-			let value = if has_value {
-				self.plain_value()?
-			} else {
-				Value::Bool(true)
-			};
-			if has_value {
-				end = self.at;
-			}
-			let name_id = self.intern(name);
-			let node = self.host(
-				"Attribute",
-				start,
-				end,
-				&[("name", Value::Str(name_id)), ("value", value)],
-				None,
-				true,
-			);
-			return Ok(Some((node, "Attribute", Some(("Attribute", name_id)))));
-		};
-		let syntax = self.grammar.directive_syntax.as_ref().unwrap();
-		let rule = directive.rule;
-		let mut fields = self.fields.take();
-		if let Some(field) = syntax.name_field {
-			let id = self.intern(directive.name);
-			fields.push((field, Value::Str(id)));
-		}
-		if let Some(field) = syntax.raw_field {
-			fields.push((field, Value::Slice(start, name_end)));
-		}
-		if let Some(field) = syntax.arg_field {
-			let value = match directive.arg {
-				Some((_, arg_start, arg_end, true)) => {
-					let (at, limit) = (self.at, self.limit);
-					self.at = arg_start;
-					self.limit = arg_end;
-					let expression = self.expression("");
-					self.at = at;
-					self.limit = limit;
-					Value::Node(expression?)
-				}
-				Some((text, _, _, false)) => Value::Str(self.intern(text)),
-				None => Value::Null,
-			};
-			fields.push((field, value));
-		}
-		let declares = rule.declares.as_deref();
-		match &rule.value {
-			DirectiveValue::Value => {
-				let value = if has_value {
-					self.plain_value()?
-				} else {
-					Value::Bool(true)
-				};
-				if has_value {
-					end = self.at;
-				}
-				fields.push(("value", value));
-			}
-			DirectiveValue::Expression {
-				optional,
-				name: own_name,
-			}
-			| DirectiveValue::Pattern {
-				optional,
-				name: own_name,
-			} => {
-				let entry = if matches!(rule.value, DirectiveValue::Pattern { .. }) {
-					JsEntry::Pattern
-				} else {
-					JsEntry::Expression
-				};
-				let value = if has_value {
-					self.plain_value_as(entry)?
-				} else {
-					Value::Bool(true)
-				};
-				if has_value {
-					end = self.at;
-				}
-				let expression = match value {
-					Value::Bool(true) => None,
-					Value::Node(tag) => self.chunk_expression(tag),
-					Value::Nodes(list) => {
-						let items = self.tree().list(list).to_vec();
-						match items[..] {
-							[Some(chunk)] if self.chunk_expression(chunk).is_some() => self.chunk_expression(chunk),
-							[Some(chunk), ..] => {
-								let node = self.tree().node(chunk);
-								return fail(node.start, node.end, Code::Expected, Some("an expression, not text"));
-							}
-							_ => None,
-						}
-					}
-					_ => None,
-				};
-				let expression = match expression {
-					Some(e) => Value::Node(e),
-					None if *own_name => match directive.arg {
-						Some((text, arg_start, _, _)) => {
-							let id = self.intern(text);
-							Value::Node(self.ast().add(NodeKind::Identifier { name: id }, arg_start, end))
-						}
-						None => return fail(start, end, Code::Expected, Some("a value")),
-					},
-					None if *optional => Value::Null,
-					None => return fail(start, end, Code::Expected, Some("a value")),
-				};
-				if let (Some([]), Value::Node(pattern)) = (declares, expression) {
-					self.declared.push(pattern);
-				}
-				fields.push(("expression", expression));
-			}
-			DirectiveValue::Form(form) => {
-				let mut read = Read {
-					fields: self.fields.take(),
-					body: None,
-				};
-				if has_value {
-					let (value_start, value_end, after) = self.value_range()?;
-					if value_end > value_start {
-						let limit = self.limit;
-						self.at = value_start;
-						self.limit = value_end;
-						let result = self.form(form, &mut read);
-						self.limit = limit;
-						result?;
-						self.space_to(value_end);
-						if self.at != value_end {
-							return fail(
-								self.at,
-								value_end,
-								Code::Expected,
-								Some("the end of the attribute value"),
-							);
-						}
-					}
-					self.at = after;
-					end = after;
-				}
-				for &(field, omit) in &form.entries {
-					if !omit && !read.fields.iter().any(|(k, _)| *k == field) {
-						read.fields.push((field, Value::Null));
-					}
-				}
-				if let Some(names) = declares {
-					for &(field, value) in &read.fields {
-						if !names.contains(&field) {
-							continue;
-						}
-						match value {
-							Value::Node(pattern) => self.declared.push(pattern),
-							Value::Nodes(list) => {
-								let patterns: Vec<NodeId> = self.tree().list(list).iter().flatten().copied().collect();
-								self.declared.extend(patterns);
-							}
-							_ => {}
-						}
-					}
-				}
-				fields.extend(read.fields);
-			}
-		}
-		if let Some(field) = syntax.modifiers_field {
-			let from = self.ast().host_strings.len() as u32;
-			let count = directive.modifiers.len() as u32;
-			for modifier in &directive.modifiers {
-				let id = self.intern(modifier);
-				self.ast().host_strings.push(id);
-			}
-			fields.push((field, Value::Strs(from, count)));
-		}
-		for &(flag, on) in &rule.flags {
-			fields.push((flag, Value::Bool(on)));
-		}
-		let node = self.host(rule.ty, start, end, &fields, None, true);
-		self.fields.give(fields);
-		let key = if syntax.unique {
-			Some(("Attribute", self.intern(name)))
-		} else {
-			match (rule.unique, directive.arg) {
-				(Unique::Kind, Some((text, ..))) => Some((rule.ty, self.intern(text))),
-				(Unique::Attribute, Some((text, ..))) => Some(("Attribute", self.intern(text))),
-				_ => None,
-			}
-		};
-		Ok(Some((node, rule.ty, key)))
-	}
-
-	/// An attribute value as the grammar reads one: text with expressions, or text.
-	fn plain_value(&mut self) -> Result<Value> {
-		self.plain_value_as(JsEntry::Expression)
-	}
-
-	/// The same, its expressions read as `entry`.
-	fn plain_value_as(&mut self, entry: JsEntry) -> Result<Value> {
-		if !self.grammar.attribute_expressions {
-			return self.text_value();
-		}
-		if self.matches("/>") {
-			// `<a href=/>`: the slash is the value
-			let slash = self.at;
-			self.at += 1;
-			let text = self.text_chunk(slash, slash + 1, true);
-			let list = self.list(&[text]);
-			return Ok(Value::Nodes(list));
-		}
-		self.attribute_value(entry)
-	}
-
-	/// The span of the attribute value at the cursor, quoted or bare, and where the cursor goes
-	/// after it.
-	fn value_range(&mut self) -> Result<(u32, u32, u32)> {
-		let at = self.at;
-		match self.char() {
-			Some(q @ ('"' | '\'')) => {
-				let Some(len) = self.rest()[1..].find(q) else {
-					return fail(at, at, Code::Expected, Some("an attribute value"));
-				};
-				Ok((at + 1, at + 1 + len as u32, at + 2 + len as u32))
-			}
-			_ => {
-				let len = self
-					.rest()
-					.find(|c: char| c == '>' || is_space(c))
-					.unwrap_or(self.rest().len());
-				let len = self.rest()[..len].find("/>").unwrap_or(len);
-				if len == 0 {
-					return fail(at, at, Code::Expected, Some("an attribute value"));
-				}
-				Ok((at, at + len as u32, at + len as u32))
-			}
-		}
-	}
-
-	/// A quoted or bare attribute value: text with expressions, or one expression on its own.
-	fn attribute_value(&mut self, entry: JsEntry) -> Result<Value> {
-		let quote = self.char().filter(|c| matches!(c, '"' | '\''));
-		if let Some(q) = quote {
-			self.at += 1;
-			if self.char() == Some(q) {
-				let at = self.at;
-				self.at += 1;
-				let text = self.text_chunk(at, at, true);
-				let list = self.list(&[text]);
-				return Ok(Value::Nodes(list));
-			}
-		}
-		let chunks = match quote {
-			Some(q) => self.sequence(move |w| w.char() == Some(q), "an attribute value", entry)?,
-			None => self.sequence(
-				|w| {
-					w.matches("/>")
-						|| w.char()
-							.is_none_or(|c| is_space(c) || matches!(c, '"' | '\'' | '=' | '<' | '>' | '`'))
-				},
-				"an attribute value",
-				entry,
-			)?,
-		};
-		if chunks.is_empty() && quote.is_none() {
-			return fail(self.at, self.at, Code::Expected, Some("an attribute value"));
-		}
-		if quote.is_some() && self.char() == quote {
-			self.at += 1;
-		}
-		let value = if quote.is_some() || chunks.len() > 1 || self.host_type(chunks[0]) == self.grammar.text.ty {
-			Value::Nodes(self.list(&chunks))
-		} else {
-			Value::Node(chunks[0])
-		};
-		self.nodes.give(chunks);
-		Ok(value)
-	}
-
-	/// Text and expression chunks up to where `done` says.
-	fn sequence(&mut self, done: impl Fn(&Self) -> bool, place: &str, entry: JsEntry) -> Result<Vec<NodeId>> {
-		let (open, close) = self.grammar.delimiters;
-		let mut chunks = self.nodes.take();
-		let mut chunk_start = self.at;
-		loop {
-			if self.at >= self.len() {
-				self.report(error(self.len(), self.len(), Code::UnexpectedEof, None))?;
-				let at = self.at;
-				self.flush_text(chunk_start, at, &mut chunks);
-				return Ok(chunks);
-			}
-			if done(self) {
-				let at = self.at;
-				self.flush_text(chunk_start, at, &mut chunks);
-				return Ok(chunks);
-			}
-			if self.verbatim == 0 && self.eat(open) {
-				let start = self.at - open.len() as u32;
-				if let Some(sigils) = &self.grammar.sigils
-					&& (self.matches(sigils.open) || self.matches(sigils.tag))
-				{
-					return fail(
-						start,
-						start + 1,
-						Code::Placement,
-						Some(&format!("A block or tag in {place}")),
-					);
-				}
-				self.flush_text(chunk_start, start, &mut chunks);
-				self.space();
-				if self.matches("/>") || self.matches(">") {
-					return fail(self.at, self.at, Code::Expected, Some(close));
-				}
-				let expression = self.js(entry, "")?;
-				let expression = self.first(expression);
-				self.space();
-				self.expect(close)?;
-				let tag = self.expression_tag(start, self.at, expression)?;
-				chunks.push(tag);
-				chunk_start = self.at;
-			} else {
-				self.at += self.char().map_or(1, |c| c.len_utf8() as u32);
-			}
-		}
-	}
-
-	fn flush_text(&mut self, from: u32, to: u32, chunks: &mut Vec<NodeId>) {
-		if to > from {
-			let text = self.text_chunk(from, to, true);
-			chunks.push(text);
-		}
-	}
-
-	/// A tag between the delimiters: a block, a branch, a close, a special tag, a declaration or
-	/// an expression.
-	fn tag(&mut self) -> Result<()> {
-		let (open, close) = self.grammar.delimiters;
-		let start = self.at;
-		self.at += open.len() as u32;
-		self.space();
-		if let Some(sigils) = &self.grammar.sigils {
-			if self.eat(sigils.open) {
-				return self.open_block(start);
-			}
-			if self.eat(sigils.branch) {
-				return self.branch(start);
-			}
-			// a `/` that starts a comment is the expression's
-			let comment = sigils.close == "/" && (self.matches("/*") || self.matches("//"));
-			if !comment && self.eat(sigils.close) {
-				return self.close_block(start);
-			}
-			if self.eat(sigils.tag) {
-				return self.special(start);
-			}
-		}
-		if let Some(rule) = &self.grammar.declaration {
-			if let Some(word) = ["var", "interface", "enum"].into_iter().find(|w| self.word(w)) {
-				let at = self.at;
-				return fail(
-					at,
-					at + word.len() as u32,
-					Code::Placement,
-					Some("A declaration of that kind"),
-				);
-			}
-			if self.word("let") || self.word("const") || self.word("type") {
-				let at = self.at;
-				let comments = self.tree().comments.len();
-				let statement = self.js(JsEntry::Statement, "")?;
-				let statement = self.first(statement);
-				let kind = self.tree().node(statement).kind;
-				match kind {
-					NodeKind::VariableDeclaration {
-						kind: VariableKind::Let | VariableKind::Const,
-						..
-					} => {
-						self.space();
-						self.expect(close)?;
-						let node = self.host(
-							rule.ty,
-							start,
-							self.at,
-							&[("declaration", Value::Node(statement))],
-							None,
-							true,
-						);
-						self.append(node);
-						return Ok(());
-					}
-					// `{type}` is an expression after all
-					NodeKind::ExpressionStatement { .. } => {
-						self.at = at;
-						self.ast().comments.truncate(comments);
-					}
-					_ => {
-						let node = self.tree().node(statement);
-						return fail(
-							node.start,
-							node.end,
-							Code::Placement,
-							Some("A declaration of that kind"),
-						);
-					}
-				}
-			}
-		}
-		let Some(rule) = &self.grammar.expression else {
-			return fail(start, start + 1, Code::UnexpectedToken, None);
-		};
-		let expression = self.expression("")?;
-		self.space();
-		self.expect(close)?;
-		let field = match rule.form.items.first() {
-			Some(Item::Entry { field, .. }) => field,
-			_ => "expression",
-		};
-		let node = self.host(rule.ty, start, self.at, &[(field, Value::Node(expression))], None, true);
-		self.append(node);
-		Ok(())
-	}
-
-	fn lowercase_word(&mut self) -> &'a str {
-		let start = self.at;
-		while self.byte().is_some_and(|b| b.is_ascii_lowercase()) {
-			self.at += 1;
-		}
-		&self.src[start as usize..self.at as usize]
-	}
-
-	fn open_block(&mut self, start: u32) -> Result<()> {
-		let close = self.grammar.delimiters.1;
-		let name_at = self.at;
-		let name = self.lowercase_word();
-		let Some(rule) = self.grammar.block(name) else {
-			if let Some(known) = self.grammar.blocks.iter().find(|rule| name.starts_with(rule.name)) {
-				let at = name_at + known.name.len() as u32;
-				return fail(at, at, Code::Expected, Some("whitespace"));
-			}
-			self.report(error(name_at, self.at, Code::Expected, Some("a block name")))?;
-			self.skip_tag();
-			return Ok(());
-		};
-		self.keyword = name_at;
-		if !rule.open.items.is_empty() {
-			self.require_space()?;
-		}
-		let mut read = Read {
-			fields: self.fields.take(),
-			body: None,
-		};
-		self.form(&rule.open, &mut read)?;
-		self.space();
-		self.expect(close)?;
-		let Some(body) = read.body.take().or(rule.open.body.as_ref()) else {
-			return fail(start, start + 1, Code::Placement, Some("A block without a body"));
-		};
-		let mut outside = self.nodes.take();
-		let group = self.group_of(&read, body, &mut outside);
-		let (nodes, done) = (self.nodes.take(), self.fields.take());
-		let mut groups = self.groups.take();
-		groups.push(group);
-		self.frames.push(Frame::Block {
-			start,
-			rule,
-			fields: read.fields,
-			body: (body.field, body.omit),
-			nodes,
-			done,
-			groups,
-			outside,
-			chain: None,
-		});
-		Ok(())
-	}
-
-	fn branch(&mut self, start: u32) -> Result<()> {
-		let close = self.grammar.delimiters.1;
-		let Some(Frame::Block { rule, .. }) = self.frames.last() else {
-			self.report(error(
-				start,
-				start + 1,
-				Code::Placement,
-				Some("A branch outside its block"),
-			))?;
-			self.skip_tag();
-			return Ok(());
-		};
-		let rule: &'a BlockRule = rule;
-		// the longest run of words first: `else if` before `else`
-		let mut branches: Vec<&'a grammar::BranchRule> = rule.branches.iter().collect();
-		branches.sort_by_key(|b| std::cmp::Reverse(b.words.len()));
-		let at = self.at;
-		let mut found = None;
-		for branch in branches {
-			self.at = at;
-			let mut ok = true;
-			for (i, word) in branch.words.iter().enumerate() {
-				if i > 0 {
-					self.space();
-				}
-				if !self.word(word) {
-					ok = false;
-					break;
-				}
-				self.at += word.len() as u32;
-			}
-			if ok {
-				found = Some(branch);
-				break;
-			}
-		}
-		let Some(branch) = found else {
-			self.at = at;
-			let names = rule
-				.branches
-				.iter()
-				.map(|b| b.words.join(" "))
-				.collect::<Vec<_>>()
-				.join(" or ");
-			return fail(start, start + 1, Code::Expected, Some(&names));
-		};
-		let body = branch.form.body.as_ref().unwrap();
-		self.finish_body();
-		if let Some(child_field) = body.chain {
-			// the branch opens a block of its own inside the parent's field, which closes with it
-			if let Some(Frame::Block { body: current, .. }) = self.frames.last_mut() {
-				*current = ("", true);
-			}
-			self.keyword = at;
-			if !branch.form.items.is_empty() {
-				self.require_space()?;
-			}
-			let mut read = Read {
-				fields: self.fields.take(),
-				body: None,
-			};
-			self.form(&branch.form, &mut read)?;
-			self.space();
-			self.expect(close)?;
-			let child = Body {
-				field: child_field,
-				omit: false,
-				chain: None,
-				declares: body.declares.clone(),
-			};
-			let mut outside = self.nodes.take();
-			let group = self.group_of(&read, &child, &mut outside);
-			let (nodes, done) = (self.nodes.take(), self.fields.take());
-			let mut groups = self.groups.take();
-			groups.push(group);
-			self.frames.push(Frame::Block {
-				start,
-				rule,
-				fields: read.fields,
-				body: (child_field, false),
-				nodes,
-				done,
-				groups,
-				outside,
-				chain: Some(body.field),
-			});
-			return Ok(());
-		}
-		let mut read = Read {
-			fields: self.fields.take(),
-			body: None,
-		};
-		self.form(&branch.form, &mut read)?;
-		self.space();
-		self.expect(close)?;
-		let mut outside = self.nodes.take();
-		let group = self.group_of(&read, body, &mut outside);
-		let Some(Frame::Block {
-			fields,
-			body: current,
-			done,
-			groups,
-			outside: all_outside,
-			..
-		}) = self.frames.last_mut()
-		else {
-			unreachable!()
-		};
-		if done.iter().any(|(field, _)| *field == body.field) {
-			return fail(
-				start,
-				start + 1,
-				Code::Duplicate,
-				Some(&format!("{{:{}}}", branch.words.join(" "))),
-			);
-		}
-		fields.extend(read.fields.iter().copied());
-		*current = (body.field, body.omit);
-		groups.push(group);
-		all_outside.extend(outside);
-		Ok(())
-	}
-
-	/// The patterns a body declares, by the fields that hold them.
-	/// The scope a body opens, as its form read it: the patterns the body declares, those the
-	/// block declares around itself, and the entries read after the first declared one, a key
-	/// after the context of an each block, which the scope holds too.
-	fn group_of(&mut self, read: &Read<'_>, body: &Body, outside: &mut Vec<NodeId>) -> BodyGroup {
-		let mut group = BodyGroup {
-			body: body.field,
-			fields: self.names.take(),
-			inside: self.nodes.take(),
-		};
-		let mut opened = false;
-		for &(field, value) in &read.fields {
-			match body.declares.iter().find(|declare| declare.field == field) {
-				Some(declare) => {
-					let target = if declare.outside {
-						&mut *outside
-					} else {
-						&mut group.inside
-					};
-					match value {
-						Value::Node(id) => target.push(id),
-						Value::Nodes(list) => target.extend(self.tree().list(list).iter().flatten()),
-						_ => {}
-					}
-					if !declare.outside {
-						group.fields.push(field);
-						opened = true;
-					}
-				}
-				None if opened => group.fields.push(field),
-				None => {}
-			}
-		}
-		group
-	}
-
-	/// Closes the open body of the block on top: its nodes become the children under its field.
-	fn finish_body(&mut self) {
-		let Some(Frame::Block { nodes, body, .. }) = self.frames.last_mut() else {
-			unreachable!()
-		};
-		let nodes = std::mem::take(nodes);
-		let field = body.0;
-		if field.is_empty() {
-			return;
-		}
-		let children = self.children(nodes);
-		let Some(Frame::Block { done, .. }) = self.frames.last_mut() else {
-			unreachable!()
-		};
-		done.push((field, children));
-	}
-
-	fn close_block(&mut self, start: u32) -> Result<()> {
-		let close = self.grammar.delimiters.1;
-		let name_at = self.at;
-		let name = self.lowercase_word();
-		self.space();
-		self.expect(close)?;
-		let end = self.at;
-		let open = self
-			.frames
-			.iter()
-			.any(|frame| matches!(frame, Frame::Block { rule, .. } if rule.name == name));
-		if !self.recovering() || !open {
-			match self.frames.last() {
-				Some(Frame::Block { rule, .. }) if rule.name == name => {}
-				Some(Frame::Block { .. }) => {
-					return self.report(error(
-						name_at,
-						name_at + name.len() as u32,
-						Code::UnexpectedClose,
-						Some(name),
-					));
-				}
-				_ => return self.report(error(start, start + 1, Code::UnexpectedClose, Some(name))),
-			}
-		}
-		loop {
-			match self.frames.last() {
-				Some(Frame::Block { rule, .. }) if rule.name == name => break,
-				Some(Frame::Block {
-					start: block_start,
-					rule,
-					chain,
-					..
-				}) => {
-					let (block_start, what, chained) = (*block_start, rule.name, chain.is_some());
-					if !chained {
-						self.report(error(block_start, block_start + 1, Code::Unclosed, Some(what)))?;
-					}
-					self.pop_block(start);
-				}
-				Some(Frame::Element {
-					start: element_start,
-					name: span,
-					..
-				}) => {
-					let (element_start, what) = (*element_start, &self.src[span.0 as usize..span.1 as usize]);
-					self.report(error(element_start, element_start + 1, Code::Unclosed, Some(what)))?;
-					self.close_top(start);
-				}
-				_ => unreachable!(),
-			}
-		}
-		while !self.pop_block(end) {}
-		Ok(())
-	}
-
-	/// Closes the block on top at `end`; whether it stood on its own rather than in a chain,
-	/// whose parent is then still open.
-	fn pop_block(&mut self, end: u32) -> bool {
-		self.finish_body();
-		let Some(Frame::Block {
-			start: block_start,
-			rule,
-			fields,
-			done,
-			groups,
-			outside,
-			chain,
-			..
-		}) = self.frames.pop()
-		else {
-			unreachable!()
-		};
-		let node = self.block_node(rule, block_start, end, fields, done, groups, outside, chain.is_some());
-		match chain {
-			Some(field) => {
-				let mut one = self.nodes.take();
-				one.push(node);
-				let children = self.children(one);
-				let Some(Frame::Block { done, .. }) = self.frames.last_mut() else {
-					unreachable!()
-				};
-				done.push((field, children));
-				false
-			}
-			None => {
-				self.append(node);
-				true
-			}
-		}
-	}
-
-	#[allow(clippy::too_many_arguments)]
-	fn block_node(
-		&mut self,
-		rule: &BlockRule,
-		start: u32,
-		end: u32,
-		mut fields: Vec<(&'static str, Value)>,
-		done: Vec<(&'static str, Value)>,
-		mut groups: Vec<BodyGroup>,
-		outside: Vec<NodeId>,
-		chained: bool,
-	) -> NodeId {
-		// every entry the block could have read, null unless left out on purpose
-		for &(field, omit) in &rule.entries {
-			if !omit && !fields.iter().any(|(k, _)| *k == field) {
-				fields.push((field, Value::Null));
-			}
-		}
-		if let Some(flag) = rule.chain_flag {
-			fields.push((flag, Value::Bool(chained)));
-		}
-		// the fields outside every scope first, then each body's scope: its fields, then the body
-		let mut ordered = self.fields.take();
-		ordered.extend(
-			fields
-				.iter()
-				.copied()
-				.filter(|(f, _)| !groups.iter().any(|group| group.fields.contains(f))),
-		);
-		for &(field, omit) in &rule.bodies {
-			if !omit && !done.iter().any(|(k, _)| *k == field) {
-				ordered.push((field, Value::Null));
-			}
-		}
-		let base = self.ast().host_fields.len() as u32;
-		let groups_at = self.ast().host_groups.len() as u32;
-		let mut count = 0;
-		for &(body, children) in &done {
-			let from = ordered.len() as u32;
-			let group = groups.iter().find(|group| group.body == body);
-			if let Some(group) = group {
-				for &field in &group.fields {
-					if let Some(&entry) = fields.iter().find(|(f, _)| *f == field) {
-						ordered.push(entry);
-					}
-				}
-			}
-			ordered.push((body, children));
-			let inside: &[NodeId] = group.map_or(&[], |group| &group.inside);
-			if self.grammar.fragment_scope || !inside.is_empty() {
-				let inside = self.list(inside);
-				let node = match children {
-					Value::Node(fragment) if self.grammar.fragment.is_some() => Some(fragment),
-					_ => None,
-				};
-				self.ast().host_groups.push(HostGroup {
-					inside,
-					from: base + from,
-					until: base + ordered.len() as u32,
-					node,
-				});
-				count += 1;
-			}
-		}
-		let outside_list = self.list(&outside);
-		self.nodes.give(outside);
-		let scope = Some(Opens {
-			outside: outside_list,
-			groups: (groups_at, count),
-		});
-		let node = self.host(rule.ty, start, end, &ordered, scope, true);
-		self.fields.give(ordered);
-		self.fields.give(fields);
-		self.fields.give(done);
-		for group in groups.drain(..) {
-			self.names.give(group.fields);
-			self.nodes.give(group.inside);
-		}
-		self.groups.give(groups);
-		node
-	}
-
-	fn special(&mut self, start: u32) -> Result<()> {
-		let (node, rule) = self.tag_node(start)?;
-		if rule.attribute {
-			return fail(
-				start,
-				self.at,
-				Code::Placement,
-				Some(&format!("A {} tag in content", rule.name)),
-			);
-		}
-		self.append(node);
-		Ok(())
-	}
-
-	/// A special tag after its sigil: its node, and its rule.
-	fn tag_node(&mut self, start: u32) -> Result<(NodeId, &'a TagRule)> {
-		let close = self.grammar.delimiters.1;
-		let name_at = self.at;
-		let name = self.lowercase_word();
-		let Some(rule) = self.grammar.tag(name) else {
-			if let Some(known) = self.grammar.tags.iter().find(|rule| name.starts_with(rule.name)) {
-				let at = name_at + known.name.len() as u32;
-				return fail(at, at, Code::Expected, Some("whitespace"));
-			}
-			return fail(name_at, self.at, Code::Expected, Some("a tag name"));
-		};
-		let rule: &'a TagRule = rule;
-		self.keyword = name_at;
-		let mut read = Read {
-			fields: self.fields.take(),
-			body: None,
-		};
-		let lists_names = matches!(
-			rule.form.items.first(),
-			Some(Item::Entry {
-				entry: Entry::Identifiers,
-				..
-			})
-		);
-		if !rule.form.items.is_empty() && !lists_names {
-			self.require_space()?;
-		}
-		self.form(&rule.form, &mut read)?;
-		self.space();
-		self.expect(close)?;
-		let node = self.host(rule.ty, start, self.at, &read.fields, None, true);
-		self.fields.give(read.fields);
-		Ok((node, rule))
-	}
-
-	/// Runs a form at the cursor: every literal in place, every entry read, the first fitting
-	/// alternative of a group taken.
-	fn form(&mut self, form: &'a Form, read: &mut Read<'a>) -> Result<()> {
-		self.items(&form.items, read)
-	}
-
-	fn items(&mut self, items: &'a [Item], read: &mut Read<'a>) -> Result<()> {
-		for item in items {
-			match item {
-				Item::Literal(literal) => {
-					self.space();
-					if !self.literal_here(literal) {
-						return fail(self.at, self.at, Code::Expected, Some(literal));
-					}
-					self.at += literal.len() as u32;
-				}
-				Item::Entry {
-					field, entry, stops, ..
-				} => {
-					self.space();
-					let value = self.entry(*entry, stops)?;
-					read.fields.push((field, value));
-				}
-				Item::Group {
-					alternatives,
-					required,
-					after,
-				} => {
-					self.space();
-					let mut taken = false;
-					for alternative in alternatives {
-						if self.alternative_here(alternative, after) {
-							self.items(&alternative.items, read)?;
-							if let Some(body) = &alternative.body {
-								read.body = Some(body);
-							}
-							taken = true;
-							break;
-						}
-					}
-					if !taken && *required {
-						let mut names = Vec::new();
-						for alternative in alternatives {
-							names.extend(grammar::first_literals(&alternative.items, &[]));
-						}
-						return fail(self.at, self.at, Code::Expected, Some(&names.join(" or ")));
-					}
-				}
-			}
-		}
-		Ok(())
-	}
-
-	fn literal_here(&self, literal: &str) -> bool {
-		if literal.starts_with(is_id_start) {
-			self.word(literal)
-		} else {
-			self.matches(literal)
-		}
-	}
-
-	/// Whether an alternative starts here: by its first literal, or, for one that starts with an
-	/// entry, by what the entry starts with: anything that is not the end of the tag nor a token
-	/// that follows the group, unless the entry has an opener of its own. An optional group that
-	/// is not here is skipped for what follows it.
-	fn alternative_here(&self, alternative: &Alternative, after: &[&'static str]) -> bool {
-		let mut items = alternative.items.iter();
-		loop {
-			let item = items.next();
-			if let Some(Item::Group {
-				alternatives, required, ..
-			}) = item
-			{
-				if alternatives.iter().any(|a| self.alternative_here(a, after)) {
-					return true;
-				}
-				if *required {
-					return false;
-				}
-				continue;
-			}
-			return match item {
-				Some(Item::Literal(literal)) => self.literal_here(literal),
-				Some(Item::Entry { entry, .. }) => self.entry_here(*entry, after),
-				_ => true,
-			};
-		}
-	}
-
-	fn entry_here(&self, entry: Entry, after: &[&'static str]) -> bool {
-		let close = self.grammar.delimiters.1;
-		match entry {
-			Entry::TypeParameters => self.matches("<"),
-			Entry::Params => self.matches("("),
-			Entry::Identifier => self.char().is_some_and(is_id_start),
-			Entry::Pattern => self.char().is_some_and(|c| is_id_start(c) || c == '[' || c == '{'),
-			_ => {
-				!self.matches(close)
-					&& self.at < self.limit
-					&& !self.char().is_some_and(|c| matches!(c, ')' | ']' | '}' | ',' | ';'))
-					&& !after.iter().any(|stop| self.literal_here(stop))
-			}
-		}
-	}
-
-	fn entry(&mut self, entry: Entry, stops: &grammar::Stops) -> Result<Value> {
-		Ok(match entry {
-			Entry::Expression => {
-				let roots = self.js(JsEntry::Expression, stops.expression)?;
-				Value::Node(self.first(roots))
-			}
-			Entry::Pattern => {
-				let roots = self.js(JsEntry::Pattern, stops.joined)?;
-				Value::Node(self.first(roots))
-			}
-			Entry::Statement => {
-				let roots = self.js(JsEntry::Statement, stops.joined)?;
-				Value::Node(self.first(roots))
-			}
-			Entry::Code => {
-				let (start, end) = (self.at, self.limit);
-				let comments = self.tree().comments.len();
-				let mark = self.tree().mark();
-				// one expression, read strictly so that recovery cannot stand in for the statements
-				let recovering = std::mem::replace(&mut self.options.error_recovery, false);
-				let expression = self.js(JsEntry::Expression, "");
-				self.options.error_recovery = recovering;
-				if let Ok(roots) = expression {
-					self.space_to(end);
-					if self.at >= end {
-						return Ok(Value::Node(self.first(roots)));
-					}
-				}
-				self.at = start;
-				self.ast().comments.truncate(comments);
-				self.ast().truncate(mark);
-				let program = self.program(start, end)?;
-				self.at = end;
-				Value::Node(program)
-			}
-			Entry::TypeParameters => {
-				let node = self.js(JsEntry::TypeParameters, stops.joined)?;
-				let node = self.first(node);
-				let node = self.tree().node(node);
-				Value::Slice(node.start + 1, node.end - 1)
-			}
-			Entry::Params => Value::Nodes(self.js(JsEntry::Params, stops.joined)?),
-			Entry::Identifier => Value::Node(self.identifier()?),
-			Entry::Text => {
-				let close = self.grammar.delimiters.1;
-				let rest = &self.src[self.at as usize..self.limit as usize];
-				let len = rest.find(close).unwrap_or(rest.len());
-				let text = &rest[..len];
-				let start = self.at + (text.len() - text.trim_start_matches(is_space).len()) as u32;
-				let end = self.at + text.trim_end_matches(is_space).len() as u32;
-				self.at += len as u32;
-				Value::Slice(start, end.max(start))
-			}
-			Entry::Identifiers => {
-				let close = self.grammar.delimiters.1;
-				let mut ids = self.nodes.take();
-				loop {
-					self.space();
-					if self.matches(close) || self.at >= self.limit {
-						break;
-					}
-					ids.push(self.identifier()?);
-					self.space();
-					if !self.eat(",") {
-						break;
-					}
-					self.space();
-					if self.matches(close) || self.at >= self.limit {
-						return fail(self.at, self.at, Code::Expected, Some("an identifier"));
-					}
-				}
-				let list = self.list(&ids);
-				Value::Nodes(list)
-			}
-			Entry::Const => {
-				let id = self.js(JsEntry::Pattern, "=")?;
-				let id = self.first(id);
-				let id_start = self.tree().node(id).start;
-				self.space();
-				self.expect("=")?;
-				self.space();
-				let init_at = self.at;
-				let init = self.js(JsEntry::Expression, "")?;
-				let init = self.first(init);
-				let declarator_end = self.at;
-				let init_node = *self.tree().node(init);
-				if matches!(init_node.kind, NodeKind::SequenceExpression { .. })
-					&& !self.src[init_at as usize..init_node.start as usize].contains('(')
-				{
-					return fail(
-						init_node.start,
-						init_node.end,
-						Code::Expected,
-						Some("a single declaration"),
-					);
-				}
-				self.space();
-				let end = self.at;
-				let declarator = self.ast().add(
-					NodeKind::VariableDeclarator { id, init: Some(init) },
-					id_start,
-					declarator_end,
-				);
-				let declarations = self.list(&[declarator]);
-				let keyword = self.keyword;
-				Value::Node(self.ast().add(
-					NodeKind::VariableDeclaration {
-						declarations,
-						kind: VariableKind::Const,
-					},
-					keyword,
-					end,
-				))
-			}
-		})
-	}
-
-	fn expression(&mut self, stop: &str) -> Result<NodeId> {
-		let roots = self.js(JsEntry::Expression, stop)?;
-		Ok(self.first(roots))
-	}
-
-	/// The JavaScript at the cursor, read by the parser into the same tree up to the limit; the
-	/// cursor moves past it.
-	fn js(&mut self, entry: JsEntry, stop: &str) -> Result<List> {
-		let ast = self.ast.take().unwrap();
-		let src = &self.src[..self.limit as usize];
-		let mut parser = Parser::<E>::new(src, self.at, self.options, stop, ast);
-		let first = parser.tok.start;
-		let roots = match parser.start().and_then(|()| parser.read_entry(entry)) {
-			// the placeholder spans what was read: a host copies an expression's text by its range
-			Err(error) if parser.recovering() => {
-				let at = error.pos;
-				parser.record(Err(error)).unwrap();
-				parser.skip_to_end();
-				parser.prev_end = parser.prev_end.max(at);
-				if entry == JsEntry::Params {
-					Ok(List::EMPTY)
-				} else {
-					let name = parser.intern("");
-					let end = parser.consumed_end().max(first);
-					let placeholder = parser.add_with_end(NodeKind::Identifier { name }, first, end);
-					Ok(parser.list_of(&[placeholder]))
-				}
-			}
-			result => result,
-		};
-		let end = parser.consumed_end();
-		self.ast = Some(parser.finish());
-		let roots = roots?;
-		self.at = end;
-		Ok(roots)
-	}
-
-	/// The one root a JavaScript entry read.
-	fn first(&self, roots: List) -> NodeId {
-		self.tree().nth(roots, 0).unwrap()
-	}
-
-	fn program(&mut self, start: u32, end: u32) -> Result<NodeId> {
-		let ast = self.ast.take().unwrap();
-		let src = &self.src[..end as usize];
-		// the template may declare what the script exports
-		let mut options = self.options;
-		options.allow_undeclared_exports = true;
-		let mut parser = Parser::<E>::new(src, start, options, "", ast);
-		let program = parser.start().and_then(|()| parser.parse_program());
-		self.ast = Some(parser.finish());
-		program
-	}
-
-	/// An empty identifier standing where one could not be read.
-	fn placeholder(&mut self, start: u32, end: u32) -> NodeId {
-		let name = self.intern("");
-		self.ast().add(NodeKind::Identifier { name }, start, end)
-	}
-
-	/// An identifier the host reads itself, as a node.
-	fn identifier(&mut self) -> Result<NodeId> {
-		let start = self.at;
-		match self.char() {
-			Some(c) if is_id_start(c) => self.at += c.len_utf8() as u32,
-			_ => {
-				// under recovery an empty identifier stands where one was expected
-				self.report(error(start, start, Code::Expected, Some("an identifier")))?;
-				return Ok(self.placeholder(start, start));
-			}
-		}
-		while let Some(c) = self.char() {
-			if !is_id_continue(c) {
-				break;
-			}
-			self.at += c.len_utf8() as u32;
-		}
-		let end = self.at;
-		let word = &self.src[start as usize..end as usize];
-		if reserved(word) || (self.options.module && word == "await") {
-			self.report(error(start, end, Code::ReservedWord, Some(word)))?;
-		}
-		let name = self.intern(word);
-		Ok(self.ast().add(NodeKind::Identifier { name }, start, end))
-	}
-}
-
-/// A word that cannot name a binding.
-fn reserved(word: &str) -> bool {
-	use crate::lexer::token::word::{ENUM, KEYWORD, STRICT, flags};
-	flags(word) & (KEYWORD | STRICT | ENUM) != 0 || matches!(word, "this" | "true" | "false" | "null")
-}
-
-/// The length of a `</name>` closer at the start of `rest`, in any case, attributes and all.
 fn closing_tag(rest: &str, name: &str) -> Option<usize> {
 	let head = 2 + name.len();
 	let start = rest.get(..head)?;
@@ -2923,4 +2273,15 @@ fn closing_tag(rest: &str, name: &str) -> Option<usize> {
 		return None;
 	}
 	tail.find('>').map(|i| head + i + 1)
+}
+
+fn native_form(form: &Form, entry: Js) -> bool {
+	match form {
+		Form::Read {
+			reader: Reader::Javascript { entry: read, .. },
+			..
+		} => *read == entry,
+		Form::Seq(items) => items.iter().any(|form| native_form(form, entry)),
+		_ => false,
+	}
 }

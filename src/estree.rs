@@ -880,6 +880,7 @@ pub struct Writer<'a, X = (), S: Sink = Json> {
 	kept: Vec<(Name<'static>, NodeId)>,
 	/// Nodes erasure skipped whose facts the next node written takes over.
 	adopted: Vec<NodeId>,
+	emitted_roots: crate::ast::NodeSet,
 }
 
 /// Maps byte offsets to UTF-16 offsets and line/column pairs, the positions JavaScript counts,
@@ -1011,6 +1012,7 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 			name_only: false,
 			kept: Vec::new(),
 			adopted: Vec::new(),
+			emitted_roots: Default::default(),
 		}
 	}
 
@@ -1075,6 +1077,7 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		let adopted = std::mem::take(&mut self.adopted);
 		for node in adopted.iter().copied().chain([id]) {
 			if let Some(&root) = scopes.root_of.get(node) {
+				self.emitted_roots.insert(node);
 				self.key(c!("root"));
 				self.sink.int(root);
 			}
@@ -1242,6 +1245,25 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 			self.all_kept();
 		}
 		if self.output.scopes {
+			let captures = self
+				.ast
+				.scopes
+				.as_ref()
+				.into_iter()
+				.flat_map(|scopes| &scopes.roots)
+				.filter(|root| !self.emitted_roots.contains(root.node))
+				.map(|root| root.node)
+				.collect::<Vec<_>>();
+			if !captures.is_empty() {
+				self.key(crate::names::Name::dynamic("captures"));
+				self.sink.list();
+				let erase = std::mem::replace(&mut self.output.erase, false);
+				for node in captures {
+					self.node(node);
+				}
+				self.output.erase = erase;
+				self.sink.end();
+			}
 			self.all_scopes();
 		}
 	}
@@ -2020,7 +2042,7 @@ pub(crate) fn push_int(out: &mut String, mut value: u32) {
 }
 
 /// The decimal digits of a BigInt literal's text, without the `n`.
-fn bigint_decimal(raw: &str) -> String {
+pub(crate) fn bigint_decimal(raw: &str) -> String {
 	let (radix, digits) = match raw.get(..2) {
 		Some("0x" | "0X") => (16, &raw[2..]),
 		Some("0o" | "0O") => (8, &raw[2..]),
