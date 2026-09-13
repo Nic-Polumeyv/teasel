@@ -5,8 +5,7 @@
 //! one keeps what is inside it as `innerComments`; what is left trails the root. Children are
 //! visited in source order. A host's own nodes take no comments: those stay in the list alone.
 
-use crate::ast::{Ast, Attached, List, NodeId, NodeKind, Walk};
-use crate::interner::FastMap;
+use crate::ast::{Ast, Attached, List, NodeId, NodeKind, NodeMap, Walk};
 
 /// Attaches the comments at or after `from` to the trees under `roots`, in order, replacing any
 /// earlier attachment; what is left trails the last one.
@@ -40,7 +39,7 @@ pub fn attach<X: Walk>(ast: &mut Ast<X>, source: &str, roots: List, from: u32) {
 		&& !matches!(last_node.kind, NodeKind::Host(_))
 		&& (ast.comments[rest as usize].start >= last_node.end || matches!(last_node.kind, NodeKind::Program { .. }))
 	{
-		let trailing = &mut attached.entry(last).or_default().trailing;
+		let trailing = &mut attached.entry(last).trailing;
 		for index in rest..ast.comments.len() as u32 {
 			trailing.push(index);
 		}
@@ -52,7 +51,7 @@ struct Attacher<'a, X> {
 	ast: &'a Ast<X>,
 	source: &'a str,
 	next: u32,
-	attached: FastMap<NodeId, Attached>,
+	attached: NodeMap<Attached>,
 	scratch: Vec<NodeId>,
 }
 
@@ -66,7 +65,7 @@ impl<X: Walk> Attacher<'_, X> {
 	}
 
 	fn take(&mut self, node: NodeId, place: Place) {
-		let entry = self.attached.entry(node).or_default();
+		let entry = self.attached.entry(node);
 		match place {
 			Place::Leading => entry.leading.push(self.next),
 			Place::Trailing => entry.trailing.push(self.next),

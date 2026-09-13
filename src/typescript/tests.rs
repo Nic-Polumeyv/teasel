@@ -264,7 +264,7 @@ fn failed_attempts_leave_nothing() {
 		panic!()
 	};
 	assert!(ast.is_parenthesized(expression));
-	assert_eq!(ast.parenthesized.iter().map(|w| w.count_ones()).sum::<u32>(), 1);
+	assert_eq!(ast.parenthesized.iter().count(), 1);
 }
 
 #[test]
