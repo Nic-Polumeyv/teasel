@@ -53,7 +53,7 @@ const directiveName = (f: DirectiveSlots, name?: string, prop = false) => seq(
 			emit(f.arg, get('event', 'argument', 'text'))),
 	),
 );
-const optionalValue = <F extends Form<string, unknown>>(form: F) => choice(
+const optionalValue = <F extends Form>(form: F) => choice(
 	seq(read({ kind: 'test', value: present(get('event', 'value')) }), form),
 	read({ kind: 'test', value: not(present(get('event', 'value'))) }),
 );

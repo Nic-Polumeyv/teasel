@@ -7,9 +7,9 @@ import {
 
 const named = (node: V) => present(staticAttribute(node, 'slot'));
 const component = (node: V) => isType(node, 'Component', 'SvelteComponent', 'SvelteSelf');
-const header = <Fs extends readonly Form<string, unknown>[]>(...items: Fs) => seq(token('{'), ...items, token('}'));
+const header = <Fs extends readonly Form[]>(...items: Fs) => seq(token('{'), ...items, token('}'));
 const end = (name: string) => header(token('/' + name, true));
-const branch = <Fs extends readonly Form<string, unknown>[]>(...items: Fs) => header(token(':', true), ...items);
+const branch = <Fs extends readonly Form[]>(...items: Fs) => header(token(':', true), ...items);
 const body = <N extends string>(into: Slot<N>) => call('Body', into);
 const event = get('event');
 
