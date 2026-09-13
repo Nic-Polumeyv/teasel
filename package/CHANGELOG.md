@@ -1,5 +1,11 @@
 # @teasel/parser
 
+## 0.0.9
+
+### Patch Changes
+
+- [#97](https://github.com/Nic-Polumeyv/teasel/pull/97) [`c32e8cf`](https://github.com/Nic-Polumeyv/teasel/commit/c32e8cf86e24552ec91c2fa1573abda0f4ae4fb0) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - identifier checks answer false above U+10FFFF; a plan whose recursion precedes a failing test, or whose region parent cycles through its own iterator, fails to load; a token that begins with skipped whitespace no longer proves a choice disjoint
+
 ## 0.0.8
 
 ### Patch Changes
