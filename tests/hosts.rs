@@ -1,4 +1,4 @@
-//! A document for each rule of the grammars under `hosts/`, its answer pinned beside it as
+//! A document for each rule of the host grammars beside them, its answer pinned beside it as
 //! `NAME.json`: the tree with comments and scopes, the error when it has one. A name says what
 //! else is on: `locations`, `erase`, or `recover` for `errorRecovery`. `UPDATE=1` rewrites the
 //! pins once a change is meant.
@@ -17,12 +17,13 @@ fn documents() {
 	let mut grammars: Vec<_> = fs::read_dir(root.join("tests/hosts"))
 		.unwrap()
 		.map(|e| e.unwrap().path())
+		.filter(|p| p.is_dir())
 		.collect();
 	grammars.sort();
 	for dir in grammars {
 		let name = dir.file_name().unwrap().to_str().unwrap().to_owned();
-		let grammar = fs::read_to_string(root.join("hosts").join(format!("{name}.grammar"))).unwrap();
-		for file in common::inputs(&dir) {
+		let grammar = fs::read_to_string(root.join("tests/hosts").join(&name).join("host.grammar")).unwrap();
+		for file in sources(&dir) {
 			let stem = file.file_stem().unwrap().to_str().unwrap();
 			let source = fs::read_to_string(&file).unwrap();
 			let mut request = Request::new(Entry::Program, 0);
@@ -56,8 +57,8 @@ fn documents() {
 fn every_prefix_answers() {
 	let root = Path::new(env!("CARGO_MANIFEST_DIR"));
 	for name in ["svelte", "vue"] {
-		let grammar = fs::read_to_string(root.join("hosts").join(format!("{name}.grammar"))).unwrap();
-		for file in common::inputs(&root.join("tests/hosts").join(name)) {
+		let grammar = fs::read_to_string(root.join("tests/hosts").join(name).join("host.grammar")).unwrap();
+		for file in sources(&root.join("tests/hosts").join(name)) {
 			let source = fs::read_to_string(&file).unwrap();
 			for (end, _) in source.char_indices().chain([(source.len(), ' ')]) {
 				for recover in [false, true] {
@@ -79,8 +80,8 @@ fn every_prefix_answers() {
 #[test]
 fn unfinished_input() {
 	let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-	let svelte = fs::read_to_string(root.join("hosts/svelte.grammar")).unwrap();
-	let vue = fs::read_to_string(root.join("hosts/vue.grammar")).unwrap();
+	let svelte = fs::read_to_string(root.join("tests/hosts/svelte/host.grammar")).unwrap();
+	let vue = fs::read_to_string(root.join("tests/hosts/vue/host.grammar")).unwrap();
 	let parse = |source: &str, grammar: &str, recover: bool| {
 		let mut request = Request::new(Entry::Program, 0);
 		request.set("comments");
@@ -112,7 +113,7 @@ fn unfinished_input() {
 fn host_phases() {
 	use teasel::json::Prepared;
 	let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-	let grammar = fs::read_to_string(root.join("hosts/svelte.grammar")).unwrap();
+	let grammar = fs::read_to_string(root.join("tests/hosts/svelte/host.grammar")).unwrap();
 	let mut documents = vec![(
 		"200 each blocks".to_string(),
 		format!(
@@ -137,4 +138,12 @@ fn host_phases() {
 			eprintln!("{best:9.2} µs  {name} {flags}");
 		}
 	}
+}
+
+/// The documents of a host directory: not its grammar, its plan or the pins.
+fn sources(dir: &Path) -> Vec<std::path::PathBuf> {
+	common::inputs(dir)
+		.into_iter()
+		.filter(|f| f.file_stem().is_some_and(|s| s != "plan") && f.extension().is_some_and(|e| e != "grammar"))
+		.collect()
 }

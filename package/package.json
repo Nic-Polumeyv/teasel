@@ -25,7 +25,11 @@
 			"types": "./index.d.ts",
 			"default": "./wasm.js"
 		},
-		"./teasel.wasm": "./teasel.wasm"
+		"./teasel.wasm": "./teasel.wasm",
+		"./plan": {
+			"types": "./plan.d.ts",
+			"default": "./plan.js"
+		}
 	},
 	"files": [
 		"index.js",
@@ -35,20 +39,26 @@
 		"api.js",
 		"decode.js",
 		"identifier.js",
+		"plan.js",
+		"plan.d.ts",
 		"teasel.wasm"
 	],
 	"scripts": {
-		"build": "node addon.js",
+		"build": "npm run build:plan && node addon.js",
+		"build:plan": "tsc --ignoreConfig plan.ts --declaration --strict --target es2022 --module esnext --moduleResolution bundler --skipLibCheck",
 		"build:wasm": "cargo build --release -p teasel-wasm --target wasm32-unknown-unknown && cp ../target/wasm32-unknown-unknown/release/teasel_wasm.wasm teasel.wasm",
 		"test": "node test.js && node test.js interpret",
+		"types": "tsc -p tsconfig.json",
 		"check": "node check.js",
-		"changeset:version": "changeset version && node versions.js && git add --all"
+		"changeset:version": "changeset version && node versions.js && git add --all",
+		"prepublishOnly": "npm run build:plan"
 	},
 	"dependencies": {
 		"@types/estree": "^1.0.6"
 	},
 	"devDependencies": {
 		"@changesets/changelog-github": "^1.0.0",
-		"@changesets/cli": "^3.0.1"
+		"@changesets/cli": "^3.0.1",
+		"@types/node": "^26.0.0"
 	}
 }
