@@ -1036,7 +1036,7 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 			self.bool(c!("parenthesized"), true);
 		}
 		self.ast.extension.extras(self, id);
-		if let Some(&attached) = self.ast.attached.get(&id) {
+		if let Some(&attached) = self.ast.attached.get(id) {
 			self.comments(c!("leadingComments"), attached.leading);
 			self.comments(c!("trailingComments"), attached.trailing);
 			self.comments(c!("innerComments"), attached.inner);
@@ -1067,7 +1067,7 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		}
 		let adopted = std::mem::take(&mut self.adopted);
 		for node in adopted.iter().copied().chain([id]) {
-			if let Some(&root) = scopes.root_of.get(&node) {
+			if let Some(&root) = scopes.root_of.get(node) {
 				self.key(c!("root"));
 				self.sink.int(root);
 			}
