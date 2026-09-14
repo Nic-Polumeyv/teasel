@@ -45,8 +45,8 @@ function bytes(text) {
 	return [ptr, written, capacity];
 }
 
-function create(source, names, host) {
-	const handle = guarded(() => wasm.source_new(...bytes(source), ...bytes(names), ...bytes(host)));
+function create(source, flags, host) {
+	const handle = guarded(() => wasm.source_new(...bytes(source), flags, ...bytes(host)));
 	if (handle === 0) throw new Error(JSON.parse(text()).error.message);
 	return { handle, generation };
 }

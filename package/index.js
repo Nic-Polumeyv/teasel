@@ -17,7 +17,7 @@ function bytes(text) {
 }
 
 export const engine = {
-	create: (source, names, host) => native.create(bytes(source), names, host),
+	create: (source, flags, host) => native.create(bytes(source), flags, host),
 	parse: native.parse,
 	free: native.free,
 	constants: native.constants,
