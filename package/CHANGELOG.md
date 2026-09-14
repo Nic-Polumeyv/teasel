@@ -1,5 +1,19 @@
 # @teasel/parser
 
+## 0.0.9
+
+### Patch Changes
+
+- [#108](https://github.com/Nic-Polumeyv/teasel/pull/108) [`30c3327`](https://github.com/Nic-Polumeyv/teasel/commit/30c332726bfb1309e1e0cc15ef4c29d09cf09629) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - every parse goes to the engine: the JavaScript-side bare identifier shortcut and the `isIdentifierStart` / `isIdentifierChar` exports are gone, the engine's own tables are the only ones
+
+- [#109](https://github.com/Nic-Polumeyv/teasel/pull/109) [`e904126`](https://github.com/Nic-Polumeyv/teasel/commit/e9041264e5c14aaef20eacb2d424133b528e5ca1) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - less fixed cost per parse: the pooled tree is boxed instead of moved by value through the parser, and the interner clears the slots it used instead of its whole table; an empty parse 432 → 274 ns, and 835 → 285 ns after a large parse on the same thread
+
+- [#111](https://github.com/Nic-Polumeyv/teasel/pull/111) [`25394c6`](https://github.com/Nic-Polumeyv/teasel/commit/25394c602027841eae9219113ab2daa23239de53) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - the options cross as one flag word instead of their names, at creation
+
+- [#97](https://github.com/Nic-Polumeyv/teasel/pull/97) [`c32e8cf`](https://github.com/Nic-Polumeyv/teasel/commit/c32e8cf86e24552ec91c2fa1573abda0f4ae4fb0) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - identifier checks answer false above U+10FFFF; a plan whose recursion precedes a failing test, or whose region parent cycles through its own iterator, fails to load; a token that begins with skipped whitespace no longer proves a choice disjoint
+
+- [`0f42351`](https://github.com/Nic-Polumeyv/teasel/commit/0f42351723f05701f1200d57530fc3f435ea684f) - the addon is built without unwinding tables and the wasm module goes through wasm-opt: 4% and 17% smaller, same speed
+
 ## 0.0.8
 
 ### Patch Changes
