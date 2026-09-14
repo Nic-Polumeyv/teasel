@@ -1,16 +1,11 @@
 name: ci
 
-# One workflow: every push and pull request is tested and built; on main the docs deploy when they
-# changed, pending changesets become the Version Packages PR, and merging that PR (it bumps
-# Cargo.toml) publishes from the artifacts this same run built, once the version is not on npm yet.
-# The tag marks the release and is created after npm has it, never before.
 on:
   push:
     branches: [main]
   pull_request:
   workflow_dispatch:
 
-# a pull request run gives way to its next push; a main run is never cancelled, it may be deploying or publishing
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -87,8 +82,6 @@ jobs:
           path: package/teasel.wasm
           if-no-files-found: error
 
-  # what the push or pull request touched: the docs build only when they changed, and a main push
-  # that touched Cargo.toml releases when its version is not on npm yet (a dispatch retries that)
   changes:
     runs-on: ubuntu-latest
     outputs:
@@ -156,7 +149,6 @@ jobs:
       - run: aws s3 sync build s3://teasel.dev --delete
       - run: aws cloudfront create-invalidation --distribution-id E2MJUFV76BN8VA --paths "/*"
 
-  # pending changesets as the Version Packages PR; merging it is the release
   version:
     if: github.repository == 'Nic-Polumeyv/teasel' && github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
