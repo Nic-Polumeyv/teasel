@@ -32,7 +32,7 @@ pub fn parse_at(
 	stop: &str,
 ) -> std::result::Result<(Ast<Data>, List, u32), SyntaxError> {
 	let (ast, parsed) = crate::parser::parse_at::<TypeScript>(src, start, end, entry, options, stop, None);
-	parsed.map(|(roots, end)| (ast, roots, end)).map_err(|e| *e)
+	parsed.map(|(roots, end)| (*ast, roots, end)).map_err(|e| *e)
 }
 
 /// Parser state that only TypeScript needs. `State` is copied into every snapshot, so it stays

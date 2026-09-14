@@ -399,6 +399,7 @@ impl Entry {
 /// everything the parse consumed. `reused` is an emptied tree from an earlier parse, its room kept.
 /// The tree, whether the parse succeeded or not, so the next parse can reuse it; with the roots
 /// read and where the parse ended.
+#[allow(clippy::type_complexity)]
 pub(crate) fn parse_at<E: Extension>(
 	src: &str,
 	start: u32,
@@ -406,8 +407,8 @@ pub(crate) fn parse_at<E: Extension>(
 	entry: Entry,
 	options: Options,
 	stop: &str,
-	reused: Option<Ast<E::Data>>,
-) -> (Ast<E::Data>, Result<(List, u32)>) {
+	reused: Option<Box<Ast<E::Data>>>,
+) -> (Box<Ast<E::Data>>, Result<(List, u32)>) {
 	let end = end.unwrap_or(src.len() as u32);
 	let src = &src[..end as usize];
 	let budget = if entry == Entry::Program {
@@ -415,7 +416,7 @@ pub(crate) fn parse_at<E: Extension>(
 	} else {
 		0
 	};
-	let ast = reused.unwrap_or_else(|| Ast::sized(budget));
+	let ast = reused.unwrap_or_else(|| Box::new(Ast::sized(budget)));
 	let mut parser = Parser::<E>::new(src, start, options, stop, ast);
 	let roots = parser.read_roots(entry).map(|roots| {
 		let end = if entry == Entry::Program {
@@ -457,7 +458,7 @@ impl<E: Extension> Parser<'_, E> {
 
 pub(crate) struct Parser<'a, E: Extension = ()> {
 	pub(crate) lexer: Lexer<'a>,
-	pub(crate) ast: Ast<E::Data>,
+	pub(crate) ast: Box<Ast<E::Data>>,
 	pub(crate) ext: E,
 	pub(crate) options: Options,
 	pub(crate) tok: Token,
@@ -587,7 +588,7 @@ pub(crate) struct DestructuringErrors {
 }
 
 impl<'a, E: Extension> Parser<'a, E> {
-	pub(crate) fn new(src: &'a str, offset: u32, options: Options, stop: &str, mut ast: Ast<E::Data>) -> Self {
+	pub(crate) fn new(src: &'a str, offset: u32, options: Options, stop: &'a str, mut ast: Box<Ast<E::Data>>) -> Self {
 		let mut lexer = Lexer::with(src, std::mem::take(&mut ast.strings));
 		lexer.comments = std::mem::take(&mut ast.comments);
 		lexer.set_pos(offset);
@@ -1016,7 +1017,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 		}
 	}
 
-	pub(crate) fn finish(self) -> Ast<E::Data> {
+	pub(crate) fn finish(self) -> Box<Ast<E::Data>> {
 		let mut ast = self.ast;
 		let mut lexer = self.lexer;
 		ast.comments = std::mem::take(&mut lexer.comments);

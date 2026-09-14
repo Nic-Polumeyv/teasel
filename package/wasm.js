@@ -1,12 +1,12 @@
 import { bind } from './api.js';
 
-export { isIdentifierStart, isIdentifierChar } from './identifier.js';
 export { scopeOf, bindingOf, referenceOf, parentOf } from './decode.js';
 
 const encoder = new TextEncoder();
 const utf8 = new TextDecoder();
 
 // `teasel.wasm` next to this file, read where there is a file system and fetched elsewhere
+// TODO: `import source` once we require node >= 22.19 and bundlers accept it: no fs, ~10 ms less startup
 const url = new URL('./teasel.wasm', import.meta.url);
 const { module, instance } =
 	url.protocol === 'file:'
@@ -65,9 +65,9 @@ function planOf(held) {
 	return held.handle;
 }
 
-function create(source, names, plan) {
+function create(source, flags, plan) {
 	const host = planOf(plan);
-	const handle = guarded(() => wasm.source_new(...bytes(source), ...bytes(names), host));
+	const handle = guarded(() => wasm.source_new(...bytes(source), flags, host));
 	if (handle === 0) throw new Error(JSON.parse(text()).error.message);
 	return { handle, generation };
 }

@@ -148,12 +148,12 @@ unsafe extern "C" fn plan(env: Env, info: CallbackInfo) -> Value {
 	})
 }
 
-// the bytes V8 encoded, made valid UTF-8 where they are not; the options as their names; the
+// the bytes V8 encoded, made valid UTF-8 where they are not; the options as one flag word; the
 // plan of the host language the whole source is a document of, by its handle, or 0
 unsafe extern "C" fn create(env: Env, info: CallbackInfo) -> Value {
 	guard(env, || {
-		let [source, names, host] = args::<3>(env, info)?;
-		let mut prepared = Prepared::from_bytes(bytes(env, source)?, Request::from_names(&string(env, names)?));
+		let [source, flags, host] = args::<3>(env, info)?;
+		let mut prepared = Prepared::from_bytes(bytes(env, source)?, Request::from_flags(number(env, flags)? as u32));
 		let host = number(env, host)? as u32;
 		if host != 0 {
 			prepared = prepared.host_by(host)?;

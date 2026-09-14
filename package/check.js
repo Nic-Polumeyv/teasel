@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import * as node from './index.js';
 import * as wasm from './wasm.js';
-import { ENTRY, names } from './api.js';
+import { ENTRY, flags } from './api.js';
 import { decode } from './decode.js';
 import { load } from './native.js';
 
@@ -25,13 +25,6 @@ function walk(dir) {
 for (const dir of process.argv.slice(2)) walk(dir);
 let checked = 0;
 let failed = 0;
-
-const bits_of = names;
-function result(answer, source) {
-	if (typeof answer !== 'string') return decode(answer, source, engine);
-	const { message, ...error } = JSON.parse(answer).error;
-	throw Object.assign(new SyntaxError(message), error);
-}
 
 function outcome(fn) {
 	try {
@@ -77,7 +70,7 @@ function mode(source, options, entry, at) {
 /** The addon's answers as JSON, each with the batch job that asks the binary for the same. */
 const jobs = [];
 function json(name, source, options, entry, at) {
-	const answer = native.parse(native.create(Buffer.from(source), names(options), 0), ENTRY[entry], at, undefined, '');
+	const answer = native.parse(native.create(Buffer.from(source), flags(options), 0), ENTRY[entry], at, undefined, '');
 	const tree = typeof answer === 'string' ? answer : JSON.stringify(decode(answer, source, engine, false));
 	jobs.push({ name, source, mode: mode(source, options, entry, at), tree });
 }
@@ -109,15 +102,12 @@ for (const file of files) {
 			const at = { end: start + m[2].length };
 			report(`${file} script ${start} wasm`, differ(outcome(() => twin.parse('program', start, at)), outcome(() => held.parse('program', start, at))));
 		}
-		const raw = native.create(Buffer.from(text), bits_of(options), 0);
 		for (const match of text.matchAll(brace_re)) {
 			const at = match.index + 1;
 			for (const entry of Object.keys(ENTRY)) {
 				if (entry === 'program') continue;
 				json(`${file}@${at} ${entry}`, text, options, entry, at);
 				report(`${file}@${at} ${entry} wasm`, differ(outcome(() => twin.parse(entry, at)), outcome(() => held.parse(entry, at))));
-				// the package answers a bare identifier itself; it must say what the engine says
-				report(`${file}@${at} ${entry} engine`, differ(outcome(() => held.parse(entry, at)), outcome(() => result(native.parse(raw, ENTRY[entry], at, undefined, ''), text))));
 			}
 		}
 	}

@@ -66,6 +66,8 @@ pub struct Interner {
 	/// empty. Always a power of two, at most half full. The hash sits beside the id so a probe
 	/// touches one line before it reads the text.
 	table: Vec<u64>,
+	/// Slots written since the last clear, so clearing costs what was used, not the table.
+	touched: Vec<u32>,
 	/// What the lexer knows of each word by id, filled as words are met; see `token::word`.
 	pub(crate) word_flags: Vec<u8>,
 }
@@ -106,6 +108,7 @@ impl Interner {
 			text: String::with_capacity(bytes / 32),
 			starts,
 			table: vec![0; slots],
+			touched: Vec::new(),
 			word_flags: Vec::new(),
 		}
 	}
@@ -115,7 +118,15 @@ impl Interner {
 		self.text.clear();
 		self.starts.clear();
 		self.starts.push(0);
-		self.table.fill(0);
+		// scattered writes lose to a fill past an eighth of the table
+		if self.touched.len() * 8 < self.table.len() {
+			for &slot in &self.touched {
+				self.table[slot as usize] = 0;
+			}
+		} else {
+			self.table.fill(0);
+		}
+		self.touched.clear();
 		self.word_flags.clear();
 	}
 
@@ -133,6 +144,7 @@ impl Interner {
 		self.text.push_str(s);
 		self.starts.push(self.text.len() as u32);
 		self.table[slot] = Self::entry(hash, id);
+		self.touched.push(slot as u32);
 		StrId(id)
 	}
 
@@ -169,12 +181,14 @@ impl Interner {
 			self.starts.push(0);
 		}
 		let mask = size - 1;
+		self.touched.clear();
 		for entry in old.into_iter().filter(|&entry| entry != 0) {
 			let mut i = (entry >> 32) as usize & mask;
 			while self.table[i] != 0 {
 				i = (i + 1) & mask;
 			}
 			self.table[i] = entry;
+			self.touched.push(i as u32);
 		}
 	}
 

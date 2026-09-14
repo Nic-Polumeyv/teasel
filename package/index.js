@@ -2,7 +2,6 @@
 import { bind } from './api.js';
 import { load } from './native.js';
 
-export { isIdentifierStart, isIdentifierChar } from './identifier.js';
 export { scopeOf, bindingOf, referenceOf, parentOf } from './decode.js';
 
 const native = load();
@@ -19,7 +18,7 @@ function bytes(text) {
 
 export const engine = {
 	plan: native.plan,
-	create: (source, names, plan) => native.create(bytes(source), names, plan ?? 0),
+	create: (source, flags, plan) => native.create(bytes(source), flags, plan ?? 0),
 	parse: native.parse,
 	free: native.free,
 	constants: native.constants,

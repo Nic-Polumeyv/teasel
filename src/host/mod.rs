@@ -360,7 +360,8 @@ impl<'a, E: Extension> Native for NativeReader<'a, E> {
 }
 
 pub fn parse(src: &str, plan: &Plan, options: Options) -> (Ast, std::result::Result<NodeId, Box<crate::SyntaxError>>) {
-	parse_document::<()>(src, plan, options, None, true)
+	let (ast, root) = parse_document::<()>(src, plan, options, None, true);
+	(*ast, root)
 }
 
 /// `regions` resolves the plan's regions and declarations, the input of scope analysis.
@@ -368,15 +369,15 @@ pub(crate) fn parse_document<E: Extension>(
 	src: &str,
 	plan: &Plan,
 	options: Options,
-	reused: Option<Ast<E::Data>>,
+	reused: Option<Box<Ast<E::Data>>>,
 	regions: bool,
-) -> (Ast<E::Data>, Result<NodeId>) {
+) -> (Box<Ast<E::Data>>, Result<NodeId>) {
 	let cut = if plan.html.trim_end {
 		src.trim_end_matches(is_space)
 	} else {
 		src
 	};
-	let mut ast = reused.unwrap_or_else(|| Ast::sized(src.len()));
+	let mut ast = reused.unwrap_or_else(|| Box::new(Ast::sized(src.len())));
 	let mut spare = ast.host_spare.take().unwrap_or_default();
 	spare.ids.clear();
 	spare.ids.resize(plan.program.strings.len(), u32::MAX);
@@ -396,11 +397,11 @@ pub(crate) fn parse_document<E: Extension>(
 	spare.region_slots.clear();
 	spare.targets.clear();
 	spare.node_records.clear();
-	let (mut ast, data) = ast.split();
+	let (mut ast, data) = (*ast).split();
 	let mut placeholder = spare.native.take().unwrap_or_else(|| Ast::sized(0));
 	placeholder.spare = std::mem::take(&mut ast.spare);
 	let mut native = NativeReader::<E> {
-		parser: Parser::new(src, 0, options, "", placeholder.with_extension(data)),
+		parser: Parser::new(src, 0, options, "", Box::new(placeholder.with_extension(data))),
 		src,
 		marks: Vec::with_capacity(plan.program.checkpoint_depth),
 	};
@@ -435,11 +436,11 @@ pub(crate) fn parse_document<E: Extension>(
 	errors.dedup_by(|a, b| a.pos == b.pos && a.code == b.code);
 	let mut ast = w.ast.take().unwrap();
 	let mut spare = w.spare;
-	let (mut placeholder, data) = native.parser.finish().split();
+	let (mut placeholder, data) = (*native.parser.finish()).split();
 	ast.spare = std::mem::take(&mut placeholder.spare);
 	spare.native = Some(placeholder);
 	ast.host_spare = Some(spare);
-	(ast.with_extension(data), result)
+	(Box::new(ast.with_extension(data)), result)
 }
 
 struct Walker<'a> {

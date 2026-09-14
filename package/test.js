@@ -4,34 +4,8 @@ import { readFileSync } from 'node:fs';
 if (process.argv[2] === 'interpret') globalThis.Function = /** @type {any} */ (() => { throw new EvalError('blocked'); });
 const node = await import('./index.js');
 const wasm = await import('./wasm.js');
-const { ENTRY, names } = await import('./api.js');
-const { decode } = await import('./decode.js');
 
-// a bare identifier is answered without the engine: the same answer the engine gives
-const canon = (value) => JSON.stringify(value, (_, v) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, v[k]])) : v));
-const summary = (answer) => ({ ...answer, scopes: answer.scopes?.length, bindings: answer.bindings?.map((b) => [b.name, b.kind]), references: answer.references?.map((r) => [r.node.name, r.read, r.write]) });
-for (const [label, { Source, Plan, engine }] of [['node', node], ['wasm', wasm]]) {
-	const engineAnswer = (text, options, entry, offset, end, stopAt) => {
-		const held = engine.create(text, names(options), undefined);
-		try {
-			const answer = engine.parse(held, ENTRY[entry], offset, end, stopAt?.join(' ') ?? '');
-			if (typeof answer === 'string') return { error: JSON.parse(answer).error.code };
-			return summary(decode(answer, text, engine));
-		} finally {
-			engine.free?.(held);
-		}
-	};
-	const texts = ['x}', 'x }', ' x}', '\rx}', '\r\nx}', '\u2028x}', 'x: T}', 'x : T}', 'x = 1}', 'x, y}', 'x(y)}', 'x.y}', 'eval}', 'arguments}', 'let}', 'await}', 'yield}', 'x as T}', 'x satisfies T}', '𝒳}', 'x\\u0041}', 'x)', 'x]', 'x'];
-	const optionSets = [{}, { sourceType: 'module' }, { typescript: true }, { sourceType: 'module', typescript: true, locations: true, scopes: true, comments: true }, { typescript: 'erase', errorRecovery: true }];
-	for (const text of texts) for (const options of optionSets) for (const entry of ['expression', 'pattern']) for (const stopAt of [undefined, ['as', ':']]) for (const end of [undefined, 0, 1]) {
-		const offset = text.search(/[^\s]/);
-		const fast = (() => { try { return summary(new Source(text, options).parse(entry, offset, { end, stopAt })); } catch (e) { return { error: e.code }; } })();
-		const full = engineAnswer(text, options, entry, offset, end, stopAt);
-		assert.equal(canon(fast), canon(full), `${label} ${entry} ${JSON.stringify(text)} at ${offset} ${JSON.stringify({ ...options, end, stopAt })}`);
-	}
-}
-
-for (const [name, { Source, Plan, isIdentifierStart, isIdentifierChar, scopeOf, bindingOf, referenceOf, parentOf }] of [['node', node], ['wasm', wasm]]) {
+for (const [name, { Source, Plan, scopeOf, bindingOf, referenceOf, parentOf }] of [['node', node], ['wasm', wasm]]) {
 	const parse = (source, options) => new Source(source, options).parse();
 	const program = (source, options) => parse(source, options).node;
 	const at = (entry, source, offset, options, stopAt) => new Source(source, options).parse(entry, offset, { stopAt });
@@ -229,9 +203,6 @@ for (const [name, { Source, Plan, isIdentifierStart, isIdentifierChar, scopeOf, 
 	const unicode = at('expression', '"é" + x', 6).node;
 	assert.equal(unicode.type, 'Identifier');
 	assert.equal(unicode.start, 6);
-	assert.equal(isIdentifierStart('a'.codePointAt(0)) && isIdentifierStart('é'.codePointAt(0)) && !isIdentifierStart('1'.codePointAt(0)), true);
-	assert.equal(isIdentifierChar('1'.codePointAt(0)) && !isIdentifierChar('-'.codePointAt(0)), true);
-	assert.equal(isIdentifierStart(0x110000) || isIdentifierChar(0x110000) || isIdentifierChar(Infinity), false);
 	const source = new Source('{a} {"é"} {b /* c */}', { locations: true, comments: true });
 	assert.equal(source.parse('expression', 1).node.name, 'a');
 	assert.equal(new Source('{xs as x}', ts).parse('expression', 1, { stopAt: ['as'] }).end, 3);

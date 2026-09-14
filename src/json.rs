@@ -43,6 +43,15 @@ impl Request {
 		}
 	}
 
+	/// The same from one word of `flag` bits.
+	pub fn from_flags(flags: u32) -> Request {
+		let mut request = Request::default();
+		for &(_, name) in flag::NAMES.iter().filter(|&&(bit, _)| flags & bit != 0) {
+			request.set(name);
+		}
+		request
+	}
+
 	/// A source's request from its switches named, separated by spaces, as the package's options spell them, and
 	/// `module` for `sourceType: 'module'`; a script otherwise. The entry and offset come with
 	/// each parse.
@@ -74,6 +83,41 @@ impl Request {
 			_ => {}
 		}
 	}
+}
+
+/// A source's switches as bits, one word across a binding; package/api.js spells the same numbers.
+pub mod flag {
+	pub const MODULE: u32 = 1;
+	pub const TYPESCRIPT: u32 = 1 << 1;
+	pub const ERASE: u32 = 1 << 2;
+	pub const COMMENTS: u32 = 1 << 3;
+	pub const SCOPES: u32 = 1 << 4;
+	pub const LOCATIONS: u32 = 1 << 5;
+	pub const PARENTHESIZED: u32 = 1 << 6;
+	pub const LEGACY_DECORATORS: u32 = 1 << 7;
+	pub const PROPOSAL_DECORATORS: u32 = 1 << 8;
+	pub const ALLOW_RETURN_OUTSIDE_FUNCTION: u32 = 1 << 9;
+	pub const ALLOW_AWAIT_OUTSIDE_FUNCTION: u32 = 1 << 10;
+	pub const ALLOW_SUPER_OUTSIDE_METHOD: u32 = 1 << 11;
+	pub const ALLOW_UNDECLARED_EXPORTS: u32 = 1 << 12;
+	pub const ERROR_RECOVERY: u32 = 1 << 13;
+	/// Each bit by the name `Request::set` takes.
+	pub const NAMES: [(u32, &str); 14] = [
+		(MODULE, "module"),
+		(TYPESCRIPT, "typescript"),
+		(ERASE, "erase"),
+		(COMMENTS, "comments"),
+		(SCOPES, "scopes"),
+		(LOCATIONS, "locations"),
+		(PARENTHESIZED, "parenthesized"),
+		(LEGACY_DECORATORS, "legacyDecorators"),
+		(PROPOSAL_DECORATORS, "proposalDecorators"),
+		(ALLOW_RETURN_OUTSIDE_FUNCTION, "allowReturnOutsideFunction"),
+		(ALLOW_AWAIT_OUTSIDE_FUNCTION, "allowAwaitOutsideFunction"),
+		(ALLOW_SUPER_OUTSIDE_METHOD, "allowSuperOutsideMethod"),
+		(ALLOW_UNDECLARED_EXPORTS, "allowUndeclaredExports"),
+		(ERROR_RECOVERY, "errorRecovery"),
+	];
 }
 
 /// The error answer for a request the parser never ran: a host's offsets or switches.
@@ -221,32 +265,32 @@ fn plan_by(handle: u32) -> Option<Rc<Plan>> {
 
 #[derive(Default)]
 pub struct Pool {
-	js: Option<Ast<()>>,
+	js: Option<Box<Ast<()>>>,
 	#[cfg(feature = "typescript")]
-	ts: Option<Ast<crate::typescript::ast::Data>>,
+	ts: Option<Box<Ast<crate::typescript::ast::Data>>>,
 }
 
 /// Which slot of the pool an extension's tree takes.
 pub trait Pooled: Sized {
-	fn take(pool: &mut Pool) -> Option<Ast<Self>>;
-	fn give(pool: &mut Pool, ast: Ast<Self>);
+	fn take(pool: &mut Pool) -> Option<Box<Ast<Self>>>;
+	fn give(pool: &mut Pool, ast: Box<Ast<Self>>);
 }
 
 impl Pooled for () {
-	fn take(pool: &mut Pool) -> Option<Ast<Self>> {
+	fn take(pool: &mut Pool) -> Option<Box<Ast<Self>>> {
 		pool.js.take()
 	}
-	fn give(pool: &mut Pool, ast: Ast<Self>) {
+	fn give(pool: &mut Pool, ast: Box<Ast<Self>>) {
 		pool.js = Some(ast);
 	}
 }
 
 #[cfg(feature = "typescript")]
 impl Pooled for crate::typescript::ast::Data {
-	fn take(pool: &mut Pool) -> Option<Ast<Self>> {
+	fn take(pool: &mut Pool) -> Option<Box<Ast<Self>>> {
 		pool.ts.take()
 	}
-	fn give(pool: &mut Pool, ast: Ast<Self>) {
+	fn give(pool: &mut Pool, ast: Box<Ast<Self>>) {
 		pool.ts = Some(ast);
 	}
 }
@@ -491,7 +535,7 @@ where
 /// The tree of a failed request goes back to the pool; the error is the answer.
 fn recycle<X: Reuse + Pooled>(
 	pool: &mut Pool,
-	mut ast: Ast<X>,
+	mut ast: Box<Ast<X>>,
 	error: &crate::SyntaxError,
 	source: &str,
 	positions: &Positions,
