@@ -58,6 +58,6 @@ export const render = (page: Page) => marked.parse(page.body, { async: false });
 export type Entry = { href: string; title: string; page: string };
 
 export const entries: Entry[] = pages.flatMap((page) => [
-	{ href: page.href, title: page.title, page: page.section },
+	{ href: page.href, title: page.title, page: page.title },
 	...[...page.body.matchAll(/^## (.+)$/gm)].map(([, heading]) => ({ href: `${page.href}#${slug(heading)}`, title: heading, page: page.title })),
 ]);
