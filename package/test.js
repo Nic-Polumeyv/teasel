@@ -8,7 +8,7 @@ const wasm = await import('./wasm.js');
 for (const [name, { Source, Plan, scopeOf, bindingOf, referenceOf, parentOf }] of [['node', node], ['wasm', wasm]]) {
 	const parse = (source, options) => new Source(source, options).parse();
 	const program = (source, options) => parse(source, options).node;
-	const at = (entry, source, offset, options, stopAt) => new Source(source, options).parse(entry, offset, { stopAt });
+	const at = (entry, source, offset, options, stopAt) => new Source(source, options).parse(stopAt === undefined ? Plan[entry] : Plan[entry].until(...stopAt), offset);
 
 	const typed = parse('let x: number = 1; // done', { sourceType: 'module', typescript: true, comments: true, locations: true });
 	assert.equal(typed.node.sourceType, 'module');
@@ -58,9 +58,9 @@ for (const [name, { Source, Plan, scopeOf, bindingOf, referenceOf, parentOf }] o
 	assert.equal(at('expression', '{{a:1} />', 1, undefined, ['/>']).end, 6);
 	assert.equal(at('expression', '{x />', 1, undefined, ['/>']).end, 2);
 	assert.equal(at('pattern', '{[a, b], i}', 1, undefined, [',']).end, 7);
-	assert.throws(() => at('expression', '{a}', 1, undefined, 'as'), TypeError);
+	assert.throws(() => Plan.expression.until(), TypeError);
 	assert.throws(() => at('expression', '{a}', 1, undefined, ['a s']), TypeError);
-	assert.throws(() => at('nonsense', '{a}', 1), TypeError);
+	assert.throws(() => new Source('{a}').parse('nonsense', 1), TypeError);
 
 	const loose = { errorRecovery: true };
 	const recovered = at('expression', '{obj.}', 1, loose, ['}']);
@@ -110,7 +110,7 @@ for (const [name, { Source, Plan, scopeOf, bindingOf, referenceOf, parentOf }] o
 	{
 		// a document's answer lists each piece of JavaScript the host read, with its share of the tables
 		const host = new Plan(readFileSync(new URL('../tests/hosts/svelte/plan.json', import.meta.url), 'utf8'));
-		const answer = parse('<script>let a = 1;</script>{a + b}', { host, sourceType: 'module', scopes: true });
+		const answer = new Source('<script>let a = 1;</script>{a + b}', { sourceType: 'module', scopes: true }).parse(host);
 		const [script, expression] = answer.roots;
 		assert.equal(answer.roots.length, 2);
 		assert.equal(script.node.type, 'Program');
@@ -122,7 +122,7 @@ for (const [name, { Source, Plan, scopeOf, bindingOf, referenceOf, parentOf }] o
 		assert.deepEqual(expression.references.map((r) => r.node.name), ['a', 'b']);
 		assert.equal(expression.references[0].binding, script.bindings[0]);
 		assert.equal(referenceOf(expression.node.left), expression.references[0]);
-        const snippet = parse('{#snippet f<T>(x: T)}{x}{/snippet}', {host, typescript: true, scopes: true});
+        const snippet = new Source('{#snippet f<T>(x: T)}{x}{/snippet}', { typescript: true, scopes: true }).parse(host);
         assert.ok(snippet.roots.every(root => root.node));
         assert.equal(new Set(snippet.roots.map(root => root.node)).size, snippet.roots.length);
         assert.equal(snippet.captures[0].type, 'TSTypeParameterDeclaration');
@@ -204,12 +204,12 @@ for (const [name, { Source, Plan, scopeOf, bindingOf, referenceOf, parentOf }] o
 	assert.equal(unicode.type, 'Identifier');
 	assert.equal(unicode.start, 6);
 	const source = new Source('{a} {"é"} {b /* c */}', { locations: true, comments: true });
-	assert.equal(source.parse('expression', 1).node.name, 'a');
-	assert.equal(new Source('{xs as x}', ts).parse('expression', 1, { stopAt: ['as'] }).end, 3);
-	assert.equal(source.parse('expression', 11).end, 20);
-	assert.equal(source.parse('expression', 11).comments[0].loc.start.column, 13);
-	assert.throws(() => source.parse('expression', 99), SyntaxError);
-	assert.throws(() => new Source('𝒳 + y').parse('expression', 1), (e) => /surrogate/.test(e.message));
+	assert.equal(source.parse(Plan.expression, 1).node.name, 'a');
+	assert.equal(new Source('{xs as x}', ts).parse(Plan.expression.until('as'), 1).end, 3);
+	assert.equal(source.parse(Plan.expression, 11).end, 20);
+	assert.equal(source.parse(Plan.expression, 11).comments[0].loc.start.column, 13);
+	assert.throws(() => source.parse(Plan.expression, 99), SyntaxError);
+	assert.throws(() => new Source('𝒳 + y').parse(Plan.expression, 1), (e) => /surrogate/.test(e.message));
 	const erased = parse('import type T from "t"; export const x: T = (1 as any)!; enum E {}', { sourceType: 'module', typescript: 'erase' });
 	assert.equal(erased.node.body.length, 2);
 	assert.equal(erased.node.body[0].declaration.declarations[0].init.type, 'Literal');
@@ -217,28 +217,28 @@ for (const [name, { Source, Plan, scopeOf, bindingOf, referenceOf, parentOf }] o
 	assert.deepEqual(erased.typescript.map((k) => k.type), ['TSEnumDeclaration']);
 	assert.throws(() => parse('let x: number = 1', { typescript: true, erase: true }), TypeError);
 	const template = new Source('<script>\n  let a = 1;\n</script>\n{a}', { sourceType: 'module', locations: true });
-	const script = template.parse('program', 8, { end: 22 });
+	const script = template.parse(Plan.program.within(22), 8);
 	assert.equal(script.node.start, 8);
 	assert.equal(script.node.end, 22);
 	assert.equal(script.end, 22);
 	assert.equal(script.node.body[0].loc.start.line, 2);
-	assert.throws(() => template.parse('program', 22, { end: 8 }), SyntaxError);
-	assert.equal(template.parse('program', 24).node.body[0].type, 'ExpressionStatement');
-	assert.equal(template.parse('expression', 33, { end: 34 }).node.name, 'a');
+	assert.throws(() => template.parse(Plan.program.within(8), 22), SyntaxError);
+	assert.equal(template.parse(Plan.program, 24).node.body[0].type, 'ExpressionStatement');
+	assert.equal(template.parse(Plan.expression.within(34), 33).node.name, 'a');
 	assert.equal(program('"﻿a"; "bc"; zz').body[2].expression.name, 'zz');
 	source[Symbol.dispose]();
-	assert.throws(() => source.parse('expression', 1), TypeError);
+	assert.throws(() => source.parse(Plan.expression, 1), TypeError);
 	let escaped;
 	{
 		using inner = new Source('x');
 		escaped = inner;
-		assert.equal(inner.parse('expression', 0).node.name, 'x');
+		assert.equal(inner.parse(Plan.expression, 0).node.name, 'x');
 	}
-	assert.throws(() => escaped.parse('expression', 0), TypeError);
+	assert.throws(() => escaped.parse(Plan.expression, 0), TypeError);
 	assert.throws(() => parse('x', { locations: 1 }), TypeError);
 	assert.throws(() => parse('x', { typescript: 'yes' }), TypeError);
-	assert.throws(() => new Source('a;b;c').parse('program', 0, { end: -1 }), (e) => e.code === 'invalid_request');
-	assert.throws(() => new Source('a;b;c').parse('program', 0, { end: NaN }), (e) => e.code === 'invalid_request');
+	assert.throws(() => new Source('a;b;c').parse(Plan.program.within(-1)), (e) => e.code === 'invalid_request');
+	assert.throws(() => new Source('a;b;c').parse(Plan.program.within(NaN)), (e) => e.code === 'invalid_request');
 	const wide = 'x;'.repeat(200000);
 	assert.equal(program(wide).body.length, 200000);
 	assert.equal(program('y;').body.length, 1);
@@ -252,7 +252,7 @@ const plan = readFileSync(new URL('../tests/hosts/svelte/plan.json', import.meta
 for (const { Source, Plan, scopeOf, bindingOf, parentOf } of [node, wasm]) {
 	const host = new Plan(plan);
 	const source = '<script lang="ts">\n\tlet items: string[] = [];\n</script>\n\n{#each items as item, i (item)}\n\t<p class:odd={i % 2} on:click={() => item}>{item}</p>\n{:else}\n\tnone\n{/each}\n';
-	const doc = new Source(source, { host, sourceType: 'module', typescript: true, scopes: true, comments: true }).parse();
+	const doc = new Source(source, { sourceType: 'module', typescript: true, scopes: true, comments: true }).parse(host);
 	const root = doc.node;
 	assert.equal(root.type, 'Root');
 	assert.equal(root.end, source.length);
@@ -288,10 +288,10 @@ for (const { Source, Plan, scopeOf, bindingOf, parentOf } of [node, wasm]) {
 	assert.equal(scopeOf(instance.content).parent, scopeOf(root));
 	assert.equal(scopeOf(each.fallback).parent, doc.scopes.find(s => s.kind === 'fragment' && s.parent === scopeOf(instance.content)));
 	assert.throws(() => new Plan('element div'), /JSON/);
-	assert.throws(() => new Source('x', { host: plan }), TypeError);
-	assert.throws(() => new Source('<div>', { host }).parse(), { code: 'unclosed', pos: 0 });
+	assert.throws(() => new Source('x').parse(plan), TypeError);
+	assert.throws(() => new Source('<div>').parse(host), { code: 'unclosed', pos: 0 });
 	// under recovery the tree is what could be read, the errors listed with it
-	const loose = new Source('<div>{#if }<Comp foo={bar}\n</div>', { host, errorRecovery: true }).parse();
+	const loose = new Source('<div>{#if }<Comp foo={bar}\n</div>', { errorRecovery: true }).parse(host);
 	assert.deepEqual(loose.errors.map((e) => e.code), ['unclosed', 'unexpected_token', 'expected']);
 	const div = loose.node.fragment.nodes[0];
 	assert.equal(div.end, 33);
@@ -302,11 +302,11 @@ for (const { Source, Plan, scopeOf, bindingOf, parentOf } of [node, wasm]) {
 }
 
 // the answer follows the options the source was prepared with, and an entry is one of the names
-for (const [label, { Source }] of [['node', node], ['wasm', wasm]]) {
+for (const [label, { Source, Plan }] of [['node', node], ['wasm', wasm]]) {
 	const options = {};
 	const source = new Source('x}', options);
 	options.locations = true;
-	assert.equal('loc' in source.parse('expression', 0).node, false, label);
+	assert.equal('loc' in source.parse(Plan.expression, 0).node, false, label);
 	assert.throws(() => source.parse('toString'), TypeError, label);
 }
 
@@ -314,22 +314,22 @@ for (const [label, { Source }] of [['node', node], ['wasm', wasm]]) {
 const plans = Object.fromEntries(['svelte', 'vue'].map((name) => [name, readFileSync(new URL(`../tests/hosts/${name}/plan.json`, import.meta.url), 'utf8')]));
 for (const [label, { Source, Plan }] of [['node', node], ['wasm', wasm]]) {
 	for (const text of ['<a x="', '<a /*', '<script>"</script>', '{#if', '<div class="{a']) {
-		assert.equal(new Source(text, { host: new Plan(plans.svelte), errorRecovery: true, comments: true, scopes: true }).parse().node.type, 'Root', `${label} ${text}`);
+		assert.equal(new Source(text, { errorRecovery: true, comments: true, scopes: true }).parse(new Plan(plans.svelte)).node.type, 'Root', `${label} ${text}`);
 	}
-	assert.throws(() => new Source('<a @x="@"/>', { host: new Plan(plans.vue) }).parse(), (e) => e instanceof SyntaxError, `${label}`);
-	const handler = new Source('<button @click="let x = 1"/>', { host: new Plan(plans.vue), errorRecovery: true }).parse();
+	assert.throws(() => new Source('<a @x="@"/>').parse(new Plan(plans.vue)), (e) => e instanceof SyntaxError, `${label}`);
+	const handler = new Source('<button @click="let x = 1"/>', { errorRecovery: true }).parse(new Plan(plans.vue));
 	assert.equal(handler.node.children[0].props[0].handler.type, 'Program', label);
 	assert.deepEqual(handler.errors, [], label);
 }
 // a source held by an engine that panicked and started over says so
-assert.throws(() => wasm.engine.parse({ handle: 0, generation: -1 }, 1, 0, undefined, ''), /started over/);
+assert.throws(() => wasm.engine.parse({ handle: 0, generation: -1 }, 1, 0, undefined, '', undefined), /started over/);
 
 // a second host: the same walker, Vue's plan
 const vueText = readFileSync(new URL('../tests/hosts/vue/plan.json', import.meta.url), 'utf8');
 for (const { Source, Plan, parentOf } of [node, wasm]) {
 	const vue = new Plan(vueText);
 	const source = '<ul :class="{ on }">\n\t<li v-for="(item, i) in items" :key="item.id" @click.stop="select(item)">{{ item.name }} #{{ i }}</li>\n</ul>\n';
-	const root = new Source(source, { host: vue, sourceType: 'module' }).parse().node;
+	const root = new Source(source, { sourceType: 'module' }).parse(vue).node;
 	assert.equal(root.type, 'Root');
 	const ul = root.children[0];
 	assert.equal(ul.tag, 'ul');
@@ -348,5 +348,5 @@ for (const { Source, Plan, parentOf } of [node, wasm]) {
 	assert.equal(li.children[0].content.property.name, 'name');
 	assert.equal(li.children[1].content, ' #');
 	assert.equal(parentOf(li.children[2].content), li.children[2]);
-	assert.throws(() => new Source('<div v-for="x items">', { host: vue }).parse(), { code: 'expected', message: 'Expected in or of' });
+	assert.throws(() => new Source('<div v-for="x items">').parse(vue), { code: 'expected', message: 'Expected in or of' });
 }

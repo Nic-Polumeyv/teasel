@@ -8,8 +8,7 @@ Test. A plan describes a host language, a template language with JavaScript insi
 import { Plan, Source } from '@teasel/parser';
 
 const plan = new Plan(grammar);
-const source = new Source(text, { host: plan });
-const { node, roots } = source.parse();
+const { node, roots } = new Source(text).parse(plan);
 ```
 
 ## Rules

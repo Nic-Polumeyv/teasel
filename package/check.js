@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import * as node from './index.js';
 import * as wasm from './wasm.js';
-import { ENTRY, flags } from './api.js';
+import { ENTRY, flags, Plan } from './api.js';
 import { decode } from './decode.js';
 import { load } from './native.js';
 
@@ -70,7 +70,7 @@ function mode(source, options, entry, at) {
 /** The addon's answers as JSON, each with the batch job that asks the binary for the same. */
 const jobs = [];
 function json(name, source, options, entry, at) {
-	const answer = native.parse(native.create(Buffer.from(source), flags(options), 0), ENTRY[entry], at, undefined, '');
+	const answer = native.parse(native.create(Buffer.from(source), flags(options)), ENTRY[entry], at, undefined, '', 0);
 	const tree = typeof answer === 'string' ? answer : JSON.stringify(decode(answer, source, engine, false));
 	jobs.push({ name, source, mode: mode(source, options, entry, at), tree });
 }
@@ -99,15 +99,15 @@ for (const file of files) {
 		using twin = new wasm.Source(text, options);
 		for (const m of text.matchAll(script_re)) {
 			const start = m.index + m[0].indexOf('>') + 1;
-			const at = { end: start + m[2].length };
-			report(`${file} script ${start} wasm`, differ(outcome(() => twin.parse('program', start, at)), outcome(() => held.parse('program', start, at))));
+			const script = Plan.program.within(start + m[2].length);
+			report(`${file} script ${start} wasm`, differ(outcome(() => twin.parse(script, start)), outcome(() => held.parse(script, start))));
 		}
 		for (const match of text.matchAll(brace_re)) {
 			const at = match.index + 1;
 			for (const entry of Object.keys(ENTRY)) {
 				if (entry === 'program') continue;
 				json(`${file}@${at} ${entry}`, text, options, entry, at);
-				report(`${file}@${at} ${entry} wasm`, differ(outcome(() => twin.parse(entry, at)), outcome(() => held.parse(entry, at))));
+				report(`${file}@${at} ${entry} wasm`, differ(outcome(() => twin.parse(Plan[entry], at)), outcome(() => held.parse(Plan[entry], at))));
 			}
 		}
 	}

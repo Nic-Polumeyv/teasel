@@ -12,7 +12,6 @@ export function flags(options) {
 	let on = 0;
 	for (const key in options) {
 		const value = options[key];
-		if (key === 'host') continue;
 		if (!OPTIONS.has(key)) throw new TypeError(`${key} is not an option`);
 		if (value === undefined || value === false) continue;
 		if (key === 'decorators') {
@@ -31,21 +30,63 @@ export function flags(options) {
 // `Entry` of parser/mod.rs by index
 export const ENTRY = { program: 0, expression: 1, pattern: 2, params: 3, statement: 4, typeParameters: 5 };
 
-// the engine takes the stop tokens as one string
-function stops(list) {
-	if (list === undefined) return '';
-	if (!Array.isArray(list) || !list.every((stop) => typeof stop === 'string' && stop !== '' && !/\s/.test(stop))) {
-		throw new TypeError('stopAt must be a list of words and punctuators');
+let read;
+
+/**
+ * What a parse reads. The built-in plans are the entries of the grammar, ended by the host's
+ * tokens with `until`, on the source cut with `within`; `new Plan(text)` is a host language's
+ * whole syntax, read by the engine once per engine.
+ */
+export class Plan {
+	#entry;
+	#stop;
+	#end;
+	#text;
+	constructor(text, stop = '', end = undefined) {
+		if (typeof text === 'number') {
+			this.#entry = text;
+		} else {
+			if (typeof text !== 'string') throw new TypeError('a plan is its JSON text');
+			JSON.parse(text);
+			this.#entry = ENTRY.program;
+			this.#text = text;
+		}
+		this.#stop = stop;
+		this.#end = end;
 	}
-	return list.join(' ');
+	static program = new Plan(ENTRY.program);
+	static expression = new Plan(ENTRY.expression);
+	/** An assignment target: an identifier or a destructuring pattern. */
+	static pattern = new Plan(ENTRY.pattern);
+	/** A parenthesized parameter list, as an arrow function's is read. */
+	static params = new Plan(ENTRY.params);
+	static statement = new Plan(ENTRY.statement);
+	/** A `TSTypeParameterDeclaration`. */
+	static typeParameters = new Plan(ENTRY.typeParameters);
+	/** The same reading, ended where one of the host's own tokens, words or punctuators, follows. */
+	until(...tokens) {
+		if (this.#text !== undefined) throw new TypeError('a document plan reads the whole source');
+		if (tokens.length === 0 || !tokens.every((stop) => typeof stop === 'string' && stop !== '' && !/\s/.test(stop))) {
+			throw new TypeError('until takes words and punctuators');
+		}
+		return new Plan(this.#entry, this.#stop === '' ? tokens.join(' ') : `${this.#stop} ${tokens.join(' ')}`, this.#end);
+	}
+	/** The same reading of the source cut at `end`, a UTF-16 offset; positions stay those of the whole source. */
+	within(end) {
+		if (this.#text !== undefined) throw new TypeError('a document plan reads the whole source');
+		return new Plan(this.#entry, this.#stop, end);
+	}
+	static {
+		read = (plan) => ({ entry: plan.#entry, stop: plan.#stop, end: plan.#end, text: plan.#text });
+	}
 }
 
 /**
  * @typedef {ArrayBuffer | Uint32Array | string} Answer
  * @typedef {object} Engine
  * @property {(text: string) => any} plan
- * @property {(source: string, flags: number, plan: any) => any} create
- * @property {(held: any, entry: number, offset: number, end: number | undefined, stop: string) => Answer} parse
+ * @property {(source: string, flags: number) => any} create
+ * @property {(held: any, entry: number, offset: number, end: number | undefined, stop: string, plan: any) => Answer} parse
  * @property {(held: any) => void} [free]
  * @property {() => string[]} constants
  * @property {() => ArrayLike<number>} shapes
@@ -61,44 +102,34 @@ export function bind(engine) {
 		throw Object.assign(new SyntaxError(message), error);
 	}
 
-	/** @type {WeakMap<Plan, any>} what the engine holds for each plan */
-	const plans = new WeakMap();
-
-	class Plan {
-		/** @param {string} text the plan as JSON */
-		constructor(text) {
-			if (typeof text !== 'string') throw new TypeError('a plan is its JSON text');
-			plans.set(this, engine.plan(text));
-		}
-	}
+	/** @type {WeakMap<Plan, any>} what this engine holds for each document plan it has read */
+	const handles = new WeakMap();
 
 	class Source {
 		#held;
 		#source;
-		#options;
 
 		constructor(source, options) {
-			const host = options?.host;
-			if (host !== undefined && !(host instanceof Plan)) throw new TypeError('host must be a Plan');
-			this.#held = engine.create(source, flags(options), host === undefined ? undefined : plans.get(host));
+			this.#held = engine.create(source, flags(options));
 			this.#source = source;
-			// what the engine was prepared with, however the caller's object changes after
-			this.#options = { ...options };
 			registry?.register(this, this.#held, this);
 		}
 
 		/**
-		 * @param {keyof typeof ENTRY} [entry] what to read
-		 * @param {number} [offset] where it starts
-		 * @param {{ end?: number, stopAt?: string[] }} [at] where the source is cut, and the host's tokens that end the parse
+		 * @param {Plan} [plan] what to read: the program by default
+		 * @param {number} [at] where it starts, a UTF-16 offset
 		 */
-		parse(entry = 'program', offset = 0, { end, stopAt } = {}) {
+		parse(plan = Plan.program, at = 0) {
 			if (this.#held === undefined) throw new TypeError('the source is freed');
-			const index = Object.hasOwn(ENTRY, entry) ? ENTRY[entry] : undefined;
-			if (index === undefined) throw new TypeError(`${JSON.stringify(entry)} is not an entry`);
-			const stop = stops(stopAt);
-			if (this.#options.host !== undefined && index === ENTRY.program) return result(engine.parse(this.#held, index, 0, undefined, ''), this.#source);
-			return result(engine.parse(this.#held, index, offset, end, stop), this.#source);
+			if (!(plan instanceof Plan)) throw new TypeError('parse takes a plan: Plan.program, Plan.expression, another built-in, or new Plan(text)');
+			const { entry, stop, end, text } = read(plan);
+			let handle;
+			if (text !== undefined) {
+				if (at !== 0) throw new TypeError('a document plan reads the whole source');
+				handle = handles.get(plan);
+				if (handle === undefined) handles.set(plan, (handle = engine.plan(text)));
+			}
+			return result(engine.parse(this.#held, entry, at, end, stop, handle), this.#source);
 		}
 
 		[Symbol.dispose]() {
@@ -108,5 +139,5 @@ export function bind(engine) {
 			this.#held = undefined;
 		}
 	}
-	return { Source, Plan };
+	return { Source };
 }

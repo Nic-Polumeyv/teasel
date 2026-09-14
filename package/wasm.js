@@ -1,6 +1,7 @@
 import { bind } from './api.js';
 
 export { scopeOf, bindingOf, referenceOf, parentOf } from './decode.js';
+export { Plan } from './api.js';
 
 const encoder = new TextEncoder();
 const utf8 = new TextDecoder();
@@ -65,9 +66,8 @@ function planOf(held) {
 	return held.handle;
 }
 
-function create(source, flags, plan) {
-	const host = planOf(plan);
-	const handle = guarded(() => wasm.source_new(...bytes(source), flags, host));
+function create(source, flags) {
+	const handle = guarded(() => wasm.source_new(...bytes(source), flags));
 	if (handle === 0) throw new Error(JSON.parse(text()).error.message);
 	return { handle, generation };
 }
@@ -100,7 +100,7 @@ export const engine = {
 	plan,
 	create,
 	// the words outlive the source: they sit in the answer buffer until the next parse
-	parse: (held, entry, offset, end, stop) => answer(guarded(() => wasm.source_parse(handle(held), entry, offset, end ?? 0, end === undefined ? 0 : 1, ...bytes(stop)))),
+	parse: (held, entry, offset, end, stop, plan) => answer(guarded(() => wasm.source_parse(handle(held), entry, offset, end ?? 0, end === undefined ? 0 : 1, ...bytes(stop), planOf(plan)))),
 	free: (held) => {
 		if (held.generation === generation) wasm.source_free(held.handle);
 	},
@@ -108,4 +108,4 @@ export const engine = {
 	shapes: () => shapes,
 };
 
-export const { Source, Plan } = bind(engine);
+export const { Source } = bind(engine);

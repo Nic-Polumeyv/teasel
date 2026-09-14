@@ -148,16 +148,11 @@ unsafe extern "C" fn plan(env: Env, info: CallbackInfo) -> Value {
 	})
 }
 
-// the bytes V8 encoded, made valid UTF-8 where they are not; the options as one flag word; the
-// plan of the host language the whole source is a document of, by its handle, or 0
+// the bytes V8 encoded, made valid UTF-8 where they are not; the options as one flag word
 unsafe extern "C" fn create(env: Env, info: CallbackInfo) -> Value {
 	guard(env, || {
-		let [source, flags, host] = args::<3>(env, info)?;
-		let mut prepared = Prepared::from_bytes(bytes(env, source)?, Request::from_flags(number(env, flags)? as u32));
-		let host = number(env, host)? as u32;
-		if host != 0 {
-			prepared = prepared.host_by(host)?;
-		}
+		let [source, flags] = args::<2>(env, info)?;
+		let prepared = Prepared::from_bytes(bytes(env, source)?, Request::from_flags(number(env, flags)? as u32));
 		let mut result = std::ptr::null_mut();
 		check(
 			unsafe {
@@ -185,12 +180,12 @@ unsafe extern "C" fn free(env: Env, info: CallbackInfo) -> Value {
 
 unsafe extern "C" fn parse(env: Env, info: CallbackInfo) -> Value {
 	guard(env, || {
-		let [source, entry, offset, end, stop] = args::<5>(env, info)?;
+		let [source, entry, offset, end, stop, plan] = args::<6>(env, info)?;
 		let prepared = unsafe { &*handle(env, source)? };
 		let entry = Entry::from_index(number(env, entry)? as u32);
-		let (offset, end, stop) = (number(env, offset)?, optional(env, end)?, string(env, stop)?);
+		let (offset, end, stop, plan) = (number(env, offset)?, optional(env, end)?, string(env, stop)?, number(env, plan)? as u32);
 		fresh(env);
-		match prepared.binary(entry, offset, end, &stop) {
+		match prepared.binary(entry, offset, end, &stop, plan) {
 			Ok(()) => view(env),
 			Err(json) => text(env, &json),
 		}
