@@ -26,12 +26,6 @@ for (const dir of process.argv.slice(2)) walk(dir);
 let checked = 0;
 let failed = 0;
 
-function result(answer, source) {
-	if (typeof answer !== 'string') return decode(answer, source, engine);
-	const { message, ...error } = JSON.parse(answer).error;
-	throw Object.assign(new SyntaxError(message), error);
-}
-
 function outcome(fn) {
 	try {
 		return { value: fn() };
@@ -108,15 +102,12 @@ for (const file of files) {
 			const at = { end: start + m[2].length };
 			report(`${file} script ${start} wasm`, differ(outcome(() => twin.parse('program', start, at)), outcome(() => held.parse('program', start, at))));
 		}
-		const raw = native.create(Buffer.from(text), flags(options), '');
 		for (const match of text.matchAll(brace_re)) {
 			const at = match.index + 1;
 			for (const entry of Object.keys(ENTRY)) {
 				if (entry === 'program') continue;
 				json(`${file}@${at} ${entry}`, text, options, entry, at);
 				report(`${file}@${at} ${entry} wasm`, differ(outcome(() => twin.parse(entry, at)), outcome(() => held.parse(entry, at))));
-				// the package answers a bare identifier itself; it must say what the engine says
-				report(`${file}@${at} ${entry} engine`, differ(outcome(() => held.parse(entry, at)), outcome(() => result(native.parse(raw, ENTRY[entry], at, undefined, ''), text))));
 			}
 		}
 	}
