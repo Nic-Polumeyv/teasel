@@ -28,6 +28,11 @@
 		<div class="plaid h-2.5"></div>
 		<Header
 			brand="teasel"
+			navLinks={data.sections.map((section) => ({
+				href: section.links[0].href,
+				label: section.label,
+				children: section.links.map((link) => ({ href: link.href, label: link.title })),
+			}))}
 			actions={[
 				{ href: "https://github.com/Nic-Polumeyv/teasel", label: "GitHub", variant: "ghost" },
 				{ href: "https://www.npmjs.com/package/@teasel/parser", label: "npm", variant: "outline" },

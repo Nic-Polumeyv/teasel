@@ -15,5 +15,5 @@
 </svelte:head>
 
 <h1>{data.title}</h1>
-<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-<div onclick={copy}>{@html data.html}</div>
+<svelte:document onclick={copy} />
+<div>{@html data.html}</div>

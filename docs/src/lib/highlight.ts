@@ -5,9 +5,6 @@ type Node = { type: string; start: number; end: number; [field: string]: unknown
 
 export type Snippet = { code: string; html: string; file?: string };
 
-// The docs are highlighted by the parser they document: teasel reads the snippet, the tree says
-// what each identifier and literal is, and the words between nodes are keywords or punctuation.
-
 type Kind = 'comment' | 'keyword' | 'string' | 'number' | 'type' | 'call' | 'property' | 'operator' | 'punctuation';
 
 const everforest: Record<Kind, string> = {

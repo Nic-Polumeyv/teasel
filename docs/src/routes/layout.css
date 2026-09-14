@@ -64,7 +64,6 @@
 	--radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* Wheat ground, sage for what acts, rust for what warns; every neutral leans to one of them. */
 :root {
 	color-scheme: light;
 	--background: oklch(0.965 0.016 88);
@@ -148,7 +147,6 @@
 	}
 }
 
-/* Fuller's teasel raised the nap on woven wool; the cloth is the site's one ornament. */
 @utility plaid {
 	background-color: var(--cloth);
 	background-image:

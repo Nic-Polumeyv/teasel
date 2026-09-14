@@ -1,9 +1,7 @@
 import { Marked } from 'marked';
 import { buttonVariants } from 'sheer-ui/components/button';
 import { snippet } from '#lib/highlight.ts';
-
-// Docs as svelte.dev keeps them: content/<nn>-<section>/<nn>-<page>.md, the numbers order the
-// sidebar and the frontmatter names the page. The first page is the site root.
+import { reference } from '#lib/reference.ts';
 
 export type Page = { href: string; title: string; section: string; body: string };
 export type Section = { label: string; links: { href: string; title: string }[] };
@@ -12,7 +10,7 @@ const files = import.meta.glob('/content/**/*.md', { query: '?raw', import: 'def
 
 const words = (name: string) => name.replace(/^\d+-/, '').replace(/-/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
 
-export const pages: Page[] = Object.keys(files)
+const written: Page[] = Object.keys(files)
 	.sort()
 	.map((path, index) => {
 		const [, section, file] = /\/content\/([^/]+)\/([^/]+)\.md$/.exec(path)!;
@@ -20,6 +18,8 @@ export const pages: Page[] = Object.keys(files)
 		const title = /^---\n(?:.*\n)*?title:\s*(.+)\n(?:.*\n)*?---\n/.exec(text)?.[1] ?? words(file);
 		return { href: index === 0 ? '/' : `/${file.replace(/^\d+-/, '')}`, title, section: words(section), body: text.replace(/^---\n[\s\S]*?\n---\n/, '') };
 	});
+
+export const pages: Page[] = [...written, ...reference];
 
 export const sections: Section[] = pages.reduce<Section[]>((sections, page) => {
 	const link = { href: page.href, title: page.title };
