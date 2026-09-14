@@ -9,7 +9,7 @@
 <br>
 
 ```js
-import { Source } from '@teasel/parser';
+import { Plan, Source } from '@teasel/parser';
 
 const source = new Source(text, { typescript: true, scopes: true });
 const { node } = source.parse();
@@ -19,12 +19,12 @@ Every parse is `source.parse(description, at)`: what to read, and the UTF-16 off
 
 ```
 source.parse()                               Program
-source.parse(expression, 7)                  the expression that starts at 7
-source.parse(pattern, 7)                     an assignment target: a name or a destructuring
-source.parse(params, 7)                      the patterns of a (a, b = 1)
-source.parse(statement, 7)                   one statement
-source.parse(typeParameters, 7)              a <T extends U>
-source.parse(program.within(40), 12)         the program inside 12..40, positions of the whole
+source.parse(Plan.expression, 7)             the expression that starts at 7
+source.parse(Plan.pattern, 7)                an assignment target: a name or a destructuring
+source.parse(Plan.params, 7)                 the patterns of a (a, b = 1)
+source.parse(Plan.statement, 7)              one statement
+source.parse(Plan.typeParameters, 7)         a <T extends U>
+source.parse(Plan.program.within(40), 12)    the program inside 12..40, positions of the whole
 ```
 
 ## Inside a larger syntax
@@ -38,7 +38,7 @@ A host that embeds JavaScript in its own describes each piece: the entry, ended 
 ```
 
 ```js
-const { node, end } = source.parse(expression.until('as', ','), 3);
+const { node, end } = source.parse(Plan.expression.until('as', ','), 3);
 // node  Identifier items
 // end   8
 ```

@@ -30,44 +30,56 @@ export function flags(options) {
 // `Entry` of parser/mod.rs by index
 export const ENTRY = { program: 0, expression: 1, pattern: 2, params: 3, statement: 4, typeParameters: 5 };
 
+let read;
+
 /**
- * What a parse reads: an entry of the grammar, ended by the host's tokens with `until`, on the
- * source cut with `within`. Immutable: each refinement is a new description.
+ * What a parse reads. The built-in plans are the entries of the grammar, ended by the host's
+ * tokens with `until`, on the source cut with `within`; `new Plan(text)` is a host language's
+ * whole syntax, read by the engine once per engine.
  */
-export class Description {
+export class Plan {
 	#entry;
 	#stop;
 	#end;
-	constructor(entry, stop = '', end = undefined) {
-		this.#entry = entry;
+	#text;
+	constructor(text, stop = '', end = undefined) {
+		if (typeof text === 'number') {
+			this.#entry = text;
+		} else {
+			if (typeof text !== 'string') throw new TypeError('a plan is its JSON text');
+			JSON.parse(text);
+			this.#entry = ENTRY.program;
+			this.#text = text;
+		}
 		this.#stop = stop;
 		this.#end = end;
 	}
+	static program = new Plan(ENTRY.program);
+	static expression = new Plan(ENTRY.expression);
+	/** An assignment target: an identifier or a destructuring pattern. */
+	static pattern = new Plan(ENTRY.pattern);
+	/** A parenthesized parameter list, as an arrow function's is read. */
+	static params = new Plan(ENTRY.params);
+	static statement = new Plan(ENTRY.statement);
+	/** A `TSTypeParameterDeclaration`. */
+	static typeParameters = new Plan(ENTRY.typeParameters);
 	/** The same reading, ended where one of the host's own tokens, words or punctuators, follows. */
 	until(...tokens) {
+		if (this.#text !== undefined) throw new TypeError('a document plan reads the whole source');
 		if (tokens.length === 0 || !tokens.every((stop) => typeof stop === 'string' && stop !== '' && !/\s/.test(stop))) {
 			throw new TypeError('until takes words and punctuators');
 		}
-		return new Description(this.#entry, this.#stop === '' ? tokens.join(' ') : `${this.#stop} ${tokens.join(' ')}`, this.#end);
+		return new Plan(this.#entry, this.#stop === '' ? tokens.join(' ') : `${this.#stop} ${tokens.join(' ')}`, this.#end);
 	}
 	/** The same reading of the source cut at `end`, a UTF-16 offset; positions stay those of the whole source. */
 	within(end) {
-		return new Description(this.#entry, this.#stop, end);
+		if (this.#text !== undefined) throw new TypeError('a document plan reads the whole source');
+		return new Plan(this.#entry, this.#stop, end);
 	}
-	static read(description) {
-		return { entry: description.#entry, stop: description.#stop, end: description.#end };
+	static {
+		read = (plan) => ({ entry: plan.#entry, stop: plan.#stop, end: plan.#end, text: plan.#text });
 	}
 }
-
-export const program = new Description(ENTRY.program);
-export const expression = new Description(ENTRY.expression);
-/** An assignment target: an identifier or a destructuring pattern. */
-export const pattern = new Description(ENTRY.pattern);
-/** A parenthesized parameter list, as an arrow function's is read. */
-export const params = new Description(ENTRY.params);
-export const statement = new Description(ENTRY.statement);
-/** A `TSTypeParameterDeclaration`. */
-export const typeParameters = new Description(ENTRY.typeParameters);
 
 /**
  * @typedef {ArrayBuffer | Uint32Array | string} Answer
@@ -90,16 +102,8 @@ export function bind(engine) {
 		throw Object.assign(new SyntaxError(message), error);
 	}
 
-	/** @type {WeakMap<Plan, any>} what the engine holds for each plan */
-	const plans = new WeakMap();
-
-	class Plan {
-		/** @param {string} text the plan as JSON */
-		constructor(text) {
-			if (typeof text !== 'string') throw new TypeError('a plan is its JSON text');
-			plans.set(this, engine.plan(text));
-		}
-	}
+	/** @type {WeakMap<Plan, any>} what this engine holds for each document plan it has read */
+	const handles = new WeakMap();
 
 	class Source {
 		#held;
@@ -112,18 +116,20 @@ export function bind(engine) {
 		}
 
 		/**
-		 * @param {Description | Plan} [description] what to read: a program by default, or the whole source as a document of a plan
+		 * @param {Plan} [plan] what to read: the program by default
 		 * @param {number} [at] where it starts, a UTF-16 offset
 		 */
-		parse(description = program, at = 0) {
+		parse(plan = Plan.program, at = 0) {
 			if (this.#held === undefined) throw new TypeError('the source is freed');
-			if (description instanceof Plan) {
-				if (at !== 0) throw new TypeError('a plan reads the whole source');
-				return result(engine.parse(this.#held, ENTRY.program, 0, undefined, '', plans.get(description)), this.#source);
+			if (!(plan instanceof Plan)) throw new TypeError('parse takes a plan: Plan.program, Plan.expression, another built-in, or new Plan(text)');
+			const { entry, stop, end, text } = read(plan);
+			let handle;
+			if (text !== undefined) {
+				if (at !== 0) throw new TypeError('a document plan reads the whole source');
+				handle = handles.get(plan);
+				if (handle === undefined) handles.set(plan, (handle = engine.plan(text)));
 			}
-			if (!(description instanceof Description)) throw new TypeError('parse takes a description: program, expression, pattern, params, statement, typeParameters, or a plan');
-			const { entry, stop, end } = Description.read(description);
-			return result(engine.parse(this.#held, entry, at, end, stop, undefined), this.#source);
+			return result(engine.parse(this.#held, entry, at, end, stop, handle), this.#source);
 		}
 
 		[Symbol.dispose]() {
@@ -133,5 +139,5 @@ export function bind(engine) {
 			this.#held = undefined;
 		}
 	}
-	return { Source, Plan };
+	return { Source };
 }

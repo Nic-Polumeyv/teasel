@@ -9,7 +9,7 @@ Test. A source kept with its options; the parses out of it share the source copy
 ```ts index.d.ts
 export class Source {
   constructor(source: string, options?: Options);
-  parse<T>(description?: Description<T>, at?: number): Parsed<T>;
+  parse<T>(plan?: Plan<T>, at?: number): Parsed<T>;
   [Symbol.dispose](): void;
 }
 ```

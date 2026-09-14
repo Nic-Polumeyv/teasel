@@ -2,4 +2,4 @@
 '@teasel/parser': patch
 ---
 
-one description per parse: `source.parse(description, at)` with `program`, `expression`, `pattern`, `params`, `statement`, `typeParameters` exported, `until(...tokens)` for the host's tokens and `within(end)` for a cut, and a `Plan` passed to `parse` instead of the `host` option; the entry strings, `stopAt` and `end` are gone
+one plan per parse: `source.parse(plan, at)` where the built-in plans `Plan.program`, `Plan.expression`, `Plan.pattern`, `Plan.params`, `Plan.statement`, `Plan.typeParameters` are refined with `until(...tokens)` and `within(end)`, and `new Plan(text)` reads a whole document; the entry strings, `stopAt`, `end` and the `host` option are gone

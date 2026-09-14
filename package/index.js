@@ -3,7 +3,7 @@ import { bind } from './api.js';
 import { load } from './native.js';
 
 export { scopeOf, bindingOf, referenceOf, parentOf } from './decode.js';
-export { Description, program, expression, pattern, params, statement, typeParameters } from './api.js';
+export { Plan } from './api.js';
 
 const native = load();
 const encoder = new TextEncoder();
@@ -26,4 +26,4 @@ export const engine = {
 	shapes: native.shapes,
 };
 
-export const { Source, Plan } = bind(engine);
+export const { Source } = bind(engine);

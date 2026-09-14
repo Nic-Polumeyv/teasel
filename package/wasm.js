@@ -1,7 +1,7 @@
 import { bind } from './api.js';
 
 export { scopeOf, bindingOf, referenceOf, parentOf } from './decode.js';
-export { Description, program, expression, pattern, params, statement, typeParameters } from './api.js';
+export { Plan } from './api.js';
 
 const encoder = new TextEncoder();
 const utf8 = new TextDecoder();
@@ -108,4 +108,4 @@ export const engine = {
 	shapes: () => shapes,
 };
 
-export const { Source, Plan } = bind(engine);
+export const { Source } = bind(engine);

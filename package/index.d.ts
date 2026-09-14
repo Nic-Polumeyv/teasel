@@ -204,10 +204,23 @@ export interface HostNode {
 }
 
 /**
- * What a parse reads. The built-in descriptions are the entries of the grammar; `until` and
- * `within` refine one; a `Plan` describes a whole document. `T` is the type of the answer's node.
+ * What a parse reads. The built-in plans are the entries of the grammar; `until` and `within`
+ * refine one; `new Plan(text)` is a host language's whole syntax, read once: the whole source as
+ * a document of it, the plan's root with the host's own nodes around the JavaScript ones in one
+ * tree, TypeScript on by what the plan says of a script tag. `T` is the type of the answer's node.
  */
-export class Description<T = Node> {
+export class Plan<T = Root> {
+	/** @param text the plan as JSON, as `@teasel/parser/plan` prints it */
+	constructor(text: string);
+	static readonly program: Plan<Program>;
+	static readonly expression: Plan<Expression>;
+	/** An assignment target: an identifier or a destructuring pattern. */
+	static readonly pattern: Plan<Pattern>;
+	/** A parenthesized parameter list, as an arrow function's is read. */
+	static readonly params: Plan<Pattern[]>;
+	static readonly statement: Plan<Statement>;
+	/** A `TSTypeParameterDeclaration`. */
+	static readonly typeParameters: Plan<Node>;
 	/**
 	 * The same reading, ended where one of the host's own tokens, words or punctuators, follows.
 	 * One read outside every bracket the parse opened, where the expression could end, ends it:
@@ -215,28 +228,9 @@ export class Description<T = Node> {
 	 * `.` is a property name. A TypeScript `as` is the host's unless another `as` follows the
 	 * assertion, so `xs as T[] as item` ends after the type.
 	 */
-	until(...tokens: string[]): Description<T>;
+	until(...tokens: string[]): Plan<T>;
 	/** The same reading of the source cut at `end`, a UTF-16 offset; positions stay those of the whole source. */
-	within(end: number): Description<T>;
-}
-export const program: Description<Program>;
-export const expression: Description<Expression>;
-/** An assignment target: an identifier or a destructuring pattern. */
-export const pattern: Description<Pattern>;
-/** A parenthesized parameter list, as an arrow function's is read. */
-export const params: Description<Pattern[]>;
-export const statement: Description<Statement>;
-/** A `TSTypeParameterDeclaration`. */
-export const typeParameters: Description<Node>;
-
-/**
- * A host language's plan, read once: the whole source as a document of it, the plan's root with
- * the host's own nodes around the JavaScript ones in one tree. TypeScript turns on by what the
- * plan says of a script tag.
- */
-export class Plan<R = Root> extends Description<R> {
-	/** @param text the plan as JSON, as `@teasel/parser/plan` prints it */
-	constructor(text: string);
+	within(end: number): Plan<T>;
 }
 
 /**
@@ -246,8 +240,8 @@ export class Plan<R = Root> extends Description<R> {
 
 export class Source {
 	constructor(source: string, options?: Options);
-	/** What `description` reads from `at`, a UTF-16 offset: the program, the whole source by default. */
-	parse<T>(description?: Description<T>, at?: number): Parsed<T>;
+	/** What `plan` reads from `at`, a UTF-16 offset: the program, the whole source by default. */
+	parse<T>(plan?: Plan<T>, at?: number): Parsed<T>;
 	/** Releases what the engine holds for the source, as `using` does at the end of its block; the collector does it otherwise. */
 	[Symbol.dispose](): void;
 }

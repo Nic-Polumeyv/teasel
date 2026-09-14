@@ -4,12 +4,11 @@ import { readFileSync } from 'node:fs';
 if (process.argv[2] === 'interpret') globalThis.Function = /** @type {any} */ (() => { throw new EvalError('blocked'); });
 const node = await import('./index.js');
 const wasm = await import('./wasm.js');
-const D = await import('./api.js');
 
 for (const [name, { Source, Plan, scopeOf, bindingOf, referenceOf, parentOf }] of [['node', node], ['wasm', wasm]]) {
 	const parse = (source, options) => new Source(source, options).parse();
 	const program = (source, options) => parse(source, options).node;
-	const at = (entry, source, offset, options, stopAt) => new Source(source, options).parse(stopAt === undefined ? D[entry] : D[entry].until(...stopAt), offset);
+	const at = (entry, source, offset, options, stopAt) => new Source(source, options).parse(stopAt === undefined ? Plan[entry] : Plan[entry].until(...stopAt), offset);
 
 	const typed = parse('let x: number = 1; // done', { sourceType: 'module', typescript: true, comments: true, locations: true });
 	assert.equal(typed.node.sourceType, 'module');
@@ -59,7 +58,7 @@ for (const [name, { Source, Plan, scopeOf, bindingOf, referenceOf, parentOf }] o
 	assert.equal(at('expression', '{{a:1} />', 1, undefined, ['/>']).end, 6);
 	assert.equal(at('expression', '{x />', 1, undefined, ['/>']).end, 2);
 	assert.equal(at('pattern', '{[a, b], i}', 1, undefined, [',']).end, 7);
-	assert.throws(() => D.expression.until(), TypeError);
+	assert.throws(() => Plan.expression.until(), TypeError);
 	assert.throws(() => at('expression', '{a}', 1, undefined, ['a s']), TypeError);
 	assert.throws(() => new Source('{a}').parse('nonsense', 1), TypeError);
 
@@ -205,12 +204,12 @@ for (const [name, { Source, Plan, scopeOf, bindingOf, referenceOf, parentOf }] o
 	assert.equal(unicode.type, 'Identifier');
 	assert.equal(unicode.start, 6);
 	const source = new Source('{a} {"é"} {b /* c */}', { locations: true, comments: true });
-	assert.equal(source.parse(D.expression, 1).node.name, 'a');
-	assert.equal(new Source('{xs as x}', ts).parse(D.expression.until('as'), 1).end, 3);
-	assert.equal(source.parse(D.expression, 11).end, 20);
-	assert.equal(source.parse(D.expression, 11).comments[0].loc.start.column, 13);
-	assert.throws(() => source.parse(D.expression, 99), SyntaxError);
-	assert.throws(() => new Source('𝒳 + y').parse(D.expression, 1), (e) => /surrogate/.test(e.message));
+	assert.equal(source.parse(Plan.expression, 1).node.name, 'a');
+	assert.equal(new Source('{xs as x}', ts).parse(Plan.expression.until('as'), 1).end, 3);
+	assert.equal(source.parse(Plan.expression, 11).end, 20);
+	assert.equal(source.parse(Plan.expression, 11).comments[0].loc.start.column, 13);
+	assert.throws(() => source.parse(Plan.expression, 99), SyntaxError);
+	assert.throws(() => new Source('𝒳 + y').parse(Plan.expression, 1), (e) => /surrogate/.test(e.message));
 	const erased = parse('import type T from "t"; export const x: T = (1 as any)!; enum E {}', { sourceType: 'module', typescript: 'erase' });
 	assert.equal(erased.node.body.length, 2);
 	assert.equal(erased.node.body[0].declaration.declarations[0].init.type, 'Literal');
@@ -218,28 +217,28 @@ for (const [name, { Source, Plan, scopeOf, bindingOf, referenceOf, parentOf }] o
 	assert.deepEqual(erased.typescript.map((k) => k.type), ['TSEnumDeclaration']);
 	assert.throws(() => parse('let x: number = 1', { typescript: true, erase: true }), TypeError);
 	const template = new Source('<script>\n  let a = 1;\n</script>\n{a}', { sourceType: 'module', locations: true });
-	const script = template.parse(D.program.within(22), 8);
+	const script = template.parse(Plan.program.within(22), 8);
 	assert.equal(script.node.start, 8);
 	assert.equal(script.node.end, 22);
 	assert.equal(script.end, 22);
 	assert.equal(script.node.body[0].loc.start.line, 2);
-	assert.throws(() => template.parse(D.program.within(8), 22), SyntaxError);
-	assert.equal(template.parse(D.program, 24).node.body[0].type, 'ExpressionStatement');
-	assert.equal(template.parse(D.expression.within(34), 33).node.name, 'a');
+	assert.throws(() => template.parse(Plan.program.within(8), 22), SyntaxError);
+	assert.equal(template.parse(Plan.program, 24).node.body[0].type, 'ExpressionStatement');
+	assert.equal(template.parse(Plan.expression.within(34), 33).node.name, 'a');
 	assert.equal(program('"﻿a"; "bc"; zz').body[2].expression.name, 'zz');
 	source[Symbol.dispose]();
-	assert.throws(() => source.parse(D.expression, 1), TypeError);
+	assert.throws(() => source.parse(Plan.expression, 1), TypeError);
 	let escaped;
 	{
 		using inner = new Source('x');
 		escaped = inner;
-		assert.equal(inner.parse(D.expression, 0).node.name, 'x');
+		assert.equal(inner.parse(Plan.expression, 0).node.name, 'x');
 	}
-	assert.throws(() => escaped.parse(D.expression, 0), TypeError);
+	assert.throws(() => escaped.parse(Plan.expression, 0), TypeError);
 	assert.throws(() => parse('x', { locations: 1 }), TypeError);
 	assert.throws(() => parse('x', { typescript: 'yes' }), TypeError);
-	assert.throws(() => new Source('a;b;c').parse(D.program.within(-1)), (e) => e.code === 'invalid_request');
-	assert.throws(() => new Source('a;b;c').parse(D.program.within(NaN)), (e) => e.code === 'invalid_request');
+	assert.throws(() => new Source('a;b;c').parse(Plan.program.within(-1)), (e) => e.code === 'invalid_request');
+	assert.throws(() => new Source('a;b;c').parse(Plan.program.within(NaN)), (e) => e.code === 'invalid_request');
 	const wide = 'x;'.repeat(200000);
 	assert.equal(program(wide).body.length, 200000);
 	assert.equal(program('y;').body.length, 1);
@@ -303,11 +302,11 @@ for (const { Source, Plan, scopeOf, bindingOf, parentOf } of [node, wasm]) {
 }
 
 // the answer follows the options the source was prepared with, and an entry is one of the names
-for (const [label, { Source }] of [['node', node], ['wasm', wasm]]) {
+for (const [label, { Source, Plan }] of [['node', node], ['wasm', wasm]]) {
 	const options = {};
 	const source = new Source('x}', options);
 	options.locations = true;
-	assert.equal('loc' in source.parse(D.expression, 0).node, false, label);
+	assert.equal('loc' in source.parse(Plan.expression, 0).node, false, label);
 	assert.throws(() => source.parse('toString'), TypeError, label);
 }
 

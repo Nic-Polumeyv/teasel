@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import * as node from './index.js';
 import * as wasm from './wasm.js';
-import { ENTRY, flags, program } from './api.js';
+import { ENTRY, flags, Plan } from './api.js';
 import { decode } from './decode.js';
 import { load } from './native.js';
 
@@ -99,7 +99,7 @@ for (const file of files) {
 		using twin = new wasm.Source(text, options);
 		for (const m of text.matchAll(script_re)) {
 			const start = m.index + m[0].indexOf('>') + 1;
-			const script = program.within(start + m[2].length);
+			const script = Plan.program.within(start + m[2].length);
 			report(`${file} script ${start} wasm`, differ(outcome(() => twin.parse(script, start)), outcome(() => held.parse(script, start))));
 		}
 		for (const match of text.matchAll(brace_re)) {
@@ -107,7 +107,7 @@ for (const file of files) {
 			for (const entry of Object.keys(ENTRY)) {
 				if (entry === 'program') continue;
 				json(`${file}@${at} ${entry}`, text, options, entry, at);
-				report(`${file}@${at} ${entry} wasm`, differ(outcome(() => twin.parse(node[entry], at)), outcome(() => held.parse(node[entry], at))));
+				report(`${file}@${at} ${entry} wasm`, differ(outcome(() => twin.parse(Plan[entry], at)), outcome(() => held.parse(Plan[entry], at))));
 			}
 		}
 	}
