@@ -27,14 +27,6 @@ export const parentOf = (node) => (node == null ? undefined : node[PARENT]);
 
 const FACTS = new Set(['scope', 'declares', 'reference', 'defines', 'writes', 'root']);
 
-/** Files a node built outside the stream as the decoder would: no parent, and its facts when it has them. */
-export function facts(node, scope, binding, reference) {
-	node[PARENT] = undefined;
-	if (scope !== undefined) node[SCOPE] = scope;
-	if (node.type === 'Identifier' || binding !== undefined) node[BINDING] = binding === null ? null : binding;
-	if (node.type === 'Identifier' || reference !== undefined) node[REFERENCE] = reference === null ? undefined : reference;
-}
-
 /**
  * One decode at a time; the builders are generated once and read through this.
  * @type {{ w: Uint32Array, at: number, strings: string[], floats: Float64Array | null, source: string, constants: string[], scopes: any[], bindings: any[], build: (() => any)[] }}

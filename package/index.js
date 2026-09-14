@@ -2,7 +2,6 @@
 import { bind } from './api.js';
 import { load } from './native.js';
 
-export { isIdentifierStart, isIdentifierChar } from './identifier.js';
 export { scopeOf, bindingOf, referenceOf, parentOf } from './decode.js';
 
 const native = load();
