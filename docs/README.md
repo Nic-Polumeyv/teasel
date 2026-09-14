@@ -15,7 +15,7 @@ To recreate this project with the same configuration:
 
 ```sh
 # recreate this project
-bun x sv@0.17.0 create --template minimal --types ts --add sveltekit-adapter="adapter:static" --no-download-check --install bun docs
+npx sv@0.17.0 create --template minimal --types ts --add sveltekit-adapter="adapter:static" --no-download-check --install npm docs
 ```
 
 ## Developing
