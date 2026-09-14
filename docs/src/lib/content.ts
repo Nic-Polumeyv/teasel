@@ -3,7 +3,7 @@ import { buttonVariants } from 'sheer-ui/components/button';
 import { snippet } from '#lib/highlight.ts';
 import { reference } from '#lib/reference.ts';
 
-export type Page = { href: string; title: string; section: string; body: string };
+export type Page = { href: string; title: string; section: string; body: string; path: string };
 export type Section = { label: string; links: { href: string; title: string }[] };
 
 const files = import.meta.glob('/content/**/*.md', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
@@ -16,7 +16,7 @@ const written: Page[] = Object.keys(files)
 		const [, section, file] = /\/content\/([^/]+)\/([^/]+)\.md$/.exec(path)!;
 		const text = files[path];
 		const title = /^---\n(?:.*\n)*?title:\s*(.+)\n(?:.*\n)*?---\n/.exec(text)?.[1] ?? words(file);
-		return { href: index === 0 ? '/' : `/${file.replace(/^\d+-/, '')}`, title, section: words(section), body: text.replace(/^---\n[\s\S]*?\n---\n/, '') };
+		return { href: index === 0 ? '/' : `/${file.replace(/^\d+-/, '')}`, title, section: words(section), body: text.replace(/^---\n[\s\S]*?\n---\n/, ''), path: `docs${path}` };
 	});
 
 export const pages: Page[] = [...written, ...reference];

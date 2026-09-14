@@ -3,7 +3,7 @@
 	import favicon from "#lib/assets/favicon.svg";
 	import { page } from "$app/state";
 	import { initTheme } from "sheer-ui/components/theme-toggle";
-	import { Header, Footer } from "sheer-ui/blocks";
+	import { Header } from "sheer-ui/blocks";
 	import * as Tooltip from "sheer-ui/components/tooltip";
 	import * as Sidebar from "sheer-ui/components/sidebar";
 	import * as Breadcrumb from "sheer-ui/components/breadcrumb";
@@ -76,15 +76,6 @@
 				</article>
 			</Sidebar.Provider>
 		</main>
-		<div class="relative">
-			<div class="plaid absolute inset-0 opacity-10"></div>
-			<div class="relative [--muted-foreground:var(--primary)]">
-				<Footer
-					navLinks={[
-						{ href: "https://github.com/Nic-Polumeyv/teasel", label: "GitHub" },
-						{ href: "https://www.npmjs.com/package/@teasel/parser", label: "npm" },
-					]} />
-			</div>
-		</div>
+		<div class="plaid h-2.5"></div>
 	</div>
 </Tooltip.Provider>

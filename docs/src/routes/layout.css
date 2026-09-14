@@ -1,7 +1,6 @@
 @import 'tailwindcss' source(none);
 @import 'sheer-ui/styles';
 @source '..';
-@source '../../node_modules/sheer-ui/dist/blocks/Footer.svelte';
 @source '../../node_modules/sheer-ui/dist/blocks/Header.svelte';
 @source '../../node_modules/sheer-ui/dist/blocks/MobileNav.svelte';
 @source '../../node_modules/sheer-ui/dist/blocks/copy-button';

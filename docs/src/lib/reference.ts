@@ -23,7 +23,7 @@ function parser(): Page {
 				return `## ${statement.declaration!.id!.name}\n\n${doc ? prose(doc.value) + '\n\n' : ''}\`\`\`ts\n${text}\n\`\`\``;
 			})
 			.join('\n\n');
-		return { href: '/reference/parser', title: '@teasel/parser', section: 'Reference', body: `Every export of the package, as \`index.d.ts\` declares it.\n\n${body}` };
+		return { href: '/reference/parser', title: '@teasel/parser', section: 'Reference', path: 'package/index.d.ts', body: `Every export of the package, as \`index.d.ts\` declares it.\n\n${body}` };
 	} finally {
 		source[Symbol.dispose]();
 	}
