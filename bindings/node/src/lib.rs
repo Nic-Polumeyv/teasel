@@ -134,12 +134,12 @@ fn handle(env: Env, value: Value) -> Result<*mut Prepared<'static>> {
 	Ok(data.cast())
 }
 
-// the bytes V8 encoded, made valid UTF-8 where they are not; the options as their names; the
+// the bytes V8 encoded, made valid UTF-8 where they are not; the options as one flag word; the
 // grammar of the host language the whole source is a document of, or nothing
 unsafe extern "C" fn create(env: Env, info: CallbackInfo) -> Value {
 	guard(env, || {
-		let [source, names, host] = args::<3>(env, info)?;
-		let mut prepared = Prepared::from_bytes(bytes(env, source)?, Request::from_names(&string(env, names)?));
+		let [source, flags, host] = args::<3>(env, info)?;
+		let mut prepared = Prepared::from_bytes(bytes(env, source)?, Request::from_flags(number(env, flags)? as u32));
 		let host = string(env, host)?;
 		if !host.is_empty() {
 			prepared = prepared.host(&host)?;
