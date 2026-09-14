@@ -59,10 +59,7 @@ const KEYWORD = new Set('arguments await break case catch class const continue d
 const space = (c) => c === 32 || (c >= 9 && c <= 13) || c === 160 || c === 0x1680 || (c >= 0x2000 && c <= 0x200a) || c === 0x2028 || c === 0x2029 || c === 0x202f || c === 0x205f || c === 0x3000 || c === 0xfeff;
 
 /**
- * The offset after an identifier the host's syntax follows directly, so the answer needs no
- * engine: a name, then optional space, then an unmatched closer, the cut, or one of `stopAt`.
- * Anything the grammar could continue with, a dot or an operator or a TypeScript `as`, and any
- * word the engine has to judge, is left to it.
+ * A name the host's syntax follows directly, answered without the engine.
  * @param {string} source @param {number} at @param {number} end @param {string[] | undefined} stopAt
  * @returns {[string, number] | null} the name and where it ends, which is where the parse ends
  */
