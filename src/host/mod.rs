@@ -352,7 +352,7 @@ struct Walker<'a, E: Extension> {
 	full: u32,
 	grammar: &'a Grammar,
 	options: Options,
-	ast: Option<Ast<E::Data>>,
+	ast: Option<Box<Ast<E::Data>>>,
 	at: u32,
 	/// Where the JavaScript read at the cursor must end: the source, or an attribute value.
 	limit: u32,
@@ -400,8 +400,8 @@ pub(crate) fn parse_document<E: Extension>(
 	src: &str,
 	grammar: &Grammar,
 	options: Options,
-	reused: Option<Ast<E::Data>>,
-) -> (Ast<E::Data>, Result<NodeId>) {
+	reused: Option<Box<Ast<E::Data>>>,
+) -> (Box<Ast<E::Data>>, Result<NodeId>) {
 	let full = src.len() as u32;
 	let cut = if grammar.trim {
 		src.trim_end_matches(is_space)
@@ -413,7 +413,7 @@ pub(crate) fn parse_document<E: Extension>(
 		full,
 		grammar,
 		options,
-		ast: Some(reused.unwrap_or_else(|| Ast::sized(src.len()))),
+		ast: Some(reused.unwrap_or_else(|| Box::new(Ast::sized(src.len())))),
 		at: 0,
 		limit: cut.len() as u32,
 		frames: vec![Frame::Root {
@@ -439,11 +439,11 @@ pub(crate) fn parse_document<E: Extension>(
 
 impl<'a, E: Extension> Walker<'a, E> {
 	fn ast(&mut self) -> &mut Ast<E::Data> {
-		self.ast.as_mut().unwrap()
+		self.ast.as_deref_mut().unwrap()
 	}
 
 	fn tree(&self) -> &Ast<E::Data> {
-		self.ast.as_ref().unwrap()
+		self.ast.as_deref().unwrap()
 	}
 
 	fn len(&self) -> u32 {

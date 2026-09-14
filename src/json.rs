@@ -191,32 +191,32 @@ fn grammar_named(text: &str) -> Result<Rc<Grammar>, String> {
 
 #[derive(Default)]
 pub struct Pool {
-	js: Option<Ast<()>>,
+	js: Option<Box<Ast<()>>>,
 	#[cfg(feature = "typescript")]
-	ts: Option<Ast<crate::typescript::ast::Data>>,
+	ts: Option<Box<Ast<crate::typescript::ast::Data>>>,
 }
 
 /// Which slot of the pool an extension's tree takes.
 pub trait Pooled: Sized {
-	fn take(pool: &mut Pool) -> Option<Ast<Self>>;
-	fn give(pool: &mut Pool, ast: Ast<Self>);
+	fn take(pool: &mut Pool) -> Option<Box<Ast<Self>>>;
+	fn give(pool: &mut Pool, ast: Box<Ast<Self>>);
 }
 
 impl Pooled for () {
-	fn take(pool: &mut Pool) -> Option<Ast<Self>> {
+	fn take(pool: &mut Pool) -> Option<Box<Ast<Self>>> {
 		pool.js.take()
 	}
-	fn give(pool: &mut Pool, ast: Ast<Self>) {
+	fn give(pool: &mut Pool, ast: Box<Ast<Self>>) {
 		pool.js = Some(ast);
 	}
 }
 
 #[cfg(feature = "typescript")]
 impl Pooled for crate::typescript::ast::Data {
-	fn take(pool: &mut Pool) -> Option<Ast<Self>> {
+	fn take(pool: &mut Pool) -> Option<Box<Ast<Self>>> {
 		pool.ts.take()
 	}
-	fn give(pool: &mut Pool, ast: Ast<Self>) {
+	fn give(pool: &mut Pool, ast: Box<Ast<Self>>) {
 		pool.ts = Some(ast);
 	}
 }
@@ -456,7 +456,7 @@ where
 /// The tree of a failed request goes back to the pool; the error is the answer.
 fn recycle<X: Reuse + Pooled>(
 	pool: &mut Pool,
-	mut ast: Ast<X>,
+	mut ast: Box<Ast<X>>,
 	error: &crate::SyntaxError,
 	source: &str,
 	positions: &Positions,
