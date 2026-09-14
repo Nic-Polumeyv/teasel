@@ -29,6 +29,8 @@ export const sections: Section[] = pages.reduce<Section[]>((sections, page) => {
 	return sections;
 }, []);
 
+export const slug = (text: string) => text.toLowerCase().replace(/[^\w]+/g, '-').replace(/^-|-$/g, '');
+
 const escape = (text: string) => text.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
 const copy = buttonVariants({ variant: 'ghost', size: 'sm', class: 'absolute top-1.5 right-2 h-7 text-xs text-white/60 hover:bg-white/10 hover:text-white' });
@@ -46,10 +48,16 @@ const marked = new Marked({
 			);
 		},
 		heading({ tokens, depth, text }) {
-			const id = text.toLowerCase().replace(/[^\w]+/g, '-').replace(/^-|-$/g, '');
-			return `<h${depth} id="${id}">${this.parser.parseInline(tokens)}</h${depth}>`;
+			return `<h${depth} id="${slug(text)}">${this.parser.parseInline(tokens)}</h${depth}>`;
 		},
 	},
 });
 
 export const render = (page: Page) => marked.parse(page.body, { async: false });
+
+export type Entry = { href: string; title: string; page: string };
+
+export const entries: Entry[] = pages.flatMap((page) => [
+	{ href: page.href, title: page.title, page: page.section },
+	...[...page.body.matchAll(/^## (.+)$/gm)].map(([, heading]) => ({ href: `${page.href}#${slug(heading)}`, title: heading, page: page.title })),
+]);
