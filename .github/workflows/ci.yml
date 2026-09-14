@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
   workflow_call:
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -81,3 +82,63 @@ jobs:
           name: wasm
           path: package/teasel.wasm
           if-no-files-found: error
+
+  # what the push or pull request touched, so the docs build only when they changed
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      docs: ${{ steps.diff.outputs.docs }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: diff
+        run: |
+          base='${{ github.event.pull_request.base.sha || github.event.before }}'
+          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ] || ! git fetch --depth=1 origin "$base"; then
+            echo docs=true >> "$GITHUB_OUTPUT"
+          elif git diff --name-only "$base" HEAD -- docs package/index.d.ts .github/workflows/ci.yml | grep -q .; then
+            echo docs=true >> "$GITHUB_OUTPUT"
+          else
+            echo docs=false >> "$GITHUB_OUTPUT"
+          fi
+
+  docs:
+    needs: changes
+    if: needs.changes.outputs.docs == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: docs
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun run check
+      - run: bun run build
+      - uses: actions/upload-artifact@v7
+        with:
+          name: site
+          path: docs/build
+          if-no-files-found: error
+
+  # main only, and not when release calls this workflow: the github context is the caller's
+  deploy:
+    needs: docs
+    if: github.workflow == 'ci' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: site
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: site
+          path: build
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::038462749233:role/teasel-github-actions
+          aws-region: us-east-1
+      - run: aws s3 sync build s3://teasel.dev --delete
+      - run: aws cloudfront create-invalidation --distribution-id E2MJUFV76BN8VA --paths "/*"
