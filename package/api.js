@@ -55,13 +55,16 @@ function stops(list) {
 // and the two names strict mode refuses to bind
 const KEYWORD = new Set('arguments await break case catch class const continue debugger default delete do else enum eval export extends false finally for function if implements import in instanceof interface let new null package private protected public return static super switch this throw true try typeof var void while with yield'.split(' '));
 
+// `\s` as compares: a regex test per unit was a tenth of the bare path
+const space = (c) => c === 32 || (c >= 9 && c <= 13) || c === 160 || c === 0x1680 || (c >= 0x2000 && c <= 0x200a) || c === 0x2028 || c === 0x2029 || c === 0x202f || c === 0x205f || c === 0x3000 || c === 0xfeff;
+
 /**
  * The offset after an identifier the host's syntax follows directly, so the answer needs no
  * engine: a name, then optional space, then an unmatched closer, the cut, or one of `stopAt`.
  * Anything the grammar could continue with, a dot or an operator or a TypeScript `as`, and any
  * word the engine has to judge, is left to it.
  * @param {string} source @param {number} at @param {number} end @param {string[] | undefined} stopAt
- * @returns {[number, number] | null} the identifier's end and where the parse ends
+ * @returns {[string, number] | null} the name and where it ends, which is where the parse ends
  */
 function bare(source, at, end, stopAt, typescript) {
 	if (at >= end) return null;
@@ -77,11 +80,12 @@ function bare(source, at, end, stopAt, typescript) {
 		i += code > 0xffff ? 2 : 1;
 	}
 	const name_end = i;
-	if (KEYWORD.has(source.slice(at, name_end))) return null;
-	while (i < end && /\s/.test(source[i])) i++;
-	if (i === end) return [name_end, name_end];
+	const name = source.slice(at, name_end);
+	if (KEYWORD.has(name)) return null;
+	while (i < end && space(source.charCodeAt(i))) i++;
+	if (i === end) return [name, name_end];
 	const c = source[i];
-	if (c === '}' || c === ')' || c === ']') return [name_end, name_end];
+	if (c === '}' || c === ')' || c === ']') return [name, name_end];
 	if (stopAt !== undefined) {
 		for (const stop of stopAt) {
 			if (!source.startsWith(stop, i)) continue;
@@ -89,7 +93,7 @@ function bare(source, at, end, stopAt, typescript) {
 			if (isIdentifierStart(/** @type {number} */ (stop.codePointAt(0))) && after !== undefined && isIdentifierChar(after)) continue;
 			// a stop TypeScript reads as its own is the engine's to judge
 			if (typescript && (stop === 'as' || stop === 'satisfies' || stop === ':')) return null;
-			return [name_end, name_end];
+			return [name, name_end];
 		}
 	}
 	return null;
@@ -134,16 +138,16 @@ export function bind(engine) {
 			if ((index === ENTRY.expression || index === ENTRY.pattern) && Number.isInteger(offset) && offset >= 0) {
 				const cut = end === undefined ? this.#source.length : end;
 				const found = Number.isInteger(cut) && cut <= this.#source.length && offset <= cut ? bare(this.#source, offset, cut, index === ENTRY.pattern ? [',', '(', ':', '='] : stopAt, !!this.#options.typescript) : null;
-				if (found !== null) return this.#identifier(offset, found[0], index === ENTRY.pattern);
+				if (found !== null) return this.#identifier(offset, found[1], found[0], index === ENTRY.pattern);
 			}
 			return result(engine.parse(this.#held, index, offset, end, stop), this.#source);
 		}
 
 		/** The answer the engine would give for a bare identifier, built here. */
-		#identifier(start, end, pattern) {
+		#identifier(start, end, name, pattern) {
 			const o = this.#options;
 			/** @type {any} */
-			const node = { type: 'Identifier', start, end, name: this.#source.slice(start, end) };
+			const node = { type: 'Identifier', start, end, name };
 			if (o.locations) node.loc = { start: this.#position(start), end: this.#position(end) };
 			/** @type {any} */
 			const answer = { node, end };
