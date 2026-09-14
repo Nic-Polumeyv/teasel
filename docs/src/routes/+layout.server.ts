@@ -1,3 +1,3 @@
-import { sections, entries } from '#lib/content.ts';
+import { sections, pages } from '#lib/content.ts';
 
-export const load = () => ({ sections, entries });
+export const load = () => ({ sections, pages });

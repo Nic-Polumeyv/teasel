@@ -4,19 +4,10 @@
 	import * as Dialog from "sheer-ui/components/dialog";
 	import { Button } from "sheer-ui/components/button";
 	import { Kbd } from "sheer-ui/components/kbd";
-	import type { Entry } from "#lib/content.ts";
+	import type { Page } from "#lib/content.ts";
 
-	let { entries }: { entries: Entry[] } = $props();
+	let { pages }: { pages: Page[] } = $props();
 	let open = $state(false);
-
-	const groups = $derived(
-		entries.reduce<{ page: string; entries: Entry[] }[]>((groups, entry) => {
-			const last = groups.at(-1);
-			if (last?.page === entry.page) last.entries.push(entry);
-			else groups.push({ page: entry.page, entries: [entry] });
-			return groups;
-		}, []),
-	);
 
 	function shortcut(event: KeyboardEvent) {
 		if ((event.metaKey || event.ctrlKey) && event.key === "k") {
@@ -51,10 +42,11 @@
 			<Command.Input placeholder="Search the docs" />
 			<Command.List>
 				<Command.Empty>Nothing found.</Command.Empty>
-				{#each groups as group (group.page)}
-					<Command.Group heading={group.page}>
-						{#each group.entries as entry (entry.href)}
-							<Command.Item value={`${group.page} ${entry.title}`} onSelect={() => go(entry.href)}>{entry.title}</Command.Item>
+				{#each pages as page (page.href)}
+					<Command.Group heading={page.title}>
+						<Command.Item value={page.title} onSelect={() => go(page.href)}>{page.title}</Command.Item>
+						{#each page.headings as heading (heading.id)}
+							<Command.Item value={`${page.title} ${heading.text}`} onSelect={() => go(`${page.href}#${heading.id}`)}>{heading.text}</Command.Item>
 						{/each}
 					</Command.Group>
 				{/each}

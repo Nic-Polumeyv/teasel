@@ -1,6 +1,5 @@
 import { Source } from '@teasel/parser';
 import types from '../../../package/index.d.ts?raw';
-import type { Page } from '#lib/content.ts';
 
 type Declaration = { type: string; start: number; end: number; id?: { name: string }; declaration?: Declaration; leadingComments?: { value: string; end: number }[] };
 
@@ -11,7 +10,7 @@ const prose = (comment: string) =>
 		.join('\n')
 		.trim();
 
-function parser(): Page {
+function parser() {
 	const source = new Source(types, { sourceType: 'module', typescript: true, comments: true });
 	try {
 		const { node } = source.parse() as unknown as { node: { body: Declaration[] } };
@@ -23,10 +22,10 @@ function parser(): Page {
 				return `## ${statement.declaration!.id!.name}\n\n${doc ? prose(doc.value) + '\n\n' : ''}\`\`\`ts\n${text}\n\`\`\``;
 			})
 			.join('\n\n');
-		return { href: '/reference/parser', title: '@teasel/parser', section: 'Reference', path: 'package/index.d.ts', body: `Every export of the package, as \`index.d.ts\` declares it.\n\n${body}` };
+		return { meta: { href: '/reference/parser', title: '@teasel/parser', section: 'Reference', path: 'package/index.d.ts' }, markdown: `Every export of the package, as \`index.d.ts\` declares it.\n\n${body}` };
 	} finally {
 		source[Symbol.dispose]();
 	}
 }
 
-export const reference: Page[] = [parser()];
+export const reference = parser();

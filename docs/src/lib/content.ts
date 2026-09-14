@@ -1,33 +1,11 @@
-import { Marked } from 'marked';
+import { Marked, type Token, type Tokens } from 'marked';
 import { buttonVariants } from 'sheer-ui/components/button';
 import { snippet } from '#lib/highlight.ts';
 import { reference } from '#lib/reference.ts';
 
-export type Page = { href: string; title: string; section: string; body: string; path: string };
-export type Section = { label: string; links: { href: string; title: string }[] };
-
-const files = import.meta.glob('/content/**/*.md', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
-
-const words = (name: string) => name.replace(/^\d+-/, '').replace(/-/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
-
-const written: Page[] = Object.keys(files)
-	.sort()
-	.map((path, index) => {
-		const [, section, file] = /\/content\/([^/]+)\/([^/]+)\.md$/.exec(path)!;
-		const text = files[path];
-		const title = /^---\n(?:.*\n)*?title:\s*(.+)\n(?:.*\n)*?---\n/.exec(text)?.[1] ?? words(file);
-		return { href: index === 0 ? '/' : `/${file.replace(/^\d+-/, '')}`, title, section: words(section), body: text.replace(/^---\n[\s\S]*?\n---\n/, ''), path: `docs${path}` };
-	});
-
-export const pages: Page[] = [...written, ...reference];
-
-export const sections: Section[] = pages.reduce<Section[]>((sections, page) => {
-	const link = { href: page.href, title: page.title };
-	const last = sections.at(-1);
-	if (last?.label === page.section) last.links.push(link);
-	else sections.push({ label: page.section, links: [link] });
-	return sections;
-}, []);
+export type Heading = { id: string; text: string };
+export type Page = { href: string; title: string; section: string; path: string; headings: Heading[] };
+export type Section = { label: string; pages: Page[] };
 
 export const slug = (text: string) => text.toLowerCase().replace(/[^\w]+/g, '-').replace(/^-|-$/g, '');
 
@@ -53,11 +31,31 @@ const marked = new Marked({
 	},
 });
 
-export const render = (page: Page) => marked.parse(page.body, { async: false });
+const tokens = new Map<string, Token[]>();
 
-export type Entry = { href: string; title: string; page: string };
+function page(meta: Omit<Page, 'headings'>, markdown: string): Page {
+	const lexed = marked.lexer(markdown);
+	tokens.set(meta.href, lexed);
+	const headings = lexed.filter((token): token is Tokens.Heading => token.type === 'heading' && token.depth === 2).map(({ text }) => ({ id: slug(text), text }));
+	return { ...meta, headings };
+}
 
-export const entries: Entry[] = pages.flatMap((page) => [
-	{ href: page.href, title: page.title, page: page.title },
-	...[...page.body.matchAll(/^## (.+)$/gm)].map(([, heading]) => ({ href: `${page.href}#${slug(heading)}`, title: heading, page: page.title })),
-]);
+export const render = (page: Page) => marked.parser(tokens.get(page.href)!);
+
+const name = (segment: string) => segment.replace(/^\d+-/, '');
+const label = (segment: string) => name(segment).replace(/-/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
+
+const files = import.meta.glob('/content/**/*.md', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
+
+const written = Object.keys(files)
+	.sort()
+	.map((path, index) => {
+		const [, section, file] = /\/content\/([^/]+)\/([^/]+)\.md$/.exec(path)!;
+		const [, front = '', markdown = files[path]] = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/.exec(files[path]) ?? [];
+		const title = /^title:\s*(.+)$/m.exec(front)?.[1] ?? label(file);
+		return page({ href: index === 0 ? '/' : `/${name(file)}`, title, section: label(section), path: `docs${path}` }, markdown);
+	});
+
+export const pages: Page[] = [...written, page(reference.meta, reference.markdown)];
+
+export const sections: Section[] = Object.entries(Object.groupBy(pages, (page) => page.section)).map(([label, pages]) => ({ label, pages: pages! }));
