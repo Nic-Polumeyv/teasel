@@ -4,6 +4,7 @@ import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
+	// TODO: remove once lightningcss parses `@container anchored()`: https://github.com/parcel-bundler/lightningcss/pull/1218
 	css: { lightningcss: { errorRecovery: true } },
 	plugins: [
 		tailwindcss(),
