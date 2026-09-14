@@ -10,10 +10,7 @@ export function names(options) {
 	const on = [];
 	for (const key in options) {
 		const value = options[key];
-		if (key === 'host') {
-			if (value !== undefined && typeof value !== 'string') throw new TypeError('host must be the plan as a string');
-			continue;
-		}
+		if (key === 'host') continue;
 		if (!OPTIONS.has(key)) throw new TypeError(`${key} is not an option`);
 		if (value === undefined || value === false) continue;
 		if (key === 'decorators') {
@@ -44,7 +41,8 @@ function stops(list) {
 /**
  * @typedef {ArrayBuffer | Uint32Array | string} Answer
  * @typedef {object} Engine
- * @property {(source: string, names: string, host: string) => any} create
+ * @property {(text: string) => any} plan
+ * @property {(source: string, names: string, plan: any) => any} create
  * @property {(held: any, entry: number, offset: number, end: number | undefined, stop: string) => Answer} parse
  * @property {(held: any) => void} [free]
  * @property {() => string[]} constants
@@ -105,7 +103,18 @@ export function bind(engine) {
 		throw Object.assign(new SyntaxError(message), error);
 	}
 
-	return class Source {
+	/** @type {WeakMap<Plan, any>} what the engine holds for each plan */
+	const plans = new WeakMap();
+
+	class Plan {
+		/** @param {string} text the plan as JSON */
+		constructor(text) {
+			if (typeof text !== 'string') throw new TypeError('a plan is its JSON text');
+			plans.set(this, engine.plan(text));
+		}
+	}
+
+	class Source {
 		#held;
 		#source;
 		#options;
@@ -113,7 +122,9 @@ export function bind(engine) {
 		#lines;
 
 		constructor(source, options) {
-			this.#held = engine.create(source, names(options), options?.host ?? '');
+			const host = options?.host;
+			if (host !== undefined && !(host instanceof Plan)) throw new TypeError('host must be a Plan');
+			this.#held = engine.create(source, names(options), host === undefined ? undefined : plans.get(host));
 			this.#source = source;
 			// what the engine was prepared with, however the caller's object changes after
 			this.#options = { ...options };
@@ -185,5 +196,6 @@ export function bind(engine) {
 			engine.free?.(this.#held);
 			this.#held = undefined;
 		}
-	};
+	}
+	return { Source, Plan };
 }

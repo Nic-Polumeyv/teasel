@@ -36,9 +36,25 @@ fn guard(on_panic: u32, f: impl FnOnce() -> u32) -> u32 {
 }
 
 /// # Safety
-/// `ptr`, `names` and `host` are each `capacity` bytes from `alloc`, `len` of them written: the
-/// source, the option names and the host plan, empty for none; all are taken over here. The
-/// handle is 0 when the plan cannot be read, the error as JSON at `text_ptr`.
+/// `ptr` is `capacity` bytes from `alloc`, `len` of them the plan's text, taken over here. The
+/// handle names the plan to `source_new`; it is 0 when the plan cannot be read, the error as
+/// JSON at `text_ptr`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn plan_new(ptr: *mut u8, len: u32, capacity: u32) -> u32 {
+	let plan = unsafe { Vec::from_raw_parts(ptr, len as usize, capacity as usize) };
+	guard(0, || match teasel::json::plan_new(&String::from_utf8_lossy(&plan)) {
+		Ok(handle) => handle,
+		Err(message) => {
+			text(teasel::json::error_json(&message, 0));
+			0
+		}
+	})
+}
+
+/// # Safety
+/// `ptr` and `names` are each `capacity` bytes from `alloc`, `len` of them written: the source
+/// and the option names, taken over here. `host` is a plan's handle from `plan_new`, or 0. The
+/// handle is 0 when the plan is unknown, the error as JSON at `text_ptr`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn source_new(
 	ptr: *mut u8,
@@ -47,17 +63,14 @@ pub unsafe extern "C" fn source_new(
 	names: *mut u8,
 	names_len: u32,
 	names_capacity: u32,
-	host: *mut u8,
-	host_len: u32,
-	host_capacity: u32,
+	host: u32,
 ) -> u32 {
 	let source = unsafe { Vec::from_raw_parts(ptr, len as usize, capacity as usize) };
 	let names = unsafe { Vec::from_raw_parts(names, names_len as usize, names_capacity as usize) };
-	let host = unsafe { Vec::from_raw_parts(host, host_len as usize, host_capacity as usize) };
 	guard(0, || {
 		let mut prepared = Prepared::from_bytes(source, Request::from_names(&String::from_utf8_lossy(&names)));
-		if !host.is_empty() {
-			prepared = match prepared.host(&String::from_utf8_lossy(&host)) {
+		if host != 0 {
+			prepared = match prepared.host_by(host) {
 				Ok(prepared) => prepared,
 				Err(message) => {
 					text(teasel::json::error_json(&message, 0));

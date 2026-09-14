@@ -10,9 +10,9 @@ const { decode } = await import('./decode.js');
 // a bare identifier is answered without the engine: the same answer the engine gives
 const canon = (value) => JSON.stringify(value, (_, v) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, v[k]])) : v));
 const summary = (answer) => ({ ...answer, scopes: answer.scopes?.length, bindings: answer.bindings?.map((b) => [b.name, b.kind]), references: answer.references?.map((r) => [r.node.name, r.read, r.write]) });
-for (const [label, { Source, engine }] of [['node', node], ['wasm', wasm]]) {
+for (const [label, { Source, Plan, engine }] of [['node', node], ['wasm', wasm]]) {
 	const engineAnswer = (text, options, entry, offset, end, stopAt) => {
-		const held = engine.create(text, names(options), '');
+		const held = engine.create(text, names(options), undefined);
 		try {
 			const answer = engine.parse(held, ENTRY[entry], offset, end, stopAt?.join(' ') ?? '');
 			if (typeof answer === 'string') return { error: JSON.parse(answer).error.code };
@@ -31,7 +31,7 @@ for (const [label, { Source, engine }] of [['node', node], ['wasm', wasm]]) {
 	}
 }
 
-for (const [name, { Source, isIdentifierStart, isIdentifierChar, scopeOf, bindingOf, referenceOf, parentOf }] of [['node', node], ['wasm', wasm]]) {
+for (const [name, { Source, Plan, isIdentifierStart, isIdentifierChar, scopeOf, bindingOf, referenceOf, parentOf }] of [['node', node], ['wasm', wasm]]) {
 	const parse = (source, options) => new Source(source, options).parse();
 	const program = (source, options) => parse(source, options).node;
 	const at = (entry, source, offset, options, stopAt) => new Source(source, options).parse(entry, offset, { stopAt });
@@ -135,7 +135,7 @@ for (const [name, { Source, isIdentifierStart, isIdentifierChar, scopeOf, bindin
 	assert.equal(program('return', { allowReturnOutsideFunction: true }).body[0].type, 'ReturnStatement');
 	{
 		// a document's answer lists each piece of JavaScript the host read, with its share of the tables
-		const host = readFileSync(new URL('../tests/hosts/svelte/plan.json', import.meta.url), 'utf8');
+		const host = new Plan(readFileSync(new URL('../tests/hosts/svelte/plan.json', import.meta.url), 'utf8'));
 		const answer = parse('<script>let a = 1;</script>{a + b}', { host, sourceType: 'module', scopes: true });
 		const [script, expression] = answer.roots;
 		assert.equal(answer.roots.length, 2);
@@ -278,9 +278,10 @@ for (const [name, { Source, isIdentifierStart, isIdentifierChar, scopeOf, bindin
 
 // a document of a host language: the host's nodes around the JavaScript ones, one tree
 const plan = readFileSync(new URL('../tests/hosts/svelte/plan.json', import.meta.url), 'utf8');
-for (const { Source, scopeOf, bindingOf, parentOf } of [node, wasm]) {
+for (const { Source, Plan, scopeOf, bindingOf, parentOf } of [node, wasm]) {
+	const host = new Plan(plan);
 	const source = '<script lang="ts">\n\tlet items: string[] = [];\n</script>\n\n{#each items as item, i (item)}\n\t<p class:odd={i % 2} on:click={() => item}>{item}</p>\n{:else}\n\tnone\n{/each}\n';
-	const doc = new Source(source, { host: plan, sourceType: 'module', typescript: true, scopes: true, comments: true }).parse();
+	const doc = new Source(source, { host, sourceType: 'module', typescript: true, scopes: true, comments: true }).parse();
 	const root = doc.node;
 	assert.equal(root.type, 'Root');
 	assert.equal(root.end, source.length);
@@ -315,10 +316,11 @@ for (const { Source, scopeOf, bindingOf, parentOf } of [node, wasm]) {
 	assert.equal(doc.scopes.find(s => s.kind === 'fragment' && s.parent === scopeOf(instance.content)).parent, scopeOf(instance.content));
 	assert.equal(scopeOf(instance.content).parent, scopeOf(root));
 	assert.equal(scopeOf(each.fallback).parent, doc.scopes.find(s => s.kind === 'fragment' && s.parent === scopeOf(instance.content)));
-	assert.throws(() => new Source('x', { host: 'element div' }), /JSON/);
-	assert.throws(() => new Source('<div>', { host: plan }).parse(), { code: 'unclosed', pos: 0 });
+	assert.throws(() => new Plan('element div'), /JSON/);
+	assert.throws(() => new Source('x', { host: plan }), TypeError);
+	assert.throws(() => new Source('<div>', { host }).parse(), { code: 'unclosed', pos: 0 });
 	// under recovery the tree is what could be read, the errors listed with it
-	const loose = new Source('<div>{#if }<Comp foo={bar}\n</div>', { host: plan, errorRecovery: true }).parse();
+	const loose = new Source('<div>{#if }<Comp foo={bar}\n</div>', { host, errorRecovery: true }).parse();
 	assert.deepEqual(loose.errors.map((e) => e.code), ['unclosed', 'unexpected_token', 'expected']);
 	const div = loose.node.fragment.nodes[0];
 	assert.equal(div.end, 33);
@@ -339,12 +341,12 @@ for (const [label, { Source }] of [['node', node], ['wasm', wasm]]) {
 
 // unfinished input under recovery is an answer, never a panic; a strict error is a SyntaxError
 const plans = Object.fromEntries(['svelte', 'vue'].map((name) => [name, readFileSync(new URL(`../tests/hosts/${name}/plan.json`, import.meta.url), 'utf8')]));
-for (const [label, { Source }] of [['node', node], ['wasm', wasm]]) {
+for (const [label, { Source, Plan }] of [['node', node], ['wasm', wasm]]) {
 	for (const text of ['<a x="', '<a /*', '<script>"</script>', '{#if', '<div class="{a']) {
-		assert.equal(new Source(text, { host: plans.svelte, errorRecovery: true, comments: true, scopes: true }).parse().node.type, 'Root', `${label} ${text}`);
+		assert.equal(new Source(text, { host: new Plan(plans.svelte), errorRecovery: true, comments: true, scopes: true }).parse().node.type, 'Root', `${label} ${text}`);
 	}
-	assert.throws(() => new Source('<a @x="@"/>', { host: plans.vue }).parse(), (e) => e instanceof SyntaxError, `${label}`);
-	const handler = new Source('<button @click="let x = 1"/>', { host: plans.vue, errorRecovery: true }).parse();
+	assert.throws(() => new Source('<a @x="@"/>', { host: new Plan(plans.vue) }).parse(), (e) => e instanceof SyntaxError, `${label}`);
+	const handler = new Source('<button @click="let x = 1"/>', { host: new Plan(plans.vue), errorRecovery: true }).parse();
 	assert.equal(handler.node.children[0].props[0].handler.type, 'Program', label);
 	assert.deepEqual(handler.errors, [], label);
 }
@@ -352,8 +354,9 @@ for (const [label, { Source }] of [['node', node], ['wasm', wasm]]) {
 assert.throws(() => wasm.engine.parse({ handle: 0, generation: -1 }, 1, 0, undefined, ''), /started over/);
 
 // a second host: the same walker, Vue's plan
-const vue = readFileSync(new URL('../tests/hosts/vue/plan.json', import.meta.url), 'utf8');
-for (const { Source, parentOf } of [node, wasm]) {
+const vueText = readFileSync(new URL('../tests/hosts/vue/plan.json', import.meta.url), 'utf8');
+for (const { Source, Plan, parentOf } of [node, wasm]) {
+	const vue = new Plan(vueText);
 	const source = '<ul :class="{ on }">\n\t<li v-for="(item, i) in items" :key="item.id" @click.stop="select(item)">{{ item.name }} #{{ i }}</li>\n</ul>\n';
 	const root = new Source(source, { host: vue, sourceType: 'module' }).parse().node;
 	assert.equal(root.type, 'Root');

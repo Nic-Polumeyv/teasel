@@ -174,8 +174,9 @@ struct Session {
 
 thread_local! {
 	static SESSION: std::cell::RefCell<Session> = std::cell::RefCell::new(Session::default());
-	/// Plans by their text, read once each.
-	static PLANS: std::cell::RefCell<Vec<(String, Rc<Plan>)>> = const { std::cell::RefCell::new(Vec::new()) };
+	/// Plans by handle, read once each; `NAMED` finds one again by its text.
+	static PLANS: std::cell::RefCell<Vec<Rc<Plan>>> = const { std::cell::RefCell::new(Vec::new()) };
+	static NAMED: std::cell::RefCell<Vec<(String, u32)>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
 /// The words of the last binary answer on this thread, where they were written.
@@ -185,15 +186,37 @@ pub fn words<R>(f: impl FnOnce(&mut Words) -> R) -> R {
 
 /// The plan of a text, read once per thread; the error names the line it stopped at.
 fn plan_named(text: &str) -> Result<Rc<Plan>, String> {
+	let known = NAMED.with(|named| {
+		named
+			.borrow()
+			.iter()
+			.find(|(known, _)| known == text)
+			.map(|(_, handle)| *handle)
+	});
+	let handle = match known {
+		Some(handle) => handle,
+		None => {
+			let handle = plan_new(text)?;
+			NAMED.with(|named| named.borrow_mut().push((text.to_string(), handle)));
+			handle
+		}
+	};
+	Ok(plan_by(handle).unwrap())
+}
+
+/// Reads a plan once on this thread; the handle names it to `Prepared::host_by`, so the text
+/// crosses once, not with every source. The error names the line it stopped at.
+pub fn plan_new(text: &str) -> Result<u32, String> {
+	let plan = Rc::new(Plan::read(text)?);
 	PLANS.with(|plans| {
 		let mut plans = plans.borrow_mut();
-		if let Some((_, plan)) = plans.iter().find(|(known, _)| known == text) {
-			return Ok(plan.clone());
-		}
-		let plan = Rc::new(Plan::read(text)?);
-		plans.push((text.to_string(), plan.clone()));
-		Ok(plan)
+		plans.push(plan);
+		Ok(plans.len() as u32)
 	})
+}
+
+fn plan_by(handle: u32) -> Option<Rc<Plan>> {
+	PLANS.with(|plans| plans.borrow().get(handle.checked_sub(1)? as usize).cloned())
 }
 
 #[derive(Default)]
@@ -263,6 +286,12 @@ impl<'a> Prepared<'a> {
 	pub fn host(mut self, plan: &str) -> Result<Prepared<'a>, String> {
 		let plan = plan_named(plan)?;
 		self.host = Some(plan);
+		Ok(self)
+	}
+
+	/// The plan `plan_new` numbered.
+	pub fn host_by(mut self, handle: u32) -> Result<Prepared<'a>, String> {
+		self.host = Some(plan_by(handle).ok_or_else(|| "not a plan handle".to_string())?);
 		Ok(self)
 	}
 

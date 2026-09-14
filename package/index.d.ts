@@ -14,7 +14,7 @@ export interface Options {
 	 * JavaScript at an offset as before. TypeScript turns on by what the plan says of a
 	 * script tag.
 	 */
-	host?: string;
+	host?: Plan;
 	/** `script` by default, as in acorn. */
 	sourceType?: 'script' | 'module';
 	/**
@@ -235,6 +235,12 @@ export interface HostNode {
  * tables. Offsets are UTF-16, as in acorn; positions stay those of the whole source. `Root` is
  * what the program entry answers with: the program, or the document's root with a `host`.
  */
+/** A host language's plan, read once; every `Source` of a document takes it as `host`. */
+export class Plan {
+	/** @param text the plan as JSON, as `@teasel/parser/plan` prints it */
+	constructor(text: string);
+}
+
 export class Source<Root = Program> {
 	constructor(source: string, options?: Options);
 	/** The program starting at `offset`, the whole source by default; the document with a `host`. */
