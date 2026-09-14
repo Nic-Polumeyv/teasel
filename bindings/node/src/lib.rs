@@ -134,12 +134,12 @@ fn handle(env: Env, value: Value) -> Result<*mut Prepared<'static>> {
 	Ok(data.cast())
 }
 
-// the bytes V8 encoded, made valid UTF-8 where they are not; the options as their names; the
+// the bytes V8 encoded, made valid UTF-8 where they are not; the options as one flag word; the
 // grammar of the host language the whole source is a document of, or nothing
 unsafe extern "C" fn create(env: Env, info: CallbackInfo) -> Value {
 	guard(env, || {
-		let [source, names, host] = args::<3>(env, info)?;
-		let mut prepared = Prepared::from_bytes(bytes(env, source)?, Request::from_names(&string(env, names)?));
+		let [source, flags, host] = args::<3>(env, info)?;
+		let mut prepared = Prepared::from_bytes(bytes(env, source)?, Request::from_flags(number(env, flags)? as u32));
 		let host = string(env, host)?;
 		if !host.is_empty() {
 			prepared = prepared.host(&host)?;
@@ -161,6 +161,20 @@ unsafe extern "C" fn create(env: Env, info: CallbackInfo) -> Value {
 	})
 }
 
+unsafe extern "C" fn stops(env: Env, info: CallbackInfo) -> Value {
+	guard(env, || {
+		let [source, tokens] = args::<2>(env, info)?;
+		let prepared = unsafe { &mut *handle(env, source)? };
+		let id = prepared.stop_set(&string(env, tokens)?);
+		let mut result = std::ptr::null_mut();
+		check(
+			unsafe { node_api::napi_create_uint32(env, id, &mut result) },
+			"a number",
+		)?;
+		Ok(result)
+	})
+}
+
 unsafe extern "C" fn free(env: Env, info: CallbackInfo) -> Value {
 	guard(env, || {
 		let [source] = args::<1>(env, info)?;
@@ -174,9 +188,9 @@ unsafe extern "C" fn parse(env: Env, info: CallbackInfo) -> Value {
 		let [source, entry, offset, end, stop] = args::<5>(env, info)?;
 		let prepared = unsafe { &*handle(env, source)? };
 		let entry = Entry::from_index(number(env, entry)? as u32);
-		let (offset, end, stop) = (number(env, offset)?, optional(env, end)?, string(env, stop)?);
+		let (offset, end, stop) = (number(env, offset)?, optional(env, end)?, number(env, stop)? as u32);
 		fresh(env);
-		match prepared.binary(entry, offset, end, &stop) {
+		match prepared.binary(entry, offset, end, stop) {
 			Ok(()) => view(env),
 			Err(json) => text(env, &json),
 		}
@@ -324,6 +338,7 @@ pub unsafe extern "C" fn napi_register_module_v1(env: Env, exports: Value) -> Va
 		for (name, callback) in [
 			(c"create", create as unsafe extern "C" fn(Env, CallbackInfo) -> Value),
 			(c"parse", parse),
+			(c"stops", stops),
 			(c"free", free),
 			(c"constants", constants),
 			(c"shapes", shapes),

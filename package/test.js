@@ -314,7 +314,7 @@ for (const [label, { Source }] of [['node', node], ['wasm', wasm]]) {
 	assert.deepEqual(handler.errors, [], label);
 }
 // a source held by an engine that panicked and started over says so
-assert.throws(() => wasm.engine.parse({ handle: 0, generation: -1 }, 1, 0, undefined, ''), /started over/);
+assert.throws(() => wasm.engine.parse({ handle: 0, generation: -1 }, 1, 0, undefined, 0), /started over/);
 
 // a second host: the same walker, Vue's grammar
 const vue = readFileSync(new URL('../tests/hosts/vue/host.grammar', import.meta.url), 'utf8');

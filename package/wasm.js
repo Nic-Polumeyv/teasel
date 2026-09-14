@@ -44,8 +44,8 @@ function bytes(text) {
 	return [ptr, written, capacity];
 }
 
-function create(source, names, host) {
-	const handle = guarded(() => wasm.source_new(...bytes(source), ...bytes(names), ...bytes(host)));
+function create(source, flags, host) {
+	const handle = guarded(() => wasm.source_new(...bytes(source), flags, ...bytes(host)));
 	if (handle === 0) throw new Error(JSON.parse(text()).error.message);
 	return { handle, generation };
 }
@@ -77,7 +77,8 @@ function answer(status) {
 export const engine = {
 	create,
 	// the words outlive the source: they sit in the answer buffer until the next parse
-	parse: (held, entry, offset, end, stop) => answer(guarded(() => wasm.source_parse(handle(held), entry, offset, end ?? 0, end === undefined ? 0 : 1, ...bytes(stop)))),
+	stops: (held, tokens) => guarded(() => wasm.source_stops(handle(held), ...bytes(tokens))),
+	parse: (held, entry, offset, end, stop) => answer(guarded(() => wasm.source_parse(handle(held), entry, offset, end ?? 0, end === undefined ? 0 : 1, stop))),
 	free: (held) => {
 		if (held.generation === generation) wasm.source_free(held.handle);
 	},

@@ -43,6 +43,15 @@ impl Request {
 		}
 	}
 
+	/// The same from one word of `flag` bits.
+	pub fn from_flags(flags: u32) -> Request {
+		let mut request = Request::default();
+		for &(_, name) in flag::NAMES.iter().filter(|&&(bit, _)| flags & bit != 0) {
+			request.set(name);
+		}
+		request
+	}
+
 	/// A source's request from its switches named, separated by spaces, as the package's options spell them, and
 	/// `module` for `sourceType: 'module'`; a script otherwise. The entry and offset come with
 	/// each parse.
@@ -74,6 +83,41 @@ impl Request {
 			_ => {}
 		}
 	}
+}
+
+/// A source's switches as bits, one word across a binding; package/api.js spells the same numbers.
+pub mod flag {
+	pub const MODULE: u32 = 1;
+	pub const TYPESCRIPT: u32 = 1 << 1;
+	pub const ERASE: u32 = 1 << 2;
+	pub const COMMENTS: u32 = 1 << 3;
+	pub const SCOPES: u32 = 1 << 4;
+	pub const LOCATIONS: u32 = 1 << 5;
+	pub const PARENTHESIZED: u32 = 1 << 6;
+	pub const LEGACY_DECORATORS: u32 = 1 << 7;
+	pub const PROPOSAL_DECORATORS: u32 = 1 << 8;
+	pub const ALLOW_RETURN_OUTSIDE_FUNCTION: u32 = 1 << 9;
+	pub const ALLOW_AWAIT_OUTSIDE_FUNCTION: u32 = 1 << 10;
+	pub const ALLOW_SUPER_OUTSIDE_METHOD: u32 = 1 << 11;
+	pub const ALLOW_UNDECLARED_EXPORTS: u32 = 1 << 12;
+	pub const ERROR_RECOVERY: u32 = 1 << 13;
+	/// Each bit by the name `Request::set` takes.
+	pub const NAMES: [(u32, &str); 14] = [
+		(MODULE, "module"),
+		(TYPESCRIPT, "typescript"),
+		(ERASE, "erase"),
+		(COMMENTS, "comments"),
+		(SCOPES, "scopes"),
+		(LOCATIONS, "locations"),
+		(PARENTHESIZED, "parenthesized"),
+		(LEGACY_DECORATORS, "legacyDecorators"),
+		(PROPOSAL_DECORATORS, "proposalDecorators"),
+		(ALLOW_RETURN_OUTSIDE_FUNCTION, "allowReturnOutsideFunction"),
+		(ALLOW_AWAIT_OUTSIDE_FUNCTION, "allowAwaitOutsideFunction"),
+		(ALLOW_SUPER_OUTSIDE_METHOD, "allowSuperOutsideMethod"),
+		(ALLOW_UNDECLARED_EXPORTS, "allowUndeclaredExports"),
+		(ERROR_RECOVERY, "errorRecovery"),
+	];
 }
 
 /// The error answer for a request the parser never ran: a host's offsets or switches.
@@ -156,6 +200,8 @@ pub struct Prepared<'a> {
 	request: Request,
 	/// The grammar a program entry reads the whole source by.
 	host: Option<Rc<Grammar>>,
+	/// The stop sets the parses name by id, one more than their index; 0 is none.
+	stops: Vec<String>,
 }
 
 /// What every parse on a thread reuses: the trees, emptied, and the answer's buffers.
@@ -247,6 +293,7 @@ impl<'a> Prepared<'a> {
 			positions,
 			request,
 			host: None,
+			stops: Vec::new(),
 		}
 	}
 
@@ -276,21 +323,46 @@ impl<'a> Prepared<'a> {
 		})
 	}
 
+	/// The id of a stop set, the host's tokens separated by spaces, registered once per source.
+	pub fn stop_set(&mut self, tokens: &str) -> u32 {
+		if tokens.is_empty() {
+			return 0;
+		}
+		if let Some(i) = self.stops.iter().position(|s| s == tokens) {
+			return i as u32 + 1;
+		}
+		self.stops.push(tokens.to_string());
+		self.stops.len() as u32
+	}
+
+	fn stop(&self, id: u32) -> Result<&str, String> {
+		if id == 0 {
+			return Ok("");
+		}
+		self.stops
+			.get(id as usize - 1)
+			.map(String::as_str)
+			.ok_or_else(|| error_json(&format!("no stop set {id}"), 0))
+	}
+
 	/// One entry at an offset, as JSON.
-	pub fn parse(&self, entry: Entry, start: f64, end: Option<f64>, stop: &str) -> String {
-		match self.request(entry, start, end) {
-			Ok(request) => parse_with(&self.source, &self.positions, &request, stop, self.grammar(entry)),
+	pub fn parse(&self, entry: Entry, start: f64, end: Option<f64>, stop: u32) -> String {
+		match self
+			.request(entry, start, end)
+			.and_then(|request| Ok((request, self.stop(stop)?)))
+		{
+			Ok((request, stop)) => parse_with(&self.source, &self.positions, &request, stop, self.grammar(entry)),
 			Err(error) => error,
 		}
 	}
 
 	/// One entry at an offset, as a token stream at `words`; the error answer stays JSON.
-	pub fn binary(&self, entry: Entry, start: f64, end: Option<f64>, stop: &str) -> Result<(), String> {
+	pub fn binary(&self, entry: Entry, start: f64, end: Option<f64>, stop: u32) -> Result<(), String> {
 		binary_with(
 			&self.source,
 			&self.positions,
 			&self.request(entry, start, end)?,
-			stop,
+			self.stop(stop)?,
 			self.grammar(entry),
 		)
 	}

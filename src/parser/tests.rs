@@ -170,15 +170,15 @@ fn the_session_writes_the_same_words_again() {
 	let source = "let x = /* a */ 1; function f(y) { return x + y; } // b";
 	let prepared = Prepared::borrowed(source, request);
 	let words = || crate::json::words(|words| words.to_vec());
-	prepared.binary(Entry::Program, 0.0, None, "").unwrap();
+	prepared.binary(Entry::Program, 0.0, None, 0).unwrap();
 	let first = words();
-	let _ = Prepared::borrowed("a + b", request).binary(Entry::Expression, 0.0, None, "");
+	let _ = Prepared::borrowed("a + b", request).binary(Entry::Expression, 0.0, None, 0);
 	assert!(
 		Prepared::borrowed("a +", request)
-			.binary(Entry::Expression, 0.0, None, "")
+			.binary(Entry::Expression, 0.0, None, 0)
 			.is_err()
 	);
-	prepared.binary(Entry::Program, 0.0, None, "").unwrap();
+	prepared.binary(Entry::Program, 0.0, None, 0).unwrap();
 	let again = words();
 	// the header counts the constants and shapes known so far, which the parses between added to
 	assert_eq!((&first[..4], &first[6..]), (&again[..4], &again[6..]));
@@ -724,14 +724,14 @@ fn phases() {
 		request.set("comments");
 		let prepared = crate::json::Prepared::borrowed(&source, request);
 		best("whole request: positions, parse, comments, encode, finish", &mut || {
-			prepared.binary(Entry::Program, 0.0, None, "").unwrap();
+			prepared.binary(Entry::Program, 0.0, None, 0).unwrap();
 		});
 		for flag in ["scopes", "locations"] {
 			request.set(flag);
 		}
 		let prepared = crate::json::Prepared::borrowed(&source, request);
 		best("whole request with scopes and loc", &mut || {
-			prepared.binary(Entry::Program, 0.0, None, "").unwrap();
+			prepared.binary(Entry::Program, 0.0, None, 0).unwrap();
 		});
 	}
 	let mut binary = Binary::new();
@@ -754,7 +754,7 @@ fn phases() {
 			.host(&grammar)
 			.unwrap();
 		best(&format!("host: 200 each blocks, {flags}"), &mut || {
-			prepared.binary(Entry::Program, 0.0, None, "").unwrap();
+			prepared.binary(Entry::Program, 0.0, None, 0).unwrap();
 		});
 	}
 	best("Json write, loc", &mut || {
@@ -962,9 +962,9 @@ fn host_alloc_probe() {
 		let prepared = crate::json::Prepared::borrowed(src, crate::json::Request::from_names("module"))
 			.host(&grammar)
 			.unwrap();
-		prepared.binary(Entry::Program, 0.0, None, "").unwrap();
+		prepared.binary(Entry::Program, 0.0, None, 0).unwrap();
 		let before = ALLOCATIONS.load(std::sync::atomic::Ordering::Relaxed);
-		prepared.binary(Entry::Program, 0.0, None, "").unwrap();
+		prepared.binary(Entry::Program, 0.0, None, 0).unwrap();
 		ALLOCATIONS.load(std::sync::atomic::Ordering::Relaxed) - before
 	};
 	let base = count("");

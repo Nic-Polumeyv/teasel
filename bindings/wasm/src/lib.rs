@@ -36,26 +36,23 @@ fn guard(on_panic: u32, f: impl FnOnce() -> u32) -> u32 {
 }
 
 /// # Safety
-/// `ptr`, `names` and `host` are each `capacity` bytes from `alloc`, `len` of them written: the
-/// source, the option names and the host grammar, empty for none; all are taken over here. The
+/// `ptr` and `host` are each `capacity` bytes from `alloc`, `len` of them written: the source and
+/// the host grammar, empty for none; both are taken over here. `flags` is the option word. The
 /// handle is 0 when the grammar cannot be read, the error as JSON at `text_ptr`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn source_new(
 	ptr: *mut u8,
 	len: u32,
 	capacity: u32,
-	names: *mut u8,
-	names_len: u32,
-	names_capacity: u32,
+	flags: u32,
 	host: *mut u8,
 	host_len: u32,
 	host_capacity: u32,
 ) -> u32 {
 	let source = unsafe { Vec::from_raw_parts(ptr, len as usize, capacity as usize) };
-	let names = unsafe { Vec::from_raw_parts(names, names_len as usize, names_capacity as usize) };
 	let host = unsafe { Vec::from_raw_parts(host, host_len as usize, host_capacity as usize) };
 	guard(0, || {
-		let mut prepared = Prepared::from_bytes(source, Request::from_names(&String::from_utf8_lossy(&names)));
+		let mut prepared = Prepared::from_bytes(source, Request::from_flags(flags));
 		if !host.is_empty() {
 			prepared = match prepared.host(&String::from_utf8_lossy(&host)) {
 				Ok(prepared) => prepared,
@@ -78,6 +75,18 @@ fn source(handle: u32) -> &'static Prepared<'static> {
 	unsafe { &*(handle as *const Prepared<'static>) }
 }
 
+fn source_mut(handle: u32) -> &'static mut Prepared<'static> {
+	unsafe { &mut *(handle as *mut Prepared<'static>) }
+}
+
+/// # Safety
+/// `ptr` is `capacity` bytes from `alloc`, `len` of them the stop tokens; they are taken over here.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn source_stops(handle: u32, ptr: *mut u8, len: u32, capacity: u32) -> u32 {
+	let tokens = unsafe { Vec::from_raw_parts(ptr, len as usize, capacity as usize) };
+	source_mut(handle).stop_set(&String::from_utf8_lossy(&tokens))
+}
+
 // 0: words at `words_ptr`; 1: an error as JSON at `text_ptr`
 fn answer(result: Result<(), String>) -> u32 {
 	match result {
@@ -89,23 +98,11 @@ fn answer(result: Result<(), String>) -> u32 {
 	}
 }
 
-/// # Safety
-/// `ptr` is `capacity` bytes from `alloc`, `len` of them the stop tokens; they are taken over here.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn source_parse(
-	handle: u32,
-	entry: u32,
-	offset: f64,
-	end: f64,
-	has_end: u32,
-	ptr: *mut u8,
-	len: u32,
-	capacity: u32,
-) -> u32 {
-	let stop = unsafe { Vec::from_raw_parts(ptr, len as usize, capacity as usize) };
+pub unsafe extern "C" fn source_parse(handle: u32, entry: u32, offset: f64, end: f64, has_end: u32, stop: u32) -> u32 {
 	let end = (has_end == 1).then_some(end);
 	guard(1, || {
-		answer(source(handle).binary(Entry::from_index(entry), offset, end, &String::from_utf8_lossy(&stop)))
+		answer(source(handle).binary(Entry::from_index(entry), offset, end, stop))
 	})
 }
 
