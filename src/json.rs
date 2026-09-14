@@ -205,8 +205,6 @@ pub struct Prepared<'a> {
 	source: std::borrow::Cow<'a, str>,
 	positions: Positions,
 	request: Request,
-	/// The plan a program entry reads the whole source by.
-	host: Option<Rc<Plan>>,
 }
 
 /// What every parse on a thread reuses: the trees, emptied, and the answer's buffers.
@@ -248,7 +246,7 @@ fn plan_named(text: &str) -> Result<Rc<Plan>, String> {
 	Ok(plan_by(handle).unwrap())
 }
 
-/// Reads a plan once on this thread; the handle names it to `Prepared::host_by`, so the text
+/// Reads a plan once on this thread; the handle names it to a parse, so the text
 /// crosses once, not with every source. The error names the line it stopped at.
 pub fn plan_new(text: &str) -> Result<u32, String> {
 	let plan = Rc::new(Plan::read(text)?);
@@ -261,6 +259,17 @@ pub fn plan_new(text: &str) -> Result<u32, String> {
 
 fn plan_by(handle: u32) -> Option<Rc<Plan>> {
 	PLANS.with(|plans| plans.borrow().get(handle.checked_sub(1)? as usize).cloned())
+}
+
+/// The plan a parse names, if any: a document is read by the program entry only.
+fn plan_of(handle: u32, entry: Entry) -> Result<Option<Rc<Plan>>, String> {
+	if handle == 0 {
+		return Ok(None);
+	}
+	if entry != Entry::Program {
+		return Err(error_json("a plan reads the whole source: the program entry", 0));
+	}
+	plan_by(handle).map(Some).ok_or_else(|| error_json("not a plan handle", 0))
 }
 
 #[derive(Default)]
@@ -320,23 +329,7 @@ impl<'a> Prepared<'a> {
 			source,
 			positions,
 			request,
-			host: None,
 		}
-	}
-
-	/// Reads the whole source as a document of the host language `plan` describes when a
-	/// program is asked for; the other entries read JavaScript at an offset as before. `Err` says
-	/// where the plan could not be read.
-	pub fn host(mut self, plan: &str) -> Result<Prepared<'a>, String> {
-		let plan = plan_named(plan)?;
-		self.host = Some(plan);
-		Ok(self)
-	}
-
-	/// The plan `plan_new` numbered.
-	pub fn host_by(mut self, handle: u32) -> Result<Prepared<'a>, String> {
-		self.host = Some(plan_by(handle).ok_or_else(|| "not a plan handle".to_string())?);
-		Ok(self)
 	}
 
 	/// The request for one entry at a UTF-16 offset, the source cut at `end`, on top of the
@@ -355,27 +348,24 @@ impl<'a> Prepared<'a> {
 		})
 	}
 
-	/// One entry at an offset, as JSON.
-	pub fn parse(&self, entry: Entry, start: f64, end: Option<f64>, stop: &str) -> String {
-		match self.request(entry, start, end) {
-			Ok(request) => parse_with(&self.source, &self.positions, &request, stop, self.plan(entry)),
+	/// One entry at an offset, as JSON; `plan` is a handle from `plan_new` for a document, 0 for JavaScript.
+	pub fn parse(&self, entry: Entry, start: f64, end: Option<f64>, stop: &str, plan: u32) -> String {
+		match self.request(entry, start, end).and_then(|request| Ok((request, plan_of(plan, entry)?))) {
+			Ok((request, plan)) => parse_with(&self.source, &self.positions, &request, stop, plan.as_deref()),
 			Err(error) => error,
 		}
 	}
 
 	/// One entry at an offset, as a token stream at `words`; the error answer stays JSON.
-	pub fn binary(&self, entry: Entry, start: f64, end: Option<f64>, stop: &str) -> Result<(), String> {
+	pub fn binary(&self, entry: Entry, start: f64, end: Option<f64>, stop: &str, plan: u32) -> Result<(), String> {
+		let plan = plan_of(plan, entry)?;
 		binary_with(
 			&self.source,
 			&self.positions,
 			&self.request(entry, start, end)?,
 			stop,
-			self.plan(entry),
+			plan.as_deref(),
 		)
-	}
-
-	fn plan(&self, entry: Entry) -> Option<&Plan> {
-		self.host.as_deref().filter(|_| entry == Entry::Program)
 	}
 
 	/// A UTF-16 offset as a byte offset, or the error answer for it.

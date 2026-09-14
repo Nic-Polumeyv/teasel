@@ -12,7 +12,6 @@ export function flags(options) {
 	let on = 0;
 	for (const key in options) {
 		const value = options[key];
-		if (key === 'host') continue;
 		if (!OPTIONS.has(key)) throw new TypeError(`${key} is not an option`);
 		if (value === undefined || value === false) continue;
 		if (key === 'decorators') {
@@ -31,21 +30,51 @@ export function flags(options) {
 // `Entry` of parser/mod.rs by index
 export const ENTRY = { program: 0, expression: 1, pattern: 2, params: 3, statement: 4, typeParameters: 5 };
 
-// the engine takes the stop tokens as one string
-function stops(list) {
-	if (list === undefined) return '';
-	if (!Array.isArray(list) || !list.every((stop) => typeof stop === 'string' && stop !== '' && !/\s/.test(stop))) {
-		throw new TypeError('stopAt must be a list of words and punctuators');
+/**
+ * What a parse reads: an entry of the grammar, ended by the host's tokens with `until`, on the
+ * source cut with `within`. Immutable: each refinement is a new description.
+ */
+export class Description {
+	#entry;
+	#stop;
+	#end;
+	constructor(entry, stop = '', end = undefined) {
+		this.#entry = entry;
+		this.#stop = stop;
+		this.#end = end;
 	}
-	return list.join(' ');
+	/** The same reading, ended where one of the host's own tokens, words or punctuators, follows. */
+	until(...tokens) {
+		if (tokens.length === 0 || !tokens.every((stop) => typeof stop === 'string' && stop !== '' && !/\s/.test(stop))) {
+			throw new TypeError('until takes words and punctuators');
+		}
+		return new Description(this.#entry, this.#stop === '' ? tokens.join(' ') : `${this.#stop} ${tokens.join(' ')}`, this.#end);
+	}
+	/** The same reading of the source cut at `end`, a UTF-16 offset; positions stay those of the whole source. */
+	within(end) {
+		return new Description(this.#entry, this.#stop, end);
+	}
+	static read(description) {
+		return { entry: description.#entry, stop: description.#stop, end: description.#end };
+	}
 }
+
+export const program = new Description(ENTRY.program);
+export const expression = new Description(ENTRY.expression);
+/** An assignment target: an identifier or a destructuring pattern. */
+export const pattern = new Description(ENTRY.pattern);
+/** A parenthesized parameter list, as an arrow function's is read. */
+export const params = new Description(ENTRY.params);
+export const statement = new Description(ENTRY.statement);
+/** A `TSTypeParameterDeclaration`. */
+export const typeParameters = new Description(ENTRY.typeParameters);
 
 /**
  * @typedef {ArrayBuffer | Uint32Array | string} Answer
  * @typedef {object} Engine
  * @property {(text: string) => any} plan
- * @property {(source: string, flags: number, plan: any) => any} create
- * @property {(held: any, entry: number, offset: number, end: number | undefined, stop: string) => Answer} parse
+ * @property {(source: string, flags: number) => any} create
+ * @property {(held: any, entry: number, offset: number, end: number | undefined, stop: string, plan: any) => Answer} parse
  * @property {(held: any) => void} [free]
  * @property {() => string[]} constants
  * @property {() => ArrayLike<number>} shapes
@@ -75,30 +104,26 @@ export function bind(engine) {
 	class Source {
 		#held;
 		#source;
-		#options;
 
 		constructor(source, options) {
-			const host = options?.host;
-			if (host !== undefined && !(host instanceof Plan)) throw new TypeError('host must be a Plan');
-			this.#held = engine.create(source, flags(options), host === undefined ? undefined : plans.get(host));
+			this.#held = engine.create(source, flags(options));
 			this.#source = source;
-			// what the engine was prepared with, however the caller's object changes after
-			this.#options = { ...options };
 			registry?.register(this, this.#held, this);
 		}
 
 		/**
-		 * @param {keyof typeof ENTRY} [entry] what to read
-		 * @param {number} [offset] where it starts
-		 * @param {{ end?: number, stopAt?: string[] }} [at] where the source is cut, and the host's tokens that end the parse
+		 * @param {Description | Plan} [description] what to read: a program by default, or the whole source as a document of a plan
+		 * @param {number} [at] where it starts, a UTF-16 offset
 		 */
-		parse(entry = 'program', offset = 0, { end, stopAt } = {}) {
+		parse(description = program, at = 0) {
 			if (this.#held === undefined) throw new TypeError('the source is freed');
-			const index = Object.hasOwn(ENTRY, entry) ? ENTRY[entry] : undefined;
-			if (index === undefined) throw new TypeError(`${JSON.stringify(entry)} is not an entry`);
-			const stop = stops(stopAt);
-			if (this.#options.host !== undefined && index === ENTRY.program) return result(engine.parse(this.#held, index, 0, undefined, ''), this.#source);
-			return result(engine.parse(this.#held, index, offset, end, stop), this.#source);
+			if (description instanceof Plan) {
+				if (at !== 0) throw new TypeError('a plan reads the whole source');
+				return result(engine.parse(this.#held, ENTRY.program, 0, undefined, '', plans.get(description)), this.#source);
+			}
+			if (!(description instanceof Description)) throw new TypeError('parse takes a description: program, expression, pattern, params, statement, typeParameters, or a plan');
+			const { entry, stop, end } = Description.read(description);
+			return result(engine.parse(this.#held, entry, at, end, stop, undefined), this.#source);
 		}
 
 		[Symbol.dispose]() {

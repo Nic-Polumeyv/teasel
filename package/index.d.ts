@@ -7,14 +7,6 @@ declare global {
 }
 
 export interface Options {
-	/**
-	 * The plan of a host language the whole source is a document of: a template language
-	 * with JavaScript inside it. The program entry then answers with the document's root, the
-	 * host's own nodes around the JavaScript ones, in one tree; the other entries read
-	 * JavaScript at an offset as before. TypeScript turns on by what the plan says of a
-	 * script tag.
-	 */
-	host?: Plan;
 	/** `script` by default, as in acorn. */
 	sourceType?: 'script' | 'module';
 	/**
@@ -200,25 +192,6 @@ export interface Parsed<T> {
 }
 
 /**
- * What a parse reads: a program, or what a host embedding JavaScript in a larger syntax reads at
- * a point of it. A type parameter list `<...>` is TypeScript only, `not_typescript` otherwise.
- */
-export type Entry = 'program' | 'expression' | 'pattern' | 'params' | 'statement' | 'typeParameters';
-
-export interface At {
-	/** Where the source is cut, a UTF-16 offset; the end of the source by default. A program reads to it. */
-	end?: number;
-	/**
-	 * The host's own tokens, words or punctuators, that follow what is parsed. One read outside
-	 * every bracket the parse opened, where the expression could end, ends it: `,` ends an
-	 * expression before a sequence would, and `/>` is never a division. A `then` after `.` is a
-	 * property name. A TypeScript `as` is the host's unless another `as` follows the assertion,
-	 * so `xs as T[] as item` ends after the type.
-	 */
-	stopAt?: string[];
-}
-
-/**
  * A node of a host language, as its plan names the type and the fields; the JavaScript under
  * it is ESTree.
  */
@@ -231,28 +204,50 @@ export interface HostNode {
 }
 
 /**
- * A source kept with its options: the parses out of it share the source copy and the position
- * tables. Offsets are UTF-16, as in acorn; positions stay those of the whole source. `Root` is
- * what the program entry answers with: the program, or the document's root with a `host`.
+ * What a parse reads. The built-in descriptions are the entries of the grammar; `until` and
+ * `within` refine one; a `Plan` describes a whole document. `T` is the type of the answer's node.
  */
-/** A host language's plan, read once; every `Source` of a document takes it as `host`. */
-export class Plan {
+export class Description<T = Node> {
+	/**
+	 * The same reading, ended where one of the host's own tokens, words or punctuators, follows.
+	 * One read outside every bracket the parse opened, where the expression could end, ends it:
+	 * `,` ends an expression before a sequence would, and `/>` is never a division. A `then` after
+	 * `.` is a property name. A TypeScript `as` is the host's unless another `as` follows the
+	 * assertion, so `xs as T[] as item` ends after the type.
+	 */
+	until(...tokens: string[]): Description<T>;
+	/** The same reading of the source cut at `end`, a UTF-16 offset; positions stay those of the whole source. */
+	within(end: number): Description<T>;
+}
+export const program: Description<Program>;
+export const expression: Description<Expression>;
+/** An assignment target: an identifier or a destructuring pattern. */
+export const pattern: Description<Pattern>;
+/** A parenthesized parameter list, as an arrow function's is read. */
+export const params: Description<Pattern[]>;
+export const statement: Description<Statement>;
+/** A `TSTypeParameterDeclaration`. */
+export const typeParameters: Description<Node>;
+
+/**
+ * A host language's plan, read once: the whole source as a document of it, the plan's root with
+ * the host's own nodes around the JavaScript ones in one tree. TypeScript turns on by what the
+ * plan says of a script tag.
+ */
+export class Plan<R = Root> extends Description<R> {
 	/** @param text the plan as JSON, as `@teasel/parser/plan` prints it */
 	constructor(text: string);
 }
 
-export class Source<Root = Program> {
+/**
+ * A source kept with its options: the parses out of it share the source copy and the position
+ * tables. Offsets are UTF-16, as in acorn; positions stay those of the whole source.
+ */
+
+export class Source {
 	constructor(source: string, options?: Options);
-	/** The program starting at `offset`, the whole source by default; the document with a `host`. */
-	parse(entry?: 'program', offset?: number, at?: At): Parsed<Root>;
-	parse(entry: 'expression', offset: number, at?: At): Parsed<Expression>;
-	/** An assignment target: an identifier or a destructuring pattern. */
-	parse(entry: 'pattern', offset: number, at?: At): Parsed<Pattern>;
-	/** A parenthesized parameter list, as an arrow function's is read. */
-	parse(entry: 'params', offset: number, at?: At): Parsed<Pattern[]>;
-	parse(entry: 'statement', offset: number, at?: At): Parsed<Statement>;
-	/** A `TSTypeParameterDeclaration`. */
-	parse(entry: 'typeParameters', offset: number, at?: At): Parsed<Node>;
+	/** What `description` reads from `at`, a UTF-16 offset: the program, the whole source by default. */
+	parse<T>(description?: Description<T>, at?: number): Parsed<T>;
 	/** Releases what the engine holds for the source, as `using` does at the end of its block; the collector does it otherwise. */
 	[Symbol.dispose](): void;
 }

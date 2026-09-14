@@ -53,28 +53,17 @@ pub unsafe extern "C" fn plan_new(ptr: *mut u8, len: u32, capacity: u32) -> u32 
 
 /// # Safety
 /// `ptr` is `capacity` bytes from `alloc`, `len` of them the source, taken over here. `flags` is
-/// the option word; `host` is a plan's handle from `plan_new`, or 0. The handle is 0 when the plan
-/// is unknown, the error as JSON at `text_ptr`.
+/// the option word.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn source_new(
 	ptr: *mut u8,
 	len: u32,
 	capacity: u32,
 	flags: u32,
-	host: u32,
 ) -> u32 {
 	let source = unsafe { Vec::from_raw_parts(ptr, len as usize, capacity as usize) };
 	guard(0, || {
-		let mut prepared = Prepared::from_bytes(source, Request::from_flags(flags));
-		if host != 0 {
-			prepared = match prepared.host_by(host) {
-				Ok(prepared) => prepared,
-				Err(message) => {
-					text(teasel::json::error_json(&message, 0));
-					return 0;
-				}
-			};
-		}
+		let prepared = Prepared::from_bytes(source, Request::from_flags(flags));
 		Box::into_raw(Box::new(prepared)) as u32
 	})
 }
@@ -101,6 +90,7 @@ fn answer(result: Result<(), String>) -> u32 {
 
 /// # Safety
 /// `ptr` is `capacity` bytes from `alloc`, `len` of them the stop tokens; they are taken over here.
+/// `plan` names a document's plan from `plan_new`, 0 for JavaScript.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn source_parse(
 	handle: u32,
@@ -111,11 +101,12 @@ pub unsafe extern "C" fn source_parse(
 	ptr: *mut u8,
 	len: u32,
 	capacity: u32,
+	plan: u32,
 ) -> u32 {
 	let stop = unsafe { Vec::from_raw_parts(ptr, len as usize, capacity as usize) };
 	let end = (has_end == 1).then_some(end);
 	guard(1, || {
-		answer(source(handle).binary(Entry::from_index(entry), offset, end, &String::from_utf8_lossy(&stop)))
+		answer(source(handle).binary(Entry::from_index(entry), offset, end, &String::from_utf8_lossy(&stop), plan))
 	})
 }
 

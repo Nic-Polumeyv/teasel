@@ -3,6 +3,7 @@ import { bind } from './api.js';
 import { load } from './native.js';
 
 export { scopeOf, bindingOf, referenceOf, parentOf } from './decode.js';
+export { Description, program, expression, pattern, params, statement, typeParameters } from './api.js';
 
 const native = load();
 const encoder = new TextEncoder();
@@ -18,8 +19,8 @@ function bytes(text) {
 
 export const engine = {
 	plan: native.plan,
-	create: (source, flags, plan) => native.create(bytes(source), flags, plan ?? 0),
-	parse: native.parse,
+	create: (source, flags) => native.create(bytes(source), flags),
+	parse: (held, entry, offset, end, stop, plan) => native.parse(held, entry, offset, end, stop, plan ?? 0),
 	free: native.free,
 	constants: native.constants,
 	shapes: native.shapes,

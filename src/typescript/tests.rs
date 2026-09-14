@@ -211,10 +211,10 @@ fn program_in_a_range() {
 	request.end = Some(2);
 	assert!(crate::json::parse(src, &request, "").contains("is before"));
 	let prepared = crate::json::Prepared::new(src[..26].to_string(), request);
-	assert!(prepared.parse(Entry::Program, 8.0, None, "").contains("\"end\":26"));
+	assert!(prepared.parse(Entry::Program, 8.0, None, "", 0).contains("\"end\":26"));
 	assert!(
 		prepared
-			.parse(Entry::Program, 22.0, Some(8.0), "")
+			.parse(Entry::Program, 22.0, Some(8.0), "", 0)
 			.contains("is before")
 	);
 }
