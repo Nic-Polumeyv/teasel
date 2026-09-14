@@ -2,15 +2,11 @@
 @import 'sheer-ui/styles';
 @source '..';
 @source '../../node_modules/sheer-ui/dist/blocks/MobileNav.svelte';
-@source '../../node_modules/sheer-ui/dist/blocks/copy-button';
-@source '../../node_modules/sheer-ui/dist/components/badge';
 @source '../../node_modules/sheer-ui/dist/components/breadcrumb';
 @source '../../node_modules/sheer-ui/dist/components/button';
-@source '../../node_modules/sheer-ui/dist/components/card';
 @source '../../node_modules/sheer-ui/dist/components/command';
 @source '../../node_modules/sheer-ui/dist/components/dialog';
 @source '../../node_modules/sheer-ui/dist/components/kbd';
-@source '../../node_modules/sheer-ui/dist/components/separator';
 @source '../../node_modules/sheer-ui/dist/components/sidebar';
 @source '../../node_modules/sheer-ui/dist/components/theme-toggle';
 @source '../../node_modules/sheer-ui/dist/components/tooltip';
