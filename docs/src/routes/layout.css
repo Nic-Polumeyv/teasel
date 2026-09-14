@@ -1,3 +1,4 @@
+/* TODO: source(none) and the explicit list until Tailwind stops scanning the siblings of a file @source under node_modules: https://github.com/tailwindlabs/tailwindcss/pull/20406 */
 @import 'tailwindcss' source(none);
 @import 'sheer-ui/styles';
 @source '..';
