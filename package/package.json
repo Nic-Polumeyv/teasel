@@ -38,7 +38,6 @@
 		"native.js",
 		"api.js",
 		"decode.js",
-		"identifier.js",
 		"plan.js",
 		"plan.d.ts",
 		"teasel.wasm"

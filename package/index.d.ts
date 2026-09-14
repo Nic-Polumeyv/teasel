@@ -249,8 +249,3 @@ export class Source<Root = Program> {
 	/** Releases what the engine holds for the source, as `using` does at the end of its block; the collector does it otherwise. */
 	[Symbol.dispose](): void;
 }
-
-/** Whether a code point can start an identifier, as acorn decides it. */
-export function isIdentifierStart(code: number): boolean;
-/** Whether a code point can continue an identifier. */
-export function isIdentifierChar(code: number): boolean;

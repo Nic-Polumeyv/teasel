@@ -1,6 +1,5 @@
 import { bind } from './api.js';
 
-export { isIdentifierStart, isIdentifierChar } from './identifier.js';
 export { scopeOf, bindingOf, referenceOf, parentOf } from './decode.js';
 
 const encoder = new TextEncoder();
