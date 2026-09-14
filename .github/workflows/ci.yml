@@ -4,12 +4,11 @@ on:
   push:
     branches: [main]
   pull_request:
-  workflow_call:
   workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
@@ -83,23 +82,31 @@ jobs:
           path: package/teasel.wasm
           if-no-files-found: error
 
-  # what the push or pull request touched, so the docs build only when they changed
   changes:
     runs-on: ubuntu-latest
     outputs:
       docs: ${{ steps.diff.outputs.docs }}
+      release: ${{ steps.diff.outputs.release }}
+      version: ${{ steps.diff.outputs.version }}
     steps:
       - uses: actions/checkout@v7
       - id: diff
         run: |
           base='${{ github.event.pull_request.base.sha || github.event.before }}'
           if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ] || ! git fetch --depth=1 origin "$base"; then
-            echo docs=true >> "$GITHUB_OUTPUT"
-          elif git diff --name-only "$base" HEAD -- docs package/index.d.ts .github/workflows/ci.yml | grep -q .; then
-            echo docs=true >> "$GITHUB_OUTPUT"
+            changed=all
           else
-            echo docs=false >> "$GITHUB_OUTPUT"
+            changed=$(git diff --name-only "$base" HEAD)
           fi
+          docs=false; bumped=false
+          [ "$changed" = all ] && docs=true
+          echo "$changed" | grep -qE '^(docs/|package/index.d.ts|.github/workflows/ci.yml)' && docs=true
+          echo "$changed" | grep -qx Cargo.toml && bumped=true
+          [ '${{ github.event_name }}' = workflow_dispatch ] && bumped=true
+          version=$(jq -r .version package/package.json)
+          release=false
+          if [ "$bumped" = true ] && [ '${{ github.ref }}' = refs/heads/main ] && ! curl -sf -o /dev/null "https://registry.npmjs.org/@teasel%2Fparser/$version"; then release=true; fi
+          printf 'docs=%s\nrelease=%s\nversion=%s\n' "$docs" "$release" "$version" >> "$GITHUB_OUTPUT"
 
   docs:
     needs: changes
@@ -120,10 +127,9 @@ jobs:
           path: docs/build
           if-no-files-found: error
 
-  # main only, and not when release calls this workflow: the github context is the caller's
   deploy:
     needs: docs
-    if: github.workflow == 'ci' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -142,3 +148,69 @@ jobs:
           aws-region: us-east-1
       - run: aws s3 sync build s3://teasel.dev --delete
       - run: aws cloudfront create-invalidation --distribution-id E2MJUFV76BN8VA --paths "/*"
+
+  version:
+    if: github.repository == 'Nic-Polumeyv/teasel' && github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+      - run: node .github/version.js > "$RUNNER_TEMP/body.md"
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - run: |
+          [ -s "$RUNNER_TEMP/body.md" ] || { echo "no changesets"; exit 0; }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git checkout -B changeset-release/main
+          git add --all
+          git commit -m 'Version Packages'
+          git push --force origin changeset-release/main
+          number=$(gh pr list --head changeset-release/main --base main --state open --json number --jq '.[0].number')
+          if [ -n "$number" ]; then gh pr edit "$number" --title 'Version Packages' --body-file "$RUNNER_TEMP/body.md"
+          else gh pr create --head changeset-release/main --base main --title 'Version Packages' --body-file "$RUNNER_TEMP/body.md"; fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  publish:
+    needs: [changes, build, wasm]
+    if: github.repository == 'Nic-Polumeyv/teasel' && needs.changes.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    concurrency:
+      group: release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+      - run: npm install -g typescript@7
+      - run: npm ci
+        working-directory: package
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: binding-*
+          path: package/artifacts
+      - uses: actions/download-artifact@v8
+        with:
+          name: wasm
+          path: package
+      - run: cp README.md package/README.md
+      - run: node release.js
+        working-directory: package
+      - run: |
+          tag="v${{ needs.changes.outputs.version }}"
+          git ls-remote --exit-code --tags origin "$tag" || { git tag "$tag" && git push origin "$tag"; }
+          gh release view "$tag" || gh release create "$tag" --title "$tag" --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
