@@ -2,7 +2,7 @@
 title: A whole module
 ---
 
-One parse of a real file, then every question answered from the tables. Nothing is walked twice.
+A real file, parsed once with `scopes` on, and five things a tool asks about it: where imports are used, who writes shared state, what is exported, what functions capture, where a function is called.
 
 The file is 183 lines: two classes with private fields, an async generator, closures over module state, three imports, seven exports.
 
@@ -27,9 +27,9 @@ const top = bindings.filter((b) => b.scope === module);
 16 statements, 44 scopes, 62 bindings, 119 references
 ```
 
-That's the whole cost. `node` is the tree, the three tables are every scope, binding and reference in the file in source order, and each row points at the others: a reference at its binding and the scope it's made from, a binding at its scope and its declaring node. Every analysis below is a filter over one table and a few hops along those pointers.
+`node` is the tree. `scopes`, `bindings` and `references` are the three tables, in source order, and their rows point at each other: a reference has its `binding` and the `scope` it's made from, a binding has its `scope` and the `node` that declares it. `line` turns a node's `start` into a line number for the output below, and `top` is the module scope's bindings, the names declared at the top level.
 
-![one parse gives a tree and three tables; five analyses read them: imports read bindings and references, module state reads references and scopes, exports reads the tree and bindings, captures reads scopes and references, calls reads references and the tree](WholeModule.svelte)
+![the parse gives a tree and three tables; the five analyses below each read one or two of them: imports read bindings and references, module state reads references and scopes, exports reads the tree and bindings, captures reads scopes and references, calls reads references and the tree](WholeModule.svelte)
 
 ## Where each import is used
 
@@ -48,7 +48,7 @@ sleep        line 2  used 1x at lines 117
 randomUUID   line 3  used 1x at lines 14
 ```
 
-An import with no uses is the unused-import lint, three lines long.
+An import with no uses is an unused import.
 
 ## Who writes the module's state
 
@@ -78,7 +78,7 @@ finished   written 2x: Scheduler.#start:109, resetStats:156
 failed     written 2x: Scheduler.#start:122, resetStats:157
 ```
 
-`nameOf` is the one place the tree is consulted: a method's function expression has no name of its own, so `parentOf` climbs to the method definition and then to the class. That's `parentOf` doing what it's for, answering "what is this node inside of" without a walk.
+`nameOf` uses `parentOf`: a method's function expression has no name of its own, so it climbs to the method definition, whose `key` is the name, and from there to the class.
 
 ## What is exported, and is it used here
 
@@ -134,11 +134,11 @@ resetStats             closes over nothing; from the module: started, finished, 
 runAll                 closes over nothing; from the module: Scheduler
 ```
 
-The anonymous one is `settled()` inside `group`, the only real closure in the file: it holds `scheduler` and `jobs` from the call that made it. A bundler deciding what a function can be hoisted past reads exactly this list.
+The anonymous one is `settled()` inside `group`, the only closure in the file that holds something from an enclosing call: `scheduler` and `jobs`.
 
 ## Every call of a function
 
-A reference says a name was used; whether it was called is the parent node's business.
+A reference says a name was used. Whether it was called is in the tree: the parent of the identifier is a `CallExpression` with the identifier as its `callee`.
 
 ```js
 const wt = top.find((b) => b.name === 'withTimeout');
@@ -151,5 +151,3 @@ for (const r of references.filter((r) => r.binding === wt)) {
 ```text
 line 49: called with 3 arguments
 ```
-
-Five analyses, one parse, and the file was never walked: the tables were built while it was parsed, and everything after that is filtering rows and following pointers.

@@ -34,5 +34,5 @@
 			<circle cx={column(t)} cy={row(i)} r="6" class="fill-emerald-400/80" />
 		{/each}
 	{/each}
-	<text x="24" y="294" font-size="12" class="text-muted-foreground">what each analysis reads; the tree is never walked again</text>
+	<text x="24" y="294" font-size="12" class="text-muted-foreground">what each analysis reads</text>
 </Diagram>

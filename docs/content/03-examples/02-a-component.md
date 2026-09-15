@@ -27,7 +27,7 @@ A template language owns the file. It has a script block, which is a whole progr
 
 ## The source, and the script
 
-The `Source` is the whole file. Everything parsed out of it, the script and each expression, reports offsets into this text, so a diagnostic or a source map needs no arithmetic.
+The `Source` is the whole file. Everything parsed out of it, the script and each expression, reports offsets into this text.
 
 ```js
 import { Source } from '@teasel/parser';
@@ -130,5 +130,3 @@ Note `pick(item)` inside the arrow function: the arrow's own scope is the parser
 - The script's answer: its tree and its bindings.
 - One stack of bindings for the template's own scopes.
 - The resolutions, which are its scope graph: the reactivity, the unused-variable warnings, the rename support all read that.
-
-That is the whole integration. The parser reads JavaScript and answers with facts about it; the host reads its own syntax and decides what the facts mean.
