@@ -10,8 +10,8 @@ import { ENTRY, flags, type Entry, type Options, type ParseError } from '../lib/
 import { decode } from '../lib/decode.js';
 import { load } from '../lib/addon.js';
 
-const native = load();
-const engine = { constants: native.constants, shapes: native.shapes };
+const addon = load();
+const engine = { constants: addon.constants, shapes: addon.shapes };
 const binary = new URL('../../target/release/teasel', import.meta.url).pathname;
 const files: string[] = [];
 function walk(dir: string) {
@@ -71,7 +71,7 @@ function mode(source: string, options: Options, entry: Entry, at: number) {
 // the addon's answers as JSON, each with the batch job that asks the binary for the same
 const jobs: { name: string; source: string; mode: string; tree: string }[] = [];
 function json(name: string, source: string, options: Options, entry: Entry, at: number) {
-	const answer = native.parse(native.create(Buffer.from(source), flags(options), ''), ENTRY[entry], at, undefined, '');
+	const answer = addon.parse(addon.create(Buffer.from(source), flags(options), ''), ENTRY[entry], at, undefined, '');
 	const tree = typeof answer === 'string' ? answer : JSON.stringify(decode(answer, source, engine, false));
 	jobs.push({ name, source, mode: mode(source, options, entry, at), tree });
 }
