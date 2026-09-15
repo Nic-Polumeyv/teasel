@@ -1,5 +1,11 @@
 # @teasel/parser
 
+## 0.0.10
+
+### Patch Changes
+
+- [#119](https://github.com/Nic-Polumeyv/teasel/pull/119) [`3da7c46`](https://github.com/Nic-Polumeyv/teasel/commit/3da7c4697491c9ab242b908c67e3e187eda54736) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - a binding is the reference its declaring identifier makes: `referenceOf(id)` answers with it, `referenceOf(id).binding` answers for every identifier, and `bindingOf` is gone; a binding says `write` when its declaration binds a value, and a name declared again is a reference with `declares: true`
+
 ## 0.0.9
 
 ### Patch Changes
