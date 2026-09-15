@@ -7,9 +7,9 @@
 	let { label, files = {} }: { label: string; files?: Record<string, string> } = $props();
 
 	const cards: Record<string, { x: number; y: number; w: number; h: number; tilt: number }> = {
-		'world.js': { x: 40, y: 140, w: 150, h: 52, tilt: -2 },
-		'player.js': { x: 530, y: 36, w: 150, h: 52, tilt: 2 },
-		'game.js': { x: 340, y: 248, w: 150, h: 52, tilt: 1 },
+		'world.js': { x: 60, y: 150, w: 150, h: 52, tilt: -2 },
+		'player.js': { x: 510, y: 60, w: 150, h: 52, tilt: 2 },
+		'game.js': { x: 340, y: 240, w: 150, h: 52, tilt: 1 },
 	};
 	const edges: { from: string; out: Side; to: string; in: Side }[] = [
 		{ from: 'player.js', out: 'left', to: 'world.js', in: 'top' },
@@ -21,6 +21,8 @@
 </script>
 
 <Diagram width={720} height={320} {label}>
+	<path d="M8 34 v-16 a6 6 0 0 1 6 -6 h108 a6 6 0 0 1 5 3 l10 13 h569 a6 6 0 0 1 6 6 v274 a6 6 0 0 1 -6 6 h-692 a6 6 0 0 1 -6 -6 z" stroke-width="1.5" class="fill-secondary/50 stroke-secondary-foreground/40" />
+	<text x="24" y="28" font-size="12" class="font-mono text-secondary-foreground">adventure/</text>
 	{#each edges as edge (edge.from + edge.to)}
 		<Arrow from={anchor(cards[edge.from], edge.out)} to={anchor(cards[edge.to], edge.in)} class="text-muted-foreground" />
 	{/each}
