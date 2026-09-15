@@ -43,12 +43,12 @@ interface State {
 }
 const EMPTY: Decoded[] = [];
 
-function node(S: State) {
+function node(S: State): Decoded | null {
 	const id = S.w[S.at++];
 	return id === NULL ? null : S.build[id](S);
 }
 
-function nodes(S: State) {
+function nodes(S: State): (Decoded | null)[] {
 	const list = [];
 	for (;;) {
 		const id = S.w[S.at++];
@@ -57,14 +57,14 @@ function nodes(S: State) {
 	}
 }
 
-function ints(S: State) {
+function ints(S: State): number[] {
 	const n = S.w[S.at++];
 	const list = new Array<number>(n);
 	for (let i = 0; i < n; i++) list[i] = S.w[S.at++];
 	return list;
 }
 
-function strs(S: State) {
+function strs(S: State): string[] {
 	const n = S.w[S.at++];
 	const list = new Array<string>(n);
 	for (let i = 0; i < n; i++) list[i] = S.strings[S.w[S.at++]];
@@ -158,7 +158,7 @@ function interpret({ type, keys, kinds }: Shape, link: boolean): Builder {
 	};
 }
 
-const compile = (() => {
+const compile: (shape: Shape, link: boolean) => Builder = (() => {
 	try {
 		new Function('');
 		return generate;
@@ -174,7 +174,7 @@ interface Table {
 	plain: Builder[];
 }
 // ids 0 and 1 are NULL and END, shapes of nothing
-const NONE = { type: null, keys: [], kinds: [] };
+const NONE: Shape = { type: null, keys: [], kinds: [] };
 const tables = new WeakMap<Tables, Table>();
 
 function table_of(engine: Tables, known: number, known_shapes: number) {

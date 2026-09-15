@@ -26,7 +26,7 @@ for (const dir of process.argv.slice(2)) walk(dir);
 let checked = 0;
 let failed = 0;
 
-function outcome(fn: () => unknown) {
+function outcome(fn: () => unknown): { value: unknown } | { error: Pick<ParseError, 'code' | 'message' | 'pos' | 'end' | 'loc'> } {
 	try {
 		return { value: fn() };
 	} catch (e) {
