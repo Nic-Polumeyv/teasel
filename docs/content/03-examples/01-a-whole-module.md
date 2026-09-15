@@ -8,7 +8,7 @@ A text adventure in three files: the map, the player, the game. Each is parsed o
 
 ## Parse each file
 
-One `Source` per file, one answer per file, kept in a map by name. `line` turns a node's `start` into a line number in its own file.
+One `Source` per file, one answer per file, kept in a map by name. The answer is plain objects that owe the Source nothing, so `using` lets each Source go as soon as its file is parsed; a tool that reads a project file by file does this, since a Source left to the garbage collector costs more to collect than a small file costs to parse. `line` turns a node's `start` into a line number in its own file.
 
 ```js
 import { readFileSync } from 'node:fs';
@@ -17,8 +17,8 @@ import { Source, referenceOf, parentOf } from '@teasel/parser';
 const modules = new Map();
 for (const name of ['world.js', 'player.js', 'game.js']) {
 	const text = readFileSync(`adventure/${name}`, 'utf8');
-	const answer = new Source(text, { sourceType: 'module', scopes: true }).parse();
-	modules.set(name, { name, text, ...answer, line: (n) => text.slice(0, n.start).split('\n').length });
+	using source = new Source(text, { sourceType: 'module', scopes: true });
+	modules.set(name, { name, text, ...source.parse(), line: (n) => text.slice(0, n.start).split('\n').length });
 }
 ```
 
