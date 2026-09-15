@@ -111,17 +111,20 @@
 		{
 			"name": "ünïcödé",
 			"kind": "const",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "ab",
 			"kind": "const",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "𝒳",
 			"kind": "const",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		}
 	],
 	"references": []

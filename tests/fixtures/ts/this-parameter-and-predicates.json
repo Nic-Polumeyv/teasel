@@ -275,22 +275,26 @@
 		{
 			"name": "f",
 			"kind": "function",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "x",
 			"kind": "param",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "g",
 			"kind": "function",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "h",
 			"kind": "const",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		}
 	],
 	"references": []

@@ -188,12 +188,14 @@
 		{
 			"name": "o",
 			"kind": "let",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "x",
 			"kind": "param",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		}
 	],
 	"references": []

@@ -69,7 +69,7 @@
 					"type": "Identifier",
 					"start": 38,
 					"end": 39,
-					"declares": 0,
+					"reference": 0,
 					"name": "f"
 				},
 				"generator": false,
@@ -106,7 +106,7 @@
 					"type": "Identifier",
 					"start": 67,
 					"end": 68,
-					"declares": 0,
+					"reference": 1,
 					"name": "f"
 				},
 				"expression": false,
@@ -360,38 +360,62 @@
 		{
 			"name": "f",
 			"kind": "function",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "a",
 			"kind": "param",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "g",
 			"kind": "function",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "h",
 			"kind": "const",
-			"scope": 0
+			"scope": 0,
+			"write": false
 		},
 		{
 			"name": "i",
 			"kind": "let",
-			"scope": 0
+			"scope": 0,
+			"write": false
 		},
 		{
 			"name": "J",
 			"kind": "class",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "K",
 			"kind": "namespace",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		}
 	],
-	"references": []
+	"references": [
+		{
+			"scope": 0,
+			"binding": 0,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 0,
+			"binding": 0,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		}
+	]
 }

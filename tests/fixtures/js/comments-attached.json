@@ -224,22 +224,26 @@
 		{
 			"name": "a",
 			"kind": "const",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "f",
 			"kind": "function",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "o",
 			"kind": "const",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "C",
 			"kind": "class",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		}
 	],
 	"references": []

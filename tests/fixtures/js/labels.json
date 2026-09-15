@@ -225,12 +225,14 @@
 		{
 			"name": "a",
 			"kind": "const",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "c",
 			"kind": "const",
-			"scope": 3
+			"scope": 3,
+			"write": true
 		}
 	],
 	"references": [
@@ -239,21 +241,24 @@
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 3,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 4,
 			"binding": 1,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		}
 	]
 }

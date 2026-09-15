@@ -150,6 +150,8 @@ pub struct Binding {
 	/// enum, as eslint-scope's definition node; none for `arguments` and for a pattern or parameter
 	/// list parsed on its own.
 	pub declaration: Option<NodeId>,
+	/// The declaration binds a value: an initializer, a parameter, a function; not a bare `let x;`.
+	pub write: bool,
 }
 
 #[derive(Debug)]
@@ -168,9 +170,12 @@ pub struct Reference {
 	/// What a write assigns: the right side of the assignment or the iterated expression of a
 	/// `for-in` or `for-of`, as eslint-scope's `writeExpr`; none for an update.
 	pub write_expr: Option<NodeId>,
+	/// The identifier declares its binding again, `var x` twice: the binding itself stands for the
+	/// first declaration, and this row writes when a value is bound here.
+	pub declares: bool,
 }
 
-/// What an identifier is in the analysis.
+/// What an identifier is in the analysis: the binding it declares, or the reference it makes.
 #[derive(Clone, Copy, Debug)]
 pub enum Role {
 	Declares(BindingId),
@@ -242,13 +247,6 @@ impl<T: Packed> NodeTable<T> {
 			"nodes are numbered before analysis"
 		);
 		self.0[id.index() as usize] = value.pack() + 1;
-	}
-
-	fn insert_new(&mut self, id: NodeId, value: T) {
-		let slot = &mut self.0[id.index() as usize];
-		if *slot == 0 {
-			*slot = value.pack() + 1;
-		}
 	}
 
 	pub fn iter(&self) -> impl Iterator<Item = (NodeId, T)> + '_ {
@@ -550,6 +548,9 @@ pub struct Binder<'a, X> {
 	writing: Option<NodeId>,
 	/// The target being visited is read as well: a compound assignment or an update.
 	compound: bool,
+	/// What the declarations being visited are initialized with: an initializer, the iterated
+	/// expression of a `for-in` or `for-of`, or a parameter's default.
+	initializing: Option<NodeId>,
 	/// The environment an `export` was met in: what it declares there is the namespace's to share.
 	exporting: Option<u32>,
 	/// The environment of each reference, parallel to `Scopes::references`.
@@ -595,6 +596,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 			declaring: None,
 			writing: None,
 			compound: false,
+			initializing: None,
 			exporting: None,
 			env_of,
 			owned,
@@ -702,9 +704,12 @@ impl<'a, X: Bind> Binder<'a, X> {
 
 	/// The binding an identifier declares, once declared.
 	pub fn declared_by(&self, node: NodeId) -> Option<BindingId> {
-		match self.out.of_identifier.get(node) {
-			Some(Role::Declares(binding)) => Some(binding),
-			_ => None,
+		match self.out.of_identifier.get(node)? {
+			Role::Declares(binding) => Some(binding),
+			Role::Reference(reference) => {
+				let reference = &self.out.references[reference as usize];
+				reference.declares.then_some(reference.binding?)
+			}
 		}
 	}
 
@@ -761,6 +766,9 @@ impl<'a, X: Bind> Binder<'a, X> {
 	/// Nothing is declared here: the walk declared everything, the implicit `arguments` included.
 	fn resolve_all(&mut self) {
 		for i in 0..self.out.references.len() {
+			if self.out.references[i].declares {
+				continue;
+			}
 			let NodeKind::Identifier { name } = self.kind(self.out.references[i].node) else {
 				unreachable!()
 			};
@@ -792,6 +800,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 			scope: self.envs[env as usize].scope,
 			node: None,
 			declaration: None,
+			write: true,
 		});
 		self.envs[env as usize].arguments = Some(id);
 	}
@@ -804,13 +813,44 @@ impl<'a, X: Bind> Binder<'a, X> {
 			scope: self.envs[env as usize].scope,
 			node,
 			declaration: node.and(self.declaring),
+			write: false,
 		});
 		self.envs[env as usize].names.insert(name, id);
-		// a class name declares the outer binding; the one inside its body shares the identifier
-		if let Some(node) = node {
-			self.out.of_identifier.insert_new(node, Role::Declares(id));
-		}
 		id
+	}
+
+	/// Records what `node` declares, once per identifier: a class name declares the outer binding,
+	/// and the one inside its body shares the identifier. A new binding is its own first
+	/// declaration; declaring it again is a reference that writes when a value is bound here.
+	fn declared(&mut self, node: NodeId, binding: BindingId, kind: BindingKind, new: bool) {
+		if self.out.of_identifier.get(node).is_some() {
+			return;
+		}
+		let (write, write_expr) = match kind {
+			BindingKind::Var | BindingKind::Let | BindingKind::Const | BindingKind::Using | BindingKind::AwaitUsing => {
+				(self.initializing.is_some(), self.initializing)
+			}
+			BindingKind::Param => (true, self.initializing),
+			_ => (true, None),
+		};
+		if new {
+			self.out.bindings[binding as usize].write = write;
+			self.out.of_identifier.insert(node, Role::Declares(binding));
+			return;
+		}
+		let id = self.out.references.len() as ReferenceId;
+		self.out.references.push(Reference {
+			node,
+			scope: self.current(),
+			binding: Some(binding),
+			write,
+			mutate: false,
+			read: false,
+			write_expr,
+			declares: true,
+		});
+		self.env_of.push(self.env());
+		self.out.of_identifier.insert(node, Role::Reference(id));
 	}
 
 	/// Declares `node`, an identifier, as `declaration` does: in the current scope, or for `var` in
@@ -826,6 +866,14 @@ impl<'a, X: Bind> Binder<'a, X> {
 		let outer = self.declaring.replace(declaration);
 		let result = f(self);
 		self.declaring = outer;
+		result
+	}
+
+	/// Runs `f` with `expression` as what the declarations it visits are initialized with.
+	fn initializing<T>(&mut self, expression: Option<NodeId>, f: impl FnOnce(&mut Self) -> T) -> T {
+		let outer = std::mem::replace(&mut self.initializing, expression);
+		let result = f(self);
+		self.initializing = outer;
 		result
 	}
 
@@ -902,10 +950,11 @@ impl<'a, X: Bind> Binder<'a, X> {
 					.errors
 					.push(SyntaxError::with(n.start, Code::Redeclaration, message).to(n.end));
 			}
-			self.out.of_identifier.insert_new(node, Role::Declares(existing));
+			self.declared(node, existing, kind, false);
 			return;
 		}
-		self.declare_in(env, name, kind, Some(node));
+		let id = self.declare_in(env, name, kind, Some(node));
+		self.declared(node, id, kind, true);
 	}
 
 	pub fn reference(&mut self, node: NodeId, write: bool, mutate: bool) {
@@ -923,6 +972,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 			mutate,
 			read: !write || self.compound,
 			write_expr: if write { self.writing } else { None },
+			declares: false,
 		});
 		self.env_of.push(self.env());
 		if let NodeKind::Identifier { name } = self.kind(node)
@@ -1021,7 +1071,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 			if i == 0 && matches!(self.kind(param), NodeKind::Identifier { name } if Some(name) == self.this_name) {
 				continue;
 			}
-			self.declaring(id, |b| b.visit_with(param, Mode::Declare(BindingKind::Param), false));
+			self.initializing(None, |b| b.declaring(id, |b| b.visit_with(param, Mode::Declare(BindingKind::Param), false)));
 		}
 		self.open_body();
 		match self.kind(body) {
@@ -1318,7 +1368,8 @@ impl<'a, X: Bind> Binder<'a, X> {
 			ObjectPattern { properties } | ArrayPattern { elements: properties } => self.list(properties, mode),
 			RestElement { argument } => self.visit(argument, mode),
 			AssignmentPattern { left, right } => {
-				self.visit(left, mode);
+				let initializer = self.initializing.or(Some(right));
+				self.initializing(initializer, |b| b.visit(left, mode));
 				self.visit(right, Mode::Expression);
 			}
 			ExpressionStatement { expression, .. } => self.visit(expression, Mode::Expression),
@@ -1401,7 +1452,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 					self.enter(ScopeKind::For, Some(id), false);
 				}
 				match self.kind(left) {
-					VariableDeclaration { .. } => self.visit(left, Mode::Expression),
+					VariableDeclaration { .. } => self.initializing(Some(right), |b| b.visit(left, Mode::Expression)),
 					_ => self.writing(Some(right), false, |b| b.target(left)),
 				}
 				self.visit(right, Mode::Expression);
@@ -1419,12 +1470,14 @@ impl<'a, X: Bind> Binder<'a, X> {
 					let VariableDeclarator { id: pattern, init } = self.kind(declarator) else {
 						continue;
 					};
-					self.declaring(declarator, |b| b.visit(pattern, Mode::Declare(kind)));
+					let initializer = init.or(self.initializing);
+					self.initializing(initializer, |b| b.declaring(declarator, |b| b.visit(pattern, Mode::Declare(kind))));
 					self.maybe(init, Mode::Expression);
 				}
 			}
 			VariableDeclarator { id: pattern, init } => {
-				self.declaring(id, |b| b.visit(pattern, mode));
+				let initializer = init.or(self.initializing);
+				self.initializing(initializer, |b| b.declaring(id, |b| b.visit(pattern, mode)));
 				self.maybe(init, Mode::Expression);
 			}
 			ImportDeclaration { specifiers, .. } => {
@@ -1517,8 +1570,7 @@ mod tests {
 		use crate::ast::NodeId;
 		let mut table: NodeTable<Role> = NodeTable::sized(3);
 		assert!(table.get(NodeId::at(7)).is_none());
-		table.insert_new(NodeId::at(1), Role::Declares(5));
-		table.insert_new(NodeId::at(1), Role::Reference(6));
+		table.insert(NodeId::at(1), Role::Declares(5));
 		assert!(matches!(table.get(NodeId::at(1)), Some(Role::Declares(5))));
 		table.insert(NodeId::at(2), Role::Reference(6));
 		assert!(matches!(table.get(NodeId::at(2)), Some(Role::Reference(6))));
@@ -1595,8 +1647,12 @@ mod tests {
 				unreachable!()
 			};
 			let mut line = format!("{}@{} ", ast.str(name), node.start);
-			match role {
-				Role::Declares(b) => {
+			let declares = match role {
+				Role::Declares(b) => Some(b),
+				Role::Reference(r) => scopes.reference(r).declares.then(|| scopes.reference(r).binding.unwrap()),
+			};
+			match declares {
+				Some(b) => {
 					let binding = scopes.binding(b);
 					line += &format!(
 						"declares {} in {}",
@@ -1604,7 +1660,8 @@ mod tests {
 						scopes.scope(binding.scope).kind.name().text
 					);
 				}
-				Role::Reference(r) => {
+				None => {
+					let Role::Reference(r) = role else { unreachable!() };
 					let reference = scopes.reference(r);
 					line += &match reference.binding {
 						Some(b) => match scopes.binding(b).node {
@@ -1925,6 +1982,10 @@ mod tests {
 			declarations,
 			[("a", Some(4)), ("b", Some(4)), ("f", Some(52)), ("p", Some(52))]
 		);
+		// the declarations of `a` and `b` write what the whole pattern is initialized with, `f` and
+		// `p` bind a value with nothing named
+		let declared: Vec<_> = scopes.bindings.iter().map(|b| b.write).collect();
+		assert_eq!(declared, [true, true, true, true]);
 		let writes: Vec<_> = scopes
 			.references
 			.iter()
@@ -1945,6 +2006,28 @@ mod tests {
 		);
 		assert!(scopes.scopes[0].top_level_await);
 		assert!(!scopes.scopes[1].top_level_await);
+	}
+
+	#[test]
+	fn redeclarations_are_references() {
+		let ast = analyzed(crate::parse_at(
+			"var x; var x = 1; function x() {}",
+			0,
+			None,
+			Entry::Program,
+			Options::default(),
+			"",
+		));
+		let scopes = ast.scopes.as_ref().unwrap();
+		let start = |id: Option<NodeId>| id.map(|id| ast.node(id).start);
+		assert_eq!(scopes.bindings.len(), 1);
+		assert!(!scopes.bindings[0].write);
+		let again: Vec<_> = scopes
+			.references
+			.iter()
+			.map(|r| (ast.node(r.node).start, r.declares, r.write, start(r.write_expr), r.binding))
+			.collect();
+		assert_eq!(again, [(11, true, true, Some(15), Some(0)), (27, true, true, None, Some(0))]);
 	}
 
 	#[test]

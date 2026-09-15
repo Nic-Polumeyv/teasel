@@ -34,9 +34,9 @@ export interface Options {
 	/** Attach `leadingComments`, `trailingComments` and `innerComments` to nodes, and list every comment read as `comments` on the answer. */
 	comments?: boolean;
 	/**
-	 * Scope analysis: the answer lists `scopes`, `bindings` and `references`, and `scopeOf`,
-	 * `bindingOf` and `referenceOf` answer for a node. The tree itself carries nothing, and a copy
-	 * of a node carries no facts. TypeScript type positions bind nothing.
+	 * Scope analysis: the answer lists `scopes`, `bindings` and `references`, and `scopeOf` and
+	 * `referenceOf` answer for a node. The tree itself carries nothing, and a copy of a node
+	 * carries no facts. TypeScript type positions bind nothing.
 	 */
 	scopes?: boolean;
 	/** Add `loc` with line and column to every node, as in acorn; off by default. */
@@ -95,8 +95,11 @@ export interface Scope {
 	topLevelAwait: boolean;
 }
 
-/** A binding, as one of `bindings` on the answer. */
-export interface Binding {
+/** A binding, as one of `bindings` on the answer: one an identifier declares, or the `arguments` a function reads. */
+export type Binding = Declared | Arguments;
+
+/** A binding an identifier declares. It is the reference that identifier makes, the first of its own: `referenceOf` answers with it, and its `binding` is itself. */
+export interface Declared extends Reference {
 	name: string;
 	kind:
 		| 'var'
@@ -111,16 +114,39 @@ export interface Binding {
 		| 'import'
 		| 'function-name'
 		| 'class-name'
-		| 'arguments'
 		| 'enum'
 		| 'enum-member'
 		| 'namespace'
 		| 'pattern';
+	/** The identifier that declares it. */
+	node: Identifier;
+	/** The scope it is declared in. */
 	scope: Scope;
-	/** The identifier that declares it; null for `arguments`. */
-	node: Identifier | null;
-	/** What declares it: the declarator, function, class, import specifier, catch clause or enum, as eslint-scope's definition node; null for `arguments` and for a pattern or parameter list parsed on its own. */
+	/** What declares it: the declarator, function, class, import specifier, catch clause or enum, as eslint-scope's definition node; null for a pattern or parameter list parsed on its own. */
 	declaration: Node | null;
+	binding: Declared;
+	declares: true;
+	/** The declaration binds a value: an initializer, a parameter, a function, a class, an import; not a bare `let x;`. */
+	write: boolean;
+	read: false;
+	mutate: false;
+	/** The initializer of a declarator, `1` in `let x = 1`; null otherwise, the iterated expression of a `for-of` and a parameter's default being on the tree. */
+	writeExpr: Expression | null;
+}
+
+/** The `arguments` of a function that reads it: bound by the call, declared by no identifier. */
+export interface Arguments {
+	name: 'arguments';
+	kind: 'arguments';
+	scope: Scope;
+	node: null;
+	declaration: null;
+	binding: Arguments;
+	declares: true;
+	write: true;
+	read: false;
+	mutate: false;
+	writeExpr: null;
 }
 
 /** A piece of JavaScript a host read on its own, as one of `roots` on a document's answer, with what the tables hold for it. */
@@ -133,7 +159,7 @@ export interface Root {
 	bindings: Binding[];
 	references: Reference[];
 }
-/** A reference, as one of `references` on the answer. */
+/** A reference, as one of `references` on the answer: an identifier using a name, or declaring it again. A binding is one too, the reference its declaring identifier makes. */
 export interface Reference {
 	node: Identifier;
 	/** The scope the reference is made from. */
@@ -144,19 +170,19 @@ export interface Reference {
 	write: boolean;
 	/** A member of the identifier's value is assigned to, updated or deleted. */
 	mutate: boolean;
-	/** The identifier's value is read: every reference but a plain assignment's target or a destructuring one's; a compound assignment or an update reads and writes. */
+	/** The identifier's value is read: every reference but a declaration, a plain assignment's target or a destructuring one's; a compound assignment or an update reads and writes. */
 	read: boolean;
-	/** What a write assigns: the right side of the assignment or the iterated expression of a `for-in` or `for-of`, as eslint-scope's `writeExpr`; null for an update. */
+	/** What a write assigns: the right side of the assignment, the iterated expression of a `for-in` or `for-of`, or what a declaration is initialized with, as eslint-scope's `writeExpr`; null for an update. */
 	writeExpr: Expression | null;
+	/** The identifier declares its binding: the binding itself for the first declaration, and a reference of its own for a name declared again, `var x` twice, which writes when a value is bound there. */
+	declares: boolean;
 }
 
 /** The node `node` is a child of; undefined for the root of an answer. A literal's `regex` and a template element's `value` are not nodes and have none. */
 export function parentOf(node: Node): Node | undefined;
 /** With `scopes`: the scope `node` opens, when it opens one. */
 export function scopeOf(node: Node): Scope | undefined;
-/** With `scopes`: what an identifier declares or refers to; null for a global, undefined when it names no value, a property key say. */
-export function bindingOf(node: Node): Binding | null | undefined;
-/** With `scopes`: the reference an identifier makes, with its `write` and `mutate`; a global's too, which no binding lists. */
+/** With `scopes`: the reference an identifier makes, the binding itself for the identifier that declares it; a global's too, which no binding lists. Undefined when the identifier names no value, a property key say. */
 export function referenceOf(node: Node): Reference | undefined;
 
 /** A range of the source, with `loc` when `locations` is on. */
