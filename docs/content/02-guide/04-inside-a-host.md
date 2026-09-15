@@ -2,7 +2,7 @@
 title: Inside a host
 ---
 
-A host language that embeds JavaScript, a template syntax say, reads one piece at a time from inside its own text: an expression at an offset, ended by the host's own tokens, and gets back where its syntax resumes.
+A template language has JavaScript in it, but it isn't JavaScript. What it needs from a parser is different: read one expression starting here, stop when you reach one of my tokens, and tell me where you stopped.
 
 ```text
 {{ items as item, index }}
@@ -17,23 +17,23 @@ const { node, end } = source.parse('expression', 3, { stopAt: ['as', ','] });
 // end   8
 ```
 
-The entries are what a host can ask for at an offset:
+The first argument is the entry, what you're asking for at that offset:
 
 ```text
-source.parse('expression', 7)             the expression that starts at 7
+source.parse('expression', 7)             the expression starting at 7
 source.parse('pattern', 7)                an assignment target: a name or a destructuring
-source.parse('params', 7)                 the patterns of a (a, b = 1)
+source.parse('params', 7)                 the patterns inside (a, b = 1)
 source.parse('statement', 7)              one statement
 source.parse('typeParameters', 7)         a <T extends U>
-source.parse('program', 12, { end: 40 })  the program inside 12..40, positions of the whole
+source.parse('program', 12, { end: 40 })  the program between 12 and 40, positions still of the whole
 ```
 
-A `typeParameters` entry reads TypeScript only; without `typescript` it is a `not_typescript` error.
+`typeParameters` only makes sense with `typescript` on; without it you get a `not_typescript` error.
 
 ## Stop tokens
 
-`stopAt` lists the host's own tokens, words or punctuators. One read outside every bracket the parse opened, where the expression could end, ends the parse: `,` does not start a sequence, and `/>` is not a division. A `then` after `.` is a property name. A TypeScript `as` is the host's unless another `as` follows the assertion, so `xs as T[] as item` ends after the type.
+`stopAt` is the list of your own tokens, words or punctuators. When the parser reads one outside every bracket it opened, at a point where the expression could end, the parse ends. So a `,` in `stopAt` doesn't start a sequence expression, and `/>` isn't a division. A `then` after a `.` is still a property name. And a TypeScript `as` is yours unless another `as` follows the type assertion, so `xs as T[] as item` ends after the type, the way you'd want.
 
 ## One source, many pieces
 
-Make the `Source` once for the whole text and parse every piece from it. The text crosses into the engine once, and every answer's positions are offsets into that whole text, so nothing needs translating back.
+Make one `Source` for the whole document and parse every piece out of it. The text crosses once, and every answer's positions are offsets into that same text, so there's nothing to add back or translate.

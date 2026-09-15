@@ -2,16 +2,16 @@
 title: TypeScript
 ---
 
-Turn `typescript` on to read TypeScript; the tree then holds the TypeScript nodes, `TSTypeAnnotation`, `TSInterfaceDeclaration` and the rest, as typescript-eslint spells them.
+Say `typescript: true` and the tree holds TypeScript nodes, `TSTypeAnnotation`, `TSInterfaceDeclaration` and friends, spelled the way typescript-eslint spells them.
 
 ```js
 const { node } = new Source('let n: number = 1', { typescript: true }).parse();
 node.body[0].declarations[0].id.typeAnnotation.type; // 'TSTypeAnnotation'
 ```
 
-## Erasing
+## Or erase it
 
-`typescript: 'erase'` reads TypeScript and answers with JavaScript, the types gone, in the same pass. Positions stay those of the original text.
+`typescript: 'erase'` reads the TypeScript and answers with JavaScript, types gone, in the one pass. Positions are still positions in the text you gave it.
 
 ```js
 const { node, typescript } = new Source('let n: number = 1', { typescript: 'erase' }).parse();
@@ -19,8 +19,8 @@ node.body[0].declarations[0].id.typeAnnotation; // undefined
 typescript;                                     // []
 ```
 
-Erasure cannot remove what has a runtime meaning. The answer's `typescript` table lists what was left in place, by type and span: enums, namespaces with values, parameter properties, `export =`, `import =`, decorators and accessor fields. An empty table means the output is plain JavaScript.
+Some TypeScript isn't just types. Enums, namespaces with values in them, parameter properties, `export =`, `import =`, decorators and accessor fields all do something at runtime, and erasing them would change the program. So they stay, and the answer's `typescript` table lists each one by type and span. An empty table means what you got is plain JavaScript.
 
 ## Decorators
 
-Decorators are read with `typescript` on; in JavaScript an `@` is an unexpected character. Both syntaxes are accepted by default. `decorators: 'legacy'` reads what TypeScript's `experimentalDecorators` allows and `'proposal'` the standard syntax only.
+Decorators are read when `typescript` is on. In plain JavaScript an `@` is an unexpected character. Both syntaxes are accepted unless you pick one: `decorators: 'legacy'` is what TypeScript's `experimentalDecorators` allows, `'proposal'` is the standard syntax and nothing else.

@@ -2,7 +2,7 @@
 title: Errors
 ---
 
-A syntax error throws a `SyntaxError` with a code to branch on and a position to point at.
+A syntax error throws a `SyntaxError`. It has a code you can branch on and a position you can point at.
 
 ```js
 try {
@@ -16,11 +16,11 @@ try {
 }
 ```
 
-`pos` and `end` span the token being read. An error reported elsewhere, at a declaration seen earlier say, has `end` equal to `pos`. `unexpected_eof` points at the end of what was parsed. A bad offset from the caller is an `invalid_request` without a `loc`.
+`pos` and `end` span the token that broke things. When the problem is somewhere else, a declaration seen earlier for instance, `end` equals `pos`. `unexpected_eof` points at the end of what was parsed. Give the parser a bad offset and you get `invalid_request`, which has no `loc` because there's nothing to point at.
 
-## Recovering
+## Or keep going
 
-With `errorRecovery`, the parse comes back and the errors come with it, in source order. Where something is missing, the tree holds an `Identifier` named `''` of no width, so the shape stays walkable.
+With `errorRecovery` the parse comes back anyway, errors included, in source order. Wherever something is missing, the tree holds an `Identifier` named `''` with no width, so the shape is still the shape and your walker doesn't have to care.
 
 ```text
 x = ;
@@ -35,6 +35,6 @@ errors[0].code;                            // 'unexpected_token'
 node.body[0].expression.right.name;        // ''
 ```
 
-A statement that cannot be read at all is skipped to the next one, so `f(a, ` alone answers with an empty program and one `unexpected_eof`.
+A statement that can't be read at all gets skipped to the next one. `f(a, ` on its own comes back as an empty program with one `unexpected_eof`.
 
-Use recovery for an editor or a language server, where a half-typed file still needs a tree. A compiler that must reject the file leaves it off and catches the throw.
+Recovery is for editors and language servers, where a half-typed file still needs a tree right now. A compiler that has to reject the file should leave it off and catch the throw.
