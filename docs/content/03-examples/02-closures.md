@@ -25,7 +25,7 @@ const captured = references.filter((r) => within(r.scope, arrow) && r.binding &&
 captured.map((r) => r.binding.name);   // ['total', 'twice']
 ```
 
-`within` walks up through `parent` until it finds the scope it's looking for, or runs out. A reference made inside the arrow whose binding lives outside it is a capture. `n` isn't one: it's used in `add`, not in the arrow.
+`within` walks up through `parent` until it finds the scope it's looking for, or runs out. A reference made inside the arrow whose binding lives outside it is a capture. `n` isn't one: it's used in `add`, not in the arrow. A variable declared inside the arrow isn't either, since its declaring reference and its binding sit in the same scope.
 
 ![three nested scopes, script, add and the arrow function; inside the arrow, total and twice are references whose arrows cross out to bindings in outer scopes, so they are captured; n is referenced inside add and stays there](Closures.svelte)
 
