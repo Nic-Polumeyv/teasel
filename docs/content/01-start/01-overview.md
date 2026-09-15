@@ -4,25 +4,35 @@ title: Overview
 
 *You make a source once. Then you ask it things.*
 
-teasel reads your JavaScript or TypeScript and hands back an ESTree `Program` with `start` and `end` on every node. If you already have code that walks an ESTree, it walks this one. What you get on top is everything a compiler needs next: which `x` is which, what each function closes over, where the errors are when the file is half typed. teasel works that out while it parses and leaves it on the nodes for you to pick up.
+teasel is a parser for JavaScript and TypeScript. You give it text, it gives you a tree.
 
-```text
-new Source(text, options)          the text goes to the engine, once
-source.parse()                     the whole program
-source.parse('expression', at)     one piece, starting at an offset
-{ node, end, …tables }             what comes back
+```js
+import { Source } from '@teasel/parser';
+
+const { node } = new Source('let answer = 42').parse();
 ```
 
-## What you can ask for
+The tree is ESTree, plain objects with a `type`, a `start` and an `end`, so anything you already have that walks an ESTree walks this one.
 
-- A plain ESTree tree with offsets, and `loc` with lines and columns if you say `locations`. See [The answer](/the-answer).
-- Scopes, bindings and references, resolved during the parse and reachable from any node. See [Scopes](/scopes).
-- A tree even when the file is broken, with the errors listed beside it, if you say `errorRecovery`. See [Errors](/errors).
-- TypeScript read as TS-ESTree, or read and stripped to JavaScript on the way out. See [TypeScript](/typescript).
-- A single expression out of the middle of a bigger text, stopped at a token you choose. This is how a template language uses it. See [Inside a host](/inside-a-host).
-- Comments attached to nodes with `comments`, and `parenthesized: true` on anything you wrapped in parentheses.
+## Ask for more
 
-The [reference](/reference/parser) has every option, entry and table with its type and default. This section has the story.
+The parse that built the tree also knows things about it. Ask, and they come back with the same answer.
+
+```js
+const { node, scopes, bindings } = new Source(text, { scopes: true }).parse();
+```
+
+Each option adds something to the answer: which `x` is which, where every comment sits, where the errors are when the file is half typed, what a TypeScript file looks like with its types stripped. [The answer](/the-answer) shows what comes back and what each option adds to it.
+
+## Read a piece
+
+A parse doesn't have to be the whole text. Start it at an offset, and ask for an expression, a statement, a pattern.
+
+```js
+source.parse('expression', 10);
+```
+
+That's how a template language reads the JavaScript inside its own syntax, one piece at a time, stopping at its own tokens. [Inside a host](/inside-a-host) is about that.
 
 ## Where it runs
 

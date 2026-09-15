@@ -2,7 +2,29 @@
 title: Scopes
 ---
 
-Turn `scopes` on and the tree is still plain ESTree. The scope facts don't live in the tree; they live beside it, and you reach them from a node with one of four functions.
+Turn `scopes` on when you make the [`Source`](/getting-started), and every identifier in the tree can tell you where it came from.
+
+```js
+import { Source, bindingOf } from '@teasel/parser';
+
+const { node } = new Source('let x = 1; x = 2', { scopes: true }).parse();
+const assignment = node.body[1].expression;
+
+bindingOf(assignment.left);   // { name: 'x', kind: 'let', scope, node, declaration }
+```
+
+The tree is still plain ESTree. The facts live beside it, and you reach them from a node with a function.
+
+## Four questions
+
+`bindingOf` is one of four. Each takes a node from the answer and gives back a fact about it.
+
+- `bindingOf(identifier)`: the binding this identifier declares or refers to. `null` if it's a global. `undefined` if it isn't a value at all, a property key for instance.
+- `referenceOf(identifier)`: the reference this identifier makes, with `read`, `write` and `mutate` flags.
+- `scopeOf(node)`: the scope this node opens, if it opens one. Programs, functions, classes, blocks, catch clauses, `for` heads, `switch` statements, static blocks and `with` all do.
+- `parentOf(node)`: the node this one hangs from. `undefined` at the root.
+
+Here they are on a function with a parameter.
 
 ```js
 import { Source, scopeOf, bindingOf, referenceOf, parentOf } from '@teasel/parser';
@@ -19,22 +41,25 @@ parentOf(assignment.left)                   // the assignment
 
 ![the module scope declares x; the function scope of f declares y; inside it, x is a write reference to the outer binding and y a read reference to the parameter](Scopes.svelte)
 
-## The four questions
+## What a reference knows
 
-- `scopeOf(node)`: the scope this node opens, if it opens one. Programs, functions, classes, blocks, catch clauses, `for` heads, `switch` statements, static blocks and `with` all open one.
-- `bindingOf(identifier)`: what this identifier declares or refers to. `null` means it's a global. `undefined` means it isn't a value at all, a property key for instance.
-- `referenceOf(identifier)`: the reference this identifier makes, with `read`, `write` and `mutate`. Globals get a reference too, with `binding: null`, even though no binding lists them.
-- `parentOf(node)`: the node this one hangs from. `undefined` at the root.
+A reference points from the scope it was made in to the binding it landed on, and says what the code does with it.
 
-## Bindings and references
+| flag | true when |
+| --- | --- |
+| `read` | the value is used. Every reference except a plain assignment target. |
+| `write` | the identifier is assigned, updated, or bound by a destructuring assignment. |
+| `mutate` | something on the value is assigned, updated or deleted, like `x.y = 1`. |
 
-A binding knows its `name`, its `kind` (`let`, `const`, `var`, `function`, `class`, `param`, `import`, `catch`, and the others in the [reference](/reference/parser#binding)), the scope it lives in, the identifier that declared it, and the declaration itself: the declarator, function, class, import specifier or catch clause.
+A compound assignment like `x += 1` is both a read and a write. For a write, `writeExpr` is what's being assigned: the right-hand side, or the thing iterated in a `for-of`.
 
-A reference knows the scope it was made from and the binding it landed on. `write` means the identifier is assigned, updated, or bound by a destructuring assignment. `read` means its value is used, which is every reference except a plain assignment target. A compound assignment is both. `mutate` means something is assigned to, updated, or deleted on the value, like `x.y = 1`. `writeExpr` is what a write assigns: the right-hand side, or the thing iterated in a `for-of`.
+A binding knows its `name`, its `kind`, the scope it lives in, the identifier that declared it, and the declaration itself. The kinds are listed in the [reference](/reference/parser#binding).
 
-If you'd rather not walk the tree at all, the answer's `scopes`, `bindings` and `references` tables list every one of them in source order.
+## All of them at once
+
+If you'd rather not walk the tree, the answer's `scopes`, `bindings` and `references` tables list every one in source order.
 
 ## Two things to know
 
-- The facts are symbol properties on the nodes. Spread a node and they come along. Push it through `structuredClone` or JSON and they're gone; the four functions answer `undefined` for the copy.
+- The facts are symbol properties on the nodes. Spread a node and they come along. Push it through `structuredClone` or JSON and they're gone.
 - Facts belong to one answer. Parse again, ask again.

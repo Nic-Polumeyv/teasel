@@ -37,7 +37,7 @@
 		</Sidebar.Content>
 	</Sidebar.Root>
 	<article
-		class="min-w-0 max-w-prose flex-1 text-base leading-7 [&_a]:text-primary [&_a]:underline [&_a]:decoration-primary/40 [&_a]:underline-offset-4 [&_a:hover]:decoration-primary [&_h1]:font-serif [&_h1]:text-5xl [&_h1]:leading-none [&_h1]:font-medium [&_h1]:tracking-tight [&_h2]:mt-12 [&_h2]:font-serif [&_h2]:text-3xl [&_h2]:font-medium [&_h2]:tracking-tight [&_h3]:label [&_h3]:mt-8 [&_h3]:text-lg [&_h3]:font-medium [&_p]:mt-4 [&_ul]:mt-4 [&_ul]:list-disc [&_ul]:pl-6 [&_:not(pre)>code]:rounded-sm [&_:not(pre)>code]:bg-accent [&_:not(pre)>code]:px-1.5 [&_:not(pre)>code]:py-0.5 [&_:not(pre)>code]:font-mono [&_:not(pre)>code]:text-[0.9em] [&_:not(pre)>code]:text-accent-foreground">
+		class="min-w-0 max-w-prose flex-1 text-base leading-7 [&_a]:text-primary [&_a]:underline [&_a]:decoration-primary/40 [&_a]:underline-offset-4 [&_a:hover]:decoration-primary [&_h1]:font-serif [&_h1]:text-5xl [&_h1]:leading-none [&_h1]:font-medium [&_h1]:tracking-tight [&_h2]:mt-12 [&_h2]:font-serif [&_h2]:text-3xl [&_h2]:font-medium [&_h2]:tracking-tight [&_h3]:label [&_h3]:mt-8 [&_h3]:text-lg [&_h3]:font-medium [&_p]:mt-4 [&_ul]:mt-4 [&_ul]:list-disc [&_ul]:pl-6 [&_table]:mt-4 [&_table]:w-full [&_table]:text-left [&_th]:label [&_th]:pb-2 [&_th]:pr-4 [&_th]:font-medium [&_td]:border-t [&_td]:py-2 [&_td]:pr-4 [&_td]:align-top [&_:not(pre)>code]:rounded-sm [&_:not(pre)>code]:bg-accent [&_:not(pre)>code]:px-1.5 [&_:not(pre)>code]:py-0.5 [&_:not(pre)>code]:font-mono [&_:not(pre)>code]:text-[0.9em] [&_:not(pre)>code]:text-accent-foreground">
 		{#if here}
 			<Breadcrumb.Root class="mb-4 [&_a]:no-underline">
 				<Breadcrumb.List>

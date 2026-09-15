@@ -16,11 +16,17 @@ try {
 }
 ```
 
-`pos` and `end` span the token that broke things. When the problem is somewhere else, a declaration seen earlier for instance, `end` equals `pos`. `unexpected_eof` points at the end of what was parsed. Give the parser a bad offset and you get `invalid_request`, which has no `loc` because there's nothing to point at.
-
 ## Or keep going
 
-With `errorRecovery` the parse comes back anyway, errors included, in source order. Wherever something is missing, the tree holds an `Identifier` named `''` with no width, so the shape is still the shape and your walker doesn't have to care.
+Sometimes a broken file still needs a tree: an editor, a language server, anything that runs while someone is typing. Turn on `errorRecovery` and the parse comes back with the tree and the errors together.
+
+```js
+const { node, errors } = new Source('x = ;', { errorRecovery: true }).parse();
+errors[0].code;                            // 'unexpected_token'
+node.body[0].expression.right.name;        // ''
+```
+
+Wherever something is missing, the tree holds an `Identifier` named `''` with no width. The shape is still the shape, and a walker doesn't have to care.
 
 ```text
 x = ;
@@ -29,12 +35,10 @@ x = ;
     right   Identifier ''  at 4..4
 ```
 
-```js
-const { node, errors } = new Source('x = ;', { errorRecovery: true }).parse();
-errors[0].code;                            // 'unexpected_token'
-node.body[0].expression.right.name;        // ''
-```
+A statement that can't be read at all is skipped to the next one. `f(a, ` on its own comes back as an empty program with one `unexpected_eof`.
 
-A statement that can't be read at all gets skipped to the next one. `f(a, ` on its own comes back as an empty program with one `unexpected_eof`.
+A compiler that has to reject the file should leave recovery off and catch the throw.
 
-Recovery is for editors and language servers, where a half-typed file still needs a tree right now. A compiler that has to reject the file should leave it off and catch the throw.
+## Where an error points
+
+`pos` and `end` span the token that broke things. When the problem is somewhere else, a declaration seen earlier for instance, `end` equals `pos`. `unexpected_eof` points at the end of what was parsed. A bad offset from your side is `invalid_request`, with no `loc`, because there's nothing in the text to point at. The codes are in the [reference](/reference/parser#parseerror).

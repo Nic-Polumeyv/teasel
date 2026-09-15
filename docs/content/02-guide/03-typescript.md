@@ -2,7 +2,7 @@
 title: TypeScript
 ---
 
-Say `typescript: true` and the tree holds TypeScript nodes, `TSTypeAnnotation`, `TSInterfaceDeclaration` and friends, in the TS-ESTree shape.
+Say `typescript: true` and the parser reads TypeScript. The tree holds TypeScript nodes, `TSTypeAnnotation`, `TSInterfaceDeclaration` and friends, in the TS-ESTree shape.
 
 ```js
 const { node } = new Source('let n: number = 1', { typescript: true }).parse();
@@ -23,4 +23,4 @@ Some TypeScript isn't just types. Enums, namespaces with values in them, paramet
 
 ## Decorators
 
-Decorators are read when `typescript` is on. In plain JavaScript an `@` is an unexpected character. Both syntaxes are accepted unless you pick one: `decorators: 'legacy'` is what TypeScript's `experimentalDecorators` allows, `'proposal'` is the standard syntax and nothing else.
+Decorators are read when `typescript` is on. Both syntaxes are accepted unless you pick one: `decorators: 'legacy'` is what `experimentalDecorators` allows, `'proposal'` is the standard syntax and nothing else.
