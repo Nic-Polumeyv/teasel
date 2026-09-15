@@ -4,19 +4,13 @@
 		"start": 0,
 		"end": 41,
 		"scope": 0,
-		"css": null,
-		"js": [],
-		"options": null,
-		"comments": [],
 		"fragment": {
 			"type": "Fragment",
-			"scope": 2,
 			"nodes": [
 				{
 					"type": "Component",
 					"start": 0,
 					"end": 23,
-					"name": "Comp",
 					"attributes": [
 						{
 							"type": "Attribute",
@@ -89,16 +83,16 @@
 					],
 					"fragment": {
 						"type": "Fragment",
-						"scope": 3,
 						"nodes": []
-					}
+					},
+					"name": "Comp"
 				},
 				{
 					"type": "Text",
 					"start": 23,
 					"end": 24,
-					"raw": "\n",
-					"data": "\n"
+					"data": "\n",
+					"raw": "\n"
 				},
 				{
 					"type": "ConstTag",
@@ -135,20 +129,19 @@
 					"type": "Text",
 					"start": 33,
 					"end": 34,
-					"raw": "\n",
-					"data": "\n"
+					"data": "\n",
+					"raw": "\n"
 				},
 				{
 					"type": "Component",
 					"start": 34,
 					"end": 40,
-					"name": "comp.",
 					"attributes": [],
 					"fragment": {
 						"type": "Fragment",
-						"scope": 4,
 						"nodes": []
-					}
+					},
+					"name": "comp."
 				}
 			]
 		}
@@ -234,7 +227,7 @@
 			"topLevelAwait": false
 		},
 		{
-			"kind": "fragment",
+			"kind": "script",
 			"parent": 0,
 			"topLevelAwait": false
 		},
@@ -269,8 +262,8 @@
 		{
 			"scope": 2,
 			"scopes": [
-				3,
-				3
+				4,
+				4
 			],
 			"bindings": [
 				0,
@@ -284,8 +277,8 @@
 		{
 			"scope": 2,
 			"scopes": [
-				3,
-				3
+				4,
+				4
 			],
 			"bindings": [
 				0,
@@ -299,8 +292,8 @@
 		{
 			"scope": 2,
 			"scopes": [
-				3,
-				3
+				4,
+				4
 			],
 			"bindings": [
 				0,

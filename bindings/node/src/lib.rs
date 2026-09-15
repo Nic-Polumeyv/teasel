@@ -134,15 +134,29 @@ fn handle(env: Env, value: Value) -> Result<*mut Prepared<'static>> {
 	Ok(data.cast())
 }
 
+// the plan's text, read once; the number names it to `create`
+unsafe extern "C" fn plan(env: Env, info: CallbackInfo) -> Value {
+	guard(env, || {
+		let [text] = args::<1>(env, info)?;
+		let handle = teasel::json::plan_new(&string(env, text)?)?;
+		let mut result = std::ptr::null_mut();
+		check(
+			unsafe { node_api::napi_create_uint32(env, handle, &mut result) },
+			"a number",
+		)?;
+		Ok(result)
+	})
+}
+
 // the bytes V8 encoded, made valid UTF-8 where they are not; the options as one flag word; the
-// grammar of the host language the whole source is a document of, or nothing
+// plan of the host language the whole source is a document of, by its handle, or 0
 unsafe extern "C" fn create(env: Env, info: CallbackInfo) -> Value {
 	guard(env, || {
 		let [source, flags, host] = args::<3>(env, info)?;
 		let mut prepared = Prepared::from_bytes(bytes(env, source)?, Request::from_flags(number(env, flags)? as u32));
-		let host = string(env, host)?;
-		if !host.is_empty() {
-			prepared = prepared.host(&host)?;
+		let host = number(env, host)? as u32;
+		if host != 0 {
+			prepared = prepared.host_by(host)?;
 		}
 		let mut result = std::ptr::null_mut();
 		check(
@@ -322,7 +336,8 @@ pub unsafe extern "C" fn napi_register_module_v1(env: Env, exports: Value) -> Va
 	};
 	guard(env, || {
 		for (name, callback) in [
-			(c"create", create as unsafe extern "C" fn(Env, CallbackInfo) -> Value),
+			(c"plan", plan as unsafe extern "C" fn(Env, CallbackInfo) -> Value),
+			(c"create", create),
 			(c"parse", parse),
 			(c"free", free),
 			(c"constants", constants),

@@ -4,13 +4,8 @@
 		"start": 0,
 		"end": 123,
 		"scope": 0,
-		"css": null,
-		"js": [],
-		"options": null,
-		"comments": [],
 		"fragment": {
 			"type": "Fragment",
-			"scope": 2,
 			"nodes": [
 				{
 					"type": "KeyBlock",
@@ -32,13 +27,12 @@
 								"type": "Component",
 								"start": 8,
 								"end": 16,
-								"name": "Comp",
 								"attributes": [],
 								"fragment": {
 									"type": "Fragment",
-									"scope": 4,
 									"nodes": []
-								}
+								},
+								"name": "Comp"
 							}
 						]
 					}
@@ -47,13 +41,79 @@
 					"type": "Text",
 					"start": 22,
 					"end": 23,
-					"raw": "\n",
-					"data": "\n"
+					"data": "\n",
+					"raw": "\n"
 				},
 				{
 					"type": "SnippetBlock",
 					"start": 23,
 					"end": 83,
+					"body": {
+						"type": "Fragment",
+						"scope": 5,
+						"nodes": [
+							{
+								"type": "Text",
+								"start": 50,
+								"end": 52,
+								"data": "\n\t",
+								"raw": "\n\t"
+							},
+							{
+								"type": "RegularElement",
+								"start": 52,
+								"end": 72,
+								"attributes": [],
+								"fragment": {
+									"type": "Fragment",
+									"scope": 7,
+									"nodes": [
+										{
+											"type": "UnmarkedTag",
+											"start": 56,
+											"end": 59,
+											"expression": {
+												"type": "Identifier",
+												"start": 57,
+												"end": 58,
+												"reference": 1,
+												"root": 4,
+												"name": "i"
+											}
+										},
+										{
+											"type": "Text",
+											"start": 59,
+											"end": 61,
+											"data": ": ",
+											"raw": ": "
+										},
+										{
+											"type": "UnmarkedTag",
+											"start": 61,
+											"end": 67,
+											"expression": {
+												"type": "Identifier",
+												"start": 62,
+												"end": 66,
+												"reference": 2,
+												"root": 5,
+												"name": "item"
+											}
+										}
+									]
+								},
+								"name": "li"
+							},
+							{
+								"type": "Text",
+								"start": 72,
+								"end": 73,
+								"data": "\n",
+								"raw": "\n"
+							}
+						]
+					},
 					"expression": {
 						"type": "Identifier",
 						"start": 33,
@@ -91,80 +151,14 @@
 								"raw": "0"
 							}
 						}
-					],
-					"body": {
-						"type": "Fragment",
-						"scope": 5,
-						"nodes": [
-							{
-								"type": "Text",
-								"start": 50,
-								"end": 52,
-								"raw": "\n\t",
-								"data": "\n\t"
-							},
-							{
-								"type": "RegularElement",
-								"start": 52,
-								"end": 72,
-								"name": "li",
-								"attributes": [],
-								"fragment": {
-									"type": "Fragment",
-									"scope": 6,
-									"nodes": [
-										{
-											"type": "ExpressionTag",
-											"start": 56,
-											"end": 59,
-											"expression": {
-												"type": "Identifier",
-												"start": 57,
-												"end": 58,
-												"reference": 1,
-												"root": 4,
-												"name": "i"
-											}
-										},
-										{
-											"type": "Text",
-											"start": 59,
-											"end": 61,
-											"raw": ": ",
-											"data": ": "
-										},
-										{
-											"type": "ExpressionTag",
-											"start": 61,
-											"end": 67,
-											"expression": {
-												"type": "Identifier",
-												"start": 62,
-												"end": 66,
-												"reference": 2,
-												"root": 5,
-												"name": "item"
-											}
-										}
-									]
-								}
-							},
-							{
-								"type": "Text",
-								"start": 72,
-								"end": 73,
-								"raw": "\n",
-								"data": "\n"
-							}
-						]
-					}
+					]
 				},
 				{
 					"type": "Text",
 					"start": 83,
 					"end": 84,
-					"raw": "\n",
-					"data": "\n"
+					"data": "\n",
+					"raw": "\n"
 				},
 				{
 					"type": "RenderTag",
@@ -205,8 +199,8 @@
 					"type": "Text",
 					"start": 103,
 					"end": 104,
-					"raw": "\n",
-					"data": "\n"
+					"data": "\n",
+					"raw": "\n"
 				},
 				{
 					"type": "RenderTag",
@@ -253,7 +247,7 @@
 			"topLevelAwait": false
 		},
 		{
-			"kind": "fragment",
+			"kind": "script",
 			"parent": 0,
 			"topLevelAwait": false
 		},
@@ -273,13 +267,18 @@
 			"topLevelAwait": false
 		},
 		{
-			"kind": "fragment",
+			"kind": "function",
 			"parent": 2,
 			"topLevelAwait": false
 		},
 		{
-			"kind": "fragment",
+			"kind": "block",
 			"parent": 5,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 6,
 			"topLevelAwait": false
 		}
 	],
@@ -292,13 +291,13 @@
 		},
 		{
 			"name": "item",
-			"kind": "pattern",
+			"kind": "param",
 			"scope": 5,
 			"write": true
 		},
 		{
 			"name": "i",
-			"kind": "pattern",
+			"kind": "param",
 			"scope": 5,
 			"write": true
 		}
@@ -313,7 +312,7 @@
 			"declares": false
 		},
 		{
-			"scope": 6,
+			"scope": 7,
 			"binding": 2,
 			"write": false,
 			"read": true,
@@ -321,7 +320,7 @@
 			"declares": false
 		},
 		{
-			"scope": 6,
+			"scope": 7,
 			"binding": 1,
 			"write": false,
 			"read": true,
@@ -365,8 +364,8 @@
 		{
 			"scope": 2,
 			"scopes": [
-				3,
-				3
+				4,
+				4
 			],
 			"bindings": [
 				0,
@@ -380,8 +379,8 @@
 		{
 			"scope": 2,
 			"scopes": [
-				5,
-				5
+				6,
+				6
 			],
 			"bindings": [
 				0,
@@ -423,10 +422,10 @@
 			]
 		},
 		{
-			"scope": 6,
+			"scope": 7,
 			"scopes": [
-				7,
-				7
+				8,
+				8
 			],
 			"bindings": [
 				3,
@@ -438,10 +437,10 @@
 			]
 		},
 		{
-			"scope": 6,
+			"scope": 7,
 			"scopes": [
-				7,
-				7
+				8,
+				8
 			],
 			"bindings": [
 				3,
@@ -455,8 +454,8 @@
 		{
 			"scope": 2,
 			"scopes": [
-				7,
-				7
+				8,
+				8
 			],
 			"bindings": [
 				3,
@@ -470,8 +469,8 @@
 		{
 			"scope": 2,
 			"scopes": [
-				7,
-				7
+				8,
+				8
 			],
 			"bindings": [
 				3,

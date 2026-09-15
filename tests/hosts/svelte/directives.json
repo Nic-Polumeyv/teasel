@@ -4,25 +4,18 @@
 		"start": 0,
 		"end": 290,
 		"scope": 0,
-		"css": null,
-		"js": [],
-		"options": null,
-		"comments": [],
 		"fragment": {
 			"type": "Fragment",
-			"scope": 2,
 			"nodes": [
 				{
 					"type": "RegularElement",
 					"start": 0,
 					"end": 207,
-					"name": "input",
 					"attributes": [
 						{
 							"type": "BindDirective",
 							"start": 7,
 							"end": 17,
-							"name": "value",
 							"expression": {
 								"type": "Identifier",
 								"start": 12,
@@ -31,13 +24,13 @@
 								"root": 0,
 								"name": "value"
 							},
-							"modifiers": []
+							"modifiers": [],
+							"name": "value"
 						},
 						{
 							"type": "BindDirective",
 							"start": 18,
 							"end": 34,
-							"name": "checked",
 							"expression": {
 								"type": "Identifier",
 								"start": 32,
@@ -46,13 +39,13 @@
 								"root": 1,
 								"name": "c"
 							},
-							"modifiers": []
+							"modifiers": [],
+							"name": "checked"
 						},
 						{
 							"type": "ClassDirective",
 							"start": 35,
 							"end": 43,
-							"name": "on",
 							"expression": {
 								"type": "Identifier",
 								"start": 41,
@@ -61,13 +54,13 @@
 								"root": 2,
 								"name": "on"
 							},
-							"modifiers": []
+							"modifiers": [],
+							"name": "on"
 						},
 						{
 							"type": "ClassDirective",
 							"start": 44,
 							"end": 59,
-							"name": "off",
 							"expression": {
 								"type": "UnaryExpression",
 								"start": 55,
@@ -83,20 +76,22 @@
 									"name": "on"
 								}
 							},
-							"modifiers": []
+							"modifiers": [],
+							"name": "off"
 						},
 						{
 							"type": "StyleDirective",
 							"start": 60,
 							"end": 71,
+							"modifiers": [],
 							"name": "color",
-							"value": true,
-							"modifiers": []
+							"value": true
 						},
 						{
 							"type": "StyleDirective",
 							"start": 72,
 							"end": 87,
+							"modifiers": [],
 							"name": "width",
 							"value": {
 								"type": "ExpressionTag",
@@ -110,32 +105,30 @@
 									"root": 4,
 									"name": "w"
 								}
-							},
-							"modifiers": []
+							}
 						},
 						{
 							"type": "StyleDirective",
 							"start": 88,
 							"end": 116,
+							"modifiers": [
+								"important"
+							],
 							"name": "height",
 							"value": [
 								{
 									"type": "Text",
 									"start": 112,
 									"end": 115,
-									"raw": "1px",
-									"data": "1px"
+									"data": "1px",
+									"raw": "1px"
 								}
-							],
-							"modifiers": [
-								"important"
 							]
 						},
 						{
 							"type": "OnDirective",
 							"start": 117,
 							"end": 149,
-							"name": "click",
 							"expression": {
 								"type": "Identifier",
 								"start": 147,
@@ -147,13 +140,13 @@
 							"modifiers": [
 								"once",
 								"preventDefault"
-							]
+							],
+							"name": "click"
 						},
 						{
 							"type": "UseDirective",
 							"start": 150,
 							"end": 161,
-							"name": "act",
 							"expression": {
 								"type": "Identifier",
 								"start": 159,
@@ -162,74 +155,73 @@
 								"root": 6,
 								"name": "o"
 							},
-							"modifiers": []
+							"modifiers": [],
+							"name": "act"
 						},
 						{
 							"type": "TransitionDirective",
 							"start": 162,
 							"end": 180,
-							"name": "t",
 							"expression": null,
+							"intro": true,
 							"modifiers": [
 								"local"
 							],
-							"intro": true,
+							"name": "t",
 							"outro": true
 						},
 						{
 							"type": "TransitionDirective",
 							"start": 181,
 							"end": 185,
-							"name": "i",
 							"expression": null,
-							"modifiers": [],
 							"intro": true,
+							"modifiers": [],
+							"name": "i",
 							"outro": false
 						},
 						{
 							"type": "TransitionDirective",
 							"start": 186,
 							"end": 191,
-							"name": "o",
 							"expression": null,
-							"modifiers": [],
 							"intro": false,
+							"modifiers": [],
+							"name": "o",
 							"outro": true
 						},
 						{
 							"type": "AnimateDirective",
 							"start": 192,
 							"end": 204,
-							"name": "flip",
 							"expression": null,
-							"modifiers": []
+							"modifiers": [],
+							"name": "flip"
 						}
 					],
 					"fragment": {
 						"type": "Fragment",
-						"scope": 3,
+						"scope": 4,
 						"nodes": []
-					}
+					},
+					"name": "input"
 				},
 				{
 					"type": "Text",
 					"start": 207,
 					"end": 208,
-					"raw": "\n",
-					"data": "\n"
+					"data": "\n",
+					"raw": "\n"
 				},
 				{
 					"type": "Component",
 					"start": 208,
 					"end": 289,
-					"scope": 4,
-					"name": "Comp",
 					"attributes": [
 						{
 							"type": "LetDirective",
 							"start": 214,
 							"end": 222,
-							"name": "item",
 							"expression": {
 								"type": "Identifier",
 								"start": 218,
@@ -238,13 +230,13 @@
 								"root": 7,
 								"name": "item"
 							},
-							"modifiers": []
+							"modifiers": [],
+							"name": "item"
 						},
 						{
 							"type": "LetDirective",
 							"start": 223,
 							"end": 236,
-							"name": "index",
 							"expression": {
 								"type": "Identifier",
 								"start": 234,
@@ -253,13 +245,13 @@
 								"root": 8,
 								"name": "i"
 							},
-							"modifiers": []
+							"modifiers": [],
+							"name": "index"
 						},
 						{
 							"type": "LetDirective",
 							"start": 237,
 							"end": 256,
-							"name": "pair",
 							"expression": {
 								"type": "ObjectPattern",
 								"start": 247,
@@ -312,7 +304,8 @@
 									}
 								]
 							},
-							"modifiers": []
+							"modifiers": [],
+							"name": "pair"
 						},
 						{
 							"type": "SpreadAttribute",
@@ -358,9 +351,9 @@
 					],
 					"fragment": {
 						"type": "Fragment",
-						"scope": 5,
 						"nodes": []
-					}
+					},
+					"name": "Comp"
 				}
 			]
 		}
@@ -374,7 +367,7 @@
 			"topLevelAwait": false
 		},
 		{
-			"kind": "fragment",
+			"kind": "script",
 			"parent": 0,
 			"topLevelAwait": false
 		},
@@ -384,18 +377,18 @@
 			"topLevelAwait": false
 		},
 		{
-			"kind": "fragment",
-			"parent": 2,
-			"topLevelAwait": false
-		},
-		{
 			"kind": "block",
 			"parent": 2,
 			"topLevelAwait": false
 		},
 		{
 			"kind": "fragment",
-			"parent": 4,
+			"parent": 3,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
 			"topLevelAwait": false
 		}
 	],
@@ -403,31 +396,79 @@
 		{
 			"name": "item",
 			"kind": "pattern",
-			"scope": 4,
+			"scope": 5,
 			"write": true
 		},
 		{
 			"name": "i",
 			"kind": "pattern",
-			"scope": 4,
+			"scope": 5,
 			"write": true
 		},
 		{
 			"name": "a",
 			"kind": "pattern",
-			"scope": 4,
+			"scope": 5,
 			"write": true
 		},
 		{
 			"name": "b",
 			"kind": "pattern",
-			"scope": 4,
+			"scope": 5,
 			"write": true
 		}
 	],
 	"references": [
 		{
-			"scope": 2,
+			"scope": 3,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 3,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 3,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 3,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 3,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 3,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 3,
 			"binding": null,
 			"write": false,
 			"read": true,
@@ -452,54 +493,6 @@
 		},
 		{
 			"scope": 2,
-			"binding": null,
-			"write": false,
-			"read": true,
-			"mutate": false,
-			"declares": false
-		},
-		{
-			"scope": 2,
-			"binding": null,
-			"write": false,
-			"read": true,
-			"mutate": false,
-			"declares": false
-		},
-		{
-			"scope": 2,
-			"binding": null,
-			"write": false,
-			"read": true,
-			"mutate": false,
-			"declares": false
-		},
-		{
-			"scope": 2,
-			"binding": null,
-			"write": false,
-			"read": true,
-			"mutate": false,
-			"declares": false
-		},
-		{
-			"scope": 4,
-			"binding": null,
-			"write": false,
-			"read": true,
-			"mutate": false,
-			"declares": false
-		},
-		{
-			"scope": 4,
-			"binding": null,
-			"write": false,
-			"read": true,
-			"mutate": false,
-			"declares": false
-		},
-		{
-			"scope": 4,
 			"binding": null,
 			"write": false,
 			"read": true,
@@ -509,10 +502,10 @@
 	],
 	"roots": [
 		{
-			"scope": 2,
+			"scope": 3,
 			"scopes": [
-				3,
-				3
+				5,
+				5
 			],
 			"bindings": [
 				0,
@@ -524,10 +517,10 @@
 			]
 		},
 		{
-			"scope": 2,
+			"scope": 3,
 			"scopes": [
-				3,
-				3
+				5,
+				5
 			],
 			"bindings": [
 				0,
@@ -539,10 +532,10 @@
 			]
 		},
 		{
-			"scope": 2,
+			"scope": 3,
 			"scopes": [
-				3,
-				3
+				5,
+				5
 			],
 			"bindings": [
 				0,
@@ -554,10 +547,10 @@
 			]
 		},
 		{
-			"scope": 2,
+			"scope": 3,
 			"scopes": [
-				3,
-				3
+				5,
+				5
 			],
 			"bindings": [
 				0,
@@ -569,10 +562,10 @@
 			]
 		},
 		{
-			"scope": 2,
+			"scope": 3,
 			"scopes": [
-				3,
-				3
+				5,
+				5
 			],
 			"bindings": [
 				0,
@@ -584,10 +577,10 @@
 			]
 		},
 		{
-			"scope": 2,
+			"scope": 3,
 			"scopes": [
-				3,
-				3
+				5,
+				5
 			],
 			"bindings": [
 				0,
@@ -599,10 +592,10 @@
 			]
 		},
 		{
-			"scope": 2,
+			"scope": 3,
 			"scopes": [
-				3,
-				3
+				5,
+				5
 			],
 			"bindings": [
 				0,
@@ -614,10 +607,10 @@
 			]
 		},
 		{
-			"scope": 4,
+			"scope": 5,
 			"scopes": [
-				5,
-				5
+				6,
+				6
 			],
 			"bindings": [
 				0,
@@ -629,10 +622,10 @@
 			]
 		},
 		{
-			"scope": 4,
+			"scope": 5,
 			"scopes": [
-				5,
-				5
+				6,
+				6
 			],
 			"bindings": [
 				1,
@@ -644,10 +637,10 @@
 			]
 		},
 		{
-			"scope": 4,
+			"scope": 5,
 			"scopes": [
-				5,
-				5
+				6,
+				6
 			],
 			"bindings": [
 				2,
@@ -659,10 +652,10 @@
 			]
 		},
 		{
-			"scope": 4,
+			"scope": 2,
 			"scopes": [
-				5,
-				5
+				6,
+				6
 			],
 			"bindings": [
 				4,
@@ -674,10 +667,10 @@
 			]
 		},
 		{
-			"scope": 4,
+			"scope": 2,
 			"scopes": [
-				5,
-				5
+				6,
+				6
 			],
 			"bindings": [
 				4,

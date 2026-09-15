@@ -1,22 +1,22 @@
 //! The strings a writer names itself, numbered once for the stream: a literal resolves to its
-//! number at compile time through `c!`, and a string from outside the table, a host grammar's, gets
+//! number at compile time through `c!`, and a string from outside the table, a host plan's, gets
 //! its number from the writer that meets it.
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Name {
+pub struct Name<'a> {
 	/// The index in `NAMES`, or `u32::MAX` for a string outside it.
 	pub id: u32,
-	pub text: &'static str,
+	pub text: &'a str,
 }
 
-impl Name {
-	/// A string met at run time, a host grammar's: the writer numbers it by its address.
-	pub const fn dynamic(text: &'static str) -> Name {
+impl<'a> Name<'a> {
+	/// A string met at run time, a host plan's: the writer numbers it by its address.
+	pub const fn dynamic(text: &'a str) -> Name<'a> {
 		Name { id: u32::MAX, text }
 	}
 
 	/// A literal the table holds; `c!` evaluates it at compile time.
-	pub const fn known(text: &'static str) -> Name {
+	pub const fn known(text: &'static str) -> Name<'static> {
 		match find(text) {
 			Some(id) => Name { id, text },
 			None => panic!("a name the writer emits is missing from NAMES"),

@@ -4,13 +4,8 @@
 		"start": 0,
 		"end": 86,
 		"scope": 0,
-		"css": null,
-		"js": [],
-		"options": null,
-		"comments": [],
 		"fragment": {
 			"type": "Fragment",
-			"scope": 2,
 			"nodes": [
 				{
 					"type": "HtmlTag",
@@ -29,8 +24,8 @@
 					"type": "Text",
 					"start": 11,
 					"end": 12,
-					"raw": "\n",
-					"data": "\n"
+					"data": "\n",
+					"raw": "\n"
 				},
 				{
 					"type": "DebugTag",
@@ -59,8 +54,8 @@
 					"type": "Text",
 					"start": 25,
 					"end": 26,
-					"raw": "\n",
-					"data": "\n"
+					"data": "\n",
+					"raw": "\n"
 				},
 				{
 					"type": "DebugTag",
@@ -72,8 +67,8 @@
 					"type": "Text",
 					"start": 34,
 					"end": 35,
-					"raw": "\n",
-					"data": "\n"
+					"data": "\n",
+					"raw": "\n"
 				},
 				{
 					"type": "ConstTag",
@@ -128,11 +123,11 @@
 					"type": "Text",
 					"start": 59,
 					"end": 60,
-					"raw": "\n",
-					"data": "\n"
+					"data": "\n",
+					"raw": "\n"
 				},
 				{
-					"type": "DeclarationTag",
+					"type": "UnmarkedTag",
 					"start": 60,
 					"end": 71,
 					"declaration": {
@@ -171,11 +166,11 @@
 					"type": "Text",
 					"start": 71,
 					"end": 72,
-					"raw": "\n",
-					"data": "\n"
+					"data": "\n",
+					"raw": "\n"
 				},
 				{
-					"type": "DeclarationTag",
+					"type": "UnmarkedTag",
 					"start": 72,
 					"end": 85,
 					"declaration": {
@@ -222,7 +217,7 @@
 			"topLevelAwait": false
 		},
 		{
-			"kind": "fragment",
+			"kind": "script",
 			"parent": 0,
 			"topLevelAwait": false
 		},

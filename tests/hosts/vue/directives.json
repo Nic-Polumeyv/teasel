@@ -9,49 +9,42 @@
 				"type": "Element",
 				"start": 0,
 				"end": 204,
-				"scope": 1,
-				"tag": "div",
+				"children": [],
 				"props": [
 					{
 						"type": "Directive",
 						"start": 5,
 						"end": 14,
-						"name": "if",
-						"rawName": "v-if",
 						"arg": null,
 						"exp": {
 							"type": "Identifier",
 							"start": 11,
 							"end": 13,
 							"reference": 0,
-							"root": 2,
+							"root": 0,
 							"name": "ok"
 						},
-						"modifiers": []
+						"modifiers": [],
+						"name": "if",
+						"rawName": "v-if"
 					},
 					{
 						"type": "Directive",
 						"start": 15,
 						"end": 45,
-						"name": "for",
-						"rawName": "v-for",
 						"arg": null,
-						"value": {
-							"type": "Identifier",
-							"start": 23,
-							"end": 27,
-							"declares": 0,
-							"root": 0,
-							"name": "item"
-						},
+						"index": null,
 						"key": {
 							"type": "Identifier",
 							"start": 29,
 							"end": 34,
 							"declares": 1,
-							"root": 1,
+							"root": 2,
 							"name": "index"
 						},
+						"modifiers": [],
+						"name": "for",
+						"rawName": "v-for",
 						"source": {
 							"type": "Identifier",
 							"start": 39,
@@ -60,14 +53,19 @@
 							"root": 3,
 							"name": "items"
 						},
-						"modifiers": []
+						"value": {
+							"type": "Identifier",
+							"start": 23,
+							"end": 27,
+							"declares": 0,
+							"root": 1,
+							"name": "item"
+						}
 					},
 					{
 						"type": "Directive",
 						"start": 46,
 						"end": 60,
-						"name": "bind",
-						"rawName": ":key",
 						"arg": "key",
 						"exp": {
 							"type": "MemberExpression",
@@ -90,14 +88,14 @@
 							"computed": false,
 							"optional": false
 						},
-						"modifiers": []
+						"modifiers": [],
+						"name": "bind",
+						"rawName": ":key"
 					},
 					{
 						"type": "Directive",
 						"start": 61,
 						"end": 83,
-						"name": "on",
-						"rawName": "@click.stop",
 						"arg": "click",
 						"handler": {
 							"type": "CallExpression",
@@ -124,14 +122,14 @@
 						},
 						"modifiers": [
 							"stop"
-						]
+						],
+						"name": "on",
+						"rawName": "@click.stop"
 					},
 					{
 						"type": "Directive",
 						"start": 84,
 						"end": 100,
-						"name": "bind",
-						"rawName": "v-bind:title",
 						"arg": "title",
 						"exp": {
 							"type": "Identifier",
@@ -141,14 +139,14 @@
 							"root": 6,
 							"name": "t"
 						},
-						"modifiers": []
+						"modifiers": [],
+						"name": "bind",
+						"rawName": "v-bind:title"
 					},
 					{
 						"type": "Directive",
 						"start": 101,
 						"end": 121,
-						"name": "on",
-						"rawName": "v-on:keyup.enter",
 						"arg": "keyup",
 						"handler": {
 							"type": "Identifier",
@@ -160,14 +158,14 @@
 						},
 						"modifiers": [
 							"enter"
-						]
+						],
+						"name": "on",
+						"rawName": "v-on:keyup.enter"
 					},
 					{
 						"type": "Directive",
 						"start": 122,
 						"end": 138,
-						"name": "model",
-						"rawName": "v-model.trim",
 						"arg": null,
 						"exp": {
 							"type": "Identifier",
@@ -179,15 +177,17 @@
 						},
 						"modifiers": [
 							"trim"
-						]
+						],
+						"name": "model",
+						"rawName": "v-model.trim"
 					},
 					{
 						"type": "Directive",
 						"start": 139,
 						"end": 155,
-						"name": "slot",
-						"rawName": "#default",
 						"arg": "default",
+						"modifiers": [],
+						"name": "slot",
 						"props": {
 							"type": "ObjectPattern",
 							"start": 149,
@@ -211,70 +211,70 @@
 										"type": "Identifier",
 										"start": 151,
 										"end": 152,
-										"reference": 8,
+										"declares": 2,
 										"name": "x"
 									},
 									"kind": "init"
 								}
 							]
 						},
-						"modifiers": []
+						"rawName": "#default"
 					},
 					{
 						"type": "Directive",
 						"start": 156,
 						"end": 176,
-						"name": "slot",
-						"rawName": "v-slot:named",
 						"arg": "named",
+						"modifiers": [],
+						"name": "slot",
 						"props": {
 							"type": "Identifier",
 							"start": 170,
 							"end": 175,
-							"reference": 9,
+							"declares": 3,
 							"root": 10,
 							"name": "props"
 						},
-						"modifiers": []
+						"rawName": "v-slot:named"
 					},
 					{
 						"type": "Directive",
 						"start": 177,
 						"end": 186,
-						"name": "bind",
-						"rawName": ".prop",
 						"arg": "prop",
 						"exp": {
 							"type": "Identifier",
 							"start": 184,
 							"end": 185,
-							"reference": 10,
+							"reference": 8,
 							"root": 11,
 							"name": "v"
 						},
 						"modifiers": [
 							"prop"
-						]
+						],
+						"name": "bind",
+						"rawName": ".prop"
 					},
 					{
 						"type": "Directive",
 						"start": 187,
 						"end": 197,
-						"name": "html",
-						"rawName": "v-html",
 						"arg": null,
 						"exp": {
 							"type": "Identifier",
 							"start": 195,
 							"end": 196,
-							"reference": 11,
+							"reference": 9,
 							"root": 12,
 							"name": "h"
 						},
-						"modifiers": []
+						"modifiers": [],
+						"name": "html",
+						"rawName": "v-html"
 					}
 				],
-				"children": []
+				"tag": "div"
 			},
 			{
 				"type": "Text",
@@ -286,35 +286,6 @@
 				"type": "Element",
 				"start": 205,
 				"end": 237,
-				"scope": 2,
-				"tag": "li",
-				"props": [
-					{
-						"type": "Directive",
-						"start": 209,
-						"end": 224,
-						"name": "for",
-						"rawName": "v-for",
-						"arg": null,
-						"value": {
-							"type": "Identifier",
-							"start": 216,
-							"end": 217,
-							"declares": 2,
-							"root": 13,
-							"name": "x"
-						},
-						"source": {
-							"type": "Identifier",
-							"start": 221,
-							"end": 223,
-							"reference": 12,
-							"root": 14,
-							"name": "xs"
-						},
-						"modifiers": []
-					}
-				],
 				"children": [
 					{
 						"type": "Interpolation",
@@ -324,12 +295,42 @@
 							"type": "Identifier",
 							"start": 228,
 							"end": 229,
-							"reference": 13,
+							"reference": 11,
 							"root": 15,
 							"name": "x"
 						}
 					}
-				]
+				],
+				"props": [
+					{
+						"type": "Directive",
+						"start": 209,
+						"end": 224,
+						"arg": null,
+						"index": null,
+						"key": null,
+						"modifiers": [],
+						"name": "for",
+						"rawName": "v-for",
+						"source": {
+							"type": "Identifier",
+							"start": 221,
+							"end": 223,
+							"reference": 10,
+							"root": 14,
+							"name": "xs"
+						},
+						"value": {
+							"type": "Identifier",
+							"start": 216,
+							"end": 217,
+							"declares": 4,
+							"root": 13,
+							"name": "x"
+						}
+					}
+				],
+				"tag": "li"
 			},
 			{
 				"type": "Text",
@@ -341,51 +342,6 @@
 				"type": "Element",
 				"start": 238,
 				"end": 279,
-				"scope": 3,
-				"tag": "li",
-				"props": [
-					{
-						"type": "Directive",
-						"start": 242,
-						"end": 266,
-						"name": "for",
-						"rawName": "v-for",
-						"arg": null,
-						"value": {
-							"type": "Identifier",
-							"start": 250,
-							"end": 251,
-							"declares": 3,
-							"root": 16,
-							"name": "v"
-						},
-						"key": {
-							"type": "Identifier",
-							"start": 253,
-							"end": 254,
-							"declares": 4,
-							"root": 17,
-							"name": "k"
-						},
-						"index": {
-							"type": "Identifier",
-							"start": 256,
-							"end": 257,
-							"declares": 5,
-							"root": 18,
-							"name": "i"
-						},
-						"source": {
-							"type": "Identifier",
-							"start": 262,
-							"end": 265,
-							"reference": 14,
-							"root": 19,
-							"name": "obj"
-						},
-						"modifiers": []
-					}
-				],
 				"children": [
 					{
 						"type": "Interpolation",
@@ -395,12 +351,56 @@
 							"type": "Identifier",
 							"start": 270,
 							"end": 271,
-							"reference": 15,
+							"reference": 13,
 							"root": 20,
 							"name": "k"
 						}
 					}
-				]
+				],
+				"props": [
+					{
+						"type": "Directive",
+						"start": 242,
+						"end": 266,
+						"arg": null,
+						"index": {
+							"type": "Identifier",
+							"start": 256,
+							"end": 257,
+							"declares": 7,
+							"root": 18,
+							"name": "i"
+						},
+						"key": {
+							"type": "Identifier",
+							"start": 253,
+							"end": 254,
+							"declares": 6,
+							"root": 17,
+							"name": "k"
+						},
+						"modifiers": [],
+						"name": "for",
+						"rawName": "v-for",
+						"source": {
+							"type": "Identifier",
+							"start": 262,
+							"end": 265,
+							"reference": 12,
+							"root": 19,
+							"name": "obj"
+						},
+						"value": {
+							"type": "Identifier",
+							"start": 250,
+							"end": 251,
+							"declares": 5,
+							"root": 16,
+							"name": "v"
+						}
+					}
+				],
+				"tag": "li"
 			},
 			{
 				"type": "Text",
@@ -421,6 +421,11 @@
 		{
 			"kind": "block",
 			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 1,
 			"topLevelAwait": false
 		},
 		{
@@ -449,33 +454,61 @@
 		},
 		{
 			"name": "x",
-			"kind": "pattern",
+			"kind": "param",
 			"scope": 2,
+			"write": true
+		},
+		{
+			"name": "props",
+			"kind": "param",
+			"scope": 2,
+			"write": true
+		},
+		{
+			"name": "x",
+			"kind": "pattern",
+			"scope": 3,
 			"write": true
 		},
 		{
 			"name": "v",
 			"kind": "pattern",
-			"scope": 3,
+			"scope": 4,
 			"write": true
 		},
 		{
 			"name": "k",
 			"kind": "pattern",
-			"scope": 3,
+			"scope": 4,
 			"write": true
 		},
 		{
 			"name": "i",
 			"kind": "pattern",
-			"scope": 3,
+			"scope": 4,
 			"write": true
 		}
 	],
 	"references": [
 		{
-			"scope": 1,
+			"scope": 0,
 			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 1,
+			"binding": 0,
 			"write": false,
 			"read": true,
 			"mutate": false,
@@ -507,14 +540,6 @@
 		},
 		{
 			"scope": 1,
-			"binding": 0,
-			"write": false,
-			"read": true,
-			"mutate": false,
-			"declares": false
-		},
-		{
-			"scope": 1,
 			"binding": null,
 			"write": false,
 			"read": true,
@@ -546,47 +571,7 @@
 			"declares": false
 		},
 		{
-			"scope": 1,
-			"binding": null,
-			"write": false,
-			"read": true,
-			"mutate": false,
-			"declares": false
-		},
-		{
-			"scope": 1,
-			"binding": null,
-			"write": false,
-			"read": true,
-			"mutate": false,
-			"declares": false
-		},
-		{
-			"scope": 1,
-			"binding": null,
-			"write": false,
-			"read": true,
-			"mutate": false,
-			"declares": false
-		},
-		{
-			"scope": 2,
-			"binding": null,
-			"write": false,
-			"read": true,
-			"mutate": false,
-			"declares": false
-		},
-		{
-			"scope": 2,
-			"binding": 2,
-			"write": false,
-			"read": true,
-			"mutate": false,
-			"declares": false
-		},
-		{
-			"scope": 3,
+			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
@@ -600,48 +585,34 @@
 			"read": true,
 			"mutate": false,
 			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 4,
+			"binding": 6,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
 		}
 	],
 	"roots": [
 		{
-			"scope": 1,
+			"scope": 0,
 			"scopes": [
-				2,
-				2
+				3,
+				3
 			],
 			"bindings": [
-				0,
-				1
-			],
-			"references": [
 				0,
 				0
-			]
-		},
-		{
-			"scope": 1,
-			"scopes": [
-				2,
-				2
-			],
-			"bindings": [
-				1,
-				2
-			],
-			"references": [
-				0,
-				0
-			]
-		},
-		{
-			"scope": 1,
-			"scopes": [
-				2,
-				2
-			],
-			"bindings": [
-				2,
-				2
 			],
 			"references": [
 				0,
@@ -649,10 +620,40 @@
 			]
 		},
 		{
-			"scope": 1,
+			"scope": 0,
 			"scopes": [
-				2,
+				3,
+				3
+			],
+			"bindings": [
+				0,
+				1
+			],
+			"references": [
+				1,
+				1
+			]
+		},
+		{
+			"scope": 0,
+			"scopes": [
+				3,
+				3
+			],
+			"bindings": [
+				1,
 				2
+			],
+			"references": [
+				1,
+				1
+			]
+		},
+		{
+			"scope": 0,
+			"scopes": [
+				3,
+				3
 			],
 			"bindings": [
 				2,
@@ -666,8 +667,8 @@
 		{
 			"scope": 1,
 			"scopes": [
-				2,
-				2
+				3,
+				3
 			],
 			"bindings": [
 				2,
@@ -681,8 +682,8 @@
 		{
 			"scope": 1,
 			"scopes": [
-				2,
-				2
+				3,
+				3
 			],
 			"bindings": [
 				2,
@@ -696,8 +697,8 @@
 		{
 			"scope": 1,
 			"scopes": [
-				2,
-				2
+				3,
+				3
 			],
 			"bindings": [
 				2,
@@ -711,8 +712,8 @@
 		{
 			"scope": 1,
 			"scopes": [
-				2,
-				2
+				3,
+				3
 			],
 			"bindings": [
 				2,
@@ -726,8 +727,8 @@
 		{
 			"scope": 1,
 			"scopes": [
-				2,
-				2
+				3,
+				3
 			],
 			"bindings": [
 				2,
@@ -739,14 +740,44 @@
 			]
 		},
 		{
-			"scope": 1,
+			"scope": 2,
 			"scopes": [
-				2,
-				2
+				3,
+				3
 			],
 			"bindings": [
 				2,
-				2
+				3
+			],
+			"references": [
+				8,
+				8
+			]
+		},
+		{
+			"scope": 2,
+			"scopes": [
+				3,
+				3
+			],
+			"bindings": [
+				3,
+				4
+			],
+			"references": [
+				8,
+				8
+			]
+		},
+		{
+			"scope": 1,
+			"scopes": [
+				3,
+				3
+			],
+			"bindings": [
+				4,
+				4
 			],
 			"references": [
 				8,
@@ -756,12 +787,12 @@
 		{
 			"scope": 1,
 			"scopes": [
-				2,
-				2
+				3,
+				3
 			],
 			"bindings": [
-				2,
-				2
+				4,
+				4
 			],
 			"references": [
 				9,
@@ -769,97 +800,7 @@
 			]
 		},
 		{
-			"scope": 1,
-			"scopes": [
-				2,
-				2
-			],
-			"bindings": [
-				2,
-				2
-			],
-			"references": [
-				10,
-				11
-			]
-		},
-		{
-			"scope": 1,
-			"scopes": [
-				2,
-				2
-			],
-			"bindings": [
-				2,
-				2
-			],
-			"references": [
-				11,
-				12
-			]
-		},
-		{
-			"scope": 2,
-			"scopes": [
-				3,
-				3
-			],
-			"bindings": [
-				2,
-				3
-			],
-			"references": [
-				12,
-				12
-			]
-		},
-		{
-			"scope": 2,
-			"scopes": [
-				3,
-				3
-			],
-			"bindings": [
-				3,
-				3
-			],
-			"references": [
-				12,
-				13
-			]
-		},
-		{
-			"scope": 2,
-			"scopes": [
-				3,
-				3
-			],
-			"bindings": [
-				3,
-				3
-			],
-			"references": [
-				13,
-				14
-			]
-		},
-		{
-			"scope": 3,
-			"scopes": [
-				4,
-				4
-			],
-			"bindings": [
-				3,
-				4
-			],
-			"references": [
-				14,
-				14
-			]
-		},
-		{
-			"scope": 3,
+			"scope": 0,
 			"scopes": [
 				4,
 				4
@@ -869,8 +810,23 @@
 				5
 			],
 			"references": [
-				14,
-				14
+				10,
+				10
+			]
+		},
+		{
+			"scope": 0,
+			"scopes": [
+				4,
+				4
+			],
+			"bindings": [
+				5,
+				5
+			],
+			"references": [
+				10,
+				11
 			]
 		},
 		{
@@ -881,41 +837,86 @@
 			],
 			"bindings": [
 				5,
+				5
+			],
+			"references": [
+				11,
+				12
+			]
+		},
+		{
+			"scope": 0,
+			"scopes": [
+				5,
+				5
+			],
+			"bindings": [
+				5,
 				6
 			],
 			"references": [
-				14,
+				12,
+				12
+			]
+		},
+		{
+			"scope": 0,
+			"scopes": [
+				5,
+				5
+			],
+			"bindings": [
+				6,
+				7
+			],
+			"references": [
+				12,
+				12
+			]
+		},
+		{
+			"scope": 0,
+			"scopes": [
+				5,
+				5
+			],
+			"bindings": [
+				7,
+				8
+			],
+			"references": [
+				12,
+				12
+			]
+		},
+		{
+			"scope": 0,
+			"scopes": [
+				5,
+				5
+			],
+			"bindings": [
+				8,
+				8
+			],
+			"references": [
+				12,
+				13
+			]
+		},
+		{
+			"scope": 4,
+			"scopes": [
+				5,
+				5
+			],
+			"bindings": [
+				8,
+				8
+			],
+			"references": [
+				13,
 				14
-			]
-		},
-		{
-			"scope": 3,
-			"scopes": [
-				4,
-				4
-			],
-			"bindings": [
-				6,
-				6
-			],
-			"references": [
-				14,
-				15
-			]
-		},
-		{
-			"scope": 3,
-			"scopes": [
-				4,
-				4
-			],
-			"bindings": [
-				6,
-				6
-			],
-			"references": [
-				15,
-				16
 			]
 		}
 	]

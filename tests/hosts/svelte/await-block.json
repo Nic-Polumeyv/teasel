@@ -4,88 +4,13 @@
 		"start": 0,
 		"end": 143,
 		"scope": 0,
-		"css": null,
-		"js": [],
-		"options": null,
-		"comments": [],
 		"fragment": {
 			"type": "Fragment",
-			"scope": 2,
 			"nodes": [
 				{
 					"type": "AwaitBlock",
 					"start": 0,
 					"end": 83,
-					"expression": {
-						"type": "Identifier",
-						"start": 8,
-						"end": 9,
-						"reference": 0,
-						"root": 0,
-						"name": "p"
-					},
-					"pending": {
-						"type": "Fragment",
-						"scope": 3,
-						"nodes": [
-							{
-								"type": "Text",
-								"start": 10,
-								"end": 20,
-								"raw": "\n\twaiting\n",
-								"data": "\n\twaiting\n"
-							}
-						]
-					},
-					"value": {
-						"type": "Identifier",
-						"start": 27,
-						"end": 32,
-						"declares": 0,
-						"root": 1,
-						"name": "value"
-					},
-					"then": {
-						"type": "Fragment",
-						"scope": 4,
-						"nodes": [
-							{
-								"type": "Text",
-								"start": 33,
-								"end": 35,
-								"raw": "\n\t",
-								"data": "\n\t"
-							},
-							{
-								"type": "ExpressionTag",
-								"start": 35,
-								"end": 42,
-								"expression": {
-									"type": "Identifier",
-									"start": 36,
-									"end": 41,
-									"reference": 1,
-									"root": 2,
-									"name": "value"
-								}
-							},
-							{
-								"type": "Text",
-								"start": 42,
-								"end": 43,
-								"raw": "\n",
-								"data": "\n"
-							}
-						]
-					},
-					"error": {
-						"type": "Identifier",
-						"start": 51,
-						"end": 56,
-						"declares": 1,
-						"root": 3,
-						"name": "error"
-					},
 					"catch": {
 						"type": "Fragment",
 						"scope": 5,
@@ -94,11 +19,11 @@
 								"type": "Text",
 								"start": 57,
 								"end": 59,
-								"raw": "\n\t",
-								"data": "\n\t"
+								"data": "\n\t",
+								"raw": "\n\t"
 							},
 							{
-								"type": "ExpressionTag",
+								"type": "UnmarkedTag",
 								"start": 59,
 								"end": 74,
 								"expression": {
@@ -127,23 +52,95 @@
 								"type": "Text",
 								"start": 74,
 								"end": 75,
-								"raw": "\n",
-								"data": "\n"
+								"data": "\n",
+								"raw": "\n"
 							}
 						]
+					},
+					"error": {
+						"type": "Identifier",
+						"start": 51,
+						"end": 56,
+						"declares": 1,
+						"root": 3,
+						"name": "error"
+					},
+					"expression": {
+						"type": "Identifier",
+						"start": 8,
+						"end": 9,
+						"reference": 0,
+						"root": 0,
+						"name": "p"
+					},
+					"pending": {
+						"type": "Fragment",
+						"scope": 3,
+						"nodes": [
+							{
+								"type": "Text",
+								"start": 10,
+								"end": 20,
+								"data": "\n\twaiting\n",
+								"raw": "\n\twaiting\n"
+							}
+						]
+					},
+					"then": {
+						"type": "Fragment",
+						"scope": 4,
+						"nodes": [
+							{
+								"type": "Text",
+								"start": 33,
+								"end": 35,
+								"data": "\n\t",
+								"raw": "\n\t"
+							},
+							{
+								"type": "UnmarkedTag",
+								"start": 35,
+								"end": 42,
+								"expression": {
+									"type": "Identifier",
+									"start": 36,
+									"end": 41,
+									"reference": 1,
+									"root": 2,
+									"name": "value"
+								}
+							},
+							{
+								"type": "Text",
+								"start": 42,
+								"end": 43,
+								"data": "\n",
+								"raw": "\n"
+							}
+						]
+					},
+					"value": {
+						"type": "Identifier",
+						"start": 27,
+						"end": 32,
+						"declares": 0,
+						"root": 1,
+						"name": "value"
 					}
 				},
 				{
 					"type": "Text",
 					"start": 83,
 					"end": 84,
-					"raw": "\n",
-					"data": "\n"
+					"data": "\n",
+					"raw": "\n"
 				},
 				{
 					"type": "AwaitBlock",
 					"start": 84,
 					"end": 112,
+					"catch": null,
+					"error": null,
 					"expression": {
 						"type": "Identifier",
 						"start": 92,
@@ -152,23 +149,13 @@
 						"root": 5,
 						"name": "p"
 					},
-					"error": null,
 					"pending": null,
-					"catch": null,
-					"value": {
-						"type": "Identifier",
-						"start": 99,
-						"end": 100,
-						"declares": 2,
-						"root": 6,
-						"name": "v"
-					},
 					"then": {
 						"type": "Fragment",
-						"scope": 6,
+						"scope": 7,
 						"nodes": [
 							{
-								"type": "ExpressionTag",
+								"type": "UnmarkedTag",
 								"start": 101,
 								"end": 104,
 								"expression": {
@@ -181,44 +168,33 @@
 								}
 							}
 						]
+					},
+					"value": {
+						"type": "Identifier",
+						"start": 99,
+						"end": 100,
+						"declares": 2,
+						"root": 6,
+						"name": "v"
 					}
 				},
 				{
 					"type": "Text",
 					"start": 112,
 					"end": 113,
-					"raw": "\n",
-					"data": "\n"
+					"data": "\n",
+					"raw": "\n"
 				},
 				{
 					"type": "AwaitBlock",
 					"start": 113,
 					"end": 142,
-					"expression": {
-						"type": "Identifier",
-						"start": 121,
-						"end": 122,
-						"reference": 5,
-						"root": 8,
-						"name": "p"
-					},
-					"value": null,
-					"pending": null,
-					"then": null,
-					"error": {
-						"type": "Identifier",
-						"start": 129,
-						"end": 130,
-						"declares": 3,
-						"root": 9,
-						"name": "e"
-					},
 					"catch": {
 						"type": "Fragment",
-						"scope": 7,
+						"scope": 11,
 						"nodes": [
 							{
-								"type": "ExpressionTag",
+								"type": "UnmarkedTag",
 								"start": 131,
 								"end": 134,
 								"expression": {
@@ -231,7 +207,26 @@
 								}
 							}
 						]
-					}
+					},
+					"error": {
+						"type": "Identifier",
+						"start": 129,
+						"end": 130,
+						"declares": 3,
+						"root": 9,
+						"name": "e"
+					},
+					"expression": {
+						"type": "Identifier",
+						"start": 121,
+						"end": 122,
+						"reference": 5,
+						"root": 8,
+						"name": "p"
+					},
+					"pending": null,
+					"then": null,
+					"value": null
 				}
 			]
 		}
@@ -245,13 +240,33 @@
 			"topLevelAwait": false
 		},
 		{
-			"kind": "fragment",
+			"kind": "script",
 			"parent": 0,
 			"topLevelAwait": false
 		},
 		{
 			"kind": "fragment",
 			"parent": 1,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
 			"topLevelAwait": false
 		},
 		{
@@ -296,13 +311,13 @@
 		{
 			"name": "v",
 			"kind": "pattern",
-			"scope": 6,
+			"scope": 7,
 			"write": true
 		},
 		{
 			"name": "e",
 			"kind": "pattern",
-			"scope": 7,
+			"scope": 11,
 			"write": true
 		}
 	],
@@ -340,7 +355,7 @@
 			"declares": false
 		},
 		{
-			"scope": 6,
+			"scope": 7,
 			"binding": 2,
 			"write": false,
 			"read": true,
@@ -356,7 +371,7 @@
 			"declares": false
 		},
 		{
-			"scope": 7,
+			"scope": 11,
 			"binding": 3,
 			"write": false,
 			"read": true,
@@ -368,8 +383,8 @@
 		{
 			"scope": 2,
 			"scopes": [
-				3,
-				3
+				6,
+				6
 			],
 			"bindings": [
 				0,
@@ -383,8 +398,8 @@
 		{
 			"scope": 4,
 			"scopes": [
-				5,
-				5
+				6,
+				6
 			],
 			"bindings": [
 				0,
@@ -398,8 +413,8 @@
 		{
 			"scope": 4,
 			"scopes": [
-				5,
-				5
+				6,
+				6
 			],
 			"bindings": [
 				1,
@@ -443,8 +458,8 @@
 		{
 			"scope": 2,
 			"scopes": [
-				6,
-				6
+				9,
+				9
 			],
 			"bindings": [
 				2,
@@ -456,10 +471,10 @@
 			]
 		},
 		{
-			"scope": 6,
+			"scope": 7,
 			"scopes": [
-				7,
-				7
+				9,
+				9
 			],
 			"bindings": [
 				2,
@@ -471,10 +486,10 @@
 			]
 		},
 		{
-			"scope": 6,
+			"scope": 7,
 			"scopes": [
-				7,
-				7
+				9,
+				9
 			],
 			"bindings": [
 				3,
@@ -488,8 +503,8 @@
 		{
 			"scope": 2,
 			"scopes": [
-				7,
-				7
+				12,
+				12
 			],
 			"bindings": [
 				3,
@@ -501,10 +516,10 @@
 			]
 		},
 		{
-			"scope": 7,
+			"scope": 11,
 			"scopes": [
-				8,
-				8
+				12,
+				12
 			],
 			"bindings": [
 				3,
@@ -516,10 +531,10 @@
 			]
 		},
 		{
-			"scope": 7,
+			"scope": 11,
 			"scopes": [
-				8,
-				8
+				12,
+				12
 			],
 			"bindings": [
 				4,

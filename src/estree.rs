@@ -58,6 +58,10 @@ pub trait Sink {
 	fn text(&mut self, value: &str);
 	/// A string of the tree's interner.
 	fn interned(&mut self, id: StrId, value: &str);
+	/// A host node's type or key, an interned string: a sink may number it once per id.
+	fn host_name<'s>(&mut self, _id: StrId, text: &'s str) -> Name<'s> {
+		Name::dynamic(text)
+	}
 	/// A string equal to the source between two offsets.
 	fn slice(&mut self, value: &str, start: u32, end: u32);
 	fn span(&mut self, start: u32, end: u32);
@@ -90,6 +94,9 @@ impl<S: Sink> Sink for &mut S {
 	}
 	fn begin(&mut self, ty: Name) {
 		(**self).begin(ty)
+	}
+	fn host_name<'s>(&mut self, id: StrId, text: &'s str) -> Name<'s> {
+		(**self).host_name(id, text)
 	}
 	fn object(&mut self) {
 		(**self).object()
@@ -309,8 +316,8 @@ pub mod kind {
 /// fetches the list when an answer refers past what it has.
 /// Strings outside `NAMES`, numbered after it in the order met.
 struct Constants {
-	names: Vec<&'static str>,
-	ids: FastMap<&'static str, u32>,
+	names: Vec<Box<str>>,
+	ids: FastMap<Box<str>, u32>,
 	// a grammar's strings live for the process, so their address is a cheaper key than their text
 	recent: Box<[(usize, u32); 512]>,
 }
@@ -330,15 +337,17 @@ impl Constants {
 		}
 		let address = name.text.as_ptr() as usize;
 		let slot = ((address as u64).wrapping_mul(crate::interner::SEED) >> 55) as usize & 511;
-		if self.recent[slot].0 == address {
+		if self.recent[slot].0 == address
+			&& self.names[(self.recent[slot].1 as usize) - NAMES.len()].as_ref() == name.text
+		{
 			return self.recent[slot].1;
 		}
 		let id = match self.ids.get(name.text) {
 			Some(&id) => id,
 			None => {
 				let id = (NAMES.len() + self.names.len()) as u32;
-				self.names.push(name.text);
-				self.ids.insert(name.text, id);
+				self.names.push(name.text.into());
+				self.ids.insert(name.text.into(), id);
 				id
 			}
 		};
@@ -557,6 +566,8 @@ pub struct Binary {
 	tables: usize,
 	constants: Constants,
 	shapes: Shapes,
+	/// Each interned string's constant id once a host node carried it; the text is compared once.
+	names: Vec<u32>,
 }
 
 const START: u32 = c!("start").id << 4 | kind::INT;
@@ -588,6 +599,7 @@ impl Binary {
 			tables: 0,
 			constants: Constants::new(),
 			shapes: Shapes::new(),
+			names: Vec::new(),
 		};
 		binary.reset();
 		binary
@@ -599,8 +611,12 @@ impl Binary {
 	}
 
 	/// The constant strings numbered so far: `NAMES`, then the ones met outside it.
-	pub fn constants(&self) -> Vec<&'static str> {
-		NAMES.iter().chain(&self.constants.names).copied().collect()
+	pub fn constants(&self) -> Vec<&str> {
+		NAMES
+			.iter()
+			.copied()
+			.chain(self.constants.names.iter().map(AsRef::as_ref))
+			.collect()
 	}
 
 	/// The shape records numbered so far.
@@ -614,6 +630,7 @@ impl Binary {
 
 	/// Ready for an answer: the header's room in `words`, the sentinel in `seq`, the rest empty.
 	pub fn reset(&mut self) {
+		self.constants.recent.fill((0, 0));
 		self.words.clear();
 		self.words.extend_from_slice(&[0; 7]);
 		self.text.clear();
@@ -625,6 +642,7 @@ impl Binary {
 		self.seq.push(0);
 		self.tables_at = 0;
 		self.tables = 0;
+		self.names.clear();
 	}
 
 	fn push_text(&mut self, value: &str) -> u32 {
@@ -694,6 +712,21 @@ impl Sink for Binary {
 	fn begin(&mut self, ty: Name) {
 		let id = self.constants.id(ty);
 		self.open(id + 1);
+	}
+
+	fn host_name<'s>(&mut self, id: StrId, text: &'s str) -> Name<'s> {
+		let i = id.0 as usize;
+		if let Some(&known) = self.names.get(i)
+			&& known != u32::MAX
+		{
+			return Name { text, id: known };
+		}
+		let constant = self.constants.id(Name::dynamic(text));
+		if self.names.len() <= i {
+			self.names.resize(i + 1, u32::MAX);
+		}
+		self.names[i] = constant;
+		Name { text, id: constant }
 	}
 
 	fn object(&mut self) {
@@ -870,9 +903,10 @@ pub struct Writer<'a, X = (), S: Sink = Json> {
 	/// The node being written names something bound by another node: no scope facts on it.
 	name_only: bool,
 	/// What erasure left in place, in emission order.
-	kept: Vec<(Name, NodeId)>,
+	kept: Vec<(Name<'static>, NodeId)>,
 	/// Nodes erasure skipped whose facts the next node written takes over.
 	adopted: Vec<NodeId>,
+	emitted_roots: crate::ast::NodeSet,
 }
 
 /// Maps byte offsets to UTF-16 offsets and line/column pairs, the positions JavaScript counts,
@@ -1004,11 +1038,12 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 			name_only: false,
 			kept: Vec::new(),
 			adopted: Vec::new(),
+			emitted_roots: Default::default(),
 		}
 	}
 
 	/// Records a node erasure had to leave in place.
-	pub(crate) fn keep(&mut self, ty: Name, id: NodeId) {
+	pub(crate) fn keep(&mut self, ty: Name<'static>, id: NodeId) {
 		self.kept.push((ty, id));
 	}
 
@@ -1067,7 +1102,8 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		}
 		let adopted = std::mem::take(&mut self.adopted);
 		for node in adopted.iter().copied().chain([id]) {
-			if let Some(&root) = scopes.root_of.get(node) {
+			if let Some(root) = scopes.root_of.get(node) {
+				self.emitted_roots.insert(node);
 				self.key(c!("root"));
 				self.sink.int(root);
 			}
@@ -1237,6 +1273,25 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 			self.all_kept();
 		}
 		if self.output.scopes {
+			let captures = self
+				.ast
+				.scopes
+				.as_ref()
+				.into_iter()
+				.flat_map(|scopes| &scopes.roots)
+				.filter(|root| !self.emitted_roots.contains(root.node))
+				.map(|root| root.node)
+				.collect::<Vec<_>>();
+			if !captures.is_empty() {
+				self.key(crate::names::Name::dynamic("captures"));
+				self.sink.list();
+				let erase = std::mem::replace(&mut self.output.erase, false);
+				for node in captures {
+					self.node(node);
+				}
+				self.output.erase = erase;
+				self.sink.end();
+			}
 			self.all_scopes();
 		}
 	}
@@ -1266,6 +1321,42 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 	}
 
 	pub(crate) fn end(&mut self) {
+		self.sink.end();
+	}
+
+	fn host_array(&mut self, start: u32, len: u32) {
+		self.sink.list();
+		for i in start..start + len {
+			match self.ast.host_values[i as usize] {
+				Value::Node(id) => self.node(id),
+				Value::Nodes(list) => {
+					self.sink.list();
+					for id in self.ast.list(list).iter() {
+						if let Some(id) = id {
+							self.node(*id);
+						} else {
+							self.sink.null();
+						}
+					}
+					self.sink.end();
+				}
+				Value::Str(id) => self.sink.interned(id, self.ast.str(id)),
+				Value::Slice(a, b) => self.slice(a, b),
+				Value::Strs(a, n) => {
+					self.sink.list();
+					for id in &self.ast.host_strings[a as usize..(a + n) as usize] {
+						self.sink.interned(*id, self.ast.str(*id));
+					}
+					self.sink.end();
+				}
+				Value::Int(v) => self.sink.int(v),
+				Value::Float(v) => self.sink.float(v),
+				Value::Bool(v) => self.sink.bool(v),
+				Value::Array(a, n) => self.host_array(a, n),
+				Value::Null => self.sink.null(),
+				Value::Comments => self.comment_list(0..self.ast.comments.len() as u32),
+			}
+		}
 		self.sink.end();
 	}
 
@@ -1890,21 +1981,25 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 			Extension(index) => return self.ast.extension.node(self, id, index),
 			Host(index) => {
 				let host = self.ast.hosts[index as usize];
-				if host.ty.is_empty() {
+				if self.ast.str(host.ty).is_empty() {
 					// an object of the host's without a type, positions and all
 					let node = self.ast.node(id);
 					self.sink.object();
-					self.span(node.start, node.end);
+					if host.span {
+						self.span(node.start, node.end);
+					}
 				} else if host.span {
-					self.begin(Name::dynamic(host.ty), id);
+					let ty = self.sink.host_name(host.ty, self.ast.str(host.ty));
+					self.begin(ty, id);
 				} else {
-					self.sink.begin(Name::dynamic(host.ty));
+					let ty = self.sink.host_name(host.ty, self.ast.str(host.ty));
+					self.sink.begin(ty);
 					self.scope_facts(id);
 				}
 				let (from, len) = host.fields;
 				for i in from..from + len {
 					let (key, value) = self.ast.host_fields[i as usize];
-					let key = Name::dynamic(key);
+					let key = self.sink.host_name(key, self.ast.str(key));
 					match value {
 						Value::Node(child) => self.field(key, child),
 						Value::Nodes(children) => self.list(key, children),
@@ -1926,6 +2021,14 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 						Value::Int(value) => {
 							self.key(key);
 							self.sink.int(value);
+						}
+						Value::Float(value) => {
+							self.key(key);
+							self.sink.float(value);
+						}
+						Value::Array(start, len) => {
+							self.key(key);
+							self.host_array(start, len);
 						}
 						Value::Null => {
 							self.key(key);
@@ -1969,7 +2072,7 @@ pub(crate) fn push_int(out: &mut String, mut value: u32) {
 }
 
 /// The decimal digits of a BigInt literal's text, without the `n`.
-fn bigint_decimal(raw: &str) -> String {
+pub(crate) fn bigint_decimal(raw: &str) -> String {
 	let (radix, digits) = match raw.get(..2) {
 		Some("0x" | "0X") => (16, &raw[2..]),
 		Some("0o" | "0O") => (8, &raw[2..]),

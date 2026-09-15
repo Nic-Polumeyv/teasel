@@ -2,7 +2,7 @@
 //! identifier resolved to the binding it names. Names are declared first, in the environment each
 //! belongs to, and every reference is resolved after, so hoisting and merging need nothing special.
 
-use crate::ast::{Ast, List, NodeId, NodeKind, NodeMap, VariableKind, Walk};
+use crate::ast::{Ast, HostParent, List, NodeId, NodeKind, NodeSet, VariableKind, Walk};
 use crate::error::{Code, SyntaxError};
 use crate::interner::{FastMap, StrId};
 use crate::names::{Name, c};
@@ -34,7 +34,7 @@ pub enum ScopeKind {
 }
 
 impl ScopeKind {
-	pub fn name(self) -> Name {
+	pub fn name(self) -> Name<'static> {
 		match self {
 			ScopeKind::Module => c!("module"),
 			ScopeKind::Script => c!("script"),
@@ -93,7 +93,7 @@ pub enum BindingKind {
 }
 
 impl BindingKind {
-	pub fn name(self) -> Name {
+	pub fn name(self) -> Name<'static> {
 		match self {
 			BindingKind::Var => c!("var"),
 			BindingKind::Let => c!("let"),
@@ -277,7 +277,7 @@ pub struct Scopes {
 	pub references: Vec<Reference>,
 	/// The pieces of JavaScript in a host's document, in source order; empty for a plain parse.
 	pub roots: Vec<Root>,
-	pub root_of: NodeMap<u32>,
+	pub root_of: NodeTable<u32>,
 	pub of_node: NodeTable<ScopeId>,
 	pub of_identifier: NodeTable<Role>,
 	/// The bindings each declaring node declares, and the write references each expression is
@@ -329,12 +329,12 @@ impl ByNode {
 /// The binder's working storage, kept between analyses.
 #[derive(Debug, Default)]
 struct Scratch {
+	host_children: Vec<NodeId>,
+	region_envs: Vec<Option<u32>>,
+	host_incoming: NodeTable<u32>,
+	host_seen: NodeSet,
 	envs: Vec<Env>,
 	open: Vec<u32>,
-	host_declared: Vec<List>,
-	/// The groups of the host nodes being walked, each node's sorted behind the ones outside it.
-	host_groups: Vec<crate::ast::HostGroup>,
-	open_groups: Vec<usize>,
 	env_of: Vec<u32>,
 	owned: FastMap<BindingId, u32>,
 	/// The name maps of earlier analyses by environment id, emptied: a document of the same shape
@@ -378,7 +378,7 @@ impl Scopes {
 		self.bindings.clear();
 		self.references.clear();
 		self.roots.clear();
-		self.root_of.clear();
+		self.root_of.reset(nodes);
 		self.of_node.reset(nodes);
 		self.of_identifier.reset(nodes);
 		self.declared_by.clear();
@@ -451,12 +451,13 @@ fn analyze_with<X: Bind>(ast: &mut Ast<X>, kind: ScopeKind, root: Option<NodeId>
 		"resolution links what the walk declared, it declares nothing"
 	);
 	let Binder {
+		host_children,
+		region_envs,
+		host_incoming,
+		host_seen,
 		mut out,
 		mut envs,
 		open,
-		host_declared,
-		host_groups,
-		open_groups,
 		mut env_of,
 		owned,
 		..
@@ -487,11 +488,12 @@ fn analyze_with<X: Bind>(ast: &mut Ast<X>, kind: ScopeKind, root: Option<NodeId>
 	}
 	env_of.clear();
 	out.scratch = Scratch {
+		host_children,
+		region_envs,
+		host_incoming,
+		host_seen,
 		envs,
 		open,
-		host_declared,
-		host_groups,
-		open_groups,
 		env_of,
 		owned,
 		names,
@@ -533,15 +535,15 @@ pub fn analyze<X: Bind>(ast: &mut Ast<X>, entry: Entry, roots: List) {
 }
 
 pub struct Binder<'a, X> {
+	host_children: Vec<NodeId>,
+	region_envs: Vec<Option<u32>>,
+	host_incoming: NodeTable<u32>,
+	host_seen: NodeSet,
 	ast: &'a Ast<X>,
 	out: Scopes,
 	envs: Vec<Env>,
 	/// The environments open here, innermost last.
 	open: Vec<u32>,
-	/// The patterns the open host scopes declare, which their fields do not reference.
-	host_declared: Vec<List>,
-	host_groups: Vec<crate::ast::HostGroup>,
-	open_groups: Vec<usize>,
 	/// The node whose pattern is being declared, for `Binding::declaration`.
 	declaring: Option<NodeId>,
 	/// What the target being visited is assigned, for `Reference::write_expr`.
@@ -569,30 +571,37 @@ impl<'a, X: Bind> Binder<'a, X> {
 				scopes
 			}
 			None => Scopes {
+				root_of: NodeTable::sized(ast.nodes.len()),
 				of_node: NodeTable::sized(ast.nodes.len()),
 				of_identifier: NodeTable::sized(ast.nodes.len()),
 				..Scopes::default()
 			},
 		};
 		let Scratch {
+			host_children,
+			mut region_envs,
+			mut host_incoming,
+			mut host_seen,
 			envs,
 			open,
-			host_declared,
-			host_groups,
-			open_groups,
 			env_of,
 			owned,
 			names,
 		} = std::mem::take(&mut out.scratch);
 		out.scratch.names = names;
+		region_envs.clear();
+		region_envs.resize(ast.host_regions.len(), None);
+		host_incoming.reset(ast.nodes.len());
+		host_seen.clear();
 		Binder {
+			host_children,
+			region_envs,
+			host_incoming,
+			host_seen,
 			ast,
 			out,
 			envs,
 			open,
-			host_declared,
-			host_groups,
-			open_groups,
 			declaring: None,
 			writing: None,
 			compound: false,
@@ -1110,80 +1119,154 @@ impl<'a, X: Bind> Binder<'a, X> {
 	}
 
 	pub fn visit(&mut self, id: NodeId, mode: Mode) {
-		self.visit_with(id, mode, true);
+		if !self.ast.host_plan {
+			self.visit_with(id, mode, true);
+			return;
+		}
+		if self.host_seen.contains(id) {
+			return;
+		}
+		self.host_seen.insert(id);
+		let open = self.open.len();
+		let incoming = self.env();
+		self.host_incoming.insert(id, incoming);
+		if let Some(regions) = self.ast.host_coverage.get(id) {
+			let mut selected = None;
+			for region in regions {
+				let env = self.region_env(*region);
+				if selected.is_none_or(|previous| self.env_contains(previous, env)) {
+					selected = Some(env);
+				} else if let Some(previous) = selected
+					&& !self.env_contains(env, previous)
+				{
+					self.out.errors.push(SyntaxError::with(
+						self.ast.node(id).start,
+						Code::Expected,
+						Code::Expected.with("one parent chain for overlapping regions"),
+					));
+				}
+			}
+			if let Some(env) = selected {
+				if self.env_contains(incoming, env) {
+					self.open.push(env);
+				} else if !self.env_contains(env, incoming) {
+					self.out.errors.push(SyntaxError::with(
+						self.ast.node(id).start,
+						Code::Expected,
+						Code::Expected.with("one parent chain for overlapping regions"),
+					));
+				}
+			}
+		}
+		let incoming = self.env();
+		self.host_incoming.insert(id, incoming);
+		if let Some(regions) = self.ast.host_region_owners.get(id) {
+			for region in regions {
+				self.region_env(*region);
+			}
+		}
+		if let Some(binding) = self.ast.host_bindings.get(id) {
+			self.ast.extension.bind_extras(self, id);
+			let env = self.region_parent(binding.target);
+			self.open.push(env);
+			let kind = match binding.kind {
+				crate::host::plan::DeclareKind::Pattern => BindingKind::Pattern,
+				crate::host::plan::DeclareKind::Param => BindingKind::Param,
+			};
+			self.declare(id, kind);
+		} else {
+			self.visit_with(id, mode, true);
+		}
+		self.open.truncate(open);
+	}
+	fn env_contains(&self, ancestor: u32, mut child: u32) -> bool {
+		loop {
+			if ancestor == child {
+				return true;
+			}
+			let Some(parent) = self.envs[child as usize].parent else {
+				return false;
+			};
+			child = parent;
+		}
+	}
+	fn region_parent(&mut self, parent: HostParent) -> u32 {
+		match parent {
+			HostParent::Root => self.open[0],
+			HostParent::Region(region) => self.region_env(region),
+			HostParent::Incoming(mut node) => loop {
+				if let Some(env) = self.host_incoming.get(node) {
+					return env;
+				}
+				let Some(parent) = self.ast.host_occurrences.get(node) else {
+					return self.env();
+				};
+				node = parent;
+			},
+		}
+	}
+	fn region_env(&mut self, index: u32) -> u32 {
+		if let Some(env) = self.region_envs[index as usize] {
+			return env;
+		}
+		let region = self.ast.host_regions[index as usize];
+		let parent = self.region_parent(region.parent);
+		let kind = match region.kind {
+			crate::host::plan::RegionKind::Module => ScopeKind::Module,
+			crate::host::plan::RegionKind::Script => ScopeKind::Script,
+			crate::host::plan::RegionKind::Fragment => ScopeKind::Fragment,
+			crate::host::plan::RegionKind::Block => ScopeKind::Block,
+			crate::host::plan::RegionKind::Function => ScopeKind::Function,
+		};
+		let env = if region.parent == HostParent::Root && kind == ScopeKind::Module {
+			parent
+		} else {
+			let open = self.open.len();
+			self.open.push(parent);
+			self.enter(kind, region.node, kind == ScopeKind::Function);
+			let env = self.env();
+			self.open.truncate(open);
+			env
+		};
+		self.region_envs[index as usize] = Some(env);
+		if let Some(node) = region.node {
+			self.out.of_node.insert(node, self.envs[env as usize].scope);
+		}
+		env
 	}
 
-	/// A host node: its fields in order, inside the scope it opens from `Opens::from` on.
 	fn host(&mut self, id: NodeId, index: u32) {
 		let host = self.ast.hosts[index as usize];
 		let (from, len) = host.fields;
-		let Some(opens) = host.scope else {
-			for i in from..from + len {
-				self.host_field(i);
-			}
-			return;
-		};
-		for &pattern in self.ast.list(opens.outside).iter().flatten() {
-			self.root(pattern, |b| b.visit(pattern, Mode::Declare(BindingKind::Pattern)));
-		}
-		let depth = self.host_declared.len();
-		self.host_declared.push(opens.outside);
-		// groups nest: the outer one opens first at a field and closes last
-		let base = self.host_groups.len();
-		let open_base = self.open_groups.len();
-		self.host_groups.extend_from_slice(
-			&self.ast.host_groups[opens.groups.0 as usize..(opens.groups.0 + opens.groups.1) as usize],
-		);
-		self.host_groups[base..].sort_unstable_by_key(|group| (group.from, std::cmp::Reverse(group.until)));
-		let mut next = base;
+		let start = self.host_children.len();
 		for i in from..from + len {
-			while next < self.host_groups.len() && self.host_groups[next].from == i {
-				let group = self.host_groups[next];
-				// a script's program hoists `var` like a script; a fragment is where a template's expressions sit
-				let node = group.node.unwrap_or(id);
-				let kind = match self.ast.node(node).kind {
-					NodeKind::Program { .. } => ScopeKind::Script,
-					NodeKind::Host(inner) if !self.ast.hosts[inner as usize].span => ScopeKind::Fragment,
-					_ => ScopeKind::Block,
-				};
-				self.enter(kind, Some(node), false);
-				for &pattern in self.ast.list(group.inside).iter().flatten() {
-					self.root(pattern, |b| b.visit(pattern, Mode::Declare(BindingKind::Pattern)));
-				}
-				self.host_declared.push(group.inside);
-				self.open_groups.push(next);
-				next += 1;
+			Self::host_roots(self.ast, self.ast.host_fields[i as usize].1, &mut self.host_children);
+		}
+		self.host_children[start..].sort_by_key(|id| self.ast.node(*id).start);
+		let end = self.host_children.len();
+		let mut previous = None;
+		for i in start..end {
+			let child = self.host_children[i];
+			if previous != Some(child) {
+				self.field_value(child);
 			}
-			self.host_field(i);
-			while self.open_groups.len() > open_base
-				&& self
-					.open_groups
-					.pop_if(|&mut g| self.host_groups[g].until == i + 1)
-					.is_some()
-			{
-				self.exit();
-				self.host_declared.pop();
+			previous = Some(child);
+		}
+		self.host_children.truncate(start);
+		if let Some(hidden) = self.ast.host_hidden.get(id) {
+			for child in hidden {
+				self.field_value(*child);
 			}
 		}
-		self.open_groups.truncate(open_base);
-		self.host_groups.truncate(base);
-		self.host_declared.truncate(depth);
 	}
 
-	/// A host node's field as an expression, the patterns the open host scopes declare left to them.
-	fn host_field(&mut self, i: u32) {
-		let declared = |b: &Self, child: NodeId| {
-			b.host_declared
-				.iter()
-				.any(|list| b.ast.list(*list).contains(&Some(child)))
-		};
-		match self.ast.host_fields[i as usize].1 {
-			crate::ast::Value::Node(child) if !declared(self, child) => self.field_value(child),
-			crate::ast::Value::Nodes(children) => {
-				for &child in self.ast.list(children).iter().flatten() {
-					if !declared(self, child) {
-						self.field_value(child);
-					}
+	fn host_roots(ast: &Ast<X>, value: crate::ast::Value, out: &mut Vec<NodeId>) {
+		match value {
+			crate::ast::Value::Node(id) => out.push(id),
+			crate::ast::Value::Nodes(list) => out.extend(ast.list(list).iter().flatten().copied()),
+			crate::ast::Value::Array(a, n) => {
+				for value in &ast.host_values[a as usize..(a + n) as usize] {
+					Self::host_roots(ast, *value, out);
 				}
 			}
 			_ => {}
@@ -1192,6 +1275,9 @@ impl<'a, X: Bind> Binder<'a, X> {
 
 	/// A host field's value: a host node visited as such, JavaScript as a root of its own.
 	fn field_value(&mut self, child: NodeId) {
+		if self.ast.host_plan && self.host_seen.contains(child) {
+			return;
+		}
 		if matches!(self.kind(child), NodeKind::Host(_)) {
 			self.visit(child, Mode::Expression);
 		} else {
@@ -1216,7 +1302,11 @@ impl<'a, X: Bind> Binder<'a, X> {
 		});
 		self.out.root_of.insert(node, index);
 		f(self);
+		let scope = self.host_incoming.get(node).map(|env| self.envs[env as usize].scope);
 		let root = &mut self.out.roots[index as usize];
+		if let Some(scope) = scope {
+			root.scope = scope;
+		}
 		root.scopes.1 = self.out.scopes.len() as u32;
 		root.bindings.1 = self.out.bindings.len() as u32;
 		root.references.1 = self.out.references.len() as u32;
@@ -1782,12 +1872,12 @@ mod tests {
 			);
 		}
 		// a host document: each piece's root lists the `arguments` of the functions inside it
-		let grammar = crate::host::grammar::Grammar::read(
-			&std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/host.grammar")).unwrap(),
+		let plan = crate::host::plan::Plan::read(
+			&std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/plan.json")).unwrap(),
 		)
 		.unwrap();
 		let src = "<script>let n = 1; function f() { return arguments; }</script>\n{(function () { return arguments + n; })()}";
-		let (mut ast, root) = crate::host::parse_document::<()>(src, &grammar, Options::default(), None);
+		let (mut ast, root) = crate::host::parse_document::<()>(src, &plan, Options::default(), None, true);
 		let roots = ast.add_list(&[Some(root.unwrap())]);
 		analyze(&mut ast, Entry::Program, roots);
 		let scopes = ast.scopes.as_ref().unwrap();

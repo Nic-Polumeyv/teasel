@@ -743,15 +743,14 @@ fn phases() {
 		binary.reset();
 		answer(&ast, Entry::Program, roots, end, &source, &lines, output, &mut binary).finish();
 	});
-	let grammar =
-		std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/host.grammar")).unwrap();
+	let plan = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/plan.json")).unwrap();
 	let document = format!(
 		"<script>let items = [1,2,3];</script>\n{}",
 		"{#each items as item}<p class=\"row\" onclick={() => f(item)}>{item + 1}</p>{/each}\n".repeat(200)
 	);
 	for flags in ["module", "module scopes comments locations"] {
 		let prepared = crate::json::Prepared::borrowed(&document, crate::json::Request::from_names(flags))
-			.host(&grammar)
+			.host(&plan)
 			.unwrap();
 		best(&format!("host: 200 each blocks, {flags}"), &mut || {
 			prepared.binary(Entry::Program, 0.0, None, "").unwrap();
@@ -803,7 +802,22 @@ fn profile() {
 		.build()
 		.unwrap();
 	let mut sink = 0usize;
-	if std::env::var("TEASEL_PROFILE").is_ok_and(|what| what == "encode") {
+	if let Ok(plan) = std::env::var("TEASEL_HOST_PLAN") {
+		let plan = std::fs::read_to_string(plan).unwrap();
+		let prepared = crate::json::Prepared::borrowed(
+			&source,
+			crate::json::Request::from_names(&std::env::var("TEASEL_FLAGS").unwrap_or("module".into())),
+		)
+		.host(&plan)
+		.unwrap();
+		let iters = std::env::var("TEASEL_ITERS")
+			.ok()
+			.and_then(|s| s.parse().ok())
+			.unwrap_or(3000);
+		for _ in 0..iters {
+			prepared.binary(Entry::Program, 0.0, None, "").unwrap();
+		}
+	} else if std::env::var("TEASEL_PROFILE").is_ok_and(|what| what == "encode") {
 		use crate::estree::{Binary, Output, Positions, answer};
 		let (mut ast, roots) = whole(&source, options);
 		crate::comments::attach(&mut ast, &source, roots, 0);
@@ -867,14 +881,23 @@ fn profile() {
 		}
 	}
 	let mut rows: Vec<_> = by_frame.into_iter().collect();
-	rows.sort_by_key(|row| std::cmp::Reverse(row.1.0));
+	rows.sort_by_key(|row| {
+		std::cmp::Reverse(if std::env::var("TEASEL_INCL").is_ok() {
+			row.1.1
+		} else {
+			row.1.0
+		})
+	});
 	eprintln!(
 		"samples {total}, sink {sink}, token {} bytes, result {} bytes",
 		std::mem::size_of::<crate::lexer::token::Token>(),
 		std::mem::size_of::<std::result::Result<crate::lexer::token::Token, Box<crate::error::SyntaxError>>>()
 	);
 	eprintln!("{:>6} {:>6}  frame", "self%", "incl%");
-	for (name, (own, incl)) in rows.iter().take(40) {
+	for (name, (own, incl)) in rows
+		.iter()
+		.take(if std::env::var("TEASEL_INCL").is_ok() { 140 } else { 40 })
+	{
 		eprintln!(
 			"{:6.1} {:6.1}  {}",
 			*own as f64 * 100.0 / total as f64,
@@ -956,12 +979,14 @@ fn alloc_probe() {
 #[test]
 #[ignore]
 fn host_alloc_probe() {
-	let grammar =
-		std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/host.grammar")).unwrap();
+	let plan = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/plan.json")).unwrap();
 	let count = |src: &str| {
-		let prepared = crate::json::Prepared::borrowed(src, crate::json::Request::from_names("module"))
-			.host(&grammar)
-			.unwrap();
+		let prepared = crate::json::Prepared::borrowed(
+			src,
+			crate::json::Request::from_names(&std::env::var("TEASEL_FLAGS").unwrap_or("module".into())),
+		)
+		.host(&plan)
+		.unwrap();
 		prepared.binary(Entry::Program, 0.0, None, "").unwrap();
 		let before = ALLOCATIONS.load(std::sync::atomic::Ordering::Relaxed);
 		prepared.binary(Entry::Program, 0.0, None, "").unwrap();
@@ -1030,4 +1055,18 @@ fn parenthesized_bits() {
 	assert_eq!(json.matches("\"parenthesized\":true").count(), 3, "{json}");
 	let json = crate::json::parse("(a, b) => a; (c);", &request, "");
 	assert_eq!(json.matches("\"parenthesized\":true").count(), 1, "{json}");
+}
+
+#[test]
+fn snapshot_restores_shared_word_boundaries() {
+	let mut parser = super::Parser::<()>::new("a", 0, Options::default(), "as", Default::default());
+	parser.start().unwrap();
+	parser.stop_word_at = Some(3);
+	parser.forced_stop = Some(5);
+	let before = parser.snapshot();
+	parser.stop_word_at = Some(8);
+	parser.forced_stop = None;
+	parser.restore(before);
+	assert_eq!(parser.stop_word_at, Some(3));
+	assert_eq!(parser.forced_stop, Some(5));
 }

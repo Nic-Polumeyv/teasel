@@ -120,16 +120,170 @@ fn combinator(rest: &str) -> Option<&'static str> {
 	["||", "+", "~", ">"].into_iter().find(|c| rest.starts_with(c))
 }
 
-impl<'a, E: Extension> Walker<'a, E> {
-	/// A style element's sheet, from the content at the cursor through the closing tag.
-	pub(super) fn style_sheet(&mut self, start: u32, name: &str, attributes: Vec<NodeId>) -> Result<NodeId> {
-		let closer = format!("</{name}");
-		let content_start = self.at;
+pub(super) fn read<X>(
+	src: &str,
+	at: &mut u32,
+	limit: u32,
+	ast: &mut Ast<X>,
+	names: Names,
+	closer: Option<&str>,
+) -> Result<(List, List)> {
+	let mut css = Css {
+		src,
+		at: *at,
+		limit,
+		ast,
+		names,
+	};
+	let result = css.css_content(closer);
+	*at = css.at;
+	result
+}
+
+struct Css<'a, 'b, X> {
+	src: &'a str,
+	at: u32,
+	limit: u32,
+	ast: &'b mut Ast<X>,
+	names: Names,
+}
+
+/// The node types and keys, as the plan's strings.
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) struct Names {
+	pub css_comment: StrId,
+	pub atrule: StrId,
+	pub rule: StrId,
+	pub selector_list: StrId,
+	pub pseudo_element_selector: StrId,
+	pub pseudo_class_selector: StrId,
+	pub attribute_selector: StrId,
+	pub percentage: StrId,
+	pub complex_selector: StrId,
+	pub relative_selector: StrId,
+	pub combinator_node: StrId,
+	pub declaration: StrId,
+	pub nesting_selector: StrId,
+	pub type_selector: StrId,
+	pub id_selector: StrId,
+	pub class_selector: StrId,
+	pub nth: StrId,
+	pub block_node: StrId,
+	pub args: StrId,
+	pub block: StrId,
+	pub children: StrId,
+	pub combinator: StrId,
+	pub flags: StrId,
+	pub matcher: StrId,
+	pub name: StrId,
+	pub namespace: StrId,
+	pub position: StrId,
+	pub prelude: StrId,
+	pub property: StrId,
+	pub selectors: StrId,
+	pub value: StrId,
+}
+
+impl Names {
+	pub(super) fn new(mut name: impl FnMut(&str) -> StrId) -> Self {
+		Names {
+			css_comment: name("CSSComment"),
+			atrule: name("Atrule"),
+			rule: name("Rule"),
+			selector_list: name("SelectorList"),
+			pseudo_element_selector: name("PseudoElementSelector"),
+			pseudo_class_selector: name("PseudoClassSelector"),
+			attribute_selector: name("AttributeSelector"),
+			percentage: name("Percentage"),
+			complex_selector: name("ComplexSelector"),
+			relative_selector: name("RelativeSelector"),
+			combinator_node: name("Combinator"),
+			declaration: name("Declaration"),
+			nesting_selector: name("NestingSelector"),
+			type_selector: name("TypeSelector"),
+			id_selector: name("IdSelector"),
+			class_selector: name("ClassSelector"),
+			nth: name("Nth"),
+			block_node: name("Block"),
+			args: name("args"),
+			block: name("block"),
+			children: name("children"),
+			combinator: name("combinator"),
+			flags: name("flags"),
+			matcher: name("matcher"),
+			name: name("name"),
+			namespace: name("namespace"),
+			position: name("position"),
+			prelude: name("prelude"),
+			property: name("property"),
+			selectors: name("selectors"),
+			value: name("value"),
+		}
+	}
+}
+
+impl<'a, X> Css<'a, '_, X> {
+	fn tree(&self) -> &Ast<X> {
+		self.ast
+	}
+	fn len(&self) -> u32 {
+		self.limit
+	}
+	fn rest(&self) -> &'a str {
+		&self.src[self.at as usize..self.limit as usize]
+	}
+	fn byte(&self) -> Option<u8> {
+		self.rest().as_bytes().first().copied()
+	}
+	fn char(&self) -> Option<char> {
+		self.rest().chars().next()
+	}
+	fn matches(&self, text: &str) -> bool {
+		self.rest().starts_with(text)
+	}
+	fn eat(&mut self, text: &str) -> bool {
+		if !self.matches(text) {
+			return false;
+		}
+		self.at += text.len() as u32;
+		true
+	}
+	fn expect(&mut self, text: &str) -> Result<()> {
+		if self.eat(text) {
+			Ok(())
+		} else {
+			fail(self.at, self.at, Code::Expected, Some(text))
+		}
+	}
+	fn space(&mut self) {
+		while let Some(c) = self.char().filter(|c| is_space(*c)) {
+			self.at += c.len_utf8() as u32;
+		}
+	}
+	fn intern(&mut self, text: &str) -> StrId {
+		self.ast.strings.intern(text)
+	}
+	fn list(&mut self, nodes: &[NodeId]) -> List {
+		self.ast.add_list_from(nodes.iter().copied().map(Some))
+	}
+	fn host(&mut self, ty: StrId, start: u32, end: u32, fields: &[(StrId, Value)], span: bool) -> NodeId {
+		let from = self.ast.host_fields.len() as u32;
+		self.ast.host_fields.extend_from_slice(fields);
+		let index = self.ast.hosts.len() as u32;
+		self.ast.hosts.push(Host {
+			ty,
+			fields: (from, fields.len() as u32),
+			span,
+		});
+		self.ast.add(NodeKind::Host(index), start, end)
+	}
+
+	pub(super) fn css_content(&mut self, closer: Option<&str>) -> Result<(List, List)> {
 		let mut comments = Vec::new();
 		let mut children = Vec::new();
 		loop {
 			self.css_space(&mut comments, true)?;
-			if self.matches(&closer) || self.at >= self.len() {
+			if closer.is_some_and(|closer| self.matches(closer)) || self.at >= self.len() {
 				break;
 			}
 			children.push(if self.matches("@") {
@@ -138,55 +292,23 @@ impl<'a, E: Extension> Walker<'a, E> {
 				self.rule(&mut comments)?
 			});
 		}
-		let content_end = self.at;
-		self.expect(&closer)?;
-		self.space();
-		self.expect(">")?;
-		let end = self.at;
 		let comments: Vec<NodeId> = comments
 			.into_iter()
 			.map(|comment| {
-				let value = ("value", Value::Slice(comment.start + 2, comment.end - 2));
+				let value = (self.names.value, Value::Slice(comment.start + 2, comment.end - 2));
 				match comment.position {
 					Some(position) => self.host(
-						"CSSComment",
+						self.names.css_comment,
 						comment.start,
 						comment.end,
-						&[value, ("position", Value::Int(position))],
-						None,
+						&[value, (self.names.position, Value::Int(position))],
 						true,
 					),
-					None => self.host("CSSComment", comment.start, comment.end, &[value], None, true),
+					None => self.host(self.names.css_comment, comment.start, comment.end, &[value], true),
 				}
 			})
 			.collect();
-		let attributes = self.list(&attributes);
-		let children = self.list(&children);
-		let comments = self.list(&comments);
-		let content = self.host(
-			"",
-			content_start,
-			content_end,
-			&[
-				("styles", Value::Slice(content_start, content_end)),
-				("comment", Value::Null),
-			],
-			None,
-			true,
-		);
-		Ok(self.host(
-			"StyleSheet",
-			start,
-			end,
-			&[
-				("attributes", Value::Nodes(attributes)),
-				("children", Value::Nodes(children)),
-				("comments", Value::Nodes(comments)),
-				("content", Value::Node(content)),
-			],
-			None,
-			true,
-		))
+		Ok((self.list(&children), self.list(&comments)))
 	}
 
 	/// Whitespace, comments and HTML comment markers; `capture` keeps the comments.
@@ -238,15 +360,14 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let name = self.intern(&name);
 		let prelude = self.intern(&prelude);
 		Ok(self.host(
-			"Atrule",
+			self.names.atrule,
 			start,
 			self.at,
 			&[
-				("name", Value::Str(name)),
-				("prelude", Value::Str(prelude)),
-				("block", block),
+				(self.names.name, Value::Str(name)),
+				(self.names.prelude, Value::Str(prelude)),
+				(self.names.block, block),
 			],
-			None,
 			true,
 		))
 	}
@@ -256,11 +377,13 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let prelude = self.selector_list(comments, false)?;
 		let block = self.css_block(comments)?;
 		Ok(self.host(
-			"Rule",
+			self.names.rule,
 			start,
 			self.at,
-			&[("prelude", Value::Node(prelude)), ("block", Value::Node(block))],
-			None,
+			&[
+				(self.names.prelude, Value::Node(prelude)),
+				(self.names.block, Value::Node(block)),
+			],
 			true,
 		))
 	}
@@ -276,11 +399,10 @@ impl<'a, E: Extension> Walker<'a, E> {
 			if self.matches(if inside_pseudo { ")" } else { "{" }) {
 				let children = self.list(&children);
 				return Ok(self.host(
-					"SelectorList",
+					self.names.selector_list,
 					start,
 					end,
-					&[("children", Value::Nodes(children))],
-					None,
+					&[(self.names.children, Value::Nodes(children))],
 					true,
 				));
 			}
@@ -302,11 +424,10 @@ impl<'a, E: Extension> Walker<'a, E> {
 			if self.eat("&") {
 				let name = self.intern("&");
 				selectors.push(self.host(
-					"NestingSelector",
+					self.names.nesting_selector,
 					start,
 					self.at,
-					&[("name", Value::Str(name))],
-					None,
+					&[(self.names.name, Value::Str(name))],
 					true,
 				));
 			} else if self.eat("*") {
@@ -314,7 +435,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 				let mut name = String::from("*");
 				if self.eat("|") {
 					let namespace = self.intern("*");
-					fields.push(("namespace", Value::Str(namespace)));
+					fields.push((self.names.namespace, Value::Str(namespace)));
 					name = if self.eat("*") {
 						String::from("*")
 					} else {
@@ -322,40 +443,44 @@ impl<'a, E: Extension> Walker<'a, E> {
 					};
 				}
 				let name = self.intern(&name);
-				fields.insert(0, ("name", Value::Str(name)));
-				selectors.push(self.host("TypeSelector", start, self.at, &fields, None, true));
+				fields.insert(0, (self.names.name, Value::Str(name)));
+				selectors.push(self.host(self.names.type_selector, start, self.at, &fields, true));
 			} else if self.eat("#") {
 				let name = self.css_identifier()?;
 				let name = self.intern(&name);
-				selectors.push(self.host("IdSelector", start, self.at, &[("name", Value::Str(name))], None, true));
+				selectors.push(self.host(
+					self.names.id_selector,
+					start,
+					self.at,
+					&[(self.names.name, Value::Str(name))],
+					true,
+				));
 			} else if self.eat(".") {
 				let name = self.css_identifier()?;
 				let name = self.intern(&name);
 				selectors.push(self.host(
-					"ClassSelector",
+					self.names.class_selector,
 					start,
 					self.at,
-					&[("name", Value::Str(name))],
-					None,
+					&[(self.names.name, Value::Str(name))],
 					true,
 				));
 			} else if self.eat("::") {
 				let name = self.css_identifier()?;
 				let name = self.intern(&name);
-				let name = ("name", Value::Str(name));
+				let name = (self.names.name, Value::Str(name));
 				let node = if self.eat("(") {
 					let args = self.selector_list(comments, true)?;
 					self.expect(")")?;
 					self.host(
-						"PseudoElementSelector",
+						self.names.pseudo_element_selector,
 						start,
 						self.at,
-						&[name, ("args", Value::Node(args))],
-						None,
+						&[name, (self.names.args, Value::Node(args))],
 						true,
 					)
 				} else {
-					self.host("PseudoElementSelector", start, self.at, &[name], None, true)
+					self.host(self.names.pseudo_element_selector, start, self.at, &[name], true)
 				};
 				selectors.push(node);
 			} else if self.eat(":") {
@@ -369,11 +494,10 @@ impl<'a, E: Extension> Walker<'a, E> {
 					Value::Null
 				};
 				selectors.push(self.host(
-					"PseudoClassSelector",
+					self.names.pseudo_class_selector,
 					start,
 					self.at,
-					&[("name", Value::Str(name)), ("args", args)],
-					None,
+					&[(self.names.name, Value::Str(name)), (self.names.args, args)],
 					true,
 				));
 			} else if self.eat("[") {
@@ -412,36 +536,33 @@ impl<'a, E: Extension> Walker<'a, E> {
 				let value = value.map_or(Value::Null, |v| Value::Str(self.intern(&v)));
 				let flags = flags.map_or(Value::Null, |f| Value::Str(self.intern(f)));
 				selectors.push(self.host(
-					"AttributeSelector",
+					self.names.attribute_selector,
 					start,
 					self.at,
 					&[
-						("name", Value::Str(name)),
-						("matcher", matcher),
-						("value", value),
-						("flags", flags),
+						(self.names.name, Value::Str(name)),
+						(self.names.matcher, matcher),
+						(self.names.value, value),
+						(self.names.flags, flags),
 					],
-					None,
 					true,
 				));
 			} else if let Some(len) = nth_of(self.rest()).filter(|_| inside_pseudo) {
 				self.at += len as u32;
 				selectors.push(self.host(
-					"Nth",
+					self.names.nth,
 					start,
 					self.at,
-					&[("value", Value::Slice(start, self.at))],
-					None,
+					&[(self.names.value, Value::Slice(start, self.at))],
 					true,
 				));
 			} else if let Some(len) = percentage(self.rest()) {
 				self.at += len as u32;
 				selectors.push(self.host(
-					"Percentage",
+					self.names.percentage,
 					start,
 					self.at,
-					&[("value", Value::Slice(start, self.at))],
-					None,
+					&[(self.names.value, Value::Slice(start, self.at))],
 					true,
 				));
 			} else if combinator(self.rest()).is_none() {
@@ -449,7 +570,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 				let mut fields = Vec::new();
 				if self.eat("|") {
 					let namespace = self.intern(&name);
-					fields.push(("namespace", Value::Str(namespace)));
+					fields.push((self.names.namespace, Value::Str(namespace)));
 					name = if self.eat("*") {
 						String::from("*")
 					} else {
@@ -457,8 +578,8 @@ impl<'a, E: Extension> Walker<'a, E> {
 					};
 				}
 				let name = self.intern(&name);
-				fields.insert(0, ("name", Value::Str(name)));
-				selectors.push(self.host("TypeSelector", start, self.at, &fields, None, true));
+				fields.insert(0, (self.names.name, Value::Str(name)));
+				selectors.push(self.host(self.names.type_selector, start, self.at, &fields, true));
 			}
 			let index = self.at;
 			self.css_space(comments, false)?;
@@ -468,11 +589,10 @@ impl<'a, E: Extension> Walker<'a, E> {
 				children.push(relative);
 				let children = self.list(&children);
 				return Ok(self.host(
-					"ComplexSelector",
+					self.names.complex_selector,
 					list_start,
 					index,
-					&[("children", Value::Nodes(children))],
-					None,
+					&[(self.names.children, Value::Nodes(children))],
 					true,
 				));
 			}
@@ -497,14 +617,13 @@ impl<'a, E: Extension> Walker<'a, E> {
 	fn relative_selector(&mut self, combinator: Option<NodeId>, selectors: &[NodeId], start: u32, end: u32) -> NodeId {
 		let selectors = self.list(selectors);
 		self.host(
-			"RelativeSelector",
+			self.names.relative_selector,
 			start,
 			end,
 			&[
-				("combinator", combinator.map_or(Value::Null, Value::Node)),
-				("selectors", Value::Nodes(selectors)),
+				(self.names.combinator, combinator.map_or(Value::Null, Value::Node)),
+				(self.names.selectors, Value::Nodes(selectors)),
 			],
-			None,
 			true,
 		)
 	}
@@ -519,22 +638,20 @@ impl<'a, E: Extension> Walker<'a, E> {
 			self.space();
 			let name = self.intern(name);
 			return Ok(Some(self.host(
-				"Combinator",
+				self.names.combinator_node,
 				index,
 				end,
-				&[("name", Value::Str(name))],
-				None,
+				&[(self.names.name, Value::Str(name))],
 				true,
 			)));
 		}
 		if self.at != start {
 			let name = self.intern(" ");
 			return Ok(Some(self.host(
-				"Combinator",
+				self.names.combinator_node,
 				start,
 				self.at,
-				&[("name", Value::Str(name))],
-				None,
+				&[(self.names.name, Value::Str(name))],
 				true,
 			)));
 		}
@@ -555,11 +672,10 @@ impl<'a, E: Extension> Walker<'a, E> {
 		self.expect("}")?;
 		let children = self.list(&children);
 		Ok(self.host(
-			"Block",
+			self.names.block_node,
 			start,
 			self.at,
-			&[("children", Value::Nodes(children))],
-			None,
+			&[(self.names.children, Value::Nodes(children))],
 			true,
 		))
 	}
@@ -602,14 +718,13 @@ impl<'a, E: Extension> Walker<'a, E> {
 		}
 		let value = self.intern(&value);
 		Ok(self.host(
-			"Declaration",
+			self.names.declaration,
 			start,
 			end,
 			&[
-				("property", Value::Slice(start, start + len as u32)),
-				("value", Value::Str(value)),
+				(self.names.property, Value::Slice(start, start + len as u32)),
+				(self.names.value, Value::Str(value)),
 			],
-			None,
 			true,
 		))
 	}

@@ -17,11 +17,12 @@ function bytes(text) {
 }
 
 export const engine = {
-	create: (source, flags, host) => native.create(bytes(source), flags, host),
+	plan: native.plan,
+	create: (source, flags, plan) => native.create(bytes(source), flags, plan ?? 0),
 	parse: native.parse,
 	free: native.free,
 	constants: native.constants,
 	shapes: native.shapes,
 };
 
-export const Source = bind(engine);
+export const { Source, Plan } = bind(engine);

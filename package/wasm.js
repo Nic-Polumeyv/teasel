@@ -45,8 +45,29 @@ function bytes(text) {
 	return [ptr, written, capacity];
 }
 
-function create(source, flags, host) {
-	const handle = guarded(() => wasm.source_new(...bytes(source), flags, ...bytes(host)));
+function register(plan) {
+	const handle = guarded(() => wasm.plan_new(...bytes(plan)));
+	if (handle === 0) throw new Error(JSON.parse(text()).error.message);
+	return handle;
+}
+
+// a plan outlives an engine that panicked: its text is kept, and the next engine reads it again
+function plan(text) {
+	return { handle: register(text), generation, text };
+}
+
+function planOf(held) {
+	if (held === undefined) return 0;
+	if (held.generation !== generation) {
+		held.handle = register(held.text);
+		held.generation = generation;
+	}
+	return held.handle;
+}
+
+function create(source, flags, plan) {
+	const host = planOf(plan);
+	const handle = guarded(() => wasm.source_new(...bytes(source), flags, host));
 	if (handle === 0) throw new Error(JSON.parse(text()).error.message);
 	return { handle, generation };
 }
@@ -76,6 +97,7 @@ function answer(status) {
 }
 
 export const engine = {
+	plan,
 	create,
 	// the words outlive the source: they sit in the answer buffer until the next parse
 	parse: (held, entry, offset, end, stop) => answer(guarded(() => wasm.source_parse(handle(held), entry, offset, end ?? 0, end === undefined ? 0 : 1, ...bytes(stop)))),
@@ -86,4 +108,4 @@ export const engine = {
 	shapes: () => shapes,
 };
 
-export const Source = bind(engine);
+export const { Source, Plan } = bind(engine);

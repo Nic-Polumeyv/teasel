@@ -764,6 +764,7 @@ impl Parser<'_, TypeScript> {
 }
 
 impl Extension for TypeScript {
+	const TYPE_PARAMETERS: bool = true;
 	type Data = Data;
 	type Snapshot = (State, usize, usize);
 

@@ -1,12 +1,104 @@
 {
-	"error": {
-		"code": "duplicate",
-		"message": "Duplicate script",
-		"pos": 18,
-		"end": 19,
-		"loc": {
-			"line": 2,
-			"column": 0
+	"node": {
+		"type": "Root",
+		"start": 0,
+		"end": 36,
+		"scope": 0,
+		"fragment": {
+			"type": "Fragment",
+			"nodes": [
+				{
+					"type": "Script",
+					"start": 0,
+					"end": 17,
+					"attributes": [],
+					"content": {
+						"type": "Program",
+						"start": 8,
+						"end": 8,
+						"scope": 1,
+						"root": 0,
+						"body": [],
+						"sourceType": "module"
+					},
+					"context": "default"
+				},
+				{
+					"type": "Text",
+					"start": 17,
+					"end": 18,
+					"data": "\n",
+					"raw": "\n"
+				},
+				{
+					"type": "Script",
+					"start": 18,
+					"end": 35,
+					"attributes": [],
+					"content": {
+						"type": "Program",
+						"start": 26,
+						"end": 26,
+						"root": 1,
+						"body": [],
+						"sourceType": "module"
+					},
+					"context": "default"
+				}
+			]
 		}
-	}
+	},
+	"end": 36,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "script",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 1,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [],
+	"references": [],
+	"roots": [
+		{
+			"scope": 1,
+			"scopes": [
+				3,
+				3
+			],
+			"bindings": [
+				0,
+				0
+			],
+			"references": [
+				0,
+				0
+			]
+		},
+		{
+			"scope": 1,
+			"scopes": [
+				3,
+				3
+			],
+			"bindings": [
+				0,
+				0
+			],
+			"references": [
+				0,
+				0
+			]
+		}
+	]
 }
