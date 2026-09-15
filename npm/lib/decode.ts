@@ -125,7 +125,7 @@ function generate({ type, keys, kinds }: Shape, link: boolean): Builder {
 
 // what a table row points at once the tree is built, in its literal from the start so nothing is
 // added later; a binding is the reference its declaring identifier makes, `binding` itself
-const LINKED: { mark: string[]; props: string[]; values: Record<string, unknown> }[] = [
+const LINKED: { mark: string[]; props: string[]; values: Record<string, null | boolean> }[] = [
 	{ mark: ['topLevelAwait'], props: ['node: null'], values: { node: null } },
 	{ mark: ['name', 'kind'], props: ['node: null', 'declaration: null', 'binding: null', 'declares: true', 'read: false', 'mutate: false', 'writeExpr: null'], values: { node: null, declaration: null, binding: null, declares: true, read: false, mutate: false, writeExpr: null } },
 	{ mark: ['mutate'], props: ['node: null', 'writeExpr: null'], values: { node: null, writeExpr: null } },

@@ -239,13 +239,25 @@ export interface Parsed<T> {
 	roots?: Root[];
 }
 
-// `Entry` of parser/mod.rs by index
-export const ENTRY = { program: 0, expression: 1, pattern: 2, params: 3, statement: 4, typeParameters: 5 } as const;
 /**
- * What a parse reads: a program, or what a host embedding JavaScript in a larger syntax reads at
- * a point of it. A type parameter list `<...>` is TypeScript only, `not_typescript` otherwise.
+ * What a parse reads, and what it answers with: a program, or what a host embedding JavaScript in
+ * a larger syntax reads at a point of it. `Root` is the program, or the document's root with a
+ * `host`.
  */
-export type Entry = keyof typeof ENTRY;
+export interface Answer<Root> {
+	program: Root;
+	expression: Expression;
+	/** An assignment target: an identifier or a destructuring pattern. */
+	pattern: Pattern;
+	/** A parenthesized parameter list, as an arrow function's is read. */
+	params: Pattern[];
+	statement: Statement;
+	/** A `TSTypeParameterDeclaration`; TypeScript only, `not_typescript` otherwise. */
+	typeParameters: Node;
+}
+export type Entry = keyof Answer<unknown>;
+// `Entry` of parser/mod.rs by index
+export const ENTRY = { program: 0, expression: 1, pattern: 2, params: 3, statement: 4, typeParameters: 5 } as const satisfies Record<Entry, number>;
 
 export interface At {
 	/** Where the source is cut, a UTF-16 offset; the end of the source by default. A program reads to it. */
@@ -286,7 +298,8 @@ const one = (key: keyof Options, choices: Record<string, number>) => (value: unk
 	return choices[value];
 };
 // what each option adds to the word the engine takes, one entry per key of `Options`
-const WORD: { [K in keyof Options]-?: (value: unknown) => number } = {
+type On = { [K in keyof Options]-?: NonNullable<Options[K]> };
+const WORD: { [K in keyof On]: (value: On[K]) => number } = {
 	host: (value) => {
 		if (typeof value !== 'string') throw new TypeError('host must be the grammar as a string');
 		return 0;
@@ -305,6 +318,7 @@ const WORD: { [K in keyof Options]-?: (value: unknown) => number } = {
 	errorRecovery: bit('errorRecovery'),
 };
 const known = (key: string): key is keyof Options => Object.hasOwn(WORD, key);
+const word = <K extends keyof On>(key: K, value: On[K]) => WORD[key](value);
 
 /** The options that are on, as the word of bits the engine takes. */
 export function flags(options: Options = {}): number {
@@ -312,7 +326,7 @@ export function flags(options: Options = {}): number {
 	for (const key in options) {
 		if (!known(key)) throw new TypeError(`${key} is not an option`);
 		const value = options[key];
-		if (value !== undefined) on |= WORD[key](value);
+		if (value !== undefined) on |= word(key, value);
 	}
 	return on;
 }
@@ -359,18 +373,8 @@ export class Source<Root = Program> {
 		registry?.register(this, this.#held, this);
 	}
 
-	/** The program starting at `offset`, the whole source by default; the document with a `host`. */
-	parse(entry?: 'program', offset?: number, at?: At): Parsed<Root>;
-	parse(entry: 'expression', offset: number, at?: At): Parsed<Expression>;
-	/** An assignment target: an identifier or a destructuring pattern. */
-	parse(entry: 'pattern', offset: number, at?: At): Parsed<Pattern>;
-	/** A parenthesized parameter list, as an arrow function's is read. */
-	parse(entry: 'params', offset: number, at?: At): Parsed<Pattern[]>;
-	parse(entry: 'statement', offset: number, at?: At): Parsed<Statement>;
-	/** A `TSTypeParameterDeclaration`. */
-	parse(entry: 'typeParameters', offset: number, at?: At): Parsed<Node>;
-	/** An entry decided at run time answers with whatever it reads. */
-	parse(entry: Entry, offset?: number, at?: At): Parsed<unknown>;
+	/** What `entry` reads at `offset`: the program, the whole source, by default; the document with a `host`. Every other entry needs its offset. */
+	parse<E extends Entry = 'program'>(entry?: E, ...rest: E extends 'program' ? [offset?: number, at?: At] : [offset: number, at?: At]): Parsed<Answer<Root>[E]>;
 	parse(entry: Entry = 'program', offset = 0, { end, stopAt }: At = {}): Parsed<any> {
 		if (this.#held === undefined) throw new TypeError('the source is freed');
 		if (!Object.hasOwn(ENTRY, entry)) throw new TypeError(`${JSON.stringify(entry)} is not an entry`);
