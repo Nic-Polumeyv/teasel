@@ -15,8 +15,8 @@
 	<section class="relative overflow-hidden">
 		<div class="plaid absolute inset-x-0 top-0 -z-10 h-full opacity-[0.07] [mask-image:linear-gradient(to_bottom,black,transparent_70%)]"></div>
 		<div class="relative mx-auto w-full max-w-6xl px-8 pt-16 md:pt-24">
-			{#each [{ blur: '', mask: 'md:[mask-image:linear-gradient(to_right,transparent_35%,black_60%)]' }, { blur: 'blur-[3px]', mask: 'md:[mask-image:linear-gradient(to_right,transparent_5%,black_35%,transparent_60%)]' }] as layer (layer.blur)}
-				<div class="pointer-events-none absolute inset-y-0 right-0 w-full opacity-30 [mask-image:linear-gradient(to_bottom,transparent_20%,black)] md:w-3/5 md:opacity-50 {layer.blur} {layer.mask}">
+			{#each [{ blur: '', mask: 'md:[mask-image:linear-gradient(to_right,transparent_30%,black_55%),linear-gradient(to_bottom,black_55%,transparent)]' }, { blur: 'blur-[3px]', mask: 'md:[mask-image:linear-gradient(to_right,transparent_5%,black_30%,transparent_55%),linear-gradient(to_bottom,black_55%,transparent)]' }] as layer (layer.blur)}
+				<div class="pointer-events-none absolute right-0 bottom-0 h-48 w-full opacity-30 [mask-composite:intersect] [mask-image:linear-gradient(to_bottom,transparent_10%,black_50%,transparent_95%)] md:h-64 md:w-2/3 md:opacity-50 {layer.blur} {layer.mask}">
 					<img src={field} alt="" class="h-full w-full object-cover object-left-bottom dark:hidden" />
 					<img src={fieldDark} alt="" class="hidden h-full w-full object-cover object-left-bottom dark:block" />
 				</div>
