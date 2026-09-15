@@ -27,7 +27,7 @@ jobs:
       - run: cargo test --release
       - run: npm ci
         working-directory: npm
-      - run: npm run types && npm run build && npm run build:wasm && npm run test && node scripts/check.js ../crates/teasel/tests/test262-parser-tests/pass ../crates/teasel/tests/test262-parser-tests/pass-explicit
+      - run: npm run types && npm run build && npm run build:wasm && npm run test && node scripts/check.ts ../crates/teasel/tests/test262-parser-tests/pass ../crates/teasel/tests/test262-parser-tests/pass-explicit
         working-directory: npm
 
   build:
@@ -102,7 +102,7 @@ jobs:
           fi
           docs=false; bumped=false
           [ "$changed" = all ] && docs=true
-          echo "$changed" | grep -qE '^(docs/|npm/types.d.ts|.github/workflows/ci.yml)' && docs=true
+          echo "$changed" | grep -qE '^(docs/|npm/lib/api.ts|.github/workflows/ci.yml)' && docs=true
           echo "$changed" | grep -qx Cargo.toml && bumped=true
           [ '${{ github.event_name }}' = workflow_dispatch ] && bumped=true
           version=$(jq -r .version npm/package.json)
@@ -120,6 +120,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
+      - run: npm install -g typescript@7
+      - run: npm ci && npm run build:js
+        working-directory: npm
       - run: bun install --frozen-lockfile
       - run: bun run check
       - run: bun run build
@@ -208,7 +211,7 @@ jobs:
           name: wasm
           path: npm
       - run: cp README.md npm/README.md
-      - run: node scripts/release.js
+      - run: npm run build:js && node scripts/release.ts
         working-directory: npm
       - run: |
           tag="v${{ needs.changes.outputs.version }}"

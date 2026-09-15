@@ -4,10 +4,13 @@
 		"target": "es2022",
 		"module": "esnext",
 		"moduleResolution": "bundler",
+		"lib": ["es2022", "dom"],
 		"noEmit": true,
 		"skipLibCheck": true,
 		"types": ["node"],
-		"allowImportingTsExtensions": true
+		"allowImportingTsExtensions": true,
+		"erasableSyntaxOnly": true
 	},
-	"files": ["plan.ts", "../crates/teasel/tests/hosts/plans.mts", "../crates/teasel/tests/hosts/svelte/plan.mts", "../crates/teasel/tests/hosts/vue/plan.mts"]
+	"include": ["*.ts", "lib/*.ts", "scripts/*.ts", "../crates/teasel/tests/hosts/**/*.mts"],
+	"exclude": ["**/*.d.ts"]
 }
