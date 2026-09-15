@@ -21,7 +21,7 @@
 </script>
 
 <Diagram width={720} height={300} {label}>
-	<Box rect={parse} tint="violet" size={13}>one parse</Box>
+	<Box rect={parse} tint="violet" size={13}>parse</Box>
 	<Box rect={answer} dashed />
 	<Arrow from={parse} to={answer} />
 	{#each tables as name, i (name)}
