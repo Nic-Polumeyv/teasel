@@ -28,6 +28,8 @@ source.parse('typeParameters', 7)         a <T extends U>
 source.parse('program', 12, { end: 40 })  the program inside 12..40, positions of the whole
 ```
 
+A `typeParameters` entry reads TypeScript only; without `typescript` it is a `not_typescript` error.
+
 ## Stop tokens
 
 `stopAt` lists the host's own tokens, words or punctuators. One read outside every bracket the parse opened, where the expression could end, ends the parse: `,` does not start a sequence, and `/>` is not a division. A `then` after `.` is a property name. A TypeScript `as` is the host's unless another `as` follows the assertion, so `xs as T[] as item` ends after the type.

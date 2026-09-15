@@ -23,17 +23,18 @@ try {
 With `errorRecovery`, the parse comes back and the errors come with it, in source order. Where something is missing, the tree holds an `Identifier` named `''` of no width, so the shape stays walkable.
 
 ```text
-{ f(a, }
-       ▲
-       errors  [{ code: 'unexpected_token', pos: 7, end: 7, loc }]
-       node    Identifier ''  at 7..7
-       end     7
+x = ;
+    ▲
+    errors  [{ code: 'unexpected_token', pos: 4, end: 5, loc }]
+    right   Identifier ''  at 4..4
 ```
 
 ```js
-const { node, errors } = new Source('f(a, ', { errorRecovery: true }).parse();
-errors.length;                                   // 1
-node.body[0].expression.arguments[1].name;       // ''
+const { node, errors } = new Source('x = ;', { errorRecovery: true }).parse();
+errors[0].code;                            // 'unexpected_token'
+node.body[0].expression.right.name;        // ''
 ```
+
+A statement that cannot be read at all is skipped to the next one, so `f(a, ` alone answers with an empty program and one `unexpected_eof`.
 
 Use recovery for an editor or a language server, where a half-typed file still needs a tree. A compiler that must reject the file leaves it off and catches the throw.

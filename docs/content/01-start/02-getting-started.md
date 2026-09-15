@@ -47,7 +47,7 @@ import { Source } from '@teasel/parser';
 const { node } = new Source('export const answer = 42').parse();
 ```
 
-To pick the WebAssembly build under Node as well, import `@teasel/parser/wasm`.
+The WebAssembly build loads `teasel.wasm` from next to its module, through `new URL('./teasel.wasm', import.meta.url)`, which bundlers such as Vite copy along. To pick that build under Node as well, import `@teasel/parser/wasm`.
 
 ## Next
 

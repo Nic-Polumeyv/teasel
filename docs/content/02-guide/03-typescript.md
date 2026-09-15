@@ -23,4 +23,4 @@ Erasure cannot remove what has a runtime meaning. The answer's `typescript` tabl
 
 ## Decorators
 
-Both decorator syntaxes are read by default. `decorators: 'legacy'` or `'proposal'` restricts the parse to one.
+Decorators are read with `typescript` on; in JavaScript an `@` is an unexpected character. Both syntaxes are accepted by default. `decorators: 'legacy'` reads what TypeScript's `experimentalDecorators` allows and `'proposal'` the standard syntax only.

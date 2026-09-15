@@ -51,5 +51,5 @@ The answer's `scopes`, `bindings` and `references` tables list all of them in so
 
 ## Caveats
 
-- A copy of a node carries no facts: `structuredClone` and spreading make plain objects the four functions answer `undefined` for.
+- A copy of a node made by `structuredClone` or through JSON carries no facts; the four functions answer `undefined` for it. Spreading keeps them, since the facts are symbol properties of the node.
 - Facts live on the nodes of one answer. Parse again and ask again.
