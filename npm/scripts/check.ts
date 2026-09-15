@@ -4,11 +4,11 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
-import * as node from '../node.js';
+import * as native from '../native.js';
 import * as wasm from '../wasm.js';
 import { ENTRY, flags, type Entry, type Options, type ParseError } from '../lib/api.js';
 import { decode } from '../lib/decode.js';
-import { load } from '../lib/native.js';
+import { load } from '../lib/addon.js';
 
 const native = load();
 const engine = { constants: native.constants, shapes: native.shapes };
@@ -91,13 +91,13 @@ for (const file of files) {
 		];
 		for (const options of runs) {
 			json(file, source, options, 'program', 0);
-			report(`${file} wasm`, differ(outcome(() => new wasm.Source(source, options).parse()), outcome(() => new node.Source(source, options).parse())));
+			report(`${file} wasm`, differ(outcome(() => new wasm.Source(source, options).parse()), outcome(() => new native.Source(source, options).parse())));
 		}
 	}
 	// every brace in a component is somewhere an expression, a pattern or a statement might start
 	if (svelte) {
 		const options: Options = { sourceType: 'module', typescript: /lang=["']?ts/.test(text), locations: true, comments: true, scopes: true };
-		using held = new node.Source(text, options);
+		using held = new native.Source(text, options);
 		using twin = new wasm.Source(text, options);
 		for (const m of text.matchAll(script_re)) {
 			const start = m.index + m[0].indexOf('>') + 1;

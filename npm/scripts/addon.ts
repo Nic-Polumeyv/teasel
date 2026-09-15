@@ -2,7 +2,7 @@
 import { copyFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { here, platforms } from '../lib/native.js';
+import { here, platforms } from '../lib/addon.js';
 
 const at = process.argv.indexOf('--target');
 const wanted = at === -1 ? platforms[here]?.target : process.argv[at + 1];
@@ -12,7 +12,6 @@ const [tag, { target, os }] = found;
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const run = spawnSync('cargo', ['build', '--release', '-p', 'teasel-node', '--target', target], { stdio: 'inherit', cwd: root });
-console.log(`cargo in ${root} for ${target}: status ${run.status}, signal ${run.signal}, error ${run.error?.message}`);
 if (run.error) throw run.error;
 if (run.status !== 0) process.exit(run.status ?? 1);
 const lib = os === 'win32' ? 'teasel_node.dll' : os === 'darwin' ? 'libteasel_node.dylib' : 'libteasel_node.so';

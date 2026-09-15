@@ -1,7 +1,7 @@
 // the source goes over as bytes: V8's encoder is 14x faster than the host reading a string out
 import type { Program } from 'estree';
 import { Source as Base, type Engine, type Options } from './lib/api.js';
-import { load } from './lib/native.js';
+import { load } from './lib/addon.js';
 
 export { parentOf, referenceOf, scopeOf } from './lib/api.js';
 export type * from './lib/api.js';

@@ -356,7 +356,7 @@ const registry = typeof FinalizationRegistry === 'undefined' ? null : new Finali
  * A source kept with its options: the parses out of it share the source copy and the position
  * tables. Offsets are UTF-16, as in acorn; positions stay those of the whole source. `Root` is
  * what the program entry answers with: the program, or the document's root with a `host`.
- * `node.ts` and `wasm.ts` each export it with their engine bound.
+ * `native.ts` and `wasm.ts` each export it with their engine bound.
  */
 export class Source<Root = Program> {
 	#engine: Engine;

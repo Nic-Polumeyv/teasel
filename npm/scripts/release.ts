@@ -1,7 +1,7 @@
 // node scripts/release.ts: publishes the platform packages from the addons under artifacts/, then this package
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { platforms } from '../lib/native.js';
+import { platforms } from '../lib/addon.js';
 
 const root: { name: string; version: string; description: string; license: string; repository: { type: string; url: string }; optionalDependencies?: Record<string, string> } = JSON.parse(readFileSync('package.json', 'utf8'));
 const { version, description, license, repository } = root;
