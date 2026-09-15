@@ -11,44 +11,37 @@
 	"engines": {
 		"node": ">=18"
 	},
-	"main": "native.js",
-	"types": "native.d.ts",
+	"main": "dist/native.js",
+	"types": "dist/native.d.ts",
 	"exports": {
 		".": {
 			"node": {
-				"types": "./native.d.ts",
-				"default": "./native.js"
+				"types": "./dist/native.d.ts",
+				"default": "./dist/native.js"
 			},
 			"default": {
-				"types": "./wasm.d.ts",
-				"default": "./wasm.js"
+				"types": "./dist/wasm.d.ts",
+				"default": "./dist/wasm.js"
 			}
 		},
 		"./wasm": {
-			"types": "./wasm.d.ts",
-			"default": "./wasm.js"
+			"types": "./dist/wasm.d.ts",
+			"default": "./dist/wasm.js"
 		},
-		"./teasel.wasm": "./teasel.wasm",
+		"./teasel.wasm": "./dist/teasel.wasm",
 		"./plan": {
-			"types": "./plan.d.ts",
-			"default": "./plan.js"
+			"types": "./dist/plan.d.ts",
+			"default": "./dist/plan.js"
 		}
 	},
 	"files": [
-		"native.js",
-		"native.d.ts",
-		"wasm.js",
-		"wasm.d.ts",
-		"plan.js",
-		"plan.d.ts",
-		"teasel.wasm",
-		"lib/*.js",
-		"lib/*.d.ts"
+		"dist",
+		"!dist/*.node"
 	],
 	"scripts": {
 		"build": "npm run build:js && node scripts/addon.ts",
-		"build:js": "tsc --ignoreConfig native.ts wasm.ts plan.ts --declaration --erasableSyntaxOnly --strict --target es2022 --module esnext --moduleResolution bundler --lib es2022,dom --types node --skipLibCheck",
-		"build:wasm": "cargo build --release -p teasel-wasm --target wasm32-unknown-unknown && wasm-opt -Oz --all-features ../target/wasm32-unknown-unknown/release/teasel_wasm.wasm -o teasel.wasm",
+		"build:js": "tsc --ignoreConfig native.ts wasm.ts plan.ts --outDir dist --rootDir . --declaration --erasableSyntaxOnly --strict --target es2022 --module esnext --moduleResolution bundler --lib es2022,dom --types node --skipLibCheck",
+		"build:wasm": "cargo build --release -p teasel-wasm --target wasm32-unknown-unknown && node scripts/wasm.ts",
 		"test": "npm run build:js && node scripts/test.ts && node scripts/test.ts interpret",
 		"types": "tsc -p tsconfig.json",
 		"check": "npm run build:js && node scripts/check.ts",

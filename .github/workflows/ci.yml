@@ -27,7 +27,7 @@ jobs:
       - run: cargo test --release
       - run: npm ci
         working-directory: npm
-      - run: npm run types && npm run build && npm run build:wasm && npm run test && node scripts/check.ts ../crates/teasel/tests/test262-parser-tests/pass ../crates/teasel/tests/test262-parser-tests/pass-explicit
+      - run: npm run build && npm run types && npm run build:wasm && npm run test && node scripts/check.ts ../crates/teasel/tests/test262-parser-tests/pass ../crates/teasel/tests/test262-parser-tests/pass-explicit
         working-directory: npm
 
   build:
@@ -61,7 +61,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: binding-${{ matrix.target }}
-          path: npm/*.node
+          path: npm/dist/*.node
           if-no-files-found: error
 
   wasm:
@@ -81,7 +81,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: wasm
-          path: npm/teasel.wasm
+          path: npm/dist/teasel.wasm
           if-no-files-found: error
 
   changes:
@@ -209,7 +209,7 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: wasm
-          path: npm
+          path: npm/dist
       - run: cp README.md npm/README.md
       - run: npm run build:js && node scripts/release.ts
         working-directory: npm

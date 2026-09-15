@@ -1,11 +1,7 @@
 target/
 node_modules/
 /crates/teasel/tests/test262-parser-tests/
-/npm/teasel.wasm
 *.node
 /crates/teasel/tests/TypeScript/
-/npm/*.js
-/npm/*.d.ts
-/npm/lib/*.js
-/npm/lib/*.d.ts
+/npm/dist/
 /target*/

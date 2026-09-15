@@ -1,5 +1,5 @@
 import { Source } from '@teasel/parser';
-import types from '../../../npm/lib/api.d.ts?raw';
+import types from '../../../npm/dist/lib/api.d.ts?raw';
 
 type Declaration = { type: string; start: number; end: number; id?: { name: string }; declarations?: { id: { name: string } }[]; declaration?: Declaration; leadingComments?: { value: string; end: number }[] };
 

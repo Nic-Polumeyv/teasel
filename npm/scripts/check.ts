@@ -4,11 +4,11 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
-import * as native from '../native.js';
-import * as wasm from '../wasm.js';
-import { ENTRY, flags, type Entry, type Options, type ParseError } from '../lib/api.js';
-import { decode } from '../lib/decode.js';
-import { load } from '../lib/addon.js';
+import * as native from '../dist/native.js';
+import * as wasm from '../dist/wasm.js';
+import { ENTRY, flags, type Entry, type Options, type ParseError } from '../dist/lib/api.js';
+import { decode } from '../dist/lib/decode.js';
+import { load } from '../dist/lib/addon.js';
 
 const addon = load();
 const engine = { constants: addon.constants, shapes: addon.shapes };

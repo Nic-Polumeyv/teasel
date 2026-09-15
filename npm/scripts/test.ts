@@ -1,10 +1,10 @@
 // `node scripts/test.ts interpret` runs the decoder without code generation, as a host forbidding it would
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import type { Entry, Options } from '../lib/api.js';
+import type { Entry, Options } from '../dist/lib/api.js';
 if (process.argv[2] === 'interpret') globalThis.Function = (() => { throw new EvalError('blocked'); }) as unknown as FunctionConstructor;
-const native = await import('../native.js');
-const wasm = await import('../wasm.js');
+const native = await import('../dist/native.js');
+const wasm = await import('../dist/wasm.js');
 // the trees are poked as the stream shaped them, host nodes included, past what the types say
 type Any = any;
 const untyped = ({ Source, scopeOf, referenceOf, parentOf }: typeof native | typeof wasm) => ({
