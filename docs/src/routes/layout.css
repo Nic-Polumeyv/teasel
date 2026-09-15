@@ -2,6 +2,7 @@
 @import 'tailwindcss' source(none);
 @import 'sheer-ui/styles';
 @source '..';
+@source '../../content';
 @source '../../node_modules/sheer-ui/dist/blocks/MobileNav.svelte';
 @source '../../node_modules/sheer-ui/dist/components/breadcrumb';
 @source '../../node_modules/sheer-ui/dist/components/button';
