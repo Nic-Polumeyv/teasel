@@ -140,10 +140,10 @@ fn host_phases() {
 	}
 }
 
-/// The documents of a host directory: not its grammar, its plan or the pins.
+/// The documents of a host directory: not its grammar or the pins.
 fn sources(dir: &Path) -> Vec<std::path::PathBuf> {
 	common::inputs(dir)
 		.into_iter()
-		.filter(|f| f.file_stem().is_some_and(|s| s != "plan") && f.extension().is_some_and(|e| e != "grammar"))
+		.filter(|f| f.extension().is_some_and(|e| e != "grammar"))
 		.collect()
 }
