@@ -1,164 +1,142 @@
 ---
-title: A whole module
+title: Three modules
 ---
 
-Five things a tool asks about a file: where imports are used, who changes shared state, what is exported, what each function reaches for, where a function is called. The file is a text adventure, 175 lines: a map of rooms, a `Player` with private fields, a table of verbs, a little command parser of its own, and a score everyone keeps poking at.
+A text adventure in three files: the map, the player, the game. Each is parsed on its own, and then the three answers are linked through what they import from each other. Click a module to read it.
 
-```file adventure.js
-```
+![three module cards, world, player and game, with an arrow from each module to the one it imports from; each card opens the file](Modules.svelte "world.js player.js game.js")
 
-## The parse
+## Parse each file
+
+One `Source` per file, one answer per file, kept in a map by name. `line` turns a node's `start` into a line number in its own file.
 
 ```js
 import { readFileSync } from 'node:fs';
-import { Source, referenceOf, scopeOf, parentOf } from '@teasel/parser';
+import { Source, referenceOf, parentOf } from '@teasel/parser';
 
-const text = readFileSync('adventure.js', 'utf8');
-const { node, scopes, bindings, references } = new Source(text, { sourceType: 'module', scopes: true }).parse();
-
-const line = (n) => text.slice(0, n.start).split('\n').length;
-const module = scopes[0];
-const top = bindings.filter((b) => b.scope === module);
+const modules = new Map();
+for (const name of ['world.js', 'player.js', 'game.js']) {
+	const text = readFileSync(`adventure/${name}`, 'utf8');
+	const answer = new Source(text, { sourceType: 'module', scopes: true }).parse();
+	modules.set(name, { name, text, ...answer, line: (n) => text.slice(0, n.start).split('\n').length });
+}
 ```
 
-```text
-19 statements, 27 scopes, 60 bindings, 163 references
-```
+## What each module exports
 
-`node` is the tree. `scopes`, `bindings` and `references` are the three tables, in source order, and their rows point at each other: a reference has its `binding` and the `scope` it's made from, a binding has its `scope` and the `node` that declares it. `line` turns a node's `start` into a line number for the output below, and `top` is the module scope's bindings, the names declared at the top level.
-
-![the parse gives a tree and three tables; the five analyses below each read one or two of them: imports read bindings and references, module state reads references and scopes, exports reads the tree and bindings, reaches reads scopes and references, calls reads references and the tree](WholeModule.svelte)
-
-## Where each import is used
-
-An import is a binding of kind `import`. Its uses are the references that resolve to it.
+An export statement is in the tree. The name it exports is a binding, and `referenceOf` on the declaring identifier is that binding.
 
 ```js
-for (const b of top.filter((b) => b.kind === 'import')) {
-	const uses = references.filter((r) => r.binding === b);
-	console.log(`${b.name.padEnd(16)} line ${line(b.node)}  used ${uses.length}x at lines ${uses.map((r) => line(r.node)).join(', ') || 'never'}`);
+const exported = (m) => {
+	const out = new Map();
+	for (const s of m.node.body) {
+		if (s.type !== 'ExportNamedDeclaration' || !s.declaration) continue;
+		const d = s.declaration;
+		const ids = d.type === 'VariableDeclaration' ? d.declarations.map((x) => x.id) : [d.id];
+		for (const id of ids) out.set(id.name, referenceOf(id));
+	}
+	return out;
+};
+for (const m of modules.values()) m.exports = exported(m);
+```
+
+## Link the imports
+
+An import statement names a file and some names. When the file is one of ours, each name resolves to the exporting module's binding. The local binding gets an `imported` property pointing at it: that's the link, one object to another, across two answers.
+
+```js
+for (const m of modules.values()) {
+	for (const s of m.node.body) {
+		if (s.type !== 'ImportDeclaration') continue;
+		const from = modules.get(s.source.value.replace('./', ''));
+		for (const spec of s.specifiers) {
+			const local = referenceOf(spec.local);
+			local.imported = from ? from.exports.get(spec.imported.name) ?? null : undefined;
+			const uses = m.references.filter((r) => r.binding === local).length;
+			if (from) console.log(`${m.name.padEnd(10)} ${spec.local.name.padEnd(11)} <- ${from.name.padEnd(10)} ${local.imported.kind.padEnd(8)} line ${from.line(local.imported.node)}, used ${uses}x here`);
+			else console.log(`${m.name.padEnd(10)} ${spec.local.name.padEnd(11)} <- ${s.source.value} (not ours)`);
+		}
+	}
 }
 ```
 
 ```text
-roll             line 1  used 1x at lines 110
-describe         line 2  used 1x at lines 93
-listen           line 2  used 1x at lines 171
-say              line 2  used 17x at lines 61, 62, 66, 70, 73, 79, 80, 92, 97, 105, 107, 111, 113, 132, 134, 138, 157
-createInterface  line 3  used 1x at lines 149
+world.js   describe    <- ./narrator.js (not ours)
+world.js   say         <- ./narrator.js (not ours)
+player.js  rooms       <- world.js   const    line 6, used 1x here
+game.js    roll        <- ./dice.js (not ours)
+game.js    say         <- ./narrator.js (not ours)
+game.js    createInterface <- node:readline/promises (not ours)
+game.js    DIRECTIONS  <- world.js   const    line 3, used 1x here
+game.js    LAMP_LIFE   <- world.js   const    line 4, used 2x here
+game.js    look        <- world.js   function line 31, used 3x here
+game.js    restock     <- world.js   function line 40, used 1x here
+game.js    Player      <- player.js  class    line 5, used 1x here
 ```
 
-An import with no uses is an unused import.
+`spec.local` is the identifier the importing file uses, `spec.imported` the name as the other file exported it. They differ in `import { setTimeout as sleep }`; here they are the same.
+
+## Every export, everywhere
+
+With the links in place, an export's uses across the program are its own module's references to it, plus the references in every other module to the import binding that points at it.
+
+```js
+for (const m of modules.values()) {
+	for (const [name, binding] of m.exports) {
+		const here = m.references.filter((r) => r.binding === binding).length;
+		const elsewhere = [];
+		for (const other of modules.values()) {
+			if (other === m) continue;
+			for (const b of other.bindings) {
+				if (b.kind === 'import' && b.imported === binding) elsewhere.push(`${other.name} ${other.references.filter((r) => r.binding === b).length}x`);
+			}
+		}
+		console.log(`${m.name.padEnd(10)} ${name.padEnd(11)} used here ${here}x; ${elsewhere.join(', ') || 'imported nowhere'}`);
+	}
+}
+```
+
+```text
+world.js   DIRECTIONS  used here 0x; game.js 1x
+world.js   LAMP_LIFE   used here 0x; game.js 2x
+world.js   rooms       used here 5x; player.js 1x
+world.js   look        used here 0x; game.js 3x
+world.js   restock     used here 0x; game.js 1x
+player.js  Player      used here 0x; game.js 1x
+game.js    parse       used here 1x; imported nowhere
+game.js    step        used here 1x; imported nowhere
+game.js    won         used here 2x; imported nowhere
+game.js    play        used here 0x; imported nowhere
+game.js    reset       used here 0x; imported nowhere
+```
+
+`game.js` is the entry point, so its exports are imported by nobody in the program; those are the public surface. An export used by nobody anywhere would be dead code.
 
 ## Who changes the score
 
-`turns`, `score` and `lampTurns` are module-level `let`s. Whoever changes them is a reference with `write` set. To say which function each write sits in, walk `scope.parent` up to the first function scope; that scope's `node` is the function.
+The score, the turn count and the lamp live in `game.js` as module-level `let`s, and nothing outside that file can touch them: `player.js` reports points back instead. Their writers are the references with `write` set, named by walking `scope.parent` up to the function they sit in.
 
 ```js
+const game = modules.get('game.js');
 const nameOf = (fn) => {
 	if (fn.id) return fn.id.name;
-	const parent = parentOf(fn);
-	if (parent.type === 'MethodDefinition') {
-		const key = parent.key.type === 'PrivateIdentifier' ? '#' + parent.key.name : parent.key.name;
-		return `${parentOf(parentOf(parent)).id.name}.${key}`;
-	}
-	if (parent.type === 'Property') return `${parentOf(parentOf(parent)).id.name}.${parent.key.name}`;
-	if (parent.type === 'VariableDeclarator') return parent.id.name;
-	if (parent.type === 'CallExpression' && parentOf(parent).type === 'VariableDeclarator') return parentOf(parent).id.name;
+	const p = parentOf(fn);
+	if (p.type === 'Property') return `${parentOf(parentOf(p)).id.name}.${p.key.name}`;
+	if (p.type === 'MethodDefinition') return `${parentOf(parentOf(p)).id.name}.${p.key.name}`;
 	return '(anonymous)';
 };
 const inside = (r) => { for (let s = r.scope; s; s = s.parent) if (s.kind === 'function') return s.node; return null; };
 
-for (const b of top.filter((b) => b.kind === 'let')) {
-	const writes = references.filter((r) => r.binding === b && r.write);
-	const where = writes.map((r) => { const fn = inside(r); return fn ? `${nameOf(fn)}:${line(r.node)}` : `top:${line(r.node)}`; });
-	console.log(`${b.name.padEnd(10)} written ${writes.length}x: ${where.join(', ')}`);
+for (const b of game.bindings.filter((b) => b.kind === 'let' && b.scope === game.scopes[0])) {
+	const writes = game.references.filter((r) => r.binding === b && r.write);
+	console.log(`${b.name.padEnd(10)} ${writes.map((r) => `${nameOf(inside(r))}:${game.line(r.node)}`).join(', ')}`);
 }
 ```
 
 ```text
-turns      written 2x: step:135, reset:162
-score      written 4x: Player.take:65, Player.go:84, verbs.eat:110, reset:163
-lampTurns  written 2x: step:137, reset:164
+turns      step:50, reset:77
+score      verbs.eat:21, act:28, reset:78
+lampTurns  step:52, reset:79
 ```
 
-`nameOf` is all `parentOf`. A method's function has no name of its own, so it climbs to the method definition, whose `key` is the name, and from there to the class. A verb's arrow function is the value of a property, so it climbs to the property, then to the object, then to the `verbs` declarator that holds it. That is how `verbs.eat` gets its name.
-
-## What is exported, and is it used here
-
-Exports are statements in the tree. Their names are bindings in the module scope.
-
-```js
-for (const s of node.body) {
-	if (s.type !== 'ExportNamedDeclaration' || !s.declaration) continue;
-	const d = s.declaration;
-	const names = d.type === 'VariableDeclaration' ? d.declarations.map((x) => x.id.name) : [d.id.name];
-	for (const name of names) {
-		const b = top.find((b) => b.name === name);
-		const uses = references.filter((r) => r.binding === b);
-		console.log(`${name.padEnd(12)} ${b.kind.padEnd(8)} line ${line(b.node)}  referenced inside the module ${uses.length}x`);
-	}
-}
-```
-
-```text
-Player       class    line 38  referenced inside the module 1x
-look         function line 90  referenced inside the module 3x
-parse        function line 116  referenced inside the module 1x
-step         function line 130  referenced inside the module 1x
-won          function line 143  referenced inside the module 2x
-play         function line 147  referenced inside the module 0x
-reset        function line 161  referenced inside the module 0x
-hint         const    line 171  referenced inside the module 0x
-```
-
-## What each function reaches for
-
-Every function scope in the table, and the module-level names referenced inside it, split by whether the reference reads or writes. `within` walks `parent` to decide whether a reference sits inside the function.
-
-```js
-const within = (scope, of) => { for (let s = scope; s; s = s.parent) if (s === of) return true; return false; };
-
-for (const s of scopes.filter((s) => s.kind === 'function')) {
-	const here = references.filter((r) => within(r.scope, s) && r.binding?.scope === module);
-	const reads = new Set(here.filter((r) => r.read).map((r) => r.binding.name));
-	const writes = new Set(here.filter((r) => r.write).map((r) => r.binding.name));
-	if (here.length) console.log(`${nameOf(s.node).padEnd(16)} reads ${[...reads].join(', ') || 'nothing'}${writes.size ? `; writes ${[...writes].join(', ')}` : ''}`);
-}
-```
-
-```text
-Player.room      reads rooms
-Player.take      reads say, MAX_CARRY, score; writes score
-Player.drop      reads say
-Player.go        reads say, score, look; writes score
-look             reads lampTurns, say, describe
-verbs.look       reads look
-verbs.inventory  reads say
-verbs.eat        reads say, score, roll; writes score
-verbs.score      reads say, score, turns
-parse            reads DIRECTIONS
-step             reads parse, say, verbs, turns, lampTurns; writes turns, lampTurns
-play             reads Player, createInterface, look, won, step, say, score, turns
-reset            reads LAMP_LIFE, rooms; writes turns, score, lampTurns
-```
-
-`score += 5` is one reference that both reads and writes, so `Player.take` lists `score` on both sides. `Player.drop` touches nothing but `say`, and `hint` is missing because its arrow function only ever looks at its `player` argument.
-
-## Every call of a function
-
-A reference says a name was used. Whether it was called is in the tree: the parent of the identifier is a `CallExpression` with the identifier as its `callee`.
-
-```js
-const look = top.find((b) => b.name === 'look');
-for (const r of references.filter((r) => r.binding === look)) {
-	const p = parentOf(r.node);
-	console.log(`line ${line(r.node)}: ${p.type === 'CallExpression' && p.callee === r.node ? 'called with ' + p.arguments.length + ' arguments' : 'not a call, ' + p.type}`);
-}
-```
-
-```text
-line 86: called with 1 arguments
-line 101: called with 1 arguments
-line 150: called with 1 arguments
-```
+`nameOf` is `parentOf` twice: a verb's arrow function is the value of a property, so it climbs to the property, whose `key` is the verb, and then to the object and the `verbs` declarator that holds it.

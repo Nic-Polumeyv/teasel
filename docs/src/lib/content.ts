@@ -29,7 +29,7 @@ function sheet(name: string) {
 	);
 }
 
-const diagrams = Object.fromEntries(Object.entries(import.meta.glob('/content/**/*.svelte', { import: 'default', eager: true })).map(([path, diagram]) => [path.slice(path.lastIndexOf('/') + 1), diagram as Component<{ label: string }>]));
+const diagrams = Object.fromEntries(Object.entries(import.meta.glob('/content/**/*.svelte', { import: 'default', eager: true })).map(([path, diagram]) => [path.slice(path.lastIndexOf('/') + 1), { path, diagram: diagram as Component<{ label: string; files?: Record<string, string> }> }]));
 
 export function fence(text: string, language = 'js', file?: string) {
 	const html = language === 'text' ? escape(text) : snippet(text, language === 'ts' || language === 'typescript' ? 'typescript' : language === 'bash' || language === 'sh' ? 'bash' : 'javascript').html;
@@ -43,9 +43,14 @@ export function fence(text: string, language = 'js', file?: string) {
 
 const marked = new Marked({
 	renderer: {
-		image({ href, text }) {
-			const diagram = diagrams[href];
-			return diagram ? ssr(diagram, { props: { label: text } }).body : `<img src="${href}" alt="${escape(text)}">`;
+		// a diagram is a component rendered here; one with a title is interactive: the title names the files it
+		// shows, and the page hydrates it in the browser with the same props
+		image({ href, text, title }) {
+			const found = diagrams[href];
+			if (!found) return `<img src="${href}" alt="${escape(text)}">`;
+			if (!title) return ssr(found.diagram, { props: { label: text } }).body;
+			const props = { label: text, files: Object.fromEntries(title.split(/\s+/).map((name) => [name, sheet(name)])) };
+			return `<div data-island="${escape(found.path)}" data-props="${escape(JSON.stringify(props))}">${ssr(found.diagram, { props }).body}</div>`;
 		},
 		code({ text, lang = '' }) {
 			const [language, file] = lang.split(/\s+/);
