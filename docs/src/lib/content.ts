@@ -15,6 +15,20 @@ const escape = (text: string) => text.replace(/[&<>"]/g, (c) => ({ '&': '&amp;',
 
 const copy = buttonVariants({ variant: 'ghost', size: 'sm', class: 'absolute top-1.5 right-2 h-7 text-xs text-white/60 hover:bg-white/10 hover:text-white' });
 
+const sources = Object.fromEntries(Object.entries(import.meta.glob('/content/**/*.js', { query: '?raw', import: 'default', eager: true })).map(([path, text]) => [path.slice(path.lastIndexOf('/') + 1), text as string]));
+
+/** A whole file the page is about, shown as the sheet it is: a name tab, every line numbered, scrolling past a screen's worth. */
+function sheet(name: string) {
+	const text = sources[name];
+	if (text === undefined) throw new Error(`no ${name} under content/`);
+	const lines = snippet(text.replace(/\n$/, ''), 'javascript').html.split('\n');
+	return (
+		`<figure class="my-8 overflow-hidden rounded-sm border border-white/10 bg-[#2d353b] text-[#d3c6aa] shadow-lg">` +
+		`<figcaption class="flex items-center gap-2 border-b border-white/10 bg-white/5 px-4 py-2 font-mono text-xs text-white/70"><svg viewBox="0 0 16 16" class="size-3.5" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M4 1.5h5l3 3v10H4z M9 1.5v3h3"/></svg>${escape(name)}<span class="ml-auto text-white/40">${lines.length} lines</span></figcaption>` +
+		`<pre class="max-h-[38rem] overflow-auto py-4 font-mono text-[13px] leading-6"><code>${lines.map((line, i) => `<span class="inline-block w-12 select-none pr-4 text-right text-white/30">${i + 1}</span>${line}`).join('\n')}</code></pre></figure>`
+	);
+}
+
 const diagrams = Object.fromEntries(Object.entries(import.meta.glob('/content/**/*.svelte', { import: 'default', eager: true })).map(([path, diagram]) => [path.slice(path.lastIndexOf('/') + 1), diagram as Component<{ label: string }>]));
 
 export function fence(text: string, language = 'js', file?: string) {
@@ -35,7 +49,7 @@ const marked = new Marked({
 		},
 		code({ text, lang = '' }) {
 			const [language, file] = lang.split(/\s+/);
-			return fence(text, language, file);
+			return language === 'file' ? sheet(file) : fence(text, language, file);
 		},
 		heading({ tokens, depth, text }) {
 			return `<h${depth} id="${slug(text)}">${this.parser.parseInline(tokens)}</h${depth}>`;
