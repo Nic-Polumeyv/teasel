@@ -15,7 +15,7 @@
 
 	const here = $derived.by(() => {
 		for (const section of data.sections) {
-			const link = section.links.find((l) => l.href === page.url.pathname);
+			const link = section.pages.find((l) => l.href === page.url.pathname);
 			if (link) return { section, link };
 		}
 	});
@@ -33,20 +33,20 @@
 				<a href="/" class="font-serif text-2xl font-medium tracking-tight">teasel</a>
 				<nav class="hidden gap-1 md:flex">
 					{#each data.sections as section (section.label)}
-						<Button variant="ghost" size="sm" href={section.links[0].href}>{section.label}</Button>
+						<Button variant="ghost" size="sm" href={section.pages[0].href}>{section.label}</Button>
 					{/each}
 				</nav>
 				<div class="ml-auto flex items-center gap-1">
-					<Search entries={data.entries} />
+					<Search pages={data.pages} />
 					<Button variant="ghost" size="icon" href="https://github.com/Nic-Polumeyv/teasel" aria-label="GitHub">
 						<svg viewBox="0 0 24 24" class="size-5" fill="currentColor"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3" /></svg>
 					</Button>
 					<ThemeToggle />
 					<MobileNav
 						navLinks={data.sections.map((section) => ({
-							href: section.links[0].href,
+							href: section.pages[0].href,
 							label: section.label,
-							children: section.links.map((link) => ({ href: link.href, label: link.title })),
+							children: section.pages.map((link) => ({ href: link.href, label: link.title })),
 						}))}
 						actions={[{ href: "https://github.com/Nic-Polumeyv/teasel", label: "GitHub", variant: "outline" }]} />
 				</div>
@@ -61,7 +61,7 @@
 								<Sidebar.GroupLabel class="label h-auto px-2 pb-2 text-sm">{section.label}</Sidebar.GroupLabel>
 								<Sidebar.GroupContent>
 									<Sidebar.Menu>
-										{#each section.links as link (link.href)}
+										{#each section.pages as link (link.href)}
 											<Sidebar.MenuItem>
 												<Sidebar.MenuButton isActive={page.url.pathname === link.href}>
 													{#snippet child({ props })}
