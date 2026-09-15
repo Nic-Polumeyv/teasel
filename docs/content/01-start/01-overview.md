@@ -6,14 +6,18 @@ title: Overview
 
 teasel is a JavaScript and TypeScript parser written in Rust and shipped to JavaScript. It reads a whole source once and answers in ESTree, the tree acorn and every tool built on acorn already understand, with the facts a compiler asks next, scopes, bindings and references, hanging beside the nodes.
 
-<svg viewBox="0 0 720 120" width="100%" role="img" aria-label="text goes into the engine as bytes, the engine answers with one stream of words, the decoder turns the stream into an ESTree tree" fill="none" stroke="currentColor" stroke-width="1.5" font-size="14" class="my-8">
-  <rect x="8" y="34" width="150" height="52" rx="8"/><text x="83" y="65" text-anchor="middle" fill="currentColor" stroke="none">your source text</text>
-  <path d="M158 60 H 208" marker-end="url(#a)"/><text x="183" y="50" text-anchor="middle" fill="currentColor" stroke="none" font-size="11" class="text-muted-foreground">bytes</text>
-  <rect x="210" y="24" width="180" height="72" rx="8"/><text x="300" y="56" text-anchor="middle" fill="currentColor" stroke="none">engine, in Rust</text><text x="300" y="76" text-anchor="middle" fill="currentColor" stroke="none" font-size="11" class="text-muted-foreground">lex, parse, scopes</text>
-  <path d="M390 60 H 440" marker-end="url(#a)"/><text x="415" y="50" text-anchor="middle" fill="currentColor" stroke="none" font-size="11" class="text-muted-foreground">words</text>
-  <rect x="442" y="34" width="120" height="52" rx="8"/><text x="502" y="65" text-anchor="middle" fill="currentColor" stroke="none">decoder</text>
-  <path d="M562 60 H 612" marker-end="url(#a)"/>
-  <rect x="614" y="34" width="98" height="52" rx="8"/><text x="663" y="65" text-anchor="middle" fill="currentColor" stroke="none">ESTree</text>
+<svg viewBox="0 0 720 200" width="100%" role="img" aria-label="the source text and the rules of what to read go into the engine, which lexes, parses and analyses scopes in one pass; the decoder turns its answer into an ESTree tree with the scope tables beside it" fill="none" stroke="currentColor" stroke-width="1.5" font-size="14" class="my-8">
+  <rect x="8" y="24" width="160" height="56" rx="8" class="fill-sky-400/15 stroke-sky-400/60"/><text x="88" y="48" text-anchor="middle" fill="currentColor" stroke="none">source text</text><text x="88" y="68" text-anchor="middle" fill="currentColor" stroke="none" font-size="11" class="text-muted-foreground">JavaScript, TypeScript, a template</text>
+  <rect x="8" y="120" width="160" height="56" rx="8" class="fill-amber-400/15 stroke-amber-400/60"/><text x="88" y="144" text-anchor="middle" fill="currentColor" stroke="none">what to read</text><text x="88" y="164" text-anchor="middle" fill="currentColor" stroke="none" font-size="11" class="text-muted-foreground">a program, a piece, a plan; options</text>
+  <path d="M168 52 C 200 52, 200 100, 232 100" marker-end="url(#a)"/>
+  <path d="M168 148 C 200 148, 200 100, 232 100" marker-end="url(#a)"/>
+  <rect x="234" y="60" width="200" height="80" rx="8" class="fill-violet-400/15 stroke-violet-400/60"/><text x="334" y="90" text-anchor="middle" fill="currentColor" stroke="none">engine</text><text x="334" y="112" text-anchor="middle" fill="currentColor" stroke="none" font-size="11" class="text-muted-foreground">lex · parse · scopes, one pass in Rust</text>
+  <path d="M434 100 H 484" marker-end="url(#a)"/>
+  <rect x="486" y="72" width="100" height="56" rx="8" class="fill-emerald-400/15 stroke-emerald-400/60"/><text x="536" y="104" text-anchor="middle" fill="currentColor" stroke="none">decoder</text>
+  <path d="M586 100 C 610 100, 610 52, 636 52" marker-end="url(#a)"/>
+  <path d="M586 100 C 610 100, 610 148, 636 148" marker-end="url(#a)"/>
+  <rect x="638" y="24" width="74" height="56" rx="8" class="fill-rose-400/15 stroke-rose-400/60"/><text x="675" y="57" text-anchor="middle" fill="currentColor" stroke="none">tree</text>
+  <rect x="638" y="120" width="74" height="56" rx="8" class="fill-rose-400/15 stroke-rose-400/60"/><text x="675" y="148" text-anchor="middle" fill="currentColor" stroke="none">scopes</text><text x="675" y="166" text-anchor="middle" fill="currentColor" stroke="none" font-size="11" class="text-muted-foreground">beside it</text>
   <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="currentColor" stroke="none"/></marker></defs>
 </svg>
 

@@ -8,15 +8,15 @@ A parse crosses the boundary between JavaScript and Rust exactly once in each di
   <text x="120" y="24" text-anchor="middle" fill="currentColor" stroke="none" class="text-muted-foreground" font-size="12">JavaScript</text>
   <text x="560" y="24" text-anchor="middle" fill="currentColor" stroke="none" class="text-muted-foreground" font-size="12">Rust</text>
   <path d="M360 8 V 252" stroke-dasharray="4 4" class="text-muted-foreground"/>
-  <rect x="20" y="44" width="200" height="44" rx="8"/><text x="120" y="71" text-anchor="middle" fill="currentColor" stroke="none">new Source(text)</text>
+  <rect x="20" y="44" width="200" height="44" rx="8" class="fill-sky-400/15 stroke-sky-400/60"/><text x="120" y="71" text-anchor="middle" fill="currentColor" stroke="none">new Source(text)</text>
   <path d="M220 66 H 440" marker-end="url(#c)"/><text x="330" y="58" text-anchor="middle" fill="currentColor" stroke="none" font-size="11" class="text-muted-foreground">UTF-8 bytes, once</text>
-  <rect x="442" y="44" width="240" height="44" rx="8"/><text x="562" y="71" text-anchor="middle" fill="currentColor" stroke="none">the source, kept</text>
-  <rect x="20" y="120" width="200" height="44" rx="8"/><text x="120" y="147" text-anchor="middle" fill="currentColor" stroke="none">source.parse(…)</text>
+  <rect x="442" y="44" width="240" height="44" rx="8" class="fill-violet-400/15 stroke-violet-400/60"/><text x="562" y="71" text-anchor="middle" fill="currentColor" stroke="none">the source, kept</text>
+  <rect x="20" y="120" width="200" height="44" rx="8" class="fill-amber-400/15 stroke-amber-400/60"/><text x="120" y="147" text-anchor="middle" fill="currentColor" stroke="none">source.parse(…)</text>
   <path d="M220 142 H 440" marker-end="url(#c)"/><text x="330" y="134" text-anchor="middle" fill="currentColor" stroke="none" font-size="11" class="text-muted-foreground">entry, offset, options</text>
-  <rect x="442" y="108" width="240" height="68" rx="8"/><text x="562" y="132" text-anchor="middle" fill="currentColor" stroke="none">lex → parse → scopes</text><text x="562" y="156" text-anchor="middle" fill="currentColor" stroke="none" font-size="11" class="text-muted-foreground">one tree, pooled between parses</text>
-  <rect x="442" y="196" width="240" height="44" rx="8"/><text x="562" y="223" text-anchor="middle" fill="currentColor" stroke="none">encoder → word stream</text>
+  <rect x="442" y="108" width="240" height="68" rx="8" class="fill-violet-400/15 stroke-violet-400/60"/><text x="562" y="132" text-anchor="middle" fill="currentColor" stroke="none">lex → parse → scopes</text><text x="562" y="156" text-anchor="middle" fill="currentColor" stroke="none" font-size="11" class="text-muted-foreground">one tree, pooled between parses</text>
+  <rect x="442" y="196" width="240" height="44" rx="8" class="fill-violet-400/15 stroke-violet-400/60"/><text x="562" y="223" text-anchor="middle" fill="currentColor" stroke="none">encoder → word stream</text>
   <path d="M440 218 H 222" marker-end="url(#c)"/><text x="330" y="210" text-anchor="middle" fill="currentColor" stroke="none" font-size="11" class="text-muted-foreground">one buffer, no copy</text>
-  <rect x="20" y="196" width="200" height="44" rx="8"/><text x="120" y="223" text-anchor="middle" fill="currentColor" stroke="none">decoder → ESTree</text>
+  <rect x="20" y="196" width="200" height="44" rx="8" class="fill-emerald-400/15 stroke-emerald-400/60"/><text x="120" y="223" text-anchor="middle" fill="currentColor" stroke="none">decoder → ESTree</text>
   <defs><marker id="c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="currentColor" stroke="none"/></marker></defs>
 </svg>
 

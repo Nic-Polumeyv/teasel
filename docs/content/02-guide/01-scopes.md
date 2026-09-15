@@ -18,11 +18,11 @@ parentOf(assignment.left)                   // the assignment
 ```
 
 <svg viewBox="0 0 720 220" width="100%" role="img" aria-label="the module scope declares x; the function scope of f declares y; inside it, x is a write reference to the outer binding and y a read reference to the parameter" fill="none" stroke="currentColor" stroke-width="1.5" font-size="14" class="my-8">
-  <rect x="8" y="8" width="704" height="204" rx="10"/>
+  <rect x="8" y="8" width="704" height="204" rx="10" class="fill-sky-400/10 stroke-sky-400/60"/>
   <text x="24" y="32" fill="currentColor" stroke="none">scope: module</text>
   <text x="24" y="60" fill="currentColor" stroke="none" font-family="monospace">let x = 1</text>
   <rect x="140" y="44" width="150" height="24" rx="6" stroke-dasharray="3 3"/><text x="215" y="61" text-anchor="middle" fill="currentColor" stroke="none" font-size="12">x  binding  let</text>
-  <rect x="24" y="84" width="672" height="112" rx="10"/>
+  <rect x="24" y="84" width="672" height="112" rx="10" class="fill-violet-400/10 stroke-violet-400/60"/>
   <text x="40" y="108" fill="currentColor" stroke="none">scope: function</text>
   <text x="40" y="136" fill="currentColor" stroke="none" font-family="monospace">function f(y) {</text>
   <rect x="190" y="120" width="170" height="24" rx="6" stroke-dasharray="3 3"/><text x="275" y="137" text-anchor="middle" fill="currentColor" stroke="none" font-size="12">y  binding  param</text>
