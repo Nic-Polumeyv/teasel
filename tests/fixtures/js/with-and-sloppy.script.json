@@ -50,7 +50,7 @@
 					"type": "Identifier",
 					"start": 25,
 					"end": 26,
-					"reference": 2,
+					"declares": 0,
 					"name": "f"
 				},
 				"expression": false,
@@ -94,16 +94,13 @@
 							"type": "Identifier",
 							"start": 51,
 							"end": 54,
-							"reference": 3,
+							"declares": 1,
 							"name": "let"
 						},
 						"init": {
 							"type": "Literal",
 							"start": 57,
 							"end": 58,
-							"writes": [
-								3
-							],
 							"value": 1,
 							"raw": "1"
 						}
@@ -127,16 +124,13 @@
 							"type": "Identifier",
 							"start": 64,
 							"end": 69,
-							"reference": 4,
+							"declares": 2,
 							"name": "yield"
 						},
 						"init": {
 							"type": "Literal",
 							"start": 72,
 							"end": 73,
-							"writes": [
-								4
-							],
 							"value": 2,
 							"raw": "2"
 						}
@@ -160,16 +154,13 @@
 							"type": "Identifier",
 							"start": 79,
 							"end": 84,
-							"reference": 5,
+							"declares": 3,
 							"name": "await"
 						},
 						"init": {
 							"type": "Literal",
 							"start": 87,
 							"end": 88,
-							"writes": [
-								5
-							],
 							"value": 3,
 							"raw": "3"
 						}
@@ -193,16 +184,13 @@
 							"type": "Identifier",
 							"start": 94,
 							"end": 100,
-							"reference": 6,
+							"declares": 4,
 							"name": "static"
 						},
 						"init": {
 							"type": "Literal",
 							"start": 103,
 							"end": 104,
-							"writes": [
-								6
-							],
 							"value": 4,
 							"raw": "4"
 						}
@@ -223,7 +211,7 @@
 						"type": "Identifier",
 						"start": 106,
 						"end": 110,
-						"reference": 7,
+						"reference": 2,
 						"name": "eval"
 					},
 					"right": {
@@ -231,7 +219,7 @@
 						"start": 113,
 						"end": 114,
 						"writes": [
-							7
+							2
 						],
 						"value": 5,
 						"raw": "5"
@@ -254,7 +242,7 @@
 							"type": "Identifier",
 							"start": 120,
 							"end": 130,
-							"reference": 8,
+							"declares": 5,
 							"name": "implements"
 						},
 						"init": null
@@ -293,32 +281,38 @@
 		{
 			"name": "f",
 			"kind": "function",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "let",
 			"kind": "var",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "yield",
 			"kind": "var",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "await",
 			"kind": "var",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "static",
 			"kind": "var",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "implements",
 			"kind": "var",
-			"scope": 0
+			"scope": 0,
+			"write": false
 		}
 	],
 	"references": [
@@ -340,59 +334,11 @@
 		},
 		{
 			"scope": 0,
-			"binding": 0,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 1,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 2,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 3,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 4,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
 			"binding": null,
 			"write": true,
 			"read": false,
 			"mutate": false,
 			"declares": false
-		},
-		{
-			"scope": 0,
-			"binding": 5,
-			"write": false,
-			"read": false,
-			"mutate": false,
-			"declares": true
 		}
 	]
 }

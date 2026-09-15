@@ -38,7 +38,7 @@
 						"type": "Identifier",
 						"start": 38,
 						"end": 39,
-						"reference": 0,
+						"declares": 0,
 						"name": "x"
 					}
 				],
@@ -65,16 +65,13 @@
 							"type": "Identifier",
 							"start": 59,
 							"end": 60,
-							"reference": 1,
+							"declares": 1,
 							"name": "d"
 						},
 						"init": {
 							"type": "Literal",
 							"start": 63,
 							"end": 64,
-							"writes": [
-								1
-							],
 							"value": 2,
 							"raw": "2"
 						}
@@ -104,17 +101,14 @@
 									"type": "Identifier",
 									"start": 74,
 									"end": 82,
-									"reference": 2,
+									"declares": 2,
 									"name": "resource"
 								},
 								"init": {
 									"type": "Identifier",
 									"start": 85,
 									"end": 91,
-									"reference": 3,
-									"writes": [
-										2
-									],
+									"reference": 0,
 									"name": "source"
 								}
 							},
@@ -134,7 +128,7 @@
 											"type": "Identifier",
 											"start": 94,
 											"end": 95,
-											"reference": 4,
+											"declares": 3,
 											"name": "a"
 										}
 									]
@@ -143,10 +137,7 @@
 									"type": "Identifier",
 									"start": 99,
 									"end": 100,
-									"reference": 5,
-									"writes": [
-										4
-									],
+									"reference": 1,
 									"name": "b"
 								}
 							}
@@ -177,7 +168,7 @@
 									"type": "Identifier",
 									"start": 112,
 									"end": 119,
-									"reference": 6,
+									"declares": 4,
 									"name": "missing"
 								},
 								"init": null
@@ -208,7 +199,7 @@
 								"type": "Identifier",
 								"start": 134,
 								"end": 138,
-								"reference": 7,
+								"declares": 5,
 								"name": "item"
 							},
 							"init": null
@@ -220,10 +211,7 @@
 					"type": "Identifier",
 					"start": 142,
 					"end": 147,
-					"reference": 8,
-					"writes": [
-						7
-					],
+					"reference": 2,
 					"name": "items"
 				},
 				"body": {
@@ -377,60 +365,42 @@
 		{
 			"name": "x",
 			"kind": "param",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "d",
 			"kind": "const",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "resource",
 			"kind": "using",
-			"scope": 2
+			"scope": 2,
+			"write": true
 		},
 		{
 			"name": "a",
 			"kind": "using",
-			"scope": 2
+			"scope": 2,
+			"write": true
 		},
 		{
 			"name": "missing",
 			"kind": "using",
-			"scope": 3
+			"scope": 3,
+			"write": false
 		},
 		{
 			"name": "item",
 			"kind": "using",
-			"scope": 4
+			"scope": 4,
+			"write": true
 		}
 	],
 	"references": [
 		{
-			"scope": 1,
-			"binding": 0,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 1,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 2,
-			"binding": 2,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
 			"scope": 2,
 			"binding": null,
 			"write": false,
@@ -440,35 +410,11 @@
 		},
 		{
 			"scope": 2,
-			"binding": 3,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 2,
 			"binding": null,
 			"write": false,
 			"read": true,
 			"mutate": false,
 			"declares": false
-		},
-		{
-			"scope": 3,
-			"binding": 4,
-			"write": false,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 4,
-			"binding": 5,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
 		},
 		{
 			"scope": 4,

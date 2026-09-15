@@ -21,17 +21,14 @@
 							"type": "Identifier",
 							"start": 6,
 							"end": 14,
-							"reference": 0,
+							"declares": 0,
 							"name": "resource"
 						},
 						"init": {
 							"type": "Identifier",
 							"start": 17,
 							"end": 23,
-							"reference": 1,
-							"writes": [
-								0
-							],
+							"reference": 0,
 							"name": "source"
 						}
 					}
@@ -46,7 +43,7 @@
 					"type": "Identifier",
 					"start": 25,
 					"end": 33,
-					"reference": 2,
+					"reference": 1,
 					"name": "resource"
 				}
 			},
@@ -66,17 +63,14 @@
 							"type": "Identifier",
 							"start": 47,
 							"end": 59,
-							"reference": 3,
+							"declares": 1,
 							"name": "asynchronous"
 						},
 						"init": {
 							"type": "Identifier",
 							"start": 62,
 							"end": 68,
-							"reference": 4,
-							"writes": [
-								3
-							],
+							"reference": 2,
 							"name": "source"
 						}
 					}
@@ -105,17 +99,14 @@
 									"type": "Identifier",
 									"start": 79,
 									"end": 84,
-									"reference": 5,
+									"declares": 2,
 									"name": "first"
 								},
 								"init": {
 									"type": "Identifier",
 									"start": 87,
 									"end": 93,
-									"reference": 6,
-									"writes": [
-										5
-									],
+									"reference": 3,
 									"name": "source"
 								}
 							},
@@ -130,17 +121,14 @@
 									"type": "Identifier",
 									"start": 95,
 									"end": 101,
-									"reference": 7,
+									"declares": 3,
 									"name": "second"
 								},
 								"init": {
 									"type": "Identifier",
 									"start": 104,
 									"end": 109,
-									"reference": 8,
-									"writes": [
-										7
-									],
+									"reference": 4,
 									"name": "first"
 								}
 							}
@@ -163,17 +151,14 @@
 									"type": "Identifier",
 									"start": 118,
 									"end": 123,
-									"reference": 9,
+									"declares": 4,
 									"name": "using"
 								},
 								"init": {
 									"type": "Identifier",
 									"start": 126,
 									"end": 132,
-									"reference": 10,
-									"writes": [
-										9
-									],
+									"reference": 5,
 									"name": "source"
 								}
 							}
@@ -194,7 +179,7 @@
 					"type": "Identifier",
 					"start": 145,
 					"end": 146,
-					"reference": 11,
+					"declares": 5,
 					"name": "f"
 				},
 				"expression": false,
@@ -222,17 +207,14 @@
 										"type": "Identifier",
 										"start": 158,
 										"end": 163,
-										"reference": 12,
+										"declares": 6,
 										"name": "local"
 									},
 									"init": {
 										"type": "Identifier",
 										"start": 166,
 										"end": 172,
-										"reference": 13,
-										"writes": [
-											12
-										],
+										"reference": 6,
 										"name": "source"
 									}
 								}
@@ -247,7 +229,7 @@
 								"type": "Identifier",
 								"start": 182,
 								"end": 187,
-								"reference": 14,
+								"reference": 7,
 								"name": "local"
 							}
 						}
@@ -266,7 +248,7 @@
 					"type": "Identifier",
 					"start": 197,
 					"end": 198,
-					"reference": 15,
+					"declares": 7,
 					"name": "C"
 				},
 				"superClass": null,
@@ -297,17 +279,14 @@
 												"type": "Identifier",
 												"start": 219,
 												"end": 224,
-												"reference": 16,
+												"declares": 8,
 												"name": "local"
 											},
 											"init": {
 												"type": "Identifier",
 												"start": 227,
 												"end": 233,
-												"reference": 17,
-												"writes": [
-													16
-												],
+												"reference": 8,
 												"name": "source"
 											}
 										}
@@ -322,7 +301,7 @@
 										"type": "Identifier",
 										"start": 237,
 										"end": 242,
-										"reference": 18,
+										"reference": 9,
 										"name": "local"
 									}
 								}
@@ -340,7 +319,7 @@
 					"type": "Identifier",
 					"start": 257,
 					"end": 263,
-					"reference": 19,
+					"reference": 10,
 					"name": "choice"
 				},
 				"cases": [
@@ -371,17 +350,14 @@
 													"type": "Identifier",
 													"start": 286,
 													"end": 291,
-													"reference": 20,
+													"declares": 9,
 													"name": "local"
 												},
 												"init": {
 													"type": "Identifier",
 													"start": 294,
 													"end": 300,
-													"reference": 21,
-													"writes": [
-														20
-													],
+													"reference": 11,
 													"name": "source"
 												}
 											}
@@ -396,7 +372,7 @@
 											"type": "Identifier",
 											"start": 304,
 											"end": 309,
-											"reference": 22,
+											"reference": 12,
 											"name": "local"
 										}
 									}
@@ -435,7 +411,7 @@
 								"type": "Identifier",
 								"start": 327,
 								"end": 331,
-								"reference": 23,
+								"declares": 10,
 								"name": "item"
 							},
 							"init": null
@@ -447,10 +423,7 @@
 					"type": "Identifier",
 					"start": 335,
 					"end": 340,
-					"reference": 24,
-					"writes": [
-						23
-					],
+					"reference": 13,
 					"name": "items"
 				},
 				"body": {
@@ -467,7 +440,7 @@
 								"type": "Identifier",
 								"start": 344,
 								"end": 348,
-								"reference": 25,
+								"reference": 14,
 								"name": "item"
 							}
 						}
@@ -495,17 +468,14 @@
 								"type": "Identifier",
 								"start": 363,
 								"end": 367,
-								"reference": 26,
+								"declares": 11,
 								"name": "item"
 							},
 							"init": {
 								"type": "Identifier",
 								"start": 370,
 								"end": 376,
-								"reference": 27,
-								"writes": [
-									26
-								],
+								"reference": 15,
 								"name": "source"
 							}
 						}
@@ -528,7 +498,7 @@
 								"type": "Identifier",
 								"start": 382,
 								"end": 386,
-								"reference": 28,
+								"reference": 16,
 								"name": "item"
 							}
 						}
@@ -556,17 +526,14 @@
 								"type": "Identifier",
 								"start": 401,
 								"end": 403,
-								"reference": 29,
+								"declares": 12,
 								"name": "of"
 							},
 							"init": {
 								"type": "Identifier",
 								"start": 406,
 								"end": 412,
-								"reference": 30,
-								"writes": [
-									29
-								],
+								"reference": 17,
 								"name": "source"
 							}
 						}
@@ -589,7 +556,7 @@
 								"type": "Identifier",
 								"start": 418,
 								"end": 420,
-								"reference": 31,
+								"reference": 18,
 								"name": "of"
 							}
 						}
@@ -608,7 +575,7 @@
 					"type": "Identifier",
 					"start": 439,
 					"end": 440,
-					"reference": 32,
+					"declares": 13,
 					"name": "g"
 				},
 				"expression": false,
@@ -636,17 +603,14 @@
 										"type": "Identifier",
 										"start": 458,
 										"end": 463,
-										"reference": 33,
+										"declares": 14,
 										"name": "local"
 									},
 									"init": {
 										"type": "Identifier",
 										"start": 466,
 										"end": 472,
-										"reference": 34,
-										"writes": [
-											33
-										],
+										"reference": 19,
 										"name": "source"
 									}
 								}
@@ -661,7 +625,7 @@
 								"type": "Identifier",
 								"start": 475,
 								"end": 480,
-								"reference": 35,
+								"reference": 20,
 								"name": "local"
 							}
 						},
@@ -687,7 +651,7 @@
 											"type": "Identifier",
 											"start": 500,
 											"end": 504,
-											"reference": 36,
+											"declares": 15,
 											"name": "item"
 										},
 										"init": null
@@ -699,10 +663,7 @@
 								"type": "Identifier",
 								"start": 508,
 								"end": 513,
-								"reference": 37,
-								"writes": [
-									36
-								],
+								"reference": 21,
 								"name": "items"
 							},
 							"body": {
@@ -719,7 +680,7 @@
 											"type": "Identifier",
 											"start": 517,
 											"end": 521,
-											"reference": 38,
+											"reference": 22,
 											"name": "item"
 										}
 									}
@@ -748,7 +709,7 @@
 											"type": "Identifier",
 											"start": 543,
 											"end": 547,
-											"reference": 39,
+											"declares": 16,
 											"name": "item"
 										},
 										"init": null
@@ -760,10 +721,7 @@
 								"type": "Identifier",
 								"start": 551,
 								"end": 556,
-								"reference": 40,
-								"writes": [
-									39
-								],
+								"reference": 23,
 								"name": "items"
 							},
 							"body": {
@@ -780,7 +738,7 @@
 											"type": "Identifier",
 											"start": 560,
 											"end": 564,
-											"reference": 41,
+											"reference": 24,
 											"name": "item"
 										}
 									}
@@ -809,7 +767,7 @@
 											"type": "Identifier",
 											"start": 586,
 											"end": 588,
-											"reference": 42,
+											"declares": 17,
 											"name": "of"
 										},
 										"init": null
@@ -821,10 +779,7 @@
 								"type": "Identifier",
 								"start": 592,
 								"end": 597,
-								"reference": 43,
-								"writes": [
-									42
-								],
+								"reference": 25,
 								"name": "items"
 							},
 							"body": {
@@ -841,7 +796,7 @@
 											"type": "Identifier",
 											"start": 601,
 											"end": 603,
-											"reference": 44,
+											"reference": 26,
 											"name": "of"
 										}
 									}
@@ -962,105 +917,115 @@
 		{
 			"name": "resource",
 			"kind": "using",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "asynchronous",
 			"kind": "await using",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "first",
 			"kind": "using",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "second",
 			"kind": "using",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "using",
 			"kind": "using",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "f",
 			"kind": "function",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "local",
 			"kind": "using",
-			"scope": 2
+			"scope": 2,
+			"write": true
 		},
 		{
 			"name": "C",
 			"kind": "class",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "local",
 			"kind": "using",
-			"scope": 4
+			"scope": 4,
+			"write": true
 		},
 		{
 			"name": "local",
 			"kind": "using",
-			"scope": 6
+			"scope": 6,
+			"write": true
 		},
 		{
 			"name": "item",
 			"kind": "using",
-			"scope": 7
+			"scope": 7,
+			"write": true
 		},
 		{
 			"name": "item",
 			"kind": "using",
-			"scope": 9
+			"scope": 9,
+			"write": true
 		},
 		{
 			"name": "of",
 			"kind": "using",
-			"scope": 11
+			"scope": 11,
+			"write": true
 		},
 		{
 			"name": "g",
 			"kind": "function",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "local",
 			"kind": "await using",
-			"scope": 13
+			"scope": 13,
+			"write": true
 		},
 		{
 			"name": "item",
 			"kind": "using",
-			"scope": 14
+			"scope": 14,
+			"write": true
 		},
 		{
 			"name": "item",
 			"kind": "await using",
-			"scope": 16
+			"scope": 16,
+			"write": true
 		},
 		{
 			"name": "of",
 			"kind": "await using",
-			"scope": 18
+			"scope": 18,
+			"write": true
 		}
 	],
 	"references": [
 		{
 			"scope": 0,
-			"binding": 0,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
@@ -1077,27 +1042,11 @@
 		},
 		{
 			"scope": 0,
-			"binding": 1,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
 			"mutate": false,
 			"declares": false
-		},
-		{
-			"scope": 1,
-			"binding": 2,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
 		},
 		{
 			"scope": 1,
@@ -1109,14 +1058,6 @@
 		},
 		{
 			"scope": 1,
-			"binding": 3,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 1,
 			"binding": 2,
 			"write": false,
 			"read": true,
@@ -1125,35 +1066,11 @@
 		},
 		{
 			"scope": 1,
-			"binding": 4,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 1,
 			"binding": null,
 			"write": false,
 			"read": true,
 			"mutate": false,
 			"declares": false
-		},
-		{
-			"scope": 0,
-			"binding": 5,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 2,
-			"binding": 6,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
 		},
 		{
 			"scope": 2,
@@ -1170,22 +1087,6 @@
 			"read": true,
 			"mutate": false,
 			"declares": false
-		},
-		{
-			"scope": 0,
-			"binding": 7,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 4,
-			"binding": 8,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
 		},
 		{
 			"scope": 4,
@@ -1213,14 +1114,6 @@
 		},
 		{
 			"scope": 6,
-			"binding": 9,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 6,
 			"binding": null,
 			"write": false,
 			"read": true,
@@ -1234,14 +1127,6 @@
 			"read": true,
 			"mutate": false,
 			"declares": false
-		},
-		{
-			"scope": 7,
-			"binding": 10,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
 		},
 		{
 			"scope": 7,
@@ -1261,14 +1146,6 @@
 		},
 		{
 			"scope": 9,
-			"binding": 11,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 9,
 			"binding": null,
 			"write": false,
 			"read": true,
@@ -1282,14 +1159,6 @@
 			"read": true,
 			"mutate": false,
 			"declares": false
-		},
-		{
-			"scope": 11,
-			"binding": 12,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
 		},
 		{
 			"scope": 11,
@@ -1308,22 +1177,6 @@
 			"declares": false
 		},
 		{
-			"scope": 0,
-			"binding": 13,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 13,
-			"binding": 14,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
 			"scope": 13,
 			"binding": null,
 			"write": false,
@@ -1338,14 +1191,6 @@
 			"read": true,
 			"mutate": false,
 			"declares": false
-		},
-		{
-			"scope": 14,
-			"binding": 15,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
 		},
 		{
 			"scope": 14,
@@ -1365,14 +1210,6 @@
 		},
 		{
 			"scope": 16,
-			"binding": 16,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 16,
 			"binding": null,
 			"write": false,
 			"read": true,
@@ -1386,14 +1223,6 @@
 			"read": true,
 			"mutate": false,
 			"declares": false
-		},
-		{
-			"scope": 18,
-			"binding": 17,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
 		},
 		{
 			"scope": 18,

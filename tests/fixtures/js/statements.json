@@ -143,16 +143,13 @@
 								"type": "Identifier",
 								"start": 82,
 								"end": 83,
-								"reference": 8,
+								"declares": 0,
 								"name": "i"
 							},
 							"init": {
 								"type": "Literal",
 								"start": 86,
 								"end": 87,
-								"writes": [
-									8
-								],
 								"value": 0,
 								"raw": "0"
 							}
@@ -168,7 +165,7 @@
 						"type": "Identifier",
 						"start": 89,
 						"end": 90,
-						"reference": 9,
+						"reference": 8,
 						"name": "i"
 					},
 					"operator": "<",
@@ -190,7 +187,7 @@
 						"type": "Identifier",
 						"start": 96,
 						"end": 97,
-						"reference": 10,
+						"reference": 9,
 						"name": "i"
 					}
 				},
@@ -222,7 +219,7 @@
 								"type": "Identifier",
 								"start": 122,
 								"end": 123,
-								"reference": 11,
+								"declares": 1,
 								"name": "k"
 							},
 							"init": null
@@ -234,10 +231,7 @@
 					"type": "Identifier",
 					"start": 127,
 					"end": 128,
-					"reference": 12,
-					"writes": [
-						11
-					],
+					"reference": 10,
 					"name": "o"
 				},
 				"body": {
@@ -270,7 +264,7 @@
 								"type": "Identifier",
 								"start": 144,
 								"end": 145,
-								"reference": 13,
+								"declares": 2,
 								"name": "v"
 							},
 							"init": null
@@ -282,10 +276,7 @@
 					"type": "Identifier",
 					"start": 149,
 					"end": 150,
-					"reference": 14,
-					"writes": [
-						13
-					],
+					"reference": 11,
 					"name": "a"
 				},
 				"body": {
@@ -305,7 +296,7 @@
 					"type": "Identifier",
 					"start": 163,
 					"end": 164,
-					"reference": 15,
+					"reference": 12,
 					"name": "x"
 				},
 				"cases": [
@@ -339,7 +330,7 @@
 										"type": "Identifier",
 										"start": 184,
 										"end": 185,
-										"reference": 16,
+										"reference": 13,
 										"name": "y"
 									},
 									"arguments": [],
@@ -378,7 +369,7 @@
 										"type": "Identifier",
 										"start": 205,
 										"end": 206,
-										"reference": 17,
+										"reference": 14,
 										"name": "z"
 									},
 									"arguments": [],
@@ -412,7 +403,7 @@
 									"type": "Identifier",
 									"start": 218,
 									"end": 219,
-									"reference": 18,
+									"reference": 15,
 									"name": "t"
 								},
 								"arguments": [],
@@ -453,7 +444,7 @@
 									"type": "Identifier",
 									"start": 245,
 									"end": 246,
-									"reference": 19,
+									"reference": 16,
 									"name": "u"
 								},
 								"arguments": [],
@@ -504,7 +495,7 @@
 									"type": "Identifier",
 									"start": 269,
 									"end": 276,
-									"reference": 20,
+									"declares": 3,
 									"name": "message"
 								},
 								"kind": "init"
@@ -571,7 +562,7 @@
 						"type": "Identifier",
 						"start": 327,
 						"end": 332,
-						"reference": 21,
+						"reference": 17,
 						"name": "Error"
 					},
 					"arguments": []
@@ -602,16 +593,16 @@
 					"type": "Identifier",
 					"start": 357,
 					"end": 358,
-					"reference": 22,
+					"reference": 18,
 					"name": "k"
 				},
 				"right": {
 					"type": "Identifier",
 					"start": 362,
 					"end": 363,
-					"reference": 23,
+					"reference": 19,
 					"writes": [
-						22
+						18
 					],
 					"name": "o"
 				},
@@ -717,22 +708,26 @@
 		{
 			"name": "i",
 			"kind": "let",
-			"scope": 2
+			"scope": 2,
+			"write": true
 		},
 		{
 			"name": "k",
 			"kind": "const",
-			"scope": 3
+			"scope": 3,
+			"write": true
 		},
 		{
 			"name": "v",
 			"kind": "const",
-			"scope": 5
+			"scope": 5,
+			"write": true
 		},
 		{
 			"name": "message",
 			"kind": "catch",
-			"scope": 13
+			"scope": 13,
+			"write": true
 		}
 	],
 	"references": [
@@ -803,14 +798,6 @@
 		{
 			"scope": 2,
 			"binding": 0,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 2,
-			"binding": 0,
 			"write": false,
 			"read": true,
 			"mutate": false,
@@ -823,14 +810,6 @@
 			"read": true,
 			"mutate": false,
 			"declares": false
-		},
-		{
-			"scope": 3,
-			"binding": 1,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
 		},
 		{
 			"scope": 3,
@@ -839,14 +818,6 @@
 			"read": true,
 			"mutate": false,
 			"declares": false
-		},
-		{
-			"scope": 5,
-			"binding": 2,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
 		},
 		{
 			"scope": 5,
@@ -895,14 +866,6 @@
 			"read": true,
 			"mutate": false,
 			"declares": false
-		},
-		{
-			"scope": 13,
-			"binding": 3,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
 		},
 		{
 			"scope": 0,

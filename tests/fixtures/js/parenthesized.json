@@ -139,7 +139,7 @@
 							"type": "Identifier",
 							"start": 41,
 							"end": 42,
-							"reference": 7,
+							"declares": 0,
 							"name": "h"
 						}
 					],
@@ -147,7 +147,7 @@
 						"type": "Identifier",
 						"start": 47,
 						"end": 48,
-						"reference": 8,
+						"reference": 7,
 						"name": "i"
 					}
 				}
@@ -165,14 +165,14 @@
 							"type": "Identifier",
 							"start": 51,
 							"end": 52,
-							"reference": 9,
+							"reference": 8,
 							"name": "j"
 						},
 						{
 							"type": "Identifier",
 							"start": 54,
 							"end": 55,
-							"reference": 10,
+							"reference": 9,
 							"name": "k"
 						}
 					]
@@ -199,7 +199,8 @@
 		{
 			"name": "h",
 			"kind": "param",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		}
 	],
 	"references": [
@@ -258,14 +259,6 @@
 			"read": true,
 			"mutate": false,
 			"declares": false
-		},
-		{
-			"scope": 1,
-			"binding": 0,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
 		},
 		{
 			"scope": 1,

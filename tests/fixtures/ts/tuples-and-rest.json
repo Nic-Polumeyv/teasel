@@ -134,7 +134,7 @@
 					"type": "Identifier",
 					"start": 101,
 					"end": 102,
-					"reference": 0,
+					"declares": 0,
 					"name": "f"
 				},
 				"expression": false,
@@ -171,7 +171,7 @@
 							"type": "Identifier",
 							"start": 106,
 							"end": 110,
-							"reference": 1,
+							"declares": 1,
 							"name": "args"
 						}
 					}
@@ -204,30 +204,15 @@
 		{
 			"name": "f",
 			"kind": "function",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "args",
 			"kind": "param",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		}
 	],
-	"references": [
-		{
-			"scope": 0,
-			"binding": 0,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 1,
-			"binding": 1,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		}
-	]
+	"references": []
 }

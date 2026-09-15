@@ -21,16 +21,13 @@
 							"type": "Identifier",
 							"start": 6,
 							"end": 7,
-							"reference": 0,
+							"declares": 0,
 							"name": "o"
 						},
 						"init": {
 							"type": "ObjectExpression",
 							"start": 10,
 							"end": 57,
-							"writes": [
-								0
-							],
 							"properties": [
 								{
 									"type": "Property",
@@ -160,7 +157,7 @@
 						"type": "Identifier",
 						"start": 59,
 						"end": 60,
-						"reference": 1,
+						"reference": 0,
 						"name": "o"
 					},
 					"property": {
@@ -185,7 +182,7 @@
 						"type": "Identifier",
 						"start": 65,
 						"end": 66,
-						"reference": 2,
+						"reference": 1,
 						"name": "o"
 					},
 					"property": {
@@ -210,7 +207,7 @@
 						"type": "Identifier",
 						"start": 74,
 						"end": 75,
-						"reference": 3,
+						"reference": 2,
 						"name": "o"
 					},
 					"property": {
@@ -235,7 +232,7 @@
 					"type": "Identifier",
 					"start": 87,
 					"end": 88,
-					"reference": 4,
+					"declares": 1,
 					"name": "C"
 				},
 				"superClass": null,
@@ -325,16 +322,13 @@
 							"type": "Identifier",
 							"start": 121,
 							"end": 126,
-							"reference": 5,
+							"declares": 2,
 							"name": "async"
 						},
 						"init": {
 							"type": "Literal",
 							"start": 129,
 							"end": 130,
-							"writes": [
-								5
-							],
 							"value": 1,
 							"raw": "1"
 						}
@@ -350,7 +344,7 @@
 					"type": "Identifier",
 					"start": 132,
 					"end": 137,
-					"reference": 6,
+					"reference": 3,
 					"name": "async"
 				}
 			},
@@ -362,7 +356,7 @@
 					"type": "Identifier",
 					"start": 139,
 					"end": 144,
-					"reference": 7,
+					"reference": 4,
 					"name": "async"
 				}
 			},
@@ -378,7 +372,7 @@
 					"type": "Identifier",
 					"start": 154,
 					"end": 155,
-					"reference": 8,
+					"declares": 3,
 					"name": "f"
 				},
 				"expression": false,
@@ -428,36 +422,32 @@
 		{
 			"name": "o",
 			"kind": "const",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "C",
 			"kind": "class",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "async",
 			"kind": "let",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "f",
 			"kind": "function",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		}
 	],
 	"references": [
 		{
 			"scope": 0,
 			"binding": 0,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 0,
 			"write": false,
 			"read": true,
 			"mutate": false,
@@ -481,22 +471,6 @@
 		},
 		{
 			"scope": 0,
-			"binding": 1,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 2,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
 			"binding": 2,
 			"write": false,
 			"read": true,
@@ -510,14 +484,6 @@
 			"read": true,
 			"mutate": false,
 			"declares": false
-		},
-		{
-			"scope": 0,
-			"binding": 3,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
 		}
 	]
 }

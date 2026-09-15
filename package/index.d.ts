@@ -121,6 +121,15 @@ export interface Binding {
 	node: Identifier | null;
 	/** What declares it: the declarator, function, class, import specifier, catch clause or enum, as eslint-scope's definition node; null for `arguments` and for a pattern or parameter list parsed on its own. */
 	declaration: Node | null;
+	/** A binding is the reference its declaring identifier makes, the first of its own: `referenceOf` answers with it, and its `binding` is itself. */
+	binding: Binding;
+	declares: true;
+	/** The declaration binds a value: an initializer, a parameter, a function, a class, an import; not a bare `let x;`. */
+	write: boolean;
+	read: false;
+	mutate: false;
+	/** The initializer of a declarator, `1` in `let x = 1`; null otherwise, the iterated expression of a `for-of` and a parameter's default being on the tree. */
+	writeExpr: Expression | null;
 }
 
 /** A piece of JavaScript a host read on its own, as one of `roots` on a document's answer, with what the tables hold for it. */
@@ -148,7 +157,7 @@ export interface Reference {
 	read: boolean;
 	/** What a write assigns: the right side of the assignment, the iterated expression of a `for-in` or `for-of`, or what a declaration is initialized with, as eslint-scope's `writeExpr`; null for an update. */
 	writeExpr: Expression | null;
-	/** The identifier declares its binding: the first write when a value is bound there, an initializer, a parameter's default, a function or class, and neither a read nor a write for a bare `let x;`. */
+	/** The identifier declares its binding again, `var x` twice: the binding itself is the first declaration, and this reference writes when a value is bound here. */
 	declares: boolean;
 }
 
@@ -156,8 +165,8 @@ export interface Reference {
 export function parentOf(node: Node): Node | undefined;
 /** With `scopes`: the scope `node` opens, when it opens one. */
 export function scopeOf(node: Node): Scope | undefined;
-/** With `scopes`: the reference an identifier makes, declaring its binding or using one; a global's too, which no binding lists. Undefined when the identifier names no value, a property key say. */
-export function referenceOf(node: Node): Reference | undefined;
+/** With `scopes`: the reference an identifier makes, the binding itself for the identifier that declares it; a global's too, which no binding lists. Undefined when the identifier names no value, a property key say. */
+export function referenceOf(node: Node): Reference | Binding | undefined;
 
 /** A range of the source, with `loc` when `locations` is on. */
 export interface Span {

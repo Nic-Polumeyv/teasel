@@ -20,7 +20,7 @@
 					"type": "Identifier",
 					"start": 9,
 					"end": 28,
-					"reference": 0,
+					"declares": 0,
 					"name": "optionalDefaultRest"
 				},
 				"expression": false,
@@ -31,7 +31,7 @@
 						"type": "Identifier",
 						"start": 29,
 						"end": 39,
-						"reference": 1,
+						"declares": 1,
 						"typeAnnotation": {
 							"type": "TSTypeAnnotation",
 							"start": 31,
@@ -53,16 +53,13 @@
 							"type": "Identifier",
 							"start": 41,
 							"end": 42,
-							"reference": 2,
+							"declares": 2,
 							"name": "y"
 						},
 						"right": {
 							"type": "Literal",
 							"start": 45,
 							"end": 46,
-							"writes": [
-								2
-							],
 							"value": 1,
 							"raw": "1"
 						}
@@ -90,7 +87,7 @@
 							"type": "Identifier",
 							"start": 51,
 							"end": 55,
-							"reference": 3,
+							"declares": 3,
 							"name": "rest"
 						}
 					}
@@ -115,7 +112,7 @@
 					"type": "Identifier",
 					"start": 79,
 					"end": 87,
-					"reference": 4,
+					"declares": 4,
 					"name": "receiver"
 				},
 				"expression": false,
@@ -142,7 +139,7 @@
 						"type": "Identifier",
 						"start": 102,
 						"end": 112,
-						"reference": 5,
+						"declares": 5,
 						"typeAnnotation": {
 							"type": "TSTypeAnnotation",
 							"start": 104,
@@ -178,7 +175,7 @@
 					"type": "Identifier",
 					"start": 126,
 					"end": 127,
-					"reference": 6,
+					"declares": 6,
 					"name": "f"
 				},
 				"expression": false,
@@ -193,16 +190,13 @@
 							"type": "Identifier",
 							"start": 128,
 							"end": 129,
-							"reference": 7,
+							"declares": 7,
 							"name": "x"
 						},
 						"right": {
 							"type": "Literal",
 							"start": 132,
 							"end": 133,
-							"writes": [
-								7
-							],
 							"value": 1,
 							"raw": "1"
 						}
@@ -211,7 +205,7 @@
 						"type": "Identifier",
 						"start": 135,
 						"end": 144,
-						"reference": 8,
+						"declares": 8,
 						"typeAnnotation": {
 							"type": "TSTypeAnnotation",
 							"start": 136,
@@ -253,7 +247,7 @@
 					"type": "Identifier",
 					"start": 158,
 					"end": 168,
-					"reference": 9,
+					"declares": 9,
 					"name": "overloaded"
 				},
 				"generator": false,
@@ -291,7 +285,7 @@
 					"type": "Identifier",
 					"start": 197,
 					"end": 207,
-					"reference": 10,
+					"reference": 0,
 					"name": "overloaded"
 				},
 				"expression": false,
@@ -302,7 +296,7 @@
 						"type": "Identifier",
 						"start": 208,
 						"end": 218,
-						"reference": 11,
+						"declares": 10,
 						"typeAnnotation": {
 							"type": "TSTypeAnnotation",
 							"start": 210,
@@ -478,7 +472,7 @@
 							"type": "Identifier",
 							"start": 334,
 							"end": 339,
-							"reference": 12,
+							"declares": 11,
 							"name": "arrow"
 						},
 						"init": {
@@ -487,9 +481,6 @@
 							"end": 359,
 							"scope": 5,
 							"defines": [
-								12
-							],
-							"writes": [
 								12
 							],
 							"id": null,
@@ -501,7 +492,7 @@
 									"type": "Identifier",
 									"start": 343,
 									"end": 353,
-									"reference": 13,
+									"declares": 12,
 									"typeAnnotation": {
 										"type": "TSTypeAnnotation",
 										"start": 345,
@@ -520,7 +511,7 @@
 								"type": "Identifier",
 								"start": 358,
 								"end": 359,
-								"reference": 14,
+								"reference": 1,
 								"name": "x"
 							}
 						}
@@ -540,7 +531,7 @@
 					"type": "Identifier",
 					"start": 367,
 					"end": 368,
-					"reference": 15,
+					"declares": 13,
 					"name": "C"
 				},
 				"superClass": null,
@@ -584,7 +575,7 @@
 											"type": "Identifier",
 											"start": 394,
 											"end": 407,
-											"reference": 16,
+											"declares": 14,
 											"typeAnnotation": {
 												"type": "TSTypeAnnotation",
 												"start": 399,
@@ -637,7 +628,7 @@
 										"type": "Identifier",
 										"start": 422,
 										"end": 435,
-										"reference": 17,
+										"declares": 15,
 										"typeAnnotation": {
 											"type": "TSTypeAnnotation",
 											"start": 427,
@@ -751,192 +742,104 @@
 		{
 			"name": "optionalDefaultRest",
 			"kind": "function",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "x",
 			"kind": "param",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "y",
 			"kind": "param",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "rest",
 			"kind": "param",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "receiver",
 			"kind": "function",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "x",
 			"kind": "param",
-			"scope": 2
+			"scope": 2,
+			"write": true
 		},
 		{
 			"name": "f",
 			"kind": "function",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "x",
 			"kind": "param",
-			"scope": 3
+			"scope": 3,
+			"write": true
 		},
 		{
 			"name": "y",
 			"kind": "param",
-			"scope": 3
+			"scope": 3,
+			"write": true
 		},
 		{
 			"name": "overloaded",
 			"kind": "function",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "x",
 			"kind": "param",
-			"scope": 4
+			"scope": 4,
+			"write": true
 		},
 		{
 			"name": "arrow",
 			"kind": "const",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "x",
 			"kind": "param",
-			"scope": 5
+			"scope": 5,
+			"write": true
 		},
 		{
 			"name": "C",
 			"kind": "class",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "value",
 			"kind": "param",
-			"scope": 7
+			"scope": 7,
+			"write": true
 		},
 		{
 			"name": "value",
 			"kind": "param",
-			"scope": 8
+			"scope": 8,
+			"write": true
 		}
 	],
 	"references": [
 		{
 			"scope": 0,
-			"binding": 0,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 1,
-			"binding": 1,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 1,
-			"binding": 2,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 1,
-			"binding": 3,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 4,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 2,
-			"binding": 5,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 6,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 3,
-			"binding": 7,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 3,
-			"binding": 8,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
 			"binding": 9,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 9,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 4,
-			"binding": 10,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 11,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 5,
-			"binding": 12,
 			"write": true,
 			"read": false,
 			"mutate": false,
@@ -949,30 +852,6 @@
 			"read": true,
 			"mutate": false,
 			"declares": false
-		},
-		{
-			"scope": 0,
-			"binding": 13,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 7,
-			"binding": 14,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 8,
-			"binding": 15,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
 		}
 	]
 }

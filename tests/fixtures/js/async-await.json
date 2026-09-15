@@ -17,7 +17,7 @@
 					"type": "Identifier",
 					"start": 15,
 					"end": 16,
-					"reference": 0,
+					"declares": 0,
 					"name": "f"
 				},
 				"expression": false,
@@ -45,7 +45,7 @@
 										"type": "Identifier",
 										"start": 28,
 										"end": 29,
-										"reference": 1,
+										"reference": 0,
 										"name": "g"
 									},
 									"arguments": [],
@@ -75,14 +75,14 @@
 												"type": "Identifier",
 												"start": 41,
 												"end": 42,
-												"reference": 2,
+												"declares": 1,
 												"name": "a"
 											},
 											{
 												"type": "Identifier",
 												"start": 44,
 												"end": 45,
-												"reference": 3,
+												"declares": 2,
 												"name": "b"
 											}
 										]
@@ -91,10 +91,6 @@
 										"type": "AwaitExpression",
 										"start": 49,
 										"end": 78,
-										"writes": [
-											2,
-											3
-										],
 										"argument": {
 											"type": "CallExpression",
 											"start": 55,
@@ -107,7 +103,7 @@
 													"type": "Identifier",
 													"start": 55,
 													"end": 62,
-													"reference": 4,
+													"reference": 1,
 													"name": "Promise"
 												},
 												"property": {
@@ -133,7 +129,7 @@
 																"type": "Identifier",
 																"start": 68,
 																"end": 69,
-																"reference": 5,
+																"reference": 2,
 																"name": "h"
 															},
 															"arguments": [],
@@ -147,7 +143,7 @@
 																"type": "Identifier",
 																"start": 73,
 																"end": 74,
-																"reference": 6,
+																"reference": 3,
 																"name": "i"
 															},
 															"arguments": [],
@@ -185,7 +181,7 @@
 											"type": "Identifier",
 											"start": 98,
 											"end": 99,
-											"reference": 7,
+											"declares": 3,
 											"name": "x"
 										},
 										"init": null
@@ -197,10 +193,7 @@
 								"type": "Identifier",
 								"start": 103,
 								"end": 104,
-								"reference": 8,
-								"writes": [
-									7
-								],
+								"reference": 4,
 								"name": "y"
 							},
 							"body": {
@@ -290,58 +283,30 @@
 		{
 			"name": "f",
 			"kind": "function",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "a",
 			"kind": "const",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "b",
 			"kind": "const",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "x",
 			"kind": "const",
-			"scope": 2
+			"scope": 2,
+			"write": true
 		}
 	],
 	"references": [
 		{
-			"scope": 0,
-			"binding": 0,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 1,
-			"binding": null,
-			"write": false,
-			"read": true,
-			"mutate": false,
-			"declares": false
-		},
-		{
-			"scope": 1,
-			"binding": 1,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 1,
-			"binding": 2,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
 			"scope": 1,
 			"binding": null,
 			"write": false,
@@ -366,12 +331,12 @@
 			"declares": false
 		},
 		{
-			"scope": 2,
-			"binding": 3,
-			"write": true,
-			"read": false,
+			"scope": 1,
+			"binding": null,
+			"write": false,
+			"read": true,
 			"mutate": false,
-			"declares": true
+			"declares": false
 		},
 		{
 			"scope": 2,

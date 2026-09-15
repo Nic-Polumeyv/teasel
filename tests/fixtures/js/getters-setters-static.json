@@ -17,7 +17,7 @@
 					"type": "Identifier",
 					"start": 6,
 					"end": 7,
-					"reference": 0,
+					"declares": 0,
 					"name": "A"
 				},
 				"superClass": null,
@@ -87,7 +87,7 @@
 										"type": "Identifier",
 										"start": 41,
 										"end": 42,
-										"reference": 1,
+										"declares": 1,
 										"name": "v"
 									}
 								],
@@ -162,7 +162,7 @@
 										"type": "Identifier",
 										"start": 66,
 										"end": 67,
-										"reference": 2,
+										"declares": 2,
 										"name": "v"
 									}
 								],
@@ -326,43 +326,21 @@
 		{
 			"name": "A",
 			"kind": "class",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "v",
 			"kind": "param",
-			"scope": 3
+			"scope": 3,
+			"write": true
 		},
 		{
 			"name": "v",
 			"kind": "param",
-			"scope": 5
+			"scope": 5,
+			"write": true
 		}
 	],
-	"references": [
-		{
-			"scope": 0,
-			"binding": 0,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 3,
-			"binding": 1,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 5,
-			"binding": 2,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		}
-	]
+	"references": []
 }

@@ -81,7 +81,7 @@
 							"type": "Identifier",
 							"start": 45,
 							"end": 46,
-							"reference": 0,
+							"declares": 0,
 							"name": "C"
 						}
 					}
@@ -199,16 +199,13 @@
 							"type": "Identifier",
 							"start": 142,
 							"end": 143,
-							"reference": 1,
+							"declares": 1,
 							"name": "G"
 						},
 						"init": {
 							"type": "Literal",
 							"start": 146,
 							"end": 147,
-							"writes": [
-								1
-							],
 							"value": 1,
 							"raw": "1"
 						}
@@ -250,7 +247,7 @@
 							"type": "Identifier",
 							"start": 166,
 							"end": 167,
-							"reference": 2,
+							"reference": 0,
 							"name": "G"
 						},
 						"exported": {
@@ -302,7 +299,7 @@
 					"type": "Identifier",
 					"start": 202,
 					"end": 203,
-					"reference": 3,
+					"declares": 2,
 					"name": "I"
 				},
 				"moduleReference": {
@@ -331,7 +328,7 @@
 					"type": "Identifier",
 					"start": 227,
 					"end": 228,
-					"reference": 4,
+					"declares": 3,
 					"name": "J"
 				},
 				"moduleReference": {
@@ -342,7 +339,7 @@
 						"type": "Identifier",
 						"start": 231,
 						"end": 232,
-						"reference": 5,
+						"reference": 1,
 						"name": "K"
 					},
 					"right": {
@@ -361,7 +358,7 @@
 					"type": "Identifier",
 					"start": 245,
 					"end": 246,
-					"reference": 6,
+					"reference": 2,
 					"name": "M"
 				}
 			},
@@ -439,7 +436,7 @@
 					"type": "Identifier",
 					"start": 344,
 					"end": 345,
-					"reference": 7,
+					"declares": 4,
 					"name": "r"
 				},
 				"moduleReference": {
@@ -450,7 +447,7 @@
 						"type": "Identifier",
 						"start": 348,
 						"end": 349,
-						"reference": 8,
+						"reference": 3,
 						"name": "N"
 					},
 					"right": {
@@ -502,69 +499,42 @@
 		{
 			"name": "C",
 			"kind": "import",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "G",
 			"kind": "const",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "I",
 			"kind": "import",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "J",
 			"kind": "import",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "r",
 			"kind": "import",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		}
 	],
 	"references": [
 		{
 			"scope": 0,
-			"binding": 0,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 1,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
 			"binding": 1,
 			"write": false,
 			"read": true,
 			"mutate": false,
 			"declares": false
-		},
-		{
-			"scope": 0,
-			"binding": 2,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 3,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
 		},
 		{
 			"scope": 0,
@@ -581,14 +551,6 @@
 			"read": true,
 			"mutate": false,
 			"declares": false
-		},
-		{
-			"scope": 0,
-			"binding": 4,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
 		},
 		{
 			"scope": 0,

@@ -21,7 +21,7 @@
 							"type": "Identifier",
 							"start": 6,
 							"end": 7,
-							"reference": 0,
+							"declares": 0,
 							"name": "D"
 						},
 						"init": {
@@ -29,9 +29,6 @@
 							"start": 11,
 							"end": 95,
 							"scope": 1,
-							"writes": [
-								0
-							],
 							"decorators": [
 								{
 									"type": "Decorator",
@@ -41,7 +38,7 @@
 										"type": "Identifier",
 										"start": 12,
 										"end": 15,
-										"reference": 1,
+										"reference": 0,
 										"name": "dec"
 									}
 								}
@@ -66,7 +63,7 @@
 													"type": "Identifier",
 													"start": 26,
 													"end": 29,
-													"reference": 2,
+													"reference": 1,
 													"name": "dec"
 												}
 											}
@@ -111,7 +108,7 @@
 													"type": "Identifier",
 													"start": 39,
 													"end": 42,
-													"reference": 3,
+													"reference": 2,
 													"name": "dec"
 												}
 											}
@@ -145,7 +142,7 @@
 													"type": "Identifier",
 													"start": 53,
 													"end": 56,
-													"reference": 4,
+													"reference": 3,
 													"name": "dec"
 												}
 											}
@@ -180,7 +177,7 @@
 													"type": "Identifier",
 													"start": 76,
 													"end": 79,
-													"reference": 5,
+													"reference": 4,
 													"name": "dec"
 												}
 											}
@@ -250,18 +247,11 @@
 		{
 			"name": "D",
 			"kind": "const",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		}
 	],
 	"references": [
-		{
-			"scope": 0,
-			"binding": 0,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
 		{
 			"scope": 0,
 			"binding": null,

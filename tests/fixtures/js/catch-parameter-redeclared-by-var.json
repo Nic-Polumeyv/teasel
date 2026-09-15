@@ -28,7 +28,7 @@
 						"type": "Identifier",
 						"start": 14,
 						"end": 15,
-						"reference": 0,
+						"declares": 0,
 						"name": "a"
 					},
 					"body": {
@@ -57,7 +57,7 @@
 												"type": "Identifier",
 												"start": 28,
 												"end": 29,
-												"reference": 1,
+												"declares": 1,
 												"name": "a"
 											},
 											"init": null
@@ -69,10 +69,7 @@
 									"type": "Identifier",
 									"start": 33,
 									"end": 34,
-									"reference": 2,
-									"writes": [
-										1
-									],
+									"reference": 0,
 									"name": "x"
 								},
 								"body": {
@@ -98,7 +95,7 @@
 												"type": "Identifier",
 												"start": 46,
 												"end": 47,
-												"reference": 3,
+												"reference": 1,
 												"name": "a"
 											},
 											"init": null
@@ -127,7 +124,7 @@
 											"type": "Identifier",
 											"start": 56,
 											"end": 57,
-											"reference": 4,
+											"reference": 2,
 											"name": "a"
 										},
 										"init": null
@@ -171,31 +168,17 @@
 		{
 			"name": "a",
 			"kind": "catch",
-			"scope": 2
+			"scope": 2,
+			"write": true
 		},
 		{
 			"name": "a",
 			"kind": "var",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		}
 	],
 	"references": [
-		{
-			"scope": 2,
-			"binding": 0,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 3,
-			"binding": 1,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
 		{
 			"scope": 3,
 			"binding": null,

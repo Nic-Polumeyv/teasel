@@ -17,14 +17,14 @@
 					"type": "Identifier",
 					"start": 6,
 					"end": 7,
-					"reference": 0,
+					"declares": 0,
 					"name": "A"
 				},
 				"superClass": {
 					"type": "Identifier",
 					"start": 16,
 					"end": 17,
-					"reference": 1,
+					"reference": 0,
 					"name": "B"
 				},
 				"body": {
@@ -82,7 +82,7 @@
 								"type": "Identifier",
 								"start": 46,
 								"end": 54,
-								"reference": 2,
+								"reference": 1,
 								"name": "computed"
 							},
 							"value": {
@@ -227,7 +227,7 @@
 										"type": "Identifier",
 										"start": 125,
 										"end": 126,
-										"reference": 3,
+										"declares": 1,
 										"name": "v"
 									}
 								],
@@ -263,7 +263,7 @@
 												"type": "Identifier",
 												"start": 141,
 												"end": 142,
-												"reference": 4,
+												"reference": 2,
 												"name": "A"
 											},
 											"property": {
@@ -388,7 +388,7 @@
 													"type": "Identifier",
 													"start": 214,
 													"end": 217,
-													"reference": 5,
+													"reference": 3,
 													"name": "obj"
 												}
 											}
@@ -416,7 +416,7 @@
 							"type": "Identifier",
 							"start": 229,
 							"end": 230,
-							"reference": 6,
+							"declares": 2,
 							"name": "C"
 						},
 						"init": {
@@ -424,9 +424,6 @@
 							"start": 233,
 							"end": 241,
 							"scope": 9,
-							"writes": [
-								6
-							],
 							"id": null,
 							"superClass": null,
 							"body": {
@@ -501,29 +498,24 @@
 		{
 			"name": "A",
 			"kind": "class",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "v",
 			"kind": "param",
-			"scope": 4
+			"scope": 4,
+			"write": true
 		},
 		{
 			"name": "C",
 			"kind": "const",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		}
 	],
 	"references": [
 		{
-			"scope": 0,
-			"binding": 0,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
 			"scope": 1,
 			"binding": null,
 			"write": false,
@@ -538,14 +530,6 @@
 			"read": true,
 			"mutate": false,
 			"declares": false
-		},
-		{
-			"scope": 4,
-			"binding": 1,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
 		},
 		{
 			"scope": 5,
@@ -562,14 +546,6 @@
 			"read": true,
 			"mutate": false,
 			"declares": false
-		},
-		{
-			"scope": 0,
-			"binding": 2,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
 		}
 	]
 }

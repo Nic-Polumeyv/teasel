@@ -71,7 +71,7 @@
 					"type": "Identifier",
 					"start": 24,
 					"end": 25,
-					"reference": 2,
+					"declares": 0,
 					"name": "A"
 				},
 				"superClass": null,
@@ -103,7 +103,7 @@
 										"type": "Identifier",
 										"start": 30,
 										"end": 34,
-										"reference": 3,
+										"reference": 2,
 										"name": "prop"
 									}
 								}
@@ -131,7 +131,7 @@
 										"type": "Identifier",
 										"start": 48,
 										"end": 54,
-										"reference": 4,
+										"reference": 3,
 										"name": "method"
 									}
 								}
@@ -162,7 +162,7 @@
 										"type": "Identifier",
 										"start": 64,
 										"end": 73,
-										"reference": 6,
+										"declares": 1,
 										"typeAnnotation": {
 											"type": "TSTypeAnnotation",
 											"start": 65,
@@ -182,7 +182,7 @@
 													"type": "Identifier",
 													"start": 58,
 													"end": 63,
-													"reference": 5,
+													"reference": 4,
 													"name": "param"
 												}
 											}
@@ -211,7 +211,7 @@
 										"type": "Identifier",
 										"start": 80,
 										"end": 83,
-										"reference": 7,
+										"reference": 5,
 										"name": "acc"
 									}
 								}
@@ -258,7 +258,7 @@
 								"type": "Identifier",
 								"start": 110,
 								"end": 113,
-								"reference": 8,
+								"reference": 6,
 								"name": "dec"
 							}
 						}
@@ -267,7 +267,7 @@
 						"type": "Identifier",
 						"start": 120,
 						"end": 121,
-						"reference": 9,
+						"declares": 2,
 						"name": "B"
 					},
 					"superClass": null,
@@ -304,7 +304,7 @@
 								"type": "Identifier",
 								"start": 126,
 								"end": 129,
-								"reference": 10,
+								"reference": 7,
 								"name": "dec"
 							}
 						}
@@ -313,7 +313,7 @@
 						"type": "Identifier",
 						"start": 143,
 						"end": 144,
-						"reference": 11,
+						"declares": 3,
 						"name": "C"
 					},
 					"superClass": null,
@@ -344,7 +344,7 @@
 							"type": "Identifier",
 							"start": 154,
 							"end": 155,
-							"reference": 12,
+							"declares": 4,
 							"name": "D"
 						},
 						"init": {
@@ -352,9 +352,6 @@
 							"start": 159,
 							"end": 172,
 							"scope": 5,
-							"writes": [
-								12
-							],
 							"decorators": [
 								{
 									"type": "Decorator",
@@ -364,7 +361,7 @@
 										"type": "Identifier",
 										"start": 160,
 										"end": 163,
-										"reference": 13,
+										"reference": 8,
 										"name": "dec"
 									}
 								}
@@ -401,7 +398,7 @@
 								"type": "Identifier",
 								"start": 191,
 								"end": 194,
-								"reference": 14,
+								"reference": 9,
 								"name": "dec"
 							}
 						}
@@ -443,7 +440,7 @@
 											"type": "Identifier",
 											"start": 223,
 											"end": 232,
-											"reference": 16,
+											"declares": 5,
 											"typeAnnotation": {
 												"type": "TSTypeAnnotation",
 												"start": 224,
@@ -463,7 +460,7 @@
 														"type": "Identifier",
 														"start": 217,
 														"end": 222,
-														"reference": 15,
+														"reference": 10,
 														"name": "param"
 													}
 												}
@@ -509,7 +506,7 @@
 											"type": "Identifier",
 											"start": 251,
 											"end": 264,
-											"reference": 18,
+											"declares": 6,
 											"typeAnnotation": {
 												"type": "TSTypeAnnotation",
 												"start": 256,
@@ -529,7 +526,7 @@
 														"type": "Identifier",
 														"start": 245,
 														"end": 250,
-														"reference": 17,
+														"reference": 11,
 														"name": "param"
 													}
 												}
@@ -566,7 +563,7 @@
 							"type": "Identifier",
 							"start": 272,
 							"end": 275,
-							"reference": 19,
+							"reference": 12,
 							"name": "dec"
 						}
 					}
@@ -576,7 +573,7 @@
 					"type": "Identifier",
 					"start": 291,
 					"end": 292,
-					"reference": 20,
+					"declares": 7,
 					"name": "E"
 				},
 				"superClass": null,
@@ -598,7 +595,7 @@
 										"type": "Identifier",
 										"start": 297,
 										"end": 300,
-										"reference": 21,
+										"reference": 13,
 										"name": "dec"
 									}
 								}
@@ -642,7 +639,7 @@
 										"type": "Identifier",
 										"start": 311,
 										"end": 314,
-										"reference": 22,
+										"reference": 14,
 										"name": "dec"
 									}
 								}
@@ -681,7 +678,7 @@
 										"type": "Identifier",
 										"start": 336,
 										"end": 339,
-										"reference": 23,
+										"reference": 15,
 										"name": "dec"
 									}
 								}
@@ -710,7 +707,7 @@
 										"type": "Identifier",
 										"start": 362,
 										"end": 365,
-										"reference": 24,
+										"reference": 16,
 										"name": "dec"
 									}
 								}
@@ -755,7 +752,7 @@
 										"type": "Identifier",
 										"start": 382,
 										"end": 385,
-										"reference": 25,
+										"reference": 17,
 										"name": "dec"
 									}
 								}
@@ -862,42 +859,50 @@
 		{
 			"name": "A",
 			"kind": "class",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "p",
 			"kind": "param",
-			"scope": 2
+			"scope": 2,
+			"write": true
 		},
 		{
 			"name": "B",
 			"kind": "class",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "C",
 			"kind": "class",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "D",
 			"kind": "const",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "x",
 			"kind": "param",
-			"scope": 7
+			"scope": 7,
+			"write": true
 		},
 		{
 			"name": "value",
 			"kind": "param",
-			"scope": 8
+			"scope": 8,
+			"write": true
 		},
 		{
 			"name": "E",
 			"kind": "class",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		}
 	],
 	"references": [
@@ -918,14 +923,6 @@
 			"declares": false
 		},
 		{
-			"scope": 0,
-			"binding": 0,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
 			"scope": 1,
 			"binding": null,
 			"write": false,
@@ -950,14 +947,6 @@
 			"declares": false
 		},
 		{
-			"scope": 2,
-			"binding": 1,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
 			"scope": 1,
 			"binding": null,
 			"write": false,
@@ -975,35 +964,11 @@
 		},
 		{
 			"scope": 0,
-			"binding": 2,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
 			"mutate": false,
 			"declares": false
-		},
-		{
-			"scope": 0,
-			"binding": 3,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 4,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
 		},
 		{
 			"scope": 0,
@@ -1030,14 +995,6 @@
 			"declares": false
 		},
 		{
-			"scope": 7,
-			"binding": 5,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
 			"scope": 6,
 			"binding": null,
 			"write": false,
@@ -1046,28 +1003,12 @@
 			"declares": false
 		},
 		{
-			"scope": 8,
-			"binding": 6,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
 			"mutate": false,
 			"declares": false
-		},
-		{
-			"scope": 0,
-			"binding": 7,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
 		},
 		{
 			"scope": 9,

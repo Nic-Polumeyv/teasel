@@ -21,7 +21,7 @@
 							"type": "Identifier",
 							"start": 4,
 							"end": 7,
-							"reference": 0,
+							"declares": 0,
 							"typeAnnotation": {
 								"type": "TSTypeAnnotation",
 								"start": 5,
@@ -39,9 +39,6 @@
 							"type": "Literal",
 							"start": 9,
 							"end": 10,
-							"writes": [
-								0
-							],
 							"value": 1,
 							"raw": "1"
 						}
@@ -62,7 +59,7 @@
 					"type": "Identifier",
 					"start": 21,
 					"end": 22,
-					"reference": 1,
+					"declares": 1,
 					"name": "f"
 				},
 				"expression": false,
@@ -73,7 +70,7 @@
 						"type": "Identifier",
 						"start": 23,
 						"end": 26,
-						"reference": 2,
+						"declares": 2,
 						"typeAnnotation": {
 							"type": "TSTypeAnnotation",
 							"start": 24,
@@ -169,7 +166,7 @@
 							"type": "Identifier",
 							"start": 67,
 							"end": 76,
-							"reference": 3,
+							"declares": 3,
 							"typeAnnotation": {
 								"type": "TSTypeAnnotation",
 								"start": 68,
@@ -186,9 +183,6 @@
 							"type": "Literal",
 							"start": 79,
 							"end": 80,
-							"writes": [
-								3
-							],
 							"value": 1,
 							"raw": "1"
 						}
@@ -259,56 +253,27 @@
 		{
 			"name": "a",
 			"kind": "let",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "f",
 			"kind": "function",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "b",
 			"kind": "param",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "g",
 			"kind": "const",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		}
 	],
-	"references": [
-		{
-			"scope": 0,
-			"binding": 0,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 1,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 1,
-			"binding": 2,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 3,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		}
-	]
+	"references": []
 }

@@ -21,7 +21,7 @@
 						"type": "Identifier",
 						"start": 21,
 						"end": 22,
-						"reference": 0,
+						"declares": 0,
 						"name": "A"
 					},
 					"superClass": null,
@@ -47,7 +47,7 @@
 							"type": "Identifier",
 							"start": 35,
 							"end": 36,
-							"reference": 1,
+							"reference": 0,
 							"name": "A"
 						},
 						"exported": {
@@ -82,18 +82,11 @@
 		{
 			"name": "A",
 			"kind": "class",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		}
 	],
 	"references": [
-		{
-			"scope": 0,
-			"binding": 0,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
 		{
 			"scope": 0,
 			"binding": 0,

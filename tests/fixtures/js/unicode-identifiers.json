@@ -21,16 +21,13 @@
 							"type": "Identifier",
 							"start": 6,
 							"end": 13,
-							"reference": 0,
+							"declares": 0,
 							"name": "ünïcödé"
 						},
 						"init": {
 							"type": "Literal",
 							"start": 16,
 							"end": 17,
-							"writes": [
-								0
-							],
 							"value": 1,
 							"raw": "1"
 						}
@@ -54,16 +51,13 @@
 							"type": "Identifier",
 							"start": 25,
 							"end": 32,
-							"reference": 1,
+							"declares": 1,
 							"name": "ab"
 						},
 						"init": {
 							"type": "Literal",
 							"start": 35,
 							"end": 36,
-							"writes": [
-								1
-							],
 							"value": 2,
 							"raw": "2"
 						}
@@ -87,16 +81,13 @@
 							"type": "Identifier",
 							"start": 44,
 							"end": 46,
-							"reference": 2,
+							"declares": 2,
 							"name": "𝒳"
 						},
 						"init": {
 							"type": "Literal",
 							"start": 49,
 							"end": 50,
-							"writes": [
-								2
-							],
 							"value": 3,
 							"raw": "3"
 						}
@@ -120,43 +111,21 @@
 		{
 			"name": "ünïcödé",
 			"kind": "const",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "ab",
 			"kind": "const",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "𝒳",
 			"kind": "const",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		}
 	],
-	"references": [
-		{
-			"scope": 0,
-			"binding": 0,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 1,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 2,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		}
-	]
+	"references": []
 }

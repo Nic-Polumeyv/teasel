@@ -21,7 +21,7 @@
 							"type": "Identifier",
 							"start": 7,
 							"end": 8,
-							"reference": 0,
+							"declares": 0,
 							"name": "a"
 						}
 					}
@@ -51,7 +51,7 @@
 							"type": "Identifier",
 							"start": 31,
 							"end": 32,
-							"reference": 1,
+							"declares": 1,
 							"name": "b"
 						}
 					}
@@ -87,7 +87,7 @@
 							"type": "Identifier",
 							"start": 52,
 							"end": 53,
-							"reference": 2,
+							"declares": 2,
 							"name": "c"
 						}
 					},
@@ -108,7 +108,7 @@
 							"type": "Identifier",
 							"start": 60,
 							"end": 61,
-							"reference": 3,
+							"declares": 3,
 							"name": "e"
 						}
 					},
@@ -130,7 +130,7 @@
 							"type": "Identifier",
 							"start": 70,
 							"end": 71,
-							"reference": 4,
+							"declares": 4,
 							"name": "g"
 						}
 					}
@@ -160,7 +160,7 @@
 							"type": "Identifier",
 							"start": 91,
 							"end": 92,
-							"reference": 5,
+							"declares": 5,
 							"name": "h"
 						}
 					},
@@ -181,7 +181,7 @@
 							"type": "Identifier",
 							"start": 96,
 							"end": 97,
-							"reference": 6,
+							"declares": 6,
 							"name": "i"
 						}
 					}
@@ -225,7 +225,7 @@
 							"type": "Identifier",
 							"start": 129,
 							"end": 130,
-							"reference": 7,
+							"declares": 7,
 							"name": "j"
 						}
 					}
@@ -395,7 +395,7 @@
 							"type": "Identifier",
 							"start": 246,
 							"end": 248,
-							"reference": 8,
+							"declares": 8,
 							"name": "ns"
 						}
 					}
@@ -444,121 +444,57 @@
 		{
 			"name": "a",
 			"kind": "import",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "b",
 			"kind": "import",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "c",
 			"kind": "import",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "e",
 			"kind": "import",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "g",
 			"kind": "import",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "h",
 			"kind": "import",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "i",
 			"kind": "import",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "j",
 			"kind": "import",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "ns",
 			"kind": "import",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		}
 	],
-	"references": [
-		{
-			"scope": 0,
-			"binding": 0,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 1,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 2,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 3,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 4,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 5,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 6,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 7,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 8,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		}
-	]
+	"references": []
 }

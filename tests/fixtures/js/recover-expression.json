@@ -21,16 +21,13 @@
 							"type": "Identifier",
 							"start": 20,
 							"end": 21,
-							"reference": 0,
+							"declares": 0,
 							"name": "b"
 						},
 						"init": {
 							"type": "Identifier",
 							"start": 24,
 							"end": 24,
-							"writes": [
-								0
-							],
 							"name": ""
 						}
 					}
@@ -53,16 +50,13 @@
 							"type": "Identifier",
 							"start": 39,
 							"end": 40,
-							"reference": 1,
+							"declares": 1,
 							"name": "c"
 						},
 						"init": {
 							"type": "Literal",
 							"start": 43,
 							"end": 44,
-							"writes": [
-								1
-							],
 							"value": 1,
 							"raw": "1"
 						}
@@ -118,30 +112,15 @@
 		{
 			"name": "b",
 			"kind": "let",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "c",
 			"kind": "const",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		}
 	],
-	"references": [
-		{
-			"scope": 0,
-			"binding": 0,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 1,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		}
-	]
+	"references": []
 }

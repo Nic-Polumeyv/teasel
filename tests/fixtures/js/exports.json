@@ -25,16 +25,13 @@
 								"type": "Identifier",
 								"start": 13,
 								"end": 14,
-								"reference": 0,
+								"declares": 0,
 								"name": "a"
 							},
 							"init": {
 								"type": "Literal",
 								"start": 17,
 								"end": 18,
-								"writes": [
-									0
-								],
 								"value": 1,
 								"raw": "1"
 							}
@@ -62,7 +59,7 @@
 						"type": "Identifier",
 						"start": 36,
 						"end": 37,
-						"reference": 1,
+						"declares": 1,
 						"name": "b"
 					},
 					"expression": false,
@@ -96,7 +93,7 @@
 						"type": "Identifier",
 						"start": 56,
 						"end": 57,
-						"reference": 2,
+						"declares": 2,
 						"name": "C"
 					},
 					"superClass": null,
@@ -125,7 +122,7 @@
 							"type": "Identifier",
 							"start": 70,
 							"end": 71,
-							"reference": 3,
+							"reference": 0,
 							"name": "a"
 						},
 						"exported": {
@@ -143,7 +140,7 @@
 							"type": "Identifier",
 							"start": 78,
 							"end": 79,
-							"reference": 4,
+							"reference": 1,
 							"name": "b"
 						},
 						"exported": {
@@ -277,44 +274,23 @@
 		{
 			"name": "a",
 			"kind": "const",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "b",
 			"kind": "function",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "C",
 			"kind": "class",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		}
 	],
 	"references": [
-		{
-			"scope": 0,
-			"binding": 0,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 1,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 2,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
 		{
 			"scope": 0,
 			"binding": 0,

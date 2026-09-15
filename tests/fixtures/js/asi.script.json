@@ -92,16 +92,13 @@
 							"type": "Identifier",
 							"start": 24,
 							"end": 25,
-							"reference": 4,
+							"declares": 0,
 							"name": "d"
 						},
 						"init": {
 							"type": "Literal",
 							"start": 28,
 							"end": 29,
-							"writes": [
-								4
-							],
 							"value": 1,
 							"raw": "1"
 						}
@@ -125,16 +122,13 @@
 							"type": "Identifier",
 							"start": 34,
 							"end": 35,
-							"reference": 5,
+							"declares": 1,
 							"name": "e"
 						},
 						"init": {
 							"type": "AssignmentExpression",
 							"start": 38,
 							"end": 49,
-							"writes": [
-								5
-							],
 							"operator": "=",
 							"left": {
 								"type": "MemberExpression",
@@ -151,7 +145,7 @@
 									"type": "Identifier",
 									"start": 41,
 									"end": 42,
-									"reference": 6,
+									"reference": 4,
 									"name": "f"
 								},
 								"computed": true,
@@ -192,12 +186,14 @@
 		{
 			"name": "d",
 			"kind": "let",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "e",
 			"kind": "var",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		}
 	],
 	"references": [
@@ -232,22 +228,6 @@
 			"read": false,
 			"mutate": false,
 			"declares": false
-		},
-		{
-			"scope": 0,
-			"binding": 0,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 1,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
 		},
 		{
 			"scope": 0,

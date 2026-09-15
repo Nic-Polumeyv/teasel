@@ -17,7 +17,7 @@
 					"type": "Identifier",
 					"start": 10,
 					"end": 11,
-					"reference": 0,
+					"declares": 0,
 					"name": "N"
 				},
 				"body": {
@@ -46,16 +46,13 @@
 											"type": "Identifier",
 											"start": 28,
 											"end": 29,
-											"reference": 1,
+											"declares": 1,
 											"name": "a"
 										},
 										"init": {
 											"type": "Literal",
 											"start": 32,
 											"end": 33,
-											"writes": [
-												1
-											],
 											"value": 1,
 											"raw": "1"
 										}
@@ -84,7 +81,7 @@
 									"type": "Identifier",
 									"start": 52,
 									"end": 53,
-									"reference": 2,
+									"declares": 2,
 									"name": "f"
 								},
 								"expression": false,
@@ -131,43 +128,21 @@
 		{
 			"name": "N",
 			"kind": "namespace",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "a",
 			"kind": "const",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "f",
 			"kind": "function",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		}
 	],
-	"references": [
-		{
-			"scope": 0,
-			"binding": 0,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 1,
-			"binding": 1,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 1,
-			"binding": 2,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		}
-	]
+	"references": []
 }

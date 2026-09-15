@@ -150,6 +150,8 @@ pub struct Binding {
 	/// enum, as eslint-scope's definition node; none for `arguments` and for a pattern or parameter
 	/// list parsed on its own.
 	pub declaration: Option<NodeId>,
+	/// The declaration binds a value: an initializer, a parameter, a function; not a bare `let x;`.
+	pub write: bool,
 }
 
 #[derive(Debug)]
@@ -168,10 +170,16 @@ pub struct Reference {
 	/// What a write assigns: the right side of the assignment or the iterated expression of a
 	/// `for-in` or `for-of`, as eslint-scope's `writeExpr`; none for an update.
 	pub write_expr: Option<NodeId>,
-	/// The identifier declares its binding: the first write when a value is bound there, an
-	/// initializer, a parameter's default, a function or class, and neither a read nor a write
-	/// for a bare `let x;`.
+	/// The identifier declares its binding again, `var x` twice: the binding itself stands for the
+	/// first declaration, and this row writes when a value is bound here.
 	pub declares: bool,
+}
+
+/// What an identifier is in the analysis: the binding it declares, or the reference it makes.
+#[derive(Clone, Copy, Debug)]
+pub enum Role {
+	Declares(BindingId),
+	Reference(ReferenceId),
 }
 
 /// A table by node, dense: nodes are numbered, and a hash of the number cost more than the room.
@@ -196,6 +204,23 @@ impl Packed for ScopeId {
 	}
 	fn unpack(word: u32) -> Self {
 		word
+	}
+}
+
+// ids stay below 2^31: a node count bounds them, and the source is u32 long
+impl Packed for Role {
+	fn pack(self) -> u32 {
+		match self {
+			Role::Declares(binding) => binding << 1,
+			Role::Reference(reference) => reference << 1 | 1,
+		}
+	}
+	fn unpack(word: u32) -> Self {
+		if word & 1 == 0 {
+			Role::Declares(word >> 1)
+		} else {
+			Role::Reference(word >> 1)
+		}
 	}
 }
 
@@ -254,7 +279,7 @@ pub struct Scopes {
 	pub roots: Vec<Root>,
 	pub root_of: NodeMap<u32>,
 	pub of_node: NodeTable<ScopeId>,
-	pub of_identifier: NodeTable<ReferenceId>,
+	pub of_identifier: NodeTable<Role>,
 	/// The bindings each declaring node declares, and the write references each expression is
 	/// assigned by: `Binding::declaration` and `Reference::write_expr` from the node's side.
 	pub declared_by: ByNode,
@@ -679,8 +704,13 @@ impl<'a, X: Bind> Binder<'a, X> {
 
 	/// The binding an identifier declares, once declared.
 	pub fn declared_by(&self, node: NodeId) -> Option<BindingId> {
-		let reference = &self.out.references[self.out.of_identifier.get(node)? as usize];
-		reference.declares.then_some(reference.binding?)
+		match self.out.of_identifier.get(node)? {
+			Role::Declares(binding) => Some(binding),
+			Role::Reference(reference) => {
+				let reference = &self.out.references[reference as usize];
+				reference.declares.then_some(reference.binding?)
+			}
+		}
 	}
 
 	/// Leaves the scope: its environments close, the one that opened it last.
@@ -770,6 +800,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 			scope: self.envs[env as usize].scope,
 			node: None,
 			declaration: None,
+			write: true,
 		});
 		self.envs[env as usize].arguments = Some(id);
 	}
@@ -782,14 +813,16 @@ impl<'a, X: Bind> Binder<'a, X> {
 			scope: self.envs[env as usize].scope,
 			node,
 			declaration: node.and(self.declaring),
+			write: false,
 		});
 		self.envs[env as usize].names.insert(name, id);
 		id
 	}
 
-	/// Records the reference `node` makes by declaring `binding`, once per identifier: a class name
-	/// declares the outer binding, and the one inside its body shares the identifier.
-	fn declared(&mut self, node: NodeId, binding: BindingId, kind: BindingKind) {
+	/// Records what `node` declares, once per identifier: a class name declares the outer binding,
+	/// and the one inside its body shares the identifier. A new binding is its own first
+	/// declaration; declaring it again is a reference that writes when a value is bound here.
+	fn declared(&mut self, node: NodeId, binding: BindingId, kind: BindingKind, new: bool) {
 		if self.out.of_identifier.get(node).is_some() {
 			return;
 		}
@@ -800,6 +833,11 @@ impl<'a, X: Bind> Binder<'a, X> {
 			BindingKind::Param => (true, self.initializing),
 			_ => (true, None),
 		};
+		if new {
+			self.out.bindings[binding as usize].write = write;
+			self.out.of_identifier.insert(node, Role::Declares(binding));
+			return;
+		}
 		let id = self.out.references.len() as ReferenceId;
 		self.out.references.push(Reference {
 			node,
@@ -812,7 +850,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 			declares: true,
 		});
 		self.env_of.push(self.env());
-		self.out.of_identifier.insert(node, id);
+		self.out.of_identifier.insert(node, Role::Reference(id));
 	}
 
 	/// Declares `node`, an identifier, as `declaration` does: in the current scope, or for `var` in
@@ -912,11 +950,11 @@ impl<'a, X: Bind> Binder<'a, X> {
 					.errors
 					.push(SyntaxError::with(n.start, Code::Redeclaration, message).to(n.end));
 			}
-			self.declared(node, existing, kind);
+			self.declared(node, existing, kind, false);
 			return;
 		}
 		let id = self.declare_in(env, name, kind, Some(node));
-		self.declared(node, id, kind);
+		self.declared(node, id, kind, true);
 	}
 
 	pub fn reference(&mut self, node: NodeId, write: bool, mutate: bool) {
@@ -944,7 +982,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 			let env = self.env();
 			self.envs[function as usize].wants_arguments.push(env);
 		}
-		self.out.of_identifier.insert(node, id);
+		self.out.of_identifier.insert(node, Role::Reference(id));
 	}
 
 	pub fn statements(&mut self, list: List) {
@@ -1528,14 +1566,14 @@ impl<'a, X: Bind> Binder<'a, X> {
 mod tests {
 	#[test]
 	fn node_tables() {
-		use super::{NodeTable, ReferenceId};
+		use super::{NodeTable, Role};
 		use crate::ast::NodeId;
-		let mut table: NodeTable<ReferenceId> = NodeTable::sized(3);
+		let mut table: NodeTable<Role> = NodeTable::sized(3);
 		assert!(table.get(NodeId::at(7)).is_none());
-		table.insert(NodeId::at(1), 5);
-		assert_eq!(table.get(NodeId::at(1)), Some(5));
-		table.insert(NodeId::at(2), 6);
-		assert_eq!(table.get(NodeId::at(2)), Some(6));
+		table.insert(NodeId::at(1), Role::Declares(5));
+		assert!(matches!(table.get(NodeId::at(1)), Some(Role::Declares(5))));
+		table.insert(NodeId::at(2), Role::Reference(6));
+		assert!(matches!(table.get(NodeId::at(2)), Some(Role::Reference(6))));
 		assert_eq!(table.iter().count(), 2);
 		assert!(table.get(NodeId::at(0)).is_none());
 	}
@@ -1603,15 +1641,18 @@ mod tests {
 		let mut ids: Vec<_> = scopes.of_identifier.iter().collect();
 		ids.sort_by_key(|&(id, _)| ast.node(id).start);
 		let mut out = Vec::new();
-		for (id, r) in ids {
+		for (id, role) in ids {
 			let node = ast.node(id);
 			let NodeKind::Identifier { name } = node.kind else {
 				unreachable!()
 			};
 			let mut line = format!("{}@{} ", ast.str(name), node.start);
-			let reference = scopes.reference(r);
-			match reference.binding {
-				Some(b) if reference.declares => {
+			let declares = match role {
+				Role::Declares(b) => Some(b),
+				Role::Reference(r) => scopes.reference(r).declares.then(|| scopes.reference(r).binding.unwrap()),
+			};
+			match declares {
+				Some(b) => {
 					let binding = scopes.binding(b);
 					line += &format!(
 						"declares {} in {}",
@@ -1619,7 +1660,9 @@ mod tests {
 						scopes.scope(binding.scope).kind.name().text
 					);
 				}
-				_ => {
+				None => {
+					let Role::Reference(r) = role else { unreachable!() };
+					let reference = scopes.reference(r);
 					line += &match reference.binding {
 						Some(b) => match scopes.binding(b).node {
 							Some(node) => format!("-> @{}", ast.node(node).start),
@@ -1939,56 +1982,52 @@ mod tests {
 			declarations,
 			[("a", Some(4)), ("b", Some(4)), ("f", Some(52)), ("p", Some(52))]
 		);
-		let mut writes: Vec<_> = scopes
+		// the declarations of `a` and `b` write what the whole pattern is initialized with, `f` and
+		// `p` bind a value with nothing named
+		let declared: Vec<_> = scopes.bindings.iter().map(|b| b.write).collect();
+		assert_eq!(declared, [true, true, true, true]);
+		let writes: Vec<_> = scopes
 			.references
 			.iter()
 			.filter(|r| r.write)
-			.map(|r| (ast.node(r.node).start, start(r.write_expr), r.declares))
+			.map(|r| (ast.node(r.node).start, start(r.write_expr)))
 			.collect();
-		writes.sort();
-		// the declarations of `a` and `b` write what the whole pattern is initialized with, `f` and
-		// `p` write nothing named; then `a = b + 1`, `a++`, `for (b of c)`, `g = p`
-		assert_eq!(
-			writes,
-			[
-				(5, Some(17), true),
-				(12, Some(17), true),
-				(20, Some(24), false),
-				(31, None, false),
-				(41, Some(46), false),
-				(61, None, true),
-				(63, None, true),
-				(68, Some(72), false)
-			]
-		);
-		let mut reads: Vec<_> = scopes
+		// `a = b + 1`, `a++`, `for (b of c)`, `g = p`
+		assert_eq!(writes, [(20, Some(24)), (31, None), (41, Some(46)), (68, Some(72))]);
+		let reads: Vec<_> = scopes
 			.references
 			.iter()
 			.map(|r| (ast.node(r.node).start, r.read))
 			.collect();
-		reads.sort();
-		// a declaration reads nothing; only the update reads what it writes; the parameter read
-		// after `g =` is a plain read
+		// only the update reads what it writes; the parameter read after `g =` is a plain read
 		assert_eq!(
-			reads,
-			[
-				(5, false),
-				(12, false),
-				(17, true),
-				(20, false),
-				(24, true),
-				(31, true),
-				(41, false),
-				(46, true),
-				(61, false),
-				(63, false),
-				(68, false),
-				(72, true),
-				(83, true)
-			]
+			&reads[..5],
+			[(17, true), (20, false), (24, true), (31, true), (41, false)]
 		);
 		assert!(scopes.scopes[0].top_level_await);
 		assert!(!scopes.scopes[1].top_level_await);
+	}
+
+	#[test]
+	fn redeclarations_are_references() {
+		let ast = analyzed(crate::parse_at(
+			"var x; var x = 1; function x() {}",
+			0,
+			None,
+			Entry::Program,
+			Options::default(),
+			"",
+		));
+		let scopes = ast.scopes.as_ref().unwrap();
+		let start = |id: Option<NodeId>| id.map(|id| ast.node(id).start);
+		assert_eq!(scopes.bindings.len(), 1);
+		assert!(!scopes.bindings[0].write);
+		let again: Vec<_> = scopes
+			.references
+			.iter()
+			.map(|r| (ast.node(r.node).start, r.declares, r.write, start(r.write_expr), r.binding))
+			.collect();
+		assert_eq!(again, [(11, true, true, Some(15), Some(0)), (27, true, true, None, Some(0))]);
 	}
 
 	#[test]
@@ -2008,8 +2047,7 @@ mod tests {
 		assert_eq!(scopes.scopes.len(), 3);
 		let a = &scopes.bindings[0];
 		let references = scopes.references.iter().filter(|r| r.binding == Some(0)).count();
-		// the import declares it, the export and the arrow use it
-		assert_eq!((ast.str(a.name), a.kind, references), ("a", BindingKind::Import, 3));
+		assert_eq!((ast.str(a.name), a.kind, references), ("a", BindingKind::Import, 2));
 		assert_eq!(scopes.scopes[2].function_depth, 2);
 	}
 

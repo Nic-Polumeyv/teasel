@@ -44,7 +44,7 @@
 								"type": "Identifier",
 								"start": 26,
 								"end": 27,
-								"reference": 1,
+								"declares": 0,
 								"name": "b"
 							},
 							"init": null
@@ -56,10 +56,7 @@
 					"type": "Identifier",
 					"start": 31,
 					"end": 32,
-					"reference": 2,
-					"writes": [
-						1
-					],
+					"reference": 1,
 					"name": "c"
 				},
 				"body": {
@@ -96,7 +93,8 @@
 		{
 			"name": "b",
 			"kind": "const",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		}
 	],
 	"references": [
@@ -107,14 +105,6 @@
 			"read": true,
 			"mutate": false,
 			"declares": false
-		},
-		{
-			"scope": 1,
-			"binding": 0,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
 		},
 		{
 			"scope": 1,

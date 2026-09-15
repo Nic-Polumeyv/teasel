@@ -61,7 +61,7 @@
 									"column": 7
 								}
 							},
-							"reference": 0,
+							"declares": 0,
 							"name": "a"
 						},
 						"init": {
@@ -78,9 +78,6 @@
 									"column": 11
 								}
 							},
-							"writes": [
-								0
-							],
 							"value": 1,
 							"raw": "1"
 						}
@@ -120,7 +117,7 @@
 							"column": 10
 						}
 					},
-					"reference": 1,
+					"declares": 1,
 					"name": "f"
 				},
 				"expression": false,
@@ -219,30 +216,15 @@
 		{
 			"name": "a",
 			"kind": "const",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "f",
 			"kind": "function",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		}
 	],
-	"references": [
-		{
-			"scope": 0,
-			"binding": 0,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 1,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		}
-	]
+	"references": []
 }

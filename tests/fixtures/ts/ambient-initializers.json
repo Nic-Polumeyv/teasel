@@ -22,16 +22,13 @@
 							"type": "Identifier",
 							"start": 14,
 							"end": 15,
-							"reference": 0,
+							"declares": 0,
 							"name": "a"
 						},
 						"init": {
 							"type": "Literal",
 							"start": 18,
 							"end": 19,
-							"writes": [
-								0
-							],
 							"value": 1,
 							"raw": "1"
 						}
@@ -52,7 +49,7 @@
 					"type": "Identifier",
 					"start": 34,
 					"end": 35,
-					"reference": 1,
+					"declares": 1,
 					"name": "E"
 				},
 				"members": [
@@ -67,7 +64,7 @@
 							"type": "Identifier",
 							"start": 38,
 							"end": 39,
-							"reference": 2,
+							"declares": 2,
 							"name": "A"
 						},
 						"initializer": {
@@ -93,7 +90,7 @@
 					"type": "Identifier",
 					"start": 64,
 					"end": 65,
-					"reference": 3,
+					"declares": 3,
 					"name": "N"
 				},
 				"body": {
@@ -117,7 +114,7 @@
 										"type": "Identifier",
 										"start": 74,
 										"end": 83,
-										"reference": 4,
+										"declares": 4,
 										"typeAnnotation": {
 											"type": "TSTypeAnnotation",
 											"start": 75,
@@ -164,69 +161,33 @@
 		{
 			"name": "a",
 			"kind": "const",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "E",
 			"kind": "enum",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "A",
 			"kind": "enum-member",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "N",
 			"kind": "namespace",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "c",
 			"kind": "const",
-			"scope": 2
+			"scope": 2,
+			"write": false
 		}
 	],
-	"references": [
-		{
-			"scope": 0,
-			"binding": 0,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 1,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 1,
-			"binding": 2,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 3,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 2,
-			"binding": 4,
-			"write": false,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		}
-	]
+	"references": []
 }

@@ -27,7 +27,7 @@
 							"type": "Identifier",
 							"start": 45,
 							"end": 46,
-							"reference": 0,
+							"declares": 0,
 							"name": "C"
 						}
 					}
@@ -57,17 +57,14 @@
 							"type": "Identifier",
 							"start": 131,
 							"end": 140,
-							"reference": 1,
+							"declares": 1,
 							"name": "g"
 						},
 						"init": {
 							"type": "Identifier",
 							"start": 152,
 							"end": 153,
-							"reference": 2,
-							"writes": [
-								1
-							],
+							"reference": 0,
 							"name": "h"
 						}
 					}
@@ -87,7 +84,7 @@
 					"type": "Identifier",
 					"start": 173,
 					"end": 174,
-					"reference": 3,
+					"declares": 2,
 					"name": "i"
 				},
 				"expression": false,
@@ -98,7 +95,7 @@
 						"type": "Identifier",
 						"start": 187,
 						"end": 197,
-						"reference": 4,
+						"declares": 3,
 						"name": "j"
 					}
 				],
@@ -121,7 +118,7 @@
 					"type": "Identifier",
 					"start": 214,
 					"end": 215,
-					"reference": 5,
+					"declares": 4,
 					"name": "K"
 				},
 				"superClass": null,
@@ -180,7 +177,7 @@
 										"type": "Identifier",
 										"start": 295,
 										"end": 304,
-										"reference": 6,
+										"declares": 5,
 										"name": "o"
 									}
 								],
@@ -207,7 +204,7 @@
 					"type": "Identifier",
 					"start": 316,
 					"end": 317,
-					"reference": 7,
+					"declares": 6,
 					"name": "P"
 				},
 				"members": [
@@ -222,7 +219,7 @@
 							"type": "Identifier",
 							"start": 320,
 							"end": 321,
-							"reference": 8,
+							"declares": 7,
 							"name": "Q"
 						}
 					}
@@ -240,7 +237,7 @@
 					"type": "Identifier",
 					"start": 334,
 					"end": 335,
-					"reference": 9,
+					"declares": 8,
 					"name": "R"
 				},
 				"body": {
@@ -268,16 +265,13 @@
 											"type": "Identifier",
 											"start": 351,
 											"end": 352,
-											"reference": 10,
+											"declares": 9,
 											"name": "s"
 										},
 										"init": {
 											"type": "Literal",
 											"start": 355,
 											"end": 356,
-											"writes": [
-												10
-											],
 											"value": 1,
 											"raw": "1"
 										}
@@ -300,7 +294,7 @@
 					"type": "Identifier",
 					"start": 369,
 					"end": 370,
-					"reference": 11,
+					"reference": 1,
 					"name": "T"
 				}
 			},
@@ -320,17 +314,14 @@
 							"type": "Identifier",
 							"start": 378,
 							"end": 379,
-							"reference": 12,
+							"declares": 10,
 							"name": "u"
 						},
 						"init": {
 							"type": "Identifier",
 							"start": 382,
 							"end": 383,
-							"reference": 13,
-							"writes": [
-								12
-							],
+							"reference": 2,
 							"name": "v"
 						}
 					}
@@ -349,7 +340,7 @@
 					"type": "Identifier",
 					"start": 412,
 					"end": 413,
-					"reference": 14,
+					"declares": 11,
 					"name": "X"
 				},
 				"superClass": null,
@@ -377,7 +368,7 @@
 							"type": "Identifier",
 							"start": 439,
 							"end": 442,
-							"reference": 15,
+							"reference": 3,
 							"name": "dec"
 						}
 					}
@@ -386,7 +377,7 @@
 					"type": "Identifier",
 					"start": 449,
 					"end": 450,
-					"reference": 16,
+					"declares": 12,
 					"name": "Z"
 				},
 				"superClass": null,
@@ -475,85 +466,90 @@
 		{
 			"name": "C",
 			"kind": "import",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "g",
 			"kind": "let",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "i",
 			"kind": "function",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "j",
 			"kind": "param",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "K",
 			"kind": "class",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "o",
 			"kind": "param",
-			"scope": 3
+			"scope": 3,
+			"write": true
 		},
 		{
 			"name": "P",
 			"kind": "enum",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "Q",
 			"kind": "enum-member",
-			"scope": 4
+			"scope": 4,
+			"write": true
 		},
 		{
 			"name": "R",
 			"kind": "namespace",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "s",
 			"kind": "const",
-			"scope": 5
+			"scope": 5,
+			"write": true
 		},
 		{
 			"name": "u",
 			"kind": "const",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "X",
 			"kind": "class",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "Z",
 			"kind": "class",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		}
 	],
 	"references": [
 		{
 			"scope": 0,
-			"binding": 0,
-			"write": true,
-			"read": false,
+			"binding": null,
+			"write": false,
+			"read": true,
 			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 1,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
+			"declares": false
 		},
 		{
 			"scope": 0,
@@ -565,70 +561,6 @@
 		},
 		{
 			"scope": 0,
-			"binding": 2,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 1,
-			"binding": 3,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 4,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 3,
-			"binding": 5,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 6,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 4,
-			"binding": 7,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 8,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 5,
-			"binding": 9,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
@@ -637,43 +569,11 @@
 		},
 		{
 			"scope": 0,
-			"binding": 10,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
 			"mutate": false,
 			"declares": false
-		},
-		{
-			"scope": 0,
-			"binding": 11,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": null,
-			"write": false,
-			"read": true,
-			"mutate": false,
-			"declares": false
-		},
-		{
-			"scope": 0,
-			"binding": 12,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
 		}
 	]
 }

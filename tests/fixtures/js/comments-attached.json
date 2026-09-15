@@ -37,16 +37,13 @@
 							"type": "Identifier",
 							"start": 17,
 							"end": 18,
-							"reference": 0,
+							"declares": 0,
 							"name": "a"
 						},
 						"init": {
 							"type": "Literal",
 							"start": 21,
 							"end": 22,
-							"writes": [
-								0
-							],
 							"value": 1,
 							"raw": "1"
 						}
@@ -74,7 +71,7 @@
 					"type": "Identifier",
 					"start": 58,
 					"end": 59,
-					"reference": 1,
+					"declares": 1,
 					"name": "f"
 				},
 				"expression": false,
@@ -112,16 +109,13 @@
 							"type": "Identifier",
 							"start": 86,
 							"end": 87,
-							"reference": 2,
+							"declares": 2,
 							"name": "o"
 						},
 						"init": {
 							"type": "ObjectExpression",
 							"start": 90,
 							"end": 107,
-							"writes": [
-								2
-							],
 							"innerComments": [
 								{
 									"type": "Line",
@@ -156,7 +150,7 @@
 					"type": "Identifier",
 					"start": 126,
 					"end": 127,
-					"reference": 3,
+					"declares": 3,
 					"name": "C"
 				},
 				"superClass": null,
@@ -230,56 +224,27 @@
 		{
 			"name": "a",
 			"kind": "const",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "f",
 			"kind": "function",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "o",
 			"kind": "const",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "C",
 			"kind": "class",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		}
 	],
-	"references": [
-		{
-			"scope": 0,
-			"binding": 0,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 1,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 2,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 3,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		}
-	]
+	"references": []
 }

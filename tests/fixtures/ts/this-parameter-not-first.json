@@ -19,7 +19,7 @@
 					"type": "Identifier",
 					"start": 9,
 					"end": 10,
-					"reference": 0,
+					"declares": 0,
 					"name": "f"
 				},
 				"expression": false,
@@ -30,7 +30,7 @@
 						"type": "Identifier",
 						"start": 11,
 						"end": 20,
-						"reference": 1,
+						"declares": 1,
 						"typeAnnotation": {
 							"type": "TSTypeAnnotation",
 							"start": 12,
@@ -47,7 +47,7 @@
 						"type": "Identifier",
 						"start": 22,
 						"end": 32,
-						"reference": 2,
+						"declares": 2,
 						"typeAnnotation": {
 							"type": "TSTypeAnnotation",
 							"start": 26,
@@ -89,43 +89,21 @@
 		{
 			"name": "f",
 			"kind": "function",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "a",
 			"kind": "param",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "this",
 			"kind": "param",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		}
 	],
-	"references": [
-		{
-			"scope": 0,
-			"binding": 0,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 1,
-			"binding": 1,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 1,
-			"binding": 2,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		}
-	]
+	"references": []
 }

@@ -277,7 +277,7 @@
 					"type": "Identifier",
 					"start": 145,
 					"end": 146,
-					"reference": 16,
+					"declares": 0,
 					"name": "f"
 				},
 				"expression": false,
@@ -301,7 +301,7 @@
 									"type": "Identifier",
 									"start": 158,
 									"end": 163,
-									"reference": 17,
+									"reference": 16,
 									"name": "using"
 								}
 							}
@@ -314,7 +314,7 @@
 								"type": "Identifier",
 								"start": 165,
 								"end": 166,
-								"reference": 18,
+								"reference": 17,
 								"name": "y"
 							}
 						}
@@ -343,7 +343,7 @@
 									"type": "Identifier",
 									"start": 177,
 									"end": 182,
-									"reference": 19,
+									"declares": 1,
 									"name": "using"
 								},
 								"init": null
@@ -389,12 +389,14 @@
 		{
 			"name": "f",
 			"kind": "function",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "using",
 			"kind": "let",
-			"scope": 4
+			"scope": 4,
+			"write": false
 		}
 	],
 	"references": [
@@ -527,14 +529,6 @@
 			"declares": false
 		},
 		{
-			"scope": 0,
-			"binding": 0,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
 			"scope": 3,
 			"binding": null,
 			"write": false,
@@ -549,14 +543,6 @@
 			"read": true,
 			"mutate": false,
 			"declares": false
-		},
-		{
-			"scope": 4,
-			"binding": 1,
-			"write": false,
-			"read": false,
-			"mutate": false,
-			"declares": true
 		}
 	]
 }

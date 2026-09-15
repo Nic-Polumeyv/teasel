@@ -21,7 +21,7 @@
 							"type": "Identifier",
 							"start": 4,
 							"end": 13,
-							"reference": 0,
+							"declares": 0,
 							"typeAnnotation": {
 								"type": "TSTypeAnnotation",
 								"start": 5,
@@ -38,9 +38,6 @@
 							"type": "Literal",
 							"start": 16,
 							"end": 17,
-							"writes": [
-								0
-							],
 							"value": 1,
 							"raw": "1"
 						}
@@ -64,7 +61,7 @@
 							"type": "Identifier",
 							"start": 23,
 							"end": 39,
-							"reference": 1,
+							"declares": 1,
 							"typeAnnotation": {
 								"type": "TSTypeAnnotation",
 								"start": 24,
@@ -118,7 +115,7 @@
 					"type": "Identifier",
 					"start": 50,
 					"end": 51,
-					"reference": 2,
+					"declares": 2,
 					"name": "f"
 				},
 				"expression": false,
@@ -129,7 +126,7 @@
 						"type": "Identifier",
 						"start": 52,
 						"end": 62,
-						"reference": 3,
+						"declares": 3,
 						"typeAnnotation": {
 							"type": "TSTypeAnnotation",
 							"start": 53,
@@ -146,7 +143,7 @@
 						"type": "Identifier",
 						"start": 64,
 						"end": 74,
-						"reference": 4,
+						"declares": 4,
 						"typeAnnotation": {
 							"type": "TSTypeAnnotation",
 							"start": 66,
@@ -184,7 +181,7 @@
 							"type": "Identifier",
 							"start": 91,
 							"end": 92,
-							"reference": 5,
+							"declares": 5,
 							"name": "e"
 						},
 						"init": {
@@ -194,9 +191,6 @@
 							"scope": 2,
 							"defines": [
 								6
-							],
-							"writes": [
-								5
 							],
 							"returnType": {
 								"type": "TSTypeAnnotation",
@@ -217,7 +211,7 @@
 									"type": "Identifier",
 									"start": 96,
 									"end": 105,
-									"reference": 6,
+									"declares": 6,
 									"typeAnnotation": {
 										"type": "TSTypeAnnotation",
 										"start": 97,
@@ -235,7 +229,7 @@
 								"type": "Identifier",
 								"start": 118,
 								"end": 119,
-								"reference": 7,
+								"reference": 0,
 								"name": "g"
 							}
 						}
@@ -259,7 +253,7 @@
 							"type": "Identifier",
 							"start": 125,
 							"end": 149,
-							"reference": 8,
+							"declares": 7,
 							"typeAnnotation": {
 								"type": "TSTypeAnnotation",
 								"start": 126,
@@ -321,7 +315,7 @@
 							"type": "Identifier",
 							"start": 155,
 							"end": 226,
-							"reference": 9,
+							"declares": 8,
 							"typeAnnotation": {
 								"type": "TSTypeAnnotation",
 								"start": 156,
@@ -465,7 +459,7 @@
 						"type": "Identifier",
 						"start": 242,
 						"end": 252,
-						"reference": 10,
+						"declares": 9,
 						"typeAnnotation": {
 							"type": "TSTypeAnnotation",
 							"start": 243,
@@ -532,14 +526,14 @@
 									"type": "Identifier",
 									"start": 262,
 									"end": 263,
-									"reference": 11,
+									"declares": 10,
 									"name": "t"
 								},
 								{
 									"type": "Identifier",
 									"start": 265,
 									"end": 266,
-									"reference": 12,
+									"declares": 11,
 									"name": "u"
 								}
 							]
@@ -548,11 +542,7 @@
 							"type": "Identifier",
 							"start": 288,
 							"end": 289,
-							"reference": 13,
-							"writes": [
-								11,
-								12
-							],
+							"reference": 1,
 							"name": "w"
 						}
 					}
@@ -600,121 +590,77 @@
 		{
 			"name": "a",
 			"kind": "let",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "b",
 			"kind": "let",
-			"scope": 0
+			"scope": 0,
+			"write": false
 		},
 		{
 			"name": "f",
 			"kind": "function",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "c",
 			"kind": "param",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "d",
 			"kind": "param",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "e",
 			"kind": "const",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "g",
 			"kind": "param",
-			"scope": 2
+			"scope": 2,
+			"write": true
 		},
 		{
 			"name": "h",
 			"kind": "let",
-			"scope": 0
+			"scope": 0,
+			"write": false
 		},
 		{
 			"name": "j",
 			"kind": "let",
-			"scope": 0
+			"scope": 0,
+			"write": false
 		},
 		{
 			"name": "e",
 			"kind": "catch",
-			"scope": 4
+			"scope": 4,
+			"write": true
 		},
 		{
 			"name": "t",
 			"kind": "let",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "u",
 			"kind": "let",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		}
 	],
 	"references": [
-		{
-			"scope": 0,
-			"binding": 0,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 1,
-			"write": false,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 2,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 1,
-			"binding": 3,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 1,
-			"binding": 4,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 5,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 2,
-			"binding": 6,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
 		{
 			"scope": 2,
 			"binding": 6,
@@ -722,46 +668,6 @@
 			"read": true,
 			"mutate": false,
 			"declares": false
-		},
-		{
-			"scope": 0,
-			"binding": 7,
-			"write": false,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 8,
-			"write": false,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 4,
-			"binding": 9,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 10,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 11,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
 		},
 		{
 			"scope": 0,

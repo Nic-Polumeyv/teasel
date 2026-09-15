@@ -98,7 +98,7 @@
 					"type": "Identifier",
 					"start": 38,
 					"end": 39,
-					"reference": 4,
+					"declares": 0,
 					"name": "g"
 				},
 				"expression": false,
@@ -113,7 +113,7 @@
 							"type": "Identifier",
 							"start": 43,
 							"end": 44,
-							"reference": 5,
+							"declares": 1,
 							"name": "d"
 						}
 					}
@@ -146,12 +146,14 @@
 		{
 			"name": "g",
 			"kind": "function",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "d",
 			"kind": "param",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		}
 	],
 	"references": [
@@ -186,22 +188,6 @@
 			"read": true,
 			"mutate": false,
 			"declares": false
-		},
-		{
-			"scope": 0,
-			"binding": 0,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 1,
-			"binding": 1,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
 		}
 	]
 }

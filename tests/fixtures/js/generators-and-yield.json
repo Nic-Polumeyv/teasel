@@ -17,7 +17,7 @@
 					"type": "Identifier",
 					"start": 10,
 					"end": 11,
-					"reference": 0,
+					"declares": 0,
 					"name": "g"
 				},
 				"expression": false,
@@ -45,16 +45,13 @@
 										"type": "Identifier",
 										"start": 23,
 										"end": 24,
-										"reference": 1,
+										"declares": 1,
 										"name": "x"
 									},
 									"init": {
 										"type": "YieldExpression",
 										"start": 27,
 										"end": 32,
-										"writes": [
-											1
-										],
 										"delegate": false,
 										"argument": null
 									}
@@ -75,7 +72,7 @@
 									"type": "Identifier",
 									"start": 41,
 									"end": 42,
-									"reference": 2,
+									"reference": 0,
 									"name": "x"
 								}
 							}
@@ -97,7 +94,7 @@
 										"type": "Identifier",
 										"start": 52,
 										"end": 53,
-										"reference": 3,
+										"reference": 1,
 										"name": "g"
 									},
 									"arguments": [],
@@ -123,7 +120,7 @@
 											"type": "Identifier",
 											"start": 64,
 											"end": 65,
-											"reference": 4,
+											"reference": 2,
 											"name": "a"
 										}
 									},
@@ -131,7 +128,7 @@
 										"type": "Identifier",
 										"start": 67,
 										"end": 68,
-										"reference": 5,
+										"reference": 3,
 										"name": "b"
 									}
 								]
@@ -161,31 +158,17 @@
 		{
 			"name": "g",
 			"kind": "function",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "x",
 			"kind": "const",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		}
 	],
 	"references": [
-		{
-			"scope": 0,
-			"binding": 0,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 1,
-			"binding": 1,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
 		{
 			"scope": 1,
 			"binding": 1,

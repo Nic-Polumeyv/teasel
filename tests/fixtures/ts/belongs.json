@@ -45,7 +45,7 @@
 					"type": "Identifier",
 					"start": 9,
 					"end": 17,
-					"reference": 0,
+					"declares": 0,
 					"name": "isString"
 				},
 				"expression": false,
@@ -56,7 +56,7 @@
 						"type": "Identifier",
 						"start": 18,
 						"end": 28,
-						"reference": 1,
+						"declares": 1,
 						"typeAnnotation": {
 							"type": "TSTypeAnnotation",
 							"start": 19,
@@ -93,7 +93,7 @@
 										"type": "Identifier",
 										"start": 59,
 										"end": 60,
-										"reference": 2,
+										"reference": 0,
 										"name": "x"
 									}
 								},
@@ -150,7 +150,7 @@
 					"type": "Identifier",
 					"start": 86,
 					"end": 98,
-					"reference": 3,
+					"declares": 2,
 					"name": "assertString"
 				},
 				"expression": false,
@@ -161,7 +161,7 @@
 						"type": "Identifier",
 						"start": 99,
 						"end": 109,
-						"reference": 4,
+						"declares": 3,
 						"typeAnnotation": {
 							"type": "TSTypeAnnotation",
 							"start": 100,
@@ -213,7 +213,7 @@
 					"type": "Identifier",
 					"start": 144,
 					"end": 157,
-					"reference": 5,
+					"declares": 4,
 					"name": "assertPresent"
 				},
 				"expression": false,
@@ -224,7 +224,7 @@
 						"type": "Identifier",
 						"start": 158,
 						"end": 168,
-						"reference": 6,
+						"declares": 5,
 						"typeAnnotation": {
 							"type": "TSTypeAnnotation",
 							"start": 159,
@@ -257,7 +257,7 @@
 					"type": "Identifier",
 					"start": 190,
 					"end": 191,
-					"reference": 7,
+					"declares": 6,
 					"name": "C"
 				},
 				"superClass": null,
@@ -323,7 +323,7 @@
 										"type": "Identifier",
 										"start": 205,
 										"end": 215,
-										"reference": 8,
+										"declares": 7,
 										"typeAnnotation": {
 											"type": "TSTypeAnnotation",
 											"start": 206,
@@ -360,7 +360,7 @@
 														"type": "Identifier",
 														"start": 246,
 														"end": 247,
-														"reference": 9,
+														"reference": 1,
 														"name": "x"
 													}
 												},
@@ -1077,16 +1077,13 @@
 							"type": "Identifier",
 							"start": 718,
 							"end": 724,
-							"reference": 10,
+							"declares": 8,
 							"name": "values"
 						},
 						"init": {
 							"type": "ArrayExpression",
 							"start": 727,
 							"end": 1015,
-							"writes": [
-								10
-							],
 							"elements": [
 								{
 									"type": "TSAsExpression",
@@ -1522,7 +1519,7 @@
 											"type": "Identifier",
 											"start": 968,
 											"end": 969,
-											"reference": 11,
+											"reference": 2,
 											"name": "E"
 										},
 										"property": {
@@ -1558,7 +1555,7 @@
 											"type": "Identifier",
 											"start": 984,
 											"end": 985,
-											"reference": 12,
+											"reference": 3,
 											"name": "E"
 										},
 										"property": {
@@ -1642,7 +1639,7 @@
 						"type": "Identifier",
 						"start": 1031,
 						"end": 1037,
-						"reference": 13,
+						"declares": 9,
 						"typeAnnotation": {
 							"type": "TSTypeAnnotation",
 							"start": 1032,
@@ -1688,7 +1685,7 @@
 						"type": "Identifier",
 						"start": 1056,
 						"end": 1066,
-						"reference": 14,
+						"declares": 10,
 						"typeAnnotation": {
 							"type": "TSTypeAnnotation",
 							"start": 1057,
@@ -1723,7 +1720,7 @@
 					"type": "Identifier",
 					"start": 1076,
 					"end": 1077,
-					"reference": 15,
+					"declares": 11,
 					"name": "E"
 				},
 				"members": [
@@ -1738,7 +1735,7 @@
 							"type": "Identifier",
 							"start": 1080,
 							"end": 1081,
-							"reference": 16,
+							"declares": 12,
 							"name": "A"
 						},
 						"initializer": {
@@ -1760,7 +1757,7 @@
 							"type": "Identifier",
 							"start": 1087,
 							"end": 1088,
-							"reference": 17,
+							"declares": 13,
 							"name": "B"
 						},
 						"initializer": {
@@ -1771,7 +1768,7 @@
 								"type": "Identifier",
 								"start": 1091,
 								"end": 1092,
-								"reference": 18,
+								"reference": 4,
 								"name": "A"
 							},
 							"operator": "+",
@@ -1819,7 +1816,7 @@
 					"type": "Identifier",
 					"start": 1136,
 					"end": 1144,
-					"reference": 19,
+					"declares": 14,
 					"name": "Abstract"
 				},
 				"superClass": null,
@@ -2034,151 +2031,102 @@
 		{
 			"name": "isString",
 			"kind": "function",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "x",
 			"kind": "param",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "assertString",
 			"kind": "function",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "x",
 			"kind": "param",
-			"scope": 2
+			"scope": 2,
+			"write": true
 		},
 		{
 			"name": "assertPresent",
 			"kind": "function",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "x",
 			"kind": "param",
-			"scope": 3
+			"scope": 3,
+			"write": true
 		},
 		{
 			"name": "C",
 			"kind": "class",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "x",
 			"kind": "param",
-			"scope": 5
+			"scope": 5,
+			"write": true
 		},
 		{
 			"name": "values",
 			"kind": "const",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "e",
 			"kind": "catch",
-			"scope": 8
+			"scope": 8,
+			"write": true
 		},
 		{
 			"name": "e",
 			"kind": "catch",
-			"scope": 11
+			"scope": 11,
+			"write": true
 		},
 		{
 			"name": "E",
 			"kind": "enum",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "A",
 			"kind": "enum-member",
-			"scope": 13
+			"scope": 13,
+			"write": true
 		},
 		{
 			"name": "B",
 			"kind": "enum-member",
-			"scope": 13
+			"scope": 13,
+			"write": true
 		},
 		{
 			"name": "Abstract",
 			"kind": "class",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		}
 	],
 	"references": [
 		{
-			"scope": 0,
-			"binding": 0,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 1,
-			"binding": 1,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
 			"scope": 1,
 			"binding": 1,
 			"write": false,
 			"read": true,
 			"mutate": false,
 			"declares": false
-		},
-		{
-			"scope": 0,
-			"binding": 2,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 2,
-			"binding": 3,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 4,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 3,
-			"binding": 5,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 6,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 5,
-			"binding": 7,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
 		},
 		{
 			"scope": 5,
@@ -2190,14 +2138,6 @@
 		},
 		{
 			"scope": 0,
-			"binding": 8,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
 			"binding": 11,
 			"write": false,
 			"read": true,
@@ -2211,46 +2151,6 @@
 			"read": true,
 			"mutate": false,
 			"declares": false
-		},
-		{
-			"scope": 8,
-			"binding": 9,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 11,
-			"binding": 10,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 0,
-			"binding": 11,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 13,
-			"binding": 12,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		},
-		{
-			"scope": 13,
-			"binding": 13,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
 		},
 		{
 			"scope": 13,
@@ -2259,14 +2159,6 @@
 			"read": true,
 			"mutate": false,
 			"declares": false
-		},
-		{
-			"scope": 0,
-			"binding": 14,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
 		}
 	]
 }

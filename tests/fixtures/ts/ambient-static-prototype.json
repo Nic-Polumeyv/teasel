@@ -18,7 +18,7 @@
 					"type": "Identifier",
 					"start": 14,
 					"end": 15,
-					"reference": 0,
+					"declares": 0,
 					"name": "C"
 				},
 				"superClass": null,
@@ -75,17 +75,9 @@
 		{
 			"name": "C",
 			"kind": "class",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		}
 	],
-	"references": [
-		{
-			"scope": 0,
-			"binding": 0,
-			"write": true,
-			"read": false,
-			"mutate": false,
-			"declares": true
-		}
-	]
+	"references": []
 }

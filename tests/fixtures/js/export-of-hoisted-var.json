@@ -55,7 +55,7 @@
 									"type": "Identifier",
 									"start": 20,
 									"end": 21,
-									"reference": 1,
+									"declares": 0,
 									"name": "a"
 								},
 								"init": null
@@ -86,7 +86,8 @@
 		{
 			"name": "a",
 			"kind": "var",
-			"scope": 0
+			"scope": 0,
+			"write": false
 		}
 	],
 	"references": [
@@ -97,14 +98,6 @@
 			"read": true,
 			"mutate": false,
 			"declares": false
-		},
-		{
-			"scope": 1,
-			"binding": 0,
-			"write": false,
-			"read": false,
-			"mutate": false,
-			"declares": true
 		}
 	]
 }
