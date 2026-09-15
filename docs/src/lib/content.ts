@@ -1,3 +1,6 @@
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Marked, type Token, type Tokens } from 'marked';
 import type { Component } from 'svelte';
 import { render as ssr } from 'svelte/server';
@@ -15,12 +18,20 @@ const escape = (text: string) => text.replace(/[&<>"]/g, (c) => ({ '&': '&amp;',
 
 const copy = buttonVariants({ variant: 'ghost', size: 'sm', class: 'absolute top-1.5 right-2 h-7 text-xs text-white/60 hover:bg-white/10 hover:text-white' });
 
-const sources = Object.fromEntries(Object.entries(import.meta.glob('/content/**/*.js', { query: '?raw', import: 'default', eager: true })).map(([path, text]) => [path.slice(path.lastIndexOf('/') + 1), text as string]));
+const content = fileURLToPath(new URL('../../content/', import.meta.url));
+
+/** A file under content/ by its name, read when asked for: a file added or renamed while the dev server runs is found too. */
+function source(name: string) {
+	for (const dir of readdirSync(content)) {
+		const path = join(content, dir, name);
+		if (existsSync(path)) return readFileSync(path, 'utf8');
+	}
+	throw new Error(`no ${name} under content/`);
+}
 
 /** A whole file the page is about, shown as the sheet it is: a name tab, every line numbered, scrolling past a screen's worth. */
 function sheet(name: string) {
-	const text = sources[name];
-	if (text === undefined) throw new Error(`no ${name} under content/`);
+	const text = source(name);
 	const lines = snippet(text.replace(/\n$/, ''), 'javascript').html.split('\n');
 	return (
 		`<figure class="my-8 overflow-hidden rounded-sm border border-white/10 bg-[#2d353b] text-[#d3c6aa] shadow-lg">` +
