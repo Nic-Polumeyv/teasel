@@ -41,14 +41,14 @@ interface State {
 	roots: Decoded[];
 	build: Builder[];
 }
-const EMPTY: never[] = [];
+const EMPTY: Decoded[] = [];
 
-function node(S: State): Decoded | null {
+function node(S: State) {
 	const id = S.w[S.at++];
 	return id === NULL ? null : S.build[id](S);
 }
 
-function nodes(S: State): (Decoded | null)[] {
+function nodes(S: State) {
 	const list = [];
 	for (;;) {
 		const id = S.w[S.at++];
@@ -57,14 +57,14 @@ function nodes(S: State): (Decoded | null)[] {
 	}
 }
 
-function ints(S: State): number[] {
+function ints(S: State) {
 	const n = S.w[S.at++];
 	const list = new Array<number>(n);
 	for (let i = 0; i < n; i++) list[i] = S.w[S.at++];
 	return list;
 }
 
-function strs(S: State): string[] {
+function strs(S: State) {
 	const n = S.w[S.at++];
 	const list = new Array<string>(n);
 	for (let i = 0; i < n; i++) list[i] = S.strings[S.w[S.at++]];
@@ -125,7 +125,7 @@ function generate({ type, keys, kinds }: Shape, link: boolean): Builder {
 
 // what a table row points at once the tree is built, in its literal from the start so nothing is
 // added later; a binding is the reference its declaring identifier makes, `binding` itself
-const LINKED: { mark: string[]; props: string[]; values: Record<string, null | boolean> }[] = [
+const LINKED = [
 	{ mark: ['topLevelAwait'], props: ['node: null'], values: { node: null } },
 	{ mark: ['name', 'kind'], props: ['node: null', 'declaration: null', 'binding: null', 'declares: true', 'read: false', 'mutate: false', 'writeExpr: null'], values: { node: null, declaration: null, binding: null, declares: true, read: false, mutate: false, writeExpr: null } },
 	{ mark: ['mutate'], props: ['node: null', 'writeExpr: null'], values: { node: null, writeExpr: null } },
@@ -158,7 +158,7 @@ function interpret({ type, keys, kinds }: Shape, link: boolean): Builder {
 	};
 }
 
-const compile: (shape: Shape, link: boolean) => Builder = (() => {
+const compile = (() => {
 	try {
 		new Function('');
 		return generate;
@@ -174,10 +174,10 @@ interface Table {
 	plain: Builder[];
 }
 // ids 0 and 1 are NULL and END, shapes of nothing
-const NONE: Shape = { type: null, keys: [], kinds: [] };
+const NONE = { type: null, keys: [], kinds: [] };
 const tables = new WeakMap<Tables, Table>();
 
-function table_of(engine: Tables, known: number, known_shapes: number): Table {
+function table_of(engine: Tables, known: number, known_shapes: number) {
 	let table = tables.get(engine);
 	if (table === undefined) tables.set(engine, (table = { constants: [], shapes: [NONE, NONE], linked: [], plain: [] }));
 	if (known > table.constants.length) table.constants = engine.constants();
@@ -201,13 +201,13 @@ function table_of(engine: Tables, known: number, known_shapes: number): Table {
 	return table;
 }
 
-function builders(table: Table, link: boolean): Builder[] {
+function builders(table: Table, link: boolean) {
 	const list = link ? table.linked : table.plain;
 	while (list.length < table.shapes.length) list.push(compile(table.shapes[list.length], link));
 	return list;
 }
 
-function unaligned_floats(buffer: ArrayBufferLike, start: number, count: number): Float64Array {
+function unaligned_floats(buffer: ArrayBufferLike, start: number, count: number) {
 	const view = new DataView(buffer, start, count * 8);
 	const floats = new Float64Array(count);
 	for (let i = 0; i < count; i++) floats[i] = view.getFloat64(i * 8, little);
@@ -215,7 +215,7 @@ function unaligned_floats(buffer: ArrayBufferLike, start: number, count: number)
 }
 
 // every row arrives with its links in place as nulls, so nothing here adds a property
-function link_tables(scopes: Decoded[], bindings: Decoded[], references: Decoded[]): void {
+function link_tables(scopes: Decoded[], bindings: Decoded[], references: Decoded[]) {
 	for (const scope of scopes) scope.parent = scope.parent === null ? null : scopes[scope.parent];
 	// a binding is its own first declaration: the reference the declaring identifier makes
 	for (const binding of bindings) {
@@ -228,7 +228,7 @@ function link_tables(scopes: Decoded[], bindings: Decoded[], references: Decoded
 	}
 }
 
-function link_roots(roots: Decoded[], scopes: Decoded[], bindings: Decoded[], references: Decoded[]): void {
+function link_roots(roots: Decoded[], scopes: Decoded[], bindings: Decoded[], references: Decoded[]) {
 	for (const root of roots) {
 		root.node = null;
 		root.scope = scopes[root.scope];

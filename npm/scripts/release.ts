@@ -7,7 +7,7 @@ const root: { name: string; version: string; description: string; license: strin
 const { version, description, license, repository } = root;
 
 // a version the registry has is left alone, so a run that died halfway can be run again
-async function publish(cwd: string, name: string): Promise<void> {
+async function publish(cwd: string, name: string) {
 	const { ok } = await fetch(`https://registry.npmjs.org/${name}/${version}`);
 	if (ok) {
 		console.log(`${name}@${version} is published`);

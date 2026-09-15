@@ -14,7 +14,7 @@ const native = load();
 const engine = { constants: native.constants, shapes: native.shapes };
 const binary = new URL('../../target/release/teasel', import.meta.url).pathname;
 const files: string[] = [];
-function walk(dir: string): void {
+function walk(dir: string) {
 	for (const name of readdirSync(dir)) {
 		if (name === 'node_modules' || name.startsWith('.')) continue;
 		const path = join(dir, name);
@@ -26,7 +26,7 @@ for (const dir of process.argv.slice(2)) walk(dir);
 let checked = 0;
 let failed = 0;
 
-function outcome(fn: () => unknown): { value: unknown } | { error: Pick<ParseError, 'code' | 'message' | 'pos' | 'end' | 'loc'> } {
+function outcome(fn: () => unknown) {
 	try {
 		return { value: fn() };
 	} catch (e) {
@@ -51,7 +51,7 @@ function differ(a: unknown, b: unknown, seen = new Map<object, unknown>(), path 
 	return null;
 }
 
-function report(name: string, difference: string | null): void {
+function report(name: string, difference: string | null) {
 	checked++;
 	if (!difference) return;
 	failed++;
@@ -60,7 +60,7 @@ function report(name: string, difference: string | null): void {
 
 // the batch header the binary reads for the same parse: byte offsets, every switch of the options
 const MODE: Record<Entry, string> = { program: '', expression: 'expr', pattern: 'pattern', params: 'params', statement: 'stmt', typeParameters: 'typeparams' };
-function mode(source: string, options: Options, entry: Entry, at: number): string {
+function mode(source: string, options: Options, entry: Entry, at: number) {
 	const switches = (['comments', 'scopes', 'parenthesized'] as const).filter((flag) => options[flag]).map((flag) => `+${flag}`);
 	if (options.typescript === 'erase') switches.push('+erase');
 	const head = entry === 'program' ? (options.sourceType === 'module' ? 'module' : 'script') : MODE[entry];
@@ -70,7 +70,7 @@ function mode(source: string, options: Options, entry: Entry, at: number): strin
 
 // the addon's answers as JSON, each with the batch job that asks the binary for the same
 const jobs: { name: string; source: string; mode: string; tree: string }[] = [];
-function json(name: string, source: string, options: Options, entry: Entry, at: number): void {
+function json(name: string, source: string, options: Options, entry: Entry, at: number) {
 	const answer = native.parse(native.create(Buffer.from(source), flags(options), ''), ENTRY[entry], at, undefined, '');
 	const tree = typeof answer === 'string' ? answer : JSON.stringify(decode(answer, source, engine, false));
 	jobs.push({ name, source, mode: mode(source, options, entry, at), tree });

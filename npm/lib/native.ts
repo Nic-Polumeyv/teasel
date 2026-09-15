@@ -1,8 +1,7 @@
 import { createRequire } from 'node:module';
 
-declare const external: unique symbol;
 /** The external V8 holds for the addon: a prepared source. */
-export type External = { readonly [external]: never };
+export type External = object;
 
 /** `crates/teasel-node/src/lib.rs`: the five operations over a prepared source, the source as V8's bytes. */
 export interface Addon {
@@ -27,8 +26,7 @@ export const platforms: Record<string, Platform> = {
 	'win32-x64-msvc': { target: 'x86_64-pc-windows-msvc', os: 'win32', cpu: 'x64' },
 };
 
-const SUFFIX: Partial<Record<NodeJS.Platform, string>> = { linux: '-gnu', win32: '-msvc' };
-export const here = `${process.platform}-${process.arch}${SUFFIX[process.platform] ?? ''}`;
+export const here = `${process.platform}-${process.arch}${process.platform === 'linux' ? '-gnu' : process.platform === 'win32' ? '-msvc' : ''}`;
 
 export function load(): Addon {
 	const require = createRequire(import.meta.url);

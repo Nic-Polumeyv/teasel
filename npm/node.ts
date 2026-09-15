@@ -10,7 +10,7 @@ const native = load();
 const encoder = new TextEncoder();
 let scratch = new Uint8Array(1 << 16);
 
-function bytes(text: string): Uint8Array {
+function bytes(text: string) {
 	const size = text.length * 3;
 	if (scratch.length < size && size <= 1 << 20) scratch = new Uint8Array(size);
 	const room = size <= scratch.length ? scratch : new Uint8Array(size);

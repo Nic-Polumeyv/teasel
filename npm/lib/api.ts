@@ -332,7 +332,7 @@ export function flags(options: Options = {}): number {
 }
 
 // the engine takes the stop tokens as one string
-function stops(list: string[] = []): string {
+function stops(list: string[] = []) {
 	if (!Array.isArray(list) || !list.every((stop) => typeof stop === 'string' && stop !== '' && !/\s/.test(stop))) {
 		throw new TypeError('stopAt must be a list of words and punctuators');
 	}
@@ -387,7 +387,7 @@ export class Source<Root = Program> {
 	}
 
 	/** Releases what the engine holds for the source, as `using` does at the end of its block; the collector does it otherwise. */
-	[Symbol.dispose](): void {
+	[Symbol.dispose]() {
 		if (this.#held === undefined) return;
 		registry?.unregister(this);
 		this.#held.free();

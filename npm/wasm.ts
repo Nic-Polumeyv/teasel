@@ -1,5 +1,5 @@
 import type { Program } from 'estree';
-import { Source as Base, type Engine, type Options, type Prepared } from './lib/api.js';
+import { Source as Base, type Engine, type Options } from './lib/api.js';
 
 export { parentOf, referenceOf, scopeOf } from './lib/api.js';
 export type * from './lib/api.js';
@@ -62,7 +62,7 @@ const text = () => utf8.decode(new Uint8Array(wasm.memory.buffer, wasm.text_ptr(
 const words = () => new Uint32Array(wasm.memory.buffer, wasm.words_ptr(), wasm.words_len());
 
 // the constants and shapes come first: writing them can grow the memory and detach a view taken before
-function answer(status: number): Uint32Array | string {
+function answer(status: number) {
 	if (status !== 0) return text();
 	if (words()[4] > constants.length) {
 		wasm.constants();
@@ -77,7 +77,7 @@ function answer(status: number): Uint32Array | string {
 }
 
 export const engine: Engine = {
-	create(source, flags, host): Prepared {
+	create(source, flags, host) {
 		const handle = guarded(() => wasm.source_new(...bytes(source), flags, ...bytes(host)));
 		if (handle === 0) throw new Error(JSON.parse(text()).error.message);
 		const held = generation;
