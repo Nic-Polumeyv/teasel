@@ -9,7 +9,7 @@
         "@fontsource-variable/newsreader": "^5.3.0",
         "@fontsource/ibm-plex-mono": "^5.3.0",
         "@internationalized/date": "^3.12.4",
-        "@teasel/parser": "^0.0.8",
+        "@teasel/parser": "^0.0.10",
         "marked": "^18.0.13",
         "sheer-ui": "^0.5.0",
       },
@@ -145,17 +145,17 @@
 
     "@tailwindcss/vite": ["@tailwindcss/vite@4.3.3", "", { "dependencies": { "@tailwindcss/node": "4.3.3", "@tailwindcss/oxide": "4.3.3", "tailwindcss": "4.3.3" }, "peerDependencies": { "vite": "^5.2.0 || ^6 || ^7 || ^8" } }, "sha512-yYU8cogLeSh/ms2jh8Fj7jaba/EWa7Ja6GoUqYZaraEuCI5YS6ms6ObZgjjedm+jm6XZjdNRWBpPP6Z86oOxcw=="],
 
-    "@teasel/parser": ["@teasel/parser@0.0.8", "", { "dependencies": { "@types/estree": "^1.0.6" }, "optionalDependencies": { "@teasel/parser-darwin-arm64": "0.0.8", "@teasel/parser-darwin-x64": "0.0.8", "@teasel/parser-linux-arm64-gnu": "0.0.8", "@teasel/parser-linux-x64-gnu": "0.0.8", "@teasel/parser-win32-x64-msvc": "0.0.8" } }, "sha512-aymIH4sIqf90BxQWGC6Qy1lgT2PYUI7kTyT+ziUgDJD8WSLrrfZAUw2QFpjam4oxnHhk2W3/Kv4U8XVehGFqSA=="],
+    "@teasel/parser": ["@teasel/parser@0.0.10", "", { "dependencies": { "@types/estree": "^1.0.6" }, "optionalDependencies": { "@teasel/parser-darwin-arm64": "0.0.10", "@teasel/parser-darwin-x64": "0.0.10", "@teasel/parser-linux-arm64-gnu": "0.0.10", "@teasel/parser-linux-x64-gnu": "0.0.10", "@teasel/parser-win32-x64-msvc": "0.0.10" } }, "sha512-/qUeDXzG6xcRA9lkgiELr/VG/0kYOlf1SCV8IW//gpsEJ8ad9ptz6S0hOLCD43hfiC8uLM2WOrXPKU6Ib8p+8g=="],
 
-    "@teasel/parser-darwin-arm64": ["@teasel/parser-darwin-arm64@0.0.8", "", { "os": "darwin", "cpu": "arm64" }, "sha512-U4Q93GpEoNUrOQNbi6CZeb/5tAheP8APd+If8FICbaBW8Ej2rQAiITlrdJbcw8OHAuKt85c130Z1EFTc3/S79Q=="],
+    "@teasel/parser-darwin-arm64": ["@teasel/parser-darwin-arm64@0.0.10", "", { "os": "darwin", "cpu": "arm64" }, "sha512-ZTIo53pzJgyWgcRwXg/iXdVDr7xNgGyIdfjdSFfluEvNmHiTPRMNeuRXxGPBkw+pBWqEAhkKN4sAjQK8KnizKQ=="],
 
-    "@teasel/parser-darwin-x64": ["@teasel/parser-darwin-x64@0.0.8", "", { "os": "darwin", "cpu": "x64" }, "sha512-xHOL13ulsARyWNmtUOEUwK6vE/9PZw354CUR+2CQTR83qaSdwVjuK+74aKboE0JKLo455DCVfcYGM5Wdn20Nyw=="],
+    "@teasel/parser-darwin-x64": ["@teasel/parser-darwin-x64@0.0.10", "", { "os": "darwin", "cpu": "x64" }, "sha512-lj0DdZOpNoOFqBmKug3UHnaxzBYIF7WuIejUxt2Vfj1/QcY+VHvo0YON+Ty31zdBAsDxkmV1Sc+NsEZhaGFqyA=="],
 
-    "@teasel/parser-linux-arm64-gnu": ["@teasel/parser-linux-arm64-gnu@0.0.8", "", { "os": "linux", "cpu": "arm64" }, "sha512-MLRSbJV9KWHKPu2dcRvKhPyOXhDOowM7ZxO1QqqWXa5jpp1mU46+GfLoF58snd2ee7Zxk+ii9XcFBA/HGRNoHQ=="],
+    "@teasel/parser-linux-arm64-gnu": ["@teasel/parser-linux-arm64-gnu@0.0.10", "", { "os": "linux", "cpu": "arm64" }, "sha512-abheDMsUMJQyv92UOKYgRdMStCccpWOC00l0UOcc4n6kX547IyMHaKGUsICDw/+yOOkoi2K7a07TdTDNNSFQ/g=="],
 
-    "@teasel/parser-linux-x64-gnu": ["@teasel/parser-linux-x64-gnu@0.0.8", "", { "os": "linux", "cpu": "x64" }, "sha512-MAlDJy/w3cYi3VUJJxodz1NhtuE+ZAWDNrYeLW4CKvx56roPqIEmGVmeP44Yf5qMzz592NY4aCK3fB4BT63P3g=="],
+    "@teasel/parser-linux-x64-gnu": ["@teasel/parser-linux-x64-gnu@0.0.10", "", { "os": "linux", "cpu": "x64" }, "sha512-2NZT1Py0n/38GjLzKRf4YTcXYrfc3SBb5igdfiWHiiErbUGWyNlKgedBAbBN8XxG3NVkbKQ6qLG714XHwD52YQ=="],
 
-    "@teasel/parser-win32-x64-msvc": ["@teasel/parser-win32-x64-msvc@0.0.8", "", { "os": "win32", "cpu": "x64" }, "sha512-9VI+Tzf35qCb4SCLRXqF6ruhIwLUKzVOHbbIEidyLXZNGgH/Rvto76CVpmudqGQZdWzStpcgL/UXKzaMhgZDIw=="],
+    "@teasel/parser-win32-x64-msvc": ["@teasel/parser-win32-x64-msvc@0.0.10", "", { "os": "win32", "cpu": "x64" }, "sha512-GjVE+AaUYDdGCkwYbeMVaCaqEL3Kt6QujzprvuKKFms1PKXPrEISd1qADheDns5CodU31TKou+z6uCWm/tkRDA=="],
 
     "@types/d3-array": ["@types/d3-array@3.2.2", "", {}, "sha512-hOLWVbm7uRza0BYXpIIW5pxfrKe0W+D5lrFiAEYR+pb6w3N2SwSMaJbXdUfSEv+dT4MfHBLtn5js0LAWaO6otw=="],
 
