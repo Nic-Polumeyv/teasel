@@ -1,0 +1,21 @@
+[package]
+name = "teasel"
+description = "A JavaScript parser in Rust"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = ["typescript"]
+typescript = []
+
+[dependencies]
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+pprof = { version = "0.15.0", features = ["flamegraph"] }
+rustc-demangle = "0.1.28"

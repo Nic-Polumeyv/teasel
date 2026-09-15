@@ -4,36 +4,36 @@
 
 use std::ffi::{c_char, c_void};
 
-pub type Env = *mut c_void;
-pub type Value = *mut c_void;
-pub type CallbackInfo = *mut c_void;
-pub type Ref = *mut c_void;
-pub type Status = i32;
-pub type Callback = Option<unsafe extern "C" fn(Env, CallbackInfo) -> Value>;
-pub type Finalize = Option<unsafe extern "C" fn(Env, *mut c_void, *mut c_void)>;
+pub(crate) type Env = *mut c_void;
+pub(crate) type Value = *mut c_void;
+pub(crate) type CallbackInfo = *mut c_void;
+pub(crate) type Ref = *mut c_void;
+pub(crate) type Status = i32;
+pub(crate) type Callback = Option<unsafe extern "C" fn(Env, CallbackInfo) -> Value>;
+pub(crate) type Finalize = Option<unsafe extern "C" fn(Env, *mut c_void, *mut c_void)>;
 
-pub const OK: Status = 0;
-pub const UNDEFINED: i32 = 0;
-pub const UINT8_ARRAY: i32 = 1;
-pub const UINT32_ARRAY: i32 = 6;
+pub(crate) const OK: Status = 0;
+pub(crate) const UNDEFINED: i32 = 0;
+pub(crate) const UINT8_ARRAY: i32 = 1;
+pub(crate) const UINT32_ARRAY: i32 = 6;
 
 macro_rules! api {
 	($(fn $name:ident($($arg:ident: $ty:ty),*) -> Status;)*) => {
 		#[cfg(not(windows))]
 		unsafe extern "C" {
-			$(pub fn $name($($arg: $ty),*) -> Status;)*
+			$(pub(crate) fn $name($($arg: $ty),*) -> Status;)*
 		}
 
 		#[cfg(windows)]
 		#[allow(non_upper_case_globals)]
 		mod symbols {
 			use std::sync::atomic::AtomicUsize;
-			$(pub static $name: AtomicUsize = AtomicUsize::new(0);)*
+			$(pub(crate) static $name: AtomicUsize = AtomicUsize::new(0);)*
 		}
 
 		$(
 			#[cfg(windows)]
-			pub unsafe fn $name($($arg: $ty),*) -> Status {
+			pub(crate) unsafe fn $name($($arg: $ty),*) -> Status {
 				let at = symbols::$name.load(std::sync::atomic::Ordering::Relaxed);
 				let f: unsafe extern "C" fn($($ty),*) -> Status = unsafe { std::mem::transmute(at) };
 				unsafe { f($($arg),*) }
@@ -41,7 +41,7 @@ macro_rules! api {
 		)*
 
 		#[cfg(windows)]
-		pub unsafe fn load() {
+		pub(crate) unsafe fn load() {
 			let host = unsafe { GetModuleHandleW(std::ptr::null()) };
 			$(symbols::$name.store(
 				unsafe { GetProcAddress(host, concat!(stringify!($name), "\0").as_ptr().cast()) } as usize,

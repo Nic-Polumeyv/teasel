@@ -1,9 +1,9 @@
 target/
 node_modules/
-/tests/test262-parser-tests/
+/crates/teasel/tests/test262-parser-tests/
 /package/teasel.wasm
 *.node
-/tests/TypeScript/
+/crates/teasel/tests/TypeScript/
 /package/plan.js
 /package/plan.d.ts
 /target*/

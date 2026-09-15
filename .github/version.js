@@ -66,9 +66,7 @@ const patchFile = (path, from, to) => {
 	if (!from.test(text)) throw new Error(`${path}: nothing matches ${from}`);
 	writeFileSync(at(path), text.replace(from, to));
 };
-for (const file of ['Cargo.toml', 'bindings/node/Cargo.toml', 'bindings/wasm/Cargo.toml']) {
-	patchFile(file, /^version = "[^"]*"$/m, `version = "${version}"`);
-}
+patchFile('Cargo.toml', /^version = "[^"]*"$/m, `version = "${version}"`);
 for (const crate of ['teasel', 'teasel-node', 'teasel-wasm']) {
 	patchFile('Cargo.lock', new RegExp(`(\\[\\[package\\]\\]\\nname = "${crate}"\\nversion = ")[^"]*`), `$1${version}`);
 }
