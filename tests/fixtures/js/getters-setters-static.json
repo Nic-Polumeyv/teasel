@@ -326,17 +326,20 @@
 		{
 			"name": "A",
 			"kind": "class",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "v",
 			"kind": "param",
-			"scope": 3
+			"scope": 3,
+			"write": true
 		},
 		{
 			"name": "v",
 			"kind": "param",
-			"scope": 5
+			"scope": 5,
+			"write": true
 		}
 	],
 	"references": []

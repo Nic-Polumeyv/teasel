@@ -2031,77 +2031,92 @@
 		{
 			"name": "isString",
 			"kind": "function",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "x",
 			"kind": "param",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "assertString",
 			"kind": "function",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "x",
 			"kind": "param",
-			"scope": 2
+			"scope": 2,
+			"write": true
 		},
 		{
 			"name": "assertPresent",
 			"kind": "function",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "x",
 			"kind": "param",
-			"scope": 3
+			"scope": 3,
+			"write": true
 		},
 		{
 			"name": "C",
 			"kind": "class",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "x",
 			"kind": "param",
-			"scope": 5
+			"scope": 5,
+			"write": true
 		},
 		{
 			"name": "values",
 			"kind": "const",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "e",
 			"kind": "catch",
-			"scope": 8
+			"scope": 8,
+			"write": true
 		},
 		{
 			"name": "e",
 			"kind": "catch",
-			"scope": 11
+			"scope": 11,
+			"write": true
 		},
 		{
 			"name": "E",
 			"kind": "enum",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "A",
 			"kind": "enum-member",
-			"scope": 13
+			"scope": 13,
+			"write": true
 		},
 		{
 			"name": "B",
 			"kind": "enum-member",
-			"scope": 13
+			"scope": 13,
+			"write": true
 		},
 		{
 			"name": "Abstract",
 			"kind": "class",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		}
 	],
 	"references": [
@@ -2110,35 +2125,40 @@
 			"binding": 1,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 5,
 			"binding": 7,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": 11,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": 11,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 13,
 			"binding": 12,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		}
 	]
 }

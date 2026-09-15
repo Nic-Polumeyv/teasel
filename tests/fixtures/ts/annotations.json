@@ -590,62 +590,74 @@
 		{
 			"name": "a",
 			"kind": "let",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "b",
 			"kind": "let",
-			"scope": 0
+			"scope": 0,
+			"write": false
 		},
 		{
 			"name": "f",
 			"kind": "function",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "c",
 			"kind": "param",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "d",
 			"kind": "param",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "e",
 			"kind": "const",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "g",
 			"kind": "param",
-			"scope": 2
+			"scope": 2,
+			"write": true
 		},
 		{
 			"name": "h",
 			"kind": "let",
-			"scope": 0
+			"scope": 0,
+			"write": false
 		},
 		{
 			"name": "j",
 			"kind": "let",
-			"scope": 0
+			"scope": 0,
+			"write": false
 		},
 		{
 			"name": "e",
 			"kind": "catch",
-			"scope": 4
+			"scope": 4,
+			"write": true
 		},
 		{
 			"name": "t",
 			"kind": "let",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "u",
 			"kind": "let",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		}
 	],
 	"references": [
@@ -654,14 +666,16 @@
 			"binding": 6,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		}
 	]
 }

@@ -82,12 +82,14 @@
 		{
 			"name": "A",
 			"kind": "class",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "A",
 			"kind": "class-name",
-			"scope": 2
+			"scope": 2,
+			"write": true
 		}
 	],
 	"references": []

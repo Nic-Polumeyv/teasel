@@ -281,32 +281,38 @@
 		{
 			"name": "f",
 			"kind": "function",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "let",
 			"kind": "var",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "yield",
 			"kind": "var",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "await",
 			"kind": "var",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "static",
 			"kind": "var",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "implements",
 			"kind": "var",
-			"scope": 0
+			"scope": 0,
+			"write": false
 		}
 	],
 	"references": [
@@ -315,21 +321,24 @@
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 2,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": true,
 			"read": false,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		}
 	]
 }

@@ -161,27 +161,32 @@
 		{
 			"name": "a",
 			"kind": "const",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "E",
 			"kind": "enum",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "A",
 			"kind": "enum-member",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "N",
 			"kind": "namespace",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "c",
 			"kind": "const",
-			"scope": 2
+			"scope": 2,
+			"write": false
 		}
 	],
 	"references": []

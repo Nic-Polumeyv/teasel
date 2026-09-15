@@ -1,11 +1,11 @@
 //! Serializes an `Ast` to ESTree: as JSON text, or as a token stream a binding hands to
 //! JavaScript without a text round trip.
 
+use crate::scopes::Role;
 use crate::ast::{Ast, Class, Function, List, MethodKind, NodeId, NodeKind, PropertyKind, Value};
 use crate::interner::{FastMap, Interner, StrId};
 use crate::names::{NAMES, Name, c};
 use crate::parser::Entry;
-use crate::scopes::Role;
 use std::fmt::Write;
 
 /// How an extension's data serializes: its own nodes, and the keys it adds to JavaScript nodes.
@@ -1076,10 +1076,10 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 				self.key(c!("defines"));
 				self.sink.ints(bindings);
 			}
-			let references = scopes.writes_of.get(node);
-			if !references.is_empty() {
+			let writes = scopes.writes_of.get(node);
+			if !writes.is_empty() {
 				self.key(c!("writes"));
-				self.sink.ints(references);
+				self.sink.ints(writes);
 			}
 		}
 	}
@@ -1116,6 +1116,7 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 			self.string(c!("kind"), binding.kind.name());
 			self.key(c!("scope"));
 			self.sink.int(binding.scope);
+			self.bool(c!("write"), binding.write);
 			self.sink.end();
 		}
 		self.sink.end();
@@ -1133,6 +1134,7 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 			self.bool(c!("write"), reference.write);
 			self.bool(c!("read"), reference.read);
 			self.bool(c!("mutate"), reference.mutate);
+			self.bool(c!("declares"), reference.declares);
 			self.sink.end();
 		}
 		self.sink.end();

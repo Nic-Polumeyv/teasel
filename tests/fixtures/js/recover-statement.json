@@ -365,32 +365,38 @@
 		{
 			"name": "x",
 			"kind": "param",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "d",
 			"kind": "const",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "resource",
 			"kind": "using",
-			"scope": 2
+			"scope": 2,
+			"write": true
 		},
 		{
 			"name": "a",
 			"kind": "using",
-			"scope": 2
+			"scope": 2,
+			"write": true
 		},
 		{
 			"name": "missing",
 			"kind": "using",
-			"scope": 3
+			"scope": 3,
+			"write": false
 		},
 		{
 			"name": "item",
 			"kind": "using",
-			"scope": 4
+			"scope": 4,
+			"write": true
 		}
 	],
 	"references": [
@@ -399,21 +405,24 @@
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 2,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 4,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		}
 	]
 }

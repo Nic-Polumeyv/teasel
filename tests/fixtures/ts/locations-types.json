@@ -178,7 +178,8 @@
 		{
 			"name": "a",
 			"kind": "let",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		}
 	],
 	"references": []

@@ -216,12 +216,14 @@
 		{
 			"name": "a",
 			"kind": "const",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "f",
 			"kind": "function",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		}
 	],
 	"references": []

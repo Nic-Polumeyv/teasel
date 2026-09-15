@@ -128,17 +128,20 @@
 		{
 			"name": "N",
 			"kind": "namespace",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "a",
 			"kind": "const",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "f",
 			"kind": "function",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		}
 	],
 	"references": []
