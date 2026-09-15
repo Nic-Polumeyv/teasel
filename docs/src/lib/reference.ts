@@ -1,5 +1,5 @@
 import { Source } from '@teasel/parser';
-import types from '../../../npm/lib/api.d.ts?raw';
+import types from '../../../npm/dist/lib/api.d.ts?raw';
 
 type Declaration = { type: string; start: number; end: number; id?: { name: string }; declarations?: { id: { name: string } }[]; declaration?: Declaration; leadingComments?: { value: string; end: number }[] };
 
@@ -22,7 +22,7 @@ function parser() {
 				return `## ${(statement.declaration!.id ?? statement.declaration!.declarations![0].id).name}\n\n${doc ? prose(doc.value) + '\n\n' : ''}\`\`\`ts\n${text}\n\`\`\``;
 			})
 			.join('\n\n');
-		return { meta: { href: '/reference/parser', title: '@teasel/parser', section: 'Reference', path: 'npm/lib/api.ts' }, markdown: `Every export of the package, as its declarations say.\n\n${body}` };
+		return { meta: { href: '/reference/parser', title: '@teasel/parser', section: 'Reference', path: 'npm/src/lib/api.ts' }, markdown: `Every export of the package, as its declarations say.\n\n${body}` };
 	} finally {
 		source[Symbol.dispose]();
 	}

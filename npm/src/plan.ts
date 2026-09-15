@@ -1,5 +1,5 @@
 // Authoring a host plan: data for `Plan::read` in Rust, typed so that a misuse fails to compile.
-// `plan.js` and `plan.d.ts` are emitted from this file.
+// `dist/plan.js` and `dist/plan.d.ts` are emitted from this file.
 
 declare const out: unique symbol;
 

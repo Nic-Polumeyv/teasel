@@ -4,14 +4,14 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
-import * as node from '../node.js';
-import * as wasm from '../wasm.js';
-import { ENTRY, flags, type Entry, type Options, type ParseError } from '../lib/api.js';
-import { decode } from '../lib/decode.js';
-import { load } from '../lib/native.js';
+import * as native from '../dist/native.js';
+import * as wasm from '../dist/wasm.js';
+import { ENTRY, flags, type Entry, type Options, type ParseError } from '../dist/lib/api.js';
+import { decode } from '../dist/lib/decode.js';
+import { load } from '../dist/lib/addon.js';
 
-const native = load();
-const engine = { constants: native.constants, shapes: native.shapes };
+const addon = load();
+const engine = { constants: addon.constants, shapes: addon.shapes };
 const binary = new URL('../../target/release/teasel', import.meta.url).pathname;
 const files: string[] = [];
 function walk(dir: string) {
@@ -71,7 +71,7 @@ function mode(source: string, options: Options, entry: Entry, at: number) {
 // the addon's answers as JSON, each with the batch job that asks the binary for the same
 const jobs: { name: string; source: string; mode: string; tree: string }[] = [];
 function json(name: string, source: string, options: Options, entry: Entry, at: number) {
-	const answer = native.parse(native.create(Buffer.from(source), flags(options), ''), ENTRY[entry], at, undefined, '');
+	const answer = addon.parse(addon.create(Buffer.from(source), flags(options), ''), ENTRY[entry], at, undefined, '');
 	const tree = typeof answer === 'string' ? answer : JSON.stringify(decode(answer, source, engine, false));
 	jobs.push({ name, source, mode: mode(source, options, entry, at), tree });
 }
@@ -91,13 +91,13 @@ for (const file of files) {
 		];
 		for (const options of runs) {
 			json(file, source, options, 'program', 0);
-			report(`${file} wasm`, differ(outcome(() => new wasm.Source(source, options).parse()), outcome(() => new node.Source(source, options).parse())));
+			report(`${file} wasm`, differ(outcome(() => new wasm.Source(source, options).parse()), outcome(() => new native.Source(source, options).parse())));
 		}
 	}
 	// every brace in a component is somewhere an expression, a pattern or a statement might start
 	if (svelte) {
 		const options: Options = { sourceType: 'module', typescript: /lang=["']?ts/.test(text), locations: true, comments: true, scopes: true };
-		using held = new node.Source(text, options);
+		using held = new native.Source(text, options);
 		using twin = new wasm.Source(text, options);
 		for (const m of text.matchAll(script_re)) {
 			const start = m.index + m[0].indexOf('>') + 1;
