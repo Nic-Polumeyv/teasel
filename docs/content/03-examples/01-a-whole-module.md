@@ -2,9 +2,7 @@
 title: A whole module
 ---
 
-A real file, parsed once with `scopes` on, and five things a tool asks about it: where imports are used, who writes shared state, what is exported, what functions capture, where a function is called.
-
-The file is 183 lines: two classes with private fields, an async generator, closures over module state, three imports, seven exports.
+Five things a tool asks about a file: where imports are used, who writes shared state, what is exported, what functions capture, where a function is called. The file is 183 lines: two classes with private fields, an async generator, closures over module state, three imports, seven exports.
 
 ```file scheduler.js
 ```
