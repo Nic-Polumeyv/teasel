@@ -1,7 +1,8 @@
 <script lang="ts">
 	import Boundary from "./Boundary.svelte";
 	import Pipeline from "./Pipeline.svelte";
-	import Teasel from "./Teasel.svelte";
+	import field from "../../../banner.svg";
+	import fieldDark from "../../../banner-dark.svg";
 
 	let { data } = $props();
 </script>
@@ -13,13 +14,18 @@
 <div class="text-base leading-7 [&_h2]:font-serif [&_h2]:text-4xl [&_h2]:font-medium [&_h2]:tracking-tight md:[&_h2]:text-5xl [&_p]:mt-5 [&_p]:max-w-prose [&_p_a]:text-primary [&_p_a]:underline [&_p_a]:decoration-primary/40 [&_p_a]:underline-offset-4 [&_p_a:hover]:decoration-primary [&_:not(pre)>code]:rounded-sm [&_:not(pre)>code]:bg-accent [&_:not(pre)>code]:px-1.5 [&_:not(pre)>code]:py-0.5 [&_:not(pre)>code]:font-mono [&_:not(pre)>code]:text-[0.9em] [&_:not(pre)>code]:text-accent-foreground">
 	<section class="relative overflow-hidden">
 		<div class="plaid absolute inset-x-0 top-0 -z-10 h-full opacity-[0.07] [mask-image:linear-gradient(to_bottom,black,transparent_70%)]"></div>
-		<div class="mx-auto flex w-full max-w-6xl items-end gap-12 px-8 pt-16 md:pt-24">
-			<div class="min-w-0 flex-1">
+		<div class="relative mx-auto w-full max-w-6xl px-8 pt-16 md:pt-24">
+			{#each [{ blur: '', mask: 'md:[mask-image:linear-gradient(to_right,transparent_35%,black_60%)]' }, { blur: 'blur-[3px]', mask: 'md:[mask-image:linear-gradient(to_right,transparent_5%,black_35%,transparent_60%)]' }] as layer (layer.blur)}
+				<div class="pointer-events-none absolute inset-y-0 right-0 w-full opacity-30 [mask-image:linear-gradient(to_bottom,transparent_20%,black)] md:w-3/5 md:opacity-50 {layer.blur} {layer.mask}">
+					<img src={field} alt="" class="h-full w-full object-cover object-left-bottom dark:hidden" />
+					<img src={fieldDark} alt="" class="hidden h-full w-full object-cover object-left-bottom dark:block" />
+				</div>
+			{/each}
+			<div class="relative max-w-2xl">
 				<h1 class="font-serif text-7xl font-medium tracking-tight md:text-9xl">teasel</h1>
 				<p class="mt-2! max-w-none! font-serif text-2xl text-muted-foreground italic md:text-3xl">One pass, one tree, one crossing.</p>
 				<p class="text-lg">A JavaScript and TypeScript parser written in Rust, made to be called from JavaScript. You get acorn's tree, the one every tool already knows how to walk, and you get the scopes, bindings and references with it, worked out during the same parse.</p>
 			</div>
-			<div class="hidden h-72 shrink-0 text-muted-foreground/50 md:block lg:h-96"><Teasel /></div>
 		</div>
 		<div class="mx-auto w-full max-w-6xl px-8 pt-8 pb-16 md:pt-12">
 			<Pipeline label="the source text crosses into the engine once, read through the piece that says what to read, which fits the engine like a puzzle piece; the engine lexes, parses and analyses scopes in one pass and answers with one stream, which the decoder turns into the tree and the scope tables on the JavaScript side" />
