@@ -14,7 +14,7 @@
 		['imports', [2, 3]],
 		['module state', [3, 1]],
 		['exports', [0, 2]],
-		['captures', [1, 3]],
+		['reaches', [1, 3]],
 		['calls', [3, 0]],
 	];
 	const row = (i: number) => 104 + i * 40;
