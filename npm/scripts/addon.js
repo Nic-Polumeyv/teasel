@@ -1,7 +1,7 @@
-// node addon.js [--target TRIPLE]: builds the addon for this machine, or for the target given, into teasel.<platform>.node
+// node scripts/addon.js [--target TRIPLE]: builds the addon for this machine, or for the target given, into teasel.<platform>.node
 import { copyFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { here, platforms } from './native.js';
+import { here, platforms } from '../lib/native.js';
 
 const at = process.argv.indexOf('--target');
 const target = at === -1 ? platforms[here].target : process.argv[at + 1];

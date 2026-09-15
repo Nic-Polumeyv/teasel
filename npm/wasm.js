@@ -1,6 +1,6 @@
-import { bind } from './api.js';
+import { bind } from './lib/api.js';
 
-export { scopeOf, referenceOf, parentOf } from './decode.js';
+export { scopeOf, referenceOf, parentOf } from './lib/decode.js';
 
 const encoder = new TextEncoder();
 const utf8 = new TextDecoder();

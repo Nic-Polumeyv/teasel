@@ -14,7 +14,7 @@ export function load() {
 	const require = createRequire(import.meta.url);
 	const file = `teasel.${here}.node`;
 	try {
-		return require(`./${file}`);
+		return require(`../${file}`);
 	} catch (e) {
 		if (e.code !== 'MODULE_NOT_FOUND') throw e;
 		return require(`@teasel/parser-${here}/${file}`);

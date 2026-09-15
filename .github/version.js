@@ -1,4 +1,4 @@
-// node .github/version.js: turns the changesets under package/.changeset into the next release.
+// node .github/version.js: turns the changesets under .changeset into the next release.
 // Bumps package.json and the crates, prepends the changelog section, deletes the changesets, and
 // prints the pull request body. Prints nothing and changes nothing when there are no changesets.
 import { readFileSync, writeFileSync, readdirSync, unlinkSync } from 'node:fs';
@@ -10,7 +10,7 @@ const root = new URL('../', import.meta.url);
 const at = (path) => new URL(path, root);
 const repo = process.env.GITHUB_REPOSITORY ?? 'Nic-Polumeyv/teasel';
 const name = '@teasel/parser';
-const dir = fileURLToPath(at('package/.changeset/'));
+const dir = fileURLToPath(at('.changeset/'));
 
 const changesets = readdirSync(dir)
 	.filter((file) => file.endsWith('.md') && file !== 'README.md')
@@ -27,7 +27,7 @@ if (changesets.length === 0) process.exit(0);
 
 const order = ['major', 'minor', 'patch'];
 const bump = order.find((level) => changesets.some((c) => c.bump === level));
-const manifest = JSON.parse(readFileSync(at('package/package.json'), 'utf8'));
+const manifest = JSON.parse(readFileSync(at('npm/package.json'), 'utf8'));
 const [major, minor, patch] = manifest.version.split('.').map(Number);
 const version = { major: `${major + 1}.0.0`, minor: `${major}.${minor + 1}.0`, patch: `${major}.${minor}.${patch + 1}` }[bump];
 
@@ -41,7 +41,7 @@ const api = (path) => {
 	}
 };
 const line = ({ file, summary }) => {
-	const sha = git('log', '--diff-filter=A', '--format=%H', '-1', '--', `package/.changeset/${file}`);
+	const sha = git('log', '--diff-filter=A', '--format=%H', '-1', '--', `.changeset/${file}`);
 	const [first, ...rest] = summary.split('\n');
 	const body = [first, ...rest.map((l) => `  ${l}`)].join('\n');
 	if (!sha) return `- ${body}`;
@@ -56,11 +56,11 @@ const sections = order
 	.map(([level, list]) => `### ${level[0].toUpperCase()}${level.slice(1)} Changes\n\n${list.map(line).join('\n\n')}`)
 	.join('\n\n');
 
-const changelog = at('package/CHANGELOG.md');
+const changelog = at('npm/CHANGELOG.md');
 // a replacer function: a summary may contain `$&` or `$1`, which a replacement string would expand
 writeFileSync(changelog, readFileSync(changelog, 'utf8').replace(`# ${name}\n`, () => `# ${name}\n\n## ${version}\n\n${sections}\n`));
 manifest.version = version;
-writeFileSync(at('package/package.json'), JSON.stringify(manifest, null, '\t') + '\n');
+writeFileSync(at('npm/package.json'), JSON.stringify(manifest, null, '\t') + '\n');
 const patchFile = (path, from, to) => {
 	const text = readFileSync(at(path), 'utf8');
 	if (!from.test(text)) throw new Error(`${path}: nothing matches ${from}`);

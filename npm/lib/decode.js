@@ -15,9 +15,9 @@ const REFERENCE = Symbol('reference');
 const PARENT = Symbol('parent');
 
 
-/** @param {import('estree').Node} node @returns {import('./index.js').Scope | undefined} the scope the node opens */
+/** @param {import('estree').Node} node @returns {import('../types.d.ts').Scope | undefined} the scope the node opens */
 export const scopeOf = (node) => (node == null ? undefined : node[SCOPE]);
-/** @param {import('estree').Node} node @returns {import('./index.js').Reference | undefined} the reference an identifier makes, a global's included */
+/** @param {import('estree').Node} node @returns {import('../types.d.ts').Reference | undefined} the reference an identifier makes, a global's included */
 export const referenceOf = (node) => (node == null ? undefined : node[REFERENCE]);
 /** @param {import('estree').Node} node @returns {import('estree').Node | undefined} the node it is a child of; undefined for the root of an answer */
 export const parentOf = (node) => (node == null ? undefined : node[PARENT]);

@@ -126,10 +126,10 @@ teasel --typescript --scopes file.ts
 
 ```
 cargo build --release
-cd package
+cd npm
 npm run build          # the Node addon; tsc 7 on the PATH for the plan types
 npm run build:wasm     # the WebAssembly module; wasm-opt (binaryen) on the PATH
-node test.js
+npm test
 ```
 
 Node resolves `@teasel/parser` to the addon and everything else to the WebAssembly module, with the same API.
