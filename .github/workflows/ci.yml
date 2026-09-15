@@ -102,7 +102,7 @@ jobs:
           fi
           docs=false; bumped=false
           [ "$changed" = all ] && docs=true
-          echo "$changed" | grep -qE '^(docs/|npm/lib/api.ts|.github/workflows/ci.yml)' && docs=true
+          echo "$changed" | grep -qE '^(docs/|npm/src/lib/api.ts|.github/workflows/ci.yml)' && docs=true
           echo "$changed" | grep -qx Cargo.toml && bumped=true
           [ '${{ github.event_name }}' = workflow_dispatch ] && bumped=true
           version=$(jq -r .version npm/package.json)

@@ -22,7 +22,7 @@ function parser() {
 				return `## ${(statement.declaration!.id ?? statement.declaration!.declarations![0].id).name}\n\n${doc ? prose(doc.value) + '\n\n' : ''}\`\`\`ts\n${text}\n\`\`\``;
 			})
 			.join('\n\n');
-		return { meta: { href: '/reference/parser', title: '@teasel/parser', section: 'Reference', path: 'npm/lib/api.ts' }, markdown: `Every export of the package, as its declarations say.\n\n${body}` };
+		return { meta: { href: '/reference/parser', title: '@teasel/parser', section: 'Reference', path: 'npm/src/lib/api.ts' }, markdown: `Every export of the package, as its declarations say.\n\n${body}` };
 	} finally {
 		source[Symbol.dispose]();
 	}
