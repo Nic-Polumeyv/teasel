@@ -22,13 +22,13 @@ jobs:
         with:
           node-version: 26
       - run: npm install -g typescript@7 binaryen
-      - run: git clone --depth 1 https://github.com/tc39/test262-parser-tests tests/test262-parser-tests
-      - run: git clone --depth 1 --filter=blob:none --sparse https://github.com/microsoft/TypeScript tests/TypeScript && git -C tests/TypeScript sparse-checkout set --no-cone '/tsc/testdata/tests/cases/conformance/**' '/tsc/testdata/baselines/reference/conformance/*.errors.txt'
+      - run: git clone --depth 1 https://github.com/tc39/test262-parser-tests crates/teasel/tests/test262-parser-tests
+      - run: git clone --depth 1 --filter=blob:none --sparse https://github.com/microsoft/TypeScript crates/teasel/tests/TypeScript && git -C crates/teasel/tests/TypeScript sparse-checkout set --no-cone '/tsc/testdata/tests/cases/conformance/**' '/tsc/testdata/baselines/reference/conformance/*.errors.txt'
       - run: cargo test --release
       - run: npm ci
-        working-directory: package
-      - run: npm run types && npm run build && npm run build:wasm && npm run test && node check.js ../tests/test262-parser-tests/pass ../tests/test262-parser-tests/pass-explicit
-        working-directory: package
+        working-directory: npm
+      - run: npm run types && npm run build && npm run build:wasm && npm run test && node scripts/check.js ../crates/teasel/tests/test262-parser-tests/pass ../crates/teasel/tests/test262-parser-tests/pass-explicit
+        working-directory: npm
 
   build:
     needs: test
@@ -55,13 +55,13 @@ jobs:
           node-version: 26
       - run: npm install -g typescript@7
       - run: npm ci
-        working-directory: package
+        working-directory: npm
       - run: npm run build -- --target ${{ matrix.target }}
-        working-directory: package
+        working-directory: npm
       - uses: actions/upload-artifact@v7
         with:
           name: binding-${{ matrix.target }}
-          path: package/*.node
+          path: npm/*.node
           if-no-files-found: error
 
   wasm:
@@ -75,13 +75,13 @@ jobs:
           node-version: 26
       - run: npm install -g binaryen
       - run: npm ci
-        working-directory: package
+        working-directory: npm
       - run: npm run build:wasm
-        working-directory: package
+        working-directory: npm
       - uses: actions/upload-artifact@v7
         with:
           name: wasm
-          path: package/teasel.wasm
+          path: npm/teasel.wasm
           if-no-files-found: error
 
   changes:
@@ -102,10 +102,10 @@ jobs:
           fi
           docs=false; bumped=false
           [ "$changed" = all ] && docs=true
-          echo "$changed" | grep -qE '^(docs/|package/index.d.ts|.github/workflows/ci.yml)' && docs=true
+          echo "$changed" | grep -qE '^(docs/|npm/types.d.ts|.github/workflows/ci.yml)' && docs=true
           echo "$changed" | grep -qx Cargo.toml && bumped=true
           [ '${{ github.event_name }}' = workflow_dispatch ] && bumped=true
-          version=$(jq -r .version package/package.json)
+          version=$(jq -r .version npm/package.json)
           release=false
           if [ "$bumped" = true ] && [ '${{ github.ref }}' = refs/heads/main ] && ! curl -sf -o /dev/null "https://registry.npmjs.org/@teasel%2Fparser/$version"; then release=true; fi
           printf 'docs=%s\nrelease=%s\nversion=%s\n' "$docs" "$release" "$version" >> "$GITHUB_OUTPUT"
@@ -198,18 +198,18 @@ jobs:
           node-version: 26
       - run: npm install -g typescript@7
       - run: npm ci
-        working-directory: package
+        working-directory: npm
       - uses: actions/download-artifact@v8
         with:
           pattern: binding-*
-          path: package/artifacts
+          path: npm/artifacts
       - uses: actions/download-artifact@v8
         with:
           name: wasm
-          path: package
-      - run: cp README.md package/README.md
-      - run: node release.js
-        working-directory: package
+          path: npm
+      - run: cp README.md npm/README.md
+      - run: node scripts/release.js
+        working-directory: npm
       - run: |
           tag="v${{ needs.changes.outputs.version }}"
           git ls-remote --exit-code --tags origin "$tag" || { git tag "$tag" && git push origin "$tag"; }

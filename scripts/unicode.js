@@ -1,4 +1,4 @@
-// Regenerates src/lexer/unicode.rs from the Unicode Character Database.
+// Regenerates crates/teasel/src/lexer/unicode.rs from the Unicode Character Database.
 // Usage: node scripts/unicode.js [version]
 import { writeFileSync } from 'node:fs';
 
@@ -157,5 +157,5 @@ mod tests {
 	}
 }
 `;
-writeFileSync(new URL('../src/lexer/unicode.rs', import.meta.url), src);
+writeFileSync(new URL('../crates/teasel/src/lexer/unicode.rs', import.meta.url), src);
 console.log(`ID_Start: r3 ${start.r3.length}, r5 groups ${start.r5.length / 64}, r6 ${start.r6.length}; ID_Continue: r3 ${cont.r3.length}, r5 groups ${cont.r5.length / 64}, r6 ${cont.r6.length}`);

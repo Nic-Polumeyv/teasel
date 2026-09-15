@@ -9,5 +9,5 @@
 		"types": ["node"],
 		"allowImportingTsExtensions": true
 	},
-	"files": ["plan.ts", "../tests/hosts/plans.mts", "../tests/hosts/svelte/plan.mts", "../tests/hosts/vue/plan.mts"]
+	"files": ["plan.ts", "../crates/teasel/tests/hosts/plans.mts", "../crates/teasel/tests/hosts/svelte/plan.mts", "../crates/teasel/tests/hosts/vue/plan.mts"]
 }

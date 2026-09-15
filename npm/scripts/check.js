@@ -1,18 +1,18 @@
-// node check.js DIR...: every script under the directories, parsed three ways and the answers
+// node scripts/check.js DIR...: every script under the directories, parsed three ways and the answers
 // diffed: the addon's decoded stream against the JSON the binary prints, and the wasm module's
 // against the addon's. `cargo build --release` first.
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
-import * as node from './index.js';
-import * as wasm from './wasm.js';
-import { ENTRY, flags } from './api.js';
-import { decode } from './decode.js';
-import { load } from './native.js';
+import * as node from '../node.js';
+import * as wasm from '../wasm.js';
+import { ENTRY, flags } from '../lib/api.js';
+import { decode } from '../lib/decode.js';
+import { load } from '../lib/native.js';
 
 const native = load();
 const engine = { constants: native.constants, shapes: native.shapes };
-const binary = new URL('../target/release/teasel', import.meta.url).pathname;
+const binary = new URL('../../target/release/teasel', import.meta.url).pathname;
 const files = [];
 function walk(dir) {
 	for (const name of readdirSync(dir)) {

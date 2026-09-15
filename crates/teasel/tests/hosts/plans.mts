@@ -1,7 +1,7 @@
 // node tests/hosts/plans.mts: writes each host's plan.json beside its plan.mts. The bottom half
-// misuses the helpers on purpose; `npm run types` in package/ fails if any line stops erroring.
+// misuses the helpers on purpose; `npm run types` in npm/ fails if any line stops erroring.
 import { writeFileSync } from 'node:fs';
-import { rule, seq, choice, js, read, repeat, region, declare, incoming, type Infer, type Slot } from '../../package/plan.ts';
+import { rule, seq, choice, js, read, repeat, region, declare, incoming, type Infer, type Slot } from '../../../../npm/plan.ts';
 
 // one rule per line keeps the generated file diffable
 const print = (plan: object) => {

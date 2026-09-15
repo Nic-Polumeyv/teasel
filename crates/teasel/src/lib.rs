@@ -1,7 +1,5 @@
 //! A JavaScript parser in Rust.
 
-#![warn(unreachable_pub)]
-
 pub mod ast;
 pub mod comments;
 pub mod error;

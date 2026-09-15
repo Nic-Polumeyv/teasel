@@ -4,7 +4,7 @@
 use std::fs;
 use std::path::Path;
 
-pub fn pretty(json: &str) -> String {
+pub(crate) fn pretty(json: &str) -> String {
 	let mut out = String::with_capacity(json.len() * 2);
 	let mut depth = 0usize;
 	let mut chars = json.chars().peekable();
@@ -53,7 +53,7 @@ pub fn pretty(json: &str) -> String {
 }
 
 /// Whether the answer is what `pin` holds; with `UPDATE=1` it is written there instead.
-pub fn pinned(pin: &Path, answer: &str) -> bool {
+pub(crate) fn pinned(pin: &Path, answer: &str) -> bool {
 	if std::env::var_os("UPDATE").is_some() {
 		fs::write(pin, answer).unwrap();
 		return true;
@@ -62,7 +62,7 @@ pub fn pinned(pin: &Path, answer: &str) -> bool {
 }
 
 /// Every file under `dir` but the pins, sorted.
-pub fn inputs(dir: &Path) -> Vec<std::path::PathBuf> {
+pub(crate) fn inputs(dir: &Path) -> Vec<std::path::PathBuf> {
 	let mut files: Vec<_> = fs::read_dir(dir)
 		.unwrap()
 		.map(|e| e.unwrap().path())
