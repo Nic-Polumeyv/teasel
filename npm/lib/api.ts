@@ -1,4 +1,5 @@
 import type { Expression, Identifier, Node, Pattern, Program, SourceLocation, Statement } from 'estree';
+import { decode, PARENT, REFERENCE, SCOPE, type Tables } from './decode.js';
 
 declare global {
 	interface SymbolConstructor {
@@ -159,6 +160,7 @@ export interface Root {
 	bindings: Binding[];
 	references: Reference[];
 }
+
 /** A reference, as one of `references` on the answer: an identifier using a name, or declaring it again. A binding is one too, the reference its declaring identifier makes. */
 export interface Reference {
 	node: Identifier;
@@ -178,12 +180,25 @@ export interface Reference {
 	declares: boolean;
 }
 
+// what the decoder hangs on a node, under keys JSON and enumeration skip
+interface Linked {
+	[PARENT]?: Node;
+	[SCOPE]?: Scope;
+	[REFERENCE]?: Reference;
+}
+
 /** The node `node` is a child of; undefined for the root of an answer. A literal's `regex` and a template element's `value` are not nodes and have none. */
-export function parentOf(node: Node): Node | undefined;
+export function parentOf(node: Node | null | undefined): Node | undefined {
+	return node == null ? undefined : (node as Linked)[PARENT];
+}
 /** With `scopes`: the scope `node` opens, when it opens one. */
-export function scopeOf(node: Node): Scope | undefined;
+export function scopeOf(node: Node | null | undefined): Scope | undefined {
+	return node == null ? undefined : (node as Linked)[SCOPE];
+}
 /** With `scopes`: the reference an identifier makes, the binding itself for the identifier that declares it; a global's too, which no binding lists. Undefined when the identifier names no value, a property key say. */
-export function referenceOf(node: Node): Reference | undefined;
+export function referenceOf(node: Node | null | undefined): Reference | undefined {
+	return node == null ? undefined : (node as Linked)[REFERENCE];
+}
 
 /** A range of the source, with `loc` when `locations` is on. */
 export interface Span {
@@ -224,11 +239,13 @@ export interface Parsed<T> {
 	roots?: Root[];
 }
 
+// `Entry` of parser/mod.rs by index
+export const ENTRY = { program: 0, expression: 1, pattern: 2, params: 3, statement: 4, typeParameters: 5 } as const;
 /**
  * What a parse reads: a program, or what a host embedding JavaScript in a larger syntax reads at
  * a point of it. A type parameter list `<...>` is TypeScript only, `not_typescript` otherwise.
  */
-export type Entry = 'program' | 'expression' | 'pattern' | 'params' | 'statement' | 'typeParameters';
+export type Entry = keyof typeof ENTRY;
 
 export interface At {
 	/** Where the source is cut, a UTF-16 offset; the end of the source by default. A program reads to it. */
@@ -255,13 +272,93 @@ export interface HostNode {
 	[field: string]: unknown;
 }
 
+// `flag` of json.rs by bit
+const FLAG = { module: 1, typescript: 2, erase: 4, comments: 8, scopes: 16, locations: 32, parenthesized: 64, legacyDecorators: 128, proposalDecorators: 256, allowReturnOutsideFunction: 512, allowAwaitOutsideFunction: 1024, allowSuperOutsideMethod: 2048, allowUndeclaredExports: 4096, errorRecovery: 8192 } as const;
+
+const bit = (key: keyof Options & keyof typeof FLAG) => (value: unknown) => {
+	if (typeof value !== 'boolean') throw new TypeError(`${key} must be a boolean, not ${JSON.stringify(value)}`);
+	return value ? FLAG[key] : 0;
+};
+const one = (key: keyof Options, choices: Record<string, number>) => (value: unknown) => {
+	if (typeof value !== 'string' || !Object.hasOwn(choices, value)) {
+		throw new TypeError(`${key} must be ${Object.keys(choices).map((choice) => JSON.stringify(choice)).join(' or ')}, not ${JSON.stringify(value)}`);
+	}
+	return choices[value];
+};
+// what each option adds to the word the engine takes, one entry per key of `Options`
+const WORD: { [K in keyof Options]-?: (value: unknown) => number } = {
+	host: (value) => {
+		if (typeof value !== 'string') throw new TypeError('host must be the grammar as a string');
+		return 0;
+	},
+	sourceType: one('sourceType', { script: 0, module: FLAG.module }),
+	typescript: (value) => (value === 'erase' ? FLAG.typescript | FLAG.erase : bit('typescript')(value)),
+	decorators: one('decorators', { legacy: FLAG.legacyDecorators, proposal: FLAG.proposalDecorators }),
+	comments: bit('comments'),
+	scopes: bit('scopes'),
+	locations: bit('locations'),
+	parenthesized: bit('parenthesized'),
+	allowReturnOutsideFunction: bit('allowReturnOutsideFunction'),
+	allowAwaitOutsideFunction: bit('allowAwaitOutsideFunction'),
+	allowSuperOutsideMethod: bit('allowSuperOutsideMethod'),
+	allowUndeclaredExports: bit('allowUndeclaredExports'),
+	errorRecovery: bit('errorRecovery'),
+};
+const known = (key: string): key is keyof Options => Object.hasOwn(WORD, key);
+
+/** The options that are on, as the word of bits the engine takes. */
+export function flags(options: Options = {}): number {
+	let on = 0;
+	for (const key in options) {
+		if (!known(key)) throw new TypeError(`${key} is not an option`);
+		const value = options[key];
+		if (value !== undefined) on |= WORD[key](value);
+	}
+	return on;
+}
+
+// the engine takes the stop tokens as one string
+function stops(list: string[] = []): string {
+	if (!Array.isArray(list) || !list.every((stop) => typeof stop === 'string' && stop !== '' && !/\s/.test(stop))) {
+		throw new TypeError('stopAt must be a list of words and punctuators');
+	}
+	return list.join(' ');
+}
+
+/** A source the engine prepared: it parses at an entry and offset, cut at `end`, the stop tokens as one string; the answer is the words, or an error as JSON. */
+export interface Prepared {
+	readonly parse: (entry: number, offset: number, end: number | undefined, stop: string) => Uint32Array | string;
+	readonly free: () => void;
+}
+
+/** What parses: the addon or the WebAssembly module, each bound to a `Source` class of its own. */
+export interface Engine extends Tables {
+	readonly create: (source: string, flags: number, host: string) => Prepared;
+}
+
+const registry = typeof FinalizationRegistry === 'undefined' ? null : new FinalizationRegistry<Prepared>((held) => held.free());
+
 /**
  * A source kept with its options: the parses out of it share the source copy and the position
  * tables. Offsets are UTF-16, as in acorn; positions stay those of the whole source. `Root` is
  * what the program entry answers with: the program, or the document's root with a `host`.
+ * `node.ts` and `wasm.ts` each export it with their engine bound.
  */
 export class Source<Root = Program> {
-	constructor(source: string, options?: Options);
+	#engine: Engine;
+	#held: Prepared | undefined;
+	#source: string;
+	#options: Options;
+
+	constructor(engine: Engine, source: string, options: Options = {}) {
+		this.#engine = engine;
+		this.#held = engine.create(source, flags(options), options.host ?? '');
+		this.#source = source;
+		// what the engine was prepared with, however the caller's object changes after
+		this.#options = { ...options };
+		registry?.register(this, this.#held, this);
+	}
+
 	/** The program starting at `offset`, the whole source by default; the document with a `host`. */
 	parse(entry?: 'program', offset?: number, at?: At): Parsed<Root>;
 	parse(entry: 'expression', offset: number, at?: At): Parsed<Expression>;
@@ -272,6 +369,24 @@ export class Source<Root = Program> {
 	parse(entry: 'statement', offset: number, at?: At): Parsed<Statement>;
 	/** A `TSTypeParameterDeclaration`. */
 	parse(entry: 'typeParameters', offset: number, at?: At): Parsed<Node>;
+	/** An entry decided at run time answers with whatever it reads. */
+	parse(entry: Entry, offset?: number, at?: At): Parsed<unknown>;
+	parse(entry: Entry = 'program', offset = 0, { end, stopAt }: At = {}): Parsed<any> {
+		if (this.#held === undefined) throw new TypeError('the source is freed');
+		if (!Object.hasOwn(ENTRY, entry)) throw new TypeError(`${JSON.stringify(entry)} is not an entry`);
+		const index = ENTRY[entry];
+		const stop = stops(stopAt);
+		const answer = this.#options.host !== undefined && index === ENTRY.program ? this.#held.parse(index, 0, undefined, '') : this.#held.parse(index, offset, end, stop);
+		if (typeof answer !== 'string') return decode(answer, this.#source, this.#engine) as Parsed<any>;
+		const { message, ...error } = JSON.parse(answer).error;
+		throw Object.assign(new SyntaxError(message), error);
+	}
+
 	/** Releases what the engine holds for the source, as `using` does at the end of its block; the collector does it otherwise. */
-	[Symbol.dispose](): void;
+	[Symbol.dispose](): void {
+		if (this.#held === undefined) return;
+		registry?.unregister(this);
+		this.#held.free();
+		this.#held = undefined;
+	}
 }

@@ -1,13 +1,13 @@
-// node scripts/release.js: publishes the platform packages from the addons under artifacts/, then this package
+// node scripts/release.ts: publishes the platform packages from the addons under artifacts/, then this package
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { platforms } from '../lib/native.js';
 
-const root = JSON.parse(readFileSync('package.json', 'utf8'));
+const root: { name: string; version: string; description: string; license: string; repository: unknown; optionalDependencies?: Record<string, string> } = JSON.parse(readFileSync('package.json', 'utf8'));
 const { version, description, license, repository } = root;
 
 // a version the registry has is left alone, so a run that died halfway can be run again
-async function publish(cwd, name) {
+async function publish(cwd: string, name: string): Promise<void> {
 	const { ok } = await fetch(`https://registry.npmjs.org/${name}/${version}`);
 	if (ok) {
 		console.log(`${name}@${version} is published`);

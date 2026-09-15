@@ -1,4 +1,4 @@
-// node scripts/check.js DIR...: every script under the directories, parsed three ways and the answers
+// node scripts/check.ts DIR...: every script under the directories, parsed three ways and the answers
 // diffed: the addon's decoded stream against the JSON the binary prints, and the wasm module's
 // against the addon's. `cargo build --release` first.
 import { readFileSync, readdirSync, statSync } from 'node:fs';
@@ -6,15 +6,15 @@ import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import * as node from '../node.js';
 import * as wasm from '../wasm.js';
-import { ENTRY, flags } from '../lib/api.js';
+import { ENTRY, flags, type Entry, type Options, type ParseError } from '../lib/api.js';
 import { decode } from '../lib/decode.js';
 import { load } from '../lib/native.js';
 
 const native = load();
 const engine = { constants: native.constants, shapes: native.shapes };
 const binary = new URL('../../target/release/teasel', import.meta.url).pathname;
-const files = [];
-function walk(dir) {
+const files: string[] = [];
+function walk(dir: string): void {
 	for (const name of readdirSync(dir)) {
 		if (name === 'node_modules' || name.startsWith('.')) continue;
 		const path = join(dir, name);
@@ -26,17 +26,18 @@ for (const dir of process.argv.slice(2)) walk(dir);
 let checked = 0;
 let failed = 0;
 
-function outcome(fn) {
+function outcome(fn: () => unknown): { value: unknown } | { error: Pick<ParseError, 'code' | 'message' | 'pos' | 'end' | 'loc'> } {
 	try {
 		return { value: fn() };
 	} catch (e) {
 		if (!(e instanceof SyntaxError)) throw e;
-		return { error: { code: e.code, message: e.message, pos: e.pos, end: e.end, loc: e.loc } };
+		const { code, message, pos, end, loc } = e as ParseError;
+		return { error: { code, message, pos, end, loc } };
 	}
 }
 
 // not assert.deepStrictEqual: it renders both graphs on failure, which never ends on linked scopes
-function differ(a, b, seen = new Map(), path = '$') {
+function differ(a: unknown, b: unknown, seen = new Map<object, unknown>(), path = '$'): string | null {
 	if (a === b) return null;
 	if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return `${path}: ${JSON.stringify(a)} vs ${JSON.stringify(b)}`;
 	if (seen.has(a)) return seen.get(a) === b ? null : `${path}: identity differs`;
@@ -44,13 +45,13 @@ function differ(a, b, seen = new Map(), path = '$') {
 	const ka = Object.keys(a), kb = Object.keys(b);
 	if (ka.length !== kb.length || ka.some((k) => !kb.includes(k))) return `${path}: keys ${ka} vs ${kb}`;
 	for (const k of ka) {
-		const r = differ(a[k], b[k], seen, `${path}.${k}`);
+		const r = differ((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k], seen, `${path}.${k}`);
 		if (r) return r;
 	}
 	return null;
 }
 
-function report(name, difference) {
+function report(name: string, difference: string | null): void {
 	checked++;
 	if (!difference) return;
 	failed++;
@@ -58,18 +59,18 @@ function report(name, difference) {
 }
 
 // the batch header the binary reads for the same parse: byte offsets, every switch of the options
-const MODE = { program: '', expression: 'expr', pattern: 'pattern', params: 'params', statement: 'stmt', typeParameters: 'typeparams' };
-function mode(source, options, entry, at) {
-	const switches = ['comments', 'scopes', 'parenthesized'].filter((flag) => options[flag]).map((flag) => `+${flag}`);
+const MODE: Record<Entry, string> = { program: '', expression: 'expr', pattern: 'pattern', params: 'params', statement: 'stmt', typeParameters: 'typeparams' };
+function mode(source: string, options: Options, entry: Entry, at: number): string {
+	const switches = (['comments', 'scopes', 'parenthesized'] as const).filter((flag) => options[flag]).map((flag) => `+${flag}`);
 	if (options.typescript === 'erase') switches.push('+erase');
 	const head = entry === 'program' ? (options.sourceType === 'module' ? 'module' : 'script') : MODE[entry];
 	const offset = entry === 'program' ? '' : `:${Buffer.byteLength(source.slice(0, at))}`;
 	return `${options.typescript ? 'ts-' : ''}${head}${switches.join('')}${offset}`;
 }
 
-/** The addon's answers as JSON, each with the batch job that asks the binary for the same. */
-const jobs = [];
-function json(name, source, options, entry, at) {
+// the addon's answers as JSON, each with the batch job that asks the binary for the same
+const jobs: { name: string; source: string; mode: string; tree: string }[] = [];
+function json(name: string, source: string, options: Options, entry: Entry, at: number): void {
 	const answer = native.parse(native.create(Buffer.from(source), flags(options), ''), ENTRY[entry], at, undefined, '');
 	const tree = typeof answer === 'string' ? answer : JSON.stringify(decode(answer, source, engine, false));
 	jobs.push({ name, source, mode: mode(source, options, entry, at), tree });
@@ -80,21 +81,22 @@ const brace_re = /\{/g;
 for (const file of files) {
 	const text = readFileSync(file, 'utf8');
 	const svelte = file.endsWith('.svelte');
-	const sources = svelte ? [...text.matchAll(script_re)].map((m) => [m[2], /lang=["']?ts/.test(m[1] ?? '')]) : [[text, file.endsWith('.ts')]];
+	const sources: [string, boolean][] = svelte ? [...text.matchAll(script_re)].map((m) => [m[2], /lang=["']?ts/.test(m[1] ?? '')]) : [[text, file.endsWith('.ts')]];
 	for (const [source, typescript] of sources) {
-		for (const options of [
+		const runs: Options[] = [
 			{ sourceType: 'module', typescript, locations: true, comments: true },
 			{ sourceType: 'module', typescript: typescript ? 'erase' : false, locations: true },
 			{ sourceType: 'module', typescript, locations: true, scopes: true },
 			{ typescript, locations: true, parenthesized: true },
-		]) {
+		];
+		for (const options of runs) {
 			json(file, source, options, 'program', 0);
 			report(`${file} wasm`, differ(outcome(() => new wasm.Source(source, options).parse()), outcome(() => new node.Source(source, options).parse())));
 		}
 	}
 	// every brace in a component is somewhere an expression, a pattern or a statement might start
 	if (svelte) {
-		const options = { sourceType: 'module', typescript: /lang=["']?ts/.test(text), locations: true, comments: true, scopes: true };
+		const options: Options = { sourceType: 'module', typescript: /lang=["']?ts/.test(text), locations: true, comments: true, scopes: true };
 		using held = new node.Source(text, options);
 		using twin = new wasm.Source(text, options);
 		for (const m of text.matchAll(script_re)) {
@@ -104,7 +106,7 @@ for (const file of files) {
 		}
 		for (const match of text.matchAll(brace_re)) {
 			const at = match.index + 1;
-			for (const entry of Object.keys(ENTRY)) {
+			for (const entry of Object.keys(ENTRY) as Entry[]) {
 				if (entry === 'program') continue;
 				json(`${file}@${at} ${entry}`, text, options, entry, at);
 				report(`${file}@${at} ${entry} wasm`, differ(outcome(() => twin.parse(entry, at)), outcome(() => held.parse(entry, at))));

@@ -10,32 +10,45 @@ const little = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
 const utf8 = new TextDecoder('utf-8', { ignoreBOM: true });
 
 // symbol keys: ten times cheaper than a WeakMap entry, and skipped by JSON, Object.keys and for-in
-const SCOPE = Symbol('scope');
-const REFERENCE = Symbol('reference');
-const PARENT = Symbol('parent');
-
-
-/** @param {import('estree').Node} node @returns {import('../types.d.ts').Scope | undefined} the scope the node opens */
-export const scopeOf = (node) => (node == null ? undefined : node[SCOPE]);
-/** @param {import('estree').Node} node @returns {import('../types.d.ts').Reference | undefined} the reference an identifier makes, a global's included */
-export const referenceOf = (node) => (node == null ? undefined : node[REFERENCE]);
-/** @param {import('estree').Node} node @returns {import('estree').Node | undefined} the node it is a child of; undefined for the root of an answer */
-export const parentOf = (node) => (node == null ? undefined : node[PARENT]);
+export const SCOPE = Symbol('scope');
+export const REFERENCE = Symbol('reference');
+export const PARENT = Symbol('parent');
 
 const FACTS = new Set(['scope', 'declares', 'reference', 'defines', 'writes', 'root']);
 
-/**
- * One decode at a time; the builders are generated once and read through this.
- * @type {{ w: Uint32Array, at: number, strings: string[], floats: Float64Array | null, source: string, constants: string[], scopes: any[], bindings: any[], build: (() => any)[] }}
- */
-const EMPTY = [];
+/** A decoded object: the stream decides its shape, `api.ts` describes it. */
+export type Decoded = Record<string | symbol, any>;
+type Builder = (S: State) => Decoded;
+type Reader = (S: State) => any;
 
-function node(S) {
+/** The engine's numbering, which the stream refers to. */
+export interface Tables {
+	readonly constants: () => string[];
+	readonly shapes: () => ArrayLike<number>;
+}
+
+// one decode at a time; the builders are generated once and read through this
+interface State {
+	w: Uint32Array;
+	at: number;
+	strings: string[];
+	floats: Float64Array | null;
+	source: string;
+	constants: string[];
+	scopes: Decoded[];
+	bindings: Decoded[];
+	references: Decoded[];
+	roots: Decoded[];
+	build: Builder[];
+}
+const EMPTY: never[] = [];
+
+function node(S: State): Decoded | null {
 	const id = S.w[S.at++];
 	return id === NULL ? null : S.build[id](S);
 }
 
-function nodes(S) {
+function nodes(S: State): (Decoded | null)[] {
 	const list = [];
 	for (;;) {
 		const id = S.w[S.at++];
@@ -44,33 +57,34 @@ function nodes(S) {
 	}
 }
 
-function ints(S) {
+function ints(S: State): number[] {
 	const n = S.w[S.at++];
-	const list = new Array(n);
+	const list = new Array<number>(n);
 	for (let i = 0; i < n; i++) list[i] = S.w[S.at++];
 	return list;
 }
 
-function strs(S) {
+function strs(S: State): string[] {
 	const n = S.w[S.at++];
-	const list = new Array(n);
+	const list = new Array<string>(n);
 	for (let i = 0; i < n; i++) list[i] = S.strings[S.w[S.at++]];
 	return list;
 }
 
-/** @typedef {{ type: string | null, keys: string[], kinds: number[] }} Shape */
+interface Shape {
+	type: string | null;
+	keys: string[];
+	kinds: number[];
+}
 
 // one reader per kind, as source for the generated builders and as a function for the interpreter
 const READ = ['node(S)', 'S.w[S.at++]', 'S.floats[S.w[S.at++]]', 'S.w[S.at++] === 1', 'S.constants[S.w[S.at++]]', 'S.strings[S.w[S.at++]]', 'S.source.slice(S.w[S.at++], S.w[S.at++])', '{ start: { line: S.w[S.at++], column: S.w[S.at++] }, end: { line: S.w[S.at++], column: S.w[S.at++] } }', 'nodes(S)', 'ints(S)', 'strs(S)'];
-const READERS = [node, (S) => S.w[S.at++], (S) => /** @type {Float64Array} */ (S.floats)[S.w[S.at++]], (S) => S.w[S.at++] === 1, (S) => S.constants[S.w[S.at++]], (S) => S.strings[S.w[S.at++]], (S) => S.source.slice(S.w[S.at++], S.w[S.at++]), (S) => ({ start: { line: S.w[S.at++], column: S.w[S.at++] }, end: { line: S.w[S.at++], column: S.w[S.at++] } }), nodes, ints, strs];
+const READERS: Reader[] = [node, (S) => S.w[S.at++], (S) => S.floats![S.w[S.at++]], (S) => S.w[S.at++] === 1, (S) => S.constants[S.w[S.at++]], (S) => S.strings[S.w[S.at++]], (S) => S.source.slice(S.w[S.at++], S.w[S.at++]), (S) => ({ start: { line: S.w[S.at++], column: S.w[S.at++] }, end: { line: S.w[S.at++], column: S.w[S.at++] } }), nodes, ints, strs];
 
-/**
- * One object literal per shape, its facts and its parent link as symbol slots of the literal:
- * V8 allocates it in one hidden class with nothing added later. Facts, and everything the stream
- * puts before the last of them, are read into locals first.
- * @param {Shape} shape @param {boolean} link
- */
-function generate({ type, keys, kinds }, link) {
+// One object literal per shape, its facts and its parent link as symbol slots of the literal:
+// V8 allocates it in one hidden class with nothing added later. Facts, and everything the stream
+// puts before the last of them, are read into locals first.
+function generate({ type, keys, kinds }: Shape, link: boolean): Builder {
 	let last = -1;
 	if (link && type !== null) for (let i = 0; i < keys.length; i++) if (FACTS.has(keys[i]) || kinds[i] === 0 || kinds[i] === 8) last = i;
 	const lead = [];
@@ -78,7 +92,7 @@ function generate({ type, keys, kinds }, link) {
 	const linked = link && type === null ? LINKED.find((row) => row.mark.every((key) => keys.includes(key))) : undefined;
 	// what the node points at, set once it exists
 	const after = [];
-	let scope = null, binding = null, reference = null;
+	let scope = null, reference = null;
 	for (let i = 0; i < keys.length; i++) {
 		const key = keys[i];
 		if (i > last) props.push(`${JSON.stringify(key)}: ${READ[kinds[i]]}`);
@@ -111,18 +125,18 @@ function generate({ type, keys, kinds }, link) {
 
 // what a table row points at once the tree is built, in its literal from the start so nothing is
 // added later; a binding is the reference its declaring identifier makes, `binding` itself
-const LINKED = [
+const LINKED: { mark: string[]; props: string[]; values: Record<string, unknown> }[] = [
 	{ mark: ['topLevelAwait'], props: ['node: null'], values: { node: null } },
 	{ mark: ['name', 'kind'], props: ['node: null', 'declaration: null', 'binding: null', 'declares: true', 'read: false', 'mutate: false', 'writeExpr: null'], values: { node: null, declaration: null, binding: null, declares: true, read: false, mutate: false, writeExpr: null } },
 	{ mark: ['mutate'], props: ['node: null', 'writeExpr: null'], values: { node: null, writeExpr: null } },
 ];
 
-/** The same without code generation, for a host whose policy forbids it. @param {Shape} shape @param {boolean} link */
-function interpret({ type, keys, kinds }, link) {
+// the same without code generation, for a host whose policy forbids it
+function interpret({ type, keys, kinds }: Shape, link: boolean): Builder {
 	const linked = link && type !== null;
 	const row = link && type === null ? LINKED.find((row) => row.mark.every((key) => keys.includes(key))) : undefined;
 	return (S) => {
-		const n = type === null ? {} : linked ? { type, [PARENT]: undefined, [SCOPE]: undefined, [REFERENCE]: undefined } : { type };
+		const n: Decoded = type === null ? {} : linked ? { type, [PARENT]: undefined, [SCOPE]: undefined, [REFERENCE]: undefined } : { type };
 		// what a declaration initializes is a child of it, in place only once every key is read
 		let defines = null;
 		for (let i = 0; i < keys.length; i++) {
@@ -144,7 +158,7 @@ function interpret({ type, keys, kinds }, link) {
 	};
 }
 
-const compile = (() => {
+const compile: (shape: Shape, link: boolean) => Builder = (() => {
 	try {
 		new Function('');
 		return generate;
@@ -153,16 +167,19 @@ const compile = (() => {
 	}
 })();
 
-/**
- * @typedef {{ constants: () => string[], shapes: () => ArrayLike<number> }} Tables the engine's numbering
- * @type {WeakMap<Tables, { constants: string[], shapes: (Shape | null)[], linked: (() => any)[], plain: (() => any)[] }>}
- */
-const tables = new WeakMap();
+interface Table {
+	constants: string[];
+	shapes: Shape[];
+	linked: Builder[];
+	plain: Builder[];
+}
+// ids 0 and 1 are NULL and END, shapes of nothing
+const NONE: Shape = { type: null, keys: [], kinds: [] };
+const tables = new WeakMap<Tables, Table>();
 
-/** @param {Tables} engine @param {number} known constants @param {number} known_shapes */
-function table_of(engine, known, known_shapes) {
+function table_of(engine: Tables, known: number, known_shapes: number): Table {
 	let table = tables.get(engine);
-	if (table === undefined) tables.set(engine, (table = { constants: [], shapes: [null, null], linked: [], plain: [] }));
+	if (table === undefined) tables.set(engine, (table = { constants: [], shapes: [NONE, NONE], linked: [], plain: [] }));
 	if (known > table.constants.length) table.constants = engine.constants();
 	if (known_shapes > table.shapes.length) {
 		const { constants, shapes } = table;
@@ -184,24 +201,21 @@ function table_of(engine, known, known_shapes) {
 	return table;
 }
 
-/** @param {ReturnType<typeof table_of>} table @param {boolean} link */
-function builders(table, link) {
+function builders(table: Table, link: boolean): Builder[] {
 	const list = link ? table.linked : table.plain;
-	if (list.length === 0) list.push(null, null);
-	while (list.length < table.shapes.length) list.push(compile(/** @type {Shape} */ (table.shapes[list.length]), link));
+	while (list.length < table.shapes.length) list.push(compile(table.shapes[list.length], link));
 	return list;
 }
 
-function unaligned_floats(buffer, start, count) {
+function unaligned_floats(buffer: ArrayBufferLike, start: number, count: number): Float64Array {
 	const view = new DataView(buffer, start, count * 8);
 	const floats = new Float64Array(count);
 	for (let i = 0; i < count; i++) floats[i] = view.getFloat64(i * 8, little);
 	return floats;
 }
 
-/** @param {any[]} scopes @param {any[]} bindings @param {any[]} references */
-/** Every row arrives with its links in place as nulls, so nothing here adds a property. */
-function link_tables(scopes, bindings, references) {
+// every row arrives with its links in place as nulls, so nothing here adds a property
+function link_tables(scopes: Decoded[], bindings: Decoded[], references: Decoded[]): void {
 	for (const scope of scopes) scope.parent = scope.parent === null ? null : scopes[scope.parent];
 	// a binding is its own first declaration: the reference the declaring identifier makes
 	for (const binding of bindings) {
@@ -214,8 +228,7 @@ function link_tables(scopes, bindings, references) {
 	}
 }
 
-/** @param {any[]} roots @param {any[]} scopes @param {any[]} bindings @param {any[]} references */
-function link_roots(roots, scopes, bindings, references) {
+function link_roots(roots: Decoded[], scopes: Decoded[], bindings: Decoded[], references: Decoded[]): void {
 	for (const root of roots) {
 		root.node = null;
 		root.scope = scopes[root.scope];
@@ -225,14 +238,8 @@ function link_roots(roots, scopes, bindings, references) {
 	}
 }
 
-/**
- * @param {ArrayBuffer | Uint32Array} answer the words, or a view of them inside a larger buffer
- * @param {string} source
- * @param {Tables} engine
- * @param {boolean} [link] replace the scope and binding numbers with the objects they index
- */
-export function decode(answer, source, engine, link = true) {
-	const words = answer instanceof Uint32Array ? answer : new Uint32Array(answer);
+/** The answer's words, or a view of them inside a larger buffer; `link` replaces the scope and binding numbers with the objects they index. */
+export function decode(words: Uint32Array, source: string, engine: Tables, link = true): Decoded {
 	const { buffer, byteOffset } = words;
 	// read by index: destructuring a typed array goes through its iterator, a tenth of a small decode
 	const tree = words[0], ends_count = words[1], floats_count = words[2], bytes = words[3], known = words[4], known_shapes = words[5], tables_at = words[6];
@@ -243,7 +250,7 @@ export function decode(answer, source, engine, link = true) {
 	if (floats_at % 2 === 1) floats_at++;
 	const floats_start = byteOffset + floats_at * 4;
 	const floats = !floats_count ? null : floats_start % 8 === 0 ? new Float64Array(buffer, floats_start, floats_count) : unaligned_floats(buffer, floats_start, floats_count);
-	const strings = new Array(ends_count);
+	const strings = new Array<string>(ends_count);
 	let from = 0;
 	for (let i = 0; i < ends_count; i++) {
 		const end = words[HEADER + tree + i];
@@ -251,15 +258,15 @@ export function decode(answer, source, engine, link = true) {
 		from = end;
 	}
 	// one state object per decode, young like everything it points at: no write barriers
-	const S = { w: words, at: HEADER, strings, floats, source, constants: table.constants, scopes: EMPTY, bindings: EMPTY, references: EMPTY, roots: EMPTY, build: builders(table, link) };
+	const S: State = { w: words, at: HEADER, strings, floats, source, constants: table.constants, scopes: EMPTY, bindings: EMPTY, references: EMPTY, roots: EMPTY, build: builders(table, link) };
 	let scopes = null, bindings = null, references = null, roots = null;
 	if (tables_at !== 0) {
 		// the writer's `all_scopes` order; the roots table is there when a host document has pieces of JavaScript
 		S.at = HEADER + tables_at;
-		scopes = nodes(S);
-		bindings = nodes(S);
-		references = nodes(S);
-		if (S.at < HEADER + tree) roots = nodes(S);
+		scopes = nodes(S) as Decoded[];
+		bindings = nodes(S) as Decoded[];
+		references = nodes(S) as Decoded[];
+		if (S.at < HEADER + tree) roots = nodes(S) as Decoded[];
 		if (link) {
 			link_tables(scopes, bindings, references);
 			if (roots !== null) link_roots(roots, scopes, bindings, references);
@@ -270,7 +277,7 @@ export function decode(answer, source, engine, link = true) {
 		if (roots !== null) S.roots = roots;
 		S.at = HEADER;
 	}
-	const root = node(S);
+	const root = node(S)!;
 	if (scopes !== null) {
 		root.scopes = scopes;
 		root.bindings = bindings;

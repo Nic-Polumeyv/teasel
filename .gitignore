@@ -4,6 +4,8 @@ node_modules/
 /npm/teasel.wasm
 *.node
 /crates/teasel/tests/TypeScript/
-/npm/plan.js
-/npm/plan.d.ts
+/npm/*.js
+/npm/*.d.ts
+/npm/lib/*.js
+/npm/lib/*.d.ts
 /target*/

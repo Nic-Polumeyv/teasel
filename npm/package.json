@@ -12,20 +12,20 @@
 		"node": ">=18"
 	},
 	"main": "node.js",
-	"types": "types.d.ts",
+	"types": "node.d.ts",
 	"exports": {
 		".": {
 			"node": {
-				"types": "./types.d.ts",
+				"types": "./node.d.ts",
 				"default": "./node.js"
 			},
 			"default": {
-				"types": "./types.d.ts",
+				"types": "./wasm.d.ts",
 				"default": "./wasm.js"
 			}
 		},
 		"./wasm": {
-			"types": "./types.d.ts",
+			"types": "./wasm.d.ts",
 			"default": "./wasm.js"
 		},
 		"./teasel.wasm": "./teasel.wasm",
@@ -36,21 +36,23 @@
 	},
 	"files": [
 		"node.js",
+		"node.d.ts",
 		"wasm.js",
-		"types.d.ts",
+		"wasm.d.ts",
 		"plan.js",
 		"plan.d.ts",
 		"teasel.wasm",
-		"lib/"
+		"lib/*.js",
+		"lib/*.d.ts"
 	],
 	"scripts": {
-		"build": "npm run build:plan && node scripts/addon.js",
-		"build:plan": "tsc --ignoreConfig plan.ts --declaration --strict --target es2022 --module esnext --moduleResolution bundler --skipLibCheck",
+		"build": "npm run build:js && node scripts/addon.ts",
+		"build:js": "tsc --ignoreConfig node.ts wasm.ts plan.ts --declaration --erasableSyntaxOnly --strict --target es2022 --module esnext --moduleResolution bundler --lib es2022,dom --types node --skipLibCheck",
 		"build:wasm": "cargo build --release -p teasel-wasm --target wasm32-unknown-unknown && wasm-opt -Oz --all-features ../target/wasm32-unknown-unknown/release/teasel_wasm.wasm -o teasel.wasm",
-		"test": "node scripts/test.js && node scripts/test.js interpret",
+		"test": "npm run build:js && node scripts/test.ts && node scripts/test.ts interpret",
 		"types": "tsc -p tsconfig.json",
-		"check": "node scripts/check.js",
-		"prepublishOnly": "npm run build:plan"
+		"check": "npm run build:js && node scripts/check.ts",
+		"prepublishOnly": "npm run build:js"
 	},
 	"dependencies": {
 		"@types/estree": "^1.0.6"
