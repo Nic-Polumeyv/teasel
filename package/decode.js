@@ -75,7 +75,7 @@ function generate({ type, keys, kinds }, link) {
 	if (link && type !== null) for (let i = 0; i < keys.length; i++) if (FACTS.has(keys[i]) || kinds[i] === 0 || kinds[i] === 8) last = i;
 	const lead = [];
 	const props = type === null ? [] : [`type: ${JSON.stringify(type)}`];
-	const linked = type === null ? LINKED.find((row) => row.mark.every((key) => keys.includes(key))) : undefined;
+	const linked = link && type === null ? LINKED.find((row) => row.mark.every((key) => keys.includes(key))) : undefined;
 	// what the node points at, set once it exists
 	const after = [];
 	let scope = null, binding = null, reference = null;
@@ -120,7 +120,7 @@ const LINKED = [
 /** The same without code generation, for a host whose policy forbids it. @param {Shape} shape @param {boolean} link */
 function interpret({ type, keys, kinds }, link) {
 	const linked = link && type !== null;
-	const row = type === null ? LINKED.find((row) => row.mark.every((key) => keys.includes(key))) : undefined;
+	const row = link && type === null ? LINKED.find((row) => row.mark.every((key) => keys.includes(key))) : undefined;
 	return (S) => {
 		const n = type === null ? {} : linked ? { type, [PARENT]: undefined, [SCOPE]: undefined, [REFERENCE]: undefined } : { type };
 		// what a declaration initializes is a child of it, in place only once every key is read
