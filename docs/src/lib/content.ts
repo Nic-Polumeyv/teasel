@@ -1,4 +1,6 @@
 import { Marked, type Token, type Tokens } from 'marked';
+import type { Component } from 'svelte';
+import { render as ssr } from 'svelte/server';
 import { buttonVariants } from 'sheer-ui/components/button';
 import { snippet } from '#lib/highlight.ts';
 import { reference } from '#lib/reference.ts';
@@ -13,17 +15,27 @@ const escape = (text: string) => text.replace(/[&<>"]/g, (c) => ({ '&': '&amp;',
 
 const copy = buttonVariants({ variant: 'ghost', size: 'sm', class: 'absolute top-1.5 right-2 h-7 text-xs text-white/60 hover:bg-white/10 hover:text-white' });
 
+const diagrams = Object.fromEntries(Object.entries(import.meta.glob('/content/**/*.svelte', { import: 'default', eager: true })).map(([path, diagram]) => [path.slice(path.lastIndexOf('/') + 1), diagram as Component<{ label: string }>]));
+
+export function fence(text: string, language = 'js', file?: string) {
+	const html = language === 'text' ? escape(text) : snippet(text, language === 'ts' || language === 'typescript' ? 'typescript' : language === 'bash' || language === 'sh' ? 'bash' : 'javascript').html;
+	return (
+		`<div class="relative my-6 overflow-hidden rounded-lg border border-white/10 bg-[#2d353b] text-sm text-[#d3c6aa]">` +
+		(file ? `<div class="flex h-10 items-center border-b border-white/10 px-4 font-mono text-xs text-white/60">${escape(file)}</div>` : '') +
+		`<pre class="overflow-x-auto px-4 py-4 font-mono leading-6"><code>${html}</code></pre>` +
+		`<button type="button" data-copy="${escape(text)}" class="${copy}${file ? '' : ' top-2'}">Copy</button></div>`
+	);
+}
+
 const marked = new Marked({
 	renderer: {
+		image({ href, text }) {
+			const diagram = diagrams[href];
+			return diagram ? ssr(diagram, { props: { label: text } }).body : `<img src="${href}" alt="${escape(text)}">`;
+		},
 		code({ text, lang = '' }) {
 			const [language, file] = lang.split(/\s+/);
-			const { html } = snippet(text, language === 'ts' || language === 'typescript' ? 'typescript' : language === 'bash' || language === 'sh' ? 'bash' : 'javascript');
-			return (
-				`<div class="relative my-6 overflow-hidden rounded-lg border border-white/10 bg-[#2d353b] text-sm text-[#d3c6aa]">` +
-				(file ? `<div class="flex h-10 items-center border-b border-white/10 px-4 font-mono text-xs text-white/60">${escape(file)}</div>` : '') +
-				`<pre class="overflow-x-auto px-4 py-4 font-mono leading-6"><code>${html}</code></pre>` +
-				`<button type="button" data-copy="${escape(text)}" class="${copy}${file ? '' : ' top-2'}">Copy</button></div>`
-			);
+			return fence(text, language, file);
 		},
 		heading({ tokens, depth, text }) {
 			return `<h${depth} id="${slug(text)}">${this.parser.parseInline(tokens)}</h${depth}>`;
@@ -49,11 +61,11 @@ const files = import.meta.glob('/content/**/*.md', { query: '?raw', import: 'def
 
 const written = Object.keys(files)
 	.sort()
-	.map((path, index) => {
+	.map((path) => {
 		const [, section, file] = /\/content\/([^/]+)\/([^/]+)\.md$/.exec(path)!;
 		const [, front = '', markdown = files[path]] = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/.exec(files[path]) ?? [];
 		const title = /^title:\s*(.+)$/m.exec(front)?.[1] ?? label(file);
-		return page({ href: index === 0 ? '/' : `/${name(file)}`, title, section: label(section), path: `docs${path}` }, markdown);
+		return page({ href: `/${name(file)}`, title, section: label(section), path: `docs${path}` }, markdown);
 	});
 
 export const pages: Page[] = [...written, page(reference.meta, reference.markdown)];
