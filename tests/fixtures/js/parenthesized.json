@@ -139,7 +139,7 @@
 							"type": "Identifier",
 							"start": 41,
 							"end": 42,
-							"declares": 0,
+							"reference": 7,
 							"name": "h"
 						}
 					],
@@ -147,7 +147,7 @@
 						"type": "Identifier",
 						"start": 47,
 						"end": 48,
-						"reference": 7,
+						"reference": 8,
 						"name": "i"
 					}
 				}
@@ -165,14 +165,14 @@
 							"type": "Identifier",
 							"start": 51,
 							"end": 52,
-							"reference": 8,
+							"reference": 9,
 							"name": "j"
 						},
 						{
 							"type": "Identifier",
 							"start": 54,
 							"end": 55,
-							"reference": 9,
+							"reference": 10,
 							"name": "k"
 						}
 					]
@@ -208,70 +208,88 @@
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": true,
 			"read": false,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": true,
 			"read": false,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 1,
+			"binding": 0,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
 		},
 		{
 			"scope": 1,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		}
 	]
 }

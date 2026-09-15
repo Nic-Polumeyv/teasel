@@ -21,13 +21,16 @@
 							"type": "Identifier",
 							"start": 4,
 							"end": 5,
-							"declares": 0,
+							"reference": 0,
 							"name": "o"
 						},
 						"init": {
 							"type": "ObjectExpression",
 							"start": 8,
 							"end": 56,
+							"writes": [
+								0
+							],
 							"properties": [
 								{
 									"type": "Property",
@@ -72,7 +75,7 @@
 												"type": "Identifier",
 												"start": 15,
 												"end": 19,
-												"declares": 1,
+												"reference": 1,
 												"typeAnnotation": {
 													"type": "TSTypeAnnotation",
 													"start": 16,
@@ -196,5 +199,22 @@
 			"scope": 1
 		}
 	],
-	"references": []
+	"references": [
+		{
+			"scope": 0,
+			"binding": 0,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 1,
+			"binding": 1,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		}
+	]
 }

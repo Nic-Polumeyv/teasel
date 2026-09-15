@@ -49,7 +49,7 @@
 							"type": "Identifier",
 							"start": 9,
 							"end": 10,
-							"declares": 0,
+							"reference": 0,
 							"name": "x"
 						}
 					],
@@ -57,7 +57,7 @@
 						"type": "Identifier",
 						"start": 14,
 						"end": 15,
-						"reference": 0,
+						"reference": 1,
 						"name": "x"
 					}
 				}
@@ -85,7 +85,7 @@
 							"type": "Identifier",
 							"start": 18,
 							"end": 19,
-							"declares": 1,
+							"reference": 2,
 							"name": "a"
 						},
 						{
@@ -96,13 +96,16 @@
 								"type": "Identifier",
 								"start": 21,
 								"end": 22,
-								"declares": 2,
+								"reference": 3,
 								"name": "b"
 							},
 							"right": {
 								"type": "Literal",
 								"start": 25,
 								"end": 26,
+								"writes": [
+									3
+								],
 								"value": 1,
 								"raw": "1"
 							}
@@ -115,7 +118,7 @@
 								"type": "Identifier",
 								"start": 31,
 								"end": 32,
-								"declares": 3,
+								"reference": 4,
 								"name": "c"
 							}
 						}
@@ -133,7 +136,7 @@
 									"type": "Identifier",
 									"start": 46,
 									"end": 47,
-									"reference": 1,
+									"reference": 5,
 									"name": "a"
 								}
 							}
@@ -162,7 +165,7 @@
 							"type": "Identifier",
 							"start": 59,
 							"end": 60,
-							"declares": 4,
+							"reference": 6,
 							"name": "a"
 						}
 					],
@@ -174,7 +177,7 @@
 							"type": "Identifier",
 							"start": 71,
 							"end": 72,
-							"reference": 2,
+							"reference": 7,
 							"name": "a"
 						}
 					}
@@ -201,7 +204,7 @@
 							"type": "Identifier",
 							"start": 80,
 							"end": 81,
-							"declares": 5,
+							"reference": 8,
 							"name": "x"
 						}
 					],
@@ -209,7 +212,7 @@
 						"type": "Identifier",
 						"start": 85,
 						"end": 86,
-						"reference": 3,
+						"reference": 9,
 						"name": "x"
 					}
 				}
@@ -253,7 +256,7 @@
 										"type": "Identifier",
 										"start": 91,
 										"end": 92,
-										"declares": 6,
+										"reference": 10,
 										"name": "a"
 									},
 									"kind": "init"
@@ -265,7 +268,7 @@
 						"type": "Identifier",
 						"start": 99,
 						"end": 100,
-						"reference": 4,
+						"reference": 11,
 						"name": "a"
 					}
 				}
@@ -282,7 +285,7 @@
 						"type": "Identifier",
 						"start": 102,
 						"end": 107,
-						"reference": 5,
+						"reference": 12,
 						"name": "async"
 					},
 					"arguments": [
@@ -290,7 +293,7 @@
 							"type": "Identifier",
 							"start": 108,
 							"end": 109,
-							"reference": 6,
+							"reference": 13,
 							"name": "x"
 						}
 					],
@@ -380,51 +383,114 @@
 		{
 			"scope": 2,
 			"binding": 0,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 2,
+			"binding": 0,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 3,
+			"binding": 1,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 3,
+			"binding": 2,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 3,
+			"binding": 3,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
 		},
 		{
 			"scope": 3,
 			"binding": 1,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 4,
+			"binding": 4,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
 		},
 		{
 			"scope": 4,
 			"binding": 4,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 5,
+			"binding": 5,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
 		},
 		{
 			"scope": 5,
 			"binding": 5,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 6,
+			"binding": 6,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
 		},
 		{
 			"scope": 6,
 			"binding": 6,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		}
 	]
 }

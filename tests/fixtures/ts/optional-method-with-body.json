@@ -17,7 +17,7 @@
 					"type": "Identifier",
 					"start": 6,
 					"end": 7,
-					"declares": 0,
+					"reference": 0,
 					"name": "A"
 				},
 				"superClass": null,
@@ -90,5 +90,14 @@
 			"scope": 0
 		}
 	],
-	"references": []
+	"references": [
+		{
+			"scope": 0,
+			"binding": 0,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		}
+	]
 }

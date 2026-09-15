@@ -32,7 +32,7 @@
 					"type": "Identifier",
 					"start": 20,
 					"end": 21,
-					"declares": 0,
+					"reference": 1,
 					"name": "C"
 				},
 				"superClass": null,
@@ -54,7 +54,7 @@
 										"type": "Identifier",
 										"start": 26,
 										"end": 29,
-										"reference": 1,
+										"reference": 2,
 										"name": "dec"
 									}
 								}
@@ -85,7 +85,7 @@
 										"type": "Identifier",
 										"start": 37,
 										"end": 46,
-										"declares": 1,
+										"reference": 4,
 										"typeAnnotation": {
 											"type": "TSTypeAnnotation",
 											"start": 38,
@@ -105,7 +105,7 @@
 													"type": "Identifier",
 													"start": 33,
 													"end": 36,
-													"reference": 2,
+													"reference": 3,
 													"name": "dec"
 												}
 											}
@@ -151,7 +151,7 @@
 										"type": "Identifier",
 										"start": 69,
 										"end": 78,
-										"declares": 2,
+										"reference": 6,
 										"typeAnnotation": {
 											"type": "TSTypeAnnotation",
 											"start": 70,
@@ -171,7 +171,7 @@
 													"type": "Identifier",
 													"start": 65,
 													"end": 68,
-													"reference": 3,
+													"reference": 5,
 													"name": "dec"
 												}
 											}
@@ -217,7 +217,7 @@
 										"type": "Identifier",
 										"start": 95,
 										"end": 108,
-										"declares": 3,
+										"reference": 8,
 										"typeAnnotation": {
 											"type": "TSTypeAnnotation",
 											"start": 100,
@@ -237,7 +237,7 @@
 													"type": "Identifier",
 													"start": 91,
 													"end": 94,
-													"reference": 4,
+													"reference": 7,
 													"name": "dec"
 												}
 											}
@@ -266,7 +266,7 @@
 										"type": "Identifier",
 										"start": 115,
 										"end": 118,
-										"reference": 5,
+										"reference": 9,
 										"name": "dec"
 									}
 								}
@@ -311,7 +311,7 @@
 										"type": "Identifier",
 										"start": 137,
 										"end": 140,
-										"reference": 6,
+										"reference": 10,
 										"name": "dec"
 									}
 								}
@@ -350,7 +350,7 @@
 										"type": "Identifier",
 										"start": 162,
 										"end": 165,
-										"reference": 7,
+										"reference": 11,
 										"name": "dec"
 									}
 								}
@@ -429,56 +429,96 @@
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": 0,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
 		},
 		{
 			"scope": 1,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 1,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 2,
+			"binding": 1,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
 		},
 		{
 			"scope": 1,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 3,
+			"binding": 2,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
 		},
 		{
 			"scope": 1,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 4,
+			"binding": 3,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
 		},
 		{
 			"scope": 1,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 1,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 1,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		}
 	]
 }

@@ -134,7 +134,7 @@
 					"type": "Identifier",
 					"start": 101,
 					"end": 102,
-					"declares": 0,
+					"reference": 0,
 					"name": "f"
 				},
 				"expression": false,
@@ -171,7 +171,7 @@
 							"type": "Identifier",
 							"start": 106,
 							"end": 110,
-							"declares": 1,
+							"reference": 1,
 							"name": "args"
 						}
 					}
@@ -212,5 +212,22 @@
 			"scope": 1
 		}
 	],
-	"references": []
+	"references": [
+		{
+			"scope": 0,
+			"binding": 0,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 1,
+			"binding": 1,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		}
+	]
 }

@@ -21,7 +21,7 @@
 							"type": "Identifier",
 							"start": 6,
 							"end": 7,
-							"declares": 0,
+							"reference": 0,
 							"name": "f"
 						},
 						"init": {
@@ -31,6 +31,9 @@
 							"scope": 1,
 							"defines": [
 								1
+							],
+							"writes": [
+								0
 							],
 							"typeParameters": {
 								"type": "TSTypeParameterDeclaration",
@@ -54,7 +57,7 @@
 									"type": "Identifier",
 									"start": 13,
 									"end": 14,
-									"declares": 1,
+									"reference": 1,
 									"name": "x"
 								}
 							],
@@ -62,7 +65,7 @@
 								"type": "Identifier",
 								"start": 18,
 								"end": 19,
-								"reference": 0,
+								"reference": 2,
 								"name": "x"
 							}
 						}
@@ -101,11 +104,28 @@
 	],
 	"references": [
 		{
+			"scope": 0,
+			"binding": 0,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 1,
+			"binding": 1,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
 			"scope": 1,
 			"binding": 1,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		}
 	]
 }

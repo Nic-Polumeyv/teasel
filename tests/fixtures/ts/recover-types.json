@@ -21,7 +21,7 @@
 							"type": "Identifier",
 							"start": 4,
 							"end": 7,
-							"declares": 0,
+							"reference": 0,
 							"typeAnnotation": {
 								"type": "TSTypeAnnotation",
 								"start": 5,
@@ -39,6 +39,9 @@
 							"type": "Literal",
 							"start": 9,
 							"end": 10,
+							"writes": [
+								0
+							],
 							"value": 1,
 							"raw": "1"
 						}
@@ -59,7 +62,7 @@
 					"type": "Identifier",
 					"start": 21,
 					"end": 22,
-					"declares": 1,
+					"reference": 1,
 					"name": "f"
 				},
 				"expression": false,
@@ -70,7 +73,7 @@
 						"type": "Identifier",
 						"start": 23,
 						"end": 26,
-						"declares": 2,
+						"reference": 2,
 						"typeAnnotation": {
 							"type": "TSTypeAnnotation",
 							"start": 24,
@@ -166,7 +169,7 @@
 							"type": "Identifier",
 							"start": 67,
 							"end": 76,
-							"declares": 3,
+							"reference": 3,
 							"typeAnnotation": {
 								"type": "TSTypeAnnotation",
 								"start": 68,
@@ -183,6 +186,9 @@
 							"type": "Literal",
 							"start": 79,
 							"end": 80,
+							"writes": [
+								3
+							],
 							"value": 1,
 							"raw": "1"
 						}
@@ -271,5 +277,38 @@
 			"scope": 0
 		}
 	],
-	"references": []
+	"references": [
+		{
+			"scope": 0,
+			"binding": 0,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 0,
+			"binding": 1,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 1,
+			"binding": 2,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 0,
+			"binding": 3,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		}
+	]
 }

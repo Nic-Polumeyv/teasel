@@ -38,13 +38,16 @@
 								"type": "Identifier",
 								"start": 25,
 								"end": 26,
-								"declares": 0,
+								"reference": 1,
 								"name": "b"
 							},
 							"init": {
 								"type": "Literal",
 								"start": 29,
 								"end": 30,
+								"writes": [
+									1
+								],
 								"value": 1,
 								"raw": "1"
 							}
@@ -81,7 +84,16 @@
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": 0,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
 		}
 	]
 }

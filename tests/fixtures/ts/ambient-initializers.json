@@ -22,13 +22,16 @@
 							"type": "Identifier",
 							"start": 14,
 							"end": 15,
-							"declares": 0,
+							"reference": 0,
 							"name": "a"
 						},
 						"init": {
 							"type": "Literal",
 							"start": 18,
 							"end": 19,
+							"writes": [
+								0
+							],
 							"value": 1,
 							"raw": "1"
 						}
@@ -49,7 +52,7 @@
 					"type": "Identifier",
 					"start": 34,
 					"end": 35,
-					"declares": 1,
+					"reference": 1,
 					"name": "E"
 				},
 				"members": [
@@ -64,7 +67,7 @@
 							"type": "Identifier",
 							"start": 38,
 							"end": 39,
-							"declares": 2,
+							"reference": 2,
 							"name": "A"
 						},
 						"initializer": {
@@ -90,7 +93,7 @@
 					"type": "Identifier",
 					"start": 64,
 					"end": 65,
-					"declares": 3,
+					"reference": 3,
 					"name": "N"
 				},
 				"body": {
@@ -114,7 +117,7 @@
 										"type": "Identifier",
 										"start": 74,
 										"end": 83,
-										"declares": 4,
+										"reference": 4,
 										"typeAnnotation": {
 											"type": "TSTypeAnnotation",
 											"start": 75,
@@ -184,5 +187,46 @@
 			"scope": 2
 		}
 	],
-	"references": []
+	"references": [
+		{
+			"scope": 0,
+			"binding": 0,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 0,
+			"binding": 1,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 1,
+			"binding": 2,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 0,
+			"binding": 3,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 2,
+			"binding": 4,
+			"write": false,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		}
+	]
 }

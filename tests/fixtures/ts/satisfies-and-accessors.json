@@ -21,13 +21,16 @@
 							"type": "Identifier",
 							"start": 6,
 							"end": 7,
-							"declares": 0,
+							"reference": 0,
 							"name": "a"
 						},
 						"init": {
 							"type": "TSSatisfiesExpression",
 							"start": 10,
 							"end": 51,
+							"writes": [
+								0
+							],
 							"expression": {
 								"type": "ObjectExpression",
 								"start": 10,
@@ -102,7 +105,7 @@
 					"type": "Identifier",
 					"start": 59,
 					"end": 60,
-					"declares": 1,
+					"reference": 1,
 					"name": "C"
 				},
 				"superClass": null,
@@ -189,5 +192,22 @@
 			"scope": 0
 		}
 	],
-	"references": []
+	"references": [
+		{
+			"scope": 0,
+			"binding": 0,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 0,
+			"binding": 1,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		}
+	]
 }

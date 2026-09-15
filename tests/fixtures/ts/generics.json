@@ -104,7 +104,7 @@
 					"type": "Identifier",
 					"start": 9,
 					"end": 10,
-					"declares": 0,
+					"reference": 0,
 					"name": "f"
 				},
 				"expression": false,
@@ -115,7 +115,7 @@
 						"type": "Identifier",
 						"start": 43,
 						"end": 47,
-						"declares": 1,
+						"reference": 1,
 						"typeAnnotation": {
 							"type": "TSTypeAnnotation",
 							"start": 44,
@@ -138,7 +138,7 @@
 						"type": "Identifier",
 						"start": 49,
 						"end": 53,
-						"declares": 2,
+						"reference": 2,
 						"typeAnnotation": {
 							"type": "TSTypeAnnotation",
 							"start": 50,
@@ -175,14 +175,14 @@
 									"type": "Identifier",
 									"start": 70,
 									"end": 71,
-									"reference": 0,
+									"reference": 3,
 									"name": "t"
 								},
 								"property": {
 									"type": "Identifier",
 									"start": 72,
 									"end": 73,
-									"reference": 1,
+									"reference": 4,
 									"name": "u"
 								},
 								"computed": true,
@@ -208,7 +208,7 @@
 							"type": "Identifier",
 							"start": 84,
 							"end": 85,
-							"declares": 3,
+							"reference": 5,
 							"name": "g"
 						},
 						"init": {
@@ -218,6 +218,9 @@
 							"scope": 2,
 							"defines": [
 								4
+							],
+							"writes": [
+								5
 							],
 							"typeParameters": {
 								"type": "TSTypeParameterDeclaration",
@@ -241,7 +244,7 @@
 									"type": "Identifier",
 									"start": 93,
 									"end": 97,
-									"declares": 4,
+									"reference": 6,
 									"typeAnnotation": {
 										"type": "TSTypeAnnotation",
 										"start": 94,
@@ -265,7 +268,7 @@
 								"type": "Identifier",
 								"start": 102,
 								"end": 103,
-								"reference": 2,
+								"reference": 7,
 								"name": "x"
 							}
 						}
@@ -300,7 +303,7 @@
 					"type": "Identifier",
 					"start": 111,
 					"end": 112,
-					"declares": 5,
+					"reference": 8,
 					"name": "C"
 				},
 				"superClass": null,
@@ -347,7 +350,7 @@
 						"type": "Identifier",
 						"start": 126,
 						"end": 127,
-						"reference": 3,
+						"reference": 9,
 						"name": "f"
 					},
 					"arguments": [
@@ -398,7 +401,7 @@
 						"type": "Identifier",
 						"start": 166,
 						"end": 169,
-						"reference": 4,
+						"reference": 10,
 						"name": "Map"
 					},
 					"arguments": []
@@ -438,7 +441,7 @@
 							"type": "Identifier",
 							"start": 189,
 							"end": 190,
-							"reference": 5,
+							"reference": 11,
 							"name": "a"
 						},
 						"arguments": [],
@@ -480,7 +483,7 @@
 							"type": "Identifier",
 							"start": 199,
 							"end": 200,
-							"reference": 6,
+							"reference": 12,
 							"name": "b"
 						},
 						"property": {
@@ -512,7 +515,7 @@
 							"type": "Identifier",
 							"start": 213,
 							"end": 229,
-							"declares": 6,
+							"reference": 13,
 							"typeAnnotation": {
 								"type": "TSTypeAnnotation",
 								"start": 217,
@@ -589,6 +592,9 @@
 							"type": "Literal",
 							"start": 232,
 							"end": 233,
+							"writes": [
+								13
+							],
 							"value": 1,
 							"raw": "1"
 						}
@@ -612,7 +618,7 @@
 							"type": "Identifier",
 							"start": 239,
 							"end": 241,
-							"declares": 7,
+							"reference": 14,
 							"name": "fe"
 						},
 						"init": {
@@ -620,6 +626,9 @@
 							"start": 244,
 							"end": 261,
 							"scope": 4,
+							"writes": [
+								14
+							],
 							"typeParameters": {
 								"type": "TSTypeParameterDeclaration",
 								"start": 253,
@@ -665,7 +674,7 @@
 							"type": "Identifier",
 							"start": 269,
 							"end": 271,
-							"declares": 8,
+							"reference": 15,
 							"name": "cf"
 						},
 						"init": {
@@ -675,6 +684,9 @@
 							"scope": 5,
 							"defines": [
 								9
+							],
+							"writes": [
+								15
 							],
 							"typeParameters": {
 								"type": "TSTypeParameterDeclaration",
@@ -699,7 +711,7 @@
 									"type": "Identifier",
 									"start": 285,
 									"end": 289,
-									"declares": 9,
+									"reference": 16,
 									"typeAnnotation": {
 										"type": "TSTypeAnnotation",
 										"start": 286,
@@ -723,7 +735,7 @@
 								"type": "Identifier",
 								"start": 294,
 								"end": 295,
-								"reference": 7,
+								"reference": 17,
 								"name": "x"
 							}
 						}
@@ -747,13 +759,16 @@
 							"type": "Identifier",
 							"start": 301,
 							"end": 305,
-							"declares": 10,
+							"reference": 18,
 							"name": "call"
 						},
 						"init": {
 							"type": "CallExpression",
 							"start": 308,
 							"end": 315,
+							"writes": [
+								18
+							],
 							"typeArguments": {
 								"type": "TSTypeParameterInstantiation",
 								"start": 309,
@@ -776,7 +791,7 @@
 								"type": "Identifier",
 								"start": 308,
 								"end": 309,
-								"reference": 8,
+								"reference": 19,
 								"name": "f"
 							},
 							"arguments": [
@@ -784,7 +799,7 @@
 									"type": "Identifier",
 									"start": 313,
 									"end": 314,
-									"reference": 9,
+									"reference": 20,
 									"name": "y"
 								}
 							],
@@ -810,13 +825,16 @@
 							"type": "Identifier",
 							"start": 321,
 							"end": 323,
-							"declares": 11,
+							"reference": 21,
 							"name": "lt"
 						},
 						"init": {
 							"type": "BinaryExpression",
 							"start": 326,
 							"end": 335,
+							"writes": [
+								21
+							],
 							"left": {
 								"type": "BinaryExpression",
 								"start": 326,
@@ -825,7 +843,7 @@
 									"type": "Identifier",
 									"start": 326,
 									"end": 327,
-									"reference": 10,
+									"reference": 22,
 									"name": "a"
 								},
 								"operator": "<",
@@ -833,7 +851,7 @@
 									"type": "Identifier",
 									"start": 330,
 									"end": 331,
-									"reference": 11,
+									"reference": 23,
 									"name": "b"
 								}
 							},
@@ -842,7 +860,7 @@
 								"type": "Identifier",
 								"start": 334,
 								"end": 335,
-								"reference": 12,
+								"reference": 24,
 								"name": "c"
 							}
 						}
@@ -866,18 +884,21 @@
 							"type": "Identifier",
 							"start": 341,
 							"end": 346,
-							"declares": 12,
+							"reference": 25,
 							"name": "shift"
 						},
 						"init": {
 							"type": "BinaryExpression",
 							"start": 349,
 							"end": 355,
+							"writes": [
+								25
+							],
 							"left": {
 								"type": "Identifier",
 								"start": 349,
 								"end": 350,
-								"reference": 13,
+								"reference": 26,
 								"name": "a"
 							},
 							"operator": "<",
@@ -889,7 +910,7 @@
 									"type": "Identifier",
 									"start": 351,
 									"end": 352,
-									"reference": 14,
+									"reference": 27,
 									"name": "b"
 								},
 								"operator": ">>",
@@ -897,7 +918,7 @@
 									"type": "Identifier",
 									"start": 354,
 									"end": 355,
-									"reference": 15,
+									"reference": 28,
 									"name": "c"
 								}
 							}
@@ -922,13 +943,16 @@
 							"type": "Identifier",
 							"start": 361,
 							"end": 365,
-							"declares": 13,
+							"reference": 29,
 							"name": "inst"
 						},
 						"init": {
 							"type": "NewExpression",
 							"start": 368,
 							"end": 380,
+							"writes": [
+								29
+							],
 							"typeArguments": {
 								"type": "TSTypeParameterInstantiation",
 								"start": 375,
@@ -951,7 +975,7 @@
 								"type": "Identifier",
 								"start": 372,
 								"end": 375,
-								"reference": 16,
+								"reference": 30,
 								"name": "Foo"
 							},
 							"arguments": []
@@ -976,13 +1000,16 @@
 							"type": "Identifier",
 							"start": 386,
 							"end": 392,
-							"declares": 14,
+							"reference": 31,
 							"name": "tagged"
 						},
 						"init": {
 							"type": "TaggedTemplateExpression",
 							"start": 395,
 							"end": 404,
+							"writes": [
+								31
+							],
 							"typeArguments": {
 								"type": "TSTypeParameterInstantiation",
 								"start": 396,
@@ -1005,7 +1032,7 @@
 								"type": "Identifier",
 								"start": 395,
 								"end": 396,
-								"reference": 17,
+								"reference": 32,
 								"name": "f"
 							},
 							"quasi": {
@@ -1047,18 +1074,21 @@
 							"type": "Identifier",
 							"start": 410,
 							"end": 423,
-							"declares": 15,
+							"reference": 33,
 							"name": "instantiation"
 						},
 						"init": {
 							"type": "TSInstantiationExpression",
 							"start": 426,
 							"end": 430,
+							"writes": [
+								33
+							],
 							"expression": {
 								"type": "Identifier",
 								"start": 426,
 								"end": 427,
-								"reference": 18,
+								"reference": 34,
 								"name": "A"
 							},
 							"typeArguments": {
@@ -1205,137 +1235,284 @@
 	],
 	"references": [
 		{
+			"scope": 0,
+			"binding": 0,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 1,
+			"binding": 1,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 1,
+			"binding": 2,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
 			"scope": 1,
 			"binding": 1,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 1,
 			"binding": 2,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": 3,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 2,
+			"binding": 4,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
 		},
 		{
 			"scope": 2,
 			"binding": 4,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": 5,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
 		},
 		{
 			"scope": 0,
 			"binding": 0,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": 6,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 0,
+			"binding": 7,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 0,
+			"binding": 8,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 5,
+			"binding": 9,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
 		},
 		{
 			"scope": 5,
 			"binding": 9,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": 10,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
 		},
 		{
 			"scope": 0,
 			"binding": 0,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": 11,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": 12,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": 13,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": 14,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
 		},
 		{
 			"scope": 0,
 			"binding": 0,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": 15,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		}
 	]
 }

@@ -55,14 +55,14 @@
 					"type": "Identifier",
 					"start": 15,
 					"end": 16,
-					"declares": 0,
+					"reference": 0,
 					"name": "A"
 				},
 				"superClass": {
 					"type": "Identifier",
 					"start": 28,
 					"end": 32,
-					"reference": 0,
+					"reference": 1,
 					"name": "Base"
 				},
 				"body": {
@@ -246,7 +246,7 @@
 											"type": "Identifier",
 											"start": 191,
 											"end": 200,
-											"declares": 1,
+											"reference": 2,
 											"typeAnnotation": {
 												"type": "TSTypeAnnotation",
 												"start": 192,
@@ -270,7 +270,7 @@
 											"type": "Identifier",
 											"start": 218,
 											"end": 228,
-											"declares": 2,
+											"reference": 3,
 											"typeAnnotation": {
 												"type": "TSTypeAnnotation",
 												"start": 220,
@@ -407,7 +407,7 @@
 										"type": "Identifier",
 										"start": 280,
 										"end": 284,
-										"declares": 3,
+										"reference": 4,
 										"typeAnnotation": {
 											"type": "TSTypeAnnotation",
 											"start": 281,
@@ -440,7 +440,7 @@
 												"type": "Identifier",
 												"start": 298,
 												"end": 299,
-												"reference": 1,
+												"reference": 5,
 												"name": "u"
 											}
 										}
@@ -596,14 +596,14 @@
 					"type": "Identifier",
 					"start": 362,
 					"end": 363,
-					"declares": 4,
+					"reference": 6,
 					"name": "D"
 				},
 				"superClass": {
 					"type": "Identifier",
 					"start": 375,
 					"end": 376,
-					"reference": 2,
+					"reference": 7,
 					"name": "E"
 				},
 				"body": {
@@ -625,7 +625,7 @@
 					"type": "Identifier",
 					"start": 405,
 					"end": 406,
-					"declares": 5,
+					"reference": 8,
 					"name": "H"
 				},
 				"superClass": null,
@@ -688,7 +688,7 @@
 										"type": "Identifier",
 										"start": 436,
 										"end": 446,
-										"declares": 6,
+										"reference": 9,
 										"typeAnnotation": {
 											"type": "TSTypeAnnotation",
 											"start": 438,
@@ -834,25 +834,84 @@
 	],
 	"references": [
 		{
+			"scope": 0,
+			"binding": 0,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
 			"scope": 1,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 2,
+			"binding": 1,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 2,
+			"binding": 2,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 3,
+			"binding": 3,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
 		},
 		{
 			"scope": 3,
 			"binding": 3,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": 4,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
 		},
 		{
 			"scope": 5,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": 5,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 7,
+			"binding": 6,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
 		}
 	]
 }

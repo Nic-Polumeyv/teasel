@@ -5,7 +5,6 @@ use crate::ast::{Ast, Class, Function, List, MethodKind, NodeId, NodeKind, Prope
 use crate::interner::{FastMap, Interner, StrId};
 use crate::names::{NAMES, Name, c};
 use crate::parser::Entry;
-use crate::scopes::Role;
 use std::fmt::Write;
 
 /// How an extension's data serializes: its own nodes, and the keys it adds to JavaScript nodes.
@@ -1054,16 +1053,9 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 			self.key(c!("scope"));
 			self.sink.int(scope);
 		}
-		match scopes.of_identifier.get(id) {
-			Some(Role::Declares(binding)) => {
-				self.key(c!("declares"));
-				self.sink.int(binding);
-			}
-			Some(Role::Reference(reference)) => {
-				self.key(c!("reference"));
-				self.sink.int(reference);
-			}
-			None => {}
+		if let Some(reference) = scopes.of_identifier.get(id) {
+			self.key(c!("reference"));
+			self.sink.int(reference);
 		}
 		let adopted = std::mem::take(&mut self.adopted);
 		for node in adopted.iter().copied().chain([id]) {
@@ -1090,8 +1082,8 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		self.adopted.push(id);
 	}
 
-	/// The scope, binding and reference tables: what the `scope`, `declares`, `reference` and
-	/// `writes` numbers index.
+	/// The scope, binding and reference tables: what the `scope`, `reference` and `writes`
+	/// numbers index.
 	fn all_scopes(&mut self) {
 		let Some(scopes) = &self.ast.scopes else { return };
 		self.sink.table(c!("scopes"));
@@ -1133,6 +1125,7 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 			self.bool(c!("write"), reference.write);
 			self.bool(c!("read"), reference.read);
 			self.bool(c!("mutate"), reference.mutate);
+			self.bool(c!("declares"), reference.declares);
 			self.sink.end();
 		}
 		self.sink.end();

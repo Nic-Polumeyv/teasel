@@ -5,7 +5,7 @@ if (process.argv[2] === 'interpret') globalThis.Function = /** @type {any} */ ((
 const node = await import('./index.js');
 const wasm = await import('./wasm.js');
 
-for (const [name, { Source, scopeOf, bindingOf, referenceOf, parentOf }] of [['node', node], ['wasm', wasm]]) {
+for (const [name, { Source, scopeOf, referenceOf, parentOf }] of [['node', node], ['wasm', wasm]]) {
 	const parse = (source, options) => new Source(source, options).parse();
 	const program = (source, options) => parse(source, options).node;
 	const at = (entry, source, offset, options, stopAt) => new Source(source, options).parse(entry, offset, { stopAt });
@@ -81,7 +81,7 @@ for (const [name, { Source, scopeOf, bindingOf, referenceOf, parentOf }] of [['n
 	assert.equal('errors' in parse('x'), false);
 	const scoped = parse('let = f(a, b)', { errorRecovery: true, scopes: true, sourceType: 'module' });
 	assert.equal(scoped.bindings.length, 0);
-	assert.equal(bindingOf(scoped.node.body[0].declarations[0].id), undefined);
+	assert.equal(referenceOf(scoped.node.body[0].declarations[0].id), undefined);
 	assert.equal(referenceOf(scoped.node.body[0].declarations[0].init.callee).binding, null);
 
 	const generics = at('typeParameters', 'foo<T extends () => void>(x: T)', 3, ts);
@@ -129,11 +129,13 @@ for (const [name, { Source, scopeOf, bindingOf, referenceOf, parentOf }] of [['n
 		const [x, f, y] = answer.bindings;
 		assert.equal(scopeOf(tree), answer.scopes[0]);
 		assert.equal(x.node, tree.body[0].declarations[0].id);
-		assert.equal(bindingOf(x.node), x);
-		const writes = answer.references.filter((r) => r.binding === x);
-		assert.deepEqual(writes.map((r) => r.node.start), [27]);
-		assert.equal(writes[0].write, true);
-		assert.equal(bindingOf(writes[0].node), x);
+		const [declared, written] = answer.references.filter((r) => r.binding === x);
+		assert.deepEqual([declared.node.start, written.node.start], [4, 27]);
+		assert.equal(referenceOf(x.node), declared);
+		assert.deepEqual([declared.declares, declared.write, declared.read], [true, true, false]);
+		assert.equal(declared.writeExpr, tree.body[0].declarations[0].init);
+		assert.deepEqual([written.declares, written.write], [false, true]);
+		assert.equal(referenceOf(written.node).binding, x);
 		assert.equal(f.scope.kind, 'module');
 		assert.equal(y.scope.node, tree.body[1]);
 		assert.deepEqual(Object.keys(answer.scopes[0]), ['kind', 'parent', 'topLevelAwait', 'node']);
@@ -142,8 +144,9 @@ for (const [name, { Source, scopeOf, bindingOf, referenceOf, parentOf }] of [['n
 		assert.equal(x.declaration, tree.body[0].declarations[0]);
 		assert.equal(f.declaration, tree.body[1]);
 		assert.equal(y.declaration, tree.body[1]);
-		const reads = answer.references.filter((r) => r.binding === y);
-		assert.equal(writes[0].writeExpr, reads[0].node);
+		const [param, ...reads] = answer.references.filter((r) => r.binding === y);
+		assert.deepEqual([param.declares, param.write, param.writeExpr], [true, true, null]);
+		assert.equal(written.writeExpr, reads[0].node);
 		assert.equal(answer.scopes[0].topLevelAwait, false);
 		const top = parse('g = await 1; g++;', { sourceType: 'module', scopes: true });
 		assert.equal(top.scopes[0].topLevelAwait, true);
@@ -151,7 +154,7 @@ for (const [name, { Source, scopeOf, bindingOf, referenceOf, parentOf }] of [['n
 		assert.equal(assigned.writeExpr, top.node.body[0].expression.right);
 		assert.equal(updated.writeExpr, null);
 		assert.equal(assigned.binding, null);
-		assert.deepEqual([assigned.read, updated.read, writes[0].read, reads[0].read], [false, true, false, true]);
+		assert.deepEqual([assigned.read, updated.read, written.read, reads[0].read], [false, true, false, true]);
 		assert.equal(assigned.scope, top.scopes[0]);
 		assert.deepEqual(top.references, [assigned, updated]);
 		assert.equal(parentOf(assigned.node), top.node.body[0].expression);
@@ -165,29 +168,30 @@ for (const [name, { Source, scopeOf, bindingOf, referenceOf, parentOf }] of [['n
 		assert.equal('scope' in tree, false);
 		assert.equal('binding' in x.node, false);
 		const fragment = at('expression', 'a + b', 0, { scopes: true });
-		assert.equal(bindingOf(fragment.node.left), null);
-		assert.equal(bindingOf(fragment.node), undefined);
+		assert.equal(referenceOf(fragment.node.left).binding, null);
+		assert.equal(referenceOf(fragment.node), undefined);
 		assert.equal(fragment.scopes[0].kind, 'fragment');
 		const bare = at('expression', '{count}', 1, { scopes: true });
-		assert.equal(bindingOf(bare.node), null);
+		assert.equal(referenceOf(bare.node).binding, null);
 		assert.equal(scopeOf(bare.node).kind, 'fragment');
 		assert.doesNotThrow(() => JSON.stringify(tree.body));
 		assert.deepEqual(Object.keys(x.node), ['type', 'start', 'end', 'name']);
 		assert.equal(scopeOf(tree.body[1]).kind, 'function');
 		const mutated = parse('let o = {}; o.x = 1; g = 2; h.k = 3;', { sourceType: 'module', scopes: true });
 		const [o] = mutated.bindings;
-		const of_o = mutated.references.filter((r) => r.binding === o);
-		assert.equal(of_o[0].mutate, true);
-		assert.equal(of_o[0].write, false);
+		const [declared_o, of_o] = mutated.references.filter((r) => r.binding === o);
+		assert.deepEqual([declared_o.declares, declared_o.write, declared_o.writeExpr], [true, true, mutated.node.body[0].declarations[0].init]);
+		assert.equal(of_o.mutate, true);
+		assert.equal(of_o.write, false);
 		const g = mutated.node.body[2].expression.left;
-		assert.equal(bindingOf(g), null);
-		assert.deepEqual(referenceOf(g), { scope: mutated.scopes[0], binding: null, write: true, read: false, mutate: false, node: g, writeExpr: mutated.node.body[2].expression.right });
+		assert.equal(referenceOf(g).binding, null);
+		assert.deepEqual(referenceOf(g), { scope: mutated.scopes[0], binding: null, write: true, read: false, mutate: false, declares: false, node: g, writeExpr: mutated.node.body[2].expression.right });
 		assert.equal(referenceOf(mutated.node.body[3].expression.left.object).mutate, true);
-		assert.equal(referenceOf(o.node), undefined);
-		assert.equal(bindingOf(null), undefined);
-		assert.equal(bindingOf(at('pattern', '[a, b]', 0, { scopes: true }).node.elements[0]).kind, 'pattern');
+		assert.equal(referenceOf(o.node), declared_o);
+		assert.equal(referenceOf(null), undefined);
+		assert.equal(referenceOf(at('pattern', '[a, b]', 0, { scopes: true }).node.elements[0]).binding.kind, 'pattern');
 		const list = at('params', '(a, b)', 0, { scopes: true });
-		assert.equal(bindingOf(list.node[1]).kind, 'param');
+		assert.equal(referenceOf(list.node[1]).binding.kind, 'param');
 		assert.equal(list.scopes[0].node, null);
 	}
 	assert.throws(() => parse('x', { sourceType: 'nonsense' }), TypeError);
@@ -244,7 +248,7 @@ for (const [name, { Source, scopeOf, bindingOf, referenceOf, parentOf }] of [['n
 
 // a document of a host language: the host's nodes around the JavaScript ones, one tree
 const grammar = readFileSync(new URL('../tests/hosts/svelte/host.grammar', import.meta.url), 'utf8');
-for (const { Source, scopeOf, bindingOf, parentOf } of [node, wasm]) {
+for (const { Source, scopeOf, referenceOf, parentOf } of [node, wasm]) {
 	const source = '<script lang="ts">\n\tlet items: string[] = [];\n</script>\n\n{#each items as item, i (item)}\n\t<p class:odd={i % 2} on:click={() => item}>{item}</p>\n{:else}\n\tnone\n{/each}\n';
 	const doc = new Source(source, { host: grammar, sourceType: 'module', scopes: true, comments: true }).parse();
 	const root = doc.node;
@@ -269,12 +273,12 @@ for (const { Source, scopeOf, bindingOf, parentOf } of [node, wasm]) {
 	// the block declares its context and index; the script declares the list
 	const tag = p.fragment.nodes[0];
 	assert.equal(tag.type, 'ExpressionTag');
-	assert.equal(bindingOf(tag.expression).node, each.context);
-	assert.equal(bindingOf(p.attributes[0].expression.left).name, 'i');
-	assert.equal(bindingOf(each.expression).kind, 'let');
+	assert.equal(referenceOf(tag.expression).binding.node, each.context);
+	assert.equal(referenceOf(p.attributes[0].expression.left).binding.name, 'i');
+	assert.equal(referenceOf(each.expression).binding.kind, 'let');
 	// every fragment is a scope of its own; the block's body declares its context and index
 	assert.equal(scopeOf(each.body).node, each.body);
-	assert.equal(bindingOf(tag.expression).scope, scopeOf(each.body));
+	assert.equal(referenceOf(tag.expression).binding.scope, scopeOf(each.body));
 	assert.equal(scopeOf(each.body).parent, scopeOf(root.fragment));
 	// the template sees the instance script, which sees the module script, which is the root's
 	assert.equal(scopeOf(root.fragment).parent, scopeOf(root.instance.content));

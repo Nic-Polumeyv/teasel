@@ -11,21 +11,18 @@ const utf8 = new TextDecoder('utf-8', { ignoreBOM: true });
 
 // symbol keys: ten times cheaper than a WeakMap entry, and skipped by JSON, Object.keys and for-in
 const SCOPE = Symbol('scope');
-const BINDING = Symbol('binding');
 const REFERENCE = Symbol('reference');
 const PARENT = Symbol('parent');
 
 
 /** @param {import('estree').Node} node @returns {import('./index.js').Scope | undefined} the scope the node opens */
 export const scopeOf = (node) => (node == null ? undefined : node[SCOPE]);
-/** @param {import('estree').Node} node @returns {import('./index.js').Binding | null | undefined} what the identifier declares or refers to; null for a global, undefined when it names no value */
-export const bindingOf = (node) => (node == null ? undefined : node[BINDING]);
 /** @param {import('estree').Node} node @returns {import('./index.js').Reference | undefined} the reference an identifier makes, a global's included */
 export const referenceOf = (node) => (node == null ? undefined : node[REFERENCE]);
 /** @param {import('estree').Node} node @returns {import('estree').Node | undefined} the node it is a child of; undefined for the root of an answer */
 export const parentOf = (node) => (node == null ? undefined : node[PARENT]);
 
-const FACTS = new Set(['scope', 'declares', 'reference', 'defines', 'writes', 'root']);
+const FACTS = new Set(['scope', 'reference', 'defines', 'writes', 'root']);
 
 /**
  * One decode at a time; the builders are generated once and read through this.
@@ -87,8 +84,7 @@ function generate({ type, keys, kinds }, link) {
 		else {
 			lead.push(`const v${i} = ${READ[kinds[i]]};`);
 			if (key === 'scope') { scope = `S.scopes[v${i}]`; lead.push(`const s = ${scope};`); after.push('s.node = n;'); }
-			else if (key === 'declares') { binding = 'd'; lead.push(`const d = S.bindings[v${i}];`); after.push('if (d.node === null) d.node = n;'); }
-			else if (key === 'reference') { reference = 'r'; binding = 'r.binding'; lead.push(`const r = S.references[v${i}];`); after.push('r.node = n;'); }
+			else if (key === 'reference') { reference = 'r'; lead.push(`const r = S.references[v${i}];`); after.push('r.node = n; if (r.declares && r.binding.node === null) r.binding.node = n;'); }
 			else if (key === 'defines') after.push(`for (let i = 0; i < v${i}.length; i++) S.bindings[v${i}[i]].declaration = n;`);
 			else if (key === 'writes') after.push(`for (let i = 0; i < v${i}.length; i++) S.references[v${i}[i]].writeExpr = n;`);
 			else if (key === 'root') after.push(`S.roots[v${i}].node = n;`);
@@ -104,18 +100,17 @@ function generate({ type, keys, kinds }, link) {
 		props.push('[PARENT]: undefined');
 		if (scope !== null) props.push('[SCOPE]: s');
 		// every identifier has the two slots, so those with facts and those without share a class
-		if (type === 'Identifier' || binding !== null) props.push(`[BINDING]: ${binding ?? 'undefined'}`);
 		if (type === 'Identifier' || reference !== null) props.push(`[REFERENCE]: ${reference ?? 'undefined'}`);
 	}
 	const body = `${lead.join(' ')} const n = { ${props.join(', ')} }; ${after.join(' ')} return n;`;
-	return new Function('node', 'nodes', 'ints', 'strs', 'PARENT', 'SCOPE', 'BINDING', 'REFERENCE', `return (S) => { ${body} };`)(node, nodes, ints, strs, PARENT, SCOPE, BINDING, REFERENCE);
+	return new Function('node', 'nodes', 'ints', 'strs', 'PARENT', 'SCOPE', 'REFERENCE', `return (S) => { ${body} };`)(node, nodes, ints, strs, PARENT, SCOPE, REFERENCE);
 }
 
 /** The same without code generation, for a host whose policy forbids it. @param {Shape} shape @param {boolean} link */
 function interpret({ type, keys, kinds }, link) {
 	const linked = link && type !== null;
 	return (S) => {
-		const n = type === null ? {} : linked ? { type, [PARENT]: undefined, [SCOPE]: undefined, [BINDING]: undefined, [REFERENCE]: undefined } : { type };
+		const n = type === null ? {} : linked ? { type, [PARENT]: undefined, [SCOPE]: undefined, [REFERENCE]: undefined } : { type };
 		for (let i = 0; i < keys.length; i++) {
 			const key = keys[i];
 			const value = READERS[kinds[i]](S);
@@ -123,8 +118,7 @@ function interpret({ type, keys, kinds }, link) {
 			else if (linked && kinds[i] === 8) for (const child of value) if (child !== null) child[PARENT] = n;
 			if (!linked || !FACTS.has(key)) n[key] = value;
 			else if (key === 'scope') { const s = S.scopes[value]; n[SCOPE] = s; s.node = n; }
-			else if (key === 'declares') { const d = S.bindings[value]; n[BINDING] = d; if (d.node === null) d.node = n; }
-			else if (key === 'reference') { const r = S.references[value]; n[REFERENCE] = r; n[BINDING] = r.binding; r.node = n; }
+			else if (key === 'reference') { const r = S.references[value]; n[REFERENCE] = r; r.node = n; if (r.declares && r.binding.node === null) r.binding.node = n; }
 			else if (key === 'defines') for (const b of value) S.bindings[b].declaration = n;
 			else if (key === 'root') S.roots[value].node = n;
 			else for (const w of value) S.references[w].writeExpr = n;

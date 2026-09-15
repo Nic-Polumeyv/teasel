@@ -55,7 +55,7 @@
 									"type": "Identifier",
 									"start": 20,
 									"end": 21,
-									"declares": 0,
+									"reference": 1,
 									"name": "a"
 								},
 								"init": null
@@ -95,7 +95,16 @@
 			"binding": 0,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 1,
+			"binding": 0,
+			"write": false,
+			"read": false,
+			"mutate": false,
+			"declares": true
 		}
 	]
 }

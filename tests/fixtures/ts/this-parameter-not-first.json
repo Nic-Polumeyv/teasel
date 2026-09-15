@@ -19,7 +19,7 @@
 					"type": "Identifier",
 					"start": 9,
 					"end": 10,
-					"declares": 0,
+					"reference": 0,
 					"name": "f"
 				},
 				"expression": false,
@@ -30,7 +30,7 @@
 						"type": "Identifier",
 						"start": 11,
 						"end": 20,
-						"declares": 1,
+						"reference": 1,
 						"typeAnnotation": {
 							"type": "TSTypeAnnotation",
 							"start": 12,
@@ -47,7 +47,7 @@
 						"type": "Identifier",
 						"start": 22,
 						"end": 32,
-						"declares": 2,
+						"reference": 2,
 						"typeAnnotation": {
 							"type": "TSTypeAnnotation",
 							"start": 26,
@@ -102,5 +102,30 @@
 			"scope": 1
 		}
 	],
-	"references": []
+	"references": [
+		{
+			"scope": 0,
+			"binding": 0,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 1,
+			"binding": 1,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 1,
+			"binding": 2,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		}
+	]
 }

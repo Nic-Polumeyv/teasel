@@ -34,9 +34,9 @@ export interface Options {
 	/** Attach `leadingComments`, `trailingComments` and `innerComments` to nodes, and list every comment read as `comments` on the answer. */
 	comments?: boolean;
 	/**
-	 * Scope analysis: the answer lists `scopes`, `bindings` and `references`, and `scopeOf`,
-	 * `bindingOf` and `referenceOf` answer for a node. The tree itself carries nothing, and a copy
-	 * of a node carries no facts. TypeScript type positions bind nothing.
+	 * Scope analysis: the answer lists `scopes`, `bindings` and `references`, and `scopeOf` and
+	 * `referenceOf` answer for a node. The tree itself carries nothing, and a copy of a node
+	 * carries no facts. TypeScript type positions bind nothing.
 	 */
 	scopes?: boolean;
 	/** Add `loc` with line and column to every node, as in acorn; off by default. */
@@ -144,19 +144,19 @@ export interface Reference {
 	write: boolean;
 	/** A member of the identifier's value is assigned to, updated or deleted. */
 	mutate: boolean;
-	/** The identifier's value is read: every reference but a plain assignment's target or a destructuring one's; a compound assignment or an update reads and writes. */
+	/** The identifier's value is read: every reference but a declaration, a plain assignment's target or a destructuring one's; a compound assignment or an update reads and writes. */
 	read: boolean;
-	/** What a write assigns: the right side of the assignment or the iterated expression of a `for-in` or `for-of`, as eslint-scope's `writeExpr`; null for an update. */
+	/** What a write assigns: the right side of the assignment, the iterated expression of a `for-in` or `for-of`, or what a declaration is initialized with, as eslint-scope's `writeExpr`; null for an update. */
 	writeExpr: Expression | null;
+	/** The identifier declares its binding: the first write when a value is bound there, an initializer, a parameter's default, a function or class, and neither a read nor a write for a bare `let x;`. */
+	declares: boolean;
 }
 
 /** The node `node` is a child of; undefined for the root of an answer. A literal's `regex` and a template element's `value` are not nodes and have none. */
 export function parentOf(node: Node): Node | undefined;
 /** With `scopes`: the scope `node` opens, when it opens one. */
 export function scopeOf(node: Node): Scope | undefined;
-/** With `scopes`: what an identifier declares or refers to; null for a global, undefined when it names no value, a property key say. */
-export function bindingOf(node: Node): Binding | null | undefined;
-/** With `scopes`: the reference an identifier makes, with its `write` and `mutate`; a global's too, which no binding lists. */
+/** With `scopes`: the reference an identifier makes, declaring its binding or using one; a global's too, which no binding lists. Undefined when the identifier names no value, a property key say. */
 export function referenceOf(node: Node): Reference | undefined;
 
 /** A range of the source, with `loc` when `locations` is on. */

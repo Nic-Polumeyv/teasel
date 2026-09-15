@@ -98,7 +98,7 @@
 					"type": "Identifier",
 					"start": 38,
 					"end": 39,
-					"declares": 0,
+					"reference": 4,
 					"name": "g"
 				},
 				"expression": false,
@@ -113,7 +113,7 @@
 							"type": "Identifier",
 							"start": 43,
 							"end": 44,
-							"declares": 1,
+							"reference": 5,
 							"name": "d"
 						}
 					}
@@ -160,28 +160,48 @@
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": 0,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 1,
+			"binding": 1,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
 		}
 	]
 }

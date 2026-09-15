@@ -17,7 +17,7 @@
 					"type": "Identifier",
 					"start": 10,
 					"end": 11,
-					"declares": 0,
+					"reference": 0,
 					"name": "N"
 				},
 				"body": {
@@ -46,13 +46,16 @@
 											"type": "Identifier",
 											"start": 27,
 											"end": 28,
-											"declares": 1,
+											"reference": 1,
 											"name": "a"
 										},
 										"init": {
 											"type": "Literal",
 											"start": 31,
 											"end": 32,
+											"writes": [
+												1
+											],
 											"value": 1,
 											"raw": "1"
 										}
@@ -76,7 +79,7 @@
 								"type": "Identifier",
 								"start": 44,
 								"end": 45,
-								"declares": 2,
+								"reference": 2,
 								"name": "M"
 							},
 							"body": {
@@ -127,7 +130,7 @@
 					"type": "Identifier",
 					"start": 83,
 					"end": 84,
-					"declares": 3,
+					"reference": 3,
 					"name": "Q"
 				},
 				"body": {
@@ -142,7 +145,7 @@
 						"type": "Identifier",
 						"start": 85,
 						"end": 86,
-						"declares": 4,
+						"reference": 4,
 						"name": "R"
 					},
 					"body": {
@@ -197,7 +200,7 @@
 									"type": "Identifier",
 									"start": 135,
 									"end": 136,
-									"declares": 5,
+									"reference": 5,
 									"name": "f"
 								},
 								"generator": false,
@@ -347,5 +350,54 @@
 			"scope": 5
 		}
 	],
-	"references": []
+	"references": [
+		{
+			"scope": 0,
+			"binding": 0,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 1,
+			"binding": 1,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 1,
+			"binding": 2,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 0,
+			"binding": 3,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 3,
+			"binding": 4,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 5,
+			"binding": 5,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		}
+	]
 }

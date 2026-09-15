@@ -61,7 +61,7 @@
 									"column": 1
 								}
 							},
-							"declares": 0,
+							"reference": 0,
 							"typeAnnotation": {
 								"type": "TSTypeAnnotation",
 								"start": 5,
@@ -156,6 +156,9 @@
 									"column": 6
 								}
 							},
+							"writes": [
+								0
+							],
 							"elements": []
 						}
 					}
@@ -181,5 +184,14 @@
 			"scope": 0
 		}
 	],
-	"references": []
+	"references": [
+		{
+			"scope": 0,
+			"binding": 0,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		}
+	]
 }

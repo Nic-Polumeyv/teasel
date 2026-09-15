@@ -17,7 +17,7 @@
 					"type": "Identifier",
 					"start": 5,
 					"end": 6,
-					"declares": 0,
+					"reference": 0,
 					"name": "E"
 				},
 				"members": [
@@ -32,7 +32,7 @@
 							"type": "Identifier",
 							"start": 9,
 							"end": 10,
-							"declares": 1,
+							"reference": 1,
 							"name": "A"
 						}
 					},
@@ -47,7 +47,7 @@
 							"type": "Identifier",
 							"start": 12,
 							"end": 13,
-							"declares": 2,
+							"reference": 2,
 							"name": "B"
 						},
 						"initializer": {
@@ -69,7 +69,7 @@
 							"type": "Identifier",
 							"start": 19,
 							"end": 20,
-							"declares": 3,
+							"reference": 3,
 							"name": "C"
 						},
 						"initializer": {
@@ -80,7 +80,7 @@
 								"type": "Identifier",
 								"start": 23,
 								"end": 24,
-								"reference": 0,
+								"reference": 5,
 								"name": "A"
 							},
 							"operator": "|",
@@ -88,7 +88,7 @@
 								"type": "Identifier",
 								"start": 27,
 								"end": 28,
-								"reference": 1,
+								"reference": 6,
 								"name": "B"
 							}
 						}
@@ -104,7 +104,7 @@
 							"type": "Identifier",
 							"start": 30,
 							"end": 31,
-							"declares": 4,
+							"reference": 4,
 							"name": "D"
 						},
 						"initializer": {
@@ -130,7 +130,7 @@
 					"type": "Identifier",
 					"start": 51,
 					"end": 52,
-					"declares": 5,
+					"reference": 7,
 					"name": "F"
 				},
 				"members": [
@@ -145,7 +145,7 @@
 							"type": "Identifier",
 							"start": 55,
 							"end": 56,
-							"declares": 6,
+							"reference": 8,
 							"name": "X"
 						}
 					}
@@ -164,7 +164,7 @@
 					"type": "Identifier",
 					"start": 72,
 					"end": 73,
-					"declares": 7,
+					"reference": 9,
 					"name": "G"
 				},
 				"members": [
@@ -179,7 +179,7 @@
 							"type": "Identifier",
 							"start": 76,
 							"end": 77,
-							"declares": 8,
+							"reference": 10,
 							"name": "Y"
 						}
 					}
@@ -197,7 +197,7 @@
 					"type": "Identifier",
 					"start": 85,
 					"end": 86,
-					"declares": 9,
+					"reference": 11,
 					"name": "H"
 				},
 				"members": [
@@ -212,7 +212,7 @@
 							"type": "Identifier",
 							"start": 89,
 							"end": 90,
-							"declares": 10,
+							"reference": 12,
 							"name": "A"
 						},
 						"initializer": {
@@ -234,7 +234,7 @@
 							"type": "Identifier",
 							"start": 96,
 							"end": 97,
-							"declares": 11,
+							"reference": 13,
 							"name": "B"
 						}
 					},
@@ -348,18 +348,116 @@
 	],
 	"references": [
 		{
+			"scope": 0,
+			"binding": 0,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 1,
+			"binding": 1,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 1,
+			"binding": 2,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 1,
+			"binding": 3,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 1,
+			"binding": 4,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
 			"scope": 1,
 			"binding": 1,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 1,
 			"binding": 2,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": 5,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 2,
+			"binding": 6,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 0,
+			"binding": 7,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 3,
+			"binding": 8,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 0,
+			"binding": 9,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 4,
+			"binding": 10,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 4,
+			"binding": 11,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
 		}
 	]
 }

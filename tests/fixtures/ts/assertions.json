@@ -21,18 +21,21 @@
 							"type": "Identifier",
 							"start": 6,
 							"end": 7,
-							"declares": 0,
+							"reference": 0,
 							"name": "a"
 						},
 						"init": {
 							"type": "TSAsExpression",
 							"start": 10,
 							"end": 21,
+							"writes": [
+								0
+							],
 							"expression": {
 								"type": "Identifier",
 								"start": 10,
 								"end": 11,
-								"reference": 0,
+								"reference": 1,
 								"name": "b"
 							},
 							"typeAnnotation": {
@@ -61,13 +64,16 @@
 							"type": "Identifier",
 							"start": 29,
 							"end": 30,
-							"declares": 1,
+							"reference": 2,
 							"name": "c"
 						},
 						"init": {
 							"type": "TSTypeAssertion",
 							"start": 33,
 							"end": 42,
+							"writes": [
+								2
+							],
 							"typeAnnotation": {
 								"type": "TSNumberKeyword",
 								"start": 34,
@@ -77,7 +83,7 @@
 								"type": "Identifier",
 								"start": 41,
 								"end": 42,
-								"reference": 1,
+								"reference": 3,
 								"name": "d"
 							}
 						}
@@ -101,18 +107,21 @@
 							"type": "Identifier",
 							"start": 50,
 							"end": 51,
-							"declares": 2,
+							"reference": 4,
 							"name": "e"
 						},
 						"init": {
 							"type": "TSNonNullExpression",
 							"start": 54,
 							"end": 56,
+							"writes": [
+								4
+							],
 							"expression": {
 								"type": "Identifier",
 								"start": 54,
 								"end": 55,
-								"reference": 2,
+								"reference": 5,
 								"name": "f"
 							}
 						}
@@ -136,18 +145,21 @@
 							"type": "Identifier",
 							"start": 64,
 							"end": 65,
-							"declares": 3,
+							"reference": 6,
 							"name": "g"
 						},
 						"init": {
 							"type": "TSSatisfiesExpression",
 							"start": 68,
 							"end": 81,
+							"writes": [
+								6
+							],
 							"expression": {
 								"type": "Identifier",
 								"start": 68,
 								"end": 69,
-								"reference": 3,
+								"reference": 7,
 								"name": "h"
 							},
 							"typeAnnotation": {
@@ -182,13 +194,16 @@
 							"type": "Identifier",
 							"start": 89,
 							"end": 90,
-							"declares": 4,
+							"reference": 8,
 							"name": "j"
 						},
 						"init": {
 							"type": "TSAsExpression",
 							"start": 93,
 							"end": 105,
+							"writes": [
+								8
+							],
 							"expression": {
 								"type": "MemberExpression",
 								"start": 93,
@@ -197,7 +212,7 @@
 									"type": "Identifier",
 									"start": 93,
 									"end": 94,
-									"reference": 4,
+									"reference": 9,
 									"name": "k"
 								},
 								"property": {
@@ -241,13 +256,16 @@
 							"type": "Identifier",
 							"start": 111,
 							"end": 112,
-							"declares": 5,
+							"reference": 10,
 							"name": "l"
 						},
 						"init": {
 							"type": "MemberExpression",
 							"start": 115,
 							"end": 130,
+							"writes": [
+								10
+							],
 							"object": {
 								"type": "TSNonNullExpression",
 								"start": 115,
@@ -264,7 +282,7 @@
 											"type": "Identifier",
 											"start": 116,
 											"end": 117,
-											"reference": 5,
+											"reference": 11,
 											"name": "m"
 										},
 										"typeAnnotation": {
@@ -318,7 +336,7 @@
 								"type": "Identifier",
 								"start": 143,
 								"end": 144,
-								"declares": 6,
+								"reference": 12,
 								"name": "x"
 							},
 							"init": null
@@ -330,11 +348,14 @@
 					"type": "TSAsExpression",
 					"start": 148,
 					"end": 158,
+					"writes": [
+						12
+					],
 					"expression": {
 						"type": "Identifier",
 						"start": 148,
 						"end": 149,
-						"reference": 6,
+						"reference": 13,
 						"name": "y"
 					},
 					"typeAnnotation": {
@@ -372,19 +393,22 @@
 							"type": "Identifier",
 							"start": 167,
 							"end": 168,
-							"declares": 7,
+							"reference": 14,
 							"name": "n"
 						},
 						"init": {
 							"type": "AssignmentExpression",
 							"start": 171,
 							"end": 185,
+							"writes": [
+								14
+							],
 							"operator": "=",
 							"left": {
 								"type": "Identifier",
 								"start": 172,
 								"end": 173,
-								"reference": 7,
+								"reference": 15,
 								"name": "a"
 							},
 							"right": {
@@ -392,7 +416,7 @@
 								"start": 184,
 								"end": 185,
 								"writes": [
-									7
+									15
 								],
 								"value": 1,
 								"raw": "1"
@@ -418,13 +442,16 @@
 							"type": "Identifier",
 							"start": 191,
 							"end": 192,
-							"declares": 8,
+							"reference": 16,
 							"name": "o"
 						},
 						"init": {
 							"type": "BinaryExpression",
 							"start": 195,
 							"end": 206,
+							"writes": [
+								16
+							],
 							"left": {
 								"type": "TSAsExpression",
 								"start": 195,
@@ -433,7 +460,7 @@
 									"type": "Identifier",
 									"start": 195,
 									"end": 196,
-									"reference": 8,
+									"reference": 17,
 									"name": "y"
 								},
 								"typeAnnotation": {
@@ -477,13 +504,16 @@
 							"type": "Identifier",
 							"start": 212,
 							"end": 213,
-							"declares": 9,
+							"reference": 18,
 							"name": "p"
 						},
 						"init": {
 							"type": "TSNonNullExpression",
 							"start": 216,
 							"end": 221,
+							"writes": [
+								18
+							],
 							"expression": {
 								"type": "MemberExpression",
 								"start": 216,
@@ -496,7 +526,7 @@
 										"type": "Identifier",
 										"start": 216,
 										"end": 217,
-										"reference": 9,
+										"reference": 19,
 										"name": "q"
 									}
 								},
@@ -591,73 +621,163 @@
 	"references": [
 		{
 			"scope": 0,
-			"binding": null,
-			"write": false,
-			"read": true,
-			"mutate": false
+			"binding": 0,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": 1,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": 2,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": 3,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": 4,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": 5,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 1,
+			"binding": 6,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
 		},
 		{
 			"scope": 1,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": 7,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
 		},
 		{
 			"scope": 0,
 			"binding": 0,
 			"write": true,
 			"read": false,
-			"mutate": false
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": 8,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": 9,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		}
 	]
 }

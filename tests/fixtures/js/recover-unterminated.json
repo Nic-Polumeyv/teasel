@@ -21,13 +21,16 @@
 							"type": "Identifier",
 							"start": 6,
 							"end": 7,
-							"declares": 0,
+							"reference": 0,
 							"name": "a"
 						},
 						"init": {
 							"type": "Literal",
 							"start": 10,
 							"end": 24,
+							"writes": [
+								0
+							],
 							"value": "unterminated;",
 							"raw": "'unterminated;"
 						}
@@ -51,13 +54,16 @@
 							"type": "Identifier",
 							"start": 31,
 							"end": 32,
-							"declares": 1,
+							"reference": 1,
 							"name": "b"
 						},
 						"init": {
 							"type": "TemplateLiteral",
 							"start": 35,
 							"end": 70,
+							"writes": [
+								1
+							],
 							"expressions": [],
 							"quasis": [
 								{
@@ -122,5 +128,22 @@
 			"scope": 0
 		}
 	],
-	"references": []
+	"references": [
+		{
+			"scope": 0,
+			"binding": 0,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 0,
+			"binding": 1,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		}
+	]
 }

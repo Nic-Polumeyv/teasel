@@ -61,7 +61,7 @@
 									"column": 7
 								}
 							},
-							"declares": 0,
+							"reference": 0,
 							"name": "a"
 						},
 						"init": {
@@ -78,6 +78,9 @@
 									"column": 11
 								}
 							},
+							"writes": [
+								0
+							],
 							"value": 1,
 							"raw": "1"
 						}
@@ -117,7 +120,7 @@
 							"column": 10
 						}
 					},
-					"declares": 1,
+					"reference": 1,
 					"name": "f"
 				},
 				"expression": false,
@@ -224,5 +227,22 @@
 			"scope": 0
 		}
 	],
-	"references": []
+	"references": [
+		{
+			"scope": 0,
+			"binding": 0,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 0,
+			"binding": 1,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		}
+	]
 }

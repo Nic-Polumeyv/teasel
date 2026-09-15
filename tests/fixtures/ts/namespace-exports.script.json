@@ -17,7 +17,7 @@
 					"type": "Identifier",
 					"start": 10,
 					"end": 11,
-					"declares": 0,
+					"reference": 0,
 					"name": "N"
 				},
 				"body": {
@@ -46,13 +46,16 @@
 											"type": "Identifier",
 											"start": 28,
 											"end": 29,
-											"declares": 1,
+											"reference": 1,
 											"name": "a"
 										},
 										"init": {
 											"type": "Literal",
 											"start": 32,
 											"end": 33,
+											"writes": [
+												1
+											],
 											"value": 1,
 											"raw": "1"
 										}
@@ -81,7 +84,7 @@
 									"type": "Identifier",
 									"start": 52,
 									"end": 53,
-									"declares": 2,
+									"reference": 2,
 									"name": "f"
 								},
 								"expression": false,
@@ -141,5 +144,30 @@
 			"scope": 1
 		}
 	],
-	"references": []
+	"references": [
+		{
+			"scope": 0,
+			"binding": 0,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 1,
+			"binding": 1,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 1,
+			"binding": 2,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		}
+	]
 }

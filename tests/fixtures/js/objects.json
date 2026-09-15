@@ -175,7 +175,7 @@
 										"type": "Identifier",
 										"start": 46,
 										"end": 47,
-										"declares": 0,
+										"reference": 2,
 										"name": "v"
 									}
 								],
@@ -292,7 +292,7 @@
 								"type": "Identifier",
 								"start": 94,
 								"end": 95,
-								"reference": 2,
+								"reference": 3,
 								"name": "i"
 							}
 						},
@@ -422,21 +422,32 @@
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 3,
+			"binding": 0,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		}
 	]
 }

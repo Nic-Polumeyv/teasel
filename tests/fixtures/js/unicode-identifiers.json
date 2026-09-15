@@ -21,13 +21,16 @@
 							"type": "Identifier",
 							"start": 6,
 							"end": 13,
-							"declares": 0,
+							"reference": 0,
 							"name": "ünïcödé"
 						},
 						"init": {
 							"type": "Literal",
 							"start": 16,
 							"end": 17,
+							"writes": [
+								0
+							],
 							"value": 1,
 							"raw": "1"
 						}
@@ -51,13 +54,16 @@
 							"type": "Identifier",
 							"start": 25,
 							"end": 32,
-							"declares": 1,
+							"reference": 1,
 							"name": "ab"
 						},
 						"init": {
 							"type": "Literal",
 							"start": 35,
 							"end": 36,
+							"writes": [
+								1
+							],
 							"value": 2,
 							"raw": "2"
 						}
@@ -81,13 +87,16 @@
 							"type": "Identifier",
 							"start": 44,
 							"end": 46,
-							"declares": 2,
+							"reference": 2,
 							"name": "𝒳"
 						},
 						"init": {
 							"type": "Literal",
 							"start": 49,
 							"end": 50,
+							"writes": [
+								2
+							],
 							"value": 3,
 							"raw": "3"
 						}
@@ -124,5 +133,30 @@
 			"scope": 0
 		}
 	],
-	"references": []
+	"references": [
+		{
+			"scope": 0,
+			"binding": 0,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 0,
+			"binding": 1,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 0,
+			"binding": 2,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		}
+	]
 }

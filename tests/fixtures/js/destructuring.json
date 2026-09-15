@@ -41,7 +41,7 @@
 										"type": "Identifier",
 										"start": 8,
 										"end": 9,
-										"declares": 0,
+										"reference": 0,
 										"name": "a"
 									},
 									"kind": "init"
@@ -85,7 +85,7 @@
 														"type": "Identifier",
 														"start": 16,
 														"end": 17,
-														"declares": 1,
+														"reference": 1,
 														"name": "c"
 													},
 													"right": {
@@ -110,7 +110,7 @@
 										"type": "Identifier",
 										"start": 28,
 										"end": 29,
-										"declares": 2,
+										"reference": 2,
 										"name": "d"
 									}
 								}
@@ -120,7 +120,12 @@
 							"type": "Identifier",
 							"start": 34,
 							"end": 35,
-							"reference": 0,
+							"reference": 3,
+							"writes": [
+								0,
+								1,
+								2
+							],
 							"name": "o"
 						}
 					}
@@ -150,7 +155,7 @@
 									"type": "Identifier",
 									"start": 42,
 									"end": 43,
-									"declares": 3,
+									"reference": 4,
 									"name": "e"
 								},
 								null,
@@ -162,7 +167,7 @@
 										"type": "Identifier",
 										"start": 47,
 										"end": 48,
-										"declares": 4,
+										"reference": 5,
 										"name": "f"
 									},
 									"right": {
@@ -181,7 +186,7 @@
 										"type": "Identifier",
 										"start": 57,
 										"end": 58,
-										"declares": 5,
+										"reference": 6,
 										"name": "g"
 									}
 								}
@@ -191,7 +196,12 @@
 							"type": "Identifier",
 							"start": 62,
 							"end": 63,
-							"reference": 1,
+							"reference": 7,
+							"writes": [
+								4,
+								5,
+								6
+							],
 							"name": "h"
 						}
 					}
@@ -216,14 +226,14 @@
 								"type": "Identifier",
 								"start": 66,
 								"end": 67,
-								"reference": 2,
+								"reference": 8,
 								"name": "i"
 							},
 							{
 								"type": "Identifier",
 								"start": 69,
 								"end": 70,
-								"reference": 3,
+								"reference": 9,
 								"name": "j"
 							}
 						]
@@ -233,22 +243,22 @@
 						"start": 74,
 						"end": 80,
 						"writes": [
-							2,
-							3
+							8,
+							9
 						],
 						"elements": [
 							{
 								"type": "Identifier",
 								"start": 75,
 								"end": 76,
-								"reference": 4,
+								"reference": 10,
 								"name": "j"
 							},
 							{
 								"type": "Identifier",
 								"start": 78,
 								"end": 79,
-								"reference": 5,
+								"reference": 11,
 								"name": "i"
 							}
 						]
@@ -286,7 +296,7 @@
 									"type": "Identifier",
 									"start": 85,
 									"end": 86,
-									"reference": 6,
+									"reference": 12,
 									"name": "k"
 								},
 								"kind": "init"
@@ -313,7 +323,7 @@
 											"type": "Identifier",
 											"start": 92,
 											"end": 93,
-											"reference": 7,
+											"reference": 13,
 											"name": "m"
 										}
 									]
@@ -326,10 +336,10 @@
 						"type": "Identifier",
 						"start": 99,
 						"end": 100,
-						"reference": 8,
+						"reference": 14,
 						"writes": [
-							6,
-							7
+							12,
+							13
 						],
 						"name": "n"
 					}
@@ -363,14 +373,14 @@
 										"type": "Identifier",
 										"start": 115,
 										"end": 116,
-										"declares": 6,
+										"reference": 15,
 										"name": "o"
 									},
 									{
 										"type": "Identifier",
 										"start": 118,
 										"end": 119,
-										"declares": 7,
+										"reference": 16,
 										"name": "p"
 									}
 								]
@@ -384,7 +394,11 @@
 					"type": "Identifier",
 					"start": 124,
 					"end": 125,
-					"reference": 9,
+					"reference": 17,
+					"writes": [
+						15,
+						16
+					],
 					"name": "q"
 				},
 				"body": {
@@ -462,73 +476,147 @@
 	"references": [
 		{
 			"scope": 0,
-			"binding": null,
-			"write": false,
-			"read": true,
-			"mutate": false
+			"binding": 0,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 0,
+			"binding": 1,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 0,
+			"binding": 2,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": 3,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 0,
+			"binding": 4,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 0,
+			"binding": 5,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": true,
 			"read": false,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": true,
 			"read": false,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": true,
 			"read": false,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": true,
 			"read": false,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 1,
+			"binding": 6,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 1,
+			"binding": 7,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
 		},
 		{
 			"scope": 1,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		}
 	]
 }

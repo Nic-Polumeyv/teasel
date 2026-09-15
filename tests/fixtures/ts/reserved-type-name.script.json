@@ -21,7 +21,7 @@
 							"type": "Identifier",
 							"start": 4,
 							"end": 13,
-							"declares": 0,
+							"reference": 0,
 							"typeAnnotation": {
 								"type": "TSTypeAnnotation",
 								"start": 5,
@@ -64,5 +64,14 @@
 			"scope": 0
 		}
 	],
-	"references": []
+	"references": [
+		{
+			"scope": 0,
+			"binding": 0,
+			"write": false,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		}
+	]
 }

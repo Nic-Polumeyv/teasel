@@ -18,7 +18,7 @@
 					"type": "Identifier",
 					"start": 15,
 					"end": 16,
-					"declares": 0,
+					"reference": 0,
 					"name": "A"
 				},
 				"superClass": null,
@@ -137,14 +137,14 @@
 					"type": "Identifier",
 					"start": 93,
 					"end": 94,
-					"declares": 1,
+					"reference": 1,
 					"name": "B"
 				},
 				"superClass": {
 					"type": "Identifier",
 					"start": 103,
 					"end": 104,
-					"reference": 0,
+					"reference": 2,
 					"name": "A"
 				},
 				"body": {
@@ -267,7 +267,7 @@
 					"type": "Identifier",
 					"start": 196,
 					"end": 197,
-					"declares": 2,
+					"reference": 3,
 					"name": "D"
 				},
 				"superClass": null,
@@ -334,11 +334,36 @@
 	],
 	"references": [
 		{
+			"scope": 0,
+			"binding": 0,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 0,
+			"binding": 1,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
 			"scope": 2,
 			"binding": 0,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": 2,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
 		}
 	]
 }
