@@ -6,9 +6,11 @@ on:
   pull_request:
   workflow_dispatch:
 
+# a pull request's runs replace each other; pushes to main run side by side, the deploy and
+# publish jobs each serialized on their own group, so a docs merge never waits for a release
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.event.number || github.sha }}
+  cancel-in-progress: true
 
 jobs:
   test:
