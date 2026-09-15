@@ -4,7 +4,7 @@ const facts = `import { Source, bindingOf } from '@teasel/parser';
 
 const { node, scopes } = new Source('let x = 1; x++', { scopes: true }).parse();
 
-node.type;                                   // 'Program', as acorn would say
+node.type;                                   // 'Program'
 bindingOf(node.body[0].declarations[0].id);  // { name: 'x', kind: 'let', scope, … }
 scopes.length;                               // 1`;
 

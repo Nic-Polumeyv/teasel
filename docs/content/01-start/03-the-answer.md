@@ -10,7 +10,7 @@ const { node, end } = source.parse();
 
 ![the answer is an object with node and end, and with comments, errors, typescript, scopes, bindings and references tables when their option is on](Answer.svelte)
 
-`node` is the tree. Every node carries `start` and `end`, UTF-16 offsets into the whole source exactly as acorn counts them, and they stay offsets into the whole source no matter how small a piece you parsed. `end` is where the parse stopped reading: after the node, after its closing parentheses, after any comments trailing it. For a whole program it's simply the end you gave it.
+`node` is the tree. Every node carries `start` and `end`, UTF-16 offsets into the whole source, the way JavaScript counts, and they stay offsets into the whole source no matter how small a piece you parsed. `end` is where the parse stopped reading: after the node, after its closing parentheses, after any comments trailing it. For a whole program it's simply the end you gave it.
 
 You get a key on the answer exactly when its option is on. Nothing appears that you didn't ask for.
 

@@ -2,7 +2,7 @@
 title: TypeScript
 ---
 
-Say `typescript: true` and the tree holds TypeScript nodes, `TSTypeAnnotation`, `TSInterfaceDeclaration` and friends, spelled the way typescript-eslint spells them.
+Say `typescript: true` and the tree holds TypeScript nodes, `TSTypeAnnotation`, `TSInterfaceDeclaration` and friends, in the TS-ESTree shape.
 
 ```js
 const { node } = new Source('let n: number = 1', { typescript: true }).parse();

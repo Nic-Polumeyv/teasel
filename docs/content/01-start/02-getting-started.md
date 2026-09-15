@@ -18,7 +18,7 @@ node.type;                 // 'Program'
 node.body[0].type;         // 'VariableDeclaration'
 ```
 
-That's an ESTree `Program`, the same object acorn gives you. Anything built on acorn, estree-walker, your own visitor, will take it without noticing the difference.
+That's an ESTree `Program`, plain objects all the way down. Any walker or visitor written for ESTree takes it as it is.
 
 ## Why a source and then a parse
 
@@ -47,7 +47,7 @@ import { Source } from '@teasel/parser';
 const { node } = new Source('export const answer = 42').parse();
 ```
 
-The WebAssembly build finds `teasel.wasm` next to its own module with `new URL('./teasel.wasm', import.meta.url)`, so bundlers like Vite copy it along without being asked. If you want that build under Node too, import `@teasel/parser/wasm`.
+The WebAssembly build finds `teasel.wasm` next to its own module with `new URL('./teasel.wasm', import.meta.url)`, so a bundler copies it along without being asked. If you want that build under Node too, import `@teasel/parser/wasm`.
 
 ## Next
 

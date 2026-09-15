@@ -4,7 +4,7 @@ title: Overview
 
 *You make a source once. Then you ask it things.*
 
-teasel reads your JavaScript or TypeScript and hands back the tree acorn would have given you, an ESTree `Program` with `start` and `end` on every node. If you already have code that walks an acorn tree, it walks this one. What you don't get from acorn is everything else a compiler needs next: which `x` is which, what each function closes over, where the errors are when the file is half typed. teasel works that out while it parses and leaves it on the nodes for you to pick up.
+teasel reads your JavaScript or TypeScript and hands back an ESTree `Program` with `start` and `end` on every node. If you already have code that walks an ESTree, it walks this one. What you get on top is everything a compiler needs next: which `x` is which, what each function closes over, where the errors are when the file is half typed. teasel works that out while it parses and leaves it on the nodes for you to pick up.
 
 ```text
 new Source(text, options)          the text goes to the engine, once
