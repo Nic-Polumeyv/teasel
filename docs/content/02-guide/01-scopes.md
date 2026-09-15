@@ -19,7 +19,7 @@ The tree is still plain ESTree. The facts live beside it, and you reach them fro
 
 `referenceOf` is one of three. Each takes a node from the answer and gives back a fact about it.
 
-- `referenceOf(identifier)`: the reference this identifier makes, whether it declares a name or uses one, with the `binding` it resolves to. `binding` is `null` for a global. The whole answer is `undefined` when the identifier isn't a value at all, a property key for instance.
+- `referenceOf(identifier)`: the reference this identifier makes, with the `binding` it resolves to. For the identifier that declares a name, the answer is the binding itself: a binding is its own first reference, and its `binding` is itself. `binding` is `null` for a global. The whole answer is `undefined` when the identifier isn't a value at all, a property key for instance.
 - `scopeOf(node)`: the scope this node opens, if it opens one. Programs, functions, classes, blocks, catch clauses, `for` heads, `switch` statements, static blocks and `with` all do.
 - `parentOf(node)`: the node this one hangs from. `undefined` at the root. This one works without `scopes`.
 
@@ -32,7 +32,7 @@ const { node } = new Source('let x = 1; function f(y) { x = y; }', { scopes: tru
 const [declaration, fn] = node.body;
 const assignment = fn.body.body[0].expression;
 
-referenceOf(declaration.declarations[0].id) // { declares: true, write: true, read: false, binding, scope, node, writeExpr }
+referenceOf(declaration.declarations[0].id) // the binding: { name: 'x', kind: 'let', declares: true, write: true, scope, node, declaration, … }
 referenceOf(assignment.left)                // { declares: false, write: true, read: false, binding, scope, node, writeExpr }
 scopeOf(fn)                                 // { kind: 'function', parent, node, topLevelAwait: false }
 parentOf(assignment.left)                   // the assignment
@@ -46,12 +46,12 @@ A reference points from the scope it was made in to the binding it landed on, an
 
 | flag | true when |
 | --- | --- |
-| `declares` | this is the identifier that declares the binding. |
+| `declares` | the identifier declares the binding. True on every binding, and on a reference only for a name declared twice, `var x` and `var x` again. |
 | `read` | the value is used. Every reference except a declaration or a plain assignment target. |
 | `write` | the identifier is assigned, updated, or bound by a destructuring assignment. A declaration writes when a value is bound there: an initializer, a parameter, a function. |
 | `mutate` | something on the value is assigned, updated or deleted, like `x.y = 1`. |
 
-A compound assignment like `x += 1` is both a read and a write. For a write, `writeExpr` is what's being assigned: the right-hand side, the thing iterated in a `for-of`, or what a declaration is initialized with. A bare `let x;` declares without writing.
+A compound assignment like `x += 1` is both a read and a write. For a write, `writeExpr` is what's being assigned: the right-hand side, or the thing iterated in a `for-of`. On a binding it's the declarator's initializer, `1` in `let x = 1`, and a bare `let x;` declares without writing.
 
 A binding knows its `name`, its `kind`, the scope it lives in, the identifier that declared it, and the declaration itself. The kinds are listed in the [reference](/reference/parser#binding).
 
