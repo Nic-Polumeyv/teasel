@@ -31,11 +31,13 @@ source.parse().node.type;                 // 'Program'
 source.parse('expression', 10).node.type; // 'CallExpression', the f(a, b)
 ```
 
-When you're done with a source, `using` lets it go at the end of the block. Or don't bother, and the garbage collector does it.
+Release a source when you're done with it. `using` does that at the end of the block.
 
 ```js
 using source = new Source(text);
 ```
+
+If you're on a Node version older than 24, `using` isn't there yet: call `source[Symbol.dispose]()` in a `finally` instead. A source left to the garbage collector is released late, and finalizing it costs more than parsing a small file did.
 
 ## In the browser
 
