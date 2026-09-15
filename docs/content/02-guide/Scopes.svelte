@@ -13,7 +13,7 @@
 
 <Diagram width={720} height={240} {label}>
 	<Box rect={{ x: 8, y: 8, w: 704, h: 224 }} tint="sky" />
-	<text x="24" y="32">scope: module</text>
+	<text x="24" y="32">scope: script</text>
 	<text x="24" y="60" class="font-mono">let x = 1</text>
 	<Box rect={{ x: 24, y: 84, w: 672, h: 132 }} tint="violet" />
 	<text x="40" y="108">scope: function</text>

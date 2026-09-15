@@ -39,7 +39,7 @@ scopeOf(fn)                                 // { kind: 'function', parent, node,
 parentOf(assignment.left)                   // the assignment
 ```
 
-![the module scope declares x; the function scope of f declares y; inside it, x is a write reference to the outer binding and y a read reference to the parameter](Scopes.svelte)
+![the script scope declares x; the function scope of f declares y; inside it, x is a write reference to the outer binding and y a read reference to the parameter](Scopes.svelte)
 
 ## What a reference knows
 
