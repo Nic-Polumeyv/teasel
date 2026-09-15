@@ -42,7 +42,7 @@ That's why `,` in `stopAt` doesn't start a sequence expression, and `/>` isn't a
 
 ## One source, many pieces
 
-Make one `Source` for the whole document and parse every piece out of it. The text goes in once. Every answer's positions already fit the document.
+Make one `Source` for the whole document and parse every piece out of it. The text goes in once. Every answer's positions already fit the document. [A component, piece by piece](/a-component) does this for a whole component, script block, `each` heads and all.
 
 ## Fine print
 
