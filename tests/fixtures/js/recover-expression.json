@@ -112,12 +112,14 @@
 		{
 			"name": "b",
 			"kind": "let",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "c",
 			"kind": "const",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		}
 	],
 	"references": []

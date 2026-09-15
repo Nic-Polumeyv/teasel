@@ -1,33 +1,13 @@
-import { Marked } from 'marked';
+import { Marked, type Token, type Tokens } from 'marked';
+import type { Component } from 'svelte';
+import { render as ssr } from 'svelte/server';
 import { buttonVariants } from 'sheer-ui/components/button';
 import { snippet } from '#lib/highlight.ts';
 import { reference } from '#lib/reference.ts';
 
-export type Page = { href: string; title: string; section: string; body: string; path: string };
-export type Section = { label: string; links: { href: string; title: string }[] };
-
-const files = import.meta.glob('/content/**/*.md', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
-
-const words = (name: string) => name.replace(/^\d+-/, '').replace(/-/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
-
-const written: Page[] = Object.keys(files)
-	.sort()
-	.map((path, index) => {
-		const [, section, file] = /\/content\/([^/]+)\/([^/]+)\.md$/.exec(path)!;
-		const text = files[path];
-		const title = /^---\n(?:.*\n)*?title:\s*(.+)\n(?:.*\n)*?---\n/.exec(text)?.[1] ?? words(file);
-		return { href: index === 0 ? '/' : `/${file.replace(/^\d+-/, '')}`, title, section: words(section), body: text.replace(/^---\n[\s\S]*?\n---\n/, ''), path: `docs${path}` };
-	});
-
-export const pages: Page[] = [...written, ...reference];
-
-export const sections: Section[] = pages.reduce<Section[]>((sections, page) => {
-	const link = { href: page.href, title: page.title };
-	const last = sections.at(-1);
-	if (last?.label === page.section) last.links.push(link);
-	else sections.push({ label: page.section, links: [link] });
-	return sections;
-}, []);
+export type Heading = { id: string; text: string };
+export type Page = { href: string; title: string; section: string; path: string; headings: Heading[] };
+export type Section = { label: string; pages: Page[] };
 
 export const slug = (text: string) => text.toLowerCase().replace(/[^\w]+/g, '-').replace(/^-|-$/g, '');
 
@@ -35,17 +15,46 @@ const escape = (text: string) => text.replace(/[&<>"]/g, (c) => ({ '&': '&amp;',
 
 const copy = buttonVariants({ variant: 'ghost', size: 'sm', class: 'absolute top-1.5 right-2 h-7 text-xs text-white/60 hover:bg-white/10 hover:text-white' });
 
+const sources = Object.fromEntries(Object.entries(import.meta.glob('/content/**/*.js', { query: '?raw', import: 'default', eager: true })).map(([path, text]) => [path.slice(path.lastIndexOf('/') + 1), text as string]));
+
+/** A whole file the page is about, shown as the sheet it is: a name tab, every line numbered, scrolling past a screen's worth. */
+function sheet(name: string) {
+	const text = sources[name];
+	if (text === undefined) throw new Error(`no ${name} under content/`);
+	const lines = snippet(text.replace(/\n$/, ''), 'javascript').html.split('\n');
+	return (
+		`<figure class="my-8 overflow-hidden rounded-sm border border-white/10 bg-[#2d353b] text-[#d3c6aa] shadow-lg">` +
+		`<figcaption class="flex items-center gap-2 border-b border-white/10 bg-white/5 px-4 py-2 font-mono text-xs text-white/70"><svg viewBox="0 0 16 16" class="size-3.5" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M4 1.5h5l3 3v10H4z M9 1.5v3h3"/></svg>${escape(name)}<span class="ml-auto text-white/40">${lines.length} lines</span></figcaption>` +
+		`<pre class="max-h-[38rem] overflow-auto py-4 font-mono text-[13px] leading-6"><code>${lines.map((line, i) => `<span class="inline-block w-12 select-none pr-4 text-right text-white/30">${i + 1}</span>${line}`).join('\n')}</code></pre></figure>`
+	);
+}
+
+const diagrams = Object.fromEntries(Object.entries(import.meta.glob('/content/**/*.svelte', { import: 'default', eager: true })).map(([path, diagram]) => [path.slice(path.lastIndexOf('/') + 1), { path, diagram: diagram as Component<{ label: string; files?: Record<string, string> }> }]));
+
+export function fence(text: string, language = 'js', file?: string) {
+	const html = language === 'text' ? escape(text) : snippet(text, language === 'ts' || language === 'typescript' ? 'typescript' : language === 'bash' || language === 'sh' ? 'bash' : 'javascript').html;
+	return (
+		`<div class="relative my-6 overflow-hidden rounded-lg border border-white/10 bg-[#2d353b] text-sm text-[#d3c6aa]">` +
+		(file ? `<div class="flex h-10 items-center border-b border-white/10 px-4 font-mono text-xs text-white/60">${escape(file)}</div>` : '') +
+		`<pre class="overflow-x-auto px-4 py-4 font-mono leading-6"><code>${html}</code></pre>` +
+		`<button type="button" data-copy="${escape(text)}" class="${copy}${file ? '' : ' top-2'}">Copy</button></div>`
+	);
+}
+
 const marked = new Marked({
 	renderer: {
+		// a diagram is a component rendered here; one with a title is interactive: the title names the files it
+		// shows, and the page hydrates it in the browser with the same props
+		image({ href, text, title }) {
+			const found = diagrams[href];
+			if (!found) return `<img src="${href}" alt="${escape(text)}">`;
+			if (!title) return ssr(found.diagram, { props: { label: text } }).body;
+			const props = { label: text, files: Object.fromEntries(title.split(/\s+/).map((name) => [name, sheet(name)])) };
+			return `<div data-island="${escape(found.path)}" data-props="${escape(JSON.stringify(props))}">${ssr(found.diagram, { props }).body}</div>`;
+		},
 		code({ text, lang = '' }) {
 			const [language, file] = lang.split(/\s+/);
-			const { html } = snippet(text, language === 'ts' || language === 'typescript' ? 'typescript' : language === 'bash' || language === 'sh' ? 'bash' : 'javascript');
-			return (
-				`<div class="relative my-6 overflow-hidden rounded-lg border border-white/10 bg-[#2d353b] text-sm text-[#d3c6aa]">` +
-				(file ? `<div class="flex h-10 items-center border-b border-white/10 px-4 font-mono text-xs text-white/60">${escape(file)}</div>` : '') +
-				`<pre class="overflow-x-auto px-4 py-4 font-mono leading-6"><code>${html}</code></pre>` +
-				`<button type="button" data-copy="${escape(text)}" class="${copy}${file ? '' : ' top-2'}">Copy</button></div>`
-			);
+			return language === 'file' ? sheet(file) : fence(text, language, file);
 		},
 		heading({ tokens, depth, text }) {
 			return `<h${depth} id="${slug(text)}">${this.parser.parseInline(tokens)}</h${depth}>`;
@@ -53,11 +62,31 @@ const marked = new Marked({
 	},
 });
 
-export const render = (page: Page) => marked.parse(page.body, { async: false });
+const tokens = new Map<string, Token[]>();
 
-export type Entry = { href: string; title: string; page: string };
+function page(meta: Omit<Page, 'headings'>, markdown: string): Page {
+	const lexed = marked.lexer(markdown);
+	tokens.set(meta.href, lexed);
+	const headings = lexed.filter((token): token is Tokens.Heading => token.type === 'heading' && token.depth === 2).map(({ text }) => ({ id: slug(text), text }));
+	return { ...meta, headings };
+}
 
-export const entries: Entry[] = pages.flatMap((page) => [
-	{ href: page.href, title: page.title, page: page.section },
-	...[...page.body.matchAll(/^## (.+)$/gm)].map(([, heading]) => ({ href: `${page.href}#${slug(heading)}`, title: heading, page: page.title })),
-]);
+export const render = (page: Page) => marked.parser(tokens.get(page.href)!);
+
+const name = (segment: string) => segment.replace(/^\d+-/, '');
+const label = (segment: string) => name(segment).replace(/-/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
+
+const files = import.meta.glob('/content/**/*.md', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
+
+const written = Object.keys(files)
+	.sort()
+	.map((path) => {
+		const [, section, file] = /\/content\/([^/]+)\/([^/]+)\.md$/.exec(path)!;
+		const [, front = '', markdown = files[path]] = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/.exec(files[path]) ?? [];
+		const title = /^title:\s*(.+)$/m.exec(front)?.[1] ?? label(file);
+		return page({ href: `/${name(file)}`, title, section: label(section), path: `docs${path}` }, markdown);
+	});
+
+export const pages: Page[] = [...written, page(reference.meta, reference.markdown)];
+
+export const sections: Section[] = Object.entries(Object.groupBy(pages, (page) => page.section)).map(([label, pages]) => ({ label, pages: pages! }));

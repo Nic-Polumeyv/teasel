@@ -245,7 +245,8 @@
 		{
 			"name": "x",
 			"kind": "pattern",
-			"scope": 9
+			"scope": 9,
+			"write": true
 		}
 	],
 	"references": [
@@ -254,21 +255,24 @@
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 2,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 7,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		}
 	],
 	"roots": [

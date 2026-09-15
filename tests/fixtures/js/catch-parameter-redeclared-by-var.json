@@ -95,7 +95,7 @@
 												"type": "Identifier",
 												"start": 46,
 												"end": 47,
-												"declares": 1,
+												"reference": 1,
 												"name": "a"
 											},
 											"init": null
@@ -124,7 +124,7 @@
 											"type": "Identifier",
 											"start": 56,
 											"end": 57,
-											"declares": 1,
+											"reference": 2,
 											"name": "a"
 										},
 										"init": null
@@ -168,12 +168,14 @@
 		{
 			"name": "a",
 			"kind": "catch",
-			"scope": 2
+			"scope": 2,
+			"write": true
 		},
 		{
 			"name": "a",
 			"kind": "var",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		}
 	],
 	"references": [
@@ -182,7 +184,24 @@
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 3,
+			"binding": 1,
+			"write": false,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 3,
+			"binding": 1,
+			"write": false,
+			"read": false,
+			"mutate": false,
+			"declares": true
 		}
 	]
 }

@@ -369,37 +369,44 @@
 		{
 			"name": "a",
 			"kind": "let",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "b",
 			"kind": "let",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "f",
 			"kind": "function",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "a",
 			"kind": "pattern",
-			"scope": 4
+			"scope": 4,
+			"write": true
 		},
 		{
 			"name": "a",
 			"kind": "pattern",
-			"scope": 6
+			"scope": 6,
+			"write": true
 		},
 		{
 			"name": "s",
 			"kind": "pattern",
-			"scope": 2
+			"scope": 2,
+			"write": true
 		},
 		{
 			"name": "b",
 			"kind": "param",
-			"scope": 7
+			"scope": 7,
+			"write": true
 		}
 	],
 	"references": [
@@ -408,63 +415,72 @@
 			"binding": 0,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 2,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 4,
 			"binding": 3,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 4,
 			"binding": 1,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 6,
 			"binding": 4,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 6,
 			"binding": 2,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 7,
 			"binding": 6,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 7,
 			"binding": 0,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 2,
 			"binding": 0,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		}
 	],
 	"roots": [

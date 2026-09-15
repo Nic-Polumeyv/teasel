@@ -319,32 +319,38 @@
 		{
 			"name": "N",
 			"kind": "namespace",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "a",
 			"kind": "const",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "M",
 			"kind": "namespace",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "Q",
 			"kind": "namespace",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "R",
 			"kind": "namespace",
-			"scope": 3
+			"scope": 3,
+			"write": true
 		},
 		{
 			"name": "f",
 			"kind": "function",
-			"scope": 5
+			"scope": 5,
+			"write": true
 		}
 	],
 	"references": []

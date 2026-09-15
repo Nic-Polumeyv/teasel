@@ -285,7 +285,7 @@
 					"type": "Identifier",
 					"start": 197,
 					"end": 207,
-					"declares": 9,
+					"reference": 0,
 					"name": "overloaded"
 				},
 				"expression": false,
@@ -511,7 +511,7 @@
 								"type": "Identifier",
 								"start": 358,
 								"end": 359,
-								"reference": 0,
+								"reference": 1,
 								"name": "x"
 							}
 						}
@@ -742,91 +742,116 @@
 		{
 			"name": "optionalDefaultRest",
 			"kind": "function",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "x",
 			"kind": "param",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "y",
 			"kind": "param",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "rest",
 			"kind": "param",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "receiver",
 			"kind": "function",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "x",
 			"kind": "param",
-			"scope": 2
+			"scope": 2,
+			"write": true
 		},
 		{
 			"name": "f",
 			"kind": "function",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "x",
 			"kind": "param",
-			"scope": 3
+			"scope": 3,
+			"write": true
 		},
 		{
 			"name": "y",
 			"kind": "param",
-			"scope": 3
+			"scope": 3,
+			"write": true
 		},
 		{
 			"name": "overloaded",
 			"kind": "function",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "x",
 			"kind": "param",
-			"scope": 4
+			"scope": 4,
+			"write": true
 		},
 		{
 			"name": "arrow",
 			"kind": "const",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "x",
 			"kind": "param",
-			"scope": 5
+			"scope": 5,
+			"write": true
 		},
 		{
 			"name": "C",
 			"kind": "class",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "value",
 			"kind": "param",
-			"scope": 7
+			"scope": 7,
+			"write": true
 		},
 		{
 			"name": "value",
 			"kind": "param",
-			"scope": 8
+			"scope": 8,
+			"write": true
 		}
 	],
 	"references": [
+		{
+			"scope": 0,
+			"binding": 9,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
 		{
 			"scope": 5,
 			"binding": 12,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		}
 	]
 }

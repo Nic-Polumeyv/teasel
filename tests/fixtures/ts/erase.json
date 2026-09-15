@@ -466,67 +466,80 @@
 		{
 			"name": "C",
 			"kind": "import",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "g",
 			"kind": "let",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "i",
 			"kind": "function",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "j",
 			"kind": "param",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "K",
 			"kind": "class",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "o",
 			"kind": "param",
-			"scope": 3
+			"scope": 3,
+			"write": true
 		},
 		{
 			"name": "P",
 			"kind": "enum",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "Q",
 			"kind": "enum-member",
-			"scope": 4
+			"scope": 4,
+			"write": true
 		},
 		{
 			"name": "R",
 			"kind": "namespace",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "s",
 			"kind": "const",
-			"scope": 5
+			"scope": 5,
+			"write": true
 		},
 		{
 			"name": "u",
 			"kind": "const",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "X",
 			"kind": "class",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "Z",
 			"kind": "class",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		}
 	],
 	"references": [
@@ -535,28 +548,32 @@
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		}
 	]
 }

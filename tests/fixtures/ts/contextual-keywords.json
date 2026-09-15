@@ -129,7 +129,8 @@
 		{
 			"name": "A",
 			"kind": "class",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		}
 	],
 	"references": [
@@ -138,28 +139,32 @@
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": true,
 			"read": false,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": true,
 			"read": false,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		}
 	]
 }

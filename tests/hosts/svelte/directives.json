@@ -396,22 +396,26 @@
 		{
 			"name": "item",
 			"kind": "pattern",
-			"scope": 5
+			"scope": 5,
+			"write": true
 		},
 		{
 			"name": "i",
 			"kind": "pattern",
-			"scope": 5
+			"scope": 5,
+			"write": true
 		},
 		{
 			"name": "a",
 			"kind": "pattern",
-			"scope": 5
+			"scope": 5,
+			"write": true
 		},
 		{
 			"name": "b",
 			"kind": "pattern",
-			"scope": 5
+			"scope": 5,
+			"write": true
 		}
 	],
 	"references": [
@@ -420,70 +424,80 @@
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 3,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 3,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 3,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 3,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 3,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 3,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 2,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 2,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 2,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		}
 	],
 	"roots": [

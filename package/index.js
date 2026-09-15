@@ -2,7 +2,7 @@
 import { bind } from './api.js';
 import { load } from './native.js';
 
-export { scopeOf, bindingOf, referenceOf, parentOf } from './decode.js';
+export { scopeOf, referenceOf, parentOf } from './decode.js';
 
 const native = load();
 const encoder = new TextEncoder();

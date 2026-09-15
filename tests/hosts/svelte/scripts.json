@@ -256,17 +256,20 @@
 		{
 			"name": "shared",
 			"kind": "const",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "n",
 			"kind": "let",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "name",
 			"kind": "let",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		}
 	],
 	"references": [
@@ -275,21 +278,24 @@
 			"binding": 0,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 2,
 			"binding": 1,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 2,
 			"binding": 2,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		}
 	],
 	"roots": [

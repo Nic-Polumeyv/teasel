@@ -283,22 +283,26 @@
 		{
 			"name": "f",
 			"kind": "function",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "a",
 			"kind": "const",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "b",
 			"kind": "const",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "x",
 			"kind": "const",
-			"scope": 2
+			"scope": 2,
+			"write": true
 		}
 	],
 	"references": [
@@ -307,35 +311,40 @@
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 1,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 1,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 1,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 2,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		}
 	]
 }

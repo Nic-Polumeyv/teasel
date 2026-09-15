@@ -85,7 +85,8 @@
 			"binding": null,
 			"write": true,
 			"read": false,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		}
 	],
 	"roots": [

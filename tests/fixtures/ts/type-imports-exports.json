@@ -499,27 +499,32 @@
 		{
 			"name": "C",
 			"kind": "import",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "G",
 			"kind": "const",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "I",
 			"kind": "import",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "J",
 			"kind": "import",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "r",
 			"kind": "import",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		}
 	],
 	"references": [
@@ -528,28 +533,32 @@
 			"binding": 1,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		}
 	]
 }

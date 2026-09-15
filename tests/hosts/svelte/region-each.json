@@ -322,17 +322,20 @@
 		{
 			"name": "x",
 			"kind": "let",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "x",
 			"kind": "pattern",
-			"scope": 3
+			"scope": 3,
+			"write": true
 		},
 		{
 			"name": "y",
 			"kind": "pattern",
-			"scope": 8
+			"scope": 8,
+			"write": true
 		}
 	],
 	"references": [
@@ -341,35 +344,40 @@
 			"binding": 0,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 3,
 			"binding": 1,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 7,
 			"binding": 0,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 9,
 			"binding": 0,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 9,
 			"binding": 2,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		}
 	],
 	"roots": [

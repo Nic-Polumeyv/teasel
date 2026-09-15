@@ -799,37 +799,44 @@
 		{
 			"name": "A",
 			"kind": "class",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "a",
 			"kind": "param",
-			"scope": 2
+			"scope": 2,
+			"write": true
 		},
 		{
 			"name": "b",
 			"kind": "param",
-			"scope": 2
+			"scope": 2,
+			"write": true
 		},
 		{
 			"name": "u",
 			"kind": "param",
-			"scope": 3
+			"scope": 3,
+			"write": true
 		},
 		{
 			"name": "D",
 			"kind": "class",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "H",
 			"kind": "class",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "x",
 			"kind": "param",
-			"scope": 7
+			"scope": 7,
+			"write": true
 		}
 	],
 	"references": [
@@ -838,21 +845,24 @@
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 3,
 			"binding": 3,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 5,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		}
 	]
 }

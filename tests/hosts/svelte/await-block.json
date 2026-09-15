@@ -299,22 +299,26 @@
 		{
 			"name": "value",
 			"kind": "pattern",
-			"scope": 4
+			"scope": 4,
+			"write": true
 		},
 		{
 			"name": "error",
 			"kind": "pattern",
-			"scope": 5
+			"scope": 5,
+			"write": true
 		},
 		{
 			"name": "v",
 			"kind": "pattern",
-			"scope": 7
+			"scope": 7,
+			"write": true
 		},
 		{
 			"name": "e",
 			"kind": "pattern",
-			"scope": 11
+			"scope": 11,
+			"write": true
 		}
 	],
 	"references": [
@@ -323,49 +327,56 @@
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 4,
 			"binding": 0,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 5,
 			"binding": 1,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 2,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 7,
 			"binding": 2,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 2,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 11,
 			"binding": 3,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		}
 	],
 	"roots": [

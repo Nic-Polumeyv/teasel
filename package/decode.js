@@ -11,15 +11,12 @@ const utf8 = new TextDecoder('utf-8', { ignoreBOM: true });
 
 // symbol keys: ten times cheaper than a WeakMap entry, and skipped by JSON, Object.keys and for-in
 const SCOPE = Symbol('scope');
-const BINDING = Symbol('binding');
 const REFERENCE = Symbol('reference');
 const PARENT = Symbol('parent');
 
 
 /** @param {import('estree').Node} node @returns {import('./index.js').Scope | undefined} the scope the node opens */
 export const scopeOf = (node) => (node == null ? undefined : node[SCOPE]);
-/** @param {import('estree').Node} node @returns {import('./index.js').Binding | null | undefined} what the identifier declares or refers to; null for a global, undefined when it names no value */
-export const bindingOf = (node) => (node == null ? undefined : node[BINDING]);
 /** @param {import('estree').Node} node @returns {import('./index.js').Reference | undefined} the reference an identifier makes, a global's included */
 export const referenceOf = (node) => (node == null ? undefined : node[REFERENCE]);
 /** @param {import('estree').Node} node @returns {import('estree').Node | undefined} the node it is a child of; undefined for the root of an answer */
@@ -78,6 +75,7 @@ function generate({ type, keys, kinds }, link) {
 	if (link && type !== null) for (let i = 0; i < keys.length; i++) if (FACTS.has(keys[i]) || kinds[i] === 0 || kinds[i] === 8) last = i;
 	const lead = [];
 	const props = type === null ? [] : [`type: ${JSON.stringify(type)}`];
+	const linked = link && type === null ? LINKED.find((row) => row.mark.every((key) => keys.includes(key))) : undefined;
 	// what the node points at, set once it exists
 	const after = [];
 	let scope = null, binding = null, reference = null;
@@ -87,9 +85,9 @@ function generate({ type, keys, kinds }, link) {
 		else {
 			lead.push(`const v${i} = ${READ[kinds[i]]};`);
 			if (key === 'scope') { scope = `S.scopes[v${i}]`; lead.push(`const s = ${scope};`); after.push('s.node = n;'); }
-			else if (key === 'declares') { binding = 'd'; lead.push(`const d = S.bindings[v${i}];`); after.push('if (d.node === null) d.node = n;'); }
-			else if (key === 'reference') { reference = 'r'; binding = 'r.binding'; lead.push(`const r = S.references[v${i}];`); after.push('r.node = n;'); }
-			else if (key === 'defines') after.push(`for (let i = 0; i < v${i}.length; i++) S.bindings[v${i}[i]].declaration = n;`);
+			else if (key === 'declares') { reference = 'd'; lead.push(`const d = S.bindings[v${i}];`); after.push('if (d.node === null) d.node = n;'); }
+			else if (key === 'reference') { reference = 'r'; lead.push(`const r = S.references[v${i}];`); after.push('r.node = n;'); }
+			else if (key === 'defines') after.push(`for (let i = 0; i < v${i}.length; i++) { const d = S.bindings[v${i}[i]]; d.declaration = n; if (n.init !== undefined) d.writeExpr = n.init; }`);
 			else if (key === 'writes') after.push(`for (let i = 0; i < v${i}.length; i++) S.references[v${i}[i]].writeExpr = n;`);
 			else if (key === 'root') after.push(`S.roots[v${i}].node = n;`);
 			else {
@@ -100,22 +98,33 @@ function generate({ type, keys, kinds }, link) {
 			}
 		}
 	}
+	if (linked !== undefined) props.push(...linked.props);
 	if (link && type !== null) {
 		props.push('[PARENT]: undefined');
 		if (scope !== null) props.push('[SCOPE]: s');
 		// every identifier has the two slots, so those with facts and those without share a class
-		if (type === 'Identifier' || binding !== null) props.push(`[BINDING]: ${binding ?? 'undefined'}`);
 		if (type === 'Identifier' || reference !== null) props.push(`[REFERENCE]: ${reference ?? 'undefined'}`);
 	}
 	const body = `${lead.join(' ')} const n = { ${props.join(', ')} }; ${after.join(' ')} return n;`;
-	return new Function('node', 'nodes', 'ints', 'strs', 'PARENT', 'SCOPE', 'BINDING', 'REFERENCE', `return (S) => { ${body} };`)(node, nodes, ints, strs, PARENT, SCOPE, BINDING, REFERENCE);
+	return new Function('node', 'nodes', 'ints', 'strs', 'PARENT', 'SCOPE', 'REFERENCE', `return (S) => { ${body} };`)(node, nodes, ints, strs, PARENT, SCOPE, REFERENCE);
 }
+
+// what a table row points at once the tree is built, in its literal from the start so nothing is
+// added later; a binding is the reference its declaring identifier makes, `binding` itself
+const LINKED = [
+	{ mark: ['topLevelAwait'], props: ['node: null'], values: { node: null } },
+	{ mark: ['name', 'kind'], props: ['node: null', 'declaration: null', 'binding: null', 'declares: true', 'read: false', 'mutate: false', 'writeExpr: null'], values: { node: null, declaration: null, binding: null, declares: true, read: false, mutate: false, writeExpr: null } },
+	{ mark: ['mutate'], props: ['node: null', 'writeExpr: null'], values: { node: null, writeExpr: null } },
+];
 
 /** The same without code generation, for a host whose policy forbids it. @param {Shape} shape @param {boolean} link */
 function interpret({ type, keys, kinds }, link) {
 	const linked = link && type !== null;
+	const row = link && type === null ? LINKED.find((row) => row.mark.every((key) => keys.includes(key))) : undefined;
 	return (S) => {
-		const n = type === null ? {} : linked ? { type, [PARENT]: undefined, [SCOPE]: undefined, [BINDING]: undefined, [REFERENCE]: undefined } : { type };
+		const n = type === null ? {} : linked ? { type, [PARENT]: undefined, [SCOPE]: undefined, [REFERENCE]: undefined } : { type };
+		// what a declaration initializes is a child of it, in place only once every key is read
+		let defines = null;
 		for (let i = 0; i < keys.length; i++) {
 			const key = keys[i];
 			const value = READERS[kinds[i]](S);
@@ -123,12 +132,14 @@ function interpret({ type, keys, kinds }, link) {
 			else if (linked && kinds[i] === 8) for (const child of value) if (child !== null) child[PARENT] = n;
 			if (!linked || !FACTS.has(key)) n[key] = value;
 			else if (key === 'scope') { const s = S.scopes[value]; n[SCOPE] = s; s.node = n; }
-			else if (key === 'declares') { const d = S.bindings[value]; n[BINDING] = d; if (d.node === null) d.node = n; }
-			else if (key === 'reference') { const r = S.references[value]; n[REFERENCE] = r; n[BINDING] = r.binding; r.node = n; }
-			else if (key === 'defines') for (const b of value) S.bindings[b].declaration = n;
+			else if (key === 'declares') { const d = S.bindings[value]; n[REFERENCE] = d; if (d.node === null) d.node = n; }
+			else if (key === 'reference') { const r = S.references[value]; n[REFERENCE] = r; r.node = n; }
+			else if (key === 'defines') defines = value;
 			else if (key === 'root') S.roots[value].node = n;
 			else for (const w of value) S.references[w].writeExpr = n;
 		}
+		if (defines !== null) for (const b of defines) { const d = S.bindings[b]; d.declaration = n; if (n.init !== undefined) d.writeExpr = n.init; }
+		if (row !== undefined) Object.assign(n, row.values);
 		return n;
 	};
 }
@@ -189,21 +200,17 @@ function unaligned_floats(buffer, start, count) {
 }
 
 /** @param {any[]} scopes @param {any[]} bindings @param {any[]} references */
+/** Every row arrives with its links in place as nulls, so nothing here adds a property. */
 function link_tables(scopes, bindings, references) {
-	for (const scope of scopes) {
-		scope.parent = scope.parent === null ? null : scopes[scope.parent];
-		scope.node = null;
-	}
+	for (const scope of scopes) scope.parent = scope.parent === null ? null : scopes[scope.parent];
+	// a binding is its own first declaration: the reference the declaring identifier makes
 	for (const binding of bindings) {
 		binding.scope = scopes[binding.scope];
-		binding.node = null;
-		binding.declaration = null;
+		binding.binding = binding;
 	}
 	for (const reference of references) {
 		reference.scope = scopes[reference.scope];
 		reference.binding = reference.binding === null ? null : bindings[reference.binding];
-		reference.node = null;
-		reference.writeExpr = null;
 	}
 }
 

@@ -458,52 +458,62 @@
 		{
 			"name": "B",
 			"kind": "import",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "c",
 			"kind": "let",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "f",
 			"kind": "function",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "t",
 			"kind": "param",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "N",
 			"kind": "namespace",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "g",
 			"kind": "const",
-			"scope": 2
+			"scope": 2,
+			"write": true
 		},
 		{
 			"name": "E",
 			"kind": "enum",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "X",
 			"kind": "enum-member",
-			"scope": 3
+			"scope": 3,
+			"write": true
 		},
 		{
 			"name": "Y",
 			"kind": "enum-member",
-			"scope": 3
+			"scope": 3,
+			"write": true
 		},
 		{
 			"name": "h",
 			"kind": "const",
-			"scope": 0
+			"scope": 0,
+			"write": false
 		}
 	],
 	"references": [
@@ -512,35 +522,40 @@
 			"binding": 0,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 1,
 			"binding": 3,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": 4,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 3,
 			"binding": 7,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": 9,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		}
 	]
 }

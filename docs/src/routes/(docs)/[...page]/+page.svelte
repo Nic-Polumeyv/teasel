@@ -1,7 +1,26 @@
 <script lang="ts">
+	import { hydrate, unmount, type Component } from "svelte";
 	import { Button } from "sheer-ui/components/button";
 
 	let { data } = $props();
+
+	// an interactive diagram was rendered into the page's html; hydrate it in place with the props it was rendered with
+	const islands = import.meta.glob("/content/**/*.svelte") as Record<string, () => Promise<{ default: Component<any> }>>;
+	let article: HTMLElement;
+	$effect(() => {
+		data.html;
+		const mounted: Record<string, any>[] = [];
+		let live = true;
+		for (const target of article.querySelectorAll<HTMLElement>("[data-island]")) {
+			islands[target.dataset.island!]().then((module) => {
+				if (live) mounted.push(hydrate(module.default, { target, props: JSON.parse(target.dataset.props!) }));
+			});
+		}
+		return () => {
+			live = false;
+			for (const island of mounted) unmount(island);
+		};
+	});
 
 	function copy(event: MouseEvent) {
 		const button = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-copy]');
@@ -18,7 +37,7 @@
 
 <h1>{data.title}</h1>
 <svelte:document onclick={copy} />
-<div>{@html data.html}</div>
+<div bind:this={article}>{@html data.html}</div>
 
 <div class="mt-16 flex flex-col gap-6 border-t pt-6">
 	<a href={data.edit} class="label w-fit text-sm text-muted-foreground no-underline hover:text-foreground">Edit this page on GitHub</a>

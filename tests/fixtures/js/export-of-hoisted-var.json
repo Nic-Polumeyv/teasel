@@ -86,7 +86,8 @@
 		{
 			"name": "a",
 			"kind": "var",
-			"scope": 0
+			"scope": 0,
+			"write": false
 		}
 	],
 	"references": [
@@ -95,7 +96,8 @@
 			"binding": 0,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		}
 	]
 }

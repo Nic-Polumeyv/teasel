@@ -769,57 +769,68 @@
 		{
 			"name": "xs",
 			"kind": "let",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "ys",
 			"kind": "let",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "c",
 			"kind": "let",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "item",
 			"kind": "pattern",
-			"scope": 3
+			"scope": 3,
+			"write": true
 		},
 		{
 			"name": "item",
 			"kind": "pattern",
-			"scope": 5
+			"scope": 5,
+			"write": true
 		},
 		{
 			"name": "item",
 			"kind": "pattern",
-			"scope": 7
+			"scope": 7,
+			"write": true
 		},
 		{
 			"name": "item",
 			"kind": "pattern",
-			"scope": 9
+			"scope": 9,
+			"write": true
 		},
 		{
 			"name": "i",
 			"kind": "pattern",
-			"scope": 9
+			"scope": 9,
+			"write": true
 		},
 		{
 			"name": "item",
 			"kind": "pattern",
-			"scope": 11
+			"scope": 11,
+			"write": true
 		},
 		{
 			"name": "i",
 			"kind": "pattern",
-			"scope": 11
+			"scope": 11,
+			"write": true
 		},
 		{
 			"name": "item",
 			"kind": "pattern",
-			"scope": 13
+			"scope": 13,
+			"write": true
 		}
 	],
 	"references": [
@@ -828,133 +839,152 @@
 			"binding": 0,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 3,
 			"binding": 3,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 2,
 			"binding": 0,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 2,
 			"binding": 1,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 5,
 			"binding": 4,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 2,
 			"binding": 2,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 2,
 			"binding": 0,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 2,
 			"binding": 1,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 7,
 			"binding": 5,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 2,
 			"binding": 0,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 9,
 			"binding": 6,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 9,
 			"binding": 6,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 9,
 			"binding": 7,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 2,
 			"binding": 0,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 11,
 			"binding": 8,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 11,
 			"binding": 9,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 2,
 			"binding": 0,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 2,
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 13,
 			"binding": 10,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		}
 	],
 	"roots": [

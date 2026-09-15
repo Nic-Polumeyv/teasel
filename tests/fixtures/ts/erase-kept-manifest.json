@@ -350,37 +350,44 @@
 		{
 			"name": "E",
 			"kind": "enum",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "A",
 			"kind": "enum-member",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "N",
 			"kind": "namespace",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "x",
 			"kind": "const",
-			"scope": 2
+			"scope": 2,
+			"write": true
 		},
 		{
 			"name": "C",
 			"kind": "class",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		},
 		{
 			"name": "a",
 			"kind": "param",
-			"scope": 4
+			"scope": 4,
+			"write": true
 		},
 		{
 			"name": "R",
 			"kind": "import",
-			"scope": 0
+			"scope": 0,
+			"write": true
 		}
 	],
 	"references": [
@@ -389,14 +396,16 @@
 			"binding": null,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		},
 		{
 			"scope": 0,
 			"binding": 4,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		}
 	]
 }

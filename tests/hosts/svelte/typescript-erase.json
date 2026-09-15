@@ -184,12 +184,14 @@
 		{
 			"name": "v",
 			"kind": "let",
-			"scope": 1
+			"scope": 1,
+			"write": true
 		},
 		{
 			"name": "p",
 			"kind": "let",
-			"scope": 1
+			"scope": 1,
+			"write": false
 		}
 	],
 	"references": [
@@ -198,7 +200,8 @@
 			"binding": 0,
 			"write": false,
 			"read": true,
-			"mutate": false
+			"mutate": false,
+			"declares": false
 		}
 	],
 	"roots": [
