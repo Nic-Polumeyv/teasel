@@ -28,11 +28,7 @@
 			"types": "./dist/wasm.d.ts",
 			"default": "./dist/wasm.js"
 		},
-		"./teasel.wasm": "./dist/teasel.wasm",
-		"./plan": {
-			"types": "./dist/plan.d.ts",
-			"default": "./dist/plan.js"
-		}
+		"./teasel.wasm": "./dist/teasel.wasm"
 	},
 	"files": [
 		"dist",
@@ -40,7 +36,7 @@
 	],
 	"scripts": {
 		"build": "npm run build:js && node scripts/addon.ts",
-		"build:js": "tsc --ignoreConfig src/native.ts src/wasm.ts src/plan.ts --outDir dist --rootDir src --declaration --erasableSyntaxOnly --strict --target es2022 --module esnext --moduleResolution bundler --lib es2022,dom --types node --skipLibCheck",
+		"build:js": "tsc --ignoreConfig src/native.ts src/wasm.ts --outDir dist --rootDir src --declaration --erasableSyntaxOnly --strict --target es2022 --module esnext --moduleResolution bundler --lib es2022,dom --types node --skipLibCheck",
 		"build:wasm": "cargo build --release -p teasel-wasm --target wasm32-unknown-unknown && node scripts/wasm.ts",
 		"test": "npm run build:js && node scripts/test.ts && node scripts/test.ts interpret",
 		"types": "tsc -p tsconfig.json",

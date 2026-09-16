@@ -12,13 +12,7 @@ export interface Addon {
 	readonly shapes: () => number[];
 }
 
-export interface Platform {
-	target: string;
-	os: NodeJS.Platform;
-	cpu: NodeJS.Architecture;
-	libc?: string;
-}
-export const platforms: Record<string, Platform> = {
+export const platforms: Record<string, { target: string; os: NodeJS.Platform; cpu: NodeJS.Architecture; libc?: string }> = {
 	'linux-x64-gnu': { target: 'x86_64-unknown-linux-gnu', os: 'linux', cpu: 'x64', libc: 'glibc' },
 	'linux-arm64-gnu': { target: 'aarch64-unknown-linux-gnu', os: 'linux', cpu: 'arm64', libc: 'glibc' },
 	'darwin-x64': { target: 'x86_64-apple-darwin', os: 'darwin', cpu: 'x64' },
