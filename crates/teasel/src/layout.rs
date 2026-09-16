@@ -138,7 +138,6 @@ macro_rules! kinds {
 		}
 	) => {
 		$(#[$m])*
-		#[repr(C, u32)]
 		$vis enum $E {
 			$( $(#[$vm])* $V $( { $( $(#[$fm])* $f: $t ),* } )? $( ( $tt ) )? ),*
 		}
@@ -183,27 +182,54 @@ macro_rules! kinds {
 }
 pub(crate) use kinds;
 
-/// How the compiler spells a missing optional: the byte of a missing enum or bool, and the word
-/// of a list's tag, 0 for missing and 1 for present, followed by the list.
+/// How the compiler spells a missing optional: the byte of a missing enum or bool, and for a
+/// list or a string id, which word of the field is the tag and what it holds when missing; the
+/// value's words follow in their order around it.
 pub struct Missing {
 	pub r#enum: u8,
 	pub bool: u8,
-	pub list: usize,
+	pub list: Tagged,
+	pub str: Tagged,
+}
+
+pub struct Tagged {
+	pub tag: usize,
+	pub missing: u32,
+}
+
+fn tagged<const N: usize>(some: [u32; N], missing: [u32; N], values: &[u32]) -> Tagged {
+	let tag = (0..N).find(|&i| !values.contains(&some[i])).expect("a tag word");
+	for (i, value) in some
+		.iter()
+		.enumerate()
+		.filter(|&(i, _)| i != tag)
+		.map(|(_, &w)| w)
+		.enumerate()
+	{
+		assert_eq!(value, values[i], "the value's words follow their order");
+	}
+	Tagged {
+		tag,
+		missing: missing[tag],
+	}
 }
 
 pub fn missing() -> Missing {
-	let some: [u32; 3] = unsafe { std::mem::transmute(Some(List { start: 7, len: 9 })) };
-	let missing: [u32; 3] = unsafe { std::mem::transmute(None::<List>) };
-	let list = some
-		.iter()
-		.position(|&word| word == 1)
-		.expect("the tag of a present list is 1");
-	assert_eq!(missing[list], 0, "the tag of a missing list is 0");
-	assert_eq!(&some[list + 1..list + 3], &[7, 9], "the list follows its tag");
-	Missing {
-		r#enum: unsafe { std::mem::transmute::<Option<crate::ast::PropertyKind>, u8>(None) },
-		bool: unsafe { std::mem::transmute::<Option<bool>, u8>(None) },
-		list,
+	unsafe {
+		Missing {
+			r#enum: std::mem::transmute::<Option<crate::ast::PropertyKind>, u8>(None),
+			bool: std::mem::transmute::<Option<bool>, u8>(None),
+			list: tagged(
+				std::mem::transmute::<Option<List>, [u32; 3]>(Some(List { start: 7, len: 9 })),
+				std::mem::transmute::<Option<List>, [u32; 3]>(None),
+				&[7, 9],
+			),
+			str: tagged(
+				std::mem::transmute::<Option<StrId>, [u32; 2]>(Some(StrId::at(7))),
+				std::mem::transmute::<Option<StrId>, [u32; 2]>(None),
+				&[7],
+			),
+		}
 	}
 }
 
@@ -309,8 +335,15 @@ pub fn json() -> String {
 	crate::estree::push_int(&mut out, none.r#enum as u32);
 	out.push_str(",\"bool\":");
 	crate::estree::push_int(&mut out, none.bool as u32);
-	out.push_str(",\"list\":");
-	crate::estree::push_int(&mut out, none.list as u32);
+	for (key, tagged) in [("list", none.list), ("str", none.str)] {
+		out.push_str(",\"");
+		out.push_str(key);
+		out.push_str("\":{\"tag\":");
+		crate::estree::push_int(&mut out, tagged.tag as u32);
+		out.push_str(",\"missing\":");
+		crate::estree::push_int(&mut out, tagged.missing);
+		out.push('}');
+	}
 	out.push_str("}}");
 	out
 }

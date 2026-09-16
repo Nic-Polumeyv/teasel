@@ -52,23 +52,17 @@ impl Hasher for FastHasher {
 pub type FastMap<K, V> = HashMap<K, V, BuildHasherDefault<FastHasher>>;
 pub type FastSet<K> = std::collections::HashSet<K, BuildHasherDefault<FastHasher>>;
 
-/// Index of an interned string, kept plus one so an `Option<StrId>` is the same four bytes.
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct StrId(std::num::NonZero<u32>);
-
-impl std::fmt::Debug for StrId {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "StrId({})", self.index())
-	}
-}
+/// Index of an interned string. Not a `NonZero`: that cost a quarter of the parse.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct StrId(u32);
 
 impl StrId {
 	pub fn at(index: u32) -> Self {
-		StrId(std::num::NonZero::new(index + 1).unwrap())
+		StrId(index)
 	}
 
 	pub fn index(self) -> u32 {
-		self.0.get() - 1
+		self.0
 	}
 }
 
