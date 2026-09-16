@@ -138,6 +138,7 @@ macro_rules! kinds {
 		}
 	) => {
 		$(#[$m])*
+		#[repr(C, u32)]
 		$vis enum $E {
 			$( $(#[$vm])* $V $( { $( $(#[$fm])* $f: $t ),* } )? $( ( $tt ) )? ),*
 		}

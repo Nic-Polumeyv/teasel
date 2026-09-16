@@ -1,10 +1,12 @@
 //! Serializes an `Ast` to ESTree: as JSON text, or as a token stream a binding hands to
 //! JavaScript without a text round trip.
 
-use crate::ast::{Ast, Class, Function, List, NodeId, NodeKind, Value};
+use crate::ast::{Ast, List, NodeId, NodeKind, Value};
 use crate::interner::{FastMap, Interner, StrId};
+use crate::layout::Ty;
 use crate::names::{NAMES, Name, c};
 use crate::parser::Entry;
+use crate::recipe::{Op, Slot};
 use crate::scopes::Role;
 use std::fmt::Write;
 
@@ -1241,508 +1243,118 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		self.slice(node.start, node.end);
 	}
 
-	fn class(&mut self, class: Class) {
-		self.opt(c!("id"), class.id);
-		self.opt(c!("superClass"), class.super_class);
-		self.field(c!("body"), class.body);
+	/// The recipes of the JavaScript kinds, resolved once.
+	fn js_recipes() -> &'static [&'static [Op<Slot>]] {
+		static RESOLVED: std::sync::OnceLock<&'static [&'static [Op<Slot>]]> = std::sync::OnceLock::new();
+		RESOLVED.get_or_init(|| crate::recipe::resolve(crate::recipe::JS, crate::ast::node_layout::VARIANTS))
 	}
 
-	fn function(&mut self, f: Function, expression: bool) {
-		self.opt(c!("id"), f.id);
-		self.bool(c!("expression"), expression);
-		self.bool(c!("generator"), f.generator);
-		self.bool(c!("async"), f.is_async);
-		self.params(c!("params"), f.params);
-		self.field(c!("body"), f.body);
+	/// Follows a kind's recipe over the record at `base`, a `repr(C, u32)` enum's payload; the
+	/// caller ends the node.
+	pub(crate) fn run(&mut self, id: NodeId, ops: &[Op<Slot>], base: *const u8) {
+		for op in ops {
+			match *op {
+				Op::Type(name) => self.begin(name, id),
+				Op::TypeOf(slot) => {
+					let Ty::Enum(names) = slot.ty else { unreachable!() };
+					self.begin(names[get::<u8>(base, slot) as usize], id);
+				}
+				Op::Node(key, slot) => self.field(key, get(base, slot)),
+				Op::Opt(key, slot) => match slot.ty {
+					Ty::OptStr => {
+						self.key(key);
+						match get::<Option<StrId>>(base, slot) {
+							Some(string) => self.sink.interned(string, self.ast.str(string)),
+							None => self.sink.null(),
+						}
+					}
+					_ => self.opt(key, get(base, slot)),
+				},
+				Op::OptKey(key, slot) => self.opt_key(key, get(base, slot)),
+				Op::List(key, slot) => self.list(key, get(base, slot)),
+				Op::OptListKey(key, slot) => {
+					if let Some(list) = get::<Option<List>>(base, slot) {
+						self.list(key, list);
+					}
+				}
+				Op::Params(key, slot) => self.params(key, get(base, slot)),
+				Op::Bool(key, slot) => self.bool(key, get(base, slot)),
+				Op::BoolIf(key, slot) => {
+					if get::<bool>(base, slot) {
+						self.bool(key, true);
+					}
+				}
+				Op::OptBoolKey(key, slot) => {
+					if let Some(value) = get::<Option<bool>>(base, slot) {
+						self.bool(key, value);
+					}
+				}
+				Op::Str(key, slot) => self.interned(key, get(base, slot)),
+				Op::OptStrKey(key, slot) => {
+					if let Some(string) = get::<Option<StrId>>(base, slot) {
+						self.interned(key, string);
+					}
+				}
+				Op::Enum(key, slot) => {
+					let Ty::Enum(names) = slot.ty else { unreachable!() };
+					self.string(key, names[get::<u8>(base, slot) as usize]);
+				}
+				// a missing enum is a byte past the names, wherever the compiler put it
+				Op::OptEnumKey(key, slot) => {
+					let Ty::OptEnum(names) = slot.ty else { unreachable!() };
+					if let Some(&name) = names.get(get::<u8>(base, slot) as usize) {
+						self.string(key, name);
+					}
+				}
+				Op::Modifier(key, slot) => {
+					let Ty::OptEnum(names) = slot.ty else { unreachable!() };
+					if let Some(&name) = names.get(get::<u8>(base, slot) as usize) {
+						if name.text == "true" {
+							self.bool(key, true);
+						} else {
+							self.string(key, name);
+						}
+					}
+				}
+				Op::BoolNames(key, slot, yes, no) => self.string(key, if get::<bool>(base, slot) { yes } else { no }),
+				Op::Float(key, slot) => {
+					let value = self.ast.numbers[get::<u32>(base, slot) as usize];
+					self.key(key);
+					if value.is_finite() {
+						self.sink.float(value);
+					} else {
+						self.sink.null();
+					}
+				}
+				Op::Raw => self.raw(id),
+				Op::BigInt => {
+					let node = self.ast.node(id);
+					let raw = &self.source[node.start as usize..node.end as usize - 1];
+					let bigint = bigint_decimal(raw);
+					self.text(c!("bigint"), &bigint);
+				}
+				Op::Const(key, value) => self.string(key, value),
+				Op::ConstBool(key, value) => self.bool(key, value),
+				Op::Null(key) => {
+					self.key(key);
+					self.sink.null();
+				}
+				Op::EmptyList(key) => self.list(key, List::EMPTY),
+				Op::Object(key, inner) => {
+					self.key(key);
+					self.sink.object();
+					self.run(id, inner, base);
+					self.sink.end();
+				}
+				Op::OtherName(key, name, binding) => self.other_name(key, get(base, name), get(base, binding)),
+			}
+		}
 	}
 
 	pub(crate) fn node(&mut self, id: NodeId) {
 		use NodeKind::*;
-		let kind = self.ast.node(id).kind;
-		match kind {
-			Program { body, module } => {
-				self.begin(c!("Program"), id);
-				self.list(c!("body"), body);
-				self.string(c!("sourceType"), if module { c!("module") } else { c!("script") });
-			}
-			Identifier { name } => {
-				self.begin(c!("Identifier"), id);
-				self.interned(c!("name"), name);
-			}
-			PrivateIdentifier { name } => {
-				self.begin(c!("PrivateIdentifier"), id);
-				self.interned(c!("name"), name);
-			}
-			NumberLiteral { value } => {
-				let value = self.ast.numbers[value as usize];
-				self.begin(c!("Literal"), id);
-				self.key(c!("value"));
-				if value.is_finite() {
-					self.sink.float(value);
-				} else {
-					self.sink.null();
-				}
-				self.raw(id);
-			}
-			BigIntLiteral => {
-				self.begin(c!("Literal"), id);
-				self.key(c!("value"));
-				self.sink.null();
-				self.raw(id);
-				let node = self.ast.node(id);
-				let raw = &self.source[node.start as usize..node.end as usize - 1];
-				let bigint = bigint_decimal(raw);
-				self.text(c!("bigint"), &bigint);
-			}
-			StringLiteral { value } => {
-				self.begin(c!("Literal"), id);
-				self.interned(c!("value"), value);
-				self.raw(id);
-			}
-			BooleanLiteral { value } => {
-				self.begin(c!("Literal"), id);
-				self.bool(c!("value"), value);
-				self.raw(id);
-			}
-			NullLiteral => {
-				self.begin(c!("Literal"), id);
-				self.key(c!("value"));
-				self.sink.null();
-				self.raw(id);
-			}
-			RegExpLiteral { pattern, flags } => {
-				self.begin(c!("Literal"), id);
-				self.key(c!("value"));
-				self.sink.null();
-				self.raw(id);
-				self.key(c!("regex"));
-				self.sink.object();
-				self.interned(c!("pattern"), pattern);
-				self.interned(c!("flags"), flags);
-				self.sink.end();
-			}
-			TemplateLiteral { quasis, expressions } => {
-				self.begin(c!("TemplateLiteral"), id);
-				self.list(c!("expressions"), expressions);
-				self.list(c!("quasis"), quasis);
-			}
-			TemplateElement { cooked, raw, tail } => {
-				self.begin(c!("TemplateElement"), id);
-				self.key(c!("value"));
-				self.sink.object();
-				self.interned(c!("raw"), raw);
-				self.key(c!("cooked"));
-				match cooked {
-					Some(cooked) => self.sink.interned(cooked, self.ast.str(cooked)),
-					None => self.sink.null(),
-				}
-				self.sink.end();
-				self.bool(c!("tail"), tail);
-			}
-			TaggedTemplateExpression { tag, quasi } => {
-				self.begin(c!("TaggedTemplateExpression"), id);
-				self.field(c!("tag"), tag);
-				self.field(c!("quasi"), quasi);
-			}
-			ThisExpression => self.begin(c!("ThisExpression"), id),
-			Super => self.begin(c!("Super"), id),
-			ArrayExpression { elements } => {
-				self.begin(c!("ArrayExpression"), id);
-				self.list(c!("elements"), elements);
-			}
-			ObjectExpression { properties } => {
-				self.begin(c!("ObjectExpression"), id);
-				self.list(c!("properties"), properties);
-			}
-			Property {
-				key,
-				value,
-				kind,
-				computed,
-				method,
-				shorthand,
-			} => {
-				self.begin(c!("Property"), id);
-				self.bool(c!("method"), method);
-				self.bool(c!("shorthand"), shorthand);
-				self.bool(c!("computed"), computed);
-				self.field(c!("key"), key);
-				self.field(c!("value"), value);
-				self.string(c!("kind"), kind.name());
-			}
-			SpreadElement { argument } => {
-				self.begin(c!("SpreadElement"), id);
-				self.field(c!("argument"), argument);
-			}
-			UnaryExpression { operator, argument } => {
-				self.begin(c!("UnaryExpression"), id);
-				self.string(c!("operator"), operator.name());
-				self.bool(c!("prefix"), true);
-				self.field(c!("argument"), argument);
-			}
-			UpdateExpression {
-				operator,
-				prefix,
-				argument,
-			} => {
-				self.begin(c!("UpdateExpression"), id);
-				self.string(c!("operator"), operator.name());
-				self.bool(c!("prefix"), prefix);
-				self.field(c!("argument"), argument);
-			}
-			BinaryExpression { operator, left, right } => {
-				self.begin(c!("BinaryExpression"), id);
-				self.field(c!("left"), left);
-				self.string(c!("operator"), operator.name());
-				self.field(c!("right"), right);
-			}
-			LogicalExpression { operator, left, right } => {
-				self.begin(c!("LogicalExpression"), id);
-				self.field(c!("left"), left);
-				self.string(c!("operator"), operator.name());
-				self.field(c!("right"), right);
-			}
-			AssignmentExpression { operator, left, right } => {
-				self.begin(c!("AssignmentExpression"), id);
-				self.string(c!("operator"), operator.name());
-				self.field(c!("left"), left);
-				self.field(c!("right"), right);
-			}
-			ConditionalExpression {
-				test,
-				consequent,
-				alternate,
-			} => {
-				self.begin(c!("ConditionalExpression"), id);
-				self.field(c!("test"), test);
-				self.field(c!("consequent"), consequent);
-				self.field(c!("alternate"), alternate);
-			}
-			MemberExpression {
-				object,
-				property,
-				computed,
-				optional,
-			} => {
-				self.begin(c!("MemberExpression"), id);
-				self.field(c!("object"), object);
-				self.field(c!("property"), property);
-				self.bool(c!("computed"), computed);
-				self.bool(c!("optional"), optional);
-			}
-			CallExpression {
-				callee,
-				arguments,
-				optional,
-			} => {
-				self.begin(c!("CallExpression"), id);
-				self.field(c!("callee"), callee);
-				self.list(c!("arguments"), arguments);
-				self.bool(c!("optional"), optional);
-			}
-			ChainExpression { expression } => {
-				self.begin(c!("ChainExpression"), id);
-				self.field(c!("expression"), expression);
-			}
-			NewExpression { callee, arguments } => {
-				self.begin(c!("NewExpression"), id);
-				self.field(c!("callee"), callee);
-				self.list(c!("arguments"), arguments);
-			}
-			SequenceExpression { expressions } => {
-				self.begin(c!("SequenceExpression"), id);
-				self.list(c!("expressions"), expressions);
-			}
-			ArrowFunctionExpression {
-				params,
-				body,
-				expression,
-				is_async,
-			} => {
-				self.begin(c!("ArrowFunctionExpression"), id);
-				self.key(c!("id"));
-				self.sink.null();
-				self.bool(c!("expression"), expression);
-				self.bool(c!("generator"), false);
-				self.bool(c!("async"), is_async);
-				self.params(c!("params"), params);
-				self.field(c!("body"), body);
-			}
-			FunctionExpression { function } => {
-				self.begin(c!("FunctionExpression"), id);
-				self.function(function, false);
-			}
-			FunctionDeclaration { function } => {
-				self.begin(c!("FunctionDeclaration"), id);
-				self.function(function, false);
-			}
-			ClassExpression { class } => {
-				self.begin(c!("ClassExpression"), id);
-				self.class(class);
-			}
-			ClassDeclaration { class } => {
-				self.begin(c!("ClassDeclaration"), id);
-				self.class(class);
-			}
-			ClassBody { body } => {
-				self.begin(c!("ClassBody"), id);
-				self.list(c!("body"), body);
-			}
-			MethodDefinition {
-				key,
-				value,
-				kind,
-				computed,
-				is_static,
-			} => {
-				self.begin(c!("MethodDefinition"), id);
-				self.bool(c!("static"), is_static);
-				self.bool(c!("computed"), computed);
-				self.field(c!("key"), key);
-				self.string(c!("kind"), kind.name());
-				self.field(c!("value"), value);
-			}
-			PropertyDefinition {
-				key,
-				value,
-				computed,
-				is_static,
-			} => {
-				self.begin(c!("PropertyDefinition"), id);
-				self.bool(c!("static"), is_static);
-				self.bool(c!("computed"), computed);
-				self.field(c!("key"), key);
-				self.opt(c!("value"), value);
-			}
-			StaticBlock { body } => {
-				self.begin(c!("StaticBlock"), id);
-				self.list(c!("body"), body);
-			}
-			YieldExpression { argument, delegate } => {
-				self.begin(c!("YieldExpression"), id);
-				self.bool(c!("delegate"), delegate);
-				self.opt(c!("argument"), argument);
-			}
-			AwaitExpression { argument } => {
-				self.begin(c!("AwaitExpression"), id);
-				self.field(c!("argument"), argument);
-			}
-			MetaProperty { meta, property } => {
-				self.begin(c!("MetaProperty"), id);
-				self.field(c!("meta"), meta);
-				self.field(c!("property"), property);
-			}
-			ImportExpression { source, options } => {
-				self.begin(c!("ImportExpression"), id);
-				self.field(c!("source"), source);
-				self.opt(c!("options"), options);
-			}
-			ObjectPattern { properties } => {
-				self.begin(c!("ObjectPattern"), id);
-				self.list(c!("properties"), properties);
-			}
-			ArrayPattern { elements } => {
-				self.begin(c!("ArrayPattern"), id);
-				self.list(c!("elements"), elements);
-			}
-			RestElement { argument } => {
-				self.begin(c!("RestElement"), id);
-				self.field(c!("argument"), argument);
-			}
-			AssignmentPattern { left, right } => {
-				self.begin(c!("AssignmentPattern"), id);
-				self.field(c!("left"), left);
-				self.field(c!("right"), right);
-			}
-			ExpressionStatement { expression, directive } => {
-				self.begin(c!("ExpressionStatement"), id);
-				self.field(c!("expression"), expression);
-				if let Some(directive) = directive {
-					self.interned(c!("directive"), directive);
-				}
-			}
-			BlockStatement { body } => {
-				self.begin(c!("BlockStatement"), id);
-				self.list(c!("body"), body);
-			}
-			EmptyStatement => self.begin(c!("EmptyStatement"), id),
-			DebuggerStatement => self.begin(c!("DebuggerStatement"), id),
-			WithStatement { object, body } => {
-				self.begin(c!("WithStatement"), id);
-				self.field(c!("object"), object);
-				self.field(c!("body"), body);
-			}
-			ReturnStatement { argument } => {
-				self.begin(c!("ReturnStatement"), id);
-				self.opt(c!("argument"), argument);
-			}
-			LabeledStatement { label, body } => {
-				self.begin(c!("LabeledStatement"), id);
-				self.field(c!("body"), body);
-				self.field(c!("label"), label);
-			}
-			BreakStatement { label } => {
-				self.begin(c!("BreakStatement"), id);
-				self.opt(c!("label"), label);
-			}
-			ContinueStatement { label } => {
-				self.begin(c!("ContinueStatement"), id);
-				self.opt(c!("label"), label);
-			}
-			IfStatement {
-				test,
-				consequent,
-				alternate,
-			} => {
-				self.begin(c!("IfStatement"), id);
-				self.field(c!("test"), test);
-				self.field(c!("consequent"), consequent);
-				self.opt(c!("alternate"), alternate);
-			}
-			SwitchStatement { discriminant, cases } => {
-				self.begin(c!("SwitchStatement"), id);
-				self.field(c!("discriminant"), discriminant);
-				self.list(c!("cases"), cases);
-			}
-			SwitchCase { test, consequent } => {
-				self.begin(c!("SwitchCase"), id);
-				self.list(c!("consequent"), consequent);
-				self.opt(c!("test"), test);
-			}
-			ThrowStatement { argument } => {
-				self.begin(c!("ThrowStatement"), id);
-				self.field(c!("argument"), argument);
-			}
-			TryStatement {
-				block,
-				handler,
-				finalizer,
-			} => {
-				self.begin(c!("TryStatement"), id);
-				self.field(c!("block"), block);
-				self.opt(c!("handler"), handler);
-				self.opt(c!("finalizer"), finalizer);
-			}
-			CatchClause { param, body } => {
-				self.begin(c!("CatchClause"), id);
-				self.opt(c!("param"), param);
-				self.field(c!("body"), body);
-			}
-			WhileStatement { test, body } => {
-				self.begin(c!("WhileStatement"), id);
-				self.field(c!("test"), test);
-				self.field(c!("body"), body);
-			}
-			DoWhileStatement { body, test } => {
-				self.begin(c!("DoWhileStatement"), id);
-				self.field(c!("body"), body);
-				self.field(c!("test"), test);
-			}
-			ForStatement {
-				init,
-				test,
-				update,
-				body,
-			} => {
-				self.begin(c!("ForStatement"), id);
-				self.opt(c!("init"), init);
-				self.opt(c!("test"), test);
-				self.opt(c!("update"), update);
-				self.field(c!("body"), body);
-			}
-			ForInStatement { left, right, body } => {
-				self.begin(c!("ForInStatement"), id);
-				self.field(c!("left"), left);
-				self.field(c!("right"), right);
-				self.field(c!("body"), body);
-			}
-			ForOfStatement {
-				left,
-				right,
-				body,
-				is_await,
-			} => {
-				self.begin(c!("ForOfStatement"), id);
-				self.bool(c!("await"), is_await);
-				self.field(c!("left"), left);
-				self.field(c!("right"), right);
-				self.field(c!("body"), body);
-			}
-			VariableDeclaration { declarations, kind } => {
-				self.begin(c!("VariableDeclaration"), id);
-				self.list(c!("declarations"), declarations);
-				self.string(c!("kind"), kind.name());
-			}
-			VariableDeclarator { id: pattern, init } => {
-				self.begin(c!("VariableDeclarator"), id);
-				self.field(c!("id"), pattern);
-				self.opt(c!("init"), init);
-			}
-			ImportDeclaration {
-				specifiers,
-				source,
-				attributes,
-			} => {
-				self.begin(c!("ImportDeclaration"), id);
-				self.list(c!("specifiers"), specifiers);
-				self.field(c!("source"), source);
-				self.list(c!("attributes"), attributes);
-			}
-			ImportSpecifier { imported, local } => {
-				self.begin(c!("ImportSpecifier"), id);
-				self.other_name(c!("imported"), imported, local);
-				self.field(c!("local"), local);
-			}
-			ImportDefaultSpecifier { local } => {
-				self.begin(c!("ImportDefaultSpecifier"), id);
-				self.field(c!("local"), local);
-			}
-			ImportNamespaceSpecifier { local } => {
-				self.begin(c!("ImportNamespaceSpecifier"), id);
-				self.field(c!("local"), local);
-			}
-			ImportAttribute { key, value } => {
-				self.begin(c!("ImportAttribute"), id);
-				self.field(c!("key"), key);
-				self.field(c!("value"), value);
-			}
-			ExportDeclaration { declaration } => {
-				self.begin(c!("ExportNamedDeclaration"), id);
-				self.field(c!("declaration"), declaration);
-				self.list(c!("specifiers"), List::EMPTY);
-				self.opt(c!("source"), None);
-				self.list(c!("attributes"), List::EMPTY);
-			}
-			ExportNamedDeclaration {
-				specifiers,
-				source,
-				attributes,
-			} => {
-				self.begin(c!("ExportNamedDeclaration"), id);
-				self.opt(c!("declaration"), None);
-				self.list(c!("specifiers"), specifiers);
-				self.opt(c!("source"), source);
-				self.list(c!("attributes"), attributes);
-			}
-			ExportSpecifier { local, exported } => {
-				self.begin(c!("ExportSpecifier"), id);
-				self.field(c!("local"), local);
-				self.other_name(c!("exported"), exported, local);
-			}
-			ExportDefaultDeclaration { declaration } => {
-				self.begin(c!("ExportDefaultDeclaration"), id);
-				self.field(c!("declaration"), declaration);
-			}
-			ExportAllDeclaration {
-				exported,
-				source,
-				attributes,
-			} => {
-				self.begin(c!("ExportAllDeclaration"), id);
-				self.opt(c!("exported"), exported);
-				self.field(c!("source"), source);
-				self.list(c!("attributes"), attributes);
-			}
+		let kind = &self.ast.nodes[id.index() as usize].kind;
+		match *kind {
 			// the extension closes its own node, since erasing may put another in its place
 			Extension(index) => return self.ast.extension.node(self, id, index),
 			Host(index) => {
@@ -1795,9 +1407,23 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 					}
 				}
 			}
+			_ => {
+				let base = kind as *const NodeKind as *const u8;
+				self.run(id, Self::js_recipes()[tag(base)], base);
+			}
 		}
 		self.end();
 	}
+}
+
+/// The tag of a `repr(C, u32)` enum at `base`: its first word.
+pub(crate) fn tag(base: *const u8) -> usize {
+	unsafe { base.cast::<u32>().read() as usize }
+}
+
+/// The field at `slot` of the record at `base`, as the type the recipe reads it by.
+fn get<T: Copy>(base: *const u8, slot: Slot) -> T {
+	unsafe { base.add(slot.at).cast::<T>().read_unaligned() }
 }
 
 pub(crate) fn push_int(out: &mut String, mut value: u32) {
