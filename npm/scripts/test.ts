@@ -1,21 +1,21 @@
 // `node scripts/test.ts interpret` runs the decoder without code generation, as a host forbidding it would
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import type { Entry, Options } from '../dist/lib/api.js';
+import type { Entry, Options } from '../dist/index.js';
 if (process.argv[2] === 'interpret') globalThis.Function = (() => { throw new EvalError('blocked'); }) as unknown as FunctionConstructor;
-const native = await import('../dist/native.js');
-const wasm = await import('../dist/wasm.js');
+const name = process.execArgv.includes('--no-addons') ? 'wasm' : 'native';
+const m = await import('../dist/index.js');
 // the trees are poked as the stream shaped them, host nodes included, past what the types say
 type Any = any;
-const untyped = ({ Source, scopeOf, referenceOf, parentOf }: typeof native | typeof wasm) => ({
+const untyped = ({ Source, scopeOf, referenceOf, parentOf }: typeof m) => ({
 	open: (source: string, options?: Options): Any => new Source(source, options),
 	scopeOf: (node: Any): Any => scopeOf(node),
 	referenceOf: (node: Any): Any => referenceOf(node),
 	parentOf: (node: Any): Any => parentOf(node),
 });
+const { open, scopeOf, referenceOf, parentOf } = untyped(m);
 
-for (const [name, m] of Object.entries({ native, wasm })) {
-	const { open, scopeOf, referenceOf, parentOf } = untyped(m);
+{
 	const parse = (source: string, options?: Options): Any => open(source, options).parse();
 	const program = (source: string, options?: Options): Any => parse(source, options).node;
 	const at = (entry: Entry, source: string, offset: number, options?: Options, stopAt?: string[]): Any => open(source, options).parse(entry, offset, { stopAt });
@@ -264,8 +264,7 @@ for (const [name, m] of Object.entries({ native, wasm })) {
 
 // a document of a host language: the host's nodes around the JavaScript ones, one tree
 const grammar = readFileSync(new URL('../../crates/teasel/tests/hosts/svelte/host.grammar', import.meta.url), 'utf8');
-for (const m of [native, wasm]) {
-	const { open, scopeOf, referenceOf, parentOf } = untyped(m);
+{
 	const source = '<script lang="ts">\n\tlet items: string[] = [];\n</script>\n\n{#each items as item, i (item)}\n\t<p class:odd={i % 2} on:click={() => item}>{item}</p>\n{:else}\n\tnone\n{/each}\n';
 	const doc = open(source, { host: grammar, sourceType: 'module', scopes: true, comments: true }).parse();
 	const root = doc.node;
@@ -315,31 +314,28 @@ for (const m of [native, wasm]) {
 }
 
 // the answer follows the options the source was prepared with, and an entry is one of the names
-for (const [label, m] of Object.entries({ native, wasm })) {
-	const { open } = untyped(m);
+{
 	const options: Options = {};
 	const source = open('x}', options);
 	options.locations = true;
-	assert.equal('loc' in source.parse('expression', 0).node, false, label);
-	assert.throws(() => source.parse('toString' as Entry), TypeError, label);
+	assert.equal('loc' in source.parse('expression', 0).node, false, name);
+	assert.throws(() => source.parse('toString' as Entry), TypeError, name);
 }
 
 // unfinished input under recovery is an answer, never a panic; a strict error is a SyntaxError
 const grammars = Object.fromEntries(['svelte', 'vue'].map((name) => [name, readFileSync(new URL(`../../crates/teasel/tests/hosts/${name}/host.grammar`, import.meta.url), 'utf8')]));
-for (const [label, m] of Object.entries({ native, wasm })) {
-	const { open } = untyped(m);
+{
 	for (const text of ['<a x="', '<a /*', '<script>"</script>', '{#if', '<div class="{a']) {
-		assert.equal(open(text, { host: grammars.svelte, errorRecovery: true, comments: true, scopes: true }).parse().node.type, 'Root', `${label} ${text}`);
+		assert.equal(open(text, { host: grammars.svelte, errorRecovery: true, comments: true, scopes: true }).parse().node.type, 'Root', `${name} ${text}`);
 	}
-	assert.throws(() => open('<a @x="@"/>', { host: grammars.vue }).parse(), (e: Any) => e instanceof SyntaxError, `${label}`);
+	assert.throws(() => open('<a @x="@"/>', { host: grammars.vue }).parse(), (e: Any) => e instanceof SyntaxError, `${name}`);
 	const handler: Any = open('<button @click="let x = 1"/>', { host: grammars.vue, errorRecovery: true }).parse();
-	assert.equal(handler.node.children[0].props[0].handler.type, 'Program', label);
-	assert.deepEqual(handler.errors, [], label);
+	assert.equal(handler.node.children[0].props[0].handler.type, 'Program', name);
+	assert.deepEqual(handler.errors, [], name);
 }
 // a second host: the same walker, Vue's grammar
 const vue = readFileSync(new URL('../../crates/teasel/tests/hosts/vue/host.grammar', import.meta.url), 'utf8');
-for (const m of [native, wasm]) {
-	const { open, parentOf } = untyped(m);
+{
 	const source = '<ul :class="{ on }">\n\t<li v-for="(item, i) in items" :key="item.id" @click.stop="select(item)">{{ item.name }} #{{ i }}</li>\n</ul>\n';
 	const root: Any = open(source, { host: vue, sourceType: 'module' }).parse().node;
 	assert.equal(root.type, 'Root');

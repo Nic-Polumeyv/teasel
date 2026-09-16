@@ -16,7 +16,7 @@ export const PARENT = Symbol('parent');
 
 const FACTS = new Set(['scope', 'declares', 'reference', 'defines', 'writes', 'root']);
 
-/** A decoded object: the stream decides its shape, `api.ts` describes it. */
+/** A decoded object: the stream decides its shape, `index.ts` describes it. */
 export type Decoded = Record<string | symbol, any>;
 type Builder = (S: State) => Decoded;
 type Reader = (S: State) => any;

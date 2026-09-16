@@ -1,6 +1,6 @@
 import { Source } from '@teasel/parser';
-import types from '../../../npm/dist/lib/api.d.ts?raw';
-import entry from '../../../npm/dist/native.d.ts?raw';
+import entry from '../../../npm/dist/index.d.ts?raw';
+import options from '../../../npm/dist/lib/options.d.ts?raw';
 
 type Declaration = { type: string; start: number; end: number; id?: { name: string }; declarations?: { id: { name: string } }[]; declaration?: Declaration | null; specifiers?: { exported: { name: string } }[]; leadingComments?: { value: string; end: number }[] };
 const name = (statement: Declaration) => (statement.declaration!.id ?? statement.declaration!.declarations![0].id).name;
@@ -18,18 +18,20 @@ const body = (text: string) => {
 	return (source.parse() as unknown as { node: { body: Declaration[] } }).node.body;
 };
 
-// the entries re-export api.ts's types wholesale and its values by name: `Source` is theirs, with the engine bound
+const item = (text: string, statement: Declaration) => {
+	const doc = statement.leadingComments?.at(-1);
+	return `## ${name(statement)}\n\n${doc ? prose(doc.value) + '\n\n' : ''}\`\`\`ts\n${text.slice(statement.start, statement.end)}\n\`\`\``;
+};
+
+// the entry declares the surface, and names what it takes from options.ts
 function parser() {
-	const values = new Set(body(entry).flatMap((statement) => (exported(statement) ? [name(statement)] : statement.type === 'ExportNamedDeclaration' ? statement.specifiers!.map((specifier) => specifier.exported.name) : [])));
-	const markdown = body(types)
-		.filter((statement) => exported(statement) && (values.has(name(statement)) || statement.declaration!.type === 'TSInterfaceDeclaration' || statement.declaration!.type === 'TSTypeAliasDeclaration'))
-		.map((statement) => {
-			const doc = statement.leadingComments?.at(-1);
-			const text = types.slice(statement.start, statement.end).replace('constructor(engine: Engine, ', 'constructor(');
-			return `## ${name(statement)}\n\n${doc ? prose(doc.value) + '\n\n' : ''}\`\`\`ts\n${text}\n\`\`\``;
-		})
-		.join('\n\n');
-	return { meta: { href: '/reference/parser', title: '@teasel/parser', section: 'Reference', path: 'npm/src/lib/api.ts' }, markdown: `Every export of the package, as its declarations say.\n\n${markdown}` };
+	const surface = body(entry);
+	const named = new Set(surface.flatMap((statement) => (statement.type === 'ExportNamedDeclaration' && statement.declaration == null ? statement.specifiers!.map((specifier) => specifier.exported.name) : [])));
+	const markdown = [
+		...body(options).filter((statement) => exported(statement) && named.has(name(statement))).map((statement) => item(options, statement)),
+		...surface.filter(exported).map((statement) => item(entry, statement)),
+	].join('\n\n');
+	return { meta: { href: '/reference/parser', title: '@teasel/parser', section: 'Reference', path: 'npm/src/index.ts' }, markdown: `Every export of the package, as its declarations say.\n\n${markdown}` };
 }
 
 export const reference = parser();

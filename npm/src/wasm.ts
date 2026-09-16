@@ -1,9 +1,4 @@
-import type { Program } from 'estree';
-import { Source as Base, type Options } from './lib/api.js';
 import type { Engine } from './lib/decode.js';
-
-export { parentOf, referenceOf, scopeOf } from './lib/api.js';
-export type * from './lib/api.js';
 
 const encoder = new TextEncoder();
 const utf8 = new TextDecoder();
@@ -77,7 +72,7 @@ function answer(status: number) {
 	return words();
 }
 
-const engine: Engine = {
+export const engine: Engine = {
 	create(source, flags, host) {
 		const handle = guarded(() => wasm.source_new(...bytes(source), flags, ...bytes(host)));
 		if (handle === 0) throw new Error(JSON.parse(text()).error.message);
@@ -96,9 +91,3 @@ const engine: Engine = {
 	constants: () => constants,
 	shapes: () => shapes,
 };
-
-export class Source<Root = Program> extends Base<Root> {
-	constructor(source: string, options?: Options) {
-		super(engine, source, options);
-	}
-}
