@@ -1,5 +1,5 @@
 import type { Expression, Identifier, Node, Pattern, Program, SourceLocation, Statement } from 'estree';
-import { decode, PARENT, REFERENCE, SCOPE, type Tables } from './decode.js';
+import { decode, type Engine, PARENT, type Prepared, REFERENCE, SCOPE } from './decode.js';
 
 declare global {
 	interface SymbolConstructor {
@@ -337,17 +337,6 @@ function stops(list: string[] = []) {
 		throw new TypeError('stopAt must be a list of words and punctuators');
 	}
 	return list.join(' ');
-}
-
-/** A source the engine prepared: it parses at an entry and offset, cut at `end`, the stop tokens as one string; the answer is the words, or an error as JSON. */
-export interface Prepared {
-	readonly parse: (entry: number, offset: number, end: number | undefined, stop: string) => Uint32Array | string;
-	readonly free: () => void;
-}
-
-/** What parses: the addon or the WebAssembly module, each bound to a `Source` class of its own. */
-export interface Engine extends Tables {
-	readonly create: (source: string, flags: number, host: string) => Prepared;
 }
 
 const registry = typeof FinalizationRegistry === 'undefined' ? null : new FinalizationRegistry<Prepared>((held) => held.free());

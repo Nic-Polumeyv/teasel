@@ -1,5 +1,6 @@
 import type { Program } from 'estree';
-import { Source as Base, type Engine, type Options } from './lib/api.js';
+import { Source as Base, type Options } from './lib/api.js';
+import type { Engine } from './lib/decode.js';
 
 export { parentOf, referenceOf, scopeOf } from './lib/api.js';
 export type * from './lib/api.js';
@@ -76,7 +77,7 @@ function answer(status: number) {
 	return words();
 }
 
-export const engine: Engine = {
+const engine: Engine = {
 	create(source, flags, host) {
 		const handle = guarded(() => wasm.source_new(...bytes(source), flags, ...bytes(host)));
 		if (handle === 0) throw new Error(JSON.parse(text()).error.message);
