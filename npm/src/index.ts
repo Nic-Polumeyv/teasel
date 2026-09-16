@@ -5,12 +5,6 @@ import { engine } from '#engine';
 
 export type { Entry, Options } from './lib/options.js';
 
-declare global {
-	interface SymbolConstructor {
-		readonly dispose: unique symbol;
-	}
-}
-
 /**
  * Thrown for a syntax error. `code` names what went wrong, for a host to branch on, and
  * `message` says it in words, without a position. An error at the token being read spans it
