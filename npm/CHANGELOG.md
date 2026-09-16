@@ -1,5 +1,13 @@
 # @teasel/parser
 
+## 0.0.11
+
+### Patch Changes
+
+- [#133](https://github.com/Nic-Polumeyv/teasel/pull/133) [`654521a`](https://github.com/Nic-Polumeyv/teasel/commit/654521a2641ecea51b4646cb7a896cf734be780e) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - The `plan` entry is gone: it authored a host format nothing consumed yet.
+
+- [#130](https://github.com/Nic-Polumeyv/teasel/pull/130) [`424c30b`](https://github.com/Nic-Polumeyv/teasel/commit/424c30bb748ab65bd4ff93f2915aa95d6cf2f8f7) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - The package is written in TypeScript: `node.d.ts`, `wasm.d.ts` and the declarations under `lib/` are emitted from the sources, in place of a hand-written `types.d.ts`. Entry points are unchanged.
+
 ## 0.0.10
 
 ### Patch Changes
