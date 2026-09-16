@@ -1,11 +1,11 @@
 //! Serializes an `Ast` to ESTree: as JSON text, or as a token stream a binding hands to
 //! JavaScript without a text round trip.
 
-use crate::scopes::Role;
 use crate::ast::{Ast, Class, Function, List, MethodKind, NodeId, NodeKind, PropertyKind, Value};
 use crate::interner::{FastMap, Interner, StrId};
 use crate::names::{NAMES, Name, c};
 use crate::parser::Entry;
+use crate::scopes::Role;
 use std::fmt::Write;
 
 /// How an extension's data serializes: its own nodes, and the keys it adds to JavaScript nodes.
@@ -412,136 +412,8 @@ impl Shapes {
 /// The strings are the tree's interned ones first, then any text written for this answer. Words
 /// are the host's endianness, which every target the package builds for shares with the
 /// decoder's check.
-/// The answer's words. A front end may take the allocation over and read the answer where it was
-/// written; a growth after that leaves the allocation to its holder instead of freeing it.
-pub struct Words {
-	vec: Vec<u32>,
-	owned: bool,
-}
-
-impl Words {
-	const LEAST: usize = 1 << 16;
-
-	pub fn new() -> Self {
-		Self::default()
-	}
-
-	fn fresh() -> Self {
-		Words {
-			vec: Vec::new(),
-			owned: true,
-		}
-	}
-
-	pub fn as_ptr(&self) -> *const u32 {
-		self.vec.as_ptr()
-	}
-
-	pub fn capacity(&self) -> usize {
-		self.vec.capacity()
-	}
-
-	fn clear(&mut self) {
-		self.vec.clear();
-	}
-
-	#[inline(always)]
-	fn room(&mut self, more: usize) {
-		if self.vec.capacity() - self.vec.len() < more {
-			self.grow(more);
-		}
-	}
-
-	#[inline(always)]
-	fn push(&mut self, word: u32) {
-		self.room(1);
-		self.vec.push(word);
-	}
-
-	#[inline(always)]
-	fn extend_from_slice(&mut self, words: &[u32]) {
-		self.room(words.len());
-		self.vec.extend_from_slice(words);
-	}
-
-	fn grow(&mut self, more: usize) {
-		let cap = (self.vec.capacity() * 2).max(self.vec.len() + more).max(Self::LEAST);
-		let mut next = Vec::with_capacity(cap);
-		next.extend_from_slice(&self.vec);
-		let old = std::mem::replace(&mut self.vec, next);
-		if !self.owned {
-			std::mem::forget(old);
-		}
-		self.owned = true;
-	}
-
-	/// Hands the allocation to the caller, who frees it as a `Vec<u32>` of that capacity;
-	/// None when a caller already holds it.
-	pub fn release(&mut self) -> Option<(*mut u32, usize)> {
-		if !self.owned {
-			return None;
-		}
-		if self.vec.capacity() == 0 {
-			self.grow(0);
-		}
-		self.owned = false;
-		Some((self.vec.as_mut_ptr(), self.vec.capacity()))
-	}
-
-	/// Starts the next answer on a fresh allocation of at least `cap` words.
-	pub fn renew(&mut self, cap: usize) {
-		let old = std::mem::replace(&mut self.vec, Vec::with_capacity(cap.max(Self::LEAST)));
-		if !self.owned {
-			std::mem::forget(old);
-		}
-		self.owned = true;
-	}
-}
-
-impl Default for Words {
-	fn default() -> Self {
-		Self::fresh()
-	}
-}
-
-impl Drop for Words {
-	fn drop(&mut self) {
-		if !self.owned {
-			std::mem::forget(std::mem::take(&mut self.vec));
-		}
-	}
-}
-
-impl std::ops::Deref for Words {
-	type Target = [u32];
-	fn deref(&self) -> &[u32] {
-		&self.vec
-	}
-}
-
-impl std::ops::DerefMut for Words {
-	fn deref_mut(&mut self) -> &mut [u32] {
-		&mut self.vec
-	}
-}
-
-impl Extend<u32> for Words {
-	fn extend<I: IntoIterator<Item = u32>>(&mut self, iter: I) {
-		let iter = iter.into_iter();
-		match iter.size_hint() {
-			// an exact size fills the room in one copy; a loose one must not let the Vec grow itself
-			(lower, Some(upper)) if lower == upper => {
-				self.room(upper);
-				self.vec.extend(iter);
-			}
-			_ => {
-				for word in iter {
-					self.push(word);
-				}
-			}
-		}
-	}
-}
+/// The answer's words, read in place by a front end that takes the allocation over.
+pub type Words = crate::handed::Handed<u32>;
 
 pub struct Binary {
 	words: Words,
@@ -577,7 +449,7 @@ impl Default for Binary {
 impl Binary {
 	pub fn new() -> Self {
 		let mut binary = Binary {
-			words: Words::new(),
+			words: Words::new(1 << 16),
 			text: Vec::new(),
 			units: 0,
 			ends: Vec::new(),

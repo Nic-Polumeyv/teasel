@@ -345,9 +345,20 @@ export interface Prepared {
 	readonly free: () => void;
 }
 
+/** The tree of the last parse, read in place: nodes eight words each, lists, numbers, and the strings' text with where each starts. */
+export interface Tree {
+	readonly nodes: Uint32Array;
+	readonly lists: Uint32Array;
+	readonly numbers: Float64Array;
+	readonly text: Uint8Array;
+	readonly starts: Uint32Array;
+}
+
 /** What parses: the addon or the WebAssembly module, each bound to a `Source` class of its own. */
 export interface Engine extends Tables {
 	readonly create: (source: string, flags: number, host: string) => Prepared;
+	/** The tree of the last parse on this thread, until the next parse; undefined before any. */
+	readonly tree: () => Tree | undefined;
 }
 
 const registry = typeof FinalizationRegistry === 'undefined' ? null : new FinalizationRegistry<Prepared>((held) => held.free());

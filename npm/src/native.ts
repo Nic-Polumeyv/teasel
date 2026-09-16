@@ -1,6 +1,6 @@
 // the source goes over as bytes: V8's encoder is 14x faster than the host reading a string out
 import type { Program } from 'estree';
-import { Source as Base, type Engine, type Options } from './lib/api.js';
+import { Source as Base, type Engine, type Options, type Tree } from './lib/api.js';
 import { load } from './lib/addon.js';
 
 export { parentOf, referenceOf, scopeOf } from './lib/api.js';
@@ -25,6 +25,11 @@ export const engine: Engine = {
 	},
 	constants: native.constants,
 	shapes: native.shapes,
+	tree(): Tree | undefined {
+		const t = native.tree();
+		if (t === undefined) return undefined;
+		return { nodes: t[0].subarray(0, t[1]), lists: t[2].subarray(0, t[3]), numbers: t[4].subarray(0, t[5]), text: t[6].subarray(0, t[7]), starts: t[8].subarray(0, t[9]) };
+	},
 };
 
 export class Source<Root = Program> extends Base<Root> {

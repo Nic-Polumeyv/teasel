@@ -1,5 +1,5 @@
 import type { Program } from 'estree';
-import { Source as Base, type Engine, type Options } from './lib/api.js';
+import { Source as Base, type Engine, type Options, type Tree } from './lib/api.js';
 
 export { parentOf, referenceOf, scopeOf } from './lib/api.js';
 export type * from './lib/api.js';
@@ -20,6 +20,7 @@ interface Exports {
 	text_len(): number;
 	constants(): void;
 	shapes(): void;
+	tree(): number;
 }
 
 // `teasel.wasm` next to this file, read where there is a file system and fetched elsewhere
@@ -94,6 +95,13 @@ export const engine: Engine = {
 	},
 	constants: () => constants,
 	shapes: () => shapes,
+	// five pointer and length pairs at the returned address; the tree sits in the module's memory until the next parse
+	tree(): Tree | undefined {
+		const at = new Uint32Array(wasm.memory.buffer, wasm.tree(), 10);
+		if (at[1] === 0) return undefined;
+		const { buffer } = wasm.memory;
+		return { nodes: new Uint32Array(buffer, at[0], at[1]), lists: new Uint32Array(buffer, at[2], at[3]), numbers: new Float64Array(buffer, at[4], at[5]), text: new Uint8Array(buffer, at[6], at[7]), starts: new Uint32Array(buffer, at[8], at[9]) };
+	},
 };
 
 export class Source<Root = Program> extends Base<Root> {

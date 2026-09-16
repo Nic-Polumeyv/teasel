@@ -1,3 +1,4 @@
+use crate::handed::Handed;
 use crate::interner::{FastMap, Interner, StrId};
 use crate::names::{Name, c};
 
@@ -191,10 +192,10 @@ pub enum Value {
 /// `X` is the data an extension attaches to the tree; the plain JavaScript parser attaches none.
 #[derive(Debug, Default)]
 pub struct Ast<X = ()> {
-	pub nodes: Vec<Node>,
+	pub nodes: Handed<Node>,
 	/// The values of the number literals, by `NumberLiteral::value`.
-	pub numbers: Vec<f64>,
-	pub lists: Vec<Option<NodeId>>,
+	pub numbers: Handed<f64>,
+	pub lists: Handed<Option<NodeId>>,
 	pub hosts: Vec<Host>,
 	pub host_fields: Vec<(&'static str, Value)>,
 	pub host_strings: Vec<StrId>,
@@ -318,10 +319,33 @@ impl<X: Default> Ast<X> {
 	/// Room for the tree of `bytes` of source: about a node per eight bytes, a list per thirty.
 	pub(crate) fn sized(bytes: usize) -> Self {
 		Ast {
-			nodes: Vec::with_capacity(bytes / 8 + 16),
-			lists: Vec::with_capacity(bytes / 30 + 16),
+			nodes: Handed::with_capacity(bytes / 8 + 16, 16),
+			lists: Handed::with_capacity(bytes / 30 + 16, 16),
 			strings: Interner::sized(bytes),
 			..Ast::default()
+		}
+	}
+}
+
+/// The tree's buffers, read in place by a front end: the nodes, the lists, the numbers, and the
+/// strings' text with where each starts.
+pub struct Buffers<'a> {
+	pub nodes: &'a mut Handed<Node>,
+	pub lists: &'a mut Handed<Option<NodeId>>,
+	pub numbers: &'a mut Handed<f64>,
+	pub text: &'a mut Handed<u8>,
+	pub starts: &'a mut Handed<u32>,
+}
+
+impl<X> Ast<X> {
+	pub fn buffers(&mut self) -> Buffers<'_> {
+		let (text, starts) = self.strings.buffers();
+		Buffers {
+			nodes: &mut self.nodes,
+			lists: &mut self.lists,
+			numbers: &mut self.numbers,
+			text,
+			starts,
 		}
 	}
 }

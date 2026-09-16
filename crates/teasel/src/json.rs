@@ -4,7 +4,7 @@
 use std::rc::Rc;
 
 use crate::Options;
-use crate::ast::{Ast, Reuse};
+use crate::ast::{Ast, Buffers, Reuse};
 use crate::comments::attach;
 use crate::error::Code;
 use crate::estree::{Binary, Emit, Json, Output, Positions, Sink, Words, answer, error_to_json};
@@ -207,6 +207,8 @@ pub struct Prepared<'a> {
 struct Session {
 	pool: Pool,
 	binary: Binary,
+	/// Whether the last parse used the TypeScript tree.
+	typescript: bool,
 }
 
 thread_local! {
@@ -218,6 +220,19 @@ thread_local! {
 /// The words of the last binary answer on this thread, where they were written.
 pub fn words<R>(f: impl FnOnce(&mut Words) -> R) -> R {
 	SESSION.with(|session| f(session.borrow_mut().binary.words()))
+}
+
+/// The tree of the last parse on this thread, kept until the next parse takes it; None before
+/// any.
+pub fn tree<R>(f: impl FnOnce(Option<Buffers<'_>>) -> R) -> R {
+	SESSION.with(|session| {
+		let session = &mut *session.borrow_mut();
+		#[cfg(feature = "typescript")]
+		if session.typescript {
+			return f(session.pool.ts.as_deref_mut().map(Ast::buffers));
+		}
+		f(session.pool.js.as_deref_mut().map(Ast::buffers))
+	})
 }
 
 /// The grammar of a text, read once per thread; the error names the line it stopped at.
@@ -396,6 +411,7 @@ fn dispatch<S: Sink>(
 fn parse_with(source: &str, positions: &Positions, request: &Request, stop: &str, host: Option<&Grammar>) -> String {
 	SESSION.with(|session| {
 		let session = &mut *session.borrow_mut();
+		session.typescript = request.typescript;
 		match dispatch(
 			source,
 			positions,
@@ -422,6 +438,7 @@ fn binary_with(
 	SESSION.with(|session| {
 		let session = &mut *session.borrow_mut();
 		session.binary.reset();
+		session.typescript = request.typescript;
 		dispatch(
 			source,
 			positions,
@@ -455,7 +472,10 @@ where
 		erase: request.erase && request.typescript,
 		errors: request.options.error_recovery,
 	};
-	let reused = Pooled::take(pool);
+	let reused = Pooled::take(pool).map(|mut ast| {
+		ast.clear();
+		ast
+	});
 	let (mut ast, parsed) = match host {
 		Some(grammar) => {
 			let (mut ast, root) = host::parse_document::<E>(source, grammar, request.options, reused);
@@ -492,7 +512,6 @@ where
 		}
 	}
 	let sink = answer(&ast, request.entry, roots, end, source, positions, output, sink);
-	ast.clear();
 	Pooled::give(pool, ast);
 	Ok(sink)
 }
@@ -500,12 +519,11 @@ where
 /// The tree of a failed request goes back to the pool; the error is the answer.
 fn recycle<X: Reuse + Pooled>(
 	pool: &mut Pool,
-	mut ast: Box<Ast<X>>,
+	ast: Box<Ast<X>>,
 	error: &crate::SyntaxError,
 	source: &str,
 	positions: &Positions,
 ) -> String {
-	ast.clear();
 	Pooled::give(pool, ast);
 	error_to_json(error, source, positions)
 }
