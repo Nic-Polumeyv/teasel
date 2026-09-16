@@ -66,14 +66,14 @@ A key is on the answer exactly when its option is on. `allowReturnOutsideFunctio
 The tree stays plain ESTree. The facts hang beside it, reached from a node.
 
 ```js
-import { Source, scopeOf, bindingOf, referenceOf, parentOf } from '@teasel/parser';
+import { Source, scopeOf, referenceOf, parentOf } from '@teasel/parser';
 
 const { node } = new Source('let x = 1; function f(y) { x = y; }', { scopes: true }).parse();
 const [declaration, fn] = node.body;
 const assignment = fn.body.body[0].expression;
 
-bindingOf(declaration.declarations[0].id)   // { name: 'x', kind: 'let', scope, node, declaration }
-referenceOf(assignment.left)                // { scope, binding, write: true, read: false, mutate: false, node, writeExpr }
+referenceOf(declaration.declarations[0].id) // the binding: { name: 'x', kind: 'let', declares: true, write: true, scope, node, declaration, … }
+referenceOf(assignment.left)                // { declares: false, write: true, read: false, mutate: false, binding, scope, node, writeExpr }
 scopeOf(fn)                                 // { kind: 'function', parent, node, topLevelAwait: false }
 parentOf(assignment.left)                   // the assignment
 ```
