@@ -36,6 +36,7 @@ const missing = (e: unknown) => e instanceof Error && 'code' in e && e.code === 
 
 export function load(): Addon {
 	const require = createRequire(import.meta.url);
+	// we add .node so require dlopens it instead of reading it as js
 	const file = `teasel.${here}.node`;
 	try {
 		return require(`../${file}`);
