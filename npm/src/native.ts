@@ -1,10 +1,6 @@
 // the source goes over as bytes: V8's encoder is 14x faster than the host reading a string out
-import type { Program } from 'estree';
-import { Source as Base, type Engine, type Options } from './lib/api.js';
+import type { Engine } from './lib/decode.js';
 import { load } from './lib/addon.js';
-
-export { parentOf, referenceOf, scopeOf } from './lib/api.js';
-export type * from './lib/api.js';
 
 const native = load();
 const encoder = new TextEncoder();
@@ -26,9 +22,3 @@ export const engine: Engine = {
 	constants: native.constants,
 	shapes: native.shapes,
 };
-
-export class Source<Root = Program> extends Base<Root> {
-	constructor(source: string, options?: Options) {
-		super(engine, source, options);
-	}
-}

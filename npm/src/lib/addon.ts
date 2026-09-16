@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 
 /** The external V8 holds for the addon: a prepared source. */
@@ -20,15 +21,32 @@ export const platforms: Record<string, { target: string; os: NodeJS.Platform; cp
 	'win32-x64-msvc': { target: 'x86_64-pc-windows-msvc', os: 'win32', cpu: 'x64' },
 };
 
-export const here = `${process.platform}-${process.arch}${process.platform === 'linux' ? '-gnu' : process.platform === 'win32' ? '-msvc' : ''}`;
+// a glibc build does not load on musl: ldd is a script that names its libc, 0.07 ms; the report is 6 ms, for a Linux without one
+function musl(): boolean {
+	try {
+		return readFileSync('/usr/bin/ldd', 'utf8').includes('musl');
+	} catch {
+		return !(process.report?.getReport() as { header: { glibcVersionRuntime?: string } }).header.glibcVersionRuntime;
+	}
+}
+
+export const here = `${process.platform}-${process.arch}${process.platform === 'linux' ? (musl() ? '-musl' : '-gnu') : process.platform === 'win32' ? '-msvc' : ''}`;
+
+const missing = (e: unknown) => e instanceof Error && 'code' in e && e.code === 'MODULE_NOT_FOUND';
 
 export function load(): Addon {
 	const require = createRequire(import.meta.url);
+	// we add .node so require dlopens it instead of reading it as js
 	const file = `teasel.${here}.node`;
 	try {
 		return require(`../${file}`);
 	} catch (e) {
-		if (!(e instanceof Error && 'code' in e && e.code === 'MODULE_NOT_FOUND')) throw e;
+		if (!missing(e)) throw e;
+	}
+	try {
 		return require(`@teasel/parser-${here}/${file}`);
+	} catch (e) {
+		if (!missing(e)) throw e;
+		throw new Error(`no native build for ${here}; the WebAssembly build runs anywhere: node --no-addons`, { cause: e });
 	}
 }

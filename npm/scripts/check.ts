@@ -4,14 +4,11 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
-import * as native from '../dist/native.js';
-import * as wasm from '../dist/wasm.js';
-import { ENTRY, flags, type Entry, type Options, type ParseError } from '../dist/lib/api.js';
-import { decode } from '../dist/lib/decode.js';
-import { load } from '../dist/lib/addon.js';
+import { engine as native } from '../dist/native.js';
+import { engine as wasm } from '../dist/wasm.js';
+import { decode, type Engine, type Prepared } from '../dist/lib/decode.js';
+import { ENTRY, type Entry, flags, type Options } from '../dist/lib/options.js';
 
-const addon = load();
-const engine = { constants: addon.constants, shapes: addon.shapes };
 const binary = new URL('../../target/release/teasel', import.meta.url).pathname;
 const files: string[] = [];
 function walk(dir: string) {
@@ -26,13 +23,17 @@ for (const dir of process.argv.slice(2)) walk(dir);
 let checked = 0;
 let failed = 0;
 
-function outcome(fn: () => unknown): { value: unknown } | { error: Pick<ParseError, 'code' | 'message' | 'pos' | 'end' | 'loc'> } {
+// what a parse answers or throws, read off the engine directly
+function outcome(engine: Engine, held: Prepared, source: string, entry: Entry, at: number, end?: number) {
+	const answer = held.parse(ENTRY[entry], at, end, '');
+	return typeof answer === 'string' ? { error: JSON.parse(answer).error } : { value: decode(answer, source, engine) };
+}
+function once(engine: Engine, source: string, options: Options, entry: Entry, at: number) {
+	const held = engine.create(source, flags(options), '');
 	try {
-		return { value: fn() };
-	} catch (e) {
-		if (!(e instanceof SyntaxError)) throw e;
-		const { code, message, pos, end, loc } = e as ParseError;
-		return { error: { code, message, pos, end, loc } };
+		return outcome(engine, held, source, entry, at);
+	} finally {
+		held.free();
 	}
 }
 
@@ -71,8 +72,10 @@ function mode(source: string, options: Options, entry: Entry, at: number) {
 // the addon's answers as JSON, each with the batch job that asks the binary for the same
 const jobs: { name: string; source: string; mode: string; tree: string }[] = [];
 function json(name: string, source: string, options: Options, entry: Entry, at: number) {
-	const answer = addon.parse(addon.create(Buffer.from(source), flags(options), ''), ENTRY[entry], at, undefined, '');
-	const tree = typeof answer === 'string' ? answer : JSON.stringify(decode(answer, source, engine, false));
+	const held = native.create(source, flags(options), '');
+	const answer = held.parse(ENTRY[entry], at, undefined, '');
+	held.free();
+	const tree = typeof answer === 'string' ? answer : JSON.stringify(decode(answer, source, native, false));
 	jobs.push({ name, source, mode: mode(source, options, entry, at), tree });
 }
 
@@ -91,27 +94,29 @@ for (const file of files) {
 		];
 		for (const options of runs) {
 			json(file, source, options, 'program', 0);
-			report(`${file} wasm`, differ(outcome(() => new wasm.Source(source, options).parse()), outcome(() => new native.Source(source, options).parse())));
+			report(`${file} wasm`, differ(once(wasm, source, options, 'program', 0), once(native, source, options, 'program', 0)));
 		}
 	}
 	// every brace in a component is somewhere an expression, a pattern or a statement might start
 	if (svelte) {
 		const options: Options = { sourceType: 'module', typescript: /lang=["']?ts/.test(text), locations: true, comments: true, scopes: true };
-		using held = new native.Source(text, options);
-		using twin = new wasm.Source(text, options);
+		const held = native.create(text, flags(options), '');
+		const twin = wasm.create(text, flags(options), '');
 		for (const m of text.matchAll(script_re)) {
 			const start = m.index + m[0].indexOf('>') + 1;
-			const at = { end: start + m[2].length };
-			report(`${file} script ${start} wasm`, differ(outcome(() => twin.parse('program', start, at)), outcome(() => held.parse('program', start, at))));
+			const end = start + m[2].length;
+			report(`${file} script ${start} wasm`, differ(outcome(wasm, twin, text, 'program', start, end), outcome(native, held, text, 'program', start, end)));
 		}
 		for (const match of text.matchAll(brace_re)) {
 			const at = match.index + 1;
 			for (const entry of Object.keys(ENTRY) as Entry[]) {
 				if (entry === 'program') continue;
 				json(`${file}@${at} ${entry}`, text, options, entry, at);
-				report(`${file}@${at} ${entry} wasm`, differ(outcome(() => twin.parse(entry, at)), outcome(() => held.parse(entry, at))));
+				report(`${file}@${at} ${entry} wasm`, differ(outcome(wasm, twin, text, entry, at), outcome(native, held, text, entry, at)));
 			}
 		}
+		held.free();
+		twin.free();
 	}
 }
 {

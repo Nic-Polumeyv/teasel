@@ -1,8 +1,4 @@
-import type { Program } from 'estree';
-import { Source as Base, type Engine, type Options } from './lib/api.js';
-
-export { parentOf, referenceOf, scopeOf } from './lib/api.js';
-export type * from './lib/api.js';
+import type { Engine } from './lib/decode.js';
 
 const encoder = new TextEncoder();
 const utf8 = new TextDecoder();
@@ -95,9 +91,3 @@ export const engine: Engine = {
 	constants: () => constants,
 	shapes: () => shapes,
 };
-
-export class Source<Root = Program> extends Base<Root> {
-	constructor(source: string, options?: Options) {
-		super(engine, source, options);
-	}
-}
