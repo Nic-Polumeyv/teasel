@@ -11,6 +11,18 @@ export type Section = { label: string; pages: Page[] };
 
 export const slug = (text: string) => text.toLowerCase().replace(/[^\w]+/g, '-').replace(/^-|-$/g, '');
 
+// two exports that differ only by case, Entry and ENTRY, would share one id and one each key
+const ids = new WeakMap<Tokens.Heading, string>();
+function label_headings(headings: Tokens.Heading[]) {
+	const seen = new Map<string, number>();
+	for (const token of headings) {
+		const base = slug(token.text);
+		const n = seen.get(base) ?? 0;
+		seen.set(base, n + 1);
+		ids.set(token, n ? `${base}-${n}` : base);
+	}
+}
+
 const escape = (text: string) => text.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
 const copy = buttonVariants({ variant: 'ghost', size: 'sm', class: 'absolute top-1.5 right-2 h-7 text-xs text-white/60 hover:bg-white/10 hover:text-white' });
@@ -56,8 +68,8 @@ const marked = new Marked({
 			const [language, file] = lang.split(/\s+/);
 			return language === 'file' ? sheet(file) : fence(text, language, file);
 		},
-		heading({ tokens, depth, text }) {
-			return `<h${depth} id="${slug(text)}">${this.parser.parseInline(tokens)}</h${depth}>`;
+		heading(token) {
+			return `<h${token.depth} id="${ids.get(token)}">${this.parser.parseInline(token.tokens)}</h${token.depth}>`;
 		},
 	},
 });
@@ -67,8 +79,12 @@ const tokens = new Map<string, Token[]>();
 function page(meta: Omit<Page, 'headings'>, markdown: string): Page {
 	const lexed = marked.lexer(markdown);
 	tokens.set(meta.href, lexed);
-	const headings = lexed.filter((token): token is Tokens.Heading => token.type === 'heading' && token.depth === 2).map(({ text }) => ({ id: slug(text), text }));
-	return { ...meta, headings };
+	const headings: Tokens.Heading[] = [];
+	marked.walkTokens(lexed, (token) => {
+		if (token.type === 'heading') headings.push(token as Tokens.Heading);
+	});
+	label_headings(headings);
+	return { ...meta, headings: headings.filter((token) => token.depth === 2).map((token) => ({ id: ids.get(token)!, text: token.text })) };
 }
 
 export const render = (page: Page) => marked.parser(tokens.get(page.href)!);
