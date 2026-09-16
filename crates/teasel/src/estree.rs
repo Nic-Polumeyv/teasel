@@ -1,7 +1,7 @@
 //! Serializes an `Ast` to ESTree: as JSON text, or as a token stream a binding hands to
 //! JavaScript without a text round trip.
 
-use crate::ast::{Ast, Class, Function, List, MethodKind, NodeId, NodeKind, PropertyKind, Value};
+use crate::ast::{Ast, Class, Function, List, NodeId, NodeKind, Value};
 use crate::interner::{FastMap, Interner, StrId};
 use crate::names::{NAMES, Name, c};
 use crate::parser::Entry;
@@ -559,7 +559,7 @@ impl Binary {
 impl Sink for Binary {
 	fn strings(&mut self, interner: &Interner) {
 		for i in 0..interner.len() {
-			self.push_text(interner.get(StrId(i as u32)));
+			self.push_text(interner.get(StrId::at(i as u32)));
 		}
 	}
 
@@ -633,7 +633,7 @@ impl Sink for Binary {
 
 	fn interned(&mut self, id: StrId, _value: &str) {
 		self.value(kind::STR);
-		self.words.push(id.0);
+		self.words.push(id.index());
 	}
 
 	fn slice(&mut self, _value: &str, start: u32, end: u32) {
@@ -664,7 +664,7 @@ impl Sink for Binary {
 	fn strs(&mut self, strings: &[(StrId, &str)]) {
 		self.value(kind::STRS);
 		self.words.push(strings.len() as u32);
-		self.words.extend(strings.iter().map(|(id, _)| id.0));
+		self.words.extend(strings.iter().map(|(id, _)| id.index()));
 	}
 
 	fn ints(&mut self, values: &[u32]) {
@@ -1368,14 +1368,7 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 				self.bool(c!("computed"), computed);
 				self.field(c!("key"), key);
 				self.field(c!("value"), value);
-				self.string(
-					c!("kind"),
-					match kind {
-						PropertyKind::Init => c!("init"),
-						PropertyKind::Get => c!("get"),
-						PropertyKind::Set => c!("set"),
-					},
-				);
+				self.string(c!("kind"), kind.name());
 			}
 			SpreadElement { argument } => {
 				self.begin(c!("SpreadElement"), id);
@@ -1506,15 +1499,7 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 				self.bool(c!("static"), is_static);
 				self.bool(c!("computed"), computed);
 				self.field(c!("key"), key);
-				self.string(
-					c!("kind"),
-					match kind {
-						MethodKind::Constructor => c!("constructor"),
-						MethodKind::Method => c!("method"),
-						MethodKind::Get => c!("get"),
-						MethodKind::Set => c!("set"),
-					},
-				);
+				self.string(c!("kind"), kind.name());
 				self.field(c!("value"), value);
 			}
 			PropertyDefinition {
@@ -2054,7 +2039,7 @@ mod tests {
 		b.begin(c!("Identifier"));
 		b.span(1, 2);
 		b.key(c!("name"));
-		b.interned(crate::interner::StrId(0), "a");
+		b.interned(crate::interner::StrId::at(0), "a");
 		b.key(c!("value"));
 		b.float(1.5);
 		b.key(c!("raw"));

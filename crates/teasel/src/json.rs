@@ -132,6 +132,11 @@ pub fn error_json(message: &str, pos: u32) -> String {
 	out
 }
 
+/// The tree's layout as JSON; see `layout::json`.
+pub fn layout_json() -> String {
+	crate::layout::json()
+}
+
 /// The constant strings this thread's writer has numbered so far.
 pub fn constants() -> Vec<&'static str> {
 	SESSION.with(|session| session.borrow().binary.constants().to_vec())

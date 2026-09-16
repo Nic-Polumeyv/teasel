@@ -3,13 +3,14 @@ import { createRequire } from 'node:module';
 /** The external V8 holds for the addon: a prepared source. */
 export type External = object;
 
-/** `crates/teasel-node/src/lib.rs`: the six operations over a prepared source, the source as V8's bytes. */
+/** `crates/teasel-node/src/lib.rs`: the seven operations over a prepared source, the source as V8's bytes. */
 export interface Addon {
 	readonly create: (source: Uint8Array, flags: number, host: string) => External;
 	readonly parse: (held: External, entry: number, offset: number, end: number | undefined, stop: string) => Uint32Array | string;
 	readonly free: (held: External) => void;
 	readonly constants: () => string[];
 	readonly shapes: () => number[];
+	readonly layout: () => string;
 	/** The tree's five views, each followed by its length in elements. */
 	readonly tree: () => [Uint32Array, number, Uint32Array, number, Float64Array, number, Uint8Array, number, Uint32Array, number] | undefined;
 }

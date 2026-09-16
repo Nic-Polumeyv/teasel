@@ -111,7 +111,7 @@ impl Emit for Data {
 				);
 				w.field(c!("typeAnnotation"), type_annotation);
 			}
-			Keyword(keyword) => w.begin(keyword.estree_type(), id),
+			Keyword(keyword) => w.begin(keyword.name(), id),
 			ThisType => w.begin(c!("TSThisType"), id),
 			TypePredicate {
 				parameter_name,

@@ -21,6 +21,7 @@ interface Exports {
 	constants(): void;
 	shapes(): void;
 	tree(): number;
+	layout(): void;
 }
 
 // `teasel.wasm` next to this file, read where there is a file system and fetched elsewhere
@@ -95,6 +96,10 @@ export const engine: Engine = {
 	},
 	constants: () => constants,
 	shapes: () => shapes,
+	layout() {
+		wasm.layout();
+		return text();
+	},
 	// five pointer and length pairs at the returned address; the tree sits in the module's memory until the next parse
 	tree(): Tree | undefined {
 		const at = new Uint32Array(wasm.memory.buffer, wasm.tree(), 10);

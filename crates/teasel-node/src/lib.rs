@@ -229,6 +229,10 @@ fn uint32(env: Env, value: u32) -> Result<Value> {
 	Ok(result)
 }
 
+unsafe extern "C" fn layout(env: Env, _: CallbackInfo) -> Value {
+	guard(env, || text(env, &teasel::json::layout_json()))
+}
+
 unsafe extern "C" fn constants(env: Env, _: CallbackInfo) -> Value {
 	guard(env, || {
 		let names = teasel::json::constants();
@@ -387,6 +391,7 @@ pub unsafe extern "C" fn napi_register_module_v1(env: Env, exports: Value) -> Va
 			(c"constants", constants),
 			(c"shapes", shapes),
 			(c"tree", tree),
+			(c"layout", layout),
 		] {
 			let mut function = std::ptr::null_mut();
 			check(

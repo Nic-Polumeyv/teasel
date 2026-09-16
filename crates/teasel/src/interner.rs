@@ -52,9 +52,25 @@ impl Hasher for FastHasher {
 pub type FastMap<K, V> = HashMap<K, V, BuildHasherDefault<FastHasher>>;
 pub type FastSet<K> = std::collections::HashSet<K, BuildHasherDefault<FastHasher>>;
 
-/// Index of an interned string.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct StrId(pub(crate) u32);
+/// Index of an interned string, kept plus one so an `Option<StrId>` is the same four bytes.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct StrId(std::num::NonZero<u32>);
+
+impl std::fmt::Debug for StrId {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "StrId({})", self.index())
+	}
+}
+
+impl StrId {
+	pub fn at(index: u32) -> Self {
+		StrId(std::num::NonZero::new(index + 1).unwrap())
+	}
+
+	pub fn index(self) -> u32 {
+		self.0.get() - 1
+	}
+}
 
 /// Strings back to back in one text, found through an open-addressing table by hash: no
 /// allocation per string and one hash per lookup, which `HashMap<Rc<str>>` paid twice on a miss.
@@ -146,7 +162,7 @@ impl Interner {
 		self.starts.push(self.text.len() as u32);
 		self.table[slot] = Self::entry(hash, id);
 		self.touched.push(slot as u32);
-		StrId(id)
+		StrId::at(id)
 	}
 
 	fn entry(hash: u32, id: u32) -> u64 {
@@ -167,8 +183,8 @@ impl Interner {
 			}
 			if (entry >> 32) as u32 == hash {
 				let id = entry as u32 - 1;
-				if self.get(StrId(id)) == s {
-					return Ok(StrId(id));
+				if self.get(StrId::at(id)) == s {
+					return Ok(StrId::at(id));
 				}
 			}
 			i = (i + 1) & mask;
@@ -198,7 +214,7 @@ impl Interner {
 	}
 
 	pub fn get(&self, id: StrId) -> &str {
-		let i = id.0 as usize;
+		let i = id.index() as usize;
 		// every start is where a whole string was appended, so a character boundary
 		unsafe {
 			std::str::from_utf8_unchecked(

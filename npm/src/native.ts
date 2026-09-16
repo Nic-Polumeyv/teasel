@@ -25,6 +25,7 @@ export const engine: Engine = {
 	},
 	constants: native.constants,
 	shapes: native.shapes,
+	layout: native.layout,
 	tree(): Tree | undefined {
 		const t = native.tree();
 		if (t === undefined) return undefined;

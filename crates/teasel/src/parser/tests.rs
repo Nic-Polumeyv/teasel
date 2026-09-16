@@ -83,7 +83,7 @@ pub(crate) fn expand<X>(ast: &Ast<X>, text: &str, extension: &dyn Fn(&Ast<X>, No
 			rest = &r[end + 2..];
 		} else if let Some(r) = tail.strip_prefix("StrId(") {
 			let end = r.find(')').unwrap();
-			let s = ast.str(crate::interner::StrId(r[..end].parse().unwrap()));
+			let s = ast.str(crate::interner::StrId::at(r[..end].parse().unwrap()));
 			out.push_str(&format!("{s:?}"));
 			rest = &r[end + 1..];
 		} else if let Some(r) = tail.strip_prefix("List { start: ") {

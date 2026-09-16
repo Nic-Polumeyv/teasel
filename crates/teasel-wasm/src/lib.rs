@@ -159,6 +159,11 @@ pub extern "C" fn tree() -> *const u32 {
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn layout() {
+	text(teasel::json::layout_json());
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn constants() {
 	text(teasel::json::constants_json());
 }

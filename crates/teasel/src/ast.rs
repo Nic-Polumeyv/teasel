@@ -1,6 +1,5 @@
 use crate::handed::Handed;
 use crate::interner::{FastMap, Interner, StrId};
-use crate::names::{Name, c};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Comment {
@@ -124,6 +123,7 @@ impl std::fmt::Debug for NodeId {
 
 /// A contiguous run of node ids in `Ast::lists`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(C)]
 pub struct List {
 	pub start: u32,
 	pub len: u32,
@@ -134,6 +134,7 @@ impl List {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[repr(C)]
 pub struct Node {
 	pub kind: NodeKind,
 	pub start: u32,
@@ -626,549 +627,452 @@ impl<X> Ast<X> {
 	}
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum NodeKind {
-	Program {
-		body: List,
-		module: bool,
-	},
+crate::layout::kinds! {
+	#[derive(Clone, Copy, Debug, PartialEq)]
+	pub enum NodeKind in node_layout {
+		Program {
+			body: List,
+			module: bool,
+		},
 
-	Identifier {
-		name: StrId,
-	},
-	PrivateIdentifier {
-		name: StrId,
-	},
-	NumberLiteral {
-		/// Into `Ast::numbers`.
-		value: u32,
-	},
-	BigIntLiteral,
-	StringLiteral {
-		value: StrId,
-	},
-	BooleanLiteral {
-		value: bool,
-	},
-	NullLiteral,
-	RegExpLiteral {
-		pattern: StrId,
-		flags: StrId,
-	},
-	TemplateLiteral {
-		quasis: List,
-		expressions: List,
-	},
-	TemplateElement {
-		cooked: Option<StrId>,
-		raw: StrId,
-		tail: bool,
-	},
-	TaggedTemplateExpression {
-		tag: NodeId,
-		quasi: NodeId,
-	},
-	ThisExpression,
-	Super,
-	ArrayExpression {
-		elements: List,
-	},
-	ObjectExpression {
-		properties: List,
-	},
-	Property {
-		key: NodeId,
-		value: NodeId,
-		kind: PropertyKind,
-		computed: bool,
-		method: bool,
-		shorthand: bool,
-	},
-	SpreadElement {
-		argument: NodeId,
-	},
-	UnaryExpression {
-		operator: UnaryOperator,
-		argument: NodeId,
-	},
-	UpdateExpression {
-		operator: UpdateOperator,
-		prefix: bool,
-		argument: NodeId,
-	},
-	BinaryExpression {
-		operator: BinaryOperator,
-		left: NodeId,
-		right: NodeId,
-	},
-	LogicalExpression {
-		operator: LogicalOperator,
-		left: NodeId,
-		right: NodeId,
-	},
-	AssignmentExpression {
-		operator: AssignmentOperator,
-		left: NodeId,
-		right: NodeId,
-	},
-	ConditionalExpression {
-		test: NodeId,
-		consequent: NodeId,
-		alternate: NodeId,
-	},
-	MemberExpression {
-		object: NodeId,
-		property: NodeId,
-		computed: bool,
-		optional: bool,
-	},
-	CallExpression {
-		callee: NodeId,
-		arguments: List,
-		optional: bool,
-	},
-	ChainExpression {
-		expression: NodeId,
-	},
-	NewExpression {
-		callee: NodeId,
-		arguments: List,
-	},
-	SequenceExpression {
-		expressions: List,
-	},
-	ArrowFunctionExpression {
-		params: List,
-		body: NodeId,
-		expression: bool,
-		is_async: bool,
-	},
-	FunctionExpression {
-		function: Function,
-	},
-	FunctionDeclaration {
-		function: Function,
-	},
-	ClassExpression {
-		class: Class,
-	},
-	ClassDeclaration {
-		class: Class,
-	},
-	ClassBody {
-		body: List,
-	},
-	MethodDefinition {
-		key: NodeId,
-		value: NodeId,
-		kind: MethodKind,
-		computed: bool,
-		is_static: bool,
-	},
-	PropertyDefinition {
-		key: NodeId,
-		value: Option<NodeId>,
-		computed: bool,
-		is_static: bool,
-	},
-	StaticBlock {
-		body: List,
-	},
-	YieldExpression {
-		argument: Option<NodeId>,
-		delegate: bool,
-	},
-	AwaitExpression {
-		argument: NodeId,
-	},
-	MetaProperty {
-		meta: NodeId,
-		property: NodeId,
-	},
-	ImportExpression {
-		source: NodeId,
-		options: Option<NodeId>,
-	},
+		Identifier {
+			name: StrId,
+		},
+		PrivateIdentifier {
+			name: StrId,
+		},
+		NumberLiteral {
+			/// Into `Ast::numbers`.
+			value: u32,
+		},
+		BigIntLiteral,
+		StringLiteral {
+			value: StrId,
+		},
+		BooleanLiteral {
+			value: bool,
+		},
+		NullLiteral,
+		RegExpLiteral {
+			pattern: StrId,
+			flags: StrId,
+		},
+		TemplateLiteral {
+			quasis: List,
+			expressions: List,
+		},
+		TemplateElement {
+			cooked: Option<StrId>,
+			raw: StrId,
+			tail: bool,
+		},
+		TaggedTemplateExpression {
+			tag: NodeId,
+			quasi: NodeId,
+		},
+		ThisExpression,
+		Super,
+		ArrayExpression {
+			elements: List,
+		},
+		ObjectExpression {
+			properties: List,
+		},
+		Property {
+			key: NodeId,
+			value: NodeId,
+			kind: PropertyKind,
+			computed: bool,
+			method: bool,
+			shorthand: bool,
+		},
+		SpreadElement {
+			argument: NodeId,
+		},
+		UnaryExpression {
+			operator: UnaryOperator,
+			argument: NodeId,
+		},
+		UpdateExpression {
+			operator: UpdateOperator,
+			prefix: bool,
+			argument: NodeId,
+		},
+		BinaryExpression {
+			operator: BinaryOperator,
+			left: NodeId,
+			right: NodeId,
+		},
+		LogicalExpression {
+			operator: LogicalOperator,
+			left: NodeId,
+			right: NodeId,
+		},
+		AssignmentExpression {
+			operator: AssignmentOperator,
+			left: NodeId,
+			right: NodeId,
+		},
+		ConditionalExpression {
+			test: NodeId,
+			consequent: NodeId,
+			alternate: NodeId,
+		},
+		MemberExpression {
+			object: NodeId,
+			property: NodeId,
+			computed: bool,
+			optional: bool,
+		},
+		CallExpression {
+			callee: NodeId,
+			arguments: List,
+			optional: bool,
+		},
+		ChainExpression {
+			expression: NodeId,
+		},
+		NewExpression {
+			callee: NodeId,
+			arguments: List,
+		},
+		SequenceExpression {
+			expressions: List,
+		},
+		ArrowFunctionExpression {
+			params: List,
+			body: NodeId,
+			expression: bool,
+			is_async: bool,
+		},
+		FunctionExpression {
+			function: Function,
+		},
+		FunctionDeclaration {
+			function: Function,
+		},
+		ClassExpression {
+			class: Class,
+		},
+		ClassDeclaration {
+			class: Class,
+		},
+		ClassBody {
+			body: List,
+		},
+		MethodDefinition {
+			key: NodeId,
+			value: NodeId,
+			kind: MethodKind,
+			computed: bool,
+			is_static: bool,
+		},
+		PropertyDefinition {
+			key: NodeId,
+			value: Option<NodeId>,
+			computed: bool,
+			is_static: bool,
+		},
+		StaticBlock {
+			body: List,
+		},
+		YieldExpression {
+			argument: Option<NodeId>,
+			delegate: bool,
+		},
+		AwaitExpression {
+			argument: NodeId,
+		},
+		MetaProperty {
+			meta: NodeId,
+			property: NodeId,
+		},
+		ImportExpression {
+			source: NodeId,
+			options: Option<NodeId>,
+		},
 
-	ObjectPattern {
-		properties: List,
-	},
-	ArrayPattern {
-		elements: List,
-	},
-	RestElement {
-		argument: NodeId,
-	},
-	AssignmentPattern {
-		left: NodeId,
-		right: NodeId,
-	},
+		ObjectPattern {
+			properties: List,
+		},
+		ArrayPattern {
+			elements: List,
+		},
+		RestElement {
+			argument: NodeId,
+		},
+		AssignmentPattern {
+			left: NodeId,
+			right: NodeId,
+		},
 
-	ExpressionStatement {
-		expression: NodeId,
-		directive: Option<StrId>,
-	},
-	BlockStatement {
-		body: List,
-	},
-	EmptyStatement,
-	DebuggerStatement,
-	WithStatement {
-		object: NodeId,
-		body: NodeId,
-	},
-	ReturnStatement {
-		argument: Option<NodeId>,
-	},
-	LabeledStatement {
-		label: NodeId,
-		body: NodeId,
-	},
-	BreakStatement {
-		label: Option<NodeId>,
-	},
-	ContinueStatement {
-		label: Option<NodeId>,
-	},
-	IfStatement {
-		test: NodeId,
-		consequent: NodeId,
-		alternate: Option<NodeId>,
-	},
-	SwitchStatement {
-		discriminant: NodeId,
-		cases: List,
-	},
-	SwitchCase {
-		test: Option<NodeId>,
-		consequent: List,
-	},
-	ThrowStatement {
-		argument: NodeId,
-	},
-	TryStatement {
-		block: NodeId,
-		handler: Option<NodeId>,
-		finalizer: Option<NodeId>,
-	},
-	CatchClause {
-		param: Option<NodeId>,
-		body: NodeId,
-	},
-	WhileStatement {
-		test: NodeId,
-		body: NodeId,
-	},
-	DoWhileStatement {
-		body: NodeId,
-		test: NodeId,
-	},
-	ForStatement {
-		init: Option<NodeId>,
-		test: Option<NodeId>,
-		update: Option<NodeId>,
-		body: NodeId,
-	},
-	ForInStatement {
-		left: NodeId,
-		right: NodeId,
-		body: NodeId,
-	},
-	ForOfStatement {
-		left: NodeId,
-		right: NodeId,
-		body: NodeId,
-		is_await: bool,
-	},
-	VariableDeclaration {
-		declarations: List,
-		kind: VariableKind,
-	},
-	VariableDeclarator {
-		id: NodeId,
-		init: Option<NodeId>,
-	},
+		ExpressionStatement {
+			expression: NodeId,
+			directive: Option<StrId>,
+		},
+		BlockStatement {
+			body: List,
+		},
+		EmptyStatement,
+		DebuggerStatement,
+		WithStatement {
+			object: NodeId,
+			body: NodeId,
+		},
+		ReturnStatement {
+			argument: Option<NodeId>,
+		},
+		LabeledStatement {
+			label: NodeId,
+			body: NodeId,
+		},
+		BreakStatement {
+			label: Option<NodeId>,
+		},
+		ContinueStatement {
+			label: Option<NodeId>,
+		},
+		IfStatement {
+			test: NodeId,
+			consequent: NodeId,
+			alternate: Option<NodeId>,
+		},
+		SwitchStatement {
+			discriminant: NodeId,
+			cases: List,
+		},
+		SwitchCase {
+			test: Option<NodeId>,
+			consequent: List,
+		},
+		ThrowStatement {
+			argument: NodeId,
+		},
+		TryStatement {
+			block: NodeId,
+			handler: Option<NodeId>,
+			finalizer: Option<NodeId>,
+		},
+		CatchClause {
+			param: Option<NodeId>,
+			body: NodeId,
+		},
+		WhileStatement {
+			test: NodeId,
+			body: NodeId,
+		},
+		DoWhileStatement {
+			body: NodeId,
+			test: NodeId,
+		},
+		ForStatement {
+			init: Option<NodeId>,
+			test: Option<NodeId>,
+			update: Option<NodeId>,
+			body: NodeId,
+		},
+		ForInStatement {
+			left: NodeId,
+			right: NodeId,
+			body: NodeId,
+		},
+		ForOfStatement {
+			left: NodeId,
+			right: NodeId,
+			body: NodeId,
+			is_await: bool,
+		},
+		VariableDeclaration {
+			declarations: List,
+			kind: VariableKind,
+		},
+		VariableDeclarator {
+			id: NodeId,
+			init: Option<NodeId>,
+		},
 
-	ImportDeclaration {
-		specifiers: List,
-		source: NodeId,
-		attributes: List,
-	},
-	ImportSpecifier {
-		imported: NodeId,
-		local: NodeId,
-	},
-	ImportDefaultSpecifier {
-		local: NodeId,
-	},
-	ImportNamespaceSpecifier {
-		local: NodeId,
-	},
-	ImportAttribute {
-		key: NodeId,
-		value: NodeId,
-	},
-	/// `export declaration`, an ExportNamedDeclaration whose only child is what it declares.
-	ExportDeclaration {
-		declaration: NodeId,
-	},
-	/// `export { specifiers } from source with { attributes }`.
-	ExportNamedDeclaration {
-		specifiers: List,
-		source: Option<NodeId>,
-		attributes: List,
-	},
-	ExportSpecifier {
-		local: NodeId,
-		exported: NodeId,
-	},
-	ExportDefaultDeclaration {
-		declaration: NodeId,
-	},
-	ExportAllDeclaration {
-		exported: Option<NodeId>,
-		source: NodeId,
-		attributes: List,
-	},
+		ImportDeclaration {
+			specifiers: List,
+			source: NodeId,
+			attributes: List,
+		},
+		ImportSpecifier {
+			imported: NodeId,
+			local: NodeId,
+		},
+		ImportDefaultSpecifier {
+			local: NodeId,
+		},
+		ImportNamespaceSpecifier {
+			local: NodeId,
+		},
+		ImportAttribute {
+			key: NodeId,
+			value: NodeId,
+		},
+		/// `export declaration`, an ExportNamedDeclaration whose only child is what it declares.
+		ExportDeclaration {
+			declaration: NodeId,
+		},
+		/// `export { specifiers } from source with { attributes }`.
+		ExportNamedDeclaration {
+			specifiers: List,
+			source: Option<NodeId>,
+			attributes: List,
+		},
+		ExportSpecifier {
+			local: NodeId,
+			exported: NodeId,
+		},
+		ExportDefaultDeclaration {
+			declaration: NodeId,
+		},
+		ExportAllDeclaration {
+			exported: Option<NodeId>,
+			source: NodeId,
+			attributes: List,
+		},
 
-	/// A node owned by a parser extension, indexed into its own data.
-	Extension(u32),
-	/// A node of the host's grammar, indexed into `Ast::hosts`.
-	Host(u32),
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Function {
-	pub id: Option<NodeId>,
-	pub params: List,
-	pub body: NodeId,
-	pub is_async: bool,
-	pub generator: bool,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Class {
-	pub id: Option<NodeId>,
-	pub super_class: Option<NodeId>,
-	pub body: NodeId,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PropertyKind {
-	Init,
-	Get,
-	Set,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum MethodKind {
-	Constructor,
-	Method,
-	Get,
-	Set,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum VariableKind {
-	Var,
-	Let,
-	Const,
-	Using,
-	AwaitUsing,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum UnaryOperator {
-	Minus,
-	Plus,
-	Not,
-	BitNot,
-	Typeof,
-	Void,
-	Delete,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum UpdateOperator {
-	Increment,
-	Decrement,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BinaryOperator {
-	Eq,
-	NotEq,
-	StrictEq,
-	StrictNotEq,
-	Lt,
-	LtEq,
-	Gt,
-	GtEq,
-	Shl,
-	Shr,
-	UShr,
-	Add,
-	Sub,
-	Mul,
-	Div,
-	Mod,
-	Exp,
-	BitOr,
-	BitXor,
-	BitAnd,
-	In,
-	Instanceof,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum LogicalOperator {
-	Or,
-	And,
-	Nullish,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum AssignmentOperator {
-	Assign,
-	Add,
-	Sub,
-	Mul,
-	Div,
-	Mod,
-	Exp,
-	Shl,
-	Shr,
-	UShr,
-	BitOr,
-	BitXor,
-	BitAnd,
-	Or,
-	And,
-	Nullish,
-}
-
-impl UnaryOperator {
-	pub fn name(self) -> Name {
-		match self {
-			Self::Minus => c!("-"),
-			Self::Plus => c!("+"),
-			Self::Not => c!("!"),
-			Self::BitNot => c!("~"),
-			Self::Typeof => c!("typeof"),
-			Self::Void => c!("void"),
-			Self::Delete => c!("delete"),
-		}
-	}
-
-	pub fn as_str(self) -> &'static str {
-		self.name().text
+		/// A node owned by a parser extension, indexed into its own data.
+		Extension(u32),
+		/// A node of the host's grammar, indexed into `Ast::hosts`.
+		Host(u32),
 	}
 }
 
-impl UpdateOperator {
-	pub fn name(self) -> Name {
-		match self {
-			Self::Increment => c!("++"),
-			Self::Decrement => c!("--"),
-		}
-	}
-
-	pub fn as_str(self) -> &'static str {
-		self.name().text
+crate::layout::record! {
+	#[derive(Clone, Copy, Debug, PartialEq)]
+	pub struct Function {
+		pub id: Option<NodeId>,
+		pub params: List,
+		pub body: NodeId,
+		pub is_async: bool,
+		pub generator: bool,
 	}
 }
 
-impl BinaryOperator {
-	pub fn name(self) -> Name {
-		match self {
-			Self::Eq => c!("=="),
-			Self::NotEq => c!("!="),
-			Self::StrictEq => c!("==="),
-			Self::StrictNotEq => c!("!=="),
-			Self::Lt => c!("<"),
-			Self::LtEq => c!("<="),
-			Self::Gt => c!(">"),
-			Self::GtEq => c!(">="),
-			Self::Shl => c!("<<"),
-			Self::Shr => c!(">>"),
-			Self::UShr => c!(">>>"),
-			Self::Add => c!("+"),
-			Self::Sub => c!("-"),
-			Self::Mul => c!("*"),
-			Self::Div => c!("/"),
-			Self::Mod => c!("%"),
-			Self::Exp => c!("**"),
-			Self::BitOr => c!("|"),
-			Self::BitXor => c!("^"),
-			Self::BitAnd => c!("&"),
-			Self::In => c!("in"),
-			Self::Instanceof => c!("instanceof"),
-		}
-	}
-
-	pub fn as_str(self) -> &'static str {
-		self.name().text
+crate::layout::record! {
+	#[derive(Clone, Copy, Debug, PartialEq)]
+	pub struct Class {
+		pub id: Option<NodeId>,
+		pub super_class: Option<NodeId>,
+		pub body: NodeId,
 	}
 }
 
-impl LogicalOperator {
-	pub fn name(self) -> Name {
-		match self {
-			Self::Or => c!("||"),
-			Self::And => c!("&&"),
-			Self::Nullish => c!("??"),
-		}
-	}
-
-	pub fn as_str(self) -> &'static str {
-		self.name().text
+crate::layout::names! {
+	#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+	pub enum PropertyKind {
+		Init = "init",
+		Get = "get",
+		Set = "set",
 	}
 }
 
-impl AssignmentOperator {
-	pub fn name(self) -> Name {
-		match self {
-			Self::Assign => c!("="),
-			Self::Add => c!("+="),
-			Self::Sub => c!("-="),
-			Self::Mul => c!("*="),
-			Self::Div => c!("/="),
-			Self::Mod => c!("%="),
-			Self::Exp => c!("**="),
-			Self::Shl => c!("<<="),
-			Self::Shr => c!(">>="),
-			Self::UShr => c!(">>>="),
-			Self::BitOr => c!("|="),
-			Self::BitXor => c!("^="),
-			Self::BitAnd => c!("&="),
-			Self::Or => c!("||="),
-			Self::And => c!("&&="),
-			Self::Nullish => c!("??="),
-		}
+crate::layout::names! {
+	#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+	pub enum MethodKind {
+		Constructor = "constructor",
+		Method = "method",
+		Get = "get",
+		Set = "set",
 	}
+}
 
-	pub fn as_str(self) -> &'static str {
-		self.name().text
+crate::layout::names! {
+	#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+	pub enum VariableKind {
+		Var = "var",
+		Let = "let",
+		Const = "const",
+		Using = "using",
+		AwaitUsing = "await using",
+	}
+}
+
+crate::layout::names! {
+	#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+	pub enum UnaryOperator {
+		Minus = "-",
+		Plus = "+",
+		Not = "!",
+		BitNot = "~",
+		Typeof = "typeof",
+		Void = "void",
+		Delete = "delete",
+	}
+}
+
+crate::layout::names! {
+	#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+	pub enum UpdateOperator {
+		Increment = "++",
+		Decrement = "--",
+	}
+}
+
+crate::layout::names! {
+	#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+	pub enum BinaryOperator {
+		Eq = "==",
+		NotEq = "!=",
+		StrictEq = "===",
+		StrictNotEq = "!==",
+		Lt = "<",
+		LtEq = "<=",
+		Gt = ">",
+		GtEq = ">=",
+		Shl = "<<",
+		Shr = ">>",
+		UShr = ">>>",
+		Add = "+",
+		Sub = "-",
+		Mul = "*",
+		Div = "/",
+		Mod = "%",
+		Exp = "**",
+		BitOr = "|",
+		BitXor = "^",
+		BitAnd = "&",
+		In = "in",
+		Instanceof = "instanceof",
+	}
+}
+
+crate::layout::names! {
+	#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+	pub enum LogicalOperator {
+		Or = "||",
+		And = "&&",
+		Nullish = "??",
+	}
+}
+
+crate::layout::names! {
+	#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+	pub enum AssignmentOperator {
+		Assign = "=",
+		Add = "+=",
+		Sub = "-=",
+		Mul = "*=",
+		Div = "/=",
+		Mod = "%=",
+		Exp = "**=",
+		Shl = "<<=",
+		Shr = ">>=",
+		UShr = ">>>=",
+		BitOr = "|=",
+		BitXor = "^=",
+		BitAnd = "&=",
+		Or = "||=",
+		And = "&&=",
+		Nullish = "??=",
 	}
 }
 
 impl VariableKind {
 	pub(crate) fn is_using(self) -> bool {
 		matches!(self, Self::Using | Self::AwaitUsing)
-	}
-
-	pub fn name(self) -> Name {
-		match self {
-			Self::Var => c!("var"),
-			Self::Let => c!("let"),
-			Self::Const => c!("const"),
-			Self::Using => c!("using"),
-			Self::AwaitUsing => c!("await using"),
-		}
-	}
-
-	pub fn as_str(self) -> &'static str {
-		self.name().text
 	}
 }
 
