@@ -684,6 +684,7 @@ fn phases() {
 			scopes: true,
 			erase: false,
 			errors: false,
+			arena: false,
 		};
 		let flat = Positions::new(&source, false);
 		let end = source.len() as u32;
@@ -715,6 +716,7 @@ fn phases() {
 		scopes: false,
 		erase: false,
 		errors: false,
+		arena: false,
 	};
 	let end = source.len() as u32;
 	let flat = Positions::new(&source, false);
@@ -812,6 +814,7 @@ fn profile() {
 			scopes: false,
 			erase: false,
 			errors: false,
+			arena: false,
 		};
 		let positions = Positions::new(&source, false);
 		let end = source.len() as u32;

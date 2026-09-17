@@ -51,6 +51,16 @@ pub enum Op<F: Copy + 'static = Path> {
 	Object(Name, &'static [Op<F>]),
 	/// A specifier's other name: names only when it is the binding node, the second field.
 	OtherName(Name, F, F),
+	/// Erasing lists the node under `typescript` by this name.
+	Keep(Name),
+	/// The same when the bool is set.
+	KeepIf(Name, F),
+	/// Erasing, the node gives way to this child, which takes its facts over.
+	Through(F),
+	/// The enum field's name, or the given one when missing.
+	EnumOr(Name, F, Name),
+	/// Only when true and the node is an extension's.
+	BoolIfExtension(Name, F),
 }
 
 /// A field resolved: its byte offset from the record's start and its type.
@@ -164,7 +174,7 @@ pub fn resolve(recipes: &[(&str, &[Op])], variants: &[Variant]) -> &'static [&'s
 	Box::leak(table.into_boxed_slice())
 }
 
-fn resolve_ops(ops: &[Op], fields: &[Field], kind: &str) -> &'static [Op<Slot>] {
+pub(crate) fn resolve_ops(ops: &[Op], fields: &[Field], kind: &str) -> &'static [Op<Slot>] {
 	let slot = |path: Path, wanted: &[fn(&Ty) -> bool]| -> Slot {
 		let (head, rest) = path.split_once('.').map_or((path, None), |(h, r)| (h, Some(r)));
 		let field = fields
@@ -224,6 +234,11 @@ fn resolve_ops(ops: &[Op], fields: &[Field], kind: &str) -> &'static [Op<Slot>] 
 				slot(f, &[|t| matches!(t, Ty::Node)]),
 				slot(g, &[|t| matches!(t, Ty::Node)]),
 			),
+			Keep(name) => Keep(name),
+			KeepIf(name, f) => KeepIf(name, slot(f, &[|t| matches!(t, Ty::Bool)])),
+			Through(f) => Through(slot(f, &[|t| matches!(t, Ty::Node)])),
+			EnumOr(k, f, other) => EnumOr(k, slot(f, &[|t| matches!(t, Ty::OptEnum(_))]), other),
+			BoolIfExtension(k, f) => BoolIfExtension(k, slot(f, &[|t| matches!(t, Ty::Bool)])),
 		})
 		.collect();
 	Box::leak(resolved.into_boxed_slice())
@@ -269,6 +284,11 @@ fn json_ops(out: &mut String, ops: &[Op]) {
 			EmptyList(k) => ("emptylist", Some(k), None, None),
 			Object(k, inner) => ("object", Some(k), None, Some(inner)),
 			OtherName(k, f, _) => ("othername", Some(k), Some(f), None),
+			Keep(name) => ("keep", Some(name), None, None),
+			KeepIf(name, f) => ("keepif", Some(name), Some(f), None),
+			Through(f) => ("through", None, Some(f), None),
+			EnumOr(k, f, _) => ("enumor", Some(k), Some(f), None),
+			BoolIfExtension(k, f) => ("boolifextension", Some(k), Some(f), None),
 		};
 		json_str(out, name);
 		if let Some(key) = key {
@@ -294,6 +314,10 @@ fn json_ops(out: &mut String, ops: &[Op]) {
 			OtherName(_, _, binding) => {
 				out.push(',');
 				json_str(out, binding);
+			}
+			EnumOr(_, _, other) => {
+				out.push(',');
+				json_str(out, other.text);
 			}
 			_ => {}
 		}

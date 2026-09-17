@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module';
+import type { Tree } from './arena.js';
 
 /** The external V8 holds for the addon: a prepared source. */
 export type External = object;
@@ -12,7 +13,7 @@ export interface Addon {
 	readonly shapes: () => number[];
 	readonly layout: () => string;
 	/** Whether the tree is the TypeScript one, then each view followed by its length in elements. */
-	readonly tree: () => (Uint32Array | Float64Array | Uint8Array | number | undefined)[] | undefined;
+	readonly tree: () => Tree | undefined;
 }
 
 export const platforms: Record<string, { target: string; os: NodeJS.Platform; cpu: NodeJS.Architecture; libc?: string }> = {

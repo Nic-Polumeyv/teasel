@@ -46,30 +46,78 @@ pub(crate) const TS: &[(&str, &[Op])] = &[
 	("InterfaceDeclaration", &[Type(c!("TSInterfaceDeclaration")), Node(c!("id"), "id"), OptKey(c!("typeParameters"), "type_parameters"), OptListKey(c!("extends"), "extends"), Node(c!("body"), "body")]),
 	("InterfaceBody", &[Type(c!("TSInterfaceBody")), List(c!("body"), "body")]),
 	("ExpressionWithTypeArguments", &[Type(c!("TSExpressionWithTypeArguments")), Node(c!("expression"), "expression"), OptKey(c!("typeParameters"), "type_arguments")]),
-	("EnumDeclaration", &[Type(c!("TSEnumDeclaration")), BoolIf(c!("const"), "is_const"), Node(c!("id"), "id"), List(c!("members"), "members")]),
+	("EnumDeclaration", &[Keep(c!("TSEnumDeclaration")), Type(c!("TSEnumDeclaration")), BoolIf(c!("const"), "is_const"), Node(c!("id"), "id"), List(c!("members"), "members")]),
 	("EnumMember", &[Type(c!("TSEnumMember")), Node(c!("id"), "id"), OptKey(c!("initializer"), "initializer")]),
-	("ModuleDeclaration", &[Type(c!("TSModuleDeclaration")), BoolIf(c!("global"), "global"), Node(c!("id"), "id"), OptKey(c!("body"), "body")]),
+	("ModuleDeclaration", &[Keep(c!("TSModuleDeclaration")), Type(c!("TSModuleDeclaration")), BoolIf(c!("global"), "global"), Node(c!("id"), "id"), OptKey(c!("body"), "body")]),
 	("ModuleBlock", &[Type(c!("TSModuleBlock")), List(c!("body"), "body")]),
 	("TypeAliasDeclaration", &[Type(c!("TSTypeAliasDeclaration")), Node(c!("id"), "id"), OptKey(c!("typeParameters"), "type_parameters"), Node(c!("typeAnnotation"), "type_annotation")]),
-	("ImportEqualsDeclaration", &[Type(c!("TSImportEqualsDeclaration")), Enum(c!("importKind"), "import_kind"), Bool(c!("isExport"), "is_export"), Node(c!("id"), "id"), Node(c!("moduleReference"), "module_reference")]),
+	("ImportEqualsDeclaration", &[Keep(c!("TSImportEqualsDeclaration")), Type(c!("TSImportEqualsDeclaration")), Enum(c!("importKind"), "import_kind"), Bool(c!("isExport"), "is_export"), Node(c!("id"), "id"), Node(c!("moduleReference"), "module_reference")]),
 	("ExternalModuleReference", &[Type(c!("TSExternalModuleReference")), Node(c!("expression"), "expression")]),
-	("ExportAssignment", &[Type(c!("TSExportAssignment")), Node(c!("expression"), "expression")]),
+	("ExportAssignment", &[Keep(c!("TSExportAssignment")), Type(c!("TSExportAssignment")), Node(c!("expression"), "expression")]),
 	("NamespaceExportDeclaration", &[Type(c!("TSNamespaceExportDeclaration")), Node(c!("id"), "id")]),
 	("DeclareFunction", &[Type(c!("TSDeclareFunction")), Opt(c!("id"), "id"), Bool(c!("generator"), "generator"), Bool(c!("async"), "is_async"), ConstBool(c!("expression"), false), List(c!("params"), "params")]),
 	("DeclareMethod", &[Type(c!("TSDeclareMethod")), Null(c!("id")), Bool(c!("generator"), "generator"), Bool(c!("async"), "is_async"), ConstBool(c!("expression"), false), List(c!("params"), "params")]),
-	("AsExpression", &[Type(c!("TSAsExpression")), Node(c!("expression"), "expression"), Node(c!("typeAnnotation"), "type_annotation")]),
-	("SatisfiesExpression", &[Type(c!("TSSatisfiesExpression")), Node(c!("expression"), "expression"), Node(c!("typeAnnotation"), "type_annotation")]),
-	("NonNullExpression", &[Type(c!("TSNonNullExpression")), Node(c!("expression"), "expression")]),
-	("TypeAssertion", &[Type(c!("TSTypeAssertion")), Node(c!("typeAnnotation"), "type_annotation"), Node(c!("expression"), "expression")]),
-	("TypeCastExpression", &[Type(c!("TSTypeCastExpression")), Node(c!("expression"), "expression"), Node(c!("typeAnnotation"), "type_annotation")]),
-	("InstantiationExpression", &[Type(c!("TSInstantiationExpression")), Node(c!("expression"), "expression"), Node(c!("typeArguments"), "type_arguments")]),
-	("ParameterProperty", &[Type(c!("TSParameterProperty")), Node(c!("parameter"), "parameter")]),
-	("Decorator", &[Type(c!("Decorator")), Node(c!("expression"), "expression")]),
+	("AsExpression", &[Through("expression"), Type(c!("TSAsExpression")), Node(c!("expression"), "expression"), Node(c!("typeAnnotation"), "type_annotation")]),
+	("SatisfiesExpression", &[Through("expression"), Type(c!("TSSatisfiesExpression")), Node(c!("expression"), "expression"), Node(c!("typeAnnotation"), "type_annotation")]),
+	("NonNullExpression", &[Through("expression"), Type(c!("TSNonNullExpression")), Node(c!("expression"), "expression")]),
+	("TypeAssertion", &[Through("expression"), Type(c!("TSTypeAssertion")), Node(c!("typeAnnotation"), "type_annotation"), Node(c!("expression"), "expression")]),
+	("TypeCastExpression", &[Through("expression"), Type(c!("TSTypeCastExpression")), Node(c!("expression"), "expression"), Node(c!("typeAnnotation"), "type_annotation")]),
+	("InstantiationExpression", &[Through("expression"), Type(c!("TSInstantiationExpression")), Node(c!("expression"), "expression"), Node(c!("typeArguments"), "type_arguments")]),
+	("ParameterProperty", &[Keep(c!("TSParameterProperty")), Through("parameter"), Type(c!("TSParameterProperty")), Node(c!("parameter"), "parameter")]),
+	("Decorator", &[Keep(c!("Decorator")), Type(c!("Decorator")), Node(c!("expression"), "expression")]),
 ];
 
-fn ts_recipes() -> &'static [&'static [Op<Slot>]] {
-	static RESOLVED: std::sync::OnceLock<&'static [&'static [Op<Slot>]]> = std::sync::OnceLock::new();
-	RESOLVED.get_or_init(|| crate::recipe::resolve(TS, super::ast::ts_layout::VARIANTS))
+/// What TypeScript adds to a JavaScript kind whatever its extras say, over the extras record.
+#[rustfmt::skip]
+pub(crate) const ADDS: &[(&str, &[Op])] = &[
+	("ImportDeclaration", &[EnumOr(c!("importKind"), "import_kind", c!("value"))]),
+	("ImportSpecifier", &[EnumOr(c!("importKind"), "import_kind", c!("value"))]),
+	("ExportDeclaration", &[EnumOr(c!("exportKind"), "export_kind", c!("value"))]),
+	("ExportNamedDeclaration", &[EnumOr(c!("exportKind"), "export_kind", c!("value"))]),
+	("ExportDefaultDeclaration", &[EnumOr(c!("exportKind"), "export_kind", c!("value"))]),
+	("ExportAllDeclaration", &[EnumOr(c!("exportKind"), "export_kind", c!("value"))]),
+	("ExportSpecifier", &[EnumOr(c!("exportKind"), "export_kind", c!("value"))]),
+];
+
+/// The keys a node's extras add, after the kind's own.
+#[rustfmt::skip]
+pub(crate) const EXTRAS: &[Op] = &[
+	OptKey(c!("typeAnnotation"), "type_annotation"), OptKey(c!("returnType"), "return_type"), OptKey(c!("typeParameters"), "type_parameters"),
+	OptKey(c!("typeArguments"), "type_arguments"), OptKey(c!("superTypeParameters"), "super_type_arguments"),
+	OptListKey(c!("implements"), "implements"), OptListKey(c!("decorators"), "decorators"), OptEnumKey(c!("accessibility"), "accessibility"),
+	BoolIf(c!("optional"), "optional"), BoolIf(c!("definite"), "definite"), BoolIf(c!("declare"), "declare"), BoolIf(c!("abstract"), "is_abstract"),
+	BoolIf(c!("readonly"), "readonly"), BoolIf(c!("override"), "is_override"), BoolIf(c!("accessor"), "accessor"), BoolIfExtension(c!("static"), "is_static"),
+];
+
+/// The same when erasing: the proposals JavaScript itself has, decorators and accessor fields.
+pub(crate) const EXTRAS_ERASED: &[Op] = &[
+	OptListKey(c!("decorators"), "decorators"),
+	BoolIf(c!("accessor"), "accessor"),
+	KeepIf(c!("AccessorProperty"), "accessor"),
+];
+
+struct Recipes {
+	kinds: &'static [&'static [Op<Slot>]],
+	/// By the JavaScript kind's tag.
+	adds: Vec<&'static [Op<Slot>]>,
+	extras: &'static [Op<Slot>],
+	erased: &'static [Op<Slot>],
+}
+
+fn recipes() -> &'static Recipes {
+	static RESOLVED: std::sync::OnceLock<Recipes> = std::sync::OnceLock::new();
+	RESOLVED.get_or_init(|| Recipes {
+		kinds: crate::recipe::resolve(TS, super::ast::ts_layout::VARIANTS),
+		adds: crate::ast::node_layout::VARIANTS
+			.iter()
+			.map(|variant| match ADDS.iter().find(|(name, _)| *name == variant.name) {
+				Some((name, ops)) => crate::recipe::resolve_ops(ops, Extras::FIELDS, name),
+				None => &[][..],
+			})
+			.collect(),
+		extras: crate::recipe::resolve_ops(EXTRAS, Extras::FIELDS, "Extras"),
+		erased: crate::recipe::resolve_ops(EXTRAS_ERASED, Extras::FIELDS, "Extras"),
+	})
 }
 
 impl Data {
@@ -135,93 +183,22 @@ impl Emit for Data {
 	}
 
 	fn node<S: Sink>(&self, w: &mut Writer<Self, S>, id: NodeId, index: u32) {
-		use TsKind::*;
-		if w.output.erase {
-			match self.kind(index) {
-				AsExpression { expression, .. }
-				| SatisfiesExpression { expression, .. }
-				| NonNullExpression { expression }
-				| TypeAssertion { expression, .. }
-				| TypeCastExpression { expression, .. }
-				| InstantiationExpression { expression, .. } => {
-					w.adopt(id);
-					return w.node(expression);
-				}
-				ParameterProperty { parameter } => {
-					w.keep(c!("TSParameterProperty"), id);
-					return w.node(parameter);
-				}
-				EnumDeclaration { .. } => w.keep(c!("TSEnumDeclaration"), id),
-				ModuleDeclaration { .. } => w.keep(c!("TSModuleDeclaration"), id),
-				ExportAssignment { .. } => w.keep(c!("TSExportAssignment"), id),
-				ImportEqualsDeclaration { .. } => w.keep(c!("TSImportEqualsDeclaration"), id),
-				Decorator { .. } => w.keep(c!("Decorator"), id),
-				_ => {}
-			}
-		}
 		let base = &self.nodes[index as usize] as *const TsKind as *const u8;
-		w.run(id, ts_recipes()[crate::estree::tag(base)], base);
-		w.end();
+		if w.run(id, recipes().kinds[crate::estree::tag(base)], base) {
+			w.end();
+		}
 	}
 
 	fn extras<S: Sink>(&self, w: &mut Writer<Self, S>, id: NodeId) {
-		let kind = w.kind(id);
+		let recipes = recipes();
 		let extras = self.extras_of(id);
-		let extension = matches!(kind, NodeKind::Extension(_));
+		let base = &extras as *const Extras as *const u8;
 		if w.output.erase {
-			// proposals JavaScript itself has, which erasure keeps and lists: decorators and accessor fields
-			if let Some(decorators) = extras.decorators {
-				w.list(c!("decorators"), decorators);
-			}
-			if extras.accessor {
-				w.bool(c!("accessor"), true);
-				w.keep(c!("AccessorProperty"), id);
-			}
+			w.run(id, recipes.erased, base);
 			return;
 		}
-		match kind {
-			NodeKind::ImportDeclaration { .. } | NodeKind::ImportSpecifier { .. } => {
-				w.string(c!("importKind"), extras.import_kind.unwrap_or(Kind::Value).name());
-			}
-			NodeKind::ExportDeclaration { .. }
-			| NodeKind::ExportNamedDeclaration { .. }
-			| NodeKind::ExportDefaultDeclaration { .. }
-			| NodeKind::ExportAllDeclaration { .. }
-			| NodeKind::ExportSpecifier { .. } => {
-				w.string(c!("exportKind"), extras.export_kind.unwrap_or(Kind::Value).name());
-			}
-			_ => {}
-		}
-		if extras == Extras::default() {
-			return;
-		}
-		w.opt_key(c!("typeAnnotation"), extras.type_annotation);
-		w.opt_key(c!("returnType"), extras.return_type);
-		w.opt_key(c!("typeParameters"), extras.type_parameters);
-		w.opt_key(c!("typeArguments"), extras.type_arguments);
-		w.opt_key(c!("superTypeParameters"), extras.super_type_arguments);
-		if let Some(implements) = extras.implements {
-			w.list(c!("implements"), implements);
-		}
-		if let Some(decorators) = extras.decorators {
-			w.list(c!("decorators"), decorators);
-		}
-		if let Some(accessibility) = extras.accessibility {
-			w.string(c!("accessibility"), accessibility.name());
-		}
-		for (key, set) in [
-			(c!("optional"), extras.optional),
-			(c!("definite"), extras.definite),
-			(c!("declare"), extras.declare),
-			(c!("abstract"), extras.is_abstract),
-			(c!("readonly"), extras.readonly),
-			(c!("override"), extras.is_override),
-			(c!("accessor"), extras.accessor),
-			(c!("static"), extras.is_static && extension),
-		] {
-			if set {
-				w.bool(key, true);
-			}
-		}
+		let kind = &w.ast().nodes[id.index() as usize].kind as *const NodeKind as *const u8;
+		w.run(id, recipes.adds[crate::estree::tag(kind)], base);
+		w.run(id, recipes.extras, base);
 	}
 }

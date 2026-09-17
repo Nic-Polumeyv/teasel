@@ -250,7 +250,10 @@ pub struct Ast<X = ()> {
 	pub host_strings: Handed<StrId>,
 	pub host_groups: Vec<HostGroup>,
 	pub strings: Interner,
-	pub comments: Handed<Comment>,
+	pub comments: Vec<Comment>,
+	/// Each comment as a front end reads it, nine words: whether it is a block, where its text and
+	/// the comment itself start and end in UTF-16, and its lines and columns with `locations`.
+	pub comment_words: Handed<u32>,
 	/// Comments attached to nodes by `comments::attach`, as indices into `comments`.
 	pub attached: Slots<Attached>,
 	/// Nodes erasure leaves out, when the answer erases TypeScript.
@@ -361,6 +364,7 @@ impl<X: Reuse> Ast<X> {
 		self.errors.clear();
 		self.parenthesized.clear();
 		self.erased.clear();
+		self.comment_words.clear();
 		self.spans.clear();
 		self.locs.clear();
 		self.units.clear();
@@ -416,7 +420,7 @@ impl<X: Reuse> Ast<X> {
 		out.push("locs", &mut self.locs);
 		out.push("parenthesized", self.parenthesized.words());
 		out.push("erased", self.erased.words());
-		out.push("comments", &mut self.comments);
+		out.push("comments", &mut self.comment_words);
 		self.attached.views("attached_slots", "attached", &mut out);
 		out.push("hosts", &mut self.host_view);
 		out.push("host_keys", &mut self.host_keys);

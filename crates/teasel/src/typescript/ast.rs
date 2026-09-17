@@ -30,7 +30,7 @@ pub struct ExtrasTable {
 	owners: Vec<NodeId>,
 }
 
-const NONE: u32 = u32::MAX;
+pub(crate) const NONE: u32 = u32::MAX;
 
 impl crate::ast::Reuse for Data {
 	type Mark = (usize, usize);

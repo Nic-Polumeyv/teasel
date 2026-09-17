@@ -26,6 +26,8 @@ pub struct Request {
 	pub locations: bool,
 	/// TypeScript erased on output; see `estree::Output`.
 	pub erase: bool,
+	/// The front end reads the tree in place; see `estree::Output`.
+	pub arena: bool,
 	/// Where the source is cut, as a byte offset, for a program inside a larger source.
 	pub end: Option<u32>,
 	pub options: Options,
@@ -80,6 +82,7 @@ impl Request {
 			"allowSuperOutsideMethod" => self.options.allow_super_outside_method = true,
 			"allowUndeclaredExports" => self.options.allow_undeclared_exports = true,
 			"erase" => self.erase = true,
+			"arena" => self.arena = true,
 			"errorRecovery" => self.options.error_recovery = true,
 			_ => {}
 		}
@@ -102,8 +105,9 @@ pub mod flag {
 	pub const ALLOW_SUPER_OUTSIDE_METHOD: u32 = 1 << 11;
 	pub const ALLOW_UNDECLARED_EXPORTS: u32 = 1 << 12;
 	pub const ERROR_RECOVERY: u32 = 1 << 13;
+	pub const ARENA: u32 = 1 << 14;
 	/// Each bit by the name `Request::set` takes.
-	pub const NAMES: [(u32, &str); 14] = [
+	pub const NAMES: [(u32, &str); 15] = [
 		(MODULE, "module"),
 		(TYPESCRIPT, "typescript"),
 		(ERASE, "erase"),
@@ -118,6 +122,7 @@ pub mod flag {
 		(ALLOW_SUPER_OUTSIDE_METHOD, "allowSuperOutsideMethod"),
 		(ALLOW_UNDECLARED_EXPORTS, "allowUndeclaredExports"),
 		(ERROR_RECOVERY, "errorRecovery"),
+		(ARENA, "arena"),
 	];
 }
 
@@ -164,7 +169,12 @@ pub fn layout_json() -> String {
 	#[cfg(feature = "typescript")]
 	{
 		out.push_str(",\"ts\":");
-		crate::recipe::json(&mut out, crate::typescript::estree::TS);
+		use crate::typescript::estree::{ADDS, EXTRAS, EXTRAS_ERASED, TS};
+		crate::recipe::json(&mut out, TS);
+		out.push_str(",\"adds\":");
+		crate::recipe::json(&mut out, ADDS);
+		out.push_str(",\"extras\":");
+		crate::recipe::json(&mut out, &[("extras", EXTRAS), ("erased", EXTRAS_ERASED)]);
 	}
 	out.push_str("}}");
 	out
@@ -543,6 +553,7 @@ where
 		scopes: request.scopes,
 		erase: request.erase && request.typescript,
 		errors: request.options.error_recovery,
+		arena: request.arena,
 	};
 	let reused = Pooled::take(pool).map(|mut ast| {
 		ast.clear();
@@ -632,11 +643,23 @@ fn prepare<X: Emit + Reuse, S: Sink>(ast: &mut Ast<X>, positions: &Positions, ou
 		ast.host_view
 			.extend_from_slice(&[ty, host.fields.0, host.fields.1, host.span as u32]);
 	}
+	let mut cursor = crate::estree::Cursor::default();
 	for i in 0..ast.host_fields.len() {
 		let (key, value) = ast.host_fields[i];
 		let key = sink.constant(crate::names::Name::dynamic(key));
 		ast.host_keys.push(key);
-		ast.host_vals.push(value.words());
+		let mut words = value.words();
+		if let crate::ast::Value::Slice(start, end) = value {
+			words = [
+				words[0],
+				positions.offset(&mut cursor, start),
+				positions.offset(&mut cursor, end),
+			];
+		}
+		ast.host_vals.push(words);
+	}
+	if output.comments || !ast.hosts.is_empty() {
+		positions.map_comments(&ast.comments, &mut ast.comment_words);
 	}
 }
 

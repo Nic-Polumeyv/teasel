@@ -316,6 +316,8 @@ pub fn json() -> String {
 	crate::estree::push_int(&mut out, std::mem::offset_of!(Node, start) as u32);
 	out.push_str(",\"end\":");
 	crate::estree::push_int(&mut out, std::mem::offset_of!(Node, end) as u32);
+	out.push_str(",\"kind\":");
+	crate::estree::push_int(&mut out, std::mem::offset_of!(Node, kind) as u32);
 	out.push_str("},\"kinds\":");
 	variants(&mut out, crate::ast::node_layout::VARIANTS);
 	#[cfg(feature = "typescript")]
@@ -327,6 +329,8 @@ pub fn json() -> String {
 		variants(&mut out, crate::typescript::ast::ts_layout::VARIANTS);
 		out.push_str("},\"extras\":{\"size\":");
 		crate::estree::push_int(&mut out, std::mem::size_of::<Extras>() as u32);
+		out.push_str(",\"none\":");
+		crate::estree::push_int(&mut out, crate::typescript::ast::NONE);
 		out.push_str(",\"fields\":");
 		list(&mut out, Extras::FIELDS);
 		out.push('}');

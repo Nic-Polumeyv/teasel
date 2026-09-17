@@ -1,5 +1,9 @@
 // Turns the addon's shape-coded stream into ESTree objects: what `JSON.parse` did, without the
 // text. The layout is `teasel::estree::Binary`, the kinds `teasel::estree::kind`.
+import { PARENT, REFERENCE, SCOPE, build_roots, strings as interned_strings, type Decoded, type Tree } from './arena.js';
+
+export { PARENT, REFERENCE, SCOPE, type Decoded, type Tree };
+
 const HEADER = 7;
 // in a node's place
 const NULL = 0;
@@ -9,23 +13,20 @@ const little = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
 // a leading U+FEFF is text, not a mark
 const utf8 = new TextDecoder('utf-8', { ignoreBOM: true });
 
-// symbol keys: ten times cheaper than a WeakMap entry, and skipped by JSON, Object.keys and for-in
-export const SCOPE = Symbol('scope');
-export const REFERENCE = Symbol('reference');
-export const PARENT = Symbol('parent');
-
 const FACTS = new Set(['scope', 'declares', 'reference', 'defines', 'writes', 'root']);
 
-/** A decoded object: the stream decides its shape, `api.ts` describes it. */
-export type Decoded = Record<string | symbol, any>;
 type Builder = (S: State) => Decoded;
 type Reader = (S: State) => any;
 
-/** The engine's numbering, which the stream refers to. */
+/** The engine's numbering, which the stream refers to, and the tree's layout. */
 export interface Tables {
 	readonly constants: () => string[];
 	readonly shapes: () => ArrayLike<number>;
+	readonly layout: () => string;
 }
+
+// todo: gone with the stream's tree half, once every answer comes this way
+export const mode = { arena: true };
 
 // one decode at a time; the builders are generated once and read through this
 interface State {
@@ -239,7 +240,7 @@ function link_roots(roots: Decoded[], scopes: Decoded[], bindings: Decoded[], re
 }
 
 /** The answer's words, or a view of them inside a larger buffer; `link` replaces the scope and binding numbers with the objects they index. */
-export function decode(words: Uint32Array, source: string, engine: Tables, link = true): Decoded {
+export function decode(words: Uint32Array, source: string, engine: Tables, link = true, arena?: Tree): Decoded {
 	const { buffer, byteOffset } = words;
 	// read by index: destructuring a typed array goes through its iterator, a tenth of a small decode
 	const tree = words[0], ends_count = words[1], floats_count = words[2], bytes = words[3], known = words[4], known_shapes = words[5], tables_at = words[6];
@@ -250,11 +251,14 @@ export function decode(words: Uint32Array, source: string, engine: Tables, link 
 	if (floats_at % 2 === 1) floats_at++;
 	const floats_start = byteOffset + floats_at * 4;
 	const floats = !floats_count ? null : floats_start % 8 === 0 ? new Float64Array(buffer, floats_start, floats_count) : unaligned_floats(buffer, floats_start, floats_count);
-	const strings = new Array<string>(ends_count);
+	// the tree's strings come first, then the words' own
+	const interned = arena === undefined ? null : interned_strings(arena, engine);
+	const strings = interned === null ? new Array<string>(ends_count) : interned.slice();
+	const first = interned === null ? 0 : interned.length;
 	let from = 0;
 	for (let i = 0; i < ends_count; i++) {
 		const end = words[HEADER + tree + i];
-		strings[i] = text.slice(from, end);
+		strings[first + i] = text.slice(from, end);
 		from = end;
 	}
 	// one state object per decode, young like everything it points at: no write barriers
@@ -277,7 +281,17 @@ export function decode(words: Uint32Array, source: string, engine: Tables, link 
 		if (roots !== null) S.roots = roots;
 		S.at = HEADER;
 	}
-	const root = node(S)!;
+	let root = node(S)!;
+	if (arena !== undefined) {
+		// the answer's `output`: every comment listed, TypeScript erased, lines, the roots a list
+		const listed = (root.output & 8) !== 0;
+		const built = build_roots(arena, engine, root.node, listed, interned!, { source, constants: table.constants, link, erase: (root.output & 2) !== 0, lines: (root.output & 4) !== 0, scopes: S.scopes, bindings: S.bindings, references: S.references, roots: S.roots });
+		const answer: Decoded = { node: listed ? built.nodes : built.nodes[0], end: root.end };
+		if ((root.output & 1) !== 0) answer.comments = built.comments();
+		if (root.errors !== undefined) answer.errors = root.errors;
+		if ((root.output & 2) !== 0) answer.typescript = built.kept();
+		root = answer;
+	}
 	if (scopes !== null) {
 		root.scopes = scopes;
 		root.bindings = bindings;

@@ -63,9 +63,13 @@ function bytes(text: string): [ptr: number, len: number, capacity: number] {
 const text = () => utf8.decode(new Uint8Array(wasm.memory.buffer, wasm.text_ptr(), wasm.text_len()));
 const words = () => new Uint32Array(wasm.memory.buffer, wasm.words_ptr(), wasm.words_len());
 
-// the constants and shapes come first: writing them can grow the memory and detach a view taken before
+let tree_at = 0;
+
+// the constants, the shapes and the tree's addresses come first: writing them can grow the memory and detach a view taken before
 function answer(status: number) {
 	if (status !== 0) return text();
+	layout();
+	tree_at = wasm.tree();
 	if (words()[4] > constants.length) {
 		wasm.constants();
 		constants = JSON.parse(text());
@@ -79,6 +83,15 @@ function answer(status: number) {
 }
 
 let elements: { js: [string, string][]; ts: [string, string][] } | undefined;
+let layout_text: string | undefined;
+// read once, before any view of the tree: writing it can grow the memory and detach them
+function layout() {
+	if (layout_text === undefined) {
+		wasm.layout();
+		layout_text = text();
+	}
+	return layout_text;
+}
 
 export const engine: Engine = {
 	create(source, flags, host) {
@@ -98,27 +111,23 @@ export const engine: Engine = {
 	},
 	constants: () => constants,
 	shapes: () => shapes,
-	layout() {
-		wasm.layout();
-		return text();
-	},
+	layout,
 	// the tree sits in the module's memory until the next parse
 	tree(): Tree | undefined {
+		elements ??= JSON.parse(layout()).views;
 		const { buffer } = wasm.memory;
-		const at = new Uint32Array(buffer, wasm.tree(), 65);
+		const at = new Uint32Array(buffer, tree_at, 65);
 		if (at[0] === 0) return undefined;
-		const typescript = (at[0] & 1) === 1;
-		elements ??= (wasm.layout(), JSON.parse(text()).views);
-		const kinds = typescript ? elements!.ts : elements!.js;
-		const views: Tree['views'][number][] = [];
+		const kinds = (at[0] & 1) === 1 ? elements!.ts : elements!.js;
+		const tree: (Uint32Array | Float64Array | Uint8Array | number | undefined)[] = [at[0] & 1];
 		for (let i = 0; i < at[0] >> 1; i++) {
 			const [ptr, bytes] = [at[1 + 2 * i], at[2 + 2 * i]];
-			if (ptr === 0) views.push(undefined);
-			else if (kinds[i][1] === 'f64') views.push(new Float64Array(buffer, ptr, bytes >> 3));
-			else if (kinds[i][1] === 'u8') views.push(new Uint8Array(buffer, ptr, bytes));
-			else views.push(new Uint32Array(buffer, ptr, bytes >> 2));
+			if (ptr === 0) tree.push(undefined, 0);
+			else if (kinds[i][1] === 'f64') tree.push(new Float64Array(buffer, ptr, bytes >> 3), bytes >> 3);
+			else if (kinds[i][1] === 'u8') tree.push(new Uint8Array(buffer, ptr, bytes), bytes);
+			else tree.push(new Uint32Array(buffer, ptr, bytes >> 2), bytes >> 2);
 		}
-		return { typescript, views };
+		return tree;
 	},
 };
 

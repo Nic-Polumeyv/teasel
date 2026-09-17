@@ -6,12 +6,12 @@ import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import * as native from '../dist/native.js';
 import * as wasm from '../dist/wasm.js';
-import { ENTRY, flags, type Entry, type Options, type ParseError } from '../dist/lib/api.js';
+import { ARENA, ENTRY, flags, type Entry, type Options, type ParseError } from '../dist/lib/api.js';
 import { decode } from '../dist/lib/decode.js';
 import { load } from '../dist/lib/addon.js';
 
 const addon = load();
-const engine = { constants: addon.constants, shapes: addon.shapes };
+const engine = { constants: addon.constants, shapes: addon.shapes, layout: addon.layout };
 const binary = new URL('../../target/release/teasel', import.meta.url).pathname;
 const files: string[] = [];
 function walk(dir: string) {
@@ -71,8 +71,8 @@ function mode(source: string, options: Options, entry: Entry, at: number) {
 // the addon's answers as JSON, each with the batch job that asks the binary for the same
 const jobs: { name: string; source: string; mode: string; tree: string }[] = [];
 function json(name: string, source: string, options: Options, entry: Entry, at: number) {
-	const answer = addon.parse(addon.create(Buffer.from(source), flags(options), ''), ENTRY[entry], at, undefined, '');
-	const tree = typeof answer === 'string' ? answer : JSON.stringify(decode(answer, source, engine, false));
+	const answer = addon.parse(addon.create(Buffer.from(source), flags(options) | ARENA, ''), ENTRY[entry], at, undefined, '');
+	const tree = typeof answer === 'string' ? answer : JSON.stringify(decode(answer, source, engine, false, addon.tree()));
 	jobs.push({ name, source, mode: mode(source, options, entry, at), tree });
 }
 

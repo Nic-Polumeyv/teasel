@@ -1,5 +1,5 @@
 import type { Expression, Identifier, Node, Pattern, Program, SourceLocation, Statement } from 'estree';
-import { decode, PARENT, REFERENCE, SCOPE, type Tables } from './decode.js';
+import { decode, mode, PARENT, REFERENCE, SCOPE, type Tables, type Tree } from './decode.js';
 
 declare global {
 	interface SymbolConstructor {
@@ -285,6 +285,9 @@ export interface HostNode {
 }
 
 // `flag` of json.rs by bit
+/** The engine leaves the tree to be read in place. */
+export const ARENA = 1 << 14;
+
 const FLAG = { module: 1, typescript: 2, erase: 4, comments: 8, scopes: 16, locations: 32, parenthesized: 64, legacyDecorators: 128, proposalDecorators: 256, allowReturnOutsideFunction: 512, allowAwaitOutsideFunction: 1024, allowSuperOutsideMethod: 2048, allowUndeclaredExports: 4096, errorRecovery: 8192 } as const;
 
 const bit = (key: keyof Options & keyof typeof FLAG) => (value: unknown) => {
@@ -345,11 +348,7 @@ export interface Prepared {
 	readonly free: () => void;
 }
 
-/** The tree of the last parse, read in place: its buffers in the order the layout's `views` names them, `undefined` for a table the parse did not fill. */
-export interface Tree {
-	readonly typescript: boolean;
-	readonly views: readonly (Uint32Array | Float64Array | Uint8Array | undefined)[];
-}
+export type { Tree };
 
 /** What parses: the addon or the WebAssembly module, each bound to a `Source` class of its own. */
 export interface Engine extends Tables {
@@ -373,10 +372,11 @@ export class Source<Root = Program> {
 	#held: Prepared | undefined;
 	#source: string;
 	#options: Options;
+	#arena = mode.arena;
 
 	constructor(engine: Engine, source: string, options: Options = {}) {
 		this.#engine = engine;
-		this.#held = engine.create(source, flags(options), options.host ?? '');
+		this.#held = engine.create(source, flags(options) | (this.#arena ? ARENA : 0), options.host ?? '');
 		this.#source = source;
 		// what the engine was prepared with, however the caller's object changes after
 		this.#options = { ...options };
@@ -391,7 +391,7 @@ export class Source<Root = Program> {
 		const index = ENTRY[entry];
 		const stop = stops(stopAt);
 		const answer = this.#options.host !== undefined && index === ENTRY.program ? this.#held.parse(index, 0, undefined, '') : this.#held.parse(index, offset, end, stop);
-		if (typeof answer !== 'string') return decode(answer, this.#source, this.#engine) as Parsed<any>;
+		if (typeof answer !== 'string') return decode(answer, this.#source, this.#engine, true, this.#arena ? this.#engine.tree() : undefined) as Parsed<any>;
 		const { message, ...error } = JSON.parse(answer).error;
 		throw Object.assign(new SyntaxError(message), error);
 	}

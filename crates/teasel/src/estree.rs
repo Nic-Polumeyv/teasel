@@ -34,6 +34,9 @@ pub struct Output {
 	pub erase: bool,
 	/// The answer lists the errors recovered from, as `errors`.
 	pub errors: bool,
+	/// The front end reads the tree in place: the answer names the roots by number and leaves the
+	/// comments and what erasure kept to it.
+	pub arena: bool,
 }
 
 impl Emit for () {
@@ -52,6 +55,8 @@ pub trait Sink {
 	}
 	/// The tree's interned strings, before anything refers to them.
 	fn strings(&mut self, _interner: &Interner) {}
+	/// The front end has the interned strings: the sink's own are numbered after them.
+	fn strings_known(&mut self, _interner: &Interner) {}
 	fn begin(&mut self, ty: Name);
 	fn object(&mut self);
 	fn list(&mut self);
@@ -97,6 +102,9 @@ impl<S: Sink> Sink for &mut S {
 	}
 	fn strings(&mut self, interner: &Interner) {
 		(**self).strings(interner)
+	}
+	fn strings_known(&mut self, interner: &Interner) {
+		(**self).strings_known(interner)
 	}
 	fn begin(&mut self, ty: Name) {
 		(**self).begin(ty)
@@ -430,6 +438,8 @@ pub struct Binary {
 	text: Vec<u8>,
 	/// UTF-16 units of text so far.
 	units: u32,
+	/// Strings the front end already has, numbered before the sink's own.
+	known: u32,
 	ends: Vec<u32>,
 	floats: Vec<f64>,
 	frames: Vec<Frame>,
@@ -462,6 +472,7 @@ impl Binary {
 			words: Words::new(1 << 16),
 			text: Vec::new(),
 			units: 0,
+			known: 0,
 			ends: Vec::new(),
 			floats: Vec::new(),
 			frames: Vec::new(),
@@ -500,6 +511,7 @@ impl Binary {
 		self.words.extend_from_slice(&[0; 7]);
 		self.text.clear();
 		self.units = 0;
+		self.known = 0;
 		self.ends.clear();
 		self.floats.clear();
 		self.frames.clear();
@@ -517,7 +529,7 @@ impl Binary {
 			value.encode_utf16().count()
 		} as u32;
 		self.ends.push(self.units);
-		self.ends.len() as u32 - 1
+		self.known + self.ends.len() as u32 - 1
 	}
 
 	fn value(&mut self, kind: u32) {
@@ -575,6 +587,10 @@ impl Sink for Binary {
 		for i in 0..interner.len() {
 			self.push_text(interner.get(StrId::at(i as u32)));
 		}
+	}
+
+	fn strings_known(&mut self, interner: &Interner) {
+		self.known = interner.len() as u32;
 	}
 
 	fn begin(&mut self, ty: Name) {
@@ -702,8 +718,34 @@ pub fn answer<X: Emit, S: Sink>(
 	sink: S,
 ) -> S {
 	let mut w = Writer::new(ast, source, positions, sink);
-	w.sink.strings(&ast.strings);
 	w.output = output;
+	if output.arena {
+		w.sink.strings_known(&ast.strings);
+		w.sink.object();
+		w.key(c!("node"));
+		let roots: Vec<u32> = ast.list(roots).iter().map(|root| root.unwrap().index()).collect();
+		w.sink.ints(&roots);
+		w.key(c!("end"));
+		let end = w.positions.offset(&mut w.cursor, end);
+		w.sink.int(end);
+		// what the front end builds by: every comment listed, TypeScript erased, lines, the roots a list
+		w.key(c!("output"));
+		w.sink.int(
+			output.comments as u32
+				| (output.erase as u32) << 1
+				| (positions.lines as u32) << 2
+				| ((entry == Entry::Params) as u32) << 3,
+		);
+		if output.errors {
+			w.errors();
+		}
+		if output.scopes {
+			w.all_scopes();
+		}
+		w.sink.end();
+		return w.sink;
+	}
+	w.sink.strings(&ast.strings);
 	w.sink.object();
 	if entry == Entry::Params {
 		w.list(c!("node"), roots);
@@ -776,7 +818,7 @@ pub struct Positions {
 /// Where the last node's start landed: starts come in source order, and a node's end follows
 /// its start, so each lookup tries a few entries on from its hint before a binary search.
 #[derive(Default)]
-struct Cursor {
+pub(crate) struct Cursor {
 	gap: usize,
 	line: usize,
 }
@@ -869,7 +911,30 @@ impl Positions {
 		}
 	}
 
-	fn offset(&self, cursor: &mut Cursor, byte: u32) -> u32 {
+	/// Every comment as nine words: whether it is a block, its text's span and its own in UTF-16,
+	/// and its lines and columns when lines are on, zeros otherwise.
+	pub fn map_comments(&self, comments: &[crate::ast::Comment], out: &mut Handed<u32>) {
+		out.clear();
+		let mut cursor = Cursor::default();
+		for comment in comments {
+			let text = comment.text_range();
+			let start = self.offset(&mut cursor, comment.start);
+			let from = self.offset(&mut cursor, text.start as u32);
+			let to = self.offset(&mut cursor, text.end as u32);
+			let end = self.offset(&mut cursor, comment.end);
+			let mut loc = [0; 4];
+			if self.lines {
+				let (sl, sc) = self.line_column(cursor.line, comment.start, start);
+				cursor.line = sl;
+				let (el, ec) = self.line_column(sl, comment.end, end);
+				loc = [sl as u32, sc, el as u32, ec];
+			}
+			out.extend_from_slice(&[comment.is_block() as u32, from, to, start, end]);
+			out.extend_from_slice(&loc);
+		}
+	}
+
+	pub(crate) fn offset(&self, cursor: &mut Cursor, byte: u32) -> u32 {
 		let (offset, gap) = self.offset_from(cursor.gap, byte);
 		cursor.gap = gap;
 		offset
@@ -1202,6 +1267,10 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		self.ast.node(id).kind
 	}
 
+	pub(crate) fn ast(&self) -> &'a Ast<X> {
+		self.ast
+	}
+
 	/// The key only when there is a node; an unset property is left out.
 	pub(crate) fn opt_key(&mut self, key: Name, id: Option<NodeId>) {
 		if let Some(id) = id {
@@ -1283,10 +1352,36 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 	}
 
 	/// Follows a kind's recipe over the record at `base`, a `repr(C, u32)` enum's payload; the
-	/// caller ends the node.
-	pub(crate) fn run(&mut self, id: NodeId, ops: &[Op<Slot>], base: *const u8) {
+	/// caller ends the node, unless a child stood in for it: false then.
+	pub(crate) fn run(&mut self, id: NodeId, ops: &[Op<Slot>], base: *const u8) -> bool {
 		for op in ops {
 			match *op {
+				Op::Keep(name) => {
+					if self.output.erase {
+						self.keep(name, id);
+					}
+				}
+				Op::KeepIf(name, slot) => {
+					if self.output.erase && get::<bool>(base, slot) {
+						self.keep(name, id);
+					}
+				}
+				Op::Through(slot) => {
+					if self.output.erase {
+						self.adopt(id);
+						self.node(get(base, slot));
+						return false;
+					}
+				}
+				Op::EnumOr(key, slot, other) => {
+					let Ty::OptEnum(names) = slot.ty else { unreachable!() };
+					self.string(key, names.get(get::<u8>(base, slot) as usize).copied().unwrap_or(other));
+				}
+				Op::BoolIfExtension(key, slot) => {
+					if get::<bool>(base, slot) && matches!(self.kind(id), NodeKind::Extension(_)) {
+						self.bool(key, true);
+					}
+				}
 				Op::Type(name) => self.begin(name, id),
 				Op::TypeOf(slot) => {
 					let Ty::Enum(names) = slot.ty else { unreachable!() };
@@ -1382,6 +1477,7 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 				Op::OtherName(key, name, binding) => self.other_name(key, get(base, name), get(base, binding)),
 			}
 		}
+		true
 	}
 
 	pub(crate) fn node(&mut self, id: NodeId) {

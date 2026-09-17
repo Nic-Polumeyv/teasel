@@ -183,7 +183,7 @@ impl<T: Copy + 'static> Raw for Handed<T> {
 		} else if ty == TypeId::of::<f64>() {
 			Element::F64
 		} else {
-			const { assert!(size_of::<T>() % 4 == 0 || size_of::<T>() == 1) };
+			const { assert!(size_of::<T>().is_multiple_of(4) || size_of::<T>() == 1) };
 			Element::U32
 		}
 	}
