@@ -181,7 +181,7 @@ unsafe extern "C" fn parse(env: Env, info: CallbackInfo) -> Value {
 		let entry = Entry::from_index(number(env, entry)? as u32);
 		let (offset, end, stop) = (number(env, offset)?, optional(env, end)?, string(env, stop)?);
 		fresh(env);
-		match prepared.binary(entry, offset, end, &stop) {
+		match prepared.in_place(entry, offset, end, &stop) {
 			Ok(()) => view(env),
 			Err(json) => text(env, &json),
 		}
@@ -261,47 +261,6 @@ fn uint32(env: Env, value: u32) -> Result<Value> {
 
 unsafe extern "C" fn layout(env: Env, _: CallbackInfo) -> Value {
 	guard(env, || text(env, &teasel::json::layout_json()))
-}
-
-unsafe extern "C" fn constants(env: Env, _: CallbackInfo) -> Value {
-	guard(env, || {
-		let names = teasel::json::constants();
-		let mut array = std::ptr::null_mut();
-		check(
-			unsafe { node_api::napi_create_array_with_length(env, names.len(), &mut array) },
-			"an array",
-		)?;
-		for (i, name) in names.iter().enumerate() {
-			check(
-				unsafe { node_api::napi_set_element(env, array, i as u32, text(env, name)?) },
-				"an element",
-			)?;
-		}
-		Ok(array)
-	})
-}
-
-unsafe extern "C" fn shapes(env: Env, _: CallbackInfo) -> Value {
-	guard(env, || {
-		let words = teasel::json::shapes();
-		let mut array = std::ptr::null_mut();
-		check(
-			unsafe { node_api::napi_create_array_with_length(env, words.len(), &mut array) },
-			"an array",
-		)?;
-		for (i, word) in words.iter().enumerate() {
-			let mut value = std::ptr::null_mut();
-			check(
-				unsafe { node_api::napi_create_uint32(env, *word, &mut value) },
-				"a number",
-			)?;
-			check(
-				unsafe { node_api::napi_set_element(env, array, i as u32, value) },
-				"an element",
-			)?;
-		}
-		Ok(array)
-	})
 }
 
 // a panic must not cross into the host; it and any error become a thrown Error
@@ -417,8 +376,6 @@ pub unsafe extern "C" fn napi_register_module_v1(env: Env, exports: Value) -> Va
 			(c"create", create as unsafe extern "C" fn(Env, CallbackInfo) -> Value),
 			(c"parse", parse),
 			(c"free", free),
-			(c"constants", constants),
-			(c"shapes", shapes),
 			(c"tree", tree),
 			(c"layout", layout),
 		] {

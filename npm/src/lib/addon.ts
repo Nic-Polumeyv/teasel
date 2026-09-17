@@ -1,17 +1,15 @@
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import type { Tree } from './arena.js';
+import type { Tree } from './decode.js';
 
 /** The external V8 holds for the addon: a prepared source. */
 export type External = object;
 
-/** `crates/teasel-node/src/lib.rs`: the seven operations over a prepared source, the source as V8's bytes. */
+/** `crates/teasel-node/src/lib.rs`: the five operations over a prepared source, the source as V8's bytes. */
 export interface Addon {
 	readonly create: (source: Uint8Array, flags: number, host: string) => External;
 	readonly parse: (held: External, entry: number, offset: number, end: number | undefined, stop: string) => Uint32Array | string;
 	readonly free: (held: External) => void;
-	readonly constants: () => string[];
-	readonly shapes: () => number[];
 	readonly layout: () => string;
 	/** Whether the tree is the TypeScript one, then each view followed by its length in elements. */
 	readonly tree: () => Tree | undefined;

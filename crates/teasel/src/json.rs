@@ -7,7 +7,7 @@ use crate::Options;
 use crate::ast::{Ast, Reuse};
 use crate::comments::attach;
 use crate::error::Code;
-use crate::estree::{Binary, Emit, Json, Output, Positions, Sink, Words, answer, answer_in_place, error_to_json};
+use crate::estree::{Emit, Output, Positions, Words, answer, error_to_json};
 use crate::handed::{Raw, Views};
 use crate::host::{self, Grammar};
 use crate::parser::{Decorators, Entry, parse_at};
@@ -26,8 +26,6 @@ pub struct Request {
 	pub locations: bool,
 	/// TypeScript erased on output; see `estree::Output`.
 	pub erase: bool,
-	/// The front end reads the tree in place; see `estree::Output`.
-	pub arena: bool,
 	/// Where the source is cut, as a byte offset, for a program inside a larger source.
 	pub end: Option<u32>,
 	pub options: Options,
@@ -82,7 +80,6 @@ impl Request {
 			"allowSuperOutsideMethod" => self.options.allow_super_outside_method = true,
 			"allowUndeclaredExports" => self.options.allow_undeclared_exports = true,
 			"erase" => self.erase = true,
-			"arena" => self.arena = true,
 			"errorRecovery" => self.options.error_recovery = true,
 			_ => {}
 		}
@@ -105,9 +102,8 @@ pub mod flag {
 	pub const ALLOW_SUPER_OUTSIDE_METHOD: u32 = 1 << 11;
 	pub const ALLOW_UNDECLARED_EXPORTS: u32 = 1 << 12;
 	pub const ERROR_RECOVERY: u32 = 1 << 13;
-	pub const ARENA: u32 = 1 << 14;
 	/// Each bit by the name `Request::set` takes.
-	pub const NAMES: [(u32, &str); 15] = [
+	pub const NAMES: [(u32, &str); 14] = [
 		(MODULE, "module"),
 		(TYPESCRIPT, "typescript"),
 		(ERASE, "erase"),
@@ -122,7 +118,6 @@ pub mod flag {
 		(ALLOW_SUPER_OUTSIDE_METHOD, "allowSuperOutsideMethod"),
 		(ALLOW_UNDECLARED_EXPORTS, "allowUndeclaredExports"),
 		(ERROR_RECOVERY, "errorRecovery"),
-		(ARENA, "arena"),
 	];
 }
 
@@ -163,6 +158,8 @@ pub fn layout_json() -> String {
 	}
 	out.push_str("},\"recipes\":{\"js\":");
 	crate::recipe::json(&mut out, crate::recipe::JS);
+	out.push_str(",\"rows\":");
+	crate::recipe::json(&mut out, crate::scopes::RECIPES);
 	#[cfg(feature = "typescript")]
 	{
 		out.push_str(",\"ts\":");
@@ -175,42 +172,6 @@ pub fn layout_json() -> String {
 	}
 	out.push_str("}}");
 	out
-}
-
-/// The constant strings this thread's writer has numbered so far.
-pub fn constants() -> Vec<&'static str> {
-	SESSION.with(|session| session.borrow().binary.constants().to_vec())
-}
-
-/// The shape records this thread's writer has numbered so far.
-pub fn shapes() -> Vec<u32> {
-	SESSION.with(|session| session.borrow().binary.shapes().to_vec())
-}
-
-pub fn constants_json() -> String {
-	let mut json = String::from("[");
-	for (i, name) in constants().iter().enumerate() {
-		if i > 0 {
-			json.push(',');
-		}
-		crate::estree::write_json_string(&mut json, name);
-	}
-	json.push(']');
-	json
-}
-
-pub fn shapes_json() -> String {
-	let words = shapes();
-	let mut json = String::with_capacity(words.len() * 8 + 2);
-	json.push('[');
-	for (i, word) in words.iter().enumerate() {
-		if i > 0 {
-			json.push(',');
-		}
-		crate::estree::push_int(&mut json, *word);
-	}
-	json.push(']');
-	json
 }
 
 /// `stop` lists the host's tokens for an entry at an offset; see `parser::parse_at`.
@@ -251,7 +212,7 @@ pub struct Prepared<'a> {
 #[derive(Default)]
 struct Session {
 	pool: Pool,
-	binary: Binary,
+	words: Words,
 	/// Whether the last parse used the TypeScript tree.
 	typescript: bool,
 }
@@ -264,7 +225,7 @@ thread_local! {
 
 /// The words of the last binary answer on this thread, where they were written.
 pub fn words<R>(f: impl FnOnce(&mut Words) -> R) -> R {
-	SESSION.with(|session| f(session.borrow_mut().binary.words()))
+	SESSION.with(|session| f(&mut session.borrow_mut().words))
 }
 
 /// Visits the buffers of the last parse's tree on this thread, kept until the next parse takes
@@ -416,9 +377,9 @@ impl<'a> Prepared<'a> {
 		}
 	}
 
-	/// One entry at an offset, as a token stream at `words`; the error answer stays JSON.
-	pub fn binary(&self, entry: Entry, start: f64, end: Option<f64>, stop: &str) -> Result<(), String> {
-		binary_with(
+	/// One entry at an offset, read in place: its words at `words`; the error answer stays JSON.
+	pub fn in_place(&self, entry: Entry, start: f64, end: Option<f64>, stop: &str) -> Result<(), String> {
+		in_place_with(
 			&self.source,
 			&self.positions,
 			&self.request(entry, start, end)?,
@@ -460,48 +421,39 @@ fn check(source: &str, request: &Request) -> Result<(), String> {
 	Ok(())
 }
 
-fn dispatch<S: Sink>(
+fn dispatch(
 	source: &str,
 	positions: &Positions,
 	request: &Request,
 	stop: &str,
 	host: Option<&Grammar>,
 	pool: &mut Pool,
-	sink: S,
-) -> Result<S, String> {
+	words: Option<&mut Words>,
+) -> Result<String, String> {
 	check(source, request)?;
 	#[cfg(feature = "typescript")]
 	if request.typescript {
-		return run::<crate::typescript::TypeScript, S>(source, positions, request, stop, host, pool, sink);
+		return run::<crate::typescript::TypeScript>(source, positions, request, stop, host, pool, words);
 	}
 	#[cfg(not(feature = "typescript"))]
 	if request.typescript {
 		return Err(error_json("built without TypeScript", 0));
 	}
-	run::<(), S>(source, positions, request, stop, host, pool, sink)
+	run::<()>(source, positions, request, stop, host, pool, words)
 }
 
 fn parse_with(source: &str, positions: &Positions, request: &Request, stop: &str, host: Option<&Grammar>) -> String {
 	SESSION.with(|session| {
 		let session = &mut *session.borrow_mut();
 		session.typescript = request.typescript;
-		match dispatch(
-			source,
-			positions,
-			request,
-			stop,
-			host,
-			&mut session.pool,
-			Json::default(),
-		) {
-			Ok(json) => json.finish(),
-			Err(error) => error,
+		match dispatch(source, positions, request, stop, host, &mut session.pool, None) {
+			Ok(json) | Err(json) => json,
 		}
 	})
 }
 
-/// The answer as a token stream at `words`, or the error answer as JSON.
-fn binary_with(
+/// The answer read in place, its words at `words`, or the error answer as JSON.
+fn in_place_with(
 	source: &str,
 	positions: &Positions,
 	request: &Request,
@@ -510,7 +462,6 @@ fn binary_with(
 ) -> Result<(), String> {
 	SESSION.with(|session| {
 		let session = &mut *session.borrow_mut();
-		session.binary.reset();
 		session.typescript = request.typescript;
 		dispatch(
 			source,
@@ -519,23 +470,23 @@ fn binary_with(
 			stop,
 			host,
 			&mut session.pool,
-			&mut session.binary,
+			Some(&mut session.words),
 		)?;
-		session.binary.finish();
 		Ok(())
 	})
 }
 
-/// Runs a request into a sink; `Err` is the error answer as JSON.
-fn run<E: crate::parser::Extension, S: Sink>(
+/// Runs a request: the answer as JSON, or read in place with its words in `words` and nothing
+/// as text; `Err` is the error answer as JSON.
+fn run<E: crate::parser::Extension>(
 	source: &str,
 	positions: &Positions,
 	request: &Request,
 	stop: &str,
 	host: Option<&Grammar>,
 	pool: &mut Pool,
-	sink: S,
-) -> Result<S, String>
+	words: Option<&mut Words>,
+) -> Result<String, String>
 where
 	E::Data: Emit + Bind + Reuse + Pooled,
 {
@@ -584,54 +535,43 @@ where
 			ast.errors.sort_by_key(|error| error.pos);
 		}
 	}
-	if !request.arena {
-		let sink = answer(&ast, request.entry, roots, end, source, positions, output, sink);
+	let Some(words) = words else {
+		let json = answer(&ast, request.entry, roots, end, source, positions, output);
 		Pooled::give(pool, ast);
-		return Ok(sink);
-	}
-	let mut sink = sink;
-	prepare(&mut ast, positions, output, &mut sink);
-	// what the answer is, then each view's length: a buffer moved since a front end took the views,
-	// the tree is TypeScript's, every comment is listed, TypeScript is erased, lines are on, the roots are a list
-	let mut views = [0u32; 40];
-	views[0] = (request.typescript as u32) << 1
-		| (output.comments as u32) << 2
-		| (output.erase as u32) << 3
-		| (request.locations as u32) << 4
-		| ((request.entry == Entry::Params) as u32) << 5;
-	let mut count = 1;
+		return Ok(json);
+	};
+	prepare(&mut ast, source, positions, output);
+	// `end`, the roots by number, a word of what the answer is, each view's length. A buffer moved
+	// since a front end took the views, the tree is TypeScript's, every comment is listed, TypeScript
+	// is erased, lines are on, the roots are a list, the errors recovered from are listed
+	words.clear();
+	words.extend_from_slice(&[positions.offset(&mut crate::estree::Cursor::default(), end), roots.len]);
+	words.extend(ast.list(roots).iter().map(|root| root.unwrap().index()));
+	let what = words.len();
+	words.push(
+		(request.typescript as u32) << 1
+			| (output.comments as u32) << 2
+			| (output.erase as u32) << 3
+			| (request.locations as u32) << 4
+			| ((request.entry == Entry::Params) as u32) << 5
+			| (output.errors as u32) << 6,
+	);
 	ast.views(&mut Views(&mut |_, buffer| {
-		if let Some(buffer) = buffer {
-			views[count] = buffer.elements() as u32;
-			views[0] |= buffer.owned() as u32;
+		words.push(buffer.as_ref().map_or(0, |buffer| buffer.elements() as u32));
+		if buffer.is_some_and(|buffer| buffer.owned()) {
+			words[what] |= 1;
 		}
-		count += 1;
 	}));
-	let sink = answer_in_place(&ast, roots, end, &views[..count], source, positions, output, sink);
 	Pooled::give(pool, ast);
-	Ok(sink)
+	Ok(String::new())
 }
 
 /// What a front end reading the tree in place needs beside it: every node's span and location
-/// as JavaScript counts them, the strings' UTF-16 starts, the nodes erasure leaves out, and the
-/// hosts' names by number.
-fn prepare<X: Emit + Reuse, S: Sink>(ast: &mut Ast<X>, positions: &Positions, output: Output, sink: &mut S) {
+/// as JavaScript counts them, the nodes erasure leaves out, the hosts, the comments and the
+/// recovered errors as words, their names and messages among the strings, and the strings'
+/// UTF-16 starts.
+fn prepare<X: Emit + Reuse>(ast: &mut Ast<X>, source: &str, positions: &Positions, output: Output) {
 	positions.map_nodes(&ast.nodes, &mut ast.spans, &mut ast.locs);
-	ast.units.clear();
-	let (text, starts) = ast.strings.buffers();
-	if !text.is_ascii() {
-		let mut units = 0u32;
-		let mut from = 0usize;
-		for &start in starts.iter() {
-			units += text[from..start as usize]
-				.iter()
-				.filter(|&&b| b & 0xc0 != 0x80)
-				.map(|&b| if b >= 0xf0 { 2 } else { 1 })
-				.sum::<u32>();
-			from = start as usize;
-			ast.units.push(units);
-		}
-	}
 	ast.erased.clear();
 	if output.erase {
 		for i in 0..ast.nodes.len() as u32 {
@@ -649,7 +589,7 @@ fn prepare<X: Emit + Reuse, S: Sink>(ast: &mut Ast<X>, positions: &Positions, ou
 		let ty = if host.ty.is_empty() {
 			u32::MAX
 		} else {
-			sink.constant(crate::names::Name::dynamic(host.ty))
+			ast.strings.intern(host.ty).index()
 		};
 		ast.host_view
 			.extend_from_slice(&[ty, host.fields.0, host.fields.1, host.span as u32]);
@@ -657,7 +597,7 @@ fn prepare<X: Emit + Reuse, S: Sink>(ast: &mut Ast<X>, positions: &Positions, ou
 	let mut cursor = crate::estree::Cursor::default();
 	for i in 0..ast.host_fields.len() {
 		let (key, value) = ast.host_fields[i];
-		let key = sink.constant(crate::names::Name::dynamic(key));
+		let key = ast.strings.intern(key).index();
 		ast.host_keys.push(key);
 		let mut words = value.words();
 		if let crate::ast::Value::Slice(start, end) = value {
@@ -671,6 +611,31 @@ fn prepare<X: Emit + Reuse, S: Sink>(ast: &mut Ast<X>, positions: &Positions, ou
 	}
 	if output.comments || !ast.hosts.is_empty() {
 		positions.map_comments(&ast.comments, &mut ast.comment_words);
+	}
+	ast.error_words.clear();
+	if output.errors {
+		let places = positions.of_errors(source, &ast.errors);
+		for (i, [pos, end, line, column]) in places.into_iter().enumerate() {
+			let code = ast.strings.intern(ast.errors[i].code.label().text).index();
+			let message = ast.strings.intern(&ast.errors[i].message).index();
+			ast.error_words
+				.extend_from_slice(&[code, message, pos, end, line, column]);
+		}
+	}
+	ast.units.clear();
+	let (text, starts) = ast.strings.buffers();
+	if !text.is_ascii() {
+		let mut units = 0u32;
+		let mut from = 0usize;
+		for &start in starts.iter() {
+			units += text[from..start as usize]
+				.iter()
+				.filter(|&&b| b & 0xc0 != 0x80)
+				.map(|&b| if b >= 0xf0 { 2 } else { 1 })
+				.sum::<u32>();
+			from = start as usize;
+			ast.units.push(units);
+		}
 	}
 }
 

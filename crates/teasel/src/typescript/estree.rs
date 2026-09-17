@@ -2,7 +2,7 @@
 
 use super::ast::{Data, Extras, Kind, TsKind};
 use crate::ast::{Ast, List, NodeId, NodeKind};
-use crate::estree::{Emit, Sink, Writer};
+use crate::estree::{Emit, Writer};
 use crate::names::c;
 use crate::recipe::Op::{self, *};
 use crate::recipe::Slot;
@@ -179,14 +179,14 @@ impl Emit for Data {
 		}
 	}
 
-	fn node<S: Sink>(&self, w: &mut Writer<Self, S>, id: NodeId, index: u32) {
+	fn node(&self, w: &mut Writer<Self>, id: NodeId, index: u32) {
 		let base = &self.nodes[index as usize] as *const TsKind as *const u8;
 		if w.run(id, recipes().kinds[crate::estree::tag(base)], base) {
 			w.end();
 		}
 	}
 
-	fn extras<S: Sink>(&self, w: &mut Writer<Self, S>, id: NodeId) {
+	fn extras(&self, w: &mut Writer<Self>, id: NodeId) {
 		let recipes = recipes();
 		let extras = self.extras_of(id);
 		let base = &extras as *const Extras as *const u8;

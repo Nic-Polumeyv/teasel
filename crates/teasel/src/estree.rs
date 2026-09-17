@@ -1,11 +1,10 @@
-//! Serializes an `Ast` to ESTree: as JSON text, or as a token stream a binding hands to
-//! JavaScript without a text round trip.
+//! Serializes an `Ast` to ESTree as JSON text, and maps its positions to what JavaScript counts.
 
 use crate::ast::{Ast, List, NodeId, NodeKind, Value};
 use crate::handed::Handed;
-use crate::interner::{FastMap, Interner, StrId};
+use crate::interner::StrId;
 use crate::layout::Ty;
-use crate::names::{NAMES, Name, c};
+use crate::names::{Name, c};
 use crate::parser::Entry;
 use crate::recipe::{Op, Slot};
 use crate::scopes::Role;
@@ -14,8 +13,8 @@ use std::fmt::Write;
 /// How an extension's data serializes: its own nodes, and the keys it adds to JavaScript nodes.
 pub trait Emit: crate::ast::Walk {
 	/// Emits one of the extension's own nodes and closes it, or what erasing puts in its place.
-	fn node<S: Sink>(&self, w: &mut Writer<Self, S>, id: NodeId, index: u32);
-	fn extras<S: Sink>(&self, _w: &mut Writer<Self, S>, _id: NodeId) {}
+	fn node(&self, w: &mut Writer<Self>, id: NodeId, index: u32);
+	fn extras(&self, _w: &mut Writer<Self>, _id: NodeId) {}
 	/// Whether erasing leaves nothing of a node in a list: type-only declarations and imports.
 	fn erased(&self, _ast: &Ast<Self>, _id: NodeId) -> bool {
 		false
@@ -37,127 +36,8 @@ pub struct Output {
 }
 
 impl Emit for () {
-	fn node<S: Sink>(&self, _w: &mut Writer<Self, S>, _id: NodeId, _index: u32) {
+	fn node(&self, _w: &mut Writer<Self>, _id: NodeId, _index: u32) {
 		unreachable!("the JavaScript parser adds no extension nodes")
-	}
-}
-
-/// Where the writer puts what it emits. Containers nest: a node begins with its type and ends
-/// like a plain object or a list; offsets in `slice`, `span` and `loc` are UTF-16. Strings the
-/// writer names itself are constants; a string computed for one tree is text.
-pub trait Sink {
-	/// The number a name goes by in this sink; a front end reading names by number asks for it.
-	fn constant(&mut self, name: Name) -> u32 {
-		name.id
-	}
-	/// The tree's interned strings, before anything refers to them.
-	fn strings(&mut self, _interner: &Interner) {}
-	/// The front end reads the tree in place: it has the interned strings, so the sink's own are
-	/// numbered after them, and it reads the views by `views`, a word of what the answer is and
-	/// each view's length.
-	fn in_place(&mut self, _interner: &Interner, _views: &[u32]) {}
-	fn begin(&mut self, ty: Name);
-	fn object(&mut self);
-	fn list(&mut self);
-	fn end(&mut self);
-	fn key(&mut self, key: Name);
-	fn int(&mut self, value: u32);
-	fn float(&mut self, value: f64);
-	fn bool(&mut self, value: bool);
-	fn null(&mut self);
-	fn str(&mut self, value: Name);
-	fn text(&mut self, value: &str);
-	/// A string of the tree's interner.
-	fn interned(&mut self, id: StrId, value: &str);
-	/// A string equal to the source between two offsets.
-	fn slice(&mut self, value: &str, start: u32, end: u32);
-	fn span(&mut self, start: u32, end: u32);
-	fn loc(&mut self, start_line: u32, start_column: u32, end_line: u32, end_column: u32);
-	/// The key of a scope table: the tables are a root's last entries, and a sink may place them
-	/// where a decoder finds them before the nodes that refer to them.
-	fn table(&mut self, key: Name) {
-		self.key(key);
-	}
-	fn ints(&mut self, values: &[u32]) {
-		self.list();
-		for &value in values {
-			self.int(value);
-		}
-		self.end();
-	}
-	/// A list of the tree's interned strings.
-	fn strs(&mut self, strings: &[(StrId, &str)]) {
-		self.list();
-		for &(id, value) in strings {
-			self.interned(id, value);
-		}
-		self.end();
-	}
-}
-
-impl<S: Sink> Sink for &mut S {
-	fn constant(&mut self, name: Name) -> u32 {
-		(**self).constant(name)
-	}
-	fn strings(&mut self, interner: &Interner) {
-		(**self).strings(interner)
-	}
-	fn in_place(&mut self, interner: &Interner, views: &[u32]) {
-		(**self).in_place(interner, views)
-	}
-	fn begin(&mut self, ty: Name) {
-		(**self).begin(ty)
-	}
-	fn object(&mut self) {
-		(**self).object()
-	}
-	fn list(&mut self) {
-		(**self).list()
-	}
-	fn end(&mut self) {
-		(**self).end()
-	}
-	fn key(&mut self, key: Name) {
-		(**self).key(key)
-	}
-	fn int(&mut self, value: u32) {
-		(**self).int(value)
-	}
-	fn float(&mut self, value: f64) {
-		(**self).float(value)
-	}
-	fn bool(&mut self, value: bool) {
-		(**self).bool(value)
-	}
-	fn null(&mut self) {
-		(**self).null()
-	}
-	fn str(&mut self, value: Name) {
-		(**self).str(value)
-	}
-	fn text(&mut self, value: &str) {
-		(**self).text(value)
-	}
-	fn interned(&mut self, id: StrId, value: &str) {
-		(**self).interned(id, value)
-	}
-	fn slice(&mut self, value: &str, start: u32, end: u32) {
-		(**self).slice(value, start, end)
-	}
-	fn span(&mut self, start: u32, end: u32) {
-		(**self).span(start, end)
-	}
-	fn loc(&mut self, start_line: u32, start_column: u32, end_line: u32, end_column: u32) {
-		(**self).loc(start_line, start_column, end_line, end_column)
-	}
-	fn table(&mut self, key: Name) {
-		(**self).table(key)
-	}
-	fn ints(&mut self, values: &[u32]) {
-		(**self).ints(values)
-	}
-	fn strs(&mut self, strings: &[(StrId, &str)]) {
-		(**self).strs(strings)
 	}
 }
 
@@ -200,7 +80,15 @@ impl Json {
 	}
 }
 
-impl Sink for Json {
+impl Json {
+	fn ints(&mut self, values: &[u32]) {
+		self.list();
+		for &value in values {
+			self.int(value);
+		}
+		self.end();
+	}
+
 	fn begin(&mut self, ty: Name) {
 		self.open(false);
 		self.out.push_str("\"type\":\"");
@@ -259,14 +147,6 @@ impl Sink for Json {
 		write_json_string(&mut self.out, value);
 	}
 
-	fn interned(&mut self, _id: StrId, value: &str) {
-		self.text(value);
-	}
-
-	fn slice(&mut self, value: &str, _start: u32, _end: u32) {
-		self.text(value);
-	}
-
 	// the two entries every node has, written in one piece: a measurable share of the text
 	fn span(&mut self, start: u32, end: u32) {
 		self.sep();
@@ -290,429 +170,12 @@ impl Sink for Json {
 	}
 }
 
-/// What a shape's entry holds, read by a binding's decoder without a tag.
-pub mod kind {
-	/// A shape id then the shape's values; `NULL` alone for null.
-	pub const NODE: u32 = 0;
-	pub const INT: u32 = 1;
-	/// An index into the floats.
-	pub const FLOAT: u32 = 2;
-	/// 0 or 1.
-	pub const BOOL: u32 = 3;
-	/// A constant id.
-	pub const CONST: u32 = 4;
-	/// An index into the answer's own strings.
-	pub const STR: u32 = 5;
-	/// Two UTF-16 offsets into the source.
-	pub const SLICE: u32 = 6;
-	/// `loc`: start line and column, end line and column.
-	pub const LOC: u32 = 7;
-	/// Nodes up to an `END`.
-	pub const NODES: u32 = 8;
-	/// A count, then that many ints.
-	pub const INTS: u32 = 9;
-	/// A count, then that many indexes into the answer's strings.
-	pub const STRS: u32 = 10;
-
-	/// In a node's place.
-	pub const NULL: u32 = 0;
-	/// In a node's place, closing a list.
-	pub const END: u32 = 1;
-	/// The first shape id.
-	pub const FIRST: u32 = 2;
-}
-
-/// The strings the writer names itself, numbered once per writer for every answer: a binding
-/// fetches the list when an answer refers past what it has.
-/// Strings outside `NAMES`, numbered after it in the order met.
-struct Constants {
-	names: Vec<&'static str>,
-	ids: FastMap<&'static str, u32>,
-	// a grammar's strings live for the process, so their address is a cheaper key than their text
-	recent: Box<[(usize, u32); 512]>,
-}
-
-impl Constants {
-	fn new() -> Self {
-		Constants {
-			names: Vec::new(),
-			ids: FastMap::default(),
-			recent: Box::new([(0, 0); 512]),
-		}
-	}
-
-	fn id(&mut self, name: Name) -> u32 {
-		if name.id != u32::MAX {
-			return name.id;
-		}
-		let address = name.text.as_ptr() as usize;
-		let slot = ((address as u64).wrapping_mul(crate::interner::SEED) >> 55) as usize & 511;
-		if self.recent[slot].0 == address {
-			return self.recent[slot].1;
-		}
-		let id = match self.ids.get(name.text) {
-			Some(&id) => id,
-			None => {
-				let id = (NAMES.len() + self.names.len()) as u32;
-				self.names.push(name.text);
-				self.ids.insert(name.text, id);
-				id
-			}
-		};
-		self.recent[slot] = (address, id);
-		id
-	}
-}
-
-/// The shapes numbered so far by a writer, from `kind::FIRST`. A shape is what a node's
-/// entries hold: its record is its type's constant id plus one (0 for a plain object), then a
-/// word per entry, the key's constant id shifted left four with the value's `kind` in the low
-/// bits. The records lie back to back, each behind its length.
-struct Shapes {
-	words: Vec<u32>,
-	starts: Vec<u32>,
-	ids: FastMap<Box<[u32]>, u32>,
-	// the map lookup was a fifth of the encode; a hit here is a probe and a compare
-	recent: Box<[(u32, u32); 1024]>,
-}
-
-impl Shapes {
-	fn new() -> Self {
-		Shapes {
-			words: Vec::new(),
-			starts: vec![0; kind::FIRST as usize],
-			ids: FastMap::default(),
-			recent: Box::new([(0, 0); 1024]),
-		}
-	}
-
-	fn id(&mut self, record: &[u32]) -> u32 {
-		// a hit is checked against the record, so the hash only has to spread: a sum does
-		let mut hash = (record.len() as u64) << 32;
-		for &word in record {
-			hash = hash.wrapping_add(word as u64);
-		}
-		let hash = (hash.wrapping_mul(crate::interner::SEED) >> 32) as u32;
-		let slot = (hash >> 22) as usize;
-		let (seen, id) = self.recent[slot];
-		if seen == hash && id != 0 {
-			let start = self.starts[id as usize] as usize;
-			// bcmp costs a call; a record is a handful of words
-			let stored = &self.words[start..];
-			if stored[0] as usize == record.len() && record.iter().zip(&stored[1..]).all(|(a, b)| a == b) {
-				return id;
-			}
-		}
-		let id = match self.ids.get(record) {
-			Some(&id) => id,
-			None => {
-				let id = self.starts.len() as u32;
-				let start = self.words.len() as u32;
-				self.starts.push(start);
-				self.words.push(record.len() as u32);
-				self.words.extend_from_slice(record);
-				self.ids.insert(record.into(), id);
-				id
-			}
-		};
-		self.recent[slot] = (hash, id);
-		id
-	}
-}
-
-/// A tree packed into one buffer of 32-bit words, what a binding's JavaScript turns into objects
-/// directly. A node is its shape id then its values in the shape's order, each read as the
-/// shape's `kind` says. The header is seven counts: the tree's words, the strings, the floats,
-/// the bytes of text, the constants and the shapes numbered when it was written, and where the
-/// scope tables start in the tree's words, 0 for none. Then the tree, the strings' UTF-16 ends,
-/// the text as UTF-8 padded to a word, padding to an even word, then the floats two words each.
-/// The strings are the tree's interned ones first, then any text written for this answer. Words
-/// are the host's endianness, which every target the package builds for shares with the
-/// decoder's check.
 /// The answer's words, read in place by a front end that takes the allocation over.
 pub type Words = crate::handed::Handed<u32>;
 
-pub struct Binary {
-	words: Words,
-	text: Vec<u8>,
-	/// UTF-16 units of text so far.
-	units: u32,
-	/// Strings the front end already has, numbered before the sink's own.
-	known: u32,
-	/// What goes behind the floats for a front end reading the tree in place.
-	views: Vec<u32>,
-	ends: Vec<u32>,
-	floats: Vec<f64>,
-	frames: Vec<Frame>,
-	// the open nodes' records; a list or a table pushes a scratch word so a value never checks where it is
-	seq: Vec<u32>,
-	tables_at: u32,
-	tables: usize,
-	constants: Constants,
-	shapes: Shapes,
-}
-
-const START: u32 = c!("start").id << 4 | kind::INT;
-const END: u32 = c!("end").id << 4 | kind::INT;
-const LOC: u32 = c!("loc").id << 4 | kind::LOC;
-
-enum Frame {
-	Node { slot: u32, record: u32 },
-	List,
-}
-
-impl Default for Binary {
-	fn default() -> Self {
-		Self::new()
-	}
-}
-
-impl Binary {
-	pub fn new() -> Self {
-		let mut binary = Binary {
-			words: Words::new(1 << 16),
-			text: Vec::new(),
-			units: 0,
-			known: 0,
-			views: Vec::new(),
-			ends: Vec::new(),
-			floats: Vec::new(),
-			frames: Vec::new(),
-			seq: Vec::new(),
-			tables_at: 0,
-			tables: 0,
-			constants: Constants::new(),
-			shapes: Shapes::new(),
-		};
-		binary.reset();
-		binary
-	}
-
-	#[cfg(test)]
-	pub(crate) fn constant(&mut self, name: Name) -> u32 {
-		self.constants.id(name)
-	}
-
-	/// The constant strings numbered so far: `NAMES`, then the ones met outside it.
-	pub fn constants(&self) -> Vec<&'static str> {
-		NAMES.iter().chain(&self.constants.names).copied().collect()
-	}
-
-	/// The shape records numbered so far.
-	pub fn shapes(&self) -> &[u32] {
-		&self.shapes.words
-	}
-
-	pub fn words(&mut self) -> &mut Words {
-		&mut self.words
-	}
-
-	/// Ready for an answer: the header's room in `words`, the sentinel in `seq`, the rest empty.
-	pub fn reset(&mut self) {
-		self.words.clear();
-		self.words.extend_from_slice(&[0; 7]);
-		self.text.clear();
-		self.units = 0;
-		self.known = 0;
-		self.views.clear();
-		self.ends.clear();
-		self.floats.clear();
-		self.frames.clear();
-		self.seq.clear();
-		self.seq.push(0);
-		self.tables_at = 0;
-		self.tables = 0;
-	}
-
-	fn push_text(&mut self, value: &str) -> u32 {
-		self.text.extend_from_slice(value.as_bytes());
-		self.units += if value.is_ascii() {
-			value.len()
-		} else {
-			value.encode_utf16().count()
-		} as u32;
-		self.ends.push(self.units);
-		self.known + self.ends.len() as u32 - 1
-	}
-
-	fn value(&mut self, kind: u32) {
-		let last = self.seq.len() - 1;
-		self.seq[last] |= kind;
-	}
-
-	fn open(&mut self, ty: u32) {
-		self.value(kind::NODE);
-		self.frames.push(Frame::Node {
-			slot: self.words.len() as u32,
-			record: self.seq.len() as u32,
-		});
-		self.seq.push(ty);
-		self.words.push(0);
-	}
-
-	/// Completes the answer in `words`: the header, then the strings and floats after the tree.
-	pub fn finish(&mut self) {
-		debug_assert!(self.frames.is_empty() && self.seq.len() == 1);
-		let tree = self.words.len() as u32 - 7;
-		self.words[..7].copy_from_slice(&[
-			tree,
-			self.ends.len() as u32,
-			self.floats.len() as u32,
-			self.text.len() as u32,
-			(NAMES.len() + self.constants.names.len()) as u32,
-			self.shapes.starts.len() as u32,
-			self.tables_at,
-		]);
-		self.words.extend_from_slice(&self.ends);
-		let (chunks, rest) = self.text.as_chunks::<4>();
-		self.words.extend(chunks.iter().map(|chunk| u32::from_ne_bytes(*chunk)));
-		if !rest.is_empty() {
-			let mut last = [0; 4];
-			last[..rest.len()].copy_from_slice(rest);
-			self.words.push(u32::from_ne_bytes(last));
-		}
-		if self.words.len() % 2 == 1 {
-			self.words.push(0);
-		}
-		for &float in &self.floats {
-			let bits = float.to_bits();
-			self.words.extend_from_slice(&[bits as u32, (bits >> 32) as u32]);
-		}
-		self.words.extend_from_slice(&self.views);
-	}
-}
-
-impl Sink for Binary {
-	fn constant(&mut self, name: Name) -> u32 {
-		self.constants.id(name)
-	}
-
-	fn strings(&mut self, interner: &Interner) {
-		for i in 0..interner.len() {
-			self.push_text(interner.get(StrId::at(i as u32)));
-		}
-	}
-
-	fn in_place(&mut self, interner: &Interner, views: &[u32]) {
-		self.known = interner.len() as u32;
-		self.views.extend_from_slice(views);
-	}
-
-	fn begin(&mut self, ty: Name) {
-		let id = self.constants.id(ty);
-		self.open(id + 1);
-	}
-
-	fn object(&mut self) {
-		self.open(0);
-	}
-
-	fn list(&mut self) {
-		self.value(kind::NODES);
-		self.frames.push(Frame::List);
-		self.seq.push(0);
-	}
-
-	fn end(&mut self) {
-		match self.frames.pop().expect("a container is open") {
-			Frame::List => {
-				self.words.push(kind::END);
-				self.seq.pop();
-			}
-			Frame::Node { slot, record } => {
-				let stop = self.seq.len() - if self.frames.is_empty() { self.tables } else { 0 };
-				self.words[slot as usize] = self.shapes.id(&self.seq[record as usize..stop]);
-				self.seq.truncate(record as usize);
-			}
-		}
-	}
-
-	fn key(&mut self, key: Name) {
-		debug_assert!(self.tables_at == 0 || self.frames.len() > 1, "the tables come last");
-		let id = self.constants.id(key);
-		self.seq.push(id << 4);
-	}
-
-	fn int(&mut self, value: u32) {
-		self.value(kind::INT);
-		self.words.push(value);
-	}
-
-	fn float(&mut self, value: f64) {
-		self.value(kind::FLOAT);
-		self.words.push(self.floats.len() as u32);
-		self.floats.push(value);
-	}
-
-	fn bool(&mut self, value: bool) {
-		self.value(kind::BOOL);
-		self.words.push(value as u32);
-	}
-
-	fn null(&mut self) {
-		self.value(kind::NODE);
-		self.words.push(kind::NULL);
-	}
-
-	fn str(&mut self, value: Name) {
-		self.value(kind::CONST);
-		let id = self.constants.id(value);
-		self.words.push(id);
-	}
-
-	fn text(&mut self, value: &str) {
-		self.value(kind::STR);
-		let id = self.push_text(value);
-		self.words.push(id);
-	}
-
-	fn interned(&mut self, id: StrId, _value: &str) {
-		self.value(kind::STR);
-		self.words.push(id.index());
-	}
-
-	fn slice(&mut self, _value: &str, start: u32, end: u32) {
-		self.value(kind::SLICE);
-		self.words.extend_from_slice(&[start, end]);
-	}
-
-	fn span(&mut self, start: u32, end: u32) {
-		self.seq.extend([START, END]);
-		self.words.extend_from_slice(&[start, end]);
-	}
-
-	fn loc(&mut self, start_line: u32, start_column: u32, end_line: u32, end_column: u32) {
-		self.seq.push(LOC);
-		self.words
-			.extend_from_slice(&[start_line, start_column, end_line, end_column]);
-	}
-
-	fn table(&mut self, _key: Name) {
-		debug_assert!(self.frames.len() == 1, "a table is the root's entry");
-		if self.tables_at == 0 {
-			self.tables_at = self.words.len() as u32 - 7;
-		}
-		self.tables += 1;
-		self.seq.push(0);
-	}
-
-	fn strs(&mut self, strings: &[(StrId, &str)]) {
-		self.value(kind::STRS);
-		self.words.push(strings.len() as u32);
-		self.words.extend(strings.iter().map(|(id, _)| id.index()));
-	}
-
-	fn ints(&mut self, values: &[u32]) {
-		self.value(kind::INTS);
-		self.words.push(values.len() as u32);
-		self.words.extend_from_slice(values);
-	}
-}
-
-/// Serializes an answer into `sink`: the roots as `node`, one node or the patterns of a
-/// parameter list, then `end` and what the options add.
-#[allow(clippy::too_many_arguments)]
-pub fn answer<X: Emit, S: Sink>(
+/// Serializes an answer as JSON: the roots as `node`, one node or the patterns of a parameter
+/// list, then `end` and what the options add.
+pub fn answer<X: Emit>(
 	ast: &Ast<X>,
 	entry: Entry,
 	roots: List,
@@ -720,11 +183,9 @@ pub fn answer<X: Emit, S: Sink>(
 	source: &str,
 	positions: &Positions,
 	output: Output,
-	sink: S,
-) -> S {
-	let mut w = Writer::new(ast, source, positions, sink);
+) -> String {
+	let mut w = Writer::new(ast, source, positions);
 	w.output = output;
-	w.sink.strings(&ast.strings);
 	w.sink.object();
 	if entry == Entry::Params {
 		w.list(c!("node"), roots);
@@ -736,45 +197,7 @@ pub fn answer<X: Emit, S: Sink>(
 	w.sink.int(end);
 	w.trailers();
 	w.sink.end();
-	w.sink
-}
-
-/// The answer a front end reading the tree in place gets: the roots by number, `end`, the errors
-/// and the tables, with `views` for the sink's `in_place`.
-#[allow(clippy::too_many_arguments)]
-pub fn answer_in_place<X: Emit, S: Sink>(
-	ast: &Ast<X>,
-	roots: List,
-	end: u32,
-	views: &[u32],
-	source: &str,
-	positions: &Positions,
-	output: Output,
-	sink: S,
-) -> S {
-	let mut w = Writer::new(ast, source, positions, sink);
-	w.output = output;
-	w.sink.in_place(&ast.strings, views);
-	w.sink.object();
-	w.key(c!("node"));
-	match ast.list(roots) {
-		[Some(root)] => w.sink.ints(&[root.index()]),
-		roots => {
-			let roots: Vec<u32> = roots.iter().map(|root| root.unwrap().index()).collect();
-			w.sink.ints(&roots);
-		}
-	}
-	w.key(c!("end"));
-	let end = w.positions.offset(&mut w.cursor, end);
-	w.sink.int(end);
-	if output.errors {
-		w.errors();
-	}
-	if output.scopes {
-		w.all_scopes();
-	}
-	w.sink.end();
-	w.sink
+	w.sink.finish()
 }
 
 /// Serializes a syntax error: its code and message, UTF-16 `pos` and `end`, and a `loc`; the
@@ -805,10 +228,10 @@ pub fn error_to_json(error: &crate::SyntaxError, source: &str, positions: &Posit
 	out
 }
 
-pub struct Writer<'a, X = (), S: Sink = Json> {
+pub struct Writer<'a, X = ()> {
 	ast: &'a Ast<X>,
 	source: &'a str,
-	pub(crate) sink: S,
+	pub(crate) sink: Json,
 	positions: &'a Positions,
 	cursor: Cursor,
 	pub(crate) output: Output,
@@ -928,6 +351,32 @@ impl Positions {
 		}
 	}
 
+	/// Where each error is, as JavaScript counts: `pos`, `end`, and the line and column of `pos`;
+	/// the line table is built up to the last of them when there is none.
+	pub fn of_errors(&self, source: &str, errors: &[crate::SyntaxError]) -> Vec<[u32; 4]> {
+		let upto;
+		let positions = if self.lines || errors.is_empty() {
+			self
+		} else {
+			let last = errors.iter().map(|e| e.pos.max(e.end)).max().unwrap() as usize;
+			let mut end = last.min(source.len());
+			while !source.is_char_boundary(end) {
+				end += 1;
+			}
+			upto = Positions::new(&source[..end], true);
+			&upto
+		};
+		let mut cursor = Cursor::default();
+		errors
+			.iter()
+			.map(|error| {
+				let pos = positions.offset(&mut cursor, error.pos);
+				let (line, column) = positions.line_column(cursor.line, error.pos, pos);
+				[pos, positions.offset(&mut cursor, error.end), line as u32, column]
+			})
+			.collect()
+	}
+
 	/// Every comment as nine words: whether it is a block, its text's span and its own in UTF-16,
 	/// and its lines and columns when lines are on, zeros otherwise.
 	pub fn map_comments(&self, comments: &[crate::ast::Comment], out: &mut Handed<u32>) {
@@ -985,12 +434,12 @@ fn locate<T>(items: &[T], hint: usize, byte: u32, key: impl Fn(&T) -> u32) -> us
 	items.partition_point(|item| key(item) <= byte)
 }
 
-impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
-	fn new(ast: &'a Ast<X>, source: &'a str, positions: &'a Positions, sink: S) -> Self {
+impl<'a, X: Emit> Writer<'a, X> {
+	fn new(ast: &'a Ast<X>, source: &'a str, positions: &'a Positions) -> Self {
 		Self {
 			ast,
 			source,
-			sink,
+			sink: Json::default(),
 			positions,
 			cursor: Cursor::default(),
 			output: Output::default(),
@@ -1087,67 +536,29 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 	/// `writes` numbers index.
 	fn all_scopes(&mut self) {
 		let Some(scopes) = &self.ast.scopes else { return };
-		self.sink.table(c!("scopes"));
-		self.sink.list();
-		for scope in &scopes.scopes {
-			self.sink.object();
-			self.string(c!("kind"), scope.kind.name());
-			self.key(c!("parent"));
-			match scope.parent {
-				Some(parent) => self.sink.int(parent),
-				None => self.sink.null(),
-			}
-			self.bool(c!("topLevelAwait"), scope.top_level_await);
-			self.sink.end();
+		self.rows(c!("scopes"), &scopes.scopes, 0);
+		self.rows(c!("bindings"), &scopes.bindings, 1);
+		self.rows(c!("references"), &scopes.references, 2);
+		if !self.ast.hosts.is_empty() {
+			self.rows(c!("roots"), &scopes.roots, 3);
 		}
-		self.sink.end();
-		self.sink.table(c!("bindings"));
+	}
+
+	/// A table, each row spelled by its recipe of `scopes::RECIPES`.
+	fn rows<T>(&mut self, key: Name, rows: &[T], table: usize) {
+		static RESOLVED: std::sync::OnceLock<Vec<&'static [Op<Slot>]>> = std::sync::OnceLock::new();
+		let ops = RESOLVED.get_or_init(|| {
+			crate::scopes::RECIPES
+				.iter()
+				.zip(crate::scopes::ROWS)
+				.map(|((name, ops), (_, _, fields))| crate::recipe::resolve_ops(ops, fields, name))
+				.collect()
+		})[table];
+		self.key(key);
 		self.sink.list();
-		for binding in &scopes.bindings {
+		for row in rows {
 			self.sink.object();
-			self.interned(c!("name"), binding.name);
-			self.string(c!("kind"), binding.kind.name());
-			self.key(c!("scope"));
-			self.sink.int(binding.scope);
-			self.bool(c!("write"), binding.write);
-			self.sink.end();
-		}
-		self.sink.end();
-		self.sink.table(c!("references"));
-		self.sink.list();
-		for reference in &scopes.references {
-			self.sink.object();
-			self.key(c!("scope"));
-			self.sink.int(reference.scope);
-			self.key(c!("binding"));
-			match reference.binding {
-				Some(binding) => self.sink.int(binding),
-				None => self.sink.null(),
-			}
-			self.bool(c!("write"), reference.write);
-			self.bool(c!("read"), reference.read);
-			self.bool(c!("mutate"), reference.mutate);
-			self.bool(c!("declares"), reference.declares);
-			self.sink.end();
-		}
-		self.sink.end();
-		if self.ast.hosts.is_empty() {
-			return;
-		}
-		self.sink.table(c!("roots"));
-		self.sink.list();
-		for root in &scopes.roots {
-			self.sink.object();
-			self.key(c!("scope"));
-			self.sink.int(root.scope);
-			for (key, (from, to)) in [
-				(c!("scopes"), root.scopes),
-				(c!("bindings"), root.bindings),
-				(c!("references"), root.references),
-			] {
-				self.key(key);
-				self.sink.ints(&[from, to]);
-			}
+			self.run(NodeId::at(0), ops, row as *const T as *const u8);
 			self.sink.end();
 		}
 		self.sink.end();
@@ -1177,25 +588,10 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 
 	/// The recovered errors as the thrown one would be: code, message, `pos`, `end` and a `loc`.
 	fn errors(&mut self) {
-		let upto;
-		let positions = if self.positions.lines || self.ast.errors.is_empty() {
-			self.positions
-		} else {
-			let last = self.ast.errors.iter().map(|e| e.pos.max(e.end)).max().unwrap() as usize;
-			let mut end = last.min(self.source.len());
-			while !self.source.is_char_boundary(end) {
-				end += 1;
-			}
-			upto = Positions::new(&self.source[..end], true);
-			&upto
-		};
-		let mut cursor = Cursor::default();
+		let places = self.positions.of_errors(self.source, &self.ast.errors);
 		self.key(c!("errors"));
 		self.sink.list();
-		for error in &self.ast.errors {
-			let pos = positions.offset(&mut cursor, error.pos);
-			let (line, column) = positions.line_column(cursor.line, error.pos, pos);
-			let end = positions.offset(&mut cursor, error.end);
+		for (error, [pos, end, line, column]) in self.ast.errors.iter().zip(places) {
 			self.sink.object();
 			self.key(c!("code"));
 			self.sink.str(error.code.label());
@@ -1208,7 +604,7 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 			self.key(c!("loc"));
 			self.sink.object();
 			self.key(c!("line"));
-			self.sink.int(line as u32);
+			self.sink.int(line);
 			self.key(c!("column"));
 			self.sink.int(column);
 			self.sink.end();
@@ -1250,12 +646,7 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 
 	/// The source between two byte offsets, as a string value.
 	fn slice(&mut self, start: u32, end: u32) {
-		let (start_offset, end_offset) = (
-			self.positions.offset(&mut self.cursor, start),
-			self.positions.offset(&mut self.cursor, end),
-		);
-		self.sink
-			.slice(&self.source[start as usize..end as usize], start_offset, end_offset);
+		self.sink.text(&self.source[start as usize..end as usize]);
 	}
 
 	pub(crate) fn end(&mut self) {
@@ -1349,7 +740,7 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 
 	pub(crate) fn interned(&mut self, key: Name, id: StrId) {
 		self.key(key);
-		self.sink.interned(id, self.ast.str(id));
+		self.sink.text(self.ast.str(id));
 	}
 
 	pub(crate) fn raw(&mut self, id: NodeId) {
@@ -1396,11 +787,26 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 					self.begin(names[get::<u8>(base, slot) as usize], id);
 				}
 				Op::Node(key, slot) => self.field(key, get(base, slot)),
+				Op::Int(key, slot) => {
+					self.key(key);
+					self.sink.int(get(base, slot));
+				}
+				Op::Pair(key, slot) => {
+					self.key(key);
+					self.sink.ints(&get::<[u32; 2]>(base, slot));
+				}
 				Op::Opt(key, slot) => match slot.ty {
+					Ty::OptU32 => {
+						self.key(key);
+						match get::<Option<u32>>(base, slot) {
+							Some(value) => self.sink.int(value),
+							None => self.sink.null(),
+						}
+					}
 					Ty::OptStr => {
 						self.key(key);
 						match get::<Option<StrId>>(base, slot) {
-							Some(string) => self.sink.interned(string, self.ast.str(string)),
+							Some(string) => self.sink.text(self.ast.str(string)),
 							None => self.sink.null(),
 						}
 					}
@@ -1520,13 +926,12 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 							self.slice(start, end);
 						}
 						Value::Strs(start, len) => {
-							let strings: Vec<(StrId, &str)> = self.ast.host_strings
-								[start as usize..(start + len) as usize]
-								.iter()
-								.map(|&string| (string, self.ast.str(string)))
-								.collect();
 							self.key(key);
-							self.sink.strs(&strings);
+							self.sink.list();
+							for &string in &self.ast.host_strings[start as usize..(start + len) as usize] {
+								self.sink.text(self.ast.str(string));
+							}
+							self.sink.end();
 						}
 						Value::Bool(value) => self.bool(key, value),
 						Value::Int(value) => {
@@ -1746,7 +1151,6 @@ pub(crate) fn write_json_string(out: &mut String, s: &str) {
 
 #[cfg(test)]
 mod tests {
-	use crate::names::{Name, c};
 	#[test]
 	#[allow(clippy::excessive_precision)]
 	fn numbers_as_javascript_writes_them() {
@@ -1787,123 +1191,5 @@ mod tests {
 		assert!(positions.byte_offset(-1.0).is_err());
 		assert!(positions.byte_offset(1.5).is_err());
 		assert_eq!(Positions::new("abc", true).byte_offset(3.0), Ok(3));
-	}
-
-	#[test]
-	fn binary_layout() {
-		use super::{Binary, Sink, kind};
-		use crate::interner::Interner;
-		let mut interner = Interner::default();
-		interner.intern("a");
-		let mut b = Binary::new();
-		b.strings(&interner);
-		b.object();
-		b.key(c!("node"));
-		b.begin(c!("Identifier"));
-		b.span(1, 2);
-		b.key(c!("name"));
-		b.interned(crate::interner::StrId::at(0), "a");
-		b.key(c!("value"));
-		b.float(1.5);
-		b.key(c!("raw"));
-		b.text("\u{1F600}b");
-		b.key(Name::dynamic("list"));
-		b.list();
-		b.int(3);
-		b.null();
-		b.end();
-		b.end();
-		b.table(c!("scopes"));
-		b.list();
-		b.object();
-		b.key(Name::dynamic("through"));
-		b.ints(&[7]);
-		b.end();
-		b.end();
-		b.end();
-		b.finish();
-		let words = b.words().to_vec();
-		let [tree, strings, floats, bytes, known, known_shapes, tables_at] = words[..7] else {
-			unreachable!()
-		};
-		assert_eq!((tree, strings, floats, bytes), (14, 2, 1, 6));
-		assert!(known >= 5 && known_shapes >= kind::FIRST + 3);
-		let body = &words[7..7 + tree as usize];
-		let (root, node, scope) = (body[0], body[1], body[10]);
-		assert_eq!(&body[2..10], &[1, 2, 0, 0, 1, 3, kind::NULL, kind::END]);
-		assert_eq!(&body[11..], &[1, 7, kind::END]);
-		assert_eq!(tables_at, 10);
-		let all = b.shapes().to_vec();
-		let record = |id: u32| {
-			let mut at = 0;
-			for _ in kind::FIRST..id {
-				at += all[at] as usize + 1;
-			}
-			&all[at + 1..at + 1 + all[at] as usize]
-		};
-		assert_eq!(record(root), &[0, b.constant(c!("node")) << 4 | kind::NODE]);
-		assert_eq!(
-			record(node),
-			&[
-				b.constant(c!("Identifier")) + 1,
-				b.constant(c!("start")) << 4 | kind::INT,
-				b.constant(c!("end")) << 4 | kind::INT,
-				b.constant(c!("name")) << 4 | kind::STR,
-				b.constant(c!("value")) << 4 | kind::FLOAT,
-				b.constant(c!("raw")) << 4 | kind::STR,
-				b.constant(Name::dynamic("list")) << 4 | kind::NODES,
-			]
-		);
-		assert_eq!(
-			record(scope),
-			&[0, b.constant(Name::dynamic("through")) << 4 | kind::INTS]
-		);
-		let ends = &words[7 + tree as usize..][..2];
-		assert_eq!(ends, &[1, 4]);
-		let text_at = 7 + tree as usize + 2;
-		assert_eq!(&words[text_at].to_ne_bytes(), &[b'a', 0xf0, 0x9f, 0x98]);
-		assert_eq!(&words[text_at + 1].to_ne_bytes(), &[0x80, b'b', 0, 0]);
-		let floats_at = (text_at + 2).next_multiple_of(2);
-		let bits = words[floats_at] as u64 | (words[floats_at + 1] as u64) << 32;
-		assert_eq!(f64::from_bits(bits), 1.5);
-		assert_eq!(words.len(), floats_at + 2);
-	}
-
-	// cargo test --release hot_paths -- --ignored --nocapture
-	#[test]
-	#[ignore]
-	fn hot_paths() {
-		use super::{Binary, kind};
-		let mut b = Binary::new();
-		let record = [
-			b.constant(Name::dynamic("Identifier")) + 1,
-			b.constant(Name::dynamic("start")) << 4 | kind::INT,
-			b.constant(Name::dynamic("end")) << 4 | kind::INT,
-			b.constant(Name::dynamic("binding")) << 4 | kind::INT,
-			b.constant(Name::dynamic("name")) << 4 | kind::STR,
-		];
-		let other = [
-			b.constant(Name::dynamic("Literal")) + 1,
-			b.constant(Name::dynamic("start")) << 4 | kind::INT,
-			b.constant(Name::dynamic("end")) << 4 | kind::INT,
-			b.constant(Name::dynamic("value")) << 4 | kind::STR,
-			b.constant(Name::dynamic("raw")) << 4 | kind::SLICE,
-		];
-		let n = 10_000_000u32;
-		let mut sink = 0u32;
-		let t = std::time::Instant::now();
-		for i in 0..n {
-			sink = sink.wrapping_add(b.shapes.id(if i & 1 == 0 { &record } else { &other }));
-		}
-		eprintln!("shape hit {:.1} ns", t.elapsed().as_nanos() as f64 / n as f64);
-		let keys = ["name", "start", "end", "body", "expression", "value", "raw", "id"];
-		let t = std::time::Instant::now();
-		for i in 0..n {
-			sink = sink.wrapping_add(b.constant(Name::dynamic(keys[(i & 7) as usize])));
-		}
-		eprintln!(
-			"constant hit {:.1} ns  ({sink})",
-			t.elapsed().as_nanos() as f64 / n as f64
-		);
 	}
 }

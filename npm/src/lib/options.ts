@@ -50,9 +50,6 @@ export interface Options {
 }
 
 // `flag` of json.rs by bit
-/** The engine leaves the tree to be read in place. */
-export const ARENA = 1 << 14;
-
 const FLAG = { module: 1, typescript: 2, erase: 4, comments: 8, scopes: 16, locations: 32, parenthesized: 64, legacyDecorators: 128, proposalDecorators: 256, allowReturnOutsideFunction: 512, allowAwaitOutsideFunction: 1024, allowSuperOutsideMethod: 2048, allowUndeclaredExports: 4096, errorRecovery: 8192 } as const;
 
 const bit = (key: keyof Options & keyof typeof FLAG) => (value: unknown) => {

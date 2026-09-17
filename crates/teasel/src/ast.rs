@@ -254,6 +254,9 @@ pub struct Ast<X = ()> {
 	pub locs: Handed<u32>,
 	/// Where each interned string starts in UTF-16 units, when the text has characters past ASCII.
 	pub units: Handed<u32>,
+	/// Each recovered error as a front end reads it, six words: its code and message as strings,
+	/// `pos`, `end`, and the line and column of `pos`.
+	pub error_words: Handed<u32>,
 	/// The hosts as a front end reads them: type id, first field, field count, has a span.
 	pub host_view: Handed<u32>,
 	/// The name id of each host field, and its value as three words.
@@ -354,6 +357,7 @@ impl<X: Reuse> Ast<X> {
 		self.parenthesized.clear();
 		self.erased.clear();
 		self.comment_words.clear();
+		self.error_words.clear();
 		self.spans.clear();
 		self.locs.clear();
 		self.units.clear();
@@ -410,6 +414,7 @@ impl<X: Reuse> Ast<X> {
 		out.push("erased", self.erased.words());
 		out.push("comments", &mut self.comment_words);
 		self.attached.views("attached_slots", "attached", out);
+		out.push("errors", &mut self.error_words);
 		out.push("hosts", &mut self.host_view);
 		out.push("host_keys", &mut self.host_keys);
 		out.push("host_vals", &mut self.host_vals);

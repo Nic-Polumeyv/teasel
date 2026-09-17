@@ -16,6 +16,9 @@ pub enum Ty {
 	Bool,
 	OptBool,
 	U32,
+	OptU32,
+	/// Two words: a range.
+	Pair,
 	Enum(&'static [Name]),
 	OptEnum(&'static [Name]),
 	/// A record inside the record, its fields' offsets from its own start.
@@ -68,6 +71,12 @@ impl Described for Option<bool> {
 }
 impl Described for u32 {
 	const TY: Ty = Ty::U32;
+}
+impl Described for Option<u32> {
+	const TY: Ty = Ty::OptU32;
+}
+impl Described for [u32; 2] {
+	const TY: Ty = Ty::Pair;
 }
 
 /// An enum of names: `repr(u8)` in declaration order, each variant spelled as the writer emits it.
@@ -191,6 +200,7 @@ pub struct Missing {
 	pub bool: u8,
 	pub list: Tagged,
 	pub str: Tagged,
+	pub int: Tagged,
 }
 
 pub struct Tagged {
@@ -230,6 +240,11 @@ pub fn missing() -> Missing {
 				std::mem::transmute::<Option<StrId>, [u32; 2]>(None),
 				&[7],
 			),
+			int: tagged(
+				std::mem::transmute::<Option<u32>, [u32; 2]>(Some(7)),
+				std::mem::transmute::<Option<u32>, [u32; 2]>(None),
+				&[7],
+			),
 		}
 	}
 }
@@ -250,6 +265,8 @@ fn field(out: &mut String, field: &Field) {
 		Ty::Bool => "bool",
 		Ty::OptBool => "?bool",
 		Ty::U32 => "u32",
+		Ty::OptU32 => "?u32",
+		Ty::Pair => "pair",
 		Ty::Enum(_) => "enum",
 		Ty::OptEnum(_) => "?enum",
 		Ty::Struct(_) => "struct",
@@ -333,12 +350,26 @@ pub fn json() -> String {
 		list(&mut out, Extras::FIELDS);
 		out.push('}');
 	}
+	out.push_str(",\"rows\":{");
+	for (i, (name, size, fields)) in crate::scopes::ROWS.iter().enumerate() {
+		if i > 0 {
+			out.push(',');
+		}
+		out.push('"');
+		out.push_str(name);
+		out.push_str("\":{\"size\":");
+		crate::estree::push_int(&mut out, *size as u32);
+		out.push_str(",\"fields\":");
+		list(&mut out, fields);
+		out.push('}');
+	}
+	out.push('}');
 	let none = missing();
 	out.push_str(",\"none\":{\"enum\":");
 	crate::estree::push_int(&mut out, none.r#enum as u32);
 	out.push_str(",\"bool\":");
 	crate::estree::push_int(&mut out, none.bool as u32);
-	for (key, tagged) in [("list", none.list), ("str", none.str)] {
+	for (key, tagged) in [("list", none.list), ("str", none.str), ("int", none.int)] {
 		out.push_str(",\"");
 		out.push_str(key);
 		out.push_str("\":{\"tag\":");

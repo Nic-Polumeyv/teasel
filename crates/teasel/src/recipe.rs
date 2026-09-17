@@ -38,6 +38,10 @@ pub enum Op<F: Copy + 'static = Path> {
 	Modifier(Name, F),
 	/// One of two names by a bool: the first when true.
 	BoolNames(Name, F, Name, Name),
+	/// A word as a number.
+	Int(Name, F),
+	/// Two words as a list of two numbers.
+	Pair(Name, F),
 	/// A number literal's value: the float, or null when not finite.
 	Float(Name, F),
 	/// `raw`: the node's source text.
@@ -205,7 +209,7 @@ pub(crate) fn resolve_ops(ops: &[Op], fields: &[Field], kind: &str) -> &'static 
 			Type(name) => Type(name),
 			TypeOf(f) => TypeOf(slot(f, &[|t| matches!(t, Ty::Enum(_))])),
 			Node(k, f) => Node(k, slot(f, &[|t| matches!(t, Ty::Node)])),
-			Opt(k, f) => Opt(k, slot(f, &[|t| matches!(t, Ty::OptNode | Ty::OptStr)])),
+			Opt(k, f) => Opt(k, slot(f, &[|t| matches!(t, Ty::OptNode | Ty::OptStr | Ty::OptU32)])),
 			OptKey(k, f) => OptKey(k, slot(f, &[|t| matches!(t, Ty::OptNode)])),
 			List(k, f) => List(k, slot(f, &[|t| matches!(t, Ty::List)])),
 			OptListKey(k, f) => OptListKey(k, slot(f, &[|t| matches!(t, Ty::OptList)])),
@@ -219,6 +223,8 @@ pub(crate) fn resolve_ops(ops: &[Op], fields: &[Field], kind: &str) -> &'static 
 			OptEnumKey(k, f) => OptEnumKey(k, slot(f, &[|t| matches!(t, Ty::OptEnum(_))])),
 			Modifier(k, f) => Modifier(k, slot(f, &[|t| matches!(t, Ty::OptEnum(_))])),
 			BoolNames(k, f, a, b) => BoolNames(k, slot(f, &[|t| matches!(t, Ty::Bool)]), a, b),
+			Int(k, f) => Int(k, slot(f, &[|t| matches!(t, Ty::U32)])),
+			Pair(k, f) => Pair(k, slot(f, &[|t| matches!(t, Ty::Pair)])),
 			Float(k, f) => Float(k, slot(f, &[|t| matches!(t, Ty::U32)])),
 			Raw => Raw,
 			BigInt => BigInt,
@@ -272,6 +278,8 @@ fn json_ops(out: &mut String, ops: &[Op]) {
 			OptEnumKey(k, f) => ("optenumkey", Some(k), Some(f), None),
 			Modifier(k, f) => ("modifier", Some(k), Some(f), None),
 			BoolNames(k, f, _, _) => ("boolnames", Some(k), Some(f), None),
+			Int(k, f) => ("int", Some(k), Some(f), None),
+			Pair(k, f) => ("pair", Some(k), Some(f), None),
 			Float(k, f) => ("float", Some(k), Some(f), None),
 			Raw => ("raw", None, None, None),
 			BigInt => ("bigint", None, None, None),

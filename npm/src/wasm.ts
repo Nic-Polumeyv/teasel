@@ -14,8 +14,6 @@ interface Exports {
 	words_len(): number;
 	text_ptr(): number;
 	text_len(): number;
-	constants(): void;
-	shapes(): void;
 	tree(): number;
 	layout(): void;
 }
@@ -28,9 +26,6 @@ const { module, instance } =
 		? await WebAssembly.instantiate(await (await import('node:fs/promises')).readFile(url), {})
 		: await WebAssembly.instantiateStreaming(fetch(url), {});
 let wasm = instance.exports as unknown as Exports;
-let constants: string[] = [];
-let shapes: number[] = [];
-let shapes_known = 0;
 // a panic traps the instance for good: a fresh one takes over, and the sources held by the old one are gone
 let generation = 0;
 
@@ -40,9 +35,6 @@ function guarded<T>(f: () => T): T {
 	} catch (error) {
 		if (!(error instanceof WebAssembly.RuntimeError)) throw error;
 		wasm = new WebAssembly.Instance(module, {}).exports as unknown as Exports;
-		constants = [];
-		shapes = [];
-		shapes_known = 0;
 		generation++;
 		throw new Error('the engine panicked and started over; the sources it held are gone', { cause: error });
 	}
@@ -61,20 +53,11 @@ const words = () => new Uint32Array(wasm.memory.buffer, wasm.words_ptr(), wasm.w
 
 let tree_at = 0;
 
-// the constants, the shapes and the tree's addresses come first: writing them can grow the memory and detach a view taken before
+// the layout and the tree's addresses come first: writing them can grow the memory and detach a view taken before
 function answer(status: number) {
 	if (status !== 0) return text();
 	layout();
 	tree_at = wasm.tree();
-	if (words()[4] > constants.length) {
-		wasm.constants();
-		constants = JSON.parse(text());
-	}
-	if (words()[5] > shapes_known) {
-		shapes_known = words()[5];
-		wasm.shapes();
-		shapes = JSON.parse(text());
-	}
 	return words();
 }
 
@@ -105,8 +88,6 @@ export const engine: Engine = {
 			},
 		};
 	},
-	constants: () => constants,
-	shapes: () => shapes,
 	layout,
 	// the tree sits in the module's memory until the next parse: a view is made anew when its buffer moved or the memory grew
 	tree(typescript) {

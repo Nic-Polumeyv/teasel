@@ -104,7 +104,7 @@ pub unsafe extern "C" fn source_parse(
 	let stop = unsafe { Vec::from_raw_parts(ptr, len as usize, capacity as usize) };
 	let end = (has_end == 1).then_some(end);
 	guard(1, || {
-		answer(source(handle).binary(Entry::from_index(entry), offset, end, &String::from_utf8_lossy(&stop)))
+		answer(source(handle).in_place(Entry::from_index(entry), offset, end, &String::from_utf8_lossy(&stop)))
 	})
 }
 
@@ -162,14 +162,4 @@ pub extern "C" fn tree() -> *const u32 {
 #[unsafe(no_mangle)]
 pub extern "C" fn layout() {
 	text(teasel::json::layout_json());
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn constants() {
-	text(teasel::json::constants_json());
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn shapes() {
-	text(teasel::json::shapes_json());
 }

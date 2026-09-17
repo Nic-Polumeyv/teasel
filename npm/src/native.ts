@@ -20,8 +20,6 @@ export const engine: Engine = {
 		const held = native.create(bytes(source), flags, host);
 		return { parse: (entry, offset, end, stop) => native.parse(held, entry, offset, end, stop), free: () => native.free(held) };
 	},
-	constants: native.constants,
-	shapes: native.shapes,
 	layout: native.layout,
 	// the addon keeps one array of views a tree and sets what moved: asked only then
 	tree: (typescript, moved) => (moved || trees[+typescript] === undefined ? (trees[+typescript] = native.tree()!) : trees[+typescript]!),

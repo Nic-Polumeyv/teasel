@@ -191,7 +191,6 @@ fn main() -> ExitCode {
 		scopes,
 		locations: true,
 		erase,
-		arena: false,
 		end: None,
 		options,
 	};

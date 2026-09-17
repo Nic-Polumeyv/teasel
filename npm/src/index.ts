@@ -1,6 +1,6 @@
 import type { Expression, Identifier, Node, Pattern, Program, SourceLocation, Statement } from 'estree';
-import { decode, type Engine, mode, PARENT, type Prepared, REFERENCE, SCOPE } from './lib/decode.js';
-import { ARENA, ENTRY, type Entry, flags, type Options } from './lib/options.js';
+import { decode, PARENT, type Prepared, REFERENCE, SCOPE } from './lib/decode.js';
+import { ENTRY, type Entry, flags, type Options } from './lib/options.js';
 import { engine } from '#engine';
 
 export type { Entry, Options } from './lib/options.js';
@@ -247,10 +247,9 @@ export class Source<Root = Program> {
 	#held: Prepared | undefined;
 	#source: string;
 	#options: Options;
-	#arena = mode.arena;
 
 	constructor(source: string, options: Options = {}) {
-		this.#held = engine.create(source, flags(options) | (this.#arena ? ARENA : 0), options.host ?? '');
+		this.#held = engine.create(source, flags(options), options.host ?? '');
 		this.#source = source;
 		// what the engine was prepared with, however the caller's object changes after
 		this.#options = { ...options };
@@ -265,7 +264,7 @@ export class Source<Root = Program> {
 		const index = ENTRY[entry];
 		const stop = stops(stopAt);
 		const answer = this.#options.host !== undefined && index === ENTRY.program ? this.#held.parse(index, 0, undefined, '') : this.#held.parse(index, offset, end, stop);
-		if (typeof answer !== 'string') return decode(answer, this.#source, engine, true, this.#arena) as Parsed<any>;
+		if (typeof answer !== 'string') return decode(answer, this.#source, engine) as Parsed<any>;
 		const { message, ...error } = JSON.parse(answer).error;
 		throw Object.assign(new SyntaxError(message), error);
 	}

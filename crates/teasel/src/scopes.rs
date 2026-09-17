@@ -6,54 +6,38 @@ use crate::ast::{Ast, List, NodeId, NodeKind, VariableKind, Walk};
 use crate::error::{Code, SyntaxError};
 use crate::handed::{Handed, Views};
 use crate::interner::{FastMap, StrId};
-use crate::names::{Name, c};
+use crate::names::c;
 use crate::parser::Entry;
+use crate::recipe::Op;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ScopeKind {
-	Module,
-	Script,
-	/// A function, its parameters and its body.
-	Function,
-	/// The name of a function expression, visible only inside it.
-	FunctionName,
-	/// A class body, where the class name is bound again, immutably.
-	Class,
-	Block,
-	Catch,
-	/// The head of a loop declaring with `let`, `const` or `using`, and its body.
-	For,
-	Switch,
-	StaticBlock,
-	With,
-	/// A TypeScript namespace body.
-	Namespace,
-	/// A TypeScript enum body, where the members are names.
-	Enum,
-	/// What a host parses at an offset: an expression, a statement, a pattern.
-	Fragment,
+crate::layout::names! {
+	#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+	pub enum ScopeKind {
+		Module = "module",
+		Script = "script",
+		/// A function, its parameters and its body.
+		Function = "function",
+		/// The name of a function expression, visible only inside it.
+		FunctionName = "function-name",
+		/// A class body, where the class name is bound again, immutably.
+		Class = "class",
+		Block = "block",
+		Catch = "catch",
+		/// The head of a loop declaring with `let`, `const` or `using`, and its body.
+		For = "for",
+		Switch = "switch",
+		StaticBlock = "static-block",
+		With = "with",
+		/// A TypeScript namespace body.
+		Namespace = "namespace",
+		/// A TypeScript enum body, where the members are names.
+		Enum = "enum",
+		/// What a host parses at an offset: an expression, a statement, a pattern.
+		Fragment = "fragment",
+	}
 }
 
 impl ScopeKind {
-	pub fn name(self) -> Name {
-		match self {
-			ScopeKind::Module => c!("module"),
-			ScopeKind::Script => c!("script"),
-			ScopeKind::Function => c!("function"),
-			ScopeKind::FunctionName => c!("function-name"),
-			ScopeKind::Class => c!("class"),
-			ScopeKind::Block => c!("block"),
-			ScopeKind::Catch => c!("catch"),
-			ScopeKind::For => c!("for"),
-			ScopeKind::Switch => c!("switch"),
-			ScopeKind::StaticBlock => c!("static-block"),
-			ScopeKind::With => c!("with"),
-			ScopeKind::Namespace => c!("namespace"),
-			ScopeKind::Enum => c!("enum"),
-			ScopeKind::Fragment => c!("fragment"),
-		}
-	}
-
 	/// Whether `var` declarations stop here.
 	fn holds_var(self) -> bool {
 		matches!(
@@ -68,54 +52,34 @@ impl ScopeKind {
 	}
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BindingKind {
-	Var,
-	Let,
-	Const,
-	Using,
-	AwaitUsing,
-	Function,
-	Class,
-	Param,
-	CatchParam,
-	Import,
-	/// The name of a function expression, seen from inside it.
-	FunctionName,
-	/// The name of a class expression, seen from inside its body.
-	ClassName,
-	/// `arguments` in a function that reads it.
-	Arguments,
-	Enum,
-	EnumMember,
-	Namespace,
-	/// What a pattern parsed on its own declares; the host says what kind of binding it is.
-	Pattern,
+crate::layout::names! {
+	#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+	pub enum BindingKind {
+		Var = "var",
+		Let = "let",
+		Const = "const",
+		Using = "using",
+		AwaitUsing = "await using",
+		Function = "function",
+		Class = "class",
+		Param = "param",
+		CatchParam = "catch",
+		Import = "import",
+		/// The name of a function expression, seen from inside it.
+		FunctionName = "function-name",
+		/// The name of a class expression, seen from inside its body.
+		ClassName = "class-name",
+		/// `arguments` in a function that reads it.
+		Arguments = "arguments",
+		Enum = "enum",
+		EnumMember = "enum-member",
+		Namespace = "namespace",
+		/// What a pattern parsed on its own declares; the host says what kind of binding it is.
+		Pattern = "pattern",
+	}
 }
 
 impl BindingKind {
-	pub fn name(self) -> Name {
-		match self {
-			BindingKind::Var => c!("var"),
-			BindingKind::Let => c!("let"),
-			BindingKind::Const => c!("const"),
-			BindingKind::Using => c!("using"),
-			BindingKind::AwaitUsing => c!("await using"),
-			BindingKind::Function => c!("function"),
-			BindingKind::Class => c!("class"),
-			BindingKind::Param => c!("param"),
-			BindingKind::CatchParam => c!("catch"),
-			BindingKind::Import => c!("import"),
-			BindingKind::FunctionName => c!("function-name"),
-			BindingKind::ClassName => c!("class-name"),
-			BindingKind::Arguments => c!("arguments"),
-			BindingKind::Enum => c!("enum"),
-			BindingKind::EnumMember => c!("enum-member"),
-			BindingKind::Namespace => c!("namespace"),
-			BindingKind::Pattern => c!("pattern"),
-		}
-	}
-
 	/// Only `var` hoists; a function declaration belongs to the block it is in.
 	fn is_var(self) -> bool {
 		self == BindingKind::Var
@@ -126,55 +90,79 @@ pub type ScopeId = u32;
 pub type BindingId = u32;
 pub type ReferenceId = u32;
 
-#[derive(Debug)]
-pub struct Scope {
-	pub kind: ScopeKind,
-	/// The node that opens the scope: the program, function, class, block, clause or statement;
-	/// none for the scope around a parameter list parsed on its own.
-	pub node: Option<NodeId>,
-	pub parent: Option<ScopeId>,
-	/// How many function scopes enclose this one, itself included when it is one.
-	pub function_depth: u32,
-	/// An `await` or `for await` runs directly in this scope, no function around it; only a
-	/// program or fragment scope can say so.
-	pub top_level_await: bool,
+crate::layout::record! {
+	#[derive(Clone, Copy, Debug)]
+	pub struct Scope {
+		pub kind: ScopeKind,
+		/// The node that opens the scope: the program, function, class, block, clause or statement;
+		/// none for the scope around a parameter list parsed on its own.
+		pub node: Option<NodeId>,
+		pub parent: Option<ScopeId>,
+		/// How many function scopes enclose this one, itself included when it is one.
+		pub function_depth: u32,
+		/// An `await` or `for await` runs directly in this scope, no function around it; only a
+		/// program or fragment scope can say so.
+		pub top_level_await: bool,
+	}
 }
 
-#[derive(Debug)]
-pub struct Binding {
-	pub name: StrId,
-	pub kind: BindingKind,
-	pub scope: ScopeId,
-	/// The identifier that declares it; `arguments` has none.
-	pub node: Option<NodeId>,
-	/// What declares it: the declarator, function, class, import specifier, catch clause or
-	/// enum, as eslint-scope's definition node; none for `arguments` and for a pattern or parameter
-	/// list parsed on its own.
-	pub declaration: Option<NodeId>,
-	/// The declaration binds a value: an initializer, a parameter, a function; not a bare `let x;`.
-	pub write: bool,
+crate::layout::record! {
+	#[derive(Clone, Copy, Debug)]
+	pub struct Binding {
+		pub name: StrId,
+		pub kind: BindingKind,
+		pub scope: ScopeId,
+		/// The identifier that declares it; `arguments` has none.
+		pub node: Option<NodeId>,
+		/// What declares it: the declarator, function, class, import specifier, catch clause or
+		/// enum, as eslint-scope's definition node; none for `arguments` and for a pattern or parameter
+		/// list parsed on its own.
+		pub declaration: Option<NodeId>,
+		/// The declaration binds a value: an initializer, a parameter, a function; not a bare `let x;`.
+		pub write: bool,
+	}
 }
 
-#[derive(Debug)]
-pub struct Reference {
-	pub node: NodeId,
-	pub scope: ScopeId,
-	/// None when no scope declares the name: a global.
-	pub binding: Option<BindingId>,
-	/// The identifier is assigned to, updated or bound by a destructuring assignment.
-	pub write: bool,
-	/// A member of the identifier's value is assigned to, updated or deleted.
-	pub mutate: bool,
-	/// The identifier's value is read: every reference but a plain assignment's target or a
-	/// destructuring one's; a compound assignment or an update reads and writes.
-	pub read: bool,
-	/// What a write assigns: the right side of the assignment or the iterated expression of a
-	/// `for-in` or `for-of`, as eslint-scope's `writeExpr`; none for an update.
-	pub write_expr: Option<NodeId>,
-	/// The identifier declares its binding again, `var x` twice: the binding itself stands for the
-	/// first declaration, and this row writes when a value is bound here.
-	pub declares: bool,
+crate::layout::record! {
+	#[derive(Clone, Copy, Debug)]
+	pub struct Reference {
+		pub node: NodeId,
+		pub scope: ScopeId,
+		/// None when no scope declares the name: a global.
+		pub binding: Option<BindingId>,
+		/// The identifier is assigned to, updated or bound by a destructuring assignment.
+		pub write: bool,
+		/// A member of the identifier's value is assigned to, updated or deleted.
+		pub mutate: bool,
+		/// The identifier's value is read: every reference but a plain assignment's target or a
+		/// destructuring one's; a compound assignment or an update reads and writes.
+		pub read: bool,
+		/// What a write assigns: the right side of the assignment or the iterated expression of a
+		/// `for-in` or `for-of`, as eslint-scope's `writeExpr`; none for an update.
+		pub write_expr: Option<NodeId>,
+		/// The identifier declares its binding again, `var x` twice: the binding itself stands for the
+		/// first declaration, and this row writes when a value is bound here.
+		pub declares: bool,
+	}
 }
+
+/// How each table's rows are spelled: the recipes of the answer's `scopes`, `bindings`,
+/// `references` and `roots`.
+#[rustfmt::skip]
+pub const RECIPES: &[(&str, &[Op])] = &[
+	("scopes", &[Op::Enum(c!("kind"), "kind"), Op::Opt(c!("parent"), "parent"), Op::Bool(c!("topLevelAwait"), "top_level_await")]),
+	("bindings", &[Op::Str(c!("name"), "name"), Op::Enum(c!("kind"), "kind"), Op::Int(c!("scope"), "scope"), Op::Bool(c!("write"), "write")]),
+	("references", &[Op::Int(c!("scope"), "scope"), Op::Opt(c!("binding"), "binding"), Op::Bool(c!("write"), "write"), Op::Bool(c!("read"), "read"), Op::Bool(c!("mutate"), "mutate"), Op::Bool(c!("declares"), "declares")]),
+	("roots", &[Op::Int(c!("scope"), "scope"), Op::Pair(c!("scopes"), "scopes"), Op::Pair(c!("bindings"), "bindings"), Op::Pair(c!("references"), "references")]),
+];
+
+/// Each table's name, its record's size and fields, in the order of `RECIPES`.
+pub const ROWS: &[(&str, usize, &[crate::layout::Field])] = &[
+	("scopes", size_of::<Scope>(), Scope::FIELDS),
+	("bindings", size_of::<Binding>(), Binding::FIELDS),
+	("references", size_of::<Reference>(), Reference::FIELDS),
+	("roots", size_of::<Root>(), Root::FIELDS),
+];
 
 /// What an identifier is in the analysis: the binding it declares, or the reference it makes.
 #[derive(Clone, Copy, Debug)]
@@ -261,25 +249,27 @@ impl<T: Packed> NodeTable<T> {
 	}
 }
 
-/// A piece of JavaScript a host read on its own, and what the tables hold for it: the scope it
-/// sits in, and the scopes opened, the bindings declared and the references made inside it, each
-/// a range of its table since a piece is visited in one go.
-#[derive(Debug)]
-pub struct Root {
-	pub node: NodeId,
-	pub scope: ScopeId,
-	pub scopes: (u32, u32),
-	pub bindings: (u32, u32),
-	pub references: (u32, u32),
+crate::layout::record! {
+	/// A piece of JavaScript a host read on its own, and what the tables hold for it: the scope it
+	/// sits in, and the scopes opened, the bindings declared and the references made inside it, each
+	/// a range of its table since a piece is visited in one go.
+	#[derive(Clone, Copy, Debug)]
+	pub struct Root {
+		pub node: NodeId,
+		pub scope: ScopeId,
+		pub scopes: [u32; 2],
+		pub bindings: [u32; 2],
+		pub references: [u32; 2],
+	}
 }
 
 #[derive(Debug, Default)]
 pub struct Scopes {
-	pub scopes: Vec<Scope>,
-	pub bindings: Vec<Binding>,
-	pub references: Vec<Reference>,
+	pub scopes: Handed<Scope>,
+	pub bindings: Handed<Binding>,
+	pub references: Handed<Reference>,
 	/// The pieces of JavaScript in a host's document, in source order; empty for a plain parse.
-	pub roots: Vec<Root>,
+	pub roots: Handed<Root>,
 	pub root_of: NodeTable<u32>,
 	pub of_node: NodeTable<ScopeId>,
 	pub of_identifier: NodeTable<Role>,
@@ -398,6 +388,10 @@ impl Scopes {
 
 	/// The per-node tables a front end reads in place, in the order `no_views` names them.
 	pub fn views(&mut self, out: &mut Views<'_>) {
+		out.push("scopes", &mut self.scopes);
+		out.push("bindings", &mut self.bindings);
+		out.push("references", &mut self.references);
+		out.push("roots", &mut self.roots);
 		out.push("of_node", &mut self.of_node.0);
 		out.push("of_identifier", &mut self.of_identifier.0);
 		out.push("root_of", &mut self.root_of.0);
@@ -410,6 +404,10 @@ impl Scopes {
 	/// The same names over nothing, for a tree without analysis.
 	pub fn no_views(out: &mut Views<'_>) {
 		for name in [
+			"scopes",
+			"bindings",
+			"references",
+			"roots",
 			"of_node",
 			"of_identifier",
 			"root_of",
@@ -1244,16 +1242,16 @@ impl<'a, X: Bind> Binder<'a, X> {
 		self.out.roots.push(Root {
 			node,
 			scope: self.current(),
-			scopes: (from.0, from.0),
-			bindings: (from.1, from.1),
-			references: (from.2, from.2),
+			scopes: [from.0; 2],
+			bindings: [from.1; 2],
+			references: [from.2; 2],
 		});
 		self.out.root_of.insert(node, index);
 		f(self);
 		let root = &mut self.out.roots[index as usize];
-		root.scopes.1 = self.out.scopes.len() as u32;
-		root.bindings.1 = self.out.bindings.len() as u32;
-		root.references.1 = self.out.references.len() as u32;
+		root.scopes[1] = self.out.scopes.len() as u32;
+		root.bindings[1] = self.out.bindings.len() as u32;
+		root.references[1] = self.out.references.len() as u32;
 	}
 
 	fn visit_with(&mut self, id: NodeId, mode: Mode, extras: bool) {
@@ -1840,7 +1838,7 @@ mod tests {
 			let root = scopes
 				.roots
 				.iter()
-				.find(|r| (r.bindings.0 as usize..r.bindings.1 as usize).contains(&i))
+				.find(|r| (r.bindings[0] as usize..r.bindings[1] as usize).contains(&i))
 				.expect("in a root");
 			let piece = ast.node(root.node);
 			assert!(
