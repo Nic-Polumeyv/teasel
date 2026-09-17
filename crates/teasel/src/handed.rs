@@ -174,8 +174,6 @@ pub trait Raw {
 				Element::F64 => 8,
 			}
 	}
-	/// Whether the allocation is the buffer's own: no caller holds it.
-	fn owned(&self) -> bool;
 	fn as_ptr(&self) -> *const u8;
 	fn len_bytes(&self) -> usize;
 	fn capacity_bytes(&self) -> usize;
@@ -197,10 +195,6 @@ impl<T: Copy + 'static> Raw for Handed<T> {
 			const { assert!(size_of::<T>().is_multiple_of(4) || size_of::<T>() == 1) };
 			Element::U32
 		}
-	}
-
-	fn owned(&self) -> bool {
-		self.owned
 	}
 
 	fn as_ptr(&self) -> *const u8 {

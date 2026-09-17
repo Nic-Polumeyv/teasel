@@ -80,6 +80,18 @@ impl NodeSet {
 		self.0.clear();
 	}
 
+	/// Empty, with a bit for each of `nodes` nodes.
+	pub fn reset(&mut self, nodes: usize) {
+		self.0.clear();
+		self.0.resize(nodes.div_ceil(64), 0);
+	}
+
+	pub fn union(&mut self, other: &NodeSet) {
+		for (word, &more) in self.0.iter_mut().zip(other.0.iter()) {
+			*word |= more;
+		}
+	}
+
 	/// Keeps the bits of the first `nodes` nodes.
 	pub fn truncate(&mut self, nodes: usize) {
 		self.0.truncate(nodes.div_ceil(64));
@@ -131,6 +143,11 @@ impl<T: Copy + 'static> Slots<T> {
 
 	pub fn len(&self) -> usize {
 		self.list.len()
+	}
+
+	/// The node of each record.
+	pub fn owners(&self) -> &[NodeId] {
+		&self.owners
 	}
 
 	pub fn is_empty(&self) -> bool {
@@ -247,6 +264,11 @@ pub struct Ast<X = ()> {
 	pub attached: Slots<Attached>,
 	/// Nodes erasure leaves out, when the answer erases TypeScript.
 	pub erased: NodeSet,
+	/// Nodes with what few have, for a front end that builds the rest in one piece: parentheses,
+	/// comments, an extension's extras, a binding or reference on what is not an identifier.
+	pub rare: NodeSet,
+	/// Nodes that declare bindings, are assigned by references or are a root.
+	pub late: NodeSet,
 	/// Each node's span in UTF-16 offsets, two words a node, when the source has characters past
 	/// ASCII; empty otherwise, the node's own span being right.
 	pub spans: Handed<u32>,
@@ -257,7 +279,8 @@ pub struct Ast<X = ()> {
 	/// Each recovered error as a front end reads it, six words: its code and message as strings,
 	/// `pos`, `end`, and the line and column of `pos`.
 	pub error_words: Handed<u32>,
-	/// The hosts as a front end reads them: type id, first field, field count, has a span.
+	/// The hosts as a front end reads them, five words: type, first field, field count, whether it
+	/// has a span, and the number of its shape.
 	pub host_view: Handed<u32>,
 	/// The name id of each host field, and its value as three words.
 	pub host_keys: Handed<u32>,
@@ -319,6 +342,8 @@ pub trait Reuse: Default {
 	fn truncate(&mut self, mark: Self::Mark);
 	/// The extension's own buffers, after the tree's.
 	fn views(&mut self, _out: &mut Views<'_>) {}
+	/// The nodes the extension adds keys to.
+	fn rare(&self, _set: &mut NodeSet) {}
 }
 
 impl Reuse for () {
@@ -356,6 +381,8 @@ impl<X: Reuse> Ast<X> {
 		self.errors.clear();
 		self.parenthesized.clear();
 		self.erased.clear();
+		self.rare.clear();
+		self.late.clear();
 		self.comment_words.clear();
 		self.error_words.clear();
 		self.spans.clear();
@@ -412,6 +439,8 @@ impl<X: Reuse> Ast<X> {
 		out.push("locs", &mut self.locs);
 		out.push("parenthesized", self.parenthesized.words());
 		out.push("erased", self.erased.words());
+		out.push("rare", self.rare.words());
+		out.push("late", self.late.words());
 		out.push("comments", &mut self.comment_words);
 		self.attached.views("attached_slots", "attached", out);
 		out.push("errors", &mut self.error_words);

@@ -259,6 +259,9 @@ const { open, scopeOf, referenceOf, parentOf } = untyped(m);
 	assert.equal(program('y;').body.length, 1);
 	assert.equal(program(wide + wide).body.length, 400000);
 	assert.equal(program('z;').body[0].expression.name, 'z');
+	// a source that grows the engine's memory while the tree's buffers stay where they are
+	assert.equal(program(`/*${'c'.repeat(1 << 25)}*/ w;`).body[0].expression.name, 'w');
+	assert.equal(program('v;').body[0].expression.name, 'v');
 	console.log(name, 'ok');
 }
 

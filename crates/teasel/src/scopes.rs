@@ -401,6 +401,27 @@ impl Scopes {
 		out.push("writes_of_at", &mut self.writes_of.starts.0);
 	}
 
+	/// Marks the nodes with what a front end links once a node is whole, in `late`, and those with
+	/// a binding or a reference that are not identifiers, in `rare`.
+	pub fn mark<X>(&self, ast: &Ast<X>, rare: &mut crate::ast::NodeSet, late: &mut crate::ast::NodeSet) {
+		for &(node, _) in self.declared_by.pairs.iter().chain(&self.writes_of.pairs) {
+			late.insert(node);
+		}
+		for root in self.roots.iter() {
+			late.insert(root.node);
+		}
+		let nodes = self
+			.bindings
+			.iter()
+			.filter_map(|b| b.node)
+			.chain(self.references.iter().map(|r| r.node));
+		for node in nodes {
+			if !matches!(ast.node(node).kind, NodeKind::Identifier { .. }) {
+				rare.insert(node);
+			}
+		}
+	}
+
 	/// The same names over nothing, for a tree without analysis.
 	pub fn no_views(out: &mut Views<'_>) {
 		for name in [

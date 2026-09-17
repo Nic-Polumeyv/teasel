@@ -236,9 +236,11 @@ pub fn tree(f: &mut dyn FnMut(&'static str, Option<&mut dyn Raw>)) -> Option<boo
 		#[cfg(feature = "typescript")]
 		if session.typescript {
 			session.pool.ts.as_deref_mut()?.views(&mut Views(f));
+			session.pool.names[1].views(&mut Views(f));
 			return Some(true);
 		}
 		session.pool.js.as_deref_mut()?.views(&mut Views(f));
+		session.pool.names[0].views(&mut Views(f));
 		Some(false)
 	})
 }
@@ -259,6 +261,7 @@ pub fn renew_trees() {
 		if let Some(ast) = session.pool.js.as_deref_mut() {
 			ast.views(&mut Views(&mut renew));
 		}
+		session.pool.names.iter_mut().for_each(Names::renew);
 	})
 }
 
@@ -266,6 +269,7 @@ pub fn renew_trees() {
 fn view_names<X: Reuse + Default>() -> Vec<&'static str> {
 	let mut names = Vec::new();
 	Ast::<X>::default().views(&mut Views(&mut |name, _| names.push(name)));
+	Names::default().views(&mut Views(&mut |name, _| names.push(name)));
 	names
 }
 
@@ -284,9 +288,76 @@ fn grammar_named(text: &str) -> Result<Rc<Grammar>, String> {
 
 #[derive(Default)]
 pub struct Pool {
+	/// The names of the hosts' types and keys, numbered once for every answer of the JavaScript
+	/// tree and of the TypeScript one.
+	names: [Names; 2],
+	/// Where the buffers of the JavaScript tree and of the TypeScript one sat, and with what room,
+	/// folded into a word each, when an answer last told a front end of them.
+	seen: [u64; 2],
 	js: Option<Box<Ast<()>>>,
 	#[cfg(feature = "typescript")]
 	ts: Option<Box<Ast<crate::typescript::ast::Data>>>,
+}
+
+/// Names a front end knows by number across answers: their text, where each starts, and the
+/// number of each.
+#[derive(Default)]
+struct Names {
+	text: crate::handed::Handed<u8>,
+	starts: crate::handed::Handed<u32>,
+	ids: crate::interner::FastMap<&'static str, u32>,
+	/// The same by where the name sits: a grammar's names are few places, met again and again.
+	places: crate::interner::FastMap<(usize, usize), u32>,
+	/// A host node's shape by its type, whether it has a span, and each field's key and kind of
+	/// value: nodes of one shape are built by one literal.
+	shapes: crate::interner::FastMap<Vec<u32>, u32>,
+	shape: Vec<u32>,
+}
+
+impl Names {
+	fn id(&mut self, name: &'static str) -> u32 {
+		let place = (name.as_ptr() as usize, name.len());
+		if let Some(&id) = self.places.get(&place) {
+			return id;
+		}
+		if let Some(&id) = self.ids.get(name) {
+			self.places.insert(place, id);
+			return id;
+		}
+		if self.starts.is_empty() {
+			self.starts.push(0);
+		}
+		let id = self.ids.len() as u32;
+		self.text.extend_from_slice(name.as_bytes());
+		self.starts.push(self.text.len() as u32);
+		self.ids.insert(name, id);
+		self.places.insert(place, id);
+		id
+	}
+
+	/// The number of the shape `self.shape` spells.
+	fn shape_id(&mut self) -> u32 {
+		if let Some(&id) = self.shapes.get(self.shape.as_slice()) {
+			return id;
+		}
+		let id = self.shapes.len() as u32;
+		self.shapes.insert(self.shape.clone(), id);
+		id
+	}
+
+	fn views(&mut self, out: &mut Views<'_>) {
+		out.push("names", &mut self.text);
+		out.push("name_starts", &mut self.starts);
+	}
+
+	/// Starts over on fresh buffers: a front end that held the views keeps what it saw.
+	fn renew(&mut self) {
+		self.ids.clear();
+		self.places.clear();
+		self.shapes.clear();
+		self.text.renew(0);
+		self.starts.renew(0);
+	}
 }
 
 /// Which slot of the pool an extension's tree takes.
@@ -540,9 +611,10 @@ where
 		Pooled::give(pool, ast);
 		return Ok(json);
 	};
-	prepare(&mut ast, source, positions, output);
+	let names = &mut pool.names[request.typescript as usize];
+	prepare(&mut ast, source, positions, output, names);
 	// `end`, the roots by number, a word of what the answer is, each view's length. A buffer moved
-	// since a front end took the views, the tree is TypeScript's, every comment is listed, TypeScript
+	// since the last answer, the tree is TypeScript's, every comment is listed, TypeScript
 	// is erased, lines are on, the roots are a list, the errors recovered from are listed
 	words.clear();
 	words.extend_from_slice(&[positions.offset(&mut crate::estree::Cursor::default(), end), roots.len]);
@@ -556,12 +628,19 @@ where
 			| ((request.entry == Entry::Params) as u32) << 5
 			| (output.errors as u32) << 6,
 	);
-	ast.views(&mut Views(&mut |_, buffer| {
+	let mut sits = 0u64;
+	let mut note = |_, buffer: Option<&mut dyn Raw>| {
 		words.push(buffer.as_ref().map_or(0, |buffer| buffer.elements() as u32));
-		if buffer.is_some_and(|buffer| buffer.owned()) {
-			words[what] |= 1;
+		if let Some(buffer) = buffer {
+			sits = (sits ^ buffer.as_ptr() as u64 ^ (buffer.capacity_bytes() as u64) << 32)
+				.wrapping_mul(0x9e37_79b9_7f4a_7c15);
 		}
-	}));
+	};
+	ast.views(&mut Views(&mut note));
+	pool.names[request.typescript as usize].views(&mut Views(&mut note));
+	let seen = &mut pool.seen[request.typescript as usize];
+	words[what] |= (*seen != sits) as u32;
+	*seen = sits;
 	Pooled::give(pool, ast);
 	Ok(String::new())
 }
@@ -570,7 +649,7 @@ where
 /// as JavaScript counts them, the nodes erasure leaves out, the hosts, the comments and the
 /// recovered errors as words, their names and messages among the strings, and the strings'
 /// UTF-16 starts.
-fn prepare<X: Emit + Reuse>(ast: &mut Ast<X>, source: &str, positions: &Positions, output: Output) {
+fn prepare<X: Emit + Reuse>(ast: &mut Ast<X>, source: &str, positions: &Positions, output: Output, names: &mut Names) {
 	positions.map_nodes(&ast.nodes, &mut ast.spans, &mut ast.locs);
 	ast.erased.clear();
 	if output.erase {
@@ -581,24 +660,27 @@ fn prepare<X: Emit + Reuse>(ast: &mut Ast<X>, source: &str, positions: &Position
 			}
 		}
 	}
+	let (mut rare, mut late) = (std::mem::take(&mut ast.rare), std::mem::take(&mut ast.late));
+	rare.reset(ast.nodes.len());
+	late.reset(ast.nodes.len());
+	rare.union(&ast.parenthesized);
+	for &owner in ast.attached.owners() {
+		rare.insert(owner);
+	}
+	ast.extension.rare(&mut rare);
+	if let Some(scopes) = &ast.scopes
+		&& output.scopes
+	{
+		scopes.mark(ast, &mut rare, &mut late);
+	}
+	(ast.rare, ast.late) = (rare, late);
 	ast.host_view.clear();
 	ast.host_keys.clear();
 	ast.host_vals.clear();
-	for i in 0..ast.hosts.len() {
-		let host = ast.hosts[i];
-		let ty = if host.ty.is_empty() {
-			u32::MAX
-		} else {
-			ast.strings.intern(host.ty).index()
-		};
-		ast.host_view
-			.extend_from_slice(&[ty, host.fields.0, host.fields.1, host.span as u32]);
-	}
 	let mut cursor = crate::estree::Cursor::default();
 	for i in 0..ast.host_fields.len() {
 		let (key, value) = ast.host_fields[i];
-		let key = ast.strings.intern(key).index();
-		ast.host_keys.push(key);
+		ast.host_keys.push(names.id(key));
 		let mut words = value.words();
 		if let crate::ast::Value::Slice(start, end) = value {
 			words = [
@@ -608,6 +690,23 @@ fn prepare<X: Emit + Reuse>(ast: &mut Ast<X>, source: &str, positions: &Position
 			];
 		}
 		ast.host_vals.push(words);
+	}
+	for i in 0..ast.hosts.len() {
+		let host = ast.hosts[i];
+		let ty = if host.ty.is_empty() {
+			u32::MAX
+		} else {
+			names.id(host.ty)
+		};
+		let (from, len) = (host.fields.0 as usize, host.fields.1 as usize);
+		names.shape.clear();
+		names.shape.extend([ty, host.span as u32]);
+		for field in from..from + len {
+			names.shape.extend([ast.host_keys[field], ast.host_vals[field][0]]);
+		}
+		let shape = names.shape_id();
+		ast.host_view
+			.extend_from_slice(&[ty, host.fields.0, host.fields.1, host.span as u32, shape]);
 	}
 	if output.comments || !ast.hosts.is_empty() {
 		positions.map_comments(&ast.comments, &mut ast.comment_words);

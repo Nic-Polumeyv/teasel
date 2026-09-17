@@ -180,7 +180,13 @@ fn the_session_writes_the_same_words_again() {
 	);
 	prepared.in_place(Entry::Program, 0.0, None, "").unwrap();
 	let again = words();
-	assert_eq!(first, again);
+	// but for the first saying its buffers are new to the front end
+	let what = 2 + first[1] as usize;
+	assert_eq!(first[what] & !1, again[what] & !1);
+	assert_eq!(
+		(&first[..what], &first[what + 1..]),
+		(&again[..what], &again[what + 1..])
+	);
 }
 
 #[test]

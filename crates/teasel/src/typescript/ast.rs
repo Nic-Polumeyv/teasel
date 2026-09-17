@@ -42,6 +42,12 @@ impl crate::ast::Reuse for Data {
 		out.push("ts", &mut self.nodes);
 		self.extras.views("extras_slots", "extras", out);
 	}
+
+	fn rare(&self, set: &mut crate::ast::NodeSet) {
+		for &owner in self.extras.owners() {
+			set.insert(owner);
+		}
+	}
 }
 
 crate::layout::names! {

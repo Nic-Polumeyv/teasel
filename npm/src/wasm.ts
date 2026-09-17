@@ -51,13 +51,10 @@ function bytes(text: string): [ptr: number, len: number, capacity: number] {
 const text = () => utf8.decode(new Uint8Array(wasm.memory.buffer, wasm.text_ptr(), wasm.text_len()));
 const words = () => new Uint32Array(wasm.memory.buffer, wasm.words_ptr(), wasm.words_len());
 
-let tree_at = 0;
-
-// the layout and the tree's addresses come first: writing them can grow the memory and detach a view taken before
+// the layout comes first: writing it can grow the memory and detach a view taken before
 function answer(status: number) {
 	if (status !== 0) return text();
 	layout();
-	tree_at = wasm.tree();
 	return words();
 }
 
@@ -90,13 +87,18 @@ export const engine: Engine = {
 	},
 	layout,
 	// the tree sits in the module's memory until the next parse: a view is made anew when its buffer moved or the memory grew
-	tree(typescript) {
+	tree(typescript, moved) {
+		const known = trees[+typescript];
+		if (!moved && known !== undefined && known.buffer === wasm.memory.buffer) return known.views;
+		// the count of views, then each one's address, room in bytes and element size; the call allocates nothing, so the words' view stays
+		const address = wasm.tree();
 		const { buffer } = wasm.memory;
-		// the count of views, then each one's address, room in bytes and element size
-		const at = new Uint32Array(buffer, tree_at, 97);
-		const held = (trees[+typescript] ??= { buffer, at: new Uint32Array(97), views: [+typescript] });
+		const at = new Uint32Array(buffer, address, 145);
+		const held = (trees[+typescript] ??= { buffer, at: new Uint32Array(145), views: [+typescript] });
 		const same = held.buffer === buffer;
 		held.buffer = buffer;
+		// a new array: whoever kept the last one sees that a view in it changed
+		held.views = held.views.slice();
 		for (let i = 1; i < 1 + 3 * at[0]; i += 3) {
 			const ptr = at[i], bytes = at[i + 1], size = at[i + 2];
 			if (same && held.at[i] === ptr && held.at[i + 1] === bytes) continue;
