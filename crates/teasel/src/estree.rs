@@ -1413,11 +1413,6 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 					let Ty::OptEnum(names) = slot.ty else { unreachable!() };
 					self.string(key, names.get(get::<u8>(base, slot) as usize).copied().unwrap_or(other));
 				}
-				Op::BoolIfExtension(key, slot) => {
-					if get::<bool>(base, slot) && matches!(self.kind(id), NodeKind::Extension(_)) {
-						self.bool(key, true);
-					}
-				}
 				Op::Type(name) => self.begin(name, id),
 				Op::TypeOf(slot) => {
 					let Ty::Enum(names) = slot.ty else { unreachable!() };

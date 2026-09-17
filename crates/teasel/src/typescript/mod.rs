@@ -1697,8 +1697,10 @@ impl Extension for TypeScript {
 				}
 			}
 		}
-		if frame.extras != Extras::default() {
-			p.extras_mut(node).merge(frame.extras);
+		let mut extras = frame.extras;
+		extras.is_static &= matches!(p.kind(node), NodeKind::Extension(_));
+		if extras != Extras::default() {
+			p.extras_mut(node).merge(extras);
 		}
 		Ok(())
 	}

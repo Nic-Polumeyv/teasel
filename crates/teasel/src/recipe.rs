@@ -59,8 +59,6 @@ pub enum Op<F: Copy + 'static = Path> {
 	Through(F),
 	/// The enum field's name, or the given one when missing.
 	EnumOr(Name, F, Name),
-	/// Only when true and the node is an extension's.
-	BoolIfExtension(Name, F),
 }
 
 /// A field resolved: its byte offset from the record's start and its type.
@@ -238,7 +236,6 @@ pub(crate) fn resolve_ops(ops: &[Op], fields: &[Field], kind: &str) -> &'static 
 			KeepIf(name, f) => KeepIf(name, slot(f, &[|t| matches!(t, Ty::Bool)])),
 			Through(f) => Through(slot(f, &[|t| matches!(t, Ty::Node)])),
 			EnumOr(k, f, other) => EnumOr(k, slot(f, &[|t| matches!(t, Ty::OptEnum(_))]), other),
-			BoolIfExtension(k, f) => BoolIfExtension(k, slot(f, &[|t| matches!(t, Ty::Bool)])),
 		})
 		.collect();
 	Box::leak(resolved.into_boxed_slice())
@@ -288,7 +285,6 @@ fn json_ops(out: &mut String, ops: &[Op]) {
 			KeepIf(name, f) => ("keepif", Some(name), Some(f), None),
 			Through(f) => ("through", None, Some(f), None),
 			EnumOr(k, f, _) => ("enumor", Some(k), Some(f), None),
-			BoolIfExtension(k, f) => ("boolifextension", Some(k), Some(f), None),
 		};
 		json_str(out, name);
 		if let Some(key) = key {

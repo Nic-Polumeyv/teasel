@@ -422,9 +422,6 @@ function apply(S: State, id: number, n: Decoded, ops: Op[], view: Uint32Array, b
 			case 'boolif':
 				if (byte(view, at) === 1) n[op.key] = true;
 				break;
-			case 'boolifextension':
-				if (byte(view, at) === 1 && S.N[id * S.C.words + (S.C.kind >> 2)] === S.C.extension) n[op.key] = true;
-				break;
 			case 'optboolkey':
 				if (byte(view, at) !== none.bool) n[op.key] = byte(view, at) === 1;
 				break;
@@ -631,7 +628,7 @@ function late(S: State, n: Decoded, id: number) {
 }
 
 const LINK = 1, LINES = 2, FACTS = 4, ERASE = 8;
-const CONDITIONAL = new Set(['optkey', 'optlistkey', 'boolif', 'boolifextension', 'optboolkey', 'optstrkey', 'optenumkey', 'modifier', 'keepif']);
+const CONDITIONAL = new Set(['optkey', 'optlistkey', 'boolif', 'optboolkey', 'optstrkey', 'optenumkey', 'modifier', 'keepif']);
 
 // One object literal per kind, its parent and facts as symbol slots of the literal: V8 allocates
 // it in one hidden class. Keys a kind may leave out are set after, in the recipe's order, and a
@@ -743,9 +740,6 @@ function generate(C: Compiled, G: Language, config: number, ops: Op[], ts: boole
 			}
 			case 'boolif':
 				tail.push(`if (${byte(op.at)} === 1) n[${key(op)}] = true;`);
-				break;
-			case 'boolifextension':
-				if (ts) tail.push(`if (${byte(op.at)} === 1) n[${key(op)}] = true;`);
 				break;
 			case 'optboolkey':
 				tail.push(`if (${byte(op.at)} !== ${none.bool}) n[${key(op)}] = ${byte(op.at)} === 1;`);
