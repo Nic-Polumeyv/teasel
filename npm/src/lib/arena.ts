@@ -6,7 +6,7 @@ export const SCOPE = Symbol('scope');
 export const REFERENCE = Symbol('reference');
 export const PARENT = Symbol('parent');
 
-/** A decoded object: the tree decides its shape, `api.ts` describes it. */
+/** A decoded object: the tree decides its shape, `index.ts` describes it. */
 export type Decoded = Record<string | symbol, any>;
 
 type View = Uint32Array | Float64Array | Uint8Array;

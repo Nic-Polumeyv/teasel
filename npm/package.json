@@ -9,26 +9,19 @@
 	},
 	"type": "module",
 	"engines": {
-		"node": ">=18"
+		"node": ">=22.17"
 	},
-	"main": "dist/native.js",
-	"types": "dist/native.d.ts",
+	"main": "dist/index.js",
+	"types": "dist/index.d.ts",
 	"exports": {
-		".": {
-			"node": {
-				"types": "./dist/native.d.ts",
-				"default": "./dist/native.js"
-			},
-			"default": {
-				"types": "./dist/wasm.d.ts",
-				"default": "./dist/wasm.js"
-			}
-		},
-		"./wasm": {
-			"types": "./dist/wasm.d.ts",
-			"default": "./dist/wasm.js"
-		},
+		".": "./dist/index.js",
 		"./teasel.wasm": "./dist/teasel.wasm"
+	},
+	"imports": {
+		"#engine": {
+			"node-addons": "./dist/native.js",
+			"default": "./dist/wasm.js"
+		}
 	},
 	"files": [
 		"dist",
@@ -36,9 +29,9 @@
 	],
 	"scripts": {
 		"build": "npm run build:js && node scripts/addon.ts",
-		"build:js": "tsc --ignoreConfig src/native.ts src/wasm.ts --outDir dist --rootDir src --declaration --erasableSyntaxOnly --strict --target es2022 --module esnext --moduleResolution bundler --lib es2022,dom --types node --skipLibCheck",
+		"build:js": "tsc --ignoreConfig src/index.ts src/native.ts src/wasm.ts --outDir dist --rootDir src --declaration --erasableSyntaxOnly --strict --target es2022 --module esnext --moduleResolution bundler --lib es2022,dom,esnext.disposable --types node --skipLibCheck",
 		"build:wasm": "cargo build --release -p teasel-wasm --target wasm32-unknown-unknown && node scripts/wasm.ts",
-		"test": "npm run build:js && node scripts/test.ts && node scripts/test.ts interpret",
+		"test": "npm run build:js && node scripts/test.ts && node --no-addons scripts/test.ts && node --no-addons scripts/test.ts interpret",
 		"types": "tsc -p tsconfig.json",
 		"check": "npm run build:js && node scripts/check.ts",
 		"prepublishOnly": "npm run build:js"

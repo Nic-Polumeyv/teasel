@@ -30,6 +30,17 @@ export interface Tables {
 // todo: gone with the stream's tree half, once every answer comes this way
 export const mode = { arena: true };
 
+/** A source the engine prepared: it parses at an entry and offset, cut at `end`, the stop tokens as one string; the answer is the words, or an error as JSON. */
+export interface Prepared {
+	readonly parse: (entry: number, offset: number, end: number | undefined, stop: string) => Uint32Array | string;
+	readonly free: () => void;
+}
+
+/** What parses: the addon or the WebAssembly module, each bound to a `Source` class of its own. */
+export interface Engine extends Tables {
+	readonly create: (source: string, flags: number, host: string) => Prepared;
+}
+
 // one decode at a time; the builders are generated once and read through this
 interface State {
 	w: Uint32Array;

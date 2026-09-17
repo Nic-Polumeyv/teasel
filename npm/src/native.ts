@@ -1,14 +1,10 @@
 // the source goes over as bytes: V8's encoder is 14x faster than the host reading a string out
-import type { Program } from 'estree';
-import { Source as Base, type Engine, type Options, type Tree } from './lib/api.js';
+import type { Engine, Tree } from './lib/decode.js';
 import { load } from './lib/addon.js';
-
-export { parentOf, referenceOf, scopeOf } from './lib/api.js';
-export type * from './lib/api.js';
 
 const native = load();
 const encoder = new TextEncoder();
-const held: (Tree | undefined)[] = [undefined, undefined];
+const trees: (Tree | undefined)[] = [undefined, undefined];
 let scratch = new Uint8Array(1 << 16);
 
 function bytes(text: string) {
@@ -28,11 +24,5 @@ export const engine: Engine = {
 	shapes: native.shapes,
 	layout: native.layout,
 	// the addon keeps one array of views a tree and sets what moved: asked only then
-	tree: (typescript, moved) => (moved || held[+typescript] === undefined ? (held[+typescript] = native.tree()!) : held[+typescript]!),
+	tree: (typescript, moved) => (moved || trees[+typescript] === undefined ? (trees[+typescript] = native.tree()!) : trees[+typescript]!),
 };
-
-export class Source<Root = Program> extends Base<Root> {
-	constructor(source: string, options?: Options) {
-		super(engine, source, options);
-	}
-}

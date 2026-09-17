@@ -1,62 +1,9 @@
 import type { Expression, Identifier, Node, Pattern, Program, SourceLocation, Statement } from 'estree';
-import { decode, mode, PARENT, REFERENCE, SCOPE, type Tables, type Tree } from './decode.js';
+import { decode, type Engine, mode, PARENT, type Prepared, REFERENCE, SCOPE } from './lib/decode.js';
+import { ARENA, ENTRY, type Entry, flags, type Options } from './lib/options.js';
+import { engine } from '#engine';
 
-declare global {
-	interface SymbolConstructor {
-		readonly dispose: unique symbol;
-	}
-}
-
-export interface Options {
-	/**
-	 * The grammar of a host language the whole source is a document of: a template language
-	 * with JavaScript inside it. The program entry then answers with the document's root, the
-	 * host's own nodes around the JavaScript ones, in one tree; the other entries read
-	 * JavaScript at an offset as before. TypeScript turns on by what the grammar says of a
-	 * script tag.
-	 */
-	host?: string;
-	/** `script` by default, as in acorn. */
-	sourceType?: 'script' | 'module';
-	/**
-	 * Parse TypeScript. `'erase'` parses it and emits JavaScript: annotations, type-only
-	 * declarations and imports go, assertions give way to their expression, and what erasure
-	 * cannot express (enums, namespaces with values, parameter properties, `export =`, `import =`)
-	 * stays in the tree and is listed as `typescript` on the answer, as are the proposals
-	 * JavaScript itself has: decorators and accessor fields (`AccessorProperty`).
-	 */
-	typescript?: boolean | 'erase';
-	/**
-	 * Which decorators are read. 'legacy' refuses decorators on private elements, class
-	 * expressions and their members; 'proposal' refuses parameter decorators and decorators
-	 * on abstract or declared fields. Unset reads both syntaxes.
-	 */
-	decorators?: 'legacy' | 'proposal';
-	/** Attach `leadingComments`, `trailingComments` and `innerComments` to nodes, and list every comment read as `comments` on the answer. */
-	comments?: boolean;
-	/**
-	 * Scope analysis: the answer lists `scopes`, `bindings` and `references`, and `scopeOf` and
-	 * `referenceOf` answer for a node. The tree itself carries nothing, and a copy of a node
-	 * carries no facts. TypeScript type positions bind nothing.
-	 */
-	scopes?: boolean;
-	/** Add `loc` with line and column to every node, as in acorn; off by default. */
-	locations?: boolean;
-	/** Mark a node the source wraps in parens with `parenthesized: true`, absent otherwise. */
-	parenthesized?: boolean;
-	allowReturnOutsideFunction?: boolean;
-	allowAwaitOutsideFunction?: boolean;
-	allowSuperOutsideMethod?: boolean;
-	allowUndeclaredExports?: boolean;
-	/**
-	 * List syntax errors on the answer as `errors` instead of throwing the first: a missing
-	 * operand, name or pattern is an `Identifier` named `''` of no width where it was expected,
-	 * and a statement or entry that cannot be read is skipped to the next stop token or
-	 * unmatched closing bracket, an empty identifier standing for it. Placeholders are neither
-	 * bindings nor references.
-	 */
-	errorRecovery?: boolean;
-}
+export type { Entry, Options } from './lib/options.js';
 
 /**
  * Thrown for a syntax error. `code` names what went wrong, for a host to branch on, and
@@ -255,9 +202,6 @@ export interface Answer<Root> {
 	/** A `TSTypeParameterDeclaration`; TypeScript only, `not_typescript` otherwise. */
 	typeParameters: Node;
 }
-export type Entry = keyof Answer<unknown>;
-// `Entry` of parser/mod.rs by index
-export const ENTRY = { program: 0, expression: 1, pattern: 2, params: 3, statement: 4, typeParameters: 5 } as const satisfies Record<Entry, number>;
 
 export interface At {
 	/** Where the source is cut, a UTF-16 offset; the end of the source by default. A program reads to it. */
@@ -284,56 +228,6 @@ export interface HostNode {
 	[field: string]: unknown;
 }
 
-// `flag` of json.rs by bit
-/** The engine leaves the tree to be read in place. */
-export const ARENA = 1 << 14;
-
-const FLAG = { module: 1, typescript: 2, erase: 4, comments: 8, scopes: 16, locations: 32, parenthesized: 64, legacyDecorators: 128, proposalDecorators: 256, allowReturnOutsideFunction: 512, allowAwaitOutsideFunction: 1024, allowSuperOutsideMethod: 2048, allowUndeclaredExports: 4096, errorRecovery: 8192 } as const;
-
-const bit = (key: keyof Options & keyof typeof FLAG) => (value: unknown) => {
-	if (typeof value !== 'boolean') throw new TypeError(`${key} must be a boolean, not ${JSON.stringify(value)}`);
-	return value ? FLAG[key] : 0;
-};
-const one = (key: keyof Options, choices: Record<string, number>) => (value: unknown) => {
-	if (typeof value !== 'string' || !Object.hasOwn(choices, value)) {
-		throw new TypeError(`${key} must be ${Object.keys(choices).map((choice) => JSON.stringify(choice)).join(' or ')}, not ${JSON.stringify(value)}`);
-	}
-	return choices[value];
-};
-// what each option adds to the word the engine takes, one entry per key of `Options`
-type On = { [K in keyof Options]-?: NonNullable<Options[K]> };
-const WORD: { [K in keyof On]: (value: On[K]) => number } = {
-	host: (value) => {
-		if (typeof value !== 'string') throw new TypeError('host must be the grammar as a string');
-		return 0;
-	},
-	sourceType: one('sourceType', { script: 0, module: FLAG.module }),
-	typescript: (value) => (value === 'erase' ? FLAG.typescript | FLAG.erase : bit('typescript')(value)),
-	decorators: one('decorators', { legacy: FLAG.legacyDecorators, proposal: FLAG.proposalDecorators }),
-	comments: bit('comments'),
-	scopes: bit('scopes'),
-	locations: bit('locations'),
-	parenthesized: bit('parenthesized'),
-	allowReturnOutsideFunction: bit('allowReturnOutsideFunction'),
-	allowAwaitOutsideFunction: bit('allowAwaitOutsideFunction'),
-	allowSuperOutsideMethod: bit('allowSuperOutsideMethod'),
-	allowUndeclaredExports: bit('allowUndeclaredExports'),
-	errorRecovery: bit('errorRecovery'),
-};
-const known = (key: string): key is keyof Options => Object.hasOwn(WORD, key);
-const word = <K extends keyof On>(key: K, value: On[K]) => WORD[key](value);
-
-/** The options that are on, as the word of bits the engine takes. */
-export function flags(options: Options = {}): number {
-	let on = 0;
-	for (const key in options) {
-		if (!known(key)) throw new TypeError(`${key} is not an option`);
-		const value = options[key];
-		if (value !== undefined) on |= word(key, value);
-	}
-	return on;
-}
-
 // the engine takes the stop tokens as one string
 function stops(list: string[] = []) {
 	if (!Array.isArray(list) || !list.every((stop) => typeof stop === 'string' && stop !== '' && !/\s/.test(stop))) {
@@ -342,36 +236,20 @@ function stops(list: string[] = []) {
 	return list.join(' ');
 }
 
-/** A source the engine prepared: it parses at an entry and offset, cut at `end`, the stop tokens as one string; the answer is the words, or an error as JSON. */
-export interface Prepared {
-	readonly parse: (entry: number, offset: number, end: number | undefined, stop: string) => Uint32Array | string;
-	readonly free: () => void;
-}
-
-export type { Tree };
-
-/** What parses: the addon or the WebAssembly module, each bound to a `Source` class of its own. */
-export interface Engine extends Tables {
-	readonly create: (source: string, flags: number, host: string) => Prepared;
-}
-
 const registry = typeof FinalizationRegistry === 'undefined' ? null : new FinalizationRegistry<Prepared>((held) => held.free());
 
 /**
  * A source kept with its options: the parses out of it share the source copy and the position
  * tables. Offsets are UTF-16, as in acorn; positions stay those of the whole source. `Root` is
  * what the program entry answers with: the program, or the document's root with a `host`.
- * `native.ts` and `wasm.ts` each export it with their engine bound.
  */
 export class Source<Root = Program> {
-	#engine: Engine;
 	#held: Prepared | undefined;
 	#source: string;
 	#options: Options;
 	#arena = mode.arena;
 
-	constructor(engine: Engine, source: string, options: Options = {}) {
-		this.#engine = engine;
+	constructor(source: string, options: Options = {}) {
 		this.#held = engine.create(source, flags(options) | (this.#arena ? ARENA : 0), options.host ?? '');
 		this.#source = source;
 		// what the engine was prepared with, however the caller's object changes after
@@ -387,7 +265,7 @@ export class Source<Root = Program> {
 		const index = ENTRY[entry];
 		const stop = stops(stopAt);
 		const answer = this.#options.host !== undefined && index === ENTRY.program ? this.#held.parse(index, 0, undefined, '') : this.#held.parse(index, offset, end, stop);
-		if (typeof answer !== 'string') return decode(answer, this.#source, this.#engine, true, this.#arena) as Parsed<any>;
+		if (typeof answer !== 'string') return decode(answer, this.#source, engine, true, this.#arena) as Parsed<any>;
 		const { message, ...error } = JSON.parse(answer).error;
 		throw Object.assign(new SyntaxError(message), error);
 	}
