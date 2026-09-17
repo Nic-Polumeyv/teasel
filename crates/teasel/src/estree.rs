@@ -34,9 +34,6 @@ pub struct Output {
 	pub erase: bool,
 	/// The answer lists the errors recovered from, as `errors`.
 	pub errors: bool,
-	/// The front end reads the tree in place: the answer names the roots by number and leaves the
-	/// comments and what erasure kept to it.
-	pub arena: bool,
 }
 
 impl Emit for () {
@@ -55,10 +52,10 @@ pub trait Sink {
 	}
 	/// The tree's interned strings, before anything refers to them.
 	fn strings(&mut self, _interner: &Interner) {}
-	/// The front end has the interned strings: the sink's own are numbered after them.
-	fn strings_known(&mut self, _interner: &Interner) {}
-	/// What the front end reads the tree's views by: a word of what they are, then each one's length.
-	fn views(&mut self, _views: &[u32]) {}
+	/// The front end reads the tree in place: it has the interned strings, so the sink's own are
+	/// numbered after them, and it reads the views by `views`, a word of what the answer is and
+	/// each view's length.
+	fn in_place(&mut self, _interner: &Interner, _views: &[u32]) {}
 	fn begin(&mut self, ty: Name);
 	fn object(&mut self);
 	fn list(&mut self);
@@ -105,11 +102,8 @@ impl<S: Sink> Sink for &mut S {
 	fn strings(&mut self, interner: &Interner) {
 		(**self).strings(interner)
 	}
-	fn strings_known(&mut self, interner: &Interner) {
-		(**self).strings_known(interner)
-	}
-	fn views(&mut self, views: &[u32]) {
-		(**self).views(views)
+	fn in_place(&mut self, interner: &Interner, views: &[u32]) {
+		(**self).in_place(interner, views)
 	}
 	fn begin(&mut self, ty: Name) {
 		(**self).begin(ty)
@@ -599,11 +593,8 @@ impl Sink for Binary {
 		}
 	}
 
-	fn strings_known(&mut self, interner: &Interner) {
+	fn in_place(&mut self, interner: &Interner, views: &[u32]) {
 		self.known = interner.len() as u32;
-	}
-
-	fn views(&mut self, views: &[u32]) {
 		self.views.extend_from_slice(views);
 	}
 
@@ -748,12 +739,11 @@ pub fn answer<X: Emit, S: Sink>(
 	w.sink
 }
 
-/// The answer a front end reading the tree in place gets: the roots by number, each view's
-/// length behind whether the views have to be taken anew, `end`, the errors and the tables.
+/// The answer a front end reading the tree in place gets: the roots by number, `end`, the errors
+/// and the tables, with `views` for the sink's `in_place`.
 #[allow(clippy::too_many_arguments)]
 pub fn answer_in_place<X: Emit, S: Sink>(
 	ast: &Ast<X>,
-	entry: Entry,
 	roots: List,
 	end: u32,
 	views: &[u32],
@@ -764,7 +754,7 @@ pub fn answer_in_place<X: Emit, S: Sink>(
 ) -> S {
 	let mut w = Writer::new(ast, source, positions, sink);
 	w.output = output;
-	w.sink.strings_known(&ast.strings);
+	w.sink.in_place(&ast.strings, views);
 	w.sink.object();
 	w.key(c!("node"));
 	match ast.list(roots) {
@@ -777,15 +767,6 @@ pub fn answer_in_place<X: Emit, S: Sink>(
 	w.key(c!("end"));
 	let end = w.positions.offset(&mut w.cursor, end);
 	w.sink.int(end);
-	w.sink.views(views);
-	// what the front end builds by: every comment listed, TypeScript erased, lines, the roots a list
-	w.key(c!("output"));
-	w.sink.int(
-		output.comments as u32
-			| (output.erase as u32) << 1
-			| (positions.lines as u32) << 2
-			| ((entry == Entry::Params) as u32) << 3,
-	);
 	if output.errors {
 		w.errors();
 	}
@@ -1303,10 +1284,6 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		self.ast.node(id).kind
 	}
 
-	pub(crate) fn ast(&self) -> &'a Ast<X> {
-		self.ast
-	}
-
 	/// The key only when there is a node; an unset property is left out.
 	pub(crate) fn opt_key(&mut self, key: Name, id: Option<NodeId>) {
 		if let Some(id) = id {
@@ -1327,7 +1304,7 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		self.sink.list();
 		let ast = self.ast;
 		for item in ast.list(list) {
-			if self.output.erase && item.is_some_and(|id| ast.erased.contains(id)) {
+			if self.output.erase && item.is_some_and(|id| ast.extension.erased(ast, id)) {
 				continue;
 			}
 			match item {

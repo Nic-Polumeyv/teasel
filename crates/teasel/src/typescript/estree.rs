@@ -129,9 +129,6 @@ impl Data {
 	}
 
 	fn extras_of(&self, id: NodeId) -> Extras {
-		if self.extras.is_empty() {
-			return Extras::default();
-		}
 		self.extras(id).copied().unwrap_or_default()
 	}
 }
@@ -197,8 +194,12 @@ impl Emit for Data {
 			w.run(id, recipes.erased, base);
 			return;
 		}
-		let kind = &w.ast().nodes[id.index() as usize].kind as *const NodeKind as *const u8;
-		w.run(id, recipes.adds[crate::estree::tag(kind)], base);
+		let kind = w.kind(id);
+		w.run(
+			id,
+			recipes.adds[crate::estree::tag(&kind as *const NodeKind as *const u8)],
+			base,
+		);
 		w.run(id, recipes.extras, base);
 	}
 }

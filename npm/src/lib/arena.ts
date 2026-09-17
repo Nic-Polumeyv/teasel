@@ -34,9 +34,9 @@ interface Layout {
 	node: { size: number; start: number; end: number; kind: number };
 	kinds: Kind[];
 	ts?: { size: number; kinds: Kind[] };
-	extras?: { size: number; none: number; fields: Field[] };
+	extras?: { size: number; fields: Field[] };
 	none: { enum: number; bool: number; list: Tagged; str: Tagged };
-	views: { js: [string, string][]; ts?: [string, string][] };
+	views: { js: string[]; ts?: string[] };
 	recipes: { js: RawRecipes; ts?: RawRecipes; adds?: RawRecipes; extras?: RawRecipes };
 }
 
@@ -122,10 +122,10 @@ function resolve(raw: RawOp[], fields: Field[]): Op[] {
 	});
 }
 
-function language(layout: Layout, views: [string, string][], typescript: boolean): Language {
+function language(layout: Layout, views: string[], typescript: boolean): Language {
 	const by = (recipes: RawRecipes, kinds: Kind[]) => kinds.map((kind) => resolve(recipes.find(([name]) => name === kind.name)?.[1] ?? [], kind.fields));
 	const at: Record<string, number> = {};
-	views.forEach(([name], i) => (at[name] = 1 + i));
+	views.forEach((name, i) => (at[name] = 1 + i));
 	const out: Language = { at, recipes: by(layout.recipes.js, layout.kinds), ts: [], adds: [], extras: [], erased: [], sets: new Map(), last: -1, builders: undefined };
 	if (typescript) {
 		const extras = layout.extras!.fields;
@@ -166,15 +166,11 @@ export function compile(engine: { layout: () => string }): Compiled {
 	return C;
 }
 
-/** What the answer's words and the caller add to the tree. */
+/** What the answer's words add to the tree. */
 export interface Context {
 	source: string;
 	/** The engine's constant names, which a host's types and keys are numbers into. */
 	constants: string[];
-	link: boolean;
-	erase: boolean;
-	/** Lines and columns are on: every node and comment has a `loc`. */
-	lines: boolean;
 	scopes: Decoded[];
 	bindings: Decoded[];
 	references: Decoded[];
@@ -182,10 +178,13 @@ export interface Context {
 }
 
 interface State extends Context {
+	link: boolean;
+	erase: boolean;
+	/** Lines and columns are on: every node and comment has a `loc`. */
+	lines: boolean;
 	C: Compiled;
 	G: Language;
-	B: Builders;
-	/** `B.js`, a load nearer. */
+	/** The builder of each kind, by a node's tag. */
 	J: Builder[];
 	N: Uint32Array;
 	L: Uint32Array;
@@ -222,7 +221,7 @@ interface State extends Context {
 	adopted: number[];
 	/** What erasure left in place: a name, then its node. */
 	kept: (string | number)[];
-	/** The bindings the node being begun declares, linked once its keys are in. */
+	/** The nodes the node being begun stands in for, when it has facts: `late` links them and it once its keys are in. */
 	pending: number[] | null;
 	/** Each root, in order. */
 	nodes: Decoded[];
@@ -234,6 +233,7 @@ export type Built = State;
 // a leading U+FEFF is text, not a mark
 const utf8 = new TextDecoder('utf-8', { ignoreBOM: true });
 const NO_WORDS = new Uint32Array(0);
+const NONE_ADOPTED: number[] = [];
 
 /** The tree's interned strings, by their number. */
 export function strings(C: Compiled, tree: Tree, words: Uint32Array, lens: number): string[] {
@@ -297,25 +297,18 @@ function facts(S: State, n: Decoded, id: number) {
 		}
 	}
 	const adopted = S.adopted;
+	if (S.link) {
+		// the rest waits until the node is whole: `late`, for each node it stands in for and for itself
+		S.pending = adopted.length === 0 ? NONE_ADOPTED : adopted.splice(0);
+		return;
+	}
 	for (let i = 0; i <= adopted.length; i++) {
 		const node = i < adopted.length ? adopted[i] : id;
-		const root = S.root_of[node];
-		if (root !== 0) {
-			if (S.link) S.roots[root - 1].node = n;
-			else n.root = root - 1;
-		}
+		if (S.root_of[node] !== 0) n.root = S.root_of[node] - 1;
 		const declared = S.declared_by_at[node];
-		if (declared !== 0) {
-			const ids = Array.from(S.declared_by.subarray(declared, declared + S.declared_by[declared - 1]));
-			if (S.link) S.pending = S.pending === null ? ids : S.pending.concat(ids);
-			else n.defines = ids;
-		}
+		if (declared !== 0) n.defines = Array.from(S.declared_by.subarray(declared, declared + S.declared_by[declared - 1]));
 		const written = S.writes_of_at[node];
-		if (written !== 0) {
-			const ids = S.writes_of.subarray(written, written + S.writes_of[written - 1]);
-			if (S.link) for (let j = 0; j < ids.length; j++) S.references[ids[j]].writeExpr = n;
-			else n.writes = Array.from(ids);
-		}
+		if (written !== 0) n.writes = Array.from(S.writes_of.subarray(written, written + S.writes_of[written - 1]));
 	}
 	adopted.length = 0;
 }
@@ -330,9 +323,8 @@ function begin(S: State, type: string, id: number): Decoded {
 	S.pending = null;
 	if (S.parenthesized !== null && bit(S.parenthesized, id)) n.parenthesized = true;
 	if (S.TS !== null) {
-		const slots = S.extras_slots;
-		const slot = slots !== null && id < slots.length ? slots[id] : S.C.layout.extras!.none;
-		const [record, base] = slot === S.C.layout.extras!.none ? [S.C.blank, 0] : [S.extras, slot * S.C.layout.extras!.size];
+		const slot = S.extras_slots === null ? 0 : S.extras_slots[id];
+		const [record, base] = slot > 0 ? [S.extras, (slot - 1) * S.C.layout.extras!.size] : [S.C.blank, 0];
 		if (S.erase) apply(S, id, n, S.G.erased, record, base);
 		else {
 			apply(S, id, n, S.G.adds[S.N[id * S.C.words + (S.C.kind >> 2)]], record, base);
@@ -360,19 +352,9 @@ function child(S: State, n: Decoded, key: string, word: number) {
 	if (S.link && c !== null && n.type !== undefined && c.type !== undefined) c[PARENT] = n;
 }
 
-function list(S: State, n: Decoded, key: string, start: number, len: number) {
-	const out: (Decoded | null)[] = [];
-	const linked = S.link && n.type !== undefined;
-	for (let i = start; i < start + len; i++) {
-		const word = S.L[i];
-		if (word === 0) out.push(null);
-		else if (S.erased === null || !bit(S.erased, word - 1)) {
-			const c = build(S, word - 1);
-			if (linked) c[PARENT] = n;
-			out.push(c);
-		}
-	}
-	n[key] = out;
+function list(S: State, n: Decoded, key: string, items: (Decoded | null)[]) {
+	if (S.link && n.type !== undefined) link_items(items, n);
+	n[key] = items;
 }
 
 // an optional's tag word sits among its value's words, which follow their order around it
@@ -399,23 +381,16 @@ function apply(S: State, id: number, n: Decoded, ops: Op[], view: Uint32Array, b
 				if (view[at >> 2] !== 0) child(S, n, op.key, view[at >> 2]);
 				break;
 			case 'list':
-				list(S, n, op.key, view[at >> 2], view[(at >> 2) + 1]);
+				list(S, n, op.key, items(S, view[at >> 2], view[(at >> 2) + 1]));
 				break;
 			case 'optlistkey': {
 				const value = tagged(view, at, none.list);
-				if (value !== -1) list(S, n, op.key, view[value], view[value + 1]);
+				if (value !== -1) list(S, n, op.key, items(S, view[value], view[value + 1]));
 				break;
 			}
-			case 'params': {
-				let start = view[at >> 2], len = view[(at >> 2) + 1];
-				// erasing drops TypeScript's `this` parameter
-				if (S.erase && len > 0 && S.L[start] !== 0) {
-					const first = (S.L[start] - 1) * S.C.words * 4 + S.C.kind;
-					if (S.N[first >> 2] === S.C.identifier && S.strings[S.N[(first + S.C.name) >> 2]] === 'this') [start, len] = [start + 1, len - 1];
-				}
-				list(S, n, op.key, start, len);
+			case 'params':
+				list(S, n, op.key, params(S, view[at >> 2], view[(at >> 2) + 1]));
 				break;
-			}
 			case 'bool':
 				n[op.key] = byte(view, at) === 1;
 				break;
@@ -489,13 +464,10 @@ function apply(S: State, id: number, n: Decoded, ops: Op[], view: Uint32Array, b
 	}
 }
 
-function settle(S: State, n: Decoded, pending: number[] | null) {
+function settle(S: State, n: Decoded, id: number, pending: number[] | null) {
 	if (pending === null) return;
-	for (let i = 0; i < pending.length; i++) {
-		const d = S.bindings[pending[i]];
-		d.declaration = n;
-		if (n.init !== undefined) d.writeExpr = n.init;
-	}
+	for (let i = 0; i < pending.length; i++) late(S, n, pending[i]);
+	late(S, n, id);
 }
 
 function run(S: State, id: number, ops: Op[], view: Uint32Array, base: number): Decoded {
@@ -516,7 +488,7 @@ function run(S: State, id: number, ops: Op[], view: Uint32Array, base: number): 
 	const pending = S.pending;
 	S.pending = null;
 	apply(S, id, n, at === 0 ? ops : ops.slice(at), view, base);
-	settle(S, n, pending);
+	settle(S, n, id, pending);
 	return n;
 }
 
@@ -543,7 +515,7 @@ function host(S: State, id: number, index: number): Decoded {
 				child(S, n, key, a + 1);
 				break;
 			case 1:
-				list(S, n, key, a, b);
+				list(S, n, key, items(S, a, b));
 				break;
 			case 2:
 				n[key] = S.strings[a];
@@ -574,7 +546,7 @@ function host(S: State, id: number, index: number): Decoded {
 			}
 		}
 	}
-	settle(S, n, pending);
+	settle(S, n, id, pending);
 	return n;
 }
 
@@ -759,7 +731,7 @@ function generate(C: Compiled, G: Language, config: number, ops: Op[], ts: boole
 		}
 	}
 	// what the literal has no room for: parentheses, comments, a TypeScript extra
-	const rare = ['(S.parenthesized !== null && (S.parenthesized[id >>> 5] >>> (id & 31) & 1) === 1)', '(S.attached_slots !== null && S.attached_slots[id] > 0)', `(S.extras_slots !== null && S.extras_slots[id] < ${C.layout.extras?.none ?? 0})`];
+	const rare = ['(S.parenthesized !== null && (S.parenthesized[id >>> 5] >>> (id & 31) & 1) === 1)', '(S.attached_slots !== null && S.attached_slots[id] > 0)', '(S.extras_slots !== null && S.extras_slots[id] > 0)'];
 	const before: string[] = [];
 	const after: string[] = [];
 	if (link) {
@@ -820,30 +792,33 @@ export function comments(S: State): Decoded[] {
 
 const filled = (tree: Tree, words: Uint32Array, lens: number, at: number) => (words[lens + at] === 0 ? null : (tree[at] as Uint32Array).subarray(0, words[lens + at]));
 
-/** The `roots` of the tree as ESTree in `nodes`, a list of them leaving out what erasure does; `words[lens]` on are the views' lengths, `interned` what `strings` gave for the same tree. */
-export function build_roots(C: Compiled, tree: Tree, words: Uint32Array, lens: number, roots: number[], listed: boolean, interned: string[], context: Context): Built {
+/** What `words[lens]` says of an answer read in place; each view's length follows it. */
+export const MOVED = 1, TYPESCRIPT = 2, COMMENTS = 4, ERASED = 8, LINED = 16, LISTED = 32;
+
+/** The `roots` of the tree as ESTree in `nodes`, a list of them leaving out what erasure does; `interned` is what `strings` gave for the same tree. */
+export function build_roots(C: Compiled, tree: Tree, words: Uint32Array, lens: number, roots: number[], interned: string[], context: Context, link: boolean): Built {
 	const typescript = tree[0] === 1;
+	const erase = (words[lens] & ERASED) !== 0, lines = (words[lens] & LINED) !== 0, listed = (words[lens] & LISTED) !== 0;
 	const G = typescript ? C.ts! : C.js;
 	const at = G.at;
 	const spans = words[lens + at.spans] !== 0;
 	const scoped = context.scopes.length !== 0;
 	const N = tree[at.nodes] as Uint32Array;
-	const config = (context.link ? LINK : 0) | (context.lines ? LINES : 0) | (scoped ? FACTS : 0) | (context.erase ? ERASE : 0);
+	const config = (link ? LINK : 0) | (lines ? LINES : 0) | (scoped ? FACTS : 0) | (erase ? ERASE : 0);
 	const B = G.last === config ? G.builders! : builders(C, G, config, typescript);
 	// one state object per decode, young like everything it points at: no write barriers
 	const S: Built = {
 		source: context.source,
 		constants: context.constants,
-		link: context.link,
-		erase: context.erase,
-		lines: context.lines,
+		link,
+		erase,
+		lines,
 		scopes: context.scopes,
 		bindings: context.bindings,
 		references: context.references,
 		roots: context.roots,
 		C,
 		G,
-		B,
 		J: B.js,
 		N,
 		L: tree[at.lists] as Uint32Array,
@@ -854,7 +829,7 @@ export function build_roots(C: Compiled, tree: Tree, words: Uint32Array, lens: n
 		po: spans ? 0 : C.layout.node.start >> 2,
 		locs: tree[at.locs] as Uint32Array,
 		parenthesized: filled(tree, words, lens, at.parenthesized),
-		erased: context.erase ? filled(tree, words, lens, at.erased) : null,
+		erased: erase ? filled(tree, words, lens, at.erased) : null,
 		comments: tree[at.comments] as Uint32Array,
 		comment_count: words[lens + at.comments] / 9,
 		attached_slots: filled(tree, words, lens, at.attached_slots),

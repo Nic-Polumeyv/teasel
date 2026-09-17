@@ -227,7 +227,7 @@ impl Parser<'_, TypeScript> {
 	}
 
 	fn extras_mut(&mut self, id: NodeId) -> &mut Extras {
-		self.ast.extension.extras.get_or_insert(id)
+		self.ast.extension.extras.entry(id)
 	}
 
 	fn ext_data(&self) -> &Data {

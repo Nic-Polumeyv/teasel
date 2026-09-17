@@ -5,7 +5,7 @@ use teasel::json::{Prepared, Request};
 thread_local! {
 	static TEXT: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
 	/// The tree's buffers as five pointer and length pairs, lengths in elements; all zero before any parse.
-	static TREE: Cell<[u32; 65]> = const { Cell::new([0; 65]) };
+	static TREE: Cell<[u32; 97]> = const { Cell::new([0; 97]) };
 }
 
 #[unsafe(no_mangle)]
@@ -136,20 +136,24 @@ fn text(json: String) {
 	});
 }
 
-// the count of views plus one for the TypeScript tree's, then each view's address and its room in bytes; zero before any parse
+// the count of views, then each view's address, its room in bytes and its elements' size; zero before any parse
 #[unsafe(no_mangle)]
 pub extern "C" fn tree() -> *const u32 {
-	let mut out = [0u32; 65];
+	let mut out = [0u32; 97];
 	let mut count = 0;
-	let typescript = teasel::json::tree(&mut |_, buffer| {
+	let found = teasel::json::tree(&mut |_, buffer| {
 		if let Some(buffer) = buffer {
-			out[1 + 2 * count] = buffer.as_ptr() as u32;
-			out[2 + 2 * count] = buffer.capacity_bytes() as u32;
+			let size = match buffer.element() {
+				teasel::handed::Element::U8 => 1,
+				teasel::handed::Element::U32 => 4,
+				teasel::handed::Element::F64 => 8,
+			};
+			out[1 + 3 * count..][..3].copy_from_slice(&[buffer.as_ptr() as u32, buffer.capacity_bytes() as u32, size]);
 		}
 		count += 1;
 	});
-	if let Some(typescript) = typescript {
-		out[0] = (count as u32) << 1 | typescript as u32;
+	if found.is_some() {
+		out[0] = count as u32;
 	}
 	TREE.set(out);
 	TREE.with(|t| t.as_ptr() as *const u32)

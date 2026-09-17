@@ -329,8 +329,6 @@ pub fn json() -> String {
 		variants(&mut out, crate::typescript::ast::ts_layout::VARIANTS);
 		out.push_str("},\"extras\":{\"size\":");
 		crate::estree::push_int(&mut out, std::mem::size_of::<Extras>() as u32);
-		out.push_str(",\"none\":");
-		crate::estree::push_int(&mut out, crate::typescript::ast::NONE);
 		out.push_str(",\"fields\":");
 		list(&mut out, Extras::FIELDS);
 		out.push('}');

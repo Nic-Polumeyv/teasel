@@ -1,5 +1,5 @@
 use crate::handed::{Handed, Views};
-use crate::interner::{FastMap, Interner, StrId};
+use crate::interner::{Interner, StrId};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(C)]
@@ -95,6 +95,8 @@ impl NodeSet {
 pub struct Slots<T: Copy> {
 	slots: Handed<u32>,
 	list: Handed<T>,
+	/// The node of each record, to unhook when the record is forgotten.
+	owners: Vec<NodeId>,
 }
 
 impl<T: Copy + 'static> Slots<T> {
@@ -115,6 +117,7 @@ impl<T: Copy + 'static> Slots<T> {
 		}
 		if self.slots[index] == 0 {
 			self.list.push(T::default());
+			self.owners.push(id);
 			self.slots[index] = self.list.len() as u32;
 		}
 		&mut self.list[self.slots[index] as usize - 1]
@@ -123,43 +126,29 @@ impl<T: Copy + 'static> Slots<T> {
 	pub fn clear(&mut self) {
 		self.slots.clear();
 		self.list.clear();
+		self.owners.clear();
+	}
+
+	pub fn len(&self) -> usize {
+		self.list.len()
+	}
+
+	pub fn is_empty(&self) -> bool {
+		self.list.is_empty()
+	}
+
+	/// Forgets the records past the first `len`.
+	pub fn truncate(&mut self, len: usize) {
+		for &owner in &self.owners[len..] {
+			self.slots[owner.index() as usize] = 0;
+		}
+		self.list.truncate(len);
+		self.owners.truncate(len);
 	}
 
 	pub fn views(&mut self, name: &'static str, records: &'static str, out: &mut Views<'_>) {
 		out.push(name, &mut self.slots);
 		out.push(records, &mut self.list);
-	}
-}
-
-/// A few nodes' values: a bit per node says whether the map holds one, so the nodes without cost
-/// a bit test and never a hash.
-#[derive(Debug, Default)]
-pub struct NodeMap<T> {
-	set: NodeSet,
-	map: FastMap<NodeId, T>,
-}
-
-impl<T> NodeMap<T> {
-	pub fn get(&self, id: NodeId) -> Option<&T> {
-		if self.set.contains(id) { self.map.get(&id) } else { None }
-	}
-
-	pub fn insert(&mut self, id: NodeId, value: T) {
-		self.set.insert(id);
-		self.map.insert(id, value);
-	}
-
-	pub fn entry(&mut self, id: NodeId) -> &mut T
-	where
-		T: Default,
-	{
-		self.set.insert(id);
-		self.map.entry(id).or_default()
-	}
-
-	pub fn clear(&mut self) {
-		self.set.clear();
-		self.map.clear();
 	}
 }
 

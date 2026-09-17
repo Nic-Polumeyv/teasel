@@ -8,7 +8,7 @@ use crate::scopes::{Bind, Binder, BindingKind, Mode, ScopeKind};
 #[derive(Debug, Default)]
 pub struct Data {
 	pub nodes: Handed<TsKind>,
-	pub extras: ExtrasTable,
+	pub extras: crate::ast::Slots<Extras>,
 }
 
 impl Data {
@@ -21,70 +21,26 @@ impl Data {
 	}
 }
 
-/// The extras of each node that has any, found through a slot per node id.
-#[derive(Debug, Default)]
-pub struct ExtrasTable {
-	slots: Handed<u32>,
-	list: Handed<Extras>,
-	/// The node of each entry of `list`, to unhook when the entry is forgotten.
-	owners: Vec<NodeId>,
-}
-
-pub(crate) const NONE: u32 = u32::MAX;
-
 impl crate::ast::Reuse for Data {
 	type Mark = (usize, usize);
 
 	fn clear(&mut self) {
 		self.nodes.clear();
-		self.extras.slots.clear();
-		self.extras.list.clear();
-		self.extras.owners.clear();
+		self.extras.clear();
 	}
 
 	fn mark(&self) -> Self::Mark {
-		(self.nodes.len(), self.extras.list.len())
+		(self.nodes.len(), self.extras.len())
 	}
 
 	fn truncate(&mut self, (nodes, extras): Self::Mark) {
 		self.nodes.truncate(nodes);
-		for &owner in &self.extras.owners[extras..] {
-			self.extras.slots[owner.index() as usize] = NONE;
-		}
-		self.extras.list.truncate(extras);
-		self.extras.owners.truncate(extras);
+		self.extras.truncate(extras);
 	}
 
 	fn views(&mut self, out: &mut Views<'_>) {
 		out.push("ts", &mut self.nodes);
-		out.push("extras_slots", &mut self.extras.slots);
-		out.push("extras", &mut self.extras.list);
-	}
-}
-
-impl ExtrasTable {
-	pub fn get(&self, id: NodeId) -> Option<&Extras> {
-		match self.slots.get(id.index() as usize) {
-			Some(&slot) if slot != NONE => Some(&self.list[slot as usize]),
-			_ => None,
-		}
-	}
-
-	pub fn get_or_insert(&mut self, id: NodeId) -> &mut Extras {
-		let index = id.index() as usize;
-		if index >= self.slots.len() {
-			self.slots.resize(index + 1, NONE);
-		}
-		if self.slots[index] == NONE {
-			self.slots[index] = self.list.len() as u32;
-			self.list.push(Extras::default());
-			self.owners.push(id);
-		}
-		&mut self.list[self.slots[index] as usize]
-	}
-
-	pub fn is_empty(&self) -> bool {
-		self.list.is_empty()
+		self.extras.views("extras_slots", "extras", out);
 	}
 }
 

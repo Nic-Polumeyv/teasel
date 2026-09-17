@@ -8,7 +8,7 @@ use crate::ast::{Ast, Reuse};
 use crate::comments::attach;
 use crate::error::Code;
 use crate::estree::{Binary, Emit, Json, Output, Positions, Sink, Words, answer, answer_in_place, error_to_json};
-use crate::handed::{Element, Raw, Views};
+use crate::handed::{Raw, Views};
 use crate::host::{self, Grammar};
 use crate::parser::{Decorators, Entry, parse_at};
 use crate::scopes::{self, Bind};
@@ -142,18 +142,15 @@ pub fn error_json(message: &str, pos: u32) -> String {
 pub fn layout_json() -> String {
 	let mut out = crate::layout::json();
 	out.pop();
-	let names = |out: &mut String, names: Vec<(&str, Element)>| {
+	let names = |out: &mut String, names: Vec<&str>| {
 		out.push('[');
-		for (i, (name, element)) in names.iter().enumerate() {
+		for (i, name) in names.iter().enumerate() {
 			if i > 0 {
 				out.push(',');
 			}
-			let element = match element {
-				Element::U8 => "u8",
-				Element::U32 => "u32",
-				Element::F64 => "f64",
-			};
-			out.push_str(&format!("[\"{name}\",\"{element}\"]"));
+			out.push('"');
+			out.push_str(name);
+			out.push('"');
 		}
 		out.push(']');
 	};
@@ -304,13 +301,10 @@ pub fn renew_trees() {
 	})
 }
 
-/// The names of a tree's views in order, each with what its elements are read as; a table the
-/// parse may not fill is words.
-fn view_names<X: Reuse + Default>() -> Vec<(&'static str, Element)> {
+/// The names of a tree's views in order.
+fn view_names<X: Reuse + Default>() -> Vec<&'static str> {
 	let mut names = Vec::new();
-	Ast::<X>::default().views(&mut Views(&mut |name, buffer| {
-		names.push((name, buffer.map_or(Element::U32, |b| b.element())));
-	}));
+	Ast::<X>::default().views(&mut Views(&mut |name, _| names.push(name)));
 	names
 }
 
@@ -550,7 +544,6 @@ where
 		scopes: request.scopes,
 		erase: request.erase && request.typescript,
 		errors: request.options.error_recovery,
-		arena: request.arena,
 	};
 	let reused = Pooled::take(pool).map(|mut ast| {
 		ast.clear();
@@ -591,37 +584,30 @@ where
 			ast.errors.sort_by_key(|error| error.pos);
 		}
 	}
+	if !request.arena {
+		let sink = answer(&ast, request.entry, roots, end, source, positions, output, sink);
+		Pooled::give(pool, ast);
+		return Ok(sink);
+	}
 	let mut sink = sink;
 	prepare(&mut ast, positions, output, &mut sink);
-	// each view's length, behind whether a front end has to take the views anew, a buffer having
-	// moved, and whether the tree is the TypeScript one
+	// what the answer is, then each view's length: a buffer moved since a front end took the views,
+	// the tree is TypeScript's, every comment is listed, TypeScript is erased, lines are on, the roots are a list
 	let mut views = [0u32; 40];
-	views[0] = (request.typescript as u32) << 1;
+	views[0] = (request.typescript as u32) << 1
+		| (output.comments as u32) << 2
+		| (output.erase as u32) << 3
+		| (request.locations as u32) << 4
+		| ((request.entry == Entry::Params) as u32) << 5;
 	let mut count = 1;
-	if output.arena {
-		ast.views(&mut Views(&mut |_, buffer| {
-			if let Some(buffer) = buffer {
-				views[count] = buffer.elements() as u32;
-				views[0] |= buffer.owned() as u32;
-			}
-			count += 1;
-		}));
-	}
-	let sink = if output.arena {
-		answer_in_place(
-			&ast,
-			request.entry,
-			roots,
-			end,
-			&views[..count],
-			source,
-			positions,
-			output,
-			sink,
-		)
-	} else {
-		answer(&ast, request.entry, roots, end, source, positions, output, sink)
-	};
+	ast.views(&mut Views(&mut |_, buffer| {
+		if let Some(buffer) = buffer {
+			views[count] = buffer.elements() as u32;
+			views[0] |= buffer.owned() as u32;
+		}
+		count += 1;
+	}));
+	let sink = answer_in_place(&ast, roots, end, &views[..count], source, positions, output, sink);
 	Pooled::give(pool, ast);
 	Ok(sink)
 }

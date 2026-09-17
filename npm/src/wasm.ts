@@ -78,7 +78,6 @@ function answer(status: number) {
 	return words();
 }
 
-let elements: { js: [string, string][]; ts: [string, string][] } | undefined;
 const trees: ({ buffer: ArrayBuffer; at: Uint32Array; views: (Uint32Array | Float64Array | Uint8Array | number | undefined)[] } | undefined)[] = [undefined, undefined];
 let layout_text: string | undefined;
 // read once, before any view of the tree: writing it can grow the memory and detach them
@@ -111,19 +110,18 @@ export const engine: Engine = {
 	layout,
 	// the tree sits in the module's memory until the next parse: a view is made anew when its buffer moved or the memory grew
 	tree(typescript) {
-		elements ??= JSON.parse(layout()).views;
 		const { buffer } = wasm.memory;
-		const at = new Uint32Array(buffer, tree_at, 65);
-		const kinds = typescript ? elements!.ts : elements!.js;
-		const held = (trees[+typescript] ??= { buffer, at: new Uint32Array(65), views: [+typescript] });
+		// the count of views, then each one's address, room in bytes and element size
+		const at = new Uint32Array(buffer, tree_at, 97);
+		const held = (trees[+typescript] ??= { buffer, at: new Uint32Array(97), views: [+typescript] });
 		const same = held.buffer === buffer;
 		held.buffer = buffer;
-		for (let i = 0; i < at[0] >> 1; i++) {
-			const ptr = at[1 + 2 * i], bytes = at[2 + 2 * i];
-			if (same && held.at[1 + 2 * i] === ptr && held.at[2 + 2 * i] === bytes) continue;
-			held.at[1 + 2 * i] = ptr;
-			held.at[2 + 2 * i] = bytes;
-			held.views[1 + i] = ptr === 0 ? undefined : kinds[i][1] === 'f64' ? new Float64Array(buffer, ptr, bytes >> 3) : kinds[i][1] === 'u8' ? new Uint8Array(buffer, ptr, bytes) : new Uint32Array(buffer, ptr, bytes >> 2);
+		for (let i = 1; i < 1 + 3 * at[0]; i += 3) {
+			const ptr = at[i], bytes = at[i + 1], size = at[i + 2];
+			if (same && held.at[i] === ptr && held.at[i + 1] === bytes) continue;
+			held.at[i] = ptr;
+			held.at[i + 1] = bytes;
+			held.views[1 + (i - 1) / 3] = ptr === 0 ? undefined : size === 8 ? new Float64Array(buffer, ptr, bytes >> 3) : size === 1 ? new Uint8Array(buffer, ptr, bytes) : new Uint32Array(buffer, ptr, bytes >> 2);
 		}
 		return held.views;
 	},
