@@ -4,7 +4,7 @@ use teasel::json::{Prepared, Request};
 
 thread_local! {
 	static TEXT: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
-	/// The tree's buffers as five pointer and length pairs, lengths in elements; all zero before any parse.
+	/// The count of the tree's buffers, then each one's address, room in bytes and element size; all zero before any parse.
 	static TREE: Cell<[u32; 145]> = const { Cell::new([0; 145]) };
 }
 
@@ -143,12 +143,11 @@ pub extern "C" fn tree() -> *const u32 {
 	let mut count = 0;
 	let found = teasel::json::tree(&mut |_, buffer| {
 		if let Some(buffer) = buffer {
-			let size = match buffer.element() {
-				teasel::handed::Element::U8 => 1,
-				teasel::handed::Element::U32 => 4,
-				teasel::handed::Element::F64 => 8,
-			};
-			out[1 + 3 * count..][..3].copy_from_slice(&[buffer.as_ptr() as u32, buffer.capacity_bytes() as u32, size]);
+			out[1 + 3 * count..][..3].copy_from_slice(&[
+				buffer.as_ptr() as u32,
+				buffer.capacity_bytes() as u32,
+				buffer.element().size() as u32,
+			]);
 		}
 		count += 1;
 	});

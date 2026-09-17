@@ -186,7 +186,7 @@ pub fn answer<X: Emit>(
 ) -> String {
 	let mut w = Writer::new(ast, source, positions);
 	w.output = output;
-	w.sink.object();
+	w.json.object();
 	if entry == Entry::Params {
 		w.list(c!("node"), roots);
 	} else {
@@ -194,10 +194,10 @@ pub fn answer<X: Emit>(
 	}
 	w.key(c!("end"));
 	let end = w.positions.offset(&mut w.cursor, end);
-	w.sink.int(end);
+	w.json.int(end);
 	w.trailers();
-	w.sink.end();
-	w.sink.finish()
+	w.json.end();
+	w.json.finish()
 }
 
 /// Serializes a syntax error: its code and message, UTF-16 `pos` and `end`, and a `loc`; the
@@ -231,7 +231,7 @@ pub fn error_to_json(error: &crate::SyntaxError, source: &str, positions: &Posit
 pub struct Writer<'a, X = ()> {
 	ast: &'a Ast<X>,
 	source: &'a str,
-	pub(crate) sink: Json,
+	pub(crate) json: Json,
 	positions: &'a Positions,
 	cursor: Cursor,
 	pub(crate) output: Output,
@@ -439,7 +439,7 @@ impl<'a, X: Emit> Writer<'a, X> {
 		Self {
 			ast,
 			source,
-			sink: Json::default(),
+			json: Json::default(),
 			positions,
 			cursor: Cursor::default(),
 			output: Output::default(),
@@ -457,21 +457,21 @@ impl<'a, X: Emit> Writer<'a, X> {
 	/// What erasure left in place, as `typescript`, in source order.
 	fn all_kept(&mut self) {
 		self.key(c!("typescript"));
-		self.sink.list();
+		self.json.list();
 		let mut kept = std::mem::take(&mut self.kept);
 		kept.sort_unstable_by_key(|&(_, id)| self.ast.node(id).start);
 		for &(ty, id) in &kept {
-			self.sink.begin(ty);
+			self.json.begin(ty);
 			let node = self.ast.node(id);
 			self.span(node.start, node.end);
-			self.sink.end();
+			self.json.end();
 		}
-		self.sink.end();
+		self.json.end();
 	}
 
 	pub(crate) fn begin(&mut self, ty: Name, id: NodeId) {
 		let node = self.ast.node(id);
-		self.sink.begin(ty);
+		self.json.begin(ty);
 		self.span(node.start, node.end);
 		self.scope_facts(id);
 		if self.ast.is_parenthesized(id) {
@@ -494,16 +494,16 @@ impl<'a, X: Emit> Writer<'a, X> {
 		}
 		if let Some(scope) = scopes.of_node.get(id) {
 			self.key(c!("scope"));
-			self.sink.int(scope);
+			self.json.int(scope);
 		}
 		match scopes.of_identifier.get(id) {
 			Some(Role::Declares(binding)) => {
 				self.key(c!("declares"));
-				self.sink.int(binding);
+				self.json.int(binding);
 			}
 			Some(Role::Reference(reference)) => {
 				self.key(c!("reference"));
-				self.sink.int(reference);
+				self.json.int(reference);
 			}
 			None => {}
 		}
@@ -511,17 +511,17 @@ impl<'a, X: Emit> Writer<'a, X> {
 		for node in adopted.iter().copied().chain([id]) {
 			if let Some(root) = scopes.root_of.get(node) {
 				self.key(c!("root"));
-				self.sink.int(root);
+				self.json.int(root);
 			}
 			let bindings = scopes.declared_by.get(node);
 			if !bindings.is_empty() {
 				self.key(c!("defines"));
-				self.sink.ints(bindings);
+				self.json.ints(bindings);
 			}
 			let writes = scopes.writes_of.get(node);
 			if !writes.is_empty() {
 				self.key(c!("writes"));
-				self.sink.ints(writes);
+				self.json.ints(writes);
 			}
 		}
 	}
@@ -555,13 +555,13 @@ impl<'a, X: Emit> Writer<'a, X> {
 				.collect()
 		})[table];
 		self.key(key);
-		self.sink.list();
+		self.json.list();
 		for row in rows {
-			self.sink.object();
+			self.json.object();
 			self.run(NodeId::at(0), ops, row as *const T as *const u8);
-			self.sink.end();
+			self.json.end();
 		}
-		self.sink.end();
+		self.json.end();
 	}
 
 	fn comments(&mut self, key: Name, comments: crate::ast::Run) {
@@ -572,45 +572,45 @@ impl<'a, X: Emit> Writer<'a, X> {
 	}
 
 	fn comment_list(&mut self, comments: impl IntoIterator<Item = u32>) {
-		self.sink.list();
+		self.json.list();
 		for index in comments {
 			let comment = self.ast.comments[index as usize];
-			self.sink
+			self.json
 				.begin(if comment.is_block() { c!("Block") } else { c!("Line") });
 			self.key(c!("value"));
 			let range = comment.text_range();
 			self.slice(range.start as u32, range.end as u32);
 			self.span(comment.start, comment.end);
-			self.sink.end();
+			self.json.end();
 		}
-		self.sink.end();
+		self.json.end();
 	}
 
 	/// The recovered errors as the thrown one would be: code, message, `pos`, `end` and a `loc`.
 	fn errors(&mut self) {
 		let places = self.positions.of_errors(self.source, &self.ast.errors);
 		self.key(c!("errors"));
-		self.sink.list();
+		self.json.list();
 		for (error, [pos, end, line, column]) in self.ast.errors.iter().zip(places) {
-			self.sink.object();
+			self.json.object();
 			self.key(c!("code"));
-			self.sink.str(error.code.label());
+			self.json.str(error.code.label());
 			self.key(c!("message"));
-			self.sink.text(&error.message);
+			self.json.text(&error.message);
 			self.key(c!("pos"));
-			self.sink.int(pos);
+			self.json.int(pos);
 			self.key(c!("end"));
-			self.sink.int(end);
+			self.json.int(end);
 			self.key(c!("loc"));
-			self.sink.object();
+			self.json.object();
 			self.key(c!("line"));
-			self.sink.int(line);
+			self.json.int(line);
 			self.key(c!("column"));
-			self.sink.int(column);
-			self.sink.end();
-			self.sink.end();
+			self.json.int(column);
+			self.json.end();
+			self.json.end();
 		}
-		self.sink.end();
+		self.json.end();
 	}
 
 	/// What the output's switches add after a root: every comment, what erasure kept, the scopes.
@@ -634,27 +634,27 @@ impl<'a, X: Emit> Writer<'a, X> {
 		let (start_offset, gap) = self.positions.offset_from(self.cursor.gap, start);
 		self.cursor.gap = gap;
 		let (end_offset, _) = self.positions.offset_from(gap, end);
-		self.sink.span(start_offset, end_offset);
+		self.json.span(start_offset, end_offset);
 		if !self.positions.lines {
 			return;
 		}
 		let (sl, sc) = self.positions.line_column(self.cursor.line, start, start_offset);
 		self.cursor.line = sl;
 		let (el, ec) = self.positions.line_column(sl, end, end_offset);
-		self.sink.loc(sl as u32, sc, el as u32, ec);
+		self.json.loc(sl as u32, sc, el as u32, ec);
 	}
 
 	/// The source between two byte offsets, as a string value.
 	fn slice(&mut self, start: u32, end: u32) {
-		self.sink.text(&self.source[start as usize..end as usize]);
+		self.json.text(&self.source[start as usize..end as usize]);
 	}
 
 	pub(crate) fn end(&mut self) {
-		self.sink.end();
+		self.json.end();
 	}
 
 	pub(crate) fn key(&mut self, key: Name) {
-		self.sink.key(key);
+		self.json.key(key);
 	}
 
 	pub(crate) fn field(&mut self, key: Name, id: NodeId) {
@@ -686,13 +686,13 @@ impl<'a, X: Emit> Writer<'a, X> {
 		self.key(key);
 		match id {
 			Some(id) => self.node(id),
-			None => self.sink.null(),
+			None => self.json.null(),
 		}
 	}
 
 	pub(crate) fn list(&mut self, key: Name, list: List) {
 		self.key(key);
-		self.sink.list();
+		self.json.list();
 		let ast = self.ast;
 		for item in ast.list(list) {
 			if self.output.erase && item.is_some_and(|id| ast.extension.erased(ast, id)) {
@@ -700,10 +700,10 @@ impl<'a, X: Emit> Writer<'a, X> {
 			}
 			match item {
 				Some(id) => self.node(*id),
-				None => self.sink.null(),
+				None => self.json.null(),
 			}
 		}
-		self.sink.end();
+		self.json.end();
 	}
 
 	/// A parameter list; erasing drops TypeScript's `this` parameter.
@@ -724,23 +724,23 @@ impl<'a, X: Emit> Writer<'a, X> {
 
 	pub(crate) fn bool(&mut self, key: Name, value: bool) {
 		self.key(key);
-		self.sink.bool(value);
+		self.json.bool(value);
 	}
 
 	pub(crate) fn string(&mut self, key: Name, value: Name) {
 		self.key(key);
-		self.sink.str(value);
+		self.json.str(value);
 	}
 
 	/// A string computed for this tree.
 	pub(crate) fn text(&mut self, key: Name, value: &str) {
 		self.key(key);
-		self.sink.text(value);
+		self.json.text(value);
 	}
 
 	pub(crate) fn interned(&mut self, key: Name, id: StrId) {
 		self.key(key);
-		self.sink.text(self.ast.str(id));
+		self.json.text(self.ast.str(id));
 	}
 
 	pub(crate) fn raw(&mut self, id: NodeId) {
@@ -789,25 +789,25 @@ impl<'a, X: Emit> Writer<'a, X> {
 				Op::Node(key, slot) => self.field(key, get(base, slot)),
 				Op::Int(key, slot) => {
 					self.key(key);
-					self.sink.int(get(base, slot));
+					self.json.int(get(base, slot));
 				}
 				Op::Pair(key, slot) => {
 					self.key(key);
-					self.sink.ints(&get::<[u32; 2]>(base, slot));
+					self.json.ints(&get::<[u32; 2]>(base, slot));
 				}
 				Op::Opt(key, slot) => match slot.ty {
 					Ty::OptU32 => {
 						self.key(key);
 						match get::<Option<u32>>(base, slot) {
-							Some(value) => self.sink.int(value),
-							None => self.sink.null(),
+							Some(value) => self.json.int(value),
+							None => self.json.null(),
 						}
 					}
 					Ty::OptStr => {
 						self.key(key);
 						match get::<Option<StrId>>(base, slot) {
-							Some(string) => self.sink.text(self.ast.str(string)),
-							None => self.sink.null(),
+							Some(string) => self.json.text(self.ast.str(string)),
+							None => self.json.null(),
 						}
 					}
 					_ => self.opt(key, get(base, slot)),
@@ -863,9 +863,9 @@ impl<'a, X: Emit> Writer<'a, X> {
 					let value = self.ast.numbers[get::<u32>(base, slot) as usize];
 					self.key(key);
 					if value.is_finite() {
-						self.sink.float(value);
+						self.json.float(value);
 					} else {
-						self.sink.null();
+						self.json.null();
 					}
 				}
 				Op::Raw => self.raw(id),
@@ -879,14 +879,14 @@ impl<'a, X: Emit> Writer<'a, X> {
 				Op::ConstBool(key, value) => self.bool(key, value),
 				Op::Null(key) => {
 					self.key(key);
-					self.sink.null();
+					self.json.null();
 				}
 				Op::EmptyList(key) => self.list(key, List::EMPTY),
 				Op::Object(key, inner) => {
 					self.key(key);
-					self.sink.object();
+					self.json.object();
 					self.run(id, inner, base);
-					self.sink.end();
+					self.json.end();
 				}
 				Op::OtherName(key, name, binding) => self.other_name(key, get(base, name), get(base, binding)),
 			}
@@ -905,12 +905,12 @@ impl<'a, X: Emit> Writer<'a, X> {
 				if host.ty.is_empty() {
 					// an object of the host's without a type, positions and all
 					let node = self.ast.node(id);
-					self.sink.object();
+					self.json.object();
 					self.span(node.start, node.end);
 				} else if host.span {
 					self.begin(Name::dynamic(host.ty), id);
 				} else {
-					self.sink.begin(Name::dynamic(host.ty));
+					self.json.begin(Name::dynamic(host.ty));
 					self.scope_facts(id);
 				}
 				let (from, len) = host.fields;
@@ -927,20 +927,20 @@ impl<'a, X: Emit> Writer<'a, X> {
 						}
 						Value::Strs(start, len) => {
 							self.key(key);
-							self.sink.list();
+							self.json.list();
 							for &string in &self.ast.host_strings[start as usize..(start + len) as usize] {
-								self.sink.text(self.ast.str(string));
+								self.json.text(self.ast.str(string));
 							}
-							self.sink.end();
+							self.json.end();
 						}
 						Value::Bool(value) => self.bool(key, value),
 						Value::Int(value) => {
 							self.key(key);
-							self.sink.int(value);
+							self.json.int(value);
 						}
 						Value::Null => {
 							self.key(key);
-							self.sink.null();
+							self.json.null();
 						}
 						Value::Comments => {
 							self.key(key);

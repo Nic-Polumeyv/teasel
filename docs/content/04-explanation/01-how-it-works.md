@@ -4,7 +4,7 @@ title: How it works
 
 A parse crosses from JavaScript into Rust once, and comes back once. Everything in between is arranged to make those two crossings cheap.
 
-![JavaScript on the left, Rust on the right; the text crosses as bytes when the Source is made; a parse runs lexer, parser and scope analysis in Rust and writes one word stream; the decoder on the JavaScript side reads the stream into ESTree objects](HowItWorks.svelte)
+![JavaScript on the left, Rust on the right; the text crosses as bytes when the Source is made; a parse runs lexer, parser and scope analysis in Rust and leaves one tree; the reader on the JavaScript side builds ESTree objects from that tree in place](HowItWorks.svelte)
 
 ## In
 
@@ -16,9 +16,9 @@ Lexer, parser and scope analysis run as one pass over the bytes and build one tr
 
 ## Out
 
-The answer is not JSON. The encoder writes the tree as a stream of 32-bit words: a numbered shape for each kind of node, then its fields as numbers, string ids and offsets. The stream sits in one buffer the engine owns and JavaScript reads in place, without a copy. The decoder walks it and builds the ESTree objects, one object literal per node with every field present, so the runtime gives each node one hidden class and keeps it. Strings come across as a single block, decoded once and sliced.
+The answer is not JSON, and nothing encodes the tree. The parser's own tree is a few flat buffers, a record per node, and JavaScript reads those buffers in place as typed arrays, without a copy. The engine describes the layout once, which kind has which fields at which offset and how each kind is spelled in ESTree, and the reader generates a builder per kind from it: one object literal per node with every field present, so the runtime gives each node one hidden class and keeps it. Strings come across as a single block, decoded once and sliced.
 
-That's why the tree is plain. Nothing in it points back into the engine. Walk it, mutate it, serialize it; the engine was done with it the moment the decoder returned.
+That's why the tree is plain. Nothing in it points back into the engine. Walk it, mutate it, serialize it; the engine was done with it the moment the reader returned.
 
 ## Host languages
 

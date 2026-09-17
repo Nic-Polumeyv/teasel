@@ -366,7 +366,7 @@ impl Scopes {
 		&self.scopes[id as usize]
 	}
 
-	/// The per-node tables a front end reads in place, in the order `no_views` names them.
+	/// The per-node tables a front end reads in place.
 	pub fn views(&mut self, out: &mut Views<'_>) {
 		out.push("scopes", &mut self.scopes);
 		out.push("bindings", &mut self.bindings);

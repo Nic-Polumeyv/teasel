@@ -11,7 +11,7 @@ export interface Addon {
 	readonly parse: (held: External, entry: number, offset: number, end: number | undefined, stop: string) => Uint32Array | string;
 	readonly free: (held: External) => void;
 	readonly layout: () => string;
-	/** Whether the tree is the TypeScript one, then each view followed by its length in elements. */
+	/** Whether the tree is the TypeScript one, then each view as long as its buffer's room; the lengths ride in the answer's words. */
 	readonly tree: () => Tree | undefined;
 }
 

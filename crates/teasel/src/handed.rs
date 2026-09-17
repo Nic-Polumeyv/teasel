@@ -161,18 +161,23 @@ pub enum Element {
 	F64,
 }
 
+impl Element {
+	pub fn size(self) -> usize {
+		match self {
+			Element::U8 => 1,
+			Element::U32 => 4,
+			Element::F64 => 8,
+		}
+	}
+}
+
 /// A buffer as a front end sees it: bytes, whatever the elements are. The allocation released
 /// is freed with `free`.
 pub trait Raw {
 	fn element(&self) -> Element;
 	/// The length in the elements a front end reads, a record being its words.
 	fn elements(&self) -> usize {
-		self.len_bytes()
-			/ match self.element() {
-				Element::U8 => 1,
-				Element::U32 => 4,
-				Element::F64 => 8,
-			}
+		self.len_bytes() / self.element().size()
 	}
 	fn as_ptr(&self) -> *const u8;
 	fn len_bytes(&self) -> usize;

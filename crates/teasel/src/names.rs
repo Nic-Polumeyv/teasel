@@ -1,4 +1,4 @@
-//! The strings a writer names itself, numbered once for the stream: a literal resolves to its
+//! The strings a writer names itself, numbered once for both writers: a literal resolves to its
 //! number at compile time through `c!`, and a string from outside the table, a host grammar's, gets
 //! its number from the writer that meets it.
 

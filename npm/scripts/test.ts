@@ -5,7 +5,7 @@ import type { Entry, Options } from '../dist/index.js';
 if (process.argv[2] === 'interpret') globalThis.Function = (() => { throw new EvalError('blocked'); }) as unknown as FunctionConstructor;
 const name = process.execArgv.includes('--no-addons') ? 'wasm' : 'native';
 const m = await import('../dist/index.js');
-// the trees are poked as the stream shaped them, host nodes included, past what the types say
+// the trees are poked as the recipes shape them, host nodes included, past what the types say
 type Any = any;
 const untyped = ({ Source, scopeOf, referenceOf, parentOf }: typeof m) => ({
 	open: (source: string, options?: Options): Any => new Source(source, options),
