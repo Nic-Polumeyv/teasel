@@ -7,7 +7,7 @@ use crate::Options;
 use crate::ast::{Ast, Reuse};
 use crate::comments::attach;
 use crate::error::Code;
-use crate::estree::{Emit, Output, Positions, Words, answer, error_to_json};
+use crate::estree::{Emit, Json, Output, Positions, Words, answer, error_to_json};
 use crate::handed::{Raw, Views};
 use crate::host::{self, Grammar};
 use crate::parser::{Decorators, Entry, parse_at};
@@ -133,45 +133,215 @@ pub fn error_json(message: &str, pos: u32) -> String {
 	out
 }
 
-/// The tree's layout, the names of its views and the recipes, as JSON; see `layout::json`.
+/// The tree's layout, the names of its views and the recipes, as JSON: what a front end reading
+/// the tree in place builds its readers from.
 pub fn layout_json() -> String {
-	let mut out = crate::layout::json();
-	out.pop();
-	let names = |out: &mut String, names: Vec<&str>| {
-		out.push('[');
-		for (i, name) in names.iter().enumerate() {
-			if i > 0 {
-				out.push(',');
+	use crate::ast::Node;
+	use crate::layout::{Field, Ty, Variant};
+	use crate::names::Name;
+	use crate::recipe::{Op, Rest};
+	let key = Name::dynamic;
+	fn field(w: &mut Json, field: &Field) {
+		w.object();
+		w.key(Name::dynamic("name"));
+		w.text(field.name);
+		w.key(Name::dynamic("at"));
+		w.int(field.at as u32);
+		w.key(Name::dynamic("ty"));
+		w.text(match field.ty {
+			Ty::Node => "node",
+			Ty::OptNode => "?node",
+			Ty::List => "list",
+			Ty::OptList => "?list",
+			Ty::Str => "str",
+			Ty::OptStr => "?str",
+			Ty::Bool => "bool",
+			Ty::OptBool => "?bool",
+			Ty::U32 => "u32",
+			Ty::OptU32 => "?u32",
+			Ty::Pair => "pair",
+			Ty::Enum(_) => "enum",
+			Ty::OptEnum(_) => "?enum",
+			Ty::Struct(_) => "struct",
+		});
+		match field.ty {
+			Ty::Enum(names) | Ty::OptEnum(names) => {
+				w.key(Name::dynamic("names"));
+				w.list();
+				names.iter().for_each(|name| w.str(*name));
+				w.end();
 			}
-			out.push('"');
-			out.push_str(name);
-			out.push('"');
+			Ty::Struct(inner) => {
+				w.key(Name::dynamic("fields"));
+				fields(w, inner);
+			}
+			_ => {}
 		}
-		out.push(']');
-	};
-	out.push_str(",\"views\":{\"js\":");
-	names(&mut out, view_names::<()>());
+		w.end();
+	}
+	fn fields(w: &mut Json, list: &[Field]) {
+		w.list();
+		list.iter().for_each(|f| field(w, f));
+		w.end();
+	}
+	fn record(w: &mut Json, size: usize, list: &[Field]) {
+		w.object();
+		w.key(Name::dynamic("size"));
+		w.int(size as u32);
+		w.key(Name::dynamic("fields"));
+		fields(w, list);
+		w.end();
+	}
+	fn kinds(w: &mut Json, size: usize, variants: &[Variant]) {
+		w.object();
+		w.key(Name::dynamic("size"));
+		w.int(size as u32);
+		w.key(Name::dynamic("kinds"));
+		w.list();
+		for variant in variants {
+			w.object();
+			w.key(Name::dynamic("name"));
+			w.text(variant.name);
+			w.key(Name::dynamic("fields"));
+			fields(w, variant.fields);
+			w.end();
+		}
+		w.end();
+		w.end();
+	}
+	// an operation is its name, then its key, its field and what else it takes
+	fn ops(w: &mut Json, list: &[Op]) {
+		w.list();
+		for op in list {
+			let (name, key, field, rest) = op.told();
+			w.list();
+			w.text(name);
+			if let Some(key) = key {
+				w.str(key);
+			}
+			if let Some(field) = field {
+				w.text(field);
+			}
+			match rest {
+				Rest::Nothing => {}
+				Rest::Names(yes, no) => {
+					w.str(yes);
+					w.str(no);
+				}
+				Rest::Const(value) => w.str(value),
+				Rest::Bool(value) => w.bool(value),
+				Rest::Text(text) => w.text(text),
+				Rest::Ops(inner) => ops(w, inner),
+			}
+			w.end();
+		}
+		w.end();
+	}
+	fn recipes(w: &mut Json, table: &[(&str, &[Op])]) {
+		w.list();
+		for (name, list) in table {
+			w.list();
+			w.text(name);
+			ops(w, list);
+			w.end();
+		}
+		w.end();
+	}
+	fn names(w: &mut Json, list: Vec<&str>) {
+		w.list();
+		list.into_iter().for_each(|name| w.text(name));
+		w.end();
+	}
+	let mut w = Json::default();
+	w.object();
+	w.key(key("node"));
+	w.object();
+	w.key(key("size"));
+	w.int(size_of::<Node>() as u32);
+	w.key(key("start"));
+	w.int(std::mem::offset_of!(Node, start) as u32);
+	w.key(key("end"));
+	w.int(std::mem::offset_of!(Node, end) as u32);
+	w.key(key("kind"));
+	w.int(std::mem::offset_of!(Node, kind) as u32);
+	w.end();
+	w.key(key("kinds"));
+	w.list();
+	for variant in crate::ast::node_layout::VARIANTS {
+		w.object();
+		w.key(key("name"));
+		w.text(variant.name);
+		w.key(key("fields"));
+		fields(&mut w, variant.fields);
+		w.end();
+	}
+	w.end();
 	#[cfg(feature = "typescript")]
 	{
-		out.push_str(",\"ts\":");
-		names(&mut out, view_names::<crate::typescript::ast::Data>());
+		use crate::typescript::ast::{Extras, TsKind, ts_layout};
+		w.key(key("ts"));
+		kinds(&mut w, size_of::<TsKind>(), ts_layout::VARIANTS);
+		w.key(key("extras"));
+		record(&mut w, size_of::<Extras>(), Extras::FIELDS);
 	}
-	out.push_str("},\"recipes\":{\"js\":");
-	crate::recipe::json(&mut out, crate::recipe::JS);
-	out.push_str(",\"rows\":");
-	crate::recipe::json(&mut out, crate::scopes::RECIPES);
+	w.key(key("rows"));
+	w.object();
+	for (name, size, list) in crate::recipe::ROWS {
+		w.key(key(name));
+		record(&mut w, *size, list);
+	}
+	w.end();
+	let none = crate::layout::missing();
+	w.key(key("none"));
+	w.object();
+	w.key(key("enum"));
+	w.int(none.r#enum as u32);
+	w.key(key("bool"));
+	w.int(none.bool as u32);
+	for (name, tagged) in [("list", none.list), ("str", none.str), ("int", none.int)] {
+		w.key(key(name));
+		w.object();
+		w.key(key("tag"));
+		w.int(tagged.tag as u32);
+		w.key(key("missing"));
+		w.int(tagged.missing);
+		w.end();
+	}
+	w.end();
+	w.key(key("views"));
+	w.object();
+	w.key(key("js"));
+	names(&mut w, view_names::<()>());
 	#[cfg(feature = "typescript")]
 	{
-		out.push_str(",\"ts\":");
-		use crate::typescript::estree::{ADDS, EXTRAS, EXTRAS_ERASED, TS};
-		crate::recipe::json(&mut out, TS);
-		out.push_str(",\"adds\":");
-		crate::recipe::json(&mut out, ADDS);
-		out.push_str(",\"extras\":");
-		crate::recipe::json(&mut out, &[("extras", EXTRAS), ("erased", EXTRAS_ERASED)]);
+		w.key(key("ts"));
+		names(&mut w, view_names::<crate::typescript::ast::Data>());
 	}
-	out.push_str("}}");
-	out
+	w.end();
+	w.key(key("recipes"));
+	w.object();
+	w.key(key("js"));
+	recipes(&mut w, crate::recipe::JS);
+	w.key(key("rows"));
+	recipes(&mut w, crate::recipe::RECIPES);
+	#[cfg(feature = "typescript")]
+	{
+		w.key(key("ts"));
+		recipes(&mut w, crate::recipe::TS);
+		w.key(key("adds"));
+		recipes(&mut w, crate::recipe::ADDS);
+		w.key(key("extras"));
+		recipes(
+			&mut w,
+			&[
+				("extras", crate::recipe::EXTRAS),
+				("erased", crate::recipe::EXTRAS_ERASED),
+			],
+		);
+	}
+	w.end();
+	w.end();
+	w.finish()
 }
 
 /// `stop` lists the host's tokens for an entry at an offset; see `parser::parse_at`.

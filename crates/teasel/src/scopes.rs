@@ -6,9 +6,7 @@ use crate::ast::{Ast, List, NodeId, NodeKind, VariableKind, Walk};
 use crate::error::{Code, SyntaxError};
 use crate::handed::{Handed, Views};
 use crate::interner::{FastMap, StrId};
-use crate::names::c;
 use crate::parser::Entry;
-use crate::recipe::Op;
 
 crate::layout::names! {
 	#[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -145,24 +143,6 @@ crate::layout::record! {
 		pub declares: bool,
 	}
 }
-
-/// How each table's rows are spelled: the recipes of the answer's `scopes`, `bindings`,
-/// `references` and `roots`.
-#[rustfmt::skip]
-pub const RECIPES: &[(&str, &[Op])] = &[
-	("scopes", &[Op::Enum(c!("kind"), "kind"), Op::Opt(c!("parent"), "parent"), Op::Bool(c!("topLevelAwait"), "top_level_await")]),
-	("bindings", &[Op::Str(c!("name"), "name"), Op::Enum(c!("kind"), "kind"), Op::Int(c!("scope"), "scope"), Op::Bool(c!("write"), "write")]),
-	("references", &[Op::Int(c!("scope"), "scope"), Op::Opt(c!("binding"), "binding"), Op::Bool(c!("write"), "write"), Op::Bool(c!("read"), "read"), Op::Bool(c!("mutate"), "mutate"), Op::Bool(c!("declares"), "declares")]),
-	("roots", &[Op::Int(c!("scope"), "scope"), Op::Pair(c!("scopes"), "scopes"), Op::Pair(c!("bindings"), "bindings"), Op::Pair(c!("references"), "references")]),
-];
-
-/// Each table's name, its record's size and fields, in the order of `RECIPES`.
-pub const ROWS: &[(&str, usize, &[crate::layout::Field])] = &[
-	("scopes", size_of::<Scope>(), Scope::FIELDS),
-	("bindings", size_of::<Binding>(), Binding::FIELDS),
-	("references", size_of::<Reference>(), Reference::FIELDS),
-	("roots", size_of::<Root>(), Root::FIELDS),
-];
 
 /// What an identifier is in the analysis: the binding it declares, or the reference it makes.
 #[derive(Clone, Copy, Debug)]

@@ -81,7 +81,7 @@ impl Json {
 }
 
 impl Json {
-	fn ints(&mut self, values: &[u32]) {
+	pub(crate) fn ints(&mut self, values: &[u32]) {
 		self.list();
 		for &value in values {
 			self.int(value);
@@ -89,7 +89,7 @@ impl Json {
 		self.end();
 	}
 
-	fn begin(&mut self, ty: Name) {
+	pub(crate) fn begin(&mut self, ty: Name) {
 		self.open(false);
 		self.out.push_str("\"type\":\"");
 		self.out.push_str(ty.text);
@@ -97,20 +97,20 @@ impl Json {
 		self.first = false;
 	}
 
-	fn object(&mut self) {
+	pub(crate) fn object(&mut self) {
 		self.open(false);
 	}
 
-	fn list(&mut self) {
+	pub(crate) fn list(&mut self) {
 		self.open(true);
 	}
 
-	fn end(&mut self) {
+	pub(crate) fn end(&mut self) {
 		self.out.push(if self.stack.pop() == Some(true) { ']' } else { '}' });
 		self.first = false;
 	}
 
-	fn key(&mut self, key: Name) {
+	pub(crate) fn key(&mut self, key: Name) {
 		self.sep();
 		self.out.push('"');
 		self.out.push_str(key.text);
@@ -118,31 +118,31 @@ impl Json {
 		self.first = true;
 	}
 
-	fn int(&mut self, value: u32) {
+	pub(crate) fn int(&mut self, value: u32) {
 		self.sep();
 		push_int(&mut self.out, value);
 	}
 
-	fn float(&mut self, value: f64) {
+	pub(crate) fn float(&mut self, value: f64) {
 		self.sep();
 		write_number(&mut self.out, value);
 	}
 
-	fn bool(&mut self, value: bool) {
+	pub(crate) fn bool(&mut self, value: bool) {
 		self.sep();
 		self.out.push_str(if value { "true" } else { "false" });
 	}
 
-	fn null(&mut self) {
+	pub(crate) fn null(&mut self) {
 		self.sep();
 		self.out.push_str("null");
 	}
 
-	fn str(&mut self, value: Name) {
+	pub(crate) fn str(&mut self, value: Name) {
 		self.text(value.text);
 	}
 
-	fn text(&mut self, value: &str) {
+	pub(crate) fn text(&mut self, value: &str) {
 		self.sep();
 		write_json_string(&mut self.out, value);
 	}
@@ -544,13 +544,13 @@ impl<'a, X: Emit> Writer<'a, X> {
 		}
 	}
 
-	/// A table, each row spelled by its recipe of `scopes::RECIPES`.
+	/// A table, each row spelled by its recipe of `recipe::RECIPES`.
 	fn rows<T>(&mut self, key: Name, rows: &[T], table: usize) {
 		static RESOLVED: std::sync::OnceLock<Vec<&'static [Op<Slot>]>> = std::sync::OnceLock::new();
 		let ops = RESOLVED.get_or_init(|| {
-			crate::scopes::RECIPES
+			crate::recipe::RECIPES
 				.iter()
-				.zip(crate::scopes::ROWS)
+				.zip(crate::recipe::ROWS)
 				.map(|((name, ops), (_, _, fields))| crate::recipe::resolve_ops(ops, fields, name))
 				.collect()
 		})[table];

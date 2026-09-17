@@ -1,9 +1,10 @@
-//! How each kind of node is spelled in ESTree: a recipe of operations over the fields the layout
-//! describes, followed by the JSON writer here and by a front end building objects from the
-//! tree in place, so the two cannot drift.
+//! How each kind of node, each table's rows and what TypeScript adds are spelled in ESTree: a
+//! recipe of operations over the fields the layout describes, followed by the JSON writer and by
+//! a front end building objects from the tree in place, so the two cannot drift.
 
 use crate::layout::{Field, Ty, Variant};
 use crate::names::{Name, c};
+use crate::scopes::{Binding, Reference, Root, Scope};
 
 /// A field of the kind's record by name, `function.id` for one inside a record; a `Slot` once
 /// resolved against the layout.
@@ -73,6 +74,57 @@ pub struct Slot {
 }
 
 use Op::*;
+
+/// What else an operation carries, past its key and field, as the layout tells it.
+pub enum Rest {
+	Nothing,
+	/// The names for true and false.
+	Names(Name, Name),
+	Const(Name),
+	Bool(bool),
+	Text(&'static str),
+	Ops(&'static [Op]),
+}
+
+impl Op {
+	/// The operation as the layout tells it: its name, its key, its field and the rest.
+	pub fn told(&self) -> (&'static str, Option<Name>, Option<Path>, Rest) {
+		match *self {
+			Type(t) => ("type", Some(t), None, Rest::Nothing),
+			TypeOf(f) => ("typeof", None, Some(f), Rest::Nothing),
+			Node(k, f) => ("node", Some(k), Some(f), Rest::Nothing),
+			Opt(k, f) => ("opt", Some(k), Some(f), Rest::Nothing),
+			OptKey(k, f) => ("optkey", Some(k), Some(f), Rest::Nothing),
+			List(k, f) => ("list", Some(k), Some(f), Rest::Nothing),
+			OptListKey(k, f) => ("optlistkey", Some(k), Some(f), Rest::Nothing),
+			Params(k, f) => ("params", Some(k), Some(f), Rest::Nothing),
+			Bool(k, f) => ("bool", Some(k), Some(f), Rest::Nothing),
+			BoolIf(k, f) => ("boolif", Some(k), Some(f), Rest::Nothing),
+			OptBoolKey(k, f) => ("optboolkey", Some(k), Some(f), Rest::Nothing),
+			Str(k, f) => ("str", Some(k), Some(f), Rest::Nothing),
+			OptStrKey(k, f) => ("optstrkey", Some(k), Some(f), Rest::Nothing),
+			Enum(k, f) => ("enum", Some(k), Some(f), Rest::Nothing),
+			OptEnumKey(k, f) => ("optenumkey", Some(k), Some(f), Rest::Nothing),
+			Modifier(k, f) => ("modifier", Some(k), Some(f), Rest::Nothing),
+			BoolNames(k, f, yes, no) => ("boolnames", Some(k), Some(f), Rest::Names(yes, no)),
+			Int(k, f) => ("int", Some(k), Some(f), Rest::Nothing),
+			Pair(k, f) => ("pair", Some(k), Some(f), Rest::Nothing),
+			Float(k, f) => ("float", Some(k), Some(f), Rest::Nothing),
+			Raw => ("raw", None, None, Rest::Nothing),
+			BigInt => ("bigint", None, None, Rest::Nothing),
+			Const(k, value) => ("const", Some(k), None, Rest::Const(value)),
+			ConstBool(k, value) => ("constbool", Some(k), None, Rest::Bool(value)),
+			Null(k) => ("null", Some(k), None, Rest::Nothing),
+			EmptyList(k) => ("emptylist", Some(k), None, Rest::Nothing),
+			Object(k, inner) => ("object", Some(k), None, Rest::Ops(inner)),
+			OtherName(k, f, binding) => ("othername", Some(k), Some(f), Rest::Text(binding)),
+			Keep(name) => ("keep", Some(name), None, Rest::Nothing),
+			KeepIf(name, f) => ("keepif", Some(name), Some(f), Rest::Nothing),
+			Through(f) => ("through", None, Some(f), Rest::Nothing),
+			EnumOr(k, f, other) => ("enumor", Some(k), Some(f), Rest::Const(other)),
+		}
+	}
+}
 
 /// The JavaScript kinds, by the variant's name; `Extension` and `Host` have none, the writer
 /// spells them itself.
@@ -247,106 +299,113 @@ pub(crate) fn resolve_ops(ops: &[Op], fields: &[Field], kind: &str) -> &'static 
 	Box::leak(resolved.into_boxed_slice())
 }
 
-fn json_str(out: &mut String, text: &str) {
-	out.push('"');
-	out.push_str(text);
-	out.push('"');
-}
+/// The TypeScript kinds, by the variant's name.
+#[cfg(feature = "typescript")]
+#[rustfmt::skip]
+pub const TS: &[(&str, &[Op])] = &[
+	("TypeAnnotation", &[Type(c!("TSTypeAnnotation")), Node(c!("typeAnnotation"), "type_annotation")]),
+	("Keyword", &[TypeOf("0")]),
+	("ThisType", &[Type(c!("TSThisType"))]),
+	("TypePredicate", &[Type(c!("TSTypePredicate")), Node(c!("parameterName"), "parameter_name"), Opt(c!("typeAnnotation"), "type_annotation"), Bool(c!("asserts"), "asserts")]),
+	("TypeReference", &[Type(c!("TSTypeReference")), Node(c!("typeName"), "type_name"), OptKey(c!("typeArguments"), "type_arguments")]),
+	("QualifiedName", &[Type(c!("TSQualifiedName")), Node(c!("left"), "left"), Node(c!("right"), "right")]),
+	("TypeParameterInstantiation", &[Type(c!("TSTypeParameterInstantiation")), List(c!("params"), "params")]),
+	("TypeParameterDeclaration", &[Type(c!("TSTypeParameterDeclaration")), List(c!("params"), "params")]),
+	("TypeParameter", &[Type(c!("TSTypeParameter")), BoolIf(c!("in"), "is_in"), BoolIf(c!("out"), "is_out"), BoolIf(c!("const"), "is_const"), Str(c!("name"), "name"), OptKey(c!("constraint"), "constraint"), OptKey(c!("default"), "default")]),
+	("FunctionType", &[Type(c!("TSFunctionType")), OptKey(c!("typeParameters"), "type_parameters"), List(c!("parameters"), "parameters"), Node(c!("typeAnnotation"), "type_annotation")]),
+	("ConstructorType", &[Type(c!("TSConstructorType")), Bool(c!("abstract"), "is_abstract"), OptKey(c!("typeParameters"), "type_parameters"), List(c!("parameters"), "parameters"), Node(c!("typeAnnotation"), "type_annotation")]),
+	("UnionType", &[Type(c!("TSUnionType")), List(c!("types"), "types")]),
+	("IntersectionType", &[Type(c!("TSIntersectionType")), List(c!("types"), "types")]),
+	("TypeOperator", &[Type(c!("TSTypeOperator")), Str(c!("operator"), "operator"), Node(c!("typeAnnotation"), "type_annotation")]),
+	("InferType", &[Type(c!("TSInferType")), Node(c!("typeParameter"), "type_parameter")]),
+	("LiteralType", &[Type(c!("TSLiteralType")), Node(c!("literal"), "literal")]),
+	("ImportType", &[Type(c!("TSImportType")), Node(c!("argument"), "argument"), OptKey(c!("qualifier"), "qualifier"), OptKey(c!("typeArguments"), "type_arguments")]),
+	("TypeQuery", &[Type(c!("TSTypeQuery")), Node(c!("exprName"), "expr_name"), OptKey(c!("typeArguments"), "type_arguments")]),
+	("MappedType", &[Type(c!("TSMappedType")), Modifier(c!("readonly"), "readonly"), Node(c!("typeParameter"), "type_parameter"), Opt(c!("nameType"), "name_type"), Modifier(c!("optional"), "optional"), OptKey(c!("typeAnnotation"), "type_annotation")]),
+	("TypeLiteral", &[Type(c!("TSTypeLiteral")), List(c!("members"), "members")]),
+	("NamedTupleMember", &[Type(c!("TSNamedTupleMember")), Bool(c!("optional"), "optional"), Node(c!("label"), "label"), Node(c!("elementType"), "element_type")]),
+	("OptionalType", &[Type(c!("TSOptionalType")), Node(c!("typeAnnotation"), "type_annotation")]),
+	("RestType", &[Type(c!("TSRestType")), Node(c!("typeAnnotation"), "type_annotation")]),
+	("TupleType", &[Type(c!("TSTupleType")), List(c!("elementTypes"), "element_types")]),
+	("ParenthesizedType", &[Type(c!("TSParenthesizedType")), Node(c!("typeAnnotation"), "type_annotation")]),
+	("ArrayType", &[Type(c!("TSArrayType")), Node(c!("elementType"), "element_type")]),
+	("IndexedAccessType", &[Type(c!("TSIndexedAccessType")), Node(c!("objectType"), "object_type"), Node(c!("indexType"), "index_type")]),
+	("ConditionalType", &[Type(c!("TSConditionalType")), Node(c!("checkType"), "check_type"), Node(c!("extendsType"), "extends_type"), Node(c!("trueType"), "true_type"), Node(c!("falseType"), "false_type")]),
+	("IndexSignature", &[Type(c!("TSIndexSignature")), List(c!("parameters"), "parameters"), OptKey(c!("typeAnnotation"), "type_annotation")]),
+	("CallSignatureDeclaration", &[Type(c!("TSCallSignatureDeclaration")), OptKey(c!("typeParameters"), "type_parameters"), List(c!("parameters"), "parameters"), OptKey(c!("typeAnnotation"), "type_annotation")]),
+	("ConstructSignatureDeclaration", &[Type(c!("TSConstructSignatureDeclaration")), OptKey(c!("typeParameters"), "type_parameters"), List(c!("parameters"), "parameters"), OptKey(c!("typeAnnotation"), "type_annotation")]),
+	("MethodSignature", &[Type(c!("TSMethodSignature")), Node(c!("key"), "key"), Bool(c!("computed"), "computed"), BoolIf(c!("optional"), "optional"), Enum(c!("kind"), "kind"), OptKey(c!("typeParameters"), "type_parameters"), List(c!("parameters"), "parameters"), OptKey(c!("typeAnnotation"), "type_annotation")]),
+	("PropertySignature", &[Type(c!("TSPropertySignature")), Node(c!("key"), "key"), OptBoolKey(c!("computed"), "computed"), BoolIf(c!("optional"), "optional"), BoolIf(c!("readonly"), "readonly"), OptEnumKey(c!("kind"), "kind"), OptKey(c!("typeAnnotation"), "type_annotation")]),
+	("InterfaceDeclaration", &[Type(c!("TSInterfaceDeclaration")), Node(c!("id"), "id"), OptKey(c!("typeParameters"), "type_parameters"), OptListKey(c!("extends"), "extends"), Node(c!("body"), "body")]),
+	("InterfaceBody", &[Type(c!("TSInterfaceBody")), List(c!("body"), "body")]),
+	("ExpressionWithTypeArguments", &[Type(c!("TSExpressionWithTypeArguments")), Node(c!("expression"), "expression"), OptKey(c!("typeParameters"), "type_arguments")]),
+	("EnumDeclaration", &[Keep(c!("TSEnumDeclaration")), Type(c!("TSEnumDeclaration")), BoolIf(c!("const"), "is_const"), Node(c!("id"), "id"), List(c!("members"), "members")]),
+	("EnumMember", &[Type(c!("TSEnumMember")), Node(c!("id"), "id"), OptKey(c!("initializer"), "initializer")]),
+	("ModuleDeclaration", &[Keep(c!("TSModuleDeclaration")), Type(c!("TSModuleDeclaration")), BoolIf(c!("global"), "global"), Node(c!("id"), "id"), OptKey(c!("body"), "body")]),
+	("ModuleBlock", &[Type(c!("TSModuleBlock")), List(c!("body"), "body")]),
+	("TypeAliasDeclaration", &[Type(c!("TSTypeAliasDeclaration")), Node(c!("id"), "id"), OptKey(c!("typeParameters"), "type_parameters"), Node(c!("typeAnnotation"), "type_annotation")]),
+	("ImportEqualsDeclaration", &[Keep(c!("TSImportEqualsDeclaration")), Type(c!("TSImportEqualsDeclaration")), Enum(c!("importKind"), "import_kind"), Bool(c!("isExport"), "is_export"), Node(c!("id"), "id"), Node(c!("moduleReference"), "module_reference")]),
+	("ExternalModuleReference", &[Type(c!("TSExternalModuleReference")), Node(c!("expression"), "expression")]),
+	("ExportAssignment", &[Keep(c!("TSExportAssignment")), Type(c!("TSExportAssignment")), Node(c!("expression"), "expression")]),
+	("NamespaceExportDeclaration", &[Type(c!("TSNamespaceExportDeclaration")), Node(c!("id"), "id")]),
+	("DeclareFunction", &[Type(c!("TSDeclareFunction")), Opt(c!("id"), "id"), Bool(c!("generator"), "generator"), Bool(c!("async"), "is_async"), ConstBool(c!("expression"), false), List(c!("params"), "params")]),
+	("DeclareMethod", &[Type(c!("TSDeclareMethod")), Null(c!("id")), Bool(c!("generator"), "generator"), Bool(c!("async"), "is_async"), ConstBool(c!("expression"), false), List(c!("params"), "params")]),
+	("AsExpression", &[Through("expression"), Type(c!("TSAsExpression")), Node(c!("expression"), "expression"), Node(c!("typeAnnotation"), "type_annotation")]),
+	("SatisfiesExpression", &[Through("expression"), Type(c!("TSSatisfiesExpression")), Node(c!("expression"), "expression"), Node(c!("typeAnnotation"), "type_annotation")]),
+	("NonNullExpression", &[Through("expression"), Type(c!("TSNonNullExpression")), Node(c!("expression"), "expression")]),
+	("TypeAssertion", &[Through("expression"), Type(c!("TSTypeAssertion")), Node(c!("typeAnnotation"), "type_annotation"), Node(c!("expression"), "expression")]),
+	("TypeCastExpression", &[Through("expression"), Type(c!("TSTypeCastExpression")), Node(c!("expression"), "expression"), Node(c!("typeAnnotation"), "type_annotation")]),
+	("InstantiationExpression", &[Through("expression"), Type(c!("TSInstantiationExpression")), Node(c!("expression"), "expression"), Node(c!("typeArguments"), "type_arguments")]),
+	("ParameterProperty", &[Keep(c!("TSParameterProperty")), Through("parameter"), Type(c!("TSParameterProperty")), Node(c!("parameter"), "parameter")]),
+	("Decorator", &[Keep(c!("Decorator")), Type(c!("Decorator")), Node(c!("expression"), "expression")]),
+];
 
-fn json_ops(out: &mut String, ops: &[Op]) {
-	out.push('[');
-	for (i, op) in ops.iter().enumerate() {
-		if i > 0 {
-			out.push(',');
-		}
-		out.push('[');
-		let (name, key, field, rest): (&str, Option<Name>, Option<Path>, Option<&[Op]>) = match *op {
-			Type(t) => ("type", Some(t), None, None),
-			TypeOf(f) => ("typeof", None, Some(f), None),
-			Node(k, f) => ("node", Some(k), Some(f), None),
-			Opt(k, f) => ("opt", Some(k), Some(f), None),
-			OptKey(k, f) => ("optkey", Some(k), Some(f), None),
-			List(k, f) => ("list", Some(k), Some(f), None),
-			OptListKey(k, f) => ("optlistkey", Some(k), Some(f), None),
-			Params(k, f) => ("params", Some(k), Some(f), None),
-			Bool(k, f) => ("bool", Some(k), Some(f), None),
-			BoolIf(k, f) => ("boolif", Some(k), Some(f), None),
-			OptBoolKey(k, f) => ("optboolkey", Some(k), Some(f), None),
-			Str(k, f) => ("str", Some(k), Some(f), None),
-			OptStrKey(k, f) => ("optstrkey", Some(k), Some(f), None),
-			Enum(k, f) => ("enum", Some(k), Some(f), None),
-			OptEnumKey(k, f) => ("optenumkey", Some(k), Some(f), None),
-			Modifier(k, f) => ("modifier", Some(k), Some(f), None),
-			BoolNames(k, f, _, _) => ("boolnames", Some(k), Some(f), None),
-			Int(k, f) => ("int", Some(k), Some(f), None),
-			Pair(k, f) => ("pair", Some(k), Some(f), None),
-			Float(k, f) => ("float", Some(k), Some(f), None),
-			Raw => ("raw", None, None, None),
-			BigInt => ("bigint", None, None, None),
-			Const(k, _) => ("const", Some(k), None, None),
-			ConstBool(k, _) => ("constbool", Some(k), None, None),
-			Null(k) => ("null", Some(k), None, None),
-			EmptyList(k) => ("emptylist", Some(k), None, None),
-			Object(k, inner) => ("object", Some(k), None, Some(inner)),
-			OtherName(k, f, _) => ("othername", Some(k), Some(f), None),
-			Keep(name) => ("keep", Some(name), None, None),
-			KeepIf(name, f) => ("keepif", Some(name), Some(f), None),
-			Through(f) => ("through", None, Some(f), None),
-			EnumOr(k, f, _) => ("enumor", Some(k), Some(f), None),
-		};
-		json_str(out, name);
-		if let Some(key) = key {
-			out.push(',');
-			json_str(out, key.text);
-		}
-		if let Some(field) = field {
-			out.push(',');
-			json_str(out, field);
-		}
-		match *op {
-			BoolNames(_, _, yes, no) => {
-				out.push(',');
-				json_str(out, yes.text);
-				out.push(',');
-				json_str(out, no.text);
-			}
-			Const(_, value) => {
-				out.push(',');
-				json_str(out, value.text);
-			}
-			ConstBool(_, value) => out.push_str(if value { ",true" } else { ",false" }),
-			OtherName(_, _, binding) => {
-				out.push(',');
-				json_str(out, binding);
-			}
-			EnumOr(_, _, other) => {
-				out.push(',');
-				json_str(out, other.text);
-			}
-			_ => {}
-		}
-		if let Some(inner) = rest {
-			out.push(',');
-			json_ops(out, inner);
-		}
-		out.push(']');
-	}
-	out.push(']');
-}
+/// What TypeScript adds to a JavaScript kind whatever its extras say, over the extras record.
+#[cfg(feature = "typescript")]
+#[rustfmt::skip]
+pub const ADDS: &[(&str, &[Op])] = &[
+	("ImportDeclaration", &[EnumOr(c!("importKind"), "import_kind", c!("value"))]),
+	("ImportSpecifier", &[EnumOr(c!("importKind"), "import_kind", c!("value"))]),
+	("ExportDeclaration", &[EnumOr(c!("exportKind"), "export_kind", c!("value"))]),
+	("ExportNamedDeclaration", &[EnumOr(c!("exportKind"), "export_kind", c!("value"))]),
+	("ExportDefaultDeclaration", &[EnumOr(c!("exportKind"), "export_kind", c!("value"))]),
+	("ExportAllDeclaration", &[EnumOr(c!("exportKind"), "export_kind", c!("value"))]),
+	("ExportSpecifier", &[EnumOr(c!("exportKind"), "export_kind", c!("value"))]),
+];
 
-/// The recipes as JSON: each kind's name and its operations, an operation as its name, then its
-/// key, its field and what else it takes.
-pub fn json(out: &mut String, recipes: &[(&str, &[Op])]) {
-	out.push('[');
-	for (i, (name, ops)) in recipes.iter().enumerate() {
-		if i > 0 {
-			out.push(',');
-		}
-		out.push('[');
-		json_str(out, name);
-		out.push(',');
-		json_ops(out, ops);
-		out.push(']');
-	}
-	out.push(']');
-}
+/// The keys a node's extras add, after the kind's own.
+#[cfg(feature = "typescript")]
+#[rustfmt::skip]
+pub const EXTRAS: &[Op] = &[
+	OptKey(c!("typeAnnotation"), "type_annotation"), OptKey(c!("returnType"), "return_type"), OptKey(c!("typeParameters"), "type_parameters"),
+	OptKey(c!("typeArguments"), "type_arguments"), OptKey(c!("superTypeParameters"), "super_type_arguments"),
+	OptListKey(c!("implements"), "implements"), OptListKey(c!("decorators"), "decorators"), OptEnumKey(c!("accessibility"), "accessibility"),
+	BoolIf(c!("optional"), "optional"), BoolIf(c!("definite"), "definite"), BoolIf(c!("declare"), "declare"), BoolIf(c!("abstract"), "is_abstract"),
+	BoolIf(c!("readonly"), "readonly"), BoolIf(c!("override"), "is_override"), BoolIf(c!("accessor"), "accessor"), BoolIf(c!("static"), "is_static"),
+];
+
+/// The same when erasing: the proposals JavaScript itself has, decorators and accessor fields.
+#[cfg(feature = "typescript")]
+pub const EXTRAS_ERASED: &[Op] = &[
+	OptListKey(c!("decorators"), "decorators"),
+	BoolIf(c!("accessor"), "accessor"),
+	KeepIf(c!("AccessorProperty"), "accessor"),
+];
+
+/// How each table's rows are spelled: the recipes of the answer's `scopes`, `bindings`,
+/// `references` and `roots`.
+#[rustfmt::skip]
+pub const RECIPES: &[(&str, &[Op])] = &[
+	("scopes", &[Enum(c!("kind"), "kind"), Opt(c!("parent"), "parent"), Bool(c!("topLevelAwait"), "top_level_await")]),
+	("bindings", &[Str(c!("name"), "name"), Enum(c!("kind"), "kind"), Int(c!("scope"), "scope"), Bool(c!("write"), "write")]),
+	("references", &[Int(c!("scope"), "scope"), Opt(c!("binding"), "binding"), Bool(c!("write"), "write"), Bool(c!("read"), "read"), Bool(c!("mutate"), "mutate"), Bool(c!("declares"), "declares")]),
+	("roots", &[Int(c!("scope"), "scope"), Pair(c!("scopes"), "scopes"), Pair(c!("bindings"), "bindings"), Pair(c!("references"), "references")]),
+];
+
+/// Each table's name, its record's size and fields, in the order of `RECIPES`.
+pub const ROWS: &[(&str, usize, &[Field])] = &[
+	("scopes", size_of::<Scope>(), Scope::FIELDS),
+	("bindings", size_of::<Binding>(), Binding::FIELDS),
+	("references", size_of::<Reference>(), Reference::FIELDS),
+	("roots", size_of::<Root>(), Root::FIELDS),
+];

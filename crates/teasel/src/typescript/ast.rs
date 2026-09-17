@@ -1,6 +1,8 @@
 use crate::ast::{Ast, List, NodeId, NodeKind, Walk};
+use crate::estree::{Emit, Writer};
 use crate::handed::{Handed, Views};
 use crate::interner::StrId;
+use crate::recipe::{ADDS, EXTRAS, EXTRAS_ERASED, Op, Slot, TS};
 use crate::scopes::{Bind, Binder, BindingKind, Mode, ScopeKind};
 
 /// What the TypeScript extension hands back with a tree: its own nodes, indexed by the
@@ -768,5 +770,114 @@ impl Walk for Data {
 			}
 		}
 		out[from..].sort_unstable_by_key(|&child| ast.node(child).start);
+	}
+}
+
+// ESTree output for the TypeScript nodes and the keys TypeScript adds to JavaScript ones
+struct Recipes {
+	kinds: &'static [&'static [Op<Slot>]],
+	/// By the JavaScript kind's tag.
+	adds: Vec<&'static [Op<Slot>]>,
+	extras: &'static [Op<Slot>],
+	erased: &'static [Op<Slot>],
+}
+
+fn recipes() -> &'static Recipes {
+	static RESOLVED: std::sync::OnceLock<Recipes> = std::sync::OnceLock::new();
+	RESOLVED.get_or_init(|| Recipes {
+		kinds: crate::recipe::resolve(TS, super::ast::ts_layout::VARIANTS),
+		adds: crate::ast::node_layout::VARIANTS
+			.iter()
+			.map(|variant| match ADDS.iter().find(|(name, _)| *name == variant.name) {
+				Some((name, ops)) => crate::recipe::resolve_ops(ops, Extras::FIELDS, name),
+				None => &[][..],
+			})
+			.collect(),
+		extras: crate::recipe::resolve_ops(EXTRAS, Extras::FIELDS, "Extras"),
+		erased: crate::recipe::resolve_ops(EXTRAS_ERASED, Extras::FIELDS, "Extras"),
+	})
+}
+
+impl Data {
+	/// Whether every statement of a list erases to nothing.
+	fn all_erased(&self, ast: &Ast<Self>, list: List) -> bool {
+		ast.list(list)
+			.iter()
+			.all(|item| item.is_none_or(|id| self.erased(ast, id)))
+	}
+
+	fn extras_of(&self, id: NodeId) -> Extras {
+		self.extras(id).copied().unwrap_or_default()
+	}
+}
+
+impl Emit for Data {
+	fn erased(&self, ast: &Ast<Self>, id: NodeId) -> bool {
+		use TsKind::*;
+		let extras = self.extras_of(id);
+		if extras.declare {
+			return true;
+		}
+		match ast.node(id).kind {
+			NodeKind::MethodDefinition { .. } | NodeKind::PropertyDefinition { .. } if extras.is_abstract => true,
+			// an overload signature: a method without a body
+			NodeKind::MethodDefinition { value, .. } => {
+				matches!(self.ts_of(ast, value), Some(DeclareMethod { .. }))
+			}
+			NodeKind::Extension(index) => match self.kind(index) {
+				InterfaceDeclaration { .. }
+				| TypeAliasDeclaration { .. }
+				| DeclareFunction { .. }
+				| IndexSignature { .. }
+				| NamespaceExportDeclaration { .. } => true,
+				ImportEqualsDeclaration { import_kind, .. } => import_kind == Kind::Type,
+				ModuleDeclaration { body: None, .. } => true,
+				ModuleDeclaration { body: Some(block), .. } => match self.ts_of(ast, block) {
+					Some(ModuleBlock { body }) => self.all_erased(ast, body),
+					_ => false,
+				},
+				_ => false,
+			},
+			NodeKind::ImportDeclaration { specifiers, .. } => {
+				extras.import_kind == Some(Kind::Type) || (specifiers.len > 0 && self.all_erased(ast, specifiers))
+			}
+			NodeKind::ImportSpecifier { .. } => extras.import_kind == Some(Kind::Type),
+			NodeKind::ExportSpecifier { .. } | NodeKind::ExportAllDeclaration { .. } => {
+				extras.export_kind == Some(Kind::Type)
+			}
+			// `export { type A }` keeps an `export {}`, as tsc keeps the file a module
+			NodeKind::ExportDeclaration { declaration } => {
+				extras.export_kind == Some(Kind::Type) || self.erased(ast, declaration)
+			}
+			NodeKind::ExportNamedDeclaration { .. } => extras.export_kind == Some(Kind::Type),
+			NodeKind::ExportDefaultDeclaration { declaration } => {
+				extras.export_kind == Some(Kind::Type) || self.erased(ast, declaration)
+			}
+			_ => false,
+		}
+	}
+
+	fn node(&self, w: &mut Writer<Self>, id: NodeId, index: u32) {
+		let base = &self.nodes[index as usize] as *const TsKind as *const u8;
+		if w.run(id, recipes().kinds[crate::estree::tag(base)], base) {
+			w.end();
+		}
+	}
+
+	fn extras(&self, w: &mut Writer<Self>, id: NodeId) {
+		let recipes = recipes();
+		let extras = self.extras_of(id);
+		let base = &extras as *const Extras as *const u8;
+		if w.output.erase {
+			w.run(id, recipes.erased, base);
+			return;
+		}
+		let kind = w.kind(id);
+		w.run(
+			id,
+			recipes.adds[crate::estree::tag(&kind as *const NodeKind as *const u8)],
+			base,
+		);
+		w.run(id, recipes.extras, base);
 	}
 }
