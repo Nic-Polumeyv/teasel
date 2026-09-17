@@ -397,7 +397,7 @@ impl Scopes {
 	}
 
 	/// The per-node tables a front end reads in place, in the order `no_views` names them.
-	pub fn views<'a>(&'a mut self, out: &mut Views<'a>) {
+	pub fn views(&mut self, out: &mut Views<'_>) {
 		out.push("of_node", &mut self.of_node.0);
 		out.push("of_identifier", &mut self.of_identifier.0);
 		out.push("root_of", &mut self.root_of.0);

@@ -11,7 +11,7 @@ import { decode } from '../dist/lib/decode.js';
 import { load } from '../dist/lib/addon.js';
 
 const addon = load();
-const engine = { constants: addon.constants, shapes: addon.shapes, layout: addon.layout };
+const engine = { constants: addon.constants, shapes: addon.shapes, layout: addon.layout, tree: () => addon.tree()! };
 const binary = new URL('../../target/release/teasel', import.meta.url).pathname;
 const files: string[] = [];
 function walk(dir: string) {
@@ -72,7 +72,7 @@ function mode(source: string, options: Options, entry: Entry, at: number) {
 const jobs: { name: string; source: string; mode: string; tree: string }[] = [];
 function json(name: string, source: string, options: Options, entry: Entry, at: number) {
 	const answer = addon.parse(addon.create(Buffer.from(source), flags(options) | ARENA, ''), ENTRY[entry], at, undefined, '');
-	const tree = typeof answer === 'string' ? answer : JSON.stringify(decode(answer, source, engine, false, addon.tree()));
+	const tree = typeof answer === 'string' ? answer : JSON.stringify(decode(answer, source, engine, false, true));
 	jobs.push({ name, source, mode: mode(source, options, entry, at), tree });
 }
 

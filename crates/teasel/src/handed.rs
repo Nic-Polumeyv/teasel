@@ -165,6 +165,17 @@ pub enum Element {
 /// is freed with `free`.
 pub trait Raw {
 	fn element(&self) -> Element;
+	/// The length in the elements a front end reads, a record being its words.
+	fn elements(&self) -> usize {
+		self.len_bytes()
+			/ match self.element() {
+				Element::U8 => 1,
+				Element::U32 => 4,
+				Element::F64 => 8,
+			}
+	}
+	/// Whether the allocation is the buffer's own: no caller holds it.
+	fn owned(&self) -> bool;
 	fn as_ptr(&self) -> *const u8;
 	fn len_bytes(&self) -> usize;
 	fn capacity_bytes(&self) -> usize;
@@ -186,6 +197,10 @@ impl<T: Copy + 'static> Raw for Handed<T> {
 			const { assert!(size_of::<T>().is_multiple_of(4) || size_of::<T>() == 1) };
 			Element::U32
 		}
+	}
+
+	fn owned(&self) -> bool {
+		self.owned
 	}
 
 	fn as_ptr(&self) -> *const u8 {
@@ -218,16 +233,16 @@ pub unsafe fn free(ptr: *mut u8, bytes: usize, align: usize) {
 	}
 }
 
-/// The buffers of a tree a front end reads in place, by name; None for a table the parse did not
-/// fill.
-pub struct Views<'a>(pub Vec<(&'static str, Option<&'a mut dyn Raw>)>);
+/// Visits the buffers of a tree a front end reads in place, by name; None for a table the parse
+/// did not fill.
+pub struct Views<'f>(pub &'f mut dyn FnMut(&'static str, Option<&mut dyn Raw>));
 
-impl<'a> Views<'a> {
-	pub fn push(&mut self, name: &'static str, buffer: &'a mut dyn Raw) {
-		self.0.push((name, Some(buffer)));
+impl Views<'_> {
+	pub fn push(&mut self, name: &'static str, buffer: &mut dyn Raw) {
+		(self.0)(name, Some(buffer));
 	}
 
 	pub fn none(&mut self, name: &'static str) {
-		self.0.push((name, None));
+		(self.0)(name, None);
 	}
 }

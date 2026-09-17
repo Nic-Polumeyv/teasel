@@ -125,7 +125,7 @@ impl<T: Copy + 'static> Slots<T> {
 		self.list.clear();
 	}
 
-	pub fn views<'a>(&'a mut self, name: &'static str, records: &'static str, out: &mut Views<'a>) {
+	pub fn views(&mut self, name: &'static str, records: &'static str, out: &mut Views<'_>) {
 		out.push(name, &mut self.slots);
 		out.push(records, &mut self.list);
 	}
@@ -326,7 +326,7 @@ pub trait Reuse: Default {
 	fn mark(&self) -> Self::Mark;
 	fn truncate(&mut self, mark: Self::Mark);
 	/// The extension's own buffers, after the tree's.
-	fn views<'a>(&'a mut self, _out: &mut Views<'a>) {}
+	fn views(&mut self, _out: &mut Views<'_>) {}
 }
 
 impl Reuse for () {
@@ -407,8 +407,7 @@ impl<X: Default> Ast<X> {
 
 impl<X: Reuse> Ast<X> {
 	/// The tree's buffers a front end reads in place, by the names `layout::json` lists.
-	pub fn views(&mut self) -> Views<'_> {
-		let mut out = Views(Vec::with_capacity(32));
+	pub fn views(&mut self, out: &mut Views<'_>) {
 		out.push("nodes", &mut self.nodes);
 		out.push("lists", &mut self.lists);
 		out.push("numbers", &mut self.numbers);
@@ -421,17 +420,16 @@ impl<X: Reuse> Ast<X> {
 		out.push("parenthesized", self.parenthesized.words());
 		out.push("erased", self.erased.words());
 		out.push("comments", &mut self.comment_words);
-		self.attached.views("attached_slots", "attached", &mut out);
+		self.attached.views("attached_slots", "attached", out);
 		out.push("hosts", &mut self.host_view);
 		out.push("host_keys", &mut self.host_keys);
 		out.push("host_vals", &mut self.host_vals);
 		out.push("host_strings", &mut self.host_strings);
 		match &mut self.scopes {
-			Some(scopes) => scopes.views(&mut out),
-			None => crate::scopes::Scopes::no_views(&mut out),
+			Some(scopes) => scopes.views(out),
+			None => crate::scopes::Scopes::no_views(out),
 		}
-		self.extension.views(&mut out);
-		out
+		self.extension.views(out);
 	}
 }
 

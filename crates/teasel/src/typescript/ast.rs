@@ -55,7 +55,7 @@ impl crate::ast::Reuse for Data {
 		self.extras.owners.truncate(extras);
 	}
 
-	fn views<'a>(&'a mut self, out: &mut Views<'a>) {
+	fn views(&mut self, out: &mut Views<'_>) {
 		out.push("ts", &mut self.nodes);
 		out.push("extras_slots", &mut self.extras.slots);
 		out.push("extras", &mut self.extras.list);

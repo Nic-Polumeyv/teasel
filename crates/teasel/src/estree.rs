@@ -57,6 +57,8 @@ pub trait Sink {
 	fn strings(&mut self, _interner: &Interner) {}
 	/// The front end has the interned strings: the sink's own are numbered after them.
 	fn strings_known(&mut self, _interner: &Interner) {}
+	/// What the front end reads the tree's views by: a word of what they are, then each one's length.
+	fn views(&mut self, _views: &[u32]) {}
 	fn begin(&mut self, ty: Name);
 	fn object(&mut self);
 	fn list(&mut self);
@@ -105,6 +107,9 @@ impl<S: Sink> Sink for &mut S {
 	}
 	fn strings_known(&mut self, interner: &Interner) {
 		(**self).strings_known(interner)
+	}
+	fn views(&mut self, views: &[u32]) {
+		(**self).views(views)
 	}
 	fn begin(&mut self, ty: Name) {
 		(**self).begin(ty)
@@ -440,6 +445,8 @@ pub struct Binary {
 	units: u32,
 	/// Strings the front end already has, numbered before the sink's own.
 	known: u32,
+	/// What goes behind the floats for a front end reading the tree in place.
+	views: Vec<u32>,
 	ends: Vec<u32>,
 	floats: Vec<f64>,
 	frames: Vec<Frame>,
@@ -473,6 +480,7 @@ impl Binary {
 			text: Vec::new(),
 			units: 0,
 			known: 0,
+			views: Vec::new(),
 			ends: Vec::new(),
 			floats: Vec::new(),
 			frames: Vec::new(),
@@ -512,6 +520,7 @@ impl Binary {
 		self.text.clear();
 		self.units = 0;
 		self.known = 0;
+		self.views.clear();
 		self.ends.clear();
 		self.floats.clear();
 		self.frames.clear();
@@ -575,6 +584,7 @@ impl Binary {
 			let bits = float.to_bits();
 			self.words.extend_from_slice(&[bits as u32, (bits >> 32) as u32]);
 		}
+		self.words.extend_from_slice(&self.views);
 	}
 }
 
@@ -591,6 +601,10 @@ impl Sink for Binary {
 
 	fn strings_known(&mut self, interner: &Interner) {
 		self.known = interner.len() as u32;
+	}
+
+	fn views(&mut self, views: &[u32]) {
+		self.views.extend_from_slice(views);
 	}
 
 	fn begin(&mut self, ty: Name) {
@@ -719,32 +733,6 @@ pub fn answer<X: Emit, S: Sink>(
 ) -> S {
 	let mut w = Writer::new(ast, source, positions, sink);
 	w.output = output;
-	if output.arena {
-		w.sink.strings_known(&ast.strings);
-		w.sink.object();
-		w.key(c!("node"));
-		let roots: Vec<u32> = ast.list(roots).iter().map(|root| root.unwrap().index()).collect();
-		w.sink.ints(&roots);
-		w.key(c!("end"));
-		let end = w.positions.offset(&mut w.cursor, end);
-		w.sink.int(end);
-		// what the front end builds by: every comment listed, TypeScript erased, lines, the roots a list
-		w.key(c!("output"));
-		w.sink.int(
-			output.comments as u32
-				| (output.erase as u32) << 1
-				| (positions.lines as u32) << 2
-				| ((entry == Entry::Params) as u32) << 3,
-		);
-		if output.errors {
-			w.errors();
-		}
-		if output.scopes {
-			w.all_scopes();
-		}
-		w.sink.end();
-		return w.sink;
-	}
 	w.sink.strings(&ast.strings);
 	w.sink.object();
 	if entry == Entry::Params {
@@ -756,6 +744,54 @@ pub fn answer<X: Emit, S: Sink>(
 	let end = w.positions.offset(&mut w.cursor, end);
 	w.sink.int(end);
 	w.trailers();
+	w.sink.end();
+	w.sink
+}
+
+/// The answer a front end reading the tree in place gets: the roots by number, each view's
+/// length behind whether the views have to be taken anew, `end`, the errors and the tables.
+#[allow(clippy::too_many_arguments)]
+pub fn answer_in_place<X: Emit, S: Sink>(
+	ast: &Ast<X>,
+	entry: Entry,
+	roots: List,
+	end: u32,
+	views: &[u32],
+	source: &str,
+	positions: &Positions,
+	output: Output,
+	sink: S,
+) -> S {
+	let mut w = Writer::new(ast, source, positions, sink);
+	w.output = output;
+	w.sink.strings_known(&ast.strings);
+	w.sink.object();
+	w.key(c!("node"));
+	match ast.list(roots) {
+		[Some(root)] => w.sink.ints(&[root.index()]),
+		roots => {
+			let roots: Vec<u32> = roots.iter().map(|root| root.unwrap().index()).collect();
+			w.sink.ints(&roots);
+		}
+	}
+	w.key(c!("end"));
+	let end = w.positions.offset(&mut w.cursor, end);
+	w.sink.int(end);
+	w.sink.views(views);
+	// what the front end builds by: every comment listed, TypeScript erased, lines, the roots a list
+	w.key(c!("output"));
+	w.sink.int(
+		output.comments as u32
+			| (output.erase as u32) << 1
+			| (positions.lines as u32) << 2
+			| ((entry == Entry::Params) as u32) << 3,
+	);
+	if output.errors {
+		w.errors();
+	}
+	if output.scopes {
+		w.all_scopes();
+	}
 	w.sink.end();
 	w.sink
 }

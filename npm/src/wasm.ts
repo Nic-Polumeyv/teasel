@@ -83,6 +83,7 @@ function answer(status: number) {
 }
 
 let elements: { js: [string, string][]; ts: [string, string][] } | undefined;
+const trees: ({ buffer: ArrayBuffer; at: Uint32Array; views: (Uint32Array | Float64Array | Uint8Array | number | undefined)[] } | undefined)[] = [undefined, undefined];
 let layout_text: string | undefined;
 // read once, before any view of the tree: writing it can grow the memory and detach them
 function layout() {
@@ -112,22 +113,23 @@ export const engine: Engine = {
 	constants: () => constants,
 	shapes: () => shapes,
 	layout,
-	// the tree sits in the module's memory until the next parse
-	tree(): Tree | undefined {
+	// the tree sits in the module's memory until the next parse: a view is made anew when its buffer moved or the memory grew
+	tree(typescript) {
 		elements ??= JSON.parse(layout()).views;
 		const { buffer } = wasm.memory;
 		const at = new Uint32Array(buffer, tree_at, 65);
-		if (at[0] === 0) return undefined;
-		const kinds = (at[0] & 1) === 1 ? elements!.ts : elements!.js;
-		const tree: (Uint32Array | Float64Array | Uint8Array | number | undefined)[] = [at[0] & 1];
+		const kinds = typescript ? elements!.ts : elements!.js;
+		const held = (trees[+typescript] ??= { buffer, at: new Uint32Array(65), views: [+typescript] });
+		const same = held.buffer === buffer;
+		held.buffer = buffer;
 		for (let i = 0; i < at[0] >> 1; i++) {
-			const [ptr, bytes] = [at[1 + 2 * i], at[2 + 2 * i]];
-			if (ptr === 0) tree.push(undefined, 0);
-			else if (kinds[i][1] === 'f64') tree.push(new Float64Array(buffer, ptr, bytes >> 3), bytes >> 3);
-			else if (kinds[i][1] === 'u8') tree.push(new Uint8Array(buffer, ptr, bytes), bytes);
-			else tree.push(new Uint32Array(buffer, ptr, bytes >> 2), bytes >> 2);
+			const ptr = at[1 + 2 * i], bytes = at[2 + 2 * i];
+			if (same && held.at[1 + 2 * i] === ptr && held.at[2 + 2 * i] === bytes) continue;
+			held.at[1 + 2 * i] = ptr;
+			held.at[2 + 2 * i] = bytes;
+			held.views[1 + i] = ptr === 0 ? undefined : kinds[i][1] === 'f64' ? new Float64Array(buffer, ptr, bytes >> 3) : kinds[i][1] === 'u8' ? new Uint8Array(buffer, ptr, bytes) : new Uint32Array(buffer, ptr, bytes >> 2);
 		}
-		return tree;
+		return held.views;
 	},
 };
 

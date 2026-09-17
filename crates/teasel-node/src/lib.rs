@@ -11,10 +11,9 @@ use teasel::Entry;
 use teasel::handed::{Element, Raw};
 use teasel::json::{Prepared, Request};
 
-/// The views JavaScript holds: the words, then the buffers of the JavaScript tree and of the
-/// TypeScript one.
-const TREE_VIEWS: usize = 32;
-const VIEWS: usize = 1 + 2 * TREE_VIEWS;
+/// What JavaScript holds: the view of the words, then the views of the JavaScript tree and of
+/// the TypeScript one, each an array.
+const VIEWS: usize = 3;
 
 thread_local! {
 	static VIEW: Cell<(Env, [Ref; VIEWS])> = const { Cell::new((std::ptr::null_mut(), [std::ptr::null_mut(); VIEWS])) };
@@ -189,37 +188,57 @@ unsafe extern "C" fn parse(env: Env, info: CallbackInfo) -> Value {
 	})
 }
 
-// whether the tree of the last parse is the TypeScript one, then each of its views followed by
-// its length in elements, undefined for a table the parse did not fill; undefined before any
+// the views of the last parse's tree, in the layout's order, `undefined` for a table the parse did not
+// fill, its first element whether the tree is the TypeScript one; undefined before any. The array is kept: a call
+// sets the views whose buffers moved since the last, and the answer's words say when one has
 unsafe extern "C" fn tree(env: Env, _: CallbackInfo) -> Value {
 	guard(env, || {
-		teasel::json::tree(|tree| {
-			let Some((typescript, views)) = tree else {
-				return undefined(env);
-			};
-			assert!(views.0.len() <= TREE_VIEWS);
-			let mut array = std::ptr::null_mut();
+		fresh(env);
+		let mut moved: Vec<(u32, *mut u8, usize, usize, i32)> = Vec::new();
+		let mut count = 0;
+		let typescript = teasel::json::tree(&mut |_, buffer| {
+			count += 1;
+			if let Some(buffer) = buffer
+				&& let Some((ptr, bytes, align)) = buffer.release()
+			{
+				moved.push((count, ptr, bytes, align, kind_of(buffer.element())));
+			}
+		});
+		let Some(typescript) = typescript else {
+			return undefined(env);
+		};
+		let slot = 1 + typescript as usize;
+		let (_, mut refs) = VIEW.get();
+		let mut array = std::ptr::null_mut();
+		if refs[slot].is_null() {
 			check(
-				unsafe { node_api::napi_create_array_with_length(env, 1 + 2 * views.0.len(), &mut array) },
+				unsafe { node_api::napi_create_array_with_length(env, 1 + count as usize, &mut array) },
 				"an array",
 			)?;
-			let set = |i: usize, value: Value| {
-				check(
-					unsafe { node_api::napi_set_element(env, array, i as u32, value) },
-					"an element",
-				)
-			};
-			set(0, uint32(env, typescript as u32)?)?;
-			let first = 1 + typescript as usize * TREE_VIEWS;
-			for (i, (_, buffer)) in views.0.into_iter().enumerate() {
-				let Some(buffer) = buffer else { continue };
-				let kind = kind_of(buffer.element());
-				let len = buffer.len_bytes() / node_api::element_size(kind);
-				set(1 + 2 * i, view_of(env, first + i, buffer, kind)?)?;
-				set(2 + 2 * i, uint32(env, len as u32)?)?;
-			}
-			Ok(array)
-		})
+			check(
+				unsafe { node_api::napi_set_element(env, array, 0, uint32(env, typescript as u32)?) },
+				"an element",
+			)?;
+			check(
+				unsafe { node_api::napi_create_reference(env, array, 1, &mut refs[slot]) },
+				"keeping the views",
+			)?;
+			VIEW.set((env, refs));
+		} else {
+			check(
+				unsafe { node_api::napi_get_reference_value(env, refs[slot], &mut array) },
+				"the views",
+			)?;
+		}
+		// the view owns the buffer's allocation and frees it when JavaScript lets the view go: the array
+		// lets go of the view of a buffer that moved
+		for (i, ptr, bytes, align, kind) in moved {
+			check(
+				unsafe { node_api::napi_set_element(env, array, i, external_view(env, ptr, bytes, align, kind)?) },
+				"an element",
+			)?;
+		}
+		Ok(array)
 	})
 }
 
@@ -310,6 +329,31 @@ unsafe extern "C" fn release(_: Env, data: *mut c_void, hint: *mut c_void) {
 	unsafe { teasel::handed::free(data.cast(), hint.addr() >> 4, 1 << (hint.addr() & 15)) };
 }
 
+fn external_view(env: Env, ptr: *mut u8, bytes: usize, align: usize, kind: i32) -> Result<Value> {
+	let mut array = std::ptr::null_mut();
+	check(
+		unsafe {
+			node_api::napi_create_external_arraybuffer(
+				env,
+				ptr.cast(),
+				bytes,
+				Some(release),
+				std::ptr::without_provenance_mut(bytes << 4 | align.trailing_zeros() as usize),
+				&mut array,
+			)
+		},
+		"the view's buffer",
+	)?;
+	let mut value = std::ptr::null_mut();
+	check(
+		unsafe {
+			node_api::napi_create_typedarray(env, kind, bytes / node_api::element_size(kind), array, 0, &mut value)
+		},
+		"the view",
+	)?;
+	Ok(value)
+}
+
 // the view owns the buffer's allocation and frees it when JavaScript lets the view go; a buffer
 // that outgrew its allocation gets a new view, and the old one stays with what it showed
 fn view_of(env: Env, slot: usize, buffer: &mut dyn Raw, kind: i32) -> Result<Value> {
@@ -321,25 +365,7 @@ fn view_of(env: Env, slot: usize, buffer: &mut dyn Raw, kind: i32) -> Result<Val
 			VIEW.set((env, refs));
 			check(unsafe { node_api::napi_delete_reference(env, old) }, "the old view")?;
 		}
-		let elements = bytes / node_api::element_size(kind);
-		let mut array = std::ptr::null_mut();
-		check(
-			unsafe {
-				node_api::napi_create_external_arraybuffer(
-					env,
-					ptr.cast(),
-					bytes,
-					Some(release),
-					std::ptr::without_provenance_mut(bytes << 4 | align.trailing_zeros() as usize),
-					&mut array,
-				)
-			},
-			"the view's buffer",
-		)?;
-		check(
-			unsafe { node_api::napi_create_typedarray(env, kind, elements, array, 0, &mut value) },
-			"the view",
-		)?;
+		value = external_view(env, ptr, bytes, align, kind)?;
 		let mut reference = std::ptr::null_mut();
 		check(
 			unsafe { node_api::napi_create_reference(env, value, 1, &mut reference) },

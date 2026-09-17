@@ -353,10 +353,6 @@ export type { Tree };
 /** What parses: the addon or the WebAssembly module, each bound to a `Source` class of its own. */
 export interface Engine extends Tables {
 	readonly create: (source: string, flags: number, host: string) => Prepared;
-	/** The tree of the last parse on this thread, until the next parse; undefined before any. */
-	readonly tree: () => Tree | undefined;
-	/** The tree's memory layout, the names of its views and the recipes, as JSON. */
-	readonly layout: () => string;
 }
 
 const registry = typeof FinalizationRegistry === 'undefined' ? null : new FinalizationRegistry<Prepared>((held) => held.free());
@@ -391,7 +387,7 @@ export class Source<Root = Program> {
 		const index = ENTRY[entry];
 		const stop = stops(stopAt);
 		const answer = this.#options.host !== undefined && index === ENTRY.program ? this.#held.parse(index, 0, undefined, '') : this.#held.parse(index, offset, end, stop);
-		if (typeof answer !== 'string') return decode(answer, this.#source, this.#engine, true, this.#arena ? this.#engine.tree() : undefined) as Parsed<any>;
+		if (typeof answer !== 'string') return decode(answer, this.#source, this.#engine, true, this.#arena) as Parsed<any>;
 		const { message, ...error } = JSON.parse(answer).error;
 		throw Object.assign(new SyntaxError(message), error);
 	}

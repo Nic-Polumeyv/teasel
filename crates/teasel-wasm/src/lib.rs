@@ -136,22 +136,22 @@ fn text(json: String) {
 	});
 }
 
-// the count of views plus one for the TypeScript tree's, then each view's address and bytes; zero before any parse
+// the count of views plus one for the TypeScript tree's, then each view's address and its room in bytes; zero before any parse
 #[unsafe(no_mangle)]
 pub extern "C" fn tree() -> *const u32 {
-	teasel::json::tree(|tree| {
-		let mut out = [0u32; 65];
-		if let Some((typescript, views)) = tree {
-			out[0] = (views.0.len() as u32) << 1 | typescript as u32;
-			for (i, (_, buffer)) in views.0.iter().enumerate() {
-				if let Some(buffer) = buffer {
-					out[1 + 2 * i] = buffer.as_ptr() as u32;
-					out[2 + 2 * i] = buffer.len_bytes() as u32;
-				}
-			}
+	let mut out = [0u32; 65];
+	let mut count = 0;
+	let typescript = teasel::json::tree(&mut |_, buffer| {
+		if let Some(buffer) = buffer {
+			out[1 + 2 * count] = buffer.as_ptr() as u32;
+			out[2 + 2 * count] = buffer.capacity_bytes() as u32;
 		}
-		TREE.set(out);
+		count += 1;
 	});
+	if let Some(typescript) = typescript {
+		out[0] = (count as u32) << 1 | typescript as u32;
+	}
+	TREE.set(out);
 	TREE.with(|t| t.as_ptr() as *const u32)
 }
 

@@ -7,8 +7,8 @@ use crate::Options;
 use crate::ast::{Ast, Reuse};
 use crate::comments::attach;
 use crate::error::Code;
-use crate::estree::{Binary, Emit, Json, Output, Positions, Sink, Words, answer, error_to_json};
-use crate::handed::{Element, Views};
+use crate::estree::{Binary, Emit, Json, Output, Positions, Sink, Words, answer, answer_in_place, error_to_json};
+use crate::handed::{Element, Raw, Views};
 use crate::host::{self, Grammar};
 use crate::parser::{Decorators, Entry, parse_at};
 use crate::scopes::{self, Bind};
@@ -270,17 +270,18 @@ pub fn words<R>(f: impl FnOnce(&mut Words) -> R) -> R {
 	SESSION.with(|session| f(session.borrow_mut().binary.words()))
 }
 
-/// The buffers of the last parse's tree on this thread, kept until the next parse takes it,
-/// by the names `layout_json` lists for the tree, and whether it is the TypeScript tree; None
-/// before any.
-pub fn tree<R>(f: impl FnOnce(Option<(bool, Views<'_>)>) -> R) -> R {
+/// Visits the buffers of the last parse's tree on this thread, kept until the next parse takes
+/// it, in the order `layout_json` names them; whether it is the TypeScript tree, None before any.
+pub fn tree(f: &mut dyn FnMut(&'static str, Option<&mut dyn Raw>)) -> Option<bool> {
 	SESSION.with(|session| {
 		let session = &mut *session.borrow_mut();
 		#[cfg(feature = "typescript")]
 		if session.typescript {
-			return f(session.pool.ts.as_deref_mut().map(|ast| (true, ast.views())));
+			session.pool.ts.as_deref_mut()?.views(&mut Views(f));
+			return Some(true);
 		}
-		f(session.pool.js.as_deref_mut().map(|ast| (false, ast.views())))
+		session.pool.js.as_deref_mut()?.views(&mut Views(f));
+		Some(false)
 	})
 }
 
@@ -288,20 +289,17 @@ pub fn tree<R>(f: impl FnOnce(Option<(bool, Views<'_>)>) -> R) -> R {
 pub fn renew_trees() {
 	SESSION.with(|session| {
 		let session = &mut *session.borrow_mut();
+		let mut renew = |_, buffer: Option<&mut dyn Raw>| {
+			if let Some(buffer) = buffer {
+				buffer.renew();
+			}
+		};
 		#[cfg(feature = "typescript")]
 		if let Some(ast) = session.pool.ts.as_deref_mut() {
-			ast.views()
-				.0
-				.into_iter()
-				.filter_map(|(_, buffer)| buffer)
-				.for_each(|buffer| buffer.renew());
+			ast.views(&mut Views(&mut renew));
 		}
 		if let Some(ast) = session.pool.js.as_deref_mut() {
-			ast.views()
-				.0
-				.into_iter()
-				.filter_map(|(_, buffer)| buffer)
-				.for_each(|buffer| buffer.renew());
+			ast.views(&mut Views(&mut renew));
 		}
 	})
 }
@@ -309,12 +307,11 @@ pub fn renew_trees() {
 /// The names of a tree's views in order, each with what its elements are read as; a table the
 /// parse may not fill is words.
 fn view_names<X: Reuse + Default>() -> Vec<(&'static str, Element)> {
-	let mut ast = Ast::<X>::default();
-	ast.views()
-		.0
-		.iter()
-		.map(|(name, buffer)| (*name, buffer.as_ref().map_or(Element::U32, |b| b.element())))
-		.collect()
+	let mut names = Vec::new();
+	Ast::<X>::default().views(&mut Views(&mut |name, buffer| {
+		names.push((name, buffer.map_or(Element::U32, |b| b.element())));
+	}));
+	names
 }
 
 /// The grammar of a text, read once per thread; the error names the line it stopped at.
@@ -596,7 +593,35 @@ where
 	}
 	let mut sink = sink;
 	prepare(&mut ast, positions, output, &mut sink);
-	let sink = answer(&ast, request.entry, roots, end, source, positions, output, sink);
+	// each view's length, behind whether a front end has to take the views anew, a buffer having
+	// moved, and whether the tree is the TypeScript one
+	let mut views = [0u32; 40];
+	views[0] = (request.typescript as u32) << 1;
+	let mut count = 1;
+	if output.arena {
+		ast.views(&mut Views(&mut |_, buffer| {
+			if let Some(buffer) = buffer {
+				views[count] = buffer.elements() as u32;
+				views[0] |= buffer.owned() as u32;
+			}
+			count += 1;
+		}));
+	}
+	let sink = if output.arena {
+		answer_in_place(
+			&ast,
+			request.entry,
+			roots,
+			end,
+			&views[..count],
+			source,
+			positions,
+			output,
+			sink,
+		)
+	} else {
+		answer(&ast, request.entry, roots, end, source, positions, output, sink)
+	};
 	Pooled::give(pool, ast);
 	Ok(sink)
 }
