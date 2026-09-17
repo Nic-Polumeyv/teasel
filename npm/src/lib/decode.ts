@@ -59,9 +59,11 @@ interface Op {
 }
 
 interface Language {
+	layout: Layout;
 	/** Each view's place in the tree, by name. */
 	at: At;
-	recipes: Op[][];
+	/** By a kind's tag, resolved the first time the kind is met. */
+	recipes: (Op[] | undefined)[];
 	ts: Op[][];
 	adds: Op[][];
 	extras: Op[];
@@ -75,6 +77,8 @@ interface Language {
 	/** The state of the last answer read from `tree`, kept for the next. */
 	state: State | undefined;
 	tree: Tree | undefined;
+	/** Where the tree's buffers sat when the state was taken, as the answer folds it. */
+	sat: [number, number];
 }
 
 type Builder = (S: State, id: number, record: number) => Decoded;
@@ -106,9 +110,10 @@ interface Compiled {
 	name: number;
 	/** An extras record with nothing set. */
 	blank: Uint32Array;
-	/** Each table's row builders, plain and linked, and its record's words. */
-	rows: { scopes: Rows; bindings: Rows; references: Rows; roots: Rows };
+	/** Each table's row builders, plain and linked, and its record's words; made on the first answer with scopes. */
+	rows: { scopes: Rows; bindings: Rows; references: Rows; roots: Rows } | undefined;
 	js: Language;
+	/** Made on the first TypeScript answer. */
 	ts: Language | undefined;
 }
 
@@ -180,14 +185,16 @@ interface At {
 	name_starts: number;
 	rare: number;
 	late: number;
+	/** Past the last view's length in the answer's words: where the tree's buffers sit, folded into two. */
+	sits: number;
 }
 
 function language(layout: Layout, views: string[], typescript: boolean): Language {
 	const by = (recipes: RawRecipes, kinds: Kind[]) => kinds.map((kind) => resolve(recipes.find(([name]) => name === kind.name)?.[1] ?? [], kind.fields));
 	// a literal: an object filled by computed keys turns into a dictionary, a hash lookup per read
 	const of = (name: string) => 1 + views.indexOf(name);
-	const at: At = { nodes: of('nodes'), lists: of('lists'), numbers: of('numbers'), text: of('text'), starts: of('starts'), units: of('units'), spans: of('spans'), locs: of('locs'), parenthesized: of('parenthesized'), erased: of('erased'), comments: of('comments'), attached_slots: of('attached_slots'), attached: of('attached'), errors: of('errors'), hosts: of('hosts'), host_keys: of('host_keys'), host_vals: of('host_vals'), host_strings: of('host_strings'), scopes: of('scopes'), bindings: of('bindings'), references: of('references'), roots: of('roots'), of_node: of('of_node'), of_identifier: of('of_identifier'), root_of: of('root_of'), declared_by: of('declared_by'), declared_by_at: of('declared_by_at'), writes_of: of('writes_of'), writes_of_at: of('writes_of_at'), ts: of('ts'), extras_slots: of('extras_slots'), extras: of('extras'), names: of('names'), name_starts: of('name_starts'), rare: of('rare'), late: of('late') };
-	const out: Language = { at, recipes: by(layout.recipes.js, layout.kinds), ts: [], adds: [], extras: [], erased: [], sets: new Map(), last: -1, builders: undefined, names: [], state: undefined, tree: undefined };
+	const at: At = { nodes: of('nodes'), lists: of('lists'), numbers: of('numbers'), text: of('text'), starts: of('starts'), units: of('units'), spans: of('spans'), locs: of('locs'), parenthesized: of('parenthesized'), erased: of('erased'), comments: of('comments'), attached_slots: of('attached_slots'), attached: of('attached'), errors: of('errors'), hosts: of('hosts'), host_keys: of('host_keys'), host_vals: of('host_vals'), host_strings: of('host_strings'), scopes: of('scopes'), bindings: of('bindings'), references: of('references'), roots: of('roots'), of_node: of('of_node'), of_identifier: of('of_identifier'), root_of: of('root_of'), declared_by: of('declared_by'), declared_by_at: of('declared_by_at'), writes_of: of('writes_of'), writes_of_at: of('writes_of_at'), ts: of('ts'), extras_slots: of('extras_slots'), extras: of('extras'), names: of('names'), name_starts: of('name_starts'), rare: of('rare'), late: of('late'), sits: 1 + views.length };
+	const out: Language = { layout, at, recipes: new Array<Op[] | undefined>(layout.kinds.length), ts: [], adds: [], extras: [], erased: [], sets: new Map(), last: -1, builders: undefined, names: [], state: undefined, tree: undefined, sat: [-1, -1] };
 	if (typescript) {
 		const extras = layout.extras!.fields;
 		out.ts = by(layout.recipes.ts!, layout.ts!.kinds);
@@ -197,6 +204,8 @@ function language(layout: Layout, views: string[], typescript: boolean): Languag
 	}
 	return out;
 }
+
+const recipe = (G: Language, tag: number): Op[] => (G.recipes[tag] ??= resolve(G.layout.recipes.js.find(([name]) => name === G.layout.kinds[tag].name)?.[1] ?? [], G.layout.kinds[tag].fields));
 
 const compiled = new WeakMap<object, Compiled>();
 
@@ -219,18 +228,24 @@ function compile(engine: Views): Compiled {
 		identifier: tag('Identifier'),
 		name: layout.kinds[tag('Identifier')].fields[0].at,
 		blank,
-		rows: undefined as unknown as Compiled['rows'],
+		rows: undefined,
 		js: language(layout, layout.views.js, false),
-		ts: layout.views.ts === undefined ? undefined : language(layout, layout.views.ts, true),
+		ts: undefined,
 	};
-	const rows = (name: string): Rows => {
-		const ops = resolve(layout.recipes.rows.find(([table]) => table === name)![1], layout.rows[name].fields);
-		return { plain: row(made, ops, undefined), linked: row(made, ops, LINKED[name]), words: layout.rows[name].size >> 2 };
-	};
-	made.rows = { scopes: rows('scopes'), bindings: rows('bindings'), references: rows('references'), roots: rows('roots') };
 	compiled.set(engine, made);
 	return made;
 }
+
+function tables(C: Compiled): NonNullable<Compiled['rows']> {
+	const { layout } = C;
+	const rows = (name: string): Rows => {
+		const ops = resolve(layout.recipes.rows.find(([table]) => table === name)![1], layout.rows[name].fields);
+		return { plain: row(C, ops, undefined), linked: row(C, ops, LINKED[name]), words: layout.rows[name].size >> 2 };
+	};
+	return (C.rows = { scopes: rows('scopes'), bindings: rows('bindings'), references: rows('references'), roots: rows('roots') });
+}
+
+
 
 interface State {
 	source: string;
@@ -948,7 +963,6 @@ function builders(C: Compiled, G: Language, config: number, typescript: boolean)
 	const set: Builders = (B = { js: [], ts: [], hosts: [] });
 	const lazy = (list: Builder[], tag: number, make: () => Builder): Builder => (S, id, record) => (list[tag] = make())(S, id, record);
 	C.layout.kinds.forEach((_, tag) => {
-		const ops = G.recipes[tag];
 		if (tag === C.extension) set.js.push((S, id) => { const record = S.N[id * C.words + (C.kind >> 2) + 1] * (C.layout.ts!.size >> 2); return set.ts[S.TS![record]](S, id, record); });
 		else if (tag === C.host && generated) {
 			set.js.push((S, id) => {
@@ -957,7 +971,13 @@ function builders(C: Compiled, G: Language, config: number, typescript: boolean)
 				return build === undefined ? host_by_shape(S, id, index, config) : build(S, id, index, S.hosts[index * 5 + 1]);
 			});
 		} else if (tag === C.host) set.js.push((S, id) => host(S, id, S.N[id * C.words + (C.kind >> 2) + 1]));
-		else set.js.push(lazy(set.js, tag, () => (generated ? generate(C, G, config, ops, false, typescript && (config & ERASE) === 0 && G.adds[tag].length !== 0) : (S, id) => run(S, id, ops, S.N, id * C.words * 4 + C.kind))));
+		else
+			set.js.push(
+				lazy(set.js, tag, () => {
+					const ops = recipe(G, tag);
+					return generated ? generate(C, G, config, ops, false, typescript && (config & ERASE) === 0 && G.adds[tag].length !== 0) : (S, id) => run(S, id, ops, S.N, id * C.words * 4 + C.kind);
+				}),
+			);
 	});
 	G.ts.forEach((ops, tag) => set.ts.push(lazy(set.ts, tag, () => (generated ? generate(C, G, config, ops, true, false) : (S, id, record) => run(S, id, ops, S.TS!, record * 4)))));
 	G.sets.set(config, set);
@@ -970,28 +990,31 @@ function comments(S: State): Decoded[] {
 	return out;
 }
 
-// the names the engine has numbered since the last answer; a table that shrank started over, and the shapes found by its numbers with it
-function names(G: Language, tree: Tree, count: number): string[] {
-	if (count === G.names.length || count < 0) return G.names;
-	if (count < G.names.length) {
+// the names the engine has numbered since the last answer. Once the tree moved, the names known
+// must still head the table, or an engine that started over numbered them anew, and the shapes
+// found by those numbers with them
+function names(G: Language, tree: Tree, count: number, moved: boolean): string[] {
+	if (!moved && count === G.names.length) return G.names;
+	const text = tree[G.at.names] as Uint8Array, starts = tree[G.at.name_starts] as Uint32Array;
+	const name = (i: number) => utf8.decode(text.subarray(starts[i], starts[i + 1]));
+	if (moved && (count < G.names.length || G.names.some((known, i) => known !== name(i)))) {
 		G.names = [];
 		for (const set of G.sets.values()) set.hosts.length = 0;
 	}
-	const text = tree[G.at.names] as Uint8Array, starts = tree[G.at.name_starts] as Uint32Array;
-	for (let i = G.names.length; i < count; i++) G.names.push(utf8.decode(text.subarray(starts[i], starts[i + 1])));
+	for (let i = G.names.length; i < count; i++) G.names.push(name(i));
 	return G.names;
 }
 
 const filled = (tree: Tree, words: Uint32Array, lens: number, at: number) => (words[lens + at] === 0 ? null : (tree[at] as Uint32Array).subarray(0, words[lens + at]));
 
-// what `words[lens]` says of an answer; each view's length follows it
-const MOVED = 1, TYPESCRIPT = 2, COMMENTS = 4, ERASED = 8, LINED = 16, LISTED = 32, RECOVERED = 64;
+// what `words[lens]` says of an answer; each view's length follows it, then where the tree's buffers sit
+const TYPESCRIPT = 2, COMMENTS = 4, ERASED = 8, LINED = 16, LISTED = 32, RECOVERED = 64;
 
 /** What parses, as the reader sees it. */
 export interface Views {
 	/** The tree's memory layout, the names of its views and the recipes, as JSON. */
 	readonly layout: () => string;
-	/** The views of the last parse's tree, JavaScript's or TypeScript's; `moved` when a buffer of it has since the last answer. The same array as long as no view in it changed, `moved` aside. */
+	/** The views of the last parse's tree, JavaScript's or TypeScript's; `moved` when a buffer of it has since this reader last took them. The same array as long as no view in it changed, `moved` aside. */
 	readonly tree: (typescript: boolean, moved: boolean) => Tree;
 }
 
@@ -1052,17 +1075,21 @@ export function decode(words: Uint32Array, source: string, engine: Views, link =
 	const lens = 2 + words[1];
 	const what = words[lens];
 	const typescript = (what & TYPESCRIPT) !== 0;
-	const tree = engine.tree(typescript, (what & MOVED) !== 0);
-	const erase = (what & ERASED) !== 0, lines = (what & LINED) !== 0, listed = (what & LISTED) !== 0;
-	const G = typescript ? C.ts! : C.js;
+	const G = typescript ? (C.ts ??= language(C.layout, C.layout.views.ts!, true)) : C.js;
 	const at = G.at;
+	const lo = words[lens + at.sits], hi = words[lens + at.sits + 1];
+	const moved = lo !== G.sat[0] || hi !== G.sat[1];
+	G.sat[0] = lo;
+	G.sat[1] = hi;
+	const tree = engine.tree(typescript, moved);
+	const erase = (what & ERASED) !== 0, lines = (what & LINED) !== 0, listed = (what & LISTED) !== 0;
 	const spans = words[lens + at.spans] !== 0;
 	const scoped = words[lens + at.scopes] !== 0;
 	const config = (link ? LINK : 0) | (lines ? LINES : 0) | (scoped ? FACTS : 0) | (erase ? ERASE : 0);
 	const B = G.last === config ? G.builders! : builders(C, G, config, typescript);
 	// the state stays with the tree's views, one answer at a time: only what an answer changes is set
 	let S = G.state;
-	if (S === undefined || (what & MOVED) !== 0 || G.tree !== tree) {
+	if (S === undefined || moved || G.tree !== tree) {
 		G.tree = tree;
 		S = G.state = {
 			source,
@@ -1120,7 +1147,7 @@ export function decode(words: Uint32Array, source: string, engine: Views, link =
 	S.lines = lines;
 	S.J = B.js;
 	S.H = B.hosts;
-	S.names = names(G, tree, words[lens + at.name_starts] - 1);
+	S.names = names(G, tree, words[lens + at.name_starts] - 1, moved);
 	S.strings = strings(tree, words, lens, at);
 	S.P = spans ? (tree[at.spans] as Uint32Array) : S.N;
 	S.ps = spans ? 2 : C.words;
@@ -1136,10 +1163,11 @@ export function decode(words: Uint32Array, source: string, engine: Views, link =
 	S.adopted.length = 0;
 	S.kept.length = 0;
 	if (scoped) {
-		S.scopes = table(S, tree, words, lens, C.rows.scopes, at.scopes);
-		S.bindings = table(S, tree, words, lens, C.rows.bindings, at.bindings);
-		S.references = table(S, tree, words, lens, C.rows.references, at.references);
-		S.roots = table(S, tree, words, lens, C.rows.roots, at.roots);
+		const rows = C.rows ?? tables(C);
+		S.scopes = table(S, tree, words, lens, rows.scopes, at.scopes);
+		S.bindings = table(S, tree, words, lens, rows.bindings, at.bindings);
+		S.references = table(S, tree, words, lens, rows.references, at.references);
+		S.roots = table(S, tree, words, lens, rows.roots, at.roots);
 		if (link) link_tables(S);
 	}
 	let node: Decoded | Decoded[];

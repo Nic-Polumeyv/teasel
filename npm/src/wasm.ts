@@ -1,4 +1,4 @@
-import type { Engine, Tree } from './lib/decode.js';
+import type { Engine } from './lib/decode.js';
 
 const encoder = new TextEncoder();
 const utf8 = new TextDecoder();

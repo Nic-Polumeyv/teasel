@@ -393,7 +393,7 @@ thread_local! {
 	static GRAMMARS: std::cell::RefCell<Vec<(String, Rc<Grammar>)>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
-/// The words of the last binary answer on this thread, where they were written.
+/// The words of the last answer read in place on this thread, where they were written.
 pub fn words<R>(f: impl FnOnce(&mut Words) -> R) -> R {
 	SESSION.with(|session| f(&mut session.borrow_mut().words))
 }
@@ -461,9 +461,6 @@ pub struct Pool {
 	/// The names of the hosts' types and keys, numbered once for every answer of the JavaScript
 	/// tree and of the TypeScript one.
 	names: [Names; 2],
-	/// Where the buffers of the JavaScript tree and of the TypeScript one sat, and with what room,
-	/// folded into a word each, when an answer last told a front end of them.
-	seen: [u64; 2],
 	js: Option<Box<Ast<()>>>,
 	#[cfg(feature = "typescript")]
 	ts: Option<Box<Ast<crate::typescript::ast::Data>>>,
@@ -783,13 +780,13 @@ where
 	};
 	let names = &mut pool.names[request.typescript as usize];
 	prepare(&mut ast, source, positions, output, names);
-	// `end`, the roots by number, a word of what the answer is, each view's length. A buffer moved
-	// since the last answer, the tree is TypeScript's, every comment is listed, TypeScript
-	// is erased, lines are on, the roots are a list, the errors recovered from are listed
+	// `end`, the roots by number, a word of what the answer is, each view's length, then where the
+	// tree's buffers sit folded into two words: a front end keeps its views while that holds. The
+	// tree is TypeScript's, every comment is listed, TypeScript is erased, lines are on, the roots
+	// are a list, the errors recovered from are listed
 	words.clear();
 	words.extend_from_slice(&[positions.offset(&mut crate::estree::Cursor::default(), end), roots.len]);
 	words.extend(ast.list(roots).iter().map(|root| root.unwrap().index()));
-	let what = words.len();
 	words.push(
 		(request.typescript as u32) << 1
 			| (output.comments as u32) << 2
@@ -808,9 +805,7 @@ where
 	};
 	ast.views(&mut Views(&mut note));
 	pool.names[request.typescript as usize].views(&mut Views(&mut note));
-	let seen = &mut pool.seen[request.typescript as usize];
-	words[what] |= (*seen != sits) as u32;
-	*seen = sits;
+	words.extend_from_slice(&[sits as u32, (sits >> 32) as u32]);
 	Pooled::give(pool, ast);
 	Ok(String::new())
 }
