@@ -4,10 +4,11 @@
 use std::rc::Rc;
 
 use crate::Options;
-use crate::ast::{Ast, Buffers, Reuse};
+use crate::ast::{Ast, Reuse};
 use crate::comments::attach;
 use crate::error::Code;
 use crate::estree::{Binary, Emit, Json, Output, Positions, Sink, Words, answer, error_to_json};
+use crate::handed::{Element, Views};
 use crate::host::{self, Grammar};
 use crate::parser::{Decorators, Entry, parse_at};
 use crate::scopes::{self, Bind};
@@ -132,9 +133,41 @@ pub fn error_json(message: &str, pos: u32) -> String {
 	out
 }
 
-/// The tree's layout as JSON; see `layout::json`.
+/// The tree's layout, the names of its views and the recipes, as JSON; see `layout::json`.
 pub fn layout_json() -> String {
-	crate::layout::json()
+	let mut out = crate::layout::json();
+	out.pop();
+	let names = |out: &mut String, names: Vec<(&str, Element)>| {
+		out.push('[');
+		for (i, (name, element)) in names.iter().enumerate() {
+			if i > 0 {
+				out.push(',');
+			}
+			let element = match element {
+				Element::U8 => "u8",
+				Element::U32 => "u32",
+				Element::F64 => "f64",
+			};
+			out.push_str(&format!("[\"{name}\",\"{element}\"]"));
+		}
+		out.push(']');
+	};
+	out.push_str(",\"views\":{\"js\":");
+	names(&mut out, view_names::<()>());
+	#[cfg(feature = "typescript")]
+	{
+		out.push_str(",\"ts\":");
+		names(&mut out, view_names::<crate::typescript::ast::Data>());
+	}
+	out.push_str("},\"recipes\":{\"js\":");
+	crate::recipe::json(&mut out, crate::recipe::JS);
+	#[cfg(feature = "typescript")]
+	{
+		out.push_str(",\"ts\":");
+		crate::recipe::json(&mut out, crate::typescript::estree::TS);
+	}
+	out.push_str("}}");
+	out
 }
 
 /// The constant strings this thread's writer has numbered so far.
@@ -227,17 +260,51 @@ pub fn words<R>(f: impl FnOnce(&mut Words) -> R) -> R {
 	SESSION.with(|session| f(session.borrow_mut().binary.words()))
 }
 
-/// The tree of the last parse on this thread, kept until the next parse takes it; None before
-/// any.
-pub fn tree<R>(f: impl FnOnce(Option<Buffers<'_>>) -> R) -> R {
+/// The buffers of the last parse's tree on this thread, kept until the next parse takes it,
+/// by the names `layout_json` lists for the tree, and whether it is the TypeScript tree; None
+/// before any.
+pub fn tree<R>(f: impl FnOnce(Option<(bool, Views<'_>)>) -> R) -> R {
 	SESSION.with(|session| {
 		let session = &mut *session.borrow_mut();
 		#[cfg(feature = "typescript")]
 		if session.typescript {
-			return f(session.pool.ts.as_deref_mut().map(Ast::buffers));
+			return f(session.pool.ts.as_deref_mut().map(|ast| (true, ast.views())));
 		}
-		f(session.pool.js.as_deref_mut().map(Ast::buffers))
+		f(session.pool.js.as_deref_mut().map(|ast| (false, ast.views())))
 	})
+}
+
+/// Every tree's buffers continue on fresh allocations: the views a front end held are its own.
+pub fn renew_trees() {
+	SESSION.with(|session| {
+		let session = &mut *session.borrow_mut();
+		#[cfg(feature = "typescript")]
+		if let Some(ast) = session.pool.ts.as_deref_mut() {
+			ast.views()
+				.0
+				.into_iter()
+				.filter_map(|(_, buffer)| buffer)
+				.for_each(|buffer| buffer.renew());
+		}
+		if let Some(ast) = session.pool.js.as_deref_mut() {
+			ast.views()
+				.0
+				.into_iter()
+				.filter_map(|(_, buffer)| buffer)
+				.for_each(|buffer| buffer.renew());
+		}
+	})
+}
+
+/// The names of a tree's views in order, each with what its elements are read as; a table the
+/// parse may not fill is words.
+fn view_names<X: Reuse + Default>() -> Vec<(&'static str, Element)> {
+	let mut ast = Ast::<X>::default();
+	ast.views()
+		.0
+		.iter()
+		.map(|(name, buffer)| (*name, buffer.as_ref().map_or(Element::U32, |b| b.element())))
+		.collect()
 }
 
 /// The grammar of a text, read once per thread; the error names the line it stopped at.
@@ -516,9 +583,61 @@ where
 			ast.errors.sort_by_key(|error| error.pos);
 		}
 	}
+	let mut sink = sink;
+	prepare(&mut ast, positions, output, &mut sink);
 	let sink = answer(&ast, request.entry, roots, end, source, positions, output, sink);
 	Pooled::give(pool, ast);
 	Ok(sink)
+}
+
+/// What a front end reading the tree in place needs beside it: every node's span and location
+/// as JavaScript counts them, the strings' UTF-16 starts, the nodes erasure leaves out, and the
+/// hosts' names by number.
+fn prepare<X: Emit + Reuse, S: Sink>(ast: &mut Ast<X>, positions: &Positions, output: Output, sink: &mut S) {
+	positions.map_nodes(&ast.nodes, &mut ast.spans, &mut ast.locs);
+	ast.units.clear();
+	let (text, starts) = ast.strings.buffers();
+	if !text.is_ascii() {
+		let mut units = 0u32;
+		let mut from = 0usize;
+		for &start in starts.iter() {
+			units += text[from..start as usize]
+				.iter()
+				.filter(|&&b| b & 0xc0 != 0x80)
+				.map(|&b| if b >= 0xf0 { 2 } else { 1 })
+				.sum::<u32>();
+			from = start as usize;
+			ast.units.push(units);
+		}
+	}
+	ast.erased.clear();
+	if output.erase {
+		for i in 0..ast.nodes.len() as u32 {
+			let id = crate::ast::NodeId::at(i);
+			if ast.extension.erased(ast, id) {
+				ast.erased.insert(id);
+			}
+		}
+	}
+	ast.host_view.clear();
+	ast.host_keys.clear();
+	ast.host_vals.clear();
+	for i in 0..ast.hosts.len() {
+		let host = ast.hosts[i];
+		let ty = if host.ty.is_empty() {
+			u32::MAX
+		} else {
+			sink.constant(crate::names::Name::dynamic(host.ty))
+		};
+		ast.host_view
+			.extend_from_slice(&[ty, host.fields.0, host.fields.1, host.span as u32]);
+	}
+	for i in 0..ast.host_fields.len() {
+		let (key, value) = ast.host_fields[i];
+		let key = sink.constant(crate::names::Name::dynamic(key));
+		ast.host_keys.push(key);
+		ast.host_vals.push(value.words());
+	}
 }
 
 /// The tree of a failed request goes back to the pool; the error is the answer.

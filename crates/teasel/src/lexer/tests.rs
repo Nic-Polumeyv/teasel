@@ -203,7 +203,7 @@ fn hashbang() {
 	let mut lexer = Lexer::new("#!/x\ny");
 	lexer.next_token().unwrap();
 	assert_eq!(
-		lexer.comments,
+		*lexer.comments,
 		[Comment {
 			kind: CommentKind::Hashbang,
 			start: 0,
@@ -468,7 +468,7 @@ fn comments_are_collected_and_skipped() {
 	assert!(is_ident(&b.kind));
 	assert!(b.newline_before);
 	assert_eq!(
-		lexer.comments,
+		*lexer.comments,
 		[
 			Comment {
 				kind: CommentKind::Line,

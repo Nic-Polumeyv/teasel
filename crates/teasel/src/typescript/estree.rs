@@ -1,7 +1,7 @@
 //! ESTree output for TypeScript nodes and the keys TypeScript adds to JavaScript nodes.
 
 use super::ast::{Data, Extras, Kind, TsKind};
-use crate::ast::{List, NodeId, NodeKind};
+use crate::ast::{Ast, List, NodeId, NodeKind};
 use crate::estree::{Emit, Sink, Writer};
 use crate::names::c;
 use crate::recipe::Op::{self, *};
@@ -74,11 +74,10 @@ fn ts_recipes() -> &'static [&'static [Op<Slot>]] {
 
 impl Data {
 	/// Whether every statement of a list erases to nothing.
-	fn all_erased<S: Sink>(&self, w: &Writer<Self, S>, list: List) -> bool {
-		w.ast()
-			.list(list)
+	fn all_erased(&self, ast: &Ast<Self>, list: List) -> bool {
+		ast.list(list)
 			.iter()
-			.all(|item| item.is_none_or(|id| self.erased(w, id)))
+			.all(|item| item.is_none_or(|id| self.erased(ast, id)))
 	}
 
 	fn extras_of(&self, id: NodeId) -> Extras {
@@ -90,17 +89,17 @@ impl Data {
 }
 
 impl Emit for Data {
-	fn erased<S: Sink>(&self, w: &Writer<Self, S>, id: NodeId) -> bool {
+	fn erased(&self, ast: &Ast<Self>, id: NodeId) -> bool {
 		use TsKind::*;
 		let extras = self.extras_of(id);
 		if extras.declare {
 			return true;
 		}
-		match w.kind(id) {
+		match ast.node(id).kind {
 			NodeKind::MethodDefinition { .. } | NodeKind::PropertyDefinition { .. } if extras.is_abstract => true,
 			// an overload signature: a method without a body
 			NodeKind::MethodDefinition { value, .. } => {
-				matches!(self.ts_of(w.ast(), value), Some(DeclareMethod { .. }))
+				matches!(self.ts_of(ast, value), Some(DeclareMethod { .. }))
 			}
 			NodeKind::Extension(index) => match self.kind(index) {
 				InterfaceDeclaration { .. }
@@ -110,14 +109,14 @@ impl Emit for Data {
 				| NamespaceExportDeclaration { .. } => true,
 				ImportEqualsDeclaration { import_kind, .. } => import_kind == Kind::Type,
 				ModuleDeclaration { body: None, .. } => true,
-				ModuleDeclaration { body: Some(block), .. } => match self.ts_of(w.ast(), block) {
-					Some(ModuleBlock { body }) => self.all_erased(w, body),
+				ModuleDeclaration { body: Some(block), .. } => match self.ts_of(ast, block) {
+					Some(ModuleBlock { body }) => self.all_erased(ast, body),
 					_ => false,
 				},
 				_ => false,
 			},
 			NodeKind::ImportDeclaration { specifiers, .. } => {
-				extras.import_kind == Some(Kind::Type) || (specifiers.len > 0 && self.all_erased(w, specifiers))
+				extras.import_kind == Some(Kind::Type) || (specifiers.len > 0 && self.all_erased(ast, specifiers))
 			}
 			NodeKind::ImportSpecifier { .. } => extras.import_kind == Some(Kind::Type),
 			NodeKind::ExportSpecifier { .. } | NodeKind::ExportAllDeclaration { .. } => {
@@ -125,11 +124,11 @@ impl Emit for Data {
 			}
 			// `export { type A }` keeps an `export {}`, as tsc keeps the file a module
 			NodeKind::ExportDeclaration { declaration } => {
-				extras.export_kind == Some(Kind::Type) || self.erased(w, declaration)
+				extras.export_kind == Some(Kind::Type) || self.erased(ast, declaration)
 			}
 			NodeKind::ExportNamedDeclaration { .. } => extras.export_kind == Some(Kind::Type),
 			NodeKind::ExportDefaultDeclaration { declaration } => {
-				extras.export_kind == Some(Kind::Type) || self.erased(w, declaration)
+				extras.export_kind == Some(Kind::Type) || self.erased(ast, declaration)
 			}
 			_ => false,
 		}

@@ -2,6 +2,7 @@
 //! JavaScript without a text round trip.
 
 use crate::ast::{Ast, List, NodeId, NodeKind, Value};
+use crate::handed::Handed;
 use crate::interner::{FastMap, Interner, StrId};
 use crate::layout::Ty;
 use crate::names::{NAMES, Name, c};
@@ -16,7 +17,7 @@ pub trait Emit: crate::ast::Walk {
 	fn node<S: Sink>(&self, w: &mut Writer<Self, S>, id: NodeId, index: u32);
 	fn extras<S: Sink>(&self, _w: &mut Writer<Self, S>, _id: NodeId) {}
 	/// Whether erasing leaves nothing of a node in a list: type-only declarations and imports.
-	fn erased<S: Sink>(&self, _w: &Writer<Self, S>, _id: NodeId) -> bool {
+	fn erased(&self, _ast: &Ast<Self>, _id: NodeId) -> bool {
 		false
 	}
 }
@@ -45,6 +46,10 @@ impl Emit for () {
 /// like a plain object or a list; offsets in `slice`, `span` and `loc` are UTF-16. Strings the
 /// writer names itself are constants; a string computed for one tree is text.
 pub trait Sink {
+	/// The number a name goes by in this sink; a front end reading names by number asks for it.
+	fn constant(&mut self, name: Name) -> u32 {
+		name.id
+	}
 	/// The tree's interned strings, before anything refers to them.
 	fn strings(&mut self, _interner: &Interner) {}
 	fn begin(&mut self, ty: Name);
@@ -87,6 +92,9 @@ pub trait Sink {
 }
 
 impl<S: Sink> Sink for &mut S {
+	fn constant(&mut self, name: Name) -> u32 {
+		(**self).constant(name)
+	}
 	fn strings(&mut self, interner: &Interner) {
 		(**self).strings(interner)
 	}
@@ -559,6 +567,10 @@ impl Binary {
 }
 
 impl Sink for Binary {
+	fn constant(&mut self, name: Name) -> u32 {
+		self.constants.id(name)
+	}
+
 	fn strings(&mut self, interner: &Interner) {
 		for i in 0..interner.len() {
 			self.push_text(interner.get(StrId::at(i as u32)));
@@ -832,6 +844,31 @@ impl Positions {
 		Ok(target + if i == 0 { 0 } else { self.gaps[i - 1].1 })
 	}
 
+	/// Every node's span as UTF-16 offsets into `spans`, when the source has gaps, and its lines
+	/// and columns into `locs`, when lines are on.
+	pub fn map_nodes(&self, nodes: &[crate::ast::Node], spans: &mut Handed<u32>, locs: &mut Handed<u32>) {
+		spans.clear();
+		locs.clear();
+		if self.gaps.is_empty() && !self.lines {
+			return;
+		}
+		let mut cursor = Cursor::default();
+		for node in nodes {
+			let (start, gap) = self.offset_from(cursor.gap, node.start);
+			cursor.gap = gap;
+			let (end, _) = self.offset_from(gap, node.end);
+			if !self.gaps.is_empty() {
+				spans.extend_from_slice(&[start, end]);
+			}
+			if self.lines {
+				let (sl, sc) = self.line_column(cursor.line, node.start, start);
+				cursor.line = sl;
+				let (el, ec) = self.line_column(sl, node.end, end);
+				locs.extend_from_slice(&[sl as u32, sc, el as u32, ec]);
+			}
+		}
+	}
+
 	fn offset(&self, cursor: &mut Cursor, byte: u32) -> u32 {
 		let (offset, gap) = self.offset_from(cursor.gap, byte);
 		cursor.gap = gap;
@@ -941,7 +978,7 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		}
 		let adopted = std::mem::take(&mut self.adopted);
 		for node in adopted.iter().copied().chain([id]) {
-			if let Some(&root) = scopes.root_of.get(node) {
+			if let Some(root) = scopes.root_of.get(node) {
 				self.key(c!("root"));
 				self.sink.int(root);
 			}
@@ -1165,10 +1202,6 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		self.ast.node(id).kind
 	}
 
-	pub(crate) fn ast(&self) -> &'a Ast<X> {
-		self.ast
-	}
-
 	/// The key only when there is a node; an unset property is left out.
 	pub(crate) fn opt_key(&mut self, key: Name, id: Option<NodeId>) {
 		if let Some(id) = id {
@@ -1189,7 +1222,7 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		self.sink.list();
 		let ast = self.ast;
 		for item in ast.list(list) {
-			if self.output.erase && item.is_some_and(|id| ast.extension.erased(self, id)) {
+			if self.output.erase && item.is_some_and(|id| ast.erased.contains(id)) {
 				continue;
 			}
 			match item {

@@ -1,7 +1,8 @@
-use crate::handed::Handed;
+use crate::handed::{Handed, Views};
 use crate::interner::{FastMap, Interner, StrId};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(C)]
 pub struct Comment {
 	pub kind: CommentKind,
 	pub start: u32,
@@ -9,6 +10,7 @@ pub struct Comment {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
 pub enum CommentKind {
 	Line,
 	Block,
@@ -52,7 +54,7 @@ impl NodeId {
 
 /// A bit per node.
 #[derive(Debug, Default)]
-pub struct NodeSet(Vec<u64>);
+pub struct NodeSet(Handed<u64>);
 
 impl NodeSet {
 	pub fn insert(&mut self, id: NodeId) {
@@ -61,6 +63,10 @@ impl NodeSet {
 			self.0.resize(index / 64 + 1, 0);
 		}
 		self.0[index / 64] |= 1 << (index % 64);
+	}
+
+	pub fn words(&mut self) -> &mut Handed<u64> {
+		&mut self.0
 	}
 
 	pub fn contains(&self, id: NodeId) -> bool {
@@ -80,6 +86,48 @@ impl NodeSet {
 		if let Some(last) = self.0.get_mut(nodes / 64) {
 			*last &= (1 << (nodes % 64)) - 1;
 		}
+	}
+}
+
+/// A few nodes' records, found through a slot per node: zero for none, else the record's index
+/// plus one.
+#[derive(Debug, Default)]
+pub struct Slots<T: Copy> {
+	slots: Handed<u32>,
+	list: Handed<T>,
+}
+
+impl<T: Copy + 'static> Slots<T> {
+	pub fn get(&self, id: NodeId) -> Option<&T> {
+		match self.slots.get(id.index() as usize) {
+			Some(&slot) if slot != 0 => Some(&self.list[slot as usize - 1]),
+			_ => None,
+		}
+	}
+
+	pub fn entry(&mut self, id: NodeId) -> &mut T
+	where
+		T: Default,
+	{
+		let index = id.index() as usize;
+		if index >= self.slots.len() {
+			self.slots.resize(index + 1, 0);
+		}
+		if self.slots[index] == 0 {
+			self.list.push(T::default());
+			self.slots[index] = self.list.len() as u32;
+		}
+		&mut self.list[self.slots[index] as usize - 1]
+	}
+
+	pub fn clear(&mut self) {
+		self.slots.clear();
+		self.list.clear();
+	}
+
+	pub fn views<'a>(&'a mut self, name: &'static str, records: &'static str, out: &mut Views<'a>) {
+		out.push(name, &mut self.slots);
+		out.push(records, &mut self.list);
 	}
 }
 
@@ -199,12 +247,26 @@ pub struct Ast<X = ()> {
 	pub lists: Handed<Option<NodeId>>,
 	pub hosts: Vec<Host>,
 	pub host_fields: Vec<(&'static str, Value)>,
-	pub host_strings: Vec<StrId>,
+	pub host_strings: Handed<StrId>,
 	pub host_groups: Vec<HostGroup>,
 	pub strings: Interner,
-	pub comments: Vec<Comment>,
+	pub comments: Handed<Comment>,
 	/// Comments attached to nodes by `comments::attach`, as indices into `comments`.
-	pub attached: NodeMap<Attached>,
+	pub attached: Slots<Attached>,
+	/// Nodes erasure leaves out, when the answer erases TypeScript.
+	pub erased: NodeSet,
+	/// Each node's span in UTF-16 offsets, two words a node, when the source has characters past
+	/// ASCII; empty otherwise, the node's own span being right.
+	pub spans: Handed<u32>,
+	/// Each node's start line and column and end line and column, with `locations`.
+	pub locs: Handed<u32>,
+	/// Where each interned string starts in UTF-16 units, when the text has characters past ASCII.
+	pub units: Handed<u32>,
+	/// The hosts as a front end reads them: type id, first field, field count, has a span.
+	pub host_view: Handed<u32>,
+	/// The name id of each host field, and its value as three words.
+	pub host_keys: Handed<u32>,
+	pub host_vals: Handed<[u32; 3]>,
 	/// The buffers the last parse worked in, for the next one.
 	pub spare: crate::parser::Spare,
 	/// The scope analysis, when `scopes::analyze` ran.
@@ -217,6 +279,7 @@ pub struct Ast<X = ()> {
 }
 
 #[derive(Debug, Default, Clone, Copy)]
+#[repr(C)]
 pub struct Attached {
 	pub leading: Run,
 	pub trailing: Run,
@@ -226,6 +289,7 @@ pub struct Attached {
 
 /// `len` comments from `start` on: a node takes each of its comments one after the other.
 #[derive(Debug, Default, Clone, Copy)]
+#[repr(C)]
 pub struct Run {
 	pub start: u32,
 	pub len: u32,
@@ -258,6 +322,8 @@ pub trait Reuse: Default {
 	fn clear(&mut self);
 	fn mark(&self) -> Self::Mark;
 	fn truncate(&mut self, mark: Self::Mark);
+	/// The extension's own buffers, after the tree's.
+	fn views<'a>(&'a mut self, _out: &mut Views<'a>) {}
 }
 
 impl Reuse for () {
@@ -294,6 +360,13 @@ impl<X: Reuse> Ast<X> {
 		}
 		self.errors.clear();
 		self.parenthesized.clear();
+		self.erased.clear();
+		self.spans.clear();
+		self.locs.clear();
+		self.units.clear();
+		self.host_view.clear();
+		self.host_keys.clear();
+		self.host_vals.clear();
 		self.extension.clear();
 	}
 
@@ -328,25 +401,49 @@ impl<X: Default> Ast<X> {
 	}
 }
 
-/// The tree's buffers, read in place by a front end: the nodes, the lists, the numbers, and the
-/// strings' text with where each starts.
-pub struct Buffers<'a> {
-	pub nodes: &'a mut Handed<Node>,
-	pub lists: &'a mut Handed<Option<NodeId>>,
-	pub numbers: &'a mut Handed<f64>,
-	pub text: &'a mut Handed<u8>,
-	pub starts: &'a mut Handed<u32>,
+impl<X: Reuse> Ast<X> {
+	/// The tree's buffers a front end reads in place, by the names `layout::json` lists.
+	pub fn views(&mut self) -> Views<'_> {
+		let mut out = Views(Vec::with_capacity(32));
+		out.push("nodes", &mut self.nodes);
+		out.push("lists", &mut self.lists);
+		out.push("numbers", &mut self.numbers);
+		let (text, starts) = self.strings.buffers();
+		out.push("text", text);
+		out.push("starts", starts);
+		out.push("units", &mut self.units);
+		out.push("spans", &mut self.spans);
+		out.push("locs", &mut self.locs);
+		out.push("parenthesized", self.parenthesized.words());
+		out.push("erased", self.erased.words());
+		out.push("comments", &mut self.comments);
+		self.attached.views("attached_slots", "attached", &mut out);
+		out.push("hosts", &mut self.host_view);
+		out.push("host_keys", &mut self.host_keys);
+		out.push("host_vals", &mut self.host_vals);
+		out.push("host_strings", &mut self.host_strings);
+		match &mut self.scopes {
+			Some(scopes) => scopes.views(&mut out),
+			None => crate::scopes::Scopes::no_views(&mut out),
+		}
+		self.extension.views(&mut out);
+		out
+	}
 }
 
-impl<X> Ast<X> {
-	pub fn buffers(&mut self) -> Buffers<'_> {
-		let (text, starts) = self.strings.buffers();
-		Buffers {
-			nodes: &mut self.nodes,
-			lists: &mut self.lists,
-			numbers: &mut self.numbers,
-			text,
-			starts,
+impl Value {
+	/// The value as three words: its tag, then what it holds.
+	pub fn words(self) -> [u32; 3] {
+		match self {
+			Value::Node(id) => [0, id.index(), 0],
+			Value::Nodes(list) => [1, list.start, list.len],
+			Value::Str(id) => [2, id.index(), 0],
+			Value::Slice(start, end) => [3, start, end],
+			Value::Strs(start, len) => [4, start, len],
+			Value::Bool(value) => [5, value as u32, 0],
+			Value::Int(value) => [6, value, 0],
+			Value::Null => [7, 0, 0],
+			Value::Comments => [8, 0, 0],
 		}
 	}
 }

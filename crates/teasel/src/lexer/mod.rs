@@ -9,6 +9,7 @@ mod tests;
 
 use crate::ast::{Comment, CommentKind};
 use crate::error::{Code, SyntaxError};
+use crate::handed::Handed;
 use crate::interner::{Interner, StrId};
 use token::{Keyword, Token, TokenKind};
 use unicode::{is_id_continue, is_id_start};
@@ -47,7 +48,7 @@ pub(crate) struct Lexer<'a> {
 	pub(crate) recover: bool,
 	pub(crate) errors: Vec<SyntaxError>,
 	unclosed: bool,
-	pub(crate) comments: Vec<Comment>,
+	pub(crate) comments: Handed<Comment>,
 	pub(crate) strings: Interner,
 }
 
@@ -78,7 +79,7 @@ impl<'a> Lexer<'a> {
 			recover: false,
 			errors: Vec::new(),
 			unclosed: false,
-			comments: Vec::new(),
+			comments: Handed::new(0),
 			strings,
 		}
 	}

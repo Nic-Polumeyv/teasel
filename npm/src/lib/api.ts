@@ -345,13 +345,10 @@ export interface Prepared {
 	readonly free: () => void;
 }
 
-/** The tree of the last parse, read in place: nodes eight words each, lists, numbers, and the strings' text with where each starts. */
+/** The tree of the last parse, read in place: its buffers in the order the layout's `views` names them, `undefined` for a table the parse did not fill. */
 export interface Tree {
-	readonly nodes: Uint32Array;
-	readonly lists: Uint32Array;
-	readonly numbers: Float64Array;
-	readonly text: Uint8Array;
-	readonly starts: Uint32Array;
+	readonly typescript: boolean;
+	readonly views: readonly (Uint32Array | Float64Array | Uint8Array | undefined)[];
 }
 
 /** What parses: the addon or the WebAssembly module, each bound to a `Source` class of its own. */
@@ -359,7 +356,7 @@ export interface Engine extends Tables {
 	readonly create: (source: string, flags: number, host: string) => Prepared;
 	/** The tree of the last parse on this thread, until the next parse; undefined before any. */
 	readonly tree: () => Tree | undefined;
-	/** The tree's memory layout as JSON: `crates/teasel/src/layout.rs`. */
+	/** The tree's memory layout, the names of its views and the recipes, as JSON. */
 	readonly layout: () => string;
 }
 

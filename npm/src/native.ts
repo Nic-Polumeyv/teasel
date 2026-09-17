@@ -29,7 +29,9 @@ export const engine: Engine = {
 	tree(): Tree | undefined {
 		const t = native.tree();
 		if (t === undefined) return undefined;
-		return { nodes: t[0].subarray(0, t[1]), lists: t[2].subarray(0, t[3]), numbers: t[4].subarray(0, t[5]), text: t[6].subarray(0, t[7]), starts: t[8].subarray(0, t[9]) };
+		const views: Tree['views'][number][] = [];
+		for (let i = 1; i < t.length; i += 2) views.push((t[i] as Uint32Array | undefined)?.subarray(0, t[i + 1] as number));
+		return { typescript: t[0] === 1, views };
 	},
 };
 

@@ -78,6 +78,8 @@ function answer(status: number) {
 	return words();
 }
 
+let elements: { js: [string, string][]; ts: [string, string][] } | undefined;
+
 export const engine: Engine = {
 	create(source, flags, host) {
 		const handle = guarded(() => wasm.source_new(...bytes(source), flags, ...bytes(host)));
@@ -100,12 +102,23 @@ export const engine: Engine = {
 		wasm.layout();
 		return text();
 	},
-	// five pointer and length pairs at the returned address; the tree sits in the module's memory until the next parse
+	// the tree sits in the module's memory until the next parse
 	tree(): Tree | undefined {
-		const at = new Uint32Array(wasm.memory.buffer, wasm.tree(), 10);
-		if (at[1] === 0) return undefined;
 		const { buffer } = wasm.memory;
-		return { nodes: new Uint32Array(buffer, at[0], at[1]), lists: new Uint32Array(buffer, at[2], at[3]), numbers: new Float64Array(buffer, at[4], at[5]), text: new Uint8Array(buffer, at[6], at[7]), starts: new Uint32Array(buffer, at[8], at[9]) };
+		const at = new Uint32Array(buffer, wasm.tree(), 65);
+		if (at[0] === 0) return undefined;
+		const typescript = (at[0] & 1) === 1;
+		elements ??= (wasm.layout(), JSON.parse(text()).views);
+		const kinds = typescript ? elements!.ts : elements!.js;
+		const views: Tree['views'][number][] = [];
+		for (let i = 0; i < at[0] >> 1; i++) {
+			const [ptr, bytes] = [at[1 + 2 * i], at[2 + 2 * i]];
+			if (ptr === 0) views.push(undefined);
+			else if (kinds[i][1] === 'f64') views.push(new Float64Array(buffer, ptr, bytes >> 3));
+			else if (kinds[i][1] === 'u8') views.push(new Uint8Array(buffer, ptr, bytes));
+			else views.push(new Uint32Array(buffer, ptr, bytes >> 2));
+		}
+		return { typescript, views };
 	},
 };
 

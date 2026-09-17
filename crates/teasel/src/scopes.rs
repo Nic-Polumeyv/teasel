@@ -2,8 +2,9 @@
 //! identifier resolved to the binding it names. Names are declared first, in the environment each
 //! belongs to, and every reference is resolved after, so hoisting and merging need nothing special.
 
-use crate::ast::{Ast, List, NodeId, NodeKind, NodeMap, VariableKind, Walk};
+use crate::ast::{Ast, List, NodeId, NodeKind, VariableKind, Walk};
 use crate::error::{Code, SyntaxError};
+use crate::handed::{Handed, Views};
 use crate::interner::{FastMap, StrId};
 use crate::names::{Name, c};
 use crate::parser::Entry;
@@ -185,11 +186,11 @@ pub enum Role {
 /// A table by node, dense: nodes are numbered, and a hash of the number cost more than the room.
 /// Zero is empty so the room comes zeroed from the allocator.
 #[derive(Debug)]
-pub struct NodeTable<T>(Vec<u32>, std::marker::PhantomData<T>);
+pub struct NodeTable<T>(Handed<u32>, std::marker::PhantomData<T>);
 
 impl<T> Default for NodeTable<T> {
 	fn default() -> Self {
-		NodeTable(Vec::new(), std::marker::PhantomData)
+		NodeTable(Handed::default(), std::marker::PhantomData)
 	}
 }
 
@@ -226,7 +227,9 @@ impl Packed for Role {
 
 impl<T: Packed> NodeTable<T> {
 	fn sized(nodes: usize) -> Self {
-		NodeTable(vec![0; nodes], std::marker::PhantomData)
+		let mut table = NodeTable::default();
+		table.reset(nodes);
+		table
 	}
 
 	fn reset(&mut self, nodes: usize) {
@@ -277,7 +280,7 @@ pub struct Scopes {
 	pub references: Vec<Reference>,
 	/// The pieces of JavaScript in a host's document, in source order; empty for a plain parse.
 	pub roots: Vec<Root>,
-	pub root_of: NodeMap<u32>,
+	pub root_of: NodeTable<u32>,
 	pub of_node: NodeTable<ScopeId>,
 	pub of_identifier: NodeTable<Role>,
 	/// The bindings each declaring node declares, and the write references each expression is
@@ -289,11 +292,11 @@ pub struct Scopes {
 	scratch: Scratch,
 }
 
-/// Ids grouped by node: one sorted list, and where each node's run starts in it.
+/// Ids grouped by node: each node's run behind its length in one list, and where it starts.
 #[derive(Debug, Default)]
 pub struct ByNode {
 	pairs: Vec<(NodeId, u32)>,
-	ids: Vec<u32>,
+	ids: Handed<u32>,
 	starts: NodeTable<u32>,
 }
 
@@ -301,22 +304,24 @@ impl ByNode {
 	fn finish(&mut self, nodes: usize) {
 		self.pairs.sort_unstable();
 		self.ids.clear();
-		self.ids.extend(self.pairs.iter().map(|&(_, id)| id));
 		self.starts.reset(nodes);
-		for (i, &(node, _)) in self.pairs.iter().enumerate() {
-			if i == 0 || self.pairs[i - 1].0 != node {
-				self.starts.insert(node, i as u32);
-			}
+		let mut i = 0;
+		while i < self.pairs.len() {
+			let node = self.pairs[i].0;
+			let len = self.pairs[i..].partition_point(|&(n, _)| n == node);
+			self.starts.insert(node, self.ids.len() as u32);
+			self.ids.push(len as u32);
+			self.ids.extend(self.pairs[i..i + len].iter().map(|&(_, id)| id));
+			i += len;
 		}
 	}
 
 	pub fn get(&self, node: NodeId) -> &[u32] {
-		let Some(from) = self.starts.get(node) else {
+		let Some(at) = self.starts.get(node) else {
 			return &[];
 		};
-		let from = from as usize;
-		let to = from + self.pairs[from..].partition_point(|&(n, _)| n == node);
-		&self.ids[from..to]
+		let at = at as usize;
+		&self.ids[at + 1..at + 1 + self.ids[at] as usize]
 	}
 
 	fn clear(&mut self) {
@@ -378,7 +383,7 @@ impl Scopes {
 		self.bindings.clear();
 		self.references.clear();
 		self.roots.clear();
-		self.root_of.clear();
+		self.root_of.reset(nodes);
 		self.of_node.reset(nodes);
 		self.of_identifier.reset(nodes);
 		self.declared_by.clear();
@@ -389,6 +394,32 @@ impl Scopes {
 
 	pub fn scope(&self, id: ScopeId) -> &Scope {
 		&self.scopes[id as usize]
+	}
+
+	/// The per-node tables a front end reads in place, in the order `no_views` names them.
+	pub fn views<'a>(&'a mut self, out: &mut Views<'a>) {
+		out.push("of_node", &mut self.of_node.0);
+		out.push("of_identifier", &mut self.of_identifier.0);
+		out.push("root_of", &mut self.root_of.0);
+		out.push("declared_by", &mut self.declared_by.ids);
+		out.push("declared_by_at", &mut self.declared_by.starts.0);
+		out.push("writes_of", &mut self.writes_of.ids);
+		out.push("writes_of_at", &mut self.writes_of.starts.0);
+	}
+
+	/// The same names over nothing, for a tree without analysis.
+	pub fn no_views(out: &mut Views<'_>) {
+		for name in [
+			"of_node",
+			"of_identifier",
+			"root_of",
+			"declared_by",
+			"declared_by_at",
+			"writes_of",
+			"writes_of_at",
+		] {
+			out.none(name);
+		}
 	}
 
 	pub fn binding(&self, id: BindingId) -> &Binding {
@@ -571,6 +602,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 			None => Scopes {
 				of_node: NodeTable::sized(ast.nodes.len()),
 				of_identifier: NodeTable::sized(ast.nodes.len()),
+				root_of: NodeTable::sized(ast.nodes.len()),
 				..Scopes::default()
 			},
 		};
@@ -1071,7 +1103,9 @@ impl<'a, X: Bind> Binder<'a, X> {
 			if i == 0 && matches!(self.kind(param), NodeKind::Identifier { name } if Some(name) == self.this_name) {
 				continue;
 			}
-			self.initializing(None, |b| b.declaring(id, |b| b.visit_with(param, Mode::Declare(BindingKind::Param), false)));
+			self.initializing(None, |b| {
+				b.declaring(id, |b| b.visit_with(param, Mode::Declare(BindingKind::Param), false))
+			});
 		}
 		self.open_body();
 		match self.kind(body) {
@@ -1471,7 +1505,9 @@ impl<'a, X: Bind> Binder<'a, X> {
 						continue;
 					};
 					let initializer = init.or(self.initializing);
-					self.initializing(initializer, |b| b.declaring(declarator, |b| b.visit(pattern, Mode::Declare(kind))));
+					self.initializing(initializer, |b| {
+						b.declaring(declarator, |b| b.visit(pattern, Mode::Declare(kind)))
+					});
 					self.maybe(init, Mode::Expression);
 				}
 			}
@@ -1649,7 +1685,10 @@ mod tests {
 			let mut line = format!("{}@{} ", ast.str(name), node.start);
 			let declares = match role {
 				Role::Declares(b) => Some(b),
-				Role::Reference(r) => scopes.reference(r).declares.then(|| scopes.reference(r).binding.unwrap()),
+				Role::Reference(r) => scopes
+					.reference(r)
+					.declares
+					.then(|| scopes.reference(r).binding.unwrap()),
 			};
 			match declares {
 				Some(b) => {
@@ -2025,9 +2064,20 @@ mod tests {
 		let again: Vec<_> = scopes
 			.references
 			.iter()
-			.map(|r| (ast.node(r.node).start, r.declares, r.write, start(r.write_expr), r.binding))
+			.map(|r| {
+				(
+					ast.node(r.node).start,
+					r.declares,
+					r.write,
+					start(r.write_expr),
+					r.binding,
+				)
+			})
 			.collect();
-		assert_eq!(again, [(11, true, true, Some(15), Some(0)), (27, true, true, None, Some(0))]);
+		assert_eq!(
+			again,
+			[(11, true, true, Some(15), Some(0)), (27, true, true, None, Some(0))]
+		);
 	}
 
 	#[test]

@@ -3,7 +3,7 @@
 use crate::error::Code;
 pub mod ast;
 mod declarations;
-mod estree;
+pub(crate) mod estree;
 #[cfg(test)]
 mod tests;
 mod types;

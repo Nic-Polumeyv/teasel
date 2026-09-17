@@ -1,4 +1,5 @@
 use crate::ast::{Ast, List, NodeId, NodeKind, Walk};
+use crate::handed::{Handed, Views};
 use crate::interner::StrId;
 use crate::scopes::{Bind, Binder, BindingKind, Mode, ScopeKind};
 
@@ -6,7 +7,7 @@ use crate::scopes::{Bind, Binder, BindingKind, Mode, ScopeKind};
 /// `NodeKind::Extension` payload, and the keys it adds to JavaScript nodes.
 #[derive(Debug, Default)]
 pub struct Data {
-	pub nodes: Vec<TsKind>,
+	pub nodes: Handed<TsKind>,
 	pub extras: ExtrasTable,
 }
 
@@ -23,8 +24,8 @@ impl Data {
 /// The extras of each node that has any, found through a slot per node id.
 #[derive(Debug, Default)]
 pub struct ExtrasTable {
-	slots: Vec<u32>,
-	list: Vec<Extras>,
+	slots: Handed<u32>,
+	list: Handed<Extras>,
 	/// The node of each entry of `list`, to unhook when the entry is forgotten.
 	owners: Vec<NodeId>,
 }
@@ -52,6 +53,12 @@ impl crate::ast::Reuse for Data {
 		}
 		self.extras.list.truncate(extras);
 		self.extras.owners.truncate(extras);
+	}
+
+	fn views<'a>(&'a mut self, out: &mut Views<'a>) {
+		out.push("ts", &mut self.nodes);
+		out.push("extras_slots", &mut self.extras.slots);
+		out.push("extras", &mut self.extras.list);
 	}
 }
 

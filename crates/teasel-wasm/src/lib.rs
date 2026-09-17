@@ -5,7 +5,7 @@ use teasel::json::{Prepared, Request};
 thread_local! {
 	static TEXT: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
 	/// The tree's buffers as five pointer and length pairs, lengths in elements; all zero before any parse.
-	static TREE: Cell<[u32; 10]> = const { Cell::new([0; 10]) };
+	static TREE: Cell<[u32; 65]> = const { Cell::new([0; 65]) };
 }
 
 #[unsafe(no_mangle)]
@@ -136,24 +136,21 @@ fn text(json: String) {
 	});
 }
 
+// the count of views plus one for the TypeScript tree's, then each view's address and bytes; zero before any parse
 #[unsafe(no_mangle)]
 pub extern "C" fn tree() -> *const u32 {
-	let words_per_node = (std::mem::size_of::<teasel::ast::Node>() / 4) as u32;
-	teasel::json::tree(|buffers| {
-		if let Some(b) = buffers {
-			TREE.set([
-				b.nodes.as_ptr() as u32,
-				b.nodes.len() as u32 * words_per_node,
-				b.lists.as_ptr() as u32,
-				b.lists.len() as u32,
-				b.numbers.as_ptr() as u32,
-				b.numbers.len() as u32,
-				b.text.as_ptr() as u32,
-				b.text.len() as u32,
-				b.starts.as_ptr() as u32,
-				b.starts.len() as u32,
-			]);
+	teasel::json::tree(|tree| {
+		let mut out = [0u32; 65];
+		if let Some((typescript, views)) = tree {
+			out[0] = (views.0.len() as u32) << 1 | typescript as u32;
+			for (i, (_, buffer)) in views.0.iter().enumerate() {
+				if let Some(buffer) = buffer {
+					out[1 + 2 * i] = buffer.as_ptr() as u32;
+					out[2 + 2 * i] = buffer.len_bytes() as u32;
+				}
+			}
 		}
+		TREE.set(out);
 	});
 	TREE.with(|t| t.as_ptr() as *const u32)
 }

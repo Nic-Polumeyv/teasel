@@ -228,3 +228,97 @@ fn resolve_ops(ops: &[Op], fields: &[Field], kind: &str) -> &'static [Op<Slot>] 
 		.collect();
 	Box::leak(resolved.into_boxed_slice())
 }
+
+fn json_str(out: &mut String, text: &str) {
+	out.push('"');
+	out.push_str(text);
+	out.push('"');
+}
+
+fn json_ops(out: &mut String, ops: &[Op]) {
+	out.push('[');
+	for (i, op) in ops.iter().enumerate() {
+		if i > 0 {
+			out.push(',');
+		}
+		out.push('[');
+		let (name, key, field, rest): (&str, Option<Name>, Option<Path>, Option<&[Op]>) = match *op {
+			Type(t) => ("type", Some(t), None, None),
+			TypeOf(f) => ("typeof", None, Some(f), None),
+			Node(k, f) => ("node", Some(k), Some(f), None),
+			Opt(k, f) => ("opt", Some(k), Some(f), None),
+			OptKey(k, f) => ("optkey", Some(k), Some(f), None),
+			List(k, f) => ("list", Some(k), Some(f), None),
+			OptListKey(k, f) => ("optlistkey", Some(k), Some(f), None),
+			Params(k, f) => ("params", Some(k), Some(f), None),
+			Bool(k, f) => ("bool", Some(k), Some(f), None),
+			BoolIf(k, f) => ("boolif", Some(k), Some(f), None),
+			OptBoolKey(k, f) => ("optboolkey", Some(k), Some(f), None),
+			Str(k, f) => ("str", Some(k), Some(f), None),
+			OptStrKey(k, f) => ("optstrkey", Some(k), Some(f), None),
+			Enum(k, f) => ("enum", Some(k), Some(f), None),
+			OptEnumKey(k, f) => ("optenumkey", Some(k), Some(f), None),
+			Modifier(k, f) => ("modifier", Some(k), Some(f), None),
+			BoolNames(k, f, _, _) => ("boolnames", Some(k), Some(f), None),
+			Float(k, f) => ("float", Some(k), Some(f), None),
+			Raw => ("raw", None, None, None),
+			BigInt => ("bigint", None, None, None),
+			Const(k, _) => ("const", Some(k), None, None),
+			ConstBool(k, _) => ("constbool", Some(k), None, None),
+			Null(k) => ("null", Some(k), None, None),
+			EmptyList(k) => ("emptylist", Some(k), None, None),
+			Object(k, inner) => ("object", Some(k), None, Some(inner)),
+			OtherName(k, f, _) => ("othername", Some(k), Some(f), None),
+		};
+		json_str(out, name);
+		if let Some(key) = key {
+			out.push(',');
+			json_str(out, key.text);
+		}
+		if let Some(field) = field {
+			out.push(',');
+			json_str(out, field);
+		}
+		match *op {
+			BoolNames(_, _, yes, no) => {
+				out.push(',');
+				json_str(out, yes.text);
+				out.push(',');
+				json_str(out, no.text);
+			}
+			Const(_, value) => {
+				out.push(',');
+				json_str(out, value.text);
+			}
+			ConstBool(_, value) => out.push_str(if value { ",true" } else { ",false" }),
+			OtherName(_, _, binding) => {
+				out.push(',');
+				json_str(out, binding);
+			}
+			_ => {}
+		}
+		if let Some(inner) = rest {
+			out.push(',');
+			json_ops(out, inner);
+		}
+		out.push(']');
+	}
+	out.push(']');
+}
+
+/// The recipes as JSON: each kind's name and its operations, an operation as its name, then its
+/// key, its field and what else it takes.
+pub fn json(out: &mut String, recipes: &[(&str, &[Op])]) {
+	out.push('[');
+	for (i, (name, ops)) in recipes.iter().enumerate() {
+		if i > 0 {
+			out.push(',');
+		}
+		out.push('[');
+		json_str(out, name);
+		out.push(',');
+		json_ops(out, ops);
+		out.push(']');
+	}
+	out.push(']');
+}

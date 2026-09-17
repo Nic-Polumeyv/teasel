@@ -43,6 +43,12 @@ impl<T: Copy> Handed<T> {
 		self.vec.truncate(len);
 	}
 
+	pub fn resize(&mut self, len: usize, value: T) {
+		self.vec.truncate(len);
+		self.room(len - self.vec.len());
+		self.vec.resize(len, value);
+	}
+
 	#[inline(always)]
 	fn room(&mut self, more: usize) {
 		if self.vec.capacity() - self.vec.len() < more {
@@ -80,7 +86,7 @@ impl<T: Copy> Handed<T> {
 			return None;
 		}
 		if self.vec.capacity() == 0 {
-			self.grow(0);
+			self.grow(1);
 		}
 		self.owned = false;
 		Some((self.vec.as_mut_ptr(), self.vec.capacity()))
@@ -144,5 +150,84 @@ impl<T: Copy> Extend<T> for Handed<T> {
 				}
 			}
 		}
+	}
+}
+
+/// What a front end reads a buffer's elements as; a record is its words.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Element {
+	U8,
+	U32,
+	F64,
+}
+
+/// A buffer as a front end sees it: bytes, whatever the elements are. The allocation released
+/// is freed with `free`.
+pub trait Raw {
+	fn element(&self) -> Element;
+	fn as_ptr(&self) -> *const u8;
+	fn len_bytes(&self) -> usize;
+	fn capacity_bytes(&self) -> usize;
+	/// The allocation, its bytes and its alignment; None when a caller already holds it.
+	fn release(&mut self) -> Option<(*mut u8, usize, usize)>;
+	/// Continues on a fresh allocation, empty.
+	fn renew(&mut self);
+}
+
+impl<T: Copy + 'static> Raw for Handed<T> {
+	fn element(&self) -> Element {
+		use std::any::TypeId;
+		let ty = TypeId::of::<T>();
+		if ty == TypeId::of::<u8>() {
+			Element::U8
+		} else if ty == TypeId::of::<f64>() {
+			Element::F64
+		} else {
+			const { assert!(size_of::<T>() % 4 == 0 || size_of::<T>() == 1) };
+			Element::U32
+		}
+	}
+
+	fn as_ptr(&self) -> *const u8 {
+		self.vec.as_ptr().cast()
+	}
+
+	fn len_bytes(&self) -> usize {
+		self.vec.len() * size_of::<T>()
+	}
+
+	fn capacity_bytes(&self) -> usize {
+		self.vec.capacity() * size_of::<T>()
+	}
+
+	fn release(&mut self) -> Option<(*mut u8, usize, usize)> {
+		let (ptr, capacity) = Handed::release(self)?;
+		Some((ptr.cast(), capacity * size_of::<T>(), align_of::<T>()))
+	}
+
+	fn renew(&mut self) {
+		Handed::renew(self, 0);
+	}
+}
+
+/// # Safety
+/// `ptr`, `bytes` and `align` are what one `release` gave, freed once.
+pub unsafe fn free(ptr: *mut u8, bytes: usize, align: usize) {
+	if bytes != 0 {
+		unsafe { std::alloc::dealloc(ptr, std::alloc::Layout::from_size_align_unchecked(bytes, align)) };
+	}
+}
+
+/// The buffers of a tree a front end reads in place, by name; None for a table the parse did not
+/// fill.
+pub struct Views<'a>(pub Vec<(&'static str, Option<&'a mut dyn Raw>)>);
+
+impl<'a> Views<'a> {
+	pub fn push(&mut self, name: &'static str, buffer: &'a mut dyn Raw) {
+		self.0.push((name, Some(buffer)));
+	}
+
+	pub fn none(&mut self, name: &'static str) {
+		self.0.push((name, None));
 	}
 }

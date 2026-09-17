@@ -11,8 +11,8 @@ export interface Addon {
 	readonly constants: () => string[];
 	readonly shapes: () => number[];
 	readonly layout: () => string;
-	/** The tree's five views, each followed by its length in elements. */
-	readonly tree: () => [Uint32Array, number, Uint32Array, number, Float64Array, number, Uint8Array, number, Uint32Array, number] | undefined;
+	/** Whether the tree is the TypeScript one, then each view followed by its length in elements. */
+	readonly tree: () => (Uint32Array | Float64Array | Uint8Array | number | undefined)[] | undefined;
 }
 
 export const platforms: Record<string, { target: string; os: NodeJS.Platform; cpu: NodeJS.Architecture; libc?: string }> = {
