@@ -14,7 +14,8 @@ node.body[0].declarations[0].id.typeAnnotation.type; // 'TSTypeAnnotation'
 `typescript: 'erase'` reads TypeScript and returns JavaScript, with the types removed, in the same pass. Positions are positions in the text you gave it.
 
 ```js typescript.js
-const { node, typescript } = new Source('let n: number = 1', { typescript: 'erase' }).parse();
+const source = new Source('let n: number = 1', { typescript: 'erase' });
+const { node, typescript } = source.parse();
 node.body[0].declarations[0].id.typeAnnotation; // undefined
 typescript;                                     // []
 ```

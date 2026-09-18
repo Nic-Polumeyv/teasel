@@ -41,7 +41,7 @@ function sheet(name: string) {
 	return (
 		`<figure class="my-8 overflow-hidden rounded-sm bg-[#2d353b] text-[#d3c6aa] shadow-lg">` +
 		`<figcaption class="flex h-10 items-center gap-2 border-b border-dashed border-[#d3c6aa]/25 px-4 font-serif text-[15px] text-[#d3c6aa]/85 italic">${escape(name)}<span class="ml-auto font-sans text-xs text-white/40 not-italic">${lines.length} lines</span></figcaption>` +
-		`<pre class="max-h-[38rem] overflow-auto py-4 font-mono text-[13px] leading-6 [tab-size:2]"><code>${lines.map((line, i) => `<span class="inline-block w-12 select-none pr-4 text-right text-white/30">${i + 1}</span>${line}`).join('\n')}</code></pre></figure>`
+		`<pre class="max-h-[38rem] overflow-y-auto py-4 pr-4 font-mono text-xs leading-6 whitespace-pre-wrap [overflow-wrap:anywhere] [tab-size:2] sm:text-[13px]"><code>${lines.map((line, i) => `<span class="inline-block w-12 select-none pr-4 text-right text-white/30">${i + 1}</span>${line}`).join('\n')}</code></pre></figure>`
 	);
 }
 
@@ -71,9 +71,9 @@ export function fence(text: string, language = 'js', file?: string, notes?: stri
 	const plain = language === 'text' ? escape(text) : snippet(text, language === 'ts' || language === 'typescript' ? 'typescript' : language === 'bash' || language === 'sh' ? 'bash' : 'javascript').html;
 	const html = notes ? mark(plain, marks(text, notes)) : plain;
 	return (
-		`<div class="relative my-6 overflow-hidden rounded-sm bg-[#2d353b] text-sm text-[#d3c6aa] shadow-md">` +
+		`<div class="relative -mx-4 my-6 overflow-hidden bg-[#2d353b] text-xs text-[#d3c6aa] shadow-md sm:mx-0 sm:rounded-sm sm:text-sm">` +
 		(file ? `<div class="flex h-10 items-center gap-2 border-b border-dashed border-[#d3c6aa]/25 px-4"><span class="flex-1 truncate font-serif text-[15px] text-[#d3c6aa]/85 italic">${escape(file)}</span>${copier(text, '-mr-2')}</div>` : copier(text, 'absolute top-1.5 right-1.5 bg-[#2d353b]')) +
-		`<pre class="overflow-x-auto px-4 py-4 font-mono leading-6 [tab-size:2]"><code>${html}</code></pre></div>`
+		`<pre class="px-4 py-4 font-mono leading-6 whitespace-pre-wrap [overflow-wrap:anywhere] [tab-size:2]"><code>${html}</code></pre></div>`
 	);
 }
 

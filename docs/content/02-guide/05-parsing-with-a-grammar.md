@@ -39,7 +39,8 @@ const mini = new Plan(grammar);
 const { node } = new Source('<p>{{ greeting }}</p>').parse(mini);
 node.type;                                   // 'Root'
 node.children.nodes[0].type;                 // 'Element', name 'p'
-node.children.nodes[0].children.nodes[0];    // ExpressionTag, its expression the Identifier greeting
+node.children.nodes[0].children.nodes[0];
+// ExpressionTag, its expression the Identifier greeting
 ```
 
 A plan made from a grammar reads the whole source: it takes no position, and `until` does not apply to it. A grammar the parser can't read throws when the plan is made, naming the line.
@@ -56,13 +57,21 @@ The options work as they do on JavaScript, with two additions.
 Scopes cover the template and the script together. The grammar says where a scope opens, the `each` body that declares its item here, and what a script declares lands in the scope around the template, so an identifier in the template resolves to a binding in the script.
 
 ```js document.js
-const text = '<script>let names = []</script>{{#each names as name}}<b>{{ name }}</b>{{/each}}';
-const { node, roots } = new Source(text, { sourceType: 'module', scopes: true }).parse(mini);
+const text =
+	'<script>let names = []</script>' +
+	'{{#each names as name}}<b>{{ name }}</b>{{/each}}';
+const source = new Source(text, { sourceType: 'module', scopes: true });
+const { node, roots } = source.parse(mini);
 const block = node.children.nodes[0];
 
-referenceOf(block.list).binding;             // { name: 'names', kind: 'let', … }, declared in the script
-scopeOf(block.body);                         // { kind: 'fragment', parent, node: block.body }
-roots.map((piece) => piece.node.type);       // ['Program', 'Identifier', 'Identifier', 'Identifier']
+referenceOf(block.list).binding;
+// { name: 'names', kind: 'let', … }, declared in the script
+
+scopeOf(block.body);
+// { kind: 'fragment', parent, node: block.body }
+
+roots.map((piece) => piece.node.type);
+// ['Program', 'Identifier', 'Identifier', 'Identifier']
 ```
 
 The scope kinds a document adds are `fragment` for what the grammar opens and `module` or `script` for the document itself; a script block of its own has the kind of its program.

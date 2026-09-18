@@ -24,12 +24,12 @@ The parse started at offset 3, read an expression instead of a program, and stop
 The first argument of `parse` is the plan, which says what to read. The second is the position.
 
 ```text
-source.parse(Plan.expression, 7)          the expression starting at 7
-source.parse(Plan.statement, 7)           one statement
-source.parse(Plan.pattern, 7)             an assignment target: a name or a destructuring
-source.parse(Plan.params, 7)              the patterns inside (a, b = 1)
-source.parse(Plan.typeParameters, 7)      a <T extends U>, with typescript on
-source.parse(Plan.program, [12, 40])      the program between 12 and 40
+source.parse(Plan.expression, 7)        the expression starting at 7
+source.parse(Plan.statement, 7)         one statement
+source.parse(Plan.pattern, 7)           a name or a destructuring pattern
+source.parse(Plan.params, 7)            the patterns inside (a, b = 1)
+source.parse(Plan.typeParameters, 7)    a <T extends U>, with typescript on
+source.parse(Plan.program, [12, 40])    the program between 12 and 40
 ```
 
 Positions in every answer are offsets into the whole text, so nothing has to be added to them.

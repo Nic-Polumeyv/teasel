@@ -10,7 +10,8 @@ import { Source, referenceOf } from '@teasel/parser';
 const { node } = new Source('let x = 1; x = 2', { scopes: true }).parse();
 const assignment = node.body[1].expression;
 
-referenceOf(assignment.left).binding;   // { name: 'x', kind: 'let', scope, node, declaration }
+referenceOf(assignment.left).binding;
+// { name: 'x', kind: 'let', scope, node, declaration }
 ```
 
 The tree stays plain ESTree. Scope information is not in visible properties: you get it by passing a node to a function.
@@ -28,14 +29,23 @@ All three, on a function with a parameter:
 ```js scopes.js
 import { Source, scopeOf, referenceOf, parentOf } from '@teasel/parser';
 
-const { node } = new Source('let x = 1; function f(y) { x = y; }', { scopes: true }).parse();
+const text = 'let x = 1; function f(y) { x = y; }';
+const { node } = new Source(text, { scopes: true }).parse();
 const [declaration, fn] = node.body;
 const assignment = fn.body.body[0].expression;
 
-referenceOf(declaration.declarations[0].id) // the binding: { name: 'x', kind: 'let', declares: true, write: true, scope, node, declaration, … }
-referenceOf(assignment.left)                // { declares: false, write: true, read: false, binding, scope, node, writeExpr }
-scopeOf(fn)                                 // { kind: 'function', parent, node, topLevelAwait: false }
-parentOf(assignment.left)                   // the assignment
+referenceOf(declaration.declarations[0].id);
+// the binding: { name: 'x', kind: 'let', declares: true, write: true,
+//   scope, node, declaration, … }
+
+referenceOf(assignment.left);
+// { declares: false, write: true, read: false, binding, scope, node, writeExpr }
+
+scopeOf(fn);
+// { kind: 'function', parent, node, topLevelAwait: false }
+
+parentOf(assignment.left);
+// the assignment
 ```
 
 ![the script scope declares x; the function scope of f declares y; inside it, x is a write reference to the outer binding and y a read reference to the parameter](Scopes.svelte)

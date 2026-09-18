@@ -49,8 +49,8 @@ One `Source` holds one text, so three files are three `Source`s.
 function exportsOf(module) {
 	const exports = new Map();
 	for (const statement of module.node.body) {
-		if (statement.type !== 'ExportNamedDeclaration' || !statement.declaration) continue;
 		const { declaration } = statement;
+		if (statement.type !== 'ExportNamedDeclaration' || !declaration) continue;
 		const ids = declaration.type === 'VariableDeclaration'
 			? declaration.declarations.map((declarator) => declarator.id)
 			: [declaration.id];
@@ -84,13 +84,13 @@ for (const module of modules.values()) {
 		for (const specifier of statement.specifiers) {
 			const local = referenceOf(specifier.local);
 			const binding = from.exports.get(specifier.imported.name);
-			importedFrom.set(local, { module: from, binding });
+			importedFrom.set(local, { importer: module, module: from, binding });
 		}
 	}
 }
 ```
 ```notes
-importedFrom :: The link between files: a map from an import's binding in one file to the export's binding in another. Both are objects from the answers, so the map connects two parses.
+importedFrom :: The link between files: a map from an import's binding in one file to the export's binding in another, with the two modules. Both are objects from the answers, so the map connects two parses.
 statement.source.value :: The string after `from`, `'./world.js'`. This example resolves it by dropping `./`; a real tool resolves paths as its module system does.
 if (!from) continue :: `./dice.js` and `node:readline/promises` are not among the three files, so those imports stay unlinked.
 specifier.local :: The name the importing file uses. `specifier.imported` is the name the other file exported. They differ in `import { setTimeout as sleep }`; in this program they are the same.
@@ -106,9 +106,13 @@ for (const module of modules.values()) {
 	const imports = module.bindings.filter((binding) => binding.kind === 'import');
 	for (const local of imports) {
 		const target = importedFrom.get(local);
-		const where = target
-			? `${target.binding.kind} in ${target.module.name} line ${lineOf(target.module, target.binding.node)}, used ${usesOf(module, local)}x here`
-			: 'from outside the program';
+		let where = 'from outside the program';
+		if (target) {
+			const { kind, node } = target.binding;
+			const line = lineOf(target.module, node);
+			const uses = usesOf(module, local);
+			where = `${kind} in ${target.module.name} line ${line}, used ${uses}x here`;
+		}
 		console.log(`${module.name.padEnd(10)} ${local.name.padEnd(16)} ${where}`);
 	}
 }
@@ -116,7 +120,7 @@ for (const module of modules.values()) {
 ```notes
 module.references :: Every use of a name in the file, in source order. Each has `binding`, the declaration it refers to. See [References and bindings](/scopes#references-and-bindings).
 binding.kind === 'import' :: Every binding has a `kind`: `import`, `const`, `let`, `function`, `class`, `param` and more. The full list is in the [reference](/reference/parser#binding).
-target.binding.node :: The identifier that declared the export, in the other file. Its `start` is an offset into that file's text, so the line is computed against that file.
+const { kind, node } = target.binding :: `node` is the identifier that declared the export, in the other file. Its `start` is an offset into that file's text, so the line is computed against that file.
 ```
 
 ```text
@@ -143,11 +147,12 @@ for (const module of modules.values()) {
 		const elsewhere = [];
 		for (const [local, target] of importedFrom) {
 			if (target.binding !== binding) continue;
-			const importer = [...modules.values()].find((m) => m.bindings.includes(local));
-			elsewhere.push(`${importer.name} ${usesOf(importer, local)}x`);
+			elsewhere.push(`${target.importer.name} ${usesOf(target.importer, local)}x`);
 		}
 		const here = usesOf(module, binding);
-		console.log(`${module.name.padEnd(10)} ${name.padEnd(11)} used here ${here}x; ${elsewhere.join(', ') || 'imported nowhere'}`);
+		const others = elsewhere.join(', ') || 'imported nowhere';
+		const row = [module.name.padEnd(10), name.padEnd(11), `used here ${here}x;`, others];
+		console.log(row.join(' '));
 	}
 }
 ```
@@ -185,7 +190,8 @@ function functionAround(reference) {
 function nameOf(fn) {
 	if (fn.id) return fn.id.name;
 	const parent = parentOf(fn);
-	if (parent.type === 'Property' || parent.type === 'MethodDefinition') return parent.key.name;
+	const keyed = parent.type === 'Property' || parent.type === 'MethodDefinition';
+	if (keyed) return parent.key.name;
 	if (parent.type === 'VariableDeclarator') return parent.id.name;
 	return '(anonymous)';
 }
@@ -198,7 +204,10 @@ for (const binding of state) {
 	const writes = game.references.filter(
 		(reference) => reference.binding === binding && reference.write,
 	);
-	const where = writes.map((reference) => `${nameOf(functionAround(reference))}:${lineOf(game, reference.node)}`);
+	const where = writes.map((reference) => {
+		const fn = nameOf(functionAround(reference));
+		return `${fn}:${lineOf(game, reference.node)}`;
+	});
 	console.log(`${binding.name.padEnd(10)} ${where.join(', ')}`);
 }
 ```

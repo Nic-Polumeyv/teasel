@@ -25,7 +25,9 @@ The component:
 {:else}
 	<ul>
 		{#each shown as item, i (item.id)}
-			<li class:active={item === selected} onclick={() => pick(item)}>{i + 1}. {item.name}</li>
+			<li class:active={item === selected} onclick={() => pick(item)}>
+				{i + 1}. {item.name}
+			</li>
 		{/each}
 	</ul>
 {/if}
@@ -69,7 +71,8 @@ scopeOf(script.node) :: `scopeOf` gives the scope a node opens. `script.node` is
 `script.bindings` has every declaration, including the parameters of the two functions:
 
 ```text
-onMount:import  items:let  selected:let  query:let  shown:const  item:param  pick:function  item:param
+onMount:import  items:let  selected:let  query:let  shown:const
+item:param  pick:function  item:param
 ```
 
 The template can only see the top-level ones, so `topLevel` leaves the two `item` parameters out.
@@ -156,7 +159,9 @@ let at = close;
 while ((at = text.indexOf('{', at)) !== -1) {
 	if (text.startsWith('{#each ', at)) at = each(at + '{#each '.length);
 	else if (text.startsWith('{/each}', at)) { inScope.pop(); at += 1; }
-	else if (text.startsWith('{#if ', at)) at = expression(at + '{#if '.length, '}').end;
+	else if (text.startsWith('{#if ', at)) {
+		at = expression(at + '{#if '.length, '}').end;
+	}
 	else if (text.startsWith('{:else}', at) || text.startsWith('{/if}', at)) at += 1;
 	else at = expression(at + 1, '}').end;
 }
@@ -180,8 +185,8 @@ pattern    402  Identifier   declares i
 expression 405  MemberExpression           (item.id)
 expression 436  BinaryExpression           class:active={item === selected}
 expression 464  ArrowFunctionExpression    onclick={() => pick(item)}
-expression 483  BinaryExpression           {i + 1}
-expression 492  MemberExpression           {item.name}
+expression 488  BinaryExpression           {i + 1}
+expression 497  MemberExpression           {item.name}
 ```
 
 ## The result
@@ -198,8 +203,8 @@ item       at 436 -> pattern at 396
 selected   at 445 -> let at 71
 pick       at 470 -> function at 212
 item       at 475 -> pattern at 396
-i          at 483 -> pattern at 402
-item       at 492 -> pattern at 396
+i          at 488 -> pattern at 402
+item       at 497 -> pattern at 396
 ```
 
 ![the script block at the top with its bindings; the each block below declaring item and i; every expression in the template with an arrow from each name to the binding it resolves to, in the script or in the each block](Component.svelte)
