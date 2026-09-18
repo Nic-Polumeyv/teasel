@@ -1,6 +1,8 @@
 //! The tree's memory layout: every kind's fields by byte offset and type, and how the compiler
 //! spells a missing optional. `json::layout_json` tells it to a front end.
 
+use std::mem::MaybeUninit;
+
 use crate::ast::{List, NodeId};
 use crate::interner::StrId;
 use crate::names::Name;
@@ -208,7 +210,9 @@ pub struct Tagged {
 	pub missing: u32,
 }
 
-fn tagged<const N: usize>(some: [u32; N], missing: [u32; N], values: &[u32]) -> Tagged {
+// the tag is found in the `Some`, every word of which is written; of the `None` only that word
+// is read, the rest of it is never written
+fn tagged<const N: usize>(some: [u32; N], missing: [MaybeUninit<u32>; N], values: &[u32]) -> Tagged {
 	let tag = (0..N).find(|&i| !values.contains(&some[i])).expect("a tag word");
 	for (i, value) in some
 		.iter()
@@ -221,7 +225,7 @@ fn tagged<const N: usize>(some: [u32; N], missing: [u32; N], values: &[u32]) -> 
 	}
 	Tagged {
 		tag,
-		missing: missing[tag],
+		missing: unsafe { missing[tag].assume_init() },
 	}
 }
 
@@ -232,17 +236,17 @@ pub fn missing() -> Missing {
 			bool: std::mem::transmute::<Option<bool>, u8>(None),
 			list: tagged(
 				std::mem::transmute::<Option<List>, [u32; 3]>(Some(List { start: 7, len: 9 })),
-				std::mem::transmute::<Option<List>, [u32; 3]>(None),
+				std::mem::transmute::<Option<List>, [MaybeUninit<u32>; 3]>(None),
 				&[7, 9],
 			),
 			str: tagged(
 				std::mem::transmute::<Option<StrId>, [u32; 2]>(Some(StrId::at(7))),
-				std::mem::transmute::<Option<StrId>, [u32; 2]>(None),
+				std::mem::transmute::<Option<StrId>, [MaybeUninit<u32>; 2]>(None),
 				&[7],
 			),
 			int: tagged(
 				std::mem::transmute::<Option<u32>, [u32; 2]>(Some(7)),
-				std::mem::transmute::<Option<u32>, [u32; 2]>(None),
+				std::mem::transmute::<Option<u32>, [MaybeUninit<u32>; 2]>(None),
 				&[7],
 			),
 		}
