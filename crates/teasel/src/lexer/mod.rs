@@ -49,6 +49,9 @@ pub(crate) struct Lexer<'a> {
 	unclosed: bool,
 	pub(crate) comments: Vec<Comment>,
 	pub(crate) strings: Interner,
+	/// The lone surrogates of the string or template being read: the UTF-16 offset in `buf`,
+	/// where it holds U+FFFD, and the surrogate.
+	marks: Vec<(u32, u16)>,
 }
 
 impl<'a> Lexer<'a> {
@@ -80,6 +83,7 @@ impl<'a> Lexer<'a> {
 			unclosed: false,
 			comments: Vec::new(),
 			strings,
+			marks: Vec::new(),
 		}
 	}
 
@@ -818,6 +822,7 @@ impl<'a> Lexer<'a> {
 		let start = self.pos;
 		self.pos += 1;
 		self.buf.clear();
+		self.marks.clear();
 		let mut pending = None;
 		let mut chunk_start = self.pos;
 		loop {
@@ -830,7 +835,7 @@ impl<'a> Lexer<'a> {
 				return self.unterminated(start, Code::UnterminatedString, |l| {
 					l.push_chunk(chunk_start, &mut pending);
 					l.flush(&mut pending);
-					TokenKind::String(l.strings.intern(&l.buf))
+					TokenKind::String(l.intern_buf())
 				});
 			}
 			let c = self.char().unwrap();
@@ -841,7 +846,7 @@ impl<'a> Lexer<'a> {
 					} else {
 						self.push_chunk(chunk_start, &mut pending);
 						self.flush(&mut pending);
-						self.strings.intern(&self.buf)
+						self.intern_buf()
 					};
 					self.pos += 1;
 					return Ok(TokenKind::String(value));
@@ -879,6 +884,7 @@ impl<'a> Lexer<'a> {
 			return self.error_with(start, Code::UnterminatedTemplate, "Unterminated template literal");
 		}
 		self.buf.clear();
+		self.marks.clear();
 		let mut valid = true;
 		let mut plain = true;
 		let mut returns = false;
@@ -920,7 +926,7 @@ impl<'a> Lexer<'a> {
 					} else if plain {
 						Some(raw)
 					} else {
-						Some(self.strings.intern(&self.buf))
+						Some(self.intern_buf())
 					};
 					let kind = TokenKind::Template { cooked, raw, tail };
 					return Ok(Token {
@@ -982,18 +988,35 @@ impl<'a> Lexer<'a> {
 					.push(char::from_u32(0x10000 + ((high - 0xd800) << 10) + (code - 0xdc00)).unwrap());
 				return;
 			}
-			self.buf.push('\u{fffd}');
+			self.push_lone(high);
 		}
 		if (0xd800..0xdc00).contains(&code) {
 			*pending = Some(code);
 		} else {
-			self.buf.push(char::from_u32(code).unwrap_or('\u{fffd}'));
+			match char::from_u32(code) {
+				Some(c) => self.buf.push(c),
+				None => self.push_lone(code),
+			}
 		}
 	}
 
 	fn flush(&mut self, pending: &mut Option<u32>) {
-		if pending.take().is_some() {
-			self.buf.push('\u{fffd}');
+		if let Some(high) = pending.take() {
+			self.push_lone(high);
+		}
+	}
+
+	/// A surrogate without its pair stands in the text as U+FFFD and is kept beside it.
+	fn push_lone(&mut self, code: u32) {
+		self.marks.push((self.buf.encode_utf16().count() as u32, code as u16));
+		self.buf.push('\u{fffd}');
+	}
+
+	fn intern_buf(&mut self) -> StrId {
+		if self.marks.is_empty() {
+			self.strings.intern(&self.buf)
+		} else {
+			self.strings.intern_marked(&self.buf, &self.marks)
 		}
 	}
 

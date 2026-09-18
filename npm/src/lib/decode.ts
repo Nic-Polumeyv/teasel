@@ -164,6 +164,7 @@ interface At {
 	numbers: number;
 	text: number;
 	starts: number;
+	marks: number;
 	units: number;
 	spans: number;
 	locs: number;
@@ -203,7 +204,7 @@ function language(layout: Layout, views: string[], typescript: boolean): Languag
 	const by = (recipes: RawRecipes, kinds: Kind[]) => kinds.map((kind) => resolve(recipes.find(([name]) => name === kind.name)?.[1] ?? [], kind.fields));
 	// a literal: an object filled by computed keys turns into a dictionary, a hash lookup per read
 	const of = (name: string) => 1 + views.indexOf(name);
-	const at: At = { nodes: of('nodes'), lists: of('lists'), numbers: of('numbers'), text: of('text'), starts: of('starts'), units: of('units'), spans: of('spans'), locs: of('locs'), parenthesized: of('parenthesized'), erased: of('erased'), comments: of('comments'), attached_slots: of('attached_slots'), attached: of('attached'), errors: of('errors'), hosts: of('hosts'), host_keys: of('host_keys'), host_vals: of('host_vals'), host_strings: of('host_strings'), scopes: of('scopes'), bindings: of('bindings'), references: of('references'), roots: of('roots'), of_node: of('of_node'), of_identifier: of('of_identifier'), root_of: of('root_of'), declared_by: of('declared_by'), declared_by_at: of('declared_by_at'), writes_of: of('writes_of'), writes_of_at: of('writes_of_at'), ts: of('ts'), extras_slots: of('extras_slots'), extras: of('extras'), names: of('names'), name_starts: of('name_starts'), rare: of('rare'), late: of('late'), sits: 1 + views.length };
+	const at: At = { nodes: of('nodes'), lists: of('lists'), numbers: of('numbers'), text: of('text'), starts: of('starts'), marks: of('marks'), units: of('units'), spans: of('spans'), locs: of('locs'), parenthesized: of('parenthesized'), erased: of('erased'), comments: of('comments'), attached_slots: of('attached_slots'), attached: of('attached'), errors: of('errors'), hosts: of('hosts'), host_keys: of('host_keys'), host_vals: of('host_vals'), host_strings: of('host_strings'), scopes: of('scopes'), bindings: of('bindings'), references: of('references'), roots: of('roots'), of_node: of('of_node'), of_identifier: of('of_identifier'), root_of: of('root_of'), declared_by: of('declared_by'), declared_by_at: of('declared_by_at'), writes_of: of('writes_of'), writes_of_at: of('writes_of_at'), ts: of('ts'), extras_slots: of('extras_slots'), extras: of('extras'), names: of('names'), name_starts: of('name_starts'), rare: of('rare'), late: of('late'), sits: 1 + views.length };
 	const out: Language = { layout, at, recipes: new Array<Op[] | undefined>(layout.kinds.length), ts: [], adds: [], extras: [], erased: [], sets: new Map(), last: -1, builders: undefined, names: [], host_ops: new Map(), state: undefined, tree: undefined, sat: [-1, -1] };
 	if (typescript) {
 		const extras = layout.extras!.fields;
@@ -334,6 +335,15 @@ function strings(tree: Tree, words: Uint32Array, lens: number, at: At): string[]
 	const ends = ascii ? (tree[at.starts] as Uint32Array) : (tree[at.units] as Uint32Array);
 	const out = new Array<string>(count);
 	for (let i = 0; i < count; i++) out[i] = text.slice(ends[i], ends[i + 1]);
+	// a lone surrogate stands in the text as U+FFFD: the string's number, the offset and the surrogate
+	const marked = words[lens + at.marks];
+	if (marked !== 0) {
+		const marks = tree[at.marks] as Uint32Array;
+		for (let i = 0; i < marked; i += 3) {
+			const s = out[marks[i]], offset = marks[i + 1];
+			out[marks[i]] = s.slice(0, offset) + String.fromCharCode(marks[i + 2]) + s.slice(offset + 1);
+		}
+	}
 	return out;
 }
 

@@ -73,6 +73,15 @@ fn string(src: &str) -> std::string::String {
 	}
 }
 
+fn marked(src: &str) -> Vec<(u32, u16)> {
+	let (lexer, token) = single(src);
+	let id = match token.kind {
+		String(value) => value,
+		kind => panic!("{kind:?}"),
+	};
+	lexer.strings.marks_of(id).iter().map(|m| (m[1], m[2] as u16)).collect()
+}
+
 fn ident(src: &str) -> (std::string::String, bool) {
 	let (lexer, token) = single(src);
 	match token.kind {
@@ -278,6 +287,26 @@ fn strings() {
 	assert_eq!(string("'\\u{d83d}\\u{de00}'"), "😀");
 	assert_eq!(string("'\\ud83d\\u{de00}'"), "😀");
 	assert_eq!(string("'\\ud83dx'"), "\u{fffd}x");
+	assert_eq!(marked("'\\ud83dx'"), vec![(0, 0xd83d)]);
+	assert_eq!(marked("'\\ude00'"), vec![(0, 0xde00)]);
+	assert_eq!(marked("'\\u{de00}'"), vec![(0, 0xde00)]);
+	assert_eq!(
+		marked("'😀\\ud83d\\ud83d\\ude00\\udbff'"),
+		vec![(2, 0xd83d), (5, 0xdbff)]
+	);
+	assert_eq!(marked("'\\ud83d\\ude00'"), vec![]);
+	assert_eq!(marked("'\\ufffd'"), vec![]);
+	{
+		let mut lexer = Lexer::new("'\\ud83d' '\\ufffd' '\\udbff'");
+		let ids: Vec<_> = (0..3)
+			.map(|_| match lexer.next_token().unwrap().kind {
+				String(value) => value,
+				kind => panic!("{kind:?}"),
+			})
+			.collect();
+		assert_ne!(ids[0], ids[1]);
+		assert_ne!(ids[0], ids[2]);
+	}
 	assert_eq!(string("'a\\\nb'"), "ab");
 	assert_eq!(string("'a\\\r\nb'"), "ab");
 	assert_eq!(string("'\\0'"), "\0");

@@ -73,6 +73,9 @@ pub struct Interner {
 	text: Handed<u8>,
 	/// Where each string starts, and where the next would.
 	starts: Handed<u32>,
+	/// Every lone surrogate the strings hold, where the text shows U+FFFD: the string's id, the
+	/// UTF-16 offset in it and the surrogate; in id order. Such a string is outside the table.
+	marks: Handed<[u32; 3]>,
 	/// Slots hold the string's hash in the high half and its id plus one in the low; zero is
 	/// empty. Always a power of two, at most half full. The hash sits beside the id so a probe
 	/// touches one line before it reads the text.
@@ -118,6 +121,7 @@ impl Interner {
 		Interner {
 			text: Handed::with_capacity(bytes / 32, 1 << 10),
 			starts,
+			marks: Handed::new(0),
 			table: vec![0; slots],
 			touched: Vec::new(),
 			word_flags: Vec::new(),
@@ -129,6 +133,7 @@ impl Interner {
 		self.text.clear();
 		self.starts.clear();
 		self.starts.push(0);
+		self.marks.clear();
 		// scattered writes lose to a fill past an eighth of the table
 		if self.touched.len() * 8 < self.table.len() {
 			for &slot in &self.touched {
@@ -159,6 +164,18 @@ impl Interner {
 		StrId::at(id)
 	}
 
+	/// `s` holding the lone surrogates `marks`, each the UTF-16 offset where `s` has U+FFFD and
+	/// the surrogate meant there. A string of its own each time: it is never found by its text.
+	pub fn intern_marked(&mut self, s: &str, marks: &[(u32, u16)]) -> StrId {
+		let id = self.len() as u32;
+		self.text.extend_from_slice(s.as_bytes());
+		self.starts.push(self.text.len() as u32);
+		for &(offset, code) in marks {
+			self.marks.push([id, offset, code as u32]);
+		}
+		StrId::at(id)
+	}
+
 	fn entry(hash: u32, id: u32) -> u64 {
 		(hash as u64) << 32 | (id + 1) as u64
 	}
@@ -183,6 +200,13 @@ impl Interner {
 			}
 			i = (i + 1) & mask;
 		}
+	}
+
+	/// The lone surrogates of `id` in offset order, each its id, its UTF-16 offset and the surrogate.
+	pub fn marks_of(&self, id: StrId) -> &[[u32; 3]] {
+		let from = self.marks.partition_point(|m| m[0] < id.index());
+		let len = self.marks[from..].partition_point(|m| m[0] == id.index());
+		&self.marks[from..from + len]
 	}
 
 	fn grow(&mut self) {
@@ -222,9 +246,10 @@ impl Interner {
 		self.starts.len().saturating_sub(1)
 	}
 
-	/// The text of every string, and where each starts, for a front end reading them in place.
-	pub fn buffers(&mut self) -> (&mut Handed<u8>, &mut Handed<u32>) {
-		(&mut self.text, &mut self.starts)
+	/// The text of every string, where each starts and the lone surrogates, for a front end
+	/// reading them in place.
+	pub fn buffers(&mut self) -> (&mut Handed<u8>, &mut Handed<u32>, &mut Handed<[u32; 3]>) {
+		(&mut self.text, &mut self.starts, &mut self.marks)
 	}
 
 	pub fn is_empty(&self) -> bool {
@@ -279,6 +304,30 @@ mod tests {
 			assert_eq!(interner.find(s), Some(id));
 		}
 		assert_eq!(interner.len(), ids.len() + 5);
+	}
+
+	#[test]
+	fn a_lone_surrogate_tells_strings_apart() {
+		let mut interner = Interner::default();
+		let plain = interner.intern("a\u{fffd}b");
+		let high = interner.intern_marked("a\u{fffd}b", &[(1, 0xd800)]);
+		let low = interner.intern_marked("a\u{fffd}b", &[(1, 0xdc00)]);
+		assert_ne!(plain, high);
+		assert_ne!(high, low);
+		assert_eq!(interner.intern("a\u{fffd}b"), plain);
+		assert_eq!(interner.find("a\u{fffd}b"), Some(plain));
+		assert_eq!(interner.get(high), "a\u{fffd}b");
+		assert_eq!(interner.marks_of(plain), &[] as &[[u32; 3]]);
+		assert_eq!(interner.marks_of(high), &[[high.index(), 1, 0xd800]]);
+		assert_eq!(interner.marks_of(low), &[[low.index(), 1, 0xdc00]]);
+		let two = interner.intern_marked("\u{fffd}\u{fffd}", &[(0, 0xdbff), (1, 0xdfff)]);
+		assert_eq!(
+			interner.marks_of(two),
+			&[[two.index(), 0, 0xdbff], [two.index(), 1, 0xdfff]]
+		);
+		interner.clear();
+		assert_eq!(interner.find("a\u{fffd}b"), None);
+		assert!(interner.marks.is_empty());
 	}
 
 	#[test]

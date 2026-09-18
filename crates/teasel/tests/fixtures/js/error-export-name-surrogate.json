@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "lone_surrogate_in_module_name",
+		"message": "An export name cannot include a lone surrogate",
+		"pos": 14,
+		"end": 22,
+		"loc": {
+			"line": 1,
+			"column": 14
+		}
+	}
+}

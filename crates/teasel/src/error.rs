@@ -89,6 +89,7 @@ codes! {
 	DuplicateExport "duplicate_export" => "Duplicate export '{}'",
 	UndefinedExport "undefined_export" => "Export '{}' is not defined",
 	StringExportWithoutFrom "string_export_without_from" => "A string literal cannot be used as an exported binding without `from`.",
+	LoneSurrogateInModuleName "lone_surrogate_in_module_name" => "An export name cannot include a lone surrogate",
 	DuplicateImportAttribute "duplicate_import_attribute" => "Duplicate attribute key '{}'",
 	ImportExportInScript "import_export_in_script" => "'import' and 'export' may appear only with 'sourceType: module'",
 	ImportExportNotTopLevel "import_export_not_top_level" => "'import' and 'export' may only appear at the top level",

@@ -7,7 +7,7 @@ use teasel::json::{Prepared, Request};
 thread_local! {
 	static TEXT: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
 	/// The count of the tree's buffers, then each one's address, room in bytes and element size; all zero before any parse.
-	static TREE: Cell<[u32; 145]> = const { Cell::new([0; 145]) };
+	static TREE: Cell<[u32; 148]> = const { Cell::new([0; 148]) };
 }
 
 #[unsafe(no_mangle)]
@@ -150,7 +150,7 @@ fn text(json: String) {
 // the count of views, then each view's address, its room in bytes and its elements' size; zero before any parse
 #[unsafe(no_mangle)]
 pub extern "C" fn tree() -> *const u32 {
-	let mut out = [0u32; 145];
+	let mut out = [0u32; 148];
 	let mut count = 0;
 	let found = teasel::json::tree(&mut |_, buffer| {
 		if let Some(buffer) = buffer {

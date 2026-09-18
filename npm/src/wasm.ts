@@ -108,8 +108,8 @@ export const engine: Engine = {
 		// the count of views, then each one's address, room in bytes and element size; the call allocates nothing, so the words' view stays
 		const address = wasm.tree();
 		const { buffer } = wasm.memory;
-		const at = new Uint32Array(buffer, address, 145);
-		const held = (trees[+typescript] ??= { buffer, at: new Uint32Array(145), views: [+typescript] });
+		const at = new Uint32Array(buffer, address, 148);
+		const held = (trees[+typescript] ??= { buffer, at: new Uint32Array(148), views: [+typescript] });
 		const same = held.buffer === buffer;
 		held.buffer = buffer;
 		// a new array: whoever kept the last one sees that a view in it changed

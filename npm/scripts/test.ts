@@ -370,6 +370,15 @@ const vue = grammars.vue;
 	assert.throws(() => open('<div v-for="x items">').parse(vue), { code: 'expected', message: 'Expected in or of' });
 }
 
+// a lone surrogate escape is the code unit it names, as JavaScript keeps it
+{
+	const values = (source: string): string[] => open(source, { sourceType: 'module' }).parse().node.body.map((s: Any) => s.expression.value ?? s.expression.quasis.map((q: Any) => q.value.cooked).join('|'));
+	assert.deepEqual(values("'\\ud83d'; '\\ude00x\\u{dbff}'; '\\ufffd'; '\\ud83d\\ude00'; `a\\ud83d${b}\\udc00`;"), ['\ud83d', '\ude00x\udbff', '�', '😀', 'a\ud83d|\udc00']);
+	assert.deepEqual(values("'\\ud83d'; '\\ufffd'; 'é\\udc00'; '\\ud83d';"), ['\ud83d', '�', 'é\udc00', '\ud83d']);
+	assert.throws(() => open("export { x as '\\ud800' };", { sourceType: 'module' }).parse(), { code: 'lone_surrogate_in_module_name', pos: 14 });
+	assert.throws(() => open("import { '\\udc00' as y } from 'm';", { sourceType: 'module' }).parse(), { code: 'lone_surrogate_in_module_name', pos: 9 });
+}
+
 // src/lib/codes.ts is written from error.rs by scripts/codes.ts: the two must agree
 {
 	const written = [...readFileSync(new URL('../src/lib/codes.ts', import.meta.url), 'utf8').matchAll(/'([a-z_0-9]+)'/g)].map((m) => m[1]);
