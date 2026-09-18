@@ -134,3 +134,40 @@ export function snippet(code: string, lang: 'javascript' | 'typescript' | 'bash'
 	const html = lang === 'bash' ? shell(code) : script(code, lang === 'typescript');
 	return { code, html, file };
 }
+
+export type Mark = { start: number; end: number; open: string };
+
+/** Wraps ranges of the code in a snippet's html; a range starts and ends between tokens, never inside one. */
+export function mark(html: string, marks: Mark[]) {
+	const sorted = marks.toSorted((a, b) => a.start - b.start);
+	let out = '';
+	let at = 0;
+	let depth = 0;
+	let next = 0;
+	let closing: number | undefined;
+	const edge = () => {
+		if (closing === at) {
+			if (depth !== 0) throw new Error(`a note ends inside a token at ${at}`);
+			out += '</span>';
+			closing = undefined;
+		}
+		if (sorted[next]?.start === at) {
+			if (depth !== 0 || closing !== undefined) throw new Error(`a note starts inside a token or another note at ${at}`);
+			out += sorted[next].open;
+			closing = sorted[next].end;
+			next += 1;
+		}
+	};
+	for (const [piece] of html.matchAll(/<\/span>|<span[^>]*>|&\w+;|[\s\S]/g)) {
+		if (piece === '</span>') depth -= 1;
+		else {
+			edge();
+			if (piece.startsWith('<span')) depth += 1;
+			else at += 1;
+		}
+		out += piece;
+	}
+	edge();
+	if (next !== sorted.length || closing !== undefined) throw new Error('a note lies past the end of its code');
+	return out;
+}

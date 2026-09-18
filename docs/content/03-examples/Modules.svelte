@@ -44,7 +44,7 @@
 	{/each}
 </Diagram>
 
-<Dialog.Root open={open !== null} onOpenChange={(value) => { if (!value) open = null; }}>
+<Dialog.Root open={open !== null} onOpenChangeComplete={(isOpen) => { if (!isOpen) open = null; }}>
 	<Dialog.Content class="p-0 sm:max-w-4xl [&_figure]:my-0 [&_figure]:rounded-none [&_figure]:border-0 [&_figure]:shadow-none">
 		<Dialog.Title class="sr-only">{open}</Dialog.Title>
 		<Dialog.Description class="sr-only">the file, highlighted</Dialog.Description>

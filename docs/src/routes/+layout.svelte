@@ -11,7 +11,17 @@
 	let { data, children } = $props();
 	initTheme();
 
+	function copy(event: MouseEvent) {
+		const button = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-copy]');
+		if (!button) return;
+		navigator.clipboard.writeText(button.dataset.copy!);
+		button.dataset.copied = '';
+		setTimeout(() => delete button.dataset.copied, 1500);
+	}
+
 </script>
+
+<svelte:document onclick={copy} />
 
 <svelte:head>
 	<link rel="icon" href={favicon} />
@@ -20,8 +30,8 @@
 <Tooltip.Provider>
 	<div class="flex min-h-screen flex-col">
 		<div class="plaid h-2.5"></div>
-		<header class="sticky top-0 z-50 bg-background">
-			<div class="mx-auto flex h-16 w-full max-w-6xl items-center gap-6 px-8">
+		<header class="sticky top-0 z-50 border-b bg-card">
+			<div class="flex h-16 w-full items-center gap-6 px-8 lg:px-12">
 				<a href="/" class="font-serif text-2xl font-medium tracking-tight">teasel</a>
 				<nav class="hidden gap-1 md:flex">
 					{#each data.sections as section (section.label)}
@@ -44,7 +54,7 @@
 				</div>
 			</div>
 		</header>
-		<main class="flex-1">
+		<main class="flex flex-1 flex-col">
 			{@render children()}
 		</main>
 		<div class="plaid h-2.5"></div>
