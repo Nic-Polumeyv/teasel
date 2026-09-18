@@ -12,7 +12,9 @@ pub(crate) const SCOPE_SUPER: u32 = 64;
 pub(crate) const SCOPE_DIRECT_SUPER: u32 = 128;
 pub(crate) const SCOPE_CLASS_STATIC_BLOCK: u32 = 256;
 pub(crate) const SCOPE_CLASS_FIELD_INIT: u32 = 512;
-pub(crate) const SCOPE_VAR: u32 = SCOPE_TOP | SCOPE_FUNCTION | SCOPE_CLASS_STATIC_BLOCK;
+/// A TypeScript namespace or module body: `var` stops there.
+pub(crate) const SCOPE_TS_MODULE: u32 = 1024;
+pub(crate) const SCOPE_VAR: u32 = SCOPE_TOP | SCOPE_FUNCTION | SCOPE_CLASS_STATIC_BLOCK | SCOPE_TS_MODULE;
 const SCOPE_VAR_LIKE: u32 = SCOPE_VAR | SCOPE_CLASS_FIELD_INIT;
 
 pub(crate) fn function_flags(is_async: bool, generator: bool) -> u32 {
@@ -45,6 +47,10 @@ pub(crate) struct Scope {
 const INDEXED: usize = 64;
 
 impl Scope {
+	pub(crate) fn declared(&self) -> impl Iterator<Item = StrId> + '_ {
+		self.names.iter().map(|(name, _)| *name)
+	}
+
 	fn has(&self, name: StrId, kinds: u8) -> bool {
 		match &self.index {
 			Some(index) => index.get(&name).is_some_and(|kind| kind & kinds != 0),

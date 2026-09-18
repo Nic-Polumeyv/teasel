@@ -1,0 +1,366 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 180,
+		"scope": 0,
+		"body": [
+			{
+				"type": "ImportDeclaration",
+				"start": 0,
+				"end": 20,
+				"importKind": "value",
+				"specifiers": [
+					{
+						"type": "ImportDefaultSpecifier",
+						"start": 7,
+						"end": 8,
+						"defines": [
+							0
+						],
+						"local": {
+							"type": "Identifier",
+							"start": 7,
+							"end": 8,
+							"declares": 0,
+							"name": "D"
+						}
+					}
+				],
+				"source": {
+					"type": "Literal",
+					"start": 14,
+					"end": 19,
+					"value": "./d",
+					"raw": "\"./d\""
+				},
+				"attributes": []
+			},
+			{
+				"type": "TSModuleDeclaration",
+				"start": 21,
+				"end": 55,
+				"scope": 1,
+				"declare": true,
+				"global": true,
+				"id": {
+					"type": "Identifier",
+					"start": 29,
+					"end": 35,
+					"name": "global"
+				},
+				"body": {
+					"type": "TSModuleBlock",
+					"start": 36,
+					"end": 55,
+					"body": [
+						{
+							"type": "VariableDeclaration",
+							"start": 39,
+							"end": 53,
+							"declarations": [
+								{
+									"type": "VariableDeclarator",
+									"start": 43,
+									"end": 52,
+									"defines": [
+										1
+									],
+									"id": {
+										"type": "Identifier",
+										"start": 43,
+										"end": 52,
+										"declares": 1,
+										"typeAnnotation": {
+											"type": "TSTypeAnnotation",
+											"start": 44,
+											"end": 52,
+											"typeAnnotation": {
+												"type": "TSNumberKeyword",
+												"start": 46,
+												"end": 52
+											}
+										},
+										"name": "D"
+									},
+									"init": null
+								}
+							],
+							"kind": "var"
+						}
+					]
+				}
+			},
+			{
+				"type": "TSModuleDeclaration",
+				"start": 56,
+				"end": 83,
+				"scope": 2,
+				"defines": [
+					2
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 66,
+					"end": 67,
+					"declares": 2,
+					"name": "N"
+				},
+				"body": {
+					"type": "TSModuleBlock",
+					"start": 68,
+					"end": 83,
+					"body": [
+						{
+							"type": "VariableDeclaration",
+							"start": 71,
+							"end": 81,
+							"declarations": [
+								{
+									"type": "VariableDeclarator",
+									"start": 75,
+									"end": 80,
+									"defines": [
+										3
+									],
+									"id": {
+										"type": "Identifier",
+										"start": 75,
+										"end": 76,
+										"declares": 3,
+										"name": "x"
+									},
+									"init": {
+										"type": "Literal",
+										"start": 79,
+										"end": 80,
+										"value": 1,
+										"raw": "1"
+									}
+								}
+							],
+							"kind": "var"
+						}
+					]
+				}
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 84,
+				"end": 96,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 90,
+						"end": 95,
+						"defines": [
+							4
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 90,
+							"end": 91,
+							"declares": 4,
+							"name": "x"
+						},
+						"init": {
+							"type": "Literal",
+							"start": 94,
+							"end": 95,
+							"value": 2,
+							"raw": "2"
+						}
+					}
+				],
+				"kind": "const"
+			},
+			{
+				"type": "TSModuleDeclaration",
+				"start": 97,
+				"end": 179,
+				"scope": 3,
+				"declare": true,
+				"id": {
+					"type": "Literal",
+					"start": 112,
+					"end": 120,
+					"value": "buffer",
+					"raw": "\"buffer\""
+				},
+				"body": {
+					"type": "TSModuleBlock",
+					"start": 121,
+					"end": 179,
+					"body": [
+						{
+							"type": "ExportNamedDeclaration",
+							"start": 124,
+							"end": 144,
+							"exportKind": "value",
+							"declaration": {
+								"type": "ClassDeclaration",
+								"start": 131,
+								"end": 144,
+								"scope": 4,
+								"defines": [
+									5
+								],
+								"id": {
+									"type": "Identifier",
+									"start": 137,
+									"end": 141,
+									"declares": 5,
+									"name": "Blob"
+								},
+								"superClass": null,
+								"body": {
+									"type": "ClassBody",
+									"start": 142,
+									"end": 144,
+									"body": []
+								}
+							},
+							"specifiers": [],
+							"source": null,
+							"attributes": []
+						},
+						{
+							"type": "TSModuleDeclaration",
+							"start": 146,
+							"end": 177,
+							"scope": 5,
+							"global": true,
+							"id": {
+								"type": "Identifier",
+								"start": 146,
+								"end": 152,
+								"name": "global"
+							},
+							"body": {
+								"type": "TSModuleBlock",
+								"start": 153,
+								"end": 177,
+								"body": [
+									{
+										"type": "VariableDeclaration",
+										"start": 157,
+										"end": 174,
+										"declarations": [
+											{
+												"type": "VariableDeclarator",
+												"start": 161,
+												"end": 173,
+												"defines": [
+													6
+												],
+												"id": {
+													"type": "Identifier",
+													"start": 161,
+													"end": 173,
+													"declares": 6,
+													"typeAnnotation": {
+														"type": "TSTypeAnnotation",
+														"start": 165,
+														"end": 173,
+														"typeAnnotation": {
+															"type": "TSNumberKeyword",
+															"start": 167,
+															"end": 173
+														}
+													},
+													"name": "Blob"
+												},
+												"init": null
+											}
+										],
+										"kind": "var"
+									}
+								]
+							}
+						}
+					]
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 180,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "namespace",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "namespace",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "namespace",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "class",
+			"parent": 3,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "namespace",
+			"parent": 3,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "D",
+			"kind": "import",
+			"scope": 0,
+			"write": true
+		},
+		{
+			"name": "D",
+			"kind": "var",
+			"scope": 1,
+			"write": false
+		},
+		{
+			"name": "N",
+			"kind": "namespace",
+			"scope": 0,
+			"write": true
+		},
+		{
+			"name": "x",
+			"kind": "var",
+			"scope": 2,
+			"write": true
+		},
+		{
+			"name": "x",
+			"kind": "const",
+			"scope": 0,
+			"write": true
+		},
+		{
+			"name": "Blob",
+			"kind": "class",
+			"scope": 3,
+			"write": true
+		},
+		{
+			"name": "Blob",
+			"kind": "var",
+			"scope": 5,
+			"write": false
+		}
+	],
+	"references": []
+}

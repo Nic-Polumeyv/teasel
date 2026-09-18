@@ -1,0 +1,325 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 160,
+		"scope": 0,
+		"body": [
+			{
+				"type": "ImportDeclaration",
+				"start": 0,
+				"end": 29,
+				"importKind": "type",
+				"specifiers": [
+					{
+						"type": "ImportSpecifier",
+						"start": 14,
+						"end": 15,
+						"importKind": "value",
+						"imported": {
+							"type": "Identifier",
+							"start": 14,
+							"end": 15,
+							"name": "C"
+						},
+						"local": {
+							"type": "Identifier",
+							"start": 14,
+							"end": 15,
+							"name": "C"
+						}
+					}
+				],
+				"source": {
+					"type": "Literal",
+					"start": 23,
+					"end": 28,
+					"value": "./t",
+					"raw": "\"./t\""
+				},
+				"attributes": []
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 30,
+				"end": 54,
+				"declare": true,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 44,
+						"end": 53,
+						"defines": [
+							0
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 44,
+							"end": 53,
+							"declares": 0,
+							"typeAnnotation": {
+								"type": "TSTypeAnnotation",
+								"start": 45,
+								"end": 53,
+								"typeAnnotation": {
+									"type": "TSNumberKeyword",
+									"start": 47,
+									"end": 53
+								}
+							},
+							"name": "C"
+						},
+						"init": null
+					}
+				],
+				"kind": "const"
+			},
+			{
+				"type": "ImportDeclaration",
+				"start": 55,
+				"end": 84,
+				"importKind": "value",
+				"specifiers": [
+					{
+						"type": "ImportSpecifier",
+						"start": 64,
+						"end": 70,
+						"importKind": "type",
+						"imported": {
+							"type": "Identifier",
+							"start": 69,
+							"end": 70,
+							"name": "D"
+						},
+						"local": {
+							"type": "Identifier",
+							"start": 69,
+							"end": 70,
+							"name": "D"
+						}
+					}
+				],
+				"source": {
+					"type": "Literal",
+					"start": 78,
+					"end": 83,
+					"value": "./t",
+					"raw": "\"./t\""
+				},
+				"attributes": []
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 85,
+				"end": 97,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 91,
+						"end": 96,
+						"defines": [
+							1
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 91,
+							"end": 92,
+							"declares": 1,
+							"name": "D"
+						},
+						"init": {
+							"type": "Literal",
+							"start": 95,
+							"end": 96,
+							"value": 1,
+							"raw": "1"
+						}
+					}
+				],
+				"kind": "const"
+			},
+			{
+				"type": "ImportDeclaration",
+				"start": 98,
+				"end": 123,
+				"importKind": "type",
+				"specifiers": [
+					{
+						"type": "ImportDefaultSpecifier",
+						"start": 110,
+						"end": 111,
+						"local": {
+							"type": "Identifier",
+							"start": 110,
+							"end": 111,
+							"name": "E"
+						}
+					}
+				],
+				"source": {
+					"type": "Literal",
+					"start": 117,
+					"end": 122,
+					"value": "./t",
+					"raw": "\"./t\""
+				},
+				"attributes": []
+			},
+			{
+				"type": "FunctionDeclaration",
+				"start": 124,
+				"end": 139,
+				"scope": 1,
+				"defines": [
+					2
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 133,
+					"end": 134,
+					"declares": 2,
+					"name": "E"
+				},
+				"expression": false,
+				"generator": false,
+				"async": false,
+				"params": [],
+				"body": {
+					"type": "BlockStatement",
+					"start": 137,
+					"end": 139,
+					"body": []
+				}
+			},
+			{
+				"type": "ExportNamedDeclaration",
+				"start": 140,
+				"end": 159,
+				"exportKind": "value",
+				"declaration": null,
+				"specifiers": [
+					{
+						"type": "ExportSpecifier",
+						"start": 149,
+						"end": 150,
+						"exportKind": "value",
+						"local": {
+							"type": "Identifier",
+							"start": 149,
+							"end": 150,
+							"reference": 0,
+							"name": "C"
+						},
+						"exported": {
+							"type": "Identifier",
+							"start": 149,
+							"end": 150,
+							"name": "C"
+						}
+					},
+					{
+						"type": "ExportSpecifier",
+						"start": 152,
+						"end": 153,
+						"exportKind": "value",
+						"local": {
+							"type": "Identifier",
+							"start": 152,
+							"end": 153,
+							"reference": 1,
+							"name": "D"
+						},
+						"exported": {
+							"type": "Identifier",
+							"start": 152,
+							"end": 153,
+							"name": "D"
+						}
+					},
+					{
+						"type": "ExportSpecifier",
+						"start": 155,
+						"end": 156,
+						"exportKind": "value",
+						"local": {
+							"type": "Identifier",
+							"start": 155,
+							"end": 156,
+							"reference": 2,
+							"name": "E"
+						},
+						"exported": {
+							"type": "Identifier",
+							"start": 155,
+							"end": 156,
+							"name": "E"
+						}
+					}
+				],
+				"source": null,
+				"attributes": []
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 160,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "C",
+			"kind": "const",
+			"scope": 0,
+			"write": false
+		},
+		{
+			"name": "D",
+			"kind": "const",
+			"scope": 0,
+			"write": true
+		},
+		{
+			"name": "E",
+			"kind": "function",
+			"scope": 0,
+			"write": true
+		}
+	],
+	"references": [
+		{
+			"scope": 0,
+			"binding": 0,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": 1,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": 2,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		}
+	]
+}

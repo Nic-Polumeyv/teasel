@@ -64,6 +64,9 @@ pub struct State {
 	ambient: bool,
 	/// The innermost module body is a namespace's, not a quoted module's or global's.
 	in_namespace: bool,
+	/// Inside `declare global` or a `global` block: what is declared there is the module's to export.
+	global_depth: u32,
+	globals: crate::interner::FastSet<StrId>,
 	in_abstract_class: bool,
 	/// Inside a parenthesized list that may turn out to be arrow parameters.
 	maybe_in_arrow_parameters: bool,
@@ -135,6 +138,8 @@ struct FunctionFrame {
 	type_parameters: Option<NodeId>,
 	return_type: Option<NodeId>,
 	arrow_parameters: bool,
+	/// The first optional binding pattern among the parameters: an error once a body follows.
+	optional_pattern: Option<u32>,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -450,6 +455,9 @@ impl Parser<'_, TypeScript> {
 		}
 		if depth == 0 {
 			self.undeclared_exports.remove(&name);
+		}
+		if self.ext.global_depth > 0 {
+			self.ext.globals.insert(name);
 		}
 		self.ext.types.push(depth, name);
 		Ok(())
@@ -966,6 +974,17 @@ impl Extension for TypeScript {
 		let NodeKind::ImportDeclaration { specifiers, .. } = p.kind(node) else {
 			unreachable!()
 		};
+		if kind == Kind::Type {
+			for specifier in p.ast.list(specifiers).to_vec().into_iter().flatten() {
+				let (NodeKind::ImportSpecifier { local, .. }
+				| NodeKind::ImportDefaultSpecifier { local }
+				| NodeKind::ImportNamespaceSpecifier { local }) = p.kind(specifier)
+				else {
+					continue;
+				};
+				p.declare_export_only(local);
+			}
+		}
 		if kind == Kind::Type
 			&& specifiers.len > 1
 			&& matches!(
@@ -984,6 +1003,16 @@ impl Extension for TypeScript {
 		Ok(None)
 	}
 
+	// a type-only import binds no value: a value may take the name, an export may still name it
+	fn import_binding(p: &Parser<Self>) -> crate::parser::scope::Binding {
+		use crate::parser::scope::Binding;
+		if p.ext.outer_kind == Some(Kind::Type) {
+			Binding::None
+		} else {
+			Binding::Lexical
+		}
+	}
+
 	fn exports_in_script(p: &Parser<Self>) -> bool {
 		p.ext.module_blocks > 0
 	}
@@ -993,7 +1022,10 @@ impl Extension for TypeScript {
 	}
 
 	fn declares_export(p: &mut Parser<Self>, name: StrId) -> bool {
-		p.ext.module_blocks > 0 || p.ext.types.contains(name) || p.ext.export_only.contains(name)
+		p.ext.module_blocks > 0
+			|| p.ext.types.contains(name)
+			|| p.ext.export_only.contains(name)
+			|| p.ext.globals.contains(&name)
 	}
 
 	fn scope_exit(p: &mut Parser<Self>) {
@@ -1095,7 +1127,15 @@ impl Extension for TypeScript {
 				return p.error(p.start_of(node), Code::OptionalRest);
 			}
 			if !matches!(p.kind(node), NodeKind::Identifier { .. }) && !p.ext.ambient && !p.lexer.in_type {
-				return p.error(p.start_of(node), Code::OptionalPatternParameter);
+				// a signature without a body may have one; the parameters come before that is known
+				let pos = p.start_of(node);
+				let arrow = p.ext.maybe_in_arrow_parameters;
+				match p.ext.functions.last_mut() {
+					Some(frame) if !arrow => {
+						frame.optional_pattern.get_or_insert(pos);
+					}
+					_ => return p.error(pos, Code::OptionalPatternParameter),
+				}
 			}
 			p.extras_mut(node).optional = true;
 		}
@@ -1280,6 +1320,9 @@ impl Extension for TypeScript {
 		if p.ext.ambient && bodiless.is_some() {
 			return p.error(start, Code::ImplementationInAmbient);
 		}
+		if let Some(pos) = p.ext.functions.last().unwrap().optional_pattern {
+			return p.error(pos, Code::OptionalPatternParameter);
+		}
 		Ok(None)
 	}
 
@@ -1354,7 +1397,7 @@ impl Extension for TypeScript {
 	}
 
 	fn class_type_parameters(p: &mut Parser<Self>) -> Result<()> {
-		let type_parameters = p.try_parse_type_parameters(TypeParameterModifiers::InOut)?;
+		let type_parameters = p.try_parse_type_parameters(TypeParameterModifiers::Class)?;
 		p.ext.classes.last_mut().unwrap().type_parameters = type_parameters;
 		Ok(())
 	}

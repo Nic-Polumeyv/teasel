@@ -137,6 +137,10 @@ pub(crate) trait Extension: Default + Sized {
 	fn import_specifier(p: &mut Parser<Self>) -> Result<Option<NodeId>> {
 		Ok(None)
 	}
+	/// How an import's local name binds: `None` for one that binds no value.
+	fn import_binding(p: &Parser<Self>) -> scope::Binding {
+		scope::Binding::Lexical
+	}
 	/// Whether the extension declared `name` in a way that satisfies a local `export { name }`.
 	/// Whether an `export` here belongs to the extension's own scoping, a namespace body say, so
 	/// the script goal does not forbid it.
