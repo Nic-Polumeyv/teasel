@@ -355,6 +355,8 @@ struct Walker<'a, E: Extension> {
 	at: u32,
 	/// Where the JavaScript read at the cursor must end: the source, or an attribute value.
 	limit: u32,
+	/// The JavaScript read last ended at one of its stops.
+	stopped: bool,
 	frames: Vec<Frame<'a>>,
 	once: Vec<&'static str>,
 	/// Where the current tag's word starts, for a declaration spelled without its keyword.
@@ -415,6 +417,7 @@ pub(crate) fn parse_document<E: Extension>(
 		ast: Some(reused.unwrap_or_else(|| Box::new(Ast::sized(src.len())))),
 		at: 0,
 		limit: cut.len() as u32,
+		stopped: false,
 		frames: vec![Frame::Root {
 			nodes: Vec::new(),
 			instance: None,
@@ -2671,21 +2674,13 @@ impl<'a, E: Extension> Walker<'a, E> {
 			}
 			Entry::Code => {
 				let (start, end) = (self.at, self.limit);
-				let comments = self.tree().comments.len();
-				let mark = self.tree().mark();
-				// one expression, read strictly so that recovery cannot stand in for the statements
-				let recovering = std::mem::replace(&mut self.options.error_recovery, false);
-				let expression = self.js(JsEntry::Expression, "");
-				self.options.error_recovery = recovering;
-				if let Ok(roots) = expression {
-					self.space_to(end);
-					if self.at >= end {
-						return Ok(Value::Node(self.first(roots)));
-					}
+				let whole = |host: &mut Self| {
+					host.space_to(end);
+					host.at >= end
+				};
+				if let Some(roots) = self.trial("", whole) {
+					return Ok(Value::Node(self.first(roots)));
 				}
-				self.at = start;
-				self.ast().comments.truncate(comments);
-				self.ast().truncate(mark);
 				let program = self.program(start, end)?;
 				self.at = end;
 				Value::Node(program)
@@ -2782,25 +2777,30 @@ impl<'a, E: Extension> Walker<'a, E> {
 	/// The groups that can follow an expression are tried in the rule's order: a literal of a later
 	/// group is JavaScript's while one of an earlier group still follows, the `,` of `a, b as x`.
 	fn expression_in_order(&mut self, stops: &grammar::Stops) -> Result<List> {
-		for tier in stops.tiers {
-			let (start, comments, mark) = (self.at, self.tree().comments.len(), self.tree().mark());
-			let recovering = std::mem::replace(&mut self.options.error_recovery, false);
-			let read = self.js(JsEntry::Expression, tier.stops);
-			self.options.error_recovery = recovering;
-			if let Ok(roots) = read {
-				let end = self.at;
-				self.space();
-				let ended = tier.own.iter().any(|literal| self.literal_here(literal));
-				self.at = end;
-				if ended {
-					return Ok(roots);
-				}
+		for stop in stops.tiers {
+			if let Some(roots) = self.trial(stop, |host| host.stopped) {
+				return Ok(roots);
 			}
-			self.at = start;
-			self.ast().comments.truncate(comments);
-			self.ast().truncate(mark);
 		}
 		self.js(JsEntry::Expression, stops.expression)
+	}
+
+	/// One expression read strictly, so that recovery cannot stand in for what is not one, and
+	/// taken back unless `keep` says it ended where it should.
+	fn trial(&mut self, stop: &str, keep: impl FnOnce(&mut Self) -> bool) -> Option<List> {
+		let (start, comments, mark) = (self.at, self.tree().comments.len(), self.tree().mark());
+		let recovering = std::mem::replace(&mut self.options.error_recovery, false);
+		let read = self.js(JsEntry::Expression, stop);
+		self.options.error_recovery = recovering;
+		if let Ok(roots) = read
+			&& keep(self)
+		{
+			return Some(roots);
+		}
+		self.at = start;
+		self.ast().comments.truncate(comments);
+		self.ast().truncate(mark);
+		None
 	}
 
 	fn js(&mut self, entry: JsEntry, stop: &str) -> Result<List> {
@@ -2827,6 +2827,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			result => result,
 		};
 		let end = parser.consumed_end();
+		self.stopped = parser.lexer.stopped;
 		self.ast = Some(parser.finish());
 		let roots = roots?;
 		self.at = end;

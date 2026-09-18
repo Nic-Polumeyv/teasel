@@ -49,16 +49,9 @@ pub struct Stops {
 	pub list: &'static [&'static str],
 	pub joined: &'static str,
 	pub expression: &'static str,
-	/// The expression's stops group by group in the rule's order, when more than one group can
-	/// follow it: all but the last, which `expression` is.
-	pub tiers: &'static [Tier],
-}
-
-/// The stops of an expression up to one group of the rule, and that group's own literals.
-#[derive(Clone, Copy, Debug)]
-pub struct Tier {
-	pub stops: &'static str,
-	pub own: &'static [&'static str],
+	/// The expression's stops up to each group that can follow it, in the rule's order, when more
+	/// than one can: all but the last, which `expression` is.
+	pub tiers: &'static [&'static str],
 }
 
 impl Stops {
@@ -81,10 +74,7 @@ impl Stops {
 		let mut tiers = Vec::new();
 		for group in ending.iter().take(ending.len().saturating_sub(1)) {
 			so_far.extend(group);
-			tiers.push(Tier {
-				stops: keep(&so_far.join(" ")),
-				own: Vec::leak(group.clone()),
-			});
+			tiers.push(keep(&so_far.join(" ")));
 		}
 		let expression: Vec<&str> = list.iter().copied().filter(continues).collect();
 		Stops {
