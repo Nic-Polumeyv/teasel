@@ -431,9 +431,10 @@ impl<X: Reuse> Ast<X> {
 		out.push("nodes", &mut self.nodes);
 		out.push("lists", &mut self.lists);
 		out.push("numbers", &mut self.numbers);
-		let (text, starts) = self.strings.buffers();
+		let (text, starts, marks) = self.strings.buffers();
 		out.push("text", text);
 		out.push("starts", starts);
+		out.push("marks", marks);
 		out.push("units", &mut self.units);
 		out.push("spans", &mut self.spans);
 		out.push("locs", &mut self.locs);

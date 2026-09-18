@@ -1071,7 +1071,10 @@ impl<E: Extension> Parser<'_, E> {
 	}
 
 	pub(crate) fn parse_module_export_name(&mut self) -> Result<NodeId> {
-		if matches!(self.tok.kind, TokenKind::String(_)) {
+		if let TokenKind::String(value) = self.tok.kind {
+			if !self.lexer.strings.marks_of(value).is_empty() {
+				return self.error(self.tok.start, Code::LoneSurrogateInModuleName);
+			}
 			let literal = self.parse_expr_atom(&mut None, ForInit::No, false)?;
 			return Ok(literal);
 		}

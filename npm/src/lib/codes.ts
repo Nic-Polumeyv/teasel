@@ -50,6 +50,7 @@ export type Code =
 	| 'duplicate_export'
 	| 'undefined_export'
 	| 'string_export_without_from'
+	| 'lone_surrogate_in_module_name'
 	| 'duplicate_import_attribute'
 	| 'import_export_in_script'
 	| 'import_export_not_top_level'

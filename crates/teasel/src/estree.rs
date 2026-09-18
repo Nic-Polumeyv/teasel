@@ -147,6 +147,33 @@ impl Json {
 		write_json_string(&mut self.out, value);
 	}
 
+	/// A string with lone surrogates at `marks`, as the interner keeps them: each written as
+	/// the escape JSON has for it.
+	pub(crate) fn marked(&mut self, value: &str, marks: &[[u32; 3]]) {
+		if marks.is_empty() {
+			return self.text(value);
+		}
+		self.sep();
+		self.out.push('"');
+		let mut marks = marks.iter();
+		let mut next = marks.next();
+		let mut units = 0u32;
+		let mut from = 0usize;
+		for (i, c) in value.char_indices() {
+			if let Some(mark) = next
+				&& mark[1] == units
+			{
+				escape_json(&mut self.out, &value[from..i]);
+				write!(self.out, "\\u{:04x}", mark[2]).unwrap();
+				from = i + c.len_utf8();
+				next = marks.next();
+			}
+			units += c.len_utf16() as u32;
+		}
+		escape_json(&mut self.out, &value[from..]);
+		self.out.push('"');
+	}
+
 	// the two entries every node has, written in one piece: a measurable share of the text
 	fn span(&mut self, start: u32, end: u32) {
 		self.sep();
@@ -740,7 +767,11 @@ impl<'a, X: Emit> Writer<'a, X> {
 
 	pub(crate) fn interned(&mut self, key: Name, id: StrId) {
 		self.key(key);
-		self.json.text(self.ast.str(id));
+		self.str_of(id);
+	}
+
+	fn str_of(&mut self, id: StrId) {
+		self.json.marked(self.ast.str(id), self.ast.strings.marks_of(id));
 	}
 
 	pub(crate) fn raw(&mut self, id: NodeId) {
@@ -806,7 +837,7 @@ impl<'a, X: Emit> Writer<'a, X> {
 					Ty::OptStr => {
 						self.key(key);
 						match get::<Option<StrId>>(base, slot) {
-							Some(string) => self.json.text(self.ast.str(string)),
+							Some(string) => self.str_of(string),
 							None => self.json.null(),
 						}
 					}
@@ -928,8 +959,8 @@ impl<'a, X: Emit> Writer<'a, X> {
 						Value::Strs(start, len) => {
 							self.key(key);
 							self.json.list();
-							for &string in &self.ast.host_strings[start as usize..(start + len) as usize] {
-								self.json.text(self.ast.str(string));
+							for i in start as usize..(start + len) as usize {
+								self.str_of(self.ast.host_strings[i]);
 							}
 							self.json.end();
 						}
@@ -1127,6 +1158,11 @@ fn even_on_tie(value: f64, digits: &mut [u8]) {
 
 pub(crate) fn write_json_string(out: &mut String, s: &str) {
 	out.push('"');
+	escape_json(out, s);
+	out.push('"');
+}
+
+fn escape_json(out: &mut String, s: &str) {
 	let mut from = 0;
 	for (i, b) in s.bytes().enumerate() {
 		if b >= 0x20 && b != b'"' && b != b'\\' {
@@ -1146,7 +1182,6 @@ pub(crate) fn write_json_string(out: &mut String, s: &str) {
 		from = i + 1;
 	}
 	out.push_str(&s[from..]);
-	out.push('"');
 }
 
 #[cfg(test)]
