@@ -1,5 +1,27 @@
 # @teasel/parser
 
+## 0.0.11
+
+### Patch Changes
+
+- [#134](https://github.com/Nic-Polumeyv/teasel/pull/134) [`580447e`](https://github.com/Nic-Polumeyv/teasel/commit/580447e144e03e2d1c5f1494ddccbd2d3f0ff481) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - One entry: `Source`, `parentOf`, `scopeOf`, `referenceOf` and the types come from one module, which takes the native engine where Node loads addons and the WebAssembly one everywhere else. The `engine` export and the `@teasel/parser/wasm` subpath are gone; `node --no-addons` is the way to the WebAssembly engine on Node.
+
+- [#134](https://github.com/Nic-Polumeyv/teasel/pull/134) [`580447e`](https://github.com/Nic-Polumeyv/teasel/commit/580447e144e03e2d1c5f1494ddccbd2d3f0ff481) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - A musl Linux is told there is no native build for it, with `node --no-addons` as the way out, instead of a module-not-found for the glibc package.
+
+- [#134](https://github.com/Nic-Polumeyv/teasel/pull/134) [`580447e`](https://github.com/Nic-Polumeyv/teasel/commit/580447e144e03e2d1c5f1494ddccbd2d3f0ff481) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - Node 22.17 is the floor.
+
+- [#136](https://github.com/Nic-Polumeyv/teasel/pull/136) [`4d33f8c`](https://github.com/Nic-Polumeyv/teasel/commit/4d33f8c1a20aa6cdcb16ad87a40e3850494328af) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - One rule for every parse: `source.parse(plan, at)`. `Plan.program`, `Plan.expression`, `Plan.pattern`, `Plan.params`, `Plan.statement` and `Plan.typeParameters` are what to read, `until(...tokens)` ends one where the host's own tokens follow, and `new Plan(grammar)` reads the whole source as a document of a host language. `at` is an offset or `[start, end]`. The entry strings, `stopAt`, `end` and the `host` option are gone; `Source` has no type parameter, a plan carries what its parse answers with.
+
+- [#135](https://github.com/Nic-Polumeyv/teasel/pull/135) [`6b24df7`](https://github.com/Nic-Polumeyv/teasel/commit/6b24df787acb92d42ceefdd6a82c5e71e9864bdf) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - The answer is built from the parser's own tree, read in place, without a second pass that encoded it first: a parse to ESTree is 15 to 30% faster on sources of tens of kilobytes, about 10% on a host's documents, and a little on small expressions. The first parse of a process costs a few milliseconds more than before: the reader builds itself for the kinds of node it meets, once.
+
+- [#133](https://github.com/Nic-Polumeyv/teasel/pull/133) [`654521a`](https://github.com/Nic-Polumeyv/teasel/commit/654521a2641ecea51b4646cb7a896cf734be780e) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - The `plan` entry is gone: it authored a host format nothing consumed yet.
+
+- [#137](https://github.com/Nic-Polumeyv/teasel/pull/137) [`e2838e6`](https://github.com/Nic-Polumeyv/teasel/commit/e2838e63c52296d9ceb0a7c902582272ca89cc97) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - A block clause given twice, `{:then}` after `{:then}` say, no longer answers with the field twice when errors are recovered from; the error is listed as before.
+
+- [#138](https://github.com/Nic-Polumeyv/teasel/pull/138) [`a3caae8`](https://github.com/Nic-Polumeyv/teasel/commit/a3caae8b31064086bdd1146e008179891f1f1135) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - TypeScript that the compiler accepts and the parser refused: `var` inside a namespace, `declare global` or `declare module` body no longer clashes with the name outside it; `const` on a type parameter of a class, a function type or a call, construct or method signature; an optional binding pattern in a signature without a body; a value declared with the name of a type-only import; an export of what a `declare global` block declares; `arguments` as a parameter name in a type inside a namespace; `declare function eval`.
+
+- [#130](https://github.com/Nic-Polumeyv/teasel/pull/130) [`424c30b`](https://github.com/Nic-Polumeyv/teasel/commit/424c30bb748ab65bd4ff93f2915aa95d6cf2f8f7) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - The package is written in TypeScript: `node.d.ts`, `wasm.d.ts` and the declarations under `lib/` are emitted from the sources, in place of a hand-written `types.d.ts`. Entry points are unchanged.
+
 ## 0.0.10
 
 ### Patch Changes
