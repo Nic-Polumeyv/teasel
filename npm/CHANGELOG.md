@@ -1,5 +1,13 @@
 # @teasel/parser
 
+## 0.0.12
+
+### Patch Changes
+
+- [#139](https://github.com/Nic-Polumeyv/teasel/pull/139) [`a24282b`](https://github.com/Nic-Polumeyv/teasel/commit/a24282b2c6297afa381f40023fb1cdd737200f37) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - `ParseError.code` is the type `Code`, every code the engine reports, so a comparison against one is checked; a grammar that cannot be read throws an `Error` naming the line on both engines.
+
+- [#141](https://github.com/Nic-Polumeyv/teasel/pull/141) [`69fb038`](https://github.com/Nic-Polumeyv/teasel/commit/69fb0389dc33da21406ef3b1e03689bb4a672450) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - A lone surrogate escape in a string or template, `'\ud83d'`, is the code unit it names in `value` and `cooked`, as JavaScript keeps it, where it was U+FFFD; an import or export name holding one is the syntax error `lone_surrogate_in_module_name`.
+
 ## 0.0.11
 
 ### Patch Changes
