@@ -5,10 +5,12 @@ import type { Tree } from './decode.js';
 /** The external V8 holds for the addon: a prepared source. */
 export type External = object;
 
-/** `crates/teasel-node/src/lib.rs`: the five operations over a prepared source, the source as V8's bytes. */
+/** `crates/teasel-node/src/lib.rs`: the operations over a prepared source and a grammar, the source as V8's bytes. */
 export interface Addon {
-	readonly create: (source: Uint8Array, flags: number, host: string) => External;
-	readonly parse: (held: External, entry: number, offset: number, end: number | undefined, stop: string) => Uint32Array | string;
+	readonly create: (source: Uint8Array, flags: number) => External;
+	readonly parse: (held: External, entry: number, offset: number, end: number | undefined, stop: string, plan: External | undefined) => Uint32Array | string;
+	/** The grammar read once; V8 lets go of it with the external. */
+	readonly plan: (grammar: string) => External;
 	readonly free: (held: External) => void;
 	readonly layout: () => string;
 	/** Whether the tree is the TypeScript one, then each view as long as its buffer's room; the lengths ride in the answer's words. */

@@ -5,10 +5,12 @@ mod node_api;
 
 use std::cell::Cell;
 use std::ffi::{CString, c_void};
+use std::rc::Rc;
 
 use node_api::{CallbackInfo, Env, OK, Ref, Status, Value};
 use teasel::Entry;
 use teasel::handed::{Element, Raw};
+use teasel::host::Grammar;
 use teasel::json::{Prepared, Request};
 
 /// What JavaScript holds: the view of the words, then the views of the JavaScript tree and of
@@ -139,16 +141,11 @@ fn handle(env: Env, value: Value) -> Result<*mut Prepared<'static>> {
 	Ok(data.cast())
 }
 
-// the bytes V8 encoded, made valid UTF-8 where they are not; the options as one flag word; the
-// grammar of the host language the whole source is a document of, or nothing
+// the bytes V8 encoded, made valid UTF-8 where they are not; the options as one flag word
 unsafe extern "C" fn create(env: Env, info: CallbackInfo) -> Value {
 	guard(env, || {
-		let [source, flags, host] = args::<3>(env, info)?;
-		let mut prepared = Prepared::from_bytes(bytes(env, source)?, Request::from_flags(number(env, flags)? as u32));
-		let host = string(env, host)?;
-		if !host.is_empty() {
-			prepared = prepared.host(&host)?;
-		}
+		let [source, flags] = args::<2>(env, info)?;
+		let prepared = Prepared::from_bytes(bytes(env, source)?, Request::from_flags(number(env, flags)? as u32));
 		let mut result = std::ptr::null_mut();
 		check(
 			unsafe {
@@ -166,6 +163,50 @@ unsafe extern "C" fn create(env: Env, info: CallbackInfo) -> Value {
 	})
 }
 
+// the grammar of a host language, read once; V8 lets go of it with the external
+unsafe extern "C" fn plan(env: Env, info: CallbackInfo) -> Value {
+	guard(env, || {
+		let [text] = args::<1>(env, info)?;
+		let grammar = teasel::json::grammar(&string(env, text)?)?;
+		let mut result = std::ptr::null_mut();
+		check(
+			unsafe {
+				node_api::napi_create_external(
+					env,
+					Box::into_raw(Box::new(grammar)).cast(),
+					Some(drop_plan),
+					std::ptr::null_mut(),
+					&mut result,
+				)
+			},
+			"a plan",
+		)?;
+		Ok(result)
+	})
+}
+
+unsafe extern "C" fn drop_plan(_: Env, data: *mut c_void, _: *mut c_void) {
+	drop(unsafe { Box::from_raw(data.cast::<Rc<Grammar>>()) });
+}
+
+// the grammar a parse reads a document by, or undefined
+fn grammar_of(env: Env, value: Value) -> Result<Option<&'static Grammar>> {
+	let mut kind = 0;
+	check(unsafe { node_api::napi_typeof(env, value, &mut kind) }, "a value")?;
+	if kind == node_api::UNDEFINED {
+		return Ok(None);
+	}
+	let mut data = std::ptr::null_mut();
+	check(
+		unsafe { node_api::napi_get_value_external(env, value, &mut data) },
+		"a plan",
+	)?;
+	if data.is_null() {
+		return Err("a plan expected".into());
+	}
+	Ok(Some(unsafe { &**data.cast::<Rc<Grammar>>() }))
+}
+
 unsafe extern "C" fn free(env: Env, info: CallbackInfo) -> Value {
 	guard(env, || {
 		let [source] = args::<1>(env, info)?;
@@ -176,12 +217,13 @@ unsafe extern "C" fn free(env: Env, info: CallbackInfo) -> Value {
 
 unsafe extern "C" fn parse(env: Env, info: CallbackInfo) -> Value {
 	guard(env, || {
-		let [source, entry, offset, end, stop] = args::<5>(env, info)?;
+		let [source, entry, offset, end, stop, plan] = args::<6>(env, info)?;
 		let prepared = unsafe { &*handle(env, source)? };
 		let entry = Entry::from_index(number(env, entry)? as u32);
 		let (offset, end, stop) = (number(env, offset)?, optional(env, end)?, string(env, stop)?);
+		let grammar = grammar_of(env, plan)?;
 		fresh(env);
-		match prepared.in_place(entry, offset, end, &stop) {
+		match prepared.in_place(entry, offset, end, &stop, grammar) {
 			Ok(()) => view(env),
 			Err(json) => text(env, &json),
 		}
@@ -375,6 +417,7 @@ pub unsafe extern "C" fn napi_register_module_v1(env: Env, exports: Value) -> Va
 		for (name, callback) in [
 			(c"create", create as unsafe extern "C" fn(Env, CallbackInfo) -> Value),
 			(c"parse", parse),
+			(c"plan", plan),
 			(c"free", free),
 			(c"tree", tree),
 			(c"layout", layout),

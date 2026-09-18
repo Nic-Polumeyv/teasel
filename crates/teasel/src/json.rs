@@ -351,7 +351,7 @@ pub fn parse(source: &str, request: &Request, stop: &str) -> String {
 
 /// A whole document of a host language by its grammar, as JSON; see `host::parse_document`.
 pub fn parse_document(source: &str, grammar: &str, request: &Request) -> String {
-	match grammar_named(grammar) {
+	match self::grammar(grammar) {
 		Ok(grammar) => {
 			let mut request = *request;
 			request.entry = Entry::Program;
@@ -374,8 +374,6 @@ pub struct Prepared<'a> {
 	source: std::borrow::Cow<'a, str>,
 	positions: Positions,
 	request: Request,
-	/// The grammar a program entry reads the whole source by.
-	host: Option<Rc<Grammar>>,
 }
 
 /// What every parse on a thread reuses: the trees, emptied, and the answer's buffers.
@@ -444,7 +442,7 @@ fn view_names<X: Reuse + Default>() -> Vec<&'static str> {
 }
 
 /// The grammar of a text, read once per thread; the error names the line it stopped at.
-fn grammar_named(text: &str) -> Result<Rc<Grammar>, String> {
+pub fn grammar(text: &str) -> Result<Rc<Grammar>, String> {
 	GRAMMARS.with(|grammars| {
 		let mut grammars = grammars.borrow_mut();
 		if let Some((_, grammar)) = grammars.iter().find(|(known, _)| known == text) {
@@ -577,23 +575,13 @@ impl<'a> Prepared<'a> {
 			source,
 			positions,
 			request,
-			host: None,
 		}
 	}
 
-	/// Reads the whole source as a document of the host language `grammar` describes when a
-	/// program is asked for; the other entries read JavaScript at an offset as before. `Err` says
-	/// where the grammar could not be read.
-	pub fn host(mut self, grammar: &str) -> Result<Prepared<'a>, String> {
-		let grammar = grammar_named(grammar)?;
-		self.request.typescript |= host::typescript(&self.source, &grammar);
-		self.host = Some(grammar);
-		Ok(self)
-	}
-
 	/// The request for one entry at a UTF-16 offset, the source cut at `end`, on top of the
-	/// source's options.
-	fn request(&self, entry: Entry, start: f64, end: Option<f64>) -> Result<Request, String> {
+	/// source's options; with a grammar, the whole source as a document of its language, in
+	/// TypeScript when the grammar says so of a script tag.
+	fn request(&self, entry: Entry, start: f64, end: Option<f64>, host: Option<&Grammar>) -> Result<Request, String> {
 		let offset = self.byte_offset(start)?;
 		let end = match end {
 			Some(end) => Some(self.byte_offset(end)?),
@@ -603,31 +591,35 @@ impl<'a> Prepared<'a> {
 			entry,
 			offset,
 			end,
+			typescript: self.request.typescript || host.is_some_and(|grammar| host::typescript(&self.source, grammar)),
 			..self.request
 		})
 	}
 
 	/// One entry at an offset, as JSON.
-	pub fn parse(&self, entry: Entry, start: f64, end: Option<f64>, stop: &str) -> String {
-		match self.request(entry, start, end) {
-			Ok(request) => parse_with(&self.source, &self.positions, &request, stop, self.grammar(entry)),
+	pub fn parse(&self, entry: Entry, start: f64, end: Option<f64>, stop: &str, host: Option<&Grammar>) -> String {
+		match self.request(entry, start, end, host) {
+			Ok(request) => parse_with(&self.source, &self.positions, &request, stop, host),
 			Err(error) => error,
 		}
 	}
 
 	/// One entry at an offset, read in place: its words at `words`; the error answer stays JSON.
-	pub fn in_place(&self, entry: Entry, start: f64, end: Option<f64>, stop: &str) -> Result<(), String> {
+	pub fn in_place(
+		&self,
+		entry: Entry,
+		start: f64,
+		end: Option<f64>,
+		stop: &str,
+		host: Option<&Grammar>,
+	) -> Result<(), String> {
 		in_place_with(
 			&self.source,
 			&self.positions,
-			&self.request(entry, start, end)?,
+			&self.request(entry, start, end, host)?,
 			stop,
-			self.grammar(entry),
+			host,
 		)
-	}
-
-	fn grammar(&self, entry: Entry) -> Option<&Grammar> {
-		self.host.as_deref().filter(|_| entry == Entry::Program)
 	}
 
 	/// A UTF-16 offset as a byte offset, or the error answer for it.

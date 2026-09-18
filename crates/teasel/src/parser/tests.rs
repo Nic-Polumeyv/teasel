@@ -170,15 +170,15 @@ fn the_session_writes_the_same_words_again() {
 	let source = "let x = /* a */ 1; function f(y) { return x + y; } // b";
 	let prepared = Prepared::borrowed(source, request);
 	let words = || crate::json::words(|words| words.to_vec());
-	prepared.in_place(Entry::Program, 0.0, None, "").unwrap();
+	prepared.in_place(Entry::Program, 0.0, None, "", None).unwrap();
 	let first = words();
-	let _ = Prepared::borrowed("a + b", request).in_place(Entry::Expression, 0.0, None, "");
+	let _ = Prepared::borrowed("a + b", request).in_place(Entry::Expression, 0.0, None, "", None);
 	assert!(
 		Prepared::borrowed("a +", request)
-			.in_place(Entry::Expression, 0.0, None, "")
+			.in_place(Entry::Expression, 0.0, None, "", None)
 			.is_err()
 	);
-	prepared.in_place(Entry::Program, 0.0, None, "").unwrap();
+	prepared.in_place(Entry::Program, 0.0, None, "", None).unwrap();
 	let again = words();
 	// but for the first saying its buffers are new to the front end
 	let what = 2 + first[1] as usize;
@@ -715,28 +715,30 @@ fn phases() {
 		request.set("comments");
 		let prepared = crate::json::Prepared::borrowed(&source, request);
 		best("whole request: positions, parse, comments, encode, finish", &mut || {
-			prepared.in_place(Entry::Program, 0.0, None, "").unwrap();
+			prepared.in_place(Entry::Program, 0.0, None, "", None).unwrap();
 		});
 		for flag in ["scopes", "locations"] {
 			request.set(flag);
 		}
 		let prepared = crate::json::Prepared::borrowed(&source, request);
 		best("whole request with scopes and loc", &mut || {
-			prepared.in_place(Entry::Program, 0.0, None, "").unwrap();
+			prepared.in_place(Entry::Program, 0.0, None, "", None).unwrap();
 		});
 	}
-	let grammar =
-		std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/host.grammar")).unwrap();
+	let grammar = crate::json::grammar(
+		&std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/host.grammar")).unwrap(),
+	)
+	.unwrap();
 	let document = format!(
 		"<script>let items = [1,2,3];</script>\n{}",
 		"{#each items as item}<p class=\"row\" onclick={() => f(item)}>{item + 1}</p>{/each}\n".repeat(200)
 	);
 	for flags in ["module", "module scopes comments locations"] {
-		let prepared = crate::json::Prepared::borrowed(&document, crate::json::Request::from_names(flags))
-			.host(&grammar)
-			.unwrap();
+		let prepared = crate::json::Prepared::borrowed(&document, crate::json::Request::from_names(flags));
 		best(&format!("host: 200 each blocks, {flags}"), &mut || {
-			prepared.in_place(Entry::Program, 0.0, None, "").unwrap();
+			prepared
+				.in_place(Entry::Program, 0.0, None, "", Some(&grammar))
+				.unwrap();
 		});
 	}
 	best("Json write, loc", &mut || {
@@ -899,15 +901,19 @@ fn alloc_probe() {
 #[test]
 #[ignore]
 fn host_alloc_probe() {
-	let grammar =
-		std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/host.grammar")).unwrap();
+	let grammar = crate::json::grammar(
+		&std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/host.grammar")).unwrap(),
+	)
+	.unwrap();
 	let count = |src: &str| {
-		let prepared = crate::json::Prepared::borrowed(src, crate::json::Request::from_names("module"))
-			.host(&grammar)
+		let prepared = crate::json::Prepared::borrowed(src, crate::json::Request::from_names("module"));
+		prepared
+			.in_place(Entry::Program, 0.0, None, "", Some(&grammar))
 			.unwrap();
-		prepared.in_place(Entry::Program, 0.0, None, "").unwrap();
 		let before = ALLOCATIONS.load(std::sync::atomic::Ordering::Relaxed);
-		prepared.in_place(Entry::Program, 0.0, None, "").unwrap();
+		prepared
+			.in_place(Entry::Program, 0.0, None, "", Some(&grammar))
+			.unwrap();
 		ALLOCATIONS.load(std::sync::atomic::Ordering::Relaxed) - before
 	};
 	let base = count("");

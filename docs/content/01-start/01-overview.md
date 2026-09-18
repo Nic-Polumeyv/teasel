@@ -7,7 +7,7 @@ title: Overview
 teasel is a parser for JavaScript and TypeScript. You give it text, it gives you a tree.
 
 ```js
-import { Source } from '@teasel/parser';
+import { Source, Plan } from '@teasel/parser';
 
 const { node } = new Source('let answer = 42').parse();
 ```
@@ -29,7 +29,7 @@ Each option adds something to the answer: which `x` is which, where every commen
 A parse doesn't have to be the whole text. Start it at an offset, and ask for an expression, a statement, a pattern.
 
 ```js
-source.parse('expression', 10);
+source.parse(Plan.expression, 10);
 ```
 
 That's how a template language reads the JavaScript inside its own syntax, one piece at a time, stopping at its own tokens. [Inside a host](/inside-a-host) is about that.

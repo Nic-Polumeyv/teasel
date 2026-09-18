@@ -1,4 +1,4 @@
-import type { Engine } from './lib/decode.js';
+import type { Engine, Held } from './lib/decode.js';
 
 const encoder = new TextEncoder();
 const utf8 = new TextDecoder();
@@ -7,9 +7,11 @@ const utf8 = new TextDecoder();
 interface Exports {
 	readonly memory: WebAssembly.Memory;
 	alloc(len: number): number;
-	source_new(ptr: number, len: number, capacity: number, flags: number, host: number, host_len: number, host_capacity: number): number;
+	source_new(ptr: number, len: number, capacity: number, flags: number): number;
 	source_free(handle: number): void;
-	source_parse(handle: number, entry: number, offset: number, end: number, has_end: number, ptr: number, len: number, capacity: number): number;
+	source_parse(handle: number, entry: number, offset: number, end: number, has_end: number, ptr: number, len: number, capacity: number, plan: number): number;
+	plan_new(ptr: number, len: number, capacity: number): number;
+	plan_free(handle: number): void;
 	words_ptr(): number;
 	words_len(): number;
 	text_ptr(): number;
@@ -69,22 +71,35 @@ function layout() {
 	return layout_text;
 }
 
+// what the module holds by a handle, as long as the instance that gave it lives
+class Plan implements Held {
+	readonly handle: number;
+	readonly held = generation;
+	constructor(grammar: string) {
+		this.handle = guarded(() => wasm.plan_new(...bytes(grammar)));
+		if (this.handle === 0) throw new TypeError(JSON.parse(text()).error.message);
+	}
+	free() {
+		if (this.held === generation) wasm.plan_free(this.handle);
+	}
+}
+
 export const engine: Engine = {
-	create(source, flags, host) {
-		const handle = guarded(() => wasm.source_new(...bytes(source), flags, ...bytes(host)));
-		if (handle === 0) throw new Error(JSON.parse(text()).error.message);
+	create(source, flags) {
+		const handle = guarded(() => wasm.source_new(...bytes(source), flags));
 		const held = generation;
 		return {
 			// the words outlive the source: they sit in the answer buffer until the next parse
-			parse(entry, offset, end, stop) {
-				if (held !== generation) throw new Error('the source was held by an engine that panicked and started over');
-				return answer(guarded(() => wasm.source_parse(handle, entry, offset, end ?? 0, end === undefined ? 0 : 1, ...bytes(stop))));
+			parse(entry, offset, end, stop, plan) {
+				if (held !== generation || (plan !== undefined && (plan as Plan).held !== generation)) throw new Error('the source was held by an engine that panicked and started over');
+				return answer(guarded(() => wasm.source_parse(handle, entry, offset, end ?? 0, end === undefined ? 0 : 1, ...bytes(stop), plan === undefined ? 0 : (plan as Plan).handle)));
 			},
 			free() {
 				if (held === generation) wasm.source_free(handle);
 			},
 		};
 	},
+	plan: (grammar) => new Plan(grammar),
 	layout,
 	// the tree sits in the module's memory until the next parse: a view is made anew when its buffer moved or the memory grew
 	tree(typescript, moved) {
