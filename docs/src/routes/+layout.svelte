@@ -30,8 +30,8 @@
 <Tooltip.Provider>
 	<div class="flex min-h-screen flex-col">
 		<div class="plaid h-2.5"></div>
-		<header class="sticky top-0 z-50 bg-background">
-			<div class="mx-auto flex h-16 w-full max-w-6xl items-center gap-6 px-8">
+		<header class="sticky top-0 z-50 border-b bg-card">
+			<div class="flex h-16 w-full items-center gap-6 px-8 lg:px-12">
 				<a href="/" class="font-serif text-2xl font-medium tracking-tight">teasel</a>
 				<nav class="hidden gap-1 md:flex">
 					{#each data.sections as section (section.label)}
