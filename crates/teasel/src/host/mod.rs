@@ -2193,6 +2193,19 @@ impl<'a, E: Extension> Walker<'a, E> {
 			return fail(start, start + 1, Code::Expected, Some(&names));
 		};
 		let body = branch.form.body.as_ref().unwrap();
+		// before the body so far is filed: filed twice, the field came out twice under recovery
+		if let Some(Frame::Block {
+			done, body: current, ..
+		}) = self.frames.last()
+			&& (current.0 == body.field || done.iter().any(|(field, _)| *field == body.field))
+		{
+			return fail(
+				start,
+				start + 1,
+				Code::Duplicate,
+				Some(&format!("{{:{}}}", branch.words.join(" "))),
+			);
+		}
 		self.finish_body();
 		if let Some(child_field) = body.chain {
 			// the branch opens a block of its own inside the parent's field, which closes with it
@@ -2246,7 +2259,6 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let Some(Frame::Block {
 			fields,
 			body: current,
-			done,
 			groups,
 			outside: all_outside,
 			..
@@ -2254,14 +2266,6 @@ impl<'a, E: Extension> Walker<'a, E> {
 		else {
 			unreachable!()
 		};
-		if done.iter().any(|(field, _)| *field == body.field) {
-			return fail(
-				start,
-				start + 1,
-				Code::Duplicate,
-				Some(&format!("{{:{}}}", branch.words.join(" "))),
-			);
-		}
 		fields.extend(read.fields.iter().copied());
 		*current = (body.field, body.omit);
 		groups.push(group);
