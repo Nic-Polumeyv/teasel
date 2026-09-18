@@ -995,7 +995,7 @@ impl<E: Extension> Parser<'_, E> {
 		if matches!(self.tok.kind, TokenKind::Ident(_)) {
 			let start = self.tok.start;
 			let local = self.parse_ident(false)?;
-			self.check_lval_simple(local, Binding::Lexical, &mut None)?;
+			self.check_lval_simple(local, E::import_binding(self), &mut None)?;
 			nodes.push(Some(self.add(NodeKind::ImportDefaultSpecifier { local }, start)));
 			if !self.eat(TokenKind::Comma)? {
 				return Ok(nodes);
@@ -1006,7 +1006,7 @@ impl<E: Extension> Parser<'_, E> {
 			self.next()?;
 			self.expect_contextual("as")?;
 			let local = self.parse_ident(false)?;
-			self.check_lval_simple(local, Binding::Lexical, &mut None)?;
+			self.check_lval_simple(local, E::import_binding(self), &mut None)?;
 			nodes.push(Some(self.add(NodeKind::ImportNamespaceSpecifier { local }, start)));
 			return Ok(nodes);
 		}
@@ -1028,7 +1028,7 @@ impl<E: Extension> Parser<'_, E> {
 				self.check_unreserved(imported)?;
 				imported
 			};
-			self.check_lval_simple(local, Binding::Lexical, &mut None)?;
+			self.check_lval_simple(local, E::import_binding(self), &mut None)?;
 			nodes.push(Some(self.add(NodeKind::ImportSpecifier { imported, local }, start)));
 		}
 		Ok(nodes)

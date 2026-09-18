@@ -7,15 +7,10 @@ use super::{ClassFrame, TypeScript};
 use crate::ast::{List, NodeId, NodeKind, VariableKind};
 use crate::error::Code;
 use crate::lexer::token::{Keyword, TokenKind};
-use crate::parser::scope::{Binding, SCOPE_FUNCTION};
+use crate::parser::scope::{Binding, SCOPE_FUNCTION, SCOPE_TS_MODULE};
 use crate::parser::statement::FUNC_STATEMENT;
 use crate::parser::statement::{ClassKind, StatementPlace};
 use crate::parser::{Context, ForInit, Parser, Result};
-
-/// The scope flags of a module block; the inner one is also the class field
-/// initializer flag, so `arguments` is rejected inside namespaces the same way.
-const SCOPE_TS_MODULE: u32 = 1024;
-const SCOPE_TS_OTHER: u32 = 512;
 
 /// The identifiers that open a declaration when what follows allows it.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -79,6 +74,18 @@ impl Parser<'_, TypeScript> {
 		body
 	}
 
+	/// A global block: its declarations are the module's to export.
+	fn parse_global_body(&mut self) -> Result<NodeId> {
+		self.enter_scope(SCOPE_TS_MODULE);
+		self.ext.global_depth += 1;
+		let body = self.parse_module_block(false);
+		self.ext.global_depth -= 1;
+		let declared: Vec<_> = self.current_scope().declared().collect();
+		self.ext.globals.extend(declared);
+		self.exit_scope();
+		body
+	}
+
 	/// A statement an ambient body may hold: what declares, not what runs.
 	fn is_declaration(&self, statement: NodeId) -> bool {
 		matches!(
@@ -97,7 +104,7 @@ impl Parser<'_, TypeScript> {
 
 	fn parse_module_block(&mut self, namespace: bool) -> Result<NodeId> {
 		let start = self.tok.start;
-		self.enter_scope(SCOPE_TS_OTHER);
+		self.enter_scope(0);
 		self.ext.module_blocks += 1;
 		let in_namespace = std::mem::replace(&mut self.ext.in_namespace, namespace);
 		self.expect(TokenKind::BraceL)?;
@@ -135,11 +142,13 @@ impl Parser<'_, TypeScript> {
 		} else {
 			return self.unexpected();
 		};
-		let body = if self.is(TokenKind::BraceL) {
-			Some(self.parse_module_body(false)?)
-		} else {
+		let body = if !self.is(TokenKind::BraceL) {
 			self.semicolon()?;
 			None
+		} else if global {
+			Some(self.parse_global_body()?)
+		} else {
+			Some(self.parse_module_body(false)?)
 		};
 		Ok(self.ts(TsKind::ModuleDeclaration { id, body, global }, start))
 	}
@@ -174,7 +183,7 @@ impl Parser<'_, TypeScript> {
 	}
 
 	fn parse_global_declaration(&mut self, start: u32, id: NodeId) -> Result<NodeId> {
-		let body = self.parse_module_body(false)?;
+		let body = self.parse_global_body()?;
 		Ok(self.ts(
 			TsKind::ModuleDeclaration {
 				id,
@@ -559,10 +568,21 @@ impl Parser<'_, TypeScript> {
 			Some(right) => right,
 			None => self.copy_node(left),
 		};
-		if is_import {
-			self.check_lval_simple(right, Binding::Lexical, &mut None)?;
-		}
 		let kind = if has_type_specifier { Kind::Type } else { Kind::Value };
+		if is_import {
+			self.check_lval_simple(
+				right,
+				if in_type_only || has_type_specifier {
+					Binding::None
+				} else {
+					Binding::Lexical
+				},
+				&mut None,
+			)?;
+			if has_type_specifier {
+				self.declare_export_only(right);
+			}
+		}
 		let node = if is_import {
 			let node = self.add(
 				NodeKind::ImportSpecifier {

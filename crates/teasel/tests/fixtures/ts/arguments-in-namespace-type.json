@@ -1,0 +1,102 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 63,
+		"scope": 0,
+		"body": [
+			{
+				"type": "TSModuleDeclaration",
+				"start": 0,
+				"end": 62,
+				"scope": 1,
+				"defines": [
+					0
+				],
+				"declare": true,
+				"id": {
+					"type": "Identifier",
+					"start": 18,
+					"end": 19,
+					"declares": 0,
+					"name": "N"
+				},
+				"body": {
+					"type": "TSModuleBlock",
+					"start": 20,
+					"end": 62,
+					"body": [
+						{
+							"type": "TSTypeAliasDeclaration",
+							"start": 23,
+							"end": 60,
+							"id": {
+								"type": "Identifier",
+								"start": 28,
+								"end": 29,
+								"name": "F"
+							},
+							"typeAnnotation": {
+								"type": "TSFunctionType",
+								"start": 32,
+								"end": 59,
+								"parameters": [
+									{
+										"type": "Identifier",
+										"start": 33,
+										"end": 50,
+										"typeAnnotation": {
+											"type": "TSTypeAnnotation",
+											"start": 42,
+											"end": 50,
+											"typeAnnotation": {
+												"type": "TSNumberKeyword",
+												"start": 44,
+												"end": 50
+											}
+										},
+										"name": "arguments"
+									}
+								],
+								"typeAnnotation": {
+									"type": "TSTypeAnnotation",
+									"start": 52,
+									"end": 59,
+									"typeAnnotation": {
+										"type": "TSVoidKeyword",
+										"start": 55,
+										"end": 59
+									}
+								}
+							}
+						}
+					]
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 63,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "namespace",
+			"parent": 0,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "N",
+			"kind": "namespace",
+			"scope": 0,
+			"write": true
+		}
+	],
+	"references": []
+}

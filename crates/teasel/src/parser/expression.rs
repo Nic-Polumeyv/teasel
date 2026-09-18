@@ -1763,8 +1763,10 @@ impl<E: Extension> Parser<'_, E> {
 			NodeKind::Identifier { name } => {
 				let flags = self.lexer.word_flags(name);
 				let text = self.str(name);
+				// a declaration that binds nothing may be named eval: `declare function eval`
+				let runtime = !E::in_ambient(self);
 				if self.strict
-					&& (self.is_reserved_word(flags) || flags & word::EVAL != 0 || flags & word::ARGUMENTS != 0)
+					&& (self.is_reserved_word(flags) || (runtime && flags & (word::EVAL | word::ARGUMENTS) != 0))
 				{
 					let verb = if is_bind { "Binding " } else { "Assigning to " };
 					return self.error_with(start, Code::StrictBinding, format!("{verb}{text} in strict mode"));

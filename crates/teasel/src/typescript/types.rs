@@ -20,12 +20,16 @@ pub(super) enum ListKind {
 /// Which modifiers a type parameter list accepts.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum TypeParameterModifiers {
-	None,
+	/// An interface or a type alias: variance only.
 	InOut,
+	/// A function, method or signature: `const` only.
 	Const,
+	/// A class: both.
+	Class,
 }
 
 const IN_OUT: &[&str] = &["in", "out"];
+const IN_OUT_CONST: &[&str] = &["in", "out", "const"];
 const ACCESSIBILITY_AND_CLASS: &[&str] = &[
 	"public",
 	"private",
@@ -398,7 +402,7 @@ impl Parser<'_, TypeScript> {
 		return_token: TokenKind,
 		allow_predicate: bool,
 	) -> Result<(Option<NodeId>, List, Option<NodeId>)> {
-		let type_parameters = self.try_parse_type_parameters(TypeParameterModifiers::None)?;
+		let type_parameters = self.try_parse_type_parameters(TypeParameterModifiers::Const)?;
 		self.expect(TokenKind::ParenL)?;
 		let parameters = self.parse_binding_list_for_signature()?;
 		let type_annotation = if return_token == TokenKind::Arrow || self.is(return_token) {
@@ -867,9 +871,9 @@ impl Parser<'_, TypeScript> {
 	fn parse_type_parameter(&mut self, modifiers: TypeParameterModifiers) -> Result<NodeId> {
 		let start = self.tok.start;
 		let (allowed, disallowed): (&[&str], &[&str]) = match modifiers {
-			TypeParameterModifiers::None => (&[], IN_OUT),
 			TypeParameterModifiers::InOut => (IN_OUT, ACCESSIBILITY_AND_CLASS),
 			TypeParameterModifiers::Const => (&["const"], IN_OUT),
+			TypeParameterModifiers::Class => (IN_OUT_CONST, ACCESSIBILITY_AND_CLASS),
 		};
 		let error = match modifiers {
 			TypeParameterModifiers::InOut => "'{}' modifier cannot appear on a type parameter.",
