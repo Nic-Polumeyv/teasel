@@ -3,7 +3,10 @@ import { decode, type Held, PARENT, type Prepared, REFERENCE, SCOPE } from './li
 import { ENTRY, flags, type Options } from './lib/options.js';
 import { engine } from '#engine';
 
+import type { Code } from './lib/codes.js';
+
 export type { Options } from './lib/options.js';
+export type { Code } from './lib/codes.js';
 
 /**
  * Thrown for a syntax error. `code` names what went wrong, for a host to branch on, and
@@ -13,7 +16,7 @@ export type { Options } from './lib/options.js';
  * else the end of the source. A bad offset from the host is an `invalid_request` without a `loc`.
  */
 export interface ParseError extends SyntaxError {
-	code: string;
+	code: Code;
 	pos: number;
 	end: number;
 	loc?: { line: number; column: number };
@@ -207,7 +210,8 @@ let read: (plan: Plan<unknown>) => { entry: number; stop: string; held: Held | u
  * `program` the whole source; `until` ends one where the host's own tokens follow. `new Plan(grammar)`
  * reads the whole source as a document of the host language the grammar describes: the host's
  * own nodes around the JavaScript ones, in one tree, in TypeScript when the grammar says so of a
- * script tag. A plan is built once and applied to any source. `T` is what its parse answers with.
+ * script tag; the grammar's format is at https://teasel.dev/host-grammar. A plan is built once and
+ * applied to any source. `T` is what its parse answers with.
  */
 export class Plan<T = HostNode> {
 	#entry: number;

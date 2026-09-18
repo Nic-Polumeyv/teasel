@@ -32,8 +32,8 @@ A parse doesn't have to be the whole text. Start it at an offset, and ask for an
 source.parse(Plan.expression, 10);
 ```
 
-That's how a template language reads the JavaScript inside its own syntax, one piece at a time, stopping at its own tokens. [Inside a host](/inside-a-host) is about that.
+That's how a template language reads the JavaScript inside its own syntax, one piece at a time, stopping at its own tokens. [Inside a host](/inside-a-host) is about that. A template language can also hand over its whole syntax and get the whole document back in one tree, scopes across both; that's [A document](/a-document).
 
 ## Where it runs
 
-Under Node it's a native addon. In a browser, or through a bundler, the same import gives you a WebAssembly build with the same API. In Rust it's a crate. [Getting started](/getting-started) is the first parse; [How it works](/how-it-works) is what happens between the call and the answer.
+Under Node it's a native addon. In a browser, or through a bundler, the same import gives you a WebAssembly build with the same API. [Getting started](/getting-started) is the first parse; [How it works](/how-it-works) is what happens between the call and the answer.

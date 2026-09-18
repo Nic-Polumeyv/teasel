@@ -107,10 +107,21 @@ With `errorRecovery`, the parse comes back and the errors come with it.
 ```
 { f(a, }
        ▲
-       errors  [{ code: 'unexpected_token', pos: 7, end: 7, loc }]
-       node    Identifier ''  at 7..7
-       end     7
+       errors  [{ code: 'unexpected_token', pos: 7, end: 8, loc }]
+       node    a Program holding an empty block: the statement that broke is skipped
+       end     8
 ```
+
+## A whole document
+
+A template language can hand over its syntax as a grammar and get the whole document back: the host's nodes around the JavaScript ones, in one tree, scopes across both.
+
+```js
+const svelte = new Plan(grammar);                  // once; the engine reads the grammar on first use
+const { node, roots } = new Source(text, { scopes: true }).parse(svelte);
+```
+
+The grammar format is documented at [teasel.dev/host-grammar](https://teasel.dev/host-grammar); two whole grammars live under `crates/teasel/tests/hosts`.
 
 ## Rust and the command line
 

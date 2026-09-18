@@ -1,6 +1,7 @@
 import { Source } from '@teasel/parser';
 import entry from '../../../npm/dist/index.d.ts?raw';
 import options from '../../../npm/dist/lib/options.d.ts?raw';
+import codes from '../../../npm/dist/lib/codes.d.ts?raw';
 
 type Declaration = { type: string; start: number; end: number; id?: { name: string }; declarations?: { id: { name: string } }[]; declaration?: Declaration | null; specifiers?: { exported: { name: string } }[]; leadingComments?: { value: string; end: number }[] };
 const name = (statement: Declaration) => (statement.declaration!.id ?? statement.declaration!.declarations![0].id).name;
@@ -23,14 +24,12 @@ const item = (text: string, statement: Declaration) => {
 	return `## ${name(statement)}\n\n${doc ? prose(doc.value) + '\n\n' : ''}\`\`\`ts\n${text.slice(statement.start, statement.end)}\n\`\`\``;
 };
 
-// the entry declares the surface, and names what it takes from options.ts
+// the entry declares the surface, and names what it takes from options.ts and codes.ts
 function parser() {
 	const surface = body(entry);
 	const named = new Set(surface.flatMap((statement) => (statement.type === 'ExportNamedDeclaration' && statement.declaration == null ? statement.specifiers!.map((specifier) => specifier.exported.name) : [])));
-	const markdown = [
-		...body(options).filter((statement) => exported(statement) && named.has(name(statement))).map((statement) => item(options, statement)),
-		...surface.filter(exported).map((statement) => item(entry, statement)),
-	].join('\n\n');
+	const taken = (text: string) => body(text).filter((statement) => exported(statement) && named.has(name(statement))).map((statement) => item(text, statement));
+	const markdown = [...taken(options), ...surface.filter(exported).map((statement) => item(entry, statement)), ...taken(codes)].join('\n\n');
 	return { meta: { href: '/reference/parser', title: '@teasel/parser', section: 'Reference', path: 'npm/src/index.ts' }, markdown: `Every export of the package, as its declarations say.\n\n${markdown}` };
 }
 

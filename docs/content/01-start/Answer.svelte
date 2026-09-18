@@ -9,8 +9,8 @@
 	const column = (x: number, row: number) => ({ x, y: 52 + row * 44, w: 140, h: 36 });
 </script>
 
-<Diagram width={720} height={200} {label}>
-	<Box rect={{ x: 8, y: 8, w: 704, h: 184 }} dashed />
+<Diagram width={720} height={244} {label}>
+	<Box rect={{ x: 8, y: 8, w: 704, h: 228 }} dashed />
 	<text x="24" y="32" class="font-mono">{'{ node, end, …tables }'}</text>
 	<Box rect={node} tint="sky" />
 	<text x="124" y="80" text-anchor="middle">node</text>
@@ -23,7 +23,7 @@
 	{#each ['comments', 'errors', 'typescript'] as table, row (table)}
 		<Box rect={column(392, row)} tint="emerald" size={13}>{table}</Box>
 	{/each}
-	{#each ['scopes', 'bindings', 'references'] as table, row (table)}
+	{#each ['scopes', 'bindings', 'references', 'roots'] as table, row (table)}
 		<Box rect={column(556, row)} tint="rose" size={13}>{table}</Box>
 	{/each}
 </Diagram>

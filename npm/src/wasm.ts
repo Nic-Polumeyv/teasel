@@ -77,7 +77,7 @@ class Plan implements Held {
 	readonly held = generation;
 	constructor(grammar: string) {
 		this.handle = guarded(() => wasm.plan_new(...bytes(grammar)));
-		if (this.handle === 0) throw new TypeError(JSON.parse(text()).error.message);
+		if (this.handle === 0) throw new Error(JSON.parse(text()).error.message);
 	}
 	free() {
 		if (this.held === generation) wasm.plan_free(this.handle);
