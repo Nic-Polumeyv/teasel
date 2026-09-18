@@ -185,6 +185,7 @@ A form is what a tag or an opening reads between the delimiters: literals, entri
 
 - A literal is a word of the host's own, `as`, `in`, `(`.
 - An entry is `field=kind`, a piece of JavaScript read into the field. `field?=kind` leaves the field out when the entry was not read; the plain form gives it null. The entry ends where the next literal of the form, or the closing delimiter, follows.
+- When several optional groups follow an `expression`, they are tried in the order the form writes them. A literal of a later group ends the expression only when no literal of an earlier group follows it. With `[ as context=pattern ] [ , index?=identifier ]`, the comma in `a, b as x` belongs to the expression, and the comma in `items, i` starts the index.
 - `[ a | b ]` reads at most one alternative, tried in order; `{ a | b }` exactly one. An alternative may end in its own `-> body`, as `await`'s does.
 
 The kinds of entry:

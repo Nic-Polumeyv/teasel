@@ -49,6 +49,9 @@ pub struct Stops {
 	pub list: &'static [&'static str],
 	pub joined: &'static str,
 	pub expression: &'static str,
+	/// The expression's stops up to each group that can follow it, in the rule's order, when more
+	/// than one can: all but the last, which `expression` is.
+	pub tiers: &'static [&'static str],
 }
 
 impl Stops {
@@ -56,19 +59,29 @@ impl Stops {
 		list: &[],
 		joined: "",
 		expression: "",
+		tiers: &[],
 	};
 
-	fn of(list: Vec<&'static str>) -> Stops {
-		let joined = keep(&list.join(" "));
-		let expression: Vec<&str> = list
+	fn of(groups: Vec<Vec<&'static str>>) -> Stops {
+		let continues = |s: &&str| !matches!(*s, "(" | "[" | "." | "?." | "`");
+		let list: Vec<&'static str> = groups.iter().flatten().copied().collect();
+		let ending: Vec<Vec<&'static str>> = groups
 			.iter()
-			.copied()
-			.filter(|s| !matches!(*s, "(" | "[" | "." | "?." | "`"))
+			.map(|group| group.iter().copied().filter(continues).collect::<Vec<_>>())
+			.filter(|group| !group.is_empty())
 			.collect();
+		let mut so_far: Vec<&'static str> = Vec::new();
+		let mut tiers = Vec::new();
+		for group in ending.iter().take(ending.len().saturating_sub(1)) {
+			so_far.extend(group);
+			tiers.push(keep(&so_far.join(" ")));
+		}
+		let expression: Vec<&str> = list.iter().copied().filter(continues).collect();
 		Stops {
-			joined,
+			joined: keep(&list.join(" ")),
 			expression: keep(&expression.join(" ")),
 			list: Vec::leak(list),
+			tiers: Vec::leak(tiers),
 		}
 	}
 }
@@ -79,7 +92,7 @@ fn resolve(items: &mut [Item], follow: &[&'static str]) {
 		let (head, rest) = items.split_at_mut(i + 1);
 		match head.last_mut().unwrap() {
 			Item::Literal(_) => {}
-			Item::Entry { stops, .. } => *stops = Stops::of(first_literals(rest, follow)),
+			Item::Entry { stops, .. } => *stops = Stops::of(first_groups(rest, follow)),
 			Item::Group {
 				alternatives, after, ..
 			} => {
@@ -95,27 +108,35 @@ fn resolve(items: &mut [Item], follow: &[&'static str]) {
 
 /// The literals that can start what `items` read, then `follow` if they can read nothing.
 pub(super) fn first_literals(items: &[Item], follow: &[&'static str]) -> Vec<&'static str> {
+	first_groups(items, follow).into_iter().flatten().collect()
+}
+
+/// `first_literals` group by group, in the rule's order.
+fn first_groups(items: &[Item], follow: &[&'static str]) -> Vec<Vec<&'static str>> {
 	let mut out = Vec::new();
 	for item in items {
 		match item {
 			Item::Literal(literal) => {
-				out.push(*literal);
+				out.push(vec![*literal]);
 				return out;
 			}
 			Item::Entry { .. } => return out,
 			Item::Group {
 				alternatives, required, ..
 			} => {
-				for alternative in alternatives {
-					out.extend(first_literals(&alternative.items, &[]));
-				}
+				out.push(
+					alternatives
+						.iter()
+						.flat_map(|alternative| first_literals(&alternative.items, &[]))
+						.collect(),
+				);
 				if *required {
 					return out;
 				}
 			}
 		}
 	}
-	out.extend_from_slice(follow);
+	out.push(follow.to_vec());
 	out
 }
 
