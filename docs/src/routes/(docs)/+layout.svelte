@@ -15,7 +15,7 @@
 
 <Sidebar.Provider class="min-h-0 w-full flex-1 [--band:max(17rem,calc((100vw_-_47.5rem)_/_2_-_3rem))]">
 	<aside class="hidden w-(--band) shrink-0 border-r bg-background md:block">
-	<div class="sticky top-16 h-[calc(100svh-4rem)] w-68 overflow-y-auto py-12 pr-6 pl-4 lg:pl-8">
+	<div class="sticky top-16 ml-auto h-[calc(100svh-4rem)] w-68 overflow-y-auto py-12 pr-6 pl-8">
 	<Sidebar.Root collapsible="none" class="h-fit w-full bg-transparent">
 		<Sidebar.Content class="gap-6">
 			{#each data.sections as section (section.label)}
