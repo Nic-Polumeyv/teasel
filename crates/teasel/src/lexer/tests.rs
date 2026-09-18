@@ -297,8 +297,8 @@ fn strings() {
 	assert_eq!(marked("'\\ud83d\\ude00'"), vec![]);
 	assert_eq!(marked("'\\ufffd'"), vec![]);
 	{
-		let mut lexer = Lexer::new("'\\ud83d' '\\ufffd' '\\udbff' '\\ud83d'");
-		let ids: Vec<_> = (0..4)
+		let mut lexer = Lexer::new("'\\ud83d' '\\ufffd' '\\udbff'");
+		let ids: Vec<_> = (0..3)
 			.map(|_| match lexer.next_token().unwrap().kind {
 				String(value) => value,
 				kind => panic!("{kind:?}"),
@@ -306,7 +306,6 @@ fn strings() {
 			.collect();
 		assert_ne!(ids[0], ids[1]);
 		assert_ne!(ids[0], ids[2]);
-		assert_eq!(ids[0], ids[3]);
 	}
 	assert_eq!(string("'a\\\nb'"), "ab");
 	assert_eq!(string("'a\\\r\nb'"), "ab");

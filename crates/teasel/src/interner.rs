@@ -74,7 +74,7 @@ pub struct Interner {
 	/// Where each string starts, and where the next would.
 	starts: Handed<u32>,
 	/// Every lone surrogate the strings hold, where the text shows U+FFFD: the string's id, the
-	/// UTF-16 offset in it and the surrogate; in id order, and part of what tells two strings apart.
+	/// UTF-16 offset in it and the surrogate; in id order. Such a string is outside the table.
 	marks: Handed<[u32; 3]>,
 	/// Slots hold the string's hash in the high half and its id plus one in the low; zero is
 	/// empty. Always a power of two, at most half full. The hash sits beside the id so a probe
@@ -89,14 +89,11 @@ pub struct Interner {
 /// `FastHasher`'s mix over the length and then eight bytes at a time, the tail read as two
 /// overlapping words rather than copied into one; the low half of the product depends on the
 /// first bytes only, so the high half is folded in.
-fn hash(s: &str, marks: &[(u32, u16)]) -> u32 {
+fn hash(s: &str) -> u32 {
 	let bytes = s.as_bytes();
 	let n = bytes.len();
 	let mix = |h: u64, word: u64| (h.rotate_left(5) ^ word).wrapping_mul(SEED);
 	let mut h = mix(0, n as u64);
-	for &(offset, code) in marks {
-		h = mix(h, (offset as u64) << 16 | code as u64);
-	}
 	let (chunks, rest) = bytes.as_chunks::<8>();
 	for chunk in chunks {
 		h = mix(h, u64::from_le_bytes(*chunk));
@@ -150,29 +147,32 @@ impl Interner {
 	}
 
 	pub fn intern(&mut self, s: &str) -> StrId {
-		self.intern_marked(s, &[])
-	}
-
-	/// `s` holding the lone surrogates `marks`, each the UTF-16 offset where `s` has U+FFFD and
-	/// the surrogate meant there.
-	pub fn intern_marked(&mut self, s: &str, marks: &[(u32, u16)]) -> StrId {
-		let hash = hash(s, marks);
-		let mut slot = match self.probe(s, marks, hash) {
+		let hash = hash(s);
+		let mut slot = match self.probe(s, hash) {
 			Ok(id) => return id,
 			Err(slot) => slot,
 		};
 		if self.table.len() < 2 * self.len() + 2 {
 			self.grow();
-			slot = self.probe(s, marks, hash).unwrap_err();
+			slot = self.probe(s, hash).unwrap_err();
 		}
+		let id = self.len() as u32;
+		self.text.extend_from_slice(s.as_bytes());
+		self.starts.push(self.text.len() as u32);
+		self.table[slot] = Self::entry(hash, id);
+		self.touched.push(slot as u32);
+		StrId::at(id)
+	}
+
+	/// `s` holding the lone surrogates `marks`, each the UTF-16 offset where `s` has U+FFFD and
+	/// the surrogate meant there. A string of its own each time: it is never found by its text.
+	pub fn intern_marked(&mut self, s: &str, marks: &[(u32, u16)]) -> StrId {
 		let id = self.len() as u32;
 		self.text.extend_from_slice(s.as_bytes());
 		self.starts.push(self.text.len() as u32);
 		for &(offset, code) in marks {
 			self.marks.push([id, offset, code as u32]);
 		}
-		self.table[slot] = Self::entry(hash, id);
-		self.touched.push(slot as u32);
 		StrId::at(id)
 	}
 
@@ -181,7 +181,7 @@ impl Interner {
 	}
 
 	/// The id of `s`, or the empty slot it would take.
-	fn probe(&self, s: &str, marks: &[(u32, u16)], hash: u32) -> Result<StrId, usize> {
+	fn probe(&self, s: &str, hash: u32) -> Result<StrId, usize> {
 		if self.table.is_empty() {
 			return Err(0);
 		}
@@ -193,22 +193,13 @@ impl Interner {
 				return Err(i);
 			}
 			if (entry >> 32) as u32 == hash {
-				let id = StrId::at(entry as u32 - 1);
-				if self.get(id) == s && (self.marks.is_empty() || self.marked(id, marks)) {
-					return Ok(id);
+				let id = entry as u32 - 1;
+				if self.get(StrId::at(id)) == s {
+					return Ok(StrId::at(id));
 				}
 			}
 			i = (i + 1) & mask;
 		}
-	}
-
-	fn marked(&self, id: StrId, marks: &[(u32, u16)]) -> bool {
-		let own = self.marks_of(id);
-		own.len() == marks.len()
-			&& own
-				.iter()
-				.zip(marks)
-				.all(|(m, &(offset, code))| m[1] == offset && m[2] == code as u32)
 	}
 
 	/// The lone surrogates of `id` in offset order, each its id, its UTF-16 offset and the surrogate.
@@ -237,7 +228,7 @@ impl Interner {
 	}
 
 	pub fn find(&self, s: &str) -> Option<StrId> {
-		self.probe(s, &[], hash(s, &[])).ok()
+		self.probe(s, hash(s)).ok()
 	}
 
 	pub fn get(&self, id: StrId) -> &str {
@@ -323,7 +314,6 @@ mod tests {
 		let low = interner.intern_marked("a\u{fffd}b", &[(1, 0xdc00)]);
 		assert_ne!(plain, high);
 		assert_ne!(high, low);
-		assert_eq!(interner.intern_marked("a\u{fffd}b", &[(1, 0xd800)]), high);
 		assert_eq!(interner.intern("a\u{fffd}b"), plain);
 		assert_eq!(interner.find("a\u{fffd}b"), Some(plain));
 		assert_eq!(interner.get(high), "a\u{fffd}b");
@@ -350,7 +340,7 @@ mod tests {
 		for (name, id) in names.iter().zip(&ids) {
 			assert_eq!(interner.get(*id), *name);
 		}
-		assert_ne!(hash("value", &[]), hash("value123", &[]));
+		assert_ne!(hash("value"), hash("value123"));
 		let mut sorted = ids.clone();
 		sorted.dedup();
 		assert_eq!(sorted.len(), names.len());
