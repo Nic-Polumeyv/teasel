@@ -2658,7 +2658,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 	fn entry(&mut self, entry: Entry, stops: &grammar::Stops) -> Result<Value> {
 		Ok(match entry {
 			Entry::Expression => {
-				let roots = self.js(JsEntry::Expression, stops.expression)?;
+				let roots = self.expression_in_order(stops)?;
 				Value::Node(self.first(roots))
 			}
 			Entry::Pattern => {
@@ -2779,6 +2779,30 @@ impl<'a, E: Extension> Walker<'a, E> {
 
 	/// The JavaScript at the cursor, read by the parser into the same tree up to the limit; the
 	/// cursor moves past it.
+	/// The groups that can follow an expression are tried in the rule's order: a literal of a later
+	/// group is JavaScript's while one of an earlier group still follows, the `,` of `a, b as x`.
+	fn expression_in_order(&mut self, stops: &grammar::Stops) -> Result<List> {
+		for tier in stops.tiers {
+			let (start, comments, mark) = (self.at, self.tree().comments.len(), self.tree().mark());
+			let recovering = std::mem::replace(&mut self.options.error_recovery, false);
+			let read = self.js(JsEntry::Expression, tier.stops);
+			self.options.error_recovery = recovering;
+			if let Ok(roots) = read {
+				let end = self.at;
+				self.space();
+				let ended = tier.own.iter().any(|literal| self.literal_here(literal));
+				self.at = end;
+				if ended {
+					return Ok(roots);
+				}
+			}
+			self.at = start;
+			self.ast().comments.truncate(comments);
+			self.ast().truncate(mark);
+		}
+		self.js(JsEntry::Expression, stops.expression)
+	}
+
 	fn js(&mut self, entry: JsEntry, stop: &str) -> Result<List> {
 		let ast = self.ast.take().unwrap();
 		let src = &self.src[..self.limit as usize];
