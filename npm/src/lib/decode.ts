@@ -1163,7 +1163,7 @@ export interface Prepared extends Held {
 /** What parses: the addon or the WebAssembly module. */
 export interface Engine extends Views {
 	readonly create: (source: string, flags: number) => Prepared;
-	/** The grammar of a host language, read once; a `TypeError` says where it could not be read. */
+	/** The grammar of a host language, read once; an `Error` names the line it could not be read at. */
 	readonly plan: (grammar: string) => Held;
 }
 

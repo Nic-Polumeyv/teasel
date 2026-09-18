@@ -1,6 +1,7 @@
 // `node scripts/test.ts interpret` runs the decoder without code generation, as a host forbidding it would
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { codes } from './codes.ts';
 import type { Options } from '../dist/index.js';
 if (process.argv[2] === 'interpret') globalThis.Function = (() => { throw new EvalError('blocked'); }) as unknown as FunctionConstructor;
 const name = process.execArgv.includes('--no-addons') ? 'wasm' : 'native';
@@ -367,4 +368,10 @@ const vue = grammars.vue;
 	assert.equal(li.children[1].content, ' #');
 	assert.equal(parentOf(li.children[2].content), li.children[2]);
 	assert.throws(() => open('<div v-for="x items">').parse(vue), { code: 'expected', message: 'Expected in or of' });
+}
+
+// src/lib/codes.ts is written from error.rs by scripts/codes.ts: the two must agree
+{
+	const written = [...readFileSync(new URL('../src/lib/codes.ts', import.meta.url), 'utf8').matchAll(/'([a-z_0-9]+)'/g)].map((m) => m[1]);
+	assert.deepEqual(written, codes(), 'run node scripts/codes.ts');
 }

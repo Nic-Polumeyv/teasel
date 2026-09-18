@@ -41,4 +41,4 @@ A compiler that has to reject the file should leave recovery off and catch the t
 
 ## Where an error points
 
-`pos` and `end` span the token that broke things. When the problem is somewhere else, a declaration seen earlier for instance, `end` equals `pos`. `unexpected_eof` points at the end of what was parsed. A bad offset from your side is `invalid_request`, with no `loc`, because there's nothing in the text to point at. The codes are in the [reference](/reference/parser#parseerror).
+`pos` and `end` span the token that broke things. When the problem is somewhere else, a declaration seen earlier for instance, `end` equals `pos`. `unexpected_eof` points at the end of what was parsed. A bad offset from your side is `invalid_request`, with no `loc`, because there's nothing in the text to point at. Every code is listed as the type [`Code`](/reference/parser#code), so a comparison against one is checked.

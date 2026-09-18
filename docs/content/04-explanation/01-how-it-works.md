@@ -22,4 +22,4 @@ That's why the tree is plain. Nothing in it points back into the engine. Walk it
 
 ## Host languages
 
-A template language can describe its whole syntax to the engine, and the engine will then read a document in one pass, the host's own nodes and the JavaScript inside them in one tree, scopes across both. That's how the Svelte and Vue integrations work. The API for writing such a description ships with a coming release.
+A template language can describe its whole syntax to the engine, as a [grammar](/host-grammar), and the engine then reads a document in one pass: the host's own nodes and the JavaScript inside them in one tree, scopes across both, one crossing for the whole file. [A document](/a-document) is the guide to it.

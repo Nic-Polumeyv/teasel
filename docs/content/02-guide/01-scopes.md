@@ -20,7 +20,7 @@ The tree is still plain ESTree. The facts live beside it, and you reach them fro
 `referenceOf` is one of three. Each takes a node from the answer and gives back a fact about it.
 
 - `referenceOf(identifier)`: the reference this identifier makes, with the `binding` it resolves to. For the identifier that declares a name, the answer is the binding itself: a binding is its own first reference, and its `binding` is itself. `binding` is `null` for a global. The whole answer is `undefined` when the identifier isn't a value at all, a property key for instance.
-- `scopeOf(node)`: the scope this node opens, if it opens one. Programs, functions, classes, blocks, catch clauses, `for` heads, `switch` statements, static blocks and `with` all do.
+- `scopeOf(node)`: the scope this node opens, if it opens one. Programs, functions, classes, blocks, catch clauses, `for` heads, `switch` statements, static blocks and `with` all do; so does the name of a named function expression, a TypeScript namespace or enum, and a fragment of a [document](/a-document). The kinds are listed in the [reference](/reference/parser#scope).
 - `parentOf(node)`: the node this one hangs from. `undefined` at the root. This one works without `scopes`.
 
 Here they are on a function with a parameter.

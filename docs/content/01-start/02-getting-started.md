@@ -49,7 +49,7 @@ import { Source, Plan } from '@teasel/parser';
 const { node } = new Source('export const answer = 42').parse();
 ```
 
-The build looks for `teasel.wasm` next to its own module, through `import.meta.url`, so a bundler copies the file along without being asked. To use that build under Node as well, import `@teasel/parser/wasm`.
+The build looks for `teasel.wasm` next to its own module, through `import.meta.url`, so a bundler copies the file along without being asked. Under Node, `node --no-addons` takes the same build instead of the addon; a Linux without glibc, where there is no addon, is told so and pointed there.
 
 ## Next
 

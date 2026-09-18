@@ -14,7 +14,7 @@ const { node, end } = source.parse();
 
 Turn on an option and the answer grows by one key. Nothing appears that you didn't ask for.
 
-![the answer is an object with node and end, and with comments, errors, typescript, scopes, bindings and references tables when their option is on](Answer.svelte)
+![the answer is an object with node and end, and with comments, errors, typescript, scopes, bindings, references and roots tables when their option is on](Answer.svelte)
 
 - `locations` puts `loc`, with line and column, on every node.
 - `comments` adds `comments`, every comment in source order, and hangs `leadingComments`, `trailingComments` and `innerComments` on the nodes.
@@ -23,6 +23,7 @@ Turn on an option and the answer grows by one key. Nothing appears that you didn
 - `typescript` reads TypeScript, and `typescript: 'erase'` also strips it, adding `typescript`, the list of what erasure had to leave behind. That's [TypeScript](/typescript).
 - `parenthesized` marks anything you wrapped in parentheses with `parenthesized: true`.
 - `sourceType: 'module'` reads strict code, with `import`, `export` and top-level `await`.
+- `scopes` on a document read by a grammar also adds `roots`, one entry per piece of JavaScript in it. That's [A document](/a-document).
 
 Every option, with its type and default, is in the [reference](/reference/parser#options).
 

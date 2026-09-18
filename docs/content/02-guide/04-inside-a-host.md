@@ -47,3 +47,7 @@ Make one `Source` for the whole document and parse every piece out of it. The te
 ## Fine print
 
 A `then` after a `.` is a property name, not your token. A TypeScript `as` is yours unless another `as` follows the type assertion, so `xs as T[] as item` ends after the type. And `typeParameters` without `typescript` is a `not_typescript` error.
+
+## Or hand over the syntax
+
+Reading piece by piece keeps the host's own parser in charge. The other way is to describe the host's syntax to the parser once and get the whole document back in one tree, scopes across the host's blocks and the JavaScript in them. That's [A document](/a-document).
