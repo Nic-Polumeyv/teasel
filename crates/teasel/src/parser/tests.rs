@@ -83,7 +83,7 @@ pub(crate) fn expand<X>(ast: &Ast<X>, text: &str, extension: &dyn Fn(&Ast<X>, No
 			rest = &r[end + 2..];
 		} else if let Some(r) = tail.strip_prefix("StrId(") {
 			let end = r.find(')').unwrap();
-			let s = ast.str(crate::interner::StrId(r[..end].parse().unwrap()));
+			let s = ast.str(crate::interner::StrId::at(r[..end].parse().unwrap()));
 			out.push_str(&format!("{s:?}"));
 			rest = &r[end + 1..];
 		} else if let Some(r) = tail.strip_prefix("List { start: ") {
@@ -170,18 +170,23 @@ fn the_session_writes_the_same_words_again() {
 	let source = "let x = /* a */ 1; function f(y) { return x + y; } // b";
 	let prepared = Prepared::borrowed(source, request);
 	let words = || crate::json::words(|words| words.to_vec());
-	prepared.binary(Entry::Program, 0.0, None, "").unwrap();
+	prepared.in_place(Entry::Program, 0.0, None, "").unwrap();
 	let first = words();
-	let _ = Prepared::borrowed("a + b", request).binary(Entry::Expression, 0.0, None, "");
+	let _ = Prepared::borrowed("a + b", request).in_place(Entry::Expression, 0.0, None, "");
 	assert!(
 		Prepared::borrowed("a +", request)
-			.binary(Entry::Expression, 0.0, None, "")
+			.in_place(Entry::Expression, 0.0, None, "")
 			.is_err()
 	);
-	prepared.binary(Entry::Program, 0.0, None, "").unwrap();
+	prepared.in_place(Entry::Program, 0.0, None, "").unwrap();
 	let again = words();
-	// the header counts the constants and shapes known so far, which the parses between added to
-	assert_eq!((&first[..4], &first[6..]), (&again[..4], &again[6..]));
+	// but for the first saying its buffers are new to the front end
+	let what = 2 + first[1] as usize;
+	assert_eq!(first[what] & !1, again[what] & !1);
+	assert_eq!(
+		(&first[..what], &first[what + 1..]),
+		(&again[..what], &again[what + 1..])
+	);
 }
 
 #[test]
@@ -610,7 +615,7 @@ fn undeclared_exports_can_be_allowed() {
 #[test]
 #[ignore]
 fn phases() {
-	use crate::estree::{Binary, Json, Output, Positions, answer};
+	use crate::estree::{Output, Positions, answer};
 	use crate::lexer::Lexer;
 	use crate::lexer::token::TokenKind;
 	let Ok(path) = std::env::var("TEASEL_BENCH") else {
@@ -679,19 +684,6 @@ fn phases() {
 		let (mut ast, roots) = whole(&source, options);
 		crate::comments::attach(&mut ast, &source, roots, 0);
 		crate::scopes::analyze(&mut ast, Entry::Program, roots);
-		let scoped = Output {
-			comments: true,
-			scopes: true,
-			erase: false,
-			errors: false,
-		};
-		let flat = Positions::new(&source, false);
-		let end = source.len() as u32;
-		let mut binary = Binary::new();
-		best("Binary encode with scopes", &mut || {
-			binary.reset();
-			answer(&ast, Entry::Program, roots, end, &source, &flat, scoped, &mut binary).finish();
-		});
 		let s = ast.scopes.as_ref().unwrap();
 		eprintln!(
 			"scopes {} bindings {} references {} of_node {} of_identifier {}",
@@ -717,32 +709,22 @@ fn phases() {
 		errors: false,
 	};
 	let end = source.len() as u32;
-	let flat = Positions::new(&source, false);
 	let lines = Positions::new(&source, true);
 	{
 		let mut request = crate::json::Request::new(Entry::Program, 0);
 		request.set("comments");
 		let prepared = crate::json::Prepared::borrowed(&source, request);
 		best("whole request: positions, parse, comments, encode, finish", &mut || {
-			prepared.binary(Entry::Program, 0.0, None, "").unwrap();
+			prepared.in_place(Entry::Program, 0.0, None, "").unwrap();
 		});
 		for flag in ["scopes", "locations"] {
 			request.set(flag);
 		}
 		let prepared = crate::json::Prepared::borrowed(&source, request);
 		best("whole request with scopes and loc", &mut || {
-			prepared.binary(Entry::Program, 0.0, None, "").unwrap();
+			prepared.in_place(Entry::Program, 0.0, None, "").unwrap();
 		});
 	}
-	let mut binary = Binary::new();
-	best("Binary encode, no loc", &mut || {
-		binary.reset();
-		answer(&ast, Entry::Program, roots, end, &source, &flat, output, &mut binary).finish();
-	});
-	best("Binary encode, loc", &mut || {
-		binary.reset();
-		answer(&ast, Entry::Program, roots, end, &source, &lines, output, &mut binary).finish();
-	});
 	let grammar =
 		std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/host.grammar")).unwrap();
 	let document = format!(
@@ -754,21 +736,11 @@ fn phases() {
 			.host(&grammar)
 			.unwrap();
 		best(&format!("host: 200 each blocks, {flags}"), &mut || {
-			prepared.binary(Entry::Program, 0.0, None, "").unwrap();
+			prepared.in_place(Entry::Program, 0.0, None, "").unwrap();
 		});
 	}
 	best("Json write, loc", &mut || {
-		let _ = answer(
-			&ast,
-			Entry::Program,
-			roots,
-			end,
-			&source,
-			&lines,
-			output,
-			Json::default(),
-		)
-		.finish();
+		let _ = answer(&ast, Entry::Program, roots, end, &source, &lines, output);
 	});
 	eprintln!(
 		"nodes {} lists {} strings {} comments {}",
@@ -803,40 +775,11 @@ fn profile() {
 		.build()
 		.unwrap();
 	let mut sink = 0usize;
-	if std::env::var("TEASEL_PROFILE").is_ok_and(|what| what == "encode") {
-		use crate::estree::{Binary, Output, Positions, answer};
-		let (mut ast, roots) = whole(&source, options);
-		crate::comments::attach(&mut ast, &source, roots, 0);
-		let output = Output {
-			comments: true,
-			scopes: false,
-			erase: false,
-			errors: false,
-		};
-		let positions = Positions::new(&source, false);
-		let end = source.len() as u32;
-		let mut binary = Binary::new();
-		for _ in 0..30000 {
-			binary.reset();
-			answer(
-				&ast,
-				Entry::Program,
-				roots,
-				end,
-				&source,
-				&positions,
-				output,
-				&mut binary,
-			)
-			.finish();
-			sink = sink.wrapping_add(binary.words().len());
-		}
-	} else {
-		for _ in 0..3000 {
-			let (ast, _) = whole(&source, options);
-			sink = sink.wrapping_add(ast.nodes.len());
-		}
+	for _ in 0..3000 {
+		let (ast, _) = whole(&source, options);
+		sink = sink.wrapping_add(ast.nodes.len());
 	}
+
 	let report = guard.report().build().unwrap();
 	let file = std::fs::File::create("target/parse.svg").unwrap();
 	report.flamegraph(file).unwrap();
@@ -962,9 +905,9 @@ fn host_alloc_probe() {
 		let prepared = crate::json::Prepared::borrowed(src, crate::json::Request::from_names("module"))
 			.host(&grammar)
 			.unwrap();
-		prepared.binary(Entry::Program, 0.0, None, "").unwrap();
+		prepared.in_place(Entry::Program, 0.0, None, "").unwrap();
 		let before = ALLOCATIONS.load(std::sync::atomic::Ordering::Relaxed);
-		prepared.binary(Entry::Program, 0.0, None, "").unwrap();
+		prepared.in_place(Entry::Program, 0.0, None, "").unwrap();
 		ALLOCATIONS.load(std::sync::atomic::Ordering::Relaxed) - before
 	};
 	let base = count("");

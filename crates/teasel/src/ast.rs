@@ -1,7 +1,8 @@
-use crate::interner::{FastMap, Interner, StrId};
-use crate::names::{Name, c};
+use crate::handed::{Handed, Views};
+use crate::interner::{Interner, StrId};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(C)]
 pub struct Comment {
 	pub kind: CommentKind,
 	pub start: u32,
@@ -9,6 +10,7 @@ pub struct Comment {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
 pub enum CommentKind {
 	Line,
 	Block,
@@ -52,7 +54,7 @@ impl NodeId {
 
 /// A bit per node.
 #[derive(Debug, Default)]
-pub struct NodeSet(Vec<u64>);
+pub struct NodeSet(Handed<u64>);
 
 impl NodeSet {
 	pub fn insert(&mut self, id: NodeId) {
@@ -61,6 +63,10 @@ impl NodeSet {
 			self.0.resize(index / 64 + 1, 0);
 		}
 		self.0[index / 64] |= 1 << (index % 64);
+	}
+
+	pub fn words(&mut self) -> &mut Handed<u64> {
+		&mut self.0
 	}
 
 	pub fn contains(&self, id: NodeId) -> bool {
@@ -74,6 +80,18 @@ impl NodeSet {
 		self.0.clear();
 	}
 
+	/// Empty, with a bit for each of `nodes` nodes.
+	pub fn reset(&mut self, nodes: usize) {
+		self.0.clear();
+		self.0.resize(nodes.div_ceil(64), 0);
+	}
+
+	pub fn union(&mut self, other: &NodeSet) {
+		for (word, &more) in self.0.iter_mut().zip(other.0.iter()) {
+			*word |= more;
+		}
+	}
+
 	/// Keeps the bits of the first `nodes` nodes.
 	pub fn truncate(&mut self, nodes: usize) {
 		self.0.truncate(nodes.div_ceil(64));
@@ -83,35 +101,71 @@ impl NodeSet {
 	}
 }
 
-/// A few nodes' values: a bit per node says whether the map holds one, so the nodes without cost
-/// a bit test and never a hash.
+/// A few nodes' records, found through a slot per node: zero for none, else the record's index
+/// plus one.
 #[derive(Debug, Default)]
-pub struct NodeMap<T> {
-	set: NodeSet,
-	map: FastMap<NodeId, T>,
+pub struct Slots<T: Copy> {
+	slots: Handed<u32>,
+	list: Handed<T>,
+	/// The node of each record, to unhook when the record is forgotten.
+	owners: Vec<NodeId>,
 }
 
-impl<T> NodeMap<T> {
+impl<T: Copy + 'static> Slots<T> {
 	pub fn get(&self, id: NodeId) -> Option<&T> {
-		if self.set.contains(id) { self.map.get(&id) } else { None }
-	}
-
-	pub fn insert(&mut self, id: NodeId, value: T) {
-		self.set.insert(id);
-		self.map.insert(id, value);
+		match self.slots.get(id.index() as usize) {
+			Some(&slot) if slot != 0 => Some(&self.list[slot as usize - 1]),
+			_ => None,
+		}
 	}
 
 	pub fn entry(&mut self, id: NodeId) -> &mut T
 	where
 		T: Default,
 	{
-		self.set.insert(id);
-		self.map.entry(id).or_default()
+		let index = id.index() as usize;
+		if index >= self.slots.len() {
+			self.slots.resize(index + 1, 0);
+		}
+		if self.slots[index] == 0 {
+			self.list.push(T::default());
+			self.owners.push(id);
+			self.slots[index] = self.list.len() as u32;
+		}
+		&mut self.list[self.slots[index] as usize - 1]
 	}
 
 	pub fn clear(&mut self) {
-		self.set.clear();
-		self.map.clear();
+		self.slots.clear();
+		self.list.clear();
+		self.owners.clear();
+	}
+
+	pub fn len(&self) -> usize {
+		self.list.len()
+	}
+
+	/// The node of each record.
+	pub fn owners(&self) -> &[NodeId] {
+		&self.owners
+	}
+
+	pub fn is_empty(&self) -> bool {
+		self.list.is_empty()
+	}
+
+	/// Forgets the records past the first `len`.
+	pub fn truncate(&mut self, len: usize) {
+		for &owner in &self.owners[len..] {
+			self.slots[owner.index() as usize] = 0;
+		}
+		self.list.truncate(len);
+		self.owners.truncate(len);
+	}
+
+	pub fn views(&mut self, name: &'static str, records: &'static str, out: &mut Views<'_>) {
+		out.push(name, &mut self.slots);
+		out.push(records, &mut self.list);
 	}
 }
 
@@ -123,6 +177,7 @@ impl std::fmt::Debug for NodeId {
 
 /// A contiguous run of node ids in `Ast::lists`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(C)]
 pub struct List {
 	pub start: u32,
 	pub len: u32,
@@ -133,6 +188,7 @@ impl List {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[repr(C)]
 pub struct Node {
 	pub kind: NodeKind,
 	pub start: u32,
@@ -191,18 +247,44 @@ pub enum Value {
 /// `X` is the data an extension attaches to the tree; the plain JavaScript parser attaches none.
 #[derive(Debug, Default)]
 pub struct Ast<X = ()> {
-	pub nodes: Vec<Node>,
+	pub nodes: Handed<Node>,
 	/// The values of the number literals, by `NumberLiteral::value`.
-	pub numbers: Vec<f64>,
-	pub lists: Vec<Option<NodeId>>,
+	pub numbers: Handed<f64>,
+	pub lists: Handed<Option<NodeId>>,
 	pub hosts: Vec<Host>,
 	pub host_fields: Vec<(&'static str, Value)>,
-	pub host_strings: Vec<StrId>,
+	pub host_strings: Handed<StrId>,
 	pub host_groups: Vec<HostGroup>,
 	pub strings: Interner,
 	pub comments: Vec<Comment>,
+	/// Each comment as a front end reads it, nine words: whether it is a block, where its text and
+	/// the comment itself start and end in UTF-16, and its lines and columns with `locations`.
+	pub comment_words: Handed<u32>,
 	/// Comments attached to nodes by `comments::attach`, as indices into `comments`.
-	pub attached: NodeMap<Attached>,
+	pub attached: Slots<Attached>,
+	/// Nodes erasure leaves out, when the answer erases TypeScript.
+	pub erased: NodeSet,
+	/// Nodes with what few have, for a front end that builds the rest in one piece: parentheses,
+	/// comments, an extension's extras, a binding or reference on what is not an identifier.
+	pub rare: NodeSet,
+	/// Nodes that declare bindings, are assigned by references or are a root.
+	pub late: NodeSet,
+	/// Each node's span in UTF-16 offsets, two words a node, when the source has characters past
+	/// ASCII; empty otherwise, the node's own span being right.
+	pub spans: Handed<u32>,
+	/// Each node's start line and column and end line and column, with `locations`.
+	pub locs: Handed<u32>,
+	/// Where each interned string starts in UTF-16 units, when the text has characters past ASCII.
+	pub units: Handed<u32>,
+	/// Each recovered error as a front end reads it, six words: its code and message as strings,
+	/// `pos`, `end`, and the line and column of `pos`.
+	pub error_words: Handed<u32>,
+	/// The hosts as a front end reads them, five words: type, first field, field count, whether it
+	/// has a span, and the number of its shape.
+	pub host_view: Handed<u32>,
+	/// The name id of each host field, and its value as three words.
+	pub host_keys: Handed<u32>,
+	pub host_vals: Handed<[u32; 3]>,
 	/// The buffers the last parse worked in, for the next one.
 	pub spare: crate::parser::Spare,
 	/// The scope analysis, when `scopes::analyze` ran.
@@ -215,6 +297,7 @@ pub struct Ast<X = ()> {
 }
 
 #[derive(Debug, Default, Clone, Copy)]
+#[repr(C)]
 pub struct Attached {
 	pub leading: Run,
 	pub trailing: Run,
@@ -224,6 +307,7 @@ pub struct Attached {
 
 /// `len` comments from `start` on: a node takes each of its comments one after the other.
 #[derive(Debug, Default, Clone, Copy)]
+#[repr(C)]
 pub struct Run {
 	pub start: u32,
 	pub len: u32,
@@ -256,6 +340,10 @@ pub trait Reuse: Default {
 	fn clear(&mut self);
 	fn mark(&self) -> Self::Mark;
 	fn truncate(&mut self, mark: Self::Mark);
+	/// The extension's own buffers, after the tree's.
+	fn views(&mut self, _out: &mut Views<'_>) {}
+	/// The nodes the extension adds keys to.
+	fn rare(&self, _set: &mut NodeSet) {}
 }
 
 impl Reuse for () {
@@ -292,6 +380,17 @@ impl<X: Reuse> Ast<X> {
 		}
 		self.errors.clear();
 		self.parenthesized.clear();
+		self.erased.clear();
+		self.rare.clear();
+		self.late.clear();
+		self.comment_words.clear();
+		self.error_words.clear();
+		self.spans.clear();
+		self.locs.clear();
+		self.units.clear();
+		self.host_view.clear();
+		self.host_keys.clear();
+		self.host_vals.clear();
 		self.extension.clear();
 	}
 
@@ -318,10 +417,58 @@ impl<X: Default> Ast<X> {
 	/// Room for the tree of `bytes` of source: about a node per eight bytes, a list per thirty.
 	pub(crate) fn sized(bytes: usize) -> Self {
 		Ast {
-			nodes: Vec::with_capacity(bytes / 8 + 16),
-			lists: Vec::with_capacity(bytes / 30 + 16),
+			nodes: Handed::with_capacity(bytes / 8 + 16, 16),
+			lists: Handed::with_capacity(bytes / 30 + 16, 16),
 			strings: Interner::sized(bytes),
 			..Ast::default()
+		}
+	}
+}
+
+impl<X: Reuse> Ast<X> {
+	/// The tree's buffers a front end reads in place, by the names `layout::json` lists.
+	pub fn views(&mut self, out: &mut Views<'_>) {
+		out.push("nodes", &mut self.nodes);
+		out.push("lists", &mut self.lists);
+		out.push("numbers", &mut self.numbers);
+		let (text, starts) = self.strings.buffers();
+		out.push("text", text);
+		out.push("starts", starts);
+		out.push("units", &mut self.units);
+		out.push("spans", &mut self.spans);
+		out.push("locs", &mut self.locs);
+		out.push("parenthesized", self.parenthesized.words());
+		out.push("erased", self.erased.words());
+		out.push("rare", self.rare.words());
+		out.push("late", self.late.words());
+		out.push("comments", &mut self.comment_words);
+		self.attached.views("attached_slots", "attached", out);
+		out.push("errors", &mut self.error_words);
+		out.push("hosts", &mut self.host_view);
+		out.push("host_keys", &mut self.host_keys);
+		out.push("host_vals", &mut self.host_vals);
+		out.push("host_strings", &mut self.host_strings);
+		match &mut self.scopes {
+			Some(scopes) => scopes.views(out),
+			None => crate::scopes::Scopes::no_views(out),
+		}
+		self.extension.views(out);
+	}
+}
+
+impl Value {
+	/// The value as three words: its tag, then what it holds.
+	pub fn words(self) -> [u32; 3] {
+		match self {
+			Value::Node(id) => [0, id.index(), 0],
+			Value::Nodes(list) => [1, list.start, list.len],
+			Value::Str(id) => [2, id.index(), 0],
+			Value::Slice(start, end) => [3, start, end],
+			Value::Strs(start, len) => [4, start, len],
+			Value::Bool(value) => [5, value as u32, 0],
+			Value::Int(value) => [6, value, 0],
+			Value::Null => [7, 0, 0],
+			Value::Comments => [8, 0, 0],
 		}
 	}
 }
@@ -602,549 +749,452 @@ impl<X> Ast<X> {
 	}
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum NodeKind {
-	Program {
-		body: List,
-		module: bool,
-	},
+crate::layout::kinds! {
+	#[derive(Clone, Copy, Debug, PartialEq)]
+	pub enum NodeKind in node_layout {
+		Program {
+			body: List,
+			module: bool,
+		},
 
-	Identifier {
-		name: StrId,
-	},
-	PrivateIdentifier {
-		name: StrId,
-	},
-	NumberLiteral {
-		/// Into `Ast::numbers`.
-		value: u32,
-	},
-	BigIntLiteral,
-	StringLiteral {
-		value: StrId,
-	},
-	BooleanLiteral {
-		value: bool,
-	},
-	NullLiteral,
-	RegExpLiteral {
-		pattern: StrId,
-		flags: StrId,
-	},
-	TemplateLiteral {
-		quasis: List,
-		expressions: List,
-	},
-	TemplateElement {
-		cooked: Option<StrId>,
-		raw: StrId,
-		tail: bool,
-	},
-	TaggedTemplateExpression {
-		tag: NodeId,
-		quasi: NodeId,
-	},
-	ThisExpression,
-	Super,
-	ArrayExpression {
-		elements: List,
-	},
-	ObjectExpression {
-		properties: List,
-	},
-	Property {
-		key: NodeId,
-		value: NodeId,
-		kind: PropertyKind,
-		computed: bool,
-		method: bool,
-		shorthand: bool,
-	},
-	SpreadElement {
-		argument: NodeId,
-	},
-	UnaryExpression {
-		operator: UnaryOperator,
-		argument: NodeId,
-	},
-	UpdateExpression {
-		operator: UpdateOperator,
-		prefix: bool,
-		argument: NodeId,
-	},
-	BinaryExpression {
-		operator: BinaryOperator,
-		left: NodeId,
-		right: NodeId,
-	},
-	LogicalExpression {
-		operator: LogicalOperator,
-		left: NodeId,
-		right: NodeId,
-	},
-	AssignmentExpression {
-		operator: AssignmentOperator,
-		left: NodeId,
-		right: NodeId,
-	},
-	ConditionalExpression {
-		test: NodeId,
-		consequent: NodeId,
-		alternate: NodeId,
-	},
-	MemberExpression {
-		object: NodeId,
-		property: NodeId,
-		computed: bool,
-		optional: bool,
-	},
-	CallExpression {
-		callee: NodeId,
-		arguments: List,
-		optional: bool,
-	},
-	ChainExpression {
-		expression: NodeId,
-	},
-	NewExpression {
-		callee: NodeId,
-		arguments: List,
-	},
-	SequenceExpression {
-		expressions: List,
-	},
-	ArrowFunctionExpression {
-		params: List,
-		body: NodeId,
-		expression: bool,
-		is_async: bool,
-	},
-	FunctionExpression {
-		function: Function,
-	},
-	FunctionDeclaration {
-		function: Function,
-	},
-	ClassExpression {
-		class: Class,
-	},
-	ClassDeclaration {
-		class: Class,
-	},
-	ClassBody {
-		body: List,
-	},
-	MethodDefinition {
-		key: NodeId,
-		value: NodeId,
-		kind: MethodKind,
-		computed: bool,
-		is_static: bool,
-	},
-	PropertyDefinition {
-		key: NodeId,
-		value: Option<NodeId>,
-		computed: bool,
-		is_static: bool,
-	},
-	StaticBlock {
-		body: List,
-	},
-	YieldExpression {
-		argument: Option<NodeId>,
-		delegate: bool,
-	},
-	AwaitExpression {
-		argument: NodeId,
-	},
-	MetaProperty {
-		meta: NodeId,
-		property: NodeId,
-	},
-	ImportExpression {
-		source: NodeId,
-		options: Option<NodeId>,
-	},
+		Identifier {
+			name: StrId,
+		},
+		PrivateIdentifier {
+			name: StrId,
+		},
+		NumberLiteral {
+			/// Into `Ast::numbers`.
+			value: u32,
+		},
+		BigIntLiteral,
+		StringLiteral {
+			value: StrId,
+		},
+		BooleanLiteral {
+			value: bool,
+		},
+		NullLiteral,
+		RegExpLiteral {
+			pattern: StrId,
+			flags: StrId,
+		},
+		TemplateLiteral {
+			quasis: List,
+			expressions: List,
+		},
+		TemplateElement {
+			cooked: Option<StrId>,
+			raw: StrId,
+			tail: bool,
+		},
+		TaggedTemplateExpression {
+			tag: NodeId,
+			quasi: NodeId,
+		},
+		ThisExpression,
+		Super,
+		ArrayExpression {
+			elements: List,
+		},
+		ObjectExpression {
+			properties: List,
+		},
+		Property {
+			key: NodeId,
+			value: NodeId,
+			kind: PropertyKind,
+			computed: bool,
+			method: bool,
+			shorthand: bool,
+		},
+		SpreadElement {
+			argument: NodeId,
+		},
+		UnaryExpression {
+			operator: UnaryOperator,
+			argument: NodeId,
+		},
+		UpdateExpression {
+			operator: UpdateOperator,
+			prefix: bool,
+			argument: NodeId,
+		},
+		BinaryExpression {
+			operator: BinaryOperator,
+			left: NodeId,
+			right: NodeId,
+		},
+		LogicalExpression {
+			operator: LogicalOperator,
+			left: NodeId,
+			right: NodeId,
+		},
+		AssignmentExpression {
+			operator: AssignmentOperator,
+			left: NodeId,
+			right: NodeId,
+		},
+		ConditionalExpression {
+			test: NodeId,
+			consequent: NodeId,
+			alternate: NodeId,
+		},
+		MemberExpression {
+			object: NodeId,
+			property: NodeId,
+			computed: bool,
+			optional: bool,
+		},
+		CallExpression {
+			callee: NodeId,
+			arguments: List,
+			optional: bool,
+		},
+		ChainExpression {
+			expression: NodeId,
+		},
+		NewExpression {
+			callee: NodeId,
+			arguments: List,
+		},
+		SequenceExpression {
+			expressions: List,
+		},
+		ArrowFunctionExpression {
+			params: List,
+			body: NodeId,
+			expression: bool,
+			is_async: bool,
+		},
+		FunctionExpression {
+			function: Function,
+		},
+		FunctionDeclaration {
+			function: Function,
+		},
+		ClassExpression {
+			class: Class,
+		},
+		ClassDeclaration {
+			class: Class,
+		},
+		ClassBody {
+			body: List,
+		},
+		MethodDefinition {
+			key: NodeId,
+			value: NodeId,
+			kind: MethodKind,
+			computed: bool,
+			is_static: bool,
+		},
+		PropertyDefinition {
+			key: NodeId,
+			value: Option<NodeId>,
+			computed: bool,
+			is_static: bool,
+		},
+		StaticBlock {
+			body: List,
+		},
+		YieldExpression {
+			argument: Option<NodeId>,
+			delegate: bool,
+		},
+		AwaitExpression {
+			argument: NodeId,
+		},
+		MetaProperty {
+			meta: NodeId,
+			property: NodeId,
+		},
+		ImportExpression {
+			source: NodeId,
+			options: Option<NodeId>,
+		},
 
-	ObjectPattern {
-		properties: List,
-	},
-	ArrayPattern {
-		elements: List,
-	},
-	RestElement {
-		argument: NodeId,
-	},
-	AssignmentPattern {
-		left: NodeId,
-		right: NodeId,
-	},
+		ObjectPattern {
+			properties: List,
+		},
+		ArrayPattern {
+			elements: List,
+		},
+		RestElement {
+			argument: NodeId,
+		},
+		AssignmentPattern {
+			left: NodeId,
+			right: NodeId,
+		},
 
-	ExpressionStatement {
-		expression: NodeId,
-		directive: Option<StrId>,
-	},
-	BlockStatement {
-		body: List,
-	},
-	EmptyStatement,
-	DebuggerStatement,
-	WithStatement {
-		object: NodeId,
-		body: NodeId,
-	},
-	ReturnStatement {
-		argument: Option<NodeId>,
-	},
-	LabeledStatement {
-		label: NodeId,
-		body: NodeId,
-	},
-	BreakStatement {
-		label: Option<NodeId>,
-	},
-	ContinueStatement {
-		label: Option<NodeId>,
-	},
-	IfStatement {
-		test: NodeId,
-		consequent: NodeId,
-		alternate: Option<NodeId>,
-	},
-	SwitchStatement {
-		discriminant: NodeId,
-		cases: List,
-	},
-	SwitchCase {
-		test: Option<NodeId>,
-		consequent: List,
-	},
-	ThrowStatement {
-		argument: NodeId,
-	},
-	TryStatement {
-		block: NodeId,
-		handler: Option<NodeId>,
-		finalizer: Option<NodeId>,
-	},
-	CatchClause {
-		param: Option<NodeId>,
-		body: NodeId,
-	},
-	WhileStatement {
-		test: NodeId,
-		body: NodeId,
-	},
-	DoWhileStatement {
-		body: NodeId,
-		test: NodeId,
-	},
-	ForStatement {
-		init: Option<NodeId>,
-		test: Option<NodeId>,
-		update: Option<NodeId>,
-		body: NodeId,
-	},
-	ForInStatement {
-		left: NodeId,
-		right: NodeId,
-		body: NodeId,
-	},
-	ForOfStatement {
-		left: NodeId,
-		right: NodeId,
-		body: NodeId,
-		is_await: bool,
-	},
-	VariableDeclaration {
-		declarations: List,
-		kind: VariableKind,
-	},
-	VariableDeclarator {
-		id: NodeId,
-		init: Option<NodeId>,
-	},
+		ExpressionStatement {
+			expression: NodeId,
+			directive: Option<StrId>,
+		},
+		BlockStatement {
+			body: List,
+		},
+		EmptyStatement,
+		DebuggerStatement,
+		WithStatement {
+			object: NodeId,
+			body: NodeId,
+		},
+		ReturnStatement {
+			argument: Option<NodeId>,
+		},
+		LabeledStatement {
+			label: NodeId,
+			body: NodeId,
+		},
+		BreakStatement {
+			label: Option<NodeId>,
+		},
+		ContinueStatement {
+			label: Option<NodeId>,
+		},
+		IfStatement {
+			test: NodeId,
+			consequent: NodeId,
+			alternate: Option<NodeId>,
+		},
+		SwitchStatement {
+			discriminant: NodeId,
+			cases: List,
+		},
+		SwitchCase {
+			test: Option<NodeId>,
+			consequent: List,
+		},
+		ThrowStatement {
+			argument: NodeId,
+		},
+		TryStatement {
+			block: NodeId,
+			handler: Option<NodeId>,
+			finalizer: Option<NodeId>,
+		},
+		CatchClause {
+			param: Option<NodeId>,
+			body: NodeId,
+		},
+		WhileStatement {
+			test: NodeId,
+			body: NodeId,
+		},
+		DoWhileStatement {
+			body: NodeId,
+			test: NodeId,
+		},
+		ForStatement {
+			init: Option<NodeId>,
+			test: Option<NodeId>,
+			update: Option<NodeId>,
+			body: NodeId,
+		},
+		ForInStatement {
+			left: NodeId,
+			right: NodeId,
+			body: NodeId,
+		},
+		ForOfStatement {
+			left: NodeId,
+			right: NodeId,
+			body: NodeId,
+			is_await: bool,
+		},
+		VariableDeclaration {
+			declarations: List,
+			kind: VariableKind,
+		},
+		VariableDeclarator {
+			id: NodeId,
+			init: Option<NodeId>,
+		},
 
-	ImportDeclaration {
-		specifiers: List,
-		source: NodeId,
-		attributes: List,
-	},
-	ImportSpecifier {
-		imported: NodeId,
-		local: NodeId,
-	},
-	ImportDefaultSpecifier {
-		local: NodeId,
-	},
-	ImportNamespaceSpecifier {
-		local: NodeId,
-	},
-	ImportAttribute {
-		key: NodeId,
-		value: NodeId,
-	},
-	/// `export declaration`, an ExportNamedDeclaration whose only child is what it declares.
-	ExportDeclaration {
-		declaration: NodeId,
-	},
-	/// `export { specifiers } from source with { attributes }`.
-	ExportNamedDeclaration {
-		specifiers: List,
-		source: Option<NodeId>,
-		attributes: List,
-	},
-	ExportSpecifier {
-		local: NodeId,
-		exported: NodeId,
-	},
-	ExportDefaultDeclaration {
-		declaration: NodeId,
-	},
-	ExportAllDeclaration {
-		exported: Option<NodeId>,
-		source: NodeId,
-		attributes: List,
-	},
+		ImportDeclaration {
+			specifiers: List,
+			source: NodeId,
+			attributes: List,
+		},
+		ImportSpecifier {
+			imported: NodeId,
+			local: NodeId,
+		},
+		ImportDefaultSpecifier {
+			local: NodeId,
+		},
+		ImportNamespaceSpecifier {
+			local: NodeId,
+		},
+		ImportAttribute {
+			key: NodeId,
+			value: NodeId,
+		},
+		/// `export declaration`, an ExportNamedDeclaration whose only child is what it declares.
+		ExportDeclaration {
+			declaration: NodeId,
+		},
+		/// `export { specifiers } from source with { attributes }`.
+		ExportNamedDeclaration {
+			specifiers: List,
+			source: Option<NodeId>,
+			attributes: List,
+		},
+		ExportSpecifier {
+			local: NodeId,
+			exported: NodeId,
+		},
+		ExportDefaultDeclaration {
+			declaration: NodeId,
+		},
+		ExportAllDeclaration {
+			exported: Option<NodeId>,
+			source: NodeId,
+			attributes: List,
+		},
 
-	/// A node owned by a parser extension, indexed into its own data.
-	Extension(u32),
-	/// A node of the host's grammar, indexed into `Ast::hosts`.
-	Host(u32),
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Function {
-	pub id: Option<NodeId>,
-	pub params: List,
-	pub body: NodeId,
-	pub is_async: bool,
-	pub generator: bool,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Class {
-	pub id: Option<NodeId>,
-	pub super_class: Option<NodeId>,
-	pub body: NodeId,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PropertyKind {
-	Init,
-	Get,
-	Set,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum MethodKind {
-	Constructor,
-	Method,
-	Get,
-	Set,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum VariableKind {
-	Var,
-	Let,
-	Const,
-	Using,
-	AwaitUsing,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum UnaryOperator {
-	Minus,
-	Plus,
-	Not,
-	BitNot,
-	Typeof,
-	Void,
-	Delete,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum UpdateOperator {
-	Increment,
-	Decrement,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BinaryOperator {
-	Eq,
-	NotEq,
-	StrictEq,
-	StrictNotEq,
-	Lt,
-	LtEq,
-	Gt,
-	GtEq,
-	Shl,
-	Shr,
-	UShr,
-	Add,
-	Sub,
-	Mul,
-	Div,
-	Mod,
-	Exp,
-	BitOr,
-	BitXor,
-	BitAnd,
-	In,
-	Instanceof,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum LogicalOperator {
-	Or,
-	And,
-	Nullish,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum AssignmentOperator {
-	Assign,
-	Add,
-	Sub,
-	Mul,
-	Div,
-	Mod,
-	Exp,
-	Shl,
-	Shr,
-	UShr,
-	BitOr,
-	BitXor,
-	BitAnd,
-	Or,
-	And,
-	Nullish,
-}
-
-impl UnaryOperator {
-	pub fn name(self) -> Name {
-		match self {
-			Self::Minus => c!("-"),
-			Self::Plus => c!("+"),
-			Self::Not => c!("!"),
-			Self::BitNot => c!("~"),
-			Self::Typeof => c!("typeof"),
-			Self::Void => c!("void"),
-			Self::Delete => c!("delete"),
-		}
-	}
-
-	pub fn as_str(self) -> &'static str {
-		self.name().text
+		/// A node owned by a parser extension, indexed into its own data.
+		Extension(u32),
+		/// A node of the host's grammar, indexed into `Ast::hosts`.
+		Host(u32),
 	}
 }
 
-impl UpdateOperator {
-	pub fn name(self) -> Name {
-		match self {
-			Self::Increment => c!("++"),
-			Self::Decrement => c!("--"),
-		}
-	}
-
-	pub fn as_str(self) -> &'static str {
-		self.name().text
+crate::layout::record! {
+	#[derive(Clone, Copy, Debug, PartialEq)]
+	pub struct Function {
+		pub id: Option<NodeId>,
+		pub params: List,
+		pub body: NodeId,
+		pub is_async: bool,
+		pub generator: bool,
 	}
 }
 
-impl BinaryOperator {
-	pub fn name(self) -> Name {
-		match self {
-			Self::Eq => c!("=="),
-			Self::NotEq => c!("!="),
-			Self::StrictEq => c!("==="),
-			Self::StrictNotEq => c!("!=="),
-			Self::Lt => c!("<"),
-			Self::LtEq => c!("<="),
-			Self::Gt => c!(">"),
-			Self::GtEq => c!(">="),
-			Self::Shl => c!("<<"),
-			Self::Shr => c!(">>"),
-			Self::UShr => c!(">>>"),
-			Self::Add => c!("+"),
-			Self::Sub => c!("-"),
-			Self::Mul => c!("*"),
-			Self::Div => c!("/"),
-			Self::Mod => c!("%"),
-			Self::Exp => c!("**"),
-			Self::BitOr => c!("|"),
-			Self::BitXor => c!("^"),
-			Self::BitAnd => c!("&"),
-			Self::In => c!("in"),
-			Self::Instanceof => c!("instanceof"),
-		}
-	}
-
-	pub fn as_str(self) -> &'static str {
-		self.name().text
+crate::layout::record! {
+	#[derive(Clone, Copy, Debug, PartialEq)]
+	pub struct Class {
+		pub id: Option<NodeId>,
+		pub super_class: Option<NodeId>,
+		pub body: NodeId,
 	}
 }
 
-impl LogicalOperator {
-	pub fn name(self) -> Name {
-		match self {
-			Self::Or => c!("||"),
-			Self::And => c!("&&"),
-			Self::Nullish => c!("??"),
-		}
-	}
-
-	pub fn as_str(self) -> &'static str {
-		self.name().text
+crate::layout::names! {
+	#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+	pub enum PropertyKind {
+		Init = "init",
+		Get = "get",
+		Set = "set",
 	}
 }
 
-impl AssignmentOperator {
-	pub fn name(self) -> Name {
-		match self {
-			Self::Assign => c!("="),
-			Self::Add => c!("+="),
-			Self::Sub => c!("-="),
-			Self::Mul => c!("*="),
-			Self::Div => c!("/="),
-			Self::Mod => c!("%="),
-			Self::Exp => c!("**="),
-			Self::Shl => c!("<<="),
-			Self::Shr => c!(">>="),
-			Self::UShr => c!(">>>="),
-			Self::BitOr => c!("|="),
-			Self::BitXor => c!("^="),
-			Self::BitAnd => c!("&="),
-			Self::Or => c!("||="),
-			Self::And => c!("&&="),
-			Self::Nullish => c!("??="),
-		}
+crate::layout::names! {
+	#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+	pub enum MethodKind {
+		Constructor = "constructor",
+		Method = "method",
+		Get = "get",
+		Set = "set",
 	}
+}
 
-	pub fn as_str(self) -> &'static str {
-		self.name().text
+crate::layout::names! {
+	#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+	pub enum VariableKind {
+		Var = "var",
+		Let = "let",
+		Const = "const",
+		Using = "using",
+		AwaitUsing = "await using",
+	}
+}
+
+crate::layout::names! {
+	#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+	pub enum UnaryOperator {
+		Minus = "-",
+		Plus = "+",
+		Not = "!",
+		BitNot = "~",
+		Typeof = "typeof",
+		Void = "void",
+		Delete = "delete",
+	}
+}
+
+crate::layout::names! {
+	#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+	pub enum UpdateOperator {
+		Increment = "++",
+		Decrement = "--",
+	}
+}
+
+crate::layout::names! {
+	#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+	pub enum BinaryOperator {
+		Eq = "==",
+		NotEq = "!=",
+		StrictEq = "===",
+		StrictNotEq = "!==",
+		Lt = "<",
+		LtEq = "<=",
+		Gt = ">",
+		GtEq = ">=",
+		Shl = "<<",
+		Shr = ">>",
+		UShr = ">>>",
+		Add = "+",
+		Sub = "-",
+		Mul = "*",
+		Div = "/",
+		Mod = "%",
+		Exp = "**",
+		BitOr = "|",
+		BitXor = "^",
+		BitAnd = "&",
+		In = "in",
+		Instanceof = "instanceof",
+	}
+}
+
+crate::layout::names! {
+	#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+	pub enum LogicalOperator {
+		Or = "||",
+		And = "&&",
+		Nullish = "??",
+	}
+}
+
+crate::layout::names! {
+	#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+	pub enum AssignmentOperator {
+		Assign = "=",
+		Add = "+=",
+		Sub = "-=",
+		Mul = "*=",
+		Div = "/=",
+		Mod = "%=",
+		Exp = "**=",
+		Shl = "<<=",
+		Shr = ">>=",
+		UShr = ">>>=",
+		BitOr = "|=",
+		BitXor = "^=",
+		BitAnd = "&=",
+		Or = "||=",
+		And = "&&=",
+		Nullish = "??=",
 	}
 }
 
 impl VariableKind {
 	pub(crate) fn is_using(self) -> bool {
 		matches!(self, Self::Using | Self::AwaitUsing)
-	}
-
-	pub fn name(self) -> Name {
-		match self {
-			Self::Var => c!("var"),
-			Self::Let => c!("let"),
-			Self::Const => c!("const"),
-			Self::Using => c!("using"),
-			Self::AwaitUsing => c!("await using"),
-		}
-	}
-
-	pub fn as_str(self) -> &'static str {
-		self.name().text
 	}
 }
 

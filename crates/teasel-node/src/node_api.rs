@@ -16,6 +16,16 @@ pub(crate) const OK: Status = 0;
 pub(crate) const UNDEFINED: i32 = 0;
 pub(crate) const UINT8_ARRAY: i32 = 1;
 pub(crate) const UINT32_ARRAY: i32 = 6;
+pub(crate) const FLOAT64_ARRAY: i32 = 8;
+
+pub(crate) fn element_size(kind: i32) -> usize {
+	match kind {
+		UINT8_ARRAY => 1,
+		UINT32_ARRAY => 4,
+		FLOAT64_ARRAY => 8,
+		_ => unreachable!("an element size for every view kind"),
+	}
+}
 
 macro_rules! api {
 	($(fn $name:ident($($arg:ident: $ty:ty),*) -> Status;)*) => {

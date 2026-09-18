@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import type { Tree } from './decode.js';
 
 /** The external V8 holds for the addon: a prepared source. */
 export type External = object;
@@ -9,8 +10,9 @@ export interface Addon {
 	readonly create: (source: Uint8Array, flags: number, host: string) => External;
 	readonly parse: (held: External, entry: number, offset: number, end: number | undefined, stop: string) => Uint32Array | string;
 	readonly free: (held: External) => void;
-	readonly constants: () => string[];
-	readonly shapes: () => number[];
+	readonly layout: () => string;
+	/** Whether the tree is the TypeScript one, then each view as long as its buffer's room; the lengths ride in the answer's words. */
+	readonly tree: () => Tree | undefined;
 }
 
 export const platforms: Record<string, { target: string; os: NodeJS.Platform; cpu: NodeJS.Architecture; libc?: string }> = {

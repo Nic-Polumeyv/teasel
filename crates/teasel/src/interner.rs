@@ -1,3 +1,4 @@
+use crate::handed::Handed;
 use std::collections::HashMap;
 use std::hash::{BuildHasherDefault, Hasher};
 
@@ -51,17 +52,27 @@ impl Hasher for FastHasher {
 pub type FastMap<K, V> = HashMap<K, V, BuildHasherDefault<FastHasher>>;
 pub type FastSet<K> = std::collections::HashSet<K, BuildHasherDefault<FastHasher>>;
 
-/// Index of an interned string.
+/// Index of an interned string. Not a `NonZero`: that cost a quarter of the parse.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct StrId(pub(crate) u32);
+pub struct StrId(u32);
+
+impl StrId {
+	pub fn at(index: u32) -> Self {
+		StrId(index)
+	}
+
+	pub fn index(self) -> u32 {
+		self.0
+	}
+}
 
 /// Strings back to back in one text, found through an open-addressing table by hash: no
 /// allocation per string and one hash per lookup, which `HashMap<Rc<str>>` paid twice on a miss.
 #[derive(Debug, Default)]
 pub struct Interner {
-	text: String,
+	text: Handed<u8>,
 	/// Where each string starts, and where the next would.
-	starts: Vec<u32>,
+	starts: Handed<u32>,
 	/// Slots hold the string's hash in the high half and its id plus one in the low; zero is
 	/// empty. Always a power of two, at most half full. The hash sits beside the id so a probe
 	/// touches one line before it reads the text.
@@ -102,10 +113,10 @@ impl Interner {
 	/// Room for the strings of `bytes` of source, so the table grows rarely.
 	pub(crate) fn sized(bytes: usize) -> Self {
 		let slots = (bytes / 16).next_power_of_two().clamp(64, 4096);
-		let mut starts = Vec::with_capacity(slots / 2 + 1);
+		let mut starts = Handed::with_capacity(slots / 2 + 1, 64);
 		starts.push(0);
 		Interner {
-			text: String::with_capacity(bytes / 32),
+			text: Handed::with_capacity(bytes / 32, 1 << 10),
 			starts,
 			table: vec![0; slots],
 			touched: Vec::new(),
@@ -141,11 +152,11 @@ impl Interner {
 			slot = self.probe(s, hash).unwrap_err();
 		}
 		let id = self.len() as u32;
-		self.text.push_str(s);
+		self.text.extend_from_slice(s.as_bytes());
 		self.starts.push(self.text.len() as u32);
 		self.table[slot] = Self::entry(hash, id);
 		self.touched.push(slot as u32);
-		StrId(id)
+		StrId::at(id)
 	}
 
 	fn entry(hash: u32, id: u32) -> u64 {
@@ -166,8 +177,8 @@ impl Interner {
 			}
 			if (entry >> 32) as u32 == hash {
 				let id = entry as u32 - 1;
-				if self.get(StrId(id)) == s {
-					return Ok(StrId(id));
+				if self.get(StrId::at(id)) == s {
+					return Ok(StrId::at(id));
 				}
 			}
 			i = (i + 1) & mask;
@@ -197,16 +208,23 @@ impl Interner {
 	}
 
 	pub fn get(&self, id: StrId) -> &str {
-		let i = id.0 as usize;
+		let i = id.index() as usize;
 		// every start is where a whole string was appended, so a character boundary
 		unsafe {
-			self.text
-				.get_unchecked(self.starts[i] as usize..self.starts[i + 1] as usize)
+			std::str::from_utf8_unchecked(
+				self.text
+					.get_unchecked(self.starts[i] as usize..self.starts[i + 1] as usize),
+			)
 		}
 	}
 
 	pub fn len(&self) -> usize {
 		self.starts.len().saturating_sub(1)
+	}
+
+	/// The text of every string, and where each starts, for a front end reading them in place.
+	pub fn buffers(&mut self) -> (&mut Handed<u8>, &mut Handed<u32>) {
+		(&mut self.text, &mut self.starts)
 	}
 
 	pub fn is_empty(&self) -> bool {

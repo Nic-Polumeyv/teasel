@@ -5,7 +5,7 @@
 //! one keeps what is inside it as `innerComments`; what is left trails the root. Children are
 //! visited in source order. A host's own nodes take no comments: those stay in the list alone.
 
-use crate::ast::{Ast, Attached, List, NodeId, NodeKind, NodeMap, Walk};
+use crate::ast::{Ast, Attached, List, NodeId, NodeKind, Slots, Walk};
 
 /// Attaches the comments at or after `from` to the trees under `roots`, in order, replacing any
 /// earlier attachment; what is left trails the last one.
@@ -51,7 +51,7 @@ struct Attacher<'a, X> {
 	ast: &'a Ast<X>,
 	source: &'a str,
 	next: u32,
-	attached: NodeMap<Attached>,
+	attached: Slots<Attached>,
 	scratch: Vec<NodeId>,
 }
 

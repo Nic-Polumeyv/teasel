@@ -2,57 +2,40 @@
 //! identifier resolved to the binding it names. Names are declared first, in the environment each
 //! belongs to, and every reference is resolved after, so hoisting and merging need nothing special.
 
-use crate::ast::{Ast, List, NodeId, NodeKind, NodeMap, VariableKind, Walk};
+use crate::ast::{Ast, List, NodeId, NodeKind, VariableKind, Walk};
 use crate::error::{Code, SyntaxError};
+use crate::handed::{Handed, Views};
 use crate::interner::{FastMap, StrId};
-use crate::names::{Name, c};
 use crate::parser::Entry;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ScopeKind {
-	Module,
-	Script,
-	/// A function, its parameters and its body.
-	Function,
-	/// The name of a function expression, visible only inside it.
-	FunctionName,
-	/// A class body, where the class name is bound again, immutably.
-	Class,
-	Block,
-	Catch,
-	/// The head of a loop declaring with `let`, `const` or `using`, and its body.
-	For,
-	Switch,
-	StaticBlock,
-	With,
-	/// A TypeScript namespace body.
-	Namespace,
-	/// A TypeScript enum body, where the members are names.
-	Enum,
-	/// What a host parses at an offset: an expression, a statement, a pattern.
-	Fragment,
+crate::layout::names! {
+	#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+	pub enum ScopeKind {
+		Module = "module",
+		Script = "script",
+		/// A function, its parameters and its body.
+		Function = "function",
+		/// The name of a function expression, visible only inside it.
+		FunctionName = "function-name",
+		/// A class body, where the class name is bound again, immutably.
+		Class = "class",
+		Block = "block",
+		Catch = "catch",
+		/// The head of a loop declaring with `let`, `const` or `using`, and its body.
+		For = "for",
+		Switch = "switch",
+		StaticBlock = "static-block",
+		With = "with",
+		/// A TypeScript namespace body.
+		Namespace = "namespace",
+		/// A TypeScript enum body, where the members are names.
+		Enum = "enum",
+		/// What a host parses at an offset: an expression, a statement, a pattern.
+		Fragment = "fragment",
+	}
 }
 
 impl ScopeKind {
-	pub fn name(self) -> Name {
-		match self {
-			ScopeKind::Module => c!("module"),
-			ScopeKind::Script => c!("script"),
-			ScopeKind::Function => c!("function"),
-			ScopeKind::FunctionName => c!("function-name"),
-			ScopeKind::Class => c!("class"),
-			ScopeKind::Block => c!("block"),
-			ScopeKind::Catch => c!("catch"),
-			ScopeKind::For => c!("for"),
-			ScopeKind::Switch => c!("switch"),
-			ScopeKind::StaticBlock => c!("static-block"),
-			ScopeKind::With => c!("with"),
-			ScopeKind::Namespace => c!("namespace"),
-			ScopeKind::Enum => c!("enum"),
-			ScopeKind::Fragment => c!("fragment"),
-		}
-	}
-
 	/// Whether `var` declarations stop here.
 	fn holds_var(self) -> bool {
 		matches!(
@@ -67,54 +50,34 @@ impl ScopeKind {
 	}
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BindingKind {
-	Var,
-	Let,
-	Const,
-	Using,
-	AwaitUsing,
-	Function,
-	Class,
-	Param,
-	CatchParam,
-	Import,
-	/// The name of a function expression, seen from inside it.
-	FunctionName,
-	/// The name of a class expression, seen from inside its body.
-	ClassName,
-	/// `arguments` in a function that reads it.
-	Arguments,
-	Enum,
-	EnumMember,
-	Namespace,
-	/// What a pattern parsed on its own declares; the host says what kind of binding it is.
-	Pattern,
+crate::layout::names! {
+	#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+	pub enum BindingKind {
+		Var = "var",
+		Let = "let",
+		Const = "const",
+		Using = "using",
+		AwaitUsing = "await using",
+		Function = "function",
+		Class = "class",
+		Param = "param",
+		CatchParam = "catch",
+		Import = "import",
+		/// The name of a function expression, seen from inside it.
+		FunctionName = "function-name",
+		/// The name of a class expression, seen from inside its body.
+		ClassName = "class-name",
+		/// `arguments` in a function that reads it.
+		Arguments = "arguments",
+		Enum = "enum",
+		EnumMember = "enum-member",
+		Namespace = "namespace",
+		/// What a pattern parsed on its own declares; the host says what kind of binding it is.
+		Pattern = "pattern",
+	}
 }
 
 impl BindingKind {
-	pub fn name(self) -> Name {
-		match self {
-			BindingKind::Var => c!("var"),
-			BindingKind::Let => c!("let"),
-			BindingKind::Const => c!("const"),
-			BindingKind::Using => c!("using"),
-			BindingKind::AwaitUsing => c!("await using"),
-			BindingKind::Function => c!("function"),
-			BindingKind::Class => c!("class"),
-			BindingKind::Param => c!("param"),
-			BindingKind::CatchParam => c!("catch"),
-			BindingKind::Import => c!("import"),
-			BindingKind::FunctionName => c!("function-name"),
-			BindingKind::ClassName => c!("class-name"),
-			BindingKind::Arguments => c!("arguments"),
-			BindingKind::Enum => c!("enum"),
-			BindingKind::EnumMember => c!("enum-member"),
-			BindingKind::Namespace => c!("namespace"),
-			BindingKind::Pattern => c!("pattern"),
-		}
-	}
-
 	/// Only `var` hoists; a function declaration belongs to the block it is in.
 	fn is_var(self) -> bool {
 		self == BindingKind::Var
@@ -125,54 +88,60 @@ pub type ScopeId = u32;
 pub type BindingId = u32;
 pub type ReferenceId = u32;
 
-#[derive(Debug)]
-pub struct Scope {
-	pub kind: ScopeKind,
-	/// The node that opens the scope: the program, function, class, block, clause or statement;
-	/// none for the scope around a parameter list parsed on its own.
-	pub node: Option<NodeId>,
-	pub parent: Option<ScopeId>,
-	/// How many function scopes enclose this one, itself included when it is one.
-	pub function_depth: u32,
-	/// An `await` or `for await` runs directly in this scope, no function around it; only a
-	/// program or fragment scope can say so.
-	pub top_level_await: bool,
+crate::layout::record! {
+	#[derive(Clone, Copy, Debug)]
+	pub struct Scope {
+		pub kind: ScopeKind,
+		/// The node that opens the scope: the program, function, class, block, clause or statement;
+		/// none for the scope around a parameter list parsed on its own.
+		pub node: Option<NodeId>,
+		pub parent: Option<ScopeId>,
+		/// How many function scopes enclose this one, itself included when it is one.
+		pub function_depth: u32,
+		/// An `await` or `for await` runs directly in this scope, no function around it; only a
+		/// program or fragment scope can say so.
+		pub top_level_await: bool,
+	}
 }
 
-#[derive(Debug)]
-pub struct Binding {
-	pub name: StrId,
-	pub kind: BindingKind,
-	pub scope: ScopeId,
-	/// The identifier that declares it; `arguments` has none.
-	pub node: Option<NodeId>,
-	/// What declares it: the declarator, function, class, import specifier, catch clause or
-	/// enum, as eslint-scope's definition node; none for `arguments` and for a pattern or parameter
-	/// list parsed on its own.
-	pub declaration: Option<NodeId>,
-	/// The declaration binds a value: an initializer, a parameter, a function; not a bare `let x;`.
-	pub write: bool,
+crate::layout::record! {
+	#[derive(Clone, Copy, Debug)]
+	pub struct Binding {
+		pub name: StrId,
+		pub kind: BindingKind,
+		pub scope: ScopeId,
+		/// The identifier that declares it; `arguments` has none.
+		pub node: Option<NodeId>,
+		/// What declares it: the declarator, function, class, import specifier, catch clause or
+		/// enum, as eslint-scope's definition node; none for `arguments` and for a pattern or parameter
+		/// list parsed on its own.
+		pub declaration: Option<NodeId>,
+		/// The declaration binds a value: an initializer, a parameter, a function; not a bare `let x;`.
+		pub write: bool,
+	}
 }
 
-#[derive(Debug)]
-pub struct Reference {
-	pub node: NodeId,
-	pub scope: ScopeId,
-	/// None when no scope declares the name: a global.
-	pub binding: Option<BindingId>,
-	/// The identifier is assigned to, updated or bound by a destructuring assignment.
-	pub write: bool,
-	/// A member of the identifier's value is assigned to, updated or deleted.
-	pub mutate: bool,
-	/// The identifier's value is read: every reference but a plain assignment's target or a
-	/// destructuring one's; a compound assignment or an update reads and writes.
-	pub read: bool,
-	/// What a write assigns: the right side of the assignment or the iterated expression of a
-	/// `for-in` or `for-of`, as eslint-scope's `writeExpr`; none for an update.
-	pub write_expr: Option<NodeId>,
-	/// The identifier declares its binding again, `var x` twice: the binding itself stands for the
-	/// first declaration, and this row writes when a value is bound here.
-	pub declares: bool,
+crate::layout::record! {
+	#[derive(Clone, Copy, Debug)]
+	pub struct Reference {
+		pub node: NodeId,
+		pub scope: ScopeId,
+		/// None when no scope declares the name: a global.
+		pub binding: Option<BindingId>,
+		/// The identifier is assigned to, updated or bound by a destructuring assignment.
+		pub write: bool,
+		/// A member of the identifier's value is assigned to, updated or deleted.
+		pub mutate: bool,
+		/// The identifier's value is read: every reference but a plain assignment's target or a
+		/// destructuring one's; a compound assignment or an update reads and writes.
+		pub read: bool,
+		/// What a write assigns: the right side of the assignment or the iterated expression of a
+		/// `for-in` or `for-of`, as eslint-scope's `writeExpr`; none for an update.
+		pub write_expr: Option<NodeId>,
+		/// The identifier declares its binding again, `var x` twice: the binding itself stands for the
+		/// first declaration, and this row writes when a value is bound here.
+		pub declares: bool,
+	}
 }
 
 /// What an identifier is in the analysis: the binding it declares, or the reference it makes.
@@ -185,11 +154,11 @@ pub enum Role {
 /// A table by node, dense: nodes are numbered, and a hash of the number cost more than the room.
 /// Zero is empty so the room comes zeroed from the allocator.
 #[derive(Debug)]
-pub struct NodeTable<T>(Vec<u32>, std::marker::PhantomData<T>);
+pub struct NodeTable<T>(Handed<u32>, std::marker::PhantomData<T>);
 
 impl<T> Default for NodeTable<T> {
 	fn default() -> Self {
-		NodeTable(Vec::new(), std::marker::PhantomData)
+		NodeTable(Handed::default(), std::marker::PhantomData)
 	}
 }
 
@@ -226,7 +195,9 @@ impl Packed for Role {
 
 impl<T: Packed> NodeTable<T> {
 	fn sized(nodes: usize) -> Self {
-		NodeTable(vec![0; nodes], std::marker::PhantomData)
+		let mut table = NodeTable::default();
+		table.reset(nodes);
+		table
 	}
 
 	fn reset(&mut self, nodes: usize) {
@@ -258,26 +229,28 @@ impl<T: Packed> NodeTable<T> {
 	}
 }
 
-/// A piece of JavaScript a host read on its own, and what the tables hold for it: the scope it
-/// sits in, and the scopes opened, the bindings declared and the references made inside it, each
-/// a range of its table since a piece is visited in one go.
-#[derive(Debug)]
-pub struct Root {
-	pub node: NodeId,
-	pub scope: ScopeId,
-	pub scopes: (u32, u32),
-	pub bindings: (u32, u32),
-	pub references: (u32, u32),
+crate::layout::record! {
+	/// A piece of JavaScript a host read on its own, and what the tables hold for it: the scope it
+	/// sits in, and the scopes opened, the bindings declared and the references made inside it, each
+	/// a range of its table since a piece is visited in one go.
+	#[derive(Clone, Copy, Debug)]
+	pub struct Root {
+		pub node: NodeId,
+		pub scope: ScopeId,
+		pub scopes: [u32; 2],
+		pub bindings: [u32; 2],
+		pub references: [u32; 2],
+	}
 }
 
 #[derive(Debug, Default)]
 pub struct Scopes {
-	pub scopes: Vec<Scope>,
-	pub bindings: Vec<Binding>,
-	pub references: Vec<Reference>,
+	pub scopes: Handed<Scope>,
+	pub bindings: Handed<Binding>,
+	pub references: Handed<Reference>,
 	/// The pieces of JavaScript in a host's document, in source order; empty for a plain parse.
-	pub roots: Vec<Root>,
-	pub root_of: NodeMap<u32>,
+	pub roots: Handed<Root>,
+	pub root_of: NodeTable<u32>,
 	pub of_node: NodeTable<ScopeId>,
 	pub of_identifier: NodeTable<Role>,
 	/// The bindings each declaring node declares, and the write references each expression is
@@ -289,11 +262,11 @@ pub struct Scopes {
 	scratch: Scratch,
 }
 
-/// Ids grouped by node: one sorted list, and where each node's run starts in it.
+/// Ids grouped by node: each node's run behind its length in one list, and where it starts.
 #[derive(Debug, Default)]
 pub struct ByNode {
 	pairs: Vec<(NodeId, u32)>,
-	ids: Vec<u32>,
+	ids: Handed<u32>,
 	starts: NodeTable<u32>,
 }
 
@@ -301,22 +274,24 @@ impl ByNode {
 	fn finish(&mut self, nodes: usize) {
 		self.pairs.sort_unstable();
 		self.ids.clear();
-		self.ids.extend(self.pairs.iter().map(|&(_, id)| id));
 		self.starts.reset(nodes);
-		for (i, &(node, _)) in self.pairs.iter().enumerate() {
-			if i == 0 || self.pairs[i - 1].0 != node {
-				self.starts.insert(node, i as u32);
-			}
+		let mut i = 0;
+		while i < self.pairs.len() {
+			let node = self.pairs[i].0;
+			let len = self.pairs[i..].partition_point(|&(n, _)| n == node);
+			self.starts.insert(node, self.ids.len() as u32);
+			self.ids.push(len as u32);
+			self.ids.extend(self.pairs[i..i + len].iter().map(|&(_, id)| id));
+			i += len;
 		}
 	}
 
 	pub fn get(&self, node: NodeId) -> &[u32] {
-		let Some(from) = self.starts.get(node) else {
+		let Some(at) = self.starts.get(node) else {
 			return &[];
 		};
-		let from = from as usize;
-		let to = from + self.pairs[from..].partition_point(|&(n, _)| n == node);
-		&self.ids[from..to]
+		let at = at as usize;
+		&self.ids[at + 1..at + 1 + self.ids[at] as usize]
 	}
 
 	fn clear(&mut self) {
@@ -378,7 +353,7 @@ impl Scopes {
 		self.bindings.clear();
 		self.references.clear();
 		self.roots.clear();
-		self.root_of.clear();
+		self.root_of.reset(nodes);
 		self.of_node.reset(nodes);
 		self.of_identifier.reset(nodes);
 		self.declared_by.clear();
@@ -389,6 +364,61 @@ impl Scopes {
 
 	pub fn scope(&self, id: ScopeId) -> &Scope {
 		&self.scopes[id as usize]
+	}
+
+	/// The per-node tables a front end reads in place.
+	pub fn views(&mut self, out: &mut Views<'_>) {
+		out.push("scopes", &mut self.scopes);
+		out.push("bindings", &mut self.bindings);
+		out.push("references", &mut self.references);
+		out.push("roots", &mut self.roots);
+		out.push("of_node", &mut self.of_node.0);
+		out.push("of_identifier", &mut self.of_identifier.0);
+		out.push("root_of", &mut self.root_of.0);
+		out.push("declared_by", &mut self.declared_by.ids);
+		out.push("declared_by_at", &mut self.declared_by.starts.0);
+		out.push("writes_of", &mut self.writes_of.ids);
+		out.push("writes_of_at", &mut self.writes_of.starts.0);
+	}
+
+	/// Marks the nodes with what a front end links once a node is whole, in `late`, and those with
+	/// a binding or a reference that are not identifiers, in `rare`.
+	pub fn mark<X>(&self, ast: &Ast<X>, rare: &mut crate::ast::NodeSet, late: &mut crate::ast::NodeSet) {
+		for &(node, _) in self.declared_by.pairs.iter().chain(&self.writes_of.pairs) {
+			late.insert(node);
+		}
+		for root in self.roots.iter() {
+			late.insert(root.node);
+		}
+		let nodes = self
+			.bindings
+			.iter()
+			.filter_map(|b| b.node)
+			.chain(self.references.iter().map(|r| r.node));
+		for node in nodes {
+			if !matches!(ast.node(node).kind, NodeKind::Identifier { .. }) {
+				rare.insert(node);
+			}
+		}
+	}
+
+	/// The same names over nothing, for a tree without analysis.
+	pub fn no_views(out: &mut Views<'_>) {
+		for name in [
+			"scopes",
+			"bindings",
+			"references",
+			"roots",
+			"of_node",
+			"of_identifier",
+			"root_of",
+			"declared_by",
+			"declared_by_at",
+			"writes_of",
+			"writes_of_at",
+		] {
+			out.none(name);
+		}
 	}
 
 	pub fn binding(&self, id: BindingId) -> &Binding {
@@ -571,6 +601,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 			None => Scopes {
 				of_node: NodeTable::sized(ast.nodes.len()),
 				of_identifier: NodeTable::sized(ast.nodes.len()),
+				root_of: NodeTable::sized(ast.nodes.len()),
 				..Scopes::default()
 			},
 		};
@@ -1071,7 +1102,9 @@ impl<'a, X: Bind> Binder<'a, X> {
 			if i == 0 && matches!(self.kind(param), NodeKind::Identifier { name } if Some(name) == self.this_name) {
 				continue;
 			}
-			self.initializing(None, |b| b.declaring(id, |b| b.visit_with(param, Mode::Declare(BindingKind::Param), false)));
+			self.initializing(None, |b| {
+				b.declaring(id, |b| b.visit_with(param, Mode::Declare(BindingKind::Param), false))
+			});
 		}
 		self.open_body();
 		match self.kind(body) {
@@ -1210,16 +1243,16 @@ impl<'a, X: Bind> Binder<'a, X> {
 		self.out.roots.push(Root {
 			node,
 			scope: self.current(),
-			scopes: (from.0, from.0),
-			bindings: (from.1, from.1),
-			references: (from.2, from.2),
+			scopes: [from.0; 2],
+			bindings: [from.1; 2],
+			references: [from.2; 2],
 		});
 		self.out.root_of.insert(node, index);
 		f(self);
 		let root = &mut self.out.roots[index as usize];
-		root.scopes.1 = self.out.scopes.len() as u32;
-		root.bindings.1 = self.out.bindings.len() as u32;
-		root.references.1 = self.out.references.len() as u32;
+		root.scopes[1] = self.out.scopes.len() as u32;
+		root.bindings[1] = self.out.bindings.len() as u32;
+		root.references[1] = self.out.references.len() as u32;
 	}
 
 	fn visit_with(&mut self, id: NodeId, mode: Mode, extras: bool) {
@@ -1471,7 +1504,9 @@ impl<'a, X: Bind> Binder<'a, X> {
 						continue;
 					};
 					let initializer = init.or(self.initializing);
-					self.initializing(initializer, |b| b.declaring(declarator, |b| b.visit(pattern, Mode::Declare(kind))));
+					self.initializing(initializer, |b| {
+						b.declaring(declarator, |b| b.visit(pattern, Mode::Declare(kind)))
+					});
 					self.maybe(init, Mode::Expression);
 				}
 			}
@@ -1649,7 +1684,10 @@ mod tests {
 			let mut line = format!("{}@{} ", ast.str(name), node.start);
 			let declares = match role {
 				Role::Declares(b) => Some(b),
-				Role::Reference(r) => scopes.reference(r).declares.then(|| scopes.reference(r).binding.unwrap()),
+				Role::Reference(r) => scopes
+					.reference(r)
+					.declares
+					.then(|| scopes.reference(r).binding.unwrap()),
 			};
 			match declares {
 				Some(b) => {
@@ -1801,7 +1839,7 @@ mod tests {
 			let root = scopes
 				.roots
 				.iter()
-				.find(|r| (r.bindings.0 as usize..r.bindings.1 as usize).contains(&i))
+				.find(|r| (r.bindings[0] as usize..r.bindings[1] as usize).contains(&i))
 				.expect("in a root");
 			let piece = ast.node(root.node);
 			assert!(
@@ -2025,9 +2063,20 @@ mod tests {
 		let again: Vec<_> = scopes
 			.references
 			.iter()
-			.map(|r| (ast.node(r.node).start, r.declares, r.write, start(r.write_expr), r.binding))
+			.map(|r| {
+				(
+					ast.node(r.node).start,
+					r.declares,
+					r.write,
+					start(r.write_expr),
+					r.binding,
+				)
+			})
 			.collect();
-		assert_eq!(again, [(11, true, true, Some(15), Some(0)), (27, true, true, None, Some(0))]);
+		assert_eq!(
+			again,
+			[(11, true, true, Some(15), Some(0)), (27, true, true, None, Some(0))]
+		);
 	}
 
 	#[test]

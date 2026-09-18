@@ -1,9 +1,11 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use teasel::Entry;
 use teasel::json::{Prepared, Request};
 
 thread_local! {
 	static TEXT: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
+	/// The count of the tree's buffers, then each one's address, room in bytes and element size; all zero before any parse.
+	static TREE: Cell<[u32; 145]> = const { Cell::new([0; 145]) };
 }
 
 #[unsafe(no_mangle)]
@@ -102,7 +104,7 @@ pub unsafe extern "C" fn source_parse(
 	let stop = unsafe { Vec::from_raw_parts(ptr, len as usize, capacity as usize) };
 	let end = (has_end == 1).then_some(end);
 	guard(1, || {
-		answer(source(handle).binary(Entry::from_index(entry), offset, end, &String::from_utf8_lossy(&stop)))
+		answer(source(handle).in_place(Entry::from_index(entry), offset, end, &String::from_utf8_lossy(&stop)))
 	})
 }
 
@@ -134,12 +136,29 @@ fn text(json: String) {
 	});
 }
 
+// the count of views, then each view's address, its room in bytes and its elements' size; zero before any parse
 #[unsafe(no_mangle)]
-pub extern "C" fn constants() {
-	text(teasel::json::constants_json());
+pub extern "C" fn tree() -> *const u32 {
+	let mut out = [0u32; 145];
+	let mut count = 0;
+	let found = teasel::json::tree(&mut |_, buffer| {
+		if let Some(buffer) = buffer {
+			out[1 + 3 * count..][..3].copy_from_slice(&[
+				buffer.as_ptr() as u32,
+				buffer.capacity_bytes() as u32,
+				buffer.element().size() as u32,
+			]);
+		}
+		count += 1;
+	});
+	if found.is_some() {
+		out[0] = count as u32;
+	}
+	TREE.set(out);
+	TREE.with(|t| t.as_ptr() as *const u32)
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn shapes() {
-	text(teasel::json::shapes_json());
+pub extern "C" fn layout() {
+	text(teasel::json::layout_json());
 }

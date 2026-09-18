@@ -227,8 +227,8 @@ fn numbers() {
 	assert_eq!(number("1_000_000"), 1_000_000.0);
 	assert_eq!(number("0x1_f"), 31.0);
 	assert_eq!(kinds("10n 0xFFn 0n"), [BigInt, BigInt, BigInt]);
-	assert_eq!(kinds("0x1na"), [BigInt, Ident(StrId(0))]);
-	assert_eq!(kinds("1\\u0061"), [Number(1.0), Ident(StrId(0))]);
+	assert_eq!(kinds("0x1na"), [BigInt, Ident(StrId::at(0))]);
+	assert_eq!(kinds("1\\u0061"), [Number(1.0), Ident(StrId::at(0))]);
 }
 
 #[test]

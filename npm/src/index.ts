@@ -1,5 +1,5 @@
 import type { Expression, Identifier, Node, Pattern, Program, SourceLocation, Statement } from 'estree';
-import { decode, type Engine, PARENT, type Prepared, REFERENCE, SCOPE } from './lib/decode.js';
+import { decode, PARENT, type Prepared, REFERENCE, SCOPE } from './lib/decode.js';
 import { ENTRY, type Entry, flags, type Options } from './lib/options.js';
 import { engine } from '#engine';
 

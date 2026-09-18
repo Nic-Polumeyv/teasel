@@ -1,6 +1,7 @@
-// node scripts/check.ts DIR...: every script under the directories, parsed three ways and the answers
-// diffed: the addon's decoded stream against the JSON the binary prints, and the wasm module's
-// against the addon's. `cargo build --release` first.
+// node scripts/check.ts [--host GRAMMAR EXTENSION] DIR...: every script under the directories, parsed three
+// ways and the answers diffed: the addon's decoded answer against the JSON the binary prints, and the wasm
+// module's against the addon's; with a host, every file of its extension as a document too.
+// `cargo build --release` first.
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
@@ -16,10 +17,12 @@ function walk(dir: string) {
 		if (name === 'node_modules' || name.startsWith('.')) continue;
 		const path = join(dir, name);
 		if (statSync(path).isDirectory()) walk(path);
-		else if (/\.(js|mjs|ts|svelte)$/.test(name)) files.push(path);
+		else if (/\.(js|mjs|ts|svelte)$/.test(name) || (host !== undefined && name.endsWith(host.extension))) files.push(path);
 	}
 }
-for (const dir of process.argv.slice(2)) walk(dir);
+const args = process.argv.slice(2);
+const host = args[0] === '--host' ? { path: args[1], grammar: readFileSync(args[1], 'utf8'), extension: args[2] } : undefined;
+for (const dir of host ? args.slice(3) : args) walk(dir);
 let checked = 0;
 let failed = 0;
 
@@ -79,10 +82,26 @@ function json(name: string, source: string, options: Options, entry: Entry, at: 
 	jobs.push({ name, source, mode: mode(source, options, entry, at), tree });
 }
 
+// a whole document of the host's, asked of the binary as `doc`
+function document(name: string, source: string, typescript: boolean, options: Options, switches: string) {
+	const held = native.create(source, flags(options), host!.grammar);
+	const answer = held.parse(ENTRY.program, 0, undefined, '');
+	held.free();
+	const tree = typeof answer === 'string' ? answer : JSON.stringify(decode(answer, source, native, false));
+	jobs.push({ name: `${name} doc${switches}`, source, mode: `${typescript ? 'ts-' : ''}doc${switches}`, tree });
+}
+
 const script_re = /<script((?:\s+(?:"[^"]*"|'[^']*'|[^>"'])*)?)>([\s\S]*?)<\/script>/g;
 const brace_re = /\{/g;
 for (const file of files) {
 	const text = readFileSync(file, 'utf8');
+	if (host !== undefined && file.endsWith(host.extension)) {
+		const typescript = /lang=["']?ts/.test(text);
+		document(file, text, false, { sourceType: 'module', locations: true, comments: true, scopes: true }, '+comments+scopes');
+		document(file, text, typescript, { sourceType: 'module', typescript: typescript ? 'erase' : false, locations: true, scopes: true }, `${typescript ? '+erase' : ''}+scopes`);
+		document(file, text, typescript, { sourceType: 'module', typescript, locations: true, errorRecovery: true, parenthesized: true }, '+recover+parenthesized');
+		if (!/\.(js|mjs|ts|svelte)$/.test(file)) continue;
+	}
 	const svelte = file.endsWith('.svelte');
 	const sources: [string, boolean][] = svelte ? [...text.matchAll(script_re)].map((m) => [m[2], /lang=["']?ts/.test(m[1] ?? '')]) : [[text, file.endsWith('.ts')]];
 	for (const [source, typescript] of sources) {
@@ -122,7 +141,7 @@ for (const file of files) {
 {
 	let input = '';
 	for (const job of jobs) input += `${job.mode} ${Buffer.byteLength(job.source, 'utf8')}\n${job.source}`;
-	const run = spawnSync(binary, ['--batch'], { input, maxBuffer: 1 << 30 });
+	const run = spawnSync(binary, host ? ['--batch', '--host', host.path] : ['--batch'], { input, maxBuffer: 1 << 30 });
 	if (run.status !== 0) throw new Error(`${binary}: ${run.stderr}`);
 	const lines = run.stdout.toString().split('\n');
 	for (const [i, job] of jobs.entries()) {

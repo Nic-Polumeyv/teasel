@@ -1,20 +1,22 @@
-//! Serializes an `Ast` to ESTree: as JSON text, or as a token stream a binding hands to
-//! JavaScript without a text round trip.
+//! Serializes an `Ast` to ESTree as JSON text, and maps its positions to what JavaScript counts.
 
-use crate::scopes::Role;
-use crate::ast::{Ast, Class, Function, List, MethodKind, NodeId, NodeKind, PropertyKind, Value};
-use crate::interner::{FastMap, Interner, StrId};
-use crate::names::{NAMES, Name, c};
+use crate::ast::{Ast, List, NodeId, NodeKind, Value};
+use crate::handed::Handed;
+use crate::interner::StrId;
+use crate::layout::Ty;
+use crate::names::{Name, c};
 use crate::parser::Entry;
+use crate::recipe::{Op, Slot};
+use crate::scopes::Role;
 use std::fmt::Write;
 
 /// How an extension's data serializes: its own nodes, and the keys it adds to JavaScript nodes.
 pub trait Emit: crate::ast::Walk {
 	/// Emits one of the extension's own nodes and closes it, or what erasing puts in its place.
-	fn node<S: Sink>(&self, w: &mut Writer<Self, S>, id: NodeId, index: u32);
-	fn extras<S: Sink>(&self, _w: &mut Writer<Self, S>, _id: NodeId) {}
+	fn node(&self, w: &mut Writer<Self>, id: NodeId, index: u32);
+	fn extras(&self, _w: &mut Writer<Self>, _id: NodeId) {}
 	/// Whether erasing leaves nothing of a node in a list: type-only declarations and imports.
-	fn erased<S: Sink>(&self, _w: &Writer<Self, S>, _id: NodeId) -> bool {
+	fn erased(&self, _ast: &Ast<Self>, _id: NodeId) -> bool {
 		false
 	}
 }
@@ -34,113 +36,8 @@ pub struct Output {
 }
 
 impl Emit for () {
-	fn node<S: Sink>(&self, _w: &mut Writer<Self, S>, _id: NodeId, _index: u32) {
+	fn node(&self, _w: &mut Writer<Self>, _id: NodeId, _index: u32) {
 		unreachable!("the JavaScript parser adds no extension nodes")
-	}
-}
-
-/// Where the writer puts what it emits. Containers nest: a node begins with its type and ends
-/// like a plain object or a list; offsets in `slice`, `span` and `loc` are UTF-16. Strings the
-/// writer names itself are constants; a string computed for one tree is text.
-pub trait Sink {
-	/// The tree's interned strings, before anything refers to them.
-	fn strings(&mut self, _interner: &Interner) {}
-	fn begin(&mut self, ty: Name);
-	fn object(&mut self);
-	fn list(&mut self);
-	fn end(&mut self);
-	fn key(&mut self, key: Name);
-	fn int(&mut self, value: u32);
-	fn float(&mut self, value: f64);
-	fn bool(&mut self, value: bool);
-	fn null(&mut self);
-	fn str(&mut self, value: Name);
-	fn text(&mut self, value: &str);
-	/// A string of the tree's interner.
-	fn interned(&mut self, id: StrId, value: &str);
-	/// A string equal to the source between two offsets.
-	fn slice(&mut self, value: &str, start: u32, end: u32);
-	fn span(&mut self, start: u32, end: u32);
-	fn loc(&mut self, start_line: u32, start_column: u32, end_line: u32, end_column: u32);
-	/// The key of a scope table: the tables are a root's last entries, and a sink may place them
-	/// where a decoder finds them before the nodes that refer to them.
-	fn table(&mut self, key: Name) {
-		self.key(key);
-	}
-	fn ints(&mut self, values: &[u32]) {
-		self.list();
-		for &value in values {
-			self.int(value);
-		}
-		self.end();
-	}
-	/// A list of the tree's interned strings.
-	fn strs(&mut self, strings: &[(StrId, &str)]) {
-		self.list();
-		for &(id, value) in strings {
-			self.interned(id, value);
-		}
-		self.end();
-	}
-}
-
-impl<S: Sink> Sink for &mut S {
-	fn strings(&mut self, interner: &Interner) {
-		(**self).strings(interner)
-	}
-	fn begin(&mut self, ty: Name) {
-		(**self).begin(ty)
-	}
-	fn object(&mut self) {
-		(**self).object()
-	}
-	fn list(&mut self) {
-		(**self).list()
-	}
-	fn end(&mut self) {
-		(**self).end()
-	}
-	fn key(&mut self, key: Name) {
-		(**self).key(key)
-	}
-	fn int(&mut self, value: u32) {
-		(**self).int(value)
-	}
-	fn float(&mut self, value: f64) {
-		(**self).float(value)
-	}
-	fn bool(&mut self, value: bool) {
-		(**self).bool(value)
-	}
-	fn null(&mut self) {
-		(**self).null()
-	}
-	fn str(&mut self, value: Name) {
-		(**self).str(value)
-	}
-	fn text(&mut self, value: &str) {
-		(**self).text(value)
-	}
-	fn interned(&mut self, id: StrId, value: &str) {
-		(**self).interned(id, value)
-	}
-	fn slice(&mut self, value: &str, start: u32, end: u32) {
-		(**self).slice(value, start, end)
-	}
-	fn span(&mut self, start: u32, end: u32) {
-		(**self).span(start, end)
-	}
-	fn loc(&mut self, start_line: u32, start_column: u32, end_line: u32, end_column: u32) {
-		(**self).loc(start_line, start_column, end_line, end_column)
-	}
-	fn table(&mut self, key: Name) {
-		(**self).table(key)
-	}
-	fn ints(&mut self, values: &[u32]) {
-		(**self).ints(values)
-	}
-	fn strs(&mut self, strings: &[(StrId, &str)]) {
-		(**self).strs(strings)
 	}
 }
 
@@ -183,8 +80,16 @@ impl Json {
 	}
 }
 
-impl Sink for Json {
-	fn begin(&mut self, ty: Name) {
+impl Json {
+	pub(crate) fn ints(&mut self, values: &[u32]) {
+		self.list();
+		for &value in values {
+			self.int(value);
+		}
+		self.end();
+	}
+
+	pub(crate) fn begin(&mut self, ty: Name) {
 		self.open(false);
 		self.out.push_str("\"type\":\"");
 		self.out.push_str(ty.text);
@@ -192,20 +97,20 @@ impl Sink for Json {
 		self.first = false;
 	}
 
-	fn object(&mut self) {
+	pub(crate) fn object(&mut self) {
 		self.open(false);
 	}
 
-	fn list(&mut self) {
+	pub(crate) fn list(&mut self) {
 		self.open(true);
 	}
 
-	fn end(&mut self) {
+	pub(crate) fn end(&mut self) {
 		self.out.push(if self.stack.pop() == Some(true) { ']' } else { '}' });
 		self.first = false;
 	}
 
-	fn key(&mut self, key: Name) {
+	pub(crate) fn key(&mut self, key: Name) {
 		self.sep();
 		self.out.push('"');
 		self.out.push_str(key.text);
@@ -213,41 +118,33 @@ impl Sink for Json {
 		self.first = true;
 	}
 
-	fn int(&mut self, value: u32) {
+	pub(crate) fn int(&mut self, value: u32) {
 		self.sep();
 		push_int(&mut self.out, value);
 	}
 
-	fn float(&mut self, value: f64) {
+	pub(crate) fn float(&mut self, value: f64) {
 		self.sep();
 		write_number(&mut self.out, value);
 	}
 
-	fn bool(&mut self, value: bool) {
+	pub(crate) fn bool(&mut self, value: bool) {
 		self.sep();
 		self.out.push_str(if value { "true" } else { "false" });
 	}
 
-	fn null(&mut self) {
+	pub(crate) fn null(&mut self) {
 		self.sep();
 		self.out.push_str("null");
 	}
 
-	fn str(&mut self, value: Name) {
+	pub(crate) fn str(&mut self, value: Name) {
 		self.text(value.text);
 	}
 
-	fn text(&mut self, value: &str) {
+	pub(crate) fn text(&mut self, value: &str) {
 		self.sep();
 		write_json_string(&mut self.out, value);
-	}
-
-	fn interned(&mut self, _id: StrId, value: &str) {
-		self.text(value);
-	}
-
-	fn slice(&mut self, value: &str, _start: u32, _end: u32) {
-		self.text(value);
 	}
 
 	// the two entries every node has, written in one piece: a measurable share of the text
@@ -273,539 +170,12 @@ impl Sink for Json {
 	}
 }
 
-/// What a shape's entry holds, read by a binding's decoder without a tag.
-pub mod kind {
-	/// A shape id then the shape's values; `NULL` alone for null.
-	pub const NODE: u32 = 0;
-	pub const INT: u32 = 1;
-	/// An index into the floats.
-	pub const FLOAT: u32 = 2;
-	/// 0 or 1.
-	pub const BOOL: u32 = 3;
-	/// A constant id.
-	pub const CONST: u32 = 4;
-	/// An index into the answer's own strings.
-	pub const STR: u32 = 5;
-	/// Two UTF-16 offsets into the source.
-	pub const SLICE: u32 = 6;
-	/// `loc`: start line and column, end line and column.
-	pub const LOC: u32 = 7;
-	/// Nodes up to an `END`.
-	pub const NODES: u32 = 8;
-	/// A count, then that many ints.
-	pub const INTS: u32 = 9;
-	/// A count, then that many indexes into the answer's strings.
-	pub const STRS: u32 = 10;
+/// The answer's words, read in place by a front end that takes the allocation over.
+pub type Words = crate::handed::Handed<u32>;
 
-	/// In a node's place.
-	pub const NULL: u32 = 0;
-	/// In a node's place, closing a list.
-	pub const END: u32 = 1;
-	/// The first shape id.
-	pub const FIRST: u32 = 2;
-}
-
-/// The strings the writer names itself, numbered once per writer for every answer: a binding
-/// fetches the list when an answer refers past what it has.
-/// Strings outside `NAMES`, numbered after it in the order met.
-struct Constants {
-	names: Vec<&'static str>,
-	ids: FastMap<&'static str, u32>,
-	// a grammar's strings live for the process, so their address is a cheaper key than their text
-	recent: Box<[(usize, u32); 512]>,
-}
-
-impl Constants {
-	fn new() -> Self {
-		Constants {
-			names: Vec::new(),
-			ids: FastMap::default(),
-			recent: Box::new([(0, 0); 512]),
-		}
-	}
-
-	fn id(&mut self, name: Name) -> u32 {
-		if name.id != u32::MAX {
-			return name.id;
-		}
-		let address = name.text.as_ptr() as usize;
-		let slot = ((address as u64).wrapping_mul(crate::interner::SEED) >> 55) as usize & 511;
-		if self.recent[slot].0 == address {
-			return self.recent[slot].1;
-		}
-		let id = match self.ids.get(name.text) {
-			Some(&id) => id,
-			None => {
-				let id = (NAMES.len() + self.names.len()) as u32;
-				self.names.push(name.text);
-				self.ids.insert(name.text, id);
-				id
-			}
-		};
-		self.recent[slot] = (address, id);
-		id
-	}
-}
-
-/// The shapes numbered so far by a writer, from `kind::FIRST`. A shape is what a node's
-/// entries hold: its record is its type's constant id plus one (0 for a plain object), then a
-/// word per entry, the key's constant id shifted left four with the value's `kind` in the low
-/// bits. The records lie back to back, each behind its length.
-struct Shapes {
-	words: Vec<u32>,
-	starts: Vec<u32>,
-	ids: FastMap<Box<[u32]>, u32>,
-	// the map lookup was a fifth of the encode; a hit here is a probe and a compare
-	recent: Box<[(u32, u32); 1024]>,
-}
-
-impl Shapes {
-	fn new() -> Self {
-		Shapes {
-			words: Vec::new(),
-			starts: vec![0; kind::FIRST as usize],
-			ids: FastMap::default(),
-			recent: Box::new([(0, 0); 1024]),
-		}
-	}
-
-	fn id(&mut self, record: &[u32]) -> u32 {
-		// a hit is checked against the record, so the hash only has to spread: a sum does
-		let mut hash = (record.len() as u64) << 32;
-		for &word in record {
-			hash = hash.wrapping_add(word as u64);
-		}
-		let hash = (hash.wrapping_mul(crate::interner::SEED) >> 32) as u32;
-		let slot = (hash >> 22) as usize;
-		let (seen, id) = self.recent[slot];
-		if seen == hash && id != 0 {
-			let start = self.starts[id as usize] as usize;
-			// bcmp costs a call; a record is a handful of words
-			let stored = &self.words[start..];
-			if stored[0] as usize == record.len() && record.iter().zip(&stored[1..]).all(|(a, b)| a == b) {
-				return id;
-			}
-		}
-		let id = match self.ids.get(record) {
-			Some(&id) => id,
-			None => {
-				let id = self.starts.len() as u32;
-				let start = self.words.len() as u32;
-				self.starts.push(start);
-				self.words.push(record.len() as u32);
-				self.words.extend_from_slice(record);
-				self.ids.insert(record.into(), id);
-				id
-			}
-		};
-		self.recent[slot] = (hash, id);
-		id
-	}
-}
-
-/// A tree packed into one buffer of 32-bit words, what a binding's JavaScript turns into objects
-/// directly. A node is its shape id then its values in the shape's order, each read as the
-/// shape's `kind` says. The header is seven counts: the tree's words, the strings, the floats,
-/// the bytes of text, the constants and the shapes numbered when it was written, and where the
-/// scope tables start in the tree's words, 0 for none. Then the tree, the strings' UTF-16 ends,
-/// the text as UTF-8 padded to a word, padding to an even word, then the floats two words each.
-/// The strings are the tree's interned ones first, then any text written for this answer. Words
-/// are the host's endianness, which every target the package builds for shares with the
-/// decoder's check.
-/// The answer's words. A front end may take the allocation over and read the answer where it was
-/// written; a growth after that leaves the allocation to its holder instead of freeing it.
-pub struct Words {
-	vec: Vec<u32>,
-	owned: bool,
-}
-
-impl Words {
-	const LEAST: usize = 1 << 16;
-
-	pub fn new() -> Self {
-		Self::default()
-	}
-
-	fn fresh() -> Self {
-		Words {
-			vec: Vec::new(),
-			owned: true,
-		}
-	}
-
-	pub fn as_ptr(&self) -> *const u32 {
-		self.vec.as_ptr()
-	}
-
-	pub fn capacity(&self) -> usize {
-		self.vec.capacity()
-	}
-
-	fn clear(&mut self) {
-		self.vec.clear();
-	}
-
-	#[inline(always)]
-	fn room(&mut self, more: usize) {
-		if self.vec.capacity() - self.vec.len() < more {
-			self.grow(more);
-		}
-	}
-
-	#[inline(always)]
-	fn push(&mut self, word: u32) {
-		self.room(1);
-		self.vec.push(word);
-	}
-
-	#[inline(always)]
-	fn extend_from_slice(&mut self, words: &[u32]) {
-		self.room(words.len());
-		self.vec.extend_from_slice(words);
-	}
-
-	fn grow(&mut self, more: usize) {
-		let cap = (self.vec.capacity() * 2).max(self.vec.len() + more).max(Self::LEAST);
-		let mut next = Vec::with_capacity(cap);
-		next.extend_from_slice(&self.vec);
-		let old = std::mem::replace(&mut self.vec, next);
-		if !self.owned {
-			std::mem::forget(old);
-		}
-		self.owned = true;
-	}
-
-	/// Hands the allocation to the caller, who frees it as a `Vec<u32>` of that capacity;
-	/// None when a caller already holds it.
-	pub fn release(&mut self) -> Option<(*mut u32, usize)> {
-		if !self.owned {
-			return None;
-		}
-		if self.vec.capacity() == 0 {
-			self.grow(0);
-		}
-		self.owned = false;
-		Some((self.vec.as_mut_ptr(), self.vec.capacity()))
-	}
-
-	/// Starts the next answer on a fresh allocation of at least `cap` words.
-	pub fn renew(&mut self, cap: usize) {
-		let old = std::mem::replace(&mut self.vec, Vec::with_capacity(cap.max(Self::LEAST)));
-		if !self.owned {
-			std::mem::forget(old);
-		}
-		self.owned = true;
-	}
-}
-
-impl Default for Words {
-	fn default() -> Self {
-		Self::fresh()
-	}
-}
-
-impl Drop for Words {
-	fn drop(&mut self) {
-		if !self.owned {
-			std::mem::forget(std::mem::take(&mut self.vec));
-		}
-	}
-}
-
-impl std::ops::Deref for Words {
-	type Target = [u32];
-	fn deref(&self) -> &[u32] {
-		&self.vec
-	}
-}
-
-impl std::ops::DerefMut for Words {
-	fn deref_mut(&mut self) -> &mut [u32] {
-		&mut self.vec
-	}
-}
-
-impl Extend<u32> for Words {
-	fn extend<I: IntoIterator<Item = u32>>(&mut self, iter: I) {
-		let iter = iter.into_iter();
-		match iter.size_hint() {
-			// an exact size fills the room in one copy; a loose one must not let the Vec grow itself
-			(lower, Some(upper)) if lower == upper => {
-				self.room(upper);
-				self.vec.extend(iter);
-			}
-			_ => {
-				for word in iter {
-					self.push(word);
-				}
-			}
-		}
-	}
-}
-
-pub struct Binary {
-	words: Words,
-	text: Vec<u8>,
-	/// UTF-16 units of text so far.
-	units: u32,
-	ends: Vec<u32>,
-	floats: Vec<f64>,
-	frames: Vec<Frame>,
-	// the open nodes' records; a list or a table pushes a scratch word so a value never checks where it is
-	seq: Vec<u32>,
-	tables_at: u32,
-	tables: usize,
-	constants: Constants,
-	shapes: Shapes,
-}
-
-const START: u32 = c!("start").id << 4 | kind::INT;
-const END: u32 = c!("end").id << 4 | kind::INT;
-const LOC: u32 = c!("loc").id << 4 | kind::LOC;
-
-enum Frame {
-	Node { slot: u32, record: u32 },
-	List,
-}
-
-impl Default for Binary {
-	fn default() -> Self {
-		Self::new()
-	}
-}
-
-impl Binary {
-	pub fn new() -> Self {
-		let mut binary = Binary {
-			words: Words::new(),
-			text: Vec::new(),
-			units: 0,
-			ends: Vec::new(),
-			floats: Vec::new(),
-			frames: Vec::new(),
-			seq: Vec::new(),
-			tables_at: 0,
-			tables: 0,
-			constants: Constants::new(),
-			shapes: Shapes::new(),
-		};
-		binary.reset();
-		binary
-	}
-
-	#[cfg(test)]
-	pub(crate) fn constant(&mut self, name: Name) -> u32 {
-		self.constants.id(name)
-	}
-
-	/// The constant strings numbered so far: `NAMES`, then the ones met outside it.
-	pub fn constants(&self) -> Vec<&'static str> {
-		NAMES.iter().chain(&self.constants.names).copied().collect()
-	}
-
-	/// The shape records numbered so far.
-	pub fn shapes(&self) -> &[u32] {
-		&self.shapes.words
-	}
-
-	pub fn words(&mut self) -> &mut Words {
-		&mut self.words
-	}
-
-	/// Ready for an answer: the header's room in `words`, the sentinel in `seq`, the rest empty.
-	pub fn reset(&mut self) {
-		self.words.clear();
-		self.words.extend_from_slice(&[0; 7]);
-		self.text.clear();
-		self.units = 0;
-		self.ends.clear();
-		self.floats.clear();
-		self.frames.clear();
-		self.seq.clear();
-		self.seq.push(0);
-		self.tables_at = 0;
-		self.tables = 0;
-	}
-
-	fn push_text(&mut self, value: &str) -> u32 {
-		self.text.extend_from_slice(value.as_bytes());
-		self.units += if value.is_ascii() {
-			value.len()
-		} else {
-			value.encode_utf16().count()
-		} as u32;
-		self.ends.push(self.units);
-		self.ends.len() as u32 - 1
-	}
-
-	fn value(&mut self, kind: u32) {
-		let last = self.seq.len() - 1;
-		self.seq[last] |= kind;
-	}
-
-	fn open(&mut self, ty: u32) {
-		self.value(kind::NODE);
-		self.frames.push(Frame::Node {
-			slot: self.words.len() as u32,
-			record: self.seq.len() as u32,
-		});
-		self.seq.push(ty);
-		self.words.push(0);
-	}
-
-	/// Completes the answer in `words`: the header, then the strings and floats after the tree.
-	pub fn finish(&mut self) {
-		debug_assert!(self.frames.is_empty() && self.seq.len() == 1);
-		let tree = self.words.len() as u32 - 7;
-		self.words[..7].copy_from_slice(&[
-			tree,
-			self.ends.len() as u32,
-			self.floats.len() as u32,
-			self.text.len() as u32,
-			(NAMES.len() + self.constants.names.len()) as u32,
-			self.shapes.starts.len() as u32,
-			self.tables_at,
-		]);
-		self.words.extend_from_slice(&self.ends);
-		let (chunks, rest) = self.text.as_chunks::<4>();
-		self.words.extend(chunks.iter().map(|chunk| u32::from_ne_bytes(*chunk)));
-		if !rest.is_empty() {
-			let mut last = [0; 4];
-			last[..rest.len()].copy_from_slice(rest);
-			self.words.push(u32::from_ne_bytes(last));
-		}
-		if self.words.len() % 2 == 1 {
-			self.words.push(0);
-		}
-		for &float in &self.floats {
-			let bits = float.to_bits();
-			self.words.extend_from_slice(&[bits as u32, (bits >> 32) as u32]);
-		}
-	}
-}
-
-impl Sink for Binary {
-	fn strings(&mut self, interner: &Interner) {
-		for i in 0..interner.len() {
-			self.push_text(interner.get(StrId(i as u32)));
-		}
-	}
-
-	fn begin(&mut self, ty: Name) {
-		let id = self.constants.id(ty);
-		self.open(id + 1);
-	}
-
-	fn object(&mut self) {
-		self.open(0);
-	}
-
-	fn list(&mut self) {
-		self.value(kind::NODES);
-		self.frames.push(Frame::List);
-		self.seq.push(0);
-	}
-
-	fn end(&mut self) {
-		match self.frames.pop().expect("a container is open") {
-			Frame::List => {
-				self.words.push(kind::END);
-				self.seq.pop();
-			}
-			Frame::Node { slot, record } => {
-				let stop = self.seq.len() - if self.frames.is_empty() { self.tables } else { 0 };
-				self.words[slot as usize] = self.shapes.id(&self.seq[record as usize..stop]);
-				self.seq.truncate(record as usize);
-			}
-		}
-	}
-
-	fn key(&mut self, key: Name) {
-		debug_assert!(self.tables_at == 0 || self.frames.len() > 1, "the tables come last");
-		let id = self.constants.id(key);
-		self.seq.push(id << 4);
-	}
-
-	fn int(&mut self, value: u32) {
-		self.value(kind::INT);
-		self.words.push(value);
-	}
-
-	fn float(&mut self, value: f64) {
-		self.value(kind::FLOAT);
-		self.words.push(self.floats.len() as u32);
-		self.floats.push(value);
-	}
-
-	fn bool(&mut self, value: bool) {
-		self.value(kind::BOOL);
-		self.words.push(value as u32);
-	}
-
-	fn null(&mut self) {
-		self.value(kind::NODE);
-		self.words.push(kind::NULL);
-	}
-
-	fn str(&mut self, value: Name) {
-		self.value(kind::CONST);
-		let id = self.constants.id(value);
-		self.words.push(id);
-	}
-
-	fn text(&mut self, value: &str) {
-		self.value(kind::STR);
-		let id = self.push_text(value);
-		self.words.push(id);
-	}
-
-	fn interned(&mut self, id: StrId, _value: &str) {
-		self.value(kind::STR);
-		self.words.push(id.0);
-	}
-
-	fn slice(&mut self, _value: &str, start: u32, end: u32) {
-		self.value(kind::SLICE);
-		self.words.extend_from_slice(&[start, end]);
-	}
-
-	fn span(&mut self, start: u32, end: u32) {
-		self.seq.extend([START, END]);
-		self.words.extend_from_slice(&[start, end]);
-	}
-
-	fn loc(&mut self, start_line: u32, start_column: u32, end_line: u32, end_column: u32) {
-		self.seq.push(LOC);
-		self.words
-			.extend_from_slice(&[start_line, start_column, end_line, end_column]);
-	}
-
-	fn table(&mut self, _key: Name) {
-		debug_assert!(self.frames.len() == 1, "a table is the root's entry");
-		if self.tables_at == 0 {
-			self.tables_at = self.words.len() as u32 - 7;
-		}
-		self.tables += 1;
-		self.seq.push(0);
-	}
-
-	fn strs(&mut self, strings: &[(StrId, &str)]) {
-		self.value(kind::STRS);
-		self.words.push(strings.len() as u32);
-		self.words.extend(strings.iter().map(|(id, _)| id.0));
-	}
-
-	fn ints(&mut self, values: &[u32]) {
-		self.value(kind::INTS);
-		self.words.push(values.len() as u32);
-		self.words.extend_from_slice(values);
-	}
-}
-
-/// Serializes an answer into `sink`: the roots as `node`, one node or the patterns of a
-/// parameter list, then `end` and what the options add.
-#[allow(clippy::too_many_arguments)]
-pub fn answer<X: Emit, S: Sink>(
+/// Serializes an answer as JSON: the roots as `node`, one node or the patterns of a parameter
+/// list, then `end` and what the options add.
+pub fn answer<X: Emit>(
 	ast: &Ast<X>,
 	entry: Entry,
 	roots: List,
@@ -813,12 +183,10 @@ pub fn answer<X: Emit, S: Sink>(
 	source: &str,
 	positions: &Positions,
 	output: Output,
-	sink: S,
-) -> S {
-	let mut w = Writer::new(ast, source, positions, sink);
-	w.sink.strings(&ast.strings);
+) -> String {
+	let mut w = Writer::new(ast, source, positions);
 	w.output = output;
-	w.sink.object();
+	w.json.object();
 	if entry == Entry::Params {
 		w.list(c!("node"), roots);
 	} else {
@@ -826,10 +194,10 @@ pub fn answer<X: Emit, S: Sink>(
 	}
 	w.key(c!("end"));
 	let end = w.positions.offset(&mut w.cursor, end);
-	w.sink.int(end);
+	w.json.int(end);
 	w.trailers();
-	w.sink.end();
-	w.sink
+	w.json.end();
+	w.json.finish()
 }
 
 /// Serializes a syntax error: its code and message, UTF-16 `pos` and `end`, and a `loc`; the
@@ -860,10 +228,10 @@ pub fn error_to_json(error: &crate::SyntaxError, source: &str, positions: &Posit
 	out
 }
 
-pub struct Writer<'a, X = (), S: Sink = Json> {
+pub struct Writer<'a, X = ()> {
 	ast: &'a Ast<X>,
 	source: &'a str,
-	pub(crate) sink: S,
+	pub(crate) json: Json,
 	positions: &'a Positions,
 	cursor: Cursor,
 	pub(crate) output: Output,
@@ -890,7 +258,7 @@ pub struct Positions {
 /// Where the last node's start landed: starts come in source order, and a node's end follows
 /// its start, so each lookup tries a few entries on from its hint before a binary search.
 #[derive(Default)]
-struct Cursor {
+pub(crate) struct Cursor {
 	gap: usize,
 	line: usize,
 }
@@ -958,7 +326,81 @@ impl Positions {
 		Ok(target + if i == 0 { 0 } else { self.gaps[i - 1].1 })
 	}
 
-	fn offset(&self, cursor: &mut Cursor, byte: u32) -> u32 {
+	/// Every node's span as UTF-16 offsets into `spans`, when the source has gaps, and its lines
+	/// and columns into `locs`, when lines are on.
+	pub fn map_nodes(&self, nodes: &[crate::ast::Node], spans: &mut Handed<u32>, locs: &mut Handed<u32>) {
+		spans.clear();
+		locs.clear();
+		if self.gaps.is_empty() && !self.lines {
+			return;
+		}
+		let mut cursor = Cursor::default();
+		for node in nodes {
+			let (start, gap) = self.offset_from(cursor.gap, node.start);
+			cursor.gap = gap;
+			let (end, _) = self.offset_from(gap, node.end);
+			if !self.gaps.is_empty() {
+				spans.extend_from_slice(&[start, end]);
+			}
+			if self.lines {
+				let (sl, sc) = self.line_column(cursor.line, node.start, start);
+				cursor.line = sl;
+				let (el, ec) = self.line_column(sl, node.end, end);
+				locs.extend_from_slice(&[sl as u32, sc, el as u32, ec]);
+			}
+		}
+	}
+
+	/// Where each error is, as JavaScript counts: `pos`, `end`, and the line and column of `pos`;
+	/// the line table is built up to the last of them when there is none.
+	pub fn of_errors(&self, source: &str, errors: &[crate::SyntaxError]) -> Vec<[u32; 4]> {
+		let upto;
+		let positions = if self.lines || errors.is_empty() {
+			self
+		} else {
+			let last = errors.iter().map(|e| e.pos.max(e.end)).max().unwrap() as usize;
+			let mut end = last.min(source.len());
+			while !source.is_char_boundary(end) {
+				end += 1;
+			}
+			upto = Positions::new(&source[..end], true);
+			&upto
+		};
+		let mut cursor = Cursor::default();
+		errors
+			.iter()
+			.map(|error| {
+				let pos = positions.offset(&mut cursor, error.pos);
+				let (line, column) = positions.line_column(cursor.line, error.pos, pos);
+				[pos, positions.offset(&mut cursor, error.end), line as u32, column]
+			})
+			.collect()
+	}
+
+	/// Every comment as nine words: whether it is a block, its text's span and its own in UTF-16,
+	/// and its lines and columns when lines are on, zeros otherwise.
+	pub fn map_comments(&self, comments: &[crate::ast::Comment], out: &mut Handed<u32>) {
+		out.clear();
+		let mut cursor = Cursor::default();
+		for comment in comments {
+			let text = comment.text_range();
+			let start = self.offset(&mut cursor, comment.start);
+			let from = self.offset(&mut cursor, text.start as u32);
+			let to = self.offset(&mut cursor, text.end as u32);
+			let end = self.offset(&mut cursor, comment.end);
+			let mut loc = [0; 4];
+			if self.lines {
+				let (sl, sc) = self.line_column(cursor.line, comment.start, start);
+				cursor.line = sl;
+				let (el, ec) = self.line_column(sl, comment.end, end);
+				loc = [sl as u32, sc, el as u32, ec];
+			}
+			out.extend_from_slice(&[comment.is_block() as u32, from, to, start, end]);
+			out.extend_from_slice(&loc);
+		}
+	}
+
+	pub(crate) fn offset(&self, cursor: &mut Cursor, byte: u32) -> u32 {
 		let (offset, gap) = self.offset_from(cursor.gap, byte);
 		cursor.gap = gap;
 		offset
@@ -992,12 +434,12 @@ fn locate<T>(items: &[T], hint: usize, byte: u32, key: impl Fn(&T) -> u32) -> us
 	items.partition_point(|item| key(item) <= byte)
 }
 
-impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
-	fn new(ast: &'a Ast<X>, source: &'a str, positions: &'a Positions, sink: S) -> Self {
+impl<'a, X: Emit> Writer<'a, X> {
+	fn new(ast: &'a Ast<X>, source: &'a str, positions: &'a Positions) -> Self {
 		Self {
 			ast,
 			source,
-			sink,
+			json: Json::default(),
 			positions,
 			cursor: Cursor::default(),
 			output: Output::default(),
@@ -1015,21 +457,21 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 	/// What erasure left in place, as `typescript`, in source order.
 	fn all_kept(&mut self) {
 		self.key(c!("typescript"));
-		self.sink.list();
+		self.json.list();
 		let mut kept = std::mem::take(&mut self.kept);
 		kept.sort_unstable_by_key(|&(_, id)| self.ast.node(id).start);
 		for &(ty, id) in &kept {
-			self.sink.begin(ty);
+			self.json.begin(ty);
 			let node = self.ast.node(id);
 			self.span(node.start, node.end);
-			self.sink.end();
+			self.json.end();
 		}
-		self.sink.end();
+		self.json.end();
 	}
 
 	pub(crate) fn begin(&mut self, ty: Name, id: NodeId) {
 		let node = self.ast.node(id);
-		self.sink.begin(ty);
+		self.json.begin(ty);
 		self.span(node.start, node.end);
 		self.scope_facts(id);
 		if self.ast.is_parenthesized(id) {
@@ -1052,34 +494,34 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		}
 		if let Some(scope) = scopes.of_node.get(id) {
 			self.key(c!("scope"));
-			self.sink.int(scope);
+			self.json.int(scope);
 		}
 		match scopes.of_identifier.get(id) {
 			Some(Role::Declares(binding)) => {
 				self.key(c!("declares"));
-				self.sink.int(binding);
+				self.json.int(binding);
 			}
 			Some(Role::Reference(reference)) => {
 				self.key(c!("reference"));
-				self.sink.int(reference);
+				self.json.int(reference);
 			}
 			None => {}
 		}
 		let adopted = std::mem::take(&mut self.adopted);
 		for node in adopted.iter().copied().chain([id]) {
-			if let Some(&root) = scopes.root_of.get(node) {
+			if let Some(root) = scopes.root_of.get(node) {
 				self.key(c!("root"));
-				self.sink.int(root);
+				self.json.int(root);
 			}
 			let bindings = scopes.declared_by.get(node);
 			if !bindings.is_empty() {
 				self.key(c!("defines"));
-				self.sink.ints(bindings);
+				self.json.ints(bindings);
 			}
 			let writes = scopes.writes_of.get(node);
 			if !writes.is_empty() {
 				self.key(c!("writes"));
-				self.sink.ints(writes);
+				self.json.ints(writes);
 			}
 		}
 	}
@@ -1094,70 +536,32 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 	/// `writes` numbers index.
 	fn all_scopes(&mut self) {
 		let Some(scopes) = &self.ast.scopes else { return };
-		self.sink.table(c!("scopes"));
-		self.sink.list();
-		for scope in &scopes.scopes {
-			self.sink.object();
-			self.string(c!("kind"), scope.kind.name());
-			self.key(c!("parent"));
-			match scope.parent {
-				Some(parent) => self.sink.int(parent),
-				None => self.sink.null(),
-			}
-			self.bool(c!("topLevelAwait"), scope.top_level_await);
-			self.sink.end();
+		self.rows(c!("scopes"), &scopes.scopes, 0);
+		self.rows(c!("bindings"), &scopes.bindings, 1);
+		self.rows(c!("references"), &scopes.references, 2);
+		if !self.ast.hosts.is_empty() {
+			self.rows(c!("roots"), &scopes.roots, 3);
 		}
-		self.sink.end();
-		self.sink.table(c!("bindings"));
-		self.sink.list();
-		for binding in &scopes.bindings {
-			self.sink.object();
-			self.interned(c!("name"), binding.name);
-			self.string(c!("kind"), binding.kind.name());
-			self.key(c!("scope"));
-			self.sink.int(binding.scope);
-			self.bool(c!("write"), binding.write);
-			self.sink.end();
+	}
+
+	/// A table, each row spelled by its recipe of `recipe::RECIPES`.
+	fn rows<T>(&mut self, key: Name, rows: &[T], table: usize) {
+		static RESOLVED: std::sync::OnceLock<Vec<&'static [Op<Slot>]>> = std::sync::OnceLock::new();
+		let ops = RESOLVED.get_or_init(|| {
+			crate::recipe::RECIPES
+				.iter()
+				.zip(crate::recipe::ROWS)
+				.map(|((name, ops), (_, _, fields))| crate::recipe::resolve_ops(ops, fields, name))
+				.collect()
+		})[table];
+		self.key(key);
+		self.json.list();
+		for row in rows {
+			self.json.object();
+			self.run(NodeId::at(0), ops, row as *const T as *const u8);
+			self.json.end();
 		}
-		self.sink.end();
-		self.sink.table(c!("references"));
-		self.sink.list();
-		for reference in &scopes.references {
-			self.sink.object();
-			self.key(c!("scope"));
-			self.sink.int(reference.scope);
-			self.key(c!("binding"));
-			match reference.binding {
-				Some(binding) => self.sink.int(binding),
-				None => self.sink.null(),
-			}
-			self.bool(c!("write"), reference.write);
-			self.bool(c!("read"), reference.read);
-			self.bool(c!("mutate"), reference.mutate);
-			self.bool(c!("declares"), reference.declares);
-			self.sink.end();
-		}
-		self.sink.end();
-		if self.ast.hosts.is_empty() {
-			return;
-		}
-		self.sink.table(c!("roots"));
-		self.sink.list();
-		for root in &scopes.roots {
-			self.sink.object();
-			self.key(c!("scope"));
-			self.sink.int(root.scope);
-			for (key, (from, to)) in [
-				(c!("scopes"), root.scopes),
-				(c!("bindings"), root.bindings),
-				(c!("references"), root.references),
-			] {
-				self.key(key);
-				self.sink.ints(&[from, to]);
-			}
-			self.sink.end();
-		}
-		self.sink.end();
+		self.json.end();
 	}
 
 	fn comments(&mut self, key: Name, comments: crate::ast::Run) {
@@ -1168,60 +572,45 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 	}
 
 	fn comment_list(&mut self, comments: impl IntoIterator<Item = u32>) {
-		self.sink.list();
+		self.json.list();
 		for index in comments {
 			let comment = self.ast.comments[index as usize];
-			self.sink
+			self.json
 				.begin(if comment.is_block() { c!("Block") } else { c!("Line") });
 			self.key(c!("value"));
 			let range = comment.text_range();
 			self.slice(range.start as u32, range.end as u32);
 			self.span(comment.start, comment.end);
-			self.sink.end();
+			self.json.end();
 		}
-		self.sink.end();
+		self.json.end();
 	}
 
 	/// The recovered errors as the thrown one would be: code, message, `pos`, `end` and a `loc`.
 	fn errors(&mut self) {
-		let upto;
-		let positions = if self.positions.lines || self.ast.errors.is_empty() {
-			self.positions
-		} else {
-			let last = self.ast.errors.iter().map(|e| e.pos.max(e.end)).max().unwrap() as usize;
-			let mut end = last.min(self.source.len());
-			while !self.source.is_char_boundary(end) {
-				end += 1;
-			}
-			upto = Positions::new(&self.source[..end], true);
-			&upto
-		};
-		let mut cursor = Cursor::default();
+		let places = self.positions.of_errors(self.source, &self.ast.errors);
 		self.key(c!("errors"));
-		self.sink.list();
-		for error in &self.ast.errors {
-			let pos = positions.offset(&mut cursor, error.pos);
-			let (line, column) = positions.line_column(cursor.line, error.pos, pos);
-			let end = positions.offset(&mut cursor, error.end);
-			self.sink.object();
+		self.json.list();
+		for (error, [pos, end, line, column]) in self.ast.errors.iter().zip(places) {
+			self.json.object();
 			self.key(c!("code"));
-			self.sink.str(error.code.label());
+			self.json.str(error.code.label());
 			self.key(c!("message"));
-			self.sink.text(&error.message);
+			self.json.text(&error.message);
 			self.key(c!("pos"));
-			self.sink.int(pos);
+			self.json.int(pos);
 			self.key(c!("end"));
-			self.sink.int(end);
+			self.json.int(end);
 			self.key(c!("loc"));
-			self.sink.object();
+			self.json.object();
 			self.key(c!("line"));
-			self.sink.int(line as u32);
+			self.json.int(line);
 			self.key(c!("column"));
-			self.sink.int(column);
-			self.sink.end();
-			self.sink.end();
+			self.json.int(column);
+			self.json.end();
+			self.json.end();
 		}
-		self.sink.end();
+		self.json.end();
 	}
 
 	/// What the output's switches add after a root: every comment, what erasure kept, the scopes.
@@ -1245,32 +634,27 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		let (start_offset, gap) = self.positions.offset_from(self.cursor.gap, start);
 		self.cursor.gap = gap;
 		let (end_offset, _) = self.positions.offset_from(gap, end);
-		self.sink.span(start_offset, end_offset);
+		self.json.span(start_offset, end_offset);
 		if !self.positions.lines {
 			return;
 		}
 		let (sl, sc) = self.positions.line_column(self.cursor.line, start, start_offset);
 		self.cursor.line = sl;
 		let (el, ec) = self.positions.line_column(sl, end, end_offset);
-		self.sink.loc(sl as u32, sc, el as u32, ec);
+		self.json.loc(sl as u32, sc, el as u32, ec);
 	}
 
 	/// The source between two byte offsets, as a string value.
 	fn slice(&mut self, start: u32, end: u32) {
-		let (start_offset, end_offset) = (
-			self.positions.offset(&mut self.cursor, start),
-			self.positions.offset(&mut self.cursor, end),
-		);
-		self.sink
-			.slice(&self.source[start as usize..end as usize], start_offset, end_offset);
+		self.json.text(&self.source[start as usize..end as usize]);
 	}
 
 	pub(crate) fn end(&mut self) {
-		self.sink.end();
+		self.json.end();
 	}
 
 	pub(crate) fn key(&mut self, key: Name) {
-		self.sink.key(key);
+		self.json.key(key);
 	}
 
 	pub(crate) fn field(&mut self, key: Name, id: NodeId) {
@@ -1291,10 +675,6 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		self.ast.node(id).kind
 	}
 
-	pub(crate) fn ast(&self) -> &'a Ast<X> {
-		self.ast
-	}
-
 	/// The key only when there is a node; an unset property is left out.
 	pub(crate) fn opt_key(&mut self, key: Name, id: Option<NodeId>) {
 		if let Some(id) = id {
@@ -1306,24 +686,24 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		self.key(key);
 		match id {
 			Some(id) => self.node(id),
-			None => self.sink.null(),
+			None => self.json.null(),
 		}
 	}
 
 	pub(crate) fn list(&mut self, key: Name, list: List) {
 		self.key(key);
-		self.sink.list();
+		self.json.list();
 		let ast = self.ast;
 		for item in ast.list(list) {
-			if self.output.erase && item.is_some_and(|id| ast.extension.erased(self, id)) {
+			if self.output.erase && item.is_some_and(|id| ast.extension.erased(ast, id)) {
 				continue;
 			}
 			match item {
 				Some(id) => self.node(*id),
-				None => self.sink.null(),
+				None => self.json.null(),
 			}
 		}
-		self.sink.end();
+		self.json.end();
 	}
 
 	/// A parameter list; erasing drops TypeScript's `this` parameter.
@@ -1344,23 +724,23 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 
 	pub(crate) fn bool(&mut self, key: Name, value: bool) {
 		self.key(key);
-		self.sink.bool(value);
+		self.json.bool(value);
 	}
 
 	pub(crate) fn string(&mut self, key: Name, value: Name) {
 		self.key(key);
-		self.sink.str(value);
+		self.json.str(value);
 	}
 
 	/// A string computed for this tree.
 	pub(crate) fn text(&mut self, key: Name, value: &str) {
 		self.key(key);
-		self.sink.text(value);
+		self.json.text(value);
 	}
 
 	pub(crate) fn interned(&mut self, key: Name, id: StrId) {
 		self.key(key);
-		self.sink.interned(id, self.ast.str(id));
+		self.json.text(self.ast.str(id));
 	}
 
 	pub(crate) fn raw(&mut self, id: NodeId) {
@@ -1369,523 +749,155 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 		self.slice(node.start, node.end);
 	}
 
-	fn class(&mut self, class: Class) {
-		self.opt(c!("id"), class.id);
-		self.opt(c!("superClass"), class.super_class);
-		self.field(c!("body"), class.body);
+	/// The recipes of the JavaScript kinds, resolved once.
+	fn js_recipes() -> &'static [&'static [Op<Slot>]] {
+		static RESOLVED: std::sync::OnceLock<&'static [&'static [Op<Slot>]]> = std::sync::OnceLock::new();
+		RESOLVED.get_or_init(|| crate::recipe::resolve(crate::recipe::JS, crate::ast::node_layout::VARIANTS))
 	}
 
-	fn function(&mut self, f: Function, expression: bool) {
-		self.opt(c!("id"), f.id);
-		self.bool(c!("expression"), expression);
-		self.bool(c!("generator"), f.generator);
-		self.bool(c!("async"), f.is_async);
-		self.params(c!("params"), f.params);
-		self.field(c!("body"), f.body);
+	/// Follows a kind's recipe over the record at `base`, a `repr(C, u32)` enum's payload; the
+	/// caller ends the node, unless a child stood in for it: false then.
+	pub(crate) fn run(&mut self, id: NodeId, ops: &[Op<Slot>], base: *const u8) -> bool {
+		for op in ops {
+			match *op {
+				Op::Keep(name) => {
+					if self.output.erase {
+						self.keep(name, id);
+					}
+				}
+				Op::KeepIf(name, slot) => {
+					if self.output.erase && get::<bool>(base, slot) {
+						self.keep(name, id);
+					}
+				}
+				Op::Through(slot) => {
+					if self.output.erase {
+						self.adopt(id);
+						self.node(get(base, slot));
+						return false;
+					}
+				}
+				Op::EnumOr(key, slot, other) => {
+					let Ty::OptEnum(names) = slot.ty else { unreachable!() };
+					self.string(key, names.get(get::<u8>(base, slot) as usize).copied().unwrap_or(other));
+				}
+				Op::Type(name) => self.begin(name, id),
+				Op::TypeOf(slot) => {
+					let Ty::Enum(names) = slot.ty else { unreachable!() };
+					self.begin(names[get::<u8>(base, slot) as usize], id);
+				}
+				Op::Node(key, slot) => self.field(key, get(base, slot)),
+				Op::Int(key, slot) => {
+					self.key(key);
+					self.json.int(get(base, slot));
+				}
+				Op::Pair(key, slot) => {
+					self.key(key);
+					self.json.ints(&get::<[u32; 2]>(base, slot));
+				}
+				Op::Opt(key, slot) => match slot.ty {
+					Ty::OptU32 => {
+						self.key(key);
+						match get::<Option<u32>>(base, slot) {
+							Some(value) => self.json.int(value),
+							None => self.json.null(),
+						}
+					}
+					Ty::OptStr => {
+						self.key(key);
+						match get::<Option<StrId>>(base, slot) {
+							Some(string) => self.json.text(self.ast.str(string)),
+							None => self.json.null(),
+						}
+					}
+					_ => self.opt(key, get(base, slot)),
+				},
+				Op::OptKey(key, slot) => self.opt_key(key, get(base, slot)),
+				Op::List(key, slot) => self.list(key, get(base, slot)),
+				Op::OptListKey(key, slot) => {
+					if let Some(list) = get::<Option<List>>(base, slot) {
+						self.list(key, list);
+					}
+				}
+				Op::Params(key, slot) => self.params(key, get(base, slot)),
+				Op::Bool(key, slot) => self.bool(key, get(base, slot)),
+				Op::BoolIf(key, slot) => {
+					if get::<bool>(base, slot) {
+						self.bool(key, true);
+					}
+				}
+				Op::OptBoolKey(key, slot) => {
+					if let Some(value) = get::<Option<bool>>(base, slot) {
+						self.bool(key, value);
+					}
+				}
+				Op::Str(key, slot) => self.interned(key, get(base, slot)),
+				Op::OptStrKey(key, slot) => {
+					if let Some(string) = get::<Option<StrId>>(base, slot) {
+						self.interned(key, string);
+					}
+				}
+				Op::Enum(key, slot) => {
+					let Ty::Enum(names) = slot.ty else { unreachable!() };
+					self.string(key, names[get::<u8>(base, slot) as usize]);
+				}
+				// a missing enum is a byte past the names, wherever the compiler put it
+				Op::OptEnumKey(key, slot) => {
+					let Ty::OptEnum(names) = slot.ty else { unreachable!() };
+					if let Some(&name) = names.get(get::<u8>(base, slot) as usize) {
+						self.string(key, name);
+					}
+				}
+				Op::Modifier(key, slot) => {
+					let Ty::OptEnum(names) = slot.ty else { unreachable!() };
+					if let Some(&name) = names.get(get::<u8>(base, slot) as usize) {
+						if name.text == "true" {
+							self.bool(key, true);
+						} else {
+							self.string(key, name);
+						}
+					}
+				}
+				Op::BoolNames(key, slot, yes, no) => self.string(key, if get::<bool>(base, slot) { yes } else { no }),
+				Op::Float(key, slot) => {
+					let value = self.ast.numbers[get::<u32>(base, slot) as usize];
+					self.key(key);
+					if value.is_finite() {
+						self.json.float(value);
+					} else {
+						self.json.null();
+					}
+				}
+				Op::Raw => self.raw(id),
+				Op::BigInt => {
+					let node = self.ast.node(id);
+					let raw = &self.source[node.start as usize..node.end as usize - 1];
+					let bigint = bigint_decimal(raw);
+					self.text(c!("bigint"), &bigint);
+				}
+				Op::Const(key, value) => self.string(key, value),
+				Op::ConstBool(key, value) => self.bool(key, value),
+				Op::Null(key) => {
+					self.key(key);
+					self.json.null();
+				}
+				Op::EmptyList(key) => self.list(key, List::EMPTY),
+				Op::Object(key, inner) => {
+					self.key(key);
+					self.json.object();
+					self.run(id, inner, base);
+					self.json.end();
+				}
+				Op::OtherName(key, name, binding) => self.other_name(key, get(base, name), get(base, binding)),
+			}
+		}
+		true
 	}
 
 	pub(crate) fn node(&mut self, id: NodeId) {
 		use NodeKind::*;
-		let kind = self.ast.node(id).kind;
-		match kind {
-			Program { body, module } => {
-				self.begin(c!("Program"), id);
-				self.list(c!("body"), body);
-				self.string(c!("sourceType"), if module { c!("module") } else { c!("script") });
-			}
-			Identifier { name } => {
-				self.begin(c!("Identifier"), id);
-				self.interned(c!("name"), name);
-			}
-			PrivateIdentifier { name } => {
-				self.begin(c!("PrivateIdentifier"), id);
-				self.interned(c!("name"), name);
-			}
-			NumberLiteral { value } => {
-				let value = self.ast.numbers[value as usize];
-				self.begin(c!("Literal"), id);
-				self.key(c!("value"));
-				if value.is_finite() {
-					self.sink.float(value);
-				} else {
-					self.sink.null();
-				}
-				self.raw(id);
-			}
-			BigIntLiteral => {
-				self.begin(c!("Literal"), id);
-				self.key(c!("value"));
-				self.sink.null();
-				self.raw(id);
-				let node = self.ast.node(id);
-				let raw = &self.source[node.start as usize..node.end as usize - 1];
-				let bigint = bigint_decimal(raw);
-				self.text(c!("bigint"), &bigint);
-			}
-			StringLiteral { value } => {
-				self.begin(c!("Literal"), id);
-				self.interned(c!("value"), value);
-				self.raw(id);
-			}
-			BooleanLiteral { value } => {
-				self.begin(c!("Literal"), id);
-				self.bool(c!("value"), value);
-				self.raw(id);
-			}
-			NullLiteral => {
-				self.begin(c!("Literal"), id);
-				self.key(c!("value"));
-				self.sink.null();
-				self.raw(id);
-			}
-			RegExpLiteral { pattern, flags } => {
-				self.begin(c!("Literal"), id);
-				self.key(c!("value"));
-				self.sink.null();
-				self.raw(id);
-				self.key(c!("regex"));
-				self.sink.object();
-				self.interned(c!("pattern"), pattern);
-				self.interned(c!("flags"), flags);
-				self.sink.end();
-			}
-			TemplateLiteral { quasis, expressions } => {
-				self.begin(c!("TemplateLiteral"), id);
-				self.list(c!("expressions"), expressions);
-				self.list(c!("quasis"), quasis);
-			}
-			TemplateElement { cooked, raw, tail } => {
-				self.begin(c!("TemplateElement"), id);
-				self.key(c!("value"));
-				self.sink.object();
-				self.interned(c!("raw"), raw);
-				self.key(c!("cooked"));
-				match cooked {
-					Some(cooked) => self.sink.interned(cooked, self.ast.str(cooked)),
-					None => self.sink.null(),
-				}
-				self.sink.end();
-				self.bool(c!("tail"), tail);
-			}
-			TaggedTemplateExpression { tag, quasi } => {
-				self.begin(c!("TaggedTemplateExpression"), id);
-				self.field(c!("tag"), tag);
-				self.field(c!("quasi"), quasi);
-			}
-			ThisExpression => self.begin(c!("ThisExpression"), id),
-			Super => self.begin(c!("Super"), id),
-			ArrayExpression { elements } => {
-				self.begin(c!("ArrayExpression"), id);
-				self.list(c!("elements"), elements);
-			}
-			ObjectExpression { properties } => {
-				self.begin(c!("ObjectExpression"), id);
-				self.list(c!("properties"), properties);
-			}
-			Property {
-				key,
-				value,
-				kind,
-				computed,
-				method,
-				shorthand,
-			} => {
-				self.begin(c!("Property"), id);
-				self.bool(c!("method"), method);
-				self.bool(c!("shorthand"), shorthand);
-				self.bool(c!("computed"), computed);
-				self.field(c!("key"), key);
-				self.field(c!("value"), value);
-				self.string(
-					c!("kind"),
-					match kind {
-						PropertyKind::Init => c!("init"),
-						PropertyKind::Get => c!("get"),
-						PropertyKind::Set => c!("set"),
-					},
-				);
-			}
-			SpreadElement { argument } => {
-				self.begin(c!("SpreadElement"), id);
-				self.field(c!("argument"), argument);
-			}
-			UnaryExpression { operator, argument } => {
-				self.begin(c!("UnaryExpression"), id);
-				self.string(c!("operator"), operator.name());
-				self.bool(c!("prefix"), true);
-				self.field(c!("argument"), argument);
-			}
-			UpdateExpression {
-				operator,
-				prefix,
-				argument,
-			} => {
-				self.begin(c!("UpdateExpression"), id);
-				self.string(c!("operator"), operator.name());
-				self.bool(c!("prefix"), prefix);
-				self.field(c!("argument"), argument);
-			}
-			BinaryExpression { operator, left, right } => {
-				self.begin(c!("BinaryExpression"), id);
-				self.field(c!("left"), left);
-				self.string(c!("operator"), operator.name());
-				self.field(c!("right"), right);
-			}
-			LogicalExpression { operator, left, right } => {
-				self.begin(c!("LogicalExpression"), id);
-				self.field(c!("left"), left);
-				self.string(c!("operator"), operator.name());
-				self.field(c!("right"), right);
-			}
-			AssignmentExpression { operator, left, right } => {
-				self.begin(c!("AssignmentExpression"), id);
-				self.string(c!("operator"), operator.name());
-				self.field(c!("left"), left);
-				self.field(c!("right"), right);
-			}
-			ConditionalExpression {
-				test,
-				consequent,
-				alternate,
-			} => {
-				self.begin(c!("ConditionalExpression"), id);
-				self.field(c!("test"), test);
-				self.field(c!("consequent"), consequent);
-				self.field(c!("alternate"), alternate);
-			}
-			MemberExpression {
-				object,
-				property,
-				computed,
-				optional,
-			} => {
-				self.begin(c!("MemberExpression"), id);
-				self.field(c!("object"), object);
-				self.field(c!("property"), property);
-				self.bool(c!("computed"), computed);
-				self.bool(c!("optional"), optional);
-			}
-			CallExpression {
-				callee,
-				arguments,
-				optional,
-			} => {
-				self.begin(c!("CallExpression"), id);
-				self.field(c!("callee"), callee);
-				self.list(c!("arguments"), arguments);
-				self.bool(c!("optional"), optional);
-			}
-			ChainExpression { expression } => {
-				self.begin(c!("ChainExpression"), id);
-				self.field(c!("expression"), expression);
-			}
-			NewExpression { callee, arguments } => {
-				self.begin(c!("NewExpression"), id);
-				self.field(c!("callee"), callee);
-				self.list(c!("arguments"), arguments);
-			}
-			SequenceExpression { expressions } => {
-				self.begin(c!("SequenceExpression"), id);
-				self.list(c!("expressions"), expressions);
-			}
-			ArrowFunctionExpression {
-				params,
-				body,
-				expression,
-				is_async,
-			} => {
-				self.begin(c!("ArrowFunctionExpression"), id);
-				self.key(c!("id"));
-				self.sink.null();
-				self.bool(c!("expression"), expression);
-				self.bool(c!("generator"), false);
-				self.bool(c!("async"), is_async);
-				self.params(c!("params"), params);
-				self.field(c!("body"), body);
-			}
-			FunctionExpression { function } => {
-				self.begin(c!("FunctionExpression"), id);
-				self.function(function, false);
-			}
-			FunctionDeclaration { function } => {
-				self.begin(c!("FunctionDeclaration"), id);
-				self.function(function, false);
-			}
-			ClassExpression { class } => {
-				self.begin(c!("ClassExpression"), id);
-				self.class(class);
-			}
-			ClassDeclaration { class } => {
-				self.begin(c!("ClassDeclaration"), id);
-				self.class(class);
-			}
-			ClassBody { body } => {
-				self.begin(c!("ClassBody"), id);
-				self.list(c!("body"), body);
-			}
-			MethodDefinition {
-				key,
-				value,
-				kind,
-				computed,
-				is_static,
-			} => {
-				self.begin(c!("MethodDefinition"), id);
-				self.bool(c!("static"), is_static);
-				self.bool(c!("computed"), computed);
-				self.field(c!("key"), key);
-				self.string(
-					c!("kind"),
-					match kind {
-						MethodKind::Constructor => c!("constructor"),
-						MethodKind::Method => c!("method"),
-						MethodKind::Get => c!("get"),
-						MethodKind::Set => c!("set"),
-					},
-				);
-				self.field(c!("value"), value);
-			}
-			PropertyDefinition {
-				key,
-				value,
-				computed,
-				is_static,
-			} => {
-				self.begin(c!("PropertyDefinition"), id);
-				self.bool(c!("static"), is_static);
-				self.bool(c!("computed"), computed);
-				self.field(c!("key"), key);
-				self.opt(c!("value"), value);
-			}
-			StaticBlock { body } => {
-				self.begin(c!("StaticBlock"), id);
-				self.list(c!("body"), body);
-			}
-			YieldExpression { argument, delegate } => {
-				self.begin(c!("YieldExpression"), id);
-				self.bool(c!("delegate"), delegate);
-				self.opt(c!("argument"), argument);
-			}
-			AwaitExpression { argument } => {
-				self.begin(c!("AwaitExpression"), id);
-				self.field(c!("argument"), argument);
-			}
-			MetaProperty { meta, property } => {
-				self.begin(c!("MetaProperty"), id);
-				self.field(c!("meta"), meta);
-				self.field(c!("property"), property);
-			}
-			ImportExpression { source, options } => {
-				self.begin(c!("ImportExpression"), id);
-				self.field(c!("source"), source);
-				self.opt(c!("options"), options);
-			}
-			ObjectPattern { properties } => {
-				self.begin(c!("ObjectPattern"), id);
-				self.list(c!("properties"), properties);
-			}
-			ArrayPattern { elements } => {
-				self.begin(c!("ArrayPattern"), id);
-				self.list(c!("elements"), elements);
-			}
-			RestElement { argument } => {
-				self.begin(c!("RestElement"), id);
-				self.field(c!("argument"), argument);
-			}
-			AssignmentPattern { left, right } => {
-				self.begin(c!("AssignmentPattern"), id);
-				self.field(c!("left"), left);
-				self.field(c!("right"), right);
-			}
-			ExpressionStatement { expression, directive } => {
-				self.begin(c!("ExpressionStatement"), id);
-				self.field(c!("expression"), expression);
-				if let Some(directive) = directive {
-					self.interned(c!("directive"), directive);
-				}
-			}
-			BlockStatement { body } => {
-				self.begin(c!("BlockStatement"), id);
-				self.list(c!("body"), body);
-			}
-			EmptyStatement => self.begin(c!("EmptyStatement"), id),
-			DebuggerStatement => self.begin(c!("DebuggerStatement"), id),
-			WithStatement { object, body } => {
-				self.begin(c!("WithStatement"), id);
-				self.field(c!("object"), object);
-				self.field(c!("body"), body);
-			}
-			ReturnStatement { argument } => {
-				self.begin(c!("ReturnStatement"), id);
-				self.opt(c!("argument"), argument);
-			}
-			LabeledStatement { label, body } => {
-				self.begin(c!("LabeledStatement"), id);
-				self.field(c!("body"), body);
-				self.field(c!("label"), label);
-			}
-			BreakStatement { label } => {
-				self.begin(c!("BreakStatement"), id);
-				self.opt(c!("label"), label);
-			}
-			ContinueStatement { label } => {
-				self.begin(c!("ContinueStatement"), id);
-				self.opt(c!("label"), label);
-			}
-			IfStatement {
-				test,
-				consequent,
-				alternate,
-			} => {
-				self.begin(c!("IfStatement"), id);
-				self.field(c!("test"), test);
-				self.field(c!("consequent"), consequent);
-				self.opt(c!("alternate"), alternate);
-			}
-			SwitchStatement { discriminant, cases } => {
-				self.begin(c!("SwitchStatement"), id);
-				self.field(c!("discriminant"), discriminant);
-				self.list(c!("cases"), cases);
-			}
-			SwitchCase { test, consequent } => {
-				self.begin(c!("SwitchCase"), id);
-				self.list(c!("consequent"), consequent);
-				self.opt(c!("test"), test);
-			}
-			ThrowStatement { argument } => {
-				self.begin(c!("ThrowStatement"), id);
-				self.field(c!("argument"), argument);
-			}
-			TryStatement {
-				block,
-				handler,
-				finalizer,
-			} => {
-				self.begin(c!("TryStatement"), id);
-				self.field(c!("block"), block);
-				self.opt(c!("handler"), handler);
-				self.opt(c!("finalizer"), finalizer);
-			}
-			CatchClause { param, body } => {
-				self.begin(c!("CatchClause"), id);
-				self.opt(c!("param"), param);
-				self.field(c!("body"), body);
-			}
-			WhileStatement { test, body } => {
-				self.begin(c!("WhileStatement"), id);
-				self.field(c!("test"), test);
-				self.field(c!("body"), body);
-			}
-			DoWhileStatement { body, test } => {
-				self.begin(c!("DoWhileStatement"), id);
-				self.field(c!("body"), body);
-				self.field(c!("test"), test);
-			}
-			ForStatement {
-				init,
-				test,
-				update,
-				body,
-			} => {
-				self.begin(c!("ForStatement"), id);
-				self.opt(c!("init"), init);
-				self.opt(c!("test"), test);
-				self.opt(c!("update"), update);
-				self.field(c!("body"), body);
-			}
-			ForInStatement { left, right, body } => {
-				self.begin(c!("ForInStatement"), id);
-				self.field(c!("left"), left);
-				self.field(c!("right"), right);
-				self.field(c!("body"), body);
-			}
-			ForOfStatement {
-				left,
-				right,
-				body,
-				is_await,
-			} => {
-				self.begin(c!("ForOfStatement"), id);
-				self.bool(c!("await"), is_await);
-				self.field(c!("left"), left);
-				self.field(c!("right"), right);
-				self.field(c!("body"), body);
-			}
-			VariableDeclaration { declarations, kind } => {
-				self.begin(c!("VariableDeclaration"), id);
-				self.list(c!("declarations"), declarations);
-				self.string(c!("kind"), kind.name());
-			}
-			VariableDeclarator { id: pattern, init } => {
-				self.begin(c!("VariableDeclarator"), id);
-				self.field(c!("id"), pattern);
-				self.opt(c!("init"), init);
-			}
-			ImportDeclaration {
-				specifiers,
-				source,
-				attributes,
-			} => {
-				self.begin(c!("ImportDeclaration"), id);
-				self.list(c!("specifiers"), specifiers);
-				self.field(c!("source"), source);
-				self.list(c!("attributes"), attributes);
-			}
-			ImportSpecifier { imported, local } => {
-				self.begin(c!("ImportSpecifier"), id);
-				self.other_name(c!("imported"), imported, local);
-				self.field(c!("local"), local);
-			}
-			ImportDefaultSpecifier { local } => {
-				self.begin(c!("ImportDefaultSpecifier"), id);
-				self.field(c!("local"), local);
-			}
-			ImportNamespaceSpecifier { local } => {
-				self.begin(c!("ImportNamespaceSpecifier"), id);
-				self.field(c!("local"), local);
-			}
-			ImportAttribute { key, value } => {
-				self.begin(c!("ImportAttribute"), id);
-				self.field(c!("key"), key);
-				self.field(c!("value"), value);
-			}
-			ExportDeclaration { declaration } => {
-				self.begin(c!("ExportNamedDeclaration"), id);
-				self.field(c!("declaration"), declaration);
-				self.list(c!("specifiers"), List::EMPTY);
-				self.opt(c!("source"), None);
-				self.list(c!("attributes"), List::EMPTY);
-			}
-			ExportNamedDeclaration {
-				specifiers,
-				source,
-				attributes,
-			} => {
-				self.begin(c!("ExportNamedDeclaration"), id);
-				self.opt(c!("declaration"), None);
-				self.list(c!("specifiers"), specifiers);
-				self.opt(c!("source"), source);
-				self.list(c!("attributes"), attributes);
-			}
-			ExportSpecifier { local, exported } => {
-				self.begin(c!("ExportSpecifier"), id);
-				self.field(c!("local"), local);
-				self.other_name(c!("exported"), exported, local);
-			}
-			ExportDefaultDeclaration { declaration } => {
-				self.begin(c!("ExportDefaultDeclaration"), id);
-				self.field(c!("declaration"), declaration);
-			}
-			ExportAllDeclaration {
-				exported,
-				source,
-				attributes,
-			} => {
-				self.begin(c!("ExportAllDeclaration"), id);
-				self.opt(c!("exported"), exported);
-				self.field(c!("source"), source);
-				self.list(c!("attributes"), attributes);
-			}
+		let kind = &self.ast.nodes[id.index() as usize].kind;
+		match *kind {
 			// the extension closes its own node, since erasing may put another in its place
 			Extension(index) => return self.ast.extension.node(self, id, index),
 			Host(index) => {
@@ -1893,12 +905,12 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 				if host.ty.is_empty() {
 					// an object of the host's without a type, positions and all
 					let node = self.ast.node(id);
-					self.sink.object();
+					self.json.object();
 					self.span(node.start, node.end);
 				} else if host.span {
 					self.begin(Name::dynamic(host.ty), id);
 				} else {
-					self.sink.begin(Name::dynamic(host.ty));
+					self.json.begin(Name::dynamic(host.ty));
 					self.scope_facts(id);
 				}
 				let (from, len) = host.fields;
@@ -1914,22 +926,21 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 							self.slice(start, end);
 						}
 						Value::Strs(start, len) => {
-							let strings: Vec<(StrId, &str)> = self.ast.host_strings
-								[start as usize..(start + len) as usize]
-								.iter()
-								.map(|&string| (string, self.ast.str(string)))
-								.collect();
 							self.key(key);
-							self.sink.strs(&strings);
+							self.json.list();
+							for &string in &self.ast.host_strings[start as usize..(start + len) as usize] {
+								self.json.text(self.ast.str(string));
+							}
+							self.json.end();
 						}
 						Value::Bool(value) => self.bool(key, value),
 						Value::Int(value) => {
 							self.key(key);
-							self.sink.int(value);
+							self.json.int(value);
 						}
 						Value::Null => {
 							self.key(key);
-							self.sink.null();
+							self.json.null();
 						}
 						Value::Comments => {
 							self.key(key);
@@ -1938,9 +949,23 @@ impl<'a, X: Emit, S: Sink> Writer<'a, X, S> {
 					}
 				}
 			}
+			_ => {
+				let base = kind as *const NodeKind as *const u8;
+				self.run(id, Self::js_recipes()[tag(base)], base);
+			}
 		}
 		self.end();
 	}
+}
+
+/// The tag of a `repr(C, u32)` enum at `base`: its first word.
+pub(crate) fn tag(base: *const u8) -> usize {
+	unsafe { base.cast::<u32>().read() as usize }
+}
+
+/// The field at `slot` of the record at `base`, as the type the recipe reads it by.
+fn get<T: Copy>(base: *const u8, slot: Slot) -> T {
+	unsafe { base.add(slot.at).cast::<T>().read_unaligned() }
 }
 
 pub(crate) fn push_int(out: &mut String, mut value: u32) {
@@ -2126,7 +1151,6 @@ pub(crate) fn write_json_string(out: &mut String, s: &str) {
 
 #[cfg(test)]
 mod tests {
-	use crate::names::{Name, c};
 	#[test]
 	#[allow(clippy::excessive_precision)]
 	fn numbers_as_javascript_writes_them() {
@@ -2167,123 +1191,5 @@ mod tests {
 		assert!(positions.byte_offset(-1.0).is_err());
 		assert!(positions.byte_offset(1.5).is_err());
 		assert_eq!(Positions::new("abc", true).byte_offset(3.0), Ok(3));
-	}
-
-	#[test]
-	fn binary_layout() {
-		use super::{Binary, Sink, kind};
-		use crate::interner::Interner;
-		let mut interner = Interner::default();
-		interner.intern("a");
-		let mut b = Binary::new();
-		b.strings(&interner);
-		b.object();
-		b.key(c!("node"));
-		b.begin(c!("Identifier"));
-		b.span(1, 2);
-		b.key(c!("name"));
-		b.interned(crate::interner::StrId(0), "a");
-		b.key(c!("value"));
-		b.float(1.5);
-		b.key(c!("raw"));
-		b.text("\u{1F600}b");
-		b.key(Name::dynamic("list"));
-		b.list();
-		b.int(3);
-		b.null();
-		b.end();
-		b.end();
-		b.table(c!("scopes"));
-		b.list();
-		b.object();
-		b.key(Name::dynamic("through"));
-		b.ints(&[7]);
-		b.end();
-		b.end();
-		b.end();
-		b.finish();
-		let words = b.words().to_vec();
-		let [tree, strings, floats, bytes, known, known_shapes, tables_at] = words[..7] else {
-			unreachable!()
-		};
-		assert_eq!((tree, strings, floats, bytes), (14, 2, 1, 6));
-		assert!(known >= 5 && known_shapes >= kind::FIRST + 3);
-		let body = &words[7..7 + tree as usize];
-		let (root, node, scope) = (body[0], body[1], body[10]);
-		assert_eq!(&body[2..10], &[1, 2, 0, 0, 1, 3, kind::NULL, kind::END]);
-		assert_eq!(&body[11..], &[1, 7, kind::END]);
-		assert_eq!(tables_at, 10);
-		let all = b.shapes().to_vec();
-		let record = |id: u32| {
-			let mut at = 0;
-			for _ in kind::FIRST..id {
-				at += all[at] as usize + 1;
-			}
-			&all[at + 1..at + 1 + all[at] as usize]
-		};
-		assert_eq!(record(root), &[0, b.constant(c!("node")) << 4 | kind::NODE]);
-		assert_eq!(
-			record(node),
-			&[
-				b.constant(c!("Identifier")) + 1,
-				b.constant(c!("start")) << 4 | kind::INT,
-				b.constant(c!("end")) << 4 | kind::INT,
-				b.constant(c!("name")) << 4 | kind::STR,
-				b.constant(c!("value")) << 4 | kind::FLOAT,
-				b.constant(c!("raw")) << 4 | kind::STR,
-				b.constant(Name::dynamic("list")) << 4 | kind::NODES,
-			]
-		);
-		assert_eq!(
-			record(scope),
-			&[0, b.constant(Name::dynamic("through")) << 4 | kind::INTS]
-		);
-		let ends = &words[7 + tree as usize..][..2];
-		assert_eq!(ends, &[1, 4]);
-		let text_at = 7 + tree as usize + 2;
-		assert_eq!(&words[text_at].to_ne_bytes(), &[b'a', 0xf0, 0x9f, 0x98]);
-		assert_eq!(&words[text_at + 1].to_ne_bytes(), &[0x80, b'b', 0, 0]);
-		let floats_at = (text_at + 2).next_multiple_of(2);
-		let bits = words[floats_at] as u64 | (words[floats_at + 1] as u64) << 32;
-		assert_eq!(f64::from_bits(bits), 1.5);
-		assert_eq!(words.len(), floats_at + 2);
-	}
-
-	// cargo test --release hot_paths -- --ignored --nocapture
-	#[test]
-	#[ignore]
-	fn hot_paths() {
-		use super::{Binary, kind};
-		let mut b = Binary::new();
-		let record = [
-			b.constant(Name::dynamic("Identifier")) + 1,
-			b.constant(Name::dynamic("start")) << 4 | kind::INT,
-			b.constant(Name::dynamic("end")) << 4 | kind::INT,
-			b.constant(Name::dynamic("binding")) << 4 | kind::INT,
-			b.constant(Name::dynamic("name")) << 4 | kind::STR,
-		];
-		let other = [
-			b.constant(Name::dynamic("Literal")) + 1,
-			b.constant(Name::dynamic("start")) << 4 | kind::INT,
-			b.constant(Name::dynamic("end")) << 4 | kind::INT,
-			b.constant(Name::dynamic("value")) << 4 | kind::STR,
-			b.constant(Name::dynamic("raw")) << 4 | kind::SLICE,
-		];
-		let n = 10_000_000u32;
-		let mut sink = 0u32;
-		let t = std::time::Instant::now();
-		for i in 0..n {
-			sink = sink.wrapping_add(b.shapes.id(if i & 1 == 0 { &record } else { &other }));
-		}
-		eprintln!("shape hit {:.1} ns", t.elapsed().as_nanos() as f64 / n as f64);
-		let keys = ["name", "start", "end", "body", "expression", "value", "raw", "id"];
-		let t = std::time::Instant::now();
-		for i in 0..n {
-			sink = sink.wrapping_add(b.constant(Name::dynamic(keys[(i & 7) as usize])));
-		}
-		eprintln!(
-			"constant hit {:.1} ns  ({sink})",
-			t.elapsed().as_nanos() as f64 / n as f64
-		);
 	}
 }

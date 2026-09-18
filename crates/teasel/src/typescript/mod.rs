@@ -3,7 +3,6 @@
 use crate::error::Code;
 pub mod ast;
 mod declarations;
-mod estree;
 #[cfg(test)]
 mod tests;
 mod types;
@@ -227,7 +226,7 @@ impl Parser<'_, TypeScript> {
 	}
 
 	fn extras_mut(&mut self, id: NodeId) -> &mut Extras {
-		self.ast.extension.extras.get_or_insert(id)
+		self.ast.extension.extras.entry(id)
 	}
 
 	fn ext_data(&self) -> &Data {
@@ -1697,8 +1696,10 @@ impl Extension for TypeScript {
 				}
 			}
 		}
-		if frame.extras != Extras::default() {
-			p.extras_mut(node).merge(frame.extras);
+		let mut extras = frame.extras;
+		extras.is_static &= matches!(p.kind(node), NodeKind::Extension(_));
+		if extras != Extras::default() {
+			p.extras_mut(node).merge(extras);
 		}
 		Ok(())
 	}

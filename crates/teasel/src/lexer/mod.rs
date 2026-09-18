@@ -84,9 +84,9 @@ impl<'a> Lexer<'a> {
 	}
 
 	pub(crate) fn word_flags(&mut self, id: StrId) -> u8 {
-		let i = id.0 as usize;
+		let i = id.index() as usize;
 		while self.strings.word_flags.len() <= i {
-			let flags = token::word::flags(self.strings.get(StrId(self.strings.word_flags.len() as u32)));
+			let flags = token::word::flags(self.strings.get(StrId::at(self.strings.word_flags.len() as u32)));
 			self.strings.word_flags.push(flags);
 		}
 		self.strings.word_flags[i]

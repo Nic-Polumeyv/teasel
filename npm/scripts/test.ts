@@ -5,7 +5,7 @@ import type { Entry, Options } from '../dist/index.js';
 if (process.argv[2] === 'interpret') globalThis.Function = (() => { throw new EvalError('blocked'); }) as unknown as FunctionConstructor;
 const name = process.execArgv.includes('--no-addons') ? 'wasm' : 'native';
 const m = await import('../dist/index.js');
-// the trees are poked as the stream shaped them, host nodes included, past what the types say
+// the trees are poked as the recipes shape them, host nodes included, past what the types say
 type Any = any;
 const untyped = ({ Source, scopeOf, referenceOf, parentOf }: typeof m) => ({
 	open: (source: string, options?: Options): Any => new Source(source, options),
@@ -259,6 +259,9 @@ const { open, scopeOf, referenceOf, parentOf } = untyped(m);
 	assert.equal(program('y;').body.length, 1);
 	assert.equal(program(wide + wide).body.length, 400000);
 	assert.equal(program('z;').body[0].expression.name, 'z');
+	// a source that grows the engine's memory while the tree's buffers stay where they are
+	assert.equal(program(`/*${'c'.repeat(1 << 25)}*/ w;`).body[0].expression.name, 'w');
+	assert.equal(program('v;').body[0].expression.name, 'v');
 	console.log(name, 'ok');
 }
 
