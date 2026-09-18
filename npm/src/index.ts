@@ -1,9 +1,9 @@
 import type { Expression, Identifier, Node, Pattern, Program, SourceLocation, Statement } from 'estree';
-import { decode, PARENT, type Prepared, REFERENCE, SCOPE } from './lib/decode.js';
-import { ENTRY, type Entry, flags, type Options } from './lib/options.js';
+import { decode, type Held, PARENT, type Prepared, REFERENCE, SCOPE } from './lib/decode.js';
+import { ENTRY, flags, type Options } from './lib/options.js';
 import { engine } from '#engine';
 
-export type { Entry, Options } from './lib/options.js';
+export type { Options } from './lib/options.js';
 
 /**
  * Thrown for a syntax error. `code` names what went wrong, for a host to branch on, and
@@ -187,36 +187,6 @@ export interface Parsed<T> {
 }
 
 /**
- * What a parse reads, and what it answers with: a program, or what a host embedding JavaScript in
- * a larger syntax reads at a point of it. `Root` is the program, or the document's root with a
- * `host`.
- */
-export interface Answer<Root> {
-	program: Root;
-	expression: Expression;
-	/** An assignment target: an identifier or a destructuring pattern. */
-	pattern: Pattern;
-	/** A parenthesized parameter list, as an arrow function's is read. */
-	params: Pattern[];
-	statement: Statement;
-	/** A `TSTypeParameterDeclaration`; TypeScript only, `not_typescript` otherwise. */
-	typeParameters: Node;
-}
-
-export interface At {
-	/** Where the source is cut, a UTF-16 offset; the end of the source by default. A program reads to it. */
-	end?: number;
-	/**
-	 * The host's own tokens, words or punctuators, that follow what is parsed. One read outside
-	 * every bracket the parse opened, where the expression could end, ends it: `,` ends an
-	 * expression before a sequence would, and `/>` is never a division. A `then` after `.` is a
-	 * property name. A TypeScript `as` is the host's unless another `as` follows the assertion,
-	 * so `xs as T[] as item` ends after the type.
-	 */
-	stopAt?: string[];
-}
-
-/**
  * A node of a host language, as its grammar names the type and the fields; the JavaScript under
  * it is ESTree.
  */
@@ -228,42 +198,100 @@ export interface HostNode {
 	[field: string]: unknown;
 }
 
-// the engine takes the stop tokens as one string
-function stops(list: string[] = []) {
-	if (!Array.isArray(list) || !list.every((stop) => typeof stop === 'string' && stop !== '' && !/\s/.test(stop))) {
-		throw new TypeError('stopAt must be a list of words and punctuators');
-	}
-	return list.join(' ');
-}
+const registry = typeof FinalizationRegistry === 'undefined' ? null : new FinalizationRegistry<Held>((held) => held.free());
 
-const registry = typeof FinalizationRegistry === 'undefined' ? null : new FinalizationRegistry<Prepared>((held) => held.free());
+let read: (plan: Plan<unknown>) => { entry: number; stop: string; held: Held | undefined };
+
+/**
+ * What a parse reads. The built-in plans read a piece of JavaScript at a position of the source,
+ * `program` the whole source; `until` ends one where the host's own tokens follow. `new Plan(grammar)`
+ * reads the whole source as a document of the host language the grammar describes: the host's
+ * own nodes around the JavaScript ones, in one tree, in TypeScript when the grammar says so of a
+ * script tag. A plan is built once and applied to any source. `T` is what its parse answers with.
+ */
+export class Plan<T = HostNode> {
+	#entry: number;
+	#stop: string;
+	#held: Held | undefined;
+
+	constructor(grammar: string);
+	constructor(grammar: string | number, stop = '') {
+		if (typeof grammar === 'number') this.#entry = grammar;
+		else {
+			if (typeof grammar !== 'string') throw new TypeError('a plan is the grammar as a string');
+			this.#entry = ENTRY.program;
+			this.#held = engine.plan(grammar);
+			registry?.register(this, this.#held, this);
+		}
+		this.#stop = stop;
+	}
+
+	// the built-in plans come through the constructor's implementation, which the overload hides
+	static #builtin<T>(entry: number, stop = ''): Plan<T> {
+		return new (Plan as unknown as new (entry: number, stop: string) => Plan<T>)(entry, stop);
+	}
+
+	/** The whole source, or the program inside `[start, end]` of it. */
+	static readonly program: Plan<Program> = Plan.#builtin(ENTRY.program);
+	static readonly expression: Plan<Expression> = Plan.#builtin(ENTRY.expression);
+	/** An assignment target: an identifier or a destructuring pattern. */
+	static readonly pattern: Plan<Pattern> = Plan.#builtin(ENTRY.pattern);
+	/** A parenthesized parameter list, as an arrow function's is read. */
+	static readonly params: Plan<Pattern[]> = Plan.#builtin(ENTRY.params);
+	static readonly statement: Plan<Statement> = Plan.#builtin(ENTRY.statement);
+	/** A `TSTypeParameterDeclaration`; TypeScript only, `not_typescript` otherwise. */
+	static readonly typeParameters: Plan<Node> = Plan.#builtin(ENTRY.typeParameters);
+
+	/**
+	 * The same reading, ended where one of the host's own tokens, words or punctuators, follows.
+	 * One read outside every bracket the parse opened, where the expression could end, ends it:
+	 * `,` ends an expression before a sequence would, and `/>` is never a division. A `then`
+	 * after `.` is a property name. A TypeScript `as` is the host's unless another `as` follows
+	 * the assertion, so `xs as T[] as item` ends after the type.
+	 */
+	until(...tokens: string[]): Plan<T> {
+		if (this.#held !== undefined) throw new TypeError('a document plan reads the whole source');
+		if (tokens.length === 0 || !tokens.every((token) => typeof token === 'string' && token !== '' && !/\s/.test(token))) {
+			throw new TypeError('until takes words and punctuators');
+		}
+		return Plan.#builtin<T>(this.#entry, this.#stop === '' ? tokens.join(' ') : `${this.#stop} ${tokens.join(' ')}`);
+	}
+
+	static {
+		read = (plan) => ({ entry: plan.#entry, stop: plan.#stop, held: plan.#held });
+	}
+}
 
 /**
  * A source kept with its options: the parses out of it share the source copy and the position
- * tables. Offsets are UTF-16, as in acorn; positions stay those of the whole source. `Root` is
- * what the program entry answers with: the program, or the document's root with a `host`.
+ * tables. Offsets are UTF-16, as in acorn; positions stay those of the whole source.
  */
-export class Source<Root = Program> {
+export class Source {
 	#held: Prepared | undefined;
 	#source: string;
-	#options: Options;
 
 	constructor(source: string, options: Options = {}) {
-		this.#held = engine.create(source, flags(options), options.host ?? '');
+		this.#held = engine.create(source, flags(options));
 		this.#source = source;
-		// what the engine was prepared with, however the caller's object changes after
-		this.#options = { ...options };
 		registry?.register(this, this.#held, this);
 	}
 
-	/** What `entry` reads at `offset`: the program, the whole source, by default; the document with a `host`. Every other entry needs its offset. */
-	parse<E extends Entry = 'program'>(entry?: E, ...rest: E extends 'program' ? [offset?: number, at?: At] : [offset: number, at?: At]): Parsed<Answer<Root>[E]>;
-	parse(entry: Entry = 'program', offset = 0, { end, stopAt }: At = {}): Parsed<any> {
+	/**
+	 * What `plan` reads at `at`: the whole source by default; a UTF-16 offset for a piece of
+	 * JavaScript, or `[start, end]` for one read as if the source ended at `end`.
+	 */
+	parse(): Parsed<Program>;
+	parse<T>(plan: Plan<T>, at?: number | [start: number, end: number]): Parsed<T>;
+	parse(plan: Plan<unknown> = Plan.program, at: number | [number, number] = 0): Parsed<any> {
 		if (this.#held === undefined) throw new TypeError('the source is freed');
-		if (!Object.hasOwn(ENTRY, entry)) throw new TypeError(`${JSON.stringify(entry)} is not an entry`);
-		const index = ENTRY[entry];
-		const stop = stops(stopAt);
-		const answer = this.#options.host !== undefined && index === ENTRY.program ? this.#held.parse(index, 0, undefined, '') : this.#held.parse(index, offset, end, stop);
+		if (!(plan instanceof Plan)) throw new TypeError('a parse takes a plan');
+		const { entry, stop, held } = read(plan);
+		let offset: number, end: number | undefined;
+		if (typeof at === 'number') offset = at;
+		else if (Array.isArray(at) && at.length === 2 && typeof at[0] === 'number' && typeof at[1] === 'number') [offset, end] = at;
+		else throw new TypeError('at is an offset or [start, end]');
+		if (held !== undefined && (offset !== 0 || end !== undefined)) throw new TypeError('a document plan reads the whole source');
+		const answer = this.#held.parse(entry, offset, end, stop, held);
 		if (typeof answer !== 'string') return decode(answer, this.#source, engine) as Parsed<any>;
 		const { message, ...error } = JSON.parse(answer).error;
 		throw Object.assign(new SyntaxError(message), error);

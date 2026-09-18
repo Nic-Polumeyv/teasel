@@ -1,5 +1,6 @@
 // the source goes over as bytes: V8's encoder is 14x faster than the host reading a string out
-import type { Engine, Tree } from './lib/decode.js';
+import type { Engine, Held, Tree } from './lib/decode.js';
+import type { External } from './lib/addon.js';
 import { load } from './lib/addon.js';
 
 const native = load();
@@ -15,11 +16,21 @@ function bytes(text: string) {
 	return room.subarray(0, written);
 }
 
+// a plan is the external the addon holds the grammar in; V8 lets go of it, nothing to free
+class Plan implements Held {
+	readonly external: External;
+	constructor(grammar: string) {
+		this.external = native.plan(grammar);
+	}
+	free() {}
+}
+
 export const engine: Engine = {
-	create(source, flags, host) {
-		const held = native.create(bytes(source), flags, host);
-		return { parse: (entry, offset, end, stop) => native.parse(held, entry, offset, end, stop), free: () => native.free(held) };
+	create(source, flags) {
+		const held = native.create(bytes(source), flags);
+		return { parse: (entry, offset, end, stop, plan) => native.parse(held, entry, offset, end, stop, (plan as Plan | undefined)?.external), free: () => native.free(held) };
 	},
+	plan: (grammar) => new Plan(grammar),
 	layout: native.layout,
 	// the addon keeps one array of views a tree and sets what moved: asked only then
 	tree: (typescript, moved) => (moved || trees[+typescript] === undefined ? (trees[+typescript] = native.tree()!) : trees[+typescript]!),

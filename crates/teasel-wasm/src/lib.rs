@@ -1,5 +1,7 @@
 use std::cell::{Cell, RefCell};
+use std::rc::Rc;
 use teasel::Entry;
+use teasel::host::Grammar;
 use teasel::json::{Prepared, Request};
 
 thread_local! {
@@ -38,34 +40,34 @@ fn guard(on_panic: u32, f: impl FnOnce() -> u32) -> u32 {
 }
 
 /// # Safety
-/// `ptr` and `host` are each `capacity` bytes from `alloc`, `len` of them written: the source and
-/// the host grammar, empty for none; both are taken over here. `flags` is the option word. The
-/// handle is 0 when the grammar cannot be read, the error as JSON at `text_ptr`.
+/// `ptr` is `capacity` bytes from `alloc`, `len` of them the source; they are taken over here.
+/// `flags` is the option word.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn source_new(
-	ptr: *mut u8,
-	len: u32,
-	capacity: u32,
-	flags: u32,
-	host: *mut u8,
-	host_len: u32,
-	host_capacity: u32,
-) -> u32 {
+pub unsafe extern "C" fn source_new(ptr: *mut u8, len: u32, capacity: u32, flags: u32) -> u32 {
 	let source = unsafe { Vec::from_raw_parts(ptr, len as usize, capacity as usize) };
-	let host = unsafe { Vec::from_raw_parts(host, host_len as usize, host_capacity as usize) };
 	guard(0, || {
-		let mut prepared = Prepared::from_bytes(source, Request::from_flags(flags));
-		if !host.is_empty() {
-			prepared = match prepared.host(&String::from_utf8_lossy(&host)) {
-				Ok(prepared) => prepared,
-				Err(message) => {
-					text(teasel::json::error_json(&message, 0));
-					return 0;
-				}
-			};
-		}
-		Box::into_raw(Box::new(prepared)) as u32
+		Box::into_raw(Box::new(Prepared::from_bytes(source, Request::from_flags(flags)))) as u32
 	})
+}
+
+/// # Safety
+/// `ptr` is `capacity` bytes from `alloc`, `len` of them a host language's grammar; they are taken
+/// over here. The handle is 0 when the grammar cannot be read, the error as JSON at `text_ptr`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn plan_new(ptr: *mut u8, len: u32, capacity: u32) -> u32 {
+	let grammar = unsafe { Vec::from_raw_parts(ptr, len as usize, capacity as usize) };
+	guard(0, || match teasel::json::grammar(&String::from_utf8_lossy(&grammar)) {
+		Ok(grammar) => Box::into_raw(Box::new(grammar)) as u32,
+		Err(message) => {
+			text(teasel::json::error_json(&message, 0));
+			0
+		}
+	})
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn plan_free(handle: u32) {
+	drop(unsafe { Box::from_raw(handle as *mut Rc<Grammar>) });
 }
 
 #[unsafe(no_mangle)]
@@ -90,6 +92,7 @@ fn answer(result: Result<(), String>) -> u32 {
 
 /// # Safety
 /// `ptr` is `capacity` bytes from `alloc`, `len` of them the stop tokens; they are taken over here.
+/// `plan` is a handle from `plan_new`, or 0.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn source_parse(
 	handle: u32,
@@ -100,11 +103,19 @@ pub unsafe extern "C" fn source_parse(
 	ptr: *mut u8,
 	len: u32,
 	capacity: u32,
+	plan: u32,
 ) -> u32 {
 	let stop = unsafe { Vec::from_raw_parts(ptr, len as usize, capacity as usize) };
 	let end = (has_end == 1).then_some(end);
+	let grammar = (plan != 0).then(|| unsafe { &**(plan as *const Rc<Grammar>) });
 	guard(1, || {
-		answer(source(handle).in_place(Entry::from_index(entry), offset, end, &String::from_utf8_lossy(&stop)))
+		answer(source(handle).in_place(
+			Entry::from_index(entry),
+			offset,
+			end,
+			&String::from_utf8_lossy(&stop),
+			grammar,
+		))
 	})
 }
 

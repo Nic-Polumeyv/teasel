@@ -22,17 +22,18 @@ function walk(dir: string) {
 }
 const args = process.argv.slice(2);
 const host = args[0] === '--host' ? { path: args[1], grammar: readFileSync(args[1], 'utf8'), extension: args[2] } : undefined;
+const plan = host === undefined ? undefined : native.plan(host.grammar);
 for (const dir of host ? args.slice(3) : args) walk(dir);
 let checked = 0;
 let failed = 0;
 
 // what a parse answers or throws, read off the engine directly
 function outcome(engine: Engine, held: Prepared, source: string, entry: Entry, at: number, end?: number) {
-	const answer = held.parse(ENTRY[entry], at, end, '');
+	const answer = held.parse(ENTRY[entry], at, end, '', undefined);
 	return typeof answer === 'string' ? { error: JSON.parse(answer).error } : { value: decode(answer, source, engine) };
 }
 function once(engine: Engine, source: string, options: Options, entry: Entry, at: number) {
-	const held = engine.create(source, flags(options), '');
+	const held = engine.create(source, flags(options));
 	try {
 		return outcome(engine, held, source, entry, at);
 	} finally {
@@ -75,8 +76,8 @@ function mode(source: string, options: Options, entry: Entry, at: number) {
 // the addon's answers as JSON, each with the batch job that asks the binary for the same
 const jobs: { name: string; source: string; mode: string; tree: string }[] = [];
 function json(name: string, source: string, options: Options, entry: Entry, at: number) {
-	const held = native.create(source, flags(options), '');
-	const answer = held.parse(ENTRY[entry], at, undefined, '');
+	const held = native.create(source, flags(options));
+	const answer = held.parse(ENTRY[entry], at, undefined, '', undefined);
 	held.free();
 	const tree = typeof answer === 'string' ? answer : JSON.stringify(decode(answer, source, native, false));
 	jobs.push({ name, source, mode: mode(source, options, entry, at), tree });
@@ -84,8 +85,8 @@ function json(name: string, source: string, options: Options, entry: Entry, at: 
 
 // a whole document of the host's, asked of the binary as `doc`
 function document(name: string, source: string, typescript: boolean, options: Options, switches: string) {
-	const held = native.create(source, flags(options), host!.grammar);
-	const answer = held.parse(ENTRY.program, 0, undefined, '');
+	const held = native.create(source, flags(options));
+	const answer = held.parse(ENTRY.program, 0, undefined, '', plan);
 	held.free();
 	const tree = typeof answer === 'string' ? answer : JSON.stringify(decode(answer, source, native, false));
 	jobs.push({ name: `${name} doc${switches}`, source, mode: `${typescript ? 'ts-' : ''}doc${switches}`, tree });
@@ -119,8 +120,8 @@ for (const file of files) {
 	// every brace in a component is somewhere an expression, a pattern or a statement might start
 	if (svelte) {
 		const options: Options = { sourceType: 'module', typescript: /lang=["']?ts/.test(text), locations: true, comments: true, scopes: true };
-		const held = native.create(text, flags(options), '');
-		const twin = wasm.create(text, flags(options), '');
+		const held = native.create(text, flags(options));
+		const twin = wasm.create(text, flags(options));
 		for (const m of text.matchAll(script_re)) {
 			const start = m.index + m[0].indexOf('>') + 1;
 			const end = start + m[2].length;

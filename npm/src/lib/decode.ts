@@ -1150,15 +1150,21 @@ export interface Views {
 	readonly tree: (typescript: boolean, moved: boolean) => Tree;
 }
 
-/** A source the engine prepared: it parses at an entry and offset, cut at `end`, the stop tokens as one string; the answer is its words, or an error as JSON. */
-export interface Prepared {
-	readonly parse: (entry: number, offset: number, end: number | undefined, stop: string) => Uint32Array | string;
+/** What the engine holds: a prepared source, or a host language's grammar read once. */
+export interface Held {
 	readonly free: () => void;
+}
+
+/** A source the engine prepared: it parses at an entry and offset, cut at `end`, the stop tokens as one string, the whole source as a document by a grammar `plan` holds; the answer is its words, or an error as JSON. */
+export interface Prepared extends Held {
+	readonly parse: (entry: number, offset: number, end: number | undefined, stop: string, plan: Held | undefined) => Uint32Array | string;
 }
 
 /** What parses: the addon or the WebAssembly module. */
 export interface Engine extends Views {
-	readonly create: (source: string, flags: number, host: string) => Prepared;
+	readonly create: (source: string, flags: number) => Prepared;
+	/** The grammar of a host language, read once; a `TypeError` says where it could not be read. */
+	readonly plan: (grammar: string) => Held;
 }
 
 function table(S: State, tree: Tree, words: Uint32Array, lens: number, rows: Rows, at: number): Decoded[] {

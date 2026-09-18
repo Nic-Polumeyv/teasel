@@ -113,7 +113,8 @@ fn unfinished_input() {
 fn host_phases() {
 	use teasel::json::Prepared;
 	let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-	let grammar = fs::read_to_string(root.join("tests/hosts/svelte/host.grammar")).unwrap();
+	let grammar =
+		teasel::json::grammar(&fs::read_to_string(root.join("tests/hosts/svelte/host.grammar")).unwrap()).unwrap();
 	let mut documents = vec![(
 		"200 each blocks".to_string(),
 		format!(
@@ -126,13 +127,13 @@ fn host_phases() {
 	}
 	for (name, source) in &documents {
 		for flags in ["module", "module scopes comments locations"] {
-			let prepared = Prepared::borrowed(source, Request::from_names(flags))
-				.host(&grammar)
-				.unwrap();
+			let prepared = Prepared::borrowed(source, Request::from_names(flags));
 			let mut best = f64::MAX;
 			for _ in 0..300 {
 				let t = std::time::Instant::now();
-				prepared.in_place(Entry::Program, 0.0, None, "").unwrap();
+				prepared
+					.in_place(Entry::Program, 0.0, None, "", Some(&grammar))
+					.unwrap();
 				best = best.min(t.elapsed().as_secs_f64() * 1e6);
 			}
 			eprintln!("{best:9.2} µs  {name} {flags}");

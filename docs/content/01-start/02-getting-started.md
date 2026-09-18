@@ -9,7 +9,7 @@ npm install @teasel/parser
 ```
 
 ```js parse.js
-import { Source } from '@teasel/parser';
+import { Source, Plan } from '@teasel/parser';
 
 const source = new Source('let answer = 42', { sourceType: 'module' });
 const { node } = source.parse();
@@ -27,8 +27,8 @@ The `Source` keeps your text. Parse it as many times as you like: the whole thin
 ```js
 const source = new Source('const x = f(a, b)');
 
-source.parse().node.type;                 // 'Program'
-source.parse('expression', 10).node.type; // 'CallExpression', the f(a, b)
+source.parse().node.type;                    // 'Program'
+source.parse(Plan.expression, 10).node.type; // 'CallExpression', the f(a, b)
 ```
 
 Release a source when you're done with it. `using` does that at the end of the block.
@@ -44,7 +44,7 @@ If you're on a Node version older than 24, `using` isn't there yet: call `source
 The same import works in a browser or behind a bundler. There it's a WebAssembly build instead of a native addon, with the same API.
 
 ```js browser.js
-import { Source } from '@teasel/parser';
+import { Source, Plan } from '@teasel/parser';
 
 const { node } = new Source('export const answer = 42').parse();
 ```

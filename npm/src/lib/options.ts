@@ -1,12 +1,4 @@
 export interface Options {
-	/**
-	 * The grammar of a host language the whole source is a document of: a template language
-	 * with JavaScript inside it. The program entry then answers with the document's root, the
-	 * host's own nodes around the JavaScript ones, in one tree; the other entries read
-	 * JavaScript at an offset as before. TypeScript turns on by what the grammar says of a
-	 * script tag.
-	 */
-	host?: string;
 	/** `script` by default, as in acorn. */
 	sourceType?: 'script' | 'module';
 	/**
@@ -65,10 +57,6 @@ const one = (key: keyof Options, choices: Record<string, number>) => (value: unk
 // what each option adds to the word the engine takes, one entry per key of `Options`
 type On = { [K in keyof Options]-?: NonNullable<Options[K]> };
 const WORD: { [K in keyof On]: (value: On[K]) => number } = {
-	host: (value) => {
-		if (typeof value !== 'string') throw new TypeError('host must be the grammar as a string');
-		return 0;
-	},
 	sourceType: one('sourceType', { script: 0, module: FLAG.module }),
 	typescript: (value) => (value === 'erase' ? FLAG.typescript | FLAG.erase : bit('typescript')(value)),
 	decorators: one('decorators', { legacy: FLAG.legacyDecorators, proposal: FLAG.proposalDecorators }),

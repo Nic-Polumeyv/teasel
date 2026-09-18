@@ -30,16 +30,16 @@ A template language owns the file. It has a script block, which is a whole progr
 The `Source` is the whole file. Everything parsed out of it, the script and each expression, reports offsets into this text.
 
 ```js
-import { Source } from '@teasel/parser';
+import { Source, Plan } from '@teasel/parser';
 
 const source = new Source(text, { sourceType: 'module', scopes: true });
 
 const open = text.indexOf('<script>') + '<script>'.length;
 const close = text.indexOf('</script>');
-const script = source.parse('program', open, { end: close });
+const script = source.parse(Plan.program, [open, close]);
 ```
 
-`program` with `end` reads exactly the text between the tags as a module. The answer's `bindings` are the script's declarations, and they are what the template's names will resolve to.
+`Plan.program` at `[open, close]` reads exactly the text between the tags as a module. The answer's `bindings` are the script's declarations, and they are what the template's names will resolve to.
 
 ```text
 script bindings: onMount:import  items:let  selected:let  query:let  shown:const  pick:function  item:param  item:param
@@ -53,8 +53,8 @@ A scanner finds `{`. What follows decides what to ask for. An expression ends at
 const skip = (i) => { while (text[i] === ' ' || text[i] === '\t') i += 1; return i; };
 const inScope = [script.bindings];   // a stack: the script's bindings, then each block's own
 
-function expression(from, stopAt) {
-	const answer = source.parse('expression', from, { stopAt });
+function expression(from, ...until) {
+	const answer = source.parse(Plan.expression.until(...until), from);
 	for (const r of answer.references) {
 		if (r.binding !== null) continue;   // a piece declares nothing, so every name in it is the host's to resolve
 		const found = inScope.flat().findLast((b) => b.name === r.node.name);
@@ -66,22 +66,22 @@ function expression(from, stopAt) {
 let at = close;
 while ((at = text.indexOf('{', at)) !== -1) {
 	if (text.startsWith('{#each ', at)) {
-		const list = expression(at + 7, ['as']);
-		const item = source.parse('pattern', list.end + 4, { stopAt: [',', '(', '}'] });
+		const list = expression(at + 7, 'as');
+		const item = source.parse(Plan.pattern.until(',', '(', '}'), list.end + 4);
 		const scope = [...item.bindings];
 		let next = skip(item.end);
 		if (text[next] === ',') {
-			const index = source.parse('pattern', skip(next + 1), { stopAt: ['(', '}'] });
+			const index = source.parse(Plan.pattern.until('(', '}'), skip(next + 1));
 			scope.push(...index.bindings);
 			next = skip(index.end);
 		}
 		inScope.push(scope);
-		if (text[next] === '(') next = expression(next + 1, [')']).end + 1;
+		if (text[next] === '(') next = expression(next + 1, ')').end + 1;
 		at = text.indexOf('}', next) + 1;
 	} else if (text.startsWith('{/each}', at)) { inScope.pop(); at += 7; }
-	else if (text.startsWith('{#if ', at)) at = expression(at + 5, ['}']).end + 1;
+	else if (text.startsWith('{#if ', at)) at = expression(at + 5, '}').end + 1;
 	else if (text.startsWith('{:else}', at) || text.startsWith('{/if}', at)) at += 1;
-	else at = expression(at + 1, ['}']).end + 1;
+	else at = expression(at + 1, '}').end + 1;
 }
 ```
 
