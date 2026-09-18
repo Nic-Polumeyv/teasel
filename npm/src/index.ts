@@ -52,6 +52,11 @@ export type Binding = Declared | Arguments;
 /** A binding an identifier declares. It is the reference that identifier makes, the first of its own: `referenceOf` answers with it, and its `binding` is itself. */
 export interface Declared extends Reference {
 	name: string;
+	/**
+	 * What declared it. `function-name` and `class-name` are the name a function expression or a class
+	 * expression has inside itself, `const f = function g() {}` declaring `g`. `pattern` is a name that
+	 * a `Plan.pattern` piece declares, parsed on its own; a `Plan.params` piece declares `param`s.
+	 */
 	kind:
 		| 'var'
 		| 'let'

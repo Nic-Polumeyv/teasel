@@ -6,7 +6,7 @@ title: Overview
 
 teasel is a parser for JavaScript and TypeScript. You give it text, it gives you a tree.
 
-```js
+```js parse.js
 import { Source, Plan } from '@teasel/parser';
 
 const { node } = new Source('let answer = 42').parse();
@@ -18,7 +18,7 @@ The tree is ESTree, plain objects with a `type`, a `start` and an `end`, so anyt
 
 The parse that built the tree also knows things about it. Ask, and they come back with the same answer.
 
-```js
+```js parse.js
 const { node, scopes, bindings } = new Source(text, { scopes: true }).parse();
 ```
 
@@ -28,7 +28,7 @@ Each option adds something to the answer: which `x` is which, where every commen
 
 A parse doesn't have to be the whole text. Start it at an offset, and ask for an expression, a statement, a pattern.
 
-```js
+```js parse.js
 source.parse(Plan.expression, 10);
 ```
 

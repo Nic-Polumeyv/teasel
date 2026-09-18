@@ -4,7 +4,7 @@ title: The answer
 
 A parse gives you two things: the node, and where it stopped.
 
-```js
+```js parse.js
 const { node, end } = source.parse();
 ```
 

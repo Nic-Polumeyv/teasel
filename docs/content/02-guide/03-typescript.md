@@ -4,7 +4,7 @@ title: TypeScript
 
 Say `typescript: true` and the parser reads TypeScript. The tree holds TypeScript nodes, `TSTypeAnnotation`, `TSInterfaceDeclaration` and friends, in the TS-ESTree shape.
 
-```js
+```js typescript.js
 const { node } = new Source('let n: number = 1', { typescript: true }).parse();
 node.body[0].declarations[0].id.typeAnnotation.type; // 'TSTypeAnnotation'
 ```
@@ -13,7 +13,7 @@ node.body[0].declarations[0].id.typeAnnotation.type; // 'TSTypeAnnotation'
 
 `typescript: 'erase'` reads the TypeScript and answers with JavaScript, types gone, in the one pass. Positions are still positions in the text you gave it.
 
-```js
+```js typescript.js
 const { node, typescript } = new Source('let n: number = 1', { typescript: 'erase' }).parse();
 node.body[0].declarations[0].id.typeAnnotation; // undefined
 typescript;                                     // []

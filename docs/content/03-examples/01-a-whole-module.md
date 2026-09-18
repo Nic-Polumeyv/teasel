@@ -2,96 +2,152 @@
 title: Three modules
 ---
 
-A text adventure in three files: the map, the player, the game. Each is parsed on its own, and then the three answers are linked through what they import from each other. Click a module to read it.
+This example takes a small program of three files and answers three questions about it:
+
+1. Which names does each file import from the other two?
+2. Where is every export used, across the whole program?
+3. Which functions change the score?
+
+The parser reads one file at a time and knows nothing about the other files. Each parse lists what the file declares and what it uses. Your code connects the files through their `import` and `export` statements.
+
+Everything here builds on [Scopes](/scopes), which explains bindings and references. Read that page first if they are new.
+
+The program is a text adventure: the map, the player, the game. Click a module to read it.
 
 ![three module cards, world, player and game, with an arrow from each module to the one it imports from; each card opens the file](Modules.svelte "world.js player.js game.js")
 
-## Parse each file
+## 1. Parse each file
 
-One `Source` per file, one answer per file, kept in a map by name. The answer is plain objects that owe the Source nothing, so `using` lets each Source go as soon as its file is parsed; a tool that reads a project file by file does this, since a Source left to the garbage collector costs more to collect than a small file costs to parse. `line` turns a node's `start` into a line number in its own file.
-
-```js
+```js link-modules.js
 import { readFileSync } from 'node:fs';
-import { Source, referenceOf, parentOf } from '@teasel/parser';
+import { Source, referenceOf, parentOf, scopeOf } from '@teasel/parser';
 
 const modules = new Map();
 for (const name of ['world.js', 'player.js', 'game.js']) {
 	const text = readFileSync(`adventure/${name}`, 'utf8');
 	using source = new Source(text, { sourceType: 'module', scopes: true });
-	modules.set(name, { name, text, ...source.parse(), line: (n) => text.slice(0, n.start).split('\n').length });
+	modules.set(name, { name, text, ...source.parse() });
 }
+
+const lineOf = (module, node) =>
+	module.text.slice(0, node.start).split('\n').length;
+```
+```notes
+using :: Releases the `Source` at the end of each loop turn. The answer stays usable, because it is plain objects that do not depend on the `Source`. See [Getting started](/getting-started#parse-it-again).
+scopes: true :: Adds `scopes`, `bindings` and `references` to the answer. Without it the answer is only the tree. See [The answer](/the-answer#what-an-option-adds).
+...source.parse() :: The answer is an object: `node` is the tree, and with `scopes` on it also has `scopes`, `bindings` and `references`. Spreading it puts those on the module record, so `module.node` and `module.bindings` below come from here.
+lineOf :: A helper of this example, not part of the package. Every node has `start`, its offset in the file's text. Counting the newlines before that offset gives the line.
 ```
 
-## What each module exports
+One `Source` holds one text, so three files are three `Source`s.
 
-An export statement is in the tree. The name it exports is a binding, and `referenceOf` on the declaring identifier is that binding.
+## 2. What each file exports
 
-```js
-const exported = (m) => {
-	const out = new Map();
-	for (const s of m.node.body) {
-		if (s.type !== 'ExportNamedDeclaration' || !s.declaration) continue;
-		const d = s.declaration;
-		const ids = d.type === 'VariableDeclaration' ? d.declarations.map((x) => x.id) : [d.id];
-		for (const id of ids) out.set(id.name, referenceOf(id));
+`export const x` and `export function f` are statements in the tree, of type `ExportNamedDeclaration`. The declaration inside has the identifier that names the export.
+
+```js link-modules.js
+function exportsOf(module) {
+	const exports = new Map();
+	for (const statement of module.node.body) {
+		if (statement.type !== 'ExportNamedDeclaration' || !statement.declaration) continue;
+		const { declaration } = statement;
+		const ids = declaration.type === 'VariableDeclaration'
+			? declaration.declarations.map((declarator) => declarator.id)
+			: [declaration.id];
+		for (const id of ids) exports.set(id.name, referenceOf(id));
 	}
-	return out;
-};
-for (const m of modules.values()) m.exports = exported(m);
+	return exports;
+}
+
+for (const module of modules.values()) module.exports = exportsOf(module);
+```
+```notes
+module.node.body :: `node` is the `Program`, and `body` is its top-level statements, in ESTree shape.
+declaration.type === 'VariableDeclaration' :: `export const a = 1, b = 2` declares several names, one per declarator. A function or a class declares one, in `declaration.id`.
+referenceOf(id) :: Asks what the identifier refers to. On the identifier that declares a name, the answer is the binding itself. See [Three questions](/scopes#three-questions).
 ```
 
-## Link the imports
+Each file now has `exports`, a map from an exported name to its binding. This reads `export const`, `export function` and `export class`. A program that also uses `export { a, b }` or `export default` needs those two statement types handled the same way.
 
-An import statement names a file and some names. When the file is one of ours, each name resolves to the exporting module's binding. The local binding gets an `imported` property pointing at it: that's the link, one object to another, across two answers.
+## 3. Match each import to the export it names
 
-```js
-for (const m of modules.values()) {
-	for (const s of m.node.body) {
-		if (s.type !== 'ImportDeclaration') continue;
-		const from = modules.get(s.source.value.replace('./', ''));
-		for (const spec of s.specifiers) {
-			const local = referenceOf(spec.local);
-			local.imported = from ? from.exports.get(spec.imported.name) ?? null : undefined;
-			const uses = m.references.filter((r) => r.binding === local).length;
-			if (from) console.log(`${m.name.padEnd(10)} ${spec.local.name.padEnd(11)} <- ${from.name.padEnd(10)} ${local.imported.kind.padEnd(8)} line ${from.line(local.imported.node)}, used ${uses}x here`);
-			else console.log(`${m.name.padEnd(10)} ${spec.local.name.padEnd(11)} <- ${s.source.value} (not ours)`);
+An import statement names a file and some names. When the file is one of the three, each imported name is looked up in that file's `exports`.
+
+```js link-modules.js
+const importedFrom = new Map();
+
+for (const module of modules.values()) {
+	for (const statement of module.node.body) {
+		if (statement.type !== 'ImportDeclaration') continue;
+		const from = modules.get(statement.source.value.replace('./', ''));
+		if (!from) continue;
+		for (const specifier of statement.specifiers) {
+			const local = referenceOf(specifier.local);
+			const binding = from.exports.get(specifier.imported.name);
+			importedFrom.set(local, { module: from, binding });
 		}
 	}
 }
+```
+```notes
+importedFrom :: The link between files: a map from an import's binding in one file to the export's binding in another. Both are objects from the answers, so the map connects two parses.
+statement.source.value :: The string after `from`, `'./world.js'`. This example resolves it by dropping `./`; a real tool resolves paths as its module system does.
+if (!from) continue :: `./dice.js` and `node:readline/promises` are not among the three files, so those imports stay unlinked.
+specifier.local :: The name the importing file uses. `specifier.imported` is the name the other file exported. They differ in `import { setTimeout as sleep }`; in this program they are the same.
+```
+
+With the map in place, the first question has an answer. `usesOf` counts the references in a file that point at a binding.
+
+```js link-modules.js
+const usesOf = (module, binding) =>
+	module.references.filter((reference) => reference.binding === binding).length;
+
+for (const module of modules.values()) {
+	const imports = module.bindings.filter((binding) => binding.kind === 'import');
+	for (const local of imports) {
+		const target = importedFrom.get(local);
+		const where = target
+			? `${target.binding.kind} in ${target.module.name} line ${lineOf(target.module, target.binding.node)}, used ${usesOf(module, local)}x here`
+			: 'from outside the program';
+		console.log(`${module.name.padEnd(10)} ${local.name.padEnd(16)} ${where}`);
+	}
+}
+```
+```notes
+module.references :: Every use of a name in the file, in source order. Each has `binding`, the declaration it refers to. See [What a reference knows](/scopes#what-a-reference-knows).
+binding.kind === 'import' :: Every binding has a `kind`: `import`, `const`, `let`, `function`, `class`, `param` and more. The full list is in the [reference](/reference/parser#binding).
+target.binding.node :: The identifier that declared the export, in the other file. Its `start` is an offset into that file's text, so the line is computed against that file.
 ```
 
 ```text
-world.js   describe    <- ./narrator.js (not ours)
-world.js   say         <- ./narrator.js (not ours)
-player.js  rooms       <- world.js   const    line 6, used 1x here
-game.js    roll        <- ./dice.js (not ours)
-game.js    say         <- ./narrator.js (not ours)
-game.js    createInterface <- node:readline/promises (not ours)
-game.js    DIRECTIONS  <- world.js   const    line 3, used 1x here
-game.js    LAMP_LIFE   <- world.js   const    line 4, used 2x here
-game.js    look        <- world.js   function line 31, used 3x here
-game.js    restock     <- world.js   function line 40, used 1x here
-game.js    Player      <- player.js  class    line 5, used 1x here
+world.js   describe         from outside the program
+world.js   say              from outside the program
+player.js  rooms            const in world.js line 6, used 1x here
+game.js    roll             from outside the program
+game.js    say              from outside the program
+game.js    createInterface  from outside the program
+game.js    DIRECTIONS       const in world.js line 3, used 1x here
+game.js    LAMP_LIFE        const in world.js line 4, used 2x here
+game.js    look             function in world.js line 31, used 3x here
+game.js    restock          function in world.js line 40, used 1x here
+game.js    Player           class in player.js line 5, used 1x here
 ```
 
-`spec.local` is the identifier the importing file uses, `spec.imported` the name as the other file exported it. They differ in `import { setTimeout as sleep }`; here they are the same.
+## 4. Every export, everywhere
 
-## Every export, everywhere
+An export is used in two places: in its own file, and in every file that imports it. The second kind is found by going through `importedFrom` for the imports that point at it.
 
-With the links in place, an export's uses across the program are its own module's references to it, plus the references in every other module to the import binding that points at it.
-
-```js
-for (const m of modules.values()) {
-	for (const [name, binding] of m.exports) {
-		const here = m.references.filter((r) => r.binding === binding).length;
+```js link-modules.js
+for (const module of modules.values()) {
+	for (const [name, binding] of module.exports) {
 		const elsewhere = [];
-		for (const other of modules.values()) {
-			if (other === m) continue;
-			for (const b of other.bindings) {
-				if (b.kind === 'import' && b.imported === binding) elsewhere.push(`${other.name} ${other.references.filter((r) => r.binding === b).length}x`);
-			}
+		for (const [local, target] of importedFrom) {
+			if (target.binding !== binding) continue;
+			const importer = [...modules.values()].find((m) => m.bindings.includes(local));
+			elsewhere.push(`${importer.name} ${usesOf(importer, local)}x`);
 		}
-		console.log(`${m.name.padEnd(10)} ${name.padEnd(11)} used here ${here}x; ${elsewhere.join(', ') || 'imported nowhere'}`);
+		const here = usesOf(module, binding);
+		console.log(`${module.name.padEnd(10)} ${name.padEnd(11)} used here ${here}x; ${elsewhere.join(', ') || 'imported nowhere'}`);
 	}
 }
 ```
@@ -110,33 +166,59 @@ game.js    play        used here 0x; imported nowhere
 game.js    reset       used here 0x; imported nowhere
 ```
 
-`game.js` is the entry point, so its exports are imported by nobody in the program; those are the public surface. An export used by nobody anywhere would be dead code.
+`game.js` is where the program starts, so no other file imports its exports. An export in any other file with no uses here and no importer would be dead code.
 
-## Who changes the score
+## 5. Which functions change the score
 
-The score, the turn count and the lamp live in `game.js` as module-level `let`s, and nothing outside that file can touch them: `player.js` reports points back instead. Their writers are the references with `write` set, named by walking `scope.parent` up to the function they sit in.
+`game.js` keeps the score, the turn count and the lamp in three top-level `let`s. A reference has `write` set when it assigns to its binding, and `scope`, the scope it sits in. Walking `scope.parent` upward reaches the function the assignment is in.
 
-```js
+```js link-modules.js
 const game = modules.get('game.js');
-const nameOf = (fn) => {
-	if (fn.id) return fn.id.name;
-	const p = parentOf(fn);
-	if (p.type === 'Property') return `${parentOf(parentOf(p)).id.name}.${p.key.name}`;
-	if (p.type === 'MethodDefinition') return `${parentOf(parentOf(p)).id.name}.${p.key.name}`;
-	return '(anonymous)';
-};
-const inside = (r) => { for (let s = r.scope; s; s = s.parent) if (s.kind === 'function') return s.node; return null; };
 
-for (const b of game.bindings.filter((b) => b.kind === 'let' && b.scope === game.scopes[0])) {
-	const writes = game.references.filter((r) => r.binding === b && r.write);
-	console.log(`${b.name.padEnd(10)} ${writes.map((r) => `${nameOf(inside(r))}:${game.line(r.node)}`).join(', ')}`);
+function functionAround(reference) {
+	for (let scope = reference.scope; scope; scope = scope.parent) {
+		if (scope.kind === 'function') return scope.node;
+	}
+	return null;
 }
+
+function nameOf(fn) {
+	if (fn.id) return fn.id.name;
+	const parent = parentOf(fn);
+	if (parent.type === 'Property' || parent.type === 'MethodDefinition') return parent.key.name;
+	if (parent.type === 'VariableDeclarator') return parent.id.name;
+	return '(anonymous)';
+}
+
+const state = game.bindings.filter(
+	(binding) => binding.kind === 'let' && binding.scope === scopeOf(game.node),
+);
+
+for (const binding of state) {
+	const writes = game.references.filter(
+		(reference) => reference.binding === binding && reference.write,
+	);
+	const where = writes.map((reference) => `${nameOf(functionAround(reference))}:${lineOf(game, reference.node)}`);
+	console.log(`${binding.name.padEnd(10)} ${where.join(', ')}`);
+}
+```
+```notes
+scope.parent :: Every scope has the scope around it in `parent`; the outermost has `null`. See the [reference](/reference/parser#scope).
+scope.kind === 'function' :: A scope's `kind` says what opened it: a function, a block, a class, the module. `scope.node` is the node that did, here the function.
+parentOf(fn) :: The node this one hangs from. An arrow function has no name of its own, so its name is on its parent: the property it is the value of, or the variable it is assigned to. See [Three questions](/scopes#three-questions).
+scopeOf(game.node) :: `scopeOf` gives the scope a node opens. `game.node` is the `Program`, which opens the file's outermost scope, so a binding whose `scope` is that one was declared at the top level.
+reference.write :: True when the reference assigns: `score = 0`, `score += 5`, `turns++`. The other flags are `read`, `mutate` and `declares`.
 ```
 
 ```text
 turns      step:50, reset:77
-score      verbs.eat:21, act:28, reset:78
+score      eat:21, act:28, reset:78
 lampTurns  step:52, reset:79
 ```
 
-`nameOf` is `parentOf` twice: a verb's arrow function is the value of a property, so it climbs to the property, whose `key` is the verb, and then to the object and the `verbs` declarator that holds it.
+The write at line 21 is `score += roll(6)`, inside an arrow function stored as a property: `eat: (player, item) => { … }`. An arrow function has no `id`, so `nameOf` reads the name from the property that holds it.
+
+## Related
+
+- [Scopes](/scopes) has everything a binding, a reference and a scope carry.
+- [A component, piece by piece](/a-component) connects names across parses of one file instead of across files.

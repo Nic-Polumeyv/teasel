@@ -24,7 +24,7 @@ That's an ESTree `Program`, plain objects all the way down.
 
 The `Source` keeps your text. Parse it as many times as you like: the whole thing, or one piece starting at an offset.
 
-```js
+```js parse.js
 const source = new Source('const x = f(a, b)');
 
 source.parse().node.type;                    // 'Program'
@@ -33,7 +33,7 @@ source.parse(Plan.expression, 10).node.type; // 'CallExpression', the f(a, b)
 
 Release a source when you're done with it. `using` does that at the end of the block.
 
-```js
+```js parse.js
 using source = new Source(text);
 ```
 

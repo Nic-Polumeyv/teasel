@@ -10,7 +10,7 @@ A template language has JavaScript in it, but it isn't JavaScript. What it needs
    3    8
 ```
 
-```js
+```js template.js
 const source = new Source('{{ items as item, index }}');
 const { node, end } = source.parse(Plan.expression.until('as', ','), 3);
 // node  Identifier items
@@ -39,6 +39,30 @@ Positions in every answer are offsets into the whole text, so there's nothing to
 `until` takes your own tokens, words or punctuators, and gives a plan that ends there. When the parser reads one at a point where the expression could end, outside every bracket it opened, the parse ends.
 
 That's why `,` in `until` doesn't start a sequence expression, and `/>` isn't a division: they're yours. Inside brackets they're still JavaScript, so `f(a, b)` reads whole. A plan has no source in it: build `Plan.expression.until('}')` once, at module level, and use it for every expression in every document.
+
+## Names in a piece
+
+With `scopes` on, the answer for a piece has `bindings` and `references`, as the answer for a whole program does. [Scopes](/scopes) explains both. The parser reads only the piece, and that shows in two places.
+
+A name the piece declares itself resolves as usual. A name declared elsewhere in your document has `binding: null`, as a global has: the parser has not read the text that declares it. Looking those names up is your code's work, since it knows the scoping rules of your document.
+
+```js template.js
+const source = new Source('{{ items.map((x) => x + offset) }}', { scopes: true });
+const { references } = source.parse(Plan.expression.until('}'), 3);
+// items   binding: null        declared elsewhere, or a global
+// x       binding: { name: 'x', kind: 'param', … }
+// offset  binding: null
+```
+
+A `Plan.pattern` piece declares names for your document. Its `bindings` has one entry per name, with `kind: 'pattern'`.
+
+```js template.js
+const source = new Source('{{ items as { id, name }, index }}', { scopes: true });
+const { bindings } = source.parse(Plan.pattern.until(',', '}'), 12);
+// bindings  id and name, both kind: 'pattern'
+```
+
+[A component, piece by piece](/a-component) puts the two together: it keeps the bindings that patterns declare, and resolves the `null` names against them.
 
 ## One source, many pieces
 

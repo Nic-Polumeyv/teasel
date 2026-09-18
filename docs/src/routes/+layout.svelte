@@ -11,7 +11,17 @@
 	let { data, children } = $props();
 	initTheme();
 
+	function copy(event: MouseEvent) {
+		const button = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-copy]');
+		if (!button) return;
+		navigator.clipboard.writeText(button.dataset.copy!);
+		button.dataset.copied = '';
+		setTimeout(() => delete button.dataset.copied, 1500);
+	}
+
 </script>
+
+<svelte:document onclick={copy} />
 
 <svelte:head>
 	<link rel="icon" href={favicon} />

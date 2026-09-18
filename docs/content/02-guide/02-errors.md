@@ -4,7 +4,7 @@ title: Errors
 
 A syntax error throws a `SyntaxError`. It has a code you can branch on and a position you can point at.
 
-```js
+```js errors.js
 try {
 	new Source('x = ;').parse();
 } catch (e) {
@@ -20,7 +20,7 @@ try {
 
 Sometimes a broken file still needs a tree: an editor, a language server, anything that runs while someone is typing. Turn on `errorRecovery` and the parse comes back with the tree and the errors together.
 
-```js
+```js errors.js
 const { node, errors } = new Source('x = ;', { errorRecovery: true }).parse();
 errors[0].code;                            // 'unexpected_token'
 node.body[0].expression.right.name;        // ''

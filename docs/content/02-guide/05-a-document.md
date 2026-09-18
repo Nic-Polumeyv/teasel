@@ -31,7 +31,7 @@ expression  ExpressionTag  expression=expression
 
 A `Plan` made from the grammar reads documents of it. Make it once, at module level: the engine reads the grammar the first time the plan is used and keeps it.
 
-```js
+```js document.js
 import { Source, Plan } from '@teasel/parser';
 
 const mini = new Plan(grammar);
@@ -55,7 +55,7 @@ The options work as they do on JavaScript, with two additions.
 
 Scopes cross the boundary. The grammar says where a scope opens, the `each` body that declares its item here, and what a script declares lands in the scope around the template, so an identifier in the template resolves to a binding in the script.
 
-```js
+```js document.js
 const text = '<script>let names = []</script>{{#each names as name}}<b>{{ name }}</b>{{/each}}';
 const { node, roots } = new Source(text, { sourceType: 'module', scopes: true }).parse(mini);
 const block = node.children.nodes[0];
@@ -71,7 +71,7 @@ The scope kinds a document adds are `fragment` for what the grammar opens and `m
 
 `errorRecovery` works on a document as it does on JavaScript: an unclosed element, an expression cut short, a block without its end, all come back as the tree that could be read, with `errors` listing each one. The host's errors have codes of their own, `unclosed`, `expected`, `duplicate` and the others in the [reference](/reference/parser#parseerror), beside JavaScript's. Without recovery the first one throws.
 
-```js
+```js document.js
 const { node, errors } = new Source('<p>{{ a', { errorRecovery: true }).parse(mini);
 errors.map((e) => e.code);                   // ['unclosed', 'expected']
 node.children.nodes[0].type;                 // 'Element', read as far as it went

@@ -4,7 +4,7 @@ title: Scopes
 
 Turn `scopes` on when you make the [`Source`](/getting-started), and every identifier in the tree can tell you what it refers to.
 
-```js
+```js scopes.js
 import { Source, referenceOf } from '@teasel/parser';
 
 const { node } = new Source('let x = 1; x = 2', { scopes: true }).parse();
@@ -25,7 +25,7 @@ The tree is still plain ESTree. The facts live beside it, and you reach them fro
 
 Here they are on a function with a parameter.
 
-```js
+```js scopes.js
 import { Source, scopeOf, referenceOf, parentOf } from '@teasel/parser';
 
 const { node } = new Source('let x = 1; function f(y) { x = y; }', { scopes: true }).parse();
