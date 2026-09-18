@@ -960,26 +960,25 @@ function builders(C: Compiled, G: Language, config: number, typescript: boolean)
 	let B = G.sets.get(config);
 	G.last = config;
 	if (B !== undefined) return (G.builders = B);
-	const set: Builders = (B = { js: [], ts: [], hosts: [] });
-	const lazy = (list: Builder[], tag: number, make: () => Builder): Builder => (S, id, record) => (list[tag] = make())(S, id, record);
-	C.layout.kinds.forEach((_, tag) => {
-		if (tag === C.extension) set.js.push((S, id) => { const record = S.N[id * C.words + (C.kind >> 2) + 1] * (C.layout.ts!.size >> 2); return set.ts[S.TS![record]](S, id, record); });
-		else if (tag === C.host && generated) {
-			set.js.push((S, id) => {
+	// one closure stands in for every kind not met yet: it makes the kind's builder and takes its place
+	const js = (tag: number): Builder => {
+		const ops = recipe(G, tag);
+		return generated ? generate(C, G, config, ops, false, typescript && (config & ERASE) === 0 && G.adds[tag].length !== 0) : (S, id) => run(S, id, ops, S.N, id * C.words * 4 + C.kind);
+	};
+	const ts = (tag: number): Builder => (generated ? generate(C, G, config, G.ts[tag], true, false) : (S, id, record) => run(S, id, G.ts[tag], S.TS!, record * 4));
+	const set: Builders = (B = {
+		js: new Array<Builder>(C.layout.kinds.length).fill((S, id, record) => (set.js[S.N[id * C.words + (C.kind >> 2)]] = js(S.N[id * C.words + (C.kind >> 2)]))(S, id, record)),
+		ts: new Array<Builder>(G.ts.length).fill((S, id, record) => (set.ts[S.TS![record]] = ts(S.TS![record]))(S, id, record)),
+		hosts: [],
+	});
+	set.js[C.extension] = (S, id) => { const record = S.N[id * C.words + (C.kind >> 2) + 1] * (C.layout.ts!.size >> 2); return set.ts[S.TS![record]](S, id, record); };
+	set.js[C.host] = generated
+		? (S, id) => {
 				const index = S.N[id * C.words + (C.kind >> 2) + 1];
 				const build = S.H[S.hosts[index * 5 + 4]];
 				return build === undefined ? host_by_shape(S, id, index, config) : build(S, id, index, S.hosts[index * 5 + 1]);
-			});
-		} else if (tag === C.host) set.js.push((S, id) => host(S, id, S.N[id * C.words + (C.kind >> 2) + 1]));
-		else
-			set.js.push(
-				lazy(set.js, tag, () => {
-					const ops = recipe(G, tag);
-					return generated ? generate(C, G, config, ops, false, typescript && (config & ERASE) === 0 && G.adds[tag].length !== 0) : (S, id) => run(S, id, ops, S.N, id * C.words * 4 + C.kind);
-				}),
-			);
-	});
-	G.ts.forEach((ops, tag) => set.ts.push(lazy(set.ts, tag, () => (generated ? generate(C, G, config, ops, true, false) : (S, id, record) => run(S, id, ops, S.TS!, record * 4)))));
+			}
+		: (S, id) => host(S, id, S.N[id * C.words + (C.kind >> 2) + 1]);
 	G.sets.set(config, set);
 	return (G.builders = set);
 }
