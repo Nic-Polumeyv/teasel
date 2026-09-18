@@ -1,8 +1,8 @@
 ---
-title: A document
+title: Parsing with a grammar
 ---
 
-A template language can hand the parser its whole syntax, and the parser then reads a whole document: the host's own nodes around the JavaScript ones, in one tree, scopes across both. The syntax is a grammar, a short text in the format the [host grammar reference](/host-grammar) describes. Here is a small one, whole.
+A template language can describe its whole syntax to the parser as a grammar. The parser then reads a whole file of that language and returns one tree: the template's own nodes, the JavaScript nodes inside them, and scopes that cover both. These pages call the template language the host. A grammar is a short text in the format the [host grammar reference](/host-grammar) describes. This is a complete small one:
 
 ```text mini.grammar
 host mini
@@ -42,18 +42,18 @@ node.children.nodes[0].type;                 // 'Element', name 'p'
 node.children.nodes[0].children.nodes[0];    // ExpressionTag, its expression the Identifier greeting
 ```
 
-A plan made from a grammar reads the whole source: it takes no position, and `until` isn't for it. A grammar the parser can't read throws when the plan is made, naming the line.
+A plan made from a grammar reads the whole source: it takes no position, and `until` does not apply to it. A grammar the parser can't read throws when the plan is made, naming the line.
 
-## What comes back
+## The tree
 
-The tree is the host's. Every node has the `type` the grammar names, `start` and `end` into the text, `loc` with `locations`, and the fields the grammar's rule lists. Where a field holds JavaScript, it holds ESTree: the expression of an `{{ }}`, the program of a `<script>`, the pattern an `each` head declares. Offsets are offsets into the whole document, so nothing has to be added back.
+The tree's nodes are the ones the grammar names. Every node has the `type` the grammar names, `start` and `end` into the text, `loc` with `locations`, and the fields the grammar's rule lists. Where a field holds JavaScript, it holds ESTree: the expression of an `{{ }}`, the program of a `<script>`, the pattern an `each` head declares. Offsets are offsets into the whole document, so nothing has to be added to them.
 
 The options work as they do on JavaScript, with two additions.
 
-- `scopes` adds `roots`: one entry per piece of JavaScript the parser read, in source order, with the piece's `node`, the `scope` it sits in, and the `scopes`, `bindings` and `references` inside it. A host that keeps tables per piece takes them from here; `scopes`, `bindings` and `references` on the answer are the whole document's, as always.
-- `typescript` turns on by itself when the grammar says a script tag can ask for it, `<script lang="ts">` say, and `'erase'` still applies: give `typescript: 'erase'` and the scripts come back as JavaScript, with the answer's `typescript` list of what could not be erased.
+- `scopes` adds `roots`: one entry per piece of JavaScript the parser read, in source order, with the piece's `node`, the `scope` it sits in, and the `scopes`, `bindings` and `references` inside it. A host that keeps tables per piece takes them from here; `scopes`, `bindings` and `references` on the answer cover the whole file.
+- `typescript` turns on by itself when the grammar says a script tag can ask for it, as `<script lang="ts">` does, and `'erase'` still applies: give `typescript: 'erase'` and the scripts come back as JavaScript, with the answer's `typescript` list of what could not be erased.
 
-Scopes cross the boundary. The grammar says where a scope opens, the `each` body that declares its item here, and what a script declares lands in the scope around the template, so an identifier in the template resolves to a binding in the script.
+Scopes cover the template and the script together. The grammar says where a scope opens, the `each` body that declares its item here, and what a script declares lands in the scope around the template, so an identifier in the template resolves to a binding in the script.
 
 ```js document.js
 const text = '<script>let names = []</script>{{#each names as name}}<b>{{ name }}</b>{{/each}}';
@@ -67,7 +67,7 @@ roots.map((piece) => piece.node.type);       // ['Program', 'Identifier', 'Ident
 
 The scope kinds a document adds are `fragment` for what the grammar opens and `module` or `script` for the document itself; a script block of its own has the kind of its program.
 
-## When it's broken
+## Error recovery
 
 `errorRecovery` works on a document as it does on JavaScript: an unclosed element, an expression cut short, a block without its end, all come back as the tree that could be read, with `errors` listing each one. The host's errors have codes of their own, `unclosed`, `expected`, `duplicate` and the others in the [reference](/reference/parser#parseerror), beside JavaScript's. Without recovery the first one throws.
 
@@ -77,6 +77,6 @@ errors.map((e) => e.code);                   // ['unclosed', 'expected']
 node.children.nodes[0].type;                 // 'Element', read as far as it went
 ```
 
-## Two grammars that ship
+## Example grammars
 
 The parser's own tests carry two whole grammars, one for a component language with script and style blocks, directives and `{#each}`-style blocks, and one for a template language with prefixed directives and `{{ }}` interpolation. They're what the [reference](/host-grammar) quotes; between them they use every statement of the format.

@@ -1,8 +1,8 @@
 ---
-title: Inside a host
+title: Embedded JavaScript
 ---
 
-A template language has JavaScript in it, but it isn't JavaScript. What it needs from a parser is different: read one expression starting here, stop when you reach one of my tokens, and tell me where you stopped.
+A template language has JavaScript inside its own syntax. To read it, a parser has to start at an offset, read one expression, stop at a token that belongs to the template language, and report where it stopped. These pages call the template language the host.
 
 ```text
 {{ items as item, index }}
@@ -17,11 +17,11 @@ const { node, end } = source.parse(Plan.expression.until('as', ','), 3);
 // end   8
 ```
 
-Three things happened there. The parse started at an offset. It was asked for an expression, not a program. And it stopped at `as`, because you said so.
+The parse started at offset 3, read an expression instead of a program, and stopped at `as` because `until` named it.
 
-## What to ask for
+## Plans
 
-The first argument is the plan, what you want read; the second is where.
+The first argument of `parse` is the plan, which says what to read. The second is the position.
 
 ```text
 source.parse(Plan.expression, 7)          the expression starting at 7
@@ -32,19 +32,19 @@ source.parse(Plan.typeParameters, 7)      a <T extends U>, with typescript on
 source.parse(Plan.program, [12, 40])      the program between 12 and 40
 ```
 
-Positions in every answer are offsets into the whole text, so there's nothing to add back afterwards.
+Positions in every answer are offsets into the whole text, so nothing has to be added to them.
 
-## Where to stop
+## until
 
 `until` takes your own tokens, words or punctuators, and gives a plan that ends there. When the parser reads one at a point where the expression could end, outside every bracket it opened, the parse ends.
 
-That's why `,` in `until` doesn't start a sequence expression, and `/>` isn't a division: they're yours. Inside brackets they're still JavaScript, so `f(a, b)` reads whole. A plan has no source in it: build `Plan.expression.until('}')` once, at module level, and use it for every expression in every document.
+So a `,` named in `until` does not start a sequence expression, and a `/>` named in `until` is not read as a division. Inside brackets they keep their JavaScript meaning, so `f(a, b)` reads whole. A plan does not hold a source: build `Plan.expression.until('}')` once, at module level, and use it for every expression in every file.
 
 ## Names in a piece
 
 With `scopes` on, the answer for a piece has `bindings` and `references`, as the answer for a whole program does. [Scopes](/scopes) explains both. The parser reads only the piece, and that shows in two places.
 
-A name the piece declares itself resolves as usual. A name declared elsewhere in your document has `binding: null`, as a global has: the parser has not read the text that declares it. Looking those names up is your code's work, since it knows the scoping rules of your document.
+A name the piece declares itself resolves to that declaration. A name declared elsewhere in your document has `binding: null`, as a global has: the parser has not read the text that declares it. Looking those names up is your code's work, since it knows the scoping rules of your document.
 
 ```js template.js
 const source = new Source('{{ items.map((x) => x + offset) }}', { scopes: true });
@@ -62,16 +62,16 @@ const { bindings } = source.parse(Plan.pattern.until(',', '}'), 12);
 // bindings  id and name, both kind: 'pattern'
 ```
 
-[A component, piece by piece](/a-component) puts the two together: it keeps the bindings that patterns declare, and resolves the `null` names against them.
+[Svelte component](/svelte-component) puts the two together: it keeps the bindings that patterns declare, and resolves the `null` names against them.
 
-## One source, many pieces
+## One Source per file
 
-Make one `Source` for the whole document and parse every piece out of it. The text goes in once. Every answer's positions already fit the document. [A component, piece by piece](/a-component) does this for a whole component, script block, `each` heads and all.
+Make one `Source` for the whole file and parse every piece from it. The text is copied into the parser once, and every answer's positions are offsets into the file. [Svelte component](/svelte-component) does this for a whole component.
 
-## Fine print
+## Edge cases
 
 A `then` after a `.` is a property name, not your token. A TypeScript `as` is yours unless another `as` follows the type assertion, so `xs as T[] as item` ends after the type. And `typeParameters` without `typescript` is a `not_typescript` error.
 
-## Or hand over the syntax
+## The alternative: a grammar
 
-Reading piece by piece keeps the host's own parser in charge. The other way is to describe the host's syntax to the parser once and get the whole document back in one tree, scopes across the host's blocks and the JavaScript in them. That's [A document](/a-document).
+With the approach on this page, your own code reads the template syntax and asks the parser for each piece of JavaScript. The alternative is to describe the template syntax to the parser once, as a grammar, and get the whole file back as one tree, with scopes that cover the template's blocks and the JavaScript in them. See [Parsing with a grammar](/parsing-with-a-grammar).

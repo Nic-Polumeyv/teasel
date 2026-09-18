@@ -13,17 +13,17 @@ const assignment = node.body[1].expression;
 referenceOf(assignment.left).binding;   // { name: 'x', kind: 'let', scope, node, declaration }
 ```
 
-The tree is still plain ESTree. The facts live beside it, and you reach them from a node with a function.
+The tree stays plain ESTree. Scope information is not in visible properties: you get it by passing a node to a function.
 
-## Three questions
+## referenceOf, scopeOf, parentOf
 
-`referenceOf` is one of three. Each takes a node from the answer and gives back a fact about it.
+Three functions take a node from the answer and return what the parser knows about it.
 
 - `referenceOf(identifier)`: the reference this identifier makes, with the `binding` it resolves to. For the identifier that declares a name, the answer is the binding itself: a binding is its own first reference, and its `binding` is itself. `binding` is `null` for a global. The whole answer is `undefined` when the identifier isn't a value at all, a property key for instance.
-- `scopeOf(node)`: the scope this node opens, if it opens one. Programs, functions, classes, blocks, catch clauses, `for` heads, `switch` statements, static blocks and `with` all do; so does the name of a named function expression, a TypeScript namespace or enum, and a fragment of a [document](/a-document). The kinds are listed in the [reference](/reference/parser#scope).
+- `scopeOf(node)`: the scope this node opens, if it opens one. Programs, functions, classes, blocks, catch clauses, `for` heads, `switch` statements, static blocks and `with` all do; so does the name of a named function expression, a TypeScript namespace or enum, and a fragment of a file [read with a grammar](/parsing-with-a-grammar). The kinds are listed in the [reference](/reference/parser#scope).
 - `parentOf(node)`: the node this one hangs from. `undefined` at the root. This one works without `scopes`.
 
-Here they are on a function with a parameter.
+All three, on a function with a parameter:
 
 ```js scopes.js
 import { Source, scopeOf, referenceOf, parentOf } from '@teasel/parser';
@@ -40,7 +40,7 @@ parentOf(assignment.left)                   // the assignment
 
 ![the script scope declares x; the function scope of f declares y; inside it, x is a write reference to the outer binding and y a read reference to the parameter](Scopes.svelte)
 
-## What a reference knows
+## References and bindings
 
 A reference points from the scope it was made in to the binding it landed on, and says what the code does with it.
 
@@ -55,11 +55,11 @@ A compound assignment like `x += 1` is both a read and a write. For a write, `wr
 
 A binding knows its `name`, its `kind`, the scope it lives in, the identifier that declared it, and the declaration itself. The kinds are listed in the [reference](/reference/parser#binding).
 
-## All of them at once
+## The tables
 
-If you'd rather not walk the tree, the answer's `scopes`, `bindings` and `references` tables list every one in source order.
+The answer's `scopes`, `bindings` and `references` list every scope, binding and reference in source order, so none of this needs a walk of the tree.
 
-## Two things to know
+## Limits
 
-- The facts are symbol properties on the nodes. Spread a node and they come along. Push it through `structuredClone` or JSON and they're gone.
-- Facts belong to one answer. Parse again, ask again.
+- The information is stored on the nodes under symbol keys. A spread copies it. `structuredClone` and JSON drop it.
+- It belongs to one answer. After another parse, ask with the new answer's nodes.

@@ -2,7 +2,7 @@
 title: Host grammar
 ---
 
-The text `new Plan(grammar)` takes: what a template language puts around the JavaScript it embeds. One statement per line, words separated by spaces; `//` starts a comment; a line indented under a `block` belongs to it. Every name a statement gives becomes the `type` of a node or the name of a field, exactly as written. The examples come from the two grammars in the parser's tests, [A document](/a-document) shows a third, whole.
+The text `new Plan(grammar)` takes: what a template language puts around the JavaScript it embeds. One statement per line, words separated by spaces; `//` starts a comment; a line indented under a `block` belongs to it. Every name a statement gives becomes the `type` of a node or the name of a field, exactly as written. The examples come from the two grammars in the parser's tests. [Parsing with a grammar](/parsing-with-a-grammar) has a third, complete one.
 
 ## The document
 

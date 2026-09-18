@@ -111,7 +111,7 @@
 			<div>
 				<h2>A plain tree, with the facts beside it.</h2>
 				<p>Every node is an ordinary object with <code>start</code> and <code>end</code>, nothing hidden behind a getter. Turn on <code>scopes</code> and the same parse also knows what every identifier declares or refers to. No second walk.</p>
-				<p><a href="/the-answer">The answer</a> lists what each option adds. <a href="/how-it-works">How it works</a> follows one parse across the boundary and back.</p>
+				<p><a href="/what-parse-returns">What parse returns</a> lists what each option adds. <a href="/how-it-works">How it works</a> follows one parse across the boundary and back.</p>
 			</div>
 			<div class="min-w-0 [&_.my-6]:my-0">{@html data.facts}</div>
 		</div>
@@ -122,7 +122,7 @@
 			<h2>For compilers, for templates, for Rust.</h2>
 			<div class="mt-4 grid gap-x-12 md:grid-cols-3">
 				<p>If you're writing a compiler or a bundler, you get an ESTree tree fast, scopes included, and TypeScript read or stripped on the way through.</p>
-				<p>If you're writing a template language, you can pull one expression out of the middle of a document and stop at your own tokens. That's <a href="/inside-a-host">Inside a host</a>.</p>
+				<p>If you're writing a template language, you can pull one expression out of the middle of a document and stop at your own tokens. See <a href="/embedded-javascript">Embedded JavaScript</a>.</p>
 				<p>If you're writing Rust, it's a crate. Under Node the package is a native addon; in a browser or behind a bundler the same import is a WebAssembly build with the same API.</p>
 			</div>
 			<div class="mt-10 grid items-center gap-x-16 gap-y-6 md:grid-cols-2">

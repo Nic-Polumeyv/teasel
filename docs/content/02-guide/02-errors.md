@@ -2,7 +2,7 @@
 title: Errors
 ---
 
-A syntax error throws a `SyntaxError`. It has a code you can branch on and a position you can point at.
+A syntax error throws a `SyntaxError`. It has a `code` to branch on and a position.
 
 ```js errors.js
 try {
@@ -16,9 +16,9 @@ try {
 }
 ```
 
-## Or keep going
+## Error recovery
 
-Sometimes a broken file still needs a tree: an editor, a language server, anything that runs while someone is typing. Turn on `errorRecovery` and the parse comes back with the tree and the errors together.
+An editor or a language server needs a tree from a file that does not parse, because it runs while someone is typing. With `errorRecovery` on, the parse returns the tree and the errors together and does not throw.
 
 ```js errors.js
 const { node, errors } = new Source('x = ;', { errorRecovery: true }).parse();
@@ -26,7 +26,7 @@ errors[0].code;                            // 'unexpected_token'
 node.body[0].expression.right.name;        // ''
 ```
 
-Wherever something is missing, the tree holds an `Identifier` named `''` with no width. The shape is still the shape, and a walker doesn't have to care.
+Where something is missing, the tree has an `Identifier` named `''` that is zero characters wide. Every node still has the fields its type has, so code that walks the tree needs no special case.
 
 ```text
 x = ;
@@ -35,10 +35,10 @@ x = ;
     right   Identifier ''  at 4..4
 ```
 
-A statement that can't be read at all is skipped to the next one. `f(a, ` on its own comes back as an empty program with one `unexpected_eof`.
+A statement that cannot be read at all is skipped, and the parse continues at the next one. `f(a, ` alone returns an empty program with one `unexpected_eof`.
 
-A compiler that has to reject the file should leave recovery off and catch the throw.
+A compiler that must reject the file leaves recovery off and catches the throw.
 
-## Where an error points
+## Error positions
 
-`pos` and `end` span the token that broke things. When the problem is somewhere else, a declaration seen earlier for instance, `end` equals `pos`. `unexpected_eof` points at the end of what was parsed. A bad offset from your side is `invalid_request`, with no `loc`, because there's nothing in the text to point at. Every code is listed as the type [`Code`](/reference/parser#code), so a comparison against one is checked.
+`pos` and `end` span the token the parser could not accept. When the cause is elsewhere, an earlier declaration of the same name for instance, `end` equals `pos`. `unexpected_eof` points at the end of what was parsed. An offset you pass that is outside the text is `invalid_request`, with no `loc`. Every code is in the type [`Code`](/reference/parser#code), so a comparison against one is type-checked.

@@ -10,7 +10,7 @@ This example takes a small program of three files and answers three questions ab
 
 The parser reads one file at a time and knows nothing about the other files. Each parse lists what the file declares and what it uses. Your code connects the files through their `import` and `export` statements.
 
-Everything here builds on [Scopes](/scopes), which explains bindings and references. Read that page first if they are new.
+Everything here builds on [Scopes](/scopes), which explains bindings and references.
 
 The program is a text adventure: the map, the player, the game. Click a module to read it.
 
@@ -33,8 +33,8 @@ const lineOf = (module, node) =>
 	module.text.slice(0, node.start).split('\n').length;
 ```
 ```notes
-using :: Releases the `Source` at the end of each loop turn. The answer stays usable, because it is plain objects that do not depend on the `Source`. See [Getting started](/getting-started#parse-it-again).
-scopes: true :: Adds `scopes`, `bindings` and `references` to the answer. Without it the answer is only the tree. See [The answer](/the-answer#what-an-option-adds).
+using :: Releases the `Source` at the end of each loop turn. The answer stays usable, because it is plain objects that do not depend on the `Source`. See [Getting started](/getting-started#release-a-source).
+scopes: true :: Adds `scopes`, `bindings` and `references` to the answer. Without it the answer is only the tree. See [What parse returns](/what-parse-returns#options).
 ...source.parse() :: The answer is an object: `node` is the tree, and with `scopes` on it also has `scopes`, `bindings` and `references`. Spreading it puts those on the module record, so `module.node` and `module.bindings` below come from here.
 lineOf :: A helper of this example, not part of the package. Every node has `start`, its offset in the file's text. Counting the newlines before that offset gives the line.
 ```
@@ -64,7 +64,7 @@ for (const module of modules.values()) module.exports = exportsOf(module);
 ```notes
 module.node.body :: `node` is the `Program`, and `body` is its top-level statements, in ESTree shape.
 declaration.type === 'VariableDeclaration' :: `export const a = 1, b = 2` declares several names, one per declarator. A function or a class declares one, in `declaration.id`.
-referenceOf(id) :: Asks what the identifier refers to. On the identifier that declares a name, the answer is the binding itself. See [Three questions](/scopes#three-questions).
+referenceOf(id) :: Asks what the identifier refers to. On the identifier that declares a name, the answer is the binding itself. See [referenceOf, scopeOf, parentOf](/scopes#referenceof-scopeof-parentof).
 ```
 
 Each file now has `exports`, a map from an exported name to its binding. This reads `export const`, `export function` and `export class`. A program that also uses `export { a, b }` or `export default` needs those two statement types handled the same way.
@@ -114,7 +114,7 @@ for (const module of modules.values()) {
 }
 ```
 ```notes
-module.references :: Every use of a name in the file, in source order. Each has `binding`, the declaration it refers to. See [What a reference knows](/scopes#what-a-reference-knows).
+module.references :: Every use of a name in the file, in source order. Each has `binding`, the declaration it refers to. See [References and bindings](/scopes#references-and-bindings).
 binding.kind === 'import' :: Every binding has a `kind`: `import`, `const`, `let`, `function`, `class`, `param` and more. The full list is in the [reference](/reference/parser#binding).
 target.binding.node :: The identifier that declared the export, in the other file. Its `start` is an offset into that file's text, so the line is computed against that file.
 ```
@@ -133,7 +133,7 @@ game.js    restock          function in world.js line 40, used 1x here
 game.js    Player           class in player.js line 5, used 1x here
 ```
 
-## 4. Every export, everywhere
+## 4. Where every export is used
 
 An export is used in two places: in its own file, and in every file that imports it. The second kind is found by going through `importedFrom` for the imports that point at it.
 
@@ -205,7 +205,7 @@ for (const binding of state) {
 ```notes
 scope.parent :: Every scope has the scope around it in `parent`; the outermost has `null`. See the [reference](/reference/parser#scope).
 scope.kind === 'function' :: A scope's `kind` says what opened it: a function, a block, a class, the module. `scope.node` is the node that did, here the function.
-parentOf(fn) :: The node this one hangs from. An arrow function has no name of its own, so its name is on its parent: the property it is the value of, or the variable it is assigned to. See [Three questions](/scopes#three-questions).
+parentOf(fn) :: The node this one hangs from. An arrow function has no name of its own, so its name is on its parent: the property it is the value of, or the variable it is assigned to. See [referenceOf, scopeOf, parentOf](/scopes#referenceof-scopeof-parentof).
 scopeOf(game.node) :: `scopeOf` gives the scope a node opens. `game.node` is the `Program`, which opens the file's outermost scope, so a binding whose `scope` is that one was declared at the top level.
 reference.write :: True when the reference assigns: `score = 0`, `score += 5`, `turns++`. The other flags are `read`, `mutate` and `declares`.
 ```
@@ -221,4 +221,4 @@ The write at line 21 is `score += roll(6)`, inside an arrow function stored as a
 ## Related
 
 - [Scopes](/scopes) has everything a binding, a reference and a scope carry.
-- [A component, piece by piece](/a-component) connects names across parses of one file instead of across files.
+- [Svelte component](/svelte-component) connects names across parses of one file instead of across files.

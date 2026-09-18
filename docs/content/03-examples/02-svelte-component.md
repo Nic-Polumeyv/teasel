@@ -1,12 +1,12 @@
 ---
-title: A component, piece by piece
+title: Svelte component
 ---
 
-This example reads a component file: a `<script>` block, then a template with JavaScript inside `{…}`. The parser reads JavaScript and does not know the template syntax. So your code finds each `{`, and asks the parser to read the JavaScript that starts there.
+This example reads a Svelte component: a `<script>` block, then a template with JavaScript inside `{…}`. The parser reads JavaScript and does not know the template syntax. So your code finds each `{`, and asks the parser to read the JavaScript that starts there.
 
 At the end, every name the template uses is matched to the declaration it refers to, in the script or in an `each` block. That match is what a compiler, a linter or a rename tool for the format is built on.
 
-This page uses three things that [Inside a host](/inside-a-host) explains: parsing at an offset, [plans](/inside-a-host#what-to-ask-for), and [`until`](/inside-a-host#where-to-stop). Read that page first if they are new.
+This page uses three things that [Embedded JavaScript](/embedded-javascript) explains: parsing at an offset, [plans](/embedded-javascript#plans), and [`until`](/embedded-javascript#until).
 
 The component:
 
@@ -39,7 +39,7 @@ import { Source, Plan, scopeOf } from '@teasel/parser';
 const source = new Source(text, { sourceType: 'module', scopes: true });
 ```
 ```notes
-Source :: Holds the text of the file. Every parse on this page reads from this one object, so every position in every answer is an offset into the file. See [Getting started](/getting-started#parse-it-again).
+Source :: Holds the text of the file. Every parse on this page reads from this one object, so every position in every answer is an offset into the file. See [Getting started](/getting-started#parse-the-same-text-again).
 sourceType: 'module' :: Lets the script use `import` and `export`. Every option is in the [reference](/reference/parser#options).
 scopes: true :: Makes each answer list the names it declares, `bindings`, and the names it uses, `references`. [Scopes](/scopes) explains both.
 ```
@@ -60,10 +60,10 @@ const topLevel = script.bindings.filter(
 );
 ```
 ```notes
-Plan.program :: The plan says what to read. `Plan.program` reads statements, as a file would have them. The other plans are `Plan.expression`, `Plan.statement`, `Plan.pattern`, `Plan.params` and `Plan.typeParameters`: see [What to ask for](/inside-a-host#what-to-ask-for).
+Plan.program :: The plan says what to read. `Plan.program` reads statements, as a file would have them. The other plans are `Plan.expression`, `Plan.statement`, `Plan.pattern`, `Plan.params` and `Plan.typeParameters`: see [Plans](/embedded-javascript#plans).
 [open, close] :: A pair of offsets reads only the text between them. A single number, used below, starts there and reads as far as the plan goes.
 script.bindings :: Every declaration in the script, one entry each: `{ name, kind, scope, node, declaration }`. [What a binding knows](/reference/parser#binding).
-scopeOf(script.node) :: `scopeOf` gives the scope a node opens. `script.node` is the `Program`, which opens the script's outermost scope, so a binding whose `scope` is that one was declared at the top level. See [Three questions](/scopes#three-questions).
+scopeOf(script.node) :: `scopeOf` gives the scope a node opens. `script.node` is the `Program`, which opens the script's outermost scope, so a binding whose `scope` is that one was declared at the top level. See [referenceOf, scopeOf, parentOf](/scopes#referenceof-scopeof-parentof).
 ```
 
 `script.bindings` has every declaration, including the parameters of the two functions:
@@ -95,9 +95,9 @@ function expression(from, ...stops) {
 ```
 ```notes
 inScope :: The declarations a template expression can see right now, as a stack of lists. It starts with the script's top-level bindings. Step 4 pushes what an `each` block declares, and pops it at `{/each}`.
-Plan.expression.until(...stops) :: Reads one expression and ends it where one of `stops` follows, outside any bracket the expression opened. With `'}'` as the stop, `{i + 1}` ends at its brace, while `{ {a: 1}.a }` still reads whole. See [Where to stop](/inside-a-host#where-to-stop).
-answer.references :: Every name the expression uses, as `{ node, binding, read, write, … }`. See [What a reference knows](/scopes#what-a-reference-knows).
-reference.binding !== null :: The parser resolved this name itself, to something the expression declared, like the parameter in `(x) => x + 1`. Those need nothing from you. See [Names in a piece](/inside-a-host#names-in-a-piece).
+Plan.expression.until(...stops) :: Reads one expression and ends it where one of `stops` follows, outside any bracket the expression opened. With `'}'` as the stop, `{i + 1}` ends at its brace, while `{ {a: 1}.a }` still reads whole. See [until](/embedded-javascript#until).
+answer.references :: Every name the expression uses, as `{ node, binding, read, write, … }`. See [References and bindings](/scopes#references-and-bindings).
+reference.binding !== null :: The parser resolved this name itself, to something the expression declared, like the parameter in `(x) => x + 1`. Those need nothing from you. See [Names in a piece](/embedded-javascript#names-in-a-piece).
 findLast :: The innermost declaration wins, as in JavaScript: an `each` block's `item` hides a top-level `item`.
 ```
 
@@ -140,7 +140,7 @@ function each(from) {
 ```
 ```notes
 skip :: A helper of this example, not part of the package. Given an offset, it returns the offset of the next character that is not a space or a tab.
-list.end :: Where the list expression stopped: just after `shown`, before the `as`. `end` is on every answer, see [The answer](/the-answer).
+list.end :: Where the list expression stopped: just after `shown`, before the `as`. `end` is on every answer, see [What parse returns](/what-parse-returns).
 Plan.pattern :: Reads what can stand on the left of `=` in a declaration: a name, or a destructuring like `{ id, name }` or `[first, ...rest]`.
 item.bindings :: What the pattern declares, one binding per name, with `kind: 'pattern'`. For `{ id, name }` that is two bindings.
 inScope.push(declared) :: From here until `{/each}`, template expressions can see `item` and `i`.
@@ -208,12 +208,12 @@ Look at `pick(item)` at 475. It sits inside an arrow function, `() => pick(item)
 
 ## What to keep
 
-- The `Source`, for as long as the file is open. Any piece can be parsed again from it. Release it when the file closes: see [Getting started](/getting-started#parse-it-again).
+- The `Source`, for as long as the file is open. Any piece can be parsed again from it. Release it when the file closes: see [Getting started](/getting-started#release-a-source).
 - `script`, the script's tree and bindings.
 - `resolved`. A compiler reads it to know which template expressions depend on which declarations; a linter reads it to find a declaration nothing uses.
 
 ## Related
 
-- [Inside a host](/inside-a-host) is the guide this example applies.
-- [A document](/a-document) is the other way to do this: describe the template syntax to the parser once, and get the script and the template back as one tree.
+- [Embedded JavaScript](/embedded-javascript) is the guide this example applies.
+- [Parsing with a grammar](/parsing-with-a-grammar) is the other way to do this: describe the template syntax to the parser once, and get the script and the template back as one tree.
 - [Scopes](/scopes) has everything a binding and a reference carry.
