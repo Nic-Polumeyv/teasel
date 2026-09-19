@@ -14,7 +14,9 @@ export default defineConfig({
 			compilerOptions: {
 				runes: ({ filename }) => filename.split(/[/\\]/).includes('node_modules') ? undefined : true
 			},
-			adapter: adapter()
+			adapter: adapter(),
+			// 404.html is served at any depth, where relative asset urls miss
+			paths: { relative: false }
 		})
 	]
 });
