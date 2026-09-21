@@ -453,9 +453,6 @@ impl Parser<'_, TypeScript> {
 				format!("type '{}' has already been declared.", self.str(name)),
 			);
 		}
-		if depth == 0 {
-			self.undeclared_exports.remove(&name);
-		}
 		if self.ext.global_depth > 0 {
 			self.ext.globals.insert(name);
 		}
@@ -468,9 +465,6 @@ impl Parser<'_, TypeScript> {
 			unreachable!()
 		};
 		let depth = self.scope_depth();
-		if depth == 0 {
-			self.undeclared_exports.remove(&name);
-		}
 		self.ext.export_only.push(depth, name);
 	}
 

@@ -191,9 +191,6 @@ impl<E: Extension> Parser<'_, E> {
 				let scope = self.current_scope_mut();
 				redeclared = scope.has(name, LEXICAL | FUNCTION | VAR);
 				scope.push(name, LEXICAL);
-				if self.current_scope().flags & SCOPE_TOP != 0 {
-					self.undeclared_exports.remove(&name);
-				}
 			}
 			Binding::SimpleCatch => self.current_scope_mut().push(name, LEXICAL),
 			Binding::Function => {
@@ -214,12 +211,7 @@ impl<E: Extension> Parser<'_, E> {
 						break;
 					}
 					scope.push(name, VAR);
-					let top = scope.flags & SCOPE_TOP != 0;
-					let stop = scope.flags & SCOPE_VAR != 0;
-					if top {
-						self.undeclared_exports.remove(&name);
-					}
-					if stop {
+					if scope.flags & SCOPE_VAR != 0 {
 						break;
 					}
 				}
@@ -244,16 +236,13 @@ impl<E: Extension> Parser<'_, E> {
 		false
 	}
 
+	pub(crate) fn declares_export(&mut self, name: StrId) -> bool {
+		E::declares_export(self, name) || self.scopes[0].has(name, VAR | LEXICAL | FUNCTION)
+	}
+
 	pub(crate) fn check_local_export(&mut self, name: StrId, pos: u32) {
-		if E::declares_export(self, name) {
-			return;
-		}
-		if !self.scopes[0].has(name, VAR | LEXICAL | FUNCTION) {
-			let order = self.undeclared_exports.len();
-			self.undeclared_exports
-				.entry(name)
-				.and_modify(|e| e.0 = pos)
-				.or_insert((pos, order));
+		if !self.declares_export(name) {
+			self.undeclared_exports.push((name, pos));
 		}
 	}
 }

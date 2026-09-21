@@ -8,7 +8,7 @@ pub(crate) mod tests;
 
 use crate::ast::{Ast, List, MethodKind, NodeId, NodeKind, Reuse, VariableKind};
 use crate::error::SyntaxError;
-use crate::interner::{FastMap, FastSet, StrId};
+use crate::interner::{FastMap, StrId};
 use crate::lexer::Lexer;
 use crate::lexer::token::{Keyword, Token, TokenKind};
 pub(crate) use expression::ForInit;
@@ -477,7 +477,7 @@ pub(crate) struct Parser<'a, E: Extension = ()> {
 	param_names: Vec<StrId>,
 	labels: Vec<Label>,
 	private_names: Vec<PrivateNameScope>,
-	pub(crate) undeclared_exports: FastMap<StrId, (u32, usize)>,
+	pub(crate) undeclared_exports: Vec<(StrId, u32)>,
 	pub(crate) yield_pos: u32,
 	pub(crate) await_pos: u32,
 	pub(crate) await_ident_pos: u32,
@@ -523,6 +523,7 @@ struct Mark<E: Extension> {
 	declared: Vec<u32>,
 	labels: usize,
 	private_names: usize,
+	undeclared_exports: usize,
 	depth: u32,
 	brackets: (u32, [u32; 3]),
 	strict: bool,
@@ -616,7 +617,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 			param_names: spare.param_names,
 			labels: spare.labels,
 			private_names: spare.private_names,
-			undeclared_exports: FastMap::default(),
+			undeclared_exports: Vec::new(),
 			yield_pos: 0,
 			await_pos: 0,
 			await_ident_pos: 0,
@@ -753,6 +754,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 			declared,
 			labels: self.labels.len(),
 			private_names: self.private_names.len(),
+			undeclared_exports: self.undeclared_exports.len(),
 			depth: self.depth,
 			brackets: (self.lexer.depth, self.lexer.open),
 			strict: self.strict,
@@ -770,6 +772,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 		}
 		self.labels.truncate(mark.labels);
 		self.private_names.truncate(mark.private_names);
+		self.undeclared_exports.truncate(mark.undeclared_exports);
 		self.depth = mark.depth;
 		(self.lexer.depth, self.lexer.open) = mark.brackets;
 		self.set_strict(mark.strict);
@@ -845,7 +848,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 			Entry::Pattern => self.parse_pattern_root()?,
 			Entry::Params => return self.parse_params_root(),
 			Entry::Statement => {
-				let mut exports = FastSet::default();
+				let mut exports = FastMap::default();
 				self.parse_statement(statement::Context::None, StatementPlace::TopLevel, Some(&mut exports))?
 			}
 			Entry::TypeParameters => E::type_parameters(self)?,

@@ -1,0 +1,117 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 40,
+		"scope": 0,
+		"body": [
+			{
+				"type": "VariableDeclaration",
+				"start": 0,
+				"end": 6,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 4,
+						"end": 5,
+						"defines": [
+							0
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 4,
+							"end": 5,
+							"declares": 0,
+							"name": "a"
+						},
+						"init": null
+					}
+				],
+				"kind": "let"
+			},
+			{
+				"type": "EmptyStatement",
+				"start": 24,
+				"end": 25
+			},
+			{
+				"type": "ExportNamedDeclaration",
+				"start": 26,
+				"end": 39,
+				"declaration": null,
+				"specifiers": [
+					{
+						"type": "ExportSpecifier",
+						"start": 35,
+						"end": 36,
+						"local": {
+							"type": "Identifier",
+							"start": 35,
+							"end": 36,
+							"reference": 0,
+							"name": "a"
+						},
+						"exported": {
+							"type": "Identifier",
+							"start": 35,
+							"end": 36,
+							"name": "a"
+						}
+					}
+				],
+				"source": null,
+				"attributes": []
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 40,
+	"comments": [],
+	"errors": [
+		{
+			"code": "unexpected_token",
+			"message": "Unexpected token",
+			"pos": 21,
+			"end": 22,
+			"loc": {
+				"line": 2,
+				"column": 14
+			}
+		},
+		{
+			"code": "unexpected_token",
+			"message": "Unexpected token",
+			"pos": 23,
+			"end": 24,
+			"loc": {
+				"line": 2,
+				"column": 16
+			}
+		}
+	],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "a",
+			"kind": "let",
+			"scope": 0,
+			"write": false
+		}
+	],
+	"references": [
+		{
+			"scope": 0,
+			"binding": 0,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		}
+	]
+}

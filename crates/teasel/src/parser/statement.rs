@@ -9,7 +9,7 @@ use super::{
 };
 use crate::ast::{Class, Function, List, MethodKind, NodeId, NodeKind, VariableKind};
 use crate::error::Code;
-use crate::interner::{FastSet, StrId};
+use crate::interner::{FastMap, StrId};
 use crate::lexer::token::{Keyword, TokenKind};
 use crate::lexer::unicode::{is_id_continue, is_id_start};
 
@@ -51,7 +51,7 @@ impl<E: Extension> Parser<'_, E> {
 		let module = self.options.module;
 		self.enter_scope(SCOPE_TOP);
 		let mut body = self.items();
-		let mut exports = FastSet::default();
+		let mut exports = FastMap::default();
 		if !self.strict {
 			self.strict_directive()?;
 		}
@@ -62,18 +62,23 @@ impl<E: Extension> Parser<'_, E> {
 				continue;
 			}
 			let at = self.tok.start;
-			if let Some(statement) = self.statement_recovered(|p| {
+			let exported = exports.len();
+			match self.statement_recovered(|p| {
 				p.parse_statement(Context::None, StatementPlace::TopLevel, Some(&mut exports))
 			})? {
-				body.push(Some(statement));
+				Some(statement) => body.push(Some(statement)),
+				// a skipped export kept its names, and the next export of one was a duplicate
+				None if exports.len() > exported => exports.retain(|_, &mut pos| pos < at),
+				None => {}
 			}
 			self.ensure_progress(at)?;
 		}
-		if module
-			&& !self.options.allow_undeclared_exports
-			&& let Some((&name, &(pos, _))) = self.undeclared_exports.iter().min_by_key(|(_, (_, order))| *order)
-		{
-			return self.error_name(pos, Code::UndefinedExport, name);
+		if module && !self.options.allow_undeclared_exports {
+			let undeclared = std::mem::take(&mut self.undeclared_exports);
+			if let Some(&(name, _)) = undeclared.iter().find(|&&(name, _)| !self.declares_export(name)) {
+				let pos = undeclared.iter().rfind(|&&(n, _)| n == name).unwrap().1;
+				return self.error_name(pos, Code::UndefinedExport, name);
+			}
 		}
 		let body = self.list_from(body);
 		self.adapt_directive_prologue(body);
@@ -153,7 +158,7 @@ impl<E: Extension> Parser<'_, E> {
 		&mut self,
 		context: Context,
 		place: StatementPlace,
-		exports: Option<&mut FastSet<StrId>>,
+		exports: Option<&mut FastMap<StrId, u32>>,
 	) -> Result<NodeId> {
 		self.enter()?;
 		let result = self.parse_statement_inner(context, place, exports);
@@ -165,7 +170,7 @@ impl<E: Extension> Parser<'_, E> {
 		&mut self,
 		context: Context,
 		place: StatementPlace,
-		exports: Option<&mut FastSet<StrId>>,
+		exports: Option<&mut FastMap<StrId, u32>>,
 	) -> Result<NodeId> {
 		if let Some(statement) = E::statement(self, context, place)? {
 			return Ok(statement);
@@ -1124,7 +1129,7 @@ impl<E: Extension> Parser<'_, E> {
 		self.parse_ident(true)
 	}
 
-	fn parse_export(&mut self, start: u32, exports: &mut FastSet<StrId>) -> Result<NodeId> {
+	fn parse_export(&mut self, start: u32, exports: &mut FastMap<StrId, u32>) -> Result<NodeId> {
 		self.next()?;
 		if let Some(node) = E::export_head(self, start)? {
 			return Ok(node);
@@ -1263,7 +1268,7 @@ impl<E: Extension> Parser<'_, E> {
 			|| E::starts_export_declaration(self)
 	}
 
-	fn parse_export_specifiers(&mut self, exports: &mut FastSet<StrId>) -> Result<Vec<Option<NodeId>>> {
+	fn parse_export_specifiers(&mut self, exports: &mut FastMap<StrId, u32>) -> Result<Vec<Option<NodeId>>> {
 		let mut nodes = self.items();
 		self.expect(TokenKind::BraceL)?;
 		let mut first = true;
@@ -1288,7 +1293,7 @@ impl<E: Extension> Parser<'_, E> {
 		Ok(nodes)
 	}
 
-	fn check_export(&self, exports: &mut FastSet<StrId>, name: NodeId, pos: u32) -> Result<()> {
+	fn check_export(&self, exports: &mut FastMap<StrId, u32>, name: NodeId, pos: u32) -> Result<()> {
 		let name = match self.kind(name) {
 			NodeKind::Identifier { name } | NodeKind::StringLiteral { value: name } => name,
 			_ => return Ok(()),
@@ -1296,14 +1301,14 @@ impl<E: Extension> Parser<'_, E> {
 		self.check_export_name(exports, name, pos)
 	}
 
-	fn check_export_name(&self, exports: &mut FastSet<StrId>, name: StrId, pos: u32) -> Result<()> {
-		if !exports.insert(name) && E::DUPLICATE_EXPORT_ERRORS {
+	fn check_export_name(&self, exports: &mut FastMap<StrId, u32>, name: StrId, pos: u32) -> Result<()> {
+		if *exports.entry(name).or_insert(pos) != pos && E::DUPLICATE_EXPORT_ERRORS {
 			return self.error_name(pos, Code::DuplicateExport, name);
 		}
 		Ok(())
 	}
 
-	fn check_pattern_export(&self, exports: &mut FastSet<StrId>, pattern: NodeId) -> Result<()> {
+	fn check_pattern_export(&self, exports: &mut FastMap<StrId, u32>, pattern: NodeId) -> Result<()> {
 		match self.kind(pattern) {
 			NodeKind::Identifier { .. } => self.check_export(exports, pattern, self.start_of(pattern)),
 			NodeKind::ObjectPattern { properties } => {
