@@ -59,10 +59,13 @@ impl<E: Extension> Parser<'_, E> {
 				continue;
 			}
 			let at = self.tok.start;
-			if let Some(statement) = self.statement_recovered(|p| {
+			let exported = (self.recovering() && self.is(TokenKind::Keyword(Keyword::Export))).then(|| exports.clone());
+			match self.statement_recovered(|p| {
 				p.parse_statement(Context::None, StatementPlace::TopLevel, Some(&mut exports))
 			})? {
-				body.push(Some(statement));
+				Some(statement) => body.push(Some(statement)),
+				// a skipped export kept its names, and the next export of one was a duplicate
+				None => exports = exported.unwrap_or(exports),
 			}
 			self.ensure_progress(at)?;
 		}
