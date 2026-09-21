@@ -301,7 +301,15 @@ export class Source {
 		else throw new TypeError('at is an offset or [start, end]');
 		if (held !== undefined && (offset !== 0 || end !== undefined)) throw new TypeError('a document plan reads the whole source');
 		const answer = this.#held.parse(entry, offset, end, stop, held);
-		if (typeof answer !== 'string') return decode(answer, this.#source, engine) as Parsed<any>;
+		if (typeof answer !== 'string') {
+			try {
+				return decode(answer, this.#source, engine) as Parsed<any>;
+			} catch (error) {
+				// a tree deeper than the caller's stack has room for overflowed the decoder
+				if (!(error instanceof RangeError)) throw error;
+				throw Object.assign(new SyntaxError('Maximum nesting depth exceeded'), { code: 'nesting_depth', pos: offset, end: offset });
+			}
+		}
 		const { message, ...error } = JSON.parse(answer).error;
 		throw Object.assign(new SyntaxError(message), error);
 	}

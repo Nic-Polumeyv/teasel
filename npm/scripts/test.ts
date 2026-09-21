@@ -380,6 +380,18 @@ const vue = grammars.vue;
 	assert.throws(() => open("import { '\\udc00' as y } from 'm';", { sourceType: 'module' }).parse(), { code: 'lone_surrogate_in_module_name', pos: 9 });
 }
 
+// a tree too deep for a walk is a parse error on every backend, and the engine reads the next source
+{
+	const deep = { code: 'nesting_depth' };
+	for (const scopes of [false, true]) {
+		assert.throws(() => open('a' + '.b'.repeat(9_999), { scopes }).parse(), deep);
+		assert.throws(() => open('new '.repeat(9_999) + 'x', { scopes }).parse(), deep);
+		assert.throws(() => open('type A = ' + 'B<'.repeat(999) + 'C' + '>'.repeat(999), { scopes, typescript: true }).parse(), deep);
+		assert.throws(() => open('<a>'.repeat(40_000) + '</a>'.repeat(40_000), { scopes }).parse(grammars.svelte), deep);
+		assert.equal(open('x', { scopes }).parse().node.body.length, 1);
+	}
+}
+
 // src/lib/codes.ts is written from error.rs by scripts/codes.ts: the two must agree
 {
 	const written = [...readFileSync(new URL('../src/lib/codes.ts', import.meta.url), 'utf8').matchAll(/'([a-z_0-9]+)'/g)].map((m) => m[1]);

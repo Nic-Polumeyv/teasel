@@ -95,6 +95,11 @@ fn unfinished_input() {
 	assert!(comment.contains("\"value\":\"xx\""), "{comment}");
 	assert!(parse("<script>\"</script>", &svelte, true).contains("\"type\":\"Root\""));
 	assert!(parse("<a @x=\"@\"/>", &vue, false).contains("\"error\""));
+	let elements = format!("{}x{}", "<a>".repeat(40_000), "</a>".repeat(40_000));
+	let branches = format!("{{#if a}}{}{{/if}}", "{:else if a}".repeat(40_000));
+	for deep in [elements, branches] {
+		assert!(parse(&deep, &svelte, false).contains("\"code\":\"nesting_depth\""));
+	}
 	let program = parse("<button @click=\"let x = 1\"/>", &vue, true);
 	assert!(
 		program.contains("\"type\":\"VariableDeclaration\"") && !program.contains("\"errors\":[{"),

@@ -35,7 +35,8 @@ function guarded<T>(f: () => T): T {
 	try {
 		return f();
 	} catch (error) {
-		if (!(error instanceof WebAssembly.RuntimeError)) throw error;
+		// a stack overflow unwinds the module mid-parse and leaves it as unusable as a trap does
+		if (!(error instanceof WebAssembly.RuntimeError || error instanceof RangeError)) throw error;
 		wasm = new WebAssembly.Instance(module, {}).exports as unknown as Exports;
 		generation++;
 		throw new Error('the engine panicked and started over; the sources it held are gone', { cause: error });

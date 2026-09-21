@@ -440,6 +440,13 @@ pub(crate) fn parse_document<E: Extension>(
 }
 
 impl<'a, E: Extension> Walker<'a, E> {
+	fn within_depth(&self, at: u32) -> Result<()> {
+		if self.frames.len() as u32 >= crate::parser::MAX_DEPTH {
+			return fail(at, at + 1, Code::NestingDepth, None);
+		}
+		Ok(())
+	}
+
 	fn ast(&mut self) -> &mut Ast<E::Data> {
 		self.ast.as_deref_mut().unwrap()
 	}
@@ -1283,6 +1290,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			return Ok(());
 		}
 		let nodes = self.nodes.take();
+		self.within_depth(start)?;
 		self.frames.push(Frame::Element {
 			start,
 			name: name_span,
@@ -2135,6 +2143,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let (nodes, done) = (self.nodes.take(), self.fields.take());
 		let mut groups = self.groups.take();
 		groups.push(group);
+		self.within_depth(start)?;
 		self.frames.push(Frame::Block {
 			start,
 			rule,
@@ -2237,6 +2246,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			let (nodes, done) = (self.nodes.take(), self.fields.take());
 			let mut groups = self.groups.take();
 			groups.push(group);
+			self.within_depth(start)?;
 			self.frames.push(Frame::Block {
 				start,
 				rule,

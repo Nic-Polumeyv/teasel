@@ -18,10 +18,11 @@ pub(crate) use statement::{ClassKind, Context, StatementPlace};
 /// Errors travel boxed so every `Result` stays two words wide.
 pub(crate) type Result<T> = std::result::Result<T, Box<SyntaxError>>;
 
-const MAX_DEPTH: u32 = 1000;
+pub(crate) const MAX_DEPTH: u32 = 1000;
 /// Subscripts and binary operators chain without recursion, but the tree they build is as deep
 /// as the chain is long, and everything that walks it recurses.
-const MAX_CHAIN: u32 = 10_000;
+// wasm frames sit on the embedder's stack: the scope walk overflowed it past 5,000 links
+const MAX_CHAIN: u32 = if cfg!(target_arch = "wasm32") { 4_000 } else { 10_000 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Decorators {

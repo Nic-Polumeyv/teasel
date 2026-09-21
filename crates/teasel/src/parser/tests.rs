@@ -261,6 +261,8 @@ fn entry_points() {
 		.spawn(move || {
 			let deep = format!("({}a{})", "[".repeat(20_000), "]".repeat(20_000));
 			assert_eq!(params(&deep, 0, options, "").unwrap_err().code, Code::NestingDepth);
+			let news = format!("({}a)", "new ".repeat(20_000));
+			assert_eq!(params(&news, 0, options, "").unwrap_err().code, Code::NestingDepth);
 		})
 		.unwrap()
 		.join()

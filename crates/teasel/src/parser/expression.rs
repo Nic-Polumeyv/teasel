@@ -868,7 +868,10 @@ impl<E: Extension> Parser<'_, E> {
 			return Ok(self.add(NodeKind::MetaProperty { meta, property }, start));
 		}
 		let callee_start = self.tok.start;
-		let atom = self.parse_expr_atom(&mut None, ForInit::No, true)?;
+		self.enter()?;
+		let atom = self.parse_expr_atom(&mut None, ForInit::No, true);
+		self.leave();
+		let atom = atom?;
 		let callee = self.parse_subscripts(atom, callee_start, true, ForInit::No)?;
 		if matches!(self.kind(callee), NodeKind::Super) {
 			return self.error(self.start_of(callee), Code::InvalidSuper);
