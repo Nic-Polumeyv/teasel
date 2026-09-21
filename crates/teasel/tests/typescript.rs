@@ -145,13 +145,11 @@ fn conformance() {
 	let mut by_stem: HashMap<String, Vec<PathBuf>> = HashMap::new();
 	for entry in fs::read_dir(&baselines).unwrap() {
 		let path = entry.unwrap().path();
-		let Some(base) = path.file_name().unwrap().to_str().unwrap().strip_suffix(".errors.txt") else {
-			continue;
-		};
-		for (i, _) in base.match_indices('(') {
-			by_stem.entry(base[..i].to_string()).or_default().push(path.clone());
+		let name = path.file_name().unwrap().to_str().unwrap();
+		if let Some(base) = name.strip_suffix(".errors.txt") {
+			let stem = base.split('(').next().unwrap().to_string();
+			by_stem.entry(stem).or_default().push(path);
 		}
-		by_stem.entry(base.to_string()).or_default().push(path.clone());
 	}
 	let mut files = Vec::new();
 	cases(&root.join("tests/cases/conformance"), &mut files);
