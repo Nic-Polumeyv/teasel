@@ -1318,26 +1318,29 @@ export function decode(words: Uint32Array, source: string, engine: Views, link =
 		S.roots = table(S, tree, words, lens, rows.roots, at.roots);
 		if (link) link_tables(S);
 	}
-	let node: Decoded | Decoded[];
-	if (listed) {
-		node = [];
-		for (let i = 2; i < lens; i++) if (S.erased === null || !bit(S.erased, words[i])) node.push(build(S, words[i]));
-	} else node = build(S, words[2]);
-	const answer: Decoded = { node, end: words[0] };
-	if ((what & COMMENTS) !== 0) answer.comments = comments(S);
-	if ((what & RECOVERED) !== 0) answer.errors = errors(S, tree[at.errors] as Uint32Array, words[lens + at.errors] / 6);
-	if (erase) answer.typescript = kept(S);
-	if (scoped) {
-		answer.scopes = S.scopes;
-		answer.bindings = S.bindings;
-		answer.references = S.references;
-		if (words[lens + at.hosts] !== 0) answer.roots = S.roots;
+	try {
+		let node: Decoded | Decoded[];
+		if (listed) {
+			node = [];
+			for (let i = 2; i < lens; i++) if (S.erased === null || !bit(S.erased, words[i])) node.push(build(S, words[i]));
+		} else node = build(S, words[2]);
+		const answer: Decoded = { node, end: words[0] };
+		if ((what & COMMENTS) !== 0) answer.comments = comments(S);
+		if ((what & RECOVERED) !== 0) answer.errors = errors(S, tree[at.errors] as Uint32Array, words[lens + at.errors] / 6);
+		if (erase) answer.typescript = kept(S);
+		if (scoped) {
+			answer.scopes = S.scopes;
+			answer.bindings = S.bindings;
+			answer.references = S.references;
+			if (words[lens + at.hosts] !== 0) answer.roots = S.roots;
+		}
+		return answer;
+	} finally {
+		// the state outlives the answer: it lets go of what the answer holds
+		S.source = '';
+		S.strings = NO_STRINGS;
+		S.scopes = S.bindings = S.references = S.roots = NO_ROWS;
 	}
-	// the state outlives the answer: it lets go of what the answer holds
-	S.source = '';
-	S.strings = NO_STRINGS;
-	S.scopes = S.bindings = S.references = S.roots = NO_ROWS;
-	return answer;
 }
 
 /** What erasure left in place, in source order. */
