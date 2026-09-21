@@ -339,9 +339,15 @@ function strings(tree: Tree, words: Uint32Array, lens: number, at: At): string[]
 	const marked = words[lens + at.marks];
 	if (marked !== 0) {
 		const marks = tree[at.marks] as Uint32Array;
-		for (let i = 0; i < marked; i += 3) {
-			const s = out[marks[i]], offset = marks[i + 1];
-			out[marks[i]] = s.slice(0, offset) + String.fromCharCode(marks[i + 2]) + s.slice(offset + 1);
+		// rebuilding the string once per mark was quadratic in a long literal
+		for (let i = 0; i < marked; ) {
+			const id = marks[i], s = out[id];
+			let built = '', from = 0;
+			for (; i < marked && marks[i] === id; i += 3) {
+				built += s.slice(from, marks[i + 1]) + String.fromCharCode(marks[i + 2]);
+				from = marks[i + 1] + 1;
+			}
+			out[id] = built + s.slice(from);
 		}
 	}
 	return out;
