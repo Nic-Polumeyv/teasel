@@ -739,13 +739,13 @@ impl<'a, E: Extension> Parser<'a, E> {
 	}
 
 	fn mark(&self) -> Mark<E> {
-		let declared = match self.recovering() {
-			true => self
-				.scopes
+		let declared = if self.recovering() {
+			self.scopes
 				.iter()
 				.map(|scope| scope.declared().count() as u32)
-				.collect(),
-			false => Vec::new(),
+				.collect()
+		} else {
+			Vec::new()
 		};
 		Mark {
 			scopes: self.scopes.len(),

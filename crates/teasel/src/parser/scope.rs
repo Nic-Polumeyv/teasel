@@ -69,10 +69,7 @@ impl Scope {
 	pub(crate) fn forget(&mut self, declared: usize) {
 		if declared < self.names.len() {
 			self.names.truncate(declared);
-			self.index = None;
-			if declared >= INDEXED {
-				self.index = Some(self.indexed());
-			}
+			self.index = (declared >= INDEXED).then(|| self.indexed());
 		}
 	}
 
