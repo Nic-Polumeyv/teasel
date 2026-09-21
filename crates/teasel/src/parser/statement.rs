@@ -97,7 +97,8 @@ impl<E: Extension> Parser<'_, E> {
 				if !matches!(p.kind(expression), NodeKind::StringLiteral { .. }) || p.end_of(expression) != end {
 					break;
 				}
-				if &p.source()[start as usize + 1..end as usize - 1] == "use strict" {
+				// under recovery the string may be a lone quote, its range empty backwards
+				if p.source().get(start as usize + 1..end as usize - 1) == Some("use strict") {
 					return Ok(true);
 				}
 			}
