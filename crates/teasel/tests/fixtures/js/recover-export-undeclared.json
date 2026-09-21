@@ -1,0 +1,79 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 46,
+		"scope": 0,
+		"body": [
+			{
+				"type": "ExportNamedDeclaration",
+				"start": 25,
+				"end": 45,
+				"declaration": {
+					"type": "VariableDeclaration",
+					"start": 32,
+					"end": 45,
+					"declarations": [
+						{
+							"type": "VariableDeclarator",
+							"start": 38,
+							"end": 44,
+							"defines": [
+								0
+							],
+							"id": {
+								"type": "Identifier",
+								"start": 38,
+								"end": 40,
+								"declares": 0,
+								"name": "ok"
+							},
+							"init": {
+								"type": "Literal",
+								"start": 43,
+								"end": 44,
+								"value": 1,
+								"raw": "1"
+							}
+						}
+					],
+					"kind": "const"
+				},
+				"specifiers": [],
+				"source": null,
+				"attributes": []
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 46,
+	"comments": [],
+	"errors": [
+		{
+			"code": "string_export_without_from",
+			"message": "A string literal cannot be used as an exported binding without `from`.",
+			"pos": 18,
+			"end": 18,
+			"loc": {
+				"line": 1,
+				"column": 18
+			}
+		}
+	],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "ok",
+			"kind": "const",
+			"scope": 0,
+			"write": true
+		}
+	],
+	"references": []
+}

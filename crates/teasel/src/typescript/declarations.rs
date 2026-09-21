@@ -109,7 +109,7 @@ impl Parser<'_, TypeScript> {
 		let in_namespace = std::mem::replace(&mut self.ext.in_namespace, namespace);
 		self.expect(TokenKind::BraceL)?;
 		let mut body = Vec::new();
-		let mut exports = crate::interner::FastSet::default();
+		let mut exports = crate::interner::FastMap::default();
 		while !self.is(TokenKind::BraceR) {
 			let at = self.tok.start;
 			if let Some(statement) = self.statement_recovered(|p| {
