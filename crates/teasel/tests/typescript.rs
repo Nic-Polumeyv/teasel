@@ -9,6 +9,7 @@
 //!
 //! A case with several files (`// @filename`) or a `.d.ts` file is left out.
 
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use teasel::Entry;
@@ -140,6 +141,18 @@ fn conformance() {
 		return;
 	}
 	let baselines = root.join("baselines/reference/conformance");
+	// reading the directory once per case took 10 s
+	let mut by_stem: HashMap<String, Vec<PathBuf>> = HashMap::new();
+	for entry in fs::read_dir(&baselines).unwrap() {
+		let path = entry.unwrap().path();
+		let Some(base) = path.file_name().unwrap().to_str().unwrap().strip_suffix(".errors.txt") else {
+			continue;
+		};
+		for (i, _) in base.match_indices('(') {
+			by_stem.entry(base[..i].to_string()).or_default().push(path.clone());
+		}
+		by_stem.entry(base.to_string()).or_default().push(path.clone());
+	}
 	let mut files = Vec::new();
 	cases(&root.join("tests/cases/conformance"), &mut files);
 	files.sort();
@@ -156,17 +169,11 @@ fn conformance() {
 		}
 		let stem = file.file_stem().unwrap().to_str().unwrap();
 		let mut codes = Vec::new();
-		for entry in fs::read_dir(&baselines).unwrap() {
-			let entry = entry.unwrap();
-			let name = entry.file_name().into_string().unwrap();
-			if name == format!("{stem}.errors.txt")
-				|| (name.starts_with(&format!("{stem}(")) && name.ends_with(".errors.txt"))
-			{
-				let text = fs::read_to_string(entry.path()).unwrap();
-				for (i, _) in text.match_indices("error TS") {
-					let code: String = text[i + 8..].chars().take_while(|c| c.is_ascii_digit()).collect();
-					codes.push(code);
-				}
+		for path in by_stem.get(stem).into_iter().flatten() {
+			let text = fs::read_to_string(path).unwrap();
+			for (i, _) in text.match_indices("error TS") {
+				let code: String = text[i + 8..].chars().take_while(|c| c.is_ascii_digit()).collect();
+				codes.push(code);
 			}
 		}
 		// TypeScript reports early errors from its binder and checker, redeclarations say, so a
