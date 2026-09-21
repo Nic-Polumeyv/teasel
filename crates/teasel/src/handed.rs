@@ -185,7 +185,10 @@ pub trait Raw {
 	/// The allocation, its bytes and its alignment; None when a caller already holds it.
 	fn release(&mut self) -> Option<(*mut u8, usize, usize)>;
 	/// Continues on a fresh allocation, empty.
-	fn renew(&mut self);
+	///
+	/// # Safety
+	/// The owner reads nothing it kept about the old contents until it is cleared.
+	unsafe fn renew(&mut self);
 }
 
 impl<T: Copy + 'static> Raw for Handed<T> {
@@ -219,7 +222,7 @@ impl<T: Copy + 'static> Raw for Handed<T> {
 		Some((ptr.cast(), capacity * size_of::<T>(), align_of::<T>()))
 	}
 
-	fn renew(&mut self) {
+	unsafe fn renew(&mut self) {
 		Handed::renew(self, 0);
 	}
 }
