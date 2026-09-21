@@ -419,7 +419,8 @@ pub fn renew_trees() {
 		let session = &mut *session.borrow_mut();
 		let mut renew = |_, buffer: Option<&mut dyn Raw>| {
 			if let Some(buffer) = buffer {
-				buffer.renew();
+				// every tree is cleared before its next parse
+				unsafe { buffer.renew() };
 			}
 		};
 		#[cfg(feature = "typescript")]

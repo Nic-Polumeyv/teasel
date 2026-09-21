@@ -248,7 +248,7 @@ impl Interner {
 
 	/// The text of every string, where each starts and the lone surrogates, for a front end
 	/// reading them in place.
-	pub fn buffers(&mut self) -> (&mut Handed<u8>, &mut Handed<u32>, &mut Handed<[u32; 3]>) {
+	pub(crate) fn buffers(&mut self) -> (&mut Handed<u8>, &mut Handed<u32>, &mut Handed<[u32; 3]>) {
 		(&mut self.text, &mut self.starts, &mut self.marks)
 	}
 
