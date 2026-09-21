@@ -595,7 +595,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 		lexer.comments = std::mem::take(&mut ast.comments);
 		lexer.set_pos(offset);
 		lexer.recover = options.error_recovery;
-		let strict = options.module || expression::strict_directive(src, offset);
+		let strict = options.module;
 		lexer.strict = strict;
 		lexer.module = options.module;
 		let spare = std::mem::take(&mut ast.spare);

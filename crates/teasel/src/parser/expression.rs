@@ -1281,24 +1281,20 @@ impl<E: Extension> Parser<'_, E> {
 			(body, true)
 		} else {
 			let simple = self.is_simple_param_list(params);
-			let mut use_strict = false;
-			if !old_strict || !simple {
-				use_strict = self.strict_directive(self.tok.end);
-				if use_strict && !simple {
-					return self.error(start, Code::StrictDirectiveNonSimpleParams);
-				}
+			let block_start = self.tok.start;
+			self.expect(TokenKind::BraceL)?;
+			let use_strict = (!old_strict || !simple) && self.strict_directive()?;
+			if use_strict && !simple {
+				return self.error(start, Code::StrictDirectiveNonSimpleParams);
 			}
 			let old_labels = std::mem::take(&mut self.labels);
-			if use_strict {
-				self.set_strict(true);
-			}
 			self.check_params(params, !old_strict && !use_strict && !is_arrow && !is_method && simple)?;
 			if self.strict
 				&& let Some(id) = id
 			{
 				self.check_lval_simple(id, Binding::Outside, &mut None)?;
 			}
-			let body = self.parse_block(false, use_strict && !old_strict)?;
+			let body = self.parse_block_body(block_start, false, use_strict && !old_strict)?;
 			let NodeKind::BlockStatement { body: statements } = self.kind(body) else {
 				unreachable!()
 			};
@@ -1476,96 +1472,6 @@ impl<E: Extension> Parser<'_, E> {
 		self.next()?;
 		let argument = self.parse_maybe_unary(&mut None, true, false, for_init)?;
 		Ok(self.add(NodeKind::AwaitExpression { argument }, start))
-	}
-
-	pub(crate) fn strict_directive(&self, pos: u32) -> bool {
-		strict_directive(self.source(), pos)
-	}
-}
-
-/// Scans for a `"use strict"` directive at the start of a body without tokenizing it.
-pub(crate) fn strict_directive(source: &str, mut pos: u32) -> bool {
-	let src = source.as_bytes();
-	{
-		loop {
-			pos = skip_space(source, pos);
-			let Some(quote) = src.get(pos as usize).filter(|b| **b == b'\'' || **b == b'"') else {
-				return false;
-			};
-			let mut end = pos as usize + 1;
-			while end < src.len() && src[end] != *quote {
-				if src[end] == b'\\' {
-					end += 1;
-				}
-				end += 1;
-			}
-			if end >= src.len() {
-				return false;
-			}
-			let literal = &src[pos as usize + 1..end];
-			let after = end as u32 + 1;
-			if literal == b"use strict" {
-				let next_pos = skip_space(source, after);
-				let next = src.get(next_pos as usize).copied();
-				if next == Some(b';') || next == Some(b'}') || next.is_none() {
-					return true;
-				}
-				let between = &source[after as usize..next_pos as usize];
-				let has_newline = between.chars().any(crate::lexer::is_new_line);
-				let rest = &src[next_pos as usize..];
-				let keyword = |w: &[u8]| {
-					rest.starts_with(w)
-						&& !rest.get(w.len()).is_some_and(|&b| {
-							crate::lexer::scan::class(b) & crate::lexer::scan::ID_CONTINUE != 0
-								|| b >= 0x80 || b == b'\\'
-						})
-				};
-				let continues = match rest[0] {
-					b'+' | b'-' => rest.get(1) != Some(&rest[0]),
-					b'!' => rest.get(1) == Some(&b'='),
-					b'i' => keyword(b"in") || keyword(b"instanceof"),
-					next => b"(`.[/*%<>=,?^&|".contains(&next),
-				};
-				return has_newline && !continues;
-			}
-			pos = skip_space(source, after);
-			if src.get(pos as usize) == Some(&b';') {
-				pos += 1;
-			}
-		}
-	}
-}
-
-/// Skips whitespace, line terminators and comments starting at a byte offset.
-fn skip_space(text: &str, mut pos: u32) -> u32 {
-	let src = text.as_bytes();
-	loop {
-		let i = pos as usize;
-		match src.get(i) {
-			Some(b'/') if src.get(i + 1) == Some(&b'/') => pos += crate::lexer::line_end(&src[i..]) as u32,
-			Some(b'/') if src.get(i + 1) == Some(&b'*') => {
-				pos = match crate::lexer::comment_end(&text[i + 2..]) {
-					Some((len, _)) => (i + len + 4) as u32,
-					None => src.len() as u32,
-				}
-			}
-			Some(&b) if b < 0x80 => {
-				if crate::lexer::scan::class(b) & (crate::lexer::scan::SPACE | crate::lexer::scan::NEWLINE) != 0 {
-					pos += 1;
-				} else {
-					return pos;
-				}
-			}
-			Some(_) => {
-				let c = text[i..].chars().next().unwrap();
-				if crate::lexer::is_new_line(c) || crate::lexer::is_whitespace(c) {
-					pos += c.len_utf8() as u32;
-				} else {
-					return pos;
-				}
-			}
-			None => return pos,
-		}
 	}
 }
 

@@ -52,6 +52,9 @@ impl<E: Extension> Parser<'_, E> {
 		self.enter_scope(SCOPE_TOP);
 		let mut body = self.items();
 		let mut exports = FastMap::default();
+		if !self.strict {
+			self.strict_directive()?;
+		}
 		while !self.is(TokenKind::Eof) {
 			if self.recovering() && self.lexer.unmatched {
 				self.report_unexpected();
@@ -81,6 +84,42 @@ impl<E: Extension> Parser<'_, E> {
 		self.adapt_directive_prologue(body);
 		self.exit_scope();
 		Ok(self.add_with_end(NodeKind::Program { body, module }, start, self.tok.end))
+	}
+
+	// a scan of the bytes for the directive missed one after a hashbang or an HTML-like comment
+	pub(crate) fn strict_directive(&mut self) -> Result<bool> {
+		if !matches!(self.tok.kind, TokenKind::String(_)) {
+			return Ok(false);
+		}
+		let snapshot = self.snapshot();
+		let found = self.speculate(|p| {
+			while matches!(p.tok.kind, TokenKind::String(_)) {
+				let (start, end) = (p.tok.start, p.tok.end);
+				let statement = p.parse_statement(Context::None, StatementPlace::Block, None)?;
+				let NodeKind::ExpressionStatement { expression, .. } = p.kind(statement) else {
+					break;
+				};
+				if !matches!(p.kind(expression), NodeKind::StringLiteral { .. }) || p.end_of(expression) != end {
+					break;
+				}
+				// under recovery the string may be a lone quote, its range empty backwards
+				if p.source().get(start as usize + 1..end as usize - 1) == Some("use strict") {
+					return Ok(true);
+				}
+			}
+			Ok(false)
+		});
+		self.restore(snapshot);
+		let found = found.unwrap_or(false);
+		if found {
+			self.set_strict(true);
+			// the first string was read as sloppy code, legacy octal escapes allowed
+			let newline_before = self.tok.newline_before;
+			self.lexer.set_pos(self.tok.start);
+			self.lexer.next_token_into(&mut self.tok)?;
+			self.tok.newline_before = newline_before;
+		}
+		Ok(found)
 	}
 
 	pub(crate) fn adapt_directive_prologue(&mut self, statements: List) {
@@ -849,6 +888,10 @@ impl<E: Extension> Parser<'_, E> {
 	pub(crate) fn parse_block(&mut self, new_scope: bool, exit_strict: bool) -> Result<NodeId> {
 		let start = self.tok.start;
 		self.expect(TokenKind::BraceL)?;
+		self.parse_block_body(start, new_scope, exit_strict)
+	}
+
+	pub(crate) fn parse_block_body(&mut self, start: u32, new_scope: bool, exit_strict: bool) -> Result<NodeId> {
 		if new_scope {
 			self.enter_scope(0);
 		}
