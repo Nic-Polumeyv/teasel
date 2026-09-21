@@ -165,7 +165,7 @@ block snippet  SnippetBlock
 - `open FORM -> BODY` reads the opening tag by the form; the body is where the content goes.
 - `branch WORDS FORM -> BODY` reads `{:WORDS …}`, the longest run of words first (`else if` before `else`), and starts a new body. A branch with `chain FIELD` nests a new block of the same kind into the field instead, so `{:else if}` becomes an `IfBlock` inside `alternate`.
 
-A body is `-> field`, or `-> field?` to leave the field out of blocks that never opened it, then optionally `chain FIELD` and `declares a b`: the fields of the form whose patterns are declared in the body's scope. `declares name:outside` declares in the scope around the block instead, a snippet's name.
+A body is `-> field`, or `-> field?` to leave the field out of blocks that never opened it, then optionally `chain FIELD` and `declares a b`: the fields of the form whose patterns are declared in the body's scope. `declares name:outside` declares in the scope around the block instead, a snippet's name. A name declared twice in a scope the host opens is a `redeclaration` error of the scope analysis: only a parse with `scopes` reports it.
 
 ## Tags
 
