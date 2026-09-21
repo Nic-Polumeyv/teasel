@@ -228,23 +228,26 @@ pub fn typescript(src: &str, grammar: &Grammar) -> bool {
 	if script.typescript.is_empty() {
 		return false;
 	}
+	// testing every text-only name at every `<` cost 1% of a document's parse
+	let firsts = (grammar.text_only.iter()).fold(1u128 << b'!', |set, name| set | 1 << (name.as_bytes()[0] & 127));
 	let mut rest = src;
 	while let Some(i) = rest.find('<') {
 		rest = &rest[i + 1..];
+		if !rest.as_bytes().first().is_some_and(|b| firsts >> (b & 127) & 1 == 1) {
+			continue;
+		}
 		if let Some(after) = rest.strip_prefix("!--") {
 			rest = after.find("-->").map_or("", |j| &after[j + 3..]);
 			continue;
 		}
-		let name_len = rest
-			.find(|c: char| is_space(c) || c == '>' || c == '/')
-			.unwrap_or(rest.len());
-		let name = &rest[..name_len];
-		let is_script = name == script.name;
 		// `<script lang=ts>` in a script's string or in a textarea made the document TypeScript
-		if !is_script && grammar.style != Some(name) && !grammar.element(name).is_some_and(|rule| rule.rcdata) {
+		let Some((name, after)) = (grammar.text_only.iter())
+			.filter_map(|&name| Some((name, rest.strip_prefix(name)?)))
+			.find(|(_, after)| after.starts_with(|c: char| is_space(c) || c == '>' || c == '/'))
+		else {
 			continue;
-		}
-		let after = &rest[name_len..];
+		};
+		let is_script = name == script.name;
 		let tag_end = tag_end(after);
 		let mut attributes = if is_script {
 			after[..tag_end].trim_start_matches(is_space)

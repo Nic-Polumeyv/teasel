@@ -439,6 +439,8 @@ pub struct Grammar {
 	pub elements: Vec<ElementRule>,
 	pub script: Option<ScriptRule>,
 	pub style: Option<&'static str>,
+	/// The elements whose content is text, never tags: the script, the style and the rcdata ones.
+	pub text_only: Vec<&'static str>,
 	pub directive_syntax: Option<DirectiveSyntax>,
 	pub shorthands: Vec<Shorthand>,
 	pub directives: Vec<DirectiveRule>,
@@ -737,6 +739,7 @@ impl Grammar {
 			},
 			verbatim: None,
 			elements: Vec::new(),
+			text_only: Vec::new(),
 			script: None,
 			style: None,
 			directive_syntax: None,
@@ -783,6 +786,14 @@ impl Grammar {
 			block.entries = entries;
 			block.bodies = bodies;
 		}
+		let rcdata = grammar.elements.iter().filter_map(|rule| match rule.name {
+			Match::Exact(name) if rule.rcdata => Some(name),
+			_ => None,
+		});
+		grammar.text_only = (grammar.script.iter().map(|script| script.name))
+			.chain(grammar.style)
+			.chain(rcdata)
+			.collect();
 		Ok(grammar)
 	}
 
