@@ -58,17 +58,26 @@ impl Scope {
 		}
 	}
 
+	fn indexed(&self) -> FastMap<StrId, u8> {
+		let mut index = FastMap::default();
+		for &(n, k) in &self.names {
+			*index.entry(n).or_default() |= k;
+		}
+		index
+	}
+
+	pub(crate) fn forget(&mut self, declared: usize) {
+		if declared < self.names.len() {
+			self.names.truncate(declared);
+			self.index = (declared >= INDEXED).then(|| self.indexed());
+		}
+	}
+
 	fn push(&mut self, name: StrId, kind: u8) {
 		self.names.push((name, kind));
 		match &mut self.index {
 			Some(index) => *index.entry(name).or_default() |= kind,
-			None if self.names.len() == INDEXED => {
-				let mut index = FastMap::default();
-				for &(n, k) in &self.names {
-					*index.entry(n).or_default() |= k;
-				}
-				self.index = Some(index);
-			}
+			None if self.names.len() == INDEXED => self.index = Some(self.indexed()),
 			None => {}
 		}
 	}

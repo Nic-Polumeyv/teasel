@@ -518,6 +518,8 @@ impl std::fmt::Debug for Spare {
 /// failed parse built is forgotten with it.
 struct Mark<E: Extension> {
 	scopes: usize,
+	/// Under recovery, how many names each open scope had declared.
+	declared: Vec<u32>,
 	labels: usize,
 	private_names: usize,
 	depth: u32,
@@ -737,8 +739,17 @@ impl<'a, E: Extension> Parser<'a, E> {
 	}
 
 	fn mark(&self) -> Mark<E> {
+		let declared = if self.recovering() {
+			self.scopes
+				.iter()
+				.map(|scope| scope.declared().count() as u32)
+				.collect()
+		} else {
+			Vec::new()
+		};
 		Mark {
 			scopes: self.scopes.len(),
+			declared,
 			labels: self.labels.len(),
 			private_names: self.private_names.len(),
 			depth: self.depth,
@@ -752,6 +763,9 @@ impl<'a, E: Extension> Parser<'a, E> {
 	fn unwind(&mut self, mark: Mark<E>) {
 		while self.scopes.len() > mark.scopes {
 			self.exit_scope();
+		}
+		for (scope, &declared) in self.scopes.iter_mut().zip(&mark.declared) {
+			scope.forget(declared as usize);
 		}
 		self.labels.truncate(mark.labels);
 		self.private_names.truncate(mark.private_names);
