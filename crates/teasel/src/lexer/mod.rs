@@ -52,6 +52,7 @@ pub(crate) struct Lexer<'a> {
 	/// The lone surrogates of the string or template being read: the UTF-16 offset in `buf`,
 	/// where it holds U+FFFD, and the surrogate.
 	marks: Vec<(u32, u16)>,
+	marked: usize,
 }
 
 impl<'a> Lexer<'a> {
@@ -84,6 +85,7 @@ impl<'a> Lexer<'a> {
 			comments: Vec::new(),
 			strings,
 			marks: Vec::new(),
+			marked: 0,
 		}
 	}
 
@@ -1008,8 +1010,12 @@ impl<'a> Lexer<'a> {
 
 	/// A surrogate without its pair stands in the text as U+FFFD and is kept beside it.
 	fn push_lone(&mut self, code: u32) {
-		self.marks.push((self.buf.encode_utf16().count() as u32, code as u16));
+		// counting the whole text for every mark was quadratic in a long literal
+		let (bytes, units) = self.marks.last().map_or((0, 0), |&(at, _)| (self.marked, at + 1));
+		self.marks
+			.push((units + self.buf[bytes..].encode_utf16().count() as u32, code as u16));
 		self.buf.push('\u{fffd}');
+		self.marked = self.buf.len();
 	}
 
 	fn intern_buf(&mut self) -> StrId {

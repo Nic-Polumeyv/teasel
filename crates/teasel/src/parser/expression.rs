@@ -1512,10 +1512,21 @@ pub(crate) fn strict_directive(source: &str, mut pos: u32) -> bool {
 				}
 				let between = &source[after as usize..next_pos as usize];
 				let has_newline = between.chars().any(crate::lexer::is_new_line);
-				let next = next.unwrap();
-				return has_newline
-					&& !(b"(`.[+-/*%<>=,?^&".contains(&next)
-						|| (next == b'!' && src.get(next_pos as usize + 1) == Some(&b'=')));
+				let rest = &src[next_pos as usize..];
+				let keyword = |w: &[u8]| {
+					rest.starts_with(w)
+						&& !rest.get(w.len()).is_some_and(|&b| {
+							crate::lexer::scan::class(b) & crate::lexer::scan::ID_CONTINUE != 0
+								|| b >= 0x80 || b == b'\\'
+						})
+				};
+				let continues = match rest[0] {
+					b'+' | b'-' => rest.get(1) != Some(&rest[0]),
+					b'!' => rest.get(1) == Some(&b'='),
+					b'i' => keyword(b"in") || keyword(b"instanceof"),
+					next => b"(`.[/*%<>=,?^&|".contains(&next),
+				};
+				return has_newline && !continues;
 			}
 			pos = skip_space(source, after);
 			if src.get(pos as usize) == Some(&b';') {

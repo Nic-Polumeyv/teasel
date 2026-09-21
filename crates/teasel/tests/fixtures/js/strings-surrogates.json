@@ -2,7 +2,7 @@
 	"node": {
 		"type": "Program",
 		"start": 0,
-		"end": 119,
+		"end": 151,
 		"scope": 0,
 		"body": [
 			{
@@ -162,11 +162,23 @@
 					"raw": "'\\ud800'"
 				},
 				"attributes": []
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 119,
+				"end": 150,
+				"expression": {
+					"type": "Literal",
+					"start": 119,
+					"end": 149,
+					"value": "\ud800😀\ud800é\udc00 \udc00",
+					"raw": "'\\ud800😀\\ud800é\\udc00 \\udc00'"
+				}
 			}
 		],
 		"sourceType": "module"
 	},
-	"end": 119,
+	"end": 151,
 	"comments": [],
 	"scopes": [
 		{

@@ -9,8 +9,9 @@ import { engine as native } from '../dist/native.js';
 import { engine as wasm } from '../dist/wasm.js';
 import { decode, type Engine, type Prepared } from '../dist/lib/decode.js';
 import { ENTRY, type Entry, flags, type Options } from '../dist/lib/options.js';
+import { target } from './target.ts';
 
-const binary = new URL('../../target/release/teasel', import.meta.url).pathname;
+const binary = `${target}/release/teasel`;
 const files: string[] = [];
 function walk(dir: string) {
 	for (const name of readdirSync(dir)) {
