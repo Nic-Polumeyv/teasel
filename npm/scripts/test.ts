@@ -93,6 +93,7 @@ const { open, scopeOf, referenceOf, parentOf } = untyped(m);
 	const broken = parse('x = "abc\ny = ', { errorRecovery: true, locations: true });
 	assert.deepEqual(broken.errors.map((e: Any) => [e.code, e.pos, e.loc.line]), [['unterminated_string', 4, 1], ['unexpected_eof', 13, 2]]);
 	assert.deepEqual(parse('x', loose).errors, []);
+	assert.deepEqual(parse('let x = (1; let x = 2;', loose).errors.map((e: Any) => e.code), ['unexpected_token']);
 	assert.equal('errors' in parse('x'), false);
 	const scoped = parse('let = f(a, b)', { errorRecovery: true, scopes: true, sourceType: 'module' });
 	assert.equal(scoped.bindings.length, 0);
