@@ -440,11 +440,10 @@ pub(crate) fn parse_document<E: Extension>(
 }
 
 impl<'a, E: Extension> Walker<'a, E> {
-	fn open(&mut self, at: u32, frame: Frame<'a>) -> Result<()> {
+	fn within_depth(&self, at: u32) -> Result<()> {
 		if self.frames.len() as u32 >= crate::parser::MAX_DEPTH {
 			return fail(at, at + 1, Code::NestingDepth, None);
 		}
-		self.frames.push(frame);
 		Ok(())
 	}
 
@@ -1291,20 +1290,18 @@ impl<'a, E: Extension> Walker<'a, E> {
 			return Ok(());
 		}
 		let nodes = self.nodes.take();
-		self.open(
+		self.within_depth(start)?;
+		self.frames.push(Frame::Element {
 			start,
-			Frame::Element {
-				start,
-				name: name_span,
-				ty,
-				attributes,
-				fields,
-				nodes,
-				shadowroot,
-				verbatim: verbatim_here,
-				declared,
-			},
-		)?;
+			name: name_span,
+			ty,
+			attributes,
+			fields,
+			nodes,
+			shadowroot,
+			verbatim: verbatim_here,
+			declared,
+		});
 		Ok(())
 	}
 
@@ -2146,20 +2143,18 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let (nodes, done) = (self.nodes.take(), self.fields.take());
 		let mut groups = self.groups.take();
 		groups.push(group);
-		self.open(
+		self.within_depth(start)?;
+		self.frames.push(Frame::Block {
 			start,
-			Frame::Block {
-				start,
-				rule,
-				fields: read.fields,
-				body: (body.field, body.omit),
-				nodes,
-				done,
-				groups,
-				outside,
-				chain: None,
-			},
-		)?;
+			rule,
+			fields: read.fields,
+			body: (body.field, body.omit),
+			nodes,
+			done,
+			groups,
+			outside,
+			chain: None,
+		});
 		Ok(())
 	}
 
@@ -2251,20 +2246,18 @@ impl<'a, E: Extension> Walker<'a, E> {
 			let (nodes, done) = (self.nodes.take(), self.fields.take());
 			let mut groups = self.groups.take();
 			groups.push(group);
-			self.open(
+			self.within_depth(start)?;
+			self.frames.push(Frame::Block {
 				start,
-				Frame::Block {
-					start,
-					rule,
-					fields: read.fields,
-					body: (child_field, false),
-					nodes,
-					done,
-					groups,
-					outside,
-					chain: Some(body.field),
-				},
-			)?;
+				rule,
+				fields: read.fields,
+				body: (child_field, false),
+				nodes,
+				done,
+				groups,
+				outside,
+				chain: Some(body.field),
+			});
 			return Ok(());
 		}
 		let mut read = Read {
