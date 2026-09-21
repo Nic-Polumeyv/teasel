@@ -1,0 +1,343 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 173,
+		"scope": 0,
+		"body": [
+			{
+				"type": "FunctionDeclaration",
+				"start": 0,
+				"end": 50,
+				"scope": 1,
+				"defines": [
+					0
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 9,
+					"end": 11,
+					"declares": 0,
+					"name": "or"
+				},
+				"expression": false,
+				"generator": false,
+				"async": false,
+				"params": [],
+				"body": {
+					"type": "BlockStatement",
+					"start": 14,
+					"end": 50,
+					"body": [
+						{
+							"type": "ExpressionStatement",
+							"start": 17,
+							"end": 35,
+							"expression": {
+								"type": "BinaryExpression",
+								"start": 17,
+								"end": 34,
+								"left": {
+									"type": "Literal",
+									"start": 17,
+									"end": 29,
+									"value": "use strict",
+									"raw": "\"use strict\""
+								},
+								"operator": "|",
+								"right": {
+									"type": "Literal",
+									"start": 33,
+									"end": 34,
+									"value": 1,
+									"raw": "1"
+								}
+							}
+						},
+						{
+							"type": "WithStatement",
+							"start": 37,
+							"end": 48,
+							"scope": 2,
+							"object": {
+								"type": "Identifier",
+								"start": 43,
+								"end": 44,
+								"reference": 0,
+								"name": "o"
+							},
+							"body": {
+								"type": "BlockStatement",
+								"start": 46,
+								"end": 48,
+								"scope": 3,
+								"body": []
+							}
+						}
+					]
+				}
+			},
+			{
+				"type": "FunctionDeclaration",
+				"start": 51,
+				"end": 106,
+				"scope": 4,
+				"defines": [
+					1
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 60,
+					"end": 66,
+					"declares": 1,
+					"name": "within"
+				},
+				"expression": false,
+				"generator": false,
+				"async": false,
+				"params": [],
+				"body": {
+					"type": "BlockStatement",
+					"start": 69,
+					"end": 106,
+					"body": [
+						{
+							"type": "ExpressionStatement",
+							"start": 72,
+							"end": 91,
+							"expression": {
+								"type": "BinaryExpression",
+								"start": 72,
+								"end": 90,
+								"left": {
+									"type": "Literal",
+									"start": 72,
+									"end": 84,
+									"value": "use strict",
+									"raw": "\"use strict\""
+								},
+								"operator": "in",
+								"right": {
+									"type": "Identifier",
+									"start": 89,
+									"end": 90,
+									"reference": 1,
+									"name": "o"
+								}
+							}
+						},
+						{
+							"type": "WithStatement",
+							"start": 93,
+							"end": 104,
+							"scope": 5,
+							"object": {
+								"type": "Identifier",
+								"start": 99,
+								"end": 100,
+								"reference": 2,
+								"name": "o"
+							},
+							"body": {
+								"type": "BlockStatement",
+								"start": 102,
+								"end": 104,
+								"scope": 6,
+								"body": []
+							}
+						}
+					]
+				}
+			},
+			{
+				"type": "FunctionDeclaration",
+				"start": 107,
+				"end": 172,
+				"scope": 7,
+				"defines": [
+					2
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 116,
+					"end": 124,
+					"declares": 2,
+					"name": "instance"
+				},
+				"expression": false,
+				"generator": false,
+				"async": false,
+				"params": [],
+				"body": {
+					"type": "BlockStatement",
+					"start": 127,
+					"end": 172,
+					"body": [
+						{
+							"type": "ExpressionStatement",
+							"start": 130,
+							"end": 157,
+							"expression": {
+								"type": "BinaryExpression",
+								"start": 130,
+								"end": 156,
+								"left": {
+									"type": "Literal",
+									"start": 130,
+									"end": 142,
+									"value": "use strict",
+									"raw": "\"use strict\""
+								},
+								"operator": "instanceof",
+								"right": {
+									"type": "Identifier",
+									"start": 155,
+									"end": 156,
+									"reference": 3,
+									"name": "o"
+								}
+							}
+						},
+						{
+							"type": "WithStatement",
+							"start": 159,
+							"end": 170,
+							"scope": 8,
+							"object": {
+								"type": "Identifier",
+								"start": 165,
+								"end": 166,
+								"reference": 4,
+								"name": "o"
+							},
+							"body": {
+								"type": "BlockStatement",
+								"start": 168,
+								"end": 170,
+								"scope": 9,
+								"body": []
+							}
+						}
+					]
+				}
+			}
+		],
+		"sourceType": "script"
+	},
+	"end": 173,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "script",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "with",
+			"parent": 1,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "with",
+			"parent": 4,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 5,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "with",
+			"parent": 7,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 8,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "or",
+			"kind": "function",
+			"scope": 0,
+			"write": true
+		},
+		{
+			"name": "within",
+			"kind": "function",
+			"scope": 0,
+			"write": true
+		},
+		{
+			"name": "instance",
+			"kind": "function",
+			"scope": 0,
+			"write": true
+		}
+	],
+	"references": [
+		{
+			"scope": 1,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 4,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 4,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 7,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 7,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		}
+	]
+}
