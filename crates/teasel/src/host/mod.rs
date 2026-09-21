@@ -235,14 +235,22 @@ pub fn typescript(src: &str, grammar: &Grammar) -> bool {
 			rest = after.find("-->").map_or("", |j| &after[j + 3..]);
 			continue;
 		}
-		let Some(after) = rest.strip_prefix(script.name) else {
-			continue;
-		};
-		if !after.starts_with(is_space) {
+		let name_len = rest
+			.find(|c: char| is_space(c) || c == '>' || c == '/')
+			.unwrap_or(rest.len());
+		let name = &rest[..name_len];
+		let is_script = name == script.name;
+		// `<script lang=ts>` in a script's string or in a textarea made the document TypeScript
+		if !is_script && grammar.style != Some(name) && !grammar.element(name).is_some_and(|rule| rule.rcdata) {
 			continue;
 		}
+		let after = &rest[name_len..];
 		let tag_end = tag_end(after);
-		let mut attributes = after[..tag_end].trim_start_matches(is_space);
+		let mut attributes = if is_script {
+			after[..tag_end].trim_start_matches(is_space)
+		} else {
+			""
+		};
 		while !attributes.is_empty() {
 			let name_len = attributes
 				.find(|c: char| is_space(c) || c == '=' || c == '/')
@@ -276,6 +284,7 @@ pub fn typescript(src: &str, grammar: &Grammar) -> bool {
 			}
 		}
 		rest = &after[tag_end..];
+		rest = rest.find(&format!("</{name}")).map_or("", |close| &rest[close..]);
 	}
 	false
 }

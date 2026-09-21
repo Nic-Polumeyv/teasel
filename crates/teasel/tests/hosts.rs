@@ -112,6 +112,26 @@ fn unfinished_input() {
 	);
 }
 
+#[test]
+fn script_language() {
+	let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+	let svelte = fs::read_to_string(root.join("tests/hosts/svelte/host.grammar")).unwrap();
+	let typed = "let x: number = 1;";
+	let refused =
+		|source: String| parse_document(&source, &svelte, &Request::new(Entry::Program, 0)).contains("\"error\"");
+	assert!(!refused(format!("<p>a < b</p><script lang=\"ts\">{typed}</script>")));
+	assert!(refused(format!("<script>{typed}</script>")));
+	assert!(refused(format!(
+		"<script>const s = \"<script lang=ts>\"; {typed}</script>"
+	)));
+	assert!(refused(format!(
+		"<textarea><script lang=\"ts\"></textarea><script>{typed}</script>"
+	)));
+	assert!(refused(format!(
+		"<style>a{{}}/*<script lang=\"ts\">*/</style><script>{typed}</script>"
+	)));
+}
+
 // cargo test --release --test hosts host_phases -- --ignored --nocapture; TEASEL_HOST_BENCH=file adds a document of its own
 #[test]
 #[ignore]
