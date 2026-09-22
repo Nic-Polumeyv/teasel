@@ -61,6 +61,7 @@ impl Datum {
 #[derive(Clone, Copy, Debug)]
 enum Event {
 	Document,
+	Content(Datum),
 	Stylesheet(List, List),
 	Text {
 		raw: Datum,
@@ -366,6 +367,13 @@ impl<'a, E: Extension> Walker<'a, E> {
 	}
 	fn matches(&self, text: &str) -> bool {
 		self.rest().starts_with(text)
+	}
+	fn prefix(&self, text: &str) -> bool {
+		self.matches(text)
+			|| text
+				.strip_prefix(self.plan.html.delimiters[0].as_ref())
+				.zip(self.rest().strip_prefix(self.plan.html.delimiters[0].as_ref()))
+				.is_some_and(|(text, rest)| rest.trim_start_matches(is_space).starts_with(text))
 	}
 	fn eat(&mut self, text: &str) -> bool {
 		if !self.matches(text) {
@@ -1230,11 +1238,16 @@ impl<'a, E: Extension> Walker<'a, E> {
 			if matches!(error.code(), Code::NestingDepth | Code::TreeSize) {
 				return error;
 			}
-			self.records[record]
+			let error = self.records[record]
 				.failure
 				.take()
 				.filter(|i| self.failures[*i].pos() > error.pos())
-				.map_or(error, |i| self.failures[i].clone())
+				.map_or(error, |i| self.failures[i].clone());
+			if error.code() == Code::Expected && self.records[record].body_end == Some(self.limit) {
+				let name = self.plan.rules[schema.source].name.to_ascii_lowercase();
+				return self::error(start, start + 1, Code::Unclosed, Some(&name)).into();
+			}
+			error
 		})?;
 		if self
 			.elements
@@ -1251,7 +1264,14 @@ impl<'a, E: Extension> Walker<'a, E> {
 				if let Some(len) = closing_tag(self.rest(), name) {
 					self.at += len as u32;
 				} else {
-					self.report(error(self.at, self.at, Code::Unclosed, Some(name)))?;
+					let stylesheet = self.slots[slots..slots + schema.slots]
+						.iter()
+						.any(|value| matches!(value, Datum::Stylesheet(_)));
+					self.report(if stylesheet {
+						error(self.at, self.at, Code::Expected, Some(&format!("</{name}")))
+					} else {
+						error(self.at, self.at, Code::Unclosed, Some(name))
+					})?;
 				}
 			}
 		}
@@ -1481,6 +1501,10 @@ impl<'a, E: Extension> Walker<'a, E> {
 				Key::Comments => Datum::Comments,
 				_ => Datum::Missing,
 			},
+			Event::Content(name) => match key {
+				Key::Name => name,
+				_ => Datum::Missing,
+			},
 			Event::Stylesheet(children, comments) => match key {
 				Key::Children => Datum::Nodes(children),
 				Key::Comments => Datum::Nodes(comments),
@@ -1548,11 +1572,12 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let tail = self
 			.rest()
 			.strip_prefix(self.plan.html.delimiters[0].as_ref())
-			.unwrap_or("");
+			.unwrap_or("")
+			.trim_start_matches(is_space);
 		if tail.starts_with("/*") || tail.starts_with("//") {
 			return false;
 		}
-		self.plan.stops.iter().any(|prefix| self.matches(prefix))
+		self.plan.stops.iter().any(|prefix| self.prefix(prefix))
 	}
 
 	fn checkpoint(&mut self, record: usize) -> Checkpoint<<E::Data as crate::ast::Reuse>::Mark> {
@@ -1722,17 +1747,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 					let rest = self.rest();
 					let selected = first
 						.iter()
-						.position(|prefixes| {
-							prefixes.iter().any(|p| {
-								let rest = if p.tight {
-									rest
-								} else {
-									rest.trim_start_matches(is_space)
-								};
-								rest.starts_with(&p.text)
-									&& (!p.word || !rest[p.text.len()..].starts_with(is_id_continue))
-							})
-						})
+						.position(|prefixes| prefixes.iter().any(|prefix| prefix.matches(rest)))
 						.or_else(|| {
 							self.options.error_recovery.then(|| {
 								first
@@ -1904,6 +1919,10 @@ impl<'a, E: Extension> Walker<'a, E> {
 				}
 				let end = start + text.len() as u32;
 				if *word && self.rest()[text.len()..].starts_with(is_id_continue) {
+					if self.options.error_recovery {
+						self.at = end;
+						self.at += self.rest().find(|c| !is_id_continue(c)).unwrap_or(self.rest().len()) as u32;
+					}
 					return Err(Rejection::Space(end, end));
 				}
 				self.at = end;
@@ -2111,7 +2130,11 @@ impl<'a, E: Extension> Walker<'a, E> {
 			result
 		};
 		if input.is_some() {
+			let failed_at = self.at;
 			(self.at, self.limit) = saved;
+			if result.is_err() && matches!(reader, Reader::CssStylesheet) {
+				self.at = failed_at;
+			}
 		}
 		result
 	}
@@ -2284,6 +2307,16 @@ impl<'a, E: Extension> Walker<'a, E> {
 		}
 		node
 	}
+	fn child_error(&mut self, error: Box<SyntaxError>, start: u32, records: usize) -> Result<()> {
+		self.report(error)?;
+		for record in &mut self.records[records..] {
+			record.node = None;
+		}
+		if self.at == start && self.at < self.limit {
+			self.at += self.char().unwrap().len_utf8() as u32;
+		}
+		Ok(())
+	}
 	fn children(&mut self, mode: Mode, stop: &Stop) -> Result<List> {
 		let element = self.elements.last().cloned();
 		if matches!(stop, Stop::MatchingElement) && element.as_ref().is_some_and(|e| e.empty) {
@@ -2301,7 +2334,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let mut closed = false;
 		while self.at < self.limit {
 			if let Stop::Prefixes(prefixes) = stop
-				&& prefixes.iter().any(|p| self.matches(p))
+				&& prefixes.iter().any(|p| self.prefix(p))
 				&& self.structural_stop()
 			{
 				break;
@@ -2323,19 +2356,25 @@ impl<'a, E: Extension> Walker<'a, E> {
 					}
 					break;
 				}
-				if matches!(stop, Stop::MatchingElement) && (self.plan.html.autoclose || self.options.error_recovery) {
+				if matches!(stop, Stop::MatchingElement)
+					&& (self.plan.html.autoclose || self.options.error_recovery)
+					&& self.elements.iter().rev().skip(1).any(|element| {
+						closing_tag(self.rest(), &self.src[element.name.0 as usize..element.name.1 as usize]).is_some()
+					}) {
 					closed = true;
 					break;
 				}
 				let (_, end) = self.peek_name(self.at + 2, false);
 				let close = &self.src[(self.at + 2) as usize..end as usize];
 				if self.plan.html.void.iter().any(|name| name.as_ref() == close) {
-					return fail(
+					self.report(error(
 						self.at,
 						self.at + 1,
 						Code::Placement,
 						Some("A closing tag of a void element"),
-					);
+					))?;
+					self.at += self.rest().find('>').map_or(self.rest().len(), |n| n + 1) as u32;
+					continue;
 				}
 				let close = if let Some(Autoclosed { previous, by, depth }) = self.autoclosed
 					&& depth == self.elements.len()
@@ -2345,7 +2384,9 @@ impl<'a, E: Extension> Walker<'a, E> {
 				} else {
 					close.to_owned()
 				};
-				return fail(self.at, self.at + 1, Code::UnexpectedClose, Some(&close));
+				self.report(error(self.at, self.at + 1, Code::UnexpectedClose, Some(&close)))?;
+				self.at += self.rest().find('>').map_or(self.rest().len(), |n| n + 1) as u32;
+				continue;
 			}
 			if mode != Mode::Verbatim && self.structural_stop() {
 				if self.options.error_recovery && matches!(stop, Stop::MatchingElement) {
@@ -2354,7 +2395,8 @@ impl<'a, E: Extension> Walker<'a, E> {
 				}
 				let start = self.at;
 				let open = self.plan.html.delimiters[0].len();
-				let tail = &self.rest()[open..];
+				let tail = self.rest()[open..].trim_start_matches(is_space);
+				let open = self.rest().len() - tail.len();
 				let closing = tail.starts_with('/');
 				let end = tail.find(self.plan.html.delimiters[1].as_ref()).unwrap_or(tail.len());
 				let name = tail.get(1..end).unwrap_or("");
@@ -2393,10 +2435,10 @@ impl<'a, E: Extension> Walker<'a, E> {
 					let start = self.at;
 					self.at += 4;
 					let data = self.at;
-					let len = self
-						.rest()
-						.find("-->")
-						.ok_or_else(|| error(self.limit, self.limit, Code::Expected, Some("-->")))?;
+					let Some(len) = self.rest().find("-->") else {
+						self.report(error(self.limit, self.limit, Code::Expected, Some("-->")))?;
+						continue;
+					};
 					let end = self.at + len as u32 + 3;
 					let event = self.event(Event::Comment(Datum::Slice(data, end - 3)));
 					self.at = start;
@@ -2419,21 +2461,49 @@ impl<'a, E: Extension> Walker<'a, E> {
 					closed = true;
 					break;
 				}
-				nodes.push(self.element()?);
+				let start = self.at;
+				let records = self.records.len();
+				match self.element() {
+					Ok(node) => nodes.push(node),
+					Err(error) => self.child_error(error, start, records)?,
+				}
 				continue;
 			}
 			if mode != Mode::Verbatim
 				&& (self.matches(&self.plan.html.delimiters[0])
-					|| self.plan.html.content.iter().any(|p| self.matches(&p.prefix)))
+					|| self.plan.html.content.iter().any(|p| self.prefix(&p.prefix)))
 			{
 				let row = self
 					.plan
 					.html
 					.content
 					.iter()
-					.find(|p| self.matches(&p.prefix))
+					.find(|p| self.prefix(&p.prefix))
 					.ok_or_else(|| error(self.at, self.at, Code::UnexpectedToken, None))?;
-				nodes.push(self.call(row.rule, Datum::Missing, None, "")?);
+				if mode == Mode::Rcdata && row.prefix.len() > self.plan.html.delimiters[0].len() {
+					let start = self.at;
+					self.at += self.plan.html.delimiters[0].len() as u32;
+					return fail(
+						start,
+						start + 1,
+						Code::Placement,
+						Some(&format!("A block or tag in <{}>", name.unwrap_or("text"))),
+					);
+				}
+				let start = self.at;
+				let records = self.records.len();
+				let tail = self
+					.rest()
+					.strip_prefix(self.plan.html.delimiters[0].as_ref())
+					.unwrap_or("");
+				let word = tail.trim_start_matches(is_space);
+				let from = self.at + (self.rest().len() - word.len()) as u32;
+				let len = word.find(|c| !is_id_continue(c)).unwrap_or(word.len()) as u32;
+				let event = self.event(Event::Content(Datum::Slice(from, from + len)));
+				match self.call(row.rule, event, None, "") {
+					Ok(node) => nodes.push(node),
+					Err(error) => self.child_error(error, start, records)?,
+				}
 				continue;
 			}
 			let start = self.at;
@@ -2513,11 +2583,27 @@ impl<'a, E: Extension> Walker<'a, E> {
 			}
 		}
 		if quote.is_some() || self.at == content {
-			self.report(error(start, start, Code::Expected, Some("an attribute value")))?;
+			return fail(start, start, Code::Expected, Some("an attribute value"));
 		}
 		Ok((content, self.at, self.at, quote.is_some()))
 	}
 	fn interpolation_span(&mut self) -> Result<()> {
+		if self
+			.plan
+			.html
+			.content
+			.iter()
+			.any(|row| row.prefix.len() > self.plan.html.delimiters[0].len() && self.prefix(&row.prefix))
+		{
+			let start = self.at;
+			self.at += self.plan.html.delimiters[0].len() as u32;
+			return fail(
+				start,
+				start + 1,
+				Code::Placement,
+				Some("A block or tag in an attribute value"),
+			);
+		}
 		self.at += self.plan.html.delimiters[0].len() as u32;
 		let close = &self.plan.html.delimiters[1];
 		use crate::lexer::token::TokenKind;
@@ -2565,7 +2651,9 @@ impl<'a, E: Extension> Walker<'a, E> {
 		self.scan_stops = lexer.stop_ranges;
 		self.scan_templates = templates;
 		self.scan_regexp = lexer.regexp;
-		self.expect(close)?;
+		if !self.eat(close) {
+			return fail(self.at, self.at, Code::Expected, Some(close));
+		}
 		Ok(())
 	}
 	fn scan_header(&mut self) -> Result<Run> {
@@ -2791,7 +2879,13 @@ impl<'a, E: Extension> Walker<'a, E> {
 				self.skip_raw(name);
 				let end = self.at;
 				self.at = start;
-				if end == self.limit && !self.options.error_recovery {
+				if end == self.limit
+					&& !self.options.error_recovery
+					&& native_form(
+						&self.plan.program.rules[self.records[record].rule].form,
+						Js::Program,
+						&self.plan.program,
+					) {
 					return fail(end, end, Code::Unclosed, Some(name));
 				}
 				let Datum::Event(i) = self.records[record].event else {
@@ -3016,7 +3110,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 	fn single(&mut self, entry: Js) -> Result<Datum> {
 		let open = &self.plan.html.delimiters[0];
 		if !self.matches(open) {
-			return fail(self.at, self.at, Code::Expected, Some("an expression, not text"));
+			return fail(self.at, self.limit, Code::Expected, Some("an expression, not text"));
 		}
 		let close = &self.plan.html.delimiters[1];
 		self.expect(open)?;
@@ -3028,7 +3122,11 @@ impl<'a, E: Extension> Walker<'a, E> {
 		Ok(value)
 	}
 	fn stylesheet(&mut self) -> Result<Datum> {
-		let (children, comments) = self.style_sheet()?;
+		let end = self.limit;
+		self.limit = self.src.len() as u32;
+		let result = self.style_sheet(end);
+		self.limit = end;
+		let (children, comments) = result?;
 		let i = self.events.len();
 		self.events.push(Event::Stylesheet(children, comments));
 		Ok(Datum::Stylesheet(i))
@@ -3683,12 +3781,15 @@ pub fn typescript(src: &str, plan: &Plan) -> bool {
 
 fn tag_end(after: &str) -> usize {
 	let mut quote = None;
+	let mut braces = 0_u32;
 	for (i, c) in after.char_indices() {
 		match quote {
 			Some(q) if c == q => quote = None,
 			Some(_) => {}
-			None if c == '"' || c == '\'' => quote = Some(c),
-			None if c == '>' => return i,
+			None if matches!(c, '"' | '\'' | '`') => quote = Some(c),
+			None if c == '{' => braces += 1,
+			None if c == '}' => braces = braces.saturating_sub(1),
+			None if c == '>' && braces == 0 => return i,
 			None => {}
 		}
 	}

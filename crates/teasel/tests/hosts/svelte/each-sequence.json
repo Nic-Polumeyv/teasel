@@ -4,8 +4,11 @@
 		"start": 0,
 		"end": 202,
 		"scope": 0,
+		"comments": [],
+		"css": null,
 		"fragment": {
 			"type": "Fragment",
+			"scope": 2,
 			"nodes": [
 				{
 					"type": "EachBlock",
@@ -16,7 +19,7 @@
 						"scope": 3,
 						"nodes": [
 							{
-								"type": "UnmarkedTag",
+								"type": "ExpressionTag",
 								"start": 17,
 								"end": 20,
 								"expression": {
@@ -77,7 +80,7 @@
 						"scope": 5,
 						"nodes": [
 							{
-								"type": "UnmarkedTag",
+								"type": "ExpressionTag",
 								"start": 44,
 								"end": 47,
 								"expression": {
@@ -125,7 +128,7 @@
 						"scope": 7,
 						"nodes": [
 							{
-								"type": "UnmarkedTag",
+								"type": "ExpressionTag",
 								"start": 73,
 								"end": 76,
 								"expression": {
@@ -195,7 +198,7 @@
 						"scope": 9,
 						"nodes": [
 							{
-								"type": "UnmarkedTag",
+								"type": "ExpressionTag",
 								"start": 111,
 								"end": 114,
 								"expression": {
@@ -208,7 +211,7 @@
 								}
 							},
 							{
-								"type": "UnmarkedTag",
+								"type": "ExpressionTag",
 								"start": 114,
 								"end": 117,
 								"expression": {
@@ -298,7 +301,7 @@
 						"scope": 11,
 						"nodes": [
 							{
-								"type": "UnmarkedTag",
+								"type": "ExpressionTag",
 								"start": 160,
 								"end": 164,
 								"expression": {
@@ -396,7 +399,7 @@
 						"scope": 13,
 						"nodes": [
 							{
-								"type": "UnmarkedTag",
+								"type": "ExpressionTag",
 								"start": 191,
 								"end": 194,
 								"expression": {
@@ -442,7 +445,9 @@
 					}
 				}
 			]
-		}
+		},
+		"js": [],
+		"options": null
 	},
 	"end": 202,
 	"comments": [],

@@ -4,176 +4,12 @@
 		"start": 0,
 		"end": 391,
 		"scope": 0,
+		"comments": [],
+		"css": null,
 		"fragment": {
 			"type": "Fragment",
+			"scope": 2,
 			"nodes": [
-				{
-					"type": "Script",
-					"start": 0,
-					"end": 109,
-					"attributes": [
-						{
-							"type": "Attribute",
-							"start": 8,
-							"end": 17,
-							"name": "lang",
-							"value": [
-								{
-									"type": "Text",
-									"start": 14,
-									"end": 16,
-									"data": "ts",
-									"raw": "ts"
-								}
-							]
-						}
-					],
-					"content": {
-						"type": "Program",
-						"start": 18,
-						"end": 100,
-						"scope": 1,
-						"root": 0,
-						"body": [
-							{
-								"type": "VariableDeclaration",
-								"start": 20,
-								"end": 42,
-								"declarations": [
-									{
-										"type": "VariableDeclarator",
-										"start": 24,
-										"end": 41,
-										"defines": [
-											0
-										],
-										"id": {
-											"type": "Identifier",
-											"start": 24,
-											"end": 36,
-											"declares": 0,
-											"typeAnnotation": {
-												"type": "TSTypeAnnotation",
-												"start": 26,
-												"end": 36,
-												"typeAnnotation": {
-													"type": "TSArrayType",
-													"start": 28,
-													"end": 36,
-													"elementType": {
-														"type": "TSNumberKeyword",
-														"start": 28,
-														"end": 34
-													}
-												}
-											},
-											"name": "xs"
-										},
-										"init": {
-											"type": "ArrayExpression",
-											"start": 39,
-											"end": 41,
-											"elements": []
-										}
-									}
-								],
-								"kind": "let"
-							},
-							{
-								"type": "VariableDeclaration",
-								"start": 44,
-								"end": 66,
-								"declarations": [
-									{
-										"type": "VariableDeclarator",
-										"start": 48,
-										"end": 65,
-										"defines": [
-											1
-										],
-										"id": {
-											"type": "Identifier",
-											"start": 48,
-											"end": 60,
-											"declares": 1,
-											"typeAnnotation": {
-												"type": "TSTypeAnnotation",
-												"start": 50,
-												"end": 60,
-												"typeAnnotation": {
-													"type": "TSArrayType",
-													"start": 52,
-													"end": 60,
-													"elementType": {
-														"type": "TSNumberKeyword",
-														"start": 52,
-														"end": 58
-													}
-												}
-											},
-											"name": "ys"
-										},
-										"init": {
-											"type": "ArrayExpression",
-											"start": 63,
-											"end": 65,
-											"elements": []
-										}
-									}
-								],
-								"kind": "let"
-							},
-							{
-								"type": "VariableDeclaration",
-								"start": 68,
-								"end": 81,
-								"declarations": [
-									{
-										"type": "VariableDeclarator",
-										"start": 72,
-										"end": 80,
-										"defines": [
-											2
-										],
-										"id": {
-											"type": "Identifier",
-											"start": 72,
-											"end": 73,
-											"declares": 2,
-											"name": "c"
-										},
-										"init": {
-											"type": "Literal",
-											"start": 76,
-											"end": 80,
-											"value": true,
-											"raw": "true"
-										}
-									}
-								],
-								"kind": "let"
-							},
-							{
-								"type": "TSTypeAliasDeclaration",
-								"start": 83,
-								"end": 99,
-								"id": {
-									"type": "Identifier",
-									"start": 88,
-									"end": 89,
-									"name": "T"
-								},
-								"typeAnnotation": {
-									"type": "TSNumberKeyword",
-									"start": 92,
-									"end": 98
-								}
-							}
-						],
-						"sourceType": "module"
-					},
-					"context": "default"
-				},
 				{
 					"type": "Text",
 					"start": 109,
@@ -190,7 +26,7 @@
 						"scope": 3,
 						"nodes": [
 							{
-								"type": "UnmarkedTag",
+								"type": "ExpressionTag",
 								"start": 142,
 								"end": 148,
 								"expression": {
@@ -270,7 +106,7 @@
 						"scope": 5,
 						"nodes": [
 							{
-								"type": "UnmarkedTag",
+								"type": "ExpressionTag",
 								"start": 186,
 								"end": 192,
 								"expression": {
@@ -351,7 +187,7 @@
 						"scope": 7,
 						"nodes": [
 							{
-								"type": "UnmarkedTag",
+								"type": "ExpressionTag",
 								"start": 234,
 								"end": 240,
 								"expression": {
@@ -438,7 +274,7 @@
 						"scope": 9,
 						"nodes": [
 							{
-								"type": "UnmarkedTag",
+								"type": "ExpressionTag",
 								"start": 283,
 								"end": 289,
 								"expression": {
@@ -451,7 +287,7 @@
 								}
 							},
 							{
-								"type": "UnmarkedTag",
+								"type": "ExpressionTag",
 								"start": 289,
 								"end": 292,
 								"expression": {
@@ -535,7 +371,7 @@
 						"scope": 11,
 						"nodes": [
 							{
-								"type": "UnmarkedTag",
+								"type": "ExpressionTag",
 								"start": 321,
 								"end": 327,
 								"expression": {
@@ -548,7 +384,7 @@
 								}
 							},
 							{
-								"type": "UnmarkedTag",
+								"type": "ExpressionTag",
 								"start": 327,
 								"end": 330,
 								"expression": {
@@ -603,7 +439,7 @@
 						"scope": 13,
 						"nodes": [
 							{
-								"type": "UnmarkedTag",
+								"type": "ExpressionTag",
 								"start": 377,
 								"end": 383,
 								"expression": {
@@ -684,7 +520,176 @@
 					}
 				}
 			]
-		}
+		},
+		"instance": {
+			"type": "Script",
+			"start": 0,
+			"end": 109,
+			"attributes": [
+				{
+					"type": "Attribute",
+					"start": 8,
+					"end": 17,
+					"name": "lang",
+					"value": [
+						{
+							"type": "Text",
+							"start": 14,
+							"end": 16,
+							"data": "ts",
+							"raw": "ts"
+						}
+					]
+				}
+			],
+			"content": {
+				"type": "Program",
+				"start": 18,
+				"end": 100,
+				"scope": 1,
+				"root": 0,
+				"body": [
+					{
+						"type": "VariableDeclaration",
+						"start": 20,
+						"end": 42,
+						"declarations": [
+							{
+								"type": "VariableDeclarator",
+								"start": 24,
+								"end": 41,
+								"defines": [
+									0
+								],
+								"id": {
+									"type": "Identifier",
+									"start": 24,
+									"end": 36,
+									"declares": 0,
+									"typeAnnotation": {
+										"type": "TSTypeAnnotation",
+										"start": 26,
+										"end": 36,
+										"typeAnnotation": {
+											"type": "TSArrayType",
+											"start": 28,
+											"end": 36,
+											"elementType": {
+												"type": "TSNumberKeyword",
+												"start": 28,
+												"end": 34
+											}
+										}
+									},
+									"name": "xs"
+								},
+								"init": {
+									"type": "ArrayExpression",
+									"start": 39,
+									"end": 41,
+									"elements": []
+								}
+							}
+						],
+						"kind": "let"
+					},
+					{
+						"type": "VariableDeclaration",
+						"start": 44,
+						"end": 66,
+						"declarations": [
+							{
+								"type": "VariableDeclarator",
+								"start": 48,
+								"end": 65,
+								"defines": [
+									1
+								],
+								"id": {
+									"type": "Identifier",
+									"start": 48,
+									"end": 60,
+									"declares": 1,
+									"typeAnnotation": {
+										"type": "TSTypeAnnotation",
+										"start": 50,
+										"end": 60,
+										"typeAnnotation": {
+											"type": "TSArrayType",
+											"start": 52,
+											"end": 60,
+											"elementType": {
+												"type": "TSNumberKeyword",
+												"start": 52,
+												"end": 58
+											}
+										}
+									},
+									"name": "ys"
+								},
+								"init": {
+									"type": "ArrayExpression",
+									"start": 63,
+									"end": 65,
+									"elements": []
+								}
+							}
+						],
+						"kind": "let"
+					},
+					{
+						"type": "VariableDeclaration",
+						"start": 68,
+						"end": 81,
+						"declarations": [
+							{
+								"type": "VariableDeclarator",
+								"start": 72,
+								"end": 80,
+								"defines": [
+									2
+								],
+								"id": {
+									"type": "Identifier",
+									"start": 72,
+									"end": 73,
+									"declares": 2,
+									"name": "c"
+								},
+								"init": {
+									"type": "Literal",
+									"start": 76,
+									"end": 80,
+									"value": true,
+									"raw": "true"
+								}
+							}
+						],
+						"kind": "let"
+					},
+					{
+						"type": "TSTypeAliasDeclaration",
+						"start": 83,
+						"end": 99,
+						"id": {
+							"type": "Identifier",
+							"start": 88,
+							"end": 89,
+							"name": "T"
+						},
+						"typeAnnotation": {
+							"type": "TSNumberKeyword",
+							"start": 92,
+							"end": 98
+						}
+					}
+				],
+				"sourceType": "module"
+			},
+			"context": "default"
+		},
+		"js": [],
+		"options": null
 	},
 	"end": 391,
 	"comments": [],

@@ -4,8 +4,11 @@
 		"start": 0,
 		"end": 405,
 		"scope": 0,
+		"comments": [],
+		"css": null,
 		"fragment": {
 			"type": "Fragment",
+			"scope": 2,
 			"nodes": [
 				{
 					"type": "SvelteOptions",
@@ -53,7 +56,7 @@
 									"scope": 8,
 									"nodes": [
 										{
-											"type": "UnmarkedTag",
+											"type": "ExpressionTag",
 											"start": 45,
 											"end": 48,
 											"expression": {
@@ -242,25 +245,6 @@
 					"attributes": [
 						{
 							"type": "Attribute",
-							"start": 232,
-							"end": 240,
-							"name": "this",
-							"value": {
-								"type": "ExpressionTag",
-								"start": 237,
-								"end": 240,
-								"expression": {
-									"type": "Identifier",
-									"start": 238,
-									"end": 239,
-									"reference": 3,
-									"root": 3,
-									"name": "C"
-								}
-							}
-						},
-						{
-							"type": "Attribute",
 							"start": 241,
 							"end": 249,
 							"name": "prop",
@@ -279,6 +263,14 @@
 							}
 						}
 					],
+					"expression": {
+						"type": "Identifier",
+						"start": 238,
+						"end": 239,
+						"reference": 3,
+						"root": 3,
+						"name": "C"
+					},
 					"fragment": {
 						"type": "Fragment",
 						"nodes": []
@@ -441,7 +433,9 @@
 					"name": "slot"
 				}
 			]
-		}
+		},
+		"js": [],
+		"options": null
 	},
 	"end": 405,
 	"comments": [],

@@ -14,8 +14,11 @@
 			}
 		},
 		"scope": 0,
+		"comments": [],
+		"css": null,
 		"fragment": {
 			"type": "Fragment",
+			"scope": 2,
 			"nodes": [
 				{
 					"type": "RegularElement",
@@ -54,7 +57,7 @@
 								"raw": "\n\t"
 							},
 							{
-								"type": "UnmarkedTag",
+								"type": "ExpressionTag",
 								"start": 7,
 								"end": 10,
 								"loc": {
@@ -108,7 +111,9 @@
 					"name": "div"
 				}
 			]
-		}
+		},
+		"js": [],
+		"options": null
 	},
 	"end": 18,
 	"comments": [],

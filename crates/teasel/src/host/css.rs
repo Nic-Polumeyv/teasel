@@ -122,12 +122,12 @@ fn combinator(rest: &str) -> Option<&'static str> {
 
 impl<'a, E: Extension> Walker<'a, E> {
 	/// A stylesheet inside the current input bounds.
-	pub(super) fn style_sheet(&mut self) -> Result<(List, List)> {
+	pub(super) fn style_sheet(&mut self, end: u32) -> Result<(List, List)> {
 		let mut comments = Vec::new();
 		let mut children = Vec::new();
 		loop {
 			self.css_space(&mut comments, true)?;
-			if self.at >= self.len() {
+			if self.at >= end {
 				break;
 			}
 			children.push(if self.matches("@") {

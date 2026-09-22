@@ -4,8 +4,11 @@
 		"start": 0,
 		"end": 67,
 		"scope": 0,
+		"comments": [],
+		"css": null,
 		"fragment": {
 			"type": "Fragment",
+			"scope": 2,
 			"nodes": [
 				{
 					"type": "Component",
@@ -110,7 +113,9 @@
 					"name": "lower-case"
 				}
 			]
-		}
+		},
+		"js": [],
+		"options": null
 	},
 	"end": 67,
 	"comments": [],

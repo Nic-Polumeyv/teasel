@@ -4,8 +4,11 @@
 		"start": 0,
 		"end": 86,
 		"scope": 0,
+		"comments": [],
+		"css": null,
 		"fragment": {
 			"type": "Fragment",
+			"scope": 2,
 			"nodes": [
 				{
 					"type": "HtmlTag",
@@ -127,7 +130,7 @@
 					"raw": "\n"
 				},
 				{
-					"type": "UnmarkedTag",
+					"type": "DeclarationTag",
 					"start": 60,
 					"end": 71,
 					"declaration": {
@@ -170,7 +173,7 @@
 					"raw": "\n"
 				},
 				{
-					"type": "UnmarkedTag",
+					"type": "DeclarationTag",
 					"start": 72,
 					"end": 85,
 					"declaration": {
@@ -206,7 +209,9 @@
 					}
 				}
 			]
-		}
+		},
+		"js": [],
+		"options": null
 	},
 	"end": 86,
 	"comments": [],

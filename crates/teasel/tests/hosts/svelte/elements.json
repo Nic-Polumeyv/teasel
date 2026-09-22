@@ -4,8 +4,11 @@
 		"start": 0,
 		"end": 156,
 		"scope": 0,
+		"comments": [],
+		"css": null,
 		"fragment": {
 			"type": "Fragment",
+			"scope": 2,
 			"nodes": [
 				{
 					"type": "RegularElement",
@@ -254,7 +257,9 @@
 					"name": "my-element"
 				}
 			]
-		}
+		},
+		"js": [],
+		"options": null
 	},
 	"end": 156,
 	"comments": [],

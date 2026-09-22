@@ -282,7 +282,7 @@ const svelte = new Plan(planText);
 	assert.equal(root.end, source.length);
 	assert.equal(doc.end, source.length);
 	assert.deepEqual(doc.comments, []);
-	const instance = root.fragment.nodes.find((n: Any) => n.type === 'Script' && n.context === 'default');
+	const instance = root.instance;
 	assert.equal(instance.context, 'default');
 	assert.equal(instance.content.body[0].declarations[0].id.typeAnnotation.type, 'TSTypeAnnotation');
 	assert.equal('module' in root, false);
@@ -299,7 +299,7 @@ const svelte = new Plan(planText);
 	assert.equal(parentOf(each.context), each);
 	// the block declares its context and index; the script declares the list
 	const tag = p.fragment.nodes[0];
-	assert.equal(tag.type, 'UnmarkedTag');
+	assert.equal(tag.type, 'ExpressionTag');
 	assert.equal(referenceOf(tag.expression).binding.node, each.context);
 	assert.equal(referenceOf(p.attributes[0].expression.left).binding.name, 'i');
 	assert.equal(referenceOf(each.expression).binding.kind, 'let');
@@ -307,7 +307,7 @@ const svelte = new Plan(planText);
 	assert.equal(referenceOf(tag.expression).binding.scope, scopeOf(each.body));
 	const templateScope = scopeOf(each.body).parent;
 	assert.equal(templateScope.kind, 'fragment');
-	assert.equal(scopeOf(root.fragment), undefined);
+	assert.equal(scopeOf(root.fragment), templateScope);
 	// the template sees the instance script, which sees the module script, which is the root's
 	assert.equal(templateScope.parent, scopeOf(instance.content));
 	assert.equal(scopeOf(instance.content).parent, scopeOf(root));
