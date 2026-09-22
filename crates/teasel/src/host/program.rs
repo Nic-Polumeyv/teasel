@@ -1414,6 +1414,12 @@ pub(super) enum Expr {
 		strings: Range,
 		negate: bool,
 	},
+	TypeMap {
+		list: Code,
+		strings: Range,
+		mapped: Code,
+		body: Code,
+	},
 	FlatMap {
 		list: Code,
 		body: Code,
@@ -1707,10 +1713,11 @@ impl Program {
 					}
 				}
 			}
-			ExprTree::FlatMap { list, body } => Expr::FlatMap {
-				list: self.expr(*list),
-				body: self.expr(*body),
-			},
+			ExprTree::FlatMap { list, body } => {
+				let list = self.expr(*list);
+				let body = self.expr(*body);
+				self.type_map(list, body).unwrap_or(Expr::FlatMap { list, body })
+			}
 			ExprTree::Length(v) => Expr::Length(self.expr(*v)),
 			ExprTree::Exists(v) => Expr::Exists(self.expr(*v)),
 			ExprTree::At { list, index } => Expr::At {
@@ -1742,6 +1749,51 @@ impl Program {
 		self.exprs.push(expr);
 		code
 	}
+	#[cold]
+	fn type_map(&self, list: Code, body: Code) -> Option<Expr> {
+		let Expr::Construct(Construct::Array(items)) = self.exprs[body.index()] else {
+			return None;
+		};
+		if items.len != 1 {
+			return None;
+		}
+		let Expr::Choose { condition, yes, no } = self.exprs[self.args[items.start as usize].index()] else {
+			return None;
+		};
+		if !matches!(self.exprs[no.index()], Expr::Get { base: Base::Binding(0), path } if path.len == 0)
+			|| !self.node_value(yes)
+		{
+			return None;
+		}
+		let Expr::Member { needle, strings } = self.exprs[condition.index()] else {
+			return None;
+		};
+		let Expr::Get {
+			base: Base::Binding(0),
+			path,
+		} = self.exprs[needle.index()]
+		else {
+			return None;
+		};
+		if !matches!(&self.paths[path.indices()], [Path::Name(prop)] if prop.key == Key::Type) {
+			return None;
+		}
+		Some(Expr::TypeMap {
+			list,
+			strings,
+			mapped: yes,
+			body,
+		})
+	}
+	#[cold]
+	fn node_value(&self, code: Code) -> bool {
+		match self.exprs[code.index()] {
+			Expr::Construct(Construct::Record { .. }) => true,
+			Expr::Choose { yes, no, .. } => self.node_value(yes) && self.node_value(no),
+			_ => false,
+		}
+	}
+
 	#[cold]
 	fn form(&mut self, form: FormTree) -> Form {
 		match form {

@@ -854,6 +854,56 @@ impl<'a, E: Extension> Walker<'a, E> {
 				})?;
 				self.array(out)
 			}
+			V::TypeMap {
+				list,
+				strings,
+				mapped,
+				body,
+			} => {
+				let list = self.eval(list, record)?;
+				if let Datum::Nodes(nodes) = list {
+					let mut output = None;
+					for i in 0..nodes.len {
+						let Some(node) = self.tree().nth(nodes, i) else {
+							continue;
+						};
+						if !self.type_in(node, &self.plan.program.sets[strings.indices()]) {
+							continue;
+						}
+						self.bindings.push(Datum::Node(node));
+						let value = self.eval(mapped, record);
+						self.bindings.pop();
+						let Datum::Node(value) = value? else { unreachable!() };
+						let start = *output.get_or_insert_with(|| {
+							let start = self.tree().lists.len();
+							for i in 0..nodes.len {
+								let node = self.tree().nth(nodes, i);
+								self.ast().lists.push(node);
+							}
+							start
+						});
+						self.ast().lists[start + i as usize] = Some(value);
+					}
+					Datum::Nodes(List {
+						start: output.map_or(nodes.start, |start| start as u32),
+						len: nodes.len,
+					})
+				} else {
+					let mut out = self.take_values();
+					for i in 0..self.count(&list) {
+						let item = self.item(&list, i);
+						self.bindings.push(item);
+						let result = self.eval_list(body, record, &mut |_, value| {
+							out.push(value);
+							Ok(true)
+						});
+						self.bindings.pop();
+						result?;
+					}
+					self.array(out)
+				}
+			}
+
 			V::Length(list) => {
 				let mut count = 0;
 				self.eval_list(list, record, &mut |_, _| {
