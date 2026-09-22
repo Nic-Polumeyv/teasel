@@ -1263,6 +1263,7 @@ impl Plan {
 enum Type {
 	Missing,
 	Null,
+	Comments,
 	Bool,
 	Number,
 	String,
@@ -1493,6 +1494,12 @@ impl Validator<'_> {
 	fn event(context: Option<Context>) -> Type {
 		let mut fields = Types::default();
 		let channel = context.map(|c| c.channel);
+		if channel.is_none() || channel == Some(Channel::Document) {
+			fields.insert("comments".into(), Type::Comments);
+		}
+		if channel.is_none() || channel == Some(Channel::Content) {
+			fields.insert("name".into(), Type::String);
+		}
 		if channel.is_none() || channel == Some(Channel::Text) {
 			fields.extend([("decoded".into(), Type::String), ("raw".into(), Type::String)]);
 		}
@@ -2334,6 +2341,7 @@ pub struct Prefix {
 	pub(crate) word: bool,
 	complete: bool,
 	pub(crate) tight: bool,
+	gaps: Vec<usize>,
 }
 
 #[cold]
@@ -2344,6 +2352,7 @@ fn prefixes(form: &Form, rules: &[Rule], active: &mut Set<usize>, budget: usize)
 			word: false,
 			complete: true,
 			tight: true,
+			gaps: Vec::new(),
 		}]
 	};
 	let unknown = || {
@@ -2352,6 +2361,7 @@ fn prefixes(form: &Form, rules: &[Rule], active: &mut Set<usize>, budget: usize)
 			word: false,
 			complete: false,
 			tight: true,
+			gaps: Vec::new(),
 		}]
 	};
 	if budget == 0 {
@@ -2372,6 +2382,7 @@ fn prefixes(form: &Form, rules: &[Rule], active: &mut Set<usize>, budget: usize)
 			word: *word,
 			complete: true,
 			tight: *gap == Gap::None,
+			gaps: Vec::new(),
 		}],
 		Form::Read {
 			reader: Reader::Space { .. },
@@ -2416,16 +2427,19 @@ fn prefixes(form: &Form, rules: &[Rule], active: &mut Set<usize>, budget: usize)
 						// Ignoring a token gap would falsely prove overlapping alternatives disjoint.
 						let separated =
 							prefix.word && suffix.text.starts_with(|c: char| c.is_alphanumeric() || c == '_');
-						if separated
-							|| (!prefix.text.is_empty() && !suffix.tight)
-							|| prefix.text.len() + suffix.text.len() > 128
-						{
+						if separated || prefix.word && !suffix.tight || prefix.text.len() + suffix.text.len() > 128 {
 							combined.push(Prefix {
 								complete: false,
 								..prefix.clone()
 							});
 						} else {
+							let mut gaps = prefix.gaps.clone();
+							if !prefix.text.is_empty() && !suffix.tight {
+								gaps.push(prefix.text.len());
+							}
+							gaps.extend(suffix.gaps.iter().map(|gap| prefix.text.len() + gap));
 							combined.push(Prefix {
+								gaps,
 								text: format!("{}{}", prefix.text, suffix.text),
 								word: if suffix.text.is_empty() {
 									prefix.word
@@ -2465,8 +2479,34 @@ fn prefixes(form: &Form, rules: &[Rule], active: &mut Set<usize>, budget: usize)
 	}
 }
 
+impl Prefix {
+	pub(crate) fn matches(&self, mut rest: &str) -> bool {
+		if !self.tight {
+			rest = rest.trim_start_matches(super::is_space);
+		}
+		let mut from = 0;
+		for to in self.gaps.iter().copied().chain([self.text.len()]) {
+			let Some(tail) = rest.strip_prefix(&self.text[from..to]) else {
+				return false;
+			};
+			rest = if to == self.text.len() {
+				tail
+			} else {
+				tail.trim_start_matches(super::is_space)
+			};
+			from = to;
+		}
+		!self.word || !rest.starts_with(super::is_id_continue)
+	}
+}
+
 #[cold]
 fn distinct(left: &Prefix, right: &Prefix) -> bool {
+	if left.gaps != right.gaps
+		|| !left.gaps.is_empty() && (left.text.contains(super::is_space) || right.text.contains(super::is_space))
+	{
+		return false;
+	}
 	let left_text = left
 		.text
 		.trim_start_matches(|c: char| c.is_whitespace() || c == '\u{feff}');

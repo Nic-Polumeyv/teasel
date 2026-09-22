@@ -8,39 +8,66 @@ import {
 const named = (node: V) => present(staticAttribute(node, 'slot'));
 const component = (node: V) => isType(node, 'Component', 'SvelteComponent', 'SvelteSelf');
 const header = <Fs extends readonly Form[]>(...items: Fs) => seq(token('{'), ...items, token('}'));
-const end = (name: string) => header(token('/' + name, true));
-const branch = <Fs extends readonly Form[]>(...items: Fs) => header(token(':', true), ...items);
+const end = (name: string) => header(token('/' + name));
+const branch = <Fs extends readonly Form[]>(...items: Fs) => header(token(':'), ...items);
 const body = <N extends string>(into: Slot<N>) => call('Body', into);
 const event = get('event');
+const attributeExpression = (attribute: V) => {
+	const value = get(attribute, 'value');
+	const part = choose(present(get(value, 1)), constant(null), get(value, 0));
+	return choose(isType(value, 'ExpressionTag'), get(value, 'expression'), get(part, 'expression'));
+};
 
 const rules: Plan['rules'] = {};
 rules.Text = rule('Text', { data: 'null', raw: 'null' })
 	.form((f) => seq(emit(f.data, get('event', 'decoded')), emit(f.raw, get('event', 'raw'))));
 rules.Comment = rule('Comment', { data: 'null' }).form((f) => emit(f.data, get('event', 'data')));
+const templateNode = (node: V) => choose(isType(node, 'UnmarkedTag'),
+	choose(present(get(node, 'declaration')),
+		record('DeclarationTag', { declaration: get(node, 'declaration') }, get(node, 'span')),
+		record('ExpressionTag', { expression: get(node, 'expression') }, get(node, 'span'))), node);
 const children = (mode: Mode, stop: Stop) =>
-	rule('Fragment', { nodes: 'null' }).form((f) => read({ kind: 'html-children', mode, stop }, f.nodes)).span('none');
+	rule('Fragment', { nodes: 'null' }, ['children']).form((f) => seq(
+		read({ kind: 'html-children', mode, stop }, f.children),
+		emit(f.nodes, map(f.children, '$node', templateNode(get('$node')))),
+	)).span('none');
 rules.Body = children('normal', { prefixes: ['{:', '{/'] });
 rules.DocumentChildren = children('normal', { documentEnd: true });
 rules.NormalChildren = children('normal', { matchingElement: true });
 rules.RawChildren = children('raw', { matchingElement: true });
 rules.RcdataChildren = children('rcdata', { matchingElement: true });
-rules.Document = rule('Root', { fragment: 'null' })
-	.form((f) => call('DocumentChildren', f.fragment))
-	.regions((f) => {
-		const rootNodes = get(f.fragment, 'nodes');
-		const scripts = (context: string) => filter(rootNodes, '$node',
-			and(isType(get('$node'), 'Script'), equal(get('$node', 'context'), constant(context))));
-		return [
-			region('module', constant(null), map(scripts('module'), '$script', get('$script', 'content')), 'module'),
-			region('instance', scope('module'), map(scripts('default'), '$script', get('$script', 'content')), 'script'),
-			region('template', scope('instance'), filter(rootNodes, '$node', not(isType(get('$node'), 'Script', 'StyleSheet')))),
-		];
-	});
+const nodesOfType = (nodes: V, ...types: string[]) => filter(nodes, '$node', isType(get('$node'), ...types));
+const scripts = (nodes: V, context: string) => filter(nodesOfType(nodes, 'Script'), '$script',
+	equal(get('$script', 'context'), constant(context)));
+rules.Document = rule('Root', {
+	css: 'null', js: 'null', options: 'null', comments: 'null', module: 'omit', instance: 'omit', fragment: 'null',
+}, ['children'])
+	.form((f) => seq(
+		call('DocumentChildren', f.children),
+		emit(f.css, at(nodesOfType(get(f.children, 'nodes'), 'StyleSheet'), 0)),
+		emit(f.js, array()), emit(f.comments, get('event', 'comments')),
+		emit(f.module, at(scripts(get(f.children, 'nodes'), 'module'), 0)),
+		emit(f.instance, at(scripts(get(f.children, 'nodes'), 'default'), 0)),
+		emit(f.fragment, record('Fragment', { nodes: filter(get(f.children, 'nodes'), '$node',
+			not(or(equal(get('$node'), f.css), or(equal(get('$node'), f.module), equal(get('$node'), f.instance))))) })),
+	))
+	.regions((f) => [
+		region('module', constant(null), map(scripts(get(f.children, 'nodes'), 'module'), '$script', get('$script', 'content')), 'module'),
+		region('instance', scope('module'), map(scripts(get(f.children, 'nodes'), 'default'), '$script', get('$script', 'content')), 'script'),
+		region('template', scope('instance'), [f.fragment]),
+	]);
 
 const element = (type: string, childRule = 'NormalChildren') =>
-	rule(type, { name: 'null', attributes: 'null', fragment: 'null' })
+	rule(type, { name: 'null', attributes: 'null', fragment: 'null', expression: 'omit' }, ['definition', 'properties'])
 		.form((f) => seq(
-			emit(f.name, get('event', 'name')), read({ kind: 'html-attributes', mode: 'normal' }, f.attributes), call(childRule, f.fragment),
+			emit(f.name, get('event', 'name')), read({ kind: 'html-attributes', mode: 'normal' }, f.properties),
+			emit(f.definition, at(filter(f.properties, '$attribute', and(isType(get('$attribute'), 'Attribute'),
+				equal(get('$attribute', 'name'), constant('this')))), 0)),
+			emit(f.expression, choose(isType(get('record'), 'SvelteComponent'),
+				attributeExpression(f.definition), at(array(), 0))),
+			emit(f.attributes, filter(f.properties, '$attribute',
+				not(and(present(f.expression), equal(get('$attribute'), f.definition))))),
+			call(childRule, f.fragment),
 		))
 		.regions((f) => {
 			const self = get('record');
@@ -97,17 +124,22 @@ rules.Let = directive('LetDirective', 'pattern', 'bindingIdentifier').declares((
 
 rules.Expression = rule('ExpressionTag', { expression: 'null' }).form((f) => header(js('expression', f.expression)));
 rules.Unmarked = rule('UnmarkedTag', { expression: 'omit', declaration: 'omit' })
-	.form((f) => choice(header(js('expression', f.expression)), header(js('statement', f.declaration))));
+	.form((f) => choice(
+		seq(test(member(get('event', 'name'), ['let', 'const', 'type'])),
+			header(js('statement', f.declaration), test(and(isType(f.declaration, 'VariableDeclaration'),
+				member(get(f.declaration, 'kind'), ['let', 'const']))))),
+		header(js('expression', f.expression)),
+	));
 rules.Spread = rule('SpreadAttribute', { expression: 'null' }).form((f) => header(token('...', true), js('expression', f.expression)));
 for (const [name, prefix, type] of [['Attach', '@attach', 'AttachTag'], ['Html', '@html', 'HtmlTag'], ['Render', '@render', 'RenderTag']] as const) {
-	rules[name] = rule(type, { expression: 'null' }).form((f) => header(token(prefix, true), space(), js('expression', f.expression)));
+	rules[name] = rule(type, { expression: 'null' }).form((f) => header(token(prefix), space(), js('expression', f.expression)));
 }
 rules.Shorthand = rule('Attribute', { name: 'null', value: 'null' }, ['id']).form((f) => seq(
 	header(js('identifierReference', f.id)),
 	emit(f.name, get(f.id, 'name')),
 	emit(f.value, record('ExpressionTag', { expression: f.id }, get(f.id, 'span'))),
 ));
-rules.Debug = rule('DebugTag', { identifiers: 'null' }, ['first', 'rest']).form((f) => header(token('@debug', true), choice(
+rules.Debug = rule('DebugTag', { identifiers: 'null' }, ['first', 'rest']).form((f) => header(token('@debug'), choice(
 	seq(js('identifierReference', f.first), repeat((r) => seq(token(','), js('identifierReference', r.item)), f.rest),
 		emit(f.identifiers, concat(array(f.first), f.rest))),
 	emit(f.identifiers, array()),
@@ -117,11 +149,11 @@ rules.Declarator = rule('js.VariableDeclarator', { id: 'null', init: 'null' })
 rules.ConstDeclaration = rule('js.VariableDeclaration', { kind: 'null', declarations: 'null' })
 	.form((f) => seq(token('const', true), space(), many('Declarator', f.declarations, 1, 1), emit(f.kind, constant('const'))))
 	.span('through-next-token-start');
-rules.Const = rule('ConstTag', { declaration: 'null' }).form((f) => header(token('@', true), call('ConstDeclaration', f.declaration)));
+rules.Const = rule('ConstTag', { declaration: 'null' }).form((f) => header(token('@'), call('ConstDeclaration', f.declaration)));
 
 const ifRule = (continuation: boolean) => rule('IfBlock', { test: 'null', consequent: 'null', alternate: 'null', elseif: 'null' })
 	.form((f) => seq(
-		token('{'), continuation ? seq(token(':else', true), space(), token('if')) : token('#if', true),
+		token('{'), continuation ? seq(token(':else'), space(), token('if')) : token('#if'),
 		space(), js('expression', f.test), token('}'), body(f.consequent),
 		choice(call('ElseIf', f.alternate), seq(branch(token('else', true)), body(f.alternate), end('if')), end('if')),
 		emit(f.elseif, constant(continuation)),
@@ -132,7 +164,7 @@ rules.IfContinuation = ifRule(true);
 rules.ElseIf = rule('Fragment', { nodes: 'null' }).form((f) => many('IfContinuation', f.nodes, 1, 1)).span('none');
 rules.Each = rule('EachBlock', { expression: 'null', context: 'null', body: 'null', index: 'omit', key: 'omit', fallback: 'omit' })
 	.form((f) => seq(
-		header(token('#each', true), space(), js('expression', f.expression, undefined, 'last-shared-word'),
+		header(token('#each'), space(), js('expression', f.expression, undefined, 'last-shared-word'),
 			optional(seq(token('as'), space(), js('pattern', f.context))),
 			optional(seq(token(','), js('bindingIdentifier', f.index))),
 			optional(seq(token('('), js('expression', f.key), token(')')))),
@@ -148,7 +180,7 @@ rules.Await = rule('AwaitBlock', { expression: 'null', value: 'null', error: 'nu
 		const thenBody = () => seq(branch(thenHeader(true)), body(f.then));
 		const catchBody = () => seq(branch(catchHeader(true)), body(f.catch));
 		return seq(
-			token('{'), token('#await', true), space(), js('expression', f.expression),
+			token('{'), token('#await'), space(), js('expression', f.expression),
 			choice(
 				seq(thenHeader(), token('}'), body(f.then), optional(catchBody())),
 				seq(catchHeader(), token('}'), body(f.catch), optional(thenBody())),
@@ -168,11 +200,11 @@ rules.Await = rule('AwaitBlock', { expression: 'null', value: 'null', error: 'nu
 	])
 	.declares((f) => [declare([f.value], 'resolved'), declare([f.error], 'rejected')]);
 rules.Key = rule('KeyBlock', { expression: 'null', fragment: 'null' })
-	.form((f) => seq(header(token('#key', true), space(), js('expression', f.expression)), body(f.fragment), end('key')))
+	.form((f) => seq(header(token('#key'), space(), js('expression', f.expression)), body(f.fragment), end('key')))
 	.regions((f) => [region('content', incoming, [f.fragment])]);
 rules.Snippet = rule('SnippetBlock', { expression: 'null', parameters: 'null', body: 'null', typeParams: 'omit' }, ['types'])
 	.form((f) => seq(
-		header(token('#snippet', true), space(), js('bindingIdentifier', f.expression),
+		header(token('#snippet'), space(), js('bindingIdentifier', f.expression),
 			optional(js('typeParameters', f.types)), js('params', f.parameters)),
 		body(f.body), end('snippet'),
 		emit(f.typeParams, get(f.types, 'innerSource')),
@@ -197,7 +229,7 @@ elements.push(
 	{ when: nameIs('textarea'), rule: 'RcdataElement', type: 'RegularElement', content: 'rcdata' },
 	{ when: member(get('event', 'name'), ['script', 'style']), rule: 'RawElement', type: 'RegularElement', content: 'raw' },
 	{ when: or(and(get('event', 'nameFacts', 'uppercaseInitial'), get('event', 'nameFacts', 'identifier')), get('event', 'nameFacts', 'dottedIdentifier')), rule: 'Element', type: 'Component' },
-	{ when: get('event', 'nameFacts', 'validHtmlName'), rule: 'Element', type: 'RegularElement' },
+	{ when: and(get('event', 'nameFacts', 'validHtmlName'), not(equal(get('event', 'nameFacts', 'namespace'), constant('svelte')))), rule: 'Element', type: 'RegularElement' },
 );
 export const svelte = {
 	version: 1, document: 'Document', rules,

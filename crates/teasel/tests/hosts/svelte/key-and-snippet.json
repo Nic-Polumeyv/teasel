@@ -4,8 +4,11 @@
 		"start": 0,
 		"end": 123,
 		"scope": 0,
+		"comments": [],
+		"css": null,
 		"fragment": {
 			"type": "Fragment",
+			"scope": 2,
 			"nodes": [
 				{
 					"type": "KeyBlock",
@@ -69,7 +72,7 @@
 									"scope": 7,
 									"nodes": [
 										{
-											"type": "UnmarkedTag",
+											"type": "ExpressionTag",
 											"start": 56,
 											"end": 59,
 											"expression": {
@@ -89,7 +92,7 @@
 											"raw": ": "
 										},
 										{
-											"type": "UnmarkedTag",
+											"type": "ExpressionTag",
 											"start": 61,
 											"end": 67,
 											"expression": {
@@ -236,7 +239,9 @@
 					}
 				}
 			]
-		}
+		},
+		"js": [],
+		"options": null
 	},
 	"end": 123,
 	"comments": [],

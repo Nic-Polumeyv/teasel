@@ -4,8 +4,11 @@
 		"start": 0,
 		"end": 41,
 		"scope": 0,
+		"comments": [],
+		"css": null,
 		"fragment": {
 			"type": "Fragment",
+			"scope": 2,
 			"nodes": [
 				{
 					"type": "Component",
@@ -144,7 +147,9 @@
 					"name": "comp."
 				}
 			]
-		}
+		},
+		"js": [],
+		"options": null
 	},
 	"end": 41,
 	"comments": [],

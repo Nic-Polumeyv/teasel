@@ -4,8 +4,11 @@
 		"start": 0,
 		"end": 58,
 		"scope": 0,
+		"comments": [],
+		"css": null,
 		"fragment": {
 			"type": "Fragment",
+			"scope": 2,
 			"nodes": [
 				{
 					"type": "RegularElement",
@@ -154,7 +157,9 @@
 					"name": "table"
 				}
 			]
-		}
+		},
+		"js": [],
+		"options": null
 	},
 	"end": 58,
 	"comments": [],

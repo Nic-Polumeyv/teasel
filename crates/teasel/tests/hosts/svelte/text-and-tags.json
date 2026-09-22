@@ -4,8 +4,11 @@
 		"start": 0,
 		"end": 28,
 		"scope": 0,
+		"comments": [],
+		"css": null,
 		"fragment": {
 			"type": "Fragment",
+			"scope": 2,
 			"nodes": [
 				{
 					"type": "Text",
@@ -15,7 +18,7 @@
 					"raw": "Hello &amp; "
 				},
 				{
-					"type": "UnmarkedTag",
+					"type": "ExpressionTag",
 					"start": 12,
 					"end": 18,
 					"expression": {
@@ -35,7 +38,7 @@
 					"raw": "!\n"
 				},
 				{
-					"type": "UnmarkedTag",
+					"type": "ExpressionTag",
 					"start": 20,
 					"end": 27,
 					"expression": {
@@ -61,7 +64,9 @@
 					}
 				}
 			]
-		}
+		},
+		"js": [],
+		"options": null
 	},
 	"end": 28,
 	"comments": [],

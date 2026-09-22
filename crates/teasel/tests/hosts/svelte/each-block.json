@@ -4,8 +4,11 @@
 		"start": 0,
 		"end": 136,
 		"scope": 0,
+		"comments": [],
+		"css": null,
 		"fragment": {
 			"type": "Fragment",
+			"scope": 2,
 			"nodes": [
 				{
 					"type": "EachBlock",
@@ -23,7 +26,7 @@
 								"raw": "\n\t"
 							},
 							{
-								"type": "UnmarkedTag",
+								"type": "ExpressionTag",
 								"start": 36,
 								"end": 39,
 								"expression": {
@@ -43,7 +46,7 @@
 								"raw": ": "
 							},
 							{
-								"type": "UnmarkedTag",
+								"type": "ExpressionTag",
 								"start": 41,
 								"end": 47,
 								"expression": {
@@ -139,7 +142,7 @@
 						"scope": 5,
 						"nodes": [
 							{
-								"type": "UnmarkedTag",
+								"type": "ExpressionTag",
 								"start": 107,
 								"end": 110,
 								"expression": {
@@ -265,7 +268,9 @@
 					}
 				}
 			]
-		}
+		},
+		"js": [],
+		"options": null
 	},
 	"end": 136,
 	"comments": [],

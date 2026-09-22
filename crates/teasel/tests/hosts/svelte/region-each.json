@@ -4,56 +4,12 @@
 		"start": 0,
 		"end": 131,
 		"scope": 0,
+		"comments": [],
+		"css": null,
 		"fragment": {
 			"type": "Fragment",
+			"scope": 2,
 			"nodes": [
-				{
-					"type": "Script",
-					"start": 0,
-					"end": 27,
-					"attributes": [],
-					"content": {
-						"type": "Program",
-						"start": 8,
-						"end": 18,
-						"scope": 1,
-						"root": 0,
-						"body": [
-							{
-								"type": "VariableDeclaration",
-								"start": 8,
-								"end": 18,
-								"declarations": [
-									{
-										"type": "VariableDeclarator",
-										"start": 12,
-										"end": 17,
-										"defines": [
-											0
-										],
-										"id": {
-											"type": "Identifier",
-											"start": 12,
-											"end": 13,
-											"declares": 0,
-											"name": "x"
-										},
-										"init": {
-											"type": "Literal",
-											"start": 16,
-											"end": 17,
-											"value": 1,
-											"raw": "1"
-										}
-									}
-								],
-								"kind": "let"
-							}
-						],
-						"sourceType": "module"
-					},
-					"context": "default"
-				},
 				{
 					"type": "Text",
 					"start": 27,
@@ -112,7 +68,7 @@
 								"raw": "\n  "
 							},
 							{
-								"type": "UnmarkedTag",
+								"type": "ExpressionTag",
 								"start": 49,
 								"end": 52,
 								"expression": {
@@ -157,7 +113,7 @@
 									"scope": 7,
 									"nodes": [
 										{
-											"type": "UnmarkedTag",
+											"type": "ExpressionTag",
 											"start": 73,
 											"end": 76,
 											"expression": {
@@ -221,7 +177,7 @@
 									"scope": 9,
 									"nodes": [
 										{
-											"type": "UnmarkedTag",
+											"type": "ExpressionTag",
 											"start": 110,
 											"end": 113,
 											"expression": {
@@ -234,7 +190,7 @@
 											}
 										},
 										{
-											"type": "UnmarkedTag",
+											"type": "ExpressionTag",
 											"start": 113,
 											"end": 116,
 											"expression": {
@@ -262,7 +218,56 @@
 					"name": "Comp"
 				}
 			]
-		}
+		},
+		"instance": {
+			"type": "Script",
+			"start": 0,
+			"end": 27,
+			"attributes": [],
+			"content": {
+				"type": "Program",
+				"start": 8,
+				"end": 18,
+				"scope": 1,
+				"root": 0,
+				"body": [
+					{
+						"type": "VariableDeclaration",
+						"start": 8,
+						"end": 18,
+						"declarations": [
+							{
+								"type": "VariableDeclarator",
+								"start": 12,
+								"end": 17,
+								"defines": [
+									0
+								],
+								"id": {
+									"type": "Identifier",
+									"start": 12,
+									"end": 13,
+									"declares": 0,
+									"name": "x"
+								},
+								"init": {
+									"type": "Literal",
+									"start": 16,
+									"end": 17,
+									"value": 1,
+									"raw": "1"
+								}
+							}
+						],
+						"kind": "let"
+					}
+				],
+				"sourceType": "module"
+			},
+			"context": "default"
+		},
+		"js": [],
+		"options": null
 	},
 	"end": 131,
 	"comments": [],
