@@ -282,6 +282,7 @@ pub(crate) fn parse_document<E: Extension>(
 		spare,
 		native_reads: 0,
 		recovering_form: false,
+		depth: 0,
 		autoclosed: None,
 	};
 	let event = w.event(Event::Document);
@@ -316,6 +317,7 @@ struct Walker<'a, E: Extension> {
 	spare: Box<Spare>,
 	native_reads: usize,
 	recovering_form: bool,
+	depth: usize,
 	autoclosed: Option<Autoclosed>,
 	ast: Option<Box<Ast<E::Data>>>,
 }
@@ -854,6 +856,56 @@ impl<'a, E: Extension> Walker<'a, E> {
 				})?;
 				self.array(out)
 			}
+			V::TypeMap {
+				list,
+				strings,
+				mapped,
+				body,
+			} => {
+				let list = self.eval(list, record)?;
+				if let Datum::Nodes(nodes) = list {
+					let mut output = None;
+					for i in 0..nodes.len {
+						let Some(node) = self.tree().nth(nodes, i) else {
+							continue;
+						};
+						if !self.type_in(node, &self.plan.program.sets[strings.indices()]) {
+							continue;
+						}
+						self.bindings.push(Datum::Node(node));
+						let value = self.eval(mapped, record);
+						self.bindings.pop();
+						let Datum::Node(value) = value? else { unreachable!() };
+						let start = *output.get_or_insert_with(|| {
+							let start = self.tree().lists.len();
+							for i in 0..nodes.len {
+								let node = self.tree().nth(nodes, i);
+								self.ast().lists.push(node);
+							}
+							start
+						});
+						self.ast().lists[start + i as usize] = Some(value);
+					}
+					Datum::Nodes(List {
+						start: output.map_or(nodes.start, |start| start as u32),
+						len: nodes.len,
+					})
+				} else {
+					let mut out = self.take_values();
+					for i in 0..self.count(&list) {
+						let item = self.item(&list, i);
+						self.bindings.push(item);
+						let result = self.eval_list(body, record, &mut |_, value| {
+							out.push(value);
+							Ok(true)
+						});
+						self.bindings.pop();
+						result?;
+					}
+					self.array(out)
+				}
+			}
+
 			V::Length(list) => {
 				let mut count = 0;
 				self.eval_list(list, record, &mut |_, _| {
@@ -1171,8 +1223,10 @@ impl<'a, E: Extension> Walker<'a, E> {
 		ty: Option<StrId>,
 		follow: &str,
 	) -> std::result::Result<NodeId, Rejection> {
-		// measured at 8 KB of stack per nested record in release: 256 fit a 4 MB worker thread
-		if self.active.len() >= 256 {
+		// Spanless wrappers must not halve the source nesting limit; their own recursion is bounded too.
+		// Baseline WebAssembly frames exhaust the engine stack before 2048 active records.
+		let frames = if cfg!(target_family = "wasm") { 1000 } else { 2048 };
+		if self.active.len() >= frames {
 			return fail(self.at, self.at, Code::NestingDepth, None).map_err(Into::into);
 		}
 		let schema = &self.plan.program.rules[rule];
@@ -1181,6 +1235,11 @@ impl<'a, E: Extension> Walker<'a, E> {
 		if let Some(leaf) = &schema.leaf {
 			return self.leaf(rule, record, event, ty, leaf).map_err(Into::into);
 		}
+		let nested = usize::from(!self.active.is_empty() && schema.span != Some(SpanPolicy::None));
+		if self.depth + nested > 1000 {
+			return fail(self.at, self.at, Code::NestingDepth, None).map_err(Into::into);
+		}
+		self.depth += nested;
 		self.slots.resize(slots + schema.slots, Datum::Missing);
 		let owner = self
 			.elements
@@ -1208,20 +1267,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		});
 		self.active.push(record);
 		let result = if self.options.error_recovery && !self.recovering_form {
-			let checkpoint = self.checkpoint(record);
-			match self.strict(&schema.strict, record, follow) {
-				Ok(()) => {
-					self.release(&checkpoint);
-					Ok(())
-				}
-				Err(_) => {
-					self.restore(record, checkpoint);
-					self.recovering_form = true;
-					let result = self.form(&schema.form, record, follow);
-					self.recovering_form = false;
-					result
-				}
-			}
+			self.recover_form(rule, record, follow)
 		} else {
 			self.form(
 				if self.options.error_recovery {
@@ -1234,21 +1280,33 @@ impl<'a, E: Extension> Walker<'a, E> {
 			)
 		};
 		self.active.pop();
-		result.map_err(|error| {
-			if matches!(error.code(), Code::NestingDepth | Code::TreeSize) {
-				return error;
-			}
-			let error = self.records[record]
-				.failure
-				.take()
-				.filter(|i| self.failures[*i].pos() > error.pos())
-				.map_or(error, |i| self.failures[i].clone());
-			if error.code() == Code::Expected && self.records[record].body_end == Some(self.limit) {
-				let name = self.plan.rules[schema.source].name.to_ascii_lowercase();
-				return self::error(start, start + 1, Code::Unclosed, Some(&name)).into();
-			}
-			error
-		})?;
+		self.depth -= nested;
+		result.map_err(|error| self.reject(record, error))?;
+		self.finish_record(record).map_err(Into::into)
+	}
+	#[cold]
+	fn reject(&mut self, record: usize, error: Rejection) -> Rejection {
+		let schema = &self.plan.program.rules[self.records[record].rule];
+		let start = self.records[record].start;
+		if matches!(error.code(), Code::NestingDepth | Code::TreeSize) {
+			return error;
+		}
+		let error = self.records[record]
+			.failure
+			.take()
+			.filter(|i| self.failures[*i].pos() > error.pos())
+			.map_or(error, |i| self.failures[i].clone());
+		if error.code() == Code::Expected && self.records[record].body_end == Some(self.limit) {
+			let name = self.plan.rules[schema.source].name.to_ascii_lowercase();
+			return self::error(start, start + 1, Code::Unclosed, Some(&name)).into();
+		}
+		error
+	}
+	#[inline(never)]
+	fn finish_record(&mut self, record: usize) -> Result<NodeId> {
+		let schema = &self.plan.program.rules[self.records[record].rule];
+		let slots = self.records[record].slots;
+		let ty_id = self.records[record].ty;
 		if self
 			.elements
 			.last()
@@ -1328,6 +1386,25 @@ impl<'a, E: Extension> Walker<'a, E> {
 		self.records[record].node = Some(node);
 		Ok(node)
 	}
+
+	#[inline(never)]
+	fn recover_form(&mut self, rule: usize, record: usize, follow: &str) -> std::result::Result<(), Rejection> {
+		let checkpoint = self.checkpoint(record);
+		match self.strict(&self.plan.program.rules[rule].strict, record, follow) {
+			Ok(()) => {
+				self.release(&checkpoint);
+				Ok(())
+			}
+			Err(_) => {
+				self.restore(record, checkpoint);
+				self.recovering_form = true;
+				let result = self.form(&self.plan.program.rules[rule].form, record, follow);
+				self.recovering_form = false;
+				result
+			}
+		}
+	}
+
 	fn leaf(
 		&mut self,
 		rule: usize,
@@ -1659,242 +1736,246 @@ impl<'a, E: Extension> Walker<'a, E> {
 	}
 
 	fn form(&mut self, form: &Form, record: usize, follow: &str) -> std::result::Result<(), Rejection> {
-		if self.records[record].aborted && !matches!(form, Form::Seq(_) | Form::Emit { .. }) {
-			return Ok(());
-		}
-		match form {
-			Form::Tokens(tokens) => {
-				for token in tokens {
-					self.token(token, record)?;
-				}
+		let (items, sequence) = match form {
+			Form::Seq(items) => (items.as_ref(), true),
+			_ => (std::slice::from_ref(form), false),
+		};
+		for item in items {
+			if self.records[record].aborted && !matches!(item, Form::Seq(_) | Form::Emit { .. }) {
+				continue;
 			}
-			Form::Seq(items) => {
-				for item in items {
-					if self.options.error_recovery
-						&& self.records[record].body_end == Some(self.at)
-						&& !self.records[record].aborted
-						&& !matches!(item, Form::Emit { .. })
-						&& (self.at == self.limit || self.matches("</") || self.structural_stop())
-					{
-						let checkpoint = self.checkpoint(record);
-						let start = self.at;
-						match self.strict(item, record, follow) {
-							Ok(()) => {
-								self.release(&checkpoint);
-								continue;
-							}
-							Err(err) => {
-								self.restore(record, checkpoint);
-								let header_end =
-									start + self.rest().find(self.plan.html.delimiters[1].as_ref()).unwrap_or(0) as u32;
-								if (err.pos() < header_end
-									&& !self
-										.rest()
-										.strip_prefix(self.plan.html.delimiters[0].as_ref())
-										.is_some_and(|rest| rest.starts_with(':')))
-									|| self.matches("</") || self.at == self.limit
-								{
-									self.records[record].aborted = true;
-									let pos = self.records[record].start;
-									let name = self.plan.rules
-										[self.plan.program.rules[self.records[record].rule].source]
-										.name
-										.to_ascii_lowercase();
-									self.report(error(pos, pos + 1, Code::Unclosed, Some(&name)))?;
-									continue;
-								}
-							}
-						}
+			if sequence
+				&& self.options.error_recovery
+				&& self.records[record].body_end == Some(self.at)
+				&& !self.records[record].aborted
+				&& !matches!(item, Form::Emit { .. })
+				&& (self.at == self.limit || self.matches("</") || self.structural_stop())
+				&& self.recover_end(item, record, follow)?
+			{
+				continue;
+			}
+			match item {
+				Form::Seq(_) => self.form(item, record, follow)?,
+				Form::Tokens(tokens) => {
+					for token in tokens {
+						self.token(token, record)?;
 					}
-					self.form(item, record, follow)?;
 				}
-			}
-			Form::Emit { into, value } => {
-				let value = self.eval(value, record)?;
-				self.write(record, into, value);
-			}
-			Form::Read {
-				reader,
-				into,
-				input,
-				follow: local,
-			} => {
-				self.read_form(
+				Form::Emit { into, value } => {
+					let value = self.eval(value, record)?;
+					self.write(record, into, value);
+				}
+				Form::Read {
+					reader,
+					into,
+					input,
+					follow: local,
+				} => self.read_form(
 					&self.plan.program.readers[*reader as usize],
 					record,
 					into,
 					input,
 					&self.plan.program.follows[*local as usize],
 					follow,
-				)?;
-			}
-
-			Form::Choice(choice) => {
-				let Choice {
-					alternatives,
-					disjoint,
-					first,
-					expected,
-				} = choice.as_ref();
-				if *disjoint {
-					let rest = self.rest();
-					let selected = first
-						.iter()
-						.position(|prefixes| prefixes.iter().any(|prefix| prefix.matches(rest)))
-						.or_else(|| {
-							self.options.error_recovery.then(|| {
-								first
-									.iter()
-									.position(|prefixes| {
-										prefixes
-											.iter()
-											.any(|p| p.text.as_str() == self.plan.html.delimiters[1].as_ref())
-									})
-									.unwrap_or(0)
-							})
-						})
-						.ok_or_else(|| {
-							let pos =
-								self.at + (self.rest().len() - self.rest().trim_start_matches(is_space).len()) as u32;
-							Rejection::Expected(pos, pos, *expected)
-						})?;
-					self.form(&alternatives[selected], record, follow)?;
-				} else {
-					let mut failure: Option<Rejection> = None;
-					let mut failed = 0;
-					let mut failed_native = false;
-					let mut matched = false;
-					let start = self.at;
-					for (i, alternative) in alternatives.iter().enumerate() {
-						if !self.options.error_recovery
-							&& let Some(error) = self.leading_mismatch(alternative)
-						{
-							if failure.as_ref().is_none_or(|prior| prior.pos() < error.pos()) {
-								failure = Some(error);
-								failed_native = false;
-								failed = i;
-							}
-							continue;
-						}
-						if !self.options.error_recovery
-							&& let Form::Seq(items) = alternative
-							&& items.is_empty()
-						{
-							matched = true;
-							break;
-						}
-						let checkpoint = self.checkpoint(record);
-						let reads = self.native_reads;
-						match self.strict(alternative, record, follow) {
-							Ok(()) => {
-								if self.options.error_recovery
-									&& self.at == start && failed_native
-									&& failure.as_ref().is_some_and(|e| e.pos() > start)
-								{
-									self.restore(record, checkpoint);
-									self.form(&alternatives[failed], record, follow)?;
-								} else {
-									self.release(&checkpoint);
-								}
-								matched = true;
-								break;
-							}
-							Err(error) => {
-								self.restore(record, checkpoint);
-								if matches!(error.code(), Code::NestingDepth | Code::TreeSize) {
-									return Err(error);
-								}
-								if failure.as_ref().is_none_or(|prior| {
-									prior.pos() < error.pos()
-										|| self.options.error_recovery
-											&& prior.pos() == error.pos() && (native_form(
-											alternative,
-											Js::Program,
-											&self.plan.program,
-										) || matches!(
-											error.code(),
-											Code::ReservedWord | Code::UnexpectedKeyword
-										) && native_form(
-											alternative,
-											Js::Statement,
-											&self.plan.program,
-										))
-								}) {
-									failure = Some(error);
-									failed_native = self.native_reads > reads;
-									failed = i;
-								}
-							}
-						}
-					}
-					if matched && let Some(error) = failure.as_ref() {
-						self.remember(record, error.clone());
-					}
-					if !matched {
-						if self.options.error_recovery {
-							self.form(&alternatives[failed], record, follow)?;
-						} else {
-							return Err(failure.unwrap());
-						}
-					}
-				}
-			}
-
-			Form::Repeat(repeat) => {
-				let Repeat {
-					body,
-					min,
-					max,
-					locals,
-					yield_value,
-					into,
-				} = repeat.as_ref();
-				let mut values = self.take_values();
-
-				while max.is_none_or(|max| values.len() < max) {
-					let checkpoint = self.checkpoint(record);
-					let start = self.at;
-					self.push_iteration(*locals);
-					let result = self
-						.strict(body, record, follow)
-						.and_then(|()| self.eval(yield_value, record).map_err(Into::into));
-					self.pop_iteration();
-					match result {
-						Ok(value) => {
-							self.release(&checkpoint);
-							values.push(value);
-						}
-						Err(error) => {
-							self.restore(record, checkpoint);
-							if matches!(error.code(), Code::NestingDepth | Code::TreeSize) {
-								return Err(error);
-							}
-							if values.len() < *min {
-								if !self.options.error_recovery {
-									return Err(error);
-								}
-								self.push_iteration(*locals);
-								self.form(body, record, follow)?;
-								values.push(self.eval(yield_value, record)?);
-								self.pop_iteration();
-								continue;
-							}
-							self.remember(record, error);
-							break;
-						}
-					}
-					if self.at == start && max.is_none() {
-						return fail(start, start, Code::TreeSize, None).map_err(Into::into);
-					}
-				}
-
-				if values.len() < *min {
-					return fail(self.at, self.at, Code::UnexpectedToken, None).map_err(Into::into);
-				}
-				let value = self.array(values);
-				self.write(record, into, value);
+				)?,
+				Form::Choice(choice) => self.choice(choice, record, follow)?,
+				Form::Repeat(repeat) => self.repeat(repeat, record, follow)?,
 			}
 		}
+		Ok(())
+	}
+
+	#[inline(never)]
+	fn recover_end(&mut self, item: &Form, record: usize, follow: &str) -> std::result::Result<bool, Rejection> {
+		let checkpoint = self.checkpoint(record);
+		let start = self.at;
+		match self.strict(item, record, follow) {
+			Ok(()) => {
+				self.release(&checkpoint);
+				return Ok(true);
+			}
+			Err(err) => {
+				self.restore(record, checkpoint);
+				let header_end = start + self.rest().find(self.plan.html.delimiters[1].as_ref()).unwrap_or(0) as u32;
+				if (err.pos() < header_end
+					&& !self
+						.rest()
+						.strip_prefix(self.plan.html.delimiters[0].as_ref())
+						.is_some_and(|rest| rest.starts_with(':')))
+					|| self.matches("</")
+					|| self.at == self.limit
+				{
+					self.records[record].aborted = true;
+					let pos = self.records[record].start;
+					let name = self.plan.rules[self.plan.program.rules[self.records[record].rule].source]
+						.name
+						.to_ascii_lowercase();
+					self.report(error(pos, pos + 1, Code::Unclosed, Some(&name)))?;
+					return Ok(true);
+				}
+			}
+		}
+		Ok(false)
+	}
+
+	#[inline(never)]
+	fn choice(&mut self, choice: &Choice, record: usize, follow: &str) -> std::result::Result<(), Rejection> {
+		let Choice {
+			alternatives,
+			disjoint,
+			first,
+			expected,
+		} = choice;
+		if *disjoint {
+			let rest = self.rest();
+			let selected = first
+				.iter()
+				.position(|prefixes| prefixes.iter().any(|prefix| prefix.matches(rest)))
+				.or_else(|| {
+					self.options.error_recovery.then(|| {
+						first
+							.iter()
+							.position(|prefixes| {
+								prefixes
+									.iter()
+									.any(|p| p.text.as_str() == self.plan.html.delimiters[1].as_ref())
+							})
+							.unwrap_or(0)
+					})
+				})
+				.ok_or_else(|| {
+					let pos = self.at + (self.rest().len() - self.rest().trim_start_matches(is_space).len()) as u32;
+					Rejection::Expected(pos, pos, *expected)
+				})?;
+			self.form(&alternatives[selected], record, follow)?;
+		} else {
+			let mut failure: Option<Rejection> = None;
+			let mut failed = 0;
+			let mut failed_native = false;
+			let mut matched = false;
+			let start = self.at;
+			for (i, alternative) in alternatives.iter().enumerate() {
+				if !self.options.error_recovery
+					&& let Some(error) = self.leading_mismatch(alternative)
+				{
+					if failure.as_ref().is_none_or(|prior| prior.pos() < error.pos()) {
+						failure = Some(error);
+						failed_native = false;
+						failed = i;
+					}
+					continue;
+				}
+				if !self.options.error_recovery
+					&& let Form::Seq(items) = alternative
+					&& items.is_empty()
+				{
+					matched = true;
+					break;
+				}
+				let checkpoint = self.checkpoint(record);
+				let reads = self.native_reads;
+				match self.strict(alternative, record, follow) {
+					Ok(()) => {
+						if self.options.error_recovery
+							&& self.at == start && failed_native
+							&& failure.as_ref().is_some_and(|e| e.pos() > start)
+						{
+							self.restore(record, checkpoint);
+							self.form(&alternatives[failed], record, follow)?;
+						} else {
+							self.release(&checkpoint);
+						}
+						matched = true;
+						break;
+					}
+					Err(error) => {
+						self.restore(record, checkpoint);
+						if matches!(error.code(), Code::NestingDepth | Code::TreeSize) {
+							return Err(error);
+						}
+						if failure.as_ref().is_none_or(|prior| {
+							prior.pos() < error.pos()
+								|| self.options.error_recovery
+									&& prior.pos() == error.pos()
+									&& (native_form(alternative, Js::Program, &self.plan.program)
+										|| matches!(error.code(), Code::ReservedWord | Code::UnexpectedKeyword)
+											&& native_form(alternative, Js::Statement, &self.plan.program))
+						}) {
+							failure = Some(error);
+							failed_native = self.native_reads > reads;
+							failed = i;
+						}
+					}
+				}
+			}
+			if matched && let Some(error) = failure.as_ref() {
+				self.remember(record, error.clone());
+			}
+			if !matched {
+				if self.options.error_recovery {
+					self.form(&alternatives[failed], record, follow)?;
+				} else {
+					return Err(failure.unwrap());
+				}
+			}
+		}
+		Ok(())
+	}
+
+	#[inline(never)]
+	fn repeat(&mut self, repeat: &Repeat, record: usize, follow: &str) -> std::result::Result<(), Rejection> {
+		let Repeat {
+			body,
+			min,
+			max,
+			locals,
+			yield_value,
+			into,
+		} = repeat;
+		let mut values = self.take_values();
+
+		while max.is_none_or(|max| values.len() < max) {
+			let checkpoint = self.checkpoint(record);
+			let start = self.at;
+			self.push_iteration(*locals);
+			let result = self
+				.strict(body, record, follow)
+				.and_then(|()| self.eval(yield_value, record).map_err(Into::into));
+			self.pop_iteration();
+			match result {
+				Ok(value) => {
+					self.release(&checkpoint);
+					values.push(value);
+				}
+				Err(error) => {
+					self.restore(record, checkpoint);
+					if matches!(error.code(), Code::NestingDepth | Code::TreeSize) {
+						return Err(error);
+					}
+					if values.len() < *min {
+						if !self.options.error_recovery {
+							return Err(error);
+						}
+						self.push_iteration(*locals);
+						self.form(body, record, follow)?;
+						values.push(self.eval(yield_value, record)?);
+						self.pop_iteration();
+						continue;
+					}
+					self.remember(record, error);
+					break;
+				}
+			}
+			if self.at == start && max.is_none() {
+				return fail(start, start, Code::TreeSize, None).map_err(Into::into);
+			}
+		}
+
+		if values.len() < *min {
+			return fail(self.at, self.at, Code::UnexpectedToken, None).map_err(Into::into);
+		}
+		let value = self.array(values);
+		self.write(record, into, value);
 		Ok(())
 	}
 
@@ -2011,10 +2092,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			&& let Reader::Rule(rule) = reader
 		{
 			let child = self.records.len();
-			let event = match self.records[record].event {
-				Datum::Event(i) => self.event(self.events[i]),
-				other => other,
-			};
+			let event = self.child_event(record);
 			let node = self.call_form(*rule, event, None, follow)?;
 			if let Some(end) = self.records[child].children_end {
 				self.records[record].body_end = Some(end);
@@ -2032,6 +2110,14 @@ impl<'a, E: Extension> Walker<'a, E> {
 		}
 		Ok(())
 	}
+	#[inline(never)]
+	fn child_event(&mut self, record: usize) -> Datum {
+		match self.records[record].event {
+			Datum::Event(i) => self.event(self.events[i]),
+			other => other,
+		}
+	}
+
 	fn push_iteration(&mut self, len: usize) {
 		let start = self.iteration_slots.len();
 		self.iteration_slots.resize(start + len, Datum::Missing);
@@ -2724,6 +2810,22 @@ impl<'a, E: Extension> Walker<'a, E> {
 	}
 	fn element(&mut self) -> Result<NodeId> {
 		let start = self.at;
+		let (selected, event) = self.open_element()?;
+		let result = self.call(
+			self.plan.program.dispatch_rules[selected],
+			event,
+			self.plan.program.types[selected],
+			"",
+		);
+		self.elements.pop();
+		if let Ok(node) = result {
+			self.ast().nodes[node.index() as usize].start = start;
+		}
+		result
+	}
+	#[inline(never)]
+	fn open_element(&mut self) -> Result<(usize, Datum)> {
+		let start = self.at;
 		self.at += 1;
 		let span = self.peek_name(self.at, false);
 		self.at = span.1;
@@ -2804,18 +2906,9 @@ impl<'a, E: Extension> Walker<'a, E> {
 			attributes: None,
 			content: row.content.unwrap_or(Mode::Normal),
 		});
-		let result = self.call(
-			self.plan.program.dispatch_rules[selected],
-			event,
-			self.plan.program.types[selected],
-			"",
-		);
-		self.elements.pop();
-		if let Ok(node) = result {
-			self.ast().nodes[node.index() as usize].start = start;
-		}
-		result
+		Ok((selected, event))
 	}
+
 	fn attributes(&mut self, mode: AttributeMode, record: usize) -> Result<List> {
 		let mode = if self.elements.iter().any(|e| e.content == Mode::Verbatim) {
 			AttributeMode::Static

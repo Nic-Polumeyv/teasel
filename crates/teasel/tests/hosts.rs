@@ -101,6 +101,14 @@ fn unfinished_input() {
 	std::thread::Builder::new()
 		.stack_size(64 << 20)
 		.spawn(move || {
+			for (open, close) in [("<a>", "</a>"), ("{#if a}", "{/if}")] {
+				let source = format!("{}x{}", open.repeat(1000), close.repeat(1000));
+				let answer = parse(&source, &svelte, false);
+				assert!(answer.contains("\"type\":\"Root\""), "{answer}");
+				let source = format!("{}x{}", open.repeat(1001), close.repeat(1001));
+				let answer = parse(&source, &svelte, false);
+				assert!(answer.contains("\"code\":\"nesting_depth\""), "{answer}");
+			}
 			for deep in [elements, branches] {
 				let answer = parse(&deep, &svelte, false);
 				assert!(answer.contains("\"code\":\"nesting_depth\""), "{answer}");
@@ -140,6 +148,9 @@ fn host_phases() {
 	}
 	for (name, source) in &documents {
 		for flags in ["module", "module scopes comments locations"] {
+			if std::env::var("TEASEL_HOST_FLAGS").is_ok_and(|selected| selected != flags) {
+				continue;
+			}
 			let prepared = Prepared::borrowed(source, Request::from_names(flags));
 			let mut best = f64::MAX;
 			for _ in 0..300 {
@@ -158,4 +169,73 @@ fn sources(dir: &Path) -> Vec<std::path::PathBuf> {
 		.into_iter()
 		.filter(|f| f.file_stem().is_some_and(|s| s != "plan") && f.extension().is_some_and(|e| e != "plan"))
 		.collect()
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+#[ignore]
+fn host_profile() {
+	use teasel::json::Prepared;
+	let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+	let plan = teasel::json::plan(&fs::read_to_string(root.join("tests/hosts/svelte/plan.json")).unwrap()).unwrap();
+	let source = format!(
+		"<script>let items = [1,2,3];</script>\n{}",
+		"{#each items as item}<p class=\"row\">{item + 1}</p>{/each}\n".repeat(200)
+	);
+	let prepared = Prepared::borrowed(&source, Request::from_names("module scopes comments locations"));
+	let guard = pprof::ProfilerGuardBuilder::default()
+		.frequency(4000)
+		.blocklist(&["libc", "libgcc", "pthread", "vdso"])
+		.build()
+		.unwrap();
+	for _ in 0..2000 {
+		prepared.in_place(Entry::Program, 0.0, None, "", Some(&plan)).unwrap();
+	}
+
+	let report = guard.report().build().unwrap();
+	let file = std::fs::File::create(root.join("../../target/host.svg")).unwrap();
+	report.flamegraph(file).unwrap();
+	let mut by_frame: std::collections::HashMap<String, (usize, usize)> = std::collections::HashMap::new();
+	let mut total = 0usize;
+	for (frames, count) in &report.data {
+		total += *count as usize;
+		let names: Vec<String> = frames
+			.frames
+			.iter()
+			.flat_map(|f| {
+				f.iter().map(|s| {
+					s.name
+						.as_deref()
+						.map(|n| rustc_demangle::demangle(&String::from_utf8_lossy(n)).to_string())
+						.unwrap_or_default()
+				})
+			})
+			.collect();
+		if let Some(top) = names.first() {
+			by_frame.entry(top.clone()).or_default().0 += *count as usize;
+		}
+		let mut seen = std::collections::HashSet::new();
+		for name in &names {
+			if seen.insert(name.clone()) {
+				by_frame.entry(name.clone()).or_default().1 += *count as usize;
+			}
+		}
+	}
+	let mut rows: Vec<_> = by_frame.into_iter().collect();
+	rows.sort_by_key(|row| std::cmp::Reverse(row.1.0));
+	eprintln!("samples {total}");
+	eprintln!("{:>6} {:>6}  frame", "self%", "incl%");
+	for (name, (own, incl)) in rows.iter().take(40) {
+		eprintln!(
+			"{:6.1} {:6.1}  {}",
+			*own as f64 * 100.0 / total as f64,
+			*incl as f64 * 100.0 / total as f64,
+			name.replace("teasel::", "")
+				.replace("core::", "")
+				.replace("alloc::", "")
+				.chars()
+				.take(400)
+				.collect::<String>()
+		);
+	}
 }

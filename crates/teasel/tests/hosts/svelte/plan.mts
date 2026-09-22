@@ -61,20 +61,22 @@ const element = (type: string, childRule = 'NormalChildren') =>
 	rule(type, { name: 'null', attributes: 'null', fragment: 'null', expression: 'omit' }, ['definition', 'properties'])
 		.form((f) => seq(
 			emit(f.name, get('event', 'name')), read({ kind: 'html-attributes', mode: 'normal' }, f.properties),
-			emit(f.definition, at(filter(f.properties, '$attribute', and(isType(get('$attribute'), 'Attribute'),
-				equal(get('$attribute', 'name'), constant('this')))), 0)),
+			emit(f.definition, choose(isType(get('record'), 'SvelteComponent'),
+				at(filter(f.properties, '$attribute', and(isType(get('$attribute'), 'Attribute'),
+					equal(get('$attribute', 'name'), constant('this')))), 0), at(array(), 0))),
 			emit(f.expression, choose(isType(get('record'), 'SvelteComponent'),
 				attributeExpression(f.definition), at(array(), 0))),
-			emit(f.attributes, filter(f.properties, '$attribute',
-				not(and(present(f.expression), equal(get('$attribute'), f.definition))))),
+			emit(f.attributes, choose(present(f.expression),
+				filter(f.properties, '$attribute', not(equal(get('$attribute'), f.definition))), f.properties)),
 			call(childRule, f.fragment),
 		))
 		.regions((f) => {
 			const self = get('record');
 			const ordinary = not(component(self));
 			const lets = filter(f.attributes, '$prop', isType(get('$prop'), 'LetDirective'));
-			const localAttributes = filter(f.attributes, '$prop', not(and(isType(self, 'SvelteElement'),
-				and(isType(get('$prop'), 'Attribute'), equal(get('$prop', 'name'), constant('this'))))));
+			const localAttributes = choose(isType(self, 'SvelteElement'),
+				filter(f.attributes, '$prop', not(and(isType(get('$prop'), 'Attribute'),
+					equal(get('$prop', 'name'), constant('this'))))), f.attributes);
 			const nodes = get(f.fragment, 'nodes');
 			return [
 				region('local', incoming, concat(localAttributes, array(f.fragment)), 'block', ordinary),
