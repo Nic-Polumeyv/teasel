@@ -1161,9 +1161,9 @@ impl<'a, X: Bind> Binder<'a, X> {
 		self.host_seen.insert(id);
 		let open = self.open.len();
 		let incoming = self.env();
-		self.host_incoming.insert(id, incoming);
 		if let Some(regions) = self.ast.host_coverage.get(id) {
 			let mut selected = None;
+			let mut unrelated = false;
 			for region in regions {
 				let env = self.region_env(*region);
 				if selected.is_none_or(|previous| self.env_contains(previous, env)) {
@@ -1171,23 +1171,22 @@ impl<'a, X: Bind> Binder<'a, X> {
 				} else if let Some(previous) = selected
 					&& !self.env_contains(env, previous)
 				{
-					self.out.errors.push(SyntaxError::with(
-						self.ast.node(id).start,
-						Code::Expected,
-						Code::Expected.with("one parent chain for overlapping regions"),
-					));
+					unrelated = true;
 				}
 			}
 			if let Some(env) = selected {
 				if self.env_contains(incoming, env) {
 					self.open.push(env);
 				} else if !self.env_contains(env, incoming) {
-					self.out.errors.push(SyntaxError::with(
-						self.ast.node(id).start,
-						Code::Expected,
-						Code::Expected.with("one parent chain for overlapping regions"),
-					));
+					unrelated = true;
 				}
+			}
+			if unrelated {
+				self.out.errors.push(SyntaxError::with(
+					self.ast.node(id).start,
+					Code::Expected,
+					Code::Expected.with("one parent chain for overlapping regions"),
+				));
 			}
 		}
 		let incoming = self.env();

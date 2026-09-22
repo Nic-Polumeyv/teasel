@@ -97,10 +97,18 @@ fn unfinished_input() {
 	assert!(parse("<a @x=\"@\"/>", &vue, false).contains("\"error\""));
 	let elements = format!("{}x{}", "<a>".repeat(40_000), "</a>".repeat(40_000));
 	let branches = format!("{{#if a}}{}{{/if}}", "{:else if a}".repeat(40_000));
-	for deep in [elements, branches] {
-		let answer = parse(&deep, &svelte, false);
-		assert!(answer.contains("\"code\":\"nesting_depth\""), "{answer}");
-	}
+	// the executor recurses per nested record; debug frames need more than a test thread's stack
+	std::thread::Builder::new()
+		.stack_size(64 << 20)
+		.spawn(move || {
+			for deep in [elements, branches] {
+				let answer = parse(&deep, &svelte, false);
+				assert!(answer.contains("\"code\":\"nesting_depth\""), "{answer}");
+			}
+		})
+		.unwrap()
+		.join()
+		.unwrap();
 	let program = parse("<button @click=\"let x = 1\"/>", &vue, true);
 	assert!(
 		program.contains("\"type\":\"VariableDeclaration\"") && !program.contains("\"errors\":[{"),

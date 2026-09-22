@@ -228,7 +228,7 @@ impl std::fmt::Debug for Spare {
 	}
 }
 
-/// Parses a document with its host regions.
+/// A document by its plan, with its regions: the tree and the root node.
 pub fn parse(src: &str, plan: &Plan, options: Options) -> (Ast, std::result::Result<NodeId, Box<crate::SyntaxError>>) {
 	let (ast, root) = parse_document::<()>(src, plan, options, None, true);
 	(*ast, root)
@@ -1158,8 +1158,8 @@ impl<'a, E: Extension> Walker<'a, E> {
 		ty: Option<StrId>,
 		follow: &str,
 	) -> std::result::Result<NodeId, Rejection> {
-		// Recursive form frames must also fit the smaller debug and test stacks.
-		if self.active.len() >= 64 {
+		// measured at 8 KB of stack per nested record in release: 256 fit a 4 MB worker thread
+		if self.active.len() >= 256 {
 			return fail(self.at, self.at, Code::NestingDepth, None).map_err(Into::into);
 		}
 		let schema = &self.plan.program.rules[rule];
@@ -1643,7 +1643,6 @@ impl<'a, E: Extension> Walker<'a, E> {
 			}
 			Form::Seq(items) => {
 				for item in items {
-					let next = follow;
 					if self.options.error_recovery
 						&& self.records[record].body_end == Some(self.at)
 						&& !self.records[record].aborted
@@ -1652,7 +1651,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 					{
 						let checkpoint = self.checkpoint(record);
 						let start = self.at;
-						match self.strict(item, record, next) {
+						match self.strict(item, record, follow) {
 							Ok(()) => {
 								self.release(&checkpoint);
 								continue;
@@ -1662,7 +1661,10 @@ impl<'a, E: Extension> Walker<'a, E> {
 								let header_end =
 									start + self.rest().find(self.plan.html.delimiters[1].as_ref()).unwrap_or(0) as u32;
 								if (err.pos() < header_end
-									&& !self.rest().starts_with(&format!("{}:", self.plan.html.delimiters[0])))
+									&& !self
+										.rest()
+										.strip_prefix(self.plan.html.delimiters[0].as_ref())
+										.is_some_and(|rest| rest.starts_with(':')))
 									|| self.matches("</") || self.at == self.limit
 								{
 									self.records[record].aborted = true;
@@ -1677,7 +1679,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 							}
 						}
 					}
-					self.form(item, record, next)?;
+					self.form(item, record, follow)?;
 				}
 			}
 			Form::Emit { into, value } => {

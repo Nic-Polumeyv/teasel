@@ -1,6 +1,6 @@
 use teasel::Options;
 use teasel::ast::{Ast, NodeId, NodeKind, Value};
-use teasel::host::{self as executor, plan::Plan};
+use teasel::host::{self, plan::Plan};
 
 fn field(ast: &Ast, node: NodeId, name: &str) -> Option<Value> {
 	let NodeKind::Host(index) = ast.node(node).kind else {
@@ -16,7 +16,7 @@ fn field(ast: &Ast, node: NodeId, name: &str) -> Option<Value> {
 #[test]
 fn native_entries_and_html() {
 	let plan = Plan::read(include_str!("hosts/vue/plan.json")).unwrap();
-	let (ast, root) = executor::parse("<p title=\"a&amp;b\">hello {{name}}</p>", &plan, Options::default());
+	let (ast, root) = host::parse("<p title=\"a&amp;b\">hello {{name}}</p>", &plan, Options::default());
 	let root = root.unwrap();
 	let Some(Value::Nodes(children)) = field(&ast, root, "children") else {
 		panic!()
@@ -66,7 +66,7 @@ fn absence_and_values() {
         {"op":"emit","into":"selected","value":{"op":"get","base":{"op":"constant","value":{"x":null}},"path":["x"]}}
     ]}}"#,
 	);
-	let (ast, root) = executor::parse("", &plan, Options::default());
+	let (ast, root) = host::parse("", &plan, Options::default());
 	let root = root.unwrap();
 	assert_eq!(field(&ast, root, "missing"), None);
 	assert_eq!(field(&ast, root, "nil"), Some(Value::Null));
@@ -84,7 +84,7 @@ fn repeat_uses_fresh_slots() {
 	let plan = document(
 		r#"{"type":"Root","fields":{"items":"null"},"form":{"op":"repeat","min":2,"max":2,"locals":["item"],"into":"items","body":{"op":"read","reader":{"kind":"token","text":"x","word":true,"gap":"space*"},"into":"item"},"yield":{"op":"get","base":"iteration","path":["item","text"]}}}"#,
 	);
-	let (ast, root) = executor::parse("x x", &plan, Options::default());
+	let (ast, root) = host::parse("x x", &plan, Options::default());
 	let Some(Value::Nodes(children)) = field(&ast, root.unwrap(), "children") else {
 		panic!()
 	};
@@ -103,7 +103,7 @@ fn choice_rolls_back_slots_nodes_and_comments() {
     ]}}"#,
 	);
 	for recover in [false, true] {
-		let (ast, root) = executor::parse(
+		let (ast, root) = host::parse(
 			"x foo /*once*/ y",
 			&plan,
 			Options {
@@ -138,7 +138,7 @@ fn a_committed_choice_is_not_reopened() {
         {"op":"read","reader":{"kind":"token","text":"z","word":false,"gap":"none"}}
     ]}}"#,
 	);
-	assert!(executor::parse("xyz", &plan, Options::default()).1.is_err());
+	assert!(host::parse("xyz", &plan, Options::default()).1.is_err());
 }
 
 #[test]
@@ -152,9 +152,9 @@ fn supplied_svelte_forms() {
 		"<script>let x=1</script><style>p {color:red}</style>",
 	] {
 		assert!(
-			executor::parse(source, &plan, Options::default()).1.is_ok(),
+			host::parse(source, &plan, Options::default()).1.is_ok(),
 			"{source}: {:?}",
-			executor::parse(source, &plan, Options::default()).1
+			host::parse(source, &plan, Options::default()).1
 		);
 	}
 	for source in [
@@ -163,15 +163,12 @@ fn supplied_svelte_forms() {
 		"{#if x}{:else}{:else if y}{/if}",
 		"<div class:foo-bar/>",
 	] {
-		assert!(
-			executor::parse(source, &plan, Options::default()).1.is_err(),
-			"{source}"
-		);
+		assert!(host::parse(source, &plan, Options::default()).1.is_err(), "{source}");
 	}
 }
 
 fn references(plan: &Plan, source: &str, name: &str) -> Vec<(u32, bool)> {
-	let (mut ast, root) = executor::parse(source, plan, Options::default());
+	let (mut ast, root) = host::parse(source, plan, Options::default());
 	let root = root.unwrap_or_else(|error| panic!("{source}: {error:?}"));
 	let roots = ast.add_list_from([Some(root)].into_iter());
 	teasel::scopes::analyze(&mut ast, teasel::Entry::Program, roots);
@@ -199,7 +196,7 @@ fn component_inputs_and_named_children_have_separate_regions() {
 			.collect::<Vec<_>>(),
 		[false, true, false, false, true]
 	);
-	let (ast, root) = executor::parse(source, &plan, Options::default());
+	let (ast, root) = host::parse(source, &plan, Options::default());
 	root.unwrap();
 	assert!(
 		ast.host_regions
@@ -253,7 +250,7 @@ fn native_values_preserve_node_handles() {
         {"op":"emit","into":"name","value":{"op":"get","base":"record","path":["expression","right","name"]}}
     ]}}"#,
 	);
-	let (ast, root) = executor::parse("x a+b;", &plan, Options::default());
+	let (ast, root) = host::parse("x a+b;", &plan, Options::default());
 	let Some(Value::Nodes(children)) = field(&ast, root.unwrap(), "children") else {
 		panic!()
 	};
@@ -279,7 +276,7 @@ fn unrelated_region_overlap_is_rejected() {
         {"id":"two","kind":"block","parent":{"op":"get","base":"incoming","path":[]},"covers":{"op":"get","base":"record","path":["value"]}}
     ]}"#,
 	);
-	let (mut ast, root) = executor::parse("x value", &plan, Options::default());
+	let (mut ast, root) = host::parse("x value", &plan, Options::default());
 	let roots = ast.add_list(&[Some(root.unwrap())]);
 	teasel::scopes::analyze(&mut ast, teasel::Entry::Program, roots);
 	assert_eq!(ast.scopes.as_ref().unwrap().errors.len(), 1);
@@ -299,7 +296,7 @@ fn constructed_native_nodes_keep_native_traversal() {
         "right":{"op":"construct","shape":"record","type":"js.Literal","span":{"op":"constant","value":null},"fields":{"value":{"op":"constant","value":2}}}
     }}}}"#,
 	);
-	let (mut ast, root) = executor::parse("", &plan, Options::default());
+	let (mut ast, root) = host::parse("", &plan, Options::default());
 	let root = root.unwrap();
 	let Some(Value::Node(value)) = field(&ast, root, "value") else {
 		panic!()
