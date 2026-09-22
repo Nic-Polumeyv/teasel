@@ -1,3 +1,5 @@
+mod common;
+
 use teasel::host::plan::{Form, Js, Plan, Reader};
 
 #[test]
@@ -7,6 +9,7 @@ fn checked_in_plans() {
 		("vue", include_str!("hosts/vue/plan.json")),
 	] {
 		Plan::read(text).unwrap_or_else(|error| panic!("{name}: {error}"));
+		Plan::read(&common::pretty(text)).unwrap_or_else(|error| panic!("{name}: {error}"));
 	}
 }
 
@@ -787,4 +790,14 @@ fn a_token_starting_with_skipped_whitespace_is_not_disjoint() {
 		panic!()
 	};
 	assert!(!disjoint);
+}
+
+#[test]
+fn wire_types() {
+	let pin = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../npm/src/lib/wire.ts");
+	assert!(
+		common::pinned(&pin, &Plan::wire_types()),
+		"wire.ts differs from the Rust definition"
+	);
+	assert!(common::inputs(pin.parent().unwrap()).contains(&pin));
 }

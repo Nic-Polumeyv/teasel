@@ -251,7 +251,17 @@ macro_rules! enums {
     ($($name:ident { $($variant:ident => $text:literal),+ $(,)? })+) => {$ (
         #[derive(Clone, Copy, Debug, PartialEq, Eq)]
         pub enum $name { $($variant),+ }
+        impl Wire for $name {
+            type Output = Self;
+            fn read_with(d: &Decode<'_>, n: &Node, _: &[&str]) -> Result<Self> { Self::read(n, &d.context) }
+            fn typescript() -> String { stringify!($name).into() }
+            fn definition() -> String {
+                format!("export type {} = {};\n", stringify!($name), vec![$(literal(Self::$variant.text())),+].join(" | "))
+            }
+        }
         impl $name {
+            fn text(self) -> &'static str { match self { $(Self::$variant => $text),+ } }
+
             #[cold]
             fn read(node: &Node, context: &str) -> Result<Self> {
                 match node.string(context)? {
@@ -260,7 +270,9 @@ macro_rules! enums {
                 }
             }
         }
-    )+};
+    )+
+    fn enum_types() -> String { [$(<$name as Wire>::definition()),+].concat() }
+    };
 }
 
 enums! {
@@ -422,7 +434,7 @@ impl<'a> JsonReader<'a> {
 			"{}:{}: {}: {reason}",
 			self.line,
 			self.column,
-			if self.path.len() >= 2 && self.path[0].as_ref() == "rules" {
+			if self.path.len() >= 2 && self.path[0].as_ref() == RULES {
 				format!("rule {}: field {:?}", self.path[1], self.path.last().unwrap())
 			} else {
 				format!("plan{}", self.path.iter().map(|s| format!(".{s}")).collect::<String>())
@@ -648,455 +660,462 @@ impl Decode<'_> {
 			.copied()
 			.ok_or_else(|| node.error(&self.context, &format!("unknown rule {name:?}")))
 	}
+}
 
-	#[cold]
-	fn value(&self, node: &Node) -> Result<Value> {
-		let context = &self.context;
-		let get = |key| node.required(key, context);
-		let val = |key| self.value(get(key)?).map(Box::new);
-		let op = get("op")?.string(context)?;
-		let allowed: &[&str] = match op {
-			"constant" => &["op", "value"],
-			"get" => &["op", "base", "path"],
-			"compare" => &["op", "relation", "left", "right"],
-			"choose" => &["op", "condition", "yes", "no"],
-			"flatMap" => &["op", "list", "as", "body"],
-			"length" => &["op", "list"],
-			"at" => &["op", "list", "index"],
-			"construct" => match get("shape")?.string(context)? {
-				"array" => &["op", "shape", "items"],
-				"record" => &["op", "shape", "type", "fields", "span"],
-				shape => return Err(node.error(context, &format!("unknown construct shape {shape:?}"))),
-			},
-			_ => return Err(node.error(context, &format!("unknown value operation {op:?}"))),
-		};
-		node.properties(context, allowed)?;
-		Ok(match op {
-			"constant" => Value::Constant(get("value")?.json()),
-			"get" => Value::Get {
-				base: if let Ok(name) = get("base")?.name(context) {
-					Base::Name(name)
-				} else {
-					Base::Value(val("base")?)
-				},
-				path: get("path")?
-					.array(context)?
-					.iter()
-					.map(|p| {
-						if let Ok(name) = p.name(context) {
-							Ok(Path::Name(name))
-						} else {
-							p.integer(context).map(Path::Index)
-						}
-					})
-					.collect::<Result<_>>()?,
-			},
-			"compare" => {
-				let relation = Relation::read(get("relation")?, context)?;
-				let right = node
-					.optional("right", context)?
-					.map(|n| self.value(n).map(Box::new))
-					.transpose()?;
-				if (relation == Relation::Present) == right.is_some() {
-					return Err(node.error(context, "compare field \"right\" is required only for equal/less"));
-				}
-				Value::Compare {
-					relation,
-					left: val("left")?,
-					right,
-					set: None,
-				}
-			}
-			"choose" => Value::Choose {
-				condition: val("condition")?,
-				yes: val("yes")?,
-				no: val("no")?,
-			},
-			"flatMap" => Value::FlatMap {
-				list: val("list")?,
-				binding: get("as")?.name(context)?.into(),
-				body: val("body")?,
-			},
-			"length" => Value::Length(val("list")?),
-			"at" => Value::At {
-				list: val("list")?,
-				index: val("index")?,
-			},
-			"construct" if get("shape")?.string(context)? == "array" => Value::Construct(Construct::Array(
-				get("items")?
-					.array(context)?
-					.iter()
-					.map(|n| self.value(n))
-					.collect::<Result<_>>()?,
-			)),
-			"construct" => Value::Construct(Construct::Record {
-				node_type: if get("type")?.null() {
-					None
-				} else {
-					Some(get("type")?.name(context)?)
-				},
-				fields: try_map(
-					&mut get("fields")?
-						.object(context)?
-						.iter()
-						.map(|(k, v)| Ok((k.clone(), self.value(v)?))),
-				)?,
-				span: val("span")?,
-			}),
-			_ => unreachable!(),
-		})
+trait Wire {
+	type Output;
+	fn read(decode: &Decode<'_>, node: &Node) -> Result<Self::Output> {
+		Self::read_with(decode, node, &[])
 	}
-
-	#[cold]
-	fn reader(&self, node: &Node) -> Result<Reader> {
-		let c = &self.context;
-		let get = |key| node.required(key, c);
-		let kind = get("kind")?.string(c)?;
-		node.properties(
-			c,
-			match kind {
-				"token" => &["kind", "text", "gap", "word"],
-				"space" => &["kind", "min"],
-				"test" => &["kind", "value"],
-				"rule" => &["kind", "name"],
-				"javascript" => &["kind", "entry", "boundary"],
-				"html-single" => &["kind", "entry"],
-				"html-attributes" => &["kind", "mode"],
-				"html-attribute-parts" | "css-stylesheet" => &["kind"],
-				"html-children" => &["kind", "mode", "stop"],
-				_ => return Err(node.error(c, &format!("unknown reader {kind:?}"))),
-			},
-		)?;
-		Ok(match kind {
-			"token" => {
-				let text = get("text")?.name(c)?;
-				if text.is_empty() {
-					return Err(node.error(c, "token text must not be empty"));
-				}
-				Reader::Token {
-					text,
-					gap: Gap::read(get("gap")?, c)?,
-					word: get("word")?.boolean(c)?,
-				}
-			}
-			"space" => Reader::Space {
-				min: get("min")?.integer(c)?,
-			},
-			"test" => Reader::Test(self.value(get("value")?)?),
-			"rule" => Reader::Rule(self.reference(get("name")?)?),
-			"javascript" => Reader::Javascript {
-				entry: Js::read(get("entry")?, c)?,
-				boundary: node
-					.optional("boundary", c)?
-					.map(|n| Boundary::read(n, c))
-					.transpose()?,
-			},
-			"html-single" => Reader::HtmlSingle(Js::read(get("entry")?, c)?),
-			"html-attributes" => Reader::HtmlAttributes(AttributeMode::read(get("mode")?, c)?),
-			"html-attribute-parts" => Reader::HtmlAttributeParts,
-			"html-children" => {
-				let stop = get("stop")?;
-				stop.properties(c, &["prefixes", "matchingElement", "documentEnd"])?;
-				if stop.object(c)?.len() != 1 {
-					return Err(stop.error(c, "stop must have exactly one condition"));
-				}
-				let stop = if let Some(prefixes) = stop.optional("prefixes", c)? {
-					let prefixes = prefixes.names(c)?;
-					if prefixes.iter().any(|p| p.is_empty()) {
-						return Err(node.error(c, "stop prefixes must not be empty"));
-					}
-					Stop::Prefixes(prefixes)
-				} else if let Some(matching) = stop.optional("matchingElement", c)? {
-					if !matching.boolean(c)? {
-						return Err(matching.error(c, "matchingElement must be true"));
-					}
-					Stop::MatchingElement
-				} else {
-					if !stop.required("documentEnd", c)?.boolean(c)? {
-						return Err(stop.error(c, "documentEnd must be true"));
-					}
-					Stop::DocumentEnd
-				};
-				Reader::HtmlChildren {
-					mode: Mode::read(get("mode")?, c)?,
-					stop,
-				}
-			}
-			"css-stylesheet" => Reader::CssStylesheet,
-			_ => unreachable!(),
-		})
+	fn read_with(decode: &Decode<'_>, node: &Node, extra: &[&str]) -> Result<Self::Output>;
+	fn typescript() -> String;
+	fn definition() -> String {
+		String::new()
 	}
-
-	#[cold]
-	fn form(&self, node: &Node) -> Result<Form> {
-		let c = &self.context;
-		let get = |key| node.required(key, c);
-		let op = get("op")?.string(c)?;
-		node.properties(
-			c,
-			match op {
-				"seq" => &["op", "items"],
-				"choice" => &["op", "alternatives"],
-				"repeat" => &["op", "body", "min", "max", "locals", "yield", "into"],
-				"read" => &["op", "reader", "into", "input"],
-				"emit" => &["op", "into", "value"],
-				_ => return Err(node.error(c, &format!("unknown form operation {op:?}"))),
-			},
-		)?;
-		Ok(match op {
-			"seq" => Form::Seq(
-				get("items")?
-					.array(c)?
-					.iter()
-					.map(|n| self.form(n))
-					.collect::<Result<_>>()?,
-			),
-			"choice" => {
-				let alternatives: Vec<_> = get("alternatives")?
-					.array(c)?
-					.iter()
-					.map(|n| self.form(n))
-					.collect::<Result<_>>()?;
-				if alternatives.is_empty() {
-					return Err(node.error(c, "choice requires an alternative"));
-				}
-				Form::Choice {
-					alternatives,
-					disjoint: false,
-					first: Vec::new(),
-				}
-			}
-			"repeat" => {
-				let min = get("min")?.integer(c)?;
-				let max = if get("max")?.null() {
-					None
-				} else {
-					Some(get("max")?.integer(c)?)
-				};
-				if max.is_some_and(|max| min > max) {
-					return Err(node.error(c, "repeat min exceeds max"));
-				}
-				Form::Repeat {
-					body: Box::new(self.form(get("body")?)?),
-					min,
-					max,
-					locals: get("locals")?.names(c)?,
-					yield_value: self.value(get("yield")?)?,
-					into: get("into")?.name(c)?,
-				}
-			}
-			"read" => Form::Read {
-				follow: "".into(),
-				reader: self.reader(get("reader")?)?,
-				into: node.optional("into", c)?.map(|n| n.name(c)).transpose()?,
-				input: node.optional("input", c)?.map(|n| self.value(n)).transpose()?,
-			},
-			"emit" => Form::Emit {
-				into: get("into")?.name(c)?,
-				value: self.value(get("value")?)?,
-			},
-			_ => unreachable!(),
-		})
+	fn optional() -> bool {
+		false
 	}
-
-	#[cold]
-	fn region(&self, node: &Node) -> Result<Region> {
-		let c = &self.context;
-		node.properties(c, &["id", "parent", "kind", "covers", "when", "each"])?;
-		let get = |key| node.required(key, c);
-		Ok(Region {
-			id: get("id")?.name(c)?,
-			parent: self.value(get("parent")?)?,
-			kind: RegionKind::read(get("kind")?, c)?,
-			covers: self.value(get("covers")?)?,
-			when: node.optional("when", c)?.map(|n| self.value(n)).transpose()?,
-			each: node
-				.optional("each", c)?
-				.map(|n| {
-					n.properties(c, &["list", "as"])?;
-					Ok::<_, String>(Each {
-						list: self.value(n.required("list", c)?)?,
-						binding: n.required("as", c)?.name(c)?.into(),
-					})
-				})
-				.transpose()?,
-		})
-	}
-
-	#[cold]
-	fn rule(&self, name: &str, node: &Node) -> Result<Rule> {
-		let c = &self.context;
-		node.properties(c, &["type", "fields", "locals", "form", "regions", "declares", "span"])?;
-		let get = |key| node.required(key, c);
-		Ok(Rule {
-			name: name.into(),
-			node_type: get("type")?.name(c)?,
-			fields: try_map(
-				&mut get("fields")?
-					.object(c)?
-					.iter()
-					.map(|(k, v)| Ok((k.clone(), Absence::read(v, &format!("{c}: field {k:?}"))?))),
-			)?,
-			locals: node
-				.optional("locals", c)?
-				.map(|n| n.names(c))
-				.transpose()?
-				.unwrap_or_default(),
-			form: self.form(get("form")?)?,
-			regions: node
-				.optional("regions", c)?
-				.map(|n| n.array(c)?.iter().map(|n| self.region(n)).collect::<Result<_>>())
-				.transpose()?
-				.unwrap_or_default(),
-			declares: node
-				.optional("declares", c)?
-				.map(|n| {
-					n.array(c)?
-						.iter()
-						.map(|n| {
-							n.properties(c, &["patterns", "into", "kind"])?;
-							Ok(Declare {
-								patterns: self.value(n.required("patterns", c)?)?,
-								into: self.value(n.required("into", c)?)?,
-								kind: DeclareKind::read(n.required("kind", c)?, c)?,
-							})
-						})
-						.collect::<Result<_>>()
-				})
-				.transpose()?
-				.unwrap_or_default(),
-			span: node.optional("span", c)?.map(|n| SpanPolicy::read(n, c)).transpose()?,
-			location: node.location,
-		})
-	}
-
-	#[cold]
-	fn prefixes(&self, node: &Node) -> Result<Vec<PrefixDispatch>> {
-		let c = &self.context;
-		node.array(c)?
-			.iter()
-			.map(|n| {
-				n.properties(c, &["prefix", "rule"])?;
-				let prefix = n.required("prefix", c)?.name(c)?;
-				if prefix.is_empty() {
-					return Err(n.error(c, "dispatch prefix must not be empty"));
-				}
-				Ok(PrefixDispatch {
-					prefix,
-					rule: self.reference(n.required("rule", c)?)?,
-				})
-			})
-			.collect()
-	}
-
-	#[cold]
-	fn html(&self, node: &Node) -> Result<Html> {
-		let c = &self.context;
-		node.properties(
-			c,
-			&[
-				"delimiters",
-				"attributeInterpolations",
-				"attributeComments",
-				"autoclose",
-				"trimEnd",
-				"void",
-				"text",
-				"comment",
-				"content",
-				"attribute",
-				"plainAttribute",
-				"elements",
-				"directiveNames",
-				"directives",
-			],
-		)?;
-		let get = |key| node.required(key, c);
-		let plain = get("plainAttribute")?;
-		plain.properties(c, &["type", "name", "value", "text", "expression"])?;
-		let names = get("directiveNames")?;
-		names.properties(
-			c,
-			&[
-				"prefix",
-				"argument",
-				"modifier",
-				"requireArgument",
-				"dynamic",
-				"unknown",
-			],
-		)?;
-		let delimiters = get("delimiters")?.pair(c)?;
-		if delimiters.iter().any(|s| s.is_empty()) {
-			return Err(node.error(c, "delimiters must not be empty"));
-		}
-		Ok(Html {
-			delimiters,
-			attribute_interpolations: get("attributeInterpolations")?.boolean(c)?,
-			attribute_comments: AttributeComments::read(get("attributeComments")?, c)?,
-			autoclose: get("autoclose")?.boolean(c)?,
-			trim_end: get("trimEnd")?.boolean(c)?,
-			void: get("void")?.names(c)?,
-			text: self.reference(get("text")?)?,
-			comment: self.reference(get("comment")?)?,
-			content: self.prefixes(get("content")?)?,
-			attribute: self.prefixes(get("attribute")?)?,
-			plain_attribute: PlainAttribute {
-				node_type: plain.required("type", c)?.name(c)?,
-				name: plain.required("name", c)?.name(c)?,
-				value: plain.required("value", c)?.name(c)?,
-				text: self.reference(plain.required("text", c)?)?,
-				expression: self.reference(plain.required("expression", c)?)?,
-			},
-			elements: get("elements")?
-				.array(c)?
-				.iter()
-				.map(|n| {
-					n.properties(c, &["when", "rule", "type", "attributes", "content"])?;
-					let attributes = n
-						.optional("attributes", c)?
-						.map(|n| AttributeMode::read(n, c))
-						.transpose()?;
-					if attributes == Some(AttributeMode::Normal) {
-						return Err(n.error(c, "dispatch attributes must be static"));
-					}
-					Ok(Dispatch {
-						when: self.value(n.required("when", c)?)?,
-						rule: self.reference(n.required("rule", c)?)?,
-						node_type: n.optional("type", c)?.map(|n| n.name(c)).transpose()?,
-						attributes,
-						content: n.optional("content", c)?.map(|n| Mode::read(n, c)).transpose()?,
-					})
-				})
-				.collect::<Result<_>>()?,
-			directive_names: DirectiveNames {
-				prefix: names.required("prefix", c)?.name(c)?,
-				argument: names.required("argument", c)?.name(c)?,
-				modifier: names.required("modifier", c)?.name(c)?,
-				require_argument: names.required("requireArgument", c)?.boolean(c)?,
-				dynamic: if names.required("dynamic", c)?.null() {
-					None
-				} else {
-					Some(names.required("dynamic", c)?.pair(c)?)
-				},
-				unknown: UnknownDirective::read(names.required("unknown", c)?, c)?,
-			},
-			directives: get("directives")?
-				.array(c)?
-				.iter()
-				.map(|n| {
-					n.properties(c, &["name", "rule"])?;
-					Ok(NamedDispatch {
-						name: n.required("name", c)?.name(c)?,
-						rule: self.reference(n.required("rule", c)?)?,
-					})
-				})
-				.collect::<Result<_>>()?,
-		})
+	fn field(decode: &Decode<'_>, node: &Node, key: &str) -> Result<Self::Output> {
+		Self::read(decode, node.required(key, &decode.context)?)
 	}
 }
 
+fn literal(text: &str) -> String {
+	format!(
+		"'{}'",
+		text.replace('\\', "\\\\")
+			.replace('\'', "\\'")
+			.replace('\n', "\\n")
+			.replace('\r', "\\r")
+	)
+}
+
+fn fields(parts: &[(&str, String, bool)]) -> String {
+	let mut out = String::from("{");
+	for (key, ty, optional) in parts {
+		out.push_str(&format!(" {}{}: {ty};", literal(key), if *optional { "?" } else { "" }));
+	}
+	out.push_str(" }");
+	out
+}
+
+macro_rules! wire_fields {
+	(read $decode:ident, $node:ident, $extra:expr; { $($field:ident: $key:expr => $ty:ty),* $(,)? } => $body:block) => {{
+		let mut keys = vec![$($key),*];
+		keys.extend_from_slice($extra);
+		$node.properties(&$decode.context, &keys)?;
+		$(let $field = <$ty as Wire>::field($decode, $node, $key)?;)*
+		$body
+	}};
+	(ts; { $($field:ident: $key:expr => $ty:ty),* $(,)? } => $body:block) => {
+		fields(&[$(($key, <$ty as Wire>::typescript(), <$ty as Wire>::optional())),*])
+	};
+	(read $decode:ident, $node:ident, $extra:expr; flatten $ty:ty => $convert:expr) => {
+		<$ty as Wire>::read_with($decode, $node, $extra).map($convert)
+	};
+	(ts; flatten $ty:ty => $convert:expr) => { <$ty as Wire>::typescript() };
+}
+
+macro_rules! wire_object {
+	($name:ident ($decode:ident, $node:ident) { $($members:tt)* } => $body:block) => {
+		impl Wire for $name {
+			type Output = Self;
+			fn read_with($decode: &Decode<'_>, $node: &Node, extra: &[&str]) -> Result<Self> {
+				wire_fields!(read $decode, $node, extra; { $($members)* } => $body)
+			}
+			fn typescript() -> String { stringify!($name).into() }
+			fn definition() -> String {
+				format!("export type {} = {};\n", stringify!($name), wire_fields!(ts; { $($members)* } => $body))
+			}
+		}
+	};
+}
+
+macro_rules! wire_tagged {
+	($name:ident => $output:ident ($decode:ident, $node:ident) $key:expr, $label:literal {
+		$([$($tag:expr),+] ($($case:tt)*)),+ $(,)?
+	}) => {
+		impl Wire for $name {
+			type Output = $output;
+			fn read_with($decode: &Decode<'_>, $node: &Node, extra: &[&str]) -> Result<Self::Output> {
+				let tag = $node.required($key, &$decode.context)?.string(&$decode.context)?;
+				let mut keys = extra.to_vec();
+				keys.push($key);
+				$(if [$($tag),+].contains(&tag) {
+					return wire_fields!(read $decode, $node, &keys; $($case)*);
+				})+
+				Err($node.error(&$decode.context, &format!("unknown {} {tag:?}", $label)))
+			}
+			fn typescript() -> String { stringify!($name).into() }
+			fn definition() -> String {
+				let cases = vec![$(format!("({} & {})", fields(&[($key, vec![$(literal($tag)),+].join(" | "), false)]), wire_fields!(ts; $($case)*))),+];
+				format!("export type {} =\n\t| {};\n", stringify!($name), cases.join("\n\t| "))
+			}
+		}
+	};
+}
+
+macro_rules! wire_scalar {
+	($ty:ty, $ts:literal, $decode:ident, $node:ident => $body:expr) => {
+		impl Wire for $ty {
+			type Output = Self;
+			fn read_with($decode: &Decode<'_>, $node: &Node, _: &[&str]) -> Result<Self> {
+				$body
+			}
+			fn typescript() -> String {
+				$ts.into()
+			}
+		}
+	};
+}
+
+wire_scalar!(Name, "string", d, n => n.name(&d.context));
+wire_scalar!(std::rc::Rc<str>, "string", d, n => n.name(&d.context).map(Into::into));
+wire_scalar!(bool, "boolean", d, n => n.boolean(&d.context));
+wire_scalar!(usize, "number", d, n => n.integer(&d.context));
+wire_scalar!([Name; 2], "readonly [string, string]", d, n => n.pair(&d.context));
+wire_scalar!(Json, "Json", _d, n => Ok(n.json()));
+macro_rules! wire_union {
+	($name:ident { $first:ty => $first_variant:path $(, $next:ty => $variant:path)* $(,)? }) => {
+		impl Wire for $name {
+			type Output = Self;
+			fn read_with(d: &Decode<'_>, n: &Node, _: &[&str]) -> Result<Self> {
+				<$first as Wire>::read(d, n).map($first_variant)
+				$(.or_else(|_| <$next as Wire>::read(d, n).map($variant)))*
+			}
+			fn typescript() -> String {
+				vec![<$first as Wire>::typescript(), $(<$next as Wire>::typescript()),*].join(" | ")
+			}
+		}
+	};
+}
+wire_union! { Base { Name => Base::Name, Box<Value> => Base::Value } }
+wire_union! { Path { Name => Path::Name, usize => Path::Index } }
+
+impl<T: Wire> Wire for Box<T> {
+	type Output = Box<T::Output>;
+	fn read_with(d: &Decode<'_>, n: &Node, extra: &[&str]) -> Result<Self::Output> {
+		T::read_with(d, n, extra).map(Box::new)
+	}
+	fn typescript() -> String {
+		T::typescript()
+	}
+}
+impl<T: Wire> Wire for Vec<T> {
+	type Output = Vec<T::Output>;
+	fn read_with(d: &Decode<'_>, n: &Node, _: &[&str]) -> Result<Self::Output> {
+		n.array(&d.context)?.iter().map(|n| T::read(d, n)).collect()
+	}
+	fn typescript() -> String {
+		format!("ReadonlyArray<{}>", T::typescript())
+	}
+}
+impl<T: Wire> Wire for BTreeMap<Name, T> {
+	type Output = BTreeMap<Name, T::Output>;
+	fn read_with(d: &Decode<'_>, n: &Node, _: &[&str]) -> Result<Self::Output> {
+		try_map(&mut n.object(&d.context)?.iter().map(|(key, n)| {
+			let d = Decode {
+				rules: d.rules,
+				context: format!("{}: field {key:?}", d.context),
+			};
+			Ok((key.clone(), T::read(&d, n)?))
+		}))
+	}
+	fn typescript() -> String {
+		format!("{{ readonly [key: string]: {} }}", T::typescript())
+	}
+}
+struct Optional<T>(std::marker::PhantomData<T>);
+struct Nullable<T>(std::marker::PhantomData<T>);
+impl<T: Wire> Wire for Optional<T> {
+	type Output = Option<T::Output>;
+	fn read_with(d: &Decode<'_>, n: &Node, extra: &[&str]) -> Result<Self::Output> {
+		T::read_with(d, n, extra).map(Some)
+	}
+	fn typescript() -> String {
+		T::typescript()
+	}
+	fn optional() -> bool {
+		true
+	}
+	fn field(d: &Decode<'_>, n: &Node, key: &str) -> Result<Self::Output> {
+		n.optional(key, &d.context)?.map(|n| T::read(d, n)).transpose()
+	}
+}
+impl<T: Wire> Wire for Nullable<T> {
+	type Output = Option<T::Output>;
+	fn read_with(d: &Decode<'_>, n: &Node, extra: &[&str]) -> Result<Self::Output> {
+		if n.null() {
+			Ok(None)
+		} else {
+			T::read_with(d, n, extra).map(Some)
+		}
+	}
+	fn typescript() -> String {
+		format!("{} | null", T::typescript())
+	}
+}
+struct Reference;
+impl Wire for Reference {
+	type Output = usize;
+	fn read_with(d: &Decode<'_>, n: &Node, _: &[&str]) -> Result<usize> {
+		d.reference(n)
+	}
+	fn typescript() -> String {
+		Name::typescript()
+	}
+}
+const VERSION: usize = 1;
+struct Version;
+impl Wire for Version {
+	type Output = u32;
+	fn read_with(d: &Decode<'_>, n: &Node, _: &[&str]) -> Result<u32> {
+		if n.integer(&d.context)? == VERSION {
+			Ok(VERSION as u32)
+		} else {
+			Err(n.error(&d.context, "unsupported version"))
+		}
+	}
+	fn typescript() -> String {
+		VERSION.to_string()
+	}
+}
+struct StaticAttributes;
+impl Wire for StaticAttributes {
+	type Output = AttributeMode;
+	fn read_with(d: &Decode<'_>, n: &Node, _: &[&str]) -> Result<AttributeMode> {
+		let mode = AttributeMode::read(n, &d.context)?;
+		if mode == AttributeMode::Static {
+			Ok(mode)
+		} else {
+			Err(n.error(&d.context, "dispatch attributes must be static"))
+		}
+	}
+	fn typescript() -> String {
+		literal(AttributeMode::Static.text())
+	}
+}
+struct Rules;
+impl Wire for Rules {
+	type Output = Vec<Rule>;
+	fn read_with(d: &Decode<'_>, n: &Node, _: &[&str]) -> Result<Self::Output> {
+		n.object(&d.context)?
+			.iter()
+			.map(|(name, node)| {
+				let mut rule = Rule::read(
+					&Decode {
+						rules: d.rules,
+						context: format!("rule {name}"),
+					},
+					node,
+				)?;
+				rule.name = name.clone();
+				Ok(rule)
+			})
+			.collect()
+	}
+	fn typescript() -> String {
+		<BTreeMap<Name, Rule>>::typescript()
+	}
+}
+
+const RULES: &str = "rules";
+const RELATION: &str = "relation";
+
+wire_object! { Plan (d, n) {
+	version: "version" => Version,
+	document: "document" => Reference,
+	rules: RULES => Rules,
+	html: "html" => Html,
+} => { Ok(Plan { version, document, rules, html, stops: Vec::new() }) } }
+
+wire_object! { Rule (d, n) {
+	node_type: "type" => Name,
+	fields: "fields" => BTreeMap<Name, Absence>,
+	locals: "locals" => Optional<Vec<Name>>,
+	form: "form" => Form,
+	regions: "regions" => Optional<Vec<Region>>,
+	declares: "declares" => Optional<Vec<Declare>>,
+	span: "span" => Optional<SpanPolicy>,
+} => { Ok(Rule { name: "".into(), node_type, fields, locals: locals.unwrap_or_default(), form,
+	regions: regions.unwrap_or_default(), declares: declares.unwrap_or_default(), span, location: n.location }) } }
+
+wire_tagged! { Form => Form (d, n) "op", "form operation" {
+	["seq"] ({ items: "items" => Vec<Form> } => { Ok(Form::Seq(items)) }),
+	["choice"] ({ alternatives: "alternatives" => Vec<Form> } => {
+		if alternatives.is_empty() { return Err(n.error(&d.context, "choice requires an alternative")); }
+		Ok(Form::Choice { alternatives, disjoint: false, first: Vec::new() })
+	}),
+	["repeat"] ({ body: "body" => Box<Form>, min: "min" => usize, max: "max" => Nullable<usize>,
+		locals: "locals" => Vec<Name>, yield_value: "yield" => Value, into: "into" => Name } => {
+		if max.is_some_and(|max| min > max) { return Err(n.error(&d.context, "repeat min exceeds max")); }
+		Ok(Form::Repeat { body, min, max, locals, yield_value, into })
+	}),
+	["read"] ({ reader: "reader" => Reader, into: "into" => Optional<Name>, input: "input" => Optional<Value> } => {
+		Ok(Form::Read { follow: "".into(), reader, into, input })
+	}),
+	["emit"] ({ into: "into" => Name, value: "value" => Value } => { Ok(Form::Emit { into, value }) }),
+} }
+
+wire_tagged! { Reader => Reader (d, n) "kind", "reader" {
+	["token"] ({ text: "text" => Name, gap: "gap" => Gap, word: "word" => bool } => {
+		if text.is_empty() { return Err(n.error(&d.context, "token text must not be empty")); }
+		Ok(Reader::Token { text, gap, word })
+	}),
+	["space"] ({ min: "min" => usize } => { Ok(Reader::Space { min }) }),
+	["test"] ({ value: "value" => Value } => { Ok(Reader::Test(value)) }),
+	["rule"] ({ name: "name" => Reference } => { Ok(Reader::Rule(name)) }),
+	["javascript"] ({ entry: "entry" => Js, boundary: "boundary" => Optional<Boundary> } => { Ok(Reader::Javascript { entry, boundary }) }),
+	["html-single"] ({ entry: "entry" => Js } => { Ok(Reader::HtmlSingle(entry)) }),
+	["html-attributes"] ({ mode: "mode" => AttributeMode } => { Ok(Reader::HtmlAttributes(mode)) }),
+	["html-attribute-parts"] ({} => { Ok(Reader::HtmlAttributeParts) }),
+	["html-children"] ({ mode: "mode" => Mode, stop: "stop" => Stop } => { Ok(Reader::HtmlChildren { mode, stop }) }),
+	["css-stylesheet"] ({} => { Ok(Reader::CssStylesheet) }),
+} }
+
+wire_tagged! { Value => Value (d, n) "op", "value operation" {
+	["constant"] ({ value: "value" => Json } => { Ok(Value::Constant(value)) }),
+	["get"] ({ base: "base" => Base, path: "path" => Vec<Path> } => { Ok(Value::Get { base, path }) }),
+	["compare"] (flatten Compare => std::convert::identity),
+	["choose"] ({ condition: "condition" => Box<Value>, yes: "yes" => Box<Value>, no: "no" => Box<Value> } => { Ok(Value::Choose { condition, yes, no }) }),
+	["flatMap"] ({ list: "list" => Box<Value>, binding: "as" => std::rc::Rc<str>, body: "body" => Box<Value> } => { Ok(Value::FlatMap { list, binding, body }) }),
+	["length"] ({ list: "list" => Box<Value> } => { Ok(Value::Length(list)) }),
+	["at"] ({ list: "list" => Box<Value>, index: "index" => Box<Value> } => { Ok(Value::At { list, index }) }),
+	["construct"] (flatten Construct => Value::Construct),
+} }
+
+struct Compare;
+wire_tagged! { Compare => Value (d, n) RELATION, "Relation" {
+	[Relation::Present.text()] ({ left: "left" => Box<Value> } => { Ok(Value::Compare { relation: Relation::Present, left, right: None, set: None }) }),
+	[Relation::Equal.text(), Relation::Less.text()] ({ left: "left" => Box<Value>, right: "right" => Box<Value> } => {
+		Ok(Value::Compare { relation: Relation::read(n.required(RELATION, &d.context)?, &d.context)?, left, right: Some(right), set: None })
+	}),
+} }
+
+wire_tagged! { Construct => Construct (d, n) "shape", "construct shape" {
+	["array"] ({ items: "items" => Vec<Value> } => { Ok(Construct::Array(items)) }),
+	["record"] ({ node_type: "type" => Nullable<Name>, fields: "fields" => BTreeMap<Name, Value>, span: "span" => Box<Value> } => { Ok(Construct::Record { node_type, fields, span }) }),
+} }
+
+wire_object! { Region (d, n) {
+	id: "id" => Name, parent: "parent" => Value, kind: "kind" => RegionKind, covers: "covers" => Value,
+	when: "when" => Optional<Value>, each: "each" => Optional<Each>,
+} => { Ok(Region { id, parent, kind, covers, when, each }) } }
+wire_object! { Each (d, n) { list: "list" => Value, binding: "as" => std::rc::Rc<str> } => { Ok(Each { list, binding }) } }
+wire_object! { Declare (d, n) { patterns: "patterns" => Value, into: "into" => Value, kind: "kind" => DeclareKind } => { Ok(Declare { patterns, into, kind }) } }
+wire_object! { PrefixDispatch (d, n) { prefix: "prefix" => Name, rule: "rule" => Reference } => {
+	if prefix.is_empty() { return Err(n.error(&d.context, "dispatch prefix must not be empty")); }
+	Ok(PrefixDispatch { prefix, rule })
+} }
+wire_object! { NamedDispatch (d, n) { name: "name" => Name, rule: "rule" => Reference } => { Ok(NamedDispatch { name, rule }) } }
+wire_object! { PlainAttribute (d, n) {
+	node_type: "type" => Name, name: "name" => Name, value: "value" => Name, text: "text" => Reference, expression: "expression" => Reference,
+} => { Ok(PlainAttribute { node_type, name, value, text, expression }) } }
+wire_object! { DirectiveNames (d, n) {
+	prefix: "prefix" => Name, argument: "argument" => Name, modifier: "modifier" => Name,
+	require_argument: "requireArgument" => bool, dynamic: "dynamic" => Nullable<[Name; 2]>, unknown: "unknown" => UnknownDirective,
+} => { Ok(DirectiveNames { prefix, argument, modifier, require_argument, dynamic, unknown }) } }
+wire_object! { Dispatch (d, n) {
+	when: "when" => Value, rule: "rule" => Reference, node_type: "type" => Optional<Name>, attributes: "attributes" => Optional<StaticAttributes>, content: "content" => Optional<Mode>,
+} => { Ok(Dispatch { when, rule, node_type, attributes, content }) } }
+wire_object! { Html (d, n) {
+	delimiters: "delimiters" => [Name; 2], attribute_interpolations: "attributeInterpolations" => bool,
+	attribute_comments: "attributeComments" => AttributeComments, autoclose: "autoclose" => bool, trim_end: "trimEnd" => bool,
+	void: "void" => Vec<Name>, text: "text" => Reference, comment: "comment" => Reference,
+	content: "content" => Vec<PrefixDispatch>, attribute: "attribute" => Vec<PrefixDispatch>, plain_attribute: "plainAttribute" => PlainAttribute,
+	elements: "elements" => Vec<Dispatch>, directive_names: "directiveNames" => DirectiveNames, directives: "directives" => Vec<NamedDispatch>,
+} => {
+	if delimiters.iter().any(|s| s.is_empty()) { return Err(n.error(&d.context, "delimiters must not be empty")); }
+	Ok(Html { delimiters, attribute_interpolations, attribute_comments, autoclose, trim_end, void, text, comment, content, attribute, plain_attribute, elements, directive_names, directives })
+} }
+
+struct True;
+impl Wire for True {
+	type Output = ();
+	fn read_with(d: &Decode<'_>, n: &Node, _: &[&str]) -> Result<()> {
+		if n.boolean(&d.context)? {
+			Ok(())
+		} else {
+			Err(n.error(
+				&d.context,
+				&format!("{} must be true", n.field.as_deref().unwrap_or_default()),
+			))
+		}
+	}
+	fn typescript() -> String {
+		"true".into()
+	}
+}
+
+macro_rules! wire_stop {
+	($($key:literal => $ty:ty, $value:ident => $body:expr),+ $(,)?) => {
+		impl Wire for Stop {
+			type Output = Self;
+			fn read_with(d: &Decode<'_>, n: &Node, _: &[&str]) -> Result<Self> {
+				n.properties(&d.context, &[$($key),+])?;
+				if n.object(&d.context)?.len() != 1 { return Err(n.error(&d.context, "stop must have exactly one condition")); }
+				$(if let Some(node) = n.optional($key, &d.context)? {
+					let $value = <$ty as Wire>::read(d, node)?;
+					let stop = $body;
+					if let Stop::Prefixes(prefixes) = &stop && prefixes.iter().any(|p| p.is_empty()) {
+						return Err(n.error(&d.context, "stop prefixes must not be empty"));
+					}
+					return Ok(stop);
+				})+
+				unreachable!()
+			}
+			fn typescript() -> String { "Stop".into() }
+			fn definition() -> String {
+				let keys = [$($key),+];
+				let cases = vec![$({
+					let mut parts = vec![($key, <$ty as Wire>::typescript(), false)];
+					parts.extend(keys.iter().filter(|key| **key != $key).map(|key| (*key, "never".into(), true)));
+					fields(&parts)
+				}),+];
+				format!("export type Stop = {};\n", cases.join(" | "))
+			}
+		}
+	};
+}
+wire_stop! {
+	"prefixes" => Vec<Name>, prefixes => Stop::Prefixes(prefixes),
+	"matchingElement" => True, _value => Stop::MatchingElement,
+	"documentEnd" => True, _value => Stop::DocumentEnd,
+}
+
 impl Plan {
+	/// The TypeScript declarations of the plan's JSON format.
+	pub fn wire_types() -> String {
+		let mut out = String::from("// written by crates/teasel/src/host/plan.rs\n\n");
+		out.push_str(
+			"export type Json = null | boolean | number | string | ReadonlyArray<Json> | { readonly [key: string]: Json };\n",
+		);
+		out.push_str(&enum_types());
+		out.push_str(
+			&[
+				Self::definition(),
+				Html::definition(),
+				Rule::definition(),
+				Form::definition(),
+				Reader::definition(),
+				Value::definition(),
+				Compare::definition(),
+				Construct::definition(),
+				Region::definition(),
+				Each::definition(),
+				Declare::definition(),
+				Stop::definition(),
+				PrefixDispatch::definition(),
+				NamedDispatch::definition(),
+				Dispatch::definition(),
+				PlainAttribute::definition(),
+				DirectiveNames::definition(),
+			]
+			.concat(),
+		);
+		out
+	}
+
 	#[cold]
 	pub fn read(text: &str) -> Result<Self> {
 		let mut reader = JsonReader {
@@ -1111,32 +1130,13 @@ impl Plan {
 		if reader.offset != text.len() {
 			return Err(reader.error("trailing JSON input"));
 		}
-		node.properties("plan", &["version", "document", "rules", "html"])?;
-		if node.required("version", "plan")?.integer("plan version")? != 1 {
-			return Err(node.error("plan", "unsupported version"));
-		}
-		let nodes = node.required("rules", "plan")?.object("plan rules")?;
-		let names: BTreeMap<_, _> = map(&mut nodes.keys().enumerate().map(|(i, n)| (n.clone(), i)));
+		let nodes = node.required(RULES, "plan")?.object("plan rules")?;
+		let names = map(&mut nodes.keys().enumerate().map(|(i, n)| (n.clone(), i)));
 		let decode = Decode {
 			rules: &names,
 			context: "plan".into(),
 		};
-		let mut plan = Self {
-			version: 1,
-			document: decode.reference(node.required("document", "plan")?)?,
-			rules: nodes
-				.iter()
-				.map(|(name, node)| {
-					Decode {
-						rules: &names,
-						context: format!("rule {name}"),
-					}
-					.rule(name, node)
-				})
-				.collect::<Result<_>>()?,
-			html: decode.html(node.required("html", "plan")?)?,
-			stops: Vec::new(),
-		};
+		let mut plan = <Self as Wire>::read(&decode, &node)?;
 		plan.validate()?;
 		fold::plan(&mut plan);
 		compile(&mut plan);
