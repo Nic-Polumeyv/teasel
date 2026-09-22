@@ -101,6 +101,14 @@ fn unfinished_input() {
 	std::thread::Builder::new()
 		.stack_size(64 << 20)
 		.spawn(move || {
+			for (open, close) in [("<a>", "</a>"), ("{#if a}", "{/if}")] {
+				let source = format!("{}x{}", open.repeat(1000), close.repeat(1000));
+				let answer = parse(&source, &svelte, false);
+				assert!(answer.contains("\"type\":\"Root\""), "{answer}");
+				let source = format!("{}x{}", open.repeat(1001), close.repeat(1001));
+				let answer = parse(&source, &svelte, false);
+				assert!(answer.contains("\"code\":\"nesting_depth\""), "{answer}");
+			}
 			for deep in [elements, branches] {
 				let answer = parse(&deep, &svelte, false);
 				assert!(answer.contains("\"code\":\"nesting_depth\""), "{answer}");
