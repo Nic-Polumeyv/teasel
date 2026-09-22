@@ -256,7 +256,8 @@ macro_rules! enums {
             fn read_with(d: &Decode<'_>, n: &Node, _: &[&str]) -> Result<Self> { Self::read(n, &d.context) }
             fn typescript() -> String { stringify!($name).into() }
             fn definition() -> String {
-                format!("export type {} = {};\n", stringify!($name), vec![$(literal(Self::$variant.text())),+].join(" | "))
+                let texts = vec![$(literal(Self::$variant.text())),+];
+                format!("export type {} = {};\n", stringify!($name), texts.join(" | "))
             }
         }
         impl $name {
@@ -691,12 +692,19 @@ fn literal(text: &str) -> String {
 }
 
 fn fields(parts: &[(&str, String, bool)]) -> String {
+	if parts.is_empty() {
+		return "{}".into();
+	}
 	let mut out = String::from("{");
 	for (key, ty, optional) in parts {
-		out.push_str(&format!(" {}{}: {ty};", literal(key), if *optional { "?" } else { "" }));
+		out.push_str(&format!(" {key}{}: {ty};", if *optional { "?" } else { "" }));
 	}
 	out.push_str(" }");
 	out
+}
+
+fn tagged(tag: String, body: String) -> String {
+	if body == "{}" { tag } else { format!("{tag} & {body}") }
 }
 
 macro_rules! wire_fields {
@@ -748,7 +756,10 @@ macro_rules! wire_tagged {
 			}
 			fn typescript() -> String { stringify!($name).into() }
 			fn definition() -> String {
-				let cases = vec![$(format!("({} & {})", fields(&[($key, vec![$(literal($tag)),+].join(" | "), false)]), wire_fields!(ts; $($case)*))),+];
+				let cases = vec![$(tagged(
+					fields(&[($key, vec![$(literal($tag)),+].join(" | "), false)]),
+					wire_fields!(ts; $($case)*),
+				)),+];
 				format!("export type {} =\n\t| {};\n", stringify!($name), cases.join("\n\t| "))
 			}
 		}
@@ -937,18 +948,39 @@ wire_object! { Rule (d, n) {
 	regions: "regions" => Optional<Vec<Region>>,
 	declares: "declares" => Optional<Vec<Declare>>,
 	span: "span" => Optional<SpanPolicy>,
-} => { Ok(Rule { name: "".into(), node_type, fields, locals: locals.unwrap_or_default(), form,
-	regions: regions.unwrap_or_default(), declares: declares.unwrap_or_default(), span, location: n.location }) } }
+} => {
+	Ok(Rule {
+		name: "".into(),
+		node_type,
+		fields,
+		locals: locals.unwrap_or_default(),
+		form,
+		regions: regions.unwrap_or_default(),
+		declares: declares.unwrap_or_default(),
+		span,
+		location: n.location,
+	})
+} }
 
 wire_tagged! { Form => Form (d, n) "op", "form operation" {
 	["seq"] ({ items: "items" => Vec<Form> } => { Ok(Form::Seq(items)) }),
 	["choice"] ({ alternatives: "alternatives" => Vec<Form> } => {
-		if alternatives.is_empty() { return Err(n.error(&d.context, "choice requires an alternative")); }
+		if alternatives.is_empty() {
+			return Err(n.error(&d.context, "choice requires an alternative"));
+		}
 		Ok(Form::Choice { alternatives, disjoint: false, first: Vec::new() })
 	}),
-	["repeat"] ({ body: "body" => Box<Form>, min: "min" => usize, max: "max" => Nullable<usize>,
-		locals: "locals" => Vec<Name>, yield_value: "yield" => Value, into: "into" => Name } => {
-		if max.is_some_and(|max| min > max) { return Err(n.error(&d.context, "repeat min exceeds max")); }
+	["repeat"] ({
+		body: "body" => Box<Form>,
+		min: "min" => usize,
+		max: "max" => Nullable<usize>,
+		locals: "locals" => Vec<Name>,
+		yield_value: "yield" => Value,
+		into: "into" => Name,
+	} => {
+		if max.is_some_and(|max| min > max) {
+			return Err(n.error(&d.context, "repeat min exceeds max"));
+		}
 		Ok(Form::Repeat { body, min, max, locals, yield_value, into })
 	}),
 	["read"] ({ reader: "reader" => Reader, into: "into" => Optional<Name>, input: "input" => Optional<Value> } => {
@@ -959,13 +991,17 @@ wire_tagged! { Form => Form (d, n) "op", "form operation" {
 
 wire_tagged! { Reader => Reader (d, n) "kind", "reader" {
 	["token"] ({ text: "text" => Name, gap: "gap" => Gap, word: "word" => bool } => {
-		if text.is_empty() { return Err(n.error(&d.context, "token text must not be empty")); }
+		if text.is_empty() {
+			return Err(n.error(&d.context, "token text must not be empty"));
+		}
 		Ok(Reader::Token { text, gap, word })
 	}),
 	["space"] ({ min: "min" => usize } => { Ok(Reader::Space { min }) }),
 	["test"] ({ value: "value" => Value } => { Ok(Reader::Test(value)) }),
 	["rule"] ({ name: "name" => Reference } => { Ok(Reader::Rule(name)) }),
-	["javascript"] ({ entry: "entry" => Js, boundary: "boundary" => Optional<Boundary> } => { Ok(Reader::Javascript { entry, boundary }) }),
+	["javascript"] ({ entry: "entry" => Js, boundary: "boundary" => Optional<Boundary> } => {
+		Ok(Reader::Javascript { entry, boundary })
+	}),
 	["html-single"] ({ entry: "entry" => Js } => { Ok(Reader::HtmlSingle(entry)) }),
 	["html-attributes"] ({ mode: "mode" => AttributeMode } => { Ok(Reader::HtmlAttributes(mode)) }),
 	["html-attribute-parts"] ({} => { Ok(Reader::HtmlAttributeParts) }),
@@ -977,8 +1013,12 @@ wire_tagged! { Value => Value (d, n) "op", "value operation" {
 	["constant"] ({ value: "value" => Json } => { Ok(Value::Constant(value)) }),
 	["get"] ({ base: "base" => Base, path: "path" => Vec<Path> } => { Ok(Value::Get { base, path }) }),
 	["compare"] (flatten Compare => std::convert::identity),
-	["choose"] ({ condition: "condition" => Box<Value>, yes: "yes" => Box<Value>, no: "no" => Box<Value> } => { Ok(Value::Choose { condition, yes, no }) }),
-	["flatMap"] ({ list: "list" => Box<Value>, binding: "as" => std::rc::Rc<str>, body: "body" => Box<Value> } => { Ok(Value::FlatMap { list, binding, body }) }),
+	["choose"] ({ condition: "condition" => Box<Value>, yes: "yes" => Box<Value>, no: "no" => Box<Value> } => {
+		Ok(Value::Choose { condition, yes, no })
+	}),
+	["flatMap"] ({ list: "list" => Box<Value>, binding: "as" => std::rc::Rc<str>, body: "body" => Box<Value> } => {
+		Ok(Value::FlatMap { list, binding, body })
+	}),
 	["length"] ({ list: "list" => Box<Value> } => { Ok(Value::Length(list)) }),
 	["at"] ({ list: "list" => Box<Value>, index: "index" => Box<Value> } => { Ok(Value::At { list, index }) }),
 	["construct"] (flatten Construct => Value::Construct),
@@ -986,47 +1026,104 @@ wire_tagged! { Value => Value (d, n) "op", "value operation" {
 
 struct Compare;
 wire_tagged! { Compare => Value (d, n) RELATION, "Relation" {
-	[Relation::Present.text()] ({ left: "left" => Box<Value> } => { Ok(Value::Compare { relation: Relation::Present, left, right: None, set: None }) }),
+	[Relation::Present.text()] ({ left: "left" => Box<Value> } => {
+		Ok(Value::Compare { relation: Relation::Present, left, right: None, set: None })
+	}),
 	[Relation::Equal.text(), Relation::Less.text()] ({ left: "left" => Box<Value>, right: "right" => Box<Value> } => {
-		Ok(Value::Compare { relation: Relation::read(n.required(RELATION, &d.context)?, &d.context)?, left, right: Some(right), set: None })
+		let relation = Relation::read(n.required(RELATION, &d.context)?, &d.context)?;
+		Ok(Value::Compare { relation, left, right: Some(right), set: None })
 	}),
 } }
 
 wire_tagged! { Construct => Construct (d, n) "shape", "construct shape" {
 	["array"] ({ items: "items" => Vec<Value> } => { Ok(Construct::Array(items)) }),
-	["record"] ({ node_type: "type" => Nullable<Name>, fields: "fields" => BTreeMap<Name, Value>, span: "span" => Box<Value> } => { Ok(Construct::Record { node_type, fields, span }) }),
+	["record"] ({
+		node_type: "type" => Nullable<Name>,
+		fields: "fields" => BTreeMap<Name, Value>,
+		span: "span" => Box<Value>,
+	} => { Ok(Construct::Record { node_type, fields, span }) }),
 } }
 
 wire_object! { Region (d, n) {
-	id: "id" => Name, parent: "parent" => Value, kind: "kind" => RegionKind, covers: "covers" => Value,
-	when: "when" => Optional<Value>, each: "each" => Optional<Each>,
+	id: "id" => Name,
+	parent: "parent" => Value,
+	kind: "kind" => RegionKind,
+	covers: "covers" => Value,
+	when: "when" => Optional<Value>,
+	each: "each" => Optional<Each>,
 } => { Ok(Region { id, parent, kind, covers, when, each }) } }
-wire_object! { Each (d, n) { list: "list" => Value, binding: "as" => std::rc::Rc<str> } => { Ok(Each { list, binding }) } }
-wire_object! { Declare (d, n) { patterns: "patterns" => Value, into: "into" => Value, kind: "kind" => DeclareKind } => { Ok(Declare { patterns, into, kind }) } }
+wire_object! { Each (d, n) { list: "list" => Value, binding: "as" => std::rc::Rc<str> } => {
+	Ok(Each { list, binding })
+} }
+wire_object! { Declare (d, n) { patterns: "patterns" => Value, into: "into" => Value, kind: "kind" => DeclareKind } => {
+	Ok(Declare { patterns, into, kind })
+} }
 wire_object! { PrefixDispatch (d, n) { prefix: "prefix" => Name, rule: "rule" => Reference } => {
-	if prefix.is_empty() { return Err(n.error(&d.context, "dispatch prefix must not be empty")); }
+	if prefix.is_empty() {
+		return Err(n.error(&d.context, "dispatch prefix must not be empty"));
+	}
 	Ok(PrefixDispatch { prefix, rule })
 } }
-wire_object! { NamedDispatch (d, n) { name: "name" => Name, rule: "rule" => Reference } => { Ok(NamedDispatch { name, rule }) } }
+wire_object! { NamedDispatch (d, n) { name: "name" => Name, rule: "rule" => Reference } => {
+	Ok(NamedDispatch { name, rule })
+} }
 wire_object! { PlainAttribute (d, n) {
-	node_type: "type" => Name, name: "name" => Name, value: "value" => Name, text: "text" => Reference, expression: "expression" => Reference,
+	node_type: "type" => Name,
+	name: "name" => Name,
+	value: "value" => Name,
+	text: "text" => Reference,
+	expression: "expression" => Reference,
 } => { Ok(PlainAttribute { node_type, name, value, text, expression }) } }
 wire_object! { DirectiveNames (d, n) {
-	prefix: "prefix" => Name, argument: "argument" => Name, modifier: "modifier" => Name,
-	require_argument: "requireArgument" => bool, dynamic: "dynamic" => Nullable<[Name; 2]>, unknown: "unknown" => UnknownDirective,
+	prefix: "prefix" => Name,
+	argument: "argument" => Name,
+	modifier: "modifier" => Name,
+	require_argument: "requireArgument" => bool,
+	dynamic: "dynamic" => Nullable<[Name; 2]>,
+	unknown: "unknown" => UnknownDirective,
 } => { Ok(DirectiveNames { prefix, argument, modifier, require_argument, dynamic, unknown }) } }
 wire_object! { Dispatch (d, n) {
-	when: "when" => Value, rule: "rule" => Reference, node_type: "type" => Optional<Name>, attributes: "attributes" => Optional<StaticAttributes>, content: "content" => Optional<Mode>,
+	when: "when" => Value,
+	rule: "rule" => Reference,
+	node_type: "type" => Optional<Name>,
+	attributes: "attributes" => Optional<StaticAttributes>,
+	content: "content" => Optional<Mode>,
 } => { Ok(Dispatch { when, rule, node_type, attributes, content }) } }
 wire_object! { Html (d, n) {
-	delimiters: "delimiters" => [Name; 2], attribute_interpolations: "attributeInterpolations" => bool,
-	attribute_comments: "attributeComments" => AttributeComments, autoclose: "autoclose" => bool, trim_end: "trimEnd" => bool,
-	void: "void" => Vec<Name>, text: "text" => Reference, comment: "comment" => Reference,
-	content: "content" => Vec<PrefixDispatch>, attribute: "attribute" => Vec<PrefixDispatch>, plain_attribute: "plainAttribute" => PlainAttribute,
-	elements: "elements" => Vec<Dispatch>, directive_names: "directiveNames" => DirectiveNames, directives: "directives" => Vec<NamedDispatch>,
+	delimiters: "delimiters" => [Name; 2],
+	attribute_interpolations: "attributeInterpolations" => bool,
+	attribute_comments: "attributeComments" => AttributeComments,
+	autoclose: "autoclose" => bool,
+	trim_end: "trimEnd" => bool,
+	void: "void" => Vec<Name>,
+	text: "text" => Reference,
+	comment: "comment" => Reference,
+	content: "content" => Vec<PrefixDispatch>,
+	attribute: "attribute" => Vec<PrefixDispatch>,
+	plain_attribute: "plainAttribute" => PlainAttribute,
+	elements: "elements" => Vec<Dispatch>,
+	directive_names: "directiveNames" => DirectiveNames,
+	directives: "directives" => Vec<NamedDispatch>,
 } => {
-	if delimiters.iter().any(|s| s.is_empty()) { return Err(n.error(&d.context, "delimiters must not be empty")); }
-	Ok(Html { delimiters, attribute_interpolations, attribute_comments, autoclose, trim_end, void, text, comment, content, attribute, plain_attribute, elements, directive_names, directives })
+	if delimiters.iter().any(|s| s.is_empty()) {
+		return Err(n.error(&d.context, "delimiters must not be empty"));
+	}
+	Ok(Html {
+		delimiters,
+		attribute_interpolations,
+		attribute_comments,
+		autoclose,
+		trim_end,
+		void,
+		text,
+		comment,
+		content,
+		attribute,
+		plain_attribute,
+		elements,
+		directive_names,
+		directives,
+	})
 } }
 
 struct True;
@@ -2006,6 +2103,7 @@ fn leading_calls(form: &Form, rules: &[bool], content: &[PrefixDispatch], edges:
 			}
 		}
 		Form::Choice { alternatives, .. } => {
+			// an alternative that cannot succeed still runs its leading calls before it fails
 			for f in alternatives {
 				leading_calls(f, rules, content, edges);
 			}

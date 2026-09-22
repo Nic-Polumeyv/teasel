@@ -21,6 +21,7 @@ export type Form<W = unknown> = WireForm & Inferred<W>;
 export type Write<N extends string, K extends string> = { into: N; kind: K };
 type Wrote<Fs extends readonly Form[]> = Form<Fs[number][typeof out]>;
 type Kind<R extends Reader> = R extends { kind: 'javascript' | 'html-single'; entry: infer E } ? E : R['kind'];
+// an emitted value counts as a write: a rule may declare a field it copied out of a sub-rule, and Rust checks the shape
 type Written<W> = W extends Write<infer N, string> ? N : never;
 type Bindable<W> = BindableOf<W, Written<W>>;
 type BindableOf<W, N> = N extends string ? (Kinds<W, N> extends 'pattern' | 'bindingIdentifier' | 'params' | 'value' ? N : never) : never;
@@ -38,6 +39,7 @@ export type Plan = Omit<WirePlan, 'rules'> & { rules: Record<string, { toJSON():
 const data = <T extends object>(value: object): T => value as T;
 const valueData = <T>(value: WireValue): V<T> => data(value);
 const formData = <W>(form: WireForm): Form<W> => data(form);
+// the name rides along for `into`, hidden from JSON because Rust's reader knows only op/base/path
 const slot = <N extends string>(base: string, name: N) =>
 	data<Slot<N>>(Object.defineProperty({ op: 'get', base, path: [name] } satisfies WireValue, 'name', { value: name }));
 const list = (value: readonly V[] | V): V => (Array.isArray(value) ? array(...value) : (value as V));
@@ -62,6 +64,7 @@ export const filter = (list: V, as: string, predicate: V<boolean>): V<unknown[]>
 	flatMap(list, as, choose(predicate, array(get(as)), array()));
 export const map = (list: V, as: string, value: V): V<unknown[]> => flatMap(list, as, array(value));
 export const any = (list: V): V<boolean> => less(constant(0), length(list));
+// helper bindings start with `$$`, a prefix an author's own aliases must not use
 export const member = (value: V, literals: JSONValue[]): V<boolean> =>
 	any(filter(constant(literals), '$$candidate', equal(get('$$candidate'), value)));
 export const concat = (...lists: V[]): V<unknown[]> => flatMap(array(...lists), '$$list', get('$$list'));
@@ -133,6 +136,7 @@ export const declare = <N extends string, const R extends string | Expr>(
 		kind,
 	} satisfies WireDeclare);
 
+// a chain, not one call with an options object: TypeScript fixes W before a deferred form callback runs
 export class Rule<Type extends string, S extends Schema, L extends readonly string[], W, R extends string, P extends RuleData['span'] = undefined> {
 	declare readonly [out]: { type: Type; fields: S; writes: W; span: P };
 	readonly #data: RuleData;

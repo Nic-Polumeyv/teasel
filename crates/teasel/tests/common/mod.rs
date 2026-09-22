@@ -1,6 +1,8 @@
 //! What the pinned tests share: the compact answer laid out one value per line, so a pin reads
 //! and diffs, and the pin itself, written on `UPDATE=1` and compared otherwise.
 
+#![allow(dead_code)]
+
 use std::fs;
 use std::path::Path;
 

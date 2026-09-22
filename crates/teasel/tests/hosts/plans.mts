@@ -1,6 +1,7 @@
 import { writeFileSync } from 'node:fs';
 import { rule, seq, choice, js, read, repeat, region, declare, incoming, type Infer, type Slot, type Plan } from '../../../../npm/src/plan.ts';
 
+// one rule per line keeps the generated file diffable
 const print = ({ rules, ...rest }: Plan): string => {
 	const lines = Object.entries(rules).map(([name, rule]) => `  ${JSON.stringify(name)}: ${JSON.stringify(rule)}`);
 	const top = Object.entries(rest).map(([key, value]) => `${JSON.stringify(key)}: ${JSON.stringify(value)}`);

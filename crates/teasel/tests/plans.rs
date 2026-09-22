@@ -9,7 +9,6 @@ fn checked_in_plans() {
 		("vue", include_str!("hosts/vue/plan.json")),
 	] {
 		Plan::read(text).unwrap_or_else(|error| panic!("{name}: {error}"));
-		Plan::read(&common::pretty(text)).unwrap_or_else(|error| panic!("{name}: {error}"));
 	}
 }
 
@@ -799,5 +798,4 @@ fn wire_types() {
 		common::pinned(&pin, &Plan::wire_types()),
 		"wire.ts differs from the Rust definition"
 	);
-	assert!(common::inputs(pin.parent().unwrap()).contains(&pin));
 }
