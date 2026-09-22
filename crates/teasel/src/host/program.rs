@@ -15,6 +15,7 @@ struct Builder {
 
 #[derive(Clone, Debug)]
 struct RuleTree {
+	pub source: usize,
 	pub ty: StrId,
 	pub fields: Vec<(StrId, Absence)>,
 	pub slots: usize,
@@ -215,6 +216,7 @@ impl Builder {
 			let fields = rule.fields.iter().map(|(k, v)| (c.program.name(k), *v)).collect();
 			let form = c.form(&rule.form);
 			p.rules.push(RuleTree {
+				source: p.rules.len(),
 				ty,
 				fields,
 				slots: rule.fields.len() + rule.locals.len(),
@@ -1185,6 +1187,7 @@ impl Default for Keys {
 }
 #[derive(Clone, Debug)]
 pub(super) struct Rule {
+	pub source: usize,
 	pub ty: StrId,
 	pub fields: Vec<(StrId, Absence)>,
 	pub slots: usize,
@@ -1382,6 +1385,7 @@ impl Program {
 				None
 			};
 			p.rules.push(Rule {
+				source: rule.source,
 				ty: rule.ty,
 				fields: rule.fields,
 				slots: rule.slots,

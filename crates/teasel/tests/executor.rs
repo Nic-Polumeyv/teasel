@@ -171,3 +171,50 @@ fn constructed_native_nodes_keep_native_traversal() {
 	teasel::scopes::analyze(&mut ast, teasel::Entry::Program, roots);
 	assert_eq!(ast.scopes.as_ref().unwrap().references.len(), 1);
 }
+
+#[test]
+fn choice_rolls_back_slots_nodes_and_comments() {
+	let plan = document(
+		r#"{"type":"Root","fields":{"failed":"omit","value":"null"},"form":{"op":"choice","alternatives":[
+        {"op":"seq","items":[{"op":"read","reader":{"kind":"token","text":"x","word":true,"gap":"none"}},{"op":"read","reader":{"kind":"javascript","entry":"expression"},"into":"failed"},{"op":"read","reader":{"kind":"token","text":"z","word":true,"gap":"space*"}}]},
+        {"op":"seq","items":[{"op":"read","reader":{"kind":"token","text":"x","word":true,"gap":"none"}},{"op":"read","reader":{"kind":"javascript","entry":"expression"},"into":"value"},{"op":"read","reader":{"kind":"token","text":"y","word":true,"gap":"space*"}}]}
+    ]}}"#,
+	);
+	for recover in [false, true] {
+		let (ast, root) = executor::parse(
+			"x foo /*once*/ y",
+			&plan,
+			Options {
+				error_recovery: recover,
+				..Default::default()
+			},
+		);
+		let root = root.unwrap();
+		let Some(Value::Nodes(children)) = field(&ast, root, "children") else {
+			panic!()
+		};
+		let node = ast.nth(children, 0).unwrap();
+		assert_eq!(field(&ast, node, "failed"), None);
+		assert!(matches!(field(&ast, node, "value"), Some(Value::Node(_))));
+		assert_eq!(ast.comments.len(), 1);
+		assert!(ast.errors.is_empty());
+		assert_eq!(
+			ast.nodes
+				.iter()
+				.filter(|n| matches!(n.kind, NodeKind::Identifier { .. }))
+				.count(),
+			1
+		);
+	}
+}
+
+#[test]
+fn a_committed_choice_is_not_reopened() {
+	let plan = document(
+		r#"{"type":"Root","fields":{},"form":{"op":"seq","items":[
+        {"op":"choice","alternatives":[{"op":"read","reader":{"kind":"token","text":"x","word":false,"gap":"none"}},{"op":"read","reader":{"kind":"token","text":"xy","word":false,"gap":"none"}}]},
+        {"op":"read","reader":{"kind":"token","text":"z","word":false,"gap":"none"}}
+    ]}}"#,
+	);
+	assert!(executor::parse("xyz", &plan, Options::default()).1.is_err());
+}

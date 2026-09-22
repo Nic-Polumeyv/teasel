@@ -98,7 +98,8 @@ fn unfinished_input() {
 	let elements = format!("{}x{}", "<a>".repeat(40_000), "</a>".repeat(40_000));
 	let branches = format!("{{#if a}}{}{{/if}}", "{:else if a}".repeat(40_000));
 	for deep in [elements, branches] {
-		assert!(parse(&deep, &svelte, false).contains("\"code\":\"nesting_depth\""));
+		let answer = parse(&deep, &svelte, false);
+		assert!(answer.contains("\"code\":\"nesting_depth\""), "{answer}");
 	}
 	let program = parse("<button @click=\"let x = 1\"/>", &vue, true);
 	assert!(

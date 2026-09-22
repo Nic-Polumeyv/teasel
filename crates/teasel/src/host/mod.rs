@@ -10,7 +10,7 @@ use std::borrow::Cow;
 
 use self::plan::{Absence, AttributeMode, Boundary, Gap, Js, Mode, Relation, SpanPolicy, Stop};
 use self::program::{
-	Base, Code as ExprCode, Construct, Expr, Form, Key, Path, Property, Reader, Repeat, Slot, Symbol, Token,
+	Base, Choice, Code as ExprCode, Construct, Expr, Form, Key, Path, Property, Reader, Repeat, Slot, Symbol, Token,
 };
 use crate::ast::{Ast, Host, List, NodeId, NodeKind, Run, Value};
 use crate::error::{Code, SyntaxError};
@@ -141,6 +141,12 @@ impl Rejection {
 			Self::Error(error) => error.pos,
 		}
 	}
+	fn code(&self) -> Code {
+		match self {
+			Self::Expected(..) | Self::Space(..) => Code::Expected,
+			Self::Error(error) => error.code,
+		}
+	}
 	fn boxed(self, plan: &Plan) -> Box<SyntaxError> {
 		match self {
 			Self::Error(error) => error,
@@ -155,6 +161,29 @@ impl Rejection {
 	}
 }
 
+struct Checkpoint<M> {
+	ast: crate::ast::Mark<M>,
+	at: u32,
+	limit: u32,
+	records: usize,
+	active: usize,
+	bindings: usize,
+	failures: usize,
+	event_changes: usize,
+	record: Record,
+	slots: usize,
+	saved: usize,
+	elements: usize,
+	element: Option<Element>,
+	iteration: usize,
+	iteration_slots: usize,
+	events: usize,
+	event: Option<Event>,
+	attributes: usize,
+	values: usize,
+	autoclosed: Option<Autoclosed>,
+}
+
 #[derive(Default)]
 pub(crate) struct Spare {
 	records: Vec<Record>,
@@ -165,6 +194,7 @@ pub(crate) struct Spare {
 	iteration_slots: Vec<Datum>,
 	bindings: Vec<Datum>,
 	events: Vec<Event>,
+	event_changes: Vec<(usize, Event)>,
 	attributes: Vec<HeaderAttribute>,
 	values: Vec<Datum>,
 	saved: Vec<Datum>,
@@ -215,6 +245,7 @@ pub(crate) fn parse_document<E: Extension>(
 	spare.iteration_slots.clear();
 	spare.bindings.clear();
 	spare.events.clear();
+	spare.event_changes.clear();
 	spare.scan_strings.clear();
 	spare.attributes.clear();
 	spare.values.clear();
@@ -231,6 +262,7 @@ pub(crate) fn parse_document<E: Extension>(
 		limit: cut.len() as u32,
 		spare,
 		native_reads: 0,
+		recovering_form: false,
 		autoclosed: None,
 	};
 	let result = w.call(plan.document, Datum::Missing, None, "").and_then(|node| {
@@ -260,6 +292,7 @@ struct Walker<'a, E: Extension> {
 	limit: u32,
 	spare: Box<Spare>,
 	native_reads: usize,
+	recovering_form: bool,
 	autoclosed: Option<Autoclosed>,
 	ast: Option<Box<Ast<E::Data>>>,
 }
@@ -1128,17 +1161,37 @@ impl<'a, E: Extension> Walker<'a, E> {
 			node: None,
 		});
 		self.active.push(record);
-		let result = self.form(
-			if self.options.error_recovery {
-				&schema.form
-			} else {
-				&schema.strict
-			},
-			record,
-			follow,
-		);
+		let result = if self.options.error_recovery && !self.recovering_form {
+			let checkpoint = self.checkpoint(record);
+			match self.strict(&schema.strict, record, follow) {
+				Ok(()) => {
+					self.release(&checkpoint);
+					Ok(())
+				}
+				Err(_) => {
+					self.restore(record, checkpoint);
+					self.recovering_form = true;
+					let result = self.form(&schema.form, record, follow);
+					self.recovering_form = false;
+					result
+				}
+			}
+		} else {
+			self.form(
+				if self.options.error_recovery {
+					&schema.form
+				} else {
+					&schema.strict
+				},
+				record,
+				follow,
+			)
+		};
 		self.active.pop();
 		result.map_err(|error| {
+			if matches!(error.code(), Code::NestingDepth | Code::TreeSize) {
+				return error;
+			}
 			self.records[record]
 				.failure
 				.take()
@@ -1391,6 +1444,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 						self.at = after_name;
 						let run = self.scan_header().unwrap_or(Run { start: 0, len: 0 });
 						(self.at, self.limit) = (at, limit);
+						self.spare.event_changes.push((i, self.spare.events[i]));
 						if let Event::Element { header, .. } = &mut self.events[i] {
 							*header = Some(run);
 						}
@@ -1429,6 +1483,84 @@ impl<'a, E: Extension> Walker<'a, E> {
 		self.plan.stops.iter().any(|prefix| self.matches(prefix))
 	}
 
+	fn checkpoint(&mut self, record: usize) -> Checkpoint<<E::Data as crate::ast::Reuse>::Mark> {
+		let rec = self.records[record];
+		let len = self.plan.program.rules[rec.rule].slots;
+		let saved = self.saved.len();
+		self.spare
+			.saved
+			.extend_from_slice(&self.spare.slots[rec.slots..rec.slots + len]);
+		if let Some(run) = self.iteration.last().copied() {
+			self.spare
+				.saved
+				.extend_from_slice(&self.spare.iteration_slots[run.start as usize..(run.start + run.len) as usize]);
+		}
+		Checkpoint {
+			ast: self.tree().mark(),
+			at: self.at,
+			limit: self.limit,
+			records: self.records.len(),
+			active: self.active.len(),
+			bindings: self.bindings.len(),
+			failures: self.failures.len(),
+			event_changes: self.event_changes.len(),
+			record: rec,
+			slots: self.slots.len(),
+			saved,
+			elements: self.elements.len(),
+			element: self.elements.last().copied(),
+			iteration: self.iteration.len(),
+			iteration_slots: self.iteration_slots.len(),
+			events: self.events.len(),
+			event: match rec.event {
+				Datum::Event(i) => Some(self.events[i]),
+				_ => None,
+			},
+			attributes: self.attributes.len(),
+			values: self.values.len(),
+			autoclosed: self.autoclosed,
+		}
+	}
+	fn release(&mut self, checkpoint: &Checkpoint<<E::Data as crate::ast::Reuse>::Mark>) {
+		self.saved.truncate(checkpoint.saved);
+	}
+	fn restore(&mut self, record: usize, checkpoint: Checkpoint<<E::Data as crate::ast::Reuse>::Mark>) {
+		self.ast().truncate(checkpoint.ast);
+		self.active.truncate(checkpoint.active);
+		self.bindings.truncate(checkpoint.bindings);
+		self.failures.truncate(checkpoint.failures);
+		while self.event_changes.len() > checkpoint.event_changes {
+			let (i, event) = self.event_changes.pop().unwrap();
+			self.events[i] = event;
+		}
+		self.at = checkpoint.at;
+		self.limit = checkpoint.limit;
+		self.records.truncate(checkpoint.records);
+		self.records[record] = checkpoint.record;
+		self.slots.truncate(checkpoint.slots);
+		let start = checkpoint.record.slots;
+		let len = self.plan.program.rules[checkpoint.record.rule].slots;
+		self.spare.slots[start..start + len]
+			.copy_from_slice(&self.spare.saved[checkpoint.saved..checkpoint.saved + len]);
+		self.elements.truncate(checkpoint.elements);
+		if let Some(element) = checkpoint.element {
+			*self.spare.elements.last_mut().unwrap() = element;
+		}
+		self.iteration.truncate(checkpoint.iteration);
+		self.iteration_slots.truncate(checkpoint.iteration_slots);
+		if let Some(run) = self.iteration.last().copied() {
+			self.spare.iteration_slots[run.start as usize..(run.start + run.len) as usize]
+				.copy_from_slice(&self.spare.saved[checkpoint.saved + len..checkpoint.saved + len + run.len as usize]);
+		}
+		self.events.truncate(checkpoint.events);
+		if let (Datum::Event(i), Some(event)) = (checkpoint.record.event, checkpoint.event) {
+			self.events[i] = event;
+		}
+		self.attributes.truncate(checkpoint.attributes);
+		self.values.truncate(checkpoint.values);
+		self.saved.truncate(checkpoint.saved);
+		self.autoclosed = checkpoint.autoclosed;
+	}
 	fn strict(&mut self, form: &Form, record: usize, follow: &str) -> std::result::Result<(), Rejection> {
 		let recover = std::mem::replace(&mut self.options.error_recovery, false);
 		let result = self.form(form, record, follow);
@@ -1448,7 +1580,41 @@ impl<'a, E: Extension> Walker<'a, E> {
 			}
 			Form::Seq(items) => {
 				for item in items {
-					self.form(item, record, follow)?;
+					let next = follow;
+					if self.options.error_recovery
+						&& self.records[record].body_end == Some(self.at)
+						&& !self.records[record].aborted
+						&& !matches!(item, Form::Emit { .. })
+						&& (self.at == self.limit || self.matches("</") || self.structural_stop())
+					{
+						let checkpoint = self.checkpoint(record);
+						let start = self.at;
+						match self.strict(item, record, next) {
+							Ok(()) => {
+								self.release(&checkpoint);
+								continue;
+							}
+							Err(err) => {
+								self.restore(record, checkpoint);
+								let header_end =
+									start + self.rest().find(self.plan.html.delimiters[1].as_ref()).unwrap_or(0) as u32;
+								if (err.pos() < header_end
+									&& !self.rest().starts_with(&format!("{}:", self.plan.html.delimiters[0])))
+									|| self.matches("</") || self.at == self.limit
+								{
+									self.records[record].aborted = true;
+									let pos = self.records[record].start;
+									let name = self.plan.rules
+										[self.plan.program.rules[self.records[record].rule].source]
+										.name
+										.to_ascii_lowercase();
+									self.report(error(pos, pos + 1, Code::Unclosed, Some(&name)))?;
+									continue;
+								}
+							}
+						}
+					}
+					self.form(item, record, next)?;
 				}
 			}
 			Form::Emit { into, value } => {
@@ -1472,44 +1638,123 @@ impl<'a, E: Extension> Walker<'a, E> {
 			}
 
 			Form::Choice(choice) => {
-				if choice.disjoint {
-					let selected = choice
-						.first
+				let Choice {
+					alternatives,
+					disjoint,
+					first,
+					expected,
+				} = choice.as_ref();
+				if *disjoint {
+					let rest = self.rest();
+					let selected = first
 						.iter()
 						.position(|prefixes| {
-							prefixes.iter().any(|prefix| {
-								let rest = if prefix.tight {
-									self.rest()
+							prefixes.iter().any(|p| {
+								let rest = if p.tight {
+									rest
 								} else {
-									self.rest().trim_start_matches(is_space)
+									rest.trim_start_matches(is_space)
 								};
-								rest.starts_with(&prefix.text)
-									&& (!prefix.word || !rest[prefix.text.len()..].starts_with(is_id_continue))
+								rest.starts_with(&p.text)
+									&& (!p.word || !rest[p.text.len()..].starts_with(is_id_continue))
 							})
 						})
-						.ok_or(Rejection::Expected(self.at, self.at, choice.expected))?;
-					return self.form(&choice.alternatives[selected], record, follow);
-				}
-
-				let mut failure = None;
-				let mut selected = None;
-				for alternative in &choice.alternatives {
-					if let Some(error) = self.leading_mismatch(alternative) {
-						if failure
-							.as_ref()
-							.is_none_or(|prior: &Rejection| prior.pos() < error.pos())
-						{
-							failure = Some(error);
-						}
-					} else {
-						selected = Some(alternative);
-						break;
-					}
-				}
-				if let Some(selected) = selected {
-					self.form(selected, record, follow)?;
+						.or_else(|| {
+							self.options.error_recovery.then(|| {
+								first
+									.iter()
+									.position(|prefixes| {
+										prefixes
+											.iter()
+											.any(|p| p.text.as_str() == self.plan.html.delimiters[1].as_ref())
+									})
+									.unwrap_or(0)
+							})
+						})
+						.ok_or_else(|| {
+							let pos =
+								self.at + (self.rest().len() - self.rest().trim_start_matches(is_space).len()) as u32;
+							Rejection::Expected(pos, pos, *expected)
+						})?;
+					self.form(&alternatives[selected], record, follow)?;
 				} else {
-					return Err(failure.unwrap());
+					let mut failure: Option<Rejection> = None;
+					let mut failed = 0;
+					let mut failed_native = false;
+					let mut matched = false;
+					let start = self.at;
+					for (i, alternative) in alternatives.iter().enumerate() {
+						if !self.options.error_recovery
+							&& let Some(error) = self.leading_mismatch(alternative)
+						{
+							if failure.as_ref().is_none_or(|prior| prior.pos() < error.pos()) {
+								failure = Some(error);
+								failed_native = false;
+								failed = i;
+							}
+							continue;
+						}
+						if !self.options.error_recovery
+							&& let Form::Seq(items) = alternative
+							&& items.is_empty()
+						{
+							matched = true;
+							break;
+						}
+						let checkpoint = self.checkpoint(record);
+						let reads = self.native_reads;
+						match self.strict(alternative, record, follow) {
+							Ok(()) => {
+								if self.options.error_recovery
+									&& self.at == start && failed_native
+									&& failure.as_ref().is_some_and(|e| e.pos() > start)
+								{
+									self.restore(record, checkpoint);
+									self.form(&alternatives[failed], record, follow)?;
+								} else {
+									self.release(&checkpoint);
+								}
+								matched = true;
+								break;
+							}
+							Err(error) => {
+								self.restore(record, checkpoint);
+								if matches!(error.code(), Code::NestingDepth | Code::TreeSize) {
+									return Err(error);
+								}
+								if failure.as_ref().is_none_or(|prior| {
+									prior.pos() < error.pos()
+										|| self.options.error_recovery
+											&& prior.pos() == error.pos() && (native_form(
+											alternative,
+											Js::Program,
+											&self.plan.program,
+										) || matches!(
+											error.code(),
+											Code::ReservedWord | Code::UnexpectedKeyword
+										) && native_form(
+											alternative,
+											Js::Statement,
+											&self.plan.program,
+										))
+								}) {
+									failure = Some(error);
+									failed_native = self.native_reads > reads;
+									failed = i;
+								}
+							}
+						}
+					}
+					if matched && let Some(error) = failure.as_ref() {
+						self.remember(record, error.clone());
+					}
+					if !matched {
+						if self.options.error_recovery {
+							self.form(&alternatives[failed], record, follow)?;
+						} else {
+							return Err(failure.unwrap());
+						}
+					}
 				}
 			}
 
@@ -1525,9 +1770,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 				let mut values = self.take_values();
 
 				while max.is_none_or(|max| values.len() < max) {
-					if self.leading_mismatch(body).is_some() {
-						break;
-					}
+					let checkpoint = self.checkpoint(record);
 					let start = self.at;
 					self.push_iteration(*locals);
 					let result = self
@@ -1536,10 +1779,14 @@ impl<'a, E: Extension> Walker<'a, E> {
 					self.pop_iteration();
 					match result {
 						Ok(value) => {
+							self.release(&checkpoint);
 							values.push(value);
 						}
 						Err(error) => {
-							self.at = start;
+							self.restore(record, checkpoint);
+							if matches!(error.code(), Code::NestingDepth | Code::TreeSize) {
+								return Err(error);
+							}
 							if values.len() < *min {
 								if !self.options.error_recovery {
 									return Err(error);
@@ -2428,6 +2675,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 				let Datum::Event(i) = self.records[record].event else {
 					unreachable!()
 				};
+				self.spare.event_changes.push((i, self.spare.events[i]));
 				let Event::Element { raw, .. } = &mut self.events[i] else {
 					unreachable!()
 				};
@@ -2999,4 +3247,14 @@ fn tag_end(after: &str) -> usize {
 		}
 	}
 	after.len()
+}
+
+fn native_form(form: &Form, entry: Js, program: &program::Program) -> bool {
+	match form {
+		Form::Read { reader, .. } => {
+			matches!(program.readers[*reader as usize],Reader::Javascript {entry:read,..} if read == entry)
+		}
+		Form::Seq(items) => items.iter().any(|form| native_form(form, entry, program)),
+		_ => false,
+	}
 }

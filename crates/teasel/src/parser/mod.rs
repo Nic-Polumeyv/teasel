@@ -535,6 +535,11 @@ struct Mark<E: Extension> {
 pub(crate) struct Snapshot<E: Extension> {
 	tokens: TokenSnapshot,
 	mark: Mark<E>,
+	stop_word_at: Option<u32>,
+	forced_stop: Option<u32>,
+	errors: usize,
+	yield_await: (u32, u32, u32),
+	arrow: (u32, bool),
 }
 
 pub(crate) struct TokenSnapshot {
@@ -645,12 +650,22 @@ impl<'a, E: Extension> Parser<'a, E> {
 		Snapshot {
 			tokens: self.token_snapshot(),
 			mark: self.mark(),
+			stop_word_at: self.stop_word_at,
+			forced_stop: self.forced_stop,
+			errors: self.errors.len(),
+			yield_await: (self.yield_pos, self.await_pos, self.await_ident_pos),
+			arrow: (self.potential_arrow_at, self.potential_arrow_in_for_await),
 		}
 	}
 
 	pub(crate) fn restore(&mut self, snapshot: Snapshot<E>) {
 		self.restore_tokens(snapshot.tokens);
 		self.unwind(snapshot.mark);
+		self.stop_word_at = snapshot.stop_word_at;
+		self.forced_stop = snapshot.forced_stop;
+		self.errors.truncate(snapshot.errors);
+		(self.yield_pos, self.await_pos, self.await_ident_pos) = snapshot.yield_await;
+		(self.potential_arrow_at, self.potential_arrow_in_for_await) = snapshot.arrow;
 	}
 
 	/// The tokenizer alone, enough for a lookahead that parses nothing.
