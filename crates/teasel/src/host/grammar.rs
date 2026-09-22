@@ -704,9 +704,9 @@ impl Reader<'_> {
 }
 
 impl Grammar {
-	/// Reads a grammar from its text; the message names the line that could not be read.
-	pub fn read(text: &str) -> Result<Grammar, String> {
-		let mut grammar = Grammar {
+	/// A grammar with nothing in it, behind a stylesheet read on its own.
+	pub fn empty() -> Grammar {
+		Grammar {
 			name: "",
 			document: DocumentRule {
 				ty: "Document",
@@ -747,7 +747,12 @@ impl Grammar {
 			tags: Vec::new(),
 			declaration: None,
 			expression: None,
-		};
+		}
+	}
+
+	/// Reads a grammar from its text; the message names the line that could not be read.
+	pub fn read(text: &str) -> Result<Grammar, String> {
+		let mut grammar = Grammar::empty();
 		for (number, line) in text.lines().enumerate() {
 			// a comment is `//` at the start of the line or after whitespace
 			let line = match line.find("//") {

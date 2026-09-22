@@ -439,6 +439,38 @@ pub(crate) fn parse_document<E: Extension>(
 	(walker.ast.take().unwrap(), root)
 }
 
+/// The whole source as a CSS stylesheet; see `Walker::stylesheet`.
+pub(crate) fn parse_stylesheet<E: Extension>(
+	src: &str,
+	options: Options,
+	reused: Option<Box<Ast<E::Data>>>,
+) -> (Box<Ast<E::Data>>, Result<NodeId>) {
+	let grammar = Grammar::empty();
+	let mut walker = Walker::<E> {
+		src,
+		full: src.len() as u32,
+		grammar: &grammar,
+		options,
+		ast: Some(reused.unwrap_or_else(|| Box::new(Ast::sized(src.len())))),
+		at: 0,
+		limit: src.len() as u32,
+		stopped: false,
+		frames: Vec::new(),
+		once: Vec::new(),
+		keyword: 0,
+		autoclosed: None,
+		verbatim: 0,
+		declared: Vec::new(),
+		fields: Pool::default(),
+		nodes: Pool::default(),
+		names: Pool::default(),
+		groups: Pool::default(),
+		seen: Vec::new(),
+	};
+	let root = walker.stylesheet();
+	(walker.ast.take().unwrap(), root)
+}
+
 impl<'a, E: Extension> Walker<'a, E> {
 	fn within_depth(&self, at: u32) -> Result<()> {
 		if self.frames.len() as u32 >= crate::parser::MAX_DEPTH {

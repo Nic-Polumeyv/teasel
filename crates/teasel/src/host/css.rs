@@ -125,44 +125,13 @@ impl<'a, E: Extension> Walker<'a, E> {
 	pub(super) fn style_sheet(&mut self, start: u32, name: &str, attributes: Vec<NodeId>) -> Result<NodeId> {
 		let closer = format!("</{name}");
 		let content_start = self.at;
-		let mut comments = Vec::new();
-		let mut children = Vec::new();
-		loop {
-			self.css_space(&mut comments, true)?;
-			if self.matches(&closer) || self.at >= self.len() {
-				break;
-			}
-			children.push(if self.matches("@") {
-				self.at_rule(&mut comments)?
-			} else {
-				self.rule(&mut comments)?
-			});
-		}
+		let (children, comments) = self.sheet(&closer)?;
 		let content_end = self.at;
 		self.expect(&closer)?;
 		self.space();
 		self.expect(">")?;
 		let end = self.at;
-		let comments: Vec<NodeId> = comments
-			.into_iter()
-			.map(|comment| {
-				let value = ("value", Value::Slice(comment.start + 2, comment.end - 2));
-				match comment.position {
-					Some(position) => self.host(
-						"CSSComment",
-						comment.start,
-						comment.end,
-						&[value, ("position", Value::Int(position))],
-						None,
-						true,
-					),
-					None => self.host("CSSComment", comment.start, comment.end, &[value], None, true),
-				}
-			})
-			.collect();
 		let attributes = self.list(&attributes);
-		let children = self.list(&children);
-		let comments = self.list(&comments);
 		let content = self.host(
 			"",
 			content_start,
@@ -187,6 +156,57 @@ impl<'a, E: Extension> Walker<'a, E> {
 			None,
 			true,
 		))
+	}
+
+	/// The whole source as a stylesheet.
+	pub(super) fn stylesheet(&mut self) -> Result<NodeId> {
+		let (children, comments) = self.sheet("")?;
+		Ok(self.host(
+			"StyleSheet",
+			0,
+			self.len(),
+			&[
+				("children", Value::Nodes(children)),
+				("comments", Value::Nodes(comments)),
+			],
+			None,
+			true,
+		))
+	}
+
+	/// The rules up to `closer` or the end, and the comments among them, as lists.
+	fn sheet(&mut self, closer: &str) -> Result<(List, List)> {
+		let mut comments = Vec::new();
+		let mut children = Vec::new();
+		loop {
+			self.css_space(&mut comments, true)?;
+			if self.at >= self.len() || (!closer.is_empty() && self.matches(closer)) {
+				break;
+			}
+			children.push(if self.matches("@") {
+				self.at_rule(&mut comments)?
+			} else {
+				self.rule(&mut comments)?
+			});
+		}
+		let comments: Vec<NodeId> = comments
+			.into_iter()
+			.map(|comment| {
+				let value = ("value", Value::Slice(comment.start + 2, comment.end - 2));
+				match comment.position {
+					Some(position) => self.host(
+						"CSSComment",
+						comment.start,
+						comment.end,
+						&[value, ("position", Value::Int(position))],
+						None,
+						true,
+					),
+					None => self.host("CSSComment", comment.start, comment.end, &[value], None, true),
+				}
+			})
+			.collect();
+		Ok((self.list(&children), self.list(&comments)))
 	}
 
 	/// Whitespace, comments and HTML comment markers; `capture` keeps the comments.

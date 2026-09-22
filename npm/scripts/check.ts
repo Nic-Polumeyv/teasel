@@ -65,12 +65,12 @@ function report(name: string, difference: string | null) {
 }
 
 // the batch header the binary reads for the same parse: byte offsets, every switch of the options
-const MODE: Record<Entry, string> = { program: '', expression: 'expr', pattern: 'pattern', params: 'params', statement: 'stmt', typeParameters: 'typeparams' };
+const MODE: Record<Entry, string> = { program: '', expression: 'expr', pattern: 'pattern', params: 'params', statement: 'stmt', typeParameters: 'typeparams', stylesheet: 'stylesheet' };
 function mode(source: string, options: Options, entry: Entry, at: number) {
 	const switches = (['comments', 'scopes', 'parenthesized'] as const).filter((flag) => options[flag]).map((flag) => `+${flag}`);
 	if (options.typescript === 'erase') switches.push('+erase');
 	const head = entry === 'program' ? (options.sourceType === 'module' ? 'module' : 'script') : MODE[entry];
-	const offset = entry === 'program' ? '' : `:${Buffer.byteLength(source.slice(0, at))}`;
+	const offset = entry === 'program' || entry === 'stylesheet' ? '' : `:${Buffer.byteLength(source.slice(0, at))}`;
 	return `${options.typescript ? 'ts-' : ''}${head}${switches.join('')}${offset}`;
 }
 

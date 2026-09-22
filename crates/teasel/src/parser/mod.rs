@@ -378,6 +378,8 @@ pub enum Entry {
 	Params,
 	Statement,
 	TypeParameters,
+	/// A CSS stylesheet on its own, the whole source.
+	StyleSheet,
 }
 
 impl Entry {
@@ -388,6 +390,7 @@ impl Entry {
 			3 => Entry::Params,
 			4 => Entry::Statement,
 			5 => Entry::TypeParameters,
+			6 => Entry::StyleSheet,
 			_ => Entry::Program,
 		}
 	}
@@ -852,7 +855,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 				self.parse_statement(statement::Context::None, StatementPlace::TopLevel, Some(&mut exports))?
 			}
 			Entry::TypeParameters => E::type_parameters(self)?,
-			Entry::Program => unreachable!(),
+			Entry::Program | Entry::StyleSheet => unreachable!(),
 		};
 		Ok(self.list_of(&[root]))
 	}

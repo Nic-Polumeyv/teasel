@@ -723,7 +723,7 @@ where
 {
 	let output = Output {
 		comments: request.comments,
-		scopes: request.scopes,
+		scopes: request.scopes && request.entry != Entry::StyleSheet,
 		erase: request.erase && request.typescript,
 		errors: request.options.error_recovery,
 	};
@@ -734,6 +734,11 @@ where
 	let (mut ast, parsed) = match host {
 		Some(grammar) => {
 			let (mut ast, root) = host::parse_document::<E>(source, grammar, request.options, reused);
+			let parsed = root.map(|root| (ast.add_list(&[Some(root)]), source.len() as u32));
+			(ast, parsed)
+		}
+		None if request.entry == Entry::StyleSheet => {
+			let (mut ast, root) = host::parse_stylesheet::<E>(source, request.options, reused);
 			let parsed = root.map(|root| (ast.add_list(&[Some(root)]), source.len() as u32));
 			(ast, parsed)
 		}

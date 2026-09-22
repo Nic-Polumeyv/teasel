@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "expected",
+		"message": "Expected a declaration value",
+		"pos": 6,
+		"end": 12,
+		"loc": {
+			"line": 1,
+			"column": 6
+		}
+	}
+}

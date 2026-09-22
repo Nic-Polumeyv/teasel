@@ -208,7 +208,7 @@ export interface HostNode {
 
 const registry = typeof FinalizationRegistry === 'undefined' ? null : new FinalizationRegistry<Held>((held) => held.free());
 
-let read: (plan: Plan<unknown>) => { entry: number; stop: string; held: Held | undefined };
+let read: (plan: Plan<unknown>) => { entry: number; stop: string; held: Held | undefined; whole: boolean };
 
 /**
  * What a parse reads. The built-in plans read a piece of JavaScript at a position of the source,
@@ -250,6 +250,13 @@ export class Plan<T = HostNode> {
 	static readonly statement: Plan<Statement> = Plan.#builtin(ENTRY.statement);
 	/** A `TSTypeParameterDeclaration`; TypeScript only, `not_typescript` otherwise. */
 	static readonly typeParameters: Plan<Node> = Plan.#builtin(ENTRY.typeParameters);
+	/** The whole source as a CSS stylesheet: a `StyleSheet` of rules and at-rules, its comments listed. */
+	static readonly stylesheet: Plan<HostNode> = Plan.#builtin(ENTRY.stylesheet);
+
+	/** A document and a stylesheet read the whole source, no offset and no `until`. */
+	get #whole(): boolean {
+		return this.#held !== undefined || this.#entry === ENTRY.stylesheet;
+	}
 
 	/**
 	 * The same reading, ended where one of the host's own tokens, words or punctuators, follows.
@@ -259,7 +266,7 @@ export class Plan<T = HostNode> {
 	 * the assertion, so `xs as T[] as item` ends after the type.
 	 */
 	until(...tokens: string[]): Plan<T> {
-		if (this.#held !== undefined) throw new TypeError('a document plan reads the whole source');
+		if (this.#whole) throw new TypeError('a document plan reads the whole source');
 		if (tokens.length === 0 || !tokens.every((token) => typeof token === 'string' && token !== '' && !/\s/.test(token))) {
 			throw new TypeError('until takes words and punctuators');
 		}
@@ -267,7 +274,7 @@ export class Plan<T = HostNode> {
 	}
 
 	static {
-		read = (plan) => ({ entry: plan.#entry, stop: plan.#stop, held: plan.#held });
+		read = (plan) => ({ entry: plan.#entry, stop: plan.#stop, held: plan.#held, whole: plan.#whole });
 	}
 }
 
@@ -294,12 +301,12 @@ export class Source {
 	parse(plan: Plan<unknown> = Plan.program, at: number | [number, number] = 0): Parsed<any> {
 		if (this.#held === undefined) throw new TypeError('the source is freed');
 		if (!(plan instanceof Plan)) throw new TypeError('a parse takes a plan');
-		const { entry, stop, held } = read(plan);
+		const { entry, stop, held, whole } = read(plan);
 		let offset: number, end: number | undefined;
 		if (typeof at === 'number') offset = at;
 		else if (Array.isArray(at) && at.length === 2 && typeof at[0] === 'number' && typeof at[1] === 'number') [offset, end] = at;
 		else throw new TypeError('at is an offset or [start, end]');
-		if (held !== undefined && (offset !== 0 || end !== undefined)) throw new TypeError('a document plan reads the whole source');
+		if (whole && (offset !== 0 || end !== undefined)) throw new TypeError('a document plan reads the whole source');
 		const answer = this.#held.parse(entry, offset, end, stop, held);
 		if (typeof answer !== 'string') {
 			try {
