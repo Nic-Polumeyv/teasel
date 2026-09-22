@@ -21,6 +21,7 @@ use crate::parser::{Entry, Extension, ForInit, Options, Parser, Result};
 enum Datum {
 	Missing,
 	Null,
+	Comments,
 	Bool(bool),
 	Number(f64),
 	Text(StrId),
@@ -59,6 +60,7 @@ impl Datum {
 
 #[derive(Clone, Copy, Debug)]
 enum Event {
+	Document,
 	Stylesheet(List, List),
 	Text {
 		raw: Datum,
@@ -281,7 +283,8 @@ pub(crate) fn parse_document<E: Extension>(
 		recovering_form: false,
 		autoclosed: None,
 	};
-	let result = w.call(plan.document, Datum::Missing, None, "").and_then(|node| {
+	let event = w.event(Event::Document);
+	let result = w.call(plan.document, event, None, "").and_then(|node| {
 		if w.at != w.limit {
 			return fail(w.at, w.at, Code::UnexpectedToken, None);
 		}
@@ -515,7 +518,8 @@ impl<'a, E: Extension> Walker<'a, E> {
 			Value::Strs(a, n) => Datum::Strings(a, n),
 			Value::Bool(v) => Datum::Bool(v),
 			Value::Int(v) => Datum::Number(v as f64),
-			Value::Null | Value::Comments => Datum::Null,
+			Value::Null => Datum::Null,
+			Value::Comments => Datum::Comments,
 		}
 	}
 	fn property(&mut self, value: Datum, path: &Path) -> Datum {
@@ -1002,6 +1006,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 	fn output(&mut self, value: &Datum) -> Result<Value> {
 		Ok(match *value {
 			Datum::Missing | Datum::Null | Datum::Scopes(_) | Datum::Region(..) | Datum::Incoming(_) => Value::Null,
+			Datum::Comments => Value::Comments,
 			Datum::Bool(v) => Value::Bool(v),
 			Datum::Number(v) if v >= 0.0 && v <= u32::MAX as f64 && v.fract() == 0.0 => Value::Int(v as u32),
 			Datum::Number(_) => return fail(self.at, self.at, Code::Expected, Some("a representable host number")),
@@ -1472,6 +1477,10 @@ impl<'a, E: Extension> Walker<'a, E> {
 	}
 	fn event_value(&mut self, i: usize, key: Key) -> Datum {
 		match self.events[i] {
+			Event::Document => match key {
+				Key::Comments => Datum::Comments,
+				_ => Datum::Missing,
+			},
 			Event::Stylesheet(children, comments) => match key {
 				Key::Children => Datum::Nodes(children),
 				Key::Comments => Datum::Nodes(comments),

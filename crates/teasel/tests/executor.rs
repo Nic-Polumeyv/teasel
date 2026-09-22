@@ -80,6 +80,16 @@ fn absence_and_values() {
 }
 
 #[test]
+fn document_comments_are_a_value() {
+	let plan = document(
+		r#"{"type":"Root","fields":{"comments":"null"},"form":{"op":"emit","into":"comments","value":{"op":"get","base":"event","path":["comments"]}}}"#,
+	);
+	let (ast, root) = host::parse("", &plan, Options::default());
+	assert_eq!(field(&ast, root.unwrap(), "comments"), Some(Value::Comments));
+	assert!(ast.comments.is_empty());
+}
+
+#[test]
 fn repeat_uses_fresh_slots() {
 	let plan = document(
 		r#"{"type":"Root","fields":{"items":"null"},"form":{"op":"repeat","min":2,"max":2,"locals":["item"],"into":"items","body":{"op":"read","reader":{"kind":"token","text":"x","word":true,"gap":"space*"},"into":"item"},"yield":{"op":"get","base":"iteration","path":["item","text"]}}}"#,

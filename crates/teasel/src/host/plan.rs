@@ -1263,6 +1263,7 @@ impl Plan {
 enum Type {
 	Missing,
 	Null,
+	Comments,
 	Bool,
 	Number,
 	String,
@@ -1493,6 +1494,9 @@ impl Validator<'_> {
 	fn event(context: Option<Context>) -> Type {
 		let mut fields = Types::default();
 		let channel = context.map(|c| c.channel);
+		if channel.is_none() || channel == Some(Channel::Document) {
+			fields.insert("comments".into(), Type::Comments);
+		}
 		if channel.is_none() || channel == Some(Channel::Text) {
 			fields.extend([("decoded".into(), Type::String), ("raw".into(), Type::String)]);
 		}
