@@ -5,6 +5,7 @@
 mod css;
 pub mod entities;
 pub mod grammar;
+pub mod plan;
 
 use std::borrow::Cow;
 
