@@ -4,155 +4,134 @@
 		"start": 0,
 		"end": 156,
 		"scope": 0,
-		"css": null,
-		"js": [],
-		"options": null,
-		"comments": [],
-		"instance": {
-			"type": "Script",
-			"start": 0,
-			"end": 64,
-			"context": "default",
-			"content": {
-				"type": "Program",
-				"start": 8,
-				"end": 55,
-				"scope": 1,
-				"root": 0,
-				"body": [
-					{
-						"type": "VariableDeclaration",
-						"start": 10,
-						"end": 27,
-						"declarations": [
+		"fragment": {
+			"type": "Fragment",
+			"nodes": [
+				{
+					"type": "Script",
+					"start": 0,
+					"end": 64,
+					"attributes": [],
+					"content": {
+						"type": "Program",
+						"start": 8,
+						"end": 55,
+						"scope": 1,
+						"root": 0,
+						"body": [
 							{
-								"type": "VariableDeclarator",
-								"start": 14,
-								"end": 19,
-								"defines": [
-									0
+								"type": "VariableDeclaration",
+								"start": 10,
+								"end": 27,
+								"declarations": [
+									{
+										"type": "VariableDeclarator",
+										"start": 14,
+										"end": 19,
+										"defines": [
+											0
+										],
+										"id": {
+											"type": "Identifier",
+											"start": 14,
+											"end": 15,
+											"declares": 0,
+											"name": "a"
+										},
+										"init": {
+											"type": "Literal",
+											"start": 18,
+											"end": 19,
+											"value": 1,
+											"raw": "1"
+										}
+									},
+									{
+										"type": "VariableDeclarator",
+										"start": 21,
+										"end": 26,
+										"defines": [
+											1
+										],
+										"id": {
+											"type": "Identifier",
+											"start": 21,
+											"end": 22,
+											"declares": 1,
+											"name": "b"
+										},
+										"init": {
+											"type": "Literal",
+											"start": 25,
+											"end": 26,
+											"value": 2,
+											"raw": "2"
+										}
+									}
 								],
-								"id": {
-									"type": "Identifier",
-									"start": 14,
-									"end": 15,
-									"declares": 0,
-									"name": "a"
-								},
-								"init": {
-									"type": "Literal",
-									"start": 18,
-									"end": 19,
-									"value": 1,
-									"raw": "1"
-								}
+								"kind": "let"
 							},
 							{
-								"type": "VariableDeclarator",
-								"start": 21,
-								"end": 26,
+								"type": "FunctionDeclaration",
+								"start": 29,
+								"end": 54,
+								"scope": 3,
 								"defines": [
-									1
+									2
 								],
 								"id": {
 									"type": "Identifier",
-									"start": 21,
-									"end": 22,
-									"declares": 1,
-									"name": "b"
+									"start": 38,
+									"end": 39,
+									"declares": 2,
+									"name": "f"
 								},
-								"init": {
-									"type": "Literal",
-									"start": 25,
-									"end": 26,
-									"value": 2,
-									"raw": "2"
+								"expression": false,
+								"generator": false,
+								"async": false,
+								"params": [],
+								"body": {
+									"type": "BlockStatement",
+									"start": 42,
+									"end": 54,
+									"body": [
+										{
+											"type": "ReturnStatement",
+											"start": 44,
+											"end": 52,
+											"argument": {
+												"type": "Identifier",
+												"start": 51,
+												"end": 52,
+												"reference": 0,
+												"name": "a"
+											}
+										}
+									]
 								}
 							}
 						],
-						"kind": "let"
+						"sourceType": "module"
 					},
-					{
-						"type": "FunctionDeclaration",
-						"start": 29,
-						"end": 54,
-						"scope": 2,
-						"defines": [
-							2
-						],
-						"id": {
-							"type": "Identifier",
-							"start": 38,
-							"end": 39,
-							"declares": 2,
-							"name": "f"
-						},
-						"expression": false,
-						"generator": false,
-						"async": false,
-						"params": [],
-						"body": {
-							"type": "BlockStatement",
-							"start": 42,
-							"end": 54,
-							"body": [
-								{
-									"type": "ReturnStatement",
-									"start": 44,
-									"end": 52,
-									"argument": {
-										"type": "Identifier",
-										"start": 51,
-										"end": 52,
-										"reference": 0,
-										"name": "a"
-									}
-								}
-							]
-						}
-					}
-				],
-				"sourceType": "module"
-			},
-			"attributes": []
-		},
-		"fragment": {
-			"type": "Fragment",
-			"scope": 3,
-			"nodes": [
+					"context": "default"
+				},
 				{
 					"type": "Text",
 					"start": 64,
 					"end": 65,
-					"raw": "\n",
-					"data": "\n"
+					"data": "\n",
+					"raw": "\n"
 				},
 				{
 					"type": "EachBlock",
 					"start": 65,
 					"end": 93,
-					"expression": {
-						"type": "Identifier",
-						"start": 72,
-						"end": 74,
-						"reference": 1,
-						"root": 1,
-						"name": "xs"
-					},
-					"context": {
-						"type": "Identifier",
-						"start": 78,
-						"end": 79,
-						"declares": 3,
-						"root": 2,
-						"name": "a"
-					},
 					"body": {
 						"type": "Fragment",
 						"scope": 4,
 						"nodes": [
 							{
-								"type": "ExpressionTag",
+								"type": "UnmarkedTag",
 								"start": 80,
 								"end": 83,
 								"expression": {
@@ -165,7 +144,7 @@
 								}
 							},
 							{
-								"type": "ExpressionTag",
+								"type": "UnmarkedTag",
 								"start": 83,
 								"end": 86,
 								"expression": {
@@ -178,27 +157,40 @@
 								}
 							}
 						]
+					},
+					"context": {
+						"type": "Identifier",
+						"start": 78,
+						"end": 79,
+						"declares": 3,
+						"root": 2,
+						"name": "a"
+					},
+					"expression": {
+						"type": "Identifier",
+						"start": 72,
+						"end": 74,
+						"reference": 1,
+						"root": 1,
+						"name": "xs"
 					}
 				},
 				{
 					"type": "Text",
 					"start": 93,
 					"end": 94,
-					"raw": "\n",
-					"data": "\n"
+					"data": "\n",
+					"raw": "\n"
 				},
 				{
 					"type": "Component",
 					"start": 94,
 					"end": 119,
-					"scope": 5,
-					"name": "Comp",
 					"attributes": [
 						{
 							"type": "LetDirective",
 							"start": 100,
 							"end": 105,
-							"name": "a",
 							"expression": {
 								"type": "Identifier",
 								"start": 104,
@@ -207,15 +199,15 @@
 								"root": 5,
 								"name": "a"
 							},
-							"modifiers": []
+							"modifiers": [],
+							"name": "a"
 						}
 					],
 					"fragment": {
 						"type": "Fragment",
-						"scope": 6,
 						"nodes": [
 							{
-								"type": "ExpressionTag",
+								"type": "UnmarkedTag",
 								"start": 106,
 								"end": 109,
 								"expression": {
@@ -228,7 +220,7 @@
 								}
 							},
 							{
-								"type": "ExpressionTag",
+								"type": "UnmarkedTag",
 								"start": 109,
 								"end": 112,
 								"expression": {
@@ -241,19 +233,52 @@
 								}
 							}
 						]
-					}
+					},
+					"name": "Comp"
 				},
 				{
 					"type": "Text",
 					"start": 119,
 					"end": 120,
-					"raw": "\n",
-					"data": "\n"
+					"data": "\n",
+					"raw": "\n"
 				},
 				{
 					"type": "SnippetBlock",
 					"start": 120,
 					"end": 151,
+					"body": {
+						"type": "Fragment",
+						"scope": 7,
+						"nodes": [
+							{
+								"type": "UnmarkedTag",
+								"start": 135,
+								"end": 138,
+								"expression": {
+									"type": "Identifier",
+									"start": 136,
+									"end": 137,
+									"reference": 6,
+									"root": 10,
+									"name": "b"
+								}
+							},
+							{
+								"type": "UnmarkedTag",
+								"start": 138,
+								"end": 141,
+								"expression": {
+									"type": "Identifier",
+									"start": 139,
+									"end": 140,
+									"reference": 7,
+									"root": 11,
+									"name": "a"
+								}
+							}
+						]
+					},
 					"expression": {
 						"type": "Identifier",
 						"start": 130,
@@ -271,49 +296,17 @@
 							"root": 9,
 							"name": "b"
 						}
-					],
-					"body": {
-						"type": "Fragment",
-						"scope": 7,
-						"nodes": [
-							{
-								"type": "ExpressionTag",
-								"start": 135,
-								"end": 138,
-								"expression": {
-									"type": "Identifier",
-									"start": 136,
-									"end": 137,
-									"reference": 6,
-									"root": 10,
-									"name": "b"
-								}
-							},
-							{
-								"type": "ExpressionTag",
-								"start": 138,
-								"end": 141,
-								"expression": {
-									"type": "Identifier",
-									"start": 139,
-									"end": 140,
-									"reference": 7,
-									"root": 11,
-									"name": "a"
-								}
-							}
-						]
-					}
+					]
 				},
 				{
 					"type": "Text",
 					"start": 151,
 					"end": 152,
-					"raw": "\n",
-					"data": "\n"
+					"data": "\n",
+					"raw": "\n"
 				},
 				{
-					"type": "ExpressionTag",
+					"type": "UnmarkedTag",
 					"start": 152,
 					"end": 155,
 					"expression": {
@@ -342,33 +335,33 @@
 			"topLevelAwait": false
 		},
 		{
+			"kind": "fragment",
+			"parent": 1,
+			"topLevelAwait": false
+		},
+		{
 			"kind": "function",
 			"parent": 1,
 			"topLevelAwait": false
 		},
 		{
 			"kind": "fragment",
-			"parent": 1,
+			"parent": 2,
 			"topLevelAwait": false
 		},
 		{
 			"kind": "fragment",
-			"parent": 3,
-			"topLevelAwait": false
-		},
-		{
-			"kind": "block",
-			"parent": 3,
+			"parent": 2,
 			"topLevelAwait": false
 		},
 		{
 			"kind": "fragment",
-			"parent": 5,
+			"parent": 2,
 			"topLevelAwait": false
 		},
 		{
-			"kind": "fragment",
-			"parent": 3,
+			"kind": "function",
+			"parent": 2,
 			"topLevelAwait": false
 		}
 	],
@@ -400,25 +393,25 @@
 		{
 			"name": "a",
 			"kind": "pattern",
-			"scope": 5,
+			"scope": 6,
 			"write": true
 		},
 		{
 			"name": "s",
 			"kind": "pattern",
-			"scope": 3,
+			"scope": 2,
 			"write": true
 		},
 		{
 			"name": "b",
-			"kind": "pattern",
+			"kind": "param",
 			"scope": 7,
 			"write": true
 		}
 	],
 	"references": [
 		{
-			"scope": 2,
+			"scope": 3,
 			"binding": 0,
 			"write": false,
 			"read": true,
@@ -426,7 +419,7 @@
 			"declares": false
 		},
 		{
-			"scope": 3,
+			"scope": 2,
 			"binding": null,
 			"write": false,
 			"read": true,
@@ -482,7 +475,7 @@
 			"declares": false
 		},
 		{
-			"scope": 3,
+			"scope": 2,
 			"binding": 0,
 			"write": false,
 			"read": true,
@@ -494,8 +487,8 @@
 		{
 			"scope": 1,
 			"scopes": [
-				2,
-				3
+				3,
+				4
 			],
 			"bindings": [
 				0,
@@ -507,10 +500,10 @@
 			]
 		},
 		{
-			"scope": 3,
+			"scope": 2,
 			"scopes": [
-				4,
-				4
+				6,
+				6
 			],
 			"bindings": [
 				3,
@@ -524,8 +517,8 @@
 		{
 			"scope": 4,
 			"scopes": [
-				5,
-				5
+				6,
+				6
 			],
 			"bindings": [
 				3,
@@ -539,8 +532,8 @@
 		{
 			"scope": 4,
 			"scopes": [
-				5,
-				5
+				6,
+				6
 			],
 			"bindings": [
 				4,
@@ -554,8 +547,8 @@
 		{
 			"scope": 4,
 			"scopes": [
-				5,
-				5
+				6,
+				6
 			],
 			"bindings": [
 				4,
@@ -567,10 +560,10 @@
 			]
 		},
 		{
-			"scope": 5,
+			"scope": 6,
 			"scopes": [
-				6,
-				6
+				7,
+				7
 			],
 			"bindings": [
 				4,
@@ -612,10 +605,10 @@
 			]
 		},
 		{
-			"scope": 3,
+			"scope": 2,
 			"scopes": [
-				7,
-				7
+				8,
+				8
 			],
 			"bindings": [
 				5,
@@ -672,7 +665,7 @@
 			]
 		},
 		{
-			"scope": 3,
+			"scope": 2,
 			"scopes": [
 				8,
 				8

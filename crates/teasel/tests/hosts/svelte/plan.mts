@@ -202,7 +202,8 @@ elements.push(
 export const svelte = {
 	version: 1, document: 'Document', rules,
 	html: {
-		delimiters: ['{', '}'], attributeInterpolations: true, attributeComments: 'javascript', autoclose: true, trimEnd: true,
+		delimiters: ['{', '}'], attributeInterpolations: true, attributeComments: 'javascript', autoclose: true, typescript: [{ element: 'script', attribute: 'lang', value: 'ts' }],
+		trimEnd: true,
 		void: ['area', 'base', 'br', 'col', 'command', 'embed', 'hr', 'img', 'input', 'keygen', 'link', 'meta', 'param', 'source', 'track', 'wbr'],
 		text: 'Text', comment: 'Comment', plainAttribute: { type: 'Attribute', name: 'name', value: 'value', text: 'Text', expression: 'Expression' },
 		content: [

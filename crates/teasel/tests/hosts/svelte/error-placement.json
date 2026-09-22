@@ -1,12 +1,80 @@
 {
-	"error": {
-		"code": "placement",
-		"message": "svelte:window is not allowed here",
-		"pos": 5,
-		"end": 6,
-		"loc": {
-			"line": 1,
-			"column": 5
+	"node": {
+		"type": "Root",
+		"start": 0,
+		"end": 29,
+		"scope": 0,
+		"fragment": {
+			"type": "Fragment",
+			"nodes": [
+				{
+					"type": "RegularElement",
+					"start": 0,
+					"end": 28,
+					"attributes": [],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 4,
+						"nodes": [
+							{
+								"type": "SvelteWindow",
+								"start": 5,
+								"end": 22,
+								"attributes": [],
+								"fragment": {
+									"type": "Fragment",
+									"scope": 6,
+									"nodes": []
+								},
+								"name": "svelte:window"
+							}
+						]
+					},
+					"name": "div"
+				}
+			]
 		}
-	}
+	},
+	"end": 29,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "script",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 1,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 3,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 4,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 5,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [],
+	"references": [],
+	"roots": []
 }

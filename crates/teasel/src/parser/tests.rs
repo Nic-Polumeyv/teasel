@@ -727,8 +727,8 @@ fn phases() {
 			prepared.in_place(Entry::Program, 0.0, None, "", None).unwrap();
 		});
 	}
-	let grammar = crate::json::grammar(
-		&std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/host.grammar")).unwrap(),
+	let plan = crate::json::plan(
+		&std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/plan.json")).unwrap(),
 	)
 	.unwrap();
 	let document = format!(
@@ -738,9 +738,7 @@ fn phases() {
 	for flags in ["module", "module scopes comments locations"] {
 		let prepared = crate::json::Prepared::borrowed(&document, crate::json::Request::from_names(flags));
 		best(&format!("host: 200 each blocks, {flags}"), &mut || {
-			prepared
-				.in_place(Entry::Program, 0.0, None, "", Some(&grammar))
-				.unwrap();
+			prepared.in_place(Entry::Program, 0.0, None, "", Some(&plan)).unwrap();
 		});
 	}
 	best("Json write, loc", &mut || {
@@ -903,19 +901,15 @@ fn alloc_probe() {
 #[test]
 #[ignore]
 fn host_alloc_probe() {
-	let grammar = crate::json::grammar(
-		&std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/host.grammar")).unwrap(),
+	let plan = crate::json::plan(
+		&std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/plan.json")).unwrap(),
 	)
 	.unwrap();
 	let count = |src: &str| {
 		let prepared = crate::json::Prepared::borrowed(src, crate::json::Request::from_names("module"));
-		prepared
-			.in_place(Entry::Program, 0.0, None, "", Some(&grammar))
-			.unwrap();
+		prepared.in_place(Entry::Program, 0.0, None, "", Some(&plan)).unwrap();
 		let before = ALLOCATIONS.load(std::sync::atomic::Ordering::Relaxed);
-		prepared
-			.in_place(Entry::Program, 0.0, None, "", Some(&grammar))
-			.unwrap();
+		prepared.in_place(Entry::Program, 0.0, None, "", Some(&plan)).unwrap();
 		ALLOCATIONS.load(std::sync::atomic::Ordering::Relaxed) - before
 	};
 	let base = count("");

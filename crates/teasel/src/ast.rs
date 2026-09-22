@@ -169,6 +169,122 @@ impl<T: Copy + 'static> Slots<T> {
 	}
 }
 
+#[derive(Debug)]
+pub struct NodeValues<T> {
+	index: Vec<u32>,
+	values: Vec<T>,
+}
+impl<T> Default for NodeValues<T> {
+	fn default() -> Self {
+		Self {
+			index: Vec::new(),
+			values: Vec::new(),
+		}
+	}
+}
+impl<T> NodeValues<T> {
+	pub fn reserve(&mut self, nodes: usize) {
+		self.index.resize(nodes, u32::MAX);
+	}
+	pub fn insert(&mut self, id: NodeId, value: T) {
+		let index = id.index() as usize;
+		if self.index.len() <= index {
+			self.index.resize(index + 1, u32::MAX);
+		}
+		self.index[index] = self.values.len() as u32;
+		self.values.push(value);
+	}
+	pub fn get(&self, id: NodeId) -> Option<&T> {
+		self.values.get(*self.index.get(id.index() as usize)? as usize)
+	}
+	pub fn clear(&mut self) {
+		self.index.clear();
+		self.values.clear();
+	}
+}
+
+#[derive(Debug, Default)]
+pub struct NodeIndex(Vec<u32>);
+
+impl NodeIndex {
+	pub fn reserve(&mut self, nodes: usize) {
+		if self.0.len() < nodes {
+			self.0.resize(nodes, u32::MAX);
+		}
+	}
+	pub fn insert(&mut self, id: NodeId, value: NodeId) {
+		let index = id.index() as usize;
+		if self.0.len() <= index {
+			self.0.resize(index + 1, u32::MAX);
+		}
+		self.0[index] = value.index();
+	}
+	pub fn get(&self, id: NodeId) -> Option<NodeId> {
+		self.0
+			.get(id.index() as usize)
+			.copied()
+			.filter(|v| *v != u32::MAX)
+			.map(NodeId::at)
+	}
+	pub fn clear(&mut self) {
+		self.0.clear();
+	}
+}
+
+#[derive(Debug)]
+pub struct NodeLists<T> {
+	heads: Vec<(u32, u32)>,
+	items: Vec<(T, u32)>,
+}
+impl<T> Default for NodeLists<T> {
+	fn default() -> Self {
+		Self {
+			heads: Vec::new(),
+			items: Vec::new(),
+		}
+	}
+}
+impl<T> NodeLists<T> {
+	pub fn reserve(&mut self, nodes: usize) {
+		if self.heads.len() < nodes {
+			self.heads.resize(nodes, (u32::MAX, u32::MAX));
+		}
+	}
+	pub fn push(&mut self, node: NodeId, value: T) {
+		let node = node.index() as usize;
+		if self.heads.len() <= node {
+			self.heads.resize(node + 1, (u32::MAX, u32::MAX));
+		}
+		let head = &mut self.heads[node];
+		let index = self.items.len() as u32;
+		if head.0 == u32::MAX {
+			head.0 = index;
+		} else {
+			self.items[head.1 as usize].1 = index;
+		}
+		head.1 = index;
+		self.items.push((value, u32::MAX));
+	}
+	pub fn get(&self, node: NodeId) -> Option<impl Iterator<Item = &T>> {
+		let &(mut index, _) = self.heads.get(node.index() as usize)?;
+		if index == u32::MAX {
+			return None;
+		}
+		Some(std::iter::from_fn(move || {
+			if index == u32::MAX {
+				return None;
+			}
+			let (value, next) = &self.items[index as usize];
+			index = *next;
+			Some(value)
+		}))
+	}
+	pub fn clear(&mut self) {
+		self.heads.clear();
+		self.items.clear();
+	}
+}
+
 impl std::fmt::Debug for NodeId {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		write!(f, "NodeId({})", self.index())
@@ -195,7 +311,7 @@ pub struct Node {
 	pub end: u32,
 }
 
-/// A node of a host's grammar: its type and its fields are the grammar's, held by name.
+/// A host node with named fields.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Host {
 	pub ty: &'static str,
@@ -203,27 +319,27 @@ pub struct Host {
 	pub fields: (u32, u32),
 	/// Whether the node has a span; a fragment has none.
 	pub span: bool,
-	/// The scope the node opens, when it opens one.
-	pub scope: Option<Opens>,
 }
 
-/// The scopes a host node opens: the patterns it declares around itself, and its groups, a run
-/// of `Ast::host_groups`.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Opens {
-	pub outside: List,
-	pub groups: (u32, u32),
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HostParent {
+	Root,
+	Incoming(NodeId),
+	Region(u32),
 }
 
-/// One scope a host node opens over a run of its fields: the patterns declared in it, the
-/// fields inside it, and the node the scope belongs to when it is not the host node itself, a
-/// body's fragment say.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct HostGroup {
-	pub inside: List,
-	pub from: u32,
-	pub until: u32,
+#[derive(Clone, Copy, Debug)]
+pub struct HostRegion {
+	pub parent: HostParent,
+	pub kind: crate::host::plan::RegionKind,
+	pub owner: NodeId,
 	pub node: Option<NodeId>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct HostBinding {
+	pub target: HostParent,
+	pub kind: crate::host::plan::DeclareKind,
 }
 
 /// A host node's field.
@@ -254,7 +370,14 @@ pub struct Ast<X = ()> {
 	pub hosts: Vec<Host>,
 	pub host_fields: Vec<(&'static str, Value)>,
 	pub host_strings: Handed<StrId>,
-	pub host_groups: Vec<HostGroup>,
+	pub host_plan: bool,
+	pub host_regions: Vec<HostRegion>,
+	pub host_coverage: NodeLists<u32>,
+	pub host_region_owners: NodeLists<u32>,
+	pub host_bindings: NodeValues<HostBinding>,
+	pub host_occurrences: NodeIndex,
+	pub host_hidden: NodeLists<NodeId>,
+
 	pub strings: Interner,
 	pub comments: Vec<Comment>,
 	/// Each comment as a front end reads it, nine words: whether it is a block, where its text and
@@ -287,6 +410,7 @@ pub struct Ast<X = ()> {
 	pub host_vals: Handed<[u32; 3]>,
 	/// The buffers the last parse worked in, for the next one.
 	pub spare: crate::parser::Spare,
+	pub(crate) host_spare: Option<Box<crate::host::Spare>>,
 	/// The scope analysis, when `scopes::analyze` ran.
 	pub scopes: Option<crate::scopes::Scopes>,
 	/// What went wrong, in source order, when errors are recovered from instead of thrown.
@@ -306,7 +430,7 @@ pub struct Attached {
 }
 
 /// `len` comments from `start` on: a node takes each of its comments one after the other.
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 #[repr(C)]
 pub struct Run {
 	pub start: u32,
@@ -360,6 +484,11 @@ pub(crate) struct Mark<M> {
 	numbers: usize,
 	lists: usize,
 	extension: M,
+	hosts: usize,
+	host_fields: usize,
+	host_strings: usize,
+	comments: usize,
+	errors: usize,
 }
 
 impl<X: Reuse> Ast<X> {
@@ -368,7 +497,14 @@ impl<X: Reuse> Ast<X> {
 		self.hosts.clear();
 		self.host_fields.clear();
 		self.host_strings.clear();
-		self.host_groups.clear();
+		self.host_plan = false;
+		self.host_regions.clear();
+		self.host_coverage.clear();
+		self.host_region_owners.clear();
+		self.host_bindings.clear();
+		self.host_occurrences.clear();
+		self.host_hidden.clear();
+
 		self.nodes.clear();
 		self.numbers.clear();
 		self.lists.clear();
@@ -400,6 +536,11 @@ impl<X: Reuse> Ast<X> {
 			numbers: self.numbers.len(),
 			lists: self.lists.len(),
 			extension: self.extension.mark(),
+			hosts: self.hosts.len(),
+			host_fields: self.host_fields.len(),
+			host_strings: self.host_strings.len(),
+			comments: self.comments.len(),
+			errors: self.errors.len(),
 		}
 	}
 
@@ -410,6 +551,11 @@ impl<X: Reuse> Ast<X> {
 		self.lists.truncate(mark.lists);
 		self.parenthesized.truncate(mark.nodes);
 		self.extension.truncate(mark.extension);
+		self.hosts.truncate(mark.hosts);
+		self.host_fields.truncate(mark.host_fields);
+		self.host_strings.truncate(mark.host_strings);
+		self.comments.truncate(mark.comments);
+		self.errors.truncate(mark.errors);
 	}
 }
 
@@ -1058,7 +1204,7 @@ crate::layout::kinds! {
 
 		/// A node owned by a parser extension, indexed into its own data.
 		Extension(u32),
-		/// A node of the host's grammar, indexed into `Ast::hosts`.
+		/// A host node indexed into `Ast::hosts`.
 		Host(u32),
 	}
 }

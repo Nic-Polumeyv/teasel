@@ -69,7 +69,7 @@ pub(crate) enum Unwrap {
 	InnerPattern,
 }
 
-/// Grammar an extension adds to the JavaScript parser at fixed points. Every hook has a no-op
+/// Syntax an extension adds to the JavaScript parser at fixed points. Every hook has a no-op
 /// default, so the plain JavaScript parser is the unit extension. State an extension keeps while
 /// parsing lives in `Self` (cloned into snapshots, so keep it small); what it hands back with the
 /// tree lives in `Data`.
@@ -535,6 +535,11 @@ struct Mark<E: Extension> {
 pub(crate) struct Snapshot<E: Extension> {
 	tokens: TokenSnapshot,
 	mark: Mark<E>,
+	stop_word_at: Option<u32>,
+	forced_stop: Option<u32>,
+	errors: usize,
+	yield_await: (u32, u32, u32),
+	arrow: (u32, bool),
 }
 
 pub(crate) struct TokenSnapshot {
@@ -645,12 +650,22 @@ impl<'a, E: Extension> Parser<'a, E> {
 		Snapshot {
 			tokens: self.token_snapshot(),
 			mark: self.mark(),
+			stop_word_at: self.stop_word_at,
+			forced_stop: self.forced_stop,
+			errors: self.errors.len(),
+			yield_await: (self.yield_pos, self.await_pos, self.await_ident_pos),
+			arrow: (self.potential_arrow_at, self.potential_arrow_in_for_await),
 		}
 	}
 
 	pub(crate) fn restore(&mut self, snapshot: Snapshot<E>) {
 		self.restore_tokens(snapshot.tokens);
 		self.unwind(snapshot.mark);
+		self.stop_word_at = snapshot.stop_word_at;
+		self.forced_stop = snapshot.forced_stop;
+		self.errors.truncate(snapshot.errors);
+		(self.yield_pos, self.await_pos, self.await_ident_pos) = snapshot.yield_await;
+		(self.potential_arrow_at, self.potential_arrow_in_for_await) = snapshot.arrow;
 	}
 
 	/// The tokenizer alone, enough for a lookahead that parses nothing.
@@ -830,12 +845,16 @@ impl<'a, E: Extension> Parser<'a, E> {
 
 	/// Reads one entry other than a program at the current token, in a scope of its own.
 	pub(crate) fn read_entry(&mut self, entry: Entry) -> Result<List> {
+		self.read_entry_boundary(entry, true)
+	}
+
+	pub(crate) fn read_entry_boundary(&mut self, entry: Entry, last_shared_word: bool) -> Result<List> {
 		self.enter_scope(SCOPE_TOP);
 		let root = match entry {
 			Entry::Expression => {
 				let before = self.snapshot();
 				let first = self.parse_sequence(ForInit::No, &mut None);
-				match self.stop_word_at.take() {
+				match self.stop_word_at.take().filter(|_| last_shared_word) {
 					None => first?,
 					// a word both the host and the extension read is the host's at its last use
 					Some(at) => {

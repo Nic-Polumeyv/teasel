@@ -9,14 +9,12 @@
 				"type": "Element",
 				"start": 0,
 				"end": 51,
-				"tag": "a",
+				"children": [],
 				"props": [
 					{
 						"type": "Directive",
 						"start": 3,
 						"end": 13,
-						"name": "bind",
-						"rawName": ":[key]",
 						"arg": {
 							"type": "Identifier",
 							"start": 5,
@@ -33,14 +31,14 @@
 							"root": 1,
 							"name": "v"
 						},
-						"modifiers": []
+						"modifiers": [],
+						"name": "bind",
+						"rawName": ":[key]"
 					},
 					{
 						"type": "Directive",
 						"start": 14,
 						"end": 31,
-						"name": "on",
-						"rawName": "@[event].once",
 						"arg": {
 							"type": "Identifier",
 							"start": 16,
@@ -59,14 +57,14 @@
 						},
 						"modifiers": [
 							"once"
-						]
+						],
+						"name": "on",
+						"rawName": "@[event].once"
 					},
 					{
 						"type": "Directive",
 						"start": 32,
 						"end": 46,
-						"name": "bind",
-						"rawName": "v-bind:[k]",
 						"arg": {
 							"type": "Identifier",
 							"start": 40,
@@ -83,10 +81,12 @@
 							"root": 5,
 							"name": "x"
 						},
-						"modifiers": []
+						"modifiers": [],
+						"name": "bind",
+						"rawName": "v-bind:[k]"
 					}
 				],
-				"children": []
+				"tag": "a"
 			},
 			{
 				"type": "Text",

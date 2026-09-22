@@ -9,7 +9,7 @@ use crate::comments::attach;
 use crate::error::Code;
 use crate::estree::{Emit, Json, Output, Positions, Words, answer, error_to_json};
 use crate::handed::{Raw, Views};
-use crate::host::{self, Grammar};
+use crate::host::{self, Plan};
 use crate::parser::{Decorators, Entry, parse_at};
 use crate::scopes::{self, Bind};
 
@@ -349,19 +349,19 @@ pub fn parse(source: &str, request: &Request, stop: &str) -> String {
 	parse_with(source, &Positions::new(source, request.locations), request, stop, None)
 }
 
-/// A whole document of a host language by its grammar, as JSON; see `host::parse_document`.
-pub fn parse_document(source: &str, grammar: &str, request: &Request) -> String {
-	match self::grammar(grammar) {
-		Ok(grammar) => {
+/// A whole document of a host language by its plan, as JSON; see `host::parse_document`.
+pub fn parse_document(source: &str, plan: &str, request: &Request) -> String {
+	match self::plan(plan) {
+		Ok(plan) => {
 			let mut request = *request;
 			request.entry = Entry::Program;
-			request.typescript |= host::typescript(source, &grammar);
+			request.typescript |= host::typescript(source, &plan);
 			parse_with(
 				source,
 				&Positions::new(source, request.locations),
 				&request,
 				"",
-				Some(&grammar),
+				Some(&plan),
 			)
 		}
 		Err(message) => error_json(&message, 0),
@@ -387,8 +387,8 @@ struct Session {
 
 thread_local! {
 	static SESSION: std::cell::RefCell<Session> = std::cell::RefCell::new(Session::default());
-	/// Grammars by their text, read once each.
-	static GRAMMARS: std::cell::RefCell<Vec<(String, Rc<Grammar>)>> = const { std::cell::RefCell::new(Vec::new()) };
+	/// Plans by their text, read once each.
+	static PLANS: std::cell::RefCell<Vec<(String, Rc<Plan>)>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
 /// The words of the last answer read in place on this thread, where they were written.
@@ -442,16 +442,16 @@ fn view_names<X: Reuse + Default>() -> Vec<&'static str> {
 	names
 }
 
-/// The grammar of a text, read once per thread; the error names the line it stopped at.
-pub fn grammar(text: &str) -> Result<Rc<Grammar>, String> {
-	GRAMMARS.with(|grammars| {
-		let mut grammars = grammars.borrow_mut();
-		if let Some((_, grammar)) = grammars.iter().find(|(known, _)| known == text) {
-			return Ok(grammar.clone());
+/// The plan of a text, read once per thread; the error names the line it stopped at.
+pub fn plan(text: &str) -> Result<Rc<Plan>, String> {
+	PLANS.with(|plans| {
+		let mut plans = plans.borrow_mut();
+		if let Some((_, plan)) = plans.iter().find(|(known, _)| known == text) {
+			return Ok(plan.clone());
 		}
-		let grammar = Rc::new(Grammar::read(text)?);
-		grammars.push((text.to_string(), grammar.clone()));
-		Ok(grammar)
+		let plan = Rc::new(Plan::read(text)?);
+		plans.push((text.to_string(), plan.clone()));
+		Ok(plan)
 	})
 }
 
@@ -472,7 +472,7 @@ struct Names {
 	text: crate::handed::Handed<u8>,
 	starts: crate::handed::Handed<u32>,
 	ids: crate::interner::FastMap<&'static str, u32>,
-	/// The same by where the name sits: a grammar's names are few places, met again and again.
+	/// The same by where the name sits: a plan's names are few places, met again and again.
 	places: crate::interner::FastMap<(usize, usize), u32>,
 	/// A host node's shape by its type, whether it has a span, and each field's key and kind of
 	/// value: nodes of one shape are built by one literal.
@@ -580,9 +580,9 @@ impl<'a> Prepared<'a> {
 	}
 
 	/// The request for one entry at a UTF-16 offset, the source cut at `end`, on top of the
-	/// source's options; with a grammar, the whole source as a document of its language, in
-	/// TypeScript when the grammar says so of a script tag.
-	fn request(&self, entry: Entry, start: f64, end: Option<f64>, host: Option<&Grammar>) -> Result<Request, String> {
+	/// source's options; with a plan, the whole source as a document of its language, in
+	/// TypeScript when the plan says so of a script tag.
+	fn request(&self, entry: Entry, start: f64, end: Option<f64>, host: Option<&Plan>) -> Result<Request, String> {
 		let offset = self.byte_offset(start)?;
 		let end = match end {
 			Some(end) => Some(self.byte_offset(end)?),
@@ -592,13 +592,13 @@ impl<'a> Prepared<'a> {
 			entry,
 			offset,
 			end,
-			typescript: self.request.typescript || host.is_some_and(|grammar| host::typescript(&self.source, grammar)),
+			typescript: self.request.typescript || host.is_some_and(|plan| host::typescript(&self.source, plan)),
 			..self.request
 		})
 	}
 
 	/// One entry at an offset, as JSON.
-	pub fn parse(&self, entry: Entry, start: f64, end: Option<f64>, stop: &str, host: Option<&Grammar>) -> String {
+	pub fn parse(&self, entry: Entry, start: f64, end: Option<f64>, stop: &str, host: Option<&Plan>) -> String {
 		match self.request(entry, start, end, host) {
 			Ok(request) => parse_with(&self.source, &self.positions, &request, stop, host),
 			Err(error) => error,
@@ -612,7 +612,7 @@ impl<'a> Prepared<'a> {
 		start: f64,
 		end: Option<f64>,
 		stop: &str,
-		host: Option<&Grammar>,
+		host: Option<&Plan>,
 	) -> Result<(), String> {
 		in_place_with(
 			&self.source,
@@ -657,7 +657,7 @@ fn dispatch(
 	positions: &Positions,
 	request: &Request,
 	stop: &str,
-	host: Option<&Grammar>,
+	host: Option<&Plan>,
 	pool: &mut Pool,
 	words: Option<&mut Words>,
 ) -> Result<String, String> {
@@ -673,7 +673,7 @@ fn dispatch(
 	run::<()>(source, positions, request, stop, host, pool, words)
 }
 
-fn parse_with(source: &str, positions: &Positions, request: &Request, stop: &str, host: Option<&Grammar>) -> String {
+fn parse_with(source: &str, positions: &Positions, request: &Request, stop: &str, host: Option<&Plan>) -> String {
 	SESSION.with(|session| {
 		let session = &mut *session.borrow_mut();
 		session.typescript = request.typescript;
@@ -689,7 +689,7 @@ fn in_place_with(
 	positions: &Positions,
 	request: &Request,
 	stop: &str,
-	host: Option<&Grammar>,
+	host: Option<&Plan>,
 ) -> Result<(), String> {
 	SESSION.with(|session| {
 		let session = &mut *session.borrow_mut();
@@ -714,7 +714,7 @@ fn run<E: crate::parser::Extension>(
 	positions: &Positions,
 	request: &Request,
 	stop: &str,
-	host: Option<&Grammar>,
+	host: Option<&Plan>,
 	pool: &mut Pool,
 	words: Option<&mut Words>,
 ) -> Result<String, String>
@@ -732,8 +732,8 @@ where
 		ast
 	});
 	let (mut ast, parsed) = match host {
-		Some(grammar) => {
-			let (mut ast, root) = host::parse_document::<E>(source, grammar, request.options, reused);
+		Some(plan) => {
+			let (mut ast, root) = host::parse_document::<E>(source, plan, request.options, reused, request.scopes);
 			let parsed = root.map(|root| (ast.add_list(&[Some(root)]), source.len() as u32));
 			(ast, parsed)
 		}

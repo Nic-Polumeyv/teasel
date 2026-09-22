@@ -1,4 +1,4 @@
-//! A document for each rule of the host grammars beside them, its answer pinned beside it as
+//! A document for each rule of the host plans beside them, its answer pinned beside it as
 //! `NAME.json`: the tree with comments and scopes, the error when it has one. A name says what
 //! else is on: `locations`, `erase`, or `recover` for `errorRecovery`. `UPDATE=1` rewrites the
 //! pins once a change is meant.
@@ -14,15 +14,15 @@ use teasel::json::{Request, parse_document};
 fn documents() {
 	let root = Path::new(env!("CARGO_MANIFEST_DIR"));
 	let mut wrong = Vec::new();
-	let mut grammars: Vec<_> = fs::read_dir(root.join("tests/hosts"))
+	let mut plans: Vec<_> = fs::read_dir(root.join("tests/hosts"))
 		.unwrap()
 		.map(|e| e.unwrap().path())
 		.filter(|p| p.is_dir())
 		.collect();
-	grammars.sort();
-	for dir in grammars {
+	plans.sort();
+	for dir in plans {
 		let name = dir.file_name().unwrap().to_str().unwrap().to_owned();
-		let grammar = fs::read_to_string(root.join("tests/hosts").join(&name).join("host.grammar")).unwrap();
+		let plan = fs::read_to_string(root.join("tests/hosts").join(&name).join("plan.json")).unwrap();
 		for file in sources(&dir) {
 			let stem = file.file_stem().unwrap().to_str().unwrap();
 			let source = fs::read_to_string(&file).unwrap();
@@ -38,7 +38,7 @@ fn documents() {
 					request.set(flag);
 				}
 			}
-			let answer = common::pretty(&parse_document(&source, &grammar, &request));
+			let answer = common::pretty(&parse_document(&source, &plan, &request));
 			if !common::pinned(&file.with_extension("json"), &answer) {
 				wrong.push(format!("{name}/{stem}"));
 			}
@@ -57,7 +57,7 @@ fn documents() {
 fn every_prefix_answers() {
 	let root = Path::new(env!("CARGO_MANIFEST_DIR"));
 	for name in ["svelte", "vue"] {
-		let grammar = fs::read_to_string(root.join("tests/hosts").join(name).join("host.grammar")).unwrap();
+		let plan = fs::read_to_string(root.join("tests/hosts").join(name).join("plan.json")).unwrap();
 		for file in sources(&root.join("tests/hosts").join(name)) {
 			let source = fs::read_to_string(&file).unwrap();
 			for (end, _) in source.char_indices().chain([(source.len(), ' ')]) {
@@ -68,7 +68,7 @@ fn every_prefix_answers() {
 					if recover {
 						request.set("errorRecovery");
 					}
-					parse_document(&source[..end], &grammar, &request);
+					parse_document(&source[..end], &plan, &request);
 				}
 			}
 		}
@@ -80,15 +80,15 @@ fn every_prefix_answers() {
 #[test]
 fn unfinished_input() {
 	let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-	let svelte = fs::read_to_string(root.join("tests/hosts/svelte/host.grammar")).unwrap();
-	let vue = fs::read_to_string(root.join("tests/hosts/vue/host.grammar")).unwrap();
-	let parse = |source: &str, grammar: &str, recover: bool| {
+	let svelte = fs::read_to_string(root.join("tests/hosts/svelte/plan.json")).unwrap();
+	let vue = fs::read_to_string(root.join("tests/hosts/vue/plan.json")).unwrap();
+	let parse = |source: &str, plan: &str, recover: bool| {
 		let mut request = Request::new(Entry::Program, 0);
 		request.set("comments");
 		if recover {
 			request.set("errorRecovery");
 		}
-		parse_document(source, grammar, &request)
+		parse_document(source, plan, &request)
 	};
 	assert!(parse("<a x=\"", &svelte, true).contains("\"type\":\"Root\""));
 	let comment = parse("<a /*xx", &svelte, true);
@@ -97,9 +97,18 @@ fn unfinished_input() {
 	assert!(parse("<a @x=\"@\"/>", &vue, false).contains("\"error\""));
 	let elements = format!("{}x{}", "<a>".repeat(40_000), "</a>".repeat(40_000));
 	let branches = format!("{{#if a}}{}{{/if}}", "{:else if a}".repeat(40_000));
-	for deep in [elements, branches] {
-		assert!(parse(&deep, &svelte, false).contains("\"code\":\"nesting_depth\""));
-	}
+	// the executor recurses per nested record; debug frames need more than a test thread's stack
+	std::thread::Builder::new()
+		.stack_size(64 << 20)
+		.spawn(move || {
+			for deep in [elements, branches] {
+				let answer = parse(&deep, &svelte, false);
+				assert!(answer.contains("\"code\":\"nesting_depth\""), "{answer}");
+			}
+		})
+		.unwrap()
+		.join()
+		.unwrap();
 	let program = parse("<button @click=\"let x = 1\"/>", &vue, true);
 	assert!(
 		program.contains("\"type\":\"VariableDeclaration\"") && !program.contains("\"errors\":[{"),
@@ -118,8 +127,7 @@ fn unfinished_input() {
 fn host_phases() {
 	use teasel::json::Prepared;
 	let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-	let grammar =
-		teasel::json::grammar(&fs::read_to_string(root.join("tests/hosts/svelte/host.grammar")).unwrap()).unwrap();
+	let plan = teasel::json::plan(&fs::read_to_string(root.join("tests/hosts/svelte/plan.json")).unwrap()).unwrap();
 	let mut documents = vec![(
 		"200 each blocks".to_string(),
 		format!(
@@ -136,9 +144,7 @@ fn host_phases() {
 			let mut best = f64::MAX;
 			for _ in 0..300 {
 				let t = std::time::Instant::now();
-				prepared
-					.in_place(Entry::Program, 0.0, None, "", Some(&grammar))
-					.unwrap();
+				prepared.in_place(Entry::Program, 0.0, None, "", Some(&plan)).unwrap();
 				best = best.min(t.elapsed().as_secs_f64() * 1e6);
 			}
 			eprintln!("{best:9.2} µs  {name} {flags}");
@@ -146,10 +152,10 @@ fn host_phases() {
 	}
 }
 
-/// The documents of a host directory: not its grammar or the pins.
+/// The documents of a host directory: not its plan or the pins.
 fn sources(dir: &Path) -> Vec<std::path::PathBuf> {
 	common::inputs(dir)
 		.into_iter()
-		.filter(|f| f.file_stem().is_some_and(|s| s != "plan") && f.extension().is_some_and(|e| e != "grammar"))
+		.filter(|f| f.file_stem().is_some_and(|s| s != "plan") && f.extension().is_some_and(|e| e != "plan"))
 		.collect()
 }

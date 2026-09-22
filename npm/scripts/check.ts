@@ -1,4 +1,4 @@
-// node scripts/check.ts [--host GRAMMAR EXTENSION] DIR...: every script under the directories, parsed three
+// node scripts/check.ts [--host PLAN EXTENSION] DIR...: every script under the directories, parsed three
 // ways and the answers diffed: the addon's decoded answer against the JSON the binary prints, and the wasm
 // module's against the addon's; with a host, every file of its extension as a document too.
 // `cargo build --release` first.
@@ -22,8 +22,8 @@ function walk(dir: string) {
 	}
 }
 const args = process.argv.slice(2);
-const host = args[0] === '--host' ? { path: args[1], grammar: readFileSync(args[1], 'utf8'), extension: args[2] } : undefined;
-const plan = host === undefined ? undefined : native.plan(host.grammar);
+const host = args[0] === '--host' ? { path: args[1], text: readFileSync(args[1], 'utf8'), extension: args[2] } : undefined;
+const plan = host === undefined ? undefined : native.plan(host.text);
 for (const dir of host ? args.slice(3) : args) walk(dir);
 let checked = 0;
 let failed = 0;
