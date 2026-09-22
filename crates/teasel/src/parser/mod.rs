@@ -69,7 +69,7 @@ pub(crate) enum Unwrap {
 	InnerPattern,
 }
 
-/// Grammar an extension adds to the JavaScript parser at fixed points. Every hook has a no-op
+/// Syntax an extension adds to the JavaScript parser at fixed points. Every hook has a no-op
 /// default, so the plain JavaScript parser is the unit extension. State an extension keeps while
 /// parsing lives in `Self` (cloned into snapshots, so keep it small); what it hands back with the
 /// tree lives in `Data`.

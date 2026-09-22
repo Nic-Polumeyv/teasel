@@ -121,7 +121,7 @@ fn combinator(rest: &str) -> Option<&'static str> {
 }
 
 impl<'a, E: Extension> Walker<'a, E> {
-	/// A style element's sheet, from the content at the cursor through the closing tag.
+	/// A stylesheet inside the current input bounds.
 	pub(super) fn style_sheet(&mut self) -> Result<(List, List)> {
 		let mut comments = Vec::new();
 		let mut children = Vec::new();

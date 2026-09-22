@@ -1,4 +1,4 @@
-//! A document for each rule of the host grammars beside them, its answer pinned beside it as
+//! A document for each rule of the host plans beside them, its answer pinned beside it as
 //! `NAME.json`: the tree with comments and scopes, the error when it has one. A name says what
 //! else is on: `locations`, `erase`, or `recover` for `errorRecovery`. `UPDATE=1` rewrites the
 //! pins once a change is meant.
@@ -14,13 +14,13 @@ use teasel::json::{Request, parse_document};
 fn documents() {
 	let root = Path::new(env!("CARGO_MANIFEST_DIR"));
 	let mut wrong = Vec::new();
-	let mut grammars: Vec<_> = fs::read_dir(root.join("tests/hosts"))
+	let mut plans: Vec<_> = fs::read_dir(root.join("tests/hosts"))
 		.unwrap()
 		.map(|e| e.unwrap().path())
 		.filter(|p| p.is_dir())
 		.collect();
-	grammars.sort();
-	for dir in grammars {
+	plans.sort();
+	for dir in plans {
 		let name = dir.file_name().unwrap().to_str().unwrap().to_owned();
 		let plan = fs::read_to_string(root.join("tests/hosts").join(&name).join("plan.json")).unwrap();
 		for file in sources(&dir) {

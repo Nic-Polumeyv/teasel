@@ -211,12 +211,8 @@ const registry = typeof FinalizationRegistry === 'undefined' ? null : new Finali
 let read: (plan: Plan<unknown>) => { entry: number; stop: string; held: Held | undefined };
 
 /**
- * What a parse reads. The built-in plans read a piece of JavaScript at a position of the source,
- * `program` the whole source; `until` ends one where the host's own tokens follow. `new Plan(grammar)`
- * reads the whole source as a document of the host language the grammar describes: the host's
- * own nodes around the JavaScript ones, in one tree, in TypeScript when the grammar says so of a
- * script tag; the grammar's format is at https://teasel.dev/host-grammar. A plan is built once and
- * applied to any source. `T` is what its parse answers with.
+ * What a parse reads: a built-in JavaScript entry or a host document described by the plan as JSON,
+ * as the helpers print it, with `T` naming the answer's node type.
  */
 export class Plan<T = HostNode> {
 	#entry: number;
@@ -227,7 +223,7 @@ export class Plan<T = HostNode> {
 	constructor(grammar: string | number, stop = '') {
 		if (typeof grammar === 'number') this.#entry = grammar;
 		else {
-			if (typeof grammar !== 'string') throw new TypeError('a plan is the grammar as a string');
+			if (typeof grammar !== 'string') throw new TypeError('a plan is the plan as JSON, as the helpers print it');
 			this.#entry = ENTRY.program;
 			this.#held = engine.plan(grammar);
 			registry?.register(this, this.#held, this);

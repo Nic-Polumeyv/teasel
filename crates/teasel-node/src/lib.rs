@@ -190,7 +190,7 @@ unsafe extern "C" fn drop_plan(_: Env, data: *mut c_void, _: *mut c_void) {
 }
 
 // the plan a parse reads a document by, or undefined
-fn grammar_of(env: Env, value: Value) -> Result<Option<&'static Plan>> {
+fn plan_of(env: Env, value: Value) -> Result<Option<&'static Plan>> {
 	let mut kind = 0;
 	check(unsafe { node_api::napi_typeof(env, value, &mut kind) }, "a value")?;
 	if kind == node_api::UNDEFINED {
@@ -221,7 +221,7 @@ unsafe extern "C" fn parse(env: Env, info: CallbackInfo) -> Value {
 		let prepared = unsafe { &*handle(env, source)? };
 		let entry = Entry::from_index(number(env, entry)? as u32);
 		let (offset, end, stop) = (number(env, offset)?, optional(env, end)?, string(env, stop)?);
-		let plan = grammar_of(env, plan)?;
+		let plan = plan_of(env, plan)?;
 		fresh(env);
 		match prepared.in_place(entry, offset, end, &stop, plan) {
 			Ok(()) => view(env),

@@ -736,7 +736,7 @@ impl Key {
 	#[cold]
 	pub(super) fn read(name: &str) -> Self {
 		match name {
-			"is_await" => Self::IsAwait,
+			"await" => Self::IsAwait,
 			"alternate" => Self::Alternate,
 			"argument" => Self::Argument,
 			"arguments" => Self::Arguments,

@@ -311,7 +311,7 @@ pub struct Node {
 	pub end: u32,
 }
 
-/// A node of a host's grammar: its type and its fields are the grammar's, held by name.
+/// A host node with named fields.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Host {
 	pub ty: &'static str,
@@ -319,27 +319,6 @@ pub struct Host {
 	pub fields: (u32, u32),
 	/// Whether the node has a span; a fragment has none.
 	pub span: bool,
-	/// The scope the node opens, when it opens one.
-	pub scope: Option<Opens>,
-}
-
-/// The scopes a host node opens: the patterns it declares around itself, and its groups, a run
-/// of `Ast::host_groups`.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Opens {
-	pub outside: List,
-	pub groups: (u32, u32),
-}
-
-/// One scope a host node opens over a run of its fields: the patterns declared in it, the
-/// fields inside it, and the node the scope belongs to when it is not the host node itself, a
-/// body's fragment say.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct HostGroup {
-	pub inside: List,
-	pub from: u32,
-	pub until: u32,
-	pub node: Option<NodeId>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -391,7 +370,6 @@ pub struct Ast<X = ()> {
 	pub hosts: Vec<Host>,
 	pub host_fields: Vec<(&'static str, Value)>,
 	pub host_strings: Handed<StrId>,
-	pub host_groups: Vec<HostGroup>,
 	pub host_plan: bool,
 	pub host_regions: Vec<HostRegion>,
 	pub host_coverage: NodeLists<u32>,
@@ -509,7 +487,6 @@ pub(crate) struct Mark<M> {
 	hosts: usize,
 	host_fields: usize,
 	host_strings: usize,
-	host_groups: usize,
 	comments: usize,
 	errors: usize,
 }
@@ -520,7 +497,6 @@ impl<X: Reuse> Ast<X> {
 		self.hosts.clear();
 		self.host_fields.clear();
 		self.host_strings.clear();
-		self.host_groups.clear();
 		self.host_plan = false;
 		self.host_regions.clear();
 		self.host_coverage.clear();
@@ -563,7 +539,6 @@ impl<X: Reuse> Ast<X> {
 			hosts: self.hosts.len(),
 			host_fields: self.host_fields.len(),
 			host_strings: self.host_strings.len(),
-			host_groups: self.host_groups.len(),
 			comments: self.comments.len(),
 			errors: self.errors.len(),
 		}
@@ -579,7 +554,6 @@ impl<X: Reuse> Ast<X> {
 		self.hosts.truncate(mark.hosts);
 		self.host_fields.truncate(mark.host_fields);
 		self.host_strings.truncate(mark.host_strings);
-		self.host_groups.truncate(mark.host_groups);
 		self.comments.truncate(mark.comments);
 		self.errors.truncate(mark.errors);
 	}
@@ -1230,7 +1204,7 @@ crate::layout::kinds! {
 
 		/// A node owned by a parser extension, indexed into its own data.
 		Extension(u32),
-		/// A node of the host's grammar, indexed into `Ast::hosts`.
+		/// A host node indexed into `Ast::hosts`.
 		Host(u32),
 	}
 }

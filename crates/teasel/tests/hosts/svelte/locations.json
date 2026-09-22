@@ -14,13 +14,8 @@
 			}
 		},
 		"scope": 0,
-		"css": null,
-		"js": [],
-		"options": null,
-		"comments": [],
 		"fragment": {
 			"type": "Fragment",
-			"scope": 2,
 			"nodes": [
 				{
 					"type": "RegularElement",
@@ -36,11 +31,10 @@
 							"column": 6
 						}
 					},
-					"name": "div",
 					"attributes": [],
 					"fragment": {
 						"type": "Fragment",
-						"scope": 3,
+						"scope": 4,
 						"nodes": [
 							{
 								"type": "Text",
@@ -56,11 +50,11 @@
 										"column": 1
 									}
 								},
-								"raw": "\n\t",
-								"data": "\n\t"
+								"data": "\n\t",
+								"raw": "\n\t"
 							},
 							{
-								"type": "ExpressionTag",
+								"type": "UnmarkedTag",
 								"start": 7,
 								"end": 10,
 								"loc": {
@@ -106,11 +100,12 @@
 										"column": 0
 									}
 								},
-								"raw": "\n",
-								"data": "\n"
+								"data": "\n",
+								"raw": "\n"
 							}
 						]
-					}
+					},
+					"name": "div"
 				}
 			]
 		}
@@ -124,7 +119,7 @@
 			"topLevelAwait": false
 		},
 		{
-			"kind": "fragment",
+			"kind": "script",
 			"parent": 0,
 			"topLevelAwait": false
 		},
@@ -134,15 +129,20 @@
 			"topLevelAwait": false
 		},
 		{
-			"kind": "fragment",
+			"kind": "block",
 			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 3,
 			"topLevelAwait": false
 		}
 	],
 	"bindings": [],
 	"references": [
 		{
-			"scope": 3,
+			"scope": 4,
 			"binding": null,
 			"write": false,
 			"read": true,
@@ -152,10 +152,10 @@
 	],
 	"roots": [
 		{
-			"scope": 3,
+			"scope": 4,
 			"scopes": [
-				4,
-				4
+				5,
+				5
 			],
 			"bindings": [
 				0,

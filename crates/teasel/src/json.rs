@@ -444,13 +444,13 @@ fn view_names<X: Reuse + Default>() -> Vec<&'static str> {
 
 /// The plan of a text, read once per thread; the error names the line it stopped at.
 pub fn plan(text: &str) -> Result<Rc<Plan>, String> {
-	PLANS.with(|grammars| {
-		let mut grammars = grammars.borrow_mut();
-		if let Some((_, plan)) = grammars.iter().find(|(known, _)| known == text) {
+	PLANS.with(|plans| {
+		let mut plans = plans.borrow_mut();
+		if let Some((_, plan)) = plans.iter().find(|(known, _)| known == text) {
 			return Ok(plan.clone());
 		}
 		let plan = Rc::new(Plan::read(text)?);
-		grammars.push((text.to_string(), plan.clone()));
+		plans.push((text.to_string(), plan.clone()));
 		Ok(plan)
 	})
 }

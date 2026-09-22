@@ -4,25 +4,65 @@
 		"start": 0,
 		"end": 136,
 		"scope": 0,
-		"css": null,
-		"js": [],
-		"options": null,
-		"comments": [],
 		"fragment": {
 			"type": "Fragment",
-			"scope": 2,
 			"nodes": [
 				{
 					"type": "EachBlock",
 					"start": 0,
 					"end": 69,
-					"expression": {
-						"type": "Identifier",
-						"start": 7,
-						"end": 12,
-						"reference": 0,
-						"root": 0,
-						"name": "items"
+					"body": {
+						"type": "Fragment",
+						"scope": 3,
+						"nodes": [
+							{
+								"type": "Text",
+								"start": 34,
+								"end": 36,
+								"data": "\n\t",
+								"raw": "\n\t"
+							},
+							{
+								"type": "UnmarkedTag",
+								"start": 36,
+								"end": 39,
+								"expression": {
+									"type": "Identifier",
+									"start": 37,
+									"end": 38,
+									"reference": 2,
+									"root": 4,
+									"name": "i"
+								}
+							},
+							{
+								"type": "Text",
+								"start": 39,
+								"end": 41,
+								"data": ": ",
+								"raw": ": "
+							},
+							{
+								"type": "UnmarkedTag",
+								"start": 41,
+								"end": 47,
+								"expression": {
+									"type": "Identifier",
+									"start": 42,
+									"end": 46,
+									"reference": 3,
+									"root": 5,
+									"name": "item"
+								}
+							},
+							{
+								"type": "Text",
+								"start": 47,
+								"end": 48,
+								"data": "\n",
+								"raw": "\n"
+							}
+						]
 					},
 					"context": {
 						"type": "Identifier",
@@ -31,6 +71,27 @@
 						"declares": 0,
 						"root": 1,
 						"name": "item"
+					},
+					"expression": {
+						"type": "Identifier",
+						"start": 7,
+						"end": 12,
+						"reference": 0,
+						"root": 0,
+						"name": "items"
+					},
+					"fallback": {
+						"type": "Fragment",
+						"scope": 4,
+						"nodes": [
+							{
+								"type": "Text",
+								"start": 55,
+								"end": 62,
+								"data": "\n\tnone\n",
+								"raw": "\n\tnone\n"
+							}
+						]
 					},
 					"index": {
 						"type": "Identifier",
@@ -60,92 +121,37 @@
 						},
 						"computed": false,
 						"optional": false
-					},
-					"body": {
-						"type": "Fragment",
-						"scope": 3,
-						"nodes": [
-							{
-								"type": "Text",
-								"start": 34,
-								"end": 36,
-								"raw": "\n\t",
-								"data": "\n\t"
-							},
-							{
-								"type": "ExpressionTag",
-								"start": 36,
-								"end": 39,
-								"expression": {
-									"type": "Identifier",
-									"start": 37,
-									"end": 38,
-									"reference": 2,
-									"root": 4,
-									"name": "i"
-								}
-							},
-							{
-								"type": "Text",
-								"start": 39,
-								"end": 41,
-								"raw": ": ",
-								"data": ": "
-							},
-							{
-								"type": "ExpressionTag",
-								"start": 41,
-								"end": 47,
-								"expression": {
-									"type": "Identifier",
-									"start": 42,
-									"end": 46,
-									"reference": 3,
-									"root": 5,
-									"name": "item"
-								}
-							},
-							{
-								"type": "Text",
-								"start": 47,
-								"end": 48,
-								"raw": "\n",
-								"data": "\n"
-							}
-						]
-					},
-					"fallback": {
-						"type": "Fragment",
-						"scope": 4,
-						"nodes": [
-							{
-								"type": "Text",
-								"start": 55,
-								"end": 62,
-								"raw": "\n\tnone\n",
-								"data": "\n\tnone\n"
-							}
-						]
 					}
 				},
 				{
 					"type": "Text",
 					"start": 69,
 					"end": 70,
-					"raw": "\n",
-					"data": "\n"
+					"data": "\n",
+					"raw": "\n"
 				},
 				{
 					"type": "EachBlock",
 					"start": 70,
 					"end": 117,
-					"expression": {
-						"type": "Identifier",
-						"start": 77,
-						"end": 81,
-						"reference": 4,
-						"root": 6,
-						"name": "list"
+					"body": {
+						"type": "Fragment",
+						"scope": 5,
+						"nodes": [
+							{
+								"type": "UnmarkedTag",
+								"start": 107,
+								"end": 110,
+								"expression": {
+									"type": "Identifier",
+									"start": 108,
+									"end": 109,
+									"reference": 5,
+									"root": 8,
+									"name": "a"
+								}
+							}
+						]
 					},
 					"context": {
 						"type": "ObjectPattern",
@@ -223,37 +229,32 @@
 							}
 						]
 					},
-					"body": {
-						"type": "Fragment",
-						"scope": 5,
-						"nodes": [
-							{
-								"type": "ExpressionTag",
-								"start": 107,
-								"end": 110,
-								"expression": {
-									"type": "Identifier",
-									"start": 108,
-									"end": 109,
-									"reference": 5,
-									"root": 8,
-									"name": "a"
-								}
-							}
-						]
+					"expression": {
+						"type": "Identifier",
+						"start": 77,
+						"end": 81,
+						"reference": 4,
+						"root": 6,
+						"name": "list"
 					}
 				},
 				{
 					"type": "Text",
 					"start": 117,
 					"end": 118,
-					"raw": "\n",
-					"data": "\n"
+					"data": "\n",
+					"raw": "\n"
 				},
 				{
 					"type": "EachBlock",
 					"start": 118,
 					"end": 135,
+					"body": {
+						"type": "Fragment",
+						"scope": 7,
+						"nodes": []
+					},
+					"context": null,
 					"expression": {
 						"type": "Identifier",
 						"start": 125,
@@ -261,12 +262,6 @@
 						"reference": 6,
 						"root": 9,
 						"name": "xs"
-					},
-					"context": null,
-					"body": {
-						"type": "Fragment",
-						"scope": 6,
-						"nodes": []
 					}
 				}
 			]
@@ -281,13 +276,23 @@
 			"topLevelAwait": false
 		},
 		{
-			"kind": "fragment",
+			"kind": "script",
 			"parent": 0,
 			"topLevelAwait": false
 		},
 		{
 			"kind": "fragment",
 			"parent": 1,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
 			"topLevelAwait": false
 		},
 		{
@@ -405,8 +410,8 @@
 		{
 			"scope": 2,
 			"scopes": [
-				3,
-				3
+				5,
+				5
 			],
 			"bindings": [
 				0,
@@ -420,8 +425,8 @@
 		{
 			"scope": 3,
 			"scopes": [
-				4,
-				4
+				5,
+				5
 			],
 			"bindings": [
 				0,
@@ -435,8 +440,8 @@
 		{
 			"scope": 3,
 			"scopes": [
-				4,
-				4
+				5,
+				5
 			],
 			"bindings": [
 				1,
@@ -450,8 +455,8 @@
 		{
 			"scope": 3,
 			"scopes": [
-				4,
-				4
+				5,
+				5
 			],
 			"bindings": [
 				2,
@@ -465,8 +470,8 @@
 		{
 			"scope": 3,
 			"scopes": [
-				4,
-				4
+				5,
+				5
 			],
 			"bindings": [
 				2,
@@ -480,8 +485,8 @@
 		{
 			"scope": 3,
 			"scopes": [
-				4,
-				4
+				5,
+				5
 			],
 			"bindings": [
 				2,
@@ -495,8 +500,8 @@
 		{
 			"scope": 2,
 			"scopes": [
-				5,
-				5
+				7,
+				7
 			],
 			"bindings": [
 				2,
@@ -510,8 +515,8 @@
 		{
 			"scope": 5,
 			"scopes": [
-				6,
-				6
+				7,
+				7
 			],
 			"bindings": [
 				2,
@@ -525,8 +530,8 @@
 		{
 			"scope": 5,
 			"scopes": [
-				6,
-				6
+				7,
+				7
 			],
 			"bindings": [
 				5,
@@ -540,8 +545,8 @@
 		{
 			"scope": 2,
 			"scopes": [
-				6,
-				6
+				9,
+				9
 			],
 			"bindings": [
 				5,

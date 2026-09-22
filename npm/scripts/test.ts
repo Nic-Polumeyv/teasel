@@ -124,7 +124,7 @@ const { open, scopeOf, referenceOf, parentOf } = untyped(m);
 	assert.equal(program('return', { allowReturnOutsideFunction: true }).body[0].type, 'ReturnStatement');
 	{
 		// a document's answer lists each piece of JavaScript the host read, with its share of the tables
-		const host = new Plan(readFileSync(new URL('../../crates/teasel/tests/hosts/svelte/host.grammar', import.meta.url), 'utf8'));
+		const host = new Plan(readFileSync(new URL('../../crates/teasel/tests/hosts/svelte/plan.json', import.meta.url), 'utf8'));
 		const answer = open('<script>let a = 1;</script>{a + b}', { sourceType: 'module', scopes: true }).parse(host);
 		const [script, expression] = answer.roots;
 		assert.equal(answer.roots.length, 2);
@@ -272,8 +272,8 @@ const { open, scopeOf, referenceOf, parentOf } = untyped(m);
 }
 
 // a document of a host language: the host's nodes around the JavaScript ones, one tree
-const grammar = readFileSync(new URL('../../crates/teasel/tests/hosts/svelte/host.grammar', import.meta.url), 'utf8');
-const svelte = new Plan(grammar);
+const planText = readFileSync(new URL('../../crates/teasel/tests/hosts/svelte/plan.json', import.meta.url), 'utf8');
+const svelte = new Plan(planText);
 {
 	const source = '<script lang="ts">\n\tlet items: string[] = [];\n</script>\n\n{#each items as item, i (item)}\n\t<p class:odd={i % 2} on:click={() => item}>{item}</p>\n{:else}\n\tnone\n{/each}\n';
 	const doc = open(source, { sourceType: 'module', scopes: true, comments: true }).parse(svelte);
@@ -282,8 +282,9 @@ const svelte = new Plan(grammar);
 	assert.equal(root.end, source.length);
 	assert.equal(doc.end, source.length);
 	assert.deepEqual(doc.comments, []);
-	assert.equal(root.instance.context, 'default');
-	assert.equal(root.instance.content.body[0].declarations[0].id.typeAnnotation.type, 'TSTypeAnnotation');
+	const instance = root.fragment.nodes.find((n: Any) => n.type === 'Script' && n.context === 'default');
+	assert.equal(instance.context, 'default');
+	assert.equal(instance.content.body[0].declarations[0].id.typeAnnotation.type, 'TSTypeAnnotation');
 	assert.equal('module' in root, false);
 	const each = root.fragment.nodes.find((n: Any) => n.type === 'EachBlock');
 	assert.equal(each.index.name, 'i');
@@ -298,19 +299,20 @@ const svelte = new Plan(grammar);
 	assert.equal(parentOf(each.context), each);
 	// the block declares its context and index; the script declares the list
 	const tag = p.fragment.nodes[0];
-	assert.equal(tag.type, 'ExpressionTag');
+	assert.equal(tag.type, 'UnmarkedTag');
 	assert.equal(referenceOf(tag.expression).binding.node, each.context);
 	assert.equal(referenceOf(p.attributes[0].expression.left).binding.name, 'i');
 	assert.equal(referenceOf(each.expression).binding.kind, 'let');
-	// every fragment is a scope of its own; the block's body declares its context and index
 	assert.equal(scopeOf(each.body).node, each.body);
 	assert.equal(referenceOf(tag.expression).binding.scope, scopeOf(each.body));
-	assert.equal(scopeOf(each.body).parent, scopeOf(root.fragment));
+	const templateScope = scopeOf(each.body).parent;
+	assert.equal(templateScope.kind, 'fragment');
+	assert.equal(scopeOf(root.fragment), undefined);
 	// the template sees the instance script, which sees the module script, which is the root's
-	assert.equal(scopeOf(root.fragment).parent, scopeOf(root.instance.content));
-	assert.equal(scopeOf(root.instance.content).parent, scopeOf(root));
-	assert.equal(scopeOf(each.fallback).parent, scopeOf(root.fragment));
-	assert.throws(() => new Plan('element div'), /grammar line 1/);
+	assert.equal(templateScope.parent, scopeOf(instance.content));
+	assert.equal(scopeOf(instance.content).parent, scopeOf(root));
+	assert.equal(scopeOf(each.fallback).parent, templateScope);
+	assert.throws(() => new Plan('element div'), /JSON/);
 	assert.throws(() => svelte.until('}'), TypeError);
 	assert.throws(() => open('<div>').parse(svelte, 1), TypeError);
 	assert.throws(() => open('<div>').parse(svelte), { code: 'unclosed', pos: 0 });
@@ -334,18 +336,17 @@ const svelte = new Plan(grammar);
 }
 
 // unfinished input under recovery is an answer, never a panic; a strict error is a SyntaxError
-const grammars = Object.fromEntries(['svelte', 'vue'].map((name) => [name, new Plan(readFileSync(new URL(`../../crates/teasel/tests/hosts/${name}/host.grammar`, import.meta.url), 'utf8'))]));
+const plans = Object.fromEntries(['svelte', 'vue'].map((name) => [name, new Plan(readFileSync(new URL(`../../crates/teasel/tests/hosts/${name}/plan.json`, import.meta.url), 'utf8'))]));
 {
 	for (const text of ['<a x="', '<a /*', '<script>"</script>', '{#if', '<div class="{a']) {
-		assert.equal(open(text, { errorRecovery: true, comments: true, scopes: true }).parse(grammars.svelte).node.type, 'Root', `${name} ${text}`);
+		assert.equal(open(text, { errorRecovery: true, comments: true, scopes: true }).parse(plans.svelte).node.type, 'Root', `${name} ${text}`);
 	}
-	assert.throws(() => open('<a @x="@"/>').parse(grammars.vue), (e: Any) => e instanceof SyntaxError, `${name}`);
-	const handler: Any = open('<button @click="let x = 1"/>', { errorRecovery: true }).parse(grammars.vue);
+	assert.throws(() => open('<a @x="@"/>').parse(plans.vue), (e: Any) => e instanceof SyntaxError, `${name}`);
+	const handler: Any = open('<button @click="let x = 1"/>', { errorRecovery: true }).parse(plans.vue);
 	assert.equal(handler.node.children[0].props[0].handler.type, 'Program', name);
 	assert.deepEqual(handler.errors, [], name);
 }
-// a second host: the same walker, Vue's grammar
-const vue = grammars.vue;
+const vue = plans.vue;
 {
 	const source = '<ul :class="{ on }">\n\t<li v-for="(item, i) in items" :key="item.id" @click.stop="select(item)">{{ item.name }} #{{ i }}</li>\n</ul>\n';
 	const root: Any = open(source, { sourceType: 'module' }).parse(vue).node;
@@ -387,7 +388,7 @@ const vue = grammars.vue;
 		assert.throws(() => open('a' + '.b'.repeat(9_999), { scopes }).parse(), deep);
 		assert.throws(() => open('new '.repeat(9_999) + 'x', { scopes }).parse(), deep);
 		assert.throws(() => open('type A = ' + 'B<'.repeat(999) + 'C' + '>'.repeat(999), { scopes, typescript: true }).parse(), deep);
-		assert.throws(() => open('<a>'.repeat(40_000) + '</a>'.repeat(40_000), { scopes }).parse(grammars.svelte), deep);
+		assert.throws(() => open('<a>'.repeat(40_000) + '</a>'.repeat(40_000), { scopes }).parse(plans.svelte), deep);
 		assert.equal(open('x', { scopes }).parse().node.body.length, 1);
 	}
 }

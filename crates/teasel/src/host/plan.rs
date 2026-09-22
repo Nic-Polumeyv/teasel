@@ -1098,7 +1098,11 @@ wire_object! { Dispatch (d, n) {
 	attributes: "attributes" => Optional<StaticAttributes>,
 	content: "content" => Optional<Mode>,
 } => { Ok(Dispatch { when, rule, node_type, attributes, content }) } }
-wire_object! { TypeScript (d, n) { element: "element" => Name, attribute: "attribute" => Name, value: "value" => Nullable<Name> } => { Ok(TypeScript { element, attribute, value }) } }
+wire_object! { TypeScript (d, n) {
+	element: "element" => Name,
+	attribute: "attribute" => Name,
+	value: "value" => Nullable<Name>,
+} => { Ok(TypeScript { element, attribute, value }) } }
 wire_object! { Html (d, n) {
 	delimiters: "delimiters" => [Name; 2],
 	attribute_interpolations: "attributeInterpolations" => bool,

@@ -1,6 +1,5 @@
 mod css;
 pub mod entities;
-pub mod grammar;
 mod native;
 pub mod plan;
 mod program;
@@ -25,6 +24,7 @@ enum Datum {
 	Bool(bool),
 	Number(f64),
 	Text(StrId),
+	HostType(u32),
 	Interned(StrId),
 	Slice(u32, u32),
 	Span(u32, u32, bool),
@@ -204,6 +204,8 @@ pub(crate) struct Spare {
 	event_changes: Vec<(usize, Event)>,
 	attributes: Vec<HeaderAttribute>,
 	values: Vec<Datum>,
+	native_fields: Vec<(Key, Datum)>,
+	static_keys: crate::interner::FastMap<(usize, usize), &'static str>,
 	saved: Vec<Datum>,
 	nodes: Vec<Vec<NodeId>>,
 	arrays: Vec<Vec<Datum>>,
@@ -226,6 +228,7 @@ impl std::fmt::Debug for Spare {
 	}
 }
 
+/// Parses a document with its host regions.
 pub fn parse(src: &str, plan: &Plan, options: Options) -> (Ast, std::result::Result<NodeId, Box<crate::SyntaxError>>) {
 	let (ast, root) = parse_document::<()>(src, plan, options, None, true);
 	(*ast, root)
@@ -245,6 +248,7 @@ pub(crate) fn parse_document<E: Extension>(
 	};
 	let mut ast = reused.unwrap_or_else(|| Box::new(Ast::sized(src.len())));
 	let mut spare = ast.host_spare.take().unwrap_or_default();
+	spare.static_keys.clear();
 	spare.ids.clear();
 	spare.ids.resize(plan.program.strings.len(), u32::MAX);
 	spare.records.clear();
@@ -282,6 +286,7 @@ pub(crate) fn parse_document<E: Extension>(
 			return fail(w.at, w.at, Code::UnexpectedToken, None);
 		}
 		w.ast().nodes[node.index() as usize].end = w.full;
+		// Region tables are filled only after all forms commit.
 		if regions {
 			w.regions()?;
 		}
@@ -440,6 +445,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 	fn text_of<'b>(&'b self, value: &'b Datum) -> Option<&'b str> {
 		match value {
 			Datum::Text(id) => Some(&self.plan.program.strings[id.index() as usize]),
+			Datum::HostType(i) => Some(self.tree().hosts[*i as usize].ty),
 			Datum::Interned(id) => Some(self.tree().str(*id)),
 			Datum::Slice(a, b) => self.src.get(*a as usize..*b as usize),
 			_ => None,
@@ -628,7 +634,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 				if let NodeKind::Host(i) = node.kind {
 					let host = &self.tree().hosts[i as usize];
 					if key == Key::Type {
-						return self.plan_text(host.ty);
+						return Datum::HostType(i);
 					}
 					self.tree().host_fields[host.fields.0 as usize..(host.fields.0 + host.fields.1) as usize]
 						.iter()
@@ -780,7 +786,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 	}
 	fn type_in(&mut self, id: NodeId, strings: &[StrId]) -> bool {
 		let ty = match self.tree().node(id).kind {
-			NodeKind::Host(i) => self.plan_text(self.tree().hosts[i as usize].ty),
+			NodeKind::Host(i) => Datum::HostType(i),
 			_ => self.native_property(id, Key::Type),
 		};
 		match ty {
@@ -799,7 +805,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			&& prop.key == Key::Type
 			&& let NodeKind::Host(i) = self.tree().node(id).kind
 		{
-			return Ok(self.plan_text(self.tree().hosts[i as usize].ty));
+			return Ok(Datum::HostType(i));
 		}
 		Ok(self.property(value, part))
 	}
@@ -886,12 +892,17 @@ impl<'a, E: Extension> Walker<'a, E> {
 				}
 				let ty = &self.plan.program.strings[node_type.index() as usize];
 				let node = if ty.starts_with("js.") {
-					let output: Vec<_> = fields
-						.iter()
-						.zip(&values)
-						.map(|((name, _), value)| (self.plan.program.properties[name.index() as usize], *value))
-						.collect();
-					let kind = self.native_construct(ty, start, end, &output)?;
+					let mut output = std::mem::take(&mut self.native_fields);
+					output.extend(
+						fields
+							.iter()
+							.zip(&values)
+							.map(|((name, _), value)| (self.plan.program.properties[name.index() as usize], *value)),
+					);
+					let kind = self.native_construct(ty, start, end, &output);
+					output.clear();
+					self.native_fields = output;
+					let kind = kind?;
 					self.ast().add(kind, start, end)
 				} else {
 					let len = values.iter().filter(|v| **v != Datum::Missing).count();
@@ -995,6 +1006,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			Datum::Number(v) if v >= 0.0 && v <= u32::MAX as f64 && v.fract() == 0.0 => Value::Int(v as u32),
 			Datum::Number(_) => return fail(self.at, self.at, Code::Expected, Some("a representable host number")),
 			Datum::Text(id) => Value::Str(self.tree_id(id)),
+			Datum::HostType(i) => Value::Str(self.intern(self.tree().hosts[i as usize].ty)),
 			Datum::Interned(id) => Value::Str(id),
 			Datum::Slice(a, b) => Value::Slice(a, b),
 			Datum::Node(id) => Value::Node(id),
@@ -1104,6 +1116,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		match value {
 			Datum::Interned(id) => id,
 			Datum::Text(id) => self.tree_id(id),
+			Datum::HostType(i) => self.intern(self.tree().hosts[i as usize].ty),
 			Datum::Slice(a, b) => self.intern(&self.src[a as usize..b as usize]),
 			_ => self.intern(""),
 		}
@@ -1113,7 +1126,6 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let ty = self.plan.program.names[ty.index() as usize];
 		self.ast().hosts.push(Host {
 			ty,
-			scope: None,
 			fields: (from as u32, len as u32),
 			span,
 		});
@@ -1121,15 +1133,18 @@ impl<'a, E: Extension> Walker<'a, E> {
 	}
 	fn make(&mut self, ty: StrId, start: u32, end: u32, fields: &[(StrId, Datum)], span: bool) -> Result<NodeId> {
 		let from = self.tree().host_fields.len();
+		let len = fields.iter().filter(|(_, value)| *value != Datum::Missing).count();
+		self.ast().host_fields.resize(from + len, ("", Value::Null));
+		let mut next = from;
 		for (key, value) in fields {
 			if *value == Datum::Missing {
 				continue;
 			}
 			let value = self.output(value)?;
 			let key = self.plan.program.names[key.index() as usize];
-			self.ast().host_fields.push((key, value));
+			self.ast().host_fields[next] = (key, value);
+			next += 1;
 		}
-		let len = self.tree().host_fields.len() - from;
 		Ok(self.host_id(ty, start, end, from, len, span))
 	}
 	fn call(&mut self, rule: usize, event: Datum, ty: Option<StrId>, follow: &str) -> Result<NodeId> {
@@ -1143,6 +1158,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		ty: Option<StrId>,
 		follow: &str,
 	) -> std::result::Result<NodeId, Rejection> {
+		// Recursive form frames must also fit the smaller debug and test stacks.
 		if self.active.len() >= 64 {
 			return fail(self.at, self.at, Code::NestingDepth, None).map_err(Into::into);
 		}
@@ -1150,7 +1166,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let record = self.records.len();
 		let slots = self.slots.len();
 		if let Some(leaf) = &schema.leaf {
-			return Ok(self.leaf(rule, record, event, ty, leaf));
+			return self.leaf(rule, record, event, ty, leaf).map_err(Into::into);
 		}
 		self.slots.resize(slots + schema.slots, Datum::Missing);
 		let owner = self
@@ -1252,16 +1268,28 @@ impl<'a, E: Extension> Walker<'a, E> {
 					self.slots[slots + i] = Datum::Null;
 				}
 			}
-			let fields: Vec<_> = schema
-				.fields
-				.iter()
-				.enumerate()
-				.map(|(i, (k, _))| (self.plan.program.properties[k.index() as usize], self.slots[slots + i]))
-				.collect();
-			let kind = self.native_construct(ty, start, end, &fields)?;
+			let mut fields = std::mem::take(&mut self.native_fields);
+			fields.extend(schema.fields.iter().enumerate().map(|(i, (key, _))| {
+				(
+					self.plan.program.properties[key.index() as usize],
+					self.slots[slots + i],
+				)
+			}));
+			let kind = self.native_construct(ty, start, end, &fields);
+			fields.clear();
+			self.native_fields = fields;
+			let kind = kind?;
 			self.ast().add(kind, start, end)
 		} else {
 			let from = self.tree().host_fields.len();
+			let len = schema
+				.fields
+				.iter()
+				.enumerate()
+				.filter(|(i, (_, absence))| self.slots[slots + i] != Datum::Missing || *absence == Absence::Null)
+				.count();
+			self.ast().host_fields.resize(from + len, ("", Value::Null));
+			let mut next = from;
 			for (i, (key, absence)) in schema.fields.iter().enumerate() {
 				let value = match self.slots[slots + i] {
 					Datum::Missing if *absence == Absence::Null => Value::Null,
@@ -1274,15 +1302,22 @@ impl<'a, E: Extension> Walker<'a, E> {
 					value => self.output(&value)?,
 				};
 				let key = self.plan.program.names[key.index() as usize];
-				self.ast().host_fields.push((key, value));
+				self.ast().host_fields[next] = (key, value);
+				next += 1;
 			}
-			let len = self.tree().host_fields.len() - from;
 			self.host_id(ty_id, start, end, from, len, span)
 		};
 		self.records[record].node = Some(node);
 		Ok(node)
 	}
-	fn leaf(&mut self, rule: usize, record: usize, event: Datum, ty: Option<StrId>, leaf: &[(u32, Key)]) -> NodeId {
+	fn leaf(
+		&mut self,
+		rule: usize,
+		record: usize,
+		event: Datum,
+		ty: Option<StrId>,
+		leaf: &[(u32, Key)],
+	) -> Result<NodeId> {
 		let schema = &self.plan.program.rules[rule];
 		let ty_id = ty.unwrap_or(schema.ty);
 		let start = self.at;
@@ -1304,8 +1339,8 @@ impl<'a, E: Extension> Walker<'a, E> {
 			start,
 			node: None,
 		});
-		let from = self.tree().host_fields.len();
-		for (i, (key, absence)) in schema.fields.iter().enumerate() {
+		let mut values = self.take_values();
+		for (i, (_, absence)) in schema.fields.iter().enumerate() {
 			let value =
 				leaf.iter()
 					.find(|(slot, _)| *slot as usize == i)
@@ -1313,27 +1348,35 @@ impl<'a, E: Extension> Walker<'a, E> {
 						Datum::Event(e) => self.event_value(e, *key),
 						_ => Datum::Missing,
 					});
-			let value = match value {
-				Datum::Missing if *absence == Absence::Null => Value::Null,
-				Datum::Missing => continue,
-				Datum::Node(id) => Value::Node(id),
-				Datum::Nodes(list) => Value::Nodes(list),
-				Datum::Slice(a, b) => Value::Slice(a, b),
-				Datum::Text(id) => Value::Str(self.tree_id(id)),
-				Datum::Interned(id) => Value::Str(id),
-				Datum::Bool(v) => Value::Bool(v),
-				Datum::Strings(a, n) => Value::Strs(a, n),
-				value => self.output(&value).unwrap_or(Value::Null),
-			};
-			let key = self.plan.program.names[key.index() as usize];
-			self.ast().host_fields.push((key, value));
+			values.push(if value == Datum::Missing && *absence == Absence::Null {
+				Datum::Null
+			} else {
+				value
+			});
 		}
-		let len = self.tree().host_fields.len() - from;
-		let span = schema.span != Some(SpanPolicy::None);
-		let node = self.host_id(ty_id, start, self.at, from, len, span);
-		self.records[record].node = Some(node);
-		node
+		let from = self.tree().host_fields.len();
+		let len = values.iter().filter(|v| **v != Datum::Missing).count();
+		self.ast().host_fields.resize(from + len, ("", Value::Null));
+		let result = (|| {
+			let mut next = from;
+			for ((key, _), value) in schema.fields.iter().zip(&values) {
+				if *value == Datum::Missing {
+					continue;
+				}
+				let value = self.output(value)?;
+				let key = self.plan.program.names[key.index() as usize];
+				self.ast().host_fields[next] = (key, value);
+				next += 1;
+			}
+			let span = schema.span != Some(SpanPolicy::None);
+			let node = self.host_id(ty_id, start, self.at, from, len, span);
+			self.records[record].node = Some(node);
+			Ok(node)
+		})();
+		self.recycle_values(values);
+		result
 	}
+
 	fn leading_mismatch(&self, form: &Form) -> Option<Rejection> {
 		self.leading(form, &mut self.at.clone(), 0).err()
 	}
@@ -2067,6 +2110,45 @@ impl<'a, E: Extension> Walker<'a, E> {
 		boundary: Option<Boundary>,
 		follow: &str,
 	) -> std::result::Result<Datum, Rejection> {
+		if entry == Js::Expression
+			&& boundary == Some(Boundary::LastSharedWord)
+			&& follow.split_ascii_whitespace().any(|s| s == ",")
+		{
+			let mut words = self.follows.pop().unwrap_or_default();
+			for word in follow.split_ascii_whitespace().filter(|s| s.starts_with(is_id_start)) {
+				if !words.is_empty() {
+					words.push(' ');
+				}
+				words.push_str(word);
+			}
+			if !words.is_empty() {
+				let at = self.at;
+				let mark = self.tree().mark();
+				let recovery = std::mem::replace(&mut self.options.error_recovery, false);
+				let trial = self.native_read(entry, boundary, &words);
+				self.options.error_recovery = recovery;
+				let rest = self.rest().trim_start_matches(is_space);
+				let stopped = words.split_ascii_whitespace().any(|word| {
+					rest.strip_prefix(word)
+						.is_some_and(|tail| !tail.starts_with(is_id_continue))
+				});
+				if trial.is_ok() && stopped {
+					words.clear();
+					self.follows.push(words);
+					return trial;
+				}
+				self.ast().truncate(mark);
+				self.at = at;
+				if trial
+					.as_ref()
+					.is_err_and(|e| matches!(e.code(), Code::NestingDepth | Code::TreeSize))
+				{
+					return trial;
+				}
+			}
+			words.clear();
+			self.follows.push(words);
+		}
 		let excluded = |s: &str| matches!(s, "(" | "[" | "." | "?." | "?");
 		if entry != Js::Expression || !follow.split_ascii_whitespace().any(excluded) {
 			return self.native_read(entry, boundary, follow);
@@ -2095,46 +2177,52 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let mut options = self.options;
 		options.allow_undeclared_exports = true;
 		let mut parser = Parser::<E>::new(src, at, options, follow, self.ast.take().unwrap());
-		let result = parser.start().and_then(|()| match entry {
-			Js::Program => parser.parse_program().map(|id| parser.list_of(&[id])),
-			Js::AssignmentExpression => {
-				parser.enter_scope(crate::parser::scope::SCOPE_TOP);
-				parser
-					.parse_maybe_assign(ForInit::No, &mut None)
-					.map(|id| parser.list_of(&[id]))
+		let result = parser.start().and_then(|()| {
+			// An empty host read diagnoses the original token, including its span.
+			if parser.lexer.stopped {
+				parser.lexer.next_token_into(&mut parser.tok)?;
 			}
-			Js::BindingIdentifier | Js::IdentifierReference => {
-				if !matches!(
-					parser.tok.kind,
-					crate::lexer::token::TokenKind::Ident(_) | crate::lexer::token::TokenKind::Keyword(_)
-				) {
-					return fail(
-						parser.tok.start,
-						parser.tok.start,
-						Code::Expected,
-						Some("an identifier"),
-					);
+			match entry {
+				Js::Program => parser.parse_program().map(|id| parser.list_of(&[id])),
+				Js::AssignmentExpression => {
+					parser.enter_scope(crate::parser::scope::SCOPE_TOP);
+					parser
+						.parse_maybe_assign(ForInit::No, &mut None)
+						.map(|id| parser.list_of(&[id]))
 				}
-				let end = parser.tok.end;
-				parser.parse_ident(false).map(|id| parser.list_of(&[id])).map_err(|e| {
-					if e.code == Code::UnexpectedKeyword {
-						error(e.pos, end, Code::ReservedWord, Some(&src[e.pos as usize..end as usize]))
-					} else {
-						e
+				Js::BindingIdentifier | Js::IdentifierReference => {
+					if !matches!(
+						parser.tok.kind,
+						crate::lexer::token::TokenKind::Ident(_) | crate::lexer::token::TokenKind::Keyword(_)
+					) {
+						return fail(
+							parser.tok.start,
+							parser.tok.start,
+							Code::Expected,
+							Some("an identifier"),
+						);
 					}
-				})
+					let end = parser.tok.end;
+					parser.parse_ident(false).map(|id| parser.list_of(&[id])).map_err(|e| {
+						if e.code == Code::UnexpectedKeyword {
+							error(e.pos, end, Code::ReservedWord, Some(&src[e.pos as usize..end as usize]))
+						} else {
+							e
+						}
+					})
+				}
+				_ => parser.read_entry_boundary(
+					match entry {
+						Js::Expression => Entry::Expression,
+						Js::Pattern => Entry::Pattern,
+						Js::Params => Entry::Params,
+						Js::TypeParameters => Entry::TypeParameters,
+						Js::Statement => Entry::Statement,
+						_ => unreachable!(),
+					},
+					boundary == Some(Boundary::LastSharedWord),
+				),
 			}
-			_ => parser.read_entry_boundary(
-				match entry {
-					Js::Expression => Entry::Expression,
-					Js::Pattern => Entry::Pattern,
-					Js::Params => Entry::Params,
-					Js::TypeParameters => Entry::TypeParameters,
-					Js::Statement => Entry::Statement,
-					_ => unreachable!(),
-				},
-				boundary == Some(Boundary::LastSharedWord),
-			),
 		});
 		let result = match result {
 			Err(error) if parser.recovering() => {
@@ -2940,23 +3028,31 @@ impl<'a, E: Extension> Walker<'a, E> {
 	fn byte(&self) -> Option<u8> {
 		self.rest().as_bytes().first().copied()
 	}
-	fn plan_text(&self, text: &str) -> Datum {
-		self.plan
-			.program
-			.interner
-			.find(text)
-			.map_or(Datum::Missing, Datum::Text)
-	}
+
 	fn host(&mut self, ty: &'static str, start: u32, end: u32, fields: &[(&'static str, Value)], span: bool) -> NodeId {
+		let from = self.tree().host_fields.len() as u32;
+		for (key, value) in fields {
+			let place = (key.as_ptr() as usize, key.len());
+			let key = if let Some(key) = self.static_keys.get(&place) {
+				*key
+			} else {
+				let canonical = self
+					.plan
+					.program
+					.interner
+					.find(key)
+					.map_or(*key, |id| self.plan.program.names[id.index() as usize]);
+				self.static_keys.insert(place, canonical);
+				canonical
+			};
+			self.ast().host_fields.push((key, *value));
+		}
 		let ast = self.ast();
-		let from = ast.host_fields.len() as u32;
-		ast.host_fields.extend_from_slice(fields);
 		let index = ast.hosts.len() as u32;
 		ast.hosts.push(Host {
 			ty,
 			fields: (from, fields.len() as u32),
 			span,
-			scope: None,
 		});
 		ast.add(NodeKind::Host(index), start, end)
 	}
