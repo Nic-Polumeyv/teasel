@@ -1264,14 +1264,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 				if let Some(len) = closing_tag(self.rest(), name) {
 					self.at += len as u32;
 				} else {
-					let stylesheet = self.slots[slots..slots + schema.slots]
-						.iter()
-						.any(|value| matches!(value, Datum::Stylesheet(_)));
-					self.report(if stylesheet {
-						error(self.at, self.at, Code::Expected, Some(&format!("</{name}")))
-					} else {
-						error(self.at, self.at, Code::Unclosed, Some(name))
-					})?;
+					self.report(error(self.at, self.at, Code::Unclosed, Some(name)))?;
 				}
 			}
 		}
@@ -2130,11 +2123,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			result
 		};
 		if input.is_some() {
-			let failed_at = self.at;
 			(self.at, self.limit) = saved;
-			if result.is_err() && matches!(reader, Reader::CssStylesheet) {
-				self.at = failed_at;
-			}
 		}
 		result
 	}
@@ -2879,6 +2868,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 				self.skip_raw(name);
 				let end = self.at;
 				self.at = start;
+				// a program cannot be read out of an unclosed raw body: the markup after it is not JavaScript
 				if end == self.limit
 					&& !self.options.error_recovery
 					&& native_form(
