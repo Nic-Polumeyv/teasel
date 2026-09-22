@@ -150,6 +150,6 @@ fn host_phases() {
 fn sources(dir: &Path) -> Vec<std::path::PathBuf> {
 	common::inputs(dir)
 		.into_iter()
-		.filter(|f| f.extension().is_some_and(|e| e != "grammar"))
+		.filter(|f| f.file_stem().is_some_and(|s| s != "plan") && f.extension().is_some_and(|e| e != "grammar"))
 		.collect()
 }

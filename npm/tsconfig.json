@@ -11,6 +11,6 @@
 		"allowImportingTsExtensions": true,
 		"erasableSyntaxOnly": true
 	},
-	"include": ["src/**/*.ts", "scripts/*.ts"],
+	"include": ["src/**/*.ts", "scripts/*.ts", "../crates/teasel/tests/hosts/**/*.mts"],
 	"exclude": ["dist"]
 }
