@@ -287,6 +287,7 @@ pub struct Ast<X = ()> {
 	pub host_vals: Handed<[u32; 3]>,
 	/// The buffers the last parse worked in, for the next one.
 	pub spare: crate::parser::Spare,
+	pub(crate) host_spare: Option<Box<crate::host::Spare>>,
 	/// The scope analysis, when `scopes::analyze` ran.
 	pub scopes: Option<crate::scopes::Scopes>,
 	/// What went wrong, in source order, when errors are recovered from instead of thrown.
@@ -306,7 +307,7 @@ pub struct Attached {
 }
 
 /// `len` comments from `start` on: a node takes each of its comments one after the other.
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 #[repr(C)]
 pub struct Run {
 	pub start: u32,

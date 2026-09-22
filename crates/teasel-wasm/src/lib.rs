@@ -1,7 +1,7 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use teasel::Entry;
-use teasel::host::Grammar;
+use teasel::host::Plan;
 use teasel::json::{Prepared, Request};
 
 thread_local! {
@@ -51,13 +51,13 @@ pub unsafe extern "C" fn source_new(ptr: *mut u8, len: u32, capacity: u32, flags
 }
 
 /// # Safety
-/// `ptr` is `capacity` bytes from `alloc`, `len` of them a host language's grammar; they are taken
-/// over here. The handle is 0 when the grammar cannot be read, the error as JSON at `text_ptr`.
+/// `ptr` is `capacity` bytes from `alloc`, `len` of them a host language's plan; they are taken
+/// over here. The handle is 0 when the plan cannot be read, the error as JSON at `text_ptr`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn plan_new(ptr: *mut u8, len: u32, capacity: u32) -> u32 {
-	let grammar = unsafe { Vec::from_raw_parts(ptr, len as usize, capacity as usize) };
-	guard(0, || match teasel::json::grammar(&String::from_utf8_lossy(&grammar)) {
-		Ok(grammar) => Box::into_raw(Box::new(grammar)) as u32,
+	let plan = unsafe { Vec::from_raw_parts(ptr, len as usize, capacity as usize) };
+	guard(0, || match teasel::json::plan(&String::from_utf8_lossy(&plan)) {
+		Ok(plan) => Box::into_raw(Box::new(plan)) as u32,
 		Err(message) => {
 			text(teasel::json::error_json(&message, 0));
 			0
@@ -67,7 +67,7 @@ pub unsafe extern "C" fn plan_new(ptr: *mut u8, len: u32, capacity: u32) -> u32 
 
 #[unsafe(no_mangle)]
 pub extern "C" fn plan_free(handle: u32) {
-	drop(unsafe { Box::from_raw(handle as *mut Rc<Grammar>) });
+	drop(unsafe { Box::from_raw(handle as *mut Rc<Plan>) });
 }
 
 #[unsafe(no_mangle)]
@@ -107,14 +107,14 @@ pub unsafe extern "C" fn source_parse(
 ) -> u32 {
 	let stop = unsafe { Vec::from_raw_parts(ptr, len as usize, capacity as usize) };
 	let end = (has_end == 1).then_some(end);
-	let grammar = (plan != 0).then(|| unsafe { &**(plan as *const Rc<Grammar>) });
+	let plan = (plan != 0).then(|| unsafe { &**(plan as *const Rc<Plan>) });
 	guard(1, || {
 		answer(source(handle).in_place(
 			Entry::from_index(entry),
 			offset,
 			end,
 			&String::from_utf8_lossy(&stop),
-			grammar,
+			plan,
 		))
 	})
 }

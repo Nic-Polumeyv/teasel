@@ -14,7 +14,8 @@ export type DeclareKind = 'pattern' | 'param';
 export type Relation = 'equal' | 'less' | 'present';
 export type Js = 'expression' | 'assignmentExpression' | 'pattern' | 'bindingIdentifier' | 'identifierReference' | 'params' | 'typeParameters' | 'statement' | 'program';
 export type Plan = { version: 1; document: string; rules: { readonly [key: string]: Rule }; html: Html; };
-export type Html = { delimiters: readonly [string, string]; attributeInterpolations: boolean; attributeComments: AttributeComments; autoclose: boolean; trimEnd: boolean; void: ReadonlyArray<string>; text: string; comment: string; content: ReadonlyArray<PrefixDispatch>; attribute: ReadonlyArray<PrefixDispatch>; plainAttribute: PlainAttribute; elements: ReadonlyArray<Dispatch>; directiveNames: DirectiveNames; directives: ReadonlyArray<NamedDispatch>; };
+export type Html = { delimiters: readonly [string, string]; attributeInterpolations: boolean; attributeComments: AttributeComments; autoclose: boolean; trimEnd: boolean; typescript: ReadonlyArray<TypeScript>; void: ReadonlyArray<string>; text: string; comment: string; content: ReadonlyArray<PrefixDispatch>; attribute: ReadonlyArray<PrefixDispatch>; plainAttribute: PlainAttribute; elements: ReadonlyArray<Dispatch>; directiveNames: DirectiveNames; directives: ReadonlyArray<NamedDispatch>; };
+export type TypeScript = { element: string; attribute: string; value: string | null; };
 export type Rule = { type: string; fields: { readonly [key: string]: Absence }; locals?: ReadonlyArray<string>; form: Form; regions?: ReadonlyArray<Region>; declares?: ReadonlyArray<Declare>; span?: SpanPolicy; };
 export type Form =
 	| { op: 'seq'; } & { items: ReadonlyArray<Form>; }

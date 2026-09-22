@@ -22,7 +22,7 @@ fn documents() {
 	grammars.sort();
 	for dir in grammars {
 		let name = dir.file_name().unwrap().to_str().unwrap().to_owned();
-		let grammar = fs::read_to_string(root.join("tests/hosts").join(&name).join("host.grammar")).unwrap();
+		let plan = fs::read_to_string(root.join("tests/hosts").join(&name).join("plan.json")).unwrap();
 		for file in sources(&dir) {
 			let stem = file.file_stem().unwrap().to_str().unwrap();
 			let source = fs::read_to_string(&file).unwrap();
@@ -38,7 +38,7 @@ fn documents() {
 					request.set(flag);
 				}
 			}
-			let answer = common::pretty(&parse_document(&source, &grammar, &request));
+			let answer = common::pretty(&parse_document(&source, &plan, &request));
 			if !common::pinned(&file.with_extension("json"), &answer) {
 				wrong.push(format!("{name}/{stem}"));
 			}
@@ -57,7 +57,7 @@ fn documents() {
 fn every_prefix_answers() {
 	let root = Path::new(env!("CARGO_MANIFEST_DIR"));
 	for name in ["svelte", "vue"] {
-		let grammar = fs::read_to_string(root.join("tests/hosts").join(name).join("host.grammar")).unwrap();
+		let plan = fs::read_to_string(root.join("tests/hosts").join(name).join("plan.json")).unwrap();
 		for file in sources(&root.join("tests/hosts").join(name)) {
 			let source = fs::read_to_string(&file).unwrap();
 			for (end, _) in source.char_indices().chain([(source.len(), ' ')]) {
@@ -68,7 +68,7 @@ fn every_prefix_answers() {
 					if recover {
 						request.set("errorRecovery");
 					}
-					parse_document(&source[..end], &grammar, &request);
+					parse_document(&source[..end], &plan, &request);
 				}
 			}
 		}
@@ -80,15 +80,15 @@ fn every_prefix_answers() {
 #[test]
 fn unfinished_input() {
 	let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-	let svelte = fs::read_to_string(root.join("tests/hosts/svelte/host.grammar")).unwrap();
-	let vue = fs::read_to_string(root.join("tests/hosts/vue/host.grammar")).unwrap();
-	let parse = |source: &str, grammar: &str, recover: bool| {
+	let svelte = fs::read_to_string(root.join("tests/hosts/svelte/plan.json")).unwrap();
+	let vue = fs::read_to_string(root.join("tests/hosts/vue/plan.json")).unwrap();
+	let parse = |source: &str, plan: &str, recover: bool| {
 		let mut request = Request::new(Entry::Program, 0);
 		request.set("comments");
 		if recover {
 			request.set("errorRecovery");
 		}
-		parse_document(source, grammar, &request)
+		parse_document(source, plan, &request)
 	};
 	assert!(parse("<a x=\"", &svelte, true).contains("\"type\":\"Root\""));
 	let comment = parse("<a /*xx", &svelte, true);
@@ -118,8 +118,7 @@ fn unfinished_input() {
 fn host_phases() {
 	use teasel::json::Prepared;
 	let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-	let grammar =
-		teasel::json::grammar(&fs::read_to_string(root.join("tests/hosts/svelte/host.grammar")).unwrap()).unwrap();
+	let plan = teasel::json::plan(&fs::read_to_string(root.join("tests/hosts/svelte/plan.json")).unwrap()).unwrap();
 	let mut documents = vec![(
 		"200 each blocks".to_string(),
 		format!(
@@ -136,9 +135,7 @@ fn host_phases() {
 			let mut best = f64::MAX;
 			for _ in 0..300 {
 				let t = std::time::Instant::now();
-				prepared
-					.in_place(Entry::Program, 0.0, None, "", Some(&grammar))
-					.unwrap();
+				prepared.in_place(Entry::Program, 0.0, None, "", Some(&plan)).unwrap();
 				best = best.min(t.elapsed().as_secs_f64() * 1e6);
 			}
 			eprintln!("{best:9.2} µs  {name} {flags}");
@@ -146,10 +143,10 @@ fn host_phases() {
 	}
 }
 
-/// The documents of a host directory: not its grammar or the pins.
+/// The documents of a host directory: not its plan or the pins.
 fn sources(dir: &Path) -> Vec<std::path::PathBuf> {
 	common::inputs(dir)
 		.into_iter()
-		.filter(|f| f.file_stem().is_some_and(|s| s != "plan") && f.extension().is_some_and(|e| e != "grammar"))
+		.filter(|f| f.file_stem().is_some_and(|s| s != "plan") && f.extension().is_some_and(|e| e != "plan"))
 		.collect()
 }

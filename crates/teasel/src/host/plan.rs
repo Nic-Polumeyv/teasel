@@ -43,6 +43,7 @@ pub struct Plan {
 	pub rules: Vec<Rule>,
 	pub html: Html,
 	pub(crate) stops: Vec<Name>,
+	pub(super) program: std::rc::Rc<super::program::Program>,
 }
 
 #[derive(Clone, Debug)]
@@ -52,6 +53,7 @@ pub struct Html {
 	pub attribute_comments: AttributeComments,
 	pub autoclose: bool,
 	pub trim_end: bool,
+	pub typescript: Vec<TypeScript>,
 	pub void: Vec<Name>,
 	pub text: usize,
 	pub comment: usize,
@@ -61,6 +63,13 @@ pub struct Html {
 	pub elements: Vec<Dispatch>,
 	pub directive_names: DirectiveNames,
 	pub directives: Vec<NamedDispatch>,
+}
+
+#[derive(Clone, Debug)]
+pub struct TypeScript {
+	pub element: Name,
+	pub attribute: Name,
+	pub value: Option<Name>,
 }
 
 #[derive(Clone, Debug)]
@@ -938,7 +947,7 @@ wire_object! { Plan (d, n) {
 	document: "document" => Reference,
 	rules: RULES => Rules,
 	html: "html" => Html,
-} => { Ok(Plan { version, document, rules, html, stops: Vec::new() }) } }
+} => { Ok(Plan { version, document, rules, html, stops: Vec::new(), program: Default::default() }) } }
 
 wire_object! { Rule (d, n) {
 	node_type: "type" => Name,
@@ -1089,12 +1098,14 @@ wire_object! { Dispatch (d, n) {
 	attributes: "attributes" => Optional<StaticAttributes>,
 	content: "content" => Optional<Mode>,
 } => { Ok(Dispatch { when, rule, node_type, attributes, content }) } }
+wire_object! { TypeScript (d, n) { element: "element" => Name, attribute: "attribute" => Name, value: "value" => Nullable<Name> } => { Ok(TypeScript { element, attribute, value }) } }
 wire_object! { Html (d, n) {
 	delimiters: "delimiters" => [Name; 2],
 	attribute_interpolations: "attributeInterpolations" => bool,
 	attribute_comments: "attributeComments" => AttributeComments,
 	autoclose: "autoclose" => bool,
 	trim_end: "trimEnd" => bool,
+	typescript: "typescript" => Vec<TypeScript>,
 	void: "void" => Vec<Name>,
 	text: "text" => Reference,
 	comment: "comment" => Reference,
@@ -1114,6 +1125,7 @@ wire_object! { Html (d, n) {
 		attribute_comments,
 		autoclose,
 		trim_end,
+		typescript,
 		void,
 		text,
 		comment,
@@ -1192,6 +1204,7 @@ impl Plan {
 			&[
 				Self::definition(),
 				Html::definition(),
+				TypeScript::definition(),
 				Rule::definition(),
 				Form::definition(),
 				Reader::definition(),
@@ -1237,6 +1250,7 @@ impl Plan {
 		plan.validate()?;
 		fold::plan(&mut plan);
 		compile(&mut plan);
+		plan.program = std::rc::Rc::new(super::program::Program::lower(&plan));
 		Ok(plan)
 	}
 }

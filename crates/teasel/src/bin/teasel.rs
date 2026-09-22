@@ -9,7 +9,7 @@
 //! `teasel --batch [--host GRAMMAR]` reads jobs from stdin, each a header line `MODE LENGTH` followed by LENGTH
 //! bytes of source, and prints one JSON line per job. MODE is `module`, `script`, `expr:OFFSET`,
 //! `pattern:OFFSET`, `params:OFFSET`, `stmt:OFFSET`, `typeparams:OFFSET` or `doc` for a whole
-//! document of the host language the grammar file describes, with a `ts-` prefix
+//! document of the host language the plan file describes, with a `ts-` prefix
 //! for TypeScript and `+comments` to attach comments, `+scopes` for the scope analysis,
 //! `+parenthesized` to mark parenthesized nodes, `+undeclared-exports` to accept exports of names
 //! the source never declares, `+stop:TOKEN` to end a parse-at entry at one of the host's tokens or
@@ -40,7 +40,7 @@ fn batch_mode(mode: &str) -> (Entry, u32, impl Iterator<Item = &str>) {
 	(entry, tail[..digits].parse().unwrap_or(0), switches)
 }
 
-fn batch(grammar: Option<String>) -> io::Result<()> {
+fn batch(plan: Option<String>) -> io::Result<()> {
 	let stdin = io::stdin();
 	let mut input = stdin.lock();
 	let stdout = io::stdout();
@@ -103,8 +103,8 @@ fn batch(grammar: Option<String>) -> io::Result<()> {
 				_ => {}
 			}
 		}
-		let json = match (&grammar, mode_text.starts_with("doc")) {
-			(Some(grammar), true) => json::parse_document(&source, grammar, &request),
+		let json = match (&plan, mode_text.starts_with("doc")) {
+			(Some(plan), true) => json::parse_document(&source, plan, &request),
 			_ => json::parse(&source, &request, &stop),
 		};
 		out.write_all(json.as_bytes())?;
@@ -116,12 +116,12 @@ fn batch(grammar: Option<String>) -> io::Result<()> {
 fn main() -> ExitCode {
 	let args: Vec<String> = std::env::args().skip(1).collect();
 	if args.iter().any(|a| a == "--batch") {
-		let grammar = args
+		let plan = args
 			.iter()
 			.position(|a| a == "--host")
 			.and_then(|i| args.get(i + 1))
 			.map(|path| std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}")));
-		return match batch(grammar) {
+		return match batch(plan) {
 			Ok(()) => ExitCode::SUCCESS,
 			Err(e) => {
 				eprintln!("{e}");
@@ -195,14 +195,14 @@ fn main() -> ExitCode {
 		options,
 	};
 	if let Some(host) = host {
-		let grammar = match std::fs::read_to_string(&host) {
+		let plan = match std::fs::read_to_string(&host) {
 			Ok(s) => s,
 			Err(e) => {
 				eprintln!("{host}: {e}");
 				return ExitCode::FAILURE;
 			}
 		};
-		println!("{}", json::parse_document(&source, &grammar, &request));
+		println!("{}", json::parse_document(&source, &plan, &request));
 		return ExitCode::SUCCESS;
 	}
 	println!("{}", json::parse(&source, &request, ""));

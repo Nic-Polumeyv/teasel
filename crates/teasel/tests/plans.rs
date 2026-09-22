@@ -21,7 +21,7 @@ fn plan(rules: &str) -> String {
         "Expression":{{"type":"Expression","fields":{{}},"form":{{"op":"seq","items":[]}}}},
         {rules}
     }},"html":{{"delimiters":["{{","}}"],"attributeInterpolations":true,"attributeComments":"none",
-        "autoclose":false,"trimEnd":false,"void":[],"text":"Text","comment":"Comment","content":[],"attribute":[],
+        "autoclose":false,"trimEnd":false,"typescript":[],"void":[],"text":"Text","comment":"Comment","content":[],"attribute":[],
         "plainAttribute":{{"type":"Attribute","name":"name","value":"value","text":"Text","expression":"Expression"}},
         "elements":[],"directiveNames":{{"prefix":"","argument":":","modifier":"|","requireArgument":false,"dynamic":null,"unknown":"plain-attribute"}},"directives":[]
     }}}}"#

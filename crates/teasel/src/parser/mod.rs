@@ -830,12 +830,16 @@ impl<'a, E: Extension> Parser<'a, E> {
 
 	/// Reads one entry other than a program at the current token, in a scope of its own.
 	pub(crate) fn read_entry(&mut self, entry: Entry) -> Result<List> {
+		self.read_entry_boundary(entry, true)
+	}
+
+	pub(crate) fn read_entry_boundary(&mut self, entry: Entry, last_shared_word: bool) -> Result<List> {
 		self.enter_scope(SCOPE_TOP);
 		let root = match entry {
 			Entry::Expression => {
 				let before = self.snapshot();
 				let first = self.parse_sequence(ForInit::No, &mut None);
-				match self.stop_word_at.take() {
+				match self.stop_word_at.take().filter(|_| last_shared_word) {
 					None => first?,
 					// a word both the host and the extension read is the host's at its last use
 					Some(at) => {

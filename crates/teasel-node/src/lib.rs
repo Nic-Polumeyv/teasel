@@ -10,7 +10,7 @@ use std::rc::Rc;
 use node_api::{CallbackInfo, Env, OK, Ref, Status, Value};
 use teasel::Entry;
 use teasel::handed::{Element, Raw};
-use teasel::host::Grammar;
+use teasel::host::Plan;
 use teasel::json::{Prepared, Request};
 
 /// What JavaScript holds: the view of the words, then the views of the JavaScript tree and of
@@ -163,17 +163,17 @@ unsafe extern "C" fn create(env: Env, info: CallbackInfo) -> Value {
 	})
 }
 
-// the grammar of a host language, read once; V8 lets go of it with the external
+// the plan of a host language, read once; V8 lets go of it with the external
 unsafe extern "C" fn plan(env: Env, info: CallbackInfo) -> Value {
 	guard(env, || {
 		let [text] = args::<1>(env, info)?;
-		let grammar = teasel::json::grammar(&string(env, text)?)?;
+		let plan = teasel::json::plan(&string(env, text)?)?;
 		let mut result = std::ptr::null_mut();
 		check(
 			unsafe {
 				node_api::napi_create_external(
 					env,
-					Box::into_raw(Box::new(grammar)).cast(),
+					Box::into_raw(Box::new(plan)).cast(),
 					Some(drop_plan),
 					std::ptr::null_mut(),
 					&mut result,
@@ -186,11 +186,11 @@ unsafe extern "C" fn plan(env: Env, info: CallbackInfo) -> Value {
 }
 
 unsafe extern "C" fn drop_plan(_: Env, data: *mut c_void, _: *mut c_void) {
-	drop(unsafe { Box::from_raw(data.cast::<Rc<Grammar>>()) });
+	drop(unsafe { Box::from_raw(data.cast::<Rc<Plan>>()) });
 }
 
-// the grammar a parse reads a document by, or undefined
-fn grammar_of(env: Env, value: Value) -> Result<Option<&'static Grammar>> {
+// the plan a parse reads a document by, or undefined
+fn grammar_of(env: Env, value: Value) -> Result<Option<&'static Plan>> {
 	let mut kind = 0;
 	check(unsafe { node_api::napi_typeof(env, value, &mut kind) }, "a value")?;
 	if kind == node_api::UNDEFINED {
@@ -204,7 +204,7 @@ fn grammar_of(env: Env, value: Value) -> Result<Option<&'static Grammar>> {
 	if data.is_null() {
 		return Err("a plan expected".into());
 	}
-	Ok(Some(unsafe { &**data.cast::<Rc<Grammar>>() }))
+	Ok(Some(unsafe { &**data.cast::<Rc<Plan>>() }))
 }
 
 unsafe extern "C" fn free(env: Env, info: CallbackInfo) -> Value {
@@ -221,9 +221,9 @@ unsafe extern "C" fn parse(env: Env, info: CallbackInfo) -> Value {
 		let prepared = unsafe { &*handle(env, source)? };
 		let entry = Entry::from_index(number(env, entry)? as u32);
 		let (offset, end, stop) = (number(env, offset)?, optional(env, end)?, string(env, stop)?);
-		let grammar = grammar_of(env, plan)?;
+		let plan = grammar_of(env, plan)?;
 		fresh(env);
-		match prepared.in_place(entry, offset, end, &stop, grammar) {
+		match prepared.in_place(entry, offset, end, &stop, plan) {
 			Ok(()) => view(env),
 			Err(json) => text(env, &json),
 		}

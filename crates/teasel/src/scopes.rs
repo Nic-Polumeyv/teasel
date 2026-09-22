@@ -1820,12 +1820,12 @@ mod tests {
 			);
 		}
 		// a host document: each piece's root lists the `arguments` of the functions inside it
-		let grammar = crate::host::grammar::Grammar::read(
-			&std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/host.grammar")).unwrap(),
+		let plan = crate::host::plan::Plan::read(
+			&std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/plan.json")).unwrap(),
 		)
 		.unwrap();
 		let src = "<script>let n = 1; function f() { return arguments; }</script>\n{(function () { return arguments + n; })()}";
-		let (mut ast, root) = crate::host::parse_document::<()>(src, &grammar, Options::default(), None);
+		let (mut ast, root) = crate::host::parse_document::<()>(src, &plan, Options::default(), None, true);
 		let roots = ast.add_list(&[Some(root.unwrap())]);
 		analyze(&mut ast, Entry::Program, roots);
 		let scopes = ast.scopes.as_ref().unwrap();

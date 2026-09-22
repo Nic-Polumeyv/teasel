@@ -1025,7 +1025,7 @@ pub(crate) fn push_int(out: &mut String, mut value: u32) {
 }
 
 /// The decimal digits of a BigInt literal's text, without the `n`.
-fn bigint_decimal(raw: &str) -> String {
+pub(crate) fn bigint_decimal(raw: &str) -> String {
 	let (radix, digits) = match raw.get(..2) {
 		Some("0x" | "0X") => (16, &raw[2..]),
 		Some("0o" | "0O") => (8, &raw[2..]),

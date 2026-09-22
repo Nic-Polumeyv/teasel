@@ -121,7 +121,8 @@ export const vue = {
 	version: 1, document: 'Document', rules,
 	html: {
 		delimiters: ['{{', '}}'], attributeInterpolations: false, attributeComments: 'none',
-		autoclose: false, trimEnd: false,
+		autoclose: false, typescript: [],
+		trimEnd: false,
 		void: ['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr'],
 		text: 'Text', comment: 'Comment',
 		content: [{ prefix: '{{', rule: 'Interpolation' }], attribute: [],
