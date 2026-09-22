@@ -1,0 +1,515 @@
+{
+	"node": {
+		"type": "Root",
+		"start": 0,
+		"end": 153,
+		"scope": 0,
+		"fragment": {
+			"type": "Fragment",
+			"nodes": [
+				{
+					"type": "RegularElement",
+					"start": 0,
+					"end": 15,
+					"attributes": [
+						{
+							"type": "Attribute",
+							"start": 10,
+							"end": 14,
+							"name": "html",
+							"value": true
+						}
+					],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 4,
+						"nodes": []
+					},
+					"name": "!doctype"
+				},
+				{
+					"type": "Text",
+					"start": 15,
+					"end": 16,
+					"data": "\n",
+					"raw": "\n"
+				},
+				{
+					"type": "RegularElement",
+					"start": 16,
+					"end": 34,
+					"attributes": [
+						{
+							"type": "Attribute",
+							"start": 19,
+							"end": 25,
+							"name": "href",
+							"value": [
+								{
+									"type": "Text",
+									"start": 24,
+									"end": 25,
+									"data": "/",
+									"raw": "/"
+								}
+							]
+						}
+					],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 6,
+						"nodes": [
+							{
+								"type": "Text",
+								"start": 26,
+								"end": 30,
+								"data": "home",
+								"raw": "home"
+							}
+						]
+					},
+					"name": "a"
+				},
+				{
+					"type": "Text",
+					"start": 34,
+					"end": 35,
+					"data": "\n",
+					"raw": "\n"
+				},
+				{
+					"type": "RegularElement",
+					"start": 35,
+					"end": 126,
+					"attributes": [
+						{
+							"type": "AttachTag",
+							"start": 40,
+							"end": 62,
+							"expression": {
+								"type": "ArrowFunctionExpression",
+								"start": 49,
+								"end": 61,
+								"scope": 9,
+								"root": 0,
+								"defines": [
+									0
+								],
+								"id": null,
+								"expression": false,
+								"generator": false,
+								"async": false,
+								"params": [
+									{
+										"type": "Identifier",
+										"start": 50,
+										"end": 54,
+										"declares": 0,
+										"name": "node"
+									}
+								],
+								"body": {
+									"type": "BlockStatement",
+									"start": 59,
+									"end": 61,
+									"body": []
+								}
+							}
+						},
+						{
+							"type": "Attribute",
+							"start": 63,
+							"end": 85,
+							"name": "data",
+							"value": {
+								"type": "ExpressionTag",
+								"start": 68,
+								"end": 85,
+								"expression": {
+									"type": "CallExpression",
+									"start": 69,
+									"end": 84,
+									"root": 1,
+									"callee": {
+										"type": "MemberExpression",
+										"start": 69,
+										"end": 77,
+										"object": {
+											"type": "Literal",
+											"start": 69,
+											"end": 72,
+											"value": null,
+											"raw": "/}/",
+											"regex": {
+												"pattern": "}",
+												"flags": ""
+											}
+										},
+										"property": {
+											"type": "Identifier",
+											"start": 73,
+											"end": 77,
+											"name": "test"
+										},
+										"computed": false,
+										"optional": false
+									},
+									"arguments": [
+										{
+											"type": "Identifier",
+											"start": 78,
+											"end": 83,
+											"reference": 0,
+											"name": "value"
+										}
+									],
+									"optional": false
+								}
+							}
+						},
+						{
+							"type": "Attribute",
+							"start": 86,
+							"end": 123,
+							"name": "text",
+							"value": {
+								"type": "ExpressionTag",
+								"start": 91,
+								"end": 123,
+								"expression": {
+									"type": "TemplateLiteral",
+									"start": 92,
+									"end": 122,
+									"root": 2,
+									"expressions": [
+										{
+											"type": "CallExpression",
+											"start": 95,
+											"end": 120,
+											"callee": {
+												"type": "Identifier",
+												"start": 95,
+												"end": 98,
+												"reference": 1,
+												"name": "foo"
+											},
+											"arguments": [
+												{
+													"type": "ObjectExpression",
+													"start": 99,
+													"end": 119,
+													"properties": [
+														{
+															"type": "Property",
+															"start": 100,
+															"end": 118,
+															"method": false,
+															"shorthand": false,
+															"computed": false,
+															"key": {
+																"type": "Identifier",
+																"start": 100,
+																"end": 101,
+																"name": "a"
+															},
+															"value": {
+																"type": "TemplateLiteral",
+																"start": 103,
+																"end": 118,
+																"expressions": [
+																	{
+																		"type": "Identifier",
+																		"start": 113,
+																		"end": 116,
+																		"reference": 2,
+																		"name": "bar"
+																	}
+																],
+																"quasis": [
+																	{
+																		"type": "TemplateElement",
+																		"start": 104,
+																		"end": 111,
+																		"value": {
+																			"raw": "nested ",
+																			"cooked": "nested "
+																		},
+																		"tail": false
+																	},
+																	{
+																		"type": "TemplateElement",
+																		"start": 117,
+																		"end": 117,
+																		"value": {
+																			"raw": "",
+																			"cooked": ""
+																		},
+																		"tail": true
+																	}
+																]
+															},
+															"kind": "init"
+														}
+													]
+												}
+											],
+											"optional": false
+										}
+									],
+									"quasis": [
+										{
+											"type": "TemplateElement",
+											"start": 93,
+											"end": 93,
+											"value": {
+												"raw": "",
+												"cooked": ""
+											},
+											"tail": false
+										},
+										{
+											"type": "TemplateElement",
+											"start": 121,
+											"end": 121,
+											"value": {
+												"raw": "",
+												"cooked": ""
+											},
+											"tail": true
+										}
+									]
+								}
+							}
+						}
+					],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 8,
+						"nodes": []
+					},
+					"name": "div"
+				},
+				{
+					"type": "Text",
+					"start": 126,
+					"end": 127,
+					"data": "\n",
+					"raw": "\n"
+				},
+				{
+					"type": "ConstTag",
+					"start": 127,
+					"end": 152,
+					"declaration": {
+						"type": "VariableDeclaration",
+						"start": 129,
+						"end": 151,
+						"root": 3,
+						"declarations": [
+							{
+								"type": "VariableDeclarator",
+								"start": 135,
+								"end": 151,
+								"defines": [
+									1
+								],
+								"id": {
+									"type": "Identifier",
+									"start": 135,
+									"end": 136,
+									"declares": 1,
+									"name": "x"
+								},
+								"init": {
+									"type": "MemberExpression",
+									"start": 140,
+									"end": 150,
+									"object": {
+										"type": "Identifier",
+										"start": 140,
+										"end": 144,
+										"reference": 3,
+										"name": "item"
+									},
+									"property": {
+										"type": "Identifier",
+										"start": 145,
+										"end": 150,
+										"name": "value"
+									},
+									"computed": false,
+									"optional": false
+								}
+							}
+						],
+						"kind": "const"
+					}
+				}
+			]
+		}
+	},
+	"end": 153,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "script",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 1,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 3,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 5,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 7,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 7,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "node",
+			"kind": "param",
+			"scope": 9,
+			"write": true
+		},
+		{
+			"name": "x",
+			"kind": "const",
+			"scope": 2,
+			"write": true
+		}
+	],
+	"references": [
+		{
+			"scope": 7,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 7,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 7,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 2,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		}
+	],
+	"roots": [
+		{
+			"scope": 7,
+			"scopes": [
+				9,
+				10
+			],
+			"bindings": [
+				0,
+				1
+			],
+			"references": [
+				0,
+				0
+			]
+		},
+		{
+			"scope": 7,
+			"scopes": [
+				10,
+				10
+			],
+			"bindings": [
+				1,
+				1
+			],
+			"references": [
+				0,
+				1
+			]
+		},
+		{
+			"scope": 7,
+			"scopes": [
+				10,
+				10
+			],
+			"bindings": [
+				1,
+				1
+			],
+			"references": [
+				1,
+				3
+			]
+		},
+		{
+			"scope": 2,
+			"scopes": [
+				10,
+				10
+			],
+			"bindings": [
+				1,
+				2
+			],
+			"references": [
+				3,
+				4
+			]
+		}
+	]
+}

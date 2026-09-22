@@ -12,7 +12,7 @@ use self::plan::{Absence, AttributeMode, Boundary, Gap, Js, Mode, Relation, Span
 use self::program::{
 	Base, Choice, Code as ExprCode, Construct, Expr, Form, Key, Path, Property, Reader, Repeat, Slot, Symbol, Token,
 };
-use crate::ast::{Ast, Host, List, NodeId, NodeKind, Run, Value};
+use crate::ast::{Ast, Host, HostBinding, HostParent, HostRegion, List, NodeId, NodeKind, Run, Value};
 use crate::error::{Code, SyntaxError};
 use crate::interner::StrId;
 use crate::lexer::unicode::{is_id_continue, is_id_start};
@@ -101,11 +101,18 @@ struct Record {
 	rule: usize,
 	ty: StrId,
 	slots: usize,
+	parent: Option<usize>,
+	regions: usize,
 	event: Datum,
 	owner: Option<usize>,
 	start: u32,
 	node: Option<NodeId>,
 }
+
+const RESOLVING: Run = Run {
+	start: u32::MAX,
+	len: 0,
+};
 
 #[derive(Clone, Copy, Debug)]
 struct Element {
@@ -204,6 +211,9 @@ pub(crate) struct Spare {
 	failures: Vec<Rejection>,
 	node_records: Vec<usize>,
 	ids: Vec<u32>,
+	region_slots: Vec<Option<Run>>,
+	targets: Vec<HostParent>,
+	cover_seen: crate::ast::NodeSet,
 	scan_strings: crate::interner::Interner,
 	scan_stops: Vec<(u32, u32, bool)>,
 	scan_templates: Vec<u32>,
@@ -252,6 +262,8 @@ pub(crate) fn parse_document<E: Extension>(
 	spare.saved.clear();
 	spare.failures.clear();
 	spare.node_records.clear();
+	spare.region_slots.clear();
+	spare.targets.clear();
 	let mut w = Walker::<E> {
 		src: cut,
 		full: src.len() as u32,
@@ -270,7 +282,9 @@ pub(crate) fn parse_document<E: Extension>(
 			return fail(w.at, w.at, Code::UnexpectedToken, None);
 		}
 		w.ast().nodes[node.index() as usize].end = w.full;
-		let _ = regions;
+		if regions {
+			w.regions()?;
+		}
 		Ok(node)
 	});
 
@@ -1147,7 +1161,10 @@ impl<'a, E: Extension> Walker<'a, E> {
 			.map(|e| e.record);
 		let ty_id = ty.unwrap_or(schema.ty);
 		let start = self.at;
+		let parent = self.active.last().copied();
 		self.records.push(Record {
+			parent,
+			regions: 0,
 			failure: None,
 			body_end: None,
 			children_end: None,
@@ -1271,7 +1288,10 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let start = self.at;
 		let slots = self.slots.len();
 		let owner = self.elements.last().map(|e| e.record);
+		let parent = self.active.last().copied();
 		self.records.push(Record {
+			parent,
+			regions: 0,
 			failure: None,
 			body_end: None,
 			children_end: None,
@@ -2567,7 +2587,10 @@ impl<'a, E: Extension> Walker<'a, E> {
 		self.spare
 			.slots
 			.resize(slots + self.plan.program.rules[rule].slots, Datum::Missing);
+		let parent = self.active.last().copied();
 		self.records.push(Record {
+			parent,
+			regions: 0,
 			failure: None,
 			body_end: None,
 			children_end: None,
@@ -2936,6 +2959,322 @@ impl<'a, E: Extension> Walker<'a, E> {
 			scope: None,
 		});
 		ast.add(NodeKind::Host(index), start, end)
+	}
+	fn roots(&self, value: &Datum, roots: &mut Vec<NodeId>) {
+		if let Datum::Node(id) = value {
+			roots.push(*id);
+		} else {
+			for i in 0..self.count(value) {
+				self.roots(&self.item(value, i), roots);
+			}
+		}
+	}
+	fn unique_nodes(&mut self, nodes: &mut Vec<NodeId>) {
+		if nodes.len() < 2 {
+			return;
+		}
+		if nodes.len() <= 8 {
+			let mut i = 1;
+			while i < nodes.len() {
+				if nodes[..i].contains(&nodes[i]) {
+					nodes.remove(i);
+				} else {
+					i += 1;
+				}
+			}
+			return;
+		}
+		self.cover_seen.clear();
+		nodes.retain(|id| {
+			let fresh = !self.cover_seen.contains(*id);
+			self.cover_seen.insert(*id);
+			fresh
+		});
+	}
+	fn cover(&mut self, code: &ExprCode, record: usize, roots: &mut Vec<NodeId>) -> Result<()> {
+		match &self.plan.program.exprs[code.index()] {
+			Expr::Concat(items) => {
+				for item in &self.plan.program.args[items.indices()] {
+					self.cover(item, record, roots)?;
+				}
+			}
+			Expr::TypeFilter { list, strings, negate } => {
+				let items = self.eval(list, record)?;
+				if let Datum::Nodes(nodes) = items {
+					let strings = &self.plan.program.sets[strings.indices()];
+					for i in 0..nodes.len {
+						let Some(id) = self.tree().nth(nodes, i) else {
+							continue;
+						};
+						if self.type_in(id, strings) != *negate {
+							roots.push(id);
+						}
+					}
+				} else {
+					self.eval_list(code, record, &mut |this, value| {
+						this.roots(&value, roots);
+						Ok(true)
+					})?;
+				}
+			}
+			Expr::Filter { list, predicate } => {
+				let items = self.eval(list, record)?;
+				if let Datum::Nodes(nodes) = items {
+					for i in 0..nodes.len {
+						let Some(id) = self.tree().nth(nodes, i) else {
+							continue;
+						};
+						self.bindings.push(Datum::Node(id));
+						let yes = self.test(predicate, record);
+						self.bindings.pop();
+						if yes? {
+							roots.push(id);
+						}
+					}
+				} else {
+					self.eval_list(code, record, &mut |this, value| {
+						this.roots(&value, roots);
+						Ok(true)
+					})?;
+				}
+			}
+			Expr::FlatMap { list, body } => {
+				self.eval_list(list, record, &mut |this, value| {
+					this.bindings.push(value);
+					let result = this.cover(body, record, roots);
+					this.bindings.pop();
+					result.map(|()| true)
+				})?;
+			}
+			Expr::Choose { condition, yes, no } => {
+				let condition = self.test(condition, record)?;
+				self.cover(if condition { yes } else { no }, record, roots)?;
+			}
+			Expr::Construct(Construct::Array(items)) => {
+				for item in &self.plan.program.args[items.indices()] {
+					self.cover(item, record, roots)?;
+				}
+			}
+			_ => {
+				let value = self.eval(code, record)?;
+				self.roots(&value, roots);
+			}
+		}
+		Ok(())
+	}
+	fn region_target(&mut self, value: Datum) -> Result<HostParent> {
+		match value {
+			Datum::Null => Ok(HostParent::Root),
+			Datum::Incoming(record) => Ok(self.records[record].node.map_or(HostParent::Root, HostParent::Incoming)),
+			Datum::Region(record, region) => {
+				let targets = self.region(record as usize, region as usize)?;
+				if targets.len != 1 {
+					return fail(self.at, self.at, Code::Expected, Some("one parent region"));
+				}
+				Ok(self.targets[targets.start as usize])
+			}
+			_ => fail(self.at, self.at, Code::Expected, Some("a region")),
+		}
+	}
+	fn region(&mut self, record: usize, index: usize) -> Result<Run> {
+		let slot = self.records[record].regions + index;
+		if let Some(targets) = self.region_slots[slot] {
+			if targets.start == RESOLVING.start {
+				return fail(self.at, self.at, Code::Expected, Some("acyclic regions"));
+			}
+			return Ok(targets);
+		}
+		self.region_slots[slot] = Some(RESOLVING);
+		let region = &self.plan.program.rules[self.records[record].rule].regions[index];
+		let guard = if region.when_item {
+			None
+		} else {
+			region.when.as_ref().map(|w| self.test(w, record)).transpose()?
+		};
+		let items = if guard == Some(false) {
+			None
+		} else {
+			region.each.as_ref().map(|e| self.eval(e, record)).transpose()?
+		};
+		let count = items.as_ref().map_or(1, |v| self.count(v));
+		let start = self.targets.len();
+		if count != 1 {
+			self.targets.resize(start + count, HostParent::Root);
+		}
+		for i in 0..count {
+			if let Some(items) = &items {
+				let item = self.item(items, i);
+				self.bindings.push(item);
+			}
+			let parent = match &self.plan.program.exprs[region.parent.index()] {
+				Expr::Get {
+					base: Base::Incoming,
+					path,
+				} if path.len == 0 => Datum::Incoming(record),
+				_ => self.eval(&region.parent, record)?,
+			};
+			let parent = self.region_target(parent)?;
+			let covered = match guard {
+				Some(v) => v,
+				None => region
+					.when
+					.as_ref()
+					.map(|e| self.test(e, record))
+					.transpose()?
+					.unwrap_or(true),
+			};
+			let target = if covered {
+				let mut roots = self.take_nodes();
+				if let Some(slots) = &region.slots {
+					let base = self.records[record].slots;
+					for i in slots {
+						self.roots(&self.slots[base + *i as usize], &mut roots);
+					}
+				} else {
+					self.cover(&region.covers, record, &mut roots)?;
+				}
+				self.unique_nodes(&mut roots);
+				let owner = self.records[record].node.unwrap();
+				let node = roots
+					.iter()
+					.find(|id| match self.tree().node(**id).kind {
+						NodeKind::Program { .. } => true,
+						NodeKind::Host(i) => !self.tree().hosts[i as usize].span,
+						_ => false,
+					})
+					.copied();
+				let id = self.tree().host_regions.len() as u32;
+				self.ast().host_regions.push(HostRegion {
+					parent,
+					kind: region.kind,
+					owner,
+					node,
+				});
+				self.ast().host_region_owners.push(owner, id);
+				for root in &roots {
+					self.ast().host_coverage.push(*root, id);
+				}
+				roots.clear();
+				self.nodes.push(roots);
+				HostParent::Region(id)
+			} else {
+				parent
+			};
+			if count == 1 {
+				self.targets.push(target);
+			} else {
+				self.targets[start + i] = target;
+			}
+			if items.is_some() {
+				self.bindings.pop();
+			}
+		}
+		let run = Run {
+			start: start as u32,
+			len: count as u32,
+		};
+		self.region_slots[slot] = Some(run);
+		Ok(run)
+	}
+	fn binding_leaves(&mut self, node: NodeId, binding: HostBinding) {
+		match self.tree().node(node).kind {
+			NodeKind::Identifier { .. } => self.ast().host_bindings.insert(node, binding),
+			NodeKind::ArrayPattern { elements } | NodeKind::ObjectPattern { properties: elements } => {
+				for i in 0..elements.len {
+					if let Some(node) = self.tree().nth(elements, i) {
+						self.binding_leaves(node, binding);
+					}
+				}
+			}
+			NodeKind::Property { value, .. } => self.binding_leaves(value, binding),
+			NodeKind::AssignmentPattern { left, .. } => self.binding_leaves(left, binding),
+			NodeKind::RestElement { argument } => self.binding_leaves(argument, binding),
+			_ => {}
+		}
+	}
+	fn regions(&mut self) -> Result<()> {
+		let count = self.tree().nodes.len();
+		self.node_records.resize(count, usize::MAX);
+		{
+			let ast = self.ast.as_mut().unwrap();
+			ast.host_coverage.reserve(count);
+			ast.host_region_owners.reserve(count);
+			ast.host_occurrences.reserve(count);
+			ast.host_bindings.reserve(count);
+			ast.host_hidden.reserve(count);
+		}
+		let plan = self.plan;
+		let Spare {
+			records,
+			node_records,
+			region_slots,
+			..
+		} = &mut *self.spare;
+		for (i, record) in records.iter_mut().enumerate() {
+			if let Some(node) = record.node {
+				node_records[node.index() as usize] = i;
+			}
+			record.regions = region_slots.len();
+			let count = plan.program.rules[record.rule].regions.len();
+			if count != 0 {
+				region_slots.resize(record.regions + count, None);
+			}
+		}
+		self.ast().host_plan = true;
+		for record in 0..self.records.len() {
+			let Some(node) = self.records[record].node else {
+				continue;
+			};
+			let rec = self.records[record];
+			let rule = &self.plan.program.rules[rec.rule];
+			if rule.slots > rule.fields.len() {
+				let mut hidden = self.take_nodes();
+				for i in rule.fields.len()..rule.slots {
+					self.roots(&self.slots[rec.slots + i], &mut hidden);
+				}
+				self.unique_nodes(&mut hidden);
+				hidden.retain(|id| !matches!(self.tree().node(*id).kind, NodeKind::Host(_)));
+				for child in &hidden {
+					self.ast().host_hidden.push(node, *child);
+				}
+				hidden.clear();
+				self.nodes.push(hidden);
+			}
+			if let Some(parent) = rec.parent.and_then(|r| self.records[r].node) {
+				self.ast().host_occurrences.insert(node, parent);
+			}
+			for region in 0..rule.regions.len() {
+				if !rule.regions[region].when.is_some_and(
+					|code| matches!(self.plan.program.exprs[code.index()],Expr::Constant(value) if !value.yes()),
+				) {
+					self.region(record, region)?;
+				}
+			}
+		}
+		for record in 0..self.records.len() {
+			if self.records[record].node.is_none() {
+				continue;
+			}
+			for declaration in &self.plan.program.rules[self.records[record].rule].declares {
+				let target = self.eval(&declaration.into, record)?;
+				let target = self.region_target(target)?;
+				let mut roots = self.take_nodes();
+				self.cover(&declaration.patterns, record, &mut roots)?;
+				self.unique_nodes(&mut roots);
+				for pattern in &roots {
+					self.binding_leaves(
+						*pattern,
+						HostBinding {
+							target,
+							kind: declaration.kind,
+						},
+					);
+				}
+				roots.clear();
+				self.nodes.push(roots);
+			}
+		}
+		Ok(())
 	}
 }
 

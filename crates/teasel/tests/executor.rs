@@ -95,84 +95,6 @@ fn repeat_uses_fresh_slots() {
 }
 
 #[test]
-fn supplied_svelte_forms() {
-	let plan = Plan::read(include_str!("hosts/svelte/plan.json")).unwrap();
-	for source in [
-		"{#if x}a{:else if y}b{:else}c{/if}",
-		"{#each xs as {x}, i (i)}{x}{:else}empty{/each}",
-		"{#await p then value}{value}{:catch error}{error}{/await}",
-		"{@const x = 1}",
-		"<script>let x=1</script><style>p {color:red}</style>",
-	] {
-		assert!(
-			executor::parse(source, &plan, Options::default()).1.is_ok(),
-			"{source}: {:?}",
-			executor::parse(source, &plan, Options::default()).1
-		);
-	}
-	for source in [
-		"{#each xs as{a}}{/each}",
-		"{#await p then{a}}{/await}",
-		"{#if x}{:else}{:else if y}{/if}",
-		"<div class:foo-bar/>",
-	] {
-		assert!(
-			executor::parse(source, &plan, Options::default()).1.is_err(),
-			"{source}"
-		);
-	}
-}
-
-#[test]
-fn native_values_preserve_node_handles() {
-	let plan = document(
-		r#"{"type":"Root","fields":{"expression":"null","nodeType":"null","name":"null"},"form":{"op":"seq","items":[
-        {"op":"read","reader":{"kind":"token","text":"x","word":true,"gap":"none"}},
-        {"op":"read","reader":{"kind":"javascript","entry":"expression"},"into":"expression"},
-        {"op":"read","reader":{"kind":"token","text":";","word":false,"gap":"none"}},
-        {"op":"emit","into":"nodeType","value":{"op":"get","base":"record","path":["expression","type"]}},
-        {"op":"emit","into":"name","value":{"op":"get","base":"record","path":["expression","right","name"]}}
-    ]}}"#,
-	);
-	let (ast, root) = executor::parse("x a+b;", &plan, Options::default());
-	let Some(Value::Nodes(children)) = field(&ast, root.unwrap(), "children") else {
-		panic!()
-	};
-	let node = ast.nth(children, 0).unwrap();
-	let Some(Value::Str(name)) = field(&ast, node, "name") else {
-		panic!()
-	};
-	assert_eq!(ast.str(name), "b");
-	let Some(Value::Str(ty)) = field(&ast, node, "nodeType") else {
-		panic!()
-	};
-	assert_eq!(ast.str(ty), "BinaryExpression");
-}
-
-#[test]
-fn constructed_native_nodes_keep_native_traversal() {
-	let plan = document(
-		r#"{"type":"Root","fields":{"value":"null"},"form":{"op":"emit","into":"value","value":{"op":"construct","shape":"record","type":"js.BinaryExpression","span":{"op":"constant","value":null},"fields":{
-        "operator":{"op":"constant","value":"+"},
-        "left":{"op":"construct","shape":"record","type":"js.Identifier","span":{"op":"constant","value":null},"fields":{"name":{"op":"constant","value":"outside"}}},
-        "right":{"op":"construct","shape":"record","type":"js.Literal","span":{"op":"constant","value":null},"fields":{"value":{"op":"constant","value":2}}}
-    }}}}"#,
-	);
-	let (mut ast, root) = executor::parse("", &plan, Options::default());
-	let root = root.unwrap();
-	let Some(Value::Node(value)) = field(&ast, root, "value") else {
-		panic!()
-	};
-	let NodeKind::BinaryExpression { right, .. } = ast.node(value).kind else {
-		panic!()
-	};
-	assert!(matches!(ast.node(right).kind, NodeKind::NumberLiteral {value} if ast.numbers[value as usize] == 2.0));
-	let roots = ast.add_list_from([Some(root)].into_iter());
-	teasel::scopes::analyze(&mut ast, teasel::Entry::Program, roots);
-	assert_eq!(ast.scopes.as_ref().unwrap().references.len(), 1);
-}
-
-#[test]
 fn choice_rolls_back_slots_nodes_and_comments() {
 	let plan = document(
 		r#"{"type":"Root","fields":{"failed":"omit","value":"null"},"form":{"op":"choice","alternatives":[
@@ -217,4 +139,176 @@ fn a_committed_choice_is_not_reopened() {
     ]}}"#,
 	);
 	assert!(executor::parse("xyz", &plan, Options::default()).1.is_err());
+}
+
+#[test]
+fn supplied_svelte_forms() {
+	let plan = Plan::read(include_str!("hosts/svelte/plan.json")).unwrap();
+	for source in [
+		"{#if x}a{:else if y}b{:else}c{/if}",
+		"{#each xs as {x}, i (i)}{x}{:else}empty{/each}",
+		"{#await p then value}{value}{:catch error}{error}{/await}",
+		"{@const x = 1}",
+		"<script>let x=1</script><style>p {color:red}</style>",
+	] {
+		assert!(
+			executor::parse(source, &plan, Options::default()).1.is_ok(),
+			"{source}: {:?}",
+			executor::parse(source, &plan, Options::default()).1
+		);
+	}
+	for source in [
+		"{#each xs as{a}}{/each}",
+		"{#await p then{a}}{/await}",
+		"{#if x}{:else}{:else if y}{/if}",
+		"<div class:foo-bar/>",
+	] {
+		assert!(
+			executor::parse(source, &plan, Options::default()).1.is_err(),
+			"{source}"
+		);
+	}
+}
+
+fn references(plan: &Plan, source: &str, name: &str) -> Vec<(u32, bool)> {
+	let (mut ast, root) = executor::parse(source, plan, Options::default());
+	let root = root.unwrap_or_else(|error| panic!("{source}: {error:?}"));
+	let roots = ast.add_list_from([Some(root)].into_iter());
+	teasel::scopes::analyze(&mut ast, teasel::Entry::Program, roots);
+	let mut refs = ast
+		.scopes
+		.as_ref()
+		.unwrap()
+		.references
+		.iter()
+		.filter(|r| matches!(ast.node(r.node).kind,NodeKind::Identifier{name:id} if ast.str(id)==name))
+		.map(|r| (ast.node(r.node).start, r.binding.is_some()))
+		.collect::<Vec<_>>();
+	refs.sort();
+	refs
+}
+
+#[test]
+fn component_inputs_and_named_children_have_separate_regions() {
+	let plan = Plan::read(include_str!("hosts/svelte/plan.json")).unwrap();
+	let source = "<Comp let:x p={x}>{x}<p slot=\"named\">{x}</p><p slot=\"other\">{x}</p><p>{x}</p></Comp>";
+	assert_eq!(
+		references(&plan, source, "x")
+			.iter()
+			.map(|(_, bound)| *bound)
+			.collect::<Vec<_>>(),
+		[false, true, false, false, true]
+	);
+	let (ast, root) = executor::parse(source, &plan, Options::default());
+	root.unwrap();
+	assert!(
+		ast.host_regions
+			.iter()
+			.filter(|r| r.kind == teasel::host::plan::RegionKind::Fragment)
+			.count() >= 5
+	);
+}
+
+#[test]
+fn vue_loop_sources_and_slot_inputs_stay_outside() {
+	let plan = Plan::read(include_str!("hosts/vue/plan.json")).unwrap();
+	assert_eq!(
+		references(&plan, "<div v-for=\"item in item\" :p=\"item\">{{item}}</div>", "item")
+			.iter()
+			.map(|(_, b)| *b)
+			.collect::<Vec<_>>(),
+		[false, true, true]
+	);
+	assert_eq!(
+		references(&plan, "<Comp v-slot=\"{x}\" :p=\"x\">{{x}}</Comp>", "x")
+			.iter()
+			.map(|(_, b)| *b)
+			.collect::<Vec<_>>(),
+		[false, true]
+	);
+}
+
+#[test]
+fn pattern_defaults_use_coverage_and_aliases_are_visited_once() {
+	let plan = Plan::read(include_str!("hosts/svelte/plan.json")).unwrap();
+	let source = "{#each xs as {x = outside}}{x}{outside}{/each}";
+	assert_eq!(references(&plan, source, "x").len(), 1);
+	assert_eq!(
+		references(&plan, source, "outside")
+			.iter()
+			.map(|(_, b)| *b)
+			.collect::<Vec<_>>(),
+		[false, false]
+	);
+}
+
+#[test]
+fn native_values_preserve_node_handles() {
+	let plan = document(
+		r#"{"type":"Root","fields":{"expression":"null","nodeType":"null","name":"null"},"form":{"op":"seq","items":[
+        {"op":"read","reader":{"kind":"token","text":"x","word":true,"gap":"none"}},
+        {"op":"read","reader":{"kind":"javascript","entry":"expression"},"into":"expression"},
+        {"op":"read","reader":{"kind":"token","text":";","word":false,"gap":"none"}},
+        {"op":"emit","into":"nodeType","value":{"op":"get","base":"record","path":["expression","type"]}},
+        {"op":"emit","into":"name","value":{"op":"get","base":"record","path":["expression","right","name"]}}
+    ]}}"#,
+	);
+	let (ast, root) = executor::parse("x a+b;", &plan, Options::default());
+	let Some(Value::Nodes(children)) = field(&ast, root.unwrap(), "children") else {
+		panic!()
+	};
+	let node = ast.nth(children, 0).unwrap();
+	let Some(Value::Str(name)) = field(&ast, node, "name") else {
+		panic!()
+	};
+	assert_eq!(ast.str(name), "b");
+	let Some(Value::Str(ty)) = field(&ast, node, "nodeType") else {
+		panic!()
+	};
+	assert_eq!(ast.str(ty), "BinaryExpression");
+}
+
+#[test]
+fn unrelated_region_overlap_is_rejected() {
+	let plan = document(
+		r#"{"type":"Root","fields":{"value":"null"},"form":{"op":"seq","items":[
+        {"op":"read","reader":{"kind":"token","text":"x","word":true,"gap":"none"}},
+        {"op":"read","reader":{"kind":"javascript","entry":"expression"},"into":"value"}
+    ]},"regions":[
+        {"id":"one","kind":"block","parent":{"op":"get","base":"incoming","path":[]},"covers":{"op":"get","base":"record","path":["value"]}},
+        {"id":"two","kind":"block","parent":{"op":"get","base":"incoming","path":[]},"covers":{"op":"get","base":"record","path":["value"]}}
+    ]}"#,
+	);
+	let (mut ast, root) = executor::parse("x value", &plan, Options::default());
+	let roots = ast.add_list(&[Some(root.unwrap())]);
+	teasel::scopes::analyze(&mut ast, teasel::Entry::Program, roots);
+	assert_eq!(ast.scopes.as_ref().unwrap().errors.len(), 1);
+	assert!(
+		ast.scopes.as_ref().unwrap().errors[0]
+			.message
+			.contains("overlapping regions")
+	);
+}
+
+#[test]
+fn constructed_native_nodes_keep_native_traversal() {
+	let plan = document(
+		r#"{"type":"Root","fields":{"value":"null"},"form":{"op":"emit","into":"value","value":{"op":"construct","shape":"record","type":"js.BinaryExpression","span":{"op":"constant","value":null},"fields":{
+        "operator":{"op":"constant","value":"+"},
+        "left":{"op":"construct","shape":"record","type":"js.Identifier","span":{"op":"constant","value":null},"fields":{"name":{"op":"constant","value":"outside"}}},
+        "right":{"op":"construct","shape":"record","type":"js.Literal","span":{"op":"constant","value":null},"fields":{"value":{"op":"constant","value":2}}}
+    }}}}"#,
+	);
+	let (mut ast, root) = executor::parse("", &plan, Options::default());
+	let root = root.unwrap();
+	let Some(Value::Node(value)) = field(&ast, root, "value") else {
+		panic!()
+	};
+	let NodeKind::BinaryExpression { right, .. } = ast.node(value).kind else {
+		panic!()
+	};
+	assert!(matches!(ast.node(right).kind, NodeKind::NumberLiteral {value} if ast.numbers[value as usize] == 2.0));
+	let roots = ast.add_list_from([Some(root)].into_iter());
+	teasel::scopes::analyze(&mut ast, teasel::Entry::Program, roots);
+	assert_eq!(ast.scopes.as_ref().unwrap().references.len(), 1);
 }

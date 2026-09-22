@@ -23,7 +23,25 @@ struct RuleTree {
 	pub scopes: Vec<Option<usize>>,
 	pub form: FormTree,
 	pub strict: FormTree,
+	pub regions: Vec<Region>,
+	pub declares: Vec<Declare>,
 	pub span: Option<SpanPolicy>,
+}
+
+#[derive(Clone, Debug)]
+struct Region {
+	pub parent: ExprTree,
+	pub kind: plan::RegionKind,
+	pub covers: ExprTree,
+	pub when: Option<ExprTree>,
+	pub each: Option<ExprTree>,
+}
+
+#[derive(Clone, Debug)]
+struct Declare {
+	pub patterns: ExprTree,
+	pub into: ExprTree,
+	pub kind: plan::DeclareKind,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -118,6 +136,30 @@ enum ExprTree {
 		index: Box<ExprTree>,
 	},
 	Construct(ConstructTree),
+}
+
+fn refers_binding(tree: &ExprTree) -> bool {
+	use ExprTree as T;
+	match tree {
+		T::Slot(_) | T::Iteration(_) | T::Event(_) | T::RecordType | T::NameEq(_) | T::Constant(_) => false,
+		T::Filter { list, predicate } => refers_binding(list) || refers_binding(predicate),
+		T::Exists(inner) | T::Length(inner) => refers_binding(inner),
+		T::Concat(items) => items.iter().any(refers_binding),
+		T::Get { base, .. } => match base {
+			BaseTree::Binding(_) => true,
+			BaseTree::Value(inner) => refers_binding(inner),
+			_ => false,
+		},
+		T::Compare { left, right, .. } => refers_binding(left) || right.as_deref().is_some_and(refers_binding),
+		T::Member { needle, .. } => refers_binding(needle),
+		T::Choose { condition, yes, no } => refers_binding(condition) || refers_binding(yes) || refers_binding(no),
+		T::FlatMap { list, body } => refers_binding(list) || refers_binding(body),
+		T::At { list, index } => refers_binding(list) || refers_binding(index),
+		T::Construct(ConstructTree::Array(items)) => items.iter().any(refers_binding),
+		T::Construct(ConstructTree::Record { fields, span, .. }) => {
+			fields.iter().any(|(_, v)| refers_binding(v)) || refers_binding(span)
+		}
+	}
 }
 
 #[derive(Clone, Debug)]
@@ -215,6 +257,36 @@ impl Builder {
 			let ty = c.program.name(&rule.node_type);
 			let fields = rule.fields.iter().map(|(k, v)| (c.program.name(k), *v)).collect();
 			let form = c.form(&rule.form);
+			let regions = rule
+				.regions
+				.iter()
+				.map(|r| {
+					let each = r.each.as_ref().map(|e| c.expr(&e.list));
+					if let Some(e) = &r.each {
+						c.bindings.push(&e.binding);
+					}
+					let region = Region {
+						each,
+						parent: c.expr(&r.parent),
+						kind: r.kind,
+						covers: c.expr(&r.covers),
+						when: r.when.as_ref().map(|w| c.expr(w)),
+					};
+					if r.each.is_some() {
+						c.bindings.pop();
+					}
+					region
+				})
+				.collect();
+			let declares = rule
+				.declares
+				.iter()
+				.map(|d| Declare {
+					patterns: c.expr(&d.patterns),
+					into: c.expr(&d.into),
+					kind: d.kind,
+				})
+				.collect();
 			p.rules.push(RuleTree {
 				source: p.rules.len(),
 				ty,
@@ -224,6 +296,8 @@ impl Builder {
 				scopes: Vec::new(),
 				strict: form.clone(),
 				form,
+				regions,
+				declares,
 				span: rule.span,
 			});
 		}
@@ -762,6 +836,20 @@ impl RuleTree {
 	fn specialize(&mut self) {
 		self.form.specialize(self.ty);
 		self.strict = self.form.clone().flatten();
+		for region in &mut self.regions {
+			region.parent.specialize(self.ty);
+			region.covers.specialize(self.ty);
+			if let Some(expr) = &mut region.when {
+				expr.specialize(self.ty);
+			}
+			if let Some(expr) = &mut region.each {
+				expr.specialize(self.ty);
+			}
+		}
+		for declaration in &mut self.declares {
+			declaration.patterns.specialize(self.ty);
+			declaration.into.specialize(self.ty);
+		}
 	}
 }
 impl FormTree {
@@ -1195,8 +1283,26 @@ pub(super) struct Rule {
 	pub scopes: Vec<Option<usize>>,
 	pub form: Form,
 	pub strict: Form,
+	pub regions: Vec<RegionCode>,
+	pub declares: Vec<DeclareCode>,
 	pub span: Option<SpanPolicy>,
 	pub leaf: Option<Box<[(u32, Key)]>>,
+}
+#[derive(Clone, Debug)]
+pub(super) struct RegionCode {
+	pub parent: Code,
+	pub kind: plan::RegionKind,
+	pub covers: Code,
+	pub slots: Option<Box<[u32]>>,
+	pub when: Option<Code>,
+	pub when_item: bool,
+	pub each: Option<Code>,
+}
+#[derive(Clone, Debug)]
+pub(super) struct DeclareCode {
+	pub patterns: Code,
+	pub into: Code,
+	pub kind: plan::DeclareKind,
 }
 #[derive(Clone, Debug)]
 pub(super) enum Form {
@@ -1361,7 +1467,41 @@ impl Program {
 			let form = p.form(rule.form);
 			let mut strict = p.form(rule.strict);
 			strict.fuse(&p);
-			let leaf = if rule.slots == rule.fields.len() && !p.strings[rule.ty.index() as usize].starts_with("js.") {
+			let regions: Vec<RegionCode> = rule
+				.regions
+				.into_iter()
+				.map(|r| {
+					let when_item = r.when.as_ref().is_some_and(refers_binding);
+					let covers = p.expr(r.covers);
+					let slots = p.plain_slots(covers).map(Vec::into_boxed_slice);
+					RegionCode {
+						parent: p.expr(r.parent),
+						kind: r.kind,
+						covers,
+						slots,
+						when_item,
+						when: r
+							.when
+							.map(|v| p.expr(v))
+							.filter(|code| !matches!(p.exprs[code.index()], Expr::Constant(Datum::Bool(true)))),
+						each: r.each.map(|v| p.expr(v)),
+					}
+				})
+				.collect();
+			let declares: Vec<DeclareCode> = rule
+				.declares
+				.into_iter()
+				.map(|d| DeclareCode {
+					patterns: p.expr(d.patterns),
+					into: p.expr(d.into),
+					kind: d.kind,
+				})
+				.collect();
+			let leaf = if regions.is_empty()
+				&& declares.is_empty()
+				&& rule.slots == rule.fields.len()
+				&& !p.strings[rule.ty.index() as usize].starts_with("js.")
+			{
 				let items: &[Form] = match &form {
 					Form::Seq(items) => items,
 					Form::Emit { .. } => std::slice::from_ref(&form),
@@ -1393,6 +1533,8 @@ impl Program {
 				scopes: rule.scopes,
 				form,
 				strict,
+				regions,
+				declares,
 				span: rule.span,
 				leaf,
 			});
@@ -1444,6 +1586,18 @@ impl Program {
 		p.properties = p.strings.iter().map(|name| Key::read(name)).collect();
 		p.names = p.strings.iter().map(|s| Box::leak(s.clone()) as &'static str).collect();
 		p
+	}
+	#[cold]
+	fn plain_slots(&self, code: Code) -> Option<Vec<u32>> {
+		match &self.exprs[code.index()] {
+			Expr::Slot(i) => Some(vec![*i]),
+			Expr::Construct(Construct::Array(items)) | Expr::Concat(items) => self.args[items.indices()]
+				.iter()
+				.map(|code| self.plain_slots(*code))
+				.collect::<Option<Vec<Vec<u32>>>>()
+				.map(|lists| lists.concat()),
+			_ => None,
+		}
 	}
 	#[cold]
 	fn args(&mut self, items: Vec<ExprTree>) -> Range {
