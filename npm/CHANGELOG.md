@@ -1,5 +1,19 @@
 # @teasel/parser
 
+## 0.0.14
+
+### Patch Changes
+
+- [#148](https://github.com/Nic-Polumeyv/teasel/pull/148) [`bcd2fef`](https://github.com/Nic-Polumeyv/teasel/commit/bcd2fefc82645bcd20ebe2d404641797795dc74d) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - Input nested too deeply is a `nesting_depth` error instead of a crash.
+
+- [#147](https://github.com/Nic-Polumeyv/teasel/pull/147) [`e4135bc`](https://github.com/Nic-Polumeyv/teasel/commit/e4135bca94771e41565b5aaf56da048b1025c439) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - Fixes `"use strict"` detection before an operator on the next line, and slow parsing of many lone surrogate escapes.
+
+- [#149](https://github.com/Nic-Polumeyv/teasel/pull/149) [`e5a2cd5`](https://github.com/Nic-Polumeyv/teasel/commit/e5a2cd5acfe4d9cf14216d620eda299eca49ffd4) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - Under `errorRecovery`, a skipped statement no longer leaves its declarations behind.
+
+- [#153](https://github.com/Nic-Polumeyv/teasel/pull/153) [`04402ae`](https://github.com/Nic-Polumeyv/teasel/commit/04402ae47d59223bf0c9904336e78fd18359b9b4) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - Under `errorRecovery`, a skipped statement no longer leaves its exports behind.
+
+- [#155](https://github.com/Nic-Polumeyv/teasel/pull/155) [`bc2c6da`](https://github.com/Nic-Polumeyv/teasel/commit/bc2c6da3940a46226262da9991e57390440519ee) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - `"use strict"` after a hashbang or an HTML-like comment makes the code strict.
+
 ## 0.0.13
 
 ### Patch Changes
