@@ -333,9 +333,9 @@ struct BodyGroup {
 	inside: Vec<NodeId>,
 }
 
-/// What reading an attribute gives: its node, its type, and the kind and name it must not
-/// repeat on the element, when it has such a name.
-type Attribute = (NodeId, &'static str, Option<(&'static str, StrId)>);
+/// What reading an attribute gives: its node, and the kind and name it must not repeat on the
+/// element, when it has such a name.
+type Attribute = (NodeId, Option<(&'static str, StrId)>);
 
 /// An attribute name read as a directive: its rule, name, argument and modifiers.
 struct Directive<'a> {
@@ -1050,7 +1050,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			} else {
 				self.attribute()?
 			};
-			let Some((node, kind, key)) = attribute else { break };
+			let Some((node, key)) = attribute else { break };
 			if let Some((kind, key)) = key {
 				let text = self.tree().strings.get(key);
 				if self.verbatim == verbatim_before && Some(text) == self.grammar.verbatim {
@@ -1076,7 +1076,6 @@ impl<'a, E: Extension> Walker<'a, E> {
 					seen.push((kind, key));
 				}
 			}
-			let _ = kind;
 			attributes.push(node);
 			self.space();
 		}
@@ -1485,7 +1484,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			None,
 			true,
 		);
-		Ok(Some((node, "Attribute", Some(("Attribute", name_id)))))
+		Ok(Some((node, Some(("Attribute", name_id)))))
 	}
 
 	fn comment_between_attributes(&mut self) -> bool {
@@ -1590,8 +1589,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		}))
 	}
 
-	/// One attribute: a plain one, a shorthand, a spread, an attachment or a directive; the node,
-	/// its type, and the key it must not repeat.
+	/// One attribute: a plain one, a shorthand, a spread, an attachment or a directive.
 	fn attribute(&mut self) -> Result<Option<Attribute>> {
 		let expressions = self.grammar.attribute_expressions;
 		if expressions {
@@ -1617,7 +1615,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 						Some(&format!("A {} tag among attributes", rule.name)),
 					);
 				}
-				return Ok(Some((node, rule.ty, None)));
+				return Ok(Some((node, None)));
 			}
 			if self.eat("...") {
 				let Some(ty) = self.grammar.spread else {
@@ -1634,7 +1632,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 					None,
 					true,
 				);
-				return Ok(Some((node, ty, None)));
+				return Ok(Some((node, None)));
 			}
 			if self.recovering()
 				&& let Some(sigils) = &self.grammar.sigils
@@ -1667,7 +1665,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 				None,
 				true,
 			);
-			return Ok(Some((node, "Attribute", Some(("Attribute", name_id)))));
+			return Ok(Some((node, Some(("Attribute", name_id)))));
 		}
 		let name = self.tag_name(true)?;
 		if name.is_empty() || (self.recovering() && name.starts_with('<')) {
@@ -1703,7 +1701,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 				None,
 				true,
 			);
-			return Ok(Some((node, "Attribute", Some(("Attribute", name_id)))));
+			return Ok(Some((node, Some(("Attribute", name_id)))));
 		};
 		let syntax = self.grammar.directive_syntax.as_ref().unwrap();
 		let rule = directive.rule;
@@ -1871,7 +1869,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 				_ => None,
 			}
 		};
-		Ok(Some((node, rule.ty, key)))
+		Ok(Some((node, key)))
 	}
 
 	/// An attribute value as the grammar reads one: text with expressions, or text.

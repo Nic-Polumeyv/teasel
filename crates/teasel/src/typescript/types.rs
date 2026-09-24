@@ -1078,19 +1078,11 @@ impl Parser<'_, TypeScript> {
 			let count = self.ast.list(parameters).len();
 			match kind {
 				Some(SignatureKind::Get) if count > 0 => {
-					return self.error_with(
-						self.tok.start,
-						Code::GetterParams,
-						"A 'get' accesor must not have any formal parameters.",
-					);
+					return self.error(self.tok.start, Code::GetterParams);
 				}
 				Some(SignatureKind::Set) => {
 					if count != 1 {
-						return self.error_with(
-							self.tok.start,
-							Code::SetterParams,
-							"A 'get' accesor must not have any formal parameters.",
-						);
+						return self.error(self.tok.start, Code::SetterParams);
 					}
 					if let Some(type_annotation) = type_annotation {
 						return self.error(self.start_of(type_annotation), Code::SetterReturnType);
