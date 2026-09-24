@@ -416,6 +416,11 @@ pub(crate) fn parse_at<E: Extension>(
 	stop: &str,
 	reused: Option<Box<Ast<E::Data>>>,
 ) -> (Box<Ast<E::Data>>, Result<(List, u32)>) {
+	if entry == Entry::StyleSheet {
+		let (mut ast, root) = crate::host::parse_stylesheet::<E>(src, options, reused);
+		let parsed = root.map(|root| (ast.add_list(&[Some(root)]), src.len() as u32));
+		return (ast, parsed);
+	}
 	let end = end.unwrap_or(src.len() as u32);
 	let src = &src[..end as usize];
 	let budget = if entry == Entry::Program {

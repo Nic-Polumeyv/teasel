@@ -285,6 +285,15 @@ impl<'a, E: Extension> Walker<'a, E> {
 		))
 	}
 
+	/// The selectors between the `(` just read and its `)`.
+	fn css_args(&mut self, comments: &mut Vec<CssComment>) -> Result<NodeId> {
+		self.css_nest()?;
+		let args = self.selector_list(comments, true)?;
+		self.expect(")")?;
+		self.nesting -= 1;
+		Ok(args)
+	}
+
 	fn selector_list(&mut self, comments: &mut Vec<CssComment>, inside_pseudo: bool) -> Result<NodeId> {
 		let mut children = Vec::new();
 		self.css_space(comments, true)?;
@@ -364,8 +373,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 				let name = self.intern(&name);
 				let name = ("name", Value::Str(name));
 				let node = if self.eat("(") {
-					let args = self.selector_list(comments, true)?;
-					self.expect(")")?;
+					let args = self.css_args(comments)?;
 					self.host(
 						"PseudoElementSelector",
 						start,
@@ -382,8 +390,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 				let name = self.css_identifier()?;
 				let name = self.intern(&name);
 				let args = if self.eat("(") {
-					let args = self.selector_list(comments, true)?;
-					self.expect(")")?;
+					let args = self.css_args(comments)?;
 					Value::Node(args)
 				} else {
 					Value::Null
@@ -561,8 +568,18 @@ impl<'a, E: Extension> Walker<'a, E> {
 		Ok(None)
 	}
 
+	/// One more block or argument list open, `MAX_DEPTH` at most.
+	fn css_nest(&mut self) -> Result<()> {
+		if self.nesting >= crate::parser::MAX_DEPTH {
+			return fail(self.at, self.at + 1, Code::NestingDepth, None);
+		}
+		self.nesting += 1;
+		Ok(())
+	}
+
 	fn css_block(&mut self, comments: &mut Vec<CssComment>) -> Result<NodeId> {
 		let start = self.at;
+		self.css_nest()?;
 		self.expect("{")?;
 		let mut children = Vec::new();
 		while self.at < self.len() {
@@ -573,6 +590,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			children.push(self.block_item(comments)?);
 		}
 		self.expect("}")?;
+		self.nesting -= 1;
 		let children = self.list(&children);
 		Ok(self.host(
 			"Block",

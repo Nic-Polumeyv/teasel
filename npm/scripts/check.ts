@@ -18,7 +18,7 @@ function walk(dir: string) {
 		if (name === 'node_modules' || name.startsWith('.')) continue;
 		const path = join(dir, name);
 		if (statSync(path).isDirectory()) walk(path);
-		else if (/\.(js|mjs|ts|svelte)$/.test(name) || (host !== undefined && name.endsWith(host.extension))) files.push(path);
+		else if (/\.(js|mjs|ts|svelte|css)$/.test(name) || (host !== undefined && name.endsWith(host.extension))) files.push(path);
 	}
 }
 const args = process.argv.slice(2);
@@ -97,6 +97,12 @@ const script_re = /<script((?:\s+(?:"[^"]*"|'[^']*'|[^>"'])*)?)>([\s\S]*?)<\/scr
 const brace_re = /\{/g;
 for (const file of files) {
 	const text = readFileSync(file, 'utf8');
+	if (file.endsWith('.css')) {
+		const options: Options = { locations: true, comments: true };
+		json(file, text, options, 'stylesheet', 0);
+		report(`${file} wasm`, differ(once(wasm, text, options, 'stylesheet', 0), once(native, text, options, 'stylesheet', 0)));
+		continue;
+	}
 	if (host !== undefined && file.endsWith(host.extension)) {
 		const typescript = /lang=["']?ts/.test(text);
 		document(file, text, false, { sourceType: 'module', locations: true, comments: true, scopes: true }, '+comments+scopes');
@@ -131,7 +137,7 @@ for (const file of files) {
 		for (const match of text.matchAll(brace_re)) {
 			const at = match.index + 1;
 			for (const entry of Object.keys(ENTRY) as Entry[]) {
-				if (entry === 'program') continue;
+				if (entry === 'program' || entry === 'stylesheet') continue;
 				json(`${file}@${at} ${entry}`, text, options, entry, at);
 				report(`${file}@${at} ${entry} wasm`, differ(outcome(wasm, twin, text, entry, at), outcome(native, held, text, entry, at)));
 			}

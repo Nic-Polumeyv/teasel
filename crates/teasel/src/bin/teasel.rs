@@ -197,6 +197,10 @@ fn main() -> ExitCode {
 		options,
 	};
 	if let Some(host) = host {
+		if entry == Entry::StyleSheet {
+			eprintln!("--stylesheet reads the file on its own, without --host");
+			return ExitCode::FAILURE;
+		}
 		let grammar = match std::fs::read_to_string(&host) {
 			Ok(s) => s,
 			Err(e) => {

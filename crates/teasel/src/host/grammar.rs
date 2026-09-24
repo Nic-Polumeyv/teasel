@@ -705,7 +705,7 @@ impl Reader<'_> {
 
 impl Grammar {
 	/// A grammar with nothing in it, behind a stylesheet read on its own.
-	pub fn empty() -> Grammar {
+	pub(crate) fn empty() -> Grammar {
 		Grammar {
 			name: "",
 			document: DocumentRule {

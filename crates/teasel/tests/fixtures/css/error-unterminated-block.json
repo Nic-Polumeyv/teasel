@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "unexpected_eof",
+		"message": "Unexpected end of input",
+		"pos": 4,
+		"end": 4,
+		"loc": {
+			"line": 2,
+			"column": 0
+		}
+	}
+}

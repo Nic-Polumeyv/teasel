@@ -2,12 +2,25 @@
 	"node": {
 		"type": "StyleSheet",
 		"start": 0,
-		"end": 0,
+		"end": 16,
 		"scope": 0,
 		"children": [],
-		"comments": []
+		"comments": [
+			{
+				"type": "CSSComment",
+				"start": 0,
+				"end": 7,
+				"value": " a "
+			},
+			{
+				"type": "CSSComment",
+				"start": 8,
+				"end": 15,
+				"value": " b "
+			}
+		]
 	},
-	"end": 0,
+	"end": 16,
 	"comments": [],
 	"scopes": [
 		{

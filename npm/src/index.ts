@@ -266,7 +266,7 @@ export class Plan<T = HostNode> {
 	 * the assertion, so `xs as T[] as item` ends after the type.
 	 */
 	until(...tokens: string[]): Plan<T> {
-		if (this.#whole) throw new TypeError('a document plan reads the whole source');
+		if (this.#whole) throw new TypeError('the plan reads the whole source');
 		if (tokens.length === 0 || !tokens.every((token) => typeof token === 'string' && token !== '' && !/\s/.test(token))) {
 			throw new TypeError('until takes words and punctuators');
 		}
@@ -306,7 +306,7 @@ export class Source {
 		if (typeof at === 'number') offset = at;
 		else if (Array.isArray(at) && at.length === 2 && typeof at[0] === 'number' && typeof at[1] === 'number') [offset, end] = at;
 		else throw new TypeError('at is an offset or [start, end]');
-		if (whole && (offset !== 0 || end !== undefined)) throw new TypeError('a document plan reads the whole source');
+		if (whole && (offset !== 0 || end !== undefined)) throw new TypeError('the plan reads the whole source');
 		const answer = this.#held.parse(entry, offset, end, stop, held);
 		if (typeof answer !== 'string') {
 			try {

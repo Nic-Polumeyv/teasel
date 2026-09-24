@@ -3,6 +3,7 @@
 		"type": "StyleSheet",
 		"start": 0,
 		"end": 182,
+		"scope": 0,
 		"children": [
 			{
 				"type": "Rule",
@@ -231,5 +232,15 @@
 		]
 	},
 	"end": 182,
-	"comments": []
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "fragment",
+			"parent": null,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [],
+	"references": [],
+	"roots": []
 }
