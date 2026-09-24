@@ -1081,7 +1081,7 @@ impl Parser<'_, TypeScript> {
 					return self.error_with(
 						self.tok.start,
 						Code::GetterParams,
-						"A 'get' accesor must not have any formal parameters.",
+						"A 'get' accessor must not have any formal parameters.",
 					);
 				}
 				Some(SignatureKind::Set) => {
@@ -1089,7 +1089,7 @@ impl Parser<'_, TypeScript> {
 						return self.error_with(
 							self.tok.start,
 							Code::SetterParams,
-							"A 'get' accesor must not have any formal parameters.",
+							"A 'set' accessor must have exactly one parameter.",
 						);
 					}
 					if let Some(type_annotation) = type_annotation {

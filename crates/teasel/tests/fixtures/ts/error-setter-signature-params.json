@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "setter_params",
+		"message": "A 'set' accessor must have exactly one parameter.",
+		"pos": 26,
+		"end": 27,
+		"loc": {
+			"line": 1,
+			"column": 26
+		}
+	}
+}

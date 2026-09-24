@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "getter_params",
+		"message": "A 'get' accessor must not have any formal parameters.",
+		"pos": 23,
+		"end": 24,
+		"loc": {
+			"line": 1,
+			"column": 23
+		}
+	}
+}
