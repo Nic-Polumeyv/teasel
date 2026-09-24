@@ -333,8 +333,8 @@ struct BodyGroup {
 	inside: Vec<NodeId>,
 }
 
-/// What reading an attribute gives: its node, its type, and the kind and name it must not
-/// repeat on the element, when it has such a name.
+/// What reading an attribute gives: its node, and the kind and name it must not repeat on the
+/// element, when it has such a name.
 type Attribute = (NodeId, Option<(&'static str, StrId)>);
 
 /// An attribute name read as a directive: its rule, name, argument and modifiers.
@@ -1589,8 +1589,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		}))
 	}
 
-	/// One attribute: a plain one, a shorthand, a spread, an attachment or a directive; the node
-	/// and the key it must not repeat.
+	/// One attribute: a plain one, a shorthand, a spread, an attachment or a directive.
 	fn attribute(&mut self) -> Result<Option<Attribute>> {
 		let expressions = self.grammar.attribute_expressions;
 		if expressions {

@@ -2,4 +2,4 @@
 "@teasel/parser": patch
 ---
 
-a TypeScript setter signature with the wrong parameter count reports the setter message, not the getter's
+TypeScript getter and setter signatures report their own parameter-count message

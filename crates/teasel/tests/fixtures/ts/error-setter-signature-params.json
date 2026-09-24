@@ -1,7 +1,7 @@
 {
 	"error": {
 		"code": "setter_params",
-		"message": "A 'set' accessor must have exactly one parameter.",
+		"message": "setter should have exactly one param",
 		"pos": 26,
 		"end": 27,
 		"loc": {
