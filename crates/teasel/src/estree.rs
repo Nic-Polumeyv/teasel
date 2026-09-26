@@ -361,6 +361,12 @@ impl Positions {
 		if self.gaps.is_empty() && !self.lines {
 			return;
 		}
+		if !self.gaps.is_empty() {
+			spans.reserve(2 * nodes.len());
+		}
+		if self.lines {
+			locs.reserve(4 * nodes.len());
+		}
 		let mut cursor = Cursor::default();
 		for node in nodes {
 			let (start, gap) = self.offset_from(cursor.gap, node.start);

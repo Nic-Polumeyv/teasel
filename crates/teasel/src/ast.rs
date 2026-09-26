@@ -414,11 +414,13 @@ impl<X: Reuse> Ast<X> {
 }
 
 impl<X: Default> Ast<X> {
-	/// Room for the tree of `bytes` of source: about a node per eight bytes, a list per thirty.
+	/// Room for the tree of `bytes` of source: about a node per eight bytes, a list per thirty, a
+	/// number per 128.
 	pub(crate) fn sized(bytes: usize) -> Self {
 		Ast {
 			nodes: Handed::with_capacity(bytes / 8 + 16, 16),
 			lists: Handed::with_capacity(bytes / 30 + 16, 16),
+			numbers: Handed::with_capacity(bytes / 128 + 16, 16),
 			strings: Interner::sized(bytes),
 			..Ast::default()
 		}

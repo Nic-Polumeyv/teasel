@@ -391,6 +391,10 @@ thread_local! {
 	static GRAMMARS: std::cell::RefCell<Vec<(String, Rc<Grammar>)>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
+pub fn reset_session() {
+	SESSION.with(|session| *session.borrow_mut() = Session::default());
+}
+
 /// The words of the last answer read in place on this thread, where they were written.
 pub fn words<R>(f: impl FnOnce(&mut Words) -> R) -> R {
 	SESSION.with(|session| f(&mut session.borrow_mut().words))
@@ -410,27 +414,6 @@ pub fn tree(f: &mut dyn FnMut(&'static str, Option<&mut dyn Raw>)) -> Option<boo
 		session.pool.js.as_deref_mut()?.views(&mut Views(f));
 		session.pool.names[0].views(&mut Views(f));
 		Some(false)
-	})
-}
-
-/// Every tree's buffers continue on fresh allocations: the views a front end held are its own.
-pub fn renew_trees() {
-	SESSION.with(|session| {
-		let session = &mut *session.borrow_mut();
-		let mut renew = |_, buffer: Option<&mut dyn Raw>| {
-			if let Some(buffer) = buffer {
-				// every tree is cleared before its next parse
-				unsafe { buffer.renew() };
-			}
-		};
-		#[cfg(feature = "typescript")]
-		if let Some(ast) = session.pool.ts.as_deref_mut() {
-			ast.views(&mut Views(&mut renew));
-		}
-		if let Some(ast) = session.pool.js.as_deref_mut() {
-			ast.views(&mut Views(&mut renew));
-		}
-		session.pool.names.iter_mut().for_each(Names::renew);
 	})
 }
 
@@ -514,15 +497,6 @@ impl Names {
 	fn views(&mut self, out: &mut Views<'_>) {
 		out.push("names", &mut self.text);
 		out.push("name_starts", &mut self.starts);
-	}
-
-	/// Starts over on fresh buffers: a front end that held the views keeps what it saw.
-	fn renew(&mut self) {
-		self.ids.clear();
-		self.places.clear();
-		self.shapes.clear();
-		self.text.renew(0);
-		self.starts.renew(0);
 	}
 }
 
@@ -882,6 +856,7 @@ fn prepare<X: Emit + Reuse>(ast: &mut Ast<X>, source: &str, positions: &Position
 	ast.units.clear();
 	let (text, starts, _) = ast.strings.buffers();
 	if !text.is_ascii() {
+		ast.units.reserve(starts.len());
 		let mut units = 0u32;
 		let mut from = 0usize;
 		for &start in starts.iter() {
