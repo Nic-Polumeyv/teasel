@@ -287,11 +287,17 @@ unsafe extern "C" fn layout(env: Env, _: CallbackInfo) -> Value {
 fn guard(env: Env, f: impl FnOnce() -> Result<Value> + std::panic::UnwindSafe) -> Value {
 	let result = match std::panic::catch_unwind(f) {
 		Ok(result) => result,
-		Err(panic) => Err(panic
-			.downcast_ref::<&str>()
-			.map(|s| s.to_string())
-			.or_else(|| panic.downcast_ref::<String>().cloned())
-			.unwrap_or_else(|| "panic".into())),
+		Err(panic) => {
+			let message = panic
+				.downcast_ref::<&str>()
+				.map(|s| s.to_string())
+				.or_else(|| panic.downcast_ref::<String>().cloned())
+				.unwrap_or_else(|| "panic".into());
+			// a payload's drop can panic again, and a second panic aborts
+			std::mem::forget(panic);
+			teasel::json::reset_session();
+			Err(message)
+		}
 	};
 	match result {
 		Ok(value) => value,

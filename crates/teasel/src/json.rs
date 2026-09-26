@@ -391,6 +391,10 @@ thread_local! {
 	static GRAMMARS: std::cell::RefCell<Vec<(String, Rc<Grammar>)>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
+pub fn reset_session() {
+	SESSION.with(|session| *session.borrow_mut() = Session::default());
+}
+
 /// The words of the last answer read in place on this thread, where they were written.
 pub fn words<R>(f: impl FnOnce(&mut Words) -> R) -> R {
 	SESSION.with(|session| f(&mut session.borrow_mut().words))

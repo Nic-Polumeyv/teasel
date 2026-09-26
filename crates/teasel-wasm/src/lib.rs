@@ -23,31 +23,13 @@ pub extern "C" fn alloc(len: u32) -> *mut u8 {
 	ptr
 }
 
-// a panic must not trap the instance: it becomes an error, the next call still answers
-fn guard(on_panic: u32, f: impl FnOnce() -> u32) -> u32 {
-	match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
-		Ok(answer) => answer,
-		Err(panic) => {
-			let message = panic
-				.downcast_ref::<&str>()
-				.map(|s| s.to_string())
-				.or_else(|| panic.downcast_ref::<String>().cloned())
-				.unwrap_or_else(|| "panic".into());
-			text(teasel::json::error_json(&message, 0));
-			on_panic
-		}
-	}
-}
-
 /// # Safety
 /// `ptr` is `capacity` bytes from `alloc`, `len` of them the source; they are taken over here.
 /// `flags` is the option word.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn source_new(ptr: *mut u8, len: u32, capacity: u32, flags: u32) -> u32 {
 	let source = unsafe { Vec::from_raw_parts(ptr, len as usize, capacity as usize) };
-	guard(0, || {
-		Box::into_raw(Box::new(Prepared::from_bytes(source, Request::from_flags(flags)))) as u32
-	})
+	Box::into_raw(Box::new(Prepared::from_bytes(source, Request::from_flags(flags)))) as u32
 }
 
 /// # Safety
@@ -56,13 +38,13 @@ pub unsafe extern "C" fn source_new(ptr: *mut u8, len: u32, capacity: u32, flags
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn plan_new(ptr: *mut u8, len: u32, capacity: u32) -> u32 {
 	let grammar = unsafe { Vec::from_raw_parts(ptr, len as usize, capacity as usize) };
-	guard(0, || match teasel::json::grammar(&String::from_utf8_lossy(&grammar)) {
+	match teasel::json::grammar(&String::from_utf8_lossy(&grammar)) {
 		Ok(grammar) => Box::into_raw(Box::new(grammar)) as u32,
 		Err(message) => {
 			text(teasel::json::error_json(&message, 0));
 			0
 		}
-	})
+	}
 }
 
 #[unsafe(no_mangle)]
@@ -108,15 +90,13 @@ pub unsafe extern "C" fn source_parse(
 	let stop = unsafe { Vec::from_raw_parts(ptr, len as usize, capacity as usize) };
 	let end = (has_end == 1).then_some(end);
 	let grammar = (plan != 0).then(|| unsafe { &**(plan as *const Rc<Grammar>) });
-	guard(1, || {
-		answer(source(handle).in_place(
-			Entry::from_index(entry),
-			offset,
-			end,
-			&String::from_utf8_lossy(&stop),
-			grammar,
-		))
-	})
+	answer(source(handle).in_place(
+		Entry::from_index(entry),
+		offset,
+		end,
+		&String::from_utf8_lossy(&stop),
+		grammar,
+	))
 }
 
 #[unsafe(no_mangle)]

@@ -16,7 +16,6 @@ unreachable_pub = "warn"
 lto = "fat"
 codegen-units = 1
 strip = true
-panic = "abort"
 
 [profile.profiling]
 inherits = "release"
