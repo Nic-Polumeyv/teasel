@@ -13,6 +13,7 @@ use crate::interner::FastMap;
 use crate::interner::StrId;
 use crate::lexer::token::{Keyword, TokenKind};
 use crate::parser::expression::starts_expression;
+use crate::parser::scope::{SCOPE_ARROW, function_flags};
 use crate::parser::statement::{ClassKind, StatementPlace};
 use crate::parser::{
 	Context, Decorators, DestructuringErrors, Entry, Errors, Extension, ForInit, FunctionKind, Options, Parser, Result,
@@ -41,6 +42,9 @@ pub struct TypeScript {
 	state: State,
 	types: Names,
 	export_only: Names,
+	// outside State so a rewind keeps them: nested `<A>(<A>(…))` and ternary arrows were read twice per level
+	not_arrow: crate::interner::FastSet<(u32, bool)>,
+	colon_after_body: FastMap<u32, bool>,
 }
 
 impl std::ops::Deref for TypeScript {
@@ -75,6 +79,8 @@ pub struct State {
 	elements: Vec<ElementFrame>,
 	/// Parsed ahead of `=>`, taken by the arrow's frame.
 	arrow_return_type: Option<NodeId>,
+	needs_colon_at: Option<u32>,
+	body_needs_colon: bool,
 	paren_lists: Vec<bool>,
 	parameter_modifiers: Vec<ParameterHead>,
 	definite: Vec<bool>,
@@ -288,10 +294,6 @@ impl Parser<'_, TypeScript> {
 				| TokenKind::BigInt
 				| TokenKind::Keyword(_)
 		)
-	}
-
-	fn is_arrow(&self, id: NodeId) -> bool {
-		matches!(self.kind(id), NodeKind::ArrowFunctionExpression { .. })
 	}
 
 	/// A line break, or the end of the input, after the current token.
@@ -551,7 +553,7 @@ impl Parser<'_, TypeScript> {
 				},
 				start,
 			))
-		});
+		})?;
 		match assertion {
 			Some(node) => {
 				let Some(TsKind::TypeAssertion {
@@ -583,10 +585,17 @@ impl Parser<'_, TypeScript> {
 			&& self.start_of(base) == self.potential_arrow_at
 	}
 
-	fn try_generic_async_arrow(&mut self, start: u32, for_init: ForInit) -> Result<Option<NodeId>> {
+	// the head alone is tried: trying the whole expression read it again as an assertion or a call, 2x per level
+	fn try_generic_arrow(&mut self, start: u32, is_async: bool, for_init: ForInit) -> Result<Option<NodeId>> {
+		let at = self.tok.start;
+		let spine = self.ext.needs_colon_at == Some(start);
+		if self.ext.not_arrow.contains(&(at, spine)) {
+			return Ok(None);
+		}
+		let before = spine.then(|| self.snapshot());
 		let old = self.ext.maybe_in_arrow_parameters;
 		self.ext.maybe_in_arrow_parameters = true;
-		let head = self.attempt(|p| {
+		let mut head = self.attempt(|p| {
 			let type_parameters = p.parse_type_parameters(TypeParameterModifiers::Const)?;
 			p.expect(TokenKind::ParenL)?;
 			let params = p.parse_binding_list(TokenKind::ParenR, false, true, false)?;
@@ -595,17 +604,61 @@ impl Parser<'_, TypeScript> {
 			} else {
 				None
 			};
+			if p.can_insert_semicolon() {
+				return p.unexpected();
+			}
 			p.expect(TokenKind::Arrow)?;
 			Ok((type_parameters, params, return_type))
-		});
+		})?;
 		self.ext.maybe_in_arrow_parameters = old;
+		if let (Some((_, _, Some(_))), Some(before)) = (&head, before)
+			&& !self.colon_after_body(is_async)?
+		{
+			self.restore(before);
+			head = None;
+		}
 		let Some((type_parameters, params, return_type)) = head else {
+			self.ext.not_arrow.insert((at, spine));
 			return Ok(None);
 		};
 		self.ext.arrow_return_type = return_type;
-		let arrow = self.parse_arrow_expression(start, params, true, for_init)?;
+		let arrow = self.parse_arrow_expression(start, params, is_async, for_init)?;
 		self.extras_mut(arrow).type_parameters = Some(type_parameters);
 		Ok(Some(arrow))
+	}
+
+	fn return_type_fits(&mut self, start: u32, is_async: bool) -> Result<bool> {
+		if !self.is(TokenKind::Colon) || self.ext.needs_colon_at != Some(start) {
+			return Ok(true);
+		}
+		match self.lookahead(|p| {
+			Ok(p.take_arrow_return_type()? && p.eat(TokenKind::Arrow)? && p.colon_after_body(is_async)?)
+		}) {
+			Err(error) if error.code.is_limit() => Err(error),
+			answer => Ok(answer.unwrap_or(false)),
+		}
+	}
+
+	fn colon_after_body(&mut self, is_async: bool) -> Result<bool> {
+		let at = self.tok.start;
+		if let Some(&colon) = self.ext.colon_after_body.get(&at) {
+			return Ok(colon);
+		}
+		let colon = match self.lookahead(|p| {
+			let old = p.take_yield_await();
+			p.enter_scope(function_flags(is_async, false) | SCOPE_ARROW);
+			p.ext.body_needs_colon = true;
+			TypeScript::function_start(p, FunctionKind::Arrow)?;
+			let params = p.list_from(Vec::new());
+			p.parse_function_body(at, None, params, true, false, ForInit::No)?;
+			p.restore_yield_await(old);
+			Ok(p.is(TokenKind::Colon))
+		}) {
+			Err(error) if error.code.is_limit() => return Err(error),
+			answer => answer.unwrap_or(false),
+		};
+		self.ext.colon_after_body.insert(at, colon);
+		Ok(colon)
 	}
 
 	/// Type arguments after an expression: a call, a tagged template, or an instantiation
@@ -622,7 +675,7 @@ impl Parser<'_, TypeScript> {
 	) -> Result<Option<NodeId>> {
 		if !no_calls
 			&& self.at_possible_async_arrow(base)
-			&& let Some(arrow) = self.try_generic_async_arrow(start, for_init)?
+			&& let Some(arrow) = self.try_generic_arrow(start, true, for_init)?
 		{
 			return Ok(Some(arrow));
 		}
@@ -725,7 +778,7 @@ impl Parser<'_, TypeScript> {
 				return p.unexpected();
 			}
 			Ok(return_type)
-		});
+		})?;
 		self.ext.arrow_return_type = return_type;
 		Ok(return_type.is_some())
 	}
@@ -1214,7 +1267,12 @@ impl Extension for TypeScript {
 		};
 		p.ext.maybe_in_arrow_parameters = false;
 		match kind {
-			FunctionKind::Arrow => frame.return_type = p.ext.arrow_return_type.take(),
+			FunctionKind::Arrow => {
+				frame.return_type = p.ext.arrow_return_type.take();
+				if std::mem::take(&mut p.ext.body_needs_colon) && !p.is(TokenKind::BraceL) {
+					p.ext.needs_colon_at = Some(p.tok.start);
+				}
+			}
 			_ => frame.type_parameters = p.try_parse_type_parameters(TypeParameterModifiers::Const)?,
 		}
 		if matches!(
@@ -1743,31 +1801,11 @@ impl Extension for TypeScript {
 
 	// Expressions
 
-	fn maybe_assign(p: &mut Parser<Self>, for_init: ForInit, errors: &mut Errors) -> Result<Option<NodeId>> {
+	fn maybe_assign(p: &mut Parser<Self>, for_init: ForInit, _: &mut Errors) -> Result<Option<NodeId>> {
 		if !p.starts_with_lt() {
 			return Ok(None);
 		}
-		let saved_errors = *errors;
-		let arrow = p.attempt(|p| {
-			let type_parameters = p.parse_type_parameters(TypeParameterModifiers::Const)?;
-			let expr = p.parse_maybe_assign(for_init, errors)?;
-			if !p.is_arrow(expr) {
-				return p.unexpected();
-			}
-			Ok((type_parameters, expr))
-		});
-		match arrow {
-			Some((type_parameters, expr)) => {
-				let start = p.start_of(type_parameters);
-				p.ast.node_mut(expr).start = start;
-				p.extras_mut(expr).type_parameters = Some(type_parameters);
-				Ok(Some(expr))
-			}
-			None => {
-				*errors = saved_errors;
-				Ok(None)
-			}
-		}
+		p.try_generic_arrow(p.tok.start, false, for_init)
 	}
 
 	fn paren_list_start(p: &mut Parser<Self>) {
@@ -1812,9 +1850,23 @@ impl Extension for TypeScript {
 			return Ok(None);
 		}
 		Ok(Some(
-			p.attempt(|p| p.parse_conditional(expr, start, for_init))
+			p.attempt(|p| p.parse_conditional(expr, start, for_init))?
 				.unwrap_or(expr),
 		))
+	}
+
+	fn arrow_start(p: &mut Parser<Self>, start: u32) {
+		p.ext.body_needs_colon = p.ext.needs_colon_at == Some(start);
+	}
+
+	fn conditional_branch(p: &mut Parser<Self>, start: u32, alternate: bool, for_init: ForInit) -> Result<NodeId> {
+		let old = p.ext.needs_colon_at;
+		if !alternate || old == Some(start) {
+			p.ext.needs_colon_at = Some(p.tok.start);
+		}
+		let branch = p.parse_maybe_assign(if alternate { for_init } else { ForInit::No }, &mut None);
+		p.ext.needs_colon_at = old;
+		branch
 	}
 
 	fn unary(p: &mut Parser<Self>, for_init: ForInit) -> Result<Option<NodeId>> {
@@ -1888,7 +1940,7 @@ impl Extension for TypeScript {
 				Some(node) => Ok((node, is_optional_call)),
 				None => p.unexpected(),
 			}
-		});
+		})?;
 		let Some((node, is_optional_call)) = subscript else {
 			return Ok(None);
 		};
@@ -1900,16 +1952,22 @@ impl Extension for TypeScript {
 		Ok(Some((node, is_optional_call)))
 	}
 
-	fn should_parse_arrow(p: &mut Parser<Self>, items: &[Option<NodeId>]) -> Result<bool> {
+	fn should_parse_arrow(p: &mut Parser<Self>, start: u32, items: &[Option<NodeId>]) -> Result<bool> {
 		let should = if p.is(TokenKind::Colon) {
 			items.iter().flatten().all(|item| p.is_assignable(*item, true))
 		} else {
 			!p.can_insert_semicolon()
 		};
+		if should && !p.return_type_fits(start, false)? {
+			return Ok(false);
+		}
 		Ok(should && p.take_arrow_return_type()? && p.is(TokenKind::Arrow))
 	}
 
-	fn should_parse_async_arrow(p: &mut Parser<Self>) -> Result<bool> {
+	fn should_parse_async_arrow(p: &mut Parser<Self>, start: u32) -> Result<bool> {
+		if !p.return_type_fits(start, true)? {
+			return Ok(false);
+		}
 		Ok(p.take_arrow_return_type()? && !p.can_insert_semicolon() && p.eat(TokenKind::Arrow)?)
 	}
 

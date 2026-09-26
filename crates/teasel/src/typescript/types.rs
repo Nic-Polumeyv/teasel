@@ -356,12 +356,12 @@ impl Parser<'_, TypeScript> {
 			return Ok(true);
 		}
 		if self.is(TokenKind::BraceL) {
-			return Ok(self.attempt(|p| p.parse_obj(true, &mut None)).is_some());
+			return Ok(self.attempt(|p| p.parse_obj(true, &mut None))?.is_some());
 		}
 		if self.is(TokenKind::BracketL) {
 			self.next()?;
 			return Ok(self
-				.attempt(|p| p.parse_binding_list(TokenKind::BracketR, true, true, false))
+				.attempt(|p| p.parse_binding_list(TokenKind::BracketR, true, true, false))?
 				.is_some());
 		}
 		Ok(false)
