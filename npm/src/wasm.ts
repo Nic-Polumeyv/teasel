@@ -28,7 +28,7 @@ const { module, instance } =
 		? await WebAssembly.instantiate(await (await import('node:fs/promises')).readFile(url), {})
 		: await WebAssembly.instantiateStreaming(fetch(url), {});
 let wasm = instance.exports as unknown as Exports;
-// a panic traps the instance for good: a fresh one takes over, and the sources held by the old one are gone
+// a panic traps the instance for good: a fresh one takes over, and sources and plans are made again in it from their text
 let generation = 0;
 
 function guarded<T>(f: () => T): T {
@@ -39,7 +39,7 @@ function guarded<T>(f: () => T): T {
 		if (!(error instanceof WebAssembly.RuntimeError || error instanceof RangeError)) throw error;
 		wasm = new WebAssembly.Instance(module, {}).exports as unknown as Exports;
 		generation++;
-		throw new Error('the engine panicked and started over; the sources it held are gone', { cause: error });
+		throw new Error('the engine panicked and started over', { cause: error });
 	}
 }
 
@@ -72,28 +72,46 @@ function layout() {
 	return layout_text;
 }
 
-// what the module holds by a handle, as long as the instance that gave it lives
 class Plan implements Held {
-	readonly handle: number;
-	readonly held = generation;
+	#grammar: string;
+	#handle = 0;
+	#held = -1;
 	constructor(grammar: string) {
-		this.handle = guarded(() => wasm.plan_new(...bytes(grammar)));
-		if (this.handle === 0) throw new Error(JSON.parse(text()).error.message);
+		this.#grammar = grammar;
+		this.handle();
+	}
+	handle() {
+		if (this.#held !== generation) {
+			const handle = guarded(() => wasm.plan_new(...bytes(this.#grammar)));
+			if (handle === 0) throw new Error(JSON.parse(text()).error.message);
+			this.#handle = handle;
+			this.#held = generation;
+		}
+		return this.#handle;
 	}
 	free() {
-		if (this.held === generation) wasm.plan_free(this.handle);
+		if (this.#held === generation) wasm.plan_free(this.#handle);
 	}
 }
 
 export const engine: Engine = {
 	create(source, flags) {
-		const handle = guarded(() => wasm.source_new(...bytes(source), flags));
-		const held = generation;
+		let handle = 0;
+		let held = -1;
+		const current = () => {
+			if (held !== generation) {
+				handle = guarded(() => wasm.source_new(...bytes(source), flags));
+				held = generation;
+			}
+			return handle;
+		};
+		current();
 		return {
 			// the words outlive the source: they sit in the answer buffer until the next parse
 			parse(entry, offset, end, stop, plan) {
-				if (held !== generation || (plan !== undefined && (plan as Plan).held !== generation)) throw new Error('the source was held by an engine that panicked and started over');
-				return answer(guarded(() => wasm.source_parse(handle, entry, offset, end ?? 0, end === undefined ? 0 : 1, ...bytes(stop), plan === undefined ? 0 : (plan as Plan).handle)));
+				const source = current();
+				const grammar = plan === undefined ? 0 : (plan as Plan).handle();
+				return answer(guarded(() => wasm.source_parse(source, entry, offset, end ?? 0, end === undefined ? 0 : 1, ...bytes(stop), grammar)));
 			},
 			free() {
 				if (held === generation) wasm.source_free(handle);
