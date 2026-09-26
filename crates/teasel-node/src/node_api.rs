@@ -1,17 +1,21 @@
-//! What the addon takes from Node-API, declared here. The host process provides the functions:
-//! resolved when the addon is loaded on Linux and macOS, looked up by name on Windows, where a
-//! library cannot leave an import open.
-
 use std::ffi::{c_char, c_void};
 
+/// `napi_env`: handle to the JS engine instance running the call; every `napi_*` call takes it
 pub(crate) type Env = *mut c_void;
+/// `napi_value`: handle to a value on the JS heap
 pub(crate) type Value = *mut c_void;
+/// `napi_callback_info`: handle to the call's arguments, read with `napi_get_cb_info`
 pub(crate) type CallbackInfo = *mut c_void;
+/// `napi_ref`: handle that keeps a JS value from being garbage collected
 pub(crate) type Ref = *mut c_void;
+/// `napi_status`
 pub(crate) type Status = i32;
+/// `napi_callback`
 pub(crate) type Callback = Option<unsafe extern "C" fn(Env, CallbackInfo) -> Value>;
+/// `napi_finalize`: runs when V8 frees an external
 pub(crate) type Finalize = Option<unsafe extern "C" fn(Env, *mut c_void, *mut c_void)>;
 
+// Node's enum numbers
 pub(crate) const OK: Status = 0;
 pub(crate) const UNDEFINED: i32 = 0;
 pub(crate) const UINT8_ARRAY: i32 = 1;
@@ -27,6 +31,7 @@ pub(crate) fn element_size(kind: i32) -> usize {
 	}
 }
 
+// a Windows DLL cannot leave an import unresolved, so there `load` looks each function up in node.exe
 macro_rules! api {
 	($(fn $name:ident($($arg:ident: $ty:ty),*) -> Status;)*) => {
 		#[cfg(not(windows))]
