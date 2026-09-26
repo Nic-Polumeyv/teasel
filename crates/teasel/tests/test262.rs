@@ -9,7 +9,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use teasel::json::{Request, parse};
+use teasel::json::{Request, flag, parse};
 use teasel::{Entry, Options, parse_at};
 
 /// Where the suite predates the language: `\8` and `\9` in sloppy strings (Annex B, ES2021),
@@ -95,11 +95,8 @@ fn pinned_answers() {
 	let mut lines = Vec::new();
 	for dir in ["pass", "pass-explicit"] {
 		for (path, source) in files(&root, dir) {
-			let mut request = Request::new(Entry::Program, 0);
+			let mut request = Request::from_flags(flag::COMMENTS | flag::SCOPES | flag::LOCATIONS);
 			request.options.module = is_module(&path);
-			for flag in ["comments", "scopes", "locations"] {
-				request.set(flag);
-			}
 			lines.push(format!("{path} {:016x}", hash(&parse(&source, &request, ""))));
 		}
 	}

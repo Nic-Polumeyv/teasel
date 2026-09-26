@@ -8,7 +8,7 @@ mod common;
 use std::fs;
 use std::path::Path;
 use teasel::Entry;
-use teasel::json::{Request, parse_document};
+use teasel::json::{Request, flag, parse_document};
 
 #[test]
 fn documents() {
@@ -26,18 +26,17 @@ fn documents() {
 		for file in sources(&dir) {
 			let stem = file.file_stem().unwrap().to_str().unwrap();
 			let source = fs::read_to_string(&file).unwrap();
-			let mut request = Request::new(Entry::Program, 0);
-			request.set("comments");
-			request.set("scopes");
-			for (word, flag) in [
-				("locations", "locations"),
-				("erase", "erase"),
-				("recover", "errorRecovery"),
+			let mut flags = flag::MODULE | flag::COMMENTS | flag::SCOPES;
+			for (word, bit) in [
+				("locations", flag::LOCATIONS),
+				("erase", flag::ERASE),
+				("recover", flag::ERROR_RECOVERY),
 			] {
 				if stem.contains(word) {
-					request.set(flag);
+					flags |= bit;
 				}
 			}
+			let request = Request::from_flags(flags);
 			let answer = common::pretty(&parse_document(&source, &grammar, &request));
 			if !common::pinned(&file.with_extension("json"), &answer) {
 				wrong.push(format!("{name}/{stem}"));
@@ -62,12 +61,8 @@ fn every_prefix_answers() {
 			let source = fs::read_to_string(&file).unwrap();
 			for (end, _) in source.char_indices().chain([(source.len(), ' ')]) {
 				for recover in [false, true] {
-					let mut request = Request::new(Entry::Program, 0);
-					request.set("comments");
-					request.set("scopes");
-					if recover {
-						request.set("errorRecovery");
-					}
+					let recovery = if recover { flag::ERROR_RECOVERY } else { 0 };
+					let request = Request::from_flags(flag::MODULE | flag::COMMENTS | flag::SCOPES | recovery);
 					parse_document(&source[..end], &grammar, &request);
 				}
 			}
@@ -83,11 +78,8 @@ fn unfinished_input() {
 	let svelte = fs::read_to_string(root.join("tests/hosts/svelte/host.grammar")).unwrap();
 	let vue = fs::read_to_string(root.join("tests/hosts/vue/host.grammar")).unwrap();
 	let parse = |source: &str, grammar: &str, recover: bool| {
-		let mut request = Request::new(Entry::Program, 0);
-		request.set("comments");
-		if recover {
-			request.set("errorRecovery");
-		}
+		let recovery = if recover { flag::ERROR_RECOVERY } else { 0 };
+		let request = Request::from_flags(flag::MODULE | flag::COMMENTS | recovery);
 		parse_document(source, grammar, &request)
 	};
 	assert!(parse("<a x=\"", &svelte, true).contains("\"type\":\"Root\""));
@@ -131,8 +123,14 @@ fn host_phases() {
 		documents.push((path.clone(), fs::read_to_string(path).unwrap()));
 	}
 	for (name, source) in &documents {
-		for flags in ["module", "module scopes comments locations"] {
-			let prepared = Prepared::borrowed(source, Request::from_names(flags));
+		for (flags, label) in [
+			(flag::MODULE, "module"),
+			(
+				flag::MODULE | flag::SCOPES | flag::COMMENTS | flag::LOCATIONS,
+				"module scopes comments locations",
+			),
+		] {
+			let prepared = Prepared::borrowed(source, Request::from_flags(flags));
 			let mut best = f64::MAX;
 			for _ in 0..300 {
 				let t = std::time::Instant::now();
@@ -141,7 +139,7 @@ fn host_phases() {
 					.unwrap();
 				best = best.min(t.elapsed().as_secs_f64() * 1e6);
 			}
-			eprintln!("{best:9.2} µs  {name} {flags}");
+			eprintln!("{best:9.2} µs  {name} {label}");
 		}
 	}
 }

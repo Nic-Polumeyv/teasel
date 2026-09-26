@@ -91,7 +91,8 @@ fn batch(grammar: Option<String>) -> io::Result<()> {
 				"scopes" => request.scopes = true,
 				"erase" => request.erase = true,
 				"parenthesized" => request.options.parenthesized = true,
-				"legacyDecorators" | "proposalDecorators" => request.set(switch),
+				"legacyDecorators" => request.options.decorators = Decorators::Legacy,
+				"proposalDecorators" => request.options.decorators = Decorators::Proposal,
 				"recover" => request.options.error_recovery = true,
 				_ if switch.starts_with("stop:") => {
 					if !stop.is_empty() {

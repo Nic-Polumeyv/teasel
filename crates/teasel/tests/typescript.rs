@@ -12,8 +12,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use teasel::Entry;
-use teasel::json::{Request, parse};
+use teasel::json::{Request, flag, parse};
 
 /// Grammar diagnostics (`TS1xxx`) only the checker can see, or where ECMAScript decides otherwise.
 const CHECKER: &[(&str, &str)] = &[
@@ -180,13 +179,14 @@ fn conformance() {
 		let excused = |c: &String| CHECKER.iter().any(|(code, _)| code == c);
 		let grammar_error = codes.iter().any(|c| c.starts_with('1') && c.len() == 4 && !excused(c));
 		let any_error = !codes.is_empty();
-		let mut request = Request::new(Entry::Program, 0);
-		request.set("typescript");
-		request.set(if legacy_decorators(&source) {
-			"legacyDecorators"
-		} else {
-			"proposalDecorators"
-		});
+		let mut request = Request::from_flags(
+			flag::TYPESCRIPT
+				| if legacy_decorators(&source) {
+					flag::LEGACY_DECORATORS
+				} else {
+					flag::PROPOSAL_DECORATORS
+				},
+		);
 		request.options.module = is_module(&source);
 		let answer = parse(&source, &request, "");
 		let failed = answer.starts_with("{\"error\"");

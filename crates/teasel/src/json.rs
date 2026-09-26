@@ -44,49 +44,37 @@ impl Request {
 		}
 	}
 
-	/// The same from one word of `flag` bits.
+	/// The same from one word of `flag` bits; the entry and offset come with each parse.
 	pub fn from_flags(flags: u32) -> Request {
-		let mut request = Request::default();
-		for &(_, name) in flag::NAMES.iter().filter(|&&(bit, _)| flags & bit != 0) {
-			request.set(name);
-		}
-		request
-	}
-
-	/// A source's request from its switches named, separated by spaces, as the package's options spell them, and
-	/// `module` for `sourceType: 'module'`; a script otherwise. The entry and offset come with
-	/// each parse.
-	pub fn from_names(names: &str) -> Request {
-		let mut request = Request::default();
-		for name in names.split_ascii_whitespace() {
-			request.set(name);
-		}
-		request
-	}
-
-	/// Turns on one switch by name; anything else is ignored.
-	pub fn set(&mut self, flag: &str) {
-		match flag {
-			"typescript" => self.typescript = true,
-			"comments" => self.comments = true,
-			"scopes" => self.scopes = true,
-			"locations" => self.locations = true,
-			"module" => self.options.module = true,
-			"parenthesized" => self.options.parenthesized = true,
-			"legacyDecorators" => self.options.decorators = Decorators::Legacy,
-			"proposalDecorators" => self.options.decorators = Decorators::Proposal,
-			"allowReturnOutsideFunction" => self.options.allow_return_outside_function = true,
-			"allowAwaitOutsideFunction" => self.options.allow_await_outside_function = true,
-			"allowSuperOutsideMethod" => self.options.allow_super_outside_method = true,
-			"allowUndeclaredExports" => self.options.allow_undeclared_exports = true,
-			"erase" => self.erase = true,
-			"errorRecovery" => self.options.error_recovery = true,
-			_ => {}
+		let on = |bit: u32| flags & bit != 0;
+		Request {
+			typescript: on(flag::TYPESCRIPT),
+			comments: on(flag::COMMENTS),
+			scopes: on(flag::SCOPES),
+			locations: on(flag::LOCATIONS),
+			erase: on(flag::ERASE),
+			options: Options {
+				module: on(flag::MODULE),
+				error_recovery: on(flag::ERROR_RECOVERY),
+				allow_return_outside_function: on(flag::ALLOW_RETURN_OUTSIDE_FUNCTION),
+				allow_await_outside_function: on(flag::ALLOW_AWAIT_OUTSIDE_FUNCTION),
+				allow_super_outside_method: on(flag::ALLOW_SUPER_OUTSIDE_METHOD),
+				allow_undeclared_exports: on(flag::ALLOW_UNDECLARED_EXPORTS),
+				parenthesized: on(flag::PARENTHESIZED),
+				decorators: if on(flag::PROPOSAL_DECORATORS) {
+					Decorators::Proposal
+				} else if on(flag::LEGACY_DECORATORS) {
+					Decorators::Legacy
+				} else {
+					Decorators::Any
+				},
+			},
+			..Request::default()
 		}
 	}
 }
 
-/// A source's switches as bits, one word across a binding; package/api.js spells the same numbers.
+/// A source's switches as bits, one word across a binding; npm/src/lib/options.ts spells the same numbers.
 pub mod flag {
 	pub const MODULE: u32 = 1;
 	pub const TYPESCRIPT: u32 = 1 << 1;
@@ -102,23 +90,6 @@ pub mod flag {
 	pub const ALLOW_SUPER_OUTSIDE_METHOD: u32 = 1 << 11;
 	pub const ALLOW_UNDECLARED_EXPORTS: u32 = 1 << 12;
 	pub const ERROR_RECOVERY: u32 = 1 << 13;
-	/// Each bit by the name `Request::set` takes.
-	pub const NAMES: [(u32, &str); 14] = [
-		(MODULE, "module"),
-		(TYPESCRIPT, "typescript"),
-		(ERASE, "erase"),
-		(COMMENTS, "comments"),
-		(SCOPES, "scopes"),
-		(LOCATIONS, "locations"),
-		(PARENTHESIZED, "parenthesized"),
-		(LEGACY_DECORATORS, "legacyDecorators"),
-		(PROPOSAL_DECORATORS, "proposalDecorators"),
-		(ALLOW_RETURN_OUTSIDE_FUNCTION, "allowReturnOutsideFunction"),
-		(ALLOW_AWAIT_OUTSIDE_FUNCTION, "allowAwaitOutsideFunction"),
-		(ALLOW_SUPER_OUTSIDE_METHOD, "allowSuperOutsideMethod"),
-		(ALLOW_UNDECLARED_EXPORTS, "allowUndeclaredExports"),
-		(ERROR_RECOVERY, "errorRecovery"),
-	];
 }
 
 /// The error answer for a request the parser never ran: a host's offsets or switches.

@@ -162,11 +162,8 @@ fn expression_ends_where_it_ends() {
 
 #[test]
 fn the_session_writes_the_same_words_again() {
-	use crate::json::{Prepared, Request};
-	let mut request = Request::new(Entry::Program, 0);
-	for flag in ["comments", "locations", "scopes"] {
-		request.set(flag);
-	}
+	use crate::json::{Prepared, Request, flag};
+	let request = Request::from_flags(flag::MODULE | flag::COMMENTS | flag::LOCATIONS | flag::SCOPES);
 	let source = "let x = /* a */ 1; function f(y) { return x + y; } // b";
 	let prepared = Prepared::borrowed(source, request);
 	let words = || crate::json::words(|words| words.to_vec());
@@ -713,15 +710,13 @@ fn phases() {
 	let end = source.len() as u32;
 	let lines = Positions::new(&source, true);
 	{
-		let mut request = crate::json::Request::new(Entry::Program, 0);
-		request.set("comments");
+		use crate::json::{Request, flag};
+		let request = Request::from_flags(flag::MODULE | flag::COMMENTS);
 		let prepared = crate::json::Prepared::borrowed(&source, request);
 		best("whole request: positions, parse, comments, encode, finish", &mut || {
 			prepared.in_place(Entry::Program, 0.0, None, "", None).unwrap();
 		});
-		for flag in ["scopes", "locations"] {
-			request.set(flag);
-		}
+		let request = Request::from_flags(flag::MODULE | flag::COMMENTS | flag::SCOPES | flag::LOCATIONS);
 		let prepared = crate::json::Prepared::borrowed(&source, request);
 		best("whole request with scopes and loc", &mut || {
 			prepared.in_place(Entry::Program, 0.0, None, "", None).unwrap();
@@ -735,9 +730,16 @@ fn phases() {
 		"<script>let items = [1,2,3];</script>\n{}",
 		"{#each items as item}<p class=\"row\" onclick={() => f(item)}>{item + 1}</p>{/each}\n".repeat(200)
 	);
-	for flags in ["module", "module scopes comments locations"] {
-		let prepared = crate::json::Prepared::borrowed(&document, crate::json::Request::from_names(flags));
-		best(&format!("host: 200 each blocks, {flags}"), &mut || {
+	use crate::json::flag;
+	for (flags, label) in [
+		(flag::MODULE, "module"),
+		(
+			flag::MODULE | flag::SCOPES | flag::COMMENTS | flag::LOCATIONS,
+			"module scopes comments locations",
+		),
+	] {
+		let prepared = crate::json::Prepared::borrowed(&document, crate::json::Request::from_flags(flags));
+		best(&format!("host: 200 each blocks, {label}"), &mut || {
 			prepared
 				.in_place(Entry::Program, 0.0, None, "", Some(&grammar))
 				.unwrap();
@@ -908,7 +910,8 @@ fn host_alloc_probe() {
 	)
 	.unwrap();
 	let count = |src: &str| {
-		let prepared = crate::json::Prepared::borrowed(src, crate::json::Request::from_names("module"));
+		let prepared =
+			crate::json::Prepared::borrowed(src, crate::json::Request::from_flags(crate::json::flag::MODULE));
 		prepared
 			.in_place(Entry::Program, 0.0, None, "", Some(&grammar))
 			.unwrap();
@@ -976,7 +979,7 @@ fn layout_sizes() {
 
 #[test]
 fn parenthesized_bits() {
-	let request = crate::json::Request::from_names("module parenthesized");
+	let request = crate::json::Request::from_flags(crate::json::flag::MODULE | crate::json::flag::PARENTHESIZED);
 	let json = crate::json::parse("(a).b; (x, y); c; ((d));", &request, "");
 	assert_eq!(json.matches("\"parenthesized\":true").count(), 3, "{json}");
 	let json = crate::json::parse("(a, b) => a; (c);", &request, "");

@@ -8,8 +8,7 @@ mod common;
 
 use std::fs;
 use std::path::Path;
-use teasel::Entry;
-use teasel::json::{Request, parse};
+use teasel::json::{Request, flag, parse};
 
 #[test]
 fn files() {
@@ -20,24 +19,25 @@ fn files() {
 			let name = file.file_name().unwrap().to_str().unwrap();
 			let stem = name.split('.').next().unwrap();
 			let source = fs::read_to_string(&file).unwrap();
-			let mut request = Request::new(Entry::Program, 0);
-			request.options.module = !name.contains(".script.");
-			request.set("comments");
-			request.set("scopes");
-			if language == "ts" {
-				request.set("typescript");
+			let mut flags = flag::COMMENTS | flag::SCOPES;
+			if !name.contains(".script.") {
+				flags |= flag::MODULE;
 			}
-			for (word, flag) in [
-				("locations", "locations"),
-				("erase", "erase"),
-				("recover", "errorRecovery"),
-				("legacy", "legacyDecorators"),
-				("proposal", "proposalDecorators"),
+			if language == "ts" {
+				flags |= flag::TYPESCRIPT;
+			}
+			for (word, bit) in [
+				("locations", flag::LOCATIONS),
+				("erase", flag::ERASE),
+				("recover", flag::ERROR_RECOVERY),
+				("legacy", flag::LEGACY_DECORATORS),
+				("proposal", flag::PROPOSAL_DECORATORS),
 			] {
 				if stem.contains(word) {
-					request.set(flag);
+					flags |= bit;
 				}
 			}
+			let request = Request::from_flags(flags);
 			let answer = common::pretty(&parse(&source, &request, ""));
 			if !common::pinned(&file.with_extension("json"), &answer) {
 				wrong.push(format!("{language}/{name}"));
