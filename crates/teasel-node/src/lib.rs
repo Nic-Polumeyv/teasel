@@ -337,7 +337,6 @@ impl Drop for Reference {
 fn allocate(layout: std::alloc::Layout) -> Allocation {
 	let (env, _) = VIEW.get();
 	assert!(!env.is_null(), "buffer allocation needs a live environment");
-	assert!(layout.align() <= 8, "buffer alignment exceeds eight bytes");
 	let result = (|| {
 		let (mut data, mut buffer, mut array, mut reference) = (
 			std::ptr::null_mut(),
@@ -350,7 +349,6 @@ fn allocate(layout: std::alloc::Layout) -> Allocation {
 			"allocating a buffer",
 		)?;
 		let ptr = std::ptr::NonNull::new(data.cast::<u8>()).ok_or("null buffer allocation")?;
-		assert!(ptr.as_ptr().addr().is_multiple_of(layout.align()), "buffer alignment");
 		let mut offset = 0;
 		check(
 			unsafe {

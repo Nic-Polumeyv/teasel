@@ -198,11 +198,6 @@ pub trait Raw {
 	fn len_bytes(&self) -> usize;
 	fn capacity_bytes(&self) -> usize;
 	fn allocation(&mut self) -> Option<&dyn Any>;
-	/// Continues on a fresh allocation, empty.
-	///
-	/// # Safety
-	/// The owner reads nothing it kept about the old contents until it is cleared.
-	unsafe fn renew(&mut self);
 }
 
 impl<T: Copy + 'static> Raw for Handed<T> {
@@ -241,10 +236,6 @@ impl<T: Copy + 'static> Raw for Handed<T> {
 		let owner = self.owner.as_deref().expect("a view needs an allocation hook");
 		self.viewed = true;
 		Some(owner)
-	}
-
-	unsafe fn renew(&mut self) {
-		Handed::renew(self, 0);
 	}
 }
 
