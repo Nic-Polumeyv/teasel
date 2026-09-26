@@ -81,7 +81,7 @@ fn string(env: Env, value: Value) -> Result<String> {
 		"a string",
 	)?;
 	buffer.truncate(length);
-	Ok(String::from_utf8(buffer).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned()))
+	String::from_utf8(buffer).map_err(|_| "a string expected".into())
 }
 
 fn number(env: Env, value: Value) -> Result<f64> {
