@@ -88,7 +88,7 @@ impl<T: Copy> Handed<T> {
 
 	pub fn resize(&mut self, len: usize, value: T) {
 		self.truncate(len);
-		self.room(len - self.len);
+		self.reserve(len - self.len);
 		while self.len < len {
 			unsafe { self.ptr.as_ptr().add(self.len).write(value) };
 			self.len += 1;
@@ -96,7 +96,7 @@ impl<T: Copy> Handed<T> {
 	}
 
 	#[inline(always)]
-	fn room(&mut self, more: usize) {
+	pub fn reserve(&mut self, more: usize) {
 		if self.capacity - self.len < more {
 			self.grow(more);
 		}
@@ -104,14 +104,14 @@ impl<T: Copy> Handed<T> {
 
 	#[inline(always)]
 	pub fn push(&mut self, value: T) {
-		self.room(1);
+		self.reserve(1);
 		unsafe { self.ptr.as_ptr().add(self.len).write(value) };
 		self.len += 1;
 	}
 
 	#[inline(always)]
 	pub fn extend_from_slice(&mut self, values: &[T]) {
-		self.room(values.len());
+		self.reserve(values.len());
 		unsafe { std::ptr::copy_nonoverlapping(values.as_ptr(), self.ptr.as_ptr().add(self.len), values.len()) };
 		self.len += values.len();
 	}
@@ -170,7 +170,7 @@ impl<T: Copy + std::fmt::Debug> std::fmt::Debug for Handed<T> {
 impl<T: Copy> Extend<T> for Handed<T> {
 	fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
 		let iter = iter.into_iter();
-		self.room(iter.size_hint().0);
+		self.reserve(iter.size_hint().0);
 		for value in iter {
 			self.push(value);
 		}

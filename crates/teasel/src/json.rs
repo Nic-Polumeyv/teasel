@@ -856,6 +856,7 @@ fn prepare<X: Emit + Reuse>(ast: &mut Ast<X>, source: &str, positions: &Position
 	ast.units.clear();
 	let (text, starts, _) = ast.strings.buffers();
 	if !text.is_ascii() {
+		ast.units.reserve(starts.len());
 		let mut units = 0u32;
 		let mut from = 0usize;
 		for &start in starts.iter() {
