@@ -10,6 +10,10 @@ macro_rules! codes {
 		}
 
 		impl Code {
+			pub(crate) fn is_limit(self) -> bool {
+				matches!(self, Code::NestingDepth | Code::TreeSize)
+			}
+
 			/// The name hosts see: `unexpected_eof`.
 			pub fn name(self) -> &'static str {
 				match self {

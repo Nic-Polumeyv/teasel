@@ -296,3 +296,27 @@ fn failed_attempt_leaves_no_scope() {
 		[src.rfind("a;").unwrap() as u32, src.rfind("b;").unwrap() as u32]
 	);
 }
+
+#[test]
+fn nested_ambiguity_is_linear() {
+	let options = Options {
+		module: true,
+		..Options::default()
+	};
+	let n = 24;
+	let nest = |open: &str, middle: &str, close: &str| format!("x = {}{middle}{};", open.repeat(n), close.repeat(n));
+	// each of these took twice as long per level while a failed reading was read again
+	for src in [
+		nest("<A>(", "x", ")"),
+		nest("<A>(a = ", "x", ")"),
+		nest("async <T>(a = ", "x", ")"),
+		nest("a ? (b) : c => ", "d", ""),
+		nest("a ? (b): T => ", "c", " : d"),
+		nest("a ? <T>(b) : c => ", "d", ""),
+		nest("a ? async (b) : c => ", "d", ""),
+	] {
+		let started = std::time::Instant::now();
+		one(super::parse_at(&src, 0, None, Entry::Program, options, "")).unwrap();
+		assert!(started.elapsed().as_millis() < 100, "{src}");
+	}
+}

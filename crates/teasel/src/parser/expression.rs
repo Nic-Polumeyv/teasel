@@ -247,9 +247,9 @@ impl<E: Extension> Parser<'_, E> {
 	/// The `? consequent : alternate` after a test.
 	pub(crate) fn parse_conditional(&mut self, test: NodeId, start: u32, for_init: ForInit) -> Result<NodeId> {
 		self.next()?;
-		let consequent = self.parse_maybe_assign(ForInit::No, &mut None)?;
+		let consequent = E::conditional_branch(self, start, false, for_init)?;
 		self.expect(TokenKind::Colon)?;
-		let alternate = self.parse_maybe_assign(for_init, &mut None)?;
+		let alternate = E::conditional_branch(self, start, true, for_init)?;
 		Ok(self.add(
 			NodeKind::ConditionalExpression {
 				test,
@@ -564,7 +564,7 @@ impl<E: Extension> Parser<'_, E> {
 			E::paren_list_start(self);
 			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut errors)?;
 			E::paren_list_end(self);
-			if maybe_async_arrow && !optional && E::should_parse_async_arrow(self)? {
+			if maybe_async_arrow && !optional && E::should_parse_async_arrow(self, start)? {
 				self.check_pattern_errors(&errors, false)?;
 				self.check_yield_await_in_default_params()?;
 				if self.await_ident_pos > 0 {
@@ -764,7 +764,7 @@ impl<E: Extension> Parser<'_, E> {
 		self.await_pos = 0;
 		let paren = self.parse_paren_items()?;
 
-		if can_be_arrow && E::should_parse_arrow(self, &paren.items)? && self.eat(TokenKind::Arrow)? {
+		if can_be_arrow && E::should_parse_arrow(self, start, &paren.items)? && self.eat(TokenKind::Arrow)? {
 			self.check_pattern_errors(&paren.errors, false)?;
 			self.check_yield_await_in_default_params()?;
 			self.yield_pos = old_yield;
@@ -1245,6 +1245,7 @@ impl<E: Extension> Parser<'_, E> {
 	) -> Result<NodeId> {
 		let old = self.take_yield_await();
 		self.enter_scope(function_flags(is_async, false) | SCOPE_ARROW);
+		E::arrow_start(self, start);
 		E::function_start(self, FunctionKind::Arrow)?;
 		let params = self.make_patterns(params, true)?;
 		let params = self.list_from(params);
