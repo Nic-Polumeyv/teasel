@@ -78,7 +78,8 @@ api! {
 	fn napi_get_value_double(env: Env, value: Value, result: *mut f64) -> Status;
 	fn napi_create_external(env: Env, data: *mut c_void, finalize: Finalize, hint: *mut c_void, result: *mut Value) -> Status;
 	fn napi_get_value_external(env: Env, value: Value, result: *mut *mut c_void) -> Status;
-	fn napi_create_external_arraybuffer(env: Env, data: *mut c_void, bytes: usize, finalize: Finalize, hint: *mut c_void, result: *mut Value) -> Status;
+	fn napi_create_buffer(env: Env, bytes: usize, data: *mut *mut c_void, result: *mut Value) -> Status;
+	fn napi_add_env_cleanup_hook(env: Env, hook: unsafe extern "C" fn(*mut c_void), data: *mut c_void) -> Status;
 	fn napi_create_typedarray(env: Env, kind: i32, length: usize, buffer: Value, offset: usize, result: *mut Value) -> Status;
 	fn napi_create_reference(env: Env, value: Value, count: u32, result: *mut Ref) -> Status;
 	fn napi_delete_reference(env: Env, reference: Ref) -> Status;
