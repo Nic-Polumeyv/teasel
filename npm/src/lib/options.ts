@@ -1,5 +1,5 @@
 export interface Options {
-	/** `script` by default, as in acorn. */
+	/** @default 'script' */
 	sourceType?: 'script' | 'module';
 	/**
 	 * Parse TypeScript. `'erase'` parses it and emits JavaScript: annotations, type-only
@@ -23,7 +23,10 @@ export interface Options {
 	 * carries no facts. TypeScript type positions bind nothing.
 	 */
 	scopes?: boolean;
-	/** Add `loc` with line and column to every node, as in acorn; off by default. */
+	/**
+	 * Add `loc` with line and column to every node.
+	 * @default false
+	 */
 	locations?: boolean;
 	/** Mark a node the source wraps in parens with `parenthesized: true`, absent otherwise. */
 	parenthesized?: boolean;
