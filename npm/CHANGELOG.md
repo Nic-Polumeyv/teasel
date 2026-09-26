@@ -1,5 +1,19 @@
 # @teasel/parser
 
+## 0.0.15
+
+### Patch Changes
+
+- [#165](https://github.com/Nic-Polumeyv/teasel/pull/165) [`592d9f2`](https://github.com/Nic-Polumeyv/teasel/commit/592d9f2d2d600c9e05c444965b612a346813634b) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - A panic in the native addon throws an error instead of ending the process
+
+- [#161](https://github.com/Nic-Polumeyv/teasel/pull/161) [`54e79dc`](https://github.com/Nic-Polumeyv/teasel/commit/54e79dca9d17b67cdd6f39ad2d7319e439baa97c) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - TypeScript getter and setter signatures report their own parameter-count message
+
+- [#164](https://github.com/Nic-Polumeyv/teasel/pull/164) [`cb4b320`](https://github.com/Nic-Polumeyv/teasel/commit/cb4b320c5aaa73ab7286cf300057de1817d0bc18) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - The native addon's buffers are owned by the JavaScript engine instead of external memory
+
+- [#166](https://github.com/Nic-Polumeyv/teasel/pull/166) [`2e74d42`](https://github.com/Nic-Polumeyv/teasel/commit/2e74d42e4075992c9b6e87d9eb41be642cd5d909) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - After the WebAssembly engine panics, earlier sources and plans keep working
+
+- [#167](https://github.com/Nic-Polumeyv/teasel/pull/167) [`a124243`](https://github.com/Nic-Polumeyv/teasel/commit/a124243d7d20450b459387a11ecb5052a427abd8) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - On Windows the native addon finds Node-API in libnode.dll too, and refuses to load without it
+
 ## 0.0.14
 
 ### Patch Changes
