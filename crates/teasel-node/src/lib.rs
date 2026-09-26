@@ -305,13 +305,13 @@ fn allocate(layout: std::alloc::Layout) -> Allocation {
 	let (env, _) = VIEW.get();
 	assert!(!env.is_null(), "buffer allocation needs a live environment");
 	let result = (|| {
-		let (mut data, mut buffer, mut array, mut reference) = (null_mut(), null_mut(), null_mut(), null_mut());
+		let (mut data, mut buffer) = (null_mut(), null_mut());
 		check(
 			unsafe { node_api::napi_create_buffer(env, layout.size(), &mut data, &mut buffer) },
 			"allocating a buffer",
 		)?;
 		let ptr = std::ptr::NonNull::new(data.cast::<u8>()).ok_or("null buffer allocation")?;
-		let mut offset = 0;
+		let (mut array, mut offset) = (null_mut(), 0);
 		check(
 			unsafe {
 				node_api::napi_get_typedarray_info(
@@ -327,10 +327,9 @@ fn allocate(layout: std::alloc::Layout) -> Allocation {
 			"the buffer's backing store",
 		)?;
 		assert_eq!(offset, 0, "a buffer must cover its backing store");
-		check(
-			unsafe { node_api::napi_create_reference(env, array, 1, &mut reference) },
-			"keeping a buffer",
-		)?;
+		let reference = out(null_mut(), "keeping a buffer", |r| unsafe {
+			node_api::napi_create_reference(env, array, 1, r)
+		})?;
 		Ok(Allocation {
 			ptr,
 			token: std::ptr::NonNull::new(reference).ok_or("null buffer reference")?,
