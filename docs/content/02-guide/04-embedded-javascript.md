@@ -29,6 +29,7 @@ source.parse(Plan.statement, 7)         one statement
 source.parse(Plan.pattern, 7)           a name or a destructuring pattern
 source.parse(Plan.params, 7)            the patterns inside (a, b = 1)
 source.parse(Plan.typeParameters, 7)    a <T extends U>, with typescript on
+source.parse(Plan.stylesheet)           the whole source as a CSS stylesheet
 source.parse(Plan.program, [12, 40])    the program between 12 and 40
 ```
 

@@ -365,6 +365,8 @@ struct Walker<'a, E: Extension> {
 	autoclosed: Option<(&'a str, &'a str, usize)>,
 	/// How many open elements made their subtree verbatim.
 	verbatim: u32,
+	/// How many CSS blocks and pseudo-class argument lists are open.
+	nesting: u32,
 	/// The patterns the directives of the element being read declare.
 	declared: Vec<NodeId>,
 	/// Buffers given back once used, for the next of their kind.
@@ -409,37 +411,62 @@ pub(crate) fn parse_document<E: Extension>(
 	} else {
 		src
 	};
-	let mut walker = Walker::<E> {
-		src: cut,
-		full,
-		grammar,
-		options,
-		ast: Some(reused.unwrap_or_else(|| Box::new(Ast::sized(src.len())))),
-		at: 0,
-		limit: cut.len() as u32,
-		stopped: false,
-		frames: vec![Frame::Root {
-			nodes: Vec::new(),
-			instance: None,
-			module: None,
-			css: None,
-		}],
-		once: Vec::new(),
-		keyword: 0,
-		autoclosed: None,
-		verbatim: 0,
-		declared: Vec::new(),
-		fields: Pool::default(),
-		nodes: Pool::default(),
-		names: Pool::default(),
-		groups: Pool::default(),
-		seen: Vec::new(),
+	let root = Frame::Root {
+		nodes: Vec::new(),
+		instance: None,
+		module: None,
+		css: None,
 	};
+	let mut walker = Walker::<E>::new(cut, full, grammar, options, reused, vec![root]);
 	let root = walker.run();
 	(walker.ast.take().unwrap(), root)
 }
 
+/// The whole source as a CSS stylesheet; see `Walker::stylesheet`.
+pub(crate) fn parse_stylesheet<E: Extension>(
+	src: &str,
+	options: Options,
+	reused: Option<Box<Ast<E::Data>>>,
+) -> (Box<Ast<E::Data>>, Result<NodeId>) {
+	let grammar = Grammar::empty();
+	let mut walker = Walker::<E>::new(src, src.len() as u32, &grammar, options, reused, Vec::new());
+	let root = walker.stylesheet();
+	(walker.ast.take().unwrap(), root)
+}
+
 impl<'a, E: Extension> Walker<'a, E> {
+	fn new(
+		src: &'a str,
+		full: u32,
+		grammar: &'a Grammar,
+		options: Options,
+		reused: Option<Box<Ast<E::Data>>>,
+		frames: Vec<Frame<'a>>,
+	) -> Self {
+		Walker {
+			src,
+			full,
+			grammar,
+			options,
+			ast: Some(reused.unwrap_or_else(|| Box::new(Ast::sized(full as usize)))),
+			at: 0,
+			limit: src.len() as u32,
+			stopped: false,
+			frames,
+			once: Vec::new(),
+			keyword: 0,
+			autoclosed: None,
+			verbatim: 0,
+			nesting: 0,
+			declared: Vec::new(),
+			fields: Pool::default(),
+			nodes: Pool::default(),
+			names: Pool::default(),
+			groups: Pool::default(),
+			seen: Vec::new(),
+		}
+	}
+
 	fn within_depth(&self, at: u32) -> Result<()> {
 		if self.frames.len() as u32 >= crate::parser::MAX_DEPTH {
 			return fail(at, at + 1, Code::NestingDepth, None);

@@ -62,7 +62,7 @@ const topLevel = script.bindings.filter(
 );
 ```
 ```notes
-Plan.program :: The plan says what to read. `Plan.program` reads statements, as a file would have them. The other plans are `Plan.expression`, `Plan.statement`, `Plan.pattern`, `Plan.params` and `Plan.typeParameters`: see [Plans](/embedded-javascript#plans).
+Plan.program :: The plan says what to read. `Plan.program` reads statements, as a file would have them. The other plans are `Plan.expression`, `Plan.statement`, `Plan.pattern`, `Plan.params`, `Plan.typeParameters` and `Plan.stylesheet`: see [Plans](/embedded-javascript#plans).
 [open, close] :: A pair of offsets reads only the text between them. A single number, used below, starts there and reads as far as the plan goes.
 script.bindings :: Every declaration in the script, one entry each: `{ name, kind, scope, node, declaration }`. [What a binding knows](/reference/parser#binding).
 scopeOf(script.node) :: `scopeOf` gives the scope a node opens. `script.node` is the `Program`, which opens the script's outermost scope, so a binding whose `scope` is that one was declared at the top level. See [referenceOf, scopeOf, parentOf](/scopes#referenceof-scopeof-parentof).

@@ -378,6 +378,8 @@ pub enum Entry {
 	Params,
 	Statement,
 	TypeParameters,
+	/// A CSS stylesheet on its own, the whole source.
+	StyleSheet,
 }
 
 impl Entry {
@@ -388,6 +390,7 @@ impl Entry {
 			3 => Entry::Params,
 			4 => Entry::Statement,
 			5 => Entry::TypeParameters,
+			6 => Entry::StyleSheet,
 			_ => Entry::Program,
 		}
 	}
@@ -413,6 +416,11 @@ pub(crate) fn parse_at<E: Extension>(
 	stop: &str,
 	reused: Option<Box<Ast<E::Data>>>,
 ) -> (Box<Ast<E::Data>>, Result<(List, u32)>) {
+	if entry == Entry::StyleSheet {
+		let (mut ast, root) = crate::host::parse_stylesheet::<E>(src, options, reused);
+		let parsed = root.map(|root| (ast.add_list(&[Some(root)]), src.len() as u32));
+		return (ast, parsed);
+	}
 	let end = end.unwrap_or(src.len() as u32);
 	let src = &src[..end as usize];
 	let budget = if entry == Entry::Program {
@@ -852,7 +860,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 				self.parse_statement(statement::Context::None, StatementPlace::TopLevel, Some(&mut exports))?
 			}
 			Entry::TypeParameters => E::type_parameters(self)?,
-			Entry::Program => unreachable!(),
+			Entry::Program | Entry::StyleSheet => unreachable!(),
 		};
 		Ok(self.list_of(&[root]))
 	}

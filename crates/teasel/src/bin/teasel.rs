@@ -8,7 +8,7 @@
 //!
 //! `teasel --batch [--host GRAMMAR]` reads jobs from stdin, each a header line `MODE LENGTH` followed by LENGTH
 //! bytes of source, and prints one JSON line per job. MODE is `module`, `script`, `expr:OFFSET`,
-//! `pattern:OFFSET`, `params:OFFSET`, `stmt:OFFSET`, `typeparams:OFFSET` or `doc` for a whole
+//! `pattern:OFFSET`, `params:OFFSET`, `stmt:OFFSET`, `typeparams:OFFSET`, `stylesheet` for CSS or `doc` for a whole
 //! document of the host language the grammar file describes, with a `ts-` prefix
 //! for TypeScript and `+comments` to attach comments, `+scopes` for the scope analysis,
 //! `+parenthesized` to mark parenthesized nodes, `+undeclared-exports` to accept exports of names
@@ -34,6 +34,7 @@ fn batch_mode(mode: &str) -> (Entry, u32, impl Iterator<Item = &str>) {
 		"params" => Entry::Params,
 		"stmt" => Entry::Statement,
 		"typeparams" => Entry::TypeParameters,
+		"stylesheet" => Entry::StyleSheet,
 		_ => Entry::Program,
 	};
 	let switches = head.chain(tail[digits..].split('+').skip(1));
@@ -156,6 +157,7 @@ fn main() -> ExitCode {
 			"--params" => entry = Entry::Params,
 			"--statement" => entry = Entry::Statement,
 			"--type-parameters" => entry = Entry::TypeParameters,
+			"--stylesheet" => entry = Entry::StyleSheet,
 			"--offset" => offset = args.next().and_then(|n| n.parse().ok()),
 			"--host" => host = args.next(),
 			_ => file = Some(arg),
@@ -172,7 +174,7 @@ fn main() -> ExitCode {
 	};
 	let Some(file) = file else {
 		eprintln!(
-			"usage: teasel [--module] [--typescript] [--comments] [--scopes] [--expression|--pattern|--params|--statement|--type-parameters] [--parenthesized] [--erase] [--legacy-decorators|--proposal-decorators] [--offset N] FILE"
+			"usage: teasel [--module] [--typescript] [--comments] [--scopes] [--expression|--pattern|--params|--statement|--type-parameters|--stylesheet] [--parenthesized] [--erase] [--legacy-decorators|--proposal-decorators] [--offset N] FILE"
 		);
 		return ExitCode::FAILURE;
 	};
@@ -195,6 +197,10 @@ fn main() -> ExitCode {
 		options,
 	};
 	if let Some(host) = host {
+		if entry == Entry::StyleSheet {
+			eprintln!("--stylesheet reads the file on its own, without --host");
+			return ExitCode::FAILURE;
+		}
 		let grammar = match std::fs::read_to_string(&host) {
 			Ok(s) => s,
 			Err(e) => {

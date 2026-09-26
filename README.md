@@ -24,6 +24,7 @@ source.parse(Plan.pattern, 7)                 an assignment target: a name or a 
 source.parse(Plan.params, 7)                  the patterns of a (a, b = 1)
 source.parse(Plan.statement, 7)               one statement
 source.parse(Plan.typeParameters, 7)          a <T extends U>
+source.parse(Plan.stylesheet)                 the whole source as a CSS stylesheet
 source.parse(Plan.program, [12, 40])          the program inside 12..40, positions of the whole
 ```
 
