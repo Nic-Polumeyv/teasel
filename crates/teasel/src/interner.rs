@@ -116,10 +116,10 @@ impl Interner {
 	/// Room for the strings of `bytes` of source, so the table grows rarely.
 	pub(crate) fn sized(bytes: usize) -> Self {
 		let slots = (bytes / 16).next_power_of_two().clamp(64, 4096);
-		let mut starts = Handed::with_capacity(slots / 2 + 1, 64);
+		let mut starts = Handed::with_capacity((slots / 2).max(bytes / 128) + 1, 64);
 		starts.push(0);
 		Interner {
-			text: Handed::with_capacity(bytes / 32, 1 << 10),
+			text: Handed::with_capacity(bytes / 6, 1 << 10),
 			starts,
 			marks: Handed::new(0),
 			table: vec![0; slots],
