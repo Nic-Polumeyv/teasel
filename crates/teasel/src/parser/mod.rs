@@ -290,6 +290,9 @@ pub(crate) trait Extension: Default + Sized {
 	fn conditional(p: &mut Parser<Self>, expr: NodeId, start: u32, for_init: ForInit) -> Result<Option<NodeId>> {
 		Ok(None)
 	}
+	fn conditional_branch(p: &mut Parser<Self>, start: u32, alternate: bool, for_init: ForInit) -> Result<NodeId> {
+		p.parse_maybe_assign(if alternate { for_init } else { ForInit::No }, &mut None)
+	}
 	fn unary(p: &mut Parser<Self>, for_init: ForInit) -> Result<Option<NodeId>> {
 		Ok(None)
 	}
@@ -313,10 +316,11 @@ pub(crate) trait Extension: Default + Sized {
 	) -> Result<Option<(NodeId, bool)>> {
 		Ok(None)
 	}
-	fn should_parse_arrow(p: &mut Parser<Self>, items: &[Option<NodeId>]) -> Result<bool> {
+	fn arrow_start(p: &mut Parser<Self>, start: u32) {}
+	fn should_parse_arrow(p: &mut Parser<Self>, start: u32, items: &[Option<NodeId>]) -> Result<bool> {
 		Ok(!p.can_insert_semicolon())
 	}
-	fn should_parse_async_arrow(p: &mut Parser<Self>) -> Result<bool> {
+	fn should_parse_async_arrow(p: &mut Parser<Self>, start: u32) -> Result<bool> {
 		Ok(!p.can_insert_semicolon() && p.eat(TokenKind::Arrow)?)
 	}
 	/// Whether the target of an assignment is checked here.
@@ -895,13 +899,15 @@ impl<'a, E: Extension> Parser<'a, E> {
 	}
 
 	/// Runs `f`, undoing it when it fails.
-	pub(crate) fn attempt<T>(&mut self, f: impl FnOnce(&mut Self) -> Result<T>) -> Option<T> {
+	pub(crate) fn attempt<T>(&mut self, f: impl FnOnce(&mut Self) -> Result<T>) -> Result<Option<T>> {
 		let snapshot = self.snapshot();
 		match self.speculate(f) {
-			Ok(value) => Some(value),
+			Ok(value) => Ok(Some(value)),
+			// a limit taken for a wrong guess was reported as the fallback's error, and past it the fallbacks multiplied
+			Err(error) if error.code.is_limit() => Err(error),
 			Err(_) => {
 				self.restore(snapshot);
-				None
+				Ok(None)
 			}
 		}
 	}
