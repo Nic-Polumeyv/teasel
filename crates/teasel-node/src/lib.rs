@@ -445,10 +445,12 @@ unsafe extern "C" fn cleanup(data: *mut c_void) {
 /// Called by Node once per load with a live `env` and the module's `exports` object.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn napi_register_module_v1(env: Env, exports: Value) -> Value {
+	// without Node-API there is nothing to throw with: Node reports the module as not registered
 	#[cfg(windows)]
-	unsafe {
-		node_api::load()
-	};
+	if !unsafe { node_api::load() } {
+		eprintln!("teasel: this process does not provide Node-API");
+		return null_mut();
+	}
 	guard(env, || {
 		check(
 			unsafe { node_api::napi_add_env_cleanup_hook(env, cleanup, env.cast()) },

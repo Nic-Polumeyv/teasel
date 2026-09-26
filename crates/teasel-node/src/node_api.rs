@@ -31,7 +31,7 @@ pub(crate) fn element_size(kind: i32) -> usize {
 	}
 }
 
-// a Windows DLL cannot leave an import unresolved, so there `load` looks each function up in node.exe
+// a Windows DLL cannot leave an import unresolved, so there `load` looks each function up in node.exe or libnode.dll
 macro_rules! api {
 	($(fn $name:ident($($arg:ident: $ty:ty),*) -> Status;)*) => {
 		#[cfg(not(windows))]
@@ -56,12 +56,25 @@ macro_rules! api {
 		)*
 
 		#[cfg(windows)]
-		pub(crate) unsafe fn load() {
-			let host = unsafe { GetModuleHandleW(std::ptr::null()) };
-			$(symbols::$name.store(
-				unsafe { GetProcAddress(host, concat!(stringify!($name), "\0").as_ptr().cast()) } as usize,
-				std::sync::atomic::Ordering::Relaxed,
-			);)*
+		pub(crate) unsafe fn load() -> bool {
+			let exe = unsafe { GetModuleHandleW(std::ptr::null()) };
+			let host = if unsafe { GetProcAddress(exe, c"napi_create_function".as_ptr()) }.is_null() {
+				let name: Vec<u16> = "libnode.dll\0".encode_utf16().collect();
+				unsafe { GetModuleHandleW(name.as_ptr()) }
+			} else {
+				exe
+			};
+			let mut found = !host.is_null();
+			$(
+				let at = if host.is_null() {
+					std::ptr::null_mut()
+				} else {
+					unsafe { GetProcAddress(host, concat!(stringify!($name), "\0").as_ptr().cast()) }
+				};
+				found &= !at.is_null();
+				symbols::$name.store(at as usize, std::sync::atomic::Ordering::Relaxed);
+			)*
+			found
 		}
 	};
 }
