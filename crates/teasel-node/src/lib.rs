@@ -323,17 +323,6 @@ fn guard(env: Env, f: impl FnOnce() -> Result<Value> + std::panic::UnwindSafe) -
 	}
 }
 
-struct Reference {
-	env: Env,
-	reference: Ref,
-}
-
-impl Drop for Reference {
-	fn drop(&mut self) {
-		unsafe { node_api::napi_delete_reference(self.env, self.reference) };
-	}
-}
-
 fn allocate(layout: std::alloc::Layout) -> Allocation {
 	let (env, _) = VIEW.get();
 	assert!(!env.is_null(), "buffer allocation needs a live environment");
@@ -371,7 +360,7 @@ fn allocate(layout: std::alloc::Layout) -> Allocation {
 		)?;
 		Ok(Allocation {
 			ptr,
-			owner: Box::new(Reference { env, reference }),
+			token: std::ptr::NonNull::new(reference).ok_or("null buffer reference")?,
 		})
 	})();
 	result.unwrap_or_else(|error: String| {
@@ -380,15 +369,18 @@ fn allocate(layout: std::alloc::Layout) -> Allocation {
 	})
 }
 
+// a session never mixes environments (`fresh` resets it first), so the token's is the current one
+fn release(reference: std::ptr::NonNull<c_void>) {
+	unsafe { node_api::napi_delete_reference(VIEW.get().0, reference.as_ptr()) };
+}
+
 fn buffer_view(env: Env, buffer: &mut dyn Raw) -> Result<Option<Value>> {
-	let Some(owner) = buffer.allocation() else {
+	let Some(reference) = buffer.allocation() else {
 		return Ok(None);
 	};
-	let owner = owner.downcast_ref::<Reference>().expect("a buffer's reference");
-	assert_eq!(owner.env, env, "a buffer belongs to its environment");
 	let mut array = std::ptr::null_mut();
 	check(
-		unsafe { node_api::napi_get_reference_value(env, owner.reference, &mut array) },
+		unsafe { node_api::napi_get_reference_value(env, reference.as_ptr(), &mut array) },
 		"the view's buffer",
 	)?;
 	let mut value = std::ptr::null_mut();
@@ -462,7 +454,7 @@ fn fresh(env: Env) {
 
 fn in_env<R>(env: Env, f: impl FnOnce() -> R) -> R {
 	fresh(env);
-	unsafe { teasel::handed::allocating(allocate, f) }
+	unsafe { teasel::handed::allocating(allocate, release, f) }
 }
 
 unsafe extern "C" fn cleanup(data: *mut c_void) {

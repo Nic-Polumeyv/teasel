@@ -1,28 +1,32 @@
 use std::alloc::{Layout, alloc, dealloc, handle_alloc_error};
-use std::any::Any;
 use std::cell::Cell;
+use std::ffi::c_void;
 use std::ptr::NonNull;
 
 pub struct Allocation {
 	pub ptr: NonNull<u8>,
-	pub owner: Box<dyn Any>,
+	pub token: NonNull<c_void>,
 }
 
 type Allocate = fn(Layout) -> Allocation;
+type Release = fn(NonNull<c_void>);
 
 thread_local! {
 	static ALLOCATE: Cell<Option<Allocate>> = const { Cell::new(None) };
+	static RELEASE: Cell<Option<Release>> = const { Cell::new(None) };
 }
 
 /// # Safety
-/// Each hook result must own a distinct writable allocation matching the layout, valid on this thread until owner drop.
-pub unsafe fn allocating<R>(allocate: Allocate, f: impl FnOnce() -> R) -> R {
+/// Each hook result must own a distinct writable allocation matching the layout, valid on this thread until
+/// `release` gets its token; `release` stays in force on this thread after `f` returns.
+pub unsafe fn allocating<R>(allocate: Allocate, release: Release, f: impl FnOnce() -> R) -> R {
 	struct Restore(Option<Allocate>);
 	impl Drop for Restore {
 		fn drop(&mut self) {
 			ALLOCATE.set(self.0);
 		}
 	}
+	RELEASE.set(Some(release));
 	let _restore = Restore(ALLOCATE.replace(Some(allocate)));
 	f()
 }
@@ -32,7 +36,7 @@ pub struct Handed<T: Copy> {
 	len: usize,
 	capacity: usize,
 	least: usize,
-	owner: Option<Box<dyn Any>>,
+	token: Option<NonNull<c_void>>,
 	viewed: bool,
 }
 
@@ -43,7 +47,7 @@ impl<T: Copy> Handed<T> {
 			len: 0,
 			capacity: if size_of::<T>() == 0 { usize::MAX } else { 0 },
 			least,
-			owner: None,
+			token: None,
 			viewed: false,
 		}
 	}
@@ -54,7 +58,7 @@ impl<T: Copy> Handed<T> {
 		if layout.size() != 0 {
 			let ptr = if let Some(allocate) = ALLOCATE.get() {
 				let allocation = allocate(layout);
-				buffer.owner = Some(allocation.owner);
+				buffer.token = Some(allocation.token);
 				allocation.ptr
 			} else {
 				NonNull::new(unsafe { alloc(layout) }).unwrap_or_else(|| handle_alloc_error(layout))
@@ -136,7 +140,9 @@ impl<T: Copy> Default for Handed<T> {
 
 impl<T: Copy> Drop for Handed<T> {
 	fn drop(&mut self) {
-		if self.owner.is_none() && self.capacity != 0 && size_of::<T>() != 0 {
+		if let Some(token) = self.token {
+			RELEASE.get().expect("a lent buffer's release")(token);
+		} else if self.capacity != 0 && size_of::<T>() != 0 {
 			unsafe { dealloc(self.ptr.as_ptr().cast(), Layout::array::<T>(self.capacity).unwrap()) };
 		}
 	}
@@ -197,7 +203,7 @@ pub trait Raw {
 	fn as_ptr(&self) -> *const u8;
 	fn len_bytes(&self) -> usize;
 	fn capacity_bytes(&self) -> usize;
-	fn allocation(&mut self) -> Option<&dyn Any>;
+	fn allocation(&mut self) -> Option<NonNull<c_void>>;
 }
 
 impl<T: Copy + 'static> Raw for Handed<T> {
@@ -226,16 +232,15 @@ impl<T: Copy + 'static> Raw for Handed<T> {
 		self.capacity * size_of::<T>()
 	}
 
-	fn allocation(&mut self) -> Option<&dyn Any> {
+	fn allocation(&mut self) -> Option<NonNull<c_void>> {
 		if self.viewed {
 			return None;
 		}
 		if self.capacity == 0 {
 			self.grow(1);
 		}
-		let owner = self.owner.as_deref().expect("a view needs an allocation hook");
 		self.viewed = true;
-		Some(owner)
+		Some(self.token.expect("a view needs an allocation hook"))
 	}
 }
 
