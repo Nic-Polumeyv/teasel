@@ -44,36 +44,35 @@ export interface Options {
 	errorRecovery?: boolean;
 }
 
-// what each accepted value of an option adds to the word the engine takes, the bits of `flag` in json.rs
-type Word<K extends keyof Options> = readonly (readonly [NonNullable<Options[K]>, number])[];
-const yes = (bit: number) => [[false, 0], [true, bit]] as const;
-const WORD: { [K in keyof Options]-?: Word<K> } = {
-	sourceType: [['script', 0], ['module', 1]],
-	typescript: [[false, 0], [true, 2], ['erase', 2 | 4]],
-	comments: yes(8),
-	scopes: yes(16),
-	locations: yes(32),
-	parenthesized: yes(64),
-	decorators: [['legacy', 128], ['proposal', 256]],
-	allowReturnOutsideFunction: yes(512),
-	allowAwaitOutsideFunction: yes(1024),
-	allowSuperOutsideMethod: yes(2048),
-	allowUndeclaredExports: yes(4096),
-	errorRecovery: yes(8192),
+// the engine's word: two bits per option, in this order, holding the index of its value; `flag` in json.rs lays it out the same way
+const ACCEPTED: { [K in keyof Options]-?: readonly [NonNullable<Options[K]> | undefined, ...NonNullable<Options[K]>[]] } = {
+	sourceType: ['script', 'module'],
+	typescript: [false, true, 'erase'],
+	decorators: [undefined, 'legacy', 'proposal'],
+	comments: [false, true],
+	scopes: [false, true],
+	locations: [false, true],
+	parenthesized: [false, true],
+	allowReturnOutsideFunction: [false, true],
+	allowAwaitOutsideFunction: [false, true],
+	allowSuperOutsideMethod: [false, true],
+	allowUndeclaredExports: [false, true],
+	errorRecovery: [false, true],
 };
-const known = (key: string): key is keyof Options => Object.hasOwn(WORD, key);
+const SLOT = Object.fromEntries(Object.keys(ACCEPTED).map((key, slot) => [key, slot])) as Record<keyof Options, number>;
+const known = (key: string): key is keyof Options => Object.hasOwn(ACCEPTED, key);
 
-/** The options that are on, as the word of bits the engine takes. */
+/** The options that are on, as the word the engine takes. */
 export function flags(options: Options = {}): number {
 	let on = 0;
 	for (const key in options) {
 		if (!known(key)) throw new TypeError(`${key} is not an option`);
 		const value: unknown = options[key];
 		if (value === undefined) continue;
-		const words: Word<keyof Options> = WORD[key];
-		const found = words.find(([accepted]) => accepted === value);
-		if (found === undefined) throw new TypeError(`${key} must be ${words.map(([accepted]) => JSON.stringify(accepted)).join(' or ')}, not ${JSON.stringify(value)}`);
-		on |= found[1];
+		const accepted: readonly unknown[] = ACCEPTED[key];
+		const index = accepted.indexOf(value);
+		if (index < 0) throw new TypeError(`${key} must be ${accepted.filter((a) => a !== undefined).map((a) => JSON.stringify(a)).join(' or ')}, not ${JSON.stringify(value)}`);
+		on |= index << (2 * SLOT[key]);
 	}
 	return on;
 }

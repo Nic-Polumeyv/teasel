@@ -36,7 +36,7 @@ impl Request {
 	pub fn from_flags(flags: u32) -> Request {
 		let on = |bit: u32| flags & bit != 0;
 		Request {
-			typescript: on(flag::TYPESCRIPT),
+			typescript: on(flag::TYPESCRIPT) || on(flag::ERASE),
 			comments: on(flag::COMMENTS),
 			scopes: on(flag::SCOPES),
 			locations: on(flag::LOCATIONS),
@@ -62,22 +62,26 @@ impl Request {
 	}
 }
 
-/// A source's switches as bits, one word across a binding; npm/src/lib/options.ts spells the same numbers.
+/// A source's switches, one word across a binding: two bits per option in the order of
+/// npm/src/lib/options.ts, holding the index of the option's value.
 pub mod flag {
-	pub const MODULE: u32 = 1;
-	pub const TYPESCRIPT: u32 = 1 << 1;
-	pub const ERASE: u32 = 1 << 2;
-	pub const COMMENTS: u32 = 1 << 3;
-	pub const SCOPES: u32 = 1 << 4;
-	pub const LOCATIONS: u32 = 1 << 5;
-	pub const PARENTHESIZED: u32 = 1 << 6;
-	pub const LEGACY_DECORATORS: u32 = 1 << 7;
-	pub const PROPOSAL_DECORATORS: u32 = 1 << 8;
-	pub const ALLOW_RETURN_OUTSIDE_FUNCTION: u32 = 1 << 9;
-	pub const ALLOW_AWAIT_OUTSIDE_FUNCTION: u32 = 1 << 10;
-	pub const ALLOW_SUPER_OUTSIDE_METHOD: u32 = 1 << 11;
-	pub const ALLOW_UNDECLARED_EXPORTS: u32 = 1 << 12;
-	pub const ERROR_RECOVERY: u32 = 1 << 13;
+	const fn at(slot: u32, index: u32) -> u32 {
+		index << (2 * slot)
+	}
+	pub const MODULE: u32 = at(0, 1);
+	pub const TYPESCRIPT: u32 = at(1, 1);
+	pub const ERASE: u32 = at(1, 2);
+	pub const LEGACY_DECORATORS: u32 = at(2, 1);
+	pub const PROPOSAL_DECORATORS: u32 = at(2, 2);
+	pub const COMMENTS: u32 = at(3, 1);
+	pub const SCOPES: u32 = at(4, 1);
+	pub const LOCATIONS: u32 = at(5, 1);
+	pub const PARENTHESIZED: u32 = at(6, 1);
+	pub const ALLOW_RETURN_OUTSIDE_FUNCTION: u32 = at(7, 1);
+	pub const ALLOW_AWAIT_OUTSIDE_FUNCTION: u32 = at(8, 1);
+	pub const ALLOW_SUPER_OUTSIDE_METHOD: u32 = at(9, 1);
+	pub const ALLOW_UNDECLARED_EXPORTS: u32 = at(10, 1);
+	pub const ERROR_RECOVERY: u32 = at(11, 1);
 }
 
 /// The error answer for a request the parser never ran: a host's offsets or switches.
