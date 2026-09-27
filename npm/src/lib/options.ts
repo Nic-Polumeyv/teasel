@@ -9,13 +9,6 @@ export interface Options {
 	 * JavaScript itself has: decorators and accessor fields (`AccessorProperty`).
 	 */
 	typescript?: boolean | 'erase';
-	/**
-	 * Which decorators are read. 'legacy' refuses decorators on private elements, class
-	 * expressions and their members; 'proposal' refuses parameter decorators and decorators
-	 * on abstract or declared fields.
-	 * @default 'any'
-	 */
-	decorators?: 'any' | 'legacy' | 'proposal';
 	/** Attach `leadingComments`, `trailingComments` and `innerComments` to nodes, and list every comment read as `comments` on the answer. */
 	comments?: boolean;
 	/**
@@ -49,7 +42,6 @@ export interface Options {
 const ACCEPTED: { [K in keyof Options]-?: readonly NonNullable<Options[K]>[] } = {
 	sourceType: ['script', 'module'],
 	typescript: [false, true, 'erase'],
-	decorators: ['any', 'legacy', 'proposal'],
 	comments: [false, true],
 	scopes: [false, true],
 	locations: [false, true],

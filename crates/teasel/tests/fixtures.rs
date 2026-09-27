@@ -30,8 +30,6 @@ fn files() {
 				("locations", flag::LOCATIONS),
 				("erase", flag::ERASE),
 				("recover", flag::ERROR_RECOVERY),
-				("legacy", flag::LEGACY_DECORATORS),
-				("proposal", flag::PROPOSAL_DECORATORS),
 			] {
 				if stem.contains(word) {
 					flags |= bit;

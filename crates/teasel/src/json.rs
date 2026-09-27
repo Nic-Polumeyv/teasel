@@ -10,7 +10,7 @@ use crate::error::Code;
 use crate::estree::{Emit, Json, Output, Positions, Words, answer, error_to_json};
 use crate::handed::{Raw, Views};
 use crate::host::{self, Grammar};
-use crate::parser::{Decorators, Entry, parse_at};
+use crate::parser::{Entry, parse_at};
 use crate::scopes::{self, Bind};
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -49,13 +49,6 @@ impl Request {
 				allow_super_outside_method: on(flag::ALLOW_SUPER_OUTSIDE_METHOD),
 				allow_undeclared_exports: on(flag::ALLOW_UNDECLARED_EXPORTS),
 				parenthesized: on(flag::PARENTHESIZED),
-				decorators: if on(flag::PROPOSAL_DECORATORS) {
-					Decorators::Proposal
-				} else if on(flag::LEGACY_DECORATORS) {
-					Decorators::Legacy
-				} else {
-					Decorators::Any
-				},
 			},
 			..Request::default()
 		}
@@ -71,17 +64,15 @@ pub mod flag {
 	pub const MODULE: u32 = at(0, 1);
 	pub const TYPESCRIPT: u32 = at(1, 1);
 	pub const ERASE: u32 = at(1, 2);
-	pub const LEGACY_DECORATORS: u32 = at(2, 1);
-	pub const PROPOSAL_DECORATORS: u32 = at(2, 2);
-	pub const COMMENTS: u32 = at(3, 1);
-	pub const SCOPES: u32 = at(4, 1);
-	pub const LOCATIONS: u32 = at(5, 1);
-	pub const PARENTHESIZED: u32 = at(6, 1);
-	pub const ALLOW_RETURN_OUTSIDE_FUNCTION: u32 = at(7, 1);
-	pub const ALLOW_AWAIT_OUTSIDE_FUNCTION: u32 = at(8, 1);
-	pub const ALLOW_SUPER_OUTSIDE_METHOD: u32 = at(9, 1);
-	pub const ALLOW_UNDECLARED_EXPORTS: u32 = at(10, 1);
-	pub const ERROR_RECOVERY: u32 = at(11, 1);
+	pub const COMMENTS: u32 = at(2, 1);
+	pub const SCOPES: u32 = at(3, 1);
+	pub const LOCATIONS: u32 = at(4, 1);
+	pub const PARENTHESIZED: u32 = at(5, 1);
+	pub const ALLOW_RETURN_OUTSIDE_FUNCTION: u32 = at(6, 1);
+	pub const ALLOW_AWAIT_OUTSIDE_FUNCTION: u32 = at(7, 1);
+	pub const ALLOW_SUPER_OUTSIDE_METHOD: u32 = at(8, 1);
+	pub const ALLOW_UNDECLARED_EXPORTS: u32 = at(9, 1);
+	pub const ERROR_RECOVERY: u32 = at(10, 1);
 }
 
 /// The error answer for a request the parser never ran: a host's offsets or switches.

@@ -1,7 +1,7 @@
 //! Command line front end: one file, or a batch of jobs, answered as JSON.
 //!
 //! `teasel [--module] [--typescript] [--comments] [--scopes] [--expression|--pattern|--params|--statement|--type-parameters]
-//! [--parenthesized] [--erase] [--legacy-decorators|--proposal-decorators] [--offset N] FILE` prints
+//! [--parenthesized] [--erase] [--offset N] FILE` prints
 //! the answer as JSON: the node (or the parameters) as `node`, then `end`, the offset after what
 //! the parse consumed. `--offset` alone parses an expression. The pattern, params and statement
 //! modes parse as a module.
@@ -13,8 +13,7 @@
 //! for TypeScript and `+comments` to attach comments, `+scopes` for the scope analysis,
 //! `+parenthesized` to mark parenthesized nodes, `+undeclared-exports` to accept exports of names
 //! the source never declares, `+stop:TOKEN` to end a parse-at entry at one of the host's tokens or
-//! `+erase` to erase TypeScript from the output. `+legacyDecorators` and `+proposalDecorators`
-//! select which decorators are read. Offsets are byte offsets into the source; the
+//! `+erase` to erase TypeScript from the output. Offsets are byte offsets into the source; the
 //! JSON output reports UTF-16 offsets, as JavaScript counts them.
 
 use std::io::{self, BufRead, Read, Write};
@@ -86,8 +85,6 @@ fn batch(grammar: Option<String>) -> io::Result<()> {
 				"scopes" => flags |= flag::SCOPES,
 				"erase" => flags |= flag::ERASE,
 				"parenthesized" => flags |= flag::PARENTHESIZED,
-				"legacyDecorators" => flags |= flag::LEGACY_DECORATORS,
-				"proposalDecorators" => flags |= flag::PROPOSAL_DECORATORS,
 				"recover" => flags |= flag::ERROR_RECOVERY,
 				"undeclared-exports" if entry == Entry::Program => flags |= flag::ALLOW_UNDECLARED_EXPORTS,
 				_ => {
@@ -144,8 +141,6 @@ fn main() -> ExitCode {
 			"--comments" => flags |= flag::COMMENTS,
 			"--scopes" => flags |= flag::SCOPES,
 			"--parenthesized" => flags |= flag::PARENTHESIZED,
-			"--legacy-decorators" => flags |= flag::LEGACY_DECORATORS,
-			"--proposal-decorators" => flags |= flag::PROPOSAL_DECORATORS,
 			"--erase" => flags |= flag::ERASE,
 			"--expression" => entry = Entry::Expression,
 			"--pattern" => entry = Entry::Pattern,
@@ -165,7 +160,7 @@ fn main() -> ExitCode {
 	}
 	let Some(file) = file else {
 		eprintln!(
-			"usage: teasel [--module] [--typescript] [--comments] [--scopes] [--expression|--pattern|--params|--statement|--type-parameters] [--parenthesized] [--erase] [--legacy-decorators|--proposal-decorators] [--offset N] FILE"
+			"usage: teasel [--module] [--typescript] [--comments] [--scopes] [--expression|--pattern|--params|--statement|--type-parameters] [--parenthesized] [--erase] [--offset N] FILE"
 		);
 		return ExitCode::FAILURE;
 	};
