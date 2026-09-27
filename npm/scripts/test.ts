@@ -51,6 +51,7 @@ const { open, scopeOf, referenceOf, parentOf } = untyped(m);
 	assert.throws(() => parse('class C { m(@dec p) {} }', { ...ts, decorators: 'proposal' }), (e: Any) => e.code === 'decorator_placement');
 	assert.doesNotThrow(() => parse('class C { @dec #x = 1 }', { ...ts, decorators: 'proposal' }));
 	assert.doesNotThrow(() => parse('class C { @dec #x = 1 }', ts));
+	assert.doesNotThrow(() => parse('class C { @dec #x = 1; m(@dec p) {} }', { ...ts, decorators: 'any' }));
 	assert.doesNotThrow(() => parse('class C { m(@dec p) {} }', ts));
 	assert.equal(at('expression', '{items as item}', 1, ts).node.type, 'TSAsExpression');
 	assert.equal(at('expression', '{items as item}', 1, ts, ['as']).end, 6);

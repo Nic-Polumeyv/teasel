@@ -12,9 +12,10 @@ export interface Options {
 	/**
 	 * Which decorators are read. 'legacy' refuses decorators on private elements, class
 	 * expressions and their members; 'proposal' refuses parameter decorators and decorators
-	 * on abstract or declared fields. Unset reads both syntaxes.
+	 * on abstract or declared fields.
+	 * @default 'any'
 	 */
-	decorators?: 'legacy' | 'proposal';
+	decorators?: 'any' | 'legacy' | 'proposal';
 	/** Attach `leadingComments`, `trailingComments` and `innerComments` to nodes, and list every comment read as `comments` on the answer. */
 	comments?: boolean;
 	/**
@@ -45,10 +46,10 @@ export interface Options {
 }
 
 // the engine's word: two bits per option, in this order, holding the index of its value; `flag` in json.rs lays it out the same way
-const ACCEPTED: { [K in keyof Options]-?: readonly [NonNullable<Options[K]> | undefined, ...NonNullable<Options[K]>[]] } = {
+const ACCEPTED: { [K in keyof Options]-?: readonly NonNullable<Options[K]>[] } = {
 	sourceType: ['script', 'module'],
 	typescript: [false, true, 'erase'],
-	decorators: [undefined, 'legacy', 'proposal'],
+	decorators: ['any', 'legacy', 'proposal'],
 	comments: [false, true],
 	scopes: [false, true],
 	locations: [false, true],
@@ -71,7 +72,7 @@ export function flags(options: Options = {}): number {
 		if (value === undefined) continue;
 		const accepted: readonly unknown[] = ACCEPTED[key];
 		const index = accepted.indexOf(value);
-		if (index < 0) throw new TypeError(`${key} must be ${accepted.filter((a) => a !== undefined).map((a) => JSON.stringify(a)).join(' or ')}, not ${JSON.stringify(value)}`);
+		if (index < 0) throw new TypeError(`${key} must be ${accepted.map((a) => JSON.stringify(a)).join(' or ')}, not ${JSON.stringify(value)}`);
 		on |= index << (2 * SLOT[key]);
 	}
 	return on;

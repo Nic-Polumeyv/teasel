@@ -24,4 +24,4 @@ Some TypeScript syntax does something at runtime: enums, namespaces that hold va
 
 ## Decorators
 
-Decorators are read when `typescript` is on. Both syntaxes are accepted by default. `decorators: 'legacy'` accepts only what `experimentalDecorators` allows, and `decorators: 'proposal'` accepts only the standard syntax.
+Decorators are read when `typescript` is on. `decorators: 'any'`, the default, accepts both syntaxes. `decorators: 'legacy'` accepts only what `experimentalDecorators` allows, and `decorators: 'proposal'` accepts only the standard syntax.
