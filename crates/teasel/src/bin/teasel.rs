@@ -19,9 +19,8 @@
 
 use std::io::{self, BufRead, Read, Write};
 use std::process::ExitCode;
-use teasel::json::Request;
-use teasel::parser::Decorators;
-use teasel::{Entry, Options, json};
+use teasel::json::{Request, flag};
+use teasel::{Entry, json};
 
 /// A batch header's mode: its entry, offset and switches, which may come before or after the offset.
 fn batch_mode(mode: &str) -> (Entry, u32, impl Iterator<Item = &str>) {
@@ -73,37 +72,39 @@ fn batch(grammar: Option<String>) -> io::Result<()> {
 			None => (false, mode_text),
 		};
 		let (entry, offset, switches) = batch_mode(mode_text);
-		let mut request = Request {
-			entry,
-			offset,
-			typescript,
-			locations: true,
-			options: Options {
-				module: !mode_text.starts_with("script"),
-				..Options::default()
-			},
-			..Request::default()
-		};
+		let mut flags = flag::LOCATIONS;
+		if typescript {
+			flags |= flag::TYPESCRIPT;
+		}
+		if !mode_text.starts_with("script") {
+			flags |= flag::MODULE;
+		}
 		let mut stop = String::new();
 		for switch in switches {
 			match switch {
-				"comments" => request.comments = true,
-				"scopes" => request.scopes = true,
-				"erase" => request.erase = true,
-				"parenthesized" => request.options.parenthesized = true,
-				"legacyDecorators" => request.options.decorators = Decorators::Legacy,
-				"proposalDecorators" => request.options.decorators = Decorators::Proposal,
-				"recover" => request.options.error_recovery = true,
-				_ if switch.starts_with("stop:") => {
-					if !stop.is_empty() {
-						stop.push(' ');
+				"comments" => flags |= flag::COMMENTS,
+				"scopes" => flags |= flag::SCOPES,
+				"erase" => flags |= flag::ERASE,
+				"parenthesized" => flags |= flag::PARENTHESIZED,
+				"legacyDecorators" => flags |= flag::LEGACY_DECORATORS,
+				"proposalDecorators" => flags |= flag::PROPOSAL_DECORATORS,
+				"recover" => flags |= flag::ERROR_RECOVERY,
+				"undeclared-exports" if entry == Entry::Program => flags |= flag::ALLOW_UNDECLARED_EXPORTS,
+				_ => {
+					if let Some(token) = switch.strip_prefix("stop:") {
+						if !stop.is_empty() {
+							stop.push(' ');
+						}
+						stop.push_str(token);
 					}
-					stop.push_str(&switch[5..]);
 				}
-				"undeclared-exports" if entry == Entry::Program => request.options.allow_undeclared_exports = true,
-				_ => {}
 			}
 		}
+		let request = Request {
+			entry,
+			offset,
+			..Request::from_flags(flags)
+		};
 		let json = match (&grammar, mode_text.starts_with("doc")) {
 			(Some(grammar), true) => json::parse_document(&source, grammar, &request),
 			_ => json::parse(&source, &request, &stop),
@@ -132,26 +133,20 @@ fn main() -> ExitCode {
 	}
 	let mut entry = Entry::Program;
 	let mut offset = None;
-	let mut module = false;
-	let mut typescript = false;
-	let mut comments = false;
-	let mut scopes = false;
-	let mut parenthesized = false;
-	let mut decorators = Decorators::Any;
-	let mut erase = false;
+	let mut flags = flag::LOCATIONS;
 	let mut host = None;
 	let mut file = None;
 	let mut args = args.into_iter();
 	while let Some(arg) = args.next() {
 		match arg.as_str() {
-			"--module" => module = true,
-			"--typescript" => typescript = true,
-			"--comments" => comments = true,
-			"--scopes" => scopes = true,
-			"--parenthesized" => parenthesized = true,
-			"--legacy-decorators" => decorators = Decorators::Legacy,
-			"--proposal-decorators" => decorators = Decorators::Proposal,
-			"--erase" => erase = true,
+			"--module" => flags |= flag::MODULE,
+			"--typescript" => flags |= flag::TYPESCRIPT,
+			"--comments" => flags |= flag::COMMENTS,
+			"--scopes" => flags |= flag::SCOPES,
+			"--parenthesized" => flags |= flag::PARENTHESIZED,
+			"--legacy-decorators" => flags |= flag::LEGACY_DECORATORS,
+			"--proposal-decorators" => flags |= flag::PROPOSAL_DECORATORS,
+			"--erase" => flags |= flag::ERASE,
 			"--expression" => entry = Entry::Expression,
 			"--pattern" => entry = Entry::Pattern,
 			"--params" => entry = Entry::Params,
@@ -165,12 +160,9 @@ fn main() -> ExitCode {
 	if entry == Entry::Program && offset.is_some() {
 		entry = Entry::Expression;
 	}
-	let options = Options {
-		module: module || !matches!(entry, Entry::Program | Entry::Expression),
-		parenthesized,
-		decorators,
-		..Options::default()
-	};
+	if !matches!(entry, Entry::Program | Entry::Expression) {
+		flags |= flag::MODULE;
+	}
 	let Some(file) = file else {
 		eprintln!(
 			"usage: teasel [--module] [--typescript] [--comments] [--scopes] [--expression|--pattern|--params|--statement|--type-parameters] [--parenthesized] [--erase] [--legacy-decorators|--proposal-decorators] [--offset N] FILE"
@@ -187,13 +179,7 @@ fn main() -> ExitCode {
 	let request = Request {
 		entry,
 		offset: offset.unwrap_or(0),
-		typescript,
-		comments,
-		scopes,
-		locations: true,
-		erase,
-		end: None,
-		options,
+		..Request::from_flags(flags)
 	};
 	if let Some(host) = host {
 		let grammar = match std::fs::read_to_string(&host) {

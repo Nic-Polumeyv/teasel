@@ -122,6 +122,12 @@ const { open, scopeOf, referenceOf, parentOf } = untyped(m);
 	assert.throws(() => parse('x', { preserveParens: true } as Any), TypeError);
 	assert.throws(() => parse('return', { sourceType: 'module' }), SyntaxError);
 	assert.equal(program('return', { allowReturnOutsideFunction: true }).body[0].type, 'ReturnStatement');
+	assert.throws(() => parse('await x'), SyntaxError);
+	assert.equal(program('await x', { allowAwaitOutsideFunction: true }).body[0].expression.type, 'AwaitExpression');
+	assert.throws(() => parse('super.x'), SyntaxError);
+	assert.equal(program('super.x', { allowSuperOutsideMethod: true }).body[0].expression.object.type, 'Super');
+	assert.throws(() => parse('export { x }', { sourceType: 'module' }), SyntaxError);
+	assert.equal(program('export { x }', { sourceType: 'module', allowUndeclaredExports: true }).body[0].type, 'ExportNamedDeclaration');
 	{
 		// a document's answer lists each piece of JavaScript the host read, with its share of the tables
 		const host = new Plan(readFileSync(new URL('../../crates/teasel/tests/hosts/svelte/host.grammar', import.meta.url), 'utf8'));

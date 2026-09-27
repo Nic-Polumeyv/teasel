@@ -615,6 +615,7 @@ fn undeclared_exports_can_be_allowed() {
 #[ignore]
 fn phases() {
 	use crate::estree::{Output, Positions, answer};
+	use crate::json::{Request, flag};
 	use crate::lexer::Lexer;
 	use crate::lexer::token::TokenKind;
 	let Ok(path) = std::env::var("TEASEL_BENCH") else {
@@ -710,7 +711,6 @@ fn phases() {
 	let end = source.len() as u32;
 	let lines = Positions::new(&source, true);
 	{
-		use crate::json::{Request, flag};
 		let request = Request::from_flags(flag::MODULE | flag::COMMENTS);
 		let prepared = crate::json::Prepared::borrowed(&source, request);
 		best("whole request: positions, parse, comments, encode, finish", &mut || {
@@ -730,7 +730,6 @@ fn phases() {
 		"<script>let items = [1,2,3];</script>\n{}",
 		"{#each items as item}<p class=\"row\" onclick={() => f(item)}>{item + 1}</p>{/each}\n".repeat(200)
 	);
-	use crate::json::flag;
 	for (flags, label) in [
 		(flag::MODULE, "module"),
 		(
@@ -738,7 +737,7 @@ fn phases() {
 			"module scopes comments locations",
 		),
 	] {
-		let prepared = crate::json::Prepared::borrowed(&document, crate::json::Request::from_flags(flags));
+		let prepared = crate::json::Prepared::borrowed(&document, Request::from_flags(flags));
 		best(&format!("host: 200 each blocks, {label}"), &mut || {
 			prepared
 				.in_place(Entry::Program, 0.0, None, "", Some(&grammar))

@@ -179,15 +179,13 @@ fn conformance() {
 		let excused = |c: &String| CHECKER.iter().any(|(code, _)| code == c);
 		let grammar_error = codes.iter().any(|c| c.starts_with('1') && c.len() == 4 && !excused(c));
 		let any_error = !codes.is_empty();
-		let mut request = Request::from_flags(
-			flag::TYPESCRIPT
-				| if legacy_decorators(&source) {
-					flag::LEGACY_DECORATORS
-				} else {
-					flag::PROPOSAL_DECORATORS
-				},
-		);
-		request.options.module = is_module(&source);
+		let module = if is_module(&source) { flag::MODULE } else { 0 };
+		let decorators = if legacy_decorators(&source) {
+			flag::LEGACY_DECORATORS
+		} else {
+			flag::PROPOSAL_DECORATORS
+		};
+		let request = Request::from_flags(flag::TYPESCRIPT | module | decorators);
 		let answer = parse(&source, &request, "");
 		let failed = answer.starts_with("{\"error\"");
 		counted += 1;

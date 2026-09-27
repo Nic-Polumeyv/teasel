@@ -32,19 +32,7 @@ pub struct Request {
 }
 
 impl Request {
-	pub fn new(entry: Entry, offset: u32) -> Request {
-		Request {
-			entry,
-			offset,
-			options: Options {
-				module: true,
-				..Options::default()
-			},
-			..Request::default()
-		}
-	}
-
-	/// The same from one word of `flag` bits; the entry and offset come with each parse.
+	/// A source's request from one word of `flag` bits; the entry and offset come with each parse.
 	pub fn from_flags(flags: u32) -> Request {
 		let on = |bit: u32| flags & bit != 0;
 		Request {

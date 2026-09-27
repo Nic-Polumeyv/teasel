@@ -35,9 +35,12 @@ fn parsing(root: &Path) -> Vec<(String, String, bool)> {
 }
 
 fn request(entry: Entry, offset: u32, module: bool, flags: u32) -> Request {
-	let mut request = Request::from_flags(flags);
-	(request.entry, request.offset, request.options.module) = (entry, offset, module);
-	request
+	let module = if module { flag::MODULE } else { 0 };
+	Request {
+		entry,
+		offset,
+		..Request::from_flags(module | flags)
+	}
 }
 
 #[test]

@@ -95,8 +95,8 @@ fn pinned_answers() {
 	let mut lines = Vec::new();
 	for dir in ["pass", "pass-explicit"] {
 		for (path, source) in files(&root, dir) {
-			let mut request = Request::from_flags(flag::COMMENTS | flag::SCOPES | flag::LOCATIONS);
-			request.options.module = is_module(&path);
+			let module = if is_module(&path) { flag::MODULE } else { 0 };
+			let request = Request::from_flags(module | flag::COMMENTS | flag::SCOPES | flag::LOCATIONS);
 			lines.push(format!("{path} {:016x}", hash(&parse(&source, &request, ""))));
 		}
 	}
