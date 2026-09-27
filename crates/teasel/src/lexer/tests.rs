@@ -547,3 +547,13 @@ fn unexpected_characters() {
 	assert_eq!(error("a ¬ b").0, "Unexpected character '¬'");
 	assert_eq!(error("\\").0, "Expecting Unicode escape sequence \\uXXXX");
 }
+
+#[test]
+fn every_keyword_reads_back() {
+	use super::token::Keyword;
+	for &keyword in Keyword::ALL {
+		assert_eq!(Keyword::from_word(keyword.as_str()), Some(keyword));
+	}
+	assert_eq!(Keyword::from_word("brea"), None);
+	assert_eq!(Keyword::from_word("breaks"), None);
+}
