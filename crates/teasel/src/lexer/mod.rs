@@ -1072,7 +1072,8 @@ fn trivia(
 	let bytes = src.as_bytes();
 	let at_start = pos == 0;
 	let mut newline = false;
-	// each arm names its kind, so the comment's head length is a constant there
+	// one match choosing the kind for every arm was measured at +0.3% of a parse: the head
+	// length is a constant only when each arm names its kind
 	macro_rules! line {
 		($kind:expr) => {{
 			let line = line_comment(src, pos, $kind);
