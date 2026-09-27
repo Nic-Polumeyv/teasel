@@ -55,7 +55,6 @@ const { node, end } = source.parse(Plan.expression.until('as', ','), 3);
 | `parenthesized` | `parenthesized: true` on a node the source wraps in parens | |
 | `errorRecovery` | an `Identifier` named `''` of no width where something is missing | `errors`, instead of a throw |
 | `typescript` | TypeScript nodes | |
-| `decorators: 'legacy'` or `'proposal'` | restricts decorator syntax; unset reads both | |
 | `typescript: 'erase'` | JavaScript, the types gone | `typescript`, what could not be erased: enums, namespaces with values, parameter properties, `export =`, `import =`, decorators, accessor fields |
 | `sourceType: 'module'` | strict code, `import`, `export`, top-level `await` | |
 

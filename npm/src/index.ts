@@ -286,7 +286,7 @@ export class Plan<T = HostNode> {
 
 /**
  * A source kept with its options: the parses out of it share the source copy and the position
- * tables. Offsets are UTF-16, as in acorn; positions stay those of the whole source.
+ * tables. Offsets are UTF-16; positions stay those of the whole source.
  */
 export class Source {
 	#held: Prepared | undefined;

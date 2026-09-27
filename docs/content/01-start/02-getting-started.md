@@ -51,7 +51,7 @@ import { Source, Plan } from '@teasel/parser';
 const { node } = new Source('export const answer = 42').parse();
 ```
 
-The build looks for `teasel.wasm` next to its own module, through `import.meta.url`, so a bundler includes the file without configuration. Under Node, `node --no-addons` takes the same build instead of the addon; on a Linux without glibc there is no addon, and the error says so and names this flag.
+The build looks for `teasel.wasm` beside the package entry, through `import.meta.url`, so a bundler includes the file without configuration. Under Node, `node --no-addons` takes the same build instead of the addon; on a Linux without glibc there is no addon, and the error says so and names this flag.
 
 ## Next
 
