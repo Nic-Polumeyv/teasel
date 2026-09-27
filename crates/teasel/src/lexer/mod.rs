@@ -150,50 +150,24 @@ impl<'a> Lexer<'a> {
 
 	/// The token after the current one, leaving the lexer where it was.
 	pub(crate) fn peek_token(&mut self) -> Result<Token> {
-		let mark = self.mark();
-		let token = self.next_token();
-		self.rewind(mark);
-		token
+		self.lookahead(|lexer| lexer.next_token())
 	}
 
-	/// The next significant character, whether a line break precedes it, and its position.
+	/// The next significant character, whether a line break precedes it, and its position,
+	/// without tokenizing.
 	pub(crate) fn peek_char(&self) -> (Option<char>, bool, usize) {
-		self.peek_char_from(self.pos)
+		match trivia(self.src, self.pos, self.module, |_| {}) {
+			Ok((pos, newline)) => (self.src[pos..].chars().next(), newline, pos),
+			Err((_, newline)) => (None, newline, self.src.len()),
+		}
 	}
 
-	/// The next significant character from a source position, without tokenizing.
-	pub(crate) fn peek_char_from(&self, mut pos: usize) -> (Option<char>, bool, usize) {
-		let mut newline = false;
-		let bytes = self.src.as_bytes();
-		loop {
-			let Some(&b) = bytes.get(pos) else {
-				return (None, newline, pos);
-			};
-			match b {
-				b' ' | b'\t' | 0x0b | 0x0c => pos += 1,
-				b'\n' | b'\r' => {
-					pos += 1;
-					newline = true;
-				}
-				b'/' if bytes.get(pos + 1) == Some(&b'/') => pos += line_end(&bytes[pos..]),
-				b'/' if bytes.get(pos + 1) == Some(&b'*') => {
-					let Some((len, broke)) = comment_end(&self.src[pos + 2..]) else {
-						return (None, newline, self.src.len());
-					};
-					newline |= broke;
-					pos += len + 4;
-				}
-				_ => {
-					let c = self.src[pos..].chars().next().unwrap();
-					if is_new_line(c) {
-						newline = true;
-					} else if !is_whitespace(c) {
-						return (Some(c), newline, pos);
-					}
-					pos += c.len_utf8();
-				}
-			}
-		}
+	/// Reads ahead with `read` and comes back.
+	pub(crate) fn lookahead<T>(&mut self, read: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
+		let mark = self.mark();
+		let out = read(self);
+		self.rewind(mark);
+		out
 	}
 
 	fn byte(&self) -> Option<u8> {
@@ -358,18 +332,8 @@ impl<'a> Lexer<'a> {
 		}
 	}
 
-	/// A hashbang line at the very start of the source, before the first token.
-	pub(crate) fn skip_hashbang(&mut self) {
-		if self.pos == 0 && self.src.starts_with("#!") {
-			self.skip_line_comment(CommentKind::Hashbang);
-		}
-	}
-
 	fn skip_space(&mut self) -> Result<bool> {
-		let mut newline = false;
-		let last_end = self.pos;
-		let src = self.src;
-		let bytes = src.as_bytes();
+		let bytes = self.src.as_bytes();
 		if let Some(&b) = bytes.get(self.pos)
 			&& b < 0x80
 		{
@@ -388,82 +352,34 @@ impl<'a> Lexer<'a> {
 				}
 			}
 		}
-		while let Some(&b) = bytes.get(self.pos) {
-			let class = scan::class(b);
-			if class & scan::SPACE != 0 {
-				self.pos = scan::run_of(bytes, self.pos + 1, scan::SPACE);
-				continue;
+		let comments = &mut self.comments;
+		match trivia(self.src, self.pos, self.module, |comment| comments.push(comment)) {
+			Ok((pos, newline)) => {
+				self.pos = pos;
+				Ok(newline)
 			}
-			if class & scan::NEWLINE != 0 {
-				self.pos += 1;
-				newline = true;
-				continue;
-			}
-			match b {
-				b'<' if !self.module && src[self.pos..].starts_with("<!--") => {
-					self.skip_line_comment(CommentKind::HtmlOpen)
-				}
-				b'-' if !self.module && (last_end == 0 || newline) && src[self.pos..].starts_with("-->") => {
-					self.skip_line_comment(CommentKind::HtmlClose)
-				}
-				b'/' => match bytes.get(self.pos + 1) {
-					Some(b'/') => self.skip_line_comment(CommentKind::Line),
-					Some(b'*') => newline |= self.skip_block_comment()?,
-					_ => break,
-				},
-				_ if b < 0x80 => break,
-				_ => {
-					let c = self.char().unwrap();
-					if is_new_line(c) {
-						newline = true;
-					} else if !is_whitespace(c) {
-						break;
-					}
-					self.pos += c.len_utf8();
-				}
+			Err((start, newline)) => {
+				let rest = &bytes[start + 2..];
+				let newline = newline || line_end(rest) < rest.len();
+				self.unterminated(start, Code::UnterminatedComment, |l| {
+					l.pos = l.src.len();
+					l.comments.push(Comment {
+						kind: CommentKind::Unclosed,
+						start: start as u32,
+						end: l.pos as u32,
+					});
+					newline
+				})
 			}
 		}
-		Ok(newline)
 	}
 
-	fn skip_line_comment(&mut self, kind: CommentKind) {
-		let start = self.pos;
-		self.pos += match kind {
-			CommentKind::HtmlOpen => 4,
-			CommentKind::HtmlClose => 3,
-			_ => 2,
-		};
-		self.pos += line_end(&self.src.as_bytes()[self.pos..]);
-		self.comments.push(Comment {
-			kind,
-			start: start as u32,
-			end: self.pos as u32,
-		});
-	}
-
-	fn skip_block_comment(&mut self) -> Result<bool> {
-		let start = self.pos;
-		let Some((len, newline)) = comment_end(&self.src[start + 2..]) else {
-			let rest = &self.src.as_bytes()[start + 2..];
-			let newline = line_end(rest) < rest.len();
-			return self.unterminated(start, Code::UnterminatedComment, |l| {
-				l.pos = l.src.len();
-				l.comments.push(Comment {
-					kind: CommentKind::Unclosed,
-					start: start as u32,
-					end: l.pos as u32,
-				});
-				newline
-			});
-		};
-		let end = start + 2 + len + 2;
-		self.pos = end;
-		self.comments.push(Comment {
-			kind: CommentKind::Block,
-			start: start as u32,
-			end: end as u32,
-		});
-		Ok(newline)
+	pub(crate) fn skip_hashbang(&mut self) {
+		if self.pos == 0 && self.src.starts_with("#!") {
+			let comment = line_comment(self.src, 0, CommentKind::Hashbang);
+			self.pos = comment.end as usize;
+			self.comments.push(comment);
+		}
 	}
 
 	fn read_punctuator(&mut self, b: u8) -> Result<TokenKind> {
@@ -1139,6 +1055,92 @@ impl<'a> Lexer<'a> {
 			Some(v) => Ok(v),
 			None => self.error(digits, Code::BadCharacterEscape),
 		}
+	}
+}
+
+/// What separates tokens from `pos`: space, line breaks and comments, each comment handed to
+/// `comment`; HTML-style comments only in scripts, `-->` only at the start of a line. Answers
+/// where the next token starts and whether a line break was crossed, or `Err` at an unclosed
+/// block comment with the line break flag so far.
+#[inline(always)]
+fn trivia(
+	src: &str,
+	mut pos: usize,
+	module: bool,
+	mut comment: impl FnMut(Comment),
+) -> std::result::Result<(usize, bool), (usize, bool)> {
+	let bytes = src.as_bytes();
+	let at_start = pos == 0;
+	let mut newline = false;
+	// each arm names its kind, so the comment's head length is a constant there
+	macro_rules! line {
+		($kind:expr) => {{
+			let line = line_comment(src, pos, $kind);
+			pos = line.end as usize;
+			comment(line);
+		}};
+	}
+	while let Some(&b) = bytes.get(pos) {
+		let class = scan::class(b);
+		if class & scan::SPACE != 0 {
+			pos = scan::run_of(bytes, pos + 1, scan::SPACE);
+			continue;
+		}
+		if class & scan::NEWLINE != 0 {
+			pos += 1;
+			newline = true;
+			continue;
+		}
+		match b {
+			b'<' if !module && bytes[pos..].starts_with(b"<!--") => line!(CommentKind::HtmlOpen),
+			b'-' if !module && (at_start || newline) && bytes[pos..].starts_with(b"-->") => {
+				line!(CommentKind::HtmlClose)
+			}
+			b'/' => match bytes.get(pos + 1) {
+				Some(b'/') => line!(CommentKind::Line),
+				Some(b'*') => {
+					let Some((len, broke)) = comment_end(&src[pos + 2..]) else {
+						return Err((pos, newline));
+					};
+					let end = pos + 2 + len + 2;
+					comment(Comment {
+						kind: CommentKind::Block,
+						start: pos as u32,
+						end: end as u32,
+					});
+					newline |= broke;
+					pos = end;
+				}
+				_ => break,
+			},
+			_ if b < 0x80 => break,
+			_ => {
+				let c = src[pos..].chars().next().unwrap();
+				if is_new_line(c) {
+					newline = true;
+				} else if !is_whitespace(c) {
+					break;
+				}
+				pos += c.len_utf8();
+			}
+		}
+	}
+	Ok((pos, newline))
+}
+
+/// A comment of `kind` opening at `start` and running to the end of its line.
+#[inline(always)]
+fn line_comment(src: &str, start: usize, kind: CommentKind) -> Comment {
+	let head = match kind {
+		CommentKind::HtmlOpen => 4,
+		CommentKind::HtmlClose => 3,
+		_ => 2,
+	};
+	let end = start + head + line_end(&src.as_bytes()[start + head..]);
+	Comment {
+		kind,
+		start: start as u32,
+		end: end as u32,
 	}
 }
 
