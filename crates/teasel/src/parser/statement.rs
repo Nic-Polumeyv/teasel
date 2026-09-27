@@ -287,7 +287,7 @@ impl<E: Extension> Parser<'_, E> {
 		}
 	}
 
-	// a token here was measured at +0.9% of a parse: `let` is common and its name is read twice
+	// a token here measured +0.9%: the name after `let` would be read twice
 	fn is_let(&self, context: Context) -> bool {
 		if !self.is_contextual("let") {
 			return false;
