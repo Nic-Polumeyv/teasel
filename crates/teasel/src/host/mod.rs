@@ -2418,7 +2418,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		}
 	}
 
-	#[allow(clippy::too_many_arguments)]
+	#[expect(clippy::too_many_arguments)]
 	fn block_node(
 		&mut self,
 		rule: &BlockRule,

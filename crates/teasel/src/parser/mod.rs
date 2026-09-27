@@ -63,7 +63,7 @@ pub(crate) enum Unwrap {
 /// default, so the plain JavaScript parser is the unit extension. State an extension keeps while
 /// parsing lives in `Self` (cloned into snapshots, so keep it small); what it hands back with the
 /// tree lives in `Data`.
-#[allow(unused_variables)]
+#[expect(unused_variables)]
 pub(crate) trait Extension: Default + Sized {
 	type Data: Reuse;
 	/// What a speculative parse needs to put the extension's state back.
@@ -193,7 +193,6 @@ pub(crate) trait Extension: Default + Sized {
 		Ok(())
 	}
 	/// After the parameters, before the body; `Some` is a function without a body.
-	#[allow(clippy::too_many_arguments)]
 	fn function_body(
 		p: &mut Parser<Self>,
 		start: u32,
@@ -294,7 +293,6 @@ pub(crate) trait Extension: Default + Sized {
 	fn expr_op(p: &mut Parser<Self>, left: NodeId, left_start: u32, min_prec: i8) -> Result<Option<NodeId>> {
 		Ok(None)
 	}
-	#[allow(clippy::too_many_arguments)]
 	fn subscript(
 		p: &mut Parser<Self>,
 		base: NodeId,
@@ -324,7 +322,6 @@ pub(crate) trait Extension: Default + Sized {
 	}
 	fn new_expression(p: &mut Parser<Self>, node: NodeId) {}
 	/// An object property whose value starts unexpectedly for the plain grammar.
-	#[allow(clippy::too_many_arguments)]
 	fn property_value(
 		p: &mut Parser<Self>,
 		start: u32,
@@ -397,7 +394,7 @@ impl Entry {
 /// everything the parse consumed. `reused` is an emptied tree from an earlier parse, its room kept.
 /// The tree, whether the parse succeeded or not, so the next parse can reuse it; with the roots
 /// read and where the parse ended.
-#[allow(clippy::type_complexity)]
+#[expect(clippy::type_complexity)]
 pub(crate) fn parse_at<E: Extension>(
 	src: &str,
 	start: u32,

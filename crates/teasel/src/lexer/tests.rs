@@ -6,6 +6,7 @@ use super::token::{
 use crate::ast::{Comment, CommentKind};
 use crate::error::SyntaxError;
 use crate::interner::StrId;
+use std::assert_matches;
 
 fn tokens(src: &str) -> Vec<Token> {
 	let mut lexer = Lexer::new(src);
@@ -202,7 +203,7 @@ fn private_names() {
 		panic!("{:?}", token.kind)
 	};
 	assert_eq!(lexer.strings.get(name), "foo");
-	assert!(matches!(single("#class").1.kind, PrivateName(_)));
+	assert_matches!(single("#class").1.kind, PrivateName(_));
 	assert_eq!(error("# a"), ("Unexpected character ' '".into(), 1));
 }
 
@@ -331,7 +332,7 @@ fn legacy_octal_escapes() {
 	assert_eq!(strict_error("'\\08'").0, "Octal literal in strict mode");
 	let mut lexer = Lexer::new("'\\0'");
 	lexer.strict = true;
-	assert!(matches!(lexer.next_token().unwrap().kind, String(_)));
+	assert_matches!(lexer.next_token().unwrap().kind, String(_));
 }
 
 #[test]
