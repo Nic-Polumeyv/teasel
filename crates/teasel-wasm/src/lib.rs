@@ -47,6 +47,12 @@ pub unsafe extern "C" fn plan_new(ptr: *mut u8, len: u32, capacity: u32) -> u32 
 	}
 }
 
+/// For a document plan, each node type of the host with the fields that hold nodes, as JSON at `text_ptr`.
+#[unsafe(no_mangle)]
+pub extern "C" fn plan_children(handle: u32) {
+	let grammar = unsafe { &**(handle as *const Rc<Grammar>) };
+	text(teasel::json::plan_children(grammar));
+}
 #[unsafe(no_mangle)]
 pub extern "C" fn plan_free(handle: u32) {
 	drop(unsafe { Box::from_raw(handle as *mut Rc<Grammar>) });

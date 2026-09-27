@@ -2697,7 +2697,9 @@ impl<'a, E: Extension> Walker<'a, E> {
 				let node = self.js(JsEntry::TypeParameters, stops.joined)?;
 				let node = self.first(node);
 				let node = self.tree().node(node);
-				Value::Slice(node.start + 1, node.end - 1)
+				// under recovery the list can end before its `>`, or hold nothing
+				let start = node.start + 1;
+				Value::Slice(start, node.end.saturating_sub(1).max(start))
 			}
 			Entry::Params => Value::Nodes(self.js(JsEntry::Params, stops.joined)?),
 			Entry::Identifier => Value::Node(self.identifier()?),

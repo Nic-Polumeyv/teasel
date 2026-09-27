@@ -298,6 +298,21 @@ pub fn layout_json() -> String {
 	w.finish()
 }
 
+/// For a document plan: every type of node the host's documents hold, each with the fields that
+/// hold nodes, as JSON; see `Grammar::children`.
+pub fn plan_children(grammar: &Grammar) -> String {
+	let mut w = Json::default();
+	w.object();
+	for (ty, fields) in grammar.children() {
+		w.key(crate::names::Name::dynamic(ty));
+		w.list();
+		fields.into_iter().for_each(|field| w.text(field));
+		w.end();
+	}
+	w.end();
+	w.finish()
+}
+
 /// `stop` lists the host's tokens for an entry at an offset; see `parser::parse_at`.
 pub fn parse(source: &str, request: &Request, stop: &str) -> String {
 	parse_with(source, &Positions::new(source, request.locations), request, stop, None)
