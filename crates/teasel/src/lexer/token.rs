@@ -191,7 +191,7 @@ pub(crate) mod word {
 }
 
 impl Keyword {
-	// a hashed index over these was measured at +2.6% of a parse: the length switch stays
+	// a hashed index measured +2.6%: the length switch stays
 	pub(crate) fn from_word(word: &str) -> Option<Keyword> {
 		use Keyword::*;
 		Some(match word.len() {
