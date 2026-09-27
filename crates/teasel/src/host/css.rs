@@ -3,6 +3,30 @@
 
 use super::*;
 
+/// Every type of node a stylesheet holds, each with the fields that hold nodes, as `host` below
+/// writes them; `Grammar::children` lists them for a grammar with a style rule.
+pub(super) const CHILDREN: &[(&str, &[&str])] = &[
+	("StyleSheet", &["attributes", "children", "comments"]),
+	("Atrule", &["block"]),
+	("Rule", &["prelude", "block"]),
+	("SelectorList", &["children"]),
+	("ComplexSelector", &["children"]),
+	("RelativeSelector", &["combinator", "selectors"]),
+	("TypeSelector", &[]),
+	("IdSelector", &[]),
+	("ClassSelector", &[]),
+	("NestingSelector", &[]),
+	("PseudoClassSelector", &["args"]),
+	("PseudoElementSelector", &["args"]),
+	("AttributeSelector", &[]),
+	("Nth", &[]),
+	("Percentage", &[]),
+	("Combinator", &[]),
+	("Block", &["children"]),
+	("Declaration", &[]),
+	("CSSComment", &[]),
+];
+
 /// A comment read out of the CSS: where it sits, and its offset into the value it interrupted.
 struct CssComment {
 	start: u32,

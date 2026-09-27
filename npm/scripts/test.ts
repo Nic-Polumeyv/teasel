@@ -1,7 +1,8 @@
 // `node scripts/test.ts interpret` runs the decoder without code generation, as a host forbidding it would
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { codes } from './codes.ts';
+import { generate } from './children.ts';
 import type { Options } from '../dist/index.js';
 if (process.argv[2] === 'interpret') globalThis.Function = (() => { throw new EvalError('blocked'); }) as unknown as FunctionConstructor;
 const name = process.execArgv.includes('--no-addons') ? 'wasm' : 'native';
@@ -396,4 +397,76 @@ const vue = grammars.vue;
 {
 	const written = [...readFileSync(new URL('../src/lib/codes.ts', import.meta.url), 'utf8').matchAll(/'([a-z_0-9]+)'/g)].map((m) => m[1]);
 	assert.deepEqual(written, codes(), 'run node scripts/codes.ts');
+}
+
+// src/lib/children.ts is written from the engine's layout by scripts/children.ts: the two must agree
+{
+	const { engine } = await import('#engine');
+	const made = generate(JSON.parse(engine.layout()));
+	assert.deepEqual(JSON.parse(JSON.stringify(m.children)), made.children, 'run node scripts/children.ts');
+	assert.deepEqual([...m.extras], made.extras, 'run node scripts/children.ts');
+}
+
+// what children names is what the answers hold: over every fixture, a key whose value is a node or a
+// list of nodes is one of the type's children, and every child named is seen holding one somewhere
+{
+	const seen = new Map<string, Set<string>>();
+	// every key holding a node or a list, empty or not: what the reverse check counts as covered
+	const listed = new Map<string, Set<string>>();
+	const observe = (value: Any) => {
+		if (value === null || typeof value !== 'object') return;
+		if (Array.isArray(value)) return value.forEach(observe);
+		if (typeof value.type !== 'string') return;
+		// a comment is not a node; a stylesheet's `Block` is one
+		if ((value.type === 'Line' || value.type === 'Block') && typeof value.value === 'string') return;
+		let keys = seen.get(value.type);
+		if (keys === undefined) seen.set(value.type, (keys = new Set()));
+		let lists = listed.get(value.type);
+		if (lists === undefined) listed.set(value.type, (lists = new Set()));
+		for (const key in value) {
+			if (key === 'loc') continue;
+			const v = value[key];
+			if (v === null || typeof v !== 'object') continue;
+			const node = (x: Any) => x !== null && typeof x === 'object' && typeof x.type === 'string' && !((x.type === 'Line' || x.type === 'Block') && typeof x.value === 'string');
+			if (Array.isArray(v) ? v.some(node) : node(v)) keys.add(key);
+			if (Array.isArray(v) || node(v)) lists.add(key);
+			observe(v);
+		}
+	};
+	const fixtures = new URL('../../crates/teasel/tests/', import.meta.url);
+	const files = (dir: string, ext: string) => readdirSync(new URL(dir, fixtures)).filter((file) => file.endsWith(ext)).map((file) => readFileSync(new URL(`${dir}${file}`, fixtures), 'utf8'));
+	const check = (table: Readonly<Record<string, readonly string[]>>, what: string, hosts = false) => {
+		for (const [type, keys] of seen) {
+			assert.ok(type in table, `${what}: ${type} is not in children`);
+			for (const key of keys) assert.ok(table[type].includes(key) || m.extras.includes(key as Any), `${what}: ${type}.${key} holds nodes but children does not name it`);
+		}
+		// the built-in table comes from the layout, so a stale entry there is impossible; the hosts' is spelled by hand
+		const unseen = Object.entries(table).flatMap(([type, keys]) => (listed.has(type) && !(hosts && type in m.children) ? keys.filter((key) => !listed.get(type)!.has(key)).map((key) => `${type}.${key}`) : []));
+		if (hosts) assert.deepEqual(unseen, [], `${what}: children names fields no fixture holds a node or a list in`);
+		seen.clear();
+		listed.clear();
+	};
+	const parses = (text: string, options: Options) => {
+		try {
+			return open(text, options).parse().node;
+		} catch (e) {
+			if (e instanceof SyntaxError) return null;
+			throw e;
+		}
+	};
+	for (const text of files('fixtures/js/', '.js')) observe(parses(text, { sourceType: 'module', comments: true, errorRecovery: true }));
+	check(m.children, 'js fixtures');
+	for (const text of files('fixtures/ts/', '.ts')) observe(parses(text, { sourceType: 'module', typescript: true, comments: true, errorRecovery: true }));
+	check(m.children, 'ts fixtures');
+	for (const [host, ext] of [['svelte', '.svelte'], ['vue', '.html']] as const) {
+		const plan = new Plan(readFileSync(new URL(`hosts/${host}/host.grammar`, fixtures), 'utf8'));
+		for (const text of files(`hosts/${host}/`, ext)) {
+			try {
+				observe(open(text, { comments: true, scopes: true, errorRecovery: true }).parse(plan).node);
+			} catch (e) {
+				if (!(e instanceof SyntaxError)) throw e;
+			}
+		}
+		check(plan.children, `${host} fixtures`, true);
+	}
 }

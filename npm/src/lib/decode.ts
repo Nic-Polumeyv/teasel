@@ -1181,6 +1181,8 @@ export interface Engine extends Views {
 	readonly create: (source: string, flags: number) => Prepared;
 	/** The grammar of a host language, read once; an `Error` names the line it could not be read at. */
 	readonly plan: (grammar: string) => Held;
+	/** For a plan's grammar, each node type of the host with the fields that hold nodes, as JSON. */
+	readonly children: (plan: Held) => string;
 }
 
 function table(S: State, tree: Tree, words: Uint32Array, lens: number, rows: Rows, at: number): Decoded[] {

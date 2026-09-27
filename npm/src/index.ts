@@ -2,11 +2,13 @@ import type { Expression, Identifier, Node, Pattern, Program, SourceLocation, St
 import { decode, type Held, PARENT, type Prepared, REFERENCE, SCOPE } from './lib/decode.js';
 import { ENTRY, flags, type Options } from './lib/options.js';
 import { engine } from '#engine';
+import { children as builtin } from './lib/children.js';
 
 import type { Code } from './lib/codes.js';
 
 export type { Options } from './lib/options.js';
 export type { Code } from './lib/codes.js';
+export { children, extras } from './lib/children.js';
 
 /**
  * Thrown for a syntax error. `code` names what went wrong, for a host to branch on, and
@@ -222,6 +224,7 @@ export class Plan<T = HostNode> {
 	#entry: number;
 	#stop: string;
 	#held: Held | undefined;
+	#children: Readonly<Record<string, readonly string[]>> | undefined;
 
 	constructor(grammar: string);
 	constructor(grammar: string | number, stop = '') {
@@ -250,6 +253,16 @@ export class Plan<T = HostNode> {
 	static readonly statement: Plan<Statement> = Plan.#builtin(ENTRY.statement);
 	/** A `TSTypeParameterDeclaration`; TypeScript only, `not_typescript` otherwise. */
 	static readonly typeParameters: Plan<Node> = Plan.#builtin(ENTRY.typeParameters);
+
+	/**
+	 * For every type of node a parse with this plan answers with, the fields that hold a node or a
+	 * list of nodes: `children` for a built-in plan; a document plan adds the host's types, their
+	 * fields as its grammar spells them.
+	 */
+	get children(): Readonly<Record<string, readonly string[]>> {
+		if (this.#held === undefined) return builtin;
+		return (this.#children ??= { ...builtin, ...JSON.parse(engine.children(this.#held)) });
+	}
 
 	/**
 	 * The same reading, ended where one of the host's own tokens, words or punctuators, follows.

@@ -172,6 +172,15 @@ unsafe extern "C" fn plan(env: Env, info: CallbackInfo) -> Value {
 	})
 }
 
+// for a document plan, each node type of the host with the fields that hold nodes, as JSON
+unsafe extern "C" fn children(env: Env, info: CallbackInfo) -> Value {
+	guard(env, || {
+		let [plan] = args::<1>(env, info)?;
+		let grammar = grammar_of(env, plan)?.ok_or_else(|| String::from("a plan expected"))?;
+		text(env, &teasel::json::plan_children(grammar))
+	})
+}
+
 unsafe extern "C" fn drop_plan(_: Env, data: *mut c_void, _: *mut c_void) {
 	drop(unsafe { Box::from_raw(data.cast::<Rc<Grammar>>()) });
 }
@@ -460,6 +469,7 @@ pub unsafe extern "C" fn napi_register_module_v1(env: Env, exports: Value) -> Va
 			(c"create", create as unsafe extern "C" fn(Env, CallbackInfo) -> Value),
 			(c"parse", parse),
 			(c"plan", plan),
+			(c"children", children),
 			(c"free", free),
 			(c"tree", tree),
 			(c"layout", layout),
