@@ -142,6 +142,8 @@ macro_rules! keywords {
 			#[cfg(test)]
 			pub(crate) const ALL: &'static [Keyword] = &[$(Keyword::$name),*];
 
+			// a table lookup here was measured at +2.8% of a parse: it changed what LLVM inlined around
+			// `Parser::is` and `eat`, which have no `#[inline]` of their own
 			pub(crate) fn as_str(self) -> &'static str {
 				match self {
 					$(Keyword::$name => $text),*
