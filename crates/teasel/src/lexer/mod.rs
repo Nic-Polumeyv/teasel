@@ -58,7 +58,9 @@ pub(crate) struct Lexer<'a> {
 impl<'a> Lexer<'a> {
 	#[cfg(test)]
 	pub(crate) fn new(src: &'a str) -> Self {
-		Self::with(src, Interner::sized(src.len()))
+		let mut lexer = Self::with(src, Interner::sized(src.len()));
+		lexer.skip_hashbang();
+		lexer
 	}
 
 	/// `strings` is the tree's own interner, so ids from an earlier read of it stay valid.
@@ -335,12 +337,16 @@ impl<'a> Lexer<'a> {
 		}
 	}
 
-	fn skip_space(&mut self) -> Result<bool> {
-		let mut newline = false;
-		let last_end = self.pos;
+	/// A hashbang line at the very start of the source, before the first token.
+	pub(crate) fn skip_hashbang(&mut self) {
 		if self.pos == 0 && self.src.starts_with("#!") {
 			self.skip_line_comment(CommentKind::Hashbang);
 		}
+	}
+
+	fn skip_space(&mut self) -> Result<bool> {
+		let mut newline = false;
+		let last_end = self.pos;
 		let src = self.src;
 		let bytes = src.as_bytes();
 		if let Some(&b) = bytes.get(self.pos)

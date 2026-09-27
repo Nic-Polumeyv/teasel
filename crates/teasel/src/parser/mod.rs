@@ -588,6 +588,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 		let mut lexer = Lexer::with(src, std::mem::take(&mut ast.strings));
 		lexer.comments = std::mem::take(&mut ast.comments);
 		lexer.set_pos(offset);
+		lexer.skip_hashbang();
 		lexer.recover = options.error_recovery;
 		let strict = options.module;
 		lexer.strict = strict;
