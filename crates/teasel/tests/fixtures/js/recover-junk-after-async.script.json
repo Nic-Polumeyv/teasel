@@ -1,0 +1,103 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 27,
+		"scope": 0,
+		"body": [
+			{
+				"type": "ExpressionStatement",
+				"start": 0,
+				"end": 23,
+				"expression": {
+					"type": "FunctionExpression",
+					"start": 0,
+					"end": 22,
+					"scope": 2,
+					"defines": [
+						0
+					],
+					"id": {
+						"type": "Identifier",
+						"start": 17,
+						"end": 18,
+						"declares": 0,
+						"name": "f"
+					},
+					"expression": false,
+					"generator": false,
+					"async": true,
+					"params": [],
+					"body": {
+						"type": "BlockStatement",
+						"start": 20,
+						"end": 22,
+						"body": []
+					}
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 24,
+				"end": 26,
+				"expression": {
+					"type": "Identifier",
+					"start": 24,
+					"end": 25,
+					"reference": 0,
+					"name": "f"
+				}
+			}
+		],
+		"sourceType": "script"
+	},
+	"end": 27,
+	"comments": [],
+	"errors": [
+		{
+			"code": "unexpected_character",
+			"message": "Unexpected character '@'",
+			"pos": 6,
+			"end": 6,
+			"loc": {
+				"line": 1,
+				"column": 6
+			}
+		}
+	],
+	"scopes": [
+		{
+			"kind": "script",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function-name",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 1,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "f",
+			"kind": "function-name",
+			"scope": 1,
+			"write": true
+		}
+	],
+	"references": [
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		}
+	]
+}

@@ -1,0 +1,85 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 29,
+		"scope": 0,
+		"body": [
+			{
+				"type": "ClassDeclaration",
+				"start": 0,
+				"end": 28,
+				"scope": 1,
+				"defines": [
+					0
+				],
+				"trailingComments": [
+					{
+						"type": "Line",
+						"value": " c",
+						"start": 17,
+						"end": 23
+					}
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 6,
+					"end": 7,
+					"declares": 0,
+					"name": "C"
+				},
+				"superClass": null,
+				"body": {
+					"type": "ClassBody",
+					"start": 8,
+					"end": 28,
+					"body": [
+						{
+							"type": "StaticBlock",
+							"start": 10,
+							"end": 26,
+							"scope": 2,
+							"body": []
+						}
+					]
+				}
+			}
+		],
+		"sourceType": "script"
+	},
+	"end": 29,
+	"comments": [
+		{
+			"type": "Line",
+			"value": " c",
+			"start": 17,
+			"end": 23
+		}
+	],
+	"scopes": [
+		{
+			"kind": "script",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "class",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "static-block",
+			"parent": 1,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "C",
+			"kind": "class",
+			"scope": 0,
+			"write": true
+		}
+	],
+	"references": []
+}

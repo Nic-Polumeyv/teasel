@@ -10,7 +10,7 @@ use super::{
 use crate::ast::{Class, Function, List, MethodKind, NodeId, NodeKind, VariableKind};
 use crate::error::Code;
 use crate::interner::{FastMap, StrId};
-use crate::lexer::token::{Keyword, TokenKind};
+use crate::lexer::token::{Keyword, Token, TokenKind};
 use crate::lexer::unicode::{is_id_continue, is_id_start};
 
 pub(crate) const FUNC_STATEMENT: u8 = 1;
@@ -183,7 +183,7 @@ impl<E: Extension> Parser<'_, E> {
 			return self.parse_var_statement(start, VariableKind::Let);
 		}
 		if context == Context::None
-			&& let Some(kind) = self.using_kind(false)
+			&& let Some(kind) = self.using_kind(false)?
 		{
 			if place == StatementPlace::Case
 				|| (place == StatementPlace::TopLevel && !self.options.module && !E::exports_in_script(self))
@@ -255,7 +255,7 @@ impl<E: Extension> Parser<'_, E> {
 				}
 			}
 			_ => {
-				if self.is_async_function() {
+				if self.is_async_function()? {
 					if context != Context::None {
 						return self.unexpected();
 					}
@@ -277,6 +277,17 @@ impl<E: Extension> Parser<'_, E> {
 	}
 
 	/// Whether a `let` token starts a declaration rather than being an identifier.
+	/// Whether a word token can name a binding here: an identifier, or any keyword written
+	/// with an escape, since `let in` and `let instanceof` are expressions.
+	fn binds(token: &Token) -> bool {
+		match token.kind {
+			TokenKind::Ident(_) => true,
+			TokenKind::Keyword(keyword) => token.escaped || !matches!(keyword, Keyword::In | Keyword::Instanceof),
+			_ => false,
+		}
+	}
+
+	// a token here measured +0.9%: the name after `let` would be read twice
 	fn is_let(&self, context: Context) -> bool {
 		if !self.is_contextual("let") {
 			return false;
@@ -316,60 +327,54 @@ impl<E: Extension> Parser<'_, E> {
 
 	/// Whether `using` or `await using` here starts a declaration: a binding name follows on the
 	/// same line, and in a for head `using of` is a declaration only when what follows `of` says so.
-	fn using_kind(&self, is_for: bool) -> Option<VariableKind> {
+	fn using_kind(&mut self, is_for: bool) -> Result<Option<VariableKind>> {
 		let kind = if self.is_contextual("using") {
 			VariableKind::Using
 		} else if self.can_await() && self.is_contextual("await") {
 			VariableKind::AwaitUsing
 		} else {
-			return None;
+			return Ok(None);
 		};
-		let (_, newline, mut pos) = self.peek_char();
-		if newline {
-			return None;
+		// `await` starts far more expressions than declarations: no token is read before a `u`
+		if kind == VariableKind::AwaitUsing && self.peek_char().0 != Some('u') {
+			return Ok(None);
 		}
-		if kind == VariableKind::AwaitUsing {
-			let rest = self.source()[pos..].strip_prefix("using")?;
-			if rest.starts_with('\\') || rest.chars().next().is_some_and(is_id_continue) {
-				return None;
+		let declares = self.peek_with(|lexer| {
+			let mut next = lexer.next_token()?;
+			if kind == VariableKind::AwaitUsing {
+				if next.newline_before
+					|| next.escaped || !matches!(next.kind, TokenKind::Ident(id) if lexer.strings.get(id) == "using")
+				{
+					return Ok(false);
+				}
+				next = lexer.next_token()?;
 			}
-			let (_, newline, binding) = self.lexer.peek_char_from(pos + 5);
-			if newline {
-				return None;
+			if next.newline_before || !Self::binds(&next) {
+				return Ok(false);
 			}
-			pos = binding;
-		}
-		if !self.starts_binding_identifier(pos) {
-			return None;
-		}
-		if is_for
-			&& kind == VariableKind::Using
-			&& let Some(rest) = self.source()[pos..].strip_prefix("of")
-			&& !rest.starts_with('\\')
-			&& !rest.chars().next().is_some_and(is_id_continue)
-		{
-			let (next, _, pos) = self.lexer.peek_char_from(pos + 2);
-			let after = self.source().as_bytes().get(pos + 1);
-			if !matches!(next, Some(';' | ':'))
-				&& !(next == Some('=') && !matches!(after, Some(b'=' | b'>')))
-				&& !(next == Some('!') && after != Some(&b'='))
+			if is_for
+				&& kind == VariableKind::Using
+				&& !next.escaped
+				&& matches!(next.kind, TokenKind::Ident(id) if lexer.strings.get(id) == "of")
 			{
-				return None;
+				let after = lexer.next_token()?;
+				return Ok(matches!(
+					after.kind,
+					TokenKind::Semi | TokenKind::Colon | TokenKind::Eq | TokenKind::Bang
+				));
 			}
-		}
-		Some(kind)
+			Ok(true)
+		})?;
+		Ok((declares == Some(true)).then_some(kind))
 	}
 
-	fn is_async_function(&self) -> bool {
+	fn is_async_function(&mut self) -> Result<bool> {
 		if !self.is_contextual("async") {
-			return false;
+			return Ok(false);
 		}
-		let (next, newline, pos) = self.peek_char();
-		if newline || next != Some('f') {
-			return false;
-		}
-		let rest = &self.source()[pos..];
-		rest.starts_with("function") && !rest[8..].chars().next().is_some_and(is_id_continue)
+		Ok(self.peek_with(|lexer| lexer.next_token())?.is_some_and(|next| {
+			next.kind == TokenKind::Keyword(Keyword::Function) && !next.newline_before && !next.escaped
+		}))
 	}
 
 	fn parse_break_continue(&mut self, start: u32, is_break: bool) -> Result<NodeId> {
@@ -439,7 +444,7 @@ impl<E: Extension> Parser<'_, E> {
 			return self.parse_for_rest(start, None);
 		}
 		let is_let = self.is_let(Context::None);
-		let using = self.using_kind(true);
+		let using = self.using_kind(true)?;
 		if self.is_keyword(Keyword::Var) || self.is_keyword(Keyword::Const) || is_let || using.is_some() {
 			let init_start = self.tok.start;
 			let kind = if let Some(kind) = using {
@@ -1170,7 +1175,7 @@ impl<E: Extension> Parser<'_, E> {
 			E::export_end(self, node);
 			return Ok(node);
 		}
-		if self.should_parse_export_statement() {
+		if self.should_parse_export_statement()? {
 			let declaration = match E::export_declaration(self)? {
 				Some(declaration) => declaration,
 				None => self.parse_statement(Context::None, StatementPlace::Block, None)?,
@@ -1242,7 +1247,7 @@ impl<E: Extension> Parser<'_, E> {
 			return Ok(declaration);
 		}
 		let start = self.tok.start;
-		let is_async = self.is_async_function();
+		let is_async = self.is_async_function()?;
 		if self.is_keyword(Keyword::Function) || is_async {
 			self.next()?;
 			if is_async {
@@ -1258,14 +1263,14 @@ impl<E: Extension> Parser<'_, E> {
 		Ok(declaration)
 	}
 
-	pub(crate) fn should_parse_export_statement(&mut self) -> bool {
-		self.is_keyword(Keyword::Var)
+	pub(crate) fn should_parse_export_statement(&mut self) -> Result<bool> {
+		Ok(self.is_keyword(Keyword::Var)
 			|| self.is_keyword(Keyword::Const)
 			|| self.is_keyword(Keyword::Class)
 			|| self.is_keyword(Keyword::Function)
 			|| self.is_let(Context::None)
-			|| self.is_async_function()
-			|| E::starts_export_declaration(self)
+			|| self.is_async_function()?
+			|| E::starts_export_declaration(self))
 	}
 
 	fn parse_export_specifiers(&mut self, exports: &mut FastMap<StrId, u32>) -> Result<Vec<Option<NodeId>>> {
