@@ -7,6 +7,7 @@ use super::{
 	DestructuringErrors, Extension, FunctionKind, Label, LabelKind, Parser, PrivateKind, PrivateNameScope, Result,
 	Unwrap,
 };
+use crate::Options;
 use crate::ast::{Class, Function, List, MethodKind, NodeId, NodeKind, VariableKind};
 use crate::error::Code;
 use crate::interner::{FastMap, StrId};
@@ -48,7 +49,7 @@ impl Context {
 impl<E: Extension> Parser<'_, E> {
 	pub(crate) fn parse_program(&mut self) -> Result<NodeId> {
 		let start = self.prev_end;
-		let module = self.options.module;
+		let module = self.options.has(Options::MODULE);
 		self.enter_scope(SCOPE_TOP);
 		let mut body = self.items();
 		let mut exports = FastMap::default();
@@ -73,7 +74,7 @@ impl<E: Extension> Parser<'_, E> {
 			}
 			self.ensure_progress(at)?;
 		}
-		if module && !self.options.allow_undeclared_exports {
+		if module && !self.options.has(Options::ALLOW_UNDECLARED_EXPORTS) {
 			let undeclared = std::mem::take(&mut self.undeclared_exports);
 			if let Some(&(name, _)) = undeclared.iter().find(|&&(name, _)| !self.declares_export(name)) {
 				let pos = undeclared.iter().rfind(|&&(n, _)| n == name).unwrap().1;
@@ -186,7 +187,9 @@ impl<E: Extension> Parser<'_, E> {
 			&& let Some(kind) = self.using_kind(false)
 		{
 			if place == StatementPlace::Case
-				|| (place == StatementPlace::TopLevel && !self.options.module && !E::exports_in_script(self))
+				|| (place == StatementPlace::TopLevel
+					&& !self.options.has(Options::MODULE)
+					&& !E::exports_in_script(self))
 			{
 				let error = self.error_arg(start, Code::UsingOutsideBlock, kind.as_str());
 				self.record(error)?;
@@ -245,7 +248,7 @@ impl<E: Extension> Parser<'_, E> {
 				if place != StatementPlace::TopLevel {
 					return self.error(start, Code::ImportExportNotTopLevel);
 				}
-				if !self.options.module && !E::exports_in_script(self) {
+				if !self.options.has(Options::MODULE) && !E::exports_in_script(self) {
 					return self.error(start, Code::ImportExportInScript);
 				}
 				if is_import {
@@ -690,7 +693,8 @@ impl<E: Extension> Parser<'_, E> {
 
 	fn parse_return(&mut self, start: u32) -> Result<NodeId> {
 		if !self.in_function()
-			&& !(self.options.allow_return_outside_function && self.current_var_scope().flags & SCOPE_TOP != 0)
+			&& !(self.options.has(Options::ALLOW_RETURN_OUTSIDE_FUNCTION)
+				&& self.current_var_scope().flags & SCOPE_TOP != 0)
 		{
 			return self.error(start, Code::ReturnOutsideFunction);
 		}

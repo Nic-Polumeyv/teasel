@@ -1649,10 +1649,7 @@ mod tests {
 			0,
 			None,
 			Entry::Program,
-			Options {
-				module,
-				..Options::default()
-			},
+			Options(if module { Options::MODULE } else { 0 }),
 			"",
 		)))
 	}
@@ -1664,10 +1661,7 @@ mod tests {
 			0,
 			None,
 			Entry::Program,
-			Options {
-				module: true,
-				..Options::default()
-			},
+			Options(Options::MODULE),
 			"",
 		)))
 	}
@@ -1874,10 +1868,7 @@ mod tests {
 				0,
 				None,
 				Entry::Program,
-				Options {
-					module: true,
-					..Options::default()
-				},
+				Options(Options::MODULE),
 				"",
 			));
 			let scopes = ast.scopes.as_ref().unwrap();
@@ -1895,10 +1886,7 @@ mod tests {
 			0,
 			None,
 			Entry::Program,
-			Options {
-				module: true,
-				..Options::default()
-			},
+			Options(Options::MODULE),
 			"",
 		));
 		let scopes = ast.scopes.as_ref().unwrap();
@@ -1960,10 +1948,7 @@ mod tests {
 			0,
 			None,
 			Entry::Program,
-			Options {
-				module: true,
-				..Options::default()
-			},
+			Options(Options::MODULE),
 			"",
 		));
 		let scopes = ast.scopes.as_ref().unwrap();
@@ -2004,10 +1989,7 @@ mod tests {
 			0,
 			None,
 			Entry::Program,
-			Options {
-				module: true,
-				..Default::default()
-			},
+			Options(Options::MODULE),
 			"",
 		));
 		let scopes = ast.scopes.as_ref().unwrap();
@@ -2087,10 +2069,7 @@ mod tests {
 			0,
 			None,
 			Entry::Program,
-			Options {
-				module: true,
-				..Options::default()
-			},
+			Options(Options::MODULE),
 			"",
 		));
 		let scopes = ast.scopes.as_ref().unwrap();

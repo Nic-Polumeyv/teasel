@@ -12,7 +12,8 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use teasel::json::{Request, flag, parse};
+use teasel::Options;
+use teasel::json::{Request, parse};
 
 /// Grammar diagnostics (`TS1xxx`) only the checker can see, or where ECMAScript decides otherwise.
 const CHECKER: &[(&str, &str)] = &[
@@ -171,8 +172,8 @@ fn conformance() {
 		let excused = |c: &String| CHECKER.iter().any(|(code, _)| code == c);
 		let grammar_error = codes.iter().any(|c| c.starts_with('1') && c.len() == 4 && !excused(c));
 		let any_error = !codes.is_empty();
-		let module = if is_module(&source) { flag::MODULE } else { 0 };
-		let request = Request::from_flags(flag::TYPESCRIPT | module);
+		let module = if is_module(&source) { Options::MODULE } else { 0 };
+		let request = Request::from_flags(Options::TYPESCRIPT | module);
 		let answer = parse(&source, &request, "");
 		let failed = answer.starts_with("{\"error\"");
 		counted += 1;
