@@ -1,5 +1,5 @@
 export interface Options {
-	/** `script` by default, as in acorn. */
+	/** @default 'script' */
 	sourceType?: 'script' | 'module';
 	/**
 	 * Parse TypeScript. `'erase'` parses it and emits JavaScript: annotations, type-only
@@ -9,12 +9,6 @@ export interface Options {
 	 * JavaScript itself has: decorators and accessor fields (`AccessorProperty`).
 	 */
 	typescript?: boolean | 'erase';
-	/**
-	 * Which decorators are read. 'legacy' refuses decorators on private elements, class
-	 * expressions and their members; 'proposal' refuses parameter decorators and decorators
-	 * on abstract or declared fields. Unset reads both syntaxes.
-	 */
-	decorators?: 'legacy' | 'proposal';
 	/** Attach `leadingComments`, `trailingComments` and `innerComments` to nodes, and list every comment read as `comments` on the answer. */
 	comments?: boolean;
 	/**
@@ -23,7 +17,10 @@ export interface Options {
 	 * carries no facts. TypeScript type positions bind nothing.
 	 */
 	scopes?: boolean;
-	/** Add `loc` with line and column to every node, as in acorn; off by default. */
+	/**
+	 * Add `loc` with line and column to every node.
+	 * @default false
+	 */
 	locations?: boolean;
 	/** Mark a node the source wraps in parens with `parenthesized: true`, absent otherwise. */
 	parenthesized?: boolean;
@@ -41,45 +38,34 @@ export interface Options {
 	errorRecovery?: boolean;
 }
 
-// `flag` of json.rs by bit
-const FLAG = { module: 1, typescript: 2, erase: 4, comments: 8, scopes: 16, locations: 32, parenthesized: 64, legacyDecorators: 128, proposalDecorators: 256, allowReturnOutsideFunction: 512, allowAwaitOutsideFunction: 1024, allowSuperOutsideMethod: 2048, allowUndeclaredExports: 4096, errorRecovery: 8192 } as const;
+// the engine's word: two bits per option, in this order, holding the index of its value; `flag` in json.rs lays it out the same way
+const ACCEPTED: { [K in keyof Options]-?: readonly NonNullable<Options[K]>[] } = {
+	sourceType: ['script', 'module'],
+	typescript: [false, true, 'erase'],
+	comments: [false, true],
+	scopes: [false, true],
+	locations: [false, true],
+	parenthesized: [false, true],
+	allowReturnOutsideFunction: [false, true],
+	allowAwaitOutsideFunction: [false, true],
+	allowSuperOutsideMethod: [false, true],
+	allowUndeclaredExports: [false, true],
+	errorRecovery: [false, true],
+};
+const SLOT = Object.fromEntries(Object.keys(ACCEPTED).map((key, slot) => [key, slot])) as Record<keyof Options, number>;
+const known = (key: string): key is keyof Options => Object.hasOwn(ACCEPTED, key);
 
-const bit = (key: keyof Options & keyof typeof FLAG) => (value: unknown) => {
-	if (typeof value !== 'boolean') throw new TypeError(`${key} must be a boolean, not ${JSON.stringify(value)}`);
-	return value ? FLAG[key] : 0;
-};
-const one = (key: keyof Options, choices: Record<string, number>) => (value: unknown) => {
-	if (typeof value !== 'string' || !Object.hasOwn(choices, value)) {
-		throw new TypeError(`${key} must be ${Object.keys(choices).map((choice) => JSON.stringify(choice)).join(' or ')}, not ${JSON.stringify(value)}`);
-	}
-	return choices[value];
-};
-// what each option adds to the word the engine takes, one entry per key of `Options`
-type On = { [K in keyof Options]-?: NonNullable<Options[K]> };
-const WORD: { [K in keyof On]: (value: On[K]) => number } = {
-	sourceType: one('sourceType', { script: 0, module: FLAG.module }),
-	typescript: (value) => (value === 'erase' ? FLAG.typescript | FLAG.erase : bit('typescript')(value)),
-	decorators: one('decorators', { legacy: FLAG.legacyDecorators, proposal: FLAG.proposalDecorators }),
-	comments: bit('comments'),
-	scopes: bit('scopes'),
-	locations: bit('locations'),
-	parenthesized: bit('parenthesized'),
-	allowReturnOutsideFunction: bit('allowReturnOutsideFunction'),
-	allowAwaitOutsideFunction: bit('allowAwaitOutsideFunction'),
-	allowSuperOutsideMethod: bit('allowSuperOutsideMethod'),
-	allowUndeclaredExports: bit('allowUndeclaredExports'),
-	errorRecovery: bit('errorRecovery'),
-};
-const known = (key: string): key is keyof Options => Object.hasOwn(WORD, key);
-const word = <K extends keyof On>(key: K, value: On[K]) => WORD[key](value);
-
-/** The options that are on, as the word of bits the engine takes. */
+/** The options that are on, as the word the engine takes. */
 export function flags(options: Options = {}): number {
 	let on = 0;
 	for (const key in options) {
 		if (!known(key)) throw new TypeError(`${key} is not an option`);
-		const value = options[key];
-		if (value !== undefined) on |= word(key, value);
+		const value: unknown = options[key];
+		if (value === undefined) continue;
+		const accepted: readonly unknown[] = ACCEPTED[key];
+		const index = accepted.indexOf(value);
+		if (index < 0) throw new TypeError(`${key} must be ${accepted.map((a) => JSON.stringify(a)).join(' or ')}, not ${JSON.stringify(value)}`);
+		on |= index << (2 * SLOT[key]);
 	}
 	return on;
 }

@@ -1,4 +1,4 @@
-import type { Engine, Held } from './lib/decode.js';
+import type { Engine, Held } from '../lib/decode.js';
 
 const encoder = new TextEncoder();
 const utf8 = new TextDecoder();
@@ -20,9 +20,9 @@ interface Exports {
 	layout(): void;
 }
 
-// `teasel.wasm` next to this file, read where there is a file system and fetched elsewhere
+// `teasel.wasm` beside the package entry, read where there is a file system and fetched elsewhere
 // TODO: `import source` once we require node >= 22.19 and bundlers accept it: no fs, ~10 ms less startup
-const url = new URL('./teasel.wasm', import.meta.url);
+const url = new URL('../teasel.wasm', import.meta.url);
 const { module, instance } =
 	url.protocol === 'file:'
 		? await WebAssembly.instantiate(await (await import('node:fs/promises')).readFile(url), {})

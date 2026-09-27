@@ -204,8 +204,11 @@ fn program_in_a_range() {
 	.unwrap();
 	assert_eq!((ast.node(root).start, ast.node(root).end), (8, 26));
 	assert_eq!(ast.comments.len(), 0);
-	let mut request = crate::json::Request::new(Entry::Program, 8);
-	request.typescript = true;
+	use crate::json::{Request, flag};
+	let mut request = Request {
+		offset: 8,
+		..Request::from_flags(flag::MODULE | flag::TYPESCRIPT)
+	};
 	request.end = Some(1000);
 	assert!(crate::json::parse(src, &request, "").contains("is not a character boundary"));
 	request.end = Some(2);

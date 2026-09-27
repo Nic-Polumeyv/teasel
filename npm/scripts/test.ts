@@ -46,11 +46,9 @@ const { open, scopeOf, referenceOf, parentOf } = untyped(m);
 	assert.equal(parens.node.trailingComments[0].start, 5);
 	assert.equal(at('statement', '{@const x = 1}', 2).end, 13);
 	const ts = { typescript: true };
-	assert.throws(() => parse('class C { @dec #x = 1 }', { ...ts, decorators: 'legacy' }), (e: Any) => e.code === 'decorator_placement');
-	assert.doesNotThrow(() => parse('class C { m(@dec p) {} }', { ...ts, decorators: 'legacy' }));
-	assert.throws(() => parse('class C { m(@dec p) {} }', { ...ts, decorators: 'proposal' }), (e: Any) => e.code === 'decorator_placement');
-	assert.doesNotThrow(() => parse('class C { @dec #x = 1 }', { ...ts, decorators: 'proposal' }));
-	assert.doesNotThrow(() => parse('class C { @dec #x = 1 }', ts));
+	assert.doesNotThrow(() => parse('class C { @dec #x = 1; @dec declare y: number; m(@dec p) {} }', ts));
+	assert.doesNotThrow(() => parse('const D = @dec class { @dec #x = 1 }', ts));
+	assert.throws(() => parse('x', { decorators: 'legacy' } as Any), TypeError);
 	assert.doesNotThrow(() => parse('class C { m(@dec p) {} }', ts));
 	assert.equal(at('expression', '{items as item}', 1, ts).node.type, 'TSAsExpression');
 	assert.equal(at('expression', '{items as item}', 1, ts, ['as']).end, 6);
@@ -122,6 +120,12 @@ const { open, scopeOf, referenceOf, parentOf } = untyped(m);
 	assert.throws(() => parse('x', { preserveParens: true } as Any), TypeError);
 	assert.throws(() => parse('return', { sourceType: 'module' }), SyntaxError);
 	assert.equal(program('return', { allowReturnOutsideFunction: true }).body[0].type, 'ReturnStatement');
+	assert.equal(program('await').body[0].expression.name, 'await');
+	assert.equal(program('await x', { allowAwaitOutsideFunction: true }).body[0].expression.type, 'AwaitExpression');
+	assert.throws(() => parse('super.x'), SyntaxError);
+	assert.equal(program('super.x', { allowSuperOutsideMethod: true }).body[0].expression.object.type, 'Super');
+	assert.throws(() => parse('export { x }', { sourceType: 'module' }), SyntaxError);
+	assert.equal(program('export { x }', { sourceType: 'module', allowUndeclaredExports: true }).body[0].type, 'ExportNamedDeclaration');
 	{
 		// a document's answer lists each piece of JavaScript the host read, with its share of the tables
 		const host = new Plan(readFileSync(new URL('../../crates/teasel/tests/hosts/svelte/host.grammar', import.meta.url), 'utf8'));

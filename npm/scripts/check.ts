@@ -5,8 +5,8 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
-import { engine as native } from '../dist/native.js';
-import { engine as wasm } from '../dist/wasm.js';
+import { engine as native } from '../dist/engine/native.js';
+import { engine as wasm } from '../dist/engine/wasm.js';
 import { decode, type Engine, type Prepared } from '../dist/lib/decode.js';
 import { ENTRY, type Entry, flags, type Options } from '../dist/lib/options.js';
 import { target } from './target.ts';

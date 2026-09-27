@@ -24,14 +24,6 @@ pub(crate) const MAX_DEPTH: u32 = 1000;
 // wasm frames sit on the embedder's stack: the scope walk overflowed it past 5,000 links
 const MAX_CHAIN: u32 = if cfg!(target_arch = "wasm32") { 4_000 } else { 10_000 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub enum Decorators {
-	#[default]
-	Any,
-	Legacy,
-	Proposal,
-}
-
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Options {
 	/// Parse as an ES module: strict mode, top-level `await`, `import` and `export`.
@@ -47,8 +39,6 @@ pub struct Options {
 	pub allow_undeclared_exports: bool,
 	/// Mark a node the source wraps in parens with the fact `parenthesized`, instead of a wrapper node.
 	pub parenthesized: bool,
-	/// Which decorators are read; `Any` reads both the proposal's and the legacy syntax.
-	pub decorators: Decorators,
 }
 
 /// What a function-shaped node is, for the extension hooks around its signature.
