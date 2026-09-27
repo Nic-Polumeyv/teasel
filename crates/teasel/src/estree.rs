@@ -321,7 +321,7 @@ impl Positions {
 				} else {
 					2
 				};
-				let separator = len == 3 && crate::lexer::is_separator(&bytes[i..]);
+				let separator = len == 3 && crate::lexer::scan::is_separator(&bytes[i..]);
 				i += len;
 				gap += len as u32 - if len == 4 { 2 } else { 1 };
 				gaps.push((i as u32, gap));

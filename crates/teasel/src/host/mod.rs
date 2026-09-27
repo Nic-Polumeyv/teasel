@@ -11,6 +11,7 @@ use std::borrow::Cow;
 use crate::ast::{Ast, Comment, CommentKind, Host, HostGroup, List, NodeId, NodeKind, Opens, Value, VariableKind};
 use crate::error::{Code, SyntaxError};
 use crate::interner::StrId;
+use crate::lexer::scan::is_space;
 use crate::lexer::unicode::{is_id_continue, is_id_start};
 use crate::parser::{Entry as JsEntry, Extension, Options, Parser, Result};
 pub use grammar::Grammar;
@@ -50,18 +51,6 @@ fn closes(current: &str, next: &str) -> bool {
 		"td" | "th" => matches!(next, "td" | "th" | "tr"),
 		_ => false,
 	}
-}
-
-fn is_space(c: char) -> bool {
-	matches!(
-		c,
-		' ' | '\t'..='\r'
-			| '\u{a0}' | '\u{1680}'
-			| '\u{2000}'..='\u{200a}'
-			| '\u{2028}' | '\u{2029}'
-			| '\u{202f}' | '\u{205f}'
-			| '\u{3000}' | '\u{feff}'
-	)
 }
 
 /// A valid element name: a doctype, a namespaced name, or a tag name as HTML spells one.
@@ -2895,7 +2884,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 /// A word that cannot name a binding.
 fn reserved(word: &str) -> bool {
 	use crate::lexer::token::word::{ENUM, KEYWORD, STRICT, flags};
-	flags(word) & (KEYWORD | STRICT | ENUM) != 0 || matches!(word, "this" | "true" | "false" | "null")
+	flags(word) & (KEYWORD | STRICT | ENUM) != 0
 }
 
 /// The length of a `</name>` closer at the start of `rest`, in any case, attributes and all.

@@ -10,10 +10,22 @@ mod tests;
 use crate::ast::{Comment, CommentKind};
 use crate::error::{Code, SyntaxError};
 use crate::interner::{Interner, StrId};
+use scan::{comment_end, is_new_line, is_whitespace, line_end};
 use token::{Keyword, Token, TokenKind};
 use unicode::{is_id_continue, is_id_start};
 
 type Result<T> = std::result::Result<T, Box<SyntaxError>>;
+
+#[derive(Clone, Copy)]
+pub(crate) struct Mark {
+	pos: usize,
+	depth: u32,
+	open: [u32; 3],
+	stopped: bool,
+	unmatched: bool,
+	comments: usize,
+	errors: usize,
+}
 
 /// Positions are byte offsets into the source.
 pub(crate) struct Lexer<'a> {
@@ -108,30 +120,39 @@ impl<'a> Lexer<'a> {
 		self.pos = pos as usize;
 	}
 
+	#[cfg(test)]
 	pub(crate) fn pos(&self) -> u32 {
 		self.pos as u32
 	}
 
+	/// Where the lexer is, to come back to after a lookahead.
+	pub(crate) fn mark(&self) -> Mark {
+		Mark {
+			pos: self.pos,
+			depth: self.depth,
+			open: self.open,
+			stopped: self.stopped,
+			unmatched: self.unmatched,
+			comments: self.comments.len(),
+			errors: self.errors.len(),
+		}
+	}
+
+	pub(crate) fn rewind(&mut self, mark: Mark) {
+		self.pos = mark.pos;
+		self.depth = mark.depth;
+		self.open = mark.open;
+		self.stopped = mark.stopped;
+		self.unmatched = mark.unmatched;
+		self.comments.truncate(mark.comments);
+		self.errors.truncate(mark.errors);
+	}
+
 	/// The token after the current one, leaving the lexer where it was.
 	pub(crate) fn peek_token(&mut self) -> Result<Token> {
-		let (pos, escaped, depth, open, stopped, unmatched) = (
-			self.pos,
-			self.escaped,
-			self.depth,
-			self.open,
-			self.stopped,
-			self.unmatched,
-		);
-		let (comments, errors) = (self.comments.len(), self.errors.len());
+		let mark = self.mark();
 		let token = self.next_token();
-		self.pos = pos;
-		self.escaped = escaped;
-		self.depth = depth;
-		self.open = open;
-		self.stopped = stopped;
-		self.unmatched = unmatched;
-		self.comments.truncate(comments);
-		self.errors.truncate(errors);
+		self.rewind(mark);
 		token
 	}
 
@@ -423,7 +444,8 @@ impl<'a> Lexer<'a> {
 	fn skip_block_comment(&mut self) -> Result<bool> {
 		let start = self.pos;
 		let Some((len, newline)) = comment_end(&self.src[start + 2..]) else {
-			let newline = self.src[start + 2..].chars().any(is_new_line);
+			let rest = &self.src.as_bytes()[start + 2..];
+			let newline = line_end(rest) < rest.len();
 			return self.unterminated(start, Code::UnterminatedComment, |l| {
 				l.pos = l.src.len();
 				l.comments.push(Comment {
@@ -902,13 +924,7 @@ impl<'a> Lexer<'a> {
 			self.pos = scan::find(self.src.as_bytes(), self.pos, *b"`$\\\r", false);
 			let c = match self.char() {
 				Some(c) => c,
-				None if self.recover => {
-					self.errors
-						.push(SyntaxError::new(start as u32, Code::UnterminatedTemplate));
-					self.unclosed = true;
-					'`'
-				}
-				None => return self.error(start, Code::UnterminatedTemplate),
+				None => self.unterminated(start, Code::UnterminatedTemplate, |_| '`')?,
 			};
 			match c {
 				'`' | '$' if c == '`' || self.byte_at(1) == Some(b'{') => {
@@ -1124,46 +1140,6 @@ impl<'a> Lexer<'a> {
 			None => self.error(digits, Code::BadCharacterEscape),
 		}
 	}
-}
-
-/// Whether `bytes` starts with a line separator or paragraph separator (U+2028, U+2029).
-pub(crate) fn is_separator(bytes: &[u8]) -> bool {
-	matches!(bytes, [0xe2, 0x80, 0xa8 | 0xa9, ..])
-}
-
-pub(crate) fn line_end(bytes: &[u8]) -> usize {
-	let mut i = 0;
-	loop {
-		i = scan::find(bytes, i, *b"\n\r\xe2", false);
-		if i == bytes.len() || bytes[i] != 0xe2 || is_separator(&bytes[i..]) {
-			return i;
-		}
-		i += 1;
-	}
-}
-
-/// Where `*/` starts in `text`, and whether a line terminator precedes it.
-pub(crate) fn comment_end(text: &str) -> Option<(usize, bool)> {
-	let mut from = 0;
-	loop {
-		let star = from + text[from..].find('*')?;
-		if text.as_bytes().get(star + 1) == Some(&b'/') {
-			let body = &text.as_bytes()[..star];
-			return Some((star, line_end(body) < body.len()));
-		}
-		from = star + 1;
-	}
-}
-
-pub(crate) fn is_new_line(c: char) -> bool {
-	matches!(c, '\n' | '\r' | '\u{2028}' | '\u{2029}')
-}
-
-pub(crate) fn is_whitespace(c: char) -> bool {
-	matches!(
-		c,
-		'\u{a0}' | '\u{1680}' | '\u{2000}'..='\u{200a}' | '\u{202f}' | '\u{205f}' | '\u{3000}' | '\u{feff}'
-	)
 }
 
 fn is_word_char(c: char, first: bool) -> bool {
