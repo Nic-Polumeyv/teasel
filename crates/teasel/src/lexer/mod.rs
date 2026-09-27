@@ -162,10 +162,12 @@ impl<'a> Lexer<'a> {
 		}
 	}
 
-	/// Reads ahead with `read` and comes back.
+	/// Reads ahead with `read`, strictly, and comes back.
 	pub(crate) fn lookahead<T>(&mut self, read: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
-		let mark = self.mark();
+		let (mark, recover) = (self.mark(), self.recover);
+		self.recover = false;
 		let out = read(self);
+		self.recover = recover;
 		self.rewind(mark);
 		out
 	}
