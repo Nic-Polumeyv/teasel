@@ -120,7 +120,7 @@ const { open, scopeOf, referenceOf, parentOf } = untyped(m);
 	assert.throws(() => parse('x', { preserveParens: true } as Any), TypeError);
 	assert.throws(() => parse('return', { sourceType: 'module' }), SyntaxError);
 	assert.equal(program('return', { allowReturnOutsideFunction: true }).body[0].type, 'ReturnStatement');
-	assert.throws(() => parse('await x'), SyntaxError);
+	assert.equal(program('await').body[0].expression.name, 'await');
 	assert.equal(program('await x', { allowAwaitOutsideFunction: true }).body[0].expression.type, 'AwaitExpression');
 	assert.throws(() => parse('super.x'), SyntaxError);
 	assert.equal(program('super.x', { allowSuperOutsideMethod: true }).body[0].expression.object.type, 'Super');
