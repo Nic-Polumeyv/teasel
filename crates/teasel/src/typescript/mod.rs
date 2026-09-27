@@ -930,7 +930,7 @@ impl Extension for TypeScript {
 		let is_declare = p.eat_contextual("declare")?;
 		if is_declare {
 			p.ext.ambient = true;
-			if p.is_contextual("declare") || !p.should_parse_export_statement() {
+			if p.is_contextual("declare") || !p.should_parse_export_statement()? {
 				return p.error(p.tok.start, Code::ExportDeclareWithoutDeclaration);
 			}
 		}
