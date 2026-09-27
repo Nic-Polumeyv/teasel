@@ -234,10 +234,7 @@ pub fn error_to_json(error: &crate::SyntaxError, source: &str, positions: &Posit
 	let positions = if positions.lines {
 		positions
 	} else {
-		let mut end = (error.pos.max(error.end) as usize).min(source.len());
-		while !source.is_char_boundary(end) {
-			end += 1;
-		}
+		let end = source.ceil_char_boundary(error.pos.max(error.end) as usize);
 		upto = Positions::new(&source[..end], true);
 		&upto
 	};
@@ -392,10 +389,7 @@ impl Positions {
 			self
 		} else {
 			let last = errors.iter().map(|e| e.pos.max(e.end)).max().unwrap() as usize;
-			let mut end = last.min(source.len());
-			while !source.is_char_boundary(end) {
-				end += 1;
-			}
+			let end = source.ceil_char_boundary(last);
 			upto = Positions::new(&source[..end], true);
 			&upto
 		};
@@ -1193,7 +1187,7 @@ fn escape_json(out: &mut String, s: &str) {
 #[cfg(test)]
 mod tests {
 	#[test]
-	#[allow(clippy::excessive_precision)]
+	#[expect(clippy::excessive_precision)]
 	fn numbers_as_javascript_writes_them() {
 		for (value, text) in [
 			(1e-14, "1e-14"),

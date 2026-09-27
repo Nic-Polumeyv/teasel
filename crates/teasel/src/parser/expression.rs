@@ -1035,7 +1035,7 @@ impl<E: Extension> Parser<'_, E> {
 			) && !self.tok.newline_before)
 	}
 
-	#[allow(clippy::too_many_arguments)]
+	#[expect(clippy::too_many_arguments)]
 	fn parse_property_value(
 		&mut self,
 		start: u32,

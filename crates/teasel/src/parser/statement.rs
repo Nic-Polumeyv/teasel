@@ -1626,7 +1626,7 @@ impl<E: Extension> Parser<'_, E> {
 		}
 	}
 
-	#[allow(clippy::too_many_arguments)]
+	#[expect(clippy::too_many_arguments)]
 	fn parse_class_method(
 		&mut self,
 		start: u32,

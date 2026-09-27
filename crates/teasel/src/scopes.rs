@@ -1606,9 +1606,9 @@ mod tests {
 		let mut table: NodeTable<Role> = NodeTable::sized(3);
 		assert!(table.get(NodeId::at(7)).is_none());
 		table.insert(NodeId::at(1), Role::Declares(5));
-		assert!(matches!(table.get(NodeId::at(1)), Some(Role::Declares(5))));
+		assert_matches!(table.get(NodeId::at(1)), Some(Role::Declares(5)));
 		table.insert(NodeId::at(2), Role::Reference(6));
-		assert!(matches!(table.get(NodeId::at(2)), Some(Role::Reference(6))));
+		assert_matches!(table.get(NodeId::at(2)), Some(Role::Reference(6)));
 		assert_eq!(table.iter().count(), 2);
 		assert!(table.get(NodeId::at(0)).is_none());
 	}
@@ -1630,6 +1630,7 @@ mod tests {
 	use super::*;
 	use crate::SyntaxError;
 	use crate::parser::Options;
+	use std::assert_matches;
 
 	fn analyzed<X: Bind>(result: Result<(Ast<X>, List, u32), SyntaxError>) -> Ast<X> {
 		let (mut ast, roots, _) = result.unwrap();

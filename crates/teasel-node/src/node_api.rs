@@ -40,7 +40,7 @@ macro_rules! api {
 		}
 
 		#[cfg(windows)]
-		#[allow(non_upper_case_globals)]
+		#[expect(non_upper_case_globals)]
 		mod symbols {
 			use std::sync::atomic::AtomicUsize;
 			$(pub(crate) static $name: AtomicUsize = AtomicUsize::new(0);)*

@@ -662,7 +662,6 @@ impl Parser<'_, TypeScript> {
 
 	/// Type arguments after an expression: a call, a tagged template, or an instantiation
 	/// expression. `None` means this is not one and the tokenizer must go back.
-	#[allow(clippy::too_many_arguments)]
 	fn parse_type_arguments_subscript(
 		&mut self,
 		base: NodeId,

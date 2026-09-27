@@ -1194,6 +1194,7 @@ mod tests {
 	}
 
 	use super::*;
+	use std::assert_matches;
 
 	#[test]
 	fn reads_the_svelte_grammar() {
@@ -1265,7 +1266,7 @@ mod tests {
 		let DirectiveValue::Form(form) = &for_.value else {
 			panic!()
 		};
-		assert!(matches!(form.items[1], Item::Group { required: true, .. }));
+		assert_matches!(form.items[1], Item::Group { required: true, .. });
 		assert_eq!(grammar.directive("anything").unwrap().name, Match::Any);
 		assert_eq!(for_.declares, Some(vec!["value", "key", "index"]));
 		assert_eq!(grammar.verbatim, Some("v-pre"));

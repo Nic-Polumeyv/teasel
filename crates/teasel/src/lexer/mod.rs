@@ -222,10 +222,9 @@ impl<'a> Lexer<'a> {
 			let kind = match self.read_kind(b, start) {
 				Ok(kind) => kind,
 				Err(error) if self.recover => {
-					let mut after = (error.end as usize).max(self.pos).max(start + 1).min(self.src.len());
-					while !self.src.is_char_boundary(after) {
-						after += 1;
-					}
+					let after = self
+						.src
+						.ceil_char_boundary((error.end as usize).max(self.pos).max(start + 1));
 					self.errors.push(*error);
 					self.pos = after;
 					token.newline_before |= self.skip_space()?;
@@ -324,11 +323,10 @@ impl<'a> Lexer<'a> {
 	pub(crate) fn set_stops(&mut self, stops: &'a str) {
 		self.stops = stops;
 		self.stop_ranges.clear();
-		let base = stops.as_ptr() as usize;
 		for stop in stops.split_ascii_whitespace() {
-			let from = (stop.as_ptr() as usize - base) as u32;
+			let range = stops.substr_range(stop).unwrap();
 			self.stop_ranges
-				.push((from, from + stop.len() as u32, stop.starts_with(is_id_start)));
+				.push((range.start as u32, range.end as u32, stop.starts_with(is_id_start)));
 		}
 	}
 
