@@ -75,10 +75,7 @@ fn dump(ast: &Ast<Data>, id: NodeId) -> String {
 }
 
 fn expr(src: &str) -> String {
-	let options = Options {
-		module: true,
-		..Options::default()
-	};
+	let options = Options(Options::MODULE);
 	match at(Entry::Expression, src, 0, options, "") {
 		Ok((ast, id, _)) => dump(&ast, id),
 		Err(e) => format!("error {}: {}", e.pos, e.message),
@@ -143,10 +140,7 @@ fn expression_entry_point() {
 
 #[test]
 fn stop_at() {
-	let options = Options {
-		module: true,
-		..Options::default()
-	};
+	let options = Options(Options::MODULE);
 	let end = |src: &str, stop: &str| at(Entry::Expression, src, 1, options, stop).unwrap().2;
 	assert_eq!(end("{xs as item}", "as"), 3);
 	assert_eq!(end("{xs as item, i (item.id)}", "as"), 3);
@@ -172,10 +166,7 @@ fn stop_at() {
 /// `?` marks an optional parameter, so it needs the arrow that makes the list parameters.
 #[test]
 fn optional_marker_needs_an_arrow() {
-	let options = Options {
-		module: true,
-		..Options::default()
-	};
+	let options = Options(Options::MODULE);
 	let error = |src: &str| {
 		let error = at(Entry::Expression, src, 0, options, "").unwrap_err();
 		(error.code, error.pos)
@@ -195,19 +186,17 @@ fn program_in_a_range() {
 		8,
 		Some(26),
 		Entry::Program,
-		Options {
-			module: true,
-			..Options::default()
-		},
+		Options(Options::MODULE),
 		"",
 	))
 	.unwrap();
 	assert_eq!((ast.node(root).start, ast.node(root).end), (8, 26));
 	assert_eq!(ast.comments.len(), 0);
-	use crate::json::{Request, flag};
+	use crate::Options;
+	use crate::json::Request;
 	let mut request = Request {
 		offset: 8,
-		..Request::from_flags(flag::MODULE | flag::TYPESCRIPT)
+		..Request::from_flags(Options::MODULE | Options::TYPESCRIPT)
 	};
 	request.end = Some(1000);
 	assert!(crate::json::parse(src, &request, "").contains("is not a character boundary"));
@@ -229,10 +218,7 @@ fn program_in_a_range() {
 /// A host's own syntax may carry a type parameter list, as a generic snippet does.
 #[test]
 fn type_parameters_entry() {
-	let options = Options {
-		module: true,
-		..Options::default()
-	};
+	let options = Options(Options::MODULE);
 	let end = |src: &str| at(Entry::TypeParameters, src, 3, options, "").unwrap().2;
 	assert_eq!(end("foo<T extends () => void>(x: T)"), 25);
 	assert_eq!(end("foo<T = '>'>()"), 12);
@@ -251,11 +237,7 @@ fn type_parameters_entry() {
 
 #[test]
 fn failed_attempts_leave_nothing() {
-	let options = Options {
-		module: true,
-		parenthesized: true,
-		..Options::default()
-	};
+	let options = Options(Options::MODULE | Options::PARENTHESIZED);
 	// every `<` tries type arguments over the rest of the list
 	let list = (0..300).map(|i| format!("a{i} < b{i}")).collect::<Vec<_>>().join(", ");
 	let (ast, _, _) = at(Entry::Expression, &format!("[{list}]"), 0, options, "").unwrap();
@@ -281,11 +263,7 @@ fn failed_attempts_leave_nothing() {
 
 #[test]
 fn failed_attempt_leaves_no_scope() {
-	let options = Options {
-		module: true,
-		error_recovery: true,
-		..Options::default()
-	};
+	let options = Options(Options::MODULE | Options::ERROR_RECOVERY);
 	let src = "let b; <T>(x) => { let a; let a; }; let b;";
 	let (ast, _, _) = one(super::parse_at(src, 0, None, Entry::Program, options, "")).unwrap();
 	let redeclared: Vec<u32> = ast
@@ -302,10 +280,7 @@ fn failed_attempt_leaves_no_scope() {
 
 #[test]
 fn nested_ambiguity_is_linear() {
-	let options = Options {
-		module: true,
-		..Options::default()
-	};
+	let options = Options(Options::MODULE);
 	let n = 24;
 	let nest = |open: &str, middle: &str, close: &str| format!("x = {}{middle}{};", open.repeat(n), close.repeat(n));
 	// each of these took twice as long per level while a failed reading was read again

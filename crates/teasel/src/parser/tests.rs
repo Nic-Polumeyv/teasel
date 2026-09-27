@@ -121,13 +121,7 @@ fn expr(src: &str) -> String {
 }
 
 fn module_error(src: &str) -> String {
-	match program(
-		src,
-		Options {
-			module: true,
-			..Options::default()
-		},
-	) {
+	match program(src, Options(Options::MODULE)) {
 		Ok(_) => panic!("no error for {src:?}"),
 		Err(e) => format!("{} ({})", e.message, e.pos),
 	}
@@ -135,10 +129,7 @@ fn module_error(src: &str) -> String {
 
 #[test]
 fn consumed_end() {
-	let options = Options {
-		module: true,
-		..Options::default()
-	};
+	let options = Options(Options::MODULE);
 	let end = |src: &str, offset: u32| at(Entry::Expression, src, offset, options, "").unwrap().2;
 	assert_eq!(end("{a /* c */ }", 1), 10);
 	assert_eq!(end("{(a) }", 1), 4);
@@ -162,8 +153,9 @@ fn expression_ends_where_it_ends() {
 
 #[test]
 fn the_session_writes_the_same_words_again() {
-	use crate::json::{Prepared, Request, flag};
-	let request = Request::from_flags(flag::MODULE | flag::COMMENTS | flag::LOCATIONS | flag::SCOPES);
+	use crate::Options;
+	use crate::json::{Prepared, Request};
+	let request = Request::from_flags(Options::MODULE | Options::COMMENTS | Options::LOCATIONS | Options::SCOPES);
 	let source = "let x = /* a */ 1; function f(y) { return x + y; } // b";
 	let prepared = Prepared::borrowed(source, request);
 	let words = || crate::json::words(|words| words.to_vec());
@@ -206,10 +198,7 @@ fn nesting_limits() {
 
 #[test]
 fn entry_points() {
-	let options = Options {
-		module: true,
-		..Options::default()
-	};
+	let options = Options(Options::MODULE);
 	let (ast, id, _) = at(Entry::Pattern, "{#each items as {a, b = 1}, i}", 16, options, "").unwrap();
 	assert_eq!(
 		dump(&ast, id, &plain),
@@ -304,10 +293,7 @@ impl<X: Walk> Api<X> {
 		stop: &str,
 	) -> (Ast<X>, Vec<NodeId>, u32) {
 		let throws = self.run(src, offset, entry, options, stop).is_err();
-		let recovering = Options {
-			error_recovery: true,
-			..options
-		};
+		let recovering = options.with(Options::ERROR_RECOVERY);
 		let (ast, roots, end) = self
 			.run(src, offset, entry, recovering, stop)
 			.unwrap_or_else(|e| panic!("{src:?}: {e}"));
@@ -358,10 +344,7 @@ impl<X: Walk> Api<X> {
 
 #[test]
 fn recovery() {
-	let module = Options {
-		module: true,
-		..Options::default()
-	};
+	let module = Options(Options::MODULE);
 	fn codes<X>(ast: &Ast<X>) -> Vec<String> {
 		ast.errors
 			.iter()
@@ -559,10 +542,7 @@ fn recovery_prefixes() {
 		}
 	}
 	files.sort();
-	let module = Options {
-		module: true,
-		..Options::default()
-	};
+	let module = Options(Options::MODULE);
 	let mut prefixes = 0;
 	let log = std::env::var("PREFIX_LOG").ok();
 	for path in &files {
@@ -602,11 +582,7 @@ fn recovery_prefixes() {
 
 #[test]
 fn undeclared_exports_can_be_allowed() {
-	let options = Options {
-		module: true,
-		allow_undeclared_exports: true,
-		..Options::default()
-	};
+	let options = Options(Options::MODULE | Options::ALLOW_UNDECLARED_EXPORTS);
 	assert!(program("export { nope };", options).is_ok());
 }
 
@@ -614,18 +590,16 @@ fn undeclared_exports_can_be_allowed() {
 #[test]
 #[ignore]
 fn phases() {
+	use crate::Options;
 	use crate::estree::{Output, Positions, answer};
-	use crate::json::{Request, flag};
+	use crate::json::Request;
 	use crate::lexer::Lexer;
 	use crate::lexer::token::TokenKind;
 	let Ok(path) = std::env::var("TEASEL_BENCH") else {
 		return;
 	};
 	let source = std::fs::read_to_string(path).unwrap();
-	let options = crate::Options {
-		module: true,
-		..Default::default()
-	};
+	let options = crate::Options(crate::Options::MODULE);
 	for _ in 0..300 {
 		let _ = whole(&source, options);
 	}
@@ -711,12 +685,12 @@ fn phases() {
 	let end = source.len() as u32;
 	let lines = Positions::new(&source, true);
 	{
-		let request = Request::from_flags(flag::MODULE | flag::COMMENTS);
+		let request = Request::from_flags(Options::MODULE | Options::COMMENTS);
 		let prepared = crate::json::Prepared::borrowed(&source, request);
 		best("whole request: positions, parse, comments, encode, finish", &mut || {
 			prepared.in_place(Entry::Program, 0.0, None, "", None).unwrap();
 		});
-		let request = Request::from_flags(flag::MODULE | flag::COMMENTS | flag::SCOPES | flag::LOCATIONS);
+		let request = Request::from_flags(Options::MODULE | Options::COMMENTS | Options::SCOPES | Options::LOCATIONS);
 		let prepared = crate::json::Prepared::borrowed(&source, request);
 		best("whole request with scopes and loc", &mut || {
 			prepared.in_place(Entry::Program, 0.0, None, "", None).unwrap();
@@ -731,9 +705,9 @@ fn phases() {
 		"{#each items as item}<p class=\"row\" onclick={() => f(item)}>{item + 1}</p>{/each}\n".repeat(200)
 	);
 	for (flags, label) in [
-		(flag::MODULE, "module"),
+		(Options::MODULE, "module"),
 		(
-			flag::MODULE | flag::SCOPES | flag::COMMENTS | flag::LOCATIONS,
+			Options::MODULE | Options::SCOPES | Options::COMMENTS | Options::LOCATIONS,
 			"module scopes comments locations",
 		),
 	] {
@@ -770,10 +744,7 @@ fn profile() {
 		return;
 	};
 	let source = std::fs::read_to_string(path).unwrap();
-	let options = crate::Options {
-		module: true,
-		..Default::default()
-	};
+	let options = crate::Options(crate::Options::MODULE);
 	let guard = pprof::ProfilerGuardBuilder::default()
 		.frequency(4000)
 		.blocklist(&["libc", "libgcc", "pthread", "vdso"])
@@ -839,10 +810,7 @@ fn profile() {
 
 #[test]
 fn parenthesized_fact() {
-	let options = Options {
-		parenthesized: true,
-		..Options::default()
-	};
+	let options = Options(Options::PARENTHESIZED);
 	let marked = |src: &str| {
 		let (ast, id, _) = at(Entry::Expression, src, 0, options, "").unwrap();
 		ast.is_parenthesized(id)
@@ -858,10 +826,7 @@ fn parenthesized_fact() {
 #[test]
 #[ignore]
 fn alloc_probe() {
-	let options = crate::Options {
-		module: true,
-		..Default::default()
-	};
+	let options = crate::Options(crate::Options::MODULE);
 	let count = |src: &str| {
 		let _ = whole(src, options);
 		let before = ALLOCATIONS.load(std::sync::atomic::Ordering::Relaxed);
@@ -909,8 +874,7 @@ fn host_alloc_probe() {
 	)
 	.unwrap();
 	let count = |src: &str| {
-		let prepared =
-			crate::json::Prepared::borrowed(src, crate::json::Request::from_flags(crate::json::flag::MODULE));
+		let prepared = crate::json::Prepared::borrowed(src, crate::json::Request::from_flags(crate::Options::MODULE));
 		prepared
 			.in_place(Entry::Program, 0.0, None, "", Some(&grammar))
 			.unwrap();
@@ -978,7 +942,7 @@ fn layout_sizes() {
 
 #[test]
 fn parenthesized_bits() {
-	let request = crate::json::Request::from_flags(crate::json::flag::MODULE | crate::json::flag::PARENTHESIZED);
+	let request = crate::json::Request::from_flags(crate::Options::MODULE | crate::Options::PARENTHESIZED);
 	let json = crate::json::parse("(a).b; (x, y); c; ((d));", &request, "");
 	assert_eq!(json.matches("\"parenthesized\":true").count(), 3, "{json}");
 	let json = crate::json::parse("(a, b) => a; (c);", &request, "");

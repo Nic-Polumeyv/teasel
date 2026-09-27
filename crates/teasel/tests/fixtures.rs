@@ -8,7 +8,8 @@ mod common;
 
 use std::fs;
 use std::path::Path;
-use teasel::json::{Request, flag, parse};
+use teasel::Options;
+use teasel::json::{Request, parse};
 
 #[test]
 fn files() {
@@ -19,17 +20,17 @@ fn files() {
 			let name = file.file_name().unwrap().to_str().unwrap();
 			let stem = name.split('.').next().unwrap();
 			let source = fs::read_to_string(&file).unwrap();
-			let mut flags = flag::COMMENTS | flag::SCOPES;
+			let mut flags = Options::COMMENTS | Options::SCOPES;
 			if !name.contains(".script.") {
-				flags |= flag::MODULE;
+				flags |= Options::MODULE;
 			}
 			if language == "ts" {
-				flags |= flag::TYPESCRIPT;
+				flags |= Options::TYPESCRIPT;
 			}
 			for (word, bit) in [
-				("locations", flag::LOCATIONS),
-				("erase", flag::ERASE),
-				("recover", flag::ERROR_RECOVERY),
+				("locations", Options::LOCATIONS),
+				("erase", Options::ERASE),
+				("recover", Options::ERROR_RECOVERY),
 			] {
 				if stem.contains(word) {
 					flags |= bit;

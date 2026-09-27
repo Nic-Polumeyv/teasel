@@ -487,7 +487,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 	}
 
 	fn recovering(&self) -> bool {
-		self.options.error_recovery
+		self.options.has(Options::ERROR_RECOVERY)
 	}
 
 	/// Under recovery the error is recorded on the tree and reading goes on; otherwise it ends
@@ -2786,9 +2786,10 @@ impl<'a, E: Extension> Walker<'a, E> {
 	/// taken back unless `keep` says it ended where it should.
 	fn trial(&mut self, stop: &str, keep: impl FnOnce(&mut Self) -> bool) -> Option<List> {
 		let (start, comments, mark) = (self.at, self.tree().comments.len(), self.tree().mark());
-		let recovering = std::mem::replace(&mut self.options.error_recovery, false);
+		let options = self.options;
+		self.options = options.without(Options::ERROR_RECOVERY);
 		let read = self.js(JsEntry::Expression, stop);
-		self.options.error_recovery = recovering;
+		self.options = options;
 		if let Ok(roots) = read
 			&& keep(self)
 		{
@@ -2840,8 +2841,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let ast = self.ast.take().unwrap();
 		let src = &self.src[..end as usize];
 		// the template may declare what the script exports
-		let mut options = self.options;
-		options.allow_undeclared_exports = true;
+		let options = self.options.with(Options::ALLOW_UNDECLARED_EXPORTS);
 		let mut parser = Parser::<E>::new(src, start, options, "", ast);
 		let program = parser.start().and_then(|()| parser.parse_program());
 		self.ast = Some(parser.finish());
@@ -2873,7 +2873,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		}
 		let end = self.at;
 		let word = &self.src[start as usize..end as usize];
-		if reserved(word) || (self.options.module && word == "await") {
+		if reserved(word) || (self.options.has(Options::MODULE) && word == "await") {
 			self.report(error(start, end, Code::ReservedWord, Some(word)))?;
 		}
 		let name = self.intern(word);

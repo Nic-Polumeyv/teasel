@@ -1,5 +1,6 @@
 use super::scope::{Binding, SCOPE_ARROW, SCOPE_DIRECT_SUPER, SCOPE_SUPER, function_flags};
 use super::{DestructuringErrors, Errors, Extension, FunctionKind, Parser, Result, Unwrap};
+use crate::Options;
 use crate::error::Code;
 use crate::interner::StrId;
 use crate::lexer::token::{Keyword, TokenKind, word};
@@ -739,7 +740,7 @@ impl<E: Extension> Parser<'_, E> {
 		if escaped {
 			return self.error(start, Code::ImportMetaEscaped);
 		}
-		if !self.options.module {
+		if !self.options.has(Options::MODULE) {
 			return self.error(start, Code::ImportMetaOutsideModule);
 		}
 		Ok(self.add(NodeKind::MetaProperty { meta, property }, start))
@@ -799,7 +800,7 @@ impl<E: Extension> Parser<'_, E> {
 			self.recycle(paren.items);
 			value
 		};
-		if self.options.parenthesized {
+		if self.options.has(Options::PARENTHESIZED) {
 			self.ast.set_parenthesized(value);
 		}
 		Ok(value)
@@ -1405,7 +1406,7 @@ impl<E: Extension> Parser<'_, E> {
 	/// `flags` are the word's `token::word` flags.
 	pub(crate) fn is_reserved_word(&self, flags: u8) -> bool {
 		flags & word::ENUM != 0
-			|| (flags & word::AWAIT != 0 && self.options.module)
+			|| (flags & word::AWAIT != 0 && self.options.has(Options::MODULE))
 			|| (flags & word::STRICT != 0 && self.strict)
 	}
 

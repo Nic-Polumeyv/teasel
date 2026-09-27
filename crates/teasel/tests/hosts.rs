@@ -8,7 +8,8 @@ mod common;
 use std::fs;
 use std::path::Path;
 use teasel::Entry;
-use teasel::json::{Request, flag, parse_document};
+use teasel::Options;
+use teasel::json::{Request, parse_document};
 
 #[test]
 fn documents() {
@@ -26,11 +27,11 @@ fn documents() {
 		for file in sources(&dir) {
 			let stem = file.file_stem().unwrap().to_str().unwrap();
 			let source = fs::read_to_string(&file).unwrap();
-			let mut flags = flag::MODULE | flag::COMMENTS | flag::SCOPES;
+			let mut flags = Options::MODULE | Options::COMMENTS | Options::SCOPES;
 			for (word, bit) in [
-				("locations", flag::LOCATIONS),
-				("erase", flag::ERASE),
-				("recover", flag::ERROR_RECOVERY),
+				("locations", Options::LOCATIONS),
+				("erase", Options::ERASE),
+				("recover", Options::ERROR_RECOVERY),
 			] {
 				if stem.contains(word) {
 					flags |= bit;
@@ -61,8 +62,8 @@ fn every_prefix_answers() {
 			let source = fs::read_to_string(&file).unwrap();
 			for (end, _) in source.char_indices().chain([(source.len(), ' ')]) {
 				for recover in [false, true] {
-					let recovery = if recover { flag::ERROR_RECOVERY } else { 0 };
-					let request = Request::from_flags(flag::MODULE | flag::COMMENTS | flag::SCOPES | recovery);
+					let recovery = if recover { Options::ERROR_RECOVERY } else { 0 };
+					let request = Request::from_flags(Options::MODULE | Options::COMMENTS | Options::SCOPES | recovery);
 					parse_document(&source[..end], &grammar, &request);
 				}
 			}
@@ -78,8 +79,8 @@ fn unfinished_input() {
 	let svelte = fs::read_to_string(root.join("tests/hosts/svelte/host.grammar")).unwrap();
 	let vue = fs::read_to_string(root.join("tests/hosts/vue/host.grammar")).unwrap();
 	let parse = |source: &str, grammar: &str, recover: bool| {
-		let recovery = if recover { flag::ERROR_RECOVERY } else { 0 };
-		let request = Request::from_flags(flag::MODULE | flag::COMMENTS | recovery);
+		let recovery = if recover { Options::ERROR_RECOVERY } else { 0 };
+		let request = Request::from_flags(Options::MODULE | Options::COMMENTS | recovery);
 		parse_document(source, grammar, &request)
 	};
 	assert!(parse("<a x=\"", &svelte, true).contains("\"type\":\"Root\""));
@@ -124,9 +125,9 @@ fn host_phases() {
 	}
 	for (name, source) in &documents {
 		for (flags, label) in [
-			(flag::MODULE, "module"),
+			(Options::MODULE, "module"),
 			(
-				flag::MODULE | flag::SCOPES | flag::COMMENTS | flag::LOCATIONS,
+				Options::MODULE | Options::SCOPES | Options::COMMENTS | Options::LOCATIONS,
 				"module scopes comments locations",
 			),
 		] {

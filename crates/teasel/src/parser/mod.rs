@@ -24,21 +24,51 @@ pub(crate) const MAX_DEPTH: u32 = 1000;
 // wasm frames sit on the embedder's stack: the scope walk overflowed it past 5,000 links
 const MAX_CHAIN: u32 = if cfg!(target_arch = "wasm32") { 4_000 } else { 10_000 };
 
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Options {
-	/// Parse as an ES module: strict mode, top-level `await`, `import` and `export`.
-	pub module: bool,
+/// The switches of a parse as one word, two bits per option in the order of npm/src/lib/options.ts,
+/// holding the index of the option's value.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Options(pub u32);
+
+impl Options {
+	const fn at(slot: u32, index: u32) -> u32 {
+		index << (2 * slot)
+	}
+	/// An ES module: strict mode, top-level `await`, `import` and `export`.
+	pub const MODULE: u32 = Self::at(0, 1);
+	pub const TYPESCRIPT: u32 = Self::at(1, 1);
+	/// TypeScript, erased on output; see `estree::Output`.
+	pub const ERASE: u32 = Self::at(1, 2);
+	pub const COMMENTS: u32 = Self::at(2, 1);
+	/// Scope analysis on the answer.
+	pub const SCOPES: u32 = Self::at(3, 1);
+	/// Line and column on every node, as `loc`.
+	pub const LOCATIONS: u32 = Self::at(4, 1);
+	/// The fact `parenthesized` on a node the source wraps in parens, instead of a wrapper node.
+	pub const PARENTHESIZED: u32 = Self::at(5, 1);
+	pub const ALLOW_RETURN_OUTSIDE_FUNCTION: u32 = Self::at(6, 1);
+	pub const ALLOW_AWAIT_OUTSIDE_FUNCTION: u32 = Self::at(7, 1);
+	pub const ALLOW_SUPER_OUTSIDE_METHOD: u32 = Self::at(8, 1);
+	pub const ALLOW_UNDECLARED_EXPORTS: u32 = Self::at(9, 1);
 	/// Errors are recorded on the tree instead of ending the parse: a missing operand, name or
 	/// pattern is an empty `Identifier` of no width where it was expected, and a statement or
 	/// entry that cannot be read is skipped to the next stop token or unmatched closer, an empty
 	/// `Identifier` standing for it.
-	pub error_recovery: bool,
-	pub allow_return_outside_function: bool,
-	pub allow_await_outside_function: bool,
-	pub allow_super_outside_method: bool,
-	pub allow_undeclared_exports: bool,
-	/// Mark a node the source wraps in parens with the fact `parenthesized`, instead of a wrapper node.
-	pub parenthesized: bool,
+	pub const ERROR_RECOVERY: u32 = Self::at(10, 1);
+
+	/// Whether any of `bits` is on.
+	pub const fn has(self, bits: u32) -> bool {
+		self.0 & bits != 0
+	}
+	pub const fn with(self, bits: u32) -> Options {
+		Options(self.0 | bits)
+	}
+	pub const fn without(self, bits: u32) -> Options {
+		Options(self.0 & !bits)
+	}
+	/// On for `typescript: true` and `'erase'` alike.
+	pub const fn typescript(self) -> bool {
+		self.has(Self::TYPESCRIPT | Self::ERASE)
+	}
 }
 
 /// What a function-shaped node is, for the extension hooks around its signature.
@@ -580,10 +610,10 @@ impl<'a, E: Extension> Parser<'a, E> {
 		lexer.comments = std::mem::take(&mut ast.comments);
 		lexer.set_pos(offset);
 		lexer.skip_hashbang();
-		lexer.recover = options.error_recovery;
-		let strict = options.module;
+		lexer.recover = options.has(Options::ERROR_RECOVERY);
+		let strict = options.has(Options::MODULE);
 		lexer.strict = strict;
-		lexer.module = options.module;
+		lexer.module = strict;
 		let spare = std::mem::take(&mut ast.spare);
 		lexer.regexp = spare.regexp;
 		lexer.stop_ranges = spare.stop_ranges;
@@ -676,7 +706,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 	}
 
 	pub(crate) fn recovering(&self) -> bool {
-		self.options.error_recovery && self.speculating == 0
+		self.options.has(Options::ERROR_RECOVERY) && self.speculating == 0
 	}
 
 	/// Runs `f` with recovery off, so it fails where strict parsing would and the caller can try
