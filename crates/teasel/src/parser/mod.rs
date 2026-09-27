@@ -532,16 +532,10 @@ pub(crate) struct Snapshot<E: Extension> {
 }
 
 pub(crate) struct TokenSnapshot {
-	pos: u32,
+	mark: crate::lexer::Mark,
 	in_type: bool,
-	depth: u32,
-	open: [u32; 3],
-	stopped: bool,
-	unmatched: bool,
 	tok: Token,
 	prev_end: u32,
-	comments: usize,
-	errors: usize,
 }
 
 #[derive(Clone, Copy)]
@@ -651,30 +645,18 @@ impl<'a, E: Extension> Parser<'a, E> {
 	/// The tokenizer alone, enough for a lookahead that parses nothing.
 	pub(crate) fn token_snapshot(&self) -> TokenSnapshot {
 		TokenSnapshot {
-			pos: self.lexer.pos(),
+			mark: self.lexer.mark(),
 			in_type: self.lexer.in_type,
-			depth: self.lexer.depth,
-			open: self.lexer.open,
-			stopped: self.lexer.stopped,
-			unmatched: self.lexer.unmatched,
 			tok: self.tok,
 			prev_end: self.prev_end,
-			comments: self.lexer.comments.len(),
-			errors: self.lexer.errors.len(),
 		}
 	}
 
 	pub(crate) fn restore_tokens(&mut self, snapshot: TokenSnapshot) {
-		self.lexer.set_pos(snapshot.pos);
+		self.lexer.rewind(snapshot.mark);
 		self.lexer.in_type = snapshot.in_type;
-		self.lexer.depth = snapshot.depth;
-		self.lexer.open = snapshot.open;
-		self.lexer.stopped = snapshot.stopped;
-		self.lexer.unmatched = snapshot.unmatched;
 		self.tok = snapshot.tok;
 		self.prev_end = snapshot.prev_end;
-		self.lexer.comments.truncate(snapshot.comments);
-		self.lexer.errors.truncate(snapshot.errors);
 	}
 
 	/// A tree past what the source can hold is a loop that consumes nothing: it fails here,
