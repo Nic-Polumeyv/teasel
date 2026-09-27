@@ -695,6 +695,16 @@ impl<'a, E: Extension> Parser<'a, E> {
 		Ok(())
 	}
 
+	/// A strict read ahead; under recovery a lexer error there is no verdict, the real read
+	/// records it.
+	pub(crate) fn peek_with<T>(&mut self, read: impl FnOnce(&mut Lexer<'a>) -> Result<T>) -> Result<Option<T>> {
+		match self.lexer.lookahead(read) {
+			Ok(value) => Ok(Some(value)),
+			Err(_) if self.recovering() => Ok(None),
+			Err(error) => Err(error),
+		}
+	}
+
 	pub(crate) fn recovering(&self) -> bool {
 		self.options.has(Options::ERROR_RECOVERY) && self.speculating == 0
 	}

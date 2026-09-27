@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "bad_character_escape",
+		"message": "Bad character escape sequence",
+		"pos": 9,
+		"end": 9,
+		"loc": {
+			"line": 1,
+			"column": 9
+		}
+	}
+}
