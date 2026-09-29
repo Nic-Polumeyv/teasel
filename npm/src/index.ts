@@ -15,11 +15,16 @@ export type { Code } from './codes.js';
  * equal to `pos`. `unexpected_eof` is the end of what was parsed: the `end` the parse was given,
  * else the end of the source. A bad offset from the host is an `invalid_request` without a `loc`.
  */
-export interface ParseError extends SyntaxError {
-	code: Code;
-	pos: number;
-	end: number;
-	loc?: { line: number; column: number };
+export class ParseError extends SyntaxError {
+	declare code: Code;
+	declare pos: number;
+	declare end: number;
+	declare loc?: { line: number; column: number };
+
+	constructor({ message, ...fields }: Pick<ParseError, 'message' | 'code' | 'pos' | 'end' | 'loc'>) {
+		super(message);
+		Object.assign(this, fields);
+	}
 }
 
 /** A scope, as one of `scopes` on the answer. */
@@ -308,11 +313,10 @@ export class Source {
 			} catch (error) {
 				// a tree deeper than the caller's stack has room for overflowed the decoder
 				if (!(error instanceof RangeError)) throw error;
-				throw Object.assign(new SyntaxError('Maximum nesting depth exceeded'), { code: 'nesting_depth', pos: offset, end: offset });
+				throw new ParseError({ message: 'Maximum nesting depth exceeded', code: 'nesting_depth', pos: offset, end: offset });
 			}
 		}
-		const { message, ...error } = JSON.parse(answer).error;
-		throw Object.assign(new SyntaxError(message), error);
+		throw new ParseError(JSON.parse(answer).error);
 	}
 
 	[Symbol.dispose]() {
