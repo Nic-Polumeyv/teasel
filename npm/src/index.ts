@@ -1,12 +1,12 @@
 import type { Expression, Identifier, Node, Pattern, Program, SourceLocation, Statement } from 'estree';
-import { decode, type Held, PARENT, type Prepared, REFERENCE, SCOPE } from './lib/decode.js';
-import { ENTRY, flags, type Options } from './lib/options.js';
+import { decode, type Held, PARENT, type Prepared, REFERENCE, SCOPE } from './decode.js';
+import { ENTRY, flags, type Options } from './options.js';
 import { engine } from '#engine';
 
-import type { Code } from './lib/codes.js';
+import type { Code } from './codes.js';
 
-export type { Options } from './lib/options.js';
-export type { Code } from './lib/codes.js';
+export type { Options } from './options.js';
+export type { Code } from './codes.js';
 
 /**
  * Thrown for a syntax error. `code` names what went wrong, for a host to branch on, and
@@ -280,6 +280,7 @@ export class Source {
 	#source: string;
 
 	constructor(source: string, options: Options = {}) {
+		// Rust cannot read a V8 string, so it parses its own copy
 		this.#held = engine.create(source, flags(options));
 		this.#source = source;
 		registry?.register(this, this.#held, this);
@@ -314,7 +315,6 @@ export class Source {
 		throw Object.assign(new SyntaxError(message), error);
 	}
 
-	/** Releases what the engine holds for the source, as `using` does at the end of its block; the collector does it otherwise. */
 	[Symbol.dispose]() {
 		if (this.#held === undefined) return;
 		registry?.unregister(this);

@@ -24,7 +24,7 @@ pub(crate) const MAX_DEPTH: u32 = 1000;
 // wasm frames sit on the embedder's stack: the scope walk overflowed it past 5,000 links
 const MAX_CHAIN: u32 = if cfg!(target_arch = "wasm32") { 4_000 } else { 10_000 };
 
-/// The switches of a parse as one word, two bits per option in the order of npm/src/lib/options.ts,
+/// The switches of a parse as one word, two bits per option in the order of npm/src/options.ts,
 /// holding the index of the option's value.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Options(pub u32);

@@ -1,4 +1,4 @@
-import type { Engine, Held } from '../lib/decode.js';
+import type { Engine, Held } from '../decode.js';
 
 const encoder = new TextEncoder();
 const utf8 = new TextDecoder();
