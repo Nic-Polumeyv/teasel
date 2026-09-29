@@ -314,6 +314,14 @@ struct Read<'a> {
 	body: Option<&'a Body>,
 }
 
+fn fill_unread(entries: &[(&'static str, bool)], fields: &mut Vec<(&'static str, Value)>) {
+	for &(field, omit) in entries {
+		if !omit && !fields.iter().any(|(k, _)| *k == field) {
+			fields.push((field, Value::Null));
+		}
+	}
+}
+
 /// A body's scope as its form read it: the body's field, the entry fields the scope holds, and
 /// the patterns declared in it.
 struct BodyGroup {
@@ -1812,11 +1820,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 					self.at = after;
 					end = after;
 				}
-				for &(field, omit) in &form.entries {
-					if !omit && !read.fields.iter().any(|(k, _)| *k == field) {
-						read.fields.push((field, Value::Null));
-					}
-				}
+				fill_unread(&form.entries, &mut read.fields);
 				if let Some(names) = declares {
 					for &(field, value) in &read.fields {
 						if !names.contains(&field) {
@@ -2430,12 +2434,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		outside: Vec<NodeId>,
 		chained: bool,
 	) -> NodeId {
-		// every entry the block could have read, null unless left out on purpose
-		for &(field, omit) in &rule.entries {
-			if !omit && !fields.iter().any(|(k, _)| *k == field) {
-				fields.push((field, Value::Null));
-			}
-		}
+		fill_unread(&rule.entries, &mut fields);
 		if let Some(flag) = rule.chain_flag {
 			fields.push((flag, Value::Bool(chained)));
 		}
@@ -2545,6 +2544,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		self.form(&rule.form, &mut read)?;
 		self.space();
 		self.expect(close)?;
+		fill_unread(&rule.form.entries, &mut read.fields);
 		let node = self.host(rule.ty, start, self.at, &read.fields, None, true);
 		self.fields.give(read.fields);
 		Ok((node, rule))

@@ -105,6 +105,13 @@ fn unfinished_input() {
 	);
 }
 
+#[test]
+fn tags_fill_unread() {
+	let grammar = "host t\nsigils open=# branch=: close=/ tag=@\ntag t T [ a=expression ] [ , b?=expression ]\n";
+	let answer = parse_document("{@t }", grammar, &Request::from_flags(Options::MODULE));
+	assert!(answer.contains("\"a\":null") && !answer.contains("\"b\""), "{answer}");
+}
+
 // cargo test --release --test hosts host_phases -- --ignored --nocapture; TEASEL_HOST_BENCH=file adds a document of its own
 #[test]
 #[ignore]
