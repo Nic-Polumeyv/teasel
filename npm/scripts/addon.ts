@@ -2,7 +2,7 @@
 import { copyFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { here, platforms } from '../dist/lib/addon.js';
+import { here, platforms } from '../dist/engine/addon.js';
 import { target as built } from './target.ts';
 
 const at = process.argv.indexOf('--target');
