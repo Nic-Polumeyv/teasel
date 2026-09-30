@@ -396,8 +396,8 @@ const vue = grammars.vue;
 	}
 }
 
-// src/lib/codes.ts is written from error.rs by scripts/codes.ts: the two must agree
+// src/codes.ts is written from error.rs by scripts/codes.ts: the two must agree
 {
-	const written = [...readFileSync(new URL('../src/lib/codes.ts', import.meta.url), 'utf8').matchAll(/'([a-z_0-9]+)'/g)].map((m) => m[1]);
+	const written = [...readFileSync(new URL('../src/codes.ts', import.meta.url), 'utf8').matchAll(/'([a-z_0-9]+)'/g)].map((m) => m[1]);
 	assert.deepEqual(written, codes(), 'run node scripts/codes.ts');
 }

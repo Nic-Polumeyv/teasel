@@ -1,7 +1,7 @@
 import { Source } from '@teasel/parser';
 import entry from '../../../npm/dist/index.d.ts?raw';
-import options from '../../../npm/dist/lib/options.d.ts?raw';
-import codes from '../../../npm/dist/lib/codes.d.ts?raw';
+import options from '../../../npm/dist/options.d.ts?raw';
+import codes from '../../../npm/dist/codes.d.ts?raw';
 
 type Declaration = { type: string; start: number; end: number; id?: { name: string }; declarations?: { id: { name: string } }[]; declaration?: Declaration | null; specifiers?: { exported: { name: string } }[]; leadingComments?: { value: string; end: number }[] };
 const name = (statement: Declaration) => (statement.declaration!.id ?? statement.declaration!.declarations![0].id).name;
