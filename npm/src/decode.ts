@@ -1,6 +1,8 @@
 // Builds ESTree objects from the parser's own tree, read in place: the layout says where each
 // kind's fields sit, the recipes how the kind is spelled.
 
+import type { Engine, Held, Prepared, Tree, Views } from './types.js';
+
 // symbol keys: ten times cheaper than a WeakMap entry, and skipped by JSON, Object.keys and for-in
 export const SCOPE = Symbol('scope');
 export const REFERENCE = Symbol('reference');
@@ -8,10 +10,6 @@ export const PARENT = Symbol('parent');
 
 /** A decoded object: the tree decides its shape, `index.ts` describes it. */
 export type Decoded = Record<string | symbol, any>;
-
-type View = Uint32Array | Float64Array | Uint8Array;
-/** Whether the tree is the TypeScript one, then each view of the layout's `views`, as long as its buffer's room; `undefined` for a table no parse filled yet. */
-export type Tree = readonly (View | number | undefined)[];
 
 interface Field {
 	name: string;
@@ -1133,31 +1131,6 @@ const filled = (tree: Tree, words: Uint32Array, lens: number, at: number) => (wo
 
 // what `words[lens]` says of an answer; each view's length follows it, then where the tree's buffers sit
 const TYPESCRIPT = 2, COMMENTS = 4, ERASED = 8, LINED = 16, LISTED = 32, RECOVERED = 64;
-
-/** What parses, as the reader sees it. */
-export interface Views {
-	/** The tree's memory layout, the names of its views and the recipes, as JSON. */
-	readonly layout: () => string;
-	/** The views of the last parse's tree, JavaScript's or TypeScript's; `moved` when a buffer of it has since this reader last took them. The same array as long as no view in it changed, `moved` aside. */
-	readonly tree: (typescript: boolean, moved: boolean) => Tree;
-}
-
-/** What the engine holds: a prepared source, or a host language's grammar read once. */
-export interface Held {
-	readonly free: () => void;
-}
-
-/** A source the engine prepared: it parses at an entry and offset, cut at `end`, the stop tokens as one string, the whole source as a document by a grammar `plan` holds; the answer is its words, or an error as JSON. */
-export interface Prepared extends Held {
-	readonly parse: (entry: number, offset: number, end: number | undefined, stop: string, plan: Held | undefined) => Uint32Array | string;
-}
-
-/** What parses: the addon or the WebAssembly module. */
-export interface Engine extends Views {
-	readonly create: (source: string, flags: number) => Prepared;
-	/** The grammar of a host language on its wire, read once. */
-	readonly plan: (grammar: Uint8Array) => Held;
-}
 
 function table(S: State, tree: Tree, words: Uint32Array, lens: number, rows: Rows, at: number): Decoded[] {
 	const build = S.link ? rows.linked : rows.plain;
