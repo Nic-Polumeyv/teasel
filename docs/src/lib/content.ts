@@ -3,7 +3,7 @@ import type { Component } from 'svelte';
 import { render as ssr } from 'svelte/server';
 import { buttonVariants } from 'sheer-ui/components/button';
 import { mark, snippet, type Mark } from '#lib/highlight.ts';
-import { reference } from '#lib/reference.ts';
+import { references } from '#lib/reference.ts';
 
 export type Heading = { id: string; text: string };
 export type Page = { href: string; title: string; section: string; path: string; headings: Heading[] };
@@ -150,6 +150,6 @@ const written = Object.keys(files)
 		return page({ href: `/${name(file)}`, title, section: label(section), path: `docs${path}` }, markdown);
 	});
 
-export const pages: Page[] = [...written, page(reference.meta, reference.markdown)];
+export const pages: Page[] = [...written, ...references.map((reference) => page(reference.meta, reference.markdown))];
 
 export const sections: Section[] = Object.entries(Object.groupBy(pages, (page) => page.section)).map(([label, pages]) => ({ label, pages: pages! }));

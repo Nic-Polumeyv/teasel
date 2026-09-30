@@ -2,37 +2,45 @@
 title: Parsing with a grammar
 ---
 
-A template language can describe its whole syntax to the parser as a grammar. The parser then reads a whole file of that language and returns one tree: the template's own nodes, the JavaScript nodes inside them, and scopes that cover both. These pages call the template language the host. A grammar is a short text in the format the [host grammar reference](/host-grammar) describes. This is a complete small one:
+A template language can describe its whole syntax to the parser as a grammar. The parser then reads a whole file of that language and returns one tree: the template's own nodes, the JavaScript nodes inside them, and scopes that cover both. These pages call the template language the host. A grammar is a definition made with the builders `@teasel/parser/grammar` exports, which the [grammar reference](/reference/grammar) lists. This is a complete small one:
 
-```text mini.grammar
-host mini
+```js mini.js
+import * as g from '@teasel/parser/grammar';
 
-document Root  script?=script  { children=fragment }
-delimiters {{ }}
-sigils open=# branch=: close=/ tag=@
-void br hr img input
-fragment Fragment nodes scope
-elements name=name attributes=attributes children=children
-
-element script  Element  raw
-element *       Element
-
-script script
-
-block if  IfBlock
-  open    test=expression  -> consequent
-  branch  else  -> alternate
-
-block each  EachBlock
-  open    list=expression as item=pattern  -> body declares item
-
-expression  ExpressionTag  expression=expression
+export const grammar = g.grammar('mini', {
+	document: g.node('Root', { script: g.optional(g.doc.script) }, g.scope({ children: g.content })),
+	fragment: g.node('Fragment', g.scope({ nodes: g.nodes })),
+	text: g.node('Text', { data: g.text.data }),
+	comment: g.node('Comment', { data: g.text.data }),
+	delimiters: ['{{', '}}'],
+	void: ['br', 'hr', 'img', 'input'],
+	elements: {
+		fields: { name: g.element.tag, attributes: g.element.attributes, children: g.content },
+		rules: { script: g.element(g.node('Element'), { content: 'raw' }) },
+		other: g.element(g.node('Element')),
+	},
+	script: { element: 'script' },
+	sigils: {
+		open: '#',
+		branch: ':',
+		close: '/',
+		tag: '@',
+		blocks: {
+			if: g.block(g.node('IfBlock', { test: g.js.expression }, { consequent: g.content }), {
+				branches: { else: [{ alternate: g.content }] },
+			}),
+			each: g.block(g.node('EachBlock', { list: g.js.expression }, 'as', { item: g.bind(g.js.pattern) }, { body: g.content })),
+		},
+	},
+	expression: g.node('ExpressionTag', { expression: g.js.expression }),
+});
 ```
 
 A `Plan` made from the grammar reads documents of it. Make it once, at module level: the engine reads the grammar the first time the plan is used and keeps it.
 
 ```js document.js
 import { Source, Plan } from '@teasel/parser';
+import { grammar } from './mini.js';
 
 const mini = new Plan(grammar);
 
@@ -43,7 +51,9 @@ node.children.nodes[0].children.nodes[0];
 // ExpressionTag, its expression the Identifier greeting
 ```
 
-A plan made from a grammar reads the whole source: it takes no position, and `until` does not apply to it. A grammar the parser can't read throws when the plan is made, naming the line.
+In TypeScript, and in JavaScript checked with JSDoc, the tree is typed from the definition: `node.children.nodes[0]` is an `Element`, an `IfBlock` or one of the others the grammar names, and `EachBlock`'s `item` is a `Pattern`. What the grammar cannot express is a type error: a tag with a body, a field named `type`, `bind` on a source that reads an expression. `g.grammar` throws a `TypeError` for a word the grammar cannot spell, such as one holding a space or a `|`.
+
+A plan made from a grammar reads the whole source: it takes no position, and `until` does not apply to it.
 
 ## The tree
 
@@ -88,4 +98,4 @@ node.children.nodes[0].type;                 // 'Element', read as far as it wen
 
 ## Example grammars
 
-The parser's own tests carry two whole grammars, one for a component language with script and style blocks, directives and `{#each}`-style blocks, and one for a template language with prefixed directives and `{{ }}` interpolation. They're what the [reference](/host-grammar) quotes; between them they use every statement of the format.
+The package's own tests carry two whole grammars, one for a component language with script and style blocks, directives and `{#each}`-style blocks, and one for a template language with prefixed directives and `{{ }}` interpolation, in `npm/scripts/hosts`. Between them they use every builder.

@@ -1,8 +1,8 @@
 ---
-title: Host grammar
+title: Grammar text
 ---
 
-The text `new Plan(grammar)` takes: what a template language puts around the JavaScript it embeds. One statement per line, words separated by spaces; `//` starts a comment; a line indented under a `block` belongs to it. Every name a statement gives becomes the `type` of a node or the name of a field, exactly as written. The examples come from the two grammars in the parser's tests. [Parsing with a grammar](/parsing-with-a-grammar) has a third, complete one.
+The text the Rust crate's `parse_document` and the command line's `--host` read: what a template language puts around the JavaScript it embeds. From JavaScript, a grammar made with [`@teasel/parser/grammar`](/reference/grammar) is written into this text once, and its `text` holds it. One statement per line, words separated by spaces; `//` starts a comment; a line indented under a `block` belongs to it. Every name a statement gives becomes the `type` of a node or the name of a field, exactly as written. The examples come from the two grammars in the parser's tests. [Parsing with a grammar](/parsing-with-a-grammar) has a third, complete one, made with the builders.
 
 ## The document
 
@@ -80,7 +80,7 @@ element *                 RegularElement
 | `rcdata` | the content is text with the host's expressions in it, a textarea's |
 | `inside NAME` | allowed only inside an element named NAME |
 | `outside ATTR` | not allowed inside an element carrying the attribute ATTR |
-| `this=FIELD` | the `this` attribute's expression goes to FIELD and leaves the attributes; `this=FIELD:text` accepts plain text there too, as a string |
+| `this=FIELD` | the `this` attribute's expression goes to FIELD and leaves the attributes; `this=FIELD:text` accepts plain text there too, as a string literal |
 
 ## Scripts and styles
 
@@ -100,7 +100,7 @@ directive on          OnDirective          expression?
 directive let         LetDirective         pattern?name  declares
 directive transition  TransitionDirective  expression?  intro outro
 directive in          TransitionDirective  expression?  intro !outro
-spread  SpreadAttribute  expression
+spread  SpreadAttribute
 ```
 
 ```text
@@ -137,7 +137,7 @@ directive *     Directive  exp?=expression
 
 The flags after the value: a bare word is a boolean field set to true, `!word` one set to false; `unique` forbids two directives of this kind with the same argument on an element, `unique:attribute` counts plain attributes with that name too; `declares` makes what the value binds visible in the element's scope, `declares a b` the named fields of the form.
 
-`spread TYPE FIELD` names the node of a `{...expression}` attribute and the field holding the expression.
+`spread TYPE` names the node of a `{...expression}` attribute; the expression is its `expression` field.
 
 ## Blocks
 

@@ -116,11 +116,11 @@ With `errorRecovery`, the parse comes back and the errors come with it.
 A template language can hand over its syntax as a grammar and get the whole document back: the host's nodes around the JavaScript ones, in one tree, scopes across both.
 
 ```js
-const svelte = new Plan(grammar);                  // once; the engine reads the grammar on first use
-const { node, roots } = new Source(text, { scopes: true }).parse(svelte);
+const host = new Plan(grammar);                    // once; the engine reads the grammar on first use
+const { node, roots } = new Source(text, { scopes: true }).parse(host);
 ```
 
-The grammar format is documented at [teasel.dev/host-grammar](https://teasel.dev/host-grammar); two whole grammars live under `crates/teasel/tests/hosts`.
+A grammar is a definition made with `@teasel/parser/grammar`, documented at [teasel.dev/parsing-with-a-grammar](https://teasel.dev/parsing-with-a-grammar); the tree a plan answers with is typed from it. Two whole grammars live under `npm/scripts/hosts`.
 
 ## Rust and the command line
 
