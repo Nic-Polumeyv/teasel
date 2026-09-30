@@ -392,3 +392,20 @@ fn wire_types() {
 		"npm/src/wire.ts changed; run with UPDATE=1 once the change is meant"
 	);
 }
+
+// cargo test --release --test hosts wire_cost -- --ignored --nocapture
+#[test]
+#[ignore]
+fn wire_cost() {
+	let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+	let bytes = fs::read(root.join("tests/hosts/svelte/host.wire")).unwrap();
+	let t = std::time::Instant::now();
+	let first = Grammar::read(&bytes).unwrap();
+	println!("first Grammar::read in this process: {:?}", t.elapsed());
+	let t = std::time::Instant::now();
+	for _ in 0..1000 {
+		std::hint::black_box(Grammar::read(&bytes).unwrap());
+	}
+	println!("warm Grammar::read: {:?}", t.elapsed() / 1000);
+	drop(first);
+}
