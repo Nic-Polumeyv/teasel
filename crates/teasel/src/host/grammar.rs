@@ -268,9 +268,10 @@ impl<T: Wire> Wire for Vec<T> {
 	}
 
 	fn ts_write(value: &str) -> String {
+		let (i, item) = (fresh(value, "i"), fresh(value, "item"));
 		format!(
-			"w.word({value}.length);\n{value}.forEach((item) => {{\n\t{}\n}});",
-			indent(&T::ts_write("item"))
+			"w.word({value}.length);\nfor (let {i} = 0; {i} < {value}.length; {i}++) {{\n\tconst {item} = {value}[{i}];\n\t{}\n}}",
+			indent(&T::ts_write(&item))
 		)
 	}
 
@@ -337,9 +338,10 @@ impl<T: Wire> Wire for Record<T> {
 	}
 
 	fn ts_write(value: &str) -> String {
+		let (keys, i, key) = (fresh(value, "keys"), fresh(value, "i"), fresh(value, "key"));
 		format!(
-			"{{\n\tconst entries = Object.entries({value});\n\tw.word(entries.length);\n\tentries.forEach(([key, item]) => {{\n\t\tw.str(key);\n\t\t{}\n\t}});\n}}",
-			indent(&indent(&T::ts_write("item")))
+			"{{\n\tconst {keys} = Object.keys({value});\n\tw.word({keys}.length);\n\tfor (let {i} = 0; {i} < {keys}.length; {i}++) {{\n\t\tconst {key} = {keys}[{i}];\n\t\tw.str({key});\n\t\t{}\n\t}}\n}}",
+			indent(&indent(&T::ts_write(&format!("{value}[{key}]"))))
 		)
 	}
 
@@ -350,6 +352,16 @@ impl<T: Wire> Wire for Record<T> {
 
 fn indent(text: &str) -> String {
 	text.replace('\n', "\n\t")
+}
+
+/// A name for a loop's variable that the value being looped over does not use: one more
+/// underscore per nesting.
+fn fresh(value: &str, base: &str) -> String {
+	let mut name = base.to_string();
+	while value.contains(&name) {
+		name.push('_');
+	}
+	name
 }
 
 /// A field as TypeScript: its name, docs, and the type and writer of its value.
@@ -480,25 +492,37 @@ export class Writer {{\n\
 \tbytes(): Uint8Array {{\n\
 \t\tconst head = 2 + 2 * this.#pool.length;\n\
 \t\tconst poolAt = (head + this.#count) * 4;\n\
-\t\tconst out = new Uint8Array(poolAt + this.#pool.reduce((size, s) => size + s.length * 3, 0));\n\
+\t\tconst joined = this.#pool.join('');\n\
+\t\tconst out = new Uint8Array(poolAt + joined.length * 3);\n\
 \t\tconst words = new Uint32Array(out.buffer, 0, head + this.#count);\n\
 \t\twords[0] = this.#count;\n\
 \t\twords[1] = this.#pool.length;\n\
 \t\tconst encoder = new TextEncoder();\n\
-\t\tlet offset = 0;\n\
-\t\tthis.#pool.forEach((s, i) => {{\n\
-\t\t\tconst {{ written }} = encoder.encodeInto(s, out.subarray(poolAt + offset));\n\
-\t\t\twords[2 + 2 * i] = offset;\n\
-\t\t\twords[3 + 2 * i] = written;\n\
-\t\t\toffset += written;\n\
-\t\t}});\n\
+\t\tlet {{ written }} = encoder.encodeInto(joined, out.subarray(poolAt));\n\
+\t\tif (written === joined.length) {{\n\
+\t\t\t// every string is ASCII, so its bytes are its characters\n\
+\t\t\tlet offset = 0;\n\
+\t\t\tfor (let i = 0; i < this.#pool.length; i++) {{\n\
+\t\t\t\twords[2 + 2 * i] = offset;\n\
+\t\t\t\twords[3 + 2 * i] = this.#pool[i]!.length;\n\
+\t\t\t\toffset += this.#pool[i]!.length;\n\
+\t\t\t}}\n\
+\t\t}} else {{\n\
+\t\t\twritten = 0;\n\
+\t\t\tfor (let i = 0; i < this.#pool.length; i++) {{\n\
+\t\t\t\tconst bytes = encoder.encodeInto(this.#pool[i]!, out.subarray(poolAt + written)).written;\n\
+\t\t\t\twords[2 + 2 * i] = written;\n\
+\t\t\t\twords[3 + 2 * i] = bytes;\n\
+\t\t\t\twritten += bytes;\n\
+\t\t\t}}\n\
+\t\t}}\n\
 \t\twords.set(this.#words.subarray(0, this.#count), head);\n\
 \t\t// the engine reads little-endian words; a big-endian platform swaps them here\n\
 \t\tif (new Uint8Array(new Uint32Array([1]).buffer)[0] !== 1) {{\n\
 \t\t\tconst view = new DataView(out.buffer);\n\
 \t\t\twords.forEach((word, i) => view.setUint32(i * 4, word, true));\n\
 \t\t}}\n\
-\t\treturn out.subarray(0, poolAt + offset);\n\
+\t\treturn out.subarray(0, poolAt + written);\n\
 \t}}\n\
 }}\n"
 	);

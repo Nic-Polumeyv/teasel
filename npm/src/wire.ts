@@ -26,25 +26,37 @@ export class Writer {
 	bytes(): Uint8Array {
 		const head = 2 + 2 * this.#pool.length;
 		const poolAt = (head + this.#count) * 4;
-		const out = new Uint8Array(poolAt + this.#pool.reduce((size, s) => size + s.length * 3, 0));
+		const joined = this.#pool.join('');
+		const out = new Uint8Array(poolAt + joined.length * 3);
 		const words = new Uint32Array(out.buffer, 0, head + this.#count);
 		words[0] = this.#count;
 		words[1] = this.#pool.length;
 		const encoder = new TextEncoder();
-		let offset = 0;
-		this.#pool.forEach((s, i) => {
-			const { written } = encoder.encodeInto(s, out.subarray(poolAt + offset));
-			words[2 + 2 * i] = offset;
-			words[3 + 2 * i] = written;
-			offset += written;
-		});
+		let { written } = encoder.encodeInto(joined, out.subarray(poolAt));
+		if (written === joined.length) {
+			// every string is ASCII, so its bytes are its characters
+			let offset = 0;
+			for (let i = 0; i < this.#pool.length; i++) {
+				words[2 + 2 * i] = offset;
+				words[3 + 2 * i] = this.#pool[i]!.length;
+				offset += this.#pool[i]!.length;
+			}
+		} else {
+			written = 0;
+			for (let i = 0; i < this.#pool.length; i++) {
+				const bytes = encoder.encodeInto(this.#pool[i]!, out.subarray(poolAt + written)).written;
+				words[2 + 2 * i] = written;
+				words[3 + 2 * i] = bytes;
+				written += bytes;
+			}
+		}
 		words.set(this.#words.subarray(0, this.#count), head);
 		// the engine reads little-endian words; a big-endian platform swaps them here
 		if (new Uint8Array(new Uint32Array([1]).buffer)[0] !== 1) {
 			const view = new DataView(out.buffer);
 			words.forEach((word, i) => view.setUint32(i * 4, word, true));
 		}
-		return out.subarray(0, poolAt + offset);
+		return out.subarray(0, poolAt + written);
 	}
 }
 
@@ -109,9 +121,10 @@ export function writeDefinition(w: Writer, v: Definition): void {
 	else {
 		w.word(1);
 		w.word(v.void.length);
-		v.void.forEach((item) => {
+		for (let i_ = 0; i_ < v.void.length; i_++) {
+			const item = v.void[i_];
 			w.str(item);
-		});
+		}
 	}
 	if (v.verbatim === undefined) w.word(0);
 	else {
@@ -164,9 +177,10 @@ export type Node = {
 export function writeNode(w: Writer, v: Node): void {
 	w.str(v.type);
 	w.word(v.items.length);
-	v.items.forEach((item) => {
-		writeItem(w, item);
-	});
+	for (let i_ = 0; i_ < v.items.length; i_++) {
+		const item_ = v.items[i_];
+		writeItem(w, item_);
+	}
 }
 
 /** One step of a form: a host word, fields, or a group. */
@@ -183,33 +197,38 @@ export function writeItem(w: Writer, v: Item): void {
 	} else if ('opt' in v) {
 		w.word(1);
 		w.word((v as { opt: ReadonlyArray<Item> }).opt.length);
-		(v as { opt: ReadonlyArray<Item> }).opt.forEach((item) => {
+		for (let i = 0; i < (v as { opt: ReadonlyArray<Item> }).opt.length; i++) {
+			const item = (v as { opt: ReadonlyArray<Item> }).opt[i];
 			writeItem(w, item);
-		});
+		}
 	} else if ('oneOf' in v) {
 		w.word(2);
 		w.word((v as { oneOf: ReadonlyArray<ReadonlyArray<Item>> }).oneOf.length);
-		(v as { oneOf: ReadonlyArray<ReadonlyArray<Item>> }).oneOf.forEach((item) => {
+		for (let i = 0; i < (v as { oneOf: ReadonlyArray<ReadonlyArray<Item>> }).oneOf.length; i++) {
+			const item = (v as { oneOf: ReadonlyArray<ReadonlyArray<Item>> }).oneOf[i];
 			w.word(item.length);
-			item.forEach((item) => {
-				writeItem(w, item);
-			});
-		});
+			for (let i_ = 0; i_ < item.length; i_++) {
+				const item_ = item[i_];
+				writeItem(w, item_);
+			}
+		}
 	} else if ('scope' in v) {
 		w.word(3);
 		w.word((v as { scope: ReadonlyArray<Item> }).scope.length);
-		(v as { scope: ReadonlyArray<Item> }).scope.forEach((item) => {
+		for (let i = 0; i < (v as { scope: ReadonlyArray<Item> }).scope.length; i++) {
+			const item = (v as { scope: ReadonlyArray<Item> }).scope[i];
 			writeItem(w, item);
-		});
+		}
 	} else {
 		w.word(4);
 		{
-			const entries = Object.entries((v as { readonly [key: string]: Source }));
-			w.word(entries.length);
-			entries.forEach(([key, item]) => {
-				w.str(key);
-				writeSource(w, item);
-			});
+			const keys = Object.keys((v as { readonly [key: string]: Source }));
+			w.word(keys.length);
+			for (let i_ = 0; i_ < keys.length; i_++) {
+				const key_ = keys[i_];
+				w.str(key_);
+				writeSource(w, (v as { readonly [key: string]: Source })[key_]);
+			}
 		}
 	}
 }
@@ -302,23 +321,25 @@ export type Elements = {
 };
 export function writeElements(w: Writer, v: Elements): void {
 	{
-		const entries = Object.entries(v.fields);
-		w.word(entries.length);
-		entries.forEach(([key, item]) => {
+		const keys = Object.keys(v.fields);
+		w.word(keys.length);
+		for (let i_ = 0; i_ < keys.length; i_++) {
+			const key = keys[i_];
 			w.str(key);
-			writeSource(w, item);
-		});
+			writeSource(w, v.fields[key]);
+		}
 	}
 	if (v.rules === undefined) w.word(0);
 	else {
 		w.word(1);
 		{
-			const entries = Object.entries(v.rules);
-			w.word(entries.length);
-			entries.forEach(([key, item]) => {
+			const keys = Object.keys(v.rules);
+			w.word(keys.length);
+			for (let i = 0; i < keys.length; i++) {
+				const key = keys[i];
 				w.str(key);
-				writeElement(w, item);
-			});
+				writeElement(w, v.rules[key]);
+			}
 		}
 	}
 	if (v.component === undefined) w.word(0);
@@ -387,27 +408,29 @@ export function writeScript(w: Writer, v: Script): void {
 	else {
 		w.word(1);
 		w.word(v.module.length);
-		v.module.forEach((item) => {
+		for (let i = 0; i < v.module.length; i++) {
+			const item = v.module[i];
 			w.str(item[0]);
 			if (item[1] === undefined) w.word(0);
 			else {
 				w.word(1);
 				w.str(item[1]);
 			}
-		});
+		}
 	}
 	if (v.typescript === undefined) w.word(0);
 	else {
 		w.word(1);
 		w.word(v.typescript.length);
-		v.typescript.forEach((item) => {
+		for (let i_ = 0; i_ < v.typescript.length; i_++) {
+			const item = v.typescript[i_];
 			w.str(item[0]);
 			if (item[1] === undefined) w.word(0);
 			else {
 				w.word(1);
 				w.str(item[1]);
 			}
-		});
+		}
 	}
 }
 
@@ -450,38 +473,42 @@ export function writeDirectives(w: Writer, v: Directives): void {
 		writeRaw(w, v.unique);
 	}
 	{
-		const entries = Object.entries(v.fields);
-		w.word(entries.length);
-		entries.forEach(([key, item]) => {
+		const keys = Object.keys(v.fields);
+		w.word(keys.length);
+		for (let i_ = 0; i_ < keys.length; i_++) {
+			const key = keys[i_];
 			w.str(key);
-			writeSource(w, item);
-		});
+			writeSource(w, v.fields[key]);
+		}
 	}
 	if (v.shorthands === undefined) w.word(0);
 	else {
 		w.word(1);
 		{
-			const entries = Object.entries(v.shorthands);
-			w.word(entries.length);
-			entries.forEach(([key, item]) => {
+			const keys = Object.keys(v.shorthands);
+			w.word(keys.length);
+			for (let i = 0; i < keys.length; i++) {
+				const key = keys[i];
 				w.str(key);
-				w.word(item.length);
-				item.forEach((item) => {
+				w.word(v.shorthands[key].length);
+				for (let i = 0; i < v.shorthands[key].length; i++) {
+					const item = v.shorthands[key][i];
 					w.str(item);
-				});
-			});
+				}
+			}
 		}
 	}
 	if (v.rules === undefined) w.word(0);
 	else {
 		w.word(1);
 		{
-			const entries = Object.entries(v.rules);
-			w.word(entries.length);
-			entries.forEach(([key, item]) => {
+			const keys = Object.keys(v.rules);
+			w.word(keys.length);
+			for (let i = 0; i < keys.length; i++) {
+				const key = keys[i];
 				w.str(key);
-				writeDirective(w, item);
-			});
+				writeDirective(w, v.rules[key]);
+			}
 		}
 	}
 	if (v.other === undefined) w.word(0);
@@ -545,24 +572,26 @@ export function writeSigils(w: Writer, v: Sigils): void {
 	else {
 		w.word(1);
 		{
-			const entries = Object.entries(v.blocks);
-			w.word(entries.length);
-			entries.forEach(([key, item]) => {
+			const keys = Object.keys(v.blocks);
+			w.word(keys.length);
+			for (let i = 0; i < keys.length; i++) {
+				const key = keys[i];
 				w.str(key);
-				writeBlock(w, item);
-			});
+				writeBlock(w, v.blocks[key]);
+			}
 		}
 	}
 	if (v.tags === undefined) w.word(0);
 	else {
 		w.word(1);
 		{
-			const entries = Object.entries(v.tags);
-			w.word(entries.length);
-			entries.forEach(([key, item]) => {
+			const keys = Object.keys(v.tags);
+			w.word(keys.length);
+			for (let i = 0; i < keys.length; i++) {
+				const key = keys[i];
 				w.str(key);
-				writeTag(w, item);
-			});
+				writeTag(w, v.tags[key]);
+			}
 		}
 	}
 }
@@ -574,12 +603,13 @@ export type Block = {
 export function writeBlock(w: Writer, v: Block): void {
 	writeNode(w, v.node);
 	{
-		const entries = Object.entries(v.branches);
-		w.word(entries.length);
-		entries.forEach(([key, item]) => {
+		const keys = Object.keys(v.branches);
+		w.word(keys.length);
+		for (let i = 0; i < keys.length; i++) {
+			const key = keys[i];
 			w.str(key);
-			writeBranch(w, item);
-		});
+			writeBranch(w, v.branches[key]);
+		}
 	}
 }
 
@@ -590,9 +620,10 @@ export function writeBranch(w: Writer, v: Branch): void {
 	if (Array.isArray(v)) {
 		w.word(0);
 		w.word((v as ReadonlyArray<Item>).length);
-		(v as ReadonlyArray<Item>).forEach((item) => {
+		for (let i = 0; i < (v as ReadonlyArray<Item>).length; i++) {
+			const item = (v as ReadonlyArray<Item>)[i];
 			writeItem(w, item);
-		});
+		}
 	} else {
 		w.word(1);
 		writeReopen(w, (v as Reopen));
