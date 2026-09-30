@@ -1,8 +1,8 @@
 //! A host grammar: what a template language puts around the JavaScript it embeds, read once
-//! from the JSON a host hands over. Every form is a sequence of the host's own words and
+//! from the wire a host hands over. Every form is a sequence of the host's own words and
 //! punctuators around JavaScript entries; what may follow an entry is what ends it.
 
-use super::wire::{self, Json, Wire, keep, wire};
+use super::wire::{self, Cursor, Wire, Writer, keep, wire};
 
 wire! {
 	/// A JavaScript entry inside a form.
@@ -525,12 +525,22 @@ impl Form {
 }
 
 impl Grammar {
-	/// Reads a grammar from its JSON; the message names the field that could not be read.
-	pub fn read(text: &str) -> Result<Grammar, String> {
-		let json = Json::parse(text)?;
-		let mut grammar = <Grammar as Wire>::read(&json, "grammar")?;
+	/// Reads a grammar off its wire, the bytes `wire` writes.
+	pub fn read(bytes: &[u8]) -> Result<Grammar, String> {
+		let mut cursor = Cursor::new(bytes)?;
+		let mut grammar = <Grammar as Wire>::read(&mut cursor)?;
+		if !cursor.done() {
+			return Err("words after the grammar".into());
+		}
 		grammar.finish()?;
 		Ok(grammar)
+	}
+
+	/// The grammar on its wire, as the JavaScript side writes it.
+	pub fn wire(&self) -> Vec<u8> {
+		let mut writer = Writer::default();
+		self.write(&mut writer);
+		writer.bytes()
 	}
 
 	/// The TypeScript module of every type on the wire, for the side that writes it.

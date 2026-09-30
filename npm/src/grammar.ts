@@ -1,5 +1,6 @@
 import type { Expression, Identifier, Pattern, Program, SourceLocation, Statement, VariableDeclaration } from 'estree';
 import type { Comment, HostNode } from './index.js';
+import { Writer, writeGrammar } from './wire.js';
 import type * as w from './wire.js';
 
 declare const out: unique symbol;
@@ -287,8 +288,8 @@ export interface Answers<T> {
 export interface Grammar<D extends Definition = Definition> extends Answers<NodeOf<D['document'], D>> {
 	readonly host: string;
 	readonly definition: D;
-	/** What the engine reads: the definition as JSON, written once when the grammar was made. */
-	readonly text: string;
+	/** What the engine reads: the definition on its wire, written once when the grammar was made. */
+	readonly wire: Uint8Array;
 }
 type Names<D extends Definition> = keyof NonNullable<D['elements']['rules']> & string;
 /** An element's `inside` names another element rule. */
@@ -306,10 +307,16 @@ type Checked<D extends Definition> = {
 export const grammar = <const D extends Definition>(host: string, definition: D & Checked<D>): Grammar<D> => ({
 	host,
 	definition,
-	text: JSON.stringify(lower(host, definition)),
+	wire: encode(lower(host, definition)),
 });
 
 // ── the wire the engine reads
+
+function encode(grammar: w.Grammar): Uint8Array {
+	const w = new Writer();
+	writeGrammar(w, grammar);
+	return w.bytes();
+}
 
 type Raw = Source<unknown, any, Mods> & { readonly literal?: unknown };
 type Group = { readonly opt?: readonly unknown[]; readonly oneOf?: readonly (readonly unknown[])[]; readonly scope?: readonly unknown[] };
@@ -375,7 +382,7 @@ function lower(host: string, d: Definition): w.Grammar {
 			rcdata: rule.content === 'rcdata',
 		};
 	};
-	const markers = (list: readonly Marker[] = []): (readonly [string, string | null])[] => list.map(([attribute, value]) => [attribute, value ?? null]);
+	const markers = (list: readonly Marker[] = []): (readonly [string, string | undefined])[] => list.map(([attribute, value]) => [attribute, value]);
 	const directive = (name: w.Match, rule: Directive): w.DirectiveRule => {
 		const flags = entries(rule.node.items).filter(([, s]) => s.from === 'literal').map(([field, s]): [string, boolean] => [field, s.literal === true]);
 		const rest = rule.node.items.filter((item) => isGroup(item) || typeof item === 'string' || entries([item]).some(([, s]) => s.from !== 'literal'));

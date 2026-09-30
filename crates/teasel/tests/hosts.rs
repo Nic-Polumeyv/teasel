@@ -9,7 +9,10 @@ use std::fs;
 use std::path::Path;
 use teasel::Entry;
 use teasel::Options;
-use teasel::host::grammar::{DirectiveValue, DocField, Grammar, Item, Match, RootField, Unique};
+use teasel::host::grammar::{
+	Alternative, BlockRule, Body, CommentRule, Declare, DirectiveValue, DocField, DocumentRule, ElementFields, Form,
+	Grammar, Item, Match, RootField, TagRule, TextRule, Unique,
+};
 use teasel::json::{Request, parse_document};
 
 #[test]
@@ -24,7 +27,7 @@ fn documents() {
 	grammars.sort();
 	for dir in grammars {
 		let name = dir.file_name().unwrap().to_str().unwrap().to_owned();
-		let grammar = fs::read_to_string(root.join("tests/hosts").join(&name).join("host.json")).unwrap();
+		let grammar = fs::read(root.join("tests/hosts").join(&name).join("host.wire")).unwrap();
 		for file in sources(&dir) {
 			let stem = file.file_stem().unwrap().to_str().unwrap();
 			let source = fs::read_to_string(&file).unwrap();
@@ -58,7 +61,7 @@ fn documents() {
 fn every_prefix_answers() {
 	let root = Path::new(env!("CARGO_MANIFEST_DIR"));
 	for name in ["svelte", "vue"] {
-		let grammar = fs::read_to_string(root.join("tests/hosts").join(name).join("host.json")).unwrap();
+		let grammar = fs::read(root.join("tests/hosts").join(name).join("host.wire")).unwrap();
 		for file in sources(&root.join("tests/hosts").join(name)) {
 			let source = fs::read_to_string(&file).unwrap();
 			for (end, _) in source.char_indices().chain([(source.len(), ' ')]) {
@@ -77,9 +80,9 @@ fn every_prefix_answers() {
 #[test]
 fn unfinished_input() {
 	let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-	let svelte = fs::read_to_string(root.join("tests/hosts/svelte/host.json")).unwrap();
-	let vue = fs::read_to_string(root.join("tests/hosts/vue/host.json")).unwrap();
-	let parse = |source: &str, grammar: &str, recover: bool| {
+	let svelte = fs::read(root.join("tests/hosts/svelte/host.wire")).unwrap();
+	let vue = fs::read(root.join("tests/hosts/vue/host.wire")).unwrap();
+	let parse = |source: &str, grammar: &[u8], recover: bool| {
 		let recovery = if recover { Options::ERROR_RECOVERY } else { 0 };
 		let request = Request::from_flags(Options::MODULE | Options::COMMENTS | recovery);
 		parse_document(source, grammar, &request)
@@ -108,14 +111,32 @@ fn unfinished_input() {
 
 #[test]
 fn tags_fill_unread() {
-	let grammar = grammar(
-		"tags",
-		r#"[{"name": "t", "ty": "T", "attribute": false, "form": {"items": [
-			{"group": {"required": false, "alternatives": [{"items": [{"entry": {"field": "a", "entry": "expression", "omit": false}}]}]}},
-			{"group": {"required": false, "alternatives": [{"items": [{"literal": ","}, {"entry": {"field": "b", "entry": "expression", "omit": true}}]}]}}
-		]}}]"#,
-	);
-	let answer = parse_document("{@t }", &grammar, &Request::from_flags(Options::MODULE));
+	let entry = |field, omit| Item::Entry {
+		field,
+		entry: teasel::host::grammar::Entry::Expression,
+		omit,
+		stops: Default::default(),
+	};
+	let group = |items| Item::Group {
+		alternatives: vec![Alternative { items, body: None }],
+		required: false,
+		after: &[],
+	};
+	let mut grammar = minimal();
+	grammar.tags.push(TagRule {
+		name: "t",
+		ty: "T",
+		attribute: false,
+		form: Form {
+			items: vec![
+				group(vec![entry("a", false)]),
+				group(vec![Item::Literal(","), entry("b", true)]),
+			],
+			body: None,
+			entries: Vec::new(),
+		},
+	});
+	let answer = parse_document("{@t }", &grammar.wire(), &Request::from_flags(Options::MODULE));
 	assert!(answer.contains("\"a\":null") && !answer.contains("\"b\""), "{answer}");
 }
 
@@ -125,8 +146,7 @@ fn tags_fill_unread() {
 fn host_phases() {
 	use teasel::json::Prepared;
 	let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-	let grammar =
-		teasel::json::grammar(&fs::read_to_string(root.join("tests/hosts/svelte/host.json")).unwrap()).unwrap();
+	let grammar = teasel::json::grammar(&fs::read(root.join("tests/hosts/svelte/host.wire")).unwrap()).unwrap();
 	let mut documents = vec![(
 		"200 each blocks".to_string(),
 		format!(
@@ -159,58 +179,109 @@ fn host_phases() {
 	}
 }
 
-/// The JSON of a grammar with nothing but what every grammar needs, `value` in place of `key`'s.
-fn grammar(key: &str, value: &str) -> String {
-	let defaults = [
-		("name", r#""t""#),
-		(
-			"document",
-			r#"{"ty": "Document", "fields": [{"field": {"field": "children", "holds": "fragment", "omit": false}}]}"#,
-		),
-		("delimiters", r#"["{", "}"]"#),
-		("attributeExpressions", "false"),
-		("attributeShorthand", "false"),
-		("sigils", r##"{"open": "#", "branch": ":", "close": "/", "tag": "@"}"##),
-		("autoclose", "false"),
-		("trim", "false"),
-		("void", "[]"),
-		("fragmentScope", "false"),
-		(
-			"elementFields",
-			r#"{"name": "name", "attributes": "attributes", "children": "children"}"#,
-		),
-		("text", r#"{"ty": "Text", "data": "data"}"#),
-		("comment", r#"{"ty": "Comment", "data": "data"}"#),
-		("elements", "[]"),
-		("shorthands", "[]"),
-		("directives", "[]"),
-		("blocks", "[]"),
-		("tags", "[]"),
-	];
-	let fields: Vec<String> = defaults
-		.iter()
-		.map(|(name, default)| format!("\"{name}\": {}", if *name == key { value } else { default }))
-		.collect();
-	format!("{{{}}}", fields.join(", "))
-}
-
 /// The documents of a host directory: not its grammar or the pins.
 fn sources(dir: &Path) -> Vec<std::path::PathBuf> {
 	common::inputs(dir)
+		.into_iter()
+		.filter(|f| f.extension().is_some_and(|e| e != "wire"))
+		.collect()
+}
+
+/// A grammar with nothing but what every grammar needs.
+fn minimal() -> Grammar {
+	Grammar {
+		name: "t",
+		document: DocumentRule {
+			ty: "Document",
+			fields: vec![DocField::Field {
+				field: "children",
+				holds: RootField::Fragment,
+				omit: false,
+			}],
+		},
+		delimiters: ("{", "}"),
+		attribute_expressions: false,
+		attribute_shorthand: false,
+		sigils: Some(teasel::host::grammar::Sigils {
+			open: "#",
+			branch: ":",
+			close: "/",
+			tag: "@",
+		}),
+		autoclose: false,
+		trim: false,
+		void: Vec::new(),
+		fragment: None,
+		fragment_scope: false,
+		element_fields: ElementFields {
+			name: "name",
+			attributes: "attributes",
+			children: "children",
+		},
+		text: TextRule {
+			ty: "Text",
+			data: "data",
+			raw: None,
+		},
+		comment: CommentRule {
+			ty: "Comment",
+			data: "data",
+		},
+		verbatim: None,
+		elements: Vec::new(),
+		script: None,
+		style: None,
+		directive_syntax: None,
+		shorthands: Vec::new(),
+		directives: Vec::new(),
+		spread: None,
+		blocks: Vec::new(),
+		tags: Vec::new(),
+		declaration: None,
+		expression: None,
+	}
 }
 
 #[test]
 fn a_body_declares_only_what_the_form_reads() {
-	let block = |declares: &str| {
-		grammar(
-			"blocks",
-			&format!(
-				r#"[{{"name": "each", "ty": "EachBlock", "branches": [], "open": {{"items": [
-				{{"entry": {{"field": "expression", "entry": "expression", "omit": false}}}}, {{"literal": "as"}},
-				{{"entry": {{"field": "context", "entry": "pattern", "omit": false}}}}
-			], "body": {{"field": "body", "omit": false, "declares": [{{"field": "{declares}", "outside": false}}]}}}}}}]"#
-			),
-		)
+	let block = |declares| {
+		let mut grammar = minimal();
+		grammar.blocks.push(BlockRule {
+			name: "each",
+			ty: "EachBlock",
+			open: Form {
+				items: vec![
+					Item::Entry {
+						field: "expression",
+						entry: teasel::host::grammar::Entry::Expression,
+						omit: false,
+						stops: Default::default(),
+					},
+					Item::Literal("as"),
+					Item::Entry {
+						field: "context",
+						entry: teasel::host::grammar::Entry::Pattern,
+						omit: false,
+						stops: Default::default(),
+					},
+				],
+				body: Some(Body {
+					field: "body",
+					omit: false,
+					chain: None,
+					declares: vec![Declare {
+						field: declares,
+						outside: false,
+					}],
+				}),
+				entries: Vec::new(),
+			},
+			branches: Vec::new(),
+			chain_flag: None,
+			entries: Vec::new(),
+			bodies: Vec::new(),
+		});
+		grammar.wire()
 	};
 	assert!(
 		Grammar::read(&block("context")).is_ok(),
@@ -219,14 +290,26 @@ fn a_body_declares_only_what_the_form_reads() {
 	);
 	let error = Grammar::read(&block("contexxt")).unwrap_err();
 	assert!(error.contains("contexxt"), "{error}");
-	let error = Grammar::read(&grammar("blocks", r#"[{"name": "if"}]"#)).unwrap_err();
-	assert!(error.contains("blocks[0].ty"), "{error}");
+	assert!(Grammar::read(&[]).is_err() && Grammar::read(&block("context")[..40]).is_err());
+}
+
+// the wire the Rust side writes is the one it reads, so both ends stay one format
+#[test]
+fn the_wire_round_trips() {
+	let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+	let bytes = fs::read(root.join("tests/hosts/svelte/host.wire")).unwrap();
+	let grammar = Grammar::read(&bytes).unwrap();
+	assert_eq!(grammar.wire(), bytes);
+	assert_eq!(
+		format!("{:?}", Grammar::read(&grammar.wire()).unwrap()),
+		format!("{grammar:?}")
+	);
 }
 
 #[test]
 fn reads_the_svelte_grammar() {
 	let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-	let grammar = Grammar::read(&fs::read_to_string(root.join("tests/hosts/svelte/host.json")).unwrap()).unwrap();
+	let grammar = Grammar::read(&fs::read(root.join("tests/hosts/svelte/host.wire")).unwrap()).unwrap();
 	assert_eq!(grammar.name, "svelte");
 	assert_eq!(grammar.document.ty, "Root");
 	assert!(
@@ -279,7 +362,7 @@ fn reads_the_svelte_grammar() {
 #[test]
 fn reads_the_vue_grammar() {
 	let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-	let grammar = Grammar::read(&fs::read_to_string(root.join("tests/hosts/vue/host.json")).unwrap()).unwrap();
+	let grammar = Grammar::read(&fs::read(root.join("tests/hosts/vue/host.wire")).unwrap()).unwrap();
 	assert_eq!(grammar.delimiters, ("{{", "}}"));
 	assert!(!grammar.attribute_expressions && !grammar.autoclose && grammar.fragment.is_none());
 	assert_eq!(grammar.element_fields.children, "children");

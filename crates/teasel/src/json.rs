@@ -268,7 +268,7 @@ pub fn parse(source: &str, request: &Request, stop: &str) -> String {
 }
 
 /// A whole document of a host language by its grammar, as JSON; see `host::parse_document`.
-pub fn parse_document(source: &str, grammar: &str, request: &Request) -> String {
+pub fn parse_document(source: &str, grammar: &[u8], request: &Request) -> String {
 	match self::grammar(grammar) {
 		Ok(grammar) => {
 			let mut request = *request;
@@ -308,7 +308,7 @@ struct Session {
 thread_local! {
 	static SESSION: std::cell::RefCell<Session> = std::cell::RefCell::new(Session::default());
 	/// Grammars by their text, read once each.
-	static GRAMMARS: std::cell::RefCell<Vec<(String, Rc<Grammar>)>> = const { std::cell::RefCell::new(Vec::new()) };
+	static GRAMMARS: std::cell::RefCell<Vec<(Vec<u8>, Rc<Grammar>)>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
 pub fn reset_session() {
@@ -345,15 +345,15 @@ fn view_names<X: Reuse + Default>() -> Vec<&'static str> {
 	names
 }
 
-/// The grammar of a text, read once per thread; the error names the line it stopped at.
-pub fn grammar(text: &str) -> Result<Rc<Grammar>, String> {
+/// The grammar on a wire, read once per thread.
+pub fn grammar(bytes: &[u8]) -> Result<Rc<Grammar>, String> {
 	GRAMMARS.with(|grammars| {
 		let mut grammars = grammars.borrow_mut();
-		if let Some((_, grammar)) = grammars.iter().find(|(known, _)| known == text) {
+		if let Some((_, grammar)) = grammars.iter().find(|(known, _)| known == bytes) {
 			return Ok(grammar.clone());
 		}
-		let grammar = Rc::new(Grammar::read(text)?);
-		grammars.push((text.to_string(), grammar.clone()));
+		let grammar = Rc::new(Grammar::read(bytes)?);
+		grammars.push((bytes.to_vec(), grammar.clone()));
 		Ok(grammar)
 	})
 }

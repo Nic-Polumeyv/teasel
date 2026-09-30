@@ -350,12 +350,11 @@ const grammars = { svelte: new Plan(svelteDefinition), vue: new Plan(vueDefiniti
 	assert.equal(handler.node.children[0].props[0].handler.type, 'Program', name);
 	assert.deepEqual(handler.errors, [], name);
 }
-// the grammar the Rust tests read is the typed definition written out, pinned beside its documents
+// the grammar the Rust tests read is the typed definition on its wire, pinned beside its documents
 for (const [host, definition] of [['svelte', svelteDefinition], ['vue', vueDefinition]] as const) {
-	const pin = new URL(`../../crates/teasel/tests/hosts/${host}/host.json`, import.meta.url);
-	const text = `${JSON.stringify(JSON.parse(definition.text), null, '\t')}\n`;
-	if (process.env.UPDATE) writeFileSync(pin, text);
-	else assert.equal(readFileSync(pin, 'utf8'), text, `${name} ${host}/host.json changed; run with UPDATE=1 once the change is meant`);
+	const pin = new URL(`../../crates/teasel/tests/hosts/${host}/host.wire`, import.meta.url);
+	if (process.env.UPDATE) writeFileSync(pin, definition.wire);
+	else assert.ok(readFileSync(pin).equals(definition.wire), `${name} ${host}/host.wire changed; run with UPDATE=1 once the change is meant`);
 }
 // a second host: the same walker, Vue's grammar
 const vue = grammars.vue;
