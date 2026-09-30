@@ -1,0 +1,1033 @@
+{
+	"name": "svelte",
+	"document": {
+		"ty": "Root",
+		"fields": [
+			{
+				"field": {
+					"field": "css",
+					"holds": "style",
+					"omit": false
+				}
+			},
+			{
+				"field": {
+					"field": "js",
+					"holds": "emptyList",
+					"omit": false
+				}
+			},
+			{
+				"field": {
+					"field": "options",
+					"holds": "null",
+					"omit": false
+				}
+			},
+			{
+				"field": {
+					"field": "comments",
+					"holds": "comments",
+					"omit": false
+				}
+			},
+			{
+				"field": {
+					"field": "module",
+					"holds": {
+						"script": {
+							"module": true
+						}
+					},
+					"omit": true
+				}
+			},
+			{
+				"scope": [
+					{
+						"field": {
+							"field": "instance",
+							"holds": {
+								"script": {
+									"module": false
+								}
+							},
+							"omit": true
+						}
+					},
+					{
+						"scope": [
+							{
+								"field": {
+									"field": "fragment",
+									"holds": "fragment",
+									"omit": false
+								}
+							}
+						]
+					}
+				]
+			}
+		]
+	},
+	"delimiters": [
+		"{",
+		"}"
+	],
+	"attributeExpressions": true,
+	"attributeShorthand": true,
+	"sigils": {
+		"open": "#",
+		"branch": ":",
+		"close": "/",
+		"tag": "@"
+	},
+	"autoclose": true,
+	"trim": true,
+	"void": [
+		"area",
+		"base",
+		"br",
+		"col",
+		"command",
+		"embed",
+		"hr",
+		"img",
+		"input",
+		"keygen",
+		"link",
+		"meta",
+		"param",
+		"source",
+		"track",
+		"wbr"
+	],
+	"fragment": [
+		"Fragment",
+		"nodes"
+	],
+	"fragmentScope": true,
+	"elementFields": {
+		"name": "name",
+		"attributes": "attributes",
+		"children": "fragment"
+	},
+	"text": {
+		"ty": "Text",
+		"data": "data",
+		"raw": "raw"
+	},
+	"comment": {
+		"ty": "Comment",
+		"data": "data"
+	},
+	"elements": [
+		{
+			"name": {
+				"exact": "svelte:element"
+			},
+			"ty": "SvelteElement",
+			"this": [
+				"tag",
+				true
+			],
+			"root": false,
+			"once": false,
+			"raw": false,
+			"rcdata": false
+		},
+		{
+			"name": {
+				"exact": "svelte:component"
+			},
+			"ty": "SvelteComponent",
+			"this": [
+				"expression",
+				false
+			],
+			"root": false,
+			"once": false,
+			"raw": false,
+			"rcdata": false
+		},
+		{
+			"name": {
+				"exact": "svelte:self"
+			},
+			"ty": "SvelteSelf",
+			"root": false,
+			"once": false,
+			"raw": false,
+			"rcdata": false
+		},
+		{
+			"name": {
+				"exact": "svelte:window"
+			},
+			"ty": "SvelteWindow",
+			"root": true,
+			"once": true,
+			"raw": false,
+			"rcdata": false
+		},
+		{
+			"name": {
+				"exact": "svelte:document"
+			},
+			"ty": "SvelteDocument",
+			"root": true,
+			"once": true,
+			"raw": false,
+			"rcdata": false
+		},
+		{
+			"name": {
+				"exact": "svelte:body"
+			},
+			"ty": "SvelteBody",
+			"root": true,
+			"once": true,
+			"raw": false,
+			"rcdata": false
+		},
+		{
+			"name": {
+				"exact": "svelte:head"
+			},
+			"ty": "SvelteHead",
+			"root": true,
+			"once": true,
+			"raw": false,
+			"rcdata": false
+		},
+		{
+			"name": {
+				"exact": "svelte:options"
+			},
+			"ty": "SvelteOptions",
+			"root": true,
+			"once": true,
+			"raw": false,
+			"rcdata": false
+		},
+		{
+			"name": {
+				"exact": "svelte:fragment"
+			},
+			"ty": "SvelteFragment",
+			"root": false,
+			"once": false,
+			"raw": false,
+			"rcdata": false
+		},
+		{
+			"name": {
+				"exact": "svelte:boundary"
+			},
+			"ty": "SvelteBoundary",
+			"root": false,
+			"once": false,
+			"raw": false,
+			"rcdata": false
+		},
+		{
+			"name": {
+				"exact": "title"
+			},
+			"ty": "TitleElement",
+			"root": false,
+			"once": false,
+			"inside": "svelte:head",
+			"raw": false,
+			"rcdata": false
+		},
+		{
+			"name": {
+				"exact": "slot"
+			},
+			"ty": "SlotElement",
+			"root": false,
+			"once": false,
+			"outside": "shadowrootmode",
+			"raw": false,
+			"rcdata": false
+		},
+		{
+			"name": {
+				"exact": "textarea"
+			},
+			"ty": "RegularElement",
+			"root": false,
+			"once": false,
+			"raw": false,
+			"rcdata": true
+		},
+		{
+			"name": {
+				"exact": "script"
+			},
+			"ty": "RegularElement",
+			"root": false,
+			"once": false,
+			"raw": true,
+			"rcdata": false
+		},
+		{
+			"name": {
+				"exact": "style"
+			},
+			"ty": "RegularElement",
+			"root": false,
+			"once": false,
+			"raw": true,
+			"rcdata": false
+		},
+		{
+			"name": "component",
+			"ty": "Component",
+			"root": false,
+			"once": false,
+			"raw": false,
+			"rcdata": false
+		},
+		{
+			"name": "any",
+			"ty": "RegularElement",
+			"root": false,
+			"once": false,
+			"raw": false,
+			"rcdata": false
+		}
+	],
+	"script": {
+		"name": "script",
+		"module": [
+			[
+				"context",
+				"module"
+			],
+			[
+				"module",
+				null
+			]
+		],
+		"typescript": [
+			[
+				"lang",
+				"ts"
+			]
+		]
+	},
+	"style": "style",
+	"directiveSyntax": {
+		"arg": ":",
+		"modifier": "|",
+		"argField": "name",
+		"modifiersField": "modifiers",
+		"unique": false
+	},
+	"shorthands": [],
+	"directives": [
+		{
+			"name": {
+				"exact": "bind"
+			},
+			"ty": "BindDirective",
+			"value": {
+				"expression": {
+					"optional": true,
+					"name": true
+				}
+			},
+			"flags": [],
+			"unique": "attribute"
+		},
+		{
+			"name": {
+				"exact": "on"
+			},
+			"ty": "OnDirective",
+			"value": {
+				"expression": {
+					"optional": true,
+					"name": false
+				}
+			},
+			"flags": [],
+			"unique": "no"
+		},
+		{
+			"name": {
+				"exact": "use"
+			},
+			"ty": "UseDirective",
+			"value": {
+				"expression": {
+					"optional": true,
+					"name": false
+				}
+			},
+			"flags": [],
+			"unique": "no"
+		},
+		{
+			"name": {
+				"exact": "class"
+			},
+			"ty": "ClassDirective",
+			"value": {
+				"expression": {
+					"optional": true,
+					"name": true
+				}
+			},
+			"flags": [],
+			"unique": "kind"
+		},
+		{
+			"name": {
+				"exact": "style"
+			},
+			"ty": "StyleDirective",
+			"value": "value",
+			"flags": [],
+			"unique": "kind"
+		},
+		{
+			"name": {
+				"exact": "transition"
+			},
+			"ty": "TransitionDirective",
+			"value": {
+				"expression": {
+					"optional": true,
+					"name": false
+				}
+			},
+			"flags": [
+				[
+					"intro",
+					true
+				],
+				[
+					"outro",
+					true
+				]
+			],
+			"unique": "no"
+		},
+		{
+			"name": {
+				"exact": "in"
+			},
+			"ty": "TransitionDirective",
+			"value": {
+				"expression": {
+					"optional": true,
+					"name": false
+				}
+			},
+			"flags": [
+				[
+					"intro",
+					true
+				],
+				[
+					"outro",
+					false
+				]
+			],
+			"unique": "no"
+		},
+		{
+			"name": {
+				"exact": "out"
+			},
+			"ty": "TransitionDirective",
+			"value": {
+				"expression": {
+					"optional": true,
+					"name": false
+				}
+			},
+			"flags": [
+				[
+					"intro",
+					false
+				],
+				[
+					"outro",
+					true
+				]
+			],
+			"unique": "no"
+		},
+		{
+			"name": {
+				"exact": "animate"
+			},
+			"ty": "AnimateDirective",
+			"value": {
+				"expression": {
+					"optional": true,
+					"name": false
+				}
+			},
+			"flags": [],
+			"unique": "no"
+		},
+		{
+			"name": {
+				"exact": "let"
+			},
+			"ty": "LetDirective",
+			"value": {
+				"pattern": {
+					"optional": true,
+					"name": true
+				}
+			},
+			"flags": [],
+			"unique": "no",
+			"declares": []
+		}
+	],
+	"spread": "SpreadAttribute",
+	"blocks": [
+		{
+			"name": "if",
+			"ty": "IfBlock",
+			"open": {
+				"items": [
+					{
+						"entry": {
+							"field": "test",
+							"entry": "expression",
+							"omit": false
+						}
+					}
+				],
+				"body": {
+					"field": "consequent",
+					"omit": false,
+					"declares": []
+				}
+			},
+			"branches": [
+				{
+					"words": [
+						"else",
+						"if"
+					],
+					"form": {
+						"items": [
+							{
+								"entry": {
+									"field": "test",
+									"entry": "expression",
+									"omit": false
+								}
+							}
+						],
+						"body": {
+							"field": "alternate",
+							"omit": false,
+							"chain": "consequent",
+							"declares": []
+						}
+					}
+				},
+				{
+					"words": [
+						"else"
+					],
+					"form": {
+						"items": [],
+						"body": {
+							"field": "alternate",
+							"omit": false,
+							"declares": []
+						}
+					}
+				}
+			],
+			"chainFlag": "elseif"
+		},
+		{
+			"name": "each",
+			"ty": "EachBlock",
+			"open": {
+				"items": [
+					{
+						"entry": {
+							"field": "expression",
+							"entry": "expression",
+							"omit": false
+						}
+					},
+					{
+						"group": {
+							"alternatives": [
+								{
+									"items": [
+										{
+											"literal": "as"
+										},
+										{
+											"entry": {
+												"field": "context",
+												"entry": "pattern",
+												"omit": false
+											}
+										}
+									]
+								}
+							],
+							"required": false
+						}
+					},
+					{
+						"group": {
+							"alternatives": [
+								{
+									"items": [
+										{
+											"literal": ","
+										},
+										{
+											"entry": {
+												"field": "index",
+												"entry": "identifier",
+												"omit": true
+											}
+										}
+									]
+								}
+							],
+							"required": false
+						}
+					},
+					{
+						"group": {
+							"alternatives": [
+								{
+									"items": [
+										{
+											"literal": "("
+										},
+										{
+											"entry": {
+												"field": "key",
+												"entry": "expression",
+												"omit": true
+											}
+										},
+										{
+											"literal": ")"
+										}
+									]
+								}
+							],
+							"required": false
+						}
+					}
+				],
+				"body": {
+					"field": "body",
+					"omit": false,
+					"declares": [
+						{
+							"field": "context",
+							"outside": false
+						},
+						{
+							"field": "index",
+							"outside": false
+						}
+					]
+				}
+			},
+			"branches": [
+				{
+					"words": [
+						"else"
+					],
+					"form": {
+						"items": [],
+						"body": {
+							"field": "fallback",
+							"omit": true,
+							"declares": []
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "await",
+			"ty": "AwaitBlock",
+			"open": {
+				"items": [
+					{
+						"entry": {
+							"field": "expression",
+							"entry": "expression",
+							"omit": false
+						}
+					},
+					{
+						"group": {
+							"alternatives": [
+								{
+									"items": [
+										{
+											"literal": "then"
+										},
+										{
+											"group": {
+												"alternatives": [
+													{
+														"items": [
+															{
+																"entry": {
+																	"field": "value",
+																	"entry": "pattern",
+																	"omit": false
+																}
+															}
+														]
+													}
+												],
+												"required": false
+											}
+										}
+									],
+									"body": {
+										"field": "then",
+										"omit": false,
+										"declares": [
+											{
+												"field": "value",
+												"outside": false
+											}
+										]
+									}
+								},
+								{
+									"items": [
+										{
+											"literal": "catch"
+										},
+										{
+											"group": {
+												"alternatives": [
+													{
+														"items": [
+															{
+																"entry": {
+																	"field": "error",
+																	"entry": "pattern",
+																	"omit": false
+																}
+															}
+														]
+													}
+												],
+												"required": false
+											}
+										}
+									],
+									"body": {
+										"field": "catch",
+										"omit": false,
+										"declares": [
+											{
+												"field": "error",
+												"outside": false
+											}
+										]
+									}
+								},
+								{
+									"items": [],
+									"body": {
+										"field": "pending",
+										"omit": false,
+										"declares": []
+									}
+								}
+							],
+							"required": true
+						}
+					}
+				]
+			},
+			"branches": [
+				{
+					"words": [
+						"then"
+					],
+					"form": {
+						"items": [
+							{
+								"group": {
+									"alternatives": [
+										{
+											"items": [
+												{
+													"entry": {
+														"field": "value",
+														"entry": "pattern",
+														"omit": false
+													}
+												}
+											]
+										}
+									],
+									"required": false
+								}
+							}
+						],
+						"body": {
+							"field": "then",
+							"omit": false,
+							"declares": [
+								{
+									"field": "value",
+									"outside": false
+								}
+							]
+						}
+					}
+				},
+				{
+					"words": [
+						"catch"
+					],
+					"form": {
+						"items": [
+							{
+								"group": {
+									"alternatives": [
+										{
+											"items": [
+												{
+													"entry": {
+														"field": "error",
+														"entry": "pattern",
+														"omit": false
+													}
+												}
+											]
+										}
+									],
+									"required": false
+								}
+							}
+						],
+						"body": {
+							"field": "catch",
+							"omit": false,
+							"declares": [
+								{
+									"field": "error",
+									"outside": false
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "key",
+			"ty": "KeyBlock",
+			"open": {
+				"items": [
+					{
+						"entry": {
+							"field": "expression",
+							"entry": "expression",
+							"omit": false
+						}
+					}
+				],
+				"body": {
+					"field": "fragment",
+					"omit": false,
+					"declares": []
+				}
+			},
+			"branches": []
+		},
+		{
+			"name": "snippet",
+			"ty": "SnippetBlock",
+			"open": {
+				"items": [
+					{
+						"entry": {
+							"field": "expression",
+							"entry": "identifier",
+							"omit": false
+						}
+					},
+					{
+						"group": {
+							"alternatives": [
+								{
+									"items": [
+										{
+											"entry": {
+												"field": "typeParams",
+												"entry": "typeParameters",
+												"omit": true
+											}
+										}
+									]
+								}
+							],
+							"required": false
+						}
+					},
+					{
+						"entry": {
+							"field": "parameters",
+							"entry": "params",
+							"omit": false
+						}
+					}
+				],
+				"body": {
+					"field": "body",
+					"omit": false,
+					"declares": [
+						{
+							"field": "expression",
+							"outside": true
+						},
+						{
+							"field": "parameters",
+							"outside": false
+						}
+					]
+				}
+			},
+			"branches": []
+		}
+	],
+	"tags": [
+		{
+			"name": "html",
+			"ty": "HtmlTag",
+			"form": {
+				"items": [
+					{
+						"entry": {
+							"field": "expression",
+							"entry": "expression",
+							"omit": false
+						}
+					}
+				]
+			},
+			"attribute": false
+		},
+		{
+			"name": "debug",
+			"ty": "DebugTag",
+			"form": {
+				"items": [
+					{
+						"entry": {
+							"field": "identifiers",
+							"entry": "identifiers",
+							"omit": false
+						}
+					}
+				]
+			},
+			"attribute": false
+		},
+		{
+			"name": "const",
+			"ty": "ConstTag",
+			"form": {
+				"items": [
+					{
+						"entry": {
+							"field": "declaration",
+							"entry": "const",
+							"omit": false
+						}
+					}
+				]
+			},
+			"attribute": false
+		},
+		{
+			"name": "render",
+			"ty": "RenderTag",
+			"form": {
+				"items": [
+					{
+						"entry": {
+							"field": "expression",
+							"entry": "expression",
+							"omit": false
+						}
+					}
+				]
+			},
+			"attribute": false
+		},
+		{
+			"name": "attach",
+			"ty": "AttachTag",
+			"form": {
+				"items": [
+					{
+						"entry": {
+							"field": "expression",
+							"entry": "expression",
+							"omit": false
+						}
+					}
+				]
+			},
+			"attribute": true
+		}
+	],
+	"declaration": {
+		"name": "",
+		"ty": "DeclarationTag",
+		"form": {
+			"items": [
+				{
+					"entry": {
+						"field": "declaration",
+						"entry": "statement",
+						"omit": false
+					}
+				}
+			]
+		},
+		"attribute": false
+	},
+	"expression": {
+		"name": "",
+		"ty": "ExpressionTag",
+		"form": {
+			"items": [
+				{
+					"entry": {
+						"field": "expression",
+						"entry": "expression",
+						"omit": false
+					}
+				}
+			]
+		},
+		"attribute": false
+	}
+}

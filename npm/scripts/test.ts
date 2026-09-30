@@ -1,6 +1,6 @@
 // `node scripts/test.ts interpret` runs the decoder without code generation, as a host forbidding it would
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { codes } from './codes.ts';
 import svelteDefinition from './hosts/svelte.ts';
 import vueDefinition from './hosts/vue.ts';
@@ -350,21 +350,12 @@ const grammars = { svelte: new Plan(svelteDefinition), vue: new Plan(vueDefiniti
 	assert.equal(handler.node.children[0].props[0].handler.type, 'Program', name);
 	assert.deepEqual(handler.errors, [], name);
 }
-// the typed definitions read every host document as the grammar text beside it does
-for (const host of ['svelte', 'vue'] as const) {
-	const dir = new URL(`../../crates/teasel/tests/hosts/${host}/`, import.meta.url);
-	const text = new Plan({ text: readFileSync(new URL('host.grammar', dir), 'utf8') } as Any);
-	for (const file of readdirSync(dir).filter((f) => !/\.(json|grammar)$/.test(f))) {
-		const source = readFileSync(new URL(file, dir), 'utf8');
-		const answer = (plan: typeof text) => {
-			try {
-				return JSON.parse(JSON.stringify(open(source, { sourceType: 'module', comments: true, errorRecovery: true }).parse(plan)));
-			} catch (error) {
-				return { error: (error as Any).code, pos: (error as Any).pos };
-			}
-		};
-		assert.deepEqual(answer(grammars[host]), answer(text), `${name} ${host}/${file}`);
-	}
+// the grammar the Rust tests read is the typed definition written out, pinned beside its documents
+for (const [host, definition] of [['svelte', svelteDefinition], ['vue', vueDefinition]] as const) {
+	const pin = new URL(`../../crates/teasel/tests/hosts/${host}/host.json`, import.meta.url);
+	const text = `${JSON.stringify(JSON.parse(definition.text), null, '\t')}\n`;
+	if (process.env.UPDATE) writeFileSync(pin, text);
+	else assert.equal(readFileSync(pin, 'utf8'), text, `${name} ${host}/host.json changed; run with UPDATE=1 once the change is meant`);
 }
 // a second host: the same walker, Vue's grammar
 const vue = grammars.vue;

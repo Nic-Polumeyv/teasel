@@ -1,0 +1,493 @@
+{
+	"name": "vue",
+	"document": {
+		"ty": "Root",
+		"fields": [
+			{
+				"field": {
+					"field": "children",
+					"holds": "fragment",
+					"omit": false
+				}
+			}
+		]
+	},
+	"delimiters": [
+		"{{",
+		"}}"
+	],
+	"attributeExpressions": false,
+	"attributeShorthand": false,
+	"autoclose": false,
+	"trim": false,
+	"void": [
+		"area",
+		"base",
+		"br",
+		"col",
+		"embed",
+		"hr",
+		"img",
+		"input",
+		"link",
+		"meta",
+		"param",
+		"source",
+		"track",
+		"wbr"
+	],
+	"fragmentScope": false,
+	"elementFields": {
+		"name": "tag",
+		"attributes": "props",
+		"children": "children"
+	},
+	"text": {
+		"ty": "Text",
+		"data": "content"
+	},
+	"comment": {
+		"ty": "Comment",
+		"data": "content"
+	},
+	"verbatim": "v-pre",
+	"elements": [
+		{
+			"name": {
+				"exact": "slot"
+			},
+			"ty": "Slot",
+			"root": false,
+			"once": false,
+			"raw": false,
+			"rcdata": false
+		},
+		{
+			"name": {
+				"exact": "template"
+			},
+			"ty": "Template",
+			"root": false,
+			"once": false,
+			"raw": false,
+			"rcdata": false
+		},
+		{
+			"name": {
+				"exact": "component"
+			},
+			"ty": "Component",
+			"root": false,
+			"once": false,
+			"raw": false,
+			"rcdata": false
+		},
+		{
+			"name": {
+				"exact": "textarea"
+			},
+			"ty": "Element",
+			"root": false,
+			"once": false,
+			"raw": false,
+			"rcdata": true
+		},
+		{
+			"name": {
+				"exact": "title"
+			},
+			"ty": "Element",
+			"root": false,
+			"once": false,
+			"raw": false,
+			"rcdata": true
+		},
+		{
+			"name": {
+				"exact": "script"
+			},
+			"ty": "Element",
+			"root": false,
+			"once": false,
+			"raw": true,
+			"rcdata": false
+		},
+		{
+			"name": {
+				"exact": "style"
+			},
+			"ty": "Element",
+			"root": false,
+			"once": false,
+			"raw": true,
+			"rcdata": false
+		},
+		{
+			"name": "component",
+			"ty": "Component",
+			"root": false,
+			"once": false,
+			"raw": false,
+			"rcdata": false
+		},
+		{
+			"name": "any",
+			"ty": "Element",
+			"root": false,
+			"once": false,
+			"raw": false,
+			"rcdata": false
+		}
+	],
+	"directiveSyntax": {
+		"prefix": "v-",
+		"arg": ":",
+		"modifier": ".",
+		"dynamic": [
+			"[",
+			"]"
+		],
+		"nameField": "name",
+		"argField": "arg",
+		"modifiersField": "modifiers",
+		"rawField": "rawName",
+		"unique": true
+	},
+	"shorthands": [
+		{
+			"token": ":",
+			"name": "bind",
+			"modifiers": []
+		},
+		{
+			"token": "@",
+			"name": "on",
+			"modifiers": []
+		},
+		{
+			"token": "#",
+			"name": "slot",
+			"modifiers": []
+		},
+		{
+			"token": ".",
+			"name": "bind",
+			"modifiers": [
+				"prop"
+			]
+		}
+	],
+	"directives": [
+		{
+			"name": {
+				"exact": "for"
+			},
+			"ty": "Directive",
+			"value": {
+				"form": {
+					"items": [
+						{
+							"group": {
+								"alternatives": [
+									{
+										"items": [
+											{
+												"literal": "("
+											},
+											{
+												"group": {
+													"alternatives": [
+														{
+															"items": [
+																{
+																	"entry": {
+																		"field": "value",
+																		"entry": "pattern",
+																		"omit": true
+																	}
+																}
+															]
+														}
+													],
+													"required": false
+												}
+											},
+											{
+												"group": {
+													"alternatives": [
+														{
+															"items": [
+																{
+																	"literal": ","
+																},
+																{
+																	"group": {
+																		"alternatives": [
+																			{
+																				"items": [
+																					{
+																						"entry": {
+																							"field": "key",
+																							"entry": "pattern",
+																							"omit": true
+																						}
+																					}
+																				]
+																			}
+																		],
+																		"required": false
+																	}
+																},
+																{
+																	"group": {
+																		"alternatives": [
+																			{
+																				"items": [
+																					{
+																						"literal": ","
+																					},
+																					{
+																						"group": {
+																							"alternatives": [
+																								{
+																									"items": [
+																										{
+																											"entry": {
+																												"field": "index",
+																												"entry": "pattern",
+																												"omit": true
+																											}
+																										}
+																									]
+																								}
+																							],
+																							"required": false
+																						}
+																					}
+																				]
+																			}
+																		],
+																		"required": false
+																	}
+																}
+															]
+														}
+													],
+													"required": false
+												}
+											},
+											{
+												"literal": ")"
+											}
+										]
+									},
+									{
+										"items": [
+											{
+												"group": {
+													"alternatives": [
+														{
+															"items": [
+																{
+																	"entry": {
+																		"field": "value",
+																		"entry": "pattern",
+																		"omit": true
+																	}
+																}
+															]
+														}
+													],
+													"required": false
+												}
+											},
+											{
+												"group": {
+													"alternatives": [
+														{
+															"items": [
+																{
+																	"literal": ","
+																},
+																{
+																	"group": {
+																		"alternatives": [
+																			{
+																				"items": [
+																					{
+																						"entry": {
+																							"field": "key",
+																							"entry": "pattern",
+																							"omit": true
+																						}
+																					}
+																				]
+																			}
+																		],
+																		"required": false
+																	}
+																},
+																{
+																	"group": {
+																		"alternatives": [
+																			{
+																				"items": [
+																					{
+																						"literal": ","
+																					},
+																					{
+																						"group": {
+																							"alternatives": [
+																								{
+																									"items": [
+																										{
+																											"entry": {
+																												"field": "index",
+																												"entry": "pattern",
+																												"omit": true
+																											}
+																										}
+																									]
+																								}
+																							],
+																							"required": false
+																						}
+																					}
+																				]
+																			}
+																		],
+																		"required": false
+																	}
+																}
+															]
+														}
+													],
+													"required": false
+												}
+											}
+										]
+									}
+								],
+								"required": false
+							}
+						},
+						{
+							"group": {
+								"alternatives": [
+									{
+										"items": [
+											{
+												"literal": "in"
+											}
+										]
+									},
+									{
+										"items": [
+											{
+												"literal": "of"
+											}
+										]
+									}
+								],
+								"required": true
+							}
+						},
+						{
+							"entry": {
+								"field": "source",
+								"entry": "expression",
+								"omit": false
+							}
+						}
+					]
+				}
+			},
+			"flags": [],
+			"unique": "no",
+			"declares": [
+				"value",
+				"key",
+				"index"
+			]
+		},
+		{
+			"name": {
+				"exact": "slot"
+			},
+			"ty": "Directive",
+			"value": {
+				"form": {
+					"items": [
+						{
+							"entry": {
+								"field": "props",
+								"entry": "pattern",
+								"omit": true
+							}
+						}
+					]
+				}
+			},
+			"flags": [],
+			"unique": "no"
+		},
+		{
+			"name": {
+				"exact": "on"
+			},
+			"ty": "Directive",
+			"value": {
+				"form": {
+					"items": [
+						{
+							"entry": {
+								"field": "handler",
+								"entry": "code",
+								"omit": true
+							}
+						}
+					]
+				}
+			},
+			"flags": [],
+			"unique": "no"
+		},
+		{
+			"name": "any",
+			"ty": "Directive",
+			"value": {
+				"form": {
+					"items": [
+						{
+							"entry": {
+								"field": "exp",
+								"entry": "expression",
+								"omit": true
+							}
+						}
+					]
+				}
+			},
+			"flags": [],
+			"unique": "no"
+		}
+	],
+	"blocks": [],
+	"tags": [],
+	"expression": {
+		"name": "",
+		"ty": "Interpolation",
+		"form": {
+			"items": [
+				{
+					"entry": {
+						"field": "content",
+						"entry": "expression",
+						"omit": false
+					}
+				}
+			]
+		},
+		"attribute": false
+	}
+}
