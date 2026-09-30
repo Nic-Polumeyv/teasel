@@ -233,9 +233,9 @@ export class Plan<T = HostNode> {
 	constructor(grammar: Grammar | number, stop = '') {
 		if (typeof grammar === 'number') this.#entry = grammar;
 		else {
-			if (typeof grammar?.text !== 'string') throw new TypeError('a plan reads a grammar made by @teasel/parser/grammar');
+			if (!(grammar?.wire instanceof Uint8Array)) throw new TypeError('a plan reads a grammar made by @teasel/parser/grammar');
 			this.#entry = ENTRY.program;
-			this.#held = engine.plan(grammar.text);
+			this.#held = engine.plan(grammar.wire);
 			registry?.register(this, this.#held, this);
 		}
 		this.#stop = stop;

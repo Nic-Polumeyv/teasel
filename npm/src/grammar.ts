@@ -1,5 +1,6 @@
 import type { Expression, Identifier, Pattern, Program, SourceLocation, Statement, VariableDeclaration } from 'estree';
 import type { Comment, HostNode } from './index.js';
+import { Writer, writeHost } from './wire.js';
 
 declare const out: unique symbol;
 
@@ -286,8 +287,8 @@ export interface Answers<T> {
 export interface Grammar<D extends Definition = Definition> extends Answers<NodeOf<D['document'], D>> {
 	readonly host: string;
 	readonly definition: D;
-	/** What the engine reads: the definition written out once, when it was made. */
-	readonly text: string;
+	/** What the engine reads: the definition on its wire, written once when the grammar was made. */
+	readonly wire: Uint8Array;
 }
 type Names<D extends Definition> = keyof NonNullable<D['elements']['rules']> & string;
 /** An element's `inside` names another element rule. */
@@ -305,160 +306,15 @@ type Checked<D extends Definition> = {
 export const grammar = <const D extends Definition>(host: string, definition: D & Checked<D>): Grammar<D> => ({
 	host,
 	definition,
-	text: write(host, definition),
+	wire: encode(host, definition),
 });
 
-// ── the text the engine reads
+// ── the wire the engine reads
 
-type Raw = Source<unknown, any, Mods> & { readonly literal?: unknown };
-type Group = { readonly opt?: readonly unknown[]; readonly oneOf?: readonly (readonly unknown[])[]; readonly scope?: readonly unknown[] };
-type At = 'block' | 'tag' | 'directive';
-
-const line = (...words: (string | false | undefined)[]) => words.filter((w): w is string => typeof w === 'string' && w !== '').join(' ');
-const isGroup = (item: unknown): item is Group => typeof item === 'object' && item !== null && ('opt' in item || 'oneOf' in item || 'scope' in item);
-const entries = (items: readonly unknown[]): [string, Raw][] =>
-	items.flatMap((item) => (typeof item === 'object' && item !== null && !isGroup(item) ? (Object.entries(item) as [string, Raw][]) : []));
-const opens = (items: readonly unknown[]) => entries(items).some(([, s]) => s.from === 'content');
-
-// the engine splits these out of any word but the delimiters' and the directive syntax's
-function word(w: string): string {
-	if (w === '' || /[\s[\]|{}=]/.test(w) || w === '->') throw new TypeError(`a grammar cannot spell ${JSON.stringify(w)}`);
-	return w;
-}
-function name(n: string): string {
-	if (!/^[A-Za-z_$][\w$-]*$/.test(n)) throw new TypeError(`${JSON.stringify(n)} cannot name a field`);
-	return n;
-}
-
-// a form's words; a body declares what its sequence bound before it
-function form(items: readonly unknown[], site: At, bound: string[] = []): string[] {
-	const out: string[] = [];
-	items.forEach((item, at) => {
-		if (typeof item === 'string') return void out.push(word(item));
-		if (isGroup(item)) {
-			if (item.oneOf) return void out.push('{', ...alternatives(item.oneOf, site, bound), '}');
-			const [only] = item.opt!;
-			const list = item.opt!.length === 1 && isGroup(only) && only.oneOf ? only.oneOf : [item.opt!];
-			return void out.push('[', ...alternatives(list, site, bound), ']');
-		}
-		for (const [field, source] of entries([item])) {
-			if (source.from === 'literal') continue;
-			if (source.from === 'content') {
-				if (site !== 'block' || at !== items.length - 1) throw new TypeError(`${field} is a body: only a block's form ends in one`);
-				out.push('->', `${name(field)}${source.optional ? '?' : ''}`, ...(bound.length > 0 ? ['declares', ...bound.splice(0)] : []));
-				continue;
-			}
-			const binds = source.bind === 'outside' ? `${name(field)}:outside` : name(field);
-			if (source.bind && !bound.includes(binds)) bound.push(binds);
-			out.push(`${name(field)}${source.optional ? '?' : ''}=${source.read}`);
-		}
-	});
-	return out;
-}
-function alternatives(list: readonly (readonly unknown[])[], site: At, bound: string[]): string[] {
-	return list.flatMap((items, i) => {
-		const words = form(items, site, items.some((item) => opens([item])) ? [] : bound);
-		return i === 0 ? words : ['|', ...words];
-	});
-}
-
-function write(host: string, d: Definition): string {
-	const lines = [line('host', word(host))];
-	const scoped = (items: readonly unknown[]): string[] =>
-		items.flatMap((item) =>
-			isGroup(item) && item.scope
-				? ['{', ...scoped(item.scope), '}']
-				: entries([item]).map(([field, s]) => {
-						const holds = s.from === 'literal' ? (s.literal === null ? 'null' : 'list') : s.read;
-						return `${name(field)}${s.optional ? '?' : ''}=${holds}`;
-					}),
-		);
-	lines.push(line('document', word(d.document.type), ...scoped(d.document.items)));
-	lines.push(line('delimiters', ...d.delimiters));
-	if (d.attributes) lines.push(line('attributes', d.attributes.expressions && 'expressions', d.attributes.shorthand && 'shorthand'));
-	if (d.sigils) {
-		const { open, branch, close, tag } = d.sigils;
-		lines.push(line('sigils', `open=${open}`, `branch=${branch}`, `close=${close}`, `tag=${tag}`));
-	}
-	if (d.autoclose) lines.push('autoclose');
-	if (d.trim) lines.push('trim');
-	if (d.void) lines.push(line('void', ...d.void.map(word)));
-	if (d.fragment) {
-		const [only] = d.fragment.items;
-		const scope = isGroup(only) && only.scope;
-		const [[field]] = entries(scope || d.fragment.items);
-		lines.push(line('fragment', word(d.fragment.type), name(field), scope && 'scope'));
-	}
-	const part = (read: string) => entries([d.elements.fields]).find(([, s]) => s.read === read)?.[0];
-	lines.push(line('elements', `name=${part('name')}`, `attributes=${part('attributes')}`, `children=${part('fragment')}`));
-	const texts = (kind: string, node: Node) => line(kind, word(node.type), ...entries(node.items).map(([field, s]) => `${name(field)}=${s.read}`));
-	lines.push(texts('text', d.text), texts('comment', d.comment));
-	if (d.verbatim) lines.push(line('verbatim', word(d.verbatim)));
-	const element = (match: string, rule: Element) => {
-		const [[field, self] = []] = entries(rule.node.items);
-		return line(
-			'element',
-			match,
-			word(rule.node.type),
-			field && `this=${name(field)}${self?.read === 'this:text' ? ':text' : ''}`,
-			rule.root && 'root',
-			rule.once && 'once',
-			rule.inside && `inside ${word(rule.inside)}`,
-			rule.outside && `outside ${word(rule.outside)}`,
-			rule.content,
-		);
-	};
-	for (const [match, rule] of Object.entries(d.elements.rules ?? {})) lines.push(element(word(match), rule));
-	if (d.elements.component) lines.push(element('component-name', d.elements.component));
-	if (d.elements.other) lines.push(element('*', d.elements.other));
-	if (d.script) {
-		const markers = (key: string, list: readonly Marker[] = []) => list.map(([attribute, value]) => `${key}=${attribute}${value === undefined ? '' : `:${value}`}`);
-		lines.push(line('script', word(d.script.element), ...markers('module', d.script.module), ...markers('typescript', d.script.typescript)));
-	}
-	if (d.style) lines.push(line('style', word(d.style)));
-	if (d.directives) {
-		const x = d.directives;
-		const parts = entries([x.fields]).map(([field, s]) => `field:${s.read}=${name(field)}`);
-		lines.push(line('directives', x.prefix && `prefix=${x.prefix}`, `arg=${x.arg ?? ':'}`, `modifier=${x.modifier ?? '|'}`, x.dynamic && `dynamic=${x.dynamic.join('')}`, ...parts, x.unique && 'unique=raw'));
-		for (const [token, [target, ...modifiers]] of Object.entries(x.shorthands ?? {})) lines.push(line('shorthand', token, word(target), ...modifiers.map((m) => `.${word(m)}`)));
-		const directive = (match: string, rule: Directive) => {
-			const flags = entries(rule.node.items).filter(([, s]) => s.from === 'literal').map(([field, s]) => (s.literal ? name(field) : `!${name(field)}`));
-			const rest = rule.node.items.filter((item) => isGroup(item) || typeof item === 'string' || entries([item]).some(([, s]) => s.from !== 'literal'));
-			const unique = rule.unique === 'kind' ? 'unique' : rule.unique === 'attributes' ? 'unique:attribute' : undefined;
-			const [only] = rest;
-			const wrapped = rest.length === 1 && isGroup(only) && only.opt?.length === 1 ? only.opt : undefined;
-			const single = entries(wrapped ?? rest);
-			if (rest.length === 1 && single.length === 1 && single[0][1].from === 'value') {
-				const [field, s] = single[0];
-				const fixed = s.read === 'value' ? 'value' : 'expression';
-				if (field !== fixed) throw new TypeError(`a directive's value is read into ${fixed}`);
-				const value = `${s.read}${wrapped || s.orArg ? '?' : ''}${s.orArg ? 'name' : ''}`;
-				return line('directive', match, word(rule.node.type), value, ...flags, unique, s.bind && 'declares');
-			}
-			const bound: string[] = [];
-			const words = form(rest, 'directive', bound);
-			return line('directive', match, word(rule.node.type), ...words, ...flags, unique, bound.length > 0 && ['declares', ...bound].join(' '));
-		};
-		for (const [match, rule] of Object.entries(x.rules ?? {})) lines.push(directive(word(match), rule));
-		if (x.other) lines.push(directive('*', x.other));
-	}
-	if (d.spread) lines.push(line('spread', word(d.spread)));
-	for (const [block, rule] of Object.entries(d.sigils?.blocks ?? {})) {
-		const reopen = Object.values(rule.branches).find((b): b is Reopen => 'reopen' in b);
-		lines.push(line('block', word(block), word(rule.node.type), reopen && `chain=${name(reopen.flag)}`));
-		lines.push(line('  open', ...form(rule.node.items, 'block')));
-		for (const [words, branch] of Object.entries(rule.branches)) {
-			const head = words.split(' ').map(word);
-			if ('reopen' in branch) {
-				const [[own]] = entries(rule.node.items.slice(-1));
-				lines.push(line('  branch', ...head, ...form(rule.node.items.slice(0, -1), 'block'), '->', name(branch.reopen), 'chain', own));
-			} else lines.push(line('  branch', ...head, ...form(branch, 'block')));
-		}
-	}
-	for (const [tag, rule] of Object.entries(d.sigils?.tags ?? {})) lines.push(line('tag', word(tag), word(rule.node.type), ...form(rule.node.items, 'tag'), rule.among === 'attributes' && 'attribute'));
-	if (d.declaration) lines.push(line('declaration', word(d.declaration.type), ...form(d.declaration.items, 'tag')));
-	if (d.expression) lines.push(line('expression', word(d.expression.type), ...form(d.expression.items, 'tag')));
-	return `${lines.join('\n')}\n`;
+function encode(name: string, definition: Definition): Uint8Array {
+	const w = new Writer();
+	writeHost(w, { name, definition });
+	return w.bytes();
 }
 
 // ── inference

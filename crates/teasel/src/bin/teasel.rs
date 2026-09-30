@@ -6,10 +6,10 @@
 //! the parse consumed. `--offset` alone parses an expression. The pattern, params and statement
 //! modes parse as a module.
 //!
-//! `teasel --batch [--host GRAMMAR]` reads jobs from stdin, each a header line `MODE LENGTH` followed by LENGTH
+//! `teasel --batch [--host WIRE]` reads jobs from stdin, each a header line `MODE LENGTH` followed by LENGTH
 //! bytes of source, and prints one JSON line per job. MODE is `module`, `script`, `expr:OFFSET`,
 //! `pattern:OFFSET`, `params:OFFSET`, `stmt:OFFSET`, `typeparams:OFFSET` or `doc` for a whole
-//! document of the host language the grammar file describes, with a `ts-` prefix
+//! document of the host language the grammar on the wire file describes, with a `ts-` prefix
 //! for TypeScript and `+comments` to attach comments, `+scopes` for the scope analysis,
 //! `+parenthesized` to mark parenthesized nodes, `+undeclared-exports` to accept exports of names
 //! the source never declares, `+stop:TOKEN` to end a parse-at entry at one of the host's tokens or
@@ -38,7 +38,7 @@ fn batch_mode(mode: &str) -> (Entry, u32, impl Iterator<Item = &str>) {
 	(entry, tail[..digits].parse().unwrap_or(0), switches)
 }
 
-fn batch(grammar: Option<String>) -> io::Result<()> {
+fn batch(grammar: Option<Vec<u8>>) -> io::Result<()> {
 	let stdin = io::stdin();
 	let mut input = stdin.lock();
 	let stdout = io::stdout();
@@ -119,7 +119,7 @@ fn main() -> ExitCode {
 			.iter()
 			.position(|a| a == "--host")
 			.and_then(|i| args.get(i + 1))
-			.map(|path| std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}")));
+			.map(|path| std::fs::read(path).unwrap_or_else(|e| panic!("{path}: {e}")));
 		return match batch(grammar) {
 			Ok(()) => ExitCode::SUCCESS,
 			Err(e) => {
@@ -177,7 +177,7 @@ fn main() -> ExitCode {
 		..Request::from_flags(flags)
 	};
 	if let Some(host) = host {
-		let grammar = match std::fs::read_to_string(&host) {
+		let grammar = match std::fs::read(&host) {
 			Ok(s) => s,
 			Err(e) => {
 				eprintln!("{host}: {e}");

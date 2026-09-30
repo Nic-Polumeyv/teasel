@@ -51,7 +51,7 @@ node.children.nodes[0].children.nodes[0];
 // ExpressionTag, its expression the Identifier greeting
 ```
 
-In TypeScript, and in JavaScript checked with JSDoc, the tree is typed from the definition: `node.children.nodes[0]` is an `Element`, an `IfBlock` or one of the others the grammar names, and `EachBlock`'s `item` is a `Pattern`. What the grammar cannot express is a type error: a tag with a body, a field named `type`, `bind` on a source that reads an expression. `g.grammar` throws a `TypeError` for a word the grammar cannot spell, such as one holding a space or a `|`.
+In TypeScript, and in JavaScript checked with JSDoc, the tree is typed from the definition: `node.children.nodes[0]` is an `Element`, an `IfBlock` or one of the others the grammar names, and `EachBlock`'s `item` is a `Pattern`. What the grammar cannot express is a type error: a tag with a body, a field named `type`, `bind` on a source that reads an expression.
 
 A plan made from a grammar reads the whole source: it takes no position, and `until` does not apply to it.
 

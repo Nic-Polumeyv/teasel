@@ -846,7 +846,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 						};
 						scopes.push((from, until, node));
 					}
-					&DocField::Field(field, holds, omit) => {
+					&DocField::Field { field, holds, omit } => {
 						let value = match holds {
 							RootField::Fragment => {
 								fields.push((field, children));

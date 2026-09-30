@@ -1,8 +1,8 @@
 // `tsc -p npm` checks these: what Infer answers for the two hosts, and the forms the algebra refuses
 import type { Expression, Identifier, Pattern } from 'estree';
-import * as g from '../src/grammar.ts';
-import type { Infer, NodeType } from '../src/grammar.ts';
-import { Plan, type Source } from '../src/index.ts';
+import * as g from '../dist/grammar.js';
+import type { Infer, NodeType } from '../dist/grammar.js';
+import { Plan, type Source } from '../dist/index.js';
 declare const open: Source;
 import type svelte from './hosts/svelte.ts';
 import type vue from './hosts/vue.ts';
