@@ -1,5 +1,5 @@
 // the source goes over as bytes: V8's encoder is 14x faster than the host reading a string out
-import type { Engine, Held, Tree } from '../decode.js';
+import type { Engine, Held, Tree } from '../types.js';
 import type { External } from './addon.js';
 import { load } from './addon.js';
 

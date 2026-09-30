@@ -1,5 +1,6 @@
 import type { Expression, Identifier, Node, Pattern, Program, SourceLocation, Statement } from 'estree';
-import { decode, type Held, PARENT, type Prepared, REFERENCE, SCOPE } from './decode.js';
+import { decode, PARENT, REFERENCE, SCOPE } from './decode.js';
+import type { Comment, Held, HostNode, Kept, Parsed, Prepared, Reference, Root, Scope } from './types.js';
 import { ENTRY, flags, type Options } from './options.js';
 import { engine } from '#engine';
 
@@ -8,6 +9,7 @@ import type { Answers, Grammar } from './grammar.js';
 
 export type { Options } from './options.js';
 export type { Code } from './codes.js';
+export type { Arguments, Binding, Comment, Declared, HostNode, Kept, Parsed, Recovered, Reference, Root, Scope, Span } from './types.js';
 
 /**
  * Thrown for a syntax error. `code` names what went wrong, for a host to branch on, and
@@ -28,119 +30,6 @@ export class ParseError extends SyntaxError {
 	}
 }
 
-/** A scope, as one of `scopes` on the answer. */
-export interface Scope {
-	kind:
-		| 'module'
-		| 'script'
-		| 'function'
-		| 'function-name'
-		| 'class'
-		| 'block'
-		| 'catch'
-		| 'for'
-		| 'switch'
-		| 'static-block'
-		| 'with'
-		| 'namespace'
-		| 'enum'
-		| 'fragment';
-	/** The node that opens it; null for a function-name scope and for the scope around a parameter list parsed on its own. */
-	node: Node | null;
-	parent: Scope | null;
-	/** An `await` or `for await` runs directly in it, no function around; only a program or fragment scope can say so. */
-	topLevelAwait: boolean;
-}
-
-/** A binding, as one of `bindings` on the answer: one an identifier declares, or the `arguments` a function reads. */
-export type Binding = Declared | Arguments;
-
-/** A binding an identifier declares. It is the reference that identifier makes, the first of its own: `referenceOf` answers with it, and its `binding` is itself. */
-export interface Declared extends Reference {
-	name: string;
-	/**
-	 * What declared it. `function-name` and `class-name` are the name a function expression or a class
-	 * expression has inside itself, `const f = function g() {}` declaring `g`. `pattern` is a name that
-	 * a `Plan.pattern` piece declares, parsed on its own; a `Plan.params` piece declares `param`s.
-	 */
-	kind:
-		| 'var'
-		| 'let'
-		| 'const'
-		| 'using'
-		| 'await using'
-		| 'function'
-		| 'class'
-		| 'param'
-		| 'catch'
-		| 'import'
-		| 'function-name'
-		| 'class-name'
-		| 'enum'
-		| 'enum-member'
-		| 'namespace'
-		| 'pattern';
-	/** The identifier that declares it. */
-	node: Identifier;
-	/** The scope it is declared in. */
-	scope: Scope;
-	/** What declares it: the declarator, function, class, import specifier, catch clause or enum, as eslint-scope's definition node; null for a pattern or parameter list parsed on its own. */
-	declaration: Node | null;
-	binding: Declared;
-	declares: true;
-	/** The declaration binds a value: an initializer, a parameter, a function, a class, an import; not a bare `let x;`. */
-	write: boolean;
-	read: false;
-	mutate: false;
-	/** The initializer of a declarator, `1` in `let x = 1`; null otherwise, the iterated expression of a `for-of` and a parameter's default being on the tree. */
-	writeExpr: Expression | null;
-}
-
-/** The `arguments` of a function that reads it: bound by the call, declared by no identifier. */
-export interface Arguments {
-	name: 'arguments';
-	kind: 'arguments';
-	scope: Scope;
-	node: null;
-	declaration: null;
-	binding: Arguments;
-	declares: true;
-	write: true;
-	read: false;
-	mutate: false;
-	writeExpr: null;
-}
-
-/** A piece of JavaScript a host read on its own, as one of `roots` on a document's answer, with what the tables hold for it. */
-export interface Root {
-	node: Node;
-	/** The scope the piece sits in. */
-	scope: Scope;
-	/** The scopes opened inside it, the bindings declared and the references made there. */
-	scopes: Scope[];
-	bindings: Binding[];
-	references: Reference[];
-}
-
-/** A reference, as one of `references` on the answer: an identifier using a name, or declaring it again. A binding is one too, the reference its declaring identifier makes. */
-export interface Reference {
-	node: Identifier;
-	/** The scope the reference is made from. */
-	scope: Scope;
-	/** Null for a global. */
-	binding: Binding | null;
-	/** The identifier is assigned to, updated or bound by a destructuring assignment. */
-	write: boolean;
-	/** A member of the identifier's value is assigned to, updated or deleted. */
-	mutate: boolean;
-	/** The identifier's value is read: every reference but a declaration, a plain assignment's target or a destructuring one's; a compound assignment or an update reads and writes. */
-	read: boolean;
-	/** What a write assigns: the right side of the assignment, the iterated expression of a `for-in` or `for-of`, or what a declaration is initialized with, as eslint-scope's `writeExpr`; null for an update. */
-	writeExpr: Expression | null;
-	/** The identifier declares its binding: the binding itself for the first declaration, and a reference of its own for a name declared again, `var x` twice, which writes when a value is bound there. */
-	declares: boolean;
-}
-
 // what the decoder hangs on a node, under keys JSON and enumeration skip
 interface Linked {
 	[PARENT]?: Node;
@@ -159,57 +48,6 @@ export function scopeOf(node: Node | null | undefined): Scope | undefined {
 /** With `scopes`: the reference an identifier makes, the binding itself for the identifier that declares it; a global's too, which no binding lists. Undefined when the identifier names no value, a property key say. */
 export function referenceOf(node: Node | null | undefined): Reference | undefined {
 	return node == null ? undefined : (node as Linked)[REFERENCE];
-}
-
-/** A range of the source, with `loc` when `locations` is on. */
-export interface Span {
-	start: number;
-	end: number;
-	loc?: { start: { line: number; column: number }; end: { line: number; column: number } };
-}
-
-export interface Comment extends Span {
-	type: 'Line' | 'Block';
-	value: string;
-}
-
-/** A node erasure left in place, by type. */
-export interface Kept extends Span {
-	type: string;
-}
-
-/** A recovered error: what the thrown `SyntaxError` carries, as a plain object. */
-export type Recovered = Pick<ParseError, 'code' | 'message' | 'pos' | 'end'> & { loc: { line: number; column: number } };
-
-/** What a parse returns: the node, or the patterns of a parameter list, and what the options add; a key is there exactly when its option is on. */
-export interface Parsed<T> {
-	node: T;
-	/** The offset after everything the parse consumed: the node, its closing parens and the comments after it; a program's is the end it was given. */
-	end: number;
-	/** Every comment read, in source order; with `comments`. */
-	comments?: Comment[];
-	/** What erasure left in place; with `typescript: 'erase'`. */
-	typescript?: Kept[];
-	/** The errors recovered from, in source order; with `errorRecovery`. */
-	errors?: Recovered[];
-	/** With `scopes`. */
-	scopes?: Scope[];
-	bindings?: Binding[];
-	references?: Reference[];
-	/** With `scopes`, for a document read by a host grammar: its pieces of JavaScript in source order. */
-	roots?: Root[];
-}
-
-/**
- * A node of a host language, as its grammar names the type and the fields; the JavaScript under
- * it is ESTree. The node a grammar wraps children in has no span.
- */
-export interface HostNode {
-	type: string;
-	start?: number;
-	end?: number;
-	loc?: SourceLocation;
-	[field: string]: unknown;
 }
 
 const registry = typeof FinalizationRegistry === 'undefined' ? null : new FinalizationRegistry<Held>((held) => held.free());
