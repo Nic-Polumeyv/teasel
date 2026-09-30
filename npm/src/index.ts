@@ -1,13 +1,13 @@
 import type { Expression, Identifier, Node, Pattern, Program, SourceLocation, Statement } from 'estree';
-import { decode, type Held, PARENT, type Prepared, REFERENCE, SCOPE } from './lib/decode.js';
-import { ENTRY, flags, type Options } from './lib/options.js';
+import { decode, type Held, PARENT, type Prepared, REFERENCE, SCOPE } from './decode.js';
+import { ENTRY, flags, type Options } from './options.js';
 import { engine } from '#engine';
 
-import type { Code } from './lib/codes.js';
+import type { Code } from './codes.js';
 import type { Answers, Grammar } from './grammar.js';
 
-export type { Options } from './lib/options.js';
-export type { Code } from './lib/codes.js';
+export type { Options } from './options.js';
+export type { Code } from './codes.js';
 
 /**
  * Thrown for a syntax error. `code` names what went wrong, for a host to branch on, and
@@ -16,11 +16,16 @@ export type { Code } from './lib/codes.js';
  * equal to `pos`. `unexpected_eof` is the end of what was parsed: the `end` the parse was given,
  * else the end of the source. A bad offset from the host is an `invalid_request` without a `loc`.
  */
-export interface ParseError extends SyntaxError {
-	code: Code;
-	pos: number;
-	end: number;
-	loc?: { line: number; column: number };
+export class ParseError extends SyntaxError {
+	declare code: Code;
+	declare pos: number;
+	declare end: number;
+	declare loc?: { line: number; column: number };
+
+	constructor({ message, ...fields }: Pick<ParseError, 'message' | 'code' | 'pos' | 'end' | 'loc'>) {
+		super(message);
+		Object.assign(this, fields);
+	}
 }
 
 /** A scope, as one of `scopes` on the answer. */
@@ -281,6 +286,7 @@ export class Source {
 	#source: string;
 
 	constructor(source: string, options: Options = {}) {
+		// Rust cannot read a V8 string, so it parses its own copy
 		this.#held = engine.create(source, flags(options));
 		this.#source = source;
 		registry?.register(this, this.#held, this);
@@ -308,14 +314,12 @@ export class Source {
 			} catch (error) {
 				// a tree deeper than the caller's stack has room for overflowed the decoder
 				if (!(error instanceof RangeError)) throw error;
-				throw Object.assign(new SyntaxError('Maximum nesting depth exceeded'), { code: 'nesting_depth', pos: offset, end: offset });
+				throw new ParseError({ message: 'Maximum nesting depth exceeded', code: 'nesting_depth', pos: offset, end: offset });
 			}
 		}
-		const { message, ...error } = JSON.parse(answer).error;
-		throw Object.assign(new SyntaxError(message), error);
+		throw new ParseError(JSON.parse(answer).error);
 	}
 
-	/** Releases what the engine holds for the source, as `using` does at the end of its block; the collector does it otherwise. */
 	[Symbol.dispose]() {
 		if (this.#held === undefined) return;
 		registry?.unregister(this);
