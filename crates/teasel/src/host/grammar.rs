@@ -32,9 +32,12 @@ impl<'a> Cursor<'a> {
 		let (Some(records), Some(strings)) = (word(0), word(1)) else {
 			return Err("the grammar has no header".into());
 		};
-		let at = 2 + 2 * strings;
-		let end = at + records;
-		if bytes.len() < end * 4 {
+		let at = strings.checked_mul(2).and_then(|n| n.checked_add(2));
+		let end = at.and_then(|at| at.checked_add(records));
+		let (Some(at), Some(end)) = (at, end) else {
+			return Err("the grammar ends early".into());
+		};
+		if end.checked_mul(4).is_none_or(|len| len > bytes.len()) {
 			return Err("the grammar ends early".into());
 		}
 		let pool = std::str::from_utf8(&bytes[end * 4..]).map_err(|_| "the grammar's strings are not UTF-8")?;
@@ -1597,16 +1600,17 @@ fn alternatives(
 		.collect()
 }
 
-fn holds(source: &Source) -> Result<RootField, String> {
+fn holds(field: &str, source: &Source) -> Result<RootField, String> {
 	Ok(match (source.from, source.read, source.literal) {
 		("literal", _, Some(Literal::Null)) => RootField::Null,
 		("literal", _, Some(Literal::List)) => RootField::EmptyList,
+		("literal", _, _) => return Err(format!("{field} on the document holds null or a list, not a boolean")),
 		(_, "script", _) => RootField::Script { module: false },
 		(_, "script:module", _) => RootField::Script { module: true },
 		(_, "fragment", _) => RootField::Fragment,
 		(_, "style", _) => RootField::Style,
 		(_, "comments", _) => RootField::Comments,
-		(from, read, _) => return Err(format!("the document cannot hold {from} {read}")),
+		(_, read, _) => return Err(format!("{field} on the document cannot hold {read}")),
 	})
 }
 
@@ -1619,7 +1623,7 @@ fn scoped(items: &[definition::Item]) -> Result<Vec<DocField>, String> {
 				for (field, source) in &record.0 {
 					out.push(DocField::Field {
 						field,
-						holds: holds(source)?,
+						holds: holds(field, source)?,
 						omit: source.optional,
 					});
 				}
@@ -1652,11 +1656,14 @@ fn element(name: Match, rule: &definition::Element) -> ElementRule {
 }
 
 fn directive(name: Match, rule: &definition::Directive) -> Result<DirectiveRule, String> {
-	let flags = sources(&rule.node.items)
-		.iter()
-		.filter(|(_, s)| s.from == "literal")
-		.map(|(field, s)| (*field, s.literal == Some(Literal::True)))
-		.collect();
+	let mut flags = Vec::new();
+	for (field, s) in sources(&rule.node.items).iter().filter(|(_, s)| s.from == "literal") {
+		match s.literal {
+			Some(Literal::True) => flags.push((*field, true)),
+			Some(Literal::False) => flags.push((*field, false)),
+			_ => return Err(format!("{field} on a directive is a flag: true or false")),
+		}
+	}
 	let rest: Vec<&definition::Item> = rule
 		.node
 		.items
@@ -1734,29 +1741,39 @@ fn block(name: &'static str, rule: &definition::Block) -> Result<BlockRule, Stri
 		let form = match branch {
 			Branch::Form(items) => form(items, At::Block, &mut Vec::new())?,
 			Branch::Reopen(r) => {
-				let (own, _) = *sources(&rule.node.items[rule.node.items.len() - 1..])
+				let (last, before) = rule
+					.node
+					.items
+					.split_last()
+					.ok_or("a reopened block's form ends in its body")?;
+				let (own, _) = *sources(std::slice::from_ref(last))
 					.first()
 					.ok_or("a reopened block's form ends in its body")?;
-				let mut head = form(
-					&rule.node.items[..rule.node.items.len() - 1],
-					At::Block,
-					&mut Vec::new(),
-				)?;
+				let mut bound = Vec::new();
+				let mut head = form(before, At::Block, &mut bound)?;
 				head.body = Some(Body {
 					field: r.reopen,
 					omit: false,
 					chain: Some(own),
-					declares: Vec::new(),
+					declares: bound,
 				});
 				head
 			}
 		};
 		branches.push(BranchRule { words, form });
 	}
+	let mut bound = Vec::new();
+	let open = form(&rule.node.items, At::Block, &mut bound)?;
+	if let Some(unread) = bound.first() {
+		return Err(format!(
+			"{name} binds {} but ends in no body to declare it in",
+			unread.field
+		));
+	}
 	Ok(BlockRule {
 		name,
 		ty: rule.node.r#type,
-		open: form(&rule.node.items, At::Block, &mut Vec::new())?,
+		open,
 		branches,
 		chain_flag: reopen.map(|r| r.flag),
 		entries: Vec::new(),

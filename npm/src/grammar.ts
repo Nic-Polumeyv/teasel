@@ -115,7 +115,7 @@ export const bind = Object.assign(
 export const orArg = <T, M extends Mods>(s: Source<T, 'value', M>): Source<T, 'value', With<M, 'orArg', true>> =>
 	({ ...s, orArg: true }) as Source<T, 'value', With<M, 'orArg', true>>;
 
-type Reserved = 'type' | 'start' | 'end' | 'loc';
+type Reserved = 'type' | 'start' | 'end' | 'loc' | 'opt' | 'oneOf' | 'scope';
 /** Fields a form reads, each named once, where its source is. */
 export type Fields = { readonly [field: string]: Source<any, any, any> } & { readonly [K in Reserved]?: never };
 

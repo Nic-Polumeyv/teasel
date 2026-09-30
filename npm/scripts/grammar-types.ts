@@ -41,6 +41,8 @@ expect<Equal<Infer<Vue>['children'][number]['type'], 'Element' | 'Text' | 'Comme
 
 // @ts-expect-error a field may not be named type
 g.node('X', { type: g.js.expression });
+// @ts-expect-error a field may not take a group's name
+g.node('X', { scope: g.js.expression });
 // @ts-expect-error only what reads a pattern, an identifier or parameters can declare
 g.bind(g.js.expression);
 // @ts-expect-error an argument stands in only for a directive's value

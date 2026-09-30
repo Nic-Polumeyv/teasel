@@ -278,6 +278,98 @@ fn a_body_declares_only_what_the_form_reads() {
 	assert!(Grammar::read(&host.wire()).unwrap_err().contains("document"));
 }
 
+// what a definition may not say is an error naming its field, never a panic or a silent drop
+#[test]
+fn a_definition_is_refused_by_name() {
+	let block = |items: Vec<definition::Item>, branches: Vec<(&'static str, definition::Branch)>| {
+		let mut host = minimal();
+		host.definition.sigils.as_mut().unwrap().blocks = Some(Record(vec![(
+			"if",
+			definition::Block {
+				node: node("IfBlock", items),
+				branches: Record(branches),
+			},
+		)]));
+		host.wire()
+	};
+	let reopen = definition::Branch::Reopen(definition::Reopen {
+		reopen: "alternate",
+		flag: "elseif",
+	});
+	let error = Grammar::read(&block(Vec::new(), vec![("else if", reopen.clone())])).unwrap_err();
+	assert!(error.contains("ends in its body"), "{error}");
+	let bound = Source {
+		bind: Bind::Inside,
+		..source("js", "pattern", false)
+	};
+	let error = Grammar::read(&block(
+		vec![definition::Item::Fields(Record(vec![("test", bound.clone())]))],
+		Vec::new(),
+	))
+	.unwrap_err();
+	assert!(error.contains("if binds test"), "{error}");
+	let grammar = Grammar::read(&block(
+		vec![
+			definition::Item::Fields(Record(vec![("test", bound)])),
+			definition::Item::Fields(Record(vec![("consequent", source("content", "fragment", false))])),
+		],
+		vec![("else if", reopen)],
+	))
+	.unwrap();
+	assert_eq!(
+		grammar.block("if").unwrap().branches[0]
+			.form
+			.body
+			.as_ref()
+			.unwrap()
+			.declares[0]
+			.field,
+		"test"
+	);
+	let mut host = minimal();
+	host.definition.directives = Some(definition::Directives {
+		prefix: None,
+		arg: None,
+		modifier: None,
+		dynamic: None,
+		unique: None,
+		fields: Record(Vec::new()),
+		shorthands: None,
+		rules: Some(Record(vec![(
+			"on",
+			definition::Directive {
+				unique: definition::Uniqueness::No,
+				node: node(
+					"OnDirective",
+					vec![definition::Item::Fields(Record(vec![(
+						"modifiers",
+						Source {
+							literal: Some(definition::Literal::List),
+							..source("literal", "literal", false)
+						},
+					)]))],
+				),
+			},
+		)])),
+		other: None,
+	});
+	let error = Grammar::read(&host.wire()).unwrap_err();
+	assert!(error.contains("modifiers on a directive is a flag"), "{error}");
+	let mut host = minimal();
+	host.definition.document.items = vec![definition::Item::Fields(Record(vec![(
+		"js",
+		Source {
+			literal: Some(definition::Literal::True),
+			..source("literal", "literal", false)
+		},
+	)]))];
+	let error = Grammar::read(&host.wire()).unwrap_err();
+	assert!(error.contains("js on the document"), "{error}");
+	let mut short = minimal().wire();
+	short[4..8].copy_from_slice(&u32::MAX.to_le_bytes());
+	assert!(Grammar::read(&short).unwrap_err().contains("ends early"));
+}
+
 // the wire the Rust side writes is the one it reads, so both ends stay one format
 #[test]
 fn the_wire_round_trips() {
