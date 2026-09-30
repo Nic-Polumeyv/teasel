@@ -42,7 +42,7 @@ function builders() {
 
 // the wire's types stay inside their module; the page shows them all, as the engine reads them
 function crossing() {
-	const declared = (statement: Declaration) => (statement.type === 'ExportNamedDeclaration' ? statement : ({ ...statement, declaration: statement } as Declaration));
+	const declared = (statement: Declaration) => (statement.type === 'ExportNamedDeclaration' ? statement : ({ ...statement, type: 'ExportNamedDeclaration', declaration: statement } as Declaration));
 	const markdown = body(wire).map(declared).filter(exported).map((statement) => item(wire, statement)).join('\n\n');
 	return { meta: { href: '/reference/wire', title: 'Grammar wire', section: 'Reference', path: 'npm/src/wire.ts' }, markdown: `What a grammar's \`wire\` holds and the Rust crate's \`parse_document\` and the command line's \`--host\` read: the definition as words in the order these types declare them, then a pool of strings, as \`Writer\` lays them out.\n\n${markdown}` };
 }
