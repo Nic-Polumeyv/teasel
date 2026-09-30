@@ -464,13 +464,14 @@ pub(crate) fn union(variants: &[Variant]) -> (String, String) {
 	(ty, write)
 }
 
-/// Renders every definition reachable from `T` as a TypeScript module: the types, the functions
-/// that write them, and the writer they write to.
+/// Renders every definition reachable from `T` as a TypeScript module that exports the root
+/// type and `wire`, which writes one: the other types, their writers and the writer they write
+/// to stay inside.
 pub(crate) fn module<T: Wire>(root: &str) -> String {
 	let mut out = format!(
 		"// written by {root}; `cargo test` pins it\n\n\
 /** The wire: words, then a pool of strings kept once. */\n\
-export class Writer {{\n\
+class Writer {{\n\
 \t#words = new Uint32Array(1024);\n\
 \t#count = 0;\n\
 \t#strings = new Map<string, number>();\n\
@@ -531,24 +532,29 @@ export class Writer {{\n\
 	);
 	let mut definitions = Vec::new();
 	T::definitions(&mut definitions);
+	let top = T::ts();
 	for d in definitions {
 		out.push('\n');
 		if !d.docs.is_empty() {
 			out.push_str(&format!("/**{} */\n", d.docs));
 		}
 		out.push_str(&format!(
-			"export type {} ={}{};\n",
+			"{}type {} ={}{};\n",
+			if d.name == top { "export " } else { "" },
 			d.name,
 			if d.ty.starts_with('\n') { "" } else { " " },
 			d.ty
 		));
 		out.push_str(&format!(
-			"export function write{}(w: Writer, v: {}): void {{\n\t{}\n}}\n",
+			"function write{}(w: Writer, v: {}): void {{\n\t{}\n}}\n",
 			d.name,
 			d.name,
 			indent(&d.write)
 		));
 	}
+	out.push_str(&format!(
+		"\n/** A {top} on its wire, as the engine reads it. */\nexport function wire(v: {top}): Uint8Array {{\n\tconst w = new Writer();\n\twrite{top}(w, v);\n\treturn w.bytes();\n}}\n"
+	));
 	out
 }
 

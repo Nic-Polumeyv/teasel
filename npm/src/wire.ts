@@ -1,7 +1,7 @@
 // written by crates/teasel/src/host/grammar.rs; `cargo test` pins it
 
 /** The wire: words, then a pool of strings kept once. */
-export class Writer {
+class Writer {
 	#words = new Uint32Array(1024);
 	#count = 0;
 	#strings = new Map<string, number>();
@@ -65,13 +65,13 @@ export type Host = {
 	name: string;
 	definition: Definition;
 };
-export function writeHost(w: Writer, v: Host): void {
+function writeHost(w: Writer, v: Host): void {
 	w.str(v.name);
 	writeDefinition(w, v.definition);
 }
 
 /** A host language: its document, its content, and the JavaScript inside them. */
-export type Definition = {
+type Definition = {
 	document: Node;
 	text: Node;
 	comment: Node;
@@ -91,7 +91,7 @@ export type Definition = {
 	declaration?: Node;
 	expression?: Node;
 };
-export function writeDefinition(w: Writer, v: Definition): void {
+function writeDefinition(w: Writer, v: Definition): void {
 	writeNode(w, v.document);
 	writeNode(w, v.text);
 	writeNode(w, v.comment);
@@ -170,11 +170,11 @@ export function writeDefinition(w: Writer, v: Definition): void {
 }
 
 /** A node type and the form its fields come from. */
-export type Node = {
+type Node = {
 	type: string;
 	items: ReadonlyArray<Item>;
 };
-export function writeNode(w: Writer, v: Node): void {
+function writeNode(w: Writer, v: Node): void {
 	w.str(v.type);
 	w.word(v.items.length);
 	for (let i_ = 0; i_ < v.items.length; i_++) {
@@ -184,13 +184,13 @@ export function writeNode(w: Writer, v: Node): void {
 }
 
 /** One step of a form: a host word, fields, or a group. */
-export type Item =
+type Item =
 	| string
 	| { opt: ReadonlyArray<Item> }
 	| { oneOf: ReadonlyArray<ReadonlyArray<Item>> }
 	| { scope: ReadonlyArray<Item> }
 	| { readonly [key: string]: Source };
-export function writeItem(w: Writer, v: Item): void {
+function writeItem(w: Writer, v: Item): void {
 	if (typeof v === 'string') {
 		w.word(0);
 		w.str((v as string));
@@ -234,7 +234,7 @@ export function writeItem(w: Writer, v: Item): void {
 }
 
 /** What fills a field: where it is read from, what reads it, and how. */
-export type Source = {
+type Source = {
 	from: string;
 	read: string;
 	optional: boolean;
@@ -242,7 +242,7 @@ export type Source = {
 	orArg: boolean;
 	literal?: Literal;
 };
-export function writeSource(w: Writer, v: Source): void {
+function writeSource(w: Writer, v: Source): void {
 	w.str(v.from);
 	w.str(v.read);
 	w.word(v.optional ? 1 : 0);
@@ -255,11 +255,11 @@ export function writeSource(w: Writer, v: Source): void {
 	}
 }
 
-export type Bind =
+type Bind =
 	| false
 	| 'inside'
 	| 'outside';
-export function writeBind(w: Writer, v: Bind): void {
+function writeBind(w: Writer, v: Bind): void {
 	switch (v) {
 		case false:
 			w.word(0);
@@ -274,12 +274,12 @@ export function writeBind(w: Writer, v: Bind): void {
 }
 
 /** A value a literal source always writes. */
-export type Literal =
+type Literal =
 	| true
 	| false
 	| null
 	| readonly [];
-export function writeLiteral(w: Writer, v: Literal): void {
+function writeLiteral(w: Writer, v: Literal): void {
 	switch (v) {
 		case true:
 			w.word(0);
@@ -296,11 +296,11 @@ export function writeLiteral(w: Writer, v: Literal): void {
 	}
 }
 
-export type Attributes = {
+type Attributes = {
 	expressions?: boolean;
 	shorthand?: boolean;
 };
-export function writeAttributes(w: Writer, v: Attributes): void {
+function writeAttributes(w: Writer, v: Attributes): void {
 	if (v.expressions === undefined) w.word(0);
 	else {
 		w.word(1);
@@ -313,13 +313,13 @@ export function writeAttributes(w: Writer, v: Attributes): void {
 	}
 }
 
-export type Elements = {
+type Elements = {
 	fields: { readonly [key: string]: Source };
 	rules?: { readonly [key: string]: Element };
 	component?: Element;
 	other?: Element;
 };
-export function writeElements(w: Writer, v: Elements): void {
+function writeElements(w: Writer, v: Elements): void {
 	{
 		const keys = Object.keys(v.fields);
 		w.word(keys.length);
@@ -354,7 +354,7 @@ export function writeElements(w: Writer, v: Elements): void {
 	}
 }
 
-export type Element = {
+type Element = {
 	node: Node;
 	root: boolean;
 	once: boolean;
@@ -362,7 +362,7 @@ export type Element = {
 	outside?: string;
 	content?: Content;
 };
-export function writeElement(w: Writer, v: Element): void {
+function writeElement(w: Writer, v: Element): void {
 	writeNode(w, v.node);
 	w.word(v.root ? 1 : 0);
 	w.word(v.once ? 1 : 0);
@@ -383,10 +383,10 @@ export function writeElement(w: Writer, v: Element): void {
 	}
 }
 
-export type Content =
+type Content =
 	| 'raw'
 	| 'rcdata';
-export function writeContent(w: Writer, v: Content): void {
+function writeContent(w: Writer, v: Content): void {
 	switch (v) {
 		case 'raw':
 			w.word(0);
@@ -397,12 +397,12 @@ export function writeContent(w: Writer, v: Content): void {
 	}
 }
 
-export type Script = {
+type Script = {
 	element: string;
 	module?: ReadonlyArray<readonly [string, string?]>;
 	typescript?: ReadonlyArray<readonly [string, string?]>;
 };
-export function writeScript(w: Writer, v: Script): void {
+function writeScript(w: Writer, v: Script): void {
 	w.str(v.element);
 	if (v.module === undefined) w.word(0);
 	else {
@@ -434,7 +434,7 @@ export function writeScript(w: Writer, v: Script): void {
 	}
 }
 
-export type Directives = {
+type Directives = {
 	prefix?: string;
 	arg?: string;
 	modifier?: string;
@@ -445,7 +445,7 @@ export type Directives = {
 	rules?: { readonly [key: string]: Directive };
 	other?: Directive;
 };
-export function writeDirectives(w: Writer, v: Directives): void {
+function writeDirectives(w: Writer, v: Directives): void {
 	if (v.prefix === undefined) w.word(0);
 	else {
 		w.word(1);
@@ -518,9 +518,9 @@ export function writeDirectives(w: Writer, v: Directives): void {
 	}
 }
 
-export type Raw =
+type Raw =
 	| 'raw';
-export function writeRaw(w: Writer, v: Raw): void {
+function writeRaw(w: Writer, v: Raw): void {
 	switch (v) {
 		case 'raw':
 			w.word(0);
@@ -528,20 +528,20 @@ export function writeRaw(w: Writer, v: Raw): void {
 	}
 }
 
-export type Directive = {
+type Directive = {
 	node: Node;
 	unique: Uniqueness;
 };
-export function writeDirective(w: Writer, v: Directive): void {
+function writeDirective(w: Writer, v: Directive): void {
 	writeNode(w, v.node);
 	writeUniqueness(w, v.unique);
 }
 
-export type Uniqueness =
+type Uniqueness =
 	| 'no'
 	| 'kind'
 	| 'attributes';
-export function writeUniqueness(w: Writer, v: Uniqueness): void {
+function writeUniqueness(w: Writer, v: Uniqueness): void {
 	switch (v) {
 		case 'no':
 			w.word(0);
@@ -555,7 +555,7 @@ export function writeUniqueness(w: Writer, v: Uniqueness): void {
 	}
 }
 
-export type Sigils = {
+type Sigils = {
 	open: string;
 	branch: string;
 	close: string;
@@ -563,7 +563,7 @@ export type Sigils = {
 	blocks?: { readonly [key: string]: Block };
 	tags?: { readonly [key: string]: Tag };
 };
-export function writeSigils(w: Writer, v: Sigils): void {
+function writeSigils(w: Writer, v: Sigils): void {
 	w.str(v.open);
 	w.str(v.branch);
 	w.str(v.close);
@@ -596,11 +596,11 @@ export function writeSigils(w: Writer, v: Sigils): void {
 	}
 }
 
-export type Block = {
+type Block = {
 	node: Node;
 	branches: { readonly [key: string]: Branch };
 };
-export function writeBlock(w: Writer, v: Block): void {
+function writeBlock(w: Writer, v: Block): void {
 	writeNode(w, v.node);
 	{
 		const keys = Object.keys(v.branches);
@@ -613,10 +613,10 @@ export function writeBlock(w: Writer, v: Block): void {
 	}
 }
 
-export type Branch =
+type Branch =
 	| ReadonlyArray<Item>
 	| Reopen;
-export function writeBranch(w: Writer, v: Branch): void {
+function writeBranch(w: Writer, v: Branch): void {
 	if (Array.isArray(v)) {
 		w.word(0);
 		w.word((v as ReadonlyArray<Item>).length);
@@ -631,28 +631,28 @@ export function writeBranch(w: Writer, v: Branch): void {
 }
 
 /** An `else if`: the block again, nested into this field, with this flag set on it. */
-export type Reopen = {
+type Reopen = {
 	reopen: string;
 	flag: string;
 };
-export function writeReopen(w: Writer, v: Reopen): void {
+function writeReopen(w: Writer, v: Reopen): void {
 	w.str(v.reopen);
 	w.str(v.flag);
 }
 
-export type Tag = {
+type Tag = {
 	node: Node;
 	among: Among;
 };
-export function writeTag(w: Writer, v: Tag): void {
+function writeTag(w: Writer, v: Tag): void {
 	writeNode(w, v.node);
 	writeAmong(w, v.among);
 }
 
-export type Among =
+type Among =
 	| 'content'
 	| 'attributes';
-export function writeAmong(w: Writer, v: Among): void {
+function writeAmong(w: Writer, v: Among): void {
 	switch (v) {
 		case 'content':
 			w.word(0);
@@ -661,4 +661,11 @@ export function writeAmong(w: Writer, v: Among): void {
 			w.word(1);
 			return;
 	}
+}
+
+/** A Host on its wire, as the engine reads it. */
+export function wire(v: Host): Uint8Array {
+	const w = new Writer();
+	writeHost(w, v);
+	return w.bytes();
 }

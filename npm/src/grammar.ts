@@ -1,6 +1,6 @@
 import type { Expression, Identifier, Pattern, Program, SourceLocation, Statement, VariableDeclaration } from 'estree';
 import type { Comment, HostNode } from './index.js';
-import { Writer, writeHost } from './wire.js';
+import { wire as encode } from './wire.js';
 
 declare const out: unique symbol;
 
@@ -306,16 +306,8 @@ type Checked<D extends Definition> = {
 export const grammar = <const D extends Definition>(host: string, definition: D & Checked<D>): Grammar<D> => ({
 	host,
 	definition,
-	wire: encode(host, definition),
+	wire: encode({ name: host, definition }),
 });
-
-// ── the wire the engine reads
-
-function encode(name: string, definition: Definition): Uint8Array {
-	const w = new Writer();
-	writeHost(w, { name, definition });
-	return w.bytes();
-}
 
 // ── inference
 
