@@ -8,7 +8,7 @@ const name = process.execArgv.includes('--no-addons') ? 'wasm' : 'native';
 const m = await import('../dist/index.js');
 // the trees are poked as the recipes shape them, host nodes included, past what the types say
 type Any = any;
-const { Plan } = m;
+const { Plan, ParseError } = m;
 type Entry = 'program' | 'expression' | 'pattern' | 'params' | 'statement' | 'typeParameters';
 const untyped = ({ Source, scopeOf, referenceOf, parentOf }: typeof m) => ({
 	open: (source: string, options?: Options): Any => new Source(source, options),
@@ -112,7 +112,8 @@ const { open, scopeOf, referenceOf, parentOf } = untyped(m);
 	assert.equal(params.node.length, 2);
 	assert.equal(params.end, 10);
 
-	assert.throws(() => parse('x = ;'), (e: Any) => e.code === 'unexpected_token' && e.pos === 4 && e.end === 5 && e.loc.column === 4 && e.message === 'Unexpected token' && e instanceof SyntaxError);
+	assert.throws(() => parse('x = ;'), (e: Any) => e.code === 'unexpected_token' && e.pos === 4 && e.end === 5 && e.loc.column === 4 && e.message === 'Unexpected token' && e instanceof ParseError && e instanceof SyntaxError);
+	assert.ok(!('loc' in new ParseError({ message: 'Expected', code: 'expected', pos: 0, end: 0 })));
 	assert.throws(() => parse('x = '), (e: Any) => e.code === 'unexpected_eof' && e.pos === 4 && e.end === 4);
 	assert.throws(() => parse('/a', { locations: true }), (e: Any) => e.code === 'unterminated_regexp' && e.pos === 1);
 	assert.throws(() => parse('x', { ranges: true } as Any), TypeError);
