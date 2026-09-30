@@ -409,35 +409,49 @@ pub(crate) fn module<T: Wire>(root: &str) -> String {
 		"// written by {root}; `cargo test` pins it\n\n\
 /** The wire: words, then a pool of strings kept once. */\n\
 export class Writer {{\n\
-\t#words: number[] = [];\n\
+\t#words = new Uint32Array(1024);\n\
+\t#count = 0;\n\
 \t#strings = new Map<string, number>();\n\
+\t#pool: string[] = [];\n\
 \tword(word: number): void {{\n\
-\t\tthis.#words.push(word);\n\
+\t\tif (this.#count === this.#words.length) {{\n\
+\t\t\tconst more = new Uint32Array(this.#count * 2);\n\
+\t\t\tmore.set(this.#words);\n\
+\t\t\tthis.#words = more;\n\
+\t\t}}\n\
+\t\tthis.#words[this.#count++] = word;\n\
 \t}}\n\
 \tstr(s: string): void {{\n\
 \t\tlet i = this.#strings.get(s);\n\
-\t\tif (i === undefined) this.#strings.set(s, (i = this.#strings.size));\n\
-\t\tthis.#words.push(i);\n\
+\t\tif (i === undefined) {{\n\
+\t\t\tthis.#strings.set(s, (i = this.#pool.length));\n\
+\t\t\tthis.#pool.push(s);\n\
+\t\t}}\n\
+\t\tthis.word(i);\n\
 \t}}\n\
 \t/** Little-endian words: the count of record words, the count of strings, each string's offset and length, the record words; then the pool, UTF-8. */\n\
 \tbytes(): Uint8Array {{\n\
+\t\tconst head = 2 + 2 * this.#pool.length;\n\
+\t\tconst poolAt = (head + this.#count) * 4;\n\
+\t\tconst out = new Uint8Array(poolAt + this.#pool.reduce((size, s) => size + s.length * 3, 0));\n\
+\t\tconst words = new Uint32Array(out.buffer, 0, head + this.#count);\n\
+\t\twords[0] = this.#count;\n\
+\t\twords[1] = this.#pool.length;\n\
 \t\tconst encoder = new TextEncoder();\n\
-\t\tconst strings = [...this.#strings.keys()].map((s) => encoder.encode(s));\n\
-\t\tconst pool = strings.reduce((size, s) => size + s.length, 0);\n\
-\t\tconst head = 2 + 2 * strings.length;\n\
-\t\tconst out = new Uint8Array((head + this.#words.length) * 4 + pool);\n\
-\t\tconst view = new DataView(out.buffer);\n\
-\t\tview.setUint32(0, this.#words.length, true);\n\
-\t\tview.setUint32(4, strings.length, true);\n\
 \t\tlet offset = 0;\n\
-\t\tstrings.forEach((s, i) => {{\n\
-\t\t\tview.setUint32(8 + i * 8, offset, true);\n\
-\t\t\tview.setUint32(12 + i * 8, s.length, true);\n\
-\t\t\tout.set(s, (head + this.#words.length) * 4 + offset);\n\
-\t\t\toffset += s.length;\n\
+\t\tthis.#pool.forEach((s, i) => {{\n\
+\t\t\tconst {{ written }} = encoder.encodeInto(s, out.subarray(poolAt + offset));\n\
+\t\t\twords[2 + 2 * i] = offset;\n\
+\t\t\twords[3 + 2 * i] = written;\n\
+\t\t\toffset += written;\n\
 \t\t}});\n\
-\t\tthis.#words.forEach((word, i) => view.setUint32((head + i) * 4, word, true));\n\
-\t\treturn out;\n\
+\t\twords.set(this.#words.subarray(0, this.#count), head);\n\
+\t\t// the engine reads little-endian words; a big-endian platform swaps them here\n\
+\t\tif (new Uint8Array(new Uint32Array([1]).buffer)[0] !== 1) {{\n\
+\t\t\tconst view = new DataView(out.buffer);\n\
+\t\t\twords.forEach((word, i) => view.setUint32(i * 4, word, true));\n\
+\t\t}}\n\
+\t\treturn out.subarray(0, poolAt + offset);\n\
 \t}}\n\
 }}\n"
 	);

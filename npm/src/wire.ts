@@ -2,35 +2,49 @@
 
 /** The wire: words, then a pool of strings kept once. */
 export class Writer {
-	#words: number[] = [];
+	#words = new Uint32Array(1024);
+	#count = 0;
 	#strings = new Map<string, number>();
+	#pool: string[] = [];
 	word(word: number): void {
-		this.#words.push(word);
+		if (this.#count === this.#words.length) {
+			const more = new Uint32Array(this.#count * 2);
+			more.set(this.#words);
+			this.#words = more;
+		}
+		this.#words[this.#count++] = word;
 	}
 	str(s: string): void {
 		let i = this.#strings.get(s);
-		if (i === undefined) this.#strings.set(s, (i = this.#strings.size));
-		this.#words.push(i);
+		if (i === undefined) {
+			this.#strings.set(s, (i = this.#pool.length));
+			this.#pool.push(s);
+		}
+		this.word(i);
 	}
 	/** Little-endian words: the count of record words, the count of strings, each string's offset and length, the record words; then the pool, UTF-8. */
 	bytes(): Uint8Array {
+		const head = 2 + 2 * this.#pool.length;
+		const poolAt = (head + this.#count) * 4;
+		const out = new Uint8Array(poolAt + this.#pool.reduce((size, s) => size + s.length * 3, 0));
+		const words = new Uint32Array(out.buffer, 0, head + this.#count);
+		words[0] = this.#count;
+		words[1] = this.#pool.length;
 		const encoder = new TextEncoder();
-		const strings = [...this.#strings.keys()].map((s) => encoder.encode(s));
-		const pool = strings.reduce((size, s) => size + s.length, 0);
-		const head = 2 + 2 * strings.length;
-		const out = new Uint8Array((head + this.#words.length) * 4 + pool);
-		const view = new DataView(out.buffer);
-		view.setUint32(0, this.#words.length, true);
-		view.setUint32(4, strings.length, true);
 		let offset = 0;
-		strings.forEach((s, i) => {
-			view.setUint32(8 + i * 8, offset, true);
-			view.setUint32(12 + i * 8, s.length, true);
-			out.set(s, (head + this.#words.length) * 4 + offset);
-			offset += s.length;
+		this.#pool.forEach((s, i) => {
+			const { written } = encoder.encodeInto(s, out.subarray(poolAt + offset));
+			words[2 + 2 * i] = offset;
+			words[3 + 2 * i] = written;
+			offset += written;
 		});
-		this.#words.forEach((word, i) => view.setUint32((head + i) * 4, word, true));
-		return out;
+		words.set(this.#words.subarray(0, this.#count), head);
+		// the engine reads little-endian words; a big-endian platform swaps them here
+		if (new Uint8Array(new Uint32Array([1]).buffer)[0] !== 1) {
+			const view = new DataView(out.buffer);
+			words.forEach((word, i) => view.setUint32(i * 4, word, true));
+		}
+		return out.subarray(0, poolAt + offset);
 	}
 }
 
