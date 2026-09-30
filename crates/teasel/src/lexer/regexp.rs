@@ -23,7 +23,7 @@ pub(super) fn validate(start: u32, pattern: &str, flags: &str, scratch: &mut Scr
 pub(crate) struct Scratch {
 	source: Vec<u16>,
 	last_string_value: String,
-	group_names: HashMap<String, Vec<usize>>,
+	group_names: crate::interner::FastMap<String, Vec<usize>>,
 	back_reference_names: Vec<String>,
 	branches: Vec<Branch>,
 }
