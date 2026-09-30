@@ -1,7 +1,9 @@
 // `node scripts/test.ts interpret` runs the decoder without code generation, as a host forbidding it would
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { codes } from './codes.ts';
+import svelteDefinition from './hosts/svelte.ts';
+import vueDefinition from './hosts/vue.ts';
 import type { Options } from '../dist/index.js';
 if (process.argv[2] === 'interpret') globalThis.Function = (() => { throw new EvalError('blocked'); }) as unknown as FunctionConstructor;
 const name = process.execArgv.includes('--no-addons') ? 'wasm' : 'native';
@@ -128,7 +130,7 @@ const { open, scopeOf, referenceOf, parentOf } = untyped(m);
 	assert.equal(program('export { x }', { sourceType: 'module', allowUndeclaredExports: true }).body[0].type, 'ExportNamedDeclaration');
 	{
 		// a document's answer lists each piece of JavaScript the host read, with its share of the tables
-		const host = new Plan(readFileSync(new URL('../../crates/teasel/tests/hosts/svelte/host.grammar', import.meta.url), 'utf8'));
+		const host = new Plan(svelteDefinition);
 		const answer = open('<script>let a = 1;</script>{a + b}', { sourceType: 'module', scopes: true }).parse(host);
 		const [script, expression] = answer.roots;
 		assert.equal(answer.roots.length, 2);
@@ -276,8 +278,7 @@ const { open, scopeOf, referenceOf, parentOf } = untyped(m);
 }
 
 // a document of a host language: the host's nodes around the JavaScript ones, one tree
-const grammar = readFileSync(new URL('../../crates/teasel/tests/hosts/svelte/host.grammar', import.meta.url), 'utf8');
-const svelte = new Plan(grammar);
+const svelte = new Plan(svelteDefinition);
 {
 	const source = '<script lang="ts">\n\tlet items: string[] = [];\n</script>\n\n{#each items as item, i (item)}\n\t<p class:odd={i % 2} on:click={() => item}>{item}</p>\n{:else}\n\tnone\n{/each}\n';
 	const doc = open(source, { sourceType: 'module', scopes: true, comments: true }).parse(svelte);
@@ -314,7 +315,7 @@ const svelte = new Plan(grammar);
 	assert.equal(scopeOf(root.fragment).parent, scopeOf(root.instance.content));
 	assert.equal(scopeOf(root.instance.content).parent, scopeOf(root));
 	assert.equal(scopeOf(each.fallback).parent, scopeOf(root.fragment));
-	assert.throws(() => new Plan('element div'), /grammar line 1/);
+	assert.throws(() => new Plan('host x' as Any), TypeError);
 	assert.throws(() => svelte.until('}'), TypeError);
 	assert.throws(() => open('<div>').parse(svelte, 1), TypeError);
 	assert.throws(() => open('<div>').parse(svelte), { code: 'unclosed', pos: 0 });
@@ -338,7 +339,7 @@ const svelte = new Plan(grammar);
 }
 
 // unfinished input under recovery is an answer, never a panic; a strict error is a SyntaxError
-const grammars = Object.fromEntries(['svelte', 'vue'].map((name) => [name, new Plan(readFileSync(new URL(`../../crates/teasel/tests/hosts/${name}/host.grammar`, import.meta.url), 'utf8'))]));
+const grammars = { svelte: new Plan(svelteDefinition), vue: new Plan(vueDefinition) };
 {
 	for (const text of ['<a x="', '<a /*', '<script>"</script>', '{#if', '<div class="{a']) {
 		assert.equal(open(text, { errorRecovery: true, comments: true, scopes: true }).parse(grammars.svelte).node.type, 'Root', `${name} ${text}`);
@@ -347,6 +348,22 @@ const grammars = Object.fromEntries(['svelte', 'vue'].map((name) => [name, new P
 	const handler: Any = open('<button @click="let x = 1"/>', { errorRecovery: true }).parse(grammars.vue);
 	assert.equal(handler.node.children[0].props[0].handler.type, 'Program', name);
 	assert.deepEqual(handler.errors, [], name);
+}
+// the typed definitions read every host document as the grammar text beside it does
+for (const host of ['svelte', 'vue'] as const) {
+	const dir = new URL(`../../crates/teasel/tests/hosts/${host}/`, import.meta.url);
+	const text = new Plan({ text: readFileSync(new URL('host.grammar', dir), 'utf8') } as Any);
+	for (const file of readdirSync(dir).filter((f) => !/\.(json|grammar)$/.test(f))) {
+		const source = readFileSync(new URL(file, dir), 'utf8');
+		const answer = (plan: typeof text) => {
+			try {
+				return JSON.parse(JSON.stringify(open(source, { sourceType: 'module', comments: true, errorRecovery: true }).parse(plan)));
+			} catch (error) {
+				return { error: (error as Any).code, pos: (error as Any).pos };
+			}
+		};
+		assert.deepEqual(answer(grammars[host]), answer(text), `${name} ${host}/${file}`);
+	}
 }
 // a second host: the same walker, Vue's grammar
 const vue = grammars.vue;
