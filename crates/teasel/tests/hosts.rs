@@ -9,10 +9,8 @@ use std::fs;
 use std::path::Path;
 use teasel::Entry;
 use teasel::Options;
-use teasel::host::grammar::{
-	Alternative, BlockRule, Body, CommentRule, Declare, DirectiveValue, DocField, DocumentRule, ElementFields, Form,
-	Grammar, Item, Match, RootField, TagRule, TextRule, Unique,
-};
+use teasel::host::grammar::definition::{self, Bind, Host, Node, Source};
+use teasel::host::grammar::{DirectiveValue, DocField, Grammar, Item, Match, Record, RootField, Unique};
 use teasel::json::{Request, parse_document};
 
 #[test]
@@ -111,32 +109,27 @@ fn unfinished_input() {
 
 #[test]
 fn tags_fill_unread() {
-	let entry = |field, omit| Item::Entry {
-		field,
-		entry: teasel::host::grammar::Entry::Expression,
-		omit,
-		stops: Default::default(),
-	};
-	let group = |items| Item::Group {
-		alternatives: vec![Alternative { items, body: None }],
-		required: false,
-		after: &[],
-	};
-	let mut grammar = minimal();
-	grammar.tags.push(TagRule {
-		name: "t",
-		ty: "T",
-		attribute: false,
-		form: Form {
-			items: vec![
-				group(vec![entry("a", false)]),
-				group(vec![Item::Literal(","), entry("b", true)]),
-			],
-			body: None,
-			entries: Vec::new(),
+	let mut host = minimal();
+	host.definition.sigils.as_mut().unwrap().tags = Some(Record(vec![(
+		"t",
+		definition::Tag {
+			among: definition::Among::Content,
+			node: Node {
+				r#type: "T",
+				items: vec![
+					definition::Item::Opt(vec![definition::Item::Fields(Record(vec![(
+						"a",
+						source("js", "expression", false),
+					)]))]),
+					definition::Item::Opt(vec![
+						definition::Item::Word(","),
+						definition::Item::Fields(Record(vec![("b", source("js", "expression", true))])),
+					]),
+				],
+			},
 		},
-	});
-	let answer = parse_document("{@t }", &grammar.wire(), &Request::from_flags(Options::MODULE));
+	)]));
+	let answer = parse_document("{@t }", &host.wire(), &Request::from_flags(Options::MODULE));
 	assert!(answer.contains("\"a\":null") && !answer.contains("\"b\""), "{answer}");
 }
 
@@ -187,110 +180,102 @@ fn sources(dir: &Path) -> Vec<std::path::PathBuf> {
 		.collect()
 }
 
-/// A grammar with nothing but what every grammar needs.
-fn minimal() -> Grammar {
-	Grammar {
+fn source(from: &'static str, read: &'static str, optional: bool) -> Source {
+	Source {
+		from,
+		read,
+		optional,
+		bind: Bind::No,
+		or_arg: false,
+		literal: None,
+	}
+}
+
+fn node(ty: &'static str, items: Vec<definition::Item>) -> Node {
+	Node { r#type: ty, items }
+}
+
+/// A definition with nothing but what every grammar needs.
+fn minimal() -> Host {
+	let fields = |list: Vec<(&'static str, Source)>| definition::Item::Fields(Record(list));
+	Host {
 		name: "t",
-		document: DocumentRule {
-			ty: "Document",
-			fields: vec![DocField::Field {
-				field: "children",
-				holds: RootField::Fragment,
-				omit: false,
-			}],
+		definition: definition::Definition {
+			document: node(
+				"Document",
+				vec![fields(vec![("children", source("content", "fragment", false))])],
+			),
+			text: node("Text", vec![fields(vec![("data", source("text", "data", false))])]),
+			comment: node("Comment", vec![fields(vec![("data", source("text", "data", false))])]),
+			fragment: None,
+			delimiters: ("{", "}"),
+			attributes: None,
+			autoclose: None,
+			trim: None,
+			void: None,
+			verbatim: None,
+			elements: definition::Elements {
+				fields: Record(vec![
+					("name", source("element", "name", false)),
+					("attributes", source("element", "attributes", false)),
+					("children", source("content", "fragment", false)),
+				]),
+				rules: None,
+				component: None,
+				other: None,
+			},
+			script: None,
+			style: None,
+			directives: None,
+			spread: None,
+			sigils: Some(definition::Sigils {
+				open: "#",
+				branch: ":",
+				close: "/",
+				tag: "@",
+				blocks: None,
+				tags: None,
+			}),
+			declaration: None,
+			expression: None,
 		},
-		delimiters: ("{", "}"),
-		attribute_expressions: false,
-		attribute_shorthand: false,
-		sigils: Some(teasel::host::grammar::Sigils {
-			open: "#",
-			branch: ":",
-			close: "/",
-			tag: "@",
-		}),
-		autoclose: false,
-		trim: false,
-		void: Vec::new(),
-		fragment: None,
-		fragment_scope: false,
-		element_fields: ElementFields {
-			name: "name",
-			attributes: "attributes",
-			children: "children",
-		},
-		text: TextRule {
-			ty: "Text",
-			data: "data",
-			raw: None,
-		},
-		comment: CommentRule {
-			ty: "Comment",
-			data: "data",
-		},
-		verbatim: None,
-		elements: Vec::new(),
-		script: None,
-		style: None,
-		directive_syntax: None,
-		shorthands: Vec::new(),
-		directives: Vec::new(),
-		spread: None,
-		blocks: Vec::new(),
-		tags: Vec::new(),
-		declaration: None,
-		expression: None,
 	}
 }
 
 #[test]
 fn a_body_declares_only_what_the_form_reads() {
-	let block = |declares| {
-		let mut grammar = minimal();
-		grammar.blocks.push(BlockRule {
-			name: "each",
-			ty: "EachBlock",
-			open: Form {
-				items: vec![
-					Item::Entry {
-						field: "expression",
-						entry: teasel::host::grammar::Entry::Expression,
-						omit: false,
-						stops: Default::default(),
-					},
-					Item::Literal("as"),
-					Item::Entry {
-						field: "context",
-						entry: teasel::host::grammar::Entry::Pattern,
-						omit: false,
-						stops: Default::default(),
-					},
-				],
-				body: Some(Body {
-					field: "body",
-					omit: false,
-					chain: None,
-					declares: vec![Declare {
-						field: declares,
-						outside: false,
-					}],
-				}),
-				entries: Vec::new(),
+	let block = |context: &'static str| {
+		let mut host = minimal();
+		let bound = Source {
+			bind: Bind::Inside,
+			..source("js", "pattern", false)
+		};
+		host.definition.sigils.as_mut().unwrap().blocks = Some(Record(vec![(
+			"each",
+			definition::Block {
+				branches: Record(Vec::new()),
+				node: node(
+					"EachBlock",
+					vec![
+						definition::Item::Fields(Record(vec![("expression", source("js", "expression", false))])),
+						definition::Item::Word("as"),
+						definition::Item::Fields(Record(vec![(context, bound)])),
+						definition::Item::Fields(Record(vec![("body", source("content", "fragment", false))])),
+					],
+				),
 			},
-			branches: Vec::new(),
-			chain_flag: None,
-			entries: Vec::new(),
-			bodies: Vec::new(),
-		});
-		grammar.wire()
+		)]));
+		host.wire()
 	};
-	assert!(
-		Grammar::read(&block("context")).is_ok(),
-		"{:?}",
-		Grammar::read(&block("context")).err()
+	let grammar = Grammar::read(&block("context")).unwrap();
+	assert_eq!(
+		grammar.block("each").unwrap().open.body.as_ref().unwrap().declares[0].field,
+		"context"
 	);
-	let error = Grammar::read(&block("contexxt")).unwrap_err();
-	assert!(error.contains("contexxt"), "{error}");
 	assert!(Grammar::read(&[]).is_err() && Grammar::read(&block("context")[..40]).is_err());
+	let mut host = minimal();
+	host.definition.document.items.push(definition::Item::Word("x"));
+	assert!(Grammar::read(&host.wire()).unwrap_err().contains("document"));
 }
 
 // the wire the Rust side writes is the one it reads, so both ends stay one format
@@ -298,12 +283,9 @@ fn a_body_declares_only_what_the_form_reads() {
 fn the_wire_round_trips() {
 	let root = Path::new(env!("CARGO_MANIFEST_DIR"));
 	let bytes = fs::read(root.join("tests/hosts/svelte/host.wire")).unwrap();
-	let grammar = Grammar::read(&bytes).unwrap();
-	assert_eq!(grammar.wire(), bytes);
-	assert_eq!(
-		format!("{:?}", Grammar::read(&grammar.wire()).unwrap()),
-		format!("{grammar:?}")
-	);
+	let host = Host::read(&bytes).unwrap();
+	assert_eq!(host.wire(), bytes);
+	assert_eq!(format!("{:?}", Host::read(&host.wire()).unwrap()), format!("{host:?}"));
 }
 
 #[test]

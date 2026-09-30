@@ -18,7 +18,8 @@ pub(crate) struct Cursor<'a> {
 	at: usize,
 	end: usize,
 	strings: usize,
-	pool: usize,
+	/// The pool, kept for the process once: every name is a slice of it.
+	pool: &'static str,
 }
 
 impl<'a> Cursor<'a> {
@@ -36,12 +37,13 @@ impl<'a> Cursor<'a> {
 		if bytes.len() < end * 4 {
 			return Err("the grammar ends early".into());
 		}
+		let pool = std::str::from_utf8(&bytes[end * 4..]).map_err(|_| "the grammar's strings are not UTF-8")?;
 		Ok(Cursor {
 			bytes,
 			at,
 			end,
 			strings,
-			pool: end * 4,
+			pool: keep(pool),
 		})
 	}
 
@@ -63,13 +65,9 @@ impl<'a> Cursor<'a> {
 			return Err(format!("no string {i} on the grammar"));
 		}
 		let (offset, len) = (self.word_at(2 + 2 * i) as usize, self.word_at(3 + 2 * i) as usize);
-		let bytes = self
-			.bytes
-			.get(self.pool + offset..self.pool + offset + len)
-			.ok_or("the grammar ends early")?;
-		Ok(keep(
-			std::str::from_utf8(bytes).map_err(|_| "a string on the grammar is not UTF-8")?,
-		))
+		self.pool
+			.get(offset..offset + len)
+			.ok_or_else(|| format!("string {i} on the grammar is cut"))
 	}
 
 	pub(crate) fn done(&self) -> bool {
@@ -119,6 +117,7 @@ pub(crate) fn keep(s: &str) -> &'static str {
 
 /// A Rust name in camel case, as TypeScript spells it: `attribute_expressions`, `TypeParameters`.
 pub(crate) fn camel(name: &str) -> String {
+	let name = name.strip_prefix("r#").unwrap_or(name);
 	let mut out = String::with_capacity(name.len());
 	let mut up = false;
 	for (i, c) in name.chars().enumerate() {
@@ -291,7 +290,12 @@ impl<A: Wire, B: Wire> Wire for (A, B) {
 	}
 
 	fn ts() -> String {
-		format!("readonly [{}, {}]", A::ts(), B::ts())
+		format!(
+			"readonly [{}, {}{}]",
+			A::ts(),
+			B::ts_field(),
+			if B::OPTIONAL { "?" } else { "" }
+		)
 	}
 
 	fn ts_write(value: &str) -> String {
@@ -308,6 +312,42 @@ impl<A: Wire, B: Wire> Wire for (A, B) {
 	}
 }
 
+/// An object of the definition: its keys in order, each holding a `T`.
+#[derive(Clone, Debug, Default)]
+pub struct Record<T>(pub Vec<(&'static str, T)>);
+
+impl<T: Wire> Wire for Record<T> {
+	fn read(c: &mut Cursor) -> Result<Self, String> {
+		(0..c.word()?)
+			.map(|_| Ok((c.str()?, T::read(c)?)))
+			.collect::<Result<_, String>>()
+			.map(Record)
+	}
+
+	fn write(&self, w: &mut Writer) {
+		w.word(self.0.len() as u32);
+		for (key, value) in &self.0 {
+			w.str(key);
+			value.write(w);
+		}
+	}
+
+	fn ts() -> String {
+		format!("{{ readonly [key: string]: {} }}", T::ts())
+	}
+
+	fn ts_write(value: &str) -> String {
+		format!(
+			"{{\n\tconst entries = Object.entries({value});\n\tw.word(entries.length);\n\tentries.forEach(([key, item]) => {{\n\t\tw.str(key);\n\t\t{}\n\t}});\n}}",
+			indent(&indent(&T::ts_write("item")))
+		)
+	}
+
+	fn definitions(out: &mut Vec<Definition>) {
+		T::definitions(out);
+	}
+}
+
 fn indent(text: &str) -> String {
 	text.replace('\n', "\n\t")
 }
@@ -318,14 +358,6 @@ pub(crate) struct Field {
 	pub(crate) docs: &'static [&'static str],
 	pub(crate) optional: bool,
 	pub(crate) ty: String,
-	pub(crate) write: String,
-}
-
-/// A variant as TypeScript: a name, or a key holding a payload.
-pub(crate) struct Variant {
-	pub(crate) name: &'static str,
-	pub(crate) docs: &'static [&'static str],
-	pub(crate) ty: Option<String>,
 	pub(crate) write: String,
 }
 
@@ -358,45 +390,60 @@ pub(crate) fn writes(fields: &[Field]) -> String {
 	fields.iter().map(|f| f.write.clone()).collect::<Vec<_>>().join("\n")
 }
 
+/// How the writer tells a variant: a `case` on its literal, or a test on `v`; an empty test is
+/// the `else`.
+pub(crate) enum Tell {
+	Case(String),
+	Test(String),
+}
+
+/// A variant as TypeScript: the alternative's type, how it is told, and what writes its payload.
+pub(crate) struct Variant {
+	pub(crate) docs: &'static [&'static str],
+	pub(crate) ty: String,
+	pub(crate) tell: Tell,
+	pub(crate) write: String,
+}
+
 /// A union as TypeScript, one alternative per line with its docs, and the statements that write
 /// a value of it: its variant's index, then the payload.
 pub(crate) fn union(variants: &[Variant]) -> (String, String) {
 	let mut ty = String::new();
-	let mut names = Vec::new();
-	let mut keyed = Vec::new();
+	let mut cases = Vec::new();
+	let mut tests = Vec::new();
 	for (tag, v) in variants.iter().enumerate() {
 		if !v.docs.is_empty() {
 			ty.push_str(&format!("\n\t/**{} */", v.docs.join("\n\t *")));
 		}
-		let key = camel(v.name);
-		match &v.ty {
-			None => {
-				ty.push_str(&format!("\n\t| '{key}'"));
-				names.push(format!("case '{key}':\n\tw.word({tag});\n\tbreak;"));
-			}
-			Some(payload) => {
-				ty.push_str(&format!("\n\t| {{ {key}: {payload} }}"));
-				keyed.push((key, format!("w.word({tag});\n{}", v.write)));
-			}
+		ty.push_str(&format!("\n\t| {}", v.ty));
+		let payload = if v.write.is_empty() {
+			String::new()
+		} else {
+			format!("\n{}", v.write)
+		};
+		match &v.tell {
+			Tell::Case(literal) => cases.push(format!(
+				"case {literal}:\n\tw.word({tag});{}\n\treturn;",
+				indent(&payload)
+			)),
+			Tell::Test(test) => tests.push((test.clone(), format!("w.word({tag});{payload}"))),
 		}
 	}
 	let mut write = String::new();
-	if !names.is_empty() {
-		write.push_str(&format!(
-			"if (typeof v === 'string') {{\n\tswitch (v) {{\n\t\t{}\n\t}}\n}}",
-			indent(&indent(&names.join("\n")))
-		));
+	if !cases.is_empty() {
+		write.push_str(&format!("switch (v) {{\n\t{}\n}}", indent(&cases.join("\n"))));
 	}
-	for (i, (key, body)) in keyed.iter().enumerate() {
-		let last = i == keyed.len() - 1;
-		let head = if !write.is_empty() && last {
+	for (i, (test, body)) in tests.iter().enumerate() {
+		if i > 0 {
+			write.push_str(" else ");
+		} else if !write.is_empty() {
+			write.push('\n');
+		}
+		let head = if test.is_empty() {
 			String::new()
 		} else {
-			format!("if ('{key}' in v) ")
+			format!("if ({test}) ")
 		};
-		if !write.is_empty() {
-			write.push_str(" else ");
-		}
 		write.push_str(&format!("{head}{{\n\t{}\n}}", indent(body)));
 	}
 	(ty, write)
@@ -479,28 +526,26 @@ export class Writer {{\n\
 }
 
 /// A type on the wire, defined once: its Rust definition, its reader and writer, and the
-/// TypeScript type and writer. Docs come first on the type and on every field; a struct's
-/// `derived` fields are computed after reading and are not on the wire; a `copy enum` holds
-/// names only.
+/// TypeScript type and writer. Docs come first on the type and on every field. A `copy enum`
+/// holds names only. A variant is told apart in TypeScript by its name or a literal it is
+/// given, or by a test on `v` when its value is bare: `Word(&'static str) = "typeof v === 'string'"`,
+/// an empty test being the `else`.
 macro_rules! wire {
 	(
 		$(#[doc = $doc:literal])* $vis:vis struct $name:ident {
 			$($(#[doc = $fdoc:literal])* $fvis:vis $f:ident : $t:ty),* $(,)?
 		}
-		$(derived { $($(#[doc = $ddoc:literal])* $dvis:vis $d:ident : $dt:ty),* $(,)? })?
 	) => {
 		$(#[doc = $doc])*
 		#[derive(Clone, Debug)]
 		$vis struct $name {
 			$($(#[doc = $fdoc])* $fvis $f: $t,)*
-			$($($(#[doc = $ddoc])* $dvis $d: $dt,)*)?
 		}
 
 		impl $crate::host::grammar::Wire for $name {
 			fn read(c: &mut $crate::host::grammar::Cursor) -> Result<Self, String> {
 				Ok($name {
 					$($f: <$t as $crate::host::grammar::Wire>::read(c)?,)*
-					$($($d: Default::default(),)*)?
 				})
 			}
 
@@ -545,64 +590,115 @@ macro_rules! wire {
 		wire!(@variants $name [$(#[doc = $doc])* $vis derive(Clone, Copy, Debug, PartialEq, Eq)] (c w v out) [] [] [] [] [] [] $($body)*);
 	};
 
-	// a variant that is a name
+	// a name told by a test, written as the type given: `List: "readonly []" = "Array.isArray(v)"`
 	(@variants $name:ident $head:tt ($c:ident $w:ident $v:ident $out:ident) [$($def:tt)*] [$($read:tt)*] [$($is:tt)*] [$($write:tt)*] [$($ts:tt)*] [$($deps:tt)*]
-		$(#[doc = $vdoc:literal])* $variant:ident $(, $($rest:tt)*)?
+		$(#[doc = $vdoc:literal])* $variant:ident : $ty:literal = $test:literal $(, $($rest:tt)*)?
 	) => {
 		wire!(@variants $name $head ($c $w $v $out)
 			[$($def)* $(#[doc = $vdoc])* $variant,]
 			[$($read)* |_| Ok($name::$variant),]
 			[$($is)* matches!($v, $name::$variant),]
 			[$($write)* $name::$variant => {}]
-			[$($ts)* $crate::host::grammar::Variant { name: stringify!($variant), docs: &[$($vdoc),*], ty: None, write: String::new() },]
+			[$($ts)* $crate::host::grammar::Variant {
+				docs: &[$($vdoc),*],
+				ty: $ty.into(),
+				tell: $crate::host::grammar::Tell::Test($test.into()),
+				write: String::new(),
+			},]
 			[$($deps)*]
 			$($($rest)*)?);
 	};
 
-	// a variant holding one value: `{ name: value }`
+	// a name, written as `'name'` or as the literal given: `No = false`
 	(@variants $name:ident $head:tt ($c:ident $w:ident $v:ident $out:ident) [$($def:tt)*] [$($read:tt)*] [$($is:tt)*] [$($write:tt)*] [$($ts:tt)*] [$($deps:tt)*]
-		$(#[doc = $vdoc:literal])* $variant:ident ( $t:ty ) $(, $($rest:tt)*)?
+		$(#[doc = $vdoc:literal])* $variant:ident $(= $literal:tt)? $(, $($rest:tt)*)?
+	) => {
+		wire!(@variants $name $head ($c $w $v $out)
+			[$($def)* $(#[doc = $vdoc])* $variant,]
+			[$($read)* |_| Ok($name::$variant),]
+			[$($is)* matches!($v, $name::$variant),]
+			[$($write)* $name::$variant => {}]
+			[$($ts)* {
+				let literal = [$(stringify!($literal),)* &format!("'{}'", $crate::host::grammar::camel(stringify!($variant)))][0].to_string();
+				$crate::host::grammar::Variant {
+					docs: &[$($vdoc),*],
+					ty: literal.clone(),
+					tell: $crate::host::grammar::Tell::Case(literal),
+					write: String::new(),
+				}
+			},]
+			[$($deps)*]
+			$($($rest)*)?);
+	};
+
+	// a variant holding one value: `{ name: value }`, or the bare value told by the test given
+	(@variants $name:ident $head:tt ($c:ident $w:ident $v:ident $out:ident) [$($def:tt)*] [$($read:tt)*] [$($is:tt)*] [$($write:tt)*] [$($ts:tt)*] [$($deps:tt)*]
+		$(#[doc = $vdoc:literal])* $variant:ident ( $t:ty ) $(= $test:literal)? $(, $($rest:tt)*)?
 	) => {
 		wire!(@variants $name $head ($c $w $v $out)
 			[$($def)* $(#[doc = $vdoc])* $variant($t),]
 			[$($read)* |$c| Ok($name::$variant(<$t as $crate::host::grammar::Wire>::read($c)?)),]
 			[$($is)* matches!($v, $name::$variant(_)),]
 			[$($write)* $name::$variant(value) => <$t as $crate::host::grammar::Wire>::write(value, $w),]
-			[$($ts)* $crate::host::grammar::Variant {
-				name: stringify!($variant),
-				docs: &[$($vdoc),*],
-				ty: Some(<$t as $crate::host::grammar::Wire>::ts()),
-				write: <$t as $crate::host::grammar::Wire>::ts_write(&format!("v.{}", $crate::host::grammar::camel(stringify!($variant)))),
+			[$($ts)* {
+				let key = $crate::host::grammar::camel(stringify!($variant));
+				let payload = <$t as $crate::host::grammar::Wire>::ts();
+				let test: Option<&str> = [$(Some($test),)* None][0];
+				match test {
+					Some(test) => $crate::host::grammar::Variant {
+						docs: &[$($vdoc),*],
+						ty: payload.clone(),
+						tell: $crate::host::grammar::Tell::Test(test.into()),
+						write: <$t as $crate::host::grammar::Wire>::ts_write(&format!("(v as {payload})")),
+					},
+					None => $crate::host::grammar::Variant {
+						docs: &[$($vdoc),*],
+						ty: format!("{{ {key}: {payload} }}"),
+						tell: $crate::host::grammar::Tell::Test(format!("'{key}' in v")),
+						write: <$t as $crate::host::grammar::Wire>::ts_write(&format!("(v as {{ {key}: {payload} }}).{key}")),
+					},
+				}
 			},]
 			[$($deps)* <$t as $crate::host::grammar::Wire>::definitions($out);]
 			$($($rest)*)?);
 	};
 
-	// a variant with fields: `{ name: { fields } }`
+	// a variant with fields: `{ name: { fields } }`, or the bare record told by the test given
 	(@variants $name:ident $head:tt ($c:ident $w:ident $v:ident $out:ident) [$($def:tt)*] [$($read:tt)*] [$($is:tt)*] [$($write:tt)*] [$($ts:tt)*] [$($deps:tt)*]
-		$(#[doc = $vdoc:literal])* $variant:ident { $($(#[doc = $fdoc:literal])* $f:ident : $t:ty),* $(,)? }
-		$(derived { $($(#[doc = $ddoc:literal])* $d:ident : $dt:ty),* $(,)? })? $(, $($rest:tt)*)?
+		$(#[doc = $vdoc:literal])* $variant:ident { $($(#[doc = $fdoc:literal])* $f:ident : $t:ty),* $(,)? } $(= $test:literal)? $(, $($rest:tt)*)?
 	) => {
 		wire!(@variants $name $head ($c $w $v $out)
-			[$($def)* $(#[doc = $vdoc])* $variant { $($(#[doc = $fdoc])* $f: $t,)* $($($(#[doc = $ddoc])* $d: $dt,)*)? },]
+			[$($def)* $(#[doc = $vdoc])* $variant { $($(#[doc = $fdoc])* $f: $t,)* },]
 			[$($read)* |$c| Ok($name::$variant {
 				$($f: <$t as $crate::host::grammar::Wire>::read($c)?,)*
-				$($($d: Default::default(),)*)?
 			}),]
 			[$($is)* matches!($v, $name::$variant { .. }),]
-			[$($write)* $name::$variant { $($f,)* .. } => { $(<$t as $crate::host::grammar::Wire>::write($f, $w);)* }]
+			[$($write)* $name::$variant { $($f,)* } => { $(<$t as $crate::host::grammar::Wire>::write($f, $w);)* }]
 			[$($ts)* {
+				let key = $crate::host::grammar::camel(stringify!($variant));
+				let test: Option<&str> = [$(Some($test),)* None][0];
+				let shape = $crate::host::grammar::fields(&[$($crate::host::grammar::Field {
+					name: stringify!($f),
+					docs: &[$($fdoc),*],
+					optional: <$t as $crate::host::grammar::Wire>::OPTIONAL,
+					ty: <$t as $crate::host::grammar::Wire>::ts_field(),
+					write: String::new(),
+				},)*], true);
+				let value = match test {
+					Some(_) => format!("(v as {shape})"),
+					None => format!("(v as {{ {key}: {shape} }}).{key}"),
+				};
 				let fields = [$($crate::host::grammar::Field {
 					name: stringify!($f),
 					docs: &[$($fdoc),*],
 					optional: <$t as $crate::host::grammar::Wire>::OPTIONAL,
 					ty: <$t as $crate::host::grammar::Wire>::ts_field(),
-					write: <$t as $crate::host::grammar::Wire>::ts_write(&format!("v.{}.{}", $crate::host::grammar::camel(stringify!($variant)), $crate::host::grammar::camel(stringify!($f)))),
+					write: <$t as $crate::host::grammar::Wire>::ts_write(&format!("{value}.{}", $crate::host::grammar::camel(stringify!($f)))),
 				},)*];
 				$crate::host::grammar::Variant {
-					name: stringify!($variant),
 					docs: &[$($vdoc),*],
-					ty: Some($crate::host::grammar::fields(&fields, true)),
+					ty: match test { Some(_) => shape.clone(), None => format!("{{ {key}: {shape} }}") },
+					tell: $crate::host::grammar::Tell::Test(test.map_or_else(|| format!("'{key}' in v"), str::to_string)),
 					write: $crate::host::grammar::writes(&fields),
 				}
 			},]
@@ -654,49 +750,47 @@ macro_rules! wire {
 	};
 }
 
-wire! {
-	/// A JavaScript entry inside a form.
-	pub copy enum Entry {
-		Expression,
-		Pattern,
-		Params,
-		Identifier,
-		TypeParameters,
-		Statement,
-		/// An expression, or, when what holds it is not one, its statements as a program.
-		Code,
-		/// `pattern = expression`, a const declaration the host spells without the keyword.
-		Const,
-		/// Identifiers separated by commas, possibly none.
-		Identifiers,
-		/// The text up to the closing delimiter, unread, for a host that reads its expressions later.
-		Text,
-	}
+/// A JavaScript entry inside a form.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Entry {
+	Expression,
+	Pattern,
+	Params,
+	Identifier,
+	TypeParameters,
+	Statement,
+	/// An expression, or, when what holds it is not one, its statements as a program.
+	Code,
+	/// `pattern = expression`, a const declaration the host spells without the keyword.
+	Const,
+	/// Identifiers separated by commas, possibly none.
+	Identifiers,
+	/// The text up to the closing delimiter, unread, for a host that reads its expressions later.
+	Text,
 }
 
-wire! {
-	/// One step of a form.
-	pub enum Item {
-		/// One of the host's words or punctuators.
-		Literal(&'static str),
-		/// A JavaScript entry read into a field; `omit` leaves the field out when the entry was not
-		/// read, where the plain form gives it null.
-		Entry {
-			field: &'static str,
-			entry: Entry,
-			omit: bool,
-		} derived {
-			stops: Stops,
-		},
-		/// Alternatives tried in order: at most one, or exactly one when `required`.
-		Group {
-			alternatives: Vec<Alternative>,
-			required: bool,
-		} derived {
-			/// The literals that may follow the group.
-			after: &'static [&'static str],
-		},
-	}
+/// One step of a form.
+#[derive(Clone, Debug)]
+pub enum Item {
+	/// One of the host's words or punctuators.
+	Literal(&'static str),
+	/// A JavaScript entry read into a field; `omit` leaves the field out when the entry was not
+	/// read, where the plain form gives it null.
+	Entry {
+		field: &'static str,
+		entry: Entry,
+		omit: bool,
+
+		stops: Stops,
+	},
+	/// Alternatives tried in order: at most one, or exactly one when `required`.
+	Group {
+		alternatives: Vec<Alternative>,
+		required: bool,
+
+		/// The literals that may follow the group.
+		after: &'static [&'static str],
+	},
 }
 
 /// The literals that may follow an entry, as the parser takes them: all of them, and for an
@@ -837,299 +931,270 @@ fn collect_bodies(form: &Form, out: &mut Vec<(&'static str, bool)>) {
 	}
 }
 
-wire! {
-	pub struct Alternative {
-		pub items: Vec<Item>,
-		/// The body the block opens when this alternative was read, `[ then value=pattern -> then ]`.
-		pub body: Option<Body>,
-	}
+#[derive(Clone, Debug)]
+pub struct Alternative {
+	pub items: Vec<Item>,
+	/// The body the block opens when this alternative was read, `[ then value=pattern -> then ]`.
+	pub body: Option<Body>,
 }
 
-wire! {
-	/// What a block's body is: the field that holds it, and what the body's scope declares.
-	pub struct Body {
-		pub field: &'static str,
-		/// The field is left out of blocks that never opened this body; otherwise it is null there.
-		pub omit: bool,
-		/// A branch that nests a new block of the same kind into the field, `{:else if}`: the field
-		/// of the nested block that its own body fills.
-		pub chain: Option<&'static str>,
-		pub declares: Vec<Declare>,
-	}
+/// What a block's body is: the field that holds it, and what the body's scope declares.
+#[derive(Clone, Debug)]
+pub struct Body {
+	pub field: &'static str,
+	/// The field is left out of blocks that never opened this body; otherwise it is null there.
+	pub omit: bool,
+	/// A branch that nests a new block of the same kind into the field, `{:else if}`: the field
+	/// of the nested block that its own body fills.
+	pub chain: Option<&'static str>,
+	pub declares: Vec<Declare>,
 }
 
-wire! {
-	pub struct Declare {
-		pub field: &'static str,
-		/// Declared in the scope around the block rather than inside it: a snippet's name.
-		pub outside: bool,
-	}
+#[derive(Clone, Debug)]
+pub struct Declare {
+	pub field: &'static str,
+	/// Declared in the scope around the block rather than inside it: a snippet's name.
+	pub outside: bool,
 }
 
-wire! {
-	pub struct Form {
-		pub items: Vec<Item>,
-		pub body: Option<Body>,
-	} derived {
-		/// Every entry the form can read, and whether its field is left out when it was not.
-		pub entries: Vec<(&'static str, bool)>,
-	}
+#[derive(Clone, Debug)]
+pub struct Form {
+	pub items: Vec<Item>,
+	pub body: Option<Body>,
+
+	/// Every entry the form can read, and whether its field is left out when it was not.
+	pub entries: Vec<(&'static str, bool)>,
 }
 
-wire! {
-	pub copy enum Match {
-		Exact(&'static str),
-		/// A capitalized or dotted name.
-		Component,
-		Any,
-	}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Match {
+	Exact(&'static str),
+	/// A capitalized or dotted name.
+	Component,
+	Any,
 }
 
-wire! {
-	pub struct ElementRule {
-		pub name: Match,
-		pub ty: &'static str,
-		/// The field that takes the expression of a `this` attribute, which leaves the attributes,
-		/// and whether text is accepted there as a string.
-		pub this: Option<(&'static str, bool)>,
-		pub root: bool,
-		pub once: bool,
-		pub inside: Option<&'static str>,
-		/// Not when an enclosing element carries this attribute.
-		pub outside: Option<&'static str>,
-		/// The content is text up to the closing tag, a script's say.
-		pub raw: bool,
-		/// The content is text with the host's expressions in it, a textarea's say.
-		pub rcdata: bool,
-	}
+#[derive(Clone, Debug)]
+pub struct ElementRule {
+	pub name: Match,
+	pub ty: &'static str,
+	/// The field that takes the expression of a `this` attribute, which leaves the attributes,
+	/// and whether text is accepted there as a string.
+	pub this: Option<(&'static str, bool)>,
+	pub root: bool,
+	pub once: bool,
+	pub inside: Option<&'static str>,
+	/// Not when an enclosing element carries this attribute.
+	pub outside: Option<&'static str>,
+	/// The content is text up to the closing tag, a script's say.
+	pub raw: bool,
+	/// The content is text with the host's expressions in it, a textarea's say.
+	pub rcdata: bool,
 }
 
-wire! {
-	pub struct ScriptRule {
-		pub name: &'static str,
-		/// Attributes that make the script the module one, each with the text value it needs, if any.
-		pub module: Vec<(&'static str, Option<&'static str>)>,
-		/// Attributes that make the document TypeScript, the same way.
-		pub typescript: Vec<(&'static str, Option<&'static str>)>,
-	}
+#[derive(Clone, Debug)]
+pub struct ScriptRule {
+	pub name: &'static str,
+	/// Attributes that make the script the module one, each with the text value it needs, if any.
+	pub module: Vec<(&'static str, Option<&'static str>)>,
+	/// Attributes that make the document TypeScript, the same way.
+	pub typescript: Vec<(&'static str, Option<&'static str>)>,
 }
 
-wire! {
-	/// How a directive's attribute name is spelled: `prefix name arg modifiers`, the name being the
-	/// directive's own when there is no prefix.
-	pub struct DirectiveSyntax {
-		pub prefix: Option<&'static str>,
-		/// What separates the argument, `:`.
-		pub arg: &'static str,
-		/// What separates the modifiers, `|` or `.`.
-		pub modifier: &'static str,
-		/// The brackets of an argument that is an expression, `[` `]`.
-		pub dynamic: Option<(&'static str, &'static str)>,
-		pub name_field: Option<&'static str>,
-		pub arg_field: Option<&'static str>,
-		pub modifiers_field: Option<&'static str>,
-		pub raw_field: Option<&'static str>,
-		/// Every directive is unique by its whole attribute name.
-		pub unique: bool,
-	}
+/// How a directive's attribute name is spelled: `prefix name arg modifiers`, the name being the
+/// directive's own when there is no prefix.
+#[derive(Clone, Debug)]
+pub struct DirectiveSyntax {
+	pub prefix: Option<&'static str>,
+	/// What separates the argument, `:`.
+	pub arg: &'static str,
+	/// What separates the modifiers, `|` or `.`.
+	pub modifier: &'static str,
+	/// The brackets of an argument that is an expression, `[` `]`.
+	pub dynamic: Option<(&'static str, &'static str)>,
+	pub name_field: Option<&'static str>,
+	pub arg_field: Option<&'static str>,
+	pub modifiers_field: Option<&'static str>,
+	pub raw_field: Option<&'static str>,
+	/// Every directive is unique by its whole attribute name.
+	pub unique: bool,
 }
 
-wire! {
-	/// A character standing for a directive's prefix and name, `:` for `v-bind`.
-	pub struct Shorthand {
-		pub token: &'static str,
-		pub name: &'static str,
-		pub modifiers: Vec<&'static str>,
-	}
+/// A character standing for a directive's prefix and name, `:` for `v-bind`.
+#[derive(Clone, Debug)]
+pub struct Shorthand {
+	pub token: &'static str,
+	pub name: &'static str,
+	pub modifiers: Vec<&'static str>,
 }
 
-wire! {
-	pub enum DirectiveValue {
-		/// The one expression of the attribute value, `on:click={handler}`; `name` makes the
-		/// directive's own argument the expression when there is no value: `bind:value`.
-		Expression {
-			optional: bool,
-			name: bool,
-		},
-		/// The one pattern of the attribute value, `let:item={{ id }}`.
-		Pattern {
-			optional: bool,
-			name: bool,
-		},
-		/// The attribute value as it is, text and expressions.
-		Value,
-		/// The attribute value read by a form, `v-for="item in items"`.
-		Form(Form),
-	}
+#[derive(Clone, Debug)]
+pub enum DirectiveValue {
+	/// The one expression of the attribute value, `on:click={handler}`; `name` makes the
+	/// directive's own argument the expression when there is no value: `bind:value`.
+	Expression { optional: bool, name: bool },
+	/// The one pattern of the attribute value, `let:item={{ id }}`.
+	Pattern { optional: bool, name: bool },
+	/// The attribute value as it is, text and expressions.
+	Value,
+	/// The attribute value read by a form, `v-for="item in items"`.
+	Form(Form),
 }
 
-wire! {
-	/// Which names a directive may not repeat on an element.
-	pub copy enum Unique {
-		No,
-		/// Its own argument, among directives of its kind.
-		Kind,
-		/// Its argument, among the plain attributes too.
-		Attribute,
-	}
+/// Which names a directive may not repeat on an element.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Unique {
+	No,
+	/// Its own argument, among directives of its kind.
+	Kind,
+	/// Its argument, among the plain attributes too.
+	Attribute,
 }
 
-wire! {
-	pub struct DirectiveRule {
-		pub name: Match,
-		pub ty: &'static str,
-		pub value: DirectiveValue,
-		pub flags: Vec<(&'static str, bool)>,
-		pub unique: Unique,
-		/// What the directive declares in the scope of its element: the fields of its form, or,
-		/// with none named, its value.
-		pub declares: Option<Vec<&'static str>>,
-	}
+#[derive(Clone, Debug)]
+pub struct DirectiveRule {
+	pub name: Match,
+	pub ty: &'static str,
+	pub value: DirectiveValue,
+	pub flags: Vec<(&'static str, bool)>,
+	pub unique: Unique,
+	/// What the directive declares in the scope of its element: the fields of its form, or,
+	/// with none named, its value.
+	pub declares: Option<Vec<&'static str>>,
 }
 
-wire! {
-	pub struct BlockRule {
-		pub name: &'static str,
-		pub ty: &'static str,
-		pub open: Form,
-		pub branches: Vec<BranchRule>,
-		/// The boolean field that says the block was opened by a chained branch.
-		pub chain_flag: Option<&'static str>,
-	} derived {
-		/// Every entry the block's forms can read, and every body they can open.
-		pub entries: Vec<(&'static str, bool)>,
-		pub bodies: Vec<(&'static str, bool)>,
-	}
+#[derive(Clone, Debug)]
+pub struct BlockRule {
+	pub name: &'static str,
+	pub ty: &'static str,
+	pub open: Form,
+	pub branches: Vec<BranchRule>,
+	/// The boolean field that says the block was opened by a chained branch.
+	pub chain_flag: Option<&'static str>,
+
+	/// Every entry the block's forms can read, and every body they can open.
+	pub entries: Vec<(&'static str, bool)>,
+	pub bodies: Vec<(&'static str, bool)>,
 }
 
-wire! {
-	pub struct BranchRule {
-		pub words: Vec<&'static str>,
-		pub form: Form,
-	}
+#[derive(Clone, Debug)]
+pub struct BranchRule {
+	pub words: Vec<&'static str>,
+	pub form: Form,
 }
 
-wire! {
-	pub struct TagRule {
-		pub name: &'static str,
-		pub ty: &'static str,
-		pub form: Form,
-		/// The tag stands among an element's attributes rather than in content.
-		pub attribute: bool,
-	}
+#[derive(Clone, Debug)]
+pub struct TagRule {
+	pub name: &'static str,
+	pub ty: &'static str,
+	pub form: Form,
+	/// The tag stands among an element's attributes rather than in content.
+	pub attribute: bool,
 }
 
-wire! {
-	/// The characters after the opening delimiter that make a tag a block, a branch, a close or a
-	/// special tag: `{#if}`, `{:else}`, `{/if}`, `{@html}`.
-	pub struct Sigils {
-		pub open: &'static str,
-		pub branch: &'static str,
-		pub close: &'static str,
-		pub tag: &'static str,
-	}
+/// The characters after the opening delimiter that make a tag a block, a branch, a close or a
+/// special tag: `{#if}`, `{:else}`, `{/if}`, `{@html}`.
+#[derive(Clone, Debug)]
+pub struct Sigils {
+	pub open: &'static str,
+	pub branch: &'static str,
+	pub close: &'static str,
+	pub tag: &'static str,
 }
 
-wire! {
-	/// What a field of the document's root holds.
-	pub copy enum RootField {
-		/// The document's nodes.
-		Fragment,
-		/// The script, the module one when `module`.
-		Script {
-			module: bool,
-		},
-		Style,
-		/// Every comment read.
-		Comments,
-		EmptyList,
-		Null,
-	}
+/// What a field of the document's root holds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RootField {
+	/// The document's nodes.
+	Fragment,
+	/// The script, the module one when `module`.
+	Script {
+		module: bool,
+	},
+	Style,
+	/// Every comment read.
+	Comments,
+	EmptyList,
+	Null,
 }
 
-wire! {
-	/// A field of the document's root, or a scope around fields.
-	pub enum DocField {
-		/// A field, what it holds, and whether it is left out rather than null when there is nothing.
-		Field {
-			field: &'static str,
-			holds: RootField,
-			omit: bool,
-		},
-		Scope(Vec<DocField>),
-	}
+/// A field of the document's root, or a scope around fields.
+#[derive(Clone, Debug)]
+pub enum DocField {
+	/// A field, what it holds, and whether it is left out rather than null when there is nothing.
+	Field {
+		field: &'static str,
+		holds: RootField,
+		omit: bool,
+	},
+	Scope(Vec<DocField>),
 }
 
-wire! {
-	pub struct DocumentRule {
-		pub ty: &'static str,
-		pub fields: Vec<DocField>,
-	}
+#[derive(Clone, Debug)]
+pub struct DocumentRule {
+	pub ty: &'static str,
+	pub fields: Vec<DocField>,
 }
 
-wire! {
-	/// The fields of every element node.
-	pub struct ElementFields {
-		pub name: &'static str,
-		pub attributes: &'static str,
-		pub children: &'static str,
-	}
+/// The fields of every element node.
+#[derive(Clone, Debug)]
+pub struct ElementFields {
+	pub name: &'static str,
+	pub attributes: &'static str,
+	pub children: &'static str,
 }
 
-wire! {
-	/// The type and fields of every text node: the text as read, and as written.
-	pub struct TextRule {
-		pub ty: &'static str,
-		pub data: &'static str,
-		pub raw: Option<&'static str>,
-	}
+/// The type and fields of every text node: the text as read, and as written.
+#[derive(Clone, Debug)]
+pub struct TextRule {
+	pub ty: &'static str,
+	pub data: &'static str,
+	pub raw: Option<&'static str>,
 }
 
-wire! {
-	pub struct CommentRule {
-		pub ty: &'static str,
-		pub data: &'static str,
-	}
+#[derive(Clone, Debug)]
+pub struct CommentRule {
+	pub ty: &'static str,
+	pub data: &'static str,
 }
 
-wire! {
-	/// A host language: its document, its content, and the JavaScript inside them.
-	pub struct Grammar {
-		pub name: &'static str,
-		pub document: DocumentRule,
-		/// What opens and closes an expression in text, `{` and `}`.
-		pub delimiters: (&'static str, &'static str),
-		/// Attribute values hold expressions between the delimiters, as text does.
-		pub attribute_expressions: bool,
-		/// `{name}` among the attributes is `name={name}`.
-		pub attribute_shorthand: bool,
-		pub sigils: Option<Sigils>,
-		/// An element the browser would close when another opens is closed there.
-		pub autoclose: bool,
-		/// Whitespace at the end of the source is not part of the document.
-		pub trim: bool,
-		pub void: Vec<&'static str>,
-		/// A node wrapping every list of children, and its field: Svelte's `Fragment`.
-		pub fragment: Option<(&'static str, &'static str)>,
-		/// Every list of children opens a scope of its own.
-		pub fragment_scope: bool,
-		pub element_fields: ElementFields,
-		pub text: TextRule,
-		pub comment: CommentRule,
-		/// The attribute that makes an element's subtree verbatim: text and plain attributes only.
-		pub verbatim: Option<&'static str>,
-		pub elements: Vec<ElementRule>,
-		pub script: Option<ScriptRule>,
-		pub style: Option<&'static str>,
-		pub directive_syntax: Option<DirectiveSyntax>,
-		pub shorthands: Vec<Shorthand>,
-		pub directives: Vec<DirectiveRule>,
-		pub spread: Option<&'static str>,
-		pub blocks: Vec<BlockRule>,
-		pub tags: Vec<TagRule>,
-		pub declaration: Option<TagRule>,
-		pub expression: Option<TagRule>,
-	}
+/// A host language: its document, its content, and the JavaScript inside them.
+#[derive(Clone, Debug)]
+pub struct Grammar {
+	pub name: &'static str,
+	pub document: DocumentRule,
+	/// What opens and closes an expression in text, `{` and `}`.
+	pub delimiters: (&'static str, &'static str),
+	/// Attribute values hold expressions between the delimiters, as text does.
+	pub attribute_expressions: bool,
+	/// `{name}` among the attributes is `name={name}`.
+	pub attribute_shorthand: bool,
+	pub sigils: Option<Sigils>,
+	/// An element the browser would close when another opens is closed there.
+	pub autoclose: bool,
+	/// Whitespace at the end of the source is not part of the document.
+	pub trim: bool,
+	pub void: Vec<&'static str>,
+	/// A node wrapping every list of children, and its field: Svelte's `Fragment`.
+	pub fragment: Option<(&'static str, &'static str)>,
+	/// Every list of children opens a scope of its own.
+	pub fragment_scope: bool,
+	pub element_fields: ElementFields,
+	pub text: TextRule,
+	pub comment: CommentRule,
+	/// The attribute that makes an element's subtree verbatim: text and plain attributes only.
+	pub verbatim: Option<&'static str>,
+	pub elements: Vec<ElementRule>,
+	pub script: Option<ScriptRule>,
+	pub style: Option<&'static str>,
+	pub directive_syntax: Option<DirectiveSyntax>,
+	pub shorthands: Vec<Shorthand>,
+	pub directives: Vec<DirectiveRule>,
+	pub spread: Option<&'static str>,
+	pub blocks: Vec<BlockRule>,
+	pub tags: Vec<TagRule>,
+	pub declaration: Option<TagRule>,
+	pub expression: Option<TagRule>,
 }
 
 /// A component name: capitalized, or a dotted path of identifiers.
@@ -1146,6 +1211,666 @@ pub fn component_name(name: &str) -> bool {
 	let mut parts = name.split('.');
 	parts.next().is_some_and(|part| part.chars().all(is_id_continue))
 		&& parts.all(|part| !part.is_empty() && part.chars().all(is_id_continue))
+}
+
+/// A grammar as the builders make it: what crosses the wire, lowered here into what the walker
+/// reads. The TypeScript side is checked against these types.
+pub mod definition {
+	use super::{Cursor, Record, Wire, Writer};
+
+	wire! {
+		/// What fills a field: where it is read from, what reads it, and how.
+		pub struct Source {
+			pub from: &'static str,
+			pub read: &'static str,
+			pub optional: bool,
+			pub bind: Bind,
+			pub or_arg: bool,
+			pub literal: Option<Literal>,
+		}
+	}
+
+	wire! {
+		pub copy enum Bind {
+			No = false,
+			Inside,
+			Outside,
+		}
+	}
+
+	wire! {
+		/// A value a literal source always writes.
+		pub copy enum Literal {
+			True = true,
+			False = false,
+			Null = null,
+			List: "readonly []" = "Array.isArray(v)",
+		}
+	}
+
+	wire! {
+		/// One step of a form: a host word, fields, or a group.
+		pub enum Item {
+			Word(&'static str) = "typeof v === 'string'",
+			Opt(Vec<Item>),
+			OneOf(Vec<Vec<Item>>),
+			Scope(Vec<Item>),
+			Fields(Record<Source>) = "",
+		}
+	}
+
+	wire! {
+		/// A node type and the form its fields come from.
+		pub struct Node {
+			pub r#type: &'static str,
+			pub items: Vec<Item>,
+		}
+	}
+
+	wire! {
+		/// An `else if`: the block again, nested into this field, with this flag set on it.
+		pub struct Reopen {
+			pub reopen: &'static str,
+			pub flag: &'static str,
+		}
+	}
+
+	wire! {
+		pub enum Branch {
+			Form(Vec<Item>) = "Array.isArray(v)",
+			Reopen(Reopen) = "",
+		}
+	}
+
+	wire! {
+		pub struct Block {
+			pub node: Node,
+			pub branches: Record<Branch>,
+		}
+	}
+
+	wire! {
+		pub copy enum Among {
+			Content,
+			Attributes,
+		}
+	}
+
+	wire! {
+		pub struct Tag {
+			pub node: Node,
+			pub among: Among,
+		}
+	}
+
+	wire! {
+		pub copy enum Uniqueness {
+			No,
+			Kind,
+			Attributes,
+		}
+	}
+
+	wire! {
+		pub struct Directive {
+			pub node: Node,
+			pub unique: Uniqueness,
+		}
+	}
+
+	wire! {
+		pub copy enum Content {
+			Raw,
+			Rcdata,
+		}
+	}
+
+	wire! {
+		pub struct Element {
+			pub node: Node,
+			pub root: bool,
+			pub once: bool,
+			pub inside: Option<&'static str>,
+			pub outside: Option<&'static str>,
+			pub content: Option<Content>,
+		}
+	}
+
+	wire! {
+		pub struct Elements {
+			pub fields: Record<Source>,
+			pub rules: Option<Record<Element>>,
+			pub component: Option<Element>,
+			pub other: Option<Element>,
+		}
+	}
+
+	wire! {
+		pub struct Script {
+			pub element: &'static str,
+			pub module: Option<Vec<(&'static str, Option<&'static str>)>>,
+			pub typescript: Option<Vec<(&'static str, Option<&'static str>)>>,
+		}
+	}
+
+	wire! {
+		pub copy enum Raw {
+			Raw,
+		}
+	}
+
+	wire! {
+		pub struct Directives {
+			pub prefix: Option<&'static str>,
+			pub arg: Option<&'static str>,
+			pub modifier: Option<&'static str>,
+			pub dynamic: Option<(&'static str, &'static str)>,
+			pub unique: Option<Raw>,
+			pub fields: Record<Source>,
+			pub shorthands: Option<Record<Vec<&'static str>>>,
+			pub rules: Option<Record<Directive>>,
+			pub other: Option<Directive>,
+		}
+	}
+
+	wire! {
+		pub struct Sigils {
+			pub open: &'static str,
+			pub branch: &'static str,
+			pub close: &'static str,
+			pub tag: &'static str,
+			pub blocks: Option<Record<Block>>,
+			pub tags: Option<Record<Tag>>,
+		}
+	}
+
+	wire! {
+		pub struct Attributes {
+			pub expressions: Option<bool>,
+			pub shorthand: Option<bool>,
+		}
+	}
+
+	wire! {
+		/// A host language: its document, its content, and the JavaScript inside them.
+		pub struct Definition {
+			pub document: Node,
+			pub text: Node,
+			pub comment: Node,
+			pub fragment: Option<Node>,
+			pub delimiters: (&'static str, &'static str),
+			pub attributes: Option<Attributes>,
+			pub autoclose: Option<bool>,
+			pub trim: Option<bool>,
+			pub void: Option<Vec<&'static str>>,
+			pub verbatim: Option<&'static str>,
+			pub elements: Elements,
+			pub script: Option<Script>,
+			pub style: Option<&'static str>,
+			pub directives: Option<Directives>,
+			pub spread: Option<&'static str>,
+			pub sigils: Option<Sigils>,
+			pub declaration: Option<Node>,
+			pub expression: Option<Node>,
+		}
+	}
+
+	wire! {
+		/// What crosses: the host's name and its definition.
+		pub struct Host {
+			pub name: &'static str,
+			pub definition: Definition,
+		}
+	}
+
+	impl Host {
+		pub fn read(bytes: &[u8]) -> Result<Host, String> {
+			let mut cursor = Cursor::new(bytes)?;
+			let host = <Host as Wire>::read(&mut cursor)?;
+			if !cursor.done() {
+				return Err("words after the grammar".into());
+			}
+			Ok(host)
+		}
+
+		/// The host on its wire, as the JavaScript side writes it.
+		pub fn wire(&self) -> Vec<u8> {
+			let mut writer = Writer::default();
+			self.write(&mut writer);
+			writer.bytes()
+		}
+	}
+}
+
+// ── the definition lowered into the walker's rules
+
+use definition::{Bind, Branch, Host, Literal, Source};
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum At {
+	Block,
+	Tag,
+	Directive,
+}
+
+fn entry(read: &str) -> Result<Entry, String> {
+	Ok(match read {
+		"expression" => Entry::Expression,
+		"pattern" => Entry::Pattern,
+		"params" => Entry::Params,
+		"identifier" => Entry::Identifier,
+		"typeParameters" => Entry::TypeParameters,
+		"statement" => Entry::Statement,
+		"code" => Entry::Code,
+		"const" => Entry::Const,
+		"identifiers" => Entry::Identifiers,
+		"text" => Entry::Text,
+		other => return Err(format!("no entry reads {other}")),
+	})
+}
+
+/// The fields among items, in order.
+fn sources(items: &[definition::Item]) -> Vec<(&'static str, &Source)> {
+	items
+		.iter()
+		.filter_map(|item| match item {
+			definition::Item::Fields(record) => Some(record.0.iter().map(|(field, source)| (*field, source))),
+			_ => None,
+		})
+		.flatten()
+		.collect()
+}
+
+fn opens(item: &definition::Item) -> bool {
+	sources(std::slice::from_ref(item))
+		.iter()
+		.any(|(_, s)| s.from == "content")
+}
+
+/// The field among `fields` read by `read`.
+fn part(fields: &Record<Source>, read: &str) -> Option<&'static str> {
+	fields.0.iter().find(|(_, s)| s.read == read).map(|(field, _)| *field)
+}
+
+// a form's items; a body declares what its sequence bound before it
+fn form(items: &[definition::Item], site: At, bound: &mut Vec<Declare>) -> Result<Form, String> {
+	let mut out = Vec::new();
+	let mut body = None;
+	for (at, item) in items.iter().enumerate() {
+		match item {
+			definition::Item::Word(word) => out.push(Item::Literal(word)),
+			definition::Item::OneOf(list) => out.push(Item::Group {
+				alternatives: alternatives(list, site, bound)?,
+				required: true,
+				after: &[],
+			}),
+			definition::Item::Opt(inner) => {
+				let one = std::slice::from_ref(inner);
+				let list = match inner.as_slice() {
+					[definition::Item::OneOf(list)] => list.as_slice(),
+					_ => one,
+				};
+				out.push(Item::Group {
+					alternatives: alternatives(list, site, bound)?,
+					required: false,
+					after: &[],
+				});
+			}
+			definition::Item::Scope(_) => return Err("a scope belongs to the document or the fragment".into()),
+			definition::Item::Fields(record) => {
+				for (field, source) in &record.0 {
+					if source.from == "literal" {
+						continue;
+					}
+					if source.from == "content" {
+						if site != At::Block || at != items.len() - 1 {
+							return Err(format!("{field} is a body: only a block's form ends in one"));
+						}
+						body = Some(Body {
+							field,
+							omit: source.optional,
+							chain: None,
+							declares: std::mem::take(bound),
+						});
+						continue;
+					}
+					let outside = source.bind == Bind::Outside;
+					if source.bind != Bind::No && !bound.iter().any(|d| d.field == *field && d.outside == outside) {
+						bound.push(Declare { field, outside });
+					}
+					out.push(Item::Entry {
+						field,
+						entry: entry(source.read)?,
+						omit: source.optional,
+						stops: Stops::default(),
+					});
+				}
+			}
+		}
+	}
+	Ok(Form {
+		items: out,
+		body,
+		entries: Vec::new(),
+	})
+}
+
+fn alternatives(
+	list: &[Vec<definition::Item>],
+	site: At,
+	bound: &mut Vec<Declare>,
+) -> Result<Vec<Alternative>, String> {
+	list.iter()
+		.map(|items| {
+			let mut own = Vec::new();
+			let bound = if items.iter().any(opens) { &mut own } else { &mut *bound };
+			let form = form(items, site, bound)?;
+			Ok(Alternative {
+				items: form.items,
+				body: form.body,
+			})
+		})
+		.collect()
+}
+
+fn holds(source: &Source) -> Result<RootField, String> {
+	Ok(match (source.from, source.read, source.literal) {
+		("literal", _, Some(Literal::Null)) => RootField::Null,
+		("literal", _, Some(Literal::List)) => RootField::EmptyList,
+		(_, "script", _) => RootField::Script { module: false },
+		(_, "script:module", _) => RootField::Script { module: true },
+		(_, "fragment", _) => RootField::Fragment,
+		(_, "style", _) => RootField::Style,
+		(_, "comments", _) => RootField::Comments,
+		(from, read, _) => return Err(format!("the document cannot hold {from} {read}")),
+	})
+}
+
+fn scoped(items: &[definition::Item]) -> Result<Vec<DocField>, String> {
+	let mut out = Vec::new();
+	for item in items {
+		match item {
+			definition::Item::Scope(inner) => out.push(DocField::Scope(scoped(inner)?)),
+			definition::Item::Fields(record) => {
+				for (field, source) in &record.0 {
+					out.push(DocField::Field {
+						field,
+						holds: holds(source)?,
+						omit: source.optional,
+					});
+				}
+			}
+			_ => return Err("the document holds fields and scopes only".into()),
+		}
+	}
+	Ok(out)
+}
+
+fn markers(list: &Option<Vec<(&'static str, Option<&'static str>)>>) -> Vec<(&'static str, Option<&'static str>)> {
+	list.clone().unwrap_or_default()
+}
+
+fn element(name: Match, rule: &definition::Element) -> ElementRule {
+	let this = sources(&rule.node.items)
+		.first()
+		.map(|(field, s)| (*field, s.read == "this:text"));
+	ElementRule {
+		name,
+		ty: rule.node.r#type,
+		this,
+		root: rule.root,
+		once: rule.once,
+		inside: rule.inside,
+		outside: rule.outside,
+		raw: rule.content == Some(definition::Content::Raw),
+		rcdata: rule.content == Some(definition::Content::Rcdata),
+	}
+}
+
+fn directive(name: Match, rule: &definition::Directive) -> Result<DirectiveRule, String> {
+	let flags = sources(&rule.node.items)
+		.iter()
+		.filter(|(_, s)| s.from == "literal")
+		.map(|(field, s)| (*field, s.literal == Some(Literal::True)))
+		.collect();
+	let rest: Vec<&definition::Item> = rule
+		.node
+		.items
+		.iter()
+		.filter(|item| match item {
+			definition::Item::Fields(record) => record.0.iter().any(|(_, s)| s.from != "literal"),
+			_ => true,
+		})
+		.collect();
+	let unique = match rule.unique {
+		definition::Uniqueness::No => Unique::No,
+		definition::Uniqueness::Kind => Unique::Kind,
+		definition::Uniqueness::Attributes => Unique::Attribute,
+	};
+	let ty = rule.node.r#type;
+	if let [only] = rest.as_slice() {
+		let wrapped = match only {
+			definition::Item::Opt(inner) if inner.len() == 1 => Some(inner.as_slice()),
+			_ => None,
+		};
+		let single = match wrapped {
+			Some(inner) => sources(inner),
+			None => sources(std::slice::from_ref(*only)),
+		};
+		if let [(field, s)] = single.as_slice()
+			&& s.from == "value"
+		{
+			let fixed = if s.read == "value" { "value" } else { "expression" };
+			if *field != fixed {
+				return Err(format!("a directive's value is read into {fixed}"));
+			}
+			let (optional, name_too) = (wrapped.is_some() || s.or_arg, s.or_arg);
+			let value = match s.read {
+				"value" => DirectiveValue::Value,
+				"pattern" => DirectiveValue::Pattern {
+					optional,
+					name: name_too,
+				},
+				_ => DirectiveValue::Expression {
+					optional,
+					name: name_too,
+				},
+			};
+			return Ok(DirectiveRule {
+				name,
+				ty,
+				value,
+				flags,
+				unique,
+				declares: (s.bind != Bind::No).then(Vec::new),
+			});
+		}
+	}
+	let mut bound = Vec::new();
+	let items: Vec<definition::Item> = rest.into_iter().cloned().collect();
+	let value = DirectiveValue::Form(form(&items, At::Directive, &mut bound)?);
+	Ok(DirectiveRule {
+		name,
+		ty,
+		value,
+		flags,
+		unique,
+		declares: (!bound.is_empty()).then(|| bound.iter().map(|d| d.field).collect()),
+	})
+}
+
+fn block(name: &'static str, rule: &definition::Block) -> Result<BlockRule, String> {
+	let reopen = rule.branches.0.iter().find_map(|(_, b)| match b {
+		Branch::Reopen(r) => Some(r),
+		Branch::Form(_) => None,
+	});
+	let mut branches = Vec::new();
+	for (words, branch) in &rule.branches.0 {
+		let words = words.split(' ').collect();
+		let form = match branch {
+			Branch::Form(items) => form(items, At::Block, &mut Vec::new())?,
+			Branch::Reopen(r) => {
+				let (own, _) = *sources(&rule.node.items[rule.node.items.len() - 1..])
+					.first()
+					.ok_or("a reopened block's form ends in its body")?;
+				let mut head = form(
+					&rule.node.items[..rule.node.items.len() - 1],
+					At::Block,
+					&mut Vec::new(),
+				)?;
+				head.body = Some(Body {
+					field: r.reopen,
+					omit: false,
+					chain: Some(own),
+					declares: Vec::new(),
+				});
+				head
+			}
+		};
+		branches.push(BranchRule { words, form });
+	}
+	Ok(BlockRule {
+		name,
+		ty: rule.node.r#type,
+		open: form(&rule.node.items, At::Block, &mut Vec::new())?,
+		branches,
+		chain_flag: reopen.map(|r| r.flag),
+		entries: Vec::new(),
+		bodies: Vec::new(),
+	})
+}
+
+fn tag(name: &'static str, node: &definition::Node, attribute: bool) -> Result<TagRule, String> {
+	Ok(TagRule {
+		name,
+		ty: node.r#type,
+		form: form(&node.items, At::Tag, &mut Vec::new())?,
+		attribute,
+	})
+}
+
+fn lower(host: Host) -> Result<Grammar, String> {
+	let d = host.definition;
+	let texts = |node: &definition::Node| -> Result<(&'static str, &'static str, Option<&'static str>), String> {
+		let record = sources(&node.items);
+		let by = |read: &str| record.iter().find(|(_, s)| s.read == read).map(|(field, _)| *field);
+		Ok((
+			node.r#type,
+			by("data").ok_or_else(|| format!("{} needs a data field", node.r#type))?,
+			by("raw"),
+		))
+	};
+	let (text_ty, text_data, text_raw) = texts(&d.text)?;
+	let (comment_ty, comment_data, _) = texts(&d.comment)?;
+	let fragment = match &d.fragment {
+		Some(node) => {
+			let (scope, items) = match node.items.as_slice() {
+				[definition::Item::Scope(inner)] => (true, inner.as_slice()),
+				items => (false, items),
+			};
+			let (field, _) = *sources(items).first().ok_or("a fragment names its field")?;
+			Some((node.r#type, field, scope))
+		}
+		None => None,
+	};
+	let element_fields =
+		|read: &str| part(&d.elements.fields, read).ok_or_else(|| format!("elements need a field read by {read}"));
+	let mut elements = Vec::new();
+	for (name, rule) in d.elements.rules.iter().flat_map(|r| &r.0) {
+		elements.push(element(Match::Exact(name), rule));
+	}
+	elements.extend(d.elements.component.as_ref().map(|r| element(Match::Component, r)));
+	elements.extend(d.elements.other.as_ref().map(|r| element(Match::Any, r)));
+	let x = d.directives.as_ref();
+	let directive_syntax = x.map(|x| DirectiveSyntax {
+		prefix: x.prefix,
+		arg: x.arg.unwrap_or(":"),
+		modifier: x.modifier.unwrap_or("|"),
+		dynamic: x.dynamic,
+		name_field: part(&x.fields, "name"),
+		arg_field: part(&x.fields, "arg"),
+		modifiers_field: part(&x.fields, "modifiers"),
+		raw_field: part(&x.fields, "raw"),
+		unique: x.unique.is_some(),
+	});
+	let shorthands = x
+		.and_then(|x| x.shorthands.as_ref())
+		.map(|s| &s.0[..])
+		.unwrap_or_default()
+		.iter()
+		.map(|(token, list)| Shorthand {
+			token,
+			name: list.first().copied().unwrap_or(""),
+			modifiers: list.get(1..).unwrap_or_default().to_vec(),
+		})
+		.collect();
+	let mut directives = Vec::new();
+	for (name, rule) in x.and_then(|x| x.rules.as_ref()).iter().flat_map(|r| &r.0) {
+		directives.push(directive(Match::Exact(name), rule)?);
+	}
+	if let Some(other) = x.and_then(|x| x.other.as_ref()) {
+		directives.push(directive(Match::Any, other)?);
+	}
+	let sigils = d.sigils.as_ref();
+	let mut blocks = Vec::new();
+	for (name, rule) in sigils.and_then(|s| s.blocks.as_ref()).iter().flat_map(|r| &r.0) {
+		blocks.push(block(name, rule)?);
+	}
+	let mut tags = Vec::new();
+	for (name, rule) in sigils.and_then(|s| s.tags.as_ref()).iter().flat_map(|r| &r.0) {
+		tags.push(tag(name, &rule.node, rule.among == definition::Among::Attributes)?);
+	}
+	Ok(Grammar {
+		name: host.name,
+		document: DocumentRule {
+			ty: d.document.r#type,
+			fields: scoped(&d.document.items)?,
+		},
+		delimiters: d.delimiters,
+		attribute_expressions: d.attributes.as_ref().is_some_and(|a| a.expressions == Some(true)),
+		attribute_shorthand: d.attributes.as_ref().is_some_and(|a| a.shorthand == Some(true)),
+		sigils: sigils.map(|s| Sigils {
+			open: s.open,
+			branch: s.branch,
+			close: s.close,
+			tag: s.tag,
+		}),
+		autoclose: d.autoclose == Some(true),
+		trim: d.trim == Some(true),
+		void: d.void.clone().unwrap_or_default(),
+		fragment: fragment.map(|(ty, field, _)| (ty, field)),
+		fragment_scope: fragment.is_some_and(|(_, _, scope)| scope),
+		element_fields: ElementFields {
+			name: element_fields("name")?,
+			attributes: element_fields("attributes")?,
+			children: element_fields("fragment")?,
+		},
+		text: TextRule {
+			ty: text_ty,
+			data: text_data,
+			raw: text_raw,
+		},
+		comment: CommentRule {
+			ty: comment_ty,
+			data: comment_data,
+		},
+		verbatim: d.verbatim,
+		elements,
+		script: d.script.as_ref().map(|s| ScriptRule {
+			name: s.element,
+			module: markers(&s.module),
+			typescript: markers(&s.typescript),
+		}),
+		style: d.style,
+		directive_syntax,
+		shorthands,
+		directives,
+		spread: d.spread,
+		blocks,
+		tags,
+		declaration: d.declaration.as_ref().map(|node| tag("", node, false)).transpose()?,
+		expression: d.expression.as_ref().map(|node| tag("", node, false)).transpose()?,
+	})
 }
 
 impl Form {
@@ -1175,27 +1900,16 @@ impl Form {
 }
 
 impl Grammar {
-	/// Reads a grammar off its wire, the bytes `wire` writes.
+	/// Reads a grammar off its wire: the definition as the builders made it, lowered.
 	pub fn read(bytes: &[u8]) -> Result<Grammar, String> {
-		let mut cursor = Cursor::new(bytes)?;
-		let mut grammar = <Grammar as Wire>::read(&mut cursor)?;
-		if !cursor.done() {
-			return Err("words after the grammar".into());
-		}
+		let mut grammar = lower(Host::read(bytes)?)?;
 		grammar.finish()?;
 		Ok(grammar)
 	}
 
-	/// The grammar on its wire, as the JavaScript side writes it.
-	pub fn wire(&self) -> Vec<u8> {
-		let mut writer = Writer::default();
-		self.write(&mut writer);
-		writer.bytes()
-	}
-
 	/// The TypeScript module of every type on the wire, for the side that writes it.
 	pub fn wire_types() -> String {
-		module::<Grammar>("crates/teasel/src/host/grammar.rs")
+		module::<Host>("crates/teasel/src/host/grammar.rs")
 	}
 
 	fn finish(&mut self) -> Result<(), String> {
@@ -1275,6 +1989,33 @@ impl Grammar {
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	// cargo test --release -p teasel --lib read_phases -- --ignored --nocapture
+	#[test]
+	#[ignore]
+	fn read_phases() {
+		let bytes = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/host.wire")).unwrap();
+		let time = |label: &str, f: &dyn Fn()| {
+			let t = std::time::Instant::now();
+			for _ in 0..1000 {
+				f();
+			}
+			println!("{label}: {:?}", t.elapsed() / 1000);
+		};
+		time("Host::read", &|| {
+			std::hint::black_box(Host::read(&bytes).unwrap());
+		});
+		let host = Host::read(&bytes).unwrap();
+		time("lower", &|| {
+			std::hint::black_box(lower(host.clone()).unwrap());
+		});
+		let grammar = lower(host.clone()).unwrap();
+		time("finish", &|| {
+			let mut g = grammar.clone();
+			g.finish().unwrap();
+			std::hint::black_box(g);
+		});
+	}
 
 	#[test]
 	fn words_round_trip() {

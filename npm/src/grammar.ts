@@ -1,7 +1,6 @@
 import type { Expression, Identifier, Pattern, Program, SourceLocation, Statement, VariableDeclaration } from 'estree';
 import type { Comment, HostNode } from './index.js';
-import { Writer, writeGrammar } from './wire.js';
-import type * as w from './wire.js';
+import { Writer, writeHost } from './wire.js';
 
 declare const out: unique symbol;
 
@@ -307,158 +306,15 @@ type Checked<D extends Definition> = {
 export const grammar = <const D extends Definition>(host: string, definition: D & Checked<D>): Grammar<D> => ({
 	host,
 	definition,
-	wire: encode(lower(host, definition)),
+	wire: encode(host, definition),
 });
 
 // ── the wire the engine reads
 
-function encode(grammar: w.Grammar): Uint8Array {
+function encode(name: string, definition: Definition): Uint8Array {
 	const w = new Writer();
-	writeGrammar(w, grammar);
+	writeHost(w, { name, definition });
 	return w.bytes();
-}
-
-type Raw = Source<unknown, any, Mods> & { readonly literal?: unknown };
-type Group = { readonly opt?: readonly unknown[]; readonly oneOf?: readonly (readonly unknown[])[]; readonly scope?: readonly unknown[] };
-type At = 'block' | 'tag' | 'directive';
-
-const isGroup = (item: unknown): item is Group => typeof item === 'object' && item !== null && ('opt' in item || 'oneOf' in item || 'scope' in item);
-const entries = (items: readonly unknown[]): [string, Raw][] =>
-	items.flatMap((item) => (typeof item === 'object' && item !== null && !isGroup(item) ? (Object.entries(item) as [string, Raw][]) : []));
-const opens = (items: readonly unknown[]) => entries(items).some(([, s]) => s.from === 'content');
-const part = (items: readonly unknown[], read: string) => entries(items).find(([, s]) => s.read === read)?.[0];
-
-// a form's items; a body declares what its sequence bound before it
-function form(items: readonly unknown[], site: At, bound: w.Declare[] = []): w.Form {
-	const out: w.Item[] = [];
-	let body: w.Body | undefined;
-	items.forEach((item, at) => {
-		if (typeof item === 'string') return void out.push({ literal: item });
-		if (isGroup(item)) {
-			if (item.oneOf) return void out.push({ group: { alternatives: alternatives(item.oneOf, site, bound), required: true } });
-			const [only] = item.opt!;
-			const list = item.opt!.length === 1 && isGroup(only) && only.oneOf ? only.oneOf : [item.opt!];
-			return void out.push({ group: { alternatives: alternatives(list, site, bound), required: false } });
-		}
-		for (const [field, source] of entries([item])) {
-			if (source.from === 'literal') continue;
-			if (source.from === 'content') {
-				if (site !== 'block' || at !== items.length - 1) throw new TypeError(`${field} is a body: only a block's form ends in one`);
-				body = { field, omit: source.optional, declares: bound.splice(0) };
-				continue;
-			}
-			const outside = source.bind === 'outside';
-			if (source.bind && !bound.some((d) => d.field === field && d.outside === outside)) bound.push({ field, outside });
-			out.push({ entry: { field, entry: source.read as w.Entry, omit: source.optional } });
-		}
-	});
-	return { items: out, body };
-}
-function alternatives(list: readonly (readonly unknown[])[], site: At, bound: w.Declare[]): w.Alternative[] {
-	return list.map((items) => form(items, site, items.some((item) => opens([item])) ? [] : bound));
-}
-
-function lower(host: string, d: Definition): w.Grammar {
-	const holds = (s: Raw): w.RootField => {
-		if (s.from === 'literal') return s.literal === null ? 'null' : 'emptyList';
-		if (s.read === 'script') return { script: { module: false } };
-		if (s.read === 'script:module') return { script: { module: true } };
-		return s.read as 'fragment' | 'style' | 'comments';
-	};
-	const scoped = (items: readonly unknown[]): w.DocField[] =>
-		items.flatMap((item): w.DocField[] => (isGroup(item) && item.scope ? [{ scope: scoped(item.scope) }] : entries([item]).map(([field, s]) => ({ field: { field, holds: holds(s), omit: s.optional } }))));
-	const texts = (node: Node) => ({ ty: node.type, data: part(node.items, 'data')!, raw: part(node.items, 'raw') });
-	const element = (name: w.Match, rule: Element): w.ElementRule => {
-		const [[field, self] = []] = entries(rule.node.items);
-		return {
-			name,
-			ty: rule.node.type,
-			this: field && self ? [field, self.read === 'this:text'] : undefined,
-			root: rule.root,
-			once: rule.once,
-			inside: rule.inside,
-			outside: rule.outside,
-			raw: rule.content === 'raw',
-			rcdata: rule.content === 'rcdata',
-		};
-	};
-	const markers = (list: readonly Marker[] = []): (readonly [string, string | undefined])[] => list.map(([attribute, value]) => [attribute, value]);
-	const directive = (name: w.Match, rule: Directive): w.DirectiveRule => {
-		const flags = entries(rule.node.items).filter(([, s]) => s.from === 'literal').map(([field, s]): [string, boolean] => [field, s.literal === true]);
-		const rest = rule.node.items.filter((item) => isGroup(item) || typeof item === 'string' || entries([item]).some(([, s]) => s.from !== 'literal'));
-		const unique = rule.unique === 'kind' ? 'kind' : rule.unique === 'attributes' ? 'attribute' : 'no';
-		const [only] = rest;
-		const wrapped = rest.length === 1 && isGroup(only) && only.opt?.length === 1 ? only.opt : undefined;
-		const single = entries(wrapped ?? rest);
-		if (rest.length === 1 && single.length === 1 && single[0][1].from === 'value') {
-			const [field, s] = single[0];
-			const fixed = s.read === 'value' ? 'value' : 'expression';
-			if (field !== fixed) throw new TypeError(`a directive's value is read into ${fixed}`);
-			const one = { optional: wrapped !== undefined || s.orArg, name: s.orArg };
-			const value: w.DirectiveValue = s.read === 'value' ? 'value' : s.read === 'pattern' ? { pattern: one } : { expression: one };
-			return { name, ty: rule.node.type, value, flags, unique, declares: s.bind ? [] : undefined };
-		}
-		const bound: w.Declare[] = [];
-		const value = form(rest, 'directive', bound);
-		return { name, ty: rule.node.type, value: { form: value }, flags, unique, declares: bound.length > 0 ? bound.map((d) => d.field) : undefined };
-	};
-	const block = (name: string, rule: Block): w.BlockRule => {
-		const reopen = Object.values(rule.branches).find((b): b is Reopen => 'reopen' in b);
-		const branches = Object.entries(rule.branches).map(([words, branch]): w.BranchRule => {
-			if (!('reopen' in branch)) return { words: words.split(' '), form: form(branch, 'block') };
-			const [[own]] = entries(rule.node.items.slice(-1));
-			const head = form(rule.node.items.slice(0, -1), 'block');
-			return { words: words.split(' '), form: { ...head, body: { field: branch.reopen, omit: false, chain: own, declares: [] } } };
-		});
-		return { name, ty: rule.node.type, open: form(rule.node.items, 'block'), branches, chainFlag: reopen?.flag };
-	};
-	const tag = (name: string, node: Node, attribute = false): w.TagRule => ({ name, ty: node.type, form: form(node.items, 'tag'), attribute });
-	const x = d.directives;
-	return {
-		name: host,
-		document: { ty: d.document.type, fields: scoped(d.document.items) },
-		delimiters: d.delimiters,
-		attributeExpressions: d.attributes?.expressions === true,
-		attributeShorthand: d.attributes?.shorthand === true,
-		sigils: d.sigils && { open: d.sigils.open, branch: d.sigils.branch, close: d.sigils.close, tag: d.sigils.tag },
-		autoclose: d.autoclose === true,
-		trim: d.trim === true,
-		void: d.void ?? [],
-		fragment: d.fragment && [d.fragment.type, entries(isGroup(d.fragment.items[0]) && d.fragment.items[0].scope ? d.fragment.items[0].scope : d.fragment.items)[0][0]],
-		fragmentScope: d.fragment !== undefined && isGroup(d.fragment.items[0]) && d.fragment.items[0].scope !== undefined,
-		elementFields: { name: part([d.elements.fields], 'name')!, attributes: part([d.elements.fields], 'attributes')!, children: part([d.elements.fields], 'fragment')! },
-		text: texts(d.text),
-		comment: texts(d.comment),
-		verbatim: d.verbatim,
-		elements: [
-			...Object.entries(d.elements.rules ?? {}).map(([match, rule]) => element({ exact: match }, rule)),
-			...(d.elements.component ? [element('component', d.elements.component)] : []),
-			...(d.elements.other ? [element('any', d.elements.other)] : []),
-		],
-		script: d.script && { name: d.script.element, module: markers(d.script.module), typescript: markers(d.script.typescript) },
-		style: d.style,
-		directiveSyntax: x && {
-			prefix: x.prefix,
-			arg: x.arg ?? ':',
-			modifier: x.modifier ?? '|',
-			dynamic: x.dynamic,
-			nameField: part([x.fields], 'name'),
-			argField: part([x.fields], 'arg'),
-			modifiersField: part([x.fields], 'modifiers'),
-			rawField: part([x.fields], 'raw'),
-			unique: x.unique === 'raw',
-		},
-		shorthands: Object.entries(x?.shorthands ?? {}).map(([token, [name, ...modifiers]]) => ({ token, name, modifiers })),
-		directives: [
-			...Object.entries(x?.rules ?? {}).map(([match, rule]) => directive({ exact: match }, rule)),
-			...(x?.other ? [directive('any', x.other)] : []),
-		],
-		spread: d.spread,
-		blocks: Object.entries(d.sigils?.blocks ?? {}).map(([name, rule]) => block(name, rule)),
-		tags: Object.entries(d.sigils?.tags ?? {}).map(([name, rule]) => tag(name, rule.node, rule.among === 'attributes')),
-		declaration: d.declaration && tag('', d.declaration),
-		expression: d.expression && tag('', d.expression),
-	};
 }
 
 // ── inference
