@@ -614,7 +614,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 		let strict = options.has(Options::MODULE);
 		lexer.strict = strict;
 		lexer.module = strict;
-		let spare = ast.spare.take().unwrap_or_default();
+		let spare = std::mem::take(&mut ast.spare);
 		lexer.regexp = spare.regexp;
 		lexer.stop_ranges = spare.stop_ranges;
 		lexer.set_stops(stop);
@@ -1006,7 +1006,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 		labels.clear();
 		let mut private_names = self.private_names;
 		private_names.clear();
-		ast.spare = Some(Spare {
+		ast.spare = Spare {
 			scopes,
 			names: self.spare_names,
 			lists: self.spare_lists,
@@ -1016,7 +1016,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 			errors,
 			regexp: std::mem::take(&mut lexer.regexp),
 			stop_ranges: std::mem::take(&mut lexer.stop_ranges),
-		});
+		};
 		ast
 	}
 

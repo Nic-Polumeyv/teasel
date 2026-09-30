@@ -286,7 +286,7 @@ pub struct Ast<X = ()> {
 	pub host_keys: Handed<u32>,
 	pub host_vals: Handed<[u32; 3]>,
 	/// The buffers the last parse worked in, for the next one.
-	pub spare: Option<crate::parser::Spare>,
+	pub spare: crate::parser::Spare,
 	/// The scope analysis, when `scopes::analyze` ran.
 	pub scopes: Option<crate::scopes::Scopes>,
 	/// What went wrong, in source order, when errors are recovered from instead of thrown.
