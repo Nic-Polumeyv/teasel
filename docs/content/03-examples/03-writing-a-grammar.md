@@ -22,9 +22,11 @@ You don't need to write the whole grammar at once. Describe the part you know, r
 
 ## 1. Start with the HTML
 
-Most of the file is HTML, so start there. The parser needs a name for each kind of node, and the names are yours to choose, since your compiler is the one that reads them. Call the whole file a `Template`, give elements a `name`, `attributes` and `children`, and give text its `data`.
+Most of the file is HTML, so start there. Every kind of node gets a type, and the names are yours to choose: your compiler is the one that reads them. A component is a kind of its own, since your compiler renders `<Card>` by calling it and `<ul>` by creating an element. Hover a piece of the grammar to see what it reads in `list.tpl`.
 
-`<Card>` is different from `<ul>`: your compiler renders a component by calling it, and an element by creating it. Give components their own node type. teasel treats a tag that starts with a capital letter, or has a dot in it, as a component.
+![list.tpl above the pieces of an HTML grammar: document, other, component, fields, text, comment and delimiters, each with arrows to the part of the file it reads](Html.svelte "start=document")
+
+Put together, with the language's name:
 
 ```js tpl.js
 import * as g from '@teasel/parser/grammar';
@@ -44,14 +46,6 @@ export const tpl = g.grammar('tpl', {
 		other: g.element(g.node('Element')),
 	},
 });
-```
-```notes
-'tpl' :: The language's name.
-g.content :: Where the language's content goes, as a list: elements, text, and every node you add later.
-g.text.data :: The text as read, with character references such as `&amp;` decoded.
-delimiters :: What opens and closes an expression in text.
-component :: The rule for a tag that starts with a capital letter or has a dot in it.
-other :: The rule for every other element.
 ```
 
 Run it:
