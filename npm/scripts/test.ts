@@ -438,6 +438,7 @@ function types(source: api.Source, definition: typeof svelteDefinition) {
 	expect<Equal<NodeType<Svelte, 'BindDirective'>['expression'], Expression>>();
 	expect<Equal<NodeType<Svelte, 'OnDirective'>['expression'], Expression | null>>();
 	expect<Equal<NodeType<Svelte, 'TransitionDirective'>['intro'], boolean>>();
+	expect<Equal<NodeType<Svelte, 'StyleDirective'>['value'], NodeType<Svelte, 'Attribute'>['value']>>();
 	expect<Equal<Infer<Svelte>['instance'], NodeType<Svelte, 'Script'> | undefined>>();
 	expect<Equal<Infer<Svelte>['fragment'], Fragment>>();
 
@@ -445,6 +446,7 @@ function types(source: api.Source, definition: typeof svelteDefinition) {
 	const f = {} as Extract<NodeType<Vue, 'Directive'>, { source: unknown }>;
 	expect<Equal<typeof f.source, Expression | null>>();
 	expect<Equal<typeof f.value, Pattern | undefined>>();
+	expect<Equal<typeof f.arg, string | Expression | null>>();
 	expect<Equal<Infer<Vue>['children'][number]['type'], 'Element' | 'Text' | 'Comment' | 'Interpolation' | 'Slot' | 'Template' | 'Component'>>();
 
 	// @ts-expect-error a field may not be named type
@@ -453,6 +455,8 @@ function types(source: api.Source, definition: typeof svelteDefinition) {
 	g.node('X', { scope: g.js.expression });
 	// @ts-expect-error only what reads a pattern, an identifier or parameters can declare
 	g.bind(g.js.expression);
+	// @ts-expect-error a directive's value is null when missing, never left out
+	g.optional(g.value.expression);
 	// @ts-expect-error an argument stands in only for a directive's value
 	g.orArg(g.js.expression);
 	// @ts-expect-error a tag has no body
