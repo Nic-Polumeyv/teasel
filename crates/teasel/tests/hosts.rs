@@ -455,6 +455,31 @@ fn records_group_freely() {
 	);
 }
 
+// a branch in a block that has none names the block, rather than an empty list of branches
+#[test]
+fn a_branch_names_a_block_without_branches() {
+	let mut host = minimal();
+	host.definition.sigils.as_mut().unwrap().blocks = Some(Record(vec![(
+		"repeat",
+		definition::Block {
+			node: node(
+				"RepeatBlock",
+				vec![
+					definition::Item::Fields(Record(vec![("list", source("js", "expression", false))])),
+					definition::Item::Fields(Record(vec![("body", source("content", "fragment", false))])),
+				],
+			),
+			branches: Record(Vec::new()),
+		},
+	)]));
+	let answer = parse_document(
+		"{#repeat items}x{:empty}y{/repeat}",
+		&host.wire(),
+		&Request::from_flags(Options::MODULE),
+	);
+	assert!(answer.contains("A branch in repeat is not allowed here"), "{answer}");
+}
+
 // what a definition says that the engine would not read is refused, naming the field
 #[test]
 fn a_definition_says_only_what_is_read() {

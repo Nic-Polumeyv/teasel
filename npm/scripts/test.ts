@@ -430,6 +430,66 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 	assert.equal(source.parse().node.body.length, 1, `${name} dist`);
 }
 
+// /writing-a-grammar builds a grammar in steps; what each step answers for the page's template is pinned beside the page
+{
+	const template = '<ul>\n\t{{#repeat item, i in items by item.id}}\n\t\t<Card title={{ item.name }} index={{ i }} />\n\t{{:empty}}\n\t\t<li>No items</li>\n\t{{/repeat}}\n</ul>\n';
+	const html = {
+		document: g.node('Template', { children: g.content }),
+		text: g.node('Text', { data: g.text.data }),
+		comment: g.node('Comment', { data: g.text.data }),
+		delimiters: ['{{', '}}'] as const,
+		elements: {
+			fields: { name: g.element.tag, attributes: g.element.attributes, children: g.content },
+			component: g.element(g.node('Component')),
+			other: g.element(g.node('Element')),
+		},
+	};
+	const expressions = { ...html, attributes: { expressions: true } as const, expression: g.node('Expression', { expression: g.js.expression }) };
+	const sigils = { open: '#', branch: ':', close: '/', tag: '@' };
+	const item = { item: g.bind(g.js.pattern) };
+	const index = g.opt(',', { index: g.optional(g.bind(g.js.identifier)) });
+	const list = { list: g.js.expression };
+	const key = g.opt('by', { key: g.optional(g.js.expression) });
+	const repeat = (head: Any[], branches?: Any): Any => ({ ...expressions, sigils: { ...sigils, blocks: { repeat: g.block(g.node('RepeatBlock', ...head, { body: g.content }), branches) } } });
+	const steps: Any[] = [
+		html,
+		expressions,
+		{ ...expressions, sigils: { ...sigils, blocks: {} } },
+		repeat([item, 'in', list]),
+		repeat([item, index, 'in', list]),
+		repeat([item, index, 'in', list, key]),
+		repeat([item, index, 'in', list, key], { branches: { empty: [{ fallback: g.optional(g.content) }] } }),
+	];
+	// an identifier that refers to a binding declared elsewhere carries where that declaration is
+	const shape = (value: Any): Any => {
+		if (Array.isArray(value)) return value.map(shape);
+		if (value === null || typeof value !== 'object') return value;
+		const out: Any = {};
+		for (const field of Object.keys(value)) if (field !== 'loc') out[field] = shape(value[field]);
+		const binding = value.type === 'Identifier' ? referenceOf(value)?.binding : undefined;
+		if (binding && binding.node !== value) out.refers = [binding.node.start, binding.node.end];
+		return out;
+	};
+	const answers = steps.map((definition) => {
+		try {
+			return { tree: shape(open(template, { scopes: true }).parse(g.grammar('tpl', definition)).node) };
+		} catch (e) {
+			const { code, message, pos, end } = e as Any;
+			return { error: { code, message, pos, end } };
+		}
+	});
+	const pin = new URL('../../docs/content/03-examples/writing-a-grammar.json', import.meta.url);
+	const pinned = `${JSON.stringify({ text: template, steps: answers }, null, '\t')}\n`;
+	if (process.env.UPDATE) writeFileSync(pin, pinned);
+	else assert.equal(readFileSync(pin, 'utf8'), pinned, `${name} writing-a-grammar.json changed; run with UPDATE=1 once the change is meant`);
+	// the page's whole grammar is the last step's
+	const page = readFileSync(new URL('../../docs/content/03-examples/03-writing-a-grammar.md', import.meta.url), 'utf8');
+	const whole = [...page.matchAll(/```js tpl\.js\n(import \* as g[\s\S]*?)```/g)].at(-1)![1];
+	const builders = JSON.stringify(new URL('../dist/grammar.js', import.meta.url).href);
+	const written = await import(`data:text/javascript,${encodeURIComponent(whole.replace("'@teasel/parser/grammar'", builders))}`);
+	assert.deepEqual(written.tpl.wire, g.grammar('tpl', steps.at(-1)).wire, `${name} the whole grammar on /writing-a-grammar is the last step's`);
+}
+
 // tsc checks what the types promise here and node never calls it, since the refused definitions throw at runtime
 function types(source: api.Source, definition: typeof svelte) {
 	type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
