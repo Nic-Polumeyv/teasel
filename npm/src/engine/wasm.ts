@@ -25,7 +25,7 @@ interface Exports {
 const url = new URL('../teasel.wasm', import.meta.url);
 const { module, instance } =
 	url.protocol === 'file:'
-		? await WebAssembly.instantiate(await (await import('node:fs/promises')).readFile(url), {})
+		? await WebAssembly.instantiate(await process.getBuiltinModule('node:fs/promises').readFile(url), {})
 		: await WebAssembly.instantiateStreaming(fetch(url), {});
 let wasm = instance.exports as unknown as Exports;
 // a panic traps the instance for good: a fresh one takes over, and sources and plans are made again in it from their bytes
