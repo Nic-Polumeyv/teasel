@@ -3,6 +3,10 @@ import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import svelteDefinition from './hosts/svelte.ts';
 import vueDefinition from './hosts/vue.ts';
+import type { Expression, Identifier, Pattern } from 'estree';
+import * as g from '../dist/grammar.js';
+import type { Infer, NodeType } from '../dist/grammar.js';
+import type * as api from '../dist/index.js';
 import type { Options } from '../dist/index.js';
 if (process.argv[2] === 'interpret') globalThis.Function = (() => { throw new EvalError('blocked'); }) as unknown as FunctionConstructor;
 const name = process.execArgv.includes('--no-addons') ? 'wasm' : 'native';
@@ -401,4 +405,68 @@ const vue = grammars.vue;
 		assert.throws(() => open('<a>'.repeat(40_000) + '</a>'.repeat(40_000), { scopes }).parse(grammars.svelte), deep);
 		assert.equal(open('x', { scopes }).parse().node.body.length, 1);
 	}
+}
+
+// tsc checks what the types promise here and node never calls it, since the refused definitions throw at runtime
+function types(source: api.Source, definition: typeof svelteDefinition) {
+	type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
+	const expect = <T extends true>() => {};
+	type Required<T> = { [K in keyof T]-?: {} extends Pick<T, K> ? never : K }[keyof T];
+	type Svelte = typeof svelteDefinition;
+	type Fragment = NodeType<Svelte, 'Fragment'>;
+
+	type Each = NodeType<Svelte, 'EachBlock'>;
+	expect<Equal<Required<Each>, 'type' | 'start' | 'end' | 'expression' | 'context' | 'body'>>();
+	expect<Equal<Each['context'], Pattern | null>>();
+	expect<Equal<Each['index'], Identifier | undefined>>();
+	expect<Equal<Each['key'], Expression | undefined>>();
+	expect<Equal<Each['body'], Fragment>>();
+	expect<Equal<Each['fallback'], Fragment | undefined>>();
+
+	expect<Equal<NodeType<Svelte, 'IfBlock'>['alternate'], Fragment | null>>();
+	expect<Equal<NodeType<Svelte, 'IfBlock'>['elseif'], boolean>>();
+	expect<Equal<NodeType<Svelte, 'AwaitBlock'>['pending'], Fragment | null>>();
+	expect<Equal<NodeType<Svelte, 'SnippetBlock'>['typeParams'], string | undefined>>();
+	expect<Equal<keyof Fragment, 'type' | 'nodes'>>();
+	expect<Equal<NodeType<Svelte, 'BindDirective'>['expression'], Expression>>();
+	expect<Equal<NodeType<Svelte, 'OnDirective'>['expression'], Expression | null>>();
+	expect<Equal<NodeType<Svelte, 'TransitionDirective'>['intro'], boolean>>();
+	expect<Equal<Infer<Svelte>['instance'], NodeType<Svelte, 'Script'> | undefined>>();
+	expect<Equal<Infer<Svelte>['fragment'], Fragment>>();
+
+	type Vue = typeof vueDefinition;
+	const f = {} as Extract<NodeType<Vue, 'Directive'>, { source: unknown }>;
+	expect<Equal<typeof f.source, Expression | null>>();
+	expect<Equal<typeof f.value, Pattern | undefined>>();
+	expect<Equal<Infer<Vue>['children'][number]['type'], 'Element' | 'Text' | 'Comment' | 'Interpolation' | 'Slot' | 'Template' | 'Component'>>();
+
+	// @ts-expect-error a field may not be named type
+	g.node('X', { type: g.js.expression });
+	// @ts-expect-error a field may not take a group's name
+	g.node('X', { scope: g.js.expression });
+	// @ts-expect-error only what reads a pattern, an identifier or parameters can declare
+	g.bind(g.js.expression);
+	// @ts-expect-error an argument stands in only for a directive's value
+	g.orArg(g.js.expression);
+	// @ts-expect-error a tag has no body
+	g.tag(g.node('T', { body: g.content }));
+	// @ts-expect-error a tag opens no scope to declare in
+	g.tag(g.node('T', { name: g.bind(g.js.identifier) }));
+	// @ts-expect-error only a block declares around itself
+	g.directive(g.node('D', { name: g.bind.outside(g.js.identifier) }));
+	g.grammar('x', {
+		document: g.node('Root', { children: g.content }),
+		text: g.node('Text', { data: g.text.data }),
+		comment: g.node('Comment', { data: g.text.data }),
+		delimiters: ['{', '}'],
+		elements: {
+			fields: { name: g.element.tag, attributes: g.element.attributes, children: g.content },
+			// @ts-expect-error inside names an element rule
+			rules: { head: g.element(g.node('Head')), title: g.element(g.node('Title'), { inside: 'haed' }) },
+		},
+	});
+
+	const typed = new Plan(definition);
+	expect<Equal<typeof typed, api.Plan<Infer<Svelte>>>>();
+	expect<Equal<ReturnType<typeof source.parse<Infer<Svelte>>>['node'], Infer<Svelte>>>();
 }
