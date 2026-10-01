@@ -488,12 +488,11 @@ const vue = grammars.vue;
 	const pinned = `${JSON.stringify({ text: template, steps: answers }, null, '\t')}\n`;
 	if (process.env.UPDATE) writeFileSync(pin, pinned);
 	else assert.equal(readFileSync(pin, 'utf8'), pinned, `${name} writing-a-grammar.json changed; run with UPDATE=1 once the change is meant`);
-	// the page's whole grammar is the last step's
-	const page = readFileSync(new URL('../../docs/content/03-examples/03-writing-a-grammar.md', import.meta.url), 'utf8');
-	const whole = [...page.matchAll(/```js tpl\.js\n(import \* as g[\s\S]*?)```/g)].at(-1)![1];
+	// the whole grammar the page shows is the last step's
+	const whole = readFileSync(new URL('../../docs/content/03-examples/tpl.js', import.meta.url), 'utf8');
 	const builders = JSON.stringify(new URL('../dist/grammar.js', import.meta.url).href);
 	const written = await import(`data:text/javascript,${encodeURIComponent(whole.replace("'@teasel/parser/grammar'", builders))}`);
-	assert.deepEqual(written.tpl.wire, g.grammar('tpl', steps.at(-1)).wire, `${name} the whole grammar on /writing-a-grammar is the last step's`);
+	assert.deepEqual(written.tpl.wire, g.grammar('tpl', steps.at(-1)).wire, `${name} docs/content/03-examples/tpl.js is the last step's grammar`);
 }
 
 // tsc checks what the types promise here and node never calls it, since the refused definitions throw at runtime
