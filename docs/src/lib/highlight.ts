@@ -130,8 +130,35 @@ function shell(code: string) {
 	return html;
 }
 
-export function snippet(code: string, lang: 'javascript' | 'typescript' | 'bash' = 'javascript', file?: string): Snippet {
-	const html = lang === 'bash' ? shell(code) : script(code, lang === 'typescript');
+// a template between `{{` and `}}`: a block's head names it, the rest is JavaScript
+function delimited(token: string) {
+	const inner = token.slice(2, -2);
+	const head = /^[#:/@][\w-]*/.exec(inner)?.[0] ?? '';
+	const edge = head ? 'keyword' : 'punctuation';
+	return paint(`{{${head}`, edge) + script(inner.slice(head.length), false) + paint('}}', edge);
+}
+
+function markup(code: string) {
+	let html = '';
+	let tag = false;
+	for (const [token] of code.matchAll(/<!--[\s\S]*?-->|\{\{[\s\S]*?\}\}|<\/?[A-Za-z][\w.:-]*|\/?>|"[^"]*"|'[^']*'|=|\s+|[^\s<>{}="'\/]+|[\s\S]/g)) {
+		if (token.startsWith('<!--')) html += paint(token, 'comment');
+		else if (token.startsWith('{{')) html += delimited(token);
+		else if (/^<\/?[A-Za-z]/.test(token)) {
+			const name = token.replace(/^<\/?/, '');
+			html += paint(token.slice(0, token.length - name.length), 'punctuation') + paint(name, /^[A-Z]|\./.test(name) ? 'type' : 'keyword');
+			tag = true;
+		} else if (tag && (token === '>' || token === '/>')) (html += paint(token, 'punctuation')), (tag = false);
+		else if (tag && token === '=') html += paint(token, 'operator');
+		else if (tag && (token[0] === '"' || token[0] === "'")) html += paint(token, 'string');
+		else if (tag && !/^\s/.test(token)) html += paint(token, 'property');
+		else html += escape(token);
+	}
+	return html;
+}
+
+export function snippet(code: string, lang: 'javascript' | 'typescript' | 'bash' | 'markup' = 'javascript', file?: string): Snippet {
+	const html = lang === 'bash' ? shell(code) : lang === 'markup' ? markup(code) : script(code, lang === 'typescript');
 	return { code, html, file };
 }
 
