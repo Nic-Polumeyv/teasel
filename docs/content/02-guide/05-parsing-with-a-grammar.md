@@ -2,7 +2,7 @@
 title: Parsing with a grammar
 ---
 
-A template language can describe its whole syntax to the parser as a grammar. The parser then reads a whole file of that language and returns one tree: the template's own nodes, the JavaScript nodes inside them, and scopes that cover both. These pages call the template language the host. A grammar is a definition made with the builders `@teasel/parser/grammar` exports, which the [grammar reference](/reference/grammar) lists. This is a complete small one:
+A template language can describe its whole syntax to the parser as a grammar. The parser then reads a whole file of that language and returns one tree: the template's own nodes, the JavaScript nodes inside them, and scopes that cover both. These pages call the template language the host. A grammar is a definition made with the builders `@teasel/parser/grammar` exports, which the [grammar reference](/reference/grammar) lists. [Writing a grammar](/writing-a-grammar) builds one step by step. This is a complete small one:
 
 ```js mini.js
 import * as g from '@teasel/parser/grammar';
