@@ -10,6 +10,9 @@ macro_rules! codes {
 		}
 
 		impl Code {
+			#[cfg(test)]
+			const ALL: &[Code] = &[$(Code::$name,)*];
+
 			pub(crate) fn is_limit(self) -> bool {
 				matches!(self, Code::NestingDepth | Code::TreeSize)
 			}
@@ -258,3 +261,29 @@ impl fmt::Display for SyntaxError {
 }
 
 impl std::error::Error for SyntaxError {}
+
+#[cfg(test)]
+mod tests {
+	use super::Code;
+
+	// the JavaScript side names every code by hand in its `Code` type; a code added, renamed or
+	// dropped here fails until types.ts says the same
+	#[test]
+	fn types_ts_names_every_code() {
+		let ts = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../npm/src/types.ts")).unwrap();
+		let start = ts
+			.find("export type Code =")
+			.expect("types.ts declares `export type Code =`");
+		let union = &ts[start..start + ts[start..].find(';').unwrap()];
+		let mut written: Vec<&str> = union.split('\'').skip(1).step_by(2).collect();
+		let mut codes: Vec<&str> = Code::ALL.iter().map(|code| code.name()).collect();
+		written.sort_unstable();
+		codes.sort_unstable();
+		let missing: Vec<_> = codes.iter().filter(|code| !written.contains(code)).collect();
+		let extra: Vec<_> = written.iter().filter(|code| !codes.contains(code)).collect();
+		assert!(
+			missing.is_empty() && extra.is_empty() && written.len() == codes.len(),
+			"npm/src/types.ts `Code` disagrees with error.rs: missing {missing:?}, not a code {extra:?}"
+		);
+	}
+}
