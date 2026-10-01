@@ -35,7 +35,7 @@ export interface Declared extends Reference {
 	/**
 	 * What declared it. `function-name` and `class-name` are the name a function expression or a class
 	 * expression has inside itself, `const f = function g() {}` declaring `g`. `pattern` is a name that
-	 * a `Plan.pattern` piece declares, parsed on its own; a `Plan.params` piece declares `param`s.
+	 * an `Entry.pattern` piece declares, parsed on its own; an `Entry.params` piece declares `param`s.
 	 */
 	kind:
 		| 'var'

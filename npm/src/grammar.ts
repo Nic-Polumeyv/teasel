@@ -311,7 +311,7 @@ export const grammar = <const D extends Definition>(host: string, definition: D 
 
 // ── inference
 
-interface Entry<K extends string = string, S = unknown, Maybe extends boolean = boolean> {
+interface Member<K extends string = string, S = unknown, Maybe extends boolean = boolean> {
 	key: K;
 	source: S;
 	maybe: Maybe;
@@ -326,12 +326,12 @@ type Step<H, Maybe extends boolean> = H extends string
 			? Collect<A[number], true>
 			: H extends Scope<infer I>
 				? Collect<I, Maybe>
-				: { [K in keyof H & string]: Entry<K, H[K], Maybe> }[keyof H & string];
+				: { [K in keyof H & string]: Member<K, H[K], Maybe> }[keyof H & string];
 
 type Out<S> = S extends { readonly [out]?: { readonly t: infer T } } ? T : never;
 type ModsOf<S> = S extends { readonly [out]?: { readonly m: infer M extends Mods } } ? M : Plain;
-type Absent<E> = E extends Entry<any, infer S> ? (ModsOf<S>['optional'] extends true ? true : never) : never;
-type Nullable<E, Force extends boolean> = E extends Entry<any, infer S, infer Maybe>
+type Absent<E> = E extends Member<any, infer S> ? (ModsOf<S>['optional'] extends true ? true : never) : never;
+type Nullable<E, Force extends boolean> = E extends Member<any, infer S, infer Maybe>
 	? ModsOf<S>['orArg'] extends true
 		? never
 		: Maybe extends true
@@ -348,7 +348,7 @@ type Nullable<E, Force extends boolean> = E extends Entry<any, infer S, infer Ma
 type Simplify<T> = { [K in keyof T]: T[K] } & {};
 type Span = { start: number; end: number; loc?: SourceLocation };
 
-type Shape<E extends Entry, G extends Definition, Force extends boolean> = Simplify<
+type Shape<E extends Member, G extends Definition, Force extends boolean> = Simplify<
 	{
 		[K in E['key'] as true extends Absent<Extract<E, { key: K }>> ? never : K]:
 			| Resolve<Out<Extract<E, { key: K }>['source']>, G>
@@ -370,7 +370,7 @@ type Resolve<T, G extends Definition> = T extends Children
 
 type Typed<T extends string, F> = Simplify<{ type: T } & Span & F>;
 
-type NodeOf<N, G extends Definition, Extra extends Entry = never, Force extends boolean = false> = N extends Node<infer T, infer I>
+type NodeOf<N, G extends Definition, Extra extends Member = never, Force extends boolean = false> = N extends Node<infer T, infer I>
 	? Typed<T, Shape<Collect<I, false> | Extra, G, Force>>
 	: never;
 
@@ -378,13 +378,13 @@ type FragmentNode<G extends Definition> = G['fragment'] extends Node<infer T, in
 	? Simplify<{ type: T } & Shape<Collect<I, false>, G, false>>
 	: never;
 
-type BranchEntries<B> = {
+type BranchMembers<B> = {
 	[W in keyof B]: B[W] extends Reopen<infer F, infer Flag>
-		? Entry<F, Source<Children, 'form', Plain>, true> | Entry<Flag, Source<boolean, 'form', Plain>, false>
+		? Member<F, Source<Children, 'form', Plain>, true> | Member<Flag, Source<boolean, 'form', Plain>, false>
 		: Collect<B[W], true>;
 }[keyof B];
 
-type BlockNode<B, G extends Definition> = B extends Block<infer N, infer Br> ? NodeOf<N, G, BranchEntries<Br>> : never;
+type BlockNode<B, G extends Definition> = B extends Block<infer N, infer Br> ? NodeOf<N, G, BranchMembers<Br>> : never;
 type TagNode<T, G extends Definition> = T extends Tag<infer N> ? NodeOf<N, G> : never;
 type DirectiveNode<D, G extends Definition> = D extends Directive<infer N>
 	? G['directives'] extends { fields: infer F }

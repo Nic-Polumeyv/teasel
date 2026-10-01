@@ -1,7 +1,7 @@
 import type { Expression, Identifier, Node, Pattern, Program, SourceLocation, Statement } from 'estree';
 import { decode, PARENT, REFERENCE, SCOPE } from './decode.ts';
-import type { Comment, Held, HostNode, Kept, Parsed, Prepared, Reference, Root, Scope } from './types.ts';
-import { ENTRY, flags, type Options } from './options.ts';
+import type { Comment, Held, Kept, Parsed, Prepared, Reference, Root, Scope } from './types.ts';
+import { flags, type Options } from './options.ts';
 import { engine } from '#engine';
 
 import type { Code } from './types.ts';
@@ -51,48 +51,46 @@ export function referenceOf(node: Node | null | undefined): Reference | undefine
 
 const registry = typeof FinalizationRegistry === 'undefined' ? null : new FinalizationRegistry<Held>((held) => held.free());
 
-let read: (plan: Plan<unknown>) => { entry: number; stop: string; held: Held | undefined };
+const grammars = new WeakMap<Grammar, Held>();
+
+function compiled(grammar: Grammar): Held {
+	let held = grammars.get(grammar);
+	if (held === undefined) {
+		if (!(grammar?.wire instanceof Uint8Array)) throw new TypeError('a parse takes an entry or a grammar made by @teasel/parser/grammar');
+		held = engine.plan(grammar.wire);
+		grammars.set(grammar, held);
+		registry?.register(grammar, held);
+	}
+	return held;
+}
+
+let read: (entry: Entry<unknown>) => { entry: number; stop: string };
 
 /**
- * What a parse reads. The built-in plans read a piece of JavaScript at a position of the source,
- * `program` the whole source; `until` ends one where the host's own tokens follow. `new Plan(grammar)`
- * reads the whole source as a document of the host language a grammar from `@teasel/parser/grammar`
- * describes: the host's own nodes around the JavaScript ones, in one tree, in TypeScript when the
- * grammar says so of a script tag. A plan is built once and applied to any source. `T` is what its
- * parse answers with.
+ * A piece of JavaScript a parse reads at a position of the source, `program` the whole source;
+ * `until` ends one where the host's own tokens follow. An entry is built once and applied at any
+ * position of any source. `T` is what its parse answers with.
  */
-export class Plan<T = HostNode> {
+export class Entry<T> {
 	#entry: number;
 	#stop: string;
-	#held: Held | undefined;
 
-	constructor(grammar: Grammar & Answers<T>);
-	constructor(grammar: Grammar | number, stop = '') {
-		if (typeof grammar === 'number') this.#entry = grammar;
-		else {
-			if (!(grammar?.wire instanceof Uint8Array)) throw new TypeError('a plan reads a grammar made by @teasel/parser/grammar');
-			this.#entry = ENTRY.program;
-			this.#held = engine.plan(grammar.wire);
-			registry?.register(this, this.#held, this);
-		}
+	private constructor(entry: number, stop = '') {
+		this.#entry = entry;
 		this.#stop = stop;
 	}
 
-	// the built-in plans come through the constructor's implementation, which the overload hides
-	static #builtin<T>(entry: number, stop = ''): Plan<T> {
-		return new (Plan as unknown as new (entry: number, stop: string) => Plan<T>)(entry, stop);
-	}
-
+	// `Entry` of parser/mod.rs by index
 	/** The whole source, or the program inside `[start, end]` of it. */
-	static readonly program: Plan<Program> = Plan.#builtin(ENTRY.program);
-	static readonly expression: Plan<Expression> = Plan.#builtin(ENTRY.expression);
+	static readonly program: Entry<Program> = new Entry(0);
+	static readonly expression: Entry<Expression> = new Entry(1);
 	/** An assignment target: an identifier or a destructuring pattern. */
-	static readonly pattern: Plan<Pattern> = Plan.#builtin(ENTRY.pattern);
+	static readonly pattern: Entry<Pattern> = new Entry(2);
 	/** A parenthesized parameter list, as an arrow function's is read. */
-	static readonly params: Plan<Pattern[]> = Plan.#builtin(ENTRY.params);
-	static readonly statement: Plan<Statement> = Plan.#builtin(ENTRY.statement);
+	static readonly params: Entry<Pattern[]> = new Entry(3);
+	static readonly statement: Entry<Statement> = new Entry(4);
 	/** A `TSTypeParameterDeclaration`; TypeScript only, `not_typescript` otherwise. */
-	static readonly typeParameters: Plan<Node> = Plan.#builtin(ENTRY.typeParameters);
+	static readonly typeParameters: Entry<Node> = new Entry(5);
 
 	/**
 	 * The same reading, ended where one of the host's own tokens, words or punctuators, follows.
@@ -101,16 +99,15 @@ export class Plan<T = HostNode> {
 	 * after `.` is a property name. A TypeScript `as` is the host's unless another `as` follows
 	 * the assertion, so `xs as T[] as item` ends after the type.
 	 */
-	until(...tokens: string[]): Plan<T> {
-		if (this.#held !== undefined) throw new TypeError('a document plan reads the whole source');
+	until(...tokens: string[]): Entry<T> {
 		if (tokens.length === 0 || !tokens.every((token) => typeof token === 'string' && token !== '' && !/\s/.test(token))) {
 			throw new TypeError('until takes words and punctuators');
 		}
-		return Plan.#builtin<T>(this.#entry, this.#stop === '' ? tokens.join(' ') : `${this.#stop} ${tokens.join(' ')}`);
+		return new Entry(this.#entry, this.#stop === '' ? tokens.join(' ') : `${this.#stop} ${tokens.join(' ')}`);
 	}
 
 	static {
-		read = (plan) => ({ entry: plan.#entry, stop: plan.#stop, held: plan.#held });
+		read = (entry) => ({ entry: entry.#entry, stop: entry.#stop });
 	}
 }
 
@@ -130,21 +127,26 @@ export class Source {
 	}
 
 	/**
-	 * What `plan` reads at `at`: the whole source by default; a UTF-16 offset for a piece of
-	 * JavaScript, or `[start, end]` for one read as if the source ended at `end`.
+	 * What `entry` reads at `at`: the whole source by default; a UTF-16 offset for a piece of
+	 * JavaScript, or `[start, end]` for one read as if the source ended at `end`. A grammar from
+	 * `@teasel/parser/grammar` reads the whole source as a document of its host language: the
+	 * host's own nodes around the JavaScript ones, in one tree, in TypeScript when the grammar
+	 * says so of a script tag. The engine reads a grammar on its first parse and keeps it while
+	 * the grammar lives, so a grammar is made once.
 	 */
 	parse(): Parsed<Program>;
-	parse<T>(plan: Plan<T>, at?: number | [start: number, end: number]): Parsed<T>;
-	parse(plan: Plan<unknown> = Plan.program, at: number | [number, number] = 0): Parsed<any> {
+	parse<T>(entry: Entry<T>, at?: number | [start: number, end: number]): Parsed<T>;
+	parse<T>(grammar: Grammar & Answers<T>): Parsed<T>;
+	parse(what: Entry<unknown> | Grammar = Entry.program, at: number | [number, number] = 0): Parsed<any> {
 		if (this.#held === undefined) throw new TypeError('the source is freed');
-		if (!(plan instanceof Plan)) throw new TypeError('a parse takes a plan');
-		const { entry, stop, held } = read(plan);
-		let offset: number, end: number | undefined;
-		if (typeof at === 'number') offset = at;
-		else if (Array.isArray(at) && at.length === 2 && typeof at[0] === 'number' && typeof at[1] === 'number') [offset, end] = at;
-		else throw new TypeError('at is an offset or [start, end]');
-		if (held !== undefined && (offset !== 0 || end !== undefined)) throw new TypeError('a document plan reads the whole source');
-		const answer = this.#held.parse(entry, offset, end, stop, held);
+		let entry = 0, stop = '', grammar: Held | undefined, offset = 0, end: number | undefined;
+		if (what instanceof Entry) {
+			({ entry, stop } = read(what));
+			if (typeof at === 'number') offset = at;
+			else if (Array.isArray(at) && at.length === 2 && typeof at[0] === 'number' && typeof at[1] === 'number') [offset, end] = at;
+			else throw new TypeError('at is an offset or [start, end]');
+		} else grammar = compiled(what);
+		const answer = this.#held.parse(entry, offset, end, stop, grammar);
 		if (typeof answer !== 'string') {
 			try {
 				return decode(answer, this.#source, engine) as Parsed<any>;
