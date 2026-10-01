@@ -1,14 +1,14 @@
 // Builds ESTree objects from the parser's own tree, read in place: the layout says where each
 // kind's fields sit, the recipes how the kind is spelled.
 
-import type { Engine, Held, Prepared, Tree, Views } from './types.js';
+import type { Tree, Views } from './types.js';
 
 // symbol keys: ten times cheaper than a WeakMap entry, and skipped by JSON, Object.keys and for-in
 export const SCOPE = Symbol('scope');
 export const REFERENCE = Symbol('reference');
 export const PARENT = Symbol('parent');
 
-/** A decoded object: the tree decides its shape, `index.ts` describes it. */
+/** A decoded object: the tree decides its shape, `types.ts` describes it. */
 export type Decoded = Record<string | symbol, any>;
 
 interface Field {
