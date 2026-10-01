@@ -1,6 +1,7 @@
 // `node scripts/test.ts interpret` runs the decoder without code generation, as a host forbidding it would
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
+import { codes } from './codes.ts';
 import svelteDefinition from './hosts/svelte.ts';
 import vueDefinition from './hosts/vue.ts';
 import type { Expression, Identifier, Pattern } from 'estree';
@@ -405,6 +406,12 @@ const vue = grammars.vue;
 		assert.throws(() => open('<a>'.repeat(40_000) + '</a>'.repeat(40_000), { scopes }).parse(grammars.svelte), deep);
 		assert.equal(open('x', { scopes }).parse().node.body.length, 1);
 	}
+}
+
+// src/codes.ts is written from error.rs by scripts/codes.ts: the two must agree
+{
+	const written = [...readFileSync(new URL('../src/codes.ts', import.meta.url), 'utf8').matchAll(/'([a-z_0-9]+)'/g)].map((m) => m[1]);
+	assert.deepEqual(written, codes(), 'run node scripts/codes.ts');
 }
 
 // tsc checks what the types promise here and node never calls it, since the refused definitions throw at runtime
