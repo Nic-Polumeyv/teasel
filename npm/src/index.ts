@@ -1,10 +1,8 @@
-import type { Expression, Identifier, Node, Pattern, Program, SourceLocation, Statement } from 'estree';
+import type { Expression, Node, Pattern, Program, Statement } from 'estree';
 import { decode, PARENT, REFERENCE, SCOPE } from './decode.js';
-import type { Comment, Held, HostNode, Kept, Parsed, Prepared, Reference, Root, Scope } from './types.js';
+import type { Code, Held, HostNode, Parsed, Prepared, Reference, Scope } from './types.js';
 import { ENTRY, flags, type Options } from './options.js';
 import { engine } from '#engine';
-
-import type { Code } from './types.js';
 import type { Answers, Grammar } from './grammar.js';
 
 export type { Options } from './options.js';

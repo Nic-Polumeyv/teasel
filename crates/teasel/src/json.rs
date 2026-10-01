@@ -307,7 +307,7 @@ struct Session {
 
 thread_local! {
 	static SESSION: std::cell::RefCell<Session> = std::cell::RefCell::new(Session::default());
-	/// Grammars by their text, read once each.
+	/// Grammars by their wire, read once each.
 	static GRAMMARS: std::cell::RefCell<Vec<(Vec<u8>, Rc<Grammar>)>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
