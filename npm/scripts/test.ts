@@ -428,6 +428,14 @@ const vue = grammars.vue;
 	}
 }
 
+// the tests read the source; the published build must answer the same once its specifiers are rewritten
+{
+	const built = await import('../dist/index.js');
+	await import('../dist/grammar.js');
+	using source = new built.Source('let x = 1');
+	assert.equal(source.parse().node.body.length, 1, `${name} dist`);
+}
+
 // tsc checks what the types promise here and node never calls it, since the refused definitions throw at runtime
 function types(source: api.Source, definition: typeof svelteDefinition) {
 	type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
