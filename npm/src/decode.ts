@@ -1,7 +1,7 @@
 // Builds ESTree objects from the parser's own tree, read in place: the layout says where each
 // kind's fields sit, the recipes how the kind is spelled.
 
-import type { Engine, Held, Prepared, Tree, Views } from './types.js';
+import type { Engine, Held, Prepared, Tree, Views } from './types.ts';
 
 // symbol keys: ten times cheaper than a WeakMap entry, and skipped by JSON, Object.keys and for-in
 export const SCOPE = Symbol('scope');

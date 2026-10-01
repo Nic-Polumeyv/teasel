@@ -4,13 +4,13 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import svelteDefinition from './hosts/svelte.ts';
 import vueDefinition from './hosts/vue.ts';
 import type { Expression, Identifier, Pattern } from 'estree';
-import * as g from '../dist/grammar.js';
-import type { Infer, NodeType } from '../dist/grammar.js';
-import type * as api from '../dist/index.js';
-import type { Options } from '../dist/index.js';
+import * as g from '../src/grammar.ts';
+import type { Infer, NodeType } from '../src/grammar.ts';
+import type * as api from '../src/index.ts';
+import type { Options } from '../src/index.ts';
 if (process.argv[2] === 'interpret') globalThis.Function = (() => { throw new EvalError('blocked'); }) as unknown as FunctionConstructor;
 const name = process.execArgv.includes('--no-addons') ? 'wasm' : 'native';
-const m = await import('../dist/index.js');
+const m = await import('../src/index.ts');
 // the trees are poked as the recipes shape them, host nodes included, past what the types say
 type Any = any;
 const { Plan, ParseError } = m;

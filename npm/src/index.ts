@@ -1,14 +1,14 @@
 import type { Expression, Identifier, Node, Pattern, Program, SourceLocation, Statement } from 'estree';
-import { decode, PARENT, REFERENCE, SCOPE } from './decode.js';
-import type { Comment, Held, HostNode, Kept, Parsed, Prepared, Reference, Root, Scope } from './types.js';
-import { ENTRY, flags, type Options } from './options.js';
+import { decode, PARENT, REFERENCE, SCOPE } from './decode.ts';
+import type { Comment, Held, HostNode, Kept, Parsed, Prepared, Reference, Root, Scope } from './types.ts';
+import { ENTRY, flags, type Options } from './options.ts';
 import { engine } from '#engine';
 
-import type { Code } from './types.js';
-import type { Answers, Grammar } from './grammar.js';
+import type { Code } from './types.ts';
+import type { Answers, Grammar } from './grammar.ts';
 
-export type { Options } from './options.js';
-export type { Arguments, Binding, Code, Comment, Declared, HostNode, Kept, Parsed, Recovered, Reference, Root, Scope, Span } from './types.js';
+export type { Options } from './options.ts';
+export type { Arguments, Binding, Code, Comment, Declared, HostNode, Kept, Parsed, Recovered, Reference, Root, Scope, Span } from './types.ts';
 
 /**
  * Thrown for a syntax error. `code` names what went wrong, for a host to branch on, and
