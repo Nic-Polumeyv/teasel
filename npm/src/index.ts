@@ -4,12 +4,11 @@ import type { Comment, Held, HostNode, Kept, Parsed, Prepared, Reference, Root, 
 import { ENTRY, flags, type Options } from './options.js';
 import { engine } from '#engine';
 
-import type { Code } from './codes.js';
+import type { Code } from './types.js';
 import type { Answers, Grammar } from './grammar.js';
 
 export type { Options } from './options.js';
-export type { Code } from './codes.js';
-export type { Arguments, Binding, Comment, Declared, HostNode, Kept, Parsed, Recovered, Reference, Root, Scope, Span } from './types.js';
+export type { Arguments, Binding, Code, Comment, Declared, HostNode, Kept, Parsed, Recovered, Reference, Root, Scope, Span } from './types.js';
 
 /**
  * Thrown for a syntax error. `code` names what went wrong, for a host to branch on, and
