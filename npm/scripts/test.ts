@@ -1,6 +1,6 @@
 // `node scripts/test.ts interpret` runs the decoder without code generation, as a host forbidding it would
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import svelteDefinition from './hosts/svelte.ts';
 import vueDefinition from './hosts/vue.ts';
 import type { Expression, Identifier, Pattern } from 'estree';
@@ -359,6 +359,27 @@ for (const [host, definition] of [['svelte', svelteDefinition], ['vue', vueDefin
 	if (process.env.UPDATE) writeFileSync(pin, definition.wire);
 	else assert.ok(readFileSync(pin).equals(definition.wire), `${name} ${host}/host.wire changed; run with UPDATE=1 once the change is meant`);
 }
+// every node's parent is the node it sits in, objects without a type passed through
+{
+	const wrong: string[] = [];
+	const walk = (holder: Any, value: Any) => {
+		if (value === null || typeof value !== 'object') return;
+		if (Array.isArray(value)) return value.forEach((item) => walk(holder, item));
+		const node = typeof value.type === 'string';
+		if (node && parentOf(value) !== holder) wrong.push(`${value.type} at ${value.start}`);
+		for (const key of Object.keys(value)) walk(node ? value : holder, value[key]);
+	};
+	const decoder = readFileSync(new URL('../src/decode.ts', import.meta.url), 'utf8');
+	for (const typescript of [true, 'erase'] as const) walk(undefined, open(decoder, { sourceType: 'module', typescript, comments: true, scopes: true }).parse().node);
+	for (const host of ['svelte', 'vue'] as const) {
+		const dir = new URL(`../../crates/teasel/tests/hosts/${host}/`, import.meta.url);
+		for (const file of readdirSync(dir).filter((f) => !/\.(json|wire)$/.test(f))) {
+			walk(undefined, open(readFileSync(new URL(file, dir), 'utf8'), { sourceType: 'module', comments: true, scopes: true, errorRecovery: true }).parse(grammars[host]).node);
+		}
+	}
+	assert.deepEqual(wrong, [], `${name} parents`);
+}
+
 // a second host: the same walker, Vue's grammar
 const vue = grammars.vue;
 {
@@ -431,6 +452,7 @@ function types(source: api.Source, definition: typeof svelteDefinition) {
 	expect<Equal<NodeType<Svelte, 'BindDirective'>['expression'], Expression>>();
 	expect<Equal<NodeType<Svelte, 'OnDirective'>['expression'], Expression | null>>();
 	expect<Equal<NodeType<Svelte, 'TransitionDirective'>['intro'], boolean>>();
+	expect<Equal<NodeType<Svelte, 'StyleDirective'>['value'], NodeType<Svelte, 'Attribute'>['value']>>();
 	expect<Equal<Infer<Svelte>['instance'], NodeType<Svelte, 'Script'> | undefined>>();
 	expect<Equal<Infer<Svelte>['fragment'], Fragment>>();
 
@@ -438,6 +460,7 @@ function types(source: api.Source, definition: typeof svelteDefinition) {
 	const f = {} as Extract<NodeType<Vue, 'Directive'>, { source: unknown }>;
 	expect<Equal<typeof f.source, Expression | null>>();
 	expect<Equal<typeof f.value, Pattern | undefined>>();
+	expect<Equal<typeof f.arg, string | Expression | null>>();
 	expect<Equal<Infer<Vue>['children'][number]['type'], 'Element' | 'Text' | 'Comment' | 'Interpolation' | 'Slot' | 'Template' | 'Component'>>();
 
 	// @ts-expect-error a field may not be named type
@@ -446,6 +469,8 @@ function types(source: api.Source, definition: typeof svelteDefinition) {
 	g.node('X', { scope: g.js.expression });
 	// @ts-expect-error only what reads a pattern, an identifier or parameters can declare
 	g.bind(g.js.expression);
+	// @ts-expect-error a directive's value is null when missing, never left out
+	g.optional(g.value.expression);
 	// @ts-expect-error an argument stands in only for a directive's value
 	g.orArg(g.js.expression);
 	// @ts-expect-error a tag has no body
