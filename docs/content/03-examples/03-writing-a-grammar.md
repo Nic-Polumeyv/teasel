@@ -53,15 +53,13 @@ fields :: The fields every element has: its tag name, its attributes, and its ch
 other :: The rule for every element no other rule matches. Here that is all of them.
 ```
 
-A `Plan` made from the grammar reads documents of the language:
+`parse` takes the grammar and reads documents of the language:
 
 ```js parse.js
-import { Source, Plan } from '@teasel/parser';
+import { Source } from '@teasel/parser';
 import { tpl } from './tpl.js';
 
-const plan = new Plan(tpl);
-
-new Source('<ul><li>Pears</li></ul>').parse(plan).node;
+new Source('<ul><li>Pears</li></ul>').parse(tpl).node;
 // { type: 'Template', children: [
 //   { type: 'Element', name: 'ul', attributes: [], children: [
 //     { type: 'Element', name: 'li', attributes: [], children: [
@@ -87,7 +85,7 @@ Should `<Card>` and `<li>` be the same kind of node? A tool reading the tree ren
 ```
 
 ```js parse.js
-new Source('<Card />').parse(plan).node.children[0];
+new Source('<Card />').parse(tpl).node.children[0];
 // { type: 'Component', name: 'Card', attributes: [], children: [] }
 ```
 
@@ -105,7 +103,7 @@ g.js.expression :: Reads a JavaScript expression, up to the closing `}}`. The fi
 ```
 
 ```js parse.js
-new Source('<Card title={{ item.name }} />Hi {{ user }}').parse(plan).node;
+new Source('<Card title={{ item.name }} />Hi {{ user }}').parse(tpl).node;
 // { type: 'Template', children: [
 //   { type: 'Component', name: 'Card', attributes: [
 //     { type: 'Attribute', name: 'title', value: { type: 'Expression',
@@ -149,7 +147,7 @@ body :: The block's content, everything up to `{{/repeat}}`. Content always come
 ```
 
 ```js parse.js
-new Source('{{#repeat items}}<Card />{{/repeat}}').parse(plan).node.children[0];
+new Source('{{#repeat items}}<Card />{{/repeat}}').parse(tpl).node.children[0];
 // { type: 'RepeatBlock', list: { type: 'Identifier', name: 'items' },
 //   body: [ { type: 'Component', name: 'Card', … } ] }
 ```
@@ -173,10 +171,10 @@ new Source('{{#repeat items}}<Card />{{/repeat}}').parse(plan).node.children[0];
 With `scopes`, every use of `item` in the body refers to the item:
 
 ```js parse.js
-import { Source, Plan, referenceOf } from '@teasel/parser';
+import { Source, referenceOf } from '@teasel/parser';
 
 const text = '{{#repeat item in items}}{{ item.name }}{{/repeat}}';
-const { node } = new Source(text, { scopes: true }).parse(plan);
+const { node } = new Source(text, { scopes: true }).parse(tpl);
 const repeat = node.children[0];
 
 const use = repeat.body[0].expression.object;    // the item in item.name
@@ -195,11 +193,11 @@ Is the index always written? No, so it goes in `g.opt`, which reads it only when
 ```
 
 ```js parse.js
-new Source('{{#repeat item, i in items}}…{{/repeat}}').parse(plan).node.children[0];
+new Source('{{#repeat item, i in items}}…{{/repeat}}').parse(tpl).node.children[0];
 // { type: 'RepeatBlock', item: { … name: 'item' }, index: { … name: 'i' },
 //   list: { … name: 'items' }, body: [ … ] }
 
-new Source('{{#repeat item in items}}…{{/repeat}}').parse(plan).node.children[0];
+new Source('{{#repeat item in items}}…{{/repeat}}').parse(tpl).node.children[0];
 // the same without index
 ```
 
@@ -215,7 +213,7 @@ Does `by item.id` declare a name? No, it uses `item`, so it reads an expression 
 
 ```js parse.js
 const text = '{{#repeat item in items by item.id}}…{{/repeat}}';
-const repeat = new Source(text, { scopes: true }).parse(plan).node.children[0];
+const repeat = new Source(text, { scopes: true }).parse(tpl).node.children[0];
 referenceOf(repeat.key.object).binding.node === repeat.item;   // true
 ```
 
@@ -284,7 +282,7 @@ export const tpl = g.grammar('tpl', {
 Read `list.tpl` from the top of the page with it:
 
 ```js parse.js
-const { node, bindings } = new Source(list, { scopes: true }).parse(plan);
+const { node, bindings } = new Source(list, { scopes: true }).parse(tpl);
 const repeat = node.children[0].children[1];   // after the text '\n\t'
 
 repeat.fallback[1].name;                        // 'li'
@@ -294,10 +292,10 @@ bindings.map((b) => `${b.name}: ${b.kind}`);    // ['item: pattern', 'i: pattern
 A document the grammar does not describe throws a `ParseError` naming what it expected:
 
 ```js parse.js
-new Source('{{#repeat item items}}…{{/repeat}}').parse(plan);
+new Source('{{#repeat item items}}…{{/repeat}}').parse(tpl);
 // ParseError: Expected in, code 'expected', pos 15
 
-new Source('{{#repeat item in items}}…').parse(plan);
+new Source('{{#repeat item in items}}…').parse(tpl);
 // ParseError: repeat is not closed, code 'unclosed', pos 0
 ```
 
