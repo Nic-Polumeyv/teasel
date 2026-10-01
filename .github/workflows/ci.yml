@@ -21,7 +21,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 26
-      - run: npm install -g typescript@7 binaryen
+      - run: npm install -g binaryen
       - run: git clone --depth 1 https://github.com/tc39/test262-parser-tests crates/teasel/tests/test262-parser-tests
       - run: git clone --depth 1 --filter=blob:none --sparse https://github.com/microsoft/TypeScript crates/teasel/tests/TypeScript && git -C crates/teasel/tests/TypeScript sparse-checkout set --no-cone '/tsc/testdata/tests/cases/conformance/**' '/tsc/testdata/baselines/reference/conformance/*.errors.txt'
       - run: cargo test --release
@@ -53,7 +53,6 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 26
-      - run: npm install -g typescript@7
       - run: npm ci
         working-directory: npm
       - run: npm run build -- --target ${{ matrix.target }}
@@ -120,7 +119,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
-      - run: npm install -g typescript@7
       - run: npm ci && npm run build:js
         working-directory: npm
       - run: bun install --frozen-lockfile
@@ -200,7 +198,6 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 26
-      - run: npm install -g typescript@7
       - run: npm ci
         working-directory: npm
       - uses: actions/download-artifact@v8
