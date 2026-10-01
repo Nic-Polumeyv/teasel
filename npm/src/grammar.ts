@@ -1,6 +1,6 @@
 import type { Expression, Identifier, Pattern, Program, SourceLocation, Statement, VariableDeclaration } from 'estree';
-import type { Comment, HostNode } from './types.js';
-import { wire as encode } from './wire.js';
+import type { Comment, HostNode } from './types.ts';
+import { wire as encode } from './wire.ts';
 
 declare const out: unique symbol;
 

@@ -1,4 +1,4 @@
-import type { Engine, Held } from '../types.js';
+import type { Engine, Held } from '../types.ts';
 
 const encoder = new TextEncoder();
 const utf8 = new TextDecoder();

@@ -1,4 +1,4 @@
-import * as g from '../../dist/grammar.js';
+import * as g from '../../src/grammar.ts';
 
 const value = { value: g.bind(g.js.pattern) };
 const error = { error: g.bind(g.js.pattern) };
