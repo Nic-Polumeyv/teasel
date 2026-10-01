@@ -2,11 +2,9 @@
 title: Writing a grammar
 ---
 
-This page builds a grammar for a small template language made up for it, one part at a time. Each step starts with a question about what the syntax means, and adds the part of the definition that answers it. [Parsing with a grammar](/parsing-with-a-grammar) covers using a grammar once you have one, and the [grammar reference](/reference/grammar) lists every builder.
+Imagine you are designing a template language for your UI library. A page of it looks like this:
 
-The language renders a component once for each item of a list:
-
-```text list.tpl
+```tpl list.tpl
 <ul>
 	{{#repeat item, i in items by item.id}}
 		<Card title={{ item.name }} index={{ i }} />
@@ -16,14 +14,17 @@ The language renders a component once for each item of a list:
 </ul>
 ```
 
-- `{{#repeat item, i in items by item.id}}` renders its body once per element of `items`, naming the element `item` and its position `i`. `by item.id` gives each repetition a key.
-- `{{:empty}}` starts what renders when `items` is empty, and `{{/repeat}}` ends the block.
-- `{{ … }}` holds a JavaScript expression, in text or in an attribute's value.
-- `<Card>` is a component: an element whose name starts with a capital letter.
+`{{#repeat}}` renders a `<Card>` for every item of `items`, keyed by `item.id`. `{{:empty}}` is what shows when the list is empty, and `{{ … }}` drops a JavaScript expression into the page.
 
-## 1. Elements and text
+Your compiler needs this file as a tree: the HTML, your `repeat` block, and the JavaScript inside both, with every name traced to where it is declared. teasel reads the file into that tree once you describe the language to it as a grammar.
 
-Before any syntax of its own, a file of this language is HTML: elements, text and comments. So the first questions are what each of these is called in the tree, and which fields it has.
+You don't need to write the whole grammar at once. Describe the part you know, run it on `list.tpl`, and read where the parser stops: that is the next thing to describe.
+
+## 1. Start with the HTML
+
+Most of the file is HTML, so start there. The parser needs a name for each kind of node, and the names are yours to choose, since your compiler is the one that reads them. Call the whole file a `Template`, give elements a `name`, `attributes` and `children`, and give text its `data`.
+
+`<Card>` is different from `<ul>`: your compiler renders a component by calling it, and an element by creating it. Give components their own node type. teasel treats a tag that starts with a capital letter, or has a dot in it, as a component.
 
 ```js tpl.js
 import * as g from '@teasel/parser/grammar';
@@ -39,84 +40,54 @@ export const tpl = g.grammar('tpl', {
 			attributes: g.element.attributes,
 			children: g.content,
 		},
+		component: g.element(g.node('Component')),
 		other: g.element(g.node('Element')),
 	},
 });
 ```
 ```notes
 'tpl' :: The language's name.
-document :: The node the whole file becomes, `Template`, with the file's content under `children`.
-g.content :: The language's content: elements, text, and every node later steps add, as a list.
-g.text.data :: The text as read, character references such as `&amp;` decoded.
-delimiters :: What opens and closes an expression in text. Blocks start with them too, in step 4.
-fields :: The fields every element has: its tag name, its attributes, and its children.
-other :: The rule for every element no other rule matches. Here that is all of them.
+g.content :: Where the language's content goes, as a list: elements, text, and every node you add later.
+g.text.data :: The text as read, with character references such as `&amp;` decoded.
+delimiters :: What opens and closes an expression in text.
+component :: The rule for a tag that starts with a capital letter or has a dot in it.
+other :: The rule for every other element.
 ```
 
-A `Plan` made from the grammar reads documents of the language:
+Run it:
 
 ```js parse.js
 import { Source, Plan } from '@teasel/parser';
 import { tpl } from './tpl.js';
 
 const plan = new Plan(tpl);
-
-new Source('<ul><li>Pears</li></ul>').parse(plan).node;
-// { type: 'Template', children: [
-//   { type: 'Element', name: 'ul', attributes: [], children: [
-//     { type: 'Element', name: 'li', attributes: [], children: [
-//       { type: 'Text', data: 'Pears' } ] } ] } ] }
+new Source(list).parse(plan);
 ```
 
-Every node also has `start` and `end`, offsets into the file, left out here and below.
+![list.tpl read with the HTML grammar: the parser stops at the first {{](Steps.svelte "step=1")
 
-## 2. Components
+The parser reads `<ul>` and stops at the first `{{`. `delimiters` told it that `{{` opens something, and nothing says what yet.
 
-Should `<Card>` and `<li>` be the same kind of node? A tool reading the tree renders a component by calling it and an element by creating it, so they get different types. The `component` rule matches a name that starts with a capital letter or has a dot in it, as `<ui.Card>` does.
+## 2. Read the expressions
 
-```js tpl.js
-	elements: {
-		fields: {
-			name: g.element.tag,
-			attributes: g.element.attributes,
-			children: g.content,
-		},
-		component: g.element(g.node('Component')),
-		other: g.element(g.node('Element')),
-	},
-```
-
-```js parse.js
-new Source('<Card />').parse(plan).node.children[0];
-// { type: 'Component', name: 'Card', attributes: [], children: [] }
-```
-
-## 3. Expressions
-
-What does `{{ … }}` hold, and where can it appear? A JavaScript expression, in text and in an attribute's value. `delimiters` already sets how one starts and ends. `expression` names the node that holds it, and `attributes` lets an attribute's value be one.
+`{{ item.name }}` is a JavaScript expression, and you want it in the tree as one: an `Expression` node holding the expression's ESTree. It also appears as an attribute's value, `title={{ item.name }}`, and an attribute's value is plain text until the grammar lets it hold one.
 
 ```js tpl.js
 	attributes: { expressions: true },
 	expression: g.node('Expression', { expression: g.js.expression }),
 ```
 ```notes
-expressions: true :: Without it an attribute's value is text, and `title={{ item.name }}` reads as an attribute `title` with the text `{{`, then two more attributes, `item.name` and `}}`.
-g.js.expression :: Reads a JavaScript expression, up to the closing `}}`. The field holds its ESTree node.
+expressions: true :: Lets an attribute's value be an expression between the delimiters.
+g.js.expression :: Reads JavaScript up to the closing `}}`. The field holds its ESTree node.
 ```
 
-```js parse.js
-new Source('<Card title={{ item.name }} />Hi {{ user }}').parse(plan).node;
-// { type: 'Template', children: [
-//   { type: 'Component', name: 'Card', attributes: [
-//     { type: 'Attribute', name: 'title', value: { type: 'Expression',
-//       expression: { type: 'MemberExpression', … } } } ], children: [] },
-//   { type: 'Text', data: 'Hi ' },
-//   { type: 'Expression', expression: { type: 'Identifier', name: 'user' } } ] }
-```
+![list.tpl read with expressions added: the parser stops at the # of {{#repeat](Steps.svelte "step=2")
 
-## 4. The repeat block
+The parser gets one character further. `{{` now opens an expression, and `#repeat item, i in items by item.id` is not JavaScript. A block needs a mark that tells it apart from an expression.
 
-How does the language mark where a block starts, where a branch of it starts, and where it ends? With the delimiter and one character: `{{#`, `{{:` and `{{/`. `sigils` names those characters, and a fourth, `tag`, for a tag such as `{{@html …}}`. This language has no tags, but a grammar with blocks names all four.
+## 3. Mark the blocks
+
+Your blocks start with `{{#`, continue with `{{:` and end with `{{/`: the delimiter and one character. Those characters are the block's sigils. teasel also takes a fourth, for a tag such as `{{@html …}}`, so name one even though your language has no tags.
 
 ```js tpl.js
 	sigils: {
@@ -128,37 +99,18 @@ How does the language mark where a block starts, where a branch of it starts, an
 	},
 ```
 
-The block itself is built in five passes, one part of `{{#repeat item, i in items by item.id}}` at a time.
+![list.tpl read with sigils added: the parser asks which block repeat is](Steps.svelte "step=3")
 
-### The list and the body
+Now `{{#` starts a block, and the parser asks which one. No block is called `repeat` yet.
 
-What is the least a repeat block needs? The list to repeat over, and the content to repeat.
+## 4. Describe the repeat block
+
+Read the block's head as a sentence: `repeat item, i in items by item.id`. Start with the parts every repeat has: the item, the word `in`, the list, and the content to repeat.
+
+`item` and `items` are different kinds of name. `items` is used: it is declared somewhere else, in your component's script or by whoever renders it. `item` is declared here, and only the block's content can see it. Read it as a pattern, so `{ name } in items` works too, and bind it, so teasel declares it in the scope the block opens.
 
 ```js tpl.js
 		blocks: {
-			repeat: g.block(
-				g.node('RepeatBlock', { list: g.js.expression }, { body: g.content }),
-			),
-		},
-```
-```notes
-repeat :: The word after `{{#`. The block closes with `{{/repeat}}`.
-'RepeatBlock' :: The node's type. After it come the block's fields, in the order the syntax writes them.
-g.js.expression :: Reads JavaScript up to the `}}`, or up to the next word of the block's head once there is one.
-body :: The block's content, everything up to `{{/repeat}}`. Content always comes last.
-```
-
-```js parse.js
-new Source('{{#repeat items}}<Card />{{/repeat}}').parse(plan).node.children[0];
-// { type: 'RepeatBlock', list: { type: 'Identifier', name: 'items' },
-//   body: [ { type: 'Component', name: 'Card', … } ] }
-```
-
-### The item
-
-`item` names each element of the list. Is it a name the template uses, or one it declares? It declares it, for the body only. Can it be destructured, as in `{{#repeat { name } in items}}`? It should be. `g.js.pattern` reads a name or a destructuring pattern, and `g.bind` declares what it reads in the scope the block opens. The word `in` stands between the item and the list.
-
-```js tpl.js
 			repeat: g.block(
 				g.node(
 					'RepeatBlock',
@@ -168,25 +120,24 @@ new Source('{{#repeat items}}<Card />{{/repeat}}').parse(plan).node.children[0];
 					{ body: g.content },
 				),
 			),
+		},
+```
+```notes
+repeat :: The word after `{{#`. The block closes with `{{/repeat}}`.
+'RepeatBlock' :: The node's type. Its fields follow, in the order the head writes them.
+g.bind :: Declares the names the pattern reads in the scope the block opens.
+g.js.pattern :: Reads a name or a destructuring pattern.
+'in' :: A word of your syntax. It stands between the fields and ends the pattern before it.
+body :: The block's content, up to `{{/repeat}}` or a branch. Content comes last.
 ```
 
-With `scopes`, every use of `item` in the body refers to the item:
+![list.tpl read with the repeat block: the parser expects in where the comma is](Steps.svelte "step=4")
 
-```js parse.js
-import { Source, Plan, referenceOf } from '@teasel/parser';
+The parser reads `item`, then expects `in` and finds the comma before the index.
 
-const text = '{{#repeat item in items}}{{ item.name }}{{/repeat}}';
-const { node } = new Source(text, { scopes: true }).parse(plan);
-const repeat = node.children[0];
+## 5. Add the index
 
-const use = repeat.body[0].expression.object;    // the item in item.name
-referenceOf(use).binding.node === repeat.item;   // true
-referenceOf(repeat.list).binding;                // null: declared outside the file
-```
-
-### The index
-
-Is the index always written? No, so it goes in `g.opt`, which reads it only when its first word, `,`, is there. When it is missing, should `index` be null or left out? `g.optional` leaves the field out. A position is one name, so it reads an identifier rather than a pattern.
+Not every repeat writes an index, so the index goes in `g.opt`: it is read only when its first word, the comma, is there. When it is missing, `g.optional` leaves the field out of the node. An index is one name, never a pattern, so read an identifier.
 
 ```js tpl.js
 					{ item: g.bind(g.js.pattern) },
@@ -194,18 +145,13 @@ Is the index always written? No, so it goes in `g.opt`, which reads it only when
 					'in',
 ```
 
-```js parse.js
-new Source('{{#repeat item, i in items}}…{{/repeat}}').parse(plan).node.children[0];
-// { type: 'RepeatBlock', item: { … name: 'item' }, index: { … name: 'i' },
-//   list: { … name: 'items' }, body: [ … ] }
+![list.tpl read with the index: the parser expects }} where by is](Steps.svelte "step=5")
 
-new Source('{{#repeat item in items}}…{{/repeat}}').parse(plan).node.children[0];
-// the same without index
-```
+The head now reads up to `by`.
 
-### The key
+## 6. Add the key
 
-Does `by item.id` declare a name? No, it uses `item`, so it reads an expression without `g.bind`. It is optional, as the index is. The key can use `item` because the scope a block opens starts at the first name the block declares, and covers everything read after it.
+`by item.id` uses `item`; it declares nothing, so it is a plain expression with no `g.bind`. It is optional, like the index. It can still use `item`, because the scope a block opens starts at the first name the block declares and covers everything read after it.
 
 ```js tpl.js
 					{ list: g.js.expression },
@@ -213,31 +159,43 @@ Does `by item.id` declare a name? No, it uses `item`, so it reads an expression 
 					{ body: g.content },
 ```
 
-```js parse.js
-const text = '{{#repeat item in items by item.id}}…{{/repeat}}';
-const repeat = new Source(text, { scopes: true }).parse(plan).node.children[0];
-referenceOf(repeat.key.object).binding.node === repeat.item;   // true
-```
+![list.tpl read with the key: the parser stops at the empty branch](Steps.svelte "step=6")
 
-### The empty branch
+The whole head reads, and so does the first `<Card>`. The parser stops at `{{:empty}}`: a branch, in a block that has none.
 
-What else can stand inside the block? `{{:empty}}` and the content after it. A branch is a word after `{{:`, with fields of its own; this one reads no JavaScript, only content. A repeat block without the branch has no `fallback` field.
+## 7. Add the empty branch
+
+A branch is a word after `{{:` with fields of its own. `empty` reads no JavaScript, only content, which goes in a field of the block. A repeat without the branch has no `fallback` field.
 
 ```js tpl.js
 			repeat: g.block(
 				g.node(
 					'RepeatBlock',
-					// the fields from the steps above
+					// the fields from steps 4 to 6
 				),
 				{ branches: { empty: [{ fallback: g.optional(g.content) }] } },
 			),
 ```
-```notes
-empty :: The word after `{{:`.
-fallback :: The field the branch's content goes in.
+
+![list.tpl read with the whole grammar: the tree, each node tied to its text](Steps.svelte "step=7")
+
+`list.tpl` reads. Hover a node to see its text, or the text to find its node. `item` in `item.name` and `item.id` points back to the `item` the block declares.
+
+The same links are on the tree you get, when you ask for `scopes`:
+
+```js parse.js
+import { Source, Plan, referenceOf } from '@teasel/parser';
+
+const { node } = new Source(list, { scopes: true }).parse(plan);
+const repeat = node.children[0].children[1];
+const card = repeat.body[1];
+const title = card.attributes[0].value.expression;   // item.name
+
+referenceOf(title.object).binding.node === repeat.item;   // true
+referenceOf(repeat.list).binding;                         // null: declared outside
 ```
 
-## 5. The whole grammar
+## The whole grammar
 
 ```js tpl.js
 import * as g from '@teasel/parser/grammar';
@@ -281,29 +239,7 @@ export const tpl = g.grammar('tpl', {
 });
 ```
 
-Read `list.tpl` from the top of the page with it:
-
-```js parse.js
-const { node, bindings } = new Source(list, { scopes: true }).parse(plan);
-const repeat = node.children[0].children[1];   // after the text '\n\t'
-
-repeat.fallback[1].name;                        // 'li'
-bindings.map((b) => `${b.name}: ${b.kind}`);    // ['item: pattern', 'i: pattern']
-```
-
-A document the grammar does not describe throws a `ParseError` naming what it expected:
-
-```js parse.js
-new Source('{{#repeat item items}}…{{/repeat}}').parse(plan);
-// ParseError: Expected in, code 'expected', pos 15
-
-new Source('{{#repeat item in items}}…').parse(plan);
-// ParseError: repeat is not closed, code 'unclosed', pos 0
-```
-
-## 6. Types
-
-In TypeScript, and in JavaScript checked with JSDoc, every node is typed from the definition:
+In TypeScript, and in JavaScript checked with JSDoc, every node is typed from it:
 
 ```ts types.ts
 import type { NodeType } from '@teasel/parser/grammar';
@@ -315,4 +251,4 @@ type Repeat = NodeType<typeof tpl, 'RepeatBlock'>;
 //   key?: Expression; body: Content[]; fallback?: Content[] }
 ```
 
-`Content` is every node the language's content can hold: `Element`, `Component`, `Text`, `Comment`, `Expression` and `RepeatBlock`. A field left out by `g.optional` is optional in the type, and a field read by `g.js.pattern` is a `Pattern`.
+`Content` is every node your content can hold: `Element`, `Component`, `Text`, `Comment`, `Expression` and `RepeatBlock`. [Parsing with a grammar](/parsing-with-a-grammar) covers the options a document parse takes, and the [grammar reference](/reference/grammar) lists every builder.
