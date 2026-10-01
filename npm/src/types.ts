@@ -1,5 +1,3 @@
-// The types the package answers with and the contract its engines meet, each defined once and
-// read by the entry, the decoder, the engines and the grammar builders.
 import type { Expression, Identifier, Node, SourceLocation } from 'estree';
 
 /** A scope, as one of `scopes` on the answer. */
@@ -351,7 +349,7 @@ export type Code =
 
 // ── the engine
 
-export type View = Uint32Array | Float64Array | Uint8Array;
+type View = Uint32Array | Float64Array | Uint8Array;
 /** Whether the tree is the TypeScript one, then each view of the layout's `views`, as long as its buffer's room; `undefined` for a table no parse filled yet. */
 export type Tree = readonly (View | number | undefined)[];
 

@@ -370,6 +370,227 @@ fn a_definition_is_refused_by_name() {
 	assert!(Grammar::read(&short).unwrap_err().contains("ends early"));
 }
 
+// how a definition groups its fields into records never changes what it reads
+#[test]
+fn records_group_freely() {
+	let fields = |list: Vec<(&'static str, Source)>| definition::Item::Fields(Record(list));
+	let parse = |host: &Host, text: &str| parse_document(text, &host.wire(), &Request::from_flags(Options::MODULE));
+
+	let mut host = minimal();
+	host.definition.sigils.as_mut().unwrap().blocks = Some(Record(vec![(
+		"if",
+		definition::Block {
+			node: node(
+				"IfBlock",
+				vec![fields(vec![
+					("test", source("js", "expression", false)),
+					("consequent", source("content", "fragment", false)),
+				])],
+			),
+			branches: Record(vec![(
+				"else if",
+				definition::Branch::Reopen(definition::Reopen {
+					reopen: "alternate",
+					flag: "elseif",
+				}),
+			)]),
+		},
+	)]));
+	let answer = parse(&host, "{#if a}x{:else if b}y{/if}");
+	assert!(
+		!answer.contains("\"error\"") && answer.contains("\"elseif\":true") && answer.contains("\"name\":\"b\""),
+		"{answer}"
+	);
+
+	let mut host = minimal();
+	host.definition.directives = Some(definition::Directives {
+		prefix: None,
+		arg: None,
+		modifier: None,
+		dynamic: None,
+		unique: None,
+		fields: Record(vec![("name", source("directive", "arg", false))]),
+		shorthands: None,
+		rules: Some(Record(vec![(
+			"transition",
+			definition::Directive {
+				unique: definition::Uniqueness::No,
+				node: node(
+					"TransitionDirective",
+					vec![fields(vec![
+						("expression", source("value", "expression", false)),
+						(
+							"intro",
+							Source {
+								literal: Some(definition::Literal::True),
+								..source("literal", "literal", false)
+							},
+						),
+					])],
+				),
+			},
+		)])),
+		other: None,
+	});
+	host.definition.attributes = Some(definition::Attributes {
+		expressions: Some(true),
+		shorthand: None,
+	});
+	host.definition.elements.other = Some(definition::Element {
+		node: node("RegularElement", Vec::new()),
+		root: false,
+		once: false,
+		inside: None,
+		outside: None,
+		content: None,
+	});
+	host.definition.expression = Some(node(
+		"ExpressionTag",
+		vec![fields(vec![("expression", source("js", "expression", false))])],
+	));
+	let answer = parse(&host, "<a transition:fade={params}/>");
+	assert!(
+		!answer.contains("\"error\"") && answer.contains("\"name\":\"params\"") && answer.contains("\"intro\":true"),
+		"{answer}"
+	);
+}
+
+// what a definition says that the engine would not read is refused, naming the field
+#[test]
+fn a_definition_says_only_what_is_read() {
+	let fields = |list: Vec<(&'static str, Source)>| definition::Item::Fields(Record(list));
+	let refused = |host: Host, says: &str| {
+		let error = Grammar::read(&host.wire()).unwrap_err();
+		assert!(error.contains(says), "expected an error naming {says:?}, got {error:?}");
+	};
+	let with_block = |items: Vec<definition::Item>| {
+		let mut host = minimal();
+		host.definition.sigils.as_mut().unwrap().blocks = Some(Record(vec![(
+			"each",
+			definition::Block {
+				node: node("EachBlock", items),
+				branches: Record(Vec::new()),
+			},
+		)]));
+		host
+	};
+	refused(
+		with_block(vec![
+			fields(vec![("expression", source("js", "expression", false))]),
+			fields(vec![
+				("body", source("content", "fragment", false)),
+				("fallback", source("content", "fragment", false)),
+			]),
+		]),
+		"fallback is a second body after body",
+	);
+	refused(
+		with_block(vec![
+			fields(vec![("expression", source("value", "expression", false))]),
+			fields(vec![("body", source("content", "fragment", false))]),
+		]),
+		"expression reads value expression, which a form cannot",
+	);
+
+	let mut host = minimal();
+	host.definition.sigils.as_mut().unwrap().tags = Some(Record(vec![(
+		"const",
+		definition::Tag {
+			among: definition::Among::Content,
+			node: node(
+				"ConstTag",
+				vec![fields(vec![(
+					"declaration",
+					Source {
+						bind: Bind::Inside,
+						..source("js", "pattern", false)
+					},
+				)])],
+			),
+		},
+	)]));
+	refused(host, "declaration binds, but a tag opens no scope");
+
+	let directive = |items: Vec<definition::Item>| {
+		let mut host = minimal();
+		host.definition.directives = Some(definition::Directives {
+			prefix: None,
+			arg: None,
+			modifier: None,
+			dynamic: None,
+			unique: None,
+			fields: Record(Vec::new()),
+			shorthands: None,
+			rules: Some(Record(vec![(
+				"on",
+				definition::Directive {
+					unique: definition::Uniqueness::No,
+					node: node("OnDirective", items),
+				},
+			)])),
+			other: None,
+		});
+		host
+	};
+	refused(
+		directive(vec![fields(vec![("expression", source("value", "expression", true))])]),
+		"expression is a directive's value",
+	);
+	refused(
+		directive(vec![definition::Item::Opt(vec![fields(vec![
+			("expression", source("value", "expression", false)),
+			(
+				"intro",
+				Source {
+					literal: Some(definition::Literal::True),
+					..source("literal", "literal", false)
+				},
+			),
+		])])]),
+		"a flag stands outside groups",
+	);
+
+	let mut host = minimal();
+	host.definition.elements.rules = Some(Record(vec![(
+		"svelte:element",
+		definition::Element {
+			node: node(
+				"SvelteElement",
+				vec![fields(vec![
+					("tag", source("element", "this:text", false)),
+					("other", source("element", "this", false)),
+				])],
+			),
+			root: false,
+			once: false,
+			inside: None,
+			outside: None,
+			content: None,
+		},
+	)]));
+	refused(host, "SvelteElement reads one `this` field at most");
+
+	let mut host = minimal();
+	host.definition.comment = node(
+		"Comment",
+		vec![fields(vec![
+			("data", source("text", "data", false)),
+			("raw", source("text", "raw", false)),
+		])],
+	);
+	refused(host, "Comment holds data and nothing else");
+
+	let mut host = minimal();
+	host.definition.fragment = Some(node(
+		"Fragment",
+		vec![fields(vec![
+			("nodes", source("nodes", "nodes", false)),
+			("more", source("nodes", "nodes", false)),
+		])],
+	));
+	refused(host, "Fragment holds one field, its nodes");
+}
+
 // the wire the Rust side writes is the one it reads, so both ends stay one format
 #[test]
 fn the_wire_round_trips() {
@@ -465,21 +686,4 @@ fn wire_types() {
 		common::pinned(&root.join("../../npm/src/wire.ts"), &Grammar::wire_types()),
 		"npm/src/wire.ts changed; run with UPDATE=1 once the change is meant"
 	);
-}
-
-// cargo test --release --test hosts wire_cost -- --ignored --nocapture
-#[test]
-#[ignore]
-fn wire_cost() {
-	let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-	let bytes = fs::read(root.join("tests/hosts/svelte/host.wire")).unwrap();
-	let t = std::time::Instant::now();
-	let first = Grammar::read(&bytes).unwrap();
-	println!("first Grammar::read in this process: {:?}", t.elapsed());
-	let t = std::time::Instant::now();
-	for _ in 0..1000 {
-		std::hint::black_box(Grammar::read(&bytes).unwrap());
-	}
-	println!("warm Grammar::read: {:?}", t.elapsed() / 1000);
-	drop(first);
 }

@@ -1,10 +1,8 @@
-import type { Expression, Identifier, Node, Pattern, Program, SourceLocation, Statement } from 'estree';
+import type { Expression, Node, Pattern, Program, Statement } from 'estree';
 import { decode, PARENT, REFERENCE, SCOPE } from './decode.ts';
-import type { Comment, Held, Kept, Parsed, Prepared, Reference, Root, Scope } from './types.ts';
+import type { Code, Held, Parsed, Prepared, Reference, Scope } from './types.ts';
 import { flags, type Options } from './options.ts';
 import { engine } from '#engine';
-
-import type { Code } from './types.ts';
 import type { Answers, Grammar } from './grammar.ts';
 
 export type { Options } from './options.ts';

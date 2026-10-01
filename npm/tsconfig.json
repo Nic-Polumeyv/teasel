@@ -7,11 +7,9 @@
 		"noEmit": true,
 		"skipLibCheck": true,
 		"types": ["node"],
-		"allowImportingTsExtensions": true,
 		"erasableSyntaxOnly": true,
 		"verbatimModuleSyntax": true,
 		"rewriteRelativeImportExtensions": true
 	},
-	"include": ["src/**/*.ts", "scripts/**/*.ts"],
-	"exclude": ["dist"]
+	"include": ["src/**/*.ts", "scripts/**/*.ts"]
 }
