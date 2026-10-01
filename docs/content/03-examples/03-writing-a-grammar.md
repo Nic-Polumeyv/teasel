@@ -22,9 +22,11 @@ You don't need to write the whole grammar at once. Describe the part you know, r
 
 ## 1. Start with the HTML
 
-Most of the file is HTML, so start there. The parser needs a name for each kind of node, and the names are yours to choose, since your compiler is the one that reads them. Call the whole file a `Template`, give elements a `name`, `attributes` and `children`, and give text its `data`.
+Most of the file is HTML, so start there. Every kind of node gets a type, and the names are yours to choose: your compiler is the one that reads them. A component is a kind of its own, since your compiler renders `<Card>` by calling it and `<ul>` by creating an element. Hover a piece of the grammar to see what it reads in `list.tpl`.
 
-`<Card>` is different from `<ul>`: your compiler renders a component by calling it, and an element by creating it. Give components their own node type. teasel treats a tag that starts with a capital letter, or has a dot in it, as a component.
+![list.tpl above the pieces of an HTML grammar: document, other, component, fields, text, comment and delimiters, each with arrows to the part of the file it reads](Html.svelte "start=document")
+
+Put together, with the language's name:
 
 ```js tpl.js
 import * as g from '@teasel/parser/grammar';
@@ -44,14 +46,6 @@ export const tpl = g.grammar('tpl', {
 		other: g.element(g.node('Element')),
 	},
 });
-```
-```notes
-'tpl' :: The language's name.
-g.content :: Where the language's content goes, as a list: elements, text, and every node you add later.
-g.text.data :: The text as read, with character references such as `&amp;` decoded.
-delimiters :: What opens and closes an expression in text.
-component :: The rule for a tag that starts with a capital letter or has a dot in it.
-other :: The rule for every other element.
 ```
 
 Run it:
@@ -197,47 +191,9 @@ referenceOf(repeat.list).binding;                         // null: declared outs
 
 ## The whole grammar
 
-```js tpl.js
-import * as g from '@teasel/parser/grammar';
+Each color is one part of the language. Hover a part, or a line of it, to bring it forward, and follow its step to see why it is there.
 
-export const tpl = g.grammar('tpl', {
-	document: g.node('Template', { children: g.content }),
-	text: g.node('Text', { data: g.text.data }),
-	comment: g.node('Comment', { data: g.text.data }),
-	delimiters: ['{{', '}}'],
-	attributes: { expressions: true },
-	elements: {
-		fields: {
-			name: g.element.tag,
-			attributes: g.element.attributes,
-			children: g.content,
-		},
-		component: g.element(g.node('Component')),
-		other: g.element(g.node('Element')),
-	},
-	sigils: {
-		open: '#',
-		branch: ':',
-		close: '/',
-		tag: '@',
-		blocks: {
-			repeat: g.block(
-				g.node(
-					'RepeatBlock',
-					{ item: g.bind(g.js.pattern) },
-					g.opt(',', { index: g.optional(g.bind(g.js.identifier)) }),
-					'in',
-					{ list: g.js.expression },
-					g.opt('by', { key: g.optional(g.js.expression) }),
-					{ body: g.content },
-				),
-				{ branches: { empty: [{ fallback: g.optional(g.content) }] } },
-			),
-		},
-	},
-	expression: g.node('Expression', { expression: g.js.expression }),
-});
-```
+![the whole grammar, colored by part: the file and its text, elements and components, expressions, block marks, the repeat block and the empty branch, each keyed to its step](Whole.svelte "tpl.js")
 
 In TypeScript, and in JavaScript checked with JSDoc, every node is typed from it:
 
