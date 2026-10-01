@@ -30,6 +30,7 @@ export interface Source<T = unknown, S extends Site = Site, M extends Mods = Pla
 declare const children: unique symbol;
 declare const attributes: unique symbol;
 declare const script: unique symbol;
+declare const written: unique symbol;
 /** A node's children: the grammar's fragment node when it has one, else the list. */
 export interface Children {
 	readonly [children]: true;
@@ -39,6 +40,10 @@ interface Nodes {
 }
 interface Attributes {
 	readonly [attributes]: true;
+}
+/** An attribute's value as written: true without one, else its text and expressions. */
+interface Written {
+	readonly [written]: true;
 }
 interface Script {
 	readonly [script]: true;
@@ -69,7 +74,7 @@ export const value = {
 	expression: source<Expression, 'value'>('value', 'expression'),
 	pattern: source<Pattern, 'value'>('value', 'pattern'),
 	/** The value as written: text and expressions. */
-	raw: source<Children, 'value'>('value', 'value'),
+	raw: source<Written, 'value'>('value', 'value'),
 };
 
 /** What the document holds. */
@@ -96,7 +101,7 @@ export const literal = <const T extends boolean | null | readonly []>(v: T): Sou
 	({ ...source<T, 'literal'>('literal', 'literal'), literal: v }) as Source<T, 'literal'>;
 
 /** The field is left out when nothing was read into it. The only way a field is absent. */
-export const optional = <T, S extends Site, M extends Mods>(s: Source<T, S, M>): Source<T, S, With<M, 'optional', true>> =>
+export const optional = <T, S extends Exclude<Site, 'value'>, M extends Mods>(s: Source<T, S, M>): Source<T, S, With<M, 'optional', true>> =>
 	({ ...s, optional: true }) as Source<T, S, With<M, 'optional', true>>;
 
 type Bindable = Pattern | Pattern[];
@@ -201,7 +206,8 @@ export const directive = Object.assign(
 	}),
 	{
 		kind: source<string, 'directive'>('directive', 'name'),
-		arg: source<string | null, 'directive'>('directive', 'arg'),
+		/** The argument; an expression when the directive syntax brackets a dynamic one. */
+		arg: source<string | Expression | null, 'directive'>('directive', 'arg'),
 		modifiers: source<string[], 'directive'>('directive', 'modifiers'),
 		raw: source<string, 'directive'>('directive', 'raw'),
 	},
@@ -362,7 +368,9 @@ type Resolve<T, G extends Definition> = T extends Children
 	? G['fragment'] extends Node ? FragmentNode<G> : Content<G>[]
 	: T extends Nodes
 		? Content<G>[]
-		: T extends Attributes
+		: T extends Written
+			? AttributeNode<G>['value']
+			: T extends Attributes
 			? Attribute<G>[]
 			: T extends Script
 				? ScriptNode<G>

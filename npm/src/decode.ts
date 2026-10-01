@@ -485,7 +485,7 @@ interface Spelling<E, St> {
 	comments(): E;
 	finite(value: E): E;
 	bigint(text: E): E;
-	/** A value computed once, before the keys are set, and read where it is used. */
+	/** A value computed once and read where it is used. */
 	hold(value: E): E;
 	/** `hold`, the node built while `name_only` says whether it names what another declares. */
 	othername(same: E, id: E): E;
@@ -513,7 +513,7 @@ const holds_nodes = (op: Op): boolean =>
 	op.op === 'params' ||
 	op.op === 'othername' ||
 	(op.op === 'opt' && op.ty !== '?str' && op.ty !== '?u32') ||
-	(op.op === 'host' && (op.value === HOST_NODE || op.value === HOST_LIST || op.value === HOST_COMMENTS)) ||
+	(op.op === 'host' && host_holds(op.value)) ||
 	(op.op === 'object' && op.inner.some(holds_nodes));
 
 /** An operation every node of the kind has: its value. */
@@ -603,6 +603,7 @@ function conditional<E, St>(B: Spelling<E, St>, op: Op, none: Missing, erase: bo
 // the engine tags a host node's field by the kind of value: a node, a list, a string, a slice of
 // the source, strings, a boolean, a number, null, every comment
 const HOST_NODE = 0, HOST_LIST = 1, HOST_COMMENTS = 8;
+const host_holds = (tag: number) => tag === HOST_NODE || tag === HOST_LIST || tag === HOST_COMMENTS;
 
 /** A host node's field from the three words at `at`: its tag, then two of value. */
 function host_value<E, St>(B: Spelling<E, St>, tag: number, at: number): E {
@@ -635,7 +636,7 @@ function host_value<E, St>(B: Spelling<E, St>, tag: number, at: number): E {
 type Value = (S: State, V: Uint32Array, b: number, n: Decoded, L: unknown[]) => any;
 type Stmt = (S: State, V: Uint32Array, b: number, n: Decoded, L: unknown[], id: number) => void;
 
-/** A kind's operations as closures: the leads, then the keys in order, then what follows. */
+/** A kind's operations as closures: the leads, then the keys in order. */
 interface Program {
 	slots: number;
 	lead: Stmt[];
@@ -680,16 +681,13 @@ class Closures implements Spelling<Value, Stmt> {
 		});
 		return (S, V, b, n, L) => L[slot];
 	}
-	othername(same: Value, id: Value): Value {
-		const slot = this.slots++;
-		this.lead.push((S, V, b, n, L) => {
-			const was = S.name_only;
-			S.name_only = same(S, V, b, n, L);
-			L[slot] = build(S, id(S, V, b, n, L), n);
-			S.name_only = was;
-		});
-		return (S, V, b, n, L) => L[slot];
-	}
+	othername = (same: Value, id: Value): Value => (S, V, b, n, L) => {
+		const was = S.name_only;
+		S.name_only = same(S, V, b, n, L);
+		const node = build(S, id(S, V, b, n, L), n);
+		S.name_only = was;
+		return node;
+	};
 	set = (key: string, value: Value): Stmt => (S, V, b, n, L) => {
 		n[key] = value(S, V, b, n, L);
 	};
@@ -874,7 +872,7 @@ class Source implements Spelling<string, string> {
 	table = (list: unknown[]) => `K[${this.constants.push(list) - 1}]`;
 	at = (table: string, index: string) => `${table}[${index}]`;
 	// a child's builder is looked up where the child is read: each site sees its own few kinds
-	built = (id: string) => `J[N[${id} * ${this.words} + ${this.kind >> 2}]](S, ${id}, 0, n)`;
+	built = (id: string, into = 'n') => `J[N[${id} * ${this.words} + ${this.kind >> 2}]](S, ${id}, 0, ${into})`;
 	items = (start: string, len: string, params: boolean) => `${params ? 'params' : 'items'}(S, ${start}, ${len}, n)`;
 	pair = (a: string, b: string) => `[${a}, ${b}]`;
 	object = (fields: [string, string][]) => `{ ${fields.map(([key, field]) => `${JSON.stringify(key)}: ${field}`).join(', ')} }`;
@@ -929,7 +927,7 @@ function generate(C: Compiled, G: Language, config: number, ops: Op[], ts: boole
 	for (; ops[at].op === 'keep' || ops[at].op === 'through'; at++) {
 		if (!erase) continue;
 		if (ops[at].op === 'keep') B.lead.push(B.kept(ops[at].key));
-		else B.lead.push(`S.adopted.push(id); return J[N[${B.dec(word(ops[at].at))} * ${C.words} + ${C.kind >> 2}]](S, ${B.dec(word(ops[at].at))}, 0, parent);`);
+		else B.lead.push(`S.adopted.push(id); return ${B.built(B.dec(word(ops[at].at)), 'parent')};`);
 	}
 	const head = ops[at++];
 	const type = head.op === 'type' ? JSON.stringify(head.key) : B.at(B.table(head.names), byte(head.at));
@@ -1019,12 +1017,9 @@ function generate_host(C: Compiled, config: number, type: string | null, span: b
 	}
 	const tail: string[] = [];
 	keys.forEach((key, i) => {
-		if (tags[i] === HOST_NODE || tags[i] === HOST_LIST || tags[i] === HOST_COMMENTS) {
+		if (host_holds(tags[i])) {
 			props.push(`${JSON.stringify(key)}: undefined`);
-			const lead = B.lead;
-			B.lead = tail;
 			tail.push(B.set(key, host_value(B, tags[i], i * 12)));
-			B.lead = lead;
 		} else props.push(`${JSON.stringify(key)}: ${host_value(B, tags[i], i * 12)}`);
 	});
 	// what the literal has no room for, as for the kinds; a node without a span has only its facts
@@ -1041,7 +1036,7 @@ function generate_host(C: Compiled, config: number, type: string | null, span: b
 			after.push('if (s !== undefined) s.node = n;', LATE);
 		}
 	}
-	const body = `const N = S.N, J = S.J, HV = S.host_vals; ${rare.length === 0 ? '' : `if (${rare.join(' || ')}) return host(S, id, index, parent);`} ${before.join(' ')} const p = id * S.ps + S.po; ${B.lead.join(' ')} const n = { ${props.join(', ')} }; ${tail.join(' ')} ${after.join(' ')} return n;`;
+	const body = `const N = S.N, J = S.J, HV = S.host_vals; ${rare.length === 0 ? '' : `if (${rare.join(' || ')}) return host(S, id, index, parent);`} ${before.join(' ')} const p = id * S.ps + S.po; const n = { ${props.join(', ')} }; ${tail.join(' ')} ${after.join(' ')} return n;`;
 	return new Function('K', 'host', 'items', 'comments', 'strs', 'late', 'PARENT', 'SCOPE', `return (S, id, index, from, parent) => { ${body} };`)(B.constants, host, items, comments, strs, late, PARENT, SCOPE);
 }
 

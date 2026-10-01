@@ -162,11 +162,11 @@ pub(crate) trait Wire: Sized {
 
 	/// Adds the definitions the type and every type it holds need, each once, in the order of
 	/// first use.
-	fn definitions(_out: &mut Vec<Definition>) {}
+	fn definitions(_out: &mut Vec<Declaration>) {}
 }
 
 /// A named type on the wire as TypeScript: its type and the function that writes it.
-pub(crate) struct Definition {
+pub(crate) struct Declaration {
 	pub(crate) name: &'static str,
 	pub(crate) docs: String,
 	pub(crate) ty: String,
@@ -249,7 +249,7 @@ impl<T: Wire> Wire for Option<T> {
 		)
 	}
 
-	fn definitions(out: &mut Vec<Definition>) {
+	fn definitions(out: &mut Vec<Declaration>) {
 		T::definitions(out);
 	}
 }
@@ -278,7 +278,7 @@ impl<T: Wire> Wire for Vec<T> {
 		)
 	}
 
-	fn definitions(out: &mut Vec<Definition>) {
+	fn definitions(out: &mut Vec<Declaration>) {
 		T::definitions(out);
 	}
 }
@@ -310,7 +310,7 @@ impl<A: Wire, B: Wire> Wire for (A, B) {
 		)
 	}
 
-	fn definitions(out: &mut Vec<Definition>) {
+	fn definitions(out: &mut Vec<Declaration>) {
 		A::definitions(out);
 		B::definitions(out);
 	}
@@ -348,7 +348,7 @@ impl<T: Wire> Wire for Record<T> {
 		)
 	}
 
-	fn definitions(out: &mut Vec<Definition>) {
+	fn definitions(out: &mut Vec<Declaration>) {
 		T::definitions(out);
 	}
 }
@@ -357,8 +357,8 @@ fn indent(text: &str) -> String {
 	text.replace('\n', "\n\t")
 }
 
-/// A name for a loop's variable that the value being looped over does not use: one more
-/// underscore per nesting.
+/// A loop variable's name that the looped value does not mention, so the loop never shadows
+/// what it reads.
 fn fresh(value: &str, base: &str) -> String {
 	let mut name = base.to_string();
 	while value.contains(&name) {
@@ -594,7 +594,7 @@ macro_rules! wire {
 				format!("write{}(w, {value});", stringify!($name))
 			}
 
-			fn definitions(out: &mut Vec<$crate::host::grammar::Definition>) {
+			fn definitions(out: &mut Vec<$crate::host::grammar::Declaration>) {
 				if out.iter().any(|d| d.name == stringify!($name)) {
 					return;
 				}
@@ -605,7 +605,7 @@ macro_rules! wire {
 					ty: <$t as $crate::host::grammar::Wire>::ts_field(),
 					write: <$t as $crate::host::grammar::Wire>::ts_write(&format!("v.{}", $crate::host::grammar::camel(stringify!($f)))),
 				},)*];
-				out.push($crate::host::grammar::Definition {
+				out.push($crate::host::grammar::Declaration {
 					name: stringify!($name),
 					docs: <[&str]>::join(&[$($doc),*], "\n *"),
 					ty: $crate::host::grammar::fields(&fields, false),
@@ -766,12 +766,12 @@ macro_rules! wire {
 				format!("write{}(w, {value});", stringify!($name))
 			}
 
-			fn definitions($out: &mut Vec<$crate::host::grammar::Definition>) {
+			fn definitions($out: &mut Vec<$crate::host::grammar::Declaration>) {
 				if $out.iter().any(|d| d.name == stringify!($name)) {
 					return;
 				}
 				let (ty, write) = $crate::host::grammar::union(&[$($ts)*]);
-				$out.push($crate::host::grammar::Definition {
+				$out.push($crate::host::grammar::Declaration {
 					name: stringify!($name),
 					docs: <[&str]>::join(&[$($doc),*], "\n *"),
 					ty,
@@ -1525,10 +1525,19 @@ fn part(fields: &Record<Source>, read: &str) -> Option<&'static str> {
 	fields.0.iter().find(|(_, s)| s.read == read).map(|(field, _)| *field)
 }
 
-// a form's items; a body declares what its sequence bound before it
+/// Whether a literal stands anywhere in `items`, groups included.
+fn has_literal(items: &[definition::Item]) -> bool {
+	items.iter().any(|item| match item {
+		definition::Item::Fields(record) => record.0.iter().any(|(_, s)| s.from == "literal"),
+		definition::Item::Opt(inner) | definition::Item::Scope(inner) => has_literal(inner),
+		definition::Item::OneOf(list) => list.iter().any(|inner| has_literal(inner)),
+		definition::Item::Word(_) => false,
+	})
+}
+
 fn form(items: &[definition::Item], site: At, bound: &mut Vec<Declare>) -> Result<Form, String> {
 	let mut out = Vec::new();
-	let mut body = None;
+	let mut body: Option<Body> = None;
 	for (at, item) in items.iter().enumerate() {
 		match item {
 			definition::Item::Word(word) => out.push(Item::Literal(word)),
@@ -1552,20 +1561,28 @@ fn form(items: &[definition::Item], site: At, bound: &mut Vec<Declare>) -> Resul
 			definition::Item::Scope(_) => return Err("a scope belongs to the document or the fragment".into()),
 			definition::Item::Fields(record) => {
 				for (field, source) in &record.0 {
-					if source.from == "literal" {
-						continue;
-					}
-					if source.from == "content" {
-						if site != At::Block || at != items.len() - 1 {
-							return Err(format!("{field} is a body: only a block's form ends in one"));
+					match source.from {
+						"literal" if site == At::Directive => continue,
+						"content" => {
+							if site != At::Block || at != items.len() - 1 {
+								return Err(format!("{field} is a body: only a block's form ends in one"));
+							}
+							if let Some(first) = &body {
+								return Err(format!("{field} is a second body after {}", first.field));
+							}
+							body = Some(Body {
+								field,
+								omit: source.optional,
+								chain: None,
+								declares: std::mem::take(bound),
+							});
+							continue;
 						}
-						body = Some(Body {
-							field,
-							omit: source.optional,
-							chain: None,
-							declares: std::mem::take(bound),
-						});
-						continue;
+						"js" => {}
+						from => return Err(format!("{field} reads {from} {}, which a form cannot", source.read)),
+					}
+					if site == At::Tag && source.bind != Bind::No {
+						return Err(format!("{field} binds, but a tag opens no scope"));
 					}
 					let outside = source.bind == Bind::Outside;
 					if source.bind != Bind::No && !bound.iter().any(|d| d.field == *field && d.outside == outside) {
@@ -1640,15 +1657,24 @@ fn scoped(items: &[definition::Item]) -> Result<Vec<DocField>, String> {
 	Ok(out)
 }
 
-fn markers(list: &Option<Vec<(&'static str, Option<&'static str>)>>) -> Vec<(&'static str, Option<&'static str>)> {
-	list.clone().unwrap_or_default()
-}
-
-fn element(name: Match, rule: &definition::Element) -> ElementRule {
-	let this = sources(&rule.node.items)
-		.first()
-		.map(|(field, s)| (*field, s.read == "this:text"));
-	ElementRule {
+fn element(name: Match, rule: &definition::Element) -> Result<ElementRule, String> {
+	let this = match rule.node.items.as_slice() {
+		[] => None,
+		[definition::Item::Fields(Record(fields))]
+			if fields.len() == 1
+				&& fields[0].1.from == "element"
+				&& matches!(fields[0].1.read, "this" | "this:text") =>
+		{
+			Some((fields[0].0, fields[0].1.read == "this:text"))
+		}
+		_ => {
+			return Err(format!(
+				"{} reads one `this` field at most, and nothing else",
+				rule.node.r#type
+			));
+		}
+	};
+	Ok(ElementRule {
 		name,
 		ty: rule.node.r#type,
 		this,
@@ -1658,10 +1684,21 @@ fn element(name: Match, rule: &definition::Element) -> ElementRule {
 		outside: rule.outside,
 		raw: rule.content == Some(definition::Content::Raw),
 		rcdata: rule.content == Some(definition::Content::Rcdata),
-	}
+	})
 }
 
 fn directive(name: Match, rule: &definition::Directive) -> Result<DirectiveRule, String> {
+	let grouped = rule.node.items.iter().any(|item| match item {
+		definition::Item::Opt(inner) | definition::Item::Scope(inner) => has_literal(inner),
+		definition::Item::OneOf(list) => list.iter().any(|inner| has_literal(inner)),
+		_ => false,
+	});
+	if grouped {
+		return Err(format!(
+			"{}: a flag stands outside groups, since every node of it has one",
+			rule.node.r#type
+		));
+	}
 	let mut flags = Vec::new();
 	for (field, s) in sources(&rule.node.items).iter().filter(|(_, s)| s.from == "literal") {
 		match s.literal {
@@ -1690,16 +1727,22 @@ fn directive(name: Match, rule: &definition::Directive) -> Result<DirectiveRule,
 			definition::Item::Opt(inner) if inner.len() == 1 => Some(inner.as_slice()),
 			_ => None,
 		};
-		let single = match wrapped {
+		let mut single = match wrapped {
 			Some(inner) => sources(inner),
 			None => sources(std::slice::from_ref(*only)),
 		};
+		single.retain(|(_, s)| s.from != "literal");
 		if let [(field, s)] = single.as_slice()
 			&& s.from == "value"
 		{
 			let fixed = if s.read == "value" { "value" } else { "expression" };
 			if *field != fixed {
 				return Err(format!("a directive's value is read into {fixed}"));
+			}
+			if s.optional {
+				return Err(format!(
+					"{field} is a directive's value: `opt` makes it null when missing, it is never left out"
+				));
 			}
 			let (optional, name_too) = (wrapped.is_some() || s.or_arg, s.or_arg);
 			let value = match s.read {
@@ -1747,21 +1790,13 @@ fn block(name: &'static str, rule: &definition::Block) -> Result<BlockRule, Stri
 		let form = match branch {
 			Branch::Form(items) => form(items, At::Block, &mut Vec::new())?,
 			Branch::Reopen(r) => {
-				let (last, before) = rule
-					.node
-					.items
-					.split_last()
-					.ok_or("a reopened block's form ends in its body")?;
-				let (own, _) = *sources(std::slice::from_ref(last))
-					.first()
-					.ok_or("a reopened block's form ends in its body")?;
-				let mut bound = Vec::new();
-				let mut head = form(before, At::Block, &mut bound)?;
+				let mut head = form(&rule.node.items, At::Block, &mut Vec::new())?;
+				let own = head.body.take().ok_or("a reopened block's form ends in its body")?;
 				head.body = Some(Body {
 					field: r.reopen,
 					omit: false,
-					chain: Some(own),
-					declares: bound,
+					chain: Some(own.field),
+					declares: own.declares,
 				});
 				head
 			}
@@ -1798,8 +1833,21 @@ fn tag(name: &'static str, node: &definition::Node, attribute: bool) -> Result<T
 
 fn lower(host: Host) -> Result<Grammar, String> {
 	let d = host.definition;
-	let texts = |node: &definition::Node| -> Result<(&'static str, &'static str, Option<&'static str>), String> {
+	let texts = |node: &definition::Node,
+	             reads: &[&str]|
+	 -> Result<(&'static str, &'static str, Option<&'static str>), String> {
 		let record = sources(&node.items);
+		let fields_only = node
+			.items
+			.iter()
+			.all(|item| matches!(item, definition::Item::Fields(_)));
+		if !fields_only || record.iter().any(|(_, s)| s.from != "text" || !reads.contains(&s.read)) {
+			return Err(format!(
+				"{} holds {} and nothing else",
+				node.r#type,
+				reads.join(" and ")
+			));
+		}
 		let by = |read: &str| record.iter().find(|(_, s)| s.read == read).map(|(field, _)| *field);
 		Ok((
 			node.r#type,
@@ -1807,15 +1855,21 @@ fn lower(host: Host) -> Result<Grammar, String> {
 			by("raw"),
 		))
 	};
-	let (text_ty, text_data, text_raw) = texts(&d.text)?;
-	let (comment_ty, comment_data, _) = texts(&d.comment)?;
+	let (text_ty, text_data, text_raw) = texts(&d.text, &["data", "raw"])?;
+	let (comment_ty, comment_data, _) = texts(&d.comment, &["data"])?;
 	let fragment = match &d.fragment {
 		Some(node) => {
 			let (scope, items) = match node.items.as_slice() {
 				[definition::Item::Scope(inner)] => (true, inner.as_slice()),
 				items => (false, items),
 			};
-			let (field, _) = *sources(items).first().ok_or("a fragment names its field")?;
+			let ([(field, source)], [_]) = (&sources(items)[..], items) else {
+				return Err(format!("{} holds one field, its nodes", node.r#type));
+			};
+			if source.from != "nodes" {
+				return Err(format!("{} holds one field, its nodes", node.r#type));
+			}
+			let field = *field;
 			Some((node.r#type, field, scope))
 		}
 		None => None,
@@ -1824,10 +1878,14 @@ fn lower(host: Host) -> Result<Grammar, String> {
 		|read: &str| part(&d.elements.fields, read).ok_or_else(|| format!("elements need a field read by {read}"));
 	let mut elements = Vec::new();
 	for (name, rule) in d.elements.rules.iter().flat_map(|r| &r.0) {
-		elements.push(element(Match::Exact(name), rule));
+		elements.push(element(Match::Exact(name), rule)?);
 	}
-	elements.extend(d.elements.component.as_ref().map(|r| element(Match::Component, r)));
-	elements.extend(d.elements.other.as_ref().map(|r| element(Match::Any, r)));
+	if let Some(rule) = &d.elements.component {
+		elements.push(element(Match::Component, rule)?);
+	}
+	if let Some(rule) = &d.elements.other {
+		elements.push(element(Match::Any, rule)?);
+	}
 	let x = d.directives.as_ref();
 	let directive_syntax = x.map(|x| DirectiveSyntax {
 		prefix: x.prefix,
@@ -1905,8 +1963,8 @@ fn lower(host: Host) -> Result<Grammar, String> {
 		elements,
 		script: d.script.as_ref().map(|s| ScriptRule {
 			name: s.element,
-			module: markers(&s.module),
-			typescript: markers(&s.typescript),
+			module: s.module.clone().unwrap_or_default(),
+			typescript: s.typescript.clone().unwrap_or_default(),
 		}),
 		style: d.style,
 		directive_syntax,
@@ -1921,7 +1979,6 @@ fn lower(host: Host) -> Result<Grammar, String> {
 }
 
 impl Form {
-	// what the walker takes from a form is computed once, here
 	fn finish(&mut self) -> Result<(), String> {
 		resolve(&mut self.items, &[]);
 		let mut entries = Vec::new();

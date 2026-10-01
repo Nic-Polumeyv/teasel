@@ -2,4 +2,4 @@
 "@teasel/parser": patch
 ---
 
-`new Plan()` takes a grammar made with `@teasel/parser/grammar` in place of the grammar's text
+A grammar is a typed definition made with `@teasel/parser/grammar`, no longer text
