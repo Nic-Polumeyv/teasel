@@ -741,12 +741,27 @@ fn a_grammar_that_cannot_work_is_refused() {
 		),
 		"X: the else branch ends in no body",
 	);
-	refused(
-		with_block(
-			vec![js("e", "expression"), content("body")],
-			vec![("else if", reopen("elseif")), ("else when", reopen("elsewhen"))],
-		),
-		"every branch that reopens the block sets the one flag",
+	// each branch that reopens the block has its own flag, true on the block it opened
+	let host = with_block(
+		vec![js("e", "expression"), content("body")],
+		vec![("else if", reopen("elseif")), ("else when", reopen("elsewhen"))],
+	);
+	let answer = parse_document(
+		"{#x a}1{:else when b}2{:else if c}3{/x}",
+		&host.wire(),
+		&Request::from_flags(Options::MODULE),
+	);
+	let flags: Vec<&str> = answer
+		.match_indices("\"elseif\":")
+		.chain(answer.match_indices("\"elsewhen\":"))
+		.map(|(at, _)| &answer[at..at + 18])
+		.collect();
+	assert_eq!(flags.len(), 6, "{answer}");
+	assert!(
+		answer.contains("\"elseif\":false,\"elsewhen\":false")
+			&& answer.contains("\"elseif\":false,\"elsewhen\":true")
+			&& answer.contains("\"elseif\":true,\"elsewhen\":false"),
+		"{answer}"
 	);
 
 	// sibling alternatives may read one field, and an alternative's body declares what was bound before the group
@@ -809,6 +824,100 @@ fn a_grammar_that_cannot_work_is_refused() {
 	refused(host, "the document reads fragment twice");
 }
 
+// the walker reads what the definition says, not a syntax of its own
+#[test]
+fn a_host_has_its_own_syntax() {
+	let fields = |list: Vec<(&'static str, Source)>| definition::Item::Fields(Record(list));
+	let content = |field: &'static str| fields(vec![(field, source("content", "fragment", false))]);
+	let js = |field: &'static str, read: &'static str| fields(vec![(field, source("js", read, false))]);
+	let parse = |host: &Host, text: &str| parse_document(text, &host.wire(), &Request::from_flags(Options::MODULE));
+	let element = |ty: &'static str, outside: Option<&'static str>| definition::Element {
+		node: node(ty, Vec::new()),
+		root: false,
+		once: false,
+		inside: None,
+		outside,
+		content: None,
+	};
+	let mut host = minimal();
+	host.definition.expression = Some(node("Expr", vec![js("value", "expression")]));
+	host.definition.declaration = Some(node("Decl", vec![js("statement", "statement")]));
+	host.definition.attributes = Some(definition::Attributes {
+		expressions: Some(true),
+		shorthand: Some(true),
+	});
+	host.definition.spread = Some("Spread");
+	host.definition.elements.other = Some(element("Element", None));
+	host.definition.elements.rules = Some(Record(vec![("slot", element("Slot", Some("data-x")))]));
+	let sigils = host.definition.sigils.as_mut().unwrap();
+	sigils.blocks = Some(Record(vec![
+		(
+			"for",
+			definition::Block {
+				node: node("For", vec![js("e", "expression"), content("body")]),
+				branches: Record(Vec::new()),
+			},
+		),
+		(
+			"for-each",
+			definition::Block {
+				node: node("ForEach", vec![js("e", "expression"), content("body")]),
+				branches: Record(Vec::new()),
+			},
+		),
+	]));
+	sigils.tags = Some(Record(vec![(
+		"myTag",
+		definition::Tag {
+			node: node("MyTag", vec![js("e", "expression")]),
+			among: definition::Among::Content,
+		},
+	)]));
+
+	// the delimiters can end in an operator, be non-ASCII, and stand among attributes
+	for (open, close) in [("<%", "%>"), ("«", "»"), ("{{", "}}"), ("{|", "|}")] {
+		host.definition.delimiters = (open, close);
+		let answer = parse(&host, &format!("a {open} x %  2 {close} b"));
+		assert!(
+			answer.contains("\"operator\":\"%\"") && !answer.contains("error"),
+			"{open} {close}: {answer}"
+		);
+		let answer = parse(&host, &format!("<a {open}name{close} {open}...rest{close}/>"));
+		assert!(
+			answer.contains("\"name\":\"name\"") && answer.contains("\"type\":\"Spread\""),
+			"{open} {close}: {answer}"
+		);
+		let answer = parse(
+			&host,
+			&format!(
+				"{open}#for-each a{close}x{open}/for-each{close}{open}#for b{close}y{open}/for{close}{open}@myTag c{close}"
+			),
+		);
+		assert!(
+			answer.contains("\"type\":\"ForEach\"")
+				&& answer.contains("\"type\":\"For\"")
+				&& answer.contains("\"type\":\"MyTag\""),
+			"{open} {close}: {answer}"
+		);
+		let answer = parse(&host, &format!("{open}const a = 1 {close}"));
+		assert!(
+			answer.contains("\"statement\":{\"type\":\"VariableDeclaration\""),
+			"{open} {close}: {answer}"
+		);
+	}
+	host.definition.delimiters = ("{{", "}}");
+	let answer = parse(&host, "{{#fore a}}x{{/fore}}");
+	assert!(answer.contains("Expected whitespace"), "{answer}");
+
+	// `outside` names the attribute
+	let answer = parse(&host, "<div data-x><slot/></div><div shadowrootmode><slot/></div>");
+	assert_eq!(answer.matches("\"type\":\"Slot\"").count(), 1, "{answer}");
+	assert!(
+		answer.find("data-x").unwrap() < answer.find("\"name\":\"slot\"").unwrap(),
+		"{answer}"
+	);
+}
+
 // the wire the Rust side writes is the one it reads, so both ends stay one format
 #[test]
 fn the_wire_round_trips() {
@@ -864,8 +973,11 @@ fn reads_the_svelte_grammar() {
 	assert_eq!(alternatives[0].body.as_ref().unwrap().field, "then");
 	assert_eq!(await_.branches[1].words, ["catch"]);
 	let if_ = grammar.block("if").unwrap();
-	assert_eq!(if_.chain_flag, Some("elseif"));
-	assert_eq!(if_.branches[0].form.body.as_ref().unwrap().chain, Some("consequent"));
+	assert_eq!(if_.chain_flags, ["elseif"]);
+	assert_eq!(
+		if_.branches[0].form.body.as_ref().unwrap().chain,
+		Some(("consequent", "elseif"))
+	);
 	assert_eq!(grammar.script.as_ref().unwrap().typescript, [("lang", Some("ts"))]);
 	assert_eq!(grammar.element("Foo.Bar").unwrap().ty, "Component");
 	assert_eq!(grammar.element("div").unwrap().ty, "RegularElement");
