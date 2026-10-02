@@ -307,7 +307,7 @@ fn a_definition_is_refused_by_name() {
 		Vec::new(),
 	))
 	.unwrap_err();
-	assert!(error.contains("if binds test"), "{error}");
+	assert!(error.contains("IfBlock ends in no body"), "{error}");
 	let grammar = Grammar::read(&block(
 		vec![
 			definition::Item::Fields(Record(vec![("test", bound)])),
@@ -354,7 +354,7 @@ fn a_definition_is_refused_by_name() {
 		other: None,
 	});
 	let error = Grammar::read(&host.wire()).unwrap_err();
-	assert!(error.contains("modifiers on a directive is a flag"), "{error}");
+	assert!(error.contains("OnDirective: modifiers is a flag"), "{error}");
 	let mut host = minimal();
 	host.definition.document.items = vec![definition::Item::Fields(Record(vec![(
 		"js",
@@ -614,6 +614,199 @@ fn a_definition_says_only_what_is_read() {
 		])],
 	));
 	refused(host, "Fragment holds one field, its nodes");
+}
+
+// a definition the engine could never parse with is refused when it is read, naming the rule
+#[test]
+fn a_grammar_that_cannot_work_is_refused() {
+	let fields = |list: Vec<(&'static str, Source)>| definition::Item::Fields(Record(list));
+	let content = |field: &'static str| fields(vec![(field, source("content", "fragment", false))]);
+	let js = |field: &'static str, read: &'static str| fields(vec![(field, source("js", read, false))]);
+	let bound = |field: &'static str| {
+		fields(vec![(
+			field,
+			Source {
+				bind: Bind::Inside,
+				..source("js", "pattern", false)
+			},
+		)])
+	};
+	let refused = |host: Host, says: &str| {
+		let error = Grammar::read(&host.wire()).unwrap_err();
+		assert!(error.contains(says), "expected an error naming {says:?}, got {error:?}");
+	};
+	let with_block = |items: Vec<definition::Item>, branches: Vec<(&'static str, definition::Branch)>| {
+		let mut host = minimal();
+		host.definition.sigils.as_mut().unwrap().blocks = Some(Record(vec![(
+			"x",
+			definition::Block {
+				node: node("X", items),
+				branches: Record(branches),
+			},
+		)]));
+		host
+	};
+	let reopen = |flag: &'static str| {
+		definition::Branch::Reopen(definition::Reopen {
+			reopen: "alternate",
+			flag,
+		})
+	};
+
+	let mut host = minimal();
+	host.definition.delimiters = ("", "}");
+	refused(host, "the open delimiter is empty");
+	let mut host = minimal();
+	host.definition.sigils.as_mut().unwrap().tag = "";
+	refused(host, "the tag sigil is empty");
+	let mut host = minimal();
+	host.definition.sigils.as_mut().unwrap().close = "#";
+	refused(host, "the open and close sigils are both #");
+
+	refused(with_block(vec![js("e", "expression")], Vec::new()), "X ends in no body");
+	refused(
+		with_block(
+			vec![
+				js("e", "expression"),
+				definition::Item::Opt(vec![definition::Item::Word("then"), content("then")]),
+			],
+			Vec::new(),
+		),
+		"a group ending in bodies is the last item",
+	);
+	refused(
+		with_block(
+			vec![
+				js("e", "expression"),
+				definition::Item::OneOf(vec![
+					vec![definition::Item::Word("then"), content("then")],
+					vec![js("f", "expression")],
+				]),
+			],
+			Vec::new(),
+		),
+		"every alternative ending in a body",
+	);
+	refused(
+		with_block(
+			vec![
+				js("e", "expression"),
+				definition::Item::Opt(Vec::new()),
+				content("body"),
+			],
+			Vec::new(),
+		),
+		"X: `opt` needs items",
+	);
+	refused(
+		with_block(
+			vec![
+				js("e", "expression"),
+				definition::Item::OneOf(Vec::new()),
+				content("body"),
+			],
+			Vec::new(),
+		),
+		"X: `oneOf` needs alternatives",
+	);
+	refused(
+		with_block(
+			vec![definition::Item::OneOf(vec![Vec::new()]), content("body")],
+			Vec::new(),
+		),
+		"X: an alternative needs items",
+	);
+	refused(
+		with_block(
+			vec![
+				js("e", "expression"),
+				definition::Item::Opt(vec![definition::Item::Word("as"), js("e", "pattern")]),
+				content("body"),
+			],
+			Vec::new(),
+		),
+		"X reads e twice",
+	);
+	refused(
+		with_block(
+			vec![js("e", "expression"), content("body")],
+			vec![("", definition::Branch::Form(vec![content("other")]))],
+		),
+		"X: a branch needs words",
+	);
+	refused(
+		with_block(
+			vec![js("e", "expression"), content("body")],
+			vec![("else", definition::Branch::Form(vec![js("f", "expression")]))],
+		),
+		"X: the else branch ends in no body",
+	);
+	refused(
+		with_block(
+			vec![js("e", "expression"), content("body")],
+			vec![("else if", reopen("elseif")), ("else when", reopen("elsewhen"))],
+		),
+		"every branch that reopens the block sets the one flag",
+	);
+
+	// sibling alternatives may read one field, and an alternative's body declares what was bound before the group
+	let host = with_block(
+		vec![
+			js("e", "expression"),
+			definition::Item::Word("as"),
+			bound("alias"),
+			definition::Item::OneOf(vec![
+				vec![
+					definition::Item::Word("then"),
+					definition::Item::Opt(vec![bound("v")]),
+					content("then"),
+				],
+				vec![
+					definition::Item::Word("catch"),
+					definition::Item::Opt(vec![bound("v")]),
+					content("catch"),
+				],
+				vec![content("pending")],
+			]),
+		],
+		Vec::new(),
+	);
+	let grammar = Grammar::read(&host.wire()).unwrap();
+	let Item::Group { alternatives, .. } = grammar.block("x").unwrap().open.items.last().unwrap() else {
+		panic!("the group is the last item");
+	};
+	let declares = |i: usize| -> Vec<&str> {
+		alternatives[i]
+			.body
+			.as_ref()
+			.unwrap()
+			.declares
+			.iter()
+			.map(|d| d.field)
+			.collect()
+	};
+	assert_eq!(declares(0), ["alias", "v"]);
+	assert_eq!(declares(2), ["alias"]);
+
+	let mut host = minimal();
+	host.definition
+		.elements
+		.fields
+		.0
+		.push(("more", source("element", "name", false)));
+	refused(host, "an element reads name twice");
+	let mut host = minimal();
+	host.definition.elements.fields.0[1].1.optional = true;
+	refused(host, "attributes on an element is never left out");
+	let mut host = minimal();
+	host.definition.document.items = vec![fields(vec![("comments", source("doc", "comments", false))])];
+	refused(host, "Document holds no content");
+	let mut host = minimal();
+	host.definition
+		.document
+		.items
+		.push(fields(vec![("again", source("content", "fragment", false))]));
+	refused(host, "the document reads fragment twice");
 }
 
 // the wire the Rust side writes is the one it reads, so both ends stay one format
