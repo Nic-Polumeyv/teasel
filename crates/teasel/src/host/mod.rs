@@ -846,7 +846,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 						};
 						scopes.push((from, until, node));
 					}
-					&DocField::Field(field, holds, omit) => {
+					&DocField::Field { field, holds, omit } => {
 						let value = match holds {
 							RootField::Fragment => {
 								fields.push((field, children));
@@ -2187,6 +2187,14 @@ impl<'a, E: Extension> Walker<'a, E> {
 		}
 		let Some(branch) = found else {
 			self.at = at;
+			if rule.branches.is_empty() {
+				return fail(
+					start,
+					start + 1,
+					Code::Placement,
+					Some(&format!("A branch in {}", rule.name)),
+				);
+			}
 			let names = rule
 				.branches
 				.iter()

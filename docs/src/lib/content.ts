@@ -3,7 +3,7 @@ import type { Component } from 'svelte';
 import { render as ssr } from 'svelte/server';
 import { buttonVariants } from 'sheer-ui/components/button';
 import { mark, snippet, type Mark } from '#lib/highlight.ts';
-import { reference } from '#lib/reference.ts';
+import { references } from '#lib/reference.ts';
 
 export type Heading = { id: string; text: string };
 export type Page = { href: string; title: string; section: string; path: string; headings: Heading[] };
@@ -68,7 +68,7 @@ function marks(code: string, notes: string): Mark[] {
 }
 
 export function fence(text: string, language = 'js', file?: string, notes?: string) {
-	const plain = language === 'text' ? escape(text) : snippet(text, language === 'ts' || language === 'typescript' ? 'typescript' : language === 'bash' || language === 'sh' ? 'bash' : 'javascript').html;
+	const plain = language === 'text' ? escape(text) : snippet(text, language === 'ts' || language === 'typescript' ? 'typescript' : language === 'bash' || language === 'sh' ? 'bash' : language === 'tpl' ? 'markup' : 'javascript').html;
 	const html = notes ? mark(plain, marks(text, notes)) : plain;
 	return (
 		`<div class="relative -mx-4 my-6 overflow-hidden bg-[#2d353b] text-xs text-[#d3c6aa] shadow-md sm:mx-0 sm:rounded-sm sm:text-sm">` +
@@ -80,12 +80,17 @@ export function fence(text: string, language = 'js', file?: string, notes?: stri
 const marked = new Marked({
 	renderer: {
 		// a diagram is a component rendered here; one with a title is interactive: the title names the files it
-		// shows, and the page hydrates it in the browser with the same props
+		// shows and its `name=value` props, and the page hydrates it in the browser with the same props
 		image({ href, text, title }) {
 			const found = diagrams[href];
 			if (!found) return `<img src="${href}" alt="${escape(text)}">`;
 			if (!title) return ssr(found.diagram, { props: { label: text } }).body;
-			const props = { label: text, files: Object.fromEntries(title.split(/\s+/).map((name) => [name, sheet(name)])) };
+			const words = title.split(/\s+/);
+			const props = {
+				label: text,
+				files: Object.fromEntries(words.filter((word) => !word.includes('=')).map((name) => [name, sheet(name)])),
+				...Object.fromEntries(words.filter((word) => word.includes('=')).map((word) => word.split('='))),
+			};
 			return `<div data-island="${escape(found.path)}" data-props="${escape(JSON.stringify(props))}">${ssr(found.diagram, { props }).body}</div>`;
 		},
 		code(token) {
@@ -150,6 +155,6 @@ const written = Object.keys(files)
 		return page({ href: `/${name(file)}`, title, section: label(section), path: `docs${path}` }, markdown);
 	});
 
-export const pages: Page[] = [...written, page(reference.meta, reference.markdown)];
+export const pages: Page[] = [...written, ...references.map((reference) => page(reference.meta, reference.markdown))];
 
 export const sections: Section[] = Object.entries(Object.groupBy(pages, (page) => page.section)).map(([label, pages]) => ({ label, pages: pages! }));

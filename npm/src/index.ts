@@ -4,6 +4,7 @@ import { ENTRY, flags, type Options } from './options.js';
 import { engine } from '#engine';
 
 import type { Code } from './codes.js';
+import type { Answers, Grammar } from './grammar.js';
 
 export type { Options } from './options.js';
 export type { Code } from './codes.js';
@@ -218,23 +219,23 @@ let read: (plan: Plan<unknown>) => { entry: number; stop: string; held: Held | u
 /**
  * What a parse reads. The built-in plans read a piece of JavaScript at a position of the source,
  * `program` the whole source; `until` ends one where the host's own tokens follow. `new Plan(grammar)`
- * reads the whole source as a document of the host language the grammar describes: the host's
- * own nodes around the JavaScript ones, in one tree, in TypeScript when the grammar says so of a
- * script tag; the grammar's format is at https://teasel.dev/host-grammar. A plan is built once and
- * applied to any source. `T` is what its parse answers with.
+ * reads the whole source as a document of the host language a grammar from `@teasel/parser/grammar`
+ * describes: the host's own nodes around the JavaScript ones, in one tree, in TypeScript when the
+ * grammar says so of a script tag. A plan is built once and applied to any source. `T` is what its
+ * parse answers with.
  */
 export class Plan<T = HostNode> {
 	#entry: number;
 	#stop: string;
 	#held: Held | undefined;
 
-	constructor(grammar: string);
-	constructor(grammar: string | number, stop = '') {
+	constructor(grammar: Grammar & Answers<T>);
+	constructor(grammar: Grammar | number, stop = '') {
 		if (typeof grammar === 'number') this.#entry = grammar;
 		else {
-			if (typeof grammar !== 'string') throw new TypeError('a plan is the grammar as a string');
+			if (!(grammar?.wire instanceof Uint8Array)) throw new TypeError('a plan reads a grammar made by @teasel/parser/grammar');
 			this.#entry = ENTRY.program;
-			this.#held = engine.plan(grammar);
+			this.#held = engine.plan(grammar.wire);
 			registry?.register(this, this.#held, this);
 		}
 		this.#stop = stop;

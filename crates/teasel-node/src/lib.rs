@@ -153,8 +153,8 @@ unsafe extern "C" fn create(env: Env, info: CallbackInfo) -> Value {
 // the grammar of a host language, read once; V8 lets go of it with the external
 unsafe extern "C" fn plan(env: Env, info: CallbackInfo) -> Value {
 	guard(env, || {
-		let [text] = args::<1>(env, info)?;
-		let grammar = teasel::json::grammar(&string(env, text)?)?;
+		let [wire] = args::<1>(env, info)?;
+		let grammar = teasel::json::grammar(&bytes(env, wire)?)?;
 		let mut result = null_mut();
 		check(
 			unsafe {

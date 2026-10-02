@@ -22,4 +22,4 @@ Nothing in the tree points back into the engine. You can walk it, change it and 
 
 ## Template languages
 
-A template language can describe its whole syntax to the engine, as a [grammar](/host-grammar), and the engine then reads a document in one pass: the host's own nodes and the JavaScript inside them in one tree, scopes across both, one crossing for the whole file. [Parsing with a grammar](/parsing-with-a-grammar) is the guide to it.
+A template language can describe its whole syntax to the engine, as a [grammar](/reference/grammar), and the engine then reads a document in one pass: the host's own nodes and the JavaScript inside them in one tree, scopes across both, one crossing for the whole file. [Parsing with a grammar](/parsing-with-a-grammar) is the guide to it.
