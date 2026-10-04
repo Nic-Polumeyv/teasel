@@ -577,6 +577,13 @@ function types(source: api.Source, definition: typeof svelteDefinition) {
 		...base,
 		document: g.node('Root', { children: g.content }),
 		elements: { fields },
+		// @ts-expect-error the declaration node holds one statement
+		declaration: g.node('Decl', { e: g.js.expression }),
+	});
+	g.grammar('x', {
+		...base,
+		document: g.node('Root', { children: g.content }),
+		elements: { fields },
 		// @ts-expect-error a directive's fields are never left out
 		directives: { fields: { arg: g.optional(g.directive.arg) } },
 	});
