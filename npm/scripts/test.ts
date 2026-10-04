@@ -1,7 +1,13 @@
 // `node scripts/test.ts interpret` runs the decoder without code generation, as a host forbidding it would
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { codes } from './codes.ts';
+import svelteDefinition from './hosts/svelte.ts';
+import vueDefinition from './hosts/vue.ts';
+import type { Expression, Identifier, Pattern } from 'estree';
+import * as g from '../dist/grammar.js';
+import type { Infer, NodeType } from '../dist/grammar.js';
+import type * as api from '../dist/index.js';
 import type { Options } from '../dist/index.js';
 if (process.argv[2] === 'interpret') globalThis.Function = (() => { throw new EvalError('blocked'); }) as unknown as FunctionConstructor;
 const name = process.execArgv.includes('--no-addons') ? 'wasm' : 'native';
@@ -129,7 +135,7 @@ const { open, scopeOf, referenceOf, parentOf } = untyped(m);
 	assert.equal(program('export { x }', { sourceType: 'module', allowUndeclaredExports: true }).body[0].type, 'ExportNamedDeclaration');
 	{
 		// a document's answer lists each piece of JavaScript the host read, with its share of the tables
-		const host = new Plan(readFileSync(new URL('../../crates/teasel/tests/hosts/svelte/host.grammar', import.meta.url), 'utf8'));
+		const host = new Plan(svelteDefinition);
 		const answer = open('<script>let a = 1;</script>{a + b}', { sourceType: 'module', scopes: true }).parse(host);
 		const [script, expression] = answer.roots;
 		assert.equal(answer.roots.length, 2);
@@ -277,8 +283,7 @@ const { open, scopeOf, referenceOf, parentOf } = untyped(m);
 }
 
 // a document of a host language: the host's nodes around the JavaScript ones, one tree
-const grammar = readFileSync(new URL('../../crates/teasel/tests/hosts/svelte/host.grammar', import.meta.url), 'utf8');
-const svelte = new Plan(grammar);
+const svelte = new Plan(svelteDefinition);
 {
 	const source = '<script lang="ts">\n\tlet items: string[] = [];\n</script>\n\n{#each items as item, i (item)}\n\t<p class:odd={i % 2} on:click={() => item}>{item}</p>\n{:else}\n\tnone\n{/each}\n';
 	const doc = open(source, { sourceType: 'module', scopes: true, comments: true }).parse(svelte);
@@ -315,7 +320,7 @@ const svelte = new Plan(grammar);
 	assert.equal(scopeOf(root.fragment).parent, scopeOf(root.instance.content));
 	assert.equal(scopeOf(root.instance.content).parent, scopeOf(root));
 	assert.equal(scopeOf(each.fallback).parent, scopeOf(root.fragment));
-	assert.throws(() => new Plan('element div'), /grammar line 1/);
+	assert.throws(() => new Plan('host x' as Any), TypeError);
 	assert.throws(() => svelte.until('}'), TypeError);
 	assert.throws(() => open('<div>').parse(svelte, 1), TypeError);
 	assert.throws(() => open('<div>').parse(svelte), { code: 'unclosed', pos: 0 });
@@ -339,7 +344,7 @@ const svelte = new Plan(grammar);
 }
 
 // unfinished input under recovery is an answer, never a panic; a strict error is a SyntaxError
-const grammars = Object.fromEntries(['svelte', 'vue'].map((name) => [name, new Plan(readFileSync(new URL(`../../crates/teasel/tests/hosts/${name}/host.grammar`, import.meta.url), 'utf8'))]));
+const grammars = { svelte: new Plan(svelteDefinition), vue: new Plan(vueDefinition) };
 {
 	for (const text of ['<a x="', '<a /*', '<script>"</script>', '{#if', '<div class="{a']) {
 		assert.equal(open(text, { errorRecovery: true, comments: true, scopes: true }).parse(grammars.svelte).node.type, 'Root', `${name} ${text}`);
@@ -348,6 +353,12 @@ const grammars = Object.fromEntries(['svelte', 'vue'].map((name) => [name, new P
 	const handler: Any = open('<button @click="let x = 1"/>', { errorRecovery: true }).parse(grammars.vue);
 	assert.equal(handler.node.children[0].props[0].handler.type, 'Program', name);
 	assert.deepEqual(handler.errors, [], name);
+}
+// the grammar the Rust tests read is the typed definition on its wire, pinned beside its documents
+for (const [host, definition] of [['svelte', svelteDefinition], ['vue', vueDefinition]] as const) {
+	const pin = new URL(`../../crates/teasel/tests/hosts/${host}/host.wire`, import.meta.url);
+	if (process.env.UPDATE) writeFileSync(pin, definition.wire);
+	else assert.ok(readFileSync(pin).equals(definition.wire), `${name} ${host}/host.wire changed; run with UPDATE=1 once the change is meant`);
 }
 // a second host: the same walker, Vue's grammar
 const vue = grammars.vue;
@@ -401,4 +412,162 @@ const vue = grammars.vue;
 {
 	const written = [...readFileSync(new URL('../src/codes.ts', import.meta.url), 'utf8').matchAll(/'([a-z_0-9]+)'/g)].map((m) => m[1]);
 	assert.deepEqual(written, codes(), 'run node scripts/codes.ts');
+}
+
+// /writing-a-grammar builds a grammar in steps; what each step answers for the page's template is pinned beside the page
+{
+	const template = '<ul>\n\t{{#repeat item, i in items by item.id}}\n\t\t<Card title={{ item.name }} index={{ i }} />\n\t{{:empty}}\n\t\t<li>No items</li>\n\t{{/repeat}}\n</ul>\n';
+	const html = {
+		document: g.node('Template', { children: g.content }),
+		text: g.node('Text', { data: g.text.data }),
+		comment: g.node('Comment', { data: g.text.data }),
+		delimiters: ['{{', '}}'] as const,
+		elements: {
+			fields: { name: g.element.tag, attributes: g.element.attributes, children: g.content },
+			component: g.element(g.node('Component')),
+			other: g.element(g.node('Element')),
+		},
+	};
+	const expressions = { ...html, attributes: { expressions: true } as const, expression: g.node('Expression', { expression: g.js.expression }) };
+	const sigils = { open: '#', branch: ':', close: '/', tag: '@' };
+	const item = { item: g.bind(g.js.pattern) };
+	const index = g.opt(',', { index: g.optional(g.bind(g.js.identifier)) });
+	const list = { list: g.js.expression };
+	const key = g.opt('by', { key: g.optional(g.js.expression) });
+	const repeat = (head: Any[], branches?: Any): Any => ({ ...expressions, sigils: { ...sigils, blocks: { repeat: g.block(g.node('RepeatBlock', ...head, { body: g.content }), branches) } } });
+	const steps: Any[] = [
+		html,
+		expressions,
+		{ ...expressions, sigils: { ...sigils, blocks: {} } },
+		repeat([item, 'in', list]),
+		repeat([item, index, 'in', list]),
+		repeat([item, index, 'in', list, key]),
+		repeat([item, index, 'in', list, key], { branches: { empty: [{ fallback: g.optional(g.content) }] } }),
+	];
+	// an identifier that refers to a binding declared elsewhere carries where that declaration is
+	const shape = (value: Any): Any => {
+		if (Array.isArray(value)) return value.map(shape);
+		if (value === null || typeof value !== 'object') return value;
+		const out: Any = {};
+		for (const field of Object.keys(value)) if (field !== 'loc') out[field] = shape(value[field]);
+		const binding = value.type === 'Identifier' ? referenceOf(value)?.binding : undefined;
+		if (binding && binding.node !== value) out.refers = [binding.node.start, binding.node.end];
+		return out;
+	};
+	const answers = steps.map((definition) => {
+		try {
+			return { tree: shape(open(template, { scopes: true }).parse(new Plan(g.grammar('tpl', definition))).node) };
+		} catch (e) {
+			const { code, message, pos, end } = e as Any;
+			return { error: { code, message, pos, end } };
+		}
+	});
+	const pin = new URL('../../docs/content/03-examples/writing-a-grammar.json', import.meta.url);
+	const pinned = `${JSON.stringify({ text: template, steps: answers }, null, '\t')}\n`;
+	if (process.env.UPDATE) writeFileSync(pin, pinned);
+	else assert.equal(readFileSync(pin, 'utf8'), pinned, `${name} writing-a-grammar.json changed; run with UPDATE=1 once the change is meant`);
+	// the whole grammar the page shows is the last step's
+	const whole = readFileSync(new URL('../../docs/content/03-examples/tpl.js', import.meta.url), 'utf8');
+	const builders = JSON.stringify(new URL('../dist/grammar.js', import.meta.url).href);
+	const written = await import(`data:text/javascript,${encodeURIComponent(whole.replace("'@teasel/parser/grammar'", builders))}`);
+	assert.deepEqual(written.tpl.wire, g.grammar('tpl', steps.at(-1)).wire, `${name} docs/content/03-examples/tpl.js is the last step's grammar`);
+}
+
+// tsc checks what the types promise here and node never calls it, since the refused definitions throw at runtime
+function types(source: api.Source, definition: typeof svelteDefinition) {
+	type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
+	const expect = <T extends true>() => {};
+	type Required<T> = { [K in keyof T]-?: {} extends Pick<T, K> ? never : K }[keyof T];
+	type Svelte = typeof svelteDefinition;
+	type Fragment = NodeType<Svelte, 'Fragment'>;
+
+	type Each = NodeType<Svelte, 'EachBlock'>;
+	expect<Equal<Required<Each>, 'type' | 'start' | 'end' | 'expression' | 'context' | 'body'>>();
+	expect<Equal<Each['context'], Pattern | null>>();
+	expect<Equal<Each['index'], Identifier | undefined>>();
+	expect<Equal<Each['key'], Expression | undefined>>();
+	expect<Equal<Each['body'], Fragment>>();
+	expect<Equal<Each['fallback'], Fragment | undefined>>();
+
+	expect<Equal<NodeType<Svelte, 'IfBlock'>['alternate'], Fragment | null>>();
+	expect<Equal<NodeType<Svelte, 'IfBlock'>['elseif'], boolean>>();
+	expect<Equal<NodeType<Svelte, 'AwaitBlock'>['pending'], Fragment | null>>();
+	expect<Equal<NodeType<Svelte, 'SnippetBlock'>['typeParams'], string | undefined>>();
+	expect<Equal<keyof Fragment, 'type' | 'nodes'>>();
+	expect<Equal<NodeType<Svelte, 'BindDirective'>['expression'], Expression>>();
+	expect<Equal<NodeType<Svelte, 'OnDirective'>['expression'], Expression | null>>();
+	expect<Equal<NodeType<Svelte, 'TransitionDirective'>['intro'], boolean>>();
+	expect<Equal<NodeType<Svelte, 'StyleDirective'>['value'], NodeType<Svelte, 'Attribute'>['value']>>();
+	expect<Equal<Infer<Svelte>['instance'], NodeType<Svelte, 'Script'> | undefined>>();
+	expect<Equal<Infer<Svelte>['fragment'], Fragment>>();
+
+	type Vue = typeof vueDefinition;
+	const f = {} as Extract<NodeType<Vue, 'Directive'>, { source: unknown }>;
+	expect<Equal<typeof f.source, Expression | null>>();
+	expect<Equal<typeof f.value, Pattern | undefined>>();
+	expect<Equal<typeof f.arg, string | Expression | null>>();
+	expect<Equal<Infer<Vue>['children'][number]['type'], 'Element' | 'Text' | 'Comment' | 'Interpolation' | 'Slot' | 'Template' | 'Component'>>();
+
+	// @ts-expect-error a field may not be named type
+	g.node('X', { type: g.js.expression });
+	// @ts-expect-error a field may not take a group's name
+	g.node('X', { scope: g.js.expression });
+	// @ts-expect-error only what reads a pattern, an identifier or parameters can declare
+	g.bind(g.js.expression);
+	// @ts-expect-error a directive's value is null when missing, never left out
+	g.optional(g.value.expression);
+	// @ts-expect-error an argument stands in only for a directive's value
+	g.orArg(g.js.expression);
+	// @ts-expect-error a tag has no body
+	g.tag(g.node('T', { body: g.content }));
+	// @ts-expect-error a tag opens no scope to declare in
+	g.tag(g.node('T', { name: g.bind(g.js.identifier) }));
+	// @ts-expect-error only a block declares around itself
+	g.directive(g.node('D', { name: g.bind.outside(g.js.identifier) }));
+	// @ts-expect-error a directive's flag is true or false
+	g.directive(g.node('D', { flag: g.literal(null) }));
+	// @ts-expect-error `opt` needs items
+	g.opt();
+	// @ts-expect-error `oneOf` needs alternatives
+	g.oneOf();
+	// @ts-expect-error an alternative needs items
+	g.oneOf([]);
+	const base = {
+		text: g.node('Text', { data: g.text.data }),
+		comment: g.node('Comment', { data: g.text.data }),
+		delimiters: ['{', '}'],
+	} as const;
+	const fields = { name: g.element.tag, attributes: g.element.attributes, children: g.content };
+	g.grammar('x', {
+		...base,
+		document: g.node('Root', { children: g.content }),
+		elements: {
+			fields,
+			// @ts-expect-error inside names an element rule
+			rules: { head: g.element(g.node('Head')), title: g.element(g.node('Title'), { inside: 'haed' }) },
+		},
+	});
+	g.grammar('x', {
+		...base,
+		// @ts-expect-error the document's literals are null or a list
+		document: g.node('Root', { children: g.content, flag: g.literal(true) }),
+		elements: { fields },
+	});
+	g.grammar('x', {
+		...base,
+		document: g.node('Root', { children: g.content }),
+		// @ts-expect-error an element's fields are never left out
+		elements: { fields: { ...fields, attributes: g.optional(g.element.attributes) } },
+	});
+	g.grammar('x', {
+		...base,
+		document: g.node('Root', { children: g.content }),
+		elements: { fields },
+		// @ts-expect-error a directive's fields are never left out
+		directives: { fields: { arg: g.optional(g.directive.arg) } },
+	});
+
+	const typed = new Plan(definition);
+	expect<Equal<typeof typed, api.Plan<Infer<Svelte>>>>();
+	expect<Equal<ReturnType<typeof source.parse<Infer<Svelte>>>['node'], Infer<Svelte>>>();
 }

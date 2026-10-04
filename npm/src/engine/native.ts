@@ -19,7 +19,7 @@ function bytes(text: string) {
 // a plan is the external the addon holds the grammar in; V8 lets go of it, nothing to free
 class Plan implements Held {
 	readonly external: External;
-	constructor(grammar: string) {
+	constructor(grammar: Uint8Array) {
 		this.external = native.plan(grammar);
 	}
 	free() {}
