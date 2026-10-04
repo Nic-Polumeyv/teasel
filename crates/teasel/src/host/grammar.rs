@@ -1514,15 +1514,79 @@ fn sources(items: &[definition::Item]) -> Vec<(&'static str, &Source)> {
 		.collect()
 }
 
-fn opens(item: &definition::Item) -> bool {
-	sources(std::slice::from_ref(item))
-		.iter()
-		.any(|(_, s)| s.from == "content")
+/// Whether a body stands anywhere among `items`, groups included.
+fn has_body(items: &[definition::Item]) -> bool {
+	items.iter().any(|item| match item {
+		definition::Item::Fields(record) => record.0.iter().any(|(_, s)| s.from == "content"),
+		definition::Item::Opt(inner) | definition::Item::Scope(inner) => has_body(inner),
+		definition::Item::OneOf(list) => list.iter().any(|inner| has_body(inner)),
+		definition::Item::Word(_) => false,
+	})
+}
+
+/// The fields `items` can read, each once; sibling alternatives may read the same field.
+fn fields_in(ty: &str, items: &[definition::Item]) -> Result<Vec<&'static str>, String> {
+	let mut seen: Vec<&'static str> = Vec::new();
+	for item in items {
+		let own = match item {
+			definition::Item::Fields(record) => record.0.iter().map(|(field, _)| *field).collect(),
+			definition::Item::Opt(inner) | definition::Item::Scope(inner) => fields_in(ty, inner)?,
+			definition::Item::OneOf(list) => {
+				let mut union: Vec<&'static str> = Vec::new();
+				for inner in list {
+					for field in fields_in(ty, inner)? {
+						if !union.contains(&field) {
+							union.push(field);
+						}
+					}
+				}
+				union
+			}
+			definition::Item::Word(_) => Vec::new(),
+		};
+		for field in own {
+			if seen.contains(&field) {
+				return Err(format!("{ty} reads {field} twice"));
+			}
+			seen.push(field);
+		}
+	}
+	Ok(seen)
+}
+
+/// Whether a read of the items always ends in a body: the last item is one, or a required group
+/// whose every alternative ends in one.
+fn closed(items: &[Item], body: Option<&Body>) -> bool {
+	body.is_some()
+		|| matches!(items.last(), Some(Item::Group { alternatives, required: true, .. })
+			if alternatives.iter().all(|a| closed(&a.items, a.body.as_ref())))
 }
 
 /// The field among `fields` read by `read`.
 fn part(fields: &Record<Source>, read: &str) -> Option<&'static str> {
 	fields.0.iter().find(|(_, s)| s.read == read).map(|(field, _)| *field)
+}
+
+/// The fields of a site that reads each of them once and never leaves one out.
+fn once(what: &str, fields: &Record<Source>) -> Result<(), String> {
+	let mut reads = Vec::new();
+	for (field, s) in &fields.0 {
+		if s.optional {
+			return Err(format!("{field} on {what} is never left out"));
+		}
+		if reads.contains(&s.read) {
+			return Err(format!("{what} reads {} twice", s.read));
+		}
+		reads.push(s.read);
+	}
+	Ok(())
+}
+
+fn token(what: &str, s: &str) -> Result<(), String> {
+	if s.is_empty() {
+		return Err(format!("{what} is empty"));
+	}
+	Ok(())
 }
 
 /// Whether a literal stands anywhere in `items`, groups included.
@@ -1535,40 +1599,69 @@ fn has_literal(items: &[definition::Item]) -> bool {
 	})
 }
 
-fn form(items: &[definition::Item], site: At, bound: &mut Vec<Declare>) -> Result<Form, String> {
+fn form(ty: &str, items: &[definition::Item], site: At, bound: &mut Vec<Declare>) -> Result<Form, String> {
+	fields_in(ty, items)?;
+	let (items, body) = sequence(ty, items, site, bound)?;
+	Ok(Form {
+		items,
+		body,
+		entries: Vec::new(),
+	})
+}
+
+fn sequence(
+	ty: &str,
+	items: &[definition::Item],
+	site: At,
+	bound: &mut Vec<Declare>,
+) -> Result<(Vec<Item>, Option<Body>), String> {
 	let mut out = Vec::new();
 	let mut body: Option<Body> = None;
 	for (at, item) in items.iter().enumerate() {
 		match item {
 			definition::Item::Word(word) => out.push(Item::Literal(word)),
-			definition::Item::OneOf(list) => out.push(Item::Group {
-				alternatives: alternatives(list, site, bound)?,
-				required: true,
-				after: &[],
-			}),
-			definition::Item::Opt(inner) => {
-				let one = std::slice::from_ref(inner);
-				let list = match inner.as_slice() {
-					[definition::Item::OneOf(list)] => list.as_slice(),
-					_ => one,
+			definition::Item::OneOf(_) | definition::Item::Opt(_) => {
+				let required = matches!(item, definition::Item::OneOf(_));
+				let one;
+				let list = match item {
+					definition::Item::OneOf(list) => list.as_slice(),
+					definition::Item::Opt(inner) if inner.is_empty() => return Err(format!("{ty}: `opt` needs items")),
+					definition::Item::Opt(inner) => match inner.as_slice() {
+						[definition::Item::OneOf(list)] => list.as_slice(),
+						_ => {
+							one = [inner.clone()];
+							&one
+						}
+					},
+					_ => unreachable!(),
 				};
+				let alternatives = alternatives(ty, list, site, bound)?;
+				if list.iter().any(|items| has_body(items)) {
+					let last = site == At::Block && at == items.len() - 1;
+					if !last || !required || !alternatives.iter().all(|a| closed(&a.items, a.body.as_ref())) {
+						return Err(format!(
+							"{ty}: a group ending in bodies is the last item of a block's form, required, with every alternative ending in a body"
+						));
+					}
+					bound.clear();
+				}
 				out.push(Item::Group {
-					alternatives: alternatives(list, site, bound)?,
-					required: false,
+					alternatives,
+					required,
 					after: &[],
 				});
 			}
-			definition::Item::Scope(_) => return Err("a scope belongs to the document or the fragment".into()),
+			definition::Item::Scope(_) => return Err(format!("{ty}: a scope belongs to the document or the fragment")),
 			definition::Item::Fields(record) => {
 				for (field, source) in &record.0 {
 					match source.from {
 						"literal" if site == At::Directive => continue,
 						"content" => {
 							if site != At::Block || at != items.len() - 1 {
-								return Err(format!("{field} is a body: only a block's form ends in one"));
+								return Err(format!("{ty}: {field} is a body, which only ends a block's form"));
 							}
 							if let Some(first) = &body {
-								return Err(format!("{field} is a second body after {}", first.field));
+								return Err(format!("{ty}: {field} is a second body after {}", first.field));
 							}
 							body = Some(Body {
 								field,
@@ -1579,10 +1672,15 @@ fn form(items: &[definition::Item], site: At, bound: &mut Vec<Declare>) -> Resul
 							continue;
 						}
 						"js" => {}
-						from => return Err(format!("{field} reads {from} {}, which a form cannot", source.read)),
+						from => {
+							return Err(format!(
+								"{ty}: {field} reads {from} {}, which a form cannot",
+								source.read
+							));
+						}
 					}
 					if site == At::Tag && source.bind != Bind::No {
-						return Err(format!("{field} binds, but a tag opens no scope"));
+						return Err(format!("{ty}: {field} binds, but a tag opens no scope"));
 					}
 					let outside = source.bind == Bind::Outside;
 					if source.bind != Bind::No && !bound.iter().any(|d| d.field == *field && d.outside == outside) {
@@ -1598,27 +1696,28 @@ fn form(items: &[definition::Item], site: At, bound: &mut Vec<Declare>) -> Resul
 			}
 		}
 	}
-	Ok(Form {
-		items: out,
-		body,
-		entries: Vec::new(),
-	})
+	Ok((out, body))
 }
 
 fn alternatives(
+	ty: &str,
 	list: &[Vec<definition::Item>],
 	site: At,
 	bound: &mut Vec<Declare>,
 ) -> Result<Vec<Alternative>, String> {
+	if list.is_empty() {
+		return Err(format!("{ty}: `oneOf` needs alternatives"));
+	}
 	list.iter()
 		.map(|items| {
-			let mut own = Vec::new();
-			let bound = if items.iter().any(opens) { &mut own } else { &mut *bound };
-			let form = form(items, site, bound)?;
-			Ok(Alternative {
-				items: form.items,
-				body: form.body,
-			})
+			if items.is_empty() {
+				return Err(format!("{ty}: an alternative needs items"));
+			}
+			// an alternative ending in a body declares what was bound before the group too
+			let mut own = bound.clone();
+			let bound = if has_body(items) { &mut own } else { &mut *bound };
+			let (items, body) = sequence(ty, items, site, bound)?;
+			Ok(Alternative { items, body })
 		})
 		.collect()
 }
@@ -1637,13 +1736,19 @@ fn holds(field: &str, source: &Source) -> Result<RootField, String> {
 	})
 }
 
-fn scoped(items: &[definition::Item]) -> Result<Vec<DocField>, String> {
+fn scoped(items: &[definition::Item], reads: &mut Vec<&'static str>) -> Result<Vec<DocField>, String> {
 	let mut out = Vec::new();
 	for item in items {
 		match item {
-			definition::Item::Scope(inner) => out.push(DocField::Scope(scoped(inner)?)),
+			definition::Item::Scope(inner) => out.push(DocField::Scope(scoped(inner, reads)?)),
 			definition::Item::Fields(record) => {
 				for (field, source) in &record.0 {
+					if source.from != "literal" {
+						if reads.contains(&source.read) {
+							return Err(format!("the document reads {} twice", source.read));
+						}
+						reads.push(source.read);
+					}
 					out.push(DocField::Field {
 						field,
 						holds: holds(field, source)?,
@@ -1704,7 +1809,7 @@ fn directive(name: Match, rule: &definition::Directive) -> Result<DirectiveRule,
 		match s.literal {
 			Some(Literal::True) => flags.push((*field, true)),
 			Some(Literal::False) => flags.push((*field, false)),
-			_ => return Err(format!("{field} on a directive is a flag: true or false")),
+			_ => return Err(format!("{}: {field} is a flag: true or false", rule.node.r#type)),
 		}
 	}
 	let rest: Vec<&definition::Item> = rule
@@ -1737,11 +1842,11 @@ fn directive(name: Match, rule: &definition::Directive) -> Result<DirectiveRule,
 		{
 			let fixed = if s.read == "value" { "value" } else { "expression" };
 			if *field != fixed {
-				return Err(format!("a directive's value is read into {fixed}"));
+				return Err(format!("{ty}: a directive's value is read into {fixed}"));
 			}
 			if s.optional {
 				return Err(format!(
-					"{field} is a directive's value: `opt` makes it null when missing, it is never left out"
+					"{ty}: {field} is a directive's value: `opt` makes it null when missing, it is never left out"
 				));
 			}
 			let (optional, name_too) = (wrapped.is_some() || s.or_arg, s.or_arg);
@@ -1768,7 +1873,7 @@ fn directive(name: Match, rule: &definition::Directive) -> Result<DirectiveRule,
 	}
 	let mut bound = Vec::new();
 	let items: Vec<definition::Item> = rest.into_iter().cloned().collect();
-	let value = DirectiveValue::Form(form(&items, At::Directive, &mut bound)?);
+	let value = DirectiveValue::Form(form(ty, &items, At::Directive, &mut bound)?);
 	Ok(DirectiveRule {
 		name,
 		ty,
@@ -1780,18 +1885,25 @@ fn directive(name: Match, rule: &definition::Directive) -> Result<DirectiveRule,
 }
 
 fn block(name: &'static str, rule: &definition::Block) -> Result<BlockRule, String> {
-	let reopen = rule.branches.0.iter().find_map(|(_, b)| match b {
-		Branch::Reopen(r) => Some(r),
-		Branch::Form(_) => None,
-	});
+	let ty = rule.node.r#type;
+	let mut chain_flag = None;
 	let mut branches = Vec::new();
 	for (words, branch) in &rule.branches.0 {
-		let words = words.split(' ').collect();
+		if words.is_empty() {
+			return Err(format!("{ty}: a branch needs words"));
+		}
 		let form = match branch {
-			Branch::Form(items) => form(items, At::Block, &mut Vec::new())?,
+			Branch::Form(items) => form(ty, items, At::Block, &mut Vec::new())?,
 			Branch::Reopen(r) => {
-				let mut head = form(&rule.node.items, At::Block, &mut Vec::new())?;
-				let own = head.body.take().ok_or("a reopened block's form ends in its body")?;
+				if chain_flag.is_some_and(|flag| flag != r.flag) {
+					return Err(format!("{ty}: every branch that reopens the block sets the one flag"));
+				}
+				chain_flag = Some(r.flag);
+				let mut head = form(ty, &rule.node.items, At::Block, &mut Vec::new())?;
+				let own = head
+					.body
+					.take()
+					.ok_or_else(|| format!("{ty}: a reopened form ends in its body"))?;
 				head.body = Some(Body {
 					field: r.reopen,
 					omit: false,
@@ -1801,22 +1913,31 @@ fn block(name: &'static str, rule: &definition::Block) -> Result<BlockRule, Stri
 				head
 			}
 		};
-		branches.push(BranchRule { words, form });
+		if !closed(&form.items, form.body.as_ref()) {
+			return Err(format!("{ty}: the {words} branch ends in no body"));
+		}
+		branches.push(BranchRule {
+			words: words.split(' ').collect(),
+			form,
+		});
 	}
 	let mut bound = Vec::new();
-	let open = form(&rule.node.items, At::Block, &mut bound)?;
+	let open = form(ty, &rule.node.items, At::Block, &mut bound)?;
+	if !closed(&open.items, open.body.as_ref()) {
+		return Err(format!("{ty} ends in no body"));
+	}
 	if let Some(unread) = bound.first() {
 		return Err(format!(
-			"{name} binds {} but ends in no body to declare it in",
+			"{ty}: {} binds after the body, so nothing declares it",
 			unread.field
 		));
 	}
 	Ok(BlockRule {
 		name,
-		ty: rule.node.r#type,
+		ty,
 		open,
 		branches,
-		chain_flag: reopen.map(|r| r.flag),
+		chain_flag,
 		entries: Vec::new(),
 		bodies: Vec::new(),
 	})
@@ -1826,7 +1947,7 @@ fn tag(name: &'static str, node: &definition::Node, attribute: bool) -> Result<T
 	Ok(TagRule {
 		name,
 		ty: node.r#type,
-		form: form(&node.items, At::Tag, &mut Vec::new())?,
+		form: form(node.r#type, &node.items, At::Tag, &mut Vec::new())?,
 		attribute,
 	})
 }
@@ -1874,6 +1995,9 @@ fn lower(host: Host) -> Result<Grammar, String> {
 		}
 		None => None,
 	};
+	token("the open delimiter", d.delimiters.0)?;
+	token("the close delimiter", d.delimiters.1)?;
+	once("an element", &d.elements.fields)?;
 	let element_fields =
 		|read: &str| part(&d.elements.fields, read).ok_or_else(|| format!("elements need a field read by {read}"));
 	let mut elements = Vec::new();
@@ -1887,6 +2011,20 @@ fn lower(host: Host) -> Result<Grammar, String> {
 		elements.push(element(Match::Any, rule)?);
 	}
 	let x = d.directives.as_ref();
+	if let Some(x) = x {
+		once("a directive", &x.fields)?;
+		for (what, mark) in [
+			("prefix", x.prefix),
+			("argument mark", x.arg),
+			("modifier mark", x.modifier),
+		] {
+			token(&format!("the directive {what}"), mark.unwrap_or("-"))?;
+		}
+		if let Some((open, close)) = x.dynamic {
+			token("the dynamic argument's open", open)?;
+			token("the dynamic argument's close", close)?;
+		}
+	}
 	let directive_syntax = x.map(|x| DirectiveSyntax {
 		prefix: x.prefix,
 		arg: x.arg.unwrap_or(":"),
@@ -1917,6 +2055,20 @@ fn lower(host: Host) -> Result<Grammar, String> {
 		directives.push(directive(Match::Any, other)?);
 	}
 	let sigils = d.sigils.as_ref();
+	if let Some(s) = sigils {
+		let marks = [
+			("open", s.open),
+			("branch", s.branch),
+			("close", s.close),
+			("tag", s.tag),
+		];
+		for (i, (what, mark)) in marks.iter().enumerate() {
+			token(&format!("the {what} sigil"), mark)?;
+			if let Some((other, _)) = marks[..i].iter().find(|(_, m)| m == mark) {
+				return Err(format!("the {other} and {what} sigils are both {mark}"));
+			}
+		}
+	}
 	let mut blocks = Vec::new();
 	for (name, rule) in sigils.and_then(|s| s.blocks.as_ref()).iter().flat_map(|r| &r.0) {
 		blocks.push(block(name, rule)?);
@@ -1925,12 +2077,17 @@ fn lower(host: Host) -> Result<Grammar, String> {
 	for (name, rule) in sigils.and_then(|s| s.tags.as_ref()).iter().flat_map(|r| &r.0) {
 		tags.push(tag(name, &rule.node, rule.among == definition::Among::Attributes)?);
 	}
+	let mut reads = Vec::new();
+	let document = DocumentRule {
+		ty: d.document.r#type,
+		fields: scoped(&d.document.items, &mut reads)?,
+	};
+	if !reads.contains(&"fragment") {
+		return Err(format!("{} holds no content", d.document.r#type));
+	}
 	Ok(Grammar {
 		name: host.name,
-		document: DocumentRule {
-			ty: d.document.r#type,
-			fields: scoped(&d.document.items)?,
-		},
+		document,
 		delimiters: d.delimiters,
 		attribute_expressions: d.attributes.as_ref().is_some_and(|a| a.expressions == Some(true)),
 		attribute_shorthand: d.attributes.as_ref().is_some_and(|a| a.shorthand == Some(true)),
@@ -2040,13 +2197,6 @@ impl Grammar {
 			collect_bodies(&block.open, &mut bodies);
 			for branch in &mut block.branches {
 				branch.form.finish()?;
-				if branch.form.body.is_none() {
-					return Err(format!(
-						"the {} branch of {} needs a body",
-						branch.words.join(" "),
-						block.name
-					));
-				}
 				entries.extend_from_slice(&branch.form.entries);
 				collect_bodies(&branch.form, &mut bodies);
 			}
