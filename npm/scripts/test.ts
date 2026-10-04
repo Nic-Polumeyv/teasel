@@ -538,16 +538,47 @@ function types(source: api.Source, definition: typeof svelteDefinition) {
 	g.tag(g.node('T', { name: g.bind(g.js.identifier) }));
 	// @ts-expect-error only a block declares around itself
 	g.directive(g.node('D', { name: g.bind.outside(g.js.identifier) }));
-	g.grammar('x', {
-		document: g.node('Root', { children: g.content }),
+	// @ts-expect-error a directive's flag is true or false
+	g.directive(g.node('D', { flag: g.literal(null) }));
+	// @ts-expect-error `opt` needs items
+	g.opt();
+	// @ts-expect-error `oneOf` needs alternatives
+	g.oneOf();
+	// @ts-expect-error an alternative needs items
+	g.oneOf([]);
+	const base = {
 		text: g.node('Text', { data: g.text.data }),
 		comment: g.node('Comment', { data: g.text.data }),
 		delimiters: ['{', '}'],
+	} as const;
+	const fields = { name: g.element.tag, attributes: g.element.attributes, children: g.content };
+	g.grammar('x', {
+		...base,
+		document: g.node('Root', { children: g.content }),
 		elements: {
-			fields: { name: g.element.tag, attributes: g.element.attributes, children: g.content },
+			fields,
 			// @ts-expect-error inside names an element rule
 			rules: { head: g.element(g.node('Head')), title: g.element(g.node('Title'), { inside: 'haed' }) },
 		},
+	});
+	g.grammar('x', {
+		...base,
+		// @ts-expect-error the document's literals are null or a list
+		document: g.node('Root', { children: g.content, flag: g.literal(true) }),
+		elements: { fields },
+	});
+	g.grammar('x', {
+		...base,
+		document: g.node('Root', { children: g.content }),
+		// @ts-expect-error an element's fields are never left out
+		elements: { fields: { ...fields, attributes: g.optional(g.element.attributes) } },
+	});
+	g.grammar('x', {
+		...base,
+		document: g.node('Root', { children: g.content }),
+		elements: { fields },
+		// @ts-expect-error a directive's fields are never left out
+		directives: { fields: { arg: g.optional(g.directive.arg) } },
 	});
 
 	const typed = new Plan(definition);
