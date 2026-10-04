@@ -5,7 +5,7 @@ use super::regexp_data::{BINARY_PROPERTIES, BINARY_PROPERTIES_OF_STRINGS, GENERA
 use super::unicode::{is_id_continue, is_id_start};
 use crate::error::Code;
 use crate::error::SyntaxError;
-use std::collections::HashMap;
+use crate::interner::FastMap;
 
 type Result<T> = std::result::Result<T, Box<SyntaxError>>;
 
@@ -23,7 +23,7 @@ pub(super) fn validate(start: u32, pattern: &str, flags: &str, scratch: &mut Scr
 pub(crate) struct Scratch {
 	source: Vec<u16>,
 	last_string_value: String,
-	group_names: HashMap<String, Vec<usize>>,
+	group_names: FastMap<String, Vec<usize>>,
 	back_reference_names: Vec<String>,
 	branches: Vec<Branch>,
 }
@@ -256,8 +256,8 @@ impl<'a> State<'a> {
 	}
 
 	/// The base of every branch on the chain from `branch` to the root, keyed by base.
-	fn ancestor_bases(&self, branch: usize) -> HashMap<usize, usize> {
-		let mut bases = HashMap::new();
+	fn ancestor_bases(&self, branch: usize) -> FastMap<usize, usize> {
+		let mut bases = FastMap::default();
 		let mut x = Some(branch);
 		while let Some(i) = x {
 			bases.insert(self.scratch.branches[i].base, i);
@@ -267,7 +267,7 @@ impl<'a> State<'a> {
 	}
 
 	/// Whether `other` sits in a different alternative from the branch whose bases are given.
-	fn separated(&self, bases: &HashMap<usize, usize>, other: usize) -> bool {
+	fn separated(&self, bases: &FastMap<usize, usize>, other: usize) -> bool {
 		let mut y = Some(other);
 		while let Some(j) = y {
 			if let Some(&i) = bases.get(&self.scratch.branches[j].base)
