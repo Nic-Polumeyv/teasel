@@ -1,7 +1,7 @@
 // the source goes over as bytes: V8's encoder is 14x faster than the host reading a string out
-import type { Engine, Held, Tree } from '../lib/decode.js';
-import type { External } from '../lib/addon.js';
-import { load } from '../lib/addon.js';
+import type { Engine, Held, Tree } from '../decode.js';
+import type { External } from './addon.js';
+import { load } from './addon.js';
 
 const native = load();
 const encoder = new TextEncoder();
@@ -19,7 +19,7 @@ function bytes(text: string) {
 // a plan is the external the addon holds the grammar in; V8 lets go of it, nothing to free
 class Plan implements Held {
 	readonly external: External;
-	constructor(grammar: string) {
+	constructor(grammar: Uint8Array) {
 		this.external = native.plan(grammar);
 	}
 	free() {}

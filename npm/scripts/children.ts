@@ -1,4 +1,4 @@
-// `node scripts/children.ts` writes src/lib/children.ts from the engine's layout: for every node type, the fields that hold nodes; the tests check they agree
+// `node scripts/children.ts` writes src/children.ts from the engine's layout: for every node type, the fields that hold nodes; the tests check they agree
 import { writeFileSync } from 'node:fs';
 
 interface Field {
@@ -53,11 +53,11 @@ export function generate(layout: Layout): { children: Record<string, string[]>; 
 }
 
 if (process.argv[1] === new URL(import.meta.url).pathname) {
-	const { engine } = await import('../dist/native.js');
+	const { engine } = await import('../dist/engine/native.js');
 	const { children, extras } = generate(JSON.parse(engine.layout()));
 	const lines = Object.entries(children).map(([type, fields]) => `\t${type}: [${fields.map((f) => `'${f}'`).join(', ')}],`);
 	writeFileSync(
-		new URL('../src/lib/children.ts', import.meta.url),
+		new URL('../src/children.ts', import.meta.url),
 		`// written by scripts/children.ts from the engine's layout\n/** For every type of node a built-in plan answers with, the fields that hold a node or a list of nodes: what a walk follows. A document plan's \`children\` adds the host's. */\nexport const children = {\n${lines.join('\n')}\n} as const;\n\n/** The fields TypeScript may add to a node of any type, holding nodes: annotations, type parameters and arguments, what a class implements, decorators. */\nexport const extras = [${extras.map((f) => `'${f}'`).join(', ')}] as const;\n`,
 	);
 	console.log(`${Object.keys(children).length} types, ${extras.length} extras`);

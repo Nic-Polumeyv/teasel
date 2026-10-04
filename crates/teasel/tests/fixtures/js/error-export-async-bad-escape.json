@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "expected_unicode_escape",
+		"message": "Expecting Unicode escape sequence \\uXXXX",
+		"pos": 22,
+		"end": 22,
+		"loc": {
+			"line": 1,
+			"column": 22
+		}
+	}
+}

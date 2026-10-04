@@ -5,7 +5,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use teasel::Entry;
-use teasel::json::{Request, flag, parse};
+use teasel::Options;
+use teasel::json::{Request, parse};
 
 fn suite() -> Option<PathBuf> {
 	let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/test262-parser-tests");
@@ -35,7 +36,7 @@ fn parsing(root: &Path) -> Vec<(String, String, bool)> {
 }
 
 fn request(entry: Entry, offset: u32, module: bool, flags: u32) -> Request {
-	let module = if module { flag::MODULE } else { 0 };
+	let module = if module { Options::MODULE } else { 0 };
 	Request {
 		entry,
 		offset,
@@ -48,11 +49,11 @@ fn recovery_changes_nothing_that_parses() {
 	let Some(root) = suite() else { return };
 	let mut differ = Vec::new();
 	for (path, source, module) in parsing(&root) {
-		let flags = flag::COMMENTS | flag::SCOPES | flag::LOCATIONS;
+		let flags = Options::COMMENTS | Options::SCOPES | Options::LOCATIONS;
 		let strict = parse(&source, &request(Entry::Program, 0, module, flags), "");
 		let mut recovered = parse(
 			&source,
-			&request(Entry::Program, 0, module, flag::ERROR_RECOVERY | flags),
+			&request(Entry::Program, 0, module, Options::ERROR_RECOVERY | flags),
 			"",
 		);
 		if let Some(at) = recovered.find(",\"errors\":[]") {
@@ -89,10 +90,10 @@ fn an_entry_reads_what_the_program_read() {
 	let Some(root) = suite() else { return };
 	let mut differ = Vec::new();
 	for (path, source, module) in parsing(&root) {
-		let program = parse(&source, &request(Entry::Program, 0, module, flag::LOCATIONS), "");
+		let program = parse(&source, &request(Entry::Program, 0, module, Options::LOCATIONS), "");
 		let mut at = 0u32;
 		while (at as usize) < source.len() {
-			let answer = parse(&source, &request(Entry::Statement, at, module, flag::LOCATIONS), "");
+			let answer = parse(&source, &request(Entry::Statement, at, module, Options::LOCATIONS), "");
 			let Some(node) = node_of(&answer) else { break };
 			let end: u32 = answer[answer.rfind(",\"end\":").unwrap() + 7..answer.len() - 1]
 				.parse()
@@ -129,7 +130,7 @@ fn a_file_cut_anywhere_is_read_without_a_panic() {
 			let cut = &source[..i];
 			for flags in [
 				0,
-				flag::ERROR_RECOVERY | flag::COMMENTS | flag::SCOPES | flag::LOCATIONS,
+				Options::ERROR_RECOVERY | Options::COMMENTS | Options::SCOPES | Options::LOCATIONS,
 			] {
 				let read = std::panic::catch_unwind(|| parse(cut, &request(Entry::Program, 0, module, flags), ""));
 				if read.is_err() {

@@ -6,10 +6,10 @@
 //! the parse consumed. `--offset` alone parses an expression. The pattern, params and statement
 //! modes parse as a module.
 //!
-//! `teasel --batch [--host GRAMMAR]` reads jobs from stdin, each a header line `MODE LENGTH` followed by LENGTH
+//! `teasel --batch [--host WIRE]` reads jobs from stdin, each a header line `MODE LENGTH` followed by LENGTH
 //! bytes of source, and prints one JSON line per job. MODE is `module`, `script`, `expr:OFFSET`,
 //! `pattern:OFFSET`, `params:OFFSET`, `stmt:OFFSET`, `typeparams:OFFSET` or `doc` for a whole
-//! document of the host language the grammar file describes, with a `ts-` prefix
+//! document of the host language the grammar on the wire file describes, with a `ts-` prefix
 //! for TypeScript and `+comments` to attach comments, `+scopes` for the scope analysis,
 //! `+parenthesized` to mark parenthesized nodes, `+undeclared-exports` to accept exports of names
 //! the source never declares, `+stop:TOKEN` to end a parse-at entry at one of the host's tokens or
@@ -18,8 +18,8 @@
 
 use std::io::{self, BufRead, Read, Write};
 use std::process::ExitCode;
-use teasel::json::{Request, flag};
-use teasel::{Entry, json};
+use teasel::json::Request;
+use teasel::{Entry, Options, json};
 
 /// A batch header's mode: its entry, offset and switches, which may come before or after the offset.
 fn batch_mode(mode: &str) -> (Entry, u32, impl Iterator<Item = &str>) {
@@ -38,7 +38,7 @@ fn batch_mode(mode: &str) -> (Entry, u32, impl Iterator<Item = &str>) {
 	(entry, tail[..digits].parse().unwrap_or(0), switches)
 }
 
-fn batch(grammar: Option<String>) -> io::Result<()> {
+fn batch(grammar: Option<Vec<u8>>) -> io::Result<()> {
 	let stdin = io::stdin();
 	let mut input = stdin.lock();
 	let stdout = io::stdout();
@@ -71,22 +71,22 @@ fn batch(grammar: Option<String>) -> io::Result<()> {
 			None => (false, mode_text),
 		};
 		let (entry, offset, switches) = batch_mode(mode_text);
-		let mut flags = flag::LOCATIONS;
+		let mut flags = Options::LOCATIONS;
 		if typescript {
-			flags |= flag::TYPESCRIPT;
+			flags |= Options::TYPESCRIPT;
 		}
 		if !mode_text.starts_with("script") {
-			flags |= flag::MODULE;
+			flags |= Options::MODULE;
 		}
 		let mut stop = String::new();
 		for switch in switches {
 			match switch {
-				"comments" => flags |= flag::COMMENTS,
-				"scopes" => flags |= flag::SCOPES,
-				"erase" => flags |= flag::ERASE,
-				"parenthesized" => flags |= flag::PARENTHESIZED,
-				"recover" => flags |= flag::ERROR_RECOVERY,
-				"undeclared-exports" if entry == Entry::Program => flags |= flag::ALLOW_UNDECLARED_EXPORTS,
+				"comments" => flags |= Options::COMMENTS,
+				"scopes" => flags |= Options::SCOPES,
+				"erase" => flags |= Options::ERASE,
+				"parenthesized" => flags |= Options::PARENTHESIZED,
+				"recover" => flags |= Options::ERROR_RECOVERY,
+				"undeclared-exports" if entry == Entry::Program => flags |= Options::ALLOW_UNDECLARED_EXPORTS,
 				_ => {
 					if let Some(token) = switch.strip_prefix("stop:") {
 						if !stop.is_empty() {
@@ -119,7 +119,7 @@ fn main() -> ExitCode {
 			.iter()
 			.position(|a| a == "--host")
 			.and_then(|i| args.get(i + 1))
-			.map(|path| std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}")));
+			.map(|path| std::fs::read(path).unwrap_or_else(|e| panic!("{path}: {e}")));
 		return match batch(grammar) {
 			Ok(()) => ExitCode::SUCCESS,
 			Err(e) => {
@@ -130,18 +130,18 @@ fn main() -> ExitCode {
 	}
 	let mut entry = Entry::Program;
 	let mut offset = None;
-	let mut flags = flag::LOCATIONS;
+	let mut flags = Options::LOCATIONS;
 	let mut host = None;
 	let mut file = None;
 	let mut args = args.into_iter();
 	while let Some(arg) = args.next() {
 		match arg.as_str() {
-			"--module" => flags |= flag::MODULE,
-			"--typescript" => flags |= flag::TYPESCRIPT,
-			"--comments" => flags |= flag::COMMENTS,
-			"--scopes" => flags |= flag::SCOPES,
-			"--parenthesized" => flags |= flag::PARENTHESIZED,
-			"--erase" => flags |= flag::ERASE,
+			"--module" => flags |= Options::MODULE,
+			"--typescript" => flags |= Options::TYPESCRIPT,
+			"--comments" => flags |= Options::COMMENTS,
+			"--scopes" => flags |= Options::SCOPES,
+			"--parenthesized" => flags |= Options::PARENTHESIZED,
+			"--erase" => flags |= Options::ERASE,
 			"--expression" => entry = Entry::Expression,
 			"--pattern" => entry = Entry::Pattern,
 			"--params" => entry = Entry::Params,
@@ -156,7 +156,7 @@ fn main() -> ExitCode {
 		entry = Entry::Expression;
 	}
 	if !matches!(entry, Entry::Program | Entry::Expression) {
-		flags |= flag::MODULE;
+		flags |= Options::MODULE;
 	}
 	let Some(file) = file else {
 		eprintln!(
@@ -177,7 +177,7 @@ fn main() -> ExitCode {
 		..Request::from_flags(flags)
 	};
 	if let Some(host) = host {
-		let grammar = match std::fs::read_to_string(&host) {
+		let grammar = match std::fs::read(&host) {
 			Ok(s) => s,
 			Err(e) => {
 				eprintln!("{host}: {e}");

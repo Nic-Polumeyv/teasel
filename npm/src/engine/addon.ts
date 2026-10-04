@@ -1,6 +1,7 @@
+// scripts/addon.ts imports this file to build the binary that native.ts loads on import, so the two stay apart
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import type { Tree } from './decode.js';
+import type { Tree } from '../decode.js';
 
 /** The external V8 holds for the addon: a prepared source. */
 export type External = object;
@@ -10,7 +11,7 @@ export interface Addon {
 	readonly create: (source: Uint8Array, flags: number) => External;
 	readonly parse: (held: External, entry: number, offset: number, end: number | undefined, stop: string, plan: External | undefined) => Uint32Array | string;
 	/** The grammar read once; V8 lets go of it with the external. */
-	readonly plan: (grammar: string) => External;
+	readonly plan: (grammar: Uint8Array) => External;
 	/** For a plan, each node type of the host with the fields that hold nodes, as JSON. */
 	readonly children: (plan: External) => string;
 	readonly free: (held: External) => void;

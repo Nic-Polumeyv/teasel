@@ -153,8 +153,8 @@
 						"name": "p"
 					},
 					"error": null,
-					"pending": null,
 					"catch": null,
+					"pending": null,
 					"value": {
 						"type": "Identifier",
 						"start": 99,
@@ -203,8 +203,8 @@
 						"name": "p"
 					},
 					"value": null,
-					"pending": null,
 					"then": null,
+					"pending": null,
 					"error": {
 						"type": "Identifier",
 						"start": 129,

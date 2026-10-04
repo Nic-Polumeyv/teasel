@@ -1,4 +1,4 @@
-import type { Engine, Held } from '../lib/decode.js';
+import type { Engine, Held } from '../decode.js';
 
 const encoder = new TextEncoder();
 const utf8 = new TextDecoder();
@@ -29,7 +29,7 @@ const { module, instance } =
 		? await WebAssembly.instantiate(await (await import('node:fs/promises')).readFile(url), {})
 		: await WebAssembly.instantiateStreaming(fetch(url), {});
 let wasm = instance.exports as unknown as Exports;
-// a panic traps the instance for good: a fresh one takes over, and sources and plans are made again in it from their text
+// a panic traps the instance for good: a fresh one takes over, and sources and plans are made again in it from their bytes
 let generation = 0;
 
 function guarded<T>(f: () => T): T {
@@ -74,16 +74,20 @@ function layout() {
 }
 
 class Plan implements Held {
-	#grammar: string;
+	#grammar: Uint8Array;
 	#handle = 0;
 	#held = -1;
-	constructor(grammar: string) {
+	constructor(grammar: Uint8Array) {
 		this.#grammar = grammar;
 		this.handle();
 	}
 	handle() {
 		if (this.#held !== generation) {
-			const handle = guarded(() => wasm.plan_new(...bytes(this.#grammar)));
+			const handle = guarded(() => {
+				const ptr = wasm.alloc(this.#grammar.length);
+				new Uint8Array(wasm.memory.buffer, ptr, this.#grammar.length).set(this.#grammar);
+				return wasm.plan_new(ptr, this.#grammar.length, this.#grammar.length);
+			});
 			if (handle === 0) throw new Error(JSON.parse(text()).error.message);
 			this.#handle = handle;
 			this.#held = generation;

@@ -129,43 +129,36 @@ pub(crate) enum TokenKind {
 	MinusMinus,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Keyword {
-	Break,
-	Case,
-	Catch,
-	Class,
-	Const,
-	Continue,
-	Debugger,
-	Default,
-	Delete,
-	Do,
-	Else,
-	Export,
-	Extends,
-	False,
-	Finally,
-	For,
-	Function,
-	If,
-	Import,
-	In,
-	Instanceof,
-	New,
-	Null,
-	Return,
-	Super,
-	Switch,
-	This,
-	Throw,
-	True,
-	Try,
-	Typeof,
-	Var,
-	Void,
-	While,
-	With,
+/// The reserved words, each with its spelling; `from_word` lists them again by length, and a
+/// test holds the two lists together.
+macro_rules! keywords {
+	($($name:ident $text:literal),* $(,)?) => {
+		#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+		pub(crate) enum Keyword {
+			$($name),*
+		}
+
+		impl Keyword {
+			#[cfg(test)]
+			pub(crate) const ALL: &'static [Keyword] = &[$(Keyword::$name),*];
+
+			// a table lookup measured +2.8%: it flipped inlining of `is` and `eat`
+			pub(crate) fn as_str(self) -> &'static str {
+				match self {
+					$(Keyword::$name => $text),*
+				}
+			}
+		}
+	};
+}
+
+keywords! {
+	Break "break", Case "case", Catch "catch", Class "class", Const "const", Continue "continue",
+	Debugger "debugger", Default "default", Delete "delete", Do "do", Else "else", Export "export",
+	Extends "extends", False "false", Finally "finally", For "for", Function "function", If "if",
+	Import "import", In "in", Instanceof "instanceof", New "new", Null "null", Return "return",
+	Super "super", Switch "switch", This "this", Throw "throw", True "true", Try "try",
+	Typeof "typeof", Var "var", Void "void", While "while", With "with",
 }
 
 /// What a word is when it stands as an identifier, computed once per distinct string.
@@ -198,6 +191,7 @@ pub(crate) mod word {
 }
 
 impl Keyword {
+	// a hashed index measured +2.6%: the length switch stays
 	pub(crate) fn from_word(word: &str) -> Option<Keyword> {
 		use Keyword::*;
 		Some(match word.len() {
@@ -262,46 +256,5 @@ impl Keyword {
 			},
 			_ => return None,
 		})
-	}
-
-	pub(crate) fn as_str(self) -> &'static str {
-		use Keyword::*;
-		match self {
-			Break => "break",
-			Case => "case",
-			Catch => "catch",
-			Class => "class",
-			Const => "const",
-			Continue => "continue",
-			Debugger => "debugger",
-			Default => "default",
-			Delete => "delete",
-			Do => "do",
-			Else => "else",
-			Export => "export",
-			Extends => "extends",
-			False => "false",
-			Finally => "finally",
-			For => "for",
-			Function => "function",
-			If => "if",
-			Import => "import",
-			In => "in",
-			Instanceof => "instanceof",
-			New => "new",
-			Null => "null",
-			Return => "return",
-			Super => "super",
-			Switch => "switch",
-			This => "this",
-			Throw => "throw",
-			True => "true",
-			Try => "try",
-			Typeof => "typeof",
-			Var => "var",
-			Void => "void",
-			While => "while",
-			With => "with",
-		}
 	}
 }

@@ -1,14 +1,15 @@
 import type { Expression, Identifier, Node, Pattern, Program, SourceLocation, Statement } from 'estree';
-import { decode, type Held, PARENT, type Prepared, REFERENCE, SCOPE } from './lib/decode.js';
-import { ENTRY, flags, type Options } from './lib/options.js';
+import { decode, type Held, PARENT, type Prepared, REFERENCE, SCOPE } from './decode.js';
+import { ENTRY, flags, type Options } from './options.js';
 import { engine } from '#engine';
-import { children as builtin } from './lib/children.js';
+import { children as builtin } from './children.js';
 
-import type { Code } from './lib/codes.js';
+import type { Code } from './codes.js';
+import type { Answers, Grammar } from './grammar.js';
 
-export type { Options } from './lib/options.js';
-export type { Code } from './lib/codes.js';
-export { children, extras } from './lib/children.js';
+export type { Options } from './options.js';
+export type { Code } from './codes.js';
+export { children, extras } from './children.js';
 
 /**
  * Thrown for a syntax error. `code` names what went wrong, for a host to branch on, and
@@ -17,11 +18,16 @@ export { children, extras } from './lib/children.js';
  * equal to `pos`. `unexpected_eof` is the end of what was parsed: the `end` the parse was given,
  * else the end of the source. A bad offset from the host is an `invalid_request` without a `loc`.
  */
-export interface ParseError extends SyntaxError {
-	code: Code;
-	pos: number;
-	end: number;
-	loc?: { line: number; column: number };
+export class ParseError extends SyntaxError {
+	declare code: Code;
+	declare pos: number;
+	declare end: number;
+	declare loc?: { line: number; column: number };
+
+	constructor({ message, ...fields }: Pick<ParseError, 'message' | 'code' | 'pos' | 'end' | 'loc'>) {
+		super(message);
+		Object.assign(this, fields);
+	}
 }
 
 /** A scope, as one of `scopes` on the answer. */
@@ -198,12 +204,12 @@ export interface Parsed<T> {
 
 /**
  * A node of a host language, as its grammar names the type and the fields; the JavaScript under
- * it is ESTree.
+ * it is ESTree. The node a grammar wraps children in has no span.
  */
 export interface HostNode {
 	type: string;
-	start: number;
-	end: number;
+	start?: number;
+	end?: number;
 	loc?: SourceLocation;
 	[field: string]: unknown;
 }
@@ -215,10 +221,10 @@ let read: (plan: Plan<unknown>) => { entry: number; stop: string; held: Held | u
 /**
  * What a parse reads. The built-in plans read a piece of JavaScript at a position of the source,
  * `program` the whole source; `until` ends one where the host's own tokens follow. `new Plan(grammar)`
- * reads the whole source as a document of the host language the grammar describes: the host's
- * own nodes around the JavaScript ones, in one tree, in TypeScript when the grammar says so of a
- * script tag; the grammar's format is at https://teasel.dev/host-grammar. A plan is built once and
- * applied to any source. `T` is what its parse answers with.
+ * reads the whole source as a document of the host language a grammar from `@teasel/parser/grammar`
+ * describes: the host's own nodes around the JavaScript ones, in one tree, in TypeScript when the
+ * grammar says so of a script tag. A plan is built once and applied to any source. `T` is what its
+ * parse answers with.
  */
 export class Plan<T = HostNode> {
 	#entry: number;
@@ -226,13 +232,13 @@ export class Plan<T = HostNode> {
 	#held: Held | undefined;
 	#children: Readonly<Record<string, readonly string[]>> | undefined;
 
-	constructor(grammar: string);
-	constructor(grammar: string | number, stop = '') {
+	constructor(grammar: Grammar & Answers<T>);
+	constructor(grammar: Grammar | number, stop = '') {
 		if (typeof grammar === 'number') this.#entry = grammar;
 		else {
-			if (typeof grammar !== 'string') throw new TypeError('a plan is the grammar as a string');
+			if (!(grammar?.wire instanceof Uint8Array)) throw new TypeError('a plan reads a grammar made by @teasel/parser/grammar');
 			this.#entry = ENTRY.program;
-			this.#held = engine.plan(grammar);
+			this.#held = engine.plan(grammar.wire);
 			registry?.register(this, this.#held, this);
 		}
 		this.#stop = stop;
@@ -293,6 +299,7 @@ export class Source {
 	#source: string;
 
 	constructor(source: string, options: Options = {}) {
+		// Rust cannot read a V8 string, so it parses its own copy
 		this.#held = engine.create(source, flags(options));
 		this.#source = source;
 		registry?.register(this, this.#held, this);
@@ -320,14 +327,12 @@ export class Source {
 			} catch (error) {
 				// a tree deeper than the caller's stack has room for overflowed the decoder
 				if (!(error instanceof RangeError)) throw error;
-				throw Object.assign(new SyntaxError('Maximum nesting depth exceeded'), { code: 'nesting_depth', pos: offset, end: offset });
+				throw new ParseError({ message: 'Maximum nesting depth exceeded', code: 'nesting_depth', pos: offset, end: offset });
 			}
 		}
-		const { message, ...error } = JSON.parse(answer).error;
-		throw Object.assign(new SyntaxError(message), error);
+		throw new ParseError(JSON.parse(answer).error);
 	}
 
-	/** Releases what the engine holds for the source, as `using` does at the end of its block; the collector does it otherwise. */
 	[Symbol.dispose]() {
 		if (this.#held === undefined) return;
 		registry?.unregister(this);

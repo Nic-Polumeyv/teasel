@@ -18,61 +18,19 @@ pub struct Request {
 	pub entry: Entry,
 	/// Byte offset into the source; the JSON reports UTF-16 offsets.
 	pub offset: u32,
-	pub typescript: bool,
-	pub comments: bool,
-	/// Scope analysis on the answer.
-	pub scopes: bool,
-	/// Line and column on every node, as `loc`.
-	pub locations: bool,
-	/// TypeScript erased on output; see `estree::Output`.
-	pub erase: bool,
 	/// Where the source is cut, as a byte offset, for a program inside a larger source.
 	pub end: Option<u32>,
 	pub options: Options,
 }
 
 impl Request {
-	/// A source's request from one word of `flag` bits; the entry and offset come with each parse.
+	/// A source's request from its option word; the entry and offset come with each parse.
 	pub fn from_flags(flags: u32) -> Request {
-		let on = |bit: u32| flags & bit != 0;
 		Request {
-			typescript: on(flag::TYPESCRIPT) || on(flag::ERASE),
-			comments: on(flag::COMMENTS),
-			scopes: on(flag::SCOPES),
-			locations: on(flag::LOCATIONS),
-			erase: on(flag::ERASE),
-			options: Options {
-				module: on(flag::MODULE),
-				error_recovery: on(flag::ERROR_RECOVERY),
-				allow_return_outside_function: on(flag::ALLOW_RETURN_OUTSIDE_FUNCTION),
-				allow_await_outside_function: on(flag::ALLOW_AWAIT_OUTSIDE_FUNCTION),
-				allow_super_outside_method: on(flag::ALLOW_SUPER_OUTSIDE_METHOD),
-				allow_undeclared_exports: on(flag::ALLOW_UNDECLARED_EXPORTS),
-				parenthesized: on(flag::PARENTHESIZED),
-			},
+			options: Options(flags),
 			..Request::default()
 		}
 	}
-}
-
-/// A source's switches, one word across a binding: two bits per option in the order of
-/// npm/src/lib/options.ts, holding the index of the option's value.
-pub mod flag {
-	const fn at(slot: u32, index: u32) -> u32 {
-		index << (2 * slot)
-	}
-	pub const MODULE: u32 = at(0, 1);
-	pub const TYPESCRIPT: u32 = at(1, 1);
-	pub const ERASE: u32 = at(1, 2);
-	pub const COMMENTS: u32 = at(2, 1);
-	pub const SCOPES: u32 = at(3, 1);
-	pub const LOCATIONS: u32 = at(4, 1);
-	pub const PARENTHESIZED: u32 = at(5, 1);
-	pub const ALLOW_RETURN_OUTSIDE_FUNCTION: u32 = at(6, 1);
-	pub const ALLOW_AWAIT_OUTSIDE_FUNCTION: u32 = at(7, 1);
-	pub const ALLOW_SUPER_OUTSIDE_METHOD: u32 = at(8, 1);
-	pub const ALLOW_UNDECLARED_EXPORTS: u32 = at(9, 1);
-	pub const ERROR_RECOVERY: u32 = at(10, 1);
 }
 
 /// The error answer for a request the parser never ran: a host's offsets or switches.
@@ -315,19 +273,27 @@ pub fn plan_children(grammar: &Grammar) -> String {
 
 /// `stop` lists the host's tokens for an entry at an offset; see `parser::parse_at`.
 pub fn parse(source: &str, request: &Request, stop: &str) -> String {
-	parse_with(source, &Positions::new(source, request.locations), request, stop, None)
+	parse_with(
+		source,
+		&Positions::new(source, request.options.has(Options::LOCATIONS)),
+		request,
+		stop,
+		None,
+	)
 }
 
 /// A whole document of a host language by its grammar, as JSON; see `host::parse_document`.
-pub fn parse_document(source: &str, grammar: &str, request: &Request) -> String {
+pub fn parse_document(source: &str, grammar: &[u8], request: &Request) -> String {
 	match self::grammar(grammar) {
 		Ok(grammar) => {
 			let mut request = *request;
 			request.entry = Entry::Program;
-			request.typescript |= host::typescript(source, &grammar);
+			if host::typescript(source, &grammar) {
+				request.options = request.options.with(Options::TYPESCRIPT);
+			}
 			parse_with(
 				source,
-				&Positions::new(source, request.locations),
+				&Positions::new(source, request.options.has(Options::LOCATIONS)),
 				&request,
 				"",
 				Some(&grammar),
@@ -356,8 +322,8 @@ struct Session {
 
 thread_local! {
 	static SESSION: std::cell::RefCell<Session> = std::cell::RefCell::new(Session::default());
-	/// Grammars by their text, read once each.
-	static GRAMMARS: std::cell::RefCell<Vec<(String, Rc<Grammar>)>> = const { std::cell::RefCell::new(Vec::new()) };
+	/// Grammars by their wire, read once each.
+	static GRAMMARS: std::cell::RefCell<Vec<(Vec<u8>, Rc<Grammar>)>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
 pub fn reset_session() {
@@ -394,15 +360,15 @@ fn view_names<X: Reuse + Default>() -> Vec<&'static str> {
 	names
 }
 
-/// The grammar of a text, read once per thread; the error names the line it stopped at.
-pub fn grammar(text: &str) -> Result<Rc<Grammar>, String> {
+/// The grammar on a wire, read once per thread.
+pub fn grammar(bytes: &[u8]) -> Result<Rc<Grammar>, String> {
 	GRAMMARS.with(|grammars| {
 		let mut grammars = grammars.borrow_mut();
-		if let Some((_, grammar)) = grammars.iter().find(|(known, _)| known == text) {
+		if let Some((_, grammar)) = grammars.iter().find(|(known, _)| known == bytes) {
 			return Ok(grammar.clone());
 		}
-		let grammar = Rc::new(Grammar::read(text)?);
-		grammars.push((text.to_string(), grammar.clone()));
+		let grammar = Rc::new(Grammar::read(bytes)?);
+		grammars.push((bytes.to_vec(), grammar.clone()));
 		Ok(grammar)
 	})
 }
@@ -514,7 +480,7 @@ impl<'a> Prepared<'a> {
 	}
 
 	fn of(source: std::borrow::Cow<'a, str>, request: Request) -> Prepared<'a> {
-		let positions = Positions::new(&source, request.locations);
+		let positions = Positions::new(&source, request.options.has(Options::LOCATIONS));
 		Prepared {
 			source,
 			positions,
@@ -535,8 +501,11 @@ impl<'a> Prepared<'a> {
 			entry,
 			offset,
 			end,
-			typescript: self.request.typescript || host.is_some_and(|grammar| host::typescript(&self.source, grammar)),
-			..self.request
+			options: if host.is_some_and(|grammar| host::typescript(&self.source, grammar)) {
+				self.request.options.with(Options::TYPESCRIPT)
+			} else {
+				self.request.options
+			},
 		})
 	}
 
@@ -606,11 +575,11 @@ fn dispatch(
 ) -> Result<String, String> {
 	check(source, request)?;
 	#[cfg(feature = "typescript")]
-	if request.typescript {
+	if request.options.typescript() {
 		return run::<crate::typescript::TypeScript>(source, positions, request, stop, host, pool, words);
 	}
 	#[cfg(not(feature = "typescript"))]
-	if request.typescript {
+	if request.options.typescript() {
 		return Err(error_json("built without TypeScript", 0));
 	}
 	run::<()>(source, positions, request, stop, host, pool, words)
@@ -619,7 +588,7 @@ fn dispatch(
 fn parse_with(source: &str, positions: &Positions, request: &Request, stop: &str, host: Option<&Grammar>) -> String {
 	SESSION.with(|session| {
 		let session = &mut *session.borrow_mut();
-		session.typescript = request.typescript;
+		session.typescript = request.options.typescript();
 		match dispatch(source, positions, request, stop, host, &mut session.pool, None) {
 			Ok(json) | Err(json) => json,
 		}
@@ -636,7 +605,7 @@ fn in_place_with(
 ) -> Result<(), String> {
 	SESSION.with(|session| {
 		let session = &mut *session.borrow_mut();
-		session.typescript = request.typescript;
+		session.typescript = request.options.typescript();
 		dispatch(
 			source,
 			positions,
@@ -665,10 +634,10 @@ where
 	E::Data: Emit + Bind + Reuse + Pooled,
 {
 	let output = Output {
-		comments: request.comments,
-		scopes: request.scopes,
-		erase: request.erase && request.typescript,
-		errors: request.options.error_recovery,
+		comments: request.options.has(Options::COMMENTS),
+		scopes: request.options.has(Options::SCOPES),
+		erase: request.options.has(Options::ERASE),
+		errors: request.options.has(Options::ERROR_RECOVERY),
 	};
 	let reused = Pooled::take(pool).map(|mut ast| {
 		ast.clear();
@@ -714,7 +683,7 @@ where
 		Pooled::give(pool, ast);
 		return Ok(json);
 	};
-	let names = &mut pool.names[request.typescript as usize];
+	let names = &mut pool.names[request.options.typescript() as usize];
 	prepare(&mut ast, source, positions, output, names);
 	// `end`, the roots by number, a word of what the answer is, each view's length, then where the
 	// tree's buffers sit folded into two words: a front end keeps its views while that holds. The
@@ -724,10 +693,10 @@ where
 	words.extend_from_slice(&[positions.offset(&mut crate::estree::Cursor::default(), end), roots.len]);
 	words.extend(ast.list(roots).iter().map(|root| root.unwrap().index()));
 	words.push(
-		(request.typescript as u32) << 1
+		(request.options.typescript() as u32) << 1
 			| (output.comments as u32) << 2
 			| (output.erase as u32) << 3
-			| (request.locations as u32) << 4
+			| (request.options.has(Options::LOCATIONS) as u32) << 4
 			| ((request.entry == Entry::Params) as u32) << 5
 			| (output.errors as u32) << 6,
 	);
@@ -740,7 +709,7 @@ where
 		}
 	};
 	ast.views(&mut Views(&mut note));
-	pool.names[request.typescript as usize].views(&mut Views(&mut note));
+	pool.names[request.options.typescript() as usize].views(&mut Views(&mut note));
 	words.extend_from_slice(&[sits as u32, (sits >> 32) as u32]);
 	Pooled::give(pool, ast);
 	Ok(String::new())

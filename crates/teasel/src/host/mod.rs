@@ -11,6 +11,7 @@ use std::borrow::Cow;
 use crate::ast::{Ast, Comment, CommentKind, Host, HostGroup, List, NodeId, NodeKind, Opens, Value, VariableKind};
 use crate::error::{Code, SyntaxError};
 use crate::interner::StrId;
+use crate::lexer::scan::is_space;
 use crate::lexer::unicode::{is_id_continue, is_id_start};
 use crate::parser::{Entry as JsEntry, Extension, Options, Parser, Result};
 pub use grammar::Grammar;
@@ -50,18 +51,6 @@ fn closes(current: &str, next: &str) -> bool {
 		"td" | "th" => matches!(next, "td" | "th" | "tr"),
 		_ => false,
 	}
-}
-
-fn is_space(c: char) -> bool {
-	matches!(
-		c,
-		' ' | '\t'..='\r'
-			| '\u{a0}' | '\u{1680}'
-			| '\u{2000}'..='\u{200a}'
-			| '\u{2028}' | '\u{2029}'
-			| '\u{202f}' | '\u{205f}'
-			| '\u{3000}' | '\u{feff}'
-	)
 }
 
 /// A valid element name: a doctype, a namespaced name, or a tag name as HTML spells one.
@@ -325,6 +314,14 @@ struct Read<'a> {
 	body: Option<&'a Body>,
 }
 
+fn fill_unread(entries: &[(&'static str, bool)], fields: &mut Vec<(&'static str, Value)>) {
+	for &(field, omit) in entries {
+		if !omit && !fields.iter().any(|(k, _)| *k == field) {
+			fields.push((field, Value::Null));
+		}
+	}
+}
+
 /// A body's scope as its form read it: the body's field, the entry fields the scope holds, and
 /// the patterns declared in it.
 struct BodyGroup {
@@ -498,7 +495,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 	}
 
 	fn recovering(&self) -> bool {
-		self.options.error_recovery
+		self.options.has(Options::ERROR_RECOVERY)
 	}
 
 	/// Under recovery the error is recorded on the tree and reading goes on; otherwise it ends
@@ -849,7 +846,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 						};
 						scopes.push((from, until, node));
 					}
-					&DocField::Field(field, holds, omit) => {
+					&DocField::Field { field, holds, omit } => {
 						let value = match holds {
 							RootField::Fragment => {
 								fields.push((field, children));
@@ -1823,11 +1820,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 					self.at = after;
 					end = after;
 				}
-				for &(field, omit) in &form.entries {
-					if !omit && !read.fields.iter().any(|(k, _)| *k == field) {
-						read.fields.push((field, Value::Null));
-					}
-				}
+				fill_unread(&form.entries, &mut read.fields);
 				if let Some(names) = declares {
 					for &(field, value) in &read.fields {
 						if !names.contains(&field) {
@@ -2194,6 +2187,14 @@ impl<'a, E: Extension> Walker<'a, E> {
 		}
 		let Some(branch) = found else {
 			self.at = at;
+			if rule.branches.is_empty() {
+				return fail(
+					start,
+					start + 1,
+					Code::Placement,
+					Some(&format!("A branch in {}", rule.name)),
+				);
+			}
 			let names = rule
 				.branches
 				.iter()
@@ -2429,7 +2430,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		}
 	}
 
-	#[allow(clippy::too_many_arguments)]
+	#[expect(clippy::too_many_arguments)]
 	fn block_node(
 		&mut self,
 		rule: &BlockRule,
@@ -2441,12 +2442,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		outside: Vec<NodeId>,
 		chained: bool,
 	) -> NodeId {
-		// every entry the block could have read, null unless left out on purpose
-		for &(field, omit) in &rule.entries {
-			if !omit && !fields.iter().any(|(k, _)| *k == field) {
-				fields.push((field, Value::Null));
-			}
-		}
+		fill_unread(&rule.entries, &mut fields);
 		if let Some(flag) = rule.chain_flag {
 			fields.push((flag, Value::Bool(chained)));
 		}
@@ -2556,6 +2552,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		self.form(&rule.form, &mut read)?;
 		self.space();
 		self.expect(close)?;
+		fill_unread(&rule.form.entries, &mut read.fields);
 		let node = self.host(rule.ty, start, self.at, &read.fields, None, true);
 		self.fields.give(read.fields);
 		Ok((node, rule))
@@ -2799,9 +2796,10 @@ impl<'a, E: Extension> Walker<'a, E> {
 	/// taken back unless `keep` says it ended where it should.
 	fn trial(&mut self, stop: &str, keep: impl FnOnce(&mut Self) -> bool) -> Option<List> {
 		let (start, comments, mark) = (self.at, self.tree().comments.len(), self.tree().mark());
-		let recovering = std::mem::replace(&mut self.options.error_recovery, false);
+		let options = self.options;
+		self.options = options.without(Options::ERROR_RECOVERY);
 		let read = self.js(JsEntry::Expression, stop);
-		self.options.error_recovery = recovering;
+		self.options = options;
 		if let Ok(roots) = read
 			&& keep(self)
 		{
@@ -2853,8 +2851,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let ast = self.ast.take().unwrap();
 		let src = &self.src[..end as usize];
 		// the template may declare what the script exports
-		let mut options = self.options;
-		options.allow_undeclared_exports = true;
+		let options = self.options.with(Options::ALLOW_UNDECLARED_EXPORTS);
 		let mut parser = Parser::<E>::new(src, start, options, "", ast);
 		let program = parser.start().and_then(|()| parser.parse_program());
 		self.ast = Some(parser.finish());
@@ -2886,7 +2883,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		}
 		let end = self.at;
 		let word = &self.src[start as usize..end as usize];
-		if reserved(word) || (self.options.module && word == "await") {
+		if reserved(word) || (self.options.has(Options::MODULE) && word == "await") {
 			self.report(error(start, end, Code::ReservedWord, Some(word)))?;
 		}
 		let name = self.intern(word);
@@ -2897,7 +2894,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 /// A word that cannot name a binding.
 fn reserved(word: &str) -> bool {
 	use crate::lexer::token::word::{ENUM, KEYWORD, STRICT, flags};
-	flags(word) & (KEYWORD | STRICT | ENUM) != 0 || matches!(word, "this" | "true" | "false" | "null")
+	flags(word) & (KEYWORD | STRICT | ENUM) != 0
 }
 
 /// The length of a `</name>` closer at the start of `rest`, in any case, attributes and all.
