@@ -356,12 +356,12 @@ impl Parser<'_, TypeScript> {
 			return Ok(true);
 		}
 		if self.is(TokenKind::BraceL) {
-			return Ok(self.attempt(|p| p.parse_obj(true, &mut None)).is_some());
+			return Ok(self.attempt(|p| p.parse_obj(true, &mut None))?.is_some());
 		}
 		if self.is(TokenKind::BracketL) {
 			self.next()?;
 			return Ok(self
-				.attempt(|p| p.parse_binding_list(TokenKind::BracketR, true, true, false))
+				.attempt(|p| p.parse_binding_list(TokenKind::BracketR, true, true, false))?
 				.is_some());
 		}
 		Ok(false)
@@ -1078,19 +1078,11 @@ impl Parser<'_, TypeScript> {
 			let count = self.ast.list(parameters).len();
 			match kind {
 				Some(SignatureKind::Get) if count > 0 => {
-					return self.error_with(
-						self.tok.start,
-						Code::GetterParams,
-						"A 'get' accesor must not have any formal parameters.",
-					);
+					return self.error(self.tok.start, Code::GetterParams);
 				}
 				Some(SignatureKind::Set) => {
 					if count != 1 {
-						return self.error_with(
-							self.tok.start,
-							Code::SetterParams,
-							"A 'get' accesor must not have any formal parameters.",
-						);
+						return self.error(self.tok.start, Code::SetterParams);
 					}
 					if let Some(type_annotation) = type_annotation {
 						return self.error(self.start_of(type_annotation), Code::SetterReturnType);

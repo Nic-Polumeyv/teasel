@@ -1,0 +1,136 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 28,
+		"scope": 0,
+		"body": [
+			{
+				"type": "VariableDeclaration",
+				"start": 0,
+				"end": 27,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 6,
+						"end": 26,
+						"defines": [
+							0
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 6,
+							"end": 7,
+							"declares": 0,
+							"name": "h"
+						},
+						"init": {
+							"type": "ConditionalExpression",
+							"start": 10,
+							"end": 26,
+							"test": {
+								"type": "Identifier",
+								"start": 10,
+								"end": 11,
+								"reference": 0,
+								"name": "a"
+							},
+							"consequent": {
+								"type": "Identifier",
+								"start": 15,
+								"end": 16,
+								"reference": 1,
+								"name": "b"
+							},
+							"alternate": {
+								"type": "ArrowFunctionExpression",
+								"start": 20,
+								"end": 26,
+								"scope": 1,
+								"defines": [
+									1
+								],
+								"id": null,
+								"expression": true,
+								"generator": false,
+								"async": false,
+								"params": [
+									{
+										"type": "Identifier",
+										"start": 20,
+										"end": 21,
+										"declares": 1,
+										"name": "c"
+									}
+								],
+								"body": {
+									"type": "Identifier",
+									"start": 25,
+									"end": 26,
+									"reference": 2,
+									"name": "d"
+								}
+							}
+						}
+					}
+				],
+				"kind": "const"
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 28,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "h",
+			"kind": "const",
+			"scope": 0,
+			"write": true
+		},
+		{
+			"name": "c",
+			"kind": "param",
+			"scope": 1,
+			"write": true
+		}
+	],
+	"references": [
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 1,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		}
+	]
+}

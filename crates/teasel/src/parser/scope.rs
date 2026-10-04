@@ -1,4 +1,5 @@
 use super::{Extension, Parser, Result};
+use crate::Options;
 use crate::error::Code;
 use crate::interner::{FastMap, StrId};
 
@@ -125,7 +126,7 @@ impl<E: Extension> Parser<'_, E> {
 	}
 
 	fn treat_functions_as_var_in(&self, scope: &Scope) -> bool {
-		scope.flags & SCOPE_FUNCTION != 0 || (!self.options.module && scope.flags & SCOPE_TOP != 0)
+		scope.flags & SCOPE_FUNCTION != 0 || (!self.options.has(Options::MODULE) && scope.flags & SCOPE_TOP != 0)
 	}
 
 	pub(crate) fn treat_functions_as_var(&self) -> bool {
@@ -153,11 +154,11 @@ impl<E: Extension> Parser<'_, E> {
 				return scope.flags & SCOPE_ASYNC != 0;
 			}
 		}
-		self.options.module || self.options.allow_await_outside_function
+		self.options.has(Options::MODULE) || self.options.has(Options::ALLOW_AWAIT_OUTSIDE_FUNCTION)
 	}
 
 	pub(crate) fn allow_super(&self) -> bool {
-		self.current_this_scope().flags & SCOPE_SUPER != 0 || self.options.allow_super_outside_method
+		self.current_this_scope().flags & SCOPE_SUPER != 0 || self.options.has(Options::ALLOW_SUPER_OUTSIDE_METHOD)
 	}
 
 	pub(crate) fn allow_direct_super(&self) -> bool {

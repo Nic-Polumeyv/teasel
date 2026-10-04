@@ -24,31 +24,51 @@ pub(crate) const MAX_DEPTH: u32 = 1000;
 // wasm frames sit on the embedder's stack: the scope walk overflowed it past 5,000 links
 const MAX_CHAIN: u32 = if cfg!(target_arch = "wasm32") { 4_000 } else { 10_000 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub enum Decorators {
-	#[default]
-	Any,
-	Legacy,
-	Proposal,
-}
+/// The switches of a parse as one word, two bits per option in the order of npm/src/options.ts,
+/// holding the index of the option's value.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Options(pub u32);
 
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Options {
-	/// Parse as an ES module: strict mode, top-level `await`, `import` and `export`.
-	pub module: bool,
+impl Options {
+	const fn at(slot: u32, index: u32) -> u32 {
+		index << (2 * slot)
+	}
+	/// An ES module: strict mode, top-level `await`, `import` and `export`.
+	pub const MODULE: u32 = Self::at(0, 1);
+	pub const TYPESCRIPT: u32 = Self::at(1, 1);
+	/// TypeScript, erased on output; see `estree::Output`.
+	pub const ERASE: u32 = Self::at(1, 2);
+	pub const COMMENTS: u32 = Self::at(2, 1);
+	/// Scope analysis on the answer.
+	pub const SCOPES: u32 = Self::at(3, 1);
+	/// Line and column on every node, as `loc`.
+	pub const LOCATIONS: u32 = Self::at(4, 1);
+	/// The fact `parenthesized` on a node the source wraps in parens, instead of a wrapper node.
+	pub const PARENTHESIZED: u32 = Self::at(5, 1);
+	pub const ALLOW_RETURN_OUTSIDE_FUNCTION: u32 = Self::at(6, 1);
+	pub const ALLOW_AWAIT_OUTSIDE_FUNCTION: u32 = Self::at(7, 1);
+	pub const ALLOW_SUPER_OUTSIDE_METHOD: u32 = Self::at(8, 1);
+	pub const ALLOW_UNDECLARED_EXPORTS: u32 = Self::at(9, 1);
 	/// Errors are recorded on the tree instead of ending the parse: a missing operand, name or
 	/// pattern is an empty `Identifier` of no width where it was expected, and a statement or
 	/// entry that cannot be read is skipped to the next stop token or unmatched closer, an empty
 	/// `Identifier` standing for it.
-	pub error_recovery: bool,
-	pub allow_return_outside_function: bool,
-	pub allow_await_outside_function: bool,
-	pub allow_super_outside_method: bool,
-	pub allow_undeclared_exports: bool,
-	/// Mark a node the source wraps in parens with the fact `parenthesized`, instead of a wrapper node.
-	pub parenthesized: bool,
-	/// Which decorators are read; `Any` reads both the proposal's and the legacy syntax.
-	pub decorators: Decorators,
+	pub const ERROR_RECOVERY: u32 = Self::at(10, 1);
+
+	/// Whether any of `bits` is on.
+	pub const fn has(self, bits: u32) -> bool {
+		self.0 & bits != 0
+	}
+	pub const fn with(self, bits: u32) -> Options {
+		Options(self.0 | bits)
+	}
+	pub const fn without(self, bits: u32) -> Options {
+		Options(self.0 & !bits)
+	}
+	/// On for `typescript: true` and `'erase'` alike.
+	pub const fn typescript(self) -> bool {
+		self.has(Self::TYPESCRIPT | Self::ERASE)
+	}
 }
 
 /// What a function-shaped node is, for the extension hooks around its signature.
@@ -73,7 +93,7 @@ pub(crate) enum Unwrap {
 /// default, so the plain JavaScript parser is the unit extension. State an extension keeps while
 /// parsing lives in `Self` (cloned into snapshots, so keep it small); what it hands back with the
 /// tree lives in `Data`.
-#[allow(unused_variables)]
+#[expect(unused_variables)]
 pub(crate) trait Extension: Default + Sized {
 	type Data: Reuse;
 	/// What a speculative parse needs to put the extension's state back.
@@ -203,7 +223,6 @@ pub(crate) trait Extension: Default + Sized {
 		Ok(())
 	}
 	/// After the parameters, before the body; `Some` is a function without a body.
-	#[allow(clippy::too_many_arguments)]
 	fn function_body(
 		p: &mut Parser<Self>,
 		start: u32,
@@ -290,6 +309,9 @@ pub(crate) trait Extension: Default + Sized {
 	fn conditional(p: &mut Parser<Self>, expr: NodeId, start: u32, for_init: ForInit) -> Result<Option<NodeId>> {
 		Ok(None)
 	}
+	fn conditional_branch(p: &mut Parser<Self>, start: u32, alternate: bool, for_init: ForInit) -> Result<NodeId> {
+		p.parse_maybe_assign(if alternate { for_init } else { ForInit::No }, &mut None)
+	}
 	fn unary(p: &mut Parser<Self>, for_init: ForInit) -> Result<Option<NodeId>> {
 		Ok(None)
 	}
@@ -301,7 +323,6 @@ pub(crate) trait Extension: Default + Sized {
 	fn expr_op(p: &mut Parser<Self>, left: NodeId, left_start: u32, min_prec: i8) -> Result<Option<NodeId>> {
 		Ok(None)
 	}
-	#[allow(clippy::too_many_arguments)]
 	fn subscript(
 		p: &mut Parser<Self>,
 		base: NodeId,
@@ -313,10 +334,11 @@ pub(crate) trait Extension: Default + Sized {
 	) -> Result<Option<(NodeId, bool)>> {
 		Ok(None)
 	}
-	fn should_parse_arrow(p: &mut Parser<Self>, items: &[Option<NodeId>]) -> Result<bool> {
+	fn arrow_start(p: &mut Parser<Self>, start: u32) {}
+	fn should_parse_arrow(p: &mut Parser<Self>, start: u32, items: &[Option<NodeId>]) -> Result<bool> {
 		Ok(!p.can_insert_semicolon())
 	}
-	fn should_parse_async_arrow(p: &mut Parser<Self>) -> Result<bool> {
+	fn should_parse_async_arrow(p: &mut Parser<Self>, start: u32) -> Result<bool> {
 		Ok(!p.can_insert_semicolon() && p.eat(TokenKind::Arrow)?)
 	}
 	/// Whether the target of an assignment is checked here.
@@ -330,7 +352,6 @@ pub(crate) trait Extension: Default + Sized {
 	}
 	fn new_expression(p: &mut Parser<Self>, node: NodeId) {}
 	/// An object property whose value starts unexpectedly for the plain grammar.
-	#[allow(clippy::too_many_arguments)]
 	fn property_value(
 		p: &mut Parser<Self>,
 		start: u32,
@@ -406,7 +427,7 @@ impl Entry {
 /// everything the parse consumed. `reused` is an emptied tree from an earlier parse, its room kept.
 /// The tree, whether the parse succeeded or not, so the next parse can reuse it; with the roots
 /// read and where the parse ended.
-#[allow(clippy::type_complexity)]
+#[expect(clippy::type_complexity)]
 pub(crate) fn parse_at<E: Extension>(
 	src: &str,
 	start: u32,
@@ -546,16 +567,10 @@ pub(crate) struct Snapshot<E: Extension> {
 }
 
 pub(crate) struct TokenSnapshot {
-	pos: u32,
+	mark: crate::lexer::Mark,
 	in_type: bool,
-	depth: u32,
-	open: [u32; 3],
-	stopped: bool,
-	unmatched: bool,
 	tok: Token,
 	prev_end: u32,
-	comments: usize,
-	errors: usize,
 }
 
 #[derive(Clone, Copy)]
@@ -602,10 +617,11 @@ impl<'a, E: Extension> Parser<'a, E> {
 		let mut lexer = Lexer::with(src, std::mem::take(&mut ast.strings));
 		lexer.comments = std::mem::take(&mut ast.comments);
 		lexer.set_pos(offset);
-		lexer.recover = options.error_recovery;
-		let strict = options.module;
+		lexer.skip_hashbang();
+		lexer.recover = options.has(Options::ERROR_RECOVERY);
+		let strict = options.has(Options::MODULE);
 		lexer.strict = strict;
-		lexer.module = options.module;
+		lexer.module = strict;
 		let spare = std::mem::take(&mut ast.spare);
 		lexer.regexp = spare.regexp;
 		lexer.stop_ranges = spare.stop_ranges;
@@ -664,30 +680,18 @@ impl<'a, E: Extension> Parser<'a, E> {
 	/// The tokenizer alone, enough for a lookahead that parses nothing.
 	pub(crate) fn token_snapshot(&self) -> TokenSnapshot {
 		TokenSnapshot {
-			pos: self.lexer.pos(),
+			mark: self.lexer.mark(),
 			in_type: self.lexer.in_type,
-			depth: self.lexer.depth,
-			open: self.lexer.open,
-			stopped: self.lexer.stopped,
-			unmatched: self.lexer.unmatched,
 			tok: self.tok,
 			prev_end: self.prev_end,
-			comments: self.lexer.comments.len(),
-			errors: self.lexer.errors.len(),
 		}
 	}
 
 	pub(crate) fn restore_tokens(&mut self, snapshot: TokenSnapshot) {
-		self.lexer.set_pos(snapshot.pos);
+		self.lexer.rewind(snapshot.mark);
 		self.lexer.in_type = snapshot.in_type;
-		self.lexer.depth = snapshot.depth;
-		self.lexer.open = snapshot.open;
-		self.lexer.stopped = snapshot.stopped;
-		self.lexer.unmatched = snapshot.unmatched;
 		self.tok = snapshot.tok;
 		self.prev_end = snapshot.prev_end;
-		self.lexer.comments.truncate(snapshot.comments);
-		self.lexer.errors.truncate(snapshot.errors);
 	}
 
 	/// A tree past what the source can hold is a loop that consumes nothing: it fails here,
@@ -699,8 +703,18 @@ impl<'a, E: Extension> Parser<'a, E> {
 		Ok(())
 	}
 
+	/// A strict read ahead; under recovery a lexer error there is no verdict, the real read
+	/// records it.
+	pub(crate) fn peek_with<T>(&mut self, read: impl FnOnce(&mut Lexer<'a>) -> Result<T>) -> Result<Option<T>> {
+		match self.lexer.lookahead(read) {
+			Ok(value) => Ok(Some(value)),
+			Err(_) if self.recovering() => Ok(None),
+			Err(error) => Err(error),
+		}
+	}
+
 	pub(crate) fn recovering(&self) -> bool {
-		self.options.error_recovery && self.speculating == 0
+		self.options.has(Options::ERROR_RECOVERY) && self.speculating == 0
 	}
 
 	/// Runs `f` with recovery off, so it fails where strict parsing would and the caller can try
@@ -903,13 +917,15 @@ impl<'a, E: Extension> Parser<'a, E> {
 	}
 
 	/// Runs `f`, undoing it when it fails.
-	pub(crate) fn attempt<T>(&mut self, f: impl FnOnce(&mut Self) -> Result<T>) -> Option<T> {
+	pub(crate) fn attempt<T>(&mut self, f: impl FnOnce(&mut Self) -> Result<T>) -> Result<Option<T>> {
 		let snapshot = self.snapshot();
 		match self.speculate(f) {
-			Ok(value) => Some(value),
+			Ok(value) => Ok(Some(value)),
+			// a limit taken for a wrong guess was reported as the fallback's error, and past it the fallbacks multiplied
+			Err(error) if error.code.is_limit() => Err(error),
 			Err(_) => {
 				self.restore(snapshot);
-				None
+				Ok(None)
 			}
 		}
 	}

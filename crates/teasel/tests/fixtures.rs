@@ -9,8 +9,8 @@ mod common;
 
 use std::fs;
 use std::path::Path;
-use teasel::Entry;
 use teasel::json::{Request, parse};
+use teasel::{Entry, Options};
 
 #[test]
 fn files() {
@@ -21,29 +21,30 @@ fn files() {
 			let name = file.file_name().unwrap().to_str().unwrap();
 			let stem = name.split('.').next().unwrap();
 			let source = fs::read_to_string(&file).unwrap();
-			let entry = if language == "css" {
-				Entry::StyleSheet
-			} else {
-				Entry::Program
-			};
-			let mut request = Request::new(entry, 0);
-			request.options.module = !name.contains(".script.");
-			request.set("comments");
-			request.set("scopes");
-			if language == "ts" {
-				request.set("typescript");
+			let mut flags = Options::COMMENTS | Options::SCOPES;
+			if !name.contains(".script.") {
+				flags |= Options::MODULE;
 			}
-			for (word, flag) in [
-				("locations", "locations"),
-				("erase", "erase"),
-				("recover", "errorRecovery"),
-				("legacy", "legacyDecorators"),
-				("proposal", "proposalDecorators"),
+			if language == "ts" {
+				flags |= Options::TYPESCRIPT;
+			}
+			for (word, bit) in [
+				("locations", Options::LOCATIONS),
+				("erase", Options::ERASE),
+				("recover", Options::ERROR_RECOVERY),
 			] {
 				if stem.contains(word) {
-					request.set(flag);
+					flags |= bit;
 				}
 			}
+			let request = Request {
+				entry: if language == "css" {
+					Entry::StyleSheet
+				} else {
+					Entry::Program
+				},
+				..Request::from_flags(flags)
+			};
 			let answer = common::pretty(&parse(&source, &request, ""));
 			if !common::pinned(&file.with_extension("json"), &answer) {
 				wrong.push(format!("{language}/{name}"));

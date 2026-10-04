@@ -1,6 +1,6 @@
 {
 	"name": "@teasel/parser",
-	"version": "0.0.14",
+	"version": "0.0.16",
 	"description": "A JavaScript and TypeScript parser in Rust. It answers in ESTree.",
 	"license": "MIT",
 	"repository": {
@@ -15,12 +15,13 @@
 	"types": "dist/index.d.ts",
 	"exports": {
 		".": "./dist/index.js",
+		"./grammar": "./dist/grammar.js",
 		"./teasel.wasm": "./dist/teasel.wasm"
 	},
 	"imports": {
 		"#engine": {
-			"node-addons": "./dist/native.js",
-			"default": "./dist/wasm.js"
+			"node-addons": "./dist/engine/native.js",
+			"default": "./dist/engine/wasm.js"
 		}
 	},
 	"files": [
@@ -29,7 +30,7 @@
 	],
 	"scripts": {
 		"build": "npm run build:js && node scripts/addon.ts",
-		"build:js": "tsc --ignoreConfig src/index.ts src/native.ts src/wasm.ts --outDir dist --rootDir src --declaration --erasableSyntaxOnly --strict --target es2022 --module esnext --moduleResolution bundler --lib es2022,dom,esnext.disposable --types node --skipLibCheck",
+		"build:js": "tsc --ignoreConfig src/index.ts src/grammar.ts src/engine/native.ts src/engine/wasm.ts --outDir dist --rootDir src --declaration --erasableSyntaxOnly --strict --target es2022 --module esnext --moduleResolution bundler --lib es2022,dom,esnext.disposable --types node --skipLibCheck",
 		"build:wasm": "cargo build --release -p teasel-wasm --target wasm32-unknown-unknown && node scripts/wasm.ts",
 		"test": "npm run build:js && node scripts/test.ts && node --no-addons scripts/test.ts && node --no-addons scripts/test.ts interpret",
 		"types": "tsc -p tsconfig.json",

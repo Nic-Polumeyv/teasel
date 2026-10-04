@@ -26,7 +26,7 @@ const fn classes() -> [u8; 256] {
 		if c.is_ascii_digit() {
 			class |= DIGIT | ID_CONTINUE;
 		}
-		if matches!(c, b' ' | b'\t' | 0x0b | 0x0c | b'\n' | b'\r' | b'/' | b'<' | b'-') {
+		if class & (SPACE | NEWLINE) != 0 || matches!(c, b'/' | b'<' | b'-') {
 			class |= TRIVIA;
 		}
 		table[b] = class;
@@ -82,9 +82,83 @@ pub(crate) fn find<const N: usize>(bytes: &[u8], mut from: usize, needles: [u8; 
 	from
 }
 
+/// Whether `bytes` starts with a line separator or paragraph separator (U+2028, U+2029).
+pub(crate) fn is_separator(bytes: &[u8]) -> bool {
+	matches!(bytes, [0xe2, 0x80, 0xa8 | 0xa9, ..])
+}
+
+pub(crate) fn line_end(bytes: &[u8]) -> usize {
+	let mut i = 0;
+	loop {
+		i = find(bytes, i, *b"\n\r\xe2", false);
+		if i == bytes.len() || bytes[i] != 0xe2 || is_separator(&bytes[i..]) {
+			return i;
+		}
+		i += 1;
+	}
+}
+
+/// Where `*/` starts in `text`, and whether a line terminator precedes it.
+pub(crate) fn comment_end(text: &str) -> Option<(usize, bool)> {
+	let mut from = 0;
+	loop {
+		let star = from + text[from..].find('*')?;
+		if text.as_bytes().get(star + 1) == Some(&b'/') {
+			let body = &text.as_bytes()[..star];
+			return Some((star, line_end(body) < body.len()));
+		}
+		from = star + 1;
+	}
+}
+
+pub(crate) fn is_new_line(c: char) -> bool {
+	matches!(c, '\n' | '\r' | '\u{2028}' | '\u{2029}')
+}
+
+pub(crate) fn is_whitespace(c: char) -> bool {
+	matches!(
+		c,
+		'\u{a0}' | '\u{1680}' | '\u{2000}'..='\u{200a}' | '\u{202f}' | '\u{205f}' | '\u{3000}' | '\u{feff}'
+	)
+}
+
+/// ECMAScript white space or a line terminator.
+pub(crate) fn is_space(c: char) -> bool {
+	matches!(c, ' ' | '\t'..='\r') || is_new_line(c) || is_whitespace(c)
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	#[test]
+	fn line_end_finds_every_terminator() {
+		let cases: &[(&[u8], usize)] = &[
+			(b"abc\ndef", 3),
+			(b"abc\rdef", 3),
+			("ab\u{2028}cd".as_bytes(), 2),
+			("ab\u{2029}cd".as_bytes(), 2),
+			(b"no terminator here at all", 25),
+			(b"", 0),
+			(b"\n", 0),
+			("\u{e2}\u{80}x\n".as_bytes(), 5),
+			(b"\xe2\x80\xa7\n", 3),
+			("1234567\u{2028}".as_bytes(), 7),
+			("12345678\u{2028}".as_bytes(), 8),
+			(b"1234567\n", 7),
+			(b"12345678\n", 8),
+			(b"123456789012345\n", 15),
+			(b"\xe2\xe2\xe2\xe2\xe2\xe2\xe2\xe2\xe2\n", 9),
+		];
+		for &(bytes, end) in cases {
+			assert_eq!(
+				line_end(bytes),
+				end,
+				"{:?}",
+				std::string::String::from_utf8_lossy(bytes)
+			);
+		}
+	}
 
 	#[test]
 	fn finds_the_first_needle_or_high_byte() {

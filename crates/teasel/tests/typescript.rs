@@ -12,7 +12,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use teasel::Entry;
+use teasel::Options;
 use teasel::json::{Request, parse};
 
 /// Grammar diagnostics (`TS1xxx`) only the checker can see, or where ECMAScript decides otherwise.
@@ -40,6 +40,10 @@ const CHECKER: &[(&str, &str)] = &[
 	),
 	("1202", "import assignments under an ES module target: an option"),
 	("1203", "export assignments under an ES module target: an option"),
+	(
+		"1206",
+		"decorator placements one dialect allows and the other refuses: the dialect is a compiler option",
+	),
 	("1207", "decorator signatures"),
 	("1238", "decorator signatures"),
 	("1239", "resolving a parameter decorator's call signature"),
@@ -110,18 +114,6 @@ fn has_several_files(source: &str) -> bool {
 	})
 }
 
-fn legacy_decorators(source: &str) -> bool {
-	source.lines().any(|line| {
-		line.trim_start()
-			.strip_prefix("//")
-			.and_then(|after| after.trim_start().split_once(':'))
-			.is_some_and(|(key, value)| {
-				key.trim_end().eq_ignore_ascii_case("@experimentalDecorators")
-					&& value.trim().eq_ignore_ascii_case("true")
-			})
-	})
-}
-
 fn cases(root: &Path, out: &mut Vec<PathBuf>) {
 	for entry in fs::read_dir(root).unwrap() {
 		let path = entry.unwrap().path();
@@ -180,14 +172,8 @@ fn conformance() {
 		let excused = |c: &String| CHECKER.iter().any(|(code, _)| code == c);
 		let grammar_error = codes.iter().any(|c| c.starts_with('1') && c.len() == 4 && !excused(c));
 		let any_error = !codes.is_empty();
-		let mut request = Request::new(Entry::Program, 0);
-		request.set("typescript");
-		request.set(if legacy_decorators(&source) {
-			"legacyDecorators"
-		} else {
-			"proposalDecorators"
-		});
-		request.options.module = is_module(&source);
+		let module = if is_module(&source) { Options::MODULE } else { 0 };
+		let request = Request::from_flags(Options::TYPESCRIPT | module);
 		let answer = parse(&source, &request, "");
 		let failed = answer.starts_with("{\"error\"");
 		counted += 1;

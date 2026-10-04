@@ -10,7 +10,7 @@ use crate::error::Code;
 use crate::estree::{Emit, Json, Output, Positions, Words, answer, error_to_json};
 use crate::handed::{Raw, Views};
 use crate::host::{self, Grammar};
-use crate::parser::{Decorators, Entry, parse_at};
+use crate::parser::{Entry, parse_at};
 use crate::scopes::{self, Bind};
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -18,107 +18,19 @@ pub struct Request {
 	pub entry: Entry,
 	/// Byte offset into the source; the JSON reports UTF-16 offsets.
 	pub offset: u32,
-	pub typescript: bool,
-	pub comments: bool,
-	/// Scope analysis on the answer.
-	pub scopes: bool,
-	/// Line and column on every node, as `loc`.
-	pub locations: bool,
-	/// TypeScript erased on output; see `estree::Output`.
-	pub erase: bool,
 	/// Where the source is cut, as a byte offset, for a program inside a larger source.
 	pub end: Option<u32>,
 	pub options: Options,
 }
 
 impl Request {
-	pub fn new(entry: Entry, offset: u32) -> Request {
+	/// A source's request from its option word; the entry and offset come with each parse.
+	pub fn from_flags(flags: u32) -> Request {
 		Request {
-			entry,
-			offset,
-			options: Options {
-				module: true,
-				..Options::default()
-			},
+			options: Options(flags),
 			..Request::default()
 		}
 	}
-
-	/// The same from one word of `flag` bits.
-	pub fn from_flags(flags: u32) -> Request {
-		let mut request = Request::default();
-		for &(_, name) in flag::NAMES.iter().filter(|&&(bit, _)| flags & bit != 0) {
-			request.set(name);
-		}
-		request
-	}
-
-	/// A source's request from its switches named, separated by spaces, as the package's options spell them, and
-	/// `module` for `sourceType: 'module'`; a script otherwise. The entry and offset come with
-	/// each parse.
-	pub fn from_names(names: &str) -> Request {
-		let mut request = Request::default();
-		for name in names.split_ascii_whitespace() {
-			request.set(name);
-		}
-		request
-	}
-
-	/// Turns on one switch by name; anything else is ignored.
-	pub fn set(&mut self, flag: &str) {
-		match flag {
-			"typescript" => self.typescript = true,
-			"comments" => self.comments = true,
-			"scopes" => self.scopes = true,
-			"locations" => self.locations = true,
-			"module" => self.options.module = true,
-			"parenthesized" => self.options.parenthesized = true,
-			"legacyDecorators" => self.options.decorators = Decorators::Legacy,
-			"proposalDecorators" => self.options.decorators = Decorators::Proposal,
-			"allowReturnOutsideFunction" => self.options.allow_return_outside_function = true,
-			"allowAwaitOutsideFunction" => self.options.allow_await_outside_function = true,
-			"allowSuperOutsideMethod" => self.options.allow_super_outside_method = true,
-			"allowUndeclaredExports" => self.options.allow_undeclared_exports = true,
-			"erase" => self.erase = true,
-			"errorRecovery" => self.options.error_recovery = true,
-			_ => {}
-		}
-	}
-}
-
-/// A source's switches as bits, one word across a binding; package/api.js spells the same numbers.
-pub mod flag {
-	pub const MODULE: u32 = 1;
-	pub const TYPESCRIPT: u32 = 1 << 1;
-	pub const ERASE: u32 = 1 << 2;
-	pub const COMMENTS: u32 = 1 << 3;
-	pub const SCOPES: u32 = 1 << 4;
-	pub const LOCATIONS: u32 = 1 << 5;
-	pub const PARENTHESIZED: u32 = 1 << 6;
-	pub const LEGACY_DECORATORS: u32 = 1 << 7;
-	pub const PROPOSAL_DECORATORS: u32 = 1 << 8;
-	pub const ALLOW_RETURN_OUTSIDE_FUNCTION: u32 = 1 << 9;
-	pub const ALLOW_AWAIT_OUTSIDE_FUNCTION: u32 = 1 << 10;
-	pub const ALLOW_SUPER_OUTSIDE_METHOD: u32 = 1 << 11;
-	pub const ALLOW_UNDECLARED_EXPORTS: u32 = 1 << 12;
-	pub const ERROR_RECOVERY: u32 = 1 << 13;
-	/// Each bit by the name `Request::set` takes.
-	pub const NAMES: [(u32, &str); 14] = [
-		(MODULE, "module"),
-		(TYPESCRIPT, "typescript"),
-		(ERASE, "erase"),
-		(COMMENTS, "comments"),
-		(SCOPES, "scopes"),
-		(LOCATIONS, "locations"),
-		(PARENTHESIZED, "parenthesized"),
-		(LEGACY_DECORATORS, "legacyDecorators"),
-		(PROPOSAL_DECORATORS, "proposalDecorators"),
-		(ALLOW_RETURN_OUTSIDE_FUNCTION, "allowReturnOutsideFunction"),
-		(ALLOW_AWAIT_OUTSIDE_FUNCTION, "allowAwaitOutsideFunction"),
-		(ALLOW_SUPER_OUTSIDE_METHOD, "allowSuperOutsideMethod"),
-		(ALLOW_UNDECLARED_EXPORTS, "allowUndeclaredExports"),
-		(ERROR_RECOVERY, "errorRecovery"),
-	];
 }
 
 /// The error answer for a request the parser never ran: a host's offsets or switches.
@@ -346,19 +258,27 @@ pub fn layout_json() -> String {
 
 /// `stop` lists the host's tokens for an entry at an offset; see `parser::parse_at`.
 pub fn parse(source: &str, request: &Request, stop: &str) -> String {
-	parse_with(source, &Positions::new(source, request.locations), request, stop, None)
+	parse_with(
+		source,
+		&Positions::new(source, request.options.has(Options::LOCATIONS)),
+		request,
+		stop,
+		None,
+	)
 }
 
 /// A whole document of a host language by its grammar, as JSON; see `host::parse_document`.
-pub fn parse_document(source: &str, grammar: &str, request: &Request) -> String {
+pub fn parse_document(source: &str, grammar: &[u8], request: &Request) -> String {
 	match self::grammar(grammar) {
 		Ok(grammar) => {
 			let mut request = *request;
 			request.entry = Entry::Program;
-			request.typescript |= host::typescript(source, &grammar);
+			if host::typescript(source, &grammar) {
+				request.options = request.options.with(Options::TYPESCRIPT);
+			}
 			parse_with(
 				source,
-				&Positions::new(source, request.locations),
+				&Positions::new(source, request.options.has(Options::LOCATIONS)),
 				&request,
 				"",
 				Some(&grammar),
@@ -387,8 +307,12 @@ struct Session {
 
 thread_local! {
 	static SESSION: std::cell::RefCell<Session> = std::cell::RefCell::new(Session::default());
-	/// Grammars by their text, read once each.
-	static GRAMMARS: std::cell::RefCell<Vec<(String, Rc<Grammar>)>> = const { std::cell::RefCell::new(Vec::new()) };
+	/// Grammars by their wire, read once each.
+	static GRAMMARS: std::cell::RefCell<Vec<(Vec<u8>, Rc<Grammar>)>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+pub fn reset_session() {
+	SESSION.with(|session| *session.borrow_mut() = Session::default());
 }
 
 /// The words of the last answer read in place on this thread, where they were written.
@@ -413,27 +337,6 @@ pub fn tree(f: &mut dyn FnMut(&'static str, Option<&mut dyn Raw>)) -> Option<boo
 	})
 }
 
-/// Every tree's buffers continue on fresh allocations: the views a front end held are its own.
-pub fn renew_trees() {
-	SESSION.with(|session| {
-		let session = &mut *session.borrow_mut();
-		let mut renew = |_, buffer: Option<&mut dyn Raw>| {
-			if let Some(buffer) = buffer {
-				// every tree is cleared before its next parse
-				unsafe { buffer.renew() };
-			}
-		};
-		#[cfg(feature = "typescript")]
-		if let Some(ast) = session.pool.ts.as_deref_mut() {
-			ast.views(&mut Views(&mut renew));
-		}
-		if let Some(ast) = session.pool.js.as_deref_mut() {
-			ast.views(&mut Views(&mut renew));
-		}
-		session.pool.names.iter_mut().for_each(Names::renew);
-	})
-}
-
 /// The names of a tree's views in order.
 fn view_names<X: Reuse + Default>() -> Vec<&'static str> {
 	let mut names = Vec::new();
@@ -442,15 +345,15 @@ fn view_names<X: Reuse + Default>() -> Vec<&'static str> {
 	names
 }
 
-/// The grammar of a text, read once per thread; the error names the line it stopped at.
-pub fn grammar(text: &str) -> Result<Rc<Grammar>, String> {
+/// The grammar on a wire, read once per thread.
+pub fn grammar(bytes: &[u8]) -> Result<Rc<Grammar>, String> {
 	GRAMMARS.with(|grammars| {
 		let mut grammars = grammars.borrow_mut();
-		if let Some((_, grammar)) = grammars.iter().find(|(known, _)| known == text) {
+		if let Some((_, grammar)) = grammars.iter().find(|(known, _)| known == bytes) {
 			return Ok(grammar.clone());
 		}
-		let grammar = Rc::new(Grammar::read(text)?);
-		grammars.push((text.to_string(), grammar.clone()));
+		let grammar = Rc::new(Grammar::read(bytes)?);
+		grammars.push((bytes.to_vec(), grammar.clone()));
 		Ok(grammar)
 	})
 }
@@ -515,15 +418,6 @@ impl Names {
 		out.push("names", &mut self.text);
 		out.push("name_starts", &mut self.starts);
 	}
-
-	/// Starts over on fresh buffers: a front end that held the views keeps what it saw.
-	fn renew(&mut self) {
-		self.ids.clear();
-		self.places.clear();
-		self.shapes.clear();
-		self.text.renew(0);
-		self.starts.renew(0);
-	}
 }
 
 /// Which slot of the pool an extension's tree takes.
@@ -571,7 +465,7 @@ impl<'a> Prepared<'a> {
 	}
 
 	fn of(source: std::borrow::Cow<'a, str>, request: Request) -> Prepared<'a> {
-		let positions = Positions::new(&source, request.locations);
+		let positions = Positions::new(&source, request.options.has(Options::LOCATIONS));
 		Prepared {
 			source,
 			positions,
@@ -592,8 +486,11 @@ impl<'a> Prepared<'a> {
 			entry,
 			offset,
 			end,
-			typescript: self.request.typescript || host.is_some_and(|grammar| host::typescript(&self.source, grammar)),
-			..self.request
+			options: if host.is_some_and(|grammar| host::typescript(&self.source, grammar)) {
+				self.request.options.with(Options::TYPESCRIPT)
+			} else {
+				self.request.options
+			},
 		})
 	}
 
@@ -663,11 +560,11 @@ fn dispatch(
 ) -> Result<String, String> {
 	check(source, request)?;
 	#[cfg(feature = "typescript")]
-	if request.typescript {
+	if request.options.typescript() {
 		return run::<crate::typescript::TypeScript>(source, positions, request, stop, host, pool, words);
 	}
 	#[cfg(not(feature = "typescript"))]
-	if request.typescript {
+	if request.options.typescript() {
 		return Err(error_json("built without TypeScript", 0));
 	}
 	run::<()>(source, positions, request, stop, host, pool, words)
@@ -676,7 +573,7 @@ fn dispatch(
 fn parse_with(source: &str, positions: &Positions, request: &Request, stop: &str, host: Option<&Grammar>) -> String {
 	SESSION.with(|session| {
 		let session = &mut *session.borrow_mut();
-		session.typescript = request.typescript;
+		session.typescript = request.options.typescript();
 		match dispatch(source, positions, request, stop, host, &mut session.pool, None) {
 			Ok(json) | Err(json) => json,
 		}
@@ -693,7 +590,7 @@ fn in_place_with(
 ) -> Result<(), String> {
 	SESSION.with(|session| {
 		let session = &mut *session.borrow_mut();
-		session.typescript = request.typescript;
+		session.typescript = request.options.typescript();
 		dispatch(
 			source,
 			positions,
@@ -722,10 +619,10 @@ where
 	E::Data: Emit + Bind + Reuse + Pooled,
 {
 	let output = Output {
-		comments: request.comments,
-		scopes: request.scopes,
-		erase: request.erase && request.typescript,
-		errors: request.options.error_recovery,
+		comments: request.options.has(Options::COMMENTS),
+		scopes: request.options.has(Options::SCOPES),
+		erase: request.options.has(Options::ERASE),
+		errors: request.options.has(Options::ERROR_RECOVERY),
 	};
 	let reused = Pooled::take(pool).map(|mut ast| {
 		ast.clear();
@@ -771,7 +668,7 @@ where
 		Pooled::give(pool, ast);
 		return Ok(json);
 	};
-	let names = &mut pool.names[request.typescript as usize];
+	let names = &mut pool.names[request.options.typescript() as usize];
 	prepare(&mut ast, source, positions, output, names);
 	// `end`, the roots by number, a word of what the answer is, each view's length, then where the
 	// tree's buffers sit folded into two words: a front end keeps its views while that holds. The
@@ -781,10 +678,10 @@ where
 	words.extend_from_slice(&[positions.offset(&mut crate::estree::Cursor::default(), end), roots.len]);
 	words.extend(ast.list(roots).iter().map(|root| root.unwrap().index()));
 	words.push(
-		(request.typescript as u32) << 1
+		(request.options.typescript() as u32) << 1
 			| (output.comments as u32) << 2
 			| (output.erase as u32) << 3
-			| (request.locations as u32) << 4
+			| (request.options.has(Options::LOCATIONS) as u32) << 4
 			| ((request.entry == Entry::Params) as u32) << 5
 			| (output.errors as u32) << 6,
 	);
@@ -797,7 +694,7 @@ where
 		}
 	};
 	ast.views(&mut Views(&mut note));
-	pool.names[request.typescript as usize].views(&mut Views(&mut note));
+	pool.names[request.options.typescript() as usize].views(&mut Views(&mut note));
 	words.extend_from_slice(&[sits as u32, (sits >> 32) as u32]);
 	Pooled::give(pool, ast);
 	Ok(String::new())
@@ -882,6 +779,7 @@ fn prepare<X: Emit + Reuse>(ast: &mut Ast<X>, source: &str, positions: &Position
 	ast.units.clear();
 	let (text, starts, _) = ast.strings.buffers();
 	if !text.is_ascii() {
+		ast.units.reserve(starts.len());
 		let mut units = 0u32;
 		let mut from = 0usize;
 		for &start in starts.iter() {

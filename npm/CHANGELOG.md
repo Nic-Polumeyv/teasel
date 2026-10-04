@@ -1,5 +1,37 @@
 # @teasel/parser
 
+## 0.0.16
+
+### Patch Changes
+
+- [#169](https://github.com/Nic-Polumeyv/teasel/pull/169) [`6866633`](https://github.com/Nic-Polumeyv/teasel/commit/68666336fd987c92ec76600133b883dd4af379eb) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - The `decorators` option is gone: every placement either dialect allows is read
+
+- [#180](https://github.com/Nic-Polumeyv/teasel/pull/180) [`5f29215`](https://github.com/Nic-Polumeyv/teasel/commit/5f2921507d5dd72dcac4b6fb24608f6f4efbe256) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - `HostNode`'s `start` and `end` are optional, since the node a grammar wraps children in has no span
+
+- [#174](https://github.com/Nic-Polumeyv/teasel/pull/174) [`8407f91`](https://github.com/Nic-Polumeyv/teasel/commit/8407f91ab8fed7651b6b1dd1c34f22e85357f4c3) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - `let`, `using` and `async` look ahead by token: an HTML comment or an escape no longer misleads them
+
+- [#179](https://github.com/Nic-Polumeyv/teasel/pull/179) [`0d15fd2`](https://github.com/Nic-Polumeyv/teasel/commit/0d15fd2c998c7f1cd73dd4583f3febb7edd5dab5) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - Thrown errors are instances of `ParseError`, a class that extends `SyntaxError`
+
+- [#180](https://github.com/Nic-Polumeyv/teasel/pull/180) [`5f29215`](https://github.com/Nic-Polumeyv/teasel/commit/5f2921507d5dd72dcac4b6fb24608f6f4efbe256) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - A tag leaves an unread entry null, as a block does, unless the grammar writes `field?=`
+
+- [#182](https://github.com/Nic-Polumeyv/teasel/pull/182) [`e25e28d`](https://github.com/Nic-Polumeyv/teasel/commit/e25e28dcc03bd6a3a74ff6e75ae3269f6664a3eb) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - Documents with many `{…}` expressions parse faster
+
+## 0.0.15
+
+### Patch Changes
+
+- [#168](https://github.com/Nic-Polumeyv/teasel/pull/168) [`148339c`](https://github.com/Nic-Polumeyv/teasel/commit/148339c02b968f08b13390cbfaa9e0c06ee6f726) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - Nested generic and ternary arrows parse in linear time in TypeScript, and `a ? (b) : c => d` parses
+
+- [#165](https://github.com/Nic-Polumeyv/teasel/pull/165) [`592d9f2`](https://github.com/Nic-Polumeyv/teasel/commit/592d9f2d2d600c9e05c444965b612a346813634b) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - A panic in the native addon throws an error instead of ending the process
+
+- [#161](https://github.com/Nic-Polumeyv/teasel/pull/161) [`54e79dc`](https://github.com/Nic-Polumeyv/teasel/commit/54e79dca9d17b67cdd6f39ad2d7319e439baa97c) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - TypeScript getter and setter signatures report their own parameter-count message
+
+- [#164](https://github.com/Nic-Polumeyv/teasel/pull/164) [`cb4b320`](https://github.com/Nic-Polumeyv/teasel/commit/cb4b320c5aaa73ab7286cf300057de1817d0bc18) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - The native addon's buffers are owned by the JavaScript engine instead of external memory
+
+- [#166](https://github.com/Nic-Polumeyv/teasel/pull/166) [`2e74d42`](https://github.com/Nic-Polumeyv/teasel/commit/2e74d42e4075992c9b6e87d9eb41be642cd5d909) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - After the WebAssembly engine panics, earlier sources and plans keep working
+
+- [#167](https://github.com/Nic-Polumeyv/teasel/pull/167) [`a124243`](https://github.com/Nic-Polumeyv/teasel/commit/a124243d7d20450b459387a11ecb5052a427abd8) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - On Windows the native addon finds Node-API in libnode.dll too, and refuses to load without it
+
 ## 0.0.14
 
 ### Patch Changes

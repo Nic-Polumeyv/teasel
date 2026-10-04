@@ -10,10 +10,22 @@ mod tests;
 use crate::ast::{Comment, CommentKind};
 use crate::error::{Code, SyntaxError};
 use crate::interner::{Interner, StrId};
+use scan::{comment_end, is_new_line, is_whitespace, line_end};
 use token::{Keyword, Token, TokenKind};
 use unicode::{is_id_continue, is_id_start};
 
 type Result<T> = std::result::Result<T, Box<SyntaxError>>;
+
+#[derive(Clone, Copy)]
+pub(crate) struct Mark {
+	pos: usize,
+	depth: u32,
+	open: [u32; 3],
+	stopped: bool,
+	unmatched: bool,
+	comments: usize,
+	errors: usize,
+}
 
 /// Positions are byte offsets into the source.
 pub(crate) struct Lexer<'a> {
@@ -58,7 +70,9 @@ pub(crate) struct Lexer<'a> {
 impl<'a> Lexer<'a> {
 	#[cfg(test)]
 	pub(crate) fn new(src: &'a str) -> Self {
-		Self::with(src, Interner::sized(src.len()))
+		let mut lexer = Self::with(src, Interner::sized(src.len()));
+		lexer.skip_hashbang();
+		lexer
 	}
 
 	/// `strings` is the tree's own interner, so ids from an earlier read of it stay valid.
@@ -106,71 +120,56 @@ impl<'a> Lexer<'a> {
 		self.pos = pos as usize;
 	}
 
+	#[cfg(test)]
 	pub(crate) fn pos(&self) -> u32 {
 		self.pos as u32
 	}
 
+	/// Where the lexer is, to come back to after a lookahead.
+	pub(crate) fn mark(&self) -> Mark {
+		Mark {
+			pos: self.pos,
+			depth: self.depth,
+			open: self.open,
+			stopped: self.stopped,
+			unmatched: self.unmatched,
+			comments: self.comments.len(),
+			errors: self.errors.len(),
+		}
+	}
+
+	pub(crate) fn rewind(&mut self, mark: Mark) {
+		self.pos = mark.pos;
+		self.depth = mark.depth;
+		self.open = mark.open;
+		self.stopped = mark.stopped;
+		self.unmatched = mark.unmatched;
+		self.comments.truncate(mark.comments);
+		self.errors.truncate(mark.errors);
+	}
+
 	/// The token after the current one, leaving the lexer where it was.
 	pub(crate) fn peek_token(&mut self) -> Result<Token> {
-		let (pos, escaped, depth, open, stopped, unmatched) = (
-			self.pos,
-			self.escaped,
-			self.depth,
-			self.open,
-			self.stopped,
-			self.unmatched,
-		);
-		let (comments, errors) = (self.comments.len(), self.errors.len());
-		let token = self.next_token();
-		self.pos = pos;
-		self.escaped = escaped;
-		self.depth = depth;
-		self.open = open;
-		self.stopped = stopped;
-		self.unmatched = unmatched;
-		self.comments.truncate(comments);
-		self.errors.truncate(errors);
-		token
+		self.lookahead(|lexer| lexer.next_token())
 	}
 
-	/// The next significant character, whether a line break precedes it, and its position.
+	/// The next significant character, whether a line break precedes it, and its position,
+	/// without tokenizing.
 	pub(crate) fn peek_char(&self) -> (Option<char>, bool, usize) {
-		self.peek_char_from(self.pos)
+		match trivia(self.src, self.pos, self.module, |_| {}) {
+			Ok((pos, newline)) => (self.src[pos..].chars().next(), newline, pos),
+			Err((_, newline)) => (None, newline, self.src.len()),
+		}
 	}
 
-	/// The next significant character from a source position, without tokenizing.
-	pub(crate) fn peek_char_from(&self, mut pos: usize) -> (Option<char>, bool, usize) {
-		let mut newline = false;
-		let bytes = self.src.as_bytes();
-		loop {
-			let Some(&b) = bytes.get(pos) else {
-				return (None, newline, pos);
-			};
-			match b {
-				b' ' | b'\t' | 0x0b | 0x0c => pos += 1,
-				b'\n' | b'\r' => {
-					pos += 1;
-					newline = true;
-				}
-				b'/' if bytes.get(pos + 1) == Some(&b'/') => pos += line_end(&bytes[pos..]),
-				b'/' if bytes.get(pos + 1) == Some(&b'*') => {
-					let Some((len, broke)) = comment_end(&self.src[pos + 2..]) else {
-						return (None, newline, self.src.len());
-					};
-					newline |= broke;
-					pos += len + 4;
-				}
-				_ => {
-					let c = self.src[pos..].chars().next().unwrap();
-					if is_new_line(c) {
-						newline = true;
-					} else if !is_whitespace(c) {
-						return (Some(c), newline, pos);
-					}
-					pos += c.len_utf8();
-				}
-			}
-		}
+	/// Reads ahead with `read`, strictly, and comes back.
+	pub(crate) fn lookahead<T>(&mut self, read: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
+		let (mark, recover) = (self.mark(), self.recover);
+		self.recover = false;
+		let out = read(self);
+		self.recover = recover;
+		self.rewind(mark);
+		out
 	}
 
 	fn byte(&self) -> Option<u8> {
@@ -225,10 +224,9 @@ impl<'a> Lexer<'a> {
 			let kind = match self.read_kind(b, start) {
 				Ok(kind) => kind,
 				Err(error) if self.recover => {
-					let mut after = (error.end as usize).max(self.pos).max(start + 1).min(self.src.len());
-					while !self.src.is_char_boundary(after) {
-						after += 1;
-					}
+					let after = self
+						.src
+						.ceil_char_boundary((error.end as usize).max(self.pos).max(start + 1));
 					self.errors.push(*error);
 					self.pos = after;
 					token.newline_before |= self.skip_space()?;
@@ -327,22 +325,15 @@ impl<'a> Lexer<'a> {
 	pub(crate) fn set_stops(&mut self, stops: &'a str) {
 		self.stops = stops;
 		self.stop_ranges.clear();
-		let base = stops.as_ptr() as usize;
 		for stop in stops.split_ascii_whitespace() {
-			let from = (stop.as_ptr() as usize - base) as u32;
+			let range = stops.substr_range(stop).unwrap();
 			self.stop_ranges
-				.push((from, from + stop.len() as u32, stop.starts_with(is_id_start)));
+				.push((range.start as u32, range.end as u32, stop.starts_with(is_id_start)));
 		}
 	}
 
 	fn skip_space(&mut self) -> Result<bool> {
-		let mut newline = false;
-		let last_end = self.pos;
-		if self.pos == 0 && self.src.starts_with("#!") {
-			self.skip_line_comment(CommentKind::Hashbang);
-		}
-		let src = self.src;
-		let bytes = src.as_bytes();
+		let bytes = self.src.as_bytes();
 		if let Some(&b) = bytes.get(self.pos)
 			&& b < 0x80
 		{
@@ -361,81 +352,34 @@ impl<'a> Lexer<'a> {
 				}
 			}
 		}
-		while let Some(&b) = bytes.get(self.pos) {
-			let class = scan::class(b);
-			if class & scan::SPACE != 0 {
-				self.pos = scan::run_of(bytes, self.pos + 1, scan::SPACE);
-				continue;
+		let comments = &mut self.comments;
+		match trivia(self.src, self.pos, self.module, |comment| comments.push(comment)) {
+			Ok((pos, newline)) => {
+				self.pos = pos;
+				Ok(newline)
 			}
-			if class & scan::NEWLINE != 0 {
-				self.pos += 1;
-				newline = true;
-				continue;
-			}
-			match b {
-				b'<' if !self.module && src[self.pos..].starts_with("<!--") => {
-					self.skip_line_comment(CommentKind::HtmlOpen)
-				}
-				b'-' if !self.module && (last_end == 0 || newline) && src[self.pos..].starts_with("-->") => {
-					self.skip_line_comment(CommentKind::HtmlClose)
-				}
-				b'/' => match bytes.get(self.pos + 1) {
-					Some(b'/') => self.skip_line_comment(CommentKind::Line),
-					Some(b'*') => newline |= self.skip_block_comment()?,
-					_ => break,
-				},
-				_ if b < 0x80 => break,
-				_ => {
-					let c = self.char().unwrap();
-					if is_new_line(c) {
-						newline = true;
-					} else if !is_whitespace(c) {
-						break;
-					}
-					self.pos += c.len_utf8();
-				}
+			Err((start, newline)) => {
+				let rest = &bytes[start + 2..];
+				let newline = newline || line_end(rest) < rest.len();
+				self.unterminated(start, Code::UnterminatedComment, |l| {
+					l.pos = l.src.len();
+					l.comments.push(Comment {
+						kind: CommentKind::Unclosed,
+						start: start as u32,
+						end: l.pos as u32,
+					});
+					newline
+				})
 			}
 		}
-		Ok(newline)
 	}
 
-	fn skip_line_comment(&mut self, kind: CommentKind) {
-		let start = self.pos;
-		self.pos += match kind {
-			CommentKind::HtmlOpen => 4,
-			CommentKind::HtmlClose => 3,
-			_ => 2,
-		};
-		self.pos += line_end(&self.src.as_bytes()[self.pos..]);
-		self.comments.push(Comment {
-			kind,
-			start: start as u32,
-			end: self.pos as u32,
-		});
-	}
-
-	fn skip_block_comment(&mut self) -> Result<bool> {
-		let start = self.pos;
-		let Some((len, newline)) = comment_end(&self.src[start + 2..]) else {
-			let newline = self.src[start + 2..].chars().any(is_new_line);
-			return self.unterminated(start, Code::UnterminatedComment, |l| {
-				l.pos = l.src.len();
-				l.comments.push(Comment {
-					kind: CommentKind::Unclosed,
-					start: start as u32,
-					end: l.pos as u32,
-				});
-				newline
-			});
-		};
-		let end = start + 2 + len + 2;
-		self.pos = end;
-		self.comments.push(Comment {
-			kind: CommentKind::Block,
-			start: start as u32,
-			end: end as u32,
-		});
-		Ok(newline)
+	pub(crate) fn skip_hashbang(&mut self) {
+		if self.pos == 0 && self.src.starts_with("#!") {
+			let comment = line_comment(self.src, 0, CommentKind::Hashbang);
+			self.pos = comment.end as usize;
+			self.comments.push(comment);
+		}
 	}
 
 	fn read_punctuator(&mut self, b: u8) -> Result<TokenKind> {
@@ -896,13 +840,7 @@ impl<'a> Lexer<'a> {
 			self.pos = scan::find(self.src.as_bytes(), self.pos, *b"`$\\\r", false);
 			let c = match self.char() {
 				Some(c) => c,
-				None if self.recover => {
-					self.errors
-						.push(SyntaxError::new(start as u32, Code::UnterminatedTemplate));
-					self.unclosed = true;
-					'`'
-				}
-				None => return self.error(start, Code::UnterminatedTemplate),
+				None => self.unterminated(start, Code::UnterminatedTemplate, |_| '`')?,
 			};
 			match c {
 				'`' | '$' if c == '`' || self.byte_at(1) == Some(b'{') => {
@@ -1120,44 +1058,90 @@ impl<'a> Lexer<'a> {
 	}
 }
 
-/// Whether `bytes` starts with a line separator or paragraph separator (U+2028, U+2029).
-pub(crate) fn is_separator(bytes: &[u8]) -> bool {
-	matches!(bytes, [0xe2, 0x80, 0xa8 | 0xa9, ..])
-}
-
-pub(crate) fn line_end(bytes: &[u8]) -> usize {
-	let mut i = 0;
-	loop {
-		i = scan::find(bytes, i, *b"\n\r\xe2", false);
-		if i == bytes.len() || bytes[i] != 0xe2 || is_separator(&bytes[i..]) {
-			return i;
-		}
-		i += 1;
+/// What separates tokens from `pos`: space, line breaks and comments, each comment handed to
+/// `comment`; HTML-style comments only in scripts, `-->` only at the start of a line. Answers
+/// where the next token starts and whether a line break was crossed, or `Err` at an unclosed
+/// block comment with the line break flag so far.
+#[inline(always)]
+fn trivia(
+	src: &str,
+	mut pos: usize,
+	module: bool,
+	mut comment: impl FnMut(Comment),
+) -> std::result::Result<(usize, bool), (usize, bool)> {
+	let bytes = src.as_bytes();
+	let at_start = pos == 0;
+	let mut newline = false;
+	// one shared kind measured +0.3%: the head length must stay a constant
+	macro_rules! line {
+		($kind:expr) => {{
+			let line = line_comment(src, pos, $kind);
+			pos = line.end as usize;
+			comment(line);
+		}};
 	}
-}
-
-/// Where `*/` starts in `text`, and whether a line terminator precedes it.
-pub(crate) fn comment_end(text: &str) -> Option<(usize, bool)> {
-	let mut from = 0;
-	loop {
-		let star = from + text[from..].find('*')?;
-		if text.as_bytes().get(star + 1) == Some(&b'/') {
-			let body = &text.as_bytes()[..star];
-			return Some((star, line_end(body) < body.len()));
+	while let Some(&b) = bytes.get(pos) {
+		let class = scan::class(b);
+		if class & scan::SPACE != 0 {
+			pos = scan::run_of(bytes, pos + 1, scan::SPACE);
+			continue;
 		}
-		from = star + 1;
+		if class & scan::NEWLINE != 0 {
+			pos += 1;
+			newline = true;
+			continue;
+		}
+		match b {
+			b'<' if !module && bytes[pos..].starts_with(b"<!--") => line!(CommentKind::HtmlOpen),
+			b'-' if !module && (at_start || newline) && bytes[pos..].starts_with(b"-->") => {
+				line!(CommentKind::HtmlClose)
+			}
+			b'/' => match bytes.get(pos + 1) {
+				Some(b'/') => line!(CommentKind::Line),
+				Some(b'*') => {
+					let Some((len, broke)) = comment_end(&src[pos + 2..]) else {
+						return Err((pos, newline));
+					};
+					let end = pos + 2 + len + 2;
+					comment(Comment {
+						kind: CommentKind::Block,
+						start: pos as u32,
+						end: end as u32,
+					});
+					newline |= broke;
+					pos = end;
+				}
+				_ => break,
+			},
+			_ if b < 0x80 => break,
+			_ => {
+				let c = src[pos..].chars().next().unwrap();
+				if is_new_line(c) {
+					newline = true;
+				} else if !is_whitespace(c) {
+					break;
+				}
+				pos += c.len_utf8();
+			}
+		}
 	}
+	Ok((pos, newline))
 }
 
-pub(crate) fn is_new_line(c: char) -> bool {
-	matches!(c, '\n' | '\r' | '\u{2028}' | '\u{2029}')
-}
-
-pub(crate) fn is_whitespace(c: char) -> bool {
-	matches!(
-		c,
-		'\u{a0}' | '\u{1680}' | '\u{2000}'..='\u{200a}' | '\u{202f}' | '\u{205f}' | '\u{3000}' | '\u{feff}'
-	)
+/// A comment of `kind` opening at `start` and running to the end of its line.
+#[inline(always)]
+fn line_comment(src: &str, start: usize, kind: CommentKind) -> Comment {
+	let head = match kind {
+		CommentKind::HtmlOpen => 4,
+		CommentKind::HtmlClose => 3,
+		_ => 2,
+	};
+	let end = start + head + line_end(&src.as_bytes()[start + head..]);
+	Comment {
+		kind,
+		start: start as u32,
+		end: end as u32,
+	}
 }
 
 fn is_word_char(c: char, first: bool) -> bool {

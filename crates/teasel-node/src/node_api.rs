@@ -1,17 +1,21 @@
-//! What the addon takes from Node-API, declared here. The host process provides the functions:
-//! resolved when the addon is loaded on Linux and macOS, looked up by name on Windows, where a
-//! library cannot leave an import open.
-
 use std::ffi::{c_char, c_void};
 
+/// `napi_env`: handle to the JS engine instance running the call; every `napi_*` call takes it
 pub(crate) type Env = *mut c_void;
+/// `napi_value`: handle to a value on the JS heap
 pub(crate) type Value = *mut c_void;
+/// `napi_callback_info`: handle to the call's arguments, read with `napi_get_cb_info`
 pub(crate) type CallbackInfo = *mut c_void;
+/// `napi_ref`: handle that keeps a JS value from being garbage collected
 pub(crate) type Ref = *mut c_void;
+/// `napi_status`
 pub(crate) type Status = i32;
+/// `napi_callback`
 pub(crate) type Callback = Option<unsafe extern "C" fn(Env, CallbackInfo) -> Value>;
+/// `napi_finalize`: runs when V8 frees an external
 pub(crate) type Finalize = Option<unsafe extern "C" fn(Env, *mut c_void, *mut c_void)>;
 
+// Node's enum numbers
 pub(crate) const OK: Status = 0;
 pub(crate) const UNDEFINED: i32 = 0;
 pub(crate) const UINT8_ARRAY: i32 = 1;
@@ -27,6 +31,7 @@ pub(crate) fn element_size(kind: i32) -> usize {
 	}
 }
 
+// a Windows DLL cannot leave an import unresolved, so there `load` looks each function up in node.exe or libnode.dll
 macro_rules! api {
 	($(fn $name:ident($($arg:ident: $ty:ty),*) -> Status;)*) => {
 		#[cfg(not(windows))]
@@ -35,7 +40,7 @@ macro_rules! api {
 		}
 
 		#[cfg(windows)]
-		#[allow(non_upper_case_globals)]
+		#[expect(non_upper_case_globals)]
 		mod symbols {
 			use std::sync::atomic::AtomicUsize;
 			$(pub(crate) static $name: AtomicUsize = AtomicUsize::new(0);)*
@@ -51,12 +56,25 @@ macro_rules! api {
 		)*
 
 		#[cfg(windows)]
-		pub(crate) unsafe fn load() {
-			let host = unsafe { GetModuleHandleW(std::ptr::null()) };
-			$(symbols::$name.store(
-				unsafe { GetProcAddress(host, concat!(stringify!($name), "\0").as_ptr().cast()) } as usize,
-				std::sync::atomic::Ordering::Relaxed,
-			);)*
+		pub(crate) unsafe fn load() -> bool {
+			let exe = unsafe { GetModuleHandleW(std::ptr::null()) };
+			let host = if unsafe { GetProcAddress(exe, c"napi_create_function".as_ptr()) }.is_null() {
+				let name: Vec<u16> = "libnode.dll\0".encode_utf16().collect();
+				unsafe { GetModuleHandleW(name.as_ptr()) }
+			} else {
+				exe
+			};
+			let mut found = !host.is_null();
+			$(
+				let at = if host.is_null() {
+					std::ptr::null_mut()
+				} else {
+					unsafe { GetProcAddress(host, concat!(stringify!($name), "\0").as_ptr().cast()) }
+				};
+				found &= !at.is_null();
+				symbols::$name.store(at as usize, std::sync::atomic::Ordering::Relaxed);
+			)*
+			found
 		}
 	};
 }
@@ -78,7 +96,8 @@ api! {
 	fn napi_get_value_double(env: Env, value: Value, result: *mut f64) -> Status;
 	fn napi_create_external(env: Env, data: *mut c_void, finalize: Finalize, hint: *mut c_void, result: *mut Value) -> Status;
 	fn napi_get_value_external(env: Env, value: Value, result: *mut *mut c_void) -> Status;
-	fn napi_create_external_arraybuffer(env: Env, data: *mut c_void, bytes: usize, finalize: Finalize, hint: *mut c_void, result: *mut Value) -> Status;
+	fn napi_create_buffer(env: Env, bytes: usize, data: *mut *mut c_void, result: *mut Value) -> Status;
+	fn napi_add_env_cleanup_hook(env: Env, hook: unsafe extern "C" fn(*mut c_void), data: *mut c_void) -> Status;
 	fn napi_create_typedarray(env: Env, kind: i32, length: usize, buffer: Value, offset: usize, result: *mut Value) -> Status;
 	fn napi_create_reference(env: Env, value: Value, count: u32, result: *mut Ref) -> Status;
 	fn napi_delete_reference(env: Env, reference: Ref) -> Status;

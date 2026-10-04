@@ -65,10 +65,7 @@ fn verdicts() {
 	let mut wrong = Vec::new();
 	for dir in ["pass", "pass-explicit", "fail", "early"] {
 		for (path, source) in files(&root, dir) {
-			let options = Options {
-				module: is_module(&path),
-				..Options::default()
-			};
+			let options = Options(if is_module(&path) { Options::MODULE } else { 0 });
 			let parses = parse_at(&source, 0, None, Entry::Program, options, "").is_ok();
 			let superseded = SUPERSEDED.contains(&path.as_str());
 			if parses != dir.starts_with("pass") && !superseded {
@@ -95,11 +92,8 @@ fn pinned_answers() {
 	let mut lines = Vec::new();
 	for dir in ["pass", "pass-explicit"] {
 		for (path, source) in files(&root, dir) {
-			let mut request = Request::new(Entry::Program, 0);
-			request.options.module = is_module(&path);
-			for flag in ["comments", "scopes", "locations"] {
-				request.set(flag);
-			}
+			let module = if is_module(&path) { Options::MODULE } else { 0 };
+			let request = Request::from_flags(module | Options::COMMENTS | Options::SCOPES | Options::LOCATIONS);
 			lines.push(format!("{path} {:016x}", hash(&parse(&source, &request, ""))));
 		}
 	}

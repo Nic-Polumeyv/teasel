@@ -6,6 +6,7 @@ use super::token::{
 use crate::ast::{Comment, CommentKind};
 use crate::error::SyntaxError;
 use crate::interner::StrId;
+use std::assert_matches;
 
 fn tokens(src: &str) -> Vec<Token> {
 	let mut lexer = Lexer::new(src);
@@ -202,7 +203,7 @@ fn private_names() {
 		panic!("{:?}", token.kind)
 	};
 	assert_eq!(lexer.strings.get(name), "foo");
-	assert!(matches!(single("#class").1.kind, PrivateName(_)));
+	assert_matches!(single("#class").1.kind, PrivateName(_));
 	assert_eq!(error("# a"), ("Unexpected character ' '".into(), 1));
 }
 
@@ -331,7 +332,7 @@ fn legacy_octal_escapes() {
 	assert_eq!(strict_error("'\\08'").0, "Octal literal in strict mode");
 	let mut lexer = Lexer::new("'\\0'");
 	lexer.strict = true;
-	assert!(matches!(lexer.next_token().unwrap().kind, String(_)));
+	assert_matches!(lexer.next_token().unwrap().kind, String(_));
 }
 
 #[test]
@@ -549,31 +550,11 @@ fn unexpected_characters() {
 }
 
 #[test]
-fn line_end_finds_every_terminator() {
-	use super::line_end;
-	let cases: &[(&[u8], usize)] = &[
-		(b"abc\ndef", 3),
-		(b"abc\rdef", 3),
-		("ab\u{2028}cd".as_bytes(), 2),
-		("ab\u{2029}cd".as_bytes(), 2),
-		(b"no terminator here at all", 25),
-		(b"", 0),
-		(b"\n", 0),
-		("\u{e2}\u{80}x\n".as_bytes(), 5),
-		(b"\xe2\x80\xa7\n", 3),
-		("1234567\u{2028}".as_bytes(), 7),
-		("12345678\u{2028}".as_bytes(), 8),
-		(b"1234567\n", 7),
-		(b"12345678\n", 8),
-		(b"123456789012345\n", 15),
-		(b"\xe2\xe2\xe2\xe2\xe2\xe2\xe2\xe2\xe2\n", 9),
-	];
-	for &(bytes, end) in cases {
-		assert_eq!(
-			line_end(bytes),
-			end,
-			"{:?}",
-			std::string::String::from_utf8_lossy(bytes)
-		);
+fn every_keyword_reads_back() {
+	use super::token::Keyword;
+	for &keyword in Keyword::ALL {
+		assert_eq!(Keyword::from_word(keyword.as_str()), Some(keyword));
 	}
+	assert_eq!(Keyword::from_word("brea"), None);
+	assert_eq!(Keyword::from_word("breaks"), None);
 }

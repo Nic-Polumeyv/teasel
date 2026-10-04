@@ -1,7 +1,9 @@
 import { Source } from '@teasel/parser';
 import entry from '../../../npm/dist/index.d.ts?raw';
-import options from '../../../npm/dist/lib/options.d.ts?raw';
-import codes from '../../../npm/dist/lib/codes.d.ts?raw';
+import options from '../../../npm/dist/options.d.ts?raw';
+import codes from '../../../npm/dist/codes.d.ts?raw';
+import grammar from '../../../npm/dist/grammar.d.ts?raw';
+import wire from '../../../npm/src/wire.ts?raw';
 
 type Declaration = { type: string; start: number; end: number; id?: { name: string }; declarations?: { id: { name: string } }[]; declaration?: Declaration | null; specifiers?: { exported: { name: string } }[]; leadingComments?: { value: string; end: number }[] };
 const name = (statement: Declaration) => (statement.declaration!.id ?? statement.declaration!.declarations![0].id).name;
@@ -33,4 +35,16 @@ function parser() {
 	return { meta: { href: '/reference/parser', title: '@teasel/parser', section: 'Reference', path: 'npm/src/index.ts' }, markdown: `Every export of the package, as its declarations say.\n\n${markdown}` };
 }
 
-export const reference = parser();
+function builders() {
+	const markdown = body(grammar).filter(exported).map((statement) => item(grammar, statement)).join('\n\n');
+	return { meta: { href: '/reference/grammar', title: '@teasel/parser/grammar', section: 'Reference', path: 'npm/src/grammar.ts' }, markdown: `Every export of the grammar builders, as their declarations say.\n\n${markdown}` };
+}
+
+// the wire's types stay inside their module; the page shows them all, as the engine reads them
+function crossing() {
+	const declared = (statement: Declaration) => (statement.type === 'ExportNamedDeclaration' ? statement : ({ ...statement, type: 'ExportNamedDeclaration', declaration: statement } as Declaration));
+	const markdown = body(wire).map(declared).filter(exported).map((statement) => item(wire, statement)).join('\n\n');
+	return { meta: { href: '/reference/wire', title: 'Grammar wire', section: 'Reference', path: 'npm/src/wire.ts' }, markdown: `What a grammar's \`wire\` holds and the Rust crate's \`parse_document\` and the command line's \`--host\` read: the definition as words in the order these types declare them, then a pool of strings, as \`Writer\` lays them out.\n\n${markdown}` };
+}
+
+export const references = [parser(), builders(), crossing()];

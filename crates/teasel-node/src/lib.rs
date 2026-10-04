@@ -5,11 +5,12 @@ mod node_api;
 
 use std::cell::Cell;
 use std::ffi::{CString, c_void};
+use std::ptr::null_mut;
 use std::rc::Rc;
 
 use node_api::{CallbackInfo, Env, OK, Ref, Status, Value};
 use teasel::Entry;
-use teasel::handed::{Element, Raw};
+use teasel::handed::{Allocation, Element, Raw};
 use teasel::host::Grammar;
 use teasel::json::{Prepared, Request};
 
@@ -18,7 +19,7 @@ use teasel::json::{Prepared, Request};
 const VIEWS: usize = 3;
 
 thread_local! {
-	static VIEW: Cell<(Env, [Ref; VIEWS])> = const { Cell::new((std::ptr::null_mut(), [std::ptr::null_mut(); VIEWS])) };
+	static VIEW: Cell<(Env, [Ref; VIEWS])> = const { Cell::new((null_mut(), [null_mut(); VIEWS])) };
 }
 
 type Result<T> = std::result::Result<T, String>;
@@ -31,20 +32,16 @@ fn check(status: Status, what: &str) -> Result<()> {
 	}
 }
 
+fn out<T>(mut slot: T, what: &str, f: impl FnOnce(*mut T) -> Status) -> Result<T> {
+	check(f(&mut slot), what)?;
+	Ok(slot)
+}
+
 fn args<const N: usize>(env: Env, info: CallbackInfo) -> Result<[Value; N]> {
-	let mut argv = [std::ptr::null_mut(); N];
+	let mut argv = [null_mut(); N];
 	let mut argc = N;
 	check(
-		unsafe {
-			node_api::napi_get_cb_info(
-				env,
-				info,
-				&mut argc,
-				argv.as_mut_ptr(),
-				std::ptr::null_mut(),
-				std::ptr::null_mut(),
-			)
-		},
+		unsafe { node_api::napi_get_cb_info(env, info, &mut argc, argv.as_mut_ptr(), null_mut(), null_mut()) },
 		"arguments",
 	)?;
 	if argc < N {
@@ -54,18 +51,10 @@ fn args<const N: usize>(env: Env, info: CallbackInfo) -> Result<[Value; N]> {
 }
 
 fn bytes(env: Env, value: Value) -> Result<Vec<u8>> {
-	let (mut kind, mut length, mut data) = (0, 0, std::ptr::null_mut());
+	let (mut kind, mut length, mut data) = (0, 0, null_mut());
 	check(
 		unsafe {
-			node_api::napi_get_typedarray_info(
-				env,
-				value,
-				&mut kind,
-				&mut length,
-				&mut data,
-				std::ptr::null_mut(),
-				std::ptr::null_mut(),
-			)
+			node_api::napi_get_typedarray_info(env, value, &mut kind, &mut length, &mut data, null_mut(), null_mut())
 		},
 		"a Uint8Array",
 	)?;
@@ -81,7 +70,7 @@ fn bytes(env: Env, value: Value) -> Result<Vec<u8>> {
 fn string(env: Env, value: Value) -> Result<String> {
 	let mut length = 0;
 	check(
-		unsafe { node_api::napi_get_value_string_utf8(env, value, std::ptr::null_mut(), 0, &mut length) },
+		unsafe { node_api::napi_get_value_string_utf8(env, value, null_mut(), 0, &mut length) },
 		"a string",
 	)?;
 	let mut buffer = vec![0u8; length + 1];
@@ -92,49 +81,47 @@ fn string(env: Env, value: Value) -> Result<String> {
 		"a string",
 	)?;
 	buffer.truncate(length);
-	Ok(String::from_utf8(buffer).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned()))
+	String::from_utf8(buffer).map_err(|_| "a string expected".into())
 }
 
 fn number(env: Env, value: Value) -> Result<f64> {
-	let mut result = 0.0;
-	check(
-		unsafe { node_api::napi_get_value_double(env, value, &mut result) },
-		"a number",
-	)?;
-	Ok(result)
+	out(0.0, "a number", |r| unsafe {
+		node_api::napi_get_value_double(env, value, r)
+	})
 }
 
 fn optional(env: Env, value: Value) -> Result<Option<f64>> {
-	let mut kind = 0;
-	check(unsafe { node_api::napi_typeof(env, value, &mut kind) }, "a value")?;
-	if kind == node_api::UNDEFINED {
+	if kind(env, value)? == node_api::UNDEFINED {
 		Ok(None)
 	} else {
 		number(env, value).map(Some)
 	}
 }
 
+fn kind(env: Env, value: Value) -> Result<i32> {
+	out(0, "a value", |r| unsafe { node_api::napi_typeof(env, value, r) })
+}
+
 fn text(env: Env, text: &str) -> Result<Value> {
-	let mut result = std::ptr::null_mut();
-	check(
-		unsafe { node_api::napi_create_string_utf8(env, text.as_ptr().cast(), text.len(), &mut result) },
-		"a string",
-	)?;
-	Ok(result)
+	out(null_mut(), "a string", |r| unsafe {
+		node_api::napi_create_string_utf8(env, text.as_ptr().cast(), text.len(), r)
+	})
 }
 
 fn undefined(env: Env) -> Result<Value> {
-	let mut result = std::ptr::null_mut();
-	check(unsafe { node_api::napi_get_undefined(env, &mut result) }, "undefined")?;
-	Ok(result)
+	out(null_mut(), "undefined", |r| unsafe {
+		node_api::napi_get_undefined(env, r)
+	})
+}
+
+fn external(env: Env, value: Value, what: &str) -> Result<*mut c_void> {
+	out(null_mut(), what, |r| unsafe {
+		node_api::napi_get_value_external(env, value, r)
+	})
 }
 
 fn handle(env: Env, value: Value) -> Result<*mut Prepared<'static>> {
-	let mut data = std::ptr::null_mut();
-	check(
-		unsafe { node_api::napi_get_value_external(env, value, &mut data) },
-		"a source",
-	)?;
+	let data = external(env, value, "a source")?;
 	if data.is_null() {
 		return Err("a source expected".into());
 	}
@@ -146,14 +133,14 @@ unsafe extern "C" fn create(env: Env, info: CallbackInfo) -> Value {
 	guard(env, || {
 		let [source, flags] = args::<2>(env, info)?;
 		let prepared = Prepared::from_bytes(bytes(env, source)?, Request::from_flags(number(env, flags)? as u32));
-		let mut result = std::ptr::null_mut();
+		let mut result = null_mut();
 		check(
 			unsafe {
 				node_api::napi_create_external(
 					env,
 					Box::into_raw(Box::new(prepared)).cast(),
 					None,
-					std::ptr::null_mut(),
+					null_mut(),
 					&mut result,
 				)
 			},
@@ -166,16 +153,16 @@ unsafe extern "C" fn create(env: Env, info: CallbackInfo) -> Value {
 // the grammar of a host language, read once; V8 lets go of it with the external
 unsafe extern "C" fn plan(env: Env, info: CallbackInfo) -> Value {
 	guard(env, || {
-		let [text] = args::<1>(env, info)?;
-		let grammar = teasel::json::grammar(&string(env, text)?)?;
-		let mut result = std::ptr::null_mut();
+		let [wire] = args::<1>(env, info)?;
+		let grammar = teasel::json::grammar(&bytes(env, wire)?)?;
+		let mut result = null_mut();
 		check(
 			unsafe {
 				node_api::napi_create_external(
 					env,
 					Box::into_raw(Box::new(grammar)).cast(),
 					Some(drop_plan),
-					std::ptr::null_mut(),
+					null_mut(),
 					&mut result,
 				)
 			},
@@ -191,16 +178,10 @@ unsafe extern "C" fn drop_plan(_: Env, data: *mut c_void, _: *mut c_void) {
 
 // the grammar a parse reads a document by, or undefined
 fn grammar_of(env: Env, value: Value) -> Result<Option<&'static Grammar>> {
-	let mut kind = 0;
-	check(unsafe { node_api::napi_typeof(env, value, &mut kind) }, "a value")?;
-	if kind == node_api::UNDEFINED {
+	if kind(env, value)? == node_api::UNDEFINED {
 		return Ok(None);
 	}
-	let mut data = std::ptr::null_mut();
-	check(
-		unsafe { node_api::napi_get_value_external(env, value, &mut data) },
-		"a plan",
-	)?;
+	let data = external(env, value, "a plan")?;
 	if data.is_null() {
 		return Err("a plan expected".into());
 	}
@@ -222,11 +203,10 @@ unsafe extern "C" fn parse(env: Env, info: CallbackInfo) -> Value {
 		let entry = Entry::from_index(number(env, entry)? as u32);
 		let (offset, end, stop) = (number(env, offset)?, optional(env, end)?, string(env, stop)?);
 		let grammar = grammar_of(env, plan)?;
-		fresh(env);
-		match prepared.in_place(entry, offset, end, &stop, grammar) {
+		in_env(env, || match prepared.in_place(entry, offset, end, &stop, grammar) {
 			Ok(()) => view(env),
 			Err(json) => text(env, &json),
-		}
+		})
 	})
 }
 
@@ -235,52 +215,51 @@ unsafe extern "C" fn parse(env: Env, info: CallbackInfo) -> Value {
 // sets the views whose buffers moved since the last, and the answer's words say when one has
 unsafe extern "C" fn tree(env: Env, _: CallbackInfo) -> Value {
 	guard(env, || {
-		fresh(env);
-		let mut moved: Vec<(u32, *mut u8, usize, usize, i32)> = Vec::new();
-		let mut count = 0;
-		let typescript = teasel::json::tree(&mut |_, buffer| {
-			count += 1;
-			if let Some(buffer) = buffer
-				&& let Some((ptr, bytes, align)) = buffer.release()
-			{
-				moved.push((count, ptr, bytes, align, kind_of(buffer.element())));
+		in_env(env, || {
+			let mut moved = Vec::new();
+			let mut count = 0;
+			let typescript = teasel::json::tree(&mut |_, buffer| {
+				count += 1;
+				if let Some(buffer) = buffer {
+					moved.push((count, buffer_view(env, buffer)));
+				}
+			});
+			let Some(typescript) = typescript else {
+				return undefined(env);
+			};
+			let slot = 1 + typescript as usize;
+			let (_, mut refs) = VIEW.get();
+			let mut array = null_mut();
+			if refs[slot].is_null() {
+				check(
+					unsafe { node_api::napi_create_array_with_length(env, 1 + count as usize, &mut array) },
+					"an array",
+				)?;
+				check(
+					unsafe { node_api::napi_set_element(env, array, 0, uint32(env, typescript as u32)?) },
+					"an element",
+				)?;
+				check(
+					unsafe { node_api::napi_create_reference(env, array, 1, &mut refs[slot]) },
+					"keeping the views",
+				)?;
+				VIEW.set((env, refs));
+			} else {
+				check(
+					unsafe { node_api::napi_get_reference_value(env, refs[slot], &mut array) },
+					"the views",
+				)?;
 			}
-		});
-		let Some(typescript) = typescript else {
-			return undefined(env);
-		};
-		let slot = 1 + typescript as usize;
-		let (_, mut refs) = VIEW.get();
-		let mut array = std::ptr::null_mut();
-		if refs[slot].is_null() {
-			check(
-				unsafe { node_api::napi_create_array_with_length(env, 1 + count as usize, &mut array) },
-				"an array",
-			)?;
-			check(
-				unsafe { node_api::napi_set_element(env, array, 0, uint32(env, typescript as u32)?) },
-				"an element",
-			)?;
-			check(
-				unsafe { node_api::napi_create_reference(env, array, 1, &mut refs[slot]) },
-				"keeping the views",
-			)?;
-			VIEW.set((env, refs));
-		} else {
-			check(
-				unsafe { node_api::napi_get_reference_value(env, refs[slot], &mut array) },
-				"the views",
-			)?;
-		}
-		// the view owns the buffer's allocation and frees it when JavaScript lets the view go: the array
-		// lets go of the view of a buffer that moved
-		for (i, ptr, bytes, align, kind) in moved {
-			check(
-				unsafe { node_api::napi_set_element(env, array, i, external_view(env, ptr, bytes, align, kind)?) },
-				"an element",
-			)?;
-		}
-		Ok(array)
+			for (i, value) in moved {
+				if let Some(value) = value? {
+					check(
+						unsafe { node_api::napi_set_element(env, array, i, value) },
+						"an element",
+					)?;
+				}
+			}
+			Ok(array)
+		})
 	})
 }
 
@@ -293,12 +272,9 @@ fn kind_of(element: Element) -> i32 {
 }
 
 fn uint32(env: Env, value: u32) -> Result<Value> {
-	let mut result = std::ptr::null_mut();
-	check(
-		unsafe { node_api::napi_create_uint32(env, value, &mut result) },
-		"a number",
-	)?;
-	Ok(result)
+	out(null_mut(), "a number", |r| unsafe {
+		node_api::napi_create_uint32(env, value, r)
+	})
 }
 
 unsafe extern "C" fn layout(env: Env, _: CallbackInfo) -> Value {
@@ -309,65 +285,111 @@ unsafe extern "C" fn layout(env: Env, _: CallbackInfo) -> Value {
 fn guard(env: Env, f: impl FnOnce() -> Result<Value> + std::panic::UnwindSafe) -> Value {
 	let result = match std::panic::catch_unwind(f) {
 		Ok(result) => result,
-		Err(panic) => Err(panic
-			.downcast_ref::<&str>()
-			.map(|s| s.to_string())
-			.or_else(|| panic.downcast_ref::<String>().cloned())
-			.unwrap_or_else(|| "panic".into())),
+		Err(panic) => {
+			let message = panic
+				.downcast_ref::<&str>()
+				.map(|s| s.to_string())
+				.or_else(|| panic.downcast_ref::<String>().cloned())
+				.unwrap_or_else(|| "panic".into());
+			// a payload's drop can panic again, and a second panic aborts
+			std::mem::forget(panic);
+			teasel::json::reset_session();
+			Err(message)
+		}
 	};
 	match result {
 		Ok(value) => value,
 		Err(message) => {
 			let message = CString::new(message.replace('\0', " ")).unwrap();
 			unsafe { node_api::napi_throw_error(env, std::ptr::null(), message.as_ptr()) };
-			std::ptr::null_mut()
+			null_mut()
 		}
 	}
 }
 
-// the hint is the allocation's bytes over its alignment's power of two
-unsafe extern "C" fn release(_: Env, data: *mut c_void, hint: *mut c_void) {
-	unsafe { teasel::handed::free(data.cast(), hint.addr() >> 4, 1 << (hint.addr() & 15)) };
+fn allocate(layout: std::alloc::Layout) -> Allocation {
+	let (env, _) = VIEW.get();
+	assert!(!env.is_null(), "buffer allocation needs a live environment");
+	let result = (|| {
+		let (mut data, mut buffer) = (null_mut(), null_mut());
+		check(
+			unsafe { node_api::napi_create_buffer(env, layout.size(), &mut data, &mut buffer) },
+			"allocating a buffer",
+		)?;
+		let ptr = std::ptr::NonNull::new(data.cast::<u8>()).ok_or("null buffer allocation")?;
+		let (mut array, mut offset) = (null_mut(), 0);
+		check(
+			unsafe {
+				node_api::napi_get_typedarray_info(
+					env,
+					buffer,
+					null_mut(),
+					null_mut(),
+					null_mut(),
+					&mut array,
+					&mut offset,
+				)
+			},
+			"the buffer's backing store",
+		)?;
+		assert_eq!(offset, 0, "a buffer must cover its backing store");
+		let reference = out(null_mut(), "keeping a buffer", |r| unsafe {
+			node_api::napi_create_reference(env, array, 1, r)
+		})?;
+		Ok(Allocation {
+			ptr,
+			token: std::ptr::NonNull::new(reference).ok_or("null buffer reference")?,
+		})
+	})();
+	result.unwrap_or_else(|error: String| {
+		eprintln!("{error}");
+		std::alloc::handle_alloc_error(layout)
+	})
 }
 
-fn external_view(env: Env, ptr: *mut u8, bytes: usize, align: usize, kind: i32) -> Result<Value> {
-	let mut array = std::ptr::null_mut();
+// a session never mixes environments (`fresh` resets it first), so the token's is the current one
+fn release(reference: std::ptr::NonNull<c_void>) {
+	unsafe { node_api::napi_delete_reference(VIEW.get().0, reference.as_ptr()) };
+}
+
+fn buffer_view(env: Env, buffer: &mut dyn Raw) -> Result<Option<Value>> {
+	let Some(reference) = buffer.allocation() else {
+		return Ok(None);
+	};
+	let mut array = null_mut();
 	check(
-		unsafe {
-			node_api::napi_create_external_arraybuffer(
-				env,
-				ptr.cast(),
-				bytes,
-				Some(release),
-				std::ptr::without_provenance_mut(bytes << 4 | align.trailing_zeros() as usize),
-				&mut array,
-			)
-		},
+		unsafe { node_api::napi_get_reference_value(env, reference.as_ptr(), &mut array) },
 		"the view's buffer",
 	)?;
-	let mut value = std::ptr::null_mut();
+	let mut value = null_mut();
+	let kind = kind_of(buffer.element());
 	check(
 		unsafe {
-			node_api::napi_create_typedarray(env, kind, bytes / node_api::element_size(kind), array, 0, &mut value)
+			node_api::napi_create_typedarray(
+				env,
+				kind,
+				buffer.capacity_bytes() / node_api::element_size(kind),
+				array,
+				0,
+				&mut value,
+			)
 		},
 		"the view",
 	)?;
-	Ok(value)
+	Ok(Some(value))
 }
 
-// the view owns the buffer's allocation and frees it when JavaScript lets the view go; a buffer
-// that outgrew its allocation gets a new view, and the old one stays with what it showed
-fn view_of(env: Env, slot: usize, buffer: &mut dyn Raw, kind: i32) -> Result<Value> {
+fn view_of(env: Env, slot: usize, buffer: &mut dyn Raw) -> Result<Value> {
 	let (_, mut refs) = VIEW.get();
-	let mut value = std::ptr::null_mut();
-	if let Some((ptr, bytes, align)) = buffer.release() {
+	let mut value = null_mut();
+	if let Some(next) = buffer_view(env, buffer)? {
 		if !refs[slot].is_null() {
-			let old = std::mem::replace(&mut refs[slot], std::ptr::null_mut());
+			let old = std::mem::replace(&mut refs[slot], null_mut());
 			VIEW.set((env, refs));
 			check(unsafe { node_api::napi_delete_reference(env, old) }, "the old view")?;
 		}
-		value = external_view(env, ptr, bytes, align, kind)?;
-		let mut reference = std::ptr::null_mut();
+		value = next;
+		let mut reference = null_mut();
 		check(
 			unsafe { node_api::napi_create_reference(env, value, 1, &mut reference) },
 			"keeping the view",
@@ -386,7 +408,7 @@ fn view_of(env: Env, slot: usize, buffer: &mut dyn Raw, kind: i32) -> Result<Val
 // the answer is written into the words in place; one the words outgrew stays with the view that shows it
 fn view(env: Env) -> Result<Value> {
 	teasel::json::words(|words| {
-		let value = view_of(env, 0, words, node_api::UINT32_ARRAY)?;
+		let value = view_of(env, 0, words)?;
 		// past 256 KB, a buffer four times too big is left to its view
 		if words.capacity() > 1 << 16 && words.capacity() > 4 * words.len() {
 			words.renew(2 * words.len());
@@ -395,13 +417,27 @@ fn view(env: Env) -> Result<Value> {
 	})
 }
 
-// a view of another environment holds an allocation that environment's end frees
 fn fresh(env: Env) {
 	let (view_env, refs) = VIEW.get();
-	if view_env != env && refs.iter().any(|reference| !reference.is_null()) {
-		VIEW.set((std::ptr::null_mut(), [std::ptr::null_mut(); VIEWS]));
-		teasel::json::words(|words| words.renew(0));
-		teasel::json::renew_trees();
+	if view_env != env {
+		teasel::json::reset_session();
+		for reference in refs {
+			if !reference.is_null() {
+				unsafe { node_api::napi_delete_reference(view_env, reference) };
+			}
+		}
+		VIEW.set((env, [null_mut(); VIEWS]));
+	}
+}
+
+fn in_env<R>(env: Env, f: impl FnOnce() -> R) -> R {
+	fresh(env);
+	unsafe { teasel::handed::allocating(allocate, release, f) }
+}
+
+unsafe extern "C" fn cleanup(data: *mut c_void) {
+	if VIEW.get().0 == data.cast() {
+		fresh(null_mut());
 	}
 }
 
@@ -409,11 +445,17 @@ fn fresh(env: Env) {
 /// Called by Node once per load with a live `env` and the module's `exports` object.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn napi_register_module_v1(env: Env, exports: Value) -> Value {
+	// without Node-API there is nothing to throw with: Node reports the module as not registered
 	#[cfg(windows)]
-	unsafe {
-		node_api::load()
-	};
+	if !unsafe { node_api::load() } {
+		eprintln!("teasel: this process does not provide Node-API");
+		return null_mut();
+	}
 	guard(env, || {
+		check(
+			unsafe { node_api::napi_add_env_cleanup_hook(env, cleanup, env.cast()) },
+			"environment cleanup",
+		)?;
 		for (name, callback) in [
 			(c"create", create as unsafe extern "C" fn(Env, CallbackInfo) -> Value),
 			(c"parse", parse),
@@ -422,7 +464,7 @@ pub unsafe extern "C" fn napi_register_module_v1(env: Env, exports: Value) -> Va
 			(c"tree", tree),
 			(c"layout", layout),
 		] {
-			let mut function = std::ptr::null_mut();
+			let mut function = null_mut();
 			check(
 				unsafe {
 					node_api::napi_create_function(
@@ -430,7 +472,7 @@ pub unsafe extern "C" fn napi_register_module_v1(env: Env, exports: Value) -> Va
 						name.as_ptr(),
 						name.count_bytes(),
 						Some(callback),
-						std::ptr::null_mut(),
+						null_mut(),
 						&mut function,
 					)
 				},
