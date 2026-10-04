@@ -221,6 +221,21 @@ impl<'a> Lexer<'a> {
 				token.unclosed = false;
 				return Ok(());
 			};
+			// a host's stop that JavaScript has no token for, `»`, ends the input where it stands
+			if b >= 0x80
+				&& self.depth == 0
+				&& !self.stops.is_empty()
+				&& !is_id_start(self.char().unwrap())
+				&& self.stops_at(start, TokenKind::Eof)
+			{
+				token.kind = TokenKind::Eof;
+				token.end = start as u32;
+				token.stop = true;
+				token.escaped = false;
+				token.unclosed = false;
+				self.stopped = true;
+				return Ok(());
+			}
 			let kind = match self.read_kind(b, start) {
 				Ok(kind) => kind,
 				Err(error) if self.recover => {
