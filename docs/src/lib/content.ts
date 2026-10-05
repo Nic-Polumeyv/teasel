@@ -11,7 +11,7 @@ export type Section = { label: string; pages: Page[] };
 
 export const slug = (text: string) => text.toLowerCase().replace(/[^\w]+/g, '-').replace(/^-|-$/g, '');
 
-// two exports that differ only by case, Entry and ENTRY, would share one id and one each key
+// two exports that differ only by case, grammar and Grammar, would share one id and one each key
 const ids = new WeakMap<Tokens.Heading, string>();
 function label_headings(headings: Tokens.Heading[]) {
 	const seen = new Map<string, number>();
@@ -48,7 +48,7 @@ function sheet(name: string) {
 const diagrams = Object.fromEntries(Object.entries(import.meta.glob('/content/**/*.svelte', { import: 'default', eager: true })).map(([path, diagram]) => [path.slice(path.lastIndexOf('/') + 1), { path, diagram: diagram as Component<{ label: string; files?: Record<string, string> }> }]));
 
 // names the package exports, and where the reference describes each
-const described: Record<string, string> = { Source: 'source', Plan: 'plan', Options: 'options', ParseError: 'parseerror', Parsed: 'parsed', Scope: 'scope', Binding: 'binding', Reference: 'reference', Root: 'root', HostNode: 'hostnode', Code: 'code', referenceOf: 'referenceof', scopeOf: 'scopeof', parentOf: 'parentof', until: 'plan' };
+const described: Record<string, string> = { Source: 'source', js: 'js', Piece: 'piece', Language: 'language', Options: 'options', ParseError: 'parseerror', Parsed: 'parsed', Scope: 'scope', Binding: 'binding', Reference: 'reference', Root: 'root', HostNode: 'hostnode', Code: 'code', referenceOf: 'referenceof', scopeOf: 'scopeof', parentOf: 'parentof', until: 'piece' };
 
 const noted = 'cursor-help rounded-xs underline decoration-white/40 decoration-dotted underline-offset-4 outline-none hover:bg-white/10 focus-visible:bg-white/10';
 
@@ -99,7 +99,7 @@ const marked = new Marked({
 		},
 		codespan(token) {
 			const name = token.text.replace(/\(.*\)$/, '');
-			const id = described[name] ?? (name.startsWith('Plan.') ? 'plan' : name === 'source.parse' ? 'source' : undefined);
+			const id = described[name] ?? (name.startsWith('js.') ? 'js' : name === 'source.parse' ? 'source' : undefined);
 			const code = `<code>${escape(token.text)}</code>`;
 			return id === undefined || linked.has(token) ? code : `<a href="/reference/parser#${id}" class="decoration-dotted!">${code}</a>`;
 		},

@@ -33,7 +33,7 @@ export interface Declared extends Reference {
 	/**
 	 * What declared it. `function-name` and `class-name` are the name a function expression or a class
 	 * expression has inside itself, `const f = function g() {}` declaring `g`. `pattern` is a name that
-	 * a `Plan.pattern` piece declares, parsed on its own; a `Plan.params` piece declares `param`s.
+	 * a `js.pattern` piece declares, parsed on its own; a `js.params` piece declares `param`s.
 	 */
 	kind:
 		| 'var'
@@ -137,6 +137,12 @@ export interface Recovered {
 	pos: number;
 	end: number;
 	loc: { line: number; column: number };
+}
+
+declare const answers: unique symbol;
+/** What a parse reads as a whole and up to the end it is given: JavaScript, or a host language by its grammar. `T` is what its parse answers with. */
+export interface Language<T> {
+	readonly [answers]?: T;
 }
 
 /** What a parse returns: the node, or the patterns of a parameter list, and what the options add; a key is there exactly when its option is on. */
