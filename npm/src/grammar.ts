@@ -137,7 +137,9 @@ export interface Scope<I extends readonly unknown[]> {
 	readonly scope: I;
 }
 
-type Field<S extends Site, B extends Mods['bind'] = false> = Source<any, S, { optional: boolean; bind: B; orArg: boolean; missing: boolean }>;
+type Field<S extends Site, B extends Mods['bind'] = false, O extends boolean = boolean> = Source<any, S, { optional: O; bind: B; orArg: boolean; missing: boolean }>;
+/** A field the site always fills, so `optional` has no meaning on it. */
+type Always<S extends Site> = Field<S, false, false>;
 type Record<F> = { readonly [field: string]: F } & { readonly [K in Reserved]?: never };
 /** A form whose fields read what `F` allows. */
 export type Form<F> = readonly (string | Record<F> | Opt<Form<F>> | OneOf<readonly Form<F>[]>)[];
@@ -145,14 +147,14 @@ type Scoped<F> = readonly (Record<F> | Scope<Scoped<F>>)[];
 
 type BlockForm = Form<Field<'form', false | 'inside' | 'outside'> | Field<'body'>>;
 type TagForm = Form<Field<'form'>>;
-type DirectiveForm = Form<Field<'form', false | 'inside'> | Field<'value', false | 'inside'> | Field<'literal'>>;
+type DirectiveForm = Form<Field<'form', false | 'inside'> | Field<'value', false | 'inside'> | Source<boolean, 'literal', any>>;
 
 /** A sequence kept for reuse in several forms. */
 export const seq = <const I extends readonly Item[]>(...items: I): I => items;
 /** `[ … ]`: read when its first word or reader is there. */
-export const opt = <const I extends readonly Item[]>(...items: I): Opt<I> => ({ opt: items });
+export const opt = <const I extends readonly [Item, ...Item[]]>(...items: I): Opt<I> => ({ opt: items });
 /** `{ a | b }`: exactly one, chosen by how it starts; wrap in `opt` for at most one. */
-export const oneOf = <const A extends readonly (readonly Item[])[]>(...alternatives: A): OneOf<A> => ({ oneOf: alternatives });
+export const oneOf = <const A extends readonly [readonly [Item, ...Item[]], ...(readonly [Item, ...Item[]])[]]>(...alternatives: A): OneOf<A> => ({ oneOf: alternatives });
 export const scope = <const I extends readonly Item[]>(...items: I): Scope<I> => ({ scope: items });
 
 export interface Node<T extends string = string, I extends readonly Item[] = readonly Item[]> {
@@ -242,10 +244,10 @@ type Marker = readonly [attribute: string] | readonly [attribute: string, value:
 
 /** A host language: its document, its content, and the JavaScript inside them. */
 export interface Definition {
-	readonly document: Node<string, Scoped<Field<'document'> | Field<'literal'>>>;
-	readonly text: Node<string, Scoped<Field<'text'>>>;
-	readonly comment: Node<string, Scoped<Field<'text'>>>;
-	readonly fragment?: Node<string, Scoped<Field<'fragment'>>>;
+	readonly document: Node<string, Scoped<Field<'document'> | Source<null | readonly [], 'literal', any>>>;
+	readonly text: Node<string, Scoped<Always<'text'>>>;
+	readonly comment: Node<string, Scoped<Always<'text'>>>;
+	readonly fragment?: Node<string, Scoped<Always<'fragment'>>>;
 	readonly delimiters: readonly [open: string, close: string];
 	readonly attributes?: { readonly expressions?: true; readonly shorthand?: true };
 	readonly autoclose?: true;
@@ -253,7 +255,7 @@ export interface Definition {
 	readonly void?: readonly string[];
 	readonly verbatim?: string;
 	readonly elements: {
-		readonly fields: Record<Field<'element'>>;
+		readonly fields: Record<Always<'element'>>;
 		readonly rules?: { readonly [name: string]: Element };
 		readonly component?: Element;
 		readonly other?: Element;
@@ -266,7 +268,7 @@ export interface Definition {
 		readonly modifier?: string;
 		readonly dynamic?: readonly [open: string, close: string];
 		readonly unique?: 'raw';
-		readonly fields: Record<Field<'directive'>>;
+		readonly fields: Record<Always<'directive'>>;
 		readonly shorthands?: { readonly [token: string]: readonly [name: string, ...modifiers: string[]] };
 		readonly rules?: { readonly [name: string]: Directive };
 		readonly other?: Directive;
@@ -280,7 +282,8 @@ export interface Definition {
 		readonly blocks?: { readonly [name: string]: Block };
 		readonly tags?: { readonly [name: string]: Tag };
 	};
-	readonly declaration?: Node<string, TagForm>;
+	/** The node of a `let`, `const` or `type` declaration between the delimiters: one field, one statement. */
+	readonly declaration?: Node<string, readonly [Record<Source<Statement, 'form'>>]>;
 	/** The node of an expression between the delimiters: one field, one expression. */
 	readonly expression?: Node<string, readonly [Record<Source<Expression, 'form'>>]>;
 }

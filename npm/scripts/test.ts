@@ -482,12 +482,11 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 	const pinned = `${JSON.stringify({ text: template, steps: answers }, null, '\t')}\n`;
 	if (process.env.UPDATE) writeFileSync(pin, pinned);
 	else assert.equal(readFileSync(pin, 'utf8'), pinned, `${name} writing-a-grammar.json changed; run with UPDATE=1 once the change is meant`);
-	// the page's whole grammar is the last step's
-	const page = readFileSync(new URL('../../docs/content/03-examples/03-writing-a-grammar.md', import.meta.url), 'utf8');
-	const whole = [...page.matchAll(/```js tpl\.js\n(import \* as g[\s\S]*?)```/g)].at(-1)![1];
+	// the whole grammar the page shows is the last step's
+	const whole = readFileSync(new URL('../../docs/content/03-examples/tpl.js', import.meta.url), 'utf8');
 	const builders = JSON.stringify(new URL('../dist/grammar.js', import.meta.url).href);
 	const written = await import(`data:text/javascript,${encodeURIComponent(whole.replace("'@teasel/parser/grammar'", builders))}`);
-	assert.deepEqual(written.tpl.wire, g.grammar('tpl', steps.at(-1)).wire, `${name} the whole grammar on /writing-a-grammar is the last step's`);
+	assert.deepEqual(written.tpl.wire, g.grammar('tpl', steps.at(-1)).wire, `${name} docs/content/03-examples/tpl.js is the last step's grammar`);
 }
 
 // tsc checks what the types promise here and node never calls it, since the refused definitions throw at runtime
@@ -541,16 +540,54 @@ function types(source: api.Source, definition: typeof svelte) {
 	g.tag(g.node('T', { name: g.bind(g.js.identifier) }));
 	// @ts-expect-error only a block declares around itself
 	g.directive(g.node('D', { name: g.bind.outside(g.js.identifier) }));
-	g.grammar('x', {
-		document: g.node('Root', { children: g.content }),
+	// @ts-expect-error a directive's flag is true or false
+	g.directive(g.node('D', { flag: g.literal(null) }));
+	// @ts-expect-error `opt` needs items
+	g.opt();
+	// @ts-expect-error `oneOf` needs alternatives
+	g.oneOf();
+	// @ts-expect-error an alternative needs items
+	g.oneOf([]);
+	const base = {
 		text: g.node('Text', { data: g.text.data }),
 		comment: g.node('Comment', { data: g.text.data }),
 		delimiters: ['{', '}'],
+	} as const;
+	const fields = { name: g.element.tag, attributes: g.element.attributes, children: g.content };
+	g.grammar('x', {
+		...base,
+		document: g.node('Root', { children: g.content }),
 		elements: {
-			fields: { name: g.element.tag, attributes: g.element.attributes, children: g.content },
+			fields,
 			// @ts-expect-error inside names an element rule
 			rules: { head: g.element(g.node('Head')), title: g.element(g.node('Title'), { inside: 'haed' }) },
 		},
+	});
+	g.grammar('x', {
+		...base,
+		// @ts-expect-error the document's literals are null or a list
+		document: g.node('Root', { children: g.content, flag: g.literal(true) }),
+		elements: { fields },
+	});
+	g.grammar('x', {
+		...base,
+		document: g.node('Root', { children: g.content }),
+		// @ts-expect-error an element's fields are never left out
+		elements: { fields: { ...fields, attributes: g.optional(g.element.attributes) } },
+	});
+	g.grammar('x', {
+		...base,
+		document: g.node('Root', { children: g.content }),
+		elements: { fields },
+		// @ts-expect-error the declaration node holds one statement
+		declaration: g.node('Decl', { e: g.js.expression }),
+	});
+	g.grammar('x', {
+		...base,
+		document: g.node('Root', { children: g.content }),
+		elements: { fields },
+		// @ts-expect-error a directive's fields are never left out
+		directives: { fields: { arg: g.optional(g.directive.arg) } },
 	});
 
 	const doc = source.parse(definition);
