@@ -4,13 +4,13 @@ import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import svelteDefinition from './hosts/svelte.ts';
 import vueDefinition from './hosts/vue.ts';
 import type { Expression, Identifier, Pattern } from 'estree';
-import * as g from '../dist/grammar.js';
-import type { Infer, NodeType } from '../dist/grammar.js';
-import type * as api from '../dist/index.js';
-import type { Options } from '../dist/index.js';
+import * as g from '../src/grammar.ts';
+import type { Infer, NodeType } from '../src/grammar.ts';
+import type * as api from '../src/index.ts';
+import type { Options } from '../src/index.ts';
 if (process.argv[2] === 'interpret') globalThis.Function = (() => { throw new EvalError('blocked'); }) as unknown as FunctionConstructor;
 const name = process.execArgv.includes('--no-addons') ? 'wasm' : 'native';
-const m = await import('../dist/index.js');
+const m = await import('../src/index.ts');
 // the trees are poked as the recipes shape them, host nodes included, past what the types say
 type Any = any;
 const { Plan, ParseError } = m;
@@ -426,6 +426,14 @@ const vue = grammars.vue;
 		assert.throws(() => open('<a>'.repeat(40_000) + '</a>'.repeat(40_000), { scopes }).parse(grammars.svelte), deep);
 		assert.equal(open('x', { scopes }).parse().node.body.length, 1);
 	}
+}
+
+// the tests read the source; the published build must answer the same once its specifiers are rewritten
+{
+	const built = await import('../dist/index.js');
+	await import('../dist/grammar.js');
+	using source = new built.Source('let x = 1');
+	assert.equal(source.parse().node.body.length, 1, `${name} dist`);
 }
 
 // /writing-a-grammar builds a grammar in steps; what each step answers for the page's template is pinned beside the page
