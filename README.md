@@ -9,22 +9,22 @@
 <br>
 
 ```js
-import { Source, Entry } from '@teasel/parser';
+import { Source, js } from '@teasel/parser';
 
 const source = new Source(text, { typescript: true, scopes: true });
 const { node } = source.parse();
 ```
 
-Every parse is `source.parse(entry, at)`: what to read, and where. Every answer is `{ node, end }` and what the options add. A source is disposable: `using source = new Source(text)` releases what the engine holds for it at the end of the block, and the collector does otherwise.
+Every parse is `source.parse(read, at)`: what to read, and where. Every answer is `{ node, end }` and what the options add. A source is disposable: `using source = new Source(text)` releases what the engine holds for it at the end of the block, and the collector does otherwise.
 
 ```
-source.parse()                                 Program, the whole source
-source.parse(Entry.expression, 7)              the expression that starts at 7
-source.parse(Entry.pattern, 7)                 an assignment target: a name or a destructuring
-source.parse(Entry.params, 7)                  the patterns of a (a, b = 1)
-source.parse(Entry.statement, 7)               one statement
-source.parse(Entry.typeParameters, 7)          a <T extends U>
-source.parse(Entry.program, [12, 40])          the program inside 12..40, positions of the whole
+source.parse()                              Program, the whole source
+source.parse(js.expression, 7)              the expression that starts at 7
+source.parse(js.pattern, 7)                 an assignment target: a name or a destructuring
+source.parse(js.params, 7)                  the patterns of a (a, b = 1)
+source.parse(js.statement, 7)               one statement
+source.parse(js.typeParameters, 7)          a <T extends U>
+source.parse(js, [12, 40])                  the program inside 12..40, positions of the whole
 ```
 
 ## Inside a larger syntax
@@ -38,12 +38,12 @@ A host that embeds JavaScript in its own reads one piece at a time, from an offs
 ```
 
 ```js
-const { node, end } = source.parse(Entry.expression.until('as', ','), 3);
+const { node, end } = source.parse(js.expression.until('as', ','), 3);
 // node  Identifier items
 // end   8
 ```
 
-`until` lists the host's own tokens; an entry is built once and used at any position of any source. One read outside every bracket the parse opened, where the expression could end, ends the parse: `,` does not start a sequence, `/>` is not a division. A `then` after `.` is a property name. A TypeScript `as` is the host's unless another `as` follows the assertion, so `xs as T[] as item` ends after the type.
+`until` lists the host's own tokens; a piece is built once and used at any position of any source. One read outside every bracket the parse opened, where the expression could end, ends the parse: `,` does not start a sequence, `/>` is not a division. A `then` after `.` is a property name. A TypeScript `as` is the host's unless another `as` follows the assertion, so `xs as T[] as item` ends after the type.
 
 ## What the options add
 

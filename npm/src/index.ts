@@ -1,12 +1,12 @@
 import type { Expression, Node, Pattern, Program, Statement } from 'estree';
 import { decode, PARENT, REFERENCE, SCOPE } from './decode.ts';
-import type { Code, Held, Parsed, Prepared, Reference, Scope } from './types.ts';
+import type { Code, Held, Language, Parsed, Prepared, Reference, Scope } from './types.ts';
 import { flags, type Options } from './options.ts';
 import { engine } from '#engine';
-import type { Answers, Grammar } from './grammar.ts';
+import type { Grammar } from './grammar.ts';
 
 export type { Options } from './options.ts';
-export type { Arguments, Binding, Code, Comment, Declared, HostNode, Kept, Parsed, Recovered, Reference, Root, Scope, Span } from './types.ts';
+export type { Arguments, Binding, Code, Comment, Declared, HostNode, Kept, Language, Parsed, Recovered, Reference, Root, Scope, Span } from './types.ts';
 
 /**
  * Thrown for a syntax error. `code` names what went wrong, for a host to branch on, and
@@ -54,7 +54,7 @@ const grammars = new WeakMap<Grammar, Held>();
 function compiled(grammar: Grammar): Held {
 	let held = grammars.get(grammar);
 	if (held === undefined) {
-		if (!(grammar?.wire instanceof Uint8Array)) throw new TypeError('a parse takes an entry or a grammar made by @teasel/parser/grammar');
+		if (!(grammar?.wire instanceof Uint8Array)) throw new TypeError('a parse takes `js`, one of its pieces, or a grammar made by @teasel/parser/grammar');
 		held = engine.plan(grammar.wire);
 		grammars.set(grammar, held);
 		registry?.register(grammar, held);
@@ -62,14 +62,15 @@ function compiled(grammar: Grammar): Held {
 	return held;
 }
 
-let read: (entry: Entry<unknown>) => { entry: number; stop: string };
+let read: (piece: Piece<unknown>) => { entry: number; stop: string };
+let piece: <T>(entry: number) => Piece<T>;
 
 /**
- * A piece of JavaScript a parse reads at a position of the source, `program` the whole source;
- * `until` ends one where the host's own tokens follow. An entry is built once and applied at any
- * position of any source. `T` is what its parse answers with.
+ * One piece of JavaScript read at a position of the source, as far as it goes; `until` ends it
+ * where the host's own tokens follow. A piece is built once and read at any position of any
+ * source. `T` is what its parse answers with.
  */
-export class Entry<T> {
+export class Piece<T> {
 	#entry: number;
 	#stop: string;
 
@@ -78,36 +79,44 @@ export class Entry<T> {
 		this.#stop = stop;
 	}
 
-	// `Entry` of parser/mod.rs by index
-	/** The whole source, or the program inside `[start, end]` of it. */
-	static readonly program: Entry<Program> = new Entry(0);
-	static readonly expression: Entry<Expression> = new Entry(1);
-	/** An assignment target: an identifier or a destructuring pattern. */
-	static readonly pattern: Entry<Pattern> = new Entry(2);
-	/** A parenthesized parameter list, as an arrow function's is read. */
-	static readonly params: Entry<Pattern[]> = new Entry(3);
-	static readonly statement: Entry<Statement> = new Entry(4);
-	/** A `TSTypeParameterDeclaration`; TypeScript only, `not_typescript` otherwise. */
-	static readonly typeParameters: Entry<Node> = new Entry(5);
-
 	/**
-	 * The same reading, ended where one of the host's own tokens, words or punctuators, follows.
+	 * The same piece, ended where one of the host's own tokens, words or punctuators, follows.
 	 * One read outside every bracket the parse opened, where the expression could end, ends it:
 	 * `,` ends an expression before a sequence would, and `/>` is never a division. A `then`
 	 * after `.` is a property name. A TypeScript `as` is the host's unless another `as` follows
 	 * the assertion, so `xs as T[] as item` ends after the type.
 	 */
-	until(...tokens: string[]): Entry<T> {
+	until(...tokens: string[]): Piece<T> {
 		if (tokens.length === 0 || !tokens.every((token) => typeof token === 'string' && token !== '' && !/\s/.test(token))) {
 			throw new TypeError('until takes words and punctuators');
 		}
-		return new Entry(this.#entry, this.#stop === '' ? tokens.join(' ') : `${this.#stop} ${tokens.join(' ')}`);
+		return new Piece(this.#entry, this.#stop === '' ? tokens.join(' ') : `${this.#stop} ${tokens.join(' ')}`);
 	}
 
 	static {
-		read = (entry) => ({ entry: entry.#entry, stop: entry.#stop });
+		read = (piece) => ({ entry: piece.#entry, stop: piece.#stop });
+		piece = (entry) => new Piece(entry);
 	}
 }
+
+// `Entry` of parser/mod.rs by index; the program is 0
+/** JavaScript: a parse of it reads the whole source, or the program inside `[start, end]`. Its members read one piece. */
+export const js: Language<Program> & {
+	readonly expression: Piece<Expression>;
+	/** An assignment target: an identifier or a destructuring pattern. */
+	readonly pattern: Piece<Pattern>;
+	/** A parenthesized parameter list, as an arrow function's is read. */
+	readonly params: Piece<Pattern[]>;
+	readonly statement: Piece<Statement>;
+	/** A `TSTypeParameterDeclaration`; TypeScript only, `not_typescript` otherwise. */
+	readonly typeParameters: Piece<Node>;
+} = Object.freeze({
+	expression: piece<Expression>(1),
+	pattern: piece<Pattern>(2),
+	params: piece<Pattern[]>(3),
+	statement: piece<Statement>(4),
+	typeParameters: piece<Node>(5),
+});
 
 /**
  * A source kept with its options: the parses out of it share the source copy and the position
@@ -125,25 +134,30 @@ export class Source {
 	}
 
 	/**
-	 * What `entry` reads at `at`: the whole source by default; a UTF-16 offset for a piece of
-	 * JavaScript, or `[start, end]` for one read as if the source ended at `end`. A grammar from
+	 * What `read` answers with: `js` by default, the whole source as a program. A piece of
+	 * JavaScript is read at `at`, a UTF-16 offset, or at `[start, end]` as if the source ended at
+	 * `end`; `js` takes the same for the program inside a range. A grammar from
 	 * `@teasel/parser/grammar` reads the whole source as a document of its host language: the
 	 * host's own nodes around the JavaScript ones, in one tree, in TypeScript when the grammar
 	 * says so of a script tag. The engine reads a grammar on its first parse and keeps it while
 	 * the grammar lives, so a grammar is made once.
 	 */
 	parse(): Parsed<Program>;
-	parse<T>(entry: Entry<T>, at?: number | [start: number, end: number]): Parsed<T>;
-	parse<T>(grammar: Grammar & Answers<T>): Parsed<T>;
-	parse(what: Entry<unknown> | Grammar = Entry.program, at: number | [number, number] = 0): Parsed<any> {
+	parse<T>(piece: Piece<T>, at?: number | [start: number, end: number]): Parsed<T>;
+	parse(language: typeof js, at?: number | [start: number, end: number]): Parsed<Program>;
+	parse<T>(grammar: Grammar & Language<T>): Parsed<T>;
+	parse(what: Piece<unknown> | Language<unknown> = js, at?: number | [number, number]): Parsed<any> {
 		if (this.#held === undefined) throw new TypeError('the source is freed');
 		let entry = 0, stop = '', grammar: Held | undefined, offset = 0, end: number | undefined;
-		if (what instanceof Entry) {
-			({ entry, stop } = read(what));
+		if (what === js || what instanceof Piece) {
+			if (what !== js) ({ entry, stop } = read(what as Piece<unknown>));
 			if (typeof at === 'number') offset = at;
 			else if (Array.isArray(at) && at.length === 2 && typeof at[0] === 'number' && typeof at[1] === 'number') [offset, end] = at;
-			else throw new TypeError('at is an offset or [start, end]');
-		} else grammar = compiled(what);
+			else if (at !== undefined) throw new TypeError('at is an offset or [start, end]');
+		} else {
+			if (at !== undefined) throw new TypeError('a document reads the whole source');
+			grammar = compiled(what as Grammar);
+		}
 		const answer = this.#held.parse(entry, offset, end, stop, grammar);
 		if (typeof answer !== 'string') {
 			try {

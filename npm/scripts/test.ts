@@ -13,7 +13,7 @@ const name = process.execArgv.includes('--no-addons') ? 'wasm' : 'native';
 const m = await import('../src/index.ts');
 // the trees are poked as the recipes shape them, host nodes included, past what the types say
 type Any = any;
-const { Entry, ParseError } = m;
+const { js, Piece, ParseError } = m;
 const untyped = ({ Source, scopeOf, referenceOf, parentOf }: typeof m) => ({
 	open: (source: string, options?: Options): Any => new Source(source, options),
 	scopeOf: (node: Any): Any => scopeOf(node),
@@ -25,7 +25,7 @@ const { open, scopeOf, referenceOf, parentOf } = untyped(m);
 {
 	const parse = (source: string, options?: Options): Any => open(source, options).parse();
 	const program = (source: string, options?: Options): Any => parse(source, options).node;
-	const at = (entry: Exclude<keyof typeof Entry, 'prototype'>, source: string, offset: number, options?: Options, stopAt?: string[]): Any => open(source, options).parse(stopAt === undefined ? Entry[entry] : Entry[entry].until(...stopAt), offset);
+	const at = (piece: Exclude<keyof typeof js, symbol>, source: string, offset: number, options?: Options, stopAt?: string[]): Any => open(source, options).parse(stopAt === undefined ? js[piece] : js[piece].until(...stopAt), offset);
 	const typed = parse('let x: number = 1; // done', { sourceType: 'module', typescript: true, comments: true, locations: true });
 	assert.equal(typed.node.sourceType, 'module');
 	assert.equal(typed.end, 26);
@@ -72,12 +72,12 @@ const { open, scopeOf, referenceOf, parentOf } = untyped(m);
 	assert.equal(at('expression', '{{a:1} />', 1, undefined, ['/>']).end, 6);
 	assert.equal(at('expression', '{x />', 1, undefined, ['/>']).end, 2);
 	assert.equal(at('pattern', '{[a, b], i}', 1, undefined, [',']).end, 7);
-	assert.throws(() => Entry.expression.until('a s'), TypeError);
-	assert.throws(() => Entry.expression.until(), TypeError);
+	assert.throws(() => js.expression.until('a s'), TypeError);
+	assert.throws(() => js.expression.until(), TypeError);
 	assert.throws(() => open('{a}').parse('expression' as Any, 1), TypeError);
-	assert.throws(() => open('{a}').parse(Entry.expression, '1' as Any), TypeError);
-	assert.throws(() => open('{a}').parse(Entry.expression, [1] as Any), TypeError);
-	assert.equal(Entry.expression.until('as').until(',').constructor, Entry);
+	assert.throws(() => open('{a}').parse(js.expression, '1' as Any), TypeError);
+	assert.throws(() => open('{a}').parse(js.expression, [1] as Any), TypeError);
+	assert.equal(js.expression.until('as').until(',').constructor, Piece);
 
 	const loose = { errorRecovery: true };
 	const recovered = at('expression', '{obj.}', 1, loose, ['}']);
@@ -233,12 +233,12 @@ const { open, scopeOf, referenceOf, parentOf } = untyped(m);
 	assert.equal(unicode.type, 'Identifier');
 	assert.equal(unicode.start, 6);
 	const source = open('{a} {"é"} {b /* c */}', { locations: true, comments: true });
-	assert.equal(source.parse(Entry.expression, 1).node.name, 'a');
-	assert.equal(open('{xs as x}', ts).parse(Entry.expression.until('as'), 1).end, 3);
-	assert.equal(source.parse(Entry.expression, 11).end, 20);
-	assert.equal(source.parse(Entry.expression, 11).comments[0].loc.start.column, 13);
-	assert.throws(() => source.parse(Entry.expression, 99), SyntaxError);
-	assert.throws(() => open('𝒳 + y').parse(Entry.expression, 1), (e: Any) => /surrogate/.test(e.message));
+	assert.equal(source.parse(js.expression, 1).node.name, 'a');
+	assert.equal(open('{xs as x}', ts).parse(js.expression.until('as'), 1).end, 3);
+	assert.equal(source.parse(js.expression, 11).end, 20);
+	assert.equal(source.parse(js.expression, 11).comments[0].loc.start.column, 13);
+	assert.throws(() => source.parse(js.expression, 99), SyntaxError);
+	assert.throws(() => open('𝒳 + y').parse(js.expression, 1), (e: Any) => /surrogate/.test(e.message));
 	const erased = parse('import type T from "t"; export const x: T = (1 as any)!; enum E {}', { sourceType: 'module', typescript: 'erase' });
 	assert.equal(erased.node.body.length, 2);
 	assert.equal(erased.node.body[0].declaration.declarations[0].init.type, 'Literal');
@@ -246,28 +246,28 @@ const { open, scopeOf, referenceOf, parentOf } = untyped(m);
 	assert.deepEqual(erased.typescript.map((k: Any) => k.type), ['TSEnumDeclaration']);
 	assert.throws(() => parse('let x: number = 1', { typescript: true, erase: true } as Any), TypeError);
 	const template = open('<script>\n  let a = 1;\n</script>\n{a}', { sourceType: 'module', locations: true });
-	const script = template.parse(Entry.program, [8, 22]);
+	const script = template.parse(js, [8, 22]);
 	assert.equal(script.node.start, 8);
 	assert.equal(script.node.end, 22);
 	assert.equal(script.end, 22);
 	assert.equal(script.node.body[0].loc.start.line, 2);
-	assert.throws(() => template.parse(Entry.program, [22, 8]), SyntaxError);
-	assert.equal(template.parse(Entry.program, 24).node.body[0].type, 'ExpressionStatement');
-	assert.equal(template.parse(Entry.expression, [33, 34]).node.name, 'a');
+	assert.throws(() => template.parse(js, [22, 8]), SyntaxError);
+	assert.equal(template.parse(js, 24).node.body[0].type, 'ExpressionStatement');
+	assert.equal(template.parse(js.expression, [33, 34]).node.name, 'a');
 	assert.equal(program('"﻿a"; "bc"; zz').body[2].expression.name, 'zz');
 	source[Symbol.dispose]();
-	assert.throws(() => source.parse(Entry.expression, 1), TypeError);
+	assert.throws(() => source.parse(js.expression, 1), TypeError);
 	let escaped: Any;
 	{
 		using inner = open('x');
 		escaped = inner;
-		assert.equal(inner.parse(Entry.expression, 0).node.name, 'x');
+		assert.equal(inner.parse(js.expression, 0).node.name, 'x');
 	}
-	assert.throws(() => escaped.parse(Entry.expression, 0), TypeError);
+	assert.throws(() => escaped.parse(js.expression, 0), TypeError);
 	assert.throws(() => parse('x', { locations: 1 } as Any), TypeError);
 	assert.throws(() => parse('x', { typescript: 'yes' } as Any), TypeError);
-	assert.throws(() => open('a;b;c').parse(Entry.program, [0, -1]), (e: Any) => e.code === 'invalid_request');
-	assert.throws(() => open('a;b;c').parse(Entry.program, [0, NaN]), (e: Any) => e.code === 'invalid_request');
+	assert.throws(() => open('a;b;c').parse(js, [0, -1]), (e: Any) => e.code === 'invalid_request');
+	assert.throws(() => open('a;b;c').parse(js, [0, NaN]), (e: Any) => e.code === 'invalid_request');
 	const wide = 'x;'.repeat(200000);
 	assert.equal(program(wide).body.length, 200000);
 	assert.equal(program('y;').body.length, 1);
@@ -335,7 +335,7 @@ const { open, scopeOf, referenceOf, parentOf } = untyped(m);
 	const options: Options = {};
 	const source = open('x}', options);
 	options.locations = true;
-	assert.equal('loc' in source.parse(Entry.expression, 0).node, false, name);
+	assert.equal('loc' in source.parse(js.expression, 0).node, false, name);
 }
 
 // unfinished input under recovery is an answer, never a panic; a strict error is a SyntaxError
@@ -344,6 +344,7 @@ const { open, scopeOf, referenceOf, parentOf } = untyped(m);
 		assert.equal(open(text, { errorRecovery: true, comments: true, scopes: true }).parse(svelte).node.type, 'Root', `${name} ${text}`);
 	}
 	assert.throws(() => open('<a @x="@"/>').parse(vue), (e: Any) => e instanceof SyntaxError, `${name}`);
+	assert.throws(() => open('<a/>').parse(vue, 0), TypeError, `${name}`);
 	const handler: Any = open('<button @click="let x = 1"/>', { errorRecovery: true }).parse(vue);
 	assert.equal(handler.node.children[0].props[0].handler.type, 'Program', name);
 	assert.deepEqual(handler.errors, [], name);
@@ -593,6 +594,8 @@ function types(source: api.Source, definition: typeof svelte) {
 	const doc = source.parse(definition);
 	expect<Equal<typeof doc.node, Infer<Svelte>>>();
 	expect<Equal<ReturnType<typeof source.parse<Infer<Svelte>>>['node'], Infer<Svelte>>>();
+	// @ts-expect-error only a piece ends at the host's tokens
+	js.until('as');
 	// @ts-expect-error a grammar reads the whole source
 	source.parse(definition, 1);
 }

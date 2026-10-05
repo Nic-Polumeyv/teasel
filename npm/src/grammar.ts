@@ -1,5 +1,5 @@
 import type { Expression, Identifier, Pattern, Program, SourceLocation, Statement, VariableDeclaration } from 'estree';
-import type { Comment, HostNode } from './types.ts';
+import type { Comment, HostNode, Language } from './types.ts';
 import { wire as encode } from './wire.ts';
 
 declare const out: unique symbol;
@@ -288,12 +288,7 @@ export interface Definition {
 	readonly expression?: Node<string, readonly [Record<Source<Expression, 'form'>>]>;
 }
 
-declare const root: unique symbol;
-/** What a parse by the grammar answers with, as a type. */
-export interface Answers<T> {
-	readonly [root]?: T;
-}
-export interface Grammar<D extends Definition = Definition> extends Answers<NodeOf<D['document'], D>> {
+export interface Grammar<D extends Definition = Definition> extends Language<NodeOf<D['document'], D>> {
 	readonly host: string;
 	readonly definition: D;
 	/** What the engine reads: the definition on its wire, written once when the grammar was made. */
