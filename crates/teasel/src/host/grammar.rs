@@ -978,8 +978,8 @@ pub struct Body {
 	/// The field is left out of blocks that never opened this body; otherwise it is null there.
 	pub omit: bool,
 	/// A branch that nests a new block of the same kind into the field, `{:else if}`: the field
-	/// of the nested block that its own body fills.
-	pub chain: Option<&'static str>,
+	/// of the nested block that its own body fills, and the flag set on it.
+	pub chain: Option<(&'static str, &'static str)>,
 	pub declares: Vec<Declare>,
 }
 
@@ -1102,8 +1102,8 @@ pub struct BlockRule {
 	pub ty: &'static str,
 	pub open: Form,
 	pub branches: Vec<BranchRule>,
-	/// The boolean field that says the block was opened by a chained branch.
-	pub chain_flag: Option<&'static str>,
+	/// The boolean fields of the branches that reopen the block, each true when that branch did.
+	pub chain_flags: Vec<&'static str>,
 
 	/// Every entry the block's forms can read, and every body they can open.
 	pub entries: Vec<(&'static str, bool)>,
@@ -1123,6 +1123,16 @@ pub struct TagRule {
 	pub form: Form,
 	/// The tag stands among an element's attributes rather than in content.
 	pub attribute: bool,
+}
+
+impl TagRule {
+	/// The one field of a tag that reads one thing.
+	pub fn field(&self) -> &'static str {
+		match self.form.items.as_slice() {
+			[Item::Entry { field, .. }] => field,
+			_ => unreachable!("checked when the grammar was read"),
+		}
+	}
 }
 
 /// The characters after the opening delimiter that make a tag a block, a branch, a close or a
@@ -1486,7 +1496,7 @@ enum At {
 	Directive,
 }
 
-fn entry(read: &str) -> Result<Entry, String> {
+fn entry_of(read: &str) -> Result<Entry, String> {
 	Ok(match read {
 		"expression" => Entry::Expression,
 		"pattern" => Entry::Pattern,
@@ -1688,7 +1698,7 @@ fn sequence(
 					}
 					out.push(Item::Entry {
 						field,
-						entry: entry(source.read)?,
+						entry: entry_of(source.read)?,
 						omit: source.optional,
 						stops: Stops::default(),
 					});
@@ -1886,7 +1896,7 @@ fn directive(name: Match, rule: &definition::Directive) -> Result<DirectiveRule,
 
 fn block(name: &'static str, rule: &definition::Block) -> Result<BlockRule, String> {
 	let ty = rule.node.r#type;
-	let mut chain_flag = None;
+	let mut chain_flags = Vec::new();
 	let mut branches = Vec::new();
 	for (words, branch) in &rule.branches.0 {
 		if words.is_empty() {
@@ -1895,10 +1905,9 @@ fn block(name: &'static str, rule: &definition::Block) -> Result<BlockRule, Stri
 		let form = match branch {
 			Branch::Form(items) => form(ty, items, At::Block, &mut Vec::new())?,
 			Branch::Reopen(r) => {
-				if chain_flag.is_some_and(|flag| flag != r.flag) {
-					return Err(format!("{ty}: every branch that reopens the block sets the one flag"));
+				if !chain_flags.contains(&r.flag) {
+					chain_flags.push(r.flag);
 				}
-				chain_flag = Some(r.flag);
 				let mut head = form(ty, &rule.node.items, At::Block, &mut Vec::new())?;
 				let own = head
 					.body
@@ -1907,7 +1916,7 @@ fn block(name: &'static str, rule: &definition::Block) -> Result<BlockRule, Stri
 				head.body = Some(Body {
 					field: r.reopen,
 					omit: false,
-					chain: Some(own.field),
+					chain: Some((own.field, r.flag)),
 					declares: own.declares,
 				});
 				head
@@ -1937,7 +1946,7 @@ fn block(name: &'static str, rule: &definition::Block) -> Result<BlockRule, Stri
 		ty,
 		open,
 		branches,
-		chain_flag,
+		chain_flags,
 		entries: Vec::new(),
 		bodies: Vec::new(),
 	})
@@ -1950,6 +1959,15 @@ fn tag(name: &'static str, node: &definition::Node, attribute: bool) -> Result<T
 		form: form(node.r#type, &node.items, At::Tag, &mut Vec::new())?,
 		attribute,
 	})
+}
+
+/// The node of a tag that reads one thing: the declaration's statement, the expression's expression.
+fn one(node: &definition::Node, read: &str) -> Result<TagRule, String> {
+	let rule = tag("", node, false)?;
+	match rule.form.items.as_slice() {
+		[Item::Entry { entry, .. }] if *entry == entry_of(read)? => Ok(rule),
+		_ => Err(format!("{} holds one field, its {read}", node.r#type)),
+	}
 }
 
 fn lower(host: Host) -> Result<Grammar, String> {
@@ -2130,14 +2148,15 @@ fn lower(host: Host) -> Result<Grammar, String> {
 		spread: d.spread,
 		blocks,
 		tags,
-		declaration: d.declaration.as_ref().map(|node| tag("", node, false)).transpose()?,
-		expression: d.expression.as_ref().map(|node| tag("", node, false)).transpose()?,
+		declaration: d.declaration.as_ref().map(|node| one(node, "statement")).transpose()?,
+		expression: d.expression.as_ref().map(|node| one(node, "expression")).transpose()?,
 	})
 }
 
 impl Form {
-	fn finish(&mut self) -> Result<(), String> {
-		resolve(&mut self.items, &[]);
+	/// `follow` is what ends the form: the close delimiter, nothing for an attribute value.
+	fn finish(&mut self, follow: &[&'static str]) -> Result<(), String> {
+		resolve(&mut self.items, follow);
 		let mut entries = Vec::new();
 		collect_entries(&self.items, &mut entries);
 		let mut bodies = Vec::new();
@@ -2227,9 +2246,10 @@ impl Grammar {
 		if self.name.is_empty() {
 			return Err("a grammar names its host".into());
 		}
+		let close = &[self.delimiters.1];
 		for rule in &mut self.directives {
 			if let DirectiveValue::Form(form) = &mut rule.value {
-				form.finish()?;
+				form.finish(&[])?;
 			}
 		}
 		for rule in self
@@ -2238,15 +2258,15 @@ impl Grammar {
 			.chain(&mut self.declaration)
 			.chain(&mut self.expression)
 		{
-			rule.form.finish()?;
+			rule.form.finish(close)?;
 		}
 		for block in &mut self.blocks {
-			block.open.finish()?;
+			block.open.finish(close)?;
 			let mut entries = block.open.entries.clone();
 			let mut bodies = Vec::new();
 			collect_bodies(&block.open, &mut bodies);
 			for branch in &mut block.branches {
-				branch.form.finish()?;
+				branch.form.finish(close)?;
 				entries.extend_from_slice(&branch.form.entries);
 				collect_bodies(&branch.form, &mut bodies);
 			}

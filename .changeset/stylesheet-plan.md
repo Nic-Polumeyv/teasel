@@ -2,4 +2,4 @@
 "@teasel/parser": patch
 ---
 
-`Plan.stylesheet` reads the whole source as a CSS stylesheet.
+`source.parse(css)` reads the whole source as a CSS stylesheet

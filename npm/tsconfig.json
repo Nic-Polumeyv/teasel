@@ -2,15 +2,14 @@
 	"compilerOptions": {
 		"strict": true,
 		"target": "es2022",
-		"module": "esnext",
-		"moduleResolution": "bundler",
+		"module": "nodenext",
 		"lib": ["es2022", "dom", "esnext.disposable"],
 		"noEmit": true,
 		"skipLibCheck": true,
 		"types": ["node"],
-		"allowImportingTsExtensions": true,
-		"erasableSyntaxOnly": true
+		"erasableSyntaxOnly": true,
+		"verbatimModuleSyntax": true,
+		"rewriteRelativeImportExtensions": true
 	},
-	"include": ["src/**/*.ts", "scripts/**/*.ts"],
-	"exclude": ["dist"]
+	"include": ["src/**/*.ts", "scripts/**/*.ts"]
 }

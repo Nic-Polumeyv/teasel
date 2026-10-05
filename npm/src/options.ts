@@ -69,7 +69,3 @@ export function flags(options: Options = {}): number {
 	}
 	return on;
 }
-
-// `Entry` of parser/mod.rs by index
-export const ENTRY = { program: 0, expression: 1, pattern: 2, params: 3, statement: 4, typeParameters: 5, stylesheet: 6 } as const;
-export type Entry = keyof typeof ENTRY;

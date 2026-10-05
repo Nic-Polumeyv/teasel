@@ -36,15 +36,13 @@ export const grammar = g.grammar('mini', {
 });
 ```
 
-A `Plan` made from the grammar reads documents of it. Make it once, at module level: the engine reads the grammar the first time the plan is used and keeps it.
+`parse` takes the grammar and reads a document of it. The engine reads a grammar on its first parse and keeps it while the grammar lives, so make it once, at module level, as `mini.js` does.
 
 ```js document.js
-import { Source, Plan } from '@teasel/parser';
+import { Source } from '@teasel/parser';
 import { grammar } from './mini.js';
 
-const mini = new Plan(grammar);
-
-const { node } = new Source('<p>{{ greeting }}</p>').parse(mini);
+const { node } = new Source('<p>{{ greeting }}</p>').parse(grammar);
 node.type;                                   // 'Root'
 node.children.nodes[0].type;                 // 'Element', name 'p'
 node.children.nodes[0].children.nodes[0];
@@ -53,7 +51,7 @@ node.children.nodes[0].children.nodes[0];
 
 In TypeScript, and in JavaScript checked with JSDoc, the tree is typed from the definition: `node.children.nodes[0]` is an `Element`, an `IfBlock` or one of the others the grammar names, and `EachBlock`'s `item` is a `Pattern`. What the grammar cannot express is a type error: a tag with a body, a field named `type`, `bind` on a source that reads an expression.
 
-A plan made from a grammar reads the whole source: it takes no position, and `until` does not apply to it.
+A grammar reads the whole source, so `parse` takes no position with one.
 
 ## The tree
 

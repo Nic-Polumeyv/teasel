@@ -6,7 +6,7 @@ This example reads a Svelte component: a `<script>` block, then a template with 
 
 At the end, every name the template uses is matched to the declaration it refers to, in the script or in an `each` block. That match is what a compiler, a linter or a rename tool for the format is built on.
 
-This page uses three things that [Embedded JavaScript](/embedded-javascript) explains: parsing at an offset, [plans](/embedded-javascript#plans), and [`until`](/embedded-javascript#until).
+This page uses three things that [Embedded JavaScript](/embedded-javascript) explains: parsing at an offset, [pieces](/embedded-javascript#pieces), and [`until`](/embedded-javascript#until).
 
 The component:
 
@@ -36,7 +36,7 @@ The component:
 ## 1. One Source for the whole file
 
 ```js read-component.js
-import { Source, Plan, scopeOf } from '@teasel/parser';
+import { Source, js, scopeOf } from '@teasel/parser';
 
 const source = new Source(text, { sourceType: 'module', scopes: true });
 ```
@@ -55,15 +55,15 @@ Find where the script's text starts and ends, then parse that range as a program
 ```js read-component.js
 const open = text.indexOf('<script>') + '<script>'.length;
 const close = text.indexOf('</script>');
-const script = source.parse(Plan.program, [open, close]);
+const script = source.parse(js, [open, close]);
 
 const topLevel = script.bindings.filter(
 	(binding) => binding.scope === scopeOf(script.node),
 );
 ```
 ```notes
-Plan.program :: The plan says what to read. `Plan.program` reads statements, as a file would have them. The other plans are `Plan.expression`, `Plan.statement`, `Plan.pattern`, `Plan.params`, `Plan.typeParameters` and `Plan.stylesheet`: see [Plans](/embedded-javascript#plans).
-[open, close] :: A pair of offsets reads only the text between them. A single number, used below, starts there and reads as far as the plan goes.
+js :: The first argument says what to read. `js` reads statements, as a file would have them. Its pieces are `js.expression`, `js.statement`, `js.pattern`, `js.params` and `js.typeParameters`: see [Pieces](/embedded-javascript#pieces).
+[open, close] :: A pair of offsets reads only the text between them. A single number, used below, starts there and reads as far as the piece goes.
 script.bindings :: Every declaration in the script, one entry each: `{ name, kind, scope, node, declaration }`. [What a binding knows](/reference/parser#binding).
 scopeOf(script.node) :: `scopeOf` gives the scope a node opens. `script.node` is the `Program`, which opens the script's outermost scope, so a binding whose `scope` is that one was declared at the top level. See [referenceOf, scopeOf, parentOf](/scopes#referenceof-scopeof-parentof).
 ```
@@ -86,7 +86,7 @@ const inScope = [topLevel];
 const resolved = [];
 
 function expression(from, ...stops) {
-	const answer = source.parse(Plan.expression.until(...stops), from);
+	const answer = source.parse(js.expression.until(...stops), from);
 	for (const reference of answer.references) {
 		if (reference.binding !== null) continue;
 		const name = reference.node.name;
@@ -98,7 +98,7 @@ function expression(from, ...stops) {
 ```
 ```notes
 inScope :: The declarations a template expression can see right now, as a stack of lists. It starts with the script's top-level bindings. Step 4 pushes what an `each` block declares, and pops it at `{/each}`.
-Plan.expression.until(...stops) :: Reads one expression and ends it where one of `stops` follows, outside any bracket the expression opened. With `'}'` as the stop, `{i + 1}` ends at its brace, while `{ {a: 1}.a }` still reads whole. See [until](/embedded-javascript#until).
+js.expression.until(...stops) :: Reads one expression and ends it where one of `stops` follows, outside any bracket the expression opened. With `'}'` as the stop, `{i + 1}` ends at its brace, while `{ {a: 1}.a }` still reads whole. See [until](/embedded-javascript#until).
 answer.references :: Every name the expression uses, as `{ node, binding, read, write, … }`. See [References and bindings](/scopes#references-and-bindings).
 reference.binding !== null :: The parser resolved this name itself, to something the expression declared, like the parameter in `(x) => x + 1`. Those need nothing from you. See [Names in a piece](/embedded-javascript#names-in-a-piece).
 findLast :: The innermost declaration wins, as in JavaScript: an `each` block's `item` hides a top-level `item`.
@@ -110,12 +110,12 @@ The parser reads this expression alone. It has not seen the script, so it cannot
 
 `{#each shown as item, i (item.id)}` has up to four pieces of JavaScript in it, and each one ends at a different token:
 
-| piece | what it is | plan | ends at |
+| piece | what it is | read as | ends at |
 | --- | --- | --- | --- |
-| `shown` | the list | `Plan.expression` | `as` |
-| `item` | declares the item | `Plan.pattern` | `,` or `(` or `}` |
-| `i` | declares the index, optional | `Plan.pattern` | `(` or `}` |
-| `item.id` | the key, optional | `Plan.expression` | `)` |
+| `shown` | the list | `js.expression` | `as` |
+| `item` | declares the item | `js.pattern` | `,` or `(` or `}` |
+| `i` | declares the index, optional | `js.pattern` | `(` or `}` |
+| `item.id` | the key, optional | `js.expression` | `)` |
 
 Every answer has `end`, the offset where that parse stopped. That is where the next piece starts.
 
@@ -128,11 +128,11 @@ const skip = (i) => {
 function each(from) {
 	const list = expression(from, 'as');
 	const afterAs = skip(skip(list.end) + 'as'.length);
-	const item = source.parse(Plan.pattern.until(',', '(', '}'), afterAs);
+	const item = source.parse(js.pattern.until(',', '(', '}'), afterAs);
 	const declared = [...item.bindings];
 	let next = skip(item.end);
 	if (text[next] === ',') {
-		const index = source.parse(Plan.pattern.until('(', '}'), skip(next + 1));
+		const index = source.parse(js.pattern.until('(', '}'), skip(next + 1));
 		declared.push(...index.bindings);
 		next = skip(index.end);
 	}
@@ -144,7 +144,7 @@ function each(from) {
 ```notes
 skip :: A helper of this example, not part of the package. Given an offset, it returns the offset of the next character that is not a space or a tab.
 list.end :: Where the list expression stopped: just after `shown`, before the `as`. `end` is on every answer, see [What parse returns](/what-parse-returns).
-Plan.pattern :: Reads what can stand on the left of `=` in a declaration: a name, or a destructuring like `{ id, name }` or `[first, ...rest]`.
+js.pattern :: Reads what can stand on the left of `=` in a declaration: a name, or a destructuring like `{ id, name }` or `[first, ...rest]`.
 item.bindings :: What the pattern declares, one binding per name, with `kind: 'pattern'`. For `{ id, name }` that is two bindings.
 inScope.push(declared) :: From here until `{/each}`, template expressions can see `item` and `i`.
 expression(next + 1, ')') :: The key is an ordinary expression that ends at the closing parenthesis. It is read after the push, because the key may use `item`.
