@@ -125,7 +125,8 @@ impl<'a, E: Extension> Walker<'a, E> {
 	pub(super) fn style_sheet(&mut self, start: u32, name: &str, attributes: Vec<NodeId>) -> Result<NodeId> {
 		let closer = format!("</{name}");
 		let content_start = self.at;
-		let (children, comments) = self.sheet(&closer)?;
+		let (children, comments, read) = self.sheet(&closer);
+		read?;
 		let content_end = self.at;
 		self.expect(&closer)?;
 		self.space();
@@ -160,7 +161,11 @@ impl<'a, E: Extension> Walker<'a, E> {
 
 	/// The whole source as a stylesheet.
 	pub(super) fn stylesheet(&mut self) -> Result<NodeId> {
-		let (children, comments) = self.sheet("")?;
+		let (children, comments, read) = self.sheet("");
+		if let Err(error) = read {
+			self.report(error)?;
+			self.at = self.len();
+		}
 		Ok(self.host(
 			"StyleSheet",
 			0,
@@ -174,21 +179,13 @@ impl<'a, E: Extension> Walker<'a, E> {
 		))
 	}
 
-	/// The rules up to `closer` or the end, and the comments among them, as lists.
-	fn sheet(&mut self, closer: &str) -> Result<(List, List)> {
+	/// The rules up to `closer` or the end, and the comments among them, as lists, with the error
+	/// that ended the read early.
+	fn sheet(&mut self, closer: &str) -> (List, List, Result<()>) {
+		self.nesting = 0;
 		let mut comments = Vec::new();
 		let mut children = Vec::new();
-		loop {
-			self.css_space(&mut comments, true)?;
-			if self.at >= self.len() || (!closer.is_empty() && self.matches(closer)) {
-				break;
-			}
-			children.push(if self.matches("@") {
-				self.at_rule(&mut comments)?
-			} else {
-				self.rule(&mut comments)?
-			});
-		}
+		let read = self.rules(closer, &mut children, &mut comments);
 		let comments: Vec<NodeId> = comments
 			.into_iter()
 			.map(|comment| {
@@ -206,7 +203,21 @@ impl<'a, E: Extension> Walker<'a, E> {
 				}
 			})
 			.collect();
-		Ok((self.list(&children), self.list(&comments)))
+		(self.list(&children), self.list(&comments), read)
+	}
+
+	fn rules(&mut self, closer: &str, children: &mut Vec<NodeId>, comments: &mut Vec<CssComment>) -> Result<()> {
+		loop {
+			self.css_space(comments, true)?;
+			if self.at >= self.len() || (!closer.is_empty() && self.matches(closer)) {
+				return Ok(());
+			}
+			children.push(if self.matches("@") {
+				self.at_rule(comments)?
+			} else {
+				self.rule(comments)?
+			});
+		}
 	}
 
 	/// Whitespace, comments and HTML comment markers; `capture` keeps the comments.

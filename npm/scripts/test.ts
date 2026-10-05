@@ -261,6 +261,9 @@ const { open, scopeOf, referenceOf, parentOf } = untyped(m);
 	assert.deepEqual(JSON.parse(JSON.stringify(sheet.node.comments)), [{ type: 'CSSComment', value: ' top ', start: 0, end: 9 }]);
 	assert.throws(() => open('div { }').parse(css, 1), TypeError);
 	assert.throws(() => open('div { color: }').parse(css), (e: Any) => e.code === 'expected' && e.pos === 6);
+	const half = open('a { b: c } div { color: } p { q: r }', { errorRecovery: true }).parse(css);
+	assert.deepEqual(half.errors.map((e: Any) => [e.code, e.pos]), [['expected', 17]]);
+	assert.deepEqual(half.node.children.map((rule: Any) => rule.end), [10]);
 	assert.equal(program('"﻿a"; "bc"; zz').body[2].expression.name, 'zz');
 	source[Symbol.dispose]();
 	assert.throws(() => source.parse(js.expression, 1), TypeError);
@@ -428,6 +431,8 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 		assert.throws(() => open('<a>'.repeat(40_000) + '</a>'.repeat(40_000), { scopes }).parse(svelte), deep);
 		assert.equal(open('x', { scopes }).parse().node.body.length, 1);
 	}
+	const sheets = `<style>${'a {'.repeat(501)}</style><style>${'a {'.repeat(501)}${'}'.repeat(501)}</style>`;
+	assert.deepEqual(open(sheets, { errorRecovery: true }).parse(svelte).errors.map((e: Any) => e.code), ['expected', 'unexpected_close']);
 }
 
 // the tests read the source; the published build must answer the same once its specifiers are rewritten

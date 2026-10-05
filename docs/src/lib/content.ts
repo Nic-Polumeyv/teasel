@@ -48,7 +48,7 @@ function sheet(name: string) {
 const diagrams = Object.fromEntries(Object.entries(import.meta.glob('/content/**/*.svelte', { import: 'default', eager: true })).map(([path, diagram]) => [path.slice(path.lastIndexOf('/') + 1), { path, diagram: diagram as Component<{ label: string; files?: Record<string, string> }> }]));
 
 // names the package exports, and where the reference describes each
-const described: Record<string, string> = { Source: 'source', js: 'js', Piece: 'piece', Language: 'language', Options: 'options', ParseError: 'parseerror', Parsed: 'parsed', Scope: 'scope', Binding: 'binding', Reference: 'reference', Root: 'root', HostNode: 'hostnode', Code: 'code', referenceOf: 'referenceof', scopeOf: 'scopeof', parentOf: 'parentof', until: 'piece' };
+const described: Record<string, string> = { Source: 'source', js: 'js', css: 'css', Piece: 'piece', Language: 'language', Options: 'options', ParseError: 'parseerror', Parsed: 'parsed', Scope: 'scope', Binding: 'binding', Reference: 'reference', Root: 'root', HostNode: 'hostnode', Code: 'code', referenceOf: 'referenceof', scopeOf: 'scopeof', parentOf: 'parentof', until: 'piece' };
 
 const noted = 'cursor-help rounded-xs underline decoration-white/40 decoration-dotted underline-offset-4 outline-none hover:bg-white/10 focus-visible:bg-white/10';
 
