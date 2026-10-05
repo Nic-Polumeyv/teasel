@@ -1096,53 +1096,55 @@ pub struct DirectiveRule {
 	pub declares: Option<Vec<&'static str>>,
 }
 
+/// Where a construct may stand.
+pub use definition::Place;
+
+/// A marker and what follows it: a construct's open, one of its branches, or its close.
 #[derive(Clone, Debug)]
-pub struct BlockRule {
+pub struct Piece {
+	pub marker: Vec<&'static str>,
+	/// Whitespace must follow the marker.
+	pub space: bool,
+	pub form: Form,
+	/// The marker and the form's last word, as messages name the piece: `{:else}`.
+	pub display: &'static str,
+	/// The form's last word before any body: where the piece's tag ends.
+	pub end: &'static str,
+}
+
+/// A tag, or with a close a block.
+#[derive(Clone, Debug)]
+pub struct Construct {
 	pub name: &'static str,
 	pub ty: &'static str,
-	pub open: Form,
-	pub branches: Vec<BranchRule>,
+	pub places: Vec<Place>,
+	pub open: Piece,
+	pub branches: Vec<Piece>,
+	pub close: Option<Piece>,
 	/// The boolean fields of the branches that reopen the block, each true when that branch did.
 	pub chain_flags: Vec<&'static str>,
 
-	/// Every entry the block's forms can read, and every body they can open.
+	/// Every entry the construct's forms can read, and every body they can open.
 	pub entries: Vec<(&'static str, bool)>,
 	pub bodies: Vec<(&'static str, bool)>,
 }
 
-#[derive(Clone, Debug)]
-pub struct BranchRule {
-	pub words: Vec<&'static str>,
-	pub form: Form,
-}
+impl Construct {
+	pub fn is_block(&self) -> bool {
+		self.close.is_some()
+	}
 
-#[derive(Clone, Debug)]
-pub struct TagRule {
-	pub name: &'static str,
-	pub ty: &'static str,
-	pub form: Form,
-	/// The tag stands among an element's attributes rather than in content.
-	pub attribute: bool,
-}
+	pub fn stands(&self, place: Place) -> bool {
+		self.places.contains(&place)
+	}
 
-impl TagRule {
-	/// The one field of a tag that reads one thing.
-	pub fn field(&self) -> &'static str {
-		match self.form.items.as_slice() {
-			[Item::Entry { field, .. }] => field,
-			_ => unreachable!("checked when the grammar was read"),
+	/// The one field of a tag that reads one thing, its entry.
+	pub fn single(&self) -> Option<(&'static str, Entry)> {
+		match self.open.form.items.as_slice() {
+			[Item::Entry { field, entry, .. }, Item::Literal(_)] if self.close.is_none() => Some((field, *entry)),
+			_ => None,
 		}
 	}
-}
-
-/// The characters after the opening delimiter that make a tag a block, a branch, a close or a
-/// special tag: `{#if}`, `{:else}`, `{/if}`, `{@html}`.
-#[derive(Clone, Debug)]
-pub struct Sigils {
-	pub open: &'static str,
-	pub branch: &'static str,
-	pub close: &'static str,
-	pub tag: &'static str,
 }
 
 /// What a field of the document's root holds.
@@ -1206,13 +1208,8 @@ pub struct CommentRule {
 pub struct Grammar {
 	pub name: &'static str,
 	pub document: DocumentRule,
-	/// What opens and closes an expression in text, `{` and `}`.
-	pub delimiters: (&'static str, &'static str),
-	/// Attribute values hold expressions between the delimiters, as text does.
-	pub attribute_expressions: bool,
-	/// `{name}` among the attributes is `name={name}`.
-	pub attribute_shorthand: bool,
-	pub sigils: Option<Sigils>,
+	/// `{name}` among the attributes is `name={name}`: the marker and the closing word around it.
+	pub shorthand: Option<(&'static str, &'static str)>,
 	/// An element the browser would close when another opens is closed there.
 	pub autoclose: bool,
 	/// Whitespace at the end of the source is not part of the document.
@@ -1233,11 +1230,9 @@ pub struct Grammar {
 	pub directive_syntax: Option<DirectiveSyntax>,
 	pub shorthands: Vec<Shorthand>,
 	pub directives: Vec<DirectiveRule>,
-	pub spread: Option<&'static str>,
-	pub blocks: Vec<BlockRule>,
-	pub tags: Vec<TagRule>,
-	pub declaration: Option<TagRule>,
-	pub expression: Option<TagRule>,
+	pub constructs: Vec<Construct>,
+	/// The first bytes of every marker, where a construct may start.
+	pub starts: [bool; 256],
 }
 
 /// A component name: capitalized, or a dotted path of identifiers.
@@ -1305,50 +1300,13 @@ pub mod definition {
 	wire! {
 		/// A node type and the form its fields come from.
 		pub struct Node {
-			pub r#type: &'static str,
-			pub items: Vec<Item>,
-		}
-	}
-
-	wire! {
-		/// An `else if`: the block again, nested into this field, with this flag set on it.
-		pub struct Reopen {
-			pub reopen: &'static str,
-			pub flag: &'static str,
-		}
-	}
-
-	wire! {
-		pub enum Branch {
-			Form(Vec<Item>) = "Array.isArray(v)",
-			Reopen(Reopen) = "",
-		}
-	}
-
-	wire! {
-		pub struct Block {
-			pub node: Node,
-			pub branches: Record<Branch>,
-		}
-	}
-
-	wire! {
-		pub copy enum Among {
-			Content,
-			Attributes,
-		}
-	}
-
-	wire! {
-		pub struct Tag {
-			pub node: Node,
-			pub among: Among,
+			pub node: &'static str,
+			pub form: Option<Vec<Item>>,
 		}
 	}
 
 	wire! {
 		pub copy enum Uniqueness {
-			No,
 			Kind,
 			Attributes,
 		}
@@ -1356,8 +1314,9 @@ pub mod definition {
 
 	wire! {
 		pub struct Directive {
-			pub node: Node,
-			pub unique: Uniqueness,
+			pub node: &'static str,
+			pub form: Option<Vec<Item>>,
+			pub unique: Option<Uniqueness>,
 		}
 	}
 
@@ -1370,9 +1329,10 @@ pub mod definition {
 
 	wire! {
 		pub struct Element {
-			pub node: Node,
-			pub root: bool,
-			pub once: bool,
+			pub node: &'static str,
+			pub form: Option<Vec<Item>>,
+			pub root: Option<bool>,
+			pub once: Option<bool>,
 			pub inside: Option<&'static str>,
 			pub outside: Option<&'static str>,
 			pub content: Option<Content>,
@@ -1417,20 +1377,49 @@ pub mod definition {
 	}
 
 	wire! {
-		pub struct Sigils {
-			pub open: &'static str,
-			pub branch: &'static str,
-			pub close: &'static str,
-			pub tag: &'static str,
-			pub blocks: Option<Record<Block>>,
-			pub tags: Option<Record<Tag>>,
+		/// Where a construct may stand: in content, in an attribute value, among attributes.
+		pub copy enum Place {
+			Content,
+			Value,
+			Attributes,
+		}
+	}
+
+	wire! {
+		/// What a construct opens or closes with: its marker, then what its form reads.
+		pub struct Piece {
+			pub marker: Vec<&'static str>,
+			/// Whitespace must follow the marker.
+			pub space: Option<bool>,
+			pub form: Vec<Item>,
+		}
+	}
+
+	wire! {
+		/// A branch of a block; `reopen` nests the block again into that field, with that flag true on it.
+		pub struct Branch {
+			pub marker: Vec<&'static str>,
+			pub space: Option<bool>,
+			pub form: Vec<Item>,
+			pub reopen: Option<(&'static str, &'static str)>,
+		}
+	}
+
+	wire! {
+		/// A tag, or with `close` a block.
+		pub struct Construct {
+			pub node: &'static str,
+			pub r#in: Option<Vec<Place>>,
+			pub open: Piece,
+			pub branches: Option<Vec<Branch>>,
+			pub close: Option<Piece>,
 		}
 	}
 
 	wire! {
 		pub struct Attributes {
-			pub expressions: Option<bool>,
-			pub shorthand: Option<bool>,
+			/// `{name}` among the attributes is `name={name}`: the marker and the closing word around the name.
+			pub shorthand: Option<(&'static str, &'static str)>,
 		}
 	}
 
@@ -1441,7 +1430,6 @@ pub mod definition {
 			pub text: Node,
 			pub comment: Node,
 			pub fragment: Option<Node>,
-			pub delimiters: (&'static str, &'static str),
 			pub attributes: Option<Attributes>,
 			pub autoclose: Option<bool>,
 			pub trim: Option<bool>,
@@ -1451,10 +1439,7 @@ pub mod definition {
 			pub script: Option<Script>,
 			pub style: Option<&'static str>,
 			pub directives: Option<Directives>,
-			pub spread: Option<&'static str>,
-			pub sigils: Option<Sigils>,
-			pub declaration: Option<Node>,
-			pub expression: Option<Node>,
+			pub constructs: Option<Record<Construct>>,
 		}
 	}
 
@@ -1487,7 +1472,7 @@ pub mod definition {
 
 // ── the definition lowered into the walker's rules
 
-use definition::{Bind, Branch, Host, Literal, Source};
+use definition::{Bind, Host, Literal, Source};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum At {
@@ -1773,7 +1758,7 @@ fn scoped(items: &[definition::Item], reads: &mut Vec<&'static str>) -> Result<V
 }
 
 fn element(name: Match, rule: &definition::Element) -> Result<ElementRule, String> {
-	let this = match rule.node.items.as_slice() {
+	let this = match rule.form.as_deref().unwrap_or_default() {
 		[] => None,
 		[definition::Item::Fields(Record(fields))]
 			if fields.len() == 1
@@ -1785,16 +1770,16 @@ fn element(name: Match, rule: &definition::Element) -> Result<ElementRule, Strin
 		_ => {
 			return Err(format!(
 				"{} reads one `this` field at most, and nothing else",
-				rule.node.r#type
+				rule.node
 			));
 		}
 	};
 	Ok(ElementRule {
 		name,
-		ty: rule.node.r#type,
+		ty: rule.node,
 		this,
-		root: rule.root,
-		once: rule.once,
+		root: rule.root == Some(true),
+		once: rule.once == Some(true),
 		inside: rule.inside,
 		outside: rule.outside,
 		raw: rule.content == Some(definition::Content::Raw),
@@ -1803,28 +1788,27 @@ fn element(name: Match, rule: &definition::Element) -> Result<ElementRule, Strin
 }
 
 fn directive(name: Match, rule: &definition::Directive) -> Result<DirectiveRule, String> {
-	let grouped = rule.node.items.iter().any(|item| match item {
+	let items = rule.form.as_deref().unwrap_or_default();
+	let ty = rule.node;
+	let grouped = items.iter().any(|item| match item {
 		definition::Item::Opt(inner) | definition::Item::Scope(inner) => has_literal(inner),
 		definition::Item::OneOf(list) => list.iter().any(|inner| has_literal(inner)),
 		_ => false,
 	});
 	if grouped {
 		return Err(format!(
-			"{}: a flag stands outside groups, since every node of it has one",
-			rule.node.r#type
+			"{ty}: a flag stands outside groups, since every node of it has one"
 		));
 	}
 	let mut flags = Vec::new();
-	for (field, s) in sources(&rule.node.items).iter().filter(|(_, s)| s.from == "literal") {
+	for (field, s) in sources(items).iter().filter(|(_, s)| s.from == "literal") {
 		match s.literal {
 			Some(Literal::True) => flags.push((*field, true)),
 			Some(Literal::False) => flags.push((*field, false)),
-			_ => return Err(format!("{}: {field} is a flag: true or false", rule.node.r#type)),
+			_ => return Err(format!("{ty}: {field} is a flag: true or false")),
 		}
 	}
-	let rest: Vec<&definition::Item> = rule
-		.node
-		.items
+	let rest: Vec<&definition::Item> = items
 		.iter()
 		.filter(|item| match item {
 			definition::Item::Fields(record) => record.0.iter().any(|(_, s)| s.from != "literal"),
@@ -1832,11 +1816,10 @@ fn directive(name: Match, rule: &definition::Directive) -> Result<DirectiveRule,
 		})
 		.collect();
 	let unique = match rule.unique {
-		definition::Uniqueness::No => Unique::No,
-		definition::Uniqueness::Kind => Unique::Kind,
-		definition::Uniqueness::Attributes => Unique::Attribute,
+		None => Unique::No,
+		Some(definition::Uniqueness::Kind) => Unique::Kind,
+		Some(definition::Uniqueness::Attributes) => Unique::Attribute,
 	};
-	let ty = rule.node.r#type;
 	if let [only] = rest.as_slice() {
 		let wrapped = match only {
 			definition::Item::Opt(inner) if inner.len() == 1 => Some(inner.as_slice()),
@@ -1894,45 +1877,105 @@ fn directive(name: Match, rule: &definition::Directive) -> Result<DirectiveRule,
 	})
 }
 
-fn block(name: &'static str, rule: &definition::Block) -> Result<BlockRule, String> {
-	let ty = rule.node.r#type;
+/// The last word a form reads before any body, on its first path.
+fn last_word(items: &[Item]) -> Option<&'static str> {
+	match items.last()? {
+		Item::Literal(word) => Some(word),
+		Item::Group { alternatives, .. } => alternatives.first().and_then(|a| last_word(&a.items)),
+		Item::Entry { .. } => None,
+	}
+}
+
+/// A marker and a word as messages write them: run together, a space where two letters meet.
+fn display(marker: &[&str], end: &str) -> String {
+	let letter = |c: char| c.is_alphanumeric() || c == '_' || c == '$';
+	let mut out = String::new();
+	for part in marker.iter().chain([&end]) {
+		if out.ends_with(letter) && part.starts_with(letter) {
+			out.push(' ');
+		}
+		out.push_str(part);
+	}
+	out
+}
+
+fn piece(
+	ty: &str,
+	marker: &[&'static str],
+	space: Option<bool>,
+	items: &[definition::Item],
+	site: At,
+	bound: &mut Vec<Declare>,
+) -> Result<Piece, String> {
+	if marker.is_empty() || marker.iter().any(|part| part.is_empty()) {
+		return Err(format!("{ty}: a marker needs parts, none of them empty"));
+	}
+	let form = form(ty, items, site, bound)?;
+	let end = last_word(&form.items).ok_or_else(|| format!("{ty}: a marker's form ends its tag with a word"))?;
+	Ok(Piece {
+		display: keep(&display(marker, end)),
+		marker: marker.to_vec(),
+		space: space == Some(true),
+		end,
+		form,
+	})
+}
+
+fn construct(name: &'static str, rule: &definition::Construct) -> Result<Construct, String> {
+	let ty = rule.node;
+	let block = rule.close.is_some();
+	let places = match &rule.r#in {
+		Some(list) if list.is_empty() => return Err(format!("{ty} stands nowhere")),
+		Some(list) => list.clone(),
+		None => vec![Place::Content],
+	};
 	let mut chain_flags = Vec::new();
 	let mut branches = Vec::new();
-	for (words, branch) in &rule.branches.0 {
-		if words.is_empty() {
-			return Err(format!("{ty}: a branch needs words"));
+	for branch in rule.branches.iter().flatten() {
+		if !block {
+			return Err(format!("{ty} has branches, so it closes"));
 		}
-		let form = match branch {
-			Branch::Form(items) => form(ty, items, At::Block, &mut Vec::new())?,
-			Branch::Reopen(r) => {
-				if !chain_flags.contains(&r.flag) {
-					chain_flags.push(r.flag);
-				}
-				let mut head = form(ty, &rule.node.items, At::Block, &mut Vec::new())?;
-				let own = head
-					.body
-					.take()
-					.ok_or_else(|| format!("{ty}: a reopened form ends in its body"))?;
-				head.body = Some(Body {
-					field: r.reopen,
-					omit: false,
-					chain: Some((own.field, r.flag)),
-					declares: own.declares,
-				});
-				head
+		let mut piece = piece(
+			ty,
+			&branch.marker,
+			branch.space,
+			&branch.form,
+			At::Block,
+			&mut Vec::new(),
+		)?;
+		if let Some((field, flag)) = branch.reopen {
+			if !chain_flags.contains(&flag) {
+				chain_flags.push(flag);
 			}
-		};
-		if !closed(&form.items, form.body.as_ref()) {
-			return Err(format!("{ty}: the {words} branch ends in no body"));
+			let own = piece.form.body.take().ok_or_else(|| {
+				format!(
+					"{ty}: the {} branch reopens the block, so it reads that block's body",
+					piece.display
+				)
+			})?;
+			piece.form.body = Some(Body {
+				field,
+				omit: false,
+				chain: Some((own.field, flag)),
+				declares: own.declares,
+			});
 		}
-		branches.push(BranchRule {
-			words: words.split(' ').collect(),
-			form,
-		});
+		if !closed(&piece.form.items, piece.form.body.as_ref()) {
+			return Err(format!("{ty}: the {} branch ends in no body", piece.display));
+		}
+		branches.push(piece);
 	}
 	let mut bound = Vec::new();
-	let open = form(ty, &rule.node.items, At::Block, &mut bound)?;
-	if !closed(&open.items, open.body.as_ref()) {
+	let site = if block { At::Block } else { At::Tag };
+	let open = piece(
+		ty,
+		&rule.open.marker,
+		rule.open.space,
+		&rule.open.form,
+		site,
+		&mut bound,
+	)?;
+	if block && !closed(&open.form.items, open.form.body.as_ref()) {
 		return Err(format!("{ty} ends in no body"));
 	}
 	if let Some(unread) = bound.first() {
@@ -1941,33 +1984,27 @@ fn block(name: &'static str, rule: &definition::Block) -> Result<BlockRule, Stri
 			unread.field
 		));
 	}
-	Ok(BlockRule {
+	let close = match &rule.close {
+		Some(close) => {
+			let piece = piece(ty, &close.marker, close.space, &close.form, At::Tag, &mut Vec::new())?;
+			if !piece.form.items.iter().all(|item| matches!(item, Item::Literal(_))) {
+				return Err(format!("{ty}: a close reads words only"));
+			}
+			Some(piece)
+		}
+		None => None,
+	};
+	Ok(Construct {
 		name,
 		ty,
+		places,
 		open,
 		branches,
+		close,
 		chain_flags,
 		entries: Vec::new(),
 		bodies: Vec::new(),
 	})
-}
-
-fn tag(name: &'static str, node: &definition::Node, attribute: bool) -> Result<TagRule, String> {
-	Ok(TagRule {
-		name,
-		ty: node.r#type,
-		form: form(node.r#type, &node.items, At::Tag, &mut Vec::new())?,
-		attribute,
-	})
-}
-
-/// The node of a tag that reads one thing: the declaration's statement, the expression's expression.
-fn one(node: &definition::Node, read: &str) -> Result<TagRule, String> {
-	let rule = tag("", node, false)?;
-	match rule.form.items.as_slice() {
-		[Item::Entry { entry, .. }] if *entry == entry_of(read)? => Ok(rule),
-		_ => Err(format!("{} holds one field, its {read}", node.r#type)),
-	}
 }
 
 fn lower(host: Host) -> Result<Grammar, String> {
@@ -1975,22 +2012,16 @@ fn lower(host: Host) -> Result<Grammar, String> {
 	let texts = |node: &definition::Node,
 	             reads: &[&str]|
 	 -> Result<(&'static str, &'static str, Option<&'static str>), String> {
-		let record = sources(&node.items);
-		let fields_only = node
-			.items
-			.iter()
-			.all(|item| matches!(item, definition::Item::Fields(_)));
+		let items = node.form.as_deref().unwrap_or_default();
+		let record = sources(items);
+		let fields_only = items.iter().all(|item| matches!(item, definition::Item::Fields(_)));
 		if !fields_only || record.iter().any(|(_, s)| s.from != "text" || !reads.contains(&s.read)) {
-			return Err(format!(
-				"{} holds {} and nothing else",
-				node.r#type,
-				reads.join(" and ")
-			));
+			return Err(format!("{} holds {} and nothing else", node.node, reads.join(" and ")));
 		}
 		let by = |read: &str| record.iter().find(|(_, s)| s.read == read).map(|(field, _)| *field);
 		Ok((
-			node.r#type,
-			by("data").ok_or_else(|| format!("{} needs a data field", node.r#type))?,
+			node.node,
+			by("data").ok_or_else(|| format!("{} needs a data field", node.node))?,
 			by("raw"),
 		))
 	};
@@ -1998,23 +2029,21 @@ fn lower(host: Host) -> Result<Grammar, String> {
 	let (comment_ty, comment_data, _) = texts(&d.comment, &["data"])?;
 	let fragment = match &d.fragment {
 		Some(node) => {
-			let (scope, items) = match node.items.as_slice() {
+			let (scope, items) = match node.form.as_deref().unwrap_or_default() {
 				[definition::Item::Scope(inner)] => (true, inner.as_slice()),
 				items => (false, items),
 			};
 			let ([(field, source)], [_]) = (&sources(items)[..], items) else {
-				return Err(format!("{} holds one field, its nodes", node.r#type));
+				return Err(format!("{} holds one field, its nodes", node.node));
 			};
 			if source.from != "nodes" {
-				return Err(format!("{} holds one field, its nodes", node.r#type));
+				return Err(format!("{} holds one field, its nodes", node.node));
 			}
 			let field = *field;
-			Some((node.r#type, field, scope))
+			Some((node.node, field, scope))
 		}
 		None => None,
 	};
-	token("the open delimiter", d.delimiters.0)?;
-	token("the close delimiter", d.delimiters.1)?;
 	once("an element", &d.elements.fields)?;
 	let element_fields =
 		|read: &str| part(&d.elements.fields, read).ok_or_else(|| format!("elements need a field read by {read}"));
@@ -2072,49 +2101,27 @@ fn lower(host: Host) -> Result<Grammar, String> {
 	if let Some(other) = x.and_then(|x| x.other.as_ref()) {
 		directives.push(directive(Match::Any, other)?);
 	}
-	let sigils = d.sigils.as_ref();
-	if let Some(s) = sigils {
-		let marks = [
-			("open", s.open),
-			("branch", s.branch),
-			("close", s.close),
-			("tag", s.tag),
-		];
-		for (i, (what, mark)) in marks.iter().enumerate() {
-			token(&format!("the {what} sigil"), mark)?;
-			if let Some((other, _)) = marks[..i].iter().find(|(_, m)| m == mark) {
-				return Err(format!("the {other} and {what} sigils are both {mark}"));
-			}
-		}
+	let mut constructs = Vec::new();
+	for (name, rule) in d.constructs.iter().flat_map(|r| &r.0) {
+		constructs.push(construct(name, rule)?);
 	}
-	let mut blocks = Vec::new();
-	for (name, rule) in sigils.and_then(|s| s.blocks.as_ref()).iter().flat_map(|r| &r.0) {
-		blocks.push(block(name, rule)?);
-	}
-	let mut tags = Vec::new();
-	for (name, rule) in sigils.and_then(|s| s.tags.as_ref()).iter().flat_map(|r| &r.0) {
-		tags.push(tag(name, &rule.node, rule.among == definition::Among::Attributes)?);
+	let shorthand = d.attributes.as_ref().and_then(|a| a.shorthand);
+	if let Some((open, close)) = shorthand {
+		token("the shorthand's marker", open)?;
+		token("the shorthand's closing word", close)?;
 	}
 	let mut reads = Vec::new();
 	let document = DocumentRule {
-		ty: d.document.r#type,
-		fields: scoped(&d.document.items, &mut reads)?,
+		ty: d.document.node,
+		fields: scoped(d.document.form.as_deref().unwrap_or_default(), &mut reads)?,
 	};
 	if !reads.contains(&"fragment") {
-		return Err(format!("{} holds no content", d.document.r#type));
+		return Err(format!("{} holds no content", d.document.node));
 	}
 	Ok(Grammar {
 		name: host.name,
 		document,
-		delimiters: d.delimiters,
-		attribute_expressions: d.attributes.as_ref().is_some_and(|a| a.expressions == Some(true)),
-		attribute_shorthand: d.attributes.as_ref().is_some_and(|a| a.shorthand == Some(true)),
-		sigils: sigils.map(|s| Sigils {
-			open: s.open,
-			branch: s.branch,
-			close: s.close,
-			tag: s.tag,
-		}),
+		shorthand,
 		autoclose: d.autoclose == Some(true),
 		trim: d.trim == Some(true),
 		void: d.void.clone().unwrap_or_default(),
@@ -2145,11 +2152,8 @@ fn lower(host: Host) -> Result<Grammar, String> {
 		directive_syntax,
 		shorthands,
 		directives,
-		spread: d.spread,
-		blocks,
-		tags,
-		declaration: d.declaration.as_ref().map(|node| one(node, "statement")).transpose()?,
-		expression: d.expression.as_ref().map(|node| one(node, "expression")).transpose()?,
+		constructs,
+		starts: [false; 256],
 	})
 }
 
@@ -2192,10 +2196,7 @@ impl Grammar {
 					omit: false,
 				}],
 			},
-			delimiters: ("{", "}"),
-			attribute_expressions: false,
-			attribute_shorthand: false,
-			sigils: None,
+			shorthand: None,
 			autoclose: false,
 			trim: false,
 			void: Vec::new(),
@@ -2222,11 +2223,8 @@ impl Grammar {
 			directive_syntax: None,
 			shorthands: Vec::new(),
 			directives: Vec::new(),
-			spread: None,
-			blocks: Vec::new(),
-			tags: Vec::new(),
-			declaration: None,
-			expression: None,
+			constructs: Vec::new(),
+			starts: [false; 256],
 		}
 	}
 
@@ -2246,33 +2244,38 @@ impl Grammar {
 		if self.name.is_empty() {
 			return Err("a grammar names its host".into());
 		}
-		let close = &[self.delimiters.1];
 		for rule in &mut self.directives {
 			if let DirectiveValue::Form(form) = &mut rule.value {
 				form.finish(&[])?;
 			}
 		}
-		for rule in self
-			.tags
-			.iter_mut()
-			.chain(&mut self.declaration)
-			.chain(&mut self.expression)
-		{
-			rule.form.finish(close)?;
-		}
-		for block in &mut self.blocks {
-			block.open.finish(close)?;
-			let mut entries = block.open.entries.clone();
+		let mut starts = [false; 256];
+		for construct in &mut self.constructs {
+			construct.open.form.finish(&[])?;
+			let mut entries = construct.open.form.entries.clone();
 			let mut bodies = Vec::new();
-			collect_bodies(&block.open, &mut bodies);
-			for branch in &mut block.branches {
-				branch.form.finish(close)?;
+			collect_bodies(&construct.open.form, &mut bodies);
+			for branch in &mut construct.branches {
+				branch.form.finish(&[])?;
 				entries.extend_from_slice(&branch.form.entries);
 				collect_bodies(&branch.form, &mut bodies);
 			}
-			block.entries = entries;
-			block.bodies = bodies;
+			if let Some(close) = &mut construct.close {
+				close.form.finish(&[])?;
+			}
+			construct.entries = entries;
+			construct.bodies = bodies;
+			for piece in std::iter::once(&construct.open)
+				.chain(&construct.branches)
+				.chain(&construct.close)
+			{
+				starts[piece.marker[0].as_bytes()[0] as usize] = true;
+			}
 		}
+		if let Some((open, _)) = self.shorthand {
+			starts[open.as_bytes()[0] as usize] = true;
+		}
+		self.starts = starts;
 		for (ty, _) in self.own_children() {
 			if crate::recipe::names_type(ty) {
 				return Err(format!("a node type named {ty} is JavaScript's"));
@@ -2304,15 +2307,13 @@ impl Grammar {
 		})
 	}
 
-	pub fn block(&self, name: &str) -> Option<&BlockRule> {
-		self.blocks.iter().find(|rule| rule.name == name)
+	/// The construct that reads values written as one expression: an attribute's chunk, a shorthand's value.
+	pub fn value_expression(&self) -> Option<&Construct> {
+		self.constructs
+			.iter()
+			.find(|c| c.stands(Place::Value) && matches!(c.single(), Some((_, Entry::Expression))))
 	}
 
-	pub fn tag(&self, name: &str) -> Option<&TagRule> {
-		self.tags.iter().find(|rule| rule.name == name)
-	}
-
-	/// Whether an element of the name has no content: the grammar's list, and a doctype.
 	pub fn is_void(&self, name: &str) -> bool {
 		name.starts_with('!') || self.void.contains(&name)
 	}
@@ -2404,9 +2405,6 @@ impl Grammar {
 		if self.script.is_some() {
 			add("Script", &["content", "attributes"]);
 		}
-		if let Some(ty) = self.spread {
-			add(ty, &["expression"]);
-		}
 		// a dynamic argument, `:[expression]`, is a node in the argument's field
 		let dynamic = self
 			.directive_syntax
@@ -2422,15 +2420,10 @@ impl Grammar {
 			}
 			add(rule.ty, &fields);
 		}
-		for rule in &self.blocks {
+		for rule in &self.constructs {
 			fields.clear();
-			form(&rule.open, &mut fields);
+			form(&rule.open.form, &mut fields);
 			rule.branches.iter().for_each(|branch| form(&branch.form, &mut fields));
-			add(rule.ty, &fields);
-		}
-		for rule in self.tags.iter().chain(&self.declaration).chain(&self.expression) {
-			fields.clear();
-			form(&rule.form, &mut fields);
 			add(rule.ty, &fields);
 		}
 		out
