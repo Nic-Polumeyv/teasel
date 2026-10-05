@@ -535,31 +535,39 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 {
 	const template = '<ul>\n\t{{#repeat item, i in items by item.id}}\n\t\t<Card title={{ item.name }} index={{ i }} />\n\t{{:empty}}\n\t\t<li>No items</li>\n\t{{/repeat}}\n</ul>\n';
 	const html = {
-		document: g.node('Template', { children: g.content }),
-		text: g.node('Text', { data: g.text.data }),
-		comment: g.node('Comment', { data: g.text.data }),
-		delimiters: ['{{', '}}'] as const,
+		document: { node: 'Template', form: [{ children: g.content }] },
+		text: { node: 'Text', form: [{ data: g.text.data }] },
+		comment: { node: 'Comment', form: [{ data: g.text.data }] },
 		elements: {
 			fields: { name: g.element.tag, attributes: g.element.attributes, children: g.content },
-			component: g.element(g.node('Component')),
-			other: g.element(g.node('Element')),
+			component: { node: 'Component' },
+			other: { node: 'Element' },
 		},
-	};
-	const expressions = { ...html, attributes: { expressions: true } as const, expression: g.node('Expression', { expression: g.js.expression }) };
-	const sigils = { open: '#', branch: ':', close: '/', tag: '@' };
+	} as const;
+	const expression = { node: 'Expression', in: ['content', 'value'], open: { marker: ['{{'], form: [{ expression: g.js.expression }, '}}'] } } as const;
 	const item = { item: g.bind(g.js.pattern) };
 	const index = g.opt(',', { index: g.optional(g.bind(g.js.identifier)) });
 	const list = { list: g.js.expression };
 	const key = g.opt('by', { key: g.optional(g.js.expression) });
-	const repeat = (head: Any[], branches?: Any): Any => ({ ...expressions, sigils: { ...sigils, blocks: { repeat: g.block(g.node('RepeatBlock', ...head, { body: g.content }), branches) } } });
+	const repeat = (head: Any[], branches: Any[] = []): Any => ({
+		...html,
+		constructs: {
+			expression,
+			repeat: {
+				node: 'RepeatBlock',
+				open: { marker: ['{{', '#repeat'], space: true, form: [...head, '}}', { body: g.content }] },
+				branches,
+				close: { marker: ['{{', '/repeat'], form: ['}}'] },
+			},
+		},
+	});
 	const steps: Any[] = [
 		html,
-		expressions,
-		{ ...expressions, sigils: { ...sigils, blocks: {} } },
+		{ ...html, constructs: { expression } },
 		repeat([item, 'in', list]),
 		repeat([item, index, 'in', list]),
 		repeat([item, index, 'in', list, key]),
-		repeat([item, index, 'in', list, key], { branches: { empty: [{ fallback: g.optional(g.content) }] } }),
+		repeat([item, index, 'in', list, key], [{ marker: ['{{', ':empty'], form: ['}}', { fallback: g.optional(g.content) }] }]),
 	];
 	// an identifier that refers to a binding declared elsewhere carries where that declaration is
 	const shape = (value: Any): Any => {
@@ -626,23 +634,20 @@ function types(source: api.Source, definition: typeof svelte) {
 	expect<Equal<Infer<Vue>['children'][number]['type'], 'Element' | 'Text' | 'Comment' | 'Interpolation' | 'Slot' | 'Template' | 'Component'>>();
 
 	// @ts-expect-error a field may not be named type
-	g.node('X', { type: g.js.expression });
+	g.opt({ type: g.js.expression });
 	// @ts-expect-error a field may not take a group's name
-	g.node('X', { scope: g.js.expression });
+	g.opt({ scope: g.js.expression });
 	// @ts-expect-error only what reads a pattern, an identifier or parameters can declare
 	g.bind(g.js.expression);
 	// @ts-expect-error a directive's value is null when missing, never left out
 	g.optional(g.value.expression);
 	// @ts-expect-error an argument stands in only for a directive's value
 	g.orArg(g.js.expression);
-	// @ts-expect-error a tag has no body
-	g.tag(g.node('T', { body: g.content }));
-	// @ts-expect-error a tag opens no scope to declare in
-	g.tag(g.node('T', { name: g.bind(g.js.identifier) }));
+	const directive = (rule: g.Directive) => rule;
 	// @ts-expect-error only a block declares around itself
-	g.directive(g.node('D', { name: g.bind.outside(g.js.identifier) }));
+	directive({ node: 'D', form: [{ name: g.bind.outside(g.js.identifier) }] });
 	// @ts-expect-error a directive's flag is true or false
-	g.directive(g.node('D', { flag: g.literal(null) }));
+	directive({ node: 'D', form: [{ flag: g.literal(null) }] });
 	// @ts-expect-error `opt` needs items
 	g.opt();
 	// @ts-expect-error `oneOf` needs alternatives
@@ -650,42 +655,25 @@ function types(source: api.Source, definition: typeof svelte) {
 	// @ts-expect-error an alternative needs items
 	g.oneOf([]);
 	const base = {
-		text: g.node('Text', { data: g.text.data }),
-		comment: g.node('Comment', { data: g.text.data }),
-		delimiters: ['{', '}'],
+		text: { node: 'Text', form: [{ data: g.text.data }] },
+		comment: { node: 'Comment', form: [{ data: g.text.data }] },
 	} as const;
 	const fields = { name: g.element.tag, attributes: g.element.attributes, children: g.content };
 	g.grammar('x', {
 		...base,
-		document: g.node('Root', { children: g.content }),
-		elements: {
-			fields,
-			// @ts-expect-error inside names an element rule
-			rules: { head: g.element(g.node('Head')), title: g.element(g.node('Title'), { inside: 'haed' }) },
-		},
-	});
-	g.grammar('x', {
-		...base,
 		// @ts-expect-error the document's literals are null or a list
-		document: g.node('Root', { children: g.content, flag: g.literal(true) }),
+		document: { node: 'Root', form: [{ children: g.content, flag: g.literal(true) }] },
 		elements: { fields },
 	});
 	g.grammar('x', {
 		...base,
-		document: g.node('Root', { children: g.content }),
+		document: { node: 'Root', form: [{ children: g.content }] },
 		// @ts-expect-error an element's fields are never left out
 		elements: { fields: { ...fields, attributes: g.optional(g.element.attributes) } },
 	});
 	g.grammar('x', {
 		...base,
-		document: g.node('Root', { children: g.content }),
-		elements: { fields },
-		// @ts-expect-error the declaration node holds one statement
-		declaration: g.node('Decl', { e: g.js.expression }),
-	});
-	g.grammar('x', {
-		...base,
-		document: g.node('Root', { children: g.content }),
+		document: { node: 'Root', form: [{ children: g.content }] },
 		elements: { fields },
 		// @ts-expect-error a directive's fields are never left out
 		directives: { fields: { arg: g.optional(g.directive.arg) } },

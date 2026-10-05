@@ -17,28 +17,23 @@
 		{ id: 'file', name: 'The file and its text', step: 'step 1', href: '#1-start-with-the-html', tint: 'bg-[#dbbc7f]/25 border-[#dbbc7f]' },
 		{ id: 'elements', name: 'Elements and components', step: 'step 1', href: '#1-start-with-the-html', tint: 'bg-[#7fbbb3]/25 border-[#7fbbb3]' },
 		{ id: 'expressions', name: 'Expressions', step: 'step 2', href: '#2-read-the-expressions', tint: 'bg-[#a7c080]/25 border-[#a7c080]' },
-		{ id: 'marks', name: 'Block marks', step: 'step 3', href: '#3-mark-the-blocks', tint: 'bg-[#d699b6]/25 border-[#d699b6]' },
-		{ id: 'repeat', name: 'The repeat block', step: 'steps 4 to 6', href: '#4-describe-the-repeat-block', tint: 'bg-[#e69875]/25 border-[#e69875]' },
-		{ id: 'branch', name: 'The empty branch', step: 'step 7', href: '#7-add-the-empty-branch', tint: 'bg-[#e67e80]/25 border-[#e67e80]' },
+		{ id: 'repeat', name: 'The repeat block', step: 'steps 3 to 5', href: '#3-describe-the-repeat-block', tint: 'bg-[#e69875]/25 border-[#e69875]' },
+		{ id: 'branch', name: 'The empty branch', step: 'step 6', href: '#6-add-the-empty-branch', tint: 'bg-[#e67e80]/25 border-[#e67e80]' },
 	];
 
 	// each line's part, by where it stands among the grammar's keys
 	const at = (start: string, from = 0) => text.findIndex((line, i) => i >= from && line.startsWith(start));
 	const of: (string | undefined)[] = new Array(text.length).fill(undefined);
 	const mark = (id: string, from: number, to: number) => of.fill(id, from, to + 1);
-	const elements = at('\telements: {');
-	const sigils = at('\tsigils: {');
-	const repeat = at('\t\t\trepeat: g.block(');
-	const branch = at('\t\t\t\t{ branches:');
+	const constructs = at('\tconstructs: {');
+	const repeat = at('\t\trepeat: {');
+	const branch = at('\t\t\tbranches:');
 	mark('file', at('\tdocument:'), at('\tcomment:'));
-	mark('expressions', at('\tdelimiters:'), at('\tattributes:'));
-	mark('elements', elements, sigils - 1);
-	mark('marks', sigils, repeat - 1);
+	mark('elements', at('\telements: {'), constructs - 1);
+	mark('expressions', constructs, repeat - 1);
 	mark('repeat', repeat, branch - 1);
 	mark('branch', branch, branch);
-	mark('repeat', branch + 1, branch + 1);
-	mark('marks', branch + 2, at('\texpression:') - 1);
-	mark('expressions', at('\texpression:'), at('\texpression:'));
+	mark('repeat', branch + 1, at('\t\t},', branch));
 
 	let active = $state<string | null>(null);
 	let copied = $state(false);

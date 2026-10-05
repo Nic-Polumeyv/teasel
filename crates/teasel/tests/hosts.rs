@@ -683,6 +683,19 @@ fn a_definition_says_only_what_is_read() {
 	refused(host, "SvelteElement reads one `this` field at most");
 
 	let mut host = minimal();
+	host.definition.elements.rules = Some(Record(vec![
+		("head", element("Head")),
+		(
+			"title",
+			definition::Element {
+				inside: Some("haed"),
+				..element("Title")
+			},
+		),
+	]));
+	refused(host, "Title: inside names haed, which no element rule is");
+
+	let mut host = minimal();
 	host.definition.comment = node(
 		"Comment",
 		vec![fields(vec![

@@ -2059,6 +2059,13 @@ fn lower(host: Host) -> Result<Grammar, String> {
 	if let Some(rule) = &d.elements.other {
 		elements.push(element(Match::Any, rule)?);
 	}
+	for rule in &elements {
+		if let Some(inside) = rule.inside
+			&& !elements.iter().any(|other| other.name == Match::Exact(inside))
+		{
+			return Err(format!("{}: inside names {inside}, which no element rule is", rule.ty));
+		}
+	}
 	let x = d.directives.as_ref();
 	if let Some(x) = x {
 		once("a directive", &x.fields)?;
