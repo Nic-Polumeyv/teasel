@@ -2325,7 +2325,7 @@ impl Grammar {
 	pub fn children(&self) -> Vec<(&'static str, Vec<&'static str>)> {
 		let mut out = self.own_children();
 		if self.style.is_some() {
-			out.extend(super::stylesheet_children());
+			out.extend(super::css::children(true));
 		}
 		out
 	}

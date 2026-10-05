@@ -397,10 +397,7 @@ impl<T> Pool<T> {
 
 /// Every type of node a stylesheet holds, each with the fields that hold nodes.
 pub fn stylesheet_children() -> Vec<(&'static str, Vec<&'static str>)> {
-	css::CHILDREN
-		.iter()
-		.map(|(ty, fields)| (*ty, fields.to_vec()))
-		.collect()
+	css::children(false)
 }
 
 /// Parses a document by its grammar: the host's tree with the JavaScript inside it, positions
@@ -2755,7 +2752,8 @@ impl<'a, E: Extension> Walker<'a, E> {
 				let node = self.tree().node(node);
 				// under recovery the list can end before its `>`, or hold nothing
 				let start = node.start + 1;
-				Value::Slice(start, node.end.saturating_sub(1).max(start))
+				let closed = node.end > start && self.src.as_bytes()[node.end as usize - 1] == b'>';
+				Value::Slice(start, if closed { node.end - 1 } else { node.end.max(start) })
 			}
 			Entry::Params => Value::Nodes(self.js(JsEntry::Params, stops.joined)?),
 			Entry::Identifier => Value::Node(self.identifier()?),

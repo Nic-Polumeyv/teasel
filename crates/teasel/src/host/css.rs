@@ -4,9 +4,9 @@
 use super::*;
 
 /// Every type of node a stylesheet holds, each with the fields that hold nodes, as `host` below
-/// writes them; `Grammar::children` lists them for a grammar with a style rule.
+/// writes them.
 pub(super) const CHILDREN: &[(&str, &[&str])] = &[
-	("StyleSheet", &["attributes", "children", "comments"]),
+	("StyleSheet", &["children", "comments"]),
 	("Atrule", &["block"]),
 	("Rule", &["prelude", "block"]),
 	("SelectorList", &["children"]),
@@ -26,6 +26,20 @@ pub(super) const CHILDREN: &[(&str, &[&str])] = &[
 	("Declaration", &[]),
 	("CSSComment", &[]),
 ];
+
+/// A style element's sheet holds the element's attributes beside its own fields.
+pub(super) fn children(element: bool) -> Vec<(&'static str, Vec<&'static str>)> {
+	CHILDREN
+		.iter()
+		.map(|&(ty, fields)| {
+			let mut fields = fields.to_vec();
+			if element && ty == "StyleSheet" {
+				fields.insert(0, "attributes");
+			}
+			(ty, fields)
+		})
+		.collect()
+}
 
 /// A comment read out of the CSS: where it sits, and its offset into the value it interrupted.
 struct CssComment {

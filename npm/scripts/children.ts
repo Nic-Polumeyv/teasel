@@ -43,7 +43,7 @@ export function generate(layout: Layout): { children: Record<string, string[]>; 
 	const kinds = (recipes: Recipes, of: { name: string; fields: Field[] }[]) => {
 		for (const [name, ops] of recipes) {
 			const { types, out } = keys(ops, of.find((kind) => kind.name === name)!.fields);
-			for (const type of types.length === 0 ? [name] : types) add(type, out);
+			for (const type of types) add(type, out);
 		}
 	};
 	kinds(layout.recipes.js, layout.kinds);
@@ -52,13 +52,13 @@ export function generate(layout: Layout): { children: Record<string, string[]>; 
 	return { children, extras };
 }
 
-if (process.argv[1] === new URL(import.meta.url).pathname) {
+if (import.meta.main) {
 	const { engine } = await import('../dist/engine/native.js');
 	const { children, extras } = generate(JSON.parse(engine.layout()));
 	const lines = Object.entries(children).map(([type, fields]) => `\t${type}: [${fields.map((f) => `'${f}'`).join(', ')}],`);
 	writeFileSync(
 		new URL('../src/children.ts', import.meta.url),
-		`// written by scripts/children.ts from the engine's layout\n/** For every type of node a built-in plan answers with, the fields that hold a node or a list of nodes: what a walk follows. A document plan's \`children\` adds the host's. */\nexport const children = {\n${lines.join('\n')}\n} as const;\n\n/** The fields TypeScript may add to a node of any type, holding nodes: annotations, type parameters and arguments, what a class implements, decorators. */\nexport const extras = [${extras.map((f) => `'${f}'`).join(', ')}] as const;\n`,
+		`// written by scripts/children.ts from the engine's layout\n/** For every type of node a built-in plan answers with, the fields that hold a node or a list of nodes: what a walk follows. A document plan's \`children\` adds the host's. */\nexport const children = frozen({\n${lines.join('\n')}\n} as const);\n\n/** The fields TypeScript may add to a node of any type, holding nodes: annotations, type parameters and arguments, what a class implements, decorators. */\nexport const extras = Object.freeze([${extras.map((f) => `'${f}'`).join(', ')}] as const);\n\nexport function frozen<T extends Readonly<Record<string, readonly string[]>>>(table: T): T {\n\tfor (const fields of Object.values(table)) Object.freeze(fields);\n\treturn Object.freeze(table);\n}\n`,
 	);
 	console.log(`${Object.keys(children).length} types, ${extras.length} extras`);
 }

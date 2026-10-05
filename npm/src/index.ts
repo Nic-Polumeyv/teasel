@@ -3,7 +3,7 @@ import { decode, PARENT, REFERENCE, SCOPE } from './decode.ts';
 import type { Code, Held, HostNode, Language, Parsed, Prepared, Reference, Scope } from './types.ts';
 import { flags, type Options } from './options.ts';
 import { engine } from '#engine';
-import { children, extras } from './children.ts';
+import { children, extras, frozen } from './children.ts';
 import { compiled, registry } from './held.ts';
 import type { Grammar } from './grammar.ts';
 
@@ -112,7 +112,7 @@ export const js: Language<Program> & {
 /** CSS: a parse of it reads the whole source as a stylesheet, a `StyleSheet` of rules and at-rules with its comments listed. */
 export const css: Language<HostNode> = Object.freeze({
 	get children() {
-		return (sheet ??= JSON.parse(engine.children(undefined)));
+		return (sheet ??= frozen(JSON.parse(engine.children(undefined))));
 	},
 });
 let sheet: Language<unknown>['children'] | undefined;

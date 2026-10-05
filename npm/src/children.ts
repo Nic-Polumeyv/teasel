@@ -1,6 +1,6 @@
 // written by scripts/children.ts from the engine's layout
 /** For every type of node a built-in plan answers with, the fields that hold a node or a list of nodes: what a walk follows. A document plan's `children` adds the host's. */
-export const children = {
+export const children = frozen({
 	Program: ['body'],
 	Identifier: [],
 	PrivateIdentifier: [],
@@ -73,8 +73,6 @@ export const children = {
 	ExportSpecifier: ['local', 'exported'],
 	ExportDefaultDeclaration: ['declaration'],
 	ExportAllDeclaration: ['exported', 'source', 'attributes'],
-	Extension: [],
-	Host: [],
 	TSTypeAnnotation: ['typeAnnotation'],
 	TSAnyKeyword: [],
 	TSBooleanKeyword: [],
@@ -142,7 +140,12 @@ export const children = {
 	TSInstantiationExpression: ['expression', 'typeArguments'],
 	TSParameterProperty: ['parameter'],
 	Decorator: ['expression'],
-} as const;
+} as const);
 
 /** The fields TypeScript may add to a node of any type, holding nodes: annotations, type parameters and arguments, what a class implements, decorators. */
-export const extras = ['typeAnnotation', 'returnType', 'typeParameters', 'typeArguments', 'superTypeParameters', 'implements', 'decorators'] as const;
+export const extras = Object.freeze(['typeAnnotation', 'returnType', 'typeParameters', 'typeArguments', 'superTypeParameters', 'implements', 'decorators'] as const);
+
+export function frozen<T extends Readonly<Record<string, readonly string[]>>>(table: T): T {
+	for (const fields of Object.values(table)) Object.freeze(fields);
+	return Object.freeze(table);
+}

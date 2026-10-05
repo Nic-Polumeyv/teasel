@@ -1,0 +1,2 @@
+ul > li + li ~ a b {}
+a:is(.x, #y)::slotted(p:not([hidden])) {}

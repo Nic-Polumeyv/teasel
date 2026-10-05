@@ -480,14 +480,14 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 	};
 	const fixtures = new URL('../../crates/teasel/tests/', import.meta.url);
 	const files = (dir: string, ext: string) => readdirSync(new URL(dir, fixtures)).filter((file) => file.endsWith(ext)).map((file) => readFileSync(new URL(`${dir}${file}`, fixtures), 'utf8'));
-	const check = (table: Readonly<Record<string, readonly string[]>>, what: string, hosts = false) => {
+	const check = (table: Readonly<Record<string, readonly string[]>>, what: string, byHand = false) => {
 		for (const [type, keys] of seen) {
 			assert.ok(type in table, `${what}: ${type} is not in children`);
 			for (const key of keys) assert.ok(table[type].includes(key) || js.extras.includes(key as Any), `${what}: ${type}.${key} holds nodes but children does not name it`);
 		}
-		// the built-in table comes from the layout, so a stale entry there is impossible; the hosts' is spelled by hand
-		const unseen = Object.entries(table).flatMap(([type, keys]) => (listed.has(type) && !(hosts && type in js.children) ? keys.filter((key) => !listed.get(type)!.has(key)).map((key) => `${type}.${key}`) : []));
-		if (hosts) assert.deepEqual(unseen, [], `${what}: children names fields no fixture holds a node or a list in`);
+		// js's table comes from the layout, so a stale entry there is impossible; css's and the hosts' are spelled by hand
+		const unseen = Object.entries(table).flatMap(([type, keys]) => (listed.has(type) && !(byHand && type in js.children) ? keys.filter((key) => !listed.get(type)!.has(key)).map((key) => `${type}.${key}`) : []));
+		if (byHand) assert.deepEqual(unseen, [], `${what}: children names fields no fixture holds a node or a list in`);
 		seen.clear();
 		listed.clear();
 	};
@@ -521,9 +521,14 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 			if (!(e instanceof SyntaxError)) throw e;
 		}
 	}
-	check(css.children, 'css fixtures');
+	check(css.children, 'css fixtures', true);
 	assert.equal(svelte.children, svelte.children, 'a grammar keeps its table');
 	assert.ok('Rule' in svelte.children && 'Identifier' in svelte.children && 'EachBlock' in svelte.children);
+	assert.ok(!('Host' in js.children) && !('Extension' in js.children));
+	assert.ok(Object.isFrozen(svelte.children.Program) && Object.isFrozen(css.children.Rule) && !Object.keys(svelte).includes('children'));
+	assert.deepEqual([css.children.StyleSheet, svelte.children.StyleSheet], [['children', 'comments'], ['attributes', 'children', 'comments']]);
+	const cut = open('<script lang="ts"></script>{#snippet x<T,}{/snippet}', { errorRecovery: true }).parse(svelte).node.fragment.nodes[0];
+	assert.equal(cut.typeParams, 'T,');
 }
 
 // /writing-a-grammar builds a grammar in steps; what each step answers for the page's template is pinned beside the page
