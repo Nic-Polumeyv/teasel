@@ -33,7 +33,7 @@ export interface Declared extends Reference {
 	/**
 	 * What declared it. `function-name` and `class-name` are the name a function expression or a class
 	 * expression has inside itself, `const f = function g() {}` declaring `g`. `pattern` is a name that
-	 * a `Plan.pattern` piece declares, parsed on its own; a `Plan.params` piece declares `param`s.
+	 * a `js.pattern` piece declares, parsed on its own; a `js.params` piece declares `param`s.
 	 */
 	kind:
 		| 'var'
@@ -137,6 +137,14 @@ export interface Recovered {
 	pos: number;
 	end: number;
 	loc: { line: number; column: number };
+}
+
+declare const answers: unique symbol;
+/** What a parse reads as a whole and up to the end it is given: JavaScript, or a host language by its grammar. `T` is what its parse answers with. */
+export interface Language<T> {
+	readonly [answers]?: T;
+	/** For every type of node a parse of the language answers with, the fields that hold a node or a list of nodes: what a walk follows. A grammar's names the JavaScript types beside the host's. */
+	readonly children: Readonly<Record<string, readonly string[]>>;
 }
 
 /** What a parse returns: the node, or the patterns of a parameter list, and what the options add; a key is there exactly when its option is on. */
@@ -376,6 +384,6 @@ export interface Engine extends Views {
 	readonly create: (source: string, flags: number) => Prepared;
 	/** The grammar of a host language on its wire, read once. */
 	readonly plan: (grammar: Uint8Array) => Held;
-	/** For a plan's grammar, each node type of the host with the fields that hold nodes, as JSON. */
-	readonly children: (plan: Held) => string;
+	/** Each node type of a grammar's host with the fields that hold nodes, as JSON; a stylesheet's without one. */
+	readonly children: (plan: Held | undefined) => string;
 }

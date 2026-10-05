@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "expected",
+		"message": "Expected a valid CSS identifier",
+		"pos": 17,
+		"end": 17,
+		"loc": {
+			"line": 2,
+			"column": 0
+		}
+	}
+}

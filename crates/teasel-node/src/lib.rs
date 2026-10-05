@@ -172,12 +172,10 @@ unsafe extern "C" fn plan(env: Env, info: CallbackInfo) -> Value {
 	})
 }
 
-// for a document plan, each node type of the host with the fields that hold nodes, as JSON
 unsafe extern "C" fn children(env: Env, info: CallbackInfo) -> Value {
 	guard(env, || {
 		let [plan] = args::<1>(env, info)?;
-		let grammar = grammar_of(env, plan)?.ok_or_else(|| String::from("a plan expected"))?;
-		text(env, &teasel::json::plan_children(grammar))
+		text(env, &teasel::json::children(grammar_of(env, plan)?))
 	})
 }
 

@@ -280,6 +280,17 @@ fn a_body_declares_only_what_the_form_reads() {
 
 // what a definition may not say is an error naming its field, never a panic or a silent drop
 #[test]
+fn a_node_type_of_javascript_is_refused() {
+	let mut host = minimal();
+	host.definition.text.r#type = "Identifier";
+	let error = Grammar::read(&host.wire()).unwrap_err();
+	assert!(error.contains("Identifier") && error.contains("JavaScript"), "{error}");
+	let mut host = minimal();
+	host.definition.text.r#type = "TSAnyKeyword";
+	assert!(Grammar::read(&host.wire()).is_err());
+}
+
+#[test]
 fn a_definition_is_refused_by_name() {
 	let block = |items: Vec<definition::Item>, branches: Vec<(&'static str, definition::Branch)>| {
 		let mut host = minimal();

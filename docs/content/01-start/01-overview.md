@@ -5,7 +5,7 @@ title: Overview
 teasel is a parser for JavaScript and TypeScript. You give it text, it gives you a tree.
 
 ```js parse.js
-import { Source, Plan } from '@teasel/parser';
+import { Source, js } from '@teasel/parser';
 
 const { node } = new Source('let answer = 42').parse();
 ```
@@ -27,7 +27,7 @@ const { node, scopes, bindings } = new Source(text, { scopes: true }).parse();
 A parse can start at an offset and read one expression, one statement or one pattern.
 
 ```js parse.js
-source.parse(Plan.expression, 10);
+source.parse(js.expression, 10);
 ```
 
 A template language uses this to read the JavaScript inside its own syntax, and to stop at its own tokens: see [Embedded JavaScript](/embedded-javascript). A template language can also describe its whole syntax as a grammar, and get a whole file back as one tree: see [Parsing with a grammar](/parsing-with-a-grammar).

@@ -12,33 +12,34 @@ A template language has JavaScript inside its own syntax. To read it, a parser h
 
 ```js template.js
 const source = new Source('{{ items as item, index }}');
-const { node, end } = source.parse(Plan.expression.until('as', ','), 3);
+const { node, end } = source.parse(js.expression.until('as', ','), 3);
 // node  Identifier items
 // end   8
 ```
 
 The parse started at offset 3, read an expression instead of a program, and stopped at `as` because `until` named it.
 
-## Plans
+## Pieces
 
-The first argument of `parse` is the plan, which says what to read. The second is the position.
+The first argument of `parse` says what to read: `js` for a program, one of its pieces, or `css` for a stylesheet. The second is the position, which `js` and its pieces take.
 
 ```text
-source.parse(Plan.expression, 7)        the expression starting at 7
-source.parse(Plan.statement, 7)         one statement
-source.parse(Plan.pattern, 7)           a name or a destructuring pattern
-source.parse(Plan.params, 7)            the patterns inside (a, b = 1)
-source.parse(Plan.typeParameters, 7)    a <T extends U>, with typescript on
-source.parse(Plan.program, [12, 40])    the program between 12 and 40
+source.parse(js.expression, 7)        the expression starting at 7
+source.parse(js.statement, 7)         one statement
+source.parse(js.pattern, 7)           a name or a destructuring pattern
+source.parse(js.params, 7)            the patterns inside (a, b = 1)
+source.parse(js.typeParameters, 7)    a <T extends U>, with typescript on
+source.parse(css)                     the whole source as a CSS stylesheet
+source.parse(js, [12, 40])            the program between 12 and 40
 ```
 
 Positions in every answer are offsets into the whole text, so nothing has to be added to them.
 
 ## until
 
-`until` takes your own tokens, words or punctuators, and gives a plan that ends there. When the parser reads one at a point where the expression could end, outside every bracket it opened, the parse ends.
+`until` takes your own tokens, words or punctuators, and gives a piece that ends there. When the parser reads one at a point where the expression could end, outside every bracket it opened, the parse ends.
 
-So a `,` named in `until` does not start a sequence expression, and a `/>` named in `until` is not read as a division. Inside brackets they keep their JavaScript meaning, so `f(a, b)` reads whole. A plan does not hold a source: build `Plan.expression.until('}')` once, at module level, and use it for every expression in every file.
+So a `,` named in `until` does not start a sequence expression, and a `/>` named in `until` is not read as a division. Inside brackets they keep their JavaScript meaning, so `f(a, b)` reads whole. A piece does not hold a source: build `js.expression.until('}')` once, at module level, and use it for every expression in every file.
 
 ## Names in a piece
 
@@ -48,17 +49,17 @@ A name the piece declares itself resolves to that declaration. A name declared e
 
 ```js template.js
 const source = new Source('{{ items.map((x) => x + offset) }}', { scopes: true });
-const { references } = source.parse(Plan.expression.until('}'), 3);
+const { references } = source.parse(js.expression.until('}'), 3);
 // items   binding: null        declared elsewhere, or a global
 // x       binding: { name: 'x', kind: 'param', … }
 // offset  binding: null
 ```
 
-A `Plan.pattern` piece declares names for your document. Its `bindings` has one entry per name, with `kind: 'pattern'`.
+A `js.pattern` piece declares names for your document. Its `bindings` has one entry per name, with `kind: 'pattern'`.
 
 ```js template.js
 const source = new Source('{{ items as { id, name }, index }}', { scopes: true });
-const { bindings } = source.parse(Plan.pattern.until(',', '}'), 12);
+const { bindings } = source.parse(js.pattern.until(',', '}'), 12);
 // bindings  id and name, both kind: 'pattern'
 ```
 

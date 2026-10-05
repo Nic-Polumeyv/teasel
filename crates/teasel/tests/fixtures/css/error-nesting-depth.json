@@ -1,0 +1,12 @@
+{
+	"error": {
+		"code": "nesting_depth",
+		"message": "Maximum nesting depth exceeded",
+		"pos": 2001,
+		"end": 2002,
+		"loc": {
+			"line": 1,
+			"column": 2001
+		}
+	}
+}

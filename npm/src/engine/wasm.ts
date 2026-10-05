@@ -125,7 +125,7 @@ export const engine: Engine = {
 	},
 	plan: (grammar) => new Plan(grammar),
 	children(plan) {
-		wasm.plan_children((plan as Plan).handle());
+		wasm.plan_children(plan === undefined ? 0 : (plan as Plan).handle());
 		return text();
 	},
 	layout,

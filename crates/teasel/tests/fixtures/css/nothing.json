@@ -1,0 +1,22 @@
+{
+	"node": {
+		"type": "StyleSheet",
+		"start": 0,
+		"end": 0,
+		"scope": 0,
+		"children": [],
+		"comments": []
+	},
+	"end": 0,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "fragment",
+			"parent": null,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [],
+	"references": [],
+	"roots": []
+}

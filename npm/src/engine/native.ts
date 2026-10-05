@@ -31,7 +31,7 @@ export const engine: Engine = {
 		return { parse: (entry, offset, end, stop, plan) => native.parse(held, entry, offset, end, stop, (plan as Plan | undefined)?.external), free: () => native.free(held) };
 	},
 	plan: (grammar) => new Plan(grammar),
-	children: (plan) => native.children((plan as Plan).external),
+	children: (plan) => native.children((plan as Plan | undefined)?.external),
 	layout: native.layout,
 	// the addon keeps one array of views a tree and sets what moved: asked only then
 	tree: (typescript, moved) => (moved || trees[+typescript] === undefined ? (trees[+typescript] = native.tree()!) : trees[+typescript]!),

@@ -51,11 +51,10 @@ export const tpl = g.grammar('tpl', {
 Run it:
 
 ```js parse.js
-import { Source, Plan } from '@teasel/parser';
+import { Source } from '@teasel/parser';
 import { tpl } from './tpl.js';
 
-const plan = new Plan(tpl);
-new Source(list).parse(plan);
+new Source(list).parse(tpl);
 ```
 
 ![list.tpl read with the HTML grammar: the parser stops at the first {{](Steps.svelte "step=1")
@@ -178,9 +177,9 @@ A branch is a word after `{{:` with fields of its own. `empty` reads no JavaScri
 The same links are on the tree you get, when you ask for `scopes`:
 
 ```js parse.js
-import { Source, Plan, referenceOf } from '@teasel/parser';
+import { Source, referenceOf } from '@teasel/parser';
 
-const { node } = new Source(list, { scopes: true }).parse(plan);
+const { node } = new Source(list, { scopes: true }).parse(tpl);
 const repeat = node.children[0].children[1];
 const card = repeat.body[1];
 const title = card.attributes[0].value.expression;   // item.name

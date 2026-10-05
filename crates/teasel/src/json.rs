@@ -256,12 +256,12 @@ pub fn layout_json() -> String {
 	w.finish()
 }
 
-/// For a document plan: every type of node the host's documents hold, each with the fields that
-/// hold nodes, as JSON; see `Grammar::children`.
-pub fn plan_children(grammar: &Grammar) -> String {
+/// Every type of node a host's documents hold, each with the fields that hold nodes, as JSON; see
+/// `Grammar::children`. Without a grammar, a stylesheet's.
+pub fn children(grammar: Option<&Grammar>) -> String {
 	let mut w = Json::default();
 	w.object();
-	for (ty, fields) in grammar.children() {
+	for (ty, fields) in grammar.map_or_else(host::stylesheet_children, Grammar::children) {
 		w.key(crate::names::Name::dynamic(ty));
 		w.list();
 		fields.into_iter().for_each(|field| w.text(field));
