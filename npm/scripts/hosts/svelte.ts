@@ -134,6 +134,6 @@ export default g.grammar('svelte', {
 		attach: { node: 'AttachTag', in: ['attributes'], open: { marker: ['{', '@attach'], space: true, form: [{ expression: g.js.expression }, '}'] } },
 		spread: { node: 'SpreadAttribute', in: ['attributes'], open: { marker: ['{', '...'], form: [{ expression: g.js.expression }, '}'] } },
 		declaration: { node: 'DeclarationTag', open: { marker: ['{'], form: [{ declaration: g.js.statement }, '}'] } },
-		expression: { node: 'ExpressionTag', in: ['content', 'value'], open: { marker: ['{'], form: [{ expression: g.js.expression }, '}'] } },
+		expression: { node: 'ExpressionTag', in: ['content', 'value', 'rcdata'], open: { marker: ['{'], form: [{ expression: g.js.expression }, '}'] } },
 	},
 });

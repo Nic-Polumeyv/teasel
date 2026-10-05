@@ -1377,11 +1377,13 @@ pub mod definition {
 	}
 
 	wire! {
-		/// Where a construct may stand: in content, in an attribute value, among attributes.
+		/// Where a construct may stand: in content, in an attribute value, among attributes, in the
+		/// text of an element whose content is rcdata.
 		pub copy enum Place {
 			Content,
 			Value,
 			Attributes,
+			Rcdata,
 		}
 	}
 

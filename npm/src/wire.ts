@@ -606,11 +606,13 @@ function writeConstruct(w: Writer, v: Construct): void {
 	}
 }
 
-/** Where a construct may stand: in content, in an attribute value, among attributes. */
+/** Where a construct may stand: in content, in an attribute value, among attributes, in the
+ * text of an element whose content is rcdata. */
 type Place =
 	| 'content'
 	| 'value'
-	| 'attributes';
+	| 'attributes'
+	| 'rcdata';
 function writePlace(w: Writer, v: Place): void {
 	switch (v) {
 		case 'content':
@@ -621,6 +623,9 @@ function writePlace(w: Writer, v: Place): void {
 			return;
 		case 'attributes':
 			w.word(2);
+			return;
+		case 'rcdata':
+			w.word(3);
 			return;
 	}
 }

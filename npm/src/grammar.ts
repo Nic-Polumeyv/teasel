@@ -166,8 +166,8 @@ export interface Node<T extends string = string, I extends readonly Item[] = rea
 
 type PieceForm = Form<Field<'form', false | 'inside' | 'outside'> | Field<'body'>>;
 
-/** Where a construct may stand: in content, in an attribute value, among an element's attributes. */
-export type Place = 'content' | 'value' | 'attributes';
+/** Where a construct may stand: in content, in an attribute value, among an element's attributes, in the text of an rcdata element. */
+export type Place = 'content' | 'value' | 'attributes' | 'rcdata';
 
 /** A marker and what its form reads after it: a construct's open, a branch, or its close. */
 export interface Piece<I extends PieceForm = PieceForm> {

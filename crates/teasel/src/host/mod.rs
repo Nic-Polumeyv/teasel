@@ -367,6 +367,8 @@ struct Walker<'a, E: Extension> {
 	once: Vec<&'static str>,
 	/// Where the current tag's word starts, for a declaration spelled without its keyword.
 	keyword: u32,
+	/// The word that ends the tag being read: missing, it is reported and the tag ends there.
+	end: &'static str,
 	/// The element the browser closed last, what closed it and how deep the stack was then.
 	autoclosed: Option<(&'a str, &'a str, usize)>,
 	/// How many open elements made their subtree verbatim.
@@ -466,6 +468,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			frames,
 			once: Vec::new(),
 			keyword: 0,
+			end: "",
 			autoclosed: None,
 			verbatim: 0,
 			nesting: 0,
@@ -1276,7 +1279,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 				|w| closing_tag(w.rest(), name).is_some(),
 				&format!("<{name}>"),
 				JsEntry::Expression,
-				Place::Content,
+				Place::Rcdata,
 			)?;
 			if let Some(len) = closing_tag(self.rest(), name) {
 				self.at += len as u32;
@@ -1953,16 +1956,26 @@ impl<'a, E: Extension> Walker<'a, E> {
 			}
 			if self.verbatim == 0 && self.construct_starts(self.at as usize) {
 				let start = self.at;
-				let (whole, reached) = self.markers_here();
-				let value = pieces(self.grammar).find_map(|(rule, which, piece)| {
-					(which == Which::Open
-						&& rule.stands(here)
-						&& matches!(rule.single(), Some((_, Entry::Expression)))
-						&& matches!(self.marker_at(start as usize, piece), Some(Ok((end, _))) if end == whole))
-					.then_some(rule)
-				});
+				// what reads one expression here, unless the open of something else reads further
+				let (mut value, mut other) = (None, 0);
+				for (rule, which, piece) in pieces(self.grammar) {
+					if which != Which::Open {
+						continue;
+					}
+					match self.marker_at(start as usize, piece) {
+						Some(Ok((end, _)))
+							if rule.stands(here) && matches!(rule.single(), Some((_, Entry::Expression))) =>
+						{
+							if value.is_none_or(|(_, known)| end > known) {
+								value = Some((rule, end));
+							}
+						}
+						Some(Ok((end, _)) | Err(end)) => other = other.max(end),
+						None => {}
+					}
+				}
 				match value {
-					Some(rule) if reached <= whole => {
+					Some((rule, whole)) if other <= whole => {
 						self.flush_text(chunk_start, start, &mut chunks);
 						self.at = whole;
 						self.space();
@@ -1978,7 +1991,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 						chunk_start = self.at;
 						continue;
 					}
-					_ if whole > start || reached > start => {
+					_ if other > start => {
 						return fail(
 							start,
 							start + 1,
@@ -2351,7 +2364,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			fields: self.fields.take(),
 			body: None,
 		};
-		self.form(&rule.open.form, &mut read)?;
+		self.piece(&rule.open, &mut read)?;
 		fill_unread(&rule.open.form.entries, &mut read.fields);
 		let node = self.host(rule.ty, start, self.at, &read.fields, None, true);
 		self.fields.give(read.fields);
@@ -2424,7 +2437,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			fields: self.fields.take(),
 			body: None,
 		};
-		self.form(&rule.open.form, &mut read)?;
+		self.piece(&rule.open, &mut read)?;
 		let Some(body) = read.body.take().or(rule.open.form.body.as_ref()) else {
 			return fail(start, start + 1, Code::Placement, Some("A block without a body"));
 		};
@@ -2473,7 +2486,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 				fields: self.fields.take(),
 				body: None,
 			};
-			self.form(&branch.form, &mut read)?;
+			self.piece(branch, &mut read)?;
 			let child = Body {
 				field: child_field,
 				omit: false,
@@ -2507,7 +2520,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			fields: self.fields.take(),
 			body: None,
 		};
-		self.form(&branch.form, &mut read)?;
+		self.piece(branch, &mut read)?;
 		let mut outside = self.nodes.take();
 		let group = self.group_of(&read, body, &mut outside);
 		let Some(Frame::Block {
@@ -2586,7 +2599,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			fields: self.fields.take(),
 			body: None,
 		};
-		self.form(&construct.close.as_ref().unwrap().form, &mut read)?;
+		self.piece(construct.close.as_ref().unwrap(), &mut read)?;
 		self.fields.give(read.fields);
 		let end = self.at;
 		let open = self
@@ -2766,9 +2779,21 @@ impl<'a, E: Extension> Walker<'a, E> {
 		self.items(&form.items, read)
 	}
 
+	/// A piece's form, its end word the tag's.
+	fn piece(&mut self, piece: &'a Piece, read: &mut Read<'a>) -> Result<()> {
+		let outer = std::mem::replace(&mut self.end, piece.end);
+		let read = self.form(&piece.form, read);
+		self.end = outer;
+		read
+	}
+
 	fn items(&mut self, items: &'a [Item], read: &mut Read<'a>) -> Result<()> {
 		for item in items {
 			match item {
+				Item::Literal(literal) if *literal == self.end => {
+					self.space();
+					self.expect(literal)?;
+				}
 				Item::Literal(literal) => {
 					self.space();
 					if !self.literal_here(literal) {
@@ -2842,7 +2867,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 				continue;
 			}
 			return match item {
-				Some(Item::Literal(literal)) => self.literal_here(literal),
+				Some(Item::Literal(literal)) => *literal == self.end || self.literal_here(literal),
 				Some(Item::Entry { entry, .. }) => self.entry_here(*entry, after),
 				_ => true,
 			};
@@ -3124,6 +3149,7 @@ fn place_name(place: Place) -> &'static str {
 		Place::Content => "content",
 		Place::Value => "an attribute value",
 		Place::Attributes => "the attributes",
+		Place::Rcdata => "an element's text",
 	}
 }
 
