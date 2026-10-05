@@ -137,7 +137,7 @@ export class Source {
 	}
 
 	/**
-	 * What `read` answers with: `js` by default, the whole source as a program. A piece of
+	 * What `what` answers with: `js` by default, the whole source as a program. A piece of
 	 * JavaScript is read at `at`, a UTF-16 offset, or at `[start, end]` as if the source ended at
 	 * `end`; `js` takes the same for the program inside a range. `css` reads the whole source as a
 	 * stylesheet. A grammar from
@@ -149,6 +149,7 @@ export class Source {
 	parse(): Parsed<Program>;
 	parse<T>(piece: Piece<T>, at?: number | [start: number, end: number]): Parsed<T>;
 	parse(language: typeof js, at?: number | [start: number, end: number]): Parsed<Program>;
+	parse<T>(what: Piece<T> | typeof js, at?: number | [start: number, end: number]): Parsed<T | Program>;
 	parse<T>(language: Language<T>): Parsed<T>;
 	parse(what: Piece<unknown> | Language<unknown> = js, at?: number | [number, number]): Parsed<any> {
 		if (this.#held === undefined) throw new TypeError('the source is freed');
@@ -159,9 +160,9 @@ export class Source {
 			else if (Array.isArray(at) && at.length === 2 && typeof at[0] === 'number' && typeof at[1] === 'number') [offset, end] = at;
 			else if (at !== undefined) throw new TypeError('at is an offset or [start, end]');
 		} else {
-			if (at !== undefined) throw new TypeError('only `js` and its pieces take a position');
 			if (what === css) entry = 6;
 			else grammar = compiled(what as Grammar);
+			if (at !== undefined) throw new TypeError('only `js` and its pieces take a position');
 		}
 		const answer = this.#held.parse(entry, offset, end, stop, grammar);
 		if (typeof answer !== 'string') {
