@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import svelte from './hosts/svelte.ts';
 import vue from './hosts/vue.ts';
-import type { Expression, Identifier, Pattern } from 'estree';
+import type { Expression, Identifier, Pattern, Program } from 'estree';
 import * as g from '../src/grammar.ts';
 import type { Infer, NodeType } from '../src/grammar.ts';
 import type * as api from '../src/index.ts';
@@ -74,7 +74,7 @@ const { open, scopeOf, referenceOf, parentOf } = untyped(m);
 	assert.equal(at('pattern', '{[a, b], i}', 1, undefined, [',']).end, 7);
 	assert.throws(() => js.expression.until('a s'), TypeError);
 	assert.throws(() => js.expression.until(), TypeError);
-	assert.throws(() => open('{a}').parse('expression' as Any, 1), TypeError);
+	assert.throws(() => open('{a}').parse('expression' as Any, 1), /a parse takes `js`, one of its pieces, or a grammar/);
 	assert.throws(() => open('{a}').parse(js.expression, '1' as Any), TypeError);
 	assert.throws(() => open('{a}').parse(js.expression, [1] as Any), TypeError);
 	assert.equal(js.expression.until('as').until(',').constructor, Piece);
@@ -598,4 +598,6 @@ function types(source: api.Source, definition: typeof svelte) {
 	js.until('as');
 	// @ts-expect-error a grammar reads the whole source
 	source.parse(definition, 1);
+	const either = source.parse(Math.random() < 0.5 ? js : js.expression, 0);
+	expect<Equal<typeof either.node, Program | Expression>>();
 }

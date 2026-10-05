@@ -134,7 +134,7 @@ export class Source {
 	}
 
 	/**
-	 * What `read` answers with: `js` by default, the whole source as a program. A piece of
+	 * What `what` answers with: `js` by default, the whole source as a program. A piece of
 	 * JavaScript is read at `at`, a UTF-16 offset, or at `[start, end]` as if the source ended at
 	 * `end`; `js` takes the same for the program inside a range. A grammar from
 	 * `@teasel/parser/grammar` reads the whole source as a document of its host language: the
@@ -145,6 +145,7 @@ export class Source {
 	parse(): Parsed<Program>;
 	parse<T>(piece: Piece<T>, at?: number | [start: number, end: number]): Parsed<T>;
 	parse(language: typeof js, at?: number | [start: number, end: number]): Parsed<Program>;
+	parse<T>(what: Piece<T> | typeof js, at?: number | [start: number, end: number]): Parsed<T | Program>;
 	parse<T>(grammar: Grammar & Language<T>): Parsed<T>;
 	parse(what: Piece<unknown> | Language<unknown> = js, at?: number | [number, number]): Parsed<any> {
 		if (this.#held === undefined) throw new TypeError('the source is freed');
@@ -155,8 +156,8 @@ export class Source {
 			else if (Array.isArray(at) && at.length === 2 && typeof at[0] === 'number' && typeof at[1] === 'number') [offset, end] = at;
 			else if (at !== undefined) throw new TypeError('at is an offset or [start, end]');
 		} else {
-			if (at !== undefined) throw new TypeError('a document reads the whole source');
 			grammar = compiled(what as Grammar);
+			if (at !== undefined) throw new TypeError('a document reads the whole source');
 		}
 		const answer = this.#held.parse(entry, offset, end, stop, grammar);
 		if (typeof answer !== 'string') {
