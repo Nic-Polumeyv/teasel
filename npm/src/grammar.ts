@@ -1,6 +1,6 @@
 import type { Expression, Identifier, Pattern, Program, SourceLocation, Statement, VariableDeclaration } from 'estree';
-import type { Comment, HostNode } from './index.js';
-import { wire as encode } from './wire.js';
+import type { Comment, HostNode } from './types.ts';
+import { wire as encode } from './wire.ts';
 
 declare const out: unique symbol;
 
@@ -282,7 +282,8 @@ export interface Definition {
 		readonly blocks?: { readonly [name: string]: Block };
 		readonly tags?: { readonly [name: string]: Tag };
 	};
-	readonly declaration?: Node<string, TagForm>;
+	/** The node of a `let`, `const` or `type` declaration between the delimiters: one field, one statement. */
+	readonly declaration?: Node<string, readonly [Record<Source<Statement, 'form'>>]>;
 	/** The node of an expression between the delimiters: one field, one expression. */
 	readonly expression?: Node<string, readonly [Record<Source<Expression, 'form'>>]>;
 }

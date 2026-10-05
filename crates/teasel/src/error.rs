@@ -10,6 +10,9 @@ macro_rules! codes {
 		}
 
 		impl Code {
+			#[cfg(test)]
+			const ALL: &[Code] = &[$(Code::$name,)*];
+
 			pub(crate) fn is_limit(self) -> bool {
 				matches!(self, Code::NestingDepth | Code::TreeSize)
 			}
@@ -258,3 +261,24 @@ impl fmt::Display for SyntaxError {
 }
 
 impl std::error::Error for SyntaxError {}
+
+#[cfg(test)]
+mod tests {
+	use super::Code;
+
+	// the JavaScript side names every code by hand in its `Code` type; a code added, renamed or
+	// dropped here fails until types.ts says the same
+	#[test]
+	fn types_ts_names_every_code() {
+		let ts = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../npm/src/types.ts")).unwrap();
+		let union: String = Code::ALL
+			.iter()
+			.map(|code| format!("\n\t| '{}'", code.name()))
+			.collect();
+		let union = format!("export type Code ={union};\n");
+		assert!(
+			ts.contains(&union),
+			"npm/src/types.ts `Code` disagrees with error.rs; it reads\n{union}"
+		);
+	}
+}

@@ -1,4 +1,4 @@
-import * as g from '../../dist/grammar.js';
+import * as g from '../../src/grammar.ts';
 
 // `v-for`'s left side, with or without its parentheses
 const aliases = g.seq(

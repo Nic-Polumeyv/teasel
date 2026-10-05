@@ -284,7 +284,8 @@ enum Frame<'a> {
 		attributes: Vec<NodeId>,
 		fields: Vec<(&'static str, Value)>,
 		nodes: Vec<NodeId>,
-		shadowroot: bool,
+		/// The attributes on it that keep an element rule's `outside` from applying inside.
+		outside: Vec<&'static str>,
 		/// The element made its subtree verbatim.
 		verbatim: bool,
 		/// The patterns its directives declare in its scope.
@@ -302,8 +303,8 @@ enum Frame<'a> {
 		/// The scope of each body read so far.
 		groups: Vec<BodyGroup>,
 		outside: Vec<NodeId>,
-		/// The parent's field this block fills as a chained branch, `{:else if}`.
-		chain: Option<&'static str>,
+		/// The parent's field this block fills as a chained branch, `{:else if}`, and the flag set.
+		chain: Option<(&'static str, &'static str)>,
 	},
 }
 
@@ -1007,11 +1008,11 @@ impl<'a, E: Extension> Walker<'a, E> {
 		{
 			ty = plain;
 		}
-		if rule.outside.is_some()
+		if let Some(attribute) = rule.outside
 			&& self
 				.frames
 				.iter()
-				.any(|frame| matches!(frame, Frame::Element { shadowroot: true, .. }))
+				.any(|frame| matches!(frame, Frame::Element { outside, .. } if outside.contains(&attribute)))
 		{
 			ty = plain;
 		}
@@ -1039,7 +1040,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let mut attributes = self.nodes.take();
 		let mut seen = std::mem::take(&mut self.seen);
 		seen.clear();
-		let mut shadowroot = false;
+		let mut outside = Vec::new();
 		self.declared.clear();
 		loop {
 			let attribute = if script.is_some() || style.is_some() || self.verbatim > 0 {
@@ -1056,12 +1057,18 @@ impl<'a, E: Extension> Walker<'a, E> {
 					self.at = attributes_at;
 					attributes.clear();
 					seen.clear();
-					shadowroot = false;
+					outside.clear();
 					self.declared.clear();
 					continue;
 				}
-				if kind == "Attribute" && text == "shadowrootmode" && ty == plain {
-					shadowroot = true;
+				if kind == "Attribute"
+					&& ty == plain && let Some(mark) = self
+					.grammar
+					.elements
+					.iter()
+					.find_map(|r| r.outside.filter(|o| *o == text))
+				{
+					outside.push(mark);
 				}
 				let this = text == "this";
 				if seen.contains(&(kind, key)) {
@@ -1294,7 +1301,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			attributes,
 			fields,
 			nodes,
-			shadowroot,
+			outside,
 			verbatim: verbatim_here,
 			declared,
 		});
@@ -1595,10 +1602,11 @@ impl<'a, E: Extension> Walker<'a, E> {
 			}
 		}
 		let start = self.at;
-		if expressions && self.eat("{") {
+		let (open, close) = self.grammar.delimiters;
+		if expressions && self.eat(open) {
 			self.space();
 			if self.matches("/>") || self.matches(">") {
-				return fail(self.at, self.at, Code::Expected, Some("}"));
+				return fail(self.at, self.at, Code::Expected, Some(close));
 			}
 			if let Some(sigils) = &self.grammar.sigils
 				&& self.eat(sigils.tag)
@@ -1618,9 +1626,9 @@ impl<'a, E: Extension> Walker<'a, E> {
 				let Some(ty) = self.grammar.spread else {
 					return fail(start, start + 1, Code::UnexpectedToken, None);
 				};
-				let expression = self.expression("")?;
+				let expression = self.expression(close)?;
 				self.space();
-				self.expect("}")?;
+				self.expect(close)?;
 				let node = self.host(
 					ty,
 					start,
@@ -1651,7 +1659,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 				return fail(id_start, id_end, Code::ReservedWord, Some(name));
 			}
 			self.space();
-			self.expect("}")?;
+			self.expect(close)?;
 			let tag = self.expression_tag(id_start, id_end, id)?;
 			let name_id = self.intern(name);
 			let node = self.host(
@@ -2041,7 +2049,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			if self.word("let") || self.word("const") || self.word("type") {
 				let at = self.at;
 				let comments = self.tree().comments.len();
-				let statement = self.js(JsEntry::Statement, "")?;
+				let statement = self.js(JsEntry::Statement, close)?;
 				let statement = self.first(statement);
 				let kind = self.tree().node(statement).kind;
 				match kind {
@@ -2055,7 +2063,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 							rule.ty,
 							start,
 							self.at,
-							&[("declaration", Value::Node(statement))],
+							&[(rule.field(), Value::Node(statement))],
 							None,
 							true,
 						);
@@ -2082,39 +2090,49 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let Some(rule) = &self.grammar.expression else {
 			return fail(start, start + 1, Code::UnexpectedToken, None);
 		};
-		let expression = self.expression("")?;
+		let expression = self.expression(close)?;
 		self.space();
 		self.expect(close)?;
-		let field = match rule.form.items.first() {
-			Some(Item::Entry { field, .. }) => field,
-			_ => "expression",
-		};
-		let node = self.host(rule.ty, start, self.at, &[(field, Value::Node(expression))], None, true);
+		let node = self.host(
+			rule.ty,
+			start,
+			self.at,
+			&[(rule.field(), Value::Node(expression))],
+			None,
+			true,
+		);
 		self.append(node);
 		Ok(())
 	}
 
-	fn lowercase_word(&mut self) -> &'a str {
-		let start = self.at;
-		while self.byte().is_some_and(|b| b.is_ascii_lowercase()) {
-			self.at += 1;
+	/// The longest of `names` at the cursor, taken; else the cursor passes what stands there up to
+	/// a space or the close delimiter, so the error spans it.
+	fn name_of<'n>(&mut self, names: impl Iterator<Item = &'n str>) -> Option<&'n str> {
+		let rest = self.rest();
+		let name = names.filter(|n| rest.starts_with(n)).max_by_key(|n| n.len());
+		match name {
+			Some(name) => self.at += name.len() as u32,
+			None => {
+				let close = self.grammar.delimiters.1;
+				while let Some(c) = self.char().filter(|c| !c.is_whitespace())
+					&& !self.matches(close)
+				{
+					self.at += c.len_utf8() as u32;
+				}
+			}
 		}
-		&self.src[start as usize..self.at as usize]
+		name
 	}
 
 	fn open_block(&mut self, start: u32) -> Result<()> {
 		let close = self.grammar.delimiters.1;
 		let name_at = self.at;
-		let name = self.lowercase_word();
-		let Some(rule) = self.grammar.block(name) else {
-			if let Some(known) = self.grammar.blocks.iter().find(|rule| name.starts_with(rule.name)) {
-				let at = name_at + known.name.len() as u32;
-				return fail(at, at, Code::Expected, Some("whitespace"));
-			}
+		let Some(name) = self.name_of(self.grammar.blocks.iter().map(|rule| rule.name)) else {
 			self.report(error(name_at, self.at, Code::Expected, Some("a block name")))?;
 			self.skip_tag();
 			return Ok(());
 		};
+		let rule = self.grammar.block(name).unwrap();
 		self.keyword = name_at;
 		if !rule.open.items.is_empty() {
 			self.require_space()?;
@@ -2218,7 +2236,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			);
 		}
 		self.finish_body();
-		if let Some(child_field) = body.chain {
+		if let Some((child_field, flag)) = body.chain {
 			// the branch opens a block of its own inside the parent's field, which closes with it
 			if let Some(Frame::Block { body: current, .. }) = self.frames.last_mut() {
 				*current = ("", true);
@@ -2255,7 +2273,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 				done,
 				groups,
 				outside,
-				chain: Some(body.field),
+				chain: Some((body.field, flag)),
 			});
 			return Ok(());
 		}
@@ -2341,7 +2359,9 @@ impl<'a, E: Extension> Walker<'a, E> {
 	fn close_block(&mut self, start: u32) -> Result<()> {
 		let close = self.grammar.delimiters.1;
 		let name_at = self.at;
-		let name = self.lowercase_word();
+		let name = self
+			.name_of(self.grammar.blocks.iter().map(|rule| rule.name))
+			.unwrap_or(&self.src[name_at as usize..self.at as usize]);
 		self.space();
 		self.expect(close)?;
 		let end = self.at;
@@ -2411,9 +2431,18 @@ impl<'a, E: Extension> Walker<'a, E> {
 		else {
 			unreachable!()
 		};
-		let node = self.block_node(rule, block_start, end, fields, done, groups, outside, chain.is_some());
+		let node = self.block_node(
+			rule,
+			block_start,
+			end,
+			fields,
+			done,
+			groups,
+			outside,
+			chain.map(|(_, flag)| flag),
+		);
 		match chain {
-			Some(field) => {
+			Some((field, _)) => {
 				let mut one = self.nodes.take();
 				one.push(node);
 				let children = self.children(one);
@@ -2440,11 +2469,11 @@ impl<'a, E: Extension> Walker<'a, E> {
 		done: Vec<(&'static str, Value)>,
 		mut groups: Vec<BodyGroup>,
 		outside: Vec<NodeId>,
-		chained: bool,
+		chained: Option<&'static str>,
 	) -> NodeId {
 		fill_unread(&rule.entries, &mut fields);
-		if let Some(flag) = rule.chain_flag {
-			fields.push((flag, Value::Bool(chained)));
+		for &flag in &rule.chain_flags {
+			fields.push((flag, Value::Bool(chained == Some(flag))));
 		}
 		// the fields outside every scope first, then each body's scope: its fields, then the body
 		let mut ordered = self.fields.take();
@@ -2525,15 +2554,10 @@ impl<'a, E: Extension> Walker<'a, E> {
 	fn tag_node(&mut self, start: u32) -> Result<(NodeId, &'a TagRule)> {
 		let close = self.grammar.delimiters.1;
 		let name_at = self.at;
-		let name = self.lowercase_word();
-		let Some(rule) = self.grammar.tag(name) else {
-			if let Some(known) = self.grammar.tags.iter().find(|rule| name.starts_with(rule.name)) {
-				let at = name_at + known.name.len() as u32;
-				return fail(at, at, Code::Expected, Some("whitespace"));
-			}
+		let Some(name) = self.name_of(self.grammar.tags.iter().map(|rule| rule.name)) else {
 			return fail(name_at, self.at, Code::Expected, Some("a tag name"));
 		};
-		let rule: &'a TagRule = rule;
+		let rule: &'a TagRule = self.grammar.tag(name).unwrap();
 		self.keyword = name_at;
 		let mut read = Read {
 			fields: self.fields.take(),
