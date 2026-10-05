@@ -4,7 +4,7 @@ import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { generate } from './children.ts';
 import svelte from './hosts/svelte.ts';
 import vue from './hosts/vue.ts';
-import type { Expression, Identifier, Pattern } from 'estree';
+import type { Expression, Identifier, Pattern, Program } from 'estree';
 import * as g from '../src/grammar.ts';
 import type { Infer, NodeType } from '../src/grammar.ts';
 import type * as api from '../src/index.ts';
@@ -75,7 +75,7 @@ const { open, scopeOf, referenceOf, parentOf } = untyped(m);
 	assert.equal(at('pattern', '{[a, b], i}', 1, undefined, [',']).end, 7);
 	assert.throws(() => js.expression.until('a s'), TypeError);
 	assert.throws(() => js.expression.until(), TypeError);
-	assert.throws(() => open('{a}').parse('expression' as Any, 1), TypeError);
+	assert.throws(() => open('{a}').parse('expression' as Any, 1), /a parse takes `js`, one of its pieces, `css`, or a grammar/);
 	assert.throws(() => open('{a}').parse(js.expression, '1' as Any), TypeError);
 	assert.throws(() => open('{a}').parse(js.expression, [1] as Any), TypeError);
 	assert.equal(js.expression.until('as').until(',').constructor, Piece);
@@ -262,6 +262,9 @@ const { open, scopeOf, referenceOf, parentOf } = untyped(m);
 	assert.deepEqual(JSON.parse(JSON.stringify(sheet.node.comments)), [{ type: 'CSSComment', value: ' top ', start: 0, end: 9 }]);
 	assert.throws(() => open('div { }').parse(css, 1), TypeError);
 	assert.throws(() => open('div { color: }').parse(css), (e: Any) => e.code === 'expected' && e.pos === 6);
+	const half = open('a { b: c } div { color: } p { q: r }', { errorRecovery: true }).parse(css);
+	assert.deepEqual(half.errors.map((e: Any) => [e.code, e.pos]), [['expected', 17]]);
+	assert.deepEqual(half.node.children.map((rule: Any) => rule.end), [10]);
 	assert.equal(program('"﻿a"; "bc"; zz').body[2].expression.name, 'zz');
 	source[Symbol.dispose]();
 	assert.throws(() => source.parse(js.expression, 1), TypeError);
@@ -429,6 +432,8 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 		assert.throws(() => open('<a>'.repeat(40_000) + '</a>'.repeat(40_000), { scopes }).parse(svelte), deep);
 		assert.equal(open('x', { scopes }).parse().node.body.length, 1);
 	}
+	const sheets = `<style>${'a {'.repeat(501)}</style><style>${'a {'.repeat(501)}${'}'.repeat(501)}</style>`;
+	assert.deepEqual(open(sheets, { errorRecovery: true }).parse(svelte).errors.map((e: Any) => e.code), ['expected', 'unexpected_close']);
 }
 
 // the tests read the source; the published build must answer the same once its specifiers are rewritten
@@ -688,4 +693,6 @@ function types(source: api.Source, definition: typeof svelte) {
 	js.until('as');
 	// @ts-expect-error a grammar reads the whole source
 	source.parse(definition, 1);
+	const either = source.parse(Math.random() < 0.5 ? js : js.expression, 0);
+	expect<Equal<typeof either.node, Program | Expression>>();
 }
