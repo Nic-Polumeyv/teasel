@@ -1112,6 +1112,14 @@ pub struct Piece {
 	pub end: &'static str,
 }
 
+/// Which piece of a construct a marker is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Which {
+	Open,
+	Branch(usize),
+	Close,
+}
+
 /// A tag, or with a close a block.
 #[derive(Clone, Debug)]
 pub struct Construct {
@@ -1130,6 +1138,26 @@ pub struct Construct {
 }
 
 impl Construct {
+	pub fn piece(&self, which: Which) -> &Piece {
+		match which {
+			Which::Open => &self.open,
+			Which::Branch(i) => &self.branches[i],
+			Which::Close => self.close.as_ref().unwrap(),
+		}
+	}
+
+	/// Its pieces, open first.
+	pub fn pieces(&self) -> impl Iterator<Item = (Which, &Piece)> {
+		std::iter::once((Which::Open, &self.open))
+			.chain(
+				self.branches
+					.iter()
+					.enumerate()
+					.map(|(i, piece)| (Which::Branch(i), piece)),
+			)
+			.chain(self.close.iter().map(|piece| (Which::Close, piece)))
+	}
+
 	pub fn is_block(&self) -> bool {
 		self.close.is_some()
 	}
@@ -1233,6 +1261,17 @@ pub struct Grammar {
 	pub constructs: Vec<Construct>,
 	/// The first bytes of every marker, where a construct may start.
 	pub starts: [bool; 256],
+	/// Every marker's first part, and the pieces it starts: what the walker matches once for them.
+	pub firsts: Vec<First>,
+}
+
+/// The pieces whose marker starts with one part: those it is the whole marker of, and the others by
+/// the first byte of their second part, each list in written order.
+#[derive(Clone, Debug)]
+pub struct First {
+	pub part: &'static str,
+	pub whole: Vec<(usize, Which)>,
+	pub next: Vec<(u8, Vec<(usize, Which)>)>,
 }
 
 /// A component name: capitalized, or a dotted path of identifiers.
@@ -2163,6 +2202,7 @@ fn lower(host: Host) -> Result<Grammar, String> {
 		directives,
 		constructs,
 		starts: [false; 256],
+		firsts: Vec::new(),
 	})
 }
 
@@ -2234,6 +2274,7 @@ impl Grammar {
 			directives: Vec::new(),
 			constructs: Vec::new(),
 			starts: [false; 256],
+			firsts: Vec::new(),
 		}
 	}
 
@@ -2285,6 +2326,34 @@ impl Grammar {
 			starts[open.as_bytes()[0] as usize] = true;
 		}
 		self.starts = starts;
+		let mut firsts: Vec<First> = Vec::new();
+		for (index, construct) in self.constructs.iter().enumerate() {
+			for (which, piece) in construct.pieces() {
+				let at = match firsts.iter().position(|first| first.part == piece.marker[0]) {
+					Some(at) => at,
+					None => {
+						firsts.push(First {
+							part: piece.marker[0],
+							whole: Vec::new(),
+							next: Vec::new(),
+						});
+						firsts.len() - 1
+					}
+				};
+				let first = &mut firsts[at];
+				match piece.marker.get(1) {
+					None => first.whole.push((index, which)),
+					Some(next) => {
+						let byte = next.as_bytes()[0];
+						match first.next.iter_mut().find(|(known, _)| *known == byte) {
+							Some((_, list)) => list.push((index, which)),
+							None => first.next.push((byte, vec![(index, which)])),
+						}
+					}
+				}
+			}
+		}
+		self.firsts = firsts;
 		for (ty, _) in self.own_children() {
 			if crate::recipe::names_type(ty) {
 				return Err(format!("a node type named {ty} is JavaScript's"));
