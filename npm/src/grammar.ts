@@ -163,9 +163,6 @@ export interface Node<T extends string = string, I extends readonly Item[] = rea
 	readonly node: T;
 	readonly form?: I;
 }
-/** A node of type `type` whose fields `form` reads: wherever a node is made, a rule written apart keeps its types. */
-export const node = <const T extends string, const I extends readonly Item[]>(type: T, ...form: I): Node<T, I> =>
-	form.length === 0 ? { node: type } : { node: type, form };
 
 type BlockForm = Form<Field<'form', false | 'inside' | 'outside'> | Field<'body'>>;
 type TagForm = Form<Field<'form'>>;
@@ -209,8 +206,6 @@ export interface Block<T extends string = string> {
 }
 
 export type Construct<T extends string = string> = Tag<T> | Block<T>;
-/** A construct, its types kept when it is written apart from the grammar. */
-export const construct = <const C extends Construct>(construct: C): C => construct;
 
 export interface Directive<T extends string = string> extends Node<T, DirectiveForm> {
 	readonly unique?: 'kind' | 'attributes';

@@ -5,14 +5,16 @@ const error = { error: g.bind(g.js.pattern) };
 const transition = { expression: g.value.expression };
 
 export default g.grammar('svelte', {
-	document: g.node(
-		'Root',
-		{ css: g.doc.style, js: g.literal([]), options: g.literal(null), comments: g.doc.comments, module: g.optional(g.doc.module) },
-		g.scope({ instance: g.optional(g.doc.script) }, g.scope({ fragment: g.content })),
-	),
-	fragment: g.node('Fragment', g.scope({ nodes: g.nodes })),
-	text: g.node('Text', { data: g.text.data, raw: g.text.raw }),
-	comment: g.node('Comment', { data: g.text.data }),
+	document: {
+		node: 'Root',
+		form: [
+			{ css: g.doc.style, js: g.literal([]), options: g.literal(null), comments: g.doc.comments, module: g.optional(g.doc.module) },
+			g.scope({ instance: g.optional(g.doc.script) }, g.scope({ fragment: g.content })),
+		],
+	},
+	fragment: { node: 'Fragment', form: [g.scope({ nodes: g.nodes })] },
+	text: { node: 'Text', form: [{ data: g.text.data, raw: g.text.raw }] },
+	comment: { node: 'Comment', form: [{ data: g.text.data }] },
 	attributes: { shorthand: ['{', '}'] },
 	autoclose: true,
 	trim: true,
@@ -21,8 +23,8 @@ export default g.grammar('svelte', {
 	elements: {
 		fields: { name: g.element.tag, attributes: g.element.attributes, fragment: g.content },
 		rules: {
-			'svelte:element': g.node('SvelteElement', { tag: g.element.thisOrText }),
-			'svelte:component': g.node('SvelteComponent', { expression: g.element.this }),
+			'svelte:element': { node: 'SvelteElement', form: [{ tag: g.element.thisOrText }] },
+			'svelte:component': { node: 'SvelteComponent', form: [{ expression: g.element.this }] },
 			'svelte:self': { node: 'SvelteSelf' },
 			'svelte:window': { node: 'SvelteWindow', root: true, once: true },
 			'svelte:document': { node: 'SvelteDocument', root: true, once: true },
@@ -50,15 +52,15 @@ export default g.grammar('svelte', {
 		fields: { name: g.directive.arg, modifiers: g.directive.modifiers },
 		rules: {
 			bind: { node: 'BindDirective', form: [{ expression: g.orArg(g.value.expression) }], unique: 'attributes' },
-			on: g.node('OnDirective', g.opt({ expression: g.value.expression })),
-			use: g.node('UseDirective', g.opt({ expression: g.value.expression })),
+			on: { node: 'OnDirective', form: [g.opt({ expression: g.value.expression })] },
+			use: { node: 'UseDirective', form: [g.opt({ expression: g.value.expression })] },
 			class: { node: 'ClassDirective', form: [{ expression: g.orArg(g.value.expression) }], unique: 'kind' },
 			style: { node: 'StyleDirective', form: [{ value: g.value.raw }], unique: 'kind' },
-			transition: g.node('TransitionDirective', g.opt(transition), { intro: g.literal(true), outro: g.literal(true) }),
-			in: g.node('TransitionDirective', g.opt(transition), { intro: g.literal(true), outro: g.literal(false) }),
-			out: g.node('TransitionDirective', g.opt(transition), { intro: g.literal(false), outro: g.literal(true) }),
-			animate: g.node('AnimateDirective', g.opt({ expression: g.value.expression })),
-			let: g.node('LetDirective', { expression: g.bind(g.orArg(g.value.pattern)) }),
+			transition: { node: 'TransitionDirective', form: [g.opt(transition), { intro: g.literal(true), outro: g.literal(true) }] },
+			in: { node: 'TransitionDirective', form: [g.opt(transition), { intro: g.literal(true), outro: g.literal(false) }] },
+			out: { node: 'TransitionDirective', form: [g.opt(transition), { intro: g.literal(false), outro: g.literal(true) }] },
+			animate: { node: 'AnimateDirective', form: [g.opt({ expression: g.value.expression })] },
+			let: { node: 'LetDirective', form: [{ expression: g.bind(g.orArg(g.value.pattern)) }] },
 		},
 	},
 
