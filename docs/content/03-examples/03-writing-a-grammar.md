@@ -64,12 +64,11 @@ Nothing in the grammar mentions `{{` yet, so every `{{ … }}` is text. Between 
 
 `{{ item.name }}` is a JavaScript expression, and you want it in the tree as one: an `Expression` node holding the expression's ESTree. It stands in content and as an attribute's value, `title={{ item.name }}`.
 
-Anything your language marks with words of its own is a construct. A construct says what it is marked with and what it reads after the marker, in order:
+Anything your language marks with words of its own is a construct. A construct is written under the type of the node it makes, and says what it is marked with and what it reads after the marker, in order:
 
 ```js tpl.js
 	constructs: {
-		expression: {
-			node: 'Expression',
+		Expression: {
 			in: ['content', 'value'],
 			open: { marker: ['{{'], form: [{ expression: g.js.expression }, '}}'] },
 		},
@@ -95,8 +94,7 @@ Read the block's head as a sentence: `repeat item, i in items by item.id`. Start
 `item` and `items` are different kinds of name. `items` is used: it is declared somewhere else, in your component's script or by whoever renders it. `item` is declared here, and only the block's content can see it. Read it as a pattern, so `{ name } in items` works too, and bind it, so teasel declares it in the scope the block opens.
 
 ```js tpl.js
-		repeat: {
-			node: 'RepeatBlock',
+		RepeatBlock: {
 			open: {
 				marker: ['{{', '#repeat'],
 				space: true,

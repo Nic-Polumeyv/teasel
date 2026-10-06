@@ -140,7 +140,7 @@
 	"errors": [
 		{
 			"code": "unclosed",
-			"message": "if is not closed",
+			"message": "{#if} is not closed",
 			"pos": 5,
 			"end": 6,
 			"loc": {
@@ -150,7 +150,7 @@
 		},
 		{
 			"code": "unclosed",
-			"message": "each is not closed",
+			"message": "{#each} is not closed",
 			"pos": 26,
 			"end": 27,
 			"loc": {
@@ -170,7 +170,7 @@
 		},
 		{
 			"code": "unexpected_close",
-			"message": "Unexpected closing each",
+			"message": "Unexpected closing {/each}",
 			"pos": 55,
 			"end": 56,
 			"loc": {

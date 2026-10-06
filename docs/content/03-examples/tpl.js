@@ -14,13 +14,11 @@ export const tpl = g.grammar('tpl', {
 		other: { node: 'Element' },
 	},
 	constructs: {
-		expression: {
-			node: 'Expression',
+		Expression: {
 			in: ['content', 'value'],
 			open: { marker: ['{{'], form: [{ expression: g.js.expression }, '}}'] },
 		},
-		repeat: {
-			node: 'RepeatBlock',
+		RepeatBlock: {
 			open: {
 				marker: ['{{', '#repeat'],
 				space: true,

@@ -544,7 +544,7 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 			other: { node: 'Element' },
 		},
 	};
-	const expression = { node: 'Expression', in: ['content', 'value'], open: { marker: ['{{'], form: [{ expression: g.js.expression }, '}}'] } } as const;
+	const expression = { in: ['content', 'value'], open: { marker: ['{{'], form: [{ expression: g.js.expression }, '}}'] } } as const;
 	const item = { item: g.bind(g.js.pattern) };
 	const index = g.opt(',', { index: g.optional(g.bind(g.js.identifier)) });
 	const list = { list: g.js.expression };
@@ -552,9 +552,8 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 	const repeat = (head: Any[], branches: Any[] = []): Any => ({
 		...html,
 		constructs: {
-			expression,
-			repeat: {
-				node: 'RepeatBlock',
+			Expression: expression,
+			RepeatBlock: {
 				open: { marker: ['{{', '#repeat'], space: true, form: [...head, '}}', { body: g.content }] },
 				branches,
 				close: { marker: ['{{', '/repeat'], form: ['}}'] },
@@ -563,7 +562,7 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 	});
 	const steps: Any[] = [
 		html,
-		{ ...html, constructs: { expression } },
+		{ ...html, constructs: { Expression: expression } },
 		repeat([item, 'in', list]),
 		repeat([item, index, 'in', list]),
 		repeat([item, index, 'in', list, key]),
@@ -645,11 +644,11 @@ function types(source: api.Source, definition: typeof svelte) {
 	g.orArg(g.js.expression);
 	const construct = (rule: g.Construct) => rule;
 	// @ts-expect-error a tag has no body
-	construct({ node: 'T', open: { marker: ['{'], form: [{ body: g.content }, '}'] } });
+	construct({ open: { marker: ['{'], form: [{ body: g.content }, '}'] } });
 	// @ts-expect-error a tag opens no scope to declare in
-	construct({ node: 'T', open: { marker: ['{'], form: [{ name: g.bind(g.js.identifier) }, '}'] } });
+	construct({ open: { marker: ['{'], form: [{ name: g.bind(g.js.identifier) }, '}'] } });
 	// @ts-expect-error a close reads words only
-	construct({ node: 'B', open: { marker: ['{#b'], form: ['}', { body: g.content }] }, close: { marker: ['{/b'], form: [{ e: g.js.expression }, '}'] } });
+	construct({ open: { marker: ['{#b'], form: ['}', { body: g.content }] }, close: { marker: ['{/b'], form: [{ e: g.js.expression }, '}'] } });
 	const directive = (rule: g.Directive) => rule;
 	// @ts-expect-error only a block declares around itself
 	directive({ node: 'D', form: [{ name: g.bind.outside(g.js.identifier) }] });
@@ -686,8 +685,8 @@ function types(source: api.Source, definition: typeof svelte) {
 		directives: { fields: { arg: g.optional(g.directive.arg) } },
 	});
 	// a rule written apart from the grammar keeps its types
-	const out = { node: 'Out', in: ['content', 'value'], open: { marker: ['{{'], form: [{ value: g.js.expression }, '}}'] } } as const;
-	const apart = g.grammar('apart', { ...base, document: { node: 'Root', form: [{ children: g.content }] }, elements: { fields }, constructs: { out } });
+	const out = { in: ['content', 'value'], open: { marker: ['{{'], form: [{ value: g.js.expression }, '}}'] } } as const;
+	const apart = g.grammar('apart', { ...base, document: { node: 'Root', form: [{ children: g.content }] }, elements: { fields }, constructs: { Out: out } });
 	expect<Equal<NodeType<typeof apart, 'Out'>['value'], Expression>>();
 
 	const doc = source.parse(definition);

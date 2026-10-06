@@ -823,7 +823,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		while self.frames.len() > 1 {
 			let (start, what) = match self.frames.last().unwrap() {
 				Frame::Element { start, name, .. } => (*start, &self.src[name.0 as usize..name.1 as usize]),
-				Frame::Block { start, rule, .. } => (*start, rule.name),
+				Frame::Block { start, rule, .. } => (*start, rule.open.display),
 				Frame::Root { .. } => unreachable!(),
 			};
 			self.report(error(start, start + 1, Code::Unclosed, Some(what)))?;
@@ -1454,7 +1454,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 					chain,
 					..
 				}) if self.recovering() => {
-					let (block_start, what, chained) = (*block_start, rule.name, chain.is_some());
+					let (block_start, what, chained) = (*block_start, rule.open.display, chain.is_some());
 					if !chained {
 						self.report(error(block_start, block_start + 1, Code::Unclosed, Some(what)))?;
 					}
@@ -2286,7 +2286,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 				start,
 				self.at,
 				Code::Placement,
-				Some(&format!("A {} tag in content", rule.name)),
+				Some(&format!("{} in content", rule.open.display)),
 			);
 		}
 		fail(start, start + 1, Code::UnexpectedToken, None)
@@ -2367,7 +2367,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 				start,
 				start + 1,
 				Code::Placement,
-				Some(&format!("A branch in {}", rule.name)),
+				Some(&format!("A branch in {}", rule.open.display)),
 			),
 			Some(rule) => {
 				let names = rule.branches.iter().map(|b| b.display).collect::<Vec<_>>().join(" or ");
@@ -2405,7 +2405,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 					start,
 					self.at,
 					Code::Placement,
-					Some(&format!("A {} tag among attributes", rule.name)),
+					Some(&format!("{} among attributes", rule.open.display)),
 				);
 			}
 			return Ok(Some(Some((node, None))));
@@ -2689,43 +2689,37 @@ impl<'a, E: Extension> Walker<'a, E> {
 		done.push((field, children));
 	}
 
-	fn close_block(&mut self, construct: &'a Construct, start: u32, name_at: u32) -> Result<()> {
-		let name = construct.name;
+	fn close_block(&mut self, construct: &'a Construct, start: u32, word: u32) -> Result<()> {
+		let close = construct.close.as_ref().unwrap();
 		let mut read = Read {
 			fields: self.fields.take(),
 			body: None,
 		};
-		self.piece(construct.close.as_ref().unwrap(), &mut read)?;
+		self.piece(close, &mut read)?;
 		self.fields.give(read.fields);
 		let end = self.at;
-		let open = self
-			.frames
-			.iter()
-			.any(|frame| matches!(frame, Frame::Block { rule, .. } if rule.name == name));
-		if !self.recovering() || !open {
+		let ours = |frame: &Frame<'a>| matches!(frame, Frame::Block { rule, .. } if std::ptr::eq(*rule, construct));
+		if !self.recovering() || !self.frames.iter().any(ours) {
 			match self.frames.last() {
-				Some(Frame::Block { rule, .. }) if rule.name == name => {}
-				Some(Frame::Block { .. }) => {
-					return self.report(error(
-						name_at,
-						name_at + name.len() as u32,
-						Code::UnexpectedClose,
-						Some(name),
-					));
+				Some(frame) if ours(frame) => {}
+				// the block that is open wanted its own close here
+				Some(Frame::Block { rule, .. }) => {
+					let wanted = rule.close.as_ref().unwrap().display;
+					return self.report(error(word, word, Code::Expected, Some(wanted)));
 				}
-				_ => return self.report(error(start, start + 1, Code::UnexpectedClose, Some(name))),
+				_ => return self.report(error(start, start + 1, Code::UnexpectedClose, Some(close.display))),
 			}
 		}
 		loop {
 			match self.frames.last() {
-				Some(Frame::Block { rule, .. }) if rule.name == name => break,
+				Some(frame) if ours(frame) => break,
 				Some(Frame::Block {
 					start: block_start,
 					rule,
 					chain,
 					..
 				}) => {
-					let (block_start, what, chained) = (*block_start, rule.name, chain.is_some());
+					let (block_start, what, chained) = (*block_start, rule.open.display, chain.is_some());
 					if !chained {
 						self.report(error(block_start, block_start + 1, Code::Unclosed, Some(what)))?;
 					}

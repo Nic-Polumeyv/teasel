@@ -20,18 +20,16 @@ export const grammar = g.grammar('mini', {
 	},
 	script: { element: 'script' },
 	constructs: {
-		if: {
-			node: 'IfBlock',
+		IfBlock: {
 			open: { marker: ['{{', '#if'], space: true, form: [{ test: g.js.expression }, '}}', { consequent: g.content }] },
 			branches: [{ marker: ['{{', ':else'], form: ['}}', { alternate: g.content }] }],
 			close: { marker: ['{{', '/if'], form: ['}}'] },
 		},
-		each: {
-			node: 'EachBlock',
+		EachBlock: {
 			open: { marker: ['{{', '#each'], space: true, form: [{ list: g.js.expression }, 'as', { item: g.bind(g.js.pattern) }, '}}', { body: g.content }] },
 			close: { marker: ['{{', '/each'], form: ['}}'] },
 		},
-		expression: { node: 'ExpressionTag', open: { marker: ['{{'], form: [{ expression: g.js.expression }, '}}'] } },
+		ExpressionTag: { open: { marker: ['{{'], form: [{ expression: g.js.expression }, '}}'] } },
 	},
 });
 ```

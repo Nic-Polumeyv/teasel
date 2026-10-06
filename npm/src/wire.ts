@@ -570,16 +570,14 @@ function writeUniqueness(w: Writer, v: Uniqueness): void {
 	}
 }
 
-/** A tag, or with `close` a block. */
+/** A tag, or with `close` a block; the type of its node is the key it is written under. */
 type Construct = {
-	node: string;
 	in?: ReadonlyArray<Place>;
 	open: Piece;
 	branches?: ReadonlyArray<Branch>;
 	close?: Piece;
 };
 function writeConstruct(w: Writer, v: Construct): void {
-	w.str(v.node);
 	if (v.in === undefined) w.word(0);
 	else {
 		w.word(1);

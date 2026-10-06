@@ -113,9 +113,8 @@ fn unfinished_input() {
 fn tags_fill_unread() {
 	let mut host = minimal();
 	host.definition.constructs = Some(Record(vec![(
-		"t",
+		"T",
 		tag(
-			"T",
 			&["{", "@t"],
 			vec![
 				definition::Item::Opt(vec![definition::Item::Fields(Record(vec![(
@@ -207,9 +206,8 @@ fn piece(marker: &[&'static str], items: Vec<definition::Item>) -> definition::P
 	}
 }
 
-fn tag(ty: &'static str, marker: &[&'static str], items: Vec<definition::Item>) -> definition::Construct {
+fn tag(marker: &[&'static str], items: Vec<definition::Item>) -> definition::Construct {
 	definition::Construct {
-		node: ty,
 		r#in: None,
 		open: piece(marker, items),
 		branches: None,
@@ -218,14 +216,8 @@ fn tag(ty: &'static str, marker: &[&'static str], items: Vec<definition::Item>) 
 }
 
 /// A block written as Svelte writes one: `{#name …}`, `{:word …}`, `{/name}`.
-fn block(
-	name: &'static str,
-	ty: &'static str,
-	items: Vec<definition::Item>,
-	branches: Vec<definition::Branch>,
-) -> definition::Construct {
+fn block(name: &'static str, items: Vec<definition::Item>, branches: Vec<definition::Branch>) -> definition::Construct {
 	definition::Construct {
-		node: ty,
 		r#in: None,
 		open: piece(&["{", keep(format!("#{name}"))], items),
 		branches: Some(branches),
@@ -254,8 +246,8 @@ fn keep(s: String) -> &'static str {
 	Box::leak(s.into_boxed_str())
 }
 
-fn construct<'g>(grammar: &'g Grammar, name: &str) -> &'g Construct {
-	grammar.constructs.iter().find(|c| c.name == name).unwrap()
+fn construct<'g>(grammar: &'g Grammar, ty: &str) -> &'g Construct {
+	grammar.constructs.iter().find(|c| c.ty == ty).unwrap()
 }
 
 fn element(ty: &'static str) -> definition::Element {
@@ -271,9 +263,8 @@ fn element(ty: &'static str) -> definition::Element {
 }
 
 /// `{expression}` in content and in attribute values.
-fn expression(ty: &'static str, field: &'static str) -> definition::Construct {
+fn expression(field: &'static str) -> definition::Construct {
 	definition::Construct {
-		node: ty,
 		r#in: Some(vec![Place::Content, Place::Value]),
 		open: definition::Piece {
 			marker: vec!["{"],
@@ -333,10 +324,9 @@ fn a_body_declares_only_what_the_form_reads() {
 			..source("js", "pattern", false)
 		};
 		host.definition.constructs = Some(Record(vec![(
-			"each",
+			"EachBlock",
 			block(
 				"each",
-				"EachBlock",
 				vec![
 					definition::Item::Fields(Record(vec![("expression", source("js", "expression", false))])),
 					definition::Item::Word("as"),
@@ -351,7 +341,14 @@ fn a_body_declares_only_what_the_form_reads() {
 	};
 	let grammar = Grammar::read(&each("context")).unwrap();
 	assert_eq!(
-		construct(&grammar, "each").open.form.body.as_ref().unwrap().declares[0].field,
+		construct(&grammar, "EachBlock")
+			.open
+			.form
+			.body
+			.as_ref()
+			.unwrap()
+			.declares[0]
+			.field,
 		"context"
 	);
 	assert!(Grammar::read(&[]).is_err() && Grammar::read(&each("context")[..40]).is_err());
@@ -381,7 +378,7 @@ fn a_node_type_of_javascript_is_refused() {
 fn a_definition_is_refused_by_name() {
 	let with_if = |items: Vec<definition::Item>, branches: Vec<definition::Branch>| {
 		let mut host = minimal();
-		host.definition.constructs = Some(Record(vec![("if", block("if", "IfBlock", items, branches))]));
+		host.definition.constructs = Some(Record(vec![("IfBlock", block("if", items, branches))]));
 		host.wire()
 	};
 	let bound = Source {
@@ -413,7 +410,7 @@ fn a_definition_is_refused_by_name() {
 	))
 	.unwrap();
 	assert_eq!(
-		construct(&grammar, "if").branches[0]
+		construct(&grammar, "IfBlock").branches[0]
 			.form
 			.body
 			.as_ref()
@@ -477,10 +474,9 @@ fn records_group_freely() {
 		fields(vec![("consequent", source("content", "fragment", false))]),
 	];
 	host.definition.constructs = Some(Record(vec![(
-		"if",
+		"IfBlock",
 		block(
 			"if",
-			"IfBlock",
 			open.clone(),
 			vec![branch(&["{", ":else", "if"], open, Some(("alternate", "elseif")))],
 		),
@@ -520,7 +516,7 @@ fn records_group_freely() {
 		other: None,
 	});
 	host.definition.elements.other = Some(element("RegularElement"));
-	host.definition.constructs = Some(Record(vec![("expression", expression("ExpressionTag", "expression"))]));
+	host.definition.constructs = Some(Record(vec![("ExpressionTag", expression("expression"))]));
 	let answer = parse(&host, "<a transition:fade={params}/>");
 	assert!(
 		!answer.contains("\"error\"") && answer.contains("\"name\":\"params\"") && answer.contains("\"intro\":true"),
@@ -535,10 +531,9 @@ fn a_branch_names_a_block_without_branches() {
 	let mut host = minimal();
 	host.definition.constructs = Some(Record(vec![
 		(
-			"repeat",
+			"RepeatBlock",
 			block(
 				"repeat",
-				"RepeatBlock",
 				vec![
 					fields(vec![("list", source("js", "expression", false))]),
 					definition::Item::Word("}"),
@@ -548,10 +543,9 @@ fn a_branch_names_a_block_without_branches() {
 			),
 		),
 		(
-			"if",
+			"IfBlock",
 			block(
 				"if",
-				"IfBlock",
 				vec![
 					fields(vec![("test", source("js", "expression", false))]),
 					definition::Item::Word("}"),
@@ -573,7 +567,7 @@ fn a_branch_names_a_block_without_branches() {
 		&host.wire(),
 		&Request::from_flags(Options::MODULE),
 	);
-	assert!(answer.contains("A branch in repeat is not allowed here"), "{answer}");
+	assert!(answer.contains("A branch in {#repeat} is not allowed here"), "{answer}");
 }
 
 // what a definition says that the engine would not read is refused, naming the field
@@ -586,7 +580,7 @@ fn a_definition_says_only_what_is_read() {
 	};
 	let with_block = |items: Vec<definition::Item>| {
 		let mut host = minimal();
-		host.definition.constructs = Some(Record(vec![("each", block("each", "EachBlock", items, Vec::new()))]));
+		host.definition.constructs = Some(Record(vec![("EachBlock", block("each", items, Vec::new()))]));
 		host
 	};
 	refused(
@@ -611,9 +605,8 @@ fn a_definition_says_only_what_is_read() {
 
 	let mut host = minimal();
 	host.definition.constructs = Some(Record(vec![(
-		"const",
+		"ConstTag",
 		tag(
-			"ConstTag",
 			&["{", "@const"],
 			vec![
 				fields(vec![(
@@ -738,18 +731,18 @@ fn a_grammar_that_cannot_work_is_refused() {
 	};
 	let with_block = |items: Vec<definition::Item>, branches: Vec<definition::Branch>| {
 		let mut host = minimal();
-		host.definition.constructs = Some(Record(vec![("x", block("x", "X", items, branches))]));
+		host.definition.constructs = Some(Record(vec![("X", block("x", items, branches))]));
 		host
 	};
 
 	let mut host = minimal();
-	host.definition.constructs = Some(Record(vec![("t", tag("T", &[], vec![close()]))]));
+	host.definition.constructs = Some(Record(vec![("T", tag(&[], vec![close()]))]));
 	refused(host, "T: a marker needs parts, none of them empty");
 	let mut host = minimal();
-	host.definition.constructs = Some(Record(vec![("t", tag("T", &["{", ""], vec![close()]))]));
+	host.definition.constructs = Some(Record(vec![("T", tag(&["{", ""], vec![close()]))]));
 	refused(host, "T: a marker needs parts, none of them empty");
 	let mut host = minimal();
-	host.definition.constructs = Some(Record(vec![("t", tag("T", &["{"], vec![js("e", "expression")]))]));
+	host.definition.constructs = Some(Record(vec![("T", tag(&["{"], vec![js("e", "expression")]))]));
 	refused(host, "T: a marker's form ends its tag with a word");
 
 	refused(
@@ -888,7 +881,7 @@ fn a_grammar_that_cannot_work_is_refused() {
 		Vec::new(),
 	);
 	let grammar = Grammar::read(&host.wire()).unwrap();
-	let Item::Group { alternatives, .. } = construct(&grammar, "x").open.form.items.last().unwrap() else {
+	let Item::Group { alternatives, .. } = construct(&grammar, "X").open.form.items.last().unwrap() else {
 		panic!("the group is the last item");
 	};
 	let declares = |i: usize| -> Vec<&str> {
@@ -946,21 +939,17 @@ fn a_host_has_its_own_syntax() {
 	let constructs = |open: &'static str, close: &'static str| {
 		let word = definition::Item::Word(close);
 		let mark = |w: &'static str| -> Vec<&'static str> { vec![open, w] };
-		let construct = |ty: &'static str, places: Vec<Place>, marker: Vec<&'static str>, space: bool, items| {
-			definition::Construct {
-				node: ty,
-				r#in: Some(places),
-				open: definition::Piece {
-					marker,
-					space: space.then_some(true),
-					form: items,
-				},
-				branches: None,
-				close: None,
-			}
+		let construct = |places: Vec<Place>, marker: Vec<&'static str>, space: bool, items| definition::Construct {
+			r#in: Some(places),
+			open: definition::Piece {
+				marker,
+				space: space.then_some(true),
+				form: items,
+			},
+			branches: None,
+			close: None,
 		};
-		let for_ = |name: &'static str, ty: &'static str| definition::Construct {
-			node: ty,
+		let for_ = |name: &'static str| definition::Construct {
 			r#in: None,
 			open: definition::Piece {
 				marker: mark(keep(format!("#{name}"))),
@@ -975,12 +964,11 @@ fn a_host_has_its_own_syntax() {
 			}),
 		};
 		Record(vec![
-			("for", for_("for", "For")),
-			("for-each", for_("for-each", "ForEach")),
+			("For", for_("for")),
+			("ForEach", for_("for-each")),
 			(
-				"myTag",
+				"MyTag",
 				construct(
-					"MyTag",
 					vec![Place::Content],
 					mark("@myTag"),
 					true,
@@ -988,9 +976,8 @@ fn a_host_has_its_own_syntax() {
 				),
 			),
 			(
-				"spread",
+				"Spread",
 				construct(
-					"Spread",
 					vec![Place::Attributes],
 					mark("..."),
 					false,
@@ -998,9 +985,8 @@ fn a_host_has_its_own_syntax() {
 				),
 			),
 			(
-				"declaration",
+				"Decl",
 				construct(
-					"Decl",
 					vec![Place::Content],
 					vec![open],
 					false,
@@ -1008,9 +994,8 @@ fn a_host_has_its_own_syntax() {
 				),
 			),
 			(
-				"expression",
+				"Expr",
 				construct(
-					"Expr",
 					vec![Place::Content, Place::Value],
 					vec![open],
 					false,
@@ -1090,10 +1075,10 @@ fn reads_the_svelte_grammar() {
 	assert_eq!(grammar.fragment, Some(("Fragment", "nodes")));
 	assert!(grammar.fragment_scope);
 	assert!(grammar.shorthand == Some(("{", "}")) && grammar.autoclose && grammar.trim);
-	assert_eq!(construct(&grammar, "html").open.marker, ["{", "@html"]);
+	assert_eq!(construct(&grammar, "HtmlTag").open.marker, ["{", "@html"]);
 	assert!(
-		construct(&grammar, "attach").stands(Place::Attributes)
-			&& !construct(&grammar, "html").stands(Place::Attributes)
+		construct(&grammar, "AttachTag").stands(Place::Attributes)
+			&& !construct(&grammar, "HtmlTag").stands(Place::Attributes)
 	);
 	assert!(grammar.is_void("br") && grammar.is_void("!DOCTYPE") && !grammar.is_void("div"));
 	assert_eq!(grammar.elements.len(), 17);
@@ -1109,7 +1094,7 @@ fn reads_the_svelte_grammar() {
 		grammar.directive("in").unwrap().flags,
 		[("intro", true), ("outro", false)]
 	);
-	let each = construct(&grammar, "each");
+	let each = construct(&grammar, "EachBlock");
 	assert_eq!(each.ty, "EachBlock");
 	let body = each.open.form.body.as_ref().unwrap();
 	assert_eq!(body.field, "body");
@@ -1117,14 +1102,14 @@ fn reads_the_svelte_grammar() {
 	assert!(
 		matches!(each.open.form.items[1], Item::Group { ref alternatives, required: false, .. } if alternatives.len() == 1)
 	);
-	let await_ = construct(&grammar, "await");
+	let await_ = construct(&grammar, "AwaitBlock");
 	let Item::Group { alternatives, .. } = &await_.open.form.items[1] else {
 		panic!()
 	};
 	assert_eq!(alternatives.len(), 3);
 	assert_eq!(alternatives[0].body.as_ref().unwrap().field, "then");
 	assert_eq!(await_.branches[1].display, "{:catch}");
-	let if_ = construct(&grammar, "if");
+	let if_ = construct(&grammar, "IfBlock");
 	assert_eq!(if_.chain_flags, ["elseif"]);
 	assert_eq!(
 		if_.branches[0].form.body.as_ref().unwrap().chain,
@@ -1140,7 +1125,7 @@ fn reads_the_svelte_grammar() {
 fn reads_the_vue_grammar() {
 	let root = Path::new(env!("CARGO_MANIFEST_DIR"));
 	let grammar = Grammar::read(&fs::read(root.join("tests/hosts/vue/host.wire")).unwrap()).unwrap();
-	assert_eq!(construct(&grammar, "interpolation").open.marker, ["{{"]);
+	assert_eq!(construct(&grammar, "Interpolation").open.marker, ["{{"]);
 	assert!(
 		!grammar.constructs.iter().any(|c| c.stands(Place::Value)) && !grammar.autoclose && grammar.fragment.is_none()
 	);

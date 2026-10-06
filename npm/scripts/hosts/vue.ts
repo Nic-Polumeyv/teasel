@@ -45,6 +45,6 @@ export default g.grammar('vue', {
 	},
 
 	constructs: {
-		interpolation: { node: 'Interpolation', in: ['content', 'rcdata'], open: { marker: ['{{'], form: [{ content: g.js.expression }, '}}'] } },
+		Interpolation: { in: ['content', 'rcdata'], open: { marker: ['{{'], form: [{ content: g.js.expression }, '}}'] } },
 	},
 });

@@ -1123,7 +1123,6 @@ pub enum Which {
 /// A tag, or with a close a block.
 #[derive(Clone, Debug)]
 pub struct Construct {
-	pub name: &'static str,
 	pub ty: &'static str,
 	pub places: Vec<Place>,
 	pub open: Piece,
@@ -1447,9 +1446,8 @@ pub mod definition {
 	}
 
 	wire! {
-		/// A tag, or with `close` a block.
+		/// A tag, or with `close` a block; the type of its node is the key it is written under.
 		pub struct Construct {
-			pub node: &'static str,
 			pub r#in: Option<Vec<Place>>,
 			pub open: Piece,
 			pub branches: Option<Vec<Branch>>,
@@ -1962,8 +1960,7 @@ fn piece(
 	})
 }
 
-fn construct(name: &'static str, rule: &definition::Construct) -> Result<Construct, String> {
-	let ty = rule.node;
+fn construct(ty: &'static str, rule: &definition::Construct) -> Result<Construct, String> {
 	let block = rule.close.is_some();
 	let places = match &rule.r#in {
 		Some(list) if list.is_empty() => return Err(format!("{ty} stands nowhere")),
@@ -2036,7 +2033,6 @@ fn construct(name: &'static str, rule: &definition::Construct) -> Result<Constru
 		None => None,
 	};
 	Ok(Construct {
-		name,
 		ty,
 		places,
 		open,

@@ -185,8 +185,7 @@ export interface Branch<I extends BlockForm = BlockForm> extends Piece<I> {
 }
 
 /** A construct without a close: it reads no content and opens no scope. */
-export interface Tag<T extends string = string> {
-	readonly node: T;
+export interface Tag {
 	/** Content when left out. */
 	readonly in?: readonly Place[];
 	readonly open: Piece<TagForm>;
@@ -195,8 +194,7 @@ export interface Tag<T extends string = string> {
 }
 
 /** A construct with a close: its open, and every branch, ends in content. */
-export interface Block<T extends string = string> {
-	readonly node: T;
+export interface Block {
 	/** Content when left out. */
 	readonly in?: readonly Place[];
 	readonly open: Piece;
@@ -205,7 +203,8 @@ export interface Block<T extends string = string> {
 	readonly close: Piece<readonly string[]>;
 }
 
-export type Construct<T extends string = string> = Tag<T> | Block<T>;
+/** A tag or a block; the type of the node it makes is the key it is written under. */
+export type Construct = Tag | Block;
 
 export interface Directive<T extends string = string> extends Node<T, DirectiveForm> {
 	readonly unique?: 'kind' | 'attributes';
@@ -270,7 +269,8 @@ export interface Definition {
 		readonly rules?: { readonly [name: string]: Directive };
 		readonly other?: Directive;
 	};
-	readonly constructs?: { readonly [name: string]: Construct };
+	/** By the type of the node each makes. */
+	readonly constructs?: { readonly [type: string]: Construct };
 }
 
 export interface Grammar<D extends Definition = Definition> extends Language<NodeOf<D['document'], D>> {
@@ -366,11 +366,15 @@ type BranchMembers<B> = B extends { readonly reopen: readonly [infer F extends s
 	? Member<F, Source<Children, 'form', Plain>, true> | Member<Flag, Source<boolean, 'form', Plain>, false>
 	: Collect<FormOf<B>, true>;
 
-type ConstructNode<C, G extends Definition> = C extends { readonly node: infer T extends string; readonly open: { readonly form: infer I } }
+type ConstructNode<T extends string, C, G extends Definition> = C extends { readonly open: { readonly form: infer I } }
 	? Typed<T, Shape<Collect<I, false> | BranchMembers<C extends { readonly branches: readonly (infer B)[] } ? B : never>, G, false>>
 	: never;
-/** The constructs that stand in `P`, content when they say nowhere. */
-type Standing<C, P extends Place> = C extends { readonly in: readonly (infer In)[] } ? (P extends In ? C : never) : P extends 'content' ? C : never;
+/** Whether a construct stands in `P`, content when it says nowhere. */
+type Stands<C, P extends Place> = C extends { readonly in: readonly (infer In)[] } ? P extends In ? true : false : P extends 'content' ? true : false;
+/** The nodes of the constructs that stand in `P`. */
+type Constructs<G extends Definition, P extends Place> = {
+	[T in keyof NonNullable<G['constructs']> & string]: Stands<NonNullable<G['constructs']>[T], P> extends true ? ConstructNode<T, NonNullable<G['constructs']>[T], G> : never;
+}[keyof NonNullable<G['constructs']> & string];
 type DirectiveNode<D, G extends Definition> = D extends Directive
 	? G['directives'] extends { fields: infer F }
 		? NodeOf<D, G, Collect<[F], false>, true>
@@ -388,13 +392,13 @@ export type Content<G extends Definition> =
 	| ElementNode<Values<G['elements']['rules']> | G['elements']['component'] | G['elements']['other'], G>
 	| NodeOf<G['text'], G>
 	| NodeOf<G['comment'], G>
-	| ConstructNode<Standing<Values<G['constructs']>, 'content'>, G>;
+	| Constructs<G, 'content'>;
 
 /** What an element's attributes can hold. */
 export type Attribute<G extends Definition> =
 	| AttributeNode<G>
 	| DirectiveNode<Values<NonNullable<G['directives']>['rules']> | NonNullable<G['directives']>['other'], G>
-	| ConstructNode<Standing<Values<G['constructs']>, 'attributes'>, G>;
+	| Constructs<G, 'attributes'>;
 
 /** The tree a grammar's parse answers with. */
 export type Infer<Gr extends Grammar> = Gr extends Grammar<infer G> ? NodeOf<G['document'], G> : never;

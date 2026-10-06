@@ -26,7 +26,7 @@
 	const of: (string | undefined)[] = new Array(text.length).fill(undefined);
 	const mark = (id: string, from: number, to: number) => of.fill(id, from, to + 1);
 	const constructs = at('\tconstructs: {');
-	const repeat = at('\t\trepeat: {');
+	const repeat = at('\t\tRepeatBlock: {');
 	const branch = at('\t\t\tbranches:');
 	mark('file', at('\tdocument:'), at('\tcomment:'));
 	mark('elements', at('\telements: {'), constructs - 1);

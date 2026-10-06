@@ -65,8 +65,7 @@ export default g.grammar('svelte', {
 	},
 
 	constructs: {
-		if: {
-			node: 'IfBlock',
+		IfBlock: {
 			open: { marker: ['{', '#if'], space: true, form: [{ test: g.js.expression }, '}', { consequent: g.content }] },
 			branches: [
 				{ marker: ['{', ':else', 'if'], space: true, form: [{ test: g.js.expression }, '}', { consequent: g.content }], reopen: ['alternate', 'elseif'] },
@@ -74,8 +73,7 @@ export default g.grammar('svelte', {
 			],
 			close: { marker: ['{', '/if'], form: ['}'] },
 		},
-		each: {
-			node: 'EachBlock',
+		EachBlock: {
 			open: {
 				marker: ['{', '#each'],
 				space: true,
@@ -91,8 +89,7 @@ export default g.grammar('svelte', {
 			branches: [{ marker: ['{', ':else'], form: ['}', { fallback: g.optional(g.content) }] }],
 			close: { marker: ['{', '/each'], form: ['}'] },
 		},
-		await: {
-			node: 'AwaitBlock',
+		AwaitBlock: {
 			open: {
 				marker: ['{', '#await'],
 				space: true,
@@ -107,13 +104,11 @@ export default g.grammar('svelte', {
 			],
 			close: { marker: ['{', '/await'], form: ['}'] },
 		},
-		key: {
-			node: 'KeyBlock',
+		KeyBlock: {
 			open: { marker: ['{', '#key'], space: true, form: [{ expression: g.js.expression }, '}', { fragment: g.content }] },
 			close: { marker: ['{', '/key'], form: ['}'] },
 		},
-		snippet: {
-			node: 'SnippetBlock',
+		SnippetBlock: {
 			open: {
 				marker: ['{', '#snippet'],
 				space: true,
@@ -127,13 +122,13 @@ export default g.grammar('svelte', {
 			},
 			close: { marker: ['{', '/snippet'], form: ['}'] },
 		},
-		html: { node: 'HtmlTag', open: { marker: ['{', '@html'], space: true, form: [{ expression: g.js.expression }, '}'] } },
-		debug: { node: 'DebugTag', open: { marker: ['{', '@debug'], form: [{ identifiers: g.js.identifiers }, '}'] } },
-		const: { node: 'ConstTag', open: { marker: ['{', '@const'], space: true, form: [{ declaration: g.js.const }, '}'] } },
-		render: { node: 'RenderTag', open: { marker: ['{', '@render'], space: true, form: [{ expression: g.js.expression }, '}'] } },
-		attach: { node: 'AttachTag', in: ['attributes'], open: { marker: ['{', '@attach'], space: true, form: [{ expression: g.js.expression }, '}'] } },
-		spread: { node: 'SpreadAttribute', in: ['attributes'], open: { marker: ['{', '...'], form: [{ expression: g.js.expression }, '}'] } },
-		declaration: { node: 'DeclarationTag', open: { marker: ['{'], form: [{ declaration: g.js.statement }, '}'] } },
-		expression: { node: 'ExpressionTag', in: ['content', 'value', 'rcdata'], open: { marker: ['{'], form: [{ expression: g.js.expression }, '}'] } },
+		HtmlTag: { open: { marker: ['{', '@html'], space: true, form: [{ expression: g.js.expression }, '}'] } },
+		DebugTag: { open: { marker: ['{', '@debug'], form: [{ identifiers: g.js.identifiers }, '}'] } },
+		ConstTag: { open: { marker: ['{', '@const'], space: true, form: [{ declaration: g.js.const }, '}'] } },
+		RenderTag: { open: { marker: ['{', '@render'], space: true, form: [{ expression: g.js.expression }, '}'] } },
+		AttachTag: { in: ['attributes'], open: { marker: ['{', '@attach'], space: true, form: [{ expression: g.js.expression }, '}'] } },
+		SpreadAttribute: { in: ['attributes'], open: { marker: ['{', '...'], form: [{ expression: g.js.expression }, '}'] } },
+		DeclarationTag: { open: { marker: ['{'], form: [{ declaration: g.js.statement }, '}'] } },
+		ExpressionTag: { in: ['content', 'value', 'rcdata'], open: { marker: ['{'], form: [{ expression: g.js.expression }, '}'] } },
 	},
 });
