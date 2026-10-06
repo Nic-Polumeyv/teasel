@@ -1,6 +1,7 @@
 // `node scripts/test.ts interpret` runs the decoder without code generation, as a host forbidding it would
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { generate } from './children.ts';
 import svelte from './hosts/svelte.ts';
 import vue from './hosts/vue.ts';
 import type { Expression, Identifier, Pattern, Program } from 'estree';
@@ -25,7 +26,7 @@ const { open, scopeOf, referenceOf, parentOf } = untyped(m);
 {
 	const parse = (source: string, options?: Options): Any => open(source, options).parse();
 	const program = (source: string, options?: Options): Any => parse(source, options).node;
-	const at = (piece: Exclude<keyof typeof js, symbol>, source: string, offset: number, options?: Options, stopAt?: string[]): Any => open(source, options).parse(stopAt === undefined ? js[piece] : js[piece].until(...stopAt), offset);
+	const at = (piece: Exclude<keyof typeof js, symbol | 'children' | 'extras'>, source: string, offset: number, options?: Options, stopAt?: string[]): Any => open(source, options).parse(stopAt === undefined ? js[piece] : js[piece].until(...stopAt), offset);
 	const typed = parse('let x: number = 1; // done', { sourceType: 'module', typescript: true, comments: true, locations: true });
 	assert.equal(typed.node.sourceType, 'module');
 	assert.equal(typed.end, 26);
@@ -441,6 +442,93 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 	await import('../dist/grammar.js');
 	using source = new built.Source('let x = 1');
 	assert.equal(source.parse().node.body.length, 1, `${name} dist`);
+}
+
+// src/children.ts is written from the engine's layout by scripts/children.ts: the two must agree
+{
+	const { engine } = await import('#engine');
+	const made = generate(JSON.parse(engine.layout()));
+	assert.deepEqual(JSON.parse(JSON.stringify(js.children)), made.children, 'run node scripts/children.ts');
+	assert.deepEqual([...js.extras], made.extras, 'run node scripts/children.ts');
+}
+
+// what children names is what the answers hold: over every fixture, a key whose value is a node or a
+// list of nodes is one of the type's children, and every child named is seen holding one somewhere
+{
+	const seen = new Map<string, Set<string>>();
+	// every key holding a node or a list, empty or not: what the reverse check counts as covered
+	const listed = new Map<string, Set<string>>();
+	const observe = (value: Any) => {
+		if (value === null || typeof value !== 'object') return;
+		if (Array.isArray(value)) return value.forEach(observe);
+		if (typeof value.type !== 'string') return;
+		// a comment is not a node; a stylesheet's `Block` is one
+		if ((value.type === 'Line' || value.type === 'Block') && typeof value.value === 'string') return;
+		let keys = seen.get(value.type);
+		if (keys === undefined) seen.set(value.type, (keys = new Set()));
+		let lists = listed.get(value.type);
+		if (lists === undefined) listed.set(value.type, (lists = new Set()));
+		for (const key in value) {
+			if (key === 'loc') continue;
+			const v = value[key];
+			if (v === null || typeof v !== 'object') continue;
+			const node = (x: Any) => x !== null && typeof x === 'object' && typeof x.type === 'string' && !((x.type === 'Line' || x.type === 'Block') && typeof x.value === 'string');
+			if (Array.isArray(v) ? v.some(node) : node(v)) keys.add(key);
+			if (Array.isArray(v) || node(v)) lists.add(key);
+			observe(v);
+		}
+	};
+	const fixtures = new URL('../../crates/teasel/tests/', import.meta.url);
+	const files = (dir: string, ext: string) => readdirSync(new URL(dir, fixtures)).filter((file) => file.endsWith(ext)).map((file) => readFileSync(new URL(`${dir}${file}`, fixtures), 'utf8'));
+	const check = (table: Readonly<Record<string, readonly string[]>>, what: string, byHand = false) => {
+		for (const [type, keys] of seen) {
+			assert.ok(type in table, `${what}: ${type} is not in children`);
+			for (const key of keys) assert.ok(table[type].includes(key) || js.extras.includes(key as Any), `${what}: ${type}.${key} holds nodes but children does not name it`);
+		}
+		// js's table comes from the layout, so a stale entry there is impossible; css's and the hosts' are spelled by hand
+		const unseen = Object.entries(table).flatMap(([type, keys]) => (listed.has(type) && !(byHand && type in js.children) ? keys.filter((key) => !listed.get(type)!.has(key)).map((key) => `${type}.${key}`) : []));
+		if (byHand) assert.deepEqual(unseen, [], `${what}: children names fields no fixture holds a node or a list in`);
+		seen.clear();
+		listed.clear();
+	};
+	const parses = (text: string, options: Options) => {
+		try {
+			return open(text, options).parse().node;
+		} catch (e) {
+			if (e instanceof SyntaxError) return null;
+			throw e;
+		}
+	};
+	for (const text of files('fixtures/js/', '.js')) observe(parses(text, { sourceType: 'module', comments: true, errorRecovery: true }));
+	check(js.children, 'js fixtures');
+	for (const text of files('fixtures/ts/', '.ts')) observe(parses(text, { sourceType: 'module', typescript: true, comments: true, errorRecovery: true }));
+	check(js.children, 'ts fixtures');
+	for (const [host, ext] of [['svelte', '.svelte'], ['vue', '.html']] as const) {
+		const plan = { svelte, vue }[host];
+		for (const text of files(`hosts/${host}/`, ext)) {
+			try {
+				observe(open(text, { comments: true, scopes: true, errorRecovery: true }).parse(plan).node);
+			} catch (e) {
+				if (!(e instanceof SyntaxError)) throw e;
+			}
+		}
+		check(plan.children, `${host} fixtures`, true);
+	}
+	for (const text of files('fixtures/css/', '.css')) {
+		try {
+			observe(open(text, { comments: true }).parse(css).node);
+		} catch (e) {
+			if (!(e instanceof SyntaxError)) throw e;
+		}
+	}
+	check(css.children, 'css fixtures', true);
+	assert.equal(svelte.children, svelte.children, 'a grammar keeps its table');
+	assert.ok('Rule' in svelte.children && 'Identifier' in svelte.children && 'EachBlock' in svelte.children);
+	assert.ok(!('Host' in js.children) && !('Extension' in js.children));
+	assert.ok(Object.isFrozen(svelte.children.Program) && Object.isFrozen(css.children.Rule) && !Object.keys(svelte).includes('children'));
+	assert.deepEqual([css.children.StyleSheet, svelte.children.StyleSheet], [['children', 'comments'], ['attributes', 'children', 'comments']]);
+	const cut = open('<script lang="ts"></script>{#snippet x<T,}{/snippet}', { errorRecovery: true }).parse(svelte).node.fragment.nodes[0];
+	assert.equal(cut.typeParams, 'T,');
 }
 
 // /writing-a-grammar builds a grammar in steps; what each step answers for the page's template is pinned beside the page

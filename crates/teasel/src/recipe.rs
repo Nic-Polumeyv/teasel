@@ -126,6 +126,24 @@ impl Op {
 	}
 }
 
+/// Whether a JavaScript or TypeScript node has this `type`.
+pub fn names_type(name: &str) -> bool {
+	let spelled = |table: &[(&str, &[Op])]| {
+		table
+			.iter()
+			.any(|(_, ops)| ops.iter().any(|op| matches!(op, Type(t) if t.text == name)))
+	};
+	#[cfg(feature = "typescript")]
+	if spelled(TS)
+		|| crate::typescript::ast::Keyword::NAMES
+			.iter()
+			.any(|keyword| keyword.text == name)
+	{
+		return true;
+	}
+	spelled(JS)
+}
+
 /// The JavaScript kinds, by the variant's name; `Extension` and `Host` have none, the writer
 /// spells them itself.
 #[rustfmt::skip]

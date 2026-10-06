@@ -3,6 +3,8 @@ import { decode, PARENT, REFERENCE, SCOPE } from './decode.ts';
 import type { Code, Held, HostNode, Language, Parsed, Prepared, Reference, Scope } from './types.ts';
 import { flags, type Options } from './options.ts';
 import { engine } from '#engine';
+import { children, extras, frozen } from './children.ts';
+import { compiled, registry } from './held.ts';
 import type { Grammar } from './grammar.ts';
 
 export type { Options } from './options.ts';
@@ -45,21 +47,6 @@ export function scopeOf(node: Node | null | undefined): Scope | undefined {
 /** With `scopes`: the reference an identifier makes, the binding itself for the identifier that declares it; a global's too, which no binding lists. Undefined when the identifier names no value, a property key say. */
 export function referenceOf(node: Node | null | undefined): Reference | undefined {
 	return node == null ? undefined : (node as Linked)[REFERENCE];
-}
-
-const registry = typeof FinalizationRegistry === 'undefined' ? null : new FinalizationRegistry<Held>((held) => held.free());
-
-const grammars = new WeakMap<Grammar, Held>();
-
-function compiled(grammar: Grammar): Held {
-	let held = grammars.get(grammar);
-	if (held === undefined) {
-		if (!(grammar?.wire instanceof Uint8Array)) throw new TypeError('a parse takes `js`, one of its pieces, `css`, or a grammar made by @teasel/parser/grammar');
-		held = engine.plan(grammar.wire);
-		grammars.set(grammar, held);
-		registry?.register(grammar, held);
-	}
-	return held;
 }
 
 let read: (piece: Piece<unknown>) => { entry: number; stop: string };
@@ -110,7 +97,11 @@ export const js: Language<Program> & {
 	readonly statement: Piece<Statement>;
 	/** A `TSTypeParameterDeclaration`; TypeScript only, `not_typescript` otherwise. */
 	readonly typeParameters: Piece<Node>;
+	/** The fields TypeScript may add to a node of any type, holding nodes: annotations, type parameters and arguments, what a class implements, decorators. */
+	readonly extras: readonly string[];
 } = Object.freeze({
+	children,
+	extras,
 	expression: piece<Expression>(1),
 	pattern: piece<Pattern>(2),
 	params: piece<Pattern[]>(3),
@@ -119,7 +110,12 @@ export const js: Language<Program> & {
 });
 
 /** CSS: a parse of it reads the whole source as a stylesheet, a `StyleSheet` of rules and at-rules with its comments listed. */
-export const css: Language<HostNode> = Object.freeze({});
+export const css: Language<HostNode> = Object.freeze({
+	get children() {
+		return (sheet ??= frozen(JSON.parse(engine.children(undefined))));
+	},
+});
+let sheet: Language<unknown>['children'] | undefined;
 
 /**
  * A source kept with its options: the parses out of it share the source copy and the position

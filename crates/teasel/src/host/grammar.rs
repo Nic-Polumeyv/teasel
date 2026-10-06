@@ -2273,6 +2273,14 @@ impl Grammar {
 			block.entries = entries;
 			block.bodies = bodies;
 		}
+		for (ty, _) in self.own_children() {
+			if crate::recipe::names_type(ty) {
+				return Err(format!("a node type named {ty} is JavaScript's"));
+			}
+			if self.style.is_some() && super::css::CHILDREN.iter().any(|(css, _)| *css == ty) {
+				return Err(format!("a node type named {ty} is a stylesheet's"));
+			}
+		}
 		Ok(())
 	}
 
@@ -2307,6 +2315,125 @@ impl Grammar {
 	/// Whether an element of the name has no content: the grammar's list, and a doctype.
 	pub fn is_void(&self, name: &str) -> bool {
 		name.starts_with('!') || self.void.contains(&name)
+	}
+}
+
+impl Grammar {
+	/// Every type of node a document of this grammar holds, each with the fields that hold nodes or
+	/// lists of them: what a walk over a document follows. The attribute, script and stylesheet
+	/// nodes are the walker's own; their fields are named here beside the grammar's.
+	pub fn children(&self) -> Vec<(&'static str, Vec<&'static str>)> {
+		let mut out = self.own_children();
+		if self.style.is_some() {
+			out.extend(super::css::children(true));
+		}
+		out
+	}
+
+	fn own_children(&self) -> Vec<(&'static str, Vec<&'static str>)> {
+		let mut out: Vec<(&'static str, Vec<&'static str>)> = Vec::new();
+		let mut add = |ty: &'static str, fields: &[&'static str]| {
+			let at = match out.iter().position(|(known, _)| *known == ty) {
+				Some(at) => at,
+				None => {
+					out.push((ty, Vec::new()));
+					out.len() - 1
+				}
+			};
+			for &field in fields {
+				if !out[at].1.contains(&field) {
+					out[at].1.push(field);
+				}
+			}
+		};
+		fn body(body: &Body, into: &mut Vec<&'static str>) {
+			into.push(body.field);
+			into.extend(body.chain.map(|(field, _)| field));
+		}
+		fn items(list: &[Item], into: &mut Vec<&'static str>) {
+			for item in list {
+				match item {
+					Item::Literal(_) => {}
+					// text and type parameters are answered as text
+					Item::Entry { field, entry, .. } => {
+						if !matches!(entry, Entry::Text | Entry::TypeParameters) {
+							into.push(field);
+						}
+					}
+					Item::Group { alternatives, .. } => {
+						for alternative in alternatives {
+							items(&alternative.items, into);
+							alternative.body.iter().for_each(|b| body(b, into));
+						}
+					}
+				}
+			}
+		}
+		fn form(form: &Form, into: &mut Vec<&'static str>) {
+			items(&form.items, into);
+			form.body.iter().for_each(|b| body(b, into));
+		}
+		fn document(fields: &[DocField], into: &mut Vec<&'static str>) {
+			for field in fields {
+				match field {
+					// comments are not nodes: a walk does not follow them
+					DocField::Field { field, holds, .. } => {
+						if !matches!(holds, RootField::Null | RootField::Comments) {
+							into.push(field);
+						}
+					}
+					DocField::Scope(inner) => document(inner, into),
+				}
+			}
+		}
+		let mut fields = Vec::new();
+		document(&self.document.fields, &mut fields);
+		add(self.document.ty, &fields);
+		if let Some((ty, field)) = self.fragment {
+			add(ty, &[field]);
+		}
+		add(self.text.ty, &[]);
+		add(self.comment.ty, &[]);
+		for rule in &self.elements {
+			fields.clear();
+			fields.extend([self.element_fields.attributes, self.element_fields.children]);
+			fields.extend(rule.this.map(|(field, _)| field));
+			add(rule.ty, &fields);
+		}
+		add("Attribute", &["value"]);
+		if self.script.is_some() {
+			add("Script", &["content", "attributes"]);
+		}
+		if let Some(ty) = self.spread {
+			add(ty, &["expression"]);
+		}
+		// a dynamic argument, `:[expression]`, is a node in the argument's field
+		let dynamic = self
+			.directive_syntax
+			.as_ref()
+			.and_then(|syntax| syntax.dynamic.and(syntax.arg_field));
+		for rule in &self.directives {
+			fields.clear();
+			fields.extend(dynamic);
+			match &rule.value {
+				DirectiveValue::Expression { .. } | DirectiveValue::Pattern { .. } => fields.push("expression"),
+				DirectiveValue::Value => fields.push("value"),
+				DirectiveValue::Form(f) => form(f, &mut fields),
+			}
+			add(rule.ty, &fields);
+		}
+		for rule in &self.blocks {
+			fields.clear();
+			form(&rule.open, &mut fields);
+			rule.branches.iter().for_each(|branch| form(&branch.form, &mut fields));
+			add(rule.ty, &fields);
+		}
+		for rule in self.tags.iter().chain(&self.declaration).chain(&self.expression) {
+			fields.clear();
+			form(&rule.form, &mut fields);
+			add(rule.ty, &fields);
+		}
+		out
 	}
 }
 

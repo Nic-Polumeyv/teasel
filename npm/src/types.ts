@@ -143,6 +143,8 @@ declare const answers: unique symbol;
 /** What a parse reads as a whole and up to the end it is given: JavaScript, or a host language by its grammar. `T` is what its parse answers with. */
 export interface Language<T> {
 	readonly [answers]?: T;
+	/** For every type of node a parse of the language answers with, the fields that hold a node or a list of nodes: what a walk follows. A grammar's names the JavaScript types beside the host's. */
+	readonly children: Readonly<Record<string, readonly string[]>>;
 }
 
 /** What a parse returns: the node, or the patterns of a parameter list, and what the options add; a key is there exactly when its option is on. */
@@ -382,4 +384,6 @@ export interface Engine extends Views {
 	readonly create: (source: string, flags: number) => Prepared;
 	/** The grammar of a host language on its wire, read once. */
 	readonly plan: (grammar: Uint8Array) => Held;
+	/** Each node type of a grammar's host with the fields that hold nodes, as JSON; a stylesheet's without one. */
+	readonly children: (plan: Held | undefined) => string;
 }

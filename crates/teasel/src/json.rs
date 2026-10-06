@@ -256,6 +256,21 @@ pub fn layout_json() -> String {
 	w.finish()
 }
 
+/// Every type of node a host's documents hold, each with the fields that hold nodes, as JSON; see
+/// `Grammar::children`. Without a grammar, a stylesheet's.
+pub fn children(grammar: Option<&Grammar>) -> String {
+	let mut w = Json::default();
+	w.object();
+	for (ty, fields) in grammar.map_or_else(host::stylesheet_children, Grammar::children) {
+		w.key(crate::names::Name::dynamic(ty));
+		w.list();
+		fields.into_iter().for_each(|field| w.text(field));
+		w.end();
+	}
+	w.end();
+	w.finish()
+}
+
 /// `stop` lists the host's tokens for an entry at an offset; see `parser::parse_at`.
 pub fn parse(source: &str, request: &Request, stop: &str) -> String {
 	parse_with(

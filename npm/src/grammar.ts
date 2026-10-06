@@ -1,5 +1,8 @@
 import type { Expression, Identifier, Pattern, Program, SourceLocation, Statement, VariableDeclaration } from 'estree';
 import type { Comment, HostNode, Language } from './types.ts';
+import { engine } from '#engine';
+import { children as builtin, frozen } from './children.ts';
+import { compiled } from './held.ts';
 import { wire as encode } from './wire.ts';
 
 declare const out: unique symbol;
@@ -307,11 +310,14 @@ type Checked<D extends Definition> = {
 		};
 	};
 };
-export const grammar = <const D extends Definition>(host: string, definition: D & Checked<D>): Grammar<D> => ({
-	host,
-	definition,
-	wire: encode({ name: host, definition }),
-});
+export const grammar = <const D extends Definition>(host: string, definition: D & Checked<D>): Grammar<D> => {
+	let children: Grammar['children'] | undefined;
+	const made = { host, definition, wire: encode({ name: host, definition }) } as Grammar<D>;
+	// the getter stays out of enumeration, so a spread or a deep compare of a grammar never has the engine read it
+	return Object.defineProperty(made, 'children', {
+		get: () => (children ??= frozen({ ...builtin, ...JSON.parse(engine.children(compiled(made as Grammar))) })),
+	});
+};
 
 // ── inference
 
