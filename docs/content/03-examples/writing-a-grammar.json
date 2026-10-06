@@ -3,10 +3,10 @@
 	"steps": [
 		{
 			"error": {
-				"code": "unexpected_token",
-				"message": "Unexpected token",
-				"pos": 6,
-				"end": 7
+				"code": "duplicate",
+				"message": "Duplicate }}",
+				"pos": 87,
+				"end": 89
 			}
 		},
 		{
@@ -14,14 +14,6 @@
 				"code": "unexpected_token",
 				"message": "Unexpected token",
 				"pos": 8,
-				"end": 15
-			}
-		},
-		{
-			"error": {
-				"code": "expected",
-				"message": "Expected a block name",
-				"pos": 9,
 				"end": 15
 			}
 		},
@@ -43,10 +35,10 @@
 		},
 		{
 			"error": {
-				"code": "placement",
-				"message": "A branch in repeat is not allowed here",
-				"pos": 94,
-				"end": 95
+				"code": "unexpected_token",
+				"message": "Unexpected token",
+				"pos": 96,
+				"end": 97
 			}
 		},
 		{

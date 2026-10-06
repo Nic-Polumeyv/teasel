@@ -7,26 +7,25 @@ const aliases = g.seq(
 );
 
 export default g.grammar('vue', {
-	document: g.node('Root', { children: g.content }),
-	text: g.node('Text', { content: g.text.data }),
-	comment: g.node('Comment', { content: g.text.data }),
-	delimiters: ['{{', '}}'],
+	document: { node: 'Root', form: [{ children: g.content }] },
+	text: { node: 'Text', form: [{ content: g.text.data }] },
+	comment: { node: 'Comment', form: [{ content: g.text.data }] },
 	void: ['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr'],
 	verbatim: 'v-pre',
 
 	elements: {
 		fields: { tag: g.element.tag, props: g.element.attributes, children: g.content },
 		rules: {
-			slot: g.element(g.node('Slot')),
-			template: g.element(g.node('Template')),
-			component: g.element(g.node('Component')),
-			textarea: g.element(g.node('Element'), { content: 'rcdata' }),
-			title: g.element(g.node('Element'), { content: 'rcdata' }),
-			script: g.element(g.node('Element'), { content: 'raw' }),
-			style: g.element(g.node('Element'), { content: 'raw' }),
+			slot: { node: 'Slot' },
+			template: { node: 'Template' },
+			component: { node: 'Component' },
+			textarea: { node: 'Element', content: 'rcdata' },
+			title: { node: 'Element', content: 'rcdata' },
+			script: { node: 'Element', content: 'raw' },
+			style: { node: 'Element', content: 'raw' },
 		},
-		component: g.element(g.node('Component')),
-		other: g.element(g.node('Element')),
+		component: { node: 'Component' },
+		other: { node: 'Element' },
 	},
 
 	directives: {
@@ -38,12 +37,14 @@ export default g.grammar('vue', {
 		fields: { name: g.directive.kind, arg: g.directive.arg, modifiers: g.directive.modifiers, rawName: g.directive.raw },
 		shorthands: { ':': ['bind'], '@': ['on'], '#': ['slot'], '.': ['bind', 'prop'] },
 		rules: {
-			for: g.directive(g.node('Directive', g.opt(g.oneOf(['(', ...aliases, ')'], aliases)), g.oneOf(['in'], ['of']), { source: g.js.expression })),
-			slot: g.directive(g.node('Directive', { props: g.optional(g.js.pattern) })),
-			on: g.directive(g.node('Directive', { handler: g.optional(g.js.code) })),
+			for: { node: 'Directive', form: [g.opt(g.oneOf(['(', ...aliases, ')'], aliases)), g.oneOf(['in'], ['of']), { source: g.js.expression }] },
+			slot: { node: 'Directive', form: [{ props: g.optional(g.js.pattern) }] },
+			on: { node: 'Directive', form: [{ handler: g.optional(g.js.code) }] },
 		},
-		other: g.directive(g.node('Directive', { exp: g.optional(g.js.expression) })),
+		other: { node: 'Directive', form: [{ exp: g.optional(g.js.expression) }] },
 	},
 
-	expression: g.node('Interpolation', { content: g.js.expression }),
+	constructs: {
+		Interpolation: { in: ['content', 'rcdata'], open: { marker: ['{{'], form: [{ content: g.js.expression }, '}}'] } },
+	},
 });

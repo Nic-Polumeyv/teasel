@@ -8,31 +8,29 @@ A template language can describe its whole syntax to the parser as a grammar. Th
 import * as g from '@teasel/parser/grammar';
 
 export const grammar = g.grammar('mini', {
-	document: g.node('Root', { script: g.optional(g.doc.script) }, g.scope({ children: g.content })),
-	fragment: g.node('Fragment', g.scope({ nodes: g.nodes })),
-	text: g.node('Text', { data: g.text.data }),
-	comment: g.node('Comment', { data: g.text.data }),
-	delimiters: ['{{', '}}'],
+	document: { node: 'Root', form: [{ script: g.optional(g.doc.script) }, g.scope({ children: g.content })] },
+	fragment: { node: 'Fragment', form: [g.scope({ nodes: g.nodes })] },
+	text: { node: 'Text', form: [{ data: g.text.data }] },
+	comment: { node: 'Comment', form: [{ data: g.text.data }] },
 	void: ['br', 'hr', 'img', 'input'],
 	elements: {
 		fields: { name: g.element.tag, attributes: g.element.attributes, children: g.content },
-		rules: { script: g.element(g.node('Element'), { content: 'raw' }) },
-		other: g.element(g.node('Element')),
+		rules: { script: { node: 'Element', content: 'raw' } },
+		other: { node: 'Element' },
 	},
 	script: { element: 'script' },
-	sigils: {
-		open: '#',
-		branch: ':',
-		close: '/',
-		tag: '@',
-		blocks: {
-			if: g.block(g.node('IfBlock', { test: g.js.expression }, { consequent: g.content }), {
-				branches: { else: [{ alternate: g.content }] },
-			}),
-			each: g.block(g.node('EachBlock', { list: g.js.expression }, 'as', { item: g.bind(g.js.pattern) }, { body: g.content })),
+	constructs: {
+		IfBlock: {
+			open: { marker: ['{{', '#if'], space: true, form: [{ test: g.js.expression }, '}}', { consequent: g.content }] },
+			branches: [{ marker: ['{{', ':else'], form: ['}}', { alternate: g.content }] }],
+			close: { marker: ['{{', '/if'], form: ['}}'] },
 		},
+		EachBlock: {
+			open: { marker: ['{{', '#each'], space: true, form: [{ list: g.js.expression }, 'as', { item: g.bind(g.js.pattern) }, '}}', { body: g.content }] },
+			close: { marker: ['{{', '/each'], form: ['}}'] },
+		},
+		ExpressionTag: { open: { marker: ['{{'], form: [{ expression: g.js.expression }, '}}'] } },
 	},
-	expression: g.node('ExpressionTag', { expression: g.js.expression }),
 });
 ```
 
@@ -49,7 +47,7 @@ node.children.nodes[0].children.nodes[0];
 // ExpressionTag, its expression the Identifier greeting
 ```
 
-In TypeScript, and in JavaScript checked with JSDoc, the tree is typed from the definition: `node.children.nodes[0]` is an `Element`, an `IfBlock` or one of the others the grammar names, and `EachBlock`'s `item` is a `Pattern`. What the grammar cannot express is a type error: a tag with a body, a field named `type`, `bind` on a source that reads an expression.
+In TypeScript, and in JavaScript checked with JSDoc, the tree is typed from the definition: `node.children.nodes[0]` is an `Element`, an `IfBlock` or one of the others the grammar names, and `EachBlock`'s `item` is a `Pattern`. A field named `type`, or `bind` on a source that reads an expression, is a type error. A tag that reads content is a type error too, and what the engine could not parse with is refused when the grammar is first used, with a message naming the rule. A rule written apart from the grammar, to share it, keeps its types with `as const`.
 
 A grammar reads the whole source, so `parse` takes no position with one.
 

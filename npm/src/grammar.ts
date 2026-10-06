@@ -68,7 +68,7 @@ export const js = {
 	code: source<Expression | Program, 'form'>('js', 'code'),
 	/** The type parameters' text, without the angle brackets. */
 	typeParameters: source<string, 'form'>('js', 'typeParameters'),
-	/** The text up to the closing delimiter, unread. */
+	/** The text up to the tag's end word, unread. */
 	text: source<string, 'form'>('js', 'text'),
 };
 
@@ -148,8 +148,6 @@ type Record<F> = { readonly [field: string]: F } & { readonly [K in Reserved]?: 
 export type Form<F> = readonly (string | Record<F> | Opt<Form<F>> | OneOf<readonly Form<F>[]>)[];
 type Scoped<F> = readonly (Record<F> | Scope<Scoped<F>>)[];
 
-type BlockForm = Form<Field<'form', false | 'inside' | 'outside'> | Field<'body'>>;
-type TagForm = Form<Field<'form'>>;
 type DirectiveForm = Form<Field<'form', false | 'inside'> | Field<'value', false | 'inside'> | Source<boolean, 'literal', any>>;
 
 /** A sequence kept for reuse in several forms. */
@@ -160,88 +158,87 @@ export const opt = <const I extends readonly [Item, ...Item[]]>(...items: I): Op
 export const oneOf = <const A extends readonly [readonly [Item, ...Item[]], ...(readonly [Item, ...Item[]])[]]>(...alternatives: A): OneOf<A> => ({ oneOf: alternatives });
 export const scope = <const I extends readonly Item[]>(...items: I): Scope<I> => ({ scope: items });
 
-export interface Node<T extends string = string, I extends readonly Item[] = readonly Item[]> {
-	readonly type: T;
-	readonly items: I;
-}
 /** A node type and the form its fields come from. */
-export const node = <const T extends string, const I extends readonly Item[]>(type: T, ...items: I): Node<T, I> => ({ type, items });
-
-/** An `else if`: the block again, nested into this body field, with this flag set on it. */
-export interface Reopen<F extends string = string, Flag extends string = string> {
-	readonly reopen: F;
-	readonly flag: Flag;
+export interface Node<T extends string = string, I extends readonly Item[] = readonly Item[]> {
+	readonly node: T;
+	readonly form?: I;
 }
-export const reopen = <const F extends string, const Flag extends string>(field: F, flag: Flag): Reopen<F, Flag> => ({ reopen: field, flag });
 
-export interface Block<N extends Node = Node, B extends Branches = Branches> {
-	readonly site: 'block';
-	readonly node: N;
-	readonly branches: B;
+type BlockForm = Form<Field<'form', false | 'inside' | 'outside'> | Field<'body'>>;
+type TagForm = Form<Field<'form'>>;
+
+/** Where a construct may stand: in content, in an attribute value, among an element's attributes, in the text of an rcdata element. */
+export type Place = 'content' | 'value' | 'attributes' | 'rcdata';
+
+/** A marker and what its form reads after it: a construct's open, a branch, or its close. */
+export interface Piece<I extends BlockForm = BlockForm> {
+	/**
+	 * Parts that whitespace and comments may stand between; a part is matched as written. A marker
+	 * that stops partway is another word, `{.5}` no `{...}`, unless it stops after a part's leading
+	 * punctuation or a whole part: `{#eac` is an error.
+	 */
+	readonly marker: readonly [string, ...string[]];
+	/** Whitespace must follow the marker. */
+	readonly space?: boolean;
+	readonly form: I;
 }
-type Branches = { readonly [words: string]: BlockForm | Reopen };
-export const block = <const N extends Node<string, BlockForm>, const B extends Branches = {}>(node: N, options?: { branches?: B }): Block<N, B> => ({
-	site: 'block',
-	node,
-	branches: (options?.branches ?? {}) as B,
-});
 
-export interface Tag<N extends Node = Node, A extends 'content' | 'attributes' = 'content' | 'attributes'> {
-	readonly site: 'tag';
-	readonly node: N;
-	readonly among: A;
+export interface Branch<I extends BlockForm = BlockForm> extends Piece<I> {
+	/** The branch opens the construct again inside this field, with this flag true on the one it opens. */
+	readonly reopen?: readonly [field: string, flag: string];
 }
-export const tag = <const N extends Node<string, TagForm>, const A extends 'content' | 'attributes' = 'content'>(node: N, options?: { among?: A }): Tag<N, A> => ({
-	site: 'tag',
-	node,
-	among: (options?.among ?? 'content') as A,
-});
 
-export interface Directive<N extends Node = Node> {
-	readonly site: 'directive';
-	readonly node: N;
-	readonly unique: 'no' | 'kind' | 'attributes';
+/** A construct without a close: it reads no content and opens no scope. */
+export interface Tag {
+	/** Content when left out. */
+	readonly in?: readonly Place[];
+	readonly open: Piece<TagForm>;
+	readonly branches?: undefined;
+	readonly close?: undefined;
 }
-/** A directive's rule, and what its attribute name holds. */
-export const directive = Object.assign(
-	<const N extends Node<string, DirectiveForm>>(node: N, options?: { unique?: 'kind' | 'attributes' }): Directive<N> => ({
-		site: 'directive',
-		node,
-		unique: options?.unique ?? 'no',
-	}),
-	{
-		kind: source<string, 'directive'>('directive', 'name'),
-		/** The argument; an expression when the directive syntax brackets a dynamic one. */
-		arg: source<string | Expression | null, 'directive'>('directive', 'arg'),
-		modifiers: source<string[], 'directive'>('directive', 'modifiers'),
-		raw: source<string, 'directive'>('directive', 'raw'),
-	},
-);
 
-export interface Element<N extends Node = Node, I extends string | undefined = string | undefined> {
-	readonly site: 'element';
-	readonly node: N;
-	readonly root: boolean;
-	readonly once: boolean;
-	readonly inside?: I;
+/** A construct with a close: its open, and every branch, ends in content. */
+export interface Block {
+	/** Content when left out. */
+	readonly in?: readonly Place[];
+	readonly open: Piece;
+	readonly branches?: readonly Branch[];
+	/** Words only: what ends the block. */
+	readonly close: Piece<readonly string[]>;
+}
+
+/** A tag or a block; the type of the node it makes is the key it is written under. */
+export type Construct = Tag | Block;
+
+export interface Directive<T extends string = string> extends Node<T, DirectiveForm> {
+	readonly unique?: 'kind' | 'attributes';
+}
+/** What a directive's attribute name holds. */
+export const directive = {
+	kind: source<string, 'directive'>('directive', 'name'),
+	/** The argument; an expression when the directive syntax brackets a dynamic one. */
+	arg: source<string | Expression | null, 'directive'>('directive', 'arg'),
+	modifiers: source<string[], 'directive'>('directive', 'modifiers'),
+	raw: source<string, 'directive'>('directive', 'raw'),
+};
+
+export interface Element<T extends string = string> extends Node<T, Form<Field<'this'>>> {
+	readonly root?: true;
+	readonly once?: true;
+	/** Only inside the element this names. */
+	readonly inside?: string;
 	readonly outside?: string;
 	readonly content?: 'raw' | 'rcdata';
 }
-/** An element's rule, and what its tag holds. */
-export const element = Object.assign(
-	<const N extends Node<string, Form<Field<'this'>>>, const I extends string | undefined = undefined>(
-		node: N,
-		options?: { root?: true; once?: true; inside?: I; outside?: string; content?: 'raw' | 'rcdata' },
-	): Element<N, I> => ({ site: 'element', node, root: options?.root ?? false, once: options?.once ?? false, ...options }),
-	{
-		tag: source<string, 'element'>('element', 'name'),
-		attributes: source<Attributes, 'element'>('element', 'attributes'),
-		/** The expression of a `this` attribute, which leaves the attributes. */
-		this: source<Expression, 'this'>('element', 'this'),
-		/** The same, a text value read as a string literal. */
-		thisOrText: source<Expression, 'this'>('element', 'this:text'),
-	},
-);
+/** What an element's tag holds. */
+export const element = {
+	tag: source<string, 'element'>('element', 'name'),
+	attributes: source<Attributes, 'element'>('element', 'attributes'),
+	/** The expression of a `this` attribute, which leaves the attributes. */
+	this: source<Expression, 'this'>('element', 'this'),
+	/** The same, a text value read as a string literal. */
+	thisOrText: source<Expression, 'this'>('element', 'this:text'),
+};
 
 type Marker = readonly [attribute: string] | readonly [attribute: string, value: string];
 
@@ -251,8 +248,8 @@ export interface Definition {
 	readonly text: Node<string, Scoped<Always<'text'>>>;
 	readonly comment: Node<string, Scoped<Always<'text'>>>;
 	readonly fragment?: Node<string, Scoped<Always<'fragment'>>>;
-	readonly delimiters: readonly [open: string, close: string];
-	readonly attributes?: { readonly expressions?: true; readonly shorthand?: true };
+	/** `{name}` among the attributes is `name={name}`: the marker and the word around the name. */
+	readonly attributes?: { readonly shorthand?: readonly [open: string, close: string] };
 	readonly autoclose?: true;
 	readonly trim?: true;
 	readonly void?: readonly string[];
@@ -276,19 +273,8 @@ export interface Definition {
 		readonly rules?: { readonly [name: string]: Directive };
 		readonly other?: Directive;
 	};
-	readonly spread?: string;
-	readonly sigils?: {
-		readonly open: string;
-		readonly branch: string;
-		readonly close: string;
-		readonly tag: string;
-		readonly blocks?: { readonly [name: string]: Block };
-		readonly tags?: { readonly [name: string]: Tag };
-	};
-	/** The node of a `let`, `const` or `type` declaration between the delimiters: one field, one statement. */
-	readonly declaration?: Node<string, readonly [Record<Source<Statement, 'form'>>]>;
-	/** The node of an expression between the delimiters: one field, one expression. */
-	readonly expression?: Node<string, readonly [Record<Source<Expression, 'form'>>]>;
+	/** By the type of the node each makes. */
+	readonly constructs?: { readonly [type: string]: Construct };
 }
 
 export interface Grammar<D extends Definition = Definition> extends Language<NodeOf<D['document'], D>> {
@@ -297,20 +283,7 @@ export interface Grammar<D extends Definition = Definition> extends Language<Nod
 	/** What the engine reads: the definition on its wire, written once when the grammar was made. */
 	readonly wire: Uint8Array;
 }
-type Names<D extends Definition> = keyof NonNullable<D['elements']['rules']> & string;
-/** An element's `inside` names another element rule. */
-type Checked<D extends Definition> = {
-	readonly elements: {
-		readonly rules?: {
-			readonly [K in keyof D['elements']['rules']]: D['elements']['rules'][K] extends Element<any, infer I>
-				? I extends undefined | Names<D>
-					? unknown
-					: { readonly inside: Names<D> }
-				: unknown;
-		};
-	};
-};
-export const grammar = <const D extends Definition>(host: string, definition: D & Checked<D>): Grammar<D> => {
+export const grammar = <const D extends Definition>(host: string, definition: D): Grammar<D> => {
 	let children: Grammar['children'] | undefined;
 	const made = { host, definition, wire: encode({ name: host, definition }) } as Grammar<D>;
 	// the getter stays out of enumeration, so a spread or a deep compare of a grammar never has the engine read it
@@ -382,54 +355,62 @@ type Resolve<T, G extends Definition> = T extends Children
 
 type Typed<T extends string, F> = Simplify<{ type: T } & Span & F>;
 
-type NodeOf<N, G extends Definition, Extra extends Member = never, Force extends boolean = false> = N extends Node<infer T, infer I>
-	? Typed<T, Shape<Collect<I, false> | Extra, G, Force>>
+type FormOf<N> = N extends { readonly form?: infer I } ? (NonNullable<I> extends readonly unknown[] ? NonNullable<I> : readonly []) : readonly [];
+
+type NodeOf<N, G extends Definition, Extra extends Member = never, Force extends boolean = false> = N extends { readonly node: infer T extends string }
+	? Typed<T, Shape<Collect<FormOf<N>, false> | Extra, G, Force>>
 	: never;
 
-type FragmentNode<G extends Definition> = G['fragment'] extends Node<infer T, infer I>
-	? Simplify<{ type: T } & Shape<Collect<I, false>, G, false>>
+type FragmentNode<G extends Definition> = G['fragment'] extends { readonly node: infer T extends string }
+	? Simplify<{ type: T } & Shape<Collect<FormOf<G['fragment']>, false>, G, false>>
 	: never;
 
-type BranchMembers<B> = {
-	[W in keyof B]: B[W] extends Reopen<infer F, infer Flag>
-		? Member<F, Source<Children, 'form', Plain>, true> | Member<Flag, Source<boolean, 'form', Plain>, false>
-		: Collect<B[W], true>;
-}[keyof B];
+/** A branch adds its fields to the construct, or, reopening it, the field it reopens into and its flag. */
+type BranchMembers<B> = B extends { readonly reopen: readonly [infer F extends string, infer Flag extends string] }
+	? Member<F, Source<Children, 'form', Plain>, true> | Member<Flag, Source<boolean, 'form', Plain>, false>
+	: Collect<FormOf<B>, true>;
 
-type BlockNode<B, G extends Definition> = B extends Block<infer N, infer Br> ? NodeOf<N, G, BranchMembers<Br>> : never;
-type TagNode<T, G extends Definition> = T extends Tag<infer N> ? NodeOf<N, G> : never;
-type DirectiveNode<D, G extends Definition> = D extends Directive<infer N>
+type ConstructNode<T extends string, C, G extends Definition> = C extends { readonly open: { readonly form: infer I } }
+	? Typed<T, Shape<Collect<I, false> | BranchMembers<C extends { readonly branches: readonly (infer B)[] } ? B : never>, G, false>>
+	: never;
+/** Whether a construct stands in `P`, content when it says nowhere. */
+type Stands<C, P extends Place> = C extends { readonly in: readonly (infer In)[] } ? P extends In ? true : false : P extends 'content' ? true : false;
+/** The nodes of the constructs that stand in `P`. */
+type Constructs<G extends Definition, P extends Place> = {
+	[T in keyof NonNullable<G['constructs']> & string]: Stands<NonNullable<G['constructs']>[T], P> extends true ? ConstructNode<T, NonNullable<G['constructs']>[T], G> : never;
+}[keyof NonNullable<G['constructs']> & string];
+type DirectiveNode<D, G extends Definition> = D extends Directive
 	? G['directives'] extends { fields: infer F }
-		? NodeOf<N, G, Collect<[F], false>, true>
+		? NodeOf<D, G, Collect<[F], false>, true>
 		: never
 	: never;
-type ElementNode<E, G extends Definition> = E extends Element<infer N> ? NodeOf<N, G, Collect<[G['elements']['fields']], false>> : never;
+type ElementNode<E, G extends Definition> = E extends Element ? NodeOf<E, G, Collect<[G['elements']['fields']], false>> : never;
 
 type Values<T> = T extends object ? T[keyof T] : never;
 
 type ScriptNode<G extends Definition> = Typed<'Script', { context: string; content: Program; attributes: Attribute<G>[] }>;
-type AttributeNode<G extends Definition> = Typed<'Attribute', { name: string; value: true | Content<G> | Content<G>[] }>;
+type AttributeNode<G extends Definition> = Typed<
+	'Attribute',
+	{ name: string; value: true | Constructs<G, 'value'> | (NodeOf<G['text'], G> | Constructs<G, 'value'>)[] }
+>;
 
-/** What a host's content can hold. */
+/** What a host's content can hold; an rcdata element's, what stands in rcdata. */
 export type Content<G extends Definition> =
 	| ElementNode<Values<G['elements']['rules']> | G['elements']['component'] | G['elements']['other'], G>
 	| NodeOf<G['text'], G>
 	| NodeOf<G['comment'], G>
-	| BlockNode<Values<NonNullable<G['sigils']>['blocks']>, G>
-	| TagNode<Extract<Values<NonNullable<G['sigils']>['tags']>, Tag<any, 'content'>>, G>
-	| NodeOf<G['expression'], G>
-	| NodeOf<G['declaration'], G>;
+	| Constructs<G, 'content'>
+	| Constructs<G, 'rcdata'>;
 
 /** What an element's attributes can hold. */
 export type Attribute<G extends Definition> =
 	| AttributeNode<G>
 	| DirectiveNode<Values<NonNullable<G['directives']>['rules']> | NonNullable<G['directives']>['other'], G>
-	| TagNode<Extract<Values<NonNullable<G['sigils']>['tags']>, Tag<any, 'attributes'>>, G>
-	| (G['spread'] extends string ? Typed<G['spread'], { expression: Expression }> : never);
+	| Constructs<G, 'attributes'>;
 
 /** The tree a grammar's parse answers with. */
 export type Infer<Gr extends Grammar> = Gr extends Grammar<infer G> ? NodeOf<G['document'], G> : never;
 /** A node type of the grammar, by name. */
 export type NodeType<Gr extends Grammar, T extends string> = Gr extends Grammar<infer G>
-	? Extract<Content<G> | Attribute<G> | FragmentNode<G> | ScriptNode<G>, { type: T }>
+	? Extract<Content<G> | Attribute<G> | Constructs<G, 'value'> | FragmentNode<G> | ScriptNode<G>, { type: T }>
 	: never;

@@ -76,7 +76,6 @@ type Definition = {
 	text: Node;
 	comment: Node;
 	fragment?: Node;
-	delimiters: readonly [string, string];
 	attributes?: Attributes;
 	autoclose?: boolean;
 	trim?: boolean;
@@ -86,10 +85,7 @@ type Definition = {
 	script?: Script;
 	style?: string;
 	directives?: Directives;
-	spread?: string;
-	sigils?: Sigils;
-	declaration?: Node;
-	expression?: Node;
+	constructs?: { readonly [key: string]: Construct };
 };
 function writeDefinition(w: Writer, v: Definition): void {
 	writeNode(w, v.document);
@@ -100,8 +96,6 @@ function writeDefinition(w: Writer, v: Definition): void {
 		w.word(1);
 		writeNode(w, v.fragment);
 	}
-	w.str(v.delimiters[0]);
-	w.str(v.delimiters[1]);
 	if (v.attributes === undefined) w.word(0);
 	else {
 		w.word(1);
@@ -147,39 +141,36 @@ function writeDefinition(w: Writer, v: Definition): void {
 		w.word(1);
 		writeDirectives(w, v.directives);
 	}
-	if (v.spread === undefined) w.word(0);
+	if (v.constructs === undefined) w.word(0);
 	else {
 		w.word(1);
-		w.str(v.spread);
-	}
-	if (v.sigils === undefined) w.word(0);
-	else {
-		w.word(1);
-		writeSigils(w, v.sigils);
-	}
-	if (v.declaration === undefined) w.word(0);
-	else {
-		w.word(1);
-		writeNode(w, v.declaration);
-	}
-	if (v.expression === undefined) w.word(0);
-	else {
-		w.word(1);
-		writeNode(w, v.expression);
+		{
+			const keys = Object.keys(v.constructs);
+			w.word(keys.length);
+			for (let i = 0; i < keys.length; i++) {
+				const key = keys[i];
+				w.str(key);
+				writeConstruct(w, v.constructs[key]);
+			}
+		}
 	}
 }
 
 /** A node type and the form its fields come from. */
 type Node = {
-	type: string;
-	items: ReadonlyArray<Item>;
+	node: string;
+	form?: ReadonlyArray<Item>;
 };
 function writeNode(w: Writer, v: Node): void {
-	w.str(v.type);
-	w.word(v.items.length);
-	for (let i_ = 0; i_ < v.items.length; i_++) {
-		const item_ = v.items[i_];
-		writeItem(w, item_);
+	w.str(v.node);
+	if (v.form === undefined) w.word(0);
+	else {
+		w.word(1);
+		w.word(v.form.length);
+		for (let i = 0; i < v.form.length; i++) {
+			const item = v.form[i];
+			writeItem(w, item);
+		}
 	}
 }
 
@@ -297,19 +288,15 @@ function writeLiteral(w: Writer, v: Literal): void {
 }
 
 type Attributes = {
-	expressions?: boolean;
-	shorthand?: boolean;
+	/** `{name}` among the attributes is `name={name}`: the marker and the closing word around the name. */
+	shorthand?: readonly [string, string];
 };
 function writeAttributes(w: Writer, v: Attributes): void {
-	if (v.expressions === undefined) w.word(0);
-	else {
-		w.word(1);
-		w.word(v.expressions ? 1 : 0);
-	}
 	if (v.shorthand === undefined) w.word(0);
 	else {
 		w.word(1);
-		w.word(v.shorthand ? 1 : 0);
+		w.str(v.shorthand[0]);
+		w.str(v.shorthand[1]);
 	}
 }
 
@@ -355,17 +342,35 @@ function writeElements(w: Writer, v: Elements): void {
 }
 
 type Element = {
-	node: Node;
-	root: boolean;
-	once: boolean;
+	node: string;
+	form?: ReadonlyArray<Item>;
+	root?: boolean;
+	once?: boolean;
 	inside?: string;
 	outside?: string;
 	content?: Content;
 };
 function writeElement(w: Writer, v: Element): void {
-	writeNode(w, v.node);
-	w.word(v.root ? 1 : 0);
-	w.word(v.once ? 1 : 0);
+	w.str(v.node);
+	if (v.form === undefined) w.word(0);
+	else {
+		w.word(1);
+		w.word(v.form.length);
+		for (let i = 0; i < v.form.length; i++) {
+			const item = v.form[i];
+			writeItem(w, item);
+		}
+	}
+	if (v.root === undefined) w.word(0);
+	else {
+		w.word(1);
+		w.word(v.root ? 1 : 0);
+	}
+	if (v.once === undefined) w.word(0);
+	else {
+		w.word(1);
+		w.word(v.once ? 1 : 0);
+	}
 	if (v.inside === undefined) w.word(0);
 	else {
 		w.word(1);
@@ -529,137 +534,153 @@ function writeRaw(w: Writer, v: Raw): void {
 }
 
 type Directive = {
-	node: Node;
-	unique: Uniqueness;
+	node: string;
+	form?: ReadonlyArray<Item>;
+	unique?: Uniqueness;
 };
 function writeDirective(w: Writer, v: Directive): void {
-	writeNode(w, v.node);
-	writeUniqueness(w, v.unique);
+	w.str(v.node);
+	if (v.form === undefined) w.word(0);
+	else {
+		w.word(1);
+		w.word(v.form.length);
+		for (let i = 0; i < v.form.length; i++) {
+			const item = v.form[i];
+			writeItem(w, item);
+		}
+	}
+	if (v.unique === undefined) w.word(0);
+	else {
+		w.word(1);
+		writeUniqueness(w, v.unique);
+	}
 }
 
 type Uniqueness =
-	| 'no'
 	| 'kind'
 	| 'attributes';
 function writeUniqueness(w: Writer, v: Uniqueness): void {
 	switch (v) {
-		case 'no':
+		case 'kind':
 			w.word(0);
 			return;
-		case 'kind':
+		case 'attributes':
+			w.word(1);
+			return;
+	}
+}
+
+/** A tag, or with `close` a block; the type of its node is the key it is written under. */
+type Construct = {
+	in?: ReadonlyArray<Place>;
+	open: Piece;
+	branches?: ReadonlyArray<Branch>;
+	close?: Piece;
+};
+function writeConstruct(w: Writer, v: Construct): void {
+	if (v.in === undefined) w.word(0);
+	else {
+		w.word(1);
+		w.word(v.in.length);
+		for (let i_ = 0; i_ < v.in.length; i_++) {
+			const item = v.in[i_];
+			writePlace(w, item);
+		}
+	}
+	writePiece(w, v.open);
+	if (v.branches === undefined) w.word(0);
+	else {
+		w.word(1);
+		w.word(v.branches.length);
+		for (let i = 0; i < v.branches.length; i++) {
+			const item = v.branches[i];
+			writeBranch(w, item);
+		}
+	}
+	if (v.close === undefined) w.word(0);
+	else {
+		w.word(1);
+		writePiece(w, v.close);
+	}
+}
+
+/** Where a construct may stand: in content, in an attribute value, among attributes, in the
+ * text of an element whose content is rcdata. */
+type Place =
+	| 'content'
+	| 'value'
+	| 'attributes'
+	| 'rcdata';
+function writePlace(w: Writer, v: Place): void {
+	switch (v) {
+		case 'content':
+			w.word(0);
+			return;
+		case 'value':
 			w.word(1);
 			return;
 		case 'attributes':
 			w.word(2);
 			return;
+		case 'rcdata':
+			w.word(3);
+			return;
 	}
 }
 
-type Sigils = {
-	open: string;
-	branch: string;
-	close: string;
-	tag: string;
-	blocks?: { readonly [key: string]: Block };
-	tags?: { readonly [key: string]: Tag };
+/** What a construct opens or closes with: its marker, then what its form reads. */
+type Piece = {
+	marker: ReadonlyArray<string>;
+	/** Whitespace must follow the marker. */
+	space?: boolean;
+	form: ReadonlyArray<Item>;
 };
-function writeSigils(w: Writer, v: Sigils): void {
-	w.str(v.open);
-	w.str(v.branch);
-	w.str(v.close);
-	w.str(v.tag);
-	if (v.blocks === undefined) w.word(0);
+function writePiece(w: Writer, v: Piece): void {
+	w.word(v.marker.length);
+	for (let i = 0; i < v.marker.length; i++) {
+		const item = v.marker[i];
+		w.str(item);
+	}
+	if (v.space === undefined) w.word(0);
 	else {
 		w.word(1);
-		{
-			const keys = Object.keys(v.blocks);
-			w.word(keys.length);
-			for (let i = 0; i < keys.length; i++) {
-				const key = keys[i];
-				w.str(key);
-				writeBlock(w, v.blocks[key]);
-			}
-		}
+		w.word(v.space ? 1 : 0);
 	}
-	if (v.tags === undefined) w.word(0);
-	else {
-		w.word(1);
-		{
-			const keys = Object.keys(v.tags);
-			w.word(keys.length);
-			for (let i = 0; i < keys.length; i++) {
-				const key = keys[i];
-				w.str(key);
-				writeTag(w, v.tags[key]);
-			}
-		}
+	w.word(v.form.length);
+	for (let i = 0; i < v.form.length; i++) {
+		const item = v.form[i];
+		writeItem(w, item);
 	}
 }
 
-type Block = {
-	node: Node;
-	branches: { readonly [key: string]: Branch };
+/** A branch of a block; `reopen` nests the block again into that field, with that flag true on it. */
+type Branch = {
+	marker: ReadonlyArray<string>;
+	space?: boolean;
+	form: ReadonlyArray<Item>;
+	reopen?: readonly [string, string];
 };
-function writeBlock(w: Writer, v: Block): void {
-	writeNode(w, v.node);
-	{
-		const keys = Object.keys(v.branches);
-		w.word(keys.length);
-		for (let i = 0; i < keys.length; i++) {
-			const key = keys[i];
-			w.str(key);
-			writeBranch(w, v.branches[key]);
-		}
-	}
-}
-
-type Branch =
-	| ReadonlyArray<Item>
-	| Reopen;
 function writeBranch(w: Writer, v: Branch): void {
-	if (Array.isArray(v)) {
-		w.word(0);
-		w.word((v as ReadonlyArray<Item>).length);
-		for (let i = 0; i < (v as ReadonlyArray<Item>).length; i++) {
-			const item = (v as ReadonlyArray<Item>)[i];
-			writeItem(w, item);
-		}
-	} else {
-		w.word(1);
-		writeReopen(w, (v as Reopen));
+	w.word(v.marker.length);
+	for (let i = 0; i < v.marker.length; i++) {
+		const item = v.marker[i];
+		w.str(item);
 	}
-}
-
-/** An `else if`: the block again, nested into this field, with this flag set on it. */
-type Reopen = {
-	reopen: string;
-	flag: string;
-};
-function writeReopen(w: Writer, v: Reopen): void {
-	w.str(v.reopen);
-	w.str(v.flag);
-}
-
-type Tag = {
-	node: Node;
-	among: Among;
-};
-function writeTag(w: Writer, v: Tag): void {
-	writeNode(w, v.node);
-	writeAmong(w, v.among);
-}
-
-type Among =
-	| 'content'
-	| 'attributes';
-function writeAmong(w: Writer, v: Among): void {
-	switch (v) {
-		case 'content':
-			w.word(0);
-			return;
-		case 'attributes':
-			w.word(1);
-			return;
+	if (v.space === undefined) w.word(0);
+	else {
+		w.word(1);
+		w.word(v.space ? 1 : 0);
+	}
+	w.word(v.form.length);
+	for (let i = 0; i < v.form.length; i++) {
+		const item = v.form[i];
+		writeItem(w, item);
+	}
+	if (v.reopen === undefined) w.word(0);
+	else {
+		w.word(1);
+		w.str(v.reopen[0]);
+		w.str(v.reopen[1]);
 	}
 }
 
