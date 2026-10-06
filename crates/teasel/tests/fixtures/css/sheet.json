@@ -1,0 +1,246 @@
+{
+	"node": {
+		"type": "StyleSheet",
+		"start": 0,
+		"end": 182,
+		"scope": 0,
+		"children": [
+			{
+				"type": "Rule",
+				"start": 10,
+				"end": 98,
+				"prelude": {
+					"type": "SelectorList",
+					"start": 10,
+					"end": 34,
+					"children": [
+						{
+							"type": "ComplexSelector",
+							"start": 10,
+							"end": 13,
+							"children": [
+								{
+									"type": "RelativeSelector",
+									"start": 10,
+									"end": 13,
+									"combinator": null,
+									"selectors": [
+										{
+											"type": "TypeSelector",
+											"start": 10,
+											"end": 13,
+											"name": "div"
+										}
+									]
+								}
+							]
+						},
+						{
+							"type": "ComplexSelector",
+							"start": 30,
+							"end": 34,
+							"children": [
+								{
+									"type": "RelativeSelector",
+									"start": 30,
+									"end": 34,
+									"combinator": null,
+									"selectors": [
+										{
+											"type": "TypeSelector",
+											"start": 30,
+											"end": 34,
+											"name": "span"
+										}
+									]
+								}
+							]
+						}
+					]
+				},
+				"block": {
+					"type": "Block",
+					"start": 35,
+					"end": 98,
+					"children": [
+						{
+							"type": "Declaration",
+							"start": 50,
+							"end": 72,
+							"property": "color",
+							"value": "red"
+						},
+						{
+							"type": "Rule",
+							"start": 75,
+							"end": 96,
+							"prelude": {
+								"type": "SelectorList",
+								"start": 75,
+								"end": 79,
+								"children": [
+									{
+										"type": "ComplexSelector",
+										"start": 75,
+										"end": 79,
+										"children": [
+											{
+												"type": "RelativeSelector",
+												"start": 75,
+												"end": 79,
+												"combinator": null,
+												"selectors": [
+													{
+														"type": "TypeSelector",
+														"start": 75,
+														"end": 79,
+														"name": "span"
+													}
+												]
+											}
+										]
+									}
+								]
+							},
+							"block": {
+								"type": "Block",
+								"start": 80,
+								"end": 96,
+								"children": [
+									{
+										"type": "Declaration",
+										"start": 82,
+										"end": 93,
+										"property": "color",
+										"value": "blue"
+									}
+								]
+							}
+						}
+					]
+				}
+			},
+			{
+				"type": "Atrule",
+				"start": 99,
+				"end": 162,
+				"name": "media",
+				"prelude": "(min-width: 800px)",
+				"block": {
+					"type": "Block",
+					"start": 125,
+					"end": 162,
+					"children": [
+						{
+							"type": "Rule",
+							"start": 127,
+							"end": 160,
+							"prelude": {
+								"type": "SelectorList",
+								"start": 127,
+								"end": 144,
+								"children": [
+									{
+										"type": "ComplexSelector",
+										"start": 127,
+										"end": 144,
+										"children": [
+											{
+												"type": "RelativeSelector",
+												"start": 127,
+												"end": 144,
+												"combinator": null,
+												"selectors": [
+													{
+														"type": "TypeSelector",
+														"start": 127,
+														"end": 130,
+														"name": "div"
+													},
+													{
+														"type": "PseudoClassSelector",
+														"start": 130,
+														"end": 136,
+														"name": "hover",
+														"args": null
+													},
+													{
+														"type": "PseudoElementSelector",
+														"start": 136,
+														"end": 144,
+														"name": "before"
+													}
+												]
+											}
+										]
+									}
+								]
+							},
+							"block": {
+								"type": "Block",
+								"start": 145,
+								"end": 160,
+								"children": [
+									{
+										"type": "Declaration",
+										"start": 147,
+										"end": 157,
+										"property": "color",
+										"value": "red"
+									}
+								]
+							}
+						}
+					]
+				}
+			},
+			{
+				"type": "Atrule",
+				"start": 163,
+				"end": 181,
+				"name": "import",
+				"prelude": "\"foo.css\"",
+				"block": null
+			}
+		],
+		"comments": [
+			{
+				"type": "CSSComment",
+				"start": 0,
+				"end": 9,
+				"value": " top "
+			},
+			{
+				"type": "CSSComment",
+				"start": 15,
+				"end": 29,
+				"value": " selector "
+			},
+			{
+				"type": "CSSComment",
+				"start": 38,
+				"end": 49,
+				"value": " block "
+			},
+			{
+				"type": "CSSComment",
+				"start": 57,
+				"end": 68,
+				"value": " value ",
+				"position": 0
+			}
+		]
+	},
+	"end": 182,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "fragment",
+			"parent": null,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [],
+	"references": [],
+	"roots": []
+}

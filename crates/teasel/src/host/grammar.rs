@@ -2180,6 +2180,56 @@ impl Form {
 }
 
 impl Grammar {
+	/// A grammar with nothing in it, behind a stylesheet read on its own.
+	pub(crate) fn empty() -> Grammar {
+		Grammar {
+			name: "",
+			document: DocumentRule {
+				ty: "Document",
+				fields: vec![DocField::Field {
+					field: "children",
+					holds: RootField::Fragment,
+					omit: false,
+				}],
+			},
+			delimiters: ("{", "}"),
+			attribute_expressions: false,
+			attribute_shorthand: false,
+			sigils: None,
+			autoclose: false,
+			trim: false,
+			void: Vec::new(),
+			fragment: None,
+			fragment_scope: false,
+			element_fields: ElementFields {
+				name: "name",
+				attributes: "attributes",
+				children: "children",
+			},
+			text: TextRule {
+				ty: "Text",
+				data: "data",
+				raw: None,
+			},
+			comment: CommentRule {
+				ty: "Comment",
+				data: "data",
+			},
+			verbatim: None,
+			elements: Vec::new(),
+			script: None,
+			style: None,
+			directive_syntax: None,
+			shorthands: Vec::new(),
+			directives: Vec::new(),
+			spread: None,
+			blocks: Vec::new(),
+			tags: Vec::new(),
+			declaration: None,
+			expression: None,
+		}
+	}
+
 	/// Reads a grammar off its wire: the definition as the builders made it, lowered.
 	pub fn read(bytes: &[u8]) -> Result<Grammar, String> {
 		let mut grammar = lower(Host::read(bytes)?)?;

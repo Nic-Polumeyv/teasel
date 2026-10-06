@@ -1,6 +1,6 @@
 import type { Expression, Node, Pattern, Program, Statement } from 'estree';
 import { decode, PARENT, REFERENCE, SCOPE } from './decode.ts';
-import type { Code, Held, Language, Parsed, Prepared, Reference, Scope } from './types.ts';
+import type { Code, Held, HostNode, Language, Parsed, Prepared, Reference, Scope } from './types.ts';
 import { flags, type Options } from './options.ts';
 import { engine } from '#engine';
 import type { Grammar } from './grammar.ts';
@@ -54,7 +54,7 @@ const grammars = new WeakMap<Grammar, Held>();
 function compiled(grammar: Grammar): Held {
 	let held = grammars.get(grammar);
 	if (held === undefined) {
-		if (!(grammar?.wire instanceof Uint8Array)) throw new TypeError('a parse takes `js`, one of its pieces, or a grammar made by @teasel/parser/grammar');
+		if (!(grammar?.wire instanceof Uint8Array)) throw new TypeError('a parse takes `js`, one of its pieces, `css`, or a grammar made by @teasel/parser/grammar');
 		held = engine.plan(grammar.wire);
 		grammars.set(grammar, held);
 		registry?.register(grammar, held);
@@ -118,6 +118,9 @@ export const js: Language<Program> & {
 	typeParameters: piece<Node>(5),
 });
 
+/** CSS: a parse of it reads the whole source as a stylesheet, a `StyleSheet` of rules and at-rules with its comments listed. */
+export const css: Language<HostNode> = Object.freeze({});
+
 /**
  * A source kept with its options: the parses out of it share the source copy and the position
  * tables. Offsets are UTF-16; positions stay those of the whole source.
@@ -136,7 +139,8 @@ export class Source {
 	/**
 	 * What `what` answers with: `js` by default, the whole source as a program. A piece of
 	 * JavaScript is read at `at`, a UTF-16 offset, or at `[start, end]` as if the source ended at
-	 * `end`; `js` takes the same for the program inside a range. A grammar from
+	 * `end`; `js` takes the same for the program inside a range. `css` reads the whole source as a
+	 * stylesheet. A grammar from
 	 * `@teasel/parser/grammar` reads the whole source as a document of its host language: the
 	 * host's own nodes around the JavaScript ones, in one tree, in TypeScript when the grammar
 	 * says so of a script tag. The engine reads a grammar on its first parse and keeps it while
@@ -146,7 +150,7 @@ export class Source {
 	parse<T>(piece: Piece<T>, at?: number | [start: number, end: number]): Parsed<T>;
 	parse(language: typeof js, at?: number | [start: number, end: number]): Parsed<Program>;
 	parse<T>(what: Piece<T> | typeof js, at?: number | [start: number, end: number]): Parsed<T | Program>;
-	parse<T>(grammar: Grammar & Language<T>): Parsed<T>;
+	parse<T>(language: Language<T>): Parsed<T>;
 	parse(what: Piece<unknown> | Language<unknown> = js, at?: number | [number, number]): Parsed<any> {
 		if (this.#held === undefined) throw new TypeError('the source is freed');
 		let entry = 0, stop = '', grammar: Held | undefined, offset = 0, end: number | undefined;
@@ -156,8 +160,9 @@ export class Source {
 			else if (Array.isArray(at) && at.length === 2 && typeof at[0] === 'number' && typeof at[1] === 'number') [offset, end] = at;
 			else if (at !== undefined) throw new TypeError('at is an offset or [start, end]');
 		} else {
-			grammar = compiled(what as Grammar);
-			if (at !== undefined) throw new TypeError('a document reads the whole source');
+			if (what === css) entry = 6;
+			else grammar = compiled(what as Grammar);
+			if (at !== undefined) throw new TypeError('only `js` and its pieces take a position');
 		}
 		const answer = this.#held.parse(entry, offset, end, stop, grammar);
 		if (typeof answer !== 'string') {

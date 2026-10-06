@@ -19,7 +19,7 @@ function walk(dir: string) {
 		if (name === 'node_modules' || name.startsWith('.')) continue;
 		const path = join(dir, name);
 		if (statSync(path).isDirectory()) walk(path);
-		else if (/\.(js|mjs|ts|svelte)$/.test(name) || (host !== undefined && name.endsWith(host.extension))) files.push(path);
+		else if (/\.(js|mjs|ts|svelte|css)$/.test(name) || (host !== undefined && name.endsWith(host.extension))) files.push(path);
 	}
 }
 const args = process.argv.slice(2);
@@ -67,13 +67,14 @@ function report(name: string, difference: string | null) {
 
 // the binary's name for each entry of parser/mod.rs, by index
 const MODE = ['', 'expr', 'pattern', 'params', 'stmt', 'typeparams'];
+const STYLESHEET = 6;
 
 // the batch header the binary reads for the same parse: byte offsets, every switch of the options
 function mode(source: string, options: Options, entry: number, at: number) {
 	const switches = (['comments', 'scopes', 'parenthesized'] as const).filter((flag) => options[flag]).map((flag) => `+${flag}`);
 	if (options.typescript === 'erase') switches.push('+erase');
-	const head = entry === 0 ? (options.sourceType === 'module' ? 'module' : 'script') : MODE[entry];
-	const offset = entry === 0 ? '' : `:${Buffer.byteLength(source.slice(0, at))}`;
+	const head = entry === 0 ? (options.sourceType === 'module' ? 'module' : 'script') : entry === STYLESHEET ? 'stylesheet' : MODE[entry];
+	const offset = entry === 0 || entry === STYLESHEET ? '' : `:${Buffer.byteLength(source.slice(0, at))}`;
 	return `${options.typescript ? 'ts-' : ''}${head}${switches.join('')}${offset}`;
 }
 
@@ -100,6 +101,12 @@ const script_re = /<script((?:\s+(?:"[^"]*"|'[^']*'|[^>"'])*)?)>([\s\S]*?)<\/scr
 const brace_re = /\{/g;
 for (const file of files) {
 	const text = readFileSync(file, 'utf8');
+	if (file.endsWith('.css')) {
+		const options: Options = { locations: true, comments: true };
+		json(file, text, options, STYLESHEET, 0);
+		report(`${file} wasm`, differ(once(wasm, text, options, STYLESHEET, 0), once(native, text, options, STYLESHEET, 0)));
+		continue;
+	}
 	if (host !== undefined && file.endsWith(host.extension)) {
 		const typescript = /lang=["']?ts/.test(text);
 		document(file, text, false, { sourceType: 'module', locations: true, comments: true, scopes: true }, '+comments+scopes');

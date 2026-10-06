@@ -125,44 +125,14 @@ impl<'a, E: Extension> Walker<'a, E> {
 	pub(super) fn style_sheet(&mut self, start: u32, name: &str, attributes: Vec<NodeId>) -> Result<NodeId> {
 		let closer = format!("</{name}");
 		let content_start = self.at;
-		let mut comments = Vec::new();
-		let mut children = Vec::new();
-		loop {
-			self.css_space(&mut comments, true)?;
-			if self.matches(&closer) || self.at >= self.len() {
-				break;
-			}
-			children.push(if self.matches("@") {
-				self.at_rule(&mut comments)?
-			} else {
-				self.rule(&mut comments)?
-			});
-		}
+		let (children, comments, read) = self.sheet(&closer);
+		read?;
 		let content_end = self.at;
 		self.expect(&closer)?;
 		self.space();
 		self.expect(">")?;
 		let end = self.at;
-		let comments: Vec<NodeId> = comments
-			.into_iter()
-			.map(|comment| {
-				let value = ("value", Value::Slice(comment.start + 2, comment.end - 2));
-				match comment.position {
-					Some(position) => self.host(
-						"CSSComment",
-						comment.start,
-						comment.end,
-						&[value, ("position", Value::Int(position))],
-						None,
-						true,
-					),
-					None => self.host("CSSComment", comment.start, comment.end, &[value], None, true),
-				}
-			})
-			.collect();
 		let attributes = self.list(&attributes);
-		let children = self.list(&children);
-		let comments = self.list(&comments);
 		let content = self.host(
 			"",
 			content_start,
@@ -187,6 +157,67 @@ impl<'a, E: Extension> Walker<'a, E> {
 			None,
 			true,
 		))
+	}
+
+	/// The whole source as a stylesheet.
+	pub(super) fn stylesheet(&mut self) -> Result<NodeId> {
+		let (children, comments, read) = self.sheet("");
+		if let Err(error) = read {
+			self.report(error)?;
+			self.at = self.len();
+		}
+		Ok(self.host(
+			"StyleSheet",
+			0,
+			self.len(),
+			&[
+				("children", Value::Nodes(children)),
+				("comments", Value::Nodes(comments)),
+			],
+			None,
+			true,
+		))
+	}
+
+	/// The rules up to `closer` or the end, and the comments among them, as lists, with the error
+	/// that ended the read early.
+	fn sheet(&mut self, closer: &str) -> (List, List, Result<()>) {
+		self.nesting = 0;
+		let mut comments = Vec::new();
+		let mut children = Vec::new();
+		let read = self.rules(closer, &mut children, &mut comments);
+		let comments: Vec<NodeId> = comments
+			.into_iter()
+			.map(|comment| {
+				let value = ("value", Value::Slice(comment.start + 2, comment.end - 2));
+				match comment.position {
+					Some(position) => self.host(
+						"CSSComment",
+						comment.start,
+						comment.end,
+						&[value, ("position", Value::Int(position))],
+						None,
+						true,
+					),
+					None => self.host("CSSComment", comment.start, comment.end, &[value], None, true),
+				}
+			})
+			.collect();
+		(self.list(&children), self.list(&comments), read)
+	}
+
+	fn rules(&mut self, closer: &str, children: &mut Vec<NodeId>, comments: &mut Vec<CssComment>) -> Result<()> {
+		loop {
+			self.css_space(comments, true)?;
+			if self.at >= self.len() || (!closer.is_empty() && self.matches(closer)) {
+				return Ok(());
+			}
+			children.push(if self.matches("@") {
+				self.at_rule(comments)?
+			} else {
+				self.rule(comments)?
+			});
+		}
 	}
 
 	/// Whitespace, comments and HTML comment markers; `capture` keeps the comments.
@@ -263,6 +294,15 @@ impl<'a, E: Extension> Walker<'a, E> {
 			None,
 			true,
 		))
+	}
+
+	/// The selectors between the `(` just read and its `)`.
+	fn css_args(&mut self, comments: &mut Vec<CssComment>) -> Result<NodeId> {
+		self.css_nest()?;
+		let args = self.selector_list(comments, true)?;
+		self.expect(")")?;
+		self.nesting -= 1;
+		Ok(args)
 	}
 
 	fn selector_list(&mut self, comments: &mut Vec<CssComment>, inside_pseudo: bool) -> Result<NodeId> {
@@ -344,8 +384,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 				let name = self.intern(&name);
 				let name = ("name", Value::Str(name));
 				let node = if self.eat("(") {
-					let args = self.selector_list(comments, true)?;
-					self.expect(")")?;
+					let args = self.css_args(comments)?;
 					self.host(
 						"PseudoElementSelector",
 						start,
@@ -362,8 +401,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 				let name = self.css_identifier()?;
 				let name = self.intern(&name);
 				let args = if self.eat("(") {
-					let args = self.selector_list(comments, true)?;
-					self.expect(")")?;
+					let args = self.css_args(comments)?;
 					Value::Node(args)
 				} else {
 					Value::Null
@@ -541,8 +579,18 @@ impl<'a, E: Extension> Walker<'a, E> {
 		Ok(None)
 	}
 
+	/// One more block or argument list open, `MAX_DEPTH` at most.
+	fn css_nest(&mut self) -> Result<()> {
+		if self.nesting >= crate::parser::MAX_DEPTH {
+			return fail(self.at, self.at + 1, Code::NestingDepth, None);
+		}
+		self.nesting += 1;
+		Ok(())
+	}
+
 	fn css_block(&mut self, comments: &mut Vec<CssComment>) -> Result<NodeId> {
 		let start = self.at;
+		self.css_nest()?;
 		self.expect("{")?;
 		let mut children = Vec::new();
 		while self.at < self.len() {
@@ -553,6 +601,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			children.push(self.block_item(comments)?);
 		}
 		self.expect("}")?;
+		self.nesting -= 1;
 		let children = self.list(&children);
 		Ok(self.host(
 			"Block",

@@ -24,6 +24,7 @@ source.parse(js.pattern, 7)                 an assignment target: a name or a de
 source.parse(js.params, 7)                  the patterns of a (a, b = 1)
 source.parse(js.statement, 7)               one statement
 source.parse(js.typeParameters, 7)          a <T extends U>
+source.parse(css)                           the whole source as a CSS stylesheet
 source.parse(js, [12, 40])                  the program inside 12..40, positions of the whole
 ```
 

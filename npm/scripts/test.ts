@@ -13,7 +13,7 @@ const name = process.execArgv.includes('--no-addons') ? 'wasm' : 'native';
 const m = await import('../src/index.ts');
 // the trees are poked as the recipes shape them, host nodes included, past what the types say
 type Any = any;
-const { js, Piece, ParseError } = m;
+const { js, css, Piece, ParseError } = m;
 const untyped = ({ Source, scopeOf, referenceOf, parentOf }: typeof m) => ({
 	open: (source: string, options?: Options): Any => new Source(source, options),
 	scopeOf: (node: Any): Any => scopeOf(node),
@@ -74,7 +74,7 @@ const { open, scopeOf, referenceOf, parentOf } = untyped(m);
 	assert.equal(at('pattern', '{[a, b], i}', 1, undefined, [',']).end, 7);
 	assert.throws(() => js.expression.until('a s'), TypeError);
 	assert.throws(() => js.expression.until(), TypeError);
-	assert.throws(() => open('{a}').parse('expression' as Any, 1), /a parse takes `js`, one of its pieces, or a grammar/);
+	assert.throws(() => open('{a}').parse('expression' as Any, 1), /a parse takes `js`, one of its pieces, `css`, or a grammar/);
 	assert.throws(() => open('{a}').parse(js.expression, '1' as Any), TypeError);
 	assert.throws(() => open('{a}').parse(js.expression, [1] as Any), TypeError);
 	assert.equal(js.expression.until('as').until(',').constructor, Piece);
@@ -254,6 +254,16 @@ const { open, scopeOf, referenceOf, parentOf } = untyped(m);
 	assert.throws(() => template.parse(js, [22, 8]), SyntaxError);
 	assert.equal(template.parse(js, 24).node.body[0].type, 'ExpressionStatement');
 	assert.equal(template.parse(js.expression, [33, 34]).node.name, 'a');
+	const sheet = open('/* top */ div, span { color: red; }').parse(css);
+	assert.equal(sheet.node.type, 'StyleSheet');
+	assert.equal(sheet.node.end, 35);
+	assert.deepEqual(sheet.node.children.map((rule: Any) => rule.type), ['Rule']);
+	assert.deepEqual(JSON.parse(JSON.stringify(sheet.node.comments)), [{ type: 'CSSComment', value: ' top ', start: 0, end: 9 }]);
+	assert.throws(() => open('div { }').parse(css, 1), TypeError);
+	assert.throws(() => open('div { color: }').parse(css), (e: Any) => e.code === 'expected' && e.pos === 6);
+	const half = open('a { b: c } div { color: } p { q: r }', { errorRecovery: true }).parse(css);
+	assert.deepEqual(half.errors.map((e: Any) => [e.code, e.pos]), [['expected', 17]]);
+	assert.deepEqual(half.node.children.map((rule: Any) => rule.end), [10]);
 	assert.equal(program('"﻿a"; "bc"; zz').body[2].expression.name, 'zz');
 	source[Symbol.dispose]();
 	assert.throws(() => source.parse(js.expression, 1), TypeError);
@@ -421,6 +431,8 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 		assert.throws(() => open('<a>'.repeat(40_000) + '</a>'.repeat(40_000), { scopes }).parse(svelte), deep);
 		assert.equal(open('x', { scopes }).parse().node.body.length, 1);
 	}
+	const sheets = `<style>${'a {'.repeat(501)}</style><style>${'a {'.repeat(501)}${'}'.repeat(501)}</style>`;
+	assert.deepEqual(open(sheets, { errorRecovery: true }).parse(svelte).errors.map((e: Any) => e.code), ['expected', 'unexpected_close']);
 }
 
 // the tests read the source; the published build must answer the same once its specifiers are rewritten

@@ -21,7 +21,7 @@ The parse started at offset 3, read an expression instead of a program, and stop
 
 ## Pieces
 
-The first argument of `parse` says what to read: `js` for a program, or one of its pieces. The second is the position.
+The first argument of `parse` says what to read: `js` for a program, one of its pieces, or `css` for a stylesheet. The second is the position, which `js` and its pieces take.
 
 ```text
 source.parse(js.expression, 7)        the expression starting at 7
@@ -29,6 +29,7 @@ source.parse(js.statement, 7)         one statement
 source.parse(js.pattern, 7)           a name or a destructuring pattern
 source.parse(js.params, 7)            the patterns inside (a, b = 1)
 source.parse(js.typeParameters, 7)    a <T extends U>, with typescript on
+source.parse(css)                     the whole source as a CSS stylesheet
 source.parse(js, [12, 40])            the program between 12 and 40
 ```
 

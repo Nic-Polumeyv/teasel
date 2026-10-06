@@ -1,0 +1,6 @@
+/* top */ div, /* selector */ span {
+	/* block */ color: /* value */ red;
+	span { color: blue; }
+}
+@media (min-width: 800px) { div:hover::before { color: red; } }
+@import "foo.css";
