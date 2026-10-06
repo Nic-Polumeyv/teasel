@@ -908,7 +908,7 @@ impl<'a, X: Emit> Writer<'a, X> {
 				}
 				Op::Const(key, value) => self.string(key, value),
 				Op::ConstBool(key, value) => self.bool(key, value),
-				Op::Null(key) => {
+				Op::Null(key) | Op::RegExp(key, ..) => {
 					self.key(key);
 					self.json.null();
 				}

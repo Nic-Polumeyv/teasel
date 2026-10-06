@@ -142,7 +142,7 @@ function resolve(raw: RawOp[], fields: Field[]): Op[] {
 		else if (op === 'const' || op === 'constbool') [out.key, out.value] = rest;
 		else if (op === 'boolnames') [out.key, field, out.value, out.other] = rest;
 		else if (op === 'enumor') [out.key, field, out.other] = rest;
-		else if (op === 'othername') {
+		else if (op === 'othername' || op === 'regexp') {
 			[out.key, field] = rest;
 			out.at2 = find(rest[2]).at;
 		} else [out.key, field] = rest;
@@ -485,6 +485,7 @@ interface Spelling<E, St> {
 	comments(): E;
 	finite(value: E): E;
 	bigint(text: E): E;
+	regexp(pattern: E, flags: E): E;
 	/** A value computed once and read where it is used. */
 	hold(value: E): E;
 	/** `hold`, the node built while `name_only` says whether it names what another declares. */
@@ -552,6 +553,8 @@ function value<E, St>(B: Spelling<E, St>, op: Op, none: Missing, erase: boolean)
 			return B.slice(0);
 		case 'bigint':
 			return B.bigint(B.slice(1));
+		case 'regexp':
+			return B.regexp(B.strings(B.word(op.at)), B.strings(B.word(op.at2)));
 		case 'const':
 		case 'constbool':
 			return B.lit(op.value);
@@ -674,6 +677,7 @@ class Closures implements Spelling<Value, Stmt> {
 	comments = (): Value => (S, V, b, n) => comments(S, n);
 	finite = (value: Value): Value => (S, V, b, n, L) => finite(value(S, V, b, n, L));
 	bigint = (text: Value): Value => (S, V, b, n, L) => bigint(text(S, V, b, n, L));
+	regexp = (pattern: Value, flags: Value): Value => (S, V, b, n, L) => regexp(pattern(S, V, b, n, L), flags(S, V, b, n, L));
 	hold(value: Value): Value {
 		const slot = this.slots++;
 		this.lead.push((S, V, b, n, L) => {
@@ -822,6 +826,15 @@ function params(S: State, start: number, len: number, parent: Decoded | undefine
 const finite = (value: number) => (Number.isFinite(value) ? value : null);
 const bigint = (digits: string) => BigInt(digits.replaceAll('_', '')).toString();
 
+// an older runtime rejects syntax teasel reads, such as the v flag, and ESTree says null then
+function regexp(pattern: string, flags: string): RegExp | null {
+	try {
+		return new RegExp(pattern, flags);
+	} catch {
+		return null;
+	}
+}
+
 // the facts a node other than an identifier has past its scope, once it is whole
 function late(S: State, n: Decoded, id: number) {
 	const root = S.root_of[id];
@@ -882,6 +895,7 @@ class Source implements Spelling<string, string> {
 	comments = () => 'comments(S, n)';
 	finite = (value: string) => `finite(${value})`;
 	bigint = (text: string) => `bigint(${text})`;
+	regexp = (pattern: string, flags: string) => `regexp(${pattern}, ${flags})`;
 	hold(value: string): string {
 		const local = `v${this.count++}`;
 		this.lead.push(`const ${local} = ${value};`);
@@ -980,7 +994,7 @@ function generate(C: Compiled, G: Language, config: number, ops: Op[], ts: boole
 	}
 	const lead = B.lead;
 	const body = `const N = S.N, J = S.J, b = id * ${C.words}${ts ? ', T = S.TS' : ''}; ${lead.length !== 0 && lead[lead.length - 1].includes('return J[') ? lead.join(' ') : `if (${rare.join(' || ')}) return slow(S, id, t, parent); ${before.join(' ')} const p = id * S.ps + S.po; ${lead.join(' ')} const n = { ${props.join(', ')} }; ${tail.join(' ')} ${after.join(' ')} return n;`}`;
-	return new Function('K', 'slow', 'items', 'params', 'finite', 'bigint', 'late', 'PARENT', 'SCOPE', 'REFERENCE', `return (S, id, t, parent) => { ${body} };`)(B.constants, slow, items, params, finite, bigint, late, PARENT, SCOPE, REFERENCE);
+	return new Function('K', 'slow', 'items', 'params', 'finite', 'bigint', 'regexp', 'late', 'PARENT', 'SCOPE', 'REFERENCE', `return (S, id, t, parent) => { ${body} };`)(B.constants, slow, items, params, finite, bigint, regexp, late, PARENT, SCOPE, REFERENCE);
 }
 
 function strs(S: State, start: number, len: number): string[] {
