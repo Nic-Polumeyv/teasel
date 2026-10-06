@@ -49,6 +49,8 @@ pub enum Op<F: Copy + 'static = Path> {
 	Raw,
 	/// `bigint`: the literal's decimal digits.
 	BigInt,
+	/// A regular expression literal's value, null in JSON because JSON cannot hold one.
+	RegExp(Name, F, F),
 	Const(Name, Name),
 	ConstBool(Name, bool),
 	Null(Name),
@@ -112,6 +114,7 @@ impl Op {
 			Float(k, f) => ("float", Some(k), Some(f), Rest::Nothing),
 			Raw => ("raw", None, None, Rest::Nothing),
 			BigInt => ("bigint", None, None, Rest::Nothing),
+			RegExp(k, pattern, flags) => ("regexp", Some(k), Some(pattern), Rest::Text(flags)),
 			Const(k, value) => ("const", Some(k), None, Rest::Const(value)),
 			ConstBool(k, value) => ("constbool", Some(k), None, Rest::Bool(value)),
 			Null(k) => ("null", Some(k), None, Rest::Nothing),
@@ -156,7 +159,7 @@ pub const JS: &[(&str, &[Op])] = &[
 	("StringLiteral", &[Type(c!("Literal")), Str(c!("value"), "value"), Raw]),
 	("BooleanLiteral", &[Type(c!("Literal")), Bool(c!("value"), "value"), Raw]),
 	("NullLiteral", &[Type(c!("Literal")), Null(c!("value")), Raw]),
-	("RegExpLiteral", &[Type(c!("Literal")), Null(c!("value")), Raw, Object(c!("regex"), &[Str(c!("pattern"), "pattern"), Str(c!("flags"), "flags")])]),
+	("RegExpLiteral", &[Type(c!("Literal")), RegExp(c!("value"), "pattern", "flags"), Raw, Object(c!("regex"), &[Str(c!("pattern"), "pattern"), Str(c!("flags"), "flags")])]),
 	("TemplateLiteral", &[Type(c!("TemplateLiteral")), List(c!("expressions"), "expressions"), List(c!("quasis"), "quasis")]),
 	("TemplateElement", &[Type(c!("TemplateElement")), Object(c!("value"), &[Str(c!("raw"), "raw"), Opt(c!("cooked"), "cooked")]), Bool(c!("tail"), "tail")]),
 	("TaggedTemplateExpression", &[Type(c!("TaggedTemplateExpression")), Node(c!("tag"), "tag"), Node(c!("quasi"), "quasi")]),
@@ -298,6 +301,11 @@ pub(crate) fn resolve_ops(ops: &[Op], fields: &[Field], kind: &str) -> &'static 
 			Float(k, f) => Float(k, slot(f, &[|t| matches!(t, Ty::U32)])),
 			Raw => Raw,
 			BigInt => BigInt,
+			RegExp(k, f, g) => RegExp(
+				k,
+				slot(f, &[|t| matches!(t, Ty::Str)]),
+				slot(g, &[|t| matches!(t, Ty::Str)]),
+			),
 			Const(k, v) => Const(k, v),
 			ConstBool(k, v) => ConstBool(k, v),
 			Null(k) => Null(k),
