@@ -535,16 +535,16 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 {
 	const template = '<ul>\n\t{{#repeat item, i in items by item.id}}\n\t\t<Card title={{ item.name }} index={{ i }} />\n\t{{:empty}}\n\t\t<li>No items</li>\n\t{{/repeat}}\n</ul>\n';
 	const html = {
-		document: { node: 'Template', form: [{ children: g.content }] },
-		text: { node: 'Text', form: [{ data: g.text.data }] },
-		comment: { node: 'Comment', form: [{ data: g.text.data }] },
+		document: g.node('Template', { children: g.content }),
+		text: g.node('Text', { data: g.text.data }),
+		comment: g.node('Comment', { data: g.text.data }),
 		elements: {
 			fields: { name: g.element.tag, attributes: g.element.attributes, children: g.content },
-			component: { node: 'Component' },
-			other: { node: 'Element' },
+			component: g.node('Component'),
+			other: g.node('Element'),
 		},
-	} as const;
-	const expression = { node: 'Expression', in: ['content', 'value'], open: { marker: ['{{'], form: [{ expression: g.js.expression }, '}}'] } } as const;
+	};
+	const expression = g.construct({ node: 'Expression', in: ['content', 'value'], open: { marker: ['{{'], form: [{ expression: g.js.expression }, '}}'] } });
 	const item = { item: g.bind(g.js.pattern) };
 	const index = g.opt(',', { index: g.optional(g.bind(g.js.identifier)) });
 	const list = { list: g.js.expression };
@@ -643,11 +643,17 @@ function types(source: api.Source, definition: typeof svelte) {
 	g.optional(g.value.expression);
 	// @ts-expect-error an argument stands in only for a directive's value
 	g.orArg(g.js.expression);
+	// @ts-expect-error a tag has no body
+	g.construct({ node: 'T', open: { marker: ['{'], form: [{ body: g.content }, '}'] } });
+	// @ts-expect-error a tag opens no scope to declare in
+	g.construct({ node: 'T', open: { marker: ['{'], form: [{ name: g.bind(g.js.identifier) }, '}'] } });
+	// @ts-expect-error a close reads words only
+	g.construct({ node: 'B', open: { marker: ['{#b'], form: ['}', { body: g.content }] }, close: { marker: ['{/b'], form: [{ e: g.js.expression }, '}'] } });
 	const directive = (rule: g.Directive) => rule;
 	// @ts-expect-error only a block declares around itself
-	directive({ node: 'D', form: [{ name: g.bind.outside(g.js.identifier) }] });
+	directive(g.node('D', { name: g.bind.outside(g.js.identifier) }));
 	// @ts-expect-error a directive's flag is true or false
-	directive({ node: 'D', form: [{ flag: g.literal(null) }] });
+	directive(g.node('D', { flag: g.literal(null) }));
 	// @ts-expect-error `opt` needs items
 	g.opt();
 	// @ts-expect-error `oneOf` needs alternatives
@@ -655,29 +661,33 @@ function types(source: api.Source, definition: typeof svelte) {
 	// @ts-expect-error an alternative needs items
 	g.oneOf([]);
 	const base = {
-		text: { node: 'Text', form: [{ data: g.text.data }] },
-		comment: { node: 'Comment', form: [{ data: g.text.data }] },
-	} as const;
+		text: g.node('Text', { data: g.text.data }),
+		comment: g.node('Comment', { data: g.text.data }),
+	};
 	const fields = { name: g.element.tag, attributes: g.element.attributes, children: g.content };
 	g.grammar('x', {
 		...base,
 		// @ts-expect-error the document's literals are null or a list
-		document: { node: 'Root', form: [{ children: g.content, flag: g.literal(true) }] },
+		document: g.node('Root', { children: g.content, flag: g.literal(true) }),
 		elements: { fields },
 	});
 	g.grammar('x', {
 		...base,
-		document: { node: 'Root', form: [{ children: g.content }] },
+		document: g.node('Root', { children: g.content }),
 		// @ts-expect-error an element's fields are never left out
 		elements: { fields: { ...fields, attributes: g.optional(g.element.attributes) } },
 	});
 	g.grammar('x', {
 		...base,
-		document: { node: 'Root', form: [{ children: g.content }] },
+		document: g.node('Root', { children: g.content }),
 		elements: { fields },
 		// @ts-expect-error a directive's fields are never left out
 		directives: { fields: { arg: g.optional(g.directive.arg) } },
 	});
+	// a rule written apart from the grammar keeps its types
+	const out = g.construct({ node: 'Out', in: ['content', 'value'], open: { marker: ['{{'], form: [{ value: g.js.expression }, '}}'] } });
+	const apart = g.grammar('apart', { ...base, document: g.node('Root', { children: g.content }), elements: { fields }, constructs: { out } });
+	expect<Equal<NodeType<typeof apart, 'Out'>['value'], Expression>>();
 
 	const doc = source.parse(definition);
 	expect<Equal<typeof doc.node, Infer<Svelte>>>();

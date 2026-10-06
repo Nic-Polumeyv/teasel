@@ -32,17 +32,17 @@ Put together, with the language's name:
 import * as g from '@teasel/parser/grammar';
 
 export const tpl = g.grammar('tpl', {
-	document: { node: 'Template', form: [{ children: g.content }] },
-	text: { node: 'Text', form: [{ data: g.text.data }] },
-	comment: { node: 'Comment', form: [{ data: g.text.data }] },
+	document: g.node('Template', { children: g.content }),
+	text: g.node('Text', { data: g.text.data }),
+	comment: g.node('Comment', { data: g.text.data }),
 	elements: {
 		fields: {
 			name: g.element.tag,
 			attributes: g.element.attributes,
 			children: g.content,
 		},
-		component: { node: 'Component' },
-		other: { node: 'Element' },
+		component: g.node('Component'),
+		other: g.node('Element'),
 	},
 });
 ```

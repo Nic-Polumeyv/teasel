@@ -33,17 +33,17 @@
 
 	type Piece = { id: string; code: string[]; says: string[]; reads: Rect[] };
 	const pieces: Piece[] = [
-		{ id: 'document', code: ["document: { node: 'Template', form: [{ children: g.content }] },"], says: ['The whole file: a Template,', 'its content in children.'], reads: [panel] },
-		{ id: 'other', code: ["other: { node: 'Element' },"], says: ['Every tag no other rule', 'names: <ul> and <li>.'], reads: [...find('<ul>'), ...find('</ul>'), ...find('<li>'), ...find('</li>')] },
-		{ id: 'component', code: ["component: { node: 'Component' },"], says: ['A tag that starts with a', 'capital letter: <Card>.'], reads: find('<Card title={{ item.name }} index={{ i }} />') },
+		{ id: 'document', code: ["document: g.node('Template', { children: g.content }),"], says: ['The whole file: a Template,', 'its content in children.'], reads: [panel] },
+		{ id: 'other', code: ["other: g.node('Element'),"], says: ['Every tag no other rule', 'names: <ul> and <li>.'], reads: [...find('<ul>'), ...find('</ul>'), ...find('<li>'), ...find('</li>')] },
+		{ id: 'component', code: ["component: g.node('Component'),"], says: ['A tag that starts with a', 'capital letter: <Card>.'], reads: find('<Card title={{ item.name }} index={{ i }} />') },
 		{
 			id: 'fields',
 			code: ['fields: {', '  name: g.element.tag, attributes: g.element.attributes,', '  children: g.content },'],
 			says: ['What every element has:', 'its tag name, its attributes,', 'and its content.'],
 			reads: [...find('ul', [0]), ...find('title={{'), ...find('item.name', [2]), ...find('}}', [2]), ...find('index={{'), ...find('i }}', [2]), ...find('No items')],
 		},
-		{ id: 'text', code: ["text: { node: 'Text', form: [{ data: g.text.data }] },"], says: ['Text between tags, as read:', 'No items, and every {{ … }}', 'until a construct claims it.'], reads: [...find('No items'), ...find('{{#repeat item, i in items by item.id}}'), ...find('{{:empty}}'), ...find('{{/repeat}}')] },
-		{ id: 'comment', code: ["comment: { node: 'Comment', form: [{ data: g.text.data }] },"], says: ['A <!-- comment -->. list.tpl', 'has none; every grammar', 'names one.'], reads: [] },
+		{ id: 'text', code: ["text: g.node('Text', { data: g.text.data }),"], says: ['Text between tags, as read:', 'No items, and every {{ … }}', 'until a construct claims it.'], reads: [...find('No items'), ...find('{{#repeat item, i in items by item.id}}'), ...find('{{:empty}}'), ...find('{{/repeat}}')] },
+		{ id: 'comment', code: ["comment: g.node('Comment', { data: g.text.data }),"], says: ['A <!-- comment -->. list.tpl', 'has none; every grammar', 'names one.'], reads: [] },
 	];
 	const rects = (() => {
 		let y = 244;

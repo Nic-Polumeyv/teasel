@@ -163,14 +163,18 @@ export interface Node<T extends string = string, I extends readonly Item[] = rea
 	readonly node: T;
 	readonly form?: I;
 }
+/** A node of type `type` whose fields `form` reads: wherever a node is made, a rule written apart keeps its types. */
+export const node = <const T extends string, const I extends readonly Item[]>(type: T, ...form: I): Node<T, I> =>
+	form.length === 0 ? { node: type } : { node: type, form };
 
-type PieceForm = Form<Field<'form', false | 'inside' | 'outside'> | Field<'body'>>;
+type BlockForm = Form<Field<'form', false | 'inside' | 'outside'> | Field<'body'>>;
+type TagForm = Form<Field<'form'>>;
 
 /** Where a construct may stand: in content, in an attribute value, among an element's attributes, in the text of an rcdata element. */
 export type Place = 'content' | 'value' | 'attributes' | 'rcdata';
 
 /** A marker and what its form reads after it: a construct's open, a branch, or its close. */
-export interface Piece<I extends PieceForm = PieceForm> {
+export interface Piece<I extends BlockForm = BlockForm> {
 	/** Parts that whitespace and comments may stand between; a part is matched as written. */
 	readonly marker: readonly [string, ...string[]];
 	/** Whitespace must follow the marker. */
@@ -178,20 +182,35 @@ export interface Piece<I extends PieceForm = PieceForm> {
 	readonly form: I;
 }
 
-export interface Branch<I extends PieceForm = PieceForm> extends Piece<I> {
+export interface Branch<I extends BlockForm = BlockForm> extends Piece<I> {
 	/** The branch opens the construct again inside this field, with this flag true on the one it opens. */
 	readonly reopen?: readonly [field: string, flag: string];
 }
 
-/** A tag, or with `close` a block. */
-export interface Construct<T extends string = string> {
+/** A construct without a close: it reads no content and opens no scope. */
+export interface Tag<T extends string = string> {
+	readonly node: T;
+	/** Content when left out. */
+	readonly in?: readonly Place[];
+	readonly open: Piece<TagForm>;
+	readonly branches?: undefined;
+	readonly close?: undefined;
+}
+
+/** A construct with a close: its open, and every branch, ends in content. */
+export interface Block<T extends string = string> {
 	readonly node: T;
 	/** Content when left out. */
 	readonly in?: readonly Place[];
 	readonly open: Piece;
 	readonly branches?: readonly Branch[];
-	readonly close?: Piece;
+	/** Words only: what ends the block. */
+	readonly close: Piece<readonly string[]>;
 }
+
+export type Construct<T extends string = string> = Tag<T> | Block<T>;
+/** A construct, its types kept when it is written apart from the grammar. */
+export const construct = <const C extends Construct>(construct: C): C => construct;
 
 export interface Directive<T extends string = string> extends Node<T, DirectiveForm> {
 	readonly unique?: 'kind' | 'attributes';
@@ -337,7 +356,7 @@ type Resolve<T, G extends Definition> = T extends Children
 
 type Typed<T extends string, F> = Simplify<{ type: T } & Span & F>;
 
-type FormOf<N> = N extends { readonly form: infer I } ? I : readonly [];
+type FormOf<N> = N extends { readonly form?: infer I } ? (NonNullable<I> extends readonly unknown[] ? NonNullable<I> : readonly []) : readonly [];
 
 type NodeOf<N, G extends Definition, Extra extends Member = never, Force extends boolean = false> = N extends { readonly node: infer T extends string }
 	? Typed<T, Shape<Collect<FormOf<N>, false> | Extra, G, Force>>
@@ -352,8 +371,8 @@ type BranchMembers<B> = B extends { readonly reopen: readonly [infer F extends s
 	? Member<F, Source<Children, 'form', Plain>, true> | Member<Flag, Source<boolean, 'form', Plain>, false>
 	: Collect<FormOf<B>, true>;
 
-type ConstructNode<C, G extends Definition> = C extends Construct<infer T>
-	? Typed<T, Shape<Collect<C['open']['form'], false> | BranchMembers<NonNullable<C['branches']>[number]>, G, false>>
+type ConstructNode<C, G extends Definition> = C extends { readonly node: infer T extends string; readonly open: { readonly form: infer I } }
+	? Typed<T, Shape<Collect<I, false> | BranchMembers<C extends { readonly branches: readonly (infer B)[] } ? B : never>, G, false>>
 	: never;
 /** The constructs that stand in `P`, content when they say nowhere. */
 type Standing<C, P extends Place> = C extends { readonly in: readonly (infer In)[] } ? (P extends In ? C : never) : P extends 'content' ? C : never;

@@ -8,15 +8,15 @@ A template language can describe its whole syntax to the parser as a grammar. Th
 import * as g from '@teasel/parser/grammar';
 
 export const grammar = g.grammar('mini', {
-	document: { node: 'Root', form: [{ script: g.optional(g.doc.script) }, g.scope({ children: g.content })] },
-	fragment: { node: 'Fragment', form: [g.scope({ nodes: g.nodes })] },
-	text: { node: 'Text', form: [{ data: g.text.data }] },
-	comment: { node: 'Comment', form: [{ data: g.text.data }] },
+	document: g.node('Root', { script: g.optional(g.doc.script) }, g.scope({ children: g.content })),
+	fragment: g.node('Fragment', g.scope({ nodes: g.nodes })),
+	text: g.node('Text', { data: g.text.data }),
+	comment: g.node('Comment', { data: g.text.data }),
 	void: ['br', 'hr', 'img', 'input'],
 	elements: {
 		fields: { name: g.element.tag, attributes: g.element.attributes, children: g.content },
 		rules: { script: { node: 'Element', content: 'raw' } },
-		other: { node: 'Element' },
+		other: g.node('Element'),
 	},
 	script: { element: 'script' },
 	constructs: {
@@ -49,7 +49,7 @@ node.children.nodes[0].children.nodes[0];
 // ExpressionTag, its expression the Identifier greeting
 ```
 
-In TypeScript, and in JavaScript checked with JSDoc, the tree is typed from the definition: `node.children.nodes[0]` is an `Element`, an `IfBlock` or one of the others the grammar names, and `EachBlock`'s `item` is a `Pattern`. A field named `type`, or `bind` on a source that reads an expression, is a type error. What the engine could not parse with, a tag that reads content say, is refused when the grammar is first used, with a message naming the rule.
+In TypeScript, and in JavaScript checked with JSDoc, the tree is typed from the definition: `node.children.nodes[0]` is an `Element`, an `IfBlock` or one of the others the grammar names, and `EachBlock`'s `item` is a `Pattern`. A field named `type`, or `bind` on a source that reads an expression, is a type error. A tag that reads content is a type error too, and what the engine could not parse with is refused when the grammar is first used, with a message naming the rule. A rule written apart from the grammar, to share it, keeps its types through `g.node` or `g.construct`.
 
 A grammar reads the whole source, so `parse` takes no position with one.
 
