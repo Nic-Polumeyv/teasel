@@ -16,16 +16,16 @@ export default g.grammar('vue', {
 	elements: {
 		fields: { tag: g.element.tag, props: g.element.attributes, children: g.content },
 		rules: {
-			slot: g.node('Slot'),
-			template: g.node('Template'),
-			component: g.node('Component'),
+			slot: { node: 'Slot' },
+			template: { node: 'Template' },
+			component: { node: 'Component' },
 			textarea: { node: 'Element', content: 'rcdata' },
 			title: { node: 'Element', content: 'rcdata' },
 			script: { node: 'Element', content: 'raw' },
 			style: { node: 'Element', content: 'raw' },
 		},
-		component: g.node('Component'),
-		other: g.node('Element'),
+		component: { node: 'Component' },
+		other: { node: 'Element' },
 	},
 
 	directives: {

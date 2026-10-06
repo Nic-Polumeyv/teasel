@@ -34,8 +34,8 @@
 	type Piece = { id: string; code: string[]; says: string[]; reads: Rect[] };
 	const pieces: Piece[] = [
 		{ id: 'document', code: ["document: g.node('Template', { children: g.content }),"], says: ['The whole file: a Template,', 'its content in children.'], reads: [panel] },
-		{ id: 'other', code: ["other: g.node('Element'),"], says: ['Every tag no other rule', 'names: <ul> and <li>.'], reads: [...find('<ul>'), ...find('</ul>'), ...find('<li>'), ...find('</li>')] },
-		{ id: 'component', code: ["component: g.node('Component'),"], says: ['A tag that starts with a', 'capital letter: <Card>.'], reads: find('<Card title={{ item.name }} index={{ i }} />') },
+		{ id: 'other', code: ["other: { node: 'Element' },"], says: ['Every tag no other rule', 'names: <ul> and <li>.'], reads: [...find('<ul>'), ...find('</ul>'), ...find('<li>'), ...find('</li>')] },
+		{ id: 'component', code: ["component: { node: 'Component' },"], says: ['A tag that starts with a', 'capital letter: <Card>.'], reads: find('<Card title={{ item.name }} index={{ i }} />') },
 		{
 			id: 'fields',
 			code: ['fields: {', '  name: g.element.tag, attributes: g.element.attributes,', '  children: g.content },'],

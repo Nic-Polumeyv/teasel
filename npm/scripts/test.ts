@@ -540,8 +540,8 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 		comment: g.node('Comment', { data: g.text.data }),
 		elements: {
 			fields: { name: g.element.tag, attributes: g.element.attributes, children: g.content },
-			component: g.node('Component'),
-			other: g.node('Element'),
+			component: { node: 'Component' },
+			other: { node: 'Element' },
 		},
 	};
 	const expression = g.construct({ node: 'Expression', in: ['content', 'value'], open: { marker: ['{{'], form: [{ expression: g.js.expression }, '}}'] } });

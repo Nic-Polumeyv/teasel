@@ -10,8 +10,8 @@ export const tpl = g.grammar('tpl', {
 			attributes: g.element.attributes,
 			children: g.content,
 		},
-		component: g.node('Component'),
-		other: g.node('Element'),
+		component: { node: 'Component' },
+		other: { node: 'Element' },
 	},
 	constructs: {
 		expression: {

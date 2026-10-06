@@ -16,7 +16,7 @@ export const grammar = g.grammar('mini', {
 	elements: {
 		fields: { name: g.element.tag, attributes: g.element.attributes, children: g.content },
 		rules: { script: { node: 'Element', content: 'raw' } },
-		other: g.node('Element'),
+		other: { node: 'Element' },
 	},
 	script: { element: 'script' },
 	constructs: {
