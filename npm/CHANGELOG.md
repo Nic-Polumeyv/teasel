@@ -1,5 +1,27 @@
 # @teasel/parser
 
+## 0.0.17
+
+### Patch Changes
+
+- [#185](https://github.com/Nic-Polumeyv/teasel/pull/185) [`ea73835`](https://github.com/Nic-Polumeyv/teasel/commit/ea7383548060883893580d50f636744ec9bcd271) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - Bundling the WebAssembly build for a browser no longer fails on `node:fs/promises`
+
+- [#171](https://github.com/Nic-Polumeyv/teasel/pull/171) [`4834ac4`](https://github.com/Nic-Polumeyv/teasel/commit/4834ac46a6c204abf7ec77724e75f0e09f92b6db) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - `js.children`, `css.children` and a grammar's `children` name, for every node type, the fields that hold nodes
+
+- [#156](https://github.com/Nic-Polumeyv/teasel/pull/156) [`24a7736`](https://github.com/Nic-Polumeyv/teasel/commit/24a7736bd5845e9f41c597fa669efffde2909edb) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - Deeply nested CSS reports `nesting_depth` instead of overflowing the stack.
+
+- [#190](https://github.com/Nic-Polumeyv/teasel/pull/190) [`b38c182`](https://github.com/Nic-Polumeyv/teasel/commit/b38c182a8f524489e8ec94aa3eed5e19cb1ed6dd) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - `source.parse` takes `js`, one of its pieces such as `js.expression`, or a grammar itself, in place of a `Plan`
+
+- [#191](https://github.com/Nic-Polumeyv/teasel/pull/191) [`12bcded`](https://github.com/Nic-Polumeyv/teasel/commit/12bcded8b81021e29e0f0484ffdfc88d3f10211b) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - A grammar's blocks and tags spell their own markers, in place of `delimiters` and `sigils`
+
+- [#171](https://github.com/Nic-Polumeyv/teasel/pull/171) [`4834ac4`](https://github.com/Nic-Polumeyv/teasel/commit/4834ac46a6c204abf7ec77724e75f0e09f92b6db) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - An unfinished type parameter list on a snippet no longer panics under error recovery
+
+- [#156](https://github.com/Nic-Polumeyv/teasel/pull/156) [`24a7736`](https://github.com/Nic-Polumeyv/teasel/commit/24a7736bd5845e9f41c597fa669efffde2909edb) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - `source.parse(css)` reads the whole source as a CSS stylesheet
+
+- [#181](https://github.com/Nic-Polumeyv/teasel/pull/181) [`693dee6`](https://github.com/Nic-Polumeyv/teasel/commit/693dee6d347eee2408f576d9805ba0bdce52a9b0) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - A grammar is a typed definition made with `@teasel/parser/grammar`, no longer text
+
+- [#188](https://github.com/Nic-Polumeyv/teasel/pull/188) [`cb6541d`](https://github.com/Nic-Polumeyv/teasel/commit/cb6541d59100c185c079f5371eee10d9dc034dde) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - A grammar's delimiters, block and tag names, `outside` attribute, declaration field and reopen flags are read as written
+
 ## 0.0.16
 
 ### Patch Changes
