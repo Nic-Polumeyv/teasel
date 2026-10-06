@@ -570,6 +570,114 @@ fn a_branch_names_a_block_without_branches() {
 	assert!(answer.contains("A branch in {#repeat} is not allowed here"), "{answer}");
 }
 
+// a marker read halfway is another word, unless it read a part whole or the punctuation a part
+// starts with: `{.5}` and `{email}` are expressions, `{#eac a}` a misspelled block
+#[test]
+fn a_marker_read_halfway_is_another_word() {
+	let fields = |list: Vec<(&'static str, Source)>| definition::Item::Fields(Record(list));
+	let js = |field: &'static str| fields(vec![(field, source("js", "expression", false))]);
+	let content = |field: &'static str| fields(vec![(field, source("content", "fragment", false))]);
+	let close = || definition::Item::Word("}");
+	let mut spread = tag(&["{", "..."], vec![js("e"), close()]);
+	spread.r#in = Some(vec![Place::Attributes]);
+	let mut host = minimal();
+	host.definition.elements.other = Some(element("Element"));
+	host.definition.constructs = Some(Record(vec![
+		(
+			"EachBlock",
+			block(
+				"each",
+				vec![js("list"), close(), content("body")],
+				vec![branch(&["{", "else"], vec![close(), content("fallback")], None)],
+			),
+		),
+		("Spread", spread),
+		("Expr", expression("e")),
+	]));
+	let parse = |text: &str| parse_document(text, &host.wire(), &Request::from_flags(Options::MODULE));
+	for text in [
+		"{.5}",
+		"<a b={.5}></a>",
+		"{email}",
+		"{elsewhere}",
+		"{#each a}{email}{else}{e}{/each}",
+	] {
+		let answer = parse(text);
+		assert!(!answer.contains("error"), "{text}: {answer}");
+	}
+	let answer = parse("{#eac a}");
+	assert!(answer.contains("Expected {#each}"), "{answer}");
+	let answer = parse("{#each a}{/eac}");
+	assert!(answer.contains("Expected {/each}"), "{answer}");
+	let answer = parse("{/eachx}");
+	assert!(answer.contains("Unexpected closing eachx"), "{answer}");
+}
+
+// blocks may share a close, which closes the innermost of them, in either written order
+#[test]
+fn a_shared_close_closes_the_innermost_block() {
+	let fields = |list: Vec<(&'static str, Source)>| definition::Item::Fields(Record(list));
+	let close = || definition::Item::Word("}");
+	let with_end = |name: &'static str| definition::Construct {
+		close: Some(definition::Piece {
+			marker: vec!["{", "end"],
+			space: None,
+			form: vec![close()],
+		}),
+		..block(
+			name,
+			vec![
+				fields(vec![("e", source("js", "expression", false))]),
+				close(),
+				fields(vec![("body", source("content", "fragment", false))]),
+			],
+			Vec::new(),
+		)
+	};
+	for order in [["range", "if"], ["if", "range"]] {
+		let mut host = minimal();
+		host.definition.constructs = Some(Record(order.iter().map(|name| (*name, with_end(name))).collect()));
+		for text in ["{#range a}{#if b}x{end}y{end}", "{#if b}{#range a}x{end}y{end}"] {
+			let answer = parse_document(text, &host.wire(), &Request::from_flags(Options::MODULE));
+			assert!(
+				!answer.contains("error") && answer.contains("\"data\":\"y\""),
+				"{order:?} {text}: {answer}"
+			);
+		}
+	}
+}
+
+// a marker that starts with a letter starts a word, and rcdata where no construct stands is text
+#[test]
+fn markers_stand_where_they_may() {
+	let js = |field: &'static str| definition::Item::Fields(Record(vec![(field, source("js", "expression", false))]));
+	let mut host = minimal();
+	host.definition.elements.other = Some(element("Element"));
+	host.definition.elements.rules = Some(Record(vec![(
+		"textarea",
+		definition::Element {
+			content: Some(definition::Content::Rcdata),
+			..element("Element")
+		},
+	)]));
+	let mut expr = expression("e");
+	expr.r#in = Some(vec![Place::Content]);
+	host.definition.constructs = Some(Record(vec![
+		("Do", tag(&["do"], vec![js("e"), definition::Item::Word("end")])),
+		("Expr", expr),
+	]));
+	let parse = |host: &Host, text: &str| parse_document(text, &host.wire(), &Request::from_flags(Options::MODULE));
+	let answer = parse(&host, "enddo");
+	assert!(!answer.contains("error") && !answer.contains("\"Do\""), "{answer}");
+	let answer = parse(&host, "x do a end");
+	assert!(answer.contains("\"type\":\"Do\""), "{answer}");
+	let answer = parse(&host, "<textarea>{x}</textarea>");
+	assert!(!answer.contains("error") && !answer.contains("\"Expr\""), "{answer}");
+	host.definition.constructs.as_mut().unwrap().0[1].1.r#in = Some(vec![Place::Content, Place::Rcdata]);
+	let answer = parse(&host, "<textarea>{x}</textarea>");
+	assert!(answer.contains("\"type\":\"Expr\""), "{answer}");
+}
+
 // what a definition says that the engine would not read is refused, naming the field
 #[test]
 fn a_definition_says_only_what_is_read() {
@@ -898,6 +1006,39 @@ fn a_grammar_that_cannot_work_is_refused() {
 	assert_eq!(declares(2), ["alias"]);
 
 	let mut host = minimal();
+	host.definition.constructs = Some(Record(vec![("T", tag(&["{", "# x"], vec![close()]))]));
+	refused(
+		host,
+		"T: a marker needs parts, none of them empty or holding whitespace",
+	);
+	let mut host = with_block(vec![js("e", "expression"), close(), content("body")], Vec::new());
+	host.definition.constructs.as_mut().unwrap().0[0].1.r#in = Some(vec![Place::Content, Place::Value]);
+	refused(host, "X closes, so it stands in content only");
+	let mut pair = tag(&["{"], vec![js("a", "identifier"), js("b", "expression"), close()]);
+	pair.r#in = Some(vec![Place::Rcdata]);
+	let mut host = minimal();
+	host.definition.constructs = Some(Record(vec![("T", pair)]));
+	refused(
+		host,
+		"T: in a value or rcdata a tag reads one expression, then its end word",
+	);
+	refused(
+		with_block(
+			vec![js("e", "expression"), close(), content("body")],
+			vec![branch(&["{", "/x"], vec![close(), content("other")], None)],
+		),
+		"X: two of its pieces share the marker {/x",
+	);
+	let mut host = minimal();
+	host.definition.attributes = Some(definition::Attributes {
+		shorthand: Some(("{", "}")),
+	});
+	refused(
+		host,
+		"the attribute shorthand needs a tag in value that reads one expression",
+	);
+
+	let mut host = minimal();
 	host.definition
 		.elements
 		.fields
@@ -1012,6 +1153,11 @@ fn a_host_has_its_own_syntax() {
 			shorthand: Some((open, close)),
 		});
 		let answer = parse(&host, &format!("a {open} x %  2 {close} b"));
+		assert!(
+			answer.contains("\"operator\":\"%\"") && !answer.contains("error"),
+			"{open} {close}: {answer}"
+		);
+		let answer = parse(&host, &format!("<a b=\"{open} x %  2 {close}\"/>"));
 		assert!(
 			answer.contains("\"operator\":\"%\"") && !answer.contains("error"),
 			"{open} {close}: {answer}"

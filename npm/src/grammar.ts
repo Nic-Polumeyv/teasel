@@ -68,7 +68,7 @@ export const js = {
 	code: source<Expression | Program, 'form'>('js', 'code'),
 	/** The type parameters' text, without the angle brackets. */
 	typeParameters: source<string, 'form'>('js', 'typeParameters'),
-	/** The text up to the closing delimiter, unread. */
+	/** The text up to the tag's end word, unread. */
 	text: source<string, 'form'>('js', 'text'),
 };
 
@@ -172,7 +172,11 @@ export type Place = 'content' | 'value' | 'attributes' | 'rcdata';
 
 /** A marker and what its form reads after it: a construct's open, a branch, or its close. */
 export interface Piece<I extends BlockForm = BlockForm> {
-	/** Parts that whitespace and comments may stand between; a part is matched as written. */
+	/**
+	 * Parts that whitespace and comments may stand between; a part is matched as written. A marker
+	 * that stops partway is another word, `{.5}` no `{...}`, unless it stops after a part's leading
+	 * punctuation or a whole part: `{#eac` is an error.
+	 */
 	readonly marker: readonly [string, ...string[]];
 	/** Whitespace must follow the marker. */
 	readonly space?: boolean;
@@ -385,14 +389,18 @@ type ElementNode<E, G extends Definition> = E extends Element ? NodeOf<E, G, Col
 type Values<T> = T extends object ? T[keyof T] : never;
 
 type ScriptNode<G extends Definition> = Typed<'Script', { context: string; content: Program; attributes: Attribute<G>[] }>;
-type AttributeNode<G extends Definition> = Typed<'Attribute', { name: string; value: true | Content<G> | Content<G>[] }>;
+type AttributeNode<G extends Definition> = Typed<
+	'Attribute',
+	{ name: string; value: true | Constructs<G, 'value'> | (NodeOf<G['text'], G> | Constructs<G, 'value'>)[] }
+>;
 
-/** What a host's content can hold. */
+/** What a host's content can hold; an rcdata element's, what stands in rcdata. */
 export type Content<G extends Definition> =
 	| ElementNode<Values<G['elements']['rules']> | G['elements']['component'] | G['elements']['other'], G>
 	| NodeOf<G['text'], G>
 	| NodeOf<G['comment'], G>
-	| Constructs<G, 'content'>;
+	| Constructs<G, 'content'>
+	| Constructs<G, 'rcdata'>;
 
 /** What an element's attributes can hold. */
 export type Attribute<G extends Definition> =
@@ -404,5 +412,5 @@ export type Attribute<G extends Definition> =
 export type Infer<Gr extends Grammar> = Gr extends Grammar<infer G> ? NodeOf<G['document'], G> : never;
 /** A node type of the grammar, by name. */
 export type NodeType<Gr extends Grammar, T extends string> = Gr extends Grammar<infer G>
-	? Extract<Content<G> | Attribute<G> | FragmentNode<G> | ScriptNode<G>, { type: T }>
+	? Extract<Content<G> | Attribute<G> | Constructs<G, 'value'> | FragmentNode<G> | ScriptNode<G>, { type: T }>
 	: never;

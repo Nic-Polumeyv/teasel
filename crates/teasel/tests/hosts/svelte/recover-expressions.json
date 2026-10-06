@@ -160,7 +160,7 @@
 			"code": "unexpected_token",
 			"message": "Unexpected token",
 			"pos": 9,
-			"end": 10,
+			"end": 9,
 			"loc": {
 				"line": 1,
 				"column": 9

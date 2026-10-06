@@ -1976,6 +1976,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 	) -> Result<Vec<NodeId>> {
 		let mut chunks = self.nodes.take();
 		let mut chunk_start = self.at;
+		let reads = self.grammar.constructs.iter().any(|c| c.stands(here));
 		loop {
 			if self.at >= self.len() {
 				self.report(error(self.len(), self.len(), Code::UnexpectedEof, None))?;
@@ -1988,7 +1989,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 				self.flush_text(chunk_start, at, &mut chunks);
 				return Ok(chunks);
 			}
-			if self.verbatim == 0 && self.construct_starts(self.at as usize) {
+			if reads && self.verbatim == 0 && self.construct_starts(self.at as usize) {
 				let start = self.at;
 				// what reads one expression here, unless the open of something else reads further
 				let (value, other) = self.value_here(start as usize, here);
@@ -1996,11 +1997,14 @@ impl<'a, E: Extension> Walker<'a, E> {
 					Some((rule, whole)) if other <= whole => {
 						self.flush_text(chunk_start, start, &mut chunks);
 						self.at = whole;
+						if rule.open.space {
+							self.require_space()?;
+						}
 						self.space();
 						if self.matches("/>") || self.matches(">") {
 							return fail(self.at, self.at, Code::Expected, Some(rule.open.end));
 						}
-						let expression = self.js(entry, "")?;
+						let expression = self.js(entry, rule.open.end)?;
 						let expression = self.first(expression);
 						self.space();
 						self.expect(rule.open.end)?;
@@ -2035,13 +2039,19 @@ impl<'a, E: Extension> Walker<'a, E> {
 
 	/// Whether some marker's first part stands at `i`.
 	fn construct_starts(&self, i: usize) -> bool {
-		let bytes = self.src.as_bytes();
+		let bytes = &self.src.as_bytes()[..self.len() as usize];
 		self.grammar.starts[bytes[i] as usize]
 			&& self
 				.grammar
 				.firsts
 				.iter()
-				.any(|first| bytes[i..].starts_with(first.part.as_bytes()))
+				.any(|first| self.first_at(bytes, i, first.part, first.word))
+	}
+
+	/// Whether a marker's first part stands at `i` of `bytes`: one that starts with a letter, `word`,
+	/// starts a word.
+	fn first_at(&self, bytes: &[u8], i: usize, part: &str, word: bool) -> bool {
+		bytes[i..].starts_with(part.as_bytes()) && !(word && self.src[..i].ends_with(is_id_continue))
 	}
 
 	/// Whitespace and comments from `i` on: what may stand between a marker's parts.
@@ -2054,7 +2064,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			if let Some(comment) = rest.strip_prefix("/*") {
 				match comment.find("*/") {
 					Some(n) => i += n + 4,
-					None => return i,
+					None => return len,
 				}
 			} else if rest.starts_with("//") {
 				i += rest.find('\n').unwrap_or(rest.len());
@@ -2065,11 +2075,14 @@ impl<'a, E: Extension> Walker<'a, E> {
 	}
 
 	/// How `piece`'s marker stands at `at`: whole, `Ok((end, word))` with `word` where its last part's
-	/// word starts; or stopped after its first part, `Err(reached)`. The last part of a marker that
-	/// whitespace must follow may run into a word: the missing whitespace is reported then.
+	/// word starts; or stopped after its first part, `Err(reached)`. A stopped marker reached into a
+	/// part only once it read a part before it whole, or the punctuation the part starts with:
+	/// `{.5}` is no `{...}` and `{{email}}` no `{{else}}`, but `{#eac` is a block. The last part of a
+	/// marker that whitespace must follow may run into a word: the missing whitespace is reported then.
 	fn marker_at(&self, at: usize, piece: &Piece) -> Option<std::result::Result<(u32, u32), u32>> {
 		let first = piece.marker[0];
-		if !self.src.as_bytes()[at..self.len() as usize].starts_with(first.as_bytes()) {
+		let bytes = &self.src.as_bytes()[..self.len() as usize];
+		if !self.first_at(bytes, at, first, first.starts_with(is_id_continue)) {
 			return None;
 		}
 		let end = at + first.len();
@@ -2104,7 +2117,9 @@ impl<'a, E: Extension> Walker<'a, E> {
 			let common = rest.bytes().zip(part.bytes()).take_while(|(a, b)| a == b).count();
 			let last = n + 1 == parts;
 			if common < part.len() || runs_on(part, from + common, last) {
-				return Some(Err(if common > 0 { (from + common) as u32 } else { i as u32 }));
+				let sign = part.len() - part.trim_start_matches(|c| !is_id_continue(c)).len();
+				let into = common > 0 && (n > 1 || (sign > 0 && common >= sign));
+				return Some(Err(if into { (from + common) as u32 } else { i as u32 }));
 			}
 			i = from + part.len();
 			if last {
@@ -2115,19 +2130,19 @@ impl<'a, E: Extension> Walker<'a, E> {
 		None
 	}
 
-	/// The pieces whose marker can stand at `at`, with where their first part ends and where the
-	/// trivia after it does. A piece left out stops where its first part ends, which `stop` says.
+	/// The pieces whose marker can stand at `at`, with where their first part ends and, for a marker
+	/// of more parts, where the trivia after it does. A piece left out stops where its first part
+	/// ends, which `stop` says.
 	fn candidates(&self, at: usize, mut each: impl FnMut(usize, Which, usize, usize), mut stop: impl FnMut(usize)) {
 		let grammar: &'a Grammar = self.grammar;
 		let bytes = &self.src.as_bytes()[..self.len() as usize];
 		for first in &grammar.firsts {
-			if !bytes[at..].starts_with(first.part.as_bytes()) {
+			if !self.first_at(bytes, at, first.part, first.word) {
 				continue;
 			}
 			let end = at + first.part.len();
-			let after = self.trivia(end);
 			for &(index, which) in &first.whole {
-				each(index, which, end, after);
+				each(index, which, end, end);
 			}
 			if first.next.is_empty()
 				|| (first.part.ends_with(is_id_continue) && self.src[end..bytes.len()].starts_with(is_id_continue))
@@ -2135,6 +2150,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 				continue;
 			}
 			stop(end);
+			let after = self.trivia(end);
 			if let Some(byte) = bytes.get(after)
 				&& let Some((_, list)) = first.next.iter().find(|(known, _)| known == byte)
 			{
@@ -2190,10 +2206,13 @@ impl<'a, E: Extension> Walker<'a, E> {
 		}
 	}
 
-	fn is_open(&self, construct: &Construct) -> bool {
+	/// How deep the innermost open `construct` stands below the top frame; MAX when none is open.
+	fn depth(&self, construct: &Construct) -> usize {
 		self.frames
 			.iter()
-			.any(|frame| matches!(frame, Frame::Block { rule, .. } if std::ptr::eq(*rule, construct)))
+			.rev()
+			.position(|frame| matches!(frame, Frame::Block { rule, .. } if std::ptr::eq(*rule, construct)))
+			.unwrap_or(usize::MAX)
 	}
 
 	/// Whether the open form of `rule` can start at `at`: its first word is there, or its first entry
@@ -2236,18 +2255,19 @@ impl<'a, E: Extension> Walker<'a, E> {
 			return self.stopped(start, reached, Place::Content);
 		}
 		let inner = self.innermost_block();
-		let (mut branch, mut close, mut misplaced, mut misplaced_branch) = (None, None, None, false);
+		let (mut branch, mut close, mut misplaced, mut misplaced_branch) = (None, None, None, None);
 		for mark in marks {
 			match mark.which {
 				Which::Branch(i) if inner.is_some_and(|block| std::ptr::eq(block, mark.rule)) => {
 					branch.get_or_insert((mark.rule, i, mark.word));
 				}
-				Which::Branch(_) => misplaced_branch = true,
+				Which::Branch(_) => {
+					misplaced_branch.get_or_insert(mark.rule.piece(mark.which).end);
+				}
 				Which::Close => {
-					if close.is_none()
-						|| (self.is_open(mark.rule) && !close.is_some_and(|(rule, _)| self.is_open(rule)))
-					{
-						close = Some((mark.rule, mark.word));
+					let depth = self.depth(mark.rule);
+					if close.is_none_or(|(_, _, known)| depth < known) {
+						close = Some((mark.rule, mark.word, depth));
 					}
 				}
 				Which::Open if mark.rule.stands(Place::Content) => {}
@@ -2260,7 +2280,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			self.at = whole;
 			return self.branch(rule, i, start, word);
 		}
-		if let Some((rule, word)) = close {
+		if let Some((rule, word, _)) = close {
 			self.at = whole;
 			return self.close_block(rule, start, word);
 		}
@@ -2275,8 +2295,8 @@ impl<'a, E: Extension> Walker<'a, E> {
 				return Ok(());
 			}
 		}
-		if misplaced_branch {
-			return self.misplaced_branch(start);
+		if let Some(end) = misplaced_branch {
+			return self.misplaced_branch(start, end);
 		}
 		if let Some((rule, word)) = misplaced {
 			self.at = whole;
@@ -2297,48 +2317,51 @@ impl<'a, E: Extension> Walker<'a, E> {
 	fn stopped(&mut self, start: u32, reached: u32, place: Place) -> Result<()> {
 		let inner = self.innermost_block();
 		let mut names: Vec<&'static str> = Vec::new();
-		let (mut closes, mut branches, mut end) = (false, false, None);
+		let (mut end, mut close, mut branch) = (None, None, None);
 		for (rule, which, piece) in pieces(self.grammar) {
 			if self.marker_at(start as usize, piece) != Some(Err(reached)) {
 				continue;
 			}
-			end.get_or_insert(piece.end);
 			let allowed = match which {
 				Which::Open => rule.stands(place),
 				Which::Branch(_) => {
-					branches = true;
+					branch.get_or_insert(piece.end);
 					inner.is_some_and(|block| std::ptr::eq(block, rule))
 				}
 				Which::Close => {
-					closes = true;
+					close.get_or_insert(piece.end);
 					false
 				}
 			};
 			if allowed && !names.contains(&piece.display) {
+				end.get_or_insert(piece.end);
 				names.push(piece.display);
 			}
 		}
-		let end = end.unwrap_or_default();
-		if !names.is_empty() {
+		if let Some(end) = end {
 			self.report(error(reached, reached, Code::Expected, Some(&names.join(" or "))))?;
 			self.skip_to(end);
 			return Ok(());
 		}
-		if closes {
-			let rest = &self.src[reached as usize..self.len() as usize];
-			let name = &rest[..rest.find(|c: char| !is_id_continue(c)).unwrap_or(rest.len())];
-			let at = if inner.is_some() { reached } else { start };
-			let to = if inner.is_some() {
-				reached + name.len() as u32
-			} else {
-				start + 1
-			};
-			self.report(error(at, to, Code::UnexpectedClose, Some(name)))?;
+		if let Some(end) = close {
+			let src = &self.src[..self.len() as usize];
+			let word = src[..reached as usize].trim_end_matches(is_id_continue).len();
+			match inner {
+				Some(rule) => {
+					let wanted = rule.close.as_ref().unwrap().display;
+					self.report(error(word as u32, word as u32, Code::Expected, Some(wanted)))?;
+				}
+				None => {
+					let rest = &src[word..];
+					let name = &rest[..rest.find(|c: char| !is_id_continue(c)).unwrap_or(rest.len())];
+					self.report(error(start, start + 1, Code::UnexpectedClose, Some(name)))?;
+				}
+			}
 			self.skip_to(end);
 			return Ok(());
 		}
-		if branches {
-			return self.misplaced_branch(start);
+		if let Some(end) = branch {
+			return self.misplaced_branch(start, end);
 		}
 		fail(
 			start,
@@ -2348,8 +2371,8 @@ impl<'a, E: Extension> Walker<'a, E> {
 		)
 	}
 
-	/// A branch where its block is not the one open.
-	fn misplaced_branch(&mut self, start: u32) -> Result<()> {
+	/// A branch where its block is not the one open; `end` ends the branch's tag.
+	fn misplaced_branch(&mut self, start: u32, end: &str) -> Result<()> {
 		match self.innermost_block() {
 			None => {
 				self.report(error(
@@ -2358,9 +2381,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 					Code::Placement,
 					Some("A branch outside its block"),
 				))?;
-				let end =
-					pieces(self.grammar).find_map(|(_, which, piece)| (which != Which::Open).then_some(piece.end));
-				self.skip_to(end.unwrap_or_default());
+				self.skip_to(end);
 				Ok(())
 			}
 			Some(rule) if rule.branches.is_empty() => fail(

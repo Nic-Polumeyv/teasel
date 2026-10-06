@@ -798,7 +798,7 @@ pub enum Entry {
 	Const,
 	/// Identifiers separated by commas, possibly none.
 	Identifiers,
-	/// The text up to the closing delimiter, unread, for a host that reads its expressions later.
+	/// The text up to the tag's end word, unread, for a host that reads its expressions later.
 	Text,
 }
 
@@ -1269,6 +1269,8 @@ pub struct Grammar {
 #[derive(Clone, Debug)]
 pub struct First {
 	pub part: &'static str,
+	/// The part starts with a letter, so it starts a word.
+	pub word: bool,
 	pub whole: Vec<(usize, Which)>,
 	pub next: Vec<(u8, Vec<(usize, Which)>)>,
 }
@@ -1946,8 +1948,14 @@ fn piece(
 	site: At,
 	bound: &mut Vec<Declare>,
 ) -> Result<Piece, String> {
-	if marker.is_empty() || marker.iter().any(|part| part.is_empty()) {
-		return Err(format!("{ty}: a marker needs parts, none of them empty"));
+	if marker.is_empty()
+		|| marker
+			.iter()
+			.any(|part| part.is_empty() || part.contains(char::is_whitespace))
+	{
+		return Err(format!(
+			"{ty}: a marker needs parts, none of them empty or holding whitespace"
+		));
 	}
 	let form = form(ty, items, site, bound)?;
 	let end = last_word(&form.items).ok_or_else(|| format!("{ty}: a marker's form ends its tag with a word"))?;
@@ -2032,7 +2040,7 @@ fn construct(ty: &'static str, rule: &definition::Construct) -> Result<Construct
 		}
 		None => None,
 	};
-	Ok(Construct {
+	let construct = Construct {
 		ty,
 		places,
 		open,
@@ -2041,7 +2049,26 @@ fn construct(ty: &'static str, rule: &definition::Construct) -> Result<Construct
 		chain_flags,
 		entries: Vec::new(),
 		bodies: Vec::new(),
-	})
+	};
+	if block && construct.places.iter().any(|place| *place != Place::Content) {
+		return Err(format!("{ty} closes, so it stands in content only"));
+	}
+	if (construct.stands(Place::Value) || construct.stands(Place::Rcdata))
+		&& !matches!(construct.single(), Some((_, Entry::Expression)))
+	{
+		return Err(format!(
+			"{ty}: in a value or rcdata a tag reads one expression, then its end word"
+		));
+	}
+	let mut seen = Vec::new();
+	for (_, piece) in construct.pieces() {
+		let marker = piece.marker.concat();
+		if seen.contains(&marker) {
+			return Err(format!("{ty}: two of its pieces share the marker {marker}"));
+		}
+		seen.push(marker);
+	}
+	Ok(construct)
 }
 
 fn lower(host: Host) -> Result<Grammar, String> {
@@ -2153,6 +2180,12 @@ fn lower(host: Host) -> Result<Grammar, String> {
 	if let Some((open, close)) = shorthand {
 		token("the shorthand's marker", open)?;
 		token("the shorthand's closing word", close)?;
+		if !constructs
+			.iter()
+			.any(|c| c.stands(Place::Value) && matches!(c.single(), Some((_, Entry::Expression))))
+		{
+			return Err("the attribute shorthand needs a tag in value that reads one expression".into());
+		}
 	}
 	let mut reads = Vec::new();
 	let document = DocumentRule {
@@ -2203,9 +2236,8 @@ fn lower(host: Host) -> Result<Grammar, String> {
 }
 
 impl Form {
-	/// `follow` is what ends the form: the close delimiter, nothing for an attribute value.
-	fn finish(&mut self, follow: &[&'static str]) -> Result<(), String> {
-		resolve(&mut self.items, follow);
+	fn finish(&mut self) -> Result<(), String> {
+		resolve(&mut self.items, &[]);
 		let mut entries = Vec::new();
 		collect_entries(&self.items, &mut entries);
 		let mut bodies = Vec::new();
@@ -2292,22 +2324,22 @@ impl Grammar {
 		}
 		for rule in &mut self.directives {
 			if let DirectiveValue::Form(form) = &mut rule.value {
-				form.finish(&[])?;
+				form.finish()?;
 			}
 		}
 		let mut starts = [false; 256];
 		for construct in &mut self.constructs {
-			construct.open.form.finish(&[])?;
+			construct.open.form.finish()?;
 			let mut entries = construct.open.form.entries.clone();
 			let mut bodies = Vec::new();
 			collect_bodies(&construct.open.form, &mut bodies);
 			for branch in &mut construct.branches {
-				branch.form.finish(&[])?;
+				branch.form.finish()?;
 				entries.extend_from_slice(&branch.form.entries);
 				collect_bodies(&branch.form, &mut bodies);
 			}
 			if let Some(close) = &mut construct.close {
-				close.form.finish(&[])?;
+				close.form.finish()?;
 			}
 			construct.entries = entries;
 			construct.bodies = bodies;
@@ -2330,6 +2362,7 @@ impl Grammar {
 					None => {
 						firsts.push(First {
 							part: piece.marker[0],
+							word: piece.marker[0].starts_with(crate::lexer::unicode::is_id_continue),
 							whole: Vec::new(),
 							next: Vec::new(),
 						});

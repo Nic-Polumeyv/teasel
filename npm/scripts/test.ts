@@ -688,6 +688,22 @@ function types(source: api.Source, definition: typeof svelte) {
 	const out = { in: ['content', 'value'], open: { marker: ['{{'], form: [{ value: g.js.expression }, '}}'] } } as const;
 	const apart = g.grammar('apart', { ...base, document: { node: 'Root', form: [{ children: g.content }] }, elements: { fields }, constructs: { Out: out } });
 	expect<Equal<NodeType<typeof apart, 'Out'>['value'], Expression>>();
+	// a construct only in values, or only in rcdata, is a node type too; an attribute's value holds text and what stands in values
+	const only = g.grammar('only', {
+		...base,
+		document: { node: 'Root', form: [{ children: g.content }] },
+		elements: { fields },
+		constructs: {
+			Interp: { in: ['value'], open: { marker: ['{{'], form: [{ value: g.js.expression }, '}}'] } },
+			Raw: { in: ['rcdata'], open: { marker: ['{%'], form: [{ value: g.js.expression }, '%}'] } },
+		},
+	});
+	type Interp = NodeType<typeof only, 'Interp'>;
+	expect<Equal<Interp['value'], Expression>>();
+	expect<Equal<NodeType<typeof only, 'Raw'>['value'], Expression>>();
+	type Value = NodeType<typeof only, 'Attribute'>['value'];
+	expect<Equal<Extract<Value, { type: 'Interp' }>, Interp>>();
+	expect<Equal<Extract<Extract<Value, unknown[]>[number], { type: 'Interp' }>, Interp>>();
 
 	const doc = source.parse(definition);
 	expect<Equal<typeof doc.node, Infer<Svelte>>>();
