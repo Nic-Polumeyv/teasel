@@ -78,13 +78,16 @@ function mode(source: string, options: Options, entry: number, at: number) {
 	return `${options.typescript ? 'ts-' : ''}${head}${switches.join('')}${offset}`;
 }
 
+// JSON has no RegExp, so the writer spells a regular expression's value null
+const as_json = (_key: string, value: unknown) => (value instanceof RegExp ? null : value);
+
 // the addon's answers as JSON, each with the batch job that asks the binary for the same
 const jobs: { name: string; source: string; mode: string; tree: string }[] = [];
 function json(name: string, source: string, options: Options, entry: number, at: number) {
 	const held = native.create(source, flags(options));
 	const answer = held.parse(entry, at, undefined, '', undefined);
 	held.free();
-	const tree = typeof answer === 'string' ? answer : JSON.stringify(decode(answer, source, native, false));
+	const tree = typeof answer === 'string' ? answer : JSON.stringify(decode(answer, source, native, false), as_json);
 	jobs.push({ name, source, mode: mode(source, options, entry, at), tree });
 }
 
@@ -93,7 +96,7 @@ function document(name: string, source: string, typescript: boolean, options: Op
 	const held = native.create(source, flags(options));
 	const answer = held.parse(0, 0, undefined, '', plan);
 	held.free();
-	const tree = typeof answer === 'string' ? answer : JSON.stringify(decode(answer, source, native, false));
+	const tree = typeof answer === 'string' ? answer : JSON.stringify(decode(answer, source, native, false), as_json);
 	jobs.push({ name: `${name} doc${switches}`, source, mode: `${typescript ? 'ts-' : ''}doc${switches}`, tree });
 }
 
