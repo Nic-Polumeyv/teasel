@@ -32,11 +32,7 @@ export class ParseError extends SyntaxError {
 // what the decoder hangs on a node, under keys JSON and enumeration skip
 const slot = (node: object | null | undefined, key: symbol) => (node as Record<symbol, any> | null | undefined)?.[key];
 
-/**
- * The node `node` is a child of; undefined for the root of an answer. In a document, a piece of
- * JavaScript's root is a child of a host node. A comment's is the node it is attached to; one listed
- * in `comments` has none. A literal's `regex` and a template element's `value` are not nodes and have none.
- */
+/** The node `node` is a child of; undefined for the root of an answer and for a comment listed in `comments`. A literal's `regex` and a template element's `value` are not nodes and have none. */
 export function parentOf(node: Node | HostNode | Comment | null | undefined): Node | HostNode | undefined {
 	return slot(node, PARENT);
 }
