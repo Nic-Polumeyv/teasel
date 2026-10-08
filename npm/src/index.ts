@@ -168,6 +168,7 @@ export class Source {
 		throw new ParseError(JSON.parse(answer).error);
 	}
 
+	// the engine frees an undisposed source when it is collected
 	[Symbol.dispose]() {
 		this.#held?.free();
 		this.#held = undefined;

@@ -132,6 +132,7 @@ export const engine: Engine = {
 				if (slot.generation === generation) wasm.source_free(slot.handle);
 			},
 		};
+		// the held value must not reach prepared, or it is never collected
 		sources.register(prepared, slot, slot);
 		return prepared;
 	},
