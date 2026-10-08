@@ -1,4 +1,4 @@
-import type { Expression, Node, Pattern, Position, Program, Statement } from 'estree';
+import type { Comment, Expression, Node, Pattern, Position, Program, Statement } from 'estree';
 import { decode, PARENT, REFERENCE, SCOPE } from './decode.ts';
 import type { Code, Held, HostNode, Language, Parsed, Prepared, Reference, Scope } from './types.ts';
 import { flags, type Options } from './options.ts';
@@ -31,17 +31,21 @@ export class ParseError extends SyntaxError {
 
 // what the decoder hangs on a node, under keys JSON and enumeration skip
 interface Linked {
-	[PARENT]?: Node;
+	[PARENT]?: Node | HostNode;
 	[SCOPE]?: Scope;
 	[REFERENCE]?: Reference;
 }
 
-/** The node `node` is a child of; undefined for the root of an answer. A literal's `regex` and a template element's `value` are not nodes and have none. */
-export function parentOf(node: Node | null | undefined): Node | undefined {
+/**
+ * The node `node` is a child of; undefined for the root of an answer. In a document, a piece of
+ * JavaScript's root is a child of a host node. A comment's is the node it is attached to; one listed
+ * in `comments` has none. A literal's `regex` and a template element's `value` are not nodes and have none.
+ */
+export function parentOf(node: Node | HostNode | Comment | null | undefined): Node | HostNode | undefined {
 	return node == null ? undefined : (node as Linked)[PARENT];
 }
 /** With `scopes`: the scope `node` opens, when it opens one. */
-export function scopeOf(node: Node | null | undefined): Scope | undefined {
+export function scopeOf(node: Node | HostNode | null | undefined): Scope | undefined {
 	return node == null ? undefined : (node as Linked)[SCOPE];
 }
 /** With `scopes`: the reference an identifier makes, the binding itself for the identifier that declares it; a global's too, which no binding lists. Undefined when the identifier names no value, a property key say. */

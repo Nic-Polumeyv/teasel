@@ -18,7 +18,7 @@ export interface Scope {
 		| 'enum'
 		| 'fragment';
 	/** The node that opens it; null for a function-name scope and for the scope around a parameter list parsed on its own. */
-	node: Node | null;
+	node: Node | HostNode | null;
 	parent: Scope | null;
 	/** An `await` or `for await` runs directly in it, no function around; only a program or fragment scope can say so. */
 	topLevelAwait: boolean;
