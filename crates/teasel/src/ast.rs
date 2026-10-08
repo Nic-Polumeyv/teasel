@@ -897,6 +897,7 @@ crate::layout::kinds! {
 			value: Option<NodeId>,
 			computed: bool,
 			is_static: bool,
+			kind: FieldKind,
 		},
 		StaticBlock {
 			body: List,
@@ -1101,6 +1102,14 @@ crate::layout::names! {
 		Method = "method",
 		Get = "get",
 		Set = "set",
+	}
+}
+
+crate::layout::names! {
+	#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+	pub enum FieldKind {
+		Property = "PropertyDefinition",
+		Accessor = "AccessorProperty",
 	}
 }
 

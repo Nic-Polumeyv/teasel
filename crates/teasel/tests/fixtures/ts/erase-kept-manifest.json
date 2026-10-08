@@ -208,10 +208,9 @@
 							}
 						},
 						{
-							"type": "PropertyDefinition",
+							"type": "AccessorProperty",
 							"start": 105,
 							"end": 120,
-							"accessor": true,
 							"static": false,
 							"computed": false,
 							"key": {

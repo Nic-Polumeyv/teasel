@@ -1,6 +1,6 @@
 //! The type grammar: everything after a `:` or inside `<...>`.
 
-use super::ast::{Keyword as TsKeyword, Modifier, SignatureKind, TsKind};
+use super::ast::{Clause, Keyword as TsKeyword, Modifier, SignatureKind, TsKind};
 use super::{Modifiers, TypeScript};
 use crate::ast::{List, NodeId, NodeKind};
 use crate::error::{Code, SyntaxError};
@@ -949,6 +949,11 @@ impl Parser<'_, TypeScript> {
 
 	pub(super) fn parse_heritage_clause(&mut self, token: &str) -> Result<Vec<NodeId>> {
 		let start = self.tok.start;
+		let clause = if token == "implements" {
+			Clause::Implements
+		} else {
+			Clause::Extends
+		};
 		let list = self.parse_delimited_list(ListKind::HeritageClause, |p| {
 			let start = p.tok.start;
 			let expression = p.parse_entity_name(false)?;
@@ -958,9 +963,10 @@ impl Parser<'_, TypeScript> {
 				None
 			};
 			Ok(p.ts(
-				TsKind::ExpressionWithTypeArguments {
+				TsKind::Heritage {
 					expression,
 					type_arguments,
+					clause,
 				},
 				start,
 			))

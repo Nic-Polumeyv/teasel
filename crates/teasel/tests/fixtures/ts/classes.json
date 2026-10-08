@@ -28,7 +28,7 @@
 				},
 				"implements": [
 					{
-						"type": "TSExpressionWithTypeArguments",
+						"type": "TSClassImplements",
 						"start": 44,
 						"end": 45,
 						"expression": {
@@ -39,7 +39,7 @@
 						}
 					},
 					{
-						"type": "TSExpressionWithTypeArguments",
+						"type": "TSClassImplements",
 						"start": 47,
 						"end": 48,
 						"expression": {
@@ -550,7 +550,7 @@
 						}
 					]
 				},
-				"superTypeParameters": {
+				"superTypeArguments": {
 					"type": "TSTypeParameterInstantiation",
 					"start": 376,
 					"end": 379,
@@ -570,7 +570,7 @@
 				},
 				"implements": [
 					{
-						"type": "TSExpressionWithTypeArguments",
+						"type": "TSClassImplements",
 						"start": 391,
 						"end": 392,
 						"expression": {
@@ -581,7 +581,7 @@
 						}
 					},
 					{
-						"type": "TSExpressionWithTypeArguments",
+						"type": "TSClassImplements",
 						"start": 394,
 						"end": 395,
 						"expression": {
