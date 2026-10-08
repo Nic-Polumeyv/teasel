@@ -1,4 +1,4 @@
-import type { Expression, Node, Pattern, Program, Statement } from 'estree';
+import type { Expression, Node, Pattern, Position, Program, Statement } from 'estree';
 import { decode, PARENT, REFERENCE, SCOPE } from './decode.ts';
 import type { Code, Held, HostNode, Language, Parsed, Prepared, Reference, Scope } from './types.ts';
 import { flags, type Options } from './options.ts';
@@ -21,7 +21,7 @@ export class ParseError extends SyntaxError {
 	declare code: Code;
 	declare pos: number;
 	declare end: number;
-	declare loc?: { line: number; column: number };
+	declare loc?: Position;
 
 	constructor({ message, ...fields }: Pick<ParseError, 'message' | 'code' | 'pos' | 'end' | 'loc'>) {
 		super(message);
