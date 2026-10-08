@@ -120,7 +120,7 @@ fn external(env: Env, value: Value, what: &str) -> Result<*mut c_void> {
 	})
 }
 
-fn handle(env: Env, value: Value) -> Result<*mut Prepared<'static>> {
+fn handle(env: Env, value: Value) -> Result<*mut Option<Prepared<'static>>> {
 	let data = external(env, value, "a source")?;
 	if data.is_null() {
 		return Err("a source expected".into());
@@ -138,8 +138,8 @@ unsafe extern "C" fn create(env: Env, info: CallbackInfo) -> Value {
 			unsafe {
 				node_api::napi_create_external(
 					env,
-					Box::into_raw(Box::new(prepared)).cast(),
-					None,
+					Box::into_raw(Box::new(Some(prepared))).cast(),
+					Some(drop_source),
 					null_mut(),
 					&mut result,
 				)
@@ -179,6 +179,11 @@ unsafe extern "C" fn children(env: Env, info: CallbackInfo) -> Value {
 	})
 }
 
+// Node-API runs the finalizer after `free` too, so `free` leaves the box empty for it
+unsafe extern "C" fn drop_source(_: Env, data: *mut c_void, _: *mut c_void) {
+	drop(unsafe { Box::from_raw(data.cast::<Option<Prepared<'static>>>()) });
+}
+
 unsafe extern "C" fn drop_plan(_: Env, data: *mut c_void, _: *mut c_void) {
 	drop(unsafe { Box::from_raw(data.cast::<Rc<Grammar>>()) });
 }
@@ -198,7 +203,7 @@ fn grammar_of(env: Env, value: Value) -> Result<Option<&'static Grammar>> {
 unsafe extern "C" fn free(env: Env, info: CallbackInfo) -> Value {
 	guard(env, || {
 		let [source] = args::<1>(env, info)?;
-		drop(unsafe { Box::from_raw(handle(env, source)?) });
+		unsafe { &mut *handle(env, source)? }.take();
 		undefined(env)
 	})
 }
@@ -206,7 +211,9 @@ unsafe extern "C" fn free(env: Env, info: CallbackInfo) -> Value {
 unsafe extern "C" fn parse(env: Env, info: CallbackInfo) -> Value {
 	guard(env, || {
 		let [source, entry, offset, end, stop, plan] = args::<6>(env, info)?;
-		let prepared = unsafe { &*handle(env, source)? };
+		let prepared = unsafe { &*handle(env, source)? }
+			.as_ref()
+			.ok_or("the source is freed")?;
 		let entry = Entry::from_index(number(env, entry)? as u32);
 		let (offset, end, stop) = (number(env, offset)?, optional(env, end)?, string(env, stop)?);
 		let grammar = grammar_of(env, plan)?;

@@ -366,21 +366,17 @@ export interface Views {
 	readonly tree: (typescript: boolean, moved: boolean) => Tree;
 }
 
-/** What the engine holds: a prepared source, or a host language's grammar read once. */
-export interface Held {
-	readonly free: () => void;
-}
-
 /** A source the engine prepared: it parses at an entry and offset, cut at `end`, the stop tokens as one string, the whole source as a document by a grammar `plan` holds; the answer is its words, or an error as JSON. */
-export interface Prepared extends Held {
-	readonly parse: (entry: number, offset: number, end: number | undefined, stop: string, plan: Held | undefined) => Uint32Array | string;
+export interface Prepared {
+	readonly parse: (entry: number, offset: number, end: number | undefined, stop: string, plan: object | undefined) => Uint32Array | string;
+	readonly free: () => void;
 }
 
 /** What parses: the addon or the WebAssembly module. */
 export interface Engine extends Views {
 	readonly create: (source: string, flags: number) => Prepared;
-	/** The grammar of a host language on its wire, read once. */
-	readonly plan: (grammar: Uint8Array) => Held;
+	/** The grammar of a host language on its wire, read once and let go of when the plan is collected. */
+	readonly plan: (grammar: Uint8Array) => object;
 	/** Each node type of a grammar's host with the fields that hold nodes, as JSON; a stylesheet's without one. */
-	readonly children: (plan: Held | undefined) => string;
+	readonly children: (plan: object | undefined) => string;
 }

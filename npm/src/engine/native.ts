@@ -1,6 +1,5 @@
 // the source goes over as bytes: V8's encoder is 14x faster than the host reading a string out
-import type { Engine, Held, Tree } from '../types.ts';
-import type { External } from './addon.ts';
+import type { Engine, Tree } from '../types.ts';
 import { load } from './addon.ts';
 
 const native = load();
@@ -16,22 +15,13 @@ function bytes(text: string) {
 	return room.subarray(0, written);
 }
 
-// a plan is the external the addon holds the grammar in; V8 lets go of it, nothing to free
-class Plan implements Held {
-	readonly external: External;
-	constructor(grammar: Uint8Array) {
-		this.external = native.plan(grammar);
-	}
-	free() {}
-}
-
 export const engine: Engine = {
 	create(source, flags) {
 		const held = native.create(bytes(source), flags);
-		return { parse: (entry, offset, end, stop, plan) => native.parse(held, entry, offset, end, stop, (plan as Plan | undefined)?.external), free: () => native.free(held) };
+		return { parse: (entry, offset, end, stop, plan) => native.parse(held, entry, offset, end, stop, plan), free: () => native.free(held) };
 	},
-	plan: (grammar) => new Plan(grammar),
-	children: (plan) => native.children((plan as Plan | undefined)?.external),
+	plan: native.plan,
+	children: native.children,
 	layout: native.layout,
 	// the addon keeps one array of views a tree and sets what moved: asked only then
 	tree: (typescript, moved) => (moved || trees[+typescript] === undefined ? (trees[+typescript] = native.tree()!) : trees[+typescript]!),

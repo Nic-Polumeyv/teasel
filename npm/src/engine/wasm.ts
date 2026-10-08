@@ -1,4 +1,4 @@
-import type { Engine, Held } from '../types.ts';
+import type { Engine, Prepared } from '../types.ts';
 
 const encoder = new TextEncoder();
 const utf8 = new TextDecoder();
@@ -73,45 +73,54 @@ function layout() {
 	return layout_text;
 }
 
-class Plan implements Held {
+// the collector cannot see the module's memory, so a source or plan it takes frees its handle here
+interface Slot {
+	handle: number;
+	generation: number;
+}
+const sources = new FinalizationRegistry<Slot>((slot) => {
+	if (slot.generation === generation) wasm.source_free(slot.handle);
+});
+const plans = new FinalizationRegistry<Slot>((slot) => {
+	if (slot.generation === generation) wasm.plan_free(slot.handle);
+});
+
+class Plan {
 	#grammar: Uint8Array;
-	#handle = 0;
-	#held = -1;
+	#slot: Slot = { handle: 0, generation: -1 };
 	constructor(grammar: Uint8Array) {
 		this.#grammar = grammar;
 		this.handle();
+		plans.register(this, this.#slot);
 	}
 	handle() {
-		if (this.#held !== generation) {
+		const slot = this.#slot;
+		if (slot.generation !== generation) {
 			const handle = guarded(() => {
 				const ptr = wasm.alloc(this.#grammar.length);
 				new Uint8Array(wasm.memory.buffer, ptr, this.#grammar.length).set(this.#grammar);
 				return wasm.plan_new(ptr, this.#grammar.length, this.#grammar.length);
 			});
 			if (handle === 0) throw new Error(JSON.parse(text()).error.message);
-			this.#handle = handle;
-			this.#held = generation;
+			slot.handle = handle;
+			slot.generation = generation;
 		}
-		return this.#handle;
-	}
-	free() {
-		if (this.#held === generation) wasm.plan_free(this.#handle);
+		return slot.handle;
 	}
 }
 
 export const engine: Engine = {
 	create(source, flags) {
-		let handle = 0;
-		let held = -1;
+		const slot: Slot = { handle: 0, generation: -1 };
 		const current = () => {
-			if (held !== generation) {
-				handle = guarded(() => wasm.source_new(...bytes(source), flags));
-				held = generation;
+			if (slot.generation !== generation) {
+				slot.handle = guarded(() => wasm.source_new(...bytes(source), flags));
+				slot.generation = generation;
 			}
-			return handle;
+			return slot.handle;
 		};
 		current();
-		return {
+		const prepared: Prepared = {
 			// the words outlive the source: they sit in the answer buffer until the next parse
 			parse(entry, offset, end, stop, plan) {
 				const source = current();
@@ -119,9 +128,12 @@ export const engine: Engine = {
 				return answer(guarded(() => wasm.source_parse(source, entry, offset, end ?? 0, end === undefined ? 0 : 1, ...bytes(stop), grammar)));
 			},
 			free() {
-				if (held === generation) wasm.source_free(handle);
+				sources.unregister(slot);
+				if (slot.generation === generation) wasm.source_free(slot.handle);
 			},
 		};
+		sources.register(prepared, slot, slot);
+		return prepared;
 	},
 	plan: (grammar) => new Plan(grammar),
 	children(plan) {

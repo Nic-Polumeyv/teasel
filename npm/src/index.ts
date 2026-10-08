@@ -1,10 +1,10 @@
 import type { Comment, Expression, Node, Pattern, Position, Program, Statement } from 'estree';
 import { decode, PARENT, REFERENCE, SCOPE } from './decode.ts';
-import type { Code, Held, HostNode, Language, Parsed, Prepared, Reference, Scope } from './types.ts';
+import type { Code, HostNode, Language, Parsed, Prepared, Reference, Scope } from './types.ts';
 import { flags, type Options } from './options.ts';
 import { engine } from '#engine';
 import { children, extras, frozen } from './children.ts';
-import { compiled, registry } from './held.ts';
+import { compiled } from './held.ts';
 import type { Grammar } from './grammar.ts';
 
 export type { Options } from './options.ts';
@@ -125,7 +125,6 @@ export class Source {
 		// Rust cannot read a V8 string, so it parses its own copy
 		this.#held = engine.create(source, flags(options));
 		this.#source = source;
-		registry?.register(this, this.#held, this);
 	}
 
 	/**
@@ -145,7 +144,7 @@ export class Source {
 	parse<T>(language: Language<T>): Parsed<T>;
 	parse(what: Piece<unknown> | Language<unknown> = js, at?: number | [number, number]): Parsed<any> {
 		if (this.#held === undefined) throw new TypeError('the source is freed');
-		let entry = 0, stop = '', grammar: Held | undefined, offset = 0, end: number | undefined;
+		let entry = 0, stop = '', grammar: object | undefined, offset = 0, end: number | undefined;
 		if (what === js || what instanceof Piece) {
 			if (what !== js) ({ entry, stop } = read(what as Piece<unknown>));
 			if (typeof at === 'number') offset = at;
@@ -170,9 +169,7 @@ export class Source {
 	}
 
 	[Symbol.dispose]() {
-		if (this.#held === undefined) return;
-		registry?.unregister(this);
-		this.#held.free();
+		this.#held?.free();
 		this.#held = undefined;
 	}
 }
