@@ -1,17 +1,18 @@
-use std::fmt;
+use crate::interner::{Interner, StrId};
 
 macro_rules! codes {
 	($($name:ident $code:literal => $message:literal,)*) => {
-		/// What went wrong, as a stable name for hosts to branch on; the message is for people.
+		/// What went wrong: the message is for people, the name for hosts to branch on, shared by
+		/// the codes whose messages say more than one thing about the same mistake.
 		#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 		#[non_exhaustive]
+		#[repr(u8)]
 		pub enum Code {
 			$($name,)*
 		}
 
 		impl Code {
-			#[cfg(test)]
-			const ALL: &[Code] = &[$(Code::$name,)*];
+			pub const ALL: &[Code] = &[$(Code::$name,)*];
 
 			pub(crate) fn is_limit(self) -> bool {
 				matches!(self, Code::NestingDepth | Code::TreeSize)
@@ -37,11 +38,6 @@ macro_rules! codes {
 					$(Code::$name => $message,)*
 				}
 			}
-
-			/// The message with its one placeholder filled.
-			pub fn with(self, arg: &str) -> String {
-				self.message().replacen("{}", arg, 1)
-			}
 		}
 	};
 }
@@ -65,6 +61,7 @@ codes! {
 	UnterminatedComment "unterminated_comment" => "Unterminated comment",
 	UnterminatedString "unterminated_string" => "Unterminated string constant",
 	UnterminatedTemplate "unterminated_template" => "Unterminated template",
+	UnterminatedTemplateLiteral "unterminated_template" => "Unterminated template literal",
 	UnterminatedRegexp "unterminated_regexp" => "Unterminated regular expression",
 	InvalidRegexp "invalid_regexp" => "Invalid regular expression: /{}/: {}",
 	InvalidRegexpFlag "invalid_regexp_flag" => "Invalid regular expression flag",
@@ -84,11 +81,13 @@ codes! {
 	StrictWith "strict_with" => "'with' in strict mode",
 	StrictDelete "strict_delete" => "Deleting local variable in strict mode",
 	StrictDirectiveNonSimpleParams "strict_directive_non_simple_params" => "Illegal 'use strict' directive in function with non-simple parameter list",
-	StrictBinding "strict_binding" => "{}{} in strict mode",
+	StrictBinding "strict_binding" => "Binding {} in strict mode",
+	AssigningInStrictMode "strict_binding" => "Assigning to {} in strict mode",
 	StrictOctal "strict_octal" => "Octal literal in strict mode",
 	StrictEscape "strict_escape" => "Invalid escape sequence",
 	LetAsBinding "let_as_binding" => "let is disallowed as a lexically bound name",
 	Redeclaration "redeclaration" => "Identifier '{}' has already been declared",
+	PrivateRedeclaration "redeclaration" => "Identifier '#{}' has already been declared",
 	DuplicateLabel "duplicate_label" => "Label '{}' is already declared",
 	DuplicateParameter "duplicate_parameter" => "Argument name clash",
 	DuplicateProto "duplicate_proto" => "Redefinition of __proto__ property",
@@ -127,6 +126,7 @@ codes! {
 	OptionalChainAssignment "optional_chain_assignment" => "Optional chaining cannot appear in left-hand side",
 	OptionalChainInNew "optional_chain_in_new" => "Optional chaining cannot appear in the callee of new expressions",
 	OptionalChainInTaggedTemplate "optional_chain_in_tagged_template" => "Optional chaining cannot appear in the tag of tagged template expressions",
+	TaggedTemplateInOptionalChain "optional_chain_in_tagged_template" => "Tagged Template Literals are not allowed in optionalChain.",
 	MixedCoalesce "mixed_coalesce" => "Logical expressions and coalesce expressions cannot be mixed. Wrap either by parentheses",
 	PrivateNameOutsideIn "private_name_outside_in" => "Private identifier can only be left side of binary expression",
 	UndeclaredPrivateName "undeclared_private_name" => "Private field '#{}' must be declared in an enclosing class",
@@ -154,6 +154,7 @@ codes! {
 	ConstructorField "constructor_field" => "Classes can't have a field named 'constructor'",
 	PrivateConstructor "private_constructor" => "Classes can't have an element named '#constructor'",
 	StaticPrototype "static_prototype" => "Classes can't have a static field named 'prototype'",
+	StaticPrototypeProperty "static_prototype" => "Classes may not have a static property named prototype",
 	AbstractOutsideAbstractClass "abstract_outside_abstract_class" => "Abstract methods can only appear within an abstract class.",
 	AbstractWithImplementation "abstract_with_implementation" => "Method '{}' cannot have an implementation because it is marked abstract.",
 	AbstractWithInitializer "abstract_with_initializer" => "Property '{}' cannot have an initializer because it is marked abstract.",
@@ -167,17 +168,26 @@ codes! {
 	ReadonlyTypeOperand "readonly_type_operand" => "'readonly' type modifier is only permitted on array and tuple literal types.",
 	OverrideWithoutExtends "override_without_extends" => "This member cannot have an 'override' modifier because its containing class does not extend another class.",
 	IndexSignatureModifier "index_signature_modifier" => "Index signatures cannot have the '{}' modifier.",
+	IndexSignatureAccessibility "index_signature_modifier" => "Index signatures cannot have an accessibility modifier ('{}').",
+	IndexSignatureOverride "index_signature_modifier" => "'override' modifier cannot appear on an index signature.",
 	PrivateModifier "private_modifier" => "Private elements cannot have the '{}' modifier.",
+	PrivateMethodAccessibility "private_modifier" => "Private methods cannot have an accessibility modifier ('{}').",
+	PrivateAccessibility "private_modifier" => "Private elements cannot have an accessibility modifier ('{}').",
 	StaticBlockModifier "static_block_modifier" => "Static class blocks cannot have any modifier.",
 	AccessorTypeParameters "accessor_type_parameters" => "An accessor cannot have type parameters.",
 	ConstructorTypeParameters "constructor_type_parameters" => "Type parameters cannot appear on a constructor declaration.",
 	SetterReturnType "setter_return_type" => "A 'set' accessor cannot have a return type annotation.",
 	DecoratorPlacement "decorator_placement" => "Decorators must be attached to a class element.",
+	DecoratorsAroundExport "decorator_placement" => "Decorators must all precede 'export' or all follow it.",
+	LeadingDecorators "decorator_placement" => "Leading decorators must be attached to a class declaration.",
+	ParameterDecorator "decorator_placement" => "A parameter decorator belongs on a parameter of a constructor, method or set accessor with a body, in a class declaration.",
+	DecoratorOnIndexSignature "decorator_placement" => "Decorators cannot be applied to an index signature.",
 	DecoratorOnConstructor "decorator_on_constructor" => "Decorators can't be used with a constructor. Did you mean '@dec class { ... }'?",
 	DecoratorWithoutBody "decorator_without_body" => "A decorator can only decorate a method or accessor with a body",
 	ThisParameterModifiers "this_parameter_modifiers" => "Neither decorators nor modifiers may be applied to 'this' parameters",
 	OptionalWithInitializer "optional_with_initializer" => "Parameter cannot have question mark and initializer",
 	RequiredAfterOptional "required_after_optional" => "A required parameter cannot follow an optional parameter",
+	RequiredElementAfterOptional "required_after_optional" => "A required element cannot follow an optional element.",
 	OptionalRest "optional_rest" => "A rest parameter cannot be optional",
 	SetterOptionalParameter "setter_optional_parameter" => "A 'set' accessor cannot have an optional parameter",
 	SetterParameterInitializer "setter_parameter_initializer" => "A 'set' accessor parameter cannot have an initializer",
@@ -201,6 +211,7 @@ codes! {
 	TypeImportArgument "type_import_argument" => "Argument in a type import must be a string literal.",
 	TypeImportDefaultAndNamed "type_import_default_and_named" => "A type-only import can specify a default import or named bindings, but not both.",
 	TypeModifierInTypeImport "type_modifier_in_type_import" => "The 'type' modifier cannot be used on a named import when 'import type' is used on its import statement.",
+	TypeModifierInTypeExport "type_modifier_in_type_import" => "The 'type' modifier cannot be used on a named export when 'export type' is used on its export statement.",
 	UnexpectedTypeAnnotation "unexpected_type_annotation" => "Did not expect a type annotation here.",
 	TypeAnnotationAfterDefault "type_annotation_after_default" => "Type annotations must come before default assignments, e.g. instead of `age = 25: number` use `age: number = 25`.",
 	EmptyTypeArguments "empty_type_arguments" => "Type argument list cannot be empty.",
@@ -208,6 +219,7 @@ codes! {
 	EmptyList "empty_list" => "'{}' list cannot be empty.",
 	TypeMemberModifier "type_member_modifier" => "'{}' modifier cannot appear on a type member.",
 	TypeParameterModifier "type_parameter_modifier" => "'{}' modifier cannot appear on a type parameter.",
+	ClassTypeParameterModifier "type_parameter_modifier" => "'{}' modifier can only appear on a type parameter of a class, interface or type alias.",
 	InvalidConst "invalid_const" => "Cannot find name 'const'.",
 	TupleLabel "tuple_label" => "Tuple members must be labeled with a simple identifier.",
 	OptionalPatternParameter "optional_pattern_parameter" => "A binding pattern parameter cannot be optional in an implementation signature.",
@@ -224,11 +236,11 @@ codes! {
 	PropertyAfterInstantiation "property_after_instantiation" => "Invalid property access after an instantiation expression. You can either wrap the instantiation expression in parentheses, or delete the type arguments.",
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SyntaxError {
 	pub code: Code,
-	/// Borrowed from the message table unless the code fills a placeholder.
-	pub message: std::borrow::Cow<'static, str>,
+	/// Strings of the parse that recorded the error, filling the message's `{}` in order.
+	pub args: [Option<StrId>; 2],
 	/// Byte offset of the error, and of the end of the offending token when there is one.
 	pub pos: u32,
 	pub end: u32,
@@ -236,31 +248,40 @@ pub struct SyntaxError {
 
 impl SyntaxError {
 	pub fn new(pos: u32, code: Code) -> Self {
-		Self::with(pos, code, code.message())
-	}
-
-	pub fn with(pos: u32, code: Code, message: impl Into<std::borrow::Cow<'static, str>>) -> Self {
 		Self {
 			code,
-			message: message.into(),
+			args: [None; 2],
 			pos,
 			end: pos,
 		}
+	}
+
+	pub fn arg(mut self, arg: StrId) -> Self {
+		let free = self
+			.args
+			.iter()
+			.position(Option::is_none)
+			.expect("two arguments at most");
+		self.args[free] = Some(arg);
+		self
 	}
 
 	pub fn to(mut self, end: u32) -> Self {
 		self.end = end;
 		self
 	}
-}
 
-impl fmt::Display for SyntaxError {
-	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		write!(f, "{} ({})", self.message, self.pos)
+	pub fn message(&self, strings: &Interner) -> String {
+		let mut args = self.args.iter().flatten().map(|&arg| strings.get(arg));
+		let mut parts = self.code.message().split("{}");
+		let mut out = String::from(parts.next().unwrap());
+		for part in parts {
+			out.push_str(args.next().unwrap_or("{}"));
+			out.push_str(part);
+		}
+		out
 	}
 }
-
-impl std::error::Error for SyntaxError {}
 
 #[cfg(test)]
 mod tests {
@@ -271,10 +292,9 @@ mod tests {
 	#[test]
 	fn types_ts_names_every_code() {
 		let ts = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../npm/src/types.ts")).unwrap();
-		let union: String = Code::ALL
-			.iter()
-			.map(|code| format!("\n\t| '{}'", code.name()))
-			.collect();
+		let mut names: Vec<&str> = Code::ALL.iter().map(|code| code.name()).collect();
+		names.dedup();
+		let union: String = names.iter().map(|name| format!("\n\t| '{name}'")).collect();
 		let union = format!("export type Code ={union};\n");
 		assert!(
 			ts.contains(&union),

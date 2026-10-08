@@ -1,16 +1,9 @@
 use super::ast::Data;
-use crate::SyntaxError;
 use crate::ast::{Ast, NodeId, NodeKind};
-use crate::parser::tests::{dump as dump_with, expand, one};
+use crate::parser::tests::{Failed, dump as dump_with, expand, one};
 use crate::parser::{Entry, Options};
 
-fn at(
-	entry: Entry,
-	src: &str,
-	offset: u32,
-	options: Options,
-	stop: &str,
-) -> Result<(Ast<Data>, NodeId, u32), SyntaxError> {
+fn at(entry: Entry, src: &str, offset: u32, options: Options, stop: &str) -> Result<(Ast<Data>, NodeId, u32), Failed> {
 	one(super::parse_at(src, offset, None, entry, options, stop))
 }
 
@@ -229,6 +222,7 @@ fn type_parameters_entry() {
 	);
 	assert_eq!(
 		crate::parse_at("foo<T>", 3, None, Entry::TypeParameters, options, "")
+			.1
 			.unwrap_err()
 			.code,
 		crate::error::Code::NotTypeScript

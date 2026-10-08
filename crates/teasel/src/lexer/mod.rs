@@ -10,6 +10,7 @@ mod tests;
 use crate::ast::{Comment, CommentKind};
 use crate::error::{Code, SyntaxError};
 use crate::interner::{Interner, StrId};
+use regexp::Rejected;
 use scan::{comment_end, is_new_line, is_whitespace, line_end};
 use token::{Keyword, Token, TokenKind};
 use unicode::{is_id_continue, is_id_start};
@@ -188,12 +189,13 @@ impl<'a> Lexer<'a> {
 		Err(Box::new(SyntaxError::new(pos as u32, code)))
 	}
 
-	fn error_with<T>(&self, pos: usize, code: Code, message: impl Into<std::borrow::Cow<'static, str>>) -> Result<T> {
-		Err(Box::new(SyntaxError::with(pos as u32, code, message)))
+	fn error_arg<T>(&mut self, pos: usize, code: Code, arg: &str) -> Result<T> {
+		let arg = self.strings.intern(arg);
+		Err(Box::new(SyntaxError::new(pos as u32, code).arg(arg)))
 	}
 
-	fn error_arg<T>(&self, pos: usize, code: Code, arg: impl std::fmt::Display) -> Result<T> {
-		self.error_with(pos, code, code.with(&arg.to_string()))
+	fn unexpected_character<T>(&mut self, pos: usize, c: char) -> Result<T> {
+		self.error_arg(pos, Code::UnexpectedCharacter, c.encode_utf8(&mut [0; 4]))
 	}
 
 	pub(crate) fn next_token(&mut self) -> Result<Token> {
@@ -300,7 +302,7 @@ impl<'a> Lexer<'a> {
 				if is_id_start(c) {
 					self.read_word()?
 				} else {
-					return self.error_arg(start, Code::UnexpectedCharacter, c);
+					return self.unexpected_character(start, c);
 				}
 			}
 		})
@@ -491,7 +493,7 @@ impl<'a> Lexer<'a> {
 				_ => (Caret, 1),
 			},
 			_ => {
-				return self.error_arg(self.pos, Code::UnexpectedCharacter, b as char);
+				return self.unexpected_character(self.pos, b as char);
 			}
 		};
 		self.pos += len;
@@ -567,7 +569,7 @@ impl<'a> Lexer<'a> {
 			Some(c) if c == '\\' || is_word_char(c, true) => {}
 			next => {
 				let c = next.unwrap_or('\u{10000}');
-				return self.error_arg(self.pos, Code::UnexpectedCharacter, c);
+				return self.unexpected_character(self.pos, c);
 			}
 		}
 		let name = match self.read_word()? {
@@ -635,7 +637,7 @@ impl<'a> Lexer<'a> {
 		self.pos += 2;
 		let start = self.pos;
 		if !self.read_digits(radix, false)? {
-			return self.error_arg(self.pos, Code::ExpectedNumberInRadix, radix);
+			return self.error_arg(self.pos, Code::ExpectedNumberInRadix, &radix.to_string());
 		}
 		let digit = |b: u8| (b as char).to_digit(radix).unwrap() as f64;
 		let value = self.src[start..self.pos]
@@ -755,16 +757,18 @@ impl<'a> Lexer<'a> {
 				.push(SyntaxError::new(flags_start as u32, Code::UnexpectedToken));
 		}
 		let flags_text = &self.src[flags_start..self.pos];
-		if let Err(error) = regexp::validate(
-			start as u32 + 1,
-			&self.src[start + 1..flags_start - 1],
-			flags_text,
-			&mut self.regexp,
-		) {
+		if let Err(rejected) = regexp::validate(&self.src[start + 1..flags_start - 1], flags_text, &mut self.regexp) {
+			let at = start as u32 + 1;
+			let error = match rejected {
+				Rejected::Flag(code) => SyntaxError::new(at, code),
+				Rejected::Pattern(reason) => SyntaxError::new(at, Code::InvalidRegexp)
+					.arg(pattern)
+					.arg(self.strings.intern(reason)),
+			};
 			if !self.recover {
-				return Err(error);
+				return Err(Box::new(error));
 			}
-			self.errors.push(*error);
+			self.errors.push(error);
 		}
 		let flags = self.strings.intern(flags_text);
 		let kind = TokenKind::RegExp { pattern, flags };
@@ -842,7 +846,10 @@ impl<'a> Lexer<'a> {
 	pub(crate) fn read_template(&mut self) -> Result<Token> {
 		let start = self.pos;
 		if start == self.src.len() && !self.recover {
-			return self.error_with(start, Code::UnterminatedTemplate, "Unterminated template literal");
+			return Err(Box::new(SyntaxError::new(
+				start as u32,
+				Code::UnterminatedTemplateLiteral,
+			)));
 		}
 		self.buf.clear();
 		self.marks.clear();

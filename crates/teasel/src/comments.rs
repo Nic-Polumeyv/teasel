@@ -228,7 +228,8 @@ mod tests {
 
 	fn at(entry: Entry, src: &str, offset: u32) -> Vec<String> {
 		let options = Options(Options::MODULE);
-		let (mut ast, roots, _) = crate::parse_at(src, offset, None, entry, options, "").unwrap();
+		let (mut ast, parsed) = crate::parse_at(src, offset, None, entry, options, "");
+		let (roots, _) = parsed.unwrap();
 		super::attach(&mut ast, src, roots, offset);
 		attached(&ast, src)
 	}
@@ -261,7 +262,8 @@ mod tests {
 	fn a_child_past_its_parent_still_takes_its_comment() {
 		let src = "async (...a: T[] /* c */) => {}";
 		let options = Options(Options::MODULE);
-		let (mut ast, roots, _) = crate::typescript::parse_at(src, 0, None, Entry::Program, options, "").unwrap();
+		let (mut ast, parsed) = crate::typescript::parse_at(src, 0, None, Entry::Program, options, "");
+		let (roots, _) = parsed.unwrap();
 		super::attach(&mut ast, src, roots, 0);
 		assert_eq!(attached(&ast, src), [r#"Extension leading=[] trailing=[" c "]"#]);
 	}

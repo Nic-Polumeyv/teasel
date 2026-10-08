@@ -4,14 +4,18 @@
 use super::regexp_data::{BINARY_PROPERTIES, BINARY_PROPERTIES_OF_STRINGS, GENERAL_CATEGORY_VALUES, SCRIPT_VALUES};
 use super::unicode::{is_id_continue, is_id_start};
 use crate::error::Code;
-use crate::error::SyntaxError;
 use crate::interner::FastMap;
 
-type Result<T> = std::result::Result<T, Box<SyntaxError>>;
+type Result<T> = std::result::Result<T, Rejected>;
 
-/// Validates `pattern` and `flags` for a literal whose pattern starts at byte `start`.
-pub(super) fn validate(start: u32, pattern: &str, flags: &str, scratch: &mut Scratch) -> Result<()> {
-	let mut state = State::new(start, pattern, flags, std::mem::take(scratch));
+pub(super) enum Rejected {
+	Flag(Code),
+	/// The reason `Code::InvalidRegexp`'s message gives after the pattern.
+	Pattern(&'static str),
+}
+
+pub(super) fn validate(pattern: &str, flags: &str, scratch: &mut Scratch) -> Result<()> {
+	let mut state = State::new(pattern, flags, std::mem::take(scratch));
 	let result = state.validate_flags().and_then(|()| state.validate_pattern());
 	*scratch = state.scratch;
 	scratch.clear();
@@ -56,8 +60,6 @@ struct Branch {
 }
 
 struct State<'a> {
-	start: u32,
-	pattern: &'a str,
 	flags: &'a str,
 	scratch: Scratch,
 	switch_u: bool,
@@ -75,13 +77,11 @@ struct State<'a> {
 }
 
 impl<'a> State<'a> {
-	fn new(start: u32, pattern: &'a str, flags: &'a str, mut scratch: Scratch) -> Self {
+	fn new(pattern: &'a str, flags: &'a str, mut scratch: Scratch) -> Self {
 		let unicode_sets = flags.contains('v');
 		let unicode = flags.contains('u');
 		scratch.source.extend(pattern.encode_utf16());
 		Self {
-			start,
-			pattern,
 			flags,
 			scratch,
 			switch_u: unicode_sets || unicode,
@@ -98,16 +98,12 @@ impl<'a> State<'a> {
 		}
 	}
 
-	fn raise<T>(&self, message: &str) -> Result<T> {
-		Err(Box::new(SyntaxError::with(
-			self.start,
-			Code::InvalidRegexp,
-			format!("Invalid regular expression: /{}/: {message}", self.pattern),
-		)))
+	fn raise<T>(&self, reason: &'static str) -> Result<T> {
+		Err(Rejected::Pattern(reason))
 	}
 
 	fn flag_error<T>(&self, code: Code) -> Result<T> {
-		Err(Box::new(SyntaxError::new(self.start, code)))
+		Err(Rejected::Flag(code))
 	}
 
 	// Cursor

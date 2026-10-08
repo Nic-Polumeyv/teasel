@@ -271,7 +271,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			if self.eat("<!--") {
 				match self.rest().find("-->") {
 					Some(i) => self.at += i as u32 + 3,
-					None => return fail(self.len(), self.len(), Code::Expected, Some("-->")),
+					None => return self.fail(self.len(), self.len(), Code::Expected, Some("-->")),
 				}
 			}
 			self.space();
@@ -284,7 +284,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		self.expect("/*")?;
 		match self.rest().find("*/") {
 			Some(i) => self.at += i as u32 + 2,
-			None => return fail(self.len(), self.len(), Code::Expected, Some("*/")),
+			None => return self.fail(self.len(), self.len(), Code::Expected, Some("*/")),
 		}
 		Ok(CssComment {
 			start,
@@ -365,7 +365,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			self.expect(",")?;
 			self.css_space(comments, true)?;
 		}
-		fail(self.len(), self.len(), Code::UnexpectedEof, None)
+		self.fail(self.len(), self.len(), Code::UnexpectedEof, None)
 	}
 
 	fn selector(&mut self, comments: &mut Vec<CssComment>, inside_pseudo: bool) -> Result<NodeId> {
@@ -563,11 +563,11 @@ impl<'a, E: Extension> Walker<'a, E> {
 				relative_start = self.tree().node(next).start;
 				self.space();
 				if self.matches(",") || self.matches(closer) {
-					return fail(self.at, self.at, Code::Expected, Some("a selector"));
+					return self.fail(self.at, self.at, Code::Expected, Some("a selector"));
 				}
 			}
 		}
-		fail(self.len(), self.len(), Code::UnexpectedEof, None)
+		self.fail(self.len(), self.len(), Code::UnexpectedEof, None)
 	}
 
 	fn relative_selector(&mut self, combinator: Option<NodeId>, selectors: &[NodeId], start: u32, end: u32) -> NodeId {
@@ -620,7 +620,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 	/// One more block or argument list open, `MAX_DEPTH` at most.
 	fn css_nest(&mut self) -> Result<()> {
 		if self.nesting >= crate::parser::MAX_DEPTH {
-			return fail(self.at, self.at + 1, Code::NestingDepth, None);
+			return self.fail(self.at, self.at + 1, Code::NestingDepth, None);
 		}
 		self.nesting += 1;
 		Ok(())
@@ -681,7 +681,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		self.space();
 		let value = self.css_value(comments, true)?;
 		if value.is_empty() && !property.starts_with("--") {
-			return fail(start, index, Code::Expected, Some("a declaration value"));
+			return self.fail(start, index, Code::Expected, Some("a declaration value"));
 		}
 		let end = self.at;
 		if !self.matches("}") {
@@ -751,7 +751,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			units += c.len_utf16() as u32;
 			self.at += c.len_utf8() as u32;
 		}
-		fail(self.len(), self.len(), Code::UnexpectedEof, None)
+		self.fail(self.len(), self.len(), Code::UnexpectedEof, None)
 	}
 
 	/// `foo`, `'foo bar'` or `"foo bar"`.
@@ -782,7 +782,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			}
 			self.at += c.len_utf8() as u32;
 		}
-		fail(self.len(), self.len(), Code::UnexpectedEof, None)
+		self.fail(self.len(), self.len(), Code::UnexpectedEof, None)
 	}
 
 	/// An identifier as CSS Syntax spells one, escapes decoded.
@@ -794,7 +794,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			.unwrap_or(rest)
 			.starts_with(|c: char| c.is_ascii_digit());
 		if digit_first {
-			return fail(start, start, Code::Expected, Some("a valid CSS identifier"));
+			return self.fail(start, start, Code::Expected, Some("a valid CSS identifier"));
 		}
 		let mut identifier = String::new();
 		while let Some(c) = self.char() {
@@ -825,7 +825,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			}
 		}
 		if identifier.is_empty() {
-			return fail(start, start, Code::Expected, Some("a valid CSS identifier"));
+			return self.fail(start, start, Code::Expected, Some("a valid CSS identifier"));
 		}
 		Ok(identifier)
 	}

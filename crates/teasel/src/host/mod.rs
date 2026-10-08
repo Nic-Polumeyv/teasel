@@ -193,18 +193,6 @@ fn decode(raw: &str, attribute: bool) -> Cow<'_, str> {
 	Cow::Owned(out)
 }
 
-fn error(pos: u32, end: u32, code: Code, arg: Option<&str>) -> Box<SyntaxError> {
-	let message: Cow<'static, str> = match arg {
-		Some(arg) => code.with(arg).into(),
-		None => code.message().into(),
-	};
-	Box::new(SyntaxError::with(pos, code, message).to(end))
-}
-
-fn fail<T>(pos: u32, end: u32, code: Code, arg: Option<&str>) -> Result<T> {
-	Err(error(pos, end, code, arg))
-}
-
 /// Where the tag ends: the first `>` outside quotes, or the end.
 fn tag_end(after: &str) -> usize {
 	let mut quote = None;
@@ -485,9 +473,9 @@ impl<'a, E: Extension> Walker<'a, E> {
 		}
 	}
 
-	fn within_depth(&self, at: u32) -> Result<()> {
+	fn within_depth(&mut self, at: u32) -> Result<()> {
 		if self.frames.len() as u32 >= crate::parser::MAX_DEPTH {
-			return fail(at, at + 1, Code::NestingDepth, None);
+			return self.fail(at, at + 1, Code::NestingDepth, None);
 		}
 		Ok(())
 	}
@@ -538,7 +526,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		if self.eat(s) {
 			Ok(())
 		} else {
-			self.report(error(self.at, self.at, Code::Expected, Some(s)))
+			self.report_at(self.at, self.at, Code::Expected, Some(s))
 		}
 	}
 
@@ -555,6 +543,23 @@ impl<'a, E: Extension> Walker<'a, E> {
 		} else {
 			Err(error)
 		}
+	}
+
+	fn report_at(&mut self, pos: u32, end: u32, code: Code, arg: Option<&str>) -> Result<()> {
+		let error = self.error(pos, end, code, arg);
+		self.report(error)
+	}
+
+	fn fail<T>(&mut self, pos: u32, end: u32, code: Code, arg: Option<&str>) -> Result<T> {
+		Err(self.error(pos, end, code, arg))
+	}
+
+	fn error(&mut self, pos: u32, end: u32, code: Code, arg: Option<&str>) -> Box<SyntaxError> {
+		let error = SyntaxError::new(pos, code).to(end);
+		Box::new(match arg {
+			Some(arg) => error.arg(self.intern(arg)),
+			None => error,
+		})
 	}
 
 	/// The word that ends the tag being read, skipped to under recovery.
@@ -581,7 +586,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 				self.space();
 				Ok(())
 			}
-			_ => fail(self.at, self.at, Code::Expected, Some("whitespace")),
+			_ => self.fail(self.at, self.at, Code::Expected, Some("whitespace")),
 		}
 	}
 
@@ -826,7 +831,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 				Frame::Block { start, rule, .. } => (*start, rule.open.display),
 				Frame::Root { .. } => unreachable!(),
 			};
-			self.report(error(start, start + 1, Code::Unclosed, Some(what)))?;
+			self.report_at(start, start + 1, Code::Unclosed, Some(what))?;
 			// under recovery, what is open ends with the source
 			let end = self.len();
 			match self.frames.last().unwrap() {
@@ -982,7 +987,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		self.at += 1;
 		if self.eat("!--") {
 			let Some(len) = self.rest().find("-->") else {
-				return fail(self.len(), self.len(), Code::Expected, Some("-->"));
+				return self.fail(self.len(), self.len(), Code::Expected, Some("-->"));
 			};
 			let data_start = self.at;
 			self.at += len as u32 + 3;
@@ -1003,12 +1008,12 @@ impl<'a, E: Extension> Walker<'a, E> {
 			self.space();
 			self.expect(">")?;
 			if self.grammar.is_void(name) {
-				return self.report(error(
+				return self.report_at(
 					start,
 					start + 1,
 					Code::Placement,
 					Some("A closing tag of a void element"),
-				));
+				);
 			}
 			return self.close_element(start, name);
 		}
@@ -1021,14 +1026,14 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let rule = rule.filter(|rule| rule.name != Match::Any || (!namespaced && valid_name(name)));
 		let typing = self.recovering() && name.ends_with('.') && component_name(&format!("{name}_"));
 		let Some(rule) = rule.or_else(|| typing.then(|| self.grammar.component()).flatten()) else {
-			return fail(name_span.0, name_span.1, Code::InvalidName, Some(name));
+			return self.fail(name_span.0, name_span.1, Code::InvalidName, Some(name));
 		};
 		if rule.root && self.frames.len() > 1 {
-			self.report(error(start, start + 1, Code::Placement, Some(name)))?;
+			self.report_at(start, start + 1, Code::Placement, Some(name))?;
 		}
 		if rule.once {
 			if self.once.contains(&rule.ty) {
-				self.report(error(start, start + 1, Code::Duplicate, Some(name)))?;
+				self.report_at(start, start + 1, Code::Duplicate, Some(name))?;
 			} else {
 				self.once.push(rule.ty);
 			}
@@ -1106,7 +1111,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 				if seen.contains(&(kind, key)) {
 					let (at, end) = (self.tree().node(node).start, self.tree().node(node).end);
 					let text = text.to_string();
-					self.report(error(at, end, Code::Duplicate, Some(&text)))?;
+					self.report_at(at, end, Code::Duplicate, Some(&text))?;
 				}
 				if !this {
 					seen.push((kind, key));
@@ -1123,7 +1128,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			let position = attributes.iter().position(|&id| self.attribute_named(id, "this"));
 			let value = match position {
 				None => {
-					self.report(error(start, start + 1, Code::Expected, Some("a this attribute")))?;
+					self.report_at(start, start + 1, Code::Expected, Some("a this attribute"))?;
 					self.placeholder(name_span.1, name_span.1)
 				}
 				Some(position) => {
@@ -1146,12 +1151,12 @@ impl<'a, E: Extension> Walker<'a, E> {
 								}
 								None => {
 									let node = *self.tree().node(this);
-									self.report(error(
+									self.report_at(
 										node.start,
 										node.end,
 										Code::Expected,
 										Some("an expression as this"),
-									))?;
+									)?;
 									self.placeholder(node.start, node.end)
 								}
 							}
@@ -1167,7 +1172,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			let close = match self.find_closing(name) {
 				Some(close) => close,
 				None => {
-					self.report(error(self.len(), self.len(), Code::Unclosed, Some(name)))?;
+					self.report_at(self.len(), self.len(), Code::Unclosed, Some(name))?;
 					self.len()
 				}
 			};
@@ -1185,21 +1190,21 @@ impl<'a, E: Extension> Walker<'a, E> {
 					match value {
 						Some(value) if self.attribute_text(id) != Some(value) => {
 							let node = *self.tree().node(id);
-							self.report(error(
+							self.report_at(
 								node.start,
 								node.end,
 								Code::Expected,
 								Some(&format!("{attribute} to be \"{value}\"")),
-							))?;
+							)?;
 						}
 						None if !matches!(self.field_of(id, "value"), Some(Value::Bool(true))) => {
 							let node = *self.tree().node(id);
-							self.report(error(
+							self.report_at(
 								node.start,
 								node.end,
 								Code::Expected,
 								Some(&format!("{attribute} without a value")),
-							))?;
+							)?;
 						}
 						_ => module = true,
 					}
@@ -1232,7 +1237,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 				*slot = Some(node);
 				return Ok(());
 			}
-			return self.report(error(start, start + 1, Code::Duplicate, Some(name)));
+			return self.report_at(start, start + 1, Code::Duplicate, Some(name));
 		}
 		if style.is_some() {
 			self.expect(">")?;
@@ -1244,12 +1249,12 @@ impl<'a, E: Extension> Walker<'a, E> {
 				*css = Some(node);
 				return Ok(());
 			}
-			return self.report(error(start, start + 1, Code::Duplicate, Some(name)));
+			return self.report_at(start, start + 1, Code::Duplicate, Some(name));
 		}
 		let self_closing = self.eat("/") || self.grammar.is_void(name);
 		let unclosed = !self.eat(">");
 		if unclosed {
-			self.report(error(self.at, self.at, Code::Expected, Some(">")))?;
+			self.report_at(self.at, self.at, Code::Expected, Some(">"))?;
 		}
 		let name_id = self.intern(name);
 		let names = &self.grammar.element_fields;
@@ -1317,7 +1322,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			self.fields.give(text_fields);
 			match closing_tag(self.rest(), name) {
 				Some(len) => self.at += len as u32,
-				None => self.report(error(self.len(), self.len(), Code::Unclosed, Some(name)))?,
+				None => self.report_at(self.len(), self.len(), Code::Unclosed, Some(name))?,
 			}
 			let end = self.at;
 			let mut nodes = self.nodes.take();
@@ -1370,7 +1375,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			if attribute && self.recovering() {
 				return Ok("");
 			}
-			return fail(self.len(), self.len(), Code::UnexpectedEof, None);
+			return self.fail(self.len(), self.len(), Code::UnexpectedEof, None);
 		}
 		while let Some(c) = self.char() {
 			if is_space(c) || c == '/' || c == '>' || (attribute && matches!(c, '"' | '\'' | '=')) {
@@ -1431,7 +1436,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			)
 		};
 		if self.recovering() && !opens(self) {
-			return self.report(error(start, start + 1, Code::UnexpectedClose, Some(&closed())));
+			return self.report_at(start, start + 1, Code::UnexpectedClose, Some(&closed()));
 		}
 		loop {
 			match self.frames.last() {
@@ -1443,7 +1448,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 						return Ok(());
 					}
 					if Some(*ty) != plain {
-						self.report(error(start, start + 1, Code::UnexpectedClose, Some(name)))?;
+						self.report_at(start, start + 1, Code::UnexpectedClose, Some(name))?;
 					}
 					// the browser closes it here
 					self.close_top(start);
@@ -1456,11 +1461,11 @@ impl<'a, E: Extension> Walker<'a, E> {
 				}) if self.recovering() => {
 					let (block_start, what, chained) = (*block_start, rule.open.display, chain.is_some());
 					if !chained {
-						self.report(error(block_start, block_start + 1, Code::Unclosed, Some(what)))?;
+						self.report_at(block_start, block_start + 1, Code::Unclosed, Some(what))?;
 					}
 					self.pop_block(start);
 				}
-				_ => return fail(start, start + 1, Code::UnexpectedClose, Some(&closed())),
+				_ => return self.fail(start, start + 1, Code::UnexpectedClose, Some(&closed())),
 			}
 		}
 	}
@@ -1473,7 +1478,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			Some(q) => {
 				self.at += 1;
 				let Some(len) = self.rest().find(q) else {
-					return fail(value_start, value_start, Code::Expected, Some("an attribute value"));
+					return self.fail(value_start, value_start, Code::Expected, Some("an attribute value"));
 				};
 				let raw = (self.at, self.at + len as u32);
 				self.at += len as u32 + 1;
@@ -1485,7 +1490,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 					.find(|c: char| c == '>' || is_space(c))
 					.unwrap_or(self.rest().len());
 				if len == 0 {
-					return fail(value_start, value_start, Code::Expected, Some("an attribute value"));
+					return self.fail(value_start, value_start, Code::Expected, Some("an attribute value"));
 				}
 				self.at += len as u32;
 				(value_start, self.at)
@@ -1510,7 +1515,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			value = self.text_value()?;
 		}
 		if self.char().is_some_and(|c| c == '"' || c == '\'') {
-			return fail(self.at, self.at, Code::Expected, Some("="));
+			return self.fail(self.at, self.at, Code::Expected, Some("="));
 		}
 		let name_id = self.intern(name);
 		let node = self.host(
@@ -1543,7 +1548,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 	}
 
 	/// The attribute name at `start` read as a directive, when the grammar's syntax says it is one.
-	fn directive_of(&self, name: &'a str, start: u32) -> Result<Option<Directive<'a>>> {
+	fn directive_of(&mut self, name: &'a str, start: u32) -> Result<Option<Directive<'a>>> {
 		let Some(syntax) = &self.grammar.directive_syntax else {
 			return Ok(None);
 		};
@@ -1575,7 +1580,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			(head, tail, head.len() + syntax.arg.len())
 		};
 		if directive.is_empty() {
-			return fail(
+			return self.fail(
 				start,
 				start + name.len() as u32,
 				Code::Expected,
@@ -1592,7 +1597,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			&& let Some(inner) = rest.strip_prefix(open)
 		{
 			let Some(len) = inner.find(close) else {
-				return fail(start, start + name.len() as u32, Code::Expected, Some(close));
+				return self.fail(start, start + name.len() as u32, Code::Expected, Some(close));
 			};
 			let inner_at = rest_at + open.len();
 			arg = Some((&inner[..len], inner_at, inner_at + len, true));
@@ -1602,7 +1607,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			if len > 0 {
 				arg = Some((&rest[..len], rest_at, rest_at + len, false));
 			} else if syntax.prefix.is_none() {
-				return fail(
+				return self.fail(
 					start,
 					start + name.len() as u32,
 					Code::Expected,
@@ -1658,7 +1663,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		self.space();
 		let has_value = self.eat("=");
 		if !has_value && self.char().is_some_and(|c| c == '"' || c == '\'') {
-			return fail(self.at, self.at, Code::Expected, Some("="));
+			return self.fail(self.at, self.at, Code::Expected, Some("="));
 		}
 		if has_value {
 			self.space();
@@ -1752,7 +1757,12 @@ impl<'a, E: Extension> Walker<'a, E> {
 							[Some(chunk)] if self.chunk_expression(chunk).is_some() => self.chunk_expression(chunk),
 							[Some(chunk), ..] => {
 								let node = self.tree().node(chunk);
-								return fail(node.start, node.end, Code::Expected, Some("an expression, not text"));
+								return self.fail(
+									node.start,
+									node.end,
+									Code::Expected,
+									Some("an expression, not text"),
+								);
 							}
 							_ => None,
 						}
@@ -1766,10 +1776,10 @@ impl<'a, E: Extension> Walker<'a, E> {
 							let id = self.intern(text);
 							Value::Node(self.ast().add(NodeKind::Identifier { name: id }, arg_start, end))
 						}
-						None => return fail(start, end, Code::Expected, Some("a value")),
+						None => return self.fail(start, end, Code::Expected, Some("a value")),
 					},
 					None if *optional => Value::Null,
-					None => return fail(start, end, Code::Expected, Some("a value")),
+					None => return self.fail(start, end, Code::Expected, Some("a value")),
 				};
 				if let (Some([]), Value::Node(pattern)) = (declares, expression) {
 					self.declared.push(pattern);
@@ -1792,7 +1802,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 						result?;
 						self.space_to(value_end);
 						if self.at != value_end {
-							return fail(
+							return self.fail(
 								self.at,
 								value_end,
 								Code::Expected,
@@ -1876,7 +1886,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		match self.char() {
 			Some(q @ ('"' | '\'')) => {
 				let Some(len) = self.rest()[1..].find(q) else {
-					return fail(at, at, Code::Expected, Some("an attribute value"));
+					return self.fail(at, at, Code::Expected, Some("an attribute value"));
 				};
 				Ok((at + 1, at + 1 + len as u32, at + 2 + len as u32))
 			}
@@ -1887,7 +1897,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 					.unwrap_or(self.rest().len());
 				let len = self.rest()[..len].find("/>").unwrap_or(len);
 				if len == 0 {
-					return fail(at, at, Code::Expected, Some("an attribute value"));
+					return self.fail(at, at, Code::Expected, Some("an attribute value"));
 				}
 				Ok((at, at + len as u32, at + len as u32))
 			}
@@ -1921,7 +1931,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			)?,
 		};
 		if chunks.is_empty() && quote.is_none() {
-			return fail(self.at, self.at, Code::Expected, Some("an attribute value"));
+			return self.fail(self.at, self.at, Code::Expected, Some("an attribute value"));
 		}
 		if quote.is_some() && self.char() == quote {
 			self.at += 1;
@@ -1979,7 +1989,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let reads = self.grammar.constructs.iter().any(|c| c.stands(here));
 		loop {
 			if self.at >= self.len() {
-				self.report(error(self.len(), self.len(), Code::UnexpectedEof, None))?;
+				self.report_at(self.len(), self.len(), Code::UnexpectedEof, None)?;
 				let at = self.at;
 				self.flush_text(chunk_start, at, &mut chunks);
 				return Ok(chunks);
@@ -2002,7 +2012,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 						}
 						self.space();
 						if self.matches("/>") || self.matches(">") {
-							return fail(self.at, self.at, Code::Expected, Some(rule.open.end));
+							return self.fail(self.at, self.at, Code::Expected, Some(rule.open.end));
 						}
 						let expression = self.js(entry, rule.open.end)?;
 						let expression = self.first(expression);
@@ -2014,7 +2024,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 						continue;
 					}
 					_ if other > start => {
-						return fail(
+						return self.fail(
 							start,
 							start + 1,
 							Code::Placement,
@@ -2302,14 +2312,14 @@ impl<'a, E: Extension> Walker<'a, E> {
 			self.at = whole;
 			self.keyword = word;
 			self.tag(rule, start)?;
-			return fail(
+			return self.fail(
 				start,
 				self.at,
 				Code::Placement,
 				Some(&format!("{} in content", rule.open.display)),
 			);
 		}
-		fail(start, start + 1, Code::UnexpectedToken, None)
+		self.fail(start, start + 1, Code::UnexpectedToken, None)
 	}
 
 	/// A marker stopped further than every whole one: the pieces that read that far say what was
@@ -2339,7 +2349,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			}
 		}
 		if let Some(end) = end {
-			self.report(error(reached, reached, Code::Expected, Some(&names.join(" or "))))?;
+			self.report_at(reached, reached, Code::Expected, Some(&names.join(" or ")))?;
 			self.skip_to(end);
 			return Ok(());
 		}
@@ -2349,12 +2359,12 @@ impl<'a, E: Extension> Walker<'a, E> {
 			match inner {
 				Some(rule) => {
 					let wanted = rule.close.as_ref().unwrap().display;
-					self.report(error(word as u32, word as u32, Code::Expected, Some(wanted)))?;
+					self.report_at(word as u32, word as u32, Code::Expected, Some(wanted))?;
 				}
 				None => {
 					let rest = &src[word..];
 					let name = &rest[..rest.find(|c: char| !is_id_continue(c)).unwrap_or(rest.len())];
-					self.report(error(start, start + 1, Code::UnexpectedClose, Some(name)))?;
+					self.report_at(start, start + 1, Code::UnexpectedClose, Some(name))?;
 				}
 			}
 			self.skip_to(end);
@@ -2363,7 +2373,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		if let Some(end) = branch {
 			return self.misplaced_branch(start, end);
 		}
-		fail(
+		self.fail(
 			start,
 			start + 1,
 			Code::Placement,
@@ -2375,16 +2385,11 @@ impl<'a, E: Extension> Walker<'a, E> {
 	fn misplaced_branch(&mut self, start: u32, end: &str) -> Result<()> {
 		match self.innermost_block() {
 			None => {
-				self.report(error(
-					start,
-					start + 1,
-					Code::Placement,
-					Some("A branch outside its block"),
-				))?;
+				self.report_at(start, start + 1, Code::Placement, Some("A branch outside its block"))?;
 				self.skip_to(end);
 				Ok(())
 			}
-			Some(rule) if rule.branches.is_empty() => fail(
+			Some(rule) if rule.branches.is_empty() => self.fail(
 				start,
 				start + 1,
 				Code::Placement,
@@ -2392,7 +2397,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			),
 			Some(rule) => {
 				let names = rule.branches.iter().map(|b| b.display).collect::<Vec<_>>().join(" or ");
-				fail(start, start + 1, Code::Expected, Some(&names))
+				self.fail(start, start + 1, Code::Expected, Some(&names))
 			}
 		}
 	}
@@ -2422,7 +2427,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			self.keyword = word;
 			let node = self.tag(rule, start)?;
 			if !rule.stands(Place::Attributes) {
-				return fail(
+				return self.fail(
 					start,
 					self.at,
 					Code::Placement,
@@ -2438,26 +2443,26 @@ impl<'a, E: Extension> Walker<'a, E> {
 		}
 		let Some((open, close)) = shorthand else {
 			if whole > 0 || reached > 0 {
-				return fail(start, start + 1, Code::UnexpectedToken, None);
+				return self.fail(start, start + 1, Code::UnexpectedToken, None);
 			}
 			return Ok(None);
 		};
 		self.at += open.len() as u32;
 		self.space();
 		if self.matches("/>") || self.matches(">") {
-			return fail(self.at, self.at, Code::Expected, Some(close));
+			return self.fail(self.at, self.at, Code::Expected, Some(close));
 		}
 		let id_start = self.at;
 		let id = self.identifier()?;
 		let id_end = self.at;
 		let name = &self.src[id_start as usize..id_end as usize];
 		if reserved(name) {
-			return fail(id_start, id_end, Code::ReservedWord, Some(name));
+			return self.fail(id_start, id_end, Code::ReservedWord, Some(name));
 		}
 		self.space();
 		self.expect(close)?;
 		let Some(rule) = self.grammar.value_expression() else {
-			return fail(id_start, id_end, Code::UnexpectedToken, None);
+			return self.fail(id_start, id_end, Code::UnexpectedToken, None);
 		};
 		let tag = self.chunk(rule, id_start, id_end, id);
 		let name_id = self.intern(name);
@@ -2494,7 +2499,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		self.space();
 		if let Some(word) = ["var", "interface", "enum"].into_iter().find(|w| self.word(w)) {
 			let at = self.at;
-			return fail(
+			return self.fail(
 				at,
 				at + word.len() as u32,
 				Code::Placement,
@@ -2526,7 +2531,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			}
 			_ => {
 				let node = self.tree().node(statement);
-				fail(
+				self.fail(
 					node.start,
 					node.end,
 					Code::Placement,
@@ -2556,7 +2561,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		};
 		self.piece(&rule.open, &mut read)?;
 		let Some(body) = read.body.take().or(rule.open.form.body.as_ref()) else {
-			return fail(start, start + 1, Code::Placement, Some("A block without a body"));
+			return self.fail(start, start + 1, Code::Placement, Some("A block without a body"));
 		};
 		let mut outside = self.nodes.take();
 		let group = self.group_of(&read, body, &mut outside);
@@ -2587,7 +2592,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		}) = self.frames.last()
 			&& (current.0 == body.field || done.iter().any(|(field, _)| *field == body.field))
 		{
-			return fail(start, start + 1, Code::Duplicate, Some(branch.display));
+			return self.fail(start, start + 1, Code::Duplicate, Some(branch.display));
 		}
 		self.finish_body();
 		if let Some((child_field, flag)) = body.chain {
@@ -2726,9 +2731,9 @@ impl<'a, E: Extension> Walker<'a, E> {
 				// the block that is open wanted its own close here
 				Some(Frame::Block { rule, .. }) => {
 					let wanted = rule.close.as_ref().unwrap().display;
-					return self.report(error(word, word, Code::Expected, Some(wanted)));
+					return self.report_at(word, word, Code::Expected, Some(wanted));
 				}
-				_ => return self.report(error(start, start + 1, Code::UnexpectedClose, Some(close.display))),
+				_ => return self.report_at(start, start + 1, Code::UnexpectedClose, Some(close.display)),
 			}
 		}
 		loop {
@@ -2742,7 +2747,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 				}) => {
 					let (block_start, what, chained) = (*block_start, rule.open.display, chain.is_some());
 					if !chained {
-						self.report(error(block_start, block_start + 1, Code::Unclosed, Some(what)))?;
+						self.report_at(block_start, block_start + 1, Code::Unclosed, Some(what))?;
 					}
 					self.pop_block(start);
 				}
@@ -2752,7 +2757,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 					..
 				}) => {
 					let (element_start, what) = (*element_start, &self.src[span.0 as usize..span.1 as usize]);
-					self.report(error(element_start, element_start + 1, Code::Unclosed, Some(what)))?;
+					self.report_at(element_start, element_start + 1, Code::Unclosed, Some(what))?;
 					self.close_top(start);
 				}
 				_ => unreachable!(),
@@ -2908,7 +2913,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 				Item::Literal(literal) => {
 					self.space();
 					if !self.literal_here(literal) {
-						return fail(self.at, self.at, Code::Expected, Some(literal));
+						return self.fail(self.at, self.at, Code::Expected, Some(literal));
 					}
 					self.at += literal.len() as u32;
 				}
@@ -2941,7 +2946,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 						for alternative in alternatives {
 							names.extend(grammar::first_literals(&alternative.items, &[]));
 						}
-						return fail(self.at, self.at, Code::Expected, Some(&names.join(" or ")));
+						return self.fail(self.at, self.at, Code::Expected, Some(&names.join(" or ")));
 					}
 				}
 			}
@@ -3066,7 +3071,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 					}
 					self.space();
 					if ended(self) {
-						return fail(self.at, self.at, Code::Expected, Some("an identifier"));
+						return self.fail(self.at, self.at, Code::Expected, Some("an identifier"));
 					}
 				}
 				let list = self.list(&ids);
@@ -3087,7 +3092,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 				if matches!(init_node.kind, NodeKind::SequenceExpression { .. })
 					&& !self.src[init_at as usize..init_node.start as usize].contains('(')
 				{
-					return fail(
+					return self.fail(
 						init_node.start,
 						init_node.end,
 						Code::Expected,
@@ -3212,7 +3217,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			Some(c) if is_id_start(c) => self.at += c.len_utf8() as u32,
 			_ => {
 				// under recovery an empty identifier stands where one was expected
-				self.report(error(start, start, Code::Expected, Some("an identifier")))?;
+				self.report_at(start, start, Code::Expected, Some("an identifier"))?;
 				return Ok(self.placeholder(start, start));
 			}
 		}
@@ -3225,7 +3230,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let end = self.at;
 		let word = &self.src[start as usize..end as usize];
 		if reserved(word) || (self.options.has(Options::MODULE) && word == "await") {
-			self.report(error(start, end, Code::ReservedWord, Some(word)))?;
+			self.report_at(start, end, Code::ReservedWord, Some(word))?;
 		}
 		let name = self.intern(word);
 		Ok(self.ast().add(NodeKind::Identifier { name }, start, end))
