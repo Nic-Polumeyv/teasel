@@ -97,6 +97,13 @@ const { open, scopeOf, referenceOf, parentOf } = untyped(m);
 	assert.deepEqual(broken.errors.map((e: Any) => [e.code, e.pos, e.loc.line]), [['unterminated_string', 4, 1], ['unexpected_eof', 13, 2]]);
 	assert.deepEqual(parse('x', loose).errors, []);
 	assert.equal('errors' in parse('x'), false);
+	const messages = (source: string, options: Options) => parse(source, { ...options, errorRecovery: true }).errors.map((e: Any) => e.message);
+	assert.deepEqual(messages('"use strict"; let a; let a; /a{2,1}/u; eval = 1;', { sourceType: 'script' }), [
+		"Identifier 'a' has already been declared",
+		'Invalid regular expression: /a{2,1}/: numbers out of order in {} quantifier',
+		'Assigning to eval in strict mode',
+	]);
+	assert.deepEqual(messages('class C { static public x }', { typescript: true }), ["'public' modifier must precede 'static' modifier.", 'Unexpected token']);
 	const scoped = parse('let = f(a, b)', { errorRecovery: true, scopes: true, sourceType: 'module' });
 	assert.equal(scoped.bindings.length, 0);
 	assert.equal(referenceOf(scoped.node.body[0].declarations[0].id), undefined);

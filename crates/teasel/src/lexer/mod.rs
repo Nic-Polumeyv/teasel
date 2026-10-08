@@ -10,6 +10,7 @@ mod tests;
 use crate::ast::{Comment, CommentKind};
 use crate::error::{Code, SyntaxError, Text};
 use crate::interner::{Interner, StrId};
+use regexp::Rejected;
 use scan::{comment_end, is_new_line, is_whitespace, line_end};
 use token::{Keyword, Token, TokenKind};
 use unicode::{is_id_continue, is_id_start};
@@ -193,6 +194,10 @@ impl<'a> Lexer<'a> {
 		Err(Box::new(SyntaxError::new(pos as u32, code).arg(arg)))
 	}
 
+	fn unexpected_character<T>(&mut self, pos: usize, c: char) -> Result<T> {
+		self.error_arg(pos, Code::UnexpectedCharacter, c.encode_utf8(&mut [0; 4]))
+	}
+
 	pub(crate) fn next_token(&mut self) -> Result<Token> {
 		let mut token = Token::eof(0);
 		self.next_token_into(&mut token)?;
@@ -297,7 +302,7 @@ impl<'a> Lexer<'a> {
 				if is_id_start(c) {
 					self.read_word()?
 				} else {
-					return self.error_arg(start, Code::UnexpectedCharacter, c.encode_utf8(&mut [0; 4]));
+					return self.unexpected_character(start, c);
 				}
 			}
 		})
@@ -488,11 +493,7 @@ impl<'a> Lexer<'a> {
 				_ => (Caret, 1),
 			},
 			_ => {
-				return self.error_arg(
-					self.pos,
-					Code::UnexpectedCharacter,
-					(b as char).encode_utf8(&mut [0; 4]),
-				);
+				return self.unexpected_character(self.pos, b as char);
 			}
 		};
 		self.pos += len;
@@ -568,7 +569,7 @@ impl<'a> Lexer<'a> {
 			Some(c) if c == '\\' || is_word_char(c, true) => {}
 			next => {
 				let c = next.unwrap_or('\u{10000}');
-				return self.error_arg(self.pos, Code::UnexpectedCharacter, c.encode_utf8(&mut [0; 4]));
+				return self.unexpected_character(self.pos, c);
 			}
 		}
 		let name = match self.read_word()? {
@@ -757,10 +758,12 @@ impl<'a> Lexer<'a> {
 		}
 		let flags_text = &self.src[flags_start..self.pos];
 		if let Err(rejected) = regexp::validate(&self.src[start + 1..flags_start - 1], flags_text, &mut self.regexp) {
-			let error = SyntaxError::new(start as u32 + 1, rejected.code);
-			let error = match rejected.reason {
-				Some(reason) => error.arg(pattern).arg(self.strings.intern(reason)),
-				None => error,
+			let at = start as u32 + 1;
+			let error = match rejected {
+				Rejected::Flag(code) => SyntaxError::new(at, code),
+				Rejected::Pattern(reason) => SyntaxError::new(at, Code::InvalidRegexp)
+					.arg(pattern)
+					.arg(self.strings.intern(reason)),
 			};
 			if !self.recover {
 				return Err(Box::new(error));

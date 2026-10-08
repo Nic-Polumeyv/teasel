@@ -8,9 +8,10 @@ use crate::interner::FastMap;
 
 type Result<T> = std::result::Result<T, Rejected>;
 
-pub(super) struct Rejected {
-	pub code: Code,
-	pub reason: Option<&'static str>,
+pub(super) enum Rejected {
+	Flag(Code),
+	/// The reason `Code::InvalidRegexp`'s message gives after the pattern.
+	Pattern(&'static str),
 }
 
 pub(super) fn validate(pattern: &str, flags: &str, scratch: &mut Scratch) -> Result<()> {
@@ -98,14 +99,11 @@ impl<'a> State<'a> {
 	}
 
 	fn raise<T>(&self, reason: &'static str) -> Result<T> {
-		Err(Rejected {
-			code: Code::InvalidRegexp,
-			reason: Some(reason),
-		})
+		Err(Rejected::Pattern(reason))
 	}
 
 	fn flag_error<T>(&self, code: Code) -> Result<T> {
-		Err(Rejected { code, reason: None })
+		Err(Rejected::Flag(code))
 	}
 
 	// Cursor

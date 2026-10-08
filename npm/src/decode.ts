@@ -1186,13 +1186,13 @@ function link_tables(S: State) {
 	}
 }
 
-const ERROR = 7;
+const ERROR_WORDS = 7;
 const NO_ARG = 0xffffffff;
 
 function errors(S: State, view: Uint32Array, count: number): Decoded[] {
 	const { codes, messages, texts } = S.C;
 	const out = new Array<Decoded>(count);
-	for (let i = 0, at = 0; i < count; i++, at += ERROR) {
+	for (let i = 0, at = 0; i < count; i++, at += ERROR_WORDS) {
 		const code = view[at] & 0xff, text = view[at] >>> 8;
 		const parts = text === 0 ? messages[code] : texts[text];
 		let message = parts[0];
@@ -1317,7 +1317,7 @@ export function decode(words: Uint32Array, source: string, engine: Views, link =
 	} else node = build(S, words[2], undefined);
 	const answer: Decoded = { node, end: words[0] };
 	if ((what & COMMENTS) !== 0) answer.comments = comments(S, undefined);
-	if ((what & RECOVERED) !== 0) answer.errors = errors(S, tree[at.errors] as Uint32Array, words[lens + at.errors] / ERROR);
+	if ((what & RECOVERED) !== 0) answer.errors = errors(S, tree[at.errors] as Uint32Array, words[lens + at.errors] / ERROR_WORDS);
 	if (erase) answer.typescript = kept(S);
 	if (scoped) {
 		answer.scopes = S.scopes;
