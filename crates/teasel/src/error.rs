@@ -126,7 +126,6 @@ codes! {
 	OptionalChainAssignment "optional_chain_assignment" => "Optional chaining cannot appear in left-hand side",
 	OptionalChainInNew "optional_chain_in_new" => "Optional chaining cannot appear in the callee of new expressions",
 	OptionalChainInTaggedTemplate "optional_chain_in_tagged_template" => "Optional chaining cannot appear in the tag of tagged template expressions",
-	TaggedTemplateInOptionalChain "optional_chain_in_tagged_template" => "Tagged Template Literals are not allowed in optionalChain.",
 	MixedCoalesce "mixed_coalesce" => "Logical expressions and coalesce expressions cannot be mixed. Wrap either by parentheses",
 	PrivateNameOutsideIn "private_name_outside_in" => "Private identifier can only be left side of binary expression",
 	UndeclaredPrivateName "undeclared_private_name" => "Private field '#{}' must be declared in an enclosing class",
