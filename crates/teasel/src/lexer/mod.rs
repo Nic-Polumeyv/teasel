@@ -8,7 +8,7 @@ pub(crate) mod unicode;
 mod tests;
 
 use crate::ast::{Comment, CommentKind};
-use crate::error::{Code, SyntaxError, Text};
+use crate::error::{Code, SyntaxError};
 use crate::interner::{Interner, StrId};
 use regexp::Rejected;
 use scan::{comment_end, is_new_line, is_whitespace, line_end};
@@ -846,9 +846,10 @@ impl<'a> Lexer<'a> {
 	pub(crate) fn read_template(&mut self) -> Result<Token> {
 		let start = self.pos;
 		if start == self.src.len() && !self.recover {
-			return Err(Box::new(
-				SyntaxError::new(start as u32, Code::UnterminatedTemplate).text(Text::UnterminatedTemplateLiteral),
-			));
+			return Err(Box::new(SyntaxError::new(
+				start as u32,
+				Code::UnterminatedTemplateLiteral,
+			)));
 		}
 		self.buf.clear();
 		self.marks.clear();

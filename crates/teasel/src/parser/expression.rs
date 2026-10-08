@@ -1,7 +1,7 @@
 use super::scope::{Binding, SCOPE_ARROW, SCOPE_DIRECT_SUPER, SCOPE_SUPER, function_flags};
 use super::{DestructuringErrors, Errors, Extension, FunctionKind, Parser, Result, Unwrap};
 use crate::Options;
-use crate::error::{Code, SyntaxError, Text};
+use crate::error::Code;
 use crate::interner::StrId;
 use crate::lexer::token::{Keyword, TokenKind, word};
 
@@ -1690,12 +1690,12 @@ impl<E: Extension> Parser<'_, E> {
 				if self.strict
 					&& (self.is_reserved_word(flags) || (runtime && flags & (word::EVAL | word::ARGUMENTS) != 0))
 				{
-					let error = SyntaxError::new(start, Code::StrictBinding).arg(name);
-					return self.raise(if is_bind {
-						error
+					let code = if is_bind {
+						Code::StrictBinding
 					} else {
-						error.text(Text::AssigningInStrictMode)
-					});
+						Code::AssigningInStrictMode
+					};
+					return self.error_name(start, code, name);
 				}
 				if is_bind {
 					if binding == Binding::Lexical && text == "let" {

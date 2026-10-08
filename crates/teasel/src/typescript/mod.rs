@@ -8,7 +8,7 @@ mod tests;
 mod types;
 
 use crate::ast::{Ast, List, MethodKind, NodeId, NodeKind, UnaryOperator, VariableKind};
-use crate::error::{SyntaxError, Text};
+use crate::error::SyntaxError;
 use crate::interner::FastMap;
 use crate::interner::StrId;
 use crate::lexer::token::{Keyword, TokenKind};
@@ -391,7 +391,7 @@ impl Parser<'_, TypeScript> {
 			.last()
 			.is_some_and(|decorators| !decorators.is_empty())
 		{
-			return self.error_text(self.tok.start, Code::DecoratorPlacement, Text::DecoratorsAroundExport);
+			return self.error(self.tok.start, Code::DecoratorsAroundExport);
 		}
 		let mut decorators = Vec::new();
 		while self.is(TokenKind::At) {
@@ -404,7 +404,7 @@ impl Parser<'_, TypeScript> {
 		} else if !self.is_keyword(Keyword::Class)
 			&& !(self.is_contextual("abstract") && self.peek_token()?.kind == TokenKind::Keyword(Keyword::Class))
 		{
-			return self.error_text(self.tok.start, Code::DecoratorPlacement, Text::LeadingDecorators);
+			return self.error(self.tok.start, Code::LeadingDecorators);
 		}
 		if self.ext.decorators.is_empty() {
 			self.ext.decorators.push(Vec::new());
@@ -423,10 +423,9 @@ impl Parser<'_, TypeScript> {
 	}
 
 	fn parameter_decorator_error<T>(&self, decorators: List) -> Result<T> {
-		self.error_text(
+		self.error(
 			self.start_of(self.ast.list(decorators)[0].unwrap()),
-			Code::DecoratorPlacement,
-			Text::ParameterDecorator,
+			Code::ParameterDecorator,
 		)
 	}
 
@@ -673,11 +672,7 @@ impl Parser<'_, TypeScript> {
 		}
 		if self.is(TokenKind::Backquote) {
 			if chained {
-				return self.error_text(
-					start,
-					Code::OptionalChainInTaggedTemplate,
-					Text::TaggedTemplateInOptionalChain,
-				);
+				return self.error(start, Code::TaggedTemplateInOptionalChain);
 			}
 			let quasi = self.parse_template(true)?;
 			let node = self.add(NodeKind::TaggedTemplateExpression { tag: base, quasi }, start);
@@ -1473,7 +1468,7 @@ impl Extension for TypeScript {
 			],
 			&["in", "out"],
 			true,
-			Some((Code::TypeParameterModifier, Text::ClassTypeParameterModifier)),
+			Some(Code::ClassTypeParameterModifier),
 		)?;
 		if !decorators.is_empty() {
 			if p.is(TokenKind::BraceR) {
@@ -1525,17 +1520,13 @@ impl Extension for TypeScript {
 		}
 		if let Some(accessibility) = extras.accessibility {
 			let accessibility = p.intern(accessibility.as_str());
-			return p.raise(
-				SyntaxError::new(start, Code::IndexSignatureModifier)
-					.text(Text::IndexSignatureAccessibility)
-					.arg(accessibility),
-			);
+			return p.raise(SyntaxError::new(start, Code::IndexSignatureAccessibility).arg(accessibility));
 		}
 		if extras.declare {
 			return p.error_arg(start, Code::IndexSignatureModifier, "declare");
 		}
 		if extras.is_override {
-			return p.error_text(start, Code::IndexSignatureModifier, Text::IndexSignatureOverride);
+			return p.error(start, Code::IndexSignatureOverride);
 		}
 		Ok(Some(signature))
 	}
@@ -1574,11 +1565,7 @@ impl Extension for TypeScript {
 		if matches!(p.kind(key), NodeKind::PrivateIdentifier { .. }) {
 			if let Some(accessibility) = element.extras.accessibility {
 				let accessibility = p.intern(accessibility.as_str());
-				return p.raise(
-					SyntaxError::new(element.start, Code::PrivateModifier)
-						.text(Text::PrivateMethodAccessibility)
-						.arg(accessibility),
-				);
+				return p.raise(SyntaxError::new(element.start, Code::PrivateMethodAccessibility).arg(accessibility));
 			}
 		} else if let Some(type_parameters) = type_parameters
 			&& !element.extras.is_static
@@ -1617,11 +1604,7 @@ impl Extension for TypeScript {
 			}
 			if let Some(accessibility) = element.extras.accessibility {
 				let accessibility = p.intern(accessibility.as_str());
-				return p.raise(
-					SyntaxError::new(element.start, Code::PrivateModifier)
-						.text(Text::PrivateAccessibility)
-						.arg(accessibility),
-				);
+				return p.raise(SyntaxError::new(element.start, Code::PrivateAccessibility).arg(accessibility));
 			}
 		} else if p.is(TokenKind::Eq) {
 			if p.ext.ambient && !(element.extras.readonly && type_annotation.is_none()) {
@@ -1675,7 +1658,7 @@ impl Extension for TypeScript {
 				}
 			}
 			if matches!(p.ts_kind(node), Some(TsKind::IndexSignature { .. })) {
-				return p.error_text(start, Code::DecoratorPlacement, Text::DecoratorOnIndexSignature);
+				return p.error(start, Code::DecoratorOnIndexSignature);
 			}
 		}
 		if let NodeKind::MethodDefinition { kind, value, .. } = p.kind(node) {

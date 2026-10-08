@@ -6,7 +6,7 @@ use std::rc::Rc;
 use crate::Options;
 use crate::ast::{Ast, Reuse};
 use crate::comments::attach;
-use crate::error::{Code, Text};
+use crate::error::Code;
 use crate::estree::{Emit, Json, Output, Positions, Words, answer, error_to_json};
 use crate::handed::{Raw, Views};
 use crate::host::{self, Grammar};
@@ -237,8 +237,6 @@ pub fn layout_json() -> String {
 	names(&mut w, Code::ALL.iter().map(|code| code.name()).collect());
 	w.key(key("messages"));
 	names(&mut w, Code::ALL.iter().map(|code| code.message()).collect());
-	w.key(key("texts"));
-	names(&mut w, Text::ALL.to_vec());
 	w.end();
 	w.key(key("recipes"));
 	w.object();
@@ -796,15 +794,8 @@ fn prepare<X: Emit + Reuse>(ast: &mut Ast<X>, source: &str, positions: &Position
 		let places = positions.of_errors(source, &ast.errors);
 		for (error, [pos, end, line, column]) in ast.errors.iter().zip(places) {
 			let [first, second] = error.args.map(|arg| arg.map_or(u32::MAX, StrId::index));
-			ast.error_words.extend_from_slice(&[
-				error.code as u32 | (error.text as u32) << 8,
-				first,
-				second,
-				pos,
-				end,
-				line,
-				column,
-			]);
+			ast.error_words
+				.extend_from_slice(&[error.code as u32, first, second, pos, end, line, column]);
 		}
 	}
 	ast.units.clear();

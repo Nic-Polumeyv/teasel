@@ -3,7 +3,7 @@
 use super::ast::{Keyword as TsKeyword, Modifier, SignatureKind, TsKind};
 use super::{Modifiers, TypeScript};
 use crate::ast::{List, NodeId, NodeKind};
-use crate::error::{Code, SyntaxError, Text};
+use crate::error::{Code, SyntaxError};
 use crate::lexer::token::{Keyword, TokenKind};
 use crate::parser::{ForInit, Parser, Result};
 
@@ -803,11 +803,7 @@ impl Parser<'_, TypeScript> {
 				Some(TsKind::OptionalType { .. } | TsKind::NamedTupleMember { optional: true, .. })
 			);
 			if seen_optional && !optional && !matches!(kind, Some(TsKind::RestType { .. })) {
-				return self.error_text(
-					self.start_of(element),
-					Code::RequiredAfterOptional,
-					Text::RequiredElementAfterOptional,
-				);
+				return self.error(self.start_of(element), Code::RequiredElementAfterOptional);
 			}
 			seen_optional |= optional;
 		}
@@ -876,11 +872,10 @@ impl Parser<'_, TypeScript> {
 			TypeParameterModifiers::Class => (IN_OUT_CONST, ACCESSIBILITY_AND_CLASS),
 		};
 		let error = match modifiers {
-			TypeParameterModifiers::InOut => Text::Own,
-			_ => Text::ClassTypeParameterModifier,
+			TypeParameterModifiers::InOut => Code::TypeParameterModifier,
+			_ => Code::ClassTypeParameterModifier,
 		};
-		let error = Some((Code::TypeParameterModifier, error));
-		let parsed = self.parse_modifiers(allowed, disallowed, false, error)?;
+		let parsed = self.parse_modifiers(allowed, disallowed, false, Some(error))?;
 		let name = self.parse_type_parameter_name()?;
 		let constraint = self.eat_then_parse_type(TokenKind::Keyword(Keyword::Extends))?;
 		let default = self.eat_then_parse_type(TokenKind::Eq)?;
@@ -1018,7 +1013,7 @@ impl Parser<'_, TypeScript> {
 				"override",
 			],
 			false,
-			Some((Code::TypeMemberModifier, Text::Own)),
+			Some(Code::TypeMemberModifier),
 		)?;
 		if let Some(signature) = self.try_parse_index_signature(start)? {
 			self.extras_mut(signature).readonly = modifiers.extras.readonly;
@@ -1202,15 +1197,14 @@ impl Parser<'_, TypeScript> {
 		allowed: &[&str],
 		disallowed: &[&str],
 		stop_on_static_block: bool,
-		disallowed_error: Option<(Code, Text)>,
+		disallowed_error: Option<Code>,
 	) -> Result<Modifiers> {
 		let mut modifiers = Modifiers::default();
 		while let Some((modifier, start)) = self.parse_modifier(allowed, disallowed, stop_on_static_block)? {
 			self.check_modifier(&modifiers, modifier, start)?;
 			modifiers.set(modifier);
-			if let Some((code, text)) = disallowed_error.filter(|_| disallowed.contains(&modifier)) {
-				let modifier = self.intern(modifier);
-				return self.raise(SyntaxError::new(self.tok.start, code).text(text).arg(modifier));
+			if let Some(code) = disallowed_error.filter(|_| disallowed.contains(&modifier)) {
+				return self.error_arg(self.tok.start, code, modifier);
 			}
 		}
 		Ok(modifiers)

@@ -5,7 +5,7 @@ use super::ast::{Kind, TsKind};
 use super::types::{ListKind, TypeParameterModifiers};
 use super::{ClassFrame, TypeScript};
 use crate::ast::{List, NodeId, NodeKind, VariableKind};
-use crate::error::{Code, Text};
+use crate::error::Code;
 use crate::lexer::token::{Keyword, TokenKind};
 use crate::parser::scope::{Binding, SCOPE_FUNCTION, SCOPE_TS_MODULE};
 use crate::parser::statement::FUNC_STATEMENT;
@@ -551,12 +551,12 @@ impl Parser<'_, TypeScript> {
 			};
 		}
 		if has_type_specifier && in_type_only {
-			let text = if is_import {
-				Text::Own
+			let code = if is_import {
+				Code::TypeModifierInTypeImport
 			} else {
-				Text::TypeModifierInTypeExport
+				Code::TypeModifierInTypeExport
 			};
-			return self.error_text(start, Code::TypeModifierInTypeImport, text);
+			return self.error(start, code);
 		}
 		if can_parse_as && self.eat_contextual("as")? {
 			right = Some(self.parse_specifier_name(is_import)?);

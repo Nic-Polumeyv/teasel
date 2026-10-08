@@ -46,8 +46,8 @@ interface Layout {
 	none: Missing;
 	views: { js: string[]; ts?: string[] };
 	recipes: { js: RawRecipes; rows: RawRecipes; ts?: RawRecipes; adds?: RawRecipes; extras?: RawRecipes };
-	/** Each code's name and message, and the other messages by number. */
-	errors: { codes: string[]; messages: string[]; texts: string[] };
+	/** Each code's name and message. */
+	errors: { codes: string[]; messages: string[] };
 }
 
 // one class for every operation: the interpreter's switch stays monomorphic
@@ -127,9 +127,8 @@ interface Compiled {
 	/** Made on the first TypeScript answer. */
 	ts: Language | undefined;
 	codes: string[];
-	/** Each code's message and each other text, split where its arguments go. */
+	/** Each code's message, split where its arguments go. */
 	messages: string[][];
-	texts: string[][];
 }
 
 function resolve(raw: RawOp[], fields: Field[]): Op[] {
@@ -249,7 +248,6 @@ function compile(engine: Views): Compiled {
 		ts: undefined,
 		codes: layout.errors.codes,
 		messages: layout.errors.messages.map((message) => message.split('{}')),
-		texts: layout.errors.texts.map((text) => text.split('{}')),
 	};
 	compiled.set(engine, made);
 	return made;
@@ -1190,11 +1188,10 @@ const ERROR_WORDS = 7;
 const NO_ARG = 0xffffffff;
 
 function errors(S: State, view: Uint32Array, count: number): Decoded[] {
-	const { codes, messages, texts } = S.C;
+	const { codes, messages } = S.C;
 	const out = new Array<Decoded>(count);
 	for (let i = 0, at = 0; i < count; i++, at += ERROR_WORDS) {
-		const code = view[at] & 0xff, text = view[at] >>> 8;
-		const parts = text === 0 ? messages[code] : texts[text];
+		const code = view[at], parts = messages[code];
 		let message = parts[0];
 		for (let k = 1; k < parts.length; k++) {
 			const arg = k < 3 ? view[at + k] : NO_ARG;

@@ -7,7 +7,7 @@ pub(crate) mod statement;
 pub(crate) mod tests;
 
 use crate::ast::{Ast, List, MethodKind, NodeId, NodeKind, Reuse, VariableKind};
-use crate::error::{SyntaxError, Text};
+use crate::error::SyntaxError;
 use crate::interner::{FastMap, StrId};
 use crate::lexer::Lexer;
 use crate::lexer::token::{Keyword, Token, TokenKind};
@@ -1044,10 +1044,6 @@ impl<'a, E: Extension> Parser<'a, E> {
 			error.pos
 		};
 		Err(Box::new(error.to(end)))
-	}
-
-	pub(crate) fn error_text<T>(&self, pos: u32, code: Code, text: Text) -> Result<T> {
-		self.raise(SyntaxError::new(pos, code).text(text))
 	}
 
 	pub(crate) fn error_arg<T>(&mut self, pos: u32, code: Code, arg: &str) -> Result<T> {
