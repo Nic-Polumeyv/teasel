@@ -127,7 +127,7 @@ interface Compiled {
 	/** Made on the first TypeScript answer. */
 	ts: Language | undefined;
 	codes: string[];
-	/** Each code's message, then each other text, split where its arguments go. */
+	/** Each code's message and each other text, split where its arguments go. */
 	messages: string[][];
 	texts: string[][];
 }
