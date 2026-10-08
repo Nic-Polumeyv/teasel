@@ -30,11 +30,7 @@ export class ParseError extends SyntaxError {
 }
 
 // what the decoder hangs on a node, under keys JSON and enumeration skip
-interface Linked {
-	[PARENT]?: Node | HostNode;
-	[SCOPE]?: Scope;
-	[REFERENCE]?: Reference;
-}
+const slot = (node: object | null | undefined, key: symbol) => (node as Record<symbol, any> | null | undefined)?.[key];
 
 /**
  * The node `node` is a child of; undefined for the root of an answer. In a document, a piece of
@@ -42,15 +38,15 @@ interface Linked {
  * in `comments` has none. A literal's `regex` and a template element's `value` are not nodes and have none.
  */
 export function parentOf(node: Node | HostNode | Comment | null | undefined): Node | HostNode | undefined {
-	return node == null ? undefined : (node as Linked)[PARENT];
+	return slot(node, PARENT);
 }
 /** With `scopes`: the scope `node` opens, when it opens one. */
 export function scopeOf(node: Node | HostNode | null | undefined): Scope | undefined {
-	return node == null ? undefined : (node as Linked)[SCOPE];
+	return slot(node, SCOPE);
 }
 /** With `scopes`: the reference an identifier makes, the binding itself for the identifier that declares it; a global's too, which no binding lists. Undefined when the identifier names no value, a property key say. */
 export function referenceOf(node: Node | null | undefined): Reference | undefined {
-	return node == null ? undefined : (node as Linked)[REFERENCE];
+	return slot(node, REFERENCE);
 }
 
 let read: (piece: Piece<unknown>) => { entry: number; stop: string };
