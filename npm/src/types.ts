@@ -1,4 +1,4 @@
-import type { Expression, Identifier, Node, SourceLocation } from 'estree';
+import type { Expression, Identifier, Node, Position, SourceLocation } from 'estree';
 
 /** A scope, as one of `scopes` on the answer. */
 export interface Scope {
@@ -117,7 +117,7 @@ export interface Reference {
 export interface Span {
 	start: number;
 	end: number;
-	loc?: { start: { line: number; column: number }; end: { line: number; column: number } };
+	loc?: SourceLocation;
 }
 
 export interface Comment extends Span {
@@ -136,7 +136,7 @@ export interface Recovered {
 	message: string;
 	pos: number;
 	end: number;
-	loc: { line: number; column: number };
+	loc: Position;
 }
 
 declare const answers: unique symbol;
@@ -170,11 +170,8 @@ export interface Parsed<T> {
  * A node of a host language, as its grammar names the type and the fields; the JavaScript under
  * it is ESTree. The node a grammar wraps children in has no span.
  */
-export interface HostNode {
+export interface HostNode extends Partial<Span> {
 	type: string;
-	start?: number;
-	end?: number;
-	loc?: SourceLocation;
 	[field: string]: unknown;
 }
 

@@ -1,5 +1,5 @@
-import type { Expression, Identifier, Pattern, Program, SourceLocation, Statement, VariableDeclaration } from 'estree';
-import type { Comment, HostNode, Language } from './types.ts';
+import type { Expression, Identifier, Pattern, Program, Statement, VariableDeclaration } from 'estree';
+import type { Comment, HostNode, Language, Span } from './types.ts';
 import { engine } from '#engine';
 import { children as builtin, frozen } from './children.ts';
 import { compiled } from './held.ts';
@@ -125,7 +125,7 @@ export const orArg = <T, M extends Mods>(s: Source<T, 'value', M>): Source<T, 'v
 
 type Reserved = 'type' | 'start' | 'end' | 'loc' | 'opt' | 'oneOf' | 'scope';
 /** Fields a form reads, each named once, where its source is. */
-export type Fields = { readonly [field: string]: Source<any, any, any> } & { readonly [K in Reserved]?: never };
+export type Fields<F = Source<any, any, any>> = { readonly [field: string]: F } & { readonly [K in Reserved]?: never };
 
 /** One step of a form: a host word or punctuator, fields, or a group. */
 export type Item = string | Fields | Opt<readonly Item[]> | OneOf<readonly (readonly Item[])[]> | Scope<readonly Item[]>;
@@ -143,10 +143,9 @@ export interface Scope<I extends readonly unknown[]> {
 type Field<S extends Site, B extends Mods['bind'] = false, O extends boolean = boolean> = Source<any, S, { optional: O; bind: B; orArg: boolean; missing: boolean }>;
 /** A field the site always fills, so `optional` has no meaning on it. */
 type Always<S extends Site> = Field<S, false, false>;
-type Record<F> = { readonly [field: string]: F } & { readonly [K in Reserved]?: never };
 /** A form whose fields read what `F` allows. */
-export type Form<F> = readonly (string | Record<F> | Opt<Form<F>> | OneOf<readonly Form<F>[]>)[];
-type Scoped<F> = readonly (Record<F> | Scope<Scoped<F>>)[];
+export type Form<F> = readonly (string | Fields<F> | Opt<Form<F>> | OneOf<readonly Form<F>[]>)[];
+type Scoped<F> = readonly (Fields<F> | Scope<Scoped<F>>)[];
 
 type DirectiveForm = Form<Field<'form', false | 'inside'> | Field<'value', false | 'inside'> | Source<boolean, 'literal', any>>;
 
@@ -255,7 +254,7 @@ export interface Definition {
 	readonly void?: readonly string[];
 	readonly verbatim?: string;
 	readonly elements: {
-		readonly fields: Record<Always<'element'>>;
+		readonly fields: Fields<Always<'element'>>;
 		readonly rules?: { readonly [name: string]: Element };
 		readonly component?: Element;
 		readonly other?: Element;
@@ -268,7 +267,7 @@ export interface Definition {
 		readonly modifier?: string;
 		readonly dynamic?: readonly [open: string, close: string];
 		readonly unique?: 'raw';
-		readonly fields: Record<Always<'directive'>>;
+		readonly fields: Fields<Always<'directive'>>;
 		readonly shorthands?: { readonly [token: string]: readonly [name: string, ...modifiers: string[]] };
 		readonly rules?: { readonly [name: string]: Directive };
 		readonly other?: Directive;
@@ -329,7 +328,6 @@ type Nullable<E, Force extends boolean> = E extends Member<any, infer S, infer M
 	: never;
 
 type Simplify<T> = { [K in keyof T]: T[K] } & {};
-type Span = { start: number; end: number; loc?: SourceLocation };
 
 type Shape<E extends Member, G extends Definition, Force extends boolean> = Simplify<
 	{

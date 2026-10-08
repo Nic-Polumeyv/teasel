@@ -9,7 +9,7 @@ export const REFERENCE = Symbol('reference');
 export const PARENT = Symbol('parent');
 
 /** A decoded object: the tree decides its shape, `types.ts` describes it. */
-export type Decoded = Record<string | symbol, any>;
+type Decoded = Record<string | symbol, any>;
 
 interface Field {
 	name: string;
