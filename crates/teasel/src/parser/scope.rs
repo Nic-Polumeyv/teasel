@@ -39,8 +39,9 @@ const FUNCTION: u8 = 4;
 
 pub(crate) struct Scope {
 	pub flags: u32,
-	/// The names declared here, each with how, in declaration order.
-	names: Vec<(StrId, u8)>,
+	/// The names declared here, each with how and with what the index held for it before, in
+	/// declaration order.
+	names: Vec<(StrId, u8, u8)>,
 	/// The same by name, once the list is long enough that a scan costs more than a lookup.
 	index: Option<FastMap<StrId, u8>>,
 }
@@ -49,37 +50,53 @@ const INDEXED: usize = 64;
 
 impl Scope {
 	pub(crate) fn declared(&self) -> impl Iterator<Item = StrId> + '_ {
-		self.names.iter().map(|(name, _)| *name)
+		self.names.iter().map(|&(name, ..)| name)
 	}
 
 	fn has(&self, name: StrId, kinds: u8) -> bool {
 		match &self.index {
 			Some(index) => index.get(&name).is_some_and(|kind| kind & kinds != 0),
-			None => self.names.iter().any(|&(n, kind)| n == name && kind & kinds != 0),
+			None => self.names.iter().any(|&(n, kind, _)| n == name && kind & kinds != 0),
 		}
 	}
 
 	fn indexed(&self) -> FastMap<StrId, u8> {
 		let mut index = FastMap::default();
-		for &(n, k) in &self.names {
+		for &(n, k, _) in &self.names {
 			*index.entry(n).or_default() |= k;
 		}
 		index
 	}
 
 	pub(crate) fn forget(&mut self, declared: usize) {
-		if declared < self.names.len() {
-			self.names.truncate(declared);
-			self.index = (declared >= INDEXED).then(|| self.indexed());
+		match &mut self.index {
+			// rebuilding the index instead was quadratic in a long scope's skipped statements
+			Some(index) if declared >= INDEXED => {
+				for &(name, _, before) in self.names[declared..].iter().rev() {
+					if before == 0 {
+						index.remove(&name);
+					} else {
+						index.insert(name, before);
+					}
+				}
+			}
+			_ => self.index = None,
 		}
+		self.names.truncate(declared);
 	}
 
 	fn push(&mut self, name: StrId, kind: u8) {
-		self.names.push((name, kind));
 		match &mut self.index {
-			Some(index) => *index.entry(name).or_default() |= kind,
-			None if self.names.len() == INDEXED => self.index = Some(self.indexed()),
-			None => {}
+			Some(index) => {
+				let held = index.entry(name).or_default();
+				self.names.push((name, kind, std::mem::replace(held, *held | kind)));
+			}
+			None => {
+				self.names.push((name, kind, 0));
+				if self.names.len() == INDEXED {
+					self.index = Some(self.indexed());
+				}
+			}
 		}
 	}
 }
@@ -244,6 +261,45 @@ impl<E: Extension> Parser<'_, E> {
 	pub(crate) fn check_local_export(&mut self, name: StrId, pos: u32) {
 		if !self.declares_export(name) {
 			self.undeclared_exports.push((name, pos));
+		}
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn forgetting_leaves_the_index_a_rebuild_would() {
+		let mut scope = Scope {
+			flags: 0,
+			names: Vec::new(),
+			index: None,
+		};
+		let mut seed = 7u32;
+		let mut next = |n: usize| {
+			seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+			(seed >> 8) as usize % n
+		};
+		let check = |scope: &Scope| {
+			assert_eq!(scope.index, (scope.names.len() >= INDEXED).then(|| scope.indexed()));
+		};
+		for _ in 0..2000 {
+			// around the length the index starts at, names declared again with other kinds
+			while scope.names.len() < INDEXED - 4 + next(16) {
+				scope.push(StrId::at(next(40) as u32), [VAR, LEXICAL, FUNCTION][next(3)]);
+			}
+			let skipped = scope.names.len();
+			for _ in 0..next(6) {
+				scope.push(StrId::at(next(40) as u32), [VAR, LEXICAL, FUNCTION][next(3)]);
+			}
+			check(&scope);
+			scope.forget(skipped);
+			check(&scope);
+			if next(8) == 0 {
+				scope.forget(next(scope.names.len()));
+				check(&scope);
+			}
 		}
 	}
 }

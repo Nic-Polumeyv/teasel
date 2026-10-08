@@ -9,7 +9,7 @@ use crate::error::Code;
 use crate::lexer::token::{Keyword, TokenKind};
 use crate::parser::scope::{Binding, SCOPE_FUNCTION, SCOPE_TS_MODULE};
 use crate::parser::statement::FUNC_STATEMENT;
-use crate::parser::statement::{ClassKind, StatementPlace};
+use crate::parser::statement::{ClassKind, Exports, StatementPlace};
 use crate::parser::{Context, ForInit, Parser, Result};
 
 /// The identifiers that open a declaration when what follows allows it.
@@ -109,7 +109,7 @@ impl Parser<'_, TypeScript> {
 		let in_namespace = std::mem::replace(&mut self.ext.in_namespace, namespace);
 		self.expect(TokenKind::BraceL)?;
 		let mut body = Vec::new();
-		let mut exports = crate::interner::FastMap::default();
+		let mut exports = Exports::default();
 		while !self.is(TokenKind::BraceR) {
 			let at = self.tok.start;
 			if let Some(statement) = self.statement_recovered(|p| {
