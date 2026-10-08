@@ -9,7 +9,7 @@ use super::{
 };
 use crate::Options;
 use crate::ast::{Class, Function, List, MethodKind, NodeId, NodeKind, VariableKind};
-use crate::error::Code;
+use crate::error::{Code, SyntaxError, Text};
 use crate::interner::{FastMap, StrId};
 use crate::lexer::token::{Keyword, Token, TokenKind};
 use crate::lexer::unicode::{is_id_continue, is_id_start};
@@ -1460,10 +1460,10 @@ impl<E: Extension> Parser<'_, E> {
 			_ => PrivateKind::Any,
 		};
 		if self.declare_private_name(name, private_kind) {
-			return self.error_arg(
-				self.start_of(key),
-				Code::Redeclaration,
-				format_args!("#{}", self.str(name)),
+			return self.raise(
+				SyntaxError::new(self.start_of(key), Code::Redeclaration)
+					.text(Text::PrivateRedeclaration)
+					.arg(name),
 			);
 		}
 		Ok(())
@@ -1652,11 +1652,7 @@ impl<E: Extension> Parser<'_, E> {
 				return self.error(self.start_of(key), Code::AsyncConstructor);
 			}
 		} else if is_static && !E::in_ambient(self) && self.check_key_name(key, computed, "prototype") {
-			return self.error_with(
-				self.start_of(key),
-				Code::StaticPrototype,
-				"Classes may not have a static property named prototype",
-			);
+			return self.error_text(self.start_of(key), Code::StaticPrototype, Text::StaticPrototypeProperty);
 		}
 		E::class_method_start(self, kind)?;
 		let value = self.parse_method(generator, is_async, allows_direct_super, true, kind)?;

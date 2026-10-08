@@ -1,17 +1,17 @@
-use std::fmt;
+use crate::interner::{Interner, StrId};
 
 macro_rules! codes {
 	($($name:ident $code:literal => $message:literal,)*) => {
 		/// What went wrong, as a stable name for hosts to branch on; the message is for people.
 		#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 		#[non_exhaustive]
+		#[repr(u8)]
 		pub enum Code {
 			$($name,)*
 		}
 
 		impl Code {
-			#[cfg(test)]
-			const ALL: &[Code] = &[$(Code::$name,)*];
+			pub const ALL: &[Code] = &[$(Code::$name,)*];
 
 			pub(crate) fn is_limit(self) -> bool {
 				matches!(self, Code::NestingDepth | Code::TreeSize)
@@ -37,11 +37,23 @@ macro_rules! codes {
 					$(Code::$name => $message,)*
 				}
 			}
+		}
+	};
+}
 
-			/// The message with its one placeholder filled.
-			pub fn with(self, arg: &str) -> String {
-				self.message().replacen("{}", arg, 1)
-			}
+macro_rules! texts {
+	($($name:ident => $text:literal,)*) => {
+		/// A message other than the code's own.
+		#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+		#[repr(u8)]
+		pub enum Text {
+			Own,
+			$($name,)*
+		}
+
+		impl Text {
+			/// Every text by number, the code's own standing first as empty.
+			pub const ALL: &[&str] = &["", $($text,)*];
 		}
 	};
 }
@@ -84,7 +96,7 @@ codes! {
 	StrictWith "strict_with" => "'with' in strict mode",
 	StrictDelete "strict_delete" => "Deleting local variable in strict mode",
 	StrictDirectiveNonSimpleParams "strict_directive_non_simple_params" => "Illegal 'use strict' directive in function with non-simple parameter list",
-	StrictBinding "strict_binding" => "{}{} in strict mode",
+	StrictBinding "strict_binding" => "Binding {} in strict mode",
 	StrictOctal "strict_octal" => "Octal literal in strict mode",
 	StrictEscape "strict_escape" => "Invalid escape sequence",
 	LetAsBinding "let_as_binding" => "let is disallowed as a lexically bound name",
@@ -224,11 +236,31 @@ codes! {
 	PropertyAfterInstantiation "property_after_instantiation" => "Invalid property access after an instantiation expression. You can either wrap the instantiation expression in parentheses, or delete the type arguments.",
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+texts! {
+	UnterminatedTemplateLiteral => "Unterminated template literal",
+	AssigningInStrictMode => "Assigning to {} in strict mode",
+	PrivateRedeclaration => "Identifier '#{}' has already been declared",
+	StaticPrototypeProperty => "Classes may not have a static property named prototype",
+	DecoratorsAroundExport => "Decorators must all precede 'export' or all follow it.",
+	LeadingDecorators => "Leading decorators must be attached to a class declaration.",
+	ParameterDecorator => "A parameter decorator belongs on a parameter of a constructor, method or set accessor with a body, in a class declaration.",
+	DecoratorOnIndexSignature => "Decorators cannot be applied to an index signature.",
+	TaggedTemplateInOptionalChain => "Tagged Template Literals are not allowed in optionalChain.",
+	IndexSignatureAccessibility => "Index signatures cannot have an accessibility modifier ('{}').",
+	IndexSignatureOverride => "'override' modifier cannot appear on an index signature.",
+	PrivateMethodAccessibility => "Private methods cannot have an accessibility modifier ('{}').",
+	PrivateAccessibility => "Private elements cannot have an accessibility modifier ('{}').",
+	RequiredElementAfterOptional => "A required element cannot follow an optional element.",
+	ClassTypeParameterModifier => "'{}' modifier can only appear on a type parameter of a class, interface or type alias.",
+	TypeModifierInTypeExport => "The 'type' modifier cannot be used on a named export when 'export type' is used on its export statement.",
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SyntaxError {
 	pub code: Code,
-	/// Borrowed from the message table unless the code fills a placeholder.
-	pub message: std::borrow::Cow<'static, str>,
+	pub text: Text,
+	/// Strings of the parse that recorded the error, filling the message's `{}` in order.
+	pub args: [Option<StrId>; 2],
 	/// Byte offset of the error, and of the end of the offending token when there is one.
 	pub pos: u32,
 	pub end: u32,
@@ -236,31 +268,53 @@ pub struct SyntaxError {
 
 impl SyntaxError {
 	pub fn new(pos: u32, code: Code) -> Self {
-		Self::with(pos, code, code.message())
-	}
-
-	pub fn with(pos: u32, code: Code, message: impl Into<std::borrow::Cow<'static, str>>) -> Self {
 		Self {
 			code,
-			message: message.into(),
+			text: Text::Own,
+			args: [None; 2],
 			pos,
 			end: pos,
 		}
+	}
+
+	pub fn text(mut self, text: Text) -> Self {
+		self.text = text;
+		self
+	}
+
+	pub fn arg(mut self, arg: StrId) -> Self {
+		let free = self
+			.args
+			.iter()
+			.position(Option::is_none)
+			.expect("two arguments at most");
+		self.args[free] = Some(arg);
+		self
 	}
 
 	pub fn to(mut self, end: u32) -> Self {
 		self.end = end;
 		self
 	}
-}
 
-impl fmt::Display for SyntaxError {
-	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		write!(f, "{} ({})", self.message, self.pos)
+	pub fn template(&self) -> &'static str {
+		match self.text {
+			Text::Own => self.code.message(),
+			text => Text::ALL[text as usize],
+		}
+	}
+
+	pub fn message(&self, strings: &Interner) -> String {
+		let mut args = self.args.iter().flatten().map(|&arg| strings.get(arg));
+		let mut parts = self.template().split("{}");
+		let mut out = String::from(parts.next().unwrap());
+		for part in parts {
+			out.push_str(args.next().unwrap_or("{}"));
+			out.push_str(part);
+		}
+		out
 	}
 }
-
-impl std::error::Error for SyntaxError {}
 
 #[cfg(test)]
 mod tests {

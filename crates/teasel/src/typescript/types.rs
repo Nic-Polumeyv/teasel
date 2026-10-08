@@ -3,7 +3,7 @@
 use super::ast::{Keyword as TsKeyword, Modifier, SignatureKind, TsKind};
 use super::{Modifiers, TypeScript};
 use crate::ast::{List, NodeId, NodeKind};
-use crate::error::Code;
+use crate::error::{Code, SyntaxError, Text};
 use crate::lexer::token::{Keyword, TokenKind};
 use crate::parser::{ForInit, Parser, Result};
 
@@ -803,10 +803,10 @@ impl Parser<'_, TypeScript> {
 				Some(TsKind::OptionalType { .. } | TsKind::NamedTupleMember { optional: true, .. })
 			);
 			if seen_optional && !optional && !matches!(kind, Some(TsKind::RestType { .. })) {
-				return self.error_with(
+				return self.error_text(
 					self.start_of(element),
 					Code::RequiredAfterOptional,
-					"A required element cannot follow an optional element.",
+					Text::RequiredElementAfterOptional,
 				);
 			}
 			seen_optional |= optional;
@@ -876,8 +876,8 @@ impl Parser<'_, TypeScript> {
 			TypeParameterModifiers::Class => (IN_OUT_CONST, ACCESSIBILITY_AND_CLASS),
 		};
 		let error = match modifiers {
-			TypeParameterModifiers::InOut => "'{}' modifier cannot appear on a type parameter.",
-			_ => "'{}' modifier can only appear on a type parameter of a class, interface or type alias.",
+			TypeParameterModifiers::InOut => Text::Own,
+			_ => Text::ClassTypeParameterModifier,
 		};
 		let error = Some((Code::TypeParameterModifier, error));
 		let parsed = self.parse_modifiers(allowed, disallowed, false, error)?;
@@ -971,7 +971,7 @@ impl Parser<'_, TypeScript> {
 			))
 		})?;
 		if list.is_empty() {
-			return self.error_with(start, Code::EmptyList, format!("'{token}' list cannot be empty."));
+			return self.error_arg(start, Code::EmptyList, token);
 		}
 		Ok(list)
 	}
@@ -1018,7 +1018,7 @@ impl Parser<'_, TypeScript> {
 				"override",
 			],
 			false,
-			Some((Code::TypeMemberModifier, Code::TypeMemberModifier.message())),
+			Some((Code::TypeMemberModifier, Text::Own)),
 		)?;
 		if let Some(signature) = self.try_parse_index_signature(start)? {
 			self.extras_mut(signature).readonly = modifiers.extras.readonly;
@@ -1202,74 +1202,72 @@ impl Parser<'_, TypeScript> {
 		allowed: &[&str],
 		disallowed: &[&str],
 		stop_on_static_block: bool,
-		disallowed_error: Option<(Code, &str)>,
+		disallowed_error: Option<(Code, Text)>,
 	) -> Result<Modifiers> {
 		let mut modifiers = Modifiers::default();
 		while let Some((modifier, start)) = self.parse_modifier(allowed, disallowed, stop_on_static_block)? {
 			self.check_modifier(&modifiers, modifier, start)?;
 			modifiers.set(modifier);
-			if let Some((code, template)) = disallowed_error.filter(|_| disallowed.contains(&modifier)) {
-				return self.error_with(self.tok.start, code, template.replace("{}", modifier));
+			if let Some((code, text)) = disallowed_error.filter(|_| disallowed.contains(&modifier)) {
+				let modifier = self.intern(modifier);
+				return self.raise(SyntaxError::new(self.tok.start, code).text(text).arg(modifier));
 			}
 		}
 		Ok(modifiers)
 	}
 
-	/// Duplicate, misordered and conflicting modifiers.
-	fn check_modifier(&self, seen: &Modifiers, modifier: &str, start: u32) -> Result<()> {
-		let order = |before: &str, after: &str| -> Result<()> {
-			if modifier == before && seen.has(after) {
-				return self.error_with(
-					start,
-					Code::ModifierOrder,
-					format!("'{before}' modifier must precede '{after}' modifier."),
-				);
-			}
-			Ok(())
+	fn check_modifier(&mut self, seen: &Modifiers, modifier: &'static str, start: u32) -> Result<()> {
+		let Some((code, args)) = misplaced(seen, modifier) else {
+			return Ok(());
 		};
-		let conflict = |a: &str, b: &str| -> Result<()> {
-			if (seen.has(a) && modifier == b) || (seen.has(b) && modifier == a) {
-				return self.error_with(
-					start,
-					Code::ConflictingModifiers,
-					format!("'{a}' modifier cannot be used with '{b}' modifier."),
-				);
-			}
-			Ok(())
-		};
-		let accessibility = matches!(modifier, "public" | "private" | "protected");
-		if accessibility && seen.extras.accessibility.is_some() {
-			return self.error(start, Code::DuplicateAccessibility);
+		let mut error = SyntaxError::new(start, code);
+		for arg in args.into_iter().flatten() {
+			error = error.arg(self.intern(arg));
 		}
-		if !accessibility && seen.has(modifier) {
-			return self.error_arg(start, Code::DuplicateModifier, modifier);
-		}
-		match modifier {
-			"public" | "private" | "protected" => {
-				for after in ["override", "static", "readonly", "accessor"] {
-					order(modifier, after)?;
-				}
-				conflict("private", "abstract")?;
-			}
-			"in" | "out" => order("in", "out")?,
-			"accessor" => {
-				for other in ["readonly", "declare"] {
-					conflict("accessor", other)?;
-				}
-			}
-			"const" => {}
-			_ => {
-				order("static", "readonly")?;
-				order("static", "override")?;
-				order("static", "accessor")?;
-				order("override", "accessor")?;
-				order("override", "readonly")?;
-				order("abstract", "override")?;
-				conflict("declare", "override")?;
-				conflict("static", "abstract")?;
-				conflict("private", "abstract")?;
-			}
-		}
-		Ok(())
+		self.raise(error)
+	}
+}
+
+/// Duplicate, misordered and conflicting modifiers: the code and the modifiers its message names.
+fn misplaced(seen: &Modifiers, modifier: &'static str) -> Option<(Code, [Option<&'static str>; 2])> {
+	let order = |before: &'static str, after: &'static str| {
+		(modifier == before && seen.has(after)).then_some((Code::ModifierOrder, [Some(before), Some(after)]))
+	};
+	let conflict = |a: &'static str, b: &'static str| {
+		((seen.has(a) && modifier == b) || (seen.has(b) && modifier == a))
+			.then_some((Code::ConflictingModifiers, [Some(a), Some(b)]))
+	};
+	let accessibility = matches!(modifier, "public" | "private" | "protected");
+	if accessibility && seen.extras.accessibility.is_some() {
+		return Some((Code::DuplicateAccessibility, [None, None]));
+	}
+	if !accessibility && seen.has(modifier) {
+		return Some((Code::DuplicateModifier, [Some(modifier), None]));
+	}
+	match modifier {
+		"public" | "private" | "protected" => ["override", "static", "readonly", "accessor"]
+			.into_iter()
+			.find_map(|after| order(modifier, after))
+			.or_else(|| conflict("private", "abstract")),
+		"in" | "out" => order("in", "out"),
+		"accessor" => ["readonly", "declare"]
+			.into_iter()
+			.find_map(|other| conflict("accessor", other)),
+		"const" => None,
+		_ => [
+			("static", "readonly"),
+			("static", "override"),
+			("static", "accessor"),
+			("override", "accessor"),
+			("override", "readonly"),
+			("abstract", "override"),
+		]
+		.into_iter()
+		.find_map(|(before, after)| order(before, after))
+		.or_else(|| {
+			[("declare", "override"), ("static", "abstract"), ("private", "abstract")]
+				.into_iter()
+				.find_map(|(a, b)| conflict(a, b))
+		}),
 	}
 }
