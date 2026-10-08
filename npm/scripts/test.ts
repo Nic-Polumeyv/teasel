@@ -146,8 +146,6 @@ const { open, scopeOf, referenceOf, parentOf } = untyped(m);
 		assert.equal(answer.roots.length, 2);
 		assert.equal(script.node.type, 'Program');
 		assert.equal(script.scope, scopeOf(script.node));
-		assert.equal(parentOf(script.node).type, 'Script');
-		assert.equal(scopeOf(answer.node), answer.scopes[0]);
 		assert.deepEqual(script.bindings.map((b: Any) => b.name), ['a']);
 		assert.equal(expression.node.type, 'BinaryExpression');
 		assert.equal(expression.scope.kind, 'fragment');
@@ -195,7 +193,6 @@ const { open, scopeOf, referenceOf, parentOf } = untyped(m);
 		assert.equal(parentOf(top.node.body[0]), top.node);
 		assert.equal(parentOf(top.node), undefined);
 		const commented = parse('/* a */ x', { comments: true });
-		assert.equal(parentOf(commented.node.body[0].leadingComments[0]), commented.node.body[0]);
 		assert.equal(parentOf(commented.comments[0]), undefined);
 		assert.equal(parentOf(program('`x${1}`').body[0].expression.quasis[0].value), undefined);
 		const literal = program('let r = /a/g, t = `x${1}y`;', { scopes: true }).body[0].declarations;
@@ -720,6 +717,10 @@ function types(source: api.Source, definition: typeof svelte) {
 
 	const doc = source.parse(definition);
 	expect<Equal<typeof doc.node, Infer<Svelte>>>();
+	// the accessors take an attached comment and a host node, and a piece's root has a host node for a parent
+	m.parentOf(source.parse().node.body[0].leadingComments![0]);
+	m.scopeOf(doc.node);
+	m.parentOf(doc.node.instance!.content)?.type === 'Script';
 	expect<Equal<ReturnType<typeof source.parse<Infer<Svelte>>>['node'], Infer<Svelte>>>();
 	// @ts-expect-error only a piece ends at the host's tokens
 	js.until('as');
