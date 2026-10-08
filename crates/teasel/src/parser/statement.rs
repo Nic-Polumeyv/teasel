@@ -9,7 +9,7 @@ use super::{
 };
 use crate::Options;
 use crate::ast::{Class, Function, List, MethodKind, NodeId, NodeKind, VariableKind};
-use crate::error::Code;
+use crate::error::{Code, SyntaxError};
 use crate::interner::{FastMap, StrId};
 use crate::lexer::token::{Keyword, Token, TokenKind};
 use crate::lexer::unicode::{is_id_continue, is_id_start};
@@ -46,13 +46,41 @@ impl Context {
 	}
 }
 
+/// The names a module or namespace exports, each at its first export.
+#[derive(Default)]
+pub(crate) struct Exports {
+	first: FastMap<StrId, u32>,
+	/// The names in the order they were first exported: a skipped statement forgets the ones it
+	/// added, or the next export of one would be a duplicate.
+	order: Vec<StrId>,
+}
+
+impl Exports {
+	pub(crate) fn len(&self) -> usize {
+		self.order.len()
+	}
+
+	fn first(&mut self, name: StrId, pos: u32) -> u32 {
+		*self.first.entry(name).or_insert_with(|| {
+			self.order.push(name);
+			pos
+		})
+	}
+
+	pub(crate) fn forget(&mut self, len: usize) {
+		for name in self.order.drain(len..) {
+			self.first.remove(&name);
+		}
+	}
+}
+
 impl<E: Extension> Parser<'_, E> {
 	pub(crate) fn parse_program(&mut self) -> Result<NodeId> {
 		let start = self.prev_end;
 		let module = self.options.has(Options::MODULE);
 		self.enter_scope(SCOPE_TOP);
 		let mut body = self.items();
-		let mut exports = FastMap::default();
+		let mut exports = Exports::default();
 		if !self.strict {
 			self.strict_directive()?;
 		}
@@ -68,9 +96,7 @@ impl<E: Extension> Parser<'_, E> {
 				p.parse_statement(Context::None, StatementPlace::TopLevel, Some(&mut exports))
 			})? {
 				Some(statement) => body.push(Some(statement)),
-				// a skipped export kept its names, and the next export of one was a duplicate
-				None if exports.len() > exported => exports.retain(|_, &mut pos| pos < at),
-				None => {}
+				None => exports.forget(exported),
 			}
 			self.ensure_progress(at)?;
 		}
@@ -159,7 +185,7 @@ impl<E: Extension> Parser<'_, E> {
 		&mut self,
 		context: Context,
 		place: StatementPlace,
-		exports: Option<&mut FastMap<StrId, u32>>,
+		exports: Option<&mut Exports>,
 	) -> Result<NodeId> {
 		self.enter()?;
 		let result = self.parse_statement_inner(context, place, exports);
@@ -171,7 +197,7 @@ impl<E: Extension> Parser<'_, E> {
 		&mut self,
 		context: Context,
 		place: StatementPlace,
-		exports: Option<&mut FastMap<StrId, u32>>,
+		exports: Option<&mut Exports>,
 	) -> Result<NodeId> {
 		if let Some(statement) = E::statement(self, context, place)? {
 			return Ok(statement);
@@ -1138,7 +1164,7 @@ impl<E: Extension> Parser<'_, E> {
 		self.parse_ident(true)
 	}
 
-	fn parse_export(&mut self, start: u32, exports: &mut FastMap<StrId, u32>) -> Result<NodeId> {
+	fn parse_export(&mut self, start: u32, exports: &mut Exports) -> Result<NodeId> {
 		self.next()?;
 		if let Some(node) = E::export_head(self, start)? {
 			return Ok(node);
@@ -1277,7 +1303,7 @@ impl<E: Extension> Parser<'_, E> {
 			|| E::starts_export_declaration(self))
 	}
 
-	fn parse_export_specifiers(&mut self, exports: &mut FastMap<StrId, u32>) -> Result<Vec<Option<NodeId>>> {
+	fn parse_export_specifiers(&mut self, exports: &mut Exports) -> Result<Vec<Option<NodeId>>> {
 		let mut nodes = self.items();
 		self.expect(TokenKind::BraceL)?;
 		let mut first = true;
@@ -1302,7 +1328,7 @@ impl<E: Extension> Parser<'_, E> {
 		Ok(nodes)
 	}
 
-	fn check_export(&self, exports: &mut FastMap<StrId, u32>, name: NodeId, pos: u32) -> Result<()> {
+	fn check_export(&self, exports: &mut Exports, name: NodeId, pos: u32) -> Result<()> {
 		let name = match self.kind(name) {
 			NodeKind::Identifier { name } | NodeKind::StringLiteral { value: name } => name,
 			_ => return Ok(()),
@@ -1310,14 +1336,14 @@ impl<E: Extension> Parser<'_, E> {
 		self.check_export_name(exports, name, pos)
 	}
 
-	fn check_export_name(&self, exports: &mut FastMap<StrId, u32>, name: StrId, pos: u32) -> Result<()> {
-		if *exports.entry(name).or_insert(pos) != pos && E::DUPLICATE_EXPORT_ERRORS {
+	fn check_export_name(&self, exports: &mut Exports, name: StrId, pos: u32) -> Result<()> {
+		if exports.first(name, pos) != pos && E::DUPLICATE_EXPORT_ERRORS {
 			return self.error_name(pos, Code::DuplicateExport, name);
 		}
 		Ok(())
 	}
 
-	fn check_pattern_export(&self, exports: &mut FastMap<StrId, u32>, pattern: NodeId) -> Result<()> {
+	fn check_pattern_export(&self, exports: &mut Exports, pattern: NodeId) -> Result<()> {
 		match self.kind(pattern) {
 			NodeKind::Identifier { .. } => self.check_export(exports, pattern, self.start_of(pattern)),
 			NodeKind::ObjectPattern { properties } => {
@@ -1460,11 +1486,7 @@ impl<E: Extension> Parser<'_, E> {
 			_ => PrivateKind::Any,
 		};
 		if self.declare_private_name(name, private_kind) {
-			return self.error_arg(
-				self.start_of(key),
-				Code::Redeclaration,
-				format_args!("#{}", self.str(name)),
-			);
+			return self.raise(SyntaxError::new(self.start_of(key), Code::PrivateRedeclaration).arg(name));
 		}
 		Ok(())
 	}
@@ -1652,11 +1674,7 @@ impl<E: Extension> Parser<'_, E> {
 				return self.error(self.start_of(key), Code::AsyncConstructor);
 			}
 		} else if is_static && !E::in_ambient(self) && self.check_key_name(key, computed, "prototype") {
-			return self.error_with(
-				self.start_of(key),
-				Code::StaticPrototype,
-				"Classes may not have a static property named prototype",
-			);
+			return self.error(self.start_of(key), Code::StaticPrototypeProperty);
 		}
 		E::class_method_start(self, kind)?;
 		let value = self.parse_method(generator, is_async, allows_direct_super, true, kind)?;

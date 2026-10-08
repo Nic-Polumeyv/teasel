@@ -21,7 +21,8 @@ pub use error::{Code, SyntaxError};
 pub use interner::{Interner, StrId};
 pub use parser::{Entry, Options};
 
-/// Parses one `entry` at `start` of `src` cut at `end`; see `parser::parse_at`.
+/// Parses one `entry` at `start` of `src` cut at `end`; see `parser::parse_at`. The tree comes
+/// back on an error too: the error's message reads its strings.
 pub fn parse_at(
 	src: &str,
 	start: u32,
@@ -29,9 +30,9 @@ pub fn parse_at(
 	entry: Entry,
 	options: Options,
 	stop: &str,
-) -> Result<(ast::Ast, ast::List, u32), SyntaxError> {
+) -> (ast::Ast, Result<(ast::List, u32), SyntaxError>) {
 	let (ast, parsed) = parser::parse_at::<()>(src, start, end, entry, options, stop, None);
-	parsed.map(|(roots, end)| (*ast, roots, end)).map_err(|e| *e)
+	(*ast, parsed.map_err(|e| *e))
 }
 
 #[cfg(test)]

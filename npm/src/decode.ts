@@ -46,6 +46,8 @@ interface Layout {
 	none: Missing;
 	views: { js: string[]; ts?: string[] };
 	recipes: { js: RawRecipes; rows: RawRecipes; ts?: RawRecipes; adds?: RawRecipes; extras?: RawRecipes };
+	/** Each code's name and message. */
+	errors: { codes: string[]; messages: string[] };
 }
 
 // one class for every operation: the interpreter's switch stays monomorphic
@@ -124,6 +126,9 @@ interface Compiled {
 	js: Language;
 	/** Made on the first TypeScript answer. */
 	ts: Language | undefined;
+	codes: string[];
+	/** Each code's message, split where its arguments go. */
+	messages: string[][];
 }
 
 function resolve(raw: RawOp[], fields: Field[]): Op[] {
@@ -241,6 +246,8 @@ function compile(engine: Views): Compiled {
 		rows: undefined,
 		js: language(layout, layout.views.js, false),
 		ts: undefined,
+		codes: layout.errors.codes,
+		messages: layout.errors.messages.map((message) => message.split('{}')),
 	};
 	compiled.set(engine, made);
 	return made;
@@ -1177,9 +1184,21 @@ function link_tables(S: State) {
 	}
 }
 
+const ERROR_WORDS = 7;
+const NO_ARG = 0xffffffff;
+
 function errors(S: State, view: Uint32Array, count: number): Decoded[] {
+	const { codes, messages } = S.C;
 	const out = new Array<Decoded>(count);
-	for (let i = 0; i < count; i++) out[i] = { code: S.strings[view[i * 6]], message: S.strings[view[i * 6 + 1]], pos: view[i * 6 + 2], end: view[i * 6 + 3], loc: { line: view[i * 6 + 4], column: view[i * 6 + 5] } };
+	for (let i = 0, at = 0; i < count; i++, at += ERROR_WORDS) {
+		const code = view[at], parts = messages[code];
+		let message = parts[0];
+		for (let k = 1; k < parts.length; k++) {
+			const arg = k < 3 ? view[at + k] : NO_ARG;
+			message += (arg === NO_ARG ? '{}' : S.strings[arg]) + parts[k];
+		}
+		out[i] = { code: codes[code], message, pos: view[at + 3], end: view[at + 4], loc: { line: view[at + 5], column: view[at + 6] } };
+	}
 	return out;
 }
 
@@ -1295,7 +1314,7 @@ export function decode(words: Uint32Array, source: string, engine: Views, link =
 	} else node = build(S, words[2], undefined);
 	const answer: Decoded = { node, end: words[0] };
 	if ((what & COMMENTS) !== 0) answer.comments = comments(S, undefined);
-	if ((what & RECOVERED) !== 0) answer.errors = errors(S, tree[at.errors] as Uint32Array, words[lens + at.errors] / 6);
+	if ((what & RECOVERED) !== 0) answer.errors = errors(S, tree[at.errors] as Uint32Array, words[lens + at.errors] / ERROR_WORDS);
 	if (erase) answer.typescript = kept(S);
 	if (scoped) {
 		answer.scopes = S.scopes;

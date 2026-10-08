@@ -8,7 +8,7 @@ pub(crate) mod tests;
 
 use crate::ast::{Ast, List, MethodKind, NodeId, NodeKind, Reuse, VariableKind};
 use crate::error::SyntaxError;
-use crate::interner::{FastMap, StrId};
+use crate::interner::StrId;
 use crate::lexer::Lexer;
 use crate::lexer::token::{Keyword, Token, TokenKind};
 pub(crate) use expression::ForInit;
@@ -500,7 +500,7 @@ pub(crate) struct Parser<'a, E: Extension = ()> {
 	pub(crate) depth: u32,
 	pub(crate) scopes: Vec<Scope>,
 	/// Name vectors of scopes left, for the next scope entered.
-	spare_names: Vec<Vec<(StrId, u8)>>,
+	spare_names: Vec<Vec<(StrId, u8, u8)>>,
 	/// List buffers earlier lists gave back: a list costs no allocation after the first at its depth.
 	spare_lists: Vec<Vec<Option<NodeId>>>,
 	param_names: Vec<StrId>,
@@ -528,7 +528,7 @@ pub(crate) struct Parser<'a, E: Extension = ()> {
 #[derive(Default)]
 pub struct Spare {
 	scopes: Vec<Scope>,
-	names: Vec<Vec<(StrId, u8)>>,
+	names: Vec<Vec<(StrId, u8, u8)>>,
 	lists: Vec<Vec<Option<NodeId>>>,
 	param_names: Vec<StrId>,
 	labels: Vec<Label>,
@@ -870,7 +870,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 			Entry::Pattern => self.parse_pattern_root()?,
 			Entry::Params => return self.parse_params_root(),
 			Entry::Statement => {
-				let mut exports = FastMap::default();
+				let mut exports = statement::Exports::default();
 				self.parse_statement(statement::Context::None, StatementPlace::TopLevel, Some(&mut exports))?
 			}
 			Entry::TypeParameters => E::type_parameters(self)?,
@@ -1034,27 +1034,25 @@ impl<'a, E: Extension> Parser<'a, E> {
 
 	/// An error at the current token spans it; one elsewhere is a point.
 	pub(crate) fn error<T>(&self, pos: u32, code: Code) -> Result<T> {
-		self.error_with(pos, code, code.message())
+		self.raise(SyntaxError::new(pos, code))
 	}
 
-	pub(crate) fn error_with<T>(
-		&self,
-		pos: u32,
-		code: Code,
-		message: impl Into<std::borrow::Cow<'static, str>>,
-	) -> Result<T> {
-		let end = if pos == self.tok.start { self.tok.end } else { pos };
-		Err(Box::new(SyntaxError::with(pos, code, message).to(end)))
+	pub(crate) fn raise<T>(&self, error: SyntaxError) -> Result<T> {
+		let end = if error.pos == self.tok.start {
+			self.tok.end
+		} else {
+			error.pos
+		};
+		Err(Box::new(error.to(end)))
 	}
 
-	/// The error for a code whose message has one placeholder.
-	pub(crate) fn error_arg<T>(&self, pos: u32, code: Code, arg: impl std::fmt::Display) -> Result<T> {
-		self.error_with(pos, code, code.with(&arg.to_string()))
+	pub(crate) fn error_arg<T>(&mut self, pos: u32, code: Code, arg: &str) -> Result<T> {
+		let arg = self.intern(arg);
+		self.error_name(pos, code, arg)
 	}
 
-	/// The same with the name of an interned string.
 	pub(crate) fn error_name<T>(&self, pos: u32, code: Code, name: StrId) -> Result<T> {
-		self.error_arg(pos, code, self.str(name))
+		self.raise(SyntaxError::new(pos, code).arg(name))
 	}
 
 	/// The current token is not what the grammar allows; at the end of the input that is its own error.

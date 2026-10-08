@@ -976,10 +976,9 @@ impl<'a, X: Bind> Binder<'a, X> {
 			};
 			if opened_by_host && !kind.is_var() && !self.out.bindings[existing as usize].kind.is_var() {
 				let n = *self.ast.node(node);
-				let message: std::borrow::Cow<'static, str> = Code::Redeclaration.with(self.ast.str(name)).into();
 				self.out
 					.errors
-					.push(SyntaxError::with(n.start, Code::Redeclaration, message).to(n.end));
+					.push(SyntaxError::new(n.start, Code::Redeclaration).arg(name).to(n.end));
 			}
 			self.declared(node, existing, kind, false);
 			return;
@@ -1632,8 +1631,8 @@ mod tests {
 	use crate::parser::Options;
 	use std::assert_matches;
 
-	fn analyzed<X: Bind>(result: Result<(Ast<X>, List, u32), SyntaxError>) -> Ast<X> {
-		let (mut ast, roots, _) = result.unwrap();
+	fn analyzed<X: Bind>((mut ast, parsed): (Ast<X>, Result<(List, u32), SyntaxError>)) -> Ast<X> {
+		let (roots, _) = parsed.unwrap();
 		analyze(&mut ast, Entry::Program, roots);
 		ast
 	}
@@ -1769,8 +1768,8 @@ mod tests {
 			facts_in("function f(a) { return a; }", false),
 			"f@9 declares function in script\na@11 declares param in function\na@23 -> @11"
 		);
-		let (mut ast, roots, _) =
-			crate::parse_at("(a, b = a)", 0, None, Entry::Params, Options::default(), "").unwrap();
+		let (mut ast, parsed) = crate::parse_at("(a, b = a)", 0, None, Entry::Params, Options::default(), "");
+		let (roots, _) = parsed.unwrap();
 		analyze(&mut ast, Entry::Params, roots);
 		assert_eq!(ast.scopes.as_ref().unwrap().bindings.len(), 2);
 		// a declaration on the way, even a later one, is what a reference means
@@ -1810,7 +1809,9 @@ mod tests {
 		// a class field or static block cannot say `arguments` at all
 		for src in ["class C { x = arguments }", "class C { static { arguments } }"] {
 			assert!(
-				crate::parse_at(src, 0, None, Entry::Program, Options::default(), "").is_err(),
+				crate::parse_at(src, 0, None, Entry::Program, Options::default(), "")
+					.1
+					.is_err(),
 				"{src}"
 			);
 		}
@@ -2092,15 +2093,15 @@ mod tests {
 		let mut pool = None;
 		let mut room = Vec::new();
 		for round in 0..12 {
-			let (mut ast, roots, _) = crate::parse_at(
+			let (mut ast, parsed) = crate::parse_at(
 				&document(5 + round % 2),
 				0,
 				None,
 				Entry::Program,
 				Options::default(),
 				"",
-			)
-			.unwrap();
+			);
+			let (roots, _) = parsed.unwrap();
 			ast.scopes = pool.take();
 			analyze(&mut ast, Entry::Program, roots);
 			let scopes = ast.scopes.take().unwrap();
