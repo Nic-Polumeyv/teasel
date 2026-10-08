@@ -1,6 +1,6 @@
 import type { Comment, Expression, Node, Pattern, Position, Program, Statement } from 'estree';
 import { decode, PARENT, REFERENCE, SCOPE } from './decode.ts';
-import type { Code, HostNode, Language, Parsed, Prepared, Reference, Scope } from './types.ts';
+import type { Code, HostNode, Language, Parsed, Reference, Scope } from './types.ts';
 import { flags, type Options } from './options.ts';
 import { engine } from '#engine';
 import { children, extras, frozen } from './children.ts';
@@ -119,7 +119,7 @@ let sheet: Language<unknown>['children'] | undefined;
  * parses after it share. Offsets are UTF-16; positions stay those of the whole source.
  */
 export class Source {
-	#held: Prepared | undefined;
+	#held: object | undefined;
 	#source: string | undefined;
 	#flags: number;
 
@@ -160,7 +160,7 @@ export class Source {
 		const answer =
 			this.#held === undefined && at === undefined
 				? engine.once(source, this.#flags, entry, stop, grammar)
-				: (this.#held ??= engine.create(source, this.#flags)).parse(entry, offset, end, stop, grammar);
+				: engine.parse((this.#held ??= engine.create(source, this.#flags)), entry, offset, end, stop, grammar);
 		if (typeof answer !== 'string') {
 			try {
 				return decode(answer, source, engine) as Parsed<any>;
@@ -176,7 +176,7 @@ export class Source {
 	// the engine frees an undisposed source when it is collected
 	[Symbol.dispose]() {
 		this.#source = undefined;
-		this.#held?.free();
+		if (this.#held !== undefined) engine.free(this.#held);
 		this.#held = undefined;
 	}
 }

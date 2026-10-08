@@ -16,10 +16,9 @@ function bytes(text: string) {
 }
 
 export const engine: Engine = {
-	create(source, flags) {
-		const held = native.create(bytes(source), flags);
-		return { parse: (entry, offset, end, stop, plan) => native.parse(held, entry, offset, end, stop, plan), free: () => native.free(held) };
-	},
+	create: (source, flags) => native.create(bytes(source), flags),
+	parse: native.parse,
+	free: native.free,
 	once: (source, flags, entry, stop, plan) => native.once(bytes(source), flags, entry, stop, plan),
 	plan: native.plan,
 	children: native.children,
