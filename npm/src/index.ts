@@ -1,4 +1,4 @@
-import type { Expression, Node, Pattern, Position, Program, Statement } from 'estree';
+import type { Comment, Expression, Node, Pattern, Position, Program, Statement } from 'estree';
 import { decode, PARENT, REFERENCE, SCOPE } from './decode.ts';
 import type { Code, Held, HostNode, Language, Parsed, Prepared, Reference, Scope } from './types.ts';
 import { flags, type Options } from './options.ts';
@@ -30,23 +30,19 @@ export class ParseError extends SyntaxError {
 }
 
 // what the decoder hangs on a node, under keys JSON and enumeration skip
-interface Linked {
-	[PARENT]?: Node;
-	[SCOPE]?: Scope;
-	[REFERENCE]?: Reference;
-}
+const slot = (node: object | null | undefined, key: symbol) => (node as Record<symbol, any> | null | undefined)?.[key];
 
-/** The node `node` is a child of; undefined for the root of an answer. A literal's `regex` and a template element's `value` are not nodes and have none. */
-export function parentOf(node: Node | null | undefined): Node | undefined {
-	return node == null ? undefined : (node as Linked)[PARENT];
+/** The node `node` is a child of; undefined for the root of an answer and for a comment listed in `comments`. A literal's `regex` and a template element's `value` are not nodes and have none. */
+export function parentOf(node: Node | HostNode | Comment | null | undefined): Node | HostNode | undefined {
+	return slot(node, PARENT);
 }
 /** With `scopes`: the scope `node` opens, when it opens one. */
-export function scopeOf(node: Node | null | undefined): Scope | undefined {
-	return node == null ? undefined : (node as Linked)[SCOPE];
+export function scopeOf(node: Node | HostNode | null | undefined): Scope | undefined {
+	return slot(node, SCOPE);
 }
 /** With `scopes`: the reference an identifier makes, the binding itself for the identifier that declares it; a global's too, which no binding lists. Undefined when the identifier names no value, a property key say. */
 export function referenceOf(node: Node | null | undefined): Reference | undefined {
-	return node == null ? undefined : (node as Linked)[REFERENCE];
+	return slot(node, REFERENCE);
 }
 
 let read: (piece: Piece<unknown>) => { entry: number; stop: string };

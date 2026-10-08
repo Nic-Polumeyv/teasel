@@ -192,6 +192,8 @@ const { open, scopeOf, referenceOf, parentOf } = untyped(m);
 		assert.equal(parentOf(assigned.node), top.node.body[0].expression);
 		assert.equal(parentOf(top.node.body[0]), top.node);
 		assert.equal(parentOf(top.node), undefined);
+		const commented = parse('/* a */ x', { comments: true });
+		assert.equal(parentOf(commented.comments[0]), undefined);
 		assert.equal(parentOf(program('`x${1}`').body[0].expression.quasis[0].value), undefined);
 		const literal = program('let r = /a/g, t = `x${1}y`;', { scopes: true }).body[0].declarations;
 		assert.equal(Object.getPrototypeOf(literal[0].init.regex), Object.prototype);
@@ -715,6 +717,10 @@ function types(source: api.Source, definition: typeof svelte) {
 
 	const doc = source.parse(definition);
 	expect<Equal<typeof doc.node, Infer<Svelte>>>();
+	// the accessors take an attached comment and a host node, and a piece's root has a host node for a parent
+	m.parentOf(source.parse().node.body[0].leadingComments![0]);
+	m.scopeOf(doc.node);
+	m.parentOf(doc.node.instance!.content)?.type === 'Script';
 	expect<Equal<ReturnType<typeof source.parse<Infer<Svelte>>>['node'], Infer<Svelte>>>();
 	// @ts-expect-error only a piece ends at the host's tokens
 	js.until('as');
