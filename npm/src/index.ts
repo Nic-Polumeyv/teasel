@@ -114,16 +114,17 @@ export const css: Language<HostNode> = Object.freeze({
 let sheet: Language<unknown>['children'] | undefined;
 
 /**
- * A source kept with its options: the parses out of it share the source copy and the position
- * tables. Offsets are UTF-16; positions stay those of the whole source.
+ * A source kept with its options. A parse of the whole source keeps nothing in the engine; the
+ * first at a position makes the engine's copy of the source and its position tables, which the
+ * parses after it share. Offsets are UTF-16; positions stay those of the whole source.
  */
 export class Source {
 	#held: Prepared | undefined;
-	#source: string;
+	#source: string | undefined;
+	#flags: number;
 
 	constructor(source: string, options: Options = {}) {
-		// Rust cannot read a V8 string, so it parses its own copy
-		this.#held = engine.create(source, flags(options));
+		this.#flags = flags(options);
 		this.#source = source;
 	}
 
@@ -143,7 +144,8 @@ export class Source {
 	parse<T>(what: Piece<T> | typeof js, at?: number | [start: number, end: number]): Parsed<T | Program>;
 	parse<T>(language: Language<T>): Parsed<T>;
 	parse(what: Piece<unknown> | Language<unknown> = js, at?: number | [number, number]): Parsed<any> {
-		if (this.#held === undefined) throw new TypeError('the source is freed');
+		const source = this.#source;
+		if (source === undefined) throw new TypeError('the source is freed');
 		let entry = 0, stop = '', grammar: object | undefined, offset = 0, end: number | undefined;
 		if (what === js || what instanceof Piece) {
 			if (what !== js) ({ entry, stop } = read(what as Piece<unknown>));
@@ -155,10 +157,13 @@ export class Source {
 			else grammar = compiled(what as Grammar);
 			if (at !== undefined) throw new TypeError('only `js` and its pieces take a position');
 		}
-		const answer = this.#held.parse(entry, offset, end, stop, grammar);
+		const answer =
+			this.#held === undefined && at === undefined
+				? engine.once(source, this.#flags, entry, stop, grammar)
+				: (this.#held ??= engine.create(source, this.#flags)).parse(entry, offset, end, stop, grammar);
 		if (typeof answer !== 'string') {
 			try {
-				return decode(answer, this.#source, engine) as Parsed<any>;
+				return decode(answer, source, engine) as Parsed<any>;
 			} catch (error) {
 				// a tree deeper than the caller's stack has room for overflowed the decoder
 				if (!(error instanceof RangeError)) throw error;
@@ -169,6 +174,7 @@ export class Source {
 	}
 
 	[Symbol.dispose]() {
+		this.#source = undefined;
 		this.#held?.free();
 		this.#held = undefined;
 	}

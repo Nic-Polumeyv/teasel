@@ -135,6 +135,16 @@ export const engine: Engine = {
 		sources.register(prepared, slot, slot);
 		return prepared;
 	},
+	once(source, flags, entry, stop, plan) {
+		const grammar = plan === undefined ? 0 : (plan as Plan).handle();
+		const handle = guarded(() => wasm.source_new(...bytes(source), flags));
+		const made = generation;
+		try {
+			return answer(guarded(() => wasm.source_parse(handle, entry, 0, 0, 0, ...bytes(stop), grammar)));
+		} finally {
+			if (made === generation) wasm.source_free(handle);
+		}
+	},
 	plan: (grammar) => new Plan(grammar),
 	children(plan) {
 		const handle = plan === undefined ? 0 : (plan as Plan).handle();

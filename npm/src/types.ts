@@ -375,6 +375,8 @@ export interface Prepared {
 /** What parses: the addon or the WebAssembly module. */
 export interface Engine extends Views {
 	readonly create: (source: string, flags: number) => Prepared;
+	/** The whole source parsed at an entry with nothing kept, as a prepared source parses it. */
+	readonly once: (source: string, flags: number, entry: number, stop: string, plan: object | undefined) => Uint32Array | string;
 	/** The grammar of a host language on its wire, read once and let go of when the plan is collected. */
 	readonly plan: (grammar: Uint8Array) => object;
 	/** Each node type of a grammar's host with the fields that hold nodes, as JSON; a stylesheet's without one. */

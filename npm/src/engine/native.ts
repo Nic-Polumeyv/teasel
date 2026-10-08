@@ -20,6 +20,7 @@ export const engine: Engine = {
 		const held = native.create(bytes(source), flags);
 		return { parse: (entry, offset, end, stop, plan) => native.parse(held, entry, offset, end, stop, plan), free: () => native.free(held) };
 	},
+	once: (source, flags, entry, stop, plan) => native.once(bytes(source), flags, entry, stop, plan),
 	plan: native.plan,
 	children: native.children,
 	layout: native.layout,
