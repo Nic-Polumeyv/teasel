@@ -1389,16 +1389,16 @@ impl<E: Extension> Parser<'_, E> {
 			return self.error(start, Code::ArgumentsInFieldInitializer);
 		}
 		if flags & (word::ARGUMENTS | word::AWAIT) != 0 && self.in_class_static_block() {
-			return self.error_arg(start, Code::InvalidInStaticBlock, name);
+			return self.error_name(start, Code::InvalidInStaticBlock, id_name);
 		}
 		if flags & word::KEYWORD != 0 {
-			return self.error_arg(start, Code::UnexpectedKeyword, name);
+			return self.error_name(start, Code::UnexpectedKeyword, id_name);
 		}
 		if self.is_reserved_word(flags) {
 			if !self.in_async() && name == "await" {
 				return self.error(start, Code::AwaitOutsideAsync);
 			}
-			return self.error_arg(start, Code::ReservedWord, name);
+			return self.error_name(start, Code::ReservedWord, id_name);
 		}
 		Ok(())
 	}
@@ -1690,8 +1690,12 @@ impl<E: Extension> Parser<'_, E> {
 				if self.strict
 					&& (self.is_reserved_word(flags) || (runtime && flags & (word::EVAL | word::ARGUMENTS) != 0))
 				{
-					let verb = if is_bind { "Binding " } else { "Assigning to " };
-					return self.error_with(start, Code::StrictBinding, format!("{verb}{text} in strict mode"));
+					let code = if is_bind {
+						Code::StrictBinding
+					} else {
+						Code::AssigningInStrictMode
+					};
+					return self.error_name(start, code, name);
 				}
 				if is_bind {
 					if binding == Binding::Lexical && text == "let" {

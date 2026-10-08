@@ -551,15 +551,12 @@ impl Parser<'_, TypeScript> {
 			};
 		}
 		if has_type_specifier && in_type_only {
-			return self.error_with(
-				start,
-				Code::TypeModifierInTypeImport,
-				if is_import {
-					"The 'type' modifier cannot be used on a named import when 'import type' is used on its import statement."
-				} else {
-					"The 'type' modifier cannot be used on a named export when 'export type' is used on its export statement."
-				},
-			);
+			let code = if is_import {
+				Code::TypeModifierInTypeImport
+			} else {
+				Code::TypeModifierInTypeExport
+			};
+			return self.error(start, code);
 		}
 		if can_parse_as && self.eat_contextual("as")? {
 			right = Some(self.parse_specifier_name(is_import)?);

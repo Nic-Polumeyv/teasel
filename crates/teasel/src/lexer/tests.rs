@@ -4,7 +4,6 @@ use super::token::{
 	TokenKind::{self, *},
 };
 use crate::ast::{Comment, CommentKind};
-use crate::error::SyntaxError;
 use crate::interner::StrId;
 use std::assert_matches;
 
@@ -31,26 +30,24 @@ fn texts(src: &str) -> Vec<&str> {
 		.collect()
 }
 
-fn error_in(src: &str, strict: bool) -> SyntaxError {
+fn error_in(src: &str, strict: bool) -> (std::string::String, u32) {
 	let mut lexer = Lexer::new(src);
 	lexer.strict = strict;
 	loop {
 		match lexer.next_token() {
 			Ok(t) if t.kind == Eof => panic!("no error for {src:?}"),
 			Ok(_) => {}
-			Err(e) => return *e,
+			Err(e) => return (e.message(&lexer.strings), e.pos),
 		}
 	}
 }
 
 fn error(src: &str) -> (std::string::String, u32) {
-	let e = error_in(src, false);
-	(e.message.into_owned(), e.pos)
+	error_in(src, false)
 }
 
 fn strict_error(src: &str) -> (std::string::String, u32) {
-	let e = error_in(src, true);
-	(e.message.into_owned(), e.pos)
+	error_in(src, true)
 }
 
 fn single(src: &str) -> (Lexer<'_>, Token) {
@@ -392,11 +389,14 @@ fn template_newlines_normalise() {
 	let mut lexer = Lexer::new("`abc");
 	lexer.next_token().unwrap();
 	let e = lexer.read_template().unwrap_err();
-	assert_eq!((&*e.message, e.pos), ("Unterminated template", 1));
+	assert_eq!((&*e.message(&lexer.strings), e.pos), ("Unterminated template", 1));
 	let mut lexer = Lexer::new("`");
 	lexer.next_token().unwrap();
 	let e = lexer.read_template().unwrap_err();
-	assert_eq!((&*e.message, e.pos), ("Unterminated template literal", 1));
+	assert_eq!(
+		(&*e.message(&lexer.strings), e.pos),
+		("Unterminated template literal", 1)
+	);
 }
 
 #[test]
@@ -419,20 +419,26 @@ fn regex() {
 	let mut lexer = Lexer::new("/abc\n/");
 	let t = lexer.next_token().unwrap();
 	let e = lexer.read_regex(t).unwrap_err();
-	assert_eq!((&*e.message, e.pos), ("Unterminated regular expression", 1));
+	assert_eq!(
+		(&*e.message(&lexer.strings), e.pos),
+		("Unterminated regular expression", 1)
+	);
 
 	let mut lexer = Lexer::new("/a/\\u0067");
 	let t = lexer.next_token().unwrap();
 	let e = lexer.read_regex(t).unwrap_err();
-	assert_eq!((&*e.message, e.pos), ("Unexpected token", 3));
+	assert_eq!((&*e.message(&lexer.strings), e.pos), ("Unexpected token", 3));
 	let mut lexer = Lexer::new("/a/\\u{30}");
 	let t = lexer.next_token().unwrap();
 	let e = lexer.read_regex(t).unwrap_err();
-	assert_eq!((&*e.message, e.pos), ("Invalid Unicode escape", 3));
+	assert_eq!((&*e.message(&lexer.strings), e.pos), ("Invalid Unicode escape", 3));
 	let mut lexer = Lexer::new("/a/\\ux");
 	let t = lexer.next_token().unwrap();
 	let e = lexer.read_regex(t).unwrap_err();
-	assert_eq!((&*e.message, e.pos), ("Bad character escape sequence", 5));
+	assert_eq!(
+		(&*e.message(&lexer.strings), e.pos),
+		("Bad character escape sequence", 5)
+	);
 }
 
 #[test]
@@ -443,7 +449,7 @@ fn regex_validation() {
 		lexer
 			.read_regex(t)
 			.map(|_| ())
-			.map_err(|e| (e.message.into_owned(), e.pos))
+			.map_err(|e| (e.message(&lexer.strings), e.pos))
 	};
 	assert!(regex("/(?<a>x)|(?<a>y)/").is_ok());
 	// groups side by side are not nested

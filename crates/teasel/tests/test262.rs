@@ -66,7 +66,7 @@ fn verdicts() {
 	for dir in ["pass", "pass-explicit", "fail", "early"] {
 		for (path, source) in files(&root, dir) {
 			let options = Options(if is_module(&path) { Options::MODULE } else { 0 });
-			let parses = parse_at(&source, 0, None, Entry::Program, options, "").is_ok();
+			let parses = parse_at(&source, 0, None, Entry::Program, options, "").1.is_ok();
 			let superseded = SUPERSEDED.contains(&path.as_str());
 			if parses != dir.starts_with("pass") && !superseded {
 				wrong.push(path);

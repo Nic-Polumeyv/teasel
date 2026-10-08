@@ -10,6 +10,7 @@ use crate::error::Code;
 use crate::estree::{Emit, Json, Output, Positions, Words, answer, error_to_json};
 use crate::handed::{Raw, Views};
 use crate::host::{self, Grammar};
+use crate::interner::StrId;
 use crate::parser::{Entry, parse_at};
 use crate::scopes::{self, Bind};
 
@@ -229,6 +230,13 @@ pub fn layout_json() -> String {
 		w.key(key("ts"));
 		names(&mut w, view_names::<crate::typescript::ast::Data>());
 	}
+	w.end();
+	w.key(key("errors"));
+	w.object();
+	w.key(key("codes"));
+	names(&mut w, Code::ALL.iter().map(|code| code.name()).collect());
+	w.key(key("messages"));
+	names(&mut w, Code::ALL.iter().map(|code| code.message()).collect());
 	w.end();
 	w.key(key("recipes"));
 	w.object();
@@ -784,11 +792,10 @@ fn prepare<X: Emit + Reuse>(ast: &mut Ast<X>, source: &str, positions: &Position
 	ast.error_words.clear();
 	if output.errors {
 		let places = positions.of_errors(source, &ast.errors);
-		for (i, [pos, end, line, column]) in places.into_iter().enumerate() {
-			let code = ast.strings.intern(ast.errors[i].code.label().text).index();
-			let message = ast.strings.intern(&ast.errors[i].message).index();
+		for (error, [pos, end, line, column]) in ast.errors.iter().zip(places) {
+			let [first, second] = error.args.map(|arg| arg.map_or(u32::MAX, StrId::index));
 			ast.error_words
-				.extend_from_slice(&[code, message, pos, end, line, column]);
+				.extend_from_slice(&[error.code as u32, first, second, pos, end, line, column]);
 		}
 	}
 	ast.units.clear();
@@ -817,6 +824,7 @@ fn recycle<X: Reuse + Pooled>(
 	source: &str,
 	positions: &Positions,
 ) -> String {
+	let json = error_to_json(error, &ast.strings, source, positions);
 	Pooled::give(pool, ast);
-	error_to_json(error, source, positions)
+	json
 }

@@ -19,38 +19,66 @@ use crate::{Code, Entry, Options, SyntaxError};
 
 /// One entry of one extension, as `parse_at` reads it.
 pub(crate) type ParseAt<X> =
-	fn(&str, u32, Option<u32>, Entry, Options, &str) -> Result<(Ast<X>, List, u32), SyntaxError>;
+	fn(&str, u32, Option<u32>, Entry, Options, &str) -> (Ast<X>, Result<(List, u32), SyntaxError>);
+
+/// An error with its message filled from the strings of its parse.
+#[derive(Debug)]
+pub(crate) struct Failed {
+	pub code: Code,
+	pub message: String,
+	pub pos: u32,
+}
+
+impl std::fmt::Display for Failed {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "{} ({})", self.message, self.pos)
+	}
+}
+
+/// The tree and roots of a parse, or its error.
+pub(crate) fn settled<X>(
+	(ast, parsed): (Ast<X>, Result<(List, u32), SyntaxError>),
+) -> Result<(Ast<X>, List, u32), Failed> {
+	match parsed {
+		Ok((list, end)) => Ok((ast, list, end)),
+		Err(e) => Err(Failed {
+			code: e.code,
+			message: e.message(&ast.strings),
+			pos: e.pos,
+		}),
+	}
+}
 
 /// The roots of an answer as a vector.
 pub(crate) fn roots<X>(
-	result: Result<(Ast<X>, List, u32), SyntaxError>,
-) -> Result<(Ast<X>, Vec<NodeId>, u32), SyntaxError> {
-	result.map(|(ast, list, end)| {
+	parsed: (Ast<X>, Result<(List, u32), SyntaxError>),
+) -> Result<(Ast<X>, Vec<NodeId>, u32), Failed> {
+	settled(parsed).map(|(ast, list, end)| {
 		let roots = ast.list(list).iter().flatten().copied().collect();
 		(ast, roots, end)
 	})
 }
 
 /// The one root of an answer.
-pub(crate) fn one<X>(result: Result<(Ast<X>, List, u32), SyntaxError>) -> Result<(Ast<X>, NodeId, u32), SyntaxError> {
-	roots(result).map(|(ast, roots, end)| (ast, roots[0], end))
+pub(crate) fn one<X>(parsed: (Ast<X>, Result<(List, u32), SyntaxError>)) -> Result<(Ast<X>, NodeId, u32), Failed> {
+	roots(parsed).map(|(ast, roots, end)| (ast, roots[0], end))
 }
 
-fn at(entry: Entry, src: &str, offset: u32, options: Options, stop: &str) -> Result<(Ast, NodeId, u32), SyntaxError> {
+fn at(entry: Entry, src: &str, offset: u32, options: Options, stop: &str) -> Result<(Ast, NodeId, u32), Failed> {
 	one(crate::parse_at(src, offset, None, entry, options, stop))
 }
 
-fn params(src: &str, offset: u32, options: Options, stop: &str) -> Result<(Ast, Vec<NodeId>, u32), SyntaxError> {
+fn params(src: &str, offset: u32, options: Options, stop: &str) -> Result<(Ast, Vec<NodeId>, u32), Failed> {
 	roots(crate::parse_at(src, offset, None, Entry::Params, options, stop))
 }
 
-fn program(src: &str, options: Options) -> Result<Ast, SyntaxError> {
-	crate::parse_at(src, 0, None, Entry::Program, options, "").map(|(ast, _, _)| ast)
+fn program(src: &str, options: Options) -> Result<Ast, Failed> {
+	settled(crate::parse_at(src, 0, None, Entry::Program, options, "")).map(|(ast, _, _)| ast)
 }
 
 /// A whole source as a program, with the list holding its root.
 fn whole(src: &str, options: Options) -> (Ast, List) {
-	let (ast, roots, _) = crate::parse_at(src, 0, None, Entry::Program, options, "").unwrap();
+	let (ast, roots, _) = settled(crate::parse_at(src, 0, None, Entry::Program, options, "")).unwrap();
 	(ast, roots)
 }
 
@@ -277,7 +305,7 @@ impl<X: Walk> Api<X> {
 		entry: Entry,
 		options: Options,
 		stop: &str,
-	) -> Result<(Ast<X>, Vec<NodeId>, u32), SyntaxError> {
+	) -> Result<(Ast<X>, Vec<NodeId>, u32), Failed> {
 		roots((self.0)(src, offset, None, entry, options, stop))
 	}
 

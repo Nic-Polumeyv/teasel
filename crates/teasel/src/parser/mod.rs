@@ -1034,27 +1034,25 @@ impl<'a, E: Extension> Parser<'a, E> {
 
 	/// An error at the current token spans it; one elsewhere is a point.
 	pub(crate) fn error<T>(&self, pos: u32, code: Code) -> Result<T> {
-		self.error_with(pos, code, code.message())
+		self.raise(SyntaxError::new(pos, code))
 	}
 
-	pub(crate) fn error_with<T>(
-		&self,
-		pos: u32,
-		code: Code,
-		message: impl Into<std::borrow::Cow<'static, str>>,
-	) -> Result<T> {
-		let end = if pos == self.tok.start { self.tok.end } else { pos };
-		Err(Box::new(SyntaxError::with(pos, code, message).to(end)))
+	pub(crate) fn raise<T>(&self, error: SyntaxError) -> Result<T> {
+		let end = if error.pos == self.tok.start {
+			self.tok.end
+		} else {
+			error.pos
+		};
+		Err(Box::new(error.to(end)))
 	}
 
-	/// The error for a code whose message has one placeholder.
-	pub(crate) fn error_arg<T>(&self, pos: u32, code: Code, arg: impl std::fmt::Display) -> Result<T> {
-		self.error_with(pos, code, code.with(&arg.to_string()))
+	pub(crate) fn error_arg<T>(&mut self, pos: u32, code: Code, arg: &str) -> Result<T> {
+		let arg = self.intern(arg);
+		self.error_name(pos, code, arg)
 	}
 
-	/// The same with the name of an interned string.
 	pub(crate) fn error_name<T>(&self, pos: u32, code: Code, name: StrId) -> Result<T> {
-		self.error_arg(pos, code, self.str(name))
+		self.raise(SyntaxError::new(pos, code).arg(name))
 	}
 
 	/// The current token is not what the grammar allows; at the end of the input that is its own error.

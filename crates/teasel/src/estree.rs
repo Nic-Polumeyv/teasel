@@ -2,7 +2,7 @@
 
 use crate::ast::{Ast, List, NodeId, NodeKind, Value};
 use crate::handed::Handed;
-use crate::interner::StrId;
+use crate::interner::{Interner, StrId};
 use crate::layout::Ty;
 use crate::names::{Name, c};
 use crate::parser::Entry;
@@ -229,7 +229,7 @@ pub fn answer<X: Emit>(
 
 /// Serializes a syntax error: its code and message, UTF-16 `pos` and `end`, and a `loc`; the
 /// line table is built up to the error when `positions` has none.
-pub fn error_to_json(error: &crate::SyntaxError, source: &str, positions: &Positions) -> String {
+pub fn error_to_json(error: &crate::SyntaxError, strings: &Interner, source: &str, positions: &Positions) -> String {
 	let upto;
 	let positions = if positions.lines {
 		positions
@@ -243,7 +243,7 @@ pub fn error_to_json(error: &crate::SyntaxError, source: &str, positions: &Posit
 	let (line, column) = positions.line_column(cursor.line, error.pos, pos);
 	let end = positions.offset(&mut cursor, error.end);
 	let mut out = format!("{{\"error\":{{\"code\":\"{}\",\"message\":", error.code.name());
-	write_json_string(&mut out, &error.message);
+	write_json_string(&mut out, &error.message(strings));
 	write!(
 		out,
 		",\"pos\":{pos},\"end\":{end},\"loc\":{{\"line\":{line},\"column\":{column}}}}}}}"
@@ -623,7 +623,7 @@ impl<'a, X: Emit> Writer<'a, X> {
 			self.key(c!("code"));
 			self.json.str(error.code.label());
 			self.key(c!("message"));
-			self.json.text(&error.message);
+			self.json.text(&error.message(&self.ast.strings));
 			self.key(c!("pos"));
 			self.json.int(pos);
 			self.key(c!("end"));
