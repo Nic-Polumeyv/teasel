@@ -397,7 +397,7 @@ struct Names {
 	names: crate::interner::Interner,
 	/// Each name by where it sits, with its number: a grammar's names are few places, met again
 	/// and again, and the place hashes faster than the text.
-	places: Vec<(usize, usize, u32)>,
+	places: Vec<((usize, usize), u32)>,
 	place_slots: crate::interner::Slots,
 	/// Each shape back to back: a host node's type, whether it has a span, and each field's key
 	/// and kind of value; nodes of one shape are built by one literal.
@@ -412,16 +412,13 @@ impl Names {
 		let place = (name.as_ptr() as usize, name.len());
 		let hash = crate::interner::hash_words(&[place.0 as u32, (place.0 as u64 >> 32) as u32, place.1 as u32]);
 		let places = &self.places;
-		let slot = match self
-			.place_slots
-			.probe(hash, |i| (places[i as usize].0, places[i as usize].1) == place)
-		{
-			Ok(i) => return self.places[i as usize].2,
+		let slot = match self.place_slots.probe(hash, |i| places[i as usize].0 == place) {
+			Ok(i) => return self.places[i as usize].1,
 			Err(slot) => slot,
 		};
 		let id = self.names.intern(name).index();
 		self.place_slots.insert(slot, hash, self.places.len() as u32);
-		self.places.push((place.0, place.1, id));
+		self.places.push((place, id));
 		id
 	}
 

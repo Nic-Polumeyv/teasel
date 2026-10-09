@@ -78,6 +78,7 @@ pub(crate) struct Slots {
 
 impl Slots {
 	pub(crate) fn sized(slots: usize) -> Self {
+		debug_assert!(slots.is_power_of_two(), "a probe masks with the size");
 		Slots {
 			table: vec![0; slots],
 			touched: Vec::new(),
@@ -220,7 +221,7 @@ impl Interner {
 
 	pub fn intern(&mut self, s: &str) -> StrId {
 		let hash = hash(s);
-		let slot = match self.slots.probe(hash, |id| self.get(StrId::at(id)) == s) {
+		let slot = match self.probe(s, hash) {
 			Ok(id) => return StrId::at(id),
 			Err(slot) => slot,
 		};
@@ -254,10 +255,11 @@ impl Interner {
 	}
 
 	pub fn find(&self, s: &str) -> Option<StrId> {
-		self.slots
-			.probe(hash(s), |id| self.get(StrId::at(id)) == s)
-			.ok()
-			.map(StrId::at)
+		self.probe(s, hash(s)).ok().map(StrId::at)
+	}
+
+	fn probe(&self, s: &str, hash: u32) -> Result<u32, usize> {
+		self.slots.probe(hash, |id| self.get(StrId::at(id)) == s)
 	}
 
 	pub fn get(&self, id: StrId) -> &str {
