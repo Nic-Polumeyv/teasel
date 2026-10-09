@@ -102,9 +102,18 @@ impl<E: Extension> Parser<'_, E> {
 		}
 		if module && !self.options.has(Options::ALLOW_UNDECLARED_EXPORTS) {
 			let undeclared = std::mem::take(&mut self.undeclared_exports);
-			if let Some(&(name, _)) = undeclared.iter().find(|&&(name, _)| !self.declares_export(name)) {
-				let pos = undeclared.iter().rfind(|&&(n, _)| n == name).unwrap().1;
-				return self.error_name(pos, Code::UndefinedExport, name);
+			let mut last = FastMap::default();
+			for &(name, pos) in &undeclared {
+				last.insert(name, pos);
+			}
+			// each name once, at its last export
+			for &(name, _) in &undeclared {
+				if let Some(pos) = last.remove(&name)
+					&& !self.declares_export(name)
+				{
+					let error = self.error_name(pos, Code::UndefinedExport, name);
+					self.record(error)?;
+				}
 			}
 		}
 		let body = self.list_from(body);
