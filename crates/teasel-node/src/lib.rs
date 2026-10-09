@@ -120,7 +120,13 @@ fn external(env: Env, value: Value, what: &str) -> Result<*mut c_void> {
 	})
 }
 
-fn handle(env: Env, value: Value) -> Result<*mut Option<Prepared<'static>>> {
+// a finalizer passed to napi_create_external cannot be cancelled, so free deletes this one's reference
+struct Held {
+	prepared: Prepared<'static>,
+	finalizer: Ref,
+}
+
+fn handle(env: Env, value: Value) -> Result<*mut Held> {
 	let data = external(env, value, "a source")?;
 	if data.is_null() {
 		return Err("a source expected".into());
@@ -136,15 +142,22 @@ unsafe extern "C" fn create(env: Env, info: CallbackInfo) -> Value {
 			bytes(env, source)?.to_vec(),
 			Request::from_flags(number(env, flags)? as u32),
 		);
-		let mut result = null_mut();
+		let held = Box::into_raw(Box::new(Held {
+			prepared,
+			finalizer: null_mut(),
+		}));
+		let result = out(null_mut(), "a source", |r| unsafe {
+			node_api::napi_create_external(env, held.cast(), None, null_mut(), r)
+		})?;
 		check(
 			unsafe {
-				node_api::napi_create_external(
+				node_api::napi_add_finalizer(
 					env,
-					Box::into_raw(Box::new(Some(prepared))).cast(),
+					result,
+					held.cast(),
 					Some(drop_source),
 					null_mut(),
-					&mut result,
+					&mut (*held).finalizer,
 				)
 			},
 			"a source",
@@ -182,9 +195,9 @@ unsafe extern "C" fn children(env: Env, info: CallbackInfo) -> Value {
 	})
 }
 
-// Node-API runs the finalizer after `free` too, so `free` leaves the box empty for it
-unsafe extern "C" fn drop_source(_: Env, data: *mut c_void, _: *mut c_void) {
-	drop(unsafe { Box::from_raw(data.cast::<Option<Prepared<'static>>>()) });
+unsafe extern "C" fn drop_source(env: Env, data: *mut c_void, _: *mut c_void) {
+	let held = unsafe { Box::from_raw(data.cast::<Held>()) };
+	unsafe { node_api::napi_delete_reference(env, held.finalizer) };
 }
 
 unsafe extern "C" fn drop_plan(_: Env, data: *mut c_void, _: *mut c_void) {
@@ -206,7 +219,12 @@ fn grammar_of(env: Env, value: Value) -> Result<Option<&'static Grammar>> {
 unsafe extern "C" fn free(env: Env, info: CallbackInfo) -> Value {
 	guard(env, || {
 		let [source] = args::<1>(env, info)?;
-		unsafe { &mut *handle(env, source)? }.take();
+		let held = handle(env, source)?;
+		check(
+			unsafe { node_api::napi_delete_reference(env, (*held).finalizer) },
+			"a source",
+		)?;
+		drop(unsafe { Box::from_raw(held) });
 		undefined(env)
 	})
 }
@@ -214,9 +232,7 @@ unsafe extern "C" fn free(env: Env, info: CallbackInfo) -> Value {
 unsafe extern "C" fn parse(env: Env, info: CallbackInfo) -> Value {
 	guard(env, || {
 		let [source, entry, offset, end, stop, plan] = args::<6>(env, info)?;
-		let prepared = unsafe { &*handle(env, source)? }
-			.as_ref()
-			.ok_or("the source is freed")?;
+		let prepared = unsafe { &(*handle(env, source)?).prepared };
 		let entry = Entry::from_index(number(env, entry)? as u32);
 		let (offset, end, stop) = (number(env, offset)?, optional(env, end)?, string(env, stop)?);
 		let grammar = grammar_of(env, plan)?;

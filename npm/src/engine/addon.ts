@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import type { Tree } from '../types.ts';
 
-/** The external V8 holds for the addon: a prepared source. */
+/** What V8 holds for the addon: a prepared source, or a grammar's plan. */
 export type External = object;
 
 /** `crates/teasel-node/src/lib.rs`: the operations over a prepared source and a grammar, the source as V8's bytes. */
