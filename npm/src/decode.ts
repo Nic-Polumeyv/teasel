@@ -492,6 +492,7 @@ interface Spelling<E, St> {
 	comments(): E;
 	finite(value: E): E;
 	bigint(text: E): E;
+	bigint_value(text: E): E;
 	regexp(pattern: E, flags: E): E;
 	/** A value computed once and read where it is used. */
 	hold(value: E): E;
@@ -560,6 +561,8 @@ function value<E, St>(B: Spelling<E, St>, op: Op, none: Missing, erase: boolean)
 			return B.slice(0);
 		case 'bigint':
 			return B.bigint(B.slice(1));
+		case 'bigintvalue':
+			return B.bigint_value(B.slice(1));
 		case 'regexp':
 			return B.regexp(B.strings(B.word(op.at)), B.strings(B.word(op.at2)));
 		case 'const':
@@ -684,6 +687,7 @@ class Closures implements Spelling<Value, Stmt> {
 	comments = (): Value => (S, V, b, n) => comments(S, n);
 	finite = (value: Value): Value => (S, V, b, n, L) => finite(value(S, V, b, n, L));
 	bigint = (text: Value): Value => (S, V, b, n, L) => bigint(text(S, V, b, n, L));
+	bigint_value = (text: Value): Value => (S, V, b, n, L) => bigint_value(text(S, V, b, n, L));
 	regexp = (pattern: Value, flags: Value): Value => (S, V, b, n, L) => regexp(pattern(S, V, b, n, L), flags(S, V, b, n, L));
 	hold(value: Value): Value {
 		const slot = this.slots++;
@@ -831,7 +835,8 @@ function params(S: State, start: number, len: number, parent: Decoded | undefine
 }
 
 const finite = (value: number) => (Number.isFinite(value) ? value : null);
-const bigint = (digits: string) => BigInt(digits.replaceAll('_', '')).toString();
+const bigint_value = (digits: string) => BigInt(digits.replaceAll('_', ''));
+const bigint = (digits: string) => bigint_value(digits).toString();
 
 // an older runtime rejects syntax teasel reads, such as the v flag, and ESTree says null then
 function regexp(pattern: string, flags: string): RegExp | null {
@@ -902,6 +907,7 @@ class Source implements Spelling<string, string> {
 	comments = () => 'comments(S, n)';
 	finite = (value: string) => `finite(${value})`;
 	bigint = (text: string) => `bigint(${text})`;
+	bigint_value = (text: string) => `bigint_value(${text})`;
 	regexp = (pattern: string, flags: string) => `regexp(${pattern}, ${flags})`;
 	hold(value: string): string {
 		const local = `v${this.count++}`;
@@ -1001,7 +1007,7 @@ function generate(C: Compiled, G: Language, config: number, ops: Op[], ts: boole
 	}
 	const lead = B.lead;
 	const body = `const N = S.N, J = S.J, b = id * ${C.words}${ts ? ', T = S.TS' : ''}; ${lead.length !== 0 && lead[lead.length - 1].includes('return J[') ? lead.join(' ') : `if (${rare.join(' || ')}) return slow(S, id, t, parent); ${before.join(' ')} const p = id * S.ps + S.po; ${lead.join(' ')} const n = { ${props.join(', ')} }; ${tail.join(' ')} ${after.join(' ')} return n;`}`;
-	return new Function('K', 'slow', 'items', 'params', 'finite', 'bigint', 'regexp', 'late', 'PARENT', 'SCOPE', 'REFERENCE', `return (S, id, t, parent) => { ${body} };`)(B.constants, slow, items, params, finite, bigint, regexp, late, PARENT, SCOPE, REFERENCE);
+	return new Function('K', 'slow', 'items', 'params', 'finite', 'bigint', 'bigint_value', 'regexp', 'late', 'PARENT', 'SCOPE', 'REFERENCE', `return (S, id, t, parent) => { ${body} };`)(B.constants, slow, items, params, finite, bigint, bigint_value, regexp, late, PARENT, SCOPE, REFERENCE);
 }
 
 function strs(S: State, start: number, len: number): string[] {

@@ -78,8 +78,8 @@ function mode(source: string, options: Options, entry: number, at: number) {
 	return `${options.typescript ? 'ts-' : ''}${head}${switches.join('')}${offset}`;
 }
 
-// JSON has no RegExp, so the writer spells a regular expression's value null
-const as_json = (_key: string, value: unknown) => (value instanceof RegExp ? null : value);
+// JSON has no RegExp or BigInt, so the writer spells a regular expression's or a BigInt's value null
+const as_json = (_key: string, value: unknown) => (value instanceof RegExp || typeof value === 'bigint' ? null : value);
 
 // the addon's answers as JSON, each with the batch job that asks the binary for the same
 const jobs: { name: string; source: string; mode: string; tree: string }[] = [];
