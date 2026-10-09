@@ -654,7 +654,6 @@ impl Parser<'_, TypeScript> {
 		base: NodeId,
 		start: u32,
 		no_calls: bool,
-		chained: bool,
 		is_optional_call: bool,
 		for_init: ForInit,
 	) -> Result<Option<NodeId>> {
@@ -671,9 +670,6 @@ impl Parser<'_, TypeScript> {
 			return Ok(None);
 		}
 		if self.is(TokenKind::Backquote) {
-			if chained {
-				return self.error(start, Code::TaggedTemplateInOptionalChain);
-			}
 			let quasi = self.parse_template(true)?;
 			let node = self.add(NodeKind::TaggedTemplateExpression { tag: base, quasi }, start);
 			self.extras_mut(node).type_arguments = Some(type_arguments);
@@ -1822,20 +1818,24 @@ impl Extension for TypeScript {
 			return Ok(Some((base, false)));
 		}
 		let subscript = p.attempt(|p| {
-			let (mut chained, mut is_optional_call) = (optional_chained, false);
 			if optional_call {
-				chained = true;
-				is_optional_call = true;
 				p.next()?;
 			}
-			match p.parse_type_arguments_subscript(base, start, no_calls, chained, is_optional_call, for_init)? {
-				Some(node) => Ok((node, is_optional_call)),
+			match p.parse_type_arguments_subscript(base, start, no_calls, optional_call, for_init)? {
+				Some(node) => Ok((node, optional_call)),
 				None => p.unexpected(),
 			}
 		})?;
 		let Some((node, is_optional_call)) = subscript else {
 			return Ok(None);
 		};
+		// raised inside the attempt, the error read `<T>` as comparisons instead
+		if optional_chained && let NodeKind::TaggedTemplateExpression { quasi, .. } = p.kind(node) {
+			let at = p.start_of(quasi);
+			return Err(Box::new(
+				SyntaxError::new(at, Code::OptionalChainInTaggedTemplate).to(at + 1),
+			));
+		}
 		if matches!(p.ts_kind(node), Some(TsKind::InstantiationExpression { .. }))
 			&& (p.is(TokenKind::Dot) || (p.is(TokenKind::QuestionDot) && p.peek_char().0 != Some('(')))
 		{

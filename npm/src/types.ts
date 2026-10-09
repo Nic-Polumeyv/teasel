@@ -1,4 +1,4 @@
-import type { Expression, Identifier, Node, SourceLocation } from 'estree';
+import type { Expression, Identifier, Node, Position, SourceLocation } from 'estree';
 
 /** A scope, as one of `scopes` on the answer. */
 export interface Scope {
@@ -18,7 +18,7 @@ export interface Scope {
 		| 'enum'
 		| 'fragment';
 	/** The node that opens it; null for a function-name scope and for the scope around a parameter list parsed on its own. */
-	node: Node | null;
+	node: Node | HostNode | null;
 	parent: Scope | null;
 	/** An `await` or `for await` runs directly in it, no function around; only a program or fragment scope can say so. */
 	topLevelAwait: boolean;
@@ -117,7 +117,7 @@ export interface Reference {
 export interface Span {
 	start: number;
 	end: number;
-	loc?: { start: { line: number; column: number }; end: { line: number; column: number } };
+	loc?: SourceLocation;
 }
 
 export interface Comment extends Span {
@@ -136,7 +136,7 @@ export interface Recovered {
 	message: string;
 	pos: number;
 	end: number;
-	loc: { line: number; column: number };
+	loc: Position;
 }
 
 declare const answers: unique symbol;
@@ -170,11 +170,8 @@ export interface Parsed<T> {
  * A node of a host language, as its grammar names the type and the fields; the JavaScript under
  * it is ESTree. The node a grammar wraps children in has no span.
  */
-export interface HostNode {
+export interface HostNode extends Partial<Span> {
 	type: string;
-	start?: number;
-	end?: number;
-	loc?: SourceLocation;
 	[field: string]: unknown;
 }
 
@@ -369,21 +366,17 @@ export interface Views {
 	readonly tree: (typescript: boolean, moved: boolean) => Tree;
 }
 
-/** What the engine holds: a prepared source, or a host language's grammar read once. */
-export interface Held {
-	readonly free: () => void;
-}
-
 /** A source the engine prepared: it parses at an entry and offset, cut at `end`, the stop tokens as one string, the whole source as a document by a grammar `plan` holds; the answer is its words, or an error as JSON. */
-export interface Prepared extends Held {
-	readonly parse: (entry: number, offset: number, end: number | undefined, stop: string, plan: Held | undefined) => Uint32Array | string;
+export interface Prepared {
+	readonly parse: (entry: number, offset: number, end: number | undefined, stop: string, plan: object | undefined) => Uint32Array | string;
+	readonly free: () => void;
 }
 
 /** What parses: the addon or the WebAssembly module. */
 export interface Engine extends Views {
 	readonly create: (source: string, flags: number) => Prepared;
-	/** The grammar of a host language on its wire, read once. */
-	readonly plan: (grammar: Uint8Array) => Held;
+	/** The grammar of a host language on its wire, read once and let go of when the plan is collected. */
+	readonly plan: (grammar: Uint8Array) => object;
 	/** Each node type of a grammar's host with the fields that hold nodes, as JSON; a stylesheet's without one. */
-	readonly children: (plan: Held | undefined) => string;
+	readonly children: (plan: object | undefined) => string;
 }

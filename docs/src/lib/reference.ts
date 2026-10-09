@@ -4,6 +4,7 @@ import options from '../../../npm/dist/options.d.ts?raw';
 import types from '../../../npm/dist/types.d.ts?raw';
 import grammar from '../../../npm/dist/grammar.d.ts?raw';
 import wire from '../../../npm/src/wire.ts?raw';
+import errors from '../../../crates/teasel/src/error.rs?raw';
 
 type Declaration = { type: string; start: number; end: number; id?: { name: string }; declarations?: { id: { name: string } }[]; declaration?: Declaration | null; specifiers?: { exported: { name: string } }[]; leadingComments?: { value: string; end: number }[] };
 const name = (statement: Declaration) => (statement.declaration!.id ?? statement.declaration!.declarations![0].id).name;
@@ -47,4 +48,15 @@ function crossing() {
 	return { meta: { href: '/reference/wire', title: 'Grammar wire', section: 'Reference', path: 'npm/src/wire.ts' }, markdown: `What a grammar's \`wire\` holds and the Rust crate's \`parse_document\` and the command line's \`--host\` read: the definition as words in the order these types declare them, then a pool of strings, as \`Writer\` lays them out.\n\n${markdown}` };
 }
 
-export const references = [parser(), builders(), crossing()];
+// the engine's table, one row per name: the codes that share a name share its row
+function codes() {
+	const rows = new Map<string, string[]>();
+	for (const [, name, message] of errors.matchAll(/^\t\w+ "(\w+)" => "((?:[^"\\]|\\.)*)",$/gm)) {
+		rows.set(name, [...(rows.get(name) ?? []), message.replace(/\\(.)/g, '$1')]);
+	}
+	const cell = (message: string) => (message === '' ? 'Names the offset or option the request cannot take' : message.replaceAll('{}', '…'));
+	const table = [...rows].map(([name, messages]) => `| \`${name}\` | ${messages.map(cell).join('<br>')} |`).join('\n');
+	return { meta: { href: '/reference/error-codes', title: 'Error codes', section: 'Reference', path: 'crates/teasel/src/error.rs' }, markdown: `Every \`code\` an error can have, with its messages. \`…\` is the name or text the error is about.\n\n| code | message |\n| --- | --- |\n${table}` };
+}
+
+export const references = [parser(), codes(), builders(), crossing()];

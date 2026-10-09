@@ -1,6 +1,8 @@
 // `node scripts/test.ts interpret` runs the decoder without code generation, as a host forbidding it would
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { setFlagsFromString } from 'node:v8';
+import { runInNewContext } from 'node:vm';
 import { generate } from './children.ts';
 import svelte from './hosts/svelte.ts';
 import vue from './hosts/vue.ts';
@@ -11,6 +13,8 @@ import type * as api from '../src/index.ts';
 import type { Options } from '../src/index.ts';
 if (process.argv[2] === 'interpret') globalThis.Function = (() => { throw new EvalError('blocked'); }) as unknown as FunctionConstructor;
 const name = process.execArgv.includes('--no-addons') ? 'wasm' : 'native';
+setFlagsFromString('--expose-gc');
+const collect = runInNewContext('gc') as () => void;
 const m = await import('../src/index.ts');
 // the trees are poked as the recipes shape them, host nodes included, past what the types say
 type Any = any;
@@ -192,6 +196,8 @@ const { open, scopeOf, referenceOf, parentOf } = untyped(m);
 		assert.equal(parentOf(assigned.node), top.node.body[0].expression);
 		assert.equal(parentOf(top.node.body[0]), top.node);
 		assert.equal(parentOf(top.node), undefined);
+		const commented = parse('/* a */ x', { comments: true });
+		assert.equal(parentOf(commented.comments[0]), undefined);
 		assert.equal(parentOf(program('`x${1}`').body[0].expression.quasis[0].value), undefined);
 		const literal = program('let r = /a/g, t = `x${1}y`;', { scopes: true }).body[0].declarations;
 		assert.equal(Object.getPrototypeOf(literal[0].init.regex), Object.prototype);
@@ -283,6 +289,13 @@ const { open, scopeOf, referenceOf, parentOf } = untyped(m);
 		assert.equal(inner.parse(js.expression, 0).node.name, 'x');
 	}
 	assert.throws(() => escaped.parse(js.expression, 0), TypeError);
+	// a source collected after its dispose is not freed again
+	for (let i = 0; i < 100; i++) open('x')[Symbol.dispose]();
+	for (let i = 0; i < 100; i++) open('x').parse(js.expression, 0);
+	collect();
+	await new Promise(setImmediate);
+	collect();
+	await new Promise(setImmediate);
 	assert.throws(() => parse('x', { locations: 1 } as Any), TypeError);
 	assert.throws(() => parse('x', { typescript: 'yes' } as Any), TypeError);
 	assert.throws(() => open('a;b;c').parse(js, [0, -1]), (e: Any) => e.code === 'invalid_request');
@@ -715,6 +728,10 @@ function types(source: api.Source, definition: typeof svelte) {
 
 	const doc = source.parse(definition);
 	expect<Equal<typeof doc.node, Infer<Svelte>>>();
+	// the accessors take an attached comment and a host node, and a piece's root has a host node for a parent
+	m.parentOf(source.parse().node.body[0].leadingComments![0]);
+	m.scopeOf(doc.node);
+	m.parentOf(doc.node.instance!.content)?.type === 'Script';
 	expect<Equal<ReturnType<typeof source.parse<Infer<Svelte>>>['node'], Infer<Svelte>>>();
 	// @ts-expect-error only a piece ends at the host's tokens
 	js.until('as');

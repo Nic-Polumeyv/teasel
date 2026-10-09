@@ -1,10 +1,10 @@
-import type { Expression, Node, Pattern, Program, Statement } from 'estree';
+import type { Comment, Expression, Node, Pattern, Position, Program, Statement } from 'estree';
 import { decode, PARENT, REFERENCE, SCOPE } from './decode.ts';
-import type { Code, Held, HostNode, Language, Parsed, Prepared, Reference, Scope } from './types.ts';
+import type { Code, HostNode, Language, Parsed, Prepared, Reference, Scope } from './types.ts';
 import { flags, type Options } from './options.ts';
 import { engine } from '#engine';
 import { children, extras, frozen } from './children.ts';
-import { compiled, registry } from './held.ts';
+import { compiled } from './held.ts';
 import type { Grammar } from './grammar.ts';
 
 export type { Options } from './options.ts';
@@ -21,7 +21,7 @@ export class ParseError extends SyntaxError {
 	declare code: Code;
 	declare pos: number;
 	declare end: number;
-	declare loc?: { line: number; column: number };
+	declare loc?: Position;
 
 	constructor({ message, ...fields }: Pick<ParseError, 'message' | 'code' | 'pos' | 'end' | 'loc'>) {
 		super(message);
@@ -30,23 +30,19 @@ export class ParseError extends SyntaxError {
 }
 
 // what the decoder hangs on a node, under keys JSON and enumeration skip
-interface Linked {
-	[PARENT]?: Node;
-	[SCOPE]?: Scope;
-	[REFERENCE]?: Reference;
-}
+const slot = (node: object | null | undefined, key: symbol) => (node as Record<symbol, any> | null | undefined)?.[key];
 
-/** The node `node` is a child of; undefined for the root of an answer. A literal's `regex` and a template element's `value` are not nodes and have none. */
-export function parentOf(node: Node | null | undefined): Node | undefined {
-	return node == null ? undefined : (node as Linked)[PARENT];
+/** The node `node` is a child of; undefined for the root of an answer and for a comment listed in `comments`. A literal's `regex` and a template element's `value` are not nodes and have none. */
+export function parentOf(node: Node | HostNode | Comment | null | undefined): Node | HostNode | undefined {
+	return slot(node, PARENT);
 }
 /** With `scopes`: the scope `node` opens, when it opens one. */
-export function scopeOf(node: Node | null | undefined): Scope | undefined {
-	return node == null ? undefined : (node as Linked)[SCOPE];
+export function scopeOf(node: Node | HostNode | null | undefined): Scope | undefined {
+	return slot(node, SCOPE);
 }
 /** With `scopes`: the reference an identifier makes, the binding itself for the identifier that declares it; a global's too, which no binding lists. Undefined when the identifier names no value, a property key say. */
 export function referenceOf(node: Node | null | undefined): Reference | undefined {
-	return node == null ? undefined : (node as Linked)[REFERENCE];
+	return slot(node, REFERENCE);
 }
 
 let read: (piece: Piece<unknown>) => { entry: number; stop: string };
@@ -129,7 +125,6 @@ export class Source {
 		// Rust cannot read a V8 string, so it parses its own copy
 		this.#held = engine.create(source, flags(options));
 		this.#source = source;
-		registry?.register(this, this.#held, this);
 	}
 
 	/**
@@ -149,7 +144,7 @@ export class Source {
 	parse<T>(language: Language<T>): Parsed<T>;
 	parse(what: Piece<unknown> | Language<unknown> = js, at?: number | [number, number]): Parsed<any> {
 		if (this.#held === undefined) throw new TypeError('the source is freed');
-		let entry = 0, stop = '', grammar: Held | undefined, offset = 0, end: number | undefined;
+		let entry = 0, stop = '', grammar: object | undefined, offset = 0, end: number | undefined;
 		if (what === js || what instanceof Piece) {
 			if (what !== js) ({ entry, stop } = read(what as Piece<unknown>));
 			if (typeof at === 'number') offset = at;
@@ -173,10 +168,9 @@ export class Source {
 		throw new ParseError(JSON.parse(answer).error);
 	}
 
+	// the engine frees an undisposed source when it is collected
 	[Symbol.dispose]() {
-		if (this.#held === undefined) return;
-		registry?.unregister(this);
-		this.#held.free();
+		this.#held?.free();
 		this.#held = undefined;
 	}
 }
