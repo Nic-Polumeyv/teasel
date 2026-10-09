@@ -66,6 +66,82 @@ impl StrId {
 	}
 }
 
+/// Ids found by hash in open addressing: a slot holds a key's hash in the high half and its id
+/// plus one in the low, zero when empty, so a probe passes a key without reading it. Always a
+/// power of two, at most half full.
+#[derive(Debug, Default)]
+pub(crate) struct Slots {
+	table: Vec<u64>,
+	/// Slots written since the last clear, so clearing costs what was used, not the table.
+	touched: Vec<u32>,
+}
+
+impl Slots {
+	pub(crate) fn sized(slots: usize) -> Self {
+		Slots {
+			table: vec![0; slots],
+			touched: Vec::new(),
+		}
+	}
+
+	/// The id hashed `hash` that `is` accepts, or the empty slot a new one would take.
+	#[inline]
+	pub(crate) fn probe(&self, hash: u32, is: impl Fn(u32) -> bool) -> Result<u32, usize> {
+		if self.table.is_empty() {
+			return Err(0);
+		}
+		let mask = self.table.len() - 1;
+		let mut i = hash as usize & mask;
+		loop {
+			let entry = self.table[i];
+			if entry == 0 {
+				return Err(i);
+			}
+			if (entry >> 32) as u32 == hash && is(entry as u32 - 1) {
+				return Ok(entry as u32 - 1);
+			}
+			i = (i + 1) & mask;
+		}
+	}
+
+	/// `id`, the next id, at the `slot` a probe for its hash returned.
+	pub(crate) fn insert(&mut self, mut slot: usize, hash: u32, id: u32) {
+		if self.table.len() < 2 * id as usize + 2 {
+			self.grow();
+			slot = self.probe(hash, |_| false).unwrap_err();
+		}
+		self.table[slot] = (hash as u64) << 32 | (id + 1) as u64;
+		self.touched.push(slot as u32);
+	}
+
+	fn grow(&mut self) {
+		let size = (self.table.len() * 2).max(64);
+		let old = std::mem::replace(&mut self.table, vec![0; size]);
+		let mask = size - 1;
+		self.touched.clear();
+		for entry in old.into_iter().filter(|&entry| entry != 0) {
+			let mut i = (entry >> 32) as usize & mask;
+			while self.table[i] != 0 {
+				i = (i + 1) & mask;
+			}
+			self.table[i] = entry;
+			self.touched.push(i as u32);
+		}
+	}
+
+	pub(crate) fn clear(&mut self) {
+		// scattered writes lose to a fill past an eighth of the table
+		if self.touched.len() * 8 < self.table.len() {
+			for &slot in &self.touched {
+				self.table[slot as usize] = 0;
+			}
+		} else {
+			self.table.fill(0);
+		}
+		self.touched.clear();
+	}
+}
+
 /// Strings back to back in one text, found through an open-addressing table by hash: no
 /// allocation per string and one hash per lookup, which `HashMap<Rc<str>>` paid twice on a miss.
 #[derive(Debug, Default)]
@@ -76,12 +152,7 @@ pub struct Interner {
 	/// Every lone surrogate the strings hold, where the text shows U+FFFD: the string's id, the
 	/// UTF-16 offset in it and the surrogate; in id order. Such a string is outside the table.
 	marks: Handed<[u32; 3]>,
-	/// Slots hold the string's hash in the high half and its id plus one in the low; zero is
-	/// empty. Always a power of two, at most half full. The hash sits beside the id so a probe
-	/// touches one line before it reads the text.
-	table: Vec<u64>,
-	/// Slots written since the last clear, so clearing costs what was used, not the table.
-	touched: Vec<u32>,
+	slots: Slots,
 	/// What the lexer knows of each word by id, filled as words are met; see `token::word`.
 	pub(crate) word_flags: Vec<u8>,
 }
@@ -112,6 +183,16 @@ fn hash(s: &str) -> u32 {
 	(h ^ (h >> 32)) as u32
 }
 
+/// The same mix over `words`, two to a step.
+pub(crate) fn hash_words(words: &[u32]) -> u32 {
+	let mix = |h: u64, word: u64| (h.rotate_left(5) ^ word).wrapping_mul(SEED);
+	let mut h = mix(0, words.len() as u64);
+	for pair in words.chunks(2) {
+		h = mix(h, pair[0] as u64 | (pair.get(1).copied().unwrap_or(0) as u64) << 32);
+	}
+	(h ^ (h >> 32)) as u32
+}
+
 impl Interner {
 	/// Room for the strings of `bytes` of source, so the table grows rarely.
 	pub(crate) fn sized(bytes: usize) -> Self {
@@ -122,8 +203,7 @@ impl Interner {
 			text: Handed::with_capacity(bytes / 6, 1 << 10),
 			starts,
 			marks: Handed::new(0),
-			table: vec![0; slots],
-			touched: Vec::new(),
+			slots: Slots::sized(slots),
 			word_flags: Vec::new(),
 		}
 	}
@@ -134,33 +214,23 @@ impl Interner {
 		self.starts.clear();
 		self.starts.push(0);
 		self.marks.clear();
-		// scattered writes lose to a fill past an eighth of the table
-		if self.touched.len() * 8 < self.table.len() {
-			for &slot in &self.touched {
-				self.table[slot as usize] = 0;
-			}
-		} else {
-			self.table.fill(0);
-		}
-		self.touched.clear();
+		self.slots.clear();
 		self.word_flags.clear();
 	}
 
 	pub fn intern(&mut self, s: &str) -> StrId {
 		let hash = hash(s);
-		let mut slot = match self.probe(s, hash) {
-			Ok(id) => return id,
+		let slot = match self.slots.probe(hash, |id| self.get(StrId::at(id)) == s) {
+			Ok(id) => return StrId::at(id),
 			Err(slot) => slot,
 		};
-		if self.table.len() < 2 * self.len() + 2 {
-			self.grow();
-			slot = self.probe(s, hash).unwrap_err();
+		if self.starts.is_empty() {
+			self.starts.push(0);
 		}
 		let id = self.len() as u32;
 		self.text.extend_from_slice(s.as_bytes());
 		self.starts.push(self.text.len() as u32);
-		self.table[slot] = Self::entry(hash, id);
-		self.touched.push(slot as u32);
+		self.slots.insert(slot, hash, id);
 		StrId::at(id)
 	}
 
@@ -176,32 +246,6 @@ impl Interner {
 		StrId::at(id)
 	}
 
-	fn entry(hash: u32, id: u32) -> u64 {
-		(hash as u64) << 32 | (id + 1) as u64
-	}
-
-	/// The id of `s`, or the empty slot it would take.
-	fn probe(&self, s: &str, hash: u32) -> Result<StrId, usize> {
-		if self.table.is_empty() {
-			return Err(0);
-		}
-		let mask = self.table.len() - 1;
-		let mut i = hash as usize & mask;
-		loop {
-			let entry = self.table[i];
-			if entry == 0 {
-				return Err(i);
-			}
-			if (entry >> 32) as u32 == hash {
-				let id = entry as u32 - 1;
-				if self.get(StrId::at(id)) == s {
-					return Ok(StrId::at(id));
-				}
-			}
-			i = (i + 1) & mask;
-		}
-	}
-
 	/// The lone surrogates of `id` in offset order, each its id, its UTF-16 offset and the surrogate.
 	pub fn marks_of(&self, id: StrId) -> &[[u32; 3]] {
 		let from = self.marks.partition_point(|m| m[0] < id.index());
@@ -209,26 +253,11 @@ impl Interner {
 		&self.marks[from..from + len]
 	}
 
-	fn grow(&mut self) {
-		let size = (self.table.len() * 2).max(64);
-		let old = std::mem::replace(&mut self.table, vec![0; size]);
-		if self.starts.is_empty() {
-			self.starts.push(0);
-		}
-		let mask = size - 1;
-		self.touched.clear();
-		for entry in old.into_iter().filter(|&entry| entry != 0) {
-			let mut i = (entry >> 32) as usize & mask;
-			while self.table[i] != 0 {
-				i = (i + 1) & mask;
-			}
-			self.table[i] = entry;
-			self.touched.push(i as u32);
-		}
-	}
-
 	pub fn find(&self, s: &str) -> Option<StrId> {
-		self.probe(s, hash(s)).ok()
+		self.slots
+			.probe(hash(s), |id| self.get(StrId::at(id)) == s)
+			.ok()
+			.map(StrId::at)
 	}
 
 	pub fn get(&self, id: StrId) -> &str {
