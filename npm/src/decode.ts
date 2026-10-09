@@ -370,7 +370,8 @@ function comment(S: State, index: number, parent: Decoded | undefined): Decoded 
 	const c = S.comments;
 	const at = index * 9;
 	const type = c[at] === 1 ? 'Block' : 'Line';
-	const n: Decoded = S.link ? { type, value: S.source.slice(c[at + 1], c[at + 2]), start: c[at + 3], end: c[at + 4], [PARENT]: parent } : { type, value: S.source.slice(c[at + 1], c[at + 2]), start: c[at + 3], end: c[at + 4] };
+	const n: Decoded = { type, value: S.source.slice(c[at + 1], c[at + 2]), start: c[at + 3], end: c[at + 4] };
+	if (S.link) n[PARENT] = parent;
 	if (S.lines) n.loc = loc(c, at + 5);
 	return n;
 }
@@ -424,7 +425,12 @@ function facts(S: State, n: Decoded, id: number) {
 
 function begin(S: State, type: string, id: number, parent: Decoded | undefined): Decoded {
 	const at = id * S.ps + S.po;
-	const n: Decoded = !S.link ? { type, start: S.P[at], end: S.P[at + 1] } : type === 'Identifier' ? { type, start: S.P[at], end: S.P[at + 1], [PARENT]: parent, [SCOPE]: undefined, [REFERENCE]: undefined } : { type, start: S.P[at], end: S.P[at + 1], [PARENT]: parent, [SCOPE]: undefined };
+	const n: Decoded = { type, start: S.P[at], end: S.P[at + 1] };
+	if (S.link) {
+		n[PARENT] = parent;
+		n[SCOPE] = undefined;
+		if (type === 'Identifier') n[REFERENCE] = undefined;
+	}
 	if (S.lines) n.loc = loc(S.locs, id * 4);
 	if (S.of_node !== null && !S.name_only) facts(S, n, id);
 	// the extras' children begin inside this one: what it declares waits past them
@@ -800,7 +806,11 @@ function host(S: State, id: number, index: number, parent: Decoded | undefined):
 		if (S.lines) n.loc = loc(S.locs, id * 4);
 	} else if (span === 1) n = begin(S, S.names[ty], id, parent);
 	else {
-		n = S.link ? { type: S.names[ty], [PARENT]: parent, [SCOPE]: undefined } : { type: S.names[ty] };
+		n = { type: S.names[ty] };
+		if (S.link) {
+			n[PARENT] = parent;
+			n[SCOPE] = undefined;
+		}
 		if (S.of_node !== null && !S.name_only) facts(S, n, id);
 	}
 	const pending = S.pending;
@@ -987,26 +997,28 @@ function generate(C: Compiled, G: Language, config: number, ops: Op[], ts: boole
 	// what the literal has no room for, the engine marks: parentheses, comments, a TypeScript extra, a binding on what is not an identifier
 	const rare = [RARE];
 	const before: string[] = [];
+	// the slots are stored after the literal: computed keys in it cost a runtime call each until the builder is optimized, and most builders never are
+	const slots: string[] = [];
 	const after: string[] = [];
 	if (link) {
-		props.push('[PARENT]: parent');
-		if (!facts) props.push('[SCOPE]: undefined');
+		slots.push('n[PARENT] = parent;');
+		if (!facts) slots.push('n[SCOPE] = undefined;');
 		else {
 			rare.push('S.name_only', 'S.adopted.length !== 0');
 			before.push('const sc = S.of_node[id]; const s = sc === 0 ? undefined : S.scopes[sc - 1];');
-			props.push('[SCOPE]: s');
+			slots.push('n[SCOPE] = s;');
 			after.push('if (s !== undefined) s.node = n;');
 		}
-		if (identifier && !facts) props.push('[REFERENCE]: undefined');
+		if (identifier && !facts) slots.push('n[REFERENCE] = undefined;');
 		else if (identifier) {
 			before.push('const ro = S.of_identifier[id] - 1; const r = ro === -1 ? undefined : (ro & 1) === 0 ? S.bindings[ro >>> 1] : S.references[ro >>> 1];');
-			props.push('[REFERENCE]: r');
+			slots.push('n[REFERENCE] = r;');
 			after.push('if (r !== undefined && ((ro & 1) === 1 || r.node === null)) r.node = n;');
 		}
 		if (facts) after.push(LATE);
 	}
 	const lead = B.lead;
-	const body = `const N = S.N, J = S.J, b = id * ${C.words}${ts ? ', T = S.TS' : ''}; ${lead.length !== 0 && lead[lead.length - 1].includes('return J[') ? lead.join(' ') : `if (${rare.join(' || ')}) return slow(S, id, t, parent); ${before.join(' ')} const p = id * S.ps + S.po; ${lead.join(' ')} const n = { ${props.join(', ')} }; ${tail.join(' ')} ${after.join(' ')} return n;`}`;
+	const body = `const N = S.N, J = S.J, b = id * ${C.words}${ts ? ', T = S.TS' : ''}; ${lead.length !== 0 && lead[lead.length - 1].includes('return J[') ? lead.join(' ') : `if (${rare.join(' || ')}) return slow(S, id, t, parent); ${before.join(' ')} const p = id * S.ps + S.po; ${lead.join(' ')} const n = { ${props.join(', ')} }; ${slots.join(' ')} ${tail.join(' ')} ${after.join(' ')} return n;`}`;
 	return new Function('K', 'slow', 'items', 'params', 'finite', 'bigint', 'bigint_value', 'regexp', 'late', 'PARENT', 'SCOPE', 'REFERENCE', `return (S, id, t, parent) => { ${body} };`)(B.constants, slow, items, params, finite, bigint, bigint_value, regexp, late, PARENT, SCOPE, REFERENCE);
 }
 
@@ -1051,19 +1063,19 @@ function generate_host(C: Compiled, config: number, type: string | null, span: b
 	});
 	// what the literal has no room for, as for the kinds; a node without a span has only its facts
 	const rare = span ? [RARE] : [];
-	const before: string[] = [], after: string[] = [];
+	const before: string[] = [], slots: string[] = [], after: string[] = [];
 	if (link) {
-		props.push('[PARENT]: parent');
-		if (!facts) props.push('[SCOPE]: undefined');
+		slots.push('n[PARENT] = parent;');
+		if (!facts) slots.push('n[SCOPE] = undefined;');
 		else {
 			rare.push('S.name_only', 'S.adopted.length !== 0');
 			if (!span) rare.push(RARE);
 			before.push('const sc = S.of_node[id]; const s = sc === 0 ? undefined : S.scopes[sc - 1];');
-			props.push('[SCOPE]: s');
+			slots.push('n[SCOPE] = s;');
 			after.push('if (s !== undefined) s.node = n;', LATE);
 		}
 	}
-	const body = `const N = S.N, J = S.J, HV = S.host_vals; ${rare.length === 0 ? '' : `if (${rare.join(' || ')}) return host(S, id, index, parent);`} ${before.join(' ')} const p = id * S.ps + S.po; const n = { ${props.join(', ')} }; ${tail.join(' ')} ${after.join(' ')} return n;`;
+	const body = `const N = S.N, J = S.J, HV = S.host_vals; ${rare.length === 0 ? '' : `if (${rare.join(' || ')}) return host(S, id, index, parent);`} ${before.join(' ')} const p = id * S.ps + S.po; const n = { ${props.join(', ')} }; ${slots.join(' ')} ${tail.join(' ')} ${after.join(' ')} return n;`;
 	return new Function('K', 'host', 'items', 'comments', 'strs', 'late', 'PARENT', 'SCOPE', `return (S, id, index, from, parent) => { ${body} };`)(B.constants, host, items, comments, strs, late, PARENT, SCOPE);
 }
 
