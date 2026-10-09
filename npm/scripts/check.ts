@@ -43,10 +43,12 @@ function once(engine: Engine, source: string, options: Options, entry: number, a
 	}
 }
 
+const show = (value: unknown) => (typeof value === 'bigint' ? `${value}n` : JSON.stringify(value));
+
 // not assert.deepStrictEqual: it renders both graphs on failure, which never ends on linked scopes
 function differ(a: unknown, b: unknown, seen = new Map<object, unknown>(), path = '$'): string | null {
 	if (a === b) return null;
-	if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return `${path}: ${JSON.stringify(a)} vs ${JSON.stringify(b)}`;
+	if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return `${path}: ${show(a)} vs ${show(b)}`;
 	if (seen.has(a)) return seen.get(a) === b ? null : `${path}: identity differs`;
 	seen.set(a, b);
 	const ka = Object.keys(a), kb = Object.keys(b);
