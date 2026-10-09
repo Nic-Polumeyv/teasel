@@ -1,5 +1,11 @@
 # @teasel/parser
 
+## 0.0.19
+
+### Patch Changes
+
+- [#208](https://github.com/Nic-Polumeyv/teasel/pull/208) [`97a245a`](https://github.com/Nic-Polumeyv/teasel/commit/97a245a3eb4d6ac933444968d440346112615791) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - Parses build their tree faster
+
 ## 0.0.18
 
 ### Patch Changes
