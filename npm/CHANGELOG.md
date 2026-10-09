@@ -1,5 +1,11 @@
 # @teasel/parser
 
+## 0.0.20
+
+### Patch Changes
+
+- [#211](https://github.com/Nic-Polumeyv/teasel/pull/211) [`499f9fa`](https://github.com/Nic-Polumeyv/teasel/commit/499f9faa9af10aeffdb80a9d392d43dafcd8f7ae) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - `locations: 'js'` puts `loc` on JavaScript nodes and comments only
+
 ## 0.0.19
 
 ### Patch Changes
