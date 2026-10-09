@@ -1,5 +1,31 @@
 # @teasel/parser
 
+## 0.0.18
+
+### Patch Changes
+
+- [#206](https://github.com/Nic-Polumeyv/teasel/pull/206) [`fd7d5e5`](https://github.com/Nic-Polumeyv/teasel/commit/fd7d5e5a50cff6db67b6fed500002bfee0c52e3e) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - A BigInt literal's `value` is its `bigint` in place of `null`
+
+- [#194](https://github.com/Nic-Polumeyv/teasel/pull/194) [`0479261`](https://github.com/Nic-Polumeyv/teasel/commit/04792619f12a151a3cc09581b7ed4999b469bb50) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - Sources with many recovered errors parse faster
+
+- [#195](https://github.com/Nic-Polumeyv/teasel/pull/195) [`7be5e21`](https://github.com/Nic-Polumeyv/teasel/commit/7be5e2159a8c3def3503570195e8a55332f1fd55) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - A span's `loc` is ESTree's `SourceLocation` and an error's is ESTree's `Position`
+
+- [#203](https://github.com/Nic-Polumeyv/teasel/pull/203) [`01fbf53`](https://github.com/Nic-Polumeyv/teasel/commit/01fbf534b5c86ac100d1fa2cb2807b32ddfbf686) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - A `Source` parsed only as a whole keeps nothing in the engine between parses
+
+- [#200](https://github.com/Nic-Polumeyv/teasel/pull/200) [`430a903`](https://github.com/Nic-Polumeyv/teasel/commit/430a903f57e0cda5033a3831de904d6ab466bdbf) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - A parent or a scope's node may be a host node, and `parentOf` takes a comment
+
+- [#199](https://github.com/Nic-Polumeyv/teasel/pull/199) [`16d6ab8`](https://github.com/Nic-Polumeyv/teasel/commit/16d6ab8c0a826d91fba603306f225d106ee12186) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - In TypeScript, a tagged template with type arguments in an optional chain is an error, as it is without them
+
+- [#196](https://github.com/Nic-Polumeyv/teasel/pull/196) [`b290087`](https://github.com/Nic-Polumeyv/teasel/commit/b290087d65b7433b53b9a6693514b11a77b477ec) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - Recovery stays linear in a scope with many skipped statements
+
+- [#192](https://github.com/Nic-Polumeyv/teasel/pull/192) [`0331e0d`](https://github.com/Nic-Polumeyv/teasel/commit/0331e0d0504a050c24442056f0eb21651aaa4cb1) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - A regular expression literal's `value` is its `RegExp` in place of `null`
+
+- [#201](https://github.com/Nic-Polumeyv/teasel/pull/201) [`433237b`](https://github.com/Nic-Polumeyv/teasel/commit/433237b82ad01b051380aeccb70106aee1feff81) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - Accessor fields are `AccessorProperty`, and heritage clauses are spelled as in TS-ESTree
+
+- [#197](https://github.com/Nic-Polumeyv/teasel/pull/197) [`1884d5c`](https://github.com/Nic-Polumeyv/teasel/commit/1884d5cdf12f2426196db1bfdf7cf1eebdd431b3) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - Under error recovery, exporting a name that is never declared is listed in `errors` instead of thrown
+
+- [#202](https://github.com/Nic-Polumeyv/teasel/pull/202) [`9153e2d`](https://github.com/Nic-Polumeyv/teasel/commit/9153e2d4330ea53639d266c8ac1c1867deb9cafc) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - A `Source` still alive when its worker thread exits no longer leaks the engine's copy of its text
+
 ## 0.0.17
 
 ### Patch Changes
