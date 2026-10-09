@@ -16,6 +16,23 @@ try {
 }
 ```
 
+`unexpected_eof` means the parser reached the end of the text while it still expected a token. A REPL can read another line on that code instead of reporting an error.
+
+```js errors.js
+function complete(text) {
+	try {
+		new Source(text).parse();
+		return true;
+	} catch (e) {
+		if (e.code === 'unexpected_eof') return false;
+		throw e;
+	}
+}
+
+complete('if (x) {');  // false
+complete('if (x) {}'); // true
+```
+
 ## Error recovery
 
 An editor or a language server needs a tree from a file that does not parse, because it runs while someone is typing. With `errorRecovery` on, the parse returns the tree and the errors together and does not throw.
@@ -41,4 +58,4 @@ A compiler that must reject the file leaves recovery off and catches the throw.
 
 ## Error positions
 
-`pos` and `end` span the token the parser could not accept. When the cause is elsewhere, an earlier declaration of the same name for instance, `end` equals `pos`. `unexpected_eof` points at the end of what was parsed. An offset you pass that is outside the text is `invalid_request`, with no `loc`. Every code is in the type [`Code`](/reference/parser#code), so a comparison against one is type-checked.
+`pos` and `end` span the token the parser could not accept. When the cause is elsewhere, an earlier declaration of the same name for instance, `end` equals `pos`. `unexpected_eof` points at the end of what was parsed. An offset you pass that is outside the text is `invalid_request`, with no `loc`. Every code is in the type [`Code`](/reference/parser#code), so a comparison against one is type-checked, and [Error codes](/reference/error-codes) lists each code with its messages.
