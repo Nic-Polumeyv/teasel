@@ -39,7 +39,7 @@ Release a `Source` when you are done with it. `using` releases it at the end of 
 using source = new Source(text);
 ```
 
-Node versions before 24 do not have `using`: call `source[Symbol.dispose]()` in a `finally` there. A source left to the garbage collector is released late, and finalizing it costs more than parsing a small file did.
+Node versions before 24 do not have `using`: call `source[Symbol.dispose]()` in a `finally` there. A source left to the garbage collector is released only after a collection and a turn of the event loop, so a loop that never yields keeps the engine's copy of every source it made.
 
 ## In the browser
 
