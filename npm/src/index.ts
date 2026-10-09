@@ -124,6 +124,7 @@ export class Source {
 	#flags: number;
 
 	constructor(source: string, options: Options = {}) {
+		if (typeof source !== 'string') throw new TypeError('a Source takes a string');
 		this.#flags = flags(options);
 		this.#source = source;
 	}
@@ -144,8 +145,6 @@ export class Source {
 	parse<T>(what: Piece<T> | typeof js, at?: number | [start: number, end: number]): Parsed<T | Program>;
 	parse<T>(language: Language<T>): Parsed<T>;
 	parse(what: Piece<unknown> | Language<unknown> = js, at?: number | [number, number]): Parsed<any> {
-		const source = this.#source;
-		if (source === undefined) throw new TypeError('the source is freed');
 		let entry = 0, stop = '', grammar: object | undefined, offset = 0, end: number | undefined;
 		if (what === js || what instanceof Piece) {
 			if (what !== js) ({ entry, stop } = read(what as Piece<unknown>));
@@ -157,6 +156,8 @@ export class Source {
 			else grammar = compiled(what as Grammar);
 			if (at !== undefined) throw new TypeError('only `js` and its pieces take a position');
 		}
+		const source = this.#source;
+		if (source === undefined) throw new TypeError('the source is freed');
 		const answer =
 			this.#held === undefined && at === undefined
 				? engine.once(source, this.#flags, entry, stop, grammar)
