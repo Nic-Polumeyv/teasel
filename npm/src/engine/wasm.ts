@@ -1,4 +1,4 @@
-import type { Engine, Prepared } from '../types.ts';
+import type { Engine } from '../types.ts';
 
 const encoder = new TextEncoder();
 const utf8 = new TextDecoder();
@@ -85,60 +85,58 @@ const plans = new FinalizationRegistry<Slot>((slot) => {
 	if (slot.generation === generation) wasm.plan_free(slot.handle);
 });
 
-class Plan {
-	#grammar: Uint8Array;
-	#slot: Slot = { handle: 0, generation: -1 };
-	constructor(grammar: Uint8Array) {
-		this.#grammar = grammar;
+class Held {
+	readonly slot: Slot = { handle: 0, generation: -1 };
+	readonly make: () => number;
+	constructor(make: () => number, registry: FinalizationRegistry<Slot>) {
+		this.make = make;
 		this.handle();
-		plans.register(this, this.#slot);
+		// the held value must not reach this, or it is never collected
+		registry.register(this, this.slot, this.slot);
 	}
 	handle() {
-		const slot = this.#slot;
+		const { slot } = this;
 		if (slot.generation !== generation) {
-			const handle = guarded(() => {
-				const ptr = wasm.alloc(this.#grammar.length);
-				new Uint8Array(wasm.memory.buffer, ptr, this.#grammar.length).set(this.#grammar);
-				return wasm.plan_new(ptr, this.#grammar.length, this.#grammar.length);
-			});
-			if (handle === 0) throw new Error(JSON.parse(text()).error.message);
-			slot.handle = handle;
+			slot.handle = guarded(this.make);
 			slot.generation = generation;
 		}
 		return slot.handle;
 	}
 }
 
+// the words outlive the source: they sit in the answer buffer until the next parse
+function read(source: number, entry: number, offset: number, end: number | undefined, stop: string, plan: object | undefined) {
+	const grammar = plan === undefined ? 0 : (plan as Held).handle();
+	return answer(guarded(() => wasm.source_parse(source, entry, offset, end ?? 0, end === undefined ? 0 : 1, ...bytes(stop), grammar)));
+}
+
 export const engine: Engine = {
-	create(source, flags) {
-		const slot: Slot = { handle: 0, generation: -1 };
-		const current = () => {
-			if (slot.generation !== generation) {
-				slot.handle = guarded(() => wasm.source_new(...bytes(source), flags));
-				slot.generation = generation;
-			}
-			return slot.handle;
-		};
-		current();
-		const prepared: Prepared = {
-			// the words outlive the source: they sit in the answer buffer until the next parse
-			parse(entry, offset, end, stop, plan) {
-				const source = current();
-				const grammar = plan === undefined ? 0 : (plan as Plan).handle();
-				return answer(guarded(() => wasm.source_parse(source, entry, offset, end ?? 0, end === undefined ? 0 : 1, ...bytes(stop), grammar)));
-			},
-			free() {
-				sources.unregister(slot);
-				if (slot.generation === generation) wasm.source_free(slot.handle);
-			},
-		};
-		// the held value must not reach prepared, or it is never collected
-		sources.register(prepared, slot, slot);
-		return prepared;
+	create: (source, flags) => new Held(() => wasm.source_new(...bytes(source), flags), sources),
+	parse: (source, entry, offset, end, stop, plan) => read((source as Held).handle(), entry, offset, end, stop, plan),
+	free(source) {
+		const { slot } = source as Held;
+		sources.unregister(slot);
+		if (slot.generation === generation) wasm.source_free(slot.handle);
 	},
-	plan: (grammar) => new Plan(grammar),
+	once(source, flags, entry, stop, plan) {
+		const handle = guarded(() => wasm.source_new(...bytes(source), flags));
+		const made = generation;
+		try {
+			return read(handle, entry, 0, undefined, stop, plan);
+		} finally {
+			if (made === generation) wasm.source_free(handle);
+		}
+	},
+	plan: (grammar) =>
+		new Held(() => {
+			const ptr = wasm.alloc(grammar.length);
+			new Uint8Array(wasm.memory.buffer, ptr, grammar.length).set(grammar);
+			const handle = wasm.plan_new(ptr, grammar.length, grammar.length);
+			if (handle === 0) throw new Error(JSON.parse(text()).error.message);
+			return handle;
+		}, plans),
 	children(plan) {
-		const handle = plan === undefined ? 0 : (plan as Plan).handle();
+		const handle = plan === undefined ? 0 : (plan as Held).handle();
 		guarded(() => wasm.plan_children(handle));
 		return text();
 	},
