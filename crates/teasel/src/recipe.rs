@@ -51,6 +51,8 @@ pub enum Op<F: Copy + 'static = Path> {
 	BigInt,
 	/// A regular expression literal's value, null in JSON because JSON cannot hold one.
 	RegExp(Name, F, F),
+	/// A BigInt literal's value, null in JSON because JSON cannot hold one.
+	BigIntValue(Name),
 	Const(Name, Name),
 	ConstBool(Name, bool),
 	Null(Name),
@@ -114,6 +116,7 @@ impl Op {
 			Float(k, f) => ("float", Some(k), Some(f), Rest::Nothing),
 			Raw => ("raw", None, None, Rest::Nothing),
 			BigInt => ("bigint", None, None, Rest::Nothing),
+			BigIntValue(k) => ("bigintvalue", Some(k), None, Rest::Nothing),
 			RegExp(k, pattern, flags) => ("regexp", Some(k), Some(pattern), Rest::Text(flags)),
 			Const(k, value) => ("const", Some(k), None, Rest::Const(value)),
 			ConstBool(k, value) => ("constbool", Some(k), None, Rest::Bool(value)),
@@ -155,7 +158,7 @@ pub const JS: &[(&str, &[Op])] = &[
 	("Identifier", &[Type(c!("Identifier")), Str(c!("name"), "name")]),
 	("PrivateIdentifier", &[Type(c!("PrivateIdentifier")), Str(c!("name"), "name")]),
 	("NumberLiteral", &[Type(c!("Literal")), Float(c!("value"), "value"), Raw]),
-	("BigIntLiteral", &[Type(c!("Literal")), Null(c!("value")), Raw, BigInt]),
+	("BigIntLiteral", &[Type(c!("Literal")), BigIntValue(c!("value")), Raw, BigInt]),
 	("StringLiteral", &[Type(c!("Literal")), Str(c!("value"), "value"), Raw]),
 	("BooleanLiteral", &[Type(c!("Literal")), Bool(c!("value"), "value"), Raw]),
 	("NullLiteral", &[Type(c!("Literal")), Null(c!("value")), Raw]),
@@ -301,6 +304,7 @@ pub(crate) fn resolve_ops(ops: &[Op], fields: &[Field], kind: &str) -> &'static 
 			Float(k, f) => Float(k, slot(f, &[|t| matches!(t, Ty::U32)])),
 			Raw => Raw,
 			BigInt => BigInt,
+			BigIntValue(k) => BigIntValue(k),
 			RegExp(k, f, g) => RegExp(
 				k,
 				slot(f, &[|t| matches!(t, Ty::Str)]),

@@ -202,6 +202,8 @@ const { open, scopeOf, referenceOf, parentOf } = untyped(m);
 		const literal = program('let r = /a/g, t = `x${1}y`;', { scopes: true }).body[0].declarations;
 		assert.equal(Object.getPrototypeOf(literal[0].init.regex), Object.prototype);
 		assert.deepEqual([literal[0].init.value instanceof RegExp, String(literal[0].init.value)], [true, '/a/g']);
+		const big = program('0x1_Fn').body[0].expression;
+		assert.deepEqual([big.value, big.raw, big.bigint], [31n, '0x1_Fn', '31']);
 		assert.deepEqual(literal[1].init.quasis[0].value, { raw: 'x', cooked: 'x' });
 		assert.equal('references' in literal[0].init.regex, false);
 		assert.equal('scope' in tree, false);
