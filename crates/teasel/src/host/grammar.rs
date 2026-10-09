@@ -1120,11 +1120,25 @@ pub enum Which {
 	Close,
 }
 
+/// Places, one bit each.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Places(u8);
+
+impl Places {
+	pub fn of(places: &[Place]) -> Places {
+		Places(places.iter().fold(0, |bits, place| bits | 1 << *place as u8))
+	}
+
+	pub fn has(self, place: Place) -> bool {
+		self.0 & 1 << place as u8 != 0
+	}
+}
+
 /// A tag, or with a close a block.
 #[derive(Clone, Debug)]
 pub struct Construct {
 	pub ty: &'static str,
-	pub places: Vec<Place>,
+	pub places: Places,
 	pub open: Piece,
 	pub branches: Vec<Piece>,
 	pub close: Option<Piece>,
@@ -1162,7 +1176,7 @@ impl Construct {
 	}
 
 	pub fn stands(&self, place: Place) -> bool {
-		self.places.contains(&place)
+		self.places.has(place)
 	}
 
 	/// The one field of a tag that reads one thing, its entry.
@@ -1262,6 +1276,11 @@ pub struct Grammar {
 	pub starts: [bool; 256],
 	/// Every marker's first part, and the pieces it starts: what the walker matches once for them.
 	pub firsts: Vec<First>,
+	/// Every place a construct stands in.
+	pub places: Places,
+	/// The type of an element no rule of its own names.
+	pub plain: Option<&'static str>,
+	value_expression: Option<usize>,
 }
 
 /// The pieces whose marker starts with one part: those it is the whole marker of, and the others by
@@ -1972,8 +1991,8 @@ fn construct(ty: &'static str, rule: &definition::Construct) -> Result<Construct
 	let block = rule.close.is_some();
 	let places = match &rule.r#in {
 		Some(list) if list.is_empty() => return Err(format!("{ty} stands nowhere")),
-		Some(list) => list.clone(),
-		None => vec![Place::Content],
+		Some(list) => Places::of(list),
+		None => Places::of(&[Place::Content]),
 	};
 	let mut chain_flags = Vec::new();
 	let mut branches = Vec::new();
@@ -2050,7 +2069,7 @@ fn construct(ty: &'static str, rule: &definition::Construct) -> Result<Construct
 		entries: Vec::new(),
 		bodies: Vec::new(),
 	};
-	if block && construct.places.iter().any(|place| *place != Place::Content) {
+	if block && construct.places != Places::of(&[Place::Content]) {
 		return Err(format!("{ty} closes, so it stands in content only"));
 	}
 	if (construct.stands(Place::Value) || construct.stands(Place::Rcdata))
@@ -2180,12 +2199,6 @@ fn lower(host: Host) -> Result<Grammar, String> {
 	if let Some((open, close)) = shorthand {
 		token("the shorthand's marker", open)?;
 		token("the shorthand's closing word", close)?;
-		if !constructs
-			.iter()
-			.any(|c| c.stands(Place::Value) && matches!(c.single(), Some((_, Entry::Expression))))
-		{
-			return Err("the attribute shorthand needs a tag in value that reads one expression".into());
-		}
 	}
 	let mut reads = Vec::new();
 	let document = DocumentRule {
@@ -2232,6 +2245,9 @@ fn lower(host: Host) -> Result<Grammar, String> {
 		constructs,
 		starts: [false; 256],
 		firsts: Vec::new(),
+		places: Places::default(),
+		plain: None,
+		value_expression: None,
 	})
 }
 
@@ -2303,6 +2319,9 @@ impl Grammar {
 			constructs: Vec::new(),
 			starts: [false; 256],
 			firsts: Vec::new(),
+			places: Places::default(),
+			plain: None,
+			value_expression: None,
 		}
 	}
 
@@ -2383,6 +2402,19 @@ impl Grammar {
 			}
 		}
 		self.firsts = firsts;
+		self.places = Places(
+			self.constructs
+				.iter()
+				.fold(0, |bits, construct| bits | construct.places.0),
+		);
+		self.plain = self.element("*").map(|rule| rule.ty);
+		self.value_expression = self
+			.constructs
+			.iter()
+			.position(|c| c.stands(Place::Value) && matches!(c.single(), Some((_, Entry::Expression))));
+		if self.shorthand.is_some() && self.value_expression.is_none() {
+			return Err("the attribute shorthand needs a tag in value that reads one expression".into());
+		}
 		for (ty, _) in self.own_children() {
 			if crate::recipe::names_type(ty) {
 				return Err(format!("a node type named {ty} is JavaScript's"));
@@ -2416,9 +2448,7 @@ impl Grammar {
 
 	/// The construct that reads values written as one expression: an attribute's chunk, a shorthand's value.
 	pub fn value_expression(&self) -> Option<&Construct> {
-		self.constructs
-			.iter()
-			.find(|c| c.stands(Place::Value) && matches!(c.single(), Some((_, Entry::Expression))))
+		self.value_expression.map(|index| &self.constructs[index])
 	}
 
 	pub fn is_void(&self, name: &str) -> bool {
