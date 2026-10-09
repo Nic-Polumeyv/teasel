@@ -947,10 +947,10 @@ const LOC = 'loc: { start: { line: S.locs[id * 4], column: S.locs[id * 4 + 1] },
 const RARE = '(S.rare[id >>> 5] >>> (id & 31) & 1) === 1';
 const LATE = 'if ((S.late[id >>> 5] >>> (id & 31) & 1) === 1) late(S, n, id);';
 
-// One object literal per kind, its parent and facts as symbol slots of the literal: V8 allocates
-// it in one hidden class. A key whose value holds nodes is a slot of the literal filled once the
-// node exists, so every child is born with its parent. Keys a kind may leave out are set after,
-// in the recipe's order, and a node with anything the literal has no room for goes to `run`.
+// One object literal per kind, its parent and facts as symbol slots stored right after it. A key
+// whose value holds nodes is a slot of the literal filled once the node exists, so every child is
+// born with its parent. Keys a kind may leave out are set after, in the recipe's order, and a node
+// with anything the literal has no room for goes to `run`.
 function generate(C: Compiled, G: Language, config: number, ops: Op[], ts: boolean, adds: boolean): Builder {
 	const slow: Builder = ts ? (S, id, record, parent) => run(S, id, ops, S.TS!, record * 4, parent) : (S, id, record, parent) => run(S, id, ops, S.N, id * C.words * 4 + C.kind, parent);
 	const link = (config & LINK) !== 0, facts = (config & FACTS) !== 0, erase = (config & ERASE) !== 0;
@@ -997,7 +997,7 @@ function generate(C: Compiled, G: Language, config: number, ops: Op[], ts: boole
 	// what the literal has no room for, the engine marks: parentheses, comments, a TypeScript extra, a binding on what is not an identifier
 	const rare = [RARE];
 	const before: string[] = [];
-	// the slots are stored after the literal: computed keys in it cost a runtime call each until the builder is optimized, and most builders never are
+	// after the literal: a computed key in it is a runtime call until TurboFan compiles the builder, which most builders never reach; the price is a second allocation for the slots
 	const slots: string[] = [];
 	const after: string[] = [];
 	if (link) {
