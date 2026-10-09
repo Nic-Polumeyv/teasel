@@ -50,7 +50,7 @@ fn args<const N: usize>(env: Env, info: CallbackInfo) -> Result<[Value; N]> {
 	Ok(argv)
 }
 
-fn bytes(env: Env, value: Value) -> Result<Vec<u8>> {
+fn bytes<'a>(env: Env, value: Value) -> Result<&'a [u8]> {
 	let (mut kind, mut length, mut data) = (0, 0, null_mut());
 	check(
 		unsafe {
@@ -62,9 +62,9 @@ fn bytes(env: Env, value: Value) -> Result<Vec<u8>> {
 		return Err("a Uint8Array expected".into());
 	}
 	if length == 0 || data.is_null() {
-		return Ok(Vec::new());
+		return Ok(&[]);
 	}
-	Ok(unsafe { std::slice::from_raw_parts(data.cast::<u8>(), length) }.to_vec())
+	Ok(unsafe { std::slice::from_raw_parts(data.cast::<u8>(), length) })
 }
 
 fn string(env: Env, value: Value) -> Result<String> {
@@ -138,7 +138,10 @@ fn handle(env: Env, value: Value) -> Result<*mut Held> {
 unsafe extern "C" fn create(env: Env, info: CallbackInfo) -> Value {
 	guard(env, || {
 		let [source, flags] = args::<2>(env, info)?;
-		let prepared = Prepared::from_bytes(bytes(env, source)?, Request::from_flags(number(env, flags)? as u32));
+		let prepared = Prepared::from_bytes(
+			bytes(env, source)?.to_vec(),
+			Request::from_flags(number(env, flags)? as u32),
+		);
 		let held = Box::into_raw(Box::new(Held {
 			prepared,
 			finalizer: null_mut(),
@@ -167,7 +170,7 @@ unsafe extern "C" fn create(env: Env, info: CallbackInfo) -> Value {
 unsafe extern "C" fn plan(env: Env, info: CallbackInfo) -> Value {
 	guard(env, || {
 		let [wire] = args::<1>(env, info)?;
-		let grammar = teasel::json::grammar(&bytes(env, wire)?)?;
+		let grammar = teasel::json::grammar(bytes(env, wire)?)?;
 		let mut result = null_mut();
 		check(
 			unsafe {
@@ -233,10 +236,26 @@ unsafe extern "C" fn parse(env: Env, info: CallbackInfo) -> Value {
 		let entry = Entry::from_index(number(env, entry)? as u32);
 		let (offset, end, stop) = (number(env, offset)?, optional(env, end)?, string(env, stop)?);
 		let grammar = grammar_of(env, plan)?;
-		in_env(env, || match prepared.in_place(entry, offset, end, &stop, grammar) {
-			Ok(()) => view(env),
-			Err(json) => text(env, &json),
-		})
+		answer(env, || prepared.in_place(entry, offset, end, &stop, grammar))
+	})
+}
+
+// the whole source read where V8 keeps its bytes, for a source the engine holds nothing of
+unsafe extern "C" fn once(env: Env, info: CallbackInfo) -> Value {
+	guard(env, || {
+		let [source, flags, entry, stop, plan] = args::<5>(env, info)?;
+		let source = std::str::from_utf8(bytes(env, source)?).map_err(|_| String::from("UTF-8 expected"))?;
+		let prepared = Prepared::borrowed(source, Request::from_flags(number(env, flags)? as u32));
+		let (entry, stop) = (Entry::from_index(number(env, entry)? as u32), string(env, stop)?);
+		let grammar = grammar_of(env, plan)?;
+		answer(env, || prepared.in_place(entry, 0.0, None, &stop, grammar))
+	})
+}
+
+fn answer(env: Env, parse: impl FnOnce() -> Result<()>) -> Result<Value> {
+	in_env(env, || match parse() {
+		Ok(()) => view(env),
+		Err(json) => text(env, &json),
 	})
 }
 
@@ -489,6 +508,7 @@ pub unsafe extern "C" fn napi_register_module_v1(env: Env, exports: Value) -> Va
 		for (name, callback) in [
 			(c"create", create as unsafe extern "C" fn(Env, CallbackInfo) -> Value),
 			(c"parse", parse),
+			(c"once", once),
 			(c"plan", plan),
 			(c"children", children),
 			(c"free", free),

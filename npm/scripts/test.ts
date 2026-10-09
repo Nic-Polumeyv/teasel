@@ -282,6 +282,16 @@ const { open, scopeOf, referenceOf, parentOf } = untyped(m);
 	assert.equal(program('"﻿a"; "bc"; zz').body[2].expression.name, 'zz');
 	source[Symbol.dispose]();
 	assert.throws(() => source.parse(js.expression, 1), TypeError);
+	assert.throws(() => source.parse(), TypeError);
+	assert.throws(() => open(42 as Any), TypeError);
+	const late = open('x');
+	const pair = [0, 1];
+	Object.defineProperty(pair, 0, { get: () => (late[Symbol.dispose](), 0) });
+	assert.throws(() => late.parse(js.expression, pair), TypeError);
+	const twice = open('let a = 1; f(a)');
+	const whole = JSON.stringify(twice.parse().node);
+	assert.equal(twice.parse(js.expression, 11).node.type, 'CallExpression');
+	assert.equal(JSON.stringify(twice.parse().node), whole);
 	let escaped: Any;
 	{
 		using inner = open('x');
@@ -290,7 +300,10 @@ const { open, scopeOf, referenceOf, parentOf } = untyped(m);
 	}
 	assert.throws(() => escaped.parse(js.expression, 0), TypeError);
 	// a source collected after its dispose is not freed again
-	for (let i = 0; i < 100; i++) open('x')[Symbol.dispose]();
+	for (let i = 0; i < 100; i++) {
+		using made = open('x');
+		made.parse(js.expression, 0);
+	}
 	for (let i = 0; i < 100; i++) open('x').parse(js.expression, 0);
 	collect();
 	await new Promise(setImmediate);

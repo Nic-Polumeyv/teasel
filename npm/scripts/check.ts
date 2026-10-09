@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { engine as native } from '../dist/engine/native.js';
 import { engine as wasm } from '../dist/engine/wasm.js';
 import { decode } from '../dist/decode.js';
-import type { Engine, Prepared } from '../dist/types.js';
+import type { Engine } from '../dist/types.js';
 import { flags, type Options } from '../dist/options.js';
 import { target } from './target.ts';
 
@@ -30,8 +30,8 @@ let checked = 0;
 let failed = 0;
 
 // what a parse answers or throws, read off the engine directly
-function outcome(engine: Engine, held: Prepared, source: string, entry: number, at: number, end?: number) {
-	const answer = held.parse(entry, at, end, '', undefined);
+function outcome(engine: Engine, held: object, source: string, entry: number, at: number, end?: number) {
+	const answer = engine.parse(held, entry, at, end, '', undefined);
 	return typeof answer === 'string' ? { error: JSON.parse(answer).error } : { value: decode(answer, source, engine) };
 }
 function once(engine: Engine, source: string, options: Options, entry: number, at: number) {
@@ -39,7 +39,7 @@ function once(engine: Engine, source: string, options: Options, entry: number, a
 	try {
 		return outcome(engine, held, source, entry, at);
 	} finally {
-		held.free();
+		engine.free(held);
 	}
 }
 
@@ -85,17 +85,15 @@ const as_json = (_key: string, value: unknown) => (value instanceof RegExp ? nul
 const jobs: { name: string; source: string; mode: string; tree: string }[] = [];
 function json(name: string, source: string, options: Options, entry: number, at: number) {
 	const held = native.create(source, flags(options));
-	const answer = held.parse(entry, at, undefined, '', undefined);
-	held.free();
+	const answer = native.parse(held, entry, at, undefined, '', undefined);
+	native.free(held);
 	const tree = typeof answer === 'string' ? answer : JSON.stringify(decode(answer, source, native, false), as_json);
 	jobs.push({ name, source, mode: mode(source, options, entry, at), tree });
 }
 
 // a whole document of the host's, asked of the binary as `doc`
 function document(name: string, source: string, typescript: boolean, options: Options, switches: string) {
-	const held = native.create(source, flags(options));
-	const answer = held.parse(0, 0, undefined, '', plan);
-	held.free();
+	const answer = native.once(source, flags(options), 0, '', plan);
 	const tree = typeof answer === 'string' ? answer : JSON.stringify(decode(answer, source, native, false), as_json);
 	jobs.push({ name: `${name} doc${switches}`, source, mode: `${typescript ? 'ts-' : ''}doc${switches}`, tree });
 }
@@ -148,8 +146,8 @@ for (const file of files) {
 				report(`${file}@${at} ${MODE[entry]} wasm`, differ(outcome(wasm, twin, text, entry, at), outcome(native, held, text, entry, at)));
 			}
 		}
-		held.free();
-		twin.free();
+		native.free(held);
+		wasm.free(twin);
 	}
 }
 {
