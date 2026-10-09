@@ -391,55 +391,60 @@ pub struct Pool {
 	ts: Option<Box<Ast<crate::typescript::ast::Data>>>,
 }
 
-/// Names a front end knows by number across answers: their text, where each starts, and the
-/// number of each.
+/// Names a front end knows by number across answers, and the shapes of host nodes.
 #[derive(Default)]
 struct Names {
-	text: crate::handed::Handed<u8>,
-	starts: crate::handed::Handed<u32>,
-	ids: crate::interner::FastMap<&'static str, u32>,
-	/// The same by where the name sits: a grammar's names are few places, met again and again.
-	places: crate::interner::FastMap<(usize, usize), u32>,
-	/// A host node's shape by its type, whether it has a span, and each field's key and kind of
-	/// value: nodes of one shape are built by one literal.
-	shapes: crate::interner::FastMap<Vec<u32>, u32>,
+	names: crate::interner::Interner,
+	/// Each name by where it sits, with its number: a grammar's names are few places, met again
+	/// and again, and the place hashes faster than the text.
+	places: Vec<((usize, usize), u32)>,
+	place_slots: crate::interner::Slots,
+	/// Each shape back to back: a host node's type, whether it has a span, and each field's key
+	/// and kind of value; nodes of one shape are built by one literal.
+	shapes: Vec<u32>,
+	shape_starts: Vec<u32>,
+	shape_slots: crate::interner::Slots,
 	shape: Vec<u32>,
 }
 
 impl Names {
 	fn id(&mut self, name: &'static str) -> u32 {
 		let place = (name.as_ptr() as usize, name.len());
-		if let Some(&id) = self.places.get(&place) {
-			return id;
-		}
-		if let Some(&id) = self.ids.get(name) {
-			self.places.insert(place, id);
-			return id;
-		}
-		if self.starts.is_empty() {
-			self.starts.push(0);
-		}
-		let id = self.ids.len() as u32;
-		self.text.extend_from_slice(name.as_bytes());
-		self.starts.push(self.text.len() as u32);
-		self.ids.insert(name, id);
-		self.places.insert(place, id);
+		let hash = crate::interner::hash_words(&[place.0 as u32, (place.0 as u64 >> 32) as u32, place.1 as u32]);
+		let places = &self.places;
+		let slot = match self.place_slots.probe(hash, |i| places[i as usize].0 == place) {
+			Ok(i) => return self.places[i as usize].1,
+			Err(slot) => slot,
+		};
+		let id = self.names.intern(name).index();
+		self.place_slots.insert(slot, hash, self.places.len() as u32);
+		self.places.push((place, id));
 		id
 	}
 
 	/// The number of the shape `self.shape` spells.
 	fn shape_id(&mut self) -> u32 {
-		if let Some(&id) = self.shapes.get(self.shape.as_slice()) {
-			return id;
+		let hash = crate::interner::hash_words(&self.shape);
+		let (shapes, starts) = (&self.shapes, &self.shape_starts);
+		let same = |id: u32| shapes[starts[id as usize] as usize..starts[id as usize + 1] as usize] == *self.shape;
+		let slot = match self.shape_slots.probe(hash, same) {
+			Ok(id) => return id,
+			Err(slot) => slot,
+		};
+		if self.shape_starts.is_empty() {
+			self.shape_starts.push(0);
 		}
-		let id = self.shapes.len() as u32;
-		self.shapes.insert(self.shape.clone(), id);
+		let id = self.shape_starts.len() as u32 - 1;
+		self.shapes.extend_from_slice(&self.shape);
+		self.shape_starts.push(self.shapes.len() as u32);
+		self.shape_slots.insert(slot, hash, id);
 		id
 	}
 
 	fn views(&mut self, out: &mut Views<'_>) {
-		out.push("names", &mut self.text);
-		out.push("name_starts", &mut self.starts);
+		let (text, starts, _) = self.names.buffers();
+		out.push("names", text);
+		out.push("name_starts", starts);
 	}
 }
 
