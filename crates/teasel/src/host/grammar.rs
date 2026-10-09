@@ -2180,12 +2180,6 @@ fn lower(host: Host) -> Result<Grammar, String> {
 	if let Some((open, close)) = shorthand {
 		token("the shorthand's marker", open)?;
 		token("the shorthand's closing word", close)?;
-		if !constructs
-			.iter()
-			.any(|c| c.stands(Place::Value) && matches!(c.single(), Some((_, Entry::Expression))))
-		{
-			return Err("the attribute shorthand needs a tag in value that reads one expression".into());
-		}
 	}
 	let mut reads = Vec::new();
 	let document = DocumentRule {
@@ -2321,6 +2315,9 @@ impl Grammar {
 	fn finish(&mut self) -> Result<(), String> {
 		if self.name.is_empty() {
 			return Err("a grammar names its host".into());
+		}
+		if self.shorthand.is_some() && self.value_expression().is_none() {
+			return Err("the attribute shorthand needs a tag in value that reads one expression".into());
 		}
 		for rule in &mut self.directives {
 			if let DirectiveValue::Form(form) = &mut rule.value {

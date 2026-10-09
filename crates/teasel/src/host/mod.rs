@@ -963,12 +963,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 	/// Whether the nearest element around the cursor, past blocks and meta elements, is `name`.
 	fn nearest_element_is(&self, name: &str) -> bool {
 		let plain = self.grammar.element("*").map(|any| any.ty);
-		let component = self
-			.grammar
-			.elements
-			.iter()
-			.find(|rule| rule.name == Match::Component)
-			.map(|rule| rule.ty);
+		let component = self.grammar.component().map(|rule| rule.ty);
 		for frame in self.frames.iter().rev() {
 			if let Frame::Element { name: span, ty, .. } = frame {
 				if &self.src[span.0 as usize..span.1 as usize] == name {
