@@ -62,6 +62,15 @@ crate::layout::names! {
 }
 
 crate::layout::names! {
+	/// An interface's `extends` or a class's `implements`.
+	#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+	pub enum Clause {
+		Extends = "TSInterfaceHeritage",
+		Implements = "TSClassImplements",
+	}
+}
+
+crate::layout::names! {
 	#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 	pub enum Accessibility {
 		Public = "public",
@@ -300,9 +309,10 @@ crate::layout::kinds! {
 		InterfaceBody {
 			body: List,
 		},
-		ExpressionWithTypeArguments {
+		Heritage {
 			expression: NodeId,
 			type_arguments: Option<NodeId>,
+			clause: Clause,
 		},
 		EnumDeclaration {
 			id: NodeId,
@@ -688,9 +698,10 @@ impl Walk for Data {
 						out.push(body);
 					}
 					InterfaceBody { body } | ModuleBlock { body } => list(body, out),
-					ExpressionWithTypeArguments {
+					Heritage {
 						expression,
 						type_arguments,
+						..
 					} => {
 						out.push(expression);
 						out.extend(type_arguments);

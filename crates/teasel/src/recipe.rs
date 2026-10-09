@@ -187,7 +187,7 @@ pub const JS: &[(&str, &[Op])] = &[
 	("ClassDeclaration", &[Type(c!("ClassDeclaration")), Opt(c!("id"), "class.id"), Opt(c!("superClass"), "class.super_class"), Node(c!("body"), "class.body")]),
 	("ClassBody", &[Type(c!("ClassBody")), List(c!("body"), "body")]),
 	("MethodDefinition", &[Type(c!("MethodDefinition")), Bool(c!("static"), "is_static"), Bool(c!("computed"), "computed"), Node(c!("key"), "key"), Enum(c!("kind"), "kind"), Node(c!("value"), "value")]),
-	("PropertyDefinition", &[Type(c!("PropertyDefinition")), Bool(c!("static"), "is_static"), Bool(c!("computed"), "computed"), Node(c!("key"), "key"), Opt(c!("value"), "value")]),
+	("PropertyDefinition", &[TypeOf("kind"), Bool(c!("static"), "is_static"), Bool(c!("computed"), "computed"), Node(c!("key"), "key"), Opt(c!("value"), "value")]),
 	("StaticBlock", &[Type(c!("StaticBlock")), List(c!("body"), "body")]),
 	("YieldExpression", &[Type(c!("YieldExpression")), Bool(c!("delegate"), "delegate"), Opt(c!("argument"), "argument")]),
 	("AwaitExpression", &[Type(c!("AwaitExpression")), Node(c!("argument"), "argument")]),
@@ -364,7 +364,7 @@ pub const TS: &[(&str, &[Op])] = &[
 	("PropertySignature", &[Type(c!("TSPropertySignature")), Node(c!("key"), "key"), OptBoolKey(c!("computed"), "computed"), BoolIf(c!("optional"), "optional"), BoolIf(c!("readonly"), "readonly"), OptEnumKey(c!("kind"), "kind"), OptKey(c!("typeAnnotation"), "type_annotation")]),
 	("InterfaceDeclaration", &[Type(c!("TSInterfaceDeclaration")), Node(c!("id"), "id"), OptKey(c!("typeParameters"), "type_parameters"), OptListKey(c!("extends"), "extends"), Node(c!("body"), "body")]),
 	("InterfaceBody", &[Type(c!("TSInterfaceBody")), List(c!("body"), "body")]),
-	("ExpressionWithTypeArguments", &[Type(c!("TSExpressionWithTypeArguments")), Node(c!("expression"), "expression"), OptKey(c!("typeParameters"), "type_arguments")]),
+	("Heritage", &[TypeOf("clause"), Node(c!("expression"), "expression"), OptKey(c!("typeArguments"), "type_arguments")]),
 	("EnumDeclaration", &[Keep(c!("TSEnumDeclaration")), Type(c!("TSEnumDeclaration")), BoolIf(c!("const"), "is_const"), Node(c!("id"), "id"), List(c!("members"), "members")]),
 	("EnumMember", &[Type(c!("TSEnumMember")), Node(c!("id"), "id"), OptKey(c!("initializer"), "initializer")]),
 	("ModuleDeclaration", &[Keep(c!("TSModuleDeclaration")), Type(c!("TSModuleDeclaration")), BoolIf(c!("global"), "global"), Node(c!("id"), "id"), OptKey(c!("body"), "body")]),
@@ -404,17 +404,16 @@ pub const ADDS: &[(&str, &[Op])] = &[
 #[rustfmt::skip]
 pub const EXTRAS: &[Op] = &[
 	OptKey(c!("typeAnnotation"), "type_annotation"), OptKey(c!("returnType"), "return_type"), OptKey(c!("typeParameters"), "type_parameters"),
-	OptKey(c!("typeArguments"), "type_arguments"), OptKey(c!("superTypeParameters"), "super_type_arguments"),
+	OptKey(c!("typeArguments"), "type_arguments"), OptKey(c!("superTypeArguments"), "super_type_arguments"),
 	OptListKey(c!("implements"), "implements"), OptListKey(c!("decorators"), "decorators"), OptEnumKey(c!("accessibility"), "accessibility"),
 	BoolIf(c!("optional"), "optional"), BoolIf(c!("definite"), "definite"), BoolIf(c!("declare"), "declare"), BoolIf(c!("abstract"), "is_abstract"),
-	BoolIf(c!("readonly"), "readonly"), BoolIf(c!("override"), "is_override"), BoolIf(c!("accessor"), "accessor"), BoolIf(c!("static"), "is_static"),
+	BoolIf(c!("readonly"), "readonly"), BoolIf(c!("override"), "is_override"), BoolIf(c!("static"), "is_static"),
 ];
 
 /// The same when erasing: the proposals JavaScript itself has, decorators and accessor fields.
 #[cfg(feature = "typescript")]
 pub const EXTRAS_ERASED: &[Op] = &[
 	OptListKey(c!("decorators"), "decorators"),
-	BoolIf(c!("accessor"), "accessor"),
 	KeepIf(c!("AccessorProperty"), "accessor"),
 ];
 

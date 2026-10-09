@@ -7,7 +7,7 @@ mod declarations;
 mod tests;
 mod types;
 
-use crate::ast::{Ast, List, MethodKind, NodeId, NodeKind, UnaryOperator, VariableKind};
+use crate::ast::{Ast, FieldKind, List, MethodKind, NodeId, NodeKind, UnaryOperator, VariableKind};
 use crate::error::SyntaxError;
 use crate::interner::FastMap;
 use crate::interner::StrId;
@@ -1618,6 +1618,11 @@ impl Extension for TypeScript {
 		let frame = p.ext.elements.pop().unwrap();
 		if let Some(outer) = frame.outer_ambient {
 			p.ext.ambient = outer;
+		}
+		if frame.extras.accessor
+			&& let NodeKind::PropertyDefinition { kind, .. } = &mut p.ast.node_mut(node).kind
+		{
+			*kind = FieldKind::Accessor;
 		}
 		if let NodeKind::MethodDefinition {
 			key,

@@ -28,7 +28,7 @@ fn extras(ast: &Ast<Data>, id: NodeId) -> String {
 	node("returnType", e.return_type, &mut parts);
 	node("typeParameters", e.type_parameters, &mut parts);
 	node("typeArguments", e.type_arguments, &mut parts);
-	node("superTypeParameters", e.super_type_arguments, &mut parts);
+	node("superTypeArguments", e.super_type_arguments, &mut parts);
 	for (name, list) in [("implements", e.implements), ("decorators", e.decorators)] {
 		if let Some(list) = list {
 			parts.push(format!("{name}: {}", expand(ast, &format!("{list:?}"), &extension)));

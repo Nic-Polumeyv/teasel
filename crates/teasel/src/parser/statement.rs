@@ -8,7 +8,7 @@ use super::{
 	Unwrap,
 };
 use crate::Options;
-use crate::ast::{Class, Function, List, MethodKind, NodeId, NodeKind, VariableKind};
+use crate::ast::{Class, FieldKind, Function, List, MethodKind, NodeId, NodeKind, VariableKind};
 use crate::error::{Code, SyntaxError};
 use crate::interner::{FastMap, StrId};
 use crate::lexer::token::{Keyword, Token, TokenKind};
@@ -1727,6 +1727,7 @@ impl<E: Extension> Parser<'_, E> {
 				value,
 				computed,
 				is_static,
+				kind: FieldKind::Property,
 			},
 			start,
 		);

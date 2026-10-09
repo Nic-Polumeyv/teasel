@@ -33,6 +33,7 @@ export const children = frozen({
 	ClassBody: ['body'],
 	MethodDefinition: ['key', 'value'],
 	PropertyDefinition: ['key', 'value'],
+	AccessorProperty: ['key', 'value'],
 	StaticBlock: ['body'],
 	YieldExpression: ['argument'],
 	AwaitExpression: ['argument'],
@@ -120,7 +121,8 @@ export const children = frozen({
 	TSPropertySignature: ['key', 'typeAnnotation'],
 	TSInterfaceDeclaration: ['id', 'typeParameters', 'extends', 'body'],
 	TSInterfaceBody: ['body'],
-	TSExpressionWithTypeArguments: ['expression', 'typeParameters'],
+	TSInterfaceHeritage: ['expression', 'typeArguments'],
+	TSClassImplements: ['expression', 'typeArguments'],
 	TSEnumDeclaration: ['id', 'members'],
 	TSEnumMember: ['id', 'initializer'],
 	TSModuleDeclaration: ['id', 'body'],
@@ -143,7 +145,7 @@ export const children = frozen({
 } as const);
 
 /** The fields TypeScript may add to a node of any type, holding nodes: annotations, type parameters and arguments, what a class implements, decorators. */
-export const extras = Object.freeze(['typeAnnotation', 'returnType', 'typeParameters', 'typeArguments', 'superTypeParameters', 'implements', 'decorators'] as const);
+export const extras = Object.freeze(['typeAnnotation', 'returnType', 'typeParameters', 'typeArguments', 'superTypeArguments', 'implements', 'decorators'] as const);
 
 export function frozen<T extends Readonly<Record<string, readonly string[]>>>(table: T): T {
 	for (const fields of Object.values(table)) Object.freeze(fields);

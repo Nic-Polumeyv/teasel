@@ -199,7 +199,7 @@
 							}
 						},
 						{
-							"type": "PropertyDefinition",
+							"type": "AccessorProperty",
 							"start": 79,
 							"end": 99,
 							"decorators": [
@@ -216,7 +216,6 @@
 									}
 								}
 							],
-							"accessor": true,
 							"static": false,
 							"computed": false,
 							"key": {

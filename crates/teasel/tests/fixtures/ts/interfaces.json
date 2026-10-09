@@ -35,7 +35,7 @@
 				},
 				"extends": [
 					{
-						"type": "TSExpressionWithTypeArguments",
+						"type": "TSInterfaceHeritage",
 						"start": 32,
 						"end": 33,
 						"expression": {
@@ -46,7 +46,7 @@
 						}
 					},
 					{
-						"type": "TSExpressionWithTypeArguments",
+						"type": "TSInterfaceHeritage",
 						"start": 35,
 						"end": 39,
 						"expression": {
@@ -55,7 +55,7 @@
 							"end": 36,
 							"name": "C"
 						},
-						"typeParameters": {
+						"typeArguments": {
 							"type": "TSTypeParameterInstantiation",
 							"start": 36,
 							"end": 39,
