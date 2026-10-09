@@ -423,6 +423,35 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 	assert.deepEqual(wrong, [], `${name} parents`);
 }
 
+// `locations: 'js'`: the JavaScript located as with `true`, the host's own nodes and a stylesheet's left their span
+{
+	const source = '<script>\n\tlet a = 1; // one\n</script>\n<div class="x" {...b}>{a}<!-- c --></div>\n<style>\n\tp { color: red }\n</style>\n';
+	const types = new Set(Object.keys(js.children));
+	// a stylesheet's `Block` is the host's; a comment carries its text
+	const ours = (node: Any) => types.has(node.type) || ((node.type === 'Line' || node.type === 'Block') && typeof node.value === 'string');
+	const pairs: [Any, Any][] = [];
+	const walk = (all: Any, some: Any) => {
+		if (all === null || typeof all !== 'object') return;
+		if (Array.isArray(all)) return all.forEach((value, i) => walk(value, some[i]));
+		if (typeof all.type === 'string') pairs.push([all, some]);
+		for (const key of Object.keys(all)) if (key !== 'loc') walk(all[key], some[key]);
+	};
+	const options = { sourceType: 'module', comments: true, scopes: true } as const;
+	const all = open(source, { ...options, locations: true }).parse(svelte);
+	const some = open(source, { ...options, locations: 'js' }).parse(svelte);
+	walk(all.node, some.node);
+	const hosts = pairs.filter(([node]) => !ours(node));
+	assert.ok(hosts.length > 10 && hosts.length < pairs.length);
+	for (const [located, bare] of pairs) {
+		if (ours(located)) assert.deepEqual(bare.loc, located.loc, `${located.type} at ${located.start}`);
+		else assert.equal('loc' in bare, false, `${located.type} at ${located.start}`);
+	}
+	assert.deepEqual(some.comments.map((c: Any) => c.loc), all.comments.map((c: Any) => c.loc));
+	assert.equal(JSON.stringify(open('p { color: red } /* c */', { locations: 'js' }).parse(css).node).includes('"loc"'), false);
+	const plain = 'let a = 1; // one\nf(a);';
+	assert.equal(JSON.stringify(open(plain, { comments: true, locations: 'js' }).parse()), JSON.stringify(open(plain, { comments: true, locations: true }).parse()));
+}
+
 // a second host: the same walker, Vue's grammar
 {
 	const source = '<ul :class="{ on }">\n\t<li v-for="(item, i) in items" :key="item.id" @click.stop="select(item)">{{ item.name }} #{{ i }}</li>\n</ul>\n';

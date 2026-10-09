@@ -277,6 +277,8 @@ pub struct Positions {
 	line_starts: Vec<(u32, u32)>,
 	len: u32,
 	lines: bool,
+	/// Whether a host's own nodes are located too, or only the JavaScript ones.
+	hosts: bool,
 }
 
 /// Where the last node's start landed: starts come in source order, and a node's end follows
@@ -288,6 +290,14 @@ pub(crate) struct Cursor {
 }
 
 impl Positions {
+	/// As `options` asks: the line table when anything is located, and whether host nodes are.
+	pub fn of(source: &str, options: crate::Options) -> Self {
+		Positions {
+			hosts: !options.has(crate::Options::LOCATIONS_JS),
+			..Self::new(source, options.locations())
+		}
+	}
+
 	/// `lines` builds the line table, which only `loc` needs.
 	pub fn new(source: &str, lines: bool) -> Self {
 		let bytes = source.as_bytes();
@@ -332,6 +342,7 @@ impl Positions {
 			line_starts,
 			len: source.len() as u32,
 			lines,
+			hosts: true,
 		}
 	}
 
@@ -373,6 +384,10 @@ impl Positions {
 				spans.extend_from_slice(&[start, end]);
 			}
 			if self.lines {
+				if !self.hosts && matches!(node.kind, crate::ast::NodeKind::Host(_)) {
+					locs.extend_from_slice(&[0; 4]);
+					continue;
+				}
 				let (sl, sc) = self.line_column(cursor.line, node.start, start);
 				cursor.line = sl;
 				let (el, ec) = self.line_column(sl, node.end, end);
@@ -499,7 +514,11 @@ impl<'a, X: Emit> Writer<'a, X> {
 	pub(crate) fn begin(&mut self, ty: Name, id: NodeId) {
 		let node = self.ast.node(id);
 		self.json.begin(ty);
-		self.span(node.start, node.end);
+		if matches!(self.ast.nodes[id.index() as usize].kind, NodeKind::Host(_)) {
+			self.host_span(node.start, node.end);
+		} else {
+			self.span(node.start, node.end);
+		}
 		self.scope_facts(id);
 		if self.ast.is_parenthesized(id) {
 			self.bool(c!("parenthesized"), true);
@@ -658,11 +677,20 @@ impl<'a, X: Emit> Writer<'a, X> {
 	}
 
 	pub(crate) fn span(&mut self, start: u32, end: u32) {
+		self.located(start, end, self.positions.lines);
+	}
+
+	/// A host node's span, with `loc` when host nodes are located.
+	fn host_span(&mut self, start: u32, end: u32) {
+		self.located(start, end, self.positions.lines && self.positions.hosts);
+	}
+
+	fn located(&mut self, start: u32, end: u32, lines: bool) {
 		let (start_offset, gap) = self.positions.offset_from(self.cursor.gap, start);
 		self.cursor.gap = gap;
 		let (end_offset, _) = self.positions.offset_from(gap, end);
 		self.json.span(start_offset, end_offset);
-		if !self.positions.lines {
+		if !lines {
 			return;
 		}
 		let (sl, sc) = self.positions.line_column(self.cursor.line, start, start_offset);
@@ -937,7 +965,7 @@ impl<'a, X: Emit> Writer<'a, X> {
 					// an object of the host's without a type, positions and all
 					let node = self.ast.node(id);
 					self.json.object();
-					self.span(node.start, node.end);
+					self.host_span(node.start, node.end);
 				} else if host.span {
 					self.begin(Name::dynamic(host.ty), id);
 				} else {

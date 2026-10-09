@@ -53,7 +53,7 @@ A grammar reads the whole source, so `parse` takes no position with one.
 
 ## The tree
 
-The tree's nodes are the ones the grammar names. Every node has the `type` the grammar names, `start` and `end` into the text, `loc` with `locations`, and the fields the grammar's rule lists. Where a field holds JavaScript, it holds ESTree: the expression of an `{{ }}`, the program of a `<script>`, the pattern an `each` head declares. Offsets are offsets into the whole document, so nothing has to be added to them.
+The tree's nodes are the ones the grammar names. Every node has the `type` the grammar names, `start` and `end` into the text, `loc` with `locations: true`, and the fields the grammar's rule lists; `locations: 'js'` puts `loc` on the JavaScript nodes and comments alone. Where a field holds JavaScript, it holds ESTree: the expression of an `{{ }}`, the program of a `<script>`, the pattern an `each` head declares. Offsets are offsets into the whole document, so nothing has to be added to them.
 
 The options work as they do on JavaScript, with two additions.
 
