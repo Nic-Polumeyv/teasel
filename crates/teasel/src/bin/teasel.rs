@@ -87,6 +87,7 @@ fn batch(grammar: Option<Vec<u8>>) -> io::Result<()> {
 				"erase" => flags |= Options::ERASE,
 				"parenthesized" => flags |= Options::PARENTHESIZED,
 				"recover" => flags |= Options::ERROR_RECOVERY,
+				"jslocations" => flags = flags & !Options::LOCATIONS | Options::LOCATIONS_JS,
 				"undeclared-exports" if entry == Entry::Program => flags |= Options::ALLOW_UNDECLARED_EXPORTS,
 				_ => {
 					if let Some(token) = switch.strip_prefix("stop:") {

@@ -73,6 +73,7 @@ const STYLESHEET = 6;
 function mode(source: string, options: Options, entry: number, at: number) {
 	const switches = (['comments', 'scopes', 'parenthesized'] as const).filter((flag) => options[flag]).map((flag) => `+${flag}`);
 	if (options.typescript === 'erase') switches.push('+erase');
+	if (options.locations === 'js') switches.push('+jslocations');
 	const head = entry === 0 ? (options.sourceType === 'module' ? 'module' : 'script') : entry === STYLESHEET ? 'stylesheet' : MODE[entry];
 	const offset = entry === 0 || entry === STYLESHEET ? '' : `:${Buffer.byteLength(source.slice(0, at))}`;
 	return `${options.typescript ? 'ts-' : ''}${head}${switches.join('')}${offset}`;
@@ -103,9 +104,11 @@ const brace_re = /\{/g;
 for (const file of files) {
 	const text = readFileSync(file, 'utf8');
 	if (file.endsWith('.css')) {
-		const options: Options = { locations: true, comments: true };
-		json(file, text, options, STYLESHEET, 0);
-		report(`${file} wasm`, differ(once(wasm, text, options, STYLESHEET, 0), once(native, text, options, STYLESHEET, 0)));
+		for (const locations of [true, 'js'] as const) {
+			const options: Options = { locations, comments: true };
+			json(file, text, options, STYLESHEET, 0);
+			report(`${file} wasm`, differ(once(wasm, text, options, STYLESHEET, 0), once(native, text, options, STYLESHEET, 0)));
+		}
 		continue;
 	}
 	if (host !== undefined && file.endsWith(host.extension)) {
@@ -113,6 +116,7 @@ for (const file of files) {
 		document(file, text, false, { sourceType: 'module', locations: true, comments: true, scopes: true }, '+comments+scopes');
 		document(file, text, typescript, { sourceType: 'module', typescript: typescript ? 'erase' : false, locations: true, scopes: true }, `${typescript ? '+erase' : ''}+scopes`);
 		document(file, text, typescript, { sourceType: 'module', typescript, locations: true, errorRecovery: true, parenthesized: true }, '+recover+parenthesized');
+		document(file, text, typescript, { sourceType: 'module', typescript: typescript ? 'erase' : false, locations: 'js', comments: true, scopes: true, parenthesized: true }, `${typescript ? '+erase' : ''}+jslocations+comments+scopes+parenthesized`);
 		if (!/\.(js|mjs|ts|svelte)$/.test(file)) continue;
 	}
 	const svelte = file.endsWith('.svelte');
@@ -123,6 +127,7 @@ for (const file of files) {
 			{ sourceType: 'module', typescript: typescript ? 'erase' : false, locations: true },
 			{ sourceType: 'module', typescript, locations: true, scopes: true },
 			{ typescript, locations: true, parenthesized: true },
+			{ sourceType: 'module', typescript, locations: 'js', comments: true },
 		];
 		for (const options of runs) {
 			json(file, source, options, 0, 0);

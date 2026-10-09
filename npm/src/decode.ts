@@ -272,8 +272,10 @@ interface State {
 	roots: Decoded[];
 	link: boolean;
 	erase: boolean;
-	/** Lines and columns are on: every node and comment has a `loc`. */
+	/** Lines and columns are on: every JavaScript node and comment has a `loc`. */
 	lines: boolean;
+	/** The host's own nodes are located too, not only the JavaScript ones. */
+	host_lines: boolean;
 	C: Compiled;
 	G: Language;
 	/** The builder of each kind, by a node's tag. */
@@ -423,7 +425,7 @@ function facts(S: State, n: Decoded, id: number) {
 	adopted.length = 0;
 }
 
-function begin(S: State, type: string, id: number, parent: Decoded | undefined): Decoded {
+function begin(S: State, type: string, id: number, parent: Decoded | undefined, lines: boolean): Decoded {
 	const at = id * S.ps + S.po;
 	const n: Decoded = { type, start: S.P[at], end: S.P[at + 1] };
 	if (S.link) {
@@ -431,7 +433,7 @@ function begin(S: State, type: string, id: number, parent: Decoded | undefined):
 		n[SCOPE] = undefined;
 		if (type === 'Identifier') n[REFERENCE] = undefined;
 	}
-	if (S.lines) n.loc = loc(S.locs, id * 4);
+	if (lines) n.loc = loc(S.locs, id * 4);
 	if (S.of_node !== null && !S.name_only) facts(S, n, id);
 	// the extras' children begin inside this one: what it declares waits past them
 	const pending = S.pending;
@@ -775,7 +777,7 @@ function run(S: State, id: number, ops: Op[], view: Uint32Array, base: number, p
 		} else break;
 	}
 	const head = ops[at];
-	const n = begin(S, head.op === 'type' ? head.key : head.names[byte(view, base + head.at)], id, parent);
+	const n = begin(S, head.op === 'type' ? head.key : head.names[byte(view, base + head.at)], id, parent, S.lines);
 	const pending = S.pending;
 	S.pending = null;
 	apply(S, id, n, ops, view, base);
@@ -803,8 +805,8 @@ function host(S: State, id: number, index: number, parent: Decoded | undefined):
 		// an object of the host's without a type, positions and all
 		const at = id * S.ps + S.po;
 		n = { start: S.P[at], end: S.P[at + 1] };
-		if (S.lines) n.loc = loc(S.locs, id * 4);
-	} else if (span === 1) n = begin(S, S.names[ty], id, parent);
+		if (S.host_lines) n.loc = loc(S.locs, id * 4);
+	} else if (span === 1) n = begin(S, S.names[ty], id, parent, S.host_lines);
 	else {
 		n = { type: S.names[ty] };
 		if (S.link) {
@@ -873,7 +875,7 @@ function late(S: State, n: Decoded, id: number) {
 	if (written !== 0) for (let i = written; i < written + S.writes_of[written - 1]; i++) S.references[S.writes_of[i]].writeExpr = n;
 }
 
-const LINK = 1, LINES = 2, FACTS = 4, ERASE = 8;
+const LINK = 1, LINES = 2, FACTS = 4, ERASE = 8, HOST_LINES = 16;
 const CONDITIONAL = new Set(['optkey', 'optlistkey', 'boolif', 'optboolkey', 'optstrkey', 'optenumkey', 'modifier', 'keepif']);
 
 // ── The source spelling: what a generated builder is made of. `word` and `byte` spell a read of
@@ -1052,7 +1054,7 @@ function generate_host(C: Compiled, config: number, type: string | null, span: b
 	const props = type === null ? [] : [`type: ${JSON.stringify(type)}`];
 	if (type === null || span) {
 		props.push('start: S.P[p]', 'end: S.P[p + 1]');
-		if ((config & LINES) !== 0) props.push(LOC);
+		if ((config & HOST_LINES) !== 0) props.push(LOC);
 	}
 	const tail: string[] = [];
 	keys.forEach((key, i) => {
@@ -1164,7 +1166,7 @@ function names(G: Language, tree: Tree, count: number, moved: boolean): string[]
 const filled = (tree: Tree, words: Uint32Array, lens: number, at: number) => (words[lens + at] === 0 ? null : (tree[at] as Uint32Array).subarray(0, words[lens + at]));
 
 // what `words[lens]` says of an answer; each view's length follows it, then where the tree's buffers sit
-const TYPESCRIPT = 2, COMMENTS = 4, ERASED = 8, LINED = 16, LISTED = 32, RECOVERED = 64;
+const TYPESCRIPT = 2, COMMENTS = 4, ERASED = 8, LINED = 16, LISTED = 32, RECOVERED = 64, JS_LINED = 128;
 
 function table(S: State, tree: Tree, words: Uint32Array, lens: number, rows: Rows, at: number): Decoded[] {
 	const build = S.link ? rows.linked : rows.plain;
@@ -1238,9 +1240,10 @@ export function decode(words: Uint32Array, source: string, engine: Views, link =
 	G.sat[1] = hi;
 	const tree = engine.tree(typescript, moved);
 	const erase = (what & ERASED) !== 0, lines = (what & LINED) !== 0, listed = (what & LISTED) !== 0;
+	const host_lines = lines && (what & JS_LINED) === 0;
 	const spans = words[lens + at.spans] !== 0;
 	const scoped = words[lens + at.scopes] !== 0;
-	const config = (link ? LINK : 0) | (lines ? LINES : 0) | (scoped ? FACTS : 0) | (erase ? ERASE : 0);
+	const config = (link ? LINK : 0) | (lines ? LINES : 0) | (host_lines ? HOST_LINES : 0) | (scoped ? FACTS : 0) | (erase ? ERASE : 0);
 	const B = G.last === config ? G.builders! : builders(C, G, config, typescript);
 	// the state stays with the tree's views, one answer at a time: only what an answer changes is set
 	let S = G.state;
@@ -1255,6 +1258,7 @@ export function decode(words: Uint32Array, source: string, engine: Views, link =
 			link,
 			erase,
 			lines,
+			host_lines,
 			C,
 			G,
 			J: B.js,
@@ -1300,6 +1304,7 @@ export function decode(words: Uint32Array, source: string, engine: Views, link =
 	S.link = link;
 	S.erase = erase;
 	S.lines = lines;
+	S.host_lines = host_lines;
 	S.J = B.js;
 	S.H = B.hosts;
 	S.names = names(G, tree, words[lens + at.name_starts] - 1, moved);

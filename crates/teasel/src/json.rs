@@ -281,13 +281,7 @@ pub fn children(grammar: Option<&Grammar>) -> String {
 
 /// `stop` lists the host's tokens for an entry at an offset; see `parser::parse_at`.
 pub fn parse(source: &str, request: &Request, stop: &str) -> String {
-	parse_with(
-		source,
-		&Positions::new(source, request.options.has(Options::LOCATIONS)),
-		request,
-		stop,
-		None,
-	)
+	parse_with(source, &Positions::of(source, request.options), request, stop, None)
 }
 
 /// A whole document of a host language by its grammar, as JSON; see `host::parse_document`.
@@ -301,7 +295,7 @@ pub fn parse_document(source: &str, grammar: &[u8], request: &Request) -> String
 			}
 			parse_with(
 				source,
-				&Positions::new(source, request.options.has(Options::LOCATIONS)),
+				&Positions::of(source, request.options),
 				&request,
 				"",
 				Some(&grammar),
@@ -493,7 +487,7 @@ impl<'a> Prepared<'a> {
 	}
 
 	fn of(source: std::borrow::Cow<'a, str>, request: Request) -> Prepared<'a> {
-		let positions = Positions::new(&source, request.options.has(Options::LOCATIONS));
+		let positions = Positions::of(&source, request.options);
 		Prepared {
 			source,
 			positions,
@@ -701,7 +695,7 @@ where
 	// `end`, the roots by number, a word of what the answer is, each view's length, then where the
 	// tree's buffers sit folded into two words: a front end keeps its views while that holds. The
 	// tree is TypeScript's, every comment is listed, TypeScript is erased, lines are on, the roots
-	// are a list, the errors recovered from are listed
+	// are a list, the errors recovered from are listed, lines are on JavaScript nodes only
 	words.clear();
 	words.extend_from_slice(&[positions.offset(&mut crate::estree::Cursor::default(), end), roots.len]);
 	words.extend(ast.list(roots).iter().map(|root| root.unwrap().index()));
@@ -709,9 +703,10 @@ where
 		(request.options.typescript() as u32) << 1
 			| (output.comments as u32) << 2
 			| (output.erase as u32) << 3
-			| (request.options.has(Options::LOCATIONS) as u32) << 4
+			| (request.options.locations() as u32) << 4
 			| ((request.entry == Entry::Params) as u32) << 5
-			| (output.errors as u32) << 6,
+			| (output.errors as u32) << 6
+			| (request.options.has(Options::LOCATIONS_JS) as u32) << 7,
 	);
 	let mut sits = 0u64;
 	let mut note = |_, buffer: Option<&mut dyn Raw>| {
