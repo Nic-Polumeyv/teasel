@@ -1,10 +1,10 @@
 import type { Comment, Expression, Node, Pattern, Program, Statement } from 'estree';
-import { decode, PARENT, REFERENCE, SCOPE } from './decode.ts';
+import { decode, PARENT, PLAN, REFERENCE, SCOPE } from './decode.ts';
 import { CODES, type answers, type Code, type HostNode, type Language, type Parsed, type Reference, type Scope } from './types.ts';
 import { flags, type Options } from './options.ts';
 import { engine } from '#engine';
 import { children, extras, frozen } from './children.ts';
-import { compiled } from './held.ts';
+import type { Grammar } from './grammar.ts';
 
 export type { Options } from './options.ts';
 export type { Arguments, Binding, Code, Comment, Declared, HostNode, Kept, Language, Parsed, Recovered, Reference, Root, Scope, Span } from './types.ts';
@@ -148,7 +148,7 @@ export class Source {
 	parse(language: typeof js, at?: number | [start: number, end: number]): Parsed<Program>;
 	parse<T>(what: Piece<T> | typeof js, at?: number | [start: number, end: number]): Parsed<T | Program>;
 	parse<T>(language: Language<T>): Parsed<T>;
-	parse(what: Piece<unknown> | Language<unknown> = js, at?: number | [number, number]) {
+	parse(what: Piece<unknown> | Language<unknown> | Grammar = js, at?: number | [number, number]) {
 		let entry = 0, stop = '', grammar: object | undefined, offset = 0, end: number | undefined;
 		if (what === js || what instanceof Piece) {
 			if (what instanceof Piece) ({ entry, stop } = read(what));
@@ -157,7 +157,8 @@ export class Source {
 			else if (at !== undefined) throw new TypeError('at is an offset or [start, end]');
 		} else {
 			if (what === css) entry = 6;
-			else grammar = compiled(what);
+			else if (typeof what === 'object' && what !== null && PLAN in what) grammar = what[PLAN];
+			else throw new TypeError('a parse takes `js`, one of its pieces, `css`, or a grammar made by @teasel/parser/grammar');
 			if (at !== undefined) throw new TypeError('only `js` and its pieces take a position');
 		}
 		const source = this.#source;
