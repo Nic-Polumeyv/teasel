@@ -722,6 +722,53 @@ where
 /// recovered errors as words, their names and messages among the strings, and the strings'
 /// UTF-16 starts.
 fn prepare<X: Emit + Reuse>(ast: &mut Ast<X>, source: &str, positions: &Positions, output: Output, names: &mut Names) {
+	if output.failed {
+		prepare_failed(ast);
+	} else {
+		prepare_tree(ast, positions, output, names);
+	}
+	ast.error_words.clear();
+	if output.errors {
+		let places = positions.of_errors(source, &ast.errors);
+		for (error, [pos, end, line, column]) in ast.errors.iter().zip(places) {
+			let [first, second] = error.args.map(|arg| arg.map_or(u32::MAX, StrId::index));
+			ast.error_words
+				.extend_from_slice(&[error.code as u32, first, second, pos, end, line, column]);
+		}
+	}
+	ast.units.clear();
+	let (text, starts, _) = ast.strings.buffers();
+	if !text.is_ascii() {
+		ast.units.reserve(starts.len());
+		let mut units = 0u32;
+		let mut from = 0usize;
+		for &start in starts.iter() {
+			units += text[from..start as usize]
+				.iter()
+				.filter(|&&b| b & 0xc0 != 0x80)
+				.map(|&b| if b >= 0xf0 { 2 } else { 1 })
+				.sum::<u32>();
+			from = start as usize;
+			ast.units.push(units);
+		}
+	}
+}
+
+/// A failed answer is its error row and the strings the args name: the tree it read so far is
+/// not mapped, and what the last answer mapped is let go of.
+fn prepare_failed<X: Emit + Reuse>(ast: &mut Ast<X>) {
+	ast.spans.clear();
+	ast.locs.clear();
+	ast.erased.clear();
+	ast.rare.reset(0);
+	ast.late.reset(0);
+	ast.host_view.clear();
+	ast.host_keys.clear();
+	ast.host_vals.clear();
+	ast.comment_words.clear();
+}
+
+fn prepare_tree<X: Emit + Reuse>(ast: &mut Ast<X>, positions: &Positions, output: Output, names: &mut Names) {
 	positions.map_nodes(&ast.nodes, &mut ast.spans, &mut ast.locs);
 	ast.erased.clear();
 	if output.erase {
@@ -782,31 +829,6 @@ fn prepare<X: Emit + Reuse>(ast: &mut Ast<X>, source: &str, positions: &Position
 	}
 	if output.comments || !ast.hosts.is_empty() {
 		positions.map_comments(&ast.comments, &mut ast.comment_words);
-	}
-	ast.error_words.clear();
-	if output.errors {
-		let places = positions.of_errors(source, &ast.errors);
-		for (error, [pos, end, line, column]) in ast.errors.iter().zip(places) {
-			let [first, second] = error.args.map(|arg| arg.map_or(u32::MAX, StrId::index));
-			ast.error_words
-				.extend_from_slice(&[error.code as u32, first, second, pos, end, line, column]);
-		}
-	}
-	ast.units.clear();
-	let (text, starts, _) = ast.strings.buffers();
-	if !text.is_ascii() {
-		ast.units.reserve(starts.len());
-		let mut units = 0u32;
-		let mut from = 0usize;
-		for &start in starts.iter() {
-			units += text[from..start as usize]
-				.iter()
-				.filter(|&&b| b & 0xc0 != 0x80)
-				.map(|&b| if b >= 0xf0 { 2 } else { 1 })
-				.sum::<u32>();
-			from = start as usize;
-			ast.units.push(units);
-		}
 	}
 }
 
