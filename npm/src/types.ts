@@ -130,11 +130,10 @@ export interface Kept extends Span {
 	type: string;
 }
 
-/** A recovered error: what the thrown `SyntaxError` carries, as a plain object. */
+/** A recovered error: the thrown `SyntaxError`'s code, args and position, as a plain object. */
 export interface Recovered {
 	code: Code;
 	args: string[];
-	message: string;
 	pos: number;
 	end: number;
 	loc: Position;

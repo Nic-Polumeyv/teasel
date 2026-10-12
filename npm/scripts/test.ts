@@ -89,7 +89,7 @@ const { open, scopeOf, referenceOf, parentOf } = untyped(m);
 	assert.equal(recovered.node.type, 'MemberExpression');
 	assert.deepEqual(JSON.parse(JSON.stringify(recovered.node.property)), { type: 'Identifier', start: 5, end: 5, name: '' });
 	assert.equal(recovered.end, 5);
-	assert.deepEqual(recovered.errors, [{ code: 'unexpected_token', args: [], message: 'unexpected_token', pos: 5, end: 6, loc: { line: 1, column: 5 } }]);
+	assert.deepEqual(recovered.errors, [{ code: 'unexpected_token', args: [], pos: 5, end: 6, loc: { line: 1, column: 5 } }]);
 	const unclosed = at('expression', '{f(a, }', 1, loose, ['}']);
 	assert.deepEqual(JSON.parse(JSON.stringify(unclosed.node)), { type: 'Identifier', start: 6, end: 6, name: '' });
 	assert.equal(unclosed.end, 6);
@@ -101,13 +101,13 @@ const { open, scopeOf, referenceOf, parentOf } = untyped(m);
 	assert.deepEqual(broken.errors.map((e: Any) => [e.code, e.pos, e.loc.line]), [['unterminated_string', 4, 1], ['unexpected_eof', 13, 2]]);
 	assert.deepEqual(parse('x', loose).errors, []);
 	assert.equal('errors' in parse('x'), false);
-	const messages = (source: string, options: Options) => parse(source, { ...options, errorRecovery: true }).errors.map((e: Any) => e.message);
-	assert.deepEqual(messages('"use strict"; let a; let a; /a{2,1}/u; eval = 1;', { sourceType: 'script' }), [
-		"redeclaration 'a'",
-		"invalid_regexp 'a{2,1}' 'numbers out of order in {} quantifier'",
-		"strict_binding 'eval'",
+	const codes = (source: string, options: Options) => parse(source, { ...options, errorRecovery: true }).errors.map((e: Any) => [e.code, ...e.args]);
+	assert.deepEqual(codes('"use strict"; let a; let a; /a{2,1}/u; eval = 1;', { sourceType: 'script' }), [
+		['redeclaration', 'a'],
+		['invalid_regexp', 'a{2,1}', 'numbers out of order in {} quantifier'],
+		['strict_binding', 'eval'],
 	]);
-	assert.deepEqual(messages('class C { static public x }', { typescript: true }), ["modifier_order 'public' 'static'", 'unexpected_token']);
+	assert.deepEqual(codes('class C { static public x }', { typescript: true }), [['modifier_order', 'public', 'static'], ['unexpected_token']]);
 	const scoped = parse('let = f(a, b)', { errorRecovery: true, scopes: true, sourceType: 'module' });
 	assert.equal(scoped.bindings.length, 0);
 	assert.equal(referenceOf(scoped.node.body[0].declarations[0].id), undefined);

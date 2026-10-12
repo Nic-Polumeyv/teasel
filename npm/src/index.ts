@@ -1,5 +1,5 @@
 import type { Comment, Expression, Node, Pattern, Position, Program, Statement } from 'estree';
-import { decode, message, PARENT, REFERENCE, SCOPE } from './decode.ts';
+import { decode, PARENT, REFERENCE, SCOPE } from './decode.ts';
 import type { Code, HostNode, Language, Parsed, Reference, Scope } from './types.ts';
 import { flags, type Options } from './options.ts';
 import { engine } from '#engine';
@@ -26,7 +26,8 @@ export class ParseError extends SyntaxError {
 	declare loc?: Position;
 
 	constructor(fields: Pick<ParseError, 'code' | 'args' | 'pos' | 'end' | 'loc'>) {
-		super(message(fields.code, fields.args));
+		// an Error's message: the code, then each argument in quotes
+		super(fields.args.reduce((text, arg) => `${text} '${arg}'`, fields.code as string));
 		Object.assign(this, fields);
 	}
 }

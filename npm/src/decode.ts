@@ -1204,19 +1204,13 @@ function link_tables(S: State) {
 const ERROR_WORDS = 7;
 const NO_ARG = 0xffffffff;
 
-/** An error's `message`: its code, then each argument in quotes: `expected '}'`. */
-export function message(code: string, args: string[]): string {
-	for (const arg of args) code += ` '${arg}'`;
-	return code;
-}
-
 function errors(S: State, view: Uint32Array, count: number): Decoded[] {
 	const { codes } = S.C;
 	const out = new Array<Decoded>(count);
 	for (let i = 0, at = 0; i < count; i++, at += ERROR_WORDS) {
 		const code = codes[view[at]], args: string[] = [];
 		for (let k = 1; k < 3; k++) if (view[at + k] !== NO_ARG) args.push(S.strings[view[at + k]]);
-		out[i] = { code, args, message: message(code, args), pos: view[at + 3], end: view[at + 4], loc: { line: view[at + 5], column: view[at + 6] } };
+		out[i] = { code, args, pos: view[at + 3], end: view[at + 4], loc: { line: view[at + 5], column: view[at + 6] } };
 	}
 	return out;
 }
