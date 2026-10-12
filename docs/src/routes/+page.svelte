@@ -122,7 +122,7 @@
 			<div class="mt-4 grid gap-x-12 md:grid-cols-3">
 				<p>If you're writing a compiler or a bundler, you get an ESTree tree fast, scopes included, and TypeScript read or stripped on the way through.</p>
 				<p>If you're writing a template language, you can pull one expression out of the middle of a document and stop at your own tokens. See <a href="/embedded-javascript">Embedded JavaScript</a>.</p>
-				<p>If you're writing a tool that runs in a browser, the same import is a WebAssembly build with the same API. Under Node the package is a native addon.</p>
+				<p>If you're writing a tool that runs in a browser, the same import is a WebAssembly build with the same API. Under Node the package is a native addon, and the WebAssembly build where the addon does not load.</p>
 			</div>
 			<div class="mt-10 grid items-center gap-x-16 gap-y-6 md:grid-cols-2">
 				<div class="[&_.my-6]:my-0">{@html data.install}</div>
