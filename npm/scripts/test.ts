@@ -12,7 +12,7 @@ import type { Infer, NodeType } from '../src/grammar.ts';
 import type * as api from '../src/index.ts';
 import type { Options } from '../src/index.ts';
 if (process.argv[2] === 'interpret') globalThis.Function = (() => { throw new EvalError('blocked'); }) as unknown as FunctionConstructor;
-const name = process.execArgv.includes('--no-addons') ? 'wasm' : 'native';
+const name = process.execArgv.includes('--conditions=browser') ? 'web' : process.execArgv.includes('--no-addons') ? 'wasm' : 'native';
 setFlagsFromString('--expose-gc');
 const collect = runInNewContext('gc') as () => void;
 const m = await import('../src/index.ts');
