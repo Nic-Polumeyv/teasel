@@ -56,6 +56,6 @@ export function load(): Addon | undefined {
 	// where no build exists there is nothing to fix
 	if (here in platforms) {
 		const why = failed === undefined ? `@teasel/parser-${here} is not installed` : `the native build for ${here} did not load (${failed.message})`;
-		process.emitWarning(`${why}; @teasel/parser parses in WebAssembly instead, slower`, { code: 'wasm_fallback' });
+		process.emitWarning(`${why}; @teasel/parser parses in WebAssembly instead, which is slower`, { code: 'wasm_fallback' });
 	}
 }
