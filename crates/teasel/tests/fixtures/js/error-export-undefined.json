@@ -1,7 +1,9 @@
 {
 	"error": {
 		"code": "undefined_export",
-		"message": "Export 'a' is not defined",
+		"args": [
+			"a"
+		],
 		"pos": 9,
 		"end": 9,
 		"loc": {

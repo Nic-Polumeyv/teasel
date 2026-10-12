@@ -1,7 +1,7 @@
 {
 	"error": {
 		"code": "unexpected_token",
-		"message": "Unexpected token",
+		"args": [],
 		"pos": 40,
 		"end": 41,
 		"loc": {

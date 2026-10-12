@@ -1,7 +1,7 @@
 {
 	"error": {
 		"code": "super_call_outside_constructor",
-		"message": "super() call outside constructor of a subclass",
+		"args": [],
 		"pos": 26,
 		"end": 26,
 		"loc": {

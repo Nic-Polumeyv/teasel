@@ -1,7 +1,9 @@
 {
 	"error": {
 		"code": "expected",
-		"message": "Expected a valid CSS identifier",
+		"args": [
+			"a valid CSS identifier"
+		],
 		"pos": 17,
 		"end": 17,
 		"loc": {

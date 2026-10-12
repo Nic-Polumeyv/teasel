@@ -227,7 +227,7 @@ pub fn answer<X: Emit>(
 	w.json.finish()
 }
 
-/// Serializes a syntax error: its code and message, UTF-16 `pos` and `end`, and a `loc`; the
+/// Serializes a syntax error: its code and args, UTF-16 `pos` and `end`, and a `loc`; the
 /// line table is built up to the error when `positions` has none.
 pub fn error_to_json(error: &crate::SyntaxError, strings: &Interner, source: &str, positions: &Positions) -> String {
 	let upto;
@@ -242,11 +242,16 @@ pub fn error_to_json(error: &crate::SyntaxError, strings: &Interner, source: &st
 	let pos = positions.offset(&mut cursor, error.pos);
 	let (line, column) = positions.line_column(cursor.line, error.pos, pos);
 	let end = positions.offset(&mut cursor, error.end);
-	let mut out = format!("{{\"error\":{{\"code\":\"{}\",\"message\":", error.code.name());
-	write_json_string(&mut out, &error.message(strings));
+	let mut out = format!("{{\"error\":{{\"code\":\"{}\",\"args\":[", error.code.name());
+	for (i, &arg) in error.args.iter().flatten().enumerate() {
+		if i > 0 {
+			out.push(',');
+		}
+		write_json_string(&mut out, strings.get(arg));
+	}
 	write!(
 		out,
-		",\"pos\":{pos},\"end\":{end},\"loc\":{{\"line\":{line},\"column\":{column}}}}}}}"
+		"],\"pos\":{pos},\"end\":{end},\"loc\":{{\"line\":{line},\"column\":{column}}}}}}}"
 	)
 	.unwrap();
 	out
@@ -632,7 +637,7 @@ impl<'a, X: Emit> Writer<'a, X> {
 		self.json.end();
 	}
 
-	/// The recovered errors as the thrown one would be: code, message, `pos`, `end` and a `loc`.
+	/// The recovered errors as the thrown one would be: code, args, `pos`, `end` and a `loc`.
 	fn errors(&mut self) {
 		let places = self.positions.of_errors(self.source, &self.ast.errors);
 		self.key(c!("errors"));
@@ -641,8 +646,12 @@ impl<'a, X: Emit> Writer<'a, X> {
 			self.json.object();
 			self.key(c!("code"));
 			self.json.str(error.code.label());
-			self.key(c!("message"));
-			self.json.text(&error.message(&self.ast.strings));
+			self.key(c!("args"));
+			self.json.list();
+			for &arg in error.args.iter().flatten() {
+				self.str_of(arg);
+			}
+			self.json.end();
 			self.key(c!("pos"));
 			self.json.int(pos);
 			self.key(c!("end"));

@@ -1,7 +1,9 @@
 {
 	"error": {
 		"code": "placement",
-		"message": "svelte:window is not allowed here",
+		"args": [
+			"svelte:window"
+		],
 		"pos": 5,
 		"end": 6,
 		"loc": {

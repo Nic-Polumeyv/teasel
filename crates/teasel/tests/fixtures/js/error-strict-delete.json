@@ -1,7 +1,7 @@
 {
 	"error": {
 		"code": "strict_delete",
-		"message": "Deleting local variable in strict mode",
+		"args": [],
 		"pos": 14,
 		"end": 14,
 		"loc": {

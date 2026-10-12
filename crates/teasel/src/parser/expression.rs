@@ -1442,7 +1442,7 @@ impl<E: Extension> Parser<'_, E> {
 		match self.private_names.last_mut() {
 			Some(scope) => scope.used.push((name, start)),
 			None => {
-				return self.error_name(start, Code::UndeclaredPrivateName, name);
+				return self.error_arg(start, Code::UndeclaredPrivateName, &format!("#{}", self.str(name)));
 			}
 		}
 		Ok(id)
@@ -1690,12 +1690,7 @@ impl<E: Extension> Parser<'_, E> {
 				if self.strict
 					&& (self.is_reserved_word(flags) || (runtime && flags & (word::EVAL | word::ARGUMENTS) != 0))
 				{
-					let code = if is_bind {
-						Code::StrictBinding
-					} else {
-						Code::AssigningInStrictMode
-					};
-					return self.error_name(start, code, name);
+					return self.error_name(start, Code::StrictBinding, name);
 				}
 				if is_bind {
 					if binding == Binding::Lexical && text == "let" {

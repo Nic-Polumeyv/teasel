@@ -1,7 +1,9 @@
 {
 	"error": {
 		"code": "abstract_with_implementation",
-		"message": "Method 'm' cannot have an implementation because it is marked abstract.",
+		"args": [
+			"m"
+		],
 		"pos": 19,
 		"end": 19,
 		"loc": {

@@ -1,7 +1,7 @@
 {
 	"error": {
 		"code": "required_after_optional",
-		"message": "A required parameter cannot follow an optional parameter",
+		"args": [],
 		"pos": 23,
 		"end": 23,
 		"loc": {

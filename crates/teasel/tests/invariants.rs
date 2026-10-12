@@ -142,33 +142,3 @@ fn a_file_cut_anywhere_is_read_without_a_panic() {
 	}
 	assert!(panicked.is_empty(), "{}", panicked.join("\n"));
 }
-
-#[test]
-fn every_error_fills_its_message() {
-	let Some(root) = suite() else { return };
-	let mut unfilled = Vec::new();
-	let mut check = |path: &Path, errors: &mut dyn Iterator<Item = &teasel::SyntaxError>| {
-		for error in errors {
-			if error.code.message().matches("{}").count() != error.args.iter().flatten().count() {
-				unfilled.push(format!("{}: {:?}", path.display(), error.code));
-			}
-		}
-	};
-	for dir in ["fail", "early"] {
-		for entry in fs::read_dir(root.join(dir)).unwrap() {
-			let path = entry.unwrap().path();
-			let source = String::from_utf8_lossy(&fs::read(&path).unwrap()).into_owned();
-			for module in [0, Options::MODULE] {
-				for recover in [0, Options::ERROR_RECOVERY] {
-					let options = Options(module | recover);
-					let (ast, parsed) = teasel::parse_at(&source, 0, None, Entry::Program, options, "");
-					check(&path, &mut ast.errors.iter().chain(parsed.as_ref().err()));
-					let options = options.with(Options::TYPESCRIPT);
-					let (ast, parsed) = teasel::typescript::parse_at(&source, 0, None, Entry::Program, options, "");
-					check(&path, &mut ast.errors.iter().chain(parsed.as_ref().err()));
-				}
-			}
-		}
-	}
-	assert!(unfilled.is_empty(), "{}", unfilled.join("\n"));
-}

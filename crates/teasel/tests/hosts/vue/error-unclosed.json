@@ -1,7 +1,9 @@
 {
 	"error": {
 		"code": "unclosed",
-		"message": "div is not closed",
+		"args": [
+			"div"
+		],
 		"pos": 0,
 		"end": 1,
 		"loc": {

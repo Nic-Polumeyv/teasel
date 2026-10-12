@@ -1,7 +1,9 @@
 {
 	"error": {
 		"code": "placement",
-		"message": "A closing tag of a void element is not allowed here",
+		"args": [
+			"A closing tag of a void element"
+		],
 		"pos": 5,
 		"end": 6,
 		"loc": {

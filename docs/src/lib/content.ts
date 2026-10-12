@@ -99,7 +99,7 @@ const marked = new Marked({
 		},
 		codespan(token) {
 			const name = token.text.replace(/\(.*\)$/, '');
-			const id = described[name] ?? (name.startsWith('js.') ? 'js' : name === 'source.parse' ? 'source' : undefined);
+			const id = (Object.hasOwn(described, name) ? described[name] : undefined) ?? (name.startsWith('js.') ? 'js' : name === 'source.parse' ? 'source' : undefined);
 			const code = `<code>${escape(token.text)}</code>`;
 			return id === undefined || linked.has(token) ? code : `<a href="/reference/parser#${id}" class="decoration-dotted!">${code}</a>`;
 		},

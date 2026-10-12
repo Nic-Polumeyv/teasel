@@ -4,7 +4,7 @@
 		{
 			"error": {
 				"code": "duplicate",
-				"message": "Duplicate }}",
+				"message": "duplicate '}}'",
 				"pos": 87,
 				"end": 89
 			}
@@ -12,7 +12,7 @@
 		{
 			"error": {
 				"code": "unexpected_token",
-				"message": "Unexpected token",
+				"message": "unexpected_token",
 				"pos": 8,
 				"end": 15
 			}
@@ -20,7 +20,7 @@
 		{
 			"error": {
 				"code": "expected",
-				"message": "Expected in",
+				"message": "expected 'in'",
 				"pos": 20,
 				"end": 20
 			}
@@ -28,7 +28,7 @@
 		{
 			"error": {
 				"code": "expected",
-				"message": "Expected }}",
+				"message": "expected '}}'",
 				"pos": 33,
 				"end": 33
 			}
@@ -36,7 +36,7 @@
 		{
 			"error": {
 				"code": "unexpected_token",
-				"message": "Unexpected token",
+				"message": "unexpected_token",
 				"pos": 96,
 				"end": 97
 			}

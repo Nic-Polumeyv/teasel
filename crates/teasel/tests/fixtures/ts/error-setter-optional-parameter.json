@@ -1,7 +1,7 @@
 {
 	"error": {
 		"code": "setter_optional_parameter",
-		"message": "A 'set' accessor cannot have an optional parameter",
+		"args": [],
 		"pos": 16,
 		"end": 16,
 		"loc": {

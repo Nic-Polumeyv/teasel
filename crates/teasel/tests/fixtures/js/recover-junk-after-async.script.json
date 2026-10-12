@@ -56,7 +56,9 @@
 	"errors": [
 		{
 			"code": "unexpected_character",
-			"message": "Unexpected character '@'",
+			"args": [
+				"@"
+			],
 			"pos": 6,
 			"end": 6,
 			"loc": {

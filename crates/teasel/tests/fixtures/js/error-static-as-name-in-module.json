@@ -1,7 +1,9 @@
 {
 	"error": {
 		"code": "reserved_word",
-		"message": "The keyword 'static' is reserved",
+		"args": [
+			"static"
+		],
 		"pos": 4,
 		"end": 4,
 		"loc": {

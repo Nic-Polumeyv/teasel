@@ -1,7 +1,7 @@
 {
 	"error": {
 		"code": "unterminated_comment",
-		"message": "Unterminated comment",
+		"args": [],
 		"pos": 0,
 		"end": 0,
 		"loc": {

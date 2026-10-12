@@ -1,7 +1,7 @@
 {
 	"error": {
 		"code": "decorator_without_body",
-		"message": "A decorator can only decorate a method or accessor with a body",
+		"args": [],
 		"pos": 19,
 		"end": 19,
 		"loc": {

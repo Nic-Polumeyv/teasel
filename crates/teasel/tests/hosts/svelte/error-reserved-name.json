@@ -1,7 +1,9 @@
 {
 	"error": {
 		"code": "reserved_word",
-		"message": "The keyword 'class' is reserved",
+		"args": [
+			"class"
+		],
 		"pos": 49,
 		"end": 54,
 		"loc": {

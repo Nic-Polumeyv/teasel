@@ -1,7 +1,7 @@
 {
 	"error": {
 		"code": "accessor_type_parameters",
-		"message": "An accessor cannot have type parameters.",
+		"args": [],
 		"pos": 15,
 		"end": 15,
 		"loc": {

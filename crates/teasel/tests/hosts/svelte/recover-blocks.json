@@ -140,7 +140,9 @@
 	"errors": [
 		{
 			"code": "unclosed",
-			"message": "{#if} is not closed",
+			"args": [
+				"{#if}"
+			],
 			"pos": 5,
 			"end": 6,
 			"loc": {
@@ -150,7 +152,9 @@
 		},
 		{
 			"code": "unclosed",
-			"message": "{#each} is not closed",
+			"args": [
+				"{#each}"
+			],
 			"pos": 26,
 			"end": 27,
 			"loc": {
@@ -160,7 +164,9 @@
 		},
 		{
 			"code": "placement",
-			"message": "A branch outside its block is not allowed here",
+			"args": [
+				"A branch outside its block"
+			],
 			"pos": 47,
 			"end": 48,
 			"loc": {
@@ -170,7 +176,9 @@
 		},
 		{
 			"code": "unexpected_close",
-			"message": "Unexpected closing {/each}",
+			"args": [
+				"{/each}"
+			],
 			"pos": 55,
 			"end": 56,
 			"loc": {
@@ -180,7 +188,7 @@
 		},
 		{
 			"code": "unexpected_token",
-			"message": "Unexpected token",
+			"args": [],
 			"pos": 70,
 			"end": 70,
 			"loc": {

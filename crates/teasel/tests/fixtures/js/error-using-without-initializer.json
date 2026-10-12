@@ -1,7 +1,9 @@
 {
 	"error": {
 		"code": "using_without_initializer",
-		"message": "Missing initializer in using declaration",
+		"args": [
+			"using"
+		],
 		"pos": 9,
 		"end": 10,
 		"loc": {

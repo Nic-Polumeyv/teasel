@@ -1,7 +1,9 @@
 {
 	"error": {
 		"code": "expected",
-		"message": "Expected symbol",
+		"args": [
+			"symbol"
+		],
 		"pos": 14,
 		"end": 20,
 		"loc": {

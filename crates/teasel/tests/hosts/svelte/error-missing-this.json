@@ -1,7 +1,9 @@
 {
 	"error": {
 		"code": "expected",
-		"message": "Expected a this attribute",
+		"args": [
+			"a this attribute"
+		],
 		"pos": 0,
 		"end": 1,
 		"loc": {

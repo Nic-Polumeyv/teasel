@@ -1,7 +1,7 @@
 {
 	"error": {
 		"code": "invalid_unicode_escape",
-		"message": "Invalid Unicode escape",
+		"args": [],
 		"pos": 0,
 		"end": 0,
 		"loc": {

@@ -1,7 +1,9 @@
 {
 	"error": {
 		"code": "reserved_word",
-		"message": "The keyword 'public' is reserved",
+		"args": [
+			"public"
+		],
 		"pos": 15,
 		"end": 15,
 		"loc": {

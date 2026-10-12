@@ -1,7 +1,9 @@
 {
 	"error": {
 		"code": "unexpected_keyword",
-		"message": "Unexpected keyword 'const'",
+		"args": [
+			"const"
+		],
 		"pos": 12,
 		"end": 12,
 		"loc": {

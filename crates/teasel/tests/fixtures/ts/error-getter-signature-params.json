@@ -1,7 +1,7 @@
 {
 	"error": {
 		"code": "getter_params",
-		"message": "getter should have no params",
+		"args": [],
 		"pos": 23,
 		"end": 24,
 		"loc": {

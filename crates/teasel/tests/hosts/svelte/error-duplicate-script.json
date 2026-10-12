@@ -1,7 +1,9 @@
 {
 	"error": {
 		"code": "duplicate",
-		"message": "Duplicate script",
+		"args": [
+			"script"
+		],
 		"pos": 18,
 		"end": 19,
 		"loc": {

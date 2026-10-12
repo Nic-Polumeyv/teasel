@@ -1,7 +1,7 @@
 {
 	"error": {
 		"code": "export_assignment_in_namespace",
-		"message": "An export assignment cannot be used in a namespace",
+		"args": [],
 		"pos": 14,
 		"end": 14,
 		"loc": {

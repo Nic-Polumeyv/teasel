@@ -1,7 +1,7 @@
 {
 	"error": {
 		"code": "identifier_after_number",
-		"message": "Identifier directly after number",
+		"args": [],
 		"pos": 3,
 		"end": 3,
 		"loc": {

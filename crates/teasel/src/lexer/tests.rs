@@ -37,7 +37,7 @@ fn error_in(src: &str, strict: bool) -> (std::string::String, u32) {
 		match lexer.next_token() {
 			Ok(t) if t.kind == Eof => panic!("no error for {src:?}"),
 			Ok(_) => {}
-			Err(e) => return (e.message(&lexer.strings), e.pos),
+			Err(e) => return (e.describe(&lexer.strings), e.pos),
 		}
 	}
 }
@@ -133,7 +133,7 @@ fn punctuators() {
 			Amp, AmpAmp, AmpEq, AmpAmpEq, Pipe, PipePipe, PipeEq, PipePipeEq, Caret, CaretEq
 		]
 	);
-	assert_eq!(error("x@y"), ("Unexpected character '@'".into(), 1));
+	assert_eq!(error("x@y"), ("unexpected_character '@'".into(), 1));
 }
 
 #[test]
@@ -188,9 +188,9 @@ fn escaped_identifiers() {
 	assert_eq!(ident("\\u{62}c"), ("bc".to_owned(), true));
 	let token = single("\\u0069f").1;
 	assert_eq!((token.kind, token.escaped), (Keyword(Keyword::If), true));
-	assert_eq!(error("\\u0031a"), ("Invalid Unicode escape".into(), 0));
-	assert_eq!(error("\\ud801\\udc00"), ("Invalid Unicode escape".into(), 0));
-	assert_eq!(error("a\\x"), ("Expecting Unicode escape sequence \\uXXXX".into(), 2));
+	assert_eq!(error("\\u0031a"), ("invalid_unicode_escape".into(), 0));
+	assert_eq!(error("\\ud801\\udc00"), ("invalid_unicode_escape".into(), 0));
+	assert_eq!(error("a\\x"), ("expected_unicode_escape".into(), 2));
 }
 
 #[test]
@@ -201,7 +201,7 @@ fn private_names() {
 	};
 	assert_eq!(lexer.strings.get(name), "foo");
 	assert_matches!(single("#class").1.kind, PrivateName(_));
-	assert_eq!(error("# a"), ("Unexpected character ' '".into(), 1));
+	assert_eq!(error("# a"), ("unexpected_character ' '".into(), 1));
 }
 
 #[test]
@@ -244,35 +244,23 @@ fn legacy_octal_numbers() {
 	assert_eq!(number("08.5"), 8.5);
 	assert_eq!(number("0"), 0.0);
 	assert_eq!(number("0374547736741752762421"), 4552292526566663700.0);
-	assert_eq!(error("017n").0, "Identifier directly after number");
-	assert_eq!(
-		error("01_7").0,
-		"Numeric separator is not allowed in legacy octal numeric literals"
-	);
-	assert_eq!(
-		error("0_1"),
-		(
-			"Numeric separator is not allowed in legacy octal numeric literals".into(),
-			1
-		)
-	);
-	assert_eq!(strict_error("017"), ("Invalid number".into(), 0));
-	assert_eq!(strict_error("06B"), ("Invalid number".into(), 0));
-	assert_eq!(strict_error("x = 08"), ("Invalid number".into(), 4));
+	assert_eq!(error("017n").0, "identifier_after_number");
+	assert_eq!(error("01_7").0, "numeric_separator_legacy_octal");
+	assert_eq!(error("0_1"), ("numeric_separator_legacy_octal".into(), 1));
+	assert_eq!(strict_error("017"), ("invalid_number".into(), 0));
+	assert_eq!(strict_error("06B"), ("invalid_number".into(), 0));
+	assert_eq!(strict_error("x = 08"), ("invalid_number".into(), 4));
 }
 
 #[test]
 fn number_errors() {
-	assert_eq!(error("1a"), ("Identifier directly after number".into(), 1));
-	assert_eq!(error("1__0").0, "Numeric separator must be exactly one underscore");
-	assert_eq!(error("1_").0, "Numeric separator is not allowed at the last of digits");
-	assert_eq!(
-		error("0x_1").0,
-		"Numeric separator is not allowed at the first of digits"
-	);
-	assert_eq!(error("0x"), ("Expected number in radix 16".into(), 2));
-	assert_eq!(error("1e").0, "Invalid number");
-	assert_eq!(error("1.5n").0, "Identifier directly after number");
+	assert_eq!(error("1a"), ("identifier_after_number".into(), 1));
+	assert_eq!(error("1__0").0, "numeric_separator_double");
+	assert_eq!(error("1_").0, "numeric_separator_last");
+	assert_eq!(error("0x_1").0, "numeric_separator_first");
+	assert_eq!(error("0x"), ("expected_number_in_radix '16'".into(), 2));
+	assert_eq!(error("1e").0, "invalid_number");
+	assert_eq!(error("1.5n").0, "identifier_after_number");
 }
 
 #[test]
@@ -310,12 +298,12 @@ fn strings() {
 	assert_eq!(string("'\\0'"), "\0");
 	assert_eq!(string("'\\q'"), "q");
 	assert_eq!(string("'\u{2028}'"), "\u{2028}");
-	assert_eq!(error("'abc").0, "Unterminated string constant");
-	assert_eq!(error("'a\nb'").0, "Unterminated string constant");
-	assert_eq!(error("'\\"), ("Unterminated string constant".into(), 0));
-	assert_eq!(error("'\\x4'"), ("Bad character escape sequence".into(), 3));
-	assert_eq!(error("'\\u{}'"), ("Bad character escape sequence".into(), 4));
-	assert_eq!(error("'\\u{110000}'"), ("Code point out of bounds".into(), 4));
+	assert_eq!(error("'abc").0, "unterminated_string");
+	assert_eq!(error("'a\nb'").0, "unterminated_string");
+	assert_eq!(error("'\\"), ("unterminated_string".into(), 0));
+	assert_eq!(error("'\\x4'"), ("bad_character_escape".into(), 3));
+	assert_eq!(error("'\\u{}'"), ("bad_character_escape".into(), 4));
+	assert_eq!(error("'\\u{110000}'"), ("code_point_out_of_bounds".into(), 4));
 }
 
 #[test]
@@ -324,9 +312,9 @@ fn legacy_octal_escapes() {
 	assert_eq!(string("'\\08'"), "\08");
 	assert_eq!(string("'\\8'"), "8");
 	assert_eq!(string("'\\0a'"), "\0a");
-	assert_eq!(strict_error("x = '\\101'"), ("Octal literal in strict mode".into(), 5));
-	assert_eq!(strict_error("'\\8'"), ("Invalid escape sequence".into(), 2));
-	assert_eq!(strict_error("'\\08'").0, "Octal literal in strict mode");
+	assert_eq!(strict_error("x = '\\101'"), ("strict_octal".into(), 5));
+	assert_eq!(strict_error("'\\8'"), ("strict_escape".into(), 2));
+	assert_eq!(strict_error("'\\08'").0, "strict_octal");
 	let mut lexer = Lexer::new("'\\0'");
 	lexer.strict = true;
 	assert_matches!(lexer.next_token().unwrap().kind, String(_));
@@ -389,14 +377,11 @@ fn template_newlines_normalise() {
 	let mut lexer = Lexer::new("`abc");
 	lexer.next_token().unwrap();
 	let e = lexer.read_template().unwrap_err();
-	assert_eq!((&*e.message(&lexer.strings), e.pos), ("Unterminated template", 1));
+	assert_eq!((&*e.describe(&lexer.strings), e.pos), ("unterminated_template", 1));
 	let mut lexer = Lexer::new("`");
 	lexer.next_token().unwrap();
 	let e = lexer.read_template().unwrap_err();
-	assert_eq!(
-		(&*e.message(&lexer.strings), e.pos),
-		("Unterminated template literal", 1)
-	);
+	assert_eq!((&*e.describe(&lexer.strings), e.pos), ("unterminated_template", 1));
 }
 
 #[test]
@@ -419,26 +404,20 @@ fn regex() {
 	let mut lexer = Lexer::new("/abc\n/");
 	let t = lexer.next_token().unwrap();
 	let e = lexer.read_regex(t).unwrap_err();
-	assert_eq!(
-		(&*e.message(&lexer.strings), e.pos),
-		("Unterminated regular expression", 1)
-	);
+	assert_eq!((&*e.describe(&lexer.strings), e.pos), ("unterminated_regexp", 1));
 
 	let mut lexer = Lexer::new("/a/\\u0067");
 	let t = lexer.next_token().unwrap();
 	let e = lexer.read_regex(t).unwrap_err();
-	assert_eq!((&*e.message(&lexer.strings), e.pos), ("Unexpected token", 3));
+	assert_eq!((&*e.describe(&lexer.strings), e.pos), ("unexpected_token", 3));
 	let mut lexer = Lexer::new("/a/\\u{30}");
 	let t = lexer.next_token().unwrap();
 	let e = lexer.read_regex(t).unwrap_err();
-	assert_eq!((&*e.message(&lexer.strings), e.pos), ("Invalid Unicode escape", 3));
+	assert_eq!((&*e.describe(&lexer.strings), e.pos), ("invalid_unicode_escape", 3));
 	let mut lexer = Lexer::new("/a/\\ux");
 	let t = lexer.next_token().unwrap();
 	let e = lexer.read_regex(t).unwrap_err();
-	assert_eq!(
-		(&*e.message(&lexer.strings), e.pos),
-		("Bad character escape sequence", 5)
-	);
+	assert_eq!((&*e.describe(&lexer.strings), e.pos), ("bad_character_escape", 5));
 }
 
 #[test]
@@ -449,7 +428,7 @@ fn regex_validation() {
 		lexer
 			.read_regex(t)
 			.map(|_| ())
-			.map_err(|e| (e.message(&lexer.strings), e.pos))
+			.map_err(|e| (e.describe(&lexer.strings), e.pos))
 	};
 	assert!(regex("/(?<a>x)|(?<a>y)/").is_ok());
 	// groups side by side are not nested
@@ -458,41 +437,35 @@ fn regex_validation() {
 	assert!(regex("/[\\p{L}--[a-z]]/v").is_ok());
 	assert!(regex("/(?i:a)b/").is_ok());
 	assert!(regex("/\\1(a)/").is_ok());
-	assert_eq!(
-		regex("/(/"),
-		Err(("Invalid regular expression: /(/: Unterminated group".into(), 1))
-	);
-	assert_eq!(regex("/a/gg"), Err(("Duplicate regular expression flag".into(), 1)));
-	assert_eq!(regex("/a/uv"), Err(("Invalid regular expression flag".into(), 1)));
+	assert_eq!(regex("/(/"), Err(("invalid_regexp '(' 'Unterminated group'".into(), 1)));
+	assert_eq!(regex("/a/gg"), Err(("duplicate_regexp_flag".into(), 1)));
+	assert_eq!(regex("/a/uv"), Err(("invalid_regexp_flag".into(), 1)));
 	assert_eq!(
 		regex("/\\1/u"),
-		Err(("Invalid regular expression: /\\1/: Invalid escape".into(), 1))
+		Err(("invalid_regexp '\\1' 'Invalid escape'".into(), 1))
 	);
 	assert_eq!(
 		regex("/[b-a]/"),
 		Err((
-			"Invalid regular expression: /[b-a]/: Range out of order in character class".into(),
+			"invalid_regexp '[b-a]' 'Range out of order in character class'".into(),
 			1
 		))
 	);
 	assert_eq!(
 		regex("/(?<a>x)(?<a>y)/"),
 		Err((
-			"Invalid regular expression: /(?<a>x)(?<a>y)/: Duplicate capture group name".into(),
+			"invalid_regexp '(?<a>x)(?<a>y)' 'Duplicate capture group name'".into(),
 			1
 		))
 	);
 	assert_eq!(
 		regex("/\\p{Nope}/u"),
-		Err((
-			"Invalid regular expression: /\\p{Nope}/: Invalid property name".into(),
-			1
-		))
+		Err(("invalid_regexp '\\p{Nope}' 'Invalid property name'".into(), 1))
 	);
 	assert!(regex("/{*/").is_ok());
 	assert_eq!(
 		regex("/{*/u"),
-		Err(("Invalid regular expression: /{*/: Lone quantifier brackets".into(), 1))
+		Err(("invalid_regexp '{*' 'Lone quantifier brackets'".into(), 1))
 	);
 }
 
@@ -519,7 +492,7 @@ fn comments_are_collected_and_skipped() {
 		]
 	);
 	assert_eq!(&"a // one\n/* two\n */ b"[lexer.comments[1].text_range()], " two\n ");
-	assert_eq!(error("/* x").0, "Unterminated comment");
+	assert_eq!(error("/* x").0, "unterminated_comment");
 }
 
 #[test]
@@ -551,8 +524,8 @@ fn unicode_whitespace() {
 
 #[test]
 fn unexpected_characters() {
-	assert_eq!(error("a ¬ b").0, "Unexpected character '¬'");
-	assert_eq!(error("\\").0, "Expecting Unicode escape sequence \\uXXXX");
+	assert_eq!(error("a ¬ b").0, "unexpected_character '¬'");
+	assert_eq!(error("\\").0, "expected_unicode_escape");
 }
 
 #[test]

@@ -1,7 +1,7 @@
 {
 	"error": {
 		"code": "invalid_super",
-		"message": "Invalid use of 'super'",
+		"args": [],
 		"pos": 40,
 		"end": 40,
 		"loc": {

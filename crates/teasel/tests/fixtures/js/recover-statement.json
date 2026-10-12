@@ -230,7 +230,7 @@
 	"errors": [
 		{
 			"code": "unexpected_token",
-			"message": "Unexpected token",
+			"args": [],
 			"pos": 6,
 			"end": 7,
 			"loc": {
@@ -240,7 +240,7 @@
 		},
 		{
 			"code": "unexpected_token",
-			"message": "Unexpected token",
+			"args": [],
 			"pos": 14,
 			"end": 15,
 			"loc": {
@@ -250,7 +250,7 @@
 		},
 		{
 			"code": "unexpected_token",
-			"message": "Unexpected token",
+			"args": [],
 			"pos": 22,
 			"end": 23,
 			"loc": {
@@ -260,7 +260,7 @@
 		},
 		{
 			"code": "unexpected_token",
-			"message": "Unexpected token",
+			"args": [],
 			"pos": 26,
 			"end": 27,
 			"loc": {
@@ -270,7 +270,7 @@
 		},
 		{
 			"code": "unexpected_token",
-			"message": "Unexpected token",
+			"args": [],
 			"pos": 37,
 			"end": 38,
 			"loc": {
@@ -280,7 +280,7 @@
 		},
 		{
 			"code": "unexpected_token",
-			"message": "Unexpected token",
+			"args": [],
 			"pos": 50,
 			"end": 51,
 			"loc": {
@@ -290,7 +290,7 @@
 		},
 		{
 			"code": "unexpected_token",
-			"message": "Unexpected token",
+			"args": [],
 			"pos": 51,
 			"end": 52,
 			"loc": {
@@ -300,7 +300,9 @@
 		},
 		{
 			"code": "using_pattern",
-			"message": "'using' declarations may not have binding patterns",
+			"args": [
+				"using"
+			],
 			"pos": 93,
 			"end": 93,
 			"loc": {
@@ -310,7 +312,9 @@
 		},
 		{
 			"code": "using_without_initializer",
-			"message": "Missing initializer in using declaration",
+			"args": [
+				"using"
+			],
 			"pos": 119,
 			"end": 120,
 			"loc": {
@@ -320,7 +324,9 @@
 		},
 		{
 			"code": "using_in_for_in",
-			"message": "The left-hand side of a for-in loop may not be a using declaration",
+			"args": [
+				"using"
+			],
 			"pos": 128,
 			"end": 128,
 			"loc": {

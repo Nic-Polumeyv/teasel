@@ -1,7 +1,7 @@
 {
 	"error": {
 		"code": "bad_template_escape",
-		"message": "Bad escape sequence in untagged template literal",
+		"args": [],
 		"pos": 1,
 		"end": 1,
 		"loc": {

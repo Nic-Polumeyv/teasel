@@ -1,7 +1,7 @@
 {
 	"error": {
 		"code": "unterminated_regexp",
-		"message": "Unterminated regular expression",
+		"args": [],
 		"pos": 1,
 		"end": 1,
 		"loc": {

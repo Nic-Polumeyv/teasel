@@ -1,7 +1,7 @@
 {
 	"error": {
 		"code": "unexpected_eof",
-		"message": "Unexpected end of input",
+		"args": [],
 		"pos": 4,
 		"end": 4,
 		"loc": {

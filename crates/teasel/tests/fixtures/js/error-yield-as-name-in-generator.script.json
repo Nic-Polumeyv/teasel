@@ -1,7 +1,7 @@
 {
 	"error": {
 		"code": "yield_as_identifier",
-		"message": "Cannot use 'yield' as identifier inside a generator",
+		"args": [],
 		"pos": 20,
 		"end": 20,
 		"loc": {

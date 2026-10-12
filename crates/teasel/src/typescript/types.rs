@@ -803,7 +803,7 @@ impl Parser<'_, TypeScript> {
 				Some(TsKind::OptionalType { .. } | TsKind::NamedTupleMember { optional: true, .. })
 			);
 			if seen_optional && !optional && !matches!(kind, Some(TsKind::RestType { .. })) {
-				return self.error(self.start_of(element), Code::RequiredElementAfterOptional);
+				return self.error(self.start_of(element), Code::RequiredAfterOptional);
 			}
 			seen_optional |= optional;
 		}
@@ -871,11 +871,7 @@ impl Parser<'_, TypeScript> {
 			TypeParameterModifiers::Const => (&["const"], IN_OUT),
 			TypeParameterModifiers::Class => (IN_OUT_CONST, ACCESSIBILITY_AND_CLASS),
 		};
-		let error = match modifiers {
-			TypeParameterModifiers::InOut => Code::TypeParameterModifier,
-			_ => Code::ClassTypeParameterModifier,
-		};
-		let parsed = self.parse_modifiers(allowed, disallowed, false, Some(error))?;
+		let parsed = self.parse_modifiers(allowed, disallowed, false, Some(Code::TypeParameterModifier))?;
 		let name = self.parse_type_parameter_name()?;
 		let constraint = self.eat_then_parse_type(TokenKind::Keyword(Keyword::Extends))?;
 		let default = self.eat_then_parse_type(TokenKind::Eq)?;

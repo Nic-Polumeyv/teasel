@@ -1,7 +1,7 @@
 {
 	"error": {
 		"code": "import_export_not_top_level",
-		"message": "'import' and 'export' may only appear at the top level",
+		"args": [],
 		"pos": 15,
 		"end": 21,
 		"loc": {

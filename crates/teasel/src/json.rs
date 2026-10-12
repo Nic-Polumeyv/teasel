@@ -34,15 +34,13 @@ impl Request {
 	}
 }
 
-/// The error answer for a request the parser never ran: a host's offsets or switches.
-pub fn error_json(message: &str, pos: u32) -> String {
+/// The error answer for a request the parser never ran: a host's offsets or switches, what is
+/// wrong with them as the one argument.
+pub fn error_json(reason: &str, pos: u32) -> String {
 	use std::fmt::Write;
-	let mut out = format!(
-		"{{\"error\":{{\"code\":\"{}\",\"message\":",
-		Code::InvalidRequest.name()
-	);
-	crate::estree::write_json_string(&mut out, message);
-	write!(out, ",\"pos\":{pos},\"end\":{pos}}}}}").unwrap();
+	let mut out = format!("{{\"error\":{{\"code\":\"{}\",\"args\":[", Code::InvalidRequest.name());
+	crate::estree::write_json_string(&mut out, reason);
+	write!(out, "],\"pos\":{pos},\"end\":{pos}}}}}").unwrap();
 	out
 }
 
@@ -232,12 +230,7 @@ pub fn layout_json() -> String {
 	}
 	w.end();
 	w.key(key("errors"));
-	w.object();
-	w.key(key("codes"));
 	names(&mut w, Code::ALL.iter().map(|code| code.name()).collect());
-	w.key(key("messages"));
-	names(&mut w, Code::ALL.iter().map(|code| code.message()).collect());
-	w.end();
 	w.key(key("recipes"));
 	w.object();
 	w.key(key("js"));

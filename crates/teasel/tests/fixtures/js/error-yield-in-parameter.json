@@ -1,7 +1,7 @@
 {
 	"error": {
 		"code": "yield_in_default_value",
-		"message": "Yield expression cannot be a default value",
+		"args": [],
 		"pos": 16,
 		"end": 16,
 		"loc": {

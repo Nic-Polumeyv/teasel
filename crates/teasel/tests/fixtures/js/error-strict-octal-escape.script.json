@@ -1,7 +1,7 @@
 {
 	"error": {
 		"code": "strict_octal",
-		"message": "Octal literal in strict mode",
+		"args": [],
 		"pos": 26,
 		"end": 26,
 		"loc": {

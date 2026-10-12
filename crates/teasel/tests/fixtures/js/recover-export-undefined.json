@@ -87,7 +87,9 @@
 	"errors": [
 		{
 			"code": "undefined_export",
-			"message": "Export 'b' is not defined",
+			"args": [
+				"b"
+			],
 			"pos": 17,
 			"end": 17,
 			"loc": {
@@ -97,7 +99,9 @@
 		},
 		{
 			"code": "undefined_export",
-			"message": "Export 'a' is not defined",
+			"args": [
+				"a"
+			],
 			"pos": 31,
 			"end": 31,
 			"loc": {

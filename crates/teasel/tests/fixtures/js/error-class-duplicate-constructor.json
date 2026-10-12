@@ -1,7 +1,7 @@
 {
 	"error": {
 		"code": "duplicate_constructor",
-		"message": "Duplicate constructor in the same class",
+		"args": [],
 		"pos": 27,
 		"end": 27,
 		"loc": {

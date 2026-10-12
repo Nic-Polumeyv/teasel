@@ -1,7 +1,7 @@
 {
 	"error": {
 		"code": "super_outside_method",
-		"message": "'super' keyword outside a method",
+		"args": [],
 		"pos": 0,
 		"end": 5,
 		"loc": {

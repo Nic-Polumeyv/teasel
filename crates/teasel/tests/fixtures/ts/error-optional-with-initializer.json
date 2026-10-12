@@ -1,7 +1,7 @@
 {
 	"error": {
 		"code": "optional_with_initializer",
-		"message": "Parameter cannot have question mark and initializer",
+		"args": [],
 		"pos": 11,
 		"end": 11,
 		"loc": {

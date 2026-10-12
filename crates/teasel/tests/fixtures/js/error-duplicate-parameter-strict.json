@@ -1,7 +1,7 @@
 {
 	"error": {
 		"code": "duplicate_parameter",
-		"message": "Argument name clash",
+		"args": [],
 		"pos": 14,
 		"end": 14,
 		"loc": {

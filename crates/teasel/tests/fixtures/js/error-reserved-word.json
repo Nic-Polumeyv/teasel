@@ -1,7 +1,9 @@
 {
 	"error": {
 		"code": "unexpected_keyword",
-		"message": "Unexpected keyword 'class'",
+		"args": [
+			"class"
+		],
 		"pos": 6,
 		"end": 6,
 		"loc": {

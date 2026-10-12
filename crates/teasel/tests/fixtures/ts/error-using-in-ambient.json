@@ -1,7 +1,9 @@
 {
 	"error": {
 		"code": "using_in_ambient",
-		"message": "'using' declarations are not allowed in ambient contexts",
+		"args": [
+			"using"
+		],
 		"pos": 22,
 		"end": 27,
 		"loc": {

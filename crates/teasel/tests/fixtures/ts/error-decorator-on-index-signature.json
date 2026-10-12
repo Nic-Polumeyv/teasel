@@ -1,7 +1,7 @@
 {
 	"error": {
 		"code": "decorator_placement",
-		"message": "Decorators cannot be applied to an index signature.",
+		"args": [],
 		"pos": 10,
 		"end": 10,
 		"loc": {

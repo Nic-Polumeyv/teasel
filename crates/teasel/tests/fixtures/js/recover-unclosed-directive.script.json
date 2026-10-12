@@ -12,7 +12,7 @@
 	"errors": [
 		{
 			"code": "unterminated_string",
-			"message": "Unterminated string constant",
+			"args": [],
 			"pos": 14,
 			"end": 14,
 			"loc": {
@@ -22,7 +22,7 @@
 		},
 		{
 			"code": "unexpected_eof",
-			"message": "Unexpected end of input",
+			"args": [],
 			"pos": 15,
 			"end": 15,
 			"loc": {

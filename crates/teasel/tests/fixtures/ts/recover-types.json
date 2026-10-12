@@ -198,7 +198,7 @@
 	"errors": [
 		{
 			"code": "unexpected_token",
-			"message": "Unexpected token",
+			"args": [],
 			"pos": 7,
 			"end": 8,
 			"loc": {
@@ -208,7 +208,7 @@
 		},
 		{
 			"code": "unexpected_token",
-			"message": "Unexpected token",
+			"args": [],
 			"pos": 26,
 			"end": 27,
 			"loc": {
@@ -218,7 +218,7 @@
 		},
 		{
 			"code": "unexpected_token",
-			"message": "Unexpected token",
+			"args": [],
 			"pos": 40,
 			"end": 41,
 			"loc": {
@@ -228,7 +228,7 @@
 		},
 		{
 			"code": "unexpected_token",
-			"message": "Unexpected token",
+			"args": [],
 			"pos": 59,
 			"end": 60,
 			"loc": {

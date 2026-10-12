@@ -98,7 +98,8 @@ try {
 	e.pos;     // 4
 	e.end;     // 5
 	e.loc;     // { line: 1, column: 4 }
-	e.message; // 'Unexpected token'
+	e.args;    // []
+	e.message; // 'unexpected_token'
 }
 ```
 

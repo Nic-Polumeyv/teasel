@@ -1,7 +1,9 @@
 {
 	"error": {
 		"code": "expected",
-		"message": "Expected an identifier",
+		"args": [
+			"an identifier"
+		],
 		"pos": 34,
 		"end": 34,
 		"loc": {

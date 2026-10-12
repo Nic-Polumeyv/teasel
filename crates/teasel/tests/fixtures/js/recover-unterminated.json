@@ -84,7 +84,7 @@
 	"errors": [
 		{
 			"code": "unterminated_string",
-			"message": "Unterminated string constant",
+			"args": [],
 			"pos": 10,
 			"end": 10,
 			"loc": {
@@ -94,7 +94,7 @@
 		},
 		{
 			"code": "unterminated_template",
-			"message": "Unterminated template",
+			"args": [],
 			"pos": 36,
 			"end": 36,
 			"loc": {

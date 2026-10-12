@@ -1,7 +1,9 @@
 {
 	"error": {
 		"code": "using_pattern",
-		"message": "'using' declarations may not have binding patterns",
+		"args": [
+			"using"
+		],
 		"pos": 27,
 		"end": 27,
 		"loc": {

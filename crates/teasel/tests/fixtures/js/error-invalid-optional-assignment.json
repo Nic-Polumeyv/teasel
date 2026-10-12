@@ -1,7 +1,7 @@
 {
 	"error": {
 		"code": "optional_chain_assignment",
-		"message": "Optional chaining cannot appear in left-hand side",
+		"args": [],
 		"pos": 0,
 		"end": 0,
 		"loc": {

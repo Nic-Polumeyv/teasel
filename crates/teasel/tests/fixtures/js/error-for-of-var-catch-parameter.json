@@ -1,7 +1,9 @@
 {
 	"error": {
 		"code": "redeclaration",
-		"message": "Identifier 'a' has already been declared",
+		"args": [
+			"a"
+		],
 		"pos": 28,
 		"end": 28,
 		"loc": {

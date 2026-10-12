@@ -1,7 +1,9 @@
 {
 	"error": {
 		"code": "index_signature_modifier",
-		"message": "Index signatures cannot have an accessibility modifier ('public').",
+		"args": [
+			"public"
+		],
 		"pos": 10,
 		"end": 10,
 		"loc": {

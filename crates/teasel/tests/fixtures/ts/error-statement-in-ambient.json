@@ -1,7 +1,7 @@
 {
 	"error": {
 		"code": "statement_in_ambient",
-		"message": "Statements are not allowed in ambient contexts.",
+		"args": [],
 		"pos": 22,
 		"end": 22,
 		"loc": {

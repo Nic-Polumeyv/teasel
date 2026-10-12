@@ -2,17 +2,18 @@
 title: Errors
 ---
 
-A syntax error throws a `SyntaxError`. It has a `code` to branch on and a position.
+A syntax error throws a `SyntaxError`. It has a `code` to branch on, `args` saying what it is about, and a position. The `message` is the code and the arguments, `expected '}'`; the words are yours to write from the code.
 
 ```js errors.js
 try {
 	new Source('x = ;').parse();
 } catch (e) {
 	e.code;    // 'unexpected_token'
+	e.args;    // []
 	e.pos;     // 4
 	e.end;     // 5
 	e.loc;     // { line: 1, column: 4 }
-	e.message; // 'Unexpected token'
+	e.message; // 'unexpected_token'
 }
 ```
 
@@ -58,4 +59,4 @@ A compiler that must reject the file leaves recovery off and catches the throw.
 
 ## Error positions
 
-`pos` and `end` span the token the parser could not accept. When the cause is elsewhere, an earlier declaration of the same name for instance, `end` equals `pos`. `unexpected_eof` points at the end of what was parsed. An offset you pass that is outside the text is `invalid_request`, with no `loc`. Every code is in the type [`Code`](/reference/parser#code), so a comparison against one is type-checked, and [Error codes](/reference/error-codes) lists each code with its messages.
+`pos` and `end` span the token the parser could not accept. When the cause is elsewhere, an earlier declaration of the same name for instance, `end` equals `pos`. `unexpected_eof` points at the end of what was parsed. An offset you pass that is outside the text is `invalid_request`, with no `loc`. Every code is in the type [`Code`](/reference/parser#code), so a comparison against one is type-checked, and [Error codes](/reference/error-codes) says what each code means.

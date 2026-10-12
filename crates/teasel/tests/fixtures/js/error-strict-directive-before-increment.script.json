@@ -1,7 +1,7 @@
 {
 	"error": {
 		"code": "strict_with",
-		"message": "'with' in strict mode",
+		"args": [],
 		"pos": 18,
 		"end": 22,
 		"loc": {

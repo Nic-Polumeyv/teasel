@@ -1,7 +1,9 @@
 {
 	"error": {
 		"code": "constructor_modifier",
-		"message": "'static' modifier cannot appear on a constructor declaration",
+		"args": [
+			"static"
+		],
 		"pos": 10,
 		"end": 10,
 		"loc": {

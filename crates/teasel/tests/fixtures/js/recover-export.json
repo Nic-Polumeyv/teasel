@@ -70,7 +70,7 @@
 	"errors": [
 		{
 			"code": "unexpected_token",
-			"message": "Unexpected token",
+			"args": [],
 			"pos": 21,
 			"end": 22,
 			"loc": {
@@ -80,7 +80,7 @@
 		},
 		{
 			"code": "unexpected_token",
-			"message": "Unexpected token",
+			"args": [],
 			"pos": 23,
 			"end": 24,
 			"loc": {

@@ -1,7 +1,7 @@
 {
 	"error": {
 		"code": "decorator_placement",
-		"message": "Leading decorators must be attached to a class declaration.",
+		"args": [],
 		"pos": 5,
 		"end": 14,
 		"loc": {

@@ -1,7 +1,9 @@
 {
 	"error": {
 		"code": "duplicate_export",
-		"message": "Duplicate export 'b'",
+		"args": [
+			"b"
+		],
 		"pos": 42,
 		"end": 42,
 		"loc": {

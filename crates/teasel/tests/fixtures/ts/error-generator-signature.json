@@ -1,7 +1,7 @@
 {
 	"error": {
 		"code": "generator_signature",
-		"message": "An overload signature cannot be declared as a generator.",
+		"args": [],
 		"pos": 12,
 		"end": 12,
 		"loc": {

@@ -1,7 +1,10 @@
 {
 	"error": {
 		"code": "conflicting_modifiers",
-		"message": "'private' modifier cannot be used with 'abstract' modifier.",
+		"args": [
+			"private",
+			"abstract"
+		],
 		"pos": 27,
 		"end": 27,
 		"loc": {

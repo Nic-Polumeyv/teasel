@@ -1,7 +1,7 @@
 {
 	"error": {
 		"code": "predicate_placement",
-		"message": "A type predicate is only allowed in return type position for functions and methods",
+		"args": [],
 		"pos": 27,
 		"end": 27,
 		"loc": {

@@ -21,17 +21,18 @@ use crate::{Code, Entry, Options, SyntaxError};
 pub(crate) type ParseAt<X> =
 	fn(&str, u32, Option<u32>, Entry, Options, &str) -> (Ast<X>, Result<(List, u32), SyntaxError>);
 
-/// An error with its message filled from the strings of its parse.
+/// An error with its arguments read from the strings of its parse.
 #[derive(Debug)]
 pub(crate) struct Failed {
 	pub code: Code,
-	pub message: String,
+	/// The code and its arguments, `expected '}'`.
+	pub text: String,
 	pub pos: u32,
 }
 
 impl std::fmt::Display for Failed {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "{} ({})", self.message, self.pos)
+		write!(f, "{} ({})", self.text, self.pos)
 	}
 }
 
@@ -43,7 +44,7 @@ pub(crate) fn settled<X>(
 		Ok((list, end)) => Ok((ast, list, end)),
 		Err(e) => Err(Failed {
 			code: e.code,
-			message: e.message(&ast.strings),
+			text: e.describe(&ast.strings),
 			pos: e.pos,
 		}),
 	}
@@ -151,7 +152,7 @@ fn expr(src: &str) -> String {
 fn module_error(src: &str) -> String {
 	match program(src, Options(Options::MODULE)) {
 		Ok(_) => panic!("no error for {src:?}"),
-		Err(e) => format!("{} ({})", e.message, e.pos),
+		Err(e) => e.to_string(),
 	}
 }
 
@@ -212,12 +213,12 @@ fn nesting_limits() {
 		.stack_size(64 << 20)
 		.spawn(|| {
 			let deep = format!("{}1{}", "(".repeat(2000), ")".repeat(2000));
-			assert_eq!(module_error(&deep).as_str(), "Maximum nesting depth exceeded (499)");
+			assert_eq!(module_error(&deep).as_str(), "nesting_depth (499)");
 			assert!(program(&format!("{}1{}", "(".repeat(400), ")".repeat(400)), Options::default()).is_ok());
 			let chain = format!("x = 1{}", " + 1".repeat(9000));
 			assert!(program(&chain, Options::default()).is_ok());
 			let chain = format!("x = 1{}", " + 1".repeat(20000));
-			assert_eq!(module_error(&chain).as_str(), "Maximum nesting depth exceeded (40006)");
+			assert_eq!(module_error(&chain).as_str(), "nesting_depth (40006)");
 		})
 		.unwrap()
 		.join()
@@ -250,22 +251,25 @@ fn entry_points() {
 	);
 	assert_eq!(end, 30);
 	assert_eq!(
-		params("{#snippet row(a, a)}", 13, options, "").unwrap_err().message,
-		"Argument name clash"
+		params("{#snippet row(a, a)}", 13, options, "").unwrap_err().text,
+		"duplicate_parameter"
 	);
 	// Parameters are read as expressions first, so the errors are an arrow's.
 	let params_error = |src: &str| {
 		let e = params(src, 13, options, "").unwrap_err();
-		(e.message, e.pos)
+		(e.text, e.pos)
 	};
-	assert_eq!(params_error("{#snippet row(a.b)}"), ("Assigning to rvalue".into(), 14));
+	assert_eq!(
+		params_error("{#snippet row(a.b)}"),
+		("invalid_assignment_target".into(), 14)
+	);
 	assert_eq!(
 		params_error("{#snippet row((a))}"),
-		("Parenthesized pattern".into(), 14)
+		("parenthesized_pattern".into(), 14)
 	);
 	assert_eq!(
 		params_error("{#snippet row(a = await x)}"),
-		("Await expression cannot be a default value".into(), 18)
+		("await_in_default_value".into(), 18)
 	);
 	// The nesting limit must fail before the stack does, on wasm's 1 MB; debug frames are far
 	// bigger, so the check gets a stack to match there.

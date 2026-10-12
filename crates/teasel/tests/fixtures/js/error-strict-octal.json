@@ -1,7 +1,7 @@
 {
 	"error": {
 		"code": "invalid_number",
-		"message": "Invalid number",
+		"args": [],
 		"pos": 14,
 		"end": 14,
 		"loc": {

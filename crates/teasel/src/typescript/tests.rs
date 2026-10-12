@@ -71,7 +71,7 @@ fn expr(src: &str) -> String {
 	let options = Options(Options::MODULE);
 	match at(Entry::Expression, src, 0, options, "") {
 		Ok((ast, id, _)) => dump(&ast, id),
-		Err(e) => format!("error {}: {}", e.pos, e.message),
+		Err(e) => format!("error {}: {}", e.pos, e.text),
 	}
 }
 

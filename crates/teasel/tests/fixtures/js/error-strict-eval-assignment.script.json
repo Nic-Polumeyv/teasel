@@ -1,7 +1,9 @@
 {
 	"error": {
 		"code": "strict_binding",
-		"message": "Assigning to eval in strict mode",
+		"args": [
+			"eval"
+		],
 		"pos": 14,
 		"end": 14,
 		"loc": {

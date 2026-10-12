@@ -567,7 +567,10 @@ fn a_branch_names_a_block_without_branches() {
 		&host.wire(),
 		&Request::from_flags(Options::MODULE),
 	);
-	assert!(answer.contains("A branch in {#repeat} is not allowed here"), "{answer}");
+	assert!(
+		answer.contains(r#""code":"placement","args":["A branch in {#repeat}"]"#),
+		"{answer}"
+	);
 }
 
 // a marker read halfway is another word, unless it read a part whole or the punctuation a part
@@ -606,11 +609,14 @@ fn a_marker_read_halfway_is_another_word() {
 		assert!(!answer.contains("error"), "{text}: {answer}");
 	}
 	let answer = parse("{#eac a}");
-	assert!(answer.contains("Expected {#each}"), "{answer}");
+	assert!(answer.contains(r#""code":"expected","args":["{#each}"]"#), "{answer}");
 	let answer = parse("{#each a}{/eac}");
-	assert!(answer.contains("Expected {/each}"), "{answer}");
+	assert!(answer.contains(r#""code":"expected","args":["{/each}"]"#), "{answer}");
 	let answer = parse("{/eachx}");
-	assert!(answer.contains("Unexpected closing eachx"), "{answer}");
+	assert!(
+		answer.contains(r#""code":"unexpected_close","args":["eachx"]"#),
+		"{answer}"
+	);
 }
 
 // blocks may share a close, which closes the innermost of them, in either written order
@@ -1187,7 +1193,10 @@ fn a_host_has_its_own_syntax() {
 	}
 	host.definition.constructs = Some(constructs("{{", "}}"));
 	let answer = parse(&host, "{{#fore a}}x{{/fore}}");
-	assert!(answer.contains("Expected whitespace"), "{answer}");
+	assert!(
+		answer.contains(r#""code":"expected","args":["whitespace"]"#),
+		"{answer}"
+	);
 
 	// `outside` names the attribute
 	let answer = parse(&host, "<div data-x><slot/></div><div shadowrootmode><slot/></div>");
