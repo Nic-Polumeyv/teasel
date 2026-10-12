@@ -20,7 +20,10 @@
 	},
 	"imports": {
 		"#engine": {
-			"node": "./dist/engine/node.js",
+			"node": {
+				"node-addons": "./dist/engine/node.js",
+				"default": "./dist/engine/sync.js"
+			},
 			"default": "./dist/engine/web.js"
 		}
 	},
