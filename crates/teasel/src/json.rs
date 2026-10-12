@@ -593,9 +593,11 @@ fn parse_with(source: &str, positions: &Positions, request: &Request, stop: &str
 	})
 }
 
-/// Beside the options' slots in the answer's word: the roots are a list, the parse failed.
-const LISTED: u32 = 1 << 28;
-const FAILED: u32 = 1 << 29;
+/// The answer's word: the roots are a list, the parse failed, the tree is TypeScript's. The
+/// options are the caller's, but a document's language is the grammar's to tell.
+const LISTED: u32 = 1;
+const FAILED: u32 = 2;
+const TYPESCRIPT: u32 = 4;
 
 /// The answer read in place, its words at `words`, or the error answer as JSON.
 fn in_place_with(
@@ -687,9 +689,7 @@ where
 	let names = &mut pool.names[request.options.typescript() as usize];
 	prepare(&mut ast, source, positions, options, failed, names);
 	// `end`, the roots by number, a word of what the answer is, each view's length, then where the
-	// tree's buffers sit folded into two words: a front end keeps its views while that holds. The
-	// word is the options as given, with two facts of the answer beside their slots: the roots
-	// are a list, the parse failed
+	// tree's buffers sit folded into two words: a front end keeps its views while that holds
 	words.clear();
 	let roots = roots.map_or(&[][..], |roots| ast.list(roots));
 	words.extend_from_slice(&[
@@ -698,7 +698,8 @@ where
 	]);
 	words.extend(roots.iter().map(|root| root.unwrap().index()));
 	let listed = if request.entry == Entry::Params { LISTED } else { 0 };
-	words.push(options.0 | listed | if failed { FAILED } else { 0 });
+	let typescript = if options.typescript() { TYPESCRIPT } else { 0 };
+	words.push(listed | typescript | if failed { FAILED } else { 0 });
 	let mut sits = 0u64;
 	let mut note = |_, buffer: Option<&mut dyn Raw>| {
 		words.push(buffer.as_ref().map_or(0, |buffer| buffer.elements() as u32));

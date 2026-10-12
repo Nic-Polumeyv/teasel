@@ -174,7 +174,7 @@ export class Source {
 		}
 		let parsed: Parsed<any>;
 		try {
-			parsed = decode(answer, source, engine) as Parsed<any>;
+			parsed = decode(answer, source, engine, this.#flags) as Parsed<any>;
 		} catch (error) {
 			// a tree deeper than the caller's stack has room for overflowed the decoder
 			if (!(error instanceof RangeError)) throw error;

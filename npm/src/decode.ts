@@ -1160,11 +1160,11 @@ function names(G: Language, tree: Tree, count: number, moved: boolean): string[]
 
 const filled = (tree: Tree, words: Uint32Array, lens: number, at: number) => (words[lens + at] === 0 ? null : (tree[at] as Uint32Array).subarray(0, words[lens + at]));
 
-// what `words[lens]` says of an answer; each view's length follows it, then where the tree's buffers sit
-// the answer's word is the options as given, with two facts of the answer beside their slots: the roots are a list, the parse failed
-const LISTED = 1 << 28, FAILED = 1 << 29;
+// what `words[lens]` says of an answer: the roots are a list, the parse failed, the tree is TypeScript's (a document's language is the grammar's to tell); each view's length follows it, then where the tree's buffers sit
+const LISTED = 1, FAILED = 2, TYPESCRIPT = 4;
+// the options the answer was asked with, as `flags` packed them
 const slot = (key: keyof Options, index = 3) => index << (2 * SLOT[key]);
-const TYPESCRIPT = slot('typescript'), ERASED = slot('typescript', 2), COMMENTS = slot('comments'), LOCATED = slot('locations'), JS_LOCATED = slot('locations', 2), RECOVERED = slot('errorRecovery');
+const TS_OPTION = slot('typescript'), ERASED = slot('typescript', 2), COMMENTS = slot('comments'), LOCATED = slot('locations'), JS_LOCATED = slot('locations', 2), RECOVERED = slot('errorRecovery');
 
 function table(S: State, tree: Tree, words: Uint32Array, lens: number, rows: Rows, at: number): Decoded[] {
 	const build = S.link ? rows.linked : rows.plain;
@@ -1217,11 +1217,11 @@ function errors(S: State, view: Uint32Array, count: number): Decoded[] {
 }
 
 /**
- * The answer of the last parse: `words` are `end`, the roots by number, a word of what the answer
- * is and each view's length; the tree itself is read in place. `link` replaces the scope and
- * binding numbers with the objects they index.
+ * The answer of the last parse, asked with the options `flags` packed: `words` are `end`, the
+ * roots by number, a word of what the answer is and each view's length; the tree itself is read
+ * in place. `link` replaces the scope and binding numbers with the objects they index.
  */
-export function decode(words: Uint32Array, source: string, engine: Views, link = true): Decoded {
+export function decode(words: Uint32Array, source: string, engine: Views, flags: number, link = true): Decoded {
 	const C = compile(engine);
 	const lens = 2 + words[1];
 	const what = words[lens];
@@ -1233,8 +1233,8 @@ export function decode(words: Uint32Array, source: string, engine: Views, link =
 	G.sat[0] = lo;
 	G.sat[1] = hi;
 	const tree = engine.tree(typescript, moved);
-	const erase = (what & TYPESCRIPT) === ERASED, lines = (what & LOCATED) !== 0, listed = (what & LISTED) !== 0, failed = (what & FAILED) !== 0;
-	const host_lines = lines && (what & LOCATED) !== JS_LOCATED;
+	const erase = (flags & TS_OPTION) === ERASED, lines = (flags & LOCATED) !== 0, listed = (what & LISTED) !== 0, failed = (what & FAILED) !== 0;
+	const host_lines = lines && (flags & LOCATED) !== JS_LOCATED;
 	const spans = words[lens + at.spans] !== 0;
 	const scoped = words[lens + at.scopes] !== 0;
 	const config = (link ? LINK : 0) | (lines ? LINES : 0) | (host_lines ? HOST_LINES : 0) | (scoped ? FACTS : 0) | (erase ? ERASE : 0);
@@ -1332,8 +1332,8 @@ export function decode(words: Uint32Array, source: string, engine: Views, link =
 		for (let i = 2; i < lens; i++) if (S.erased === null || !bit(S.erased, words[i])) node.push(build(S, words[i], undefined));
 	} else node = build(S, words[2], undefined);
 	const answer: Decoded = { node, end: words[0] };
-	if (!failed && (what & COMMENTS) !== 0) answer.comments = comments(S, undefined);
-	if (failed || (what & RECOVERED) !== 0) answer.errors = errors(S, tree[at.errors] as Uint32Array, words[lens + at.errors] / ERROR_WORDS);
+	if (!failed && (flags & COMMENTS) !== 0) answer.comments = comments(S, undefined);
+	if (failed || (flags & RECOVERED) !== 0) answer.errors = errors(S, tree[at.errors] as Uint32Array, words[lens + at.errors] / ERROR_WORDS);
 	if (!failed && erase) answer.typescript = kept(S);
 	if (!failed && scoped) {
 		answer.scopes = S.scopes;
