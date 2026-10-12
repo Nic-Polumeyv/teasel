@@ -1163,7 +1163,8 @@ const filled = (tree: Tree, words: Uint32Array, lens: number, at: number) => (wo
 // what `words[lens]` says of an answer; each view's length follows it, then where the tree's buffers sit
 // the answer's word is the options as given, with two facts of the answer beside their slots: the roots are a list, the parse failed
 const LISTED = 1 << 28, FAILED = 1 << 29;
-const slot = (what: number, key: keyof Options) => (what >> (2 * SLOT[key])) & 3;
+const slot = (key: keyof Options, index = 3) => index << (2 * SLOT[key]);
+const TYPESCRIPT = slot('typescript'), ERASED = slot('typescript', 2), COMMENTS = slot('comments'), LOCATED = slot('locations'), JS_LOCATED = slot('locations', 2), RECOVERED = slot('errorRecovery');
 
 function table(S: State, tree: Tree, words: Uint32Array, lens: number, rows: Rows, at: number): Decoded[] {
 	const build = S.link ? rows.linked : rows.plain;
@@ -1224,7 +1225,7 @@ export function decode(words: Uint32Array, source: string, engine: Views, link =
 	const C = compile(engine);
 	const lens = 2 + words[1];
 	const what = words[lens];
-	const typescript = slot(what, 'typescript') !== 0;
+	const typescript = (what & TYPESCRIPT) !== 0;
 	const G = typescript ? (C.ts ??= language(C.layout, C.layout.views.ts!, true)) : C.js;
 	const at = G.at;
 	const lo = words[lens + at.sits], hi = words[lens + at.sits + 1];
@@ -1232,8 +1233,8 @@ export function decode(words: Uint32Array, source: string, engine: Views, link =
 	G.sat[0] = lo;
 	G.sat[1] = hi;
 	const tree = engine.tree(typescript, moved);
-	const erase = slot(what, 'typescript') === 2, lines = slot(what, 'locations') !== 0, listed = (what & LISTED) !== 0, failed = (what & FAILED) !== 0;
-	const host_lines = lines && slot(what, 'locations') !== 2;
+	const erase = (what & TYPESCRIPT) === ERASED, lines = (what & LOCATED) !== 0, listed = (what & LISTED) !== 0, failed = (what & FAILED) !== 0;
+	const host_lines = lines && (what & LOCATED) !== JS_LOCATED;
 	const spans = words[lens + at.spans] !== 0;
 	const scoped = words[lens + at.scopes] !== 0;
 	const config = (link ? LINK : 0) | (lines ? LINES : 0) | (host_lines ? HOST_LINES : 0) | (scoped ? FACTS : 0) | (erase ? ERASE : 0);
@@ -1323,27 +1324,22 @@ export function decode(words: Uint32Array, source: string, engine: Views, link =
 		S.roots = table(S, tree, words, lens, rows.roots, at.roots);
 		if (link) link_tables(S);
 	}
-	const recovered = () => errors(S, tree[at.errors] as Uint32Array, words[lens + at.errors] / ERROR_WORDS);
-	let answer: Decoded;
+	// a failed parse has no node and its one error listed, nothing else
+	let node: Decoded | Decoded[] | null = null;
 	if (failed) {
-		// no node, the one error listed, nothing else
-		answer = { node: null, end: words[0], errors: recovered() };
-	} else {
-		let node: Decoded | Decoded[];
-		if (listed) {
-			node = [];
-			for (let i = 2; i < lens; i++) if (S.erased === null || !bit(S.erased, words[i])) node.push(build(S, words[i], undefined));
-		} else node = build(S, words[2], undefined);
-		answer = { node, end: words[0] };
-		if (slot(what, 'comments') !== 0) answer.comments = comments(S, undefined);
-		if (slot(what, 'errorRecovery') !== 0) answer.errors = recovered();
-		if (erase) answer.typescript = kept(S);
-		if (scoped) {
-			answer.scopes = S.scopes;
-			answer.bindings = S.bindings;
-			answer.references = S.references;
-			if (words[lens + at.hosts] !== 0) answer.roots = S.roots;
-		}
+	} else if (listed) {
+		node = [];
+		for (let i = 2; i < lens; i++) if (S.erased === null || !bit(S.erased, words[i])) node.push(build(S, words[i], undefined));
+	} else node = build(S, words[2], undefined);
+	const answer: Decoded = { node, end: words[0] };
+	if (!failed && (what & COMMENTS) !== 0) answer.comments = comments(S, undefined);
+	if (failed || (what & RECOVERED) !== 0) answer.errors = errors(S, tree[at.errors] as Uint32Array, words[lens + at.errors] / ERROR_WORDS);
+	if (!failed && erase) answer.typescript = kept(S);
+	if (!failed && scoped) {
+		answer.scopes = S.scopes;
+		answer.bindings = S.bindings;
+		answer.references = S.references;
+		if (words[lens + at.hosts] !== 0) answer.roots = S.roots;
 	}
 	// the state outlives the answer: it lets go of what the answer holds
 	S.source = '';
