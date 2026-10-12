@@ -233,70 +233,56 @@
 			"args": [],
 			"pos": 6,
 			"end": 7,
-			"loc": {
-				"line": 1,
-				"column": 6
-			}
+			"line": 1,
+			"column": 6
 		},
 		{
 			"code": 0,
 			"args": [],
 			"pos": 14,
 			"end": 15,
-			"loc": {
-				"line": 3,
-				"column": 0
-			}
+			"line": 3,
+			"column": 0
 		},
 		{
 			"code": 0,
 			"args": [],
 			"pos": 22,
 			"end": 23,
-			"loc": {
-				"line": 4,
-				"column": 6
-			}
+			"line": 4,
+			"column": 6
 		},
 		{
 			"code": 0,
 			"args": [],
 			"pos": 26,
 			"end": 27,
-			"loc": {
-				"line": 4,
-				"column": 10
-			}
+			"line": 4,
+			"column": 10
 		},
 		{
 			"code": 0,
 			"args": [],
 			"pos": 37,
 			"end": 38,
-			"loc": {
-				"line": 5,
-				"column": 9
-			}
+			"line": 5,
+			"column": 9
 		},
 		{
 			"code": 0,
 			"args": [],
 			"pos": 50,
 			"end": 51,
-			"loc": {
-				"line": 6,
-				"column": 6
-			}
+			"line": 6,
+			"column": 6
 		},
 		{
 			"code": 0,
 			"args": [],
 			"pos": 51,
 			"end": 52,
-			"loc": {
-				"line": 6,
-				"column": 7
-			}
+			"line": 6,
+			"column": 7
 		},
 		{
 			"code": 92,
@@ -305,10 +291,8 @@
 			],
 			"pos": 93,
 			"end": 93,
-			"loc": {
-				"line": 8,
-				"column": 27
-			}
+			"line": 8,
+			"column": 27
 		},
 		{
 			"code": 93,
@@ -317,10 +301,8 @@
 			],
 			"pos": 119,
 			"end": 120,
-			"loc": {
-				"line": 9,
-				"column": 15
-			}
+			"line": 9,
+			"column": 15
 		},
 		{
 			"code": 94,
@@ -329,10 +311,8 @@
 			],
 			"pos": 128,
 			"end": 128,
-			"loc": {
-				"line": 10,
-				"column": 5
-			}
+			"line": 10,
+			"column": 5
 		}
 	],
 	"scopes": [

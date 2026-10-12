@@ -161,20 +161,16 @@
 			"args": [],
 			"pos": 9,
 			"end": 9,
-			"loc": {
-				"line": 1,
-				"column": 9
-			}
+			"line": 1,
+			"column": 9
 		},
 		{
 			"code": 0,
 			"args": [],
 			"pos": 16,
 			"end": 17,
-			"loc": {
-				"line": 1,
-				"column": 16
-			}
+			"line": 1,
+			"column": 16
 		},
 		{
 			"code": 1,
@@ -183,20 +179,16 @@
 			],
 			"pos": 19,
 			"end": 19,
-			"loc": {
-				"line": 1,
-				"column": 19
-			}
+			"line": 1,
+			"column": 19
 		},
 		{
 			"code": 0,
 			"args": [],
 			"pos": 32,
 			"end": 33,
-			"loc": {
-				"line": 2,
-				"column": 8
-			}
+			"line": 2,
+			"column": 8
 		},
 		{
 			"code": 1,
@@ -205,20 +197,16 @@
 			],
 			"pos": 32,
 			"end": 32,
-			"loc": {
-				"line": 2,
-				"column": 8
-			}
+			"line": 2,
+			"column": 8
 		},
 		{
 			"code": 0,
 			"args": [],
 			"pos": 32,
 			"end": 33,
-			"loc": {
-				"line": 2,
-				"column": 8
-			}
+			"line": 2,
+			"column": 8
 		},
 		{
 			"code": 1,
@@ -227,10 +215,8 @@
 			],
 			"pos": 40,
 			"end": 40,
-			"loc": {
-				"line": 3,
-				"column": 6
-			}
+			"line": 3,
+			"column": 6
 		}
 	],
 	"scopes": [

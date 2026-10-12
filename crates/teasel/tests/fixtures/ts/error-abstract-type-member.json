@@ -9,10 +9,8 @@
 			],
 			"pos": 23,
 			"end": 24,
-			"loc": {
-				"line": 1,
-				"column": 23
-			}
+			"line": 1,
+			"column": 23
 		}
 	]
 }

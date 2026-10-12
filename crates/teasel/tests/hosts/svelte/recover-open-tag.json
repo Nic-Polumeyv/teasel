@@ -124,10 +124,8 @@
 			],
 			"pos": 23,
 			"end": 23,
-			"loc": {
-				"line": 3,
-				"column": 0
-			}
+			"line": 3,
+			"column": 0
 		},
 		{
 			"code": 1,
@@ -136,10 +134,8 @@
 			],
 			"pos": 45,
 			"end": 45,
-			"loc": {
-				"line": 6,
-				"column": 0
-			}
+			"line": 6,
+			"column": 0
 		}
 	],
 	"scopes": [

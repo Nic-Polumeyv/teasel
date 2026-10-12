@@ -92,10 +92,8 @@
 			],
 			"pos": 17,
 			"end": 17,
-			"loc": {
-				"line": 1,
-				"column": 17
-			}
+			"line": 1,
+			"column": 17
 		},
 		{
 			"code": 47,
@@ -104,10 +102,8 @@
 			],
 			"pos": 31,
 			"end": 31,
-			"loc": {
-				"line": 2,
-				"column": 9
-			}
+			"line": 2,
+			"column": 9
 		}
 	],
 	"scopes": [

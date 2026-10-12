@@ -612,7 +612,7 @@ impl<'a, X: Emit> Writer<'a, X> {
 		self.json.end();
 	}
 
-	/// The recovered errors as the thrown one would be: code, args, `pos`, `end` and a `loc`.
+	/// The recovered errors as the thrown one would be: code, args, `pos`, `end`, `line`, `column`.
 	fn errors(&mut self) {
 		let places = self.positions.of_errors(self.source, &self.ast.errors);
 		self.key(c!("errors"));
@@ -631,13 +631,10 @@ impl<'a, X: Emit> Writer<'a, X> {
 			self.json.int(pos);
 			self.key(c!("end"));
 			self.json.int(end);
-			self.key(c!("loc"));
-			self.json.object();
 			self.key(c!("line"));
 			self.json.int(line);
 			self.key(c!("column"));
 			self.json.int(column);
-			self.json.end();
 			self.json.end();
 		}
 		self.json.end();

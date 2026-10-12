@@ -136,7 +136,9 @@ export interface Recovered {
 	args: readonly string[];
 	pos: number;
 	end: number;
-	loc: Position;
+	/** 1-based line and 0-based column of `pos`. */
+	line: number;
+	column: number;
 }
 
 declare const answers: unique symbol;

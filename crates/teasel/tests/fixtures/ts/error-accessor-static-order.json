@@ -10,10 +10,8 @@
 			],
 			"pos": 19,
 			"end": 19,
-			"loc": {
-				"line": 1,
-				"column": 19
-			}
+			"line": 1,
+			"column": 19
 		}
 	]
 }

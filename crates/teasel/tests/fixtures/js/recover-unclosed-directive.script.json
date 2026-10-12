@@ -15,20 +15,16 @@
 			"args": [],
 			"pos": 14,
 			"end": 14,
-			"loc": {
-				"line": 1,
-				"column": 14
-			}
+			"line": 1,
+			"column": 14
 		},
 		{
 			"code": 7,
 			"args": [],
 			"pos": 15,
 			"end": 15,
-			"loc": {
-				"line": 1,
-				"column": 15
-			}
+			"line": 1,
+			"column": 15
 		}
 	],
 	"scopes": [

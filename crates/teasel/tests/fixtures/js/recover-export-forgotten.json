@@ -46,20 +46,16 @@
 			],
 			"pos": 9,
 			"end": 9,
-			"loc": {
-				"line": 1,
-				"column": 9
-			}
+			"line": 1,
+			"column": 9
 		},
 		{
 			"code": 0,
 			"args": [],
 			"pos": 31,
 			"end": 32,
-			"loc": {
-				"line": 2,
-				"column": 17
-			}
+			"line": 2,
+			"column": 17
 		}
 	],
 	"scopes": [

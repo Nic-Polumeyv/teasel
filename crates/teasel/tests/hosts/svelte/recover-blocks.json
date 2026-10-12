@@ -145,10 +145,8 @@
 			],
 			"pos": 5,
 			"end": 6,
-			"loc": {
-				"line": 1,
-				"column": 5
-			}
+			"line": 1,
+			"column": 5
 		},
 		{
 			"code": 2,
@@ -157,10 +155,8 @@
 			],
 			"pos": 26,
 			"end": 27,
-			"loc": {
-				"line": 2,
-				"column": 7
-			}
+			"line": 2,
+			"column": 7
 		},
 		{
 			"code": 6,
@@ -169,10 +165,8 @@
 			],
 			"pos": 47,
 			"end": 48,
-			"loc": {
-				"line": 3,
-				"column": 0
-			}
+			"line": 3,
+			"column": 0
 		},
 		{
 			"code": 3,
@@ -181,20 +175,16 @@
 			],
 			"pos": 55,
 			"end": 56,
-			"loc": {
-				"line": 4,
-				"column": 0
-			}
+			"line": 4,
+			"column": 0
 		},
 		{
 			"code": 0,
 			"args": [],
 			"pos": 70,
 			"end": 70,
-			"loc": {
-				"line": 5,
-				"column": 7
-			}
+			"line": 5,
+			"column": 7
 		}
 	],
 	"scopes": [

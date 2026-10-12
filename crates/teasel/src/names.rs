@@ -87,7 +87,7 @@ const fn hash(bytes: &[u8]) -> usize {
 	(h >> 53) as usize
 }
 
-pub static NAMES: [&str; 364] = [
+pub static NAMES: [&str; 363] = [
 	"!",
 	"!=",
 	"!==",
@@ -357,7 +357,6 @@ pub static NAMES: [&str; 364] = [
 	"let",
 	"line",
 	"literal",
-	"loc",
 	"local",
 	"members",
 	"meta",

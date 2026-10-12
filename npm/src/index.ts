@@ -1,4 +1,4 @@
-import type { Comment, Expression, Node, Pattern, Position, Program, Statement } from 'estree';
+import type { Comment, Expression, Node, Pattern, Program, Statement } from 'estree';
 import { decode, PARENT, REFERENCE, SCOPE } from './decode.ts';
 import { CODES, type Code, type HostNode, type Language, type Parsed, type Reference, type Scope } from './types.ts';
 import { flags, type Options } from './options.ts';
@@ -16,16 +16,17 @@ export type { Arguments, Binding, Code, Comment, Declared, HostNode, Kept, Langu
  * `expected '}'`. An error at the token being read spans it with `pos` and `end`; one reported
  * elsewhere, at a declaration seen earlier say, has `end` equal to `pos`. `unexpected_eof` is
  * the end of what was parsed: the `end` the parse was given, else the end of the source. A bad
- * offset from the host is an `invalid_request` without a `loc`.
+ * offset from the host is an `invalid_request` without a `line` and `column`.
  */
 export class ParseError extends SyntaxError {
 	declare code: Code;
 	declare args: readonly string[];
 	declare pos: number;
 	declare end: number;
-	declare loc?: Position;
+	declare line?: number;
+	declare column?: number;
 
-	constructor(fields: Pick<ParseError, 'code' | 'args' | 'pos' | 'end' | 'loc'>) {
+	constructor(fields: Pick<ParseError, 'code' | 'args' | 'pos' | 'end' | 'line' | 'column'>) {
 		// an Error's message: the code, then each argument in quotes
 		super(fields.args.reduce((text, arg) => `${text} '${arg}'`, fields.code as string));
 		Object.assign(this, fields);
