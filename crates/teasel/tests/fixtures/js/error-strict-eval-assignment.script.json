@@ -1,14 +1,18 @@
 {
-	"error": {
-		"code": 37,
-		"args": [
-			"eval"
-		],
-		"pos": 14,
-		"end": 14,
-		"loc": {
-			"line": 1,
-			"column": 14
+	"node": null,
+	"end": 14,
+	"errors": [
+		{
+			"code": 37,
+			"args": [
+				"eval"
+			],
+			"pos": 14,
+			"end": 14,
+			"loc": {
+				"line": 1,
+				"column": 14
+			}
 		}
-	}
+	]
 }

@@ -188,14 +188,16 @@ fn the_session_writes_the_same_words_again() {
 	let source = "let x = /* a */ 1; function f(y) { return x + y; } // b";
 	let prepared = Prepared::borrowed(source, request);
 	let words = || crate::json::words(|words| words.to_vec());
+	// a failed parse answers words too, flagged as such; its first one settles the error buffer
+	Prepared::borrowed("a +", request)
+		.in_place(Entry::Expression, 0.0, None, "", None)
+		.unwrap();
+	let failed = words();
+	assert_eq!((failed[1], failed[2 + failed[1] as usize] & 256), (0, 256));
 	prepared.in_place(Entry::Program, 0.0, None, "", None).unwrap();
 	let first = words();
 	let _ = Prepared::borrowed("a + b", request).in_place(Entry::Expression, 0.0, None, "", None);
-	assert!(
-		Prepared::borrowed("a +", request)
-			.in_place(Entry::Expression, 0.0, None, "", None)
-			.is_err()
-	);
+	let _ = Prepared::borrowed("a +", request).in_place(Entry::Expression, 0.0, None, "", None);
 	prepared.in_place(Entry::Program, 0.0, None, "", None).unwrap();
 	let again = words();
 	// but for the first saying its buffers are new to the front end
@@ -710,9 +712,7 @@ fn phases() {
 	crate::comments::attach(&mut ast, &source, roots, 0);
 	let output = Output {
 		comments: true,
-		scopes: false,
-		erase: false,
-		errors: false,
+		..Output::default()
 	};
 	let end = source.len() as u32;
 	let lines = Positions::new(&source, true);

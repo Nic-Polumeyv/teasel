@@ -1,12 +1,16 @@
 {
-	"error": {
-		"code": 49,
-		"args": [],
-		"pos": 9,
-		"end": 17,
-		"loc": {
-			"line": 1,
-			"column": 9
+	"node": null,
+	"end": 9,
+	"errors": [
+		{
+			"code": 49,
+			"args": [],
+			"pos": 9,
+			"end": 17,
+			"loc": {
+				"line": 1,
+				"column": 9
+			}
 		}
-	}
+	]
 }

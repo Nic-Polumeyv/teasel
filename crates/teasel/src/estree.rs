@@ -2,7 +2,7 @@
 
 use crate::ast::{Ast, List, NodeId, NodeKind, Value};
 use crate::handed::Handed;
-use crate::interner::{Interner, StrId};
+use crate::interner::StrId;
 use crate::layout::Ty;
 use crate::names::{Name, c};
 use crate::parser::Entry;
@@ -33,6 +33,8 @@ pub struct Output {
 	pub erase: bool,
 	/// The answer lists the errors recovered from, as `errors`.
 	pub errors: bool,
+	/// The parse failed: `node` is null and `errors` holds the one error, nothing else is listed.
+	pub failed: bool,
 }
 
 impl Emit for () {
@@ -214,7 +216,10 @@ pub fn answer<X: Emit>(
 	let mut w = Writer::new(ast, source, positions);
 	w.output = output;
 	w.json.object();
-	if entry == Entry::Params {
+	if output.failed {
+		w.key(c!("node"));
+		w.json.null();
+	} else if entry == Entry::Params {
 		w.list(c!("node"), roots);
 	} else {
 		w.field(c!("node"), ast.list(roots)[0].unwrap());
@@ -225,36 +230,6 @@ pub fn answer<X: Emit>(
 	w.trailers();
 	w.json.end();
 	w.json.finish()
-}
-
-/// Serializes a syntax error: its code and args, UTF-16 `pos` and `end`, and a `loc`; the
-/// line table is built up to the error when `positions` has none.
-pub fn error_to_json(error: &crate::SyntaxError, strings: &Interner, source: &str, positions: &Positions) -> String {
-	let upto;
-	let positions = if positions.lines {
-		positions
-	} else {
-		let end = source.ceil_char_boundary(error.pos.max(error.end) as usize);
-		upto = Positions::new(&source[..end], true);
-		&upto
-	};
-	let mut cursor = Cursor::default();
-	let pos = positions.offset(&mut cursor, error.pos);
-	let (line, column) = positions.line_column(cursor.line, error.pos, pos);
-	let end = positions.offset(&mut cursor, error.end);
-	let mut out = format!("{{\"error\":{{\"code\":{},\"args\":[", error.code as u8);
-	for (i, &arg) in error.args.iter().flatten().enumerate() {
-		if i > 0 {
-			out.push(',');
-		}
-		write_json_string(&mut out, strings.get(arg));
-	}
-	write!(
-		out,
-		"],\"pos\":{pos},\"end\":{end},\"loc\":{{\"line\":{line},\"column\":{column}}}}}}}"
-	)
-	.unwrap();
-	out
 }
 
 pub struct Writer<'a, X = ()> {

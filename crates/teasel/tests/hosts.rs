@@ -92,7 +92,7 @@ fn unfinished_input() {
 	let comment = parse("<a /*xx", &svelte, true);
 	assert!(comment.contains("\"value\":\"xx\""), "{comment}");
 	assert!(parse("<script>\"</script>", &svelte, true).contains("\"type\":\"Root\""));
-	assert!(parse("<a @x=\"@\"/>", &vue, false).contains("\"error\""));
+	assert!(parse("<a @x=\"@\"/>", &vue, false).contains("\"node\":null"));
 	let elements = format!("{}x{}", "<a>".repeat(40_000), "</a>".repeat(40_000));
 	let branches = format!("{{#if a}}{}{{/if}}", "{:else if a}".repeat(40_000));
 	for deep in [elements, branches] {

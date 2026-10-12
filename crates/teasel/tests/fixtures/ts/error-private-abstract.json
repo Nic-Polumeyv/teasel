@@ -1,15 +1,19 @@
 {
-	"error": {
-		"code": 112,
-		"args": [
-			"private",
-			"abstract"
-		],
-		"pos": 27,
-		"end": 27,
-		"loc": {
-			"line": 1,
-			"column": 27
+	"node": null,
+	"end": 27,
+	"errors": [
+		{
+			"code": 112,
+			"args": [
+				"private",
+				"abstract"
+			],
+			"pos": 27,
+			"end": 27,
+			"loc": {
+				"line": 1,
+				"column": 27
+			}
 		}
-	}
+	]
 }

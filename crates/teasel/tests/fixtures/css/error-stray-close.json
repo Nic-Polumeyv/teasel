@@ -1,14 +1,18 @@
 {
-	"error": {
-		"code": 1,
-		"args": [
-			"a valid CSS identifier"
-		],
-		"pos": 0,
-		"end": 0,
-		"loc": {
-			"line": 1,
-			"column": 0
+	"node": null,
+	"end": 0,
+	"errors": [
+		{
+			"code": 1,
+			"args": [
+				"a valid CSS identifier"
+			],
+			"pos": 0,
+			"end": 0,
+			"loc": {
+				"line": 1,
+				"column": 0
+			}
 		}
-	}
+	]
 }

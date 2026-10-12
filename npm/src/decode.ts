@@ -1160,7 +1160,7 @@ function names(G: Language, tree: Tree, count: number, moved: boolean): string[]
 const filled = (tree: Tree, words: Uint32Array, lens: number, at: number) => (words[lens + at] === 0 ? null : (tree[at] as Uint32Array).subarray(0, words[lens + at]));
 
 // what `words[lens]` says of an answer; each view's length follows it, then where the tree's buffers sit
-const TYPESCRIPT = 2, COMMENTS = 4, ERASED = 8, LINED = 16, LISTED = 32, RECOVERED = 64, JS_LINED = 128;
+const TYPESCRIPT = 2, COMMENTS = 4, ERASED = 8, LINED = 16, LISTED = 32, RECOVERED = 64, JS_LINED = 128, FAILED = 256;
 
 function table(S: State, tree: Tree, words: Uint32Array, lens: number, rows: Rows, at: number): Decoded[] {
 	const build = S.link ? rows.linked : rows.plain;
@@ -1320,8 +1320,10 @@ export function decode(words: Uint32Array, source: string, engine: Views, link =
 		S.roots = table(S, tree, words, lens, rows.roots, at.roots);
 		if (link) link_tables(S);
 	}
-	let node: Decoded | Decoded[];
-	if (listed) {
+	// a failed parse has no node and its one error listed
+	let node: Decoded | Decoded[] | null = null;
+	if ((what & FAILED) !== 0) {
+	} else if (listed) {
 		node = [];
 		for (let i = 2; i < lens; i++) if (S.erased === null || !bit(S.erased, words[i])) node.push(build(S, words[i], undefined));
 	} else node = build(S, words[2], undefined);

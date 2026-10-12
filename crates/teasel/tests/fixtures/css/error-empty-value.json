@@ -1,14 +1,18 @@
 {
-	"error": {
-		"code": 1,
-		"args": [
-			"a declaration value"
-		],
-		"pos": 6,
-		"end": 12,
-		"loc": {
-			"line": 1,
-			"column": 6
+	"node": null,
+	"end": 6,
+	"errors": [
+		{
+			"code": 1,
+			"args": [
+				"a declaration value"
+			],
+			"pos": 6,
+			"end": 12,
+			"loc": {
+				"line": 1,
+				"column": 6
+			}
 		}
-	}
+	]
 }

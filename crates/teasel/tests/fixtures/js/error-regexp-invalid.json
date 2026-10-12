@@ -1,15 +1,19 @@
 {
-	"error": {
-		"code": 19,
-		"args": [
-			"(",
-			"Unterminated group"
-		],
-		"pos": 1,
-		"end": 1,
-		"loc": {
-			"line": 1,
-			"column": 1
+	"node": null,
+	"end": 1,
+	"errors": [
+		{
+			"code": 19,
+			"args": [
+				"(",
+				"Unterminated group"
+			],
+			"pos": 1,
+			"end": 1,
+			"loc": {
+				"line": 1,
+				"column": 1
+			}
 		}
-	}
+	]
 }

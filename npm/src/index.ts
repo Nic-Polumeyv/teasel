@@ -165,18 +165,22 @@ export class Source {
 			this.#held === undefined && at === undefined
 				? engine.once(source, this.#flags, entry, stop, grammar)
 				: engine.parse((this.#held ??= engine.create(source, this.#flags)), entry, offset, end, stop, grammar);
-		if (typeof answer !== 'string') {
-			try {
-				return decode(answer, source, engine) as Parsed<any>;
-			} catch (error) {
-				// a tree deeper than the caller's stack has room for overflowed the decoder
-				if (!(error instanceof RangeError)) throw error;
-				throw new ParseError({ code: 'nesting_depth', args: [], pos: offset, end: offset });
-			}
+		if (typeof answer === 'string') {
+			// a request the engine refused: an offset or option it cannot take
+			const error = JSON.parse(answer).error;
+			error.code = CODES[error.code];
+			throw new ParseError(error);
 		}
-		const error = JSON.parse(answer).error;
-		error.code = CODES[error.code];
-		throw new ParseError(error);
+		let parsed: Parsed<any>;
+		try {
+			parsed = decode(answer, source, engine) as Parsed<any>;
+		} catch (error) {
+			// a tree deeper than the caller's stack has room for overflowed the decoder
+			if (!(error instanceof RangeError)) throw error;
+			throw new ParseError({ code: 'nesting_depth', args: [], pos: offset, end: offset });
+		}
+		if (parsed.node === null) throw new ParseError(parsed.errors![0]);
+		return parsed;
 	}
 
 	// the engine frees an undisposed source when it is collected

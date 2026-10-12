@@ -1,15 +1,19 @@
 {
-	"error": {
-		"code": 113,
-		"args": [
-			"static",
-			"accessor"
-		],
-		"pos": 19,
-		"end": 19,
-		"loc": {
-			"line": 1,
-			"column": 19
+	"node": null,
+	"end": 19,
+	"errors": [
+		{
+			"code": 113,
+			"args": [
+				"static",
+				"accessor"
+			],
+			"pos": 19,
+			"end": 19,
+			"loc": {
+				"line": 1,
+				"column": 19
+			}
 		}
-	}
+	]
 }

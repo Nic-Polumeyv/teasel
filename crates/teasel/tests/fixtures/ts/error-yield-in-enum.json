@@ -1,14 +1,18 @@
 {
-	"error": {
-		"code": 10,
-		"args": [
-			"yield"
-		],
-		"pos": 29,
-		"end": 29,
-		"loc": {
-			"line": 1,
-			"column": 29
+	"node": null,
+	"end": 29,
+	"errors": [
+		{
+			"code": 10,
+			"args": [
+				"yield"
+			],
+			"pos": 29,
+			"end": 29,
+			"loc": {
+				"line": 1,
+				"column": 29
+			}
 		}
-	}
+	]
 }

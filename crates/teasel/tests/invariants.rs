@@ -68,10 +68,11 @@ fn recovery_changes_nothing_that_parses() {
 }
 
 /// The `node` of an entry's answer, `{"node":...,"end":N}`.
+/// The node of an answer, none for a failed parse.
 fn node_of(answer: &str) -> Option<&str> {
-	let rest = answer.strip_prefix("{\"node\":")?;
+	let rest = answer.strip_prefix("{\"node\":{")?;
 	let end = rest.rfind(",\"end\":")?;
-	Some(&rest[..end])
+	Some(&answer[8..9 + end])
 }
 
 /// The byte offset of a UTF-16 offset, which is how the answers count.

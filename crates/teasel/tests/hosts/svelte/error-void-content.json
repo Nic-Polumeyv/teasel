@@ -1,14 +1,18 @@
 {
-	"error": {
-		"code": 6,
-		"args": [
-			"A closing tag of a void element"
-		],
-		"pos": 5,
-		"end": 6,
-		"loc": {
-			"line": 1,
-			"column": 5
+	"node": null,
+	"end": 5,
+	"errors": [
+		{
+			"code": 6,
+			"args": [
+				"A closing tag of a void element"
+			],
+			"pos": 5,
+			"end": 6,
+			"loc": {
+				"line": 1,
+				"column": 5
+			}
 		}
-	}
+	]
 }
