@@ -1,9 +1,4 @@
-import { start } from './wasm.ts';
+import type { Engine } from '../types.ts';
+import { instantiate } from './wasm.ts';
 
-// `teasel.wasm` beside the package entry, read where there is a file system and fetched elsewhere
-const url = new URL('../teasel.wasm', import.meta.url);
-const { module, instance } =
-	url.protocol === 'file:'
-		? await WebAssembly.instantiate(await globalThis.process.getBuiltinModule('node:fs/promises').readFile(url), {})
-		: await WebAssembly.instantiateStreaming(fetch(url), {});
-export const engine = start(module, instance);
+export const engine: Engine = await instantiate();

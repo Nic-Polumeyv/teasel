@@ -1,6 +1,4 @@
-import { readFileSync } from 'node:fs';
-import { start } from './wasm.ts';
+import type { Engine } from '../types.ts';
+import { compile } from './wasm.ts';
 
-// synchronous: 7 ms against 13 async for the 1.1 MB module, and require() refuses a graph with top-level await
-// TODO: `import source` once we require node >= 22.19 and bundlers accept it: no fs, ~10 ms less startup
-export const engine = start(new WebAssembly.Module(readFileSync(new URL('../teasel.wasm', import.meta.url))));
+export const engine: Engine = compile();

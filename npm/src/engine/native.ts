@@ -1,8 +1,7 @@
 // the source goes over as bytes: V8's encoder is 14x faster than the host reading a string out
-import { readFileSync } from 'node:fs';
 import type { Engine, Tree } from '../types.ts';
 import { load } from './addon.ts';
-import { start } from './wasm.ts';
+import { compile } from './wasm.ts';
 
 const native = load();
 const encoder = new TextEncoder();
@@ -18,7 +17,7 @@ function bytes(text: string) {
 }
 
 // node.ts would compile the module even where the addon loads
-export const engine: Engine = native === undefined ? start(new WebAssembly.Module(readFileSync(new URL('../teasel.wasm', import.meta.url)))) : {
+export const engine: Engine = native === undefined ? compile() : {
 	create: (source, flags) => native.create(bytes(source), flags),
 	parse: native.parse,
 	free: native.free,

@@ -33,7 +33,10 @@ function musl(): boolean {
 	try {
 		return readFileSync('/usr/bin/ldd', 'utf8').includes('musl');
 	} catch {
-		return !(process.report?.getReport() as { header: { glibcVersionRuntime?: string } }).header.glibcVersionRuntime;
+		// the report walks the network interfaces unless told not to, and that can block
+		const report = process.report as NodeJS.ProcessReport & { excludeNetwork: boolean };
+		report.excludeNetwork = true;
+		return !(report.getReport() as { header: { glibcVersionRuntime?: string } }).header.glibcVersionRuntime;
 	}
 }
 
@@ -49,12 +52,15 @@ export function load(): Addon | undefined {
 		try {
 			return require(path);
 		} catch (e) {
-			if (!(e instanceof Error && 'code' in e && (e.code === 'MODULE_NOT_FOUND' || e.code === 'ERR_DLOPEN_FAILED'))) throw e;
+			if (!(e instanceof Error && 'code' in e)) throw e;
+			// a worker of a --no-addons parent, or WebContainers: addons are off, nothing to warn about
+			if (e.code === 'ERR_DLOPEN_DISABLED') return;
+			if (e.code !== 'MODULE_NOT_FOUND' && e.code !== 'ERR_DLOPEN_FAILED') throw e;
 			if (e.code === 'ERR_DLOPEN_FAILED') failed ??= e;
 		}
 	}
 	// where no build exists there is nothing to fix
-	if (here in platforms) {
+	if (failed !== undefined || here in platforms) {
 		const why = failed === undefined ? `@teasel/parser-${here} is not installed` : `the native build for ${here} did not load (${failed.message})`;
 		process.emitWarning(`${why}; @teasel/parser parses in WebAssembly instead, which is slower`, { code: 'wasm_fallback' });
 	}
