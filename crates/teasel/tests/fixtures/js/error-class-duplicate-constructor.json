@@ -1,12 +1,14 @@
 {
-	"error": {
-		"code": "duplicate_constructor",
-		"message": "Duplicate constructor in the same class",
-		"pos": 27,
-		"end": 27,
-		"loc": {
+	"node": null,
+	"end": 27,
+	"errors": [
+		{
+			"code": 103,
+			"args": [],
+			"pos": 27,
+			"end": 27,
 			"line": 1,
 			"column": 27
 		}
-	}
+	]
 }

@@ -1,12 +1,14 @@
 {
-	"error": {
-		"code": "decorator_without_body",
-		"message": "A decorator can only decorate a method or accessor with a body",
-		"pos": 10,
-		"end": 10,
-		"loc": {
+	"node": null,
+	"end": 10,
+	"errors": [
+		{
+			"code": 127,
+			"args": [],
+			"pos": 10,
+			"end": 10,
 			"line": 1,
 			"column": 10
 		}
-	}
+	]
 }

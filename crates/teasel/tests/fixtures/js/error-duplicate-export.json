@@ -1,12 +1,16 @@
 {
-	"error": {
-		"code": "duplicate_export",
-		"message": "Duplicate export 'b'",
-		"pos": 42,
-		"end": 42,
-		"loc": {
+	"node": null,
+	"end": 42,
+	"errors": [
+		{
+			"code": 46,
+			"args": [
+				"b"
+			],
+			"pos": 42,
+			"end": 42,
 			"line": 1,
 			"column": 42
 		}
-	}
+	]
 }

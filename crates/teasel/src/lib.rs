@@ -22,7 +22,7 @@ pub use interner::{Interner, StrId};
 pub use parser::{Entry, Options};
 
 /// Parses one `entry` at `start` of `src` cut at `end`; see `parser::parse_at`. The tree comes
-/// back on an error too: the error's message reads its strings.
+/// back on an error too: the error's args name its strings.
 pub fn parse_at(
 	src: &str,
 	start: u32,

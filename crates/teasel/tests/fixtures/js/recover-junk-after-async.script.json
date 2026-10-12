@@ -55,14 +55,14 @@
 	"comments": [],
 	"errors": [
 		{
-			"code": "unexpected_character",
-			"message": "Unexpected character '@'",
+			"code": 8,
+			"args": [
+				"@"
+			],
 			"pos": 6,
 			"end": 6,
-			"loc": {
-				"line": 1,
-				"column": 6
-			}
+			"line": 1,
+			"column": 6
 		}
 	],
 	"scopes": [

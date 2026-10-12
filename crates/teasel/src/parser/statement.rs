@@ -9,7 +9,7 @@ use super::{
 };
 use crate::Options;
 use crate::ast::{Class, FieldKind, Function, List, MethodKind, NodeId, NodeKind, VariableKind};
-use crate::error::{Code, SyntaxError};
+use crate::error::Code;
 use crate::interner::{FastMap, StrId};
 use crate::lexer::token::{Keyword, Token, TokenKind};
 use crate::lexer::unicode::{is_id_continue, is_id_start};
@@ -1495,7 +1495,7 @@ impl<E: Extension> Parser<'_, E> {
 			_ => PrivateKind::Any,
 		};
 		if self.declare_private_name(name, private_kind) {
-			return self.raise(SyntaxError::new(self.start_of(key), Code::PrivateRedeclaration).arg(name));
+			return self.error_arg(self.start_of(key), Code::Redeclaration, &format!("#{}", self.str(name)));
 		}
 		Ok(())
 	}
@@ -1525,7 +1525,7 @@ impl<E: Extension> Parser<'_, E> {
 			match self.private_names.last_mut() {
 				Some(parent) => parent.used.push((name, pos)),
 				None => {
-					return self.error_name(pos, Code::UndeclaredPrivateName, name);
+					return self.error_arg(pos, Code::UndeclaredPrivateName, &format!("#{}", self.str(name)));
 				}
 			}
 		}
@@ -1683,7 +1683,7 @@ impl<E: Extension> Parser<'_, E> {
 				return self.error(self.start_of(key), Code::AsyncConstructor);
 			}
 		} else if is_static && !E::in_ambient(self) && self.check_key_name(key, computed, "prototype") {
-			return self.error(self.start_of(key), Code::StaticPrototypeProperty);
+			return self.error(self.start_of(key), Code::StaticPrototype);
 		}
 		E::class_method_start(self, kind)?;
 		let value = self.parse_method(generator, is_async, allows_direct_super, true, kind)?;

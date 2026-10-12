@@ -1,12 +1,14 @@
 {
-	"error": {
-		"code": "constructor_return_type",
-		"message": "Type annotation cannot appear on a constructor declaration",
-		"pos": 23,
-		"end": 23,
-		"loc": {
+	"node": null,
+	"end": 23,
+	"errors": [
+		{
+			"code": 134,
+			"args": [],
+			"pos": 23,
+			"end": 23,
 			"line": 1,
 			"column": 23
 		}
-	}
+	]
 }

@@ -1,12 +1,14 @@
 {
-	"error": {
-		"code": "unexpected_type_annotation",
-		"message": "Did not expect a type annotation here.",
-		"pos": 4,
-		"end": 4,
-		"loc": {
+	"node": null,
+	"end": 4,
+	"errors": [
+		{
+			"code": 154,
+			"args": [],
+			"pos": 4,
+			"end": 4,
 			"line": 1,
 			"column": 4
 		}
-	}
+	]
 }

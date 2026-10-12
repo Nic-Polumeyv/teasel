@@ -1,12 +1,14 @@
 {
-	"error": {
-		"code": "strict_with",
-		"message": "'with' in strict mode",
-		"pos": 38,
-		"end": 42,
-		"loc": {
+	"node": null,
+	"end": 38,
+	"errors": [
+		{
+			"code": 34,
+			"args": [],
+			"pos": 38,
+			"end": 42,
 			"line": 3,
 			"column": 1
 		}
-	}
+	]
 }

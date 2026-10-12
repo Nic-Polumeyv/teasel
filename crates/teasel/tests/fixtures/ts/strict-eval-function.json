@@ -1,12 +1,16 @@
 {
-	"error": {
-		"code": "strict_binding",
-		"message": "Binding eval in strict mode",
-		"pos": 9,
-		"end": 9,
-		"loc": {
+	"node": null,
+	"end": 9,
+	"errors": [
+		{
+			"code": 37,
+			"args": [
+				"eval"
+			],
+			"pos": 9,
+			"end": 9,
 			"line": 1,
 			"column": 9
 		}
-	}
+	]
 }

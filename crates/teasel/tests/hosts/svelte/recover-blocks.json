@@ -139,54 +139,52 @@
 	"comments": [],
 	"errors": [
 		{
-			"code": "unclosed",
-			"message": "{#if} is not closed",
+			"code": 2,
+			"args": [
+				"{#if}"
+			],
 			"pos": 5,
 			"end": 6,
-			"loc": {
-				"line": 1,
-				"column": 5
-			}
+			"line": 1,
+			"column": 5
 		},
 		{
-			"code": "unclosed",
-			"message": "{#each} is not closed",
+			"code": 2,
+			"args": [
+				"{#each}"
+			],
 			"pos": 26,
 			"end": 27,
-			"loc": {
-				"line": 2,
-				"column": 7
-			}
+			"line": 2,
+			"column": 7
 		},
 		{
-			"code": "placement",
-			"message": "A branch outside its block is not allowed here",
+			"code": 6,
+			"args": [
+				"A branch outside its block"
+			],
 			"pos": 47,
 			"end": 48,
-			"loc": {
-				"line": 3,
-				"column": 0
-			}
+			"line": 3,
+			"column": 0
 		},
 		{
-			"code": "unexpected_close",
-			"message": "Unexpected closing {/each}",
+			"code": 3,
+			"args": [
+				"{/each}"
+			],
 			"pos": 55,
 			"end": 56,
-			"loc": {
-				"line": 4,
-				"column": 0
-			}
+			"line": 4,
+			"column": 0
 		},
 		{
-			"code": "unexpected_token",
-			"message": "Unexpected token",
+			"code": 0,
+			"args": [],
 			"pos": 70,
 			"end": 70,
-			"loc": {
-				"line": 5,
-				"column": 7
-			}
+			"line": 5,
+			"column": 7
 		}
 	],
 	"scopes": [

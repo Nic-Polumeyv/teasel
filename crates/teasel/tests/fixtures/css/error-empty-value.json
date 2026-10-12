@@ -1,12 +1,16 @@
 {
-	"error": {
-		"code": "expected",
-		"message": "Expected a declaration value",
-		"pos": 6,
-		"end": 12,
-		"loc": {
+	"node": null,
+	"end": 6,
+	"errors": [
+		{
+			"code": 1,
+			"args": [
+				"a declaration value"
+			],
+			"pos": 6,
+			"end": 12,
 			"line": 1,
 			"column": 6
 		}
-	}
+	]
 }

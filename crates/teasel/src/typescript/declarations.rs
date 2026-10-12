@@ -551,12 +551,7 @@ impl Parser<'_, TypeScript> {
 			};
 		}
 		if has_type_specifier && in_type_only {
-			let code = if is_import {
-				Code::TypeModifierInTypeImport
-			} else {
-				Code::TypeModifierInTypeExport
-			};
-			return self.error(start, code);
+			return self.error(start, Code::TypeModifierInTypeImport);
 		}
 		if can_parse_as && self.eat_contextual("as")? {
 			right = Some(self.parse_specifier_name(is_import)?);

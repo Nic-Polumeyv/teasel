@@ -1,12 +1,16 @@
 {
-	"error": {
-		"code": "reserved_word",
-		"message": "The keyword 'interface' is reserved",
-		"pos": 5,
-		"end": 5,
-		"loc": {
+	"node": null,
+	"end": 5,
+	"errors": [
+		{
+			"code": 10,
+			"args": [
+				"interface"
+			],
+			"pos": 5,
+			"end": 5,
 			"line": 1,
 			"column": 5
 		}
-	}
+	]
 }

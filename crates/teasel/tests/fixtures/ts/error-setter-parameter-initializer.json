@@ -1,12 +1,14 @@
 {
-	"error": {
-		"code": "setter_parameter_initializer",
-		"message": "A 'set' accessor parameter cannot have an initializer",
-		"pos": 18,
-		"end": 18,
-		"loc": {
+	"node": null,
+	"end": 18,
+	"errors": [
+		{
+			"code": 133,
+			"args": [],
+			"pos": 18,
+			"end": 18,
 			"line": 1,
 			"column": 18
 		}
-	}
+	]
 }

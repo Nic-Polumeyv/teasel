@@ -48,15 +48,10 @@ function crossing() {
 	return { meta: { href: '/reference/wire', title: 'Grammar wire', section: 'Reference', path: 'npm/src/wire.ts' }, markdown: `What a grammar's \`wire\` holds and the Rust crate's \`parse_document\` and the command line's \`--host\` read: the definition as words in the order these types declare them, then a pool of strings, as \`Writer\` lays them out.\n\n${markdown}` };
 }
 
-// the engine's table, one row per name: the codes that share a name share its row
+// the engine's enum: each code's doc comment says what it means, its name is the variant's in snake case
 function codes() {
-	const rows = new Map<string, string[]>();
-	for (const [, name, message] of errors.matchAll(/^\t\w+ "(\w+)" => "((?:[^"\\]|\\.)*)",$/gm)) {
-		rows.set(name, [...(rows.get(name) ?? []), message.replace(/\\(.)/g, '$1')]);
-	}
-	const cell = (message: string) => (message === '' ? 'Names the offset or option the request cannot take' : message.replaceAll('{}', '…'));
-	const table = [...rows].map(([name, messages]) => `| \`${name}\` | ${messages.map(cell).join('<br>')} |`).join('\n');
-	return { meta: { href: '/reference/error-codes', title: 'Error codes', section: 'Reference', path: 'crates/teasel/src/error.rs' }, markdown: `Every \`code\` an error can have, with its messages. \`…\` is the name or text the error is about.\n\n| code | message |\n| --- | --- |\n${table}` };
+	const rows = [...errors.matchAll(/^((?:\t\/\/\/ .*\n)+)\t(\w+),$/gm)].map(([, doc, variant]) => `| \`${variant.replace(/(?<!^)[A-Z]/g, '_$&').toLowerCase()}\` | ${doc.replace(/^\t\/\/\/ /gm, '').trim().replaceAll('\n', ' ').replaceAll('|', '\\|')} |`);
+	return { meta: { href: '/reference/error-codes', title: 'Error codes', section: 'Reference', path: 'crates/teasel/src/error.rs' }, markdown: `Every \`code\` an error can have and what it means. \`args\` holds what the error is about when the code says so, and \`message\` is the code followed by each argument in quotes: \`expected '}'\`.\n\n| code | meaning |\n| --- | --- |\n${rows.join('\n')}` };
 }
 
 export const references = [parser(), codes(), builders(), crossing()];

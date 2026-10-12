@@ -1,12 +1,14 @@
 {
-	"error": {
-		"code": "export_assignment_in_namespace",
-		"message": "An export assignment cannot be used in a namespace",
-		"pos": 14,
-		"end": 14,
-		"loc": {
+	"node": null,
+	"end": 14,
+	"errors": [
+		{
+			"code": 142,
+			"args": [],
+			"pos": 14,
+			"end": 14,
 			"line": 1,
 			"column": 14
 		}
-	}
+	]
 }

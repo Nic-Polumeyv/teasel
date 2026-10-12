@@ -1,12 +1,14 @@
 {
-	"error": {
-		"code": "setter_return_type",
-		"message": "A 'set' accessor cannot have a return type annotation.",
-		"pos": 20,
-		"end": 20,
-		"loc": {
+	"node": null,
+	"end": 20,
+	"errors": [
+		{
+			"code": 124,
+			"args": [],
+			"pos": 20,
+			"end": 20,
 			"line": 1,
 			"column": 20
 		}
-	}
+	]
 }

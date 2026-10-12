@@ -1,12 +1,14 @@
 {
-	"error": {
-		"code": "predicate_placement",
-		"message": "A type predicate is only allowed in return type position for functions and methods",
-		"pos": 27,
-		"end": 27,
-		"loc": {
+	"node": null,
+	"end": 27,
+	"errors": [
+		{
+			"code": 137,
+			"args": [],
+			"pos": 27,
+			"end": 27,
 			"line": 1,
 			"column": 27
 		}
-	}
+	]
 }

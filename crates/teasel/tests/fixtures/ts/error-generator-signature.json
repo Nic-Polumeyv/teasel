@@ -1,12 +1,14 @@
 {
-	"error": {
-		"code": "generator_signature",
-		"message": "An overload signature cannot be declared as a generator.",
-		"pos": 12,
-		"end": 12,
-		"loc": {
+	"node": null,
+	"end": 12,
+	"errors": [
+		{
+			"code": 168,
+			"args": [],
+			"pos": 12,
+			"end": 12,
 			"line": 1,
 			"column": 12
 		}
-	}
+	]
 }

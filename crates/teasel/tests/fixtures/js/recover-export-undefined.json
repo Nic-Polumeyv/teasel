@@ -86,24 +86,24 @@
 	"comments": [],
 	"errors": [
 		{
-			"code": "undefined_export",
-			"message": "Export 'b' is not defined",
+			"code": 47,
+			"args": [
+				"b"
+			],
 			"pos": 17,
 			"end": 17,
-			"loc": {
-				"line": 1,
-				"column": 17
-			}
+			"line": 1,
+			"column": 17
 		},
 		{
-			"code": "undefined_export",
-			"message": "Export 'a' is not defined",
+			"code": 47,
+			"args": [
+				"a"
+			],
 			"pos": 31,
 			"end": 31,
-			"loc": {
-				"line": 2,
-				"column": 9
-			}
+			"line": 2,
+			"column": 9
 		}
 	],
 	"scopes": [

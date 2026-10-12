@@ -1,12 +1,14 @@
 {
-	"error": {
-		"code": "await_outside_async",
-		"message": "Cannot use keyword 'await' outside an async function",
-		"pos": 4,
-		"end": 4,
-		"loc": {
+	"node": null,
+	"end": 4,
+	"errors": [
+		{
+			"code": 66,
+			"args": [],
+			"pos": 4,
+			"end": 4,
 			"line": 1,
 			"column": 4
 		}
-	}
+	]
 }

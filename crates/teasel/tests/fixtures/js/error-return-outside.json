@@ -1,12 +1,14 @@
 {
-	"error": {
-		"code": "return_outside_function",
-		"message": "'return' outside of function",
-		"pos": 0,
-		"end": 6,
-		"loc": {
+	"node": null,
+	"end": 0,
+	"errors": [
+		{
+			"code": 60,
+			"args": [],
+			"pos": 0,
+			"end": 6,
 			"line": 1,
 			"column": 0
 		}
-	}
+	]
 }

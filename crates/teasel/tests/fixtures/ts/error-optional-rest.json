@@ -1,12 +1,14 @@
 {
-	"error": {
-		"code": "optional_rest",
-		"message": "A rest parameter cannot be optional",
-		"pos": 11,
-		"end": 11,
-		"loc": {
+	"node": null,
+	"end": 11,
+	"errors": [
+		{
+			"code": 131,
+			"args": [],
+			"pos": 11,
+			"end": 11,
 			"line": 1,
 			"column": 11
 		}
-	}
+	]
 }

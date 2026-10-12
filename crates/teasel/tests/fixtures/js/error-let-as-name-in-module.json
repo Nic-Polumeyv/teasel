@@ -1,12 +1,16 @@
 {
-	"error": {
-		"code": "reserved_word",
-		"message": "The keyword 'let' is reserved",
-		"pos": 4,
-		"end": 4,
-		"loc": {
+	"node": null,
+	"end": 4,
+	"errors": [
+		{
+			"code": 10,
+			"args": [
+				"let"
+			],
+			"pos": 4,
+			"end": 4,
 			"line": 1,
 			"column": 4
 		}
-	}
+	]
 }

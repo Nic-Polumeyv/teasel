@@ -1,12 +1,14 @@
 {
-	"error": {
-		"code": "required_after_optional",
-		"message": "A required parameter cannot follow an optional parameter",
-		"pos": 22,
-		"end": 22,
-		"loc": {
+	"node": null,
+	"end": 22,
+	"errors": [
+		{
+			"code": 130,
+			"args": [],
+			"pos": 22,
+			"end": 22,
 			"line": 1,
 			"column": 22
 		}
-	}
+	]
 }

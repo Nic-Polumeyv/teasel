@@ -1,12 +1,16 @@
 {
-	"error": {
-		"code": "placement",
-		"message": "svelte:window is not allowed here",
-		"pos": 5,
-		"end": 6,
-		"loc": {
+	"node": null,
+	"end": 5,
+	"errors": [
+		{
+			"code": 6,
+			"args": [
+				"svelte:window"
+			],
+			"pos": 5,
+			"end": 6,
 			"line": 1,
 			"column": 5
 		}
-	}
+	]
 }

@@ -1,12 +1,16 @@
 {
-	"error": {
-		"code": "using_pattern",
-		"message": "'using' declarations may not have binding patterns",
-		"pos": 27,
-		"end": 27,
-		"loc": {
+	"node": null,
+	"end": 27,
+	"errors": [
+		{
+			"code": 92,
+			"args": [
+				"using"
+			],
+			"pos": 27,
+			"end": 27,
 			"line": 1,
 			"column": 27
 		}
-	}
+	]
 }

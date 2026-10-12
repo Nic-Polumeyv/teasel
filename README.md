@@ -97,8 +97,10 @@ try {
 	e.code;    // 'unexpected_token'
 	e.pos;     // 4
 	e.end;     // 5
-	e.loc;     // { line: 1, column: 4 }
-	e.message; // 'Unexpected token'
+	e.line;    // 1
+	e.column;  // 4
+	e.args;    // []
+	e.message; // 'unexpected_token'
 }
 ```
 
@@ -107,7 +109,7 @@ With `errorRecovery`, the parse comes back and the errors come with it.
 ```
 { f(a, }
        ▲
-       errors  [{ code: 'unexpected_token', pos: 7, end: 8, loc }]
+       errors  [{ code: 'unexpected_token', pos: 7, end: 8, line, column }]
        node    a Program holding an empty block: the statement that broke is skipped
        end     8
 ```

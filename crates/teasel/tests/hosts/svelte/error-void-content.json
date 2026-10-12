@@ -1,12 +1,16 @@
 {
-	"error": {
-		"code": "placement",
-		"message": "A closing tag of a void element is not allowed here",
-		"pos": 5,
-		"end": 6,
-		"loc": {
+	"node": null,
+	"end": 5,
+	"errors": [
+		{
+			"code": 6,
+			"args": [
+				"A closing tag of a void element"
+			],
+			"pos": 5,
+			"end": 6,
 			"line": 1,
 			"column": 5
 		}
-	}
+	]
 }

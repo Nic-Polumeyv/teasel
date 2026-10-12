@@ -1,12 +1,14 @@
 {
-	"error": {
-		"code": "implementation_in_ambient",
-		"message": "An implementation cannot be declared in ambient contexts.",
-		"pos": 0,
-		"end": 0,
-		"loc": {
+	"node": null,
+	"end": 0,
+	"errors": [
+		{
+			"code": 144,
+			"args": [],
+			"pos": 0,
+			"end": 0,
 			"line": 1,
 			"column": 0
 		}
-	}
+	]
 }

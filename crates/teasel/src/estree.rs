@@ -1,8 +1,9 @@
 //! Serializes an `Ast` to ESTree as JSON text, and maps its positions to what JavaScript counts.
 
+use crate::Options;
 use crate::ast::{Ast, List, NodeId, NodeKind, Value};
 use crate::handed::Handed;
-use crate::interner::{Interner, StrId};
+use crate::interner::StrId;
 use crate::layout::Ty;
 use crate::names::{Name, c};
 use crate::parser::Entry;
@@ -19,20 +20,6 @@ pub trait Emit: crate::ast::Walk {
 	fn erased(&self, _ast: &Ast<Self>, _id: NodeId) -> bool {
 		false
 	}
-}
-
-/// What the answer carries beyond the tree.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Output {
-	/// The answer lists every comment read.
-	pub comments: bool,
-	/// Nodes carry their scope and identifiers their binding, and the answer lists both tables.
-	pub scopes: bool,
-	/// TypeScript is erased: annotations, type-only declarations and imports go, assertions give
-	/// way to their expression, and what erasure cannot express is listed as `typescript`.
-	pub erase: bool,
-	/// The answer lists the errors recovered from, as `errors`.
-	pub errors: bool,
 }
 
 impl Emit for () {
@@ -201,23 +188,27 @@ impl Json {
 pub type Words = crate::handed::Handed<u32>;
 
 /// Serializes an answer as JSON: the roots as `node`, one node or the patterns of a parameter
-/// list, then `end` and what the options add.
+/// list, null when the parse failed, then `end` and what the options add.
 pub fn answer<X: Emit>(
 	ast: &Ast<X>,
 	entry: Entry,
-	roots: List,
+	roots: Option<List>,
 	end: u32,
 	source: &str,
 	positions: &Positions,
-	output: Output,
+	options: Options,
 ) -> String {
 	let mut w = Writer::new(ast, source, positions);
-	w.output = output;
+	w.options = options;
+	w.failed = roots.is_none();
 	w.json.object();
-	if entry == Entry::Params {
-		w.list(c!("node"), roots);
-	} else {
-		w.field(c!("node"), ast.list(roots)[0].unwrap());
+	match roots {
+		None => {
+			w.key(c!("node"));
+			w.json.null();
+		}
+		Some(roots) if entry == Entry::Params => w.list(c!("node"), roots),
+		Some(roots) => w.field(c!("node"), ast.list(roots)[0].unwrap()),
 	}
 	w.key(c!("end"));
 	let end = w.positions.offset(&mut w.cursor, end);
@@ -227,38 +218,15 @@ pub fn answer<X: Emit>(
 	w.json.finish()
 }
 
-/// Serializes a syntax error: its code and message, UTF-16 `pos` and `end`, and a `loc`; the
-/// line table is built up to the error when `positions` has none.
-pub fn error_to_json(error: &crate::SyntaxError, strings: &Interner, source: &str, positions: &Positions) -> String {
-	let upto;
-	let positions = if positions.lines {
-		positions
-	} else {
-		let end = source.ceil_char_boundary(error.pos.max(error.end) as usize);
-		upto = Positions::new(&source[..end], true);
-		&upto
-	};
-	let mut cursor = Cursor::default();
-	let pos = positions.offset(&mut cursor, error.pos);
-	let (line, column) = positions.line_column(cursor.line, error.pos, pos);
-	let end = positions.offset(&mut cursor, error.end);
-	let mut out = format!("{{\"error\":{{\"code\":\"{}\",\"message\":", error.code.name());
-	write_json_string(&mut out, &error.message(strings));
-	write!(
-		out,
-		",\"pos\":{pos},\"end\":{end},\"loc\":{{\"line\":{line},\"column\":{column}}}}}}}"
-	)
-	.unwrap();
-	out
-}
-
 pub struct Writer<'a, X = ()> {
 	ast: &'a Ast<X>,
 	source: &'a str,
 	pub(crate) json: Json,
 	positions: &'a Positions,
 	cursor: Cursor,
-	pub(crate) output: Output,
+	pub(crate) options: Options,
+	/// The parse failed: `node` is null and `errors` holds the one error, nothing else is listed.
+	pub(crate) failed: bool,
 	/// The node being written names something bound by another node: no scope facts on it.
 	name_only: bool,
 	/// What erasure left in place, in emission order.
@@ -484,7 +452,8 @@ impl<'a, X: Emit> Writer<'a, X> {
 			json: Json::default(),
 			positions,
 			cursor: Cursor::default(),
-			output: Output::default(),
+			options: Options::default(),
+			failed: false,
 			name_only: false,
 			kept: Vec::new(),
 			adopted: Vec::new(),
@@ -632,7 +601,7 @@ impl<'a, X: Emit> Writer<'a, X> {
 		self.json.end();
 	}
 
-	/// The recovered errors as the thrown one would be: code, message, `pos`, `end` and a `loc`.
+	/// The recovered errors as the thrown one would be: code, args, `pos`, `end`, `line`, `column`.
 	fn errors(&mut self) {
 		let places = self.positions.of_errors(self.source, &self.ast.errors);
 		self.key(c!("errors"));
@@ -640,38 +609,43 @@ impl<'a, X: Emit> Writer<'a, X> {
 		for (error, [pos, end, line, column]) in self.ast.errors.iter().zip(places) {
 			self.json.object();
 			self.key(c!("code"));
-			self.json.str(error.code.label());
-			self.key(c!("message"));
-			self.json.text(&error.message(&self.ast.strings));
+			self.json.int(error.code as u32);
+			self.key(c!("args"));
+			self.json.list();
+			for &arg in error.args.iter().flatten() {
+				self.str_of(arg);
+			}
+			self.json.end();
 			self.key(c!("pos"));
 			self.json.int(pos);
 			self.key(c!("end"));
 			self.json.int(end);
-			self.key(c!("loc"));
-			self.json.object();
 			self.key(c!("line"));
 			self.json.int(line);
 			self.key(c!("column"));
 			self.json.int(column);
 			self.json.end();
-			self.json.end();
 		}
 		self.json.end();
 	}
 
-	/// What the output's switches add after a root: every comment, what erasure kept, the scopes.
+	/// What the options add after a root: every comment, the errors recovered from, what erasure
+	/// kept, the scopes; a failed parse lists its error alone.
 	fn trailers(&mut self) {
-		if self.output.comments {
+		if self.failed {
+			return self.errors();
+		}
+		if self.options.has(Options::COMMENTS) {
 			self.key(c!("comments"));
 			self.comment_list(0..self.ast.comments.len() as u32);
 		}
-		if self.output.errors {
+		if self.options.has(Options::ERROR_RECOVERY) {
 			self.errors();
 		}
-		if self.output.erase {
+		if self.options.has(Options::ERASE) {
 			self.all_kept();
 		}
-		if self.output.scopes {
+		if self.options.has(Options::SCOPES) {
 			self.all_scopes();
 		}
 	}
@@ -750,7 +724,7 @@ impl<'a, X: Emit> Writer<'a, X> {
 		self.json.list();
 		let ast = self.ast;
 		for item in ast.list(list) {
-			if self.output.erase && item.is_some_and(|id| ast.extension.erased(ast, id)) {
+			if self.options.has(Options::ERASE) && item.is_some_and(|id| ast.extension.erased(ast, id)) {
 				continue;
 			}
 			match item {
@@ -763,7 +737,7 @@ impl<'a, X: Emit> Writer<'a, X> {
 
 	/// A parameter list; erasing drops TypeScript's `this` parameter.
 	pub(crate) fn params(&mut self, key: Name, list: List) {
-		if self.output.erase
+		if self.options.has(Options::ERASE)
 			&& let Some(&Some(first)) = self.ast.list(list).first()
 			&& let NodeKind::Identifier { name } = self.kind(first)
 			&& self.ast.str(name) == "this"
@@ -820,17 +794,17 @@ impl<'a, X: Emit> Writer<'a, X> {
 		for op in ops {
 			match *op {
 				Op::Keep(name) => {
-					if self.output.erase {
+					if self.options.has(Options::ERASE) {
 						self.keep(name, id);
 					}
 				}
 				Op::KeepIf(name, slot) => {
-					if self.output.erase && get::<bool>(base, slot) {
+					if self.options.has(Options::ERASE) && get::<bool>(base, slot) {
 						self.keep(name, id);
 					}
 				}
 				Op::Through(slot) => {
-					if self.output.erase {
+					if self.options.has(Options::ERASE) {
 						self.adopt(id);
 						self.node(get(base, slot));
 						return false;

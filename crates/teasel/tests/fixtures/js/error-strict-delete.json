@@ -1,12 +1,14 @@
 {
-	"error": {
-		"code": "strict_delete",
-		"message": "Deleting local variable in strict mode",
-		"pos": 14,
-		"end": 14,
-		"loc": {
+	"node": null,
+	"end": 14,
+	"errors": [
+		{
+			"code": 35,
+			"args": [],
+			"pos": 14,
+			"end": 14,
 			"line": 1,
 			"column": 14
 		}
-	}
+	]
 }

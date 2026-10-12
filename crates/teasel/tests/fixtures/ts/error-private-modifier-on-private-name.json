@@ -1,12 +1,16 @@
 {
-	"error": {
-		"code": "private_modifier",
-		"message": "Private elements cannot have an accessibility modifier ('private').",
-		"pos": 10,
-		"end": 10,
-		"loc": {
+	"node": null,
+	"end": 10,
+	"errors": [
+		{
+			"code": 120,
+			"args": [
+				"private"
+			],
+			"pos": 10,
+			"end": 10,
 			"line": 1,
 			"column": 10
 		}
-	}
+	]
 }

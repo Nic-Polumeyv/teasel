@@ -1,12 +1,14 @@
 {
-	"error": {
-		"code": "setter_optional_parameter",
-		"message": "A 'set' accessor cannot have an optional parameter",
-		"pos": 16,
-		"end": 16,
-		"loc": {
+	"node": null,
+	"end": 16,
+	"errors": [
+		{
+			"code": 132,
+			"args": [],
+			"pos": 16,
+			"end": 16,
 			"line": 1,
 			"column": 16
 		}
-	}
+	]
 }

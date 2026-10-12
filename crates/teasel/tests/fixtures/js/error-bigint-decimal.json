@@ -1,12 +1,14 @@
 {
-	"error": {
-		"code": "identifier_after_number",
-		"message": "Identifier directly after number",
-		"pos": 3,
-		"end": 3,
-		"loc": {
+	"node": null,
+	"end": 3,
+	"errors": [
+		{
+			"code": 24,
+			"args": [],
+			"pos": 3,
+			"end": 3,
 			"line": 1,
 			"column": 3
 		}
-	}
+	]
 }

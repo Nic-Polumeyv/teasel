@@ -1,6 +1,6 @@
-import type { Comment, Expression, Node, Pattern, Position, Program, Statement } from 'estree';
+import type { Comment, Expression, Node, Pattern, Program, Statement } from 'estree';
 import { decode, PARENT, REFERENCE, SCOPE } from './decode.ts';
-import type { Code, HostNode, Language, Parsed, Reference, Scope } from './types.ts';
+import { CODES, type Code, type HostNode, type Language, type Parsed, type Reference, type Scope } from './types.ts';
 import { flags, type Options } from './options.ts';
 import { engine } from '#engine';
 import { children, extras, frozen } from './children.ts';
@@ -11,20 +11,23 @@ export type { Options } from './options.ts';
 export type { Arguments, Binding, Code, Comment, Declared, HostNode, Kept, Language, Parsed, Recovered, Reference, Root, Scope, Span } from './types.ts';
 
 /**
- * Thrown for a syntax error. `code` names what went wrong, for a host to branch on, and
- * `message` says it in words, without a position. An error at the token being read spans it
- * with `pos` and `end`; one reported elsewhere, at a declaration seen earlier say, has `end`
- * equal to `pos`. `unexpected_eof` is the end of what was parsed: the `end` the parse was given,
- * else the end of the source. A bad offset from the host is an `invalid_request` without a `loc`.
+ * Thrown for a syntax error. `code` names what went wrong, for a host to branch on, and `args`
+ * what it is about, a name or a token; `message` is the code then each argument in quotes,
+ * `expected '}'`. An error at the token being read spans it with `pos` and `end`; one reported
+ * elsewhere, at a declaration seen earlier say, has `end` equal to `pos`. `unexpected_eof` is
+ * the end of what was parsed: the `end` the parse was given, else the end of the source. A bad
+ * offset from the host is an `invalid_request` without a `line` and `column`.
  */
 export class ParseError extends SyntaxError {
 	declare code: Code;
+	declare args: readonly string[];
 	declare pos: number;
 	declare end: number;
-	declare loc?: Position;
+	declare line?: number;
+	declare column?: number;
 
-	constructor({ message, ...fields }: Pick<ParseError, 'message' | 'code' | 'pos' | 'end' | 'loc'>) {
-		super(message);
+	constructor(fields: Pick<ParseError, 'code' | 'args' | 'pos' | 'end' | 'line' | 'column'>) {
+		super(fields.args.reduce((text, arg) => `${text} '${arg}'`, fields.code as string));
 		Object.assign(this, fields);
 	}
 }
@@ -162,16 +165,22 @@ export class Source {
 			this.#held === undefined && at === undefined
 				? engine.once(source, this.#flags, entry, stop, grammar)
 				: engine.parse((this.#held ??= engine.create(source, this.#flags)), entry, offset, end, stop, grammar);
-		if (typeof answer !== 'string') {
-			try {
-				return decode(answer, source, engine) as Parsed<any>;
-			} catch (error) {
-				// a tree deeper than the caller's stack has room for overflowed the decoder
-				if (!(error instanceof RangeError)) throw error;
-				throw new ParseError({ message: 'Maximum nesting depth exceeded', code: 'nesting_depth', pos: offset, end: offset });
-			}
+		if (typeof answer === 'string') {
+			// a request the engine refused: an offset or option it cannot take
+			const error = JSON.parse(answer).error;
+			error.code = CODES[error.code];
+			throw new ParseError(error);
 		}
-		throw new ParseError(JSON.parse(answer).error);
+		let parsed: Parsed<any>;
+		try {
+			parsed = decode(answer, source, engine, this.#flags, entry === 3) as Parsed<any>;
+		} catch (error) {
+			// a tree deeper than the caller's stack has room for overflowed the decoder
+			if (!(error instanceof RangeError)) throw error;
+			throw new ParseError({ code: 'nesting_depth', args: [], pos: offset, end: offset });
+		}
+		if (parsed.node === null) throw new ParseError(parsed.errors![0]);
+		return parsed;
 	}
 
 	// the engine frees an undisposed source when it is collected

@@ -1,12 +1,14 @@
 {
-	"error": {
-		"code": "comma_after_rest",
-		"message": "Comma is not permitted after the rest element",
-		"pos": 15,
-		"end": 16,
-		"loc": {
+	"node": null,
+	"end": 15,
+	"errors": [
+		{
+			"code": 87,
+			"args": [],
+			"pos": 15,
+			"end": 16,
 			"line": 1,
 			"column": 15
 		}
-	}
+	]
 }

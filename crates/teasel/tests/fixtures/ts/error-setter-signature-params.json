@@ -1,12 +1,14 @@
 {
-	"error": {
-		"code": "setter_params",
-		"message": "setter should have exactly one param",
-		"pos": 26,
-		"end": 27,
-		"loc": {
+	"node": null,
+	"end": 26,
+	"errors": [
+		{
+			"code": 98,
+			"args": [],
+			"pos": 26,
+			"end": 27,
 			"line": 1,
 			"column": 26
 		}
-	}
+	]
 }

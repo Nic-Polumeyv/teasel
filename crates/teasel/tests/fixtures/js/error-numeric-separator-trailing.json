@@ -1,12 +1,14 @@
 {
-	"error": {
-		"code": "numeric_separator_last",
-		"message": "Numeric separator is not allowed at the last of digits",
-		"pos": 1,
-		"end": 1,
-		"loc": {
+	"node": null,
+	"end": 1,
+	"errors": [
+		{
+			"code": 26,
+			"args": [],
+			"pos": 1,
+			"end": 1,
 			"line": 1,
 			"column": 1
 		}
-	}
+	]
 }

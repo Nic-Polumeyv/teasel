@@ -1,12 +1,14 @@
 {
-	"error": {
-		"code": "yield_as_identifier",
-		"message": "Cannot use 'yield' as identifier inside a generator",
-		"pos": 20,
-		"end": 20,
-		"loc": {
+	"node": null,
+	"end": 20,
+	"errors": [
+		{
+			"code": 68,
+			"args": [],
+			"pos": 20,
+			"end": 20,
 			"line": 1,
 			"column": 20
 		}
-	}
+	]
 }

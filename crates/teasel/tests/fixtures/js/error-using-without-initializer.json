@@ -1,12 +1,16 @@
 {
-	"error": {
-		"code": "using_without_initializer",
-		"message": "Missing initializer in using declaration",
-		"pos": 9,
-		"end": 10,
-		"loc": {
+	"node": null,
+	"end": 9,
+	"errors": [
+		{
+			"code": 93,
+			"args": [
+				"using"
+			],
+			"pos": 9,
+			"end": 10,
 			"line": 1,
 			"column": 9
 		}
-	}
+	]
 }

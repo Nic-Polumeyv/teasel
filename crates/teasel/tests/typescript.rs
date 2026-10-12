@@ -175,7 +175,7 @@ fn conformance() {
 		let module = if is_module(&source) { Options::MODULE } else { 0 };
 		let request = Request::from_flags(Options::TYPESCRIPT | module);
 		let answer = parse(&source, &request, "");
-		let failed = answer.starts_with("{\"error\"");
+		let failed = answer.starts_with("{\"node\":null");
 		counted += 1;
 		if (failed && !any_error) || (!failed && grammar_error) {
 			let what = if failed {
