@@ -2,4 +2,4 @@
 '@teasel/parser': patch
 ---
 
-Errors carry `args`; `message` is the code and its arguments, `expected '}'`, the words are yours
+Errors carry `args`, `line` and `column`; `message` is the code and its arguments, `expected '}'`
