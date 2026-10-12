@@ -139,7 +139,7 @@ export interface Recovered {
 	loc: Position;
 }
 
-declare const answers: unique symbol;
+export declare const answers: unique symbol;
 /** What a parse reads as a whole and up to the end it is given: JavaScript, or a host language by its grammar. `T` is what its parse answers with. */
 export interface Language<T> {
 	readonly [answers]?: T;
@@ -354,9 +354,8 @@ export type Code =
 
 // ── the engine
 
-type View = Uint32Array | Float64Array | Uint8Array;
 /** Whether the tree is the TypeScript one, then each view of the layout's `views`, as long as its buffer's room; `undefined` for a table no parse filled yet. */
-export type Tree = readonly (View | number | undefined)[];
+export type Tree = readonly (Uint32Array | Float64Array | Uint8Array | number | undefined)[];
 
 /** What parses, as the reader sees it. */
 export interface Views {

@@ -1,4 +1,4 @@
-import type { Engine } from '../types.ts';
+import type { Engine, Tree } from '../types.ts';
 
 const encoder = new TextEncoder();
 const utf8 = new TextDecoder();
@@ -81,7 +81,7 @@ function answer(status: number) {
 	return words();
 }
 
-const trees: ({ buffer: ArrayBuffer; at: Uint32Array; views: (Uint32Array | Float64Array | Uint8Array | number | undefined)[] } | undefined)[] = [undefined, undefined];
+const trees: ({ buffer: ArrayBuffer; at: Uint32Array; views: Tree[number][] } | undefined)[] = [undefined, undefined];
 let layout_text: string | undefined;
 // read once, before any view of the tree: writing it can grow the memory and detach them
 function layout() {

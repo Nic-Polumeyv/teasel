@@ -53,7 +53,7 @@ interface Script {
 }
 
 const source = <T, S extends Site, M extends Mods = Plain>(from: string, read: string): Source<T, S, M> =>
-	({ from, read, optional: false, bind: false, orArg: false }) as unknown as Source<T, S, M>;
+	({ from, read, optional: false, bind: false, orArg: false }) as Source<T, S, M>;
 
 /** JavaScript read at a position of a form. */
 export const js = {
@@ -287,7 +287,7 @@ export const grammar = <const D extends Definition>(host: string, definition: D)
 	const made = { host, definition, wire: encode({ name: host, definition }) } as Grammar<D>;
 	// the getter stays out of enumeration, so a spread or a deep compare of a grammar never has the engine read it
 	return Object.defineProperty(made, 'children', {
-		get: () => (children ??= frozen({ ...builtin, ...JSON.parse(engine.children(compiled(made as Grammar))) })),
+		get: () => (children ??= frozen({ ...builtin, ...JSON.parse(engine.children(compiled(made))) })),
 	});
 };
 

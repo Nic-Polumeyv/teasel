@@ -11,14 +11,14 @@ export const PARENT = Symbol('parent');
 /** A decoded object: the tree decides its shape, `types.ts` describes it. */
 type Decoded = Record<string | symbol, any>;
 
-interface Field {
+export interface Field {
 	name: string;
 	at: number;
 	ty: string;
 	names?: string[];
 	fields?: Field[];
 }
-interface Kind {
+export interface Kind {
 	name: string;
 	fields: Field[];
 }
@@ -34,9 +34,9 @@ interface Missing {
 	str: Tagged;
 	int: Tagged;
 }
-type RawOp = [string, ...any[]];
-type RawRecipes = [string, RawOp[]][];
-interface Layout {
+export type RawOp = [string, ...any[]];
+export type RawRecipes = [string, RawOp[]][];
+export interface Layout {
 	node: { size: number; start: number; end: number; kind: number };
 	kinds: Kind[];
 	ts?: { size: number; kinds: Kind[] };
@@ -122,7 +122,7 @@ interface Compiled {
 	/** An extras record with nothing set. */
 	blank: Uint32Array;
 	/** Each table's row builders, plain and linked, and its record's words; made on the first answer with scopes. */
-	rows: { scopes: Rows; bindings: Rows; references: Rows; roots: Rows } | undefined;
+	rows: Record<keyof typeof LINKED, Rows> | undefined;
 	js: Language;
 	/** Made on the first TypeScript answer. */
 	ts: Language | undefined;
@@ -132,7 +132,7 @@ interface Compiled {
 }
 
 function resolve(raw: RawOp[], fields: Field[]): Op[] {
-	const find = (path: string): Field => {
+	const find = (path: string) => {
 		const [head, rest] = path.split('.');
 		const field = fields.find((f) => f.name === head)!;
 		if (rest === undefined) return field;
@@ -161,55 +161,17 @@ function resolve(raw: RawOp[], fields: Field[]): Op[] {
 	});
 }
 
-/** Each view's place in a tree; zero for a view the tree does not have. */
-interface At {
-	nodes: number;
-	lists: number;
-	numbers: number;
-	text: number;
-	starts: number;
-	marks: number;
-	units: number;
-	spans: number;
-	locs: number;
-	parenthesized: number;
-	erased: number;
-	comments: number;
-	attached_slots: number;
-	attached: number;
-	errors: number;
-	hosts: number;
-	host_keys: number;
-	host_vals: number;
-	host_strings: number;
-	scopes: number;
-	bindings: number;
-	references: number;
-	roots: number;
-	of_node: number;
-	of_identifier: number;
-	root_of: number;
-	declared_by: number;
-	declared_by_at: number;
-	writes_of: number;
-	writes_of_at: number;
-	ts: number;
-	extras_slots: number;
-	extras: number;
-	names: number;
-	name_starts: number;
-	rare: number;
-	late: number;
-	/** Past the last view's length in the answer's words: where the tree's buffers sit, folded into two. */
-	sits: number;
+// a literal: an object filled by computed keys turns into a dictionary, a hash lookup per read
+function places(views: string[]) {
+	const of = (name: string) => 1 + views.indexOf(name);
+	return { nodes: of('nodes'), lists: of('lists'), numbers: of('numbers'), text: of('text'), starts: of('starts'), marks: of('marks'), units: of('units'), spans: of('spans'), locs: of('locs'), parenthesized: of('parenthesized'), erased: of('erased'), comments: of('comments'), attached_slots: of('attached_slots'), attached: of('attached'), errors: of('errors'), hosts: of('hosts'), host_keys: of('host_keys'), host_vals: of('host_vals'), host_strings: of('host_strings'), scopes: of('scopes'), bindings: of('bindings'), references: of('references'), roots: of('roots'), of_node: of('of_node'), of_identifier: of('of_identifier'), root_of: of('root_of'), declared_by: of('declared_by'), declared_by_at: of('declared_by_at'), writes_of: of('writes_of'), writes_of_at: of('writes_of_at'), ts: of('ts'), extras_slots: of('extras_slots'), extras: of('extras'), names: of('names'), name_starts: of('name_starts'), rare: of('rare'), late: of('late'), /** Past the last view's length in the answer's words: where the tree's buffers sit, folded into two. */ sits: 1 + views.length };
 }
+/** Each view's place in a tree; zero for a view the tree does not have. */
+type At = ReturnType<typeof places>;
 
 function language(layout: Layout, views: string[], typescript: boolean): Language {
 	const by = (recipes: RawRecipes, kinds: Kind[]) => kinds.map((kind) => resolve(recipes.find(([name]) => name === kind.name)?.[1] ?? [], kind.fields));
-	// a literal: an object filled by computed keys turns into a dictionary, a hash lookup per read
-	const of = (name: string) => 1 + views.indexOf(name);
-	const at: At = { nodes: of('nodes'), lists: of('lists'), numbers: of('numbers'), text: of('text'), starts: of('starts'), marks: of('marks'), units: of('units'), spans: of('spans'), locs: of('locs'), parenthesized: of('parenthesized'), erased: of('erased'), comments: of('comments'), attached_slots: of('attached_slots'), attached: of('attached'), errors: of('errors'), hosts: of('hosts'), host_keys: of('host_keys'), host_vals: of('host_vals'), host_strings: of('host_strings'), scopes: of('scopes'), bindings: of('bindings'), references: of('references'), roots: of('roots'), of_node: of('of_node'), of_identifier: of('of_identifier'), root_of: of('root_of'), declared_by: of('declared_by'), declared_by_at: of('declared_by_at'), writes_of: of('writes_of'), writes_of_at: of('writes_of_at'), ts: of('ts'), extras_slots: of('extras_slots'), extras: of('extras'), names: of('names'), name_starts: of('name_starts'), rare: of('rare'), late: of('late'), sits: 1 + views.length };
-	const out: Language = { layout, at, recipes: new Array<Op[] | undefined>(layout.kinds.length), ts: [], adds: [], extras: [], erased: [], sets: new Map(), last: -1, builders: undefined, names: [], host_ops: new Map(), state: undefined, tree: undefined, sat: [-1, -1] };
+	const out: Language = { layout, at: places(views), recipes: new Array(layout.kinds.length), ts: [], adds: [], extras: [], erased: [], sets: new Map(), last: -1, builders: undefined, names: [], host_ops: new Map(), state: undefined, tree: undefined, sat: [-1, -1] };
 	if (typescript) {
 		const extras = layout.extras!.fields;
 		out.ts = by(layout.recipes.ts!, layout.ts!.kinds);
@@ -255,7 +217,7 @@ function compile(engine: Views): Compiled {
 
 function tables(C: Compiled): NonNullable<Compiled['rows']> {
 	const { layout } = C;
-	const rows = (name: string): Rows => {
+	const rows = (name: keyof typeof LINKED) => {
 		const ops = resolve(layout.recipes.rows.find(([table]) => table === name)![1], layout.rows[name].fields);
 		return { plain: row(C, ops, undefined), linked: row(C, ops, LINKED[name]), words: layout.rows[name].size >> 2 };
 	};
@@ -486,7 +448,7 @@ interface Spelling<E, St> {
 	strings(index: E): E;
 	numbers(index: E): E;
 	/** A constant table, and an element of one. */
-	table(list: unknown[]): E;
+	table(list: (string | true)[]): E;
 	at(table: E, index: E): E;
 	/** The node with an id, built into the node at hand. */
 	built(id: E): E;
@@ -516,15 +478,15 @@ interface Spelling<E, St> {
 const key_of = (op: Op) => (op.op === 'raw' || op.op === 'bigint' ? op.op : op.key);
 
 // an optional's tag word sits among its value's words, which follow their order around it
-const tagged = ({ tag }: Tagged, at: number) => [at + tag * 4, at + (tag === 0 ? 4 : 0)] as const;
+const tagged = ({ tag }: Tagged, at: number) => [at + tag * 4, at + (tag === 0 ? 4 : 0)];
 
-const child = <E, St>(B: Spelling<E, St>, word: E): E => {
+const child = <E,>(B: Spelling<E, unknown>, word: E): E => {
 	const w = B.hold(word);
 	return B.pick(B.eq(w, B.lit(0)), B.lit(null), B.built(B.dec(w)));
 };
 
 /** Whether an operation's value holds nodes, which are built into the node once it exists. */
-const holds_nodes = (op: Op): boolean =>
+const holds_nodes = (op: Op) =>
 	op.op === 'node' ||
 	op.op === 'list' ||
 	op.op === 'params' ||
@@ -534,7 +496,7 @@ const holds_nodes = (op: Op): boolean =>
 	(op.op === 'object' && op.inner.some(holds_nodes));
 
 /** An operation every node of the kind has: its value. */
-function value<E, St>(B: Spelling<E, St>, op: Op, none: Missing, erase: boolean): E {
+function value<E>(B: Spelling<E, unknown>, op: Op, none: Missing, erase: boolean): E {
 	switch (op.op) {
 		case 'node':
 			return child(B, B.word(op.at));
@@ -627,7 +589,7 @@ const HOST_NODE = 0, HOST_LIST = 1, HOST_COMMENTS = 8;
 const host_holds = (tag: number) => tag === HOST_NODE || tag === HOST_LIST || tag === HOST_COMMENTS;
 
 /** A host node's field from the three words at `at`: its tag, then two of value. */
-function host_value<E, St>(B: Spelling<E, St>, tag: number, at: number): E {
+function host_value<E>(B: Spelling<E, unknown>, tag: number, at: number): E {
 	const a = B.word(at + 4), b = B.word(at + 8);
 	switch (tag) {
 		case HOST_NODE:
@@ -657,19 +619,12 @@ function host_value<E, St>(B: Spelling<E, St>, tag: number, at: number): E {
 type Value = (S: State, V: Uint32Array, b: number, n: Decoded, L: unknown[]) => any;
 type Stmt = (S: State, V: Uint32Array, b: number, n: Decoded, L: unknown[], id: number) => void;
 
-/** A kind's operations as closures: the leads, then the keys in order. */
-interface Program {
-	slots: number;
-	lead: Stmt[];
-	body: Stmt[];
-}
-
 class Closures implements Spelling<Value, Stmt> {
 	slots = 0;
 	lead: Stmt[] = [];
 	word = (at: number): Value => (S, V, b) => V[(b + at) >> 2];
 	byte = (at: number): Value => (S, V, b) => byte(V, b + at);
-	lit = (value: unknown): Value => () => value;
+	lit = (value: string | number | boolean | null): Value => () => value;
 	empty = (): Value => () => [];
 	dec = (value: Value): Value => (S, V, b, n, L) => value(S, V, b, n, L) - 1;
 	eq = (a: Value, c: Value): Value => (S, V, b, n, L) => a(S, V, b, n, L) === c(S, V, b, n, L);
@@ -679,8 +634,8 @@ class Closures implements Spelling<Value, Stmt> {
 	pick = (test: Value, yes: Value, no: Value): Value => (S, V, b, n, L) => (test(S, V, b, n, L) ? yes(S, V, b, n, L) : no(S, V, b, n, L));
 	strings = (index: Value): Value => (S, V, b, n, L) => S.strings[index(S, V, b, n, L)];
 	numbers = (index: Value): Value => (S, V, b, n, L) => S.numbers[index(S, V, b, n, L)];
-	table = (list: unknown[]): Value => () => list;
-	at = (table: Value, index: Value): Value => (S, V, b, n, L) => (table(S, V, b, n, L) as unknown[])[index(S, V, b, n, L)];
+	table = (list: (string | true)[]): Value => () => list;
+	at = (table: Value, index: Value): Value => (S, V, b, n, L) => table(S, V, b, n, L)[index(S, V, b, n, L)];
 	built = (id: Value): Value => (S, V, b, n, L) => build(S, id(S, V, b, n, L), n);
 	items = (start: Value, len: Value, params_: boolean): Value => (S, V, b, n, L) => (params_ ? params : items)(S, start(S, V, b, n, L), len(S, V, b, n, L), n);
 	pair = (a: Value, c: Value): Value => (S, V, b, n, L) => [a(S, V, b, n, L), c(S, V, b, n, L)];
@@ -731,8 +686,9 @@ class Closures implements Spelling<Value, Stmt> {
 }
 
 // the operations past the head: a kind's own keys, or a table row's, or an extras record's
-const programs = new WeakMap<Op[], Program>();
-function program(ops: Op[], none: Missing): Program {
+// a kind's operations as closures: the leads, then the keys in order
+const programs = new WeakMap<Op[], { slots: number; lead: Stmt[]; body: Stmt[] }>();
+function program(ops: Op[], none: Missing) {
 	let made = programs.get(ops);
 	if (made !== undefined) return made;
 	const B = new Closures();
@@ -896,7 +852,7 @@ class Source implements Spelling<string, string> {
 		this.words = words;
 		this.kind = kind;
 	}
-	lit = (value: unknown) => JSON.stringify(value);
+	lit = (value: string | number | boolean | null) => JSON.stringify(value);
 	empty = () => '[]';
 	dec = (value: string) => `(${value} - 1)`;
 	eq = (a: string, b: string) => `${a} === ${b}`;
@@ -906,7 +862,7 @@ class Source implements Spelling<string, string> {
 	pick = (test: string, yes: string, no: string) => `(${test} ? ${yes} : ${no})`;
 	strings = (index: string) => `S.strings[${index}]`;
 	numbers = (index: string) => `S.numbers[${index}]`;
-	table = (list: unknown[]) => `K[${this.constants.push(list) - 1}]`;
+	table = (list: (string | true)[]) => `K[${this.constants.push(list) - 1}]`;
 	at = (table: string, index: string) => `${table}[${index}]`;
 	// a child's builder is looked up where the child is read: each site sees its own few kinds
 	built = (id: string, into = 'n') => `J[N[${id} * ${this.words} + ${this.kind >> 2}]](S, ${id}, 0, ${into})`;
@@ -921,12 +877,12 @@ class Source implements Spelling<string, string> {
 	bigint = (text: string) => `bigint(${text})`;
 	bigint_value = (text: string) => `bigint_value(${text})`;
 	regexp = (pattern: string, flags: string) => `regexp(${pattern}, ${flags})`;
-	hold(value: string): string {
+	hold(value: string) {
 		const local = `v${this.count++}`;
 		this.lead.push(`const ${local} = ${value};`);
 		return local;
 	}
-	othername(same: string, id: string): string {
+	othername(same: string, id: string) {
 		const local = `v${this.count++}`;
 		if (this.facts) this.lead.push(`const was${local} = S.name_only; S.name_only = ${same};`);
 		this.lead.push(`const ${local} = ${this.built(id)};`);
@@ -934,7 +890,7 @@ class Source implements Spelling<string, string> {
 		return local;
 	}
 	set = (key: string, value: string) => `n[${JSON.stringify(key)}] = ${value};`;
-	when(test: string, body: () => string[]): string {
+	when(test: string, body: () => string[]) {
 		const outer = this.lead;
 		const lead: string[] = (this.lead = []);
 		const inner = body();
@@ -1092,7 +1048,7 @@ const generated = (() => {
 
 // what a table's row points at once the tree is built, in its literal from the start so nothing is
 // added later; a binding is the reference its declaring identifier makes, `binding` itself
-const LINKED: Record<string, Record<string, unknown>> = {
+const LINKED = {
 	scopes: { node: null },
 	bindings: { node: null, declaration: null, binding: null, declares: true, read: false, mutate: false, writeExpr: null },
 	references: { node: null, writeExpr: null },

@@ -1,21 +1,12 @@
 // scripts/addon.ts imports this file to build the binary that node.ts loads on import, so the two stay apart
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import type { Tree } from '../types.ts';
-
-/** What V8 holds for the addon: a prepared source, or a grammar's plan. */
-export type External = object;
+import type { Engine, Tree } from '../types.ts';
 
 /** `crates/teasel-node/src/lib.rs`: the operations over a prepared source and a grammar, the source as V8's bytes. */
-export interface Addon {
-	readonly create: (source: Uint8Array, flags: number) => External;
-	readonly parse: (held: External, entry: number, offset: number, end: number | undefined, stop: string, plan: External | undefined) => Uint32Array | string;
-	readonly once: (source: Uint8Array, flags: number, entry: number, stop: string, plan: External | undefined) => Uint32Array | string;
-	/** The grammar read once; V8 lets go of it with the external. */
-	readonly plan: (grammar: Uint8Array) => External;
-	readonly children: (plan: External | undefined) => string;
-	readonly free: (held: External) => void;
-	readonly layout: () => string;
+export interface Addon extends Omit<Engine, 'create' | 'once' | 'tree'> {
+	readonly create: (source: Uint8Array, flags: number) => object;
+	readonly once: (source: Uint8Array, flags: number, entry: number, stop: string, plan: object | undefined) => Uint32Array | string;
 	/** Whether the tree is the TypeScript one, then each view as long as its buffer's room; the lengths ride in the answer's words. */
 	readonly tree: () => Tree | undefined;
 }
@@ -29,7 +20,7 @@ export const platforms: Record<string, { target: string; os: NodeJS.Platform; cp
 };
 
 // a glibc build does not load on musl: ldd is a script that names its libc; without one glibc is assumed, and a musl box only gets the warning
-function libc(): string {
+function libc() {
 	try {
 		return readFileSync('/usr/bin/ldd', 'utf8').includes('musl') ? 'musl' : 'glibc';
 	} catch {
@@ -40,7 +31,7 @@ function libc(): string {
 // a build linked against a newer glibc than the system's fails to dlopen: WebAssembly parses there, as it does without a build
 export function load(): Addon | undefined {
 	const require = createRequire(import.meta.url);
-	let why: { code?: string; message: string } | undefined;
+	let why: NodeJS.ErrnoException | undefined;
 	for (const [tag, p] of Object.entries(platforms)) {
 		if (p.os !== process.platform || p.cpu !== process.arch || (p.libc !== undefined && p.libc !== libc())) continue;
 		// we add .node so require dlopens it instead of reading it as js
@@ -48,7 +39,7 @@ export function load(): Addon | undefined {
 			try {
 				return require(path);
 			} catch (e) {
-				const error = e as Error & { code?: string };
+				const error = e as NodeJS.ErrnoException;
 				// addons turned off by flag: WebAssembly was asked for
 				if (error.code === 'ERR_DLOPEN_DISABLED') return;
 				// a build that fails to load says more than one that is not there

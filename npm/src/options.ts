@@ -53,7 +53,7 @@ const ACCEPTED: { [K in keyof Options]-?: readonly NonNullable<Options[K]>[] } =
 	allowUndeclaredExports: [false, true],
 	errorRecovery: [false, true],
 };
-const SLOT = Object.fromEntries(Object.keys(ACCEPTED).map((key, slot) => [key, slot])) as Record<keyof Options, number>;
+const SLOT = Object.fromEntries(Object.keys(ACCEPTED).map((key, slot) => [key, slot]));
 const known = (key: string): key is keyof Options => Object.hasOwn(ACCEPTED, key);
 
 /** The options that are on, as the word the engine takes. */
