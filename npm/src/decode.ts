@@ -93,8 +93,8 @@ interface Language {
 
 /** A node from its id, its TypeScript record when it has one, and the node it sits in. */
 type Builder = (S: State, id: number, record: number, parent: Decoded | undefined) => Decoded;
-/** A table's row from its record, `b` words into the view. */
 type Table = 'scopes' | 'bindings' | 'references' | 'roots';
+/** A table's row from its record, `b` words into the view, and the table it joins: a linked row reads the rows before it. */
 type Row = (S: State, view: Uint32Array, b: number, table: Decoded[]) => Decoded;
 /** A host's node from its fields, `from` on in the hosts' keys and values. */
 type HostBuilder = (S: State, id: number, index: number, from: number, parent: Decoded | undefined) => Decoded;
@@ -1100,9 +1100,9 @@ const generated = (() => {
 	}
 })();
 
-// A linked row is whole from its literal: the rows its numbers index are read as the objects, and
-// what the tree fills in once built is there as null. A binding is the reference its declaring
-// identifier makes, `binding` itself.
+// A linked row is whole from its literal, so nothing is added to it later: the rows its numbers
+// index are read as the objects (a scope's parent is numbered before it), and what the tree fills in
+// once built is there as null. A binding is the reference its declaring identifier makes, `binding` itself.
 interface Linked {
 	into: Record<string, Table>;
 	held: Record<string, unknown>;
