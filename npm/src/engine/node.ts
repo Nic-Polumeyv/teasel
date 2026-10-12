@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import type { Engine, Tree } from '../types.ts';
 import { load } from './addon.ts';
-import { start } from './wasm.ts';
+import { start, url } from './wasm.ts';
 
 const native = load();
 const encoder = new TextEncoder();
@@ -19,7 +19,7 @@ function bytes(text: string) {
 
 // synchronous: 7 ms against 13 async for the 1.1 MB module, and require() refuses a graph with top-level await
 // TODO: `import source` once node >= 22.19, tsc and bundlers accept it: no file read
-export const engine: Engine = native === undefined ? start(new WebAssembly.Module(readFileSync(new URL('../teasel.wasm', import.meta.url)))) : {
+export const engine: Engine = native === undefined ? start(new WebAssembly.Module(readFileSync(url))) : {
 	create: (source, flags) => native.create(bytes(source), flags),
 	parse: native.parse,
 	free: native.free,

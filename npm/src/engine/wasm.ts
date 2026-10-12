@@ -21,6 +21,8 @@ interface Exports {
 	layout(): void;
 }
 
+// `teasel.wasm` beside the package entry: a bundler includes the file without configuration
+export const url = new URL('../teasel.wasm', import.meta.url);
 let module: WebAssembly.Module;
 let wasm: Exports;
 

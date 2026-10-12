@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { load } from '../dist/engine/addon.js';
 import { engine as native } from '../dist/engine/node.js';
-import { start } from '../dist/engine/wasm.js';
+import { start, url } from '../dist/engine/wasm.js';
 import { decode } from '../dist/decode.js';
 import type { Engine } from '../dist/types.js';
 import { flags, type Options } from '../dist/options.js';
@@ -15,7 +15,7 @@ import { target } from './target.ts';
 
 // without the addon node.js is the wasm engine already, and every diff would pass
 if (load() === undefined) throw new Error('no addon to check: npm run build');
-const wasm = start(new WebAssembly.Module(readFileSync(new URL('../dist/teasel.wasm', import.meta.url))));
+const wasm = start(new WebAssembly.Module(readFileSync(url)));
 const binary = `${target}/release/teasel`;
 const files: string[] = [];
 function walk(dir: string) {
