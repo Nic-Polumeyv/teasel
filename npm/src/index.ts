@@ -20,7 +20,7 @@ export type { Arguments, Binding, Code, Comment, Declared, HostNode, Kept, Langu
  */
 export class ParseError extends SyntaxError {
 	declare code: Code;
-	declare args: string[];
+	declare args: readonly string[];
 	declare pos: number;
 	declare end: number;
 	declare loc?: Position;

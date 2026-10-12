@@ -1200,13 +1200,14 @@ function link_tables(S: State) {
 
 const ERROR_WORDS = 7;
 const NO_ARG = 0xffffffff;
+const NO_ARGS: readonly string[] = Object.freeze([]);
 
 function errors(S: State, view: Uint32Array, count: number): Decoded[] {
 	const out = new Array<Decoded>(count);
 	for (let i = 0, at = 0; i < count; i++, at += ERROR_WORDS) {
-		const code = CODES[view[at]], args: string[] = [];
-		for (let k = 1; k < 3; k++) if (view[at + k] !== NO_ARG) args.push(S.strings[view[at + k]]);
-		out[i] = { code, args, pos: view[at + 3], end: view[at + 4], loc: { line: view[at + 5], column: view[at + 6] } };
+		const a = view[at + 1], b = view[at + 2];
+		const args = a === NO_ARG ? NO_ARGS : b === NO_ARG ? [S.strings[a]] : [S.strings[a], S.strings[b]];
+		out[i] = { code: CODES[view[at]], args, pos: view[at + 3], end: view[at + 4], loc: { line: view[at + 5], column: view[at + 6] } };
 	}
 	return out;
 }

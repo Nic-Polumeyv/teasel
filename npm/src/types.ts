@@ -133,7 +133,7 @@ export interface Kept extends Span {
 /** A recovered error: the thrown `SyntaxError`'s code, args and position, as a plain object. */
 export interface Recovered {
 	code: Code;
-	args: string[];
+	args: readonly string[];
 	pos: number;
 	end: number;
 	loc: Position;
