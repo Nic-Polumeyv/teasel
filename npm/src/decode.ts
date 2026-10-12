@@ -827,13 +827,15 @@ function build(S: State, id: number, parent: Decoded | undefined): Decoded {
 }
 
 function items(S: State, start: number, len: number, parent: Decoded | undefined): (Decoded | null)[] {
-	const out: (Decoded | null)[] = [];
+	const out: (Decoded | null)[] = new Array(len);
 	const L = S.L, N = S.N, J = S.J, erased = S.erased, words = S.C.words, kind = S.C.kind >> 2;
+	let n = 0;
 	for (let i = start, end = start + len; i < end; i++) {
 		const word = L[i];
-		if (word === 0) out.push(null);
-		else if (erased === null || !bit(erased, word - 1)) out.push(J[N[(word - 1) * words + kind]](S, word - 1, 0, parent));
+		if (word === 0) out[n++] = null;
+		else if (erased === null || !bit(erased, word - 1)) out[n++] = J[N[(word - 1) * words + kind]](S, word - 1, 0, parent);
 	}
+	if (n !== len) out.length = n;
 	return out;
 }
 
