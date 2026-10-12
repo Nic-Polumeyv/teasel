@@ -366,7 +366,7 @@ codes! {
 	StatementInAmbient,
 	/// A `using` declaration in an ambient context; `args` names the declaration.
 	UsingInAmbient,
-	/// An offset or option the request cannot take; `args` says which, no `loc`.
+	/// An offset or option the request cannot take; `args` says which, no `line` or `column`.
 	InvalidRequest,
 	/// A property access right after an instantiation expression.
 	PropertyAfterInstantiation,

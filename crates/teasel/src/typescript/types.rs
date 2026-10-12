@@ -1224,7 +1224,7 @@ impl Parser<'_, TypeScript> {
 	}
 }
 
-/// Duplicate, misordered and conflicting modifiers: the code and the modifiers its message names.
+/// Duplicate, misordered and conflicting modifiers: the code and the modifiers it names.
 fn misplaced(seen: &Modifiers, modifier: &'static str) -> Option<(Code, [Option<&'static str>; 2])> {
 	let order = |before: &'static str, after: &'static str| {
 		(modifier == before && seen.has(after)).then_some((Code::ModifierOrder, [Some(before), Some(after)]))

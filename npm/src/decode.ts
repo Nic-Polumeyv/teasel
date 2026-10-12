@@ -330,14 +330,20 @@ const NO_ROWS: Decoded[] = [];
 const NO_STRINGS: string[] = [];
 
 // the tree's interned strings, by their number
-function strings(tree: Tree, words: Uint32Array, lens: number, at: At): string[] {
+function strings(tree: Tree, words: Uint32Array, lens: number, at: At, only?: number[]): string[] {
 	const count = words[lens + at.starts] - 1;
 	const bytes = tree[at.text] as Uint8Array, length = words[lens + at.text];
-	const ascii = words[lens + at.units] === 0;
-	const text = node_slices === undefined ? utf8.decode(bytes.subarray(0, length)) : (ascii ? node_slices.latin1Slice : node_slices.utf8Slice).call(bytes, 0, length);
-	const ends = ascii ? (tree[at.starts] as Uint32Array) : (tree[at.units] as Uint32Array);
 	const out = new Array<string>(count);
-	for (let i = 0; i < count; i++) out[i] = text.slice(ends[i], ends[i + 1]);
+	if (only !== undefined) {
+		// a failed parse reads its error's args alone, not a table it never walks
+		const starts = tree[at.starts] as Uint32Array;
+		for (const id of only) out[id] = utf8.decode(bytes.subarray(starts[id], starts[id + 1]));
+	} else {
+		const ascii = words[lens + at.units] === 0;
+		const text = node_slices === undefined ? utf8.decode(bytes.subarray(0, length)) : (ascii ? node_slices.latin1Slice : node_slices.utf8Slice).call(bytes, 0, length);
+		const ends = ascii ? (tree[at.starts] as Uint32Array) : (tree[at.units] as Uint32Array);
+		for (let i = 0; i < count; i++) out[i] = text.slice(ends[i], ends[i + 1]);
+	}
 	// a lone surrogate stands in the text as U+FFFD: the string's number, the offset and the surrogate
 	const marked = words[lens + at.marks];
 	if (marked !== 0) {
@@ -345,6 +351,10 @@ function strings(tree: Tree, words: Uint32Array, lens: number, at: At): string[]
 		// rebuilding the string once per mark was quadratic in a long literal
 		for (let i = 0; i < marked; ) {
 			const id = marks[i], s = out[id];
+			if (s === undefined) {
+				for (; i < marked && marks[i] === id; i += 3);
+				continue;
+			}
 			let built = '', from = 0;
 			for (; i < marked && marks[i] === id; i += 3) {
 				built += s.slice(from, marks[i + 1]) + String.fromCharCode(marks[i + 2]);
@@ -1160,8 +1170,8 @@ function names(G: Language, tree: Tree, count: number, moved: boolean): string[]
 
 const filled = (tree: Tree, words: Uint32Array, lens: number, at: number) => (words[lens + at] === 0 ? null : (tree[at] as Uint32Array).subarray(0, words[lens + at]));
 
-// what `words[lens]` says of an answer: the roots are a list, the parse failed, the tree is TypeScript's (a document's language is the grammar's to tell); each view's length follows it, then where the tree's buffers sit
-const LISTED = 1, FAILED = 2, TYPESCRIPT = 4;
+// what `words[lens]` says of an answer, what the caller could not know: the parse failed, the tree is TypeScript's (a document's language is the grammar's to tell); each view's length follows it, then where the tree's buffers sit
+const FAILED = 1, TYPESCRIPT = 2;
 // the options the answer was asked with, as `flags` packed them
 const slot = (key: keyof Options, index = 3) => index << (2 * SLOT[key]);
 const TS_OPTION = slot('typescript'), ERASED = slot('typescript', 2), COMMENTS = slot('comments'), LOCATED = slot('locations'), JS_LOCATED = slot('locations', 2), RECOVERED = slot('errorRecovery');
@@ -1217,11 +1227,12 @@ function errors(S: State, view: Uint32Array, count: number): Decoded[] {
 }
 
 /**
- * The answer of the last parse, asked with the options `flags` packed: `words` are `end`, the
- * roots by number, a word of what the answer is and each view's length; the tree itself is read
- * in place. `link` replaces the scope and binding numbers with the objects they index.
+ * The answer of the last parse, asked with the options `flags` packed, `listed` for the parameter
+ * list entry: `words` are `end`, the roots by number, a word of what the answer is and each
+ * view's length; the tree itself is read in place. `link` replaces the scope and binding numbers
+ * with the objects they index.
  */
-export function decode(words: Uint32Array, source: string, engine: Views, flags: number, link = true): Decoded {
+export function decode(words: Uint32Array, source: string, engine: Views, flags: number, listed: boolean, link = true): Decoded {
 	const C = compile(engine);
 	const lens = 2 + words[1];
 	const what = words[lens];
@@ -1233,10 +1244,11 @@ export function decode(words: Uint32Array, source: string, engine: Views, flags:
 	G.sat[0] = lo;
 	G.sat[1] = hi;
 	const tree = engine.tree(typescript, moved);
-	const erase = (flags & TS_OPTION) === ERASED, lines = (flags & LOCATED) !== 0, listed = (what & LISTED) !== 0, failed = (what & FAILED) !== 0;
+	const erase = (flags & TS_OPTION) === ERASED, lines = (flags & LOCATED) !== 0, failed = (what & FAILED) !== 0;
 	const host_lines = lines && (flags & LOCATED) !== JS_LOCATED;
 	const spans = words[lens + at.spans] !== 0;
-	const scoped = words[lens + at.scopes] !== 0;
+	const scoped = !failed && words[lens + at.scopes] !== 0;
+	const rows = tree[at.errors] as Uint32Array;
 	const config = (link ? LINK : 0) | (lines ? LINES : 0) | (host_lines ? HOST_LINES : 0) | (scoped ? FACTS : 0) | (erase ? ERASE : 0);
 	const B = G.last === config ? G.builders! : builders(C, G, config, typescript);
 	// the state stays with the tree's views, one answer at a time: only what an answer changes is set
@@ -1302,7 +1314,7 @@ export function decode(words: Uint32Array, source: string, engine: Views, flags:
 	S.J = B.js;
 	S.H = B.hosts;
 	S.names = names(G, tree, words[lens + at.name_starts] - 1, moved);
-	S.strings = strings(tree, words, lens, at);
+	S.strings = failed ? strings(tree, words, lens, at, [rows[1], rows[2]].filter((arg) => arg !== NO_ARG)) : strings(tree, words, lens, at);
 	S.P = spans ? (tree[at.spans] as Uint32Array) : S.N;
 	S.ps = spans ? 2 : C.words;
 	S.po = spans ? 0 : C.layout.node.start >> 2;
@@ -1324,16 +1336,16 @@ export function decode(words: Uint32Array, source: string, engine: Views, flags:
 		S.roots = table(S, tree, words, lens, rows.roots, at.roots);
 		if (link) link_tables(S);
 	}
-	// a failed parse has no node and its one error listed, nothing else
 	let node: Decoded | Decoded[] | null = null;
-	if (failed) {
-	} else if (listed) {
-		node = [];
-		for (let i = 2; i < lens; i++) if (S.erased === null || !bit(S.erased, words[i])) node.push(build(S, words[i], undefined));
-	} else node = build(S, words[2], undefined);
+	if (!failed) {
+		if (listed) {
+			node = [];
+			for (let i = 2; i < lens; i++) if (S.erased === null || !bit(S.erased, words[i])) node.push(build(S, words[i], undefined));
+		} else node = build(S, words[2], undefined);
+	}
 	const answer: Decoded = { node, end: words[0] };
 	if (!failed && (flags & COMMENTS) !== 0) answer.comments = comments(S, undefined);
-	if (failed || (flags & RECOVERED) !== 0) answer.errors = errors(S, tree[at.errors] as Uint32Array, words[lens + at.errors] / ERROR_WORDS);
+	if (failed || (flags & RECOVERED) !== 0) answer.errors = errors(S, rows, words[lens + at.errors] / ERROR_WORDS);
 	if (!failed && erase) answer.typescript = kept(S);
 	if (!failed && scoped) {
 		answer.scopes = S.scopes;

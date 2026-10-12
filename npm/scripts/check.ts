@@ -33,7 +33,7 @@ let failed = 0;
 // what a parse answers or throws, read off the engine directly
 function outcome(engine: Engine, held: object, source: string, on: number, entry: number, at: number, end?: number) {
 	const answer = engine.parse(held, entry, at, end, '', undefined);
-	return typeof answer === 'string' ? { error: JSON.parse(answer).error } : { value: decode(answer, source, engine, on) };
+	return typeof answer === 'string' ? { error: JSON.parse(answer).error } : { value: decode(answer, source, engine, on, entry === 3) };
 }
 function once(engine: Engine, source: string, options: Options, entry: number, at: number) {
 	const on = flags(options);
@@ -94,7 +94,7 @@ function json(name: string, source: string, options: Options, entry: number, at:
 	const held = native.create(source, on);
 	const answer = native.parse(held, entry, at, undefined, '', undefined);
 	native.free(held);
-	const tree = typeof answer === 'string' ? answer : JSON.stringify(decode(answer, source, native, on, false), as_json);
+	const tree = typeof answer === 'string' ? answer : JSON.stringify(decode(answer, source, native, on, entry === 3, false), as_json);
 	jobs.push({ name, source, mode: mode(source, options, entry, at), tree });
 }
 
@@ -102,7 +102,7 @@ function json(name: string, source: string, options: Options, entry: number, at:
 function document(name: string, source: string, typescript: boolean, options: Options, switches: string) {
 	const on = flags(options);
 	const answer = native.once(source, on, 0, '', plan);
-	const tree = typeof answer === 'string' ? answer : JSON.stringify(decode(answer, source, native, on, false), as_json);
+	const tree = typeof answer === 'string' ? answer : JSON.stringify(decode(answer, source, native, on, false, false), as_json);
 	jobs.push({ name: `${name} doc${switches}`, source, mode: `${typescript ? 'ts-' : ''}doc${switches}`, tree });
 }
 

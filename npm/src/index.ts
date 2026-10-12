@@ -27,7 +27,6 @@ export class ParseError extends SyntaxError {
 	declare column?: number;
 
 	constructor(fields: Pick<ParseError, 'code' | 'args' | 'pos' | 'end' | 'line' | 'column'>) {
-		// an Error's message: the code, then each argument in quotes
 		super(fields.args.reduce((text, arg) => `${text} '${arg}'`, fields.code as string));
 		Object.assign(this, fields);
 	}
@@ -174,7 +173,7 @@ export class Source {
 		}
 		let parsed: Parsed<any>;
 		try {
-			parsed = decode(answer, source, engine, this.#flags) as Parsed<any>;
+			parsed = decode(answer, source, engine, this.#flags, entry === 3) as Parsed<any>;
 		} catch (error) {
 			// a tree deeper than the caller's stack has room for overflowed the decoder
 			if (!(error instanceof RangeError)) throw error;

@@ -83,7 +83,7 @@
 		></pre>
 	{#if answer.error}
 		<p class="border-t border-dashed border-[#d3c6aa]/25 px-4 py-3 font-mono text-xs text-[#e67e80] sm:text-[13px]">
-			{answer.error.code}: {answer.error.message}, {where(answer.error.pos)}
+			{answer.error.message}, {where(answer.error.pos)}
 		</p>
 	{:else if answer.tree}
 		<div class="max-h-[30rem] overflow-y-auto border-t border-dashed border-[#d3c6aa]/25 py-3 font-mono text-xs leading-6 sm:text-[13px]" onmouseleave={() => (active = null)} role="tree" tabindex="-1">

@@ -1,7 +1,7 @@
 //! What must hold between the parser's own answers, over every file of test262-parser-tests that
 //! parses: recovery changes nothing about a file that parses, an entry reads the same statement
 //! the program did, and a file cut anywhere is read without a panic. Over every file that does not
-//! parse, each error has an argument for every `{}` of its message.
+//! parse, a cut is read without a panic too.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -67,8 +67,7 @@ fn recovery_changes_nothing_that_parses() {
 	assert!(differ.is_empty(), "{}", differ.join("\n"));
 }
 
-/// The `node` of an entry's answer, `{"node":...,"end":N}`.
-/// The node of an answer, none for a failed parse.
+/// The `node` of an answer, `{"node":...,"end":N}`; none for a failed parse.
 fn node_of(answer: &str) -> Option<&str> {
 	let rest = answer.strip_prefix("{\"node\":{")?;
 	let end = rest.rfind(",\"end\":")?;

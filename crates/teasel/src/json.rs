@@ -1,5 +1,7 @@
 //! One entry for every front end: a request describes what to parse and how, and the answer is
-//! ESTree JSON, or a JSON object with an `error`: its code, message, span and location.
+//! ESTree JSON, with `node` null and the one error listed when the parse failed; a request the
+//! engine cannot take answers a JSON object with an `error`: its code, the reason as its argument,
+//! and the offset.
 
 use std::rc::Rc;
 
@@ -574,13 +576,15 @@ fn dispatch(
 	check(source, request)?;
 	#[cfg(feature = "typescript")]
 	if request.options.typescript() {
-		return run::<crate::typescript::TypeScript>(source, positions, request, stop, host, pool, words);
+		return Ok(run::<crate::typescript::TypeScript>(
+			source, positions, request, stop, host, pool, words,
+		));
 	}
 	#[cfg(not(feature = "typescript"))]
 	if request.options.typescript() {
 		return Err(error_json("built without TypeScript", 0));
 	}
-	run::<()>(source, positions, request, stop, host, pool, words)
+	Ok(run::<()>(source, positions, request, stop, host, pool, words))
 }
 
 fn parse_with(source: &str, positions: &Positions, request: &Request, stop: &str, host: Option<&Grammar>) -> String {
@@ -593,11 +597,10 @@ fn parse_with(source: &str, positions: &Positions, request: &Request, stop: &str
 	})
 }
 
-/// The answer's word: the roots are a list, the parse failed, the tree is TypeScript's. The
-/// options are the caller's, but a document's language is the grammar's to tell.
-const LISTED: u32 = 1;
-const FAILED: u32 = 2;
-const TYPESCRIPT: u32 = 4;
+/// The answer's word, what the caller could not know: the parse failed, the tree is TypeScript's
+/// (a document's language is the grammar's to tell).
+const FAILED: u32 = 1;
+const TYPESCRIPT: u32 = 2;
 
 /// The answer read in place, its words at `words`, or the error answer as JSON.
 fn in_place_with(
@@ -624,7 +627,7 @@ fn in_place_with(
 }
 
 /// Runs a request: the answer as JSON, or read in place with its words in `words` and nothing
-/// as text; `Err` is the error answer as JSON.
+/// as text.
 fn run<E: crate::parser::Extension>(
 	source: &str,
 	positions: &Positions,
@@ -633,7 +636,7 @@ fn run<E: crate::parser::Extension>(
 	host: Option<&Grammar>,
 	pool: &mut Pool,
 	words: Option<&mut Words>,
-) -> Result<String, String>
+) -> String
 where
 	E::Data: Emit + Bind + Reuse + Pooled,
 {
@@ -658,7 +661,6 @@ where
 			reused,
 		),
 	};
-	// no roots: the parse failed, and its error is the only one listed
 	let (mut roots, mut end) = match parsed {
 		Ok((roots, end)) => (Some(roots), end),
 		Err(error) => (fail(&mut ast, *error), error.pos),
@@ -684,7 +686,7 @@ where
 	let Some(words) = words else {
 		let json = answer(&ast, request.entry, roots, end, source, positions, options);
 		Pooled::give(pool, ast);
-		return Ok(json);
+		return json;
 	};
 	let names = &mut pool.names[request.options.typescript() as usize];
 	prepare(&mut ast, source, positions, options, failed, names);
@@ -697,9 +699,8 @@ where
 		roots.len() as u32,
 	]);
 	words.extend(roots.iter().map(|root| root.unwrap().index()));
-	let listed = if request.entry == Entry::Params { LISTED } else { 0 };
 	let typescript = if options.typescript() { TYPESCRIPT } else { 0 };
-	words.push(listed | typescript | if failed { FAILED } else { 0 });
+	words.push(typescript | if failed { FAILED } else { 0 });
 	let mut sits = 0u64;
 	let mut note = |_, buffer: Option<&mut dyn Raw>| {
 		words.push(buffer.as_ref().map_or(0, |buffer| buffer.elements() as u32));
@@ -712,13 +713,13 @@ where
 	pool.names[request.options.typescript() as usize].views(&mut Views(&mut note));
 	words.extend_from_slice(&[sits as u32, (sits >> 32) as u32]);
 	Pooled::give(pool, ast);
-	Ok(String::new())
+	String::new()
 }
 
 /// What a front end reading the tree in place needs beside it: every node's span and location
-/// as JavaScript counts them, the nodes erasure leaves out, the hosts, the comments and the
-/// recovered errors as words, their names and messages among the strings, and the strings'
-/// UTF-16 starts.
+/// as JavaScript counts them, the nodes erasure leaves out, the hosts, the comments, the errors
+/// as words and the strings' UTF-16 starts; a failed parse prepares its error row alone, the
+/// tree it read is left as the last answer cleared it.
 fn prepare<X: Emit + Reuse>(
 	ast: &mut Ast<X>,
 	source: &str,
@@ -727,9 +728,7 @@ fn prepare<X: Emit + Reuse>(
 	failed: bool,
 	names: &mut Names,
 ) {
-	if failed {
-		prepare_failed(ast);
-	} else {
+	if !failed {
 		prepare_tree(ast, positions, options, names);
 	}
 	ast.error_words.clear();
@@ -743,7 +742,7 @@ fn prepare<X: Emit + Reuse>(
 	}
 	ast.units.clear();
 	let (text, starts, _) = ast.strings.buffers();
-	if !text.is_ascii() {
+	if !failed && !text.is_ascii() {
 		ast.units.reserve(starts.len());
 		let mut units = 0u32;
 		let mut from = 0usize;
@@ -757,20 +756,6 @@ fn prepare<X: Emit + Reuse>(
 			ast.units.push(units);
 		}
 	}
-}
-
-/// A failed answer is its error row and the strings the args name: the tree it read so far is
-/// not mapped, and what the last answer mapped is let go of.
-fn prepare_failed<X: Emit + Reuse>(ast: &mut Ast<X>) {
-	ast.spans.clear();
-	ast.locs.clear();
-	ast.erased.clear();
-	ast.rare.reset(0);
-	ast.late.reset(0);
-	ast.host_view.clear();
-	ast.host_keys.clear();
-	ast.host_vals.clear();
-	ast.comment_words.clear();
 }
 
 fn prepare_tree<X: Emit + Reuse>(ast: &mut Ast<X>, positions: &Positions, options: Options, names: &mut Names) {

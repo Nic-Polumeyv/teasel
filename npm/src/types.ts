@@ -1,4 +1,4 @@
-import type { Expression, Identifier, Node, Position, SourceLocation } from 'estree';
+import type { Expression, Identifier, Node, SourceLocation } from 'estree';
 
 /** A scope, as one of `scopes` on the answer. */
 export interface Scope {
@@ -376,7 +376,7 @@ export interface Views {
 export interface Engine extends Views {
 	/** The engine's copy of a source and its position tables, for parses at a position. */
 	readonly create: (source: string, flags: number) => object;
-	/** A source `create` prepared, parsed at an entry and offset, cut at `end`, the stop tokens as one string, the whole source as a document by a grammar `plan` holds; the answer is its words, or an error as JSON. */
+	/** A source `create` prepared, parsed at an entry and offset, cut at `end`, the stop tokens as one string, the whole source as a document by a grammar `plan` holds; the answer is its words, or, for a request the engine cannot take, an error as JSON. */
 	readonly parse: (source: object, entry: number, offset: number, end: number | undefined, stop: string, plan: object | undefined) => Uint32Array | string;
 	readonly free: (source: object) => void;
 	/** The whole source parsed at an entry with nothing kept, as a prepared source parses it. */
