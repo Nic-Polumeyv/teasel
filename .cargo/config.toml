@@ -1,2 +1,6 @@
 [target.wasm32-unknown-unknown]
 rustflags = ["-C", "link-arg=-zstack-size=8388608"]
+
+# the addon would import VCRUNTIME140.dll otherwise, which a Windows without the redistributable does not have
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
