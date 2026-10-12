@@ -1,18 +1,21 @@
-// `node scripts/test.ts interpret` runs the decoder without code generation, as a host forbidding it would
+// `node scripts/test.ts [web] [interpret]`: `web` takes the browser loader, which no Node condition reaches; `interpret` runs the decoder without code generation, as a host forbidding it would
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { registerHooks } from 'node:module';
 import { setFlagsFromString } from 'node:v8';
 import { runInNewContext } from 'node:vm';
 import { generate } from './children.ts';
-import svelte from './hosts/svelte.ts';
-import vue from './hosts/vue.ts';
 import type { Expression, Identifier, Pattern, Program } from 'estree';
-import * as g from '../src/grammar.ts';
-import type { Infer, NodeType } from '../src/grammar.ts';
+import type { Construct, Directive, Infer, NodeType } from '../src/grammar.ts';
 import type * as api from '../src/index.ts';
 import type { Options } from '../src/index.ts';
-if (process.argv[2] === 'interpret') globalThis.Function = (() => { throw new EvalError('blocked'); }) as unknown as FunctionConstructor;
-const name = process.execArgv.includes('--conditions=browser') ? 'web' : process.execArgv.includes('--no-addons') ? 'wasm' : 'native';
+if (process.argv.includes('interpret')) globalThis.Function = (() => { throw new EvalError('blocked'); }) as unknown as FunctionConstructor;
+const name = process.argv.includes('web') ? 'web' : process.execArgv.includes('--no-addons') ? 'wasm' : 'native';
+// the hook must be in place before anything imports the grammar, so those come in below
+if (name === 'web') registerHooks({ resolve: (specifier, context, next) => (specifier === '#engine' ? { url: new URL('../dist/engine/web.js', import.meta.url).href, shortCircuit: true } : next(specifier, context)) });
+const g = await import('../src/grammar.ts');
+const { default: svelte } = await import('./hosts/svelte.ts');
+const { default: vue } = await import('./hosts/vue.ts');
 setFlagsFromString('--expose-gc');
 const collect = runInNewContext('gc') as () => void;
 const m = await import('../src/index.ts');
@@ -707,14 +710,14 @@ function types(source: api.Source, definition: typeof svelte) {
 	g.optional(g.value.expression);
 	// @ts-expect-error an argument stands in only for a directive's value
 	g.orArg(g.js.expression);
-	const construct = (rule: g.Construct) => rule;
+	const construct = (rule: Construct) => rule;
 	// @ts-expect-error a tag has no body
 	construct({ open: { marker: ['{'], form: [{ body: g.content }, '}'] } });
 	// @ts-expect-error a tag opens no scope to declare in
 	construct({ open: { marker: ['{'], form: [{ name: g.bind(g.js.identifier) }, '}'] } });
 	// @ts-expect-error a close reads words only
 	construct({ open: { marker: ['{#b'], form: ['}', { body: g.content }] }, close: { marker: ['{/b'], form: [{ e: g.js.expression }, '}'] } });
-	const directive = (rule: g.Directive) => rule;
+	const directive = (rule: Directive) => rule;
 	// @ts-expect-error only a block declares around itself
 	directive({ node: 'D', form: [{ name: g.bind.outside(g.js.identifier) }] });
 	// @ts-expect-error a directive's flag is true or false
