@@ -77,8 +77,13 @@ jobs:
         working-directory: npm
       - run: npm run build:wasm
         working-directory: npm
-      # the empty file fails to dlopen rather than to resolve
-      - run: npm run build:js && node --input-type=commonjs -e "new (require('@teasel/parser').Source)('x').parse()" && truncate -s 0 dist/teasel.linux-x64-gnu.node && node --input-type=commonjs -e "new (require('@teasel/parser').Source)('x').parse()"
+      # each require must parse and warn once, with the reason: the build missing, then an empty file that fails to dlopen
+      - run: |
+          npm run build:js
+          probe() { node --input-type=commonjs -e "let seen = false; process.on('warning', (w) => { if (w.code !== 'wasm_fallback' || !w.message.includes(process.argv[1])) process.exit(1); seen = true; }); process.on('exit', () => { if (!seen) process.exitCode = 1; }); new (require('@teasel/parser').Source)('x').parse()" "$1"; }
+          probe 'Cannot find module'
+          truncate -s 0 dist/teasel.linux-x64-gnu.node
+          probe 'too short'
         working-directory: npm
       - run: docker run --rm -v "$PWD:/p" -w /p node:26-alpine node --input-type=commonjs -e "process.on('warning', () => process.exit(1)); new (require('./dist/index.js').Source)('x').parse()"
         working-directory: npm

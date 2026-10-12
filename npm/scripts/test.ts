@@ -11,6 +11,10 @@ import type * as api from '../src/index.ts';
 import type { Options } from '../src/index.ts';
 if (process.argv.includes('interpret')) globalThis.Function = (() => { throw new EvalError('blocked'); }) as unknown as FunctionConstructor;
 const name = process.argv.includes('web') ? 'web' : process.execArgv.includes('--no-addons') ? 'wasm' : 'native';
+// a native run that fell back to WebAssembly would pass as native
+process.on('warning', (warning) => {
+	if (name === 'native' && (warning as { code?: string }).code === 'wasm_fallback') throw warning;
+});
 // the hook must be in place before anything imports the grammar, so those come in below
 if (name === 'web') registerHooks({ resolve: (specifier, context, next) => (specifier === '#engine' ? { url: new URL('../dist/engine/web.js', import.meta.url).href, shortCircuit: true } : next(specifier, context)) });
 const g = await import('../src/grammar.ts');
