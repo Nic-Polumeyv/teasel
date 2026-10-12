@@ -39,21 +39,23 @@ function musl(): boolean {
 
 export const here = `${process.platform}-${process.arch}${process.platform === 'linux' ? (musl() ? '-musl' : '-gnu') : process.platform === 'win32' ? '-msvc' : ''}`;
 
-const missing = (e: unknown) => e instanceof Error && 'code' in e && e.code === 'MODULE_NOT_FOUND';
-
-export function load(): Addon {
+// a build linked against a newer glibc than the system's fails to dlopen: WebAssembly parses there, as it does without a build
+export function load(): Addon | undefined {
 	const require = createRequire(import.meta.url);
 	// we add .node so require dlopens it instead of reading it as js
 	const file = `teasel.${here}.node`;
-	try {
-		return require(`../${file}`);
-	} catch (e) {
-		if (!missing(e)) throw e;
+	let failed: Error | undefined;
+	for (const path of [`../${file}`, `@teasel/parser-${here}/${file}`]) {
+		try {
+			return require(path);
+		} catch (e) {
+			if (!(e instanceof Error && 'code' in e && (e.code === 'MODULE_NOT_FOUND' || e.code === 'ERR_DLOPEN_FAILED'))) throw e;
+			if (e.code === 'ERR_DLOPEN_FAILED') failed ??= e;
+		}
 	}
-	try {
-		return require(`@teasel/parser-${here}/${file}`);
-	} catch (e) {
-		if (!missing(e)) throw e;
-		throw new Error(`no native build for ${here}; the WebAssembly build runs anywhere: node --no-addons`, { cause: e });
+	// where no build exists there is nothing to fix
+	if (here in platforms) {
+		const why = failed === undefined ? `@teasel/parser-${here} is not installed` : `the native build for ${here} did not load (${failed.message})`;
+		process.emitWarning(`${why}; @teasel/parser parses in WebAssembly instead, slower`, { code: 'wasm_fallback' });
 	}
 }

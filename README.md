@@ -143,7 +143,7 @@ npm run build:wasm     # the WebAssembly module; wasm-opt (binaryen) on the PATH
 npm test
 ```
 
-Node resolves `@teasel/parser` to the addon and everything else to the WebAssembly module, with the same API.
+Node resolves `@teasel/parser` to the addon and everything else to the WebAssembly module, with the same API. Where the addon does not load, Node takes the WebAssembly module too.
 
 <br>
 

@@ -77,6 +77,11 @@ jobs:
         working-directory: npm
       - run: npm run build:wasm
         working-directory: npm
+      # no addon is built here, so Node falls back to the module
+      - run: npm run build:js && node scripts/test.ts && node --input-type=commonjs -e "new (require('@teasel/parser').Source)('x').parse()"
+        working-directory: npm
+      - run: docker run --rm -v "$PWD:/p" -w /p node:26-alpine node --input-type=commonjs -e "new (require('./dist/index.js').Source)('x').parse()"
+        working-directory: npm
       - uses: actions/upload-artifact@v7
         with:
           name: wasm

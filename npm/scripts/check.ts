@@ -12,6 +12,8 @@ import type { Engine } from '../dist/types.js';
 import { flags, type Options } from '../dist/options.js';
 import { target } from './target.ts';
 
+// without the addon native.js falls back to this same engine, and every diff would pass
+if (native === wasm) throw new Error('no addon to check: npm run build');
 const binary = `${target}/release/teasel`;
 const files: string[] = [];
 function walk(dir: string) {
