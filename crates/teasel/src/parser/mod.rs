@@ -36,7 +36,7 @@ impl Options {
 	/// An ES module: strict mode, top-level `await`, `import` and `export`.
 	pub const MODULE: u32 = Self::at(0, 1);
 	pub const TYPESCRIPT: u32 = Self::at(1, 1);
-	/// TypeScript, erased on output; see `estree::Output`.
+	/// TypeScript, erased on output: what erasure cannot express is listed as `typescript`.
 	pub const ERASE: u32 = Self::at(1, 2);
 	pub const COMMENTS: u32 = Self::at(2, 1);
 	/// Scope analysis on the answer.

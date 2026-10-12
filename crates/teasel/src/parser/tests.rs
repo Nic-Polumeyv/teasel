@@ -193,7 +193,7 @@ fn the_session_writes_the_same_words_again() {
 		.in_place(Entry::Expression, 0.0, None, "", None)
 		.unwrap();
 	let failed = words();
-	assert_eq!((failed[1], failed[2 + failed[1] as usize] & 256), (0, 256));
+	assert_eq!((failed[1], failed[2 + failed[1] as usize] >> 29 & 1), (0, 1));
 	prepared.in_place(Entry::Program, 0.0, None, "", None).unwrap();
 	let first = words();
 	let _ = Prepared::borrowed("a + b", request).in_place(Entry::Expression, 0.0, None, "", None);
@@ -625,7 +625,7 @@ fn undeclared_exports_can_be_allowed() {
 #[ignore]
 fn phases() {
 	use crate::Options;
-	use crate::estree::{Output, Positions, answer};
+	use crate::estree::{Positions, answer};
 	use crate::json::Request;
 	use crate::lexer::Lexer;
 	use crate::lexer::token::TokenKind;
@@ -710,10 +710,6 @@ fn phases() {
 	});
 	let (mut ast, roots) = whole(&source, options);
 	crate::comments::attach(&mut ast, &source, roots, 0);
-	let output = Output {
-		comments: true,
-		..Output::default()
-	};
 	let end = source.len() as u32;
 	let lines = Positions::new(&source, true);
 	{
@@ -751,7 +747,7 @@ fn phases() {
 		});
 	}
 	best("Json write, loc", &mut || {
-		let _ = answer(&ast, Entry::Program, roots, end, &source, &lines, output);
+		let _ = answer(&ast, Entry::Program, Some(roots), end, &source, &lines, options);
 	});
 	eprintln!(
 		"nodes {} lists {} strings {} comments {}",

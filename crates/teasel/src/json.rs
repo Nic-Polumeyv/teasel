@@ -7,7 +7,7 @@ use crate::Options;
 use crate::ast::{Ast, Reuse};
 use crate::comments::attach;
 use crate::error::Code;
-use crate::estree::{Emit, Json, Output, Positions, Words, answer};
+use crate::estree::{Emit, Json, Positions, Words, answer};
 use crate::handed::{Raw, Views};
 use crate::host::{self, Grammar};
 use crate::interner::StrId;
@@ -593,6 +593,10 @@ fn parse_with(source: &str, positions: &Positions, request: &Request, stop: &str
 	})
 }
 
+/// Beside the options' slots in the answer's word: the roots are a list, the parse failed.
+const LISTED: u32 = 1 << 28;
+const FAILED: u32 = 1 << 29;
+
 /// The answer read in place, its words at `words`, or the error answer as JSON.
 fn in_place_with(
 	source: &str,
@@ -631,13 +635,7 @@ fn run<E: crate::parser::Extension>(
 where
 	E::Data: Emit + Bind + Reuse + Pooled,
 {
-	let mut output = Output {
-		comments: request.options.has(Options::COMMENTS),
-		scopes: request.options.has(Options::SCOPES),
-		erase: request.options.has(Options::ERASE),
-		errors: request.options.has(Options::ERROR_RECOVERY),
-		failed: false,
-	};
+	let options = request.options;
 	let reused = Pooled::take(pool).map(|mut ast| {
 		ast.clear();
 		ast
@@ -658,50 +656,49 @@ where
 			reused,
 		),
 	};
+	// no roots: the parse failed, and its error is the only one listed
 	let (mut roots, mut end) = match parsed {
-		Ok(parsed) => parsed,
-		Err(error) => fail(&mut ast, &mut output, *error),
+		Ok((roots, end)) => (Some(roots), end),
+		Err(error) => (fail(&mut ast, *error), error.pos),
 	};
-	if output.comments {
-		attach(&mut ast, source, roots, request.offset);
-	}
-	if output.scopes {
-		scopes::analyze(&mut ast, request.entry, roots);
-		let errors = std::mem::take(&mut ast.scopes.as_mut().unwrap().errors);
-		if !errors.is_empty() {
-			if !output.errors {
-				(roots, end) = fail(&mut ast, &mut output, errors[0]);
-			} else {
-				ast.errors.extend(errors);
-				ast.errors.sort_by_key(|error| error.pos);
+	if let Some(list) = roots {
+		if options.has(Options::COMMENTS) {
+			attach(&mut ast, source, list, request.offset);
+		}
+		if options.has(Options::SCOPES) {
+			scopes::analyze(&mut ast, request.entry, list);
+			let errors = std::mem::take(&mut ast.scopes.as_mut().unwrap().errors);
+			if !errors.is_empty() {
+				if options.has(Options::ERROR_RECOVERY) {
+					ast.errors.extend(errors);
+					ast.errors.sort_by_key(|error| error.pos);
+				} else {
+					(roots, end) = (fail(&mut ast, errors[0]), errors[0].pos);
+				}
 			}
 		}
 	}
+	let failed = roots.is_none();
 	let Some(words) = words else {
-		let json = answer(&ast, request.entry, roots, end, source, positions, output);
+		let json = answer(&ast, request.entry, roots, end, source, positions, options);
 		Pooled::give(pool, ast);
 		return Ok(json);
 	};
 	let names = &mut pool.names[request.options.typescript() as usize];
-	prepare(&mut ast, source, positions, output, names);
+	prepare(&mut ast, source, positions, options, failed, names);
 	// `end`, the roots by number, a word of what the answer is, each view's length, then where the
 	// tree's buffers sit folded into two words: a front end keeps its views while that holds. The
-	// tree is TypeScript's, every comment is listed, TypeScript is erased, lines are on, the roots
-	// are a list, the errors recovered from are listed, lines are on JavaScript nodes only, the
-	// parse failed
+	// word is the options as given, with two facts of the answer beside their slots: the roots
+	// are a list, the parse failed
 	words.clear();
-	words.extend_from_slice(&[positions.offset(&mut crate::estree::Cursor::default(), end), roots.len]);
-	words.extend(ast.list(roots).iter().map(|root| root.unwrap().index()));
-	words.push(
-		(request.options.typescript() as u32) << 1
-			| (output.comments as u32) << 2
-			| (output.erase as u32) << 3
-			| (request.options.locations() as u32) << 4
-			| ((request.entry == Entry::Params) as u32) << 5
-			| (output.errors as u32) << 6
-			| (request.options.has(Options::LOCATIONS_JS) as u32) << 7
-			| (output.failed as u32) << 8,
-	);
+	let roots = roots.map_or(&[][..], |roots| ast.list(roots));
+	words.extend_from_slice(&[
+		positions.offset(&mut crate::estree::Cursor::default(), end),
+		roots.len() as u32,
+	]);
+	words.extend(roots.iter().map(|root| root.unwrap().index()));
+	let listed = if request.entry == Entry::Params { LISTED } else { 0 };
+	words.push(options.0 | listed | if failed { FAILED } else { 0 });
 	let mut sits = 0u64;
 	let mut note = |_, buffer: Option<&mut dyn Raw>| {
 		words.push(buffer.as_ref().map_or(0, |buffer| buffer.elements() as u32));
@@ -721,14 +718,21 @@ where
 /// as JavaScript counts them, the nodes erasure leaves out, the hosts, the comments and the
 /// recovered errors as words, their names and messages among the strings, and the strings'
 /// UTF-16 starts.
-fn prepare<X: Emit + Reuse>(ast: &mut Ast<X>, source: &str, positions: &Positions, output: Output, names: &mut Names) {
-	if output.failed {
+fn prepare<X: Emit + Reuse>(
+	ast: &mut Ast<X>,
+	source: &str,
+	positions: &Positions,
+	options: Options,
+	failed: bool,
+	names: &mut Names,
+) {
+	if failed {
 		prepare_failed(ast);
 	} else {
-		prepare_tree(ast, positions, output, names);
+		prepare_tree(ast, positions, options, names);
 	}
 	ast.error_words.clear();
-	if output.errors {
+	if failed || options.has(Options::ERROR_RECOVERY) {
 		let places = positions.of_errors(source, &ast.errors);
 		for (error, [pos, end, line, column]) in ast.errors.iter().zip(places) {
 			let [first, second] = error.args.map(|arg| arg.map_or(u32::MAX, StrId::index));
@@ -768,10 +772,10 @@ fn prepare_failed<X: Emit + Reuse>(ast: &mut Ast<X>) {
 	ast.comment_words.clear();
 }
 
-fn prepare_tree<X: Emit + Reuse>(ast: &mut Ast<X>, positions: &Positions, output: Output, names: &mut Names) {
+fn prepare_tree<X: Emit + Reuse>(ast: &mut Ast<X>, positions: &Positions, options: Options, names: &mut Names) {
 	positions.map_nodes(&ast.nodes, &mut ast.spans, &mut ast.locs);
 	ast.erased.clear();
-	if output.erase {
+	if options.has(Options::ERASE) {
 		for i in 0..ast.nodes.len() as u32 {
 			let id = crate::ast::NodeId::at(i);
 			if ast.extension.erased(ast, id) {
@@ -788,7 +792,7 @@ fn prepare_tree<X: Emit + Reuse>(ast: &mut Ast<X>, positions: &Positions, output
 	}
 	ast.extension.rare(&mut rare);
 	if let Some(scopes) = &ast.scopes
-		&& output.scopes
+		&& options.has(Options::SCOPES)
 	{
 		scopes.mark(ast, &mut rare, &mut late);
 	}
@@ -827,20 +831,15 @@ fn prepare_tree<X: Emit + Reuse>(ast: &mut Ast<X>, positions: &Positions, output
 		ast.host_view
 			.extend_from_slice(&[ty, host.fields.0, host.fields.1, host.span as u32, shape]);
 	}
-	if output.comments || !ast.hosts.is_empty() {
+	if options.has(Options::COMMENTS) || !ast.hosts.is_empty() {
 		positions.map_comments(&ast.comments, &mut ast.comment_words);
 	}
 }
 
 /// A parse that failed answers as one that recovered from nothing but its error: no roots,
 /// `end` at the error, the error alone in `errors`, and nothing else listed.
-fn fail<X>(ast: &mut Ast<X>, output: &mut Output, error: crate::SyntaxError) -> (crate::ast::List, u32) {
+fn fail<X>(ast: &mut Ast<X>, error: crate::SyntaxError) -> Option<crate::ast::List> {
 	ast.errors.clear();
 	ast.errors.push(error);
-	*output = Output {
-		errors: true,
-		failed: true,
-		..Output::default()
-	};
-	(ast.add_list(&[]), error.pos)
+	None
 }
