@@ -718,7 +718,7 @@ macro_rules! wire {
 					write: String::new(),
 				},)*], true);
 				let value = match test {
-					Some(_) => format!("(v as {shape})"),
+					Some(_) => "v".to_string(),
 					None => format!("(v as {{ {key}: {shape} }}).{key}"),
 				};
 				let fields = [$($crate::host::grammar::Field {

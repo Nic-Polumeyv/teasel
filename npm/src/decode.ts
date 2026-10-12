@@ -131,14 +131,17 @@ interface Compiled {
 	messages: string[][];
 }
 
+/** A field by its path, `a` or `a.b`, an inner field at its offset in the record. */
+export function field(fields: Field[], path: string): Field {
+	const [head, rest] = path.split('.');
+	const outer = fields.find((f) => f.name === head)!;
+	if (rest === undefined) return outer;
+	const inner = outer.fields!.find((f) => f.name === rest)!;
+	return { ...inner, at: outer.at + inner.at };
+}
+
 function resolve(raw: RawOp[], fields: Field[]): Op[] {
-	const find = (path: string) => {
-		const [head, rest] = path.split('.');
-		const field = fields.find((f) => f.name === head)!;
-		if (rest === undefined) return field;
-		const inner = field.fields!.find((f) => f.name === rest)!;
-		return { ...inner, at: field.at + inner.at };
-	};
+	const find = (path: string) => field(fields, path);
 	return raw.map(([op, ...rest]) => {
 		const out: Op = { op, key: '', at: 0, ty: '', names: [], at2: 0, value: null, other: '', inner: [] };
 		let field: string | undefined;
@@ -480,7 +483,7 @@ const key_of = (op: Op) => (op.op === 'raw' || op.op === 'bigint' ? op.op : op.k
 // an optional's tag word sits among its value's words, which follow their order around it
 const tagged = ({ tag }: Tagged, at: number) => [at + tag * 4, at + (tag === 0 ? 4 : 0)];
 
-const child = <E,>(B: Spelling<E, unknown>, word: E): E => {
+const child = <E, St>(B: Spelling<E, St>, word: E): E => {
 	const w = B.hold(word);
 	return B.pick(B.eq(w, B.lit(0)), B.lit(null), B.built(B.dec(w)));
 };
@@ -496,7 +499,7 @@ const holds_nodes = (op: Op) =>
 	(op.op === 'object' && op.inner.some(holds_nodes));
 
 /** An operation every node of the kind has: its value. */
-function value<E>(B: Spelling<E, unknown>, op: Op, none: Missing, erase: boolean): E {
+function value<E, St>(B: Spelling<E, St>, op: Op, none: Missing, erase: boolean): E {
 	switch (op.op) {
 		case 'node':
 			return child(B, B.word(op.at));
@@ -589,7 +592,7 @@ const HOST_NODE = 0, HOST_LIST = 1, HOST_COMMENTS = 8;
 const host_holds = (tag: number) => tag === HOST_NODE || tag === HOST_LIST || tag === HOST_COMMENTS;
 
 /** A host node's field from the three words at `at`: its tag, then two of value. */
-function host_value<E>(B: Spelling<E, unknown>, tag: number, at: number): E {
+function host_value<E, St>(B: Spelling<E, St>, tag: number, at: number): E {
 	const a = B.word(at + 4), b = B.word(at + 8);
 	switch (tag) {
 		case HOST_NODE:
@@ -685,7 +688,6 @@ class Closures implements Spelling<Value, Stmt> {
 	};
 }
 
-// the operations past the head: a kind's own keys, or a table row's, or an extras record's
 // a kind's operations as closures: the leads, then the keys in order
 const programs = new WeakMap<Op[], { slots: number; lead: Stmt[]; body: Stmt[] }>();
 function program(ops: Op[], none: Missing) {
@@ -837,7 +839,7 @@ const CONDITIONAL = new Set(['optkey', 'optlistkey', 'boolif', 'optboolkey', 'op
 // ── The source spelling: what a generated builder is made of. `word` and `byte` spell a read of
 // the record at hand: a node's, a TypeScript record's, a table row's, a host node's fields.
 class Source implements Spelling<string, string> {
-	constants: unknown[] = [];
+	constants: (string | true)[][] = [];
 	lead: string[] = [];
 	count = 0;
 	readonly word: (at: number) => string;

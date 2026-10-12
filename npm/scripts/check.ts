@@ -111,7 +111,7 @@ for (const file of files) {
 	const text = readFileSync(file, 'utf8');
 	if (file.endsWith('.css')) {
 		for (const locations of [true, 'js'] as const) {
-			const options = { locations, comments: true };
+			const options: Options = { locations, comments: true };
 			json(file, text, options, STYLESHEET, 0);
 			report(`${file} wasm`, differ(once(wasm, text, options, STYLESHEET, 0), once(native, text, options, STYLESHEET, 0)));
 		}

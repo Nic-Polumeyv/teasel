@@ -1,14 +1,9 @@
 // `node scripts/children.ts` writes src/children.ts from the engine's layout: for every node type, the fields that hold nodes; the tests check they agree
 import { writeFileSync } from 'node:fs';
-import type { Field, Kind, Layout, RawOp as Op, RawRecipes as Recipes } from '../src/decode.ts';
+import { field as find, type Field, type Kind, type Layout, type RawOp as Op, type RawRecipes as Recipes } from '../src/decode.ts';
 
 /** From the layout the engine hands over: each type with the keys that hold nodes or lists of nodes, and the keys TypeScript may add to any node. */
 export function generate(layout: Layout): { children: Record<string, string[]>; extras: string[] } {
-	const find = (fields: Field[], path: string) => {
-		const [head, rest] = path.split('.');
-		const field = fields.find((f) => f.name === head)!;
-		return rest === undefined ? field : field.fields!.find((f) => f.name === rest)!;
-	};
 	// the keys whose value is a node or a list of nodes, and the types the recipe spells: one, or one per name of an enum field
 	const keys = (ops: Op[], fields: Field[]) => {
 		const out: string[] = [];

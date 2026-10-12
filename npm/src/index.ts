@@ -165,7 +165,7 @@ export class Source {
 				: engine.parse((this.#held ??= engine.create(source, this.#flags)), entry, offset, end, stop, grammar);
 		if (typeof answer !== 'string') {
 			try {
-				return decode(answer, source, engine) as Parsed<any>;
+				return decode(answer, source, engine) as Parsed<unknown>;
 			} catch (error) {
 				// a tree deeper than the caller's stack has room for overflowed the decoder
 				if (!(error instanceof RangeError)) throw error;

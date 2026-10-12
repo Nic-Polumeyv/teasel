@@ -4,16 +4,16 @@ import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
 import { setFlagsFromString } from 'node:v8';
 import { runInNewContext } from 'node:vm';
-import { generate } from './children.ts';
 import type { Expression, Identifier, Pattern, Program } from 'estree';
 import type { Construct, Directive, Infer, NodeType } from '../src/grammar.ts';
 import type * as api from '../src/index.ts';
 import type { Options } from '../src/index.ts';
 if (process.argv.includes('interpret')) globalThis.Function = (() => { throw new EvalError('blocked'); }) as unknown as FunctionConstructor;
 const name = process.argv.includes('web') ? 'web' : process.execArgv.includes('--no-addons') ? 'wasm' : 'native';
-// the hook must be in place before anything imports the grammar, so those come in below
+// the hook must be in place before anything imports the grammar, and the Function swap before anything imports the decoder, so those come in below
 if (name === 'web') registerHooks({ resolve: (specifier, context, next) => (specifier === '#engine' ? { url: new URL('../dist/engine/web.js', import.meta.url).href, shortCircuit: true } : next(specifier, context)) });
 const g = await import('../src/grammar.ts');
+const { generate } = await import('./children.ts');
 const { default: svelte } = await import('./hosts/svelte.ts');
 const { default: vue } = await import('./hosts/vue.ts');
 setFlagsFromString('--expose-gc');
