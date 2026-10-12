@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "arguments_in_field_initializer",
+		"code": 71,
 		"args": [],
 		"pos": 14,
 		"end": 14,

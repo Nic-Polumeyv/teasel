@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "redeclaration",
+		"code": 41,
 		"args": [
 			"a"
 		],

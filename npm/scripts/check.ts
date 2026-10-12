@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { engine as native } from '../dist/engine/native.js';
 import { engine as wasm } from '../dist/engine/wasm.js';
 import { decode } from '../dist/decode.js';
+import { CODES, type Code } from '../dist/types.js';
 import type { Engine } from '../dist/types.js';
 import { flags, type Options } from '../dist/options.js';
 import { target } from './target.ts';
@@ -82,7 +83,8 @@ function mode(source: string, options: Options, entry: number, at: number) {
 }
 
 // JSON has no RegExp or BigInt, so the writer spells a regular expression's or a BigInt's value null
-const as_json = (_key: string, value: unknown) => (value instanceof RegExp || typeof value === 'bigint' ? null : value);
+// the binary reports a code as its byte, the package as its name
+const as_json = (key: string, value: unknown) => (value instanceof RegExp || typeof value === 'bigint' ? null : key === 'code' && typeof value === 'string' ? CODES.indexOf(value as Code) : value);
 
 // the addon's answers as JSON, each with the batch job that asks the binary for the same
 const jobs: { name: string; source: string; mode: string; tree: string }[] = [];

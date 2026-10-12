@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "invalid_number",
+		"code": 22,
 		"args": [],
 		"pos": 14,
 		"end": 14,

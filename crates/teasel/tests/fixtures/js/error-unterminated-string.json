@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "unterminated_string",
+		"code": 16,
 		"args": [],
 		"pos": 0,
 		"end": 0,

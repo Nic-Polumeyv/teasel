@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "this_parameter_modifiers",
+		"code": 128,
 		"args": [],
 		"pos": 19,
 		"end": 19,

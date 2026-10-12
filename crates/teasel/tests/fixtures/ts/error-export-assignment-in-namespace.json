@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "export_assignment_in_namespace",
+		"code": 142,
 		"args": [],
 		"pos": 14,
 		"end": 14,

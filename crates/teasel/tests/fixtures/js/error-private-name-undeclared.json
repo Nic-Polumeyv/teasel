@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "undeclared_private_name",
+		"code": 82,
 		"args": [
 			"#x"
 		],

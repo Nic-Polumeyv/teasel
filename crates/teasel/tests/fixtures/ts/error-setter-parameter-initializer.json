@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "setter_parameter_initializer",
+		"code": 133,
 		"args": [],
 		"pos": 18,
 		"end": 18,

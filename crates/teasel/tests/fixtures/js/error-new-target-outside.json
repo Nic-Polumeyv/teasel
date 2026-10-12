@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "new_target_outside_function",
+		"code": 58,
 		"args": [],
 		"pos": 0,
 		"end": 0,

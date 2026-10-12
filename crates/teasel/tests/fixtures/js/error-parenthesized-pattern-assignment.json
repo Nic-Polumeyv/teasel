@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "invalid_assignment_target",
+		"code": 72,
 		"args": [],
 		"pos": 0,
 		"end": 0,

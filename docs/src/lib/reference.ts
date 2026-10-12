@@ -48,9 +48,9 @@ function crossing() {
 	return { meta: { href: '/reference/wire', title: 'Grammar wire', section: 'Reference', path: 'npm/src/wire.ts' }, markdown: `What a grammar's \`wire\` holds and the Rust crate's \`parse_document\` and the command line's \`--host\` read: the definition as words in the order these types declare them, then a pool of strings, as \`Writer\` lays them out.\n\n${markdown}` };
 }
 
-// the engine's table: each code's doc comment says what it means
+// the engine's enum: each code's doc comment says what it means, its name is the variant's in snake case
 function codes() {
-	const rows = [...errors.matchAll(/^((?:\t\/\/\/ .*\n)+)\t\w+ "(\w+)",$/gm)].map(([, doc, name]) => `| \`${name}\` | ${doc.replace(/^\t\/\/\/ /gm, '').trim().replaceAll('\n', ' ')} |`);
+	const rows = [...errors.matchAll(/^((?:\t\/\/\/ .*\n)+)\t(\w+),$/gm)].map(([, doc, variant]) => `| \`${variant.replace(/(?<!^)[A-Z]/g, '_$&').toLowerCase()}\` | ${doc.replace(/^\t\/\/\/ /gm, '').trim().replaceAll('\n', ' ')} |`);
 	return { meta: { href: '/reference/error-codes', title: 'Error codes', section: 'Reference', path: 'crates/teasel/src/error.rs' }, markdown: `Every \`code\` an error can have and what it means. \`args\` holds what the error is about when the code says so, and \`message\` is the code followed by each argument in quotes: \`expected '}'\`.\n\n| code | meaning |\n| --- | --- |\n${rows.join('\n')}` };
 }
 

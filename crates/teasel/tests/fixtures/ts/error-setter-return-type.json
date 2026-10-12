@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "setter_return_type",
+		"code": 124,
 		"args": [],
 		"pos": 20,
 		"end": 20,

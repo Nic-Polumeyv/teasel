@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "index_signature_modifier",
+		"code": 119,
 		"args": [
 			"public"
 		],

@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "await_in_default_value",
+		"code": 67,
 		"args": [],
 		"pos": 21,
 		"end": 21,

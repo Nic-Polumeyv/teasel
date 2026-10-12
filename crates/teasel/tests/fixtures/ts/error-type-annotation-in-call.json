@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "unexpected_type_annotation",
+		"code": 154,
 		"args": [],
 		"pos": 4,
 		"end": 4,

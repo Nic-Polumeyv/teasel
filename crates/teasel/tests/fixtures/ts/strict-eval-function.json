@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "strict_binding",
+		"code": 37,
 		"args": [
 			"eval"
 		],

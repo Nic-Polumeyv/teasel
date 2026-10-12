@@ -132,7 +132,7 @@
 	"comments": [],
 	"errors": [
 		{
-			"code": "unexpected_eof",
+			"code": 7,
 			"args": [],
 			"pos": 11,
 			"end": 11,
@@ -142,7 +142,7 @@
 			}
 		},
 		{
-			"code": "unexpected_eof",
+			"code": 7,
 			"args": [],
 			"pos": 23,
 			"end": 23,
@@ -152,7 +152,7 @@
 			}
 		},
 		{
-			"code": "unexpected_eof",
+			"code": 7,
 			"args": [],
 			"pos": 36,
 			"end": 36,
@@ -162,7 +162,7 @@
 			}
 		},
 		{
-			"code": "unexpected_token",
+			"code": 0,
 			"args": [],
 			"pos": 45,
 			"end": 46,

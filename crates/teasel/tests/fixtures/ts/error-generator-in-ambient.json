@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "generator_in_ambient",
+		"code": 167,
 		"args": [],
 		"pos": 0,
 		"end": 0,

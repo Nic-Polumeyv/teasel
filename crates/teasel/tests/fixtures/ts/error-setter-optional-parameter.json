@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "setter_optional_parameter",
+		"code": 132,
 		"args": [],
 		"pos": 16,
 		"end": 16,

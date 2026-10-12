@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "getter_params",
+		"code": 97,
 		"args": [],
 		"pos": 23,
 		"end": 24,

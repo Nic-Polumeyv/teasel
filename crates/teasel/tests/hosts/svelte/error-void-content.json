@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "placement",
+		"code": 6,
 		"args": [
 			"A closing tag of a void element"
 		],

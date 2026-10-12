@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "using_pattern",
+		"code": 92,
 		"args": [
 			"using"
 		],

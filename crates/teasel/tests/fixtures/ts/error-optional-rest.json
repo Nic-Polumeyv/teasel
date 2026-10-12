@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "optional_rest",
+		"code": 131,
 		"args": [],
 		"pos": 11,
 		"end": 11,

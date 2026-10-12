@@ -83,7 +83,7 @@
 	"comments": [],
 	"errors": [
 		{
-			"code": "unterminated_string",
+			"code": 16,
 			"args": [],
 			"pos": 10,
 			"end": 10,
@@ -93,7 +93,7 @@
 			}
 		},
 		{
-			"code": "unterminated_template",
+			"code": 17,
 			"args": [],
 			"pos": 36,
 			"end": 36,

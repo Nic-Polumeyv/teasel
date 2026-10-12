@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "expected_unicode_escape",
+		"code": 32,
 		"args": [],
 		"pos": 22,
 		"end": 22,

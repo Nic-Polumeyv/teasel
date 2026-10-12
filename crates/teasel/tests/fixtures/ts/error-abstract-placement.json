@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "abstract_placement",
+		"code": 141,
 		"args": [],
 		"pos": 0,
 		"end": 0,

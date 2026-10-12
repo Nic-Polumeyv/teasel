@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "decorator_without_body",
+		"code": 127,
 		"args": [],
 		"pos": 19,
 		"end": 19,

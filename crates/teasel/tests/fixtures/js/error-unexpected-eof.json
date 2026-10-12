@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "unexpected_eof",
+		"code": 7,
 		"args": [],
 		"pos": 15,
 		"end": 15,

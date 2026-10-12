@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "invalid_in_static_block",
+		"code": 70,
 		"args": [
 			"await"
 		],

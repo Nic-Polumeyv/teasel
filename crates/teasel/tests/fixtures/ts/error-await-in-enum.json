@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "await_outside_async",
+		"code": 66,
 		"args": [],
 		"pos": 34,
 		"end": 34,

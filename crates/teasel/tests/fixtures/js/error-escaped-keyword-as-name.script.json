@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "escape_in_keyword",
+		"code": 11,
 		"args": [
 			"if"
 		],

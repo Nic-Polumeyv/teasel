@@ -225,7 +225,7 @@ fn type_parameters_entry() {
 			.1
 			.unwrap_err()
 			.code,
-		crate::error::Code::NotTypeScript
+		crate::error::Code::NotTypescript
 	);
 }
 

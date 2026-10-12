@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "unterminated_comment",
+		"code": 15,
 		"args": [],
 		"pos": 0,
 		"end": 0,

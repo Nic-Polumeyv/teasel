@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "constructor_modifier",
+		"code": 135,
 		"args": [
 			"static"
 		],

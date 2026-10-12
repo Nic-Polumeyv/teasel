@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "strict_with",
+		"code": 34,
 		"args": [],
 		"pos": 34,
 		"end": 38,

@@ -229,7 +229,7 @@
 	"comments": [],
 	"errors": [
 		{
-			"code": "unexpected_token",
+			"code": 0,
 			"args": [],
 			"pos": 6,
 			"end": 7,
@@ -239,7 +239,7 @@
 			}
 		},
 		{
-			"code": "unexpected_token",
+			"code": 0,
 			"args": [],
 			"pos": 14,
 			"end": 15,
@@ -249,7 +249,7 @@
 			}
 		},
 		{
-			"code": "unexpected_token",
+			"code": 0,
 			"args": [],
 			"pos": 22,
 			"end": 23,
@@ -259,7 +259,7 @@
 			}
 		},
 		{
-			"code": "unexpected_token",
+			"code": 0,
 			"args": [],
 			"pos": 26,
 			"end": 27,
@@ -269,7 +269,7 @@
 			}
 		},
 		{
-			"code": "unexpected_token",
+			"code": 0,
 			"args": [],
 			"pos": 37,
 			"end": 38,
@@ -279,7 +279,7 @@
 			}
 		},
 		{
-			"code": "unexpected_token",
+			"code": 0,
 			"args": [],
 			"pos": 50,
 			"end": 51,
@@ -289,7 +289,7 @@
 			}
 		},
 		{
-			"code": "unexpected_token",
+			"code": 0,
 			"args": [],
 			"pos": 51,
 			"end": 52,
@@ -299,7 +299,7 @@
 			}
 		},
 		{
-			"code": "using_pattern",
+			"code": 92,
 			"args": [
 				"using"
 			],
@@ -311,7 +311,7 @@
 			}
 		},
 		{
-			"code": "using_without_initializer",
+			"code": 93,
 			"args": [
 				"using"
 			],
@@ -323,7 +323,7 @@
 			}
 		},
 		{
-			"code": "using_in_for_in",
+			"code": 94,
 			"args": [
 				"using"
 			],

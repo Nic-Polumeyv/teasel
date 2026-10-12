@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "quoted_module_name",
+		"code": 143,
 		"args": [],
 		"pos": 7,
 		"end": 10,

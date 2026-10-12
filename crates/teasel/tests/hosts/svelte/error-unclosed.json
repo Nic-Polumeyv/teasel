@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "unclosed",
+		"code": 2,
 		"args": [
 			"div"
 		],

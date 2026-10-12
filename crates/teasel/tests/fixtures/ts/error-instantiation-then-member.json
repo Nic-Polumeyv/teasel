@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "property_after_instantiation",
+		"code": 173,
 		"args": [],
 		"pos": 12,
 		"end": 13,

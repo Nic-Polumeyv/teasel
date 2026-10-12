@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "definite_with_initializer",
+		"code": 166,
 		"args": [],
 		"pos": 4,
 		"end": 4,

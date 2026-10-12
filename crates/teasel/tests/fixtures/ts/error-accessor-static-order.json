@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "modifier_order",
+		"code": 113,
 		"args": [
 			"static",
 			"accessor"

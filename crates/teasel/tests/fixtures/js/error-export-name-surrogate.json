@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "lone_surrogate_in_module_name",
+		"code": 49,
 		"args": [],
 		"pos": 14,
 		"end": 22,

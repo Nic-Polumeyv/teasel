@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "import_export_not_top_level",
+		"code": 52,
 		"args": [],
 		"pos": 15,
 		"end": 21,

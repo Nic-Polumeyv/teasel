@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "duplicate_regexp_flag",
+		"code": 21,
 		"args": [],
 		"pos": 1,
 		"end": 1,

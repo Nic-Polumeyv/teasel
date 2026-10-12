@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "using_outside_block",
+		"code": 95,
 		"args": [
 			"using"
 		],

@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "mixed_coalesce",
+		"code": 80,
 		"args": [],
 		"pos": 7,
 		"end": 9,

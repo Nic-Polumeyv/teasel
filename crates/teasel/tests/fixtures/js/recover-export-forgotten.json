@@ -40,7 +40,7 @@
 	"comments": [],
 	"errors": [
 		{
-			"code": "undefined_export",
+			"code": 47,
 			"args": [
 				"a"
 			],
@@ -52,7 +52,7 @@
 			}
 		},
 		{
-			"code": "unexpected_token",
+			"code": 0,
 			"args": [],
 			"pos": 31,
 			"end": 32,

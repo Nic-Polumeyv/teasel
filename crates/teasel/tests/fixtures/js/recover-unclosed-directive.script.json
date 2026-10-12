@@ -11,7 +11,7 @@
 	"comments": [],
 	"errors": [
 		{
-			"code": "unterminated_string",
+			"code": 16,
 			"args": [],
 			"pos": 14,
 			"end": 14,
@@ -21,7 +21,7 @@
 			}
 		},
 		{
-			"code": "unexpected_eof",
+			"code": 7,
 			"args": [],
 			"pos": 15,
 			"end": 15,

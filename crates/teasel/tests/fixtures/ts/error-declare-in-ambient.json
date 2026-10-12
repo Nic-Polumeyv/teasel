@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "declare_in_ambient",
+		"code": 169,
 		"args": [],
 		"pos": 22,
 		"end": 22,

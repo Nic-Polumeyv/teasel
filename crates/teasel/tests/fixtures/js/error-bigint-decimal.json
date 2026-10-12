@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "identifier_after_number",
+		"code": 24,
 		"args": [],
 		"pos": 3,
 		"end": 3,

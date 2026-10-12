@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "reserved_word",
+		"code": 10,
 		"args": [
 			"yield"
 		],

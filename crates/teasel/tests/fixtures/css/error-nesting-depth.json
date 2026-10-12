@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "nesting_depth",
+		"code": 12,
 		"args": [],
 		"pos": 2001,
 		"end": 2002,

@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "unexpected_token",
+		"code": 0,
 		"args": [],
 		"pos": 9,
 		"end": 11,

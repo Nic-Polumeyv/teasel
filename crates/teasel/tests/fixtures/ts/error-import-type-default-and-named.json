@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "type_import_default_and_named",
+		"code": 152,
 		"args": [],
 		"pos": 0,
 		"end": 0,

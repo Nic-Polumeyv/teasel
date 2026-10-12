@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "required_after_optional",
+		"code": 130,
 		"args": [],
 		"pos": 22,
 		"end": 22,

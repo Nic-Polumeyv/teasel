@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "bad_character_escape",
+		"code": 29,
 		"args": [],
 		"pos": 9,
 		"end": 9,

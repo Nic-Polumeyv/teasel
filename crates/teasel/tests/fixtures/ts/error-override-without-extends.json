@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "override_without_extends",
+		"code": 118,
 		"args": [],
 		"pos": 10,
 		"end": 10,

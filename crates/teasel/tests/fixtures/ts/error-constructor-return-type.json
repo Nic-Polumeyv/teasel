@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "constructor_return_type",
+		"code": 134,
 		"args": [],
 		"pos": 23,
 		"end": 23,

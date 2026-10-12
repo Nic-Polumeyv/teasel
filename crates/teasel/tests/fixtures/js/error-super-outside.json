@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "super_outside_method",
+		"code": 85,
 		"args": [],
 		"pos": 0,
 		"end": 5,

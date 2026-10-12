@@ -118,7 +118,7 @@
 	"comments": [],
 	"errors": [
 		{
-			"code": "expected",
+			"code": 1,
 			"args": [
 				">"
 			],
@@ -130,7 +130,7 @@
 			}
 		},
 		{
-			"code": "expected",
+			"code": 1,
 			"args": [
 				">"
 			],

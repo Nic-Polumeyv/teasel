@@ -99,7 +99,7 @@
 	"comments": [],
 	"errors": [
 		{
-			"code": "unexpected_token",
+			"code": 0,
 			"args": [],
 			"pos": 10,
 			"end": 11,
@@ -109,7 +109,7 @@
 			}
 		},
 		{
-			"code": "unexpected_token",
+			"code": 0,
 			"args": [],
 			"pos": 48,
 			"end": 49,

@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "await_as_identifier",
+		"code": 65,
 		"args": [],
 		"pos": 25,
 		"end": 25,

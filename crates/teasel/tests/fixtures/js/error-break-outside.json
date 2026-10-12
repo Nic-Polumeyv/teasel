@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "unsyntactic",
+		"code": 59,
 		"args": [
 			"break"
 		],

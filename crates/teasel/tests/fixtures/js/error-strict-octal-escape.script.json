@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "strict_octal",
+		"code": 38,
 		"args": [],
 		"pos": 26,
 		"end": 26,

@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "shorthand_assignment",
+		"code": 90,
 		"args": [],
 		"pos": 5,
 		"end": 5,

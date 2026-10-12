@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "duplicate",
+		"code": 5,
 		"args": [
 			"script"
 		],

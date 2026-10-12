@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "duplicate_constructor",
+		"code": 103,
 		"args": [],
 		"pos": 27,
 		"end": 27,

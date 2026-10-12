@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "using_in_ambient",
+		"code": 171,
 		"args": [
 			"using"
 		],

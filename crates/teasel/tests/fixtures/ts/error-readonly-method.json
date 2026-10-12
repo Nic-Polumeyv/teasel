@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "readonly_on_method",
+		"code": 115,
 		"args": [],
 		"pos": 10,
 		"end": 10,

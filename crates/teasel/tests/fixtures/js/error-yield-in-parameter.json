@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "yield_in_default_value",
+		"code": 69,
 		"args": [],
 		"pos": 16,
 		"end": 16,

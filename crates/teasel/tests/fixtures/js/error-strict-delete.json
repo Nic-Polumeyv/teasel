@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "strict_delete",
+		"code": 35,
 		"args": [],
 		"pos": 14,
 		"end": 14,

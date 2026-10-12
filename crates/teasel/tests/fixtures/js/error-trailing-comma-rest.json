@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "comma_after_rest",
+		"code": 87,
 		"args": [],
 		"pos": 15,
 		"end": 16,

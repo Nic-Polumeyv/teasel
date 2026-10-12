@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "using_without_initializer",
+		"code": 93,
 		"args": [
 			"using"
 		],

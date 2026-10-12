@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "using_in_for_in",
+		"code": 94,
 		"args": [
 			"using"
 		],

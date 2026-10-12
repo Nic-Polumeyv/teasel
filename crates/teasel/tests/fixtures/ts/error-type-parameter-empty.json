@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "empty_type_parameters",
+		"code": 157,
 		"args": [],
 		"pos": 12,
 		"end": 13,

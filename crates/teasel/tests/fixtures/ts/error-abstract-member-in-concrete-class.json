@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "abstract_outside_abstract_class",
+		"code": 107,
 		"args": [],
 		"pos": 10,
 		"end": 10,

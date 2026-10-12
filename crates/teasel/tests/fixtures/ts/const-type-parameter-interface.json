@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "unexpected_keyword",
+		"code": 9,
 		"args": [
 			"const"
 		],

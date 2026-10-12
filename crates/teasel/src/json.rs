@@ -38,7 +38,7 @@ impl Request {
 /// wrong with them as the one argument.
 pub fn error_json(reason: &str, pos: u32) -> String {
 	use std::fmt::Write;
-	let mut out = format!("{{\"error\":{{\"code\":\"{}\",\"args\":[", Code::InvalidRequest.name());
+	let mut out = format!("{{\"error\":{{\"code\":{},\"args\":[", Code::InvalidRequest as u8);
 	crate::estree::write_json_string(&mut out, reason);
 	write!(out, "],\"pos\":{pos},\"end\":{pos}}}}}").unwrap();
 	out
@@ -229,8 +229,6 @@ pub fn layout_json() -> String {
 		names(&mut w, view_names::<crate::typescript::ast::Data>());
 	}
 	w.end();
-	w.key(key("errors"));
-	names(&mut w, Code::ALL.iter().map(|code| code.name()).collect());
 	w.key(key("recipes"));
 	w.object();
 	w.key(key("js"));

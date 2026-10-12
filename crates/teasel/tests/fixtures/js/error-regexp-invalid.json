@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "invalid_regexp",
+		"code": 19,
 		"args": [
 			"(",
 			"Unterminated group"

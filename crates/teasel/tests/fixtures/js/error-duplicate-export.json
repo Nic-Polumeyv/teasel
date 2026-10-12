@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "duplicate_export",
+		"code": 46,
 		"args": [
 			"b"
 		],

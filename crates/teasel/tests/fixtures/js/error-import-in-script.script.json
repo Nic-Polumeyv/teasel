@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "import_export_in_script",
+		"code": 51,
 		"args": [],
 		"pos": 0,
 		"end": 6,

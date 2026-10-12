@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "super_call_outside_constructor",
+		"code": 86,
 		"args": [],
 		"pos": 26,
 		"end": 26,

@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "type_member_modifier",
+		"code": 159,
 		"args": [
 			"abstract"
 		],

@@ -50,7 +50,7 @@
 	"comments": [],
 	"errors": [
 		{
-			"code": "string_export_without_from",
+			"code": 48,
 			"args": [],
 			"pos": 18,
 			"end": 18,

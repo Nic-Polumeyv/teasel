@@ -86,7 +86,7 @@
 	"comments": [],
 	"errors": [
 		{
-			"code": "undefined_export",
+			"code": 47,
 			"args": [
 				"b"
 			],
@@ -98,7 +98,7 @@
 			}
 		},
 		{
-			"code": "undefined_export",
+			"code": 47,
 			"args": [
 				"a"
 			],

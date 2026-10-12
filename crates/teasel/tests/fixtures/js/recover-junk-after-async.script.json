@@ -55,7 +55,7 @@
 	"comments": [],
 	"errors": [
 		{
-			"code": "unexpected_character",
+			"code": 8,
 			"args": [
 				"@"
 			],

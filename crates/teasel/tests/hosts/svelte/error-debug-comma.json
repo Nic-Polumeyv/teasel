@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "expected",
+		"code": 1,
 		"args": [
 			"an identifier"
 		],

@@ -242,7 +242,7 @@ pub fn error_to_json(error: &crate::SyntaxError, strings: &Interner, source: &st
 	let pos = positions.offset(&mut cursor, error.pos);
 	let (line, column) = positions.line_column(cursor.line, error.pos, pos);
 	let end = positions.offset(&mut cursor, error.end);
-	let mut out = format!("{{\"error\":{{\"code\":\"{}\",\"args\":[", error.code.name());
+	let mut out = format!("{{\"error\":{{\"code\":{},\"args\":[", error.code as u8);
 	for (i, &arg) in error.args.iter().flatten().enumerate() {
 		if i > 0 {
 			out.push(',');
@@ -645,7 +645,7 @@ impl<'a, X: Emit> Writer<'a, X> {
 		for (error, [pos, end, line, column]) in self.ast.errors.iter().zip(places) {
 			self.json.object();
 			self.key(c!("code"));
-			self.json.str(error.code.label());
+			self.json.int(error.code as u32);
 			self.key(c!("args"));
 			self.json.list();
 			for &arg in error.args.iter().flatten() {

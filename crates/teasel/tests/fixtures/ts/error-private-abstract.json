@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "conflicting_modifiers",
+		"code": 112,
 		"args": [
 			"private",
 			"abstract"

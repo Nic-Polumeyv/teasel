@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "yield_as_identifier",
+		"code": 68,
 		"args": [],
 		"pos": 20,
 		"end": 20,

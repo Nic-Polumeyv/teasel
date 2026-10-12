@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "duplicate_parameter",
+		"code": 43,
 		"args": [],
 		"pos": 14,
 		"end": 14,

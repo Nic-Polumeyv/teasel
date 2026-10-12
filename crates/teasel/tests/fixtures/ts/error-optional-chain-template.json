@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "optional_chain_in_tagged_template",
+		"code": 79,
 		"args": [],
 		"pos": 7,
 		"end": 8,

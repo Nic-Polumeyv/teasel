@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "private_modifier",
+		"code": 120,
 		"args": [
 			"private"
 		],

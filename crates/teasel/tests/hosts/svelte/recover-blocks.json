@@ -139,7 +139,7 @@
 	"comments": [],
 	"errors": [
 		{
-			"code": "unclosed",
+			"code": 2,
 			"args": [
 				"{#if}"
 			],
@@ -151,7 +151,7 @@
 			}
 		},
 		{
-			"code": "unclosed",
+			"code": 2,
 			"args": [
 				"{#each}"
 			],
@@ -163,7 +163,7 @@
 			}
 		},
 		{
-			"code": "placement",
+			"code": 6,
 			"args": [
 				"A branch outside its block"
 			],
@@ -175,7 +175,7 @@
 			}
 		},
 		{
-			"code": "unexpected_close",
+			"code": 3,
 			"args": [
 				"{/each}"
 			],
@@ -187,7 +187,7 @@
 			}
 		},
 		{
-			"code": "unexpected_token",
+			"code": 0,
 			"args": [],
 			"pos": 70,
 			"end": 70,

@@ -275,7 +275,7 @@ pub(crate) trait Extension: Default + Sized {
 	}
 	/// A type parameter list `<...>` at the cursor, for the entry that parses one on its own.
 	fn type_parameters(p: &mut Parser<Self>) -> Result<NodeId> {
-		p.error(p.tok.start, Code::NotTypeScript)
+		p.error(p.tok.start, Code::NotTypescript)
 	}
 	/// After the key of a class element.
 	fn class_key_end(p: &mut Parser<Self>, key: NodeId, computed: bool) -> Result<()> {

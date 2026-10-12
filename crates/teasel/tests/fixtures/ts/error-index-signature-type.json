@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "index_signature_type",
+		"code": 136,
 		"args": [],
 		"pos": 21,
 		"end": 22,

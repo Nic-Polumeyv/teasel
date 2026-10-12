@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "unterminated_regexp",
+		"code": 18,
 		"args": [],
 		"pos": 1,
 		"end": 1,

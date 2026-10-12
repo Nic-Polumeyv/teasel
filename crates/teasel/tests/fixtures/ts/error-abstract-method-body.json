@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "abstract_with_implementation",
+		"code": 108,
 		"args": [
 			"m"
 		],

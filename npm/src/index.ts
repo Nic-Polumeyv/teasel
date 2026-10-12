@@ -1,6 +1,6 @@
 import type { Comment, Expression, Node, Pattern, Position, Program, Statement } from 'estree';
 import { decode, PARENT, REFERENCE, SCOPE } from './decode.ts';
-import type { Code, HostNode, Language, Parsed, Reference, Scope } from './types.ts';
+import { CODES, type Code, type HostNode, type Language, type Parsed, type Reference, type Scope } from './types.ts';
 import { flags, type Options } from './options.ts';
 import { engine } from '#engine';
 import { children, extras, frozen } from './children.ts';
@@ -174,7 +174,9 @@ export class Source {
 				throw new ParseError({ code: 'nesting_depth', args: [], pos: offset, end: offset });
 			}
 		}
-		throw new ParseError(JSON.parse(answer).error);
+		const error = JSON.parse(answer).error;
+		error.code = CODES[error.code];
+		throw new ParseError(error);
 	}
 
 	// the engine frees an undisposed source when it is collected

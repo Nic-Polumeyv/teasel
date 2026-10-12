@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "decorator_placement",
+		"code": 125,
 		"args": [],
 		"pos": 5,
 		"end": 8,

@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "initializer_in_ambient",
+		"code": 145,
 		"args": [],
 		"pos": 23,
 		"end": 23,

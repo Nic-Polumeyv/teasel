@@ -7,6 +7,7 @@ mod common;
 
 use std::fs;
 use std::path::Path;
+use teasel::Code;
 use teasel::Entry;
 use teasel::Options;
 use teasel::host::grammar::definition::{self, Bind, Host, Node, Source};
@@ -95,7 +96,7 @@ fn unfinished_input() {
 	let elements = format!("{}x{}", "<a>".repeat(40_000), "</a>".repeat(40_000));
 	let branches = format!("{{#if a}}{}{{/if}}", "{:else if a}".repeat(40_000));
 	for deep in [elements, branches] {
-		assert!(parse(&deep, &svelte, false).contains("\"code\":\"nesting_depth\""));
+		assert!(parse(&deep, &svelte, false).contains(&format!("\"code\":{}", Code::NestingDepth as u8)));
 	}
 	let program = parse("<button @click=\"let x = 1\"/>", &vue, true);
 	assert!(
@@ -568,7 +569,10 @@ fn a_branch_names_a_block_without_branches() {
 		&Request::from_flags(Options::MODULE),
 	);
 	assert!(
-		answer.contains(r#""code":"placement","args":["A branch in {#repeat}"]"#),
+		answer.contains(&format!(
+			r#""code":{},"args":["A branch in {{#repeat}}"]"#,
+			Code::Placement as u8
+		)),
 		"{answer}"
 	);
 }
@@ -609,12 +613,18 @@ fn a_marker_read_halfway_is_another_word() {
 		assert!(!answer.contains("error"), "{text}: {answer}");
 	}
 	let answer = parse("{#eac a}");
-	assert!(answer.contains(r#""code":"expected","args":["{#each}"]"#), "{answer}");
+	assert!(
+		answer.contains(&format!(r#""code":{},"args":["{{#each}}"]"#, Code::Expected as u8)),
+		"{answer}"
+	);
 	let answer = parse("{#each a}{/eac}");
-	assert!(answer.contains(r#""code":"expected","args":["{/each}"]"#), "{answer}");
+	assert!(
+		answer.contains(&format!(r#""code":{},"args":["{{/each}}"]"#, Code::Expected as u8)),
+		"{answer}"
+	);
 	let answer = parse("{/eachx}");
 	assert!(
-		answer.contains(r#""code":"unexpected_close","args":["eachx"]"#),
+		answer.contains(&format!(r#""code":{},"args":["eachx"]"#, Code::UnexpectedClose as u8)),
 		"{answer}"
 	);
 }
@@ -1194,7 +1204,7 @@ fn a_host_has_its_own_syntax() {
 	host.definition.constructs = Some(constructs("{{", "}}"));
 	let answer = parse(&host, "{{#fore a}}x{{/fore}}");
 	assert!(
-		answer.contains(r#""code":"expected","args":["whitespace"]"#),
+		answer.contains(&format!(r#""code":{},"args":["whitespace"]"#, Code::Expected as u8)),
 		"{answer}"
 	);
 

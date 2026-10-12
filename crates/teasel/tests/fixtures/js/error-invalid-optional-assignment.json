@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "optional_chain_assignment",
+		"code": 77,
 		"args": [],
 		"pos": 0,
 		"end": 0,

@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "accessor_type_parameters",
+		"code": 122,
 		"args": [],
 		"pos": 15,
 		"end": 15,

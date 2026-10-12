@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "invalid_unicode_escape",
+		"code": 31,
 		"args": [],
 		"pos": 0,
 		"end": 0,

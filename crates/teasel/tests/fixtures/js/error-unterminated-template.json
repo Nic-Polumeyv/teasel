@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "unterminated_template",
+		"code": 17,
 		"args": [],
 		"pos": 1,
 		"end": 1,

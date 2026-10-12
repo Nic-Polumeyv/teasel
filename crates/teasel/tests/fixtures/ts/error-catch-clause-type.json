@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "catch_clause_type",
+		"code": 140,
 		"args": [],
 		"pos": 17,
 		"end": 17,

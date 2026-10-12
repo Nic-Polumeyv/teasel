@@ -2,6 +2,7 @@
 // kind's fields sit, the recipes how the kind is spelled.
 
 import type { Tree, Views } from './types.ts';
+import { CODES } from './types.ts';
 
 // symbol keys: ten times cheaper than a WeakMap entry, and skipped by JSON, Object.keys and for-in
 export const SCOPE = Symbol('scope');
@@ -46,8 +47,6 @@ interface Layout {
 	none: Missing;
 	views: { js: string[]; ts?: string[] };
 	recipes: { js: RawRecipes; rows: RawRecipes; ts?: RawRecipes; adds?: RawRecipes; extras?: RawRecipes };
-	/** Each code's name. */
-	errors: string[];
 }
 
 // one class for every operation: the interpreter's switch stays monomorphic
@@ -126,7 +125,6 @@ interface Compiled {
 	js: Language;
 	/** Made on the first TypeScript answer. */
 	ts: Language | undefined;
-	codes: string[];
 }
 
 function resolve(raw: RawOp[], fields: Field[]): Op[] {
@@ -244,7 +242,6 @@ function compile(engine: Views): Compiled {
 		rows: undefined,
 		js: language(layout, layout.views.js, false),
 		ts: undefined,
-		codes: layout.errors,
 	};
 	compiled.set(engine, made);
 	return made;
@@ -1205,10 +1202,9 @@ const ERROR_WORDS = 7;
 const NO_ARG = 0xffffffff;
 
 function errors(S: State, view: Uint32Array, count: number): Decoded[] {
-	const { codes } = S.C;
 	const out = new Array<Decoded>(count);
 	for (let i = 0, at = 0; i < count; i++, at += ERROR_WORDS) {
-		const code = codes[view[at]], args: string[] = [];
+		const code = CODES[view[at]], args: string[] = [];
 		for (let k = 1; k < 3; k++) if (view[at + k] !== NO_ARG) args.push(S.strings[view[at + k]]);
 		out[i] = { code, args, pos: view[at + 3], end: view[at + 4], loc: { line: view[at + 5], column: view[at + 6] } };
 	}

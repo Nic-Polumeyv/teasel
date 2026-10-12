@@ -1,6 +1,6 @@
 {
 	"error": {
-		"code": "return_outside_function",
+		"code": 60,
 		"args": [],
 		"pos": 0,
 		"end": 6,
