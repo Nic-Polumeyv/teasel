@@ -2,11 +2,11 @@
 import { copyFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { here, platforms } from '../dist/engine/addon.js';
+import { platforms } from '../dist/engine/addon.js';
 import { target as built } from './target.ts';
 
 const at = process.argv.indexOf('--target');
-const wanted = at === -1 ? platforms[here]?.target : process.argv[at + 1];
+const wanted = at === -1 ? /^host: (\S+)/m.exec(spawnSync('rustc', ['-vV'], { encoding: 'utf8' }).stdout)?.[1] : process.argv[at + 1];
 const found = Object.entries(platforms).find(([, p]) => p.target === wanted);
 if (found === undefined) throw new Error(`no platform builds for ${wanted}`);
 const [tag, { target, os }] = found;

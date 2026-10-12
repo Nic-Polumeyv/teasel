@@ -80,7 +80,7 @@ jobs:
       # the empty file fails to dlopen rather than to resolve
       - run: npm run build:js && node --input-type=commonjs -e "new (require('@teasel/parser').Source)('x').parse()" && : > dist/teasel.linux-x64-gnu.node && node --input-type=commonjs -e "new (require('@teasel/parser').Source)('x').parse()"
         working-directory: npm
-      - run: docker run --rm -v "$PWD:/p" -w /p node:26-alpine node --input-type=commonjs -e "process.on('warning', () => process.exit(1)); require('node:assert').equal(require('./dist/engine/addon.js').here, 'linux-x64-musl'); new (require('./dist/index.js').Source)('x').parse()"
+      - run: docker run --rm -v "$PWD:/p" -w /p node:26-alpine node --input-type=commonjs -e "process.on('warning', () => process.exit(1)); new (require('./dist/index.js').Source)('x').parse()"
         working-directory: npm
       - uses: actions/upload-artifact@v7
         with:

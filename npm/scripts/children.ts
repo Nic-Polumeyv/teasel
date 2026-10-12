@@ -53,7 +53,7 @@ export function generate(layout: Layout): { children: Record<string, string[]>; 
 }
 
 if (import.meta.main) {
-	const { engine } = await import('../dist/engine/native.js');
+	const { engine } = await import('../dist/engine/node.js');
 	const { children, extras } = generate(JSON.parse(engine.layout()));
 	const lines = Object.entries(children).map(([type, fields]) => `\t${type}: [${fields.map((f) => `'${f}'`).join(', ')}],`);
 	writeFileSync(
