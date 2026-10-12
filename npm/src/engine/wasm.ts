@@ -22,14 +22,30 @@ interface Exports {
 }
 
 // `teasel.wasm` beside the package entry: a bundler includes the file without configuration
-export const url = new URL('../teasel.wasm', import.meta.url);
+const url = new URL('../teasel.wasm', import.meta.url);
 let module: WebAssembly.Module;
 let wasm: Exports;
 
-export function start(compiled: WebAssembly.Module, instance = new WebAssembly.Instance(compiled, {})): Engine {
+function start(compiled: WebAssembly.Module, instance: WebAssembly.Instance): Engine {
 	module = compiled;
 	wasm = instance.exports as unknown as Exports;
 	return engine;
+}
+
+// synchronous: 7 ms against 13 async for the 1.1 MB module, and require() refuses a graph with top-level await
+// TODO: `import source` once node >= 22.19, tsc and bundlers accept it: no file read
+export function compile(): Engine {
+	const compiled = new WebAssembly.Module(globalThis.process.getBuiltinModule('node:fs').readFileSync(url));
+	return start(compiled, new WebAssembly.Instance(compiled, {}));
+}
+
+// read where there is a file system and fetched elsewhere
+export async function instantiate(): Promise<Engine> {
+	const { module: compiled, instance } =
+		url.protocol === 'file:'
+			? await WebAssembly.instantiate(await globalThis.process.getBuiltinModule('node:fs/promises').readFile(url), {})
+			: await WebAssembly.instantiateStreaming(fetch(url), {});
+	return start(compiled, instance);
 }
 
 // a panic traps the instance for good: a fresh one takes over, and sources and plans are made again in it from their bytes
