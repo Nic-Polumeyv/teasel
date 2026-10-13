@@ -5,14 +5,18 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
-import { engine as native } from '../dist/engine/native.js';
-import { engine as wasm } from '../dist/engine/wasm.js';
+import { load } from '../dist/engine/addon.js';
+import { engine as native } from '../dist/engine/node.js';
+import { compile } from '../dist/engine/wasm.js';
 import { decode } from '../dist/decode.js';
 import { CODES, type Code } from '../dist/types.js';
 import type { Engine } from '../dist/types.js';
 import { flags, type Options } from '../dist/options.js';
 import { target } from './target.ts';
 
+// without the addon node.js is the wasm engine already, and every diff would pass
+if (load() === undefined) throw new Error('no addon to check: npm run build');
+const wasm = compile();
 const binary = `${target}/release/teasel`;
 const files: string[] = [];
 function walk(dir: string) {

@@ -34,4 +34,4 @@ A template language uses this to read the JavaScript inside its own syntax, and 
 
 ## Where it runs
 
-Under Node it is a native addon. In a browser, or through a bundler, the same import is a WebAssembly build with the same API. [Getting started](/getting-started) is the first parse. [How it works](/how-it-works) explains what happens during a parse.
+Under Node it is a native addon, and the WebAssembly build where the addon does not load. In a browser, or through a bundler, the same import is a WebAssembly build with the same API. [Getting started](/getting-started) is the first parse. [How it works](/how-it-works) explains what happens during a parse.

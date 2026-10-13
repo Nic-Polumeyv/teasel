@@ -1,4 +1,4 @@
-// scripts/addon.ts imports this file to build the binary that native.ts loads on import, so the two stay apart
+// scripts/addon.ts imports this file to build the binary that node.ts loads on import, so the two stay apart
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import type { Tree } from '../types.ts';
@@ -28,32 +28,32 @@ export const platforms: Record<string, { target: string; os: NodeJS.Platform; cp
 	'win32-x64-msvc': { target: 'x86_64-pc-windows-msvc', os: 'win32', cpu: 'x64' },
 };
 
-// a glibc build does not load on musl: ldd is a script that names its libc, 0.07 ms; the report is 6 ms, for a Linux without one
-function musl(): boolean {
+// a glibc build does not load on musl: ldd is a script that names its libc; without one glibc is assumed, and a musl box only gets the warning
+function libc(): string {
 	try {
-		return readFileSync('/usr/bin/ldd', 'utf8').includes('musl');
+		return readFileSync('/usr/bin/ldd', 'utf8').includes('musl') ? 'musl' : 'glibc';
 	} catch {
-		return !(process.report?.getReport() as { header: { glibcVersionRuntime?: string } }).header.glibcVersionRuntime;
+		return 'glibc';
 	}
 }
 
-export const here = `${process.platform}-${process.arch}${process.platform === 'linux' ? (musl() ? '-musl' : '-gnu') : process.platform === 'win32' ? '-msvc' : ''}`;
-
-const missing = (e: unknown) => e instanceof Error && 'code' in e && e.code === 'MODULE_NOT_FOUND';
-
-export function load(): Addon {
+// a build linked against a newer glibc than the system's fails to dlopen: WebAssembly parses there, as it does without a build
+export function load(): Addon | undefined {
 	const require = createRequire(import.meta.url);
-	// we add .node so require dlopens it instead of reading it as js
-	const file = `teasel.${here}.node`;
-	try {
-		return require(`../${file}`);
-	} catch (e) {
-		if (!missing(e)) throw e;
+	let why: { code?: string; message: string } | undefined;
+	for (const [tag, p] of Object.entries(platforms)) {
+		if (p.os !== process.platform || p.cpu !== process.arch || (p.libc !== undefined && p.libc !== libc())) continue;
+		// we add .node so require dlopens it instead of reading it as js
+		for (const path of [`../teasel.${tag}.node`, `@teasel/parser-${tag}/teasel.${tag}.node`]) {
+			try {
+				return require(path);
+			} catch (e) {
+				const error = e as Error & { code?: string };
+				// a build that fails to load says more than one that is not there
+				if (why === undefined || why.code === 'MODULE_NOT_FOUND') why = error;
+			}
+		}
 	}
-	try {
-		return require(`@teasel/parser-${here}/${file}`);
-	} catch (e) {
-		if (!missing(e)) throw e;
-		throw new Error(`no native build for ${here}; the WebAssembly build runs anywhere: node --no-addons`, { cause: e });
-	}
+	// where no build exists there is nothing to fix
+	if (why !== undefined) process.emitWarning(`no native build loaded for ${process.platform}-${process.arch} (${why.message.split('\n')[0]}); @teasel/parser parses in WebAssembly instead, which is slower`, { code: 'wasm_fallback' });
 }

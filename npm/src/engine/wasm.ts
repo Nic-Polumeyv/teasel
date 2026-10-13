@@ -21,14 +21,33 @@ interface Exports {
 	layout(): void;
 }
 
-// `teasel.wasm` beside the package entry, read where there is a file system and fetched elsewhere
-// TODO: `import source` once we require node >= 22.19 and bundlers accept it: no fs, ~10 ms less startup
+// `teasel.wasm` beside the package entry: a bundler includes the file without configuration
 const url = new URL('../teasel.wasm', import.meta.url);
-const { module, instance } =
-	url.protocol === 'file:'
-		? await WebAssembly.instantiate(await globalThis.process.getBuiltinModule('node:fs/promises').readFile(url), {})
-		: await WebAssembly.instantiateStreaming(fetch(url), {});
-let wasm = instance.exports as unknown as Exports;
+let module: WebAssembly.Module;
+let wasm: Exports;
+
+function start(compiled: WebAssembly.Module, instance: WebAssembly.Instance): Engine {
+	module = compiled;
+	wasm = instance.exports as unknown as Exports;
+	return engine;
+}
+
+// synchronous: 7 ms against 13 async for the 1.1 MB module, and require() refuses a graph with top-level await
+// TODO: `import source` once node >= 22.19, tsc and bundlers accept it: no file read
+export function compile(): Engine {
+	const compiled = new WebAssembly.Module(globalThis.process.getBuiltinModule('node:fs').readFileSync(url));
+	return start(compiled, new WebAssembly.Instance(compiled, {}));
+}
+
+// read where there is a file system and fetched elsewhere
+export async function instantiate(): Promise<Engine> {
+	const { module: compiled, instance } =
+		url.protocol === 'file:'
+			? await WebAssembly.instantiate(await globalThis.process.getBuiltinModule('node:fs/promises').readFile(url), {})
+			: await WebAssembly.instantiateStreaming(fetch(url), {});
+	return start(compiled, instance);
+}
+
 // a panic traps the instance for good: a fresh one takes over, and sources and plans are made again in it from their bytes
 let generation = 0;
 
@@ -110,7 +129,7 @@ function read(source: number, entry: number, offset: number, end: number | undef
 	return answer(guarded(() => wasm.source_parse(source, entry, offset, end ?? 0, end === undefined ? 0 : 1, ...bytes(stop), grammar)));
 }
 
-export const engine: Engine = {
+const engine: Engine = {
 	create: (source, flags) => new Held(() => wasm.source_new(...bytes(source), flags), sources),
 	parse: (source, entry, offset, end, stop, plan) => read((source as Held).handle(), entry, offset, end, stop, plan),
 	free(source) {

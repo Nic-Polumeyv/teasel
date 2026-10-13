@@ -1,6 +1,7 @@
 // the source goes over as bytes: V8's encoder is 14x faster than the host reading a string out
 import type { Engine, Tree } from '../types.ts';
 import { load } from './addon.ts';
+import { compile } from './wasm.ts';
 
 const native = load();
 const encoder = new TextEncoder();
@@ -15,7 +16,7 @@ function bytes(text: string) {
 	return room.subarray(0, written);
 }
 
-export const engine: Engine = {
+export const engine: Engine = native === undefined ? compile() : {
 	create: (source, flags) => native.create(bytes(source), flags),
 	parse: native.parse,
 	free: native.free,

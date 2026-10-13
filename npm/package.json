@@ -20,8 +20,11 @@
 	},
 	"imports": {
 		"#engine": {
-			"node-addons": "./dist/engine/native.js",
-			"default": "./dist/engine/wasm.js"
+			"node": {
+				"node-addons": "./dist/engine/node.js",
+				"default": "./dist/engine/sync.js"
+			},
+			"default": "./dist/engine/web.js"
 		}
 	},
 	"files": [
@@ -32,7 +35,7 @@
 		"build": "npm run build:js && node scripts/addon.ts",
 		"build:js": "tsc -p tsconfig.build.json",
 		"build:wasm": "cargo build --release -p teasel-wasm --target wasm32-unknown-unknown && node scripts/wasm.ts",
-		"test": "npm run build:js && node scripts/test.ts && node --no-addons scripts/test.ts && node --no-addons scripts/test.ts interpret",
+		"test": "npm run build:js && node scripts/test.ts && node --no-addons scripts/test.ts && node scripts/test.ts web interpret && node --input-type=commonjs -e \"new (require('@teasel/parser').Source)('x').parse()\" && node --no-addons --input-type=commonjs -e \"new (require('@teasel/parser').Source)('x').parse()\"",
 		"types": "tsc -p tsconfig.json",
 		"check": "npm run build:js && node scripts/check.ts",
 		"prepublishOnly": "npm run build:js"
