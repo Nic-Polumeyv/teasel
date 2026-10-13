@@ -152,7 +152,7 @@ export class Source {
 		} else {
 			if (what === css) entry = 6;
 			else if (typeof what === 'object' && what !== null && PLAN in what) plan = what[PLAN];
-			else throw new TypeError('a parse takes `js`, one of its pieces, `css`, or a grammar made by @teasel/parser/grammar');
+			else throw new TypeError('a parse takes `js`, one of its pieces, `css`, or a grammar made by this copy of @teasel/parser/grammar');
 			if (at !== undefined) throw new TypeError('only `js` and its pieces take a position');
 		}
 		const source = this.#source;
