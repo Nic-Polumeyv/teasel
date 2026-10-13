@@ -1,12 +1,16 @@
 {
-	"error": {
-		"code": "undefined_export",
-		"message": "Export 'a' is not defined",
-		"pos": 9,
-		"end": 9,
-		"loc": {
+	"node": null,
+	"end": 9,
+	"errors": [
+		{
+			"code": 47,
+			"args": [
+				"a"
+			],
+			"pos": 9,
+			"end": 9,
 			"line": 1,
 			"column": 9
 		}
-	}
+	]
 }

@@ -846,10 +846,7 @@ impl<'a> Lexer<'a> {
 	pub(crate) fn read_template(&mut self) -> Result<Token> {
 		let start = self.pos;
 		if start == self.src.len() && !self.recover {
-			return Err(Box::new(SyntaxError::new(
-				start as u32,
-				Code::UnterminatedTemplateLiteral,
-			)));
+			return Err(Box::new(SyntaxError::new(start as u32, Code::UnterminatedTemplate)));
 		}
 		self.buf.clear();
 		self.marks.clear();

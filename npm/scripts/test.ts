@@ -10,6 +10,10 @@ import type * as api from '../src/index.ts';
 import type { Options } from '../src/index.ts';
 if (process.argv.includes('interpret')) globalThis.Function = (() => { throw new EvalError('blocked'); }) as unknown as FunctionConstructor;
 const name = process.argv.includes('web') ? 'web' : process.execArgv.includes('--no-addons') ? 'wasm' : 'native';
+// a native run that fell back to WebAssembly would pass as native
+process.on('warning', (warning) => {
+	if (name === 'native' && (warning as { code?: string }).code === 'wasm_fallback') throw warning;
+});
 // the hook must be in place before anything imports the grammar, and the Function swap before anything imports the decoder, so those come in below
 if (name === 'web') registerHooks({ resolve: (specifier, context, next) => (specifier === '#engine' ? { url: new URL('../dist/engine/web.js', import.meta.url).href, shortCircuit: true } : next(specifier, context)) });
 const g = await import('../src/grammar.ts');
@@ -66,7 +70,7 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 	assert.equal(at('expression', '{p.then(f) then r}', 1, undefined, ['then', 'catch']).end, 10);
 	assert.equal(at('expression', '{xs as [a, b = 1]}', 1, ts, ['as']).end, 3);
 	assert.equal(at('expression', '{f<A, B>(), i}', 1, ts, ['as', ',']).end, 10);
-	assert.throws(() => at('expression', 'éé𝒳x', 3), (e: Any) => e.message === 'offset 3 is inside a surrogate pair');
+	assert.throws(() => at('expression', 'éé𝒳x', 3), (e: Any) => e.code === 'invalid_request' && e.args[0] === 'offset 3 is inside a surrogate pair' && e.message === "invalid_request 'offset 3 is inside a surrogate pair'");
 	assert.equal(at('expression', '{obj. as item}', 1, undefined, ['as']).end, 8);
 	assert.equal(at('expression', '{x. then y}', 1, ts).end, 8);
 	assert.equal(at('expression', '{items, i}', 1, undefined, ['as', ',']).end, 6);
@@ -87,7 +91,7 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 	assert.equal(recovered.node.type, 'MemberExpression');
 	assert.deepEqual(JSON.parse(JSON.stringify(recovered.node.property)), { type: 'Identifier', start: 5, end: 5, name: '' });
 	assert.equal(recovered.end, 5);
-	assert.deepEqual(recovered.errors, [{ code: 'unexpected_token', message: 'Unexpected token', pos: 5, end: 6, loc: { line: 1, column: 5 } }]);
+	assert.deepEqual(recovered.errors, [{ code: 'unexpected_token', args: [], pos: 5, end: 6, line: 1, column: 5 }]);
 	const unclosed = at('expression', '{f(a, }', 1, loose, ['}']);
 	assert.deepEqual(JSON.parse(JSON.stringify(unclosed.node)), { type: 'Identifier', start: 6, end: 6, name: '' });
 	assert.equal(unclosed.end, 6);
@@ -96,16 +100,16 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 	assert.deepEqual(JSON.parse(JSON.stringify(declaration.node.declarations[0].id)), { type: 'Identifier', start: 5, end: 5, name: '' });
 	assert.deepEqual(at('expression', '{a b}', 1, loose, ['}']).errors, []);
 	const broken = parse('x = "abc\ny = ', { errorRecovery: true, locations: true });
-	assert.deepEqual(broken.errors.map((e: Any) => [e.code, e.pos, e.loc.line]), [['unterminated_string', 4, 1], ['unexpected_eof', 13, 2]]);
+	assert.deepEqual(broken.errors.map((e: Any) => [e.code, e.pos, e.line]), [['unterminated_string', 4, 1], ['unexpected_eof', 13, 2]]);
 	assert.deepEqual(parse('x', loose).errors, []);
 	assert.equal('errors' in parse('x'), false);
-	const messages = (source: string, options: Options) => parse(source, { ...options, errorRecovery: true }).errors.map((e: Any) => e.message);
-	assert.deepEqual(messages('"use strict"; let a; let a; /a{2,1}/u; eval = 1;', { sourceType: 'script' }), [
-		"Identifier 'a' has already been declared",
-		'Invalid regular expression: /a{2,1}/: numbers out of order in {} quantifier',
-		'Assigning to eval in strict mode',
+	const codes = (source: string, options: Options) => parse(source, { ...options, errorRecovery: true }).errors.map((e: Any) => [e.code, ...e.args]);
+	assert.deepEqual(codes('"use strict"; let a; let a; /a{2,1}/u; eval = 1;', { sourceType: 'script' }), [
+		['redeclaration', 'a'],
+		['invalid_regexp', 'a{2,1}', 'numbers out of order in {} quantifier'],
+		['strict_binding', 'eval'],
 	]);
-	assert.deepEqual(messages('class C { static public x }', { typescript: true }), ["'public' modifier must precede 'static' modifier.", 'Unexpected token']);
+	assert.deepEqual(codes('class C { static public x }', { typescript: true }), [['modifier_order', 'public', 'static'], ['unexpected_token']]);
 	const scoped = parse('let = f(a, b)', { errorRecovery: true, scopes: true, sourceType: 'module' });
 	assert.equal(scoped.bindings.length, 0);
 	assert.equal(referenceOf(scoped.node.body[0].declarations[0].id), undefined);
@@ -126,8 +130,8 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 	assert.equal(params.node.length, 2);
 	assert.equal(params.end, 10);
 
-	assert.throws(() => parse('x = ;'), (e: Any) => e.code === 'unexpected_token' && e.pos === 4 && e.end === 5 && e.loc.column === 4 && e.message === 'Unexpected token' && e instanceof ParseError && e instanceof SyntaxError);
-	assert.ok(!('loc' in new ParseError({ message: 'Expected', code: 'expected', pos: 0, end: 0 })));
+	assert.throws(() => parse('x = ;'), (e: Any) => e.code === 'unexpected_token' && e.pos === 4 && e.end === 5 && e.column === 4 && e.message === 'unexpected_token' && e.args.length === 0 && e instanceof ParseError && e instanceof SyntaxError);
+	assert.ok(!('line' in new ParseError({ code: 'expected', args: ['}'], pos: 0, end: 0 })));
 	assert.throws(() => parse('x = '), (e: Any) => e.code === 'unexpected_eof' && e.pos === 4 && e.end === 4);
 	assert.throws(() => parse('/a', { locations: true }), (e: Any) => e.code === 'unterminated_regexp' && e.pos === 1);
 	assert.throws(() => parse('x', { ranges: true } as Any), TypeError);
@@ -472,7 +476,7 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 	assert.equal(li.children[0].content.property.name, 'name');
 	assert.equal(li.children[1].content, ' #');
 	assert.equal(parentOf(li.children[2].content), li.children[2]);
-	assert.throws(() => open('<div v-for="x items">').parse(vue), { code: 'expected', message: 'Expected in or of' });
+	assert.throws(() => open('<div v-for="x items">').parse(vue), { code: 'expected', args: ['in or of'], message: "expected 'in or of'" });
 }
 
 // a lone surrogate escape is the code unit it names, as JavaScript keeps it

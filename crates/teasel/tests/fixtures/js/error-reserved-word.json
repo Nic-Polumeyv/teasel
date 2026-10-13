@@ -1,12 +1,16 @@
 {
-	"error": {
-		"code": "unexpected_keyword",
-		"message": "Unexpected keyword 'class'",
-		"pos": 6,
-		"end": 6,
-		"loc": {
+	"node": null,
+	"end": 6,
+	"errors": [
+		{
+			"code": 9,
+			"args": [
+				"class"
+			],
+			"pos": 6,
+			"end": 6,
 			"line": 1,
 			"column": 6
 		}
-	}
+	]
 }

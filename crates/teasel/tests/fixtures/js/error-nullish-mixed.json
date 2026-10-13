@@ -1,12 +1,14 @@
 {
-	"error": {
-		"code": "mixed_coalesce",
-		"message": "Logical expressions and coalesce expressions cannot be mixed. Wrap either by parentheses",
-		"pos": 7,
-		"end": 9,
-		"loc": {
+	"node": null,
+	"end": 7,
+	"errors": [
+		{
+			"code": 80,
+			"args": [],
+			"pos": 7,
+			"end": 9,
 			"line": 1,
 			"column": 7
 		}
-	}
+	]
 }

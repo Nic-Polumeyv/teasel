@@ -1,12 +1,14 @@
 {
-	"error": {
-		"code": "unexpected_eof",
-		"message": "Unexpected end of input",
-		"pos": 15,
-		"end": 15,
-		"loc": {
+	"node": null,
+	"end": 15,
+	"errors": [
+		{
+			"code": 7,
+			"args": [],
+			"pos": 15,
+			"end": 15,
 			"line": 2,
 			"column": 0
 		}
-	}
+	]
 }

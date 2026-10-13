@@ -83,24 +83,20 @@
 	"comments": [],
 	"errors": [
 		{
-			"code": "unterminated_string",
-			"message": "Unterminated string constant",
+			"code": 16,
+			"args": [],
 			"pos": 10,
 			"end": 10,
-			"loc": {
-				"line": 1,
-				"column": 10
-			}
+			"line": 1,
+			"column": 10
 		},
 		{
-			"code": "unterminated_template",
-			"message": "Unterminated template",
+			"code": 17,
+			"args": [],
 			"pos": 36,
 			"end": 36,
-			"loc": {
-				"line": 2,
-				"column": 11
-			}
+			"line": 2,
+			"column": 11
 		}
 	],
 	"scopes": [

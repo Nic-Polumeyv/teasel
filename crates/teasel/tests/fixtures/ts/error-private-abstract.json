@@ -1,12 +1,17 @@
 {
-	"error": {
-		"code": "conflicting_modifiers",
-		"message": "'private' modifier cannot be used with 'abstract' modifier.",
-		"pos": 27,
-		"end": 27,
-		"loc": {
+	"node": null,
+	"end": 27,
+	"errors": [
+		{
+			"code": 112,
+			"args": [
+				"private",
+				"abstract"
+			],
+			"pos": 27,
+			"end": 27,
 			"line": 1,
 			"column": 27
 		}
-	}
+	]
 }

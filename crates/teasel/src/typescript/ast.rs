@@ -879,7 +879,7 @@ impl Emit for Data {
 		let recipes = recipes();
 		let extras = self.extras_of(id);
 		let base = &extras as *const Extras as *const u8;
-		if w.output.erase {
+		if w.options.has(crate::Options::ERASE) {
 			w.run(id, recipes.erased, base);
 			return;
 		}

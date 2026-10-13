@@ -1,12 +1,16 @@
 {
-	"error": {
-		"code": "reserved_word",
-		"message": "The keyword 'class' is reserved",
-		"pos": 49,
-		"end": 54,
-		"loc": {
+	"node": null,
+	"end": 49,
+	"errors": [
+		{
+			"code": 10,
+			"args": [
+				"class"
+			],
+			"pos": 49,
+			"end": 54,
 			"line": 2,
 			"column": 19
 		}
-	}
+	]
 }

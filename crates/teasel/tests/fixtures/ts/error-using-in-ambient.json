@@ -1,12 +1,16 @@
 {
-	"error": {
-		"code": "using_in_ambient",
-		"message": "'using' declarations are not allowed in ambient contexts",
-		"pos": 22,
-		"end": 27,
-		"loc": {
+	"node": null,
+	"end": 22,
+	"errors": [
+		{
+			"code": 171,
+			"args": [
+				"using"
+			],
+			"pos": 22,
+			"end": 27,
 			"line": 1,
 			"column": 22
 		}
-	}
+	]
 }

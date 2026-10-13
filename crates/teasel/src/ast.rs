@@ -276,8 +276,8 @@ pub struct Ast<X = ()> {
 	pub locs: Handed<u32>,
 	/// Where each interned string starts in UTF-16 units, when the text has characters past ASCII.
 	pub units: Handed<u32>,
-	/// Each recovered error as a front end reads it, six words: its code and message as strings,
-	/// `pos`, `end`, and the line and column of `pos`.
+	/// Each error as a front end reads it, seven words: its code, two args as string numbers or
+	/// none, `pos`, `end`, and the line and column of `pos`.
 	pub error_words: Handed<u32>,
 	/// The hosts as a front end reads them, five words: type, first field, field count, whether it
 	/// has a span, and the number of its shape.

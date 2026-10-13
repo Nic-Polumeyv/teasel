@@ -36,7 +36,7 @@ impl Options {
 	/// An ES module: strict mode, top-level `await`, `import` and `export`.
 	pub const MODULE: u32 = Self::at(0, 1);
 	pub const TYPESCRIPT: u32 = Self::at(1, 1);
-	/// TypeScript, erased on output; see `estree::Output`.
+	/// TypeScript, erased on output: what erasure cannot express is listed as `typescript`.
 	pub const ERASE: u32 = Self::at(1, 2);
 	pub const COMMENTS: u32 = Self::at(2, 1);
 	/// Scope analysis on the answer.
@@ -275,7 +275,7 @@ pub(crate) trait Extension: Default + Sized {
 	}
 	/// A type parameter list `<...>` at the cursor, for the entry that parses one on its own.
 	fn type_parameters(p: &mut Parser<Self>) -> Result<NodeId> {
-		p.error(p.tok.start, Code::NotTypeScript)
+		p.error(p.tok.start, Code::NotTypescript)
 	}
 	/// After the key of a class element.
 	fn class_key_end(p: &mut Parser<Self>, key: NodeId, computed: bool) -> Result<()> {

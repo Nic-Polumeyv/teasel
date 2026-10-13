@@ -1,12 +1,14 @@
 {
-	"error": {
-		"code": "declare_in_ambient",
-		"message": "A 'declare' modifier cannot be used in an already ambient context.",
-		"pos": 22,
-		"end": 22,
-		"loc": {
+	"node": null,
+	"end": 22,
+	"errors": [
+		{
+			"code": 169,
+			"args": [],
+			"pos": 22,
+			"end": 22,
 			"line": 1,
 			"column": 22
 		}
-	}
+	]
 }

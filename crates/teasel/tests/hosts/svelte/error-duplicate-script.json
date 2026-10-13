@@ -1,12 +1,16 @@
 {
-	"error": {
-		"code": "duplicate",
-		"message": "Duplicate script",
-		"pos": 18,
-		"end": 19,
-		"loc": {
+	"node": null,
+	"end": 18,
+	"errors": [
+		{
+			"code": 5,
+			"args": [
+				"script"
+			],
+			"pos": 18,
+			"end": 19,
 			"line": 2,
 			"column": 0
 		}
-	}
+	]
 }

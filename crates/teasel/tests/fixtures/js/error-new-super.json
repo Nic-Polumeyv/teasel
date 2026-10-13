@@ -1,12 +1,14 @@
 {
-	"error": {
-		"code": "invalid_super",
-		"message": "Invalid use of 'super'",
-		"pos": 40,
-		"end": 40,
-		"loc": {
+	"node": null,
+	"end": 40,
+	"errors": [
+		{
+			"code": 84,
+			"args": [],
+			"pos": 40,
+			"end": 40,
 			"line": 1,
 			"column": 40
 		}
-	}
+	]
 }

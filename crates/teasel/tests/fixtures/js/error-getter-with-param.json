@@ -1,12 +1,14 @@
 {
-	"error": {
-		"code": "getter_params",
-		"message": "getter should have no params",
-		"pos": 8,
-		"end": 8,
-		"loc": {
+	"node": null,
+	"end": 8,
+	"errors": [
+		{
+			"code": 97,
+			"args": [],
+			"pos": 8,
+			"end": 8,
 			"line": 1,
 			"column": 8
 		}
-	}
+	]
 }

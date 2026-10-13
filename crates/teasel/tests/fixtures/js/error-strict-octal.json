@@ -1,12 +1,14 @@
 {
-	"error": {
-		"code": "invalid_number",
-		"message": "Invalid number",
-		"pos": 14,
-		"end": 14,
-		"loc": {
+	"node": null,
+	"end": 14,
+	"errors": [
+		{
+			"code": 22,
+			"args": [],
+			"pos": 14,
+			"end": 14,
 			"line": 1,
 			"column": 14
 		}
-	}
+	]
 }

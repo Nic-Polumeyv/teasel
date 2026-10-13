@@ -132,44 +132,36 @@
 	"comments": [],
 	"errors": [
 		{
-			"code": "unexpected_eof",
-			"message": "Unexpected end of input",
+			"code": 7,
+			"args": [],
 			"pos": 11,
 			"end": 11,
-			"loc": {
-				"line": 1,
-				"column": 11
-			}
+			"line": 1,
+			"column": 11
 		},
 		{
-			"code": "unexpected_eof",
-			"message": "Unexpected end of input",
+			"code": 7,
+			"args": [],
 			"pos": 23,
 			"end": 23,
-			"loc": {
-				"line": 1,
-				"column": 23
-			}
+			"line": 1,
+			"column": 23
 		},
 		{
-			"code": "unexpected_eof",
-			"message": "Unexpected end of input",
+			"code": 7,
+			"args": [],
 			"pos": 36,
 			"end": 36,
-			"loc": {
-				"line": 1,
-				"column": 36
-			}
+			"line": 1,
+			"column": 36
 		},
 		{
-			"code": "unexpected_token",
-			"message": "Unexpected token",
+			"code": 0,
+			"args": [],
 			"pos": 45,
 			"end": 46,
-			"loc": {
-				"line": 1,
-				"column": 45
-			}
+			"line": 1,
+			"column": 45
 		}
 	],
 	"scopes": [

@@ -40,8 +40,6 @@ export function load(): Addon | undefined {
 				return require(path);
 			} catch (e) {
 				const error = e as NodeJS.ErrnoException;
-				// addons turned off by flag: WebAssembly was asked for
-				if (error.code === 'ERR_DLOPEN_DISABLED') return;
 				// a build that fails to load says more than one that is not there
 				if (why === undefined || why.code === 'MODULE_NOT_FOUND') why = error;
 			}

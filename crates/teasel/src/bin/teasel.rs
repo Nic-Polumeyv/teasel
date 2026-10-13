@@ -3,8 +3,9 @@
 //! `teasel [--module] [--typescript] [--comments] [--scopes] [--expression|--pattern|--params|--statement|--type-parameters]
 //! [--parenthesized] [--erase] [--offset N] FILE` prints
 //! the answer as JSON: the node (or the parameters) as `node`, then `end`, the offset after what
-//! the parse consumed. `--offset` alone parses an expression. The pattern, params and statement
-//! modes parse as a module.
+//! the parse consumed; a parse that fails has `node` null and its error alone in `errors`, the
+//! code as the byte the package's `CODES` names. `--offset` alone parses an expression. The
+//! pattern, params and statement modes parse as a module.
 //!
 //! `teasel --batch [--host WIRE]` reads jobs from stdin, each a header line `MODE LENGTH` followed by LENGTH
 //! bytes of source, and prints one JSON line per job. MODE is `module`, `script`, `expr:OFFSET`,

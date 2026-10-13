@@ -1,12 +1,14 @@
 {
-	"error": {
-		"code": "duplicate_parameter",
-		"message": "Argument name clash",
-		"pos": 14,
-		"end": 14,
-		"loc": {
+	"node": null,
+	"end": 14,
+	"errors": [
+		{
+			"code": 43,
+			"args": [],
+			"pos": 14,
+			"end": 14,
 			"line": 1,
 			"column": 14
 		}
-	}
+	]
 }

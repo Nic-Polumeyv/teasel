@@ -1,12 +1,14 @@
 {
-	"error": {
-		"code": "decorator_placement",
-		"message": "A parameter decorator belongs on a parameter of a constructor, method or set accessor with a body, in a class declaration.",
-		"pos": 12,
-		"end": 12,
-		"loc": {
+	"node": null,
+	"end": 12,
+	"errors": [
+		{
+			"code": 125,
+			"args": [],
+			"pos": 12,
+			"end": 12,
 			"line": 1,
 			"column": 12
 		}
-	}
+	]
 }

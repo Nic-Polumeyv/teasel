@@ -9,6 +9,7 @@ import { load } from '../dist/engine/addon.js';
 import { engine as native } from '../dist/engine/node.js';
 import { compile } from '../dist/engine/wasm.js';
 import { decode } from '../dist/decode.js';
+import { CODES, type Code } from '../dist/types.js';
 import type { Engine } from '../dist/types.js';
 import { flags, type Options } from '../dist/options.js';
 import { target } from './target.ts';
@@ -34,14 +35,15 @@ let checked = 0;
 let failed = 0;
 
 // what a parse answers or throws, read off the engine directly
-function outcome(engine: Engine, held: object, source: string, entry: number, at: number, end?: number) {
+function outcome(engine: Engine, held: object, source: string, on: number, entry: number, at: number, end?: number) {
 	const answer = engine.parse(held, entry, at, end, '', undefined);
-	return typeof answer === 'string' ? { error: JSON.parse(answer).error } : { value: decode(answer, source, engine) };
+	return typeof answer === 'string' ? { error: JSON.parse(answer).error } : { value: decode(answer, source, engine, on, entry === 3) };
 }
 function once(engine: Engine, source: string, options: Options, entry: number, at: number) {
-	const held = engine.create(source, flags(options));
+	const on = flags(options);
+	const held = engine.create(source, on);
 	try {
-		return outcome(engine, held, source, entry, at);
+		return outcome(engine, held, source, on, entry, at);
 	} finally {
 		engine.free(held);
 	}
@@ -86,22 +88,25 @@ function mode(source: string, options: Options, entry: number, at: number) {
 }
 
 // JSON has no RegExp or BigInt, so the writer spells a regular expression's or a BigInt's value null
-const as_json = (_key: string, value: unknown) => (value instanceof RegExp || typeof value === 'bigint' ? null : value);
+// the binary reports a code as its byte, the package as its name
+const as_json = (key: string, value: unknown) => (value instanceof RegExp || typeof value === 'bigint' ? null : key === 'code' && typeof value === 'string' ? CODES.indexOf(value as Code) : value);
 
 // the addon's answers as JSON, each with the batch job that asks the binary for the same
 const jobs: { name: string; source: string; mode: string; tree: string }[] = [];
 function json(name: string, source: string, options: Options, entry: number, at: number) {
-	const held = native.create(source, flags(options));
+	const on = flags(options);
+	const held = native.create(source, on);
 	const answer = native.parse(held, entry, at, undefined, '', undefined);
 	native.free(held);
-	const tree = typeof answer === 'string' ? answer : JSON.stringify(decode(answer, source, native, false), as_json);
+	const tree = typeof answer === 'string' ? answer : JSON.stringify(decode(answer, source, native, on, entry === 3, false), as_json);
 	jobs.push({ name, source, mode: mode(source, options, entry, at), tree });
 }
 
 // a whole document of the host's, asked of the binary as `doc`
 function document(name: string, source: string, typescript: boolean, options: Options, switches: string) {
-	const answer = native.once(source, flags(options), 0, '', plan);
-	const tree = typeof answer === 'string' ? answer : JSON.stringify(decode(answer, source, native, false), as_json);
+	const on = flags(options);
+	const answer = native.once(source, on, 0, '', plan);
+	const tree = typeof answer === 'string' ? answer : JSON.stringify(decode(answer, source, native, on, false, false), as_json);
 	jobs.push({ name: `${name} doc${switches}`, source, mode: `${typescript ? 'ts-' : ''}doc${switches}`, tree });
 }
 
@@ -143,18 +148,19 @@ for (const file of files) {
 	// every brace in a component is somewhere an expression, a pattern or a statement might start
 	if (svelte) {
 		const options: Options = { sourceType: 'module', typescript: /lang=["']?ts/.test(text), locations: true, comments: true, scopes: true };
-		const held = native.create(text, flags(options));
-		const twin = wasm.create(text, flags(options));
+		const on = flags(options);
+		const held = native.create(text, on);
+		const twin = wasm.create(text, on);
 		for (const m of text.matchAll(script_re)) {
 			const start = m.index + m[0].indexOf('>') + 1;
 			const end = start + m[2].length;
-			report(`${file} script ${start} wasm`, differ(outcome(wasm, twin, text, 0, start, end), outcome(native, held, text, 0, start, end)));
+			report(`${file} script ${start} wasm`, differ(outcome(wasm, twin, text, on, 0, start, end), outcome(native, held, text, on, 0, start, end)));
 		}
 		for (const match of text.matchAll(brace_re)) {
 			const at = match.index + 1;
 			for (let entry = 1; entry < MODE.length; entry++) {
 				json(`${file}@${at} ${MODE[entry]}`, text, options, entry, at);
-				report(`${file}@${at} ${MODE[entry]} wasm`, differ(outcome(wasm, twin, text, entry, at), outcome(native, held, text, entry, at)));
+				report(`${file}@${at} ${MODE[entry]} wasm`, differ(outcome(wasm, twin, text, on, entry, at), outcome(native, held, text, on, entry, at)));
 			}
 		}
 		native.free(held);

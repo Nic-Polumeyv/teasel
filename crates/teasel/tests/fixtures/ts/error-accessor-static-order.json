@@ -1,12 +1,17 @@
 {
-	"error": {
-		"code": "modifier_order",
-		"message": "'static' modifier must precede 'accessor' modifier.",
-		"pos": 19,
-		"end": 19,
-		"loc": {
+	"node": null,
+	"end": 19,
+	"errors": [
+		{
+			"code": 113,
+			"args": [
+				"static",
+				"accessor"
+			],
+			"pos": 19,
+			"end": 19,
 			"line": 1,
 			"column": 19
 		}
-	}
+	]
 }

@@ -1,14 +1,14 @@
-use crate::interner::{Interner, StrId};
+use crate::interner::StrId;
 
 macro_rules! codes {
-	($($name:ident $code:literal => $message:literal,)*) => {
-		/// What went wrong: the message is for people, the name for hosts to branch on, shared by
-		/// the codes whose messages say more than one thing about the same mistake.
+	($($(#[$meta:meta])* $name:ident,)*) => {
+		/// What went wrong, as the byte the engine reports; what each means is on its variant, with
+		/// what its `args` hold. The JavaScript side names each in `Code`, in this order.
 		#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 		#[non_exhaustive]
 		#[repr(u8)]
 		pub enum Code {
-			$($name,)*
+			$($(#[$meta])* $name,)*
 		}
 
 		impl Code {
@@ -17,228 +17,365 @@ macro_rules! codes {
 			pub(crate) fn is_limit(self) -> bool {
 				matches!(self, Code::NestingDepth | Code::TreeSize)
 			}
-
-			/// The name hosts see: `unexpected_eof`.
-			pub fn name(self) -> &'static str {
-				match self {
-					$(Code::$name => $code,)*
-				}
-			}
-
-			/// The name as the writer emits it.
-			pub fn label(self) -> crate::names::Name {
-				match self {
-					$(Code::$name => crate::names::c!($code),)*
-				}
-			}
-
-			/// The message with its `{}` placeholders, when it has any.
-			pub fn message(self) -> &'static str {
-				match self {
-					$(Code::$name => $message,)*
-				}
-			}
 		}
 	};
 }
 
 codes! {
-	UnexpectedToken "unexpected_token" => "Unexpected token",
-	Expected "expected" => "Expected {}",
-	Unclosed "unclosed" => "{} is not closed",
-	UnexpectedClose "unexpected_close" => "Unexpected closing {}",
-	InvalidName "invalid_name" => "Invalid name {}",
-	Duplicate "duplicate" => "Duplicate {}",
-	Placement "placement" => "{} is not allowed here",
-	UnexpectedEof "unexpected_eof" => "Unexpected end of input",
-	UnexpectedCharacter "unexpected_character" => "Unexpected character '{}'",
-	UnexpectedKeyword "unexpected_keyword" => "Unexpected keyword '{}'",
-	ReservedWord "reserved_word" => "The keyword '{}' is reserved",
-	EscapeInKeyword "escape_in_keyword" => "Escape sequence in keyword {}",
-	NestingDepth "nesting_depth" => "Maximum nesting depth exceeded",
-	TreeSize "tree_size" => "Maximum tree size exceeded",
-	NotTypeScript "not_typescript" => "TypeScript syntax in JavaScript",
-	UnterminatedComment "unterminated_comment" => "Unterminated comment",
-	UnterminatedString "unterminated_string" => "Unterminated string constant",
-	UnterminatedTemplate "unterminated_template" => "Unterminated template",
-	UnterminatedTemplateLiteral "unterminated_template" => "Unterminated template literal",
-	UnterminatedRegexp "unterminated_regexp" => "Unterminated regular expression",
-	InvalidRegexp "invalid_regexp" => "Invalid regular expression: /{}/: {}",
-	InvalidRegexpFlag "invalid_regexp_flag" => "Invalid regular expression flag",
-	DuplicateRegexpFlag "duplicate_regexp_flag" => "Duplicate regular expression flag",
-	InvalidNumber "invalid_number" => "Invalid number",
-	ExpectedNumberInRadix "expected_number_in_radix" => "Expected number in radix {}",
-	IdentifierAfterNumber "identifier_after_number" => "Identifier directly after number",
-	NumericSeparatorFirst "numeric_separator_first" => "Numeric separator is not allowed at the first of digits",
-	NumericSeparatorLast "numeric_separator_last" => "Numeric separator is not allowed at the last of digits",
-	NumericSeparatorDouble "numeric_separator_double" => "Numeric separator must be exactly one underscore",
-	NumericSeparatorLegacyOctal "numeric_separator_legacy_octal" => "Numeric separator is not allowed in legacy octal numeric literals",
-	BadCharacterEscape "bad_character_escape" => "Bad character escape sequence",
-	BadTemplateEscape "bad_template_escape" => "Bad escape sequence in untagged template literal",
-	InvalidUnicodeEscape "invalid_unicode_escape" => "Invalid Unicode escape",
-	ExpectedUnicodeEscape "expected_unicode_escape" => "Expecting Unicode escape sequence \\uXXXX",
-	CodePointOutOfBounds "code_point_out_of_bounds" => "Code point out of bounds",
-	StrictWith "strict_with" => "'with' in strict mode",
-	StrictDelete "strict_delete" => "Deleting local variable in strict mode",
-	StrictDirectiveNonSimpleParams "strict_directive_non_simple_params" => "Illegal 'use strict' directive in function with non-simple parameter list",
-	StrictBinding "strict_binding" => "Binding {} in strict mode",
-	AssigningInStrictMode "strict_binding" => "Assigning to {} in strict mode",
-	StrictOctal "strict_octal" => "Octal literal in strict mode",
-	StrictEscape "strict_escape" => "Invalid escape sequence",
-	LetAsBinding "let_as_binding" => "let is disallowed as a lexically bound name",
-	Redeclaration "redeclaration" => "Identifier '{}' has already been declared",
-	PrivateRedeclaration "redeclaration" => "Identifier '#{}' has already been declared",
-	DuplicateLabel "duplicate_label" => "Label '{}' is already declared",
-	DuplicateParameter "duplicate_parameter" => "Argument name clash",
-	DuplicateProto "duplicate_proto" => "Redefinition of __proto__ property",
-	DuplicateDefault "duplicate_default" => "Multiple default clauses",
-	DuplicateExport "duplicate_export" => "Duplicate export '{}'",
-	UndefinedExport "undefined_export" => "Export '{}' is not defined",
-	StringExportWithoutFrom "string_export_without_from" => "A string literal cannot be used as an exported binding without `from`.",
-	LoneSurrogateInModuleName "lone_surrogate_in_module_name" => "An export name cannot include a lone surrogate",
-	DuplicateImportAttribute "duplicate_import_attribute" => "Duplicate attribute key '{}'",
-	ImportExportInScript "import_export_in_script" => "'import' and 'export' may appear only with 'sourceType: module'",
-	ImportExportNotTopLevel "import_export_not_top_level" => "'import' and 'export' may only appear at the top level",
-	ImportMetaOutsideModule "import_meta_outside_module" => "Cannot use 'import.meta' outside a module",
-	ImportMetaEscaped "import_meta_escaped" => "'import.meta' must not contain escaped characters",
-	InvalidImportMeta "invalid_import_meta" => "The only valid meta property for import is 'import.meta'",
-	InvalidNewTarget "invalid_new_target" => "The only valid meta property for new is 'new.target'",
-	NewTargetEscaped "new_target_escaped" => "'new.target' must not contain escaped characters",
-	NewTargetOutsideFunction "new_target_outside_function" => "'new.target' can only be used in functions and class static block",
-	Unsyntactic "unsyntactic" => "Unsyntactic {}",
-	ReturnOutsideFunction "return_outside_function" => "'return' outside of function",
-	NewlineAfterThrow "newline_after_throw" => "Illegal newline after throw",
-	MissingCatchOrFinally "missing_catch_or_finally" => "Missing catch or finally clause",
-	ForInOfInitializer "for_in_of_initializer" => "{} loop variable declaration may not have an initializer",
-	ForOfLet "for_of_let" => "The left-hand side of a for-of loop may not start with 'let'.",
-	AwaitAsIdentifier "await_as_identifier" => "Cannot use 'await' as identifier inside an async function",
-	AwaitOutsideAsync "await_outside_async" => "Cannot use keyword 'await' outside an async function",
-	AwaitInDefaultValue "await_in_default_value" => "Await expression cannot be a default value",
-	YieldAsIdentifier "yield_as_identifier" => "Cannot use 'yield' as identifier inside a generator",
-	YieldInDefaultValue "yield_in_default_value" => "Yield expression cannot be a default value",
-	InvalidInStaticBlock "invalid_in_static_block" => "Cannot use {} in class static initialization block",
-	ArgumentsInFieldInitializer "arguments_in_field_initializer" => "Cannot use 'arguments' in class field initializer",
-	InvalidAssignmentTarget "invalid_assignment_target" => "Assigning to rvalue",
-	InvalidBindingTarget "invalid_binding_target" => "Binding rvalue",
-	BindingMemberExpression "binding_member_expression" => "Binding member expression",
-	ParenthesizedPattern "parenthesized_pattern" => "Parenthesized pattern",
-	BindingParenthesized "binding_parenthesized" => "Binding parenthesized expression",
-	OptionalChainAssignment "optional_chain_assignment" => "Optional chaining cannot appear in left-hand side",
-	OptionalChainInNew "optional_chain_in_new" => "Optional chaining cannot appear in the callee of new expressions",
-	OptionalChainInTaggedTemplate "optional_chain_in_tagged_template" => "Optional chaining cannot appear in the tag of tagged template expressions",
-	MixedCoalesce "mixed_coalesce" => "Logical expressions and coalesce expressions cannot be mixed. Wrap either by parentheses",
-	PrivateNameOutsideIn "private_name_outside_in" => "Private identifier can only be left side of binary expression",
-	UndeclaredPrivateName "undeclared_private_name" => "Private field '#{}' must be declared in an enclosing class",
-	DeletePrivate "delete_private" => "Private fields can not be deleted",
-	InvalidSuper "invalid_super" => "Invalid use of 'super'",
-	SuperOutsideMethod "super_outside_method" => "'super' keyword outside a method",
-	SuperCallOutsideConstructor "super_call_outside_constructor" => "super() call outside constructor of a subclass",
-	CommaAfterRest "comma_after_rest" => "Comma is not permitted after the rest element",
-	RestWithDefault "rest_with_default" => "Rest elements cannot have a default value",
-	AccessorInPattern "accessor_in_pattern" => "Object pattern can't contain getter or setter",
-	ShorthandAssignment "shorthand_assignment" => "Shorthand property assignments are valid only in destructuring patterns",
-	PatternWithoutInitializer "pattern_without_initializer" => "Complex binding patterns require an initialization value",
-	UsingPattern "using_pattern" => "'{}' declarations may not have binding patterns",
-	UsingWithoutInitializer "using_without_initializer" => "Missing initializer in {} declaration",
-	UsingInForIn "using_in_for_in" => "The left-hand side of a for-in loop may not be a {} declaration",
-	UsingOutsideBlock "using_outside_block" => "A {} declaration at the top level of a script or in a case clause must be inside a block",
-	InvalidDefaultOperator "invalid_default_operator" => "Only '=' operator can be used for specifying default value.",
-	GetterParams "getter_params" => "getter should have no params",
-	SetterParams "setter_params" => "setter should have exactly one param",
-	SetterRestParam "setter_rest_param" => "Setter cannot use rest params",
-	GeneratorConstructor "generator_constructor" => "Constructor can't be a generator",
-	AsyncConstructor "async_constructor" => "Constructor can't be an async method",
-	AccessorConstructor "accessor_constructor" => "Constructor can't have get/set modifier",
-	DuplicateConstructor "duplicate_constructor" => "Duplicate constructor in the same class",
-	ConstructorField "constructor_field" => "Classes can't have a field named 'constructor'",
-	PrivateConstructor "private_constructor" => "Classes can't have an element named '#constructor'",
-	StaticPrototype "static_prototype" => "Classes can't have a static field named 'prototype'",
-	StaticPrototypeProperty "static_prototype" => "Classes may not have a static property named prototype",
-	AbstractOutsideAbstractClass "abstract_outside_abstract_class" => "Abstract methods can only appear within an abstract class.",
-	AbstractWithImplementation "abstract_with_implementation" => "Method '{}' cannot have an implementation because it is marked abstract.",
-	AbstractWithInitializer "abstract_with_initializer" => "Property '{}' cannot have an initializer because it is marked abstract.",
-	DuplicateAccessibility "duplicate_accessibility" => "Accessibility modifier already seen.",
-	DuplicateModifier "duplicate_modifier" => "Duplicate modifier: '{}'.",
-	ConflictingModifiers "conflicting_modifiers" => "'{}' modifier cannot be used with '{}' modifier.",
-	ModifierOrder "modifier_order" => "'{}' modifier must precede '{}' modifier.",
-	DeclareOnMethod "declare_on_method" => "Class methods cannot have the 'declare' modifier.",
-	ReadonlyOnMethod "readonly_on_method" => "Class methods cannot have the 'readonly' modifier.",
-	ReadonlyPlacement "readonly_placement" => "'readonly' modifier can only appear on a property declaration or index signature.",
-	ReadonlyTypeOperand "readonly_type_operand" => "'readonly' type modifier is only permitted on array and tuple literal types.",
-	OverrideWithoutExtends "override_without_extends" => "This member cannot have an 'override' modifier because its containing class does not extend another class.",
-	IndexSignatureModifier "index_signature_modifier" => "Index signatures cannot have the '{}' modifier.",
-	IndexSignatureAccessibility "index_signature_modifier" => "Index signatures cannot have an accessibility modifier ('{}').",
-	IndexSignatureOverride "index_signature_modifier" => "'override' modifier cannot appear on an index signature.",
-	PrivateModifier "private_modifier" => "Private elements cannot have the '{}' modifier.",
-	PrivateMethodAccessibility "private_modifier" => "Private methods cannot have an accessibility modifier ('{}').",
-	PrivateAccessibility "private_modifier" => "Private elements cannot have an accessibility modifier ('{}').",
-	StaticBlockModifier "static_block_modifier" => "Static class blocks cannot have any modifier.",
-	AccessorTypeParameters "accessor_type_parameters" => "An accessor cannot have type parameters.",
-	ConstructorTypeParameters "constructor_type_parameters" => "Type parameters cannot appear on a constructor declaration.",
-	SetterReturnType "setter_return_type" => "A 'set' accessor cannot have a return type annotation.",
-	DecoratorPlacement "decorator_placement" => "Decorators must be attached to a class element.",
-	DecoratorsAroundExport "decorator_placement" => "Decorators must all precede 'export' or all follow it.",
-	LeadingDecorators "decorator_placement" => "Leading decorators must be attached to a class declaration.",
-	ParameterDecorator "decorator_placement" => "A parameter decorator belongs on a parameter of a constructor, method or set accessor with a body, in a class declaration.",
-	DecoratorOnIndexSignature "decorator_placement" => "Decorators cannot be applied to an index signature.",
-	DecoratorOnConstructor "decorator_on_constructor" => "Decorators can't be used with a constructor. Did you mean '@dec class { ... }'?",
-	DecoratorWithoutBody "decorator_without_body" => "A decorator can only decorate a method or accessor with a body",
-	ThisParameterModifiers "this_parameter_modifiers" => "Neither decorators nor modifiers may be applied to 'this' parameters",
-	OptionalWithInitializer "optional_with_initializer" => "Parameter cannot have question mark and initializer",
-	RequiredAfterOptional "required_after_optional" => "A required parameter cannot follow an optional parameter",
-	RequiredElementAfterOptional "required_after_optional" => "A required element cannot follow an optional element.",
-	OptionalRest "optional_rest" => "A rest parameter cannot be optional",
-	SetterOptionalParameter "setter_optional_parameter" => "A 'set' accessor cannot have an optional parameter",
-	SetterParameterInitializer "setter_parameter_initializer" => "A 'set' accessor parameter cannot have an initializer",
-	ConstructorReturnType "constructor_return_type" => "Type annotation cannot appear on a constructor declaration",
-	ConstructorModifier "constructor_modifier" => "'{}' modifier cannot appear on a constructor declaration",
-	IndexSignatureType "index_signature_type" => "An index signature must have a type annotation",
-	PredicatePlacement "predicate_placement" => "A type predicate is only allowed in return type position for functions and methods",
-	InferPlacement "infer_placement" => "'infer' declarations are only permitted in the 'extends' clause of a conditional type",
-	ConstAssertionTarget "const_assertion_target" => "A 'const' assertion can only be applied to references to enum members, or string, number, boolean, array, or object literals",
-	CatchClauseType "catch_clause_type" => "Catch clause variable type annotation must be 'any' or 'unknown' if specified",
-	AbstractPlacement "abstract_placement" => "'abstract' modifier can only appear on a class, method, or property declaration",
-	ExportAssignmentInNamespace "export_assignment_in_namespace" => "An export assignment cannot be used in a namespace",
-	QuotedModuleName "quoted_module_name" => "Only ambient modules can use quoted names",
-	ImplementationInAmbient "implementation_in_ambient" => "An implementation cannot be declared in ambient contexts.",
-	InitializerInAmbient "initializer_in_ambient" => "Initializers are not allowed in ambient contexts.",
-	AmbientConstInitializer "ambient_const_initializer" => "A 'const' initializer in an ambient context must be a string or numeric literal or literal enum reference.",
-	ExportDeclareWithoutDeclaration "export_declare_without_declaration" => "'export declare' must be followed by an ambient declaration.",
-	InterfaceWithoutName "interface_without_name" => "'interface' declarations must be followed by an identifier.",
-	TypeRedeclaration "type_redeclaration" => "type '{}' has already been declared.",
-	ImportTypeAlias "import_type_alias" => "An import alias can not use 'import type'.",
-	TypeImportArgument "type_import_argument" => "Argument in a type import must be a string literal.",
-	TypeImportDefaultAndNamed "type_import_default_and_named" => "A type-only import can specify a default import or named bindings, but not both.",
-	TypeModifierInTypeImport "type_modifier_in_type_import" => "The 'type' modifier cannot be used on a named import when 'import type' is used on its import statement.",
-	TypeModifierInTypeExport "type_modifier_in_type_import" => "The 'type' modifier cannot be used on a named export when 'export type' is used on its export statement.",
-	UnexpectedTypeAnnotation "unexpected_type_annotation" => "Did not expect a type annotation here.",
-	TypeAnnotationAfterDefault "type_annotation_after_default" => "Type annotations must come before default assignments, e.g. instead of `age = 25: number` use `age: number = 25`.",
-	EmptyTypeArguments "empty_type_arguments" => "Type argument list cannot be empty.",
-	EmptyTypeParameters "empty_type_parameters" => "Type parameter list cannot be empty.",
-	EmptyList "empty_list" => "'{}' list cannot be empty.",
-	TypeMemberModifier "type_member_modifier" => "'{}' modifier cannot appear on a type member.",
-	TypeParameterModifier "type_parameter_modifier" => "'{}' modifier cannot appear on a type parameter.",
-	ClassTypeParameterModifier "type_parameter_modifier" => "'{}' modifier can only appear on a type parameter of a class, interface or type alias.",
-	InvalidConst "invalid_const" => "Cannot find name 'const'.",
-	TupleLabel "tuple_label" => "Tuple members must be labeled with a simple identifier.",
-	OptionalPatternParameter "optional_pattern_parameter" => "A binding pattern parameter cannot be optional in an implementation signature.",
-	ParameterPropertyPattern "parameter_property_pattern" => "A parameter property may not be declared using a binding pattern.",
-	SignatureParameterDefault "signature_parameter_default" => "Name in a signature must be an Identifier, ObjectPattern or ArrayPattern, instead got AssignmentPattern.",
-	DefiniteWithInitializer "definite_with_initializer" => "Declarations with initializers cannot also have definite assignment assertions.",
-	GeneratorInAmbient "generator_in_ambient" => "Generators are not allowed in an ambient context.",
-	GeneratorSignature "generator_signature" => "An overload signature cannot be declared as a generator.",
-	DeclareInAmbient "declare_in_ambient" => "A 'declare' modifier cannot be used in an already ambient context.",
-	StatementInAmbient "statement_in_ambient" => "Statements are not allowed in ambient contexts.",
-	UsingInAmbient "using_in_ambient" => "'{}' declarations are not allowed in ambient contexts",
-	// A host's offsets or switches, with the message given where it is raised.
-	InvalidRequest "invalid_request" => "",
-	PropertyAfterInstantiation "property_after_instantiation" => "Invalid property access after an instantiation expression. You can either wrap the instantiation expression in parentheses, or delete the type arguments.",
+	/// A token the grammar does not allow here.
+	UnexpectedToken,
+	/// A token other than the one the grammar needs next; `args` names what was needed.
+	Expected,
+	/// A tag, block or bracket never closed; `args` names it.
+	Unclosed,
+	/// A closing tag, block or bracket with nothing open; `args` names it.
+	UnexpectedClose,
+	/// A name a host's grammar cannot take; `args` names it.
+	InvalidName,
+	/// A thing that may appear once appears again; `args` names it.
+	Duplicate,
+	/// A construct in a place the grammar does not allow it; `args` names it.
+	Placement,
+	/// The text ended while a token was still needed; `pos` is the end of what was parsed.
+	UnexpectedEof,
+	/// A character no token starts with; `args` holds it.
+	UnexpectedCharacter,
+	/// A keyword where a name or expression is needed; `args` names it.
+	UnexpectedKeyword,
+	/// A reserved word used as a name; `args` names it.
+	ReservedWord,
+	/// A keyword spelled with an escape sequence; `args` names it.
+	EscapeInKeyword,
+	/// Nesting deeper than the engine's limit.
+	NestingDepth,
+	/// A tree larger than the engine's limit.
+	TreeSize,
+	/// TypeScript syntax in a parse without `typescript`.
+	NotTypescript,
+	/// A comment the text ends inside.
+	UnterminatedComment,
+	/// A string the line or text ends inside.
+	UnterminatedString,
+	/// A template the text ends inside.
+	UnterminatedTemplate,
+	/// A regular expression the line or text ends inside.
+	UnterminatedRegexp,
+	/// A regular expression pattern that does not parse; `args` holds the pattern and the reason.
+	InvalidRegexp,
+	/// A regular expression flag that does not exist.
+	InvalidRegexpFlag,
+	/// A regular expression flag given twice.
+	DuplicateRegexpFlag,
+	/// A number that does not parse.
+	InvalidNumber,
+	/// A radix prefix with no digits after it; `args` holds the radix.
+	ExpectedNumberInRadix,
+	/// An identifier starting right after a number.
+	IdentifierAfterNumber,
+	/// A numeric separator before the first digit.
+	NumericSeparatorFirst,
+	/// A numeric separator after the last digit.
+	NumericSeparatorLast,
+	/// Two numeric separators in a row.
+	NumericSeparatorDouble,
+	/// A numeric separator in a legacy octal number.
+	NumericSeparatorLegacyOctal,
+	/// An escape sequence that does not parse.
+	BadCharacterEscape,
+	/// An escape sequence that does not parse, in a template with no tag.
+	BadTemplateEscape,
+	/// A `\u` escape that does not parse.
+	InvalidUnicodeEscape,
+	/// A `\` in a name with no `u` after it.
+	ExpectedUnicodeEscape,
+	/// A `\u{…}` escape above the last code point.
+	CodePointOutOfBounds,
+	/// `with` in strict mode.
+	StrictWith,
+	/// `delete` of a name in strict mode.
+	StrictDelete,
+	/// `"use strict"` in a function whose parameters are not all plain names.
+	StrictDirectiveNonSimpleParams,
+	/// A name strict mode does not allow to be declared or assigned; `args` names it.
+	StrictBinding,
+	/// A legacy octal number or escape in strict mode.
+	StrictOctal,
+	/// A `\8` or `\9` escape in strict mode.
+	StrictEscape,
+	/// `let` as the name of a `let`, `const`, `using` or class declaration.
+	LetAsBinding,
+	/// A name declared again where it cannot be; `args` names it.
+	Redeclaration,
+	/// A label already in use; `args` names it.
+	DuplicateLabel,
+	/// A parameter name used twice where that is not allowed.
+	DuplicateParameter,
+	/// `__proto__` twice in an object literal.
+	DuplicateProto,
+	/// Two `default` clauses in a `switch`.
+	DuplicateDefault,
+	/// A name exported twice; `args` names it.
+	DuplicateExport,
+	/// An exported name that is not declared; `args` names it.
+	UndefinedExport,
+	/// An export of a string name with no `from`.
+	StringExportWithoutFrom,
+	/// A lone surrogate in a string export name.
+	LoneSurrogateInModuleName,
+	/// An import attribute key given twice; `args` names it.
+	DuplicateImportAttribute,
+	/// `import` or `export` with `sourceType` `script`.
+	ImportExportInScript,
+	/// `import` or `export` below the top level.
+	ImportExportNotTopLevel,
+	/// `import.meta` outside a module.
+	ImportMetaOutsideModule,
+	/// `import.meta` spelled with an escape sequence.
+	ImportMetaEscaped,
+	/// `import.` followed by something other than `meta`.
+	InvalidImportMeta,
+	/// `new.` followed by something other than `target`.
+	InvalidNewTarget,
+	/// `new.target` spelled with an escape sequence.
+	NewTargetEscaped,
+	/// `new.target` outside a function or class static block.
+	NewTargetOutsideFunction,
+	/// A `break` or `continue` with no loop, switch or label to go to; `args` names the statement.
+	Unsyntactic,
+	/// `return` outside a function.
+	ReturnOutsideFunction,
+	/// A line break between `throw` and its expression.
+	NewlineAfterThrow,
+	/// A `try` with neither `catch` nor `finally`.
+	MissingCatchOrFinally,
+	/// An initializer on the declaration of a `for-in` or `for-of`; `args` names the loop.
+	ForInOfInitializer,
+	/// A `for-of` whose left side starts with `let`.
+	ForOfLet,
+	/// `await` as a name inside an async function.
+	AwaitAsIdentifier,
+	/// `await` outside an async function or module.
+	AwaitOutsideAsync,
+	/// `await` in a parameter's default value.
+	AwaitInDefaultValue,
+	/// `yield` as a name inside a generator.
+	YieldAsIdentifier,
+	/// `yield` in a parameter's default value.
+	YieldInDefaultValue,
+	/// `await` or `arguments` in a class static block; `args` names it.
+	InvalidInStaticBlock,
+	/// `arguments` in a class field initializer.
+	ArgumentsInFieldInitializer,
+	/// An assignment to something that cannot be assigned.
+	InvalidAssignmentTarget,
+	/// A binding to something that cannot be bound.
+	InvalidBindingTarget,
+	/// A member expression where a binding is needed.
+	BindingMemberExpression,
+	/// A parenthesized pattern.
+	ParenthesizedPattern,
+	/// A parenthesized expression where a binding is needed.
+	BindingParenthesized,
+	/// An optional chain assigned to.
+	OptionalChainAssignment,
+	/// An optional chain as the callee of `new`.
+	OptionalChainInNew,
+	/// An optional chain as the tag of a template.
+	OptionalChainInTaggedTemplate,
+	/// `??` mixed with `||` or `&&` without parentheses.
+	MixedCoalesce,
+	/// A private name outside the left side of `in`.
+	PrivateNameOutsideIn,
+	/// A private name no enclosing class declares; `args` names it.
+	UndeclaredPrivateName,
+	/// `delete` of a private name.
+	DeletePrivate,
+	/// `super` where neither a call nor a property follows.
+	InvalidSuper,
+	/// `super` outside a method.
+	SuperOutsideMethod,
+	/// `super()` outside the constructor of a derived class.
+	SuperCallOutsideConstructor,
+	/// A comma after a rest element.
+	CommaAfterRest,
+	/// A default value on a rest element.
+	RestWithDefault,
+	/// A getter or setter in an object pattern.
+	AccessorInPattern,
+	/// A shorthand `a = 1` in an object that is not a pattern.
+	ShorthandAssignment,
+	/// A pattern declared without a value.
+	PatternWithoutInitializer,
+	/// A pattern in a `using` declaration; `args` names the declaration.
+	UsingPattern,
+	/// A `using` declaration without a value; `args` names the declaration.
+	UsingWithoutInitializer,
+	/// A `using` declaration as the left side of a `for-in`; `args` names the declaration.
+	UsingInForIn,
+	/// A `using` declaration at the top level of a script or in a case clause; `args` names the declaration.
+	UsingOutsideBlock,
+	/// An operator other than `=` giving a default value.
+	InvalidDefaultOperator,
+	/// A getter with parameters.
+	GetterParams,
+	/// A setter with other than one parameter.
+	SetterParams,
+	/// A setter with a rest parameter.
+	SetterRestParam,
+	/// A constructor that is a generator.
+	GeneratorConstructor,
+	/// A constructor that is async.
+	AsyncConstructor,
+	/// A constructor that is a getter or setter.
+	AccessorConstructor,
+	/// Two constructors in a class.
+	DuplicateConstructor,
+	/// A class field named `constructor`.
+	ConstructorField,
+	/// A class element named `#constructor`.
+	PrivateConstructor,
+	/// A static class element named `prototype`.
+	StaticPrototype,
+	/// An abstract method outside an abstract class.
+	AbstractOutsideAbstractClass,
+	/// An abstract method with a body; `args` names it.
+	AbstractWithImplementation,
+	/// An abstract property with a value; `args` names it.
+	AbstractWithInitializer,
+	/// Two accessibility modifiers on one element.
+	DuplicateAccessibility,
+	/// A modifier given twice; `args` names it.
+	DuplicateModifier,
+	/// Two modifiers that cannot go together; `args` names both.
+	ConflictingModifiers,
+	/// Two modifiers in the wrong order; `args` names the one that must come first, then the other.
+	ModifierOrder,
+	/// `declare` on a method.
+	DeclareOnMethod,
+	/// `readonly` on a method.
+	ReadonlyOnMethod,
+	/// `readonly` on other than a property or index signature.
+	ReadonlyPlacement,
+	/// `readonly` on a type other than an array or tuple.
+	ReadonlyTypeOperand,
+	/// `override` in a class that extends nothing.
+	OverrideWithoutExtends,
+	/// A modifier on an index signature; `args` names it.
+	IndexSignatureModifier,
+	/// A modifier on a private element; `args` names it.
+	PrivateModifier,
+	/// A modifier on a static block.
+	StaticBlockModifier,
+	/// Type parameters on a getter or setter.
+	AccessorTypeParameters,
+	/// Type parameters on a constructor.
+	ConstructorTypeParameters,
+	/// A return type on a setter.
+	SetterReturnType,
+	/// A decorator on something other than a class or a class element, or split around `export`.
+	DecoratorPlacement,
+	/// A decorator on a constructor.
+	DecoratorOnConstructor,
+	/// A decorator on a method or accessor without a body.
+	DecoratorWithoutBody,
+	/// A decorator or modifier on a `this` parameter.
+	ThisParameterModifiers,
+	/// A parameter both optional and with a default value.
+	OptionalWithInitializer,
+	/// A required parameter or tuple element after an optional one.
+	RequiredAfterOptional,
+	/// A rest parameter marked optional.
+	OptionalRest,
+	/// An optional parameter on a setter.
+	SetterOptionalParameter,
+	/// A default value on a setter's parameter.
+	SetterParameterInitializer,
+	/// A return type on a constructor.
+	ConstructorReturnType,
+	/// A modifier on a constructor; `args` names it.
+	ConstructorModifier,
+	/// An index signature without a type.
+	IndexSignatureType,
+	/// A type predicate outside a return type.
+	PredicatePlacement,
+	/// `infer` outside the `extends` clause of a conditional type.
+	InferPlacement,
+	/// `as const` on other than a literal or a reference.
+	ConstAssertionTarget,
+	/// A catch clause variable typed other than `any` or `unknown`.
+	CatchClauseType,
+	/// `abstract` on other than a class, method or property.
+	AbstractPlacement,
+	/// `export =` in a namespace.
+	ExportAssignmentInNamespace,
+	/// A quoted module name on a module that is not ambient.
+	QuotedModuleName,
+	/// A body in an ambient context.
+	ImplementationInAmbient,
+	/// A value in an ambient context.
+	InitializerInAmbient,
+	/// An ambient `const` with a value other than a literal or enum member.
+	AmbientConstInitializer,
+	/// `export declare` followed by other than a declaration.
+	ExportDeclareWithoutDeclaration,
+	/// `interface` followed by other than a name.
+	InterfaceWithoutName,
+	/// A type declared again; `args` names it.
+	TypeRedeclaration,
+	/// `import type` on an import alias.
+	ImportTypeAlias,
+	/// A type import of other than a string.
+	TypeImportArgument,
+	/// `import type` with both a default and named imports.
+	TypeImportDefaultAndNamed,
+	/// `type` on a name of an `import type` or `export type`.
+	TypeModifierInTypeImport,
+	/// A type annotation where none can be.
+	UnexpectedTypeAnnotation,
+	/// A type annotation after a default value.
+	TypeAnnotationAfterDefault,
+	/// `<>` with no type arguments.
+	EmptyTypeArguments,
+	/// `<>` with no type parameters.
+	EmptyTypeParameters,
+	/// A list that cannot be empty; `args` names it.
+	EmptyList,
+	/// A modifier on a type member; `args` names it.
+	TypeMemberModifier,
+	/// A modifier on a type parameter where it cannot be; `args` names it.
+	TypeParameterModifier,
+	/// `const` as a type.
+	InvalidConst,
+	/// A tuple label that is not a plain name.
+	TupleLabel,
+	/// An optional pattern parameter in an implementation.
+	OptionalPatternParameter,
+	/// A parameter property declared with a pattern.
+	ParameterPropertyPattern,
+	/// A default value on a parameter of a signature.
+	SignatureParameterDefault,
+	/// A `!` definite assignment on a declaration with a value.
+	DefiniteWithInitializer,
+	/// A generator in an ambient context.
+	GeneratorInAmbient,
+	/// An overload signature marked as a generator.
+	GeneratorSignature,
+	/// `declare` inside an ambient context.
+	DeclareInAmbient,
+	/// A statement in an ambient context.
+	StatementInAmbient,
+	/// A `using` declaration in an ambient context; `args` names the declaration.
+	UsingInAmbient,
+	/// An offset or option the request cannot take; `args` says which, no `line` or `column`.
+	InvalidRequest,
+	/// A property access right after an instantiation expression.
+	PropertyAfterInstantiation,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SyntaxError {
 	pub code: Code,
-	/// Strings of the parse that recorded the error, filling the message's `{}` in order.
+	/// What the code is about, as strings of the parse that recorded the error: a name, a token.
 	pub args: [Option<StrId>; 2],
 	/// Byte offset of the error, and of the end of the offending token when there is one.
 	pub pos: u32,
@@ -270,13 +407,29 @@ impl SyntaxError {
 		self
 	}
 
-	pub fn message(&self, strings: &Interner) -> String {
-		let mut args = self.args.iter().flatten().map(|&arg| strings.get(arg));
-		let mut parts = self.code.message().split("{}");
-		let mut out = String::from(parts.next().unwrap());
-		for part in parts {
-			out.push_str(args.next().unwrap_or("{}"));
-			out.push_str(part);
+	/// The code and its arguments as the package's `message` spells them: `expected '}'`.
+	#[cfg(test)]
+	pub(crate) fn describe(&self, strings: &crate::interner::Interner) -> String {
+		let mut out = self.code.name();
+		for &arg in self.args.iter().flatten() {
+			out.push_str(" '");
+			out.push_str(strings.get(arg));
+			out.push('\'');
+		}
+		out
+	}
+}
+
+#[cfg(test)]
+impl Code {
+	/// The name the JavaScript side gives this byte: the variant in snake case, `unexpected_eof`.
+	pub(crate) fn name(self) -> String {
+		let mut out = String::new();
+		for c in format!("{self:?}").chars() {
+			if c.is_ascii_uppercase() && !out.is_empty() {
+				out.push('_');
+			}
+			out.push(c.to_ascii_lowercase());
 		}
 		out
 	}
@@ -286,18 +439,16 @@ impl SyntaxError {
 mod tests {
 	use super::Code;
 
-	// the JavaScript side names every code by hand in its `Code` type; a code added, renamed or
-	// dropped here fails until types.ts says the same
+	// the JavaScript side names every code by hand, in this order; a code added, renamed, moved
+	// or dropped here fails until types.ts says the same
 	#[test]
 	fn types_ts_names_every_code() {
 		let ts = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../npm/src/types.ts")).unwrap();
-		let mut names: Vec<&str> = Code::ALL.iter().map(|code| code.name()).collect();
-		names.dedup();
-		let union: String = names.iter().map(|name| format!("\n\t| '{name}'")).collect();
-		let union = format!("export type Code ={union};\n");
+		let list: String = Code::ALL.iter().map(|code| format!("\n\t'{}',", code.name())).collect();
+		let list = format!("export const CODES = [{list}\n] as const;\n");
 		assert!(
-			ts.contains(&union),
-			"npm/src/types.ts `Code` disagrees with error.rs; it reads\n{union}"
+			ts.contains(&list),
+			"npm/src/types.ts `CODES` disagrees with error.rs; it reads\n{list}"
 		);
 	}
 }

@@ -1,12 +1,14 @@
 {
-	"error": {
-		"code": "const_assertion_target",
-		"message": "A 'const' assertion can only be applied to references to enum members, or string, number, boolean, array, or object literals",
-		"pos": 8,
-		"end": 8,
-		"loc": {
+	"node": null,
+	"end": 8,
+	"errors": [
+		{
+			"code": 139,
+			"args": [],
+			"pos": 8,
+			"end": 8,
 			"line": 1,
 			"column": 8
 		}
-	}
+	]
 }

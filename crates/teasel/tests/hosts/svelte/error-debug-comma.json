@@ -1,12 +1,16 @@
 {
-	"error": {
-		"code": "expected",
-		"message": "Expected an identifier",
-		"pos": 34,
-		"end": 34,
-		"loc": {
+	"node": null,
+	"end": 34,
+	"errors": [
+		{
+			"code": 1,
+			"args": [
+				"an identifier"
+			],
+			"pos": 34,
+			"end": 34,
 			"line": 2,
 			"column": 10
 		}
-	}
+	]
 }

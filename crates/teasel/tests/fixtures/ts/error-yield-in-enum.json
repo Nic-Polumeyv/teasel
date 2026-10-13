@@ -1,12 +1,16 @@
 {
-	"error": {
-		"code": "reserved_word",
-		"message": "The keyword 'yield' is reserved",
-		"pos": 29,
-		"end": 29,
-		"loc": {
+	"node": null,
+	"end": 29,
+	"errors": [
+		{
+			"code": 10,
+			"args": [
+				"yield"
+			],
+			"pos": 29,
+			"end": 29,
 			"line": 1,
 			"column": 29
 		}
-	}
+	]
 }

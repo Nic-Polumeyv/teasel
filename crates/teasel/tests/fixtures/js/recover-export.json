@@ -69,24 +69,20 @@
 	"comments": [],
 	"errors": [
 		{
-			"code": "unexpected_token",
-			"message": "Unexpected token",
+			"code": 0,
+			"args": [],
 			"pos": 21,
 			"end": 22,
-			"loc": {
-				"line": 2,
-				"column": 14
-			}
+			"line": 2,
+			"column": 14
 		},
 		{
-			"code": "unexpected_token",
-			"message": "Unexpected token",
+			"code": 0,
+			"args": [],
 			"pos": 23,
 			"end": 24,
-			"loc": {
-				"line": 2,
-				"column": 16
-			}
+			"line": 2,
+			"column": 16
 		}
 	],
 	"scopes": [

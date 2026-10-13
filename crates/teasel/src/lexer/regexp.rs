@@ -10,7 +10,7 @@ type Result<T> = std::result::Result<T, Rejected>;
 
 pub(super) enum Rejected {
 	Flag(Code),
-	/// The reason `Code::InvalidRegexp`'s message gives after the pattern.
+	/// The reason, `Code::InvalidRegexp`'s second argument after the pattern.
 	Pattern(&'static str),
 }
 

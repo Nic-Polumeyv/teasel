@@ -1,12 +1,14 @@
 {
-	"error": {
-		"code": "yield_in_default_value",
-		"message": "Yield expression cannot be a default value",
-		"pos": 16,
-		"end": 16,
-		"loc": {
+	"node": null,
+	"end": 16,
+	"errors": [
+		{
+			"code": 69,
+			"args": [],
+			"pos": 16,
+			"end": 16,
 			"line": 1,
 			"column": 16
 		}
-	}
+	]
 }
