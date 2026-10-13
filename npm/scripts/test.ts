@@ -404,18 +404,25 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 	if (process.env.UPDATE) writeFileSync(pin, definition.wire);
 	else assert.ok(readFileSync(pin).equals(definition.wire), `${name} ${host}/host.wire changed; run with UPDATE=1 once the change is meant`);
 }
-// every node's parent is the node it sits in, objects without a type passed through
+// every node's parent is the node it sits in, objects without a type passed through; a list born at its size has no holes
 {
 	const wrong: string[] = [];
 	const walk = (holder: Any, value: Any) => {
 		if (value === null || typeof value !== 'object') return;
-		if (Array.isArray(value)) return value.forEach((item) => walk(holder, item));
+		if (Array.isArray(value)) {
+			for (let i = 0; i < value.length; i++) {
+				if (!Object.hasOwn(value, i)) wrong.push(`hole at ${i}`);
+				walk(holder, value[i]);
+			}
+			return;
+		}
 		const node = typeof value.type === 'string';
 		if (node && parentOf(value) !== holder) wrong.push(`${value.type} at ${value.start}`);
 		for (const key of Object.keys(value)) walk(node ? value : holder, value[key]);
 	};
 	const decoder = readFileSync(new URL('../src/decode.ts', import.meta.url), 'utf8');
 	for (const typescript of [true, 'erase'] as const) walk(undefined, open(decoder, { sourceType: 'module', typescript, comments: true, scopes: true }).parse().node);
+	walk(undefined, open('[1, , 3]; function f(this: T, a: number, b?: string) {} /* c */ // d', { typescript: 'erase', comments: true }).parse().node);
 	for (const [host, grammar] of [['svelte', svelte], ['vue', vue]] as const) {
 		const dir = new URL(`../../crates/teasel/tests/hosts/${host}/`, import.meta.url);
 		for (const file of readdirSync(dir).filter((f) => !/\.(json|wire)$/.test(f))) {
@@ -635,6 +642,9 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 		repeat([item, index, 'in', list, key]),
 		repeat([item, index, 'in', list, key], [{ marker: ['{{', ':empty'], form: ['}}', { fallback: g.optional(g.content) }] }]),
 	];
+	// a construct's second text is its own slice: only Text's `data` beside its `raw` shares a span
+	const pair = g.grammar('pair', { ...html, constructs: { Pair: { in: ['content'], open: { marker: ['{%'], form: [{ left: g.js.text }, '|', { right: g.js.text }, '%}'] } } } });
+	assert.deepEqual(open('<a>{% alpha | beta %}{%x|x%}</a>').parse(pair).node.children[0].children.map(({ left, right }: Any) => [left, right]), [['alpha', 'beta'], ['x', 'x']]);
 	// an identifier that refers to a binding declared elsewhere carries where that declaration is
 	const shape = (value: Any): Any => {
 		if (Array.isArray(value)) return value.map(shape);
