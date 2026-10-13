@@ -1,5 +1,17 @@
 # @teasel/parser
 
+## 0.0.21
+
+### Patch Changes
+
+- [#215](https://github.com/Nic-Polumeyv/teasel/pull/215) [`bec8f9f`](https://github.com/Nic-Polumeyv/teasel/commit/bec8f9f38265aaf133b8011eca4fed69a783018f) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - Errors carry `args`, `line` and `column`; `message` is the code and its arguments, `expected '}'`
+
+- [#216](https://github.com/Nic-Polumeyv/teasel/pull/216) [`1930058`](https://github.com/Nic-Polumeyv/teasel/commit/1930058558ee30b177d0b78378fc94f45f1c76a5) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - node lists are allocated at their size, so a decoded tree holds about a tenth less memory
+
+- [#214](https://github.com/Nic-Polumeyv/teasel/pull/214) [`c2409d0`](https://github.com/Nic-Polumeyv/teasel/commit/c2409d0f5f1c9ebf48c08ac5b83d87bbe3fe5a09) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - `Piece<T>` is checked: a piece of one type no longer passes for another
+
+- [#213](https://github.com/Nic-Polumeyv/teasel/pull/213) [`c5c5da6`](https://github.com/Nic-Polumeyv/teasel/commit/c5c5da69d4951b111976cdd3054914ef865b56da) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - WebAssembly stands in where the native build is missing or fails to load, and `require()` works
+
 ## 0.0.20
 
 ### Patch Changes
