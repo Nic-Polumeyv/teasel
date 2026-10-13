@@ -8,126 +8,24 @@
 
 <br>
 
+```bash
+npm install @teasel/parser
+```
+
 ```js
 import { Source, js } from '@teasel/parser';
 
 const source = new Source(text, { typescript: true, scopes: true });
-const { node } = source.parse();
+const { node } = source.parse();            // the whole source, as an ESTree Program
+const { node: expression } = source.parse(js.expression, 7);   // the expression at offset 7
 ```
 
-Every parse is `source.parse(read, at)`: what to read, and where. Every answer is `{ node, end }` and what the options add. A source is disposable: `using source = new Source(text)` releases what the engine holds for it at the end of the block, and the collector does otherwise.
-
-```
-source.parse()                              Program, the whole source
-source.parse(js.expression, 7)              the expression that starts at 7
-source.parse(js.pattern, 7)                 an assignment target: a name or a destructuring
-source.parse(js.params, 7)                  the patterns of a (a, b = 1)
-source.parse(js.statement, 7)               one statement
-source.parse(js.typeParameters, 7)          a <T extends U>
-source.parse(css)                           the whole source as a CSS stylesheet
-source.parse(js, [12, 40])                  the program inside 12..40, positions of the whole
-```
-
-## Inside a larger syntax
-
-A host that embeds JavaScript in its own reads one piece at a time, from an offset, and gets back where its own syntax resumes.
-
-```
-{{ items as item, index }}
-   ▲    ▲
-   3    8
-```
-
-```js
-const { node, end } = source.parse(js.expression.until('as', ','), 3);
-// node  Identifier items
-// end   8
-```
-
-`until` lists the host's own tokens; a piece is built once and used at any position of any source. One read outside every bracket the parse opened, where the expression could end, ends the parse: `,` does not start a sequence, `/>` is not a division. A `then` after `.` is a property name. A TypeScript `as` is the host's unless another `as` follows the assertion, so `xs as T[] as item` ends after the type.
-
-## What the options add
-
-| option | on the tree | on the answer |
-| --- | --- | --- |
-| `locations` | `loc` with line and column on every node | |
-| `comments` | `leadingComments`, `trailingComments`, `innerComments` | `comments`, every comment read |
-| `scopes` | | `scopes`, `bindings`, `references`, and the four questions below |
-| `parenthesized` | `parenthesized: true` on a node the source wraps in parens | |
-| `errorRecovery` | an `Identifier` named `''` of no width where something is missing | `errors`, instead of a throw |
-| `typescript` | TypeScript nodes | |
-| `typescript: 'erase'` | JavaScript, the types gone | `typescript`, what could not be erased: enums, namespaces with values, parameter properties, `export =`, `import =`, decorators, accessor fields |
-| `sourceType: 'module'` | strict code, `import`, `export`, top-level `await` | |
-
-A key is on the answer exactly when its option is on. `allowReturnOutsideFunction`, `allowAwaitOutsideFunction`, `allowSuperOutsideMethod` and `allowUndeclaredExports` loosen the early errors as their names say.
-
-## Scopes
-
-The tree stays plain ESTree. The facts hang beside it, reached from a node.
-
-```js
-import { Source, scopeOf, referenceOf, parentOf } from '@teasel/parser';
-
-const { node } = new Source('let x = 1; function f(y) { x = y; }', { scopes: true }).parse();
-const [declaration, fn] = node.body;
-const assignment = fn.body.body[0].expression;
-
-referenceOf(declaration.declarations[0].id) // the binding: { name: 'x', kind: 'let', declares: true, write: true, scope, node, declaration, … }
-referenceOf(assignment.left)                // { declares: false, write: true, read: false, mutate: false, binding, scope, node, writeExpr }
-scopeOf(fn)                                 // { kind: 'function', parent, node, topLevelAwait: false }
-parentOf(assignment.left)                   // the assignment
-```
-
-```
-Program ──────────────────── scope: module
-├─ let x = 1                  x  binding  let
-└─ function f(y) {            scope: function
-   │                          y  binding  param
-   └─ x = y                   x  reference  write     y  reference  read
-```
-
-A reference to a name no scope declares has `binding: null`. A copy of a node carries no facts.
-
-## Errors
-
-```js
-try {
-	new Source('x = ;').parse();
-} catch (e) {
-	e.code;    // 'unexpected_token'
-	e.pos;     // 4
-	e.end;     // 5
-	e.line;    // 1
-	e.column;  // 4
-	e.args;    // []
-	e.message; // 'unexpected_token'
-}
-```
-
-With `errorRecovery`, the parse comes back and the errors come with it.
-
-```
-{ f(a, }
-       ▲
-       errors  [{ code: 'unexpected_token', pos: 7, end: 8, line, column }]
-       node    a Program holding an empty block: the statement that broke is skipped
-       end     8
-```
-
-## A whole document
-
-A template language can hand over its syntax as a grammar and get the whole document back: the host's nodes around the JavaScript ones, in one tree, scopes across both.
-
-```js
-const { node, roots } = new Source(text, { scopes: true }).parse(grammar);
-```
-
-A grammar is a definition made with `@teasel/parser/grammar`, documented at [teasel.dev/parsing-with-a-grammar](https://teasel.dev/parsing-with-a-grammar); the tree a parse answers with is typed from it. Two whole grammars live under `npm/scripts/hosts`.
+The tree is plain ESTree. The options add to the answer: [what parse returns](https://teasel.dev/what-parse-returns) lists them. The scopes, bindings and references hang beside the tree, reached from a node: [scopes](https://teasel.dev/scopes). A parse of one piece stops at the host's own tokens, so a template language reads the JavaScript inside its syntax: [embedded JavaScript](https://teasel.dev/embedded-javascript). A template language can also hand over its whole syntax as a grammar and get the whole document back as one tree: [parsing with a grammar](https://teasel.dev/parsing-with-a-grammar). Everything else is at [teasel.dev](https://teasel.dev).
 
 ## Rust and the command line
 
 ```rust
-let (ast, roots, end) = teasel::parse_at(source, 0, None, Entry::Program, options, "")?;
+let (ast, parsed) = teasel::parse_at(source, 0, None, Entry::Program, Options::default(), "");
 ```
 
 ```
