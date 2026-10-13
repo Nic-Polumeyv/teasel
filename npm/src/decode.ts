@@ -9,8 +9,6 @@ import { SLOT, type Options } from './options.ts';
 export const SCOPE = Symbol('scope');
 export const REFERENCE = Symbol('reference');
 export const PARENT = Symbol('parent');
-/** What the engine holds for a grammar, on the grammar. Here and not in `grammar.ts`, so the entry reads the key without loading the builders and the encoder. */
-export const PLAN = Symbol('plan');
 
 /** A decoded object: the tree decides its shape, `types.ts` describes it. */
 type Decoded = Record<string | symbol, any>;

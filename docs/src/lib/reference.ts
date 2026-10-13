@@ -25,7 +25,7 @@ const body = (text: string) => {
 // the slot that types a piece's answer is no part of the surface
 const item = (text: string, statement: Declaration) => {
 	const doc = statement.leadingComments?.at(-1);
-	return `## ${name(statement)}\n\n${doc ? prose(doc.value) + '\n\n' : ''}\`\`\`ts\n${text.slice(statement.start, statement.end).replace(/\n[^\n]*\[answers\][^\n]*/g, '')}\n\`\`\``;
+	return `## ${name(statement)}\n\n${doc ? prose(doc.value) + '\n\n' : ''}\`\`\`ts\n${text.slice(statement.start, statement.end).replace(/\n[^\n]*\[(?:answers|PLAN)\][^\n]*/g, '')}\n\`\`\``;
 };
 
 // the entry declares the surface, and names what it takes from options.ts and types.ts
@@ -46,7 +46,7 @@ function builders() {
 function crossing() {
 	const declared = (statement: Declaration) => (statement.type === 'ExportNamedDeclaration' ? statement : ({ ...statement, type: 'ExportNamedDeclaration', declaration: statement } as Declaration));
 	const markdown = body(wire).map(declared).filter(exported).map((statement) => item(wire, statement)).join('\n\n');
-	return { meta: { href: '/reference/wire', title: 'Grammar wire', section: 'Reference', path: 'npm/src/wire.ts' }, markdown: `What a grammar's \`wire\` holds and the Rust crate's \`parse_document\` and the command line's \`--host\` read: the definition as words in the order these types declare them, then a pool of strings, as \`Writer\` lays them out.\n\n${markdown}` };
+	return { meta: { href: '/reference/wire', title: 'Grammar wire', section: 'Reference', path: 'npm/src/wire.ts' }, markdown: `What the Rust crate's \`parse_document\` and the command line's \`--host\` read, as \`wire\` in \`npm/src/wire.ts\` writes a definition: the definition as words in the order these types declare them, then a pool of strings, as \`Writer\` lays them out.\n\n${markdown}` };
 }
 
 // the engine's enum: each code's doc comment says what it means, its name is the variant's in snake case

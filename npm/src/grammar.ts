@@ -1,8 +1,7 @@
 import type { Expression, Identifier, Pattern, Program, Statement, VariableDeclaration } from 'estree';
-import type { Comment, HostNode, Language, Span } from './types.ts';
+import { PLAN, type Comment, type HostNode, type Language, type Span } from './types.ts';
 import { engine } from '#engine';
 import { children as builtin, frozen } from './children.ts';
-import { PLAN } from './decode.ts';
 import { wire as encode } from './wire.ts';
 
 declare const out: unique symbol;

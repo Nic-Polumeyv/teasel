@@ -512,6 +512,28 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 	assert.deepEqual(open(sheets, { errorRecovery: true }).parse(svelte).errors.map((e: Any) => e.code), ['expected', 'unexpected_close']);
 }
 
+// a grammar made before the engine started over parses after it: the fresh instance reads its plan again
+if (name !== 'native') {
+	let restarted = false;
+	// a RangeError inside the engine is taken for a wasm stack overflow: exhaust the stack, then parse on the way back up
+	(function deep() {
+		try {
+			deep();
+		} catch {
+			if (!restarted) {
+				try {
+					open('<a>{x}</a>').parse(svelte);
+				} catch (e: Any) {
+					restarted = /started over/.test(e.message);
+				}
+			}
+		}
+	})();
+	assert.ok(restarted, `${name} the engine started over`);
+	assert.equal(open('<a>{x}</a>').parse(svelte).node.fragment.nodes[0].name, 'a');
+	assert.equal(open('a { b: c }').parse(css).node.children[0].type, 'Rule');
+}
+
 // the tests read the source; the published build must answer the same once its specifiers are rewritten
 {
 	const built = await import('../dist/index.js');

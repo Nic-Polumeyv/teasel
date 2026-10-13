@@ -142,6 +142,8 @@ export interface Recovered {
 }
 
 export declare const answers: unique symbol;
+/** What the engine holds for a grammar, on the grammar. Here and not in `grammar.ts`, so the entry reads the key without loading the builders and the encoder. */
+export const PLAN = Symbol('plan');
 /** What a parse reads as a whole and up to the end it is given: JavaScript, or a host language by its grammar. `T` is what its parse answers with. */
 export interface Language<T> {
 	readonly [answers]?: T;
