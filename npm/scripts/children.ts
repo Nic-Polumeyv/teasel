@@ -3,7 +3,7 @@ import { writeFileSync } from 'node:fs';
 import { field as find, type Field, type Kind, type Layout, type RawOp as Op, type RawRecipes as Recipes } from '../src/decode.ts';
 
 /** From the layout the engine hands over: each type with the keys that hold nodes or lists of nodes, and the keys TypeScript may add to any node. */
-export function generate(layout: Layout): { children: Record<string, string[]>; extras: string[] } {
+export function generate(layout: Layout): { children: Record<string, string[]>; extras: string[]; stylesheet: Record<string, string[]> } {
 	// the keys whose value is a node or a list of nodes, and the types the recipe spells: one, or one per name of an enum field
 	const keys = (ops: Op[], fields: Field[]) => {
 		const out: string[] = [];
@@ -31,16 +31,16 @@ export function generate(layout: Layout): { children: Record<string, string[]>; 
 	kinds(layout.recipes.js, layout.kinds);
 	if (layout.ts !== undefined) kinds(layout.recipes.ts!, layout.ts.kinds);
 	const extras = layout.extras === undefined ? [] : keys(layout.recipes.extras!.find(([name]) => name === 'extras')![1], layout.extras.fields).out;
-	return { children, extras };
+	return { children, extras, stylesheet: layout.stylesheet };
 }
 
 if (import.meta.main) {
 	const { engine } = await import('../dist/engine/node.js');
-	const { children, extras } = generate(JSON.parse(engine.layout()));
-	const lines = Object.entries(children).map(([type, fields]) => `\t${type}: [${fields.map((f) => `'${f}'`).join(', ')}],`);
+	const { children, extras, stylesheet } = generate(JSON.parse(engine.layout()));
+	const lines = (table: Record<string, string[]>) => Object.entries(table).map(([type, fields]) => `\t${type}: [${fields.map((f) => `'${f}'`).join(', ')}],`).join('\n');
 	writeFileSync(
 		new URL('../src/children.ts', import.meta.url),
-		`// written by scripts/children.ts from the engine's layout\n/** For every type of node a built-in plan answers with, the fields that hold a node or a list of nodes: what a walk follows. A document plan's \`children\` adds the host's. */\nexport const children = frozen({\n${lines.join('\n')}\n});\n\n/** The fields TypeScript may add to a node of any type, holding nodes: annotations, type parameters and arguments, what a class implements, decorators. */\nexport const extras = Object.freeze([${extras.map((f) => `'${f}'`).join(', ')}]);\n\nexport function frozen(table: Readonly<Record<string, readonly string[]>>) {\n\tfor (const fields of Object.values(table)) Object.freeze(fields);\n\treturn Object.freeze(table);\n}\n`,
+		`// written by scripts/children.ts from the engine's layout\n/** For every type of node a built-in plan answers with, the fields that hold a node or a list of nodes: what a walk follows. A document plan's \`children\` adds the host's. */\nexport const children = frozen({\n${lines(children)}\n});\n\n/** For every type of node a stylesheet holds, the fields that hold a node or a list of nodes. */\nexport const stylesheet = frozen({\n${lines(stylesheet)}\n});\n\n/** The fields TypeScript may add to a node of any type, holding nodes: annotations, type parameters and arguments, what a class implements, decorators. */\nexport const extras = Object.freeze([${extras.map((f) => `'${f}'`).join(', ')}]);\n\nexport function frozen(table: Readonly<Record<string, readonly string[]>>) {\n\tfor (const fields of Object.values(table)) Object.freeze(fields);\n\treturn Object.freeze(table);\n}\n`,
 	);
-	console.log(`${Object.keys(children).length} types, ${extras.length} extras`);
+	console.log(`${Object.keys(children).length} types, ${Object.keys(stylesheet).length} stylesheet types, ${extras.length} extras`);
 }

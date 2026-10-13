@@ -6,6 +6,7 @@ import { setFlagsFromString } from 'node:v8';
 import { runInNewContext } from 'node:vm';
 import type { Expression, Identifier, Pattern, Program } from 'estree';
 import type { Construct, Directive, Infer, NodeType } from '../src/grammar.ts';
+import { wire as encode } from '../src/wire.ts';
 import type * as api from '../src/index.ts';
 import type { Options } from '../src/index.ts';
 if (process.argv.includes('interpret')) globalThis.Function = (() => { throw new EvalError('blocked'); }) as unknown as FunctionConstructor;
@@ -401,8 +402,9 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 // the grammar the Rust tests read is the typed definition on its wire, pinned beside its documents
 for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 	const pin = new URL(`../../crates/teasel/tests/hosts/${host}/host.wire`, import.meta.url);
-	if (process.env.UPDATE) writeFileSync(pin, definition.wire);
-	else assert.ok(readFileSync(pin).equals(definition.wire), `${name} ${host}/host.wire changed; run with UPDATE=1 once the change is meant`);
+	const wire = encode({ name: host, definition: definition.definition });
+	if (process.env.UPDATE) writeFileSync(pin, wire);
+	else assert.ok(readFileSync(pin).equals(wire), `${name} ${host}/host.wire changed; run with UPDATE=1 once the change is meant`);
 }
 // every node's parent is the node it sits in, objects without a type passed through; a list born at its size has no holes
 {
@@ -510,6 +512,28 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 	assert.deepEqual(open(sheets, { errorRecovery: true }).parse(svelte).errors.map((e: Any) => e.code), ['expected', 'unexpected_close']);
 }
 
+// a grammar made before the engine started over parses after it: the fresh instance reads its plan again
+if (name !== 'native') {
+	let restarted = false;
+	// a RangeError inside the engine is taken for a wasm stack overflow: exhaust the stack, then parse on the way back up
+	(function deep() {
+		try {
+			deep();
+		} catch {
+			if (!restarted) {
+				try {
+					open('<a>{x}</a>').parse(svelte);
+				} catch (e: Any) {
+					restarted = /started over/.test(e.message);
+				}
+			}
+		}
+	})();
+	assert.ok(restarted, `${name} the engine started over`);
+	assert.equal(open('<a>{x}</a>').parse(svelte).node.fragment.nodes[0].name, 'a');
+	assert.equal(open('a { b: c }').parse(css).node.children[0].type, 'Rule');
+}
+
 // the tests read the source; the published build must answer the same once its specifiers are rewritten
 {
 	const built = await import('../dist/index.js');
@@ -524,6 +548,7 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 	const made = generate(JSON.parse(engine.layout()));
 	assert.deepEqual(JSON.parse(JSON.stringify(js.children)), made.children, 'run node scripts/children.ts');
 	assert.deepEqual([...js.extras], made.extras, 'run node scripts/children.ts');
+	assert.deepEqual(JSON.parse(JSON.stringify(css.children)), made.stylesheet, 'run node scripts/children.ts');
 }
 
 // what children names is what the answers hold: over every fixture, a key whose value is a node or a
@@ -599,7 +624,9 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 	assert.equal(svelte.children, svelte.children, 'a grammar keeps its table');
 	assert.ok('Rule' in svelte.children && 'Identifier' in svelte.children && 'EachBlock' in svelte.children);
 	assert.ok(!('Host' in js.children) && !('Extension' in js.children));
-	assert.ok(Object.isFrozen(svelte.children.Program) && Object.isFrozen(css.children.Rule) && !Object.keys(svelte).includes('children'));
+	assert.ok(Object.isFrozen(svelte.children.Program) && Object.isFrozen(css.children.Rule));
+	// a grammar is plain data: no getter the engine answers, nothing of its wire kept on it
+	assert.ok(Object.getOwnPropertyDescriptor(svelte, 'children')!.get === undefined && !('wire' in svelte));
 	assert.deepEqual([css.children.StyleSheet, svelte.children.StyleSheet], [['children', 'comments'], ['attributes', 'children', 'comments']]);
 	const cut = open('<script lang="ts"></script>{#snippet x<T,}{/snippet}', { errorRecovery: true }).parse(svelte).node.fragment.nodes[0];
 	assert.equal(cut.typeParams, 'T,');
@@ -645,6 +672,8 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 	// a construct's second text is its own slice: only Text's `data` beside its `raw` shares a span
 	const pair = g.grammar('pair', { ...html, constructs: { Pair: { in: ['content'], open: { marker: ['{%'], form: [{ left: g.js.text }, '|', { right: g.js.text }, '%}'] } } } });
 	assert.deepEqual(open('<a>{% alpha | beta %}{%x|x%}</a>').parse(pair).node.children[0].children.map(({ left, right }: Any) => [left, right]), [['alpha', 'beta'], ['x', 'x']]);
+	// what the engine cannot parse with is refused by `grammar` itself, naming the rule
+	assert.throws(() => g.grammar('twice', { ...html, constructs: { Pair: { in: ['content'], open: { marker: ['{%'], form: [{ left: g.js.text }, '|', { left: g.js.text }, '%}'] } } } }), /Pair reads left twice/);
 	// an identifier that refers to a binding declared elsewhere carries where that declaration is
 	const shape = (value: Any): Any => {
 		if (Array.isArray(value)) return value.map(shape);
@@ -671,7 +700,7 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 	const whole = readFileSync(new URL('../../docs/content/03-examples/tpl.js', import.meta.url), 'utf8');
 	const builders = JSON.stringify(new URL('../dist/grammar.js', import.meta.url).href);
 	const written = await import(`data:text/javascript,${encodeURIComponent(whole.replace("'@teasel/parser/grammar'", builders))}`);
-	assert.deepEqual(written.tpl.wire, g.grammar('tpl', steps.at(-1)).wire, `${name} docs/content/03-examples/tpl.js is the last step's grammar`);
+	assert.deepEqual(written.tpl.definition, steps.at(-1), `${name} docs/content/03-examples/tpl.js is the last step's grammar`);
 }
 
 // tsc checks what the types promise here and node never calls it, since the refused definitions throw at runtime

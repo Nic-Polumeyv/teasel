@@ -1,8 +1,7 @@
 import type { Expression, Identifier, Pattern, Program, Statement, VariableDeclaration } from 'estree';
-import type { Comment, HostNode, Language, Span } from './types.ts';
+import { PLAN, type Comment, type HostNode, type Language, type Span } from './types.ts';
 import { engine } from '#engine';
 import { children as builtin, frozen } from './children.ts';
-import { compiled } from './held.ts';
 import { wire as encode } from './wire.ts';
 
 declare const out: unique symbol;
@@ -279,16 +278,12 @@ export interface Definition {
 export interface Grammar<D extends Definition = Definition> extends Language<NodeOf<D['document'], D>> {
 	readonly host: string;
 	readonly definition: D;
-	/** What the engine reads: the definition on its wire, written once when the grammar was made. */
-	readonly wire: Uint8Array;
+	readonly [PLAN]: object;
 }
+// one literal, so every grammar has the shape of the first: a getter added after would make the rest dictionaries
 export const grammar = <const D extends Definition>(host: string, definition: D): Grammar<D> => {
-	let children: Grammar['children'] | undefined;
-	const made = { host, definition, wire: encode({ name: host, definition }) } as Grammar<D>;
-	// the getter stays out of enumeration, so a spread or a deep compare of a grammar never has the engine read it
-	return Object.defineProperty(made, 'children', {
-		get: () => (children ??= frozen({ ...builtin, ...JSON.parse(engine.children(compiled(made))) })),
-	});
+	const plan = engine.plan(encode({ name: host, definition }));
+	return { host, definition, children: frozen({ ...builtin, ...JSON.parse(engine.children(plan)) }), [PLAN]: plan };
 };
 
 // ── inference

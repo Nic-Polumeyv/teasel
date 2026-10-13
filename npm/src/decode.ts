@@ -47,6 +47,8 @@ export interface Layout {
 	rows: Record<string, { size: number; fields: Field[] }>;
 	none: Missing;
 	views: { js: string[]; ts?: string[] };
+	/** Each type of node a stylesheet holds with the fields that hold nodes. */
+	stylesheet: Record<string, string[]>;
 	recipes: { js: RawRecipes; rows: RawRecipes; ts?: RawRecipes; adds?: RawRecipes; extras?: RawRecipes };
 }
 

@@ -34,7 +34,7 @@ export const grammar = g.grammar('mini', {
 });
 ```
 
-`parse` takes the grammar and reads a document of it. The engine reads a grammar on its first parse and keeps it while the grammar lives, so make it once, at module level, as `mini.js` does.
+`parse` takes the grammar and reads a document of it. The engine reads a grammar when `grammar` makes it, so make it once, at module level, as `mini.js` does.
 
 ```js document.js
 import { Source } from '@teasel/parser';
@@ -47,7 +47,7 @@ node.children.nodes[0].children.nodes[0];
 // ExpressionTag, its expression the Identifier greeting
 ```
 
-In TypeScript, and in JavaScript checked with JSDoc, the tree is typed from the definition: `node.children.nodes[0]` is an `Element`, an `IfBlock` or one of the others the grammar names, and `EachBlock`'s `item` is a `Pattern`. A field named `type`, or `bind` on a source that reads an expression, is a type error. A tag that reads content is a type error too, and what the engine could not parse with is refused when the grammar is first used, with a message naming the rule. A rule written apart from the grammar, to share it, keeps its types with `as const`.
+In TypeScript, and in JavaScript checked with JSDoc, the tree is typed from the definition: `node.children.nodes[0]` is an `Element`, an `IfBlock` or one of the others the grammar names, and `EachBlock`'s `item` is a `Pattern`. A field named `type`, or `bind` on a source that reads an expression, is a type error. A tag that reads content is a type error too, and what the engine could not parse with is refused by `grammar` itself, with a message naming the rule. A rule written apart from the grammar, to share it, keeps its types with `as const`.
 
 A grammar reads the whole source, so `parse` takes no position with one.
 

@@ -1,10 +1,10 @@
 import type { Comment, Expression, Node, Pattern, Program, Statement } from 'estree';
 import { decode, PARENT, REFERENCE, SCOPE } from './decode.ts';
-import { CODES, type answers, type Code, type HostNode, type Language, type Parsed, type Reference, type Scope } from './types.ts';
+import { CODES, PLAN, type answers, type Code, type HostNode, type Language, type Parsed, type Reference, type Scope } from './types.ts';
 import { flags, type Options } from './options.ts';
 import { engine } from '#engine';
-import { children, extras, frozen } from './children.ts';
-import { compiled } from './held.ts';
+import { children, extras, stylesheet } from './children.ts';
+import type { Grammar } from './grammar.ts';
 
 export type { Options } from './options.ts';
 export type { Arguments, Binding, Code, Comment, Declared, HostNode, Kept, Language, Parsed, Recovered, Reference, Root, Scope, Span } from './types.ts';
@@ -110,12 +110,7 @@ export const js: Language<Program> & {
 });
 
 /** CSS: a parse of it reads the whole source as a stylesheet, a `StyleSheet` of rules and at-rules with its comments listed. */
-export const css: Language<HostNode> = Object.freeze({
-	get children() {
-		return (sheet ??= frozen(JSON.parse(engine.children(undefined))));
-	},
-});
-let sheet: Language<unknown>['children'] | undefined;
+export const css: Language<HostNode> = Object.freeze({ children: stylesheet });
 
 /**
  * A source kept with its options. A parse of the whole source keeps nothing in the engine; the
@@ -140,16 +135,15 @@ export class Source {
 	 * stylesheet. A grammar from
 	 * `@teasel/parser/grammar` reads the whole source as a document of its host language: the
 	 * host's own nodes around the JavaScript ones, in one tree, in TypeScript when the grammar
-	 * says so of a script tag. The engine reads a grammar on its first parse and keeps it while
-	 * the grammar lives, so a grammar is made once.
+	 * says so of a script tag. The engine read the grammar when it was made.
 	 */
 	parse(): Parsed<Program>;
 	parse<T>(piece: Piece<T>, at?: number | [start: number, end: number]): Parsed<T>;
 	parse(language: typeof js, at?: number | [start: number, end: number]): Parsed<Program>;
 	parse<T>(what: Piece<T> | typeof js, at?: number | [start: number, end: number]): Parsed<T | Program>;
 	parse<T>(language: Language<T>): Parsed<T>;
-	parse(what: Piece<unknown> | Language<unknown> = js, at?: number | [number, number]) {
-		let entry = 0, stop = '', grammar: object | undefined, offset = 0, end: number | undefined;
+	parse(what: Piece<unknown> | Language<unknown> | Grammar = js, at?: number | [number, number]) {
+		let entry = 0, stop = '', plan: object | undefined, offset = 0, end: number | undefined;
 		if (what === js || what instanceof Piece) {
 			if (what instanceof Piece) ({ entry, stop } = read(what));
 			if (typeof at === 'number') offset = at;
@@ -157,15 +151,16 @@ export class Source {
 			else if (at !== undefined) throw new TypeError('at is an offset or [start, end]');
 		} else {
 			if (what === css) entry = 6;
-			else grammar = compiled(what);
+			else if (typeof what === 'object' && what !== null && PLAN in what) plan = what[PLAN];
+			else throw new TypeError('a parse takes `js`, one of its pieces, `css`, or a grammar made by this copy of @teasel/parser/grammar');
 			if (at !== undefined) throw new TypeError('only `js` and its pieces take a position');
 		}
 		const source = this.#source;
 		if (source === undefined) throw new TypeError('the source is freed');
 		const answer =
 			this.#held === undefined && at === undefined
-				? engine.once(source, this.#flags, entry, stop, grammar)
-				: engine.parse((this.#held ??= engine.create(source, this.#flags)), entry, offset, end, stop, grammar);
+				? engine.once(source, this.#flags, entry, stop, plan)
+				: engine.parse((this.#held ??= engine.create(source, this.#flags)), entry, offset, end, stop, plan);
 		if (typeof answer === 'string') {
 			// a request the engine refused: an offset or option it cannot take
 			const error = JSON.parse(answer).error;

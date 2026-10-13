@@ -144,6 +144,29 @@ export const children = frozen({
 	Decorator: ['expression'],
 });
 
+/** For every type of node a stylesheet holds, the fields that hold a node or a list of nodes. */
+export const stylesheet = frozen({
+	StyleSheet: ['children', 'comments'],
+	Atrule: ['block'],
+	Rule: ['prelude', 'block'],
+	SelectorList: ['children'],
+	ComplexSelector: ['children'],
+	RelativeSelector: ['combinator', 'selectors'],
+	TypeSelector: [],
+	IdSelector: [],
+	ClassSelector: [],
+	NestingSelector: [],
+	PseudoClassSelector: ['args'],
+	PseudoElementSelector: ['args'],
+	AttributeSelector: [],
+	Nth: [],
+	Percentage: [],
+	Combinator: [],
+	Block: ['children'],
+	Declaration: [],
+	CSSComment: [],
+});
+
 /** The fields TypeScript may add to a node of any type, holding nodes: annotations, type parameters and arguments, what a class implements, decorators. */
 export const extras = Object.freeze(['typeAnnotation', 'returnType', 'typeParameters', 'typeArguments', 'superTypeArguments', 'implements', 'decorators']);
 

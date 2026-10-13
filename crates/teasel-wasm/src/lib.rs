@@ -50,8 +50,7 @@ pub unsafe extern "C" fn plan_new(ptr: *mut u8, len: u32, capacity: u32) -> u32 
 
 #[unsafe(no_mangle)]
 pub extern "C" fn plan_children(handle: u32) {
-	let grammar = (handle != 0).then(|| unsafe { &**(handle as *const Rc<Grammar>) });
-	text(teasel::json::children(grammar));
+	text(teasel::json::children(unsafe { &*(handle as *const Rc<Grammar>) }));
 }
 #[unsafe(no_mangle)]
 pub extern "C" fn plan_free(handle: u32) {

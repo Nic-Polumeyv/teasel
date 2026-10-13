@@ -155,8 +155,7 @@ const engine: Engine = {
 			return handle;
 		}, plans),
 	children(plan) {
-		const handle = plan === undefined ? 0 : (plan as Held).handle();
-		guarded(() => wasm.plan_children(handle));
+		guarded(() => wasm.plan_children((plan as Held).handle()));
 		return text();
 	},
 	layout,
