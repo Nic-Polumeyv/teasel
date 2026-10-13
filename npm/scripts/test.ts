@@ -526,6 +526,7 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 	const made = generate(JSON.parse(engine.layout()));
 	assert.deepEqual(JSON.parse(JSON.stringify(js.children)), made.children, 'run node scripts/children.ts');
 	assert.deepEqual([...js.extras], made.extras, 'run node scripts/children.ts');
+	assert.deepEqual(JSON.parse(JSON.stringify(css.children)), made.stylesheet, 'run node scripts/children.ts');
 }
 
 // what children names is what the answers hold: over every fixture, a key whose value is a node or a
@@ -602,6 +603,8 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 	assert.ok('Rule' in svelte.children && 'Identifier' in svelte.children && 'EachBlock' in svelte.children);
 	assert.ok(!('Host' in js.children) && !('Extension' in js.children));
 	assert.ok(Object.isFrozen(svelte.children.Program) && Object.isFrozen(css.children.Rule));
+	// a grammar is plain data: no getter the engine answers, nothing of its wire kept on it
+	assert.ok(Object.getOwnPropertyDescriptor(svelte, 'children')!.get === undefined && !('wire' in svelte));
 	assert.deepEqual([css.children.StyleSheet, svelte.children.StyleSheet], [['children', 'comments'], ['attributes', 'children', 'comments']]);
 	const cut = open('<script lang="ts"></script>{#snippet x<T,}{/snippet}', { errorRecovery: true }).parse(svelte).node.fragment.nodes[0];
 	assert.equal(cut.typeParams, 'T,');
@@ -647,6 +650,8 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 	// a construct's second text is its own slice: only Text's `data` beside its `raw` shares a span
 	const pair = g.grammar('pair', { ...html, constructs: { Pair: { in: ['content'], open: { marker: ['{%'], form: [{ left: g.js.text }, '|', { right: g.js.text }, '%}'] } } } });
 	assert.deepEqual(open('<a>{% alpha | beta %}{%x|x%}</a>').parse(pair).node.children[0].children.map(({ left, right }: Any) => [left, right]), [['alpha', 'beta'], ['x', 'x']]);
+	// what the engine cannot parse with is refused by `grammar` itself, naming the rule
+	assert.throws(() => g.grammar('twice', { ...html, constructs: { Pair: { in: ['content'], open: { marker: ['{%'], form: [{ left: g.js.text }, '|', { left: g.js.text }, '%}'] } } } }), /Pair reads left twice/);
 	// an identifier that refers to a binding declared elsewhere carries where that declaration is
 	const shape = (value: Any): Any => {
 		if (Array.isArray(value)) return value.map(shape);

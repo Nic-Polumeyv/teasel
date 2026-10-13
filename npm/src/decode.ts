@@ -9,7 +9,7 @@ import { SLOT, type Options } from './options.ts';
 export const SCOPE = Symbol('scope');
 export const REFERENCE = Symbol('reference');
 export const PARENT = Symbol('parent');
-/** What the engine holds for a grammar, on the grammar. */
+/** What the engine holds for a grammar, on the grammar. Here and not in `grammar.ts`, so the entry reads the key without loading the builders and the encoder. */
 export const PLAN = Symbol('plan');
 
 /** A decoded object: the tree decides its shape, `types.ts` describes it. */
@@ -49,6 +49,8 @@ export interface Layout {
 	rows: Record<string, { size: number; fields: Field[] }>;
 	none: Missing;
 	views: { js: string[]; ts?: string[] };
+	/** Each type of node a stylesheet holds with the fields that hold nodes. */
+	stylesheet: Record<string, string[]>;
 	recipes: { js: RawRecipes; rows: RawRecipes; ts?: RawRecipes; adds?: RawRecipes; extras?: RawRecipes };
 }
 

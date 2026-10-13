@@ -231,6 +231,8 @@ pub fn layout_json() -> String {
 		names(&mut w, view_names::<crate::typescript::ast::Data>());
 	}
 	w.end();
+	w.key(key("stylesheet"));
+	children_table(&mut w, host::stylesheet_children());
 	w.key(key("recipes"));
 	w.object();
 	w.key(key("js"));
@@ -258,18 +260,22 @@ pub fn layout_json() -> String {
 }
 
 /// Every type of node a host's documents hold, each with the fields that hold nodes, as JSON; see
-/// `Grammar::children`. Without a grammar, a stylesheet's.
-pub fn children(grammar: Option<&Grammar>) -> String {
+/// `Grammar::children`.
+pub fn children(grammar: &Grammar) -> String {
 	let mut w = Json::default();
+	children_table(&mut w, grammar.children());
+	w.finish()
+}
+
+fn children_table(w: &mut Json, table: Vec<(&'static str, Vec<&'static str>)>) {
 	w.object();
-	for (ty, fields) in grammar.map_or_else(host::stylesheet_children, Grammar::children) {
+	for (ty, fields) in table {
 		w.key(crate::names::Name::dynamic(ty));
 		w.list();
 		fields.into_iter().for_each(|field| w.text(field));
 		w.end();
 	}
 	w.end();
-	w.finish()
 }
 
 /// `stop` lists the host's tokens for an entry at an offset; see `parser::parse_at`.

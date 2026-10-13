@@ -191,7 +191,10 @@ unsafe extern "C" fn plan(env: Env, info: CallbackInfo) -> Value {
 unsafe extern "C" fn children(env: Env, info: CallbackInfo) -> Value {
 	guard(env, || {
 		let [plan] = args::<1>(env, info)?;
-		text(env, &teasel::json::children(grammar_of(env, plan)?))
+		text(
+			env,
+			&teasel::json::children(grammar_of(env, plan)?.ok_or("a plan expected")?),
+		)
 	})
 }
 
