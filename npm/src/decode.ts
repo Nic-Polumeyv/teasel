@@ -93,8 +93,9 @@ interface Language {
 
 /** A node from its id, its TypeScript record when it has one, and the node it sits in. */
 type Builder = (S: State, id: number, record: number, parent: Decoded | undefined) => Decoded;
-/** A table's row from its record, `b` words into the view. */
-type Row = (S: State, view: Uint32Array, b: number) => Decoded;
+type Table = 'scopes' | 'bindings' | 'references' | 'roots';
+/** A table's row from its record, `b` words into the view, and the table it joins: a linked row reads the rows before it. */
+type Row = (S: State, view: Uint32Array, b: number, table: Decoded[]) => Decoded;
 /** A host's node from its fields, `from` on in the hosts' keys and values. */
 type HostBuilder = (S: State, id: number, index: number, from: number, parent: Decoded | undefined) => Decoded;
 interface Rows {
@@ -250,9 +251,9 @@ function compile(engine: Views): Compiled {
 
 function tables(C: Compiled): NonNullable<Compiled['rows']> {
 	const { layout } = C;
-	const rows = (name: string): Rows => {
+	const rows = (name: Table): Rows => {
 		const ops = resolve(layout.recipes.rows.find(([table]) => table === name)![1], layout.rows[name].fields);
-		return { plain: row(C, ops, undefined), linked: row(C, ops, LINKED[name]), words: layout.rows[name].size >> 2 };
+		return { plain: row(C, name, ops, undefined), linked: row(C, name, ops, LINKED[name]), words: layout.rows[name].size >> 2 };
 	};
 	return (C.rows = { scopes: rows('scopes'), bindings: rows('bindings'), references: rows('references'), roots: rows('roots') });
 }
@@ -385,8 +386,8 @@ function comment(S: State, index: number, parent: Decoded | undefined): Decoded 
 
 function run_of_comments(S: State, n: Decoded, key: string, start: number, len: number) {
 	if (len === 0) return;
-	const list = [];
-	for (let i = start; i < start + len; i++) list.push(comment(S, i, n));
+	const list = new Array<Decoded>(len);
+	for (let i = 0; i < len; i++) list[i] = comment(S, start + i, n);
 	n[key] = list;
 }
 
@@ -832,13 +833,15 @@ function build(S: State, id: number, parent: Decoded | undefined): Decoded {
 }
 
 function items(S: State, start: number, len: number, parent: Decoded | undefined): (Decoded | null)[] {
-	const out: (Decoded | null)[] = [];
+	const out: (Decoded | null)[] = new Array(len);
 	const L = S.L, N = S.N, J = S.J, erased = S.erased, words = S.C.words, kind = S.C.kind >> 2;
+	let n = 0;
 	for (let i = start, end = start + len; i < end; i++) {
 		const word = L[i];
-		if (word === 0) out.push(null);
-		else if (erased === null || !bit(erased, word - 1)) out.push(J[N[(word - 1) * words + kind]](S, word - 1, 0, parent));
+		if (word === 0) out[n++] = null;
+		else if (erased === null || !bit(erased, word - 1)) out[n++] = J[N[(word - 1) * words + kind]](S, word - 1, 0, parent);
 	}
+	if (n !== len) out.length = n;
 	return out;
 }
 
@@ -889,6 +892,7 @@ class Source implements Spelling<string, string> {
 	constants: unknown[] = [];
 	lead: string[] = [];
 	count = 0;
+	first_text: { start: string; end: string; held: string } | undefined;
 	readonly word: (at: number) => string;
 	readonly byte: (at: number) => string;
 	readonly facts: boolean;
@@ -919,7 +923,13 @@ class Source implements Spelling<string, string> {
 	pair = (a: string, b: string) => `[${a}, ${b}]`;
 	object = (fields: [string, string][]) => `{ ${fields.map(([key, field]) => `${JSON.stringify(key)}: ${field}`).join(', ')} }`;
 	slice = (back: number) => `S.source.slice(S.P[p], S.P[p + 1]${back === 0 ? '' : ` - ${back}`})`;
-	text = (start: string, end: string) => `S.source.slice(${start}, ${end})`;
+	// a second text over the first's span, Text's `data` beside its `raw`, is the first's string
+	text = (start: string, end: string) => {
+		const first = this.first_text;
+		if (first !== undefined) return `(${start} === ${first.start} && ${end} === ${first.end} ? ${first.held} : S.source.slice(${start}, ${end}))`;
+		this.first_text = { start, end, held: this.hold(`S.source.slice(${start}, ${end})`) };
+		return this.first_text.held;
+	};
 	strs = (start: string, len: string) => `strs(S, ${start}, ${len})`;
 	comments = () => 'comments(S, n)';
 	finite = (value: string) => `finite(${value})`;
@@ -1082,7 +1092,7 @@ function generate_host(C: Compiled, config: number, type: string | null, span: b
 			after.push('if (s !== undefined) s.node = n;', LATE);
 		}
 	}
-	const body = `const N = S.N, J = S.J, HV = S.host_vals; ${rare.length === 0 ? '' : `if (${rare.join(' || ')}) return host(S, id, index, parent);`} ${before.join(' ')} const p = id * S.ps + S.po; const n = { ${props.join(', ')} }; ${slots.join(' ')} ${tail.join(' ')} ${after.join(' ')} return n;`;
+	const body = `const N = S.N, J = S.J, HV = S.host_vals; ${rare.length === 0 ? '' : `if (${rare.join(' || ')}) return host(S, id, index, parent);`} ${before.join(' ')} const p = id * S.ps + S.po; ${B.lead.join(' ')} const n = { ${props.join(', ')} }; ${slots.join(' ')} ${tail.join(' ')} ${after.join(' ')} return n;`;
 	return new Function('K', 'host', 'items', 'comments', 'strs', 'late', 'PARENT', 'SCOPE', `return (S, id, index, from, parent) => { ${body} };`)(B.constants, host, items, comments, strs, late, PARENT, SCOPE);
 }
 
@@ -1095,27 +1105,50 @@ const generated = (() => {
 	}
 })();
 
-// what a table's row points at once the tree is built, in its literal from the start so nothing is
-// added later; a binding is the reference its declaring identifier makes, `binding` itself
-const LINKED: Record<string, Record<string, unknown>> = {
-	scopes: { node: null },
-	bindings: { node: null, declaration: null, binding: null, declares: true, read: false, mutate: false, writeExpr: null },
-	references: { node: null, writeExpr: null },
-	roots: { node: null },
+// A linked row is whole from its literal, so nothing is added to it later: the rows its numbers
+// index are read as the objects (a scope's parent is numbered before it), and what the tree fills in
+// once built is there as null. A binding is the reference its declaring identifier makes, `binding` itself.
+interface Linked {
+	into: Record<string, Table>;
+	held: Record<string, unknown>;
+	self?: string;
+}
+const LINKED: Record<Table, Linked> = {
+	scopes: { into: { parent: 'scopes' }, held: { node: null } },
+	bindings: { into: { scope: 'scopes' }, held: { node: null, declaration: null, binding: null, declares: true, read: false, mutate: false, writeExpr: null }, self: 'binding' },
+	references: { into: { scope: 'scopes', binding: 'bindings' }, held: { node: null, writeExpr: null } },
+	roots: { into: { scope: 'scopes', scopes: 'scopes', bindings: 'bindings', references: 'references' }, held: { node: null } },
 };
 
-function row(C: Compiled, ops: Op[], linked: Record<string, unknown> | undefined): Row {
+function row(C: Compiled, name: Table, ops: Op[], linked: Linked | undefined): Row {
 	if (!generated) {
-		return (S, view, b) => {
+		return (S, view, b, T) => {
 			const n: Decoded = {};
 			apply(S, 0, n, ops, view, b * 4);
-			return Object.assign(n, linked);
+			if (linked === undefined) return n;
+			for (const key in linked.into) {
+				const v = n[key], t = linked.into[key] === name ? T : S[linked.into[key]];
+				if (v !== null) n[key] = Array.isArray(v) ? t.slice(v[0], v[1]) : t[v];
+			}
+			Object.assign(n, linked.held);
+			if (linked.self !== undefined) n[linked.self] = n;
+			return n;
 		};
 	}
 	const B = new Source((at) => `V[b + ${at >> 2}]`, (at) => `(V[b + ${at >> 2}] >>> ${(at & 3) << 3} & 255)`, false, C.words, C.kind);
-	const props = ops.map((op) => `${JSON.stringify(op.key)}: ${value(B, op, C.layout.none, false)}`);
-	for (const key in linked) props.push(`${JSON.stringify(key)}: ${JSON.stringify(linked[key])}`);
-	return new Function('K', `return (S, V, b) => { ${B.lead.join(' ')} return { ${props.join(', ')} }; };`)(B.constants);
+	const none = C.layout.none;
+	const props = ops.map((op) => {
+		const key = JSON.stringify(op.key), into = linked?.into[op.key];
+		if (into === undefined) return `${key}: ${value(B, op, none, false)}`;
+		const t = into === name ? 'T' : `S.${into}`;
+		if (op.op === 'pair') return `${key}: ${t}.slice(${B.word(op.at)}, ${B.word(op.at + 4)})`;
+		if (op.op === 'int') return `${key}: ${t}[${B.word(op.at)}]`;
+		const v = B.hold(value(B, op, none, false));
+		return `${key}: ${v} === null ? null : ${t}[${v}]`;
+	});
+	if (linked !== undefined) for (const key in linked.held) props.push(`${JSON.stringify(key)}: ${JSON.stringify(linked.held[key])}`);
+	const self = linked?.self === undefined ? '' : ` o.${linked.self} = o;`;
+	return new Function('K', `return (S, V, b, T) => { ${B.lead.join(' ')} const o = { ${props.join(', ')} };${self} return o; };`)(B.constants);
 }
 
 // each builder is made the first time its kind is met
@@ -1181,35 +1214,8 @@ function table(S: State, tree: Tree, words: Uint32Array, lens: number, rows: Row
 	const size = rows.words;
 	const view = tree[at] as Uint32Array;
 	const out = new Array<Decoded>(words[lens + at] / size);
-	for (let i = 0; i < out.length; i++) out[i] = build(S, view, i * size);
+	for (let i = 0; i < out.length; i++) out[i] = build(S, view, i * size, out);
 	return out;
-}
-
-// every row arrives with its links in place as nulls, so nothing here adds a property
-function link_tables(S: State) {
-	const { scopes, bindings, references, roots } = S;
-	for (let i = 0; i < scopes.length; i++) {
-		const scope = scopes[i];
-		scope.parent = scope.parent === null ? null : scopes[scope.parent];
-	}
-	// a binding is its own first declaration: the reference the declaring identifier makes
-	for (let i = 0; i < bindings.length; i++) {
-		const binding = bindings[i];
-		binding.scope = scopes[binding.scope];
-		binding.binding = binding;
-	}
-	for (let i = 0; i < references.length; i++) {
-		const reference = references[i];
-		reference.scope = scopes[reference.scope];
-		reference.binding = reference.binding === null ? null : bindings[reference.binding];
-	}
-	for (let i = 0; i < roots.length; i++) {
-		const root = roots[i];
-		root.scope = scopes[root.scope];
-		root.scopes = scopes.slice(root.scopes[0], root.scopes[1]);
-		root.bindings = bindings.slice(root.bindings[0], root.bindings[1]);
-		root.references = references.slice(root.references[0], root.references[1]);
-	}
 }
 
 const ERROR_WORDS = 7;
@@ -1334,7 +1340,6 @@ export function decode(words: Uint32Array, source: string, engine: Views, flags:
 		S.bindings = table(S, tree, words, lens, rows.bindings, at.bindings);
 		S.references = table(S, tree, words, lens, rows.references, at.references);
 		S.roots = table(S, tree, words, lens, rows.roots, at.roots);
-		if (link) link_tables(S);
 	}
 	let node: Decoded | Decoded[] | null = null;
 	if (!failed) {
