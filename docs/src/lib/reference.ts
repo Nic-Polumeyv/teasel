@@ -22,9 +22,10 @@ const body = (text: string) => {
 	return (source.parse() as unknown as { node: { body: Declaration[] } }).node.body;
 };
 
+// the slot that types a piece's answer is no part of the surface
 const item = (text: string, statement: Declaration) => {
 	const doc = statement.leadingComments?.at(-1);
-	return `## ${name(statement)}\n\n${doc ? prose(doc.value) + '\n\n' : ''}\`\`\`ts\n${text.slice(statement.start, statement.end)}\n\`\`\``;
+	return `## ${name(statement)}\n\n${doc ? prose(doc.value) + '\n\n' : ''}\`\`\`ts\n${text.slice(statement.start, statement.end).replace(/\n[^\n]*\[answers\][^\n]*/g, '')}\n\`\`\``;
 };
 
 // the entry declares the surface, and names what it takes from options.ts and types.ts

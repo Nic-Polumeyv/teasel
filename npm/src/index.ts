@@ -1,11 +1,10 @@
 import type { Comment, Expression, Node, Pattern, Program, Statement } from 'estree';
 import { decode, PARENT, REFERENCE, SCOPE } from './decode.ts';
-import { CODES, type Code, type HostNode, type Language, type Parsed, type Reference, type Scope } from './types.ts';
+import { CODES, type answers, type Code, type HostNode, type Language, type Parsed, type Reference, type Scope } from './types.ts';
 import { flags, type Options } from './options.ts';
 import { engine } from '#engine';
 import { children, extras, frozen } from './children.ts';
 import { compiled } from './held.ts';
-import type { Grammar } from './grammar.ts';
 
 export type { Options } from './options.ts';
 export type { Arguments, Binding, Code, Comment, Declared, HostNode, Kept, Language, Parsed, Recovered, Reference, Root, Scope, Span } from './types.ts';
@@ -27,7 +26,7 @@ export class ParseError extends SyntaxError {
 	declare column?: number;
 
 	constructor(fields: Pick<ParseError, 'code' | 'args' | 'pos' | 'end' | 'line' | 'column'>) {
-		super(fields.args.reduce((text, arg) => `${text} '${arg}'`, fields.code as string));
+		super(fields.args.reduce((text: string, arg) => `${text} '${arg}'`, fields.code));
 		Object.assign(this, fields);
 	}
 }
@@ -57,6 +56,8 @@ let piece: <T>(entry: number) => Piece<T>;
  * source. `T` is what its parse answers with.
  */
 export class Piece<T> {
+	// `T` is read nowhere else, so without this any piece would pass for any other
+	declare readonly [answers]?: T;
 	#entry: number;
 	#stop: string;
 
@@ -147,16 +148,16 @@ export class Source {
 	parse(language: typeof js, at?: number | [start: number, end: number]): Parsed<Program>;
 	parse<T>(what: Piece<T> | typeof js, at?: number | [start: number, end: number]): Parsed<T | Program>;
 	parse<T>(language: Language<T>): Parsed<T>;
-	parse(what: Piece<unknown> | Language<unknown> = js, at?: number | [number, number]): Parsed<any> {
+	parse(what: Piece<unknown> | Language<unknown> = js, at?: number | [number, number]) {
 		let entry = 0, stop = '', grammar: object | undefined, offset = 0, end: number | undefined;
 		if (what === js || what instanceof Piece) {
-			if (what !== js) ({ entry, stop } = read(what as Piece<unknown>));
+			if (what instanceof Piece) ({ entry, stop } = read(what));
 			if (typeof at === 'number') offset = at;
 			else if (Array.isArray(at) && at.length === 2 && typeof at[0] === 'number' && typeof at[1] === 'number') [offset, end] = at;
 			else if (at !== undefined) throw new TypeError('at is an offset or [start, end]');
 		} else {
 			if (what === css) entry = 6;
-			else grammar = compiled(what as Grammar);
+			else grammar = compiled(what);
 			if (at !== undefined) throw new TypeError('only `js` and its pieces take a position');
 		}
 		const source = this.#source;
@@ -171,9 +172,9 @@ export class Source {
 			error.code = CODES[error.code];
 			throw new ParseError(error);
 		}
-		let parsed: Parsed<any>;
+		let parsed: Parsed<unknown>;
 		try {
-			parsed = decode(answer, source, engine, this.#flags, entry === 3) as Parsed<any>;
+			parsed = decode(answer, source, engine, this.#flags, entry === 3) as Parsed<unknown>;
 		} catch (error) {
 			// a tree deeper than the caller's stack has room for overflowed the decoder
 			if (!(error instanceof RangeError)) throw error;

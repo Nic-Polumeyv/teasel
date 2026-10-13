@@ -142,12 +142,12 @@ export const children = frozen({
 	TSInstantiationExpression: ['expression', 'typeArguments'],
 	TSParameterProperty: ['parameter'],
 	Decorator: ['expression'],
-} as const);
+});
 
 /** The fields TypeScript may add to a node of any type, holding nodes: annotations, type parameters and arguments, what a class implements, decorators. */
-export const extras = Object.freeze(['typeAnnotation', 'returnType', 'typeParameters', 'typeArguments', 'superTypeArguments', 'implements', 'decorators'] as const);
+export const extras = Object.freeze(['typeAnnotation', 'returnType', 'typeParameters', 'typeArguments', 'superTypeArguments', 'implements', 'decorators']);
 
-export function frozen<T extends Readonly<Record<string, readonly string[]>>>(table: T): T {
+export function frozen(table: Readonly<Record<string, readonly string[]>>) {
 	for (const fields of Object.values(table)) Object.freeze(fields);
 	return Object.freeze(table);
 }

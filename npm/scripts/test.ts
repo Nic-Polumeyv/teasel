@@ -4,7 +4,6 @@ import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
 import { setFlagsFromString } from 'node:v8';
 import { runInNewContext } from 'node:vm';
-import { generate } from './children.ts';
 import type { Expression, Identifier, Pattern, Program } from 'estree';
 import type { Construct, Directive, Infer, NodeType } from '../src/grammar.ts';
 import type * as api from '../src/index.ts';
@@ -15,9 +14,10 @@ const name = process.argv.includes('web') ? 'web' : process.execArgv.includes('-
 process.on('warning', (warning) => {
 	if (name === 'native' && (warning as { code?: string }).code === 'wasm_fallback') throw warning;
 });
-// the hook must be in place before anything imports the grammar, so those come in below
+// the hook must be in place before anything imports the grammar, and the Function swap before anything imports the decoder, so those come in below
 if (name === 'web') registerHooks({ resolve: (specifier, context, next) => (specifier === '#engine' ? { url: new URL('../dist/engine/web.js', import.meta.url).href, shortCircuit: true } : next(specifier, context)) });
 const g = await import('../src/grammar.ts');
+const { generate } = await import('./children.ts');
 const { default: svelte } = await import('./hosts/svelte.ts');
 const { default: vue } = await import('./hosts/vue.ts');
 setFlagsFromString('--expose-gc');
@@ -26,13 +26,8 @@ const m = await import('../src/index.ts');
 // the trees are poked as the recipes shape them, host nodes included, past what the types say
 type Any = any;
 const { js, css, Piece, ParseError } = m;
-const untyped = ({ Source, scopeOf, referenceOf, parentOf }: typeof m) => ({
-	open: (source: string, options?: Options): Any => new Source(source, options),
-	scopeOf: (node: Any): Any => scopeOf(node),
-	referenceOf: (node: Any): Any => referenceOf(node),
-	parentOf: (node: Any): Any => parentOf(node),
-});
-const { open, scopeOf, referenceOf, parentOf } = untyped(m);
+const open = (source: string, options?: Options): Any => new m.Source(source, options);
+const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'parentOf', (node: Any) => Any> = m;
 
 {
 	const parse = (source: string, options?: Options): Any => open(source, options).parse();
@@ -374,7 +369,7 @@ const { open, scopeOf, referenceOf, parentOf } = untyped(m);
 	assert.throws(() => open('<div>').parse({ wire: 'host x' } as Any), TypeError);
 	assert.throws(() => open('<div>').parse(svelte), { code: 'unclosed', pos: 0 });
 	// under recovery the tree is what could be read, the errors listed with it
-	const loose: Any = open('<div>{#if }<Comp foo={bar}\n</div>', { errorRecovery: true }).parse(svelte);
+	const loose = open('<div>{#if }<Comp foo={bar}\n</div>', { errorRecovery: true }).parse(svelte);
 	assert.deepEqual(loose.errors.map((e: Any) => e.code), ['unclosed', 'unexpected_token', 'expected']);
 	const div = loose.node.fragment.nodes[0];
 	assert.equal(div.end, 33);
@@ -399,7 +394,7 @@ const { open, scopeOf, referenceOf, parentOf } = untyped(m);
 	}
 	assert.throws(() => open('<a @x="@"/>').parse(vue), (e: Any) => e instanceof SyntaxError, `${name}`);
 	assert.throws(() => open('<a/>').parse(vue, 0), TypeError, `${name}`);
-	const handler: Any = open('<button @click="let x = 1"/>', { errorRecovery: true }).parse(vue);
+	const handler = open('<button @click="let x = 1"/>', { errorRecovery: true }).parse(vue);
 	assert.equal(handler.node.children[0].props[0].handler.type, 'Program', name);
 	assert.deepEqual(handler.errors, [], name);
 }
@@ -469,7 +464,7 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 // a second host: the same walker, Vue's grammar
 {
 	const source = '<ul :class="{ on }">\n\t<li v-for="(item, i) in items" :key="item.id" @click.stop="select(item)">{{ item.name }} #{{ i }}</li>\n</ul>\n';
-	const root: Any = open(source, { sourceType: 'module' }).parse(vue).node;
+	const root = open(source, { sourceType: 'module' }).parse(vue).node;
 	assert.equal(root.type, 'Root');
 	const ul = root.children[0];
 	assert.equal(ul.tag, 'ul');
@@ -493,7 +488,7 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 
 // a lone surrogate escape is the code unit it names, as JavaScript keeps it
 {
-	const values = (source: string): string[] => open(source, { sourceType: 'module' }).parse().node.body.map((s: Any) => s.expression.value ?? s.expression.quasis.map((q: Any) => q.value.cooked).join('|'));
+	const values = (source: string) => open(source, { sourceType: 'module' }).parse().node.body.map((s: Any) => s.expression.value ?? s.expression.quasis.map((q: Any) => q.value.cooked).join('|'));
 	assert.deepEqual(values("'\\ud83d'; '\\ude00x\\u{dbff}'; '\\ufffd'; '\\ud83d\\ude00'; `a\\ud83d${b}\\udc00`;"), ['\ud83d', '\ude00x\udbff', '�', '😀', 'a\ud83d|\udc00']);
 	assert.deepEqual(values("'\\ud83d'; '\\ufffd'; 'é\\udc00'; '\\ud83d';"), ['\ud83d', '�', 'é\udc00', '\ud83d']);
 	assert.deepEqual(values("'\\ud800😀\\ud800é\\udc00 \\udc00'; 'a\\ud800';"), ['\ud800😀\ud800é\udc00 \udc00', 'a\ud800']);
@@ -559,10 +554,10 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 	};
 	const fixtures = new URL('../../crates/teasel/tests/', import.meta.url);
 	const files = (dir: string, ext: string) => readdirSync(new URL(dir, fixtures)).filter((file) => file.endsWith(ext)).map((file) => readFileSync(new URL(`${dir}${file}`, fixtures), 'utf8'));
-	const check = (table: Readonly<Record<string, readonly string[]>>, what: string, byHand = false) => {
+	const check = (table: typeof js.children, what: string, byHand = false) => {
 		for (const [type, keys] of seen) {
 			assert.ok(type in table, `${what}: ${type} is not in children`);
-			for (const key of keys) assert.ok(table[type].includes(key) || js.extras.includes(key as Any), `${what}: ${type}.${key} holds nodes but children does not name it`);
+			for (const key of keys) assert.ok(table[type].includes(key) || js.extras.includes(key), `${what}: ${type}.${key} holds nodes but children does not name it`);
 		}
 		// js's table comes from the layout, so a stale entry there is impossible; css's and the hosts' are spelled by hand
 		const unseen = Object.entries(table).flatMap(([type, keys]) => (listed.has(type) && !(byHand && type in js.children) ? keys.filter((key) => !listed.get(type)!.has(key)).map((key) => `${type}.${key}`) : []));
@@ -628,7 +623,7 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 	const index = g.opt(',', { index: g.optional(g.bind(g.js.identifier)) });
 	const list = { list: g.js.expression };
 	const key = g.opt('by', { key: g.optional(g.js.expression) });
-	const repeat = (head: Any[], branches: Any[] = []): Any => ({
+	const repeat = (head: Any[], branches: Any[] = []) => ({
 		...html,
 		constructs: {
 			Expression: expression,

@@ -476,7 +476,7 @@ class Writer {{\n\
 \t#count = 0;\n\
 \t#strings = new Map<string, number>();\n\
 \t#pool: string[] = [];\n\
-\tword(word: number): void {{\n\
+\tword(word: number) {{\n\
 \t\tif (this.#count === this.#words.length) {{\n\
 \t\t\tconst more = new Uint32Array(this.#count * 2);\n\
 \t\t\tmore.set(this.#words);\n\
@@ -484,7 +484,7 @@ class Writer {{\n\
 \t\t}}\n\
 \t\tthis.#words[this.#count++] = word;\n\
 \t}}\n\
-\tstr(s: string): void {{\n\
+\tstr(s: string) {{\n\
 \t\tlet i = this.#strings.get(s);\n\
 \t\tif (i === undefined) {{\n\
 \t\t\tthis.#strings.set(s, (i = this.#pool.length));\n\
@@ -508,13 +508,13 @@ class Writer {{\n\
 \t\t\tlet offset = 0;\n\
 \t\t\tfor (let i = 0; i < this.#pool.length; i++) {{\n\
 \t\t\t\twords[2 + 2 * i] = offset;\n\
-\t\t\t\twords[3 + 2 * i] = this.#pool[i]!.length;\n\
-\t\t\t\toffset += this.#pool[i]!.length;\n\
+\t\t\t\twords[3 + 2 * i] = this.#pool[i].length;\n\
+\t\t\t\toffset += this.#pool[i].length;\n\
 \t\t\t}}\n\
 \t\t}} else {{\n\
 \t\t\twritten = 0;\n\
 \t\t\tfor (let i = 0; i < this.#pool.length; i++) {{\n\
-\t\t\t\tconst bytes = encoder.encodeInto(this.#pool[i]!, out.subarray(poolAt + written)).written;\n\
+\t\t\t\tconst bytes = encoder.encodeInto(this.#pool[i], out.subarray(poolAt + written)).written;\n\
 \t\t\t\twords[2 + 2 * i] = written;\n\
 \t\t\t\twords[3 + 2 * i] = bytes;\n\
 \t\t\t\twritten += bytes;\n\
@@ -546,7 +546,7 @@ class Writer {{\n\
 			d.ty
 		));
 		out.push_str(&format!(
-			"function write{}(w: Writer, v: {}): void {{\n\t{}\n}}\n",
+			"function write{}(w: Writer, v: {}) {{\n\t{}\n}}\n",
 			d.name,
 			d.name,
 			indent(&d.write)
@@ -682,7 +682,7 @@ macro_rules! wire {
 						docs: &[$($vdoc),*],
 						ty: payload.clone(),
 						tell: $crate::host::grammar::Tell::Test(test.into()),
-						write: <$t as $crate::host::grammar::Wire>::ts_write(&format!("(v as {payload})")),
+						write: <$t as $crate::host::grammar::Wire>::ts_write("v"),
 					},
 					None => $crate::host::grammar::Variant {
 						docs: &[$($vdoc),*],
@@ -718,7 +718,7 @@ macro_rules! wire {
 					write: String::new(),
 				},)*], true);
 				let value = match test {
-					Some(_) => format!("(v as {shape})"),
+					Some(_) => "v".to_string(),
 					None => format!("(v as {{ {key}: {shape} }}).{key}"),
 				};
 				let fields = [$($crate::host::grammar::Field {

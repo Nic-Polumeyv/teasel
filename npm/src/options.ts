@@ -54,7 +54,7 @@ const ACCEPTED: { [K in keyof Options]-?: readonly NonNullable<Options[K]>[] } =
 	errorRecovery: [false, true],
 };
 /** Each option's slot in the engine's word: two bits holding the index of its value. */
-export const SLOT = Object.fromEntries(Object.keys(ACCEPTED).map((key, slot) => [key, slot])) as Record<keyof Options, number>;
+export const SLOT = Object.fromEntries(Object.keys(ACCEPTED).map((key, slot) => [key, slot]));
 const known = (key: string): key is keyof Options => Object.hasOwn(ACCEPTED, key);
 
 /** The options that are on, as the word the engine takes. */

@@ -6,7 +6,7 @@ class Writer {
 	#count = 0;
 	#strings = new Map<string, number>();
 	#pool: string[] = [];
-	word(word: number): void {
+	word(word: number) {
 		if (this.#count === this.#words.length) {
 			const more = new Uint32Array(this.#count * 2);
 			more.set(this.#words);
@@ -14,7 +14,7 @@ class Writer {
 		}
 		this.#words[this.#count++] = word;
 	}
-	str(s: string): void {
+	str(s: string) {
 		let i = this.#strings.get(s);
 		if (i === undefined) {
 			this.#strings.set(s, (i = this.#pool.length));
@@ -38,13 +38,13 @@ class Writer {
 			let offset = 0;
 			for (let i = 0; i < this.#pool.length; i++) {
 				words[2 + 2 * i] = offset;
-				words[3 + 2 * i] = this.#pool[i]!.length;
-				offset += this.#pool[i]!.length;
+				words[3 + 2 * i] = this.#pool[i].length;
+				offset += this.#pool[i].length;
 			}
 		} else {
 			written = 0;
 			for (let i = 0; i < this.#pool.length; i++) {
-				const bytes = encoder.encodeInto(this.#pool[i]!, out.subarray(poolAt + written)).written;
+				const bytes = encoder.encodeInto(this.#pool[i], out.subarray(poolAt + written)).written;
 				words[2 + 2 * i] = written;
 				words[3 + 2 * i] = bytes;
 				written += bytes;
@@ -65,7 +65,7 @@ export type Host = {
 	name: string;
 	definition: Definition;
 };
-function writeHost(w: Writer, v: Host): void {
+function writeHost(w: Writer, v: Host) {
 	w.str(v.name);
 	writeDefinition(w, v.definition);
 }
@@ -87,7 +87,7 @@ type Definition = {
 	directives?: Directives;
 	constructs?: { readonly [key: string]: Construct };
 };
-function writeDefinition(w: Writer, v: Definition): void {
+function writeDefinition(w: Writer, v: Definition) {
 	writeNode(w, v.document);
 	writeNode(w, v.text);
 	writeNode(w, v.comment);
@@ -161,7 +161,7 @@ type Node = {
 	node: string;
 	form?: ReadonlyArray<Item>;
 };
-function writeNode(w: Writer, v: Node): void {
+function writeNode(w: Writer, v: Node) {
 	w.str(v.node);
 	if (v.form === undefined) w.word(0);
 	else {
@@ -181,10 +181,10 @@ type Item =
 	| { oneOf: ReadonlyArray<ReadonlyArray<Item>> }
 	| { scope: ReadonlyArray<Item> }
 	| { readonly [key: string]: Source };
-function writeItem(w: Writer, v: Item): void {
+function writeItem(w: Writer, v: Item) {
 	if (typeof v === 'string') {
 		w.word(0);
-		w.str((v as string));
+		w.str(v);
 	} else if ('opt' in v) {
 		w.word(1);
 		w.word((v as { opt: ReadonlyArray<Item> }).opt.length);
@@ -213,12 +213,12 @@ function writeItem(w: Writer, v: Item): void {
 	} else {
 		w.word(4);
 		{
-			const keys = Object.keys((v as { readonly [key: string]: Source }));
+			const keys = Object.keys(v);
 			w.word(keys.length);
-			for (let i_ = 0; i_ < keys.length; i_++) {
-				const key_ = keys[i_];
-				w.str(key_);
-				writeSource(w, (v as { readonly [key: string]: Source })[key_]);
+			for (let i = 0; i < keys.length; i++) {
+				const key = keys[i];
+				w.str(key);
+				writeSource(w, v[key]);
 			}
 		}
 	}
@@ -233,7 +233,7 @@ type Source = {
 	orArg: boolean;
 	literal?: Literal;
 };
-function writeSource(w: Writer, v: Source): void {
+function writeSource(w: Writer, v: Source) {
 	w.str(v.from);
 	w.str(v.read);
 	w.word(v.optional ? 1 : 0);
@@ -250,7 +250,7 @@ type Bind =
 	| false
 	| 'inside'
 	| 'outside';
-function writeBind(w: Writer, v: Bind): void {
+function writeBind(w: Writer, v: Bind) {
 	switch (v) {
 		case false:
 			w.word(0);
@@ -270,7 +270,7 @@ type Literal =
 	| false
 	| null
 	| readonly [];
-function writeLiteral(w: Writer, v: Literal): void {
+function writeLiteral(w: Writer, v: Literal) {
 	switch (v) {
 		case true:
 			w.word(0);
@@ -291,7 +291,7 @@ type Attributes = {
 	/** `{name}` among the attributes is `name={name}`: the marker and the closing word around the name. */
 	shorthand?: readonly [string, string];
 };
-function writeAttributes(w: Writer, v: Attributes): void {
+function writeAttributes(w: Writer, v: Attributes) {
 	if (v.shorthand === undefined) w.word(0);
 	else {
 		w.word(1);
@@ -306,7 +306,7 @@ type Elements = {
 	component?: Element;
 	other?: Element;
 };
-function writeElements(w: Writer, v: Elements): void {
+function writeElements(w: Writer, v: Elements) {
 	{
 		const keys = Object.keys(v.fields);
 		w.word(keys.length);
@@ -350,7 +350,7 @@ type Element = {
 	outside?: string;
 	content?: Content;
 };
-function writeElement(w: Writer, v: Element): void {
+function writeElement(w: Writer, v: Element) {
 	w.str(v.node);
 	if (v.form === undefined) w.word(0);
 	else {
@@ -391,7 +391,7 @@ function writeElement(w: Writer, v: Element): void {
 type Content =
 	| 'raw'
 	| 'rcdata';
-function writeContent(w: Writer, v: Content): void {
+function writeContent(w: Writer, v: Content) {
 	switch (v) {
 		case 'raw':
 			w.word(0);
@@ -407,7 +407,7 @@ type Script = {
 	module?: ReadonlyArray<readonly [string, string?]>;
 	typescript?: ReadonlyArray<readonly [string, string?]>;
 };
-function writeScript(w: Writer, v: Script): void {
+function writeScript(w: Writer, v: Script) {
 	w.str(v.element);
 	if (v.module === undefined) w.word(0);
 	else {
@@ -450,7 +450,7 @@ type Directives = {
 	rules?: { readonly [key: string]: Directive };
 	other?: Directive;
 };
-function writeDirectives(w: Writer, v: Directives): void {
+function writeDirectives(w: Writer, v: Directives) {
 	if (v.prefix === undefined) w.word(0);
 	else {
 		w.word(1);
@@ -525,7 +525,7 @@ function writeDirectives(w: Writer, v: Directives): void {
 
 type Raw =
 	| 'raw';
-function writeRaw(w: Writer, v: Raw): void {
+function writeRaw(w: Writer, v: Raw) {
 	switch (v) {
 		case 'raw':
 			w.word(0);
@@ -538,7 +538,7 @@ type Directive = {
 	form?: ReadonlyArray<Item>;
 	unique?: Uniqueness;
 };
-function writeDirective(w: Writer, v: Directive): void {
+function writeDirective(w: Writer, v: Directive) {
 	w.str(v.node);
 	if (v.form === undefined) w.word(0);
 	else {
@@ -559,7 +559,7 @@ function writeDirective(w: Writer, v: Directive): void {
 type Uniqueness =
 	| 'kind'
 	| 'attributes';
-function writeUniqueness(w: Writer, v: Uniqueness): void {
+function writeUniqueness(w: Writer, v: Uniqueness) {
 	switch (v) {
 		case 'kind':
 			w.word(0);
@@ -577,7 +577,7 @@ type Construct = {
 	branches?: ReadonlyArray<Branch>;
 	close?: Piece;
 };
-function writeConstruct(w: Writer, v: Construct): void {
+function writeConstruct(w: Writer, v: Construct) {
 	if (v.in === undefined) w.word(0);
 	else {
 		w.word(1);
@@ -611,7 +611,7 @@ type Place =
 	| 'value'
 	| 'attributes'
 	| 'rcdata';
-function writePlace(w: Writer, v: Place): void {
+function writePlace(w: Writer, v: Place) {
 	switch (v) {
 		case 'content':
 			w.word(0);
@@ -635,7 +635,7 @@ type Piece = {
 	space?: boolean;
 	form: ReadonlyArray<Item>;
 };
-function writePiece(w: Writer, v: Piece): void {
+function writePiece(w: Writer, v: Piece) {
 	w.word(v.marker.length);
 	for (let i = 0; i < v.marker.length; i++) {
 		const item = v.marker[i];
@@ -660,7 +660,7 @@ type Branch = {
 	form: ReadonlyArray<Item>;
 	reopen?: readonly [string, string];
 };
-function writeBranch(w: Writer, v: Branch): void {
+function writeBranch(w: Writer, v: Branch) {
 	w.word(v.marker.length);
 	for (let i = 0; i < v.marker.length; i++) {
 		const item = v.marker[i];
