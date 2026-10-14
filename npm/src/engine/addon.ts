@@ -1,6 +1,6 @@
 // scripts/addon.ts imports this file to build the binary that node.ts loads on import, so the two stay apart
-import { readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
+const { existsSync, readFileSync } = process.getBuiltinModule('node:fs');
+const { createRequire } = process.getBuiltinModule('node:module');
 import type { Engine, Tree } from '../types.ts';
 
 /** `crates/teasel-node/src/lib.rs`: the operations over a prepared source and a grammar, the source as V8's bytes. */
@@ -35,7 +35,10 @@ export function load(): Addon | undefined {
 	for (const [tag, p] of Object.entries(platforms)) {
 		if (p.os !== process.platform || p.cpu !== process.arch || (p.libc !== undefined && p.libc !== libc())) continue;
 		// we add .node so require dlopens it instead of reading it as js
-		for (const path of [`../teasel.${tag}.node`, `@teasel/parser-${tag}/teasel.${tag}.node`]) {
+		const own = `../teasel.${tag}.node`;
+		const paths = [`@teasel/parser-${tag}/teasel.${tag}.node`];
+		if (existsSync(new URL(own, import.meta.url))) paths.unshift(own);
+		for (const path of paths) {
 			try {
 				return require(path);
 			} catch (e) {
