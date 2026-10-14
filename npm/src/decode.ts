@@ -1,14 +1,30 @@
 // Builds ESTree objects from the parser's own tree, read in place: the layout says where each
 // kind's fields sit, the recipes how the kind is spelled.
 
-import type { Tree, Views } from './types.ts';
+import type { Comment, Node } from 'estree';
+import type { HostNode, Reference, Scope, Tree, Views } from './types.ts';
 import { CODES } from './types.ts';
 import { SLOT, type Options } from './options.ts';
 
 // symbol keys: ten times cheaper than a WeakMap entry, and skipped by JSON, Object.keys and for-in
-export const SCOPE = Symbol('scope');
-export const REFERENCE = Symbol('reference');
-export const PARENT = Symbol('parent');
+const SCOPE = Symbol('scope');
+const REFERENCE = Symbol('reference');
+const PARENT = Symbol('parent');
+
+const hung = (node: object | null | undefined, key: symbol) => (node as Record<symbol, any> | null | undefined)?.[key];
+
+/** The node `node` is a child of; undefined for the root of an answer and for a comment listed in `comments`. A literal's `regex` and a template element's `value` are not nodes and have none. */
+export function parentOf(node: Node | HostNode | Comment | null | undefined): Node | HostNode | undefined {
+	return hung(node, PARENT);
+}
+/** With `scopes`: the scope `node` opens, when it opens one. */
+export function scopeOf(node: Node | HostNode | null | undefined): Scope | undefined {
+	return hung(node, SCOPE);
+}
+/** With `scopes`: the reference an identifier makes, the binding itself for the identifier that declares it; a global's too, which no binding lists. Undefined when the identifier names no value, a property key say. */
+export function referenceOf(node: Node | null | undefined): Reference | undefined {
+	return hung(node, REFERENCE);
+}
 
 /** A decoded object: the tree decides its shape, `types.ts` describes it. */
 type Decoded = Record<string | symbol, any>;

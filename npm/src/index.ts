@@ -1,5 +1,5 @@
 import type { Comment, Expression, Node, Pattern, Program, Statement } from 'estree';
-import { decode, PARENT, REFERENCE, SCOPE } from './decode.ts';
+import { decode } from './decode.ts';
 import { CODES, PLAN, type answers, type Code, type HostNode, type Language, type Parsed, type Reference, type Scope } from './types.ts';
 import { flags, type Options } from './options.ts';
 import { engine } from '#engine';
@@ -7,6 +7,7 @@ import { children, extras, stylesheet } from './children.ts';
 import type { Grammar } from './grammar.ts';
 
 export type { Options } from './options.ts';
+export { parentOf, referenceOf, scopeOf } from './decode.ts';
 export type { Arguments, Binding, Code, Comment, Declared, HostNode, Kept, Language, Parsed, Recovered, Reference, Root, Scope, Span } from './types.ts';
 
 /**
@@ -29,22 +30,6 @@ export class ParseError extends SyntaxError {
 		super(fields.args.reduce((text: string, arg) => `${text} '${arg}'`, fields.code));
 		Object.assign(this, fields);
 	}
-}
-
-// what the decoder hangs on a node, under keys JSON and enumeration skip
-const slot = (node: object | null | undefined, key: symbol) => (node as Record<symbol, any> | null | undefined)?.[key];
-
-/** The node `node` is a child of; undefined for the root of an answer and for a comment listed in `comments`. A literal's `regex` and a template element's `value` are not nodes and have none. */
-export function parentOf(node: Node | HostNode | Comment | null | undefined): Node | HostNode | undefined {
-	return slot(node, PARENT);
-}
-/** With `scopes`: the scope `node` opens, when it opens one. */
-export function scopeOf(node: Node | HostNode | null | undefined): Scope | undefined {
-	return slot(node, SCOPE);
-}
-/** With `scopes`: the reference an identifier makes, the binding itself for the identifier that declares it; a global's too, which no binding lists. Undefined when the identifier names no value, a property key say. */
-export function referenceOf(node: Node | null | undefined): Reference | undefined {
-	return slot(node, REFERENCE);
 }
 
 let read: (piece: Piece<unknown>) => { entry: number; stop: string };
