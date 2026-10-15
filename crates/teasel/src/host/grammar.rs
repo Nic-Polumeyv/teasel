@@ -14,12 +14,31 @@ pub(crate) struct Reader<'a> {
 	/// Every name without an escape is a slice of it.
 	text: &'static str,
 	at: usize,
+	depth: u32,
 	arena: &'a Arena,
 }
 
 impl<'a> Reader<'a> {
 	pub(crate) fn new(text: &'static str, arena: &'a Arena) -> Reader<'a> {
-		Reader { text, at: 0, arena }
+		Reader {
+			text,
+			at: 0,
+			depth: 0,
+			arena,
+		}
+	}
+
+	/// Guards the descent into objects and lists, as the parser guards its own.
+	fn descend(&mut self) -> Result<(), String> {
+		self.depth += 1;
+		if self.depth > crate::parser::MAX_DEPTH {
+			return Err(format!(
+				"the grammar nests deeper than {} at byte {}",
+				crate::parser::MAX_DEPTH,
+				self.at
+			));
+		}
+		Ok(())
 	}
 
 	pub(crate) fn peek(&self) -> Option<u8> {
@@ -29,10 +48,13 @@ impl<'a> Reader<'a> {
 	/// What the reader wanted where it stands, as the error says it.
 	#[cold]
 	pub(crate) fn expected(&self, what: &str) -> String {
-		if self.at < self.text.len() {
-			format!("{what} expected at byte {} of the grammar", self.at)
-		} else {
-			format!("the grammar ends early: {what} expected at byte {}", self.at)
+		match self.peek() {
+			None => format!("the grammar ends early: {what} expected at byte {}", self.at),
+			Some(b' ' | b'\t' | b'\n' | b'\r') => format!(
+				"{what} expected at byte {} of the grammar, which has no whitespace: it is written as JSON.stringify writes it",
+				self.at
+			),
+			Some(_) => format!("{what} expected at byte {} of the grammar", self.at),
 		}
 	}
 
@@ -128,9 +150,19 @@ impl<'a> Reader<'a> {
 					return Err(self.expected("four hex digits"));
 				};
 				self.at += 5;
+				let code = u32::from_str_radix(digits, 16).unwrap();
+				// a pair, as a writer that escapes everything beyond ASCII spells one character
+				if (0xD800..0xDC00).contains(&code)
+					&& let Some(low) = self.text.get(self.at..self.at + 6).and_then(|t| t.strip_prefix("\\u"))
+					&& let Ok(low) = u32::from_str_radix(low, 16)
+					&& (0xDC00..0xE000).contains(&low)
+				{
+					self.at += 6;
+					return Ok(char::from_u32(0x10000 + ((code - 0xD800) << 10) + (low - 0xDC00)).unwrap());
+				}
 				// `JSON.stringify` escapes a surrogate only when it is lone, which UTF-8 cannot
 				// hold: it becomes U+FFFD, as the encoder makes it in a source
-				return Ok(char::from_u32(u32::from_str_radix(digits, 16).unwrap()).unwrap_or('\u{FFFD}'));
+				return Ok(char::from_u32(code).unwrap_or('\u{FFFD}'));
 			}
 			_ => return Err(self.expected("an escape")),
 		};
@@ -146,34 +178,65 @@ impl<'a> Reader<'a> {
 		entry: &mut dyn FnMut(&mut Reader<'a>) -> Result<(), String>,
 	) -> Result<(), String> {
 		self.expect(b'{')?;
-		if self.eat(b'}') {
-			return Ok(());
-		}
-		loop {
-			entry(self)?;
-			if self.eat(b'}') {
-				return Ok(());
+		self.descend()?;
+		if !self.eat(b'}') {
+			loop {
+				entry(self)?;
+				if self.eat(b'}') {
+					break;
+				}
+				if !self.eat(b',') {
+					return Err(self.expected("`,` or `}`"));
+				}
 			}
-			if !self.eat(b',') {
-				return Err(self.expected("`,` or `}`"));
-			}
 		}
+		self.depth -= 1;
+		Ok(())
 	}
 
 	/// Reads a list, `item` reading each item in order.
 	pub(crate) fn list(&mut self, mut item: impl FnMut(&mut Reader<'a>) -> Result<(), String>) -> Result<(), String> {
 		self.expect(b'[')?;
-		if self.eat(b']') {
-			return Ok(());
+		self.descend()?;
+		if !self.eat(b']') {
+			loop {
+				item(self)?;
+				if self.eat(b']') {
+					break;
+				}
+				if !self.eat(b',') {
+					return Err(self.expected("`,` or `]`"));
+				}
+			}
 		}
-		loop {
-			item(self)?;
-			if self.eat(b']') {
-				return Ok(());
+		self.depth -= 1;
+		Ok(())
+	}
+
+	/// Steps over a key the struct has no field for and its value: a definition may carry more
+	/// than the engine reads, and the types cannot refuse it.
+	pub(crate) fn skip_entry(&mut self) -> Result<(), String> {
+		self.str()?;
+		self.expect(b':')?;
+		self.skip()
+	}
+
+	fn skip(&mut self) -> Result<(), String> {
+		match self.peek() {
+			Some(b'"') => self.str().map(|_| ()),
+			Some(b'{') => self.object(&mut Reader::skip_entry),
+			Some(b'[') => self.list(Reader::skip),
+			Some(b'-' | b'0'..=b'9') => {
+				while self
+					.peek()
+					.is_some_and(|b| matches!(b, b'-' | b'+' | b'.' | b'e' | b'E' | b'0'..=b'9'))
+				{
+					self.at += 1;
+				}
+				Ok(())
 			}
-			if !self.eat(b',') {
-				return Err(self.expected("`,` or `]`"));
-			}
+			_ if self.eat_text("true") || self.eat_text("false") || self.eat_text("null") => Ok(()),
+			_ => Err(self.expected("a value")),
 		}
 	}
 
@@ -191,15 +254,6 @@ impl<'a> Reader<'a> {
 		format!("a second {key} on a {ty} at byte {} of the grammar", self.at)
 	}
 
-	/// The error for a key a struct does not have, or what stands where one should.
-	#[cold]
-	pub(crate) fn unknown(&mut self, ty: &str) -> String {
-		match self.str() {
-			Ok(key) => format!("a {ty} has no {key}, at byte {} of the grammar", self.at),
-			Err(error) => error,
-		}
-	}
-
 	/// The error for a struct whose keys, each with whether it was read, leave out one it needs.
 	#[cold]
 	pub(crate) fn missing(&self, ty: &str, keys: &[(&str, bool)]) -> String {
@@ -207,7 +261,11 @@ impl<'a> Reader<'a> {
 		format!("a {ty} needs {key}, before byte {} of the grammar", self.at)
 	}
 
-	pub(crate) fn end(&self) -> Result<(), String> {
+	pub(crate) fn end(&mut self) -> Result<(), String> {
+		// a file ends in a newline
+		while self.peek().is_some_and(|b| matches!(b, b' ' | b'\t' | b'\n' | b'\r')) {
+			self.at += 1;
+		}
 		if self.at == self.text.len() {
 			Ok(())
 		} else {
@@ -278,7 +336,7 @@ struct Items<'a, T> {
 
 impl<'a, T: Copy> Items<'a, T> {
 	const fn words(items: usize) -> usize {
-		const { assert!(align_of::<T>() <= align_of::<u64>()) };
+		const { assert!(size_of::<T>() > 0 && align_of::<T>() <= align_of::<u64>()) };
 		(items * size_of::<T>()).div_ceil(size_of::<u64>())
 	}
 
@@ -413,27 +471,8 @@ impl<'a> Wire<'a> for &'static str {
 	}
 
 	fn write(&self, out: &mut String) {
-		write_str(self, out);
+		crate::estree::write_json_string(out, self);
 	}
-}
-
-/// A string as `JSON.stringify` writes it.
-fn write_str(s: &str, out: &mut String) {
-	out.push('"');
-	for c in s.chars() {
-		match c {
-			'"' => out.push_str("\\\""),
-			'\\' => out.push_str("\\\\"),
-			'\u{8}' => out.push_str("\\b"),
-			'\u{c}' => out.push_str("\\f"),
-			'\n' => out.push_str("\\n"),
-			'\r' => out.push_str("\\r"),
-			'\t' => out.push_str("\\t"),
-			c if c < ' ' => out.push_str(&format!("\\u{:04x}", c as u32)),
-			c => out.push(c),
-		}
-	}
-	out.push('"');
 }
 
 /// Writes `"key":value` into the object being written, unless the value is absent.
@@ -445,7 +484,7 @@ pub(crate) fn entry<'a>(out: &mut String, key: &str, value: &impl Wire<'a>) {
 	if !out.ends_with('{') {
 		out.push(',');
 	}
-	write_str(key, out);
+	crate::estree::write_json_string(out, key);
 	out.push(':');
 	value.write(out);
 }
@@ -588,7 +627,7 @@ macro_rules! wire {
 					$(if r.eat_text(spelled!("\"", stringify!($f), "\":")) {
 						return r.once(&mut $f, spelled!(stringify!($f)), stringify!($name));
 					})*
-					Err(r.unknown(stringify!($name)))
+					r.skip_entry()
 				})?;
 				// one match over every slot, where a `?` per field would drop the others at each return
 				$(let $f = $f.or_else(<$t as $crate::host::grammar::Wire>::absent);)*
@@ -2472,6 +2511,7 @@ mod tests {
 		);
 		assert_eq!(write(&read_markers), markers);
 		assert_eq!(read::<&str>(r#""\n\/\u00e9\ud800""#).unwrap(), "\n/é\u{FFFD}");
+		assert_eq!(read::<&str>(r#""\ud83d\ude00\ude00""#).unwrap(), "😀\u{FFFD}");
 		// keys in any order, an absent option left out, the shape telling a variant
 		let source = r#"{"orArg":true,"from":"js","read":"pattern","optional":false,"bind":"inside","literal":null}"#;
 		let read_source: definition::Source = read(source).unwrap();
@@ -2506,12 +2546,21 @@ mod tests {
 		assert!(read::<definition::Source>(plain).is_ok());
 		let missing = source(r#"{"from":"js","read":"expression","optional":false,"bind":false}"#);
 		assert!(missing.contains("needs orArg"), "{missing}");
-		let unknown = source(&plain.replace("\"orArg\"", "\"or_arg\""));
-		assert!(unknown.contains("has no or_arg, at byte 71"), "{unknown}");
+		// a key the struct lacks is stepped over, whatever it holds
+		let renamed = source(&plain.replace("\"orArg\"", "\"or_arg\""));
+		assert!(renamed.contains("needs orArg"), "{renamed}");
+		let more = plain.replace(
+			"\"orArg\":false",
+			r#""note":{"a":["b",true,null,-1.5e3,{}]},"orArg":false"#,
+		);
+		assert!(read::<definition::Source>(&more).unwrap().bind == definition::Bind::No);
 		let twice = source(&plain.replace("\"read\":\"expression\"", "\"from\":\"js\""));
 		assert!(twice.contains("second from"), "{twice}");
 		let spaced = source(&plain.replace(":", ": "));
-		assert!(spaced.contains("a string expected at byte 8"), "{spaced}");
+		assert!(
+			spaced.contains("a string expected at byte 8 of the grammar, which has no whitespace"),
+			"{spaced}"
+		);
 		let number = source(&plain.replace("false,\"bind", "0,\"bind"));
 		assert!(number.contains("a boolean expected at byte 44"), "{number}");
 		let variant = source(&plain.replace("\"bind\":false", "\"bind\":\"around\""));
@@ -2519,10 +2568,21 @@ mod tests {
 		let cut = source(&plain[..plain.len() - 1]);
 		assert!(cut.contains("ends early"), "{cut}");
 		assert!(source("").contains("ends early") && source(r#"{"from":"j"#).contains("ends early"));
+		assert!(read::<&[&str]>("[\"a\"]\n").is_ok());
 		assert!(
-			read::<&[&str]>(r#"["a"] "#)
+			read::<&[&str]>(r#"["a"] x"#)
 				.unwrap_err()
-				.contains("text after the grammar at byte 5")
+				.contains("text after the grammar at byte 6")
+		);
+		let nested = |n: usize| format!("{}\"x\"{}", r#"{"opt":["#.repeat(n), "]}".repeat(n));
+		assert!(read::<definition::Item>(&nested(400)).is_ok());
+		let deep = read::<definition::Item>(&nested(2000)).unwrap_err();
+		assert!(deep.contains("nests deeper than"), "{deep}");
+		let skipped = format!(r#"{{"note":{}{}, "from":"js"}}"#, "[".repeat(2000), "]".repeat(2000)).replace(", ", ",");
+		assert!(
+			read::<definition::Source>(&skipped)
+				.unwrap_err()
+				.contains("nests deeper than")
 		);
 		assert!(read::<&[&str]>("[\"a\u{1}\"]").is_err() && read::<&str>(r#""\x""#).is_err());
 		assert!(read::<(&str, &str)>(r#"["a"]"#).is_err());
