@@ -2,7 +2,6 @@ import type { Expression, Identifier, Pattern, Program, Statement, VariableDecla
 import { PLAN, type Comment, type HostNode, type Language, type Span } from './types.ts';
 import { engine } from '#engine';
 import { children as builtin, frozen } from './children.ts';
-import { wire as encode } from './wire.ts';
 
 declare const out: unique symbol;
 
@@ -282,7 +281,7 @@ export interface Grammar<D extends Definition = Definition> extends Language<Nod
 }
 // one literal, so every grammar has the shape of the first: a getter added after would make the rest dictionaries
 export const grammar = <const D extends Definition>(host: string, definition: D): Grammar<D> => {
-	const plan = engine.plan(encode({ name: host, definition }));
+	const plan = engine.plan(JSON.stringify({ name: host, definition }));
 	return { host, definition, children: frozen({ ...builtin, ...JSON.parse(engine.children(plan)) }), [PLAN]: plan };
 };
 

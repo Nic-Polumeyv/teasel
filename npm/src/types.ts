@@ -382,8 +382,8 @@ export interface Engine extends Views {
 	readonly free: (source: object) => void;
 	/** The whole source parsed at an entry with nothing kept, as a prepared source parses it. */
 	readonly once: (source: string, flags: number, entry: number, stop: string, plan: object | undefined) => Uint32Array | string;
-	/** The grammar of a host language on its wire, read once and let go of when the plan is collected. */
-	readonly plan: (grammar: Uint8Array) => object;
+	/** The grammar of a host language as JSON, read once and let go of when the plan is collected. */
+	readonly plan: (grammar: string) => object;
 	/** Each node type of a grammar's host with the fields that hold nodes, as JSON. */
 	readonly children: (plan: object) => string;
 }

@@ -6,7 +6,6 @@ import { setFlagsFromString } from 'node:v8';
 import { runInNewContext } from 'node:vm';
 import type { Expression, Identifier, Pattern, Program } from 'estree';
 import type { Construct, Directive, Infer, NodeType } from '../src/grammar.ts';
-import { wire as encode } from '../src/wire.ts';
 import type * as api from '../src/index.ts';
 import type { Options } from '../src/index.ts';
 if (process.argv.includes('interpret')) globalThis.Function = (() => { throw new EvalError('blocked'); }) as unknown as FunctionConstructor;
@@ -399,12 +398,12 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 	assert.equal(handler.node.children[0].props[0].handler.type, 'Program', name);
 	assert.deepEqual(handler.errors, [], name);
 }
-// the grammar the Rust tests read is the typed definition on its wire, pinned beside its documents
+// the grammar the Rust tests read is the typed definition as it crosses, pinned beside its documents
 for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
-	const pin = new URL(`../../crates/teasel/tests/hosts/${host}/host.wire`, import.meta.url);
-	const wire = encode({ name: host, definition: definition.definition });
-	if (process.env.UPDATE) writeFileSync(pin, wire);
-	else assert.ok(readFileSync(pin).equals(wire), `${name} ${host}/host.wire changed; run with UPDATE=1 once the change is meant`);
+	const pin = new URL(`../../crates/teasel/tests/hosts/${host}/host.json`, import.meta.url);
+	const json = JSON.stringify({ name: host, definition: definition.definition });
+	if (process.env.UPDATE) writeFileSync(pin, json);
+	else assert.ok(readFileSync(pin, 'utf8') === json, `${name} ${host}/host.json changed; run with UPDATE=1 once the change is meant`);
 }
 // every node's parent is the node it sits in, objects without a type passed through; a list born at its size has no holes
 {
@@ -427,7 +426,7 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 	walk(undefined, open('[1, , 3]; function f(this: T, a: number, b?: string) {} /* c */ // d', { typescript: 'erase', comments: true }).parse().node);
 	for (const [host, grammar] of [['svelte', svelte], ['vue', vue]] as const) {
 		const dir = new URL(`../../crates/teasel/tests/hosts/${host}/`, import.meta.url);
-		for (const file of readdirSync(dir).filter((f) => !/\.(json|wire)$/.test(f))) {
+		for (const file of readdirSync(dir).filter((f) => !f.endsWith('.json'))) {
 			walk(undefined, open(readFileSync(new URL(file, dir), 'utf8'), { sourceType: 'module', comments: true, scopes: true, errorRecovery: true }).parse(grammar).node);
 		}
 	}
@@ -625,7 +624,7 @@ if (name !== 'native') {
 	assert.ok('Rule' in svelte.children && 'Identifier' in svelte.children && 'EachBlock' in svelte.children);
 	assert.ok(!('Host' in js.children) && !('Extension' in js.children));
 	assert.ok(Object.isFrozen(svelte.children.Program) && Object.isFrozen(css.children.Rule));
-	// a grammar is plain data: no getter the engine answers, nothing of its wire kept on it
+	// a grammar is plain data: no getter the engine answers, nothing of what crossed kept on it
 	assert.ok(Object.getOwnPropertyDescriptor(svelte, 'children')!.get === undefined && !('wire' in svelte));
 	assert.deepEqual([css.children.StyleSheet, svelte.children.StyleSheet], [['children', 'comments'], ['attributes', 'children', 'comments']]);
 	const cut = open('<script lang="ts"></script>{#snippet x<T,}{/snippet}', { errorRecovery: true }).parse(svelte).node.fragment.nodes[0];

@@ -28,8 +28,8 @@ fn documents() {
 	grammars.sort();
 	for dir in grammars {
 		let name = dir.file_name().unwrap().to_str().unwrap().to_owned();
-		let grammar = fs::read(root.join("tests/hosts").join(&name).join("host.wire")).unwrap();
-		for file in sources(&dir) {
+		let grammar = fs::read_to_string(root.join("tests/hosts").join(&name).join("host.json")).unwrap();
+		for file in common::inputs(&dir) {
 			let stem = file.file_stem().unwrap().to_str().unwrap();
 			let source = fs::read_to_string(&file).unwrap();
 			let mut flags = Options::MODULE | Options::COMMENTS | Options::SCOPES;
@@ -62,8 +62,8 @@ fn documents() {
 fn every_prefix_answers() {
 	let root = Path::new(env!("CARGO_MANIFEST_DIR"));
 	for name in ["svelte", "vue"] {
-		let grammar = fs::read(root.join("tests/hosts").join(name).join("host.wire")).unwrap();
-		for file in sources(&root.join("tests/hosts").join(name)) {
+		let grammar = fs::read_to_string(root.join("tests/hosts").join(name).join("host.json")).unwrap();
+		for file in common::inputs(&root.join("tests/hosts").join(name)) {
 			let source = fs::read_to_string(&file).unwrap();
 			for (end, _) in source.char_indices().chain([(source.len(), ' ')]) {
 				for recover in [false, true] {
@@ -81,9 +81,9 @@ fn every_prefix_answers() {
 #[test]
 fn unfinished_input() {
 	let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-	let svelte = fs::read(root.join("tests/hosts/svelte/host.wire")).unwrap();
-	let vue = fs::read(root.join("tests/hosts/vue/host.wire")).unwrap();
-	let parse = |source: &str, grammar: &[u8], recover: bool| {
+	let svelte = fs::read_to_string(root.join("tests/hosts/svelte/host.json")).unwrap();
+	let vue = fs::read_to_string(root.join("tests/hosts/vue/host.json")).unwrap();
+	let parse = |source: &str, grammar: &str, recover: bool| {
 		let recovery = if recover { Options::ERROR_RECOVERY } else { 0 };
 		let request = Request::from_flags(Options::MODULE | Options::COMMENTS | recovery);
 		parse_document(source, grammar, &request)
@@ -130,7 +130,7 @@ fn tags_fill_unread() {
 			],
 		),
 	)]));
-	let answer = parse_document("{@t }", &host.wire(), &Request::from_flags(Options::MODULE));
+	let answer = parse_document("{@t }", &host.json(), &Request::from_flags(Options::MODULE));
 	assert!(answer.contains("\"a\":null") && !answer.contains("\"b\""), "{answer}");
 }
 
@@ -140,7 +140,8 @@ fn tags_fill_unread() {
 fn host_phases() {
 	use teasel::json::Prepared;
 	let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-	let grammar = teasel::json::grammar(&fs::read(root.join("tests/hosts/svelte/host.wire")).unwrap()).unwrap();
+	let grammar =
+		teasel::json::grammar(&fs::read_to_string(root.join("tests/hosts/svelte/host.json")).unwrap()).unwrap();
 	let mut documents = vec![(
 		"200 each blocks".to_string(),
 		format!(
@@ -171,14 +172,6 @@ fn host_phases() {
 			eprintln!("{best:9.2} µs  {name} {label}");
 		}
 	}
-}
-
-/// The documents of a host directory: not its grammar or the pins.
-fn sources(dir: &Path) -> Vec<std::path::PathBuf> {
-	common::inputs(dir)
-		.into_iter()
-		.filter(|f| f.extension().is_some_and(|e| e != "wire"))
-		.collect()
 }
 
 fn source(from: &'static str, read: &'static str, optional: bool) -> Source {
@@ -338,9 +331,9 @@ fn a_body_declares_only_what_the_form_reads() {
 				Vec::new(),
 			),
 		)]));
-		host.wire()
+		keep(host.json())
 	};
-	let grammar = Grammar::read(&each("context")).unwrap();
+	let grammar = Grammar::read(each("context")).unwrap();
 	assert_eq!(
 		construct(&grammar, "EachBlock")
 			.open
@@ -352,7 +345,7 @@ fn a_body_declares_only_what_the_form_reads() {
 			.field,
 		"context"
 	);
-	assert!(Grammar::read(&[]).is_err() && Grammar::read(&each("context")[..40]).is_err());
+	assert!(Grammar::read("").is_err() && Grammar::read(&each("context")[..40]).is_err());
 	let mut host = minimal();
 	host.definition
 		.document
@@ -360,7 +353,7 @@ fn a_body_declares_only_what_the_form_reads() {
 		.as_mut()
 		.unwrap()
 		.push(definition::Item::Word("x"));
-	assert!(Grammar::read(&host.wire()).unwrap_err().contains("document"));
+	assert!(Grammar::read(keep(host.json())).unwrap_err().contains("document"));
 }
 
 // what a definition may not say is an error naming its field, never a panic or a silent drop
@@ -368,11 +361,11 @@ fn a_body_declares_only_what_the_form_reads() {
 fn a_node_type_of_javascript_is_refused() {
 	let mut host = minimal();
 	host.definition.text.node = "Identifier";
-	let error = Grammar::read(&host.wire()).unwrap_err();
+	let error = Grammar::read(keep(host.json())).unwrap_err();
 	assert!(error.contains("Identifier") && error.contains("JavaScript"), "{error}");
 	let mut host = minimal();
 	host.definition.text.node = "TSAnyKeyword";
-	assert!(Grammar::read(&host.wire()).is_err());
+	assert!(Grammar::read(keep(host.json())).is_err());
 }
 
 #[test]
@@ -380,7 +373,7 @@ fn a_definition_is_refused_by_name() {
 	let with_if = |items: Vec<definition::Item>, branches: Vec<definition::Branch>| {
 		let mut host = minimal();
 		host.definition.constructs = Some(Record(vec![("IfBlock", block("if", items, branches))]));
-		host.wire()
+		keep(host.json())
 	};
 	let bound = Source {
 		bind: Bind::Inside,
@@ -389,7 +382,7 @@ fn a_definition_is_refused_by_name() {
 	let test = definition::Item::Fields(Record(vec![("test", bound.clone())]));
 	let consequent = definition::Item::Fields(Record(vec![("consequent", source("content", "fragment", false))]));
 	let close = definition::Item::Word("}");
-	let error = Grammar::read(&with_if(
+	let error = Grammar::read(with_if(
 		vec![test.clone(), close.clone(), consequent.clone()],
 		vec![branch(
 			&["{", ":else", "if"],
@@ -399,9 +392,9 @@ fn a_definition_is_refused_by_name() {
 	))
 	.unwrap_err();
 	assert!(error.contains("reopens the block"), "{error}");
-	let error = Grammar::read(&with_if(vec![test.clone(), close.clone()], Vec::new())).unwrap_err();
+	let error = Grammar::read(with_if(vec![test.clone(), close.clone()], Vec::new())).unwrap_err();
 	assert!(error.contains("IfBlock ends in no body"), "{error}");
-	let grammar = Grammar::read(&with_if(
+	let grammar = Grammar::read(with_if(
 		vec![test.clone(), close.clone(), consequent.clone()],
 		vec![branch(
 			&["{", ":else", "if"],
@@ -445,7 +438,7 @@ fn a_definition_is_refused_by_name() {
 		)])),
 		other: None,
 	});
-	let error = Grammar::read(&host.wire()).unwrap_err();
+	let error = Grammar::read(keep(host.json())).unwrap_err();
 	assert!(error.contains("OnDirective: modifiers is a flag"), "{error}");
 	let mut host = minimal();
 	host.definition.document.form = Some(vec![definition::Item::Fields(Record(vec![(
@@ -455,18 +448,21 @@ fn a_definition_is_refused_by_name() {
 			..source("literal", "literal", false)
 		},
 	)]))]);
-	let error = Grammar::read(&host.wire()).unwrap_err();
+	let error = Grammar::read(keep(host.json())).unwrap_err();
 	assert!(error.contains("js on the document"), "{error}");
-	let mut short = minimal().wire();
-	short[4..8].copy_from_slice(&u32::MAX.to_le_bytes());
-	assert!(Grammar::read(&short).unwrap_err().contains("ends early"));
+	let whole = keep(minimal().json());
+	assert!(
+		Grammar::read(&whole[..whole.len() - 1])
+			.unwrap_err()
+			.contains("ends early")
+	);
 }
 
 // how a definition groups its fields into records never changes what it reads
 #[test]
 fn records_group_freely() {
 	let fields = |list: Vec<(&'static str, Source)>| definition::Item::Fields(Record(list));
-	let parse = |host: &Host, text: &str| parse_document(text, &host.wire(), &Request::from_flags(Options::MODULE));
+	let parse = |host: &Host, text: &str| parse_document(text, &host.json(), &Request::from_flags(Options::MODULE));
 
 	let mut host = minimal();
 	let open = vec![
@@ -565,7 +561,7 @@ fn a_branch_names_a_block_without_branches() {
 	]));
 	let answer = parse_document(
 		"{#repeat items}x{:else}y{/repeat}",
-		&host.wire(),
+		&host.json(),
 		&Request::from_flags(Options::MODULE),
 	);
 	assert!(
@@ -601,7 +597,7 @@ fn a_marker_read_halfway_is_another_word() {
 		("Spread", spread),
 		("Expr", expression("e")),
 	]));
-	let parse = |text: &str| parse_document(text, &host.wire(), &Request::from_flags(Options::MODULE));
+	let parse = |text: &str| parse_document(text, &host.json(), &Request::from_flags(Options::MODULE));
 	for text in [
 		"{.5}",
 		"<a b={.5}></a>",
@@ -654,7 +650,7 @@ fn a_shared_close_closes_the_innermost_block() {
 		let mut host = minimal();
 		host.definition.constructs = Some(Record(order.iter().map(|name| (*name, with_end(name))).collect()));
 		for text in ["{#range a}{#if b}x{end}y{end}", "{#if b}{#range a}x{end}y{end}"] {
-			let answer = parse_document(text, &host.wire(), &Request::from_flags(Options::MODULE));
+			let answer = parse_document(text, &host.json(), &Request::from_flags(Options::MODULE));
 			assert!(
 				!answer.contains("error") && answer.contains("\"data\":\"y\""),
 				"{order:?} {text}: {answer}"
@@ -682,7 +678,7 @@ fn markers_stand_where_they_may() {
 		("Do", tag(&["do"], vec![js("e"), definition::Item::Word("end")])),
 		("Expr", expr),
 	]));
-	let parse = |host: &Host, text: &str| parse_document(text, &host.wire(), &Request::from_flags(Options::MODULE));
+	let parse = |host: &Host, text: &str| parse_document(text, &host.json(), &Request::from_flags(Options::MODULE));
 	let answer = parse(&host, "enddo");
 	assert!(!answer.contains("error") && !answer.contains("\"Do\""), "{answer}");
 	let answer = parse(&host, "x do a end");
@@ -699,7 +695,7 @@ fn markers_stand_where_they_may() {
 fn a_definition_says_only_what_is_read() {
 	let fields = |list: Vec<(&'static str, Source)>| definition::Item::Fields(Record(list));
 	let refused = |host: Host, says: &str| {
-		let error = Grammar::read(&host.wire()).unwrap_err();
+		let error = Grammar::read(keep(host.json())).unwrap_err();
 		assert!(error.contains(says), "expected an error naming {says:?}, got {error:?}");
 	};
 	let with_block = |items: Vec<definition::Item>| {
@@ -850,7 +846,7 @@ fn a_grammar_that_cannot_work_is_refused() {
 		)])
 	};
 	let refused = |host: Host, says: &str| {
-		let error = Grammar::read(&host.wire()).unwrap_err();
+		let error = Grammar::read(keep(host.json())).unwrap_err();
 		assert!(error.contains(says), "expected an error naming {says:?}, got {error:?}");
 	};
 	let with_block = |items: Vec<definition::Item>, branches: Vec<definition::Branch>| {
@@ -964,7 +960,7 @@ fn a_grammar_that_cannot_work_is_refused() {
 	);
 	let answer = parse_document(
 		"{#x a}1{:else when b}2{:else if c}3{/x}",
-		&host.wire(),
+		&host.json(),
 		&Request::from_flags(Options::MODULE),
 	);
 	let flags: Vec<&str> = answer
@@ -1004,7 +1000,7 @@ fn a_grammar_that_cannot_work_is_refused() {
 		],
 		Vec::new(),
 	);
-	let grammar = Grammar::read(&host.wire()).unwrap();
+	let grammar = Grammar::read(keep(host.json())).unwrap();
 	let Item::Group { alternatives, .. } = construct(&grammar, "X").open.form.items.last().unwrap() else {
 		panic!("the group is the last item");
 	};
@@ -1083,7 +1079,7 @@ fn a_host_has_its_own_syntax() {
 	let fields = |list: Vec<(&'static str, Source)>| definition::Item::Fields(Record(list));
 	let content = |field: &'static str| fields(vec![(field, source("content", "fragment", false))]);
 	let js = |field: &'static str, read: &'static str| fields(vec![(field, source("js", read, false))]);
-	let parse = |host: &Host, text: &str| parse_document(text, &host.wire(), &Request::from_flags(Options::MODULE));
+	let parse = |host: &Host, text: &str| parse_document(text, &host.json(), &Request::from_flags(Options::MODULE));
 	let mut host = minimal();
 	host.definition.elements.other = Some(element("Element"));
 	host.definition.elements.rules = Some(Record(vec![(
@@ -1217,20 +1213,27 @@ fn a_host_has_its_own_syntax() {
 	);
 }
 
-// the wire the Rust side writes is the one it reads, so both ends stay one format
+// what the Rust side writes reads back as the host it wrote, so a test's definition crosses as the package's does
 #[test]
-fn the_wire_round_trips() {
+fn the_json_round_trips() {
 	let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-	let bytes = fs::read(root.join("tests/hosts/svelte/host.wire")).unwrap();
-	let host = Host::read(&bytes).unwrap();
-	assert_eq!(host.wire(), bytes);
-	assert_eq!(format!("{:?}", Host::read(&host.wire()).unwrap()), format!("{host:?}"));
+	let host = Host::read(keep(
+		fs::read_to_string(root.join("tests/hosts/svelte/host.json")).unwrap(),
+	))
+	.unwrap();
+	assert_eq!(
+		format!("{:?}", Host::read(keep(host.json())).unwrap()),
+		format!("{host:?}")
+	);
 }
 
 #[test]
 fn reads_the_svelte_grammar() {
 	let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-	let grammar = Grammar::read(&fs::read(root.join("tests/hosts/svelte/host.wire")).unwrap()).unwrap();
+	let grammar = Grammar::read(keep(
+		fs::read_to_string(root.join("tests/hosts/svelte/host.json")).unwrap(),
+	))
+	.unwrap();
 	assert_eq!(grammar.name, "svelte");
 	assert_eq!(grammar.document.ty, "Root");
 	assert!(
@@ -1289,7 +1292,10 @@ fn reads_the_svelte_grammar() {
 #[test]
 fn reads_the_vue_grammar() {
 	let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-	let grammar = Grammar::read(&fs::read(root.join("tests/hosts/vue/host.wire")).unwrap()).unwrap();
+	let grammar = Grammar::read(keep(
+		fs::read_to_string(root.join("tests/hosts/vue/host.json")).unwrap(),
+	))
+	.unwrap();
 	assert_eq!(construct(&grammar, "Interpolation").open.marker, ["{{"]);
 	assert!(
 		!grammar.constructs.iter().any(|c| c.stands(Place::Value)) && !grammar.autoclose && grammar.fragment.is_none()
@@ -1310,14 +1316,4 @@ fn reads_the_vue_grammar() {
 	assert_eq!(grammar.directive("anything").unwrap().name, Match::Any);
 	assert_eq!(for_.declares, Some(vec!["value", "key", "index"]));
 	assert_eq!(grammar.verbatim, Some("v-pre"));
-}
-
-// the types the JavaScript side writes a grammar as, pinned beside its writer
-#[test]
-fn wire_types() {
-	let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-	assert!(
-		common::pinned(&root.join("../../npm/src/wire.ts"), &Grammar::wire_types()),
-		"npm/src/wire.ts changed; run with UPDATE=1 once the change is meant"
-	);
 }
