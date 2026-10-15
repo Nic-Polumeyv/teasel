@@ -7,18 +7,19 @@
 //! its reader, which takes the type's value off the text where it stands, and its writer. A
 //! struct's keys come in any order, each once; an enum's variant is told by the shape of its
 //! value. The text is kept for the process, and every name is a slice of it unless it was
-//! escaped.
+//! escaped; every list is a slice of the arena the definition is read into.
 
 /// Reads a definition's JSON in one pass, each value straight into its type.
-pub(crate) struct Reader {
+pub(crate) struct Reader<'a> {
 	/// Every name without an escape is a slice of it.
 	text: &'static str,
 	at: usize,
+	arena: &'a Arena,
 }
 
-impl Reader {
-	pub(crate) fn new(text: &'static str) -> Reader {
-		Reader { text, at: 0 }
+impl<'a> Reader<'a> {
+	pub(crate) fn new(text: &'static str, arena: &'a Arena) -> Reader<'a> {
+		Reader { text, at: 0, arena }
 	}
 
 	pub(crate) fn peek(&self) -> Option<u8> {
@@ -140,7 +141,10 @@ impl Reader {
 	/// Reads an object, `entry` reading each key and its value in order.
 	// `dyn` keeps one loop for every object: a copy for each struct, its keys inlined into it, made
 	// the WebAssembly module's first read 1.3 ms longer to compile
-	pub(crate) fn object(&mut self, entry: &mut dyn FnMut(&mut Reader) -> Result<(), String>) -> Result<(), String> {
+	pub(crate) fn object(
+		&mut self,
+		entry: &mut dyn FnMut(&mut Reader<'a>) -> Result<(), String>,
+	) -> Result<(), String> {
 		self.expect(b'{')?;
 		if self.eat(b'}') {
 			return Ok(());
@@ -157,7 +161,7 @@ impl Reader {
 	}
 
 	/// Reads a list, `item` reading each item in order.
-	pub(crate) fn list(&mut self, mut item: impl FnMut(&mut Reader) -> Result<(), String>) -> Result<(), String> {
+	pub(crate) fn list(&mut self, mut item: impl FnMut(&mut Reader<'a>) -> Result<(), String>) -> Result<(), String> {
 		self.expect(b'[')?;
 		if self.eat(b']') {
 			return Ok(());
@@ -174,7 +178,7 @@ impl Reader {
 	}
 
 	/// Reads the value of a struct's key into its slot, which a key read before has not filled.
-	pub(crate) fn once<T: Wire>(&mut self, slot: &mut Option<T>, key: &str, ty: &str) -> Result<(), String> {
+	pub(crate) fn once<T: Wire<'a>>(&mut self, slot: &mut Option<T>, key: &str, ty: &str) -> Result<(), String> {
 		if slot.is_some() {
 			return Err(self.twice(key, ty));
 		}
@@ -215,6 +219,99 @@ impl Reader {
 /// A grammar's names reach the walker as `&'static str`, so they live for the process.
 pub(crate) fn keep(s: &str) -> &'static str {
 	Box::leak(s.to_owned().into_boxed_str())
+}
+
+/// Holds a definition's lists until it is lowered: each is bumped onto the chunk being filled,
+/// and all go with the arena. A list of its own from the allocator, freed on its own, made
+/// reading the Svelte grammar 60% slower.
+pub struct Arena {
+	chunks: std::cell::RefCell<Vec<Vec<std::mem::MaybeUninit<u64>>>>,
+	/// The free words of the last chunk.
+	free: std::cell::Cell<(*mut std::mem::MaybeUninit<u64>, usize)>,
+}
+
+impl Arena {
+	/// Room for `words` words.
+	fn words(&self, words: usize) -> *mut std::mem::MaybeUninit<u64> {
+		let (at, left) = self.free.get();
+		if words <= left {
+			self.free.set((at.wrapping_add(words), left - words));
+			return at;
+		}
+		let mut chunks = self.chunks.borrow_mut();
+		let size = words.max(chunks.last().map_or(1024, |chunk| chunk.capacity() * 2));
+		let mut chunk = Vec::with_capacity(size);
+		let at = chunk.as_mut_ptr();
+		chunks.push(chunk);
+		self.free.set((at.wrapping_add(words), size - words));
+		at
+	}
+
+	/// Whether the list at `at`, `words` words long, takes `more` where it is: it ends what the
+	/// chunk has filled, and the chunk has the room.
+	fn grow(&self, at: *mut std::mem::MaybeUninit<u64>, words: usize, more: usize) -> bool {
+		let (free, left) = self.free.get();
+		let grows = at.wrapping_add(words) == free && more <= left;
+		if grows {
+			self.free.set((free.wrapping_add(more), left - more));
+		}
+		grows
+	}
+}
+
+impl Default for Arena {
+	fn default() -> Arena {
+		Arena {
+			chunks: Default::default(),
+			free: std::cell::Cell::new((std::ptr::null_mut(), 0)),
+		}
+	}
+}
+
+/// A list being read into an arena.
+struct Items<'a, T> {
+	arena: &'a Arena,
+	at: *mut T,
+	len: usize,
+	room: usize,
+}
+
+impl<'a, T: Copy> Items<'a, T> {
+	const fn words(items: usize) -> usize {
+		const { assert!(align_of::<T>() <= align_of::<u64>()) };
+		(items * size_of::<T>()).div_ceil(size_of::<u64>())
+	}
+
+	fn new(arena: &'a Arena) -> Items<'a, T> {
+		Items {
+			arena,
+			at: std::ptr::NonNull::dangling().as_ptr(),
+			len: 0,
+			room: 0,
+		}
+	}
+
+	fn push(&mut self, item: T) {
+		if self.len == self.room {
+			let room = (self.room * 2).max(4);
+			let (old, new) = (Self::words(self.room), Self::words(room));
+			if !(self.room > 0 && self.arena.grow(self.at.cast(), old, new - old)) {
+				let at = self.arena.words(new).cast::<T>();
+				// SAFETY: the new room is the list's own, apart from the old, which holds `len` items
+				unsafe { std::ptr::copy_nonoverlapping(self.at, at, self.len) };
+				self.at = at;
+			}
+			self.room = room;
+		}
+		// SAFETY: the room for `room` items at `at` is the list's
+		unsafe { self.at.add(self.len).write(item) };
+		self.len += 1;
+	}
+
+	fn list(self) -> &'a [T] {
+		// SAFETY: `len` items were written at `at`, which the arena holds as long as it lives
+		unsafe { std::slice::from_raw_parts(self.at, self.len) }
+	}
 }
 
 /// The length of what `camel` spells.
@@ -292,9 +389,10 @@ macro_rules! spelled {
 	}};
 }
 
-/// A type of the definition: how it reads off the text and writes back.
-pub(crate) trait Wire: Sized {
-	fn read(r: &mut Reader) -> Result<Self, String>;
+/// A type of the definition: how it reads off the text, its lists into the arena of `'a`, and
+/// writes back.
+pub(crate) trait Wire<'a>: Sized {
+	fn read(r: &mut Reader<'a>) -> Result<Self, String>;
 
 	/// What a field holds when its key is left out: none of most types, `None` of an option.
 	fn absent() -> Option<Self> {
@@ -309,8 +407,8 @@ pub(crate) trait Wire: Sized {
 	}
 }
 
-impl Wire for &'static str {
-	fn read(r: &mut Reader) -> Result<Self, String> {
+impl<'a> Wire<'a> for &'static str {
+	fn read(r: &mut Reader<'a>) -> Result<Self, String> {
 		r.str()
 	}
 
@@ -339,7 +437,7 @@ fn write_str(s: &str, out: &mut String) {
 }
 
 /// Writes `"key":value` into the object being written, unless the value is absent.
-pub(crate) fn entry(out: &mut String, key: &str, value: &impl Wire) {
+pub(crate) fn entry<'a>(out: &mut String, key: &str, value: &impl Wire<'a>) {
 	if value.is_absent() {
 		return;
 	}
@@ -352,8 +450,8 @@ pub(crate) fn entry(out: &mut String, key: &str, value: &impl Wire) {
 	value.write(out);
 }
 
-impl Wire for bool {
-	fn read(r: &mut Reader) -> Result<Self, String> {
+impl<'a> Wire<'a> for bool {
+	fn read(r: &mut Reader<'a>) -> Result<Self, String> {
 		if r.eat_text("true") {
 			Ok(true)
 		} else if r.eat_text("false") {
@@ -368,8 +466,8 @@ impl Wire for bool {
 	}
 }
 
-impl<T: Wire> Wire for Option<T> {
-	fn read(r: &mut Reader) -> Result<Self, String> {
+impl<'a, T: Wire<'a>> Wire<'a> for Option<T> {
+	fn read(r: &mut Reader<'a>) -> Result<Self, String> {
 		T::read(r).map(Some)
 	}
 
@@ -388,14 +486,14 @@ impl<T: Wire> Wire for Option<T> {
 	}
 }
 
-impl<T: Wire> Wire for Vec<T> {
-	fn read(r: &mut Reader) -> Result<Self, String> {
-		let mut items = Vec::new();
+impl<'a, T: Wire<'a> + Copy> Wire<'a> for &'a [T] {
+	fn read(r: &mut Reader<'a>) -> Result<Self, String> {
+		let mut items = Items::new(r.arena);
 		r.list(|r| {
 			items.push(T::read(r)?);
 			Ok(())
 		})?;
-		Ok(items)
+		Ok(items.list())
 	}
 
 	fn write(&self, out: &mut String) {
@@ -411,8 +509,8 @@ impl<T: Wire> Wire for Vec<T> {
 }
 
 /// A list of two; the second may be left out when it is absent, `[attribute]`.
-impl<A: Wire, B: Wire> Wire for (A, B) {
-	fn read(r: &mut Reader) -> Result<Self, String> {
+impl<'a, A: Wire<'a>, B: Wire<'a>> Wire<'a> for (A, B) {
+	fn read(r: &mut Reader<'a>) -> Result<Self, String> {
 		r.expect(b'[')?;
 		let a = A::read(r)?;
 		if let Some(b) = B::absent()
@@ -438,24 +536,24 @@ impl<A: Wire, B: Wire> Wire for (A, B) {
 }
 
 /// An object of the definition: its keys in order, each holding a `T`.
-#[derive(Clone, Debug, Default)]
-pub struct Record<T>(pub Vec<(&'static str, T)>);
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Record<'a, T>(pub &'a [(&'static str, T)]);
 
-impl<T: Wire> Wire for Record<T> {
-	fn read(r: &mut Reader) -> Result<Self, String> {
-		let mut entries = Vec::new();
+impl<'a, T: Wire<'a> + Copy> Wire<'a> for Record<'a, T> {
+	fn read(r: &mut Reader<'a>) -> Result<Self, String> {
+		let mut entries = Items::new(r.arena);
 		r.object(&mut |r| {
 			let key = r.str()?;
 			r.expect(b':')?;
 			entries.push((key, T::read(r)?));
 			Ok(())
 		})?;
-		Ok(Record(entries))
+		Ok(Record(entries.list()))
 	}
 
 	fn write(&self, out: &mut String) {
 		out.push('{');
-		for (key, value) in &self.0 {
+		for (key, value) in self.0 {
 			entry(out, key, value);
 		}
 		out.push('}');
@@ -471,18 +569,18 @@ impl<T: Wire> Wire for Record<T> {
 /// `object`.
 macro_rules! wire {
 	(
-		$(#[doc = $doc:literal])* $vis:vis struct $name:ident {
+		$(#[doc = $doc:literal])* $vis:vis struct $name:ident $(<$a:lifetime>)? {
 			$($(#[doc = $fdoc:literal])* $fvis:vis $f:ident : $t:ty),* $(,)?
 		}
 	) => {
 		$(#[doc = $doc])*
-		#[derive(Clone, Debug)]
-		$vis struct $name {
+		#[derive(Clone, Copy, Debug)]
+		$vis struct $name $(<$a>)? {
 			$($(#[doc = $fdoc])* $fvis $f: $t,)*
 		}
 
-		impl $crate::host::grammar::Wire for $name {
-			fn read(r: &mut $crate::host::grammar::Reader) -> Result<Self, String> {
+		impl<'a> $crate::host::grammar::Wire<'a> for $name $(<$a>)? {
+			fn read(r: &mut $crate::host::grammar::Reader<'a>) -> Result<Self, String> {
 				$(let mut $f = None::<$t>;)*
 				// each key is matched where it stands: reading it as a string first, then
 				// matching that, read the Svelte grammar 25% slower
@@ -508,18 +606,18 @@ macro_rules! wire {
 		}
 	};
 
-	($(#[doc = $doc:literal])* $vis:vis enum $name:ident { $($body:tt)* }) => {
-		wire!(@variants $name [$(#[doc = $doc])* $vis derive(Clone, Debug)] (r out) [] [] [] $($body)*);
+	($(#[doc = $doc:literal])* $vis:vis enum $name:ident $(<$a:lifetime>)? { $($body:tt)* }) => {
+		wire!(@variants $name [$(<$a>)?] [$(#[doc = $doc])* $vis derive(Clone, Copy, Debug)] (r out) [] [] [] $($body)*);
 	};
 	($(#[doc = $doc:literal])* $vis:vis copy enum $name:ident { $($body:tt)* }) => {
-		wire!(@variants $name [$(#[doc = $doc])* $vis derive(Clone, Copy, Debug, PartialEq, Eq)] (r out) [] [] [] $($body)*);
+		wire!(@variants $name [] [$(#[doc = $doc])* $vis derive(Clone, Copy, Debug, PartialEq, Eq)] (r out) [] [] [] $($body)*);
 	};
 
 	// a name: its string, or the JSON given
-	(@variants $name:ident $head:tt ($r:ident $out:ident) [$($def:tt)*] [$($read:tt)*] [$($write:tt)*]
+	(@variants $name:ident $gen:tt $head:tt ($r:ident $out:ident) [$($def:tt)*] [$($read:tt)*] [$($write:tt)*]
 		$(#[doc = $vdoc:literal])* $variant:ident $(= $json:tt)? $(, $($rest:tt)*)?
 	) => {
-		wire!(@variants $name $head ($r $out)
+		wire!(@variants $name $gen $head ($r $out)
 			[$($def)* $(#[doc = $vdoc])* $variant,]
 			[$($read)* if $r.eat_text(wire!(@json $variant $($json)?)) { return Ok($name::$variant); }]
 			[$($write)* $name::$variant => $out.push_str(wire!(@json $variant $($json)?)),]
@@ -527,23 +625,23 @@ macro_rules! wire {
 	};
 
 	// a variant holding one value: an object its name keys, or the bare value of the shape given
-	(@variants $name:ident $head:tt ($r:ident $out:ident) [$($def:tt)*] [$($read:tt)*] [$($write:tt)*]
+	(@variants $name:ident $gen:tt $head:tt ($r:ident $out:ident) [$($def:tt)*] [$($read:tt)*] [$($write:tt)*]
 		$(#[doc = $vdoc:literal])* $variant:ident ( $t:ty ) $(= $shape:ident)? $(, $($rest:tt)*)?
 	) => {
-		wire!(@variants $name $head ($r $out)
+		wire!(@variants $name $gen $head ($r $out)
 			[$($def)* $(#[doc = $vdoc])* $variant($t),]
 			[$($read)* wire!(@read $r $name $variant $t $(, $shape)?);]
 			[$($write)* $name::$variant(value) => wire!(@write $out $variant value $(, $shape)?),]
 			$($($rest)*)?);
 	};
 
-	(@variants $name:ident [$(#[doc = $doc:literal])* $vis:vis derive($($derive:ident),*)] ($r:ident $out:ident) [$($def:tt)*] [$($read:tt)*] [$($write:tt)*]) => {
+	(@variants $name:ident [$($gen:tt)*] [$(#[doc = $doc:literal])* $vis:vis derive($($derive:ident),*)] ($r:ident $out:ident) [$($def:tt)*] [$($read:tt)*] [$($write:tt)*]) => {
 		$(#[doc = $doc])*
 		#[derive($($derive),*)]
-		$vis enum $name { $($def)* }
+		$vis enum $name $($gen)* { $($def)* }
 
-		impl $crate::host::grammar::Wire for $name {
-			fn read($r: &mut $crate::host::grammar::Reader) -> Result<Self, String> {
+		impl<'a> $crate::host::grammar::Wire<'a> for $name $($gen)* {
+			fn read($r: &mut $crate::host::grammar::Reader<'a>) -> Result<Self, String> {
 				$($read)*
 				Err($r.expected(concat!("a ", stringify!($name))))
 			}
@@ -1095,7 +1193,7 @@ pub fn component_name(name: &str) -> bool {
 /// A grammar as the builders make it, which is what crosses, lowered here into what the walker
 /// reads.
 pub mod definition {
-	use super::{Reader, Record, Wire};
+	use super::{Arena, Reader, Record, Wire};
 
 	wire! {
 		/// What fills a field: where it is read from, what reads it, and how.
@@ -1129,20 +1227,20 @@ pub mod definition {
 
 	wire! {
 		/// One step of a form: a host word, fields, or a group.
-		pub enum Item {
+		pub enum Item<'a> {
 			Word(&'static str) = string,
-			Opt(Vec<Item>),
-			OneOf(Vec<Vec<Item>>),
-			Scope(Vec<Item>),
-			Fields(Record<Source>) = object,
+			Opt(&'a [Item<'a>]),
+			OneOf(&'a [&'a [Item<'a>]]),
+			Scope(&'a [Item<'a>]),
+			Fields(Record<'a, Source>) = object,
 		}
 	}
 
 	wire! {
 		/// A node type and the form its fields come from.
-		pub struct Node {
+		pub struct Node<'a> {
 			pub node: &'static str,
-			pub form: Option<Vec<Item>>,
+			pub form: Option<&'a [Item<'a>]>,
 		}
 	}
 
@@ -1154,9 +1252,9 @@ pub mod definition {
 	}
 
 	wire! {
-		pub struct Directive {
+		pub struct Directive<'a> {
 			pub node: &'static str,
-			pub form: Option<Vec<Item>>,
+			pub form: Option<&'a [Item<'a>]>,
 			pub unique: Option<Uniqueness>,
 		}
 	}
@@ -1169,9 +1267,9 @@ pub mod definition {
 	}
 
 	wire! {
-		pub struct Element {
+		pub struct Element<'a> {
 			pub node: &'static str,
-			pub form: Option<Vec<Item>>,
+			pub form: Option<&'a [Item<'a>]>,
 			pub root: Option<bool>,
 			pub once: Option<bool>,
 			pub inside: Option<&'static str>,
@@ -1181,19 +1279,19 @@ pub mod definition {
 	}
 
 	wire! {
-		pub struct Elements {
-			pub fields: Record<Source>,
-			pub rules: Option<Record<Element>>,
-			pub component: Option<Element>,
-			pub other: Option<Element>,
+		pub struct Elements<'a> {
+			pub fields: Record<'a, Source>,
+			pub rules: Option<Record<'a, Element<'a>>>,
+			pub component: Option<Element<'a>>,
+			pub other: Option<Element<'a>>,
 		}
 	}
 
 	wire! {
-		pub struct Script {
+		pub struct Script<'a> {
 			pub element: &'static str,
-			pub module: Option<Vec<(&'static str, Option<&'static str>)>>,
-			pub typescript: Option<Vec<(&'static str, Option<&'static str>)>>,
+			pub module: Option<&'a [(&'static str, Option<&'static str>)]>,
+			pub typescript: Option<&'a [(&'static str, Option<&'static str>)]>,
 		}
 	}
 
@@ -1204,16 +1302,16 @@ pub mod definition {
 	}
 
 	wire! {
-		pub struct Directives {
+		pub struct Directives<'a> {
 			pub prefix: Option<&'static str>,
 			pub arg: Option<&'static str>,
 			pub modifier: Option<&'static str>,
 			pub dynamic: Option<(&'static str, &'static str)>,
 			pub unique: Option<Raw>,
-			pub fields: Record<Source>,
-			pub shorthands: Option<Record<Vec<&'static str>>>,
-			pub rules: Option<Record<Directive>>,
-			pub other: Option<Directive>,
+			pub fields: Record<'a, Source>,
+			pub shorthands: Option<Record<'a, &'a [&'static str]>>,
+			pub rules: Option<Record<'a, Directive<'a>>>,
+			pub other: Option<Directive<'a>>,
 		}
 	}
 
@@ -1230,31 +1328,31 @@ pub mod definition {
 
 	wire! {
 		/// What a construct opens or closes with: its marker, then what its form reads.
-		pub struct Piece {
-			pub marker: Vec<&'static str>,
+		pub struct Piece<'a> {
+			pub marker: &'a [&'static str],
 			/// Whitespace must follow the marker.
 			pub space: Option<bool>,
-			pub form: Vec<Item>,
+			pub form: &'a [Item<'a>],
 		}
 	}
 
 	wire! {
 		/// A branch of a block; `reopen` nests the block again into that field, with that flag true on it.
-		pub struct Branch {
-			pub marker: Vec<&'static str>,
+		pub struct Branch<'a> {
+			pub marker: &'a [&'static str],
 			pub space: Option<bool>,
-			pub form: Vec<Item>,
+			pub form: &'a [Item<'a>],
 			pub reopen: Option<(&'static str, &'static str)>,
 		}
 	}
 
 	wire! {
 		/// A tag, or with `close` a block; the type of its node is the key it is written under.
-		pub struct Construct {
-			pub r#in: Option<Vec<Place>>,
-			pub open: Piece,
-			pub branches: Option<Vec<Branch>>,
-			pub close: Option<Piece>,
+		pub struct Construct<'a> {
+			pub r#in: Option<&'a [Place]>,
+			pub open: Piece<'a>,
+			pub branches: Option<&'a [Branch<'a>]>,
+			pub close: Option<Piece<'a>>,
 		}
 	}
 
@@ -1267,36 +1365,37 @@ pub mod definition {
 
 	wire! {
 		/// A host language: its document, its content, and the JavaScript inside them.
-		pub struct Definition {
-			pub document: Node,
-			pub text: Node,
-			pub comment: Node,
-			pub fragment: Option<Node>,
+		pub struct Definition<'a> {
+			pub document: Node<'a>,
+			pub text: Node<'a>,
+			pub comment: Node<'a>,
+			pub fragment: Option<Node<'a>>,
 			pub attributes: Option<Attributes>,
 			pub autoclose: Option<bool>,
 			pub trim: Option<bool>,
-			pub void: Option<Vec<&'static str>>,
+			pub void: Option<&'a [&'static str]>,
 			pub verbatim: Option<&'static str>,
-			pub elements: Elements,
-			pub script: Option<Script>,
+			pub elements: Elements<'a>,
+			pub script: Option<Script<'a>>,
 			pub style: Option<&'static str>,
-			pub directives: Option<Directives>,
-			pub constructs: Option<Record<Construct>>,
+			pub directives: Option<Directives<'a>>,
+			pub constructs: Option<Record<'a, Construct<'a>>>,
 		}
 	}
 
 	wire! {
 		/// What crosses: the host's name and its definition.
-		pub struct Host {
+		pub struct Host<'a> {
 			pub name: &'static str,
-			pub definition: Definition,
+			pub definition: Definition<'a>,
 		}
 	}
 
-	impl Host {
-		/// Every name but an escaped one is a slice of `text`, which therefore lives for the process.
-		pub fn read(text: &'static str) -> Result<Host, String> {
-			let mut reader = Reader::new(text);
+	impl<'a> Host<'a> {
+		/// Every name but an escaped one is a slice of `text`, which therefore lives for the
+		/// process; every list is in `arena`.
+		pub fn read(text: &'static str, arena: &'a Arena) -> Result<Host<'a>, String> {
+			let mut reader = Reader::new(text, arena);
 			let host = <Host as Wire>::read(&mut reader)?;
 			reader.end()?;
 			Ok(host)
@@ -1339,7 +1438,7 @@ fn entry_of(read: &str) -> Result<Entry, String> {
 }
 
 /// The fields among items, in order.
-fn sources(items: &[definition::Item]) -> Vec<(&'static str, &Source)> {
+fn sources<'a>(items: &[definition::Item<'a>]) -> Vec<(&'static str, &'a Source)> {
 	items
 		.iter()
 		.filter_map(|item| match item {
@@ -1369,7 +1468,7 @@ fn fields_in(ty: &str, items: &[definition::Item]) -> Result<Vec<&'static str>, 
 			definition::Item::Opt(inner) | definition::Item::Scope(inner) => fields_in(ty, inner)?,
 			definition::Item::OneOf(list) => {
 				let mut union: Vec<&'static str> = Vec::new();
-				for inner in list {
+				for inner in *list {
 					for field in fields_in(ty, inner)? {
 						if !union.contains(&field) {
 							union.push(field);
@@ -1406,7 +1505,7 @@ fn part(fields: &Record<Source>, read: &str) -> Option<&'static str> {
 /// The fields of a site that reads each of them once and never leaves one out.
 fn once(what: &str, fields: &Record<Source>) -> Result<(), String> {
 	let mut reads = Vec::new();
-	for (field, s) in &fields.0 {
+	for (field, s) in fields.0 {
 		if s.optional {
 			return Err(format!("{field} on {what} is never left out"));
 		}
@@ -1460,12 +1559,12 @@ fn sequence(
 				let required = matches!(item, definition::Item::OneOf(_));
 				let one;
 				let list = match item {
-					definition::Item::OneOf(list) => list.as_slice(),
-					definition::Item::Opt(inner) if inner.is_empty() => return Err(format!("{ty}: `opt` needs items")),
-					definition::Item::Opt(inner) => match inner.as_slice() {
-						[definition::Item::OneOf(list)] => list.as_slice(),
+					definition::Item::OneOf(list) => *list,
+					definition::Item::Opt([]) => return Err(format!("{ty}: `opt` needs items")),
+					definition::Item::Opt(inner) => match *inner {
+						[definition::Item::OneOf(list)] => *list,
 						_ => {
-							one = [inner.clone()];
+							one = [*inner];
 							&one
 						}
 					},
@@ -1489,7 +1588,7 @@ fn sequence(
 			}
 			definition::Item::Scope(_) => return Err(format!("{ty}: a scope belongs to the document or the fragment")),
 			definition::Item::Fields(record) => {
-				for (field, source) in &record.0 {
+				for (field, source) in record.0 {
 					match source.from {
 						"literal" if site == At::Directive => continue,
 						"content" => {
@@ -1537,7 +1636,7 @@ fn sequence(
 
 fn alternatives(
 	ty: &str,
-	list: &[Vec<definition::Item>],
+	list: &[&[definition::Item]],
 	site: At,
 	bound: &mut Vec<Declare>,
 ) -> Result<Vec<Alternative>, String> {
@@ -1578,7 +1677,7 @@ fn scoped(items: &[definition::Item], reads: &mut Vec<&'static str>) -> Result<V
 		match item {
 			definition::Item::Scope(inner) => out.push(DocField::Scope(scoped(inner, reads)?)),
 			definition::Item::Fields(record) => {
-				for (field, source) in &record.0 {
+				for (field, source) in record.0 {
 					if source.from != "literal" {
 						if reads.contains(&source.read) {
 							return Err(format!("the document reads {} twice", source.read));
@@ -1599,7 +1698,7 @@ fn scoped(items: &[definition::Item], reads: &mut Vec<&'static str>) -> Result<V
 }
 
 fn element(name: Match, rule: &definition::Element) -> Result<ElementRule, String> {
-	let this = match rule.form.as_deref().unwrap_or_default() {
+	let this = match rule.form.unwrap_or_default() {
 		[] => None,
 		[definition::Item::Fields(Record(fields))]
 			if fields.len() == 1
@@ -1629,7 +1728,7 @@ fn element(name: Match, rule: &definition::Element) -> Result<ElementRule, Strin
 }
 
 fn directive(name: Match, rule: &definition::Directive) -> Result<DirectiveRule, String> {
-	let items = rule.form.as_deref().unwrap_or_default();
+	let items = rule.form.unwrap_or_default();
 	let ty = rule.node;
 	let grouped = items.iter().any(|item| match item {
 		definition::Item::Opt(inner) | definition::Item::Scope(inner) => has_literal(inner),
@@ -1663,7 +1762,7 @@ fn directive(name: Match, rule: &definition::Directive) -> Result<DirectiveRule,
 	};
 	if let [only] = rest.as_slice() {
 		let wrapped = match only {
-			definition::Item::Opt(inner) if inner.len() == 1 => Some(inner.as_slice()),
+			definition::Item::Opt(inner) if inner.len() == 1 => Some(*inner),
 			_ => None,
 		};
 		let mut single = match wrapped {
@@ -1770,25 +1869,18 @@ fn piece(
 
 fn construct(ty: &'static str, rule: &definition::Construct) -> Result<Construct, String> {
 	let block = rule.close.is_some();
-	let places = match &rule.r#in {
-		Some(list) if list.is_empty() => return Err(format!("{ty} stands nowhere")),
-		Some(list) => list.clone(),
+	let places = match rule.r#in {
+		Some([]) => return Err(format!("{ty} stands nowhere")),
+		Some(list) => list.to_vec(),
 		None => vec![Place::Content],
 	};
 	let mut chain_flags = Vec::new();
 	let mut branches = Vec::new();
-	for branch in rule.branches.iter().flatten() {
+	for branch in rule.branches.unwrap_or_default() {
 		if !block {
 			return Err(format!("{ty} has branches, so it closes"));
 		}
-		let mut piece = piece(
-			ty,
-			&branch.marker,
-			branch.space,
-			&branch.form,
-			At::Block,
-			&mut Vec::new(),
-		)?;
+		let mut piece = piece(ty, branch.marker, branch.space, branch.form, At::Block, &mut Vec::new())?;
 		if let Some((field, flag)) = branch.reopen {
 			if !chain_flags.contains(&flag) {
 				chain_flags.push(flag);
@@ -1813,14 +1905,7 @@ fn construct(ty: &'static str, rule: &definition::Construct) -> Result<Construct
 	}
 	let mut bound = Vec::new();
 	let site = if block { At::Block } else { At::Tag };
-	let open = piece(
-		ty,
-		&rule.open.marker,
-		rule.open.space,
-		&rule.open.form,
-		site,
-		&mut bound,
-	)?;
+	let open = piece(ty, rule.open.marker, rule.open.space, rule.open.form, site, &mut bound)?;
 	if block && !closed(&open.form.items, open.form.body.as_ref()) {
 		return Err(format!("{ty} ends in no body"));
 	}
@@ -1832,7 +1917,7 @@ fn construct(ty: &'static str, rule: &definition::Construct) -> Result<Construct
 	}
 	let close = match &rule.close {
 		Some(close) => {
-			let piece = piece(ty, &close.marker, close.space, &close.form, At::Tag, &mut Vec::new())?;
+			let piece = piece(ty, close.marker, close.space, close.form, At::Tag, &mut Vec::new())?;
 			if !piece.form.items.iter().all(|item| matches!(item, Item::Literal(_))) {
 				return Err(format!("{ty}: a close reads words only"));
 			}
@@ -1876,7 +1961,7 @@ fn lower(host: Host) -> Result<Grammar, String> {
 	let texts = |node: &definition::Node,
 	             reads: &[&str]|
 	 -> Result<(&'static str, &'static str, Option<&'static str>), String> {
-		let items = node.form.as_deref().unwrap_or_default();
+		let items = node.form.unwrap_or_default();
 		let record = sources(items);
 		let fields_only = items.iter().all(|item| matches!(item, definition::Item::Fields(_)));
 		if !fields_only || record.iter().any(|(_, s)| s.from != "text" || !reads.contains(&s.read)) {
@@ -1893,8 +1978,8 @@ fn lower(host: Host) -> Result<Grammar, String> {
 	let (comment_ty, comment_data, _) = texts(&d.comment, &["data"])?;
 	let fragment = match &d.fragment {
 		Some(node) => {
-			let (scope, items) = match node.form.as_deref().unwrap_or_default() {
-				[definition::Item::Scope(inner)] => (true, inner.as_slice()),
+			let (scope, items) = match node.form.unwrap_or_default() {
+				[definition::Item::Scope(inner)] => (true, *inner),
 				items => (false, items),
 			};
 			let ([(field, source)], [_]) = (&sources(items)[..], items) else {
@@ -1912,7 +1997,7 @@ fn lower(host: Host) -> Result<Grammar, String> {
 	let element_fields =
 		|read: &str| part(&d.elements.fields, read).ok_or_else(|| format!("elements need a field read by {read}"));
 	let mut elements = Vec::new();
-	for (name, rule) in d.elements.rules.iter().flat_map(|r| &r.0) {
+	for (name, rule) in d.elements.rules.iter().flat_map(|r| r.0) {
 		elements.push(element(Match::Exact(name), rule)?);
 	}
 	if let Some(rule) = &d.elements.component {
@@ -1955,8 +2040,8 @@ fn lower(host: Host) -> Result<Grammar, String> {
 		unique: x.unique.is_some(),
 	});
 	let shorthands = x
-		.and_then(|x| x.shorthands.as_ref())
-		.map(|s| &s.0[..])
+		.and_then(|x| x.shorthands)
+		.map(|s| s.0)
 		.unwrap_or_default()
 		.iter()
 		.map(|(token, list)| Shorthand {
@@ -1966,14 +2051,14 @@ fn lower(host: Host) -> Result<Grammar, String> {
 		})
 		.collect();
 	let mut directives = Vec::new();
-	for (name, rule) in x.and_then(|x| x.rules.as_ref()).iter().flat_map(|r| &r.0) {
+	for (name, rule) in x.and_then(|x| x.rules).iter().flat_map(|r| r.0) {
 		directives.push(directive(Match::Exact(name), rule)?);
 	}
 	if let Some(other) = x.and_then(|x| x.other.as_ref()) {
 		directives.push(directive(Match::Any, other)?);
 	}
 	let mut constructs = Vec::new();
-	for (name, rule) in d.constructs.iter().flat_map(|r| &r.0) {
+	for (name, rule) in d.constructs.iter().flat_map(|r| r.0) {
 		constructs.push(construct(name, rule)?);
 	}
 	let shorthand = d.attributes.as_ref().and_then(|a| a.shorthand);
@@ -1984,7 +2069,7 @@ fn lower(host: Host) -> Result<Grammar, String> {
 	let mut reads = Vec::new();
 	let document = DocumentRule {
 		ty: d.document.node,
-		fields: scoped(d.document.form.as_deref().unwrap_or_default(), &mut reads)?,
+		fields: scoped(d.document.form.unwrap_or_default(), &mut reads)?,
 	};
 	if !reads.contains(&"fragment") {
 		return Err(format!("{} holds no content", d.document.node));
@@ -1995,7 +2080,7 @@ fn lower(host: Host) -> Result<Grammar, String> {
 		shorthand,
 		autoclose: d.autoclose == Some(true),
 		trim: d.trim == Some(true),
-		void: d.void.clone().unwrap_or_default(),
+		void: d.void.unwrap_or_default().to_vec(),
 		fragment: fragment.map(|(ty, field, _)| (ty, field)),
 		fragment_scope: fragment.is_some_and(|(_, _, scope)| scope),
 		element_fields: ElementFields {
@@ -2016,8 +2101,8 @@ fn lower(host: Host) -> Result<Grammar, String> {
 		elements,
 		script: d.script.as_ref().map(|s| ScriptRule {
 			name: s.element,
-			module: s.module.clone().unwrap_or_default(),
-			typescript: s.typescript.clone().unwrap_or_default(),
+			module: s.module.unwrap_or_default().to_vec(),
+			typescript: s.typescript.unwrap_or_default().to_vec(),
 		}),
 		style: d.style,
 		directive_syntax,
@@ -2103,7 +2188,7 @@ impl Grammar {
 	/// Reads a grammar off its JSON, kept for the process: the definition as the builders made it,
 	/// lowered.
 	pub fn read(text: &'static str) -> Result<Grammar, String> {
-		let mut grammar = lower(Host::read(text)?)?;
+		let mut grammar = lower(Host::read(text, &Arena::default())?)?;
 		grammar.finish()?;
 		Ok(grammar)
 	}
@@ -2349,13 +2434,14 @@ mod tests {
 			println!("{label}: {:?}", t.elapsed() / 1000);
 		};
 		time("Host::read", &|| {
-			std::hint::black_box(Host::read(text).unwrap());
+			std::hint::black_box(Host::read(text, &Arena::default()).unwrap());
 		});
-		let host = Host::read(text).unwrap();
+		let arena = Arena::default();
+		let host = Host::read(text, &arena).unwrap();
 		time("lower", &|| {
-			std::hint::black_box(lower(host.clone()).unwrap());
+			std::hint::black_box(lower(host).unwrap());
 		});
-		let grammar = lower(host.clone()).unwrap();
+		let grammar = lower(host).unwrap();
 		time("finish", &|| {
 			let mut g = grammar.clone();
 			g.finish().unwrap();
@@ -2363,14 +2449,14 @@ mod tests {
 		});
 	}
 
-	fn read<T: Wire>(text: &str) -> Result<T, String> {
-		let mut reader = Reader::new(keep(text));
+	fn read<T: Wire<'static>>(text: &str) -> Result<T, String> {
+		let mut reader = Reader::new(keep(text), Box::leak(Box::default()));
 		let value = T::read(&mut reader)?;
 		reader.end()?;
 		Ok(value)
 	}
 
-	fn write(value: &impl Wire) -> String {
+	fn write<'a>(value: &impl Wire<'a>) -> String {
 		let mut out = String::new();
 		value.write(&mut out);
 		out
@@ -2379,7 +2465,7 @@ mod tests {
 	#[test]
 	fn json_round_trips() {
 		let markers = r#"[["context","module"],["mo\"d\\ule"],["a\u0001","é"]]"#;
-		let read_markers: Vec<(&str, Option<&str>)> = read(markers).unwrap();
+		let read_markers: &[(&str, Option<&str>)] = read(markers).unwrap();
 		assert_eq!(
 			read_markers,
 			[("context", Some("module")), ("mo\"d\\ule", None), ("a\u{1}", Some("é"))]
@@ -2398,9 +2484,9 @@ mod tests {
 		let plain = r#"{"from":"js","read":"expression","optional":false,"bind":false,"orArg":false}"#;
 		let form =
 			format!(r#"["{{",{{"opt":[{{"a":{plain}}}]}},{{"oneOf":[["x"],["y"]]}},{{"b":{plain},"c":{plain}}}]"#);
-		let items: Vec<definition::Item> = read(&form).unwrap();
+		let items: &[definition::Item] = read(&form).unwrap();
 		assert!(matches!(
-			items.as_slice(),
+			items,
 			[
 				definition::Item::Word("{"),
 				definition::Item::Opt(_),
@@ -2434,11 +2520,11 @@ mod tests {
 		assert!(cut.contains("ends early"), "{cut}");
 		assert!(source("").contains("ends early") && source(r#"{"from":"j"#).contains("ends early"));
 		assert!(
-			read::<Vec<&str>>(r#"["a"] "#)
+			read::<&[&str]>(r#"["a"] "#)
 				.unwrap_err()
 				.contains("text after the grammar at byte 5")
 		);
-		assert!(read::<Vec<&str>>("[\"a\u{1}\"]").is_err() && read::<&str>(r#""\x""#).is_err());
+		assert!(read::<&[&str]>("[\"a\u{1}\"]").is_err() && read::<&str>(r#""\x""#).is_err());
 		assert!(read::<(&str, &str)>(r#"["a"]"#).is_err());
 	}
 
