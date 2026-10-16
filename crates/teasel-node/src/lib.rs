@@ -93,7 +93,7 @@ fn number(env: Env, value: Value) -> Result<f64> {
 	})
 }
 
-// undefined is absent, read straight: asking V8 what the value is first costs as much as the read
+// anything but a number is absent, read straight: asking V8 what the value is first costs as much as the read
 fn optional(env: Env, value: Value) -> Option<f64> {
 	let mut result = 0.0;
 	(unsafe { node_api::napi_get_value_double(env, value, &mut result) } == OK).then_some(result)
@@ -204,7 +204,7 @@ unsafe extern "C" fn drop_plan(_: Env, data: *mut c_void, _: *mut c_void) {
 	drop(unsafe { Box::from_raw(data.cast::<Rc<Grammar>>()) });
 }
 
-// the grammar a parse reads a document by, or undefined
+// the grammar a parse reads a document by; anything else is none
 fn grammar_of(env: Env, value: Value) -> Option<&'static Grammar> {
 	let mut data = null_mut();
 	if unsafe { node_api::napi_get_value_external(env, value, &mut data) } != OK || data.is_null() {
