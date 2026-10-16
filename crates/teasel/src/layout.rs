@@ -5,7 +5,6 @@ use std::mem::MaybeUninit;
 
 use crate::ast::{List, NodeId};
 use crate::interner::StrId;
-use crate::names::Name;
 
 #[derive(Clone, Copy)]
 pub enum Ty {
@@ -21,8 +20,8 @@ pub enum Ty {
 	OptU32,
 	/// Two words: a range.
 	Pair,
-	Enum(&'static [Name]),
-	OptEnum(&'static [Name]),
+	Enum(&'static [&'static str]),
+	OptEnum(&'static [&'static str]),
 	/// A record inside the record, its fields' offsets from its own start.
 	Struct(&'static [Field]),
 }
@@ -91,14 +90,10 @@ macro_rules! names {
 		}
 
 		impl $E {
-			pub const NAMES: &[$crate::names::Name] = &[ $( $crate::names::c!($text) ),* ];
-
-			pub fn name(self) -> $crate::names::Name {
-				Self::NAMES[self as usize]
-			}
+			pub const NAMES: &[&'static str] = &[ $( $text ),* ];
 
 			pub fn as_str(self) -> &'static str {
-				self.name().text
+				Self::NAMES[self as usize]
 			}
 		}
 

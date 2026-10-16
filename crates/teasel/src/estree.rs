@@ -5,7 +5,6 @@ use crate::ast::{Ast, List, NodeId, NodeKind, Reuse, Value};
 use crate::handed::Handed;
 use crate::interner::StrId;
 use crate::layout::Ty;
-use crate::names::{Name, c};
 use crate::parser::Entry;
 use crate::recipe::{Op, Slot};
 use crate::scopes::Role;
@@ -72,10 +71,10 @@ impl Json {
 		self.end();
 	}
 
-	pub(crate) fn begin(&mut self, ty: Name) {
+	pub(crate) fn begin(&mut self, ty: &str) {
 		self.open(false);
 		self.out.push_str("\"type\":\"");
-		self.out.push_str(ty.text);
+		self.out.push_str(ty);
 		self.out.push('"');
 		self.first = false;
 	}
@@ -93,10 +92,10 @@ impl Json {
 		self.first = false;
 	}
 
-	pub(crate) fn key(&mut self, key: Name) {
+	pub(crate) fn key(&mut self, key: &str) {
 		self.sep();
 		self.out.push('"');
-		self.out.push_str(key.text);
+		self.out.push_str(key);
 		self.out.push_str("\":");
 		self.first = true;
 	}
@@ -119,10 +118,6 @@ impl Json {
 	pub(crate) fn null(&mut self) {
 		self.sep();
 		self.out.push_str("null");
-	}
-
-	pub(crate) fn str(&mut self, value: Name) {
-		self.text(value.text);
 	}
 
 	pub(crate) fn text(&mut self, value: &str) {
@@ -200,13 +195,13 @@ pub fn answer<X: Emit + Reuse>(
 	w.json.object();
 	match roots {
 		None => {
-			w.key(c!("node"));
+			w.key("node");
 			w.json.null();
 		}
-		Some(roots) if entry == Entry::Params => w.list(c!("node"), roots),
-		Some(roots) => w.field(c!("node"), ast.list(roots)[0].unwrap()),
+		Some(roots) if entry == Entry::Params => w.list("node", roots),
+		Some(roots) => w.field("node", ast.list(roots)[0].unwrap()),
 	}
-	w.key(c!("end"));
+	w.key("end");
 	let end = w.positions.offset(&mut w.cursor, end);
 	w.json.int(end);
 	w.trailers();
@@ -226,7 +221,7 @@ pub struct Writer<'a, X = ()> {
 	/// The node being written names something bound by another node: no scope facts on it.
 	name_only: bool,
 	/// What erasure left in place, in emission order.
-	kept: Vec<(Name, NodeId)>,
+	kept: Vec<(&'static str, NodeId)>,
 	/// Nodes erasure skipped whose facts the next node written takes over.
 	adopted: Vec<NodeId>,
 }
@@ -457,13 +452,13 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 	}
 
 	/// Records a node erasure had to leave in place.
-	pub(crate) fn keep(&mut self, ty: Name, id: NodeId) {
+	pub(crate) fn keep(&mut self, ty: &'static str, id: NodeId) {
 		self.kept.push((ty, id));
 	}
 
 	/// What erasure left in place, as `typescript`, in source order.
 	fn all_kept(&mut self) {
-		self.key(c!("typescript"));
+		self.key("typescript");
 		self.json.list();
 		let mut kept = std::mem::take(&mut self.kept);
 		kept.sort_unstable_by_key(|&(_, id)| self.ast.node(id).start);
@@ -476,7 +471,7 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 		self.json.end();
 	}
 
-	pub(crate) fn begin(&mut self, ty: Name, id: NodeId) {
+	pub(crate) fn begin(&mut self, ty: &'static str, id: NodeId) {
 		let node = self.ast.node(id);
 		self.json.begin(ty);
 		if matches!(self.ast.nodes[id.index() as usize].kind, NodeKind::Host(_)) {
@@ -486,13 +481,13 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 		}
 		self.scope_facts(id);
 		if self.ast.is_parenthesized(id) {
-			self.bool(c!("parenthesized"), true);
+			self.bool("parenthesized", true);
 		}
 		self.ast.extension.extras(self, id);
 		if let Some(&attached) = self.ast.attached.get(id) {
-			self.comments(c!("leadingComments"), attached.leading);
-			self.comments(c!("trailingComments"), attached.trailing);
-			self.comments(c!("innerComments"), attached.inner);
+			self.comments("leadingComments", attached.leading);
+			self.comments("trailingComments", attached.trailing);
+			self.comments("innerComments", attached.inner);
 		}
 	}
 
@@ -504,16 +499,16 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 			return;
 		}
 		if let Some(scope) = scopes.of_node.get(id) {
-			self.key(c!("scope"));
+			self.key("scope");
 			self.json.int(scope);
 		}
 		match scopes.of_identifier.get(id) {
 			Some(Role::Declares(binding)) => {
-				self.key(c!("declares"));
+				self.key("declares");
 				self.json.int(binding);
 			}
 			Some(Role::Reference(reference)) => {
-				self.key(c!("reference"));
+				self.key("reference");
 				self.json.int(reference);
 			}
 			None => {}
@@ -521,17 +516,17 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 		let adopted = std::mem::take(&mut self.adopted);
 		for node in adopted.iter().copied().chain([id]) {
 			if let Some(root) = scopes.root_of.get(node) {
-				self.key(c!("root"));
+				self.key("root");
 				self.json.int(root);
 			}
 			let bindings = scopes.declared_by.get(node);
 			if !bindings.is_empty() {
-				self.key(c!("defines"));
+				self.key("defines");
 				self.json.ints(bindings);
 			}
 			let writes = scopes.writes_of.get(node);
 			if !writes.is_empty() {
-				self.key(c!("writes"));
+				self.key("writes");
 				self.json.ints(writes);
 			}
 		}
@@ -547,16 +542,16 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 	/// `writes` numbers index.
 	fn all_scopes(&mut self) {
 		let Some(scopes) = &self.ast.scopes else { return };
-		self.rows(c!("scopes"), &scopes.scopes, 0);
-		self.rows(c!("bindings"), &scopes.bindings, 1);
-		self.rows(c!("references"), &scopes.references, 2);
+		self.rows("scopes", &scopes.scopes, 0);
+		self.rows("bindings", &scopes.bindings, 1);
+		self.rows("references", &scopes.references, 2);
 		if !self.ast.hosts.is_empty() {
-			self.rows(c!("roots"), &scopes.roots, 3);
+			self.rows("roots", &scopes.roots, 3);
 		}
 	}
 
 	/// A table, each row spelled by its recipe of `recipe::RECIPES`.
-	fn rows<T>(&mut self, key: Name, rows: &[T], table: usize) {
+	fn rows<T>(&mut self, key: &'static str, rows: &[T], table: usize) {
 		static RESOLVED: std::sync::OnceLock<Vec<&'static [Op<Slot>]>> = std::sync::OnceLock::new();
 		let ops = RESOLVED.get_or_init(|| {
 			crate::recipe::RECIPES
@@ -575,7 +570,7 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 		self.json.end();
 	}
 
-	fn comments(&mut self, key: Name, comments: crate::ast::Run) {
+	fn comments(&mut self, key: &'static str, comments: crate::ast::Run) {
 		if !comments.is_empty() {
 			self.key(key);
 			self.comment_list(comments.indices());
@@ -586,9 +581,8 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 		self.json.list();
 		for index in comments {
 			let comment = self.ast.comments[index as usize];
-			self.json
-				.begin(if comment.is_block() { c!("Block") } else { c!("Line") });
-			self.key(c!("value"));
+			self.json.begin(if comment.is_block() { "Block" } else { "Line" });
+			self.key("value");
 			let range = comment.text_range();
 			self.slice(range.start as u32, range.end as u32);
 			self.span(comment.start, comment.end);
@@ -600,25 +594,25 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 	/// The recovered errors as the thrown one would be: code, args, `pos`, `end`, `line`, `column`.
 	fn errors(&mut self) {
 		let places = self.positions.of_errors(self.source, &self.ast.errors);
-		self.key(c!("errors"));
+		self.key("errors");
 		self.json.list();
 		for (error, [pos, end, line, column]) in self.ast.errors.iter().zip(places) {
 			self.json.object();
-			self.key(c!("code"));
+			self.key("code");
 			self.json.int(error.code as u32);
-			self.key(c!("args"));
+			self.key("args");
 			self.json.list();
 			for &arg in error.args.iter().flatten() {
 				self.str_of(arg);
 			}
 			self.json.end();
-			self.key(c!("pos"));
+			self.key("pos");
 			self.json.int(pos);
-			self.key(c!("end"));
+			self.key("end");
 			self.json.int(end);
-			self.key(c!("line"));
+			self.key("line");
 			self.json.int(line);
-			self.key(c!("column"));
+			self.key("column");
 			self.json.int(column);
 			self.json.end();
 		}
@@ -632,7 +626,7 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 			return self.errors();
 		}
 		if self.options.has(Options::COMMENTS) {
-			self.key(c!("comments"));
+			self.key("comments");
 			self.comment_list(0..self.ast.comments.len() as u32);
 		}
 		if self.options.has(Options::ERROR_RECOVERY) {
@@ -678,18 +672,18 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 		self.json.end();
 	}
 
-	pub(crate) fn key(&mut self, key: Name) {
+	pub(crate) fn key(&mut self, key: &'static str) {
 		self.json.key(key);
 	}
 
-	pub(crate) fn field(&mut self, key: Name, id: NodeId) {
+	pub(crate) fn field(&mut self, key: &'static str, id: NodeId) {
 		self.key(key);
 		self.node(id);
 	}
 
 	/// A specifier's other name, which is the same node as the binding one in `import { a }`
 	/// and `export { a }`, and then only names: the binding facts stay on the binding one.
-	fn other_name(&mut self, key: Name, id: NodeId, binding: NodeId) {
+	fn other_name(&mut self, key: &'static str, id: NodeId, binding: NodeId) {
 		let was = self.name_only;
 		self.name_only = id == binding;
 		self.field(key, id);
@@ -701,13 +695,13 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 	}
 
 	/// The key only when there is a node; an unset property is left out.
-	pub(crate) fn opt_key(&mut self, key: Name, id: Option<NodeId>) {
+	pub(crate) fn opt_key(&mut self, key: &'static str, id: Option<NodeId>) {
 		if let Some(id) = id {
 			self.field(key, id);
 		}
 	}
 
-	pub(crate) fn opt(&mut self, key: Name, id: Option<NodeId>) {
+	pub(crate) fn opt(&mut self, key: &'static str, id: Option<NodeId>) {
 		self.key(key);
 		match id {
 			Some(id) => self.node(id),
@@ -715,7 +709,7 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 		}
 	}
 
-	pub(crate) fn list(&mut self, key: Name, list: List) {
+	pub(crate) fn list(&mut self, key: &'static str, list: List) {
 		self.key(key);
 		self.json.list();
 		let ast = self.ast;
@@ -732,7 +726,7 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 	}
 
 	/// A parameter list; erasing drops TypeScript's `this` parameter.
-	pub(crate) fn params(&mut self, key: Name, list: List) {
+	pub(crate) fn params(&mut self, key: &'static str, list: List) {
 		if self.options.has(Options::ERASE)
 			&& let Some(&Some(first)) = self.ast.list(list).first()
 			&& let NodeKind::Identifier { name } = self.kind(first)
@@ -747,23 +741,17 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 		self.list(key, list)
 	}
 
-	pub(crate) fn bool(&mut self, key: Name, value: bool) {
+	pub(crate) fn bool(&mut self, key: &'static str, value: bool) {
 		self.key(key);
 		self.json.bool(value);
 	}
 
-	pub(crate) fn string(&mut self, key: Name, value: Name) {
-		self.key(key);
-		self.json.str(value);
-	}
-
-	/// A string computed for this tree.
-	pub(crate) fn text(&mut self, key: Name, value: &str) {
+	pub(crate) fn text(&mut self, key: &'static str, value: &str) {
 		self.key(key);
 		self.json.text(value);
 	}
 
-	pub(crate) fn interned(&mut self, key: Name, id: StrId) {
+	pub(crate) fn interned(&mut self, key: &'static str, id: StrId) {
 		self.key(key);
 		self.str_of(id);
 	}
@@ -774,7 +762,7 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 
 	pub(crate) fn raw(&mut self, id: NodeId) {
 		let node = self.ast.node(id);
-		self.key(c!("raw"));
+		self.key("raw");
 		self.slice(node.start, node.end);
 	}
 
@@ -808,7 +796,7 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 				}
 				Op::EnumOr(key, slot, other) => {
 					let Ty::OptEnum(names) = slot.ty else { unreachable!() };
-					self.string(key, names.get(get::<u8>(base, slot) as usize).copied().unwrap_or(other));
+					self.text(key, names.get(get::<u8>(base, slot) as usize).copied().unwrap_or(other));
 				}
 				Op::Type(name) => self.begin(name, id),
 				Op::TypeOf(slot) => {
@@ -868,26 +856,26 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 				}
 				Op::Enum(key, slot) => {
 					let Ty::Enum(names) = slot.ty else { unreachable!() };
-					self.string(key, names[get::<u8>(base, slot) as usize]);
+					self.text(key, names[get::<u8>(base, slot) as usize]);
 				}
 				// a missing enum is a byte past the names, wherever the compiler put it
 				Op::OptEnumKey(key, slot) => {
 					let Ty::OptEnum(names) = slot.ty else { unreachable!() };
 					if let Some(&name) = names.get(get::<u8>(base, slot) as usize) {
-						self.string(key, name);
+						self.text(key, name);
 					}
 				}
 				Op::Modifier(key, slot) => {
 					let Ty::OptEnum(names) = slot.ty else { unreachable!() };
 					if let Some(&name) = names.get(get::<u8>(base, slot) as usize) {
-						if name.text == "true" {
+						if name == "true" {
 							self.bool(key, true);
 						} else {
-							self.string(key, name);
+							self.text(key, name);
 						}
 					}
 				}
-				Op::BoolNames(key, slot, yes, no) => self.string(key, if get::<bool>(base, slot) { yes } else { no }),
+				Op::BoolNames(key, slot, yes, no) => self.text(key, if get::<bool>(base, slot) { yes } else { no }),
 				Op::Float(key, slot) => {
 					let value = self.ast.numbers[get::<u32>(base, slot) as usize];
 					self.key(key);
@@ -902,9 +890,9 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 					let node = self.ast.node(id);
 					let raw = &self.source[node.start as usize..node.end as usize - 1];
 					let bigint = bigint_decimal(raw);
-					self.text(c!("bigint"), &bigint);
+					self.text("bigint", &bigint);
 				}
-				Op::Const(key, value) => self.string(key, value),
+				Op::Const(key, value) => self.text(key, value),
 				Op::ConstBool(key, value) => self.bool(key, value),
 				Op::Null(key) | Op::RegExp(key, ..) | Op::BigIntValue(key) => {
 					self.key(key);
@@ -937,15 +925,14 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 					self.json.object();
 					self.host_span(node.start, node.end);
 				} else if host.span {
-					self.begin(Name::dynamic(host.ty), id);
+					self.begin(host.ty, id);
 				} else {
-					self.json.begin(Name::dynamic(host.ty));
+					self.json.begin(host.ty);
 					self.scope_facts(id);
 				}
 				let (from, len) = host.fields;
 				for i in from..from + len {
 					let (key, value) = self.ast.host_fields[i as usize];
-					let key = Name::dynamic(key);
 					match value {
 						Value::Node(child) => self.field(key, child),
 						Value::Nodes(children) => self.list(key, children),

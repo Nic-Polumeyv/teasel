@@ -51,17 +51,15 @@ pub fn error_json(reason: &str, pos: u32) -> String {
 pub fn layout_json() -> String {
 	use crate::ast::Node;
 	use crate::layout::{Field, Ty, Variant};
-	use crate::names::Name;
 	use crate::recipe::{Op, Rest};
 	use crate::typescript::ast::{Extras, TsKind, ts_layout};
-	let key = Name::dynamic;
 	fn field(w: &mut Json, field: &Field) {
 		w.object();
-		w.key(Name::dynamic("name"));
+		w.key("name");
 		w.text(field.name);
-		w.key(Name::dynamic("at"));
+		w.key("at");
 		w.int(field.at as u32);
-		w.key(Name::dynamic("ty"));
+		w.key("ty");
 		w.text(match field.ty {
 			Ty::Node => "node",
 			Ty::OptNode => "?node",
@@ -80,13 +78,13 @@ pub fn layout_json() -> String {
 		});
 		match field.ty {
 			Ty::Enum(names) | Ty::OptEnum(names) => {
-				w.key(Name::dynamic("names"));
+				w.key("names");
 				w.list();
-				names.iter().for_each(|name| w.str(*name));
+				names.iter().for_each(|name| w.text(name));
 				w.end();
 			}
 			Ty::Struct(inner) => {
-				w.key(Name::dynamic("fields"));
+				w.key("fields");
 				fields(w, inner);
 			}
 			_ => {}
@@ -100,23 +98,23 @@ pub fn layout_json() -> String {
 	}
 	fn record(w: &mut Json, size: usize, list: &[Field]) {
 		w.object();
-		w.key(Name::dynamic("size"));
+		w.key("size");
 		w.int(size as u32);
-		w.key(Name::dynamic("fields"));
+		w.key("fields");
 		fields(w, list);
 		w.end();
 	}
 	fn kinds(w: &mut Json, size: usize, variants: &[Variant]) {
 		w.object();
-		w.key(Name::dynamic("size"));
+		w.key("size");
 		w.int(size as u32);
-		w.key(Name::dynamic("kinds"));
+		w.key("kinds");
 		w.list();
 		for variant in variants {
 			w.object();
-			w.key(Name::dynamic("name"));
+			w.key("name");
 			w.text(variant.name);
-			w.key(Name::dynamic("fields"));
+			w.key("fields");
 			fields(w, variant.fields);
 			w.end();
 		}
@@ -131,7 +129,7 @@ pub fn layout_json() -> String {
 			w.list();
 			w.text(name);
 			if let Some(key) = key {
-				w.str(key);
+				w.text(key);
 			}
 			if let Some(field) = field {
 				w.text(field);
@@ -139,10 +137,10 @@ pub fn layout_json() -> String {
 			match rest {
 				Rest::Nothing => {}
 				Rest::Names(yes, no) => {
-					w.str(yes);
-					w.str(no);
+					w.text(yes);
+					w.text(no);
 				}
-				Rest::Const(value) => w.str(value),
+				Rest::Const(value) => w.text(value),
 				Rest::Bool(value) => w.bool(value),
 				Rest::Text(text) => w.text(text),
 				Rest::Ops(inner) => ops(w, inner),
@@ -168,76 +166,76 @@ pub fn layout_json() -> String {
 	}
 	let mut w = Json::default();
 	w.object();
-	w.key(key("node"));
+	w.key("node");
 	w.object();
-	w.key(key("size"));
+	w.key("size");
 	w.int(size_of::<Node>() as u32);
-	w.key(key("start"));
+	w.key("start");
 	w.int(std::mem::offset_of!(Node, start) as u32);
-	w.key(key("end"));
+	w.key("end");
 	w.int(std::mem::offset_of!(Node, end) as u32);
-	w.key(key("kind"));
+	w.key("kind");
 	w.int(std::mem::offset_of!(Node, kind) as u32);
 	w.end();
-	w.key(key("kinds"));
+	w.key("kinds");
 	w.list();
 	for variant in crate::ast::node_layout::VARIANTS {
 		w.object();
-		w.key(key("name"));
+		w.key("name");
 		w.text(variant.name);
-		w.key(key("fields"));
+		w.key("fields");
 		fields(&mut w, variant.fields);
 		w.end();
 	}
 	w.end();
-	w.key(key("ts"));
+	w.key("ts");
 	kinds(&mut w, size_of::<TsKind>(), ts_layout::VARIANTS);
-	w.key(key("extras"));
+	w.key("extras");
 	record(&mut w, size_of::<Extras>(), Extras::FIELDS);
-	w.key(key("rows"));
+	w.key("rows");
 	w.object();
 	for (name, size, list) in crate::recipe::ROWS {
-		w.key(key(name));
+		w.key(name);
 		record(&mut w, *size, list);
 	}
 	w.end();
 	let none = crate::layout::missing();
-	w.key(key("none"));
+	w.key("none");
 	w.object();
-	w.key(key("enum"));
+	w.key("enum");
 	w.int(none.r#enum as u32);
-	w.key(key("bool"));
+	w.key("bool");
 	w.int(none.bool as u32);
 	for (name, tagged) in [("list", none.list), ("str", none.str), ("int", none.int)] {
-		w.key(key(name));
+		w.key(name);
 		w.object();
-		w.key(key("tag"));
+		w.key("tag");
 		w.int(tagged.tag as u32);
-		w.key(key("missing"));
+		w.key("missing");
 		w.int(tagged.missing);
 		w.end();
 	}
 	w.end();
-	w.key(key("views"));
+	w.key("views");
 	w.object();
-	w.key(key("js"));
+	w.key("js");
 	names(&mut w, view_names::<()>());
-	w.key(key("ts"));
+	w.key("ts");
 	names(&mut w, view_names::<crate::typescript::ast::Data>());
 	w.end();
-	w.key(key("stylesheet"));
+	w.key("stylesheet");
 	children_table(&mut w, host::stylesheet_children());
-	w.key(key("recipes"));
+	w.key("recipes");
 	w.object();
-	w.key(key("js"));
+	w.key("js");
 	recipes(&mut w, crate::recipe::JS);
-	w.key(key("rows"));
+	w.key("rows");
 	recipes(&mut w, crate::recipe::RECIPES);
-	w.key(key("ts"));
+	w.key("ts");
 	recipes(&mut w, crate::recipe::TS);
-	w.key(key("adds"));
+	w.key("adds");
 	recipes(&mut w, crate::recipe::ADDS);
-	w.key(key("extras"));
+	w.key("extras");
 	recipes(
 		&mut w,
 		&[
@@ -261,7 +259,7 @@ pub fn children(grammar: &Grammar) -> String {
 fn children_table(w: &mut Json, table: Vec<(&'static str, Vec<&'static str>)>) {
 	w.object();
 	for (ty, fields) in table {
-		w.key(crate::names::Name::dynamic(ty));
+		w.key(ty);
 		w.list();
 		fields.into_iter().for_each(|field| w.text(field));
 		w.end();
