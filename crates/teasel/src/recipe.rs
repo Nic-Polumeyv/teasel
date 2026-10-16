@@ -139,7 +139,6 @@ pub fn names_type(name: &str) -> bool {
 			.iter()
 			.any(|(_, ops)| ops.iter().any(|op| matches!(op, Type(t) if t.text == name)))
 	};
-	#[cfg(feature = "typescript")]
 	if spelled(TS)
 		|| crate::typescript::ast::Keyword::NAMES
 			.iter()
@@ -330,7 +329,6 @@ pub(crate) fn resolve_ops(ops: &[Op], fields: &[Field], kind: &str) -> &'static 
 }
 
 /// The TypeScript kinds, by the variant's name.
-#[cfg(feature = "typescript")]
 #[rustfmt::skip]
 pub const TS: &[(&str, &[Op])] = &[
 	("TypeAnnotation", &[Type(c!("TSTypeAnnotation")), Node(c!("typeAnnotation"), "type_annotation")]),
@@ -391,7 +389,6 @@ pub const TS: &[(&str, &[Op])] = &[
 ];
 
 /// What TypeScript adds to a JavaScript kind whatever its extras say, over the extras record.
-#[cfg(feature = "typescript")]
 #[rustfmt::skip]
 pub const ADDS: &[(&str, &[Op])] = &[
 	("ImportDeclaration", &[EnumOr(c!("importKind"), "import_kind", c!("value"))]),
@@ -404,7 +401,6 @@ pub const ADDS: &[(&str, &[Op])] = &[
 ];
 
 /// The keys a node's extras add, after the kind's own.
-#[cfg(feature = "typescript")]
 #[rustfmt::skip]
 pub const EXTRAS: &[Op] = &[
 	OptKey(c!("typeAnnotation"), "type_annotation"), OptKey(c!("returnType"), "return_type"), OptKey(c!("typeParameters"), "type_parameters"),
@@ -415,7 +411,6 @@ pub const EXTRAS: &[Op] = &[
 ];
 
 /// The same when erasing: the proposals JavaScript itself has, decorators and accessor fields.
-#[cfg(feature = "typescript")]
 pub const EXTRAS_ERASED: &[Op] = &[
 	OptListKey(c!("decorators"), "decorators"),
 	KeepIf(c!("AccessorProperty"), "accessor"),
