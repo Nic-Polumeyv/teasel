@@ -725,7 +725,7 @@ fn phases() {
 		});
 	}
 	let grammar = crate::json::grammar(
-		&std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/host.wire")).unwrap(),
+		&std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/host.json")).unwrap(),
 	)
 	.unwrap();
 	let document = format!(
@@ -906,7 +906,7 @@ fn alloc_probe() {
 #[ignore]
 fn host_alloc_probe() {
 	let grammar = crate::json::grammar(
-		&std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/host.wire")).unwrap(),
+		&std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/host.json")).unwrap(),
 	)
 	.unwrap();
 	let count = |src: &str| {

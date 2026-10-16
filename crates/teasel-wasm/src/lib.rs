@@ -33,13 +33,14 @@ pub unsafe extern "C" fn source_new(ptr: *mut u8, len: u32, capacity: u32, flags
 }
 
 /// # Safety
-/// `ptr` is `capacity` bytes from `alloc`, `len` of them a host language's grammar on its wire;
+/// `ptr` is `capacity` bytes from `alloc`, `len` of them a host language's grammar as JSON;
 /// they are taken over here. The handle is 0 when the grammar cannot be read, the error as JSON
 /// at `text_ptr`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn plan_new(ptr: *mut u8, len: u32, capacity: u32) -> u32 {
 	let grammar = unsafe { Vec::from_raw_parts(ptr, len as usize, capacity as usize) };
-	match teasel::json::grammar(&grammar) {
+	let grammar = std::str::from_utf8(&grammar).map_err(|_| "the grammar is not UTF-8".to_string());
+	match grammar.and_then(teasel::json::grammar) {
 		Ok(grammar) => Box::into_raw(Box::new(grammar)) as u32,
 		Err(message) => {
 			text(teasel::json::error_json(&message, 0));

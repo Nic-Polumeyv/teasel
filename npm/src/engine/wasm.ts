@@ -148,9 +148,7 @@ const engine: Engine = {
 	},
 	plan: (grammar) =>
 		new Held(() => {
-			const ptr = wasm.alloc(grammar.length);
-			new Uint8Array(wasm.memory.buffer, ptr, grammar.length).set(grammar);
-			const handle = wasm.plan_new(ptr, grammar.length, grammar.length);
+			const handle = wasm.plan_new(...bytes(grammar));
 			if (handle === 0) throw new Error(JSON.parse(text()).error.args[0]);
 			return handle;
 		}, plans),

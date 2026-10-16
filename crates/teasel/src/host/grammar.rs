@@ -1,115 +1,276 @@
 //! A host grammar: what a template language puts around the JavaScript it embeds, read once
-//! from the wire a host hands over. Every form is a sequence of the host's own words and
+//! from the definition a host hands over. Every form is a sequence of the host's own words and
 //! punctuators around JavaScript entries; what may follow an entry is what ends it.
 //!
-//! The wire a grammar crosses on: words, then a pool of strings. Nothing is spelled: a value is
-//! what sits at its position, in the order the types declare, and both ends of the crossing come
-//! from those declarations. `wire!` defines a type once and derives its reader, its writer, and
-//! the TypeScript type and writer the other end is checked against.
-//!
-//! Little-endian 32-bit words: the count of record words, the count of strings, each string's
-//! offset and length in the pool, the record words; then the pool, UTF-8. A string is the index
-//! of one in the pool, a boolean 0 or 1, an option 0 or 1 and then the value, a list its length
-//! and then the items, a struct its fields, an enum the index of its variant and then the payload.
+//! A definition crosses as the JSON `JSON.stringify` writes of it: no whitespace, no numbers,
+//! keys in camel case, a field that is absent left out. `wire!` defines a type once and derives
+//! its reader, which takes the type's value off the text where it stands, and its writer. A
+//! struct's keys come in any order, each once; an enum's variant is told by the shape of its
+//! value. The text is kept for the process, and every name is a slice of it unless it was
+//! escaped; every list is a slice of the arena the definition is read into.
 
-/// Reads the record words of a wire in order.
-pub(crate) struct Cursor<'a> {
-	bytes: &'a [u8],
+/// Reads a definition's JSON in one pass, each value straight into its type.
+pub(crate) struct Reader<'a> {
+	/// Every name without an escape is a slice of it.
+	text: &'static str,
 	at: usize,
-	end: usize,
-	strings: usize,
-	/// The pool, kept for the process once: every name is a slice of it.
-	pool: &'static str,
+	depth: u32,
+	arena: &'a Arena,
 }
 
-impl<'a> Cursor<'a> {
-	pub(crate) fn new(bytes: &'a [u8]) -> Result<Cursor<'a>, String> {
-		let word = |i: usize| {
-			bytes
-				.get(i * 4..i * 4 + 4)
-				.map(|b| u32::from_le_bytes(b.try_into().unwrap()) as usize)
-		};
-		let (Some(records), Some(strings)) = (word(0), word(1)) else {
-			return Err("the grammar has no header".into());
-		};
-		let at = strings.checked_mul(2).and_then(|n| n.checked_add(2));
-		let end = at.and_then(|at| at.checked_add(records));
-		let (Some(at), Some(end)) = (at, end) else {
-			return Err("the grammar ends early".into());
-		};
-		if end.checked_mul(4).is_none_or(|len| len > bytes.len()) {
-			return Err("the grammar ends early".into());
+impl<'a> Reader<'a> {
+	pub(crate) fn new(text: &'static str, arena: &'a Arena) -> Reader<'a> {
+		Reader {
+			text,
+			at: 0,
+			depth: 0,
+			arena,
 		}
-		let pool = std::str::from_utf8(&bytes[end * 4..]).map_err(|_| "the grammar's strings are not UTF-8")?;
-		Ok(Cursor {
-			bytes,
-			at,
-			end,
-			strings,
-			pool: keep(pool),
-		})
 	}
 
-	fn word_at(&self, i: usize) -> u32 {
-		u32::from_le_bytes(self.bytes[i * 4..i * 4 + 4].try_into().unwrap())
+	/// Guards the descent into objects and lists, as the parser guards its own.
+	fn descend(&mut self) -> Result<(), String> {
+		self.depth += 1;
+		if self.depth > crate::parser::MAX_DEPTH {
+			return Err(format!(
+				"the grammar nests deeper than {} at byte {}",
+				crate::parser::MAX_DEPTH,
+				self.at
+			));
+		}
+		Ok(())
 	}
 
-	pub(crate) fn word(&mut self) -> Result<u32, String> {
-		if self.at >= self.end {
-			return Err("the grammar ends early".into());
+	pub(crate) fn peek(&self) -> Option<u8> {
+		self.text.as_bytes().get(self.at).copied()
+	}
+
+	/// What the reader wanted where it stands, as the error says it.
+	#[cold]
+	pub(crate) fn expected(&self, what: &str) -> String {
+		match self.peek() {
+			None => format!("the grammar ends early: {what} expected at byte {}", self.at),
+			Some(b' ' | b'\t' | b'\n' | b'\r') => format!(
+				"{what} expected at byte {} of the grammar, which has no whitespace: it is written as JSON.stringify writes it",
+				self.at
+			),
+			Some(_) => format!("{what} expected at byte {} of the grammar", self.at),
 		}
-		self.at += 1;
-		Ok(self.word_at(self.at - 1))
+	}
+
+	/// Steps over `byte` when the text goes on with it.
+	pub(crate) fn eat(&mut self, byte: u8) -> bool {
+		let found = self.peek() == Some(byte);
+		self.at += usize::from(found);
+		found
+	}
+
+	pub(crate) fn expect(&mut self, byte: u8) -> Result<(), String> {
+		if self.eat(byte) {
+			Ok(())
+		} else {
+			Err(self.expected_byte(byte))
+		}
+	}
+
+	#[cold]
+	fn expected_byte(&self, byte: u8) -> String {
+		self.expected(&format!("`{}`", byte as char))
+	}
+
+	/// Steps over `text` when the text goes on with it: a literal, or a name as `spelled!` spells it.
+	pub(crate) fn eat_text(&mut self, text: &str) -> bool {
+		let found = self.text.as_bytes()[self.at..].starts_with(text.as_bytes());
+		if found {
+			self.at += text.len();
+		}
+		found
 	}
 
 	pub(crate) fn str(&mut self) -> Result<&'static str, String> {
-		let i = self.word()? as usize;
-		if i >= self.strings {
-			return Err(format!("no string {i} on the grammar"));
+		if !self.eat(b'"') {
+			return Err(self.expected("a string"));
 		}
-		let (offset, len) = (self.word_at(2 + 2 * i) as usize, self.word_at(3 + 2 * i) as usize);
-		self.pool
-			.get(offset..offset + len)
-			.ok_or_else(|| format!("string {i} on the grammar is cut"))
-	}
-
-	pub(crate) fn done(&self) -> bool {
-		self.at == self.end
-	}
-}
-
-/// Writes a wire, strings kept once.
-#[derive(Default)]
-pub(crate) struct Writer {
-	words: Vec<u32>,
-	strings: Vec<String>,
-}
-
-impl Writer {
-	pub(crate) fn word(&mut self, word: u32) {
-		self.words.push(word);
-	}
-
-	pub(crate) fn str(&mut self, s: &str) {
-		let i = self.strings.iter().position(|known| known == s).unwrap_or_else(|| {
-			self.strings.push(s.to_owned());
-			self.strings.len() - 1
-		});
-		self.words.push(i as u32);
-	}
-
-	pub(crate) fn bytes(self) -> Vec<u8> {
-		let mut head = vec![self.words.len() as u32, self.strings.len() as u32];
-		let mut offset = 0;
-		for s in &self.strings {
-			head.extend([offset, s.len() as u32]);
-			offset += s.len() as u32;
+		let start = self.at;
+		let rest = &self.text.as_bytes()[start..];
+		self.at += rest
+			.iter()
+			.position(|&b| matches!(b, b'"' | b'\\' | ..0x20))
+			.unwrap_or(rest.len());
+		match self.peek() {
+			Some(b'"') => {
+				self.at += 1;
+				Ok(&self.text[start..self.at - 1])
+			}
+			Some(b'\\') => self.escaped(start),
+			_ => Err(self.expected("`\"`")),
 		}
-		let mut out: Vec<u8> = head.iter().chain(&self.words).flat_map(|w| w.to_le_bytes()).collect();
-		for s in &self.strings {
-			out.extend_from_slice(s.as_bytes());
+	}
+
+	/// The rest of a string that holds an escape, decoded into a copy of its own.
+	fn escaped(&mut self, start: usize) -> Result<&'static str, String> {
+		let mut out = String::new();
+		let mut plain = start;
+		loop {
+			match self.peek() {
+				Some(b'"') => {
+					out.push_str(&self.text[plain..self.at]);
+					self.at += 1;
+					return Ok(keep(&out));
+				}
+				Some(b'\\') => {
+					out.push_str(&self.text[plain..self.at]);
+					self.at += 1;
+					out.push(self.escape()?);
+					plain = self.at;
+				}
+				Some(0x20..) => self.at += 1,
+				_ => return Err(self.expected("`\"`")),
+			}
 		}
-		out
+	}
+
+	fn escape(&mut self) -> Result<char, String> {
+		let c = match self.peek() {
+			Some(b'"') => '"',
+			Some(b'\\') => '\\',
+			Some(b'/') => '/',
+			Some(b'b') => '\u{8}',
+			Some(b'f') => '\u{c}',
+			Some(b'n') => '\n',
+			Some(b'r') => '\r',
+			Some(b't') => '\t',
+			Some(b'u') => {
+				let digits = self
+					.text
+					.get(self.at + 1..self.at + 5)
+					.filter(|d| d.bytes().all(|b| b.is_ascii_hexdigit()));
+				let Some(digits) = digits else {
+					self.at += 1;
+					return Err(self.expected("four hex digits"));
+				};
+				self.at += 5;
+				let code = u32::from_str_radix(digits, 16).unwrap();
+				// a pair, as a writer that escapes everything beyond ASCII spells one character
+				if (0xD800..0xDC00).contains(&code)
+					&& let Some(low) = self.text.get(self.at..self.at + 6).and_then(|t| t.strip_prefix("\\u"))
+					&& let Ok(low) = u32::from_str_radix(low, 16)
+					&& (0xDC00..0xE000).contains(&low)
+				{
+					self.at += 6;
+					return Ok(char::from_u32(0x10000 + ((code - 0xD800) << 10) + (low - 0xDC00)).unwrap());
+				}
+				// `JSON.stringify` escapes a surrogate only when it is lone, which UTF-8 cannot
+				// hold: it becomes U+FFFD, as the encoder makes it in a source
+				return Ok(char::from_u32(code).unwrap_or('\u{FFFD}'));
+			}
+			_ => return Err(self.expected("an escape")),
+		};
+		self.at += 1;
+		Ok(c)
+	}
+
+	/// Reads an object, `entry` reading each key and its value in order.
+	// `dyn` keeps one loop for every object: a copy for each struct, its keys inlined into it, made
+	// the WebAssembly module's first read 1.3 ms longer to compile
+	pub(crate) fn object(
+		&mut self,
+		entry: &mut dyn FnMut(&mut Reader<'a>) -> Result<(), String>,
+	) -> Result<(), String> {
+		self.expect(b'{')?;
+		self.descend()?;
+		if !self.eat(b'}') {
+			loop {
+				entry(self)?;
+				if self.eat(b'}') {
+					break;
+				}
+				if !self.eat(b',') {
+					return Err(self.expected("`,` or `}`"));
+				}
+			}
+		}
+		self.depth -= 1;
+		Ok(())
+	}
+
+	/// Reads a list, `item` reading each item in order.
+	pub(crate) fn list(&mut self, mut item: impl FnMut(&mut Reader<'a>) -> Result<(), String>) -> Result<(), String> {
+		self.expect(b'[')?;
+		self.descend()?;
+		if !self.eat(b']') {
+			loop {
+				item(self)?;
+				if self.eat(b']') {
+					break;
+				}
+				if !self.eat(b',') {
+					return Err(self.expected("`,` or `]`"));
+				}
+			}
+		}
+		self.depth -= 1;
+		Ok(())
+	}
+
+	/// Steps over a key the struct has no field for and its value: a definition may carry more
+	/// than the engine reads, and the types cannot refuse it.
+	pub(crate) fn skip_entry(&mut self) -> Result<(), String> {
+		self.str()?;
+		self.expect(b':')?;
+		self.skip()
+	}
+
+	fn skip(&mut self) -> Result<(), String> {
+		match self.peek() {
+			Some(b'"') => self.str().map(|_| ()),
+			Some(b'{') => self.object(&mut Reader::skip_entry),
+			Some(b'[') => self.list(Reader::skip),
+			Some(b'-' | b'0'..=b'9') => {
+				while self
+					.peek()
+					.is_some_and(|b| matches!(b, b'-' | b'+' | b'.' | b'e' | b'E' | b'0'..=b'9'))
+				{
+					self.at += 1;
+				}
+				Ok(())
+			}
+			_ if self.eat_text("true") || self.eat_text("false") || self.eat_text("null") => Ok(()),
+			_ => Err(self.expected("a value")),
+		}
+	}
+
+	/// Reads the value of a struct's key into its slot, which a key read before has not filled.
+	pub(crate) fn once<T: Wire<'a>>(&mut self, slot: &mut Option<T>, key: &str, ty: &str) -> Result<(), String> {
+		if slot.is_some() {
+			return Err(self.twice(key, ty));
+		}
+		*slot = Some(T::read(self)?);
+		Ok(())
+	}
+
+	#[cold]
+	fn twice(&self, key: &str, ty: &str) -> String {
+		format!("a second {key} on a {ty} at byte {} of the grammar", self.at)
+	}
+
+	/// The error for a struct whose keys, each with whether it was read, leave out one it needs.
+	#[cold]
+	pub(crate) fn missing(&self, ty: &str, keys: &[(&str, bool)]) -> String {
+		let key = keys.iter().find(|(_, read)| !read).map_or("", |(key, _)| key);
+		format!("a {ty} needs {key}, before byte {} of the grammar", self.at)
+	}
+
+	pub(crate) fn end(&mut self) -> Result<(), String> {
+		// a file ends in a newline
+		while self.peek().is_some_and(|b| matches!(b, b' ' | b'\t' | b'\n' | b'\r')) {
+			self.at += 1;
+		}
+		if self.at == self.text.len() {
+			Ok(())
+		} else {
+			Err(format!("text after the grammar at byte {}", self.at))
+		}
 	}
 }
 
@@ -118,668 +279,445 @@ pub(crate) fn keep(s: &str) -> &'static str {
 	Box::leak(s.to_owned().into_boxed_str())
 }
 
-/// A Rust name in camel case, as TypeScript spells it: `attribute_expressions`, `TypeParameters`.
-pub(crate) fn camel(name: &str) -> String {
-	let name = name.strip_prefix("r#").unwrap_or(name);
-	let mut out = String::with_capacity(name.len());
-	let mut up = false;
-	for (i, c) in name.chars().enumerate() {
-		if c == '_' {
-			up = true;
-			continue;
+/// Holds a definition's lists until it is lowered: each is bumped onto the chunk being filled,
+/// and all go with the arena. A list of its own from the allocator, freed on its own, made
+/// reading the Svelte grammar 60% slower.
+pub struct Arena {
+	chunks: std::cell::RefCell<Vec<Vec<std::mem::MaybeUninit<u64>>>>,
+	/// The free words of the last chunk.
+	free: std::cell::Cell<(*mut std::mem::MaybeUninit<u64>, usize)>,
+}
+
+impl Arena {
+	/// Room for `words` words.
+	fn words(&self, words: usize) -> *mut std::mem::MaybeUninit<u64> {
+		let (at, left) = self.free.get();
+		if words <= left {
+			self.free.set((at.wrapping_add(words), left - words));
+			return at;
 		}
-		out.push(if up {
-			c.to_ascii_uppercase()
-		} else if i == 0 {
-			c.to_ascii_lowercase()
+		let mut chunks = self.chunks.borrow_mut();
+		let size = words.max(chunks.last().map_or(1024, |chunk| chunk.capacity() * 2));
+		let mut chunk = Vec::with_capacity(size);
+		let at = chunk.as_mut_ptr();
+		chunks.push(chunk);
+		self.free.set((at.wrapping_add(words), size - words));
+		at
+	}
+
+	/// Whether the list at `at`, `words` words long, takes `more` where it is: it ends what the
+	/// chunk has filled, and the chunk has the room.
+	fn grow(&self, at: *mut std::mem::MaybeUninit<u64>, words: usize, more: usize) -> bool {
+		let (free, left) = self.free.get();
+		let grows = at.wrapping_add(words) == free && more <= left;
+		if grows {
+			self.free.set((free.wrapping_add(more), left - more));
+		}
+		grows
+	}
+}
+
+impl Default for Arena {
+	fn default() -> Arena {
+		Arena {
+			chunks: Default::default(),
+			free: std::cell::Cell::new((std::ptr::null_mut(), 0)),
+		}
+	}
+}
+
+/// A list being read into an arena.
+struct Items<'a, T> {
+	arena: &'a Arena,
+	at: *mut T,
+	len: usize,
+	room: usize,
+}
+
+impl<'a, T: Copy> Items<'a, T> {
+	const fn words(items: usize) -> usize {
+		const { assert!(size_of::<T>() > 0 && align_of::<T>() <= align_of::<u64>()) };
+		(items * size_of::<T>()).div_ceil(size_of::<u64>())
+	}
+
+	fn new(arena: &'a Arena) -> Items<'a, T> {
+		Items {
+			arena,
+			at: std::ptr::NonNull::dangling().as_ptr(),
+			len: 0,
+			room: 0,
+		}
+	}
+
+	fn push(&mut self, item: T) {
+		if self.len == self.room {
+			let room = (self.room * 2).max(4);
+			let (old, new) = (Self::words(self.room), Self::words(room));
+			if !(self.room > 0 && self.arena.grow(self.at.cast(), old, new - old)) {
+				let at = self.arena.words(new).cast::<T>();
+				// SAFETY: the new room is the list's own, apart from the old, which holds `len` items
+				unsafe { std::ptr::copy_nonoverlapping(self.at, at, self.len) };
+				self.at = at;
+			}
+			self.room = room;
+		}
+		// SAFETY: the room for `room` items at `at` is the list's
+		unsafe { self.at.add(self.len).write(item) };
+		self.len += 1;
+	}
+
+	fn list(self) -> &'a [T] {
+		// SAFETY: `len` items were written at `at`, which the arena holds as long as it lives
+		unsafe { std::slice::from_raw_parts(self.at, self.len) }
+	}
+}
+
+/// The length of what `camel` spells.
+pub(crate) const fn camel_len(open: &str, name: &str, close: &str) -> usize {
+	let name = name.as_bytes();
+	let mut i = if name.len() > 2 && name[0] == b'r' && name[1] == b'#' {
+		2
+	} else {
+		0
+	};
+	let mut len = open.len() + close.len();
+	while i < name.len() {
+		if name[i] != b'_' {
+			len += 1;
+		}
+		i += 1;
+	}
+	len
+}
+
+/// A Rust name in camel case, as the definition spells it, between `open` and `close`: `or_arg`
+/// is `orArg`, `OneOf` is `oneOf`, `r#in` is `in`.
+pub(crate) const fn camel<const N: usize>(open: &str, name: &str, close: &str) -> [u8; N] {
+	let (open, name, close) = (open.as_bytes(), name.as_bytes(), close.as_bytes());
+	let mut out = [0; N];
+	let mut len = 0;
+	while len < open.len() {
+		out[len] = open[len];
+		len += 1;
+	}
+	let mut i = if name.len() > 2 && name[0] == b'r' && name[1] == b'#' {
+		2
+	} else {
+		0
+	};
+	let mut up = false;
+	while i < name.len() {
+		if name[i] == b'_' {
+			up = true;
 		} else {
-			c
-		});
-		up = false;
+			out[len] = if up {
+				name[i].to_ascii_uppercase()
+			} else if len == open.len() {
+				name[i].to_ascii_lowercase()
+			} else {
+				name[i]
+			};
+			len += 1;
+			up = false;
+		}
+		i += 1;
+	}
+	i = 0;
+	while i < close.len() {
+		out[len + i] = close[i];
+		i += 1;
 	}
 	out
 }
 
-/// A type on the wire, and the TypeScript that writes it.
-pub(crate) trait Wire: Sized {
-	/// A field of the type may be left out.
-	const OPTIONAL: bool = false;
-
-	fn read(c: &mut Cursor) -> Result<Self, String>;
-
-	fn write(&self, w: &mut Writer);
-
-	/// The TypeScript type.
-	fn ts() -> String;
-
-	/// The TypeScript type of a field, whose `?` says what `OPTIONAL` does.
-	fn ts_field() -> String {
-		Self::ts()
-	}
-
-	/// TypeScript statements that write `value`, an expression of the type, to `w`.
-	fn ts_write(value: &str) -> String;
-
-	/// Adds the definitions the type and every type it holds need, each once, in the order of
-	/// first use.
-	fn definitions(_out: &mut Vec<Declaration>) {}
+/// A Rust name as the definition spells it, worked out when compiling; with `open` and `close`,
+/// the text around it too: `"inside"`, `{"opt":`.
+macro_rules! spelled {
+	($name:expr) => {
+		spelled!("", $name, "")
+	};
+	($open:literal, $name:expr, $close:literal) => {{
+		const SPELLED: [u8; $crate::host::grammar::camel_len($open, $name, $close)] =
+			$crate::host::grammar::camel($open, $name, $close);
+		const TEXT: &str = match std::str::from_utf8(&SPELLED) {
+			Ok(text) => text,
+			Err(_) => panic!(),
+		};
+		TEXT
+	}};
 }
 
-/// A named type on the wire as TypeScript: its type and the function that writes it.
-pub(crate) struct Declaration {
-	pub(crate) name: &'static str,
-	pub(crate) docs: String,
-	pub(crate) ty: String,
-	pub(crate) write: String,
-}
+/// A type of the definition: how it reads off the text, its lists into the arena of `'a`, and
+/// writes back.
+pub(crate) trait Wire<'a>: Sized {
+	fn read(r: &mut Reader<'a>) -> Result<Self, String>;
 
-impl Wire for &'static str {
-	fn read(c: &mut Cursor) -> Result<Self, String> {
-		c.str()
+	/// What a field holds when its key is left out: none of most types, `None` of an option.
+	fn absent() -> Option<Self> {
+		None
 	}
 
-	fn write(&self, w: &mut Writer) {
-		w.str(self);
-	}
+	fn write(&self, out: &mut String);
 
-	fn ts() -> String {
-		"string".into()
-	}
-
-	fn ts_write(value: &str) -> String {
-		format!("w.str({value});")
+	/// The field holding the value leaves its key out.
+	fn is_absent(&self) -> bool {
+		false
 	}
 }
 
-impl Wire for bool {
-	fn read(c: &mut Cursor) -> Result<Self, String> {
-		match c.word()? {
-			0 => Ok(false),
-			1 => Ok(true),
-			other => Err(format!("{other} is not a boolean on the grammar")),
+impl<'a> Wire<'a> for &'static str {
+	fn read(r: &mut Reader<'a>) -> Result<Self, String> {
+		r.str()
+	}
+
+	fn write(&self, out: &mut String) {
+		crate::estree::write_json_string(out, self);
+	}
+}
+
+/// Writes `"key":value` into the object being written, unless the value is absent.
+pub(crate) fn entry<'a>(out: &mut String, key: &str, value: &impl Wire<'a>) {
+	if value.is_absent() {
+		return;
+	}
+	// an object's first key follows its brace, and no value ends in one
+	if !out.ends_with('{') {
+		out.push(',');
+	}
+	crate::estree::write_json_string(out, key);
+	out.push(':');
+	value.write(out);
+}
+
+impl<'a> Wire<'a> for bool {
+	fn read(r: &mut Reader<'a>) -> Result<Self, String> {
+		if r.eat_text("true") {
+			Ok(true)
+		} else if r.eat_text("false") {
+			Ok(false)
+		} else {
+			Err(r.expected("a boolean"))
 		}
 	}
 
-	fn write(&self, w: &mut Writer) {
-		w.word(u32::from(*self));
-	}
-
-	fn ts() -> String {
-		"boolean".into()
-	}
-
-	fn ts_write(value: &str) -> String {
-		format!("w.word({value} ? 1 : 0);")
+	fn write(&self, out: &mut String) {
+		out.push_str(if *self { "true" } else { "false" });
 	}
 }
 
-impl<T: Wire> Wire for Option<T> {
-	const OPTIONAL: bool = true;
+impl<'a, T: Wire<'a>> Wire<'a> for Option<T> {
+	fn read(r: &mut Reader<'a>) -> Result<Self, String> {
+		T::read(r).map(Some)
+	}
 
-	fn read(c: &mut Cursor) -> Result<Self, String> {
-		match c.word()? {
-			0 => Ok(None),
-			1 => T::read(c).map(Some),
-			other => Err(format!("{other} is not an option on the grammar")),
+	fn absent() -> Option<Self> {
+		Some(None)
+	}
+
+	fn write(&self, out: &mut String) {
+		if let Some(value) = self {
+			value.write(out);
 		}
 	}
 
-	fn write(&self, w: &mut Writer) {
-		match self {
-			None => w.word(0),
-			Some(value) => {
-				w.word(1);
-				value.write(w);
+	fn is_absent(&self) -> bool {
+		self.is_none()
+	}
+}
+
+impl<'a, T: Wire<'a> + Copy> Wire<'a> for &'a [T] {
+	fn read(r: &mut Reader<'a>) -> Result<Self, String> {
+		let mut items = Items::new(r.arena);
+		r.list(|r| {
+			items.push(T::read(r)?);
+			Ok(())
+		})?;
+		Ok(items.list())
+	}
+
+	fn write(&self, out: &mut String) {
+		out.push('[');
+		for (i, item) in self.iter().enumerate() {
+			if i > 0 {
+				out.push(',');
 			}
+			item.write(out);
 		}
-	}
-
-	fn ts() -> String {
-		format!("{} | undefined", T::ts())
-	}
-
-	fn ts_field() -> String {
-		T::ts()
-	}
-
-	fn ts_write(value: &str) -> String {
-		format!(
-			"if ({value} === undefined) w.word(0);\nelse {{\n\tw.word(1);\n\t{}\n}}",
-			indent(&T::ts_write(value))
-		)
-	}
-
-	fn definitions(out: &mut Vec<Declaration>) {
-		T::definitions(out);
+		out.push(']');
 	}
 }
 
-impl<T: Wire> Wire for Vec<T> {
-	fn read(c: &mut Cursor) -> Result<Self, String> {
-		(0..c.word()?).map(|_| T::read(c)).collect()
-	}
-
-	fn write(&self, w: &mut Writer) {
-		w.word(self.len() as u32);
-		for item in self {
-			item.write(w);
+/// A list of two; the second may be left out when it is absent, `[attribute]`.
+impl<'a, A: Wire<'a>, B: Wire<'a>> Wire<'a> for (A, B) {
+	fn read(r: &mut Reader<'a>) -> Result<Self, String> {
+		r.expect(b'[')?;
+		let a = A::read(r)?;
+		if let Some(b) = B::absent()
+			&& r.eat(b']')
+		{
+			return Ok((a, b));
 		}
+		r.expect(b',')?;
+		let b = B::read(r)?;
+		r.expect(b']')?;
+		Ok((a, b))
 	}
 
-	fn ts() -> String {
-		format!("ReadonlyArray<{}>", T::ts())
-	}
-
-	fn ts_write(value: &str) -> String {
-		let (i, item) = (fresh(value, "i"), fresh(value, "item"));
-		format!(
-			"w.word({value}.length);\nfor (let {i} = 0; {i} < {value}.length; {i}++) {{\n\tconst {item} = {value}[{i}];\n\t{}\n}}",
-			indent(&T::ts_write(&item))
-		)
-	}
-
-	fn definitions(out: &mut Vec<Declaration>) {
-		T::definitions(out);
-	}
-}
-
-impl<A: Wire, B: Wire> Wire for (A, B) {
-	fn read(c: &mut Cursor) -> Result<Self, String> {
-		Ok((A::read(c)?, B::read(c)?))
-	}
-
-	fn write(&self, w: &mut Writer) {
-		self.0.write(w);
-		self.1.write(w);
-	}
-
-	fn ts() -> String {
-		format!(
-			"readonly [{}, {}{}]",
-			A::ts(),
-			B::ts_field(),
-			if B::OPTIONAL { "?" } else { "" }
-		)
-	}
-
-	fn ts_write(value: &str) -> String {
-		format!(
-			"{}\n{}",
-			A::ts_write(&format!("{value}[0]")),
-			B::ts_write(&format!("{value}[1]"))
-		)
-	}
-
-	fn definitions(out: &mut Vec<Declaration>) {
-		A::definitions(out);
-		B::definitions(out);
+	fn write(&self, out: &mut String) {
+		out.push('[');
+		self.0.write(out);
+		if !self.1.is_absent() {
+			out.push(',');
+			self.1.write(out);
+		}
+		out.push(']');
 	}
 }
 
 /// An object of the definition: its keys in order, each holding a `T`.
-#[derive(Clone, Debug, Default)]
-pub struct Record<T>(pub Vec<(&'static str, T)>);
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Record<'a, T>(pub &'a [(&'static str, T)]);
 
-impl<T: Wire> Wire for Record<T> {
-	fn read(c: &mut Cursor) -> Result<Self, String> {
-		(0..c.word()?)
-			.map(|_| Ok((c.str()?, T::read(c)?)))
-			.collect::<Result<_, String>>()
-			.map(Record)
+impl<'a, T: Wire<'a> + Copy> Wire<'a> for Record<'a, T> {
+	fn read(r: &mut Reader<'a>) -> Result<Self, String> {
+		let mut entries = Items::new(r.arena);
+		r.object(&mut |r| {
+			let key = r.str()?;
+			r.expect(b':')?;
+			entries.push((key, T::read(r)?));
+			Ok(())
+		})?;
+		Ok(Record(entries.list()))
 	}
 
-	fn write(&self, w: &mut Writer) {
-		w.word(self.0.len() as u32);
-		for (key, value) in &self.0 {
-			w.str(key);
-			value.write(w);
+	fn write(&self, out: &mut String) {
+		out.push('{');
+		for (key, value) in self.0 {
+			entry(out, key, value);
 		}
-	}
-
-	fn ts() -> String {
-		format!("{{ readonly [key: string]: {} }}", T::ts())
-	}
-
-	fn ts_write(value: &str) -> String {
-		let (keys, i, key) = (fresh(value, "keys"), fresh(value, "i"), fresh(value, "key"));
-		format!(
-			"{{\n\tconst {keys} = Object.keys({value});\n\tw.word({keys}.length);\n\tfor (let {i} = 0; {i} < {keys}.length; {i}++) {{\n\t\tconst {key} = {keys}[{i}];\n\t\tw.str({key});\n\t\t{}\n\t}}\n}}",
-			indent(&indent(&T::ts_write(&format!("{value}[{key}]"))))
-		)
-	}
-
-	fn definitions(out: &mut Vec<Declaration>) {
-		T::definitions(out);
+		out.push('}');
 	}
 }
 
-fn indent(text: &str) -> String {
-	text.replace('\n', "\n\t")
-}
-
-/// A loop variable's name that the looped value does not mention, so the loop never shadows
-/// what it reads.
-fn fresh(value: &str, base: &str) -> String {
-	let mut name = base.to_string();
-	while value.contains(&name) {
-		name.push('_');
-	}
-	name
-}
-
-/// A field as TypeScript: its name, docs, and the type and writer of its value.
-pub(crate) struct Field {
-	pub(crate) name: &'static str,
-	pub(crate) docs: &'static [&'static str],
-	pub(crate) optional: bool,
-	pub(crate) ty: String,
-	pub(crate) write: String,
-}
-
-/// The fields of a type as TypeScript, one per line, with their docs; a variant's on one line.
-pub(crate) fn fields(fields: &[Field], inline: bool) -> String {
-	let lines: Vec<String> = fields
-		.iter()
-		.map(|f| {
-			let field = format!("{}{}: {}", camel(f.name), if f.optional { "?" } else { "" }, f.ty);
-			if f.docs.is_empty() {
-				field
-			} else {
-				format!(
-					"/**{} */{}{field}",
-					f.docs.join("\n\t *"),
-					if inline { " " } else { "\n\t" }
-				)
-			}
-		})
-		.collect();
-	if inline {
-		format!("{{ {} }}", lines.join("; "))
-	} else {
-		format!("{{\n\t{};\n}}", lines.join(";\n\t"))
-	}
-}
-
-/// The statements writing a struct's fields in order.
-pub(crate) fn writes(fields: &[Field]) -> String {
-	fields.iter().map(|f| f.write.clone()).collect::<Vec<_>>().join("\n")
-}
-
-/// How the writer tells a variant: a `case` on its literal, or a test on `v`; an empty test is
-/// the `else`.
-pub(crate) enum Tell {
-	Case(String),
-	Test(String),
-}
-
-/// A variant as TypeScript: the alternative's type, how it is told, and what writes its payload.
-pub(crate) struct Variant {
-	pub(crate) docs: &'static [&'static str],
-	pub(crate) ty: String,
-	pub(crate) tell: Tell,
-	pub(crate) write: String,
-}
-
-/// A union as TypeScript, one alternative per line with its docs, and the statements that write
-/// a value of it: its variant's index, then the payload.
-pub(crate) fn union(variants: &[Variant]) -> (String, String) {
-	let mut ty = String::new();
-	let mut cases = Vec::new();
-	let mut tests = Vec::new();
-	for (tag, v) in variants.iter().enumerate() {
-		if !v.docs.is_empty() {
-			ty.push_str(&format!("\n\t/**{} */", v.docs.join("\n\t *")));
-		}
-		ty.push_str(&format!("\n\t| {}", v.ty));
-		let payload = if v.write.is_empty() {
-			String::new()
-		} else {
-			format!("\n{}", v.write)
-		};
-		match &v.tell {
-			Tell::Case(literal) => cases.push(format!(
-				"case {literal}:\n\tw.word({tag});{}\n\treturn;",
-				indent(&payload)
-			)),
-			Tell::Test(test) => tests.push((test.clone(), format!("w.word({tag});{payload}"))),
-		}
-	}
-	let mut write = String::new();
-	if !cases.is_empty() {
-		write.push_str(&format!("switch (v) {{\n\t{}\n}}", indent(&cases.join("\n"))));
-	}
-	for (i, (test, body)) in tests.iter().enumerate() {
-		if i > 0 {
-			write.push_str(" else ");
-		} else if !write.is_empty() {
-			write.push('\n');
-		}
-		let head = if test.is_empty() {
-			String::new()
-		} else {
-			format!("if ({test}) ")
-		};
-		write.push_str(&format!("{head}{{\n\t{}\n}}", indent(body)));
-	}
-	(ty, write)
-}
-
-/// Renders every definition reachable from `T` as a TypeScript module that exports the root
-/// type and `wire`, which writes one: the other types, their writers and the writer they write
-/// to stay inside.
-pub(crate) fn module<T: Wire>(root: &str) -> String {
-	let mut out = format!(
-		"// written by {root}; `cargo test` pins it\n\n\
-/** The wire: words, then a pool of strings kept once. */\n\
-class Writer {{\n\
-\t#words = new Uint32Array(1024);\n\
-\t#count = 0;\n\
-\t#strings = new Map<string, number>();\n\
-\t#pool: string[] = [];\n\
-\tword(word: number) {{\n\
-\t\tif (this.#count === this.#words.length) {{\n\
-\t\t\tconst more = new Uint32Array(this.#count * 2);\n\
-\t\t\tmore.set(this.#words);\n\
-\t\t\tthis.#words = more;\n\
-\t\t}}\n\
-\t\tthis.#words[this.#count++] = word;\n\
-\t}}\n\
-\tstr(s: string) {{\n\
-\t\tlet i = this.#strings.get(s);\n\
-\t\tif (i === undefined) {{\n\
-\t\t\tthis.#strings.set(s, (i = this.#pool.length));\n\
-\t\t\tthis.#pool.push(s);\n\
-\t\t}}\n\
-\t\tthis.word(i);\n\
-\t}}\n\
-\t/** Little-endian words: the count of record words, the count of strings, each string's offset and length, the record words; then the pool, UTF-8. */\n\
-\tbytes(): Uint8Array {{\n\
-\t\tconst head = 2 + 2 * this.#pool.length;\n\
-\t\tconst poolAt = (head + this.#count) * 4;\n\
-\t\tconst joined = this.#pool.join('');\n\
-\t\tconst out = new Uint8Array(poolAt + joined.length * 3);\n\
-\t\tconst words = new Uint32Array(out.buffer, 0, head + this.#count);\n\
-\t\twords[0] = this.#count;\n\
-\t\twords[1] = this.#pool.length;\n\
-\t\tconst encoder = new TextEncoder();\n\
-\t\tlet {{ written }} = encoder.encodeInto(joined, out.subarray(poolAt));\n\
-\t\tif (written === joined.length) {{\n\
-\t\t\t// every string is ASCII, so its bytes are its characters\n\
-\t\t\tlet offset = 0;\n\
-\t\t\tfor (let i = 0; i < this.#pool.length; i++) {{\n\
-\t\t\t\twords[2 + 2 * i] = offset;\n\
-\t\t\t\twords[3 + 2 * i] = this.#pool[i].length;\n\
-\t\t\t\toffset += this.#pool[i].length;\n\
-\t\t\t}}\n\
-\t\t}} else {{\n\
-\t\t\twritten = 0;\n\
-\t\t\tfor (let i = 0; i < this.#pool.length; i++) {{\n\
-\t\t\t\tconst bytes = encoder.encodeInto(this.#pool[i], out.subarray(poolAt + written)).written;\n\
-\t\t\t\twords[2 + 2 * i] = written;\n\
-\t\t\t\twords[3 + 2 * i] = bytes;\n\
-\t\t\t\twritten += bytes;\n\
-\t\t\t}}\n\
-\t\t}}\n\
-\t\twords.set(this.#words.subarray(0, this.#count), head);\n\
-\t\t// the engine reads little-endian words; a big-endian platform swaps them here\n\
-\t\tif (new Uint8Array(new Uint32Array([1]).buffer)[0] !== 1) {{\n\
-\t\t\tconst view = new DataView(out.buffer);\n\
-\t\t\twords.forEach((word, i) => view.setUint32(i * 4, word, true));\n\
-\t\t}}\n\
-\t\treturn out.subarray(0, poolAt + written);\n\
-\t}}\n\
-}}\n"
-	);
-	let mut definitions = Vec::new();
-	T::definitions(&mut definitions);
-	let top = T::ts();
-	for d in definitions {
-		out.push('\n');
-		if !d.docs.is_empty() {
-			out.push_str(&format!("/**{} */\n", d.docs));
-		}
-		out.push_str(&format!(
-			"{}type {} ={}{};\n",
-			if d.name == top { "export " } else { "" },
-			d.name,
-			if d.ty.starts_with('\n') { "" } else { " " },
-			d.ty
-		));
-		out.push_str(&format!(
-			"function write{}(w: Writer, v: {}) {{\n\t{}\n}}\n",
-			d.name,
-			d.name,
-			indent(&d.write)
-		));
-	}
-	out.push_str(&format!(
-		"\n/** A {top} on its wire, as the engine reads it. */\nexport function wire(v: {top}): Uint8Array {{\n\tconst w = new Writer();\n\twrite{top}(w, v);\n\treturn w.bytes();\n}}\n"
-	));
-	out
-}
-
-/// A type on the wire, defined once: its Rust definition, its reader and writer, and the
-/// TypeScript type and writer. Docs come first on the type and on every field. A `copy enum`
-/// holds names only. A variant is told apart in TypeScript by its name or a literal it is
-/// given, or by a test on `v` when its value is bare: `Word(&'static str) = "typeof v === 'string'"`,
-/// an empty test being the `else`.
+/// A type of the definition, defined once: its Rust definition, its reader and its writer. Docs
+/// come first on the type and on every field. A struct is an object of its fields, in any order;
+/// a field that may be absent is an `Option`. A `copy enum` holds names only. An enum's variants
+/// are tried in the order written, each told by the shape of its value: a name is its string,
+/// `"inside"`, or the JSON it is given, `No = false`; a variant holding a value is an object of
+/// one key, its name, `{"opt":[…]}`, or the bare value when it is given the shape, `string` or
+/// `object`.
 macro_rules! wire {
 	(
-		$(#[doc = $doc:literal])* $vis:vis struct $name:ident {
+		$(#[doc = $doc:literal])* $vis:vis struct $name:ident $(<$a:lifetime>)? {
 			$($(#[doc = $fdoc:literal])* $fvis:vis $f:ident : $t:ty),* $(,)?
 		}
 	) => {
 		$(#[doc = $doc])*
-		#[derive(Clone, Debug)]
-		$vis struct $name {
+		#[derive(Clone, Copy, Debug)]
+		$vis struct $name $(<$a>)? {
 			$($(#[doc = $fdoc])* $fvis $f: $t,)*
 		}
 
-		impl $crate::host::grammar::Wire for $name {
-			fn read(c: &mut $crate::host::grammar::Cursor) -> Result<Self, String> {
-				Ok($name {
-					$($f: <$t as $crate::host::grammar::Wire>::read(c)?,)*
-				})
-			}
-
-			fn write(&self, w: &mut $crate::host::grammar::Writer) {
-				$(<$t as $crate::host::grammar::Wire>::write(&self.$f, w);)*
-			}
-
-			fn ts() -> String {
-				stringify!($name).into()
-			}
-
-			fn ts_write(value: &str) -> String {
-				format!("write{}(w, {value});", stringify!($name))
-			}
-
-			fn definitions(out: &mut Vec<$crate::host::grammar::Declaration>) {
-				if out.iter().any(|d| d.name == stringify!($name)) {
-					return;
+		impl<'a> $crate::host::grammar::Wire<'a> for $name $(<$a>)? {
+			fn read(r: &mut $crate::host::grammar::Reader<'a>) -> Result<Self, String> {
+				$(let mut $f = None::<$t>;)*
+				// each key is matched where it stands: reading it as a string first, then
+				// matching that, read the Svelte grammar 25% slower
+				r.object(&mut |r| {
+					$(if r.eat_text(spelled!("\"", stringify!($f), "\":")) {
+						return r.once(&mut $f, spelled!(stringify!($f)), stringify!($name));
+					})*
+					r.skip_entry()
+				})?;
+				// one match over every slot, where a `?` per field would drop the others at each return
+				$(let $f = $f.or_else(<$t as $crate::host::grammar::Wire>::absent);)*
+				match ($($f,)*) {
+					($(Some($f),)*) => Ok($name { $($f,)* }),
+					($($f,)*) => Err(r.missing(stringify!($name), &[$((spelled!(stringify!($f)), $f.is_some()),)*])),
 				}
-				let fields = [$($crate::host::grammar::Field {
-					name: stringify!($f),
-					docs: &[$($fdoc),*],
-					optional: <$t as $crate::host::grammar::Wire>::OPTIONAL,
-					ty: <$t as $crate::host::grammar::Wire>::ts_field(),
-					write: <$t as $crate::host::grammar::Wire>::ts_write(&format!("v.{}", $crate::host::grammar::camel(stringify!($f)))),
-				},)*];
-				out.push($crate::host::grammar::Declaration {
-					name: stringify!($name),
-					docs: <[&str]>::join(&[$($doc),*], "\n *"),
-					ty: $crate::host::grammar::fields(&fields, false),
-					write: $crate::host::grammar::writes(&fields),
-				});
-				$(<$t as $crate::host::grammar::Wire>::definitions(out);)*
+			}
+
+			fn write(&self, out: &mut String) {
+				out.push('{');
+				$($crate::host::grammar::entry(out, spelled!(stringify!($f)), &self.$f);)*
+				out.push('}');
 			}
 		}
 	};
 
-	($(#[doc = $doc:literal])* $vis:vis enum $name:ident { $($body:tt)* }) => {
-		wire!(@variants $name [$(#[doc = $doc])* $vis derive(Clone, Debug)] (c w v out) [] [] [] [] [] [] $($body)*);
+	($(#[doc = $doc:literal])* $vis:vis enum $name:ident $(<$a:lifetime>)? { $($body:tt)* }) => {
+		wire!(@variants $name [$(<$a>)?] [$(#[doc = $doc])* $vis derive(Clone, Copy, Debug)] (r out) [] [] [] $($body)*);
 	};
 	($(#[doc = $doc:literal])* $vis:vis copy enum $name:ident { $($body:tt)* }) => {
-		wire!(@variants $name [$(#[doc = $doc])* $vis derive(Clone, Copy, Debug, PartialEq, Eq)] (c w v out) [] [] [] [] [] [] $($body)*);
+		wire!(@variants $name [] [$(#[doc = $doc])* $vis derive(Clone, Copy, Debug, PartialEq, Eq)] (r out) [] [] [] $($body)*);
 	};
 
-	// a name told by a test, written as the type given: `List: "readonly []" = "Array.isArray(v)"`
-	(@variants $name:ident $head:tt ($c:ident $w:ident $v:ident $out:ident) [$($def:tt)*] [$($read:tt)*] [$($is:tt)*] [$($write:tt)*] [$($ts:tt)*] [$($deps:tt)*]
-		$(#[doc = $vdoc:literal])* $variant:ident : $ty:literal = $test:literal $(, $($rest:tt)*)?
+	// a name: its string, or the JSON given
+	(@variants $name:ident $gen:tt $head:tt ($r:ident $out:ident) [$($def:tt)*] [$($read:tt)*] [$($write:tt)*]
+		$(#[doc = $vdoc:literal])* $variant:ident $(= $json:tt)? $(, $($rest:tt)*)?
 	) => {
-		wire!(@variants $name $head ($c $w $v $out)
+		wire!(@variants $name $gen $head ($r $out)
 			[$($def)* $(#[doc = $vdoc])* $variant,]
-			[$($read)* |_| Ok($name::$variant),]
-			[$($is)* matches!($v, $name::$variant),]
-			[$($write)* $name::$variant => {}]
-			[$($ts)* $crate::host::grammar::Variant {
-				docs: &[$($vdoc),*],
-				ty: $ty.into(),
-				tell: $crate::host::grammar::Tell::Test($test.into()),
-				write: String::new(),
-			},]
-			[$($deps)*]
+			[$($read)* if $r.eat_text(wire!(@json $variant $($json)?)) { return Ok($name::$variant); }]
+			[$($write)* $name::$variant => $out.push_str(wire!(@json $variant $($json)?)),]
 			$($($rest)*)?);
 	};
 
-	// a name, written as `'name'` or as the literal given: `No = false`
-	(@variants $name:ident $head:tt ($c:ident $w:ident $v:ident $out:ident) [$($def:tt)*] [$($read:tt)*] [$($is:tt)*] [$($write:tt)*] [$($ts:tt)*] [$($deps:tt)*]
-		$(#[doc = $vdoc:literal])* $variant:ident $(= $literal:tt)? $(, $($rest:tt)*)?
+	// a variant holding one value: an object its name keys, or the bare value of the shape given
+	(@variants $name:ident $gen:tt $head:tt ($r:ident $out:ident) [$($def:tt)*] [$($read:tt)*] [$($write:tt)*]
+		$(#[doc = $vdoc:literal])* $variant:ident ( $t:ty ) $(= $shape:ident)? $(, $($rest:tt)*)?
 	) => {
-		wire!(@variants $name $head ($c $w $v $out)
-			[$($def)* $(#[doc = $vdoc])* $variant,]
-			[$($read)* |_| Ok($name::$variant),]
-			[$($is)* matches!($v, $name::$variant),]
-			[$($write)* $name::$variant => {}]
-			[$($ts)* {
-				let literal = [$(stringify!($literal),)* &format!("'{}'", $crate::host::grammar::camel(stringify!($variant)))][0].to_string();
-				$crate::host::grammar::Variant {
-					docs: &[$($vdoc),*],
-					ty: literal.clone(),
-					tell: $crate::host::grammar::Tell::Case(literal),
-					write: String::new(),
-				}
-			},]
-			[$($deps)*]
-			$($($rest)*)?);
-	};
-
-	// a variant holding one value: `{ name: value }`, or the bare value told by the test given
-	(@variants $name:ident $head:tt ($c:ident $w:ident $v:ident $out:ident) [$($def:tt)*] [$($read:tt)*] [$($is:tt)*] [$($write:tt)*] [$($ts:tt)*] [$($deps:tt)*]
-		$(#[doc = $vdoc:literal])* $variant:ident ( $t:ty ) $(= $test:literal)? $(, $($rest:tt)*)?
-	) => {
-		wire!(@variants $name $head ($c $w $v $out)
+		wire!(@variants $name $gen $head ($r $out)
 			[$($def)* $(#[doc = $vdoc])* $variant($t),]
-			[$($read)* |$c| Ok($name::$variant(<$t as $crate::host::grammar::Wire>::read($c)?)),]
-			[$($is)* matches!($v, $name::$variant(_)),]
-			[$($write)* $name::$variant(value) => <$t as $crate::host::grammar::Wire>::write(value, $w),]
-			[$($ts)* {
-				let key = $crate::host::grammar::camel(stringify!($variant));
-				let payload = <$t as $crate::host::grammar::Wire>::ts();
-				let test: Option<&str> = [$(Some($test),)* None][0];
-				match test {
-					Some(test) => $crate::host::grammar::Variant {
-						docs: &[$($vdoc),*],
-						ty: payload.clone(),
-						tell: $crate::host::grammar::Tell::Test(test.into()),
-						write: <$t as $crate::host::grammar::Wire>::ts_write("v"),
-					},
-					None => $crate::host::grammar::Variant {
-						docs: &[$($vdoc),*],
-						ty: format!("{{ {key}: {payload} }}"),
-						tell: $crate::host::grammar::Tell::Test(format!("'{key}' in v")),
-						write: <$t as $crate::host::grammar::Wire>::ts_write(&format!("(v as {{ {key}: {payload} }}).{key}")),
-					},
-				}
-			},]
-			[$($deps)* <$t as $crate::host::grammar::Wire>::definitions($out);]
+			[$($read)* wire!(@read $r $name $variant $t $(, $shape)?);]
+			[$($write)* $name::$variant(value) => wire!(@write $out $variant value $(, $shape)?),]
 			$($($rest)*)?);
 	};
 
-	// a variant with fields: `{ name: { fields } }`, or the bare record told by the test given
-	(@variants $name:ident $head:tt ($c:ident $w:ident $v:ident $out:ident) [$($def:tt)*] [$($read:tt)*] [$($is:tt)*] [$($write:tt)*] [$($ts:tt)*] [$($deps:tt)*]
-		$(#[doc = $vdoc:literal])* $variant:ident { $($(#[doc = $fdoc:literal])* $f:ident : $t:ty),* $(,)? } $(= $test:literal)? $(, $($rest:tt)*)?
-	) => {
-		wire!(@variants $name $head ($c $w $v $out)
-			[$($def)* $(#[doc = $vdoc])* $variant { $($(#[doc = $fdoc])* $f: $t,)* },]
-			[$($read)* |$c| Ok($name::$variant {
-				$($f: <$t as $crate::host::grammar::Wire>::read($c)?,)*
-			}),]
-			[$($is)* matches!($v, $name::$variant { .. }),]
-			[$($write)* $name::$variant { $($f,)* } => { $(<$t as $crate::host::grammar::Wire>::write($f, $w);)* }]
-			[$($ts)* {
-				let key = $crate::host::grammar::camel(stringify!($variant));
-				let test: Option<&str> = [$(Some($test),)* None][0];
-				let shape = $crate::host::grammar::fields(&[$($crate::host::grammar::Field {
-					name: stringify!($f),
-					docs: &[$($fdoc),*],
-					optional: <$t as $crate::host::grammar::Wire>::OPTIONAL,
-					ty: <$t as $crate::host::grammar::Wire>::ts_field(),
-					write: String::new(),
-				},)*], true);
-				let value = match test {
-					Some(_) => "v".to_string(),
-					None => format!("(v as {{ {key}: {shape} }}).{key}"),
-				};
-				let fields = [$($crate::host::grammar::Field {
-					name: stringify!($f),
-					docs: &[$($fdoc),*],
-					optional: <$t as $crate::host::grammar::Wire>::OPTIONAL,
-					ty: <$t as $crate::host::grammar::Wire>::ts_field(),
-					write: <$t as $crate::host::grammar::Wire>::ts_write(&format!("{value}.{}", $crate::host::grammar::camel(stringify!($f)))),
-				},)*];
-				$crate::host::grammar::Variant {
-					docs: &[$($vdoc),*],
-					ty: match test { Some(_) => shape.clone(), None => format!("{{ {key}: {shape} }}") },
-					tell: $crate::host::grammar::Tell::Test(test.map_or_else(|| format!("'{key}' in v"), str::to_string)),
-					write: $crate::host::grammar::writes(&fields),
-				}
-			},]
-			[$($deps)* $(<$t as $crate::host::grammar::Wire>::definitions($out);)*]
-			$($($rest)*)?);
-	};
-
-	(@variants $name:ident [$(#[doc = $doc:literal])* $vis:vis derive($($derive:ident),*)] ($c:ident $w:ident $v:ident $out:ident) [$($def:tt)*] [$($read:tt)*] [$($is:tt)*] [$($write:tt)*] [$($ts:tt)*] [$($deps:tt)*]) => {
+	(@variants $name:ident [$($gen:tt)*] [$(#[doc = $doc:literal])* $vis:vis derive($($derive:ident),*)] ($r:ident $out:ident) [$($def:tt)*] [$($read:tt)*] [$($write:tt)*]) => {
 		$(#[doc = $doc])*
 		#[derive($($derive),*)]
-		$vis enum $name { $($def)* }
+		$vis enum $name $($gen)* { $($def)* }
 
-		impl $crate::host::grammar::Wire for $name {
-			fn read($c: &mut $crate::host::grammar::Cursor) -> Result<Self, String> {
-				let readers: &[fn(&mut $crate::host::grammar::Cursor) -> Result<Self, String>] = &[$($read)*];
-				let tag = $c.word()?;
-				let reader = readers.get(tag as usize).ok_or_else(|| format!("{tag} is not a {} on the grammar", stringify!($name)))?;
-				reader($c)
+		impl<'a> $crate::host::grammar::Wire<'a> for $name $($gen)* {
+			fn read($r: &mut $crate::host::grammar::Reader<'a>) -> Result<Self, String> {
+				$($read)*
+				Err($r.expected(concat!("a ", stringify!($name))))
 			}
 
-			fn write(&self, $w: &mut $crate::host::grammar::Writer) {
-				let $v = self;
-				$w.word([$($is)*].iter().position(|is| *is).unwrap() as u32);
-				match $v { $($write)* }
-			}
-
-			fn ts() -> String {
-				stringify!($name).into()
-			}
-
-			fn ts_write(value: &str) -> String {
-				format!("write{}(w, {value});", stringify!($name))
-			}
-
-			fn definitions($out: &mut Vec<$crate::host::grammar::Declaration>) {
-				if $out.iter().any(|d| d.name == stringify!($name)) {
-					return;
-				}
-				let (ty, write) = $crate::host::grammar::union(&[$($ts)*]);
-				$out.push($crate::host::grammar::Declaration {
-					name: stringify!($name),
-					docs: <[&str]>::join(&[$($doc),*], "\n *"),
-					ty,
-					write,
-				});
-				$($deps)*
+			fn write(&self, $out: &mut String) {
+				match self { $($write)* }
 			}
 		}
+	};
+
+	(@json $variant:ident) => { spelled!("\"", stringify!($variant), "\"") };
+	(@json $variant:ident $json:tt) => { stringify!($json) };
+
+	(@read $r:ident $name:ident $variant:ident $t:ty) => {
+		if $r.eat_text(spelled!("{\"", stringify!($variant), "\":")) {
+			let value = <$t as $crate::host::grammar::Wire>::read($r)?;
+			$r.expect(b'}')?;
+			return Ok($name::$variant(value));
+		}
+	};
+	(@read $r:ident $name:ident $variant:ident $t:ty, string) => {
+		if $r.peek() == Some(b'"') {
+			return <$t as $crate::host::grammar::Wire>::read($r).map($name::$variant);
+		}
+	};
+	(@read $r:ident $name:ident $variant:ident $t:ty, object) => {
+		if $r.peek() == Some(b'{') {
+			return <$t as $crate::host::grammar::Wire>::read($r).map($name::$variant);
+		}
+	};
+	(@write $out:ident $variant:ident $value:ident) => {{
+		$out.push_str(spelled!("{\"", stringify!($variant), "\":"));
+		$crate::host::grammar::Wire::write($value, $out);
+		$out.push('}');
+	}};
+	(@write $out:ident $variant:ident $value:ident, $shape:ident) => {
+		$crate::host::grammar::Wire::write($value, $out)
 	};
 }
 
@@ -1291,10 +1229,10 @@ pub fn component_name(name: &str) -> bool {
 		&& parts.all(|part| !part.is_empty() && part.chars().all(is_id_continue))
 }
 
-/// A grammar as the builders make it: what crosses the wire, lowered here into what the walker
-/// reads. The TypeScript side is checked against these types.
+/// A grammar as the builders make it, which is what crosses, lowered here into what the walker
+/// reads.
 pub mod definition {
-	use super::{Cursor, Record, Wire, Writer};
+	use super::{Arena, Reader, Record, Wire};
 
 	wire! {
 		/// What fills a field: where it is read from, what reads it, and how.
@@ -1322,26 +1260,26 @@ pub mod definition {
 			True = true,
 			False = false,
 			Null = null,
-			List: "readonly []" = "Array.isArray(v)",
+			List = [],
 		}
 	}
 
 	wire! {
 		/// One step of a form: a host word, fields, or a group.
-		pub enum Item {
-			Word(&'static str) = "typeof v === 'string'",
-			Opt(Vec<Item>),
-			OneOf(Vec<Vec<Item>>),
-			Scope(Vec<Item>),
-			Fields(Record<Source>) = "",
+		pub enum Item<'a> {
+			Word(&'static str) = string,
+			Opt(&'a [Item<'a>]),
+			OneOf(&'a [&'a [Item<'a>]]),
+			Scope(&'a [Item<'a>]),
+			Fields(Record<'a, Source>) = object,
 		}
 	}
 
 	wire! {
 		/// A node type and the form its fields come from.
-		pub struct Node {
+		pub struct Node<'a> {
 			pub node: &'static str,
-			pub form: Option<Vec<Item>>,
+			pub form: Option<&'a [Item<'a>]>,
 		}
 	}
 
@@ -1353,9 +1291,9 @@ pub mod definition {
 	}
 
 	wire! {
-		pub struct Directive {
+		pub struct Directive<'a> {
 			pub node: &'static str,
-			pub form: Option<Vec<Item>>,
+			pub form: Option<&'a [Item<'a>]>,
 			pub unique: Option<Uniqueness>,
 		}
 	}
@@ -1368,9 +1306,9 @@ pub mod definition {
 	}
 
 	wire! {
-		pub struct Element {
+		pub struct Element<'a> {
 			pub node: &'static str,
-			pub form: Option<Vec<Item>>,
+			pub form: Option<&'a [Item<'a>]>,
 			pub root: Option<bool>,
 			pub once: Option<bool>,
 			pub inside: Option<&'static str>,
@@ -1380,19 +1318,19 @@ pub mod definition {
 	}
 
 	wire! {
-		pub struct Elements {
-			pub fields: Record<Source>,
-			pub rules: Option<Record<Element>>,
-			pub component: Option<Element>,
-			pub other: Option<Element>,
+		pub struct Elements<'a> {
+			pub fields: Record<'a, Source>,
+			pub rules: Option<Record<'a, Element<'a>>>,
+			pub component: Option<Element<'a>>,
+			pub other: Option<Element<'a>>,
 		}
 	}
 
 	wire! {
-		pub struct Script {
+		pub struct Script<'a> {
 			pub element: &'static str,
-			pub module: Option<Vec<(&'static str, Option<&'static str>)>>,
-			pub typescript: Option<Vec<(&'static str, Option<&'static str>)>>,
+			pub module: Option<&'a [(&'static str, Option<&'static str>)]>,
+			pub typescript: Option<&'a [(&'static str, Option<&'static str>)]>,
 		}
 	}
 
@@ -1403,16 +1341,16 @@ pub mod definition {
 	}
 
 	wire! {
-		pub struct Directives {
+		pub struct Directives<'a> {
 			pub prefix: Option<&'static str>,
 			pub arg: Option<&'static str>,
 			pub modifier: Option<&'static str>,
 			pub dynamic: Option<(&'static str, &'static str)>,
 			pub unique: Option<Raw>,
-			pub fields: Record<Source>,
-			pub shorthands: Option<Record<Vec<&'static str>>>,
-			pub rules: Option<Record<Directive>>,
-			pub other: Option<Directive>,
+			pub fields: Record<'a, Source>,
+			pub shorthands: Option<Record<'a, &'a [&'static str]>>,
+			pub rules: Option<Record<'a, Directive<'a>>>,
+			pub other: Option<Directive<'a>>,
 		}
 	}
 
@@ -1429,31 +1367,31 @@ pub mod definition {
 
 	wire! {
 		/// What a construct opens or closes with: its marker, then what its form reads.
-		pub struct Piece {
-			pub marker: Vec<&'static str>,
+		pub struct Piece<'a> {
+			pub marker: &'a [&'static str],
 			/// Whitespace must follow the marker.
 			pub space: Option<bool>,
-			pub form: Vec<Item>,
+			pub form: &'a [Item<'a>],
 		}
 	}
 
 	wire! {
 		/// A branch of a block; `reopen` nests the block again into that field, with that flag true on it.
-		pub struct Branch {
-			pub marker: Vec<&'static str>,
+		pub struct Branch<'a> {
+			pub marker: &'a [&'static str],
 			pub space: Option<bool>,
-			pub form: Vec<Item>,
+			pub form: &'a [Item<'a>],
 			pub reopen: Option<(&'static str, &'static str)>,
 		}
 	}
 
 	wire! {
 		/// A tag, or with `close` a block; the type of its node is the key it is written under.
-		pub struct Construct {
-			pub r#in: Option<Vec<Place>>,
-			pub open: Piece,
-			pub branches: Option<Vec<Branch>>,
-			pub close: Option<Piece>,
+		pub struct Construct<'a> {
+			pub r#in: Option<&'a [Place]>,
+			pub open: Piece<'a>,
+			pub branches: Option<&'a [Branch<'a>]>,
+			pub close: Option<Piece<'a>>,
 		}
 	}
 
@@ -1466,47 +1404,47 @@ pub mod definition {
 
 	wire! {
 		/// A host language: its document, its content, and the JavaScript inside them.
-		pub struct Definition {
-			pub document: Node,
-			pub text: Node,
-			pub comment: Node,
-			pub fragment: Option<Node>,
+		pub struct Definition<'a> {
+			pub document: Node<'a>,
+			pub text: Node<'a>,
+			pub comment: Node<'a>,
+			pub fragment: Option<Node<'a>>,
 			pub attributes: Option<Attributes>,
 			pub autoclose: Option<bool>,
 			pub trim: Option<bool>,
-			pub void: Option<Vec<&'static str>>,
+			pub void: Option<&'a [&'static str]>,
 			pub verbatim: Option<&'static str>,
-			pub elements: Elements,
-			pub script: Option<Script>,
+			pub elements: Elements<'a>,
+			pub script: Option<Script<'a>>,
 			pub style: Option<&'static str>,
-			pub directives: Option<Directives>,
-			pub constructs: Option<Record<Construct>>,
+			pub directives: Option<Directives<'a>>,
+			pub constructs: Option<Record<'a, Construct<'a>>>,
 		}
 	}
 
 	wire! {
 		/// What crosses: the host's name and its definition.
-		pub struct Host {
+		pub struct Host<'a> {
 			pub name: &'static str,
-			pub definition: Definition,
+			pub definition: Definition<'a>,
 		}
 	}
 
-	impl Host {
-		pub fn read(bytes: &[u8]) -> Result<Host, String> {
-			let mut cursor = Cursor::new(bytes)?;
-			let host = <Host as Wire>::read(&mut cursor)?;
-			if !cursor.done() {
-				return Err("words after the grammar".into());
-			}
+	impl<'a> Host<'a> {
+		/// Every name but an escaped one is a slice of `text`, which therefore lives for the
+		/// process; every list is in `arena`.
+		pub fn read(text: &'static str, arena: &'a Arena) -> Result<Host<'a>, String> {
+			let mut reader = Reader::new(text, arena);
+			let host = <Host as Wire>::read(&mut reader)?;
+			reader.end()?;
 			Ok(host)
 		}
 
-		/// The host on its wire, as the JavaScript side writes it.
-		pub fn wire(&self) -> Vec<u8> {
-			let mut writer = Writer::default();
-			self.write(&mut writer);
-			writer.bytes()
+		/// The host as JSON, as the JavaScript side writes it.
+		pub fn json(&self) -> String {
+			let mut out = String::new();
+			self.write(&mut out);
+			out
 		}
 	}
 }
@@ -1539,7 +1477,7 @@ fn entry_of(read: &str) -> Result<Entry, String> {
 }
 
 /// The fields among items, in order.
-fn sources(items: &[definition::Item]) -> Vec<(&'static str, &Source)> {
+fn sources<'a>(items: &[definition::Item<'a>]) -> Vec<(&'static str, &'a Source)> {
 	items
 		.iter()
 		.filter_map(|item| match item {
@@ -1569,7 +1507,7 @@ fn fields_in(ty: &str, items: &[definition::Item]) -> Result<Vec<&'static str>, 
 			definition::Item::Opt(inner) | definition::Item::Scope(inner) => fields_in(ty, inner)?,
 			definition::Item::OneOf(list) => {
 				let mut union: Vec<&'static str> = Vec::new();
-				for inner in list {
+				for inner in *list {
 					for field in fields_in(ty, inner)? {
 						if !union.contains(&field) {
 							union.push(field);
@@ -1606,7 +1544,7 @@ fn part(fields: &Record<Source>, read: &str) -> Option<&'static str> {
 /// The fields of a site that reads each of them once and never leaves one out.
 fn once(what: &str, fields: &Record<Source>) -> Result<(), String> {
 	let mut reads = Vec::new();
-	for (field, s) in &fields.0 {
+	for (field, s) in fields.0 {
 		if s.optional {
 			return Err(format!("{field} on {what} is never left out"));
 		}
@@ -1660,12 +1598,12 @@ fn sequence(
 				let required = matches!(item, definition::Item::OneOf(_));
 				let one;
 				let list = match item {
-					definition::Item::OneOf(list) => list.as_slice(),
-					definition::Item::Opt(inner) if inner.is_empty() => return Err(format!("{ty}: `opt` needs items")),
-					definition::Item::Opt(inner) => match inner.as_slice() {
-						[definition::Item::OneOf(list)] => list.as_slice(),
+					definition::Item::OneOf(list) => *list,
+					definition::Item::Opt([]) => return Err(format!("{ty}: `opt` needs items")),
+					definition::Item::Opt(inner) => match *inner {
+						[definition::Item::OneOf(list)] => *list,
 						_ => {
-							one = [inner.clone()];
+							one = [*inner];
 							&one
 						}
 					},
@@ -1689,7 +1627,7 @@ fn sequence(
 			}
 			definition::Item::Scope(_) => return Err(format!("{ty}: a scope belongs to the document or the fragment")),
 			definition::Item::Fields(record) => {
-				for (field, source) in &record.0 {
+				for (field, source) in record.0 {
 					match source.from {
 						"literal" if site == At::Directive => continue,
 						"content" => {
@@ -1737,7 +1675,7 @@ fn sequence(
 
 fn alternatives(
 	ty: &str,
-	list: &[Vec<definition::Item>],
+	list: &[&[definition::Item]],
 	site: At,
 	bound: &mut Vec<Declare>,
 ) -> Result<Vec<Alternative>, String> {
@@ -1778,7 +1716,7 @@ fn scoped(items: &[definition::Item], reads: &mut Vec<&'static str>) -> Result<V
 		match item {
 			definition::Item::Scope(inner) => out.push(DocField::Scope(scoped(inner, reads)?)),
 			definition::Item::Fields(record) => {
-				for (field, source) in &record.0 {
+				for (field, source) in record.0 {
 					if source.from != "literal" {
 						if reads.contains(&source.read) {
 							return Err(format!("the document reads {} twice", source.read));
@@ -1799,7 +1737,7 @@ fn scoped(items: &[definition::Item], reads: &mut Vec<&'static str>) -> Result<V
 }
 
 fn element(name: Match, rule: &definition::Element) -> Result<ElementRule, String> {
-	let this = match rule.form.as_deref().unwrap_or_default() {
+	let this = match rule.form.unwrap_or_default() {
 		[] => None,
 		[definition::Item::Fields(Record(fields))]
 			if fields.len() == 1
@@ -1829,7 +1767,7 @@ fn element(name: Match, rule: &definition::Element) -> Result<ElementRule, Strin
 }
 
 fn directive(name: Match, rule: &definition::Directive) -> Result<DirectiveRule, String> {
-	let items = rule.form.as_deref().unwrap_or_default();
+	let items = rule.form.unwrap_or_default();
 	let ty = rule.node;
 	let grouped = items.iter().any(|item| match item {
 		definition::Item::Opt(inner) | definition::Item::Scope(inner) => has_literal(inner),
@@ -1863,7 +1801,7 @@ fn directive(name: Match, rule: &definition::Directive) -> Result<DirectiveRule,
 	};
 	if let [only] = rest.as_slice() {
 		let wrapped = match only {
-			definition::Item::Opt(inner) if inner.len() == 1 => Some(inner.as_slice()),
+			definition::Item::Opt(inner) if inner.len() == 1 => Some(*inner),
 			_ => None,
 		};
 		let mut single = match wrapped {
@@ -1970,25 +1908,18 @@ fn piece(
 
 fn construct(ty: &'static str, rule: &definition::Construct) -> Result<Construct, String> {
 	let block = rule.close.is_some();
-	let places = match &rule.r#in {
-		Some(list) if list.is_empty() => return Err(format!("{ty} stands nowhere")),
-		Some(list) => list.clone(),
+	let places = match rule.r#in {
+		Some([]) => return Err(format!("{ty} stands nowhere")),
+		Some(list) => list.to_vec(),
 		None => vec![Place::Content],
 	};
 	let mut chain_flags = Vec::new();
 	let mut branches = Vec::new();
-	for branch in rule.branches.iter().flatten() {
+	for branch in rule.branches.unwrap_or_default() {
 		if !block {
 			return Err(format!("{ty} has branches, so it closes"));
 		}
-		let mut piece = piece(
-			ty,
-			&branch.marker,
-			branch.space,
-			&branch.form,
-			At::Block,
-			&mut Vec::new(),
-		)?;
+		let mut piece = piece(ty, branch.marker, branch.space, branch.form, At::Block, &mut Vec::new())?;
 		if let Some((field, flag)) = branch.reopen {
 			if !chain_flags.contains(&flag) {
 				chain_flags.push(flag);
@@ -2013,14 +1944,7 @@ fn construct(ty: &'static str, rule: &definition::Construct) -> Result<Construct
 	}
 	let mut bound = Vec::new();
 	let site = if block { At::Block } else { At::Tag };
-	let open = piece(
-		ty,
-		&rule.open.marker,
-		rule.open.space,
-		&rule.open.form,
-		site,
-		&mut bound,
-	)?;
+	let open = piece(ty, rule.open.marker, rule.open.space, rule.open.form, site, &mut bound)?;
 	if block && !closed(&open.form.items, open.form.body.as_ref()) {
 		return Err(format!("{ty} ends in no body"));
 	}
@@ -2032,7 +1956,7 @@ fn construct(ty: &'static str, rule: &definition::Construct) -> Result<Construct
 	}
 	let close = match &rule.close {
 		Some(close) => {
-			let piece = piece(ty, &close.marker, close.space, &close.form, At::Tag, &mut Vec::new())?;
+			let piece = piece(ty, close.marker, close.space, close.form, At::Tag, &mut Vec::new())?;
 			if !piece.form.items.iter().all(|item| matches!(item, Item::Literal(_))) {
 				return Err(format!("{ty}: a close reads words only"));
 			}
@@ -2076,7 +2000,7 @@ fn lower(host: Host) -> Result<Grammar, String> {
 	let texts = |node: &definition::Node,
 	             reads: &[&str]|
 	 -> Result<(&'static str, &'static str, Option<&'static str>), String> {
-		let items = node.form.as_deref().unwrap_or_default();
+		let items = node.form.unwrap_or_default();
 		let record = sources(items);
 		let fields_only = items.iter().all(|item| matches!(item, definition::Item::Fields(_)));
 		if !fields_only || record.iter().any(|(_, s)| s.from != "text" || !reads.contains(&s.read)) {
@@ -2093,8 +2017,8 @@ fn lower(host: Host) -> Result<Grammar, String> {
 	let (comment_ty, comment_data, _) = texts(&d.comment, &["data"])?;
 	let fragment = match &d.fragment {
 		Some(node) => {
-			let (scope, items) = match node.form.as_deref().unwrap_or_default() {
-				[definition::Item::Scope(inner)] => (true, inner.as_slice()),
+			let (scope, items) = match node.form.unwrap_or_default() {
+				[definition::Item::Scope(inner)] => (true, *inner),
 				items => (false, items),
 			};
 			let ([(field, source)], [_]) = (&sources(items)[..], items) else {
@@ -2112,7 +2036,7 @@ fn lower(host: Host) -> Result<Grammar, String> {
 	let element_fields =
 		|read: &str| part(&d.elements.fields, read).ok_or_else(|| format!("elements need a field read by {read}"));
 	let mut elements = Vec::new();
-	for (name, rule) in d.elements.rules.iter().flat_map(|r| &r.0) {
+	for (name, rule) in d.elements.rules.iter().flat_map(|r| r.0) {
 		elements.push(element(Match::Exact(name), rule)?);
 	}
 	if let Some(rule) = &d.elements.component {
@@ -2155,8 +2079,8 @@ fn lower(host: Host) -> Result<Grammar, String> {
 		unique: x.unique.is_some(),
 	});
 	let shorthands = x
-		.and_then(|x| x.shorthands.as_ref())
-		.map(|s| &s.0[..])
+		.and_then(|x| x.shorthands)
+		.map(|s| s.0)
 		.unwrap_or_default()
 		.iter()
 		.map(|(token, list)| Shorthand {
@@ -2166,14 +2090,14 @@ fn lower(host: Host) -> Result<Grammar, String> {
 		})
 		.collect();
 	let mut directives = Vec::new();
-	for (name, rule) in x.and_then(|x| x.rules.as_ref()).iter().flat_map(|r| &r.0) {
+	for (name, rule) in x.and_then(|x| x.rules).iter().flat_map(|r| r.0) {
 		directives.push(directive(Match::Exact(name), rule)?);
 	}
 	if let Some(other) = x.and_then(|x| x.other.as_ref()) {
 		directives.push(directive(Match::Any, other)?);
 	}
 	let mut constructs = Vec::new();
-	for (name, rule) in d.constructs.iter().flat_map(|r| &r.0) {
+	for (name, rule) in d.constructs.iter().flat_map(|r| r.0) {
 		constructs.push(construct(name, rule)?);
 	}
 	let shorthand = d.attributes.as_ref().and_then(|a| a.shorthand);
@@ -2184,7 +2108,7 @@ fn lower(host: Host) -> Result<Grammar, String> {
 	let mut reads = Vec::new();
 	let document = DocumentRule {
 		ty: d.document.node,
-		fields: scoped(d.document.form.as_deref().unwrap_or_default(), &mut reads)?,
+		fields: scoped(d.document.form.unwrap_or_default(), &mut reads)?,
 	};
 	if !reads.contains(&"fragment") {
 		return Err(format!("{} holds no content", d.document.node));
@@ -2195,7 +2119,7 @@ fn lower(host: Host) -> Result<Grammar, String> {
 		shorthand,
 		autoclose: d.autoclose == Some(true),
 		trim: d.trim == Some(true),
-		void: d.void.clone().unwrap_or_default(),
+		void: d.void.unwrap_or_default().to_vec(),
 		fragment: fragment.map(|(ty, field, _)| (ty, field)),
 		fragment_scope: fragment.is_some_and(|(_, _, scope)| scope),
 		element_fields: ElementFields {
@@ -2216,8 +2140,8 @@ fn lower(host: Host) -> Result<Grammar, String> {
 		elements,
 		script: d.script.as_ref().map(|s| ScriptRule {
 			name: s.element,
-			module: s.module.clone().unwrap_or_default(),
-			typescript: s.typescript.clone().unwrap_or_default(),
+			module: s.module.unwrap_or_default().to_vec(),
+			typescript: s.typescript.unwrap_or_default().to_vec(),
 		}),
 		style: d.style,
 		directive_syntax,
@@ -2300,16 +2224,12 @@ impl Grammar {
 		}
 	}
 
-	/// Reads a grammar off its wire: the definition as the builders made it, lowered.
-	pub fn read(bytes: &[u8]) -> Result<Grammar, String> {
-		let mut grammar = lower(Host::read(bytes)?)?;
+	/// Reads a grammar off its JSON, kept for the process: the definition as the builders made it,
+	/// lowered.
+	pub fn read(text: &'static str) -> Result<Grammar, String> {
+		let mut grammar = lower(Host::read(text, &Arena::default())?)?;
 		grammar.finish()?;
 		Ok(grammar)
-	}
-
-	/// The TypeScript module of every type on the wire, for the side that writes it.
-	pub fn wire_types() -> String {
-		module::<Host>("crates/teasel/src/host/grammar.rs")
 	}
 
 	fn finish(&mut self) -> Result<(), String> {
@@ -2542,7 +2462,9 @@ mod tests {
 	#[test]
 	#[ignore]
 	fn read_phases() {
-		let bytes = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/host.wire")).unwrap();
+		let text = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/host.json"))
+			.unwrap()
+			.leak();
 		let time = |label: &str, f: &dyn Fn()| {
 			let t = std::time::Instant::now();
 			for _ in 0..1000 {
@@ -2551,13 +2473,14 @@ mod tests {
 			println!("{label}: {:?}", t.elapsed() / 1000);
 		};
 		time("Host::read", &|| {
-			std::hint::black_box(Host::read(&bytes).unwrap());
+			std::hint::black_box(Host::read(text, &Arena::default()).unwrap());
 		});
-		let host = Host::read(&bytes).unwrap();
+		let arena = Arena::default();
+		let host = Host::read(text, &arena).unwrap();
 		time("lower", &|| {
-			std::hint::black_box(lower(host.clone()).unwrap());
+			std::hint::black_box(lower(host).unwrap());
 		});
-		let grammar = lower(host.clone()).unwrap();
+		let grammar = lower(host).unwrap();
 		time("finish", &|| {
 			let mut g = grammar.clone();
 			g.finish().unwrap();
@@ -2565,27 +2488,111 @@ mod tests {
 		});
 	}
 
+	fn read<T: Wire<'static>>(text: &str) -> Result<T, String> {
+		let mut reader = Reader::new(keep(text), Box::leak(Box::default()));
+		let value = T::read(&mut reader)?;
+		reader.end()?;
+		Ok(value)
+	}
+
+	fn write<'a>(value: &impl Wire<'a>) -> String {
+		let mut out = String::new();
+		value.write(&mut out);
+		out
+	}
+
 	#[test]
-	fn words_round_trip() {
-		let mut w = Writer::default();
-		Some("a").write(&mut w);
-		vec![("b", true), ("a", false)].write(&mut w);
-		Option::<&str>::None.write(&mut w);
-		let bytes = w.bytes();
-		assert_eq!(bytes.len(), (2 + 4 + 8) * 4 + 2);
-		let mut c = Cursor::new(&bytes).unwrap();
-		assert_eq!(Option::<&str>::read(&mut c).unwrap(), Some("a"));
-		assert_eq!(Vec::<(&str, bool)>::read(&mut c).unwrap(), [("b", true), ("a", false)]);
-		assert_eq!(Option::<&str>::read(&mut c).unwrap(), None);
-		assert!(c.done() && c.word().is_err());
-		let mut short = Cursor::new(&bytes[..bytes.len() - 1]).unwrap();
-		assert!(Option::<&str>::read(&mut short).is_ok() && Vec::<(&str, bool)>::read(&mut short).is_err());
-		assert!(Cursor::new(&bytes[..12]).is_err() && Cursor::new(&[]).is_err());
+	fn json_round_trips() {
+		let markers = r#"[["context","module"],["mo\"d\\ule"],["a\u0001","é"]]"#;
+		let read_markers: &[(&str, Option<&str>)] = read(markers).unwrap();
+		assert_eq!(
+			read_markers,
+			[("context", Some("module")), ("mo\"d\\ule", None), ("a\u{1}", Some("é"))]
+		);
+		assert_eq!(write(&read_markers), markers);
+		assert_eq!(read::<&str>(r#""\n\/\u00e9\ud800""#).unwrap(), "\n/é\u{FFFD}");
+		assert_eq!(read::<&str>(r#""\ud83d\ude00\ude00""#).unwrap(), "😀\u{FFFD}");
+		// keys in any order, an absent option left out, the shape telling a variant
+		let source = r#"{"orArg":true,"from":"js","read":"pattern","optional":false,"bind":"inside","literal":null}"#;
+		let read_source: definition::Source = read(source).unwrap();
+		assert!(read_source.or_arg && read_source.bind == definition::Bind::Inside);
+		assert_eq!(read_source.literal, Some(definition::Literal::Null));
+		assert_eq!(
+			write(&read_source),
+			r#"{"from":"js","read":"pattern","optional":false,"bind":"inside","orArg":true,"literal":null}"#
+		);
+		let plain = r#"{"from":"js","read":"expression","optional":false,"bind":false,"orArg":false}"#;
+		let form =
+			format!(r#"["{{",{{"opt":[{{"a":{plain}}}]}},{{"oneOf":[["x"],["y"]]}},{{"b":{plain},"c":{plain}}}]"#);
+		let items: &[definition::Item] = read(&form).unwrap();
+		assert!(matches!(
+			items,
+			[
+				definition::Item::Word("{"),
+				definition::Item::Opt(_),
+				definition::Item::OneOf(_),
+				definition::Item::Fields(Record(fields)),
+			] if fields.len() == 2 && fields[1].0 == "c" && fields[1].1.literal.is_none()
+		));
+		assert_eq!(write(&items), form);
+		let piece: definition::Piece = read(r#"{"form":[],"marker":["{"]}"#).unwrap();
+		assert!(piece.space.is_none() && piece.marker == ["{"]);
+	}
+
+	#[test]
+	fn json_errors_say_where() {
+		let source = |text: &str| read::<definition::Source>(text).unwrap_err();
+		let plain = r#"{"from":"js","read":"expression","optional":false,"bind":false,"orArg":false}"#;
+		assert!(read::<definition::Source>(plain).is_ok());
+		let missing = source(r#"{"from":"js","read":"expression","optional":false,"bind":false}"#);
+		assert!(missing.contains("needs orArg"), "{missing}");
+		// a key the struct lacks is stepped over, whatever it holds
+		let renamed = source(&plain.replace("\"orArg\"", "\"or_arg\""));
+		assert!(renamed.contains("needs orArg"), "{renamed}");
+		let more = plain.replace(
+			"\"orArg\":false",
+			r#""note":{"a":["b",true,null,-1.5e3,{}]},"orArg":false"#,
+		);
+		assert!(read::<definition::Source>(&more).unwrap().bind == definition::Bind::No);
+		let twice = source(&plain.replace("\"read\":\"expression\"", "\"from\":\"js\""));
+		assert!(twice.contains("second from"), "{twice}");
+		let spaced = source(&plain.replace(":", ": "));
+		assert!(
+			spaced.contains("a string expected at byte 8 of the grammar, which has no whitespace"),
+			"{spaced}"
+		);
+		let number = source(&plain.replace("false,\"bind", "0,\"bind"));
+		assert!(number.contains("a boolean expected at byte 44"), "{number}");
+		let variant = source(&plain.replace("\"bind\":false", "\"bind\":\"around\""));
+		assert!(variant.contains("a Bind expected at byte 57"), "{variant}");
+		let cut = source(&plain[..plain.len() - 1]);
+		assert!(cut.contains("ends early"), "{cut}");
+		assert!(source("").contains("ends early") && source(r#"{"from":"j"#).contains("ends early"));
+		assert!(read::<&[&str]>("[\"a\"]\n").is_ok());
+		assert!(
+			read::<&[&str]>(r#"["a"] x"#)
+				.unwrap_err()
+				.contains("text after the grammar at byte 6")
+		);
+		let nested = |n: usize| format!("{}\"x\"{}", r#"{"opt":["#.repeat(n), "]}".repeat(n));
+		assert!(read::<definition::Item>(&nested(400)).is_ok());
+		let deep = read::<definition::Item>(&nested(2000)).unwrap_err();
+		assert!(deep.contains("nests deeper than"), "{deep}");
+		let skipped = format!(r#"{{"note":{}{}, "from":"js"}}"#, "[".repeat(2000), "]".repeat(2000)).replace(", ", ",");
+		assert!(
+			read::<definition::Source>(&skipped)
+				.unwrap_err()
+				.contains("nests deeper than")
+		);
+		assert!(read::<&[&str]>("[\"a\u{1}\"]").is_err() && read::<&str>(r#""\x""#).is_err());
+		assert!(read::<(&str, &str)>(r#"["a"]"#).is_err());
 	}
 
 	#[test]
 	fn spells_names() {
-		assert_eq!(camel("attribute_expressions"), "attributeExpressions");
-		assert_eq!(camel("TypeParameters"), "typeParameters");
+		assert_eq!(spelled!("attribute_expressions"), "attributeExpressions");
+		assert_eq!(spelled!("TypeParameters"), "typeParameters");
+		assert_eq!(spelled!(stringify!(r#in)), "in");
+		assert_eq!(spelled!("{\"", "OneOf", "\":"), r#"{"oneOf":"#);
 	}
 }

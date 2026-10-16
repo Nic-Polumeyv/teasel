@@ -3,7 +3,6 @@ import entry from '../../../npm/dist/index.d.ts?raw';
 import options from '../../../npm/dist/options.d.ts?raw';
 import types from '../../../npm/dist/types.d.ts?raw';
 import grammar from '../../../npm/dist/grammar.d.ts?raw';
-import wire from '../../../npm/src/wire.ts?raw';
 import errors from '../../../crates/teasel/src/error.rs?raw';
 
 type Declaration = { type: string; start: number; end: number; id?: { name: string }; declarations?: { id: { name: string } }[]; declaration?: Declaration | null; specifiers?: { exported: { name: string } }[]; leadingComments?: { value: string; end: number }[] };
@@ -39,14 +38,7 @@ function parser() {
 
 function builders() {
 	const markdown = body(grammar).filter(exported).map((statement) => item(grammar, statement)).join('\n\n');
-	return { meta: { href: '/reference/grammar', title: '@teasel/parser/grammar', section: 'Reference', path: 'npm/src/grammar.ts' }, markdown: `Every export of the grammar builders, as their declarations say.\n\n${markdown}` };
-}
-
-// the wire's types stay inside their module; the page shows them all, as the engine reads them
-function crossing() {
-	const declared = (statement: Declaration) => (statement.type === 'ExportNamedDeclaration' ? statement : ({ ...statement, type: 'ExportNamedDeclaration', declaration: statement } as Declaration));
-	const markdown = body(wire).map(declared).filter(exported).map((statement) => item(wire, statement)).join('\n\n');
-	return { meta: { href: '/reference/wire', title: 'Grammar wire', section: 'Reference', path: 'npm/src/wire.ts' }, markdown: `What the Rust crate's \`parse_document\` and the command line's \`--host\` read, as \`wire\` in \`npm/src/wire.ts\` writes a definition: the definition as words in the order these types declare them, then a pool of strings, as \`Writer\` lays them out.\n\n${markdown}` };
+	return { meta: { href: '/reference/grammar', title: '@teasel/parser/grammar', section: 'Reference', path: 'npm/src/grammar.ts' }, markdown: `Every export of the grammar builders, as their declarations say. A grammar crosses to the engine as \`JSON.stringify({ name, definition })\`, which is also what the Rust crate's \`parse_document\` and the command line's \`--host\` read.\n\n${markdown}` };
 }
 
 // the engine's enum: each code's doc comment says what it means, its name is the variant's in snake case
@@ -55,4 +47,4 @@ function codes() {
 	return { meta: { href: '/reference/error-codes', title: 'Error codes', section: 'Reference', path: 'crates/teasel/src/error.rs' }, markdown: `Every \`code\` an error can have and what it means. \`args\` holds what the error is about when the code says so, and \`message\` is the code followed by each argument in quotes: \`expected '}'\`.\n\n| code | meaning |\n| --- | --- |\n${rows.join('\n')}` };
 }
 
-export const references = [parser(), codes(), builders(), crossing()];
+export const references = [parser(), codes(), builders()];
