@@ -140,7 +140,6 @@ pub fn layout_json() -> String {
 					w.text(yes);
 					w.text(no);
 				}
-				Rest::Const(value) => w.text(value),
 				Rest::Bool(value) => w.bool(value),
 				Rest::Text(text) => w.text(text),
 				Rest::Ops(inner) => ops(w, inner),

@@ -52,7 +52,6 @@ pub enum Op<F: Copy + 'static = Path> {
 	RegExp(&'static str, F, F),
 	/// A BigInt literal's value, null in JSON because JSON cannot hold one.
 	BigIntValue(&'static str),
-	Const(&'static str, &'static str),
 	ConstBool(&'static str, bool),
 	Null(&'static str),
 	EmptyList(&'static str),
@@ -83,7 +82,6 @@ pub enum Rest {
 	Nothing,
 	/// The names for true and false.
 	Names(&'static str, &'static str),
-	Const(&'static str),
 	Bool(bool),
 	Text(&'static str),
 	Ops(&'static [Op]),
@@ -117,7 +115,6 @@ impl Op {
 			BigInt => ("bigint", None, None, Rest::Nothing),
 			BigIntValue(k) => ("bigintvalue", Some(k), None, Rest::Nothing),
 			RegExp(k, pattern, flags) => ("regexp", Some(k), Some(pattern), Rest::Text(flags)),
-			Const(k, value) => ("const", Some(k), None, Rest::Const(value)),
 			ConstBool(k, value) => ("constbool", Some(k), None, Rest::Bool(value)),
 			Null(k) => ("null", Some(k), None, Rest::Nothing),
 			EmptyList(k) => ("emptylist", Some(k), None, Rest::Nothing),
@@ -126,7 +123,7 @@ impl Op {
 			Keep(name) => ("keep", Some(name), None, Rest::Nothing),
 			KeepIf(name, f) => ("keepif", Some(name), Some(f), Rest::Nothing),
 			Through(f) => ("through", None, Some(f), Rest::Nothing),
-			EnumOr(k, f, other) => ("enumor", Some(k), Some(f), Rest::Const(other)),
+			EnumOr(k, f, other) => ("enumor", Some(k), Some(f), Rest::Text(other)),
 		}
 	}
 }
@@ -304,7 +301,6 @@ pub(crate) fn resolve_ops(ops: &[Op], fields: &[Field], kind: &str) -> &'static 
 				slot(f, &[|t| matches!(t, Ty::Str)]),
 				slot(g, &[|t| matches!(t, Ty::Str)]),
 			),
-			Const(k, v) => Const(k, v),
 			ConstBool(k, v) => ConstBool(k, v),
 			Null(k) => Null(k),
 			EmptyList(k) => EmptyList(k),

@@ -892,7 +892,6 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 					let bigint = bigint_decimal(raw);
 					self.text("bigint", &bigint);
 				}
-				Op::Const(key, value) => self.text(key, value),
 				Op::ConstBool(key, value) => self.bool(key, value),
 				Op::Null(key) | Op::RegExp(key, ..) | Op::BigIntValue(key) => {
 					self.key(key);
