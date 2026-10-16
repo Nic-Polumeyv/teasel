@@ -1,5 +1,19 @@
 # @teasel/parser
 
+## 0.0.22
+
+### Patch Changes
+
+- [#221](https://github.com/Nic-Polumeyv/teasel/pull/221) [`3d390ee`](https://github.com/Nic-Polumeyv/teasel/commit/3d390ee86ff95c98a3981f80b9928c4bb3eef9bf) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - The Windows build no longer needs the Visual C++ redistributable
+
+- [#224](https://github.com/Nic-Polumeyv/teasel/pull/224) [`c79ba83`](https://github.com/Nic-Polumeyv/teasel/commit/c79ba83f61e3cef090d3a511d2c5e1c822dd1261) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - The grammar crosses to the engine as JSON
+
+- [#218](https://github.com/Nic-Polumeyv/teasel/pull/218) [`2b689c4`](https://github.com/Nic-Polumeyv/teasel/commit/2b689c42444ad46bda25729ba2370260fdbc99a2) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - A grammar is read when made, parses in the copy of the package that made it, and has no `wire`
+
+- [#222](https://github.com/Nic-Polumeyv/teasel/pull/222) [`ac6a695`](https://github.com/Nic-Polumeyv/teasel/commit/ac6a6958db5276f3d1e267d827c89eb3a907e227) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - Tiny parses are a few percent faster
+
+- [#223](https://github.com/Nic-Polumeyv/teasel/pull/223) [`212c5a4`](https://github.com/Nic-Polumeyv/teasel/commit/212c5a4b887b43bdf18e062ae330bb9af628a85c) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - Importing the package is 2 to 5 ms faster on Node
+
 ## 0.0.21
 
 ### Patch Changes
