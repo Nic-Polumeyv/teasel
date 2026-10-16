@@ -36,16 +36,10 @@ export function load(): Addon | undefined {
 		if (p.os !== process.platform || p.cpu !== process.arch || (p.libc !== undefined && p.libc !== libc())) continue;
 		// we add .node so require dlopens it instead of reading it as js
 		const own = `../teasel.${tag}.node`;
-		const paths = [`@teasel/parser-${tag}/teasel.${tag}.node`];
-		if (existsSync(new URL(own, import.meta.url))) paths.unshift(own);
-		for (const path of paths) {
-			try {
-				return require(path);
-			} catch (e) {
-				const error = e as NodeJS.ErrnoException;
-				// a build that fails to load says more than one that is not there
-				if (why === undefined || why.code === 'MODULE_NOT_FOUND') why = error;
-			}
+		try {
+			return require(existsSync(new URL(own, import.meta.url)) ? own : `@teasel/parser-${tag}/teasel.${tag}.node`);
+		} catch (e) {
+			why = e as NodeJS.ErrnoException;
 		}
 	}
 	// where no build exists there is nothing to fix
