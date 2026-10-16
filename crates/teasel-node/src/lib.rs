@@ -14,6 +14,10 @@ use teasel::handed::{Allocation, Element, Raw};
 use teasel::host::Grammar;
 use teasel::json::{Prepared, Request};
 
+// RUSTFLAGS in the environment replaces .cargo/config.toml's flags, and nothing loads the addon on a Windows without the redistributable
+#[cfg(all(target_env = "msvc", not(target_feature = "crt-static")))]
+compile_error!("the addon links the C runtime statically: build with .cargo/config.toml's rustflags");
+
 /// What JavaScript holds: the view of the words, then the views of the JavaScript tree and of
 /// the TypeScript one, each an array.
 const VIEWS: usize = 3;
