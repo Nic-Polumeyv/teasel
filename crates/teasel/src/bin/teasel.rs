@@ -48,15 +48,25 @@ fn batch(grammar: Option<String>) -> io::Result<()> {
 			));
 		}
 		let source = String::from_utf8_lossy(&bytes);
-		let request = Request {
-			entry: Entry::from_index(entry),
-			offset,
-			..Request::from_flags(flags)
-		};
-		let json = match (&grammar, entry) {
-			(Some(grammar), DOCUMENT) => json::parse_document(&source, grammar, &request),
-			(None, DOCUMENT) => return Err(io::Error::new(io::ErrorKind::InvalidData, "a document needs --host")),
-			_ => json::parse(&source, &request, ""),
+		let json = match (Entry::from_index(entry), &grammar) {
+			(Some(entry), _) => json::parse(
+				&source,
+				&Request {
+					entry,
+					offset,
+					..Request::from_flags(flags)
+				},
+				"",
+			),
+			(None, Some(grammar)) if entry == DOCUMENT => {
+				json::parse_document(&source, grammar, &Request::from_flags(flags))
+			}
+			(None, _) => {
+				return Err(io::Error::new(
+					io::ErrorKind::InvalidData,
+					format!("entry {entry} needs --host or is no entry"),
+				));
+			}
 		};
 		out.write_all(json.as_bytes())?;
 		out.write_all(b"\n")?;

@@ -27,7 +27,7 @@ pub struct Request {
 }
 
 impl Request {
-	/// A source's request from its option word; the entry and offset come with each parse.
+	/// The whole source as a program, from its option word.
 	pub fn from_flags(flags: u32) -> Request {
 		Request {
 			options: Options(flags),
@@ -271,7 +271,10 @@ fn children_table(w: &mut Json, table: Vec<(&'static str, Vec<&'static str>)>) {
 
 /// `stop` lists the host's tokens for an entry at an offset; see `parser::parse_at`.
 pub fn parse(source: &str, request: &Request, stop: &str) -> String {
-	parse_with(source, &Positions::of(source, request.options), request, stop, None)
+	match check(source, request) {
+		Ok(()) => to_json(source, &Positions::of(source, request.options), request, stop, None),
+		Err(error) => error,
+	}
 }
 
 /// A whole document of a host language by its grammar, as JSON; see `host::parse_document`.
@@ -283,7 +286,7 @@ pub fn parse_document(source: &str, grammar: &str, request: &Request) -> String 
 			if host::typescript(source, &grammar) {
 				request.options = request.options.with(Options::TYPESCRIPT);
 			}
-			parse_with(
+			to_json(
 				source,
 				&Positions::of(source, request.options),
 				&request,
@@ -300,7 +303,7 @@ pub fn parse_document(source: &str, grammar: &str, request: &Request) -> String 
 pub struct Prepared<'a> {
 	source: std::borrow::Cow<'a, str>,
 	positions: Positions,
-	request: Request,
+	options: Options,
 }
 
 /// What every parse on a thread reuses: the trees, emptied, and the answer's buffers.
@@ -334,11 +337,11 @@ pub fn tree(f: &mut dyn FnMut(&'static str, Option<&mut dyn Raw>)) -> Option<boo
 		let session = &mut *session.borrow_mut();
 		if session.typescript {
 			session.pool.ts.as_deref_mut()?.views(&mut Views(f));
-			session.pool.names[1].views(&mut Views(f));
+			<crate::typescript::ast::Data as Pooled>::names(&mut session.pool).views(&mut Views(f));
 			return Some(true);
 		}
 		session.pool.js.as_deref_mut()?.views(&mut Views(f));
-		session.pool.names[0].views(&mut Views(f));
+		<() as Pooled>::names(&mut session.pool).views(&mut Views(f));
 		Some(false)
 	})
 }
@@ -376,7 +379,7 @@ pub struct Pool {
 
 /// Names a front end knows by number across answers, and the shapes of host nodes.
 #[derive(Default)]
-struct Names {
+pub(crate) struct Names {
 	names: crate::interner::Interner,
 	/// Each name by where it sits, with its number: a grammar's names are few places, met again
 	/// and again, and the place hashes faster than the text.
@@ -431,10 +434,11 @@ impl Names {
 	}
 }
 
-/// Which slot of the pool an extension's tree takes.
-pub trait Pooled: Sized {
+/// Which slot of the pool an extension's tree takes, and the names its answers number.
+pub(crate) trait Pooled: Sized {
 	fn take(pool: &mut Pool) -> Option<Box<Ast<Self>>>;
 	fn give(pool: &mut Pool, ast: Box<Ast<Self>>);
+	fn names(pool: &mut Pool) -> &mut Names;
 }
 
 impl Pooled for () {
@@ -443,6 +447,9 @@ impl Pooled for () {
 	}
 	fn give(pool: &mut Pool, ast: Box<Ast<Self>>) {
 		pool.js = Some(ast);
+	}
+	fn names(pool: &mut Pool) -> &mut Names {
+		&mut pool.names[0]
 	}
 }
 
@@ -453,33 +460,29 @@ impl Pooled for crate::typescript::ast::Data {
 	fn give(pool: &mut Pool, ast: Box<Ast<Self>>) {
 		pool.ts = Some(ast);
 	}
+	fn names(pool: &mut Pool) -> &mut Names {
+		&mut pool.names[1]
+	}
 }
 
 impl Prepared<'static> {
-	/// The request's entry and offset are ignored; `parse` takes them.
-	pub fn new(source: String, request: Request) -> Prepared<'static> {
-		Prepared::of(std::borrow::Cow::Owned(source), request)
-	}
-
-	/// The same over bytes a host hands over, made valid UTF-8 where they are not.
-	pub fn from_bytes(source: Vec<u8>, request: Request) -> Prepared<'static> {
-		let source = String::from_utf8(source).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned());
-		Prepared::new(source, request)
+	pub fn new(source: String, options: Options) -> Prepared<'static> {
+		Prepared::of(std::borrow::Cow::Owned(source), options)
 	}
 }
 
 impl<'a> Prepared<'a> {
 	/// The same over a source the caller keeps for the parses.
-	pub fn borrowed(source: &'a str, request: Request) -> Prepared<'a> {
-		Prepared::of(std::borrow::Cow::Borrowed(source), request)
+	pub fn borrowed(source: &'a str, options: Options) -> Prepared<'a> {
+		Prepared::of(std::borrow::Cow::Borrowed(source), options)
 	}
 
-	fn of(source: std::borrow::Cow<'a, str>, request: Request) -> Prepared<'a> {
-		let positions = Positions::of(&source, request.options);
+	fn of(source: std::borrow::Cow<'a, str>, options: Options) -> Prepared<'a> {
+		let positions = Positions::of(&source, options);
 		Prepared {
 			source,
 			positions,
-			request,
+			options,
 		}
 	}
 
@@ -489,7 +492,13 @@ impl<'a> Prepared<'a> {
 	fn request(&self, entry: Entry, start: f64, end: Option<f64>, host: Option<&Grammar>) -> Result<Request, String> {
 		let offset = self.byte_offset(start)?;
 		let end = match end {
-			Some(end) => Some(self.byte_offset(end)?),
+			Some(utf16) => {
+				let end = self.byte_offset(utf16)?;
+				if end < offset {
+					return Err(error_json(&format!("offset {utf16} is before {start}"), end));
+				}
+				Some(end)
+			}
 			None => None,
 		};
 		Ok(Request {
@@ -497,9 +506,9 @@ impl<'a> Prepared<'a> {
 			offset,
 			end,
 			options: if host.is_some_and(|grammar| host::typescript(&self.source, grammar)) {
-				self.request.options.with(Options::TYPESCRIPT)
+				self.options.with(Options::TYPESCRIPT)
 			} else {
-				self.request.options
+				self.options
 			},
 		})
 	}
@@ -507,7 +516,7 @@ impl<'a> Prepared<'a> {
 	/// One entry at an offset, as JSON.
 	pub fn parse(&self, entry: Entry, start: f64, end: Option<f64>, stop: &str, host: Option<&Grammar>) -> String {
 		match self.request(entry, start, end, host) {
-			Ok(request) => parse_with(&self.source, &self.positions, &request, stop, host),
+			Ok(request) => to_json(&self.source, &self.positions, &request, stop, host),
 			Err(error) => error,
 		}
 	}
@@ -521,13 +530,9 @@ impl<'a> Prepared<'a> {
 		stop: &str,
 		host: Option<&Grammar>,
 	) -> Result<(), String> {
-		in_place_with(
-			&self.source,
-			&self.positions,
-			&self.request(entry, start, end, host)?,
-			stop,
-			host,
-		)
+		let request = self.request(entry, start, end, host)?;
+		to_words(&self.source, &self.positions, &request, stop, host);
+		Ok(())
 	}
 
 	/// A UTF-16 offset as a byte offset, or the error answer for it.
@@ -540,7 +545,7 @@ impl<'a> Prepared<'a> {
 	}
 }
 
-/// The checks every entry makes on its offsets, or the error answer.
+/// The checks on a request's byte offsets, or the error answer.
 fn check(source: &str, request: &Request) -> Result<(), String> {
 	if !source.is_char_boundary(request.offset as usize) {
 		return Err(error_json(
@@ -559,6 +564,12 @@ fn check(source: &str, request: &Request) -> Result<(), String> {
 	Ok(())
 }
 
+/// Where an answer goes: JSON text, or the words a front end reads the tree by.
+enum Out<'a> {
+	Json(&'a mut String),
+	Words(&'a mut Words),
+}
+
 fn dispatch(
 	source: &str,
 	positions: &Positions,
@@ -566,24 +577,30 @@ fn dispatch(
 	stop: &str,
 	host: Option<&Grammar>,
 	pool: &mut Pool,
-	words: Option<&mut Words>,
-) -> Result<String, String> {
-	check(source, request)?;
+	out: Out<'_>,
+) {
 	if request.options.typescript() {
-		return Ok(run::<crate::typescript::TypeScript>(
-			source, positions, request, stop, host, pool, words,
-		));
+		run::<crate::typescript::TypeScript>(source, positions, request, stop, host, pool, out);
+	} else {
+		run::<()>(source, positions, request, stop, host, pool, out);
 	}
-	Ok(run::<()>(source, positions, request, stop, host, pool, words))
 }
 
-fn parse_with(source: &str, positions: &Positions, request: &Request, stop: &str, host: Option<&Grammar>) -> String {
+fn to_json(source: &str, positions: &Positions, request: &Request, stop: &str, host: Option<&Grammar>) -> String {
 	SESSION.with(|session| {
 		let session = &mut *session.borrow_mut();
 		session.typescript = request.options.typescript();
-		match dispatch(source, positions, request, stop, host, &mut session.pool, None) {
-			Ok(json) | Err(json) => json,
-		}
+		let mut json = String::new();
+		dispatch(
+			source,
+			positions,
+			request,
+			stop,
+			host,
+			&mut session.pool,
+			Out::Json(&mut json),
+		);
+		json
 	})
 }
 
@@ -592,14 +609,8 @@ fn parse_with(source: &str, positions: &Positions, request: &Request, stop: &str
 const FAILED: u32 = 1;
 const TYPESCRIPT: u32 = 2;
 
-/// The answer read in place, its words at `words`, or the error answer as JSON.
-fn in_place_with(
-	source: &str,
-	positions: &Positions,
-	request: &Request,
-	stop: &str,
-	host: Option<&Grammar>,
-) -> Result<(), String> {
+/// The answer read in place, its words at `words`.
+fn to_words(source: &str, positions: &Positions, request: &Request, stop: &str, host: Option<&Grammar>) {
 	SESSION.with(|session| {
 		let session = &mut *session.borrow_mut();
 		session.typescript = request.options.typescript();
@@ -610,14 +621,12 @@ fn in_place_with(
 			stop,
 			host,
 			&mut session.pool,
-			Some(&mut session.words),
-		)?;
-		Ok(())
+			Out::Words(&mut session.words),
+		);
 	})
 }
 
-/// Runs a request: the answer as JSON, or read in place with its words in `words` and nothing
-/// as text.
+/// Runs a request and answers it at `out`.
 fn run<E: crate::parser::Extension>(
 	source: &str,
 	positions: &Positions,
@@ -625,9 +634,8 @@ fn run<E: crate::parser::Extension>(
 	stop: &str,
 	host: Option<&Grammar>,
 	pool: &mut Pool,
-	words: Option<&mut Words>,
-) -> String
-where
+	out: Out<'_>,
+) where
 	E::Data: Emit + Bind + Reuse + Pooled,
 {
 	let options = request.options;
@@ -672,45 +680,44 @@ where
 			}
 		}
 	}
-	let failed = roots.is_none();
-	let Some(words) = words else {
-		let json = answer(&ast, request.entry, roots, end, source, positions, options);
-		Pooled::give(pool, ast);
-		return json;
-	};
-	let names = &mut pool.names[request.options.typescript() as usize];
-	prepare(&mut ast, source, positions, options, failed, names);
-	// `end`, the roots by number, a word of what the answer is, each view's length, then where the
-	// tree's buffers sit folded into two words: a front end keeps its views while that holds
-	words.clear();
-	let roots = roots.map_or(&[][..], |roots| ast.list(roots));
-	words.extend_from_slice(&[
-		positions.offset(&mut crate::estree::Cursor::default(), end),
-		roots.len() as u32,
-	]);
-	words.extend(roots.iter().map(|root| root.unwrap().index()));
-	let typescript = if options.typescript() { TYPESCRIPT } else { 0 };
-	words.push(typescript | if failed { FAILED } else { 0 });
-	let mut sits = 0u64;
-	let mut note = |_, buffer: Option<&mut dyn Raw>| {
-		words.push(buffer.as_ref().map_or(0, |buffer| buffer.elements() as u32));
-		if let Some(buffer) = buffer {
-			sits = (sits ^ buffer.as_ptr() as u64 ^ (buffer.capacity_bytes() as u64) << 32)
-				.wrapping_mul(0x9e37_79b9_7f4a_7c15);
+	match out {
+		Out::Json(json) => *json = answer(&ast, request.entry, roots, end, source, positions, options),
+		Out::Words(words) => {
+			let failed = roots.is_none();
+			let names = E::Data::names(pool);
+			prepare(&mut ast, source, positions, options, failed, names);
+			// `end`, the roots by number, a word of what the answer is, each view's length, then where
+			// the tree's buffers sit folded into two words: a front end keeps its views while that holds
+			words.clear();
+			let roots = roots.map_or(&[][..], |roots| ast.list(roots));
+			words.extend_from_slice(&[
+				positions.offset(&mut crate::estree::Cursor::default(), end),
+				roots.len() as u32,
+			]);
+			words.extend(roots.iter().map(|root| root.unwrap().index()));
+			let typescript = if options.typescript() { TYPESCRIPT } else { 0 };
+			words.push(typescript | if failed { FAILED } else { 0 });
+			let mut sits = 0u64;
+			let mut note = |_, buffer: Option<&mut dyn Raw>| {
+				words.push(buffer.as_ref().map_or(0, |buffer| buffer.elements() as u32));
+				if let Some(buffer) = buffer {
+					sits = (sits ^ buffer.as_ptr() as u64 ^ (buffer.capacity_bytes() as u64) << 32)
+						.wrapping_mul(0x9e37_79b9_7f4a_7c15);
+				}
+			};
+			ast.views(&mut Views(&mut note));
+			names.views(&mut Views(&mut note));
+			words.extend_from_slice(&[sits as u32, (sits >> 32) as u32]);
 		}
-	};
-	ast.views(&mut Views(&mut note));
-	pool.names[request.options.typescript() as usize].views(&mut Views(&mut note));
-	words.extend_from_slice(&[sits as u32, (sits >> 32) as u32]);
+	}
 	Pooled::give(pool, ast);
-	String::new()
 }
 
 /// What a front end reading the tree in place needs beside it: every node's span and location
 /// as JavaScript counts them, the nodes erasure leaves out, the hosts, the comments, the errors
 /// as words and the strings' UTF-16 starts; a failed parse prepares its error row alone, the
 /// tree it read is left as the last answer cleared it.
-fn prepare<X: Emit + Reuse>(
+fn prepare<X: Reuse>(
 	ast: &mut Ast<X>,
 	source: &str,
 	positions: &Positions,
@@ -748,7 +755,7 @@ fn prepare<X: Emit + Reuse>(
 	}
 }
 
-fn prepare_tree<X: Emit + Reuse>(ast: &mut Ast<X>, positions: &Positions, options: Options, names: &mut Names) {
+fn prepare_tree<X: Reuse>(ast: &mut Ast<X>, positions: &Positions, options: Options, names: &mut Names) {
 	positions.map_nodes(&ast.nodes, &mut ast.spans, &mut ast.locs);
 	ast.erased.clear();
 	if options.has(Options::ERASE) {

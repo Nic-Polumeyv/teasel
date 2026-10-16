@@ -129,8 +129,14 @@ function read(source: number, entry: number, offset: number, end: number | undef
 	return answer(guarded(() => wasm.source_parse(source, entry, offset, end ?? 0, end === undefined ? 0 : 1, ...bytes(stop), grammar)));
 }
 
+// 0 is the error answer at `text_ptr`: a source or grammar the engine cannot take
+function opened(handle: number) {
+	if (handle === 0) throw new Error(JSON.parse(text()).error.args[0]);
+	return handle;
+}
+
 const engine: Engine = {
-	create: (source, flags) => new Held(() => wasm.source_new(...bytes(source), flags), sources),
+	create: (source, flags) => new Held(() => opened(wasm.source_new(...bytes(source), flags)), sources),
 	parse: (source, entry, offset, end, stop, plan) => read((source as Held).handle(), entry, offset, end, stop, plan),
 	free(source) {
 		const { slot } = source as Held;
@@ -138,7 +144,7 @@ const engine: Engine = {
 		if (slot.generation === generation) wasm.source_free(slot.handle);
 	},
 	once(source, flags, entry, stop, plan) {
-		const handle = guarded(() => wasm.source_new(...bytes(source), flags));
+		const handle = guarded(() => opened(wasm.source_new(...bytes(source), flags)));
 		const made = generation;
 		try {
 			return read(handle, entry, 0, undefined, stop, plan);
@@ -146,12 +152,7 @@ const engine: Engine = {
 			if (made === generation) wasm.source_free(handle);
 		}
 	},
-	plan: (grammar) =>
-		new Held(() => {
-			const handle = wasm.plan_new(...bytes(grammar));
-			if (handle === 0) throw new Error(JSON.parse(text()).error.args[0]);
-			return handle;
-		}, plans),
+	plan: (grammar) => new Held(() => opened(wasm.plan_new(...bytes(grammar))), plans),
 	children(plan) {
 		guarded(() => wasm.plan_children((plan as Held).handle()));
 		return text();

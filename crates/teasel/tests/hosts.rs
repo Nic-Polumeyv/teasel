@@ -168,7 +168,7 @@ fn host_phases() {
 				"module scopes comments locations",
 			),
 		] {
-			let prepared = Prepared::borrowed(source, Request::from_flags(flags));
+			let prepared = Prepared::borrowed(source, Options(flags));
 			let mut best = f64::MAX;
 			for _ in 0..300 {
 				let t = std::time::Instant::now();
