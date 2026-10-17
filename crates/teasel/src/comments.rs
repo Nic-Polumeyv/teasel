@@ -257,7 +257,6 @@ mod tests {
 		);
 	}
 
-	#[cfg(feature = "typescript")]
 	#[test]
 	fn a_child_past_its_parent_still_takes_its_comment() {
 		let src = "async (...a: T[] /* c */) => {}";

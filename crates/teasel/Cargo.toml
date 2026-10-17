@@ -10,10 +10,6 @@ repository.workspace = true
 [lints]
 workspace = true
 
-[features]
-default = ["typescript"]
-typescript = []
-
 [dependencies]
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]
