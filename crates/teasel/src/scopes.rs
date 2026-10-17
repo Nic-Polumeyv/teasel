@@ -1687,8 +1687,8 @@ mod tests {
 					let binding = scopes.binding(b);
 					line += &format!(
 						"declares {} in {}",
-						binding.kind.name().text,
-						scopes.scope(binding.scope).kind.name().text
+						binding.kind.as_str(),
+						scopes.scope(binding.scope).kind.as_str()
 					);
 				}
 				None => {
@@ -1697,7 +1697,7 @@ mod tests {
 					line += &match reference.binding {
 						Some(b) => match scopes.binding(b).node {
 							Some(node) => format!("-> @{}", ast.node(node).start),
-							None => format!("-> {}", scopes.binding(b).kind.name().text),
+							None => format!("-> {}", scopes.binding(b).kind.as_str()),
 						},
 						None => "-> global".into(),
 					};
@@ -1893,7 +1893,7 @@ mod tests {
 		let names: Vec<_> = scopes
 			.bindings
 			.iter()
-			.map(|b| format!("{}:{}", ast.str(b.name), b.kind.name().text))
+			.map(|b| format!("{}:{}", ast.str(b.name), b.kind.as_str()))
 			.collect();
 		assert_eq!(
 			names,
@@ -1953,7 +1953,7 @@ mod tests {
 		let names: Vec<_> = scopes
 			.bindings
 			.iter()
-			.map(|b| format!("{}:{}", ast.str(b.name), b.kind.name().text))
+			.map(|b| format!("{}:{}", ast.str(b.name), b.kind.as_str()))
 			.collect();
 		assert_eq!(
 			names,
