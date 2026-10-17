@@ -344,6 +344,10 @@ pub trait Reuse: Default {
 	fn views(&mut self, _out: &mut Views<'_>) {}
 	/// The nodes the extension adds keys to.
 	fn rare(&self, _set: &mut NodeSet) {}
+	/// Whether erasing leaves nothing of a node in a list: type-only declarations and imports.
+	fn erased(&self, _ast: &Ast<Self>, _id: NodeId) -> bool {
+		false
+	}
 }
 
 impl Reuse for () {
