@@ -1,0 +1,2 @@
+@dec abstract
+class A {}

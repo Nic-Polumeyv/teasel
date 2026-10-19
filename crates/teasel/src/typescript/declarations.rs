@@ -12,10 +12,20 @@ use crate::parser::statement::FUNC_STATEMENT;
 use crate::parser::statement::{ClassKind, Exports, StatementPlace};
 use crate::parser::{Context, ForInit, Parser, Result};
 
-/// The identifiers that open a declaration when what follows allows it.
+#[derive(Clone, Copy, Default)]
+pub(super) struct Opened {
+	declare: Option<u32>,
+	is_abstract: bool,
+	head: Option<Head>,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Word {
+pub(super) enum Head {
 	Abstract,
+	Declare,
+	Enum,
+	Global,
+	Interface,
 	Module,
 	Namespace,
 	Type,
@@ -32,7 +42,7 @@ impl Parser<'_, TypeScript> {
 
 	// Enums
 
-	pub(super) fn parse_enum_declaration(&mut self, start: u32, is_const: bool, declare: bool) -> Result<NodeId> {
+	fn parse_enum_declaration(&mut self, start: u32, is_const: bool) -> Result<NodeId> {
 		self.expect_contextual("enum")?;
 		let id = self.parse_ident(false)?;
 		self.check_lval_simple(id, Binding::None, &mut None)?;
@@ -41,9 +51,7 @@ impl Parser<'_, TypeScript> {
 		let members = self.parse_delimited_list(ListKind::EnumMembers, |p| p.parse_enum_member())?;
 		self.expect(TokenKind::BraceR)?;
 		let members = self.list_of(&members);
-		let node = self.ts(TsKind::EnumDeclaration { id, members, is_const }, start);
-		self.extras_mut(node).declare = declare;
-		Ok(node)
+		Ok(self.ts(TsKind::EnumDeclaration { id, members, is_const }, start))
 	}
 
 	fn parse_enum_member(&mut self) -> Result<NodeId> {
@@ -182,18 +190,6 @@ impl Parser<'_, TypeScript> {
 		))
 	}
 
-	fn parse_global_declaration(&mut self, start: u32, id: NodeId) -> Result<NodeId> {
-		let body = self.parse_global_body()?;
-		Ok(self.ts(
-			TsKind::ModuleDeclaration {
-				id,
-				body: Some(body),
-				global: true,
-			},
-			start,
-		))
-	}
-
 	// Type aliases and interfaces
 
 	fn parse_type_alias_declaration(&mut self, start: u32) -> Result<NodeId> {
@@ -222,17 +218,7 @@ impl Parser<'_, TypeScript> {
 		))
 	}
 
-	/// `None` when a line break follows `interface`, which then is a plain identifier.
-	pub(super) fn parse_interface_declaration(
-		&mut self,
-		start: u32,
-		declare: bool,
-		is_abstract: bool,
-	) -> Result<Option<NodeId>> {
-		if self.has_following_line_break() {
-			return Ok(None);
-		}
-		self.expect_contextual("interface")?;
+	pub(super) fn parse_interface_declaration(&mut self, start: u32) -> Result<NodeId> {
 		if !self.is_ident() {
 			return self.error(self.tok.start, Code::InterfaceWithoutName);
 		}
@@ -252,7 +238,7 @@ impl Parser<'_, TypeScript> {
 		self.expect(TokenKind::BraceR)?;
 		let members = self.list_of(&members);
 		let body = self.ts(TsKind::InterfaceBody { body: members }, body_start);
-		let node = self.ts(
+		Ok(self.ts(
 			TsKind::InterfaceDeclaration {
 				id,
 				type_parameters,
@@ -260,81 +246,10 @@ impl Parser<'_, TypeScript> {
 				body,
 			},
 			start,
-		);
-		let extras = self.extras_mut(node);
-		extras.declare = declare;
-		extras.is_abstract = is_abstract;
-		Ok(Some(node))
-	}
-
-	fn parse_abstract_declaration(&mut self, start: u32) -> Result<Option<NodeId>> {
-		if self.is_keyword(Keyword::Class) {
-			self.ext.next_class = ClassFrame {
-				is_abstract: true,
-				start: Some(start),
-				..ClassFrame::default()
-			};
-			return self.parse_class(ClassKind::Declaration).map(Some);
-		}
-		self.error(start, Code::AbstractPlacement)
+		))
 	}
 
 	// Ambient declarations
-
-	/// After `declare`, which is the current statement's first identifier.
-	pub(super) fn try_parse_declare(&mut self, start: u32) -> Result<Option<NodeId>> {
-		if self.is_line_terminator()? {
-			return Ok(None);
-		}
-		if self.ext.ambient {
-			return self.error(start, Code::DeclareInAmbient);
-		}
-		self.ambient(|p| {
-			let const_enum = p.is_keyword(Keyword::Const) && p.peek_is_contextual("enum")?;
-			let node = match p.tok.kind {
-				TokenKind::Keyword(Keyword::Function) => {
-					p.next()?;
-					p.parse_function(start, FUNC_STATEMENT, false, ForInit::No)?
-				}
-				TokenKind::Keyword(Keyword::Class) => {
-					p.ext.next_class = ClassFrame {
-						declare: true,
-						start: Some(start),
-						..ClassFrame::default()
-					};
-					p.parse_class(ClassKind::Declaration)?
-				}
-				TokenKind::Keyword(Keyword::Const) if const_enum => {
-					p.next()?;
-					p.parse_enum_declaration(start, true, true)?
-				}
-				TokenKind::Keyword(Keyword::Const) | TokenKind::Keyword(Keyword::Var) => {
-					let kind = if p.is_keyword(Keyword::Const) {
-						VariableKind::Const
-					} else {
-						VariableKind::Var
-					};
-					p.parse_var_statement(start, kind)?
-				}
-				TokenKind::Ident(name) => match p.str(name) {
-					"let" => p.parse_var_statement(start, VariableKind::Let)?,
-					"enum" => p.parse_enum_declaration(start, false, true)?,
-					"global" => p.parse_ambient_external_module_declaration(start)?,
-					"interface" => match p.parse_interface_declaration(start, true, false)? {
-						Some(node) => node,
-						None => return Ok(None),
-					},
-					_ => match p.parse_declaration(start, name, true)? {
-						Some(node) => node,
-						None => return Ok(None),
-					},
-				},
-				_ => return Ok(None),
-			};
-			p.extras_mut(node).declare = true;
-			Ok(Some(node))
-		})
-	}
 
 	/// In an ambient context only a `const` may be initialized, and only with a literal, a template
 	/// without substitutions, or a reference to an enum member.
@@ -405,71 +320,138 @@ impl Parser<'_, TypeScript> {
 		}
 	}
 
-	/// The declarations introduced by an identifier: `abstract`, `module`, `namespace`, `type`.
-	/// With `next`, the identifier is still the current token.
-	pub(super) fn parse_declaration(
-		&mut self,
-		start: u32,
-		name: crate::interner::StrId,
-		next: bool,
-	) -> Result<Option<NodeId>> {
-		let word = match self.str(name) {
-			"abstract" => Word::Abstract,
-			"module" => Word::Module,
-			"namespace" => Word::Namespace,
-			"type" => Word::Type,
-			_ => return Ok(None),
+	pub(super) fn head(&self) -> Option<Head> {
+		let TokenKind::Ident(name) = self.tok.kind else {
+			return None;
 		};
-		if !self.check_line_terminator(next)? {
-			return Ok(None);
+		if self.tok.escaped {
+			return None;
 		}
-		match word {
-			Word::Abstract
-				if self.is_keyword(Keyword::Class)
-					|| self.is_ident()
-					|| matches!(
-						self.tok.kind,
-						TokenKind::Keyword(Keyword::Function | Keyword::Const | Keyword::Var)
-					) =>
-			{
-				self.parse_abstract_declaration(start)
-			}
-			Word::Module if matches!(self.tok.kind, TokenKind::String(_)) => {
-				self.parse_ambient_external_module_declaration(start).map(Some)
-			}
-			Word::Module | Word::Namespace if self.is_ident() => {
-				self.parse_module_or_namespace_declaration(start, false).map(Some)
-			}
-			Word::Type if self.is_ident() => self.parse_type_alias_declaration(start).map(Some),
-			_ => Ok(None),
-		}
+		Some(match self.str(name) {
+			"abstract" => Head::Abstract,
+			"declare" => Head::Declare,
+			"enum" => Head::Enum,
+			"global" => Head::Global,
+			"interface" => Head::Interface,
+			"module" => Head::Module,
+			"namespace" => Head::Namespace,
+			"type" => Head::Type,
+			_ => return None,
+		})
 	}
 
-	fn check_line_terminator(&mut self, next: bool) -> Result<bool> {
-		if next {
-			if self.has_following_line_break() {
-				return Ok(false);
-			}
-			self.next()?;
-			return Ok(true);
-		}
-		Ok(!self.is_line_terminator()?)
-	}
-
-	/// An expression statement that turned out to be a bare identifier.
-	pub(super) fn parse_declaration_statement(&mut self, start: u32, expression: NodeId) -> Result<Option<NodeId>> {
-		let NodeKind::Identifier { name } = self.kind(expression) else {
-			unreachable!()
-		};
-		match self.str(name) {
-			"declare" => self.try_parse_declare(start),
-			"global" => {
-				if self.is(TokenKind::BraceL) {
-					return self.parse_global_declaration(start, expression).map(Some);
+	// rewinding after a confirmed lookahead read the next token twice: +1.7% on lib.dom.d.ts
+	pub(super) fn open_declaration(&mut self) -> Result<Option<Opened>> {
+		let snapshot = self.token_snapshot();
+		let mut opened = Opened::default();
+		loop {
+			let at = self.tok.start;
+			let Some(head) = self.head() else {
+				let javascript = matches!(
+					self.tok.kind,
+					TokenKind::Keyword(Keyword::Var | Keyword::Const | Keyword::Function | Keyword::Class)
+				) || self.is_contextual("let");
+				let modified = opened.declare.is_some() || opened.is_abstract;
+				if javascript && (modified || self.is_keyword(Keyword::Const) && self.peek_is_contextual("enum")?) {
+					return Ok(Some(opened));
 				}
-				Ok(None)
+				break;
+			};
+			match head {
+				Head::Enum => {
+					opened.head = Some(head);
+					return Ok(Some(opened));
+				}
+				Head::Global => {
+					let next = self.peek_token()?.kind;
+					let bodiless = opened.declare.is_some()
+						&& matches!(next, TokenKind::Ident(_) | TokenKind::Keyword(Keyword::Export));
+					if next != TokenKind::BraceL && !bodiless {
+						break;
+					}
+					opened.head = Some(head);
+					return Ok(Some(opened));
+				}
+				_ => {}
 			}
-			_ => self.parse_declaration(start, name, false),
+			self.next_liberal()?;
+			if self.tok.newline_before {
+				break;
+			}
+			let named = match head {
+				Head::Declare if opened.declare.is_none() => {
+					opened.declare = Some(at);
+					continue;
+				}
+				Head::Abstract if !opened.is_abstract => {
+					opened.is_abstract = true;
+					continue;
+				}
+				Head::Interface => true,
+				Head::Type => self.is_ident(),
+				Head::Namespace | Head::Module => self.is_ident() || matches!(self.tok.kind, TokenKind::String(_)),
+				_ => false,
+			};
+			if !named {
+				break;
+			}
+			opened.head = Some(head);
+			return Ok(Some(opened));
+		}
+		self.restore_tokens(snapshot);
+		Ok(None)
+	}
+
+	pub(super) fn parse_opened(&mut self, start: u32, opened: Opened) -> Result<NodeId> {
+		let Some(at) = opened.declare else {
+			return self.parse_opened_declaration(start, opened);
+		};
+		if self.ext.ambient {
+			return self.error(at, Code::DeclareInAmbient);
+		}
+		let node = self.ambient(|p| p.parse_opened_declaration(start, opened))?;
+		self.extras_mut(node).declare = true;
+		Ok(node)
+	}
+
+	fn parse_opened_declaration(&mut self, start: u32, opened: Opened) -> Result<NodeId> {
+		if opened.is_abstract || opened.head.is_none() && self.is_keyword(Keyword::Class) {
+			if opened.head.is_some() || !self.is_keyword(Keyword::Class) {
+				return self.error(start, Code::AbstractPlacement);
+			}
+			self.ext.next_class = ClassFrame {
+				is_abstract: opened.is_abstract,
+				declare: opened.declare.is_some(),
+				start: Some(start),
+				..ClassFrame::default()
+			};
+			return self.parse_class(ClassKind::Declaration);
+		}
+		let Some(head) = opened.head else {
+			let const_enum = self.is_keyword(Keyword::Const) && self.peek_is_contextual("enum")?;
+			return match self.tok.kind {
+				TokenKind::Keyword(Keyword::Function) => {
+					self.next()?;
+					self.parse_function(start, FUNC_STATEMENT, false, ForInit::No)
+				}
+				TokenKind::Keyword(Keyword::Const) if const_enum => {
+					self.next()?;
+					self.parse_enum_declaration(start, true)
+				}
+				TokenKind::Keyword(Keyword::Const) => self.parse_var_statement(start, VariableKind::Const),
+				TokenKind::Keyword(Keyword::Var) => self.parse_var_statement(start, VariableKind::Var),
+				_ => self.parse_var_statement(start, VariableKind::Let),
+			};
+		};
+		match head {
+			Head::Enum => self.parse_enum_declaration(start, false),
+			Head::Global => self.parse_ambient_external_module_declaration(start),
+			Head::Interface => self.parse_interface_declaration(start),
+			Head::Type => self.parse_type_alias_declaration(start),
+			Head::Module if matches!(self.tok.kind, TokenKind::String(_)) => {
+				self.parse_ambient_external_module_declaration(start)
+			}
+			_ => self.parse_module_or_namespace_declaration(start, false),
 		}
 	}
 

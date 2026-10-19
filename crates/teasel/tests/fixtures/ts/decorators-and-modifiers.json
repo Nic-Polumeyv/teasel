@@ -1,0 +1,262 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 133,
+		"scope": 0,
+		"body": [
+			{
+				"type": "ClassDeclaration",
+				"start": 0,
+				"end": 23,
+				"scope": 1,
+				"defines": [
+					0
+				],
+				"decorators": [
+					{
+						"type": "Decorator",
+						"start": 0,
+						"end": 4,
+						"expression": {
+							"type": "Identifier",
+							"start": 1,
+							"end": 4,
+							"reference": 0,
+							"name": "dec"
+						}
+					}
+				],
+				"declare": true,
+				"id": {
+					"type": "Identifier",
+					"start": 19,
+					"end": 20,
+					"declares": 0,
+					"name": "A"
+				},
+				"superClass": null,
+				"body": {
+					"type": "ClassBody",
+					"start": 21,
+					"end": 23,
+					"body": []
+				}
+			},
+			{
+				"type": "ExportNamedDeclaration",
+				"start": 24,
+				"end": 54,
+				"exportKind": "value",
+				"declaration": {
+					"type": "ClassDeclaration",
+					"start": 31,
+					"end": 54,
+					"scope": 2,
+					"defines": [
+						1
+					],
+					"decorators": [
+						{
+							"type": "Decorator",
+							"start": 31,
+							"end": 35,
+							"expression": {
+								"type": "Identifier",
+								"start": 32,
+								"end": 35,
+								"reference": 1,
+								"name": "dec"
+							}
+						}
+					],
+					"declare": true,
+					"id": {
+						"type": "Identifier",
+						"start": 50,
+						"end": 51,
+						"declares": 1,
+						"name": "B"
+					},
+					"superClass": null,
+					"body": {
+						"type": "ClassBody",
+						"start": 52,
+						"end": 54,
+						"body": []
+					}
+				},
+				"specifiers": [],
+				"source": null,
+				"attributes": []
+			},
+			{
+				"type": "ExportNamedDeclaration",
+				"start": 60,
+				"end": 94,
+				"exportKind": "value",
+				"declaration": {
+					"type": "ClassDeclaration",
+					"start": 67,
+					"end": 94,
+					"scope": 3,
+					"defines": [
+						2
+					],
+					"decorators": [
+						{
+							"type": "Decorator",
+							"start": 55,
+							"end": 59,
+							"expression": {
+								"type": "Identifier",
+								"start": 56,
+								"end": 59,
+								"reference": 2,
+								"name": "dec"
+							}
+						}
+					],
+					"declare": true,
+					"abstract": true,
+					"id": {
+						"type": "Identifier",
+						"start": 90,
+						"end": 91,
+						"declares": 2,
+						"name": "C"
+					},
+					"superClass": null,
+					"body": {
+						"type": "ClassBody",
+						"start": 92,
+						"end": 94,
+						"body": []
+					}
+				},
+				"specifiers": [],
+				"source": null,
+				"attributes": []
+			},
+			{
+				"type": "ExportDefaultDeclaration",
+				"start": 95,
+				"end": 132,
+				"exportKind": "value",
+				"declaration": {
+					"type": "ClassDeclaration",
+					"start": 110,
+					"end": 132,
+					"scope": 4,
+					"decorators": [
+						{
+							"type": "Decorator",
+							"start": 110,
+							"end": 114,
+							"expression": {
+								"type": "Identifier",
+								"start": 111,
+								"end": 114,
+								"reference": 3,
+								"name": "dec"
+							}
+						}
+					],
+					"abstract": true,
+					"id": null,
+					"superClass": null,
+					"body": {
+						"type": "ClassBody",
+						"start": 130,
+						"end": 132,
+						"body": []
+					}
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 133,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "class",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "class",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "class",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "class",
+			"parent": 0,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "A",
+			"kind": "class",
+			"scope": 0,
+			"write": true
+		},
+		{
+			"name": "B",
+			"kind": "class",
+			"scope": 0,
+			"write": true
+		},
+		{
+			"name": "C",
+			"kind": "class",
+			"scope": 0,
+			"write": true
+		}
+	],
+	"references": [
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		}
+	]
+}
