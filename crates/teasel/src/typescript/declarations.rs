@@ -192,18 +192,6 @@ impl Parser<'_, TypeScript> {
 		))
 	}
 
-	fn parse_global_declaration(&mut self, start: u32, id: NodeId) -> Result<NodeId> {
-		let body = self.parse_global_body()?;
-		Ok(self.ts(
-			TsKind::ModuleDeclaration {
-				id,
-				body: Some(body),
-				global: true,
-			},
-			start,
-		))
-	}
-
 	// Type aliases and interfaces
 
 	fn parse_type_alias_declaration(&mut self, start: u32) -> Result<NodeId> {
@@ -456,11 +444,7 @@ impl Parser<'_, TypeScript> {
 		};
 		match head {
 			Head::Enum => self.parse_enum_declaration(start, false, false),
-			Head::Global if self.ext.ambient => self.parse_ambient_external_module_declaration(start),
-			Head::Global => {
-				let id = self.parse_ident(false)?;
-				self.parse_global_declaration(start, id)
-			}
+			Head::Global => self.parse_ambient_external_module_declaration(start),
 			Head::Interface => self.parse_interface_declaration(start),
 			Head::Type => self.parse_type_alias_declaration(start),
 			Head::Module if matches!(self.tok.kind, TokenKind::String(_)) => {
