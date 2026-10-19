@@ -896,6 +896,10 @@ impl Extension for TypeScript {
 			return Ok(None);
 		}
 		let Some(opened) = p.open_declaration()? else {
+			if p.head() == Some(Head::Declare) && !p.peek_token()?.newline_before {
+				p.next()?;
+				return p.error(p.tok.start, Code::ExportDeclareWithoutDeclaration);
+			}
 			return Ok(None);
 		};
 		let declaration = p.parse_opened(start, opened)?;
