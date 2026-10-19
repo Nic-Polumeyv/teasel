@@ -81,7 +81,6 @@ pub struct State {
 	needs_colon_at: Option<u32>,
 	body_needs_colon: bool,
 	paren_lists: Vec<bool>,
-	parameter_modifiers: Vec<ParameterHead>,
 	definite: Vec<bool>,
 	/// The kind of the import or export being parsed.
 	outer_kind: Option<Kind>,
@@ -128,13 +127,6 @@ impl Names {
 		let len = self.log.iter().rposition(|(d, _)| *d < depth).map_or(0, |i| i + 1);
 		self.truncate(len);
 	}
-}
-
-/// What precedes a parameter: its decorators, and modifiers that make it a parameter property.
-#[derive(Clone, Copy, Default)]
-struct ParameterHead {
-	modifiers: Option<(u32, Extras)>,
-	decorators: Option<List>,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -1092,61 +1084,52 @@ impl Extension for TypeScript {
 		p.ext.ambient
 	}
 
-	fn binding_atom(p: &mut Parser<Self>) -> Result<Option<NodeId>> {
-		if p.is_keyword(Keyword::This) {
-			return p.parse_ident(true).map(Some);
-		}
-		Ok(None)
-	}
-
-	fn binding_item_start(p: &mut Parser<Self>, allow_modifiers: bool) -> Result<u32> {
+	fn parameter(p: &mut Parser<Self>, allow_modifiers: bool) -> Result<Option<NodeId>> {
 		let mut decorators = Vec::new();
 		while p.is(TokenKind::At) {
 			decorators.push(p.parse_decorator()?);
 		}
-		let decorators = if decorators.is_empty() {
-			None
-		} else {
-			Some(p.list_of(&decorators))
-		};
+		let decorators = (!decorators.is_empty()).then(|| p.list_of(&decorators));
+		let this = p.is_keyword(Keyword::This);
 		if !allow_modifiers
-			&& !p.is_keyword(Keyword::This)
-			&& let Some(decorators) = decorators
+			&& !this && let Some(decorators) = decorators
 		{
 			return p.parameter_decorator_error(decorators);
 		}
 		let start = p.tok.start;
-		let mut entry = None;
+		let mut property = None;
 		if allow_modifiers {
-			let modifiers = p.parse_modifiers(
-				&["public", "private", "protected", "override", "readonly"],
-				&[],
-				false,
-				None,
-			)?;
-			let extras = modifiers.extras;
+			let extras = p
+				.parse_modifiers(
+					&["public", "private", "protected", "override", "readonly"],
+					&[],
+					false,
+					None,
+				)?
+				.extras;
 			if extras.accessibility.is_some() || extras.readonly || extras.is_override {
-				entry = Some((start, extras));
+				property = Some(extras);
 			}
 		}
-		p.ext.parameter_modifiers.push(ParameterHead {
-			modifiers: entry,
-			decorators,
-		});
-		Ok(start)
-	}
-
-	fn binding_annotation(p: &mut Parser<Self>, node: NodeId, params: bool) -> Result<()> {
-		if !params {
-			return Ok(());
-		}
+		let left = if p.is_keyword(Keyword::This) {
+			let this = p.parse_ident(true)?;
+			if decorators.is_some() || property.is_some() {
+				return p.error(p.start_of(this), Code::ThisParameterModifiers);
+			}
+			this
+		} else if p.is(TokenKind::Ellipsis) {
+			p.parse_rest_binding()?
+		} else {
+			p.parse_binding_atom()?
+		};
+		let rest = matches!(p.kind(left), NodeKind::RestElement { .. });
 		if p.eat(TokenKind::Question)? {
-			if matches!(p.kind(node), NodeKind::RestElement { .. }) {
-				return p.error(p.start_of(node), Code::OptionalRest);
+			if rest {
+				return p.error(p.start_of(left), Code::OptionalRest);
 			}
-			if !matches!(p.kind(node), NodeKind::Identifier { .. }) && !p.ext.ambient && !p.lexer.in_type {
+			if !matches!(p.kind(left), NodeKind::Identifier { .. }) && !p.ext.ambient && !p.lexer.in_type {
 				// a signature without a body may have one; the parameters come before that is known
-				let pos = p.start_of(node);
+				let pos = p.start_of(left);
 				let arrow = p.ext.maybe_in_arrow_parameters;
 				match p.ext.functions.last_mut() {
 					Some(frame) if !arrow => {
@@ -1155,47 +1138,36 @@ impl Extension for TypeScript {
 					_ => return p.error(pos, Code::OptionalPatternParameter),
 				}
 			}
-			p.extras_mut(node).optional = true;
+			p.extras_mut(left).optional = true;
 		}
 		if p.is(TokenKind::Colon) {
 			let annotation = p.parse_type_annotation(true, None)?;
-			if matches!(p.kind(node), NodeKind::AssignmentPattern { .. }) {
-				return p.error(p.start_of(annotation), Code::TypeAnnotationAfterDefault);
-			}
-			p.extras_mut(node).type_annotation = Some(annotation);
+			p.extras_mut(left).type_annotation = Some(annotation);
+			p.ast.node_mut(left).end = p.prev_end;
 		}
-		p.ast.node_mut(node).end = p.prev_end;
-		if matches!(p.kind(node), NodeKind::RestElement { .. })
-			&& p.ext.ambient
-			&& p.is(TokenKind::Comma)
-			&& p.peek_char().0 == Some(')')
-		{
+		if rest && p.ext.ambient && p.is(TokenKind::Comma) && p.peek_char().0 == Some(')') {
 			p.next()?;
 		}
-		Ok(())
-	}
-
-	fn binding_item_end(p: &mut Parser<Self>, item: NodeId) -> Result<NodeId> {
-		let head = p.ext.parameter_modifiers.pop().unwrap();
-		let binding = match p.kind(item) {
-			NodeKind::AssignmentPattern { left, .. } => left,
-			_ => item,
+		let item = if rest {
+			left
+		} else {
+			p.parse_maybe_default(p.start_of(left), Some(left))?
 		};
-		if (head.decorators.is_some() || head.modifiers.is_some()) && p.ident_is(binding, "this") {
-			return p.error(p.start_of(binding), Code::ThisParameterModifiers);
+		if p.is(TokenKind::Colon) && item != left {
+			return p.error(p.tok.start, Code::TypeAnnotationAfterDefault);
 		}
-		if head.decorators.is_some() {
-			p.extras_mut(item).decorators = head.decorators;
+		if decorators.is_some() {
+			p.extras_mut(item).decorators = decorators;
 		}
-		let Some((start, extras)) = head.modifiers else {
-			return Ok(item);
+		let Some(extras) = property else {
+			return Ok(Some(item));
 		};
-		if !matches!(p.kind(binding), NodeKind::Identifier { .. }) {
+		if !matches!(p.kind(left), NodeKind::Identifier { .. }) {
 			return p.error(start, Code::ParameterPropertyPattern);
 		}
 		let node = p.ts(TsKind::ParameterProperty { parameter: item }, start);
 		p.extras_mut(node).merge(extras);
-		Ok(node)
+		Ok(Some(node))
 	}
 
 	fn catch_param(p: &mut Parser<Self>, param: NodeId) -> Result<()> {
