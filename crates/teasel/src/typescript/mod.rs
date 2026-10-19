@@ -1143,8 +1143,8 @@ impl Extension for TypeScript {
 		if p.is(TokenKind::Colon) {
 			let annotation = p.parse_type_annotation(true, None)?;
 			p.extras_mut(left).type_annotation = Some(annotation);
-			p.ast.node_mut(left).end = p.prev_end;
 		}
+		p.ast.node_mut(left).end = p.prev_end;
 		if rest && p.ext.ambient && p.is(TokenKind::Comma) && p.peek_char().0 == Some(')') {
 			p.next()?;
 		}
