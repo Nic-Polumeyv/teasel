@@ -366,7 +366,10 @@ impl Parser<'_, TypeScript> {
 					return Ok(Some(opened));
 				}
 				Head::Global => {
-					if self.peek_token()?.kind != TokenKind::BraceL {
+					let next = self.peek_token()?.kind;
+					let bodiless = opened.declare.is_some()
+						&& matches!(next, TokenKind::Ident(_) | TokenKind::Keyword(Keyword::Export));
+					if next != TokenKind::BraceL && !bodiless {
 						break;
 					}
 					opened.head = Some(head);
