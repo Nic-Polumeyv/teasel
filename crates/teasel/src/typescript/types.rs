@@ -1010,7 +1010,11 @@ impl Parser<'_, TypeScript> {
 		}
 		let (mut key, mut computed) = self.parse_property_name()?;
 		let mut kind = None;
-		if !computed && (self.ident_is(key, "get") || self.ident_is(key, "set")) && self.token_can_follow_modifier() {
+		if !computed
+			&& (self.ident_is(key, "get") || self.ident_is(key, "set"))
+			&& !self.tok.newline_before
+			&& self.token_can_follow_modifier()
+		{
 			kind = Some(if self.ident_is(key, "get") {
 				SignatureKind::Get
 			} else {
@@ -1138,22 +1142,13 @@ impl Parser<'_, TypeScript> {
 
 	// Modifiers
 
-	fn tok_can_follow_static(&self) -> bool {
-		self.tok.newline_before
-			&& (self.is(TokenKind::BracketL)
-				|| self.is(TokenKind::Star)
-				|| matches!(self.tok.kind, TokenKind::PrivateName(_))
-				|| self.is_literal_property_name())
-	}
-
-	pub(super) fn token_can_follow_modifier(&self) -> bool {
-		(self.is(TokenKind::BracketL)
+	fn token_can_follow_modifier(&self) -> bool {
+		self.is(TokenKind::BracketL)
 			|| self.is(TokenKind::BraceL)
 			|| self.is(TokenKind::Star)
 			|| self.is(TokenKind::Ellipsis)
 			|| matches!(self.tok.kind, TokenKind::PrivateName(_))
-			|| self.is_literal_property_name())
-			&& !self.tok.newline_before
+			|| self.is_literal_property_name()
 	}
 
 	/// Consumes the current identifier when it is one of the modifiers and a member name may
@@ -1182,7 +1177,7 @@ impl Parser<'_, TypeScript> {
 		let start = self.tok.start;
 		let snapshot = self.token_snapshot();
 		self.next_liberal()?;
-		if self.token_can_follow_modifier() || (modifier == "static" && self.tok_can_follow_static()) {
+		if (modifier == "static" || !self.tok.newline_before) && self.token_can_follow_modifier() {
 			return Ok(Some((modifier, start)));
 		}
 		self.restore_tokens(snapshot);
