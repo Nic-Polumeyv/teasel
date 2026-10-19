@@ -842,11 +842,7 @@ impl Extension for TypeScript {
 			p.parse_decorators(true)?;
 		}
 		let start = p.tok.start;
-		if p.is_keyword(Keyword::Const) && p.peek_is_contextual("enum")? {
-			p.next()?;
-			return p.parse_enum_declaration(start, true, false).map(Some);
-		}
-		if p.head().is_some()
+		if (p.head().is_some() || p.is_keyword(Keyword::Const))
 			&& let Some(opened) = p.open_declaration()?
 		{
 			return p.parse_opened(start, opened).map(Some);

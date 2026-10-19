@@ -354,7 +354,8 @@ impl Parser<'_, TypeScript> {
 					self.tok.kind,
 					TokenKind::Keyword(Keyword::Var | Keyword::Const | Keyword::Function | Keyword::Class)
 				) || self.is_contextual("let");
-				if javascript && (opened.declare.is_some() || opened.is_abstract.is_some()) {
+				let modified = opened.declare.is_some() || opened.is_abstract.is_some();
+				if javascript && (modified || self.is_keyword(Keyword::Const) && self.peek_is_contextual("enum")?) {
 					return Ok(Some(opened));
 				}
 				break;
