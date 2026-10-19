@@ -6,7 +6,7 @@ use super::types::{ListKind, TypeParameterModifiers};
 use super::{ClassFrame, TypeScript};
 use crate::ast::{List, NodeId, NodeKind, VariableKind};
 use crate::error::Code;
-use crate::lexer::token::{Keyword, TokenKind};
+use crate::lexer::token::{Keyword, TokenKind, word};
 use crate::parser::scope::{Binding, SCOPE_FUNCTION, SCOPE_TS_MODULE};
 use crate::parser::statement::FUNC_STATEMENT;
 use crate::parser::statement::{ClassKind, Exports, StatementPlace};
@@ -161,10 +161,15 @@ impl Parser<'_, TypeScript> {
 	}
 
 	fn parse_module_or_namespace_declaration_inner(&mut self, start: u32, nested: bool) -> Result<NodeId> {
-		let id = self.parse_ident(false)?;
+		let id = self.parse_ident(nested)?;
 		if !nested {
 			self.check_lval_simple(id, Binding::None, &mut None)?;
 			self.declare_export_only(id);
+		} else if let NodeKind::Identifier { name } = self.kind(id)
+			&& self.strict
+			&& self.lexer.word_flags(name) & word::STRICT != 0
+		{
+			return self.error_name(self.start_of(id), Code::ReservedWord, name);
 		}
 		let body = if self.eat(TokenKind::Dot)? {
 			let inner_start = self.tok.start;

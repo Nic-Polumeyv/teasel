@@ -95,11 +95,11 @@ const BY_NAME: &[(&str, &str)] = &[
 	),
 	(
 		"ambientModuleDeclarationWithReservedIdentifierInDottedPath.ts",
-		"a reserved word after a dot in a namespace name is not read yet",
+		"declare in an ambient namespace, which the file's parse errors hide",
 	),
 	(
 		"ambientModuleDeclarationWithReservedIdentifierInDottedPath2.ts",
-		"a reserved word after a dot in a namespace name is not read yet",
+		"declare in an ambient namespace, which the file's parse errors hide",
 	),
 	(
 		"catchClauseWithTypeAnnotation.ts",
