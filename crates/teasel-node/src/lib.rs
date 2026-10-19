@@ -14,6 +14,10 @@ use teasel::host::Grammar;
 use teasel::json::Prepared;
 use teasel::{Entry, Options};
 
+// RUSTFLAGS in the environment replaces .cargo/config.toml's flags, and nothing loads the addon on a Windows without the redistributable
+#[cfg(all(target_env = "msvc", not(target_feature = "crt-static")))]
+compile_error!("the addon links the C runtime statically: build with .cargo/config.toml's rustflags");
+
 /// What JavaScript holds: the view of the words, then the views of the JavaScript tree and of
 /// the TypeScript one, each an array.
 const VIEWS: usize = 3;
@@ -73,6 +77,9 @@ fn string(env: Env, value: Value) -> Result<String> {
 		unsafe { node_api::napi_get_value_string_utf8(env, value, null_mut(), 0, &mut length) },
 		"a string",
 	)?;
+	if length == 0 {
+		return Ok(String::new());
+	}
 	let mut buffer = vec![0u8; length + 1];
 	check(
 		unsafe {
@@ -90,16 +97,10 @@ fn number(env: Env, value: Value) -> Result<f64> {
 	})
 }
 
-fn optional(env: Env, value: Value) -> Result<Option<f64>> {
-	if kind(env, value)? == node_api::UNDEFINED {
-		Ok(None)
-	} else {
-		number(env, value).map(Some)
-	}
-}
-
-fn kind(env: Env, value: Value) -> Result<i32> {
-	out(0, "a value", |r| unsafe { node_api::napi_typeof(env, value, r) })
+// anything but a number is absent, read straight: asking V8 what the value is first costs as much as the read
+fn optional(env: Env, value: Value) -> Option<f64> {
+	let mut result = 0.0;
+	(unsafe { node_api::napi_get_value_double(env, value, &mut result) } == OK).then_some(result)
 }
 
 fn text(env: Env, text: &str) -> Result<Value> {
@@ -191,7 +192,7 @@ unsafe extern "C" fn children(env: Env, info: CallbackInfo) -> Value {
 		let [plan] = args::<1>(env, info)?;
 		text(
 			env,
-			&teasel::json::children(grammar_of(env, plan)?.ok_or("a plan expected")?),
+			&teasel::json::children(grammar_of(env, plan).ok_or("a plan expected")?),
 		)
 	})
 }
@@ -205,16 +206,13 @@ unsafe extern "C" fn drop_plan(_: Env, data: *mut c_void, _: *mut c_void) {
 	drop(unsafe { Box::from_raw(data.cast::<Rc<Grammar>>()) });
 }
 
-// the grammar a parse reads a document by, or undefined
-fn grammar_of(env: Env, value: Value) -> Result<Option<&'static Grammar>> {
-	if kind(env, value)? == node_api::UNDEFINED {
-		return Ok(None);
+// the grammar a parse reads a document by; anything else is none
+fn grammar_of(env: Env, value: Value) -> Option<&'static Grammar> {
+	let mut data = null_mut();
+	if unsafe { node_api::napi_get_value_external(env, value, &mut data) } != OK || data.is_null() {
+		return None;
 	}
-	let data = external(env, value, "a plan")?;
-	if data.is_null() {
-		return Err("a plan expected".into());
-	}
-	Ok(Some(unsafe { &**data.cast::<Rc<Grammar>>() }))
+	Some(unsafe { &**data.cast::<Rc<Grammar>>() })
 }
 
 unsafe extern "C" fn free(env: Env, info: CallbackInfo) -> Value {
@@ -235,8 +233,8 @@ unsafe extern "C" fn parse(env: Env, info: CallbackInfo) -> Value {
 		let [source, entry, offset, end, stop, plan] = args::<6>(env, info)?;
 		let prepared = unsafe { &(*handle(env, source)?).prepared };
 		let entry = Entry::from_index(number(env, entry)? as u32).ok_or("an entry expected")?;
-		let (offset, end, stop) = (number(env, offset)?, optional(env, end)?, string(env, stop)?);
-		let grammar = grammar_of(env, plan)?;
+		let (offset, end, stop) = (number(env, offset)?, optional(env, end), string(env, stop)?);
+		let grammar = grammar_of(env, plan);
 		answer(env, || prepared.in_place(entry, offset, end, &stop, grammar))
 	})
 }
@@ -249,7 +247,7 @@ unsafe extern "C" fn once(env: Env, info: CallbackInfo) -> Value {
 		let prepared = Prepared::borrowed(source, Options(number(env, flags)? as u32));
 		let entry = Entry::from_index(number(env, entry)? as u32).ok_or("an entry expected")?;
 		let stop = string(env, stop)?;
-		let grammar = grammar_of(env, plan)?;
+		let grammar = grammar_of(env, plan);
 		answer(env, || prepared.in_place(entry, 0.0, None, &stop, grammar))
 	})
 }

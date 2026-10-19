@@ -1,6 +1,6 @@
 // scripts/addon.ts imports this file to build the binary that node.ts loads on import, so the two stay apart
-import { readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
+const { existsSync, readFileSync } = process.getBuiltinModule('node:fs');
+const { createRequire } = process.getBuiltinModule('node:module');
 import type { Engine, Tree } from '../types.ts';
 
 /** `crates/teasel-node/src/lib.rs`: the operations over a prepared source and a grammar, the source as V8's bytes. */
@@ -35,14 +35,11 @@ export function load(): Addon | undefined {
 	for (const [tag, p] of Object.entries(platforms)) {
 		if (p.os !== process.platform || p.cpu !== process.arch || (p.libc !== undefined && p.libc !== libc())) continue;
 		// we add .node so require dlopens it instead of reading it as js
-		for (const path of [`../teasel.${tag}.node`, `@teasel/parser-${tag}/teasel.${tag}.node`]) {
-			try {
-				return require(path);
-			} catch (e) {
-				const error = e as NodeJS.ErrnoException;
-				// a build that fails to load says more than one that is not there
-				if (why === undefined || why.code === 'MODULE_NOT_FOUND') why = error;
-			}
+		const own = `../teasel.${tag}.node`;
+		try {
+			return require(existsSync(new URL(own, import.meta.url)) ? own : `@teasel/parser-${tag}/teasel.${tag}.node`);
+		} catch (e) {
+			why = e as NodeJS.ErrnoException;
 		}
 	}
 	// where no build exists there is nothing to fix

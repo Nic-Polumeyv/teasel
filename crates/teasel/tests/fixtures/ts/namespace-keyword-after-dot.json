@@ -1,0 +1,144 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 58,
+		"scope": 0,
+		"body": [
+			{
+				"type": "TSModuleDeclaration",
+				"start": 0,
+				"end": 36,
+				"scope": 1,
+				"defines": [
+					0
+				],
+				"declare": true,
+				"id": {
+					"type": "Identifier",
+					"start": 18,
+					"end": 24,
+					"declares": 0,
+					"name": "chrome"
+				},
+				"body": {
+					"type": "TSModuleDeclaration",
+					"start": 25,
+					"end": 36,
+					"scope": 2,
+					"defines": [
+						1
+					],
+					"id": {
+						"type": "Identifier",
+						"start": 25,
+						"end": 33,
+						"declares": 1,
+						"name": "debugger"
+					},
+					"body": {
+						"type": "TSModuleBlock",
+						"start": 34,
+						"end": 36,
+						"body": []
+					}
+				}
+			},
+			{
+				"type": "TSModuleDeclaration",
+				"start": 37,
+				"end": 57,
+				"scope": 3,
+				"defines": [
+					2
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 47,
+					"end": 48,
+					"declares": 2,
+					"name": "a"
+				},
+				"body": {
+					"type": "TSModuleDeclaration",
+					"start": 49,
+					"end": 57,
+					"scope": 4,
+					"defines": [
+						3
+					],
+					"id": {
+						"type": "Identifier",
+						"start": 49,
+						"end": 54,
+						"declares": 3,
+						"name": "class"
+					},
+					"body": {
+						"type": "TSModuleBlock",
+						"start": 55,
+						"end": 57,
+						"body": []
+					}
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 58,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "namespace",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "namespace",
+			"parent": 1,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "namespace",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "namespace",
+			"parent": 3,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "chrome",
+			"kind": "namespace",
+			"scope": 0,
+			"write": true
+		},
+		{
+			"name": "debugger",
+			"kind": "namespace",
+			"scope": 1,
+			"write": true
+		},
+		{
+			"name": "a",
+			"kind": "namespace",
+			"scope": 0,
+			"write": true
+		},
+		{
+			"name": "class",
+			"kind": "namespace",
+			"scope": 3,
+			"write": true
+		}
+	],
+	"references": []
+}

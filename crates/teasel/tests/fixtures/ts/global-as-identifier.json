@@ -1,0 +1,125 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 28,
+		"scope": 0,
+		"body": [
+			{
+				"type": "ExpressionStatement",
+				"start": 0,
+				"end": 13,
+				"expression": {
+					"type": "AssignmentExpression",
+					"start": 0,
+					"end": 12,
+					"operator": "=",
+					"left": {
+						"type": "MemberExpression",
+						"start": 0,
+						"end": 8,
+						"object": {
+							"type": "Identifier",
+							"start": 0,
+							"end": 6,
+							"reference": 0,
+							"name": "global"
+						},
+						"property": {
+							"type": "Identifier",
+							"start": 7,
+							"end": 8,
+							"name": "x"
+						},
+						"computed": false,
+						"optional": false
+					},
+					"right": {
+						"type": "Literal",
+						"start": 11,
+						"end": 12,
+						"value": 1,
+						"raw": "1"
+					}
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 14,
+				"end": 20,
+				"expression": {
+					"type": "Identifier",
+					"start": 14,
+					"end": 20,
+					"reference": 1,
+					"name": "global"
+				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 21,
+				"end": 27,
+				"expression": {
+					"type": "AssignmentExpression",
+					"start": 21,
+					"end": 26,
+					"operator": "=",
+					"left": {
+						"type": "Identifier",
+						"start": 21,
+						"end": 22,
+						"reference": 2,
+						"name": "X"
+					},
+					"right": {
+						"type": "Literal",
+						"start": 25,
+						"end": 26,
+						"writes": [
+							2
+						],
+						"value": 1,
+						"raw": "1"
+					}
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 28,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [],
+	"references": [
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": true,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": false
+		}
+	]
+}

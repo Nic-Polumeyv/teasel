@@ -17,7 +17,6 @@ pub(crate) type Finalize = Option<unsafe extern "C" fn(Env, *mut c_void, *mut c_
 
 // Node's enum numbers
 pub(crate) const OK: Status = 0;
-pub(crate) const UNDEFINED: i32 = 0;
 pub(crate) const UINT8_ARRAY: i32 = 1;
 pub(crate) const UINT32_ARRAY: i32 = 6;
 pub(crate) const FLOAT64_ARRAY: i32 = 8;
@@ -90,7 +89,6 @@ api! {
 	fn napi_create_function(env: Env, name: *const c_char, length: usize, cb: Callback, data: *mut c_void, result: *mut Value) -> Status;
 	fn napi_set_named_property(env: Env, object: Value, name: *const c_char, value: Value) -> Status;
 	fn napi_get_cb_info(env: Env, info: CallbackInfo, argc: *mut usize, argv: *mut Value, this: *mut Value, data: *mut *mut c_void) -> Status;
-	fn napi_typeof(env: Env, value: Value, result: *mut i32) -> Status;
 	fn napi_get_typedarray_info(env: Env, array: Value, kind: *mut i32, length: *mut usize, data: *mut *mut c_void, buffer: *mut Value, offset: *mut usize) -> Status;
 	fn napi_get_value_string_utf8(env: Env, value: Value, buffer: *mut c_char, size: usize, length: *mut usize) -> Status;
 	fn napi_get_value_double(env: Env, value: Value, result: *mut f64) -> Status;

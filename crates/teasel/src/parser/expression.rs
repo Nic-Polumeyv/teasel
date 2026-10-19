@@ -1599,9 +1599,6 @@ impl<E: Extension> Parser<'_, E> {
 	}
 
 	fn parse_binding_atom_inner(&mut self) -> Result<NodeId> {
-		if let Some(atom) = E::binding_atom(self)? {
-			return Ok(atom);
-		}
 		match self.tok.kind {
 			TokenKind::BracketL => {
 				let start = self.tok.start;
@@ -1634,21 +1631,24 @@ impl<E: Extension> Parser<'_, E> {
 				elements.push(None);
 			} else if allow_trailing_comma && self.after_trailing_comma(close, false)? {
 				break;
-			} else if self.is(TokenKind::Ellipsis) {
-				let rest = self.parse_rest_binding()?;
-				E::binding_annotation(self, rest)?;
-				elements.push(Some(rest));
-				if self.is(TokenKind::Comma) {
-					return self.error(self.tok.start, Code::CommaAfterRest);
-				}
-				self.expect(close)?;
-				break;
 			} else {
-				let start = E::binding_item_start(self, allow_modifiers)?;
-				let left = self.parse_maybe_default(start, None)?;
-				E::binding_annotation(self, left)?;
-				let item = self.parse_maybe_default(self.start_of(left), Some(left))?;
-				elements.push(Some(E::binding_item_end(self, item)?));
+				let parameter = match close {
+					TokenKind::ParenR => E::parameter(self, allow_modifiers)?,
+					_ => None,
+				};
+				let item = match parameter {
+					Some(item) => item,
+					None if self.is(TokenKind::Ellipsis) => self.parse_rest_binding()?,
+					None => self.parse_maybe_default(self.tok.start, None)?,
+				};
+				elements.push(Some(item));
+				if matches!(self.kind(item), NodeKind::RestElement { .. }) {
+					if self.is(TokenKind::Comma) {
+						return self.error(self.tok.start, Code::CommaAfterRest);
+					}
+					self.expect(close)?;
+					break;
+				}
 			}
 		}
 		Ok(elements)

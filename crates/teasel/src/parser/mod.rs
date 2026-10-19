@@ -127,23 +127,10 @@ pub(crate) trait Extension: Default + Sized {
 	fn statement(p: &mut Parser<Self>, context: Context, place: StatementPlace) -> Result<Option<NodeId>> {
 		Ok(None)
 	}
-	/// An expression statement whose expression is a bare identifier may be a declaration instead.
-	fn expression_statement(
-		p: &mut Parser<Self>,
-		start: u32,
-		expression: NodeId,
-		context: Context,
-	) -> Result<Option<NodeId>> {
-		Ok(None)
-	}
-	fn starts_export_declaration(p: &mut Parser<Self>) -> bool {
-		false
-	}
 	/// Right after `export`; `Some` is a whole export statement.
 	fn export_head(p: &mut Parser<Self>, start: u32) -> Result<Option<NodeId>> {
 		Ok(None)
 	}
-	/// The declaration after `export`, when `starts_export_declaration` or the plain grammar said so.
 	fn export_declaration(p: &mut Parser<Self>) -> Result<Option<NodeId>> {
 		Ok(None)
 	}
@@ -199,20 +186,9 @@ pub(crate) trait Extension: Default + Sized {
 	fn allows_missing_initializer(p: &mut Parser<Self>) -> bool {
 		false
 	}
-	fn binding_atom(p: &mut Parser<Self>) -> Result<Option<NodeId>> {
+	/// A whole parameter of a parameter list; `allow_modifiers` inside class methods.
+	fn parameter(p: &mut Parser<Self>, allow_modifiers: bool) -> Result<Option<NodeId>> {
 		Ok(None)
-	}
-	/// Before an element of a binding list; `allow_modifiers` inside class methods. Returns where
-	/// the element's own node starts.
-	fn binding_item_start(p: &mut Parser<Self>, allow_modifiers: bool) -> Result<u32> {
-		Ok(p.tok.start)
-	}
-	/// After a binding, before its default.
-	fn binding_annotation(p: &mut Parser<Self>, node: NodeId) -> Result<()> {
-		Ok(())
-	}
-	fn binding_item_end(p: &mut Parser<Self>, item: NodeId) -> Result<NodeId> {
-		Ok(item)
 	}
 	fn catch_param(p: &mut Parser<Self>, param: NodeId) -> Result<()> {
 		Ok(())
