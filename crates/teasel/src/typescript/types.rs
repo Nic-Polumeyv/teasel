@@ -1158,6 +1158,7 @@ impl Parser<'_, TypeScript> {
 		allowed: &[&str],
 		disallowed: &[&str],
 		stop_on_static_block: bool,
+		seen_static: bool,
 	) -> Result<Option<(&'static str, u32)>> {
 		let word = match self.tok.kind {
 			TokenKind::Ident(name) if !self.tok.escaped => self.str(name),
@@ -1171,7 +1172,7 @@ impl Parser<'_, TypeScript> {
 		if !allowed.contains(&modifier) && !disallowed.contains(&modifier) {
 			return Ok(None);
 		}
-		if stop_on_static_block && modifier == "static" && self.peek_char().0 == Some('{') {
+		if modifier == "static" && (seen_static || (stop_on_static_block && self.peek_char().0 == Some('{'))) {
 			return Ok(None);
 		}
 		let start = self.tok.start;
@@ -1192,7 +1193,9 @@ impl Parser<'_, TypeScript> {
 		disallowed_error: Option<Code>,
 	) -> Result<Modifiers> {
 		let mut modifiers = Modifiers::default();
-		while let Some((modifier, start)) = self.parse_modifier(allowed, disallowed, stop_on_static_block)? {
+		while let Some((modifier, start)) =
+			self.parse_modifier(allowed, disallowed, stop_on_static_block, modifiers.extras.is_static)?
+		{
 			self.check_modifier(&modifiers, modifier, start)?;
 			modifiers.set(modifier);
 			if let Some(code) = disallowed_error.filter(|_| disallowed.contains(&modifier)) {
