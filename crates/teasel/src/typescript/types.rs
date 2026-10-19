@@ -404,7 +404,7 @@ impl Parser<'_, TypeScript> {
 	) -> Result<(Option<NodeId>, List, Option<NodeId>)> {
 		let type_parameters = self.try_parse_type_parameters(TypeParameterModifiers::Const)?;
 		self.expect(TokenKind::ParenL)?;
-		let parameters = self.parse_binding_list(TokenKind::ParenR, true, true, false)?;
+		let parameters = self.parse_binding_list(TokenKind::ParenR, false, true, false)?;
 		let parameters = self.list_from(parameters);
 		self.check_parameter_list(parameters, true)?;
 		let type_annotation = if return_token == TokenKind::Arrow || self.is(return_token) {
