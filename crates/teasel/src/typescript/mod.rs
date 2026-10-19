@@ -366,7 +366,7 @@ impl Parser<'_, TypeScript> {
 			expression
 		};
 		if self.eat(TokenKind::ParenL)? {
-			let args = self.parse_expr_list(TokenKind::ParenR, false, false, &mut None)?;
+			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut None)?;
 			self.no_type_casts(&args)?;
 			let arguments = self.list_from(args);
 			let callee_start = self.start_of(expression);
@@ -1136,7 +1136,10 @@ impl Extension for TypeScript {
 		Ok(start)
 	}
 
-	fn binding_annotation(p: &mut Parser<Self>, node: NodeId) -> Result<()> {
+	fn binding_annotation(p: &mut Parser<Self>, node: NodeId, params: bool) -> Result<()> {
+		if !params {
+			return Ok(());
+		}
 		if p.eat(TokenKind::Question)? {
 			if matches!(p.kind(node), NodeKind::RestElement { .. }) {
 				return p.error(p.start_of(node), Code::OptionalRest);
@@ -1187,10 +1190,7 @@ impl Extension for TypeScript {
 		let Some((start, extras)) = head.modifiers else {
 			return Ok(item);
 		};
-		if !matches!(
-			p.kind(item),
-			NodeKind::Identifier { .. } | NodeKind::AssignmentPattern { .. }
-		) {
+		if !matches!(p.kind(binding), NodeKind::Identifier { .. }) {
 			return p.error(start, Code::ParameterPropertyPattern);
 		}
 		let node = p.ts(TsKind::ParameterProperty { parameter: item }, start);
@@ -1334,6 +1334,15 @@ impl Extension for TypeScript {
 		{
 			if generator {
 				return p.error(start, Code::GeneratorSignature);
+			}
+			if let Some(default) = p.ast.list(params).iter().flatten().copied().find(|&param| {
+				let param = match p.ts_kind(param) {
+					Some(TsKind::ParameterProperty { parameter }) => parameter,
+					_ => param,
+				};
+				matches!(p.kind(param), NodeKind::AssignmentPattern { .. })
+			}) {
+				return p.error(p.start_of(default), Code::SignatureParameterDefault);
 			}
 			return Ok(Some(p.ts(kind, start)));
 		}
@@ -1579,7 +1588,7 @@ impl Extension for TypeScript {
 		let mut definite = false;
 		let mut optional = element.extras.optional;
 		if !optional {
-			if p.is(TokenKind::Bang) {
+			if p.is(TokenKind::Bang) && !p.tok.newline_before {
 				p.next()?;
 				definite = true;
 			} else {
@@ -1931,7 +1940,7 @@ impl Extension for TypeScript {
 				| TsKind::SatisfiesExpression { expression, .. }
 				| TsKind::NonNullExpression { expression }
 				| TsKind::TypeAssertion { expression, .. },
-			) => p.make_pattern(expression, is_binding, errors).map(Some),
+			) if !is_binding => p.make_pattern(expression, is_binding, errors).map(Some),
 			Some(TsKind::TypeCastExpression { .. }) => {
 				let parameter = p.type_cast_to_parameter(id);
 				p.make_pattern(parameter, is_binding, errors).map(Some)

@@ -208,7 +208,7 @@ pub(crate) trait Extension: Default + Sized {
 		Ok(p.tok.start)
 	}
 	/// After a binding, before its default.
-	fn binding_annotation(p: &mut Parser<Self>, node: NodeId) -> Result<()> {
+	fn binding_annotation(p: &mut Parser<Self>, node: NodeId, params: bool) -> Result<()> {
 		Ok(())
 	}
 	fn binding_item_end(p: &mut Parser<Self>, item: NodeId) -> Result<NodeId> {

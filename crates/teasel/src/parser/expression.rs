@@ -1636,7 +1636,7 @@ impl<E: Extension> Parser<'_, E> {
 				break;
 			} else if self.is(TokenKind::Ellipsis) {
 				let rest = self.parse_rest_binding()?;
-				E::binding_annotation(self, rest)?;
+				E::binding_annotation(self, rest, close == TokenKind::ParenR)?;
 				elements.push(Some(rest));
 				if self.is(TokenKind::Comma) {
 					return self.error(self.tok.start, Code::CommaAfterRest);
@@ -1646,7 +1646,7 @@ impl<E: Extension> Parser<'_, E> {
 			} else {
 				let start = E::binding_item_start(self, allow_modifiers)?;
 				let left = self.parse_maybe_default(start, None)?;
-				E::binding_annotation(self, left)?;
+				E::binding_annotation(self, left, close == TokenKind::ParenR)?;
 				let item = self.parse_maybe_default(self.start_of(left), Some(left))?;
 				elements.push(Some(E::binding_item_end(self, item)?));
 			}

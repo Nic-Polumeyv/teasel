@@ -595,6 +595,9 @@ impl Parser<'_, TypeScript> {
 				if let Some(keyword) = TsKeyword::from_name(self.str(name))
 					&& self.peek_char().0 != Some('.')
 				{
+					if self.tok.escaped {
+						return self.error_name(start, Code::EscapeInKeyword, name);
+					}
 					self.next()?;
 					return Ok(self.ts(TsKind::Keyword(keyword), start));
 				}
@@ -1151,6 +1154,14 @@ impl Parser<'_, TypeScript> {
 
 	// Modifiers
 
+	fn tok_can_follow_static(&self) -> bool {
+		self.tok.newline_before
+			&& (self.is(TokenKind::BracketL)
+				|| self.is(TokenKind::Star)
+				|| matches!(self.tok.kind, TokenKind::PrivateName(_))
+				|| self.is_literal_property_name())
+	}
+
 	pub(super) fn token_can_follow_modifier(&self) -> bool {
 		(self.is(TokenKind::BracketL)
 			|| self.is(TokenKind::BraceL)
@@ -1171,7 +1182,7 @@ impl Parser<'_, TypeScript> {
 	) -> Result<Option<(&'static str, u32)>> {
 		let word = match self.tok.kind {
 			TokenKind::Ident(name) if !self.tok.escaped => self.str(name),
-			TokenKind::Keyword(Keyword::In) => "in",
+			TokenKind::Keyword(Keyword::In) if !self.tok.escaped => "in",
 			TokenKind::Keyword(Keyword::Const) => "const",
 			_ => return Ok(None),
 		};
@@ -1187,7 +1198,7 @@ impl Parser<'_, TypeScript> {
 		let start = self.tok.start;
 		let snapshot = self.token_snapshot();
 		self.next_liberal()?;
-		if self.token_can_follow_modifier() {
+		if self.token_can_follow_modifier() || (modifier == "static" && self.tok_can_follow_static()) {
 			return Ok(Some((modifier, start)));
 		}
 		self.restore_tokens(snapshot);
