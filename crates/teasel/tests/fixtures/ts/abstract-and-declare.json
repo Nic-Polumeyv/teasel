@@ -1,0 +1,140 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 91,
+		"scope": 0,
+		"body": [
+			{
+				"type": "ClassDeclaration",
+				"start": 0,
+				"end": 27,
+				"scope": 1,
+				"defines": [
+					0
+				],
+				"declare": true,
+				"abstract": true,
+				"id": {
+					"type": "Identifier",
+					"start": 23,
+					"end": 24,
+					"declares": 0,
+					"name": "A"
+				},
+				"superClass": null,
+				"body": {
+					"type": "ClassBody",
+					"start": 25,
+					"end": 27,
+					"body": []
+				}
+			},
+			{
+				"type": "ClassDeclaration",
+				"start": 28,
+				"end": 55,
+				"scope": 2,
+				"defines": [
+					1
+				],
+				"declare": true,
+				"abstract": true,
+				"id": {
+					"type": "Identifier",
+					"start": 51,
+					"end": 52,
+					"declares": 1,
+					"name": "B"
+				},
+				"superClass": null,
+				"body": {
+					"type": "ClassBody",
+					"start": 53,
+					"end": 55,
+					"body": []
+				}
+			},
+			{
+				"type": "ExportNamedDeclaration",
+				"start": 56,
+				"end": 90,
+				"exportKind": "value",
+				"declaration": {
+					"type": "ClassDeclaration",
+					"start": 63,
+					"end": 90,
+					"scope": 3,
+					"defines": [
+						2
+					],
+					"declare": true,
+					"abstract": true,
+					"id": {
+						"type": "Identifier",
+						"start": 86,
+						"end": 87,
+						"declares": 2,
+						"name": "C"
+					},
+					"superClass": null,
+					"body": {
+						"type": "ClassBody",
+						"start": 88,
+						"end": 90,
+						"body": []
+					}
+				},
+				"specifiers": [],
+				"source": null,
+				"attributes": []
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 91,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "class",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "class",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "class",
+			"parent": 0,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "A",
+			"kind": "class",
+			"scope": 0,
+			"write": true
+		},
+		{
+			"name": "B",
+			"kind": "class",
+			"scope": 0,
+			"write": true
+		},
+		{
+			"name": "C",
+			"kind": "class",
+			"scope": 0,
+			"write": true
+		}
+	],
+	"references": []
+}

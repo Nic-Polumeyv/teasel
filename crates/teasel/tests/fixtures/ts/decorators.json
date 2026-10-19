@@ -288,7 +288,7 @@
 				"exportKind": "value",
 				"declaration": {
 					"type": "ClassDeclaration",
-					"start": 125,
+					"start": 137,
 					"end": 147,
 					"scope": 4,
 					"defines": [

@@ -19,6 +19,7 @@ use crate::parser::{
 	Context, DestructuringErrors, Entry, Errors, Extension, ForInit, FunctionKind, Options, Parser, Result, Unwrap,
 };
 use ast::{Accessibility, Data, Extras, Kind, TsKind};
+use declarations::Head;
 use types::TypeParameterModifiers;
 
 /// Parses one `entry` of TypeScript at `start` of `src` cut at `end`; see `parser::parse_at`.
@@ -92,6 +93,7 @@ pub struct State {
 	module_blocks: u32,
 	/// Decorators waiting for their class, one list per nesting level of decorator expressions.
 	decorators: Vec<Vec<NodeId>>,
+	decorators_before_export: bool,
 }
 
 /// Names declared per scope depth, in declaration order so a scope's names are a suffix.
@@ -295,12 +297,6 @@ impl Parser<'_, TypeScript> {
 		)
 	}
 
-	/// A line break, or the end of the input, after the current token.
-	fn has_following_line_break(&self) -> bool {
-		let (next, newline, _) = self.peek_char();
-		newline || next.is_none()
-	}
-
 	/// Eats a semicolon, or accepts the place one could be inserted.
 	fn is_line_terminator(&mut self) -> Result<bool> {
 		Ok(self.eat(TokenKind::Semi)? || self.can_insert_semicolon())
@@ -397,20 +393,40 @@ impl Parser<'_, TypeScript> {
 		while self.is(TokenKind::At) {
 			decorators.push(self.parse_decorator()?);
 		}
-		if self.is_keyword(Keyword::Export) {
-			if !allow_export {
-				return self.unexpected();
-			}
-		} else if !self.is_keyword(Keyword::Class)
-			&& !(self.is_contextual("abstract") && self.peek_token()?.kind == TokenKind::Keyword(Keyword::Class))
-		{
+		if self.is_keyword(Keyword::Export) && !allow_export {
+			return self.unexpected();
+		}
+		let snapshot = self.token_snapshot();
+		let class_follows = self.decorated_class_follows();
+		self.restore_tokens(snapshot);
+		if !class_follows? {
 			return self.error(self.tok.start, Code::DecoratorPlacement);
 		}
+		self.ext.decorators_before_export = self.is_keyword(Keyword::Export);
 		if self.ext.decorators.is_empty() {
 			self.ext.decorators.push(Vec::new());
 		}
 		self.ext.decorators.last_mut().unwrap().extend(decorators);
 		Ok(())
+	}
+
+	fn decorated_class_follows(&mut self) -> Result<bool> {
+		if self.is_keyword(Keyword::Export) {
+			self.next_liberal()?;
+			if self.is_keyword(Keyword::Default) {
+				self.next_liberal()?;
+			}
+			if self.is(TokenKind::At) {
+				return Ok(true);
+			}
+		}
+		while matches!(self.head(), Some(Head::Abstract | Head::Declare)) {
+			self.next_liberal()?;
+			if self.tok.newline_before {
+				return Ok(false);
+			}
+		}
+		Ok(self.is_keyword(Keyword::Class))
 	}
 
 	fn take_decorators(&mut self) -> Option<List> {
@@ -830,40 +846,12 @@ impl Extension for TypeScript {
 			p.next()?;
 			return p.parse_enum_declaration(start, true, false).map(Some);
 		}
-		if p.is_contextual("enum") {
-			return p.parse_enum_declaration(start, false, false).map(Some);
-		}
-		if p.is_contextual("interface") {
-			return p.parse_interface_declaration(start, false, false);
+		if p.head().is_some()
+			&& let Some(opened) = p.open_declaration()?
+		{
+			return p.parse_opened(start, opened).map(Some);
 		}
 		Ok(None)
-	}
-
-	fn expression_statement(
-		p: &mut Parser<Self>,
-		start: u32,
-		expression: NodeId,
-		context: Context,
-	) -> Result<Option<NodeId>> {
-		if context != Context::None {
-			return Ok(None);
-		}
-		p.parse_declaration_statement(start, expression)
-	}
-
-	fn starts_export_declaration(p: &mut Parser<Self>) -> bool {
-		[
-			"abstract",
-			"declare",
-			"enum",
-			"module",
-			"namespace",
-			"interface",
-			"type",
-		]
-		.iter()
-		.any(|name| p.is_contextual(name))
-			|| p.is(TokenKind::At)
 	}
 
 	fn export_head(p: &mut Parser<Self>, start: u32) -> Result<Option<NodeId>> {
@@ -904,33 +892,25 @@ impl Extension for TypeScript {
 	}
 
 	fn export_declaration(p: &mut Parser<Self>) -> Result<Option<NodeId>> {
-		let start = p.tok.start;
-		let old_ambient = p.ext.ambient;
-		let is_declare = p.eat_contextual("declare")?;
-		if is_declare {
-			p.ext.ambient = true;
-			if p.is_contextual("declare") || !p.should_parse_export_statement()? {
-				return p.error(p.tok.start, Code::ExportDeclareWithoutDeclaration);
-			}
+		if p.is(TokenKind::At) {
+			return p.parse_statement(Context::None, StatementPlace::Block, None).map(Some);
 		}
-		let declaration = match p.tok.kind {
-			TokenKind::Ident(name) => p.parse_declaration(start, name, true)?,
-			_ => None,
+		let start = p.tok.start;
+		if p.head().is_none_or(|head| head == Head::Global) {
+			return Ok(None);
+		}
+		let Some(opened) = p.open_declaration()? else {
+			return Ok(None);
 		};
-		let declaration = match declaration {
-			Some(declaration) => declaration,
-			None => p.parse_statement(Context::None, StatementPlace::Block, None)?,
-		};
-		p.ext.ambient = old_ambient;
+		let declaration = p.parse_opened(start, opened)?;
+		if let Some(TsKind::ModuleDeclaration { global: true, id, .. }) = p.ts_kind(declaration) {
+			return p.error(p.start_of(id), Code::ExportDeclareWithoutDeclaration);
+		}
 		if matches!(
 			p.ts_kind(declaration),
 			Some(TsKind::InterfaceDeclaration { .. } | TsKind::TypeAliasDeclaration { .. })
 		) {
 			p.ext.export_kind = Some(Kind::Type);
-		}
-		if is_declare {
-			p.ast.node_mut(declaration).start = start;
-			p.extras_mut(declaration).declare = true;
 		}
 		Ok(Some(declaration))
 	}
@@ -940,17 +920,21 @@ impl Extension for TypeScript {
 			p.parse_decorators(false)?;
 		}
 		let start = p.tok.start;
-		if p.is_contextual("abstract") && p.peek_token()?.kind == TokenKind::Keyword(Keyword::Class) {
-			p.next()?;
-			p.ext.next_class = ClassFrame {
-				is_abstract: true,
-				start: Some(start),
-				..ClassFrame::default()
-			};
-			return p.parse_class(ClassKind::Declaration).map(Some);
+		if p.head() == Some(Head::Abstract) {
+			let next = p.peek_token()?;
+			if next.kind == TokenKind::Keyword(Keyword::Class) && !next.newline_before {
+				p.next()?;
+				p.ext.next_class = ClassFrame {
+					is_abstract: true,
+					start: Some(start),
+					..ClassFrame::default()
+				};
+				return p.parse_class(ClassKind::NullableId).map(Some);
+			}
 		}
-		if p.is_contextual("interface") {
-			return p.parse_interface_declaration(start, false, false);
+		if p.head() == Some(Head::Interface) {
+			p.next()?;
+			return p.parse_interface_declaration(start).map(Some);
 		}
 		Ok(None)
 	}
@@ -1393,7 +1377,9 @@ impl Extension for TypeScript {
 		frame.is_declaration = kind != ClassKind::Expression;
 		if let Some(decorators) = p.take_decorators() {
 			frame.decorators = Some(decorators);
-			frame.start = Some(p.start_of(p.ast.list(decorators)[0].unwrap()));
+			if !std::mem::take(&mut p.ext.decorators_before_export) {
+				frame.start = Some(p.start_of(p.ast.list(decorators)[0].unwrap()));
+			}
 		}
 		frame.outer_abstract = p.ext.in_abstract_class;
 		p.ext.in_abstract_class = frame.is_abstract;
