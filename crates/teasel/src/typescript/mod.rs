@@ -237,8 +237,8 @@ impl Parser<'_, TypeScript> {
 
 	fn check_parameter_list(&self, params: List, signature: bool) -> Result<()> {
 		let mut seen_optional = false;
-		for &param in self.ast.list(params).iter().flatten() {
-			let param = TypeScript::unwrap(self, param, Unwrap::InnerPattern).unwrap_or(param);
+		for &item in self.ast.list(params).iter().flatten() {
+			let param = TypeScript::unwrap(self, item, Unwrap::InnerPattern).unwrap_or(item);
 			let binding = match self.kind(param) {
 				NodeKind::AssignmentPattern { left, .. } => left,
 				_ => param,
@@ -256,7 +256,8 @@ impl Parser<'_, TypeScript> {
 				return self.error(self.start_of(param), Code::OptionalWithInitializer);
 			}
 			if signature && let Some(default) = self.first_default(param) {
-				return self.error(self.start_of(default), Code::SignatureParameterDefault);
+				let at = if default == param { item } else { default };
+				return self.error(self.start_of(at), Code::SignatureParameterDefault);
 			}
 			if seen_optional && !optional && !initialized && !rest {
 				return self.error(self.start_of(param), Code::RequiredAfterOptional);
