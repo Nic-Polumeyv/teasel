@@ -1167,7 +1167,7 @@ impl Parser<'_, TypeScript> {
 		let word = match self.tok.kind {
 			TokenKind::Ident(name) if !self.tok.escaped => self.str(name),
 			TokenKind::Keyword(Keyword::In) if !self.tok.escaped => "in",
-			TokenKind::Keyword(Keyword::Const) => "const",
+			TokenKind::Keyword(Keyword::Const) if !self.tok.escaped => "const",
 			_ => return Ok(None),
 		};
 		let Some(&modifier) = super::MODIFIERS.iter().find(|m| **m == word) else {
