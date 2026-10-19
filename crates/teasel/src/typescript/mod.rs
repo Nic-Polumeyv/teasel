@@ -599,6 +599,9 @@ impl Parser<'_, TypeScript> {
 			self.ext.not_arrow.insert((at, spine));
 			return Ok(None);
 		};
+		if let Some(&this) = params.iter().flatten().find(|&&param| self.ident_is(param, "this")) {
+			return self.error(self.start_of(this), Code::InvalidAssignmentTarget);
+		}
 		self.ext.arrow_return_type = return_type;
 		let arrow = self.parse_arrow_expression(start, params, is_async, for_init)?;
 		self.extras_mut(arrow).type_parameters = Some(type_parameters);
@@ -1090,12 +1093,6 @@ impl Extension for TypeScript {
 			decorators.push(p.parse_decorator()?);
 		}
 		let decorators = (!decorators.is_empty()).then(|| p.list_of(&decorators));
-		let this = p.is_keyword(Keyword::This);
-		if !allow_modifiers
-			&& !this && let Some(decorators) = decorators
-		{
-			return p.parameter_decorator_error(decorators);
-		}
 		let start = p.tok.start;
 		let mut property = None;
 		if allow_modifiers {
@@ -1111,7 +1108,13 @@ impl Extension for TypeScript {
 				property = Some(extras);
 			}
 		}
-		let left = if p.is_keyword(Keyword::This) {
+		let this = p.is_keyword(Keyword::This);
+		if !allow_modifiers
+			&& !this && let Some(decorators) = decorators
+		{
+			return p.parameter_decorator_error(decorators);
+		}
+		let left = if this {
 			let this = p.parse_ident(true)?;
 			if decorators.is_some() || property.is_some() {
 				return p.error(p.start_of(this), Code::ThisParameterModifiers);
@@ -1123,7 +1126,7 @@ impl Extension for TypeScript {
 			p.parse_binding_atom()?
 		};
 		let rest = matches!(p.kind(left), NodeKind::RestElement { .. });
-		if p.eat(TokenKind::Question)? {
+		if !this && p.eat(TokenKind::Question)? {
 			if rest {
 				return p.error(p.start_of(left), Code::OptionalRest);
 			}
@@ -1148,7 +1151,7 @@ impl Extension for TypeScript {
 		if rest && p.ext.ambient && p.is(TokenKind::Comma) && p.peek_char().0 == Some(')') {
 			p.next()?;
 		}
-		let item = if rest {
+		let item = if rest || this {
 			left
 		} else {
 			p.parse_maybe_default(p.start_of(left), Some(left))?
