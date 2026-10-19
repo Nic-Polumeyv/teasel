@@ -82,7 +82,6 @@ pub struct State {
 	needs_colon_at: Option<u32>,
 	body_needs_colon: bool,
 	paren_lists: Vec<bool>,
-	parameter_modifiers: Vec<ParameterHead>,
 	definite: Vec<bool>,
 	/// The kind of the import or export being parsed.
 	outer_kind: Option<Kind>,
@@ -130,13 +129,6 @@ impl Names {
 		let len = self.log.iter().rposition(|(d, _)| *d < depth).map_or(0, |i| i + 1);
 		self.truncate(len);
 	}
-}
-
-/// What precedes a parameter: its decorators, and modifiers that make it a parameter property.
-#[derive(Clone, Copy, Default)]
-struct ParameterHead {
-	modifiers: Option<(u32, Extras)>,
-	decorators: Option<List>,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -245,13 +237,10 @@ impl Parser<'_, TypeScript> {
 		&self.ast.extension
 	}
 
-	fn check_parameter_list(&self, params: List) -> Result<()> {
+	fn check_parameter_list(&self, params: List, signature: bool) -> Result<()> {
 		let mut seen_optional = false;
-		for param in self.ast.list(params).iter().flatten() {
-			let param = match self.ts_kind(*param) {
-				Some(TsKind::ParameterProperty { parameter }) => parameter,
-				_ => *param,
-			};
+		for &item in self.ast.list(params).iter().flatten() {
+			let param = TypeScript::unwrap(self, item, Unwrap::InnerPattern).unwrap_or(item);
 			let binding = match self.kind(param) {
 				NodeKind::AssignmentPattern { left, .. } => left,
 				_ => param,
@@ -260,22 +249,40 @@ impl Parser<'_, TypeScript> {
 				continue;
 			}
 			let optional = self.ext_data().extras(binding).is_some_and(|extras| extras.optional);
-			if matches!(self.kind(param), NodeKind::RestElement { .. }) {
-				if optional {
-					return self.error(self.start_of(param), Code::OptionalRest);
-				}
-				continue;
+			let rest = matches!(self.kind(param), NodeKind::RestElement { .. });
+			if rest && optional {
+				return self.error(self.start_of(param), Code::OptionalRest);
 			}
 			let initialized = matches!(self.kind(param), NodeKind::AssignmentPattern { .. });
 			if optional && initialized {
 				return self.error(self.start_of(param), Code::OptionalWithInitializer);
 			}
-			if seen_optional && !optional && !initialized {
+			if signature && let Some(default) = self.first_default(param) {
+				let at = if default == param { item } else { default };
+				return self.error(self.start_of(at), Code::SignatureParameterDefault);
+			}
+			if seen_optional && !optional && !initialized && !rest {
 				return self.error(self.start_of(param), Code::RequiredAfterOptional);
 			}
 			seen_optional |= optional;
 		}
 		Ok(())
+	}
+
+	fn first_default(&self, pattern: NodeId) -> Option<NodeId> {
+		match self.kind(pattern) {
+			NodeKind::AssignmentPattern { .. } => Some(pattern),
+			NodeKind::ObjectPattern { properties: list } | NodeKind::ArrayPattern { elements: list } => self
+				.ast
+				.list(list)
+				.iter()
+				.flatten()
+				.find_map(|&element| self.first_default(element)),
+			NodeKind::Property { value: inner, .. } | NodeKind::RestElement { argument: inner } => {
+				self.first_default(inner)
+			}
+			_ => None,
+		}
 	}
 
 	fn is_ident(&self) -> bool {
@@ -362,7 +369,7 @@ impl Parser<'_, TypeScript> {
 			expression
 		};
 		if self.eat(TokenKind::ParenL)? {
-			let args = self.parse_expr_list(TokenKind::ParenR, false, false, &mut None)?;
+			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut None)?;
 			self.no_type_casts(&args)?;
 			let arguments = self.list_from(args);
 			let callee_start = self.start_of(expression);
@@ -620,6 +627,9 @@ impl Parser<'_, TypeScript> {
 			self.ext.not_arrow.insert((at, spine));
 			return Ok(None);
 		};
+		if let Some(&this) = params.iter().flatten().find(|&&param| self.ident_is(param, "this")) {
+			return self.error(self.start_of(this), Code::InvalidAssignmentTarget);
+		}
 		self.ext.arrow_return_type = return_type;
 		let arrow = self.parse_arrow_expression(start, params, is_async, for_init)?;
 		self.extras_mut(arrow).type_parameters = Some(type_parameters);
@@ -1073,58 +1083,49 @@ impl Extension for TypeScript {
 		p.ext.ambient
 	}
 
-	fn binding_atom(p: &mut Parser<Self>) -> Result<Option<NodeId>> {
-		if p.is_keyword(Keyword::This) {
-			return p.parse_ident(true).map(Some);
-		}
-		Ok(None)
-	}
-
-	fn binding_item_start(p: &mut Parser<Self>, allow_modifiers: bool) -> Result<u32> {
+	fn parameter(p: &mut Parser<Self>, allow_modifiers: bool) -> Result<Option<NodeId>> {
 		let mut decorators = Vec::new();
 		while p.is(TokenKind::At) {
 			decorators.push(p.parse_decorator()?);
 		}
-		let decorators = if decorators.is_empty() {
-			None
-		} else {
-			Some(p.list_of(&decorators))
-		};
+		let decorators = (!decorators.is_empty()).then(|| p.list_of(&decorators));
+		let start = p.tok.start;
+		let mut property = None;
+		if allow_modifiers {
+			let extras = p
+				.parse_modifiers(
+					&["public", "private", "protected", "override", "readonly"],
+					&[],
+					false,
+					None,
+				)?
+				.extras;
+			if extras.accessibility.is_some() || extras.readonly || extras.is_override {
+				property = Some(extras);
+			}
+		}
+		let this = p.is_keyword(Keyword::This);
 		if !allow_modifiers
-			&& !p.is_keyword(Keyword::This)
-			&& let Some(decorators) = decorators
+			&& !this && let Some(decorators) = decorators
 		{
 			return p.parameter_decorator_error(decorators);
 		}
-		let start = p.tok.start;
-		let mut entry = None;
-		if allow_modifiers {
-			let modifiers = p.parse_modifiers(
-				&["public", "private", "protected", "override", "readonly"],
-				&[],
-				false,
-				None,
-			)?;
-			let extras = modifiers.extras;
-			if extras.accessibility.is_some() || extras.readonly || extras.is_override {
-				entry = Some((start, extras));
+		let left = if this {
+			let this = p.parse_ident(true)?;
+			if decorators.is_some() || property.is_some() {
+				return p.error(p.start_of(this), Code::ThisParameterModifiers);
 			}
-		}
-		p.ext.parameter_modifiers.push(ParameterHead {
-			modifiers: entry,
-			decorators,
-		});
-		Ok(start)
-	}
-
-	fn binding_annotation(p: &mut Parser<Self>, node: NodeId) -> Result<()> {
-		if p.eat(TokenKind::Question)? {
-			if matches!(p.kind(node), NodeKind::RestElement { .. }) {
-				return p.error(p.start_of(node), Code::OptionalRest);
-			}
-			if !matches!(p.kind(node), NodeKind::Identifier { .. }) && !p.ext.ambient && !p.lexer.in_type {
+			this
+		} else if p.is(TokenKind::Ellipsis) {
+			p.parse_rest_binding()?
+		} else {
+			p.parse_binding_atom()?
+		};
+		let rest = matches!(p.kind(left), NodeKind::RestElement { .. });
+		if !this && p.eat(TokenKind::Question)? {
+			if !matches!(p.kind(left), NodeKind::Identifier { .. }) && !p.ext.ambient && !p.lexer.in_type {
 				// a signature without a body may have one; the parameters come before that is known
-				let pos = p.start_of(node);
+				let pos = p.start_of(left);
 				let arrow = p.ext.maybe_in_arrow_parameters;
 				match p.ext.functions.last_mut() {
 					Some(frame) if !arrow => {
@@ -1133,50 +1134,36 @@ impl Extension for TypeScript {
 					_ => return p.error(pos, Code::OptionalPatternParameter),
 				}
 			}
-			p.extras_mut(node).optional = true;
+			p.extras_mut(left).optional = true;
 		}
 		if p.is(TokenKind::Colon) {
 			let annotation = p.parse_type_annotation(true, None)?;
-			if matches!(p.kind(node), NodeKind::AssignmentPattern { .. }) {
-				return p.error(p.start_of(annotation), Code::TypeAnnotationAfterDefault);
-			}
-			p.extras_mut(node).type_annotation = Some(annotation);
+			p.extras_mut(left).type_annotation = Some(annotation);
 		}
-		p.ast.node_mut(node).end = p.prev_end;
-		if matches!(p.kind(node), NodeKind::RestElement { .. })
-			&& p.ext.ambient
-			&& p.is(TokenKind::Comma)
-			&& p.peek_char().0 == Some(')')
-		{
+		p.ast.node_mut(left).end = p.prev_end;
+		if rest && p.ext.ambient && p.is(TokenKind::Comma) && p.peek_char().0 == Some(')') {
 			p.next()?;
 		}
-		Ok(())
-	}
-
-	fn binding_item_end(p: &mut Parser<Self>, item: NodeId) -> Result<NodeId> {
-		let head = p.ext.parameter_modifiers.pop().unwrap();
-		let binding = match p.kind(item) {
-			NodeKind::AssignmentPattern { left, .. } => left,
-			_ => item,
+		let item = if rest || this {
+			left
+		} else {
+			p.parse_maybe_default(p.start_of(left), Some(left))?
 		};
-		if (head.decorators.is_some() || head.modifiers.is_some()) && p.ident_is(binding, "this") {
-			return p.error(p.start_of(binding), Code::ThisParameterModifiers);
+		if p.is(TokenKind::Colon) && item != left {
+			return p.error(p.tok.start, Code::TypeAnnotationAfterDefault);
 		}
-		if head.decorators.is_some() {
-			p.extras_mut(item).decorators = head.decorators;
+		if decorators.is_some() {
+			p.extras_mut(item).decorators = decorators;
 		}
-		let Some((start, extras)) = head.modifiers else {
-			return Ok(item);
+		let Some(extras) = property else {
+			return Ok(Some(item));
 		};
-		if !matches!(
-			p.kind(item),
-			NodeKind::Identifier { .. } | NodeKind::AssignmentPattern { .. }
-		) {
+		if !matches!(p.kind(left), NodeKind::Identifier { .. }) {
 			return p.error(start, Code::ParameterPropertyPattern);
 		}
 		let node = p.ts(TsKind::ParameterProperty { parameter: item }, start);
 		p.extras_mut(node).merge(extras);
-		Ok(node)
+		Ok(Some(node))
 	}
 
 	fn catch_param(p: &mut Parser<Self>, param: NodeId) -> Result<()> {
@@ -1247,7 +1234,6 @@ impl Extension for TypeScript {
 		generator: bool,
 		kind: FunctionKind,
 	) -> Result<Option<NodeId>> {
-		p.check_parameter_list(params)?;
 		if matches!(
 			kind,
 			FunctionKind::Method {
@@ -1309,10 +1295,9 @@ impl Extension for TypeScript {
 		if generator && p.ext.ambient && bodiless.is_some() {
 			return p.error(start, Code::GeneratorInAmbient);
 		}
-		if let Some(kind) = bodiless
-			&& !p.is(TokenKind::BraceL)
-			&& p.is_line_terminator()?
-		{
+		let signature = bodiless.is_some() && !p.is(TokenKind::BraceL) && p.is_line_terminator()?;
+		p.check_parameter_list(params, signature)?;
+		if signature && let Some(kind) = bodiless {
 			if generator {
 				return p.error(start, Code::GeneratorSignature);
 			}
@@ -1329,7 +1314,7 @@ impl Extension for TypeScript {
 
 	fn function_end(p: &mut Parser<Self>, node: NodeId) -> Result<()> {
 		if let NodeKind::ArrowFunctionExpression { params, .. } = p.kind(node) {
-			p.check_parameter_list(params)?;
+			p.check_parameter_list(params, false)?;
 		}
 		let frame = p.ext.functions.pop().unwrap();
 		p.ext.maybe_in_arrow_parameters = frame.arrow_parameters;
@@ -1562,7 +1547,7 @@ impl Extension for TypeScript {
 		let mut definite = false;
 		let mut optional = element.extras.optional;
 		if !optional {
-			if p.is(TokenKind::Bang) {
+			if p.is(TokenKind::Bang) && !p.tok.newline_before {
 				p.next()?;
 				definite = true;
 			} else {
@@ -1651,11 +1636,8 @@ impl Extension for TypeScript {
 				_ => (Self::function_params(p, value).unwrap(), false),
 			};
 			if !has_body || kind == MethodKind::Get || !p.ext.classes.last().unwrap().is_declaration {
-				for param in p.ast.list(params).iter().flatten() {
-					let param = match p.ts_kind(*param) {
-						Some(TsKind::ParameterProperty { parameter }) => parameter,
-						_ => *param,
-					};
+				for &param in p.ast.list(params).iter().flatten() {
+					let param = Self::unwrap(p, param, Unwrap::InnerPattern).unwrap_or(param);
 					if let Some(decorators) = p.ext_data().extras(param).and_then(|extras| extras.decorators) {
 						return p.parameter_decorator_error(decorators);
 					}
@@ -1914,7 +1896,7 @@ impl Extension for TypeScript {
 				| TsKind::SatisfiesExpression { expression, .. }
 				| TsKind::NonNullExpression { expression }
 				| TsKind::TypeAssertion { expression, .. },
-			) => p.make_pattern(expression, is_binding, errors).map(Some),
+			) if !is_binding => p.make_pattern(expression, is_binding, errors).map(Some),
 			Some(TsKind::TypeCastExpression { .. }) => {
 				let parameter = p.type_cast_to_parameter(id);
 				p.make_pattern(parameter, is_binding, errors).map(Some)

@@ -350,9 +350,9 @@ codes! {
 	TupleLabel,
 	/// An optional pattern parameter in an implementation.
 	OptionalPatternParameter,
-	/// A parameter property declared with a pattern.
+	/// A parameter property declared with a pattern or as a rest.
 	ParameterPropertyPattern,
-	/// A default value on a parameter of a signature.
+	/// A default value anywhere in a parameter of a signature.
 	SignatureParameterDefault,
 	/// A `!` definite assignment on a declaration with a value.
 	DefiniteWithInitializer,
