@@ -65,6 +65,7 @@ const CHECKER: &[(&str, &str)] = &[
 
 /// Cases decided by name: what the parser rejects on ECMAScript's rules, which TypeScript does
 /// not apply, what it does not read yet, and an error it reports on an earlier line.
+/// TypeScript drops checker grammar errors in a file with parse errors, so a baseline can miss one the parser reports.
 const BY_NAME: &[(&str, &str)] = &[
 	(
 		"asyncWithVarShadowing_es6.ts",
@@ -102,13 +103,16 @@ const BY_NAME: &[(&str, &str)] = &[
 	),
 	(
 		"catchClauseWithTypeAnnotation.ts",
-		"a catch clause type is not resolved to any or unknown yet",
+		"a catch type other than the any or unknown keyword, which TypeScript decides by the type it names",
 	),
 	(
 		"importAttributes12.ts",
 		"import attributes in an import type are not read yet",
 	),
-	("classStaticBlock6.ts", "await as a name in a static block"),
+	(
+		"classStaticBlock6.ts",
+		"await as a name in a static block, which the file's parse errors hide",
+	),
 	(
 		"topLevelAwaitErrors.12.ts",
 		"await as a name in a namespace of a module",
