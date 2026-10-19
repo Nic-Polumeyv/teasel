@@ -236,20 +236,15 @@ fn conformance() {
 				}
 			}
 		}
-		// TypeScript reports early errors from its binder and checker, redeclarations say, so a
-		// rejection is wrong when the baseline is clean or when it comes before every line the
-		// baseline reports; a parse is wrong when the baseline has a grammar diagnostic the parser
-		// could see
 		let excused = |c: &String| CHECKER.iter().any(|(code, _)| code == c);
 		let grammar_error = codes.iter().any(|c| c.starts_with('1') && c.len() == 4 && !excused(c));
-		let any_error = !codes.is_empty();
 		let module = if is_module(&source) { Options::MODULE } else { 0 };
 		let request = Request::from_flags(Options::TYPESCRIPT | module);
 		let answer = parse(&source, &request, "");
 		let failed = answer.starts_with("{\"node\":null");
-		let early = failed && error_line(&answer) < first_line;
 		counted += 1;
-		if (failed && (!any_error || early)) || (!failed && grammar_error) {
+		// TypeScript reports early errors from its binder and checker, redeclarations say
+		if (failed && error_line(&answer) < first_line) || (!failed && grammar_error) {
 			let what = if failed {
 				answer[..answer.len().min(160)].to_owned()
 			} else {
