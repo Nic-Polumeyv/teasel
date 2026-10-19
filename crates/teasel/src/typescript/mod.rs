@@ -235,13 +235,13 @@ impl Parser<'_, TypeScript> {
 		&self.ast.extension
 	}
 
-	fn check_parameter_list(&self, params: List) -> Result<()> {
+	fn check_parameter_list(&self, params: List, signature: bool) -> Result<()> {
 		let mut seen_optional = false;
-		for param in self.ast.list(params).iter().flatten() {
-			let param = match self.ts_kind(*param) {
-				Some(TsKind::ParameterProperty { parameter }) => parameter,
-				_ => *param,
-			};
+		for &param in self.ast.list(params).iter().flatten() {
+			let param = TypeScript::unwrap(self, param, Unwrap::InnerPattern).unwrap_or(param);
+			if signature && let Some(default) = self.first_default(param) {
+				return self.error(self.start_of(default), Code::SignatureParameterDefault);
+			}
 			let binding = match self.kind(param) {
 				NodeKind::AssignmentPattern { left, .. } => left,
 				_ => param,
@@ -266,6 +266,22 @@ impl Parser<'_, TypeScript> {
 			seen_optional |= optional;
 		}
 		Ok(())
+	}
+
+	fn first_default(&self, pattern: NodeId) -> Option<NodeId> {
+		match self.kind(pattern) {
+			NodeKind::AssignmentPattern { .. } => Some(pattern),
+			NodeKind::ObjectPattern { properties: list } | NodeKind::ArrayPattern { elements: list } => self
+				.ast
+				.list(list)
+				.iter()
+				.flatten()
+				.find_map(|&element| self.first_default(element)),
+			NodeKind::Property { value: inner, .. } | NodeKind::RestElement { argument: inner } => {
+				self.first_default(inner)
+			}
+			_ => None,
+		}
 	}
 
 	fn is_ident(&self) -> bool {
@@ -1241,7 +1257,6 @@ impl Extension for TypeScript {
 		generator: bool,
 		kind: FunctionKind,
 	) -> Result<Option<NodeId>> {
-		p.check_parameter_list(params)?;
 		if matches!(
 			kind,
 			FunctionKind::Method {
@@ -1303,21 +1318,11 @@ impl Extension for TypeScript {
 		if generator && p.ext.ambient && bodiless.is_some() {
 			return p.error(start, Code::GeneratorInAmbient);
 		}
-		if let Some(kind) = bodiless
-			&& !p.is(TokenKind::BraceL)
-			&& p.is_line_terminator()?
-		{
+		let signature = bodiless.is_some() && !p.is(TokenKind::BraceL) && p.is_line_terminator()?;
+		p.check_parameter_list(params, signature)?;
+		if signature && let Some(kind) = bodiless {
 			if generator {
 				return p.error(start, Code::GeneratorSignature);
-			}
-			if let Some(default) = p.ast.list(params).iter().flatten().copied().find(|&param| {
-				let param = match p.ts_kind(param) {
-					Some(TsKind::ParameterProperty { parameter }) => parameter,
-					_ => param,
-				};
-				matches!(p.kind(param), NodeKind::AssignmentPattern { .. })
-			}) {
-				return p.error(p.start_of(default), Code::SignatureParameterDefault);
 			}
 			return Ok(Some(p.ts(kind, start)));
 		}
@@ -1332,7 +1337,7 @@ impl Extension for TypeScript {
 
 	fn function_end(p: &mut Parser<Self>, node: NodeId) -> Result<()> {
 		if let NodeKind::ArrowFunctionExpression { params, .. } = p.kind(node) {
-			p.check_parameter_list(params)?;
+			p.check_parameter_list(params, false)?;
 		}
 		let frame = p.ext.functions.pop().unwrap();
 		p.ext.maybe_in_arrow_parameters = frame.arrow_parameters;
@@ -1652,11 +1657,8 @@ impl Extension for TypeScript {
 				_ => (Self::function_params(p, value).unwrap(), false),
 			};
 			if !has_body || kind == MethodKind::Get || !p.ext.classes.last().unwrap().is_declaration {
-				for param in p.ast.list(params).iter().flatten() {
-					let param = match p.ts_kind(*param) {
-						Some(TsKind::ParameterProperty { parameter }) => parameter,
-						_ => *param,
-					};
+				for &param in p.ast.list(params).iter().flatten() {
+					let param = Self::unwrap(p, param, Unwrap::InnerPattern).unwrap_or(param);
 					if let Some(decorators) = p.ext_data().extras(param).and_then(|extras| extras.decorators) {
 						return p.parameter_decorator_error(decorators);
 					}

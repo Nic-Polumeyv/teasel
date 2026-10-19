@@ -404,31 +404,15 @@ impl Parser<'_, TypeScript> {
 	) -> Result<(Option<NodeId>, List, Option<NodeId>)> {
 		let type_parameters = self.try_parse_type_parameters(TypeParameterModifiers::Const)?;
 		self.expect(TokenKind::ParenL)?;
-		let parameters = self.parse_binding_list_for_signature()?;
+		let parameters = self.parse_binding_list(TokenKind::ParenR, true, true, false)?;
+		let parameters = self.list_from(parameters);
+		self.check_parameter_list(parameters, true)?;
 		let type_annotation = if return_token == TokenKind::Arrow || self.is(return_token) {
 			Some(self.parse_type_or_type_predicate_annotation(return_token, allow_predicate)?)
 		} else {
 			None
 		};
 		Ok((type_parameters, parameters, type_annotation))
-	}
-
-	fn parse_binding_list_for_signature(&mut self) -> Result<List> {
-		let params = self.parse_binding_list(TokenKind::ParenR, true, true, false)?;
-		let params = self.list_from(params);
-		self.check_parameter_list(params)?;
-		for param in self.ast.list(params).iter().flatten() {
-			if !matches!(
-				self.kind(*param),
-				NodeKind::Identifier { .. }
-					| NodeKind::RestElement { .. }
-					| NodeKind::ObjectPattern { .. }
-					| NodeKind::ArrayPattern { .. }
-			) {
-				return self.error(self.start_of(*param), Code::SignatureParameterDefault);
-			}
-		}
-		Ok(params)
 	}
 
 	fn parse_union_type_or_higher(&mut self) -> Result<NodeId> {
