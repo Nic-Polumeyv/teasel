@@ -137,10 +137,12 @@ fn is_module(source: &str) -> bool {
 		})
 }
 
-// TypeScript's baselines number a case's lines without its option lines and the blank lines before its code
+/// TypeScript's baselines number a case's lines after dropping its byte order mark, its option lines
+/// and the empty lines before its code.
 fn as_baselined(source: &str) -> String {
+	let source = source.strip_prefix('\u{feff}').unwrap_or(source);
 	let kept = source.split_inclusive('\n').filter(|line| !is_option(line));
-	kept.skip_while(|line| line.trim().is_empty()).collect()
+	kept.skip_while(|line| *line == "\n" || *line == "\r\n").collect()
 }
 
 fn is_option(line: &str) -> bool {
