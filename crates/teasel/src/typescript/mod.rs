@@ -239,9 +239,6 @@ impl Parser<'_, TypeScript> {
 		let mut seen_optional = false;
 		for &param in self.ast.list(params).iter().flatten() {
 			let param = TypeScript::unwrap(self, param, Unwrap::InnerPattern).unwrap_or(param);
-			if signature && let Some(default) = self.first_default(param) {
-				return self.error(self.start_of(default), Code::SignatureParameterDefault);
-			}
 			let binding = match self.kind(param) {
 				NodeKind::AssignmentPattern { left, .. } => left,
 				_ => param,
@@ -250,17 +247,18 @@ impl Parser<'_, TypeScript> {
 				continue;
 			}
 			let optional = self.ext_data().extras(binding).is_some_and(|extras| extras.optional);
-			if matches!(self.kind(param), NodeKind::RestElement { .. }) {
-				if optional {
-					return self.error(self.start_of(param), Code::OptionalRest);
-				}
-				continue;
+			let rest = matches!(self.kind(param), NodeKind::RestElement { .. });
+			if rest && optional {
+				return self.error(self.start_of(param), Code::OptionalRest);
 			}
 			let initialized = matches!(self.kind(param), NodeKind::AssignmentPattern { .. });
 			if optional && initialized {
 				return self.error(self.start_of(param), Code::OptionalWithInitializer);
 			}
-			if seen_optional && !optional && !initialized {
+			if signature && let Some(default) = self.first_default(param) {
+				return self.error(self.start_of(default), Code::SignatureParameterDefault);
+			}
+			if seen_optional && !optional && !initialized && !rest {
 				return self.error(self.start_of(param), Code::RequiredAfterOptional);
 			}
 			seen_optional |= optional;
