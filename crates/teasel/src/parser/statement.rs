@@ -278,7 +278,7 @@ impl<E: Extension> Parser<'_, E> {
 				let is_import = self.is_keyword(Keyword::Import);
 				if is_import && matches!(self.peek_char().0, Some('(' | '.')) {
 					let expression = self.parse_expression(false, &mut None)?;
-					return self.parse_expression_statement(start, expression, context);
+					return self.parse_expression_statement(start, expression);
 				}
 				if place != StatementPlace::TopLevel {
 					return self.error(start, Code::ImportExportNotTopLevel);
@@ -309,7 +309,7 @@ impl<E: Extension> Parser<'_, E> {
 				{
 					return self.parse_labeled(start, name, expression, context);
 				}
-				self.parse_expression_statement(start, expression, context)
+				self.parse_expression_statement(start, expression)
 			}
 		}
 	}
@@ -906,12 +906,7 @@ impl<E: Extension> Parser<'_, E> {
 		Ok(self.add(NodeKind::LabeledStatement { label, body }, start))
 	}
 
-	fn parse_expression_statement(&mut self, start: u32, expression: NodeId, context: Context) -> Result<NodeId> {
-		if matches!(self.kind(expression), NodeKind::Identifier { .. })
-			&& let Some(statement) = E::expression_statement(self, start, expression, context)?
-		{
-			return Ok(statement);
-		}
+	fn parse_expression_statement(&mut self, start: u32, expression: NodeId) -> Result<NodeId> {
 		self.semicolon()?;
 		Ok(self.add(
 			NodeKind::ExpressionStatement {
@@ -1214,11 +1209,13 @@ impl<E: Extension> Parser<'_, E> {
 			E::export_end(self, node);
 			return Ok(node);
 		}
-		if self.should_parse_export_statement()? {
-			let declaration = match E::export_declaration(self)? {
-				Some(declaration) => declaration,
-				None => self.parse_statement(Context::None, StatementPlace::Block, None)?,
-			};
+		let declaration = match E::export_declaration(self)? {
+			None if self.should_parse_export_statement()? => {
+				Some(self.parse_statement(Context::None, StatementPlace::Block, None)?)
+			}
+			declaration => declaration,
+		};
+		if let Some(declaration) = declaration {
 			match self.kind(declaration) {
 				NodeKind::VariableDeclaration { declarations, .. } => {
 					for i in 0..declarations.len {
@@ -1308,8 +1305,7 @@ impl<E: Extension> Parser<'_, E> {
 			|| self.is_keyword(Keyword::Class)
 			|| self.is_keyword(Keyword::Function)
 			|| self.is_let(Context::None)
-			|| self.is_async_function()?
-			|| E::starts_export_declaration(self))
+			|| self.is_async_function()?)
 	}
 
 	fn parse_export_specifiers(&mut self, exports: &mut Exports) -> Result<Vec<Option<NodeId>>> {
