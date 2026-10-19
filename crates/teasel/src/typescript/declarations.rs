@@ -415,7 +415,7 @@ impl Parser<'_, TypeScript> {
 	}
 
 	fn parse_opened_declaration(&mut self, start: u32, opened: Opened) -> Result<NodeId> {
-		if opened.is_abstract || self.is_keyword(Keyword::Class) {
+		if opened.is_abstract || opened.head.is_none() && self.is_keyword(Keyword::Class) {
 			if opened.head.is_some() || !self.is_keyword(Keyword::Class) {
 				return self.error(start, Code::AbstractPlacement);
 			}
