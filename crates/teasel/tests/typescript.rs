@@ -64,7 +64,7 @@ const CHECKER: &[(&str, &str)] = &[
 ];
 
 /// Cases decided by name: what the parser rejects on ECMAScript's rules, which TypeScript does
-/// not apply, what it does not read yet, and an error it reports on an earlier line.
+/// not apply, and what it does not read yet.
 /// TypeScript drops checker grammar errors in a file with parse errors, so a baseline can miss one the parser reports.
 const BY_NAME: &[(&str, &str)] = &[
 	(
@@ -122,6 +122,10 @@ const BY_NAME: &[(&str, &str)] = &[
 		"jsdocDisallowedInTypescript.ts",
 		"a JSDoc type outside a comment, which the checker refuses",
 	),
+];
+
+/// Cases whose error TypeScript reports on a later line than the parser.
+const REPORTED_LATER: &[(&str, &str)] = &[
 	(
 		"disallowLineTerminatorBeforeArrow.ts",
 		"reported at the parens a line break parts from their arrow",
@@ -247,8 +251,9 @@ fn conformance() {
 		let answer = parse(&source, &request, "");
 		let failed = answer.starts_with("{\"node\":null");
 		counted += 1;
+		let later = REPORTED_LATER.iter().any(|(n, _)| *n == name);
 		// TypeScript reports early errors from its binder and checker, redeclarations say
-		if (failed && error_line(&answer) < first_line) || (!failed && grammar_error) {
+		if (failed && !later && error_line(&answer) < first_line) || (!failed && grammar_error) {
 			let what = if failed {
 				answer[..answer.len().min(160)].to_owned()
 			} else {
