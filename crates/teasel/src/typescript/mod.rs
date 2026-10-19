@@ -1143,9 +1143,6 @@ impl Extension for TypeScript {
 		};
 		let rest = matches!(p.kind(left), NodeKind::RestElement { .. });
 		if !this && p.eat(TokenKind::Question)? {
-			if rest {
-				return p.error(p.start_of(left), Code::OptionalRest);
-			}
 			if !matches!(p.kind(left), NodeKind::Identifier { .. }) && !p.ext.ambient && !p.lexer.in_type {
 				// a signature without a body may have one; the parameters come before that is known
 				let pos = p.start_of(left);
