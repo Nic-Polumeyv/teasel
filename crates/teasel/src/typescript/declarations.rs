@@ -15,7 +15,7 @@ use crate::parser::{Context, ForInit, Parser, Result};
 #[derive(Clone, Copy, Default)]
 pub(super) struct Opened {
 	declare: Option<u32>,
-	is_abstract: Option<u32>,
+	is_abstract: bool,
 	head: Option<Head>,
 }
 
@@ -42,7 +42,7 @@ impl Parser<'_, TypeScript> {
 
 	// Enums
 
-	pub(super) fn parse_enum_declaration(&mut self, start: u32, is_const: bool, declare: bool) -> Result<NodeId> {
+	fn parse_enum_declaration(&mut self, start: u32, is_const: bool) -> Result<NodeId> {
 		self.expect_contextual("enum")?;
 		let id = self.parse_ident(false)?;
 		self.check_lval_simple(id, Binding::None, &mut None)?;
@@ -51,9 +51,7 @@ impl Parser<'_, TypeScript> {
 		let members = self.parse_delimited_list(ListKind::EnumMembers, |p| p.parse_enum_member())?;
 		self.expect(TokenKind::BraceR)?;
 		let members = self.list_of(&members);
-		let node = self.ts(TsKind::EnumDeclaration { id, members, is_const }, start);
-		self.extras_mut(node).declare = declare;
-		Ok(node)
+		Ok(self.ts(TsKind::EnumDeclaration { id, members, is_const }, start))
 	}
 
 	fn parse_enum_member(&mut self) -> Result<NodeId> {
@@ -240,7 +238,7 @@ impl Parser<'_, TypeScript> {
 		self.expect(TokenKind::BraceR)?;
 		let members = self.list_of(&members);
 		let body = self.ts(TsKind::InterfaceBody { body: members }, body_start);
-		let node = self.ts(
+		Ok(self.ts(
 			TsKind::InterfaceDeclaration {
 				id,
 				type_parameters,
@@ -248,8 +246,7 @@ impl Parser<'_, TypeScript> {
 				body,
 			},
 			start,
-		);
-		Ok(node)
+		))
 	}
 
 	// Ambient declarations
@@ -354,7 +351,7 @@ impl Parser<'_, TypeScript> {
 					self.tok.kind,
 					TokenKind::Keyword(Keyword::Var | Keyword::Const | Keyword::Function | Keyword::Class)
 				) || self.is_contextual("let");
-				let modified = opened.declare.is_some() || opened.is_abstract.is_some();
+				let modified = opened.declare.is_some() || opened.is_abstract;
 				if javascript && (modified || self.is_keyword(Keyword::Const) && self.peek_is_contextual("enum")?) {
 					return Ok(Some(opened));
 				}
@@ -386,8 +383,8 @@ impl Parser<'_, TypeScript> {
 					opened.declare = Some(at);
 					continue;
 				}
-				Head::Abstract if opened.is_abstract.is_none() => {
-					opened.is_abstract = Some(at);
+				Head::Abstract if !opened.is_abstract => {
+					opened.is_abstract = true;
 					continue;
 				}
 				Head::Interface => true,
@@ -418,12 +415,12 @@ impl Parser<'_, TypeScript> {
 	}
 
 	fn parse_opened_declaration(&mut self, start: u32, opened: Opened) -> Result<NodeId> {
-		if opened.is_abstract.is_some() || self.is_keyword(Keyword::Class) {
+		if opened.is_abstract || self.is_keyword(Keyword::Class) {
 			if opened.head.is_some() || !self.is_keyword(Keyword::Class) {
 				return self.error(start, Code::AbstractPlacement);
 			}
 			self.ext.next_class = ClassFrame {
-				is_abstract: opened.is_abstract.is_some(),
+				is_abstract: opened.is_abstract,
 				declare: opened.declare.is_some(),
 				start: Some(start),
 				..ClassFrame::default()
@@ -439,7 +436,7 @@ impl Parser<'_, TypeScript> {
 				}
 				TokenKind::Keyword(Keyword::Const) if const_enum => {
 					self.next()?;
-					self.parse_enum_declaration(start, true, false)
+					self.parse_enum_declaration(start, true)
 				}
 				TokenKind::Keyword(Keyword::Const) => self.parse_var_statement(start, VariableKind::Const),
 				TokenKind::Keyword(Keyword::Var) => self.parse_var_statement(start, VariableKind::Var),
@@ -447,7 +444,7 @@ impl Parser<'_, TypeScript> {
 			};
 		};
 		match head {
-			Head::Enum => self.parse_enum_declaration(start, false, false),
+			Head::Enum => self.parse_enum_declaration(start, false),
 			Head::Global => self.parse_ambient_external_module_declaration(start),
 			Head::Interface => self.parse_interface_declaration(start),
 			Head::Type => self.parse_type_alias_declaration(start),

@@ -396,10 +396,7 @@ impl Parser<'_, TypeScript> {
 		if self.is_keyword(Keyword::Export) && !allow_export {
 			return self.unexpected();
 		}
-		let snapshot = self.token_snapshot();
-		let class_follows = self.decorated_class_follows();
-		self.restore_tokens(snapshot);
-		if !class_follows? {
+		if !self.peek_tokens(|p| p.decorated_class_follows())? {
 			return self.error(self.tok.start, Code::DecoratorPlacement);
 		}
 		self.ext.decorators_before_export = self.is_keyword(Keyword::Export);
