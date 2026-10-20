@@ -14,11 +14,14 @@
 					0
 				],
 				"declare": true,
+				"global": false,
 				"id": {
 					"type": "Identifier",
 					"start": 18,
 					"end": 24,
 					"declares": 0,
+					"decorators": [],
+					"optional": false,
 					"name": "chrome"
 				},
 				"body": {
@@ -29,11 +32,15 @@
 					"defines": [
 						1
 					],
+					"declare": false,
+					"global": false,
 					"id": {
 						"type": "Identifier",
 						"start": 25,
 						"end": 33,
 						"declares": 1,
+						"decorators": [],
+						"optional": false,
 						"name": "debugger"
 					},
 					"body": {
@@ -52,11 +59,15 @@
 				"defines": [
 					2
 				],
+				"declare": false,
+				"global": false,
 				"id": {
 					"type": "Identifier",
 					"start": 47,
 					"end": 48,
 					"declares": 2,
+					"decorators": [],
+					"optional": false,
 					"name": "a"
 				},
 				"body": {
@@ -67,11 +78,15 @@
 					"defines": [
 						3
 					],
+					"declare": false,
+					"global": false,
 					"id": {
 						"type": "Identifier",
 						"start": 49,
 						"end": 54,
 						"declares": 3,
+						"decorators": [],
+						"optional": false,
 						"name": "class"
 					},
 					"body": {

@@ -12,7 +12,8 @@ export function generate(layout: Layout): { children: Record<string, string[]>; 
 			if (op === 'type') types = [key];
 			else if (op === 'typeof') types = find(fields, key).names!;
 			else if (op === 'node' || op === 'list' || op === 'optlistkey' || op === 'params' || op === 'othername') out.push(key);
-			else if ((op === 'opt' || op === 'optkey') && find(fields, path).ty === '?node') out.push(key);
+			else if ((op === 'opt' || op === 'maybe') && find(fields, path).ty === '?node') out.push(key);
+			else if (op === 'maybe' && find(fields, path).ty === '?list') out.push(key);
 			else if (op === 'object' && keys(path, fields).out.length !== 0) throw new Error(`${key} nests nodes`);
 		}
 		return { types, out };
@@ -30,7 +31,8 @@ export function generate(layout: Layout): { children: Record<string, string[]>; 
 	};
 	kinds(layout.recipes.js, layout.kinds);
 	if (layout.ts !== undefined) kinds(layout.recipes.ts!, layout.ts.kinds);
-	const extras = layout.extras === undefined ? [] : keys(layout.recipes.extras!.find(([name]) => name === 'extras')![1], layout.extras.fields).out;
+	const adds = [...(layout.recipes.adds ?? []), ...(layout.recipes.ts_adds ?? [])].flatMap(([, ops]) => ops);
+	const extras = (layout.extras?.fields ?? []).flatMap((f) => (f.ty === '?node' || f.ty === '?list' ? adds.filter(([op, , path]) => op === 'maybe' && path === f.name).map(([, key]) => key as string).slice(0, 1) : []));
 	return { children, extras, stylesheet: layout.stylesheet };
 }
 

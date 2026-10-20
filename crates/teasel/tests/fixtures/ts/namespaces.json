@@ -13,11 +13,15 @@
 				"defines": [
 					0
 				],
+				"declare": false,
+				"global": false,
 				"id": {
 					"type": "Identifier",
 					"start": 10,
 					"end": 11,
 					"declares": 0,
+					"decorators": [],
+					"optional": false,
 					"name": "N"
 				},
 				"body": {
@@ -34,6 +38,7 @@
 								"type": "VariableDeclaration",
 								"start": 21,
 								"end": 33,
+								"declare": false,
 								"declarations": [
 									{
 										"type": "VariableDeclarator",
@@ -42,11 +47,14 @@
 										"defines": [
 											1
 										],
+										"definite": false,
 										"id": {
 											"type": "Identifier",
 											"start": 27,
 											"end": 28,
 											"declares": 1,
+											"decorators": [],
+											"optional": false,
 											"name": "a"
 										},
 										"init": {
@@ -72,11 +80,15 @@
 							"defines": [
 								2
 							],
+							"declare": false,
+							"global": false,
 							"id": {
 								"type": "Identifier",
 								"start": 44,
 								"end": 45,
 								"declares": 2,
+								"decorators": [],
+								"optional": false,
 								"name": "M"
 							},
 							"body": {
@@ -93,10 +105,13 @@
 											"type": "TSTypeAliasDeclaration",
 											"start": 55,
 											"end": 71,
+											"declare": false,
 											"id": {
 												"type": "Identifier",
 												"start": 60,
 												"end": 61,
+												"decorators": [],
+												"optional": false,
 												"name": "T"
 											},
 											"typeAnnotation": {
@@ -123,11 +138,15 @@
 				"defines": [
 					3
 				],
+				"declare": false,
+				"global": false,
 				"id": {
 					"type": "Identifier",
 					"start": 83,
 					"end": 84,
 					"declares": 3,
+					"decorators": [],
+					"optional": false,
 					"name": "Q"
 				},
 				"body": {
@@ -138,11 +157,15 @@
 					"defines": [
 						4
 					],
+					"declare": false,
+					"global": false,
 					"id": {
 						"type": "Identifier",
 						"start": 85,
 						"end": 86,
 						"declares": 4,
+						"decorators": [],
+						"optional": false,
 						"name": "R"
 					},
 					"body": {
@@ -159,6 +182,7 @@
 				"end": 147,
 				"scope": 5,
 				"declare": true,
+				"global": false,
 				"id": {
 					"type": "Literal",
 					"start": 106,
@@ -193,11 +217,14 @@
 										"end": 144
 									}
 								},
+								"declare": false,
 								"id": {
 									"type": "Identifier",
 									"start": 135,
 									"end": 136,
 									"declares": 5,
+									"decorators": [],
+									"optional": false,
 									"name": "f"
 								},
 								"generator": false,
@@ -223,6 +250,8 @@
 					"type": "Identifier",
 					"start": 156,
 					"end": 162,
+					"decorators": [],
+					"optional": false,
 					"name": "global"
 				},
 				"body": {
@@ -234,12 +263,16 @@
 							"type": "TSInterfaceDeclaration",
 							"start": 165,
 							"end": 195,
+							"declare": false,
 							"id": {
 								"type": "Identifier",
 								"start": 175,
 								"end": 181,
+								"decorators": [],
+								"optional": false,
 								"name": "Window"
 							},
+							"extends": [],
 							"body": {
 								"type": "TSInterfaceBody",
 								"start": 182,
@@ -249,13 +282,18 @@
 										"type": "TSPropertySignature",
 										"start": 184,
 										"end": 193,
+										"static": false,
 										"key": {
 											"type": "Identifier",
 											"start": 184,
 											"end": 185,
+											"decorators": [],
+											"optional": false,
 											"name": "x"
 										},
 										"computed": false,
+										"optional": false,
+										"readonly": false,
 										"typeAnnotation": {
 											"type": "TSTypeAnnotation",
 											"start": 185,

@@ -20,12 +20,16 @@
 							"type": "Identifier",
 							"start": 14,
 							"end": 15,
+							"decorators": [],
+							"optional": false,
 							"name": "A"
 						},
 						"local": {
 							"type": "Identifier",
 							"start": 14,
 							"end": 15,
+							"decorators": [],
+							"optional": false,
 							"name": "A"
 						}
 					}
@@ -54,12 +58,16 @@
 							"type": "Identifier",
 							"start": 42,
 							"end": 43,
+							"decorators": [],
+							"optional": false,
 							"name": "B"
 						},
 						"local": {
 							"type": "Identifier",
 							"start": 42,
 							"end": 43,
+							"decorators": [],
+							"optional": false,
 							"name": "B"
 						}
 					},
@@ -75,6 +83,8 @@
 							"type": "Identifier",
 							"start": 45,
 							"end": 46,
+							"decorators": [],
+							"optional": false,
 							"name": "C"
 						},
 						"local": {
@@ -82,6 +92,8 @@
 							"start": 45,
 							"end": 46,
 							"declares": 0,
+							"decorators": [],
+							"optional": false,
 							"name": "C"
 						}
 					}
@@ -109,6 +121,8 @@
 							"type": "Identifier",
 							"start": 71,
 							"end": 72,
+							"decorators": [],
+							"optional": false,
 							"name": "D"
 						}
 					}
@@ -126,10 +140,13 @@
 				"type": "TSTypeAliasDeclaration",
 				"start": 83,
 				"end": 99,
+				"declare": false,
 				"id": {
 					"type": "Identifier",
 					"start": 88,
 					"end": 89,
+					"decorators": [],
+					"optional": false,
 					"name": "E"
 				},
 				"typeAnnotation": {
@@ -154,12 +171,16 @@
 							"type": "Identifier",
 							"start": 114,
 							"end": 115,
+							"decorators": [],
+							"optional": false,
 							"name": "E"
 						},
 						"exported": {
 							"type": "Identifier",
 							"start": 114,
 							"end": 115,
+							"decorators": [],
+							"optional": false,
 							"name": "E"
 						}
 					}
@@ -171,10 +192,13 @@
 				"type": "TSTypeAliasDeclaration",
 				"start": 119,
 				"end": 135,
+				"declare": false,
 				"id": {
 					"type": "Identifier",
 					"start": 124,
 					"end": 125,
+					"decorators": [],
+					"optional": false,
 					"name": "F"
 				},
 				"typeAnnotation": {
@@ -187,6 +211,7 @@
 				"type": "VariableDeclaration",
 				"start": 136,
 				"end": 148,
+				"declare": false,
 				"declarations": [
 					{
 						"type": "VariableDeclarator",
@@ -195,11 +220,14 @@
 						"defines": [
 							1
 						],
+						"definite": false,
 						"id": {
 							"type": "Identifier",
 							"start": 142,
 							"end": 143,
 							"declares": 1,
+							"decorators": [],
+							"optional": false,
 							"name": "G"
 						},
 						"init": {
@@ -229,12 +257,16 @@
 							"type": "Identifier",
 							"start": 163,
 							"end": 164,
+							"decorators": [],
+							"optional": false,
 							"name": "F"
 						},
 						"exported": {
 							"type": "Identifier",
 							"start": 163,
 							"end": 164,
+							"decorators": [],
+							"optional": false,
 							"name": "F"
 						}
 					},
@@ -248,12 +280,16 @@
 							"start": 166,
 							"end": 167,
 							"reference": 0,
+							"decorators": [],
+							"optional": false,
 							"name": "G"
 						},
 						"exported": {
 							"type": "Identifier",
 							"start": 166,
 							"end": 167,
+							"decorators": [],
+							"optional": false,
 							"name": "G"
 						}
 					}
@@ -270,10 +306,13 @@
 					"type": "TSTypeAliasDeclaration",
 					"start": 178,
 					"end": 194,
+					"declare": false,
 					"id": {
 						"type": "Identifier",
 						"start": 183,
 						"end": 184,
+						"decorators": [],
+						"optional": false,
 						"name": "H"
 					},
 					"typeAnnotation": {
@@ -300,6 +339,8 @@
 					"start": 202,
 					"end": 203,
 					"declares": 2,
+					"decorators": [],
+					"optional": false,
 					"name": "I"
 				},
 				"moduleReference": {
@@ -329,6 +370,8 @@
 					"start": 227,
 					"end": 228,
 					"declares": 3,
+					"decorators": [],
+					"optional": false,
 					"name": "J"
 				},
 				"moduleReference": {
@@ -340,12 +383,16 @@
 						"start": 231,
 						"end": 232,
 						"reference": 1,
+						"decorators": [],
+						"optional": false,
 						"name": "K"
 					},
 					"right": {
 						"type": "Identifier",
 						"start": 233,
 						"end": 234,
+						"decorators": [],
+						"optional": false,
 						"name": "L"
 					}
 				}
@@ -359,6 +406,8 @@
 					"start": 245,
 					"end": 246,
 					"reference": 2,
+					"decorators": [],
+					"optional": false,
 					"name": "M"
 				}
 			},
@@ -370,6 +419,8 @@
 					"type": "Identifier",
 					"start": 268,
 					"end": 269,
+					"decorators": [],
+					"optional": false,
 					"name": "N"
 				}
 			},
@@ -387,6 +438,8 @@
 							"type": "Identifier",
 							"start": 288,
 							"end": 289,
+							"decorators": [],
+							"optional": false,
 							"name": "O"
 						}
 					}
@@ -409,12 +462,16 @@
 					"type": "TSInterfaceDeclaration",
 					"start": 315,
 					"end": 329,
+					"declare": false,
 					"id": {
 						"type": "Identifier",
 						"start": 325,
 						"end": 326,
+						"decorators": [],
+						"optional": false,
 						"name": "Q"
 					},
+					"extends": [],
 					"body": {
 						"type": "TSInterfaceBody",
 						"start": 327,
@@ -437,6 +494,8 @@
 					"start": 344,
 					"end": 345,
 					"declares": 4,
+					"decorators": [],
+					"optional": false,
 					"name": "r"
 				},
 				"moduleReference": {
@@ -448,12 +507,16 @@
 						"start": 348,
 						"end": 349,
 						"reference": 3,
+						"decorators": [],
+						"optional": false,
 						"name": "N"
 					},
 					"right": {
 						"type": "Identifier",
 						"start": 350,
 						"end": 351,
+						"decorators": [],
+						"optional": false,
 						"name": "y"
 					}
 				}
@@ -468,6 +531,8 @@
 					"type": "Identifier",
 					"start": 365,
 					"end": 366,
+					"decorators": [],
+					"optional": false,
 					"name": "s"
 				},
 				"moduleReference": {

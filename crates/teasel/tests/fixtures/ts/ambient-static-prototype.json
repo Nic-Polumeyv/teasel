@@ -13,12 +13,17 @@
 				"defines": [
 					0
 				],
+				"implements": [],
+				"decorators": [],
 				"declare": true,
+				"abstract": false,
 				"id": {
 					"type": "Identifier",
 					"start": 14,
 					"end": 15,
 					"declares": 0,
+					"decorators": [],
+					"optional": false,
 					"name": "C"
 				},
 				"superClass": null,
@@ -41,12 +46,21 @@
 									"end": 42
 								}
 							},
+							"decorators": [],
+							"optional": false,
+							"definite": false,
+							"declare": false,
+							"abstract": false,
+							"readonly": false,
+							"override": false,
 							"static": true,
 							"computed": false,
 							"key": {
 								"type": "Identifier",
 								"start": 25,
 								"end": 34,
+								"decorators": [],
+								"optional": false,
 								"name": "prototype"
 							},
 							"value": null

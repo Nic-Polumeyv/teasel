@@ -9,10 +9,13 @@
 				"type": "TSInterfaceDeclaration",
 				"start": 0,
 				"end": 199,
+				"declare": false,
 				"id": {
 					"type": "Identifier",
 					"start": 10,
 					"end": 11,
+					"decorators": [],
+					"optional": false,
 					"name": "A"
 				},
 				"typeParameters": {
@@ -24,6 +27,9 @@
 							"type": "TSTypeParameter",
 							"start": 12,
 							"end": 22,
+							"in": false,
+							"out": false,
+							"const": false,
 							"name": "T",
 							"default": {
 								"type": "TSStringKeyword",
@@ -42,6 +48,8 @@
 							"type": "Identifier",
 							"start": 32,
 							"end": 33,
+							"decorators": [],
+							"optional": false,
 							"name": "B"
 						}
 					},
@@ -53,6 +61,8 @@
 							"type": "Identifier",
 							"start": 35,
 							"end": 36,
+							"decorators": [],
+							"optional": false,
 							"name": "C"
 						},
 						"typeArguments": {
@@ -68,6 +78,8 @@
 										"type": "Identifier",
 										"start": 37,
 										"end": 38,
+										"decorators": [],
+										"optional": false,
 										"name": "T"
 									}
 								}
@@ -84,13 +96,18 @@
 							"type": "TSPropertySignature",
 							"start": 43,
 							"end": 53,
+							"static": false,
 							"key": {
 								"type": "Identifier",
 								"start": 43,
 								"end": 44,
+								"decorators": [],
+								"optional": false,
 								"name": "x"
 							},
 							"computed": false,
+							"optional": false,
+							"readonly": false,
 							"typeAnnotation": {
 								"type": "TSTypeAnnotation",
 								"start": 44,
@@ -106,10 +123,13 @@
 							"type": "TSPropertySignature",
 							"start": 55,
 							"end": 75,
+							"static": false,
 							"key": {
 								"type": "Identifier",
 								"start": 64,
 								"end": 65,
+								"decorators": [],
+								"optional": false,
 								"name": "y"
 							},
 							"computed": false,
@@ -130,13 +150,18 @@
 							"type": "TSMethodSignature",
 							"start": 77,
 							"end": 91,
+							"readonly": false,
+							"static": false,
 							"key": {
 								"type": "Identifier",
 								"start": 77,
 								"end": 78,
+								"decorators": [],
+								"optional": false,
 								"name": "m"
 							},
 							"computed": false,
+							"optional": false,
 							"kind": "method",
 							"parameters": [
 								{
@@ -155,10 +180,14 @@
 												"type": "Identifier",
 												"start": 82,
 												"end": 83,
+												"decorators": [],
+												"optional": false,
 												"name": "T"
 											}
 										}
 									},
+									"decorators": [],
+									"optional": false,
 									"name": "a"
 								}
 							],
@@ -192,6 +221,8 @@
 											"end": 107
 										}
 									},
+									"decorators": [],
+									"optional": false,
 									"name": "b"
 								}
 							],
@@ -207,6 +238,8 @@
 										"type": "Identifier",
 										"start": 110,
 										"end": 111,
+										"decorators": [],
+										"optional": false,
 										"name": "A"
 									},
 									"typeArguments": {
@@ -222,6 +255,8 @@
 													"type": "Identifier",
 													"start": 112,
 													"end": 113,
+													"decorators": [],
+													"optional": false,
 													"name": "T"
 												}
 											}
@@ -249,6 +284,8 @@
 											"end": 127
 										}
 									},
+									"decorators": [],
+									"optional": false,
 									"name": "c"
 								}
 							],
@@ -267,6 +304,8 @@
 							"type": "TSIndexSignature",
 							"start": 137,
 							"end": 160,
+							"readonly": false,
+							"static": false,
 							"parameters": [
 								{
 									"type": "Identifier",
@@ -282,6 +321,8 @@
 											"end": 149
 										}
 									},
+									"decorators": [],
+									"optional": false,
 									"name": "key"
 								}
 							],
@@ -300,13 +341,18 @@
 							"type": "TSMethodSignature",
 							"start": 162,
 							"end": 178,
+							"readonly": false,
+							"static": false,
 							"key": {
 								"type": "Identifier",
 								"start": 166,
 								"end": 167,
+								"decorators": [],
+								"optional": false,
 								"name": "g"
 							},
 							"computed": false,
+							"optional": false,
 							"kind": "get",
 							"parameters": [],
 							"typeAnnotation": {
@@ -324,13 +370,18 @@
 							"type": "TSMethodSignature",
 							"start": 180,
 							"end": 197,
+							"readonly": false,
+							"static": false,
 							"key": {
 								"type": "Identifier",
 								"start": 184,
 								"end": 185,
+								"decorators": [],
+								"optional": false,
 								"name": "g"
 							},
 							"computed": false,
+							"optional": false,
 							"kind": "set",
 							"parameters": [
 								{
@@ -347,6 +398,8 @@
 											"end": 195
 										}
 									},
+									"decorators": [],
+									"optional": false,
 									"name": "v"
 								}
 							]

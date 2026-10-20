@@ -13,11 +13,15 @@
 				"defines": [
 					0
 				],
+				"declare": false,
+				"global": false,
 				"id": {
 					"type": "Identifier",
 					"start": 10,
 					"end": 11,
 					"declares": 0,
+					"decorators": [],
+					"optional": false,
 					"name": "N"
 				},
 				"body": {
@@ -34,6 +38,7 @@
 								"type": "VariableDeclaration",
 								"start": 22,
 								"end": 34,
+								"declare": false,
 								"declarations": [
 									{
 										"type": "VariableDeclarator",
@@ -42,11 +47,14 @@
 										"defines": [
 											1
 										],
+										"definite": false,
 										"id": {
 											"type": "Identifier",
 											"start": 28,
 											"end": 29,
 											"declares": 1,
+											"decorators": [],
+											"optional": false,
 											"name": "a"
 										},
 										"init": {
@@ -77,11 +85,14 @@
 								"defines": [
 									2
 								],
+								"declare": false,
 								"id": {
 									"type": "Identifier",
 									"start": 52,
 									"end": 53,
 									"declares": 2,
+									"decorators": [],
+									"optional": false,
 									"name": "f"
 								},
 								"expression": false,

@@ -27,11 +27,14 @@
 							"end": 57
 						}
 					},
+					"declare": false,
 					"id": {
 						"type": "Identifier",
 						"start": 16,
 						"end": 17,
 						"declares": 0,
+						"decorators": [],
+						"optional": false,
 						"name": "f"
 					},
 					"generator": false,
@@ -52,6 +55,8 @@
 									"end": 27
 								}
 							},
+							"decorators": [],
+							"optional": false,
 							"name": "a"
 						},
 						{
@@ -71,13 +76,18 @@
 											"type": "TSPropertySignature",
 											"start": 39,
 											"end": 48,
+											"static": false,
 											"key": {
 												"type": "Identifier",
 												"start": 39,
 												"end": 40,
+												"decorators": [],
+												"optional": false,
 												"name": "b"
 											},
 											"computed": false,
+											"optional": false,
+											"readonly": false,
 											"typeAnnotation": {
 												"type": "TSTypeAnnotation",
 												"start": 40,
@@ -92,12 +102,14 @@
 									]
 								}
 							},
+							"decorators": [],
 							"optional": true,
 							"properties": [
 								{
 									"type": "Property",
 									"start": 31,
 									"end": 32,
+									"optional": false,
 									"method": false,
 									"shorthand": true,
 									"computed": false,
@@ -105,12 +117,16 @@
 										"type": "Identifier",
 										"start": 31,
 										"end": 32,
+										"decorators": [],
+										"optional": false,
 										"name": "b"
 									},
 									"value": {
 										"type": "Identifier",
 										"start": 31,
 										"end": 32,
+										"decorators": [],
+										"optional": false,
 										"name": "b"
 									},
 									"kind": "init"
@@ -137,11 +153,14 @@
 						1,
 						2
 					],
+					"declare": false,
 					"id": {
 						"type": "Identifier",
 						"start": 75,
 						"end": 76,
 						"reference": 0,
+						"decorators": [],
+						"optional": false,
 						"name": "f"
 					},
 					"expression": false,
@@ -163,6 +182,8 @@
 									"end": 86
 								}
 							},
+							"decorators": [],
+							"optional": false,
 							"name": "a"
 						},
 						{
@@ -180,6 +201,7 @@
 									"end": 95
 								}
 							},
+							"decorators": [],
 							"optional": true,
 							"name": "b"
 						}
@@ -203,11 +225,17 @@
 				"defines": [
 					3
 				],
+				"implements": [],
+				"decorators": [],
+				"declare": false,
+				"abstract": false,
 				"id": {
 					"type": "Identifier",
 					"start": 106,
 					"end": 107,
 					"declares": 3,
+					"decorators": [],
+					"optional": false,
 					"name": "C"
 				},
 				"superClass": null,
@@ -220,12 +248,18 @@
 							"type": "MethodDefinition",
 							"start": 111,
 							"end": 142,
+							"decorators": [],
+							"optional": false,
+							"abstract": false,
+							"override": false,
 							"static": false,
 							"computed": false,
 							"key": {
 								"type": "Identifier",
 								"start": 111,
 								"end": 112,
+								"decorators": [],
+								"optional": false,
 								"name": "m"
 							},
 							"kind": "method",
@@ -265,13 +299,18 @@
 														"type": "TSPropertySignature",
 														"start": 123,
 														"end": 132,
+														"static": false,
 														"key": {
 															"type": "Identifier",
 															"start": 123,
 															"end": 124,
+															"decorators": [],
+															"optional": false,
 															"name": "b"
 														},
 														"computed": false,
+														"optional": false,
+														"readonly": false,
 														"typeAnnotation": {
 															"type": "TSTypeAnnotation",
 															"start": 124,
@@ -286,12 +325,14 @@
 												]
 											}
 										},
+										"decorators": [],
 										"optional": true,
 										"properties": [
 											{
 												"type": "Property",
 												"start": 115,
 												"end": 116,
+												"optional": false,
 												"method": false,
 												"shorthand": true,
 												"computed": false,
@@ -299,12 +340,16 @@
 													"type": "Identifier",
 													"start": 115,
 													"end": 116,
+													"decorators": [],
+													"optional": false,
 													"name": "b"
 												},
 												"value": {
 													"type": "Identifier",
 													"start": 115,
 													"end": 116,
+													"decorators": [],
+													"optional": false,
 													"name": "b"
 												},
 												"kind": "init"
@@ -318,12 +363,18 @@
 							"type": "MethodDefinition",
 							"start": 144,
 							"end": 157,
+							"decorators": [],
+							"optional": false,
+							"abstract": false,
+							"override": false,
 							"static": false,
 							"computed": false,
 							"key": {
 								"type": "Identifier",
 								"start": 144,
 								"end": 145,
+								"decorators": [],
+								"optional": false,
 								"name": "m"
 							},
 							"kind": "method",
@@ -335,6 +386,7 @@
 								"defines": [
 									4
 								],
+								"declare": false,
 								"id": null,
 								"expression": false,
 								"generator": false,
@@ -355,6 +407,7 @@
 												"end": 153
 											}
 										},
+										"decorators": [],
 										"optional": true,
 										"name": "b"
 									}

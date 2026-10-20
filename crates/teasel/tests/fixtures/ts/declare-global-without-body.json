@@ -15,6 +15,8 @@
 					"type": "Identifier",
 					"start": 8,
 					"end": 14,
+					"decorators": [],
+					"optional": false,
 					"name": "global"
 				}
 			},
@@ -32,6 +34,8 @@
 						"start": 15,
 						"end": 16,
 						"reference": 0,
+						"decorators": [],
+						"optional": false,
 						"name": "X"
 					},
 					"right": {
@@ -56,6 +60,8 @@
 					"type": "Identifier",
 					"start": 30,
 					"end": 36,
+					"decorators": [],
+					"optional": false,
 					"name": "global"
 				}
 			},

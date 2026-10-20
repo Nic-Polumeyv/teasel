@@ -9,10 +9,13 @@
 				"type": "TSTypeAliasDeclaration",
 				"start": 0,
 				"end": 89,
+				"declare": false,
 				"id": {
 					"type": "Identifier",
 					"start": 5,
 					"end": 6,
+					"decorators": [],
+					"optional": false,
 					"name": "A"
 				},
 				"typeParameters": {
@@ -24,6 +27,9 @@
 							"type": "TSTypeParameter",
 							"start": 7,
 							"end": 8,
+							"in": false,
+							"out": false,
+							"const": false,
 							"name": "T"
 						}
 					]
@@ -37,6 +43,9 @@
 						"type": "TSTypeParameter",
 						"start": 25,
 						"end": 37,
+						"in": false,
+						"out": false,
+						"const": false,
 						"name": "K",
 						"constraint": {
 							"type": "TSTypeOperator",
@@ -51,6 +60,8 @@
 									"type": "Identifier",
 									"start": 36,
 									"end": 37,
+									"decorators": [],
+									"optional": false,
 									"name": "T"
 								}
 							}
@@ -73,6 +84,8 @@
 										"type": "Identifier",
 										"start": 47,
 										"end": 57,
+										"decorators": [],
+										"optional": false,
 										"name": "Capitalize"
 									},
 									"typeArguments": {
@@ -93,6 +106,8 @@
 															"type": "Identifier",
 															"start": 58,
 															"end": 59,
+															"decorators": [],
+															"optional": false,
 															"name": "K"
 														}
 													},
@@ -153,6 +168,8 @@
 										"type": "Identifier",
 										"start": 82,
 										"end": 83,
+										"decorators": [],
+										"optional": false,
 										"name": "T"
 									}
 								},
@@ -164,6 +181,8 @@
 										"type": "Identifier",
 										"start": 84,
 										"end": 85,
+										"decorators": [],
+										"optional": false,
 										"name": "K"
 									}
 								}
@@ -176,10 +195,13 @@
 				"type": "TSTypeAliasDeclaration",
 				"start": 90,
 				"end": 159,
+				"declare": false,
 				"id": {
 					"type": "Identifier",
 					"start": 95,
 					"end": 96,
+					"decorators": [],
+					"optional": false,
 					"name": "B"
 				},
 				"typeParameters": {
@@ -191,6 +213,9 @@
 							"type": "TSTypeParameter",
 							"start": 97,
 							"end": 98,
+							"in": false,
+							"out": false,
+							"const": false,
 							"name": "T"
 						}
 					]
@@ -207,6 +232,8 @@
 							"type": "Identifier",
 							"start": 102,
 							"end": 103,
+							"decorators": [],
+							"optional": false,
 							"name": "T"
 						}
 					},
@@ -231,14 +258,21 @@
 											"type": "TSTypeParameter",
 											"start": 128,
 											"end": 129,
+											"in": false,
+											"out": false,
+											"const": false,
 											"name": "P"
 										}
 									}
 								},
+								"decorators": [],
+								"optional": false,
 								"argument": {
 									"type": "Identifier",
 									"start": 116,
 									"end": 120,
+									"decorators": [],
+									"optional": false,
 									"name": "args"
 								}
 							}
@@ -255,6 +289,9 @@
 									"type": "TSTypeParameter",
 									"start": 140,
 									"end": 141,
+									"in": false,
+									"out": false,
+									"const": false,
 									"name": "R"
 								}
 							}
@@ -273,6 +310,8 @@
 									"type": "Identifier",
 									"start": 145,
 									"end": 146,
+									"decorators": [],
+									"optional": false,
 									"name": "P"
 								}
 							},
@@ -284,6 +323,8 @@
 									"type": "Identifier",
 									"start": 148,
 									"end": 149,
+									"decorators": [],
+									"optional": false,
 									"name": "R"
 								}
 							}
@@ -300,10 +341,13 @@
 				"type": "TSTypeAliasDeclaration",
 				"start": 160,
 				"end": 221,
+				"declare": false,
 				"id": {
 					"type": "Identifier",
 					"start": 165,
 					"end": 166,
+					"decorators": [],
+					"optional": false,
 					"name": "C"
 				},
 				"typeParameters": {
@@ -315,6 +359,9 @@
 							"type": "TSTypeParameter",
 							"start": 167,
 							"end": 168,
+							"in": false,
+							"out": false,
+							"const": false,
 							"name": "T"
 						}
 					]
@@ -331,6 +378,8 @@
 							"type": "Identifier",
 							"start": 172,
 							"end": 173,
+							"decorators": [],
+							"optional": false,
 							"name": "T"
 						}
 					},
@@ -350,6 +399,9 @@
 									"type": "TSTypeParameter",
 									"start": 189,
 									"end": 205,
+									"in": false,
+									"out": false,
+									"const": false,
 									"name": "U",
 									"constraint": {
 										"type": "TSStringKeyword",
@@ -368,6 +420,8 @@
 							"type": "Identifier",
 							"start": 211,
 							"end": 212,
+							"decorators": [],
+							"optional": false,
 							"name": "U"
 						}
 					},

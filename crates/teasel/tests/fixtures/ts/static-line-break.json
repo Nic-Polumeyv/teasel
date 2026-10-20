@@ -13,11 +13,17 @@
 				"defines": [
 					0
 				],
+				"implements": [],
+				"decorators": [],
+				"declare": false,
+				"abstract": false,
 				"id": {
 					"type": "Identifier",
 					"start": 6,
 					"end": 7,
 					"declares": 0,
+					"decorators": [],
+					"optional": false,
 					"name": "A"
 				},
 				"superClass": null,
@@ -30,12 +36,21 @@
 							"type": "PropertyDefinition",
 							"start": 11,
 							"end": 25,
+							"decorators": [],
+							"optional": false,
+							"definite": false,
+							"declare": false,
+							"abstract": false,
+							"readonly": false,
+							"override": false,
 							"static": true,
 							"computed": false,
 							"key": {
 								"type": "Identifier",
 								"start": 19,
 								"end": 20,
+								"decorators": [],
+								"optional": false,
 								"name": "x"
 							},
 							"value": {
@@ -50,12 +65,18 @@
 							"type": "MethodDefinition",
 							"start": 27,
 							"end": 41,
+							"decorators": [],
+							"optional": false,
+							"abstract": false,
+							"override": false,
 							"static": true,
 							"computed": false,
 							"key": {
 								"type": "Identifier",
 								"start": 35,
 								"end": 36,
+								"decorators": [],
+								"optional": false,
 								"name": "m"
 							},
 							"kind": "method",
@@ -64,6 +85,7 @@
 								"start": 36,
 								"end": 41,
 								"scope": 2,
+								"declare": false,
 								"id": null,
 								"expression": false,
 								"generator": false,

@@ -18,12 +18,17 @@
 					"defines": [
 						0
 					],
+					"implements": [],
+					"decorators": [],
+					"declare": false,
 					"abstract": true,
 					"id": {
 						"type": "Identifier",
 						"start": 30,
 						"end": 31,
 						"declares": 0,
+						"decorators": [],
+						"optional": false,
 						"name": "A"
 					},
 					"superClass": null,

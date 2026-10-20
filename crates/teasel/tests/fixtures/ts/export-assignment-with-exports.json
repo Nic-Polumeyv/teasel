@@ -14,6 +14,8 @@
 					"start": 9,
 					"end": 10,
 					"reference": 0,
+					"decorators": [],
+					"optional": false,
 					"name": "a"
 				}
 			},
@@ -26,6 +28,7 @@
 					"type": "VariableDeclaration",
 					"start": 19,
 					"end": 31,
+					"declare": false,
 					"declarations": [
 						{
 							"type": "VariableDeclarator",
@@ -34,11 +37,14 @@
 							"defines": [
 								0
 							],
+							"definite": false,
 							"id": {
 								"type": "Identifier",
 								"start": 25,
 								"end": 26,
 								"declares": 0,
+								"decorators": [],
+								"optional": false,
 								"name": "b"
 							},
 							"init": {

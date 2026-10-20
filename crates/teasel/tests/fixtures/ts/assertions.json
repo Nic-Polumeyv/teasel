@@ -9,6 +9,7 @@
 				"type": "VariableDeclaration",
 				"start": 0,
 				"end": 22,
+				"declare": false,
 				"declarations": [
 					{
 						"type": "VariableDeclarator",
@@ -17,11 +18,14 @@
 						"defines": [
 							0
 						],
+						"definite": false,
 						"id": {
 							"type": "Identifier",
 							"start": 6,
 							"end": 7,
 							"declares": 0,
+							"decorators": [],
+							"optional": false,
 							"name": "a"
 						},
 						"init": {
@@ -33,6 +37,8 @@
 								"start": 10,
 								"end": 11,
 								"reference": 0,
+								"decorators": [],
+								"optional": false,
 								"name": "b"
 							},
 							"typeAnnotation": {
@@ -49,6 +55,7 @@
 				"type": "VariableDeclaration",
 				"start": 23,
 				"end": 43,
+				"declare": false,
 				"declarations": [
 					{
 						"type": "VariableDeclarator",
@@ -57,11 +64,14 @@
 						"defines": [
 							1
 						],
+						"definite": false,
 						"id": {
 							"type": "Identifier",
 							"start": 29,
 							"end": 30,
 							"declares": 1,
+							"decorators": [],
+							"optional": false,
 							"name": "c"
 						},
 						"init": {
@@ -78,6 +88,8 @@
 								"start": 41,
 								"end": 42,
 								"reference": 1,
+								"decorators": [],
+								"optional": false,
 								"name": "d"
 							}
 						}
@@ -89,6 +101,7 @@
 				"type": "VariableDeclaration",
 				"start": 44,
 				"end": 57,
+				"declare": false,
 				"declarations": [
 					{
 						"type": "VariableDeclarator",
@@ -97,11 +110,14 @@
 						"defines": [
 							2
 						],
+						"definite": false,
 						"id": {
 							"type": "Identifier",
 							"start": 50,
 							"end": 51,
 							"declares": 2,
+							"decorators": [],
+							"optional": false,
 							"name": "e"
 						},
 						"init": {
@@ -113,6 +129,8 @@
 								"start": 54,
 								"end": 55,
 								"reference": 2,
+								"decorators": [],
+								"optional": false,
 								"name": "f"
 							}
 						}
@@ -124,6 +142,7 @@
 				"type": "VariableDeclaration",
 				"start": 58,
 				"end": 82,
+				"declare": false,
 				"declarations": [
 					{
 						"type": "VariableDeclarator",
@@ -132,11 +151,14 @@
 						"defines": [
 							3
 						],
+						"definite": false,
 						"id": {
 							"type": "Identifier",
 							"start": 64,
 							"end": 65,
 							"declares": 3,
+							"decorators": [],
+							"optional": false,
 							"name": "g"
 						},
 						"init": {
@@ -148,6 +170,8 @@
 								"start": 68,
 								"end": 69,
 								"reference": 3,
+								"decorators": [],
+								"optional": false,
 								"name": "h"
 							},
 							"typeAnnotation": {
@@ -158,6 +182,8 @@
 									"type": "Identifier",
 									"start": 80,
 									"end": 81,
+									"decorators": [],
+									"optional": false,
 									"name": "I"
 								}
 							}
@@ -170,6 +196,7 @@
 				"type": "VariableDeclaration",
 				"start": 83,
 				"end": 106,
+				"declare": false,
 				"declarations": [
 					{
 						"type": "VariableDeclarator",
@@ -178,11 +205,14 @@
 						"defines": [
 							4
 						],
+						"definite": false,
 						"id": {
 							"type": "Identifier",
 							"start": 89,
 							"end": 90,
 							"declares": 4,
+							"decorators": [],
+							"optional": false,
 							"name": "j"
 						},
 						"init": {
@@ -198,12 +228,16 @@
 									"start": 93,
 									"end": 94,
 									"reference": 4,
+									"decorators": [],
+									"optional": false,
 									"name": "k"
 								},
 								"property": {
 									"type": "Identifier",
 									"start": 95,
 									"end": 96,
+									"decorators": [],
+									"optional": false,
 									"name": "l"
 								},
 								"computed": false,
@@ -217,6 +251,8 @@
 									"type": "Identifier",
 									"start": 100,
 									"end": 105,
+									"decorators": [],
+									"optional": false,
 									"name": "const"
 								}
 							}
@@ -229,6 +265,7 @@
 				"type": "VariableDeclaration",
 				"start": 107,
 				"end": 131,
+				"declare": false,
 				"declarations": [
 					{
 						"type": "VariableDeclarator",
@@ -237,11 +274,14 @@
 						"defines": [
 							5
 						],
+						"definite": false,
 						"id": {
 							"type": "Identifier",
 							"start": 111,
 							"end": 112,
 							"declares": 5,
+							"decorators": [],
+							"optional": false,
 							"name": "l"
 						},
 						"init": {
@@ -265,6 +305,8 @@
 											"start": 116,
 											"end": 117,
 											"reference": 5,
+											"decorators": [],
+											"optional": false,
 											"name": "m"
 										},
 										"typeAnnotation": {
@@ -277,6 +319,8 @@
 										"type": "Identifier",
 										"start": 126,
 										"end": 127,
+										"decorators": [],
+										"optional": false,
 										"name": "n"
 									},
 									"computed": false,
@@ -287,6 +331,8 @@
 								"type": "Identifier",
 								"start": 129,
 								"end": 130,
+								"decorators": [],
+								"optional": false,
 								"name": "o"
 							},
 							"computed": false,
@@ -306,6 +352,7 @@
 					"type": "VariableDeclaration",
 					"start": 137,
 					"end": 144,
+					"declare": false,
 					"declarations": [
 						{
 							"type": "VariableDeclarator",
@@ -314,11 +361,14 @@
 							"defines": [
 								6
 							],
+							"definite": false,
 							"id": {
 								"type": "Identifier",
 								"start": 143,
 								"end": 144,
 								"declares": 6,
+								"decorators": [],
+								"optional": false,
 								"name": "x"
 							},
 							"init": null
@@ -335,6 +385,8 @@
 						"start": 148,
 						"end": 149,
 						"reference": 6,
+						"decorators": [],
+						"optional": false,
 						"name": "y"
 					},
 					"typeAnnotation": {
@@ -360,6 +412,7 @@
 				"type": "VariableDeclaration",
 				"start": 163,
 				"end": 186,
+				"declare": false,
 				"declarations": [
 					{
 						"type": "VariableDeclarator",
@@ -368,11 +421,14 @@
 						"defines": [
 							7
 						],
+						"definite": false,
 						"id": {
 							"type": "Identifier",
 							"start": 167,
 							"end": 168,
 							"declares": 7,
+							"decorators": [],
+							"optional": false,
 							"name": "n"
 						},
 						"init": {
@@ -385,6 +441,8 @@
 								"start": 172,
 								"end": 173,
 								"reference": 7,
+								"decorators": [],
+								"optional": false,
 								"name": "a"
 							},
 							"right": {
@@ -406,6 +464,7 @@
 				"type": "VariableDeclaration",
 				"start": 187,
 				"end": 207,
+				"declare": false,
 				"declarations": [
 					{
 						"type": "VariableDeclarator",
@@ -414,11 +473,14 @@
 						"defines": [
 							8
 						],
+						"definite": false,
 						"id": {
 							"type": "Identifier",
 							"start": 191,
 							"end": 192,
 							"declares": 8,
+							"decorators": [],
+							"optional": false,
 							"name": "o"
 						},
 						"init": {
@@ -434,6 +496,8 @@
 									"start": 195,
 									"end": 196,
 									"reference": 8,
+									"decorators": [],
+									"optional": false,
 									"name": "y"
 								},
 								"typeAnnotation": {
@@ -444,6 +508,8 @@
 										"type": "Identifier",
 										"start": 200,
 										"end": 201,
+										"decorators": [],
+										"optional": false,
 										"name": "T"
 									}
 								}
@@ -465,6 +531,7 @@
 				"type": "VariableDeclaration",
 				"start": 208,
 				"end": 222,
+				"declare": false,
 				"declarations": [
 					{
 						"type": "VariableDeclarator",
@@ -473,11 +540,14 @@
 						"defines": [
 							9
 						],
+						"definite": false,
 						"id": {
 							"type": "Identifier",
 							"start": 212,
 							"end": 213,
 							"declares": 9,
+							"decorators": [],
+							"optional": false,
 							"name": "p"
 						},
 						"init": {
@@ -497,6 +567,8 @@
 										"start": 216,
 										"end": 217,
 										"reference": 9,
+										"decorators": [],
+										"optional": false,
 										"name": "q"
 									}
 								},
@@ -504,6 +576,8 @@
 									"type": "Identifier",
 									"start": 219,
 									"end": 220,
+									"decorators": [],
+									"optional": false,
 									"name": "r"
 								},
 								"computed": false,

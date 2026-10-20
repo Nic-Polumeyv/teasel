@@ -67,7 +67,6 @@ pub fn layout_json() -> String {
 			Ty::Str => "str",
 			Ty::OptStr => "?str",
 			Ty::Bool => "bool",
-			Ty::OptBool => "?bool",
 			Ty::U32 => "u32",
 			Ty::OptU32 => "?u32",
 			Ty::Pair => "pair",
@@ -209,8 +208,6 @@ pub fn layout_json() -> String {
 	w.object();
 	w.key("enum");
 	w.int(none.r#enum as u32);
-	w.key("bool");
-	w.int(none.bool as u32);
 	for (name, tagged) in [("list", none.list), ("str", none.str), ("int", none.int)] {
 		w.key(name);
 		w.object();
@@ -240,14 +237,10 @@ pub fn layout_json() -> String {
 	recipes(&mut w, crate::recipe::TS);
 	w.key("adds");
 	recipes(&mut w, crate::recipe::ADDS);
-	w.key("extras");
-	recipes(
-		&mut w,
-		&[
-			("extras", crate::recipe::EXTRAS),
-			("erased", crate::recipe::EXTRAS_ERASED),
-		],
-	);
+	w.key("ts_adds");
+	recipes(&mut w, crate::recipe::TS_ADDS);
+	w.key("erased");
+	ops(&mut w, crate::recipe::EXTRAS_ERASED);
 	w.end();
 	w.end();
 	w.finish()
@@ -783,7 +776,9 @@ fn prepare_tree<X: Reuse>(ast: &mut Ast<X>, positions: &Positions, options: Opti
 	for &owner in ast.attached.owners() {
 		rare.insert(owner);
 	}
-	ast.extension.rare(&mut rare);
+	if options.has(Options::ERASE) {
+		ast.extension.rare(&mut rare);
+	}
 	if let Some(scopes) = &ast.scopes
 		&& options.has(Options::SCOPES)
 	{

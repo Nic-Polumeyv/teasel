@@ -22,11 +22,14 @@
 						"end": 27
 					}
 				},
+				"declare": false,
 				"id": {
 					"type": "Identifier",
 					"start": 9,
 					"end": 10,
 					"declares": 0,
+					"decorators": [],
+					"optional": false,
 					"name": "f"
 				},
 				"generator": false,
@@ -47,6 +50,8 @@
 								"end": 20
 							}
 						},
+						"decorators": [],
+						"optional": false,
 						"name": "a"
 					}
 				]
@@ -65,11 +70,14 @@
 						"end": 56
 					}
 				},
+				"declare": false,
 				"id": {
 					"type": "Identifier",
 					"start": 38,
 					"end": 39,
 					"reference": 0,
+					"decorators": [],
+					"optional": false,
 					"name": "f"
 				},
 				"generator": false,
@@ -90,6 +98,8 @@
 								"end": 49
 							}
 						},
+						"decorators": [],
+						"optional": false,
 						"name": "a"
 					}
 				]
@@ -102,11 +112,14 @@
 				"defines": [
 					1
 				],
+				"declare": false,
 				"id": {
 					"type": "Identifier",
 					"start": 67,
 					"end": 68,
 					"reference": 1,
+					"decorators": [],
+					"optional": false,
 					"name": "f"
 				},
 				"expression": false,
@@ -128,6 +141,8 @@
 								"end": 75
 							}
 						},
+						"decorators": [],
+						"optional": false,
 						"name": "a"
 					}
 				],
@@ -161,6 +176,8 @@
 					"start": 97,
 					"end": 98,
 					"declares": 2,
+					"decorators": [],
+					"optional": false,
 					"name": "g"
 				},
 				"generator": false,
@@ -181,6 +198,7 @@
 						"defines": [
 							3
 						],
+						"definite": false,
 						"id": {
 							"type": "Identifier",
 							"start": 122,
@@ -196,6 +214,8 @@
 									"end": 131
 								}
 							},
+							"decorators": [],
+							"optional": false,
 							"name": "h"
 						},
 						"init": null
@@ -216,6 +236,7 @@
 						"defines": [
 							4
 						],
+						"definite": false,
 						"id": {
 							"type": "Identifier",
 							"start": 145,
@@ -231,6 +252,8 @@
 									"end": 154
 								}
 							},
+							"decorators": [],
+							"optional": false,
 							"name": "i"
 						},
 						"init": null
@@ -246,12 +269,17 @@
 				"defines": [
 					5
 				],
+				"implements": [],
+				"decorators": [],
 				"declare": true,
+				"abstract": false,
 				"id": {
 					"type": "Identifier",
 					"start": 170,
 					"end": 171,
 					"declares": 5,
+					"decorators": [],
+					"optional": false,
 					"name": "J"
 				},
 				"superClass": null,
@@ -264,12 +292,18 @@
 							"type": "MethodDefinition",
 							"start": 174,
 							"end": 184,
+							"decorators": [],
+							"optional": false,
+							"abstract": false,
+							"override": false,
 							"static": false,
 							"computed": false,
 							"key": {
 								"type": "Identifier",
 								"start": 174,
 								"end": 175,
+								"decorators": [],
+								"optional": false,
 								"name": "m"
 							},
 							"kind": "method",
@@ -311,11 +345,14 @@
 						6
 					],
 					"declare": true,
+					"global": false,
 					"id": {
 						"type": "Identifier",
 						"start": 212,
 						"end": 213,
 						"declares": 6,
+						"decorators": [],
+						"optional": false,
 						"name": "K"
 					},
 					"body": {

@@ -13,6 +13,10 @@
 				"defines": [
 					0
 				],
+				"implements": [],
+				"decorators": [],
+				"declare": false,
+				"abstract": false,
 				"trailingComments": [
 					{
 						"type": "Line",
@@ -26,6 +30,8 @@
 					"start": 6,
 					"end": 7,
 					"declares": 0,
+					"decorators": [],
+					"optional": false,
 					"name": "C"
 				},
 				"superClass": null,

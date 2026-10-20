@@ -13,11 +13,17 @@
 				"defines": [
 					0
 				],
+				"implements": [],
+				"decorators": [],
+				"declare": false,
+				"abstract": false,
 				"id": {
 					"type": "Identifier",
 					"start": 6,
 					"end": 7,
 					"declares": 0,
+					"decorators": [],
+					"optional": false,
 					"name": "C"
 				},
 				"superClass": null,
@@ -30,12 +36,21 @@
 							"type": "PropertyDefinition",
 							"start": 11,
 							"end": 24,
+							"decorators": [],
+							"optional": false,
+							"definite": false,
+							"declare": false,
+							"abstract": false,
+							"readonly": false,
+							"override": false,
 							"static": true,
 							"computed": false,
 							"key": {
 								"type": "Identifier",
 								"start": 18,
 								"end": 24,
+								"decorators": [],
+								"optional": false,
 								"name": "static"
 							},
 							"value": null
@@ -44,12 +59,21 @@
 							"type": "PropertyDefinition",
 							"start": 26,
 							"end": 32,
+							"decorators": [],
+							"optional": false,
+							"definite": false,
+							"declare": false,
+							"abstract": false,
+							"readonly": false,
+							"override": false,
 							"static": false,
 							"computed": false,
 							"key": {
 								"type": "Identifier",
 								"start": 26,
 								"end": 27,
+								"decorators": [],
+								"optional": false,
 								"name": "x"
 							},
 							"value": {

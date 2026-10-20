@@ -13,6 +13,7 @@
 				"defines": [
 					0
 				],
+				"implements": [],
 				"decorators": [
 					{
 						"type": "Decorator",
@@ -23,16 +24,21 @@
 							"start": 1,
 							"end": 4,
 							"reference": 0,
+							"decorators": [],
+							"optional": false,
 							"name": "dec"
 						}
 					}
 				],
 				"declare": true,
+				"abstract": false,
 				"id": {
 					"type": "Identifier",
 					"start": 19,
 					"end": 20,
 					"declares": 0,
+					"decorators": [],
+					"optional": false,
 					"name": "A"
 				},
 				"superClass": null,
@@ -56,6 +62,7 @@
 					"defines": [
 						1
 					],
+					"implements": [],
 					"decorators": [
 						{
 							"type": "Decorator",
@@ -66,16 +73,21 @@
 								"start": 32,
 								"end": 35,
 								"reference": 1,
+								"decorators": [],
+								"optional": false,
 								"name": "dec"
 							}
 						}
 					],
 					"declare": true,
+					"abstract": false,
 					"id": {
 						"type": "Identifier",
 						"start": 50,
 						"end": 51,
 						"declares": 1,
+						"decorators": [],
+						"optional": false,
 						"name": "B"
 					},
 					"superClass": null,
@@ -103,6 +115,7 @@
 					"defines": [
 						2
 					],
+					"implements": [],
 					"decorators": [
 						{
 							"type": "Decorator",
@@ -113,6 +126,8 @@
 								"start": 56,
 								"end": 59,
 								"reference": 2,
+								"decorators": [],
+								"optional": false,
 								"name": "dec"
 							}
 						}
@@ -124,6 +139,8 @@
 						"start": 90,
 						"end": 91,
 						"declares": 2,
+						"decorators": [],
+						"optional": false,
 						"name": "C"
 					},
 					"superClass": null,
@@ -148,6 +165,7 @@
 					"start": 110,
 					"end": 132,
 					"scope": 4,
+					"implements": [],
 					"decorators": [
 						{
 							"type": "Decorator",
@@ -158,10 +176,13 @@
 								"start": 111,
 								"end": 114,
 								"reference": 3,
+								"decorators": [],
+								"optional": false,
 								"name": "dec"
 							}
 						}
 					],
+					"declare": false,
 					"abstract": true,
 					"id": null,
 					"superClass": null,

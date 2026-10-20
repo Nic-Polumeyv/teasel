@@ -988,7 +988,7 @@ impl Parser<'_, TypeScript> {
 			}
 			let name = self.intern("new");
 			let key = self.add(NodeKind::Identifier { name }, start);
-			return self.parse_property_or_method_signature(start, key, None, None, false);
+			return self.parse_property_or_method_signature(start, key, false, None, false);
 		}
 		let modifiers = self.parse_modifiers(
 			&["readonly"],
@@ -1022,7 +1022,7 @@ impl Parser<'_, TypeScript> {
 			});
 			(key, computed) = self.parse_property_name()?;
 		}
-		self.parse_property_or_method_signature(start, key, Some(computed), kind, modifiers.extras.readonly)
+		self.parse_property_or_method_signature(start, key, computed, kind, modifiers.extras.readonly)
 	}
 
 	fn parse_signature_member(&mut self, start: u32, construct: bool) -> Result<NodeId> {
@@ -1048,10 +1048,13 @@ impl Parser<'_, TypeScript> {
 		&mut self,
 		start: u32,
 		key: NodeId,
-		computed: Option<bool>,
+		computed: bool,
 		kind: Option<SignatureKind>,
 		readonly: bool,
 	) -> Result<NodeId> {
+		if kind.is_some() && !self.is(TokenKind::ParenL) && !self.is(TokenKind::Lt) {
+			return self.unexpected();
+		}
 		let optional = self.eat(TokenKind::Question)?;
 		if self.is(TokenKind::ParenL) || self.is(TokenKind::Lt) {
 			if readonly {
@@ -1081,7 +1084,7 @@ impl Parser<'_, TypeScript> {
 			return Ok(self.ts(
 				TsKind::MethodSignature {
 					key,
-					computed: computed.unwrap_or(false),
+					computed,
 					optional,
 					kind: kind.unwrap_or(SignatureKind::Method),
 					type_parameters,
@@ -1099,7 +1102,6 @@ impl Parser<'_, TypeScript> {
 				computed,
 				optional,
 				readonly,
-				kind,
 				type_annotation,
 			},
 			start,

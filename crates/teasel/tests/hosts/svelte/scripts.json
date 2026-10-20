@@ -28,6 +28,7 @@
 							"type": "VariableDeclaration",
 							"start": 24,
 							"end": 41,
+							"declare": false,
 							"declarations": [
 								{
 									"type": "VariableDeclarator",
@@ -36,11 +37,14 @@
 									"defines": [
 										0
 									],
+									"definite": false,
 									"id": {
 										"type": "Identifier",
 										"start": 30,
 										"end": 36,
 										"declares": 0,
+										"decorators": [],
+										"optional": false,
 										"name": "shared"
 									},
 									"init": {
@@ -87,6 +91,7 @@
 						"type": "VariableDeclaration",
 						"start": 72,
 						"end": 95,
+						"declare": false,
 						"declarations": [
 							{
 								"type": "VariableDeclarator",
@@ -95,6 +100,7 @@
 								"defines": [
 									1
 								],
+								"definite": false,
 								"id": {
 									"type": "Identifier",
 									"start": 76,
@@ -110,6 +116,8 @@
 											"end": 85
 										}
 									},
+									"decorators": [],
+									"optional": false,
 									"name": "n"
 								},
 								"init": {
@@ -117,6 +125,8 @@
 									"start": 88,
 									"end": 94,
 									"reference": 0,
+									"decorators": [],
+									"optional": false,
 									"name": "shared"
 								}
 							}
@@ -132,6 +142,7 @@
 							"type": "VariableDeclaration",
 							"start": 104,
 							"end": 119,
+							"declare": false,
 							"declarations": [
 								{
 									"type": "VariableDeclarator",
@@ -140,11 +151,14 @@
 									"defines": [
 										2
 									],
+									"definite": false,
 									"id": {
 										"type": "Identifier",
 										"start": 108,
 										"end": 112,
 										"declares": 2,
+										"decorators": [],
+										"optional": false,
 										"name": "name"
 									},
 									"init": {
@@ -211,6 +225,8 @@
 						"end": 132,
 						"reference": 1,
 						"root": 2,
+						"decorators": [],
+						"optional": false,
 						"name": "n"
 					}
 				},
@@ -231,6 +247,8 @@
 						"end": 139,
 						"reference": 2,
 						"root": 3,
+						"decorators": [],
+						"optional": false,
 						"name": "name"
 					}
 				}

@@ -13,11 +13,15 @@
 				"defines": [
 					0
 				],
+				"declare": false,
+				"const": false,
 				"id": {
 					"type": "Identifier",
 					"start": 5,
 					"end": 6,
 					"declares": 0,
+					"decorators": [],
+					"optional": false,
 					"name": "E"
 				},
 				"members": [
@@ -33,6 +37,8 @@
 							"start": 9,
 							"end": 10,
 							"declares": 1,
+							"decorators": [],
+							"optional": false,
 							"name": "A"
 						}
 					},
@@ -48,6 +54,8 @@
 							"start": 12,
 							"end": 13,
 							"declares": 2,
+							"decorators": [],
+							"optional": false,
 							"name": "B"
 						},
 						"initializer": {
@@ -70,6 +78,8 @@
 							"start": 19,
 							"end": 20,
 							"declares": 3,
+							"decorators": [],
+							"optional": false,
 							"name": "C"
 						},
 						"initializer": {
@@ -81,6 +91,8 @@
 								"start": 23,
 								"end": 24,
 								"reference": 0,
+								"decorators": [],
+								"optional": false,
 								"name": "A"
 							},
 							"operator": "|",
@@ -89,6 +101,8 @@
 								"start": 27,
 								"end": 28,
 								"reference": 1,
+								"decorators": [],
+								"optional": false,
 								"name": "B"
 							}
 						}
@@ -105,6 +119,8 @@
 							"start": 30,
 							"end": 31,
 							"declares": 4,
+							"decorators": [],
+							"optional": false,
 							"name": "D"
 						},
 						"initializer": {
@@ -125,12 +141,15 @@
 				"defines": [
 					5
 				],
+				"declare": false,
 				"const": true,
 				"id": {
 					"type": "Identifier",
 					"start": 51,
 					"end": 52,
 					"declares": 5,
+					"decorators": [],
+					"optional": false,
 					"name": "F"
 				},
 				"members": [
@@ -146,6 +165,8 @@
 							"start": 55,
 							"end": 56,
 							"declares": 6,
+							"decorators": [],
+							"optional": false,
 							"name": "X"
 						}
 					}
@@ -160,11 +181,14 @@
 					7
 				],
 				"declare": true,
+				"const": false,
 				"id": {
 					"type": "Identifier",
 					"start": 72,
 					"end": 73,
 					"declares": 7,
+					"decorators": [],
+					"optional": false,
 					"name": "G"
 				},
 				"members": [
@@ -180,6 +204,8 @@
 							"start": 76,
 							"end": 77,
 							"declares": 8,
+							"decorators": [],
+							"optional": false,
 							"name": "Y"
 						}
 					}
@@ -193,11 +219,15 @@
 				"defines": [
 					9
 				],
+				"declare": false,
+				"const": false,
 				"id": {
 					"type": "Identifier",
 					"start": 85,
 					"end": 86,
 					"declares": 9,
+					"decorators": [],
+					"optional": false,
 					"name": "H"
 				},
 				"members": [
@@ -213,6 +243,8 @@
 							"start": 89,
 							"end": 90,
 							"declares": 10,
+							"decorators": [],
+							"optional": false,
 							"name": "A"
 						},
 						"initializer": {
@@ -235,6 +267,8 @@
 							"start": 96,
 							"end": 97,
 							"declares": 11,
+							"decorators": [],
+							"optional": false,
 							"name": "B"
 						}
 					},

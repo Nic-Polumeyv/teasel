@@ -15,7 +15,6 @@ pub enum Ty {
 	Str,
 	OptStr,
 	Bool,
-	OptBool,
 	U32,
 	OptU32,
 	/// Two words: a range.
@@ -66,9 +65,6 @@ impl Described for Option<StrId> {
 }
 impl Described for bool {
 	const TY: Ty = Ty::Bool;
-}
-impl Described for Option<bool> {
-	const TY: Ty = Ty::OptBool;
 }
 impl Described for u32 {
 	const TY: Ty = Ty::U32;
@@ -189,12 +185,11 @@ macro_rules! kinds {
 }
 pub(crate) use kinds;
 
-/// How the compiler spells a missing optional: the byte of a missing enum or bool, and for a
+/// How the compiler spells a missing optional: the byte of a missing enum, and for a
 /// list or a string id, which word of the field is the tag and what it holds when missing; the
 /// value's words follow in their order around it.
 pub struct Missing {
 	pub r#enum: u8,
-	pub bool: u8,
 	pub list: Tagged,
 	pub str: Tagged,
 	pub int: Tagged,
@@ -228,7 +223,6 @@ pub fn missing() -> Missing {
 	unsafe {
 		Missing {
 			r#enum: std::mem::transmute::<Option<crate::ast::PropertyKind>, u8>(None),
-			bool: std::mem::transmute::<Option<bool>, u8>(None),
 			list: tagged(
 				std::mem::transmute::<Option<List>, [u32; 3]>(Some(List { start: 7, len: 9 })),
 				std::mem::transmute::<Option<List>, [MaybeUninit<u32>; 3]>(None),

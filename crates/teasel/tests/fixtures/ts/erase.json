@@ -200,6 +200,7 @@
 				"defines": [
 					6
 				],
+				"const": false,
 				"id": {
 					"type": "Identifier",
 					"start": 316,
@@ -233,6 +234,7 @@
 				"defines": [
 					8
 				],
+				"global": false,
 				"id": {
 					"type": "Identifier",
 					"start": 334,

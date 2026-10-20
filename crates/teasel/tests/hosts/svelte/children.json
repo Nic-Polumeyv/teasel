@@ -38,6 +38,8 @@
 									"type": "Identifier",
 									"start": 29,
 									"end": 33,
+									"decorators": [],
+									"optional": false,
 									"name": "fade"
 								},
 								"local": {
@@ -45,6 +47,8 @@
 									"start": 29,
 									"end": 33,
 									"declares": 0,
+									"decorators": [],
+									"optional": false,
 									"name": "fade"
 								}
 							}
@@ -76,6 +80,8 @@
 									"type": "Identifier",
 									"start": 72,
 									"end": 76,
+									"decorators": [],
+									"optional": false,
 									"name": "flip"
 								},
 								"local": {
@@ -83,6 +89,8 @@
 									"start": 72,
 									"end": 76,
 									"declares": 1,
+									"decorators": [],
+									"optional": false,
 									"name": "flip"
 								}
 							}
@@ -100,6 +108,7 @@
 						"type": "VariableDeclaration",
 						"start": 103,
 						"end": 128,
+						"declare": false,
 						"declarations": [
 							{
 								"type": "VariableDeclarator",
@@ -108,6 +117,7 @@
 								"defines": [
 									2
 								],
+								"definite": false,
 								"id": {
 									"type": "Identifier",
 									"start": 107,
@@ -128,6 +138,8 @@
 											}
 										}
 									},
+									"decorators": [],
+									"optional": false,
 									"name": "items"
 								},
 								"init": {
@@ -182,6 +194,8 @@
 						"end": 152,
 						"reference": 0,
 						"root": 1,
+						"decorators": [],
+						"optional": false,
 						"name": "items"
 					},
 					"context": {
@@ -190,6 +204,8 @@
 						"end": 160,
 						"declares": 3,
 						"root": 2,
+						"decorators": [],
+						"optional": false,
 						"name": "item"
 					},
 					"key": {
@@ -198,6 +214,8 @@
 						"end": 166,
 						"reference": 1,
 						"root": 3,
+						"decorators": [],
+						"optional": false,
 						"name": "item"
 					},
 					"body": {
@@ -232,6 +250,7 @@
 													"type": "Property",
 													"start": 193,
 													"end": 206,
+													"optional": false,
 													"method": false,
 													"shorthand": false,
 													"computed": false,
@@ -239,6 +258,8 @@
 														"type": "Identifier",
 														"start": 193,
 														"end": 201,
+														"decorators": [],
+														"optional": false,
 														"name": "duration"
 													},
 													"value": {
@@ -271,6 +292,7 @@
 													"type": "Property",
 													"start": 226,
 													"end": 235,
+													"optional": false,
 													"method": false,
 													"shorthand": false,
 													"computed": false,
@@ -278,6 +300,8 @@
 														"type": "Identifier",
 														"start": 226,
 														"end": 231,
+														"decorators": [],
+														"optional": false,
 														"name": "delay"
 													},
 													"value": {
@@ -308,6 +332,8 @@
 												"end": 244,
 												"reference": 2,
 												"root": 6,
+												"decorators": [],
+												"optional": false,
 												"name": "item"
 											}
 										}
@@ -341,6 +367,8 @@
 						"end": 274,
 						"declares": 4,
 						"root": 7,
+						"decorators": [],
+						"optional": false,
 						"name": "cell"
 					},
 					"typeParams": "T",
@@ -363,10 +391,14 @@
 										"type": "Identifier",
 										"start": 285,
 										"end": 286,
+										"decorators": [],
+										"optional": false,
 										"name": "T"
 									}
 								}
 							},
+							"decorators": [],
+							"optional": false,
 							"name": "value"
 						},
 						{
@@ -374,11 +406,15 @@
 							"start": 288,
 							"end": 297,
 							"root": 9,
+							"decorators": [],
+							"optional": false,
 							"left": {
 								"type": "Identifier",
 								"start": 288,
 								"end": 293,
 								"declares": 6,
+								"decorators": [],
+								"optional": false,
 								"name": "width"
 							},
 							"right": {
@@ -422,6 +458,8 @@
 												"end": 319,
 												"reference": 3,
 												"root": 10,
+												"decorators": [],
+												"optional": false,
 												"name": "width"
 											}
 										}
@@ -441,6 +479,8 @@
 												"end": 327,
 												"reference": 4,
 												"root": 11,
+												"decorators": [],
+												"optional": false,
 												"name": "value"
 											}
 										}
@@ -478,6 +518,8 @@
 							"start": 354,
 							"end": 358,
 							"reference": 5,
+							"decorators": [],
+							"optional": false,
 							"name": "cell"
 						},
 						"arguments": [

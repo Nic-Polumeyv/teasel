@@ -631,6 +631,36 @@ if (name !== 'native') {
 	assert.equal(cut.typeParams, 'T,');
 }
 
+// every node of a type has the same keys in the same order, but for what acorn adds where it applies and, erasing, a decorator
+{
+	const fixtures = new URL('../../crates/teasel/tests/fixtures/', import.meta.url);
+	const sources = (dir: string) => readdirSync(new URL(dir, fixtures)).filter((file) => !file.endsWith('.json')).map((file) => readFileSync(new URL(`${dir}${file}`, fixtures), 'utf8'));
+	const acorn = ['regex', 'bigint', 'directive'];
+	for (const [dir, options, where] of [
+		['js/', { sourceType: 'module', scopes: true }, acorn],
+		['ts/', { sourceType: 'module', typescript: true, scopes: true }, acorn],
+		['ts/', { sourceType: 'module', typescript: 'erase', scopes: true }, [...acorn, 'decorators']],
+	] as const) {
+		const shapes = new Map<string, string>();
+		const walk = (value: Any) => {
+			if (value === null || typeof value !== 'object') return;
+			if (Array.isArray(value)) return value.forEach(walk);
+			if (typeof value.type === 'string') {
+				const keys = Object.keys(value).filter((key) => !(where as readonly string[]).includes(key)).join();
+				assert.equal(keys, shapes.get(value.type) ?? (shapes.set(value.type, keys), keys), `${dir} ${options.typescript ?? false}: a second shape of ${value.type}`);
+			}
+			for (const key in value) if (key !== 'loc') walk(value[key]);
+		};
+		for (const text of sources(dir)) {
+			try {
+				walk(open(text, options).parse().node);
+			} catch (e) {
+				if (!(e instanceof SyntaxError)) throw e;
+			}
+		}
+	}
+}
+
 // /writing-a-grammar builds a grammar in steps; what each step answers for the page's template is pinned beside the page
 {
 	const template = '<ul>\n\t{{#repeat item, i in items by item.id}}\n\t\t<Card title={{ item.name }} index={{ i }} />\n\t{{:empty}}\n\t\t<li>No items</li>\n\t{{/repeat}}\n</ul>\n';

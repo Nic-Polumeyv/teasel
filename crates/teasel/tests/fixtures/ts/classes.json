@@ -22,6 +22,9 @@
 							"type": "TSTypeParameter",
 							"start": 17,
 							"end": 18,
+							"in": false,
+							"out": false,
+							"const": false,
 							"name": "T"
 						}
 					]
@@ -35,6 +38,8 @@
 							"type": "Identifier",
 							"start": 44,
 							"end": 45,
+							"decorators": [],
+							"optional": false,
 							"name": "B"
 						}
 					},
@@ -46,16 +51,22 @@
 							"type": "Identifier",
 							"start": 47,
 							"end": 48,
+							"decorators": [],
+							"optional": false,
 							"name": "C"
 						}
 					}
 				],
+				"decorators": [],
+				"declare": false,
 				"abstract": true,
 				"id": {
 					"type": "Identifier",
 					"start": 15,
 					"end": 16,
 					"declares": 0,
+					"decorators": [],
+					"optional": false,
 					"name": "A"
 				},
 				"superClass": {
@@ -63,6 +74,8 @@
 					"start": 28,
 					"end": 32,
 					"reference": 0,
+					"decorators": [],
+					"optional": false,
 					"name": "Base"
 				},
 				"body": {
@@ -84,13 +97,22 @@
 									"end": 69
 								}
 							},
+							"decorators": [],
 							"accessibility": "private",
+							"optional": false,
+							"definite": false,
+							"declare": false,
+							"abstract": false,
+							"readonly": false,
+							"override": false,
 							"static": false,
 							"computed": false,
 							"key": {
 								"type": "Identifier",
 								"start": 60,
 								"end": 61,
+								"decorators": [],
+								"optional": false,
 								"name": "x"
 							},
 							"value": {
@@ -115,15 +137,22 @@
 									"end": 105
 								}
 							},
+							"decorators": [],
 							"accessibility": "protected",
 							"optional": true,
+							"definite": false,
+							"declare": false,
+							"abstract": false,
 							"readonly": true,
+							"override": false,
 							"static": false,
 							"computed": false,
 							"key": {
 								"type": "Identifier",
 								"start": 95,
 								"end": 96,
+								"decorators": [],
+								"optional": false,
 								"name": "y"
 							},
 							"value": null
@@ -144,17 +173,28 @@
 										"type": "Identifier",
 										"start": 125,
 										"end": 126,
+										"decorators": [],
+										"optional": false,
 										"name": "T"
 									}
 								}
 							},
+							"decorators": [],
 							"accessibility": "public",
+							"optional": false,
+							"definite": false,
+							"declare": false,
+							"abstract": false,
+							"readonly": false,
+							"override": false,
 							"static": true,
 							"computed": false,
 							"key": {
 								"type": "Identifier",
 								"start": 122,
 								"end": 123,
+								"decorators": [],
+								"optional": false,
 								"name": "z"
 							},
 							"value": null
@@ -173,13 +213,21 @@
 									"end": 146
 								}
 							},
+							"decorators": [],
+							"optional": false,
+							"definite": false,
 							"declare": true,
+							"abstract": false,
+							"readonly": false,
+							"override": false,
 							"static": false,
 							"computed": false,
 							"key": {
 								"type": "Identifier",
 								"start": 137,
 								"end": 138,
+								"decorators": [],
+								"optional": false,
 								"name": "w"
 							},
 							"value": null
@@ -198,7 +246,12 @@
 									"end": 168
 								}
 							},
+							"decorators": [],
+							"optional": false,
 							"definite": true,
+							"declare": false,
+							"abstract": false,
+							"readonly": false,
 							"override": true,
 							"static": false,
 							"computed": false,
@@ -206,6 +259,8 @@
 								"type": "Identifier",
 								"start": 158,
 								"end": 159,
+								"decorators": [],
+								"optional": false,
 								"name": "v"
 							},
 							"value": null
@@ -214,12 +269,18 @@
 							"type": "MethodDefinition",
 							"start": 171,
 							"end": 242,
+							"decorators": [],
+							"optional": false,
+							"abstract": false,
+							"override": false,
 							"static": false,
 							"computed": false,
 							"key": {
 								"type": "Identifier",
 								"start": 171,
 								"end": 182,
+								"decorators": [],
+								"optional": false,
 								"name": "constructor"
 							},
 							"kind": "constructor",
@@ -232,6 +293,7 @@
 									1,
 									2
 								],
+								"declare": false,
 								"id": null,
 								"expression": false,
 								"generator": false,
@@ -241,7 +303,11 @@
 										"type": "TSParameterProperty",
 										"start": 183,
 										"end": 200,
+										"decorators": [],
 										"accessibility": "private",
+										"readonly": false,
+										"override": false,
+										"static": false,
 										"parameter": {
 											"type": "Identifier",
 											"start": 191,
@@ -257,6 +323,8 @@
 													"end": 200
 												}
 											},
+											"decorators": [],
+											"optional": false,
 											"name": "a"
 										}
 									},
@@ -264,8 +332,11 @@
 										"type": "TSParameterProperty",
 										"start": 202,
 										"end": 228,
+										"decorators": [],
 										"accessibility": "public",
 										"readonly": true,
+										"override": false,
+										"static": false,
 										"parameter": {
 											"type": "Identifier",
 											"start": 218,
@@ -281,6 +352,7 @@
 													"end": 228
 												}
 											},
+											"decorators": [],
 											"optional": true,
 											"name": "b"
 										}
@@ -316,13 +388,18 @@
 							"type": "MethodDefinition",
 							"start": 244,
 							"end": 263,
+							"decorators": [],
+							"optional": false,
 							"abstract": true,
+							"override": false,
 							"static": false,
 							"computed": false,
 							"key": {
 								"type": "Identifier",
 								"start": 253,
 								"end": 254,
+								"decorators": [],
+								"optional": false,
 								"name": "m"
 							},
 							"kind": "method",
@@ -360,17 +437,26 @@
 										"type": "TSTypeParameter",
 										"start": 277,
 										"end": 278,
+										"in": false,
+										"out": false,
+										"const": false,
 										"name": "U"
 									}
 								]
 							},
+							"decorators": [],
 							"accessibility": "protected",
+							"optional": false,
+							"abstract": false,
+							"override": false,
 							"static": false,
 							"computed": false,
 							"key": {
 								"type": "Identifier",
 								"start": 275,
 								"end": 276,
+								"decorators": [],
+								"optional": false,
 								"name": "n"
 							},
 							"kind": "method",
@@ -394,10 +480,13 @@
 											"type": "Identifier",
 											"start": 287,
 											"end": 288,
+											"decorators": [],
+											"optional": false,
 											"name": "U"
 										}
 									}
 								},
+								"declare": false,
 								"id": null,
 								"expression": false,
 								"generator": false,
@@ -420,10 +509,14 @@
 													"type": "Identifier",
 													"start": 283,
 													"end": 284,
+													"decorators": [],
+													"optional": false,
 													"name": "U"
 												}
 											}
 										},
+										"decorators": [],
+										"optional": false,
 										"name": "u"
 									}
 								],
@@ -441,6 +534,8 @@
 												"start": 298,
 												"end": 299,
 												"reference": 1,
+												"decorators": [],
+												"optional": false,
 												"name": "u"
 											}
 										}
@@ -452,12 +547,18 @@
 							"type": "MethodDefinition",
 							"start": 304,
 							"end": 333,
+							"decorators": [],
+							"optional": false,
+							"abstract": false,
+							"override": false,
 							"static": false,
 							"computed": false,
 							"key": {
 								"type": "Identifier",
 								"start": 308,
 								"end": 309,
+								"decorators": [],
+								"optional": false,
 								"name": "g"
 							},
 							"kind": "get",
@@ -476,6 +577,7 @@
 										"end": 319
 									}
 								},
+								"declare": false,
 								"id": null,
 								"expression": false,
 								"generator": false,
@@ -516,6 +618,13 @@
 									"end": 352
 								}
 							},
+							"decorators": [],
+							"optional": false,
+							"definite": false,
+							"declare": false,
+							"abstract": false,
+							"readonly": false,
+							"override": false,
 							"static": true,
 							"computed": false,
 							"key": {
@@ -546,6 +655,9 @@
 							"type": "TSTypeParameter",
 							"start": 364,
 							"end": 365,
+							"in": false,
+							"out": false,
+							"const": false,
 							"name": "T"
 						}
 					]
@@ -563,6 +675,8 @@
 								"type": "Identifier",
 								"start": 377,
 								"end": 378,
+								"decorators": [],
+								"optional": false,
 								"name": "T"
 							}
 						}
@@ -577,6 +691,8 @@
 							"type": "Identifier",
 							"start": 391,
 							"end": 392,
+							"decorators": [],
+							"optional": false,
 							"name": "F"
 						}
 					},
@@ -588,15 +704,22 @@
 							"type": "Identifier",
 							"start": 394,
 							"end": 395,
+							"decorators": [],
+							"optional": false,
 							"name": "G"
 						}
 					}
 				],
+				"decorators": [],
+				"declare": false,
+				"abstract": false,
 				"id": {
 					"type": "Identifier",
 					"start": 362,
 					"end": 363,
 					"declares": 4,
+					"decorators": [],
+					"optional": false,
 					"name": "D"
 				},
 				"superClass": {
@@ -604,6 +727,8 @@
 					"start": 375,
 					"end": 376,
 					"reference": 2,
+					"decorators": [],
+					"optional": false,
 					"name": "E"
 				},
 				"body": {
@@ -621,11 +746,17 @@
 				"defines": [
 					5
 				],
+				"implements": [],
+				"decorators": [],
+				"declare": false,
+				"abstract": false,
 				"id": {
 					"type": "Identifier",
 					"start": 405,
 					"end": 406,
 					"declares": 5,
+					"decorators": [],
+					"optional": false,
 					"name": "H"
 				},
 				"superClass": null,
@@ -638,12 +769,18 @@
 							"type": "MethodDefinition",
 							"start": 409,
 							"end": 423,
+							"decorators": [],
+							"optional": false,
+							"abstract": false,
+							"override": false,
 							"static": false,
 							"computed": false,
 							"key": {
 								"type": "Identifier",
 								"start": 409,
 								"end": 420,
+								"decorators": [],
+								"optional": false,
 								"name": "constructor"
 							},
 							"kind": "constructor",
@@ -662,12 +799,18 @@
 							"type": "MethodDefinition",
 							"start": 424,
 							"end": 450,
+							"decorators": [],
+							"optional": false,
+							"abstract": false,
+							"override": false,
 							"static": false,
 							"computed": false,
 							"key": {
 								"type": "Identifier",
 								"start": 424,
 								"end": 435,
+								"decorators": [],
+								"optional": false,
 								"name": "constructor"
 							},
 							"kind": "constructor",
@@ -679,6 +822,7 @@
 								"defines": [
 									6
 								],
+								"declare": false,
 								"id": null,
 								"expression": false,
 								"generator": false,
@@ -699,6 +843,7 @@
 												"end": 446
 											}
 										},
+										"decorators": [],
 										"optional": true,
 										"name": "x"
 									}
@@ -715,12 +860,18 @@
 							"type": "MethodDefinition",
 							"start": 451,
 							"end": 461,
+							"decorators": [],
+							"optional": false,
+							"abstract": false,
+							"override": false,
 							"static": false,
 							"computed": false,
 							"key": {
 								"type": "Identifier",
 								"start": 451,
 								"end": 452,
+								"decorators": [],
+								"optional": false,
 								"name": "m"
 							},
 							"kind": "method",

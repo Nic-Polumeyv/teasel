@@ -20,12 +20,16 @@
 							"type": "Identifier",
 							"start": 14,
 							"end": 15,
+							"decorators": [],
+							"optional": false,
 							"name": "A"
 						},
 						"local": {
 							"type": "Identifier",
 							"start": 14,
 							"end": 15,
+							"decorators": [],
+							"optional": false,
 							"name": "A"
 						}
 					}
@@ -57,6 +61,8 @@
 							"type": "Identifier",
 							"start": 37,
 							"end": 38,
+							"decorators": [],
+							"optional": false,
 							"name": "B"
 						},
 						"local": {
@@ -64,6 +70,8 @@
 							"start": 37,
 							"end": 38,
 							"declares": 0,
+							"decorators": [],
+							"optional": false,
 							"name": "B"
 						}
 					}
@@ -81,6 +89,7 @@
 				"type": "VariableDeclaration",
 				"start": 51,
 				"end": 64,
+				"declare": false,
 				"declarations": [
 					{
 						"type": "VariableDeclarator",
@@ -89,6 +98,7 @@
 						"defines": [
 							1
 						],
+						"definite": false,
 						"id": {
 							"type": "Identifier",
 							"start": 55,
@@ -106,10 +116,14 @@
 										"type": "Identifier",
 										"start": 58,
 										"end": 59,
+										"decorators": [],
+										"optional": false,
 										"name": "A"
 									}
 								}
 							},
+							"decorators": [],
+							"optional": false,
 							"name": "c"
 						},
 						"init": {
@@ -117,6 +131,8 @@
 							"start": 62,
 							"end": 63,
 							"reference": 0,
+							"decorators": [],
+							"optional": false,
 							"name": "B"
 						}
 					}
@@ -127,10 +143,13 @@
 				"type": "TSTypeAliasDeclaration",
 				"start": 65,
 				"end": 83,
+				"declare": false,
 				"id": {
 					"type": "Identifier",
 					"start": 70,
 					"end": 71,
+					"decorators": [],
+					"optional": false,
 					"name": "D"
 				},
 				"typeAnnotation": {
@@ -141,6 +160,8 @@
 						"type": "Identifier",
 						"start": 81,
 						"end": 82,
+						"decorators": [],
+						"optional": false,
 						"name": "c"
 					}
 				}
@@ -166,6 +187,8 @@
 							"type": "Identifier",
 							"start": 105,
 							"end": 106,
+							"decorators": [],
+							"optional": false,
 							"name": "T"
 						}
 					}
@@ -179,15 +202,21 @@
 							"type": "TSTypeParameter",
 							"start": 95,
 							"end": 96,
+							"in": false,
+							"out": false,
+							"const": false,
 							"name": "T"
 						}
 					]
 				},
+				"declare": false,
 				"id": {
 					"type": "Identifier",
 					"start": 93,
 					"end": 94,
 					"declares": 2,
+					"decorators": [],
+					"optional": false,
 					"name": "f"
 				},
 				"expression": false,
@@ -211,10 +240,14 @@
 									"type": "Identifier",
 									"start": 101,
 									"end": 102,
+									"decorators": [],
+									"optional": false,
 									"name": "T"
 								}
 							}
 						},
+						"decorators": [],
+						"optional": false,
 						"name": "t"
 					}
 				],
@@ -232,6 +265,8 @@
 								"start": 116,
 								"end": 117,
 								"reference": 1,
+								"decorators": [],
+								"optional": false,
 								"name": "t"
 							}
 						}
@@ -246,11 +281,15 @@
 				"defines": [
 					4
 				],
+				"declare": false,
+				"global": false,
 				"id": {
 					"type": "Identifier",
 					"start": 131,
 					"end": 132,
 					"declares": 4,
+					"decorators": [],
+					"optional": false,
 					"name": "N"
 				},
 				"body": {
@@ -267,6 +306,7 @@
 								"type": "VariableDeclaration",
 								"start": 142,
 								"end": 154,
+								"declare": false,
 								"declarations": [
 									{
 										"type": "VariableDeclarator",
@@ -275,11 +315,14 @@
 										"defines": [
 											5
 										],
+										"definite": false,
 										"id": {
 											"type": "Identifier",
 											"start": 148,
 											"end": 149,
 											"declares": 5,
+											"decorators": [],
+											"optional": false,
 											"name": "g"
 										},
 										"init": {
@@ -313,12 +356,16 @@
 						"start": 157,
 						"end": 158,
 						"reference": 2,
+						"decorators": [],
+						"optional": false,
 						"name": "N"
 					},
 					"property": {
 						"type": "Identifier",
 						"start": 159,
 						"end": 160,
+						"decorators": [],
+						"optional": false,
 						"name": "g"
 					},
 					"computed": false,
@@ -333,11 +380,15 @@
 				"defines": [
 					6
 				],
+				"declare": false,
+				"const": false,
 				"id": {
 					"type": "Identifier",
 					"start": 167,
 					"end": 168,
 					"declares": 6,
+					"decorators": [],
+					"optional": false,
 					"name": "E"
 				},
 				"members": [
@@ -353,6 +404,8 @@
 							"start": 171,
 							"end": 172,
 							"declares": 7,
+							"decorators": [],
+							"optional": false,
 							"name": "X"
 						}
 					},
@@ -368,6 +421,8 @@
 							"start": 174,
 							"end": 175,
 							"declares": 8,
+							"decorators": [],
+							"optional": false,
 							"name": "Y"
 						},
 						"initializer": {
@@ -375,6 +430,8 @@
 							"start": 178,
 							"end": 179,
 							"reference": 3,
+							"decorators": [],
+							"optional": false,
 							"name": "X"
 						}
 					}
@@ -393,6 +450,7 @@
 						"defines": [
 							9
 						],
+						"definite": false,
 						"id": {
 							"type": "Identifier",
 							"start": 196,
@@ -408,6 +466,8 @@
 									"end": 205
 								}
 							},
+							"decorators": [],
+							"optional": false,
 							"name": "h"
 						},
 						"init": null
@@ -424,6 +484,8 @@
 					"start": 207,
 					"end": 208,
 					"reference": 4,
+					"decorators": [],
+					"optional": false,
 					"name": "h"
 				}
 			}
