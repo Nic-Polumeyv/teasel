@@ -415,7 +415,7 @@ pub const TS_ADDS: &[(&str, &[Op])] = &[
 	("ModuleDeclaration", &[Bool("declare", "declare")]),
 	("DeclareFunction", &[Maybe("returnType", "return_type"), Maybe("typeParameters", "type_parameters"), Bool("declare", "declare")]),
 	("DeclareMethod", &[Maybe("returnType", "return_type")]),
-	("ParameterProperty", &[Maybe("decorators", "decorators"), Maybe("accessibility", "accessibility"), Bool("readonly", "readonly"), Bool("override", "is_override"), Bool("static", "is_static")]),
+	("ParameterProperty", &[Maybe("accessibility", "accessibility"), Bool("readonly", "readonly"), Bool("override", "is_override"), Bool("static", "is_static")]),
 ];
 
 #[rustfmt::skip]

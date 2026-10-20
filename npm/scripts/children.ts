@@ -32,7 +32,11 @@ export function generate(layout: Layout): { children: Record<string, string[]>; 
 	kinds(layout.recipes.js, layout.kinds);
 	if (layout.ts !== undefined) kinds(layout.recipes.ts!, layout.ts.kinds);
 	const adds = [...(layout.recipes.adds ?? []), ...(layout.recipes.ts_adds ?? [])].flatMap(([, ops]) => ops);
-	const extras = (layout.extras?.fields ?? []).flatMap((f) => (f.ty === '?node' || f.ty === '?list' ? adds.filter(([op, , path]) => op === 'maybe' && path === f.name).map(([, key]) => key as string).slice(0, 1) : []));
+	const extras: string[] = [];
+	for (const field of layout.extras?.fields ?? []) {
+		const add = adds.find(([op, , path]) => op === 'maybe' && path === field.name);
+		if (add !== undefined && (field.ty === '?node' || field.ty === '?list')) extras.push(add[1]);
+	}
 	return { children, extras, stylesheet: layout.stylesheet };
 }
 

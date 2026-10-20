@@ -643,7 +643,6 @@
 										"type": "TSParameterProperty",
 										"start": 387,
 										"end": 407,
-										"decorators": [],
 										"accessibility": "public",
 										"readonly": false,
 										"override": false,

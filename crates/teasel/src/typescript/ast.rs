@@ -148,8 +148,7 @@ crate::layout::names! {
 }
 
 crate::layout::record! {
-	/// Keys TypeScript adds to a JavaScript node, or modifiers on one of its own. Serialized only
-	/// when set.
+	/// Keys TypeScript adds to a JavaScript node, or modifiers on one of its own.
 	#[derive(Clone, Copy, Debug, Default, PartialEq)]
 	pub struct Extras {
 		pub type_annotation: Option<NodeId>,
@@ -936,4 +935,31 @@ impl Emit for Data {
 			panic!("{:?} has {field}, which its kind does not list", w.kind(id));
 		}
 	}
+}
+
+// the writer's check on a node's extras sees every field
+#[test]
+fn set_names_every_field() {
+	let (node, list) = (Some(NodeId::at(0)), Some(List { start: 0, len: 1 }));
+	let all = Extras {
+		type_annotation: node,
+		return_type: node,
+		type_parameters: node,
+		type_arguments: node,
+		super_type_arguments: node,
+		implements: list,
+		decorators: list,
+		accessibility: Some(Accessibility::Public),
+		import_kind: Some(Kind::Type),
+		export_kind: Some(Kind::Type),
+		optional: true,
+		definite: true,
+		declare: true,
+		is_abstract: true,
+		readonly: true,
+		is_override: true,
+		accessor: true,
+		is_static: true,
+	};
+	assert!(all.set().eq(Extras::FIELDS.iter().map(|field| field.name)));
 }

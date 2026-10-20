@@ -464,7 +464,7 @@ function begin(S: State, type: string, id: number, parent: Decoded | undefined, 
 			if (slot > 0) apply(S, id, n, S.G.erased, S.extras, base);
 		} else {
 			const tag = S.N[id * S.C.words + (S.C.kind >> 2)];
-			const adds = tag === S.C.extension ? S.G.ts_adds[S.TS[S.N[id * S.C.words + (S.C.kind >> 2) + 1] * (S.C.layout.ts!.size >> 2)]] : S.G.adds[tag];
+			const adds = tag === S.C.extension ? S.G.ts_adds[S.TS[ts_record(S.C, S.N, id)]] : S.G.adds[tag];
 			if (adds.length !== 0) apply(S, id, n, adds, slot > 0 ? S.extras : S.C.blank, slot > 0 ? base : 0);
 		}
 	}
@@ -595,6 +595,10 @@ function value<E, St>(B: Spelling<E, St>, op: Op, none: Missing, erase: boolean)
 			return B.bigint_value(B.slice(1));
 		case 'regexp':
 			return B.regexp(B.strings(B.word(op.at)), B.strings(B.word(op.at2)));
+		case 'optstrkey': {
+			const [tag, from] = tagged(none.str, op.at);
+			return B.pick(B.eq(B.word(tag), B.lit(none.str.missing)), B.lit(undefined), B.strings(B.word(from)));
+		}
 		case 'constbool':
 			return B.lit(op.value);
 		case 'null':
@@ -731,27 +735,28 @@ class Closures implements Spelling<Value, Stmt> {
 }
 
 // a kind's operations as closures: the leads, then the keys in order
-const programs = new WeakMap<Op[], { slots: number; lead: Stmt[]; body: Stmt[] }>();
-function program(ops: Op[], none: Missing) {
+// one program for JavaScript and one for TypeScript, whose answer gives every statement a `directive`
+const programs = new WeakMap<Op[], { slots: number; lead: Stmt[]; body: Stmt[] }[]>();
+function program(ops: Op[], none: Missing, typescript: boolean) {
 	let made = programs.get(ops);
-	if (made !== undefined) return made;
+	if (made === undefined) programs.set(ops, (made = []));
+	if (made[+typescript] !== undefined) return made[+typescript];
 	const B = new Closures();
 	const body: Stmt[] = [];
 	for (const op of ops) {
 		if (op.op === 'type' || op.op === 'typeof' || op.op === 'keep' || op.op === 'through') continue;
-		if (CONDITIONAL.has(op.op)) {
+		if (sometimes(op, typescript)) {
 			const set = conditional(B, op, none, true);
 			if (set !== undefined) body.push(set);
 		} else body.push(B.set(key_of(op), value(B, op, none, true)));
 	}
-	programs.set(ops, (made = { slots: B.slots, lead: B.lead, body }));
-	return made;
+	return (made[+typescript] = { slots: B.slots, lead: B.lead, body });
 }
 
 const NO_LOCALS: unknown[] = [];
 
 function apply(S: State, id: number, n: Decoded, ops: Op[], view: Uint32Array, base: number) {
-	const { slots, lead, body } = program(ops, S.C.layout.none);
+	const { slots, lead, body } = program(ops, S.C.layout.none, S.G === S.C.ts && !S.erase);
 	const L = slots === 0 ? NO_LOCALS : new Array<unknown>(slots);
 	for (let i = 0; i < lead.length; i++) lead[i](S, view, base, n, L, id);
 	for (let i = 0; i < body.length; i++) body[i](S, view, base, n, L, id);
@@ -830,6 +835,8 @@ function host(S: State, id: number, index: number, parent: Decoded | undefined):
 	return n;
 }
 
+const ts_record = (C: Compiled, N: Uint32Array, id: number) => N[id * C.words + C.payload] * (C.layout.ts!.size >> 2);
+
 function build(S: State, id: number, parent: Decoded | undefined): Decoded {
 	return S.J[S.N[id * S.C.words + (S.C.kind >> 2)]](S, id, 0, parent);
 }
@@ -887,6 +894,8 @@ function late(S: State, n: Decoded, id: number) {
 
 const LINK = 1, LINES = 2, FACTS = 4, ERASE = 8, HOST_LINES = 16;
 const CONDITIONAL = new Set(['optlistkey', 'optstrkey', 'keepif']);
+/** Whether an operation sets its key on only some nodes of the kind. */
+const sometimes = (op: Op, typescript: boolean) => CONDITIONAL.has(op.op) && !(typescript && op.op === 'optstrkey');
 
 // ── The source spelling: what a generated builder is made of. `word` and `byte` spell a read of
 // the record at hand: a node's, a TypeScript record's, a table row's, a host node's fields.
@@ -1011,7 +1020,8 @@ function generate(C: Compiled, G: Language, config: number, ops: Op[], ts: boole
 		}
 		[B.word, B.byte] = own;
 	}
-	for (; at < ops.length && !CONDITIONAL.has(ops[at].op); at++) {
+	const typescript = G === C.ts && !erase;
+	for (; at < ops.length && !sometimes(ops[at], typescript); at++) {
 		if (holds_nodes(ops[at])) {
 			props.push(`${JSON.stringify(key_of(ops[at]))}: undefined`);
 			fill(ops[at]);
@@ -1019,7 +1029,7 @@ function generate(C: Compiled, G: Language, config: number, ops: Op[], ts: boole
 	}
 	for (; at < ops.length; at++) {
 		const op = ops[at];
-		if (CONDITIONAL.has(op.op)) {
+		if (sometimes(op, typescript)) {
 			const set = conditional(B, op, none, erase);
 			if (set !== undefined) tail.push(set);
 		} else fill(op);
@@ -1182,7 +1192,7 @@ function builders(C: Compiled, G: Language, config: number, typescript: boolean)
 		ts: new Array<Builder>(G.ts.length).fill((S, id, record, parent) => (set.ts[S.TS![record]] = ts(S.TS![record]))(S, id, record, parent)),
 		hosts: [],
 	});
-	set.js[C.extension] = (S, id, _record, parent) => { const record = S.N[id * C.words + C.payload] * (C.layout.ts!.size >> 2); return set.ts[S.TS![record]](S, id, record, parent); };
+	set.js[C.extension] = (S, id, _record, parent) => { const record = ts_record(C, S.N, id); return set.ts[S.TS![record]](S, id, record, parent); };
 	set.js[C.host] = generated
 		? (S, id, _record, parent) => {
 				const index = S.N[id * C.words + C.payload], H = C.R.host;

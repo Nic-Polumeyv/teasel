@@ -638,7 +638,7 @@ if (name !== 'native') {
 	const acorn = ['regex', 'bigint', 'directive'];
 	for (const [dir, options, where] of [
 		['js/', { sourceType: 'module', scopes: true }, acorn],
-		['ts/', { sourceType: 'module', typescript: true, scopes: true }, acorn],
+		['ts/', { sourceType: 'module', typescript: true, scopes: true }, ['regex', 'bigint']],
 		['ts/', { sourceType: 'module', typescript: 'erase', scopes: true }, [...acorn, 'decorators']],
 	] as const) {
 		const shapes = new Map<string, string>();
