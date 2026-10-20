@@ -549,7 +549,6 @@ impl<'a> Prepared<'a> {
 	}
 }
 
-/// The entry a front end names by its number, or the error answer for a number that names none.
 pub fn entry(index: f64) -> Result<Entry, String> {
 	Entry::from_index(index as u32)
 		.filter(|_| f64::from(index as u32) == index)

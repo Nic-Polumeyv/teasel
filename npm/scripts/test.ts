@@ -319,7 +319,6 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 	assert.throws(() => parse('x', { typescript: 'yes' } as Any), TypeError);
 	assert.throws(() => open('a;b;c').parse(js, [0, -1]), (e: Any) => e.code === 'invalid_request');
 	assert.throws(() => open('a;b;c').parse(js, [0, NaN]), (e: Any) => e.code === 'invalid_request');
-	// an entry is one of the engine's numbers, on every engine alike
 	const { engine } = await import('#engine');
 	const held = engine.create('a;', 0);
 	for (const entry of [7, -1, 6.5, NaN]) assert.match(engine.parse(held, entry, 0, undefined, '', undefined) as string, / is no entry/);
