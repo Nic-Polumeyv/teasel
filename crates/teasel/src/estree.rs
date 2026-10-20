@@ -392,8 +392,7 @@ impl Positions {
 			.collect()
 	}
 
-	/// Every comment as nine words: whether it is a block, its text's span and its own in UTF-16,
-	/// and its lines and columns when lines are on, zeros otherwise.
+	/// Each comment's row, its `loc` zeros unless lines are on.
 	pub fn map_comments(&self, comments: &[crate::ast::Comment], out: &mut Handed<CommentRow>) {
 		out.clear();
 		let mut cursor = Cursor::default();

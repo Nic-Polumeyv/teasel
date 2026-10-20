@@ -711,7 +711,7 @@ fn run<E: crate::parser::Extension>(
 
 /// What a front end reading the tree in place needs beside it: every node's span and location
 /// as JavaScript counts them, the nodes erasure leaves out, the hosts, the comments, the errors
-/// as words and the strings' UTF-16 starts; a failed parse prepares its error row alone, the
+/// and the strings' UTF-16 starts; a failed parse prepares its error row alone, the
 /// tree it read is left as the last answer cleared it.
 fn prepare<X: Reuse>(
 	ast: &mut Ast<X>,
