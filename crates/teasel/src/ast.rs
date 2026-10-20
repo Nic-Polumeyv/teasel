@@ -188,6 +188,12 @@ impl List {
 	pub const EMPTY: List = List { start: 0, len: 0 };
 }
 
+// decode.ts reads a span as its start and the word after, in a node and in `Ast::spans` alike
+const _: () = assert!(
+	std::mem::offset_of!(Node, end) == std::mem::offset_of!(Node, start) + 4
+		&& std::mem::offset_of!(Span, end) == std::mem::offset_of!(Span, start) + 4
+);
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[repr(C)]
 pub struct Node {

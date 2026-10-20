@@ -127,6 +127,8 @@ interface Compiled {
 	/** An extras record with nothing set. */
 	blank: Uint32Array;
 	R: Records;
+	/** The word of a node holding a host's or an extension's index, `Host`'s and `Extension`'s field alike. */
+	payload: number;
 	/** A node's `loc` as a literal's entry, read from its record in `locs`. */
 	LOC: string;
 	/** Each table's row builders, plain and linked, and its record's words; made on the first answer with scopes. */
@@ -197,18 +199,23 @@ function records(layout: Layout) {
 	const of = (name: keyof Layout['records'], path: string) => field(R[name].fields, path);
 	const word = (name: keyof Layout['records'], path: string) => of(name, path).at >> 2;
 	const words = (name: keyof Layout['records']) => R[name].size >> 2;
-	const optional = (name: keyof Layout['records'], path: string, { tag }: Tagged) => [word(name, path) + tag, word(name, path) + (tag === 0 ? 1 : 0)];
+	// an optional's tag word and its value's, as the layout spells a missing one of its type
+	const optional = (name: keyof Layout['records'], path: string) => {
+		const field = of(name, path);
+		const none = field.ty === '?str' ? layout.none.str : field.ty === '?u32' ? layout.none.int : undefined;
+		if (none === undefined) throw new Error(`${name}.${path} is not an optional the decoder reads`);
+		const [tag, value] = tagged(none, field.at);
+		return { tag: tag >> 2, value: value >> 2, missing: none.missing };
+	};
 	const run = (name: keyof Layout['records'], path: string) => [word(name, `${path}.start`), word(name, `${path}.len`)];
-	const [first, first_value] = optional('errors', 'first', layout.none.str), [second, second_value] = optional('errors', 'second', layout.none.str);
-	const [ty, ty_value] = optional('hosts', 'ty', layout.none.int);
 	const tag = of('host_vals', 'tag');
 	return {
 		loc: { words: words('locs'), start_line: word('locs', 'start.line'), start_column: word('locs', 'start.column'), end_line: word('locs', 'end.line'), end_column: word('locs', 'end.column') },
 		span: { words: words('spans'), start: word('spans', 'start'), end: word('spans', 'end') },
 		comment: { words: words('comments'), block: of('comments', 'block').at, text: word('comments', 'text.start'), text_end: word('comments', 'text.end'), start: word('comments', 'span.start'), end: word('comments', 'span.end'), loc: word('comments', 'loc') },
 		attached: { words: words('attached'), leading: run('attached', 'leading'), trailing: run('attached', 'trailing'), inner: run('attached', 'inner') },
-		error: { words: words('errors'), code: word('errors', 'code'), first, first_value, second, second_value, missing: layout.none.str.missing, pos: word('errors', 'pos'), end: word('errors', 'end'), line: word('errors', 'line'), column: word('errors', 'column') },
-		host: { words: words('hosts'), ty, ty_value, untyped: layout.none.int.missing, from: word('hosts', 'fields.start'), len: word('hosts', 'fields.len'), shape: word('hosts', 'shape'), span: of('hosts', 'span').at },
+		error: { words: words('errors'), code: word('errors', 'code'), first: optional('errors', 'first'), second: optional('errors', 'second'), pos: word('errors', 'pos'), end: word('errors', 'end'), line: word('errors', 'line'), column: word('errors', 'column') },
+		host: { words: words('hosts'), ty: optional('hosts', 'ty'), from: word('hosts', 'fields.start'), len: word('hosts', 'fields.len'), shape: word('hosts', 'shape'), span: of('hosts', 'span').at },
 		value: { size: R.host_vals.size, words: words('host_vals'), tag: tag.at, tags: tag.names!, value: of('host_vals', 'value').at },
 		mark: { words: words('marks'), string: word('marks', 'string'), at: word('marks', 'at'), unit: word('marks', 'unit') },
 	};
@@ -230,8 +237,6 @@ function compile(engine: Views): Compiled {
 		blank[field.at >> 2] |= none << ((field.at & 3) << 3);
 	}
 	const R = records(layout);
-	// a span is read as its start and the word after, in the nodes and in `spans` alike
-	if (R.span.end !== R.span.start + 1 || layout.node.end !== layout.node.start + 4) throw new Error('a span is not its start then its end');
 	const at = (field: number) => `S.locs[id * ${R.loc.words}${field === 0 ? '' : ` + ${field}`}]`;
 	const made: Compiled = {
 		layout,
@@ -243,6 +248,7 @@ function compile(engine: Views): Compiled {
 		name: layout.kinds[tag('Identifier')].fields[0].at,
 		blank,
 		R,
+		payload: (layout.node.kind + field(layout.kinds[tag('Host')].fields, '0').at) >> 2,
 		LOC: `loc: { start: { line: ${at(R.loc.start_line)}, column: ${at(R.loc.start_column)} }, end: { line: ${at(R.loc.end_line)}, column: ${at(R.loc.end_column)} } }`,
 		rows: undefined,
 		js: language(layout, layout.views.js, false),
@@ -348,7 +354,7 @@ function strings(C: Compiled, tree: Tree, words: Uint32Array, lens: number, at: 
 		const ends = ascii ? (tree[at.starts] as Uint32Array) : (tree[at.units] as Uint32Array);
 		for (let i = 0; i < count; i++) out[i] = text.slice(ends[i], ends[i + 1]);
 	}
-	// a lone surrogate stands in the text as U+FFFD: the string's number, the offset and the surrogate
+	// a lone surrogate stands in the text as U+FFFD
 	const marked = words[lens + at.marks];
 	if (marked !== 0) {
 		const marks = tree[at.marks] as Uint32Array;
@@ -592,7 +598,7 @@ function value<E, St>(B: Spelling<E, St>, op: Op, none: Missing, erase: boolean)
 		case 'object':
 			return B.object(op.inner.map((inner) => [inner.key, value(B, inner, none, erase)]));
 		case 'host':
-			return host_value(B, op.value, op.at, op.at2);
+			return host_value(B, op.value, op.at);
 		case 'othername': {
 			const w = B.hold(B.word(op.at));
 			return B.othername(B.eq(w, B.word(op.at2)), B.dec(w));
@@ -633,9 +639,9 @@ function conditional<E, St>(B: Spelling<E, St>, op: Op, none: Missing, erase: bo
 // the engine tags a host node's field by the kind of value, `HostTag` names each
 const host_holds = (tag: string) => tag === 'node' || tag === 'nodes' || tag === 'comments';
 
-/** A host node's field from its record at `at`, the two words of value at `value` in it. */
-function host_value<E, St>(B: Spelling<E, St>, tag: string, at: number, value: number): E {
-	const a = B.word(at + value), b = B.word(at + value + 4);
+/** A host node's field from the two words of its value at `at`. */
+function host_value<E, St>(B: Spelling<E, St>, tag: string, at: number): E {
+	const a = B.word(at), b = B.word(at + 4);
 	switch (tag) {
 		case 'node':
 			return B.built(a);
@@ -787,8 +793,8 @@ function run(S: State, id: number, ops: Op[], view: Uint32Array, base: number, p
 
 const host_tag = (S: State, field: number) => S.C.R.value.tags[byte(S.host_vals, field * S.C.R.value.size + S.C.R.value.tag)];
 const host_type = (S: State, index: number) => {
-	const H = S.C.R.host, at = index * H.words;
-	return S.hosts[at + H.ty] === H.untyped ? null : S.names[S.hosts[at + H.ty_value]];
+	const { ty, words } = S.C.R.host, at = index * words;
+	return S.hosts[at + ty.tag] === ty.missing ? null : S.names[S.hosts[at + ty.value]];
 };
 const host_span = (S: State, index: number) => byte(S.hosts, index * S.C.R.host.words * 4 + S.C.R.host.span) === 1;
 
@@ -800,7 +806,7 @@ function host_ops(S: State, index: number): Op[] {
 	if (ops === undefined) {
 		const from = S.hosts[index * H.words + H.from], len = S.hosts[index * H.words + H.len];
 		ops = [];
-		for (let i = 0; i < len; i++) ops.push({ op: 'host', key: S.names[S.host_keys[from + i]], at: i * V.size, ty: '', names: [], at2: V.value, value: host_tag(S, from + i), other: '', inner: [] });
+		for (let i = 0; i < len; i++) ops.push({ op: 'host', key: S.names[S.host_keys[from + i]], at: i * V.size + V.value, ty: '', names: [], at2: 0, value: host_tag(S, from + i), other: '', inner: [] });
 		S.G.host_ops.set(shape, ops);
 	}
 	return ops;
@@ -1078,8 +1084,8 @@ function generate_host(C: Compiled, config: number, type: string | null, span: b
 	keys.forEach((key, i) => {
 		if (host_holds(tags[i])) {
 			props.push(`${JSON.stringify(key)}: undefined`);
-			tail.push(B.set(key, host_value(B, tags[i], i * V.size, V.value)));
-		} else props.push(`${JSON.stringify(key)}: ${host_value(B, tags[i], i * V.size, V.value)}`);
+			tail.push(B.set(key, host_value(B, tags[i], i * V.size + V.value)));
+		} else props.push(`${JSON.stringify(key)}: ${host_value(B, tags[i], i * V.size + V.value)}`);
 	});
 	// what the literal has no room for, as for the kinds; a node without a span has only its facts
 	const rare = span ? [RARE] : [];
@@ -1170,14 +1176,14 @@ function builders(C: Compiled, G: Language, config: number, typescript: boolean)
 		ts: new Array<Builder>(G.ts.length).fill((S, id, record, parent) => (set.ts[S.TS![record]] = ts(S.TS![record]))(S, id, record, parent)),
 		hosts: [],
 	});
-	set.js[C.extension] = (S, id, _record, parent) => { const record = S.N[id * C.words + (C.kind >> 2) + 1] * (C.layout.ts!.size >> 2); return set.ts[S.TS![record]](S, id, record, parent); };
+	set.js[C.extension] = (S, id, _record, parent) => { const record = S.N[id * C.words + C.payload] * (C.layout.ts!.size >> 2); return set.ts[S.TS![record]](S, id, record, parent); };
 	set.js[C.host] = generated
 		? (S, id, _record, parent) => {
-				const index = S.N[id * C.words + (C.kind >> 2) + 1], H = C.R.host;
+				const index = S.N[id * C.words + C.payload], H = C.R.host;
 				const build = S.H[S.hosts[index * H.words + H.shape]];
 				return build === undefined ? host_by_shape(S, id, index, config, parent) : build(S, id, index, S.hosts[index * H.words + H.from], parent);
 			}
-		: (S, id, _record, parent) => host(S, id, S.N[id * C.words + (C.kind >> 2) + 1], parent);
+		: (S, id, _record, parent) => host(S, id, S.N[id * C.words + C.payload], parent);
 	G.sets.set(config, set);
 	return (G.builders = set);
 }
@@ -1224,8 +1230,9 @@ function table(S: State, tree: Tree, words: Uint32Array, lens: number, rows: Row
 const NO_ARGS = Object.freeze([]);
 
 function args_of(E: Records['error'], view: Uint32Array, at: number): number[] {
-	if (view[at + E.first] === E.missing) return [];
-	return view[at + E.second] === E.missing ? [view[at + E.first_value]] : [view[at + E.first_value], view[at + E.second_value]];
+	const { first, second } = E;
+	if (view[at + first.tag] === first.missing) return [];
+	return view[at + second.tag] === second.missing ? [view[at + first.value]] : [view[at + first.value], view[at + second.value]];
 }
 
 function errors(S: State, view: Uint32Array, count: number): Decoded[] {
