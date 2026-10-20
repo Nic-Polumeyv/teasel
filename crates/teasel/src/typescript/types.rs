@@ -1010,11 +1010,7 @@ impl Parser<'_, TypeScript> {
 		}
 		let (mut key, mut computed) = self.parse_property_name()?;
 		let mut kind = None;
-		if !computed
-			&& (self.ident_is(key, "get") || self.ident_is(key, "set"))
-			&& !self.tok.newline_before
-			&& self.token_can_follow_modifier()
-		{
+		if !computed && (self.ident_is(key, "get") || self.ident_is(key, "set")) && self.token_can_follow_modifier() {
 			kind = Some(if self.ident_is(key, "get") {
 				SignatureKind::Get
 			} else {

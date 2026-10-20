@@ -1209,6 +1209,7 @@ impl Extension for TypeScript {
 					p.ext.needs_colon_at = Some(p.tok.start);
 				}
 			}
+			FunctionKind::Method { in_class: true, .. } => {}
 			_ => frame.type_parameters = p.try_parse_type_parameters(TypeParameterModifiers::Const)?,
 		}
 		if matches!(
@@ -1504,10 +1505,11 @@ impl Extension for TypeScript {
 		if p.eat(TokenKind::Question)? {
 			p.ext.elements.last_mut().unwrap().extras.optional = true;
 		}
-		if extras.readonly && p.is(TokenKind::ParenL) {
+		let method = p.is(TokenKind::ParenL) || p.is(TokenKind::Lt);
+		if extras.readonly && method {
 			return p.error(start, Code::ReadonlyOnMethod);
 		}
-		if extras.declare && p.is(TokenKind::ParenL) {
+		if extras.declare && method {
 			return p.error(start, Code::DeclareOnMethod);
 		}
 		Ok(())
