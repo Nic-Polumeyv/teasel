@@ -10,8 +10,9 @@
 //! `teasel --batch [--host GRAMMAR]` reads jobs from stdin, each a header line `ENTRY OFFSET FLAGS LENGTH`
 //! followed by LENGTH bytes of source, and prints one JSON line per job. ENTRY is the entry's number as
 //! the engine takes it, or 7 for a whole document of the host language the grammar's JSON file
-//! describes; OFFSET is a byte offset into the source and FLAGS the option word. The JSON output
-//! reports UTF-16 offsets, as JavaScript counts them.
+//! describes; OFFSET is a byte offset into the source and FLAGS the option word as the bridges take
+//! it, with nothing added: no module or `loc` it does not ask for. The JSON output reports UTF-16
+//! offsets, as JavaScript counts them.
 
 use std::io::{self, BufRead, Read, Write};
 use std::process::ExitCode;
@@ -33,7 +34,9 @@ fn batch(grammar: Option<String>) -> io::Result<()> {
 		}
 		let mut words = header.split_ascii_whitespace();
 		let mut word = || words.next().and_then(|w| w.parse::<u32>().ok());
-		let (Some(entry), Some(offset), Some(flags), Some(length)) = (word(), word(), word(), word()) else {
+		let (Some(entry), Some(offset), Some(flags), Some(length), None) =
+			(word(), word(), word(), word(), words.next())
+		else {
 			return Err(io::Error::new(
 				io::ErrorKind::InvalidData,
 				format!("malformed header: {header:?}"),
