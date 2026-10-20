@@ -258,7 +258,7 @@ pub fn children(grammar: &Grammar) -> String {
 fn children_table(w: &mut Json, table: Vec<(&'static str, Vec<&'static str>)>) {
 	w.object();
 	for (ty, fields) in table {
-		w.key(ty);
+		w.escaped_key(ty);
 		w.list();
 		fields.into_iter().for_each(|field| w.text(field));
 		w.end();

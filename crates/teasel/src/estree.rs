@@ -79,6 +79,13 @@ impl Json {
 		self.first = false;
 	}
 
+	pub(crate) fn escaped_begin(&mut self, ty: &str) {
+		self.open(false);
+		self.out.push_str("\"type\":");
+		write_json_string(&mut self.out, ty);
+		self.first = false;
+	}
+
 	pub(crate) fn object(&mut self) {
 		self.open(false);
 	}
@@ -97,6 +104,14 @@ impl Json {
 		self.out.push('"');
 		self.out.push_str(key);
 		self.out.push_str("\":");
+		self.first = true;
+	}
+
+	// escaping every key and type made a JSON answer 13% slower, so only a grammar's are escaped
+	pub(crate) fn escaped_key(&mut self, key: &str) {
+		self.sep();
+		write_json_string(&mut self.out, key);
+		self.out.push(':');
 		self.first = true;
 	}
 
@@ -473,10 +488,11 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 
 	pub(crate) fn begin(&mut self, ty: &'static str, id: NodeId) {
 		let node = self.ast.node(id);
-		self.json.begin(ty);
 		if matches!(self.ast.nodes[id.index() as usize].kind, NodeKind::Host(_)) {
+			self.json.escaped_begin(ty);
 			self.host_span(node.start, node.end);
 		} else {
+			self.json.begin(ty);
 			self.span(node.start, node.end);
 		}
 		self.scope_facts(id);
@@ -711,6 +727,10 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 
 	pub(crate) fn list(&mut self, key: &'static str, list: List) {
 		self.key(key);
+		self.items(list);
+	}
+
+	fn items(&mut self, list: List) {
 		self.json.list();
 		let ast = self.ast;
 		for item in ast.list(list) {
@@ -926,41 +946,29 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 				} else if host.span {
 					self.begin(host.ty, id);
 				} else {
-					self.json.begin(host.ty);
+					self.json.escaped_begin(host.ty);
 					self.scope_facts(id);
 				}
 				let (from, len) = host.fields;
 				for i in from..from + len {
 					let (key, value) = self.ast.host_fields[i as usize];
+					self.json.escaped_key(key);
 					match value {
-						Value::Node(child) => self.field(key, child),
-						Value::Nodes(children) => self.list(key, children),
-						Value::Str(string) => self.interned(key, string),
-						Value::Slice(start, end) => {
-							self.key(key);
-							self.slice(start, end);
-						}
+						Value::Node(child) => self.node(child),
+						Value::Nodes(children) => self.items(children),
+						Value::Str(string) => self.str_of(string),
+						Value::Slice(start, end) => self.slice(start, end),
 						Value::Strs(start, len) => {
-							self.key(key);
 							self.json.list();
 							for i in start as usize..(start + len) as usize {
 								self.str_of(self.ast.host_strings[i]);
 							}
 							self.json.end();
 						}
-						Value::Bool(value) => self.bool(key, value),
-						Value::Int(value) => {
-							self.key(key);
-							self.json.int(value);
-						}
-						Value::Null => {
-							self.key(key);
-							self.json.null();
-						}
-						Value::Comments => {
-							self.key(key);
-							self.comment_list(0..self.ast.comments.len() as u32);
-						}
+						Value::Bool(value) => self.json.bool(value),
+						Value::Int(value) => self.json.int(value),
+						Value::Null => self.json.null(),
+						Value::Comments => self.comment_list(0..self.ast.comments.len() as u32),
 					}
 				}
 			}

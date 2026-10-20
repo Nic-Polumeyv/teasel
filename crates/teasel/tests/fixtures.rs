@@ -12,6 +12,21 @@ use std::path::Path;
 use teasel::json::{Request, parse};
 use teasel::{Entry, Options};
 
+// a misspelled or new type, key or enum text is a line of this pin's diff, as `c!` once failed the build on one
+#[test]
+fn spellings() {
+	let layout = teasel::json::layout_json();
+	assert!(!layout.contains('\\'), "a string the split below would cut");
+	let mut names: Vec<&str> = layout.split('"').skip(1).step_by(2).collect();
+	names.sort_unstable();
+	names.dedup();
+	let pin = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spellings.txt");
+	assert!(
+		common::pinned(&pin, &(names.join("\n") + "\n")),
+		"spellings changed: run with UPDATE=1 once the change is meant"
+	);
+}
+
 #[test]
 fn files() {
 	let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
