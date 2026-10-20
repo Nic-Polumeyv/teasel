@@ -1653,7 +1653,6 @@ mod tests {
 		)))
 	}
 
-	#[cfg(feature = "typescript")]
 	fn ts_facts(src: &str) -> String {
 		facts_of(&analyzed(crate::typescript::parse_at(
 			src,
@@ -1863,7 +1862,6 @@ mod tests {
 			facts_in("delete x; delete y.z; delete (w).v;", false),
 			"x@7 -> global\ny@17 -> global mutate\nw@30 -> global mutate"
 		);
-		#[cfg(feature = "typescript")]
 		{
 			let src = "(a as any).b = 1; (c!).d = 2; (e as any) = 3;";
 			let ast = analyzed(crate::typescript::parse_at(
@@ -1881,7 +1879,6 @@ mod tests {
 	}
 
 	#[test]
-	#[cfg(feature = "typescript")]
 	fn typescript_declarations() {
 		let src = "import type { X } from 'm'; import { type Y, Z } from 'm'; export { type X }; enum E { A = 1, B = A } namespace N { export const n = 1; } namespace N { n; } export function f(): void; class C { m(@dec p) {} } function dec() {} function g(this: T, a) {} enum M { this = 1 }";
 		let ast = analyzed(crate::typescript::parse_at(
@@ -1927,7 +1924,6 @@ mod tests {
 	/// A namespace's blocks share what they export and keep the rest to themselves; a type-only
 	/// import-equals binds nothing.
 	#[test]
-	#[cfg(feature = "typescript")]
 	fn namespaces_merge() {
 		let cases = [
 			"const x = 0; namespace N { const x = 1; } namespace N { export const y = x; }",
@@ -1943,7 +1939,6 @@ mod tests {
 	}
 
 	#[test]
-	#[cfg(feature = "typescript")]
 	fn typescript_values_and_types() {
 		let src = "enum E { A = x } namespace N { export const n: T = y as T; } let t: T; @d class C { constructor(public p: P) {} }";
 		let ast = analyzed(crate::typescript::parse_at(

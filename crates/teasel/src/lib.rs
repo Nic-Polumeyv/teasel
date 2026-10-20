@@ -14,7 +14,6 @@ pub mod names;
 pub mod parser;
 pub mod recipe;
 pub mod scopes;
-#[cfg(feature = "typescript")]
 pub mod typescript;
 
 pub use error::{Code, SyntaxError};

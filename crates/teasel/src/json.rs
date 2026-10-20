@@ -53,6 +53,7 @@ pub fn layout_json() -> String {
 	use crate::layout::{Field, Ty, Variant};
 	use crate::names::Name;
 	use crate::recipe::{Op, Rest};
+	use crate::typescript::ast::{Extras, TsKind, ts_layout};
 	let key = Name::dynamic;
 	fn field(w: &mut Json, field: &Field) {
 		w.object();
@@ -189,14 +190,10 @@ pub fn layout_json() -> String {
 		w.end();
 	}
 	w.end();
-	#[cfg(feature = "typescript")]
-	{
-		use crate::typescript::ast::{Extras, TsKind, ts_layout};
-		w.key(key("ts"));
-		kinds(&mut w, size_of::<TsKind>(), ts_layout::VARIANTS);
-		w.key(key("extras"));
-		record(&mut w, size_of::<Extras>(), Extras::FIELDS);
-	}
+	w.key(key("ts"));
+	kinds(&mut w, size_of::<TsKind>(), ts_layout::VARIANTS);
+	w.key(key("extras"));
+	record(&mut w, size_of::<Extras>(), Extras::FIELDS);
 	w.key(key("rows"));
 	w.object();
 	for (name, size, list) in crate::recipe::ROWS {
@@ -225,11 +222,8 @@ pub fn layout_json() -> String {
 	w.object();
 	w.key(key("js"));
 	names(&mut w, view_names::<()>());
-	#[cfg(feature = "typescript")]
-	{
-		w.key(key("ts"));
-		names(&mut w, view_names::<crate::typescript::ast::Data>());
-	}
+	w.key(key("ts"));
+	names(&mut w, view_names::<crate::typescript::ast::Data>());
 	w.end();
 	w.key(key("stylesheet"));
 	children_table(&mut w, host::stylesheet_children());
@@ -239,21 +233,18 @@ pub fn layout_json() -> String {
 	recipes(&mut w, crate::recipe::JS);
 	w.key(key("rows"));
 	recipes(&mut w, crate::recipe::RECIPES);
-	#[cfg(feature = "typescript")]
-	{
-		w.key(key("ts"));
-		recipes(&mut w, crate::recipe::TS);
-		w.key(key("adds"));
-		recipes(&mut w, crate::recipe::ADDS);
-		w.key(key("extras"));
-		recipes(
-			&mut w,
-			&[
-				("extras", crate::recipe::EXTRAS),
-				("erased", crate::recipe::EXTRAS_ERASED),
-			],
-		);
-	}
+	w.key(key("ts"));
+	recipes(&mut w, crate::recipe::TS);
+	w.key(key("adds"));
+	recipes(&mut w, crate::recipe::ADDS);
+	w.key(key("extras"));
+	recipes(
+		&mut w,
+		&[
+			("extras", crate::recipe::EXTRAS),
+			("erased", crate::recipe::EXTRAS_ERASED),
+		],
+	);
 	w.end();
 	w.end();
 	w.finish()
@@ -341,7 +332,6 @@ pub fn words<R>(f: impl FnOnce(&mut Words) -> R) -> R {
 pub fn tree(f: &mut dyn FnMut(&'static str, Option<&mut dyn Raw>)) -> Option<bool> {
 	SESSION.with(|session| {
 		let session = &mut *session.borrow_mut();
-		#[cfg(feature = "typescript")]
 		if session.typescript {
 			session.pool.ts.as_deref_mut()?.views(&mut Views(f));
 			session.pool.names[1].views(&mut Views(f));
@@ -381,7 +371,6 @@ pub struct Pool {
 	/// tree and of the TypeScript one.
 	names: [Names; 2],
 	js: Option<Box<Ast<()>>>,
-	#[cfg(feature = "typescript")]
 	ts: Option<Box<Ast<crate::typescript::ast::Data>>>,
 }
 
@@ -457,7 +446,6 @@ impl Pooled for () {
 	}
 }
 
-#[cfg(feature = "typescript")]
 impl Pooled for crate::typescript::ast::Data {
 	fn take(pool: &mut Pool) -> Option<Box<Ast<Self>>> {
 		pool.ts.take()
@@ -581,15 +569,10 @@ fn dispatch(
 	words: Option<&mut Words>,
 ) -> Result<String, String> {
 	check(source, request)?;
-	#[cfg(feature = "typescript")]
 	if request.options.typescript() {
 		return Ok(run::<crate::typescript::TypeScript>(
 			source, positions, request, stop, host, pool, words,
 		));
-	}
-	#[cfg(not(feature = "typescript"))]
-	if request.options.typescript() {
-		return Err(error_json("built without TypeScript", 0));
 	}
 	Ok(run::<()>(source, positions, request, stop, host, pool, words))
 }
