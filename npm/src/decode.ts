@@ -45,6 +45,8 @@ export interface Layout {
 	extras?: { size: number; fields: Field[] };
 	/** Each table's record: its size and its fields. */
 	rows: Record<string, { size: number; fields: Field[] }>;
+	/** The records beside the nodes and the tables, by their view's name. */
+	records: Record<'comments' | 'attached' | 'errors' | 'hosts' | 'host_vals' | 'spans' | 'locs' | 'marks', { size: number; fields: Field[] }>;
 	none: Missing;
 	views: { js: string[]; ts?: string[] };
 	/** Each type of node a stylesheet holds with the fields that hold nodes. */
@@ -124,6 +126,9 @@ interface Compiled {
 	name: number;
 	/** An extras record with nothing set. */
 	blank: Uint32Array;
+	R: Records;
+	/** A node's `loc` as a literal's entry, read from its record in `locs`. */
+	LOC: string;
 	/** Each table's row builders, plain and linked, and its record's words; made on the first answer with scopes. */
 	rows: Record<keyof typeof LINKED, Rows> | undefined;
 	js: Language;
@@ -131,13 +136,14 @@ interface Compiled {
 	ts: Language | undefined;
 }
 
-/** A field by its path, `a` or `a.b`, an inner field at its offset in the record. */
+/** A field by its path, `a` or `a.b.c`, an inner field at its offset in the record. */
 export function field(fields: Field[], path: string): Field {
-	const [head, rest] = path.split('.');
-	const outer = fields.find((f) => f.name === head)!;
-	if (rest === undefined) return outer;
-	const inner = outer.fields!.find((f) => f.name === rest)!;
-	return { ...inner, at: outer.at + inner.at };
+	let found: Field | undefined, at = 0;
+	for (const name of path.split('.')) {
+		found = (found === undefined ? fields : found.fields!).find((f) => f.name === name)!;
+		at += found.at;
+	}
+	return { ...found!, at };
 }
 
 function resolve(raw: RawOp[], fields: Field[]): Op[] {
@@ -185,6 +191,30 @@ function language(layout: Layout, views: string[], typescript: boolean): Languag
 	return out;
 }
 
+// each record's words, and its fields' offsets in words, a byte's in bytes
+function records(layout: Layout) {
+	const R = layout.records;
+	const of = (name: keyof Layout['records'], path: string) => field(R[name].fields, path);
+	const word = (name: keyof Layout['records'], path: string) => of(name, path).at >> 2;
+	const words = (name: keyof Layout['records']) => R[name].size >> 2;
+	const optional = (name: keyof Layout['records'], path: string, { tag }: Tagged) => [word(name, path) + tag, word(name, path) + (tag === 0 ? 1 : 0)];
+	const run = (name: keyof Layout['records'], path: string) => [word(name, `${path}.start`), word(name, `${path}.len`)];
+	const [first, first_value] = optional('errors', 'first', layout.none.str), [second, second_value] = optional('errors', 'second', layout.none.str);
+	const [ty, ty_value] = optional('hosts', 'ty', layout.none.int);
+	const tag = of('host_vals', 'tag');
+	return {
+		loc: { words: words('locs'), start_line: word('locs', 'start.line'), start_column: word('locs', 'start.column'), end_line: word('locs', 'end.line'), end_column: word('locs', 'end.column') },
+		span: { words: words('spans'), start: word('spans', 'start'), end: word('spans', 'end') },
+		comment: { words: words('comments'), block: of('comments', 'block').at, text: word('comments', 'text.start'), text_end: word('comments', 'text.end'), start: word('comments', 'span.start'), end: word('comments', 'span.end'), loc: word('comments', 'loc') },
+		attached: { words: words('attached'), leading: run('attached', 'leading'), trailing: run('attached', 'trailing'), inner: run('attached', 'inner') },
+		error: { words: words('errors'), code: word('errors', 'code'), first, first_value, second, second_value, missing: layout.none.str.missing, pos: word('errors', 'pos'), end: word('errors', 'end'), line: word('errors', 'line'), column: word('errors', 'column') },
+		host: { words: words('hosts'), ty, ty_value, untyped: layout.none.int.missing, from: word('hosts', 'fields.start'), len: word('hosts', 'fields.len'), shape: word('hosts', 'shape'), span: of('hosts', 'span').at },
+		value: { size: R.host_vals.size, words: words('host_vals'), tag: tag.at, tags: tag.names!, value: of('host_vals', 'value').at },
+		mark: { words: words('marks'), string: word('marks', 'string'), at: word('marks', 'at'), unit: word('marks', 'unit') },
+	};
+}
+type Records = ReturnType<typeof records>;
+
 const recipe = (G: Language, tag: number): Op[] => (G.recipes[tag] ??= resolve(G.layout.recipes.js.find(([name]) => name === G.layout.kinds[tag].name)?.[1] ?? [], G.layout.kinds[tag].fields));
 
 const compiled = new WeakMap<object, Compiled>();
@@ -199,6 +229,10 @@ function compile(engine: Views): Compiled {
 		const none = field.ty === '?enum' ? layout.none.enum : field.ty === '?bool' ? layout.none.bool : 0;
 		blank[field.at >> 2] |= none << ((field.at & 3) << 3);
 	}
+	const R = records(layout);
+	// a span is read as its start and the word after, in the nodes and in `spans` alike
+	if (R.span.end !== R.span.start + 1 || layout.node.end !== layout.node.start + 4) throw new Error('a span is not its start then its end');
+	const at = (field: number) => `S.locs[id * ${R.loc.words}${field === 0 ? '' : ` + ${field}`}]`;
 	const made: Compiled = {
 		layout,
 		words: layout.node.size >> 2,
@@ -208,6 +242,8 @@ function compile(engine: Views): Compiled {
 		identifier: tag('Identifier'),
 		name: layout.kinds[tag('Identifier')].fields[0].at,
 		blank,
+		R,
+		LOC: `loc: { start: { line: ${at(R.loc.start_line)}, column: ${at(R.loc.start_column)} }, end: { line: ${at(R.loc.end_line)}, column: ${at(R.loc.end_column)} } }`,
 		rows: undefined,
 		js: language(layout, layout.views.js, false),
 		ts: undefined,
@@ -298,7 +334,7 @@ const NO_ROWS: Decoded[] = [];
 const NO_STRINGS: string[] = [];
 
 // the tree's interned strings, by their number
-function strings(tree: Tree, words: Uint32Array, lens: number, at: At, only?: number[]): string[] {
+function strings(C: Compiled, tree: Tree, words: Uint32Array, lens: number, at: At, only?: number[]): string[] {
 	const count = words[lens + at.starts] - 1;
 	const bytes = tree[at.text] as Uint8Array, length = words[lens + at.text];
 	const out = new Array<string>(count);
@@ -316,17 +352,18 @@ function strings(tree: Tree, words: Uint32Array, lens: number, at: At, only?: nu
 	const marked = words[lens + at.marks];
 	if (marked !== 0) {
 		const marks = tree[at.marks] as Uint32Array;
+		const M = C.R.mark;
 		// rebuilding the string once per mark was quadratic in a long literal
 		for (let i = 0; i < marked; ) {
-			const id = marks[i], s = out[id];
+			const id = marks[i + M.string], s = out[id];
 			if (s === undefined) {
-				for (; i < marked && marks[i] === id; i += 3);
+				for (; i < marked && marks[i + M.string] === id; i += M.words);
 				continue;
 			}
 			let built = '', from = 0;
-			for (; i < marked && marks[i] === id; i += 3) {
-				built += s.slice(from, marks[i + 1]) + String.fromCharCode(marks[i + 2]);
-				from = marks[i + 1] + 1;
+			for (; i < marked && marks[i + M.string] === id; i += M.words) {
+				built += s.slice(from, marks[i + M.at]) + String.fromCharCode(marks[i + M.unit]);
+				from = marks[i + M.at] + 1;
 			}
 			out[id] = built + s.slice(from);
 		}
@@ -337,17 +374,17 @@ function strings(tree: Tree, words: Uint32Array, lens: number, at: At, only?: nu
 const bit = (set: Uint32Array, id: number) => ((set[id >>> 5] >>> (id & 31)) & 1) === 1;
 const byte = (view: Uint32Array, at: number) => (view[at >> 2] >>> ((at & 3) << 3)) & 255;
 
-function loc(words: Uint32Array, at: number) {
-	return { start: { line: words[at], column: words[at + 1] }, end: { line: words[at + 2], column: words[at + 3] } };
+function loc(L: Records['loc'], words: Uint32Array, at: number) {
+	return { start: { line: words[at + L.start_line], column: words[at + L.start_column] }, end: { line: words[at + L.end_line], column: words[at + L.end_column] } };
 }
 
 function comment(S: State, index: number, parent: Decoded | undefined): Decoded {
-	const c = S.comments;
-	const at = index * 9;
-	const type = c[at] === 1 ? 'Block' : 'Line';
-	const n: Decoded = { type, value: S.source.slice(c[at + 1], c[at + 2]), start: c[at + 3], end: c[at + 4] };
+	const c = S.comments, K = S.C.R.comment;
+	const at = index * K.words;
+	const type = byte(c, at * 4 + K.block) === 1 ? 'Block' : 'Line';
+	const n: Decoded = { type, value: S.source.slice(c[at + K.text], c[at + K.text_end]), start: c[at + K.start], end: c[at + K.end] };
 	if (S.link) n[PARENT] = parent;
-	if (S.lines) n.loc = loc(c, at + 5);
+	if (S.lines) n.loc = loc(S.C.R.loc, c, at + K.loc);
 	return n;
 }
 
@@ -406,7 +443,7 @@ function begin(S: State, type: string, id: number, parent: Decoded | undefined, 
 		n[SCOPE] = undefined;
 		if (type === 'Identifier') n[REFERENCE] = undefined;
 	}
-	if (lines) n.loc = loc(S.locs, id * 4);
+	if (lines) n.loc = loc(S.C.R.loc, S.locs, id * S.C.R.loc.words);
 	if (S.of_node !== null && !S.name_only) facts(S, n, id);
 	// the extras' children begin inside this one: what it declares waits past them
 	const pending = S.pending;
@@ -430,11 +467,11 @@ function begin(S: State, type: string, id: number, parent: Decoded | undefined, 
 	if (S.attached_slots !== null) {
 		const slot = S.attached_slots[id];
 		if (slot) {
-			const a = S.attached;
-			const at = (slot - 1) * 6;
-			run_of_comments(S, n, 'leadingComments', a[at], a[at + 1]);
-			run_of_comments(S, n, 'trailingComments', a[at + 2], a[at + 3]);
-			run_of_comments(S, n, 'innerComments', a[at + 4], a[at + 5]);
+			const a = S.attached, A = S.C.R.attached;
+			const at = (slot - 1) * A.words;
+			run_of_comments(S, n, 'leadingComments', a[at + A.leading[0]], a[at + A.leading[1]]);
+			run_of_comments(S, n, 'trailingComments', a[at + A.trailing[0]], a[at + A.trailing[1]]);
+			run_of_comments(S, n, 'innerComments', a[at + A.inner[0]], a[at + A.inner[1]]);
 		}
 	}
 	S.pending = pending;
@@ -555,7 +592,7 @@ function value<E, St>(B: Spelling<E, St>, op: Op, none: Missing, erase: boolean)
 		case 'object':
 			return B.object(op.inner.map((inner) => [inner.key, value(B, inner, none, erase)]));
 		case 'host':
-			return host_value(B, op.value, op.at);
+			return host_value(B, op.value, op.at, op.at2);
 		case 'othername': {
 			const w = B.hold(B.word(op.at));
 			return B.othername(B.eq(w, B.word(op.at2)), B.dec(w));
@@ -593,32 +630,30 @@ function conditional<E, St>(B: Spelling<E, St>, op: Op, none: Missing, erase: bo
 	return undefined;
 }
 
-// the engine tags a host node's field by the kind of value: a node, a list, a string, a slice of
-// the source, strings, a boolean, a number, null, every comment
-const HOST_NODE = 0, HOST_LIST = 1, HOST_COMMENTS = 8;
-const host_holds = (tag: number) => tag === HOST_NODE || tag === HOST_LIST || tag === HOST_COMMENTS;
+// the engine tags a host node's field by the kind of value, `HostTag` names each
+const host_holds = (tag: string) => tag === 'node' || tag === 'nodes' || tag === 'comments';
 
-/** A host node's field from the three words at `at`: its tag, then two of value. */
-function host_value<E, St>(B: Spelling<E, St>, tag: number, at: number): E {
-	const a = B.word(at + 4), b = B.word(at + 8);
+/** A host node's field from its record at `at`, the two words of value at `value` in it. */
+function host_value<E, St>(B: Spelling<E, St>, tag: string, at: number, value: number): E {
+	const a = B.word(at + value), b = B.word(at + value + 4);
 	switch (tag) {
-		case HOST_NODE:
+		case 'node':
 			return B.built(a);
-		case HOST_LIST:
+		case 'nodes':
 			return B.items(a, b, false);
-		case HOST_COMMENTS:
+		case 'comments':
 			return B.comments();
-		case 2:
+		case 'str':
 			return B.strings(a);
-		case 3:
+		case 'slice':
 			return B.text(a, b);
-		case 4:
+		case 'strs':
 			return B.strs(a, b);
-		case 5:
+		case 'bool':
 			return B.eq(a, B.lit(1));
-		case 6:
+		case 'int':
 			return a;
-		case 7:
+		case 'null':
 			return B.lit(null);
 	}
 	throw new Error(`no host value ${tag}`);
@@ -750,30 +785,38 @@ function run(S: State, id: number, ops: Op[], view: Uint32Array, base: number, p
 	return n;
 }
 
+const host_tag = (S: State, field: number) => S.C.R.value.tags[byte(S.host_vals, field * S.C.R.value.size + S.C.R.value.tag)];
+const host_type = (S: State, index: number) => {
+	const H = S.C.R.host, at = index * H.words;
+	return S.hosts[at + H.ty] === H.untyped ? null : S.names[S.hosts[at + H.ty_value]];
+};
+const host_span = (S: State, index: number) => byte(S.hosts, index * S.C.R.host.words * 4 + S.C.R.host.span) === 1;
+
 // a host node's fields as operations, one list per shape the engine numbers
 function host_ops(S: State, index: number): Op[] {
-	const shape = S.hosts[index * 5 + 4];
+	const H = S.C.R.host, V = S.C.R.value;
+	const shape = S.hosts[index * H.words + H.shape];
 	let ops = S.G.host_ops.get(shape);
 	if (ops === undefined) {
-		const from = S.hosts[index * 5 + 1], len = S.hosts[index * 5 + 2];
+		const from = S.hosts[index * H.words + H.from], len = S.hosts[index * H.words + H.len];
 		ops = [];
-		for (let i = 0; i < len; i++) ops.push({ op: 'host', key: S.names[S.host_keys[from + i]], at: i * 12, ty: '', names: [], at2: 0, value: S.host_vals[(from + i) * 3], other: '', inner: [] });
+		for (let i = 0; i < len; i++) ops.push({ op: 'host', key: S.names[S.host_keys[from + i]], at: i * V.size, ty: '', names: [], at2: V.value, value: host_tag(S, from + i), other: '', inner: [] });
 		S.G.host_ops.set(shape, ops);
 	}
 	return ops;
 }
 
 function host(S: State, id: number, index: number, parent: Decoded | undefined): Decoded {
-	const ty = S.hosts[index * 5], from = S.hosts[index * 5 + 1], span = S.hosts[index * 5 + 3];
+	const ty = host_type(S, index), from = S.hosts[index * S.C.R.host.words + S.C.R.host.from];
 	let n: Decoded;
-	if (ty === 0xffffffff) {
+	if (ty === null) {
 		// an object of the host's without a type, positions and all
 		const at = id * S.ps + S.po;
 		n = { start: S.P[at], end: S.P[at + 1] };
-		if (S.host_lines) n.loc = loc(S.locs, id * 4);
-	} else if (span === 1) n = begin(S, S.names[ty], id, parent, S.host_lines);
+		if (S.host_lines) n.loc = loc(S.C.R.loc, S.locs, id * S.C.R.loc.words);
+	} else if (host_span(S, index)) n = begin(S, ty, id, parent, S.host_lines);
 	else {
-		n = { type: S.names[ty] };
+		n = { type: ty };
 		if (S.link) {
 			n[PARENT] = parent;
 			n[SCOPE] = undefined;
@@ -782,7 +825,7 @@ function host(S: State, id: number, index: number, parent: Decoded | undefined):
 	}
 	const pending = S.pending;
 	S.pending = null;
-	apply(S, id, n, host_ops(S, index), S.host_vals, from * 12);
+	apply(S, id, n, host_ops(S, index), S.host_vals, from * S.C.R.value.size);
 	settle(S, n, id, pending);
 	return n;
 }
@@ -919,7 +962,6 @@ class Source implements Spelling<string, string> {
 	kept = (key: string) => `S.kept.push(${JSON.stringify(key)}, id);`;
 }
 
-const LOC = 'loc: { start: { line: S.locs[id * 4], column: S.locs[id * 4 + 1] }, end: { line: S.locs[id * 4 + 2], column: S.locs[id * 4 + 3] } }';
 const RARE = '(S.rare[id >>> 5] >>> (id & 31) & 1) === 1';
 const LATE = 'if ((S.late[id >>> 5] >>> (id & 31) & 1) === 1) late(S, n, id);';
 
@@ -946,7 +988,7 @@ function generate(C: Compiled, G: Language, config: number, ops: Op[], ts: boole
 	const type = head.op === 'type' ? JSON.stringify(head.key) : B.at(B.table(head.names), byte(head.at));
 	const identifier = head.op === 'type' && head.key === 'Identifier';
 	const props = [`type: ${type}`, 'start: S.P[p]', 'end: S.P[p + 1]'];
-	if ((config & LINES) !== 0) props.push(LOC);
+	if ((config & LINES) !== 0) props.push(C.LOC);
 	if (ops.slice(at).some((op) => op.op === 'object' && op.inner.some((inner) => CONDITIONAL.has(inner.op)))) return slow;
 	// what is set once the literal exists: its nodes, then the keys some nodes of the kind leave out
 	const tail: string[] = [];
@@ -1007,35 +1049,37 @@ function strs(S: State, start: number, len: number): string[] {
 // The engine numbers the shapes of a host's nodes, a type with its fields' keys and kinds of value:
 // one literal each, as the kinds have.
 function host_by_shape(S: State, id: number, index: number, config: number, parent: Decoded | undefined): Decoded {
-	const from = S.hosts[index * 5 + 1], shape = S.hosts[index * 5 + 4];
+	const H = S.C.R.host;
+	const from = S.hosts[index * H.words + H.from], shape = S.hosts[index * H.words + H.shape];
 	let build = S.H[shape];
 	if (build === undefined) {
-		const ty = S.hosts[index * 5], len = S.hosts[index * 5 + 2];
-		const keys: string[] = [], tags: number[] = [];
+		const len = S.hosts[index * H.words + H.len];
+		const keys: string[] = [], tags: string[] = [];
 		for (let i = from; i < from + len; i++) {
 			keys.push(S.names[S.host_keys[i]]);
-			tags.push(S.host_vals[i * 3]);
+			tags.push(host_tag(S, i));
 		}
-		build = S.H[shape] = generate_host(S.C, config, ty === 0xffffffff ? null : S.names[ty], S.hosts[index * 5 + 3] === 1, keys, tags);
+		build = S.H[shape] = generate_host(S.C, config, host_type(S, index), host_span(S, index), keys, tags);
 	}
 	return build(S, id, index, from, parent);
 }
 
-function generate_host(C: Compiled, config: number, type: string | null, span: boolean, keys: string[], tags: number[]): HostBuilder {
+function generate_host(C: Compiled, config: number, type: string | null, span: boolean, keys: string[], tags: string[]): HostBuilder {
 	const link = (config & LINK) !== 0 && type !== null, facts = (config & FACTS) !== 0 && type !== null;
 	if (facts && (config & LINK) === 0) return (S, id, index, _from, parent) => host(S, id, index, parent);
-	const B = new Source((at) => `HV[from * 3 + ${at >> 2}]`, () => '', facts, C.words, C.kind);
+	const V = C.R.value;
+	const B = new Source((at) => `HV[from * ${V.words} + ${at >> 2}]`, () => '', facts, C.words, C.kind);
 	const props = type === null ? [] : [`type: ${JSON.stringify(type)}`];
 	if (type === null || span) {
 		props.push('start: S.P[p]', 'end: S.P[p + 1]');
-		if ((config & HOST_LINES) !== 0) props.push(LOC);
+		if ((config & HOST_LINES) !== 0) props.push(C.LOC);
 	}
 	const tail: string[] = [];
 	keys.forEach((key, i) => {
 		if (host_holds(tags[i])) {
 			props.push(`${JSON.stringify(key)}: undefined`);
-			tail.push(B.set(key, host_value(B, tags[i], i * 12)));
-		} else props.push(`${JSON.stringify(key)}: ${host_value(B, tags[i], i * 12)}`);
+			tail.push(B.set(key, host_value(B, tags[i], i * V.size, V.value)));
+		} else props.push(`${JSON.stringify(key)}: ${host_value(B, tags[i], i * V.size, V.value)}`);
 	});
 	// what the literal has no room for, as for the kinds; a node without a span has only its facts
 	const rare = span ? [RARE] : [];
@@ -1129,9 +1173,9 @@ function builders(C: Compiled, G: Language, config: number, typescript: boolean)
 	set.js[C.extension] = (S, id, _record, parent) => { const record = S.N[id * C.words + (C.kind >> 2) + 1] * (C.layout.ts!.size >> 2); return set.ts[S.TS![record]](S, id, record, parent); };
 	set.js[C.host] = generated
 		? (S, id, _record, parent) => {
-				const index = S.N[id * C.words + (C.kind >> 2) + 1];
-				const build = S.H[S.hosts[index * 5 + 4]];
-				return build === undefined ? host_by_shape(S, id, index, config, parent) : build(S, id, index, S.hosts[index * 5 + 1], parent);
+				const index = S.N[id * C.words + (C.kind >> 2) + 1], H = C.R.host;
+				const build = S.H[S.hosts[index * H.words + H.shape]];
+				return build === undefined ? host_by_shape(S, id, index, config, parent) : build(S, id, index, S.hosts[index * H.words + H.from], parent);
 			}
 		: (S, id, _record, parent) => host(S, id, S.N[id * C.words + (C.kind >> 2) + 1], parent);
 	G.sets.set(config, set);
@@ -1177,16 +1221,20 @@ function table(S: State, tree: Tree, words: Uint32Array, lens: number, rows: Row
 	return out;
 }
 
-const ERROR_WORDS = 7;
-const NO_ARG = 0xffffffff;
 const NO_ARGS = Object.freeze([]);
 
+function args_of(E: Records['error'], view: Uint32Array, at: number): number[] {
+	if (view[at + E.first] === E.missing) return [];
+	return view[at + E.second] === E.missing ? [view[at + E.first_value]] : [view[at + E.first_value], view[at + E.second_value]];
+}
+
 function errors(S: State, view: Uint32Array, count: number): Decoded[] {
+	const E = S.C.R.error;
 	const out = new Array<Decoded>(count);
-	for (let i = 0, at = 0; i < count; i++, at += ERROR_WORDS) {
-		const a = view[at + 1], b = view[at + 2];
-		const args = a === NO_ARG ? NO_ARGS : b === NO_ARG ? [S.strings[a]] : [S.strings[a], S.strings[b]];
-		out[i] = { code: CODES[view[at]], args, pos: view[at + 3], end: view[at + 4], line: view[at + 5], column: view[at + 6] };
+	for (let i = 0, at = 0; i < count; i++, at += E.words) {
+		const ids = args_of(E, view, at);
+		const args = ids.length === 0 ? NO_ARGS : ids.map((id) => S.strings[id]);
+		out[i] = { code: CODES[view[at + E.code]], args, pos: view[at + E.pos], end: view[at + E.end], line: view[at + E.line], column: view[at + E.column] };
 	}
 	return out;
 }
@@ -1279,13 +1327,13 @@ export function decode(words: Uint32Array, source: string, engine: Views, flags:
 	S.J = B.js;
 	S.H = B.hosts;
 	S.names = names(G, tree, words[lens + at.name_starts] - 1, moved);
-	S.strings = failed ? strings(tree, words, lens, at, [rows[1], rows[2]].filter((arg) => arg !== NO_ARG)) : strings(tree, words, lens, at);
+	S.strings = failed ? strings(C, tree, words, lens, at, args_of(C.R.error, rows, 0)) : strings(C, tree, words, lens, at);
 	S.P = spans ? (tree[at.spans] as Uint32Array) : S.N;
-	S.ps = spans ? 2 : C.words;
-	S.po = spans ? 0 : C.layout.node.start >> 2;
+	S.ps = spans ? C.R.span.words : C.words;
+	S.po = spans ? C.R.span.start : C.layout.node.start >> 2;
 	S.parenthesized = filled(tree, words, lens, at.parenthesized);
 	S.erased = erase ? filled(tree, words, lens, at.erased) : null;
-	S.comment_count = words[lens + at.comments] / 9;
+	S.comment_count = words[lens + at.comments] / C.R.comment.words;
 	S.attached_slots = filled(tree, words, lens, at.attached_slots);
 	S.of_node = scoped ? (tree[at.of_node] as Uint32Array) : null;
 	S.extras_slots = typescript ? filled(tree, words, lens, at.extras_slots) : null;
@@ -1309,7 +1357,7 @@ export function decode(words: Uint32Array, source: string, engine: Views, flags:
 	}
 	const answer: Decoded = { node, end: words[0] };
 	if (!failed && (flags & COMMENTS) !== 0) answer.comments = comments(S, undefined);
-	if (failed || (flags & RECOVERED) !== 0) answer.errors = errors(S, rows, words[lens + at.errors] / ERROR_WORDS);
+	if (failed || (flags & RECOVERED) !== 0) answer.errors = errors(S, rows, words[lens + at.errors] / C.R.error.words);
 	if (!failed && erase) answer.typescript = kept(S);
 	if (!failed && scoped) {
 		answer.scopes = S.scopes;
@@ -1331,7 +1379,7 @@ function kept(S: State): Decoded[] {
 		const id = S.kept[i + 1] as number;
 		const at = id * S.ps + S.po;
 		const n: Decoded = { type: S.kept[i], start: S.P[at], end: S.P[at + 1] };
-		if (S.lines) n.loc = loc(S.locs, id * 4);
+		if (S.lines) n.loc = loc(S.C.R.loc, S.locs, id * S.C.R.loc.words);
 		out.push(n);
 	}
 	return out.sort((a, b) => a.start - b.start);

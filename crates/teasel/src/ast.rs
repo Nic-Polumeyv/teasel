@@ -1,5 +1,6 @@
 use crate::handed::{Handed, Views};
-use crate::interner::{Interner, StrId};
+use crate::interner::{Interner, StrId, Surrogate};
+use crate::layout::Field;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(C)]
@@ -244,6 +245,108 @@ pub enum Value {
 	Comments,
 }
 
+crate::layout::names! {
+	/// What a host field's value is, as `Value` has it.
+	#[derive(Clone, Copy, Debug, PartialEq)]
+	pub enum HostTag {
+		Node = "node",
+		Nodes = "nodes",
+		Str = "str",
+		Slice = "slice",
+		Strs = "strs",
+		Bool = "bool",
+		Int = "int",
+		Null = "null",
+		Comments = "comments",
+	}
+}
+
+crate::layout::record! {
+	/// A host field's value: two words, as many of them as the tag needs.
+	#[derive(Clone, Copy, Debug)]
+	pub struct HostValue {
+		pub tag: HostTag,
+		pub value: [u32; 2],
+	}
+}
+
+crate::layout::record! {
+	#[derive(Clone, Copy, Debug)]
+	pub struct HostRow {
+		/// The name of its type; none for an object of the host's without one.
+		pub ty: Option<u32>,
+		/// Its fields, in `Ast::host_keys` and `Ast::host_vals`.
+		pub fields: Run,
+		/// The number of its shape: its type, whether it has a span, and its fields' keys and tags.
+		pub shape: u32,
+		pub span: bool,
+	}
+}
+
+crate::layout::record! {
+	/// Where something starts and ends, in UTF-16 offsets.
+	#[derive(Clone, Copy, Debug, Default)]
+	pub struct Span {
+		pub start: u32,
+		pub end: u32,
+	}
+}
+
+crate::layout::record! {
+	#[derive(Clone, Copy, Debug, Default)]
+	pub struct Position {
+		pub line: u32,
+		pub column: u32,
+	}
+}
+
+crate::layout::record! {
+	#[derive(Clone, Copy, Debug, Default)]
+	pub struct Loc {
+		pub start: Position,
+		pub end: Position,
+	}
+}
+
+crate::layout::record! {
+	#[derive(Clone, Copy, Debug)]
+	pub struct CommentRow {
+		pub block: bool,
+		/// Its text, without its delimiters.
+		pub text: Span,
+		pub span: Span,
+		/// With `locations`.
+		pub loc: Loc,
+	}
+}
+
+crate::layout::record! {
+	#[derive(Clone, Copy, Debug)]
+	pub struct ErrorRow {
+		/// Its number in `Code`.
+		pub code: u32,
+		pub first: Option<StrId>,
+		pub second: Option<StrId>,
+		pub pos: u32,
+		pub end: u32,
+		/// The line and column of `pos`.
+		pub line: u32,
+		pub column: u32,
+	}
+}
+
+/// Every record a front end reads beside the nodes and the tables, by the name of its view.
+pub const RECORDS: &[(&str, usize, &[Field])] = &[
+	("comments", size_of::<CommentRow>(), CommentRow::FIELDS),
+	("attached", size_of::<Attached>(), Attached::FIELDS),
+	("errors", size_of::<ErrorRow>(), ErrorRow::FIELDS),
+	("hosts", size_of::<HostRow>(), HostRow::FIELDS),
+	("host_vals", size_of::<HostValue>(), HostValue::FIELDS),
+	("spans", size_of::<Span>(), Span::FIELDS),
+	("locs", size_of::<Loc>(), Loc::FIELDS),
+	("marks", size_of::<Surrogate>(), Surrogate::FIELDS),
+];
+
 /// `X` is the data an extension attaches to the tree; the plain JavaScript parser attaches none.
 #[derive(Debug, Default)]
 pub struct Ast<X = ()> {
@@ -257,9 +360,7 @@ pub struct Ast<X = ()> {
 	pub host_groups: Vec<HostGroup>,
 	pub strings: Interner,
 	pub comments: Vec<Comment>,
-	/// Each comment as a front end reads it, nine words: whether it is a block, where its text and
-	/// the comment itself start and end in UTF-16, and its lines and columns with `locations`.
-	pub comment_words: Handed<u32>,
+	pub comment_rows: Handed<CommentRow>,
 	/// Comments attached to nodes by `comments::attach`, as indices into `comments`.
 	pub attached: Slots<Attached>,
 	/// Nodes erasure leaves out, when the answer erases TypeScript.
@@ -269,22 +370,18 @@ pub struct Ast<X = ()> {
 	pub rare: NodeSet,
 	/// Nodes that declare bindings, are assigned by references or are a root.
 	pub late: NodeSet,
-	/// Each node's span in UTF-16 offsets, two words a node, when the source has characters past
-	/// ASCII; empty otherwise, the node's own span being right.
-	pub spans: Handed<u32>,
-	/// Each node's start line and column and end line and column, with `locations`.
-	pub locs: Handed<u32>,
+	/// Each node's span in UTF-16 offsets, when the source has characters past ASCII; empty
+	/// otherwise, the node's own span being right.
+	pub spans: Handed<Span>,
+	/// Each node's lines and columns, with `locations`.
+	pub locs: Handed<Loc>,
 	/// Where each interned string starts in UTF-16 units, when the text has characters past ASCII.
 	pub units: Handed<u32>,
-	/// Each error as a front end reads it, seven words: its code, two args as string numbers or
-	/// none, `pos`, `end`, and the line and column of `pos`.
-	pub error_words: Handed<u32>,
-	/// The hosts as a front end reads them, five words: type, first field, field count, whether it
-	/// has a span, and the number of its shape.
-	pub host_view: Handed<u32>,
-	/// The name id of each host field, and its value as three words.
+	pub error_rows: Handed<ErrorRow>,
+	pub host_rows: Handed<HostRow>,
+	/// The name id of each host field, and its value.
 	pub host_keys: Handed<u32>,
-	pub host_vals: Handed<[u32; 3]>,
+	pub host_vals: Handed<HostValue>,
 	/// The buffers the last parse worked in, for the next one.
 	pub spare: crate::parser::Spare,
 	/// The scope analysis, when `scopes::analyze` ran.
@@ -296,21 +393,24 @@ pub struct Ast<X = ()> {
 	pub extension: X,
 }
 
-#[derive(Debug, Default, Clone, Copy)]
-#[repr(C)]
-pub struct Attached {
-	pub leading: Run,
-	pub trailing: Run,
-	/// Inside an empty block, program, array or object.
-	pub inner: Run,
+crate::layout::record! {
+	#[derive(Debug, Default, Clone, Copy)]
+	pub struct Attached {
+		pub leading: Run,
+		pub trailing: Run,
+		/// Inside an empty block, program, array or object.
+		pub inner: Run,
+	}
 }
 
-/// `len` comments from `start` on: a node takes each of its comments one after the other.
-#[derive(Debug, Default, Clone, Copy)]
-#[repr(C)]
-pub struct Run {
-	pub start: u32,
-	pub len: u32,
+crate::layout::record! {
+	/// `len` items from `start` on: a node takes each of its comments one after the other, a host
+	/// node its fields.
+	#[derive(Debug, Default, Clone, Copy)]
+	pub struct Run {
+		pub start: u32,
+		pub len: u32,
+	}
 }
 
 impl Run {
@@ -387,12 +487,12 @@ impl<X: Reuse> Ast<X> {
 		self.erased.clear();
 		self.rare.clear();
 		self.late.clear();
-		self.comment_words.clear();
-		self.error_words.clear();
+		self.comment_rows.clear();
+		self.error_rows.clear();
 		self.spans.clear();
 		self.locs.clear();
 		self.units.clear();
-		self.host_view.clear();
+		self.host_rows.clear();
 		self.host_keys.clear();
 		self.host_vals.clear();
 		self.extension.clear();
@@ -448,10 +548,10 @@ impl<X: Reuse> Ast<X> {
 		out.push("erased", self.erased.words());
 		out.push("rare", self.rare.words());
 		out.push("late", self.late.words());
-		out.push("comments", &mut self.comment_words);
+		out.push("comments", &mut self.comment_rows);
 		self.attached.views("attached_slots", "attached", out);
-		out.push("errors", &mut self.error_words);
-		out.push("hosts", &mut self.host_view);
+		out.push("errors", &mut self.error_rows);
+		out.push("hosts", &mut self.host_rows);
 		out.push("host_keys", &mut self.host_keys);
 		out.push("host_vals", &mut self.host_vals);
 		out.push("host_strings", &mut self.host_strings);
@@ -464,19 +564,19 @@ impl<X: Reuse> Ast<X> {
 }
 
 impl Value {
-	/// The value as three words: its tag, then what it holds.
-	pub fn words(self) -> [u32; 3] {
-		match self {
-			Value::Node(id) => [0, id.index(), 0],
-			Value::Nodes(list) => [1, list.start, list.len],
-			Value::Str(id) => [2, id.index(), 0],
-			Value::Slice(start, end) => [3, start, end],
-			Value::Strs(start, len) => [4, start, len],
-			Value::Bool(value) => [5, value as u32, 0],
-			Value::Int(value) => [6, value, 0],
-			Value::Null => [7, 0, 0],
-			Value::Comments => [8, 0, 0],
-		}
+	pub fn row(self) -> HostValue {
+		let (tag, value) = match self {
+			Value::Node(id) => (HostTag::Node, [id.index(), 0]),
+			Value::Nodes(list) => (HostTag::Nodes, [list.start, list.len]),
+			Value::Str(id) => (HostTag::Str, [id.index(), 0]),
+			Value::Slice(start, end) => (HostTag::Slice, [start, end]),
+			Value::Strs(start, len) => (HostTag::Strs, [start, len]),
+			Value::Bool(value) => (HostTag::Bool, [value as u32, 0]),
+			Value::Int(value) => (HostTag::Int, [value, 0]),
+			Value::Null => (HostTag::Null, [0, 0]),
+			Value::Comments => (HostTag::Comments, [0, 0]),
+		};
+		HostValue { tag, value }
 	}
 }
 
