@@ -73,41 +73,37 @@ function report(name: string, difference: string | null) {
 	if (failed <= 20) console.log(`${name}: ${difference}`);
 }
 
-// the binary's name for each entry of parser/mod.rs, by index
+// each entry of parser/mod.rs by index, naming the report's lines
 const MODE = ['', 'expr', 'pattern', 'params', 'stmt', 'typeparams'];
 const STYLESHEET = 6;
+// the binary's own entry: a whole document of the grammar's language
+const DOCUMENT = 7;
 
-// the batch header the binary reads for the same parse: byte offsets, every switch of the options
-function mode(source: string, options: Options, entry: number, at: number) {
-	const switches = (['comments', 'scopes', 'parenthesized'] as const).filter((flag) => options[flag]).map((flag) => `+${flag}`);
-	if (options.typescript === 'erase') switches.push('+erase');
-	if (options.locations === 'js') switches.push('+jslocations');
-	const head = entry === 0 ? (options.sourceType === 'module' ? 'module' : 'script') : entry === STYLESHEET ? 'stylesheet' : MODE[entry];
-	const offset = entry === 0 || entry === STYLESHEET ? '' : `:${Buffer.byteLength(source.slice(0, at))}`;
-	return `${options.typescript ? 'ts-' : ''}${head}${switches.join('')}${offset}`;
-}
+// the batch header the binary reads for the same parse: the entry, a byte offset and the option word
+const header = (entry: number, offset: number, on: number) => `${entry} ${offset} ${on}`;
 
 // JSON has no RegExp or BigInt, so the writer spells a regular expression's or a BigInt's value null
 // the binary reports a code as its byte, the package as its name
 const as_json = (key: string, value: unknown) => (value instanceof RegExp || typeof value === 'bigint' ? null : key === 'code' && typeof value === 'string' ? CODES.indexOf(value as Code) : value);
 
 // the addon's answers as JSON, each with the batch job that asks the binary for the same
-const jobs: { name: string; source: string; mode: string; tree: string }[] = [];
+const jobs: { name: string; source: string; header: string; tree: string }[] = [];
 function json(name: string, source: string, options: Options, entry: number, at: number) {
 	const on = flags(options);
 	const held = native.create(source, on);
 	const answer = native.parse(held, entry, at, undefined, '', undefined);
 	native.free(held);
 	const tree = typeof answer === 'string' ? answer : JSON.stringify(decode(answer, source, native, on, entry === 3, false), as_json);
-	jobs.push({ name, source, mode: mode(source, options, entry, at), tree });
+	jobs.push({ name, source, header: header(entry, Buffer.byteLength(source.slice(0, at)), on), tree });
 }
 
-// a whole document of the host's, asked of the binary as `doc`
-function document(name: string, source: string, typescript: boolean, options: Options, switches: string) {
+// a whole document of the host's
+function document(name: string, source: string, options: Options) {
 	const on = flags(options);
 	const answer = native.once(source, on, 0, '', plan);
 	const tree = typeof answer === 'string' ? answer : JSON.stringify(decode(answer, source, native, on, false, false), as_json);
-	jobs.push({ name: `${name} doc${switches}`, source, mode: `${typescript ? 'ts-' : ''}doc${switches}`, tree });
+	const switches = Object.entries(options).flatMap(([key, value]) => (value === true ? [key] : value ? [`${key}:${value}`] : []));
+	jobs.push({ name: `${name} doc ${switches.join('+')}`, source, header: header(DOCUMENT, 0, on), tree });
 }
 
 const script_re = /<script((?:\s+(?:"[^"]*"|'[^']*'|[^>"'])*)?)>([\s\S]*?)<\/script>/g;
@@ -124,10 +120,10 @@ for (const file of files) {
 	}
 	if (host !== undefined && file.endsWith(host.extension)) {
 		const typescript = /lang=["']?ts/.test(text);
-		document(file, text, false, { sourceType: 'module', locations: true, comments: true, scopes: true }, '+comments+scopes');
-		document(file, text, typescript, { sourceType: 'module', typescript: typescript ? 'erase' : false, locations: true, scopes: true }, `${typescript ? '+erase' : ''}+scopes`);
-		document(file, text, typescript, { sourceType: 'module', typescript, locations: true, errorRecovery: true, parenthesized: true }, '+recover+parenthesized');
-		document(file, text, typescript, { sourceType: 'module', typescript: typescript ? 'erase' : false, locations: 'js', comments: true, scopes: true, parenthesized: true }, `${typescript ? '+erase' : ''}+jslocations+comments+scopes+parenthesized`);
+		document(file, text, { sourceType: 'module', locations: true, comments: true, scopes: true });
+		document(file, text, { sourceType: 'module', typescript: typescript ? 'erase' : false, locations: true, scopes: true });
+		document(file, text, { sourceType: 'module', typescript, locations: true, errorRecovery: true, parenthesized: true });
+		document(file, text, { sourceType: 'module', typescript: typescript ? 'erase' : false, locations: 'js', comments: true, scopes: true, parenthesized: true });
 		if (!/\.(js|mjs|ts|svelte)$/.test(file)) continue;
 	}
 	const svelte = file.endsWith('.svelte');
@@ -169,7 +165,7 @@ for (const file of files) {
 }
 {
 	let input = '';
-	for (const job of jobs) input += `${job.mode} ${Buffer.byteLength(job.source, 'utf8')}\n${job.source}`;
+	for (const job of jobs) input += `${job.header} ${Buffer.byteLength(job.source, 'utf8')}\n${job.source}`;
 	const run = spawnSync(binary, host ? ['--batch', '--host', host.path] : ['--batch'], { input, maxBuffer: 1 << 30 });
 	if (run.status !== 0) throw new Error(`${binary}: ${run.stderr}`);
 	const lines = run.stdout.toString().split('\n');

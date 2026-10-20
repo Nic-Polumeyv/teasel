@@ -27,7 +27,9 @@ jobs:
       - run: cargo test --release
       - run: npm ci
         working-directory: npm
-      - run: npm run build && npm run types && npm run build:wasm && npm run test && node scripts/check.ts ../crates/teasel/tests/test262-parser-tests/pass ../crates/teasel/tests/test262-parser-tests/pass-explicit
+      - run: npm run build && npm run types && npm run build:wasm && npm run test && node scripts/check.ts ../crates/teasel/tests/test262-parser-tests/pass ../crates/teasel/tests/test262-parser-tests/pass-explicit ../crates/teasel/tests/fixtures
+        working-directory: npm
+      - run: node scripts/check.ts --host ../crates/teasel/tests/hosts/svelte/host.json .svelte ../crates/teasel/tests/hosts/svelte && node scripts/check.ts --host ../crates/teasel/tests/hosts/vue/host.json .html ../crates/teasel/tests/hosts/vue
         working-directory: npm
 
   build:
