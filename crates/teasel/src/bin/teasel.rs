@@ -59,11 +59,8 @@ fn batch(grammar: Option<String>) -> io::Result<()> {
 					offset,
 					..Request::from_flags(flags)
 				},
-				"",
 			),
-			(None, Some(grammar)) if entry == DOCUMENT => {
-				json::parse_document(&source, grammar, &Request::from_flags(flags))
-			}
+			(None, Some(grammar)) if entry == DOCUMENT => json::parse_document(&source, grammar, Options(flags)),
 			(None, _) => {
 				return Err(io::Error::new(
 					io::ErrorKind::InvalidData,
@@ -137,14 +134,9 @@ fn main() -> ExitCode {
 			return ExitCode::FAILURE;
 		}
 	};
-	let request = Request {
-		entry,
-		offset: offset.unwrap_or(0),
-		..Request::from_flags(flags)
-	};
 	if let Some(host) = host {
-		if entry == Entry::StyleSheet {
-			eprintln!("--stylesheet reads the file on its own, without --host");
+		if entry != Entry::Program {
+			eprintln!("--host reads the whole file as a document, with no entry or --offset");
 			return ExitCode::FAILURE;
 		}
 		let grammar = match std::fs::read_to_string(&host) {
@@ -154,9 +146,14 @@ fn main() -> ExitCode {
 				return ExitCode::FAILURE;
 			}
 		};
-		println!("{}", json::parse_document(&source, &grammar, &request));
+		println!("{}", json::parse_document(&source, &grammar, Options(flags)));
 		return ExitCode::SUCCESS;
 	}
-	println!("{}", json::parse(&source, &request, ""));
+	let request = Request {
+		entry,
+		offset: offset.unwrap_or(0),
+		..Request::from_flags(flags)
+	};
+	println!("{}", json::parse(&source, &request));
 	ExitCode::SUCCESS
 }

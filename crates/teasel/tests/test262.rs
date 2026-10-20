@@ -94,7 +94,7 @@ fn pinned_answers() {
 		for (path, source) in files(&root, dir) {
 			let module = if is_module(&path) { Options::MODULE } else { 0 };
 			let request = Request::from_flags(module | Options::COMMENTS | Options::SCOPES | Options::LOCATIONS);
-			lines.push(format!("{path} {:016x}", hash(&parse(&source, &request, ""))));
+			lines.push(format!("{path} {:016x}", hash(&parse(&source, &request))));
 		}
 	}
 	let now = lines.join("\n") + "\n";

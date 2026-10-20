@@ -269,23 +269,27 @@ fn children_table(w: &mut Json, table: Vec<(&'static str, Vec<&'static str>)>) {
 	w.end();
 }
 
-/// `stop` lists the host's tokens for an entry at an offset; see `parser::parse_at`.
-pub fn parse(source: &str, request: &Request, stop: &str) -> String {
+/// One entry at a byte offset, as JSON.
+pub fn parse(source: &str, request: &Request) -> String {
 	match check(source, request) {
-		Ok(()) => to_json(source, &Positions::of(source, request.options), request, stop, None),
+		Ok(()) => to_json(source, &Positions::of(source, request.options), request, "", None),
 		Err(error) => error,
 	}
 }
 
 /// A whole document of a host language by its grammar, as JSON; see `host::parse_document`.
-pub fn parse_document(source: &str, grammar: &str, request: &Request) -> String {
+pub fn parse_document(source: &str, grammar: &str, options: Options) -> String {
 	match self::grammar(grammar) {
 		Ok(grammar) => {
-			let mut request = *request;
-			request.entry = Entry::Program;
-			if host::typescript(source, &grammar) {
-				request.options = request.options.with(Options::TYPESCRIPT);
-			}
+			let options = if host::typescript(source, &grammar) {
+				options.with(Options::TYPESCRIPT)
+			} else {
+				options
+			};
+			let request = Request {
+				options,
+				..Request::default()
+			};
 			to_json(
 				source,
 				&Positions::of(source, request.options),
@@ -495,7 +499,7 @@ impl<'a> Prepared<'a> {
 			Some(utf16) => {
 				let end = self.byte_offset(utf16)?;
 				if end < offset {
-					return Err(error_json(&format!("offset {utf16} is before {start}"), end));
+					return Err(error_json(&format!("offset {utf16} is before {start}"), 0));
 				}
 				Some(end)
 			}
@@ -543,6 +547,13 @@ impl<'a> Prepared<'a> {
 			Err(message) => Err(error_json(&message, 0)),
 		}
 	}
+}
+
+/// The entry a front end names by its number, or the error answer for a number that names none.
+pub fn entry(index: f64) -> Result<Entry, String> {
+	Entry::from_index(index as u32)
+		.filter(|_| f64::from(index as u32) == index)
+		.ok_or_else(|| error_json(&format!("{index} is no entry"), 0))
 }
 
 /// The checks on a request's byte offsets, or the error answer.

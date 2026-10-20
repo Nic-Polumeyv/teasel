@@ -9,10 +9,10 @@ use std::ptr::null_mut;
 use std::rc::Rc;
 
 use node_api::{CallbackInfo, Env, OK, Ref, Status, Value};
+use teasel::Options;
 use teasel::handed::{Allocation, Element, Raw};
 use teasel::host::Grammar;
-use teasel::json::Prepared;
-use teasel::{Entry, Options};
+use teasel::json::{self, Prepared};
 
 // RUSTFLAGS in the environment replaces .cargo/config.toml's flags, and nothing loads the addon on a Windows without the redistributable
 #[cfg(all(target_env = "msvc", not(target_feature = "crt-static")))]
@@ -91,6 +91,10 @@ fn string(env: Env, value: Value) -> Result<String> {
 	String::from_utf8(buffer).map_err(|_| "a string expected".into())
 }
 
+fn source_text<'a>(env: Env, value: Value) -> Result<&'a str> {
+	std::str::from_utf8(bytes(env, value)?).map_err(|_| "the source is not UTF-8".into())
+}
+
 fn number(env: Env, value: Value) -> Result<f64> {
 	out(0.0, "a number", |r| unsafe {
 		node_api::napi_get_value_double(env, value, r)
@@ -135,12 +139,14 @@ fn handle(env: Env, value: Value) -> Result<*mut Held> {
 	Ok(data.cast())
 }
 
-// the bytes V8 encoded, made valid UTF-8 where they are not; the options as one flag word
+// the bytes V8 encoded, copied; the options as one flag word
 unsafe extern "C" fn create(env: Env, info: CallbackInfo) -> Value {
 	guard(env, || {
 		let [source, flags] = args::<2>(env, info)?;
-		let source = std::str::from_utf8(bytes(env, source)?).map_err(|_| String::from("UTF-8 expected"))?;
-		let prepared = Prepared::new(source.to_owned(), Options(number(env, flags)? as u32));
+		let prepared = Prepared::new(
+			source_text(env, source)?.to_owned(),
+			Options(number(env, flags)? as u32),
+		);
 		let held = Box::into_raw(Box::new(Held {
 			prepared,
 			finalizer: null_mut(),
@@ -232,10 +238,16 @@ unsafe extern "C" fn parse(env: Env, info: CallbackInfo) -> Value {
 	guard(env, || {
 		let [source, entry, offset, end, stop, plan] = args::<6>(env, info)?;
 		let prepared = unsafe { &(*handle(env, source)?).prepared };
-		let entry = Entry::from_index(number(env, entry)? as u32).ok_or("an entry expected")?;
-		let (offset, end, stop) = (number(env, offset)?, optional(env, end), string(env, stop)?);
+		let (entry, offset, end, stop) = (
+			number(env, entry)?,
+			number(env, offset)?,
+			optional(env, end),
+			string(env, stop)?,
+		);
 		let grammar = grammar_of(env, plan);
-		answer(env, || prepared.in_place(entry, offset, end, &stop, grammar))
+		answer(env, || {
+			prepared.in_place(json::entry(entry)?, offset, end, &stop, grammar)
+		})
 	})
 }
 
@@ -243,12 +255,12 @@ unsafe extern "C" fn parse(env: Env, info: CallbackInfo) -> Value {
 unsafe extern "C" fn once(env: Env, info: CallbackInfo) -> Value {
 	guard(env, || {
 		let [source, flags, entry, stop, plan] = args::<5>(env, info)?;
-		let source = std::str::from_utf8(bytes(env, source)?).map_err(|_| String::from("UTF-8 expected"))?;
-		let prepared = Prepared::borrowed(source, Options(number(env, flags)? as u32));
-		let entry = Entry::from_index(number(env, entry)? as u32).ok_or("an entry expected")?;
-		let stop = string(env, stop)?;
+		let prepared = Prepared::borrowed(source_text(env, source)?, Options(number(env, flags)? as u32));
+		let (entry, stop) = (number(env, entry)?, string(env, stop)?);
 		let grammar = grammar_of(env, plan);
-		answer(env, || prepared.in_place(entry, 0.0, None, &stop, grammar))
+		answer(env, || {
+			prepared.in_place(json::entry(entry)?, 0.0, None, &stop, grammar)
+		})
 	})
 }
 
