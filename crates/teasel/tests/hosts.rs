@@ -24,8 +24,6 @@ macro_rules! list {
 	}};
 }
 
-/// A batch job is four numbers and its source; a fifth word, an entry that is none or a document
-/// without a grammar stops the batch after the jobs before it answered.
 #[test]
 fn batch_headers() {
 	use std::io::Write;
