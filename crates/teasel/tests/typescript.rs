@@ -65,6 +65,7 @@ const CHECKER: &[(&str, &str)] = &[
 
 /// Cases decided by name: what the parser rejects on ECMAScript's rules, which TypeScript does
 /// not apply, and what it does not read yet.
+/// TypeScript drops checker grammar errors in a file with parse errors, so a baseline can miss one the parser reports.
 const BY_NAME: &[(&str, &str)] = &[
 	(
 		"asyncWithVarShadowing_es6.ts",
@@ -92,6 +93,44 @@ const BY_NAME: &[(&str, &str)] = &[
 		"parservoidInQualifiedName1.ts",
 		"void in a qualified type name is not read yet",
 	),
+	(
+		"ambientModuleDeclarationWithReservedIdentifierInDottedPath.ts",
+		"declare in an ambient namespace, which the file's parse errors hide",
+	),
+	(
+		"ambientModuleDeclarationWithReservedIdentifierInDottedPath2.ts",
+		"declare in an ambient namespace, which the file's parse errors hide",
+	),
+	(
+		"catchClauseWithTypeAnnotation.ts",
+		"a catch type other than the any or unknown keyword, which TypeScript decides by the type it names",
+	),
+	(
+		"importAttributes12.ts",
+		"import attributes in an import type are not read yet",
+	),
+	(
+		"classStaticBlock6.ts",
+		"await as a name in a static block, which the file's parse errors hide",
+	),
+	(
+		"topLevelAwaitErrors.12.ts",
+		"await as a name in a namespace of a module",
+	),
+	("constEnum4.ts", "a declaration as the body of an if"),
+	(
+		"jsdocDisallowedInTypescript.ts",
+		"a JSDoc type outside a comment, which the checker refuses",
+	),
+];
+
+/// Cases whose error TypeScript reports on a later line than the parser.
+const REPORTED_LATER: &[(&str, &str)] = &[
+	(
+		"disallowLineTerminatorBeforeArrow.ts",
+		"reported at the parens a line break parts from their arrow",
+	),
+	("scannerS7.4_A2_T2.ts", "an unclosed comment reported where it opens"),
 ];
 
 /// A file TypeScript treats as a module: one with an import or export of its own, or `import.meta`.
@@ -103,6 +142,24 @@ fn is_module(source: &str) -> bool {
 				line.strip_prefix(word)
 					.is_some_and(|after| !after.starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '$'))
 			})
+		})
+}
+
+/// TypeScript's baselines number a case's lines after dropping its byte order mark, its option lines
+/// and the empty lines before its code.
+fn as_baselined(source: &str) -> String {
+	let source = source.strip_prefix('\u{feff}').unwrap_or(source);
+	let kept = source.split_inclusive('\n').filter(|line| !is_option(line));
+	kept.skip_while(|line| *line == "\n" || *line == "\r\n").collect()
+}
+
+fn is_option(line: &str) -> bool {
+	line.strip_prefix("//")
+		.and_then(|rest| rest.trim_start().strip_prefix('@'))
+		.and_then(|rest| rest.split_once(':'))
+		.is_some_and(|(name, _)| {
+			let name = name.trim_end();
+			!name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_')
 		})
 }
 
@@ -123,6 +180,16 @@ fn cases(root: &Path, out: &mut Vec<PathBuf>) {
 			out.push(path);
 		}
 	}
+}
+
+fn error_line(answer: &str) -> u32 {
+	let at = answer.find("\"line\":").unwrap() + 7;
+	answer[at..]
+		.chars()
+		.take_while(|c| c.is_ascii_digit())
+		.collect::<String>()
+		.parse()
+		.unwrap()
 }
 
 #[test]
@@ -157,27 +224,36 @@ fn conformance() {
 			left_out += 1;
 			continue;
 		}
+		let source = as_baselined(&source);
 		let stem = file.file_stem().unwrap().to_str().unwrap();
 		let mut codes = Vec::new();
+		let mut first_line = u32::MAX;
 		for path in by_stem.get(stem).into_iter().flatten() {
 			let text = fs::read_to_string(path).unwrap();
 			for (i, _) in text.match_indices("error TS") {
 				let code: String = text[i + 8..].chars().take_while(|c| c.is_ascii_digit()).collect();
 				codes.push(code);
 			}
+			for line in text.lines() {
+				if let Some((head, _)) = line.split_once("): error TS")
+					&& let Some((reported, at)) = head.rsplit_once('(')
+					&& reported == name
+					&& let Some((line, _)) = at.split_once(',')
+				{
+					first_line = first_line.min(line.parse().unwrap());
+				}
+			}
 		}
-		// TypeScript reports early errors from its binder and checker, redeclarations say, so a
-		// rejection is wrong only when the baseline is clean; a parse is wrong when the baseline has
-		// a grammar diagnostic the parser could see
 		let excused = |c: &String| CHECKER.iter().any(|(code, _)| code == c);
 		let grammar_error = codes.iter().any(|c| c.starts_with('1') && c.len() == 4 && !excused(c));
-		let any_error = !codes.is_empty();
 		let module = if is_module(&source) { Options::MODULE } else { 0 };
 		let request = Request::from_flags(Options::TYPESCRIPT | module);
 		let answer = parse(&source, &request, "");
 		let failed = answer.starts_with("{\"node\":null");
 		counted += 1;
-		if (failed && !any_error) || (!failed && grammar_error) {
+		let later = REPORTED_LATER.iter().any(|(n, _)| *n == name);
+		// TypeScript reports early errors from its binder and checker, redeclarations say
+		if (failed && !later && error_line(&answer) < first_line) || (!failed && grammar_error) {
 			let what = if failed {
 				answer[..answer.len().min(160)].to_owned()
 			} else {

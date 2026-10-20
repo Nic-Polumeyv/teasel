@@ -2,7 +2,7 @@
 	"node": {
 		"type": "Program",
 		"start": 0,
-		"end": 42,
+		"end": 98,
 		"scope": 0,
 		"body": [
 			{
@@ -107,11 +107,89 @@
 					"end": 41,
 					"body": []
 				}
+			},
+			{
+				"type": "ExpressionStatement",
+				"start": 42,
+				"end": 49,
+				"expression": {
+					"type": "Identifier",
+					"start": 42,
+					"end": 49,
+					"reference": 4,
+					"name": "declare"
+				}
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 50,
+				"end": 62,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 56,
+						"end": 61,
+						"defines": [
+							1
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 56,
+							"end": 57,
+							"declares": 1,
+							"name": "c"
+						},
+						"init": {
+							"type": "Literal",
+							"start": 60,
+							"end": 61,
+							"value": 1,
+							"raw": "1"
+						}
+					}
+				],
+				"kind": "const"
+			},
+			{
+				"type": "ExportDefaultDeclaration",
+				"start": 63,
+				"end": 86,
+				"exportKind": "value",
+				"declaration": {
+					"type": "Identifier",
+					"start": 78,
+					"end": 86,
+					"reference": 5,
+					"name": "abstract"
+				}
+			},
+			{
+				"type": "ClassDeclaration",
+				"start": 87,
+				"end": 97,
+				"scope": 2,
+				"defines": [
+					2
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 93,
+					"end": 94,
+					"declares": 2,
+					"name": "B"
+				},
+				"superClass": null,
+				"body": {
+					"type": "ClassBody",
+					"start": 95,
+					"end": 97,
+					"body": []
+				}
 			}
 		],
 		"sourceType": "module"
 	},
-	"end": 42,
+	"end": 98,
 	"comments": [],
 	"scopes": [
 		{
@@ -123,11 +201,28 @@
 			"kind": "class",
 			"parent": 0,
 			"topLevelAwait": false
+		},
+		{
+			"kind": "class",
+			"parent": 0,
+			"topLevelAwait": false
 		}
 	],
 	"bindings": [
 		{
 			"name": "A",
+			"kind": "class",
+			"scope": 0,
+			"write": true
+		},
+		{
+			"name": "c",
+			"kind": "const",
+			"scope": 0,
+			"write": true
+		},
+		{
+			"name": "B",
 			"kind": "class",
 			"scope": 0,
 			"write": true
@@ -155,6 +250,22 @@
 			"binding": null,
 			"write": true,
 			"read": false,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
 			"mutate": false,
 			"declares": false
 		},

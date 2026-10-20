@@ -1,0 +1,16 @@
+{
+	"node": null,
+	"end": 12,
+	"errors": [
+		{
+			"code": 10,
+			"args": [
+				"yield"
+			],
+			"pos": 12,
+			"end": 12,
+			"line": 1,
+			"column": 12
+		}
+	]
+}

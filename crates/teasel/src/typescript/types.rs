@@ -404,31 +404,15 @@ impl Parser<'_, TypeScript> {
 	) -> Result<(Option<NodeId>, List, Option<NodeId>)> {
 		let type_parameters = self.try_parse_type_parameters(TypeParameterModifiers::Const)?;
 		self.expect(TokenKind::ParenL)?;
-		let parameters = self.parse_binding_list_for_signature()?;
+		let parameters = self.parse_binding_list(TokenKind::ParenR, false, true, false)?;
+		let parameters = self.list_from(parameters);
+		self.check_parameter_list(parameters, true)?;
 		let type_annotation = if return_token == TokenKind::Arrow || self.is(return_token) {
 			Some(self.parse_type_or_type_predicate_annotation(return_token, allow_predicate)?)
 		} else {
 			None
 		};
 		Ok((type_parameters, parameters, type_annotation))
-	}
-
-	fn parse_binding_list_for_signature(&mut self) -> Result<List> {
-		let params = self.parse_binding_list(TokenKind::ParenR, true, true, false)?;
-		let params = self.list_from(params);
-		self.check_parameter_list(params)?;
-		for param in self.ast.list(params).iter().flatten() {
-			if !matches!(
-				self.kind(*param),
-				NodeKind::Identifier { .. }
-					| NodeKind::RestElement { .. }
-					| NodeKind::ObjectPattern { .. }
-					| NodeKind::ArrayPattern { .. }
-			) {
-				return self.error(self.start_of(*param), Code::SignatureParameterDefault);
-			}
-		}
-		Ok(params)
 	}
 
 	fn parse_union_type_or_higher(&mut self) -> Result<NodeId> {
@@ -595,6 +579,9 @@ impl Parser<'_, TypeScript> {
 				if let Some(keyword) = TsKeyword::from_name(self.str(name))
 					&& self.peek_char().0 != Some('.')
 				{
+					if self.tok.escaped {
+						return self.error_name(start, Code::EscapeInKeyword, name);
+					}
 					self.next()?;
 					return Ok(self.ts(TsKind::Keyword(keyword), start));
 				}
@@ -1023,7 +1010,11 @@ impl Parser<'_, TypeScript> {
 		}
 		let (mut key, mut computed) = self.parse_property_name()?;
 		let mut kind = None;
-		if !computed && (self.ident_is(key, "get") || self.ident_is(key, "set")) && self.token_can_follow_modifier() {
+		if !computed
+			&& (self.ident_is(key, "get") || self.ident_is(key, "set"))
+			&& !self.tok.newline_before
+			&& self.token_can_follow_modifier()
+		{
 			kind = Some(if self.ident_is(key, "get") {
 				SignatureKind::Get
 			} else {
@@ -1151,14 +1142,13 @@ impl Parser<'_, TypeScript> {
 
 	// Modifiers
 
-	pub(super) fn token_can_follow_modifier(&self) -> bool {
-		(self.is(TokenKind::BracketL)
+	fn token_can_follow_modifier(&self) -> bool {
+		self.is(TokenKind::BracketL)
 			|| self.is(TokenKind::BraceL)
 			|| self.is(TokenKind::Star)
 			|| self.is(TokenKind::Ellipsis)
 			|| matches!(self.tok.kind, TokenKind::PrivateName(_))
-			|| self.is_literal_property_name())
-			&& !self.tok.newline_before
+			|| self.is_literal_property_name()
 	}
 
 	/// Consumes the current identifier when it is one of the modifiers and a member name may
@@ -1168,11 +1158,12 @@ impl Parser<'_, TypeScript> {
 		allowed: &[&str],
 		disallowed: &[&str],
 		stop_on_static_block: bool,
+		seen_static: bool,
 	) -> Result<Option<(&'static str, u32)>> {
 		let word = match self.tok.kind {
 			TokenKind::Ident(name) if !self.tok.escaped => self.str(name),
-			TokenKind::Keyword(Keyword::In) => "in",
-			TokenKind::Keyword(Keyword::Const) => "const",
+			TokenKind::Keyword(Keyword::In) if !self.tok.escaped => "in",
+			TokenKind::Keyword(Keyword::Const) if !self.tok.escaped => "const",
 			_ => return Ok(None),
 		};
 		let Some(&modifier) = super::MODIFIERS.iter().find(|m| **m == word) else {
@@ -1181,13 +1172,13 @@ impl Parser<'_, TypeScript> {
 		if !allowed.contains(&modifier) && !disallowed.contains(&modifier) {
 			return Ok(None);
 		}
-		if stop_on_static_block && modifier == "static" && self.peek_char().0 == Some('{') {
+		if modifier == "static" && (seen_static || (stop_on_static_block && self.peek_char().0 == Some('{'))) {
 			return Ok(None);
 		}
 		let start = self.tok.start;
 		let snapshot = self.token_snapshot();
 		self.next_liberal()?;
-		if self.token_can_follow_modifier() {
+		if (modifier == "static" || !self.tok.newline_before) && self.token_can_follow_modifier() {
 			return Ok(Some((modifier, start)));
 		}
 		self.restore_tokens(snapshot);
@@ -1202,7 +1193,9 @@ impl Parser<'_, TypeScript> {
 		disallowed_error: Option<Code>,
 	) -> Result<Modifiers> {
 		let mut modifiers = Modifiers::default();
-		while let Some((modifier, start)) = self.parse_modifier(allowed, disallowed, stop_on_static_block)? {
+		while let Some((modifier, start)) =
+			self.parse_modifier(allowed, disallowed, stop_on_static_block, modifiers.extras.is_static)?
+		{
 			self.check_modifier(&modifiers, modifier, start)?;
 			modifiers.set(modifier);
 			if let Some(code) = disallowed_error.filter(|_| disallowed.contains(&modifier)) {

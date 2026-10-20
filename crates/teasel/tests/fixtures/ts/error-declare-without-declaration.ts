@@ -1,0 +1,1 @@
+declare X = 1;
