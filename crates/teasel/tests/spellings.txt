@@ -35,7 +35,6 @@
 >>>=
 ??
 ??=
-?bool
 ?enum
 ?list
 ?node
@@ -289,7 +288,6 @@ bindings
 block
 body
 bool
-boolif
 boolnames
 callee
 cases
@@ -420,6 +418,7 @@ loc
 local
 locs
 marks
+maybe
 members
 meta
 method
@@ -447,11 +446,8 @@ of_identifier
 of_node
 operator
 opt
-optboolkey
-optenumkey
 optional
 options
-optkey
 optlistkey
 optstrkey
 othername
@@ -534,6 +530,7 @@ true
 trueType
 true_type
 ts
+ts_adds
 ty
 type
 typeAnnotation
