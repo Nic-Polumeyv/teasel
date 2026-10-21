@@ -62,8 +62,9 @@ interface Op {
 	names: string[];
 	/** The binding's field of `othername`. */
 	at2: number;
-	/** What `const`, `constbool`, `enumor` and `boolnames` spell: the value, or the names for true and false. */
+	/** What `constbool` spells, `boolnames`' name for true, or a `host` value's tag. */
 	value: any;
+	/** `boolnames`' name for false, or what `enumor` spells when the byte names none. */
 	other: string;
 	inner: Op[];
 }
@@ -147,7 +148,7 @@ function resolve(raw: RawOp[], fields: Field[]): Op[] {
 		let field: string | undefined;
 		if (op === 'typeof' || op === 'through') [field] = rest;
 		else if (op === 'object') [out.key, out.inner] = [rest[0], resolve(rest[1], fields)];
-		else if (op === 'const' || op === 'constbool') [out.key, out.value] = rest;
+		else if (op === 'constbool') [out.key, out.value] = rest;
 		else if (op === 'boolnames') [out.key, field, out.value, out.other] = rest;
 		else if (op === 'enumor') [out.key, field, out.other] = rest;
 		else if (op === 'othername' || op === 'regexp') {
@@ -546,7 +547,6 @@ function value<E, St>(B: Spelling<E, St>, op: Op, none: Missing, erase: boolean)
 			return B.bigint_value(B.slice(1));
 		case 'regexp':
 			return B.regexp(B.strings(B.word(op.at)), B.strings(B.word(op.at2)));
-		case 'const':
 		case 'constbool':
 			return B.lit(op.value);
 		case 'null':

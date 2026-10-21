@@ -10,7 +10,6 @@ pub mod interner;
 pub mod json;
 pub mod layout;
 pub(crate) mod lexer;
-pub mod names;
 pub mod parser;
 pub mod recipe;
 pub mod scopes;

@@ -121,6 +121,23 @@ fn every_prefix_answers() {
 	}
 }
 
+#[test]
+fn names_are_escaped() {
+	let vue = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/hosts/vue/host.json")).unwrap();
+	let grammar = vue.replacen(
+		r#""node":"Root","form":[{"children""#,
+		r#""node":"Ro\"ot","form":[{"chil\"dren""#,
+		1,
+	);
+	let answer = parse_document("<div>hi</div>", &grammar, Options(Options::MODULE));
+	assert!(
+		answer.contains(r#""type":"Ro\"ot""#) && answer.contains(r#""chil\"dren":["#),
+		"{answer}"
+	);
+	let children = teasel::json::children(&teasel::json::grammar(&grammar).unwrap());
+	assert!(children.contains(r#""Ro\"ot":["chil\"dren"]"#), "{children}");
+}
+
 /// The unfinished and odd inputs the audit found panicking, and the fallback from one expression
 /// to statements, which must not settle for what recovery makes of the expression.
 #[test]
