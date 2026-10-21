@@ -64,8 +64,9 @@ interface Op {
 	names: string[];
 	/** The binding's field of `othername`. */
 	at2: number;
-	/** What `constbool`, `enumor` and `boolnames` spell: the value, or the names for true and false. */
+	/** What `constbool` spells, `boolnames`' name for true, or a `host` value's tag. */
 	value: any;
+	/** `boolnames`' name for false, or what `enumor` spells when the byte names none. */
 	other: string;
 	inner: Op[];
 }

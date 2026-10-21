@@ -192,9 +192,9 @@ fn program_in_a_range() {
 		..Request::from_flags(Options::MODULE | Options::TYPESCRIPT)
 	};
 	request.end = Some(1000);
-	assert!(crate::json::parse(src, &request, "").contains("is not a character boundary"));
+	assert!(crate::json::parse(src, &request).contains("is not a character boundary"));
 	request.end = Some(2);
-	assert!(crate::json::parse(src, &request, "").contains("is before"));
+	assert!(crate::json::parse(src, &request).contains("is before"));
 	let prepared = crate::json::Prepared::new(src[..26].to_string(), request.options);
 	assert!(
 		prepared

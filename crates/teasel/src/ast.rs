@@ -437,8 +437,8 @@ impl Run {
 	}
 }
 
-/// What an extension's data does to be reused for the next parse, and to forget what a failed
-/// attempt built.
+/// What an extension's data does to be reused for the next parse and to forget what a failed
+/// attempt built, and what both answers read of it.
 pub trait Reuse: Default {
 	/// Where the data stood, to cut back to.
 	type Mark: Copy;

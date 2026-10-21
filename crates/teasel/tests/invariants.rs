@@ -51,11 +51,10 @@ fn recovery_changes_nothing_that_parses() {
 	let mut differ = Vec::new();
 	for (path, source, module) in parsing(&root) {
 		let flags = Options::COMMENTS | Options::SCOPES | Options::LOCATIONS;
-		let strict = parse(&source, &request(Entry::Program, 0, module, flags), "");
+		let strict = parse(&source, &request(Entry::Program, 0, module, flags));
 		let mut recovered = parse(
 			&source,
 			&request(Entry::Program, 0, module, Options::ERROR_RECOVERY | flags),
-			"",
 		);
 		if let Some(at) = recovered.find(",\"errors\":[]") {
 			recovered.replace_range(at..at + ",\"errors\":[]".len(), "");
@@ -91,10 +90,10 @@ fn an_entry_reads_what_the_program_read() {
 	let Some(root) = suite() else { return };
 	let mut differ = Vec::new();
 	for (path, source, module) in parsing(&root) {
-		let program = parse(&source, &request(Entry::Program, 0, module, Options::LOCATIONS), "");
+		let program = parse(&source, &request(Entry::Program, 0, module, Options::LOCATIONS));
 		let mut at = 0u32;
 		while (at as usize) < source.len() {
-			let answer = parse(&source, &request(Entry::Statement, at, module, Options::LOCATIONS), "");
+			let answer = parse(&source, &request(Entry::Statement, at, module, Options::LOCATIONS));
 			let Some(node) = node_of(&answer) else { break };
 			let end: u32 = answer[answer.rfind(",\"end\":").unwrap() + 7..answer.len() - 1]
 				.parse()
@@ -133,7 +132,7 @@ fn a_file_cut_anywhere_is_read_without_a_panic() {
 				0,
 				Options::ERROR_RECOVERY | Options::COMMENTS | Options::SCOPES | Options::LOCATIONS,
 			] {
-				let read = std::panic::catch_unwind(|| parse(cut, &request(Entry::Program, 0, module, flags), ""));
+				let read = std::panic::catch_unwind(|| parse(cut, &request(Entry::Program, 0, module, flags)));
 				if read.is_err() {
 					panicked.push(format!("{path} cut at {i} with {flags:?}"));
 				}

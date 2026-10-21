@@ -98,11 +98,12 @@ function json(name: string, source: string, options: Options, entry: number, at:
 }
 
 // a whole document of the host's
-function document(name: string, source: string, options: Options, switches: string) {
+function document(name: string, source: string, options: Options) {
 	const on = flags(options);
 	const answer = native.once(source, on, 0, '', plan);
 	const tree = typeof answer === 'string' ? answer : JSON.stringify(decode(answer, source, native, on, false, false), as_json);
-	jobs.push({ name: `${name} doc${switches}`, source, header: header(DOCUMENT, 0, on), tree });
+	const switches = Object.entries(options).flatMap(([key, value]) => (value === true ? [key] : value ? [`${key}:${value}`] : []));
+	jobs.push({ name: `${name} doc ${switches.join('+')}`, source, header: header(DOCUMENT, 0, on), tree });
 }
 
 const script_re = /<script((?:\s+(?:"[^"]*"|'[^']*'|[^>"'])*)?)>([\s\S]*?)<\/script>/g;
@@ -119,10 +120,10 @@ for (const file of files) {
 	}
 	if (host !== undefined && file.endsWith(host.extension)) {
 		const typescript = /lang=["']?ts/.test(text);
-		document(file, text, { sourceType: 'module', locations: true, comments: true, scopes: true }, '+comments+scopes');
-		document(file, text, { sourceType: 'module', typescript: typescript ? 'erase' : false, locations: true, scopes: true }, `${typescript ? '+erase' : ''}+scopes`);
-		document(file, text, { sourceType: 'module', typescript, locations: true, errorRecovery: true, parenthesized: true }, '+recover+parenthesized');
-		document(file, text, { sourceType: 'module', typescript: typescript ? 'erase' : false, locations: 'js', comments: true, scopes: true, parenthesized: true }, `${typescript ? '+erase' : ''}+jslocations+comments+scopes+parenthesized`);
+		document(file, text, { sourceType: 'module', locations: true, comments: true, scopes: true });
+		document(file, text, { sourceType: 'module', typescript: typescript ? 'erase' : false, locations: true, scopes: true });
+		document(file, text, { sourceType: 'module', typescript, locations: true, errorRecovery: true, parenthesized: true });
+		document(file, text, { sourceType: 'module', typescript: typescript ? 'erase' : false, locations: 'js', comments: true, scopes: true, parenthesized: true });
 		if (!/\.(js|mjs|ts|svelte)$/.test(file)) continue;
 	}
 	const svelte = file.endsWith('.svelte');
