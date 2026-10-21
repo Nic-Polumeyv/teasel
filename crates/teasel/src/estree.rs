@@ -1,7 +1,7 @@
 //! Serializes an `Ast` to ESTree as JSON text, and maps its positions to what JavaScript counts.
 
 use crate::Options;
-use crate::ast::{Ast, List, NodeId, NodeKind, Reuse, Value};
+use crate::ast::{Ast, CommentRow, List, Loc, NodeId, NodeKind, Position, Reuse, Span, Value};
 use crate::handed::Handed;
 use crate::interner::StrId;
 use crate::layout::Ty;
@@ -142,7 +142,7 @@ impl Json {
 
 	/// A string with lone surrogates at `marks`, as the interner keeps them: each written as
 	/// the escape JSON has for it.
-	pub(crate) fn marked(&mut self, value: &str, marks: &[[u32; 3]]) {
+	pub(crate) fn marked(&mut self, value: &str, marks: &[crate::interner::Surrogate]) {
 		if marks.is_empty() {
 			return self.text(value);
 		}
@@ -154,10 +154,10 @@ impl Json {
 		let mut from = 0usize;
 		for (i, c) in value.char_indices() {
 			if let Some(mark) = next
-				&& mark[1] == units
+				&& mark.at == units
 			{
 				escape_json(&mut self.out, &value[from..i]);
-				write!(self.out, "\\u{:04x}", mark[2]).unwrap();
+				write!(self.out, "\\u{:04x}", mark.unit).unwrap();
 				from = i + c.len_utf8();
 				next = marks.next();
 			}
@@ -337,17 +337,17 @@ impl Positions {
 
 	/// Every node's span as UTF-16 offsets into `spans`, when the source has gaps, and its lines
 	/// and columns into `locs`, when lines are on.
-	pub fn map_nodes(&self, nodes: &[crate::ast::Node], spans: &mut Handed<u32>, locs: &mut Handed<u32>) {
+	pub fn map_nodes(&self, nodes: &[crate::ast::Node], spans: &mut Handed<Span>, locs: &mut Handed<Loc>) {
 		spans.clear();
 		locs.clear();
 		if self.gaps.is_empty() && !self.lines {
 			return;
 		}
 		if !self.gaps.is_empty() {
-			spans.reserve(2 * nodes.len());
+			spans.reserve(nodes.len());
 		}
 		if self.lines {
-			locs.reserve(4 * nodes.len());
+			locs.reserve(nodes.len());
 		}
 		let mut cursor = Cursor::default();
 		for node in nodes {
@@ -355,18 +355,32 @@ impl Positions {
 			cursor.gap = gap;
 			let (end, _) = self.offset_from(gap, node.end);
 			if !self.gaps.is_empty() {
-				spans.extend_from_slice(&[start, end]);
+				spans.push(Span { start, end });
 			}
 			if self.lines {
 				if !self.hosts && matches!(node.kind, crate::ast::NodeKind::Host(_)) {
-					locs.extend_from_slice(&[0; 4]);
+					locs.push(Loc::default());
 					continue;
 				}
-				let (sl, sc) = self.line_column(cursor.line, node.start, start);
-				cursor.line = sl;
-				let (el, ec) = self.line_column(sl, node.end, end);
-				locs.extend_from_slice(&[sl as u32, sc, el as u32, ec]);
+				locs.push(self.loc(&mut cursor, node.start, start, node.end, end));
 			}
+		}
+	}
+
+	/// The lines and columns of a span whose offsets `offset` already mapped.
+	fn loc(&self, cursor: &mut Cursor, from: u32, start: u32, to: u32, end: u32) -> Loc {
+		let (sl, sc) = self.line_column(cursor.line, from, start);
+		cursor.line = sl;
+		let (el, ec) = self.line_column(sl, to, end);
+		Loc {
+			start: Position {
+				line: sl as u32,
+				column: sc,
+			},
+			end: Position {
+				line: el as u32,
+				column: ec,
+			},
 		}
 	}
 
@@ -393,9 +407,8 @@ impl Positions {
 			.collect()
 	}
 
-	/// Every comment as nine words: whether it is a block, its text's span and its own in UTF-16,
-	/// and its lines and columns when lines are on, zeros otherwise.
-	pub fn map_comments(&self, comments: &[crate::ast::Comment], out: &mut Handed<u32>) {
+	/// Each comment's row, its `loc` zeros unless lines are on.
+	pub fn map_comments(&self, comments: &[crate::ast::Comment], out: &mut Handed<CommentRow>) {
 		out.clear();
 		let mut cursor = Cursor::default();
 		for comment in comments {
@@ -404,15 +417,16 @@ impl Positions {
 			let from = self.offset(&mut cursor, text.start as u32);
 			let to = self.offset(&mut cursor, text.end as u32);
 			let end = self.offset(&mut cursor, comment.end);
-			let mut loc = [0; 4];
-			if self.lines {
-				let (sl, sc) = self.line_column(cursor.line, comment.start, start);
-				cursor.line = sl;
-				let (el, ec) = self.line_column(sl, comment.end, end);
-				loc = [sl as u32, sc, el as u32, ec];
-			}
-			out.extend_from_slice(&[comment.is_block() as u32, from, to, start, end]);
-			out.extend_from_slice(&loc);
+			out.push(CommentRow {
+				block: comment.is_block(),
+				text: Span { start: from, end: to },
+				span: Span { start, end },
+				loc: if self.lines {
+					self.loc(&mut cursor, comment.start, start, comment.end, end)
+				} else {
+					Loc::default()
+				},
+			});
 		}
 	}
 

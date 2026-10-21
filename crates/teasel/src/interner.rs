@@ -143,6 +143,17 @@ impl Slots {
 	}
 }
 
+crate::layout::record! {
+	/// A lone surrogate a string holds where its text shows U+FFFD: the string's id, the UTF-16
+	/// offset in it, and the surrogate meant there.
+	#[derive(Clone, Copy, Debug)]
+	pub struct Surrogate {
+		pub string: u32,
+		pub at: u32,
+		pub unit: u32,
+	}
+}
+
 /// Strings back to back in one text, found through an open-addressing table by hash: no
 /// allocation per string and one hash per lookup, which `HashMap<Rc<str>>` paid twice on a miss.
 #[derive(Debug, Default)]
@@ -150,9 +161,9 @@ pub struct Interner {
 	text: Handed<u8>,
 	/// Where each string starts, and where the next would.
 	starts: Handed<u32>,
-	/// Every lone surrogate the strings hold, where the text shows U+FFFD: the string's id, the
-	/// UTF-16 offset in it and the surrogate; in id order. Such a string is outside the table.
-	marks: Handed<[u32; 3]>,
+	/// Every lone surrogate the strings hold, where the text shows U+FFFD, in id order. Such a
+	/// string is outside the table.
+	marks: Handed<Surrogate>,
 	slots: Slots,
 	/// What the lexer knows of each word by id, filled as words are met; see `token::word`.
 	pub(crate) word_flags: Vec<u8>,
@@ -242,15 +253,19 @@ impl Interner {
 		self.text.extend_from_slice(s.as_bytes());
 		self.starts.push(self.text.len() as u32);
 		for &(offset, code) in marks {
-			self.marks.push([id, offset, code as u32]);
+			self.marks.push(Surrogate {
+				string: id,
+				at: offset,
+				unit: code as u32,
+			});
 		}
 		StrId::at(id)
 	}
 
-	/// The lone surrogates of `id` in offset order, each its id, its UTF-16 offset and the surrogate.
-	pub fn marks_of(&self, id: StrId) -> &[[u32; 3]] {
-		let from = self.marks.partition_point(|m| m[0] < id.index());
-		let len = self.marks[from..].partition_point(|m| m[0] == id.index());
+	/// The lone surrogates of `id` in offset order.
+	pub fn marks_of(&self, id: StrId) -> &[Surrogate] {
+		let from = self.marks.partition_point(|m| m.string < id.index());
+		let len = self.marks[from..].partition_point(|m| m.string == id.index());
 		&self.marks[from..from + len]
 	}
 
@@ -279,7 +294,7 @@ impl Interner {
 
 	/// The text of every string, where each starts and the lone surrogates, for a front end
 	/// reading them in place.
-	pub(crate) fn buffers(&mut self) -> (&mut Handed<u8>, &mut Handed<u32>, &mut Handed<[u32; 3]>) {
+	pub(crate) fn buffers(&mut self) -> (&mut Handed<u8>, &mut Handed<u32>, &mut Handed<Surrogate>) {
 		(&mut self.text, &mut self.starts, &mut self.marks)
 	}
 
@@ -348,13 +363,14 @@ mod tests {
 		assert_eq!(interner.intern("a\u{fffd}b"), plain);
 		assert_eq!(interner.find("a\u{fffd}b"), Some(plain));
 		assert_eq!(interner.get(high), "a\u{fffd}b");
-		assert_eq!(interner.marks_of(plain), &[] as &[[u32; 3]]);
-		assert_eq!(interner.marks_of(high), &[[high.index(), 1, 0xd800]]);
-		assert_eq!(interner.marks_of(low), &[[low.index(), 1, 0xdc00]]);
+		let words = |marks: &[Surrogate]| marks.iter().map(|m| [m.string, m.at, m.unit]).collect::<Vec<_>>();
+		assert_eq!(words(interner.marks_of(plain)), [] as [[u32; 3]; 0]);
+		assert_eq!(words(interner.marks_of(high)), [[high.index(), 1, 0xd800]]);
+		assert_eq!(words(interner.marks_of(low)), [[low.index(), 1, 0xdc00]]);
 		let two = interner.intern_marked("\u{fffd}\u{fffd}", &[(0, 0xdbff), (1, 0xdfff)]);
 		assert_eq!(
-			interner.marks_of(two),
-			&[[two.index(), 0, 0xdbff], [two.index(), 1, 0xdfff]]
+			words(interner.marks_of(two)),
+			[[two.index(), 0, 0xdbff], [two.index(), 1, 0xdfff]]
 		);
 		interner.clear();
 		assert_eq!(interner.find("a\u{fffd}b"), None);

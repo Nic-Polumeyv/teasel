@@ -77,7 +77,12 @@ fn marked(src: &str) -> Vec<(u32, u16)> {
 		String(value) => value,
 		kind => panic!("{kind:?}"),
 	};
-	lexer.strings.marks_of(id).iter().map(|m| (m[1], m[2] as u16)).collect()
+	lexer
+		.strings
+		.marks_of(id)
+		.iter()
+		.map(|m| (m.at, m.unit as u16))
+		.collect()
 }
 
 fn ident(src: &str) -> (std::string::String, bool) {

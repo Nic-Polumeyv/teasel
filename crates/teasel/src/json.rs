@@ -12,7 +12,6 @@ use crate::error::Code;
 use crate::estree::{Emit, Json, Positions, Words, answer};
 use crate::handed::{Raw, Views};
 use crate::host::{self, Grammar};
-use crate::interner::StrId;
 use crate::parser::{Entry, parse_at};
 use crate::scopes::{self, Bind};
 
@@ -194,6 +193,13 @@ pub fn layout_json() -> String {
 	w.key("rows");
 	w.object();
 	for (name, size, list) in crate::recipe::ROWS {
+		w.key(name);
+		record(&mut w, *size, list);
+	}
+	w.end();
+	w.key("records");
+	w.object();
+	for (name, size, list) in crate::ast::RECORDS {
 		w.key(name);
 		record(&mut w, *size, list);
 	}
@@ -722,7 +728,7 @@ fn run<E: crate::parser::Extension>(
 
 /// What a front end reading the tree in place needs beside it: every node's span and location
 /// as JavaScript counts them, the nodes erasure leaves out, the hosts, the comments, the errors
-/// as words and the strings' UTF-16 starts; a failed parse prepares its error row alone, the
+/// and the strings' UTF-16 starts; a failed parse prepares its error row alone, the
 /// tree it read is left as the last answer cleared it.
 fn prepare<X: Reuse>(
 	ast: &mut Ast<X>,
@@ -735,13 +741,20 @@ fn prepare<X: Reuse>(
 	if !failed {
 		prepare_tree(ast, positions, options, names);
 	}
-	ast.error_words.clear();
+	ast.error_rows.clear();
 	if failed || options.has(Options::ERROR_RECOVERY) {
 		let places = positions.of_errors(source, &ast.errors);
 		for (error, [pos, end, line, column]) in ast.errors.iter().zip(places) {
-			let [first, second] = error.args.map(|arg| arg.map_or(u32::MAX, StrId::index));
-			ast.error_words
-				.extend_from_slice(&[error.code as u32, first, second, pos, end, line, column]);
+			let [first, second] = error.args;
+			ast.error_rows.push(crate::ast::ErrorRow {
+				code: error.code as u32,
+				first,
+				second,
+				pos,
+				end,
+				line,
+				column,
+			});
 		}
 	}
 	ast.units.clear();
@@ -787,42 +800,43 @@ fn prepare_tree<X: Reuse>(ast: &mut Ast<X>, positions: &Positions, options: Opti
 		scopes.mark(ast, &mut rare, &mut late);
 	}
 	(ast.rare, ast.late) = (rare, late);
-	ast.host_view.clear();
+	ast.host_rows.clear();
 	ast.host_keys.clear();
 	ast.host_vals.clear();
 	let mut cursor = crate::estree::Cursor::default();
 	for i in 0..ast.host_fields.len() {
 		let (key, value) = ast.host_fields[i];
 		ast.host_keys.push(names.id(key));
-		let mut words = value.words();
+		let mut row = value.row();
 		if let crate::ast::Value::Slice(start, end) = value {
-			words = [
-				words[0],
-				positions.offset(&mut cursor, start),
-				positions.offset(&mut cursor, end),
-			];
+			row.value = [positions.offset(&mut cursor, start), positions.offset(&mut cursor, end)];
 		}
-		ast.host_vals.push(words);
+		ast.host_vals.push(row);
 	}
 	for i in 0..ast.hosts.len() {
 		let host = ast.hosts[i];
-		let ty = if host.ty.is_empty() {
-			u32::MAX
-		} else {
-			names.id(host.ty)
-		};
+		let ty = (!host.ty.is_empty()).then(|| names.id(host.ty));
 		let (from, len) = (host.fields.0 as usize, host.fields.1 as usize);
 		names.shape.clear();
-		names.shape.extend([ty, host.span as u32]);
+		names.shape.extend([ty.unwrap_or(u32::MAX), host.span as u32]);
 		for field in from..from + len {
-			names.shape.extend([ast.host_keys[field], ast.host_vals[field][0]]);
+			names
+				.shape
+				.extend([ast.host_keys[field], ast.host_vals[field].tag as u32]);
 		}
 		let shape = names.shape_id();
-		ast.host_view
-			.extend_from_slice(&[ty, host.fields.0, host.fields.1, host.span as u32, shape]);
+		ast.host_rows.push(crate::ast::HostRow {
+			ty,
+			fields: crate::ast::Run {
+				start: host.fields.0,
+				len: host.fields.1,
+			},
+			shape,
+			span: host.span,
+		});
 	}
 	if options.has(Options::COMMENTS) || !ast.hosts.is_empty() {
-		positions.map_comments(&ast.comments, &mut ast.comment_words);
+		positions.map_comments(&ast.comments, &mut ast.comment_rows);
 	}
 }
 
