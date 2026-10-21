@@ -8,6 +8,7 @@ import type { Expression, Identifier, Pattern, Program } from 'estree';
 import type { Construct, Directive, Infer, NodeType } from '../src/grammar.ts';
 import type * as api from '../src/index.ts';
 import type { Options } from '../src/index.ts';
+import type { Addon } from '../src/engine/addon.ts';
 if (process.argv.includes('interpret')) globalThis.Function = (() => { throw new EvalError('blocked'); }) as unknown as FunctionConstructor;
 const name = process.argv.includes('web') ? 'web' : process.execArgv.includes('--no-addons') ? 'wasm' : 'native';
 // a native run that fell back to WebAssembly would pass as native
@@ -20,6 +21,7 @@ const g = await import('../src/grammar.ts');
 const { generate } = await import('./children.ts');
 const { default: svelte } = await import('./hosts/svelte.ts');
 const { default: vue } = await import('./hosts/vue.ts');
+const { load } = await import('../dist/engine/addon.js');
 setFlagsFromString('--expose-gc');
 const collect = runInNewContext('gc') as () => void;
 const m = await import('../src/index.ts');
@@ -317,6 +319,11 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 	assert.throws(() => parse('x', { typescript: 'yes' } as Any), TypeError);
 	assert.throws(() => open('a;b;c').parse(js, [0, -1]), (e: Any) => e.code === 'invalid_request');
 	assert.throws(() => open('a;b;c').parse(js, [0, NaN]), (e: Any) => e.code === 'invalid_request');
+	const { engine } = await import('#engine');
+	const held = engine.create('a;', 0);
+	for (const entry of [7, -1, 6.5, NaN]) assert.match(engine.parse(held, entry, 0, undefined, '', undefined) as string, / is no entry/);
+	engine.free(held);
+	if (name === 'native') assert.throws(() => (load() as Addon).create(new Uint8Array([0xff]), 0), /the source is not UTF-8/);
 	const wide = 'x;'.repeat(200000);
 	assert.equal(program(wide).body.length, 200000);
 	assert.equal(program('y;').body.length, 1);

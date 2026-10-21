@@ -331,8 +331,8 @@ impl Run {
 	}
 }
 
-/// What an extension's data does to be reused for the next parse, and to forget what a failed
-/// attempt built.
+/// What an extension's data does to be reused for the next parse and to forget what a failed
+/// attempt built, and what both answers read of it.
 pub trait Reuse: Default {
 	/// Where the data stood, to cut back to.
 	type Mark: Copy;
@@ -344,6 +344,10 @@ pub trait Reuse: Default {
 	fn views(&mut self, _out: &mut Views<'_>) {}
 	/// The nodes the extension adds keys to.
 	fn rare(&self, _set: &mut NodeSet) {}
+	/// Whether erasing leaves nothing of a node in a list: type-only declarations and imports.
+	fn erased(&self, _ast: &Ast<Self>, _id: NodeId) -> bool {
+		false
+	}
 }
 
 impl Reuse for () {

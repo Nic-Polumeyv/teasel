@@ -45,7 +45,7 @@ fn files() {
 				},
 				..Request::from_flags(flags)
 			};
-			let answer = common::pretty(&parse(&source, &request, ""));
+			let answer = common::pretty(&parse(&source, &request));
 			if !common::pinned(&file.with_extension("json"), &answer) {
 				wrong.push(format!("{language}/{name}"));
 			}

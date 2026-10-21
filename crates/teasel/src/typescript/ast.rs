@@ -1,4 +1,4 @@
-use crate::ast::{Ast, List, NodeId, NodeKind, Walk};
+use crate::ast::{Ast, List, NodeId, NodeKind, Reuse, Walk};
 use crate::estree::{Emit, Writer};
 use crate::handed::{Handed, Views};
 use crate::interner::StrId;
@@ -48,6 +48,51 @@ impl crate::ast::Reuse for Data {
 	fn rare(&self, set: &mut crate::ast::NodeSet) {
 		for &owner in self.extras.owners() {
 			set.insert(owner);
+		}
+	}
+
+	fn erased(&self, ast: &Ast<Self>, id: NodeId) -> bool {
+		use TsKind::*;
+		let extras = self.extras_of(id);
+		if extras.declare {
+			return true;
+		}
+		match ast.node(id).kind {
+			NodeKind::MethodDefinition { .. } | NodeKind::PropertyDefinition { .. } if extras.is_abstract => true,
+			// an overload signature: a method without a body
+			NodeKind::MethodDefinition { value, .. } => {
+				matches!(self.ts_of(ast, value), Some(DeclareMethod { .. }))
+			}
+			NodeKind::Extension(index) => match self.kind(index) {
+				InterfaceDeclaration { .. }
+				| TypeAliasDeclaration { .. }
+				| DeclareFunction { .. }
+				| IndexSignature { .. }
+				| NamespaceExportDeclaration { .. } => true,
+				ImportEqualsDeclaration { import_kind, .. } => import_kind == Kind::Type,
+				ModuleDeclaration { body: None, .. } => true,
+				ModuleDeclaration { body: Some(block), .. } => match self.ts_of(ast, block) {
+					Some(ModuleBlock { body }) => self.all_erased(ast, body),
+					_ => false,
+				},
+				_ => false,
+			},
+			NodeKind::ImportDeclaration { specifiers, .. } => {
+				extras.import_kind == Some(Kind::Type) || (specifiers.len > 0 && self.all_erased(ast, specifiers))
+			}
+			NodeKind::ImportSpecifier { .. } => extras.import_kind == Some(Kind::Type),
+			NodeKind::ExportSpecifier { .. } | NodeKind::ExportAllDeclaration { .. } => {
+				extras.export_kind == Some(Kind::Type)
+			}
+			// `export { type A }` keeps an `export {}`, as tsc keeps the file a module
+			NodeKind::ExportDeclaration { declaration } => {
+				extras.export_kind == Some(Kind::Type) || self.erased(ast, declaration)
+			}
+			NodeKind::ExportNamedDeclaration { .. } => extras.export_kind == Some(Kind::Type),
+			NodeKind::ExportDefaultDeclaration { declaration } => {
+				extras.export_kind == Some(Kind::Type) || self.erased(ast, declaration)
+			}
+			_ => false,
 		}
 	}
 }
@@ -823,51 +868,6 @@ impl Data {
 }
 
 impl Emit for Data {
-	fn erased(&self, ast: &Ast<Self>, id: NodeId) -> bool {
-		use TsKind::*;
-		let extras = self.extras_of(id);
-		if extras.declare {
-			return true;
-		}
-		match ast.node(id).kind {
-			NodeKind::MethodDefinition { .. } | NodeKind::PropertyDefinition { .. } if extras.is_abstract => true,
-			// an overload signature: a method without a body
-			NodeKind::MethodDefinition { value, .. } => {
-				matches!(self.ts_of(ast, value), Some(DeclareMethod { .. }))
-			}
-			NodeKind::Extension(index) => match self.kind(index) {
-				InterfaceDeclaration { .. }
-				| TypeAliasDeclaration { .. }
-				| DeclareFunction { .. }
-				| IndexSignature { .. }
-				| NamespaceExportDeclaration { .. } => true,
-				ImportEqualsDeclaration { import_kind, .. } => import_kind == Kind::Type,
-				ModuleDeclaration { body: None, .. } => true,
-				ModuleDeclaration { body: Some(block), .. } => match self.ts_of(ast, block) {
-					Some(ModuleBlock { body }) => self.all_erased(ast, body),
-					_ => false,
-				},
-				_ => false,
-			},
-			NodeKind::ImportDeclaration { specifiers, .. } => {
-				extras.import_kind == Some(Kind::Type) || (specifiers.len > 0 && self.all_erased(ast, specifiers))
-			}
-			NodeKind::ImportSpecifier { .. } => extras.import_kind == Some(Kind::Type),
-			NodeKind::ExportSpecifier { .. } | NodeKind::ExportAllDeclaration { .. } => {
-				extras.export_kind == Some(Kind::Type)
-			}
-			// `export { type A }` keeps an `export {}`, as tsc keeps the file a module
-			NodeKind::ExportDeclaration { declaration } => {
-				extras.export_kind == Some(Kind::Type) || self.erased(ast, declaration)
-			}
-			NodeKind::ExportNamedDeclaration { .. } => extras.export_kind == Some(Kind::Type),
-			NodeKind::ExportDefaultDeclaration { declaration } => {
-				extras.export_kind == Some(Kind::Type) || self.erased(ast, declaration)
-			}
-			_ => false,
-		}
-	}
-
 	fn node(&self, w: &mut Writer<Self>, id: NodeId, index: u32) {
 		let base = &self.nodes[index as usize] as *const TsKind as *const u8;
 		if w.run(id, recipes().kinds[crate::estree::tag(base)], base) {

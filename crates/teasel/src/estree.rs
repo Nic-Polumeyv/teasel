@@ -1,7 +1,7 @@
 //! Serializes an `Ast` to ESTree as JSON text, and maps its positions to what JavaScript counts.
 
 use crate::Options;
-use crate::ast::{Ast, List, NodeId, NodeKind, Value};
+use crate::ast::{Ast, List, NodeId, NodeKind, Reuse, Value};
 use crate::handed::Handed;
 use crate::interner::StrId;
 use crate::layout::Ty;
@@ -16,10 +16,6 @@ pub trait Emit: crate::ast::Walk {
 	/// Emits one of the extension's own nodes and closes it, or what erasing puts in its place.
 	fn node(&self, w: &mut Writer<Self>, id: NodeId, index: u32);
 	fn extras(&self, _w: &mut Writer<Self>, _id: NodeId) {}
-	/// Whether erasing leaves nothing of a node in a list: type-only declarations and imports.
-	fn erased(&self, _ast: &Ast<Self>, _id: NodeId) -> bool {
-		false
-	}
 }
 
 impl Emit for () {
@@ -189,7 +185,7 @@ pub type Words = crate::handed::Handed<u32>;
 
 /// Serializes an answer as JSON: the roots as `node`, one node or the patterns of a parameter
 /// list, null when the parse failed, then `end` and what the options add.
-pub fn answer<X: Emit>(
+pub fn answer<X: Emit + Reuse>(
 	ast: &Ast<X>,
 	entry: Entry,
 	roots: Option<List>,
@@ -444,7 +440,7 @@ fn locate<T>(items: &[T], hint: usize, byte: u32, key: impl Fn(&T) -> u32) -> us
 	items.partition_point(|item| key(item) <= byte)
 }
 
-impl<'a, X: Emit> Writer<'a, X> {
+impl<'a, X: Emit + Reuse> Writer<'a, X> {
 	fn new(ast: &'a Ast<X>, source: &'a str, positions: &'a Positions) -> Self {
 		Self {
 			ast,

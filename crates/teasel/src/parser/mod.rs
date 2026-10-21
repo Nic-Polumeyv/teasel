@@ -386,16 +386,17 @@ pub enum Entry {
 }
 
 impl Entry {
-	pub fn from_index(index: u32) -> Entry {
-		match index {
+	pub fn from_index(index: u32) -> Option<Entry> {
+		Some(match index {
+			0 => Entry::Program,
 			1 => Entry::Expression,
 			2 => Entry::Pattern,
 			3 => Entry::Params,
 			4 => Entry::Statement,
 			5 => Entry::TypeParameters,
 			6 => Entry::StyleSheet,
-			_ => Entry::Program,
-		}
+			_ => return None,
+		})
 	}
 }
 
