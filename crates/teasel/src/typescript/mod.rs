@@ -785,20 +785,22 @@ impl Parser<'_, TypeScript> {
 
 	/// A type annotation or optional marker in a list that is not becoming parameters is an error.
 	fn no_type_casts(&self, items: &[Option<NodeId>]) -> Result<()> {
-		for &item in items.iter().flatten() {
-			let item = match self.kind(item) {
-				NodeKind::AssignmentExpression { left, .. } => left,
-				_ => item,
+		for &whole in items.iter().flatten() {
+			let left = match self.kind(whole) {
+				NodeKind::AssignmentExpression { left, .. } => Some(left),
+				_ => None,
 			};
-			if self.ext_data().extras(item).is_some_and(|e| e.optional) {
-				return self.error(self.ast.node(item).end - 1, Code::UnexpectedToken);
-			}
-			let annotation = match self.ts_kind(item) {
-				Some(TsKind::TypeCastExpression { type_annotation, .. }) => Some(type_annotation),
-				_ => self.ext_data().extras(item).and_then(|e| e.type_annotation),
-			};
-			if let Some(annotation) = annotation {
-				return self.error(self.start_of(annotation), Code::UnexpectedTypeAnnotation);
+			for item in std::iter::once(whole).chain(left) {
+				if self.ext_data().extras(item).is_some_and(|e| e.optional) {
+					return self.error(self.ast.node(item).end - 1, Code::UnexpectedToken);
+				}
+				let annotation = match self.ts_kind(item) {
+					Some(TsKind::TypeCastExpression { type_annotation, .. }) => Some(type_annotation),
+					_ => self.ext_data().extras(item).and_then(|e| e.type_annotation),
+				};
+				if let Some(annotation) = annotation {
+					return self.error(self.start_of(annotation), Code::UnexpectedTypeAnnotation);
+				}
 			}
 		}
 		Ok(())
