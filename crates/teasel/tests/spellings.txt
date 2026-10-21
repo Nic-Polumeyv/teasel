@@ -303,6 +303,8 @@ class.body
 class.id
 class.super_class
 clause
+code
+column
 combinator
 comments
 computed
@@ -353,6 +355,7 @@ falseType
 false_type
 fields
 finalizer
+first
 flags
 float
 for
@@ -384,6 +387,7 @@ indexType
 index_type
 init
 initializer
+inner
 instanceof
 int
 isExport
@@ -404,11 +408,15 @@ kind
 kinds
 label
 late
+leading
 left
+len
 let
+line
 list
 lists
 literal
+loc
 local
 locs
 marks
@@ -459,6 +467,7 @@ params
 parent
 parenthesized
 pattern
+pos
 prefix
 prelude
 private
@@ -474,6 +483,7 @@ raw
 read
 readonly
 recipes
+records
 references
 regex
 regexp
@@ -486,12 +496,16 @@ rows
 scope
 scopes
 script
+second
 selectors
 set
+shape
 shorthand
 size
+slice
 source
 sourceType
+span
 spans
 specifiers
 start
@@ -499,6 +513,8 @@ starts
 static
 static-block
 str
+string
+strs
 struct
 stylesheet
 superClass
@@ -513,6 +529,7 @@ text
 through
 topLevelAwait
 top_level_await
+trailing
 true
 trueType
 true_type
@@ -532,6 +549,7 @@ type_parameters
 typeof
 types
 u32
+unit
 units
 update
 using
