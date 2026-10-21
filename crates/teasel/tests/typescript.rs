@@ -248,7 +248,7 @@ fn conformance() {
 		let grammar_error = codes.iter().any(|c| c.starts_with('1') && c.len() == 4 && !excused(c));
 		let module = if is_module(&source) { Options::MODULE } else { 0 };
 		let request = Request::from_flags(Options::TYPESCRIPT | module);
-		let answer = parse(&source, &request, "");
+		let answer = parse(&source, &request);
 		let failed = answer.starts_with("{\"node\":null");
 		counted += 1;
 		let later = REPORTED_LATER.iter().any(|(n, _)| *n == name);

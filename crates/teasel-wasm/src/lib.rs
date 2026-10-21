@@ -1,8 +1,8 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
+use teasel::Options;
 use teasel::host::Grammar;
 use teasel::json::{Prepared, error_json};
-use teasel::{Entry, Options};
 
 thread_local! {
 	static TEXT: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
@@ -91,7 +91,7 @@ fn answer(result: Result<(), String>) -> u32 {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn source_parse(
 	handle: u32,
-	entry: u32,
+	entry: f64,
 	offset: f64,
 	end: f64,
 	has_end: u32,
@@ -103,10 +103,10 @@ pub unsafe extern "C" fn source_parse(
 	let stop = unsafe { Vec::from_raw_parts(ptr, len as usize, capacity as usize) };
 	let end = (has_end == 1).then_some(end);
 	let grammar = (plan != 0).then(|| unsafe { &**(plan as *const Rc<Grammar>) });
-	let (Some(entry), Ok(stop)) = (Entry::from_index(entry), std::str::from_utf8(&stop)) else {
-		return answer(Err(error_json("an entry and UTF-8 stop tokens expected", 0)));
+	let Ok(stop) = std::str::from_utf8(&stop) else {
+		return answer(Err(error_json("the stop tokens are not UTF-8", 0)));
 	};
-	answer(source(handle).in_place(entry, offset, end, stop, grammar))
+	answer(teasel::json::entry(entry).and_then(|entry| source(handle).in_place(entry, offset, end, stop, grammar)))
 }
 
 #[unsafe(no_mangle)]

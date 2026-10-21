@@ -14,7 +14,7 @@ use teasel::host::grammar::definition::{self, Bind, Host, Node, Source};
 use teasel::host::grammar::{
 	Arena, Construct, DirectiveValue, DocField, Grammar, Item, Match, Place, Record, RootField, Unique,
 };
-use teasel::json::{Request, parse_document};
+use teasel::json::parse_document;
 
 /// A list of a definition, kept for the process.
 macro_rules! list {
@@ -22,6 +22,44 @@ macro_rules! list {
 		let items: &'static [_] = Vec::leak(vec![$($item),*]);
 		items
 	}};
+}
+
+#[test]
+fn batch_headers() {
+	use std::io::Write;
+	use std::process::{Command, Stdio};
+	let host = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/hosts/svelte/host.json");
+	let batch = |input: &str, grammar: bool| {
+		let mut command = Command::new(env!("CARGO_BIN_EXE_teasel"));
+		command.arg("--batch");
+		if grammar {
+			command.arg("--host").arg(&host);
+		}
+		let mut child = command
+			.stdin(Stdio::piped())
+			.stdout(Stdio::piped())
+			.stderr(Stdio::piped())
+			.spawn()
+			.unwrap();
+		child.stdin.take().unwrap().write_all(input.as_bytes()).unwrap();
+		let output = child.wait_with_output().unwrap();
+		let text = |bytes: Vec<u8>| String::from_utf8(bytes).unwrap();
+		(
+			output.status.success(),
+			text(output.stdout).lines().count(),
+			text(output.stderr),
+		)
+	};
+	let (ok, answers, _) = batch("0 0 1 2\na;7 0 1 7\n<a></a>", true);
+	assert!(ok && answers == 2);
+	for (input, grammar, error) in [
+		("1 0 1 1\na0 0 1 2 5\na;", false, "malformed header"),
+		("1 0 1 1\na8 0 1 2\na;", true, "entry 8 needs --host or is no entry"),
+		("1 0 1 1\na7 0 1 2\na;", false, "entry 7 needs --host or is no entry"),
+	] {
+		let (ok, answers, stderr) = batch(input, grammar);
+		assert!(!ok && answers == 1 && stderr.contains(error), "{input}: {stderr}");
+	}
 }
 
 #[test]
@@ -50,8 +88,7 @@ fn documents() {
 					flags |= bit;
 				}
 			}
-			let request = Request::from_flags(flags);
-			let answer = common::pretty(&parse_document(&source, &grammar, &request));
+			let answer = common::pretty(&parse_document(&source, &grammar, Options(flags)));
 			if !common::pinned(&file.with_extension("json"), &answer) {
 				wrong.push(format!("{name}/{stem}"));
 			}
@@ -76,12 +113,29 @@ fn every_prefix_answers() {
 			for (end, _) in source.char_indices().chain([(source.len(), ' ')]) {
 				for recover in [false, true] {
 					let recovery = if recover { Options::ERROR_RECOVERY } else { 0 };
-					let request = Request::from_flags(Options::MODULE | Options::COMMENTS | Options::SCOPES | recovery);
-					parse_document(&source[..end], &grammar, &request);
+					let options = Options(Options::MODULE | Options::COMMENTS | Options::SCOPES | recovery);
+					parse_document(&source[..end], &grammar, options);
 				}
 			}
 		}
 	}
+}
+
+#[test]
+fn names_are_escaped() {
+	let vue = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/hosts/vue/host.json")).unwrap();
+	let grammar = vue.replacen(
+		r#""node":"Root","form":[{"children""#,
+		r#""node":"Ro\"ot","form":[{"chil\"dren""#,
+		1,
+	);
+	let answer = parse_document("<div>hi</div>", &grammar, Options(Options::MODULE));
+	assert!(
+		answer.contains(r#""type":"Ro\"ot""#) && answer.contains(r#""chil\"dren":["#),
+		"{answer}"
+	);
+	let children = teasel::json::children(&teasel::json::grammar(&grammar).unwrap());
+	assert!(children.contains(r#""Ro\"ot":["chil\"dren"]"#), "{children}");
 }
 
 /// The unfinished and odd inputs the audit found panicking, and the fallback from one expression
@@ -93,8 +147,7 @@ fn unfinished_input() {
 	let vue = fs::read_to_string(root.join("tests/hosts/vue/host.json")).unwrap();
 	let parse = |source: &str, grammar: &str, recover: bool| {
 		let recovery = if recover { Options::ERROR_RECOVERY } else { 0 };
-		let request = Request::from_flags(Options::MODULE | Options::COMMENTS | recovery);
-		parse_document(source, grammar, &request)
+		parse_document(source, grammar, Options(Options::MODULE | Options::COMMENTS | recovery))
 	};
 	assert!(parse("<a x=\"", &svelte, true).contains("\"type\":\"Root\""));
 	let comment = parse("<a /*xx", &svelte, true);
@@ -138,7 +191,7 @@ fn tags_fill_unread() {
 			],
 		),
 	)]));
-	let answer = parse_document("{@t }", &host.json(), &Request::from_flags(Options::MODULE));
+	let answer = parse_document("{@t }", &host.json(), Options(Options::MODULE));
 	assert!(answer.contains("\"a\":null") && !answer.contains("\"b\""), "{answer}");
 }
 
@@ -471,7 +524,7 @@ fn a_definition_is_refused_by_name() {
 #[test]
 fn records_group_freely() {
 	let fields = |list: &'static [(&'static str, Source)]| definition::Item::Fields(Record(list));
-	let parse = |host: &Host, text: &str| parse_document(text, &host.json(), &Request::from_flags(Options::MODULE));
+	let parse = |host: &Host, text: &str| parse_document(text, &host.json(), Options(Options::MODULE));
 
 	let mut host = minimal();
 	let open = list![
@@ -571,7 +624,7 @@ fn a_branch_names_a_block_without_branches() {
 	let answer = parse_document(
 		"{#repeat items}x{:else}y{/repeat}",
 		&host.json(),
-		&Request::from_flags(Options::MODULE),
+		Options(Options::MODULE),
 	);
 	assert!(
 		answer.contains(&format!(
@@ -606,7 +659,7 @@ fn a_marker_read_halfway_is_another_word() {
 		("Spread", spread),
 		("Expr", expression("e")),
 	]));
-	let parse = |text: &str| parse_document(text, &host.json(), &Request::from_flags(Options::MODULE));
+	let parse = |text: &str| parse_document(text, &host.json(), Options(Options::MODULE));
 	for text in [
 		"{.5}",
 		"<a b={.5}></a>",
@@ -665,7 +718,7 @@ fn a_shared_close_closes_the_innermost_block() {
 				.leak(),
 		));
 		for text in ["{#range a}{#if b}x{end}y{end}", "{#if b}{#range a}x{end}y{end}"] {
-			let answer = parse_document(text, &host.json(), &Request::from_flags(Options::MODULE));
+			let answer = parse_document(text, &host.json(), Options(Options::MODULE));
 			assert!(
 				!answer.contains("error") && answer.contains("\"data\":\"y\""),
 				"{order:?} {text}: {answer}"
@@ -693,7 +746,7 @@ fn markers_stand_where_they_may() {
 		("Do", tag(&["do"], list![js("e"), definition::Item::Word("end")])),
 		("Expr", expr),
 	]));
-	let parse = |host: &Host, text: &str| parse_document(text, &host.json(), &Request::from_flags(Options::MODULE));
+	let parse = |host: &Host, text: &str| parse_document(text, &host.json(), Options(Options::MODULE));
 	let answer = parse(&host, "enddo");
 	assert!(!answer.contains("error") && !answer.contains("\"Do\""), "{answer}");
 	let answer = parse(&host, "x do a end");
@@ -978,7 +1031,7 @@ fn a_grammar_that_cannot_work_is_refused() {
 	let answer = parse_document(
 		"{#x a}1{:else when b}2{:else if c}3{/x}",
 		&host.json(),
-		&Request::from_flags(Options::MODULE),
+		Options(Options::MODULE),
 	);
 	let flags: Vec<&str> = answer
 		.match_indices("\"elseif\":")
@@ -1095,7 +1148,7 @@ fn a_host_has_its_own_syntax() {
 	let fields = |list: &'static [(&'static str, Source)]| definition::Item::Fields(Record(list));
 	let content = |field: &'static str| fields(list![(field, source("content", "fragment", false))]);
 	let js = |field: &'static str, read: &'static str| fields(list![(field, source("js", read, false))]);
-	let parse = |host: &Host, text: &str| parse_document(text, &host.json(), &Request::from_flags(Options::MODULE));
+	let parse = |host: &Host, text: &str| parse_document(text, &host.json(), Options(Options::MODULE));
 	let mut host = minimal();
 	host.definition.elements.other = Some(element("Element"));
 	host.definition.elements.rules = Some(Record(list![(

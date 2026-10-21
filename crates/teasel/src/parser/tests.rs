@@ -181,6 +181,17 @@ fn expression_ends_where_it_ends() {
 }
 
 #[test]
+fn an_entry_is_one_of_its_numbers() {
+	assert_eq!(crate::json::entry(6.0), Ok(Entry::StyleSheet));
+	for index in [7.0, -1.0, 6.5, f64::NAN] {
+		assert!(
+			crate::json::entry(index).unwrap_err().contains(" is no entry"),
+			"{index}"
+		);
+	}
+}
+
+#[test]
 fn the_session_writes_the_same_words_again() {
 	use crate::Options;
 	use crate::json::Prepared;
@@ -621,7 +632,6 @@ fn undeclared_exports_can_be_allowed() {
 fn phases() {
 	use crate::Options;
 	use crate::estree::{Positions, answer};
-	use crate::json::Request;
 	use crate::lexer::Lexer;
 	use crate::lexer::token::TokenKind;
 	let Ok(path) = std::env::var("TEASEL_BENCH") else {
@@ -708,13 +718,12 @@ fn phases() {
 	let end = source.len() as u32;
 	let lines = Positions::new(&source, true);
 	{
-		let request = Request::from_flags(Options::MODULE | Options::COMMENTS);
-		let prepared = crate::json::Prepared::borrowed(&source, request.options);
+		let prepared = crate::json::Prepared::borrowed(&source, Options(Options::MODULE | Options::COMMENTS));
 		best("whole request: positions, parse, comments, encode, finish", &mut || {
 			prepared.in_place(Entry::Program, 0.0, None, "", None).unwrap();
 		});
-		let request = Request::from_flags(Options::MODULE | Options::COMMENTS | Options::SCOPES | Options::LOCATIONS);
-		let prepared = crate::json::Prepared::borrowed(&source, request.options);
+		let options = Options(Options::MODULE | Options::COMMENTS | Options::SCOPES | Options::LOCATIONS);
+		let prepared = crate::json::Prepared::borrowed(&source, options);
 		best("whole request with scopes and loc", &mut || {
 			prepared.in_place(Entry::Program, 0.0, None, "", None).unwrap();
 		});
@@ -974,8 +983,8 @@ fn layout_sizes() {
 #[test]
 fn parenthesized_bits() {
 	let request = crate::json::Request::from_flags(crate::Options::MODULE | crate::Options::PARENTHESIZED);
-	let json = crate::json::parse("(a).b; (x, y); c; ((d));", &request, "");
+	let json = crate::json::parse("(a).b; (x, y); c; ((d));", &request);
 	assert_eq!(json.matches("\"parenthesized\":true").count(), 3, "{json}");
-	let json = crate::json::parse("(a, b) => a; (c);", &request, "");
+	let json = crate::json::parse("(a, b) => a; (c);", &request);
 	assert_eq!(json.matches("\"parenthesized\":true").count(), 1, "{json}");
 }
