@@ -863,7 +863,17 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 					}
 					_ => self.opt(key, get(base, slot)),
 				},
-				Op::OptKey(key, slot) => self.opt_key(key, get(base, slot)),
+				// JSON spells undefined by leaving the key out
+				Op::Maybe(key, slot) => match slot.ty {
+					Ty::OptList => self.list(key, get::<Option<List>>(base, slot).unwrap_or(List::EMPTY)),
+					// a missing enum is a byte past the names, wherever the compiler put it
+					Ty::OptEnum(names) => {
+						if let Some(&name) = names.get(get::<u8>(base, slot) as usize) {
+							self.text(key, name);
+						}
+					}
+					_ => self.opt_key(key, get(base, slot)),
+				},
 				Op::List(key, slot) => self.list(key, get(base, slot)),
 				Op::OptListKey(key, slot) => {
 					if let Some(list) = get::<Option<List>>(base, slot) {
@@ -872,16 +882,6 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 				}
 				Op::Params(key, slot) => self.params(key, get(base, slot)),
 				Op::Bool(key, slot) => self.bool(key, get(base, slot)),
-				Op::BoolIf(key, slot) => {
-					if get::<bool>(base, slot) {
-						self.bool(key, true);
-					}
-				}
-				Op::OptBoolKey(key, slot) => {
-					if let Some(value) = get::<Option<bool>>(base, slot) {
-						self.bool(key, value);
-					}
-				}
 				Op::Str(key, slot) => self.interned(key, get(base, slot)),
 				Op::OptStrKey(key, slot) => {
 					if let Some(string) = get::<Option<StrId>>(base, slot) {
@@ -891,13 +891,6 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 				Op::Enum(key, slot) => {
 					let Ty::Enum(names) = slot.ty else { unreachable!() };
 					self.text(key, names[get::<u8>(base, slot) as usize]);
-				}
-				// a missing enum is a byte past the names, wherever the compiler put it
-				Op::OptEnumKey(key, slot) => {
-					let Ty::OptEnum(names) = slot.ty else { unreachable!() };
-					if let Some(&name) = names.get(get::<u8>(base, slot) as usize) {
-						self.text(key, name);
-					}
 				}
 				Op::Modifier(key, slot) => {
 					let Ty::OptEnum(names) = slot.ty else { unreachable!() };

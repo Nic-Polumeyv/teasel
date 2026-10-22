@@ -18,23 +18,20 @@ pub enum Op<F: Copy + 'static = Path> {
 	Node(&'static str, F),
 	/// Null when missing.
 	Opt(&'static str, F),
-	/// Left out when missing.
-	OptKey(&'static str, F),
+	/// What TypeScript adds: undefined when missing, a list empty.
+	Maybe(&'static str, F),
 	List(&'static str, F),
+	/// Left out when missing.
 	OptListKey(&'static str, F),
 	/// A parameter list: erasing drops a leading `this`.
 	Params(&'static str, F),
 	Bool(&'static str, F),
-	/// Only when true.
-	BoolIf(&'static str, F),
-	OptBoolKey(&'static str, F),
 	/// An interned string.
 	Str(&'static str, F),
 	OptStrKey(&'static str, F),
 	/// The enum field's name as a string.
 	Enum(&'static str, F),
-	OptEnumKey(&'static str, F),
-	/// A mapped type's modifier: `+` or `-` as a string, bare as `true`, left out when missing.
+	/// A mapped type's modifier: `+` or `-` as a string, bare as `true`, undefined when missing.
 	Modifier(&'static str, F),
 	/// One of two names by a bool: the first when true.
 	BoolNames(&'static str, F, &'static str, &'static str),
@@ -95,17 +92,14 @@ impl Op {
 			TypeOf(f) => ("typeof", None, Some(f), Rest::Nothing),
 			Node(k, f) => ("node", Some(k), Some(f), Rest::Nothing),
 			Opt(k, f) => ("opt", Some(k), Some(f), Rest::Nothing),
-			OptKey(k, f) => ("optkey", Some(k), Some(f), Rest::Nothing),
+			Maybe(k, f) => ("maybe", Some(k), Some(f), Rest::Nothing),
 			List(k, f) => ("list", Some(k), Some(f), Rest::Nothing),
 			OptListKey(k, f) => ("optlistkey", Some(k), Some(f), Rest::Nothing),
 			Params(k, f) => ("params", Some(k), Some(f), Rest::Nothing),
 			Bool(k, f) => ("bool", Some(k), Some(f), Rest::Nothing),
-			BoolIf(k, f) => ("boolif", Some(k), Some(f), Rest::Nothing),
-			OptBoolKey(k, f) => ("optboolkey", Some(k), Some(f), Rest::Nothing),
 			Str(k, f) => ("str", Some(k), Some(f), Rest::Nothing),
 			OptStrKey(k, f) => ("optstrkey", Some(k), Some(f), Rest::Nothing),
 			Enum(k, f) => ("enum", Some(k), Some(f), Rest::Nothing),
-			OptEnumKey(k, f) => ("optenumkey", Some(k), Some(f), Rest::Nothing),
 			Modifier(k, f) => ("modifier", Some(k), Some(f), Rest::Nothing),
 			BoolNames(k, f, yes, no) => ("boolnames", Some(k), Some(f), Rest::Names(yes, no)),
 			Int(k, f) => ("int", Some(k), Some(f), Rest::Nothing),
@@ -277,17 +271,17 @@ pub(crate) fn resolve_ops(ops: &[Op], fields: &[Field], kind: &str) -> &'static 
 			TypeOf(f) => TypeOf(slot(f, &[|t| matches!(t, Ty::Enum(_))])),
 			Node(k, f) => Node(k, slot(f, &[|t| matches!(t, Ty::Node)])),
 			Opt(k, f) => Opt(k, slot(f, &[|t| matches!(t, Ty::OptNode | Ty::OptStr | Ty::OptU32)])),
-			OptKey(k, f) => OptKey(k, slot(f, &[|t| matches!(t, Ty::OptNode)])),
+			Maybe(k, f) => Maybe(
+				k,
+				slot(f, &[|t| matches!(t, Ty::OptNode | Ty::OptList | Ty::OptEnum(_))]),
+			),
 			List(k, f) => List(k, slot(f, &[|t| matches!(t, Ty::List)])),
 			OptListKey(k, f) => OptListKey(k, slot(f, &[|t| matches!(t, Ty::OptList)])),
 			Params(k, f) => Params(k, slot(f, &[|t| matches!(t, Ty::List)])),
 			Bool(k, f) => Bool(k, slot(f, &[|t| matches!(t, Ty::Bool)])),
-			BoolIf(k, f) => BoolIf(k, slot(f, &[|t| matches!(t, Ty::Bool)])),
-			OptBoolKey(k, f) => OptBoolKey(k, slot(f, &[|t| matches!(t, Ty::OptBool)])),
 			Str(k, f) => Str(k, slot(f, &[|t| matches!(t, Ty::Str)])),
 			OptStrKey(k, f) => OptStrKey(k, slot(f, &[|t| matches!(t, Ty::OptStr)])),
 			Enum(k, f) => Enum(k, slot(f, &[|t| matches!(t, Ty::Enum(_))])),
-			OptEnumKey(k, f) => OptEnumKey(k, slot(f, &[|t| matches!(t, Ty::OptEnum(_))])),
 			Modifier(k, f) => Modifier(k, slot(f, &[|t| matches!(t, Ty::OptEnum(_))])),
 			BoolNames(k, f, a, b) => BoolNames(k, slot(f, &[|t| matches!(t, Ty::Bool)]), a, b),
 			Int(k, f) => Int(k, slot(f, &[|t| matches!(t, Ty::U32)])),
@@ -326,21 +320,21 @@ pub const TS: &[(&str, &[Op])] = &[
 	("Keyword", &[TypeOf("0")]),
 	("ThisType", &[Type("TSThisType")]),
 	("TypePredicate", &[Type("TSTypePredicate"), Node("parameterName", "parameter_name"), Opt("typeAnnotation", "type_annotation"), Bool("asserts", "asserts")]),
-	("TypeReference", &[Type("TSTypeReference"), Node("typeName", "type_name"), OptKey("typeArguments", "type_arguments")]),
+	("TypeReference", &[Type("TSTypeReference"), Node("typeName", "type_name"), Maybe("typeArguments", "type_arguments")]),
 	("QualifiedName", &[Type("TSQualifiedName"), Node("left", "left"), Node("right", "right")]),
 	("TypeParameterInstantiation", &[Type("TSTypeParameterInstantiation"), List("params", "params")]),
 	("TypeParameterDeclaration", &[Type("TSTypeParameterDeclaration"), List("params", "params")]),
-	("TypeParameter", &[Type("TSTypeParameter"), BoolIf("in", "is_in"), BoolIf("out", "is_out"), BoolIf("const", "is_const"), Str("name", "name"), OptKey("constraint", "constraint"), OptKey("default", "default")]),
-	("FunctionType", &[Type("TSFunctionType"), OptKey("typeParameters", "type_parameters"), List("parameters", "parameters"), Node("typeAnnotation", "type_annotation")]),
-	("ConstructorType", &[Type("TSConstructorType"), Bool("abstract", "is_abstract"), OptKey("typeParameters", "type_parameters"), List("parameters", "parameters"), Node("typeAnnotation", "type_annotation")]),
+	("TypeParameter", &[Type("TSTypeParameter"), Bool("in", "is_in"), Bool("out", "is_out"), Bool("const", "is_const"), Str("name", "name"), Maybe("constraint", "constraint"), Maybe("default", "default")]),
+	("FunctionType", &[Type("TSFunctionType"), Maybe("typeParameters", "type_parameters"), List("parameters", "parameters"), Node("typeAnnotation", "type_annotation")]),
+	("ConstructorType", &[Type("TSConstructorType"), Bool("abstract", "is_abstract"), Maybe("typeParameters", "type_parameters"), List("parameters", "parameters"), Node("typeAnnotation", "type_annotation")]),
 	("UnionType", &[Type("TSUnionType"), List("types", "types")]),
 	("IntersectionType", &[Type("TSIntersectionType"), List("types", "types")]),
 	("TypeOperator", &[Type("TSTypeOperator"), Str("operator", "operator"), Node("typeAnnotation", "type_annotation")]),
 	("InferType", &[Type("TSInferType"), Node("typeParameter", "type_parameter")]),
 	("LiteralType", &[Type("TSLiteralType"), Node("literal", "literal")]),
-	("ImportType", &[Type("TSImportType"), Node("argument", "argument"), OptKey("qualifier", "qualifier"), OptKey("typeArguments", "type_arguments")]),
-	("TypeQuery", &[Type("TSTypeQuery"), Node("exprName", "expr_name"), OptKey("typeArguments", "type_arguments")]),
-	("MappedType", &[Type("TSMappedType"), Modifier("readonly", "readonly"), Node("typeParameter", "type_parameter"), Opt("nameType", "name_type"), Modifier("optional", "optional"), OptKey("typeAnnotation", "type_annotation")]),
+	("ImportType", &[Type("TSImportType"), Node("argument", "argument"), Opt("qualifier", "qualifier"), Opt("typeArguments", "type_arguments")]),
+	("TypeQuery", &[Type("TSTypeQuery"), Node("exprName", "expr_name"), Maybe("typeArguments", "type_arguments")]),
+	("MappedType", &[Type("TSMappedType"), Modifier("readonly", "readonly"), Node("typeParameter", "type_parameter"), Opt("nameType", "name_type"), Modifier("optional", "optional"), Maybe("typeAnnotation", "type_annotation")]),
 	("TypeLiteral", &[Type("TSTypeLiteral"), List("members", "members")]),
 	("NamedTupleMember", &[Type("TSNamedTupleMember"), Bool("optional", "optional"), Node("label", "label"), Node("elementType", "element_type")]),
 	("OptionalType", &[Type("TSOptionalType"), Node("typeAnnotation", "type_annotation")]),
@@ -350,19 +344,19 @@ pub const TS: &[(&str, &[Op])] = &[
 	("ArrayType", &[Type("TSArrayType"), Node("elementType", "element_type")]),
 	("IndexedAccessType", &[Type("TSIndexedAccessType"), Node("objectType", "object_type"), Node("indexType", "index_type")]),
 	("ConditionalType", &[Type("TSConditionalType"), Node("checkType", "check_type"), Node("extendsType", "extends_type"), Node("trueType", "true_type"), Node("falseType", "false_type")]),
-	("IndexSignature", &[Type("TSIndexSignature"), List("parameters", "parameters"), OptKey("typeAnnotation", "type_annotation")]),
-	("CallSignatureDeclaration", &[Type("TSCallSignatureDeclaration"), OptKey("typeParameters", "type_parameters"), List("parameters", "parameters"), OptKey("typeAnnotation", "type_annotation")]),
-	("ConstructSignatureDeclaration", &[Type("TSConstructSignatureDeclaration"), OptKey("typeParameters", "type_parameters"), List("parameters", "parameters"), OptKey("typeAnnotation", "type_annotation")]),
-	("MethodSignature", &[Type("TSMethodSignature"), Node("key", "key"), Bool("computed", "computed"), BoolIf("optional", "optional"), Enum("kind", "kind"), OptKey("typeParameters", "type_parameters"), List("parameters", "parameters"), OptKey("typeAnnotation", "type_annotation")]),
-	("PropertySignature", &[Type("TSPropertySignature"), Node("key", "key"), OptBoolKey("computed", "computed"), BoolIf("optional", "optional"), BoolIf("readonly", "readonly"), OptEnumKey("kind", "kind"), OptKey("typeAnnotation", "type_annotation")]),
-	("InterfaceDeclaration", &[Type("TSInterfaceDeclaration"), Node("id", "id"), OptKey("typeParameters", "type_parameters"), OptListKey("extends", "extends"), Node("body", "body")]),
+	("IndexSignature", &[Type("TSIndexSignature"), List("parameters", "parameters"), Maybe("typeAnnotation", "type_annotation")]),
+	("CallSignatureDeclaration", &[Type("TSCallSignatureDeclaration"), Maybe("typeParameters", "type_parameters"), List("parameters", "parameters"), Maybe("typeAnnotation", "type_annotation")]),
+	("ConstructSignatureDeclaration", &[Type("TSConstructSignatureDeclaration"), Maybe("typeParameters", "type_parameters"), List("parameters", "parameters"), Maybe("typeAnnotation", "type_annotation")]),
+	("MethodSignature", &[Type("TSMethodSignature"), Node("key", "key"), Bool("computed", "computed"), Bool("optional", "optional"), Enum("kind", "kind"), Maybe("typeParameters", "type_parameters"), List("parameters", "parameters"), Maybe("typeAnnotation", "type_annotation")]),
+	("PropertySignature", &[Type("TSPropertySignature"), Node("key", "key"), Bool("computed", "computed"), Bool("optional", "optional"), Bool("readonly", "readonly"), Maybe("typeAnnotation", "type_annotation")]),
+	("InterfaceDeclaration", &[Type("TSInterfaceDeclaration"), Node("id", "id"), Maybe("typeParameters", "type_parameters"), Maybe("extends", "extends"), Node("body", "body")]),
 	("InterfaceBody", &[Type("TSInterfaceBody"), List("body", "body")]),
-	("Heritage", &[TypeOf("clause"), Node("expression", "expression"), OptKey("typeArguments", "type_arguments")]),
-	("EnumDeclaration", &[Keep("TSEnumDeclaration"), Type("TSEnumDeclaration"), BoolIf("const", "is_const"), Node("id", "id"), List("members", "members")]),
-	("EnumMember", &[Type("TSEnumMember"), Node("id", "id"), OptKey("initializer", "initializer")]),
-	("ModuleDeclaration", &[Keep("TSModuleDeclaration"), Type("TSModuleDeclaration"), BoolIf("global", "global"), Node("id", "id"), OptKey("body", "body")]),
+	("Heritage", &[TypeOf("clause"), Node("expression", "expression"), Maybe("typeArguments", "type_arguments")]),
+	("EnumDeclaration", &[Keep("TSEnumDeclaration"), Type("TSEnumDeclaration"), Bool("const", "is_const"), Node("id", "id"), List("members", "members")]),
+	("EnumMember", &[Type("TSEnumMember"), Node("id", "id"), Maybe("initializer", "initializer")]),
+	("ModuleDeclaration", &[Keep("TSModuleDeclaration"), Type("TSModuleDeclaration"), Bool("global", "global"), Node("id", "id"), Maybe("body", "body")]),
 	("ModuleBlock", &[Type("TSModuleBlock"), List("body", "body")]),
-	("TypeAliasDeclaration", &[Type("TSTypeAliasDeclaration"), Node("id", "id"), OptKey("typeParameters", "type_parameters"), Node("typeAnnotation", "type_annotation")]),
+	("TypeAliasDeclaration", &[Type("TSTypeAliasDeclaration"), Node("id", "id"), Maybe("typeParameters", "type_parameters"), Node("typeAnnotation", "type_annotation")]),
 	("ImportEqualsDeclaration", &[Keep("TSImportEqualsDeclaration"), Type("TSImportEqualsDeclaration"), Enum("importKind", "import_kind"), Bool("isExport", "is_export"), Node("id", "id"), Node("moduleReference", "module_reference")]),
 	("ExternalModuleReference", &[Type("TSExternalModuleReference"), Node("expression", "expression")]),
 	("ExportAssignment", &[Keep("TSExportAssignment"), Type("TSExportAssignment"), Node("expression", "expression")]),
@@ -379,9 +373,27 @@ pub const TS: &[(&str, &[Op])] = &[
 	("Decorator", &[Keep("Decorator"), Type("Decorator"), Node("expression", "expression")]),
 ];
 
-/// What TypeScript adds to a JavaScript kind whatever its extras say, over the extras record.
+/// What TypeScript adds to every node of a kind from its extras record, by the JavaScript kind's name.
 #[rustfmt::skip]
 pub const ADDS: &[(&str, &[Op])] = &[
+	("Identifier", PATTERN),
+	("ArrayPattern", PATTERN),
+	("ObjectPattern", PATTERN),
+	("AssignmentPattern", PATTERN),
+	("RestElement", PATTERN),
+	("ArrowFunctionExpression", &[Maybe("returnType", "return_type"), Maybe("typeParameters", "type_parameters")]),
+	("FunctionDeclaration", FUNCTION),
+	("FunctionExpression", FUNCTION),
+	("ClassDeclaration", CLASS),
+	("ClassExpression", CLASS),
+	("MethodDefinition", &[Maybe("typeParameters", "type_parameters"), Maybe("decorators", "decorators"), Maybe("accessibility", "accessibility"), Bool("optional", "optional"), Bool("abstract", "is_abstract"), Bool("override", "is_override")]),
+	("PropertyDefinition", &[Maybe("typeAnnotation", "type_annotation"), Maybe("decorators", "decorators"), Maybe("accessibility", "accessibility"), Bool("optional", "optional"), Bool("definite", "definite"), Bool("declare", "declare"), Bool("abstract", "is_abstract"), Bool("readonly", "readonly"), Bool("override", "is_override")]),
+	("Property", &[Bool("optional", "optional")]),
+	("CallExpression", &[Maybe("typeArguments", "type_arguments")]),
+	("NewExpression", &[Maybe("typeArguments", "type_arguments")]),
+	("TaggedTemplateExpression", &[Maybe("typeArguments", "type_arguments")]),
+	("VariableDeclaration", &[Bool("declare", "declare")]),
+	("VariableDeclarator", &[Bool("definite", "definite")]),
 	("ImportDeclaration", &[EnumOr("importKind", "import_kind", "value")]),
 	("ImportSpecifier", &[EnumOr("importKind", "import_kind", "value")]),
 	("ExportDeclaration", &[EnumOr("exportKind", "export_kind", "value")]),
@@ -391,15 +403,27 @@ pub const ADDS: &[(&str, &[Op])] = &[
 	("ExportSpecifier", &[EnumOr("exportKind", "export_kind", "value")]),
 ];
 
-/// The keys a node's extras add, after the kind's own.
+/// The same by the TypeScript kind's name.
 #[rustfmt::skip]
-pub const EXTRAS: &[Op] = &[
-	OptKey("typeAnnotation", "type_annotation"), OptKey("returnType", "return_type"), OptKey("typeParameters", "type_parameters"),
-	OptKey("typeArguments", "type_arguments"), OptKey("superTypeArguments", "super_type_arguments"),
-	OptListKey("implements", "implements"), OptListKey("decorators", "decorators"), OptEnumKey("accessibility", "accessibility"),
-	BoolIf("optional", "optional"), BoolIf("definite", "definite"), BoolIf("declare", "declare"), BoolIf("abstract", "is_abstract"),
-	BoolIf("readonly", "readonly"), BoolIf("override", "is_override"), BoolIf("static", "is_static"),
+pub const TS_ADDS: &[(&str, &[Op])] = &[
+	("PropertySignature", &[Maybe("accessibility", "accessibility"), Bool("static", "is_static")]),
+	("MethodSignature", &[Maybe("accessibility", "accessibility"), Bool("readonly", "readonly"), Bool("static", "is_static")]),
+	("IndexSignature", &[Maybe("accessibility", "accessibility"), Bool("readonly", "readonly"), Bool("static", "is_static")]),
+	("InterfaceDeclaration", &[Bool("declare", "declare")]),
+	("TypeAliasDeclaration", &[Bool("declare", "declare")]),
+	("EnumDeclaration", &[Bool("declare", "declare")]),
+	("ModuleDeclaration", &[Bool("declare", "declare")]),
+	("DeclareFunction", &[Maybe("returnType", "return_type"), Maybe("typeParameters", "type_parameters"), Bool("declare", "declare")]),
+	("DeclareMethod", &[Maybe("returnType", "return_type")]),
+	("ParameterProperty", &[Maybe("accessibility", "accessibility"), Bool("readonly", "readonly"), Bool("override", "is_override"), Bool("static", "is_static")]),
 ];
+
+#[rustfmt::skip]
+const PATTERN: &[Op] = &[Maybe("typeAnnotation", "type_annotation"), Maybe("decorators", "decorators"), Bool("optional", "optional")];
+#[rustfmt::skip]
+const FUNCTION: &[Op] = &[Maybe("returnType", "return_type"), Maybe("typeParameters", "type_parameters"), Bool("declare", "declare")];
+#[rustfmt::skip]
+const CLASS: &[Op] = &[Maybe("typeParameters", "type_parameters"), Maybe("superTypeArguments", "super_type_arguments"), Maybe("implements", "implements"), Maybe("decorators", "decorators"), Bool("declare", "declare"), Bool("abstract", "is_abstract")];
 
 /// The same when erasing: the proposals JavaScript itself has, decorators and accessor fields.
 pub const EXTRAS_ERASED: &[Op] = &[

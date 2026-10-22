@@ -26,6 +26,8 @@
 							"type": "Identifier",
 							"start": 38,
 							"end": 39,
+							"decorators": [],
+							"optional": false,
 							"name": "x"
 						},
 						"typeAnnotation": {
@@ -41,11 +43,14 @@
 						"asserts": false
 					}
 				},
+				"declare": false,
 				"id": {
 					"type": "Identifier",
 					"start": 9,
 					"end": 10,
 					"declares": 0,
+					"decorators": [],
+					"optional": false,
 					"name": "f"
 				},
 				"expression": false,
@@ -68,10 +73,14 @@
 									"type": "Identifier",
 									"start": 17,
 									"end": 23,
+									"decorators": [],
+									"optional": false,
 									"name": "Window"
 								}
 							}
 						},
+						"decorators": [],
+						"optional": false,
 						"name": "this"
 					},
 					{
@@ -89,6 +98,8 @@
 								"end": 35
 							}
 						},
+						"decorators": [],
+						"optional": false,
 						"name": "x"
 					}
 				],
@@ -145,6 +156,8 @@
 									"type": "Identifier",
 									"start": 107,
 									"end": 108,
+									"decorators": [],
+									"optional": false,
 									"name": "A"
 								}
 							}
@@ -152,11 +165,14 @@
 						"asserts": true
 					}
 				},
+				"declare": false,
 				"id": {
 					"type": "Identifier",
 					"start": 76,
 					"end": 77,
 					"declares": 2,
+					"decorators": [],
+					"optional": false,
 					"name": "g"
 				},
 				"expression": false,
@@ -177,6 +193,8 @@
 								"end": 88
 							}
 						},
+						"decorators": [],
+						"optional": false,
 						"name": "this"
 					}
 				],
@@ -191,6 +209,7 @@
 				"type": "VariableDeclaration",
 				"start": 112,
 				"end": 146,
+				"declare": false,
 				"declarations": [
 					{
 						"type": "VariableDeclarator",
@@ -199,11 +218,14 @@
 						"defines": [
 							3
 						],
+						"definite": false,
 						"id": {
 							"type": "Identifier",
 							"start": 118,
 							"end": 119,
 							"declares": 3,
+							"decorators": [],
+							"optional": false,
 							"name": "h"
 						},
 						"init": {
@@ -211,6 +233,7 @@
 							"start": 122,
 							"end": 145,
 							"scope": 3,
+							"declare": false,
 							"id": null,
 							"expression": false,
 							"generator": false,
@@ -230,6 +253,8 @@
 											"end": 141
 										}
 									},
+									"decorators": [],
+									"optional": false,
 									"name": "this"
 								}
 							],

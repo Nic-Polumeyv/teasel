@@ -28,6 +28,8 @@
 					"start": 17,
 					"end": 18,
 					"declares": 0,
+					"decorators": [],
+					"optional": false,
 					"name": "f"
 				},
 				"generator": false,
@@ -38,10 +40,14 @@
 						"type": "RestElement",
 						"start": 19,
 						"end": 23,
+						"decorators": [],
+						"optional": false,
 						"argument": {
 							"type": "Identifier",
 							"start": 22,
 							"end": 23,
+							"decorators": [],
+							"optional": false,
 							"name": "a"
 						}
 					}

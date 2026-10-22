@@ -1,0 +1,111 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 59,
+		"scope": 0,
+		"body": [
+			{
+				"type": "TSInterfaceDeclaration",
+				"start": 0,
+				"end": 58,
+				"declare": false,
+				"id": {
+					"type": "Identifier",
+					"start": 10,
+					"end": 11,
+					"decorators": [],
+					"optional": false,
+					"name": "I"
+				},
+				"extends": [],
+				"body": {
+					"type": "TSInterfaceBody",
+					"start": 12,
+					"end": 58,
+					"body": [
+						{
+							"type": "TSMethodSignature",
+							"start": 15,
+							"end": 32,
+							"readonly": false,
+							"static": false,
+							"key": {
+								"type": "Identifier",
+								"start": 20,
+								"end": 21,
+								"decorators": [],
+								"optional": false,
+								"name": "x"
+							},
+							"computed": false,
+							"optional": false,
+							"kind": "get",
+							"parameters": [],
+							"typeAnnotation": {
+								"type": "TSTypeAnnotation",
+								"start": 23,
+								"end": 31,
+								"typeAnnotation": {
+									"type": "TSStringKeyword",
+									"start": 25,
+									"end": 31
+								}
+							}
+						},
+						{
+							"type": "TSMethodSignature",
+							"start": 34,
+							"end": 56,
+							"readonly": false,
+							"static": false,
+							"key": {
+								"type": "Identifier",
+								"start": 39,
+								"end": 40,
+								"decorators": [],
+								"optional": false,
+								"name": "x"
+							},
+							"computed": false,
+							"optional": false,
+							"kind": "set",
+							"parameters": [
+								{
+									"type": "Identifier",
+									"start": 41,
+									"end": 54,
+									"typeAnnotation": {
+										"type": "TSTypeAnnotation",
+										"start": 46,
+										"end": 54,
+										"typeAnnotation": {
+											"type": "TSStringKeyword",
+											"start": 48,
+											"end": 54
+										}
+									},
+									"decorators": [],
+									"optional": false,
+									"name": "value"
+								}
+							]
+						}
+					]
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 59,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [],
+	"references": []
+}

@@ -448,7 +448,7 @@ pub trait Reuse: Default {
 	fn truncate(&mut self, mark: Self::Mark);
 	/// The extension's own buffers, after the tree's.
 	fn views(&mut self, _out: &mut Views<'_>) {}
-	/// The nodes the extension adds keys to.
+	/// The nodes the extension adds keys to when erasing.
 	fn rare(&self, _set: &mut NodeSet) {}
 	/// Whether erasing leaves nothing of a node in a list: type-only declarations and imports.
 	fn erased(&self, _ast: &Ast<Self>, _id: NodeId) -> bool {

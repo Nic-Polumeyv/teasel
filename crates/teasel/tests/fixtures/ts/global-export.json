@@ -26,6 +26,8 @@
 					"type": "Identifier",
 					"start": 19,
 					"end": 25,
+					"decorators": [],
+					"optional": false,
 					"name": "global"
 				},
 				"body": {
@@ -37,12 +39,16 @@
 							"type": "TSInterfaceDeclaration",
 							"start": 29,
 							"end": 43,
+							"declare": false,
 							"id": {
 								"type": "Identifier",
 								"start": 39,
 								"end": 40,
+								"decorators": [],
+								"optional": false,
 								"name": "P"
 							},
+							"extends": [],
 							"body": {
 								"type": "TSInterfaceBody",
 								"start": 41,
@@ -54,6 +60,7 @@
 							"type": "VariableDeclaration",
 							"start": 45,
 							"end": 59,
+							"declare": false,
 							"declarations": [
 								{
 									"type": "VariableDeclarator",
@@ -62,6 +69,7 @@
 									"defines": [
 										0
 									],
+									"definite": false,
 									"id": {
 										"type": "Identifier",
 										"start": 49,
@@ -77,6 +85,8 @@
 												"end": 58
 											}
 										},
+										"decorators": [],
+										"optional": false,
 										"name": "Q"
 									},
 									"init": null
@@ -104,12 +114,16 @@
 							"start": 71,
 							"end": 72,
 							"reference": 0,
+							"decorators": [],
+							"optional": false,
 							"name": "P"
 						},
 						"exported": {
 							"type": "Identifier",
 							"start": 71,
 							"end": 72,
+							"decorators": [],
+							"optional": false,
 							"name": "P"
 						}
 					},
@@ -123,12 +137,16 @@
 							"start": 74,
 							"end": 75,
 							"reference": 1,
+							"decorators": [],
+							"optional": false,
 							"name": "Q"
 						},
 						"exported": {
 							"type": "Identifier",
 							"start": 74,
 							"end": 75,
+							"decorators": [],
+							"optional": false,
 							"name": "Q"
 						}
 					}

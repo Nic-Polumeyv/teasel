@@ -13,6 +13,7 @@
 				"defines": [
 					0
 				],
+				"const": false,
 				"id": {
 					"type": "Identifier",
 					"start": 5,
@@ -46,6 +47,7 @@
 				"defines": [
 					2
 				],
+				"global": false,
 				"id": {
 					"type": "Identifier",
 					"start": 23,

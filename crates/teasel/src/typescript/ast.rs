@@ -2,7 +2,7 @@ use crate::ast::{Ast, List, NodeId, NodeKind, Reuse, Walk};
 use crate::estree::{Emit, Writer};
 use crate::handed::{Handed, Views};
 use crate::interner::StrId;
-use crate::recipe::{ADDS, EXTRAS, EXTRAS_ERASED, Op, Slot, TS};
+use crate::recipe::{ADDS, EXTRAS_ERASED, Op, Slot, TS, TS_ADDS};
 use crate::scopes::{Bind, Binder, BindingKind, Mode, ScopeKind};
 
 /// What the TypeScript extension hands back with a tree: its own nodes, indexed by the
@@ -47,7 +47,11 @@ impl crate::ast::Reuse for Data {
 
 	fn rare(&self, set: &mut crate::ast::NodeSet) {
 		for &owner in self.extras.owners() {
-			set.insert(owner);
+			if let Some(extras) = self.extras(owner)
+				&& (extras.decorators.is_some() || extras.accessor)
+			{
+				set.insert(owner);
+			}
 		}
 	}
 
@@ -144,8 +148,7 @@ crate::layout::names! {
 }
 
 crate::layout::record! {
-	/// Keys TypeScript adds to a JavaScript node, or modifiers on one of its own. Serialized only
-	/// when set.
+	/// Keys TypeScript adds to a JavaScript node, or modifiers on one of its own.
 	#[derive(Clone, Copy, Debug, Default, PartialEq)]
 	pub struct Extras {
 		pub type_annotation: Option<NodeId>,
@@ -170,6 +173,35 @@ crate::layout::record! {
 }
 
 impl Extras {
+	fn set(&self) -> impl Iterator<Item = &'static str> {
+		let none = Extras::default();
+		macro_rules! set {
+			($($field:ident),*) => { [$( (stringify!($field), self.$field != none.$field) ),*] };
+		}
+		set!(
+			type_annotation,
+			return_type,
+			type_parameters,
+			type_arguments,
+			super_type_arguments,
+			implements,
+			decorators,
+			accessibility,
+			import_kind,
+			export_kind,
+			optional,
+			definite,
+			declare,
+			is_abstract,
+			readonly,
+			is_override,
+			accessor,
+			is_static
+		)
+		.into_iter()
+		.filter_map(|(field, set)| set.then_some(field))
+	}
+
 	pub(crate) fn merge(&mut self, other: Extras) {
 		macro_rules! take {
 			($($field:ident),*) => { $( if other.$field.is_some() { self.$field = other.$field; } )* };
@@ -337,10 +369,9 @@ crate::layout::kinds! {
 		},
 		PropertySignature {
 			key: NodeId,
-			computed: Option<bool>,
+			computed: bool,
 			optional: bool,
 			readonly: bool,
-			kind: Option<SignatureKind>,
 			type_annotation: Option<NodeId>,
 		},
 
@@ -829,27 +860,33 @@ impl Walk for Data {
 	}
 }
 
-// ESTree output for the TypeScript nodes and the keys TypeScript adds to JavaScript ones
+// ESTree output for the TypeScript nodes and the keys TypeScript adds to every node
 struct Recipes {
 	kinds: &'static [&'static [Op<Slot>]],
-	/// By the JavaScript kind's tag.
-	adds: Vec<&'static [Op<Slot>]>,
-	extras: &'static [Op<Slot>],
+	/// By the kind's tag: the operations and the fields they read.
+	adds: Vec<(&'static [Op<Slot>], Vec<&'static str>)>,
+	ts_adds: Vec<(&'static [Op<Slot>], Vec<&'static str>)>,
 	erased: &'static [Op<Slot>],
 }
 
 fn recipes() -> &'static Recipes {
 	static RESOLVED: std::sync::OnceLock<Recipes> = std::sync::OnceLock::new();
+	let adds = |table: &[(&str, &'static [Op])], variants: &[crate::layout::Variant]| {
+		variants
+			.iter()
+			.map(|variant| match table.iter().find(|(name, _)| *name == variant.name) {
+				Some((name, ops)) => (
+					crate::recipe::resolve_ops(ops, Extras::FIELDS, name),
+					ops.iter().filter_map(|op| op.told().2).collect(),
+				),
+				None => (&[][..], Vec::new()),
+			})
+			.collect()
+	};
 	RESOLVED.get_or_init(|| Recipes {
 		kinds: crate::recipe::resolve(TS, super::ast::ts_layout::VARIANTS),
-		adds: crate::ast::node_layout::VARIANTS
-			.iter()
-			.map(|variant| match ADDS.iter().find(|(name, _)| *name == variant.name) {
-				Some((name, ops)) => crate::recipe::resolve_ops(ops, Extras::FIELDS, name),
-				None => &[][..],
-			})
-			.collect(),
-		extras: crate::recipe::resolve_ops(EXTRAS, Extras::FIELDS, "Extras"),
+		adds: adds(ADDS, crate::ast::node_layout::VARIANTS),
+		ts_adds: adds(TS_ADDS, super::ast::ts_layout::VARIANTS),
 		erased: crate::recipe::resolve_ops(EXTRAS_ERASED, Extras::FIELDS, "Extras"),
 	})
 }
@@ -883,12 +920,46 @@ impl Emit for Data {
 			w.run(id, recipes.erased, base);
 			return;
 		}
-		let kind = w.kind(id);
-		w.run(
-			id,
-			recipes.adds[crate::estree::tag(&kind as *const NodeKind as *const u8)],
-			base,
-		);
-		w.run(id, recipes.extras, base);
+		let (ops, read) = match w.kind(id) {
+			NodeKind::Extension(index) => {
+				&recipes.ts_adds[crate::estree::tag(&self.nodes[index as usize] as *const TsKind as *const u8)]
+			}
+			kind => &recipes.adds[crate::estree::tag(&kind as *const NodeKind as *const u8)],
+		};
+		w.run(id, ops, base);
+		// an accessor is its kind's type, not a key
+		if let Some(field) = extras
+			.set()
+			.find(|&field| field != "accessor" && !read.contains(&field))
+		{
+			panic!("{:?} has {field}, which its kind does not list", w.kind(id));
+		}
 	}
+}
+
+// the writer's check on a node's extras sees every field
+#[test]
+fn set_names_every_field() {
+	let (node, list) = (Some(NodeId::at(0)), Some(List { start: 0, len: 1 }));
+	let all = Extras {
+		type_annotation: node,
+		return_type: node,
+		type_parameters: node,
+		type_arguments: node,
+		super_type_arguments: node,
+		implements: list,
+		decorators: list,
+		accessibility: Some(Accessibility::Public),
+		import_kind: Some(Kind::Type),
+		export_kind: Some(Kind::Type),
+		optional: true,
+		definite: true,
+		declare: true,
+		is_abstract: true,
+		readonly: true,
+		is_override: true,
+		accessor: true,
+		is_static: true,
+	};
+	assert!(all.set().eq(Extras::FIELDS.iter().map(|field| field.name)));
 }

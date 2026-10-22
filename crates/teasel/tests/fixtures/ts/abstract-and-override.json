@@ -13,12 +13,17 @@
 				"defines": [
 					0
 				],
+				"implements": [],
+				"decorators": [],
+				"declare": false,
 				"abstract": true,
 				"id": {
 					"type": "Identifier",
 					"start": 15,
 					"end": 16,
 					"declares": 0,
+					"decorators": [],
+					"optional": false,
 					"name": "A"
 				},
 				"superClass": null,
@@ -41,13 +46,21 @@
 									"end": 37
 								}
 							},
+							"decorators": [],
+							"optional": false,
+							"definite": false,
+							"declare": false,
 							"abstract": true,
+							"readonly": false,
+							"override": false,
 							"static": false,
 							"computed": false,
 							"key": {
 								"type": "Identifier",
 								"start": 28,
 								"end": 29,
+								"decorators": [],
+								"optional": false,
 								"name": "x"
 							},
 							"value": null
@@ -56,13 +69,18 @@
 							"type": "MethodDefinition",
 							"start": 39,
 							"end": 64,
+							"decorators": [],
+							"optional": false,
 							"abstract": true,
+							"override": false,
 							"static": false,
 							"computed": false,
 							"key": {
 								"type": "Identifier",
 								"start": 52,
 								"end": 53,
+								"decorators": [],
+								"optional": false,
 								"name": "y"
 							},
 							"kind": "get",
@@ -91,13 +109,18 @@
 							"type": "MethodDefinition",
 							"start": 65,
 							"end": 84,
+							"decorators": [],
+							"optional": false,
 							"abstract": true,
+							"override": false,
 							"static": false,
 							"computed": false,
 							"key": {
 								"type": "Identifier",
 								"start": 74,
 								"end": 75,
+								"decorators": [],
+								"optional": false,
 								"name": "m"
 							},
 							"kind": "method",
@@ -133,11 +156,17 @@
 				"defines": [
 					1
 				],
+				"implements": [],
+				"decorators": [],
+				"declare": false,
+				"abstract": false,
 				"id": {
 					"type": "Identifier",
 					"start": 93,
 					"end": 94,
 					"declares": 1,
+					"decorators": [],
+					"optional": false,
 					"name": "B"
 				},
 				"superClass": {
@@ -145,6 +174,8 @@
 					"start": 103,
 					"end": 104,
 					"reference": 0,
+					"decorators": [],
+					"optional": false,
 					"name": "A"
 				},
 				"body": {
@@ -156,6 +187,12 @@
 							"type": "PropertyDefinition",
 							"start": 107,
 							"end": 122,
+							"decorators": [],
+							"optional": false,
+							"definite": false,
+							"declare": false,
+							"abstract": false,
+							"readonly": false,
 							"override": true,
 							"static": false,
 							"computed": false,
@@ -163,6 +200,8 @@
 								"type": "Identifier",
 								"start": 116,
 								"end": 117,
+								"decorators": [],
+								"optional": false,
 								"name": "x"
 							},
 							"value": {
@@ -177,6 +216,9 @@
 							"type": "MethodDefinition",
 							"start": 123,
 							"end": 154,
+							"decorators": [],
+							"optional": false,
+							"abstract": false,
 							"override": true,
 							"static": false,
 							"computed": false,
@@ -184,6 +226,8 @@
 								"type": "Identifier",
 								"start": 136,
 								"end": 137,
+								"decorators": [],
+								"optional": false,
 								"name": "y"
 							},
 							"kind": "get",
@@ -192,6 +236,7 @@
 								"start": 137,
 								"end": 154,
 								"scope": 3,
+								"declare": false,
 								"id": null,
 								"expression": false,
 								"generator": false,
@@ -222,6 +267,9 @@
 							"type": "MethodDefinition",
 							"start": 155,
 							"end": 170,
+							"decorators": [],
+							"optional": false,
+							"abstract": false,
 							"override": true,
 							"static": false,
 							"computed": false,
@@ -229,6 +277,8 @@
 								"type": "Identifier",
 								"start": 164,
 								"end": 165,
+								"decorators": [],
+								"optional": false,
 								"name": "m"
 							},
 							"kind": "method",
@@ -237,6 +287,7 @@
 								"start": 165,
 								"end": 170,
 								"scope": 4,
+								"declare": false,
 								"id": null,
 								"expression": false,
 								"generator": false,
@@ -261,6 +312,8 @@
 				"defines": [
 					2
 				],
+				"implements": [],
+				"decorators": [],
 				"declare": true,
 				"abstract": true,
 				"id": {
@@ -268,6 +321,8 @@
 					"start": 196,
 					"end": 197,
 					"declares": 2,
+					"decorators": [],
+					"optional": false,
 					"name": "D"
 				},
 				"superClass": null,

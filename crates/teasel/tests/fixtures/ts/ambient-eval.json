@@ -28,6 +28,8 @@
 					"start": 17,
 					"end": 21,
 					"declares": 0,
+					"decorators": [],
+					"optional": false,
 					"name": "eval"
 				},
 				"generator": false,
@@ -48,6 +50,8 @@
 								"end": 31
 							}
 						},
+						"decorators": [],
+						"optional": false,
 						"name": "x"
 					}
 				]
@@ -65,6 +69,7 @@
 						"defines": [
 							1
 						],
+						"definite": false,
 						"id": {
 							"type": "Identifier",
 							"start": 51,
@@ -80,6 +85,8 @@
 									"end": 65
 								}
 							},
+							"decorators": [],
+							"optional": false,
 							"name": "arguments"
 						},
 						"init": null
@@ -95,12 +102,17 @@
 				"defines": [
 					2
 				],
+				"implements": [],
+				"decorators": [],
 				"declare": true,
+				"abstract": false,
 				"id": {
 					"type": "Identifier",
 					"start": 81,
 					"end": 82,
 					"declares": 2,
+					"decorators": [],
+					"optional": false,
 					"name": "A"
 				},
 				"superClass": null,
@@ -113,12 +125,18 @@
 							"type": "MethodDefinition",
 							"start": 86,
 							"end": 99,
+							"decorators": [],
+							"optional": false,
+							"abstract": false,
+							"override": false,
 							"static": false,
 							"computed": false,
 							"key": {
 								"type": "Identifier",
 								"start": 86,
 								"end": 90,
+								"decorators": [],
+								"optional": false,
 								"name": "eval"
 							},
 							"kind": "method",

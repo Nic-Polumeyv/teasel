@@ -9,10 +9,13 @@
 				"type": "TSTypeAliasDeclaration",
 				"start": 0,
 				"end": 28,
+				"declare": false,
 				"id": {
 					"type": "Identifier",
 					"start": 5,
 					"end": 6,
+					"decorators": [],
+					"optional": false,
 					"name": "T"
 				},
 				"typeAnnotation": {
@@ -27,6 +30,8 @@
 							"type": "Identifier",
 							"start": 9,
 							"end": 15,
+							"decorators": [],
+							"optional": false,
 							"trailingComments": [
 								{
 									"type": "Line",
@@ -41,6 +46,8 @@
 							"type": "Identifier",
 							"start": 24,
 							"end": 27,
+							"decorators": [],
+							"optional": false,
 							"name": "foo"
 						}
 					}

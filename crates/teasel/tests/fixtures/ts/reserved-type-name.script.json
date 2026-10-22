@@ -9,6 +9,7 @@
 				"type": "VariableDeclaration",
 				"start": 0,
 				"end": 14,
+				"declare": false,
 				"declarations": [
 					{
 						"type": "VariableDeclarator",
@@ -17,6 +18,7 @@
 						"defines": [
 							0
 						],
+						"definite": false,
 						"id": {
 							"type": "Identifier",
 							"start": 4,
@@ -34,10 +36,14 @@
 										"type": "Identifier",
 										"start": 7,
 										"end": 13,
+										"decorators": [],
+										"optional": false,
 										"name": "public"
 									}
 								}
 							},
+							"decorators": [],
+							"optional": false,
 							"name": "x"
 						},
 						"init": null

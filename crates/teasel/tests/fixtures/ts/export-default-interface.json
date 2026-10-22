@@ -14,12 +14,16 @@
 					"type": "TSInterfaceDeclaration",
 					"start": 15,
 					"end": 29,
+					"declare": false,
 					"id": {
 						"type": "Identifier",
 						"start": 25,
 						"end": 26,
+						"decorators": [],
+						"optional": false,
 						"name": "I"
 					},
+					"extends": [],
 					"body": {
 						"type": "TSInterfaceBody",
 						"start": 27,

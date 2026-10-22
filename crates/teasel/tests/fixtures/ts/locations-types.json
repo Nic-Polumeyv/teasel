@@ -29,6 +29,7 @@
 						"column": 7
 					}
 				},
+				"declare": false,
 				"declarations": [
 					{
 						"type": "VariableDeclarator",
@@ -47,6 +48,7 @@
 						"defines": [
 							0
 						],
+						"definite": false,
 						"id": {
 							"type": "Identifier",
 							"start": 4,
@@ -104,6 +106,8 @@
 												"column": 12
 											}
 										},
+										"decorators": [],
+										"optional": false,
 										"name": "Array"
 									},
 									"typeArguments": {
@@ -140,6 +144,8 @@
 									}
 								}
 							},
+							"decorators": [],
+							"optional": false,
 							"name": "a"
 						},
 						"init": {

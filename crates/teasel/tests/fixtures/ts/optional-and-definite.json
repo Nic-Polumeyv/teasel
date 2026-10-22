@@ -13,11 +13,17 @@
 				"defines": [
 					0
 				],
+				"implements": [],
+				"decorators": [],
+				"declare": false,
+				"abstract": false,
 				"id": {
 					"type": "Identifier",
 					"start": 6,
 					"end": 7,
 					"declares": 0,
+					"decorators": [],
+					"optional": false,
 					"name": "A"
 				},
 				"superClass": null,
@@ -40,13 +46,21 @@
 									"end": 20
 								}
 							},
+							"decorators": [],
 							"optional": true,
+							"definite": false,
+							"declare": false,
+							"abstract": false,
+							"readonly": false,
+							"override": false,
 							"static": false,
 							"computed": false,
 							"key": {
 								"type": "Identifier",
 								"start": 10,
 								"end": 11,
+								"decorators": [],
+								"optional": false,
 								"name": "x"
 							},
 							"value": null
@@ -65,13 +79,21 @@
 									"end": 32
 								}
 							},
+							"decorators": [],
+							"optional": false,
 							"definite": true,
+							"declare": false,
+							"abstract": false,
+							"readonly": false,
+							"override": false,
 							"static": false,
 							"computed": false,
 							"key": {
 								"type": "Identifier",
 								"start": 22,
 								"end": 23,
+								"decorators": [],
+								"optional": false,
 								"name": "y"
 							},
 							"value": null
@@ -89,11 +111,14 @@
 					2,
 					3
 				],
+				"declare": false,
 				"id": {
 					"type": "Identifier",
 					"start": 45,
 					"end": 46,
 					"declares": 1,
+					"decorators": [],
+					"optional": false,
 					"name": "f"
 				},
 				"expression": false,
@@ -115,6 +140,7 @@
 								"end": 57
 							}
 						},
+						"decorators": [],
 						"optional": true,
 						"name": "a"
 					},
@@ -133,6 +159,7 @@
 								"end": 69
 							}
 						},
+						"decorators": [],
 						"optional": true,
 						"name": "b"
 					}
@@ -148,6 +175,7 @@
 				"type": "VariableDeclaration",
 				"start": 74,
 				"end": 96,
+				"declare": false,
 				"declarations": [
 					{
 						"type": "VariableDeclarator",
@@ -156,6 +184,7 @@
 						"defines": [
 							4
 						],
+						"definite": false,
 						"id": {
 							"type": "Identifier",
 							"start": 78,
@@ -174,14 +203,18 @@
 											"type": "TSPropertySignature",
 											"start": 83,
 											"end": 93,
+											"static": false,
 											"key": {
 												"type": "Identifier",
 												"start": 83,
 												"end": 84,
+												"decorators": [],
+												"optional": false,
 												"name": "a"
 											},
 											"computed": false,
 											"optional": true,
+											"readonly": false,
 											"typeAnnotation": {
 												"type": "TSTypeAnnotation",
 												"start": 85,
@@ -196,6 +229,8 @@
 									]
 								}
 							},
+							"decorators": [],
+							"optional": false,
 							"name": "o"
 						},
 						"init": null

@@ -14,11 +14,14 @@
 					0
 				],
 				"declare": true,
+				"global": false,
 				"id": {
 					"type": "Identifier",
 					"start": 18,
 					"end": 19,
 					"declares": 0,
+					"decorators": [],
+					"optional": false,
 					"name": "N"
 				},
 				"body": {
@@ -30,10 +33,13 @@
 							"type": "TSTypeAliasDeclaration",
 							"start": 23,
 							"end": 60,
+							"declare": false,
 							"id": {
 								"type": "Identifier",
 								"start": 28,
 								"end": 29,
+								"decorators": [],
+								"optional": false,
 								"name": "F"
 							},
 							"typeAnnotation": {
@@ -55,6 +61,8 @@
 												"end": 50
 											}
 										},
+										"decorators": [],
+										"optional": false,
 										"name": "arguments"
 									}
 								],

@@ -24,6 +24,7 @@
 						"type": "VariableDeclaration",
 						"start": 20,
 						"end": 42,
+						"declare": false,
 						"declarations": [
 							{
 								"type": "VariableDeclarator",
@@ -32,6 +33,7 @@
 								"defines": [
 									0
 								],
+								"definite": false,
 								"id": {
 									"type": "Identifier",
 									"start": 24,
@@ -52,6 +54,8 @@
 											}
 										}
 									},
+									"decorators": [],
+									"optional": false,
 									"name": "xs"
 								},
 								"init": {
@@ -68,6 +72,7 @@
 						"type": "VariableDeclaration",
 						"start": 44,
 						"end": 66,
+						"declare": false,
 						"declarations": [
 							{
 								"type": "VariableDeclarator",
@@ -76,6 +81,7 @@
 								"defines": [
 									1
 								],
+								"definite": false,
 								"id": {
 									"type": "Identifier",
 									"start": 48,
@@ -96,6 +102,8 @@
 											}
 										}
 									},
+									"decorators": [],
+									"optional": false,
 									"name": "ys"
 								},
 								"init": {
@@ -112,6 +120,7 @@
 						"type": "VariableDeclaration",
 						"start": 68,
 						"end": 81,
+						"declare": false,
 						"declarations": [
 							{
 								"type": "VariableDeclarator",
@@ -120,11 +129,14 @@
 								"defines": [
 									2
 								],
+								"definite": false,
 								"id": {
 									"type": "Identifier",
 									"start": 72,
 									"end": 73,
 									"declares": 2,
+									"decorators": [],
+									"optional": false,
 									"name": "c"
 								},
 								"init": {
@@ -142,10 +154,13 @@
 						"type": "TSTypeAliasDeclaration",
 						"start": 83,
 						"end": 99,
+						"declare": false,
 						"id": {
 							"type": "Identifier",
 							"start": 88,
 							"end": 89,
+							"decorators": [],
+							"optional": false,
 							"name": "T"
 						},
 						"typeAnnotation": {
@@ -204,6 +219,8 @@
 								"start": 118,
 								"end": 120,
 								"reference": 0,
+								"decorators": [],
+								"optional": false,
 								"name": "xs"
 							},
 							"typeAnnotation": {
@@ -218,6 +235,8 @@
 										"type": "Identifier",
 										"start": 124,
 										"end": 125,
+										"decorators": [],
+										"optional": false,
 										"name": "T"
 									}
 								}
@@ -237,6 +256,8 @@
 						"end": 141,
 						"declares": 3,
 						"root": 2,
+						"decorators": [],
+						"optional": false,
 						"name": "item"
 					},
 					"body": {
@@ -253,6 +274,8 @@
 									"end": 147,
 									"reference": 1,
 									"root": 3,
+									"decorators": [],
+									"optional": false,
 									"name": "item"
 								}
 							}
@@ -284,6 +307,8 @@
 								"start": 163,
 								"end": 165,
 								"reference": 2,
+								"decorators": [],
+								"optional": false,
 								"name": "xs"
 							},
 							"typeAnnotation": {
@@ -298,6 +323,8 @@
 										"type": "Identifier",
 										"start": 169,
 										"end": 170,
+										"decorators": [],
+										"optional": false,
 										"name": "T"
 									}
 								}
@@ -309,6 +336,8 @@
 							"start": 175,
 							"end": 177,
 							"reference": 3,
+							"decorators": [],
+							"optional": false,
 							"name": "ys"
 						}
 					},
@@ -318,6 +347,8 @@
 						"end": 185,
 						"declares": 4,
 						"root": 5,
+						"decorators": [],
+						"optional": false,
 						"name": "item"
 					},
 					"body": {
@@ -334,6 +365,8 @@
 									"end": 191,
 									"reference": 4,
 									"root": 6,
+									"decorators": [],
+									"optional": false,
 									"name": "item"
 								}
 							}
@@ -361,6 +394,8 @@
 							"start": 207,
 							"end": 208,
 							"reference": 5,
+							"decorators": [],
+							"optional": false,
 							"name": "c"
 						},
 						"consequent": {
@@ -372,6 +407,8 @@
 								"start": 211,
 								"end": 213,
 								"reference": 6,
+								"decorators": [],
+								"optional": false,
 								"name": "xs"
 							},
 							"typeAnnotation": {
@@ -386,6 +423,8 @@
 										"type": "Identifier",
 										"start": 217,
 										"end": 218,
+										"decorators": [],
+										"optional": false,
 										"name": "T"
 									}
 								}
@@ -396,6 +435,8 @@
 							"start": 223,
 							"end": 225,
 							"reference": 7,
+							"decorators": [],
+							"optional": false,
 							"name": "ys"
 						}
 					},
@@ -405,6 +446,8 @@
 						"end": 233,
 						"declares": 5,
 						"root": 8,
+						"decorators": [],
+						"optional": false,
 						"name": "item"
 					},
 					"body": {
@@ -421,6 +464,8 @@
 									"end": 239,
 									"reference": 8,
 									"root": 9,
+									"decorators": [],
+									"optional": false,
 									"name": "item"
 								}
 							}
@@ -448,6 +493,8 @@
 							"start": 255,
 							"end": 257,
 							"reference": 9,
+							"decorators": [],
+							"optional": false,
 							"name": "xs"
 						},
 						"typeAnnotation": {
@@ -462,6 +509,8 @@
 									"type": "Identifier",
 									"start": 261,
 									"end": 262,
+									"decorators": [],
+									"optional": false,
 									"name": "T"
 								}
 							}
@@ -473,6 +522,8 @@
 						"end": 272,
 						"declares": 6,
 						"root": 11,
+						"decorators": [],
+						"optional": false,
 						"name": "item"
 					},
 					"index": {
@@ -481,6 +532,8 @@
 						"end": 275,
 						"declares": 7,
 						"root": 12,
+						"decorators": [],
+						"optional": false,
 						"name": "i"
 					},
 					"key": {
@@ -489,6 +542,8 @@
 						"end": 281,
 						"reference": 10,
 						"root": 13,
+						"decorators": [],
+						"optional": false,
 						"name": "item"
 					},
 					"body": {
@@ -505,6 +560,8 @@
 									"end": 288,
 									"reference": 11,
 									"root": 14,
+									"decorators": [],
+									"optional": false,
 									"name": "item"
 								}
 							},
@@ -518,6 +575,8 @@
 									"end": 291,
 									"reference": 12,
 									"root": 15,
+									"decorators": [],
+									"optional": false,
 									"name": "i"
 								}
 							}
@@ -541,6 +600,8 @@
 						"end": 309,
 						"reference": 13,
 						"root": 16,
+						"decorators": [],
+						"optional": false,
 						"name": "xs"
 					},
 					"context": {
@@ -549,6 +610,8 @@
 						"end": 317,
 						"declares": 8,
 						"root": 17,
+						"decorators": [],
+						"optional": false,
 						"name": "item"
 					},
 					"index": {
@@ -557,6 +620,8 @@
 						"end": 320,
 						"declares": 9,
 						"root": 18,
+						"decorators": [],
+						"optional": false,
 						"name": "i"
 					},
 					"body": {
@@ -573,6 +638,8 @@
 									"end": 326,
 									"reference": 14,
 									"root": 19,
+									"decorators": [],
+									"optional": false,
 									"name": "item"
 								}
 							},
@@ -586,6 +653,8 @@
 									"end": 329,
 									"reference": 15,
 									"root": 20,
+									"decorators": [],
+									"optional": false,
 									"name": "i"
 								}
 							}
@@ -621,6 +690,8 @@
 									"start": 346,
 									"end": 348,
 									"reference": 16,
+									"decorators": [],
+									"optional": false,
 									"name": "xs"
 								},
 								"typeAnnotation": {
@@ -635,6 +706,8 @@
 											"type": "Identifier",
 											"start": 352,
 											"end": 353,
+											"decorators": [],
+											"optional": false,
 											"name": "T"
 										}
 									}
@@ -644,6 +717,8 @@
 								"type": "Identifier",
 								"start": 357,
 								"end": 360,
+								"decorators": [],
+								"optional": false,
 								"name": "map"
 							},
 							"computed": false,
@@ -655,6 +730,8 @@
 								"start": 361,
 								"end": 367,
 								"reference": 17,
+								"decorators": [],
+								"optional": false,
 								"name": "Number"
 							}
 						],
@@ -666,6 +743,8 @@
 						"end": 376,
 						"declares": 10,
 						"root": 22,
+						"decorators": [],
+						"optional": false,
 						"name": "item"
 					},
 					"body": {
@@ -682,6 +761,8 @@
 									"end": 382,
 									"reference": 18,
 									"root": 23,
+									"decorators": [],
+									"optional": false,
 									"name": "item"
 								}
 							}

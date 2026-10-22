@@ -9,6 +9,7 @@
 				"type": "VariableDeclaration",
 				"start": 0,
 				"end": 52,
+				"declare": false,
 				"declarations": [
 					{
 						"type": "VariableDeclarator",
@@ -17,11 +18,14 @@
 						"defines": [
 							0
 						],
+						"definite": false,
 						"id": {
 							"type": "Identifier",
 							"start": 6,
 							"end": 7,
 							"declares": 0,
+							"decorators": [],
+							"optional": false,
 							"name": "a"
 						},
 						"init": {
@@ -37,6 +41,7 @@
 										"type": "Property",
 										"start": 12,
 										"end": 16,
+										"optional": false,
 										"method": false,
 										"shorthand": false,
 										"computed": false,
@@ -44,6 +49,8 @@
 											"type": "Identifier",
 											"start": 12,
 											"end": 13,
+											"decorators": [],
+											"optional": false,
 											"name": "b"
 										},
 										"value": {
@@ -65,6 +72,8 @@
 									"type": "Identifier",
 									"start": 29,
 									"end": 35,
+									"decorators": [],
+									"optional": false,
 									"name": "Record"
 								},
 								"typeArguments": {
@@ -98,11 +107,17 @@
 				"defines": [
 					1
 				],
+				"implements": [],
+				"decorators": [],
+				"declare": false,
+				"abstract": false,
 				"id": {
 					"type": "Identifier",
 					"start": 59,
 					"end": 60,
 					"declares": 1,
+					"decorators": [],
+					"optional": false,
 					"name": "C"
 				},
 				"superClass": null,
@@ -115,12 +130,21 @@
 							"type": "AccessorProperty",
 							"start": 63,
 							"end": 78,
+							"decorators": [],
+							"optional": false,
+							"definite": false,
+							"declare": false,
+							"abstract": false,
+							"readonly": false,
+							"override": false,
 							"static": false,
 							"computed": false,
 							"key": {
 								"type": "Identifier",
 								"start": 72,
 								"end": 73,
+								"decorators": [],
+								"optional": false,
 								"name": "d"
 							},
 							"value": {
@@ -145,12 +169,21 @@
 									"end": 104
 								}
 							},
+							"decorators": [],
+							"optional": false,
+							"definite": false,
+							"declare": false,
+							"abstract": false,
+							"readonly": false,
+							"override": false,
 							"static": true,
 							"computed": false,
 							"key": {
 								"type": "Identifier",
 								"start": 95,
 								"end": 96,
+								"decorators": [],
+								"optional": false,
 								"name": "e"
 							},
 							"value": null

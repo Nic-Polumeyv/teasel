@@ -13,6 +13,7 @@
 				"defines": [
 					0
 				],
+				"implements": [],
 				"decorators": [
 					{
 						"type": "Decorator",
@@ -27,6 +28,8 @@
 								"start": 1,
 								"end": 4,
 								"reference": 0,
+								"decorators": [],
+								"optional": false,
 								"name": "dec"
 							},
 							"arguments": [
@@ -35,6 +38,8 @@
 									"start": 5,
 									"end": 6,
 									"reference": 1,
+									"decorators": [],
+									"optional": false,
 									"name": "a"
 								},
 								{
@@ -42,6 +47,8 @@
 									"start": 8,
 									"end": 9,
 									"reference": 2,
+									"decorators": [],
+									"optional": false,
 									"name": "b"
 								}
 							],
@@ -49,11 +56,15 @@
 						}
 					}
 				],
+				"declare": false,
+				"abstract": false,
 				"id": {
 					"type": "Identifier",
 					"start": 18,
 					"end": 19,
 					"declares": 0,
+					"decorators": [],
+					"optional": false,
 					"name": "A"
 				},
 				"superClass": null,

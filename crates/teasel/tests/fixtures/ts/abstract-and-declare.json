@@ -13,6 +13,8 @@
 				"defines": [
 					0
 				],
+				"implements": [],
+				"decorators": [],
 				"declare": true,
 				"abstract": true,
 				"id": {
@@ -20,6 +22,8 @@
 					"start": 23,
 					"end": 24,
 					"declares": 0,
+					"decorators": [],
+					"optional": false,
 					"name": "A"
 				},
 				"superClass": null,
@@ -38,6 +42,8 @@
 				"defines": [
 					1
 				],
+				"implements": [],
+				"decorators": [],
 				"declare": true,
 				"abstract": true,
 				"id": {
@@ -45,6 +51,8 @@
 					"start": 51,
 					"end": 52,
 					"declares": 1,
+					"decorators": [],
+					"optional": false,
 					"name": "B"
 				},
 				"superClass": null,
@@ -68,6 +76,8 @@
 					"defines": [
 						2
 					],
+					"implements": [],
+					"decorators": [],
 					"declare": true,
 					"abstract": true,
 					"id": {
@@ -75,6 +85,8 @@
 						"start": 86,
 						"end": 87,
 						"declares": 2,
+						"decorators": [],
+						"optional": false,
 						"name": "C"
 					},
 					"superClass": null,

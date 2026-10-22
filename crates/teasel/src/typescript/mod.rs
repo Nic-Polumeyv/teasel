@@ -785,19 +785,22 @@ impl Parser<'_, TypeScript> {
 
 	/// A type annotation or optional marker in a list that is not becoming parameters is an error.
 	fn no_type_casts(&self, items: &[Option<NodeId>]) -> Result<()> {
-		for item in items.iter().flatten() {
-			if self.ext_data().extras(*item).is_some_and(|e| e.optional) {
-				return self.error(self.ast.node(*item).end - 1, Code::UnexpectedToken);
-			}
-			let annotation = match self.ts_kind(*item) {
-				Some(TsKind::TypeCastExpression { type_annotation, .. }) => Some(type_annotation),
-				_ if matches!(self.kind(*item), NodeKind::SpreadElement { .. }) => {
-					self.ext_data().extras(*item).and_then(|e| e.type_annotation)
-				}
+		for &whole in items.iter().flatten() {
+			let left = match self.kind(whole) {
+				NodeKind::AssignmentExpression { left, .. } => Some(left),
 				_ => None,
 			};
-			if let Some(annotation) = annotation {
-				return self.error(self.start_of(annotation), Code::UnexpectedTypeAnnotation);
+			for item in std::iter::once(whole).chain(left) {
+				if self.ext_data().extras(item).is_some_and(|e| e.optional) {
+					return self.error(self.ast.node(item).end - 1, Code::UnexpectedToken);
+				}
+				let annotation = match self.ts_kind(item) {
+					Some(TsKind::TypeCastExpression { type_annotation, .. }) => Some(type_annotation),
+					_ => self.ext_data().extras(item).and_then(|e| e.type_annotation),
+				};
+				if let Some(annotation) = annotation {
+					return self.error(self.start_of(annotation), Code::UnexpectedTypeAnnotation);
+				}
 			}
 		}
 		Ok(())
@@ -1209,6 +1212,7 @@ impl Extension for TypeScript {
 					p.ext.needs_colon_at = Some(p.tok.start);
 				}
 			}
+			FunctionKind::Method { in_class: true, .. } => {}
 			_ => frame.type_parameters = p.try_parse_type_parameters(TypeParameterModifiers::Const)?,
 		}
 		if matches!(
@@ -1504,10 +1508,11 @@ impl Extension for TypeScript {
 		if p.eat(TokenKind::Question)? {
 			p.ext.elements.last_mut().unwrap().extras.optional = true;
 		}
-		if extras.readonly && p.is(TokenKind::ParenL) {
+		let method = p.is(TokenKind::ParenL) || p.is(TokenKind::Lt);
+		if extras.readonly && method {
 			return p.error(start, Code::ReadonlyOnMethod);
 		}
-		if extras.declare && p.is(TokenKind::ParenL) {
+		if extras.declare && method {
 			return p.error(start, Code::DeclareOnMethod);
 		}
 		Ok(())
