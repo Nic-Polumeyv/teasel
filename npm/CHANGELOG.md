@@ -1,5 +1,33 @@
 # @teasel/parser
 
+## 0.0.22
+
+### Patch Changes
+
+- [#233](https://github.com/Nic-Polumeyv/teasel/pull/233) [`478003d`](https://github.com/Nic-Polumeyv/teasel/commit/478003dd50eeee4493e813b73de7f3bb5d24e3b3) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - A get or set type member reads as TypeScript reads it: with a parameter list, across a line break
+
+- [#230](https://github.com/Nic-Polumeyv/teasel/pull/230) [`423f23f`](https://github.com/Nic-Polumeyv/teasel/commit/423f23f380d87ed7a1657b2af278493b33fed8cf) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - TypeScript parameters, pattern elements, class members and decorators are read as TypeScript reads them
+
+- [#233](https://github.com/Nic-Polumeyv/teasel/pull/233) [`478003d`](https://github.com/Nic-Polumeyv/teasel/commit/478003dd50eeee4493e813b73de7f3bb5d24e3b3) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - A typed or optional cast with a default, `f(a: T = 1)`, is an error, as in TypeScript
+
+- [#221](https://github.com/Nic-Polumeyv/teasel/pull/221) [`3d390ee`](https://github.com/Nic-Polumeyv/teasel/commit/3d390ee86ff95c98a3981f80b9928c4bb3eef9bf) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - The Windows build no longer needs the Visual C++ redistributable
+
+- [#229](https://github.com/Nic-Polumeyv/teasel/pull/229) [`63eee5c`](https://github.com/Nic-Polumeyv/teasel/commit/63eee5c2745e13033adf64eee8fd071b47fdaaaf) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - A TypeScript declaration word is a keyword only when a declaration follows it on its line
+
+- [#224](https://github.com/Nic-Polumeyv/teasel/pull/224) [`c79ba83`](https://github.com/Nic-Polumeyv/teasel/commit/c79ba83f61e3cef090d3a511d2c5e1c822dd1261) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - The grammar crosses to the engine as JSON
+
+- [#218](https://github.com/Nic-Polumeyv/teasel/pull/218) [`2b689c4`](https://github.com/Nic-Polumeyv/teasel/commit/2b689c42444ad46bda25729ba2370260fdbc99a2) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - A grammar is read when made, parses in the copy of the package that made it, and has no `wire`
+
+- [#222](https://github.com/Nic-Polumeyv/teasel/pull/222) [`ac6a695`](https://github.com/Nic-Polumeyv/teasel/commit/ac6a6958db5276f3d1e267d827c89eb3a907e227) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - Tiny parses are a few percent faster
+
+- [#223](https://github.com/Nic-Polumeyv/teasel/pull/223) [`212c5a4`](https://github.com/Nic-Polumeyv/teasel/commit/212c5a4b887b43bdf18e062ae330bb9af628a85c) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - Importing the package is 2 to 5 ms faster on Node
+
+- [#233](https://github.com/Nic-Polumeyv/teasel/pull/233) [`478003d`](https://github.com/Nic-Polumeyv/teasel/commit/478003dd50eeee4493e813b73de7f3bb5d24e3b3) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - readonly, declare or a second type parameter list on a generic method is an error, as in TypeScript
+
+- [#231](https://github.com/Nic-Polumeyv/teasel/pull/231) [`e6bfa16`](https://github.com/Nic-Polumeyv/teasel/commit/e6bfa16ef4c33e31ed2967469dded039b2c49c58) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - A keyword after a dot in a namespace name parses, as in `namespace chrome.debugger {}`
+
+- [#233](https://github.com/Nic-Polumeyv/teasel/pull/233) [`478003d`](https://github.com/Nic-Polumeyv/teasel/commit/478003dd50eeee4493e813b73de7f3bb5d24e3b3) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - Every node of a TypeScript type has the same keys, as typescript-estree gives them
+
 ## 0.0.21
 
 ### Patch Changes
