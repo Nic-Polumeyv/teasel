@@ -927,10 +927,12 @@ impl Emit for Data {
 			kind => &recipes.adds[crate::estree::tag(&kind as *const NodeKind as *const u8)],
 		};
 		w.run(id, ops, base);
-		// an accessor is its kind's type, not a key
-		if let Some(field) = extras
-			.set()
-			.find(|&field| field != "accessor" && !read.contains(&field))
+		// an accessor is its kind's type, not a key; an unlisted extra is a parser bug, which a test
+		// build catches and a shipped build answers around
+		if cfg!(debug_assertions)
+			&& let Some(field) = extras
+				.set()
+				.find(|&field| field != "accessor" && !read.contains(&field))
 		{
 			panic!("{:?} has {field}, which its kind does not list", w.kind(id));
 		}
