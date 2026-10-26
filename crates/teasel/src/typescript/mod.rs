@@ -1831,10 +1831,6 @@ impl Extension for TypeScript {
 		Ok(p.take_arrow_return_type()? && !p.can_insert_semicolon() && p.eat(TokenKind::Arrow)?)
 	}
 
-	fn checks_assignment_target(p: &mut Parser<Self>) -> bool {
-		!p.ext.maybe_in_arrow_parameters
-	}
-
 	fn list_items(p: &mut Parser<Self>, items: &[Option<NodeId>]) -> Result<()> {
 		p.no_type_casts(items)
 	}

@@ -324,10 +324,6 @@ pub(crate) trait Extension: Default + Sized {
 	fn should_parse_async_arrow(p: &mut Parser<Self>, start: u32) -> Result<bool> {
 		Ok(!p.can_insert_semicolon() && p.eat(TokenKind::Arrow)?)
 	}
-	/// Whether the target of an assignment is checked here.
-	fn checks_assignment_target(p: &mut Parser<Self>) -> bool {
-		true
-	}
 	/// A finished list of expressions: array elements, arguments, or a parenthesized expression
 	/// that did not become parameters.
 	fn list_items(p: &mut Parser<Self>, items: &[Option<NodeId>]) -> Result<()> {

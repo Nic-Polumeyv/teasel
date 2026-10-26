@@ -183,13 +183,12 @@ impl<E: Extension> Parser<'_, E> {
 		}
 		if let Some(operator) = assignment_operator(self.tok.kind) {
 			let is_eq = operator == AssignmentOperator::Assign;
-			// the checks read what a wrapper stands for, the tree keeps the wrapper
-			let target = if is_eq {
+			if is_eq {
 				left = self.make_pattern(left, false, errors)?;
-				E::unwrap(self, left, Unwrap::InnerPattern).unwrap_or(left)
-			} else {
-				left
-			};
+			}
+			// `a: T = 1` is checked once its list is known, as a parameter or as a stray cast
+			let inner = E::unwrap(self, left, Unwrap::InnerPattern);
+			let target = inner.unwrap_or(left);
 			let e = errors.as_mut().unwrap();
 			if !own_errors {
 				e.parenthesized_assign = None;
@@ -199,11 +198,11 @@ impl<E: Extension> Parser<'_, E> {
 			if e.shorthand_assign.is_some_and(|p| p >= self.start_of(target)) {
 				e.shorthand_assign = None;
 			}
-			if E::checks_assignment_target(self) {
+			if inner.is_none() {
 				if is_eq {
-					self.check_lval_pattern(target, Binding::None, &mut None)?;
+					self.check_lval_pattern(left, Binding::None, &mut None)?;
 				} else {
-					self.check_lval_simple(target, Binding::None, &mut None)?;
+					self.check_lval_simple(left, Binding::None, &mut None)?;
 				}
 			}
 			self.next()?;
