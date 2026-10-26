@@ -786,26 +786,16 @@ impl Parser<'_, TypeScript> {
 	/// A cast left in a list that is not becoming parameters is an error.
 	fn no_type_casts(&self, items: &[Option<NodeId>]) -> Result<()> {
 		for &item in items.iter().flatten() {
-			let (cast, default) = match self.kind(item) {
-				NodeKind::AssignmentExpression { operator, left, .. } => {
-					(left, operator == crate::ast::AssignmentOperator::Assign)
-				}
-				_ => (item, false),
+			let cast = match self.kind(item) {
+				NodeKind::AssignmentExpression { left, .. } => left,
+				_ => item,
 			};
-			let Some(TsKind::TypeCastExpression {
-				type_annotation,
-				optional,
-				..
-			}) = self.ts_kind(cast)
-			else {
+			let Some(TsKind::TypeCastExpression { type_annotation, .. }) = self.ts_kind(cast) else {
 				continue;
 			};
 			return match type_annotation {
-				// a defaulted `a?: T` reports its marker, at the end of the would-be parameter
-				Some(annotation) if !(default && optional) => {
-					self.error(self.start_of(annotation), Code::UnexpectedTypeAnnotation)
-				}
-				_ => self.error(self.end_of(cast) - 1, Code::UnexpectedToken),
+				Some(annotation) => self.error(self.start_of(annotation), Code::UnexpectedTypeAnnotation),
+				None => self.error(self.end_of(cast) - 1, Code::UnexpectedToken),
 			};
 		}
 		Ok(())
