@@ -1406,6 +1406,6 @@ function kept(S: State): Decoded[] {
 		if (S.lines) n.loc = loc(S.C.R.loc, S.locs, id * S.C.R.loc.words);
 		out.push(n);
 	}
-	// a decorated field starts at its first decorator, which comes first
-	return out.sort((a, b) => a.start - b.start || a.end - b.end);
+	// a node comes before what it contains
+	return out.sort((a, b) => a.start - b.start || b.end - a.end);
 }

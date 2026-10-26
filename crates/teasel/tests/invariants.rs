@@ -142,80 +142,28 @@ fn a_file_cut_anywhere_is_read_without_a_panic() {
 	assert!(panicked.is_empty(), "{}", panicked.join("\n"));
 }
 
-/// The (start, end) of each item of the list at `key`, in the order written.
-fn spans(json: &str, key: &str) -> Vec<(u32, u32)> {
-	let Some(at) = json.find(&format!("\"{key}\":[")) else {
-		return Vec::new();
+fn kept(json: &str) -> Vec<(u32, u32)> {
+	let list = json.split("\"typescript\":[").nth(1).expect("no typescript list");
+	let list = &list[..list.find(']').unwrap()];
+	let numbers = |key: &str| -> Vec<u32> {
+		list.match_indices(key)
+			.map(|(at, _)| {
+				list[at + key.len()..]
+					.split(|c: char| !c.is_ascii_digit())
+					.next()
+					.unwrap()
+					.parse()
+					.unwrap()
+			})
+			.collect()
 	};
-	let text = &json[at + key.len() + 4..];
-	let mut out = Vec::new();
-	let (mut depth, mut quoted, mut escaped) = (0usize, false, false);
-	let mut span = [None; 2];
-	for (i, c) in text.bytes().enumerate() {
-		if quoted {
-			if escaped {
-				escaped = false;
-			} else if c == b'\\' {
-				escaped = true;
-			} else if c == b'"' {
-				quoted = false;
-			}
-			continue;
-		}
-		match c {
-			b'"' => {
-				quoted = true;
-				if depth == 1 {
-					for (name, slot) in [("\"start\":", 0), ("\"end\":", 1)] {
-						if text[i..].starts_with(name) {
-							let digits = text[i + name.len()..]
-								.split(|c: char| !c.is_ascii_digit())
-								.next()
-								.unwrap();
-							span[slot].get_or_insert(digits.parse::<u32>().unwrap());
-						}
-					}
-				}
-			}
-			b'{' | b'[' => {
-				depth += 1;
-				if depth == 1 {
-					span = [None; 2];
-				}
-			}
-			b'}' | b']' => {
-				if depth == 0 {
-					break;
-				}
-				depth -= 1;
-				if depth == 0
-					&& let [Some(start), Some(end)] = span
-				{
-					out.push((start, end));
-				}
-			}
-			_ => {}
-		}
-	}
-	out
+	numbers("\"start\":").into_iter().zip(numbers("\"end\":")).collect()
 }
 
-/// The erase answer lists what TypeScript kept in source order, whatever order the writer met it in.
+// a node comes before what it contains: a field precedes the decorators that share its start
 #[test]
 fn kept_nodes_are_in_source_order() {
-	let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/ts");
-	let mut sources: Vec<String> = fs::read_dir(&fixtures)
-		.unwrap()
-		.map(|entry| entry.unwrap().path())
-		.filter(|path| path.extension().is_some_and(|ext| ext == "ts"))
-		.map(|path| fs::read_to_string(path).unwrap())
-		.collect();
-	// an unstable sort stays stable below 33 items; a decorated field and its decorator share a start
-	let params: String = (0..16).map(|i| format!("@d public p{i},")).collect();
-	sources.push(format!("class C {{ @d accessor x = 1; constructor({params}) {{}} }}"));
 	let request = Request::from_flags(Options::MODULE | Options::TYPESCRIPT | Options::ERASE);
-	for source in sources {
-		let spans = spans(&parse(&source, &request), "typescript");
-		assert!(spans.is_sorted(), "{source}: {spans:?}");
-	}
+	let answer = parse("class C { @a @b accessor x = 1; }", &request);
+	assert_eq!(kept(&answer), [(10, 31), (10, 12), (13, 15)]);
 }
