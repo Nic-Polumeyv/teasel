@@ -1,7 +1,7 @@
 //! What must hold between the parser's own answers, over every file of test262-parser-tests that
 //! parses: recovery changes nothing about a file that parses, an entry reads the same statement
 //! the program did, and a file cut anywhere is read without a panic. Over every file that does not
-//! parse, a cut is read without a panic too.
+//! parse, a cut is read without a panic too. The erase answer lists kept nodes in source order.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -140,4 +140,30 @@ fn a_file_cut_anywhere_is_read_without_a_panic() {
 		}
 	}
 	assert!(panicked.is_empty(), "{}", panicked.join("\n"));
+}
+
+fn kept(json: &str) -> Vec<(u32, u32)> {
+	let list = json.split("\"typescript\":[").nth(1).expect("no typescript list");
+	let list = &list[..list.find(']').unwrap()];
+	let numbers = |key: &str| -> Vec<u32> {
+		list.match_indices(key)
+			.map(|(at, _)| {
+				list[at + key.len()..]
+					.split(|c: char| !c.is_ascii_digit())
+					.next()
+					.unwrap()
+					.parse()
+					.unwrap()
+			})
+			.collect()
+	};
+	numbers("\"start\":").into_iter().zip(numbers("\"end\":")).collect()
+}
+
+// a node comes before what it contains: a field precedes the decorators that share its start
+#[test]
+fn kept_nodes_are_in_source_order() {
+	let request = Request::from_flags(Options::MODULE | Options::TYPESCRIPT | Options::ERASE);
+	let answer = parse("class C { @a @b accessor x = 1; }", &request);
+	assert_eq!(kept(&answer), [(10, 31), (10, 12), (13, 15)]);
 }
