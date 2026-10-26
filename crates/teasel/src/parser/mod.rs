@@ -91,7 +91,8 @@ pub(crate) enum FunctionKind {
 pub(crate) enum Unwrap {
 	/// `check_lval_simple`: the target of an assignment or update.
 	Simple,
-	/// `check_lval_inner_pattern`: an element of a parameter list or pattern.
+	/// `check_lval_inner_pattern`: an element of a parameter list or pattern, or the target of `=`
+	/// that may become one.
 	InnerPattern,
 }
 
@@ -283,9 +284,9 @@ pub(crate) trait Extension: Default + Sized {
 	fn paren_item(p: &mut Parser<Self>, item: NodeId) -> Result<NodeId> {
 		Ok(item)
 	}
-	/// A spread in an argument list.
-	fn spread(p: &mut Parser<Self>, spread: NodeId) -> Result<()> {
-		Ok(())
+	/// A spread in an argument list; the result replaces it.
+	fn spread(p: &mut Parser<Self>, spread: NodeId) -> Result<NodeId> {
+		Ok(spread)
 	}
 	/// At `?` after an expression; `Some` replaces the conditional.
 	fn conditional(p: &mut Parser<Self>, expr: NodeId, start: u32, for_init: ForInit) -> Result<Option<NodeId>> {
@@ -352,8 +353,6 @@ pub(crate) trait Extension: Default + Sized {
 	fn make_pattern(p: &mut Parser<Self>, id: NodeId, is_binding: bool, errors: &mut Errors) -> Result<Option<NodeId>> {
 		Ok(None)
 	}
-	/// Replaces the items of a list about to become patterns.
-	fn convert_items(p: &mut Parser<Self>, items: &mut [Option<NodeId>]) {}
 	/// The plain node an extension wrapper stands for in a check, if any.
 	fn unwrap(p: &Parser<Self>, id: NodeId, context: Unwrap) -> Option<NodeId> {
 		None

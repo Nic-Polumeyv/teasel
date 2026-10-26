@@ -183,23 +183,28 @@ impl<E: Extension> Parser<'_, E> {
 		}
 		if let Some(operator) = assignment_operator(self.tok.kind) {
 			let is_eq = operator == AssignmentOperator::Assign;
-			if is_eq {
+			// the checks read what a wrapper stands for, the tree keeps the wrapper
+			let target = if is_eq {
 				left = self.make_pattern(left, false, errors)?;
+				E::unwrap(self, left, Unwrap::InnerPattern)
+			} else {
+				E::unwrap(self, left, Unwrap::Simple)
 			}
+			.unwrap_or(left);
 			let e = errors.as_mut().unwrap();
 			if !own_errors {
 				e.parenthesized_assign = None;
 				e.trailing_comma = None;
 				e.double_proto = None;
 			}
-			if e.shorthand_assign.is_some_and(|p| p >= self.start_of(left)) {
+			if e.shorthand_assign.is_some_and(|p| p >= self.start_of(target)) {
 				e.shorthand_assign = None;
 			}
 			if E::checks_assignment_target(self) {
 				if is_eq {
-					self.check_lval_pattern(left, Binding::None, &mut None)?;
+					self.check_lval_pattern(target, Binding::None, &mut None)?;
 				} else {
-					self.check_lval_simple(left, Binding::None, &mut None)?;
+					self.check_lval_simple(target, Binding::None, &mut None)?;
 				}
 			}
 			self.next()?;
@@ -1346,7 +1351,7 @@ impl<E: Extension> Parser<'_, E> {
 				None
 			} else if self.is(TokenKind::Ellipsis) {
 				let spread = self.parse_spread(errors)?;
-				E::spread(self, spread)?;
+				let spread = E::spread(self, spread)?;
 				if self.is(TokenKind::Comma)
 					&& let Some(e) = errors
 					&& e.trailing_comma.is_none()
@@ -1540,15 +1545,11 @@ impl<E: Extension> Parser<'_, E> {
 			NodeKind::ArrayExpression { elements } => {
 				self.ast.node_mut(id).kind = NodeKind::ArrayPattern { elements };
 				self.check_pattern_errors(errors, true)?;
-				let mut items = self.items();
-				items.extend_from_slice(self.ast.list(elements));
-				E::convert_items(self, &mut items);
-				self.ast.lists[elements.start as usize..(elements.start + elements.len) as usize]
-					.copy_from_slice(&items);
-				for element in items.iter().flatten() {
-					self.make_pattern(*element, is_binding, &mut None)?;
+				for i in 0..elements.len {
+					if let Some(element) = self.nth(elements, i) {
+						self.make_pattern(element, is_binding, &mut None)?;
+					}
 				}
-				self.recycle(items);
 			}
 			NodeKind::SpreadElement { argument } => {
 				let argument = self.make_pattern(argument, is_binding, &mut None)?;
@@ -1584,9 +1585,8 @@ impl<E: Extension> Parser<'_, E> {
 		mut items: Vec<Option<NodeId>>,
 		is_binding: bool,
 	) -> Result<Vec<Option<NodeId>>> {
-		E::convert_items(self, &mut items);
-		for item in items.iter().flatten() {
-			self.make_pattern(*item, is_binding, &mut None)?;
+		for item in items.iter_mut().flatten() {
+			*item = self.make_pattern(*item, is_binding, &mut None)?;
 		}
 		Ok(items)
 	}

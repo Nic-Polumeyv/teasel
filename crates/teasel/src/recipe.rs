@@ -367,7 +367,7 @@ pub const TS: &[(&str, &[Op])] = &[
 	("SatisfiesExpression", &[Through("expression"), Type("TSSatisfiesExpression"), Node("expression", "expression"), Node("typeAnnotation", "type_annotation")]),
 	("NonNullExpression", &[Through("expression"), Type("TSNonNullExpression"), Node("expression", "expression")]),
 	("TypeAssertion", &[Through("expression"), Type("TSTypeAssertion"), Node("typeAnnotation", "type_annotation"), Node("expression", "expression")]),
-	("TypeCastExpression", &[Through("expression"), Type("TSTypeCastExpression"), Node("expression", "expression"), Node("typeAnnotation", "type_annotation")]),
+	("TypeCastExpression", &[Through("expression"), Type("TSTypeCastExpression"), Node("expression", "expression"), Maybe("typeAnnotation", "type_annotation")]),
 	("InstantiationExpression", &[Through("expression"), Type("TSInstantiationExpression"), Node("expression", "expression"), Node("typeArguments", "type_arguments")]),
 	("ParameterProperty", &[Keep("TSParameterProperty"), Through("parameter"), Type("TSParameterProperty"), Node("parameter", "parameter")]),
 	("Decorator", &[Keep("Decorator"), Type("Decorator"), Node("expression", "expression")]),
