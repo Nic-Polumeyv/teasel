@@ -292,3 +292,16 @@ fn nested_ambiguity_is_linear() {
 		assert!(started.elapsed().as_millis() < 100, "{src}");
 	}
 }
+
+#[test]
+fn a_stray_marker_fails_where_it_stands() {
+	let options = Options(Options::MODULE);
+	let error = |src: &str| {
+		let error = at(Entry::Program, src, 0, options, "").unwrap_err();
+		(error.code, error.pos)
+	};
+	use crate::error::Code;
+	assert_eq!(error("[eval: T = (b: U)];"), (Code::UnexpectedTypeAnnotation, 5));
+	assert_eq!(error("({a = 1} += 2);"), (Code::InvalidAssignmentTarget, 1));
+	assert_eq!(error("const g = ({ a }?) => a;"), (Code::OptionalPatternParameter, 11));
+}
