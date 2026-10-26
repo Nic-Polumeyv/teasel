@@ -1406,5 +1406,6 @@ function kept(S: State): Decoded[] {
 		if (S.lines) n.loc = loc(S.C.R.loc, S.locs, id * S.C.R.loc.words);
 		out.push(n);
 	}
-	return out.sort((a, b) => a.start - b.start);
+	// a node comes before what it contains
+	return out.sort((a, b) => a.start - b.start || b.end - a.end);
 }
