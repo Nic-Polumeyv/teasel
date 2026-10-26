@@ -7,12 +7,12 @@ mod declarations;
 mod tests;
 mod types;
 
-use crate::ast::{Ast, FieldKind, List, MethodKind, NodeId, NodeKind, UnaryOperator, VariableKind};
+use crate::ast::{AssignmentOperator, Ast, FieldKind, List, MethodKind, NodeId, NodeKind, UnaryOperator, VariableKind};
 use crate::error::SyntaxError;
 use crate::interner::FastMap;
 use crate::interner::StrId;
 use crate::lexer::token::{Keyword, TokenKind};
-use crate::parser::expression::starts_expression;
+use crate::parser::expression::{assignment_operator, starts_expression};
 use crate::parser::scope::{SCOPE_ARROW, function_flags};
 use crate::parser::statement::{ClassKind, StatementPlace};
 use crate::parser::{
@@ -1668,14 +1668,21 @@ impl Extension for TypeScript {
 		} else {
 			return Ok(item);
 		};
-		Ok(p.ts(
+		let cast = p.ts(
 			TsKind::TypeCastExpression {
 				expression: item,
 				type_annotation,
 				optional,
 			},
 			start,
-		))
+		);
+		// a parameter is never compound-assigned
+		if !p.ext.maybe_in_arrow_parameters
+			|| assignment_operator(p.tok.kind).is_some_and(|op| op != AssignmentOperator::Assign)
+		{
+			p.no_type_casts(&[Some(cast)])?;
+		}
+		Ok(cast)
 	}
 
 	fn spread(p: &mut Parser<Self>, spread: NodeId) -> Result<NodeId> {
@@ -1924,15 +1931,6 @@ impl Extension for TypeScript {
 			(Unwrap::Simple, TsKind::NonNullExpression { expression } | TsKind::AsExpression { expression, .. }) => {
 				Some(expression)
 			}
-			// `a?` alone is still its item as a simple target, `a: T` is not
-			(
-				Unwrap::Simple,
-				TsKind::TypeCastExpression {
-					expression,
-					type_annotation: None,
-					..
-				},
-			) => Some(expression),
 			(
 				Unwrap::InnerPattern,
 				TsKind::ParameterProperty { parameter: inner } | TsKind::TypeCastExpression { expression: inner, .. },

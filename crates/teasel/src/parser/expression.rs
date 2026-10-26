@@ -53,7 +53,7 @@ fn binary_precedence(kind: TokenKind) -> Option<(u8, BinaryOperator)> {
 	})
 }
 
-fn assignment_operator(kind: TokenKind) -> Option<AssignmentOperator> {
+pub(crate) fn assignment_operator(kind: TokenKind) -> Option<AssignmentOperator> {
 	use AssignmentOperator as A;
 	use TokenKind as T;
 	Some(match kind {
@@ -186,11 +186,10 @@ impl<E: Extension> Parser<'_, E> {
 			// the checks read what a wrapper stands for, the tree keeps the wrapper
 			let target = if is_eq {
 				left = self.make_pattern(left, false, errors)?;
-				E::unwrap(self, left, Unwrap::InnerPattern)
+				E::unwrap(self, left, Unwrap::InnerPattern).unwrap_or(left)
 			} else {
-				E::unwrap(self, left, Unwrap::Simple)
-			}
-			.unwrap_or(left);
+				left
+			};
 			let e = errors.as_mut().unwrap();
 			if !own_errors {
 				e.parenthesized_assign = None;
