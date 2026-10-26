@@ -1511,6 +1511,7 @@ impl Extension for TypeScript {
 		element.computed = computed;
 		let start = element.start;
 		let extras = element.extras;
+		let accessor = element.accessor;
 		if p.eat(TokenKind::Question)? {
 			p.ext.elements.last_mut().unwrap().extras.optional = true;
 		}
@@ -1520,6 +1521,9 @@ impl Extension for TypeScript {
 		}
 		if extras.declare && method {
 			return p.error(start, Code::DeclareOnMethod);
+		}
+		if accessor && method {
+			return p.error(start, Code::AccessorPlacement);
 		}
 		Ok(())
 	}

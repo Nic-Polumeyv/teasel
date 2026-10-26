@@ -355,6 +355,7 @@ export const CODES = [
 	'using_in_ambient',
 	'invalid_request',
 	'property_after_instantiation',
+	'accessor_placement',
 ] as const;
 
 /** What a parse error names in `code`; what each means is at Error codes. */
