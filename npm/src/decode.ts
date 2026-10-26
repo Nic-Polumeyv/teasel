@@ -1022,8 +1022,12 @@ function generate(C: Compiled, G: Language, config: number, ops: Op[], ts: boole
 		[B.word, B.byte] = own;
 	}
 	const typescript = G === C.ts && !erase;
-	for (; at < ops.length && !sometimes(ops[at], typescript); at++) {
-		if (holds_nodes(ops[at])) {
+	// a kept node sets no key: the literal goes on past it
+	for (; at < ops.length && (ops[at].op === 'keepif' || !sometimes(ops[at], typescript)); at++) {
+		if (ops[at].op === 'keepif') {
+			const set = conditional(B, ops[at], none, erase);
+			if (set !== undefined) tail.push(set);
+		} else if (holds_nodes(ops[at])) {
 			props.push(`${JSON.stringify(key_of(ops[at]))}: undefined`);
 			fill(ops[at]);
 		} else props.push(`${JSON.stringify(key_of(ops[at]))}: ${value(B, ops[at], none, erase)}`);

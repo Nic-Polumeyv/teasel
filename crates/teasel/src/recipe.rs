@@ -57,7 +57,7 @@ pub enum Op<F: Copy + 'static = Path> {
 	OtherName(&'static str, F, F),
 	/// Erasing lists the node under `typescript` by this name.
 	Keep(&'static str),
-	/// The same when the bool is set, or the enum of two names is at the second.
+	/// The same when the enum of two names is at the second.
 	KeepIf(&'static str, F),
 	/// Erasing, the node gives way to this child, which takes its facts over.
 	Through(F),
@@ -305,7 +305,7 @@ pub(crate) fn resolve_ops(ops: &[Op], fields: &[Field], kind: &str) -> &'static 
 				slot(g, &[|t| matches!(t, Ty::Node)]),
 			),
 			Keep(name) => Keep(name),
-			KeepIf(name, f) => KeepIf(name, slot(f, &[|t| matches!(t, Ty::Bool | Ty::Enum([_, _]))])),
+			KeepIf(name, f) => KeepIf(name, slot(f, &[|t| matches!(t, Ty::Enum([_, _]))])),
 			Through(f) => Through(slot(f, &[|t| matches!(t, Ty::Node)])),
 			EnumOr(k, f, other) => EnumOr(k, slot(f, &[|t| matches!(t, Ty::OptEnum(_))]), other),
 		})
