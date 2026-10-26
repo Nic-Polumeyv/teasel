@@ -1165,7 +1165,7 @@ impl Extension for TypeScript {
 			return p.error(start, Code::ParameterPropertyPattern);
 		}
 		let node = p.ts(TsKind::ParameterProperty { parameter: item }, start);
-		p.extras_mut(node).merge(extras);
+		*p.extras_mut(node) = extras;
 		Ok(Some(node))
 	}
 
@@ -1652,7 +1652,7 @@ impl Extension for TypeScript {
 		let mut extras = frame.extras;
 		extras.is_static &= matches!(p.kind(node), NodeKind::Extension(_));
 		if extras != Extras::default() {
-			p.extras_mut(node).merge(extras);
+			*p.extras_mut(node) = extras;
 		}
 		Ok(())
 	}

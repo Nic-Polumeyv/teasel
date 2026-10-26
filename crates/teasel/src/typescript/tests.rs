@@ -1,5 +1,6 @@
-use super::ast::Data;
-use crate::ast::{Ast, NodeId, NodeKind};
+use super::ast::{Data, Extras};
+use crate::ast::{Ast, List, NodeId, NodeKind};
+use crate::layout::Ty;
 use crate::parser::tests::{Failed, dump as dump_with, expand, one};
 use crate::parser::{Entry, Options};
 
@@ -18,41 +19,28 @@ fn extras(ast: &Ast<Data>, id: NodeId) -> String {
 	let Some(e) = ast.extension.extras(id) else {
 		return String::new();
 	};
-	let mut parts = Vec::new();
-	let node = |name: &str, id: Option<NodeId>, parts: &mut Vec<String>| {
-		if let Some(id) = id {
-			parts.push(format!("{name}: {}", dump(ast, id)));
-		}
-	};
-	node("typeAnnotation", e.type_annotation, &mut parts);
-	node("returnType", e.return_type, &mut parts);
-	node("typeParameters", e.type_parameters, &mut parts);
-	node("typeArguments", e.type_arguments, &mut parts);
-	node("superTypeArguments", e.super_type_arguments, &mut parts);
-	for (name, list) in [("implements", e.implements), ("decorators", e.decorators)] {
-		if let Some(list) = list {
-			parts.push(format!("{name}: {}", expand(ast, &format!("{list:?}"), &extension)));
-		}
-	}
-	if let Some(a) = e.accessibility {
-		parts.push(format!("accessibility: {}", a.as_str()));
-	}
-	for (name, kind) in [("importKind", e.import_kind), ("exportKind", e.export_kind)] {
-		if let Some(kind) = kind {
-			parts.push(format!("{name}: {}", kind.as_str()));
-		}
-	}
-	let flags = [
-		("optional", e.optional),
-		("definite", e.definite),
-		("declare", e.declare),
-		("abstract", e.is_abstract),
-		("readonly", e.readonly),
-		("override", e.is_override),
-		("accessor", e.accessor),
-		("static", e.is_static),
-	];
-	parts.extend(flags.iter().filter(|(_, set)| *set).map(|(name, _)| name.to_string()));
+	let base = e as *const Extras as *const u8;
+	let parts: Vec<String> = Extras::FIELDS
+		.iter()
+		.filter_map(|field| unsafe {
+			let (at, name) = (base.add(field.at), field.name);
+			match field.ty {
+				Ty::Bool => at.cast::<bool>().read().then(|| name.to_owned()),
+				Ty::OptNode => at
+					.cast::<Option<NodeId>>()
+					.read()
+					.map(|id| format!("{name}: {}", dump(ast, id))),
+				Ty::OptList => at
+					.cast::<Option<List>>()
+					.read()
+					.map(|list| format!("{name}: {}", expand(ast, &format!("{list:?}"), &extension))),
+				Ty::OptEnum(names) => names
+					.get(usize::from(at.read()))
+					.map(|value| format!("{name}: {value}")),
+				_ => unreachable!(),
+			}
+		})
+		.collect();
 	if parts.is_empty() {
 		return String::new();
 	}
@@ -91,11 +79,11 @@ fn expression_entry_point() {
 	);
 	assert_eq!(
 		expr(r#"<T>(x: T) => x"#),
-		r#"ArrowFunctionExpression { params: [Identifier { name: "x" }], body: Identifier { name: "x" }, expression: true, is_async: false } +{typeParameters: TypeParameterDeclaration { params: [TypeParameter { name: "T", constraint: None, default: None, is_in: false, is_out: false, is_const: false }] }}"#
+		r#"ArrowFunctionExpression { params: [Identifier { name: "x" }], body: Identifier { name: "x" }, expression: true, is_async: false } +{type_parameters: TypeParameterDeclaration { params: [TypeParameter { name: "T", constraint: None, default: None, is_in: false, is_out: false, is_const: false }] }}"#
 	);
 	assert_eq!(
 		expr(r#"async <T>(x: T) => x"#),
-		r#"ArrowFunctionExpression { params: [Identifier { name: "x" }], body: Identifier { name: "x" }, expression: true, is_async: true } +{typeParameters: TypeParameterDeclaration { params: [TypeParameter { name: "T", constraint: None, default: None, is_in: false, is_out: false, is_const: false }] }}"#
+		r#"ArrowFunctionExpression { params: [Identifier { name: "x" }], body: Identifier { name: "x" }, expression: true, is_async: true } +{type_parameters: TypeParameterDeclaration { params: [TypeParameter { name: "T", constraint: None, default: None, is_in: false, is_out: false, is_const: false }] }}"#
 	);
 	assert_eq!(
 		expr(r#"(x?: number) => x"#),
@@ -111,7 +99,7 @@ fn expression_entry_point() {
 	);
 	assert_eq!(
 		expr(r#"f<T>(x)"#),
-		r#"CallExpression { callee: Identifier { name: "f" }, arguments: [Identifier { name: "x" }], optional: false } +{typeArguments: TypeParameterInstantiation { params: [TypeReference { type_name: Identifier { name: "T" }, type_arguments: None }] }}"#
+		r#"CallExpression { callee: Identifier { name: "f" }, arguments: [Identifier { name: "x" }], optional: false } +{type_arguments: TypeParameterInstantiation { params: [TypeReference { type_name: Identifier { name: "T" }, type_arguments: None }] }}"#
 	);
 	assert_eq!(
 		expr(r#"a < b"#),
@@ -119,7 +107,7 @@ fn expression_entry_point() {
 	);
 	assert_eq!(
 		expr(r#"a<b>(c)"#),
-		r#"CallExpression { callee: Identifier { name: "a" }, arguments: [Identifier { name: "c" }], optional: false } +{typeArguments: TypeParameterInstantiation { params: [TypeReference { type_name: Identifier { name: "b" }, type_arguments: None }] }}"#
+		r#"CallExpression { callee: Identifier { name: "a" }, arguments: [Identifier { name: "c" }], optional: false } +{type_arguments: TypeParameterInstantiation { params: [TypeReference { type_name: Identifier { name: "b" }, type_arguments: None }] }}"#
 	);
 	assert_eq!(
 		expr(r#"class { }"#),
