@@ -490,7 +490,11 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 		self.key("typescript");
 		self.json.list();
 		let mut kept = std::mem::take(&mut self.kept);
-		kept.sort_unstable_by_key(|&(_, id)| self.ast.node(id).start);
+		// a decorated field starts at its first decorator, which comes first
+		kept.sort_by_key(|&(_, id)| {
+			let node = self.ast.node(id);
+			(node.start, node.end)
+		});
 		for &(ty, id) in &kept {
 			self.json.begin(ty);
 			let node = self.ast.node(id);
