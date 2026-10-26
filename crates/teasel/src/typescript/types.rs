@@ -1252,9 +1252,15 @@ fn misplaced(seen: &Modifiers, modifier: &'static str) -> Option<(Code, [Option<
 		.into_iter()
 		.find_map(|(before, after)| order(before, after))
 		.or_else(|| {
-			[("declare", "override"), ("static", "abstract"), ("private", "abstract")]
-				.into_iter()
-				.find_map(|(a, b)| conflict(a, b))
+			[
+				("declare", "override"),
+				("static", "abstract"),
+				("private", "abstract"),
+				("accessor", "readonly"),
+				("accessor", "declare"),
+			]
+			.into_iter()
+			.find_map(|(a, b)| conflict(a, b))
 		}),
 	}
 }

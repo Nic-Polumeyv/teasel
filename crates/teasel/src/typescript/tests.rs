@@ -166,11 +166,25 @@ fn accessor_belongs_to_a_property() {
 		let error = at(Entry::Program, src, 0, options, "").unwrap_err();
 		(error.code, error.pos)
 	};
-	let placement = crate::error::Code::AccessorPlacement;
-	assert_eq!(error("class A { accessor get x() {} }"), (placement, 10));
-	assert_eq!(error("class A { accessor set x(v) {} }"), (placement, 10));
-	assert_eq!(error("class A { accessor constructor() {} }"), (placement, 10));
-	assert!(at(Entry::Program, "class A { accessor x = 1 }", 0, options, "").is_ok());
+	use crate::error::Code;
+	assert_eq!(error("class A { accessor get x() {} }"), (Code::AccessorPlacement, 10));
+	assert_eq!(error("class A { accessor set x(v) {} }"), (Code::AccessorPlacement, 10));
+	assert_eq!(
+		error("class A { accessor constructor() {} }"),
+		(Code::AccessorPlacement, 10)
+	);
+	assert_eq!(
+		error("class A { static accessor m() {} }"),
+		(Code::AccessorPlacement, 10)
+	);
+	assert_eq!(
+		error("class A { accessor readonly x = 1 }"),
+		(Code::ConflictingModifiers, 19)
+	);
+	assert_eq!(
+		error("class A { accessor declare x: T }"),
+		(Code::ConflictingModifiers, 19)
+	);
 }
 
 #[test]
