@@ -57,7 +57,7 @@ pub enum Op<F: Copy + 'static = Path> {
 	OtherName(&'static str, F, F),
 	/// Erasing lists the node under `typescript` by this name.
 	Keep(&'static str),
-	/// The same when the bool is set.
+	/// The same when the bool is set, or the enum of two names is at the second.
 	KeepIf(&'static str, F),
 	/// Erasing, the node gives way to this child, which takes its facts over.
 	Through(F),
@@ -175,7 +175,7 @@ pub const JS: &[(&str, &[Op])] = &[
 	("ClassDeclaration", &[Type("ClassDeclaration"), Opt("id", "class.id"), Opt("superClass", "class.super_class"), Node("body", "class.body")]),
 	("ClassBody", &[Type("ClassBody"), List("body", "body")]),
 	("MethodDefinition", &[Type("MethodDefinition"), Bool("static", "is_static"), Bool("computed", "computed"), Node("key", "key"), Enum("kind", "kind"), Node("value", "value")]),
-	("PropertyDefinition", &[TypeOf("kind"), Bool("static", "is_static"), Bool("computed", "computed"), Node("key", "key"), Opt("value", "value")]),
+	("PropertyDefinition", &[TypeOf("kind"), Bool("static", "is_static"), Bool("computed", "computed"), Node("key", "key"), Opt("value", "value"), KeepIf("AccessorProperty", "kind")]),
 	("StaticBlock", &[Type("StaticBlock"), List("body", "body")]),
 	("YieldExpression", &[Type("YieldExpression"), Bool("delegate", "delegate"), Opt("argument", "argument")]),
 	("AwaitExpression", &[Type("AwaitExpression"), Node("argument", "argument")]),
@@ -305,7 +305,7 @@ pub(crate) fn resolve_ops(ops: &[Op], fields: &[Field], kind: &str) -> &'static 
 				slot(g, &[|t| matches!(t, Ty::Node)]),
 			),
 			Keep(name) => Keep(name),
-			KeepIf(name, f) => KeepIf(name, slot(f, &[|t| matches!(t, Ty::Bool)])),
+			KeepIf(name, f) => KeepIf(name, slot(f, &[|t| matches!(t, Ty::Bool | Ty::Enum([_, _]))])),
 			Through(f) => Through(slot(f, &[|t| matches!(t, Ty::Node)])),
 			EnumOr(k, f, other) => EnumOr(k, slot(f, &[|t| matches!(t, Ty::OptEnum(_))]), other),
 		})
@@ -425,11 +425,8 @@ const FUNCTION: &[Op] = &[Maybe("returnType", "return_type"), Maybe("typeParamet
 #[rustfmt::skip]
 const CLASS: &[Op] = &[Maybe("typeParameters", "type_parameters"), Maybe("superTypeArguments", "super_type_arguments"), Maybe("implements", "implements"), Maybe("decorators", "decorators"), Bool("declare", "declare"), Bool("abstract", "is_abstract")];
 
-/// The same when erasing: the proposals JavaScript itself has, decorators and accessor fields.
-pub const EXTRAS_ERASED: &[Op] = &[
-	OptListKey("decorators", "decorators"),
-	KeepIf("AccessorProperty", "accessor"),
-];
+/// The same when erasing: decorators, a proposal JavaScript itself has.
+pub const EXTRAS_ERASED: &[Op] = &[OptListKey("decorators", "decorators")];
 
 /// How each table's rows are spelled: the recipes of the answer's `scopes`, `bindings`,
 /// `references` and `roots`.

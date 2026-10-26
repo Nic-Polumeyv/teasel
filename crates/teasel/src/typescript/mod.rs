@@ -163,11 +163,13 @@ struct ElementFrame {
 	computed: bool,
 	/// The ambient flag before a `declare` member set it.
 	outer_ambient: Option<bool>,
+	accessor: bool,
 }
 
-#[derive(Default)]
+#[derive(Default, PartialEq)]
 pub(crate) struct Modifiers {
 	pub extras: Extras,
+	pub accessor: bool,
 	pub is_in: bool,
 	pub is_out: bool,
 	pub is_const: bool,
@@ -204,7 +206,7 @@ modifiers! {
 	"abstract" => extras.is_abstract = true,
 	"override" => extras.is_override = true,
 	"readonly" => extras.readonly = true,
-	"accessor" => extras.accessor = true,
+	"accessor" => accessor = true,
 	"static" => extras.is_static = true,
 	"in" => is_in = true,
 	"out" => is_out = true,
@@ -1444,7 +1446,7 @@ impl Extension for TypeScript {
 			}
 			modifiers.extras.decorators = Some(p.list_of(&decorators));
 		}
-		if modifiers.extras != Extras::default() && p.is_contextual("static") && p.peek_char().0 == Some('{') {
+		if modifiers != Modifiers::default() && p.is_contextual("static") && p.peek_char().0 == Some('{') {
 			let snapshot = p.token_snapshot();
 			p.next()?;
 			p.next()?;
@@ -1462,6 +1464,7 @@ impl Extension for TypeScript {
 			key: None,
 			computed: false,
 			outer_ambient,
+			accessor: modifiers.accessor,
 		});
 		Ok(modifiers.extras.is_static)
 	}
@@ -1482,7 +1485,7 @@ impl Extension for TypeScript {
 			}
 			return Ok(None);
 		};
-		let extras = p.ext.elements.last().unwrap().extras;
+		let ElementFrame { extras, accessor, .. } = *p.ext.elements.last().unwrap();
 		if extras.is_abstract {
 			return p.error_arg(start, Code::IndexSignatureModifier, "abstract");
 		}
@@ -1495,6 +1498,9 @@ impl Extension for TypeScript {
 		}
 		if extras.is_override {
 			return p.error_arg(start, Code::IndexSignatureModifier, "override");
+		}
+		if accessor {
+			return p.error_arg(start, Code::IndexSignatureModifier, "accessor");
 		}
 		Ok(Some(signature))
 	}
@@ -1592,7 +1598,7 @@ impl Extension for TypeScript {
 		if let Some(outer) = frame.outer_ambient {
 			p.ext.ambient = outer;
 		}
-		if frame.extras.accessor
+		if frame.accessor
 			&& let NodeKind::PropertyDefinition { kind, .. } = &mut p.ast.node_mut(node).kind
 		{
 			*kind = FieldKind::Accessor;

@@ -48,9 +48,7 @@ impl crate::ast::Reuse for Data {
 
 	fn rare(&self, set: &mut crate::ast::NodeSet) {
 		for &owner in self.extras.owners() {
-			if let Some(extras) = self.extras(owner)
-				&& (extras.decorators.is_some() || extras.accessor)
-			{
+			if self.extras(owner).is_some_and(|extras| extras.decorators.is_some()) {
 				set.insert(owner);
 			}
 		}
@@ -168,7 +166,6 @@ crate::layout::record! {
 		pub is_abstract: bool,
 		pub readonly: bool,
 		pub is_override: bool,
-		pub accessor: bool,
 		pub is_static: bool,
 	}
 }
@@ -890,12 +887,9 @@ impl Emit for Data {
 			kind => &recipes.adds[crate::estree::tag(&kind as *const NodeKind as *const u8)],
 		};
 		w.run(id, ops, base);
-		// an accessor is its kind's type, not a key; an unlisted extra is a parser bug, which a test
-		// build catches and a shipped build answers around
+		// an unlisted extra is a parser bug, which a test build catches and a shipped build answers around
 		if cfg!(debug_assertions)
-			&& let Some(field) = extras
-				.set()
-				.find(|&field| field != "accessor" && !read.contains(&field))
+			&& let Some(field) = extras.set().find(|&field| !read.contains(&field))
 		{
 			panic!("{:?} has {field}, which its kind does not list", w.kind(id));
 		}
