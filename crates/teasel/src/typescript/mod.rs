@@ -137,8 +137,6 @@ struct FunctionFrame {
 	type_parameters: Option<NodeId>,
 	return_type: Option<NodeId>,
 	arrow_parameters: bool,
-	/// The first optional binding pattern among the parameters: an error once a body follows.
-	optional_pattern: Option<u32>,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -256,6 +254,15 @@ impl Parser<'_, TypeScript> {
 			let initialized = matches!(self.kind(param), NodeKind::AssignmentPattern { .. });
 			if optional && initialized {
 				return self.error(self.start_of(param), Code::OptionalWithInitializer);
+			}
+			if optional
+				&& !signature
+				&& !self.ext.ambient
+				&& matches!(
+					self.kind(binding),
+					NodeKind::ObjectPattern { .. } | NodeKind::ArrayPattern { .. }
+				) {
+				return self.error(self.start_of(param), Code::OptionalPatternParameter);
 			}
 			if signature && let Some(default) = self.first_default(param) {
 				let at = if default == param { item } else { default };
@@ -1108,17 +1115,6 @@ impl Extension for TypeScript {
 		};
 		let rest = matches!(p.kind(left), NodeKind::RestElement { .. });
 		if !this && p.eat(TokenKind::Question)? {
-			if !matches!(p.kind(left), NodeKind::Identifier { .. }) && !p.ext.ambient && !p.lexer.in_type {
-				// a signature without a body may have one; the parameters come before that is known
-				let pos = p.start_of(left);
-				let arrow = p.ext.maybe_in_arrow_parameters;
-				match p.ext.functions.last_mut() {
-					Some(frame) if !arrow => {
-						frame.optional_pattern.get_or_insert(pos);
-					}
-					_ => return p.error(pos, Code::OptionalPatternParameter),
-				}
-			}
 			p.extras_mut(left).optional = true;
 		}
 		if p.is(TokenKind::Colon) {
@@ -1291,9 +1287,6 @@ impl Extension for TypeScript {
 		}
 		if p.ext.ambient && bodiless.is_some() {
 			return p.error(start, Code::ImplementationInAmbient);
-		}
-		if let Some(pos) = p.ext.functions.last().unwrap().optional_pattern {
-			return p.error(pos, Code::OptionalPatternParameter);
 		}
 		Ok(None)
 	}
