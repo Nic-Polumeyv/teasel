@@ -160,6 +160,20 @@ fn optional_marker_needs_an_arrow() {
 }
 
 #[test]
+fn accessor_belongs_to_a_property() {
+	let options = Options(Options::MODULE);
+	let error = |src: &str| {
+		let error = at(Entry::Program, src, 0, options, "").unwrap_err();
+		(error.code, error.pos)
+	};
+	let placement = crate::error::Code::AccessorPlacement;
+	assert_eq!(error("class A { accessor get x() {} }"), (placement, 10));
+	assert_eq!(error("class A { accessor set x(v) {} }"), (placement, 10));
+	assert_eq!(error("class A { accessor constructor() {} }"), (placement, 10));
+	assert!(at(Entry::Program, "class A { accessor x = 1 }", 0, options, "").is_ok());
+}
+
+#[test]
 fn program_in_a_range() {
 	let src = "<script>let a: number = 1;</script>{a}";
 	let (ast, root, _) = one(super::parse_at(
