@@ -1694,17 +1694,14 @@ impl Extension for TypeScript {
 		}
 		let start = p.tok.start;
 		let type_annotation = Some(p.parse_type_annotation(true, None)?);
-		let cast = p.ts(
+		Ok(p.ts(
 			TsKind::TypeCastExpression {
 				expression: spread,
 				type_annotation,
 				optional: false,
 			},
 			start,
-		);
-		// the rest of an async arrow's arguments ends before its annotation
-		p.ast.node_mut(cast).end = p.end_of(spread);
-		Ok(cast)
+		))
 	}
 
 	fn conditional(p: &mut Parser<Self>, expr: NodeId, start: u32, for_init: ForInit) -> Result<Option<NodeId>> {
