@@ -378,7 +378,9 @@ impl Parser<'_, TypeScript> {
 			expression
 		};
 		if self.eat(TokenKind::ParenL)? {
+			TypeScript::paren_list_start(self, false);
 			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut None)?;
+			TypeScript::paren_list_end(self);
 			self.no_type_casts(&args)?;
 			let arguments = self.list_from(args);
 			let callee_start = self.start_of(expression);
@@ -709,7 +711,9 @@ impl Parser<'_, TypeScript> {
 		}
 		if !no_calls && self.eat(TokenKind::ParenL)? {
 			let mut errors = Some(DestructuringErrors::default());
+			TypeScript::paren_list_start(self, false);
 			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut errors)?;
+			TypeScript::paren_list_end(self);
 			self.no_type_casts(&args)?;
 			let arguments = self.list_from(args);
 			let node = self.add(
@@ -1651,10 +1655,10 @@ impl Extension for TypeScript {
 		p.try_generic_arrow(p.tok.start, false, for_init)
 	}
 
-	fn paren_list_start(p: &mut Parser<Self>) {
+	fn paren_list_start(p: &mut Parser<Self>, parameters: bool) {
 		let inside = p.ext.maybe_in_arrow_parameters;
 		p.ext.paren_lists.push(inside);
-		p.ext.maybe_in_arrow_parameters = true;
+		p.ext.maybe_in_arrow_parameters = parameters;
 	}
 
 	fn paren_list_end(p: &mut Parser<Self>) {

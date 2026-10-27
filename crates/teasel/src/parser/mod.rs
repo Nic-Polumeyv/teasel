@@ -278,7 +278,8 @@ pub(crate) trait Extension: Default + Sized {
 		Ok(None)
 	}
 	/// Entering a parenthesized list that may turn out to be arrow parameters.
-	fn paren_list_start(p: &mut Parser<Self>) {}
+	/// A list opens; `parameters` when it may turn out to be a function's parameters.
+	fn paren_list_start(p: &mut Parser<Self>, parameters: bool) {}
 	fn paren_list_end(p: &mut Parser<Self>) {}
 	/// An item of a parenthesized list, after its expression.
 	fn paren_item(p: &mut Parser<Self>, item: NodeId) -> Result<NodeId> {

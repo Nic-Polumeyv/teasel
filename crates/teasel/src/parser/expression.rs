@@ -564,7 +564,7 @@ impl<E: Extension> Parser<'_, E> {
 		if !no_calls && self.eat(TokenKind::ParenL)? {
 			let mut errors = Some(DestructuringErrors::default());
 			let old = self.take_yield_await();
-			E::paren_list_start(self);
+			E::paren_list_start(self, maybe_async_arrow);
 			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut errors)?;
 			E::paren_list_end(self);
 			if maybe_async_arrow && !optional && E::should_parse_async_arrow(self, start)? {
@@ -681,7 +681,9 @@ impl<E: Extension> Parser<'_, E> {
 			}
 			TokenKind::BracketL => {
 				self.next()?;
+				E::paren_list_start(self, false);
 				let elements = self.parse_expr_list(TokenKind::BracketR, true, true, errors)?;
+				E::paren_list_end(self);
 				E::list_items(self, &elements)?;
 				let elements = self.list_from(elements);
 				Ok(self.add(NodeKind::ArrayExpression { elements }, start))
@@ -811,7 +813,7 @@ impl<E: Extension> Parser<'_, E> {
 	/// Parses the comma-separated expressions after an opening paren through the closing one,
 	/// which may turn out to be arrow function parameters.
 	pub(crate) fn parse_paren_items(&mut self) -> Result<ParenItems> {
-		E::paren_list_start(self);
+		E::paren_list_start(self, true);
 		let inner_start = self.tok.start;
 		let mut items = self.items();
 		let mut first = true;
@@ -880,7 +882,9 @@ impl<E: Extension> Parser<'_, E> {
 			return self.error(self.start_of(callee), Code::InvalidSuper);
 		}
 		let arguments = if self.eat(TokenKind::ParenL)? {
+			E::paren_list_start(self, false);
 			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut None)?;
+			E::paren_list_end(self);
 			E::list_items(self, &args)?;
 			self.list_from(args)
 		} else {

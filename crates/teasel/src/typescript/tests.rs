@@ -154,7 +154,7 @@ fn optional_marker_needs_an_arrow() {
 	};
 	assert_eq!(error("(a, b?)"), (crate::error::Code::UnexpectedToken, 5));
 	assert_eq!(error("(a?)"), (crate::error::Code::UnexpectedToken, 2));
-	assert_eq!(error("f(a?)"), (crate::error::Code::UnexpectedToken, 3));
+	assert_eq!(error("f(a?)"), (crate::error::Code::UnexpectedToken, 4));
 	assert!(at(Entry::Expression, "(a, b?) => a", 0, options, "").is_ok());
 	assert!(at(Entry::Expression, "f((a?) => a)", 0, options, "").is_ok());
 }
