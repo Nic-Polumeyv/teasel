@@ -248,8 +248,8 @@ pub struct Spare {
 	regexp: crate::lexer::regexp::Scratch,
 	stop_ranges: Vec<(u32, u32, bool)>,
 	// built for every parse, it cost the pieces of a JavaScript document 1.5%; a plain field moved in
-	// and out of here, documents read as JavaScript 1.4% and TypeScript apps 1.1%; held in the tree
-	// outside these buffers, documents 0.6 to 0.9% and TypeScript conformance 0.7 to 0.9%
+	// and out of here, or held in the tree outside these buffers, read no faster: documents 1% and
+	// TypeScript apps 1 to 1.6% slower, at the 1% noise of code placement
 	typescript: Option<Box<TypeScript>>,
 }
 
@@ -346,7 +346,7 @@ impl<'a> Parser<'a> {
 		lexer.set_stops(stop);
 		let ts = match spare.typescript {
 			Some(mut ts) => {
-				// cleared keeping the room of its stacks and tables instead, TypeScript apps read no faster
+				// cleared keeping the room of its stacks and tables instead, TypeScript apps read 0 to 1% slower
 				if options.typescript() {
 					*ts = TypeScript::default();
 				}
