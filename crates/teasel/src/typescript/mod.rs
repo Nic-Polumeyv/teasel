@@ -970,8 +970,8 @@ impl TypeScript {
 		}
 	}
 
-	/// Whether an `export` here belongs to TypeScript's own scoping, a namespace body say: the
-	/// script goal does not forbid it, and its list names that body's scope.
+	/// Whether an `export` here belongs to TypeScript's own scoping, a namespace body say, so the
+	/// script goal does not forbid it.
 	#[cold]
 	pub(crate) fn exports_in_script(p: &Parser) -> bool {
 		p.ts.module_blocks > 0

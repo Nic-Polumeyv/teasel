@@ -212,7 +212,6 @@ pub(crate) struct Parser<'a> {
 	pub(crate) scopes: Vec<Scope>,
 	/// Name vectors of scopes left, for the next scope entered.
 	spare_names: Vec<Vec<scope::Name>>,
-	/// Names declared so far, the next one's serial.
 	declarations: u32,
 	/// List buffers earlier lists gave back: a list costs no allocation after the first at its depth.
 	spare_lists: Vec<Vec<Option<NodeId>>>,

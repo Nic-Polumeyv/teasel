@@ -37,15 +37,11 @@ pub(crate) enum Binding {
 const VAR: u8 = 1;
 const LEXICAL: u8 = 2;
 const FUNCTION: u8 = 4;
-/// A TypeScript type: a second type alias of the name in its scope is an error.
 pub(crate) const TYPE: u8 = 8;
-/// A TypeScript name that binds no value but may be exported: an enum, a namespace, a type-only
-/// import, an ambient function.
 pub(crate) const EXPORT_ONLY: u8 = 16;
 
 pub(crate) struct Scope {
 	pub flags: u32,
-	/// The names declared here, in declaration order.
 	names: Vec<Name>,
 	/// The same by name, once the list is long enough that a scan costs more than a lookup.
 	index: Option<FastMap<StrId, u8>>,
@@ -57,7 +53,6 @@ pub(crate) struct Name {
 	kind: u8,
 	/// What the index held for the name before.
 	before: u8,
-	/// The parse's count of declarations when this one was made, which a mark keeps too.
 	serial: u32,
 }
 
