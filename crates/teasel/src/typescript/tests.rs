@@ -342,3 +342,11 @@ fn an_async_rest_ends_after_its_annotation() {
 		.unwrap();
 	assert_eq!((ast.node(rest).start, ast.node(rest).end), (24, 41));
 }
+
+#[test]
+fn a_this_parameter_erases_wherever_it_stands() {
+	let request = crate::json::Request::from_flags(Options::MODULE | Options::ERASE);
+	for src in ["function f(this: void, a) {}", "function f(a, this: void) {}"] {
+		assert!(!crate::json::parse(src, &request).contains("\"this\""), "{src}");
+	}
+}

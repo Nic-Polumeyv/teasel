@@ -123,8 +123,6 @@ interface Compiled {
 	kind: number;
 	extension: number;
 	host: number;
-	identifier: number;
-	name: number;
 	/** An extras record with nothing set. */
 	blank: Uint32Array;
 	R: Records;
@@ -246,8 +244,6 @@ function compile(engine: Views): Compiled {
 		kind: layout.node.kind,
 		extension: tag('Extension'),
 		host: tag('Host'),
-		identifier: tag('Identifier'),
-		name: layout.kinds[tag('Identifier')].fields[0].at,
 		blank,
 		R,
 		payload: (layout.node.kind + field(layout.kinds[tag('Host')].fields, '0').at) >> 2,
@@ -504,7 +500,7 @@ interface Spelling<E, St> {
 	at(table: E, index: E): E;
 	/** The node with an id, built into the node at hand. */
 	built(id: E): E;
-	items(start: E, len: E, params: boolean): E;
+	items(start: E, len: E): E;
 	pair(a: E, b: E): E;
 	object(fields: [string, E][]): E;
 	/** The node's own text, `back` characters short of its end; and the source between two offsets. */
@@ -541,7 +537,6 @@ const child = <E, St>(B: Spelling<E, St>, word: E, typescript = false): E => {
 const holds_nodes = (op: Op) =>
 	op.op === 'node' ||
 	op.op === 'list' ||
-	op.op === 'params' ||
 	op.op === 'othername' ||
 	(op.op === 'opt' && op.ty !== '?str' && op.ty !== '?u32') ||
 	(op.op === 'maybe' && op.ty !== '?enum') ||
@@ -549,7 +544,7 @@ const holds_nodes = (op: Op) =>
 	(op.op === 'object' && op.inner.some(holds_nodes));
 
 /** An operation every node of the kind has: its value. */
-function value<E, St>(B: Spelling<E, St>, op: Op, none: Missing, erase: boolean): E {
+function value<E, St>(B: Spelling<E, St>, op: Op, none: Missing): E {
 	switch (op.op) {
 		case 'node':
 			return child(B, B.word(op.at));
@@ -565,7 +560,7 @@ function value<E, St>(B: Spelling<E, St>, op: Op, none: Missing, erase: boolean)
 			if (op.ty === '?enum') return B.at(B.table(op.names), B.byte(op.at));
 			if (op.ty === '?node') return child(B, B.word(op.at), true);
 			const [tag, from] = tagged(none.list, op.at);
-			return B.pick(B.eq(B.word(tag), B.lit(none.list.missing)), B.empty(), B.items(B.word(from), B.word(from + 4), false));
+			return B.pick(B.eq(B.word(tag), B.lit(none.list.missing)), B.empty(), B.items(B.word(from), B.word(from + 4)));
 		}
 		case 'modifier':
 			return B.at(B.table(op.names.map((name) => (name === 'true' ? true : name))), B.byte(op.at));
@@ -574,8 +569,7 @@ function value<E, St>(B: Spelling<E, St>, op: Op, none: Missing, erase: boolean)
 		case 'pair':
 			return B.pair(B.word(op.at), B.word(op.at + 4));
 		case 'list':
-		case 'params':
-			return B.items(B.word(op.at), B.word(op.at + 4), op.op === 'params' && erase);
+			return B.items(B.word(op.at), B.word(op.at + 4));
 		case 'bool':
 			return B.eq(B.byte(op.at), B.lit(1));
 		case 'str':
@@ -607,7 +601,7 @@ function value<E, St>(B: Spelling<E, St>, op: Op, none: Missing, erase: boolean)
 		case 'emptylist':
 			return B.empty();
 		case 'object':
-			return B.object(op.inner.map((inner) => [inner.key, value(B, inner, none, erase)]));
+			return B.object(op.inner.map((inner) => [inner.key, value(B, inner, none)]));
 		case 'host':
 			return host_value(B, op.value, op.at);
 		case 'othername': {
@@ -624,7 +618,7 @@ function conditional<E, St>(B: Spelling<E, St>, op: Op, none: Missing, erase: bo
 	switch (op.op) {
 		case 'optlistkey': {
 			const [tag, from] = tagged(none.list, op.at);
-			return B.when(B.ne(B.word(tag), B.lit(none.list.missing)), () => [B.set(key, B.items(B.word(from), B.word(from + 4), false))]);
+			return B.when(B.ne(B.word(tag), B.lit(none.list.missing)), () => [B.set(key, B.items(B.word(from), B.word(from + 4)))]);
 		}
 		case 'optstrkey': {
 			const [tag, from] = tagged(none.str, op.at);
@@ -646,7 +640,7 @@ function host_value<E, St>(B: Spelling<E, St>, tag: string, at: number): E {
 		case 'node':
 			return B.built(a);
 		case 'nodes':
-			return B.items(a, b, false);
+			return B.items(a, b);
 		case 'comments':
 			return B.comments();
 		case 'str':
@@ -687,7 +681,7 @@ class Closures implements Spelling<Value, Stmt> {
 	table = (list: (string | true)[]): Value => () => list;
 	at = (table: Value, index: Value): Value => (S, V, b, n, L) => table(S, V, b, n, L)[index(S, V, b, n, L)];
 	built = (id: Value): Value => (S, V, b, n, L) => build(S, id(S, V, b, n, L), n);
-	items = (start: Value, len: Value, params_: boolean): Value => (S, V, b, n, L) => (params_ ? params : items)(S, start(S, V, b, n, L), len(S, V, b, n, L), n);
+	items = (start: Value, len: Value): Value => (S, V, b, n, L) => items(S, start(S, V, b, n, L), len(S, V, b, n, L), n);
 	pair = (a: Value, c: Value): Value => (S, V, b, n, L) => [a(S, V, b, n, L), c(S, V, b, n, L)];
 	object = (fields: [string, Value][]): Value => (S, V, b, n, L) => {
 		const o: Decoded = {};
@@ -749,7 +743,7 @@ function program(ops: Op[], none: Missing, typescript: boolean) {
 		if (sometimes(op, typescript)) {
 			const set = conditional(B, op, none, true);
 			if (set !== undefined) body.push(set);
-		} else body.push(B.set(key_of(op), value(B, op, none, true)));
+		} else body.push(B.set(key_of(op), value(B, op, none)));
 	}
 	return (made[+typescript] = { slots: B.slots, lead: B.lead, body });
 }
@@ -855,15 +849,6 @@ function items(S: State, start: number, len: number, parent: Decoded | undefined
 	return out;
 }
 
-// erasing drops TypeScript's `this` parameter
-function params(S: State, start: number, len: number, parent: Decoded | undefined) {
-	if (S.erase && len > 0 && S.L[start] !== 0) {
-		const first = (S.L[start] - 1) * S.C.words * 4 + S.C.kind;
-		if (S.N[first >> 2] === S.C.identifier && S.strings[S.N[(first + S.C.name) >> 2]] === 'this') return items(S, start + 1, len - 1, parent);
-	}
-	return items(S, start, len, parent);
-}
-
 const finite = (value: number) => (Number.isFinite(value) ? value : null);
 const bigint_value = (digits: string) => BigInt(digits.replaceAll('_', ''));
 const bigint = (digits: string) => bigint_value(digits).toString();
@@ -930,7 +915,7 @@ class Source implements Spelling<string, string> {
 	at = (table: string, index: string) => `${table}[${index}]`;
 	// a child's builder is looked up where the child is read: each site sees its own few kinds
 	built = (id: string, into = 'n') => `J[N[${id} * ${this.words} + ${this.kind >> 2}]](S, ${id}, 0, ${into})`;
-	items = (start: string, len: string, params: boolean) => `${params ? 'params' : 'items'}(S, ${start}, ${len}, n)`;
+	items = (start: string, len: string) => `items(S, ${start}, ${len}, n)`;
 	pair = (a: string, b: string) => `[${a}, ${b}]`;
 	object = (fields: [string, string][]) => `{ ${fields.map(([key, field]) => `${JSON.stringify(key)}: ${field}`).join(', ')} }`;
 	slice = (back: number) => `S.source.slice(S.P[p], S.P[p + 1]${back === 0 ? '' : ` - ${back}`})`;
@@ -1004,7 +989,7 @@ function generate(C: Compiled, G: Language, config: number, ops: Op[], ts: boole
 	const fill = (op: Op) => {
 		const lead = B.lead;
 		B.lead = tail;
-		const v = value(B, op, none, erase);
+		const v = value(B, op, none);
 		B.lead = lead;
 		tail.push(B.set(key_of(op), v));
 	};
@@ -1017,7 +1002,7 @@ function generate(C: Compiled, G: Language, config: number, ops: Op[], ts: boole
 			if (holds_nodes(op)) {
 				props.push(`${JSON.stringify(key_of(op))}: undefined`);
 				fill(op);
-			} else props.push(`${JSON.stringify(key_of(op))}: ${value(B, op, none, erase)}`);
+			} else props.push(`${JSON.stringify(key_of(op))}: ${value(B, op, none)}`);
 		}
 		[B.word, B.byte] = own;
 	}
@@ -1030,7 +1015,7 @@ function generate(C: Compiled, G: Language, config: number, ops: Op[], ts: boole
 		} else if (holds_nodes(ops[at])) {
 			props.push(`${JSON.stringify(key_of(ops[at]))}: undefined`);
 			fill(ops[at]);
-		} else props.push(`${JSON.stringify(key_of(ops[at]))}: ${value(B, ops[at], none, erase)}`);
+		} else props.push(`${JSON.stringify(key_of(ops[at]))}: ${value(B, ops[at], none)}`);
 	}
 	for (; at < ops.length; at++) {
 		const op = ops[at];
@@ -1064,7 +1049,7 @@ function generate(C: Compiled, G: Language, config: number, ops: Op[], ts: boole
 	}
 	const lead = B.lead;
 	const body = `const N = S.N, J = S.J, b = id * ${C.words}${ts ? ', T = S.TS' : ''}; ${lead.length !== 0 && lead[lead.length - 1].includes('return J[') ? lead.join(' ') : `if (${rare.join(' || ')}) return slow(S, id, t, parent); ${before.join(' ')} const p = id * S.ps + S.po; ${lead.join(' ')} const n = { ${props.join(', ')} }; ${slots.join(' ')} ${tail.join(' ')} ${after.join(' ')} return n;`}`;
-	return new Function('K', 'slow', 'items', 'params', 'finite', 'bigint', 'bigint_value', 'regexp', 'late', 'PARENT', 'SCOPE', 'REFERENCE', `return (S, id, t, parent) => { ${body} };`)(B.constants, slow, items, params, finite, bigint, bigint_value, regexp, late, PARENT, SCOPE, REFERENCE);
+	return new Function('K', 'slow', 'items', 'finite', 'bigint', 'bigint_value', 'regexp', 'late', 'PARENT', 'SCOPE', 'REFERENCE', `return (S, id, t, parent) => { ${body} };`)(B.constants, slow, items, finite, bigint, bigint_value, regexp, late, PARENT, SCOPE, REFERENCE);
 }
 
 function strs(S: State, start: number, len: number): string[] {
@@ -1169,11 +1154,11 @@ function row(C: Compiled, name: Table, ops: Op[], linked: Linked | undefined): R
 	const none = C.layout.none;
 	const props = ops.map((op) => {
 		const key = JSON.stringify(op.key), into = linked?.into[op.key];
-		if (into === undefined) return `${key}: ${value(B, op, none, false)}`;
+		if (into === undefined) return `${key}: ${value(B, op, none)}`;
 		const t = into === name ? 'T' : `S.${into}`;
 		if (op.op === 'pair') return `${key}: ${t}.slice(${B.word(op.at)}, ${B.word(op.at + 4)})`;
 		if (op.op === 'int') return `${key}: ${t}[${B.word(op.at)}]`;
-		const v = B.hold(value(B, op, none, false));
+		const v = B.hold(value(B, op, none));
 		return `${key}: ${v} === null ? null : ${t}[${v}]`;
 	});
 	if (linked !== undefined) for (const key in linked.held) props.push(`${JSON.stringify(key)}: ${JSON.stringify(linked.held[key])}`);

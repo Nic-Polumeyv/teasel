@@ -774,22 +774,6 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 		self.json.end();
 	}
 
-	/// A parameter list; erasing drops TypeScript's `this` parameter.
-	fn params(&mut self, key: &'static str, list: List) {
-		if self.options.has(Options::ERASE)
-			&& let Some(&Some(first)) = self.ast.list(list).first()
-			&& let NodeKind::Identifier { name } = self.ast.node(first).kind
-			&& self.ast.str(name) == "this"
-		{
-			let rest = List {
-				start: list.start + 1,
-				len: list.len - 1,
-			};
-			return self.list(key, rest);
-		}
-		self.list(key, list)
-	}
-
 	fn bool(&mut self, key: &'static str, value: bool) {
 		self.key(key);
 		self.json.bool(value);
@@ -914,7 +898,6 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 						self.list(key, list);
 					}
 				}
-				Op::Params(key, slot) => self.params(key, get(base, slot)),
 				Op::Bool(key, slot) => self.bool(key, get(base, slot)),
 				Op::Str(key, slot) => self.interned(key, get(base, slot)),
 				Op::OptStrKey(key, slot) => {

@@ -11,7 +11,7 @@ export function generate(layout: Layout): { children: Record<string, string[]>; 
 		for (const [op, key, path] of ops) {
 			if (op === 'type') types = [key];
 			else if (op === 'typeof') types = find(fields, key).names!;
-			else if (op === 'node' || op === 'list' || op === 'optlistkey' || op === 'params' || op === 'othername') out.push(key);
+			else if (op === 'node' || op === 'list' || op === 'optlistkey' || op === 'othername') out.push(key);
 			else if ((op === 'opt' || op === 'maybe') && find(fields, path).ty === '?node') out.push(key);
 			else if (op === 'maybe' && find(fields, path).ty === '?list') out.push(key);
 			else if (op === 'object' && keys(path, fields).out.length !== 0) throw new Error(`${key} nests nodes`);

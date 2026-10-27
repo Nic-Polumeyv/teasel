@@ -23,8 +23,6 @@ pub enum Op<F: Copy + 'static = Path> {
 	List(&'static str, F),
 	/// Left out when missing.
 	OptListKey(&'static str, F),
-	/// A parameter list: erasing drops a leading `this`.
-	Params(&'static str, F),
 	Bool(&'static str, F),
 	/// An interned string.
 	Str(&'static str, F),
@@ -95,7 +93,6 @@ impl Op {
 			Maybe(k, f) => ("maybe", Some(k), Some(f), Rest::Nothing),
 			List(k, f) => ("list", Some(k), Some(f), Rest::Nothing),
 			OptListKey(k, f) => ("optlistkey", Some(k), Some(f), Rest::Nothing),
-			Params(k, f) => ("params", Some(k), Some(f), Rest::Nothing),
 			Bool(k, f) => ("bool", Some(k), Some(f), Rest::Nothing),
 			Str(k, f) => ("str", Some(k), Some(f), Rest::Nothing),
 			OptStrKey(k, f) => ("optstrkey", Some(k), Some(f), Rest::Nothing),
@@ -168,9 +165,9 @@ pub const JS: &[(&str, &[Op])] = &[
 	("ChainExpression", &[Type("ChainExpression"), Node("expression", "expression")]),
 	("NewExpression", &[Type("NewExpression"), Node("callee", "callee"), List("arguments", "arguments")]),
 	("SequenceExpression", &[Type("SequenceExpression"), List("expressions", "expressions")]),
-	("ArrowFunctionExpression", &[Type("ArrowFunctionExpression"), Null("id"), Bool("expression", "expression"), ConstBool("generator", false), Bool("async", "is_async"), Params("params", "params"), Node("body", "body")]),
-	("FunctionExpression", &[Type("FunctionExpression"), Opt("id", "function.id"), ConstBool("expression", false), Bool("generator", "function.generator"), Bool("async", "function.is_async"), Params("params", "function.params"), Node("body", "function.body")]),
-	("FunctionDeclaration", &[Type("FunctionDeclaration"), Opt("id", "function.id"), ConstBool("expression", false), Bool("generator", "function.generator"), Bool("async", "function.is_async"), Params("params", "function.params"), Node("body", "function.body")]),
+	("ArrowFunctionExpression", &[Type("ArrowFunctionExpression"), Null("id"), Bool("expression", "expression"), ConstBool("generator", false), Bool("async", "is_async"), List("params", "params"), Node("body", "body")]),
+	("FunctionExpression", &[Type("FunctionExpression"), Opt("id", "function.id"), ConstBool("expression", false), Bool("generator", "function.generator"), Bool("async", "function.is_async"), List("params", "function.params"), Node("body", "function.body")]),
+	("FunctionDeclaration", &[Type("FunctionDeclaration"), Opt("id", "function.id"), ConstBool("expression", false), Bool("generator", "function.generator"), Bool("async", "function.is_async"), List("params", "function.params"), Node("body", "function.body")]),
 	("ClassExpression", &[Type("ClassExpression"), Opt("id", "class.id"), Opt("superClass", "class.super_class"), Node("body", "class.body")]),
 	("ClassDeclaration", &[Type("ClassDeclaration"), Opt("id", "class.id"), Opt("superClass", "class.super_class"), Node("body", "class.body")]),
 	("ClassBody", &[Type("ClassBody"), List("body", "body")]),
@@ -277,7 +274,6 @@ pub(crate) fn resolve_ops(ops: &[Op], fields: &[Field], kind: &str) -> &'static 
 			),
 			List(k, f) => List(k, slot(f, &[|t| matches!(t, Ty::List)])),
 			OptListKey(k, f) => OptListKey(k, slot(f, &[|t| matches!(t, Ty::OptList)])),
-			Params(k, f) => Params(k, slot(f, &[|t| matches!(t, Ty::List)])),
 			Bool(k, f) => Bool(k, slot(f, &[|t| matches!(t, Ty::Bool)])),
 			Str(k, f) => Str(k, slot(f, &[|t| matches!(t, Ty::Str)])),
 			OptStrKey(k, f) => OptStrKey(k, slot(f, &[|t| matches!(t, Ty::OptStr)])),
