@@ -232,9 +232,10 @@ pub(crate) fn answer<X: Pooled>(
 	roots: Option<List>,
 	end: u32,
 	source: &str,
+	positions: &Positions,
 	options: Options,
 ) -> String {
-	let mut w = Writer::new(ast, source, options);
+	let mut w = Writer::new(ast, source, positions, options);
 	w.failed = roots.is_none();
 	w.json.object();
 	match roots {
@@ -257,11 +258,8 @@ struct Writer<'a, X> {
 	typescript: Option<&'a Data>,
 	source: &'a str,
 	json: Json,
+	positions: &'a Positions,
 	options: Options,
-	/// Every JavaScript node and comment has a `loc`.
-	lines: bool,
-	/// A host's own nodes have one too.
-	host_lines: bool,
 	/// The parse failed: `node` is null and `errors` holds the one error, nothing else is listed.
 	failed: bool,
 	/// The node being written names something bound by another node: no scope facts on it.
@@ -500,15 +498,14 @@ fn locate<T>(items: &[T], hint: usize, byte: u32, key: impl Fn(&T) -> u32) -> us
 }
 
 impl<'a, X: Pooled> Writer<'a, X> {
-	fn new(ast: &'a Ast<X>, source: &'a str, options: Options) -> Self {
+	fn new(ast: &'a Ast<X>, source: &'a str, positions: &'a Positions, options: Options) -> Self {
 		Self {
 			ast,
 			typescript: ast.extension.typescript(),
 			source,
 			json: Json::default(),
+			positions,
 			options,
-			lines: options.locations(),
-			host_lines: options.locations() && !options.has(Options::LOCATIONS_JS),
 			failed: false,
 			name_only: false,
 			kept: Vec::new(),
@@ -528,7 +525,7 @@ impl<'a, X: Pooled> Writer<'a, X> {
 		});
 		for &(ty, id) in &kept {
 			self.json.begin(ty);
-			self.span(id, self.lines);
+			self.span(id, self.positions.lines);
 			self.json.end();
 		}
 		self.json.end();
@@ -537,10 +534,10 @@ impl<'a, X: Pooled> Writer<'a, X> {
 	fn begin(&mut self, ty: &'static str, id: NodeId) {
 		if matches!(self.ast.node(id).kind, NodeKind::Host(_)) {
 			self.json.escaped_begin(ty);
-			self.span(id, self.host_lines);
+			self.span(id, self.positions.lines && self.positions.hosts);
 		} else {
 			self.json.begin(ty);
-			self.span(id, self.lines);
+			self.span(id, self.positions.lines);
 		}
 		self.scope_facts(id);
 		if self.ast.is_parenthesized(id) {
@@ -638,7 +635,7 @@ impl<'a, X: Pooled> Writer<'a, X> {
 			let range = self.ast.comments[index as usize].text_range();
 			self.slice(range.start as u32, range.end as u32);
 			self.json.span(row.span.start, row.span.end);
-			if self.lines {
+			if self.positions.lines {
 				self.json.loc(row.loc);
 			}
 			self.json.end();
@@ -958,7 +955,7 @@ impl<'a, X: Pooled> Writer<'a, X> {
 				if host.ty.is_empty() {
 					// an object of the host's without a type, positions and all
 					self.json.object();
-					self.span(id, self.host_lines);
+					self.span(id, self.positions.lines && self.positions.hosts);
 				} else if host.span {
 					self.begin(host.ty, id);
 				} else {

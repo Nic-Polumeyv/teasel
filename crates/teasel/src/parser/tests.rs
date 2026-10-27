@@ -753,7 +753,7 @@ fn phases() {
 	}
 	best("Json write, loc", &mut || {
 		crate::json::place(&mut ast, &source, &lines, located, false);
-		let _ = answer(&ast, Entry::Program, Some(roots), end, &source, located);
+		let _ = answer(&ast, Entry::Program, Some(roots), end, &source, &lines, located);
 	});
 	eprintln!(
 		"nodes {} lists {} strings {} comments {}",

@@ -696,7 +696,7 @@ fn run<E: crate::parser::Extension>(
 	place(&mut ast, source, positions, options, failed);
 	let end = positions.offset(&mut crate::estree::Cursor::default(), end);
 	match out {
-		Out::Json(json) => *json = answer(&ast, request.entry, roots, end, source, options),
+		Out::Json(json) => *json = answer(&ast, request.entry, roots, end, source, positions, options),
 		Out::Words(words) => {
 			let names = E::Data::names(pool);
 			prepare(&mut ast, positions, options, failed, names);
