@@ -211,7 +211,7 @@ impl Parser<'_> {
 		if self.typescript()
 			&& context == Context::None
 			&& (matches!(self.tok.kind, TokenKind::At | TokenKind::Ident(_)) || self.is_keyword(Keyword::Const))
-			&& let Some(statement) = TypeScript::statement(self, context, place)?
+			&& let Some(statement) = TypeScript::statement(self)?
 		{
 			return Ok(statement);
 		}

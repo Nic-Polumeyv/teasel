@@ -821,10 +821,7 @@ impl TypeScript {
 
 	/// First look at a statement; `Some` replaces it entirely.
 	#[cold]
-	pub(crate) fn statement(p: &mut Parser, context: Context, _place: StatementPlace) -> Result<Option<NodeId>> {
-		if context != Context::None {
-			return Ok(None);
-		}
+	pub(crate) fn statement(p: &mut Parser) -> Result<Option<NodeId>> {
 		if p.is(TokenKind::At) {
 			p.parse_decorators(true)?;
 		}
@@ -1716,10 +1713,8 @@ impl TypeScript {
 		let optional = p.eat(TokenKind::Question)?;
 		let type_annotation = if p.is(TokenKind::Colon) {
 			Some(p.parse_type_annotation(true, None)?)
-		} else if optional {
-			None
 		} else {
-			return Ok(item);
+			None
 		};
 		let cast = p.ts(
 			TsKind::TypeCastExpression {
@@ -1779,17 +1774,9 @@ impl TypeScript {
 
 	/// First look at an atom.
 	#[cold]
-	pub(crate) fn atom(
-		p: &mut Parser,
-		errors: &mut Errors,
-		for_init: ForInit,
-		for_new: bool,
-	) -> Result<Option<NodeId>> {
-		if p.is(TokenKind::At) {
-			p.parse_decorators(false)?;
-			return p.parse_expr_atom(errors, for_init, for_new).map(Some);
-		}
-		Ok(None)
+	pub(crate) fn atom(p: &mut Parser, errors: &mut Errors, for_init: ForInit, for_new: bool) -> Result<NodeId> {
+		p.parse_decorators(false)?;
+		p.parse_expr_atom(errors, for_init, for_new)
 	}
 
 	/// Whether the current token, one of the host's stop tokens, is one TypeScript reads after an
@@ -1801,10 +1788,7 @@ impl TypeScript {
 
 	/// At an operator position; `Some` is the new left operand.
 	#[cold]
-	pub(crate) fn expr_op(p: &mut Parser, left: NodeId, left_start: u32, min_prec: i8) -> Result<Option<NodeId>> {
-		if 7 <= min_prec || p.tok.newline_before {
-			return Ok(None);
-		}
+	pub(crate) fn expr_op(p: &mut Parser, left: NodeId, left_start: u32) -> Result<Option<NodeId>> {
 		let is_as = p.is_contextual("as");
 		if !is_as && !p.is_contextual("satisfies") {
 			return Ok(None);
@@ -1830,14 +1814,17 @@ impl TypeScript {
 		optional_chained: bool,
 		for_init: ForInit,
 	) -> Result<Option<(NodeId, bool)>> {
-		if !p.tok.newline_before && p.is(TokenKind::Bang) {
+		if p.is(TokenKind::Bang) {
+			if p.tok.newline_before {
+				return Ok(None);
+			}
 			p.next()?;
 			p.stop_after_operand();
 			let node = p.ts(TsKind::NonNullExpression { expression: base }, start);
 			return Ok(Some((node, false)));
 		}
-		let optional_call = p.is(TokenKind::QuestionDot) && p.peek_char().0 == Some('<');
-		if !optional_call && !p.is(TokenKind::Lt) && !p.is(TokenKind::LtLt) {
+		let optional_call = p.is(TokenKind::QuestionDot);
+		if optional_call && p.peek_char().0 != Some('<') {
 			return Ok(None);
 		}
 		if optional_call && no_calls {
@@ -1926,15 +1913,12 @@ impl TypeScript {
 		is_pattern: bool,
 		generator: bool,
 		is_async: bool,
-	) -> Result<Option<NodeId>> {
-		if !p.is(TokenKind::Lt) {
-			return Ok(None);
-		}
+	) -> Result<NodeId> {
 		if is_pattern {
 			return p.unexpected();
 		}
 		let value = p.parse_method(generator, is_async, false, false, MethodKind::Method)?;
-		Ok(Some(p.add(
+		Ok(p.add(
 			NodeKind::Property {
 				key,
 				value,
@@ -1944,15 +1928,12 @@ impl TypeScript {
 				shorthand: false,
 			},
 			start,
-		)))
+		))
 	}
 
 	#[cold]
-	pub(crate) fn template_expression(p: &mut Parser) -> Result<Option<NodeId>> {
-		if p.lexer.in_type {
-			return p.parse_type().map(Some);
-		}
-		Ok(None)
+	pub(crate) fn template_expression(p: &mut Parser) -> Result<NodeId> {
+		p.parse_type()
 	}
 
 	/// Reinterprets a TypeScript node as a pattern; the result replaces it.

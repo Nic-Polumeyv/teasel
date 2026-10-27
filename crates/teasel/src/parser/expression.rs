@@ -306,7 +306,7 @@ impl Parser<'_> {
 				&& min_prec < 7
 				&& !self.tok.newline_before
 				&& self.typescript()
-				&& let Some(expr) = TypeScript::expr_op(self, left, left_start, min_prec)?
+				&& let Some(expr) = TypeScript::expr_op(self, left, left_start)?
 			{
 				left = expr;
 				continue;
@@ -642,11 +642,8 @@ impl Parser<'_> {
 		if self.is(TokenKind::Slash) || self.is(TokenKind::SlashEq) {
 			self.tok = self.lexer.read_regex(self.tok)?;
 		}
-		if self.is(TokenKind::At)
-			&& self.typescript()
-			&& let Some(atom) = TypeScript::atom(self, errors, for_init, for_new)?
-		{
-			return Ok(atom);
+		if self.is(TokenKind::At) && self.typescript() {
+			return TypeScript::atom(self, errors, for_init, for_new);
 		}
 		let start = self.tok.start;
 		let can_be_arrow = self.potential_arrow_at == start;
@@ -1004,14 +1001,10 @@ impl Parser<'_> {
 			}
 			self.prev_end = chunk.end + 2;
 			self.lexer.next_token_into(&mut self.tok)?;
-			let typed = if self.lexer.in_type {
+			let expression = if self.lexer.in_type {
 				TypeScript::template_expression(self)?
 			} else {
-				None
-			};
-			let expression = match typed {
-				Some(expression) => expression,
-				None => self.parse_expression(false, &mut None)?,
+				self.parse_expression(false, &mut None)?
 			};
 			expressions.push(Some(expression));
 			if !self.is(TokenKind::BraceR) {
@@ -1143,11 +1136,8 @@ impl Parser<'_> {
 		errors: &mut Errors,
 		escaped: bool,
 	) -> Result<NodeId> {
-		if self.is(TokenKind::Lt)
-			&& self.typescript()
-			&& let Some(prop) = TypeScript::property_value(self, start, key, computed, is_pattern, generator, is_async)?
-		{
-			return Ok(prop);
+		if self.is(TokenKind::Lt) && self.typescript() {
+			return TypeScript::property_value(self, start, key, computed, is_pattern, generator, is_async);
 		}
 		if (generator || is_async) && self.is(TokenKind::Colon) {
 			return self.unexpected();
