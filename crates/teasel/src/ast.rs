@@ -95,6 +95,10 @@ impl NodeSet {
 
 	/// Keeps the bits of the first `nodes` nodes.
 	pub fn truncate(&mut self, nodes: usize) {
+		// truncating an empty set at every rollback cost 0.5% of a TypeScript answer
+		if self.0.is_empty() {
+			return;
+		}
 		self.0.truncate(nodes.div_ceil(64));
 		if let Some(last) = self.0.get_mut(nodes / 64) {
 			*last &= (1 << (nodes % 64)) - 1;
