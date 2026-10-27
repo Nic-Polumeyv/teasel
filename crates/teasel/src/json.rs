@@ -729,8 +729,9 @@ pub(crate) fn place<X: Reuse>(ast: &mut Ast<X>, source: &str, positions: &Positi
 			// a `this` parameter wherever it stands, by its name's id: only a leading one left
 			// `function f(a, this)`, and comparing each identifier's text cost 1.2% of an erasing parse
 			let this = ast.strings.find("this");
-			for i in 0..ast.nodes.len() as u32 {
-				let id = crate::ast::NodeId::at(i);
+			// only a list leaves an item out: asking every node cost 2% of an erasing JSON answer
+			for i in 0..ast.lists.len() {
+				let Some(id) = ast.lists[i] else { continue };
 				let this_parameter =
 					this.is_some() && matches!(ast.node(id).kind, NodeKind::Identifier { name } if Some(name) == this);
 				if this_parameter || ast.extension.erased(ast, id) {
