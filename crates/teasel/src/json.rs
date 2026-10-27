@@ -9,7 +9,7 @@ use crate::Options;
 use crate::ast::{Ast, Reuse};
 use crate::comments::attach;
 use crate::error::Code;
-use crate::estree::{Emit, Json, Positions, Words, answer};
+use crate::estree::{Json, Positions, Words, answer};
 use crate::handed::{Raw, Views};
 use crate::host::{self, Grammar};
 use crate::parser::{Entry, parse_at};
@@ -439,6 +439,9 @@ pub(crate) trait Pooled: Sized {
 	fn take(pool: &mut Pool) -> Option<Box<Ast<Self>>>;
 	fn give(pool: &mut Pool, ast: Box<Ast<Self>>);
 	fn names(pool: &mut Pool) -> &mut Names;
+	fn typescript(&self) -> Option<&crate::typescript::ast::Data> {
+		None
+	}
 }
 
 impl Pooled for () {
@@ -462,6 +465,9 @@ impl Pooled for crate::typescript::ast::Data {
 	}
 	fn names(pool: &mut Pool) -> &mut Names {
 		&mut pool.names[1]
+	}
+	fn typescript(&self) -> Option<&crate::typescript::ast::Data> {
+		Some(self)
 	}
 }
 
@@ -642,7 +648,7 @@ fn run<E: crate::parser::Extension>(
 	pool: &mut Pool,
 	out: Out<'_>,
 ) where
-	E::Data: Emit + Bind + Reuse + Pooled,
+	E::Data: Bind + Reuse + Pooled,
 {
 	let options = request.options;
 	let reused = Pooled::take(pool).map(|mut ast| {

@@ -1,30 +1,16 @@
 //! Serializes an `Ast` to ESTree as JSON text, and maps its positions to what JavaScript counts.
 
 use crate::Options;
-use crate::ast::{Ast, CommentRow, List, Loc, NodeId, NodeKind, Position, Reuse, Span, Value};
+use crate::ast::{Ast, CommentRow, List, Loc, NodeId, NodeKind, Position, Span, Value};
 use crate::handed::Handed;
 use crate::interner::StrId;
+use crate::json::Pooled;
 use crate::layout::Ty;
 use crate::parser::Entry;
 use crate::recipe::{Op, Slot};
 use crate::scopes::Role;
 use crate::typescript::ast::{Data, Extras, TsKind};
 use std::fmt::Write;
-
-/// What the writer reads of an extension's data: TypeScript's records, when the tree has them.
-pub trait Emit {
-	fn typescript(&self) -> Option<&Data> {
-		None
-	}
-}
-
-impl Emit for () {}
-
-impl Emit for Data {
-	fn typescript(&self) -> Option<&Data> {
-		Some(self)
-	}
-}
 
 /// Every recipe with its fields resolved, by a kind's tag: the JavaScript kinds, TypeScript's,
 /// what TypeScript adds to either with the fields it reads, what erasing keeps, and the rows.
@@ -240,7 +226,7 @@ pub type Words = crate::handed::Handed<u32>;
 /// Serializes an answer as JSON from the tree `json::place` mapped: the roots as `node`, one node
 /// or the patterns of a parameter list, null when the parse failed, then `end`, a UTF-16 offset,
 /// and what the options add.
-pub fn answer<X: Emit + Reuse>(
+pub(crate) fn answer<X: Pooled>(
 	ast: &Ast<X>,
 	entry: Entry,
 	roots: Option<List>,
@@ -513,7 +499,7 @@ fn locate<T>(items: &[T], hint: usize, byte: u32, key: impl Fn(&T) -> u32) -> us
 	items.partition_point(|item| key(item) <= byte)
 }
 
-impl<'a, X: Emit + Reuse> Writer<'a, X> {
+impl<'a, X: Pooled> Writer<'a, X> {
 	fn new(ast: &'a Ast<X>, source: &'a str, options: Options) -> Self {
 		Self {
 			ast,
