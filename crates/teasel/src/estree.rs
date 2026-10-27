@@ -794,7 +794,7 @@ impl<'a, X: Pooled> Writer<'a, X> {
 	/// answers around.
 	fn extras(&mut self, ts: &Data, id: NodeId) {
 		let recipes = recipes();
-		let extras = ts.extras(id).copied().unwrap_or_default();
+		let extras = ts.extras_of(id);
 		let base = &extras as *const Extras as *const u8;
 		if self.options.has(Options::ERASE) {
 			self.run(id, recipes.erased, base);

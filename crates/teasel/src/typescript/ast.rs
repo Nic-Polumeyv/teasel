@@ -839,7 +839,7 @@ impl Data {
 			.all(|item| item.is_none_or(|id| self.erased(ast, id)))
 	}
 
-	fn extras_of(&self, id: NodeId) -> Extras {
+	pub(crate) fn extras_of(&self, id: NodeId) -> Extras {
 		self.extras(id).copied().unwrap_or_default()
 	}
 }
