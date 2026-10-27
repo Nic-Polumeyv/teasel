@@ -569,6 +569,9 @@ pub struct Binder<'a> {
 	owned: FastMap<BindingId, u32>,
 	arguments: Option<StrId>,
 	this_name: Option<StrId>,
+	/// Whether TypeScript added keys to any node, decorators among them.
+	// looked up at every node of a JavaScript tree instead, a parse with scopes took 1% longer
+	extras: bool,
 }
 
 impl<'a> Binder<'a> {
@@ -613,6 +616,7 @@ impl<'a> Binder<'a> {
 			owned,
 			arguments: ast.strings.find("arguments"),
 			this_name: ast.strings.find("this"),
+			extras: !ast.typescript.extras.is_empty(),
 		}
 	}
 
@@ -1019,7 +1023,7 @@ impl<'a> Binder<'a> {
 				NodeKind::MemberExpression { object, .. } => id = object,
 				NodeKind::ChainExpression { expression } => id = expression,
 				NodeKind::Extension(_) => {
-					id = self.ast.extension.wrapped(self.ast, id)?;
+					id = self.ast.typescript.wrapped(self.ast, id)?;
 				}
 				_ => return None,
 			}
@@ -1032,7 +1036,7 @@ impl<'a> Binder<'a> {
 			match self.kind(id) {
 				NodeKind::MemberExpression { .. } => return true,
 				NodeKind::ChainExpression { expression } => id = expression,
-				NodeKind::Extension(_) => match self.ast.extension.wrapped(self.ast, id) {
+				NodeKind::Extension(_) => match self.ast.typescript.wrapped(self.ast, id) {
 					Some(inner) => id = inner,
 					None => return false,
 				},
@@ -1062,7 +1066,7 @@ impl<'a> Binder<'a> {
 				}
 			}
 			NodeKind::ChainExpression { expression } => self.visit_member_target(expression, root),
-			NodeKind::Extension(_) => match self.ast.extension.wrapped(self.ast, id) {
+			NodeKind::Extension(_) => match self.ast.typescript.wrapped(self.ast, id) {
 				Some(inner) => self.visit_member_target(inner, root),
 				None => self.visit(id, Mode::Expression),
 			},
@@ -1072,8 +1076,10 @@ impl<'a> Binder<'a> {
 
 	fn function(&mut self, id: NodeId, params: List, body: NodeId, arrow: bool) {
 		// a parameter's decorators are evaluated where the function is defined
-		for &param in self.ast.list(params).iter().flatten() {
-			self.ast.extension.bind_extras(self, param);
+		if self.extras {
+			for &param in self.ast.list(params).iter().flatten() {
+				self.ast.typescript.bind_extras(self, param);
+			}
 		}
 		self.enter(ScopeKind::Function, Some(id), arrow);
 		// a TypeScript `this` parameter, first in the list, is a type position and binds nothing
@@ -1236,8 +1242,8 @@ impl<'a> Binder<'a> {
 
 	fn visit_with(&mut self, id: NodeId, mode: Mode, extras: bool) {
 		use NodeKind::*;
-		if extras {
-			self.ast.extension.bind_extras(self, id);
+		if extras && self.extras {
+			self.ast.typescript.bind_extras(self, id);
 		}
 		match self.kind(id) {
 			Host(index) => self.host(id, index),
@@ -1245,7 +1251,7 @@ impl<'a> Binder<'a> {
 				Mode::Expression => self.reference(id, false, false),
 				Mode::Declare(kind) => self.declare(id, kind),
 			},
-			Extension(_) => self.ast.extension.bind(self, id, mode),
+			Extension(_) => self.ast.typescript.bind(self, id, mode),
 			Program { body, .. } => self.statements(body),
 			PrivateIdentifier { .. }
 			| NumberLiteral { .. }
@@ -1495,24 +1501,24 @@ impl<'a> Binder<'a> {
 				self.maybe(init, Mode::Expression);
 			}
 			ImportDeclaration { specifiers, .. } => {
-				if !self.ast.extension.types_only(id) {
+				if !self.ast.typescript.types_only(id) {
 					self.list(specifiers, Mode::Expression);
 				}
 			}
 			ImportSpecifier { local, .. } | ImportDefaultSpecifier { local } | ImportNamespaceSpecifier { local } => {
-				if !self.ast.extension.types_only(id) {
+				if !self.ast.typescript.types_only(id) {
 					self.declare_by(local, BindingKind::Import, id);
 				}
 			}
 			ExportDeclaration { declaration } => self.exported(|b| b.visit(declaration, Mode::Expression)),
 			ExportNamedDeclaration { specifiers, source, .. } => {
-				if source.is_none() && !self.ast.extension.types_only(id) {
+				if source.is_none() && !self.ast.typescript.types_only(id) {
 					self.list(specifiers, Mode::Expression);
 				}
 			}
 			ExportSpecifier { local, .. } => {
 				if let Identifier { .. } = self.kind(local)
-					&& !self.ast.extension.types_only(id)
+					&& !self.ast.typescript.types_only(id)
 				{
 					self.reference(local, false, false);
 				}
@@ -1543,7 +1549,7 @@ impl<'a> Binder<'a> {
 				}
 				self.target(value);
 			}
-			NodeKind::Extension(_) => match self.ast.extension.wrapped(self.ast, id) {
+			NodeKind::Extension(_) => match self.ast.typescript.wrapped(self.ast, id) {
 				Some(inner) => self.target(inner),
 				None => self.visit(id, Mode::Expression),
 			},

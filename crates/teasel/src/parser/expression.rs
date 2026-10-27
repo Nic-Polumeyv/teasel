@@ -287,7 +287,7 @@ impl Parser<'_> {
 				&& min_prec < 7
 				&& !self.tok.newline_before
 				&& self.typescript()
-				&& let Some(expr) = TypeScript::expr_op(self, left, left_start, min_prec)?
+				&& let Some(expr) = TypeScript::expr_op(self, left, left_start)?
 			{
 				left = expr;
 				continue;
@@ -597,11 +597,8 @@ impl Parser<'_> {
 		if self.is(TokenKind::Slash) || self.is(TokenKind::SlashEq) {
 			self.tok = self.lexer.read_regex(self.tok)?;
 		}
-		if self.is(TokenKind::At)
-			&& self.typescript()
-			&& let Some(atom) = TypeScript::atom(self, errors, for_init, for_new)?
-		{
-			return Ok(atom);
+		if self.is(TokenKind::At) && self.typescript() {
+			return TypeScript::atom(self, errors, for_init, for_new);
 		}
 		let start = self.tok.start;
 		let can_be_arrow = self.potential_arrow_at == start;
@@ -764,6 +761,8 @@ impl Parser<'_> {
 
 	/// A `<` at the cursor, alone or the start of `<<`, `<=` or `<<=`: in TypeScript, maybe what
 	/// opens type parameters or a type assertion.
+	// the token tested ahead of the flag, here and at TypeScript's other per-token points: with the
+	// flag alone, a TypeScript parse of JavaScript took 6% longer and of documents 1.7%
 	fn at_lt(&self) -> bool {
 		matches!(
 			self.tok.kind,
@@ -950,14 +949,10 @@ impl Parser<'_> {
 			}
 			self.prev_end = chunk.end + 2;
 			self.lexer.next_token_into(&mut self.tok)?;
-			let typed = if self.lexer.in_type {
+			let expression = if self.lexer.in_type {
 				TypeScript::template_expression(self)?
 			} else {
-				None
-			};
-			let expression = match typed {
-				Some(expression) => expression,
-				None => self.parse_expression(false, &mut None)?,
+				self.parse_expression(false, &mut None)?
 			};
 			expressions.push(Some(expression));
 			if !self.is(TokenKind::BraceR) {
@@ -1089,11 +1084,8 @@ impl Parser<'_> {
 		errors: &mut Errors,
 		escaped: bool,
 	) -> Result<NodeId> {
-		if self.is(TokenKind::Lt)
-			&& self.typescript()
-			&& let Some(prop) = TypeScript::property_value(self, start, key, computed, is_pattern, generator, is_async)?
-		{
-			return Ok(prop);
+		if self.is(TokenKind::Lt) && self.typescript() {
+			return TypeScript::property_value(self, start, key, computed, is_pattern, generator, is_async);
 		}
 		if (generator || is_async) && self.is(TokenKind::Colon) {
 			return self.unexpected();
@@ -1253,18 +1245,19 @@ impl Parser<'_> {
 			function_flags(is_async, generator) | SCOPE_SUPER | if allow_direct_super { SCOPE_DIRECT_SUPER } else { 0 },
 		);
 		let kind = FunctionKind::Method { in_class, kind };
-		if self.typescript() {
-			TypeScript::function_start(self, kind)?;
-		}
+		let mut frame = if self.typescript() {
+			Some(TypeScript::function_start(self, kind)?)
+		} else {
+			None
+		};
 		let start = self.tok.start;
 		self.expect(TokenKind::ParenL)?;
 		let params = self.parse_binding_list(TokenKind::ParenR, false, true, in_class)?;
 		self.check_yield_await_in_default_params()?;
 		let params = self.list_from(params);
-		let bodiless = if self.typescript() {
-			TypeScript::function_body(self, start, None, params, is_async, generator, kind)?
-		} else {
-			None
+		let bodiless = match &mut frame {
+			Some(frame) => TypeScript::function_body(self, frame, start, None, params, is_async, generator, kind)?,
+			None => None,
 		};
 		let node = match bodiless {
 			Some(node) => {
@@ -1284,8 +1277,8 @@ impl Parser<'_> {
 			}
 		};
 		self.restore_yield_await(old);
-		if self.typescript() {
-			TypeScript::function_end(self, node)?;
+		if let Some(frame) = frame {
+			TypeScript::function_end(self, node, frame)?;
 		}
 		Ok(node)
 	}
@@ -1358,10 +1351,12 @@ impl Parser<'_> {
 	) -> Result<NodeId> {
 		let old = self.take_yield_await();
 		self.enter_scope(function_flags(is_async, false) | SCOPE_ARROW);
-		if self.typescript() {
+		let frame = if self.typescript() {
 			TypeScript::arrow_start(self, start);
-			TypeScript::function_start(self, FunctionKind::Arrow)?;
-		}
+			Some(TypeScript::function_start(self, FunctionKind::Arrow)?)
+		} else {
+			None
+		};
 		let params = self.list_from(params);
 		let (body, expression) = self.parse_function_body(start, None, params, true, false, for_init)?;
 		self.restore_yield_await(old);
@@ -1374,8 +1369,8 @@ impl Parser<'_> {
 			},
 			start,
 		);
-		if self.typescript() {
-			TypeScript::function_end(self, node)?;
+		if let Some(frame) = frame {
+			TypeScript::function_end(self, node, frame)?;
 		}
 		Ok(node)
 	}

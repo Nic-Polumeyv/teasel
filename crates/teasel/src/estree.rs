@@ -505,7 +505,7 @@ impl<'a> Writer<'a> {
 			self.bool("parenthesized", true);
 		}
 		if self.options.typescript() {
-			self.ast.extension.write_extras(self, id);
+			self.ast.typescript.write_extras(self, id);
 		}
 		if let Some(&attached) = self.ast.attached.get(id) {
 			self.comments("leadingComments", attached.leading);
@@ -741,7 +741,7 @@ impl<'a> Writer<'a> {
 		self.json.list();
 		let ast = self.ast;
 		for item in ast.list(list) {
-			if self.options.has(Options::ERASE) && item.is_some_and(|id| ast.extension.erased(ast, id)) {
+			if self.options.has(Options::ERASE) && item.is_some_and(|id| ast.typescript.erased(ast, id)) {
 				continue;
 			}
 			match item {
@@ -935,7 +935,7 @@ impl<'a> Writer<'a> {
 		let kind = &self.ast.nodes[id.index() as usize].kind;
 		match *kind {
 			// TypeScript closes its own node, since erasing may put another in its place
-			Extension(index) => return self.ast.extension.write_node(self, id, index),
+			Extension(index) => return self.ast.typescript.write_node(self, id, index),
 			Host(index) => {
 				let host = self.ast.hosts[index as usize];
 				if host.ty.is_empty() {

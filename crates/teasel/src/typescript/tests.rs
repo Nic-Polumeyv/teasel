@@ -8,15 +8,15 @@ fn at(entry: Entry, src: &str, offset: u32, options: Options, stop: &str) -> Res
 	one(crate::parse_at(src, offset, None, entry, typescript(options), stop))
 }
 
-fn extension(ast: &Ast, id: NodeId, index: u32) -> String {
-	let mut out = expand(ast, &format!("{:?}", ast.extension.kind(index)), &extension);
+fn typescript_node(ast: &Ast, id: NodeId, index: u32) -> String {
+	let mut out = expand(ast, &format!("{:?}", ast.typescript.kind(index)), &typescript_node);
 	out.push_str(&extras(ast, id));
 	out
 }
 
 /// The keys TypeScript added to a node, after its own rendering.
 fn extras(ast: &Ast, id: NodeId) -> String {
-	let Some(e) = ast.extension.extras(id) else {
+	let Some(e) = ast.typescript.extras(id) else {
 		return String::new();
 	};
 	let base = e as *const Extras as *const u8;
@@ -33,7 +33,7 @@ fn extras(ast: &Ast, id: NodeId) -> String {
 				Ty::OptList => at
 					.cast::<Option<List>>()
 					.read()
-					.map(|list| format!("{name}: {}", expand(ast, &format!("{list:?}"), &extension))),
+					.map(|list| format!("{name}: {}", expand(ast, &format!("{list:?}"), &typescript_node))),
 				Ty::OptEnum(names) => names
 					.get(usize::from(at.read()))
 					.map(|value| format!("{name}: {value}")),
@@ -48,7 +48,7 @@ fn extras(ast: &Ast, id: NodeId) -> String {
 }
 
 fn dump(ast: &Ast, id: NodeId) -> String {
-	let mut out = dump_with(ast, id, &extension);
+	let mut out = dump_with(ast, id, &typescript_node);
 	if !matches!(ast.node(id).kind, NodeKind::Extension(_)) {
 		out.push_str(&extras(ast, id));
 	}
@@ -252,14 +252,14 @@ fn failed_attempts_leave_nothing() {
 	let list = (0..300).map(|i| format!("a{i} < b{i}")).collect::<Vec<_>>().join(", ");
 	let (ast, _, _) = at(Entry::Expression, &format!("[{list}]"), 0, options, "").unwrap();
 	assert!(ast.nodes.len() < 4 * 300 + 8, "{} nodes", ast.nodes.len());
-	assert!(ast.extension.nodes.is_empty());
-	assert!(ast.extension.extras.is_empty());
+	assert!(ast.typescript.nodes.is_empty());
+	assert!(ast.typescript.extras.is_empty());
 	// a generic arrow is tried first: the parens it saw go with it
 	let (ast, root, _) = at(Entry::Expression, "<T>(a)", 0, options, "").unwrap();
 	let NodeKind::Extension(index) = ast.node(root).kind else {
 		panic!()
 	};
-	let super::ast::TsKind::TypeAssertion { expression, .. } = ast.extension.kind(index) else {
+	let super::ast::TsKind::TypeAssertion { expression, .. } = ast.typescript.kind(index) else {
 		panic!()
 	};
 	assert!(ast.is_parenthesized(expression));

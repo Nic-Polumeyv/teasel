@@ -84,18 +84,18 @@ fn whole(src: &str, options: Options) -> (Ast, List) {
 	(ast, roots)
 }
 
-/// Renders a node as its Debug form with ids, strings and lists expanded inline; `extension`
+/// Renders a node as its Debug form with ids, strings and lists expanded inline; `typescript`
 /// renders TypeScript's nodes.
-pub(crate) fn dump(ast: &Ast, id: NodeId, extension: &dyn Fn(&Ast, NodeId, u32) -> String) -> String {
+pub(crate) fn dump(ast: &Ast, id: NodeId, typescript: &dyn Fn(&Ast, NodeId, u32) -> String) -> String {
 	let node = ast.node(id);
 	match node.kind {
-		NodeKind::Extension(index) => extension(ast, id, index),
-		kind => expand(ast, &format!("{kind:?}"), extension),
+		NodeKind::Extension(index) => typescript(ast, id, index),
+		kind => expand(ast, &format!("{kind:?}"), typescript),
 	}
 }
 
 /// Expands the ids inside a Debug rendering.
-pub(crate) fn expand(ast: &Ast, text: &str, extension: &dyn Fn(&Ast, NodeId, u32) -> String) -> String {
+pub(crate) fn expand(ast: &Ast, text: &str, typescript: &dyn Fn(&Ast, NodeId, u32) -> String) -> String {
 	let mut out = String::new();
 	let mut rest = text;
 	while let Some(i) = rest.find(['N', 'S', 'L']) {
@@ -104,7 +104,7 @@ pub(crate) fn expand(ast: &Ast, text: &str, extension: &dyn Fn(&Ast, NodeId, u32
 		if let Some(r) = tail.strip_prefix("NodeId(") {
 			let end = r.find(')').unwrap();
 			let child = NodeId::at(r[..end].parse().unwrap());
-			out.push_str(&dump(ast, child, extension));
+			out.push_str(&dump(ast, child, typescript));
 			rest = &r[end + 1..];
 		} else if let Some(r) = tail.strip_prefix("NumberLiteral { value: ") {
 			let end = r.find(" }").unwrap();
@@ -126,7 +126,7 @@ pub(crate) fn expand(ast: &Ast, text: &str, extension: &dyn Fn(&Ast, NodeId, u32
 			let items: Vec<String> = ast
 				.list(list)
 				.iter()
-				.map(|c| c.map(|c| dump(ast, c, extension)).unwrap_or_else(|| "hole".into()))
+				.map(|c| c.map(|c| dump(ast, c, typescript)).unwrap_or_else(|| "hole".into()))
 				.collect();
 			out.push('[');
 			out.push_str(&items.join(", "));

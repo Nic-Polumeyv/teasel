@@ -203,7 +203,7 @@ pub(crate) struct Parser<'a> {
 	pub(crate) lexer: Lexer<'a>,
 	pub(crate) ast: Box<Ast>,
 	/// What TypeScript's grammar keeps while it reads; untouched in a JavaScript parse.
-	pub(crate) ts: TypeScript,
+	pub(crate) ts: Box<TypeScript>,
 	pub(crate) options: Options,
 	pub(crate) tok: Token,
 	pub(crate) prev_end: u32,
@@ -247,6 +247,8 @@ pub struct Spare {
 	errors: Vec<SyntaxError>,
 	regexp: crate::lexer::regexp::Scratch,
 	stop_ranges: Vec<(u32, u32, bool)>,
+	// built for every parse, it cost the pieces of a JavaScript document 1.5%
+	typescript: Option<Box<TypeScript>>,
 }
 
 impl std::fmt::Debug for Spare {
@@ -267,7 +269,9 @@ struct Mark {
 	depth: u32,
 	brackets: (u32, [u32; 3]),
 	strict: bool,
-	ts: crate::typescript::Saved,
+	/// TypeScript's state, in a TypeScript parse.
+	// inline, it grew every JavaScript frame that holds a mark: 1% on host documents and under recovery
+	ts: Option<Box<crate::typescript::Saved>>,
 	ast: crate::ast::Mark,
 }
 
@@ -362,10 +366,19 @@ impl<'a> Parser<'a> {
 		lexer.regexp = spare.regexp;
 		lexer.stop_ranges = spare.stop_ranges;
 		lexer.set_stops(stop);
+		let ts = match spare.typescript {
+			Some(mut ts) => {
+				if options.typescript() {
+					*ts = TypeScript::default();
+				}
+				ts
+			}
+			None => Box::default(),
+		};
 		Self {
 			lexer,
 			ast,
-			ts: TypeScript::default(),
+			ts,
 			options,
 			tok: Token::eof(offset),
 			prev_end: offset,
@@ -519,7 +532,7 @@ impl<'a> Parser<'a> {
 			depth: self.depth,
 			brackets: (self.lexer.depth, self.lexer.open),
 			strict: self.strict,
-			ts: self.ts.save(),
+			ts: self.typescript().then(|| Box::new(self.ts.save())),
 			ast: self.ast.mark(),
 		}
 	}
@@ -537,7 +550,9 @@ impl<'a> Parser<'a> {
 		self.depth = mark.depth;
 		(self.lexer.depth, self.lexer.open) = mark.brackets;
 		self.set_strict(mark.strict);
-		self.ts.restore(mark.ts);
+		if let Some(saved) = mark.ts {
+			self.ts.restore(*saved);
+		}
 		self.ast.truncate(mark.ast);
 	}
 
@@ -553,7 +568,7 @@ impl<'a> Parser<'a> {
 		self.recover_statement(f)
 	}
 
-	// inlined, its mark sat in the frame of every block the recursion opens: 0.4% on a JavaScript parse
+	// with this and the two inlined below left to the compiler, a parse-only JavaScript read took 0.9% longer
 	#[inline(never)]
 	fn recover_statement(&mut self, f: impl FnOnce(&mut Self) -> Result<NodeId>) -> Result<Option<NodeId>> {
 		let mark = self.mark();
@@ -758,6 +773,7 @@ impl<'a> Parser<'a> {
 			errors,
 			regexp: std::mem::take(&mut lexer.regexp),
 			stop_ranges: std::mem::take(&mut lexer.stop_ranges),
+			typescript: Some(self.ts),
 		};
 		ast
 	}
@@ -1015,7 +1031,7 @@ impl<'a> Parser<'a> {
 		Ok(false)
 	}
 
-	// these two out of line, as TypeScript's calls left them, a JavaScript parse took 0.5% longer
+	// with these two and recover_statement above left to the compiler, a parse-only JavaScript read took 0.9% longer
 	#[inline(always)]
 	pub(crate) fn check_expression_errors(
 		&self,

@@ -397,7 +397,7 @@ pub struct Ast {
 	pub parenthesized: NodeSet,
 	/// TypeScript's own nodes, by the `NodeKind::Extension` payload, and the keys it adds; empty
 	/// in a JavaScript tree.
-	pub extension: crate::typescript::ast::Data,
+	pub typescript: crate::typescript::ast::Data,
 }
 
 crate::layout::record! {
@@ -444,7 +444,7 @@ pub(crate) struct Mark {
 	nodes: usize,
 	numbers: usize,
 	lists: usize,
-	extension: (usize, usize),
+	typescript: (usize, usize),
 }
 
 impl Ast {
@@ -476,7 +476,7 @@ impl Ast {
 		self.host_rows.clear();
 		self.host_keys.clear();
 		self.host_vals.clear();
-		self.extension.clear();
+		self.typescript.clear();
 	}
 
 	pub(crate) fn mark(&self) -> Mark {
@@ -484,7 +484,7 @@ impl Ast {
 			nodes: self.nodes.len(),
 			numbers: self.numbers.len(),
 			lists: self.lists.len(),
-			extension: self.extension.mark(),
+			typescript: self.typescript.mark(),
 		}
 	}
 
@@ -494,7 +494,7 @@ impl Ast {
 		self.numbers.truncate(mark.numbers);
 		self.lists.truncate(mark.lists);
 		self.parenthesized.truncate(mark.nodes);
-		self.extension.truncate(mark.extension);
+		self.typescript.truncate(mark.typescript);
 	}
 
 	/// Room for the tree of `bytes` of source: about a node per eight bytes, a list per thirty, a
@@ -538,7 +538,7 @@ impl Ast {
 			None => crate::scopes::Scopes::no_views(out),
 		}
 		if typescript {
-			self.extension.views(out);
+			self.typescript.views(out);
 		}
 	}
 }
@@ -564,10 +564,10 @@ impl Ast {
 	/// Appends the children of `id` in source order.
 	pub fn children(&self, id: NodeId, out: &mut Vec<NodeId>) {
 		let from = out.len();
-		if self.extension.extras.is_empty() && !matches!(self.node(id).kind, NodeKind::Extension(_)) {
+		if self.typescript.extras.is_empty() && !matches!(self.node(id).kind, NodeKind::Extension(_)) {
 			self.plain_children(id, out);
 		} else {
-			self.extension.children(self, id, out);
+			self.typescript.children(self, id, out);
 		}
 		debug_assert!(out[from..].is_sorted_by_key(|&child| self.node(child).start));
 	}
@@ -1134,7 +1134,7 @@ crate::layout::kinds! {
 			attributes: List,
 		},
 
-		/// A TypeScript node, indexed into `Ast::extension`.
+		/// A TypeScript node, indexed into `Ast::typescript`.
 		Extension(u32),
 		/// A node of the host's grammar, indexed into `Ast::hosts`.
 		Host(u32),
