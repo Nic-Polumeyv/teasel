@@ -805,6 +805,8 @@ impl Parser<'_> {
 
 	/// A `<` at the cursor, alone or the start of `<<`, `<=` or `<<=`: in TypeScript, maybe what
 	/// opens type parameters or a type assertion.
+	// the token tested ahead of the flag, here and at TypeScript's other per-token points: with the
+	// flag alone, a TypeScript parse of JavaScript took 6% longer and of documents 1.7%
 	fn at_lt(&self) -> bool {
 		matches!(
 			self.tok.kind,

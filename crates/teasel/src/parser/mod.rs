@@ -544,7 +544,7 @@ impl<'a> Parser<'a> {
 		self.recover_statement(f)
 	}
 
-	// inlined, its mark sat in the frame of every block the recursion opens: 0.4% on a JavaScript parse
+	// inlined, a parse-only read of JavaScript took 0.5% longer
 	#[inline(never)]
 	fn recover_statement(&mut self, f: impl FnOnce(&mut Self) -> Result<NodeId>) -> Result<Option<NodeId>> {
 		let mark = self.mark();
@@ -1021,7 +1021,7 @@ impl<'a> Parser<'a> {
 		Ok(false)
 	}
 
-	// these two out of line, as TypeScript's calls left them, a JavaScript parse took 0.5% longer
+	// these two out of line, a parse-only read of JavaScript took 0.6% longer
 	#[inline(always)]
 	pub(crate) fn check_expression_errors(
 		&self,
