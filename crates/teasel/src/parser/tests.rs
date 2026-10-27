@@ -717,7 +717,6 @@ fn phases() {
 	crate::comments::attach(&mut ast, &source, roots, 0);
 	let lines = Positions::new(&source, true);
 	let located = options.with(Options::COMMENTS | Options::LOCATIONS);
-	crate::json::place(&mut ast, &source, &lines, located, false);
 	let end = lines.offset(&mut Default::default(), source.len() as u32);
 	{
 		let prepared = crate::json::Prepared::borrowed(&source, Options(Options::MODULE | Options::COMMENTS));
@@ -753,6 +752,7 @@ fn phases() {
 		});
 	}
 	best("Json write, loc", &mut || {
+		crate::json::place(&mut ast, &source, &lines, located, false);
 		let _ = answer(&ast, Entry::Program, Some(roots), end, &source, located);
 	});
 	eprintln!(
