@@ -144,8 +144,8 @@ impl Parser<'_> {
 		result
 	}
 
-	/// An assignment expression that is an item of a parenthesized list, which an extension may
-	/// read differently.
+	/// An assignment expression that is an item of a parenthesized list, which TypeScript reads
+	/// differently.
 	pub(crate) fn parse_paren_item(&mut self, for_init: ForInit, errors: &mut Errors) -> Result<NodeId> {
 		self.enter()?;
 		let result = self.parse_maybe_assign_inner(for_init, errors, true);

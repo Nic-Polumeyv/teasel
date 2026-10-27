@@ -85,7 +85,7 @@ fn whole(src: &str, options: Options) -> (Ast, List) {
 }
 
 /// Renders a node as its Debug form with ids, strings and lists expanded inline; `extension`
-/// renders the nodes an extension owns.
+/// renders TypeScript's nodes.
 pub(crate) fn dump(ast: &Ast, id: NodeId, extension: &dyn Fn(&Ast, NodeId, u32) -> String) -> String {
 	let node = ast.node(id);
 	match node.kind {
@@ -142,7 +142,7 @@ pub(crate) fn expand(ast: &Ast, text: &str, extension: &dyn Fn(&Ast, NodeId, u32
 }
 
 fn plain(_: &Ast, _: NodeId, _: u32) -> String {
-	unreachable!("the JavaScript parser adds no extension nodes")
+	unreachable!("a JavaScript tree holds no TypeScript nodes")
 }
 
 fn expr(src: &str) -> String {

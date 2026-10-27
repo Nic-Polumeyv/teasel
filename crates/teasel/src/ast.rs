@@ -371,7 +371,7 @@ pub struct Ast {
 	/// Nodes erasure leaves out, when the answer erases TypeScript.
 	pub erased: NodeSet,
 	/// Nodes with what few have, for a front end that builds the rest in one piece: parentheses,
-	/// comments, an extension's extras, a binding or reference on what is not an identifier.
+	/// comments, TypeScript's extras, a binding or reference on what is not an identifier.
 	pub rare: NodeSet,
 	/// Nodes that declare bindings, are assigned by references or are a root.
 	pub late: NodeSet,
@@ -1134,7 +1134,7 @@ crate::layout::kinds! {
 			attributes: List,
 		},
 
-		/// A node owned by a parser extension, indexed into its own data.
+		/// A TypeScript node, indexed into `Ast::extension`.
 		Extension(u32),
 		/// A node of the host's grammar, indexed into `Ast::hosts`.
 		Host(u32),
