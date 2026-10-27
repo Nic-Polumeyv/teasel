@@ -48,10 +48,9 @@ const TEMPLATE: TokenKind = TokenKind::Backquote;
 impl Lexer<'_> {
 	/// How the list whose `(` is at `open` is read, with the lexer just past its first token
 	/// `first`; `call` when it follows `async`, where it may be arguments. The lexer is left where
-	/// it was.
+	/// it was, and reads ahead as the parse does: a recovering one reads past what it records.
 	pub(crate) fn list_role(&mut self, open: u32, first: &Token, typescript: bool, call: bool) -> Role {
-		let (mark, recover) = (self.mark(), self.recover);
-		self.recover = false;
+		let mark = self.mark();
 		let role = match self.first_tokens(first, typescript, call) {
 			Ok(Some(role)) => role,
 			Ok(None) => {
@@ -63,7 +62,6 @@ impl Lexer<'_> {
 			}
 			Err(_) => Role::Unsure,
 		};
-		self.recover = recover;
 		self.rewind(mark);
 		role
 	}

@@ -479,6 +479,10 @@ fn recovery() {
 	let (ast, _, _) = JS.recovered("/* c", 0, Entry::Program, module, "");
 	assert_eq!(codes(&ast), ["unterminated_comment@0"]);
 	assert_eq!(ast.comments.len(), 1);
+	// a character no token starts, inside an arrow's parameters: the arrow is read around it
+	let (ast, _, _) = JS.recovered("f((a, b = #) => a);", 0, Entry::Program, module, "");
+	assert_eq!(codes(&ast), ["unexpected_token@11", "unexpected_character@11"]);
+	assert!(script_body(&ast)[0].contains("ArrowFunctionExpression"));
 
 	// a missing semicolon is recorded and the statement kept; a statement that fails is skipped
 	// to `;`, the closing brace or a keyword on a new line
