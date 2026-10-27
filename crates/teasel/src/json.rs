@@ -686,20 +686,19 @@ fn run<E: crate::parser::Extension>(
 			}
 		}
 	}
+	let failed = roots.is_none();
+	place(&mut ast, source, positions, options, failed);
+	let end = positions.offset(&mut crate::estree::Cursor::default(), end);
 	match out {
-		Out::Json(json) => *json = answer(&ast, request.entry, roots, end, source, positions, options),
+		Out::Json(json) => *json = answer(&ast, request.entry, roots, end, source, options),
 		Out::Words(words) => {
-			let failed = roots.is_none();
 			let names = E::Data::names(pool);
-			prepare(&mut ast, source, positions, options, failed, names);
+			prepare(&mut ast, positions, options, failed, names);
 			// `end`, the roots by number, a word of what the answer is, each view's length, then where
 			// the tree's buffers sit folded into two words: a front end keeps its views while that holds
 			words.clear();
 			let roots = roots.map_or(&[][..], |roots| ast.list(roots));
-			words.extend_from_slice(&[
-				positions.offset(&mut crate::estree::Cursor::default(), end),
-				roots.len() as u32,
-			]);
+			words.extend_from_slice(&[end, roots.len() as u32]);
 			words.extend(roots.iter().map(|root| root.unwrap().index()));
 			let typescript = if options.typescript() { TYPESCRIPT } else { 0 };
 			words.push(typescript | if failed { FAILED } else { 0 });
@@ -719,20 +718,24 @@ fn run<E: crate::parser::Extension>(
 	Pooled::give(pool, ast);
 }
 
-/// What a front end reading the tree in place needs beside it: every node's span and location
-/// as JavaScript counts them, the nodes erasure leaves out, the hosts, the comments, the errors
-/// and the strings' UTF-16 starts; a failed parse prepares its error row alone, the
-/// tree it read is left as the last answer cleared it.
-fn prepare<X: Reuse>(
-	ast: &mut Ast<X>,
-	source: &str,
-	positions: &Positions,
-	options: Options,
-	failed: bool,
-	names: &mut Names,
-) {
+/// What both answers read beside the tree: every node's span and location as JavaScript counts
+/// them, the nodes erasure leaves out, the comments and the errors; a failed parse places its
+/// error row alone, the tree it read is left as the last answer cleared it.
+pub(crate) fn place<X: Reuse>(ast: &mut Ast<X>, source: &str, positions: &Positions, options: Options, failed: bool) {
 	if !failed {
-		prepare_tree(ast, positions, options, names);
+		positions.map_nodes(&ast.nodes, &mut ast.spans, &mut ast.locs);
+		ast.erased.clear();
+		if options.has(Options::ERASE) {
+			for i in 0..ast.nodes.len() as u32 {
+				let id = crate::ast::NodeId::at(i);
+				if ast.extension.erased(ast, id) {
+					ast.erased.insert(id);
+				}
+			}
+		}
+		if options.has(Options::COMMENTS) || !ast.hosts.is_empty() {
+			positions.map_comments(&ast.comments, &mut ast.comment_rows);
+		}
 	}
 	ast.error_rows.clear();
 	if failed || options.has(Options::ERROR_RECOVERY) {
@@ -750,34 +753,14 @@ fn prepare<X: Reuse>(
 			});
 		}
 	}
-	ast.units.clear();
-	let (text, starts, _) = ast.strings.buffers();
-	if !failed && !text.is_ascii() {
-		ast.units.reserve(starts.len());
-		let mut units = 0u32;
-		let mut from = 0usize;
-		for &start in starts.iter() {
-			units += text[from..start as usize]
-				.iter()
-				.filter(|&&b| b & 0xc0 != 0x80)
-				.map(|&b| if b >= 0xf0 { 2 } else { 1 })
-				.sum::<u32>();
-			from = start as usize;
-			ast.units.push(units);
-		}
-	}
 }
 
-fn prepare_tree<X: Reuse>(ast: &mut Ast<X>, positions: &Positions, options: Options, names: &mut Names) {
-	positions.map_nodes(&ast.nodes, &mut ast.spans, &mut ast.locs);
-	ast.erased.clear();
-	if options.has(Options::ERASE) {
-		for i in 0..ast.nodes.len() as u32 {
-			let id = crate::ast::NodeId::at(i);
-			if ast.extension.erased(ast, id) {
-				ast.erased.insert(id);
-			}
-		}
+/// What a front end reading the tree in place needs beyond: the nodes with what few have, the
+/// hosts by number and the strings' UTF-16 starts.
+fn prepare<X: Reuse>(ast: &mut Ast<X>, positions: &Positions, options: Options, failed: bool, names: &mut Names) {
+	ast.units.clear();
+	if failed {
+		return;
 	}
 	let (mut rare, mut late) = (std::mem::take(&mut ast.rare), std::mem::take(&mut ast.late));
 	rare.reset(ast.nodes.len());
@@ -830,8 +813,20 @@ fn prepare_tree<X: Reuse>(ast: &mut Ast<X>, positions: &Positions, options: Opti
 			span: host.span,
 		});
 	}
-	if options.has(Options::COMMENTS) || !ast.hosts.is_empty() {
-		positions.map_comments(&ast.comments, &mut ast.comment_rows);
+	let (text, starts, _) = ast.strings.buffers();
+	if !text.is_ascii() {
+		ast.units.reserve(starts.len());
+		let mut units = 0u32;
+		let mut from = 0usize;
+		for &start in starts.iter() {
+			units += text[from..start as usize]
+				.iter()
+				.filter(|&&b| b & 0xc0 != 0x80)
+				.map(|&b| if b >= 0xf0 { 2 } else { 1 })
+				.sum::<u32>();
+			from = start as usize;
+			ast.units.push(units);
+		}
 	}
 }
 

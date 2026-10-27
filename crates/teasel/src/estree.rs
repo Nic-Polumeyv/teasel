@@ -176,16 +176,16 @@ impl Json {
 		push_int(&mut self.out, end);
 	}
 
-	fn loc(&mut self, start_line: u32, start_column: u32, end_line: u32, end_column: u32) {
+	fn loc(&mut self, loc: Loc) {
 		self.sep();
 		self.out.push_str("\"loc\":{\"start\":{\"line\":");
-		push_int(&mut self.out, start_line);
+		push_int(&mut self.out, loc.start.line);
 		self.out.push_str(",\"column\":");
-		push_int(&mut self.out, start_column);
+		push_int(&mut self.out, loc.start.column);
 		self.out.push_str("},\"end\":{\"line\":");
-		push_int(&mut self.out, end_line);
+		push_int(&mut self.out, loc.end.line);
 		self.out.push_str(",\"column\":");
-		push_int(&mut self.out, end_column);
+		push_int(&mut self.out, loc.end.column);
 		self.out.push_str("}}");
 	}
 }
@@ -193,19 +193,18 @@ impl Json {
 /// The answer's words, read in place by a front end that takes the allocation over.
 pub type Words = crate::handed::Handed<u32>;
 
-/// Serializes an answer as JSON: the roots as `node`, one node or the patterns of a parameter
-/// list, null when the parse failed, then `end` and what the options add.
+/// Serializes an answer as JSON from the tree `json::place` mapped: the roots as `node`, one node
+/// or the patterns of a parameter list, null when the parse failed, then `end`, a UTF-16 offset,
+/// and what the options add.
 pub fn answer<X: Emit + Reuse>(
 	ast: &Ast<X>,
 	entry: Entry,
 	roots: Option<List>,
 	end: u32,
 	source: &str,
-	positions: &Positions,
 	options: Options,
 ) -> String {
-	let mut w = Writer::new(ast, source, positions);
-	w.options = options;
+	let mut w = Writer::new(ast, source, options);
 	w.failed = roots.is_none();
 	w.json.object();
 	match roots {
@@ -217,7 +216,6 @@ pub fn answer<X: Emit + Reuse>(
 		Some(roots) => w.field("node", ast.list(roots)[0].unwrap()),
 	}
 	w.key("end");
-	let end = w.positions.offset(&mut w.cursor, end);
 	w.json.int(end);
 	w.trailers();
 	w.json.end();
@@ -228,9 +226,11 @@ pub struct Writer<'a, X = ()> {
 	ast: &'a Ast<X>,
 	source: &'a str,
 	pub(crate) json: Json,
-	positions: &'a Positions,
-	cursor: Cursor,
 	pub(crate) options: Options,
+	/// Every JavaScript node and comment has a `loc`.
+	lines: bool,
+	/// A host's own nodes have one too.
+	host_lines: bool,
 	/// The parse failed: `node` is null and `errors` holds the one error, nothing else is listed.
 	pub(crate) failed: bool,
 	/// The node being written names something bound by another node: no scope facts on it.
@@ -465,14 +465,14 @@ fn locate<T>(items: &[T], hint: usize, byte: u32, key: impl Fn(&T) -> u32) -> us
 }
 
 impl<'a, X: Emit + Reuse> Writer<'a, X> {
-	fn new(ast: &'a Ast<X>, source: &'a str, positions: &'a Positions) -> Self {
+	fn new(ast: &'a Ast<X>, source: &'a str, options: Options) -> Self {
 		Self {
 			ast,
 			source,
 			json: Json::default(),
-			positions,
-			cursor: Cursor::default(),
-			options: Options::default(),
+			options,
+			lines: options.locations(),
+			host_lines: options.locations() && !options.has(Options::LOCATIONS_JS),
 			failed: false,
 			name_only: false,
 			kept: Vec::new(),
@@ -497,21 +497,19 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 		});
 		for &(ty, id) in &kept {
 			self.json.begin(ty);
-			let node = self.ast.node(id);
-			self.span(node.start, node.end);
+			self.span(id, self.lines);
 			self.json.end();
 		}
 		self.json.end();
 	}
 
 	pub(crate) fn begin(&mut self, ty: &'static str, id: NodeId) {
-		let node = self.ast.node(id);
-		if matches!(self.ast.nodes[id.index() as usize].kind, NodeKind::Host(_)) {
+		if matches!(self.ast.node(id).kind, NodeKind::Host(_)) {
 			self.json.escaped_begin(ty);
-			self.host_span(node.start, node.end);
+			self.span(id, self.host_lines);
 		} else {
 			self.json.begin(ty);
-			self.span(node.start, node.end);
+			self.span(id, self.lines);
 		}
 		self.scope_facts(id);
 		if self.ast.is_parenthesized(id) {
@@ -614,12 +612,15 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 	fn comment_list(&mut self, comments: impl IntoIterator<Item = u32>) {
 		self.json.list();
 		for index in comments {
-			let comment = self.ast.comments[index as usize];
-			self.json.begin(if comment.is_block() { "Block" } else { "Line" });
+			let row = self.ast.comment_rows[index as usize];
+			self.json.begin(if row.block { "Block" } else { "Line" });
 			self.key("value");
-			let range = comment.text_range();
+			let range = self.ast.comments[index as usize].text_range();
 			self.slice(range.start as u32, range.end as u32);
-			self.span(comment.start, comment.end);
+			self.json.span(row.span.start, row.span.end);
+			if self.lines {
+				self.json.loc(row.loc);
+			}
 			self.json.end();
 		}
 		self.json.end();
@@ -627,27 +628,26 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 
 	/// The recovered errors as the thrown one would be: code, args, `pos`, `end`, `line`, `column`.
 	fn errors(&mut self) {
-		let places = self.positions.of_errors(self.source, &self.ast.errors);
 		self.key("errors");
 		self.json.list();
-		for (error, [pos, end, line, column]) in self.ast.errors.iter().zip(places) {
+		for row in self.ast.error_rows.iter() {
 			self.json.object();
 			self.key("code");
-			self.json.int(error.code as u32);
+			self.json.int(row.code);
 			self.key("args");
 			self.json.list();
-			for &arg in error.args.iter().flatten() {
+			for arg in [row.first, row.second].into_iter().flatten() {
 				self.str_of(arg);
 			}
 			self.json.end();
 			self.key("pos");
-			self.json.int(pos);
+			self.json.int(row.pos);
 			self.key("end");
-			self.json.int(end);
+			self.json.int(row.end);
 			self.key("line");
-			self.json.int(line);
+			self.json.int(row.line);
 			self.key("column");
-			self.json.int(column);
+			self.json.int(row.column);
 			self.json.end();
 		}
 		self.json.end();
@@ -674,27 +674,16 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 		}
 	}
 
-	pub(crate) fn span(&mut self, start: u32, end: u32) {
-		self.located(start, end, self.positions.lines);
-	}
-
-	/// A host node's span, with `loc` when host nodes are located.
-	fn host_span(&mut self, start: u32, end: u32) {
-		self.located(start, end, self.positions.lines && self.positions.hosts);
-	}
-
-	fn located(&mut self, start: u32, end: u32, lines: bool) {
-		let (start_offset, gap) = self.positions.offset_from(self.cursor.gap, start);
-		self.cursor.gap = gap;
-		let (end_offset, _) = self.positions.offset_from(gap, end);
-		self.json.span(start_offset, end_offset);
-		if !lines {
-			return;
+	/// A node's span as UTF-16 offsets, the node's own when the source is ASCII, and its `loc`.
+	fn span(&mut self, id: NodeId, lines: bool) {
+		let index = id.index() as usize;
+		match self.ast.spans.get(index) {
+			Some(span) => self.json.span(span.start, span.end),
+			None => self.json.span(self.ast.nodes[index].start, self.ast.nodes[index].end),
 		}
-		let (sl, sc) = self.positions.line_column(self.cursor.line, start, start_offset);
-		self.cursor.line = sl;
-		let (el, ec) = self.positions.line_column(sl, end, end_offset);
-		self.json.loc(sl as u32, sc, el as u32, ec);
+		if lines {
+			self.json.loc(self.ast.locs[index]);
+		}
 	}
 
 	/// The source between two byte offsets, as a string value.
@@ -752,7 +741,7 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 		self.json.list();
 		let ast = self.ast;
 		for item in ast.list(list) {
-			if self.options.has(Options::ERASE) && item.is_some_and(|id| ast.extension.erased(ast, id)) {
+			if item.is_some_and(|id| ast.erased.contains(id)) {
 				continue;
 			}
 			match item {
@@ -951,9 +940,8 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 				let host = self.ast.hosts[index as usize];
 				if host.ty.is_empty() {
 					// an object of the host's without a type, positions and all
-					let node = self.ast.node(id);
 					self.json.object();
-					self.host_span(node.start, node.end);
+					self.span(id, self.host_lines);
 				} else if host.span {
 					self.begin(host.ty, id);
 				} else {

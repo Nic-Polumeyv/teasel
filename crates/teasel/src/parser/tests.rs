@@ -715,8 +715,10 @@ fn phases() {
 	});
 	let (mut ast, roots) = whole(&source, options);
 	crate::comments::attach(&mut ast, &source, roots, 0);
-	let end = source.len() as u32;
 	let lines = Positions::new(&source, true);
+	let located = options.with(Options::COMMENTS | Options::LOCATIONS);
+	crate::json::place(&mut ast, &source, &lines, located, false);
+	let end = lines.offset(&mut Default::default(), source.len() as u32);
 	{
 		let prepared = crate::json::Prepared::borrowed(&source, Options(Options::MODULE | Options::COMMENTS));
 		best("whole request: positions, parse, comments, encode, finish", &mut || {
@@ -751,15 +753,7 @@ fn phases() {
 		});
 	}
 	best("Json write, loc", &mut || {
-		let _ = answer(
-			&ast,
-			Entry::Program,
-			Some(roots),
-			end,
-			&source,
-			&lines,
-			options.with(Options::COMMENTS),
-		);
+		let _ = answer(&ast, Entry::Program, Some(roots), end, &source, located);
 	});
 	eprintln!(
 		"nodes {} lists {} strings {} comments {}",
