@@ -262,7 +262,11 @@ impl Parser<'_> {
 		let NodeKind::VariableDeclarator { id, init: Some(init) } = self.kind(declarator) else {
 			return Ok(());
 		};
-		let annotated = self.ext_data().extras(id).is_some_and(|e| e.type_annotation.is_some());
+		let annotated = self
+			.ast
+			.typescript
+			.extras(id)
+			.is_some_and(|e| e.type_annotation.is_some());
 		if kind != VariableKind::Const || annotated {
 			return self.error(self.start_of(init), Code::InitializerInAmbient);
 		}

@@ -16,7 +16,7 @@ use crate::parser::expression::{assignment_operator, starts_expression};
 use crate::parser::scope::{SCOPE_ARROW, function_flags};
 use crate::parser::statement::{ClassKind, StatementPlace};
 use crate::parser::{Context, DestructuringErrors, Errors, ForInit, FunctionKind, Parser, Result, Unwrap};
-use ast::{Accessibility, Data, Extras, Kind, TsKind};
+use ast::{Accessibility, Extras, Kind, TsKind};
 use declarations::Head;
 use types::TypeParameterModifiers;
 
@@ -199,8 +199,8 @@ modifiers! {
 
 impl Parser<'_> {
 	pub(crate) fn ts(&mut self, kind: TsKind, start: u32) -> NodeId {
-		let index = self.ast.extension.nodes.len() as u32;
-		self.ast.extension.nodes.push(kind);
+		let index = self.ast.typescript.nodes.len() as u32;
+		self.ast.typescript.nodes.push(kind);
 		self.add(NodeKind::Extension(index), start)
 	}
 
@@ -212,15 +212,11 @@ impl Parser<'_> {
 	}
 
 	fn ts_kind(&self, id: NodeId) -> Option<TsKind> {
-		Some(self.ast.extension.nodes[self.ts_index(id)?])
+		Some(self.ast.typescript.nodes[self.ts_index(id)?])
 	}
 
 	fn extras_mut(&mut self, id: NodeId) -> &mut Extras {
-		self.ast.extension.extras.entry(id)
-	}
-
-	fn ext_data(&self) -> &Data {
-		&self.ast.extension
+		self.ast.typescript.extras.entry(id)
 	}
 
 	fn check_parameter_list(&self, params: List, signature: bool) -> Result<()> {
@@ -234,7 +230,11 @@ impl Parser<'_> {
 			if self.ident_is(binding, "this") {
 				continue;
 			}
-			let optional = self.ext_data().extras(binding).is_some_and(|extras| extras.optional);
+			let optional = self
+				.ast
+				.typescript
+				.extras(binding)
+				.is_some_and(|extras| extras.optional);
 			let rest = matches!(self.kind(param), NodeKind::RestElement { .. });
 			if rest && optional {
 				return self.error(self.start_of(param), Code::OptionalRest);
@@ -1245,7 +1245,7 @@ impl TypeScript {
 				if p.ident_is(*param, "this") {
 					continue;
 				}
-				if p.ext_data().extras(*param).is_some_and(|extras| extras.optional) {
+				if p.ast.typescript.extras(*param).is_some_and(|extras| extras.optional) {
 					return p.error(p.start_of(*param), Code::SetterOptionalParameter);
 				}
 				if matches!(p.kind(*param), NodeKind::AssignmentPattern { .. }) {
@@ -1667,7 +1667,7 @@ impl TypeScript {
 			if !has_body || kind == MethodKind::Get || !p.ts.classes.last().unwrap().is_declaration {
 				for &param in p.ast.list(params).iter().flatten() {
 					let param = Self::unwrap(p, param, Unwrap::InnerPattern).unwrap_or(param);
-					if let Some(decorators) = p.ext_data().extras(param).and_then(|extras| extras.decorators) {
+					if let Some(decorators) = p.ast.typescript.extras(param).and_then(|extras| extras.decorators) {
 						return p.parameter_decorator_error(decorators);
 					}
 				}
