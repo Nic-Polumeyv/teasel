@@ -8,19 +8,63 @@ use crate::layout::Ty;
 use crate::parser::Entry;
 use crate::recipe::{Op, Slot};
 use crate::scopes::Role;
+use crate::typescript::ast::{Data, Extras, TsKind};
 use std::fmt::Write;
 
-/// How an extension's data serializes: its own nodes, and the keys it adds to JavaScript nodes.
-pub trait Emit: crate::ast::Walk {
-	/// Emits one of the extension's own nodes and closes it, or what erasing puts in its place.
-	fn node(&self, w: &mut Writer<Self>, id: NodeId, index: u32);
-	fn extras(&self, _w: &mut Writer<Self>, _id: NodeId) {}
+/// What the writer reads of an extension's data: TypeScript's records, when the tree has them.
+pub trait Emit {
+	fn typescript(&self) -> Option<&Data> {
+		None
+	}
 }
 
-impl Emit for () {
-	fn node(&self, _w: &mut Writer<Self>, _id: NodeId, _index: u32) {
-		unreachable!("the JavaScript parser adds no extension nodes")
+impl Emit for () {}
+
+impl Emit for Data {
+	fn typescript(&self) -> Option<&Data> {
+		Some(self)
 	}
+}
+
+/// Every recipe with its fields resolved, by a kind's tag: the JavaScript kinds, TypeScript's,
+/// what TypeScript adds to either with the fields it reads, what erasing keeps, and the rows.
+struct Recipes {
+	js: &'static [&'static [Op<Slot>]],
+	ts: &'static [&'static [Op<Slot>]],
+	adds: Vec<(&'static [Op<Slot>], Vec<&'static str>)>,
+	ts_adds: Vec<(&'static [Op<Slot>], Vec<&'static str>)>,
+	erased: &'static [Op<Slot>],
+	rows: Vec<&'static [Op<Slot>]>,
+}
+
+fn recipes() -> &'static Recipes {
+	use crate::recipe::{self, ADDS, EXTRAS_ERASED, JS, RECIPES, ROWS, TS, TS_ADDS};
+	use crate::typescript::ast::ts_layout;
+	static RESOLVED: std::sync::OnceLock<Recipes> = std::sync::OnceLock::new();
+	let adds = |table: &[(&str, &'static [Op])], variants: &[crate::layout::Variant]| {
+		variants
+			.iter()
+			.map(|variant| match table.iter().find(|(name, _)| *name == variant.name) {
+				Some((name, ops)) => (
+					recipe::resolve_ops(ops, Extras::FIELDS, name),
+					ops.iter().filter_map(|op| op.told().2).collect(),
+				),
+				None => (&[][..], Vec::new()),
+			})
+			.collect()
+	};
+	RESOLVED.get_or_init(|| Recipes {
+		js: recipe::resolve(JS, crate::ast::node_layout::VARIANTS),
+		ts: recipe::resolve(TS, ts_layout::VARIANTS),
+		adds: adds(ADDS, crate::ast::node_layout::VARIANTS),
+		ts_adds: adds(TS_ADDS, ts_layout::VARIANTS),
+		erased: recipe::resolve_ops(EXTRAS_ERASED, Extras::FIELDS, "Extras"),
+		rows: RECIPES
+			.iter()
+			.zip(ROWS)
+			.map(|((name, ops), (_, _, fields))| recipe::resolve_ops(ops, fields, name))
+			.collect(),
+	})
 }
 
 /// JSON text.
@@ -222,17 +266,18 @@ pub fn answer<X: Emit + Reuse>(
 	w.json.finish()
 }
 
-pub struct Writer<'a, X = ()> {
+struct Writer<'a, X> {
 	ast: &'a Ast<X>,
+	typescript: Option<&'a Data>,
 	source: &'a str,
-	pub(crate) json: Json,
-	pub(crate) options: Options,
+	json: Json,
+	options: Options,
 	/// Every JavaScript node and comment has a `loc`.
 	lines: bool,
 	/// A host's own nodes have one too.
 	host_lines: bool,
 	/// The parse failed: `node` is null and `errors` holds the one error, nothing else is listed.
-	pub(crate) failed: bool,
+	failed: bool,
 	/// The node being written names something bound by another node: no scope facts on it.
 	name_only: bool,
 	/// What erasure left in place, in emission order.
@@ -468,6 +513,7 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 	fn new(ast: &'a Ast<X>, source: &'a str, options: Options) -> Self {
 		Self {
 			ast,
+			typescript: ast.extension.typescript(),
 			source,
 			json: Json::default(),
 			options,
@@ -478,11 +524,6 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 			kept: Vec::new(),
 			adopted: Vec::new(),
 		}
-	}
-
-	/// Records a node erasure had to leave in place.
-	pub(crate) fn keep(&mut self, ty: &'static str, id: NodeId) {
-		self.kept.push((ty, id));
 	}
 
 	/// What erasure left in place, as `typescript`, in source order.
@@ -503,7 +544,7 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 		self.json.end();
 	}
 
-	pub(crate) fn begin(&mut self, ty: &'static str, id: NodeId) {
+	fn begin(&mut self, ty: &'static str, id: NodeId) {
 		if matches!(self.ast.node(id).kind, NodeKind::Host(_)) {
 			self.json.escaped_begin(ty);
 			self.span(id, self.host_lines);
@@ -515,7 +556,9 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 		if self.ast.is_parenthesized(id) {
 			self.bool("parenthesized", true);
 		}
-		self.ast.extension.extras(self, id);
+		if let Some(ts) = self.typescript {
+			self.extras(ts, id);
+		}
 		if let Some(&attached) = self.ast.attached.get(id) {
 			self.comments("leadingComments", attached.leading);
 			self.comments("trailingComments", attached.trailing);
@@ -564,12 +607,6 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 		}
 	}
 
-	/// The facts of a node erasure leaves out go on the next node written, the one standing in
-	/// for it.
-	pub(crate) fn adopt(&mut self, id: NodeId) {
-		self.adopted.push(id);
-	}
-
 	/// The scope, binding and reference tables: what the `scope`, `declares`, `reference` and
 	/// `writes` numbers index.
 	fn all_scopes(&mut self) {
@@ -584,14 +621,7 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 
 	/// A table, each row spelled by its recipe of `recipe::RECIPES`.
 	fn rows<T>(&mut self, key: &'static str, rows: &[T], table: usize) {
-		static RESOLVED: std::sync::OnceLock<Vec<&'static [Op<Slot>]>> = std::sync::OnceLock::new();
-		let ops = RESOLVED.get_or_init(|| {
-			crate::recipe::RECIPES
-				.iter()
-				.zip(crate::recipe::ROWS)
-				.map(|((name, ops), (_, _, fields))| crate::recipe::resolve_ops(ops, fields, name))
-				.collect()
-		})[table];
+		let ops = recipes().rows[table];
 		self.key(key);
 		self.json.list();
 		for row in rows {
@@ -691,15 +721,11 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 		self.json.text(&self.source[start as usize..end as usize]);
 	}
 
-	pub(crate) fn end(&mut self) {
-		self.json.end();
-	}
-
-	pub(crate) fn key(&mut self, key: &'static str) {
+	fn key(&mut self, key: &'static str) {
 		self.json.key(key);
 	}
 
-	pub(crate) fn field(&mut self, key: &'static str, id: NodeId) {
+	fn field(&mut self, key: &'static str, id: NodeId) {
 		self.key(key);
 		self.node(id);
 	}
@@ -713,18 +739,14 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 		self.name_only = was;
 	}
 
-	pub(crate) fn kind(&self, id: NodeId) -> NodeKind {
-		self.ast.node(id).kind
-	}
-
 	/// The key only when there is a node; an unset property is left out.
-	pub(crate) fn opt_key(&mut self, key: &'static str, id: Option<NodeId>) {
+	fn opt_key(&mut self, key: &'static str, id: Option<NodeId>) {
 		if let Some(id) = id {
 			self.field(key, id);
 		}
 	}
 
-	pub(crate) fn opt(&mut self, key: &'static str, id: Option<NodeId>) {
+	fn opt(&mut self, key: &'static str, id: Option<NodeId>) {
 		self.key(key);
 		match id {
 			Some(id) => self.node(id),
@@ -732,7 +754,7 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 		}
 	}
 
-	pub(crate) fn list(&mut self, key: &'static str, list: List) {
+	fn list(&mut self, key: &'static str, list: List) {
 		self.key(key);
 		self.items(list);
 	}
@@ -753,10 +775,10 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 	}
 
 	/// A parameter list; erasing drops TypeScript's `this` parameter.
-	pub(crate) fn params(&mut self, key: &'static str, list: List) {
+	fn params(&mut self, key: &'static str, list: List) {
 		if self.options.has(Options::ERASE)
 			&& let Some(&Some(first)) = self.ast.list(list).first()
-			&& let NodeKind::Identifier { name } = self.kind(first)
+			&& let NodeKind::Identifier { name } = self.ast.node(first).kind
 			&& self.ast.str(name) == "this"
 		{
 			let rest = List {
@@ -768,17 +790,17 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 		self.list(key, list)
 	}
 
-	pub(crate) fn bool(&mut self, key: &'static str, value: bool) {
+	fn bool(&mut self, key: &'static str, value: bool) {
 		self.key(key);
 		self.json.bool(value);
 	}
 
-	pub(crate) fn text(&mut self, key: &'static str, value: &str) {
+	fn text(&mut self, key: &'static str, value: &str) {
 		self.key(key);
 		self.json.text(value);
 	}
 
-	pub(crate) fn interned(&mut self, key: &'static str, id: StrId) {
+	fn interned(&mut self, key: &'static str, id: StrId) {
 		self.key(key);
 		self.str_of(id);
 	}
@@ -787,36 +809,55 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 		self.json.marked(self.ast.str(id), self.ast.strings.marks_of(id));
 	}
 
-	pub(crate) fn raw(&mut self, id: NodeId) {
+	fn raw(&mut self, id: NodeId) {
 		let node = self.ast.node(id);
 		self.key("raw");
 		self.slice(node.start, node.end);
 	}
 
-	/// The recipes of the JavaScript kinds, resolved once.
-	fn js_recipes() -> &'static [&'static [Op<Slot>]] {
-		static RESOLVED: std::sync::OnceLock<&'static [&'static [Op<Slot>]]> = std::sync::OnceLock::new();
-		RESOLVED.get_or_init(|| crate::recipe::resolve(crate::recipe::JS, crate::ast::node_layout::VARIANTS))
+	/// What TypeScript adds to a node from its extras record, a blank one when it has none; a
+	/// key its kind does not list is a parser bug, which a test build catches and a shipped build
+	/// answers around.
+	fn extras(&mut self, ts: &Data, id: NodeId) {
+		let recipes = recipes();
+		let extras = ts.extras(id).copied().unwrap_or_default();
+		let base = &extras as *const Extras as *const u8;
+		if self.options.has(Options::ERASE) {
+			self.run(id, recipes.erased, base);
+			return;
+		}
+		let (ops, read) = match self.ast.node(id).kind {
+			NodeKind::Extension(index) => {
+				&recipes.ts_adds[tag(&ts.nodes[index as usize] as *const TsKind as *const u8)]
+			}
+			ref kind => &recipes.adds[tag(kind as *const NodeKind as *const u8)],
+		};
+		self.run(id, ops, base);
+		if cfg!(debug_assertions)
+			&& let Some(field) = extras.set().find(|&field| !read.contains(&field))
+		{
+			panic!("{:?} has {field}, which its kind does not list", self.ast.node(id).kind);
+		}
 	}
 
 	/// Follows a kind's recipe over the record at `base`, a `repr(C, u32)` enum's payload; the
 	/// caller ends the node, unless a child stood in for it: false then.
-	pub(crate) fn run(&mut self, id: NodeId, ops: &[Op<Slot>], base: *const u8) -> bool {
+	fn run(&mut self, id: NodeId, ops: &[Op<Slot>], base: *const u8) -> bool {
 		for op in ops {
 			match *op {
 				Op::Keep(name) => {
 					if self.options.has(Options::ERASE) {
-						self.keep(name, id);
+						self.kept.push((name, id));
 					}
 				}
 				Op::KeepIf(name, slot) => {
 					if self.options.has(Options::ERASE) && get::<u8>(base, slot) == 1 {
-						self.keep(name, id);
+						self.kept.push((name, id));
 					}
 				}
 				Op::Through(slot) => {
 					if self.options.has(Options::ERASE) {
-						self.adopt(id);
+						self.adopted.push(id);
 						self.node(get(base, slot));
 						return false;
 					}
@@ -930,12 +971,15 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 		true
 	}
 
-	pub(crate) fn node(&mut self, id: NodeId) {
+	fn node(&mut self, id: NodeId) {
 		use NodeKind::*;
 		let kind = &self.ast.nodes[id.index() as usize].kind;
-		match *kind {
-			// the extension closes its own node, since erasing may put another in its place
-			Extension(index) => return self.ast.extension.node(self, id, index),
+		let (ops, base) = match *kind {
+			Extension(index) => {
+				let ts = self.typescript.expect("only TypeScript adds nodes of its own");
+				let base = &ts.nodes[index as usize] as *const TsKind as *const u8;
+				(recipes().ts[tag(base)], base)
+			}
 			Host(index) => {
 				let host = self.ast.hosts[index as usize];
 				if host.ty.is_empty() {
@@ -970,18 +1014,22 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 						Value::Comments => self.comment_list(0..self.ast.comments.len() as u32),
 					}
 				}
+				self.json.end();
+				return;
 			}
 			_ => {
 				let base = kind as *const NodeKind as *const u8;
-				self.run(id, Self::js_recipes()[tag(base)], base);
+				(recipes().js[tag(base)], base)
 			}
+		};
+		if self.run(id, ops, base) {
+			self.json.end();
 		}
-		self.end();
 	}
 }
 
 /// The tag of a `repr(C, u32)` enum at `base`: its first word.
-pub(crate) fn tag(base: *const u8) -> usize {
+fn tag(base: *const u8) -> usize {
 	unsafe { base.cast::<u32>().read() as usize }
 }
 

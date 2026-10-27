@@ -1,9 +1,7 @@
 use crate::ast::{Ast, List, NodeId, NodeKind, Reuse, Walk};
-use crate::estree::{Emit, Writer};
 use crate::handed::{Handed, Views};
 use crate::interner::StrId;
 use crate::layout::Ty;
-use crate::recipe::{ADDS, EXTRAS_ERASED, Op, Slot, TS, TS_ADDS};
 use crate::scopes::{Bind, Binder, BindingKind, Mode, ScopeKind};
 
 /// What the TypeScript extension hands back with a tree: its own nodes, indexed by the
@@ -171,7 +169,7 @@ crate::layout::record! {
 }
 
 impl Extras {
-	fn set(&self) -> impl Iterator<Item = &'static str> {
+	pub(crate) fn set(&self) -> impl Iterator<Item = &'static str> {
 		let base = self as *const Extras as *const u8;
 		Extras::FIELDS
 			.iter()
@@ -825,37 +823,6 @@ impl Walk for Data {
 	}
 }
 
-// ESTree output for the TypeScript nodes and the keys TypeScript adds to every node
-struct Recipes {
-	kinds: &'static [&'static [Op<Slot>]],
-	/// By the kind's tag: the operations and the fields they read.
-	adds: Vec<(&'static [Op<Slot>], Vec<&'static str>)>,
-	ts_adds: Vec<(&'static [Op<Slot>], Vec<&'static str>)>,
-	erased: &'static [Op<Slot>],
-}
-
-fn recipes() -> &'static Recipes {
-	static RESOLVED: std::sync::OnceLock<Recipes> = std::sync::OnceLock::new();
-	let adds = |table: &[(&str, &'static [Op])], variants: &[crate::layout::Variant]| {
-		variants
-			.iter()
-			.map(|variant| match table.iter().find(|(name, _)| *name == variant.name) {
-				Some((name, ops)) => (
-					crate::recipe::resolve_ops(ops, Extras::FIELDS, name),
-					ops.iter().filter_map(|op| op.told().2).collect(),
-				),
-				None => (&[][..], Vec::new()),
-			})
-			.collect()
-	};
-	RESOLVED.get_or_init(|| Recipes {
-		kinds: crate::recipe::resolve(TS, super::ast::ts_layout::VARIANTS),
-		adds: adds(ADDS, crate::ast::node_layout::VARIANTS),
-		ts_adds: adds(TS_ADDS, super::ast::ts_layout::VARIANTS),
-		erased: crate::recipe::resolve_ops(EXTRAS_ERASED, Extras::FIELDS, "Extras"),
-	})
-}
-
 impl Data {
 	/// Whether every statement of a list erases to nothing.
 	fn all_erased(&self, ast: &Ast<Self>, list: List) -> bool {
@@ -866,37 +833,5 @@ impl Data {
 
 	fn extras_of(&self, id: NodeId) -> Extras {
 		self.extras(id).copied().unwrap_or_default()
-	}
-}
-
-impl Emit for Data {
-	fn node(&self, w: &mut Writer<Self>, id: NodeId, index: u32) {
-		let base = &self.nodes[index as usize] as *const TsKind as *const u8;
-		if w.run(id, recipes().kinds[crate::estree::tag(base)], base) {
-			w.end();
-		}
-	}
-
-	fn extras(&self, w: &mut Writer<Self>, id: NodeId) {
-		let recipes = recipes();
-		let extras = self.extras_of(id);
-		let base = &extras as *const Extras as *const u8;
-		if w.options.has(crate::Options::ERASE) {
-			w.run(id, recipes.erased, base);
-			return;
-		}
-		let (ops, read) = match w.kind(id) {
-			NodeKind::Extension(index) => {
-				&recipes.ts_adds[crate::estree::tag(&self.nodes[index as usize] as *const TsKind as *const u8)]
-			}
-			kind => &recipes.adds[crate::estree::tag(&kind as *const NodeKind as *const u8)],
-		};
-		w.run(id, ops, base);
-		// an unlisted extra is a parser bug, which a test build catches and a shipped build answers around
-		if cfg!(debug_assertions)
-			&& let Some(field) = extras.set().find(|&field| !read.contains(&field))
-		{
-			panic!("{:?} has {field}, which its kind does not list", w.kind(id));
-		}
 	}
 }
