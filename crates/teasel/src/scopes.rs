@@ -442,9 +442,6 @@ pub trait Bind: Walk {
 	fn types_only(&self, _ast: &Ast<Self>, _id: NodeId) -> bool {
 		false
 	}
-	fn this_parameter(&self, _id: NodeId) -> bool {
-		false
-	}
 }
 
 impl Bind for () {
@@ -1099,7 +1096,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 		self.enter(ScopeKind::Function, Some(id), arrow);
 		// a TypeScript `this` parameter is a type position and binds nothing
 		for &param in self.ast.list(params).iter().flatten() {
-			if self.ast.extension.this_parameter(param) {
+			if self.ast.this_parameters.contains(param) {
 				continue;
 			}
 			self.initializing(None, |b| {

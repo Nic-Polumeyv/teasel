@@ -396,6 +396,7 @@ pub struct Ast<X = ()> {
 	pub errors: Vec<crate::SyntaxError>,
 	/// Whether a node was written in parentheses, when `Options::parenthesized` asks.
 	pub parenthesized: NodeSet,
+	pub this_parameters: NodeSet,
 	pub extension: X,
 }
 
@@ -490,6 +491,7 @@ impl<X: Reuse> Ast<X> {
 		}
 		self.errors.clear();
 		self.parenthesized.clear();
+		self.this_parameters.clear();
 		self.erased.clear();
 		self.rare.clear();
 		self.late.clear();
@@ -519,6 +521,7 @@ impl<X: Reuse> Ast<X> {
 		self.numbers.truncate(mark.numbers);
 		self.lists.truncate(mark.lists);
 		self.parenthesized.truncate(mark.nodes);
+		self.this_parameters.truncate(mark.nodes);
 		self.extension.truncate(mark.extension);
 	}
 }

@@ -10,7 +10,6 @@ use crate::scopes::{Bind, Binder, BindingKind, Mode, ScopeKind};
 pub struct Data {
 	pub nodes: Handed<TsKind>,
 	pub extras: crate::ast::Slots<Extras>,
-	pub this_parameters: Vec<NodeId>,
 }
 
 impl Data {
@@ -24,22 +23,20 @@ impl Data {
 }
 
 impl crate::ast::Reuse for Data {
-	type Mark = (usize, usize, usize);
+	type Mark = (usize, usize);
 
 	fn clear(&mut self) {
 		self.nodes.clear();
 		self.extras.clear();
-		self.this_parameters.clear();
 	}
 
 	fn mark(&self) -> Self::Mark {
-		(self.nodes.len(), self.extras.len(), self.this_parameters.len())
+		(self.nodes.len(), self.extras.len())
 	}
 
-	fn truncate(&mut self, (nodes, extras, this_parameters): Self::Mark) {
+	fn truncate(&mut self, (nodes, extras): Self::Mark) {
 		self.nodes.truncate(nodes);
 		self.extras.truncate(extras);
-		self.this_parameters.truncate(this_parameters);
 	}
 
 	fn views(&mut self, out: &mut Views<'_>) {
@@ -96,7 +93,7 @@ impl crate::ast::Reuse for Data {
 			NodeKind::ExportDefaultDeclaration { declaration } => {
 				extras.export_kind == Some(Kind::Type) || self.erased(ast, declaration)
 			}
-			NodeKind::Identifier { .. } => self.this_parameters.contains(&id),
+			NodeKind::Identifier { .. } => ast.this_parameters.contains(id),
 			_ => false,
 		}
 	}
@@ -565,10 +562,6 @@ impl Bind for Data {
 				b.visit(decorator, Mode::Expression);
 			}
 		}
-	}
-
-	fn this_parameter(&self, id: NodeId) -> bool {
-		self.this_parameters.contains(&id)
 	}
 
 	fn types_only(&self, _ast: &Ast<Self>, id: NodeId) -> bool {

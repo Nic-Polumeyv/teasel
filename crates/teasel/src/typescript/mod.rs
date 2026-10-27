@@ -248,7 +248,7 @@ impl Parser<'_, TypeScript> {
 			};
 			if self.ident_is(binding, "this") {
 				if binding == item {
-					self.ast.extension.this_parameters.push(item);
+					self.ast.this_parameters.insert(item);
 				}
 				continue;
 			}
