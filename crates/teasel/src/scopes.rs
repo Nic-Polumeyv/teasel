@@ -1094,7 +1094,6 @@ impl<'a, X: Bind> Binder<'a, X> {
 			self.ast.extension.bind_extras(self, param);
 		}
 		self.enter(ScopeKind::Function, Some(id), arrow);
-		// a TypeScript `this` parameter is a type position and binds nothing
 		for &param in self.ast.list(params).iter().flatten() {
 			if self.ast.this_parameters.contains(param) {
 				continue;

@@ -729,7 +729,7 @@ pub(crate) fn place<X: Reuse>(ast: &mut Ast<X>, source: &str, positions: &Positi
 		positions.map_nodes(&ast.nodes, &mut ast.spans, &mut ast.locs);
 		ast.erased.clear();
 		if options.has(Options::ERASE) {
-			// only a list leaves an item out: asking every node cost 2% of an erasing JSON answer
+			// asking every node, not only list items, cost 2% of an erasing JSON answer
 			for i in 0..ast.lists.len() {
 				let Some(id) = ast.lists[i] else { continue };
 				if ast.extension.erased(ast, id) {

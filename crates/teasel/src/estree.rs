@@ -398,8 +398,7 @@ impl Positions {
 	fn loc(&self, cursor: &mut Cursor, from: u32, start: u32, to: u32, end: u32) -> Loc {
 		let (sl, sc) = self.line_column(cursor.line, from, start);
 		cursor.line = sl;
-		// a node follows its last child, so its end is near the last end: looked up from its own
-		// start, a long node's end was a binary search, 8% of placing a tree
+		// hinting a node's end from its own start line cost 8% of placing a tree
 		let (el, ec) = self.line_column(cursor.end.max(sl), to, end);
 		cursor.end = el;
 		Loc {
