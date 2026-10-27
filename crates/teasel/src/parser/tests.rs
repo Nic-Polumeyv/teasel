@@ -253,6 +253,12 @@ fn nesting_limits() {
 			assert!(program(&chain, Options::default()).is_ok());
 			let chain = format!("x = 1{}", " + 1".repeat(20000));
 			assert_eq!(module_error(&chain).as_str(), "nesting_depth (40006)");
+			// an arrow's parameters hold the depth an expression list's items do
+			let arrows = format!("x = {}x{};", "(a = ".repeat(450), ") => a".repeat(450));
+			assert_eq!(module_error(&arrows).as_str(), "nesting_depth (1665)");
+			let typed = format!("x = {}x{};", "(a = ".repeat(450), "): T => a".repeat(450));
+			let error = program(&typed, typescript(Options(Options::MODULE))).unwrap_err();
+			assert_eq!((error.text.as_str(), error.pos), ("nesting_depth", 1665));
 		})
 		.unwrap()
 		.join()

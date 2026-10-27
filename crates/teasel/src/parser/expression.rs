@@ -798,6 +798,10 @@ impl Parser<'_> {
 		let back = (self.token_snapshot(), self.ast.mark());
 		let mut names = self.items();
 		let mut last_end = self.prev_end;
+		let held = matches!(self.tok.kind, TokenKind::Ident(_));
+		if held {
+			self.enter()?;
+		}
 		let plain = loop {
 			if self.is(TokenKind::ParenR) && names.is_empty() {
 				break true;
@@ -818,6 +822,9 @@ impl Parser<'_> {
 				break false;
 			}
 		};
+		if held {
+			self.leave();
+		}
 		if plain {
 			self.next()?;
 			let arrow = self.is(TokenKind::Arrow) && (!self.tok.newline_before || names.is_empty());
@@ -1298,7 +1305,15 @@ impl Parser<'_> {
 	#[expect(clippy::type_complexity)]
 	pub(crate) fn read_arrow_params(&mut self, is_async: bool) -> Result<(Vec<Option<NodeId>>, (u32, u32, u32))> {
 		let outer = self.open_arrow_head(is_async);
+		// without it the limit fell a third deeper than for an expression list: `(a = ` ×450 parsed
+		let held = !self.is(TokenKind::ParenR) && !self.is(TokenKind::Ellipsis);
+		if held {
+			self.enter()?;
+		}
 		let params = self.parse_binding_list(TokenKind::ParenR, false, true, false)?;
+		if held {
+			self.leave();
+		}
 		self.close_arrow_head()?;
 		Ok((params, outer))
 	}
