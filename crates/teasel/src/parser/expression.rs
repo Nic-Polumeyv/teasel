@@ -53,7 +53,7 @@ fn binary_precedence(kind: TokenKind) -> Option<(u8, BinaryOperator)> {
 	})
 }
 
-fn assignment_operator(kind: TokenKind) -> Option<AssignmentOperator> {
+pub(crate) fn assignment_operator(kind: TokenKind) -> Option<AssignmentOperator> {
 	use AssignmentOperator as A;
 	use TokenKind as T;
 	Some(match kind {
@@ -186,6 +186,8 @@ impl<E: Extension> Parser<'_, E> {
 			if is_eq {
 				left = self.make_pattern(left, false, errors)?;
 			}
+			// `a: T = 1` is checked once its list is known, as a parameter or as a stray cast
+			let inner = E::unwrap(self, left, Unwrap::InnerPattern);
 			let e = errors.as_mut().unwrap();
 			if !own_errors {
 				e.parenthesized_assign = None;
@@ -195,7 +197,7 @@ impl<E: Extension> Parser<'_, E> {
 			if e.shorthand_assign.is_some_and(|p| p >= self.start_of(left)) {
 				e.shorthand_assign = None;
 			}
-			if E::checks_assignment_target(self) {
+			if inner.is_none() {
 				if is_eq {
 					self.check_lval_pattern(left, Binding::None, &mut None)?;
 				} else {
@@ -562,7 +564,7 @@ impl<E: Extension> Parser<'_, E> {
 		if !no_calls && self.eat(TokenKind::ParenL)? {
 			let mut errors = Some(DestructuringErrors::default());
 			let old = self.take_yield_await();
-			E::paren_list_start(self);
+			E::paren_list_start(self, maybe_async_arrow);
 			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut errors)?;
 			E::paren_list_end(self);
 			if maybe_async_arrow && !optional && E::should_parse_async_arrow(self, start)? {
@@ -679,7 +681,9 @@ impl<E: Extension> Parser<'_, E> {
 			}
 			TokenKind::BracketL => {
 				self.next()?;
+				E::paren_list_start(self, false);
 				let elements = self.parse_expr_list(TokenKind::BracketR, true, true, errors)?;
+				E::paren_list_end(self);
 				E::list_items(self, &elements)?;
 				let elements = self.list_from(elements);
 				Ok(self.add(NodeKind::ArrayExpression { elements }, start))
@@ -809,7 +813,7 @@ impl<E: Extension> Parser<'_, E> {
 	/// Parses the comma-separated expressions after an opening paren through the closing one,
 	/// which may turn out to be arrow function parameters.
 	pub(crate) fn parse_paren_items(&mut self) -> Result<ParenItems> {
-		E::paren_list_start(self);
+		E::paren_list_start(self, true);
 		let inner_start = self.tok.start;
 		let mut items = self.items();
 		let mut first = true;
@@ -878,7 +882,9 @@ impl<E: Extension> Parser<'_, E> {
 			return self.error(self.start_of(callee), Code::InvalidSuper);
 		}
 		let arguments = if self.eat(TokenKind::ParenL)? {
+			E::paren_list_start(self, false);
 			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut None)?;
+			E::paren_list_end(self);
 			E::list_items(self, &args)?;
 			self.list_from(args)
 		} else {
@@ -1346,7 +1352,7 @@ impl<E: Extension> Parser<'_, E> {
 				None
 			} else if self.is(TokenKind::Ellipsis) {
 				let spread = self.parse_spread(errors)?;
-				E::spread(self, spread)?;
+				let spread = E::paren_item(self, spread)?;
 				if self.is(TokenKind::Comma)
 					&& let Some(e) = errors
 					&& e.trailing_comma.is_none()
@@ -1540,15 +1546,11 @@ impl<E: Extension> Parser<'_, E> {
 			NodeKind::ArrayExpression { elements } => {
 				self.ast.node_mut(id).kind = NodeKind::ArrayPattern { elements };
 				self.check_pattern_errors(errors, true)?;
-				let mut items = self.items();
-				items.extend_from_slice(self.ast.list(elements));
-				E::convert_items(self, &mut items);
-				self.ast.lists[elements.start as usize..(elements.start + elements.len) as usize]
-					.copy_from_slice(&items);
-				for element in items.iter().flatten() {
-					self.make_pattern(*element, is_binding, &mut None)?;
+				for i in 0..elements.len {
+					if let Some(element) = self.nth(elements, i) {
+						self.make_pattern(element, is_binding, &mut None)?;
+					}
 				}
-				self.recycle(items);
 			}
 			NodeKind::SpreadElement { argument } => {
 				let argument = self.make_pattern(argument, is_binding, &mut None)?;
@@ -1584,9 +1586,8 @@ impl<E: Extension> Parser<'_, E> {
 		mut items: Vec<Option<NodeId>>,
 		is_binding: bool,
 	) -> Result<Vec<Option<NodeId>>> {
-		E::convert_items(self, &mut items);
-		for item in items.iter().flatten() {
-			self.make_pattern(*item, is_binding, &mut None)?;
+		for item in items.iter_mut().flatten() {
+			*item = self.make_pattern(*item, is_binding, &mut None)?;
 		}
 		Ok(items)
 	}

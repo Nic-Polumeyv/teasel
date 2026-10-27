@@ -1,12 +1,14 @@
 //! What must hold between the parser's own answers, over every file of test262-parser-tests that
 //! parses: recovery changes nothing about a file that parses, an entry reads the same statement
 //! the program did, and a file cut anywhere is read without a panic. Over every file that does not
-//! parse, a cut is read without a panic too. The erase answer lists kept nodes in source order.
+//! parse, a cut is read without a panic too. The erase answer lists kept nodes in source order,
+//! and no child ends past its parent.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 use teasel::Entry;
 use teasel::Options;
+use teasel::ast::{Ast, List, Walk};
 use teasel::json::{Request, parse};
 
 fn suite() -> Option<PathBuf> {
@@ -166,4 +168,53 @@ fn kept_nodes_are_in_source_order() {
 	let request = Request::from_flags(Options::MODULE | Options::TYPESCRIPT | Options::ERASE);
 	let answer = parse("class C { @a @b accessor x = 1; }", &request);
 	assert_eq!(kept(&answer), [(10, 31), (10, 12), (13, 15)]);
+}
+
+/// Every node reached from `roots` that ends past its parent.
+fn escaped<X: Walk>(path: &str, ast: &Ast<X>, roots: List, out: &mut Vec<String>) {
+	let mut stack: Vec<_> = ast.list(roots).iter().flatten().copied().collect();
+	let mut children = Vec::new();
+	while let Some(id) = stack.pop() {
+		let parent = ast.node(id);
+		children.clear();
+		ast.children(id, &mut children);
+		for &child in &children {
+			let node = ast.node(child);
+			if node.end > parent.end {
+				out.push(format!(
+					"{path}: {}..{} inside {}..{}",
+					node.start, node.end, parent.start, parent.end
+				));
+			}
+		}
+		stack.extend_from_slice(&children);
+	}
+}
+
+// comment attachment hands a node's trailing comments to its last child by this
+#[test]
+fn no_child_ends_past_its_parent() {
+	let Some(root) = suite() else { return };
+	let mut wrong = Vec::new();
+	for (path, source, module) in parsing(&root) {
+		let options = Options(if module { Options::MODULE } else { 0 });
+		if let (ast, Ok((roots, _))) = teasel::parse_at(&source, 0, None, Entry::Program, options, "") {
+			escaped(&path, &ast, roots, &mut wrong);
+		}
+	}
+	let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/ts");
+	for entry in fs::read_dir(fixtures).unwrap() {
+		let file = entry.unwrap().path();
+		let name = file.file_name().unwrap().to_str().unwrap();
+		if !name.ends_with(".ts") {
+			continue;
+		}
+		let source = fs::read_to_string(&file).unwrap();
+		let module = if name.contains(".script.") { 0 } else { Options::MODULE };
+		let options = Options(module | Options::TYPESCRIPT);
+		if let (ast, Ok((roots, _))) = teasel::typescript::parse_at(&source, 0, None, Entry::Program, options, "") {
+			escaped(name, &ast, roots, &mut wrong);
+		}
+	}
+	assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }

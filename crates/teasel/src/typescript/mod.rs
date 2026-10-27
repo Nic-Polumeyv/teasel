@@ -7,12 +7,12 @@ mod declarations;
 mod tests;
 mod types;
 
-use crate::ast::{Ast, FieldKind, List, MethodKind, NodeId, NodeKind, UnaryOperator, VariableKind};
+use crate::ast::{AssignmentOperator, Ast, FieldKind, List, MethodKind, NodeId, NodeKind, UnaryOperator, VariableKind};
 use crate::error::SyntaxError;
 use crate::interner::FastMap;
 use crate::interner::StrId;
 use crate::lexer::token::{Keyword, TokenKind};
-use crate::parser::expression::starts_expression;
+use crate::parser::expression::{assignment_operator, starts_expression};
 use crate::parser::scope::{SCOPE_ARROW, function_flags};
 use crate::parser::statement::{ClassKind, StatementPlace};
 use crate::parser::{
@@ -137,8 +137,6 @@ struct FunctionFrame {
 	type_parameters: Option<NodeId>,
 	return_type: Option<NodeId>,
 	arrow_parameters: bool,
-	/// The first optional binding pattern among the parameters: an error once a body follows.
-	optional_pattern: Option<u32>,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -259,6 +257,15 @@ impl Parser<'_, TypeScript> {
 			if optional && initialized {
 				return self.error(self.start_of(param), Code::OptionalWithInitializer);
 			}
+			if optional
+				&& !signature
+				&& !self.ext.ambient
+				&& matches!(
+					self.kind(binding),
+					NodeKind::ObjectPattern { .. } | NodeKind::ArrayPattern { .. }
+				) {
+				return self.error(self.start_of(param), Code::OptionalPatternParameter);
+			}
 			if signature && let Some(default) = self.first_default(param) {
 				let at = if default == param { item } else { default };
 				return self.error(self.start_of(at), Code::SignatureParameterDefault);
@@ -371,7 +378,9 @@ impl Parser<'_, TypeScript> {
 			expression
 		};
 		if self.eat(TokenKind::ParenL)? {
+			TypeScript::paren_list_start(self, false);
 			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut None)?;
+			TypeScript::paren_list_end(self);
 			self.no_type_casts(&args)?;
 			let arguments = self.list_from(args);
 			let callee_start = self.start_of(expression);
@@ -702,7 +711,9 @@ impl Parser<'_, TypeScript> {
 		}
 		if !no_calls && self.eat(TokenKind::ParenL)? {
 			let mut errors = Some(DestructuringErrors::default());
+			TypeScript::paren_list_start(self, false);
 			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut errors)?;
+			TypeScript::paren_list_end(self);
 			self.no_type_casts(&args)?;
 			let arguments = self.list_from(args);
 			let node = self.add(
@@ -785,40 +796,22 @@ impl Parser<'_, TypeScript> {
 		Ok(return_type.is_some())
 	}
 
-	/// A type annotation or optional marker in a list that is not becoming parameters is an error.
+	/// A cast left in a list that is not becoming parameters is an error.
 	fn no_type_casts(&self, items: &[Option<NodeId>]) -> Result<()> {
-		for &whole in items.iter().flatten() {
-			let left = match self.kind(whole) {
-				NodeKind::AssignmentExpression { left, .. } => Some(left),
-				_ => None,
+		for &item in items.iter().flatten() {
+			let cast = match self.kind(item) {
+				NodeKind::AssignmentExpression { left, .. } => left,
+				_ => item,
 			};
-			for item in std::iter::once(whole).chain(left) {
-				if self.ext_data().extras(item).is_some_and(|e| e.optional) {
-					return self.error(self.ast.node(item).end - 1, Code::UnexpectedToken);
-				}
-				let annotation = match self.ts_kind(item) {
-					Some(TsKind::TypeCastExpression { type_annotation, .. }) => Some(type_annotation),
-					_ => self.ext_data().extras(item).and_then(|e| e.type_annotation),
-				};
-				if let Some(annotation) = annotation {
-					return self.error(self.start_of(annotation), Code::UnexpectedTypeAnnotation);
-				}
-			}
+			let Some(TsKind::TypeCastExpression { type_annotation, .. }) = self.ts_kind(cast) else {
+				continue;
+			};
+			return match type_annotation {
+				Some(annotation) => self.error(self.start_of(annotation), Code::UnexpectedTypeAnnotation),
+				None => self.error(self.end_of(cast) - 1, Code::UnexpectedToken),
+			};
 		}
 		Ok(())
-	}
-
-	fn type_cast_to_parameter(&mut self, id: NodeId) -> NodeId {
-		let Some(TsKind::TypeCastExpression {
-			expression,
-			type_annotation,
-		}) = self.ts_kind(id)
-		else {
-			unreachable!()
-		};
-		self.extras_mut(expression).type_annotation = Some(type_annotation);
-		self.ast.node_mut(expression).end = self.end_of(type_annotation);
-		expression
 	}
 }
 
@@ -1128,17 +1121,6 @@ impl Extension for TypeScript {
 		};
 		let rest = matches!(p.kind(left), NodeKind::RestElement { .. });
 		if !this && p.eat(TokenKind::Question)? {
-			if !matches!(p.kind(left), NodeKind::Identifier { .. }) && !p.ext.ambient && !p.lexer.in_type {
-				// a signature without a body may have one; the parameters come before that is known
-				let pos = p.start_of(left);
-				let arrow = p.ext.maybe_in_arrow_parameters;
-				match p.ext.functions.last_mut() {
-					Some(frame) if !arrow => {
-						frame.optional_pattern.get_or_insert(pos);
-					}
-					_ => return p.error(pos, Code::OptionalPatternParameter),
-				}
-			}
 			p.extras_mut(left).optional = true;
 		}
 		if p.is(TokenKind::Colon) {
@@ -1311,9 +1293,6 @@ impl Extension for TypeScript {
 		}
 		if p.ext.ambient && bodiless.is_some() {
 			return p.error(start, Code::ImplementationInAmbient);
-		}
-		if let Some(pos) = p.ext.functions.last().unwrap().optional_pattern {
-			return p.error(pos, Code::OptionalPatternParameter);
 		}
 		Ok(None)
 	}
@@ -1676,10 +1655,10 @@ impl Extension for TypeScript {
 		p.try_generic_arrow(p.tok.start, false, for_init)
 	}
 
-	fn paren_list_start(p: &mut Parser<Self>) {
+	fn paren_list_start(p: &mut Parser<Self>, parameters: bool) {
 		let inside = p.ext.maybe_in_arrow_parameters;
 		p.ext.paren_lists.push(inside);
-		p.ext.maybe_in_arrow_parameters = true;
+		p.ext.maybe_in_arrow_parameters = parameters;
 	}
 
 	fn paren_list_end(p: &mut Parser<Self>) {
@@ -1687,30 +1666,32 @@ impl Extension for TypeScript {
 	}
 
 	fn paren_item(p: &mut Parser<Self>, item: NodeId) -> Result<NodeId> {
-		let start = p.tok.start;
-		if p.eat(TokenKind::Question)? {
-			p.extras_mut(item).optional = true;
-			p.ast.node_mut(item).end = p.prev_end;
+		let optional = p.eat(TokenKind::Question)?;
+		let type_annotation = if p.is(TokenKind::Colon) {
+			Some(p.parse_type_annotation(true, None)?)
+		} else if optional {
+			None
+		} else {
+			return Ok(item);
+		};
+		let cast = p.ts(
+			TsKind::TypeCastExpression {
+				expression: item,
+				type_annotation,
+				optional,
+			},
+			p.start_of(item),
+		);
+		// a parameter is never compound-assigned; a rest takes no operator at all
+		if !p.ext.maybe_in_arrow_parameters
+			|| !matches!(
+				p.kind(item),
+				NodeKind::RestElement { .. } | NodeKind::SpreadElement { .. }
+			) && assignment_operator(p.tok.kind).is_some_and(|op| op != AssignmentOperator::Assign)
+		{
+			p.no_type_casts(&[Some(cast)])?;
 		}
-		if p.is(TokenKind::Colon) {
-			let type_annotation = p.parse_type_annotation(true, None)?;
-			return Ok(p.ts(
-				TsKind::TypeCastExpression {
-					expression: item,
-					type_annotation,
-				},
-				start,
-			));
-		}
-		Ok(item)
-	}
-
-	fn spread(p: &mut Parser<Self>, spread: NodeId) -> Result<()> {
-		if p.ext.maybe_in_arrow_parameters && p.is(TokenKind::Colon) {
-			let annotation = p.parse_type_annotation(true, None)?;
-			p.extras_mut(spread).type_annotation = Some(annotation);
-		}
-		Ok(())
+		Ok(cast)
 	}
 
 	fn conditional(p: &mut Parser<Self>, expr: NodeId, start: u32, for_init: ForInit) -> Result<Option<NodeId>> {
@@ -1843,10 +1824,6 @@ impl Extension for TypeScript {
 		Ok(p.take_arrow_return_type()? && !p.can_insert_semicolon() && p.eat(TokenKind::Arrow)?)
 	}
 
-	fn checks_assignment_target(p: &mut Parser<Self>) -> bool {
-		!p.ext.maybe_in_arrow_parameters
-	}
-
 	fn list_items(p: &mut Parser<Self>, items: &[Option<NodeId>]) -> Result<()> {
 		p.no_type_casts(items)
 	}
@@ -1912,20 +1889,21 @@ impl Extension for TypeScript {
 				| TsKind::NonNullExpression { expression }
 				| TsKind::TypeAssertion { expression, .. },
 			) if !is_binding => p.make_pattern(expression, is_binding, errors).map(Some),
-			Some(TsKind::TypeCastExpression { .. }) => {
-				let parameter = p.type_cast_to_parameter(id);
-				p.make_pattern(parameter, is_binding, errors).map(Some)
+			// the target of `=` stays a cast until its list becomes parameters
+			Some(TsKind::TypeCastExpression { .. }) if !is_binding => Ok(Some(id)),
+			Some(TsKind::TypeCastExpression {
+				expression,
+				type_annotation,
+				optional,
+			}) => {
+				let pattern = p.make_pattern(expression, is_binding, errors)?;
+				let extras = p.extras_mut(pattern);
+				extras.type_annotation = type_annotation;
+				extras.optional = optional;
+				p.ast.node_mut(pattern).end = p.end_of(id);
+				Ok(Some(pattern))
 			}
 			_ => Ok(None),
-		}
-	}
-
-	/// Only `expr: type` items become their parameter; other wrappers stay in a list.
-	fn convert_items(p: &mut Parser<Self>, items: &mut [Option<NodeId>]) {
-		for item in items.iter_mut().flatten() {
-			if matches!(p.ts_kind(*item), Some(TsKind::TypeCastExpression { .. })) {
-				*item = p.type_cast_to_parameter(*item);
-			}
 		}
 	}
 
@@ -1934,7 +1912,10 @@ impl Extension for TypeScript {
 			(Unwrap::Simple, TsKind::NonNullExpression { expression } | TsKind::AsExpression { expression, .. }) => {
 				Some(expression)
 			}
-			(Unwrap::InnerPattern, TsKind::ParameterProperty { parameter }) => Some(parameter),
+			(
+				Unwrap::InnerPattern,
+				TsKind::ParameterProperty { parameter: inner } | TsKind::TypeCastExpression { expression: inner, .. },
+			) => Some(inner),
 			_ => None,
 		}
 	}

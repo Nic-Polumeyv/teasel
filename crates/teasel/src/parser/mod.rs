@@ -91,7 +91,8 @@ pub(crate) enum FunctionKind {
 pub(crate) enum Unwrap {
 	/// `check_lval_simple`: the target of an assignment or update.
 	Simple,
-	/// `check_lval_inner_pattern`: an element of a parameter list or pattern.
+	/// `check_lval_inner_pattern`: an element of a parameter list or pattern, or the target of `=`
+	/// that may become one.
 	InnerPattern,
 }
 
@@ -276,16 +277,12 @@ pub(crate) trait Extension: Default + Sized {
 	fn maybe_assign(p: &mut Parser<Self>, for_init: ForInit, errors: &mut Errors) -> Result<Option<NodeId>> {
 		Ok(None)
 	}
-	/// Entering a parenthesized list that may turn out to be arrow parameters.
-	fn paren_list_start(p: &mut Parser<Self>) {}
+	/// A list opens; `parameters` when it may still turn out to be a function's parameters.
+	fn paren_list_start(p: &mut Parser<Self>, parameters: bool) {}
 	fn paren_list_end(p: &mut Parser<Self>) {}
 	/// An item of a parenthesized list, after its expression.
 	fn paren_item(p: &mut Parser<Self>, item: NodeId) -> Result<NodeId> {
 		Ok(item)
-	}
-	/// A spread in an argument list.
-	fn spread(p: &mut Parser<Self>, spread: NodeId) -> Result<()> {
-		Ok(())
 	}
 	/// At `?` after an expression; `Some` replaces the conditional.
 	fn conditional(p: &mut Parser<Self>, expr: NodeId, start: u32, for_init: ForInit) -> Result<Option<NodeId>> {
@@ -323,10 +320,6 @@ pub(crate) trait Extension: Default + Sized {
 	fn should_parse_async_arrow(p: &mut Parser<Self>, start: u32) -> Result<bool> {
 		Ok(!p.can_insert_semicolon() && p.eat(TokenKind::Arrow)?)
 	}
-	/// Whether the target of an assignment is checked here.
-	fn checks_assignment_target(p: &mut Parser<Self>) -> bool {
-		true
-	}
 	/// A finished list of expressions: array elements, arguments, or a parenthesized expression
 	/// that did not become parameters.
 	fn list_items(p: &mut Parser<Self>, items: &[Option<NodeId>]) -> Result<()> {
@@ -352,8 +345,6 @@ pub(crate) trait Extension: Default + Sized {
 	fn make_pattern(p: &mut Parser<Self>, id: NodeId, is_binding: bool, errors: &mut Errors) -> Result<Option<NodeId>> {
 		Ok(None)
 	}
-	/// Replaces the items of a list about to become patterns.
-	fn convert_items(p: &mut Parser<Self>, items: &mut [Option<NodeId>]) {}
 	/// The plain node an extension wrapper stands for in a check, if any.
 	fn unwrap(p: &Parser<Self>, id: NodeId, context: Unwrap) -> Option<NodeId> {
 		None

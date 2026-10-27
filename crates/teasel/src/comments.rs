@@ -89,16 +89,11 @@ impl<X: Walk> Attacher<'_, X> {
 			}
 		}
 		let Some(next) = self.peek() else { return };
-		let base = self.scratch.len();
-		self.ast.children(node, &mut self.scratch);
-		let count = self.scratch.len() - base;
-		// a comment past the children reaches one only over commas, parens and blanks; a child
-		// can end past its parent (a rest parameter's annotation in an async arrow), so it is the
-		// children's reach that counts
-		let reach = self.scratch[base..]
-			.iter()
-			.fold(end, |reach, &c| reach.max(self.ast.node(c).end));
-		if self.start(next) < reach || self.only_separators(reach, self.start(next)) {
+		// a comment past the node reaches a descendant only over commas, parens and blanks
+		if self.start(next) < end || self.only_separators(end, self.start(next)) {
+			let base = self.scratch.len();
+			self.ast.children(node, &mut self.scratch);
+			let count = self.scratch.len() - base;
 			if count == 0 && self.body_of(node).is_some() {
 				while self.peek().is_some_and(|c| self.start(c) < end) {
 					self.take(node, Place::Inner);
@@ -113,8 +108,8 @@ impl<X: Walk> Attacher<'_, X> {
 				};
 				self.visit(child, Some(node), limit);
 			}
+			self.scratch.truncate(base);
 		}
-		self.scratch.truncate(base);
 		let Some(comment) = self.peek() else { return };
 		let parent_end = parent.map(|p| self.ast.node(p).end);
 		if host || parent_end == Some(end) {
@@ -258,13 +253,13 @@ mod tests {
 	}
 
 	#[test]
-	fn a_child_past_its_parent_still_takes_its_comment() {
+	fn an_async_rest_takes_the_comment_after_its_annotation() {
 		let src = "async (...a: T[] /* c */) => {}";
 		let options = Options(Options::MODULE);
 		let (mut ast, parsed) = crate::typescript::parse_at(src, 0, None, Entry::Program, options, "");
 		let (roots, _) = parsed.unwrap();
 		super::attach(&mut ast, src, roots, 0);
-		assert_eq!(attached(&ast, src), [r#"Extension leading=[] trailing=[" c "]"#]);
+		assert_eq!(attached(&ast, src), [r#"RestElement leading=[] trailing=[" c "]"#]);
 	}
 
 	#[test]

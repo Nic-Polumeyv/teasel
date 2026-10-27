@@ -154,7 +154,7 @@ fn optional_marker_needs_an_arrow() {
 	};
 	assert_eq!(error("(a, b?)"), (crate::error::Code::UnexpectedToken, 5));
 	assert_eq!(error("(a?)"), (crate::error::Code::UnexpectedToken, 2));
-	assert_eq!(error("f(a?)"), (crate::error::Code::UnexpectedToken, 3));
+	assert_eq!(error("f(a?)"), (crate::error::Code::UnexpectedToken, 4));
 	assert!(at(Entry::Expression, "(a, b?) => a", 0, options, "").is_ok());
 	assert!(at(Entry::Expression, "f((a?) => a)", 0, options, "").is_ok());
 }
@@ -307,4 +307,38 @@ fn nested_ambiguity_is_linear() {
 		one(super::parse_at(&src, 0, None, Entry::Program, options, "")).unwrap();
 		assert!(started.elapsed().as_millis() < 100, "{src}");
 	}
+}
+
+#[test]
+fn a_list_item_fails_where_it_stands() {
+	let options = Options(Options::MODULE);
+	let error = |src: &str| {
+		let error = at(Entry::Program, src, 0, options, "").unwrap_err();
+		(error.code, error.pos)
+	};
+	use crate::error::Code;
+	assert_eq!(error("[eval: T = (b: U)];"), (Code::UnexpectedTypeAnnotation, 5));
+	assert_eq!(error("f(a as T: U = 1);"), (Code::UnexpectedTypeAnnotation, 8));
+	assert_eq!(error("({a = 1} += 2);"), (Code::InvalidAssignmentTarget, 1));
+	assert_eq!(error("const g = ({ a }?) => a;"), (Code::OptionalPatternParameter, 11));
+}
+
+#[test]
+fn an_asserted_cast_is_no_parameter() {
+	let options = Options(Options::MODULE);
+	let error = |src: &str| at(Entry::Program, src, 0, options, "").unwrap_err().pos;
+	assert_eq!(error("(a as T: U = 1) => 1;"), 1);
+	assert_eq!(error("(a!: T = 1) => 1;"), 1);
+	assert_eq!(error("(...a: T += 1) => 1;"), 9);
+}
+
+#[test]
+fn an_async_rest_ends_after_its_annotation() {
+	let src = "const f = async (first, ...rest: number[]) => rest;";
+	let (ast, _, _) = at(Entry::Program, src, 0, Options(Options::MODULE), "").unwrap();
+	let rest = (0..ast.nodes.len() as u32)
+		.map(NodeId::at)
+		.find(|&id| matches!(ast.node(id).kind, NodeKind::RestElement { .. }))
+		.unwrap();
+	assert_eq!((ast.node(rest).start, ast.node(rest).end), (24, 41));
 }
