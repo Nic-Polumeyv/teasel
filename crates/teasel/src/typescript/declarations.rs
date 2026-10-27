@@ -7,7 +7,7 @@ use super::types::{ListKind, TypeParameterModifiers};
 use crate::ast::{List, NodeId, NodeKind, VariableKind};
 use crate::error::Code;
 use crate::lexer::token::{Keyword, TokenKind, word};
-use crate::parser::scope::{Binding, SCOPE_FUNCTION, SCOPE_TS_MODULE};
+use crate::parser::scope::{Binding, EXPORT_ONLY, SCOPE_FUNCTION, SCOPE_TS_MODULE};
 use crate::parser::statement::FUNC_STATEMENT;
 use crate::parser::statement::{ClassKind, Exports, StatementPlace};
 use crate::parser::{Context, ForInit, Parser, Result};
@@ -89,7 +89,9 @@ impl Parser<'_> {
 		let body = self.parse_module_block(false);
 		self.ts.global_depth -= 1;
 		let declared: Vec<_> = self.current_scope().declared().collect();
-		self.ts.globals.extend(declared);
+		for name in declared {
+			self.declare_at(0, name, EXPORT_ONLY);
+		}
 		self.exit_scope();
 		body
 	}

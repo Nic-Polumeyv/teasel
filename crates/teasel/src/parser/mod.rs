@@ -267,7 +267,7 @@ struct Mark {
 	depth: u32,
 	brackets: (u32, [u32; 3]),
 	strict: bool,
-	ts: crate::typescript::Saved,
+	ts: crate::typescript::State,
 	ast: crate::ast::Mark,
 }
 

@@ -37,6 +37,11 @@ pub(crate) enum Binding {
 const VAR: u8 = 1;
 const LEXICAL: u8 = 2;
 const FUNCTION: u8 = 4;
+/// A TypeScript type: a second type alias of the name in its scope is an error.
+pub(crate) const TYPE: u8 = 8;
+/// A TypeScript name that binds no value but may be exported: an enum, a namespace, a type-only
+/// import, an ambient function.
+pub(crate) const EXPORT_ONLY: u8 = 16;
 
 pub(crate) struct Scope {
 	pub flags: u32,
@@ -54,7 +59,7 @@ impl Scope {
 		self.names.iter().map(|&(name, ..)| name)
 	}
 
-	fn has(&self, name: StrId, kinds: u8) -> bool {
+	pub(crate) fn has(&self, name: StrId, kinds: u8) -> bool {
 		match &self.index {
 			Some(index) => index.get(&name).is_some_and(|kind| kind & kinds != 0),
 			None => self.names.iter().any(|&(n, kind, _)| n == name && kind & kinds != 0),
@@ -113,9 +118,6 @@ impl Parser<'_> {
 	}
 
 	pub(crate) fn exit_scope(&mut self) {
-		if self.typescript() {
-			TypeScript::scope_exit(self);
-		}
 		let mut scope = self.scopes.pop().unwrap();
 		scope.names.clear();
 		self.spare_names.push(scope.names);
@@ -127,6 +129,10 @@ impl Parser<'_> {
 
 	fn current_scope_mut(&mut self) -> &mut Scope {
 		self.scopes.last_mut().unwrap()
+	}
+
+	pub(crate) fn declare_at(&mut self, depth: usize, name: StrId, kind: u8) {
+		self.scopes[depth].push(name, kind);
 	}
 
 	pub(crate) fn current_var_scope(&self) -> &Scope {
@@ -257,9 +263,12 @@ impl Parser<'_> {
 		false
 	}
 
-	pub(crate) fn declares_export(&mut self, name: StrId) -> bool {
-		(self.typescript() && TypeScript::declares_export(self, name))
-			|| self.scopes[0].has(name, VAR | LEXICAL | FUNCTION)
+	pub(crate) fn declares_export(&self, name: StrId) -> bool {
+		if self.typescript() && TypeScript::exports_in_script(self) {
+			return true;
+		}
+		debug_assert_eq!(self.scopes.len(), 1);
+		self.scopes[0].has(name, VAR | LEXICAL | FUNCTION | TYPE | EXPORT_ONLY)
 	}
 
 	pub(crate) fn check_local_export(&mut self, name: StrId, pos: u32) {
