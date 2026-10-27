@@ -258,7 +258,8 @@ impl Parser<'_> {
 	}
 
 	pub(crate) fn declares_export(&mut self, name: StrId) -> bool {
-		TypeScript::declares_export(self, name) || self.scopes[0].has(name, VAR | LEXICAL | FUNCTION)
+		(self.typescript() && TypeScript::declares_export(self, name))
+			|| self.scopes[0].has(name, VAR | LEXICAL | FUNCTION)
 	}
 
 	pub(crate) fn check_local_export(&mut self, name: StrId, pos: u32) {

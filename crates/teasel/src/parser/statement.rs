@@ -209,6 +209,8 @@ impl Parser<'_> {
 		exports: Option<&mut Exports>,
 	) -> Result<NodeId> {
 		if self.typescript()
+			&& context == Context::None
+			&& (matches!(self.tok.kind, TokenKind::At | TokenKind::Ident(_)) || self.is_keyword(Keyword::Const))
 			&& let Some(statement) = TypeScript::statement(self, context, place)?
 		{
 			return Ok(statement);
@@ -226,7 +228,7 @@ impl Parser<'_> {
 			if place == StatementPlace::Case
 				|| (place == StatementPlace::TopLevel
 					&& !self.options.has(Options::MODULE)
-					&& !TypeScript::exports_in_script(self))
+					&& !(self.typescript() && TypeScript::exports_in_script(self)))
 			{
 				let error = self.error_arg(start, Code::UsingOutsideBlock, kind.as_str());
 				self.record(error)?;
@@ -285,7 +287,7 @@ impl Parser<'_> {
 				if place != StatementPlace::TopLevel {
 					return self.error(start, Code::ImportExportNotTopLevel);
 				}
-				if !self.options.has(Options::MODULE) && !TypeScript::exports_in_script(self) {
+				if !self.options.has(Options::MODULE) && !(self.typescript() && TypeScript::exports_in_script(self)) {
 					return self.error(start, Code::ImportExportInScript);
 				}
 				if is_import {
@@ -1002,7 +1004,7 @@ impl Parser<'_> {
 	}
 
 	fn parse_var(&mut self, start: u32, is_for: bool, kind: VariableKind) -> Result<NodeId> {
-		if kind.is_using() && TypeScript::in_ambient(self) {
+		if kind.is_using() && self.typescript() && TypeScript::in_ambient(self) {
 			let error = self.error_arg(start, Code::UsingInAmbient, kind.as_str());
 			self.record(error)?;
 		}
@@ -1031,7 +1033,7 @@ impl Parser<'_> {
 				Some(self.parse_maybe_assign(if is_for { ForInit::Yes } else { ForInit::No }, &mut None)?)
 			} else {
 				let in_or_of = self.is_keyword(Keyword::In) || self.is_contextual("of");
-				let missing_allowed = TypeScript::allows_missing_initializer(self);
+				let missing_allowed = self.typescript() && TypeScript::allows_missing_initializer(self);
 				if kind.is_using() && !(is_for && in_or_of) && !missing_allowed {
 					let error = self.error_arg(self.prev_end, Code::UsingWithoutInitializer, kind.as_str());
 					self.record(error)?;
@@ -1100,11 +1102,16 @@ impl Parser<'_> {
 	}
 
 	fn parse_import_specifiers(&mut self) -> Result<Vec<Option<NodeId>>> {
+		let binding = if self.typescript() {
+			TypeScript::import_binding(self)
+		} else {
+			Binding::Lexical
+		};
 		let mut nodes = self.items();
 		if matches!(self.tok.kind, TokenKind::Ident(_)) {
 			let start = self.tok.start;
 			let local = self.parse_ident(false)?;
-			self.check_lval_simple(local, TypeScript::import_binding(self), &mut None)?;
+			self.check_lval_simple(local, binding, &mut None)?;
 			nodes.push(Some(self.add(NodeKind::ImportDefaultSpecifier { local }, start)));
 			if !self.eat(TokenKind::Comma)? {
 				return Ok(nodes);
@@ -1115,7 +1122,7 @@ impl Parser<'_> {
 			self.next()?;
 			self.expect_contextual("as")?;
 			let local = self.parse_ident(false)?;
-			self.check_lval_simple(local, TypeScript::import_binding(self), &mut None)?;
+			self.check_lval_simple(local, binding, &mut None)?;
 			nodes.push(Some(self.add(NodeKind::ImportNamespaceSpecifier { local }, start)));
 			return Ok(nodes);
 		}
@@ -1139,7 +1146,7 @@ impl Parser<'_> {
 				self.check_unreserved(imported)?;
 				imported
 			};
-			self.check_lval_simple(local, TypeScript::import_binding(self), &mut None)?;
+			self.check_lval_simple(local, binding, &mut None)?;
 			nodes.push(Some(self.add(NodeKind::ImportSpecifier { imported, local }, start)));
 		}
 		Ok(nodes)
@@ -1736,7 +1743,10 @@ impl Parser<'_> {
 			if is_async {
 				return self.error(self.start_of(key), Code::AsyncConstructor);
 			}
-		} else if is_static && !TypeScript::in_ambient(self) && self.check_key_name(key, computed, "prototype") {
+		} else if is_static
+			&& !(self.typescript() && TypeScript::in_ambient(self))
+			&& self.check_key_name(key, computed, "prototype")
+		{
 			return self.error(self.start_of(key), Code::StaticPrototype);
 		}
 		if self.typescript() {
@@ -1766,7 +1776,10 @@ impl Parser<'_> {
 		if self.check_key_name(key, computed, "constructor") {
 			return self.error(self.start_of(key), Code::ConstructorField);
 		}
-		if is_static && !TypeScript::in_ambient(self) && self.check_key_name(key, computed, "prototype") {
+		if is_static
+			&& !(self.typescript() && TypeScript::in_ambient(self))
+			&& self.check_key_name(key, computed, "prototype")
+		{
 			return self.error(self.start_of(key), Code::StaticPrototype);
 		}
 		if self.typescript() {

@@ -154,7 +154,8 @@ impl Parser<'_> {
 	}
 
 	fn parse_maybe_assign_inner(&mut self, for_init: ForInit, errors: &mut Errors, item: bool) -> Result<NodeId> {
-		if self.typescript()
+		if self.at_lt()
+			&& self.typescript()
 			&& let Some(expr) = TypeScript::maybe_assign(self, for_init, errors)?
 		{
 			return Ok(expr);
@@ -181,7 +182,7 @@ impl Parser<'_> {
 			self.potential_arrow_in_for_await = for_init == ForInit::Await;
 		}
 		let mut left = self.parse_maybe_conditional(for_init, errors)?;
-		if item && self.typescript() {
+		if item && matches!(self.tok.kind, TokenKind::Question | TokenKind::Colon) && self.typescript() {
 			left = TypeScript::paren_item(self, left)?;
 		}
 		if let Some(operator) = assignment_operator(self.tok.kind) {
@@ -190,7 +191,11 @@ impl Parser<'_> {
 				left = self.make_pattern(left, false, errors)?;
 			}
 			// `a: T = 1` is checked once its list is known, as a parameter or as a stray cast
-			let inner = TypeScript::unwrap(self, left, Unwrap::InnerPattern);
+			let inner = if self.typescript() {
+				TypeScript::unwrap(self, left, Unwrap::InnerPattern)
+			} else {
+				None
+			};
 			let e = errors.as_mut().unwrap();
 			if !own_errors {
 				e.parenthesized_assign = None;
@@ -297,7 +302,10 @@ impl Parser<'_> {
 		loop {
 			links += 1;
 			self.chain(links)?;
-			if self.typescript()
+			if matches!(self.tok.kind, TokenKind::Ident(_))
+				&& min_prec < 7
+				&& !self.tok.newline_before
+				&& self.typescript()
 				&& let Some(expr) = TypeScript::expr_op(self, left, left_start, min_prec)?
 			{
 				left = expr;
@@ -373,7 +381,8 @@ impl Parser<'_> {
 		inc_dec: bool,
 		for_init: ForInit,
 	) -> Result<NodeId> {
-		if self.typescript()
+		if self.at_lt()
+			&& self.typescript()
 			&& let Some(expr) = TypeScript::unary(self, for_init)?
 		{
 			return Ok(expr);
@@ -537,7 +546,10 @@ impl Parser<'_> {
 		optional_chained: bool,
 		for_init: ForInit,
 	) -> Result<(NodeId, bool)> {
-		if self.typescript()
+		if matches!(
+			self.tok.kind,
+			TokenKind::Bang | TokenKind::Lt | TokenKind::LtLt | TokenKind::QuestionDot
+		) && self.typescript()
 			&& let Some(result) = TypeScript::subscript(
 				self,
 				base,
@@ -630,7 +642,8 @@ impl Parser<'_> {
 		if self.is(TokenKind::Slash) || self.is(TokenKind::SlashEq) {
 			self.tok = self.lexer.read_regex(self.tok)?;
 		}
-		if self.typescript()
+		if self.is(TokenKind::At)
+			&& self.typescript()
 			&& let Some(atom) = TypeScript::atom(self, errors, for_init, for_new)?
 		{
 			return Ok(atom);
@@ -790,6 +803,15 @@ impl Parser<'_> {
 		Ok(self.add(kind, start))
 	}
 
+	/// A `<` at the cursor, alone or the start of `<<`, `<=` or `<<=`: in TypeScript, maybe what
+	/// opens type parameters or a type assertion.
+	fn at_lt(&self) -> bool {
+		matches!(
+			self.tok.kind,
+			TokenKind::Lt | TokenKind::LtLt | TokenKind::LtEq | TokenKind::LtLtEq
+		)
+	}
+
 	/// Whether the arguments after `async` are an arrow's parameters, its `=>` eaten.
 	fn async_arrow_follows(&mut self, start: u32) -> Result<bool> {
 		if self.typescript() {
@@ -881,7 +903,7 @@ impl Parser<'_> {
 			if self.is(TokenKind::Ellipsis) {
 				spread_start = Some(self.tok.start);
 				let rest = self.parse_rest_binding()?;
-				let rest = if self.typescript() {
+				let rest = if matches!(self.tok.kind, TokenKind::Question | TokenKind::Colon) && self.typescript() {
 					TypeScript::paren_item(self, rest)?
 				} else {
 					rest
@@ -980,7 +1002,7 @@ impl Parser<'_> {
 			}
 			self.prev_end = chunk.end + 2;
 			self.lexer.next_token_into(&mut self.tok)?;
-			let typed = if self.typescript() {
+			let typed = if self.lexer.in_type {
 				TypeScript::template_expression(self)?
 			} else {
 				None
@@ -1119,7 +1141,8 @@ impl Parser<'_> {
 		errors: &mut Errors,
 		escaped: bool,
 	) -> Result<NodeId> {
-		if self.typescript()
+		if self.is(TokenKind::Lt)
+			&& self.typescript()
 			&& let Some(prop) = TypeScript::property_value(self, start, key, computed, is_pattern, generator, is_async)?
 		{
 			return Ok(prop);
@@ -1432,7 +1455,7 @@ impl Parser<'_> {
 				None
 			} else if self.is(TokenKind::Ellipsis) {
 				let spread = self.parse_spread(errors)?;
-				let spread = if self.typescript() {
+				let spread = if matches!(self.tok.kind, TokenKind::Question | TokenKind::Colon) && self.typescript() {
 					TypeScript::paren_item(self, spread)?
 				} else {
 					spread
@@ -1771,9 +1794,10 @@ impl Parser<'_> {
 				let flags = self.lexer.word_flags(name);
 				let text = self.str(name);
 				// a declaration that binds nothing may be named eval: `declare function eval`
-				let runtime = !TypeScript::in_ambient(self);
 				if self.strict
-					&& (self.is_reserved_word(flags) || (runtime && flags & (word::EVAL | word::ARGUMENTS) != 0))
+					&& (self.is_reserved_word(flags)
+						|| (flags & (word::EVAL | word::ARGUMENTS) != 0
+							&& !(self.typescript() && TypeScript::in_ambient(self))))
 				{
 					return self.error_name(start, Code::StrictBinding, name);
 				}

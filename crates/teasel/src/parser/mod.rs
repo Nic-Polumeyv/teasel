@@ -526,6 +526,12 @@ impl<'a> Parser<'a> {
 		if !self.recovering() {
 			return f(self).map(Some);
 		}
+		self.recover_statement(f)
+	}
+
+	// inlined, its mark sat in the frame of every block the recursion opens: 0.4% on a JavaScript parse
+	#[inline(never)]
+	fn recover_statement(&mut self, f: impl FnOnce(&mut Self) -> Result<NodeId>) -> Result<Option<NodeId>> {
 		let mark = self.mark();
 		let at = self.tok.start;
 		match f(self) {
@@ -999,6 +1005,8 @@ impl<'a> Parser<'a> {
 		Ok(false)
 	}
 
+	// these two out of line, as TypeScript's calls left them, a JavaScript parse took 0.5% longer
+	#[inline(always)]
 	pub(crate) fn check_expression_errors(
 		&self,
 		errors: &Option<DestructuringErrors>,
@@ -1018,6 +1026,7 @@ impl<'a> Parser<'a> {
 		Ok(false)
 	}
 
+	#[inline(always)]
 	pub(crate) fn check_pattern_errors(&self, errors: &Option<DestructuringErrors>, is_assign: bool) -> Result<()> {
 		let Some(errors) = errors else { return Ok(()) };
 		if let Some(pos) = errors.trailing_comma {
