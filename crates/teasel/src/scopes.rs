@@ -569,6 +569,9 @@ pub struct Binder<'a> {
 	owned: FastMap<BindingId, u32>,
 	arguments: Option<StrId>,
 	this_name: Option<StrId>,
+	/// Whether TypeScript added keys to any node, decorators among them.
+	// looked up at every node of a JavaScript tree instead, a parse with scopes took 1% longer
+	extras: bool,
 }
 
 impl<'a> Binder<'a> {
@@ -613,6 +616,7 @@ impl<'a> Binder<'a> {
 			owned,
 			arguments: ast.strings.find("arguments"),
 			this_name: ast.strings.find("this"),
+			extras: !ast.typescript.extras.is_empty(),
 		}
 	}
 
@@ -1072,8 +1076,10 @@ impl<'a> Binder<'a> {
 
 	fn function(&mut self, id: NodeId, params: List, body: NodeId, arrow: bool) {
 		// a parameter's decorators are evaluated where the function is defined
-		for &param in self.ast.list(params).iter().flatten() {
-			self.ast.typescript.bind_extras(self, param);
+		if self.extras {
+			for &param in self.ast.list(params).iter().flatten() {
+				self.ast.typescript.bind_extras(self, param);
+			}
 		}
 		self.enter(ScopeKind::Function, Some(id), arrow);
 		// a TypeScript `this` parameter, first in the list, is a type position and binds nothing
@@ -1236,7 +1242,7 @@ impl<'a> Binder<'a> {
 
 	fn visit_with(&mut self, id: NodeId, mode: Mode, extras: bool) {
 		use NodeKind::*;
-		if extras {
+		if extras && self.extras {
 			self.ast.typescript.bind_extras(self, id);
 		}
 		match self.kind(id) {
