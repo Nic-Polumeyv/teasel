@@ -2,7 +2,6 @@ use super::{Parser, Result};
 use crate::Options;
 use crate::error::Code;
 use crate::interner::{FastMap, StrId};
-use crate::typescript::TypeScript;
 
 pub(crate) const SCOPE_TOP: u32 = 1;
 pub(crate) const SCOPE_FUNCTION: u32 = 2;
@@ -307,7 +306,7 @@ impl Parser<'_> {
 	}
 
 	pub(crate) fn declares_export(&self, name: StrId) -> bool {
-		if self.typescript() && TypeScript::exports_in_script(self) {
+		if self.typescript() && self.exports_in_script() {
 			return true;
 		}
 		debug_assert_eq!(self.scopes.len(), 1);

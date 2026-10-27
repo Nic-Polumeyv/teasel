@@ -133,7 +133,7 @@ impl Entry {
 /// program reads to `end`, where a hashbang or an HTML comment at `start` is what it would be in
 /// the middle of a file; anything else stops where its grammar ends, or at one of `stop`, the
 /// host's own tokens separated by spaces, read outside every bracket the parse opened where the
-/// expression could end (TypeScript may read one as its own, see `TypeScript::reads_stop`). Returns
+/// expression could end (TypeScript may read one as its own, see `Parser::reads_stop`). Returns
 /// the tree, its roots (one node, or the patterns of a parameter list) and the offset after
 /// everything the parse consumed. `reused` is an emptied tree from an earlier parse, its room kept.
 /// The tree, whether the parse succeeded or not, so the next parse can reuse it; with the roots
@@ -248,7 +248,9 @@ pub struct Spare {
 	errors: Vec<SyntaxError>,
 	regexp: crate::lexer::regexp::Scratch,
 	stop_ranges: Vec<(u32, u32, bool)>,
-	// built for every parse, it cost the pieces of a JavaScript document 1.5%
+	// built for every parse, it cost the pieces of a JavaScript document 1.5%; a plain field moved in
+	// and out of here, or held in the tree outside these buffers, read no faster: documents 1% and
+	// TypeScript apps 1 to 1.6% slower, at the 1% noise of code placement
 	typescript: Option<Box<TypeScript>>,
 }
 
@@ -344,6 +346,7 @@ impl<'a> Parser<'a> {
 		lexer.set_stops(stop);
 		let ts = match spare.typescript {
 			Some(mut ts) => {
+				// cleared keeping the room of its stacks and tables instead, TypeScript apps read 0 to 1% slower
 				if options.typescript() {
 					*ts = TypeScript::default();
 				}
@@ -535,7 +538,7 @@ impl<'a> Parser<'a> {
 		self.recover_statement(f)
 	}
 
-	// inlined, a parse-only read of JavaScript took 0.5% longer
+	// with this and the two inlined below left to the compiler, a parse-only JavaScript read took 0.9% longer
 	#[inline(never)]
 	fn recover_statement(&mut self, f: impl FnOnce(&mut Self) -> Result<NodeId>) -> Result<Option<NodeId>> {
 		let mark = self.mark();
@@ -600,7 +603,7 @@ impl<'a> Parser<'a> {
 				let mut exports = statement::Exports::default();
 				self.parse_statement(statement::Context::None, StatementPlace::TopLevel, Some(&mut exports))?
 			}
-			Entry::TypeParameters if self.typescript() => TypeScript::type_parameters(self)?,
+			Entry::TypeParameters if self.typescript() => self.type_parameters()?,
 			Entry::TypeParameters => return self.error(self.tok.start, Code::NotTypescript),
 			Entry::Program | Entry::StyleSheet => unreachable!(),
 		};
@@ -618,7 +621,7 @@ impl<'a> Parser<'a> {
 		let pattern = self.make_pattern(expression, false, &mut errors)?;
 		self.check_lval_pattern(pattern, scope::Binding::None, &mut None)?;
 		if self.typescript() {
-			TypeScript::pattern_annotation(self, pattern)?;
+			self.pattern_annotation(pattern)?;
 		}
 		Ok(pattern)
 	}
@@ -911,7 +914,7 @@ impl<'a> Parser<'a> {
 	/// Ends the parse when the current token is the host's: one of its stop tokens, after an
 	/// operand, that the grammar does not read as its own.
 	pub(crate) fn stop_after_operand(&mut self) {
-		if self.tok.stop && !(self.typescript() && TypeScript::reads_stop(self)) {
+		if self.tok.stop && !(self.typescript() && self.reads_stop()) {
 			self.stop_here();
 		}
 	}
@@ -1012,7 +1015,7 @@ impl<'a> Parser<'a> {
 		Ok(false)
 	}
 
-	// these two out of line, a parse-only read of JavaScript took 0.6% longer
+	// with these two and recover_statement above left to the compiler, a parse-only JavaScript read took 0.9% longer
 	#[inline(always)]
 	pub(crate) fn check_expression_errors(
 		&self,
@@ -1063,9 +1066,9 @@ impl<'a> Parser<'a> {
 	pub(crate) fn is_simple_assign_target(&self, id: NodeId) -> bool {
 		match self.kind(id) {
 			NodeKind::Identifier { .. } | NodeKind::MemberExpression { .. } => true,
-			NodeKind::Extension(_) => {
-				TypeScript::unwrap(self, id, Unwrap::Simple).is_some_and(|inner| self.is_simple_assign_target(inner))
-			}
+			NodeKind::Extension(_) => self
+				.unwrap(id, Unwrap::Simple)
+				.is_some_and(|inner| self.is_simple_assign_target(inner)),
 			_ => false,
 		}
 	}
