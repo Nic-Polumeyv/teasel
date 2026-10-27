@@ -133,7 +133,7 @@ impl Entry {
 /// program reads to `end`, where a hashbang or an HTML comment at `start` is what it would be in
 /// the middle of a file; anything else stops where its grammar ends, or at one of `stop`, the
 /// host's own tokens separated by spaces, read outside every bracket the parse opened where the
-/// expression could end (TypeScript may read one as its own, see `TypeScript::reads_stop`). Returns
+/// expression could end (TypeScript may read one as its own, see `Parser::reads_stop`). Returns
 /// the tree, its roots (one node, or the patterns of a parameter list) and the offset after
 /// everything the parse consumed. `reused` is an emptied tree from an earlier parse, its room kept.
 /// The tree, whether the parse succeeded or not, so the next parse can reuse it; with the roots
@@ -609,7 +609,7 @@ impl<'a> Parser<'a> {
 				let mut exports = statement::Exports::default();
 				self.parse_statement(statement::Context::None, StatementPlace::TopLevel, Some(&mut exports))?
 			}
-			Entry::TypeParameters if self.typescript() => TypeScript::type_parameters(self)?,
+			Entry::TypeParameters if self.typescript() => self.type_parameters()?,
 			Entry::TypeParameters => return self.error(self.tok.start, Code::NotTypescript),
 			Entry::Program | Entry::StyleSheet => unreachable!(),
 		};
@@ -627,7 +627,7 @@ impl<'a> Parser<'a> {
 		let pattern = self.make_pattern(expression, false, &mut errors)?;
 		self.check_lval_pattern(pattern, scope::Binding::None, &mut None)?;
 		if self.typescript() {
-			TypeScript::pattern_annotation(self, pattern)?;
+			self.pattern_annotation(pattern)?;
 		}
 		Ok(pattern)
 	}
@@ -920,7 +920,7 @@ impl<'a> Parser<'a> {
 	/// Ends the parse when the current token is the host's: one of its stop tokens, after an
 	/// operand, that the grammar does not read as its own.
 	pub(crate) fn stop_after_operand(&mut self) {
-		if self.tok.stop && !(self.typescript() && TypeScript::reads_stop(self)) {
+		if self.tok.stop && !(self.typescript() && self.reads_stop()) {
 			self.stop_here();
 		}
 	}
@@ -1072,9 +1072,9 @@ impl<'a> Parser<'a> {
 	pub(crate) fn is_simple_assign_target(&self, id: NodeId) -> bool {
 		match self.kind(id) {
 			NodeKind::Identifier { .. } | NodeKind::MemberExpression { .. } => true,
-			NodeKind::Extension(_) => {
-				TypeScript::unwrap(self, id, Unwrap::Simple).is_some_and(|inner| self.is_simple_assign_target(inner))
-			}
+			NodeKind::Extension(_) => self
+				.unwrap(id, Unwrap::Simple)
+				.is_some_and(|inner| self.is_simple_assign_target(inner)),
 			_ => false,
 		}
 	}
