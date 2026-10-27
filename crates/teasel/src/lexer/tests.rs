@@ -572,16 +572,13 @@ fn a_list_is_decided_before_it_is_read() {
 	assert_eq!(js("(a = /[)]/g, b = c / d / e) => 1").0, Parameters);
 	assert_eq!(js("(a = `${(b) => `${c})`}`, d) => 1").0, Parameters);
 	assert_eq!(js("(a = `${{ b: ')' }.b}`, c) + 1").0, Expression);
-	// a `/` after a statement head's `)` or a block's `}` starts a regular expression
+	// a `/` after a statement head's `)` starts a regular expression
 	assert_eq!(js("(a = function () { if (x) /[)]/.test(y) }, b) => 1").0, Parameters);
-	assert_eq!(js("(a = function () { {} /[)]/.test(y) }, b) => 1").0, Parameters);
-	assert_eq!(
-		js("(a = function () { try {} catch {} /[)]/.test(y) }, b) => 1").0,
-		Parameters
-	);
 	assert_eq!(js("(a = b.if (c) / d, e) => 1").0, Parameters);
-	// after a body's `}` only the parser knows
+	// after any brace's `}` only the parser knows: a block, a body or an object
 	assert_eq!(js("(a = function () {} / 1, b) => 1"), (Unsure, None));
+	assert_eq!(js("(a = function () { {} /[)]/.test(y) }, b) => 1"), (Unsure, None));
+	assert_eq!(js("(a = class extends {} {} / (b, \")\" / c)) => 1"), (Unsure, None));
 	assert_eq!(js("(a = yield / 2, b) => 1"), (Unsure, None));
 	// a postfix `++` ends an operand, a prefix one starts one
 	assert_eq!(js("(a = x++ / 2, b) => 1").0, Parameters);

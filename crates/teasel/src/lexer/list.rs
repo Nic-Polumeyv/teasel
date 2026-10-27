@@ -31,8 +31,6 @@ pub(super) struct Frame {
 	opener: u32,
 	/// What a `/` is after the closer.
 	after: Slash,
-	/// The parens of an `if`, `while`, `for`, `with`, `switch` or `catch`.
-	head: bool,
 }
 
 /// What a `/` is after a `++`, `--` or TypeScript `!` read where a `/` would be `slash`.
@@ -166,11 +164,9 @@ impl Lexer<'_> {
 			closer: T::ParenR,
 			opener: open,
 			after: Slash::Divide,
-			head: false,
 		});
 		let mut slash = Slash::Regex;
 		let mut closed: Option<u32> = None;
-		let mut closed_head = false;
 		let (mut prev, mut prev2) = (T::ParenL, T::Eof);
 		let mut token = Token::eof(0);
 		let mut unread = Some(*first);
@@ -190,7 +186,6 @@ impl Lexer<'_> {
 					break Some(role);
 				}
 			}
-			let mut head = false;
 			match token.kind {
 				T::Slash | T::SlashEq => match slash {
 					Slash::Regex => {
@@ -208,7 +203,6 @@ impl Lexer<'_> {
 							closer: TEMPLATE,
 							opener: token.start,
 							after: Slash::Divide,
-							head: false,
 						});
 						slash = Slash::Regex;
 					}
@@ -230,7 +224,6 @@ impl Lexer<'_> {
 						closer: T::ParenR,
 						opener: token.start,
 						after: if statement { Slash::Regex } else { Slash::Divide },
-						head: statement,
 					});
 					slash = Slash::Regex;
 				}
@@ -239,36 +232,14 @@ impl Lexer<'_> {
 						closer: T::BracketR,
 						opener: token.start,
 						after: Slash::Divide,
-						head: false,
 					});
 					slash = Slash::Regex;
 				}
 				T::BraceL => {
-					let after = match prev {
-						// a block
-						T::ParenR if closed_head => Slash::Regex,
-						T::Semi | T::BraceL | T::BraceR => Slash::Regex,
-						T::Keyword(Keyword::Else | Keyword::Do | Keyword::Try | Keyword::Finally | Keyword::Catch) => {
-							Slash::Regex
-						}
-						// a function's, class's or arrow's body, which may end a declaration or an expression
-						T::ParenR | T::Arrow | T::Ident(_) | T::BracketR | T::Keyword(Keyword::Class) => Slash::Unsure,
-						// a label's block or a property's object
-						T::Colon
-							if frames
-								.last()
-								.is_none_or(|frame| frame.closer != T::BraceR || frame.after != Slash::Divide) =>
-						{
-							Slash::Unsure
-						}
-						// an object literal
-						_ => Slash::Divide,
-					};
 					frames.push(Frame {
 						closer: T::BraceR,
 						opener: token.start,
-						after,
-						head: false,
+						after: Slash::Unsure,
 					});
 					slash = Slash::Regex;
 				}
@@ -290,7 +261,6 @@ impl Lexer<'_> {
 							closed = Some(frame.opener);
 						}
 						slash = frame.after;
-						head = frame.head;
 					}
 				}
 				T::Eof => break None,
@@ -311,7 +281,6 @@ impl Lexer<'_> {
 					}
 				}
 			}
-			closed_head = head;
 			prev2 = prev;
 			prev = token.kind;
 		};
