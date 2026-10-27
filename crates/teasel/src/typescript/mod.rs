@@ -32,20 +32,6 @@ pub(crate) struct TypeScript {
 	colon_after_body: FastMap<u32, bool>,
 }
 
-impl std::ops::Deref for TypeScript {
-	type Target = State;
-
-	fn deref(&self) -> &State {
-		&self.state
-	}
-}
-
-impl std::ops::DerefMut for TypeScript {
-	fn deref_mut(&mut self) -> &mut State {
-		&mut self.state
-	}
-}
-
 /// What a snapshot keeps of TypeScript's state: the state, and how many names each table had.
 pub(crate) type Saved = (State, usize, usize);
 
@@ -245,7 +231,7 @@ impl Parser<'_> {
 			}
 			if optional
 				&& !signature
-				&& !self.ts.ambient
+				&& !self.ts.state.ambient
 				&& matches!(
 					self.kind(binding),
 					NodeKind::ObjectPattern { .. } | NodeKind::ArrayPattern { .. }
@@ -340,7 +326,7 @@ impl Parser<'_> {
 	fn parse_decorator(&mut self) -> Result<NodeId> {
 		let start = self.tok.start;
 		self.next()?;
-		self.ts.decorators.push(Vec::new());
+		self.ts.state.decorators.push(Vec::new());
 		let expression_start = self.tok.start;
 		let mut expression = if self.is(TokenKind::ParenL) {
 			self.next()?;
@@ -377,7 +363,7 @@ impl Parser<'_> {
 				callee_start,
 			);
 		}
-		self.ts.decorators.pop();
+		self.ts.state.decorators.pop();
 		Ok(self.ts(TsKind::Decorator { expression }, start))
 	}
 
@@ -385,6 +371,7 @@ impl Parser<'_> {
 	fn parse_decorators(&mut self, allow_export: bool) -> Result<()> {
 		if self
 			.ts
+			.state
 			.decorators
 			.last()
 			.is_some_and(|decorators| !decorators.is_empty())
@@ -401,11 +388,11 @@ impl Parser<'_> {
 		if !self.peek_tokens(|p| p.decorated_class_follows())? {
 			return self.error(self.tok.start, Code::DecoratorPlacement);
 		}
-		self.ts.decorators_before_export = self.is_keyword(Keyword::Export);
-		if self.ts.decorators.is_empty() {
-			self.ts.decorators.push(Vec::new());
+		self.ts.state.decorators_before_export = self.is_keyword(Keyword::Export);
+		if self.ts.state.decorators.is_empty() {
+			self.ts.state.decorators.push(Vec::new());
 		}
-		self.ts.decorators.last_mut().unwrap().extend(decorators);
+		self.ts.state.decorators.last_mut().unwrap().extend(decorators);
 		Ok(())
 	}
 
@@ -429,7 +416,7 @@ impl Parser<'_> {
 	}
 
 	fn take_decorators(&mut self) -> Option<List> {
-		let pending = self.ts.decorators.last_mut()?;
+		let pending = self.ts.state.decorators.last_mut()?;
 		if pending.is_empty() {
 			return None;
 		}
@@ -456,8 +443,8 @@ impl Parser<'_> {
 		if unique && self.ts.types.contains_at(depth, name) {
 			return self.error_name(self.start_of(id), Code::TypeRedeclaration, name);
 		}
-		if self.ts.global_depth > 0 {
-			self.ts.globals.insert(name);
+		if self.ts.state.global_depth > 0 {
+			self.ts.state.globals.insert(name);
 		}
 		self.ts.types.push(depth, name);
 		Ok(())
@@ -589,13 +576,13 @@ impl Parser<'_> {
 	// the head alone is tried: trying the whole expression read it again as an assertion or a call, 2x per level
 	fn try_generic_arrow(&mut self, start: u32, is_async: bool, for_init: ForInit) -> Result<Option<NodeId>> {
 		let at = self.tok.start;
-		let spine = self.ts.needs_colon_at == Some(start);
+		let spine = self.ts.state.needs_colon_at == Some(start);
 		if self.ts.not_arrow.contains(&(at, spine)) {
 			return Ok(None);
 		}
 		let before = spine.then(|| self.snapshot());
-		let old = self.ts.maybe_in_arrow_parameters;
-		self.ts.maybe_in_arrow_parameters = true;
+		let old = self.ts.state.maybe_in_arrow_parameters;
+		self.ts.state.maybe_in_arrow_parameters = true;
 		let mut head = self.attempt(|p| {
 			let type_parameters = p.parse_type_parameters(TypeParameterModifiers::Const)?;
 			p.expect(TokenKind::ParenL)?;
@@ -611,7 +598,7 @@ impl Parser<'_> {
 			p.expect(TokenKind::Arrow)?;
 			Ok((type_parameters, params, return_type))
 		})?;
-		self.ts.maybe_in_arrow_parameters = old;
+		self.ts.state.maybe_in_arrow_parameters = old;
 		if let (Some((_, _, Some(_))), Some(before)) = (&head, before)
 			&& !self.colon_after_body(is_async)?
 		{
@@ -625,14 +612,14 @@ impl Parser<'_> {
 		if let Some(&this) = params.iter().flatten().find(|&&param| self.ident_is(param, "this")) {
 			return self.error(self.start_of(this), Code::InvalidAssignmentTarget);
 		}
-		self.ts.arrow_return_type = return_type;
+		self.ts.state.arrow_return_type = return_type;
 		let arrow = self.parse_arrow_expression(start, params, is_async, for_init)?;
 		self.extras_mut(arrow).type_parameters = Some(type_parameters);
 		Ok(Some(arrow))
 	}
 
 	fn return_type_fits(&mut self, start: u32, is_async: bool) -> Result<bool> {
-		if !self.is(TokenKind::Colon) || self.ts.needs_colon_at != Some(start) {
+		if !self.is(TokenKind::Colon) || self.ts.state.needs_colon_at != Some(start) {
 			return Ok(true);
 		}
 		match self.lookahead(|p| {
@@ -651,7 +638,7 @@ impl Parser<'_> {
 		let colon = match self.lookahead(|p| {
 			let old = p.take_yield_await();
 			p.enter_scope(function_flags(is_async, false) | SCOPE_ARROW);
-			p.ts.body_needs_colon = true;
+			p.ts.state.body_needs_colon = true;
 			p.function_start(FunctionKind::Arrow)?;
 			let params = p.list_from(Vec::new());
 			p.parse_function_body(at, None, params, true, false, ForInit::No)?;
@@ -763,7 +750,7 @@ impl Parser<'_> {
 	/// Reads a `: type` before `=>` into `arrow_return_type`; false when there is a colon but no
 	/// arrow follows it.
 	fn take_arrow_return_type(&mut self) -> Result<bool> {
-		self.ts.arrow_return_type = None;
+		self.ts.state.arrow_return_type = None;
 		if !self.is(TokenKind::Colon) {
 			return Ok(true);
 		}
@@ -774,7 +761,7 @@ impl Parser<'_> {
 			}
 			Ok(return_type)
 		})?;
-		self.ts.arrow_return_type = return_type;
+		self.ts.state.arrow_return_type = return_type;
 		Ok(return_type.is_some())
 	}
 
@@ -836,17 +823,17 @@ impl Parser<'_> {
 		if self.is_keyword(Keyword::Import) {
 			self.next()?;
 			if self.is_contextual("type") && self.peek_char().0 != Some('=') {
-				self.ts.outer_kind = Some(Kind::Type);
+				self.ts.state.outer_kind = Some(Kind::Type);
 				self.next()?;
 			} else {
-				self.ts.outer_kind = Some(Kind::Value);
+				self.ts.state.outer_kind = Some(Kind::Value);
 			}
 			let node = self.parse_import_equals_declaration(start, true)?;
-			self.ts.outer_kind = None;
+			self.ts.state.outer_kind = None;
 			return Ok(Some(node));
 		}
 		if self.eat(TokenKind::Eq)? {
-			if self.ts.in_namespace {
+			if self.ts.state.in_namespace {
 				return self.error(start, Code::ExportAssignmentInNamespace);
 			}
 			let expression = self.parse_expression(false, &mut None)?;
@@ -861,10 +848,10 @@ impl Parser<'_> {
 		}
 		if self.is_contextual("type") && matches!(self.peek_token()?.kind, TokenKind::BraceL | TokenKind::Star) {
 			self.next()?;
-			self.ts.outer_kind = Some(Kind::Type);
-			self.ts.export_kind = Some(Kind::Type);
+			self.ts.state.outer_kind = Some(Kind::Type);
+			self.ts.state.export_kind = Some(Kind::Type);
 		} else {
-			self.ts.outer_kind = Some(Kind::Value);
+			self.ts.state.outer_kind = Some(Kind::Value);
 		}
 		Ok(None)
 	}
@@ -895,7 +882,7 @@ impl Parser<'_> {
 			self.ts_kind(declaration),
 			Some(TsKind::InterfaceDeclaration { .. } | TsKind::TypeAliasDeclaration { .. })
 		) {
-			self.ts.export_kind = Some(Kind::Type);
+			self.ts.state.export_kind = Some(Kind::Type);
 		}
 		Ok(Some(declaration))
 	}
@@ -910,7 +897,7 @@ impl Parser<'_> {
 			let next = self.peek_token()?;
 			if next.kind == TokenKind::Keyword(Keyword::Class) && !next.newline_before {
 				self.next()?;
-				self.ts.next_class = ClassFrame {
+				self.ts.state.next_class = ClassFrame {
 					is_abstract: true,
 					start: Some(start),
 					..ClassFrame::default()
@@ -927,10 +914,10 @@ impl Parser<'_> {
 
 	#[cold]
 	pub(crate) fn export_end(&mut self, node: NodeId) {
-		if let Some(kind) = self.ts.export_kind.take() {
+		if let Some(kind) = self.ts.state.export_kind.take() {
 			self.extras_mut(node).export_kind = Some(kind);
 		}
-		self.ts.outer_kind = None;
+		self.ts.state.outer_kind = None;
 	}
 
 	#[cold]
@@ -944,7 +931,7 @@ impl Parser<'_> {
 	/// Right after `import`; `Some` is a whole import statement.
 	#[cold]
 	pub(crate) fn import_head(&mut self, start: u32) -> Result<Option<NodeId>> {
-		self.ts.outer_kind = Some(Kind::Value);
+		self.ts.state.outer_kind = Some(Kind::Value);
 		if self.is_ident() || self.is(TokenKind::Star) || self.is(TokenKind::BraceL) {
 			let mut ahead = self.peek_token()?;
 			let ahead_is_from = matches!(ahead.kind, TokenKind::Ident(n) if self.str(n) == "from");
@@ -954,12 +941,12 @@ impl Parser<'_> {
 				&& ahead.kind != TokenKind::Eq
 			{
 				self.next()?;
-				self.ts.outer_kind = Some(Kind::Type);
+				self.ts.state.outer_kind = Some(Kind::Type);
 				ahead = self.peek_token()?;
 			}
 			if self.is_ident() && ahead.kind == TokenKind::Eq {
 				let node = self.parse_import_equals_declaration(start, false)?;
-				self.ts.outer_kind = None;
+				self.ts.state.outer_kind = None;
 				return Ok(Some(node));
 			}
 		}
@@ -968,7 +955,7 @@ impl Parser<'_> {
 
 	#[cold]
 	pub(crate) fn import_end(&mut self, node: NodeId) -> Result<()> {
-		let kind = self.ts.outer_kind.take().unwrap_or(Kind::Value);
+		let kind = self.ts.state.outer_kind.take().unwrap_or(Kind::Value);
 		self.extras_mut(node).import_kind = Some(kind);
 		let NodeKind::ImportDeclaration { specifiers, .. } = self.kind(node) else {
 			unreachable!()
@@ -1008,7 +995,7 @@ impl Parser<'_> {
 	#[cold]
 	pub(crate) fn import_binding(&self) -> crate::parser::scope::Binding {
 		use crate::parser::scope::Binding;
-		if self.ts.outer_kind == Some(Kind::Type) {
+		if self.ts.state.outer_kind == Some(Kind::Type) {
 			Binding::None
 		} else {
 			Binding::Lexical
@@ -1019,23 +1006,23 @@ impl Parser<'_> {
 	/// script goal does not forbid it.
 	#[cold]
 	pub(crate) fn exports_in_script(&self) -> bool {
-		self.ts.module_blocks > 0
+		self.ts.state.module_blocks > 0
 	}
 
 	/// Whether the code describes rather than defines, an ambient declaration's body, where a
 	/// definition's rules do not apply.
 	#[cold]
 	pub(crate) fn in_ambient(&self) -> bool {
-		self.ts.ambient
+		self.ts.state.ambient
 	}
 
 	/// Whether TypeScript declared `name` in a way that satisfies a local `export { name }`.
 	#[cold]
 	pub(crate) fn ts_declares_export(&mut self, name: StrId) -> bool {
-		self.ts.module_blocks > 0
+		self.ts.state.module_blocks > 0
 			|| self.ts.types.contains(name)
 			|| self.ts.export_only.contains(name)
-			|| self.ts.globals.contains(&name)
+			|| self.ts.state.globals.contains(&name)
 	}
 
 	#[cold]
@@ -1072,7 +1059,7 @@ impl Parser<'_> {
 				return self.error(self.start_of(node), Code::DefiniteWithInitializer);
 			}
 		}
-		if self.ts.ambient {
+		if self.ts.state.ambient {
 			self.check_ambient_initializer(node, kind)?;
 		}
 		Ok(())
@@ -1081,7 +1068,7 @@ impl Parser<'_> {
 	/// Whether a declarator may go without an initializer where JavaScript requires one.
 	#[cold]
 	pub(crate) fn allows_missing_initializer(&mut self) -> bool {
-		self.ts.ambient
+		self.ts.state.ambient
 	}
 
 	/// A whole parameter of a parameter list; `allow_modifiers` inside class methods.
@@ -1133,7 +1120,7 @@ impl Parser<'_> {
 			self.extras_mut(left).type_annotation = Some(annotation);
 		}
 		self.ast.node_mut(left).end = self.prev_end;
-		if rest && self.ts.ambient && self.is(TokenKind::Comma) && self.peek_char().0 == Some(')') {
+		if rest && self.ts.state.ambient && self.is(TokenKind::Comma) && self.peek_char().0 == Some(')') {
 			self.next()?;
 		}
 		let item = if rest || this {
@@ -1195,15 +1182,15 @@ impl Parser<'_> {
 	pub(crate) fn function_start(&mut self, kind: FunctionKind) -> Result<FunctionFrame> {
 		let mut frame = FunctionFrame {
 			in_class_method: matches!(kind, FunctionKind::Method { in_class: true, .. }),
-			arrow_parameters: self.ts.maybe_in_arrow_parameters,
+			arrow_parameters: self.ts.state.maybe_in_arrow_parameters,
 			..FunctionFrame::default()
 		};
-		self.ts.maybe_in_arrow_parameters = false;
+		self.ts.state.maybe_in_arrow_parameters = false;
 		match kind {
 			FunctionKind::Arrow => {
-				frame.return_type = self.ts.arrow_return_type.take();
-				if std::mem::take(&mut self.ts.body_needs_colon) && !self.is(TokenKind::BraceL) {
-					self.ts.needs_colon_at = Some(self.tok.start);
+				frame.return_type = self.ts.state.arrow_return_type.take();
+				if std::mem::take(&mut self.ts.state.body_needs_colon) && !self.is(TokenKind::BraceL) {
+					self.ts.state.needs_colon_at = Some(self.tok.start);
 				}
 			}
 			FunctionKind::Method { in_class: true, .. } => {}
@@ -1293,7 +1280,7 @@ impl Parser<'_> {
 			}),
 			_ => None,
 		};
-		if generator && self.ts.ambient && bodiless.is_some() {
+		if generator && self.ts.state.ambient && bodiless.is_some() {
 			return self.error(start, Code::GeneratorInAmbient);
 		}
 		let signature = bodiless.is_some() && !self.is(TokenKind::BraceL) && self.is_line_terminator()?;
@@ -1304,7 +1291,7 @@ impl Parser<'_> {
 			}
 			return Ok(Some(self.ts(kind, start)));
 		}
-		if self.ts.ambient && bodiless.is_some() {
+		if self.ts.state.ambient && bodiless.is_some() {
 			return self.error(start, Code::ImplementationInAmbient);
 		}
 		Ok(None)
@@ -1315,7 +1302,7 @@ impl Parser<'_> {
 		if let NodeKind::ArrowFunctionExpression { params, .. } = self.kind(node) {
 			self.check_parameter_list(params, false)?;
 		}
-		self.ts.maybe_in_arrow_parameters = frame.arrow_parameters;
+		self.ts.state.maybe_in_arrow_parameters = frame.arrow_parameters;
 		if let Some(TsKind::DeclareFunction { id: Some(id), .. }) = self.ts_kind(node) {
 			self.declare_export_only(id);
 		}
@@ -1328,7 +1315,7 @@ impl Parser<'_> {
 		}
 		if frame.in_class_method
 			&& matches!(self.kind(node), NodeKind::FunctionExpression { .. })
-			&& let Some(element) = self.ts.elements.last()
+			&& let Some(element) = self.ts.state.elements.last()
 			&& element.extras.is_abstract
 		{
 			let (start, element) = (element.start, *element);
@@ -1359,17 +1346,17 @@ impl Parser<'_> {
 
 	#[cold]
 	pub(crate) fn class_start(&mut self, kind: ClassKind) -> Result<()> {
-		let mut frame = std::mem::take(&mut self.ts.next_class);
+		let mut frame = std::mem::take(&mut self.ts.state.next_class);
 		frame.is_declaration = kind != ClassKind::Expression;
 		if let Some(decorators) = self.take_decorators() {
 			frame.decorators = Some(decorators);
-			if !std::mem::take(&mut self.ts.decorators_before_export) {
+			if !std::mem::take(&mut self.ts.state.decorators_before_export) {
 				frame.start = Some(self.start_of(self.ast.list(decorators)[0].unwrap()));
 			}
 		}
-		frame.outer_abstract = self.ts.in_abstract_class;
-		self.ts.in_abstract_class = frame.is_abstract;
-		self.ts.classes.push(frame);
+		frame.outer_abstract = self.ts.state.in_abstract_class;
+		self.ts.state.in_abstract_class = frame.is_abstract;
+		self.ts.state.classes.push(frame);
 		Ok(())
 	}
 
@@ -1382,7 +1369,7 @@ impl Parser<'_> {
 	#[cold]
 	pub(crate) fn class_type_parameters(&mut self) -> Result<()> {
 		let type_parameters = self.try_parse_type_parameters(TypeParameterModifiers::Class)?;
-		self.ts.classes.last_mut().unwrap().type_parameters = type_parameters;
+		self.ts.state.classes.last_mut().unwrap().type_parameters = type_parameters;
 		Ok(())
 	}
 
@@ -1398,7 +1385,7 @@ impl Parser<'_> {
 		} else {
 			None
 		};
-		let frame = self.ts.classes.last_mut().unwrap();
+		let frame = self.ts.state.classes.last_mut().unwrap();
 		frame.has_super = has_super;
 		frame.super_type_arguments = super_type_arguments;
 		frame.implements = implements;
@@ -1407,8 +1394,8 @@ impl Parser<'_> {
 
 	#[cold]
 	pub(crate) fn class_end(&mut self, node: NodeId) {
-		let frame = self.ts.classes.pop().unwrap();
-		self.ts.in_abstract_class = frame.outer_abstract;
+		let frame = self.ts.state.classes.pop().unwrap();
+		self.ts.state.in_abstract_class = frame.outer_abstract;
 		if let Some(start) = frame.start {
 			self.ast.node_mut(node).start = start;
 		}
@@ -1462,8 +1449,8 @@ impl Parser<'_> {
 		let outer_ambient = modifiers
 			.extras
 			.declare
-			.then(|| std::mem::replace(&mut self.ts.ambient, true));
-		self.ts.elements.push(ElementFrame {
+			.then(|| std::mem::replace(&mut self.ts.state.ambient, true));
+		self.ts.state.elements.push(ElementFrame {
 			start,
 			extras: modifiers.extras,
 			key: None,
@@ -1483,9 +1470,9 @@ impl Parser<'_> {
 	#[cold]
 	pub(crate) fn class_index_signature(&mut self, start: u32) -> Result<Option<NodeId>> {
 		let Some(signature) = self.try_parse_index_signature(start)? else {
-			let has_super = self.ts.classes.last().is_some_and(|c| c.has_super);
-			let extras = self.ts.elements.last().unwrap().extras;
-			if !self.ts.in_abstract_class && extras.is_abstract {
+			let has_super = self.ts.state.classes.last().is_some_and(|c| c.has_super);
+			let extras = self.ts.state.elements.last().unwrap().extras;
+			if !self.ts.state.in_abstract_class && extras.is_abstract {
 				return self.error(start, Code::AbstractOutsideAbstractClass);
 			}
 			if extras.is_override && !has_super {
@@ -1493,7 +1480,7 @@ impl Parser<'_> {
 			}
 			return Ok(None);
 		};
-		let ElementFrame { extras, accessor, .. } = *self.ts.elements.last().unwrap();
+		let ElementFrame { extras, accessor, .. } = *self.ts.state.elements.last().unwrap();
 		if extras.is_abstract {
 			return self.error_arg(start, Code::IndexSignatureModifier, "abstract");
 		}
@@ -1516,14 +1503,14 @@ impl Parser<'_> {
 	/// After the key of a class element.
 	#[cold]
 	pub(crate) fn class_key_end(&mut self, key: NodeId, computed: bool) -> Result<()> {
-		let element = self.ts.elements.last_mut().unwrap();
+		let element = self.ts.state.elements.last_mut().unwrap();
 		element.key = Some(key);
 		element.computed = computed;
 		let start = element.start;
 		let extras = element.extras;
 		let accessor = element.accessor;
 		if self.eat(TokenKind::Question)? {
-			self.ts.elements.last_mut().unwrap().extras.optional = true;
+			self.ts.state.elements.last_mut().unwrap().extras.optional = true;
 		}
 		let method = self.is(TokenKind::ParenL) || self.is(TokenKind::Lt);
 		if extras.readonly && method {
@@ -1551,7 +1538,7 @@ impl Parser<'_> {
 		{
 			return self.error(self.start_of(type_parameters), Code::AccessorTypeParameters);
 		}
-		let element = *self.ts.elements.last().unwrap();
+		let element = *self.ts.state.elements.last().unwrap();
 		let key = element.key.unwrap();
 		if matches!(self.kind(key), NodeKind::PrivateIdentifier { .. }) {
 			if let Some(accessibility) = element.extras.accessibility {
@@ -1565,14 +1552,14 @@ impl Parser<'_> {
 		{
 			return self.error(self.start_of(type_parameters), Code::ConstructorTypeParameters);
 		}
-		self.ts.elements.last_mut().unwrap().extras.type_parameters = type_parameters;
+		self.ts.state.elements.last_mut().unwrap().extras.type_parameters = type_parameters;
 		Ok(())
 	}
 
 	/// After the key of a class field, before its initializer.
 	#[cold]
 	pub(crate) fn class_field_annotation(&mut self) -> Result<()> {
-		let element = *self.ts.elements.last().unwrap();
+		let element = *self.ts.state.elements.last().unwrap();
 		let mut definite = false;
 		let mut optional = element.extras.optional;
 		if !optional {
@@ -1584,7 +1571,7 @@ impl Parser<'_> {
 			}
 		}
 		let type_annotation = self.try_parse_type_annotation()?;
-		let extras = &mut self.ts.elements.last_mut().unwrap().extras;
+		let extras = &mut self.ts.state.elements.last_mut().unwrap().extras;
 		extras.definite = definite;
 		extras.optional = optional;
 		extras.type_annotation = type_annotation;
@@ -1600,7 +1587,7 @@ impl Parser<'_> {
 				return self.raise(SyntaxError::new(element.start, Code::PrivateModifier).arg(accessibility));
 			}
 		} else if self.is(TokenKind::Eq) {
-			if self.ts.ambient && !(element.extras.readonly && type_annotation.is_none()) {
+			if self.ts.state.ambient && !(element.extras.readonly && type_annotation.is_none()) {
 				return self.error(self.tok.start, Code::InitializerInAmbient);
 			}
 			if element.extras.is_abstract {
@@ -1613,9 +1600,9 @@ impl Parser<'_> {
 
 	#[cold]
 	pub(crate) fn class_element_end(&mut self, node: NodeId) -> Result<()> {
-		let frame = self.ts.elements.pop().unwrap();
+		let frame = self.ts.state.elements.pop().unwrap();
 		if let Some(outer) = frame.outer_ambient {
-			self.ts.ambient = outer;
+			self.ts.state.ambient = outer;
 		}
 		if frame.accessor
 			&& let NodeKind::PropertyDefinition { kind, .. } = &mut self.ast.node_mut(node).kind
@@ -1665,7 +1652,7 @@ impl Parser<'_> {
 				NodeKind::FunctionExpression { function } => (function.params, true),
 				_ => (self.function_params(value).unwrap(), false),
 			};
-			if !has_body || kind == MethodKind::Get || !self.ts.classes.last().unwrap().is_declaration {
+			if !has_body || kind == MethodKind::Get || !self.ts.state.classes.last().unwrap().is_declaration {
 				for &param in self.ast.list(params).iter().flatten() {
 					let param = self.unwrap(param, Unwrap::InnerPattern).unwrap_or(param);
 					if let Some(decorators) = self.ast.typescript.extras(param).and_then(|extras| extras.decorators) {
@@ -1696,9 +1683,9 @@ impl Parser<'_> {
 	/// parameters; what the enclosing list said holds again after it.
 	#[cold]
 	pub(crate) fn ts_list<T>(&mut self, parameters: bool, read: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
-		let outer = std::mem::replace(&mut self.ts.maybe_in_arrow_parameters, parameters);
+		let outer = std::mem::replace(&mut self.ts.state.maybe_in_arrow_parameters, parameters);
 		let list = read(self)?;
-		self.ts.maybe_in_arrow_parameters = outer;
+		self.ts.state.maybe_in_arrow_parameters = outer;
 		Ok(list)
 	}
 
@@ -1720,7 +1707,7 @@ impl Parser<'_> {
 			self.start_of(item),
 		);
 		// a parameter is never compound-assigned; a rest takes no operator at all
-		if !self.ts.maybe_in_arrow_parameters
+		if !self.ts.state.maybe_in_arrow_parameters
 			|| !matches!(
 				self.kind(item),
 				NodeKind::RestElement { .. } | NodeKind::SpreadElement { .. }
@@ -1734,7 +1721,7 @@ impl Parser<'_> {
 	/// At `?` after an expression; `Some` replaces the conditional.
 	#[cold]
 	pub(crate) fn conditional(&mut self, expr: NodeId, start: u32, for_init: ForInit) -> Result<Option<NodeId>> {
-		if !self.ts.maybe_in_arrow_parameters {
+		if !self.ts.state.maybe_in_arrow_parameters {
 			return Ok(None);
 		}
 		Ok(Some(
@@ -1745,17 +1732,17 @@ impl Parser<'_> {
 
 	#[cold]
 	pub(crate) fn arrow_start(&mut self, start: u32) {
-		self.ts.body_needs_colon = self.ts.needs_colon_at == Some(start);
+		self.ts.state.body_needs_colon = self.ts.state.needs_colon_at == Some(start);
 	}
 
 	#[cold]
 	pub(crate) fn conditional_branch(&mut self, start: u32, alternate: bool, for_init: ForInit) -> Result<NodeId> {
-		let old = self.ts.needs_colon_at;
+		let old = self.ts.state.needs_colon_at;
 		if !alternate || old == Some(start) {
-			self.ts.needs_colon_at = Some(self.tok.start);
+			self.ts.state.needs_colon_at = Some(self.tok.start);
 		}
 		let branch = self.parse_maybe_assign(if alternate { for_init } else { ForInit::No }, &mut None);
-		self.ts.needs_colon_at = old;
+		self.ts.state.needs_colon_at = old;
 		branch
 	}
 
