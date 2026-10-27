@@ -364,9 +364,7 @@ impl Parser<'_> {
 			expression
 		};
 		if self.eat(TokenKind::ParenL)? {
-			let outer = TypeScript::paren_list_start(self, false);
-			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut None)?;
-			TypeScript::paren_list_end(self, outer);
+			let args = self.parse_item_list(false, TokenKind::ParenR, true, false, &mut None)?;
 			self.no_type_casts(&args)?;
 			let arguments = self.list_from(args);
 			let callee_start = self.start_of(expression);
@@ -697,9 +695,7 @@ impl Parser<'_> {
 		}
 		if !no_calls && self.eat(TokenKind::ParenL)? {
 			let mut errors = Some(DestructuringErrors::default());
-			let outer = TypeScript::paren_list_start(self, false);
-			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut errors)?;
-			TypeScript::paren_list_end(self, outer);
+			let args = self.parse_item_list(false, TokenKind::ParenR, true, false, &mut errors)?;
 			self.no_type_casts(&args)?;
 			let arguments = self.list_from(args);
 			let node = self.add(
@@ -1691,16 +1687,18 @@ impl TypeScript {
 		p.try_generic_arrow(p.tok.start, false, for_init)
 	}
 
-	/// A list opens; `parameters` when it may still turn out to be a function's parameters. What
-	/// the enclosing list said comes back, for `paren_list_end`.
+	/// A list `read` with `parameters` saying whether it may still turn out to be a function's
+	/// parameters; what the enclosing list said holds again after it.
 	#[cold]
-	pub(crate) fn paren_list_start(p: &mut Parser, parameters: bool) -> bool {
-		std::mem::replace(&mut p.ts.maybe_in_arrow_parameters, parameters)
-	}
-
-	#[cold]
-	pub(crate) fn paren_list_end(p: &mut Parser, outer: bool) {
+	pub(crate) fn list<'a, T>(
+		p: &mut Parser<'a>,
+		parameters: bool,
+		read: impl FnOnce(&mut Parser<'a>) -> Result<T>,
+	) -> Result<T> {
+		let outer = std::mem::replace(&mut p.ts.maybe_in_arrow_parameters, parameters);
+		let list = read(p)?;
 		p.ts.maybe_in_arrow_parameters = outer;
+		Ok(list)
 	}
 
 	/// An item of a parenthesized list, after its expression.

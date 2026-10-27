@@ -594,11 +594,7 @@ impl Parser<'_> {
 		if !no_calls && self.eat(TokenKind::ParenL)? {
 			let mut errors = Some(DestructuringErrors::default());
 			let old = self.take_yield_await();
-			let outer = self.typescript() && TypeScript::paren_list_start(self, maybe_async_arrow);
-			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut errors)?;
-			if self.typescript() {
-				TypeScript::paren_list_end(self, outer);
-			}
+			let args = self.parse_item_list(maybe_async_arrow, TokenKind::ParenR, true, false, &mut errors)?;
 			if maybe_async_arrow && !optional && self.async_arrow_follows(start)? {
 				self.check_pattern_errors(&errors, false)?;
 				self.check_yield_await_in_default_params()?;
@@ -715,10 +711,8 @@ impl Parser<'_> {
 			}
 			TokenKind::BracketL => {
 				self.next()?;
-				let outer = self.typescript() && TypeScript::paren_list_start(self, false);
-				let elements = self.parse_expr_list(TokenKind::BracketR, true, true, errors)?;
+				let elements = self.parse_item_list(false, TokenKind::BracketR, true, true, errors)?;
 				if self.typescript() {
-					TypeScript::paren_list_end(self, outer);
 					TypeScript::list_items(self, &elements)?;
 				}
 				let elements = self.list_from(elements);
@@ -876,7 +870,13 @@ impl Parser<'_> {
 	/// Parses the comma-separated expressions after an opening paren through the closing one,
 	/// which may turn out to be arrow function parameters.
 	pub(crate) fn parse_paren_items(&mut self) -> Result<ParenItems> {
-		let outer = self.typescript() && TypeScript::paren_list_start(self, true);
+		if self.typescript() {
+			return TypeScript::list(self, true, Self::read_paren_items);
+		}
+		self.read_paren_items()
+	}
+
+	fn read_paren_items(&mut self) -> Result<ParenItems> {
 		let inner_start = self.tok.start;
 		let mut items = self.items();
 		let mut first = true;
@@ -911,9 +911,6 @@ impl Parser<'_> {
 		}
 		let inner_end = self.prev_end;
 		self.expect(TokenKind::ParenR)?;
-		if self.typescript() {
-			TypeScript::paren_list_end(self, outer);
-		}
 		Ok(ParenItems {
 			items,
 			errors,
@@ -951,10 +948,8 @@ impl Parser<'_> {
 			return self.error(self.start_of(callee), Code::InvalidSuper);
 		}
 		let arguments = if self.eat(TokenKind::ParenL)? {
-			let outer = self.typescript() && TypeScript::paren_list_start(self, false);
-			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut None)?;
+			let args = self.parse_item_list(false, TokenKind::ParenR, true, false, &mut None)?;
 			if self.typescript() {
-				TypeScript::paren_list_end(self, outer);
 				TypeScript::list_items(self, &args)?;
 			}
 			self.list_from(args)
@@ -1423,6 +1418,24 @@ impl Parser<'_> {
 			self.param_names = names;
 		}
 		Ok(())
+	}
+
+	/// A list of expressions through `close`; in TypeScript, `parameters` says whether it may still
+	/// turn out to be a function's parameters.
+	pub(crate) fn parse_item_list(
+		&mut self,
+		parameters: bool,
+		close: TokenKind,
+		allow_trailing_comma: bool,
+		allow_empty: bool,
+		errors: &mut Errors,
+	) -> Result<Vec<Option<NodeId>>> {
+		if self.typescript() {
+			return TypeScript::list(self, parameters, |p| {
+				p.parse_expr_list(close, allow_trailing_comma, allow_empty, errors)
+			});
+		}
+		self.parse_expr_list(close, allow_trailing_comma, allow_empty, errors)
 	}
 
 	pub(crate) fn parse_expr_list(
