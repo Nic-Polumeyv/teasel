@@ -442,6 +442,9 @@ pub trait Bind: Walk {
 	fn types_only(&self, _ast: &Ast<Self>, _id: NodeId) -> bool {
 		false
 	}
+	fn this_parameter(&self, _id: NodeId) -> bool {
+		false
+	}
 }
 
 impl Bind for () {
@@ -588,7 +591,6 @@ pub struct Binder<'a, X> {
 	/// The shared environment a binding owns, for declarations that merge: namespaces and enums.
 	owned: FastMap<BindingId, u32>,
 	arguments: Option<StrId>,
-	this_name: Option<StrId>,
 }
 
 impl<'a, X: Bind> Binder<'a, X> {
@@ -632,7 +634,6 @@ impl<'a, X: Bind> Binder<'a, X> {
 			env_of,
 			owned,
 			arguments: ast.strings.find("arguments"),
-			this_name: ast.strings.find("this"),
 		}
 	}
 
@@ -1096,9 +1097,9 @@ impl<'a, X: Bind> Binder<'a, X> {
 			self.ast.extension.bind_extras(self, param);
 		}
 		self.enter(ScopeKind::Function, Some(id), arrow);
-		// a TypeScript `this` parameter, first in the list, is a type position and binds nothing
-		for (i, &param) in self.ast.list(params).iter().flatten().enumerate() {
-			if i == 0 && matches!(self.kind(param), NodeKind::Identifier { name } if Some(name) == self.this_name) {
+		// a TypeScript `this` parameter is a type position and binds nothing
+		for &param in self.ast.list(params).iter().flatten() {
+			if self.ast.extension.this_parameter(param) {
 				continue;
 			}
 			self.initializing(None, |b| {

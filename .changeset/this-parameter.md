@@ -2,4 +2,4 @@
 '@teasel/parser': patch
 ---
 
-Erasing drops a `this` parameter wherever it stands, as TypeScript does
+Erasing drops a `this` parameter wherever it stands, and it declares no binding

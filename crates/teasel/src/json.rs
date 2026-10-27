@@ -6,7 +6,7 @@
 use std::rc::Rc;
 
 use crate::Options;
-use crate::ast::{Ast, NodeKind, Reuse};
+use crate::ast::{Ast, Reuse};
 use crate::comments::attach;
 use crate::error::Code;
 use crate::estree::{Emit, Json, Positions, Words, answer};
@@ -726,15 +726,10 @@ pub(crate) fn place<X: Reuse>(ast: &mut Ast<X>, source: &str, positions: &Positi
 		positions.map_nodes(&ast.nodes, &mut ast.spans, &mut ast.locs);
 		ast.erased.clear();
 		if options.has(Options::ERASE) {
-			// a `this` parameter wherever it stands, by its name's id: only a leading one left
-			// `function f(a, this)`, and comparing each identifier's text cost 1.2% of an erasing parse
-			let this = ast.strings.find("this");
 			// only a list leaves an item out: asking every node cost 2% of an erasing JSON answer
 			for i in 0..ast.lists.len() {
 				let Some(id) = ast.lists[i] else { continue };
-				let this_parameter =
-					this.is_some() && matches!(ast.node(id).kind, NodeKind::Identifier { name } if Some(name) == this);
-				if this_parameter || ast.extension.erased(ast, id) {
+				if ast.extension.erased(ast, id) {
 					ast.erased.insert(id);
 				}
 			}

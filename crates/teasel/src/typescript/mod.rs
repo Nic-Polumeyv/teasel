@@ -237,15 +237,19 @@ impl Parser<'_, TypeScript> {
 		&self.ast.extension
 	}
 
-	fn check_parameter_list(&self, params: List, signature: bool) -> Result<()> {
+	fn check_parameter_list(&mut self, params: List, signature: bool) -> Result<()> {
 		let mut seen_optional = false;
-		for &item in self.ast.list(params).iter().flatten() {
+		for i in 0..params.len {
+			let Some(item) = self.ast.nth(params, i) else { continue };
 			let param = TypeScript::unwrap(self, item, Unwrap::InnerPattern).unwrap_or(item);
 			let binding = match self.kind(param) {
 				NodeKind::AssignmentPattern { left, .. } => left,
 				_ => param,
 			};
 			if self.ident_is(binding, "this") {
+				if binding == item {
+					self.ast.extension.this_parameters.push(item);
+				}
 				continue;
 			}
 			let optional = self.ext_data().extras(binding).is_some_and(|extras| extras.optional);
