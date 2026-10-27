@@ -321,3 +321,12 @@ fn a_stray_marker_fails_where_it_stands() {
 	assert_eq!(error("({a = 1} += 2);"), (Code::InvalidAssignmentTarget, 1));
 	assert_eq!(error("const g = ({ a }?) => a;"), (Code::OptionalPatternParameter, 11));
 }
+
+#[test]
+fn an_asserted_cast_is_no_parameter() {
+	let options = Options(Options::MODULE);
+	let error = |src: &str| at(Entry::Program, src, 0, options, "").unwrap_err().pos;
+	assert_eq!(error("(a as T: U = 1) => 1;"), 1);
+	assert_eq!(error("(a!: T = 1) => 1;"), 1);
+	assert_eq!(error("(...a: T += 1) => 1;"), 9);
+}

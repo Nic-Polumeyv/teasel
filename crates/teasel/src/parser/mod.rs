@@ -284,10 +284,6 @@ pub(crate) trait Extension: Default + Sized {
 	fn paren_item(p: &mut Parser<Self>, item: NodeId) -> Result<NodeId> {
 		Ok(item)
 	}
-	/// A spread in an argument list; the result replaces it.
-	fn spread(p: &mut Parser<Self>, spread: NodeId) -> Result<NodeId> {
-		Ok(spread)
-	}
 	/// At `?` after an expression; `Some` replaces the conditional.
 	fn conditional(p: &mut Parser<Self>, expr: NodeId, start: u32, for_init: ForInit) -> Result<Option<NodeId>> {
 		Ok(None)

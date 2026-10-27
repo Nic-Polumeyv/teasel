@@ -1662,7 +1662,6 @@ impl Extension for TypeScript {
 	}
 
 	fn paren_item(p: &mut Parser<Self>, item: NodeId) -> Result<NodeId> {
-		let start = p.tok.start;
 		let optional = p.eat(TokenKind::Question)?;
 		let type_annotation = if p.is(TokenKind::Colon) {
 			Some(p.parse_type_annotation(true, None)?)
@@ -1677,31 +1676,18 @@ impl Extension for TypeScript {
 				type_annotation,
 				optional,
 			},
-			start,
+			p.start_of(item),
 		);
-		// a parameter is never compound-assigned
+		// a parameter is never compound-assigned; a rest takes no operator at all
 		if !p.ext.maybe_in_arrow_parameters
-			|| assignment_operator(p.tok.kind).is_some_and(|op| op != AssignmentOperator::Assign)
+			|| !matches!(
+				p.kind(item),
+				NodeKind::RestElement { .. } | NodeKind::SpreadElement { .. }
+			) && assignment_operator(p.tok.kind).is_some_and(|op| op != AssignmentOperator::Assign)
 		{
 			p.no_type_casts(&[Some(cast)])?;
 		}
 		Ok(cast)
-	}
-
-	fn spread(p: &mut Parser<Self>, spread: NodeId) -> Result<NodeId> {
-		if !p.ext.maybe_in_arrow_parameters || !p.is(TokenKind::Colon) {
-			return Ok(spread);
-		}
-		let start = p.tok.start;
-		let type_annotation = Some(p.parse_type_annotation(true, None)?);
-		Ok(p.ts(
-			TsKind::TypeCastExpression {
-				expression: spread,
-				type_annotation,
-				optional: false,
-			},
-			start,
-		))
 	}
 
 	fn conditional(p: &mut Parser<Self>, expr: NodeId, start: u32, for_init: ForInit) -> Result<Option<NodeId>> {
@@ -1899,22 +1885,14 @@ impl Extension for TypeScript {
 				| TsKind::NonNullExpression { expression }
 				| TsKind::TypeAssertion { expression, .. },
 			) if !is_binding => p.make_pattern(expression, is_binding, errors).map(Some),
+			// the target of `=` stays a cast until its list becomes parameters
+			Some(TsKind::TypeCastExpression { .. }) if !is_binding => Ok(Some(id)),
 			Some(TsKind::TypeCastExpression {
 				expression,
 				type_annotation,
 				optional,
 			}) => {
 				let pattern = p.make_pattern(expression, is_binding, errors)?;
-				// the target of `=` stays a cast until its list becomes parameters
-				if !is_binding {
-					let index = p.ts_index(id).unwrap();
-					p.ast.extension.nodes[index] = TsKind::TypeCastExpression {
-						expression: pattern,
-						type_annotation,
-						optional,
-					};
-					return Ok(Some(id));
-				}
 				let extras = p.extras_mut(pattern);
 				extras.type_annotation = type_annotation;
 				extras.optional = optional;

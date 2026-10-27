@@ -188,14 +188,13 @@ impl<E: Extension> Parser<'_, E> {
 			}
 			// `a: T = 1` is checked once its list is known, as a parameter or as a stray cast
 			let inner = E::unwrap(self, left, Unwrap::InnerPattern);
-			let target = inner.unwrap_or(left);
 			let e = errors.as_mut().unwrap();
 			if !own_errors {
 				e.parenthesized_assign = None;
 				e.trailing_comma = None;
 				e.double_proto = None;
 			}
-			if e.shorthand_assign.is_some_and(|p| p >= self.start_of(target)) {
+			if e.shorthand_assign.is_some_and(|p| p >= self.start_of(left)) {
 				e.shorthand_assign = None;
 			}
 			if inner.is_none() {
@@ -1349,7 +1348,7 @@ impl<E: Extension> Parser<'_, E> {
 				None
 			} else if self.is(TokenKind::Ellipsis) {
 				let spread = self.parse_spread(errors)?;
-				let spread = E::spread(self, spread)?;
+				let spread = E::paren_item(self, spread)?;
 				if self.is(TokenKind::Comma)
 					&& let Some(e) = errors
 					&& e.trailing_comma.is_none()
