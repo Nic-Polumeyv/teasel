@@ -544,7 +544,7 @@ impl<'a> Parser<'a> {
 		self.recover_statement(f)
 	}
 
-	// inlined, a parse-only read of JavaScript took 0.5% longer
+	// with this and the two inlined below left to the compiler, a parse-only JavaScript read took 0.9% longer
 	#[inline(never)]
 	fn recover_statement(&mut self, f: impl FnOnce(&mut Self) -> Result<NodeId>) -> Result<Option<NodeId>> {
 		let mark = self.mark();
@@ -1021,7 +1021,7 @@ impl<'a> Parser<'a> {
 		Ok(false)
 	}
 
-	// these two out of line, a parse-only read of JavaScript took 0.6% longer
+	// with these two and recover_statement above left to the compiler, a parse-only JavaScript read took 0.9% longer
 	#[inline(always)]
 	pub(crate) fn check_expression_errors(
 		&self,
