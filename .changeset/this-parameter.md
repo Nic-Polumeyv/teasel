@@ -2,4 +2,4 @@
 '@teasel/parser': patch
 ---
 
-Erasing drops a `this` parameter that is not first, as TypeScript's output does
+Erasing drops a `this` parameter wherever it stands, as TypeScript does
