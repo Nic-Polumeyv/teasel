@@ -9,7 +9,9 @@ use super::token::{Keyword, Token, TokenKind};
 pub(crate) enum Role {
 	Parameters,
 	Expression,
-	/// Only reading a type tells, or the tokens do not: the head is tried as an arrow's.
+	/// A `:` at the offset follows the closer: only reading the type after it tells.
+	Typed(u32),
+	/// The tokens do not tell: the head is tried as an arrow's.
 	Unsure,
 }
 
@@ -83,7 +85,7 @@ impl Lexer<'_> {
 					_ if token.stop => Role::Expression,
 					T::Arrow => Role::Parameters,
 					// `a ? async() : b`
-					T::Colon if typescript && call => Role::Unsure,
+					T::Colon if typescript && call => Role::Typed(token.start),
 					T::Colon | T::BraceL if typescript && !call => Role::Parameters,
 					_ => Role::Expression,
 				}));
@@ -139,7 +141,7 @@ impl Lexer<'_> {
 			// the host's syntax starts there: the list ends the expression
 			_ if follower.stop => Role::Expression,
 			TokenKind::Arrow if !follower.newline_before => Role::Parameters,
-			TokenKind::Colon if typescript => Role::Unsure,
+			TokenKind::Colon if typescript => Role::Typed(follower.start),
 			_ => Role::Expression,
 		}
 	}

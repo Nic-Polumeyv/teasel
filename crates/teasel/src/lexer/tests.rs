@@ -564,7 +564,7 @@ fn a_list_is_decided_before_it_is_read() {
 	assert_eq!(js("(...a) + 1"), (Parameters, Some(Expression)));
 	assert_eq!(js("(a, b)\n=> 1").0, Expression);
 	assert_eq!(js("(1, b) => 1").0, Expression);
-	assert_eq!(list("(a, b): T => 1", true, true).0, Unsure);
+	assert_eq!(list("(a, b): T => 1", true, true).0, Typed(6));
 	assert_eq!(list("(a: T, b) => 1", true, true).0, Parameters);
 	// strings, comments, regular expressions and templates hold brackets that close nothing
 	assert_eq!(js("(a = \")\", b = '(') => 1").0, Parameters);

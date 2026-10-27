@@ -858,7 +858,10 @@ impl Parser<'_> {
 		let (params, outer) = match self.lexer.list_role(at, &first, self.typescript(), is_async) {
 			Role::Parameters => self.read_arrow_params(is_async)?,
 			Role::Expression => return Ok(None),
-			Role::Unsure if self.typescript() => return TypeScript::arrow_head(self, start, at, is_async, for_init),
+			Role::Typed(colon) => return TypeScript::arrow_head(self, start, at, Some(colon), is_async, for_init),
+			Role::Unsure if self.typescript() => {
+				return TypeScript::arrow_head(self, start, at, None, is_async, for_init);
+			}
 			Role::Unsure => {
 				let outer = (self.yield_pos, self.await_pos, self.await_ident_pos);
 				let head = self.attempt(|p| p.read_arrow_params(is_async))?;

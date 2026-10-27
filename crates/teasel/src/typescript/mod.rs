@@ -588,12 +588,21 @@ impl Parser<'_> {
 		&mut self,
 		start: u32,
 		at: u32,
+		colon: Option<u32>,
 		is_async: bool,
 		for_init: ForInit,
 		generic: bool,
 	) -> Result<Option<NodeId>> {
 		let spine = self.ts.needs_colon_at == Some(start);
 		if self.ts.not_arrow.contains(&(at, spine)) {
+			return Ok(None);
+		}
+		// the list read first and again after the type failed: a nest of `c ? (a = …) : d` read its
+		// inner lists once per level, 128 levels in 16 ms
+		if let Some(colon) = colon
+			&& !self.arrow_after_type(colon)?
+		{
+			self.ts.not_arrow.insert((at, spine));
 			return Ok(None);
 		}
 		let before = spine.then(|| self.snapshot());
@@ -625,6 +634,19 @@ impl Parser<'_> {
 			self.extras_mut(arrow).type_parameters = type_parameters;
 		}
 		Ok(Some(arrow))
+	}
+
+	/// Whether a type and `=>` follow the `:` at `colon`, read without the list before it.
+	fn arrow_after_type(&mut self, colon: u32) -> Result<bool> {
+		match self.lookahead(|p| {
+			p.lexer.set_pos(colon);
+			p.lexer.next_token_into(&mut p.tok)?;
+			p.parse_type_or_type_predicate_annotation(TokenKind::Colon, true)?;
+			Ok(!p.can_insert_semicolon() && p.is(TokenKind::Arrow))
+		}) {
+			Err(error) if error.code.is_limit() => Err(error),
+			answer => Ok(answer.unwrap_or(false)),
+		}
 	}
 
 	fn colon_after_body(&mut self, is_async: bool) -> Result<bool> {
@@ -661,7 +683,7 @@ impl Parser<'_> {
 	) -> Result<Option<NodeId>> {
 		if !no_calls
 			&& self.at_possible_async_arrow(base)
-			&& let Some(arrow) = self.try_arrow_head(start, self.tok.start, true, for_init, true)?
+			&& let Some(arrow) = self.try_arrow_head(start, self.tok.start, None, true, for_init, true)?
 		{
 			return Ok(Some(arrow));
 		}
@@ -1595,20 +1617,21 @@ impl TypeScript {
 		if !p.starts_with_lt() {
 			return Ok(None);
 		}
-		p.try_arrow_head(p.tok.start, p.tok.start, false, for_init, true)
+		p.try_arrow_head(p.tok.start, p.tok.start, None, false, for_init, true)
 	}
 
-	/// At the `(` of a list that a type must be read to decide, or that the closer reader could
-	/// not; `Some` is the arrow it starts.
+	/// At the `(` of a list that a type must be read to decide, the `:` after its closer at
+	/// `colon`, or that the closer reader could not; `Some` is the arrow it starts.
 	#[cold]
 	pub(crate) fn arrow_head(
 		p: &mut Parser,
 		start: u32,
 		at: u32,
+		colon: Option<u32>,
 		is_async: bool,
 		for_init: ForInit,
 	) -> Result<Option<NodeId>> {
-		p.try_arrow_head(start, at, is_async, for_init, false)
+		p.try_arrow_head(start, at, colon, is_async, for_init, false)
 	}
 
 	/// After an arrow's parameters, before `=>`.
