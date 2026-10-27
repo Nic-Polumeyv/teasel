@@ -344,9 +344,45 @@ fn an_async_rest_ends_after_its_annotation() {
 }
 
 #[test]
-fn a_this_parameter_erases_wherever_it_stands() {
-	let request = crate::json::Request::from_flags(Options::MODULE | Options::ERASE);
+fn a_this_parameter_erases_and_binds_nothing_wherever_it_stands() {
+	let options = Options(Options::MODULE | Options::ERASE | Options::SCOPES);
 	for src in ["function f(this: void, a) {}", "function f(a, this: void) {}"] {
-		assert!(!crate::json::parse(src, &request).contains("\"this\""), "{src}");
+		let (mut ast, root, _) = at(Entry::Program, src, 0, options, "").unwrap();
+		let roots = ast.add_list(&[Some(root)]);
+		crate::scopes::analyze(&mut ast, Entry::Program, roots);
+		crate::json::place(
+			&mut ast,
+			src,
+			&crate::estree::Positions::of(src, options),
+			options,
+			false,
+		);
+		let name = |id: NodeId| match ast.node(id).kind {
+			NodeKind::Identifier { name } => ast.str(name),
+			_ => "",
+		};
+		let function = (0..ast.nodes.len() as u32)
+			.find_map(|i| match ast.node(NodeId::at(i)).kind {
+				NodeKind::FunctionDeclaration { function } => Some(function),
+				_ => None,
+			})
+			.unwrap();
+		let params: Vec<&str> = ast
+			.list(function.params)
+			.iter()
+			.flatten()
+			.filter(|&&id| !ast.erased.contains(id))
+			.map(|&id| name(id))
+			.collect();
+		assert_eq!(params, ["a"], "{src}");
+		let bindings: Vec<&str> = ast
+			.scopes
+			.as_ref()
+			.unwrap()
+			.bindings
+			.iter()
+			.map(|b| ast.str(b.name))
+			.collect();
+		assert_eq!(bindings, ["f", "a"], "{src}");
 	}
 }
