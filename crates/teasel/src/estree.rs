@@ -821,7 +821,7 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 					}
 				}
 				Op::KeepIf(name, slot) => {
-					if self.options.has(Options::ERASE) && get::<bool>(base, slot) {
+					if self.options.has(Options::ERASE) && get::<u8>(base, slot) == 1 {
 						self.keep(name, id);
 					}
 				}
