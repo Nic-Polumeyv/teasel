@@ -320,6 +320,31 @@ pub(crate) struct DestructuringErrors {
 	pub trailing_comma: Option<u32>,
 	pub parenthesized_assign: Option<u32>,
 	pub double_proto: Option<u32>,
+	/// The literal or parenthesized expression the facts are of.
+	pub owner: Option<NodeId>,
+	/// The first error of a literal used as an operand, raised where its list closes.
+	pub operand: Option<(u32, Code)>,
+}
+
+impl DestructuringErrors {
+	/// An element's facts joining its list's: the first of each stays.
+	pub(crate) fn merge(&mut self, element: DestructuringErrors) {
+		self.shorthand_assign = self.shorthand_assign.or(element.shorthand_assign);
+		self.trailing_comma = self.trailing_comma.or(element.trailing_comma);
+		self.parenthesized_assign = self.parenthesized_assign.or(element.parenthesized_assign);
+		self.double_proto = self.double_proto.or(element.double_proto);
+		self.operand = self.operand.or(element.operand);
+	}
+
+	/// The facts of an expression that is no pattern: only what makes it an error stays.
+	pub(crate) fn settle_as_operand(&mut self) {
+		let error = (self.shorthand_assign.map(|pos| (pos, Code::ShorthandAssignment)))
+			.or(self.double_proto.map(|pos| (pos, Code::DuplicateProto)));
+		*self = DestructuringErrors {
+			operand: self.operand.or(error),
+			..DestructuringErrors::default()
+		};
+	}
 }
 
 impl<'a> Parser<'a> {
@@ -998,9 +1023,12 @@ impl<'a> Parser<'a> {
 		and_throw: bool,
 	) -> Result<bool> {
 		let Some(errors) = errors else { return Ok(false) };
-		let has = errors.shorthand_assign.is_some() || errors.double_proto.is_some();
+		let has = errors.shorthand_assign.is_some() || errors.double_proto.is_some() || errors.operand.is_some();
 		if !and_throw {
 			return Ok(has);
+		}
+		if let Some((pos, code)) = errors.operand {
+			return self.error(pos, code);
 		}
 		if let Some(pos) = errors.shorthand_assign {
 			return self.error(pos, Code::ShorthandAssignment);
@@ -1014,6 +1042,9 @@ impl<'a> Parser<'a> {
 	#[inline(always)]
 	pub(crate) fn check_pattern_errors(&self, errors: &Option<DestructuringErrors>) -> Result<()> {
 		let Some(errors) = errors else { return Ok(()) };
+		if let Some((pos, code)) = errors.operand {
+			return self.error(pos, code);
+		}
 		if let Some(pos) = errors.trailing_comma {
 			return self.error(pos, Code::CommaAfterRest);
 		}

@@ -157,6 +157,26 @@ fn module_error(src: &str) -> String {
 	}
 }
 
+/// A literal's facts are its own: used as an operand it keeps them, and no sibling clears them.
+#[test]
+fn a_literal_keeps_its_facts() {
+	assert_eq!(module_error("({a = 1}.b = 2);"), "shorthand_assignment (4)");
+	assert_eq!(module_error("f({a = 1}.b = 2);"), "shorthand_assignment (5)");
+	assert_eq!(module_error("for ({a = 1}.b of c);"), "shorthand_assignment (8)");
+	assert_eq!(
+		module_error("({__proto__: a, __proto__: b}.c = 1);"),
+		"duplicate_proto (16)"
+	);
+	assert_eq!(module_error("[...r, a = 1] = b;"), "comma_after_rest (5)");
+	assert_eq!(module_error("[(a = 1), b = 2] = c;"), "invalid_assignment_target (1)");
+	assert_eq!(module_error("async (...r, a = 1) => 1;"), "comma_after_rest (11)");
+	program(
+		"({a = 1} = b); [{a = 1}] = b; for ({a = 1} of b);",
+		Options(Options::MODULE),
+	)
+	.unwrap();
+}
+
 #[test]
 fn consumed_end() {
 	let options = Options(Options::MODULE);

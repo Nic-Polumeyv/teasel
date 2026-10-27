@@ -130,7 +130,13 @@ impl Parser<'_> {
 			let mut expressions = self.items();
 			expressions.push(Some(expr));
 			while self.eat(TokenKind::Comma)? {
-				expressions.push(Some(self.parse_maybe_assign(for_init, errors)?));
+				expressions.push(Some(
+					self.element(errors, |p, facts| p.parse_maybe_assign(for_init, facts))?,
+				));
+			}
+			// a sequence is never a pattern
+			if let Some(e) = errors {
+				e.settle_as_operand();
 			}
 			let expressions = self.list_from(expressions);
 			return Ok(self.add(NodeKind::SequenceExpression { expressions }, start));
@@ -155,67 +161,66 @@ impl Parser<'_> {
 		if self.is_contextual("yield") && self.in_generator() {
 			return self.parse_yield(for_init);
 		}
-		let own_errors = errors.is_none();
-		let (old_paren_assign, old_trailing_comma, old_double_proto) = match errors {
-			Some(e) => {
-				let old = (e.parenthesized_assign, e.trailing_comma, e.double_proto);
-				e.parenthesized_assign = None;
-				e.trailing_comma = None;
-				old
-			}
-			None => {
-				*errors = Some(DestructuringErrors::default());
-				(None, None, None)
-			}
+		let handing = errors.is_some();
+		let mut own: Errors;
+		let facts = if handing {
+			errors
+		} else {
+			own = Some(DestructuringErrors::default());
+			&mut own
 		};
 		let start = self.tok.start;
 		if self.is(TokenKind::ParenL) || matches!(self.tok.kind, TokenKind::Ident(_)) {
 			self.potential_arrow_at = start;
 			self.potential_arrow_in_for_await = for_init == ForInit::Await;
 		}
-		let mut left = self.parse_maybe_conditional(for_init, errors)?;
+		let mut left = self.parse_maybe_conditional(for_init, facts)?;
+		let e = facts.as_mut().unwrap();
+		let target = e.owner == Some(left);
+		if !target && e.owner.is_some() {
+			e.settle_as_operand();
+		}
 		if let Some(operator) = assignment_operator(self.tok.kind) {
 			let is_eq = operator == AssignmentOperator::Assign;
 			if is_eq {
-				left = self.make_pattern(left, errors)?;
-			}
-			let e = errors.as_mut().unwrap();
-			if !own_errors {
-				e.parenthesized_assign = None;
-				e.trailing_comma = None;
-				e.double_proto = None;
-			}
-			if e.shorthand_assign.is_some_and(|p| p >= self.start_of(left)) {
-				e.shorthand_assign = None;
-			}
-			if is_eq {
+				left = self.make_pattern(left, facts)?;
 				self.check_lval_pattern(left, Binding::None, &mut None)?;
 			} else {
 				self.check_lval_simple(left, Binding::None, &mut None)?;
 			}
 			self.next()?;
-			let right = self.parse_maybe_assign(for_init, &mut None)?;
-			if old_double_proto.is_some() {
-				errors.as_mut().unwrap().double_proto = old_double_proto;
+			if target {
+				*facts = Some(DestructuringErrors::default());
 			}
-			if own_errors {
-				*errors = None;
+			let mut right_facts = handing.then(DestructuringErrors::default);
+			let right = self.parse_maybe_assign(for_init, &mut right_facts)?;
+			if let Some(mut right_facts) = right_facts {
+				right_facts.settle_as_operand();
+				facts.as_mut().unwrap().merge(right_facts);
+			}
+			if !handing {
+				self.check_expression_errors(facts, true)?;
 			}
 			return Ok(self.add(NodeKind::AssignmentExpression { operator, left, right }, start));
 		}
-		if own_errors {
-			self.check_expression_errors(errors, true)?;
-			*errors = None;
-		} else {
-			let e = errors.as_mut().unwrap();
-			if old_paren_assign.is_some() {
-				e.parenthesized_assign = old_paren_assign;
-			}
-			if old_trailing_comma.is_some() {
-				e.trailing_comma = old_trailing_comma;
-			}
+		if !handing {
+			self.check_expression_errors(facts, true)?;
 		}
 		Ok(left)
+	}
+
+	/// An element of a list read with facts of its own, which join the list's.
+	fn element(
+		&mut self,
+		list: &mut Errors,
+		read: impl FnOnce(&mut Self, &mut Errors) -> Result<NodeId>,
+	) -> Result<NodeId> {
+		let mut facts = list.is_some().then(DestructuringErrors::default);
+		let node = read(self, &mut facts)?;
+		if let (Some(list), Some(facts)) = (list.as_mut(), facts) {
+			list.merge(facts);
+		}
+		Ok(node)
 	}
 
 	fn parse_maybe_conditional(&mut self, for_init: ForInit, errors: &mut Errors) -> Result<NodeId> {
@@ -464,19 +469,7 @@ impl Parser<'_> {
 		{
 			return Ok(expr);
 		}
-		let result = self.parse_subscripts(expr, start, false, for_init)?;
-		if let Some(e) = errors
-			&& matches!(self.kind(result), NodeKind::MemberExpression { .. })
-		{
-			let rs = self.start_of(result);
-			if e.parenthesized_assign.is_some_and(|p| p >= rs) {
-				e.parenthesized_assign = None;
-			}
-			if e.trailing_comma.is_some_and(|p| p >= rs) {
-				e.trailing_comma = None;
-			}
-		}
-		Ok(result)
+		self.parse_subscripts(expr, start, false, for_init)
 	}
 
 	fn parse_subscripts(&mut self, mut base: NodeId, start: u32, no_calls: bool, for_init: ForInit) -> Result<NodeId> {
@@ -673,11 +666,11 @@ impl Parser<'_> {
 			TokenKind::Keyword(Keyword::False) => self.literal(NodeKind::BooleanLiteral { value: false }, start),
 			TokenKind::ParenL => {
 				let expr = self.parse_paren_and_distinguish_expression(can_be_arrow, for_init)?;
-				if let Some(e) = errors
-					&& e.parenthesized_assign.is_none()
-					&& !self.is_simple_assign_target(expr)
-				{
-					e.parenthesized_assign = Some(start);
+				if let Some(e) = errors {
+					if e.parenthesized_assign.is_none() && !self.is_simple_assign_target(expr) {
+						e.parenthesized_assign = Some(start);
+					}
+					e.owner = Some(expr);
 				}
 				Ok(expr)
 			}
@@ -685,9 +678,19 @@ impl Parser<'_> {
 				self.next()?;
 				let elements = self.parse_expr_list(TokenKind::BracketR, true, true, errors)?;
 				let elements = self.list_from(elements);
-				Ok(self.add(NodeKind::ArrayExpression { elements }, start))
+				let array = self.add(NodeKind::ArrayExpression { elements }, start);
+				if let Some(e) = errors {
+					e.owner = Some(array);
+				}
+				Ok(array)
 			}
-			TokenKind::BraceL => self.parse_obj(false, errors),
+			TokenKind::BraceL => {
+				let object = self.parse_obj(false, errors)?;
+				if let Some(e) = errors {
+					e.owner = Some(object);
+				}
+				Ok(object)
+			}
 			TokenKind::Keyword(Keyword::Function) => {
 				self.next()?;
 				self.parse_function(start, 0, false, ForInit::No)
@@ -779,8 +782,10 @@ impl Parser<'_> {
 				return Ok(arrow);
 			}
 		}
-		let value = self.parse_expression(false, &mut None)?;
+		let mut facts = Some(DestructuringErrors::default());
+		let value = self.parse_expression(false, &mut facts)?;
 		self.expect(TokenKind::ParenR)?;
+		self.check_expression_errors(&facts, true)?;
 		if self.options.has(Options::PARENTHESIZED) {
 			self.ast.set_parenthesized(value);
 		}
@@ -906,7 +911,9 @@ impl Parser<'_> {
 			return self.error(self.start_of(callee), Code::InvalidSuper);
 		}
 		let arguments = if self.eat(TokenKind::ParenL)? {
-			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut None)?;
+			let mut facts = Some(DestructuringErrors::default());
+			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut facts)?;
+			self.check_expression_errors(&facts, true)?;
 			self.list_from(args)
 		} else {
 			List::EMPTY
@@ -1032,7 +1039,7 @@ impl Parser<'_> {
 				}
 				return Ok(self.add(NodeKind::RestElement { argument }, start));
 			}
-			let argument = self.parse_maybe_assign(ForInit::No, errors)?;
+			let argument = self.element(errors, |p, facts| p.parse_maybe_assign(ForInit::No, facts))?;
 			if self.is(TokenKind::Comma)
 				&& let Some(e) = errors
 				&& e.trailing_comma.is_none()
@@ -1100,7 +1107,7 @@ impl Parser<'_> {
 				let s = self.tok.start;
 				self.parse_maybe_default(s, None)?
 			} else {
-				self.parse_maybe_assign(ForInit::No, errors)?
+				self.element(errors, |p, facts| p.parse_maybe_assign(ForInit::No, facts))?
 			};
 		} else if self.is(TokenKind::ParenL) {
 			if is_pattern {
@@ -1462,7 +1469,7 @@ impl Parser<'_> {
 				}
 				Some(spread)
 			} else {
-				Some(self.parse_maybe_assign(ForInit::No, errors)?)
+				Some(self.element(errors, |p, facts| p.parse_maybe_assign(ForInit::No, facts))?)
 			};
 			elements.push(element);
 		}
@@ -1472,7 +1479,7 @@ impl Parser<'_> {
 	fn parse_spread(&mut self, errors: &mut Errors) -> Result<NodeId> {
 		let start = self.tok.start;
 		self.next()?;
-		let argument = self.parse_maybe_assign(ForInit::No, errors)?;
+		let argument = self.element(errors, |p, facts| p.parse_maybe_assign(ForInit::No, facts))?;
 		Ok(self.add(NodeKind::SpreadElement { argument }, start))
 	}
 
