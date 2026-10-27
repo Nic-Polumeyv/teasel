@@ -1,6 +1,3 @@
-//! What a parenthesized list that may be an arrow's parameters is, told before the parser reads
-//! it: by its first tokens, or by the token after its closer.
-
 use super::Lexer;
 use super::token::{Keyword, Token, TokenKind};
 
@@ -89,13 +86,11 @@ impl Lexer<'_> {
 				return Ok(Some(match token.kind {
 					_ if token.stop => Role::Expression,
 					T::Arrow => Role::Parameters,
-					// `a ? async() : b`
 					T::Colon if typescript && call => Role::Typed(token.start),
 					T::Colon | T::BraceL if typescript && !call => Role::Parameters,
 					_ => Role::Expression,
 				}));
 			}
-			// a call spreads its arguments
 			T::Ellipsis if !call => return Ok(Some(Role::Parameters)),
 			T::Ellipsis | T::BracketL | T::BraceL => return Ok(None),
 			T::Ident(_) => {}
@@ -117,7 +112,6 @@ impl Lexer<'_> {
 					_ => Role::Expression,
 				})
 			}
-			// `(public x`, which only a parameter list can hold; `(public as T)` is an assertion
 			T::Ident(second) if typescript && self.is_modifier(first) => Some(match self.strings.get(second) {
 				"as" | "satisfies" => Role::Expression,
 				_ => Role::Parameters,
@@ -143,7 +137,6 @@ impl Lexer<'_> {
 	/// What the token after a list's closer makes the list.
 	fn after_closer(&self, follower: &Token, typescript: bool) -> Role {
 		match follower.kind {
-			// the host's syntax starts there: the list ends the expression
 			_ if follower.stop => Role::Expression,
 			TokenKind::Arrow if !follower.newline_before => Role::Parameters,
 			TokenKind::Colon if typescript => Role::Typed(follower.start),

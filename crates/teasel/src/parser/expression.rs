@@ -134,7 +134,6 @@ impl Parser<'_> {
 					self.element(errors, |p, facts| p.parse_maybe_assign(for_init, facts))?,
 				));
 			}
-			// a sequence is never a pattern
 			if let Some(e) = errors {
 				e.settle_as_operand();
 			}
@@ -865,9 +864,9 @@ impl Parser<'_> {
 		let (params, outer) = match self.lexer.list_role(at, &first, self.typescript(), is_async) {
 			Role::Parameters => self.read_arrow_params(is_async)?,
 			Role::Expression => return Ok(None),
-			Role::Typed(colon) => return TypeScript::arrow_head(self, start, at, Some(colon), is_async, for_init),
+			Role::Typed(colon) => return self.try_arrow_head(start, at, Some(colon), is_async, for_init, false),
 			Role::Unsure if self.typescript() => {
-				return TypeScript::arrow_head(self, start, at, None, is_async, for_init);
+				return self.try_arrow_head(start, at, None, is_async, for_init, false);
 			}
 			Role::Unsure => {
 				let outer = (self.yield_pos, self.await_pos, self.await_ident_pos);

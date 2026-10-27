@@ -585,8 +585,10 @@ impl Parser<'_> {
 	}
 
 	// the head alone is tried: trying the whole expression read it again as an assertion or a call, 2x per level
-	/// An arrow's head tried at `<` (`generic`) or at a list's `(`.
-	fn try_arrow_head(
+	/// An arrow's head tried at `<` (`generic`) or after a list's `(` at `at`: a list a type must be
+	/// read to decide, the `:` after its closer at `colon`, or one the closer reader could not.
+	#[cold]
+	pub(crate) fn try_arrow_head(
 		&mut self,
 		start: u32,
 		at: u32,
@@ -1626,20 +1628,6 @@ impl TypeScript {
 			return Ok(None);
 		}
 		p.try_arrow_head(p.tok.start, p.tok.start, None, false, for_init, true)
-	}
-
-	/// At the `(` of a list that a type must be read to decide, the `:` after its closer at
-	/// `colon`, or that the closer reader could not; `Some` is the arrow it starts.
-	#[cold]
-	pub(crate) fn arrow_head(
-		p: &mut Parser,
-		start: u32,
-		at: u32,
-		colon: Option<u32>,
-		is_async: bool,
-		for_init: ForInit,
-	) -> Result<Option<NodeId>> {
-		p.try_arrow_head(start, at, colon, is_async, for_init, false)
 	}
 
 	/// After an arrow's parameters, before `=>`.

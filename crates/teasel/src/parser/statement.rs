@@ -544,7 +544,6 @@ impl Parser<'_> {
 			if starts_with_let && is_for_of {
 				return self.error(self.start_of(init), Code::ForOfLet);
 			}
-			// a literal that is no target here was an operand
 			if errors.as_ref().is_some_and(|e| e.owner != Some(init)) {
 				self.check_expression_errors(&errors, true)?;
 			}
