@@ -490,7 +490,11 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 		self.key("typescript");
 		self.json.list();
 		let mut kept = std::mem::take(&mut self.kept);
-		kept.sort_unstable_by_key(|&(_, id)| self.ast.node(id).start);
+		// a node comes before what it contains
+		kept.sort_by_key(|&(_, id)| {
+			let node = self.ast.node(id);
+			(node.start, std::cmp::Reverse(node.end))
+		});
 		for &(ty, id) in &kept {
 			self.json.begin(ty);
 			let node = self.ast.node(id);
@@ -817,7 +821,7 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 					}
 				}
 				Op::KeepIf(name, slot) => {
-					if self.options.has(Options::ERASE) && get::<bool>(base, slot) {
+					if self.options.has(Options::ERASE) && get::<u8>(base, slot) == 1 {
 						self.keep(name, id);
 					}
 				}

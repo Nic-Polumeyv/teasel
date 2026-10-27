@@ -15,6 +15,9 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # the tested builds keep the writer's checks that shipped builds drop
+    env:
+      CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS: 'true'
     steps:
       - uses: actions/checkout@v7
       - run: rustup target add wasm32-unknown-unknown

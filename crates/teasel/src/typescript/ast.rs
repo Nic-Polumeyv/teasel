@@ -2,6 +2,7 @@ use crate::ast::{Ast, List, NodeId, NodeKind, Reuse, Walk};
 use crate::estree::{Emit, Writer};
 use crate::handed::{Handed, Views};
 use crate::interner::StrId;
+use crate::layout::Ty;
 use crate::recipe::{ADDS, EXTRAS_ERASED, Op, Slot, TS, TS_ADDS};
 use crate::scopes::{Bind, Binder, BindingKind, Mode, ScopeKind};
 
@@ -47,9 +48,7 @@ impl crate::ast::Reuse for Data {
 
 	fn rare(&self, set: &mut crate::ast::NodeSet) {
 		for &owner in self.extras.owners() {
-			if let Some(extras) = self.extras(owner)
-				&& (extras.decorators.is_some() || extras.accessor)
-			{
+			if self.extras(owner).is_some_and(|extras| extras.decorators.is_some()) {
 				set.insert(owner);
 			}
 		}
@@ -167,65 +166,26 @@ crate::layout::record! {
 		pub is_abstract: bool,
 		pub readonly: bool,
 		pub is_override: bool,
-		pub accessor: bool,
 		pub is_static: bool,
 	}
 }
 
 impl Extras {
 	fn set(&self) -> impl Iterator<Item = &'static str> {
-		let none = Extras::default();
-		macro_rules! set {
-			($($field:ident),*) => { [$( (stringify!($field), self.$field != none.$field) ),*] };
-		}
-		set!(
-			type_annotation,
-			return_type,
-			type_parameters,
-			type_arguments,
-			super_type_arguments,
-			implements,
-			decorators,
-			accessibility,
-			import_kind,
-			export_kind,
-			optional,
-			definite,
-			declare,
-			is_abstract,
-			readonly,
-			is_override,
-			accessor,
-			is_static
-		)
-		.into_iter()
-		.filter_map(|(field, set)| set.then_some(field))
-	}
-
-	pub(crate) fn merge(&mut self, other: Extras) {
-		macro_rules! take {
-			($($field:ident),*) => { $( if other.$field.is_some() { self.$field = other.$field; } )* };
-		}
-		take!(
-			type_annotation,
-			return_type,
-			type_parameters,
-			type_arguments,
-			super_type_arguments,
-			implements,
-			decorators,
-			accessibility,
-			import_kind,
-			export_kind
-		);
-		self.optional |= other.optional;
-		self.definite |= other.definite;
-		self.declare |= other.declare;
-		self.is_abstract |= other.is_abstract;
-		self.readonly |= other.readonly;
-		self.is_override |= other.is_override;
-		self.accessor |= other.accessor;
-		self.is_static |= other.is_static;
+		let base = self as *const Extras as *const u8;
+		Extras::FIELDS
+			.iter()
+			.filter(move |field| unsafe {
+				let at = base.add(field.at);
+				match field.ty {
+					Ty::Bool => at.cast::<bool>().read(),
+					Ty::OptNode => at.cast::<Option<NodeId>>().read().is_some(),
+					Ty::OptList => at.cast::<Option<List>>().read().is_some(),
+					Ty::OptEnum(names) => usize::from(at.read()) < names.len(),
+					_ => unreachable!(),
+				}
+			})
+			.map(|field| field.name)
 	}
 }
 
@@ -932,39 +892,11 @@ impl Emit for Data {
 			kind => &recipes.adds[crate::estree::tag(&kind as *const NodeKind as *const u8)],
 		};
 		w.run(id, ops, base);
-		// an accessor is its kind's type, not a key
-		if let Some(field) = extras
-			.set()
-			.find(|&field| field != "accessor" && !read.contains(&field))
+		// an unlisted extra is a parser bug, which a test build catches and a shipped build answers around
+		if cfg!(debug_assertions)
+			&& let Some(field) = extras.set().find(|&field| !read.contains(&field))
 		{
 			panic!("{:?} has {field}, which its kind does not list", w.kind(id));
 		}
 	}
-}
-
-// the writer's check on a node's extras sees every field
-#[test]
-fn set_names_every_field() {
-	let (node, list) = (Some(NodeId::at(0)), Some(List { start: 0, len: 1 }));
-	let all = Extras {
-		type_annotation: node,
-		return_type: node,
-		type_parameters: node,
-		type_arguments: node,
-		super_type_arguments: node,
-		implements: list,
-		decorators: list,
-		accessibility: Some(Accessibility::Public),
-		import_kind: Some(Kind::Type),
-		export_kind: Some(Kind::Type),
-		optional: true,
-		definite: true,
-		declare: true,
-		is_abstract: true,
-		readonly: true,
-		is_override: true,
-		accessor: true,
-		is_static: true,
-	};
-	assert!(all.set().eq(Extras::FIELDS.iter().map(|field| field.name)));
 }

@@ -370,6 +370,8 @@ codes! {
 	InvalidRequest,
 	/// A property access right after an instantiation expression.
 	PropertyAfterInstantiation,
+	/// `accessor` on other than a property.
+	AccessorPlacement,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

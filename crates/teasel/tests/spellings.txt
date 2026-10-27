@@ -267,7 +267,6 @@ YieldExpression
 ^=
 abstract
 accessibility
-accessor
 adds
 alternate
 args
