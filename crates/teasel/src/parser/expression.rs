@@ -1342,6 +1342,48 @@ impl Parser<'_> {
 		Ok(node)
 	}
 
+	/// An arrow's head after its type parameters: the parameters through `=>`, read as bindings,
+	/// with the yield and await positions from before them.
+	#[expect(clippy::type_complexity)]
+	pub(crate) fn read_arrow_head(&mut self, is_async: bool) -> Result<(Vec<Option<NodeId>>, (u32, u32, u32))> {
+		let outer = (self.yield_pos, self.await_pos, self.await_ident_pos);
+		(self.yield_pos, self.await_pos) = (0, 0);
+		if is_async {
+			self.await_ident_pos = 0;
+		}
+		self.expect(TokenKind::ParenL)?;
+		let params = self.parse_binding_list(TokenKind::ParenR, false, true, false)?;
+		if self.typescript() {
+			TypeScript::arrow_return_type(self)?;
+		}
+		if self.can_insert_semicolon() {
+			return self.unexpected();
+		}
+		self.expect(TokenKind::Arrow)?;
+		Ok((params, outer))
+	}
+
+	/// What an arrow's parameters may not hold, checked once its head is read.
+	pub(crate) fn check_arrow_head(
+		&mut self,
+		params: &[Option<NodeId>],
+		is_async: bool,
+		(yield_pos, await_pos, await_ident_pos): (u32, u32, u32),
+	) -> Result<()> {
+		self.check_yield_await_in_default_params()?;
+		if is_async && self.await_ident_pos > 0 {
+			return self.error(self.await_ident_pos, Code::AwaitAsIdentifier);
+		}
+		(self.yield_pos, self.await_pos) = (yield_pos, await_pos);
+		if is_async {
+			self.await_ident_pos = await_ident_pos;
+		}
+		if let Some(&this) = params.iter().flatten().find(|&&param| self.ident_is(param, "this")) {
+			return self.error(self.start_of(this), Code::InvalidAssignmentTarget);
+		}
+		Ok(())
+	}
+
 	pub(crate) fn parse_arrow_expression(
 		&mut self,
 		start: u32,

@@ -600,36 +600,28 @@ impl Parser<'_> {
 		let before = spine.then(|| self.snapshot());
 		let old = self.ts.maybe_in_arrow_parameters;
 		self.ts.maybe_in_arrow_parameters = true;
+		let outer = (self.yield_pos, self.await_pos, self.await_ident_pos);
 		let mut head = self.attempt(|p| {
 			let type_parameters = p.parse_type_parameters(TypeParameterModifiers::Const)?;
-			p.expect(TokenKind::ParenL)?;
-			let params = p.parse_binding_list(TokenKind::ParenR, false, true, false)?;
-			let return_type = if p.is(TokenKind::Colon) {
-				Some(p.parse_type_or_type_predicate_annotation(TokenKind::Colon, true)?)
-			} else {
-				None
-			};
-			if p.can_insert_semicolon() {
-				return p.unexpected();
-			}
-			p.expect(TokenKind::Arrow)?;
-			Ok((type_parameters, params, return_type))
+			let (params, _) = p.read_arrow_head(is_async)?;
+			Ok((type_parameters, params))
 		})?;
 		self.ts.maybe_in_arrow_parameters = old;
-		if let (Some((_, _, Some(_))), Some(before)) = (&head, before)
+		if head.is_some()
+			&& self.ts.arrow_return_type.is_some()
+			&& let Some(before) = before
 			&& !self.colon_after_body(is_async)?
 		{
 			self.restore(before);
 			head = None;
 		}
-		let Some((type_parameters, params, return_type)) = head else {
+		let Some((type_parameters, params)) = head else {
+			self.restore_yield_await(outer);
 			self.ts.not_arrow.insert((at, spine));
 			return Ok(None);
 		};
-		if let Some(&this) = params.iter().flatten().find(|&&param| self.ident_is(param, "this")) {
-			return self.error(self.start_of(this), Code::InvalidAssignmentTarget);
-		}
-		self.ts.arrow_return_type = return_type;
+		// checked after the attempt, which would have read a real parameter error as no arrow
+		self.check_arrow_head(&params, is_async, outer)?;
 		let arrow = self.parse_arrow_expression(start, params, is_async, for_init)?;
 		self.extras_mut(arrow).type_parameters = Some(type_parameters);
 		Ok(Some(arrow))
@@ -1751,6 +1743,17 @@ impl TypeScript {
 			p.attempt(|p| p.parse_conditional(expr, start, for_init))?
 				.unwrap_or(expr),
 		))
+	}
+
+	/// After an arrow's parameters, before `=>`.
+	#[cold]
+	pub(crate) fn arrow_return_type(p: &mut Parser) -> Result<()> {
+		p.ts.arrow_return_type = if p.is(TokenKind::Colon) {
+			Some(p.parse_type_or_type_predicate_annotation(TokenKind::Colon, true)?)
+		} else {
+			None
+		};
+		Ok(())
 	}
 
 	#[cold]

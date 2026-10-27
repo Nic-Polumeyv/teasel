@@ -342,3 +342,21 @@ fn an_async_rest_ends_after_its_annotation() {
 		.unwrap();
 	assert_eq!((ast.node(rest).start, ast.node(rest).end), (24, 41));
 }
+
+#[test]
+fn a_generic_head_checks_its_defaults() {
+	let options = Options(Options::MODULE);
+	let error = |src: &str| {
+		let error = at(Entry::Program, src, 0, options, "").unwrap_err();
+		(error.code, error.pos)
+	};
+	use crate::error::Code;
+	assert_eq!(
+		error("function* g() { <T>(a = yield) => 1 }"),
+		(Code::YieldInDefaultValue, 24)
+	);
+	assert_eq!(
+		error("async function f() { <T>(a = await 1) => 1 }"),
+		(Code::AwaitInDefaultValue, 29)
+	);
+}
