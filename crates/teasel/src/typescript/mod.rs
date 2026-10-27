@@ -16,7 +16,7 @@ use crate::parser::expression::{assignment_operator, starts_expression};
 use crate::parser::scope::{EXPORT_ONLY, SCOPE_ARROW, TYPE, function_flags};
 use crate::parser::statement::{ClassKind, StatementPlace};
 use crate::parser::{Context, DestructuringErrors, Errors, ForInit, FunctionKind, Parser, Result, Unwrap};
-use ast::{Accessibility, Data, Extras, Kind, TsKind};
+use ast::{Accessibility, Extras, Kind, TsKind};
 use declarations::Head;
 use types::TypeParameterModifiers;
 
@@ -56,15 +56,12 @@ pub(crate) struct State {
 	in_abstract_class: bool,
 	/// Inside a parenthesized list that may turn out to be arrow parameters.
 	maybe_in_arrow_parameters: bool,
-	functions: Vec<FunctionFrame>,
 	classes: Vec<ClassFrame>,
 	elements: Vec<ElementFrame>,
 	/// Parsed ahead of `=>`, taken by the arrow's frame.
 	arrow_return_type: Option<NodeId>,
 	needs_colon_at: Option<u32>,
 	body_needs_colon: bool,
-	paren_lists: Vec<bool>,
-	definite: Vec<bool>,
 	/// The kind of the import or export being parsed.
 	outer_kind: Option<Kind>,
 	export_kind: Option<Kind>,
@@ -77,8 +74,9 @@ pub(crate) struct State {
 	decorators_before_export: bool,
 }
 
+/// What TypeScript reads of a function before its body and sets on it after.
 #[derive(Clone, Copy, Default)]
-struct FunctionFrame {
+pub(crate) struct FunctionFrame {
 	in_class_method: bool,
 	type_parameters: Option<NodeId>,
 	return_type: Option<NodeId>,
@@ -159,8 +157,8 @@ modifiers! {
 
 impl Parser<'_> {
 	pub(crate) fn ts(&mut self, kind: TsKind, start: u32) -> NodeId {
-		let index = self.ast.extension.nodes.len() as u32;
-		self.ast.extension.nodes.push(kind);
+		let index = self.ast.typescript.nodes.len() as u32;
+		self.ast.typescript.nodes.push(kind);
 		self.add(NodeKind::Extension(index), start)
 	}
 
@@ -172,15 +170,11 @@ impl Parser<'_> {
 	}
 
 	fn ts_kind(&self, id: NodeId) -> Option<TsKind> {
-		Some(self.ast.extension.nodes[self.ts_index(id)?])
+		Some(self.ast.typescript.nodes[self.ts_index(id)?])
 	}
 
 	fn extras_mut(&mut self, id: NodeId) -> &mut Extras {
-		self.ast.extension.extras.entry(id)
-	}
-
-	fn ext_data(&self) -> &Data {
-		&self.ast.extension
+		self.ast.typescript.extras.entry(id)
 	}
 
 	fn check_parameter_list(&self, params: List, signature: bool) -> Result<()> {
@@ -194,7 +188,11 @@ impl Parser<'_> {
 			if self.ident_is(binding, "this") {
 				continue;
 			}
-			let optional = self.ext_data().extras(binding).is_some_and(|extras| extras.optional);
+			let optional = self
+				.ast
+				.typescript
+				.extras(binding)
+				.is_some_and(|extras| extras.optional);
 			let rest = matches!(self.kind(param), NodeKind::RestElement { .. });
 			if rest && optional {
 				return self.error(self.start_of(param), Code::OptionalRest);
@@ -324,9 +322,7 @@ impl Parser<'_> {
 			expression
 		};
 		if self.eat(TokenKind::ParenL)? {
-			TypeScript::paren_list_start(self, false);
-			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut None)?;
-			TypeScript::paren_list_end(self);
+			let args = self.parse_item_list(false, TokenKind::ParenR, true, false, &mut None)?;
 			self.no_type_casts(&args)?;
 			let arguments = self.list_from(args);
 			let callee_start = self.start_of(expression);
@@ -651,9 +647,7 @@ impl Parser<'_> {
 		}
 		if !no_calls && self.eat(TokenKind::ParenL)? {
 			let mut errors = Some(DestructuringErrors::default());
-			TypeScript::paren_list_start(self, false);
-			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut errors)?;
-			TypeScript::paren_list_end(self);
+			let args = self.parse_item_list(false, TokenKind::ParenR, true, false, &mut errors)?;
 			self.no_type_casts(&args)?;
 			let arguments = self.list_from(args);
 			let node = self.add(
@@ -771,10 +765,7 @@ impl TypeScript {
 
 	/// First look at a statement; `Some` replaces it entirely.
 	#[cold]
-	pub(crate) fn statement(p: &mut Parser, context: Context, _place: StatementPlace) -> Result<Option<NodeId>> {
-		if context != Context::None {
-			return Ok(None);
-		}
+	pub(crate) fn statement(p: &mut Parser) -> Result<Option<NodeId>> {
 		if p.is(TokenKind::At) {
 			p.parse_decorators(true)?;
 		}
@@ -986,9 +977,9 @@ impl TypeScript {
 
 	// Bindings
 
-	/// After the id of a variable declarator.
+	/// After the id of a variable declarator; whether it is definite, `!`.
 	#[cold]
-	pub(crate) fn var_id(p: &mut Parser, id: NodeId) -> Result<()> {
+	pub(crate) fn var_id(p: &mut Parser, id: NodeId) -> Result<bool> {
 		let mut definite = false;
 		if matches!(p.kind(id), NodeKind::Identifier { .. }) && !p.tok.newline_before && p.is(TokenKind::Bang) {
 			p.next()?;
@@ -999,13 +990,12 @@ impl TypeScript {
 			p.extras_mut(id).type_annotation = Some(annotation);
 			p.ast.node_mut(id).end = p.prev_end;
 		}
-		p.ts.definite.push(definite);
-		Ok(())
+		Ok(definite)
 	}
 
 	#[cold]
-	pub(crate) fn var_declarator(p: &mut Parser, node: NodeId, kind: VariableKind) -> Result<()> {
-		if p.ts.definite.pop() == Some(true) {
+	pub(crate) fn var_declarator(p: &mut Parser, node: NodeId, kind: VariableKind, definite: bool) -> Result<()> {
+		if definite {
 			p.extras_mut(node).definite = true;
 			if let NodeKind::VariableDeclarator { init: Some(_), .. } = p.kind(node) {
 				return p.error(p.start_of(node), Code::DefiniteWithInitializer);
@@ -1131,7 +1121,7 @@ impl TypeScript {
 
 	/// Before the parameters of a function, method or arrow.
 	#[cold]
-	pub(crate) fn function_start(p: &mut Parser, kind: FunctionKind) -> Result<()> {
+	pub(crate) fn function_start(p: &mut Parser, kind: FunctionKind) -> Result<FunctionFrame> {
 		let mut frame = FunctionFrame {
 			in_class_method: matches!(kind, FunctionKind::Method { in_class: true, .. }),
 			arrow_parameters: p.ts.maybe_in_arrow_parameters,
@@ -1158,14 +1148,15 @@ impl TypeScript {
 		{
 			return p.error(p.start_of(type_parameters), Code::AccessorTypeParameters);
 		}
-		p.ts.functions.push(frame);
-		Ok(())
+		Ok(frame)
 	}
 
 	/// After the parameters, before the body; `Some` is a function without a body.
 	#[cold]
+	#[expect(clippy::too_many_arguments)]
 	pub(crate) fn function_body(
 		p: &mut Parser,
+		frame: &mut FunctionFrame,
 		start: u32,
 		id: Option<NodeId>,
 		params: List,
@@ -1184,7 +1175,7 @@ impl TypeScript {
 				if p.ident_is(*param, "this") {
 					continue;
 				}
-				if p.ext_data().extras(*param).is_some_and(|extras| extras.optional) {
+				if p.ast.typescript.extras(*param).is_some_and(|extras| extras.optional) {
 					return p.error(p.start_of(*param), Code::SetterOptionalParameter);
 				}
 				if matches!(p.kind(*param), NodeKind::AssignmentPattern { .. }) {
@@ -1215,7 +1206,7 @@ impl TypeScript {
 				}
 				_ => {}
 			}
-			p.ts.functions.last_mut().unwrap().return_type = Some(return_type);
+			frame.return_type = Some(return_type);
 		}
 		let bodiless = match kind {
 			FunctionKind::Declaration => Some(TsKind::DeclareFunction {
@@ -1249,11 +1240,10 @@ impl TypeScript {
 	}
 
 	#[cold]
-	pub(crate) fn function_end(p: &mut Parser, node: NodeId) -> Result<()> {
+	pub(crate) fn function_end(p: &mut Parser, node: NodeId, frame: FunctionFrame) -> Result<()> {
 		if let NodeKind::ArrowFunctionExpression { params, .. } = p.kind(node) {
 			p.check_parameter_list(params, false)?;
 		}
-		let frame = p.ts.functions.pop().unwrap();
 		p.ts.maybe_in_arrow_parameters = frame.arrow_parameters;
 		if let Some(TsKind::DeclareFunction { id: Some(id), .. }) = p.ts_kind(node) {
 			p.declare_export_only(id);
@@ -1607,7 +1597,7 @@ impl TypeScript {
 			if !has_body || kind == MethodKind::Get || !p.ts.classes.last().unwrap().is_declaration {
 				for &param in p.ast.list(params).iter().flatten() {
 					let param = Self::unwrap(p, param, Unwrap::InnerPattern).unwrap_or(param);
-					if let Some(decorators) = p.ext_data().extras(param).and_then(|extras| extras.decorators) {
+					if let Some(decorators) = p.ast.typescript.extras(param).and_then(|extras| extras.decorators) {
 						return p.parameter_decorator_error(decorators);
 					}
 				}
@@ -1631,17 +1621,18 @@ impl TypeScript {
 		p.try_generic_arrow(p.tok.start, false, for_init)
 	}
 
-	/// A list opens; `parameters` when it may still turn out to be a function's parameters.
+	/// A list `read` with `parameters` saying whether it may still turn out to be a function's
+	/// parameters; what the enclosing list said holds again after it.
 	#[cold]
-	pub(crate) fn paren_list_start(p: &mut Parser, parameters: bool) {
-		let inside = p.ts.maybe_in_arrow_parameters;
-		p.ts.paren_lists.push(inside);
-		p.ts.maybe_in_arrow_parameters = parameters;
-	}
-
-	#[cold]
-	pub(crate) fn paren_list_end(p: &mut Parser) {
-		p.ts.maybe_in_arrow_parameters = p.ts.paren_lists.pop().unwrap();
+	pub(crate) fn list<'a, T>(
+		p: &mut Parser<'a>,
+		parameters: bool,
+		read: impl FnOnce(&mut Parser<'a>) -> Result<T>,
+	) -> Result<T> {
+		let outer = std::mem::replace(&mut p.ts.maybe_in_arrow_parameters, parameters);
+		let list = read(p)?;
+		p.ts.maybe_in_arrow_parameters = outer;
+		Ok(list)
 	}
 
 	/// An item of a parenthesized list, after its expression.
@@ -1650,10 +1641,8 @@ impl TypeScript {
 		let optional = p.eat(TokenKind::Question)?;
 		let type_annotation = if p.is(TokenKind::Colon) {
 			Some(p.parse_type_annotation(true, None)?)
-		} else if optional {
-			None
 		} else {
-			return Ok(item);
+			None
 		};
 		let cast = p.ts(
 			TsKind::TypeCastExpression {
@@ -1713,17 +1702,9 @@ impl TypeScript {
 
 	/// First look at an atom.
 	#[cold]
-	pub(crate) fn atom(
-		p: &mut Parser,
-		errors: &mut Errors,
-		for_init: ForInit,
-		for_new: bool,
-	) -> Result<Option<NodeId>> {
-		if p.is(TokenKind::At) {
-			p.parse_decorators(false)?;
-			return p.parse_expr_atom(errors, for_init, for_new).map(Some);
-		}
-		Ok(None)
+	pub(crate) fn atom(p: &mut Parser, errors: &mut Errors, for_init: ForInit, for_new: bool) -> Result<NodeId> {
+		p.parse_decorators(false)?;
+		p.parse_expr_atom(errors, for_init, for_new)
 	}
 
 	/// Whether the current token, one of the host's stop tokens, is one TypeScript reads after an
@@ -1735,10 +1716,7 @@ impl TypeScript {
 
 	/// At an operator position; `Some` is the new left operand.
 	#[cold]
-	pub(crate) fn expr_op(p: &mut Parser, left: NodeId, left_start: u32, min_prec: i8) -> Result<Option<NodeId>> {
-		if 7 <= min_prec || p.tok.newline_before {
-			return Ok(None);
-		}
+	pub(crate) fn expr_op(p: &mut Parser, left: NodeId, left_start: u32) -> Result<Option<NodeId>> {
 		let is_as = p.is_contextual("as");
 		if !is_as && !p.is_contextual("satisfies") {
 			return Ok(None);
@@ -1764,14 +1742,17 @@ impl TypeScript {
 		optional_chained: bool,
 		for_init: ForInit,
 	) -> Result<Option<(NodeId, bool)>> {
-		if !p.tok.newline_before && p.is(TokenKind::Bang) {
+		if p.is(TokenKind::Bang) {
+			if p.tok.newline_before {
+				return Ok(None);
+			}
 			p.next()?;
 			p.stop_after_operand();
 			let node = p.ts(TsKind::NonNullExpression { expression: base }, start);
 			return Ok(Some((node, false)));
 		}
-		let optional_call = p.is(TokenKind::QuestionDot) && p.peek_char().0 == Some('<');
-		if !optional_call && !p.is(TokenKind::Lt) && !p.is(TokenKind::LtLt) {
+		let optional_call = p.is(TokenKind::QuestionDot);
+		if optional_call && p.peek_char().0 != Some('<') {
 			return Ok(None);
 		}
 		if optional_call && no_calls {
@@ -1860,15 +1841,12 @@ impl TypeScript {
 		is_pattern: bool,
 		generator: bool,
 		is_async: bool,
-	) -> Result<Option<NodeId>> {
-		if !p.is(TokenKind::Lt) {
-			return Ok(None);
-		}
+	) -> Result<NodeId> {
 		if is_pattern {
 			return p.unexpected();
 		}
 		let value = p.parse_method(generator, is_async, false, false, MethodKind::Method)?;
-		Ok(Some(p.add(
+		Ok(p.add(
 			NodeKind::Property {
 				key,
 				value,
@@ -1878,15 +1856,12 @@ impl TypeScript {
 				shorthand: false,
 			},
 			start,
-		)))
+		))
 	}
 
 	#[cold]
-	pub(crate) fn template_expression(p: &mut Parser) -> Result<Option<NodeId>> {
-		if p.lexer.in_type {
-			return p.parse_type().map(Some);
-		}
-		Ok(None)
+	pub(crate) fn template_expression(p: &mut Parser) -> Result<NodeId> {
+		p.parse_type()
 	}
 
 	/// Reinterprets a TypeScript node as a pattern; the result replaces it.

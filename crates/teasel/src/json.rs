@@ -721,7 +721,7 @@ fn prepare_tree(ast: &mut Ast, positions: &Positions, options: Options, names: &
 	if options.has(Options::ERASE) {
 		for i in 0..ast.nodes.len() as u32 {
 			let id = crate::ast::NodeId::at(i);
-			if ast.extension.erased(ast, id) {
+			if ast.typescript.erased(ast, id) {
 				ast.erased.insert(id);
 			}
 		}
@@ -734,7 +734,7 @@ fn prepare_tree(ast: &mut Ast, positions: &Positions, options: Options, names: &
 		rare.insert(owner);
 	}
 	if options.has(Options::ERASE) {
-		ast.extension.rare(&mut rare);
+		ast.typescript.rare(&mut rare);
 	}
 	if let Some(scopes) = &ast.scopes
 		&& options.has(Options::SCOPES)

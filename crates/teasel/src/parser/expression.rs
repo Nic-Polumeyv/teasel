@@ -306,7 +306,7 @@ impl Parser<'_> {
 				&& min_prec < 7
 				&& !self.tok.newline_before
 				&& self.typescript()
-				&& let Some(expr) = TypeScript::expr_op(self, left, left_start, min_prec)?
+				&& let Some(expr) = TypeScript::expr_op(self, left, left_start)?
 			{
 				left = expr;
 				continue;
@@ -594,13 +594,7 @@ impl Parser<'_> {
 		if !no_calls && self.eat(TokenKind::ParenL)? {
 			let mut errors = Some(DestructuringErrors::default());
 			let old = self.take_yield_await();
-			if self.typescript() {
-				TypeScript::paren_list_start(self, maybe_async_arrow);
-			}
-			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut errors)?;
-			if self.typescript() {
-				TypeScript::paren_list_end(self);
-			}
+			let args = self.parse_item_list(maybe_async_arrow, TokenKind::ParenR, true, false, &mut errors)?;
 			if maybe_async_arrow && !optional && self.async_arrow_follows(start)? {
 				self.check_pattern_errors(&errors, false)?;
 				self.check_yield_await_in_default_params()?;
@@ -642,11 +636,8 @@ impl Parser<'_> {
 		if self.is(TokenKind::Slash) || self.is(TokenKind::SlashEq) {
 			self.tok = self.lexer.read_regex(self.tok)?;
 		}
-		if self.is(TokenKind::At)
-			&& self.typescript()
-			&& let Some(atom) = TypeScript::atom(self, errors, for_init, for_new)?
-		{
-			return Ok(atom);
+		if self.is(TokenKind::At) && self.typescript() {
+			return TypeScript::atom(self, errors, for_init, for_new);
 		}
 		let start = self.tok.start;
 		let can_be_arrow = self.potential_arrow_at == start;
@@ -720,12 +711,8 @@ impl Parser<'_> {
 			}
 			TokenKind::BracketL => {
 				self.next()?;
+				let elements = self.parse_item_list(false, TokenKind::BracketR, true, true, errors)?;
 				if self.typescript() {
-					TypeScript::paren_list_start(self, false);
-				}
-				let elements = self.parse_expr_list(TokenKind::BracketR, true, true, errors)?;
-				if self.typescript() {
-					TypeScript::paren_list_end(self);
 					TypeScript::list_items(self, &elements)?;
 				}
 				let elements = self.list_from(elements);
@@ -805,6 +792,8 @@ impl Parser<'_> {
 
 	/// A `<` at the cursor, alone or the start of `<<`, `<=` or `<<=`: in TypeScript, maybe what
 	/// opens type parameters or a type assertion.
+	// the token tested ahead of the flag, here and at TypeScript's other per-token points: with the
+	// flag alone, a TypeScript parse of JavaScript took 6% longer and of documents 1.7%
 	fn at_lt(&self) -> bool {
 		matches!(
 			self.tok.kind,
@@ -882,8 +871,12 @@ impl Parser<'_> {
 	/// which may turn out to be arrow function parameters.
 	pub(crate) fn parse_paren_items(&mut self) -> Result<ParenItems> {
 		if self.typescript() {
-			TypeScript::paren_list_start(self, true);
+			return TypeScript::list(self, true, Self::read_paren_items);
 		}
+		self.read_paren_items()
+	}
+
+	fn read_paren_items(&mut self) -> Result<ParenItems> {
 		let inner_start = self.tok.start;
 		let mut items = self.items();
 		let mut first = true;
@@ -918,9 +911,6 @@ impl Parser<'_> {
 		}
 		let inner_end = self.prev_end;
 		self.expect(TokenKind::ParenR)?;
-		if self.typescript() {
-			TypeScript::paren_list_end(self);
-		}
 		Ok(ParenItems {
 			items,
 			errors,
@@ -958,12 +948,8 @@ impl Parser<'_> {
 			return self.error(self.start_of(callee), Code::InvalidSuper);
 		}
 		let arguments = if self.eat(TokenKind::ParenL)? {
+			let args = self.parse_item_list(false, TokenKind::ParenR, true, false, &mut None)?;
 			if self.typescript() {
-				TypeScript::paren_list_start(self, false);
-			}
-			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut None)?;
-			if self.typescript() {
-				TypeScript::paren_list_end(self);
 				TypeScript::list_items(self, &args)?;
 			}
 			self.list_from(args)
@@ -1002,14 +988,10 @@ impl Parser<'_> {
 			}
 			self.prev_end = chunk.end + 2;
 			self.lexer.next_token_into(&mut self.tok)?;
-			let typed = if self.lexer.in_type {
+			let expression = if self.lexer.in_type {
 				TypeScript::template_expression(self)?
 			} else {
-				None
-			};
-			let expression = match typed {
-				Some(expression) => expression,
-				None => self.parse_expression(false, &mut None)?,
+				self.parse_expression(false, &mut None)?
 			};
 			expressions.push(Some(expression));
 			if !self.is(TokenKind::BraceR) {
@@ -1141,11 +1123,8 @@ impl Parser<'_> {
 		errors: &mut Errors,
 		escaped: bool,
 	) -> Result<NodeId> {
-		if self.is(TokenKind::Lt)
-			&& self.typescript()
-			&& let Some(prop) = TypeScript::property_value(self, start, key, computed, is_pattern, generator, is_async)?
-		{
-			return Ok(prop);
+		if self.is(TokenKind::Lt) && self.typescript() {
+			return TypeScript::property_value(self, start, key, computed, is_pattern, generator, is_async);
 		}
 		if (generator || is_async) && self.is(TokenKind::Colon) {
 			return self.unexpected();
@@ -1305,18 +1284,19 @@ impl Parser<'_> {
 			function_flags(is_async, generator) | SCOPE_SUPER | if allow_direct_super { SCOPE_DIRECT_SUPER } else { 0 },
 		);
 		let kind = FunctionKind::Method { in_class, kind };
-		if self.typescript() {
-			TypeScript::function_start(self, kind)?;
-		}
+		let mut frame = if self.typescript() {
+			Some(TypeScript::function_start(self, kind)?)
+		} else {
+			None
+		};
 		let start = self.tok.start;
 		self.expect(TokenKind::ParenL)?;
 		let params = self.parse_binding_list(TokenKind::ParenR, false, true, in_class)?;
 		self.check_yield_await_in_default_params()?;
 		let params = self.list_from(params);
-		let bodiless = if self.typescript() {
-			TypeScript::function_body(self, start, None, params, is_async, generator, kind)?
-		} else {
-			None
+		let bodiless = match &mut frame {
+			Some(frame) => TypeScript::function_body(self, frame, start, None, params, is_async, generator, kind)?,
+			None => None,
 		};
 		let node = match bodiless {
 			Some(node) => {
@@ -1336,8 +1316,8 @@ impl Parser<'_> {
 			}
 		};
 		self.restore_yield_await(old);
-		if self.typescript() {
-			TypeScript::function_end(self, node)?;
+		if let Some(frame) = frame {
+			TypeScript::function_end(self, node, frame)?;
 		}
 		Ok(node)
 	}
@@ -1351,10 +1331,12 @@ impl Parser<'_> {
 	) -> Result<NodeId> {
 		let old = self.take_yield_await();
 		self.enter_scope(function_flags(is_async, false) | SCOPE_ARROW);
-		if self.typescript() {
+		let frame = if self.typescript() {
 			TypeScript::arrow_start(self, start);
-			TypeScript::function_start(self, FunctionKind::Arrow)?;
-		}
+			Some(TypeScript::function_start(self, FunctionKind::Arrow)?)
+		} else {
+			None
+		};
 		let params = self.make_patterns(params, true)?;
 		let params = self.list_from(params);
 		let (body, expression) = self.parse_function_body(start, None, params, true, false, for_init)?;
@@ -1368,8 +1350,8 @@ impl Parser<'_> {
 			},
 			start,
 		);
-		if self.typescript() {
-			TypeScript::function_end(self, node)?;
+		if let Some(frame) = frame {
+			TypeScript::function_end(self, node, frame)?;
 		}
 		Ok(node)
 	}
@@ -1436,6 +1418,24 @@ impl Parser<'_> {
 			self.param_names = names;
 		}
 		Ok(())
+	}
+
+	/// A list of expressions through `close`; in TypeScript, `parameters` says whether it may still
+	/// turn out to be a function's parameters.
+	pub(crate) fn parse_item_list(
+		&mut self,
+		parameters: bool,
+		close: TokenKind,
+		allow_trailing_comma: bool,
+		allow_empty: bool,
+		errors: &mut Errors,
+	) -> Result<Vec<Option<NodeId>>> {
+		if self.typescript() {
+			return TypeScript::list(self, parameters, |p| {
+				p.parse_expr_list(close, allow_trailing_comma, allow_empty, errors)
+			});
+		}
+		self.parse_expr_list(close, allow_trailing_comma, allow_empty, errors)
 	}
 
 	pub(crate) fn parse_expr_list(
