@@ -141,9 +141,14 @@ impl Parser<'_> {
 		self.scopes.last_mut().unwrap()
 	}
 
-	pub(crate) fn declare_at(&mut self, depth: usize, name: StrId, kind: u8) {
+	pub(crate) fn declare_here(&mut self, name: StrId, kind: u8) {
 		let serial = self.serial();
-		self.scopes[depth].push(name, kind, serial);
+		self.current_scope_mut().push(name, kind, serial);
+	}
+
+	pub(crate) fn declare_global(&mut self, name: StrId) {
+		let serial = self.serial();
+		self.scopes[0].push(name, EXPORT_ONLY, serial);
 	}
 
 	fn serial(&mut self) -> u32 {

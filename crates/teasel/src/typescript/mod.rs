@@ -414,9 +414,9 @@ impl Parser<'_> {
 			return self.error_name(self.start_of(id), Code::TypeRedeclaration, name);
 		}
 		if self.ts.global_depth > 0 {
-			self.declare_at(0, name, EXPORT_ONLY);
+			self.declare_global(name);
 		}
-		self.declare_at(self.scopes.len() - 1, name, TYPE);
+		self.declare_here(name, TYPE);
 		Ok(())
 	}
 
@@ -424,7 +424,7 @@ impl Parser<'_> {
 		let NodeKind::Identifier { name } = self.kind(id) else {
 			unreachable!()
 		};
-		self.declare_at(self.scopes.len() - 1, name, EXPORT_ONLY);
+		self.declare_here(name, EXPORT_ONLY);
 	}
 
 	/// A class member's name the way error messages print it.
