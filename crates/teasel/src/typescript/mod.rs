@@ -30,7 +30,7 @@ pub fn parse_at(
 	entry: Entry,
 	options: Options,
 	stop: &str,
-) -> (Ast<Data>, std::result::Result<(List, u32), SyntaxError>) {
+) -> (Ast, std::result::Result<(List, u32), SyntaxError>) {
 	let (ast, parsed) = crate::parser::parse_at::<TypeScript>(src, start, end, entry, options, stop, None);
 	(*ast, parsed.map_err(|e| *e))
 }
@@ -816,7 +816,6 @@ impl Parser<'_, TypeScript> {
 }
 
 impl Extension for TypeScript {
-	type Data = Data;
 	type Snapshot = (State, usize, usize);
 
 	const DUPLICATE_EXPORT_ERRORS: bool = false;

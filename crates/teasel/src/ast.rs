@@ -353,9 +353,8 @@ pub const RECORDS: &[(&str, usize, &[Field])] = &[
 	("marks", size_of::<Surrogate>(), Surrogate::FIELDS),
 ];
 
-/// `X` is the data an extension attaches to the tree; the plain JavaScript parser attaches none.
 #[derive(Debug, Default)]
-pub struct Ast<X = ()> {
+pub struct Ast {
 	pub nodes: Handed<Node>,
 	/// The values of the number literals, by `NumberLiteral::value`.
 	pub numbers: Handed<f64>,
@@ -396,7 +395,9 @@ pub struct Ast<X = ()> {
 	pub errors: Vec<crate::SyntaxError>,
 	/// Whether a node was written in parentheses, when `Options::parenthesized` asks.
 	pub parenthesized: NodeSet,
-	pub extension: X,
+	/// TypeScript's own nodes, by the `NodeKind::Extension` payload, and the keys it adds; empty
+	/// in a JavaScript tree.
+	pub extension: crate::typescript::ast::Data,
 }
 
 crate::layout::record! {
@@ -437,42 +438,16 @@ impl Run {
 	}
 }
 
-/// What an extension's data does to be reused for the next parse and to forget what a failed
-/// attempt built, and what both answers read of it.
-pub trait Reuse: Default {
-	/// Where the data stood, to cut back to.
-	type Mark: Copy;
-	/// Forgets everything, keeping the room.
-	fn clear(&mut self);
-	fn mark(&self) -> Self::Mark;
-	fn truncate(&mut self, mark: Self::Mark);
-	/// The extension's own buffers, after the tree's.
-	fn views(&mut self, _out: &mut Views<'_>) {}
-	/// The nodes the extension adds keys to when erasing.
-	fn rare(&self, _set: &mut NodeSet) {}
-	/// Whether erasing leaves nothing of a node in a list: type-only declarations and imports.
-	fn erased(&self, _ast: &Ast<Self>, _id: NodeId) -> bool {
-		false
-	}
-}
-
-impl Reuse for () {
-	type Mark = ();
-	fn clear(&mut self) {}
-	fn mark(&self) {}
-	fn truncate(&mut self, _: ()) {}
-}
-
 /// Where a tree stood, to forget what was built after.
 #[derive(Clone, Copy)]
-pub(crate) struct Mark<M> {
+pub(crate) struct Mark {
 	nodes: usize,
 	numbers: usize,
 	lists: usize,
-	extension: M,
+	extension: (usize, usize),
 }
 
-impl<X: Reuse> Ast<X> {
+impl Ast {
 	/// Empties the tree for the next parse; the room stays allocated.
 	pub fn clear(&mut self) {
 		self.hosts.clear();
@@ -504,7 +479,7 @@ impl<X: Reuse> Ast<X> {
 		self.extension.clear();
 	}
 
-	pub(crate) fn mark(&self) -> Mark<X::Mark> {
+	pub(crate) fn mark(&self) -> Mark {
 		Mark {
 			nodes: self.nodes.len(),
 			numbers: self.numbers.len(),
@@ -514,16 +489,14 @@ impl<X: Reuse> Ast<X> {
 	}
 
 	/// Forgets the nodes built since `mark`; their ids are reused, so nothing may still hold one.
-	pub(crate) fn truncate(&mut self, mark: Mark<X::Mark>) {
+	pub(crate) fn truncate(&mut self, mark: Mark) {
 		self.nodes.truncate(mark.nodes);
 		self.numbers.truncate(mark.numbers);
 		self.lists.truncate(mark.lists);
 		self.parenthesized.truncate(mark.nodes);
 		self.extension.truncate(mark.extension);
 	}
-}
 
-impl<X: Default> Ast<X> {
 	/// Room for the tree of `bytes` of source: about a node per eight bytes, a list per thirty, a
 	/// number per 128.
 	pub(crate) fn sized(bytes: usize) -> Self {
@@ -535,11 +508,10 @@ impl<X: Default> Ast<X> {
 			..Ast::default()
 		}
 	}
-}
 
-impl<X: Reuse> Ast<X> {
-	/// The tree's buffers a front end reads in place, by the names `layout::json` lists.
-	pub fn views(&mut self, out: &mut Views<'_>) {
+	/// The tree's buffers a front end reads in place, by the names `layout::json` lists; a
+	/// TypeScript tree's tables last.
+	pub fn views(&mut self, typescript: bool, out: &mut Views<'_>) {
 		out.push("nodes", &mut self.nodes);
 		out.push("lists", &mut self.lists);
 		out.push("numbers", &mut self.numbers);
@@ -565,7 +537,9 @@ impl<X: Reuse> Ast<X> {
 			Some(scopes) => scopes.views(out),
 			None => crate::scopes::Scopes::no_views(out),
 		}
-		self.extension.views(out);
+		if typescript {
+			self.extension.views(out);
+		}
 	}
 }
 
@@ -586,28 +560,18 @@ impl Value {
 	}
 }
 
-/// How an extension's nodes join a walk over the tree.
-pub trait Walk: Sized {
-	/// Pushes the children of `id` in source order; plain nodes come from `Ast::plain_children`.
-	fn children(&self, ast: &Ast<Self>, id: NodeId, out: &mut Vec<NodeId>);
-}
-
-impl Walk for () {
-	fn children(&self, ast: &Ast<Self>, id: NodeId, out: &mut Vec<NodeId>) {
-		ast.plain_children(id, out);
-	}
-}
-
-impl<X: Walk> Ast<X> {
+impl Ast {
 	/// Appends the children of `id` in source order.
 	pub fn children(&self, id: NodeId, out: &mut Vec<NodeId>) {
 		let from = out.len();
-		self.extension.children(self, id, out);
+		if self.extension.extras.is_empty() && !matches!(self.node(id).kind, NodeKind::Extension(_)) {
+			self.plain_children(id, out);
+		} else {
+			self.extension.children(self, id, out);
+		}
 		debug_assert!(out[from..].is_sorted_by_key(|&child| self.node(child).start));
 	}
-}
 
-impl<X> Ast<X> {
 	/// The nodes under a host node's fields; a child that is a fragment, a node without a span
 	/// of its own, is walked through, so a document's nodes come in source order around its scripts.
 	fn host_children(&self, index: u32, out: &mut Vec<NodeId>) {
@@ -624,7 +588,8 @@ impl<X> Ast<X> {
 		}
 	}
 
-	/// The children of a plain JavaScript node; an extension node has none here.
+	/// The children of a plain JavaScript node, without what TypeScript adds; a TypeScript node
+	/// has none here.
 	pub fn plain_children(&self, id: NodeId, out: &mut Vec<NodeId>) {
 		use NodeKind::*;
 		let list = |list: List, out: &mut Vec<NodeId>| out.extend(self.list(list).iter().flatten());

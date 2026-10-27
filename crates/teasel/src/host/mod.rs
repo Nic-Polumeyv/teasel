@@ -346,7 +346,7 @@ struct Walker<'a, E: Extension> {
 	full: u32,
 	grammar: &'a Grammar,
 	options: Options,
-	ast: Option<Box<Ast<E::Data>>>,
+	ast: Option<Box<Ast>>,
 	at: u32,
 	/// Where the JavaScript read at the cursor must end: the source, or an attribute value.
 	limit: u32,
@@ -375,6 +375,7 @@ struct Walker<'a, E: Extension> {
 	groups: Pool<BodyGroup>,
 	/// The kinds and names the attributes of the element being read must not repeat.
 	seen: Vec<(&'static str, StrId)>,
+	parser: std::marker::PhantomData<E>,
 }
 
 struct Pool<T>(Vec<Vec<T>>);
@@ -407,8 +408,8 @@ pub(crate) fn parse_document<E: Extension>(
 	src: &str,
 	grammar: &Grammar,
 	options: Options,
-	reused: Option<Box<Ast<E::Data>>>,
-) -> (Box<Ast<E::Data>>, Result<NodeId>) {
+	reused: Option<Box<Ast>>,
+) -> (Box<Ast>, Result<NodeId>) {
 	let full = src.len() as u32;
 	let cut = if grammar.trim {
 		src.trim_end_matches(is_space)
@@ -430,8 +431,8 @@ pub(crate) fn parse_document<E: Extension>(
 pub(crate) fn parse_stylesheet<E: Extension>(
 	src: &str,
 	options: Options,
-	reused: Option<Box<Ast<E::Data>>>,
-) -> (Box<Ast<E::Data>>, Result<NodeId>) {
+	reused: Option<Box<Ast>>,
+) -> (Box<Ast>, Result<NodeId>) {
 	let grammar = Grammar::empty();
 	let mut walker = Walker::<E>::new(src, src.len() as u32, &grammar, options, reused, Vec::new());
 	let root = walker.stylesheet();
@@ -444,7 +445,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 		full: u32,
 		grammar: &'a Grammar,
 		options: Options,
-		reused: Option<Box<Ast<E::Data>>>,
+		reused: Option<Box<Ast>>,
 		frames: Vec<Frame<'a>>,
 	) -> Self {
 		Walker {
@@ -470,6 +471,7 @@ impl<'a, E: Extension> Walker<'a, E> {
 			names: Pool::default(),
 			groups: Pool::default(),
 			seen: Vec::new(),
+			parser: std::marker::PhantomData,
 		}
 	}
 
@@ -480,11 +482,11 @@ impl<'a, E: Extension> Walker<'a, E> {
 		Ok(())
 	}
 
-	fn ast(&mut self) -> &mut Ast<E::Data> {
+	fn ast(&mut self) -> &mut Ast {
 		self.ast.as_deref_mut().unwrap()
 	}
 
-	fn tree(&self) -> &Ast<E::Data> {
+	fn tree(&self) -> &Ast {
 		self.ast.as_deref().unwrap()
 	}
 

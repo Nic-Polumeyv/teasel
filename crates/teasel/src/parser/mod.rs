@@ -6,7 +6,7 @@ pub(crate) mod statement;
 #[cfg(test)]
 pub(crate) mod tests;
 
-use crate::ast::{Ast, List, MethodKind, NodeId, NodeKind, Reuse, VariableKind};
+use crate::ast::{Ast, List, MethodKind, NodeId, NodeKind, VariableKind};
 use crate::error::SyntaxError;
 use crate::interner::StrId;
 use crate::lexer::Lexer;
@@ -99,10 +99,9 @@ pub(crate) enum Unwrap {
 /// Grammar an extension adds to the JavaScript parser at fixed points. Every hook has a no-op
 /// default, so the plain JavaScript parser is the unit extension. State an extension keeps while
 /// parsing lives in `Self` (cloned into snapshots, so keep it small); what it hands back with the
-/// tree lives in `Data`.
+/// tree lives in `Ast::extension`.
 #[expect(unused_variables)]
 pub(crate) trait Extension: Default + Sized {
-	type Data: Reuse;
 	/// What a speculative parse needs to put the extension's state back.
 	type Snapshot;
 
@@ -352,7 +351,6 @@ pub(crate) trait Extension: Default + Sized {
 }
 
 impl Extension for () {
-	type Data = ();
 	type Snapshot = ();
 
 	fn save(&self) {}
@@ -401,7 +399,6 @@ impl Entry {
 /// everything the parse consumed. `reused` is an emptied tree from an earlier parse, its room kept.
 /// The tree, whether the parse succeeded or not, so the next parse can reuse it; with the roots
 /// read and where the parse ended.
-#[expect(clippy::type_complexity)]
 pub(crate) fn parse_at<E: Extension>(
 	src: &str,
 	start: u32,
@@ -409,8 +406,8 @@ pub(crate) fn parse_at<E: Extension>(
 	entry: Entry,
 	options: Options,
 	stop: &str,
-	reused: Option<Box<Ast<E::Data>>>,
-) -> (Box<Ast<E::Data>>, Result<(List, u32)>) {
+	reused: Option<Box<Ast>>,
+) -> (Box<Ast>, Result<(List, u32)>) {
 	if entry == Entry::StyleSheet {
 		let (mut ast, root) = crate::host::parse_stylesheet::<E>(src, options, reused);
 		let parsed = root.map(|root| (ast.add_list(&[Some(root)]), src.len() as u32));
@@ -465,7 +462,7 @@ impl<E: Extension> Parser<'_, E> {
 
 pub(crate) struct Parser<'a, E: Extension = ()> {
 	pub(crate) lexer: Lexer<'a>,
-	pub(crate) ast: Box<Ast<E::Data>>,
+	pub(crate) ast: Box<Ast>,
 	pub(crate) ext: E,
 	pub(crate) options: Options,
 	pub(crate) tok: Token,
@@ -531,7 +528,7 @@ struct Mark<E: Extension> {
 	brackets: (u32, [u32; 3]),
 	strict: bool,
 	ext: E::Snapshot,
-	ast: crate::ast::Mark<<E::Data as Reuse>::Mark>,
+	ast: crate::ast::Mark,
 }
 
 /// Enough to retry a speculative parse from here: the mark, and the tokens back at it.
@@ -587,7 +584,7 @@ pub(crate) struct DestructuringErrors {
 }
 
 impl<'a, E: Extension> Parser<'a, E> {
-	pub(crate) fn new(src: &'a str, offset: u32, options: Options, stop: &'a str, mut ast: Box<Ast<E::Data>>) -> Self {
+	pub(crate) fn new(src: &'a str, offset: u32, options: Options, stop: &'a str, mut ast: Box<Ast>) -> Self {
 		let mut lexer = Lexer::with(src, std::mem::take(&mut ast.strings));
 		lexer.comments = std::mem::take(&mut ast.comments);
 		lexer.set_pos(offset);
@@ -973,7 +970,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 		}
 	}
 
-	pub(crate) fn finish(self) -> Box<Ast<E::Data>> {
+	pub(crate) fn finish(self) -> Box<Ast> {
 		let mut ast = self.ast;
 		let mut lexer = self.lexer;
 		ast.comments = std::mem::take(&mut lexer.comments);

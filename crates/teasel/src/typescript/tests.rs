@@ -1,21 +1,21 @@
-use super::ast::{Data, Extras};
+use super::ast::Extras;
 use crate::ast::{Ast, List, NodeId, NodeKind};
 use crate::layout::Ty;
 use crate::parser::tests::{Failed, dump as dump_with, expand, one};
 use crate::parser::{Entry, Options};
 
-fn at(entry: Entry, src: &str, offset: u32, options: Options, stop: &str) -> Result<(Ast<Data>, NodeId, u32), Failed> {
+fn at(entry: Entry, src: &str, offset: u32, options: Options, stop: &str) -> Result<(Ast, NodeId, u32), Failed> {
 	one(super::parse_at(src, offset, None, entry, options, stop))
 }
 
-fn extension(ast: &Ast<Data>, id: NodeId, index: u32) -> String {
+fn extension(ast: &Ast, id: NodeId, index: u32) -> String {
 	let mut out = expand(ast, &format!("{:?}", ast.extension.kind(index)), &extension);
 	out.push_str(&extras(ast, id));
 	out
 }
 
 /// The keys TypeScript added to a node, after its own rendering.
-fn extras(ast: &Ast<Data>, id: NodeId) -> String {
+fn extras(ast: &Ast, id: NodeId) -> String {
 	let Some(e) = ast.extension.extras(id) else {
 		return String::new();
 	};
@@ -47,7 +47,7 @@ fn extras(ast: &Ast<Data>, id: NodeId) -> String {
 	format!(" +{{{}}}", parts.join(", "))
 }
 
-fn dump(ast: &Ast<Data>, id: NodeId) -> String {
+fn dump(ast: &Ast, id: NodeId) -> String {
 	let mut out = dump_with(ast, id, &extension);
 	if !matches!(ast.node(id).kind, NodeKind::Extension(_)) {
 		out.push_str(&extras(ast, id));

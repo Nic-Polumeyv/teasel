@@ -5,11 +5,11 @@
 //! one keeps what is inside it as `innerComments`; what is left trails the root. Children are
 //! visited in source order. A host's own nodes take no comments: those stay in the list alone.
 
-use crate::ast::{Ast, Attached, List, NodeId, NodeKind, Slots, Walk};
+use crate::ast::{Ast, Attached, List, NodeId, NodeKind, Slots};
 
 /// Attaches the comments at or after `from` to the trees under `roots`, in order, replacing any
 /// earlier attachment; what is left trails the last one.
-pub fn attach<X: Walk>(ast: &mut Ast<X>, source: &str, roots: List, from: u32) {
+pub fn attach(ast: &mut Ast, source: &str, roots: List, from: u32) {
 	let mut attached = std::mem::take(&mut ast.attached);
 	attached.clear();
 	let first = ast.comments.partition_point(|c| c.start < from);
@@ -47,15 +47,15 @@ pub fn attach<X: Walk>(ast: &mut Ast<X>, source: &str, roots: List, from: u32) {
 	ast.attached = attached;
 }
 
-struct Attacher<'a, X> {
-	ast: &'a Ast<X>,
+struct Attacher<'a> {
+	ast: &'a Ast,
 	source: &'a str,
 	next: u32,
 	attached: Slots<Attached>,
 	scratch: Vec<NodeId>,
 }
 
-impl<X: Walk> Attacher<'_, X> {
+impl Attacher<'_> {
 	fn peek(&self) -> Option<u32> {
 		(self.next < self.ast.comments.len() as u32).then_some(self.next)
 	}
@@ -179,11 +179,11 @@ enum Place {
 
 #[cfg(test)]
 mod tests {
-	use crate::ast::{Ast, NodeId, Walk};
+	use crate::ast::{Ast, NodeId};
 	use crate::{Entry, Options};
 
 	/// Every node with comments, in source order: `Kind leading=[..] trailing=[..]`.
-	fn attached<X: Walk>(ast: &Ast<X>, src: &str) -> Vec<String> {
+	fn attached(ast: &Ast, src: &str) -> Vec<String> {
 		let mut nodes: Vec<(NodeId, &crate::ast::Attached)> = (0..ast.nodes.len() as u32)
 			.map(NodeId::at)
 			.filter_map(|id| ast.attached.get(id).map(|a| (id, a)))
