@@ -140,21 +140,12 @@ impl Parser<'_> {
 
 	pub(crate) fn parse_maybe_assign(&mut self, for_init: ForInit, errors: &mut Errors) -> Result<NodeId> {
 		self.enter()?;
-		let result = self.parse_maybe_assign_inner(for_init, errors, false);
+		let result = self.parse_maybe_assign_inner(for_init, errors);
 		self.leave();
 		result
 	}
 
-	/// An assignment expression that is an item of a parenthesized list, which TypeScript reads
-	/// differently.
-	pub(crate) fn parse_paren_item(&mut self, for_init: ForInit, errors: &mut Errors) -> Result<NodeId> {
-		self.enter()?;
-		let result = self.parse_maybe_assign_inner(for_init, errors, true);
-		self.leave();
-		result
-	}
-
-	fn parse_maybe_assign_inner(&mut self, for_init: ForInit, errors: &mut Errors, item: bool) -> Result<NodeId> {
+	fn parse_maybe_assign_inner(&mut self, for_init: ForInit, errors: &mut Errors) -> Result<NodeId> {
 		if self.at_lt()
 			&& self.typescript()
 			&& let Some(expr) = TypeScript::maybe_assign(self, for_init, errors)?
@@ -183,20 +174,11 @@ impl Parser<'_> {
 			self.potential_arrow_in_for_await = for_init == ForInit::Await;
 		}
 		let mut left = self.parse_maybe_conditional(for_init, errors)?;
-		if item && matches!(self.tok.kind, TokenKind::Question | TokenKind::Colon) && self.typescript() {
-			left = TypeScript::paren_item(self, left)?;
-		}
 		if let Some(operator) = assignment_operator(self.tok.kind) {
 			let is_eq = operator == AssignmentOperator::Assign;
 			if is_eq {
 				left = self.make_pattern(left, errors)?;
 			}
-			// `a: T = 1` is checked once its list is known, as a parameter or as a stray cast
-			let inner = if self.typescript() {
-				TypeScript::unwrap(self, left, Unwrap::InnerPattern)
-			} else {
-				None
-			};
 			let e = errors.as_mut().unwrap();
 			if !own_errors {
 				e.parenthesized_assign = None;
@@ -206,12 +188,10 @@ impl Parser<'_> {
 			if e.shorthand_assign.is_some_and(|p| p >= self.start_of(left)) {
 				e.shorthand_assign = None;
 			}
-			if inner.is_none() {
-				if is_eq {
-					self.check_lval_pattern(left, Binding::None, &mut None)?;
-				} else {
-					self.check_lval_simple(left, Binding::None, &mut None)?;
-				}
+			if is_eq {
+				self.check_lval_pattern(left, Binding::None, &mut None)?;
+			} else {
+				self.check_lval_simple(left, Binding::None, &mut None)?;
 			}
 			self.next()?;
 			let right = self.parse_maybe_assign(for_init, &mut None)?;
@@ -248,11 +228,6 @@ impl Parser<'_> {
 			return Ok(expr);
 		}
 		if self.is(TokenKind::Question) {
-			if self.typescript()
-				&& let Some(expr) = TypeScript::conditional(self, expr, start, for_init)?
-			{
-				return Ok(expr);
-			}
 			return self.parse_conditional(expr, start, for_init);
 		}
 		Ok(expr)
@@ -601,17 +576,8 @@ impl Parser<'_> {
 		};
 		if call {
 			let mut errors = Some(DestructuringErrors::default());
-			if self.typescript() {
-				TypeScript::paren_list_start(self, false);
-			}
 			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut errors)?;
-			if self.typescript() {
-				TypeScript::paren_list_end(self);
-			}
 			self.check_expression_errors(&errors, true)?;
-			if self.typescript() {
-				TypeScript::list_items(self, &args)?;
-			}
 			let arguments = self.list_from(args);
 			let node = self.add(
 				NodeKind::CallExpression {
@@ -717,14 +683,7 @@ impl Parser<'_> {
 			}
 			TokenKind::BracketL => {
 				self.next()?;
-				if self.typescript() {
-					TypeScript::paren_list_start(self, false);
-				}
 				let elements = self.parse_expr_list(TokenKind::BracketR, true, true, errors)?;
-				if self.typescript() {
-					TypeScript::paren_list_end(self);
-					TypeScript::list_items(self, &elements)?;
-				}
 				let elements = self.list_from(elements);
 				Ok(self.add(NodeKind::ArrayExpression { elements }, start))
 			}
@@ -947,14 +906,7 @@ impl Parser<'_> {
 			return self.error(self.start_of(callee), Code::InvalidSuper);
 		}
 		let arguments = if self.eat(TokenKind::ParenL)? {
-			if self.typescript() {
-				TypeScript::paren_list_start(self, false);
-			}
 			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut None)?;
-			if self.typescript() {
-				TypeScript::paren_list_end(self);
-				TypeScript::list_items(self, &args)?;
-			}
 			self.list_from(args)
 		} else {
 			List::EMPTY
@@ -1502,11 +1454,6 @@ impl Parser<'_> {
 				None
 			} else if self.is(TokenKind::Ellipsis) {
 				let spread = self.parse_spread(errors)?;
-				let spread = if matches!(self.tok.kind, TokenKind::Question | TokenKind::Colon) && self.typescript() {
-					TypeScript::paren_item(self, spread)?
-				} else {
-					spread
-				};
 				if self.is(TokenKind::Comma)
 					&& let Some(e) = errors
 					&& e.trailing_comma.is_none()
@@ -1515,7 +1462,7 @@ impl Parser<'_> {
 				}
 				Some(spread)
 			} else {
-				Some(self.parse_paren_item(ForInit::No, errors)?)
+				Some(self.parse_maybe_assign(ForInit::No, errors)?)
 			};
 			elements.push(element);
 		}

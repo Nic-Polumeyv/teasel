@@ -420,12 +420,6 @@ crate::layout::kinds! {
 			type_annotation: NodeId,
 			expression: NodeId,
 		},
-		/// An item of a list, or its rest, with `?`, `: type` or both, before the list is known to be parameters.
-		TypeCastExpression {
-			expression: NodeId,
-			type_annotation: Option<NodeId>,
-			optional: bool,
-		},
 		InstantiationExpression {
 			expression: NodeId,
 			type_arguments: NodeId,
@@ -509,7 +503,6 @@ impl Data {
 			| SatisfiesExpression { expression, .. }
 			| NonNullExpression { expression }
 			| TypeAssertion { expression, .. }
-			| TypeCastExpression { expression, .. }
 			| InstantiationExpression { expression, .. }
 			| ParameterProperty { parameter: expression } => b.visit(expression, mode),
 			Decorator { expression } | ExportAssignment { expression } => b.visit(expression, Mode::Expression),
@@ -584,7 +577,6 @@ impl Data {
 			| SatisfiesExpression { expression, .. }
 			| NonNullExpression { expression }
 			| TypeAssertion { expression, .. }
-			| TypeCastExpression { expression, .. }
 			| InstantiationExpression { expression, .. } => Some(expression),
 			_ => None,
 		}
@@ -798,14 +790,6 @@ impl Data {
 						expression,
 						type_annotation,
 					} => out.extend([expression, type_annotation]),
-					TypeCastExpression {
-						expression,
-						type_annotation,
-						..
-					} => {
-						out.push(expression);
-						out.extend(type_annotation);
-					}
 					TypeAssertion {
 						type_annotation,
 						expression,

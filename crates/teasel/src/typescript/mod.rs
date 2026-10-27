@@ -7,12 +7,12 @@ mod declarations;
 mod tests;
 mod types;
 
-use crate::ast::{AssignmentOperator, FieldKind, List, MethodKind, NodeId, NodeKind, UnaryOperator, VariableKind};
+use crate::ast::{FieldKind, List, MethodKind, NodeId, NodeKind, UnaryOperator, VariableKind};
 use crate::error::SyntaxError;
 use crate::interner::FastMap;
 use crate::interner::StrId;
 use crate::lexer::token::{Keyword, TokenKind};
-use crate::parser::expression::{assignment_operator, starts_expression};
+use crate::parser::expression::starts_expression;
 use crate::parser::scope::{SCOPE_ARROW, function_flags};
 use crate::parser::statement::{ClassKind, StatementPlace};
 use crate::parser::{Context, DestructuringErrors, Errors, ForInit, FunctionKind, Parser, Result, Unwrap};
@@ -60,8 +60,6 @@ pub(crate) struct State {
 	global_depth: u32,
 	globals: crate::interner::FastSet<StrId>,
 	in_abstract_class: bool,
-	/// Inside a parenthesized list that may turn out to be arrow parameters.
-	maybe_in_arrow_parameters: bool,
 	functions: Vec<FunctionFrame>,
 	classes: Vec<ClassFrame>,
 	elements: Vec<ElementFrame>,
@@ -69,7 +67,6 @@ pub(crate) struct State {
 	arrow_return_type: Option<NodeId>,
 	needs_colon_at: Option<u32>,
 	body_needs_colon: bool,
-	paren_lists: Vec<bool>,
 	definite: Vec<bool>,
 	/// The kind of the import or export being parsed.
 	outer_kind: Option<Kind>,
@@ -124,7 +121,6 @@ struct FunctionFrame {
 	in_class_method: bool,
 	type_parameters: Option<NodeId>,
 	return_type: Option<NodeId>,
-	arrow_parameters: bool,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -366,10 +362,7 @@ impl Parser<'_> {
 			expression
 		};
 		if self.eat(TokenKind::ParenL)? {
-			TypeScript::paren_list_start(self, false);
 			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut None)?;
-			TypeScript::paren_list_end(self);
-			self.no_type_casts(&args)?;
 			let arguments = self.list_from(args);
 			let callee_start = self.start_of(expression);
 			expression = self.add(
@@ -605,8 +598,6 @@ impl Parser<'_> {
 			return Ok(None);
 		}
 		let before = spine.then(|| self.snapshot());
-		let old = self.ts.maybe_in_arrow_parameters;
-		self.ts.maybe_in_arrow_parameters = true;
 		let outer = (self.yield_pos, self.await_pos, self.await_ident_pos);
 		let mut head = self.attempt(|p| {
 			if !generic {
@@ -615,7 +606,6 @@ impl Parser<'_> {
 			let type_parameters = p.parse_type_parameters(TypeParameterModifiers::Const)?;
 			Ok((Some(type_parameters), p.read_arrow_head(is_async)?.0))
 		})?;
-		self.ts.maybe_in_arrow_parameters = old;
 		if head.is_some()
 			&& self.ts.arrow_return_type.is_some()
 			&& let Some(before) = before
@@ -690,10 +680,7 @@ impl Parser<'_> {
 		}
 		if !no_calls && self.eat(TokenKind::ParenL)? {
 			let mut errors = Some(DestructuringErrors::default());
-			TypeScript::paren_list_start(self, false);
 			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut errors)?;
-			TypeScript::paren_list_end(self);
-			self.no_type_casts(&args)?;
 			let arguments = self.list_from(args);
 			let node = self.add(
 				NodeKind::CallExpression {
@@ -722,24 +709,6 @@ impl Parser<'_> {
 			},
 			start,
 		)))
-	}
-
-	/// A cast left in a list that is not becoming parameters is an error.
-	fn no_type_casts(&self, items: &[Option<NodeId>]) -> Result<()> {
-		for &item in items.iter().flatten() {
-			let cast = match self.kind(item) {
-				NodeKind::AssignmentExpression { left, .. } => left,
-				_ => item,
-			};
-			let Some(TsKind::TypeCastExpression { type_annotation, .. }) = self.ts_kind(cast) else {
-				continue;
-			};
-			return match type_annotation {
-				Some(annotation) => self.error(self.start_of(annotation), Code::UnexpectedTypeAnnotation),
-				None => self.error(self.end_of(cast) - 1, Code::UnexpectedToken),
-			};
-		}
-		Ok(())
 	}
 }
 
@@ -1140,10 +1109,8 @@ impl TypeScript {
 	pub(crate) fn function_start(p: &mut Parser, kind: FunctionKind) -> Result<()> {
 		let mut frame = FunctionFrame {
 			in_class_method: matches!(kind, FunctionKind::Method { in_class: true, .. }),
-			arrow_parameters: p.ts.maybe_in_arrow_parameters,
 			..FunctionFrame::default()
 		};
-		p.ts.maybe_in_arrow_parameters = false;
 		match kind {
 			FunctionKind::Arrow => {
 				frame.return_type = p.ts.arrow_return_type.take();
@@ -1260,7 +1227,6 @@ impl TypeScript {
 			p.check_parameter_list(params, false)?;
 		}
 		let frame = p.ts.functions.pop().unwrap();
-		p.ts.maybe_in_arrow_parameters = frame.arrow_parameters;
 		if let Some(TsKind::DeclareFunction { id: Some(id), .. }) = p.ts_kind(node) {
 			p.declare_export_only(id);
 		}
@@ -1637,62 +1603,6 @@ impl TypeScript {
 		p.try_arrow_head(p.tok.start, p.tok.start, false, for_init, true)
 	}
 
-	/// A list opens; `parameters` when it may still turn out to be a function's parameters.
-	#[cold]
-	pub(crate) fn paren_list_start(p: &mut Parser, parameters: bool) {
-		let inside = p.ts.maybe_in_arrow_parameters;
-		p.ts.paren_lists.push(inside);
-		p.ts.maybe_in_arrow_parameters = parameters;
-	}
-
-	#[cold]
-	pub(crate) fn paren_list_end(p: &mut Parser) {
-		p.ts.maybe_in_arrow_parameters = p.ts.paren_lists.pop().unwrap();
-	}
-
-	/// An item of a parenthesized list, after its expression.
-	#[cold]
-	pub(crate) fn paren_item(p: &mut Parser, item: NodeId) -> Result<NodeId> {
-		let optional = p.eat(TokenKind::Question)?;
-		let type_annotation = if p.is(TokenKind::Colon) {
-			Some(p.parse_type_annotation(true, None)?)
-		} else if optional {
-			None
-		} else {
-			return Ok(item);
-		};
-		let cast = p.ts(
-			TsKind::TypeCastExpression {
-				expression: item,
-				type_annotation,
-				optional,
-			},
-			p.start_of(item),
-		);
-		// a parameter is never compound-assigned; a rest takes no operator at all
-		if !p.ts.maybe_in_arrow_parameters
-			|| !matches!(
-				p.kind(item),
-				NodeKind::RestElement { .. } | NodeKind::SpreadElement { .. }
-			) && assignment_operator(p.tok.kind).is_some_and(|op| op != AssignmentOperator::Assign)
-		{
-			p.no_type_casts(&[Some(cast)])?;
-		}
-		Ok(cast)
-	}
-
-	/// At `?` after an expression; `Some` replaces the conditional.
-	#[cold]
-	pub(crate) fn conditional(p: &mut Parser, expr: NodeId, start: u32, for_init: ForInit) -> Result<Option<NodeId>> {
-		if !p.ts.maybe_in_arrow_parameters {
-			return Ok(None);
-		}
-		Ok(Some(
-			p.attempt(|p| p.parse_conditional(expr, start, for_init))?
-				.unwrap_or(expr),
-		))
-	}
-
 	/// At the `(` of a list that a type must be read to decide, or that the closer reader could
 	/// not; `Some` is the arrow it starts.
 	#[cold]
@@ -1834,13 +1744,6 @@ impl TypeScript {
 		Ok(Some((node, is_optional_call)))
 	}
 
-	/// A finished list of expressions: array elements, arguments, or a parenthesized expression
-	/// that did not become parameters.
-	#[cold]
-	pub(crate) fn list_items(p: &mut Parser, items: &[Option<NodeId>]) -> Result<()> {
-		p.no_type_casts(items)
-	}
-
 	#[cold]
 	pub(crate) fn new_expression(p: &mut Parser, node: NodeId) {
 		let NodeKind::NewExpression { callee, arguments } = p.kind(node) else {
@@ -1908,8 +1811,6 @@ impl TypeScript {
 				| TsKind::NonNullExpression { expression }
 				| TsKind::TypeAssertion { expression, .. },
 			) => p.make_pattern(expression, errors).map(Some),
-			// a stray cast is reported with its list
-			Some(TsKind::TypeCastExpression { .. }) => Ok(Some(id)),
 			_ => Ok(None),
 		}
 	}
@@ -1921,10 +1822,7 @@ impl TypeScript {
 			(Unwrap::Simple, TsKind::NonNullExpression { expression } | TsKind::AsExpression { expression, .. }) => {
 				Some(expression)
 			}
-			(
-				Unwrap::InnerPattern,
-				TsKind::ParameterProperty { parameter: inner } | TsKind::TypeCastExpression { expression: inner, .. },
-			) => Some(inner),
+			(Unwrap::InnerPattern, TsKind::ParameterProperty { parameter: inner }) => Some(inner),
 			_ => None,
 		}
 	}

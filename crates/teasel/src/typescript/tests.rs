@@ -317,8 +317,8 @@ fn a_list_item_fails_where_it_stands() {
 		(error.code, error.pos)
 	};
 	use crate::error::Code;
-	assert_eq!(error("[eval: T = (b: U)];"), (Code::UnexpectedTypeAnnotation, 5));
-	assert_eq!(error("f(a as T: U = 1);"), (Code::UnexpectedTypeAnnotation, 8));
+	assert_eq!(error("[eval: T = (b: U)];"), (Code::UnexpectedToken, 5));
+	assert_eq!(error("f(a as T: U = 1);"), (Code::UnexpectedToken, 8));
 	assert_eq!(error("({a = 1} += 2);"), (Code::InvalidAssignmentTarget, 1));
 	assert_eq!(error("const g = ({ a }?) => a;"), (Code::OptionalPatternParameter, 11));
 }
