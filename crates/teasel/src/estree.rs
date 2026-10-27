@@ -12,8 +12,6 @@ use crate::scopes::Role;
 use crate::typescript::ast::{Data, Extras, TsKind};
 use std::fmt::Write;
 
-/// Every recipe with its fields resolved, by a kind's tag: the JavaScript kinds, TypeScript's,
-/// what TypeScript adds to either with the fields it reads, what erasing keeps, and the rows.
 struct Recipes {
 	js: &'static [&'static [Op<Slot>]],
 	ts: &'static [&'static [Op<Slot>]],
@@ -223,9 +221,8 @@ impl Json {
 /// The answer's words, read in place by a front end that takes the allocation over.
 pub type Words = crate::handed::Handed<u32>;
 
-/// Serializes an answer as JSON from the tree `json::place` mapped: the roots as `node`, one node
-/// or the patterns of a parameter list, null when the parse failed, then `end`, a UTF-16 offset,
-/// and what the options add.
+/// Serializes an answer as JSON: the roots as `node`, one node or the patterns of a parameter
+/// list, null when the parse failed, then `end` and what the options add.
 pub(crate) fn answer<X: Pooled>(
 	ast: &Ast<X>,
 	entry: Entry,
@@ -691,7 +688,6 @@ impl<'a, X: Pooled> Writer<'a, X> {
 		}
 	}
 
-	/// A node's span as UTF-16 offsets, the node's own when the source is ASCII, and its `loc`.
 	fn span(&mut self, id: NodeId, lines: bool) {
 		let index = id.index() as usize;
 		match self.ast.spans.get(index) {
@@ -786,9 +782,6 @@ impl<'a, X: Pooled> Writer<'a, X> {
 		self.slice(node.start, node.end);
 	}
 
-	/// What TypeScript adds to a node from its extras record, a blank one when it has none; a
-	/// key its kind does not list is a parser bug, which a test build catches and a shipped build
-	/// answers around.
 	fn extras(&mut self, ts: &Data, id: NodeId) {
 		let recipes = recipes();
 		let extras = ts.extras_of(id);
@@ -804,6 +797,7 @@ impl<'a, X: Pooled> Writer<'a, X> {
 			ref kind => &recipes.adds[tag(kind as *const NodeKind as *const u8)],
 		};
 		self.run(id, ops, base);
+		// an unlisted extra is a parser bug, which a test build catches and a shipped build answers around
 		if cfg!(debug_assertions)
 			&& let Some(field) = extras.set().find(|&field| !read.contains(&field))
 		{

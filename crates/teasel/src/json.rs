@@ -724,9 +724,6 @@ fn run<E: crate::parser::Extension>(
 	Pooled::give(pool, ast);
 }
 
-/// What both answers read beside the tree: every node's span and location as JavaScript counts
-/// them, the nodes erasure leaves out, the comments and the errors; a failed parse places its
-/// error row alone, the tree it read is left as the last answer cleared it.
 pub(crate) fn place<X: Reuse>(ast: &mut Ast<X>, source: &str, positions: &Positions, options: Options, failed: bool) {
 	if !failed {
 		positions.map_nodes(&ast.nodes, &mut ast.spans, &mut ast.locs);
@@ -762,8 +759,6 @@ pub(crate) fn place<X: Reuse>(ast: &mut Ast<X>, source: &str, positions: &Positi
 	}
 }
 
-/// What a front end reading the tree in place needs beyond: the nodes with what few have, the
-/// hosts by number and the strings' UTF-16 starts.
 fn prepare<X: Reuse>(ast: &mut Ast<X>, positions: &Positions, options: Options, failed: bool, names: &mut Names) {
 	ast.units.clear();
 	if failed {
