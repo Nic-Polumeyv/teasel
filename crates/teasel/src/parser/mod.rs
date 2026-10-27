@@ -211,7 +211,9 @@ pub(crate) struct Parser<'a> {
 	pub(crate) depth: u32,
 	pub(crate) scopes: Vec<Scope>,
 	/// Name vectors of scopes left, for the next scope entered.
-	spare_names: Vec<Vec<(StrId, u8, u8)>>,
+	spare_names: Vec<Vec<scope::Name>>,
+	/// Names declared so far, the next one's serial.
+	declarations: u32,
 	/// List buffers earlier lists gave back: a list costs no allocation after the first at its depth.
 	spare_lists: Vec<Vec<Option<NodeId>>>,
 	param_names: Vec<StrId>,
@@ -239,7 +241,7 @@ pub(crate) struct Parser<'a> {
 #[derive(Default)]
 pub struct Spare {
 	scopes: Vec<Scope>,
-	names: Vec<Vec<(StrId, u8, u8)>>,
+	names: Vec<Vec<scope::Name>>,
 	lists: Vec<Vec<Option<NodeId>>>,
 	param_names: Vec<StrId>,
 	labels: Vec<Label>,
@@ -259,8 +261,7 @@ impl std::fmt::Debug for Spare {
 /// failed parse built is forgotten with it.
 struct Mark {
 	scopes: usize,
-	/// Under recovery, how many names each open scope had declared.
-	declared: Vec<u32>,
+	declarations: u32,
 	labels: usize,
 	private_names: usize,
 	undeclared_exports: usize,
@@ -349,6 +350,7 @@ impl<'a> Parser<'a> {
 			depth: 0,
 			scopes: spare.scopes,
 			spare_names: spare.names,
+			declarations: 0,
 			spare_lists: spare.lists,
 			param_names: spare.param_names,
 			labels: spare.labels,
@@ -478,17 +480,9 @@ impl<'a> Parser<'a> {
 	}
 
 	fn mark(&self) -> Mark {
-		let declared = if self.recovering() {
-			self.scopes
-				.iter()
-				.map(|scope| scope.declared().count() as u32)
-				.collect()
-		} else {
-			Vec::new()
-		};
 		Mark {
 			scopes: self.scopes.len(),
-			declared,
+			declarations: self.declarations,
 			labels: self.labels.len(),
 			private_names: self.private_names.len(),
 			undeclared_exports: self.undeclared_exports.len(),
@@ -504,9 +498,7 @@ impl<'a> Parser<'a> {
 		while self.scopes.len() > mark.scopes {
 			self.exit_scope();
 		}
-		for (scope, &declared) in self.scopes.iter_mut().zip(&mark.declared) {
-			scope.forget(declared as usize);
-		}
+		self.forget_names(mark.declarations);
 		self.labels.truncate(mark.labels);
 		self.private_names.truncate(mark.private_names);
 		self.undeclared_exports.truncate(mark.undeclared_exports);
