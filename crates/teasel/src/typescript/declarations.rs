@@ -33,10 +33,10 @@ pub(super) enum Head {
 
 impl Parser<'_> {
 	fn ambient<T>(&mut self, f: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
-		let old = self.ts.ambient;
-		self.ts.ambient = true;
+		let old = self.ts.state.ambient;
+		self.ts.state.ambient = true;
 		let result = f(self);
-		self.ts.ambient = old;
+		self.ts.state.ambient = old;
 		result
 	}
 
@@ -85,11 +85,11 @@ impl Parser<'_> {
 	/// A global block: its declarations are the module's to export.
 	fn parse_global_body(&mut self) -> Result<NodeId> {
 		self.enter_scope(SCOPE_TS_MODULE);
-		self.ts.global_depth += 1;
+		self.ts.state.global_depth += 1;
 		let body = self.parse_module_block(false);
-		self.ts.global_depth -= 1;
+		self.ts.state.global_depth -= 1;
 		let declared: Vec<_> = self.current_scope().declared().collect();
-		self.ts.globals.extend(declared);
+		self.ts.state.globals.extend(declared);
 		self.exit_scope();
 		body
 	}
@@ -113,8 +113,8 @@ impl Parser<'_> {
 	fn parse_module_block(&mut self, namespace: bool) -> Result<NodeId> {
 		let start = self.tok.start;
 		self.enter_scope(0);
-		self.ts.module_blocks += 1;
-		let in_namespace = std::mem::replace(&mut self.ts.in_namespace, namespace);
+		self.ts.state.module_blocks += 1;
+		let in_namespace = std::mem::replace(&mut self.ts.state.in_namespace, namespace);
 		self.expect(TokenKind::BraceL)?;
 		let mut body = Vec::new();
 		let mut exports = Exports::default();
@@ -123,7 +123,7 @@ impl Parser<'_> {
 			if let Some(statement) = self.statement_recovered(|p| {
 				p.parse_statement(Context::None, StatementPlace::TopLevel, Some(&mut exports))
 			})? {
-				if self.ts.ambient && !self.is_declaration(statement) {
+				if self.ts.state.ambient && !self.is_declaration(statement) {
 					return self.error(at, Code::StatementInAmbient);
 				}
 				body.push(statement);
@@ -131,8 +131,8 @@ impl Parser<'_> {
 			self.ensure_progress(at)?;
 		}
 		self.next()?;
-		self.ts.module_blocks -= 1;
-		self.ts.in_namespace = in_namespace;
+		self.ts.state.module_blocks -= 1;
+		self.ts.state.in_namespace = in_namespace;
 		self.exit_scope();
 		let body = self.list_of(&body);
 		Ok(self.ts(TsKind::ModuleBlock { body }, start))
@@ -143,7 +143,7 @@ impl Parser<'_> {
 		let id = if global {
 			self.parse_ident(false)?
 		} else if matches!(self.tok.kind, TokenKind::String(_)) {
-			if !self.ts.ambient {
+			if !self.ts.state.ambient {
 				return self.error(self.tok.start, Code::QuotedModuleName);
 			}
 			self.parse_expr_atom(&mut None, ForInit::No, false)?
@@ -415,7 +415,7 @@ impl Parser<'_> {
 		let Some(at) = opened.declare else {
 			return self.parse_opened_declaration(start, opened);
 		};
-		if self.ts.ambient {
+		if self.ts.state.ambient {
 			return self.error(at, Code::DeclareInAmbient);
 		}
 		let node = self.ambient(|p| p.parse_opened_declaration(start, opened))?;
@@ -428,7 +428,7 @@ impl Parser<'_> {
 			if opened.head.is_some() || !self.is_keyword(Keyword::Class) {
 				return self.error(start, Code::AbstractPlacement);
 			}
-			self.ts.next_class = ClassFrame {
+			self.ts.state.next_class = ClassFrame {
 				is_abstract: opened.is_abstract,
 				declare: opened.declare.is_some(),
 				start: Some(start),
@@ -470,7 +470,7 @@ impl Parser<'_> {
 		let id = self.parse_ident(false)?;
 		self.check_lval_simple(id, Binding::Lexical, &mut None)?;
 		self.expect(TokenKind::Eq)?;
-		let import_kind = self.ts.outer_kind.unwrap_or(Kind::Value);
+		let import_kind = self.ts.state.outer_kind.unwrap_or(Kind::Value);
 		let module_reference = if self.is_contextual("require") && self.peek_char().0 == Some('(') {
 			let reference_start = self.tok.start;
 			self.next()?;
@@ -489,7 +489,7 @@ impl Parser<'_> {
 			reference
 		};
 		self.semicolon()?;
-		self.ts.outer_kind = None;
+		self.ts.state.outer_kind = None;
 		Ok(self.ts(
 			TsKind::ImportEqualsDeclaration {
 				id,
@@ -505,7 +505,7 @@ impl Parser<'_> {
 	/// name itself.
 	pub(super) fn parse_type_only_specifier(&mut self, is_import: bool) -> Result<NodeId> {
 		let start = self.tok.start;
-		let in_type_only = self.ts.outer_kind == Some(Kind::Type);
+		let in_type_only = self.ts.state.outer_kind == Some(Kind::Type);
 		let mut left = self.parse_module_export_name()?;
 		let mut right = None;
 		let mut has_type_specifier = false;

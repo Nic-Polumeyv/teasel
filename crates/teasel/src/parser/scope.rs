@@ -2,7 +2,6 @@ use super::{Parser, Result};
 use crate::Options;
 use crate::error::Code;
 use crate::interner::{FastMap, StrId};
-use crate::typescript::TypeScript;
 
 pub(crate) const SCOPE_TOP: u32 = 1;
 pub(crate) const SCOPE_FUNCTION: u32 = 2;
@@ -114,7 +113,7 @@ impl Parser<'_> {
 
 	pub(crate) fn exit_scope(&mut self) {
 		if self.typescript() {
-			TypeScript::scope_exit(self);
+			self.scope_exit();
 		}
 		let mut scope = self.scopes.pop().unwrap();
 		scope.names.clear();
@@ -258,8 +257,7 @@ impl Parser<'_> {
 	}
 
 	pub(crate) fn declares_export(&mut self, name: StrId) -> bool {
-		(self.typescript() && TypeScript::declares_export(self, name))
-			|| self.scopes[0].has(name, VAR | LEXICAL | FUNCTION)
+		(self.typescript() && self.ts_declares_export(name)) || self.scopes[0].has(name, VAR | LEXICAL | FUNCTION)
 	}
 
 	pub(crate) fn check_local_export(&mut self, name: StrId, pos: u32) {
