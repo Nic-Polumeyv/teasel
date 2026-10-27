@@ -243,9 +243,10 @@ fn the_session_writes_the_same_words_again() {
 
 #[test]
 fn nesting_limits() {
-	std::thread::Builder::new()
+	let (done, finished) = std::sync::mpsc::channel();
+	let limits = std::thread::Builder::new()
 		.stack_size(64 << 20)
-		.spawn(|| {
+		.spawn(move || {
 			let deep = format!("{}1{}", "(".repeat(2000), ")".repeat(2000));
 			assert_eq!(module_error(&deep).as_str(), "nesting_depth (499)");
 			assert!(program(&format!("{}1{}", "(".repeat(400), ")".repeat(400)), Options::default()).is_ok());
@@ -259,10 +260,17 @@ fn nesting_limits() {
 			let typed = format!("x = {}x{};", "(a = ".repeat(450), "): T => a".repeat(450));
 			let error = program(&typed, typescript(Options(Options::MODULE))).unwrap_err();
 			assert_eq!((error.text.as_str(), error.pos), ("nesting_depth", 1665));
+			let spine = format!("x = {}c{};", "a ? (b): T => ".repeat(334), " : d".repeat(334));
+			let error = program(&spine, typescript(Options(Options::MODULE))).unwrap_err();
+			assert_eq!((error.text.as_str(), error.pos), ("nesting_depth", 4656));
+			done.send(()).unwrap();
 		})
-		.unwrap()
-		.join()
 		.unwrap();
+	// the spine above ran past ten minutes when a limit met in the type read ahead of a list was
+	// taken for an arrow: each level read the levels under it again
+	let waited = finished.recv_timeout(std::time::Duration::from_secs(20));
+	assert_ne!(waited, Err(std::sync::mpsc::RecvTimeoutError::Timeout));
+	limits.join().unwrap();
 }
 
 #[test]

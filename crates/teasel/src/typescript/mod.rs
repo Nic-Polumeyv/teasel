@@ -652,9 +652,7 @@ impl Parser<'_> {
 			}
 			Ok(!spine || p.colon_after_body(is_async)?)
 		}) {
-			// a limit met here, ahead of the list, put the error at the far `:`; the list's own
-			// reading meets it where it is
-			Err(error) if error.code.is_limit() => Ok(true),
+			Err(error) if error.code.is_limit() => Err(error),
 			answer => Ok(answer.unwrap_or(false)),
 		}
 	}
