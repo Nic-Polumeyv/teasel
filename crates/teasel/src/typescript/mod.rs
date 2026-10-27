@@ -361,7 +361,9 @@ impl Parser<'_> {
 			expression
 		};
 		if self.eat(TokenKind::ParenL)? {
-			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut None)?;
+			let mut facts = Some(DestructuringErrors::default());
+			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut facts)?;
+			self.check_expression_errors(&facts, true)?;
 			let arguments = self.list_from(args);
 			let callee_start = self.start_of(expression);
 			expression = self.add(
