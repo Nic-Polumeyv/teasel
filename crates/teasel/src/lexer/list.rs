@@ -35,6 +35,15 @@ pub(super) struct Frame {
 	head: bool,
 }
 
+/// What a `/` is after a `++`, `--` or TypeScript `!` read where a `/` would be `slash`.
+fn postfix(slash: Slash, token: &Token) -> Slash {
+	match slash {
+		Slash::Divide if !token.newline_before => Slash::Divide,
+		Slash::Unsure => Slash::Unsure,
+		_ => Slash::Regex,
+	}
+}
+
 /// A template's substitution, closed by `}` as a brace is.
 const TEMPLATE: TokenKind = TokenKind::Backquote;
 
@@ -291,9 +300,9 @@ impl Lexer<'_> {
 						_ => Slash::Divide,
 					}
 				}
-				T::PlusPlus | T::MinusMinus => slash = Slash::Unsure,
-				// a non-null assertion or a type's `>` after an operand, or an operator
-				T::Bang | T::Gt if typescript && slash == Slash::Divide => slash = Slash::Unsure,
+				T::PlusPlus | T::MinusMinus => slash = postfix(slash, &token),
+				T::Bang if typescript => slash = postfix(slash, &token),
+				T::Gt if typescript && slash == Slash::Divide => slash = Slash::Unsure,
 				_ => {
 					slash = if token.ends_operand() {
 						Slash::Divide
@@ -306,6 +315,13 @@ impl Lexer<'_> {
 			prev2 = prev;
 			prev = token.kind;
 		};
+		if role.is_none() {
+			for frame in &frames {
+				if frame.closer == T::ParenR {
+					self.roles.insert(frame.opener, Role::Unsure);
+				}
+			}
+		}
 		self.frames = frames;
 		role
 	}

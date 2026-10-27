@@ -582,11 +582,22 @@ fn a_list_is_decided_before_it_is_read() {
 	assert_eq!(js("(a = b.if (c) / d, e) => 1").0, Parameters);
 	// after a body's `}` only the parser knows
 	assert_eq!(js("(a = function () {} / 1, b) => 1"), (Unsure, None));
-	assert_eq!(js("(a = x++ / 2, b) => 1"), (Unsure, None));
+	assert_eq!(js("(a = yield / 2, b) => 1"), (Unsure, None));
+	// a postfix `++` ends an operand, a prefix one starts one
+	assert_eq!(js("(a = x++ / 2, b) => 1").0, Parameters);
+	assert_eq!(js("(a = ++/[)]/.b, c) => 1").0, Parameters);
+	assert_eq!(list("(a = x! / 2, b) => 1", true, true).0, Parameters);
 	// a script's HTML comments
 	assert_eq!(list("(a, b <!-- )\n) => 1", false, false).0, Parameters);
 	assert_eq!(list("(a, b\n--> )\n) => 1", false, false).0, Parameters);
 	// every list passed is kept, so a nested one is not read again
+	// a scan that gives up keeps every list it opened as unknown, so none is read again
+	let mut lexer = Lexer::new("(x, (a, b = yield / 2)) + 1");
+	let open = lexer.next_token().unwrap();
+	let first = lexer.next_token().unwrap();
+	assert_eq!(lexer.list_role(open.start, &first, false, false), Unsure);
+	assert_eq!(lexer.roles.get(&0), Some(&Unsure));
+	assert_eq!(lexer.roles.get(&4), Some(&Unsure));
 	let mut lexer = Lexer::new("(x, (a, b) => 1, [(c, d)]) + 1");
 	let open = lexer.next_token().unwrap();
 	let first = lexer.next_token().unwrap();

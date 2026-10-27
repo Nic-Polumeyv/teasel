@@ -597,10 +597,10 @@ impl Parser<'_> {
 		if self.ts.not_arrow.contains(&(at, spine)) {
 			return Ok(None);
 		}
-		// the list read first and again after the type failed: a nest of `c ? (a = …) : d` read its
-		// inner lists once per level, 128 levels in 16 ms
+		// the list read first and again after the type or the body failed: a nest of `c ? (a = …) : d`
+		// read its inner lists once per level, 128 levels in 16 ms
 		if let Some(colon) = colon
-			&& !self.arrow_after_type(colon)?
+			&& !self.arrow_after_type(colon, is_async, spine)?
 		{
 			self.ts.not_arrow.insert((at, spine));
 			return Ok(None);
@@ -636,13 +636,17 @@ impl Parser<'_> {
 		Ok(Some(arrow))
 	}
 
-	/// Whether a type and `=>` follow the `:` at `colon`, read without the list before it.
-	fn arrow_after_type(&mut self, colon: u32) -> Result<bool> {
+	/// Whether a type and `=>` follow the `:` at `colon`, read without the list before it, and on a
+	/// conditional's `spine` a `:` after the arrow's body.
+	fn arrow_after_type(&mut self, colon: u32, is_async: bool, spine: bool) -> Result<bool> {
 		match self.lookahead(|p| {
 			p.lexer.set_pos(colon);
 			p.lexer.next_token_into(&mut p.tok)?;
 			p.parse_type_or_type_predicate_annotation(TokenKind::Colon, true)?;
-			Ok(!p.can_insert_semicolon() && p.is(TokenKind::Arrow))
+			if p.can_insert_semicolon() || !p.eat(TokenKind::Arrow)? {
+				return Ok(false);
+			}
+			Ok(!spine || p.colon_after_body(is_async)?)
 		}) {
 			Err(error) if error.code.is_limit() => Err(error),
 			answer => Ok(answer.unwrap_or(false)),
