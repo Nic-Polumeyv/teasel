@@ -62,15 +62,12 @@ pub(crate) struct State {
 	in_abstract_class: bool,
 	/// Inside a parenthesized list that may turn out to be arrow parameters.
 	maybe_in_arrow_parameters: bool,
-	functions: Vec<FunctionFrame>,
 	classes: Vec<ClassFrame>,
 	elements: Vec<ElementFrame>,
 	/// Parsed ahead of `=>`, taken by the arrow's frame.
 	arrow_return_type: Option<NodeId>,
 	needs_colon_at: Option<u32>,
 	body_needs_colon: bool,
-	paren_lists: Vec<bool>,
-	definite: Vec<bool>,
 	/// The kind of the import or export being parsed.
 	outer_kind: Option<Kind>,
 	export_kind: Option<Kind>,
@@ -119,8 +116,9 @@ impl Names {
 	}
 }
 
+/// What TypeScript reads of a function before its body and sets on it after.
 #[derive(Clone, Copy, Default)]
-struct FunctionFrame {
+pub(crate) struct FunctionFrame {
 	in_class_method: bool,
 	type_parameters: Option<NodeId>,
 	return_type: Option<NodeId>,
@@ -366,9 +364,9 @@ impl Parser<'_> {
 			expression
 		};
 		if self.eat(TokenKind::ParenL)? {
-			TypeScript::paren_list_start(self, false);
+			let outer = TypeScript::paren_list_start(self, false);
 			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut None)?;
-			TypeScript::paren_list_end(self);
+			TypeScript::paren_list_end(self, outer);
 			self.no_type_casts(&args)?;
 			let arguments = self.list_from(args);
 			let callee_start = self.start_of(expression);
@@ -699,9 +697,9 @@ impl Parser<'_> {
 		}
 		if !no_calls && self.eat(TokenKind::ParenL)? {
 			let mut errors = Some(DestructuringErrors::default());
-			TypeScript::paren_list_start(self, false);
+			let outer = TypeScript::paren_list_start(self, false);
 			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut errors)?;
-			TypeScript::paren_list_end(self);
+			TypeScript::paren_list_end(self, outer);
 			self.no_type_casts(&args)?;
 			let arguments = self.list_from(args);
 			let node = self.add(
@@ -1049,9 +1047,9 @@ impl TypeScript {
 
 	// Bindings
 
-	/// After the id of a variable declarator.
+	/// After the id of a variable declarator; whether it is definite, `!`.
 	#[cold]
-	pub(crate) fn var_id(p: &mut Parser, id: NodeId) -> Result<()> {
+	pub(crate) fn var_id(p: &mut Parser, id: NodeId) -> Result<bool> {
 		let mut definite = false;
 		if matches!(p.kind(id), NodeKind::Identifier { .. }) && !p.tok.newline_before && p.is(TokenKind::Bang) {
 			p.next()?;
@@ -1062,13 +1060,12 @@ impl TypeScript {
 			p.extras_mut(id).type_annotation = Some(annotation);
 			p.ast.node_mut(id).end = p.prev_end;
 		}
-		p.ts.definite.push(definite);
-		Ok(())
+		Ok(definite)
 	}
 
 	#[cold]
-	pub(crate) fn var_declarator(p: &mut Parser, node: NodeId, kind: VariableKind) -> Result<()> {
-		if p.ts.definite.pop() == Some(true) {
+	pub(crate) fn var_declarator(p: &mut Parser, node: NodeId, kind: VariableKind, definite: bool) -> Result<()> {
+		if definite {
 			p.extras_mut(node).definite = true;
 			if let NodeKind::VariableDeclarator { init: Some(_), .. } = p.kind(node) {
 				return p.error(p.start_of(node), Code::DefiniteWithInitializer);
@@ -1194,7 +1191,7 @@ impl TypeScript {
 
 	/// Before the parameters of a function, method or arrow.
 	#[cold]
-	pub(crate) fn function_start(p: &mut Parser, kind: FunctionKind) -> Result<()> {
+	pub(crate) fn function_start(p: &mut Parser, kind: FunctionKind) -> Result<FunctionFrame> {
 		let mut frame = FunctionFrame {
 			in_class_method: matches!(kind, FunctionKind::Method { in_class: true, .. }),
 			arrow_parameters: p.ts.maybe_in_arrow_parameters,
@@ -1221,14 +1218,15 @@ impl TypeScript {
 		{
 			return p.error(p.start_of(type_parameters), Code::AccessorTypeParameters);
 		}
-		p.ts.functions.push(frame);
-		Ok(())
+		Ok(frame)
 	}
 
 	/// After the parameters, before the body; `Some` is a function without a body.
 	#[cold]
+	#[expect(clippy::too_many_arguments)]
 	pub(crate) fn function_body(
 		p: &mut Parser,
+		frame: &mut FunctionFrame,
 		start: u32,
 		id: Option<NodeId>,
 		params: List,
@@ -1278,7 +1276,7 @@ impl TypeScript {
 				}
 				_ => {}
 			}
-			p.ts.functions.last_mut().unwrap().return_type = Some(return_type);
+			frame.return_type = Some(return_type);
 		}
 		let bodiless = match kind {
 			FunctionKind::Declaration => Some(TsKind::DeclareFunction {
@@ -1312,11 +1310,10 @@ impl TypeScript {
 	}
 
 	#[cold]
-	pub(crate) fn function_end(p: &mut Parser, node: NodeId) -> Result<()> {
+	pub(crate) fn function_end(p: &mut Parser, node: NodeId, frame: FunctionFrame) -> Result<()> {
 		if let NodeKind::ArrowFunctionExpression { params, .. } = p.kind(node) {
 			p.check_parameter_list(params, false)?;
 		}
-		let frame = p.ts.functions.pop().unwrap();
 		p.ts.maybe_in_arrow_parameters = frame.arrow_parameters;
 		if let Some(TsKind::DeclareFunction { id: Some(id), .. }) = p.ts_kind(node) {
 			p.declare_export_only(id);
@@ -1694,17 +1691,16 @@ impl TypeScript {
 		p.try_generic_arrow(p.tok.start, false, for_init)
 	}
 
-	/// A list opens; `parameters` when it may still turn out to be a function's parameters.
+	/// A list opens; `parameters` when it may still turn out to be a function's parameters. What
+	/// the enclosing list said comes back, for `paren_list_end`.
 	#[cold]
-	pub(crate) fn paren_list_start(p: &mut Parser, parameters: bool) {
-		let inside = p.ts.maybe_in_arrow_parameters;
-		p.ts.paren_lists.push(inside);
-		p.ts.maybe_in_arrow_parameters = parameters;
+	pub(crate) fn paren_list_start(p: &mut Parser, parameters: bool) -> bool {
+		std::mem::replace(&mut p.ts.maybe_in_arrow_parameters, parameters)
 	}
 
 	#[cold]
-	pub(crate) fn paren_list_end(p: &mut Parser) {
-		p.ts.maybe_in_arrow_parameters = p.ts.paren_lists.pop().unwrap();
+	pub(crate) fn paren_list_end(p: &mut Parser, outer: bool) {
+		p.ts.maybe_in_arrow_parameters = outer;
 	}
 
 	/// An item of a parenthesized list, after its expression.

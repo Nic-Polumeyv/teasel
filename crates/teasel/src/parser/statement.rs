@@ -658,17 +658,18 @@ impl Parser<'_> {
 		} else {
 			FunctionKind::Expression
 		};
-		if self.typescript() {
-			TypeScript::function_start(self, kind)?;
-		}
+		let mut frame = if self.typescript() {
+			Some(TypeScript::function_start(self, kind)?)
+		} else {
+			None
+		};
 		self.expect(TokenKind::ParenL)?;
 		let params = self.parse_binding_list(TokenKind::ParenR, false, true, false)?;
 		self.check_yield_await_in_default_params()?;
 		let params = self.list_from(params);
-		let bodiless = if self.typescript() {
-			TypeScript::function_body(self, start, id, params, is_async, generator, kind)?
-		} else {
-			None
+		let bodiless = match &mut frame {
+			Some(frame) => TypeScript::function_body(self, frame, start, id, params, is_async, generator, kind)?,
+			None => None,
 		};
 		let node = match bodiless {
 			Some(node) => {
@@ -705,8 +706,8 @@ impl Parser<'_> {
 			};
 			self.check_lval_simple(name, binding, &mut None)?;
 		}
-		if self.typescript() {
-			TypeScript::function_end(self, node)?;
+		if let Some(frame) = frame {
+			TypeScript::function_end(self, node, frame)?;
 		}
 		Ok(node)
 	}
@@ -1026,9 +1027,7 @@ impl Parser<'_> {
 				Binding::Lexical
 			};
 			self.check_lval_pattern(id, binding, &mut None)?;
-			if self.typescript() {
-				TypeScript::var_id(self, id)?;
-			}
+			let definite = self.typescript() && TypeScript::var_id(self, id)?;
 			let init = if self.eat(TokenKind::Eq)? {
 				Some(self.parse_maybe_assign(if is_for { ForInit::Yes } else { ForInit::No }, &mut None)?)
 			} else {
@@ -1051,7 +1050,7 @@ impl Parser<'_> {
 			};
 			let declarator = self.add(NodeKind::VariableDeclarator { id, init }, decl_start);
 			if self.typescript() {
-				TypeScript::var_declarator(self, declarator, kind)?;
+				TypeScript::var_declarator(self, declarator, kind, definite)?;
 			}
 			declarations.push(Some(declarator));
 			if !self.eat(TokenKind::Comma)? {

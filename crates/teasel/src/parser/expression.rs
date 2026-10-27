@@ -594,12 +594,10 @@ impl Parser<'_> {
 		if !no_calls && self.eat(TokenKind::ParenL)? {
 			let mut errors = Some(DestructuringErrors::default());
 			let old = self.take_yield_await();
-			if self.typescript() {
-				TypeScript::paren_list_start(self, maybe_async_arrow);
-			}
+			let outer = self.typescript() && TypeScript::paren_list_start(self, maybe_async_arrow);
 			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut errors)?;
 			if self.typescript() {
-				TypeScript::paren_list_end(self);
+				TypeScript::paren_list_end(self, outer);
 			}
 			if maybe_async_arrow && !optional && self.async_arrow_follows(start)? {
 				self.check_pattern_errors(&errors, false)?;
@@ -717,12 +715,10 @@ impl Parser<'_> {
 			}
 			TokenKind::BracketL => {
 				self.next()?;
-				if self.typescript() {
-					TypeScript::paren_list_start(self, false);
-				}
+				let outer = self.typescript() && TypeScript::paren_list_start(self, false);
 				let elements = self.parse_expr_list(TokenKind::BracketR, true, true, errors)?;
 				if self.typescript() {
-					TypeScript::paren_list_end(self);
+					TypeScript::paren_list_end(self, outer);
 					TypeScript::list_items(self, &elements)?;
 				}
 				let elements = self.list_from(elements);
@@ -880,9 +876,7 @@ impl Parser<'_> {
 	/// Parses the comma-separated expressions after an opening paren through the closing one,
 	/// which may turn out to be arrow function parameters.
 	pub(crate) fn parse_paren_items(&mut self) -> Result<ParenItems> {
-		if self.typescript() {
-			TypeScript::paren_list_start(self, true);
-		}
+		let outer = self.typescript() && TypeScript::paren_list_start(self, true);
 		let inner_start = self.tok.start;
 		let mut items = self.items();
 		let mut first = true;
@@ -918,7 +912,7 @@ impl Parser<'_> {
 		let inner_end = self.prev_end;
 		self.expect(TokenKind::ParenR)?;
 		if self.typescript() {
-			TypeScript::paren_list_end(self);
+			TypeScript::paren_list_end(self, outer);
 		}
 		Ok(ParenItems {
 			items,
@@ -957,12 +951,10 @@ impl Parser<'_> {
 			return self.error(self.start_of(callee), Code::InvalidSuper);
 		}
 		let arguments = if self.eat(TokenKind::ParenL)? {
-			if self.typescript() {
-				TypeScript::paren_list_start(self, false);
-			}
+			let outer = self.typescript() && TypeScript::paren_list_start(self, false);
 			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut None)?;
 			if self.typescript() {
-				TypeScript::paren_list_end(self);
+				TypeScript::paren_list_end(self, outer);
 				TypeScript::list_items(self, &args)?;
 			}
 			self.list_from(args)
@@ -1297,18 +1289,19 @@ impl Parser<'_> {
 			function_flags(is_async, generator) | SCOPE_SUPER | if allow_direct_super { SCOPE_DIRECT_SUPER } else { 0 },
 		);
 		let kind = FunctionKind::Method { in_class, kind };
-		if self.typescript() {
-			TypeScript::function_start(self, kind)?;
-		}
+		let mut frame = if self.typescript() {
+			Some(TypeScript::function_start(self, kind)?)
+		} else {
+			None
+		};
 		let start = self.tok.start;
 		self.expect(TokenKind::ParenL)?;
 		let params = self.parse_binding_list(TokenKind::ParenR, false, true, in_class)?;
 		self.check_yield_await_in_default_params()?;
 		let params = self.list_from(params);
-		let bodiless = if self.typescript() {
-			TypeScript::function_body(self, start, None, params, is_async, generator, kind)?
-		} else {
-			None
+		let bodiless = match &mut frame {
+			Some(frame) => TypeScript::function_body(self, frame, start, None, params, is_async, generator, kind)?,
+			None => None,
 		};
 		let node = match bodiless {
 			Some(node) => {
@@ -1328,8 +1321,8 @@ impl Parser<'_> {
 			}
 		};
 		self.restore_yield_await(old);
-		if self.typescript() {
-			TypeScript::function_end(self, node)?;
+		if let Some(frame) = frame {
+			TypeScript::function_end(self, node, frame)?;
 		}
 		Ok(node)
 	}
@@ -1343,10 +1336,12 @@ impl Parser<'_> {
 	) -> Result<NodeId> {
 		let old = self.take_yield_await();
 		self.enter_scope(function_flags(is_async, false) | SCOPE_ARROW);
-		if self.typescript() {
+		let frame = if self.typescript() {
 			TypeScript::arrow_start(self, start);
-			TypeScript::function_start(self, FunctionKind::Arrow)?;
-		}
+			Some(TypeScript::function_start(self, FunctionKind::Arrow)?)
+		} else {
+			None
+		};
 		let params = self.make_patterns(params, true)?;
 		let params = self.list_from(params);
 		let (body, expression) = self.parse_function_body(start, None, params, true, false, for_init)?;
@@ -1360,8 +1355,8 @@ impl Parser<'_> {
 			},
 			start,
 		);
-		if self.typescript() {
-			TypeScript::function_end(self, node)?;
+		if let Some(frame) = frame {
+			TypeScript::function_end(self, node, frame)?;
 		}
 		Ok(node)
 	}
