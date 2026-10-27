@@ -1,11 +1,11 @@
 use super::ast::Extras;
 use crate::ast::{Ast, List, NodeId, NodeKind};
 use crate::layout::Ty;
-use crate::parser::tests::{Failed, dump as dump_with, expand, one};
+use crate::parser::tests::{Failed, dump as dump_with, expand, one, typescript};
 use crate::parser::{Entry, Options};
 
 fn at(entry: Entry, src: &str, offset: u32, options: Options, stop: &str) -> Result<(Ast, NodeId, u32), Failed> {
-	one(super::parse_at(src, offset, None, entry, options, stop))
+	one(crate::parse_at(src, offset, None, entry, typescript(options), stop))
 }
 
 fn extension(ast: &Ast, id: NodeId, index: u32) -> String {
@@ -190,12 +190,12 @@ fn accessor_belongs_to_a_property() {
 #[test]
 fn program_in_a_range() {
 	let src = "<script>let a: number = 1;</script>{a}";
-	let (ast, root, _) = one(super::parse_at(
+	let (ast, root, _) = one(crate::parse_at(
 		src,
 		8,
 		Some(26),
 		Entry::Program,
-		Options(Options::MODULE),
+		Options(Options::MODULE | Options::TYPESCRIPT),
 		"",
 	))
 	.unwrap();
@@ -275,7 +275,7 @@ fn failed_attempts_leave_nothing() {
 fn failed_attempt_leaves_no_scope() {
 	let options = Options(Options::MODULE | Options::ERROR_RECOVERY);
 	let src = "let b; <T>(x) => { let a; let a; }; let b;";
-	let (ast, _, _) = one(super::parse_at(src, 0, None, Entry::Program, options, "")).unwrap();
+	let (ast, _, _) = one(crate::parse_at(src, 0, None, Entry::Program, typescript(options), "")).unwrap();
 	let redeclared: Vec<u32> = ast
 		.errors
 		.iter()
@@ -304,7 +304,7 @@ fn nested_ambiguity_is_linear() {
 		nest("a ? async (b) : c => ", "d", ""),
 	] {
 		let started = std::time::Instant::now();
-		one(super::parse_at(&src, 0, None, Entry::Program, options, "")).unwrap();
+		one(crate::parse_at(&src, 0, None, Entry::Program, typescript(options), "")).unwrap();
 		assert!(started.elapsed().as_millis() < 100, "{src}");
 	}
 }

@@ -1,4 +1,4 @@
-//! TypeScript as an extension of the JavaScript grammar.
+//! TypeScript's grammar where it departs from JavaScript's, and what the parser keeps to read it.
 
 use crate::error::Code;
 pub mod ast;
@@ -7,7 +7,7 @@ mod declarations;
 mod tests;
 mod types;
 
-use crate::ast::{AssignmentOperator, Ast, FieldKind, List, MethodKind, NodeId, NodeKind, UnaryOperator, VariableKind};
+use crate::ast::{AssignmentOperator, FieldKind, List, MethodKind, NodeId, NodeKind, UnaryOperator, VariableKind};
 use crate::error::SyntaxError;
 use crate::interner::FastMap;
 use crate::interner::StrId;
@@ -15,30 +15,15 @@ use crate::lexer::token::{Keyword, TokenKind};
 use crate::parser::expression::{assignment_operator, starts_expression};
 use crate::parser::scope::{SCOPE_ARROW, function_flags};
 use crate::parser::statement::{ClassKind, StatementPlace};
-use crate::parser::{
-	Context, DestructuringErrors, Entry, Errors, Extension, ForInit, FunctionKind, Options, Parser, Result, Unwrap,
-};
+use crate::parser::{Context, DestructuringErrors, Errors, ForInit, FunctionKind, Parser, Result, Unwrap};
 use ast::{Accessibility, Data, Extras, Kind, TsKind};
 use declarations::Head;
 use types::TypeParameterModifiers;
 
-/// Parses one `entry` of TypeScript at `start` of `src` cut at `end`; see `parser::parse_at`.
-pub fn parse_at(
-	src: &str,
-	start: u32,
-	end: Option<u32>,
-	entry: Entry,
-	options: Options,
-	stop: &str,
-) -> (Ast, std::result::Result<(List, u32), SyntaxError>) {
-	let (ast, parsed) = crate::parser::parse_at::<TypeScript>(src, start, end, entry, options, stop, None);
-	(*ast, parsed.map_err(|e| *e))
-}
-
 /// Parser state that only TypeScript needs. `State` is copied into every snapshot, so it stays
 /// small; the name tables only grow within a scope and are truncated instead.
 #[derive(Default)]
-pub struct TypeScript {
+pub(crate) struct TypeScript {
 	state: State,
 	types: Names,
 	export_only: Names,
@@ -61,8 +46,11 @@ impl std::ops::DerefMut for TypeScript {
 	}
 }
 
+/// What a snapshot keeps of TypeScript's state: the state, and how many names each table had.
+pub(crate) type Saved = (State, usize, usize);
+
 #[derive(Clone, Default)]
-pub struct State {
+pub(crate) struct State {
 	disallow_conditional_types: bool,
 	infer_depth: u32,
 	ambient: bool,
@@ -211,7 +199,7 @@ modifiers! {
 	"const" => is_const = true,
 }
 
-impl Parser<'_, TypeScript> {
+impl Parser<'_> {
 	pub(crate) fn ts(&mut self, kind: TsKind, start: u32) -> NodeId {
 		let index = self.ast.extension.nodes.len() as u32;
 		self.ast.extension.nodes.push(kind);
@@ -259,7 +247,7 @@ impl Parser<'_, TypeScript> {
 			}
 			if optional
 				&& !signature
-				&& !self.ext.ambient
+				&& !self.ts.ambient
 				&& matches!(
 					self.kind(binding),
 					NodeKind::ObjectPattern { .. } | NodeKind::ArrayPattern { .. }
@@ -354,7 +342,7 @@ impl Parser<'_, TypeScript> {
 	fn parse_decorator(&mut self) -> Result<NodeId> {
 		let start = self.tok.start;
 		self.next()?;
-		self.ext.decorators.push(Vec::new());
+		self.ts.decorators.push(Vec::new());
 		let expression_start = self.tok.start;
 		let mut expression = if self.is(TokenKind::ParenL) {
 			self.next()?;
@@ -393,14 +381,14 @@ impl Parser<'_, TypeScript> {
 				callee_start,
 			);
 		}
-		self.ext.decorators.pop();
+		self.ts.decorators.pop();
 		Ok(self.ts(TsKind::Decorator { expression }, start))
 	}
 
 	/// Decorators before a class, kept until the class takes them.
 	fn parse_decorators(&mut self, allow_export: bool) -> Result<()> {
 		if self
-			.ext
+			.ts
 			.decorators
 			.last()
 			.is_some_and(|decorators| !decorators.is_empty())
@@ -417,11 +405,11 @@ impl Parser<'_, TypeScript> {
 		if !self.peek_tokens(|p| p.decorated_class_follows())? {
 			return self.error(self.tok.start, Code::DecoratorPlacement);
 		}
-		self.ext.decorators_before_export = self.is_keyword(Keyword::Export);
-		if self.ext.decorators.is_empty() {
-			self.ext.decorators.push(Vec::new());
+		self.ts.decorators_before_export = self.is_keyword(Keyword::Export);
+		if self.ts.decorators.is_empty() {
+			self.ts.decorators.push(Vec::new());
 		}
-		self.ext.decorators.last_mut().unwrap().extend(decorators);
+		self.ts.decorators.last_mut().unwrap().extend(decorators);
 		Ok(())
 	}
 
@@ -445,7 +433,7 @@ impl Parser<'_, TypeScript> {
 	}
 
 	fn take_decorators(&mut self) -> Option<List> {
-		let pending = self.ext.decorators.last_mut()?;
+		let pending = self.ts.decorators.last_mut()?;
 		if pending.is_empty() {
 			return None;
 		}
@@ -469,13 +457,13 @@ impl Parser<'_, TypeScript> {
 			unreachable!()
 		};
 		let depth = self.scope_depth();
-		if unique && self.ext.types.contains_at(depth, name) {
+		if unique && self.ts.types.contains_at(depth, name) {
 			return self.error_name(self.start_of(id), Code::TypeRedeclaration, name);
 		}
-		if self.ext.global_depth > 0 {
-			self.ext.globals.insert(name);
+		if self.ts.global_depth > 0 {
+			self.ts.globals.insert(name);
 		}
-		self.ext.types.push(depth, name);
+		self.ts.types.push(depth, name);
 		Ok(())
 	}
 
@@ -484,7 +472,7 @@ impl Parser<'_, TypeScript> {
 			unreachable!()
 		};
 		let depth = self.scope_depth();
-		self.ext.export_only.push(depth, name);
+		self.ts.export_only.push(depth, name);
 	}
 
 	/// A class member's name the way error messages print it.
@@ -605,13 +593,13 @@ impl Parser<'_, TypeScript> {
 	// the head alone is tried: trying the whole expression read it again as an assertion or a call, 2x per level
 	fn try_generic_arrow(&mut self, start: u32, is_async: bool, for_init: ForInit) -> Result<Option<NodeId>> {
 		let at = self.tok.start;
-		let spine = self.ext.needs_colon_at == Some(start);
-		if self.ext.not_arrow.contains(&(at, spine)) {
+		let spine = self.ts.needs_colon_at == Some(start);
+		if self.ts.not_arrow.contains(&(at, spine)) {
 			return Ok(None);
 		}
 		let before = spine.then(|| self.snapshot());
-		let old = self.ext.maybe_in_arrow_parameters;
-		self.ext.maybe_in_arrow_parameters = true;
+		let old = self.ts.maybe_in_arrow_parameters;
+		self.ts.maybe_in_arrow_parameters = true;
 		let mut head = self.attempt(|p| {
 			let type_parameters = p.parse_type_parameters(TypeParameterModifiers::Const)?;
 			p.expect(TokenKind::ParenL)?;
@@ -627,7 +615,7 @@ impl Parser<'_, TypeScript> {
 			p.expect(TokenKind::Arrow)?;
 			Ok((type_parameters, params, return_type))
 		})?;
-		self.ext.maybe_in_arrow_parameters = old;
+		self.ts.maybe_in_arrow_parameters = old;
 		if let (Some((_, _, Some(_))), Some(before)) = (&head, before)
 			&& !self.colon_after_body(is_async)?
 		{
@@ -635,20 +623,20 @@ impl Parser<'_, TypeScript> {
 			head = None;
 		}
 		let Some((type_parameters, params, return_type)) = head else {
-			self.ext.not_arrow.insert((at, spine));
+			self.ts.not_arrow.insert((at, spine));
 			return Ok(None);
 		};
 		if let Some(&this) = params.iter().flatten().find(|&&param| self.ident_is(param, "this")) {
 			return self.error(self.start_of(this), Code::InvalidAssignmentTarget);
 		}
-		self.ext.arrow_return_type = return_type;
+		self.ts.arrow_return_type = return_type;
 		let arrow = self.parse_arrow_expression(start, params, is_async, for_init)?;
 		self.extras_mut(arrow).type_parameters = Some(type_parameters);
 		Ok(Some(arrow))
 	}
 
 	fn return_type_fits(&mut self, start: u32, is_async: bool) -> Result<bool> {
-		if !self.is(TokenKind::Colon) || self.ext.needs_colon_at != Some(start) {
+		if !self.is(TokenKind::Colon) || self.ts.needs_colon_at != Some(start) {
 			return Ok(true);
 		}
 		match self.lookahead(|p| {
@@ -661,13 +649,13 @@ impl Parser<'_, TypeScript> {
 
 	fn colon_after_body(&mut self, is_async: bool) -> Result<bool> {
 		let at = self.tok.start;
-		if let Some(&colon) = self.ext.colon_after_body.get(&at) {
+		if let Some(&colon) = self.ts.colon_after_body.get(&at) {
 			return Ok(colon);
 		}
 		let colon = match self.lookahead(|p| {
 			let old = p.take_yield_await();
 			p.enter_scope(function_flags(is_async, false) | SCOPE_ARROW);
-			p.ext.body_needs_colon = true;
+			p.ts.body_needs_colon = true;
 			TypeScript::function_start(p, FunctionKind::Arrow)?;
 			let params = p.list_from(Vec::new());
 			p.parse_function_body(at, None, params, true, false, ForInit::No)?;
@@ -677,7 +665,7 @@ impl Parser<'_, TypeScript> {
 			Err(error) if error.code.is_limit() => return Err(error),
 			answer => answer.unwrap_or(false),
 		};
-		self.ext.colon_after_body.insert(at, colon);
+		self.ts.colon_after_body.insert(at, colon);
 		Ok(colon)
 	}
 
@@ -781,7 +769,7 @@ impl Parser<'_, TypeScript> {
 	/// Reads a `: type` before `=>` into `arrow_return_type`; false when there is a colon but no
 	/// arrow follows it.
 	fn take_arrow_return_type(&mut self) -> Result<bool> {
-		self.ext.arrow_return_type = None;
+		self.ts.arrow_return_type = None;
 		if !self.is(TokenKind::Colon) {
 			return Ok(true);
 		}
@@ -792,7 +780,7 @@ impl Parser<'_, TypeScript> {
 			}
 			Ok(return_type)
 		})?;
-		self.ext.arrow_return_type = return_type;
+		self.ts.arrow_return_type = return_type;
 		Ok(return_type.is_some())
 	}
 
@@ -815,22 +803,14 @@ impl Parser<'_, TypeScript> {
 	}
 }
 
-impl Extension for TypeScript {
-	type Snapshot = (State, usize, usize);
-
-	const DUPLICATE_EXPORT_ERRORS: bool = false;
-	const DECLARES_FUNCTION_NAME_AFTER_BODY: bool = true;
-	const STATIC_IS_A_MODIFIER: bool = true;
-
-	fn init(p: &mut Parser<Self>) {
-		p.lexer.at_sign = true;
-	}
-
-	fn save(&self) -> Self::Snapshot {
+/// TypeScript's grammar at the points where it departs from JavaScript's, each read where the parser
+/// meets one in a TypeScript parse.
+impl TypeScript {
+	pub(crate) fn save(&self) -> Saved {
 		(self.state.clone(), self.types.log.len(), self.export_only.log.len())
 	}
 
-	fn restore(&mut self, (state, types, export_only): Self::Snapshot) {
+	pub(crate) fn restore(&mut self, (state, types, export_only): Saved) {
 		self.state = state;
 		self.types.truncate(types);
 		self.export_only.truncate(export_only);
@@ -838,7 +818,8 @@ impl Extension for TypeScript {
 
 	// Statements and modules
 
-	fn statement(p: &mut Parser<Self>, context: Context, _place: StatementPlace) -> Result<Option<NodeId>> {
+	/// First look at a statement; `Some` replaces it entirely.
+	pub(crate) fn statement(p: &mut Parser, context: Context, _place: StatementPlace) -> Result<Option<NodeId>> {
 		if context != Context::None {
 			return Ok(None);
 		}
@@ -854,21 +835,22 @@ impl Extension for TypeScript {
 		Ok(None)
 	}
 
-	fn export_head(p: &mut Parser<Self>, start: u32) -> Result<Option<NodeId>> {
+	/// Right after `export`; `Some` is a whole export statement.
+	pub(crate) fn export_head(p: &mut Parser, start: u32) -> Result<Option<NodeId>> {
 		if p.is_keyword(Keyword::Import) {
 			p.next()?;
 			if p.is_contextual("type") && p.peek_char().0 != Some('=') {
-				p.ext.outer_kind = Some(Kind::Type);
+				p.ts.outer_kind = Some(Kind::Type);
 				p.next()?;
 			} else {
-				p.ext.outer_kind = Some(Kind::Value);
+				p.ts.outer_kind = Some(Kind::Value);
 			}
 			let node = p.parse_import_equals_declaration(start, true)?;
-			p.ext.outer_kind = None;
+			p.ts.outer_kind = None;
 			return Ok(Some(node));
 		}
 		if p.eat(TokenKind::Eq)? {
-			if p.ext.in_namespace {
+			if p.ts.in_namespace {
 				return p.error(start, Code::ExportAssignmentInNamespace);
 			}
 			let expression = p.parse_expression(false, &mut None)?;
@@ -883,15 +865,15 @@ impl Extension for TypeScript {
 		}
 		if p.is_contextual("type") && matches!(p.peek_token()?.kind, TokenKind::BraceL | TokenKind::Star) {
 			p.next()?;
-			p.ext.outer_kind = Some(Kind::Type);
-			p.ext.export_kind = Some(Kind::Type);
+			p.ts.outer_kind = Some(Kind::Type);
+			p.ts.export_kind = Some(Kind::Type);
 		} else {
-			p.ext.outer_kind = Some(Kind::Value);
+			p.ts.outer_kind = Some(Kind::Value);
 		}
 		Ok(None)
 	}
 
-	fn export_declaration(p: &mut Parser<Self>) -> Result<Option<NodeId>> {
+	pub(crate) fn export_declaration(p: &mut Parser) -> Result<Option<NodeId>> {
 		if p.is(TokenKind::At) {
 			return p.parse_statement(Context::None, StatementPlace::Block, None).map(Some);
 		}
@@ -914,12 +896,12 @@ impl Extension for TypeScript {
 			p.ts_kind(declaration),
 			Some(TsKind::InterfaceDeclaration { .. } | TsKind::TypeAliasDeclaration { .. })
 		) {
-			p.ext.export_kind = Some(Kind::Type);
+			p.ts.export_kind = Some(Kind::Type);
 		}
 		Ok(Some(declaration))
 	}
 
-	fn export_default(p: &mut Parser<Self>) -> Result<Option<NodeId>> {
+	pub(crate) fn export_default(p: &mut Parser) -> Result<Option<NodeId>> {
 		if p.is(TokenKind::At) {
 			p.parse_decorators(false)?;
 		}
@@ -928,7 +910,7 @@ impl Extension for TypeScript {
 			let next = p.peek_token()?;
 			if next.kind == TokenKind::Keyword(Keyword::Class) && !next.newline_before {
 				p.next()?;
-				p.ext.next_class = ClassFrame {
+				p.ts.next_class = ClassFrame {
 					is_abstract: true,
 					start: Some(start),
 					..ClassFrame::default()
@@ -943,22 +925,23 @@ impl Extension for TypeScript {
 		Ok(None)
 	}
 
-	fn export_end(p: &mut Parser<Self>, node: NodeId) {
-		if let Some(kind) = p.ext.export_kind.take() {
+	pub(crate) fn export_end(p: &mut Parser, node: NodeId) {
+		if let Some(kind) = p.ts.export_kind.take() {
 			p.extras_mut(node).export_kind = Some(kind);
 		}
-		p.ext.outer_kind = None;
+		p.ts.outer_kind = None;
 	}
 
-	fn export_specifier(p: &mut Parser<Self>) -> Result<Option<NodeId>> {
+	pub(crate) fn export_specifier(p: &mut Parser) -> Result<Option<NodeId>> {
 		if p.is_contextual("type") {
 			return p.parse_type_only_specifier(false).map(Some);
 		}
 		Ok(None)
 	}
 
-	fn import_head(p: &mut Parser<Self>, start: u32) -> Result<Option<NodeId>> {
-		p.ext.outer_kind = Some(Kind::Value);
+	/// Right after `import`; `Some` is a whole import statement.
+	pub(crate) fn import_head(p: &mut Parser, start: u32) -> Result<Option<NodeId>> {
+		p.ts.outer_kind = Some(Kind::Value);
 		if p.is_ident() || p.is(TokenKind::Star) || p.is(TokenKind::BraceL) {
 			let mut ahead = p.peek_token()?;
 			let ahead_is_from = matches!(ahead.kind, TokenKind::Ident(n) if p.str(n) == "from");
@@ -968,20 +951,20 @@ impl Extension for TypeScript {
 				&& ahead.kind != TokenKind::Eq
 			{
 				p.next()?;
-				p.ext.outer_kind = Some(Kind::Type);
+				p.ts.outer_kind = Some(Kind::Type);
 				ahead = p.peek_token()?;
 			}
 			if p.is_ident() && ahead.kind == TokenKind::Eq {
 				let node = p.parse_import_equals_declaration(start, false)?;
-				p.ext.outer_kind = None;
+				p.ts.outer_kind = None;
 				return Ok(Some(node));
 			}
 		}
 		Ok(None)
 	}
 
-	fn import_end(p: &mut Parser<Self>, node: NodeId) -> Result<()> {
-		let kind = p.ext.outer_kind.take().unwrap_or(Kind::Value);
+	pub(crate) fn import_end(p: &mut Parser, node: NodeId) -> Result<()> {
+		let kind = p.ts.outer_kind.take().unwrap_or(Kind::Value);
 		p.extras_mut(node).import_kind = Some(kind);
 		let NodeKind::ImportDeclaration { specifiers, .. } = p.kind(node) else {
 			unreachable!()
@@ -1008,7 +991,7 @@ impl Extension for TypeScript {
 		Ok(())
 	}
 
-	fn import_specifier(p: &mut Parser<Self>) -> Result<Option<NodeId>> {
+	pub(crate) fn import_specifier(p: &mut Parser) -> Result<Option<NodeId>> {
 		if p.is_contextual("type") {
 			return p.parse_type_only_specifier(true).map(Some);
 		}
@@ -1016,39 +999,46 @@ impl Extension for TypeScript {
 	}
 
 	// a type-only import binds no value: a value may take the name, an export may still name it
-	fn import_binding(p: &Parser<Self>) -> crate::parser::scope::Binding {
+	/// How an import's local name binds: `None` for one that binds no value.
+	pub(crate) fn import_binding(p: &Parser) -> crate::parser::scope::Binding {
 		use crate::parser::scope::Binding;
-		if p.ext.outer_kind == Some(Kind::Type) {
+		if p.ts.outer_kind == Some(Kind::Type) {
 			Binding::None
 		} else {
 			Binding::Lexical
 		}
 	}
 
-	fn exports_in_script(p: &Parser<Self>) -> bool {
-		p.ext.module_blocks > 0
+	/// Whether an `export` here belongs to TypeScript's own scoping, a namespace body say, so the
+	/// script goal does not forbid it.
+	pub(crate) fn exports_in_script(p: &Parser) -> bool {
+		p.ts.module_blocks > 0
 	}
 
-	fn in_ambient(p: &Parser<Self>) -> bool {
-		p.ext.ambient
+	/// Whether the code describes rather than defines, an ambient declaration's body, where a
+	/// definition's rules do not apply.
+	pub(crate) fn in_ambient(p: &Parser) -> bool {
+		p.ts.ambient
 	}
 
-	fn declares_export(p: &mut Parser<Self>, name: StrId) -> bool {
-		p.ext.module_blocks > 0
-			|| p.ext.types.contains(name)
-			|| p.ext.export_only.contains(name)
-			|| p.ext.globals.contains(&name)
+	/// Whether TypeScript declared `name` in a way that satisfies a local `export { name }`.
+	pub(crate) fn declares_export(p: &mut Parser, name: StrId) -> bool {
+		p.ts.module_blocks > 0
+			|| p.ts.types.contains(name)
+			|| p.ts.export_only.contains(name)
+			|| p.ts.globals.contains(&name)
 	}
 
-	fn scope_exit(p: &mut Parser<Self>) {
+	pub(crate) fn scope_exit(p: &mut Parser) {
 		let depth = p.scope_depth();
-		p.ext.types.exit(depth);
-		p.ext.export_only.exit(depth);
+		p.ts.types.exit(depth);
+		p.ts.export_only.exit(depth);
 	}
 
 	// Bindings
 
-	fn var_id(p: &mut Parser<Self>, id: NodeId) -> Result<()> {
+	/// After the id of a variable declarator.
+	pub(crate) fn var_id(p: &mut Parser, id: NodeId) -> Result<()> {
 		let mut definite = false;
 		if matches!(p.kind(id), NodeKind::Identifier { .. }) && !p.tok.newline_before && p.is(TokenKind::Bang) {
 			p.next()?;
@@ -1059,28 +1049,30 @@ impl Extension for TypeScript {
 			p.extras_mut(id).type_annotation = Some(annotation);
 			p.ast.node_mut(id).end = p.prev_end;
 		}
-		p.ext.definite.push(definite);
+		p.ts.definite.push(definite);
 		Ok(())
 	}
 
-	fn var_declarator(p: &mut Parser<Self>, node: NodeId, kind: VariableKind) -> Result<()> {
-		if p.ext.definite.pop() == Some(true) {
+	pub(crate) fn var_declarator(p: &mut Parser, node: NodeId, kind: VariableKind) -> Result<()> {
+		if p.ts.definite.pop() == Some(true) {
 			p.extras_mut(node).definite = true;
 			if let NodeKind::VariableDeclarator { init: Some(_), .. } = p.kind(node) {
 				return p.error(p.start_of(node), Code::DefiniteWithInitializer);
 			}
 		}
-		if p.ext.ambient {
+		if p.ts.ambient {
 			p.check_ambient_initializer(node, kind)?;
 		}
 		Ok(())
 	}
 
-	fn allows_missing_initializer(p: &mut Parser<Self>) -> bool {
-		p.ext.ambient
+	/// Whether a declarator may go without an initializer where JavaScript requires one.
+	pub(crate) fn allows_missing_initializer(p: &mut Parser) -> bool {
+		p.ts.ambient
 	}
 
-	fn parameter(p: &mut Parser<Self>, allow_modifiers: bool) -> Result<Option<NodeId>> {
+	/// A whole parameter of a parameter list; `allow_modifiers` inside class methods.
+	pub(crate) fn parameter(p: &mut Parser, allow_modifiers: bool) -> Result<Option<NodeId>> {
 		let mut decorators = Vec::new();
 		while p.is(TokenKind::At) {
 			decorators.push(p.parse_decorator()?);
@@ -1127,7 +1119,7 @@ impl Extension for TypeScript {
 			p.extras_mut(left).type_annotation = Some(annotation);
 		}
 		p.ast.node_mut(left).end = p.prev_end;
-		if rest && p.ext.ambient && p.is(TokenKind::Comma) && p.peek_char().0 == Some(')') {
+		if rest && p.ts.ambient && p.is(TokenKind::Comma) && p.peek_char().0 == Some(')') {
 			p.next()?;
 		}
 		let item = if rest || this {
@@ -1152,7 +1144,7 @@ impl Extension for TypeScript {
 		Ok(Some(node))
 	}
 
-	fn catch_param(p: &mut Parser<Self>, param: NodeId) -> Result<()> {
+	pub(crate) fn catch_param(p: &mut Parser, param: NodeId) -> Result<()> {
 		if p.is(TokenKind::Colon) {
 			let annotation = p.parse_type_annotation(true, None)?;
 			let Some(TsKind::TypeAnnotation { type_annotation }) = p.ts_kind(annotation) else {
@@ -1170,7 +1162,8 @@ impl Extension for TypeScript {
 		Ok(())
 	}
 
-	fn pattern_annotation(p: &mut Parser<Self>, pattern: NodeId) -> Result<()> {
+	/// After a pattern read on its own, the `Pattern` entry.
+	pub(crate) fn pattern_annotation(p: &mut Parser, pattern: NodeId) -> Result<()> {
 		if p.is(TokenKind::Colon) {
 			let annotation = p.parse_type_annotation(true, None)?;
 			p.extras_mut(pattern).type_annotation = Some(annotation);
@@ -1181,18 +1174,19 @@ impl Extension for TypeScript {
 
 	// Functions and classes
 
-	fn function_start(p: &mut Parser<Self>, kind: FunctionKind) -> Result<()> {
+	/// Before the parameters of a function, method or arrow.
+	pub(crate) fn function_start(p: &mut Parser, kind: FunctionKind) -> Result<()> {
 		let mut frame = FunctionFrame {
 			in_class_method: matches!(kind, FunctionKind::Method { in_class: true, .. }),
-			arrow_parameters: p.ext.maybe_in_arrow_parameters,
+			arrow_parameters: p.ts.maybe_in_arrow_parameters,
 			..FunctionFrame::default()
 		};
-		p.ext.maybe_in_arrow_parameters = false;
+		p.ts.maybe_in_arrow_parameters = false;
 		match kind {
 			FunctionKind::Arrow => {
-				frame.return_type = p.ext.arrow_return_type.take();
-				if std::mem::take(&mut p.ext.body_needs_colon) && !p.is(TokenKind::BraceL) {
-					p.ext.needs_colon_at = Some(p.tok.start);
+				frame.return_type = p.ts.arrow_return_type.take();
+				if std::mem::take(&mut p.ts.body_needs_colon) && !p.is(TokenKind::BraceL) {
+					p.ts.needs_colon_at = Some(p.tok.start);
 				}
 			}
 			FunctionKind::Method { in_class: true, .. } => {}
@@ -1208,12 +1202,13 @@ impl Extension for TypeScript {
 		{
 			return p.error(p.start_of(type_parameters), Code::AccessorTypeParameters);
 		}
-		p.ext.functions.push(frame);
+		p.ts.functions.push(frame);
 		Ok(())
 	}
 
-	fn function_body(
-		p: &mut Parser<Self>,
+	/// After the parameters, before the body; `Some` is a function without a body.
+	pub(crate) fn function_body(
+		p: &mut Parser,
 		start: u32,
 		id: Option<NodeId>,
 		params: List,
@@ -1263,7 +1258,7 @@ impl Extension for TypeScript {
 				}
 				_ => {}
 			}
-			p.ext.functions.last_mut().unwrap().return_type = Some(return_type);
+			p.ts.functions.last_mut().unwrap().return_type = Some(return_type);
 		}
 		let bodiless = match kind {
 			FunctionKind::Declaration => Some(TsKind::DeclareFunction {
@@ -1279,7 +1274,7 @@ impl Extension for TypeScript {
 			}),
 			_ => None,
 		};
-		if generator && p.ext.ambient && bodiless.is_some() {
+		if generator && p.ts.ambient && bodiless.is_some() {
 			return p.error(start, Code::GeneratorInAmbient);
 		}
 		let signature = bodiless.is_some() && !p.is(TokenKind::BraceL) && p.is_line_terminator()?;
@@ -1290,18 +1285,18 @@ impl Extension for TypeScript {
 			}
 			return Ok(Some(p.ts(kind, start)));
 		}
-		if p.ext.ambient && bodiless.is_some() {
+		if p.ts.ambient && bodiless.is_some() {
 			return p.error(start, Code::ImplementationInAmbient);
 		}
 		Ok(None)
 	}
 
-	fn function_end(p: &mut Parser<Self>, node: NodeId) -> Result<()> {
+	pub(crate) fn function_end(p: &mut Parser, node: NodeId) -> Result<()> {
 		if let NodeKind::ArrowFunctionExpression { params, .. } = p.kind(node) {
 			p.check_parameter_list(params, false)?;
 		}
-		let frame = p.ext.functions.pop().unwrap();
-		p.ext.maybe_in_arrow_parameters = frame.arrow_parameters;
+		let frame = p.ts.functions.pop().unwrap();
+		p.ts.maybe_in_arrow_parameters = frame.arrow_parameters;
 		if let Some(TsKind::DeclareFunction { id: Some(id), .. }) = p.ts_kind(node) {
 			p.declare_export_only(id);
 		}
@@ -1314,7 +1309,7 @@ impl Extension for TypeScript {
 		}
 		if frame.in_class_method
 			&& matches!(p.kind(node), NodeKind::FunctionExpression { .. })
-			&& let Some(element) = p.ext.elements.last()
+			&& let Some(element) = p.ts.elements.last()
 			&& element.extras.is_abstract
 		{
 			let (start, element) = (element.start, *element);
@@ -1324,46 +1319,50 @@ impl Extension for TypeScript {
 		Ok(())
 	}
 
-	fn accessor_this_param(p: &Parser<Self>, params: List) -> bool {
+	/// Whether an object literal accessor's first parameter is a `this` parameter, which does not
+	/// count.
+	pub(crate) fn accessor_this_param(p: &Parser, params: List) -> bool {
 		p.ast
 			.list(params)
 			.first()
 			.is_some_and(|param| param.is_some_and(|param| p.ident_is(param, "this")))
 	}
 
-	fn function_params(p: &Parser<Self>, node: NodeId) -> Option<List> {
+	/// The parameters of a function-shaped TypeScript node.
+	pub(crate) fn function_params(p: &Parser, node: NodeId) -> Option<List> {
 		match p.ts_kind(node) {
 			Some(TsKind::DeclareFunction { params, .. } | TsKind::DeclareMethod { params, .. }) => Some(params),
 			_ => None,
 		}
 	}
 
-	fn class_start(p: &mut Parser<Self>, kind: ClassKind) -> Result<()> {
-		let mut frame = std::mem::take(&mut p.ext.next_class);
+	pub(crate) fn class_start(p: &mut Parser, kind: ClassKind) -> Result<()> {
+		let mut frame = std::mem::take(&mut p.ts.next_class);
 		frame.is_declaration = kind != ClassKind::Expression;
 		if let Some(decorators) = p.take_decorators() {
 			frame.decorators = Some(decorators);
-			if !std::mem::take(&mut p.ext.decorators_before_export) {
+			if !std::mem::take(&mut p.ts.decorators_before_export) {
 				frame.start = Some(p.start_of(p.ast.list(decorators)[0].unwrap()));
 			}
 		}
-		frame.outer_abstract = p.ext.in_abstract_class;
-		p.ext.in_abstract_class = frame.is_abstract;
-		p.ext.classes.push(frame);
+		frame.outer_abstract = p.ts.in_abstract_class;
+		p.ts.in_abstract_class = frame.is_abstract;
+		p.ts.classes.push(frame);
 		Ok(())
 	}
 
-	fn starts_class_heritage(p: &mut Parser<Self>) -> bool {
+	/// Whether the token after `class` opens a heritage clause rather than naming the class.
+	pub(crate) fn starts_class_heritage(p: &mut Parser) -> bool {
 		p.is_contextual("implements")
 	}
 
-	fn class_type_parameters(p: &mut Parser<Self>) -> Result<()> {
+	pub(crate) fn class_type_parameters(p: &mut Parser) -> Result<()> {
 		let type_parameters = p.try_parse_type_parameters(TypeParameterModifiers::Class)?;
-		p.ext.classes.last_mut().unwrap().type_parameters = type_parameters;
+		p.ts.classes.last_mut().unwrap().type_parameters = type_parameters;
 		Ok(())
 	}
 
-	fn class_heritage(p: &mut Parser<Self>, has_super: bool) -> Result<()> {
+	pub(crate) fn class_heritage(p: &mut Parser, has_super: bool) -> Result<()> {
 		let mut super_type_arguments = None;
 		if has_super && (p.is(TokenKind::Lt) || p.is(TokenKind::LtLt)) {
 			super_type_arguments = p.parse_type_arguments_in_expression()?;
@@ -1374,16 +1373,16 @@ impl Extension for TypeScript {
 		} else {
 			None
 		};
-		let frame = p.ext.classes.last_mut().unwrap();
+		let frame = p.ts.classes.last_mut().unwrap();
 		frame.has_super = has_super;
 		frame.super_type_arguments = super_type_arguments;
 		frame.implements = implements;
 		Ok(())
 	}
 
-	fn class_end(p: &mut Parser<Self>, node: NodeId) {
-		let frame = p.ext.classes.pop().unwrap();
-		p.ext.in_abstract_class = frame.outer_abstract;
+	pub(crate) fn class_end(p: &mut Parser, node: NodeId) {
+		let frame = p.ts.classes.pop().unwrap();
+		p.ts.in_abstract_class = frame.outer_abstract;
 		if let Some(start) = frame.start {
 			p.ast.node_mut(node).start = start;
 		}
@@ -1396,7 +1395,8 @@ impl Extension for TypeScript {
 		extras.declare = frame.declare;
 	}
 
-	fn class_modifiers(p: &mut Parser<Self>) -> Result<bool> {
+	/// Modifiers before a class element; returns whether `static` was among them.
+	pub(crate) fn class_modifiers(p: &mut Parser) -> Result<bool> {
 		let mut decorators = Vec::new();
 		while p.is(TokenKind::At) {
 			decorators.push(p.parse_decorator()?);
@@ -1435,8 +1435,8 @@ impl Extension for TypeScript {
 		let outer_ambient = modifiers
 			.extras
 			.declare
-			.then(|| std::mem::replace(&mut p.ext.ambient, true));
-		p.ext.elements.push(ElementFrame {
+			.then(|| std::mem::replace(&mut p.ts.ambient, true));
+		p.ts.elements.push(ElementFrame {
 			start,
 			extras: modifiers.extras,
 			key: None,
@@ -1447,15 +1447,16 @@ impl Extension for TypeScript {
 		Ok(modifiers.extras.is_static)
 	}
 
-	fn type_parameters(p: &mut Parser<Self>) -> Result<NodeId> {
+	/// A type parameter list `<...>` at the cursor, for the entry that parses one on its own.
+	pub(crate) fn type_parameters(p: &mut Parser) -> Result<NodeId> {
 		p.parse_type_parameters(TypeParameterModifiers::Const)
 	}
 
-	fn class_index_signature(p: &mut Parser<Self>, start: u32) -> Result<Option<NodeId>> {
+	pub(crate) fn class_index_signature(p: &mut Parser, start: u32) -> Result<Option<NodeId>> {
 		let Some(signature) = p.try_parse_index_signature(start)? else {
-			let has_super = p.ext.classes.last().is_some_and(|c| c.has_super);
-			let extras = p.ext.elements.last().unwrap().extras;
-			if !p.ext.in_abstract_class && extras.is_abstract {
+			let has_super = p.ts.classes.last().is_some_and(|c| c.has_super);
+			let extras = p.ts.elements.last().unwrap().extras;
+			if !p.ts.in_abstract_class && extras.is_abstract {
 				return p.error(start, Code::AbstractOutsideAbstractClass);
 			}
 			if extras.is_override && !has_super {
@@ -1463,7 +1464,7 @@ impl Extension for TypeScript {
 			}
 			return Ok(None);
 		};
-		let ElementFrame { extras, accessor, .. } = *p.ext.elements.last().unwrap();
+		let ElementFrame { extras, accessor, .. } = *p.ts.elements.last().unwrap();
 		if extras.is_abstract {
 			return p.error_arg(start, Code::IndexSignatureModifier, "abstract");
 		}
@@ -1483,15 +1484,16 @@ impl Extension for TypeScript {
 		Ok(Some(signature))
 	}
 
-	fn class_key_end(p: &mut Parser<Self>, key: NodeId, computed: bool) -> Result<()> {
-		let element = p.ext.elements.last_mut().unwrap();
+	/// After the key of a class element.
+	pub(crate) fn class_key_end(p: &mut Parser, key: NodeId, computed: bool) -> Result<()> {
+		let element = p.ts.elements.last_mut().unwrap();
 		element.key = Some(key);
 		element.computed = computed;
 		let start = element.start;
 		let extras = element.extras;
 		let accessor = element.accessor;
 		if p.eat(TokenKind::Question)? {
-			p.ext.elements.last_mut().unwrap().extras.optional = true;
+			p.ts.elements.last_mut().unwrap().extras.optional = true;
 		}
 		let method = p.is(TokenKind::ParenL) || p.is(TokenKind::Lt);
 		if extras.readonly && method {
@@ -1506,18 +1508,18 @@ impl Extension for TypeScript {
 		Ok(())
 	}
 
-	fn starts_class_method(p: &mut Parser<Self>) -> bool {
+	pub(crate) fn starts_class_method(p: &mut Parser) -> bool {
 		p.is(TokenKind::Lt)
 	}
 
-	fn class_method_start(p: &mut Parser<Self>, kind: MethodKind) -> Result<()> {
+	pub(crate) fn class_method_start(p: &mut Parser, kind: MethodKind) -> Result<()> {
 		let type_parameters = p.try_parse_type_parameters(TypeParameterModifiers::Const)?;
 		if matches!(kind, MethodKind::Get | MethodKind::Set)
 			&& let Some(type_parameters) = type_parameters
 		{
 			return p.error(p.start_of(type_parameters), Code::AccessorTypeParameters);
 		}
-		let element = *p.ext.elements.last().unwrap();
+		let element = *p.ts.elements.last().unwrap();
 		let key = element.key.unwrap();
 		if matches!(p.kind(key), NodeKind::PrivateIdentifier { .. }) {
 			if let Some(accessibility) = element.extras.accessibility {
@@ -1531,12 +1533,13 @@ impl Extension for TypeScript {
 		{
 			return p.error(p.start_of(type_parameters), Code::ConstructorTypeParameters);
 		}
-		p.ext.elements.last_mut().unwrap().extras.type_parameters = type_parameters;
+		p.ts.elements.last_mut().unwrap().extras.type_parameters = type_parameters;
 		Ok(())
 	}
 
-	fn class_field_annotation(p: &mut Parser<Self>) -> Result<()> {
-		let element = *p.ext.elements.last().unwrap();
+	/// After the key of a class field, before its initializer.
+	pub(crate) fn class_field_annotation(p: &mut Parser) -> Result<()> {
+		let element = *p.ts.elements.last().unwrap();
 		let mut definite = false;
 		let mut optional = element.extras.optional;
 		if !optional {
@@ -1548,7 +1551,7 @@ impl Extension for TypeScript {
 			}
 		}
 		let type_annotation = p.try_parse_type_annotation()?;
-		let extras = &mut p.ext.elements.last_mut().unwrap().extras;
+		let extras = &mut p.ts.elements.last_mut().unwrap().extras;
 		extras.definite = definite;
 		extras.optional = optional;
 		extras.type_annotation = type_annotation;
@@ -1564,7 +1567,7 @@ impl Extension for TypeScript {
 				return p.raise(SyntaxError::new(element.start, Code::PrivateModifier).arg(accessibility));
 			}
 		} else if p.is(TokenKind::Eq) {
-			if p.ext.ambient && !(element.extras.readonly && type_annotation.is_none()) {
+			if p.ts.ambient && !(element.extras.readonly && type_annotation.is_none()) {
 				return p.error(p.tok.start, Code::InitializerInAmbient);
 			}
 			if element.extras.is_abstract {
@@ -1575,10 +1578,10 @@ impl Extension for TypeScript {
 		Ok(())
 	}
 
-	fn class_element_end(p: &mut Parser<Self>, node: NodeId) -> Result<()> {
-		let frame = p.ext.elements.pop().unwrap();
+	pub(crate) fn class_element_end(p: &mut Parser, node: NodeId) -> Result<()> {
+		let frame = p.ts.elements.pop().unwrap();
 		if let Some(outer) = frame.outer_ambient {
-			p.ext.ambient = outer;
+			p.ts.ambient = outer;
 		}
 		if frame.accessor
 			&& let NodeKind::PropertyDefinition { kind, .. } = &mut p.ast.node_mut(node).kind
@@ -1628,7 +1631,7 @@ impl Extension for TypeScript {
 				NodeKind::FunctionExpression { function } => (function.params, true),
 				_ => (Self::function_params(p, value).unwrap(), false),
 			};
-			if !has_body || kind == MethodKind::Get || !p.ext.classes.last().unwrap().is_declaration {
+			if !has_body || kind == MethodKind::Get || !p.ts.classes.last().unwrap().is_declaration {
 				for &param in p.ast.list(params).iter().flatten() {
 					let param = Self::unwrap(p, param, Unwrap::InnerPattern).unwrap_or(param);
 					if let Some(decorators) = p.ext_data().extras(param).and_then(|extras| extras.decorators) {
@@ -1647,24 +1650,26 @@ impl Extension for TypeScript {
 
 	// Expressions
 
-	fn maybe_assign(p: &mut Parser<Self>, for_init: ForInit, _: &mut Errors) -> Result<Option<NodeId>> {
+	pub(crate) fn maybe_assign(p: &mut Parser, for_init: ForInit, _: &mut Errors) -> Result<Option<NodeId>> {
 		if !p.starts_with_lt() {
 			return Ok(None);
 		}
 		p.try_generic_arrow(p.tok.start, false, for_init)
 	}
 
-	fn paren_list_start(p: &mut Parser<Self>, parameters: bool) {
-		let inside = p.ext.maybe_in_arrow_parameters;
-		p.ext.paren_lists.push(inside);
-		p.ext.maybe_in_arrow_parameters = parameters;
+	/// A list opens; `parameters` when it may still turn out to be a function's parameters.
+	pub(crate) fn paren_list_start(p: &mut Parser, parameters: bool) {
+		let inside = p.ts.maybe_in_arrow_parameters;
+		p.ts.paren_lists.push(inside);
+		p.ts.maybe_in_arrow_parameters = parameters;
 	}
 
-	fn paren_list_end(p: &mut Parser<Self>) {
-		p.ext.maybe_in_arrow_parameters = p.ext.paren_lists.pop().unwrap();
+	pub(crate) fn paren_list_end(p: &mut Parser) {
+		p.ts.maybe_in_arrow_parameters = p.ts.paren_lists.pop().unwrap();
 	}
 
-	fn paren_item(p: &mut Parser<Self>, item: NodeId) -> Result<NodeId> {
+	/// An item of a parenthesized list, after its expression.
+	pub(crate) fn paren_item(p: &mut Parser, item: NodeId) -> Result<NodeId> {
 		let optional = p.eat(TokenKind::Question)?;
 		let type_annotation = if p.is(TokenKind::Colon) {
 			Some(p.parse_type_annotation(true, None)?)
@@ -1682,7 +1687,7 @@ impl Extension for TypeScript {
 			p.start_of(item),
 		);
 		// a parameter is never compound-assigned; a rest takes no operator at all
-		if !p.ext.maybe_in_arrow_parameters
+		if !p.ts.maybe_in_arrow_parameters
 			|| !matches!(
 				p.kind(item),
 				NodeKind::RestElement { .. } | NodeKind::SpreadElement { .. }
@@ -1693,8 +1698,9 @@ impl Extension for TypeScript {
 		Ok(cast)
 	}
 
-	fn conditional(p: &mut Parser<Self>, expr: NodeId, start: u32, for_init: ForInit) -> Result<Option<NodeId>> {
-		if !p.ext.maybe_in_arrow_parameters {
+	/// At `?` after an expression; `Some` replaces the conditional.
+	pub(crate) fn conditional(p: &mut Parser, expr: NodeId, start: u32, for_init: ForInit) -> Result<Option<NodeId>> {
+		if !p.ts.maybe_in_arrow_parameters {
 			return Ok(None);
 		}
 		Ok(Some(
@@ -1703,28 +1709,34 @@ impl Extension for TypeScript {
 		))
 	}
 
-	fn arrow_start(p: &mut Parser<Self>, start: u32) {
-		p.ext.body_needs_colon = p.ext.needs_colon_at == Some(start);
+	pub(crate) fn arrow_start(p: &mut Parser, start: u32) {
+		p.ts.body_needs_colon = p.ts.needs_colon_at == Some(start);
 	}
 
-	fn conditional_branch(p: &mut Parser<Self>, start: u32, alternate: bool, for_init: ForInit) -> Result<NodeId> {
-		let old = p.ext.needs_colon_at;
+	pub(crate) fn conditional_branch(p: &mut Parser, start: u32, alternate: bool, for_init: ForInit) -> Result<NodeId> {
+		let old = p.ts.needs_colon_at;
 		if !alternate || old == Some(start) {
-			p.ext.needs_colon_at = Some(p.tok.start);
+			p.ts.needs_colon_at = Some(p.tok.start);
 		}
 		let branch = p.parse_maybe_assign(if alternate { for_init } else { ForInit::No }, &mut None);
-		p.ext.needs_colon_at = old;
+		p.ts.needs_colon_at = old;
 		branch
 	}
 
-	fn unary(p: &mut Parser<Self>, for_init: ForInit) -> Result<Option<NodeId>> {
+	pub(crate) fn unary(p: &mut Parser, for_init: ForInit) -> Result<Option<NodeId>> {
 		if p.starts_with_lt() {
 			return p.parse_type_assertion(for_init).map(Some);
 		}
 		Ok(None)
 	}
 
-	fn atom(p: &mut Parser<Self>, errors: &mut Errors, for_init: ForInit, for_new: bool) -> Result<Option<NodeId>> {
+	/// First look at an atom.
+	pub(crate) fn atom(
+		p: &mut Parser,
+		errors: &mut Errors,
+		for_init: ForInit,
+		for_new: bool,
+	) -> Result<Option<NodeId>> {
 		if p.is(TokenKind::At) {
 			p.parse_decorators(false)?;
 			return p.parse_expr_atom(errors, for_init, for_new).map(Some);
@@ -1732,11 +1744,14 @@ impl Extension for TypeScript {
 		Ok(None)
 	}
 
-	fn reads_stop(p: &Parser<Self>) -> bool {
+	/// Whether the current token, one of the host's stop tokens, is one TypeScript reads after an
+	/// expression; it then decides where the host's syntax starts.
+	pub(crate) fn reads_stop(p: &Parser) -> bool {
 		(p.is_contextual("as") || p.is_contextual("satisfies")) && p.forced_stop != Some(p.tok.start)
 	}
 
-	fn expr_op(p: &mut Parser<Self>, left: NodeId, left_start: u32, min_prec: i8) -> Result<Option<NodeId>> {
+	/// At an operator position; `Some` is the new left operand.
+	pub(crate) fn expr_op(p: &mut Parser, left: NodeId, left_start: u32, min_prec: i8) -> Result<Option<NodeId>> {
 		if 7 <= min_prec || p.tok.newline_before {
 			return Ok(None);
 		}
@@ -1755,8 +1770,8 @@ impl Extension for TypeScript {
 		assertion(p, left, left_start, is_as).map(Some)
 	}
 
-	fn subscript(
-		p: &mut Parser<Self>,
+	pub(crate) fn subscript(
+		p: &mut Parser,
 		base: NodeId,
 		start: u32,
 		no_calls: bool,
@@ -1804,7 +1819,7 @@ impl Extension for TypeScript {
 		Ok(Some((node, is_optional_call)))
 	}
 
-	fn should_parse_arrow(p: &mut Parser<Self>, start: u32, items: &[Option<NodeId>]) -> Result<bool> {
+	pub(crate) fn should_parse_arrow(p: &mut Parser, start: u32, items: &[Option<NodeId>]) -> Result<bool> {
 		let should = if p.is(TokenKind::Colon) {
 			items.iter().flatten().all(|item| p.is_assignable(*item, true))
 		} else {
@@ -1816,18 +1831,20 @@ impl Extension for TypeScript {
 		Ok(should && p.take_arrow_return_type()? && p.is(TokenKind::Arrow))
 	}
 
-	fn should_parse_async_arrow(p: &mut Parser<Self>, start: u32) -> Result<bool> {
+	pub(crate) fn should_parse_async_arrow(p: &mut Parser, start: u32) -> Result<bool> {
 		if !p.return_type_fits(start, true)? {
 			return Ok(false);
 		}
 		Ok(p.take_arrow_return_type()? && !p.can_insert_semicolon() && p.eat(TokenKind::Arrow)?)
 	}
 
-	fn list_items(p: &mut Parser<Self>, items: &[Option<NodeId>]) -> Result<()> {
+	/// A finished list of expressions: array elements, arguments, or a parenthesized expression
+	/// that did not become parameters.
+	pub(crate) fn list_items(p: &mut Parser, items: &[Option<NodeId>]) -> Result<()> {
 		p.no_type_casts(items)
 	}
 
-	fn new_expression(p: &mut Parser<Self>, node: NodeId) {
+	pub(crate) fn new_expression(p: &mut Parser, node: NodeId) {
 		let NodeKind::NewExpression { callee, arguments } = p.kind(node) else {
 			unreachable!()
 		};
@@ -1844,8 +1861,9 @@ impl Extension for TypeScript {
 		}
 	}
 
-	fn property_value(
-		p: &mut Parser<Self>,
+	/// An object property whose value starts unexpectedly for JavaScript.
+	pub(crate) fn property_value(
+		p: &mut Parser,
 		start: u32,
 		key: NodeId,
 		computed: bool,
@@ -1873,14 +1891,20 @@ impl Extension for TypeScript {
 		)))
 	}
 
-	fn template_expression(p: &mut Parser<Self>) -> Result<Option<NodeId>> {
+	pub(crate) fn template_expression(p: &mut Parser) -> Result<Option<NodeId>> {
 		if p.lexer.in_type {
 			return p.parse_type().map(Some);
 		}
 		Ok(None)
 	}
 
-	fn make_pattern(p: &mut Parser<Self>, id: NodeId, is_binding: bool, errors: &mut Errors) -> Result<Option<NodeId>> {
+	/// Reinterprets a TypeScript node as a pattern; the result replaces it.
+	pub(crate) fn make_pattern(
+		p: &mut Parser,
+		id: NodeId,
+		is_binding: bool,
+		errors: &mut Errors,
+	) -> Result<Option<NodeId>> {
 		match p.ts_kind(id) {
 			Some(
 				TsKind::AsExpression { expression, .. }
@@ -1906,7 +1930,8 @@ impl Extension for TypeScript {
 		}
 	}
 
-	fn unwrap(p: &Parser<Self>, id: NodeId, context: Unwrap) -> Option<NodeId> {
+	/// The plain node a TypeScript wrapper stands for in a check, if any.
+	pub(crate) fn unwrap(p: &Parser, id: NodeId, context: Unwrap) -> Option<NodeId> {
 		match (context, p.ts_kind(id)?) {
 			(Unwrap::Simple, TsKind::NonNullExpression { expression } | TsKind::AsExpression { expression, .. }) => {
 				Some(expression)
@@ -1921,7 +1946,7 @@ impl Extension for TypeScript {
 }
 
 /// `left as T` or `left satisfies T`, the word being the current token.
-fn assertion(p: &mut Parser<TypeScript>, left: NodeId, left_start: u32, is_as: bool) -> Result<NodeId> {
+fn assertion(p: &mut Parser, left: NodeId, left_start: u32, is_as: bool) -> Result<NodeId> {
 	let type_annotation = match p.try_next_parse_constant_context()? {
 		Some(constant) => constant,
 		None => p.next_then_parse_type()?,

@@ -1,9 +1,10 @@
 use super::scope::{Binding, SCOPE_ARROW, SCOPE_DIRECT_SUPER, SCOPE_SUPER, function_flags};
-use super::{DestructuringErrors, Errors, Extension, FunctionKind, Parser, Result, Unwrap};
+use super::{DestructuringErrors, Errors, FunctionKind, Parser, Result, Unwrap};
 use crate::Options;
 use crate::error::Code;
 use crate::interner::StrId;
 use crate::lexer::token::{Keyword, TokenKind, word};
+use crate::typescript::TypeScript;
 
 use crate::ast::{
 	AssignmentOperator, BinaryOperator, Function, List, LogicalOperator, MethodKind, NodeId, NodeKind, PropertyKind,
@@ -115,7 +116,7 @@ pub(crate) fn starts_expression(kind: TokenKind) -> bool {
 	}
 }
 
-impl<E: Extension> Parser<'_, E> {
+impl Parser<'_> {
 	pub(crate) fn parse_expression(&mut self, for_init: bool, errors: &mut Errors) -> Result<NodeId> {
 		let for_init = if for_init { ForInit::Yes } else { ForInit::No };
 		self.parse_sequence(for_init, errors)
@@ -153,7 +154,9 @@ impl<E: Extension> Parser<'_, E> {
 	}
 
 	fn parse_maybe_assign_inner(&mut self, for_init: ForInit, errors: &mut Errors, item: bool) -> Result<NodeId> {
-		if let Some(expr) = E::maybe_assign(self, for_init, errors)? {
+		if self.typescript()
+			&& let Some(expr) = TypeScript::maybe_assign(self, for_init, errors)?
+		{
 			return Ok(expr);
 		}
 		if self.is_contextual("yield") && self.in_generator() {
@@ -178,8 +181,8 @@ impl<E: Extension> Parser<'_, E> {
 			self.potential_arrow_in_for_await = for_init == ForInit::Await;
 		}
 		let mut left = self.parse_maybe_conditional(for_init, errors)?;
-		if item {
-			left = E::paren_item(self, left)?;
+		if item && self.typescript() {
+			left = TypeScript::paren_item(self, left)?;
 		}
 		if let Some(operator) = assignment_operator(self.tok.kind) {
 			let is_eq = operator == AssignmentOperator::Assign;
@@ -187,7 +190,7 @@ impl<E: Extension> Parser<'_, E> {
 				left = self.make_pattern(left, false, errors)?;
 			}
 			// `a: T = 1` is checked once its list is known, as a parameter or as a stray cast
-			let inner = E::unwrap(self, left, Unwrap::InnerPattern);
+			let inner = TypeScript::unwrap(self, left, Unwrap::InnerPattern);
 			let e = errors.as_mut().unwrap();
 			if !own_errors {
 				e.parenthesized_assign = None;
@@ -239,7 +242,9 @@ impl<E: Extension> Parser<'_, E> {
 			return Ok(expr);
 		}
 		if self.is(TokenKind::Question) {
-			if let Some(expr) = E::conditional(self, expr, start, for_init)? {
+			if self.typescript()
+				&& let Some(expr) = TypeScript::conditional(self, expr, start, for_init)?
+			{
 				return Ok(expr);
 			}
 			return self.parse_conditional(expr, start, for_init);
@@ -250,9 +255,17 @@ impl<E: Extension> Parser<'_, E> {
 	/// The `? consequent : alternate` after a test.
 	pub(crate) fn parse_conditional(&mut self, test: NodeId, start: u32, for_init: ForInit) -> Result<NodeId> {
 		self.next()?;
-		let consequent = E::conditional_branch(self, start, false, for_init)?;
+		let consequent = if self.typescript() {
+			TypeScript::conditional_branch(self, start, false, for_init)?
+		} else {
+			self.parse_maybe_assign(ForInit::No, &mut None)?
+		};
 		self.expect(TokenKind::Colon)?;
-		let alternate = E::conditional_branch(self, start, true, for_init)?;
+		let alternate = if self.typescript() {
+			TypeScript::conditional_branch(self, start, true, for_init)?
+		} else {
+			self.parse_maybe_assign(for_init, &mut None)?
+		};
 		Ok(self.add(
 			NodeKind::ConditionalExpression {
 				test,
@@ -284,7 +297,9 @@ impl<E: Extension> Parser<'_, E> {
 		loop {
 			links += 1;
 			self.chain(links)?;
-			if let Some(expr) = E::expr_op(self, left, left_start, min_prec)? {
+			if self.typescript()
+				&& let Some(expr) = TypeScript::expr_op(self, left, left_start, min_prec)?
+			{
 				left = expr;
 				continue;
 			}
@@ -358,7 +373,9 @@ impl<E: Extension> Parser<'_, E> {
 		inc_dec: bool,
 		for_init: ForInit,
 	) -> Result<NodeId> {
-		if let Some(expr) = E::unary(self, for_init)? {
+		if self.typescript()
+			&& let Some(expr) = TypeScript::unary(self, for_init)?
+		{
 			return Ok(expr);
 		}
 		let start = self.tok.start;
@@ -520,15 +537,16 @@ impl<E: Extension> Parser<'_, E> {
 		optional_chained: bool,
 		for_init: ForInit,
 	) -> Result<(NodeId, bool)> {
-		if let Some(result) = E::subscript(
-			self,
-			base,
-			start,
-			no_calls,
-			maybe_async_arrow,
-			optional_chained,
-			for_init,
-		)? {
+		if self.typescript()
+			&& let Some(result) = TypeScript::subscript(
+				self,
+				base,
+				start,
+				no_calls,
+				maybe_async_arrow,
+				optional_chained,
+				for_init,
+			)? {
 			return Ok(result);
 		}
 		let optional = self.eat(TokenKind::QuestionDot)?;
@@ -564,10 +582,14 @@ impl<E: Extension> Parser<'_, E> {
 		if !no_calls && self.eat(TokenKind::ParenL)? {
 			let mut errors = Some(DestructuringErrors::default());
 			let old = self.take_yield_await();
-			E::paren_list_start(self, maybe_async_arrow);
+			if self.typescript() {
+				TypeScript::paren_list_start(self, maybe_async_arrow);
+			}
 			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut errors)?;
-			E::paren_list_end(self);
-			if maybe_async_arrow && !optional && E::should_parse_async_arrow(self, start)? {
+			if self.typescript() {
+				TypeScript::paren_list_end(self);
+			}
+			if maybe_async_arrow && !optional && self.async_arrow_follows(start)? {
 				self.check_pattern_errors(&errors, false)?;
 				self.check_yield_await_in_default_params()?;
 				if self.await_ident_pos > 0 {
@@ -578,7 +600,9 @@ impl<E: Extension> Parser<'_, E> {
 				return Ok((arrow, false));
 			}
 			self.check_expression_errors(&errors, true)?;
-			E::list_items(self, &args)?;
+			if self.typescript() {
+				TypeScript::list_items(self, &args)?;
+			}
 			self.restore_yield_await_if_set(old);
 			let arguments = self.list_from(args);
 			let node = self.add(
@@ -606,7 +630,9 @@ impl<E: Extension> Parser<'_, E> {
 		if self.is(TokenKind::Slash) || self.is(TokenKind::SlashEq) {
 			self.tok = self.lexer.read_regex(self.tok)?;
 		}
-		if let Some(atom) = E::atom(self, errors, for_init, for_new)? {
+		if self.typescript()
+			&& let Some(atom) = TypeScript::atom(self, errors, for_init, for_new)?
+		{
 			return Ok(atom);
 		}
 		let start = self.tok.start;
@@ -681,10 +707,14 @@ impl<E: Extension> Parser<'_, E> {
 			}
 			TokenKind::BracketL => {
 				self.next()?;
-				E::paren_list_start(self, false);
+				if self.typescript() {
+					TypeScript::paren_list_start(self, false);
+				}
 				let elements = self.parse_expr_list(TokenKind::BracketR, true, true, errors)?;
-				E::paren_list_end(self);
-				E::list_items(self, &elements)?;
+				if self.typescript() {
+					TypeScript::paren_list_end(self);
+					TypeScript::list_items(self, &elements)?;
+				}
 				let elements = self.list_from(elements);
 				Ok(self.add(NodeKind::ArrayExpression { elements }, start))
 			}
@@ -760,6 +790,14 @@ impl<E: Extension> Parser<'_, E> {
 		Ok(self.add(kind, start))
 	}
 
+	/// Whether the arguments after `async` are an arrow's parameters, its `=>` eaten.
+	fn async_arrow_follows(&mut self, start: u32) -> Result<bool> {
+		if self.typescript() {
+			return TypeScript::should_parse_async_arrow(self, start);
+		}
+		Ok(!self.can_insert_semicolon() && self.eat(TokenKind::Arrow)?)
+	}
+
 	fn parse_paren_and_distinguish_expression(&mut self, can_be_arrow: bool, for_init: ForInit) -> Result<NodeId> {
 		let start = self.tok.start;
 		self.next()?;
@@ -769,7 +807,13 @@ impl<E: Extension> Parser<'_, E> {
 		self.await_pos = 0;
 		let paren = self.parse_paren_items()?;
 
-		if can_be_arrow && E::should_parse_arrow(self, start, &paren.items)? && self.eat(TokenKind::Arrow)? {
+		let arrow = can_be_arrow
+			&& if self.typescript() {
+				TypeScript::should_parse_arrow(self, start, &paren.items)?
+			} else {
+				!self.can_insert_semicolon()
+			};
+		if arrow && self.eat(TokenKind::Arrow)? {
 			self.check_pattern_errors(&paren.errors, false)?;
 			self.check_yield_await_in_default_params()?;
 			self.yield_pos = old_yield;
@@ -784,7 +828,9 @@ impl<E: Extension> Parser<'_, E> {
 			return self.unexpected_at(pos);
 		}
 		self.check_expression_errors(&paren.errors, true)?;
-		E::list_items(self, &paren.items)?;
+		if self.typescript() {
+			TypeScript::list_items(self, &paren.items)?;
+		}
 		if old_yield != 0 {
 			self.yield_pos = old_yield;
 		}
@@ -813,7 +859,9 @@ impl<E: Extension> Parser<'_, E> {
 	/// Parses the comma-separated expressions after an opening paren through the closing one,
 	/// which may turn out to be arrow function parameters.
 	pub(crate) fn parse_paren_items(&mut self) -> Result<ParenItems> {
-		E::paren_list_start(self, true);
+		if self.typescript() {
+			TypeScript::paren_list_start(self, true);
+		}
 		let inner_start = self.tok.start;
 		let mut items = self.items();
 		let mut first = true;
@@ -833,7 +881,11 @@ impl<E: Extension> Parser<'_, E> {
 			if self.is(TokenKind::Ellipsis) {
 				spread_start = Some(self.tok.start);
 				let rest = self.parse_rest_binding()?;
-				let rest = E::paren_item(self, rest)?;
+				let rest = if self.typescript() {
+					TypeScript::paren_item(self, rest)?
+				} else {
+					rest
+				};
 				items.push(Some(rest));
 				if self.is(TokenKind::Comma) {
 					return self.error(self.tok.start, Code::CommaAfterRest);
@@ -844,7 +896,9 @@ impl<E: Extension> Parser<'_, E> {
 		}
 		let inner_end = self.prev_end;
 		self.expect(TokenKind::ParenR)?;
-		E::paren_list_end(self);
+		if self.typescript() {
+			TypeScript::paren_list_end(self);
+		}
 		Ok(ParenItems {
 			items,
 			errors,
@@ -882,16 +936,22 @@ impl<E: Extension> Parser<'_, E> {
 			return self.error(self.start_of(callee), Code::InvalidSuper);
 		}
 		let arguments = if self.eat(TokenKind::ParenL)? {
-			E::paren_list_start(self, false);
+			if self.typescript() {
+				TypeScript::paren_list_start(self, false);
+			}
 			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut None)?;
-			E::paren_list_end(self);
-			E::list_items(self, &args)?;
+			if self.typescript() {
+				TypeScript::paren_list_end(self);
+				TypeScript::list_items(self, &args)?;
+			}
 			self.list_from(args)
 		} else {
 			List::EMPTY
 		};
 		let node = self.add(NodeKind::NewExpression { callee, arguments }, start);
-		E::new_expression(self, node);
+		if self.typescript() {
+			TypeScript::new_expression(self, node);
+		}
 		Ok(node)
 	}
 
@@ -920,7 +980,12 @@ impl<E: Extension> Parser<'_, E> {
 			}
 			self.prev_end = chunk.end + 2;
 			self.lexer.next_token_into(&mut self.tok)?;
-			let expression = match E::template_expression(self)? {
+			let typed = if self.typescript() {
+				TypeScript::template_expression(self)?
+			} else {
+				None
+			};
+			let expression = match typed {
 				Some(expression) => expression,
 				None => self.parse_expression(false, &mut None)?,
 			};
@@ -1054,7 +1119,9 @@ impl<E: Extension> Parser<'_, E> {
 		errors: &mut Errors,
 		escaped: bool,
 	) -> Result<NodeId> {
-		if let Some(prop) = E::property_value(self, start, key, computed, is_pattern, generator, is_async)? {
+		if self.typescript()
+			&& let Some(prop) = TypeScript::property_value(self, start, key, computed, is_pattern, generator, is_async)?
+		{
 			return Ok(prop);
 		}
 		if (generator || is_async) && self.is(TokenKind::Colon) {
@@ -1157,12 +1224,12 @@ impl<E: Extension> Parser<'_, E> {
 	pub(crate) fn check_accessor_params(&self, func: NodeId, is_getter: bool, in_class: bool) -> Result<()> {
 		let params = match self.kind(func) {
 			NodeKind::FunctionExpression { function } => function.params,
-			_ => match E::function_params(self, func) {
+			_ => match TypeScript::function_params(self, func) {
 				Some(params) => params,
 				None => return Ok(()),
 			},
 		};
-		let this_param = !in_class && E::accessor_this_param(self, params);
+		let this_param = !in_class && self.typescript() && TypeScript::accessor_this_param(self, params);
 		let params = self.ast.list(params);
 		let expected = if is_getter { 0 } else { 1 } + usize::from(this_param);
 		if params.len() != expected {
@@ -1215,13 +1282,20 @@ impl<E: Extension> Parser<'_, E> {
 			function_flags(is_async, generator) | SCOPE_SUPER | if allow_direct_super { SCOPE_DIRECT_SUPER } else { 0 },
 		);
 		let kind = FunctionKind::Method { in_class, kind };
-		E::function_start(self, kind)?;
+		if self.typescript() {
+			TypeScript::function_start(self, kind)?;
+		}
 		let start = self.tok.start;
 		self.expect(TokenKind::ParenL)?;
 		let params = self.parse_binding_list(TokenKind::ParenR, false, true, in_class)?;
 		self.check_yield_await_in_default_params()?;
 		let params = self.list_from(params);
-		let node = match E::function_body(self, start, None, params, is_async, generator, kind)? {
+		let bodiless = if self.typescript() {
+			TypeScript::function_body(self, start, None, params, is_async, generator, kind)?
+		} else {
+			None
+		};
+		let node = match bodiless {
 			Some(node) => {
 				self.exit_scope();
 				node
@@ -1239,7 +1313,9 @@ impl<E: Extension> Parser<'_, E> {
 			}
 		};
 		self.restore_yield_await(old);
-		E::function_end(self, node)?;
+		if self.typescript() {
+			TypeScript::function_end(self, node)?;
+		}
 		Ok(node)
 	}
 
@@ -1252,8 +1328,10 @@ impl<E: Extension> Parser<'_, E> {
 	) -> Result<NodeId> {
 		let old = self.take_yield_await();
 		self.enter_scope(function_flags(is_async, false) | SCOPE_ARROW);
-		E::arrow_start(self, start);
-		E::function_start(self, FunctionKind::Arrow)?;
+		if self.typescript() {
+			TypeScript::arrow_start(self, start);
+			TypeScript::function_start(self, FunctionKind::Arrow)?;
+		}
 		let params = self.make_patterns(params, true)?;
 		let params = self.list_from(params);
 		let (body, expression) = self.parse_function_body(start, None, params, true, false, for_init)?;
@@ -1267,7 +1345,9 @@ impl<E: Extension> Parser<'_, E> {
 			},
 			start,
 		);
-		E::function_end(self, node)?;
+		if self.typescript() {
+			TypeScript::function_end(self, node)?;
+		}
 		Ok(node)
 	}
 
@@ -1352,7 +1432,11 @@ impl<E: Extension> Parser<'_, E> {
 				None
 			} else if self.is(TokenKind::Ellipsis) {
 				let spread = self.parse_spread(errors)?;
-				let spread = E::paren_item(self, spread)?;
+				let spread = if self.typescript() {
+					TypeScript::paren_item(self, spread)?
+				} else {
+					spread
+				};
 				if self.is(TokenKind::Comma)
 					&& let Some(e) = errors
 					&& e.trailing_comma.is_none()
@@ -1499,7 +1583,7 @@ enum Op {
 	Coalesce,
 }
 
-impl<E: Extension> Parser<'_, E> {
+impl Parser<'_> {
 	pub(crate) fn make_pattern(
 		&mut self,
 		id: NodeId,
@@ -1571,7 +1655,7 @@ impl<E: Extension> Parser<'_, E> {
 			}
 			NodeKind::MemberExpression { .. } if !is_binding => {}
 			NodeKind::Extension(_) => {
-				return match E::make_pattern(self, id, is_binding, errors)? {
+				return match TypeScript::make_pattern(self, id, is_binding, errors)? {
 					Some(pattern) => Ok(pattern),
 					None => self.error(start, Code::InvalidAssignmentTarget),
 				};
@@ -1634,7 +1718,7 @@ impl<E: Extension> Parser<'_, E> {
 				break;
 			} else {
 				let parameter = match close {
-					TokenKind::ParenR => E::parameter(self, allow_modifiers)?,
+					TokenKind::ParenR if self.typescript() => TypeScript::parameter(self, allow_modifiers)?,
 					_ => None,
 				};
 				let item = match parameter {
@@ -1687,7 +1771,7 @@ impl<E: Extension> Parser<'_, E> {
 				let flags = self.lexer.word_flags(name);
 				let text = self.str(name);
 				// a declaration that binds nothing may be named eval: `declare function eval`
-				let runtime = !E::in_ambient(self);
+				let runtime = !TypeScript::in_ambient(self);
 				if self.strict
 					&& (self.is_reserved_word(flags) || (runtime && flags & (word::EVAL | word::ARGUMENTS) != 0))
 				{
@@ -1716,7 +1800,7 @@ impl<E: Extension> Parser<'_, E> {
 				}
 				Ok(())
 			}
-			NodeKind::Extension(_) if let Some(inner) = E::unwrap(self, id, Unwrap::Simple) => {
+			NodeKind::Extension(_) if let Some(inner) = TypeScript::unwrap(self, id, Unwrap::Simple) => {
 				self.check_lval_simple(inner, binding, clashes)
 			}
 			_ => self.error(
@@ -1766,7 +1850,7 @@ impl<E: Extension> Parser<'_, E> {
 			NodeKind::Property { value, .. } => self.check_lval_inner_pattern(value, binding, clashes),
 			NodeKind::AssignmentPattern { left, .. } => self.check_lval_pattern(left, binding, clashes),
 			NodeKind::RestElement { argument } => self.check_lval_pattern(argument, binding, clashes),
-			NodeKind::Extension(_) if let Some(inner) = E::unwrap(self, id, Unwrap::InnerPattern) => {
+			NodeKind::Extension(_) if let Some(inner) = TypeScript::unwrap(self, id, Unwrap::InnerPattern) => {
 				self.check_lval_inner_pattern(inner, binding, clashes)
 			}
 			_ => self.check_lval_pattern(id, binding, clashes),

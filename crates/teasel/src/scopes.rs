@@ -1634,12 +1634,12 @@ mod tests {
 	}
 
 	fn ts_facts(src: &str) -> String {
-		facts_of(&analyzed(crate::typescript::parse_at(
+		facts_of(&analyzed(crate::parse_at(
 			src,
 			0,
 			None,
 			Entry::Program,
-			Options(Options::MODULE),
+			Options(Options::MODULE | Options::TYPESCRIPT),
 			"",
 		)))
 	}
@@ -1802,7 +1802,7 @@ mod tests {
 		)
 		.unwrap();
 		let src = "<script>let n = 1; function f() { return arguments; }</script>\n{(function () { return arguments + n; })()}";
-		let (mut ast, root) = crate::host::parse_document::<()>(src, &grammar, Options::default(), None);
+		let (mut ast, root) = crate::host::parse_document(src, &grammar, Options::default(), None);
 		let roots = ast.add_list(&[Some(root.unwrap())]);
 		analyze(&mut ast, Entry::Program, roots);
 		let scopes = ast.scopes.as_ref().unwrap();
@@ -1844,12 +1844,12 @@ mod tests {
 		);
 		{
 			let src = "(a as any).b = 1; (c!).d = 2; (e as any) = 3;";
-			let ast = analyzed(crate::typescript::parse_at(
+			let ast = analyzed(crate::parse_at(
 				src,
 				0,
 				None,
 				Entry::Program,
-				Options(Options::MODULE),
+				Options(Options::MODULE | Options::TYPESCRIPT),
 				"",
 			));
 			let scopes = ast.scopes.as_ref().unwrap();
@@ -1861,12 +1861,12 @@ mod tests {
 	#[test]
 	fn typescript_declarations() {
 		let src = "import type { X } from 'm'; import { type Y, Z } from 'm'; export { type X }; enum E { A = 1, B = A } namespace N { export const n = 1; } namespace N { n; } export function f(): void; class C { m(@dec p) {} } function dec() {} function g(this: T, a) {} enum M { this = 1 }";
-		let ast = analyzed(crate::typescript::parse_at(
+		let ast = analyzed(crate::parse_at(
 			src,
 			0,
 			None,
 			Entry::Program,
-			Options(Options::MODULE),
+			Options(Options::MODULE | Options::TYPESCRIPT),
 			"",
 		));
 		let scopes = ast.scopes.as_ref().unwrap();
@@ -1921,12 +1921,12 @@ mod tests {
 	#[test]
 	fn typescript_values_and_types() {
 		let src = "enum E { A = x } namespace N { export const n: T = y as T; } let t: T; @d class C { constructor(public p: P) {} }";
-		let ast = analyzed(crate::typescript::parse_at(
+		let ast = analyzed(crate::parse_at(
 			src,
 			0,
 			None,
 			Entry::Program,
-			Options(Options::MODULE),
+			Options(Options::MODULE | Options::TYPESCRIPT),
 			"",
 		));
 		let scopes = ast.scopes.as_ref().unwrap();

@@ -1,7 +1,7 @@
 //! The type grammar: everything after a `:` or inside `<...>`.
 
+use super::Modifiers;
 use super::ast::{Clause, Keyword as TsKeyword, Modifier, SignatureKind, TsKind};
-use super::{Modifiers, TypeScript};
 use crate::ast::{List, NodeId, NodeKind};
 use crate::error::{Code, SyntaxError};
 use crate::lexer::token::{Keyword, TokenKind};
@@ -40,7 +40,7 @@ const ACCESSIBILITY_AND_CLASS: &[&str] = &[
 	"override",
 ];
 
-impl Parser<'_, TypeScript> {
+impl Parser<'_> {
 	// Contexts
 
 	pub(super) fn in_type<T>(&mut self, f: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
@@ -52,18 +52,18 @@ impl Parser<'_, TypeScript> {
 	}
 
 	fn allow_conditional_types<T>(&mut self, f: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
-		let old = self.ext.disallow_conditional_types;
-		self.ext.disallow_conditional_types = false;
+		let old = self.ts.disallow_conditional_types;
+		self.ts.disallow_conditional_types = false;
 		let result = f(self);
-		self.ext.disallow_conditional_types = old;
+		self.ts.disallow_conditional_types = old;
 		result
 	}
 
 	fn disallow_conditional_types<T>(&mut self, f: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
-		let old = self.ext.disallow_conditional_types;
-		self.ext.disallow_conditional_types = true;
+		let old = self.ts.disallow_conditional_types;
+		self.ts.disallow_conditional_types = true;
 		let result = f(self);
-		self.ext.disallow_conditional_types = old;
+		self.ts.disallow_conditional_types = old;
 		result
 	}
 
@@ -281,12 +281,12 @@ impl Parser<'_, TypeScript> {
 	fn parse_type_inner(&mut self) -> Result<NodeId> {
 		debug_assert!(self.lexer.in_type);
 		let check_type = self.parse_non_conditional_type()?;
-		if self.ext.disallow_conditional_types || self.tok.newline_before || !self.eat_keyword(Keyword::Extends)? {
+		if self.ts.disallow_conditional_types || self.tok.newline_before || !self.eat_keyword(Keyword::Extends)? {
 			return Ok(check_type);
 		}
-		self.ext.infer_depth += 1;
+		self.ts.infer_depth += 1;
 		let extends_type = self.disallow_conditional_types(|p| p.parse_non_conditional_type());
-		self.ext.infer_depth -= 1;
+		self.ts.infer_depth -= 1;
 		let extends_type = extends_type?;
 		self.expect(TokenKind::Question)?;
 		let true_type = self.allow_conditional_types(|p| p.parse_type())?;
@@ -488,7 +488,7 @@ impl Parser<'_, TypeScript> {
 
 	fn parse_infer_type(&mut self) -> Result<NodeId> {
 		let start = self.tok.start;
-		if self.ext.infer_depth == 0 {
+		if self.ts.infer_depth == 0 {
 			return self.error(start, Code::InferPlacement);
 		}
 		self.expect_contextual("infer")?;
@@ -512,7 +512,7 @@ impl Parser<'_, TypeScript> {
 	fn parse_constraint_for_infer_type(&mut self) -> Result<Option<NodeId>> {
 		if self.eat_keyword(Keyword::Extends)? {
 			let constraint = self.disallow_conditional_types(|p| p.parse_type())?;
-			if self.ext.disallow_conditional_types || !self.is(TokenKind::Question) {
+			if self.ts.disallow_conditional_types || !self.is(TokenKind::Question) {
 				return Ok(Some(constraint));
 			}
 		}

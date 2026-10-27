@@ -547,28 +547,12 @@ enum Out<'a> {
 	Words(&'a mut Words),
 }
 
-fn dispatch(
-	source: &str,
-	positions: &Positions,
-	request: &Request,
-	stop: &str,
-	host: Option<&Grammar>,
-	pool: &mut Pool,
-	out: Out<'_>,
-) {
-	if request.options.typescript() {
-		run::<crate::typescript::TypeScript>(source, positions, request, stop, host, pool, out);
-	} else {
-		run::<()>(source, positions, request, stop, host, pool, out);
-	}
-}
-
 fn to_json(source: &str, positions: &Positions, request: &Request, stop: &str, host: Option<&Grammar>) -> String {
 	SESSION.with(|session| {
 		let session = &mut *session.borrow_mut();
 		session.typescript = request.options.typescript();
 		let mut json = String::new();
-		dispatch(
+		run(
 			source,
 			positions,
 			request,
@@ -591,7 +575,7 @@ fn to_words(source: &str, positions: &Positions, request: &Request, stop: &str, 
 	SESSION.with(|session| {
 		let session = &mut *session.borrow_mut();
 		session.typescript = request.options.typescript();
-		dispatch(
+		run(
 			source,
 			positions,
 			request,
@@ -604,7 +588,7 @@ fn to_words(source: &str, positions: &Positions, request: &Request, stop: &str, 
 }
 
 /// Runs a request and answers it at `out`.
-fn run<E: crate::parser::Extension>(
+fn run(
 	source: &str,
 	positions: &Positions,
 	request: &Request,
@@ -621,11 +605,11 @@ fn run<E: crate::parser::Extension>(
 	});
 	let (mut ast, parsed) = match host {
 		Some(grammar) => {
-			let (mut ast, root) = host::parse_document::<E>(source, grammar, request.options, reused);
+			let (mut ast, root) = host::parse_document(source, grammar, request.options, reused);
 			let parsed = root.map(|root| (ast.add_list(&[Some(root)]), source.len() as u32));
 			(ast, parsed)
 		}
-		None => parse_at::<E>(
+		None => parse_at(
 			source,
 			request.offset,
 			request.end,

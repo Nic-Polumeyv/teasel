@@ -17,8 +17,14 @@ unsafe impl std::alloc::GlobalAlloc for Counting {
 
 use crate::{Code, Entry, Options, SyntaxError};
 
-/// One entry of one extension, as `parse_at` reads it.
-pub(crate) type ParseAt = fn(&str, u32, Option<u32>, Entry, Options, &str) -> (Ast, Result<(List, u32), SyntaxError>);
+/// The options of a TypeScript parse: these, read as TypeScript.
+pub(crate) fn typescript(options: Options) -> Options {
+	if options.typescript() {
+		options
+	} else {
+		options.with(Options::TYPESCRIPT)
+	}
+}
 
 /// An error with its arguments read from the strings of its parse.
 #[derive(Debug)]
@@ -302,11 +308,13 @@ fn entry_points() {
 	assert_eq!(ast.node(id).end, 17);
 }
 
-/// One extension's parse, with the checks tests make of recovery.
-struct Api(ParseAt);
+/// A parse of one language, with the checks tests make of recovery.
+struct Api {
+	typescript: bool,
+}
 
-const JS: Api = Api(crate::parse_at);
-const TS: Api = Api(crate::typescript::parse_at);
+const JS: Api = Api { typescript: false };
+const TS: Api = Api { typescript: true };
 
 impl Api {
 	fn run(
@@ -317,7 +325,8 @@ impl Api {
 		options: Options,
 		stop: &str,
 	) -> Result<(Ast, Vec<NodeId>, u32), Failed> {
-		roots((self.0)(src, offset, None, entry, options, stop))
+		let options = if self.typescript { typescript(options) } else { options };
+		roots(crate::parse_at(src, offset, None, entry, options, stop))
 	}
 
 	/// Parses under recovery and checks what the recovered tree promises: it never fails, its

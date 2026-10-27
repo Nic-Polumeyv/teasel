@@ -212,7 +212,7 @@ fn no_child_ends_past_its_parent() {
 		let source = fs::read_to_string(&file).unwrap();
 		let module = if name.contains(".script.") { 0 } else { Options::MODULE };
 		let options = Options(module | Options::TYPESCRIPT);
-		if let (ast, Ok((roots, _))) = teasel::typescript::parse_at(&source, 0, None, Entry::Program, options, "") {
+		if let (ast, Ok((roots, _))) = teasel::parse_at(&source, 0, None, Entry::Program, options, "") {
 			escaped(name, &ast, roots, &mut wrong);
 		}
 	}

@@ -158,7 +158,7 @@ fn combinator(rest: &str) -> Option<&'static str> {
 	["||", "+", "~", ">"].into_iter().find(|c| rest.starts_with(c))
 }
 
-impl<'a, E: Extension> Walker<'a, E> {
+impl<'a> Walker<'a> {
 	/// A style element's sheet, from the content at the cursor through the closing tag.
 	pub(super) fn style_sheet(&mut self, start: u32, name: &str, attributes: Vec<NodeId>) -> Result<NodeId> {
 		let closer = format!("</{name}");
