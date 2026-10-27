@@ -164,7 +164,9 @@ impl Parser<'_> {
 			}
 			scope.forget(serial);
 		}
-		if let Some(top) = self.scopes.first_mut() {
+		if let Some(top) = self.scopes.first_mut()
+			&& top.names.last().is_some_and(|n| n.serial >= serial)
+		{
 			top.forget(serial);
 		}
 		self.declarations = serial;
