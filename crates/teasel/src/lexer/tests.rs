@@ -542,3 +542,55 @@ fn every_keyword_reads_back() {
 	assert_eq!(Keyword::from_word("brea"), None);
 	assert_eq!(Keyword::from_word("breaks"), None);
 }
+
+/// The list at the first `(` of `src`: how it is read, and what the closer reader alone says.
+fn list(src: &str, typescript: bool, module: bool) -> (super::list::Role, Option<super::list::Role>) {
+	let mut lexer = Lexer::new(src);
+	lexer.module = module;
+	let open = lexer.next_token().unwrap();
+	assert_eq!(open.kind, ParenL);
+	let first = lexer.next_token().unwrap();
+	let role = lexer.list_role(open.start, &first, typescript, false);
+	(role, lexer.scan(open.start, &first, typescript))
+}
+
+#[test]
+fn a_list_is_decided_before_it_is_read() {
+	use super::list::Role::*;
+	let js = |src: &str| list(src, false, true);
+	assert_eq!(js("(a) => a"), (Parameters, Some(Parameters)));
+	assert_eq!(js("(a) + 1"), (Expression, Some(Expression)));
+	assert_eq!(js("(a)\n=> a"), (Expression, Some(Expression)));
+	assert_eq!(js("(...a) + 1"), (Parameters, Some(Expression)));
+	assert_eq!(js("(a, b)\n=> 1").0, Expression);
+	assert_eq!(js("(1, b) => 1").0, Expression);
+	assert_eq!(list("(a, b): T => 1", true, true).0, Unsure);
+	assert_eq!(list("(a: T, b) => 1", true, true).0, Parameters);
+	// strings, comments, regular expressions and templates hold brackets that close nothing
+	assert_eq!(js("(a = \")\", b = '(') => 1").0, Parameters);
+	assert_eq!(js("(a /* ) */, b // )\n) => 1").0, Parameters);
+	assert_eq!(js("(a = /[)]/g, b = c / d / e) => 1").0, Parameters);
+	assert_eq!(js("(a = `${(b) => `${c})`}`, d) => 1").0, Parameters);
+	assert_eq!(js("(a = `${{ b: ')' }.b}`, c) + 1").0, Expression);
+	// a `/` after a statement head's `)` or a block's `}` starts a regular expression
+	assert_eq!(js("(a = function () { if (x) /[)]/.test(y) }, b) => 1").0, Parameters);
+	assert_eq!(js("(a = function () { {} /[)]/.test(y) }, b) => 1").0, Parameters);
+	assert_eq!(
+		js("(a = function () { try {} catch {} /[)]/.test(y) }, b) => 1").0,
+		Parameters
+	);
+	assert_eq!(js("(a = b.if (c) / d, e) => 1").0, Parameters);
+	// after a body's `}` only the parser knows
+	assert_eq!(js("(a = function () {} / 1, b) => 1"), (Unsure, None));
+	assert_eq!(js("(a = x++ / 2, b) => 1"), (Unsure, None));
+	// a script's HTML comments
+	assert_eq!(list("(a, b <!-- )\n) => 1", false, false).0, Parameters);
+	assert_eq!(list("(a, b\n--> )\n) => 1", false, false).0, Parameters);
+	// every list passed is kept, so a nested one is not read again
+	let mut lexer = Lexer::new("(x, (a, b) => 1, [(c, d)]) + 1");
+	let open = lexer.next_token().unwrap();
+	let first = lexer.next_token().unwrap();
+	assert_eq!(lexer.list_role(open.start, &first, false, false), Expression);
+	assert_eq!(lexer.roles.get(&4), Some(&Parameters));
+	assert_eq!(lexer.roles.get(&18), Some(&Expression));
+}

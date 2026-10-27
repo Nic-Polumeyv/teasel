@@ -268,19 +268,13 @@ fn entry_points() {
 		params("{#snippet row(a, a)}", 13, options, "").unwrap_err().text,
 		"duplicate_parameter"
 	);
-	// Parameters are read as expressions first, so the errors are an arrow's.
+	// Parameters are read as bindings, as an arrow's are.
 	let params_error = |src: &str| {
 		let e = params(src, 13, options, "").unwrap_err();
 		(e.text, e.pos)
 	};
-	assert_eq!(
-		params_error("{#snippet row(a.b)}"),
-		("invalid_assignment_target".into(), 14)
-	);
-	assert_eq!(
-		params_error("{#snippet row((a))}"),
-		("parenthesized_pattern".into(), 14)
-	);
+	assert_eq!(params_error("{#snippet row(a.b)}"), ("unexpected_token".into(), 15));
+	assert_eq!(params_error("{#snippet row((a))}"), ("unexpected_token".into(), 14));
 	assert_eq!(
 		params_error("{#snippet row(a = await x)}"),
 		("await_in_default_value".into(), 18)
@@ -293,7 +287,7 @@ fn entry_points() {
 		.spawn(move || {
 			let deep = format!("({}a{})", "[".repeat(20_000), "]".repeat(20_000));
 			assert_eq!(params(&deep, 0, options, "").unwrap_err().code, Code::NestingDepth);
-			let news = format!("({}a)", "new ".repeat(20_000));
+			let news = format!("(a = {}a)", "new ".repeat(20_000));
 			assert_eq!(params(&news, 0, options, "").unwrap_err().code, Code::NestingDepth);
 		})
 		.unwrap()

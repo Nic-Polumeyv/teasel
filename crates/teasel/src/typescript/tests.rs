@@ -152,8 +152,8 @@ fn optional_marker_needs_an_arrow() {
 		let error = at(Entry::Expression, src, 0, options, "").unwrap_err();
 		(error.code, error.pos)
 	};
-	assert_eq!(error("(a, b?)"), (crate::error::Code::UnexpectedToken, 5));
-	assert_eq!(error("(a?)"), (crate::error::Code::UnexpectedToken, 2));
+	assert_eq!(error("(a, b?)"), (crate::error::Code::UnexpectedToken, 6));
+	assert_eq!(error("(a?)"), (crate::error::Code::UnexpectedEof, 4));
 	assert_eq!(error("f(a?)"), (crate::error::Code::UnexpectedToken, 4));
 	assert!(at(Entry::Expression, "(a, b?) => a", 0, options, "").is_ok());
 	assert!(at(Entry::Expression, "f((a?) => a)", 0, options, "").is_ok());
@@ -327,8 +327,8 @@ fn a_list_item_fails_where_it_stands() {
 fn an_asserted_cast_is_no_parameter() {
 	let options = Options(Options::MODULE);
 	let error = |src: &str| at(Entry::Program, src, 0, options, "").unwrap_err().pos;
-	assert_eq!(error("(a as T: U = 1) => 1;"), 1);
-	assert_eq!(error("(a!: T = 1) => 1;"), 1);
+	assert_eq!(error("(a as T: U = 1) => 1;"), 7);
+	assert_eq!(error("(a!: T = 1) => 1;"), 3);
 	assert_eq!(error("(...a: T += 1) => 1;"), 9);
 }
 

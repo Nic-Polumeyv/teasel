@@ -319,7 +319,6 @@ pub(crate) struct DestructuringErrors {
 	pub shorthand_assign: Option<u32>,
 	pub trailing_comma: Option<u32>,
 	pub parenthesized_assign: Option<u32>,
-	pub parenthesized_bind: Option<u32>,
 	pub double_proto: Option<u32>,
 }
 
@@ -609,7 +608,7 @@ impl<'a> Parser<'a> {
 			TokenKind::BraceL | TokenKind::BracketL => self.parse_expr_atom(&mut errors, ForInit::No, false)?,
 			_ => self.parse_ident(false)?,
 		};
-		let pattern = self.make_pattern(expression, false, &mut errors)?;
+		let pattern = self.make_pattern(expression, &mut errors)?;
 		self.check_lval_pattern(pattern, scope::Binding::None, &mut None)?;
 		if self.typescript() {
 			TypeScript::pattern_annotation(self, pattern)?;
@@ -617,15 +616,14 @@ impl<'a> Parser<'a> {
 		Ok(pattern)
 	}
 
-	/// A parenthesized parameter list on its own, read as an arrow function's would be: as
-	/// expressions in the enclosing scope, reinterpreted as patterns once the list is complete.
+	/// A parenthesized parameter list on its own, read as an arrow function's would be, in the
+	/// enclosing scope.
 	fn parse_params_root(&mut self) -> Result<List> {
+		let outer = (self.yield_pos, self.await_pos, self.await_ident_pos);
 		self.expect(TokenKind::ParenL)?;
-		let paren = self.parse_paren_items()?;
-		self.check_pattern_errors(&paren.errors, false)?;
-		self.check_yield_await_in_default_params()?;
+		let params = self.parse_binding_list(TokenKind::ParenR, false, true, false)?;
+		self.check_arrow_head(&params, false, outer)?;
 		self.enter_scope(scope::function_flags(false, false) | scope::SCOPE_ARROW);
-		let params = self.make_patterns(paren.items, true)?;
 		let list = self.list_from(params);
 		self.check_params(list, false)?;
 		Ok(list)
@@ -677,19 +675,6 @@ impl<'a> Parser<'a> {
 
 	pub(crate) fn restore_yield_await(&mut self, (yield_pos, await_pos, await_ident_pos): (u32, u32, u32)) {
 		(self.yield_pos, self.await_pos, self.await_ident_pos) = (yield_pos, await_pos, await_ident_pos);
-	}
-
-	/// Restores what was set before; what the nested list found stays otherwise.
-	pub(crate) fn restore_yield_await_if_set(&mut self, (yield_pos, await_pos, await_ident_pos): (u32, u32, u32)) {
-		if yield_pos != 0 {
-			self.yield_pos = yield_pos;
-		}
-		if await_pos != 0 {
-			self.await_pos = await_pos;
-		}
-		if await_ident_pos != 0 {
-			self.await_ident_pos = await_ident_pos;
-		}
 	}
 
 	pub(crate) fn nth(&self, list: List, i: u32) -> Option<NodeId> {
@@ -1027,18 +1012,13 @@ impl<'a> Parser<'a> {
 	}
 
 	#[inline(always)]
-	pub(crate) fn check_pattern_errors(&self, errors: &Option<DestructuringErrors>, is_assign: bool) -> Result<()> {
+	pub(crate) fn check_pattern_errors(&self, errors: &Option<DestructuringErrors>) -> Result<()> {
 		let Some(errors) = errors else { return Ok(()) };
 		if let Some(pos) = errors.trailing_comma {
 			return self.error(pos, Code::CommaAfterRest);
 		}
-		let (parens, code) = if is_assign {
-			(errors.parenthesized_assign, Code::InvalidAssignmentTarget)
-		} else {
-			(errors.parenthesized_bind, Code::ParenthesizedPattern)
-		};
-		match parens {
-			Some(pos) => self.error(pos, code),
+		match errors.parenthesized_assign {
+			Some(pos) => self.error(pos, Code::InvalidAssignmentTarget),
 			None => Ok(()),
 		}
 	}

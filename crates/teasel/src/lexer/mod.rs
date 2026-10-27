@@ -1,3 +1,4 @@
+pub(crate) mod list;
 pub(crate) mod regexp;
 mod regexp_data;
 pub(crate) mod scan;
@@ -66,6 +67,9 @@ pub(crate) struct Lexer<'a> {
 	/// where it holds U+FFFD, and the surrogate.
 	marks: Vec<(u32, u16)>,
 	marked: usize,
+	/// The role of each list the closer reader passed, by the offset of its `(`.
+	pub(crate) roles: crate::interner::FastMap<u32, list::Role>,
+	frames: Vec<list::Frame>,
 }
 
 impl<'a> Lexer<'a> {
@@ -101,6 +105,8 @@ impl<'a> Lexer<'a> {
 			strings,
 			marks: Vec::new(),
 			marked: 0,
+			roles: Default::default(),
+			frames: Vec::new(),
 		}
 	}
 

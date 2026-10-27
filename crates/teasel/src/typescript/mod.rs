@@ -591,8 +591,15 @@ impl Parser<'_> {
 	}
 
 	// the head alone is tried: trying the whole expression read it again as an assertion or a call, 2x per level
-	fn try_generic_arrow(&mut self, start: u32, is_async: bool, for_init: ForInit) -> Result<Option<NodeId>> {
-		let at = self.tok.start;
+	/// An arrow's head tried at `<` (`generic`) or at a list's `(`.
+	fn try_arrow_head(
+		&mut self,
+		start: u32,
+		at: u32,
+		is_async: bool,
+		for_init: ForInit,
+		generic: bool,
+	) -> Result<Option<NodeId>> {
 		let spine = self.ts.needs_colon_at == Some(start);
 		if self.ts.not_arrow.contains(&(at, spine)) {
 			return Ok(None);
@@ -602,9 +609,11 @@ impl Parser<'_> {
 		self.ts.maybe_in_arrow_parameters = true;
 		let outer = (self.yield_pos, self.await_pos, self.await_ident_pos);
 		let mut head = self.attempt(|p| {
+			if !generic {
+				return Ok((None, p.read_arrow_params(is_async)?.0));
+			}
 			let type_parameters = p.parse_type_parameters(TypeParameterModifiers::Const)?;
-			let (params, _) = p.read_arrow_head(is_async)?;
-			Ok((type_parameters, params))
+			Ok((Some(type_parameters), p.read_arrow_head(is_async)?.0))
 		})?;
 		self.ts.maybe_in_arrow_parameters = old;
 		if head.is_some()
@@ -623,20 +632,10 @@ impl Parser<'_> {
 		// checked after the attempt, which would have read a real parameter error as no arrow
 		self.check_arrow_head(&params, is_async, outer)?;
 		let arrow = self.parse_arrow_expression(start, params, is_async, for_init)?;
-		self.extras_mut(arrow).type_parameters = Some(type_parameters);
+		if type_parameters.is_some() {
+			self.extras_mut(arrow).type_parameters = type_parameters;
+		}
 		Ok(Some(arrow))
-	}
-
-	fn return_type_fits(&mut self, start: u32, is_async: bool) -> Result<bool> {
-		if !self.is(TokenKind::Colon) || self.ts.needs_colon_at != Some(start) {
-			return Ok(true);
-		}
-		match self.lookahead(|p| {
-			Ok(p.take_arrow_return_type()? && p.eat(TokenKind::Arrow)? && p.colon_after_body(is_async)?)
-		}) {
-			Err(error) if error.code.is_limit() => Err(error),
-			answer => Ok(answer.unwrap_or(false)),
-		}
 	}
 
 	fn colon_after_body(&mut self, is_async: bool) -> Result<bool> {
@@ -673,7 +672,7 @@ impl Parser<'_> {
 	) -> Result<Option<NodeId>> {
 		if !no_calls
 			&& self.at_possible_async_arrow(base)
-			&& let Some(arrow) = self.try_generic_arrow(start, true, for_init)?
+			&& let Some(arrow) = self.try_arrow_head(start, self.tok.start, true, for_init, true)?
 		{
 			return Ok(Some(arrow));
 		}
@@ -723,57 +722,6 @@ impl Parser<'_> {
 			},
 			start,
 		)))
-	}
-
-	fn is_assignable(&self, id: NodeId, is_binding: bool) -> bool {
-		match self.kind(id) {
-			NodeKind::Identifier { .. }
-			| NodeKind::ObjectPattern { .. }
-			| NodeKind::ArrayPattern { .. }
-			| NodeKind::AssignmentPattern { .. }
-			| NodeKind::RestElement { .. } => true,
-			NodeKind::ObjectExpression { properties } => {
-				let last = properties.len.saturating_sub(1);
-				self.ast.list(properties).iter().enumerate().all(|(i, prop)| {
-					let prop = prop.unwrap();
-					(i as u32 == last || !matches!(self.kind(prop), NodeKind::SpreadElement { .. }))
-						&& self.is_assignable(prop, false)
-				})
-			}
-			NodeKind::Property { value, .. } => self.is_assignable(value, false),
-			NodeKind::SpreadElement { argument } => self.is_assignable(argument, false),
-			NodeKind::ArrayExpression { elements } => self
-				.ast
-				.list(elements)
-				.iter()
-				.all(|element| element.is_none_or(|e| self.is_assignable(e, false))),
-			NodeKind::AssignmentExpression { operator, .. } => operator == crate::ast::AssignmentOperator::Assign,
-			NodeKind::MemberExpression { .. } => !is_binding,
-			NodeKind::Extension(_) => match self.ts_kind(id) {
-				Some(TsKind::TypeCastExpression { expression, .. }) => self.is_assignable(expression, is_binding),
-				Some(TsKind::ParameterProperty { .. }) => true,
-				_ => false,
-			},
-			_ => false,
-		}
-	}
-
-	/// Reads a `: type` before `=>` into `arrow_return_type`; false when there is a colon but no
-	/// arrow follows it.
-	fn take_arrow_return_type(&mut self) -> Result<bool> {
-		self.ts.arrow_return_type = None;
-		if !self.is(TokenKind::Colon) {
-			return Ok(true);
-		}
-		let return_type = self.attempt(|p| {
-			let return_type = p.parse_type_or_type_predicate_annotation(TokenKind::Colon, true)?;
-			if p.can_insert_semicolon() || !p.is(TokenKind::Arrow) {
-				return p.unexpected();
-			}
-			Ok(return_type)
-		})?;
-		self.ts.arrow_return_type = return_type;
-		Ok(return_type.is_some())
 	}
 
 	/// A cast left in a list that is not becoming parameters is an error.
@@ -1686,7 +1634,7 @@ impl TypeScript {
 		if !p.starts_with_lt() {
 			return Ok(None);
 		}
-		p.try_generic_arrow(p.tok.start, false, for_init)
+		p.try_arrow_head(p.tok.start, p.tok.start, false, for_init, true)
 	}
 
 	/// A list opens; `parameters` when it may still turn out to be a function's parameters.
@@ -1743,6 +1691,19 @@ impl TypeScript {
 			p.attempt(|p| p.parse_conditional(expr, start, for_init))?
 				.unwrap_or(expr),
 		))
+	}
+
+	/// At the `(` of a list that a type must be read to decide, or that the closer reader could
+	/// not; `Some` is the arrow it starts.
+	#[cold]
+	pub(crate) fn arrow_head(
+		p: &mut Parser,
+		start: u32,
+		at: u32,
+		is_async: bool,
+		for_init: ForInit,
+	) -> Result<Option<NodeId>> {
+		p.try_arrow_head(start, at, is_async, for_init, false)
 	}
 
 	/// After an arrow's parameters, before `=>`.
@@ -1873,27 +1834,6 @@ impl TypeScript {
 		Ok(Some((node, is_optional_call)))
 	}
 
-	#[cold]
-	pub(crate) fn should_parse_arrow(p: &mut Parser, start: u32, items: &[Option<NodeId>]) -> Result<bool> {
-		let should = if p.is(TokenKind::Colon) {
-			items.iter().flatten().all(|item| p.is_assignable(*item, true))
-		} else {
-			!p.can_insert_semicolon()
-		};
-		if should && !p.return_type_fits(start, false)? {
-			return Ok(false);
-		}
-		Ok(should && p.take_arrow_return_type()? && p.is(TokenKind::Arrow))
-	}
-
-	#[cold]
-	pub(crate) fn should_parse_async_arrow(p: &mut Parser, start: u32) -> Result<bool> {
-		if !p.return_type_fits(start, true)? {
-			return Ok(false);
-		}
-		Ok(p.take_arrow_return_type()? && !p.can_insert_semicolon() && p.eat(TokenKind::Arrow)?)
-	}
-
 	/// A finished list of expressions: array elements, arguments, or a parenthesized expression
 	/// that did not become parameters.
 	#[cold]
@@ -1960,33 +1900,16 @@ impl TypeScript {
 
 	/// Reinterprets a TypeScript node as a pattern; the result replaces it.
 	#[cold]
-	pub(crate) fn make_pattern(
-		p: &mut Parser,
-		id: NodeId,
-		is_binding: bool,
-		errors: &mut Errors,
-	) -> Result<Option<NodeId>> {
+	pub(crate) fn make_pattern(p: &mut Parser, id: NodeId, errors: &mut Errors) -> Result<Option<NodeId>> {
 		match p.ts_kind(id) {
 			Some(
 				TsKind::AsExpression { expression, .. }
 				| TsKind::SatisfiesExpression { expression, .. }
 				| TsKind::NonNullExpression { expression }
 				| TsKind::TypeAssertion { expression, .. },
-			) if !is_binding => p.make_pattern(expression, is_binding, errors).map(Some),
-			// the target of `=` stays a cast until its list becomes parameters
-			Some(TsKind::TypeCastExpression { .. }) if !is_binding => Ok(Some(id)),
-			Some(TsKind::TypeCastExpression {
-				expression,
-				type_annotation,
-				optional,
-			}) => {
-				let pattern = p.make_pattern(expression, is_binding, errors)?;
-				let extras = p.extras_mut(pattern);
-				extras.type_annotation = type_annotation;
-				extras.optional = optional;
-				p.ast.node_mut(pattern).end = p.end_of(id);
-				Ok(Some(pattern))
-			}
+			) => p.make_pattern(expression, errors).map(Some),
+			// a stray cast is reported with its list
+			Some(TsKind::TypeCastExpression { .. }) => Ok(Some(id)),
 			_ => Ok(None),
 		}
 	}
