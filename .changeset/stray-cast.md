@@ -2,4 +2,4 @@
 '@teasel/parser': patch
 ---
 
-A stray `: T` or `?` in an array, `new` or decorator arguments is reported where it stands
+A stray `: T` or `?` is reported where it stands in any list that cannot be parameters

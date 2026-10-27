@@ -417,7 +417,7 @@ crate::layout::kinds! {
 			type_annotation: NodeId,
 			expression: NodeId,
 		},
-		/// `expr?`, `expr: type` or both inside parentheses, before it is known to be a parameter.
+		/// An item of a list, or its rest, with `?`, `: type` or both, before the list is known to be parameters.
 		TypeCastExpression {
 			expression: NodeId,
 			type_annotation: Option<NodeId>,

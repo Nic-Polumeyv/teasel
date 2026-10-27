@@ -277,8 +277,7 @@ pub(crate) trait Extension: Default + Sized {
 	fn maybe_assign(p: &mut Parser<Self>, for_init: ForInit, errors: &mut Errors) -> Result<Option<NodeId>> {
 		Ok(None)
 	}
-	/// Entering a parenthesized list that may turn out to be arrow parameters.
-	/// A list opens; `parameters` when it may turn out to be a function's parameters.
+	/// A list opens; `parameters` when it may still turn out to be a function's parameters.
 	fn paren_list_start(p: &mut Parser<Self>, parameters: bool) {}
 	fn paren_list_end(p: &mut Parser<Self>) {}
 	/// An item of a parenthesized list, after its expression.

@@ -2,4 +2,4 @@
 '@teasel/parser': patch
 ---
 
-TypeScript checks assignment targets inside parentheses and arguments: `(1 += 2)` is an error
+In TypeScript, `(1 += 2)` and `f(1 += 2)` are errors, as in JavaScript
