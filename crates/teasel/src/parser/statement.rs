@@ -4,8 +4,7 @@ use super::scope::{
 	function_flags,
 };
 use super::{
-	DestructuringErrors, Extension, FunctionKind, Label, LabelKind, Parser, PrivateKind, PrivateNameScope, Result,
-	Unwrap,
+	DestructuringErrors, FunctionKind, Label, LabelKind, Parser, PrivateKind, PrivateNameScope, Result, Unwrap,
 };
 use crate::Options;
 use crate::ast::{Class, FieldKind, Function, List, MethodKind, NodeId, NodeKind, VariableKind};
@@ -74,7 +73,7 @@ impl Exports {
 	}
 }
 
-impl<E: Extension> Parser<'_, E> {
+impl<const TS: bool> Parser<'_, TS> {
 	pub(crate) fn parse_program(&mut self) -> Result<NodeId> {
 		let start = self.prev_end;
 		let module = self.options.has(Options::MODULE);
@@ -208,7 +207,11 @@ impl<E: Extension> Parser<'_, E> {
 		place: StatementPlace,
 		exports: Option<&mut Exports>,
 	) -> Result<NodeId> {
-		if let Some(statement) = E::statement(self, context, place)? {
+		if self.typescript()
+			&& context == Context::None
+			&& (matches!(self.tok.kind, TokenKind::At | TokenKind::Ident(_)) || self.is_keyword(Keyword::Const))
+			&& let Some(statement) = self.statement()?
+		{
 			return Ok(statement);
 		}
 		let start = self.tok.start;
@@ -224,7 +227,7 @@ impl<E: Extension> Parser<'_, E> {
 			if place == StatementPlace::Case
 				|| (place == StatementPlace::TopLevel
 					&& !self.options.has(Options::MODULE)
-					&& !E::exports_in_script(self))
+					&& !(self.typescript() && self.exports_in_script()))
 			{
 				let error = self.error_arg(start, Code::UsingOutsideBlock, kind.as_str());
 				self.record(error)?;
@@ -283,7 +286,7 @@ impl<E: Extension> Parser<'_, E> {
 				if place != StatementPlace::TopLevel {
 					return self.error(start, Code::ImportExportNotTopLevel);
 				}
-				if !self.options.has(Options::MODULE) && !E::exports_in_script(self) {
+				if !self.options.has(Options::MODULE) && !(self.typescript() && self.exports_in_script()) {
 					return self.error(start, Code::ImportExportInScript);
 				}
 				if is_import {
@@ -637,7 +640,8 @@ impl<E: Extension> Parser<'_, E> {
 		let mut id = None;
 		if is_statement && (flags & FUNC_NULLABLE_ID == 0 || matches!(self.tok.kind, TokenKind::Ident(_))) {
 			let name = self.parse_ident(false)?;
-			if flags & FUNC_HANGING == 0 && !E::DECLARES_FUNCTION_NAME_AFTER_BODY {
+			// declared here in TypeScript too, an overload without a body would redeclare its implementation
+			if flags & FUNC_HANGING == 0 && !self.typescript() {
 				let binding = self.function_binding(generator, is_async);
 				self.check_lval_simple(name, binding, &mut None)?;
 			}
@@ -653,12 +657,20 @@ impl<E: Extension> Parser<'_, E> {
 		} else {
 			FunctionKind::Expression
 		};
-		E::function_start(self, kind)?;
+		let mut frame = if self.typescript() {
+			Some(self.function_start(kind)?)
+		} else {
+			None
+		};
 		self.expect(TokenKind::ParenL)?;
 		let params = self.parse_binding_list(TokenKind::ParenR, false, true, false)?;
 		self.check_yield_await_in_default_params()?;
 		let params = self.list_from(params);
-		let node = match E::function_body(self, start, id, params, is_async, generator, kind)? {
+		let bodiless = match &mut frame {
+			Some(frame) => self.function_body(frame, start, id, params, is_async, generator, kind)?,
+			None => None,
+		};
+		let node = match bodiless {
 			Some(node) => {
 				self.exit_scope();
 				node
@@ -683,7 +695,7 @@ impl<E: Extension> Parser<'_, E> {
 		self.restore_yield_await(old);
 		if is_statement
 			&& flags & FUNC_HANGING == 0
-			&& E::DECLARES_FUNCTION_NAME_AFTER_BODY
+			&& self.typescript()
 			&& let Some(name) = id
 		{
 			let binding = if matches!(self.kind(node), NodeKind::FunctionDeclaration { .. }) {
@@ -693,7 +705,9 @@ impl<E: Extension> Parser<'_, E> {
 			};
 			self.check_lval_simple(name, binding, &mut None)?;
 		}
-		E::function_end(self, node)?;
+		if let Some(frame) = frame {
+			self.function_end(node, frame)?;
+		}
 		Ok(node)
 	}
 
@@ -823,7 +837,9 @@ impl<E: Extension> Parser<'_, E> {
 					if simple { Binding::SimpleCatch } else { Binding::Lexical },
 					&mut None,
 				)?;
-				E::catch_param(self, param)?;
+				if self.typescript() {
+					self.catch_param(param)?;
+				}
 				self.expect(TokenKind::ParenR)?;
 				Some(param)
 			} else {
@@ -976,7 +992,7 @@ impl<E: Extension> Parser<'_, E> {
 				NodeKind::RestElement { argument } => stack.push(Some(argument)),
 				NodeKind::AssignmentPattern { left, .. } => stack.push(Some(left)),
 				NodeKind::Extension(_) => {
-					if let Some(inner) = E::unwrap(self, id, Unwrap::InnerPattern) {
+					if let Some(inner) = self.unwrap(id, Unwrap::InnerPattern) {
 						stack.push(Some(inner));
 					}
 				}
@@ -988,7 +1004,7 @@ impl<E: Extension> Parser<'_, E> {
 	}
 
 	fn parse_var(&mut self, start: u32, is_for: bool, kind: VariableKind) -> Result<NodeId> {
-		if kind.is_using() && E::in_ambient(self) {
+		if kind.is_using() && self.typescript() && self.in_ambient() {
 			let error = self.error_arg(start, Code::UsingInAmbient, kind.as_str());
 			self.record(error)?;
 		}
@@ -1010,12 +1026,12 @@ impl<E: Extension> Parser<'_, E> {
 				Binding::Lexical
 			};
 			self.check_lval_pattern(id, binding, &mut None)?;
-			E::var_id(self, id)?;
+			let definite = self.typescript() && self.var_id(id)?;
 			let init = if self.eat(TokenKind::Eq)? {
 				Some(self.parse_maybe_assign(if is_for { ForInit::Yes } else { ForInit::No }, &mut None)?)
 			} else {
 				let in_or_of = self.is_keyword(Keyword::In) || self.is_contextual("of");
-				let missing_allowed = E::allows_missing_initializer(self);
+				let missing_allowed = self.typescript() && self.allows_missing_initializer();
 				if kind.is_using() && !(is_for && in_or_of) && !missing_allowed {
 					let error = self.error_arg(self.prev_end, Code::UsingWithoutInitializer, kind.as_str());
 					self.record(error)?;
@@ -1032,7 +1048,9 @@ impl<E: Extension> Parser<'_, E> {
 				None
 			};
 			let declarator = self.add(NodeKind::VariableDeclarator { id, init }, decl_start);
-			E::var_declarator(self, declarator, kind)?;
+			if self.typescript() {
+				self.var_declarator(declarator, kind, definite)?;
+			}
 			declarations.push(Some(declarator));
 			if !self.eat(TokenKind::Comma)? {
 				break;
@@ -1046,7 +1064,9 @@ impl<E: Extension> Parser<'_, E> {
 
 	fn parse_import(&mut self, start: u32) -> Result<NodeId> {
 		self.next()?;
-		if let Some(node) = E::import_head(self, start)? {
+		if self.typescript()
+			&& let Some(node) = self.import_head(start)?
+		{
 			return Ok(node);
 		}
 		let specifiers;
@@ -1073,16 +1093,23 @@ impl<E: Extension> Parser<'_, E> {
 			},
 			start,
 		);
-		E::import_end(self, node)?;
+		if self.typescript() {
+			self.import_end(node)?;
+		}
 		Ok(node)
 	}
 
 	fn parse_import_specifiers(&mut self) -> Result<Vec<Option<NodeId>>> {
+		let binding = if self.typescript() {
+			self.import_binding()
+		} else {
+			Binding::Lexical
+		};
 		let mut nodes = self.items();
 		if matches!(self.tok.kind, TokenKind::Ident(_)) {
 			let start = self.tok.start;
 			let local = self.parse_ident(false)?;
-			self.check_lval_simple(local, E::import_binding(self), &mut None)?;
+			self.check_lval_simple(local, binding, &mut None)?;
 			nodes.push(Some(self.add(NodeKind::ImportDefaultSpecifier { local }, start)));
 			if !self.eat(TokenKind::Comma)? {
 				return Ok(nodes);
@@ -1093,7 +1120,7 @@ impl<E: Extension> Parser<'_, E> {
 			self.next()?;
 			self.expect_contextual("as")?;
 			let local = self.parse_ident(false)?;
-			self.check_lval_simple(local, E::import_binding(self), &mut None)?;
+			self.check_lval_simple(local, binding, &mut None)?;
 			nodes.push(Some(self.add(NodeKind::ImportNamespaceSpecifier { local }, start)));
 			return Ok(nodes);
 		}
@@ -1103,7 +1130,9 @@ impl<E: Extension> Parser<'_, E> {
 			if self.list_comma(TokenKind::BraceR, &mut first, true)? {
 				break;
 			}
-			if let Some(node) = E::import_specifier(self)? {
+			if self.typescript()
+				&& let Some(node) = self.import_specifier()?
+			{
 				nodes.push(Some(node));
 				continue;
 			}
@@ -1115,7 +1144,7 @@ impl<E: Extension> Parser<'_, E> {
 				self.check_unreserved(imported)?;
 				imported
 			};
-			self.check_lval_simple(local, E::import_binding(self), &mut None)?;
+			self.check_lval_simple(local, binding, &mut None)?;
 			nodes.push(Some(self.add(NodeKind::ImportSpecifier { imported, local }, start)));
 		}
 		Ok(nodes)
@@ -1170,7 +1199,9 @@ impl<E: Extension> Parser<'_, E> {
 
 	fn parse_export(&mut self, start: u32, exports: &mut Exports) -> Result<NodeId> {
 		self.next()?;
-		if let Some(node) = E::export_head(self, start)? {
+		if self.typescript()
+			&& let Some(node) = self.export_head(start)?
+		{
 			return Ok(node);
 		}
 		if self.eat(TokenKind::Star)? {
@@ -1196,7 +1227,9 @@ impl<E: Extension> Parser<'_, E> {
 				},
 				start,
 			);
-			E::export_end(self, node);
+			if self.typescript() {
+				self.export_end(node);
+			}
 			return Ok(node);
 		}
 		if self.is_keyword(Keyword::Default) {
@@ -1206,10 +1239,17 @@ impl<E: Extension> Parser<'_, E> {
 			self.check_export_name(exports, name, default_start)?;
 			let declaration = self.parse_export_default_declaration()?;
 			let node = self.add(NodeKind::ExportDefaultDeclaration { declaration }, start);
-			E::export_end(self, node);
+			if self.typescript() {
+				self.export_end(node);
+			}
 			return Ok(node);
 		}
-		let declaration = match E::export_declaration(self)? {
+		let declaration = if self.typescript() {
+			self.export_declaration()?
+		} else {
+			None
+		};
+		let declaration = match declaration {
 			None if self.should_parse_export_statement()? => {
 				Some(self.parse_statement(Context::None, StatementPlace::Block, None)?)
 			}
@@ -1237,7 +1277,9 @@ impl<E: Extension> Parser<'_, E> {
 				_ => {}
 			}
 			let node = self.add(NodeKind::ExportDeclaration { declaration }, start);
-			E::export_end(self, node);
+			if self.typescript() {
+				self.export_end(node);
+			}
 			return Ok(node);
 		}
 		let specifiers = self.parse_export_specifiers(exports)?;
@@ -1274,12 +1316,16 @@ impl<E: Extension> Parser<'_, E> {
 			},
 			start,
 		);
-		E::export_end(self, node);
+		if self.typescript() {
+			self.export_end(node);
+		}
 		Ok(node)
 	}
 
 	fn parse_export_default_declaration(&mut self) -> Result<NodeId> {
-		if let Some(declaration) = E::export_default(self)? {
+		if self.typescript()
+			&& let Some(declaration) = self.export_default()?
+		{
 			return Ok(declaration);
 		}
 		let start = self.tok.start;
@@ -1316,7 +1362,9 @@ impl<E: Extension> Parser<'_, E> {
 			if self.list_comma(TokenKind::BraceR, &mut first, true)? {
 				break;
 			}
-			if let Some(node) = E::export_specifier(self)? {
+			if self.typescript()
+				&& let Some(node) = self.export_specifier()?
+			{
 				nodes.push(Some(node));
 				continue;
 			}
@@ -1342,7 +1390,8 @@ impl<E: Extension> Parser<'_, E> {
 	}
 
 	fn check_export_name(&self, exports: &mut Exports, name: StrId, pos: u32) -> Result<()> {
-		if exports.first(name, pos) != pos && E::DUPLICATE_EXPORT_ERRORS {
+		// an error in TypeScript too, an exported overload would be one
+		if exports.first(name, pos) != pos && !self.typescript() {
 			return self.error_name(pos, Code::DuplicateExport, name);
 		}
 		Ok(())
@@ -1378,15 +1427,17 @@ pub(crate) enum ClassKind {
 	NullableId,
 }
 
-impl<E: Extension> Parser<'_, E> {
+impl<const TS: bool> Parser<'_, TS> {
 	pub(crate) fn parse_class(&mut self, kind: ClassKind) -> Result<NodeId> {
 		let start = self.tok.start;
 		self.next()?;
-		E::class_start(self, kind)?;
+		if self.typescript() {
+			self.class_start(kind)?;
+		}
 		let old_strict = self.strict;
 		self.set_strict(true);
 		let id = if matches!(self.tok.kind, TokenKind::Ident(_))
-			&& !(kind == ClassKind::Expression && E::starts_class_heritage(self))
+			&& !(kind == ClassKind::Expression && self.typescript() && self.starts_class_heritage())
 		{
 			let id = self.parse_ident(false)?;
 			// a class expression binds its name inside its own strict body, nowhere else
@@ -1403,13 +1454,17 @@ impl<E: Extension> Parser<'_, E> {
 			}
 			None
 		};
-		E::class_type_parameters(self)?;
+		if self.typescript() {
+			self.class_type_parameters()?;
+		}
 		let super_class = if self.eat_keyword(Keyword::Extends)? {
 			Some(self.parse_expr_subscripts(&mut None, ForInit::No)?)
 		} else {
 			None
 		};
-		E::class_heritage(self, super_class.is_some())?;
+		if self.typescript() {
+			self.class_heritage(super_class.is_some())?;
+		}
 		self.private_names.push(PrivateNameScope::default());
 		let body_start = self.tok.start;
 		let mut body = self.items();
@@ -1461,7 +1516,9 @@ impl<E: Extension> Parser<'_, E> {
 			NodeKind::ClassDeclaration { class }
 		};
 		let node = self.add(kind, start);
-		E::class_end(self, node);
+		if self.typescript() {
+			self.class_end(node);
+		}
 		Ok(node)
 	}
 
@@ -1537,19 +1594,23 @@ impl<E: Extension> Parser<'_, E> {
 		let mut generator = false;
 		let mut is_async = false;
 		let mut kind = MethodKind::Method;
-		let mut is_static = E::class_modifiers(self)?;
-		if let Some(signature) = E::class_index_signature(self, start)? {
-			E::class_element_end(self, signature)?;
+		let mut is_static = self.typescript() && self.class_modifiers()?;
+		if self.typescript()
+			&& let Some(signature) = self.class_index_signature(start)?
+		{
+			self.class_element_end(signature)?;
 			return Ok(Some(signature));
 		}
 		if !is_static
 			&& self.is_contextual("static")
-			&& (!E::STATIC_IS_A_MODIFIER || self.peek_char().0 == Some('{'))
+			&& (!self.typescript() || self.peek_char().0 == Some('{'))
 			&& self.eat_contextual("static")?
 		{
 			if self.eat(TokenKind::BraceL)? {
 				let block = self.parse_class_static_block(start)?;
-				E::class_element_end(self, block)?;
+				if self.typescript() {
+					self.class_element_end(block)?;
+				}
 				return Ok(Some(block));
 			}
 			if self.is_class_element_name_start() || self.is(TokenKind::Star) {
@@ -1596,9 +1657,11 @@ impl<E: Extension> Parser<'_, E> {
 			}
 			None => self.parse_class_element_name()?,
 		};
-		E::class_key_end(self, key, computed)?;
+		if self.typescript() {
+			self.class_key_end(key, computed)?;
+		}
 		if self.is(TokenKind::ParenL)
-			|| E::starts_class_method(self)
+			|| (self.typescript() && self.starts_class_method())
 			|| kind != MethodKind::Method
 			|| generator
 			|| is_async
@@ -1678,10 +1741,15 @@ impl<E: Extension> Parser<'_, E> {
 			if is_async {
 				return self.error(self.start_of(key), Code::AsyncConstructor);
 			}
-		} else if is_static && !E::in_ambient(self) && self.check_key_name(key, computed, "prototype") {
+		} else if is_static
+			&& !(self.typescript() && self.in_ambient())
+			&& self.check_key_name(key, computed, "prototype")
+		{
 			return self.error(self.start_of(key), Code::StaticPrototype);
 		}
-		E::class_method_start(self, kind)?;
+		if self.typescript() {
+			self.class_method_start(kind)?;
+		}
 		let value = self.parse_method(generator, is_async, allows_direct_super, true, kind)?;
 		if kind == MethodKind::Get || kind == MethodKind::Set {
 			self.check_accessor_params(value, kind == MethodKind::Get, true)?;
@@ -1696,7 +1764,9 @@ impl<E: Extension> Parser<'_, E> {
 			},
 			start,
 		);
-		E::class_element_end(self, node)?;
+		if self.typescript() {
+			self.class_element_end(node)?;
+		}
 		Ok(node)
 	}
 
@@ -1704,10 +1774,12 @@ impl<E: Extension> Parser<'_, E> {
 		if self.check_key_name(key, computed, "constructor") {
 			return self.error(self.start_of(key), Code::ConstructorField);
 		}
-		if is_static && !E::in_ambient(self) && self.check_key_name(key, computed, "prototype") {
+		if is_static && !(self.typescript() && self.in_ambient()) && self.check_key_name(key, computed, "prototype") {
 			return self.error(self.start_of(key), Code::StaticPrototype);
 		}
-		E::class_field_annotation(self)?;
+		if self.typescript() {
+			self.class_field_annotation()?;
+		}
 		let value = if self.eat(TokenKind::Eq)? {
 			self.enter_scope(SCOPE_CLASS_FIELD_INIT | SCOPE_SUPER);
 			let value = self.parse_maybe_assign(ForInit::No, &mut None)?;
@@ -1727,7 +1799,9 @@ impl<E: Extension> Parser<'_, E> {
 			},
 			start,
 		);
-		E::class_element_end(self, node)?;
+		if self.typescript() {
+			self.class_element_end(node)?;
+		}
 		Ok(node)
 	}
 

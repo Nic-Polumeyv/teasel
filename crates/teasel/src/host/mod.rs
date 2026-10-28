@@ -13,7 +13,7 @@ use crate::error::{Code, SyntaxError};
 use crate::interner::StrId;
 use crate::lexer::scan::is_space;
 use crate::lexer::unicode::{is_id_continue, is_id_start};
-use crate::parser::{Entry as JsEntry, Extension, Options, Parser, Result};
+use crate::parser::{Entry as JsEntry, Options, Parser, Result};
 pub use grammar::Grammar;
 use grammar::{
 	Alternative, Body, Construct, DirectiveRule, DirectiveValue, DocField, Entry, Form, Item, Match, Piece, Place,
@@ -341,12 +341,12 @@ struct Directive<'a> {
 	modifiers: Vec<&'a str>,
 }
 
-struct Walker<'a, E: Extension> {
+struct Walker<'a> {
 	src: &'a str,
 	full: u32,
 	grammar: &'a Grammar,
 	options: Options,
-	ast: Option<Box<Ast<E::Data>>>,
+	ast: Option<Box<Ast>>,
 	at: u32,
 	/// Where the JavaScript read at the cursor must end: the source, or an attribute value.
 	limit: u32,
@@ -403,12 +403,12 @@ pub fn stylesheet_children() -> Vec<(&'static str, Vec<&'static str>)> {
 
 /// Parses a document by its grammar: the host's tree with the JavaScript inside it, positions
 /// of the whole source. Returns the tree and its root.
-pub(crate) fn parse_document<E: Extension>(
+pub(crate) fn parse_document(
 	src: &str,
 	grammar: &Grammar,
 	options: Options,
-	reused: Option<Box<Ast<E::Data>>>,
-) -> (Box<Ast<E::Data>>, Result<NodeId>) {
+	reused: Option<Box<Ast>>,
+) -> (Box<Ast>, Result<NodeId>) {
 	let full = src.len() as u32;
 	let cut = if grammar.trim {
 		src.trim_end_matches(is_space)
@@ -421,30 +421,26 @@ pub(crate) fn parse_document<E: Extension>(
 		module: None,
 		css: None,
 	};
-	let mut walker = Walker::<E>::new(cut, full, grammar, options, reused, vec![root]);
+	let mut walker = Walker::new(cut, full, grammar, options, reused, vec![root]);
 	let root = walker.run();
 	(walker.ast.take().unwrap(), root)
 }
 
 /// The whole source as a CSS stylesheet; see `Walker::stylesheet`.
-pub(crate) fn parse_stylesheet<E: Extension>(
-	src: &str,
-	options: Options,
-	reused: Option<Box<Ast<E::Data>>>,
-) -> (Box<Ast<E::Data>>, Result<NodeId>) {
+pub(crate) fn parse_stylesheet(src: &str, options: Options, reused: Option<Box<Ast>>) -> (Box<Ast>, Result<NodeId>) {
 	let grammar = Grammar::empty();
-	let mut walker = Walker::<E>::new(src, src.len() as u32, &grammar, options, reused, Vec::new());
+	let mut walker = Walker::new(src, src.len() as u32, &grammar, options, reused, Vec::new());
 	let root = walker.stylesheet();
 	(walker.ast.take().unwrap(), root)
 }
 
-impl<'a, E: Extension> Walker<'a, E> {
+impl<'a> Walker<'a> {
 	fn new(
 		src: &'a str,
 		full: u32,
 		grammar: &'a Grammar,
 		options: Options,
-		reused: Option<Box<Ast<E::Data>>>,
+		reused: Option<Box<Ast>>,
 		frames: Vec<Frame<'a>>,
 	) -> Self {
 		Walker {
@@ -480,11 +476,11 @@ impl<'a, E: Extension> Walker<'a, E> {
 		Ok(())
 	}
 
-	fn ast(&mut self) -> &mut Ast<E::Data> {
+	fn ast(&mut self) -> &mut Ast {
 		self.ast.as_deref_mut().unwrap()
 	}
 
-	fn tree(&self) -> &Ast<E::Data> {
+	fn tree(&self) -> &Ast {
 		self.ast.as_deref().unwrap()
 	}
 
@@ -857,8 +853,8 @@ impl<'a, E: Extension> Walker<'a, E> {
 		let mut fields = self.fields.take();
 		// (from, until, node) of each scope the document line opens, over the fields it holds
 		let mut scopes: Vec<(usize, usize, Option<NodeId>)> = Vec::new();
-		fn place<E: Extension>(
-			w: &mut Walker<E>,
+		fn place(
+			w: &mut Walker,
 			items: &[DocField],
 			fields: &mut Vec<(&'static str, Value)>,
 			scopes: &mut Vec<(usize, usize, Option<NodeId>)>,
@@ -3153,9 +3149,17 @@ impl<'a, E: Extension> Walker<'a, E> {
 	}
 
 	fn js(&mut self, entry: JsEntry, stop: &str) -> Result<List> {
+		if self.options.typescript() {
+			self.js_in::<true>(entry, stop)
+		} else {
+			self.js_in::<false>(entry, stop)
+		}
+	}
+
+	fn js_in<const TS: bool>(&mut self, entry: JsEntry, stop: &str) -> Result<List> {
 		let ast = self.ast.take().unwrap();
 		let src = &self.src[..self.limit as usize];
-		let mut parser = Parser::<E>::new(src, self.at, self.options, stop, ast);
+		let mut parser = Parser::<TS>::new(src, self.at, self.options, stop, ast);
 		let first = parser.tok.start;
 		let roots = match parser.start().and_then(|()| parser.read_entry(entry)) {
 			// the placeholder spans what was read: a host copies an expression's text by its range
@@ -3189,11 +3193,19 @@ impl<'a, E: Extension> Walker<'a, E> {
 	}
 
 	fn program(&mut self, start: u32, end: u32) -> Result<NodeId> {
+		if self.options.typescript() {
+			self.program_in::<true>(start, end)
+		} else {
+			self.program_in::<false>(start, end)
+		}
+	}
+
+	fn program_in<const TS: bool>(&mut self, start: u32, end: u32) -> Result<NodeId> {
 		let ast = self.ast.take().unwrap();
 		let src = &self.src[..end as usize];
 		// the template may declare what the script exports
 		let options = self.options.with(Options::ALLOW_UNDECLARED_EXPORTS);
-		let mut parser = Parser::<E>::new(src, start, options, "", ast);
+		let mut parser = Parser::<TS>::new(src, start, options, "", ast);
 		let program = parser.start().and_then(|()| parser.parse_program());
 		self.ast = Some(parser.finish());
 		program

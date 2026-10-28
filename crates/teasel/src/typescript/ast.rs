@@ -1,13 +1,13 @@
-use crate::ast::{Ast, List, NodeId, NodeKind, Walk};
-use crate::estree::{Emit, Writer};
+use crate::ast::{Ast, List, NodeId, NodeKind};
+use crate::estree::Writer;
 use crate::handed::{Handed, Views};
 use crate::interner::StrId;
 use crate::layout::Ty;
 use crate::recipe::{ADDS, EXTRAS_ERASED, Op, Slot, TS, TS_ADDS};
-use crate::scopes::{Bind, Binder, BindingKind, Mode, ScopeKind};
+use crate::scopes::{Binder, BindingKind, Mode, ScopeKind};
 
-/// What the TypeScript extension hands back with a tree: its own nodes, indexed by the
-/// `NodeKind::Extension` payload, and the keys it adds to JavaScript nodes.
+/// What TypeScript hands back with a tree: its own nodes, indexed by the `NodeKind::Extension`
+/// payload, and the keys it adds to JavaScript nodes.
 #[derive(Debug, Default)]
 pub struct Data {
 	pub nodes: Handed<TsKind>,
@@ -24,29 +24,31 @@ impl Data {
 	}
 }
 
-impl crate::ast::Reuse for Data {
-	type Mark = (usize, usize);
-
-	fn clear(&mut self) {
+impl Data {
+	/// Forgets everything, keeping the room.
+	pub(crate) fn clear(&mut self) {
 		self.nodes.clear();
 		self.extras.clear();
 	}
 
-	fn mark(&self) -> Self::Mark {
+	/// Where the tables stood, to cut back to.
+	pub(crate) fn mark(&self) -> (usize, usize) {
 		(self.nodes.len(), self.extras.len())
 	}
 
-	fn truncate(&mut self, (nodes, extras): Self::Mark) {
+	pub(crate) fn truncate(&mut self, (nodes, extras): (usize, usize)) {
 		self.nodes.truncate(nodes);
 		self.extras.truncate(extras);
 	}
 
-	fn views(&mut self, out: &mut Views<'_>) {
+	/// The tables' buffers, after the tree's.
+	pub(crate) fn views(&mut self, out: &mut Views<'_>) {
 		out.push("ts", &mut self.nodes);
 		self.extras.views("extras_slots", "extras", out);
 	}
 
-	fn rare(&self, set: &mut crate::ast::NodeSet) {
+	/// The nodes TypeScript adds keys to when erasing.
+	pub(crate) fn rare(&self, set: &mut crate::ast::NodeSet) {
 		for &owner in self.extras.owners() {
 			if self.extras(owner).is_some_and(|extras| extras.decorators.is_some()) {
 				set.insert(owner);
@@ -54,7 +56,8 @@ impl crate::ast::Reuse for Data {
 		}
 	}
 
-	fn erased(&self, ast: &Ast<Self>, id: NodeId) -> bool {
+	/// Whether erasing leaves nothing of a node in a list: type-only declarations and imports.
+	pub(crate) fn erased(&self, ast: &Ast, id: NodeId) -> bool {
 		use TsKind::*;
 		let extras = self.extras_of(id);
 		if extras.declare {
@@ -471,14 +474,14 @@ impl Keyword {
 
 impl Data {
 	/// The TypeScript node `id` is, if it is one.
-	pub(crate) fn ts_of(&self, ast: &Ast<Self>, id: NodeId) -> Option<TsKind> {
+	pub(crate) fn ts_of(&self, ast: &Ast, id: NodeId) -> Option<TsKind> {
 		match ast.node(id).kind {
 			NodeKind::Extension(index) => Some(self.kind(index)),
 			_ => None,
 		}
 	}
 
-	fn root(&self, ast: &Ast<Self>, mut id: NodeId) -> Option<NodeId> {
+	fn root(&self, ast: &Ast, mut id: NodeId) -> Option<NodeId> {
 		loop {
 			match ast.node(id).kind {
 				NodeKind::Identifier { .. } => return Some(id),
@@ -492,8 +495,9 @@ impl Data {
 	}
 }
 
-impl Bind for Data {
-	fn bind(&self, b: &mut Binder<Self>, id: NodeId, mode: Mode) {
+impl Data {
+	/// Binds what a TypeScript node declares and refers to.
+	pub(crate) fn bind(&self, b: &mut Binder, id: NodeId, mode: Mode) {
 		use TsKind::*;
 		let Some(kind) = self.ts_of(b.ast(), id) else { return };
 		match kind {
@@ -553,7 +557,8 @@ impl Bind for Data {
 		}
 	}
 
-	fn bind_extras(&self, b: &mut Binder<Self>, id: NodeId) {
+	/// The value-space parts TypeScript attaches to a plain node: decorators.
+	pub(crate) fn bind_extras(&self, b: &mut Binder, id: NodeId) {
 		if let Some(decorators) = self.extras(id).and_then(|e| e.decorators) {
 			for &decorator in b.ast().list(decorators).iter().flatten() {
 				b.visit(decorator, Mode::Expression);
@@ -561,12 +566,14 @@ impl Bind for Data {
 		}
 	}
 
-	fn types_only(&self, _ast: &Ast<Self>, id: NodeId) -> bool {
+	/// Whether an import or export only names types, so it binds and refers to no value.
+	pub(crate) fn types_only(&self, id: NodeId) -> bool {
 		self.extras(id)
 			.is_some_and(|e| e.import_kind == Some(Kind::Type) || e.export_kind == Some(Kind::Type))
 	}
 
-	fn wrapped(&self, ast: &Ast<Self>, id: NodeId) -> Option<NodeId> {
+	/// The expression a TypeScript node wraps without changing its value: `x as T`, `x!`.
+	pub(crate) fn wrapped(&self, ast: &Ast, id: NodeId) -> Option<NodeId> {
 		use TsKind::*;
 		match self.ts_of(ast, id)? {
 			AsExpression { expression, .. }
@@ -580,8 +587,9 @@ impl Bind for Data {
 	}
 }
 
-impl Walk for Data {
-	fn children(&self, ast: &Ast<Self>, id: NodeId, out: &mut Vec<NodeId>) {
+impl Data {
+	/// Pushes the children of `id` in source order, with the nodes TypeScript adds to a plain one.
+	pub(crate) fn children(&self, ast: &Ast, id: NodeId, out: &mut Vec<NodeId>) {
 		let list = |list: List, out: &mut Vec<NodeId>| out.extend(ast.list(list).iter().flatten());
 		let from = out.len();
 		let extras = self.extras(id).copied().unwrap_or_default();
@@ -854,7 +862,7 @@ fn recipes() -> &'static Recipes {
 
 impl Data {
 	/// tsc emits a namespace that declares any value, so a `declare`d member counts here though it erases at the top level.
-	fn instantiates(&self, ast: &Ast<Self>, id: NodeId) -> bool {
+	fn instantiates(&self, ast: &Ast, id: NodeId) -> bool {
 		use TsKind::*;
 		match ast.node(id).kind {
 			NodeKind::Extension(index) => match self.kind(index) {
@@ -879,15 +887,17 @@ impl Data {
 	}
 }
 
-impl Emit for Data {
-	fn node(&self, w: &mut Writer<Self>, id: NodeId, index: u32) {
+impl Data {
+	/// Writes one of TypeScript's own nodes and closes it, or what erasing puts in its place.
+	pub(crate) fn write_node(&self, w: &mut Writer, id: NodeId, index: u32) {
 		let base = &self.nodes[index as usize] as *const TsKind as *const u8;
 		if w.run(id, recipes().kinds[crate::estree::tag(base)], base) {
 			w.end();
 		}
 	}
 
-	fn extras(&self, w: &mut Writer<Self>, id: NodeId) {
+	/// Writes the keys TypeScript adds to a node.
+	pub(crate) fn write_extras(&self, w: &mut Writer, id: NodeId) {
 		let recipes = recipes();
 		let extras = self.extras_of(id);
 		let base = &extras as *const Extras as *const u8;

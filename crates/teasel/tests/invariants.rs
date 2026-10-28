@@ -8,7 +8,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use teasel::Entry;
 use teasel::Options;
-use teasel::ast::{Ast, List, Walk};
+use teasel::ast::{Ast, List};
 use teasel::json::{Request, parse};
 
 fn suite() -> Option<PathBuf> {
@@ -171,7 +171,7 @@ fn kept_nodes_are_in_source_order() {
 }
 
 /// Every node reached from `roots` that ends past its parent.
-fn escaped<X: Walk>(path: &str, ast: &Ast<X>, roots: List, out: &mut Vec<String>) {
+fn escaped(path: &str, ast: &Ast, roots: List, out: &mut Vec<String>) {
 	let mut stack: Vec<_> = ast.list(roots).iter().flatten().copied().collect();
 	let mut children = Vec::new();
 	while let Some(id) = stack.pop() {
@@ -212,7 +212,7 @@ fn no_child_ends_past_its_parent() {
 		let source = fs::read_to_string(&file).unwrap();
 		let module = if name.contains(".script.") { 0 } else { Options::MODULE };
 		let options = Options(module | Options::TYPESCRIPT);
-		if let (ast, Ok((roots, _))) = teasel::typescript::parse_at(&source, 0, None, Entry::Program, options, "") {
+		if let (ast, Ok((roots, _))) = teasel::parse_at(&source, 0, None, Entry::Program, options, "") {
 			escaped(name, &ast, roots, &mut wrong);
 		}
 	}
