@@ -33,7 +33,7 @@ source.parse(js.expression, 10).node.type; // 'CallExpression', the f(a, b)
 
 ## In the browser
 
-The same import works in a browser or behind a bundler. There it is a WebAssembly build, not the native addon, with the same API.
+The same import works in a browser, directly or through a bundler. There it is a WebAssembly build, not the native addon, with the same API.
 
 ```js browser.js
 import { Source, js } from '@teasel/parser';
@@ -41,7 +41,9 @@ import { Source, js } from '@teasel/parser';
 const { node } = new Source('export const answer = 42').parse();
 ```
 
-The build looks for `teasel.wasm` beside the package entry, through `import.meta.url`, so a bundler includes the file without configuration. Under Node, `node --no-addons` takes the same build instead of the addon. Node also takes it where no addon loads, such as on a Linux without glibc, and warns if the platform has an addon that is not installed or does not load.
+The build looks for `teasel.wasm` beside the package entry, through `import.meta.url`, so a bundler includes the file without configuration. A bundle built for Node loads the native addon, from `@teasel/parser-<platform>` in `node_modules`, as Node does. Under Node, `node --no-addons` takes the WebAssembly build instead of the addon, without a warning. Node also takes it where no addon loads, such as on a Linux without glibc, and warns if the platform has an addon that is not installed or does not load.
+
+Under `node --permission`, the package needs `--allow-fs-read` for its directory, and `--allow-addons` for the native addon, which also reads `@teasel/parser-<platform>`: `--allow-fs-read=node_modules/@teasel/*` covers both. Without `--allow-addons` the WebAssembly build runs, silently.
 
 ## Next
 

@@ -29,6 +29,8 @@ function libc() {
 
 // a build linked against a newer glibc than the system's fails to dlopen: WebAssembly parses there, as it does without a build
 export function load(): Addon | undefined {
+	// the permission model refuses a read of the platform package before it refuses the build
+	if (process.permission?.has('addon') === false) return;
 	const require = createRequire(import.meta.url);
 	let why: NodeJS.ErrnoException | undefined;
 	for (const [tag, p] of Object.entries(platforms)) {
@@ -39,6 +41,8 @@ export function load(): Addon | undefined {
 			return require(existsSync(new URL(own, import.meta.url)) ? own : `@teasel/parser-${tag}/teasel.${tag}.node`);
 		} catch (e) {
 			why = e as NodeJS.ErrnoException;
+			// --no-addons asks for WebAssembly
+			if (why.code === 'ERR_DLOPEN_DISABLED') return;
 		}
 	}
 	// where no build exists there is nothing to fix
