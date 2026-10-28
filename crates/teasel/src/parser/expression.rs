@@ -116,7 +116,7 @@ pub(crate) fn starts_expression(kind: TokenKind) -> bool {
 	}
 }
 
-impl Parser<'_> {
+impl<const TS: bool> Parser<'_, TS> {
 	pub(crate) fn parse_expression(&mut self, for_init: bool, errors: &mut Errors) -> Result<NodeId> {
 		let for_init = if for_init { ForInit::Yes } else { ForInit::No };
 		self.parse_sequence(for_init, errors)
@@ -360,11 +360,8 @@ impl Parser<'_> {
 		inc_dec: bool,
 		for_init: ForInit,
 	) -> Result<NodeId> {
-		if self.at_lt()
-			&& self.typescript()
-			&& let Some(expr) = self.unary(for_init)?
-		{
-			return Ok(expr);
+		if self.at_lt() && self.typescript() && self.starts_with_lt() {
+			return self.parse_type_assertion(for_init);
 		}
 		let start = self.tok.start;
 		let expr;
@@ -590,7 +587,8 @@ impl Parser<'_> {
 			self.tok = self.lexer.read_regex(self.tok)?;
 		}
 		if self.is(TokenKind::At) && self.typescript() {
-			return self.atom(errors, for_init, for_new);
+			self.parse_decorators(false)?;
+			return self.parse_expr_atom(errors, for_init, for_new);
 		}
 		let start = self.tok.start;
 		let can_be_arrow = self.potential_arrow_at == start;
@@ -952,7 +950,7 @@ impl Parser<'_> {
 			self.prev_end = chunk.end + 2;
 			self.lexer.next_token_into(&mut self.tok)?;
 			let expression = if self.lexer.in_type {
-				self.template_expression()?
+				self.parse_type()?
 			} else {
 				self.parse_expression(false, &mut None)?
 			};
@@ -1603,7 +1601,7 @@ enum Op {
 	Coalesce,
 }
 
-impl Parser<'_> {
+impl<const TS: bool> Parser<'_, TS> {
 	pub(crate) fn make_pattern(&mut self, id: NodeId, errors: &mut Option<DestructuringErrors>) -> Result<NodeId> {
 		let start = self.start_of(id);
 		match self.kind(id) {

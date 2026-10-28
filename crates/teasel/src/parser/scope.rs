@@ -101,7 +101,7 @@ impl Scope {
 	}
 }
 
-impl Parser<'_> {
+impl<const TS: bool> Parser<'_, TS> {
 	pub(crate) fn enter_scope(&mut self, flags: u32) {
 		let names = self.spare_names.pop().unwrap_or_default();
 		self.scopes.push(Scope {

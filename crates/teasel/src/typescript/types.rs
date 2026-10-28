@@ -40,7 +40,7 @@ const ACCESSIBILITY_AND_CLASS: &[&str] = &[
 	"override",
 ];
 
-impl Parser<'_> {
+impl<const TS: bool> Parser<'_, TS> {
 	// Contexts
 
 	pub(super) fn in_type<T>(&mut self, f: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
@@ -271,7 +271,7 @@ impl Parser<'_> {
 
 	// Types
 
-	pub(super) fn parse_type(&mut self) -> Result<NodeId> {
+	pub(crate) fn parse_type(&mut self) -> Result<NodeId> {
 		self.enter()?;
 		let result = self.parse_type_inner();
 		self.leave();
