@@ -115,7 +115,7 @@ pub(crate) fn starts_expression(kind: TokenKind) -> bool {
 	}
 }
 
-impl Parser<'_> {
+impl<const TS: bool> Parser<'_, TS> {
 	pub(crate) fn parse_expression(&mut self, for_init: bool, errors: &mut Errors) -> Result<NodeId> {
 		let for_init = if for_init { ForInit::Yes } else { ForInit::No };
 		self.parse_sequence(for_init, errors)
@@ -1599,7 +1599,7 @@ enum Op {
 	Coalesce,
 }
 
-impl Parser<'_> {
+impl<const TS: bool> Parser<'_, TS> {
 	pub(crate) fn make_pattern(
 		&mut self,
 		id: NodeId,

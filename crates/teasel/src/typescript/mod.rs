@@ -183,7 +183,7 @@ modifiers! {
 	"const" => is_const = true,
 }
 
-impl Parser<'_> {
+impl<const TS: bool> Parser<'_, TS> {
 	pub(crate) fn ts(&mut self, kind: TsKind, start: u32) -> NodeId {
 		let index = self.ast.typescript.nodes.len() as u32;
 		self.ast.typescript.nodes.push(kind);
@@ -799,7 +799,7 @@ impl TypeScript {
 /// TypeScript's grammar at the points where it departs from JavaScript's, each read where the parser
 /// meets one in a TypeScript parse.
 // each one cold: without it a JavaScript parse, which calls none of them, ran over 1% slower
-impl Parser<'_> {
+impl<const TS: bool> Parser<'_, TS> {
 	// Statements and modules
 
 	/// First look at a statement; `Some` replaces it entirely.
@@ -1968,7 +1968,7 @@ impl Parser<'_> {
 }
 
 /// `left as T` or `left satisfies T`, the word being the current token.
-fn assertion(p: &mut Parser, left: NodeId, left_start: u32, is_as: bool) -> Result<NodeId> {
+fn assertion<const TS: bool>(p: &mut Parser<'_, TS>, left: NodeId, left_start: u32, is_as: bool) -> Result<NodeId> {
 	let type_annotation = match p.try_next_parse_constant_context()? {
 		Some(constant) => constant,
 		None => p.next_then_parse_type()?,

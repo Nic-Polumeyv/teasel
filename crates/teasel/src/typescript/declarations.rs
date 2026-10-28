@@ -31,7 +31,7 @@ pub(super) enum Head {
 	Type,
 }
 
-impl Parser<'_> {
+impl<const TS: bool> Parser<'_, TS> {
 	fn ambient<T>(&mut self, f: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
 		let old = self.ts.state.ambient;
 		self.ts.state.ambient = true;
