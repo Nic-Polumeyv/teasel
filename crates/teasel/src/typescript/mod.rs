@@ -13,7 +13,7 @@ use crate::interner::FastMap;
 use crate::interner::StrId;
 use crate::lexer::token::{Keyword, TokenKind};
 use crate::parser::expression::starts_expression;
-use crate::parser::scope::{SCOPE_ARROW, function_flags};
+use crate::parser::scope::{EXPORT_ONLY, SCOPE_ARROW, TYPE, function_flags};
 use crate::parser::statement::{ClassKind, StatementPlace};
 use crate::parser::{Context, DestructuringErrors, Errors, ForInit, FunctionKind, Parser, Result, Unwrap};
 use ast::{Accessibility, Extras, Kind, TsKind};
@@ -21,19 +21,14 @@ use declarations::Head;
 use types::TypeParameterModifiers;
 
 /// Parser state that only TypeScript needs. `State` is copied into every snapshot, so it stays
-/// small; the name tables only grow within a scope and are truncated instead.
+/// small.
 #[derive(Default)]
 pub(crate) struct TypeScript {
 	state: State,
-	types: Names,
-	export_only: Names,
 	// outside State so a rewind keeps them: nested `<A>(<A>(…))` and ternary arrows were read twice per level
 	not_arrow: crate::interner::FastSet<(u32, bool)>,
 	colon_after_body: FastMap<u32, bool>,
 }
-
-/// What a snapshot keeps of TypeScript's state: the state, and how many names each table had.
-pub(crate) type Saved = (State, usize, usize);
 
 #[derive(Clone, Default)]
 pub(crate) struct State {
@@ -44,7 +39,6 @@ pub(crate) struct State {
 	in_namespace: bool,
 	/// Inside `declare global` or a `global` block: what is declared there is the module's to export.
 	global_depth: u32,
-	globals: crate::interner::FastSet<StrId>,
 	in_abstract_class: bool,
 	classes: Vec<ClassFrame>,
 	elements: Vec<ElementFrame>,
@@ -62,42 +56,6 @@ pub(crate) struct State {
 	/// Decorators waiting for their class, one list per nesting level of decorator expressions.
 	decorators: Vec<Vec<NodeId>>,
 	decorators_before_export: bool,
-}
-
-/// Names declared per scope depth, in declaration order so a scope's names are a suffix.
-#[derive(Default)]
-struct Names {
-	log: Vec<(usize, StrId)>,
-	depths: FastMap<StrId, Vec<usize>>,
-}
-
-impl Names {
-	fn push(&mut self, depth: usize, name: StrId) {
-		self.log.push((depth, name));
-		self.depths.entry(name).or_default().push(depth);
-	}
-
-	fn contains(&self, name: StrId) -> bool {
-		self.depths.get(&name).is_some_and(|d| !d.is_empty())
-	}
-
-	fn contains_at(&self, depth: usize, name: StrId) -> bool {
-		self.depths.get(&name).is_some_and(|d| d.contains(&depth))
-	}
-
-	fn truncate(&mut self, len: usize) {
-		debug_assert!(self.log.len() >= len);
-		while self.log.len() > len {
-			let (_, name) = self.log.pop().unwrap();
-			self.depths.get_mut(&name).unwrap().pop();
-		}
-	}
-
-	/// Forgets the names of a scope being left.
-	fn exit(&mut self, depth: usize) {
-		let len = self.log.iter().rposition(|(d, _)| *d < depth).map_or(0, |i| i + 1);
-		self.truncate(len);
-	}
 }
 
 /// What TypeScript reads of a function before its body and sets on it after.
@@ -430,22 +388,17 @@ impl<const TS: bool> Parser<'_, TS> {
 		)
 	}
 
-	fn scope_depth(&self) -> usize {
-		self.scopes.len() - 1
-	}
-
 	fn declare_type(&mut self, id: NodeId, unique: bool) -> Result<()> {
 		let NodeKind::Identifier { name } = self.kind(id) else {
 			unreachable!()
 		};
-		let depth = self.scope_depth();
-		if unique && self.ts.types.contains_at(depth, name) {
+		if unique && self.current_scope().has(name, TYPE) {
 			return self.error_name(self.start_of(id), Code::TypeRedeclaration, name);
 		}
 		if self.ts.state.global_depth > 0 {
-			self.ts.state.globals.insert(name);
+			self.declare_global(name);
 		}
-		self.ts.types.push(depth, name);
+		self.declare_here(name, TYPE);
 		Ok(())
 	}
 
@@ -453,8 +406,7 @@ impl<const TS: bool> Parser<'_, TS> {
 		let NodeKind::Identifier { name } = self.kind(id) else {
 			unreachable!()
 		};
-		let depth = self.scope_depth();
-		self.ts.export_only.push(depth, name);
+		self.declare_here(name, EXPORT_ONLY);
 	}
 
 	/// A class member's name the way error messages print it.
@@ -732,14 +684,12 @@ impl<const TS: bool> Parser<'_, TS> {
 }
 
 impl TypeScript {
-	pub(crate) fn save(&self) -> Saved {
-		(self.state.clone(), self.types.log.len(), self.export_only.log.len())
+	pub(crate) fn save(&self) -> State {
+		self.state.clone()
 	}
 
-	pub(crate) fn restore(&mut self, (state, types, export_only): Saved) {
+	pub(crate) fn restore(&mut self, state: State) {
 		self.state = state;
-		self.types.truncate(types);
-		self.export_only.truncate(export_only);
 	}
 }
 
@@ -950,20 +900,6 @@ impl<const TS: bool> Parser<'_, TS> {
 	/// definition's rules do not apply.
 	pub(crate) fn in_ambient(&self) -> bool {
 		self.ts.state.ambient
-	}
-
-	/// Whether TypeScript declared `name` in a way that satisfies a local `export { name }`.
-	pub(crate) fn ts_declares_export(&mut self, name: StrId) -> bool {
-		self.ts.state.module_blocks > 0
-			|| self.ts.types.contains(name)
-			|| self.ts.export_only.contains(name)
-			|| self.ts.state.globals.contains(&name)
-	}
-
-	pub(crate) fn scope_exit(&mut self) {
-		let depth = self.scope_depth();
-		self.ts.types.exit(depth);
-		self.ts.export_only.exit(depth);
 	}
 
 	// Bindings
