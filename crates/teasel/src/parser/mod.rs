@@ -215,6 +215,7 @@ impl<const TS: bool> Parser<'_, TS> {
 	}
 }
 
+// with the language read from the options at each point instead, a parse-only JavaScript read took 1% longer
 pub(crate) struct Parser<'a, const TS: bool> {
 	pub(crate) lexer: Lexer<'a>,
 	pub(crate) ast: Box<Ast>,
