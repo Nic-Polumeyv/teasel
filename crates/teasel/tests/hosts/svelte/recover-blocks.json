@@ -34,8 +34,8 @@
 									"root": 0,
 									"name": "a"
 								},
-								"elseif": false,
 								"alternate": null,
+								"branches": [],
 								"consequent": {
 									"type": "Fragment",
 									"scope": 4,
@@ -64,8 +64,8 @@
 						"root": 1,
 						"name": "b"
 					},
-					"elseif": false,
 					"alternate": null,
+					"branches": [],
 					"consequent": {
 						"type": "Fragment",
 						"scope": 5,

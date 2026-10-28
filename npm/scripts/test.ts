@@ -756,7 +756,9 @@ function types(source: api.Source, definition: typeof svelte) {
 	expect<Equal<Each['fallback'], Fragment | undefined>>();
 
 	expect<Equal<NodeType<Svelte, 'IfBlock'>['alternate'], Fragment | null>>();
-	expect<Equal<NodeType<Svelte, 'IfBlock'>['elseif'], boolean>>();
+	expect<Equal<NodeType<Svelte, 'IfBlock'>['branches'], NodeType<Svelte, 'ElseIf'>[]>>();
+	expect<Equal<Required<NodeType<Svelte, 'ElseIf'>>, 'type' | 'start' | 'end' | 'test' | 'consequent'>>();
+	expect<Equal<NodeType<Svelte, 'ElseIf'>['consequent'], Fragment>>();
 	expect<Equal<NodeType<Svelte, 'AwaitBlock'>['pending'], Fragment | null>>();
 	expect<Equal<NodeType<Svelte, 'SnippetBlock'>['typeParams'], string | undefined>>();
 	expect<Equal<keyof Fragment, 'type' | 'nodes'>>();

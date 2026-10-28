@@ -83,8 +83,8 @@
 						"root": 1,
 						"name": "x"
 					},
-					"elseif": false,
 					"alternate": null,
+					"branches": [],
 					"consequent": {
 						"type": "Fragment",
 						"scope": 5,

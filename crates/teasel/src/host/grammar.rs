@@ -915,9 +915,6 @@ pub struct Body {
 	pub field: &'static str,
 	/// The field is left out of blocks that never opened this body; otherwise it is null there.
 	pub omit: bool,
-	/// A branch that nests a new block of the same kind into the field, `{:else if}`: the field
-	/// of the nested block that its own body fills, and the flag set on it.
-	pub chain: Option<(&'static str, &'static str)>,
 	pub declares: Vec<Declare>,
 }
 
@@ -1048,6 +1045,10 @@ pub struct Piece {
 	pub display: &'static str,
 	/// The form's last word before any body: where the piece's tag ends.
 	pub end: &'static str,
+	/// A branch that repeats: the type of the node each one makes, and the block's field listing them.
+	pub repeats: Option<(&'static str, &'static str)>,
+	/// Every body the form can open.
+	pub bodies: Vec<(&'static str, bool)>,
 }
 
 /// Which piece of a construct a marker is.
@@ -1066,12 +1067,12 @@ pub struct Construct {
 	pub open: Piece,
 	pub branches: Vec<Piece>,
 	pub close: Option<Piece>,
-	/// The boolean fields of the branches that reopen the block, each true when that branch did.
-	pub chain_flags: Vec<&'static str>,
 
-	/// Every entry the construct's forms can read, and every body they can open.
+	/// Every entry the node's own forms can read, every body they can open, and the lists its
+	/// repeating branches fill, in the order written.
 	pub entries: Vec<(&'static str, bool)>,
 	pub bodies: Vec<(&'static str, bool)>,
+	pub lists: Vec<&'static str>,
 }
 
 impl Construct {
@@ -1376,12 +1377,14 @@ pub mod definition {
 	}
 
 	wire! {
-		/// A branch of a block; `reopen` nests the block again into that field, with that flag true on it.
+		/// A branch of a block; with `node` and `list` it repeats, each one a node of that type in
+		/// that field of the block.
 		pub struct Branch<'a> {
 			pub marker: &'a [&'static str],
 			pub space: Option<bool>,
+			pub node: Option<&'static str>,
+			pub list: Option<&'static str>,
 			pub form: &'a [Item<'a>],
-			pub reopen: Option<(&'static str, &'static str)>,
 		}
 	}
 
@@ -1640,7 +1643,6 @@ fn sequence(
 							body = Some(Body {
 								field,
 								omit: source.optional,
-								chain: None,
 								declares: std::mem::take(bound),
 							});
 							continue;
@@ -1903,6 +1905,8 @@ fn piece(
 		space: space == Some(true),
 		end,
 		form,
+		repeats: None,
+		bodies: Vec::new(),
 	})
 }
 
@@ -1913,30 +1917,22 @@ fn construct(ty: &'static str, rule: &definition::Construct) -> Result<Construct
 		Some(list) => list.to_vec(),
 		None => vec![Place::Content],
 	};
-	let mut chain_flags = Vec::new();
 	let mut branches = Vec::new();
 	for branch in rule.branches.unwrap_or_default() {
 		if !block {
 			return Err(format!("{ty} has branches, so it closes"));
 		}
 		let mut piece = piece(ty, branch.marker, branch.space, branch.form, At::Block, &mut Vec::new())?;
-		if let Some((field, flag)) = branch.reopen {
-			if !chain_flags.contains(&flag) {
-				chain_flags.push(flag);
-			}
-			let own = piece.form.body.take().ok_or_else(|| {
-				format!(
-					"{ty}: the {} branch reopens the block, so it reads that block's body",
+		piece.repeats = match (branch.node, branch.list) {
+			(Some(node), Some(list)) => Some((node, list)),
+			(None, None) => None,
+			_ => {
+				return Err(format!(
+					"{ty}: the {} branch repeats, so it names its node and its list",
 					piece.display
-				)
-			})?;
-			piece.form.body = Some(Body {
-				field,
-				omit: false,
-				chain: Some((own.field, flag)),
-				declares: own.declares,
-			});
-		}
+				));
+			}
+		};
 		if !closed(&piece.form.items, piece.form.body.as_ref()) {
 			return Err(format!("{ty}: the {} branch ends in no body", piece.display));
 		}
@@ -1970,9 +1966,9 @@ fn construct(ty: &'static str, rule: &definition::Construct) -> Result<Construct
 		open,
 		branches,
 		close,
-		chain_flags,
 		entries: Vec::new(),
 		bodies: Vec::new(),
+		lists: Vec::new(),
 	};
 	if block && construct.places.iter().any(|place| *place != Place::Content) {
 		return Err(format!("{ty} closes, so it stands in content only"));
@@ -2247,19 +2243,36 @@ impl Grammar {
 		let mut starts = [false; 256];
 		for construct in &mut self.constructs {
 			construct.open.form.finish()?;
+			collect_bodies(&construct.open.form, &mut construct.open.bodies);
 			let mut entries = construct.open.form.entries.clone();
-			let mut bodies = Vec::new();
-			collect_bodies(&construct.open.form, &mut bodies);
+			let mut bodies = construct.open.bodies.clone();
+			let mut lists = Vec::new();
 			for branch in &mut construct.branches {
 				branch.form.finish()?;
-				entries.extend_from_slice(&branch.form.entries);
-				collect_bodies(&branch.form, &mut bodies);
+				collect_bodies(&branch.form, &mut branch.bodies);
+				match branch.repeats {
+					Some((_, list)) => {
+						if !lists.contains(&list) {
+							lists.push(list);
+						}
+					}
+					None => {
+						entries.extend_from_slice(&branch.form.entries);
+						collect_bodies(&branch.form, &mut bodies);
+					}
+				}
 			}
 			if let Some(close) = &mut construct.close {
 				close.form.finish()?;
 			}
+			for list in &lists {
+				if entries.iter().chain(&bodies).any(|(field, _)| field == list) {
+					return Err(format!("{} reads {list} twice", construct.ty));
+				}
+			}
 			construct.entries = entries;
 			construct.bodies = bodies;
+			construct.lists = lists;
 			for piece in std::iter::once(&construct.open)
 				.chain(&construct.branches)
 				.chain(&construct.close)
@@ -2373,7 +2386,6 @@ impl Grammar {
 		};
 		fn body(body: &Body, into: &mut Vec<&'static str>) {
 			into.push(body.field);
-			into.extend(body.chain.map(|(field, _)| field));
 		}
 		fn items(list: &[Item], into: &mut Vec<&'static str>) {
 			for item in list {
@@ -2447,8 +2459,20 @@ impl Grammar {
 		for rule in &self.constructs {
 			fields.clear();
 			form(&rule.open.form, &mut fields);
-			rule.branches.iter().for_each(|branch| form(&branch.form, &mut fields));
+			for branch in &rule.branches {
+				if branch.repeats.is_none() {
+					form(&branch.form, &mut fields);
+				}
+			}
+			fields.extend(&rule.lists);
 			add(rule.ty, &fields);
+			for branch in &rule.branches {
+				if let Some((ty, _)) = branch.repeats {
+					fields.clear();
+					form(&branch.form, &mut fields);
+					add(ty, &fields);
+				}
+			}
 		}
 		out
 	}

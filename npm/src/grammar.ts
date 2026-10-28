@@ -181,8 +181,10 @@ export interface Piece<I extends BlockForm = BlockForm> {
 }
 
 export interface Branch<I extends BlockForm = BlockForm> extends Piece<I> {
-	/** The branch opens the construct again inside this field, with this flag true on the one it opens. */
-	readonly reopen?: readonly [field: string, flag: string];
+	/** With `list`, the branch repeats: each one is a node of this type. */
+	readonly node?: string;
+	/** The block's field listing the nodes in the order read, empty when none came. */
+	readonly list?: string;
 }
 
 /** A construct without a close: it reads no content and opens no scope. */
@@ -357,14 +359,21 @@ type FragmentNode<G extends Definition> = G['fragment'] extends { readonly node:
 	? Simplify<{ type: T } & Shape<Collect<FormOf<G['fragment']>, false>, G, false>>
 	: never;
 
-/** A branch adds its fields to the construct, or, reopening it, the field it reopens into and its flag. */
-type BranchMembers<B> = B extends { readonly reopen: readonly [infer F extends string, infer Flag extends string] }
-	? Member<F, Source<Children, 'form', Plain>, true> | Member<Flag, Source<boolean, 'form', Plain>, false>
+/** The node a repeating branch makes. */
+type BranchNode<B, G extends Definition> = B extends { readonly node: infer N extends string; readonly list: string }
+	? Typed<N, Shape<Collect<FormOf<B>, false>, G, false>>
+	: never;
+/** A branch adds its fields to the construct, or, repeating, the field listing its nodes. */
+type BranchMembers<B, G extends Definition> = B extends { readonly node: string; readonly list: infer F extends string }
+	? Member<F, Source<BranchNode<B, G>[], 'form', Plain>, false>
 	: Collect<FormOf<B>, true>;
 
+type Branches<C> = C extends { readonly branches: readonly (infer B)[] } ? B : never;
 type ConstructNode<T extends string, C, G extends Definition> = C extends { readonly open: { readonly form: infer I } }
-	? Typed<T, Shape<Collect<I, false> | BranchMembers<C extends { readonly branches: readonly (infer B)[] } ? B : never>, G, false>>
+	? Typed<T, Shape<Collect<I, false> | BranchMembers<Branches<C>, G>, G, false>>
 	: never;
+/** The nodes of every construct's repeating branches. */
+type BranchNodes<G extends Definition> = BranchNode<Branches<Values<G['constructs']>>, G>;
 /** Whether a construct stands in `P`, content when it says nowhere. */
 type Stands<C, P extends Place> = C extends { readonly in: readonly (infer In)[] } ? P extends In ? true : false : P extends 'content' ? true : false;
 /** The nodes of the constructs that stand in `P`. */
@@ -404,5 +413,5 @@ export type Attribute<G extends Definition> =
 export type Infer<Gr extends Grammar> = Gr extends Grammar<infer G> ? NodeOf<G['document'], G> : never;
 /** A node type of the grammar, by name. */
 export type NodeType<Gr extends Grammar, T extends string> = Gr extends Grammar<infer G>
-	? Extract<Content<G> | Attribute<G> | Constructs<G, 'value'> | FragmentNode<G> | ScriptNode<G>, { type: T }>
+	? Extract<Content<G> | Attribute<G> | Constructs<G, 'value'> | BranchNodes<G> | FragmentNode<G> | ScriptNode<G>, { type: T }>
 	: never;
