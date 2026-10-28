@@ -1,4 +1,4 @@
-use crate::ast::{Ast, List, NodeId, NodeKind, Reuse, Walk};
+use crate::ast::{Ast, List, NodeId, NodeKind, Walk};
 use crate::estree::{Emit, Writer};
 use crate::handed::{Handed, Views};
 use crate::interner::StrId;
@@ -73,17 +73,13 @@ impl crate::ast::Reuse for Data {
 				| IndexSignature { .. }
 				| NamespaceExportDeclaration { .. } => true,
 				ImportEqualsDeclaration { import_kind, .. } => import_kind == Kind::Type,
-				ModuleDeclaration { body: None, .. } => true,
-				ModuleDeclaration { body: Some(block), .. } => match self.ts_of(ast, block) {
-					Some(ModuleBlock { body }) => self.all_erased(ast, body),
-					_ => false,
-				},
+				ModuleDeclaration { .. } => !self.instantiates(ast, id),
 				_ => false,
 			},
-			NodeKind::ImportDeclaration { specifiers, .. } => {
-				extras.import_kind == Some(Kind::Type) || (specifiers.len > 0 && self.all_erased(ast, specifiers))
+			// an import of only types still runs its module, so `import { type A } from 'x'` keeps `import {} from 'x'`
+			NodeKind::ImportDeclaration { .. } | NodeKind::ImportSpecifier { .. } => {
+				extras.import_kind == Some(Kind::Type)
 			}
-			NodeKind::ImportSpecifier { .. } => extras.import_kind == Some(Kind::Type),
 			NodeKind::ExportSpecifier { .. } | NodeKind::ExportAllDeclaration { .. } => {
 				extras.export_kind == Some(Kind::Type)
 			}
@@ -857,11 +853,25 @@ fn recipes() -> &'static Recipes {
 }
 
 impl Data {
-	/// Whether every statement of a list erases to nothing.
-	fn all_erased(&self, ast: &Ast<Self>, list: List) -> bool {
-		ast.list(list)
-			.iter()
-			.all(|item| item.is_none_or(|id| self.erased(ast, id)))
+	/// tsc emits a namespace that declares any value, so a `declare`d member counts here though it erases at the top level.
+	fn instantiates(&self, ast: &Ast<Self>, id: NodeId) -> bool {
+		use TsKind::*;
+		match ast.node(id).kind {
+			NodeKind::Extension(index) => match self.kind(index) {
+				InterfaceDeclaration { .. } | TypeAliasDeclaration { .. } => false,
+				ImportEqualsDeclaration { import_kind, .. } => import_kind == Kind::Value,
+				ModuleDeclaration { body, .. } => body.is_some_and(|block| self.instantiates(ast, block)),
+				ModuleBlock { body } => ast.list(body).iter().flatten().any(|&id| self.instantiates(ast, id)),
+				_ => true,
+			},
+			NodeKind::ExportDeclaration { declaration } => {
+				self.extras_of(id).export_kind != Some(Kind::Type) && self.instantiates(ast, declaration)
+			}
+			NodeKind::ExportNamedDeclaration { .. } | NodeKind::ExportAllDeclaration { .. } => {
+				self.extras_of(id).export_kind != Some(Kind::Type)
+			}
+			_ => true,
+		}
 	}
 
 	fn extras_of(&self, id: NodeId) -> Extras {
