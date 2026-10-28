@@ -1,4 +1,4 @@
-use super::{Extension, Parser, Result};
+use super::{Parser, Result};
 use crate::Options;
 use crate::error::Code;
 use crate::interner::{FastMap, StrId};
@@ -101,7 +101,7 @@ impl Scope {
 	}
 }
 
-impl<E: Extension> Parser<'_, E> {
+impl<const TS: bool> Parser<'_, TS> {
 	pub(crate) fn enter_scope(&mut self, flags: u32) {
 		let names = self.spare_names.pop().unwrap_or_default();
 		self.scopes.push(Scope {
@@ -112,7 +112,9 @@ impl<E: Extension> Parser<'_, E> {
 	}
 
 	pub(crate) fn exit_scope(&mut self) {
-		E::scope_exit(self);
+		if self.typescript() {
+			self.scope_exit();
+		}
 		let mut scope = self.scopes.pop().unwrap();
 		scope.names.clear();
 		self.spare_names.push(scope.names);
@@ -255,7 +257,7 @@ impl<E: Extension> Parser<'_, E> {
 	}
 
 	pub(crate) fn declares_export(&mut self, name: StrId) -> bool {
-		E::declares_export(self, name) || self.scopes[0].has(name, VAR | LEXICAL | FUNCTION)
+		(self.typescript() && self.ts_declares_export(name)) || self.scopes[0].has(name, VAR | LEXICAL | FUNCTION)
 	}
 
 	pub(crate) fn check_local_export(&mut self, name: StrId, pos: u32) {

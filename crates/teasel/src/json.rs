@@ -6,14 +6,14 @@
 use std::rc::Rc;
 
 use crate::Options;
-use crate::ast::{Ast, Reuse};
+use crate::ast::Ast;
 use crate::comments::attach;
 use crate::error::Code;
-use crate::estree::{Emit, Json, Positions, Words, answer};
+use crate::estree::{Json, Positions, Words, answer};
 use crate::handed::{Raw, Views};
 use crate::host::{self, Grammar};
 use crate::parser::{Entry, parse_at};
-use crate::scopes::{self, Bind};
+use crate::scopes;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Request {
@@ -221,9 +221,9 @@ pub fn layout_json() -> String {
 	w.key("views");
 	w.object();
 	w.key("js");
-	names(&mut w, view_names::<()>());
+	names(&mut w, view_names(false));
 	w.key("ts");
-	names(&mut w, view_names::<crate::typescript::ast::Data>());
+	names(&mut w, view_names(true));
 	w.end();
 	w.key("stylesheet");
 	children_table(&mut w, host::stylesheet_children());
@@ -335,21 +335,18 @@ pub fn words<R>(f: impl FnOnce(&mut Words) -> R) -> R {
 pub fn tree(f: &mut dyn FnMut(&'static str, Option<&mut dyn Raw>)) -> Option<bool> {
 	SESSION.with(|session| {
 		let session = &mut *session.borrow_mut();
-		if session.typescript {
-			session.pool.ts.as_deref_mut()?.views(&mut Views(f));
-			<crate::typescript::ast::Data as Pooled>::names(&mut session.pool).views(&mut Views(f));
-			return Some(true);
-		}
-		session.pool.js.as_deref_mut()?.views(&mut Views(f));
-		<() as Pooled>::names(&mut session.pool).views(&mut Views(f));
-		Some(false)
+		let typescript = session.typescript;
+		let slot = &mut session.pool.slots[typescript as usize];
+		slot.tree.as_deref_mut()?.views(typescript, &mut Views(f));
+		slot.names.views(&mut Views(f));
+		Some(typescript)
 	})
 }
 
 /// The names of a tree's views in order.
-fn view_names<X: Reuse + Default>() -> Vec<&'static str> {
+fn view_names(typescript: bool) -> Vec<&'static str> {
 	let mut names = Vec::new();
-	Ast::<X>::default().views(&mut Views(&mut |name, _| names.push(name)));
+	Ast::default().views(typescript, &mut Views(&mut |name, _| names.push(name)));
 	Names::default().views(&mut Views(&mut |name, _| names.push(name)));
 	names
 }
@@ -368,13 +365,18 @@ pub fn grammar(text: &str) -> Result<Rc<Grammar>, String> {
 	})
 }
 
+/// What JavaScript answers reuse, then what TypeScript answers reuse: a front end keeps the views
+/// of the two apart.
 #[derive(Default)]
 pub struct Pool {
-	/// The names of the hosts' types and keys, numbered once for every answer of the JavaScript
-	/// tree and of the TypeScript one.
-	names: [Names; 2],
-	js: Option<Box<Ast<()>>>,
-	ts: Option<Box<Ast<crate::typescript::ast::Data>>>,
+	slots: [Slot; 2],
+}
+
+#[derive(Default)]
+struct Slot {
+	tree: Option<Box<Ast>>,
+	/// The names of the hosts' types and keys, numbered once for every answer of the slot.
+	names: Names,
 }
 
 /// Names a front end knows by number across answers, and the shapes of host nodes.
@@ -431,37 +433,6 @@ impl Names {
 		let (text, starts, _) = self.names.buffers();
 		out.push("names", text);
 		out.push("name_starts", starts);
-	}
-}
-
-/// Which slot of the pool an extension's tree takes, and the names its answers number.
-pub(crate) trait Pooled: Sized {
-	fn take(pool: &mut Pool) -> Option<Box<Ast<Self>>>;
-	fn give(pool: &mut Pool, ast: Box<Ast<Self>>);
-	fn names(pool: &mut Pool) -> &mut Names;
-}
-
-impl Pooled for () {
-	fn take(pool: &mut Pool) -> Option<Box<Ast<Self>>> {
-		pool.js.take()
-	}
-	fn give(pool: &mut Pool, ast: Box<Ast<Self>>) {
-		pool.js = Some(ast);
-	}
-	fn names(pool: &mut Pool) -> &mut Names {
-		&mut pool.names[0]
-	}
-}
-
-impl Pooled for crate::typescript::ast::Data {
-	fn take(pool: &mut Pool) -> Option<Box<Ast<Self>>> {
-		pool.ts.take()
-	}
-	fn give(pool: &mut Pool, ast: Box<Ast<Self>>) {
-		pool.ts = Some(ast);
-	}
-	fn names(pool: &mut Pool) -> &mut Names {
-		&mut pool.names[1]
 	}
 }
 
@@ -576,28 +547,12 @@ enum Out<'a> {
 	Words(&'a mut Words),
 }
 
-fn dispatch(
-	source: &str,
-	positions: &Positions,
-	request: &Request,
-	stop: &str,
-	host: Option<&Grammar>,
-	pool: &mut Pool,
-	out: Out<'_>,
-) {
-	if request.options.typescript() {
-		run::<crate::typescript::TypeScript>(source, positions, request, stop, host, pool, out);
-	} else {
-		run::<()>(source, positions, request, stop, host, pool, out);
-	}
-}
-
 fn to_json(source: &str, positions: &Positions, request: &Request, stop: &str, host: Option<&Grammar>) -> String {
 	SESSION.with(|session| {
 		let session = &mut *session.borrow_mut();
 		session.typescript = request.options.typescript();
 		let mut json = String::new();
-		dispatch(
+		run(
 			source,
 			positions,
 			request,
@@ -620,7 +575,7 @@ fn to_words(source: &str, positions: &Positions, request: &Request, stop: &str, 
 	SESSION.with(|session| {
 		let session = &mut *session.borrow_mut();
 		session.typescript = request.options.typescript();
-		dispatch(
+		run(
 			source,
 			positions,
 			request,
@@ -633,7 +588,7 @@ fn to_words(source: &str, positions: &Positions, request: &Request, stop: &str, 
 }
 
 /// Runs a request and answers it at `out`.
-fn run<E: crate::parser::Extension>(
+fn run(
 	source: &str,
 	positions: &Positions,
 	request: &Request,
@@ -641,21 +596,20 @@ fn run<E: crate::parser::Extension>(
 	host: Option<&Grammar>,
 	pool: &mut Pool,
 	out: Out<'_>,
-) where
-	E::Data: Emit + Bind + Reuse + Pooled,
-{
+) {
 	let options = request.options;
-	let reused = Pooled::take(pool).map(|mut ast| {
+	let slot = &mut pool.slots[options.typescript() as usize];
+	let reused = slot.tree.take().map(|mut ast| {
 		ast.clear();
 		ast
 	});
 	let (mut ast, parsed) = match host {
 		Some(grammar) => {
-			let (mut ast, root) = host::parse_document::<E>(source, grammar, request.options, reused);
+			let (mut ast, root) = host::parse_document(source, grammar, request.options, reused);
 			let parsed = root.map(|root| (ast.add_list(&[Some(root)]), source.len() as u32));
 			(ast, parsed)
 		}
-		None => parse_at::<E>(
+		None => parse_at(
 			source,
 			request.offset,
 			request.end,
@@ -690,7 +644,7 @@ fn run<E: crate::parser::Extension>(
 		Out::Json(json) => *json = answer(&ast, request.entry, roots, end, source, positions, options),
 		Out::Words(words) => {
 			let failed = roots.is_none();
-			let names = E::Data::names(pool);
+			let names = &mut slot.names;
 			prepare(&mut ast, source, positions, options, failed, names);
 			// `end`, the roots by number, a word of what the answer is, each view's length, then where
 			// the tree's buffers sit folded into two words: a front end keeps its views while that holds
@@ -711,26 +665,19 @@ fn run<E: crate::parser::Extension>(
 						.wrapping_mul(0x9e37_79b9_7f4a_7c15);
 				}
 			};
-			ast.views(&mut Views(&mut note));
+			ast.views(options.typescript(), &mut Views(&mut note));
 			names.views(&mut Views(&mut note));
 			words.extend_from_slice(&[sits as u32, (sits >> 32) as u32]);
 		}
 	}
-	Pooled::give(pool, ast);
+	slot.tree = Some(ast);
 }
 
 /// What a front end reading the tree in place needs beside it: every node's span and location
 /// as JavaScript counts them, the nodes erasure leaves out, the hosts, the comments, the errors
 /// and the strings' UTF-16 starts; a failed parse prepares its error row alone, the
 /// tree it read is left as the last answer cleared it.
-fn prepare<X: Reuse>(
-	ast: &mut Ast<X>,
-	source: &str,
-	positions: &Positions,
-	options: Options,
-	failed: bool,
-	names: &mut Names,
-) {
+fn prepare(ast: &mut Ast, source: &str, positions: &Positions, options: Options, failed: bool, names: &mut Names) {
 	if !failed {
 		prepare_tree(ast, positions, options, names);
 	}
@@ -768,13 +715,13 @@ fn prepare<X: Reuse>(
 	}
 }
 
-fn prepare_tree<X: Reuse>(ast: &mut Ast<X>, positions: &Positions, options: Options, names: &mut Names) {
+fn prepare_tree(ast: &mut Ast, positions: &Positions, options: Options, names: &mut Names) {
 	positions.map_nodes(&ast.nodes, &mut ast.spans, &mut ast.locs);
 	ast.erased.clear();
 	if options.has(Options::ERASE) {
 		for i in 0..ast.nodes.len() as u32 {
 			let id = crate::ast::NodeId::at(i);
-			if ast.extension.erased(ast, id) {
+			if ast.typescript.erased(ast, id) {
 				ast.erased.insert(id);
 			}
 		}
@@ -787,7 +734,7 @@ fn prepare_tree<X: Reuse>(ast: &mut Ast<X>, positions: &Positions, options: Opti
 		rare.insert(owner);
 	}
 	if options.has(Options::ERASE) {
-		ast.extension.rare(&mut rare);
+		ast.typescript.rare(&mut rare);
 	}
 	if let Some(scopes) = &ast.scopes
 		&& options.has(Options::SCOPES)
@@ -837,7 +784,7 @@ fn prepare_tree<X: Reuse>(ast: &mut Ast<X>, positions: &Positions, options: Opti
 
 /// A parse that failed answers as one that recovered from nothing but its error: no roots,
 /// `end` at the error, the error alone in `errors`, and nothing else listed.
-fn fail<X>(ast: &mut Ast<X>, error: crate::SyntaxError) -> Option<crate::ast::List> {
+fn fail(ast: &mut Ast, error: crate::SyntaxError) -> Option<crate::ast::List> {
 	ast.errors.clear();
 	ast.errors.push(error);
 	None

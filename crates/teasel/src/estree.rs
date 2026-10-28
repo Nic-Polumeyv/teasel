@@ -1,7 +1,7 @@
 //! Serializes an `Ast` to ESTree as JSON text, and maps its positions to what JavaScript counts.
 
 use crate::Options;
-use crate::ast::{Ast, CommentRow, List, Loc, NodeId, NodeKind, Position, Reuse, Span, Value};
+use crate::ast::{Ast, CommentRow, List, Loc, NodeId, NodeKind, Position, Span, Value};
 use crate::handed::Handed;
 use crate::interner::StrId;
 use crate::layout::Ty;
@@ -9,19 +9,6 @@ use crate::parser::Entry;
 use crate::recipe::{Op, Slot};
 use crate::scopes::Role;
 use std::fmt::Write;
-
-/// How an extension's data serializes: its own nodes, and the keys it adds to JavaScript nodes.
-pub trait Emit: crate::ast::Walk {
-	/// Emits one of the extension's own nodes and closes it, or what erasing puts in its place.
-	fn node(&self, w: &mut Writer<Self>, id: NodeId, index: u32);
-	fn extras(&self, _w: &mut Writer<Self>, _id: NodeId) {}
-}
-
-impl Emit for () {
-	fn node(&self, _w: &mut Writer<Self>, _id: NodeId, _index: u32) {
-		unreachable!("the JavaScript parser adds no extension nodes")
-	}
-}
 
 /// JSON text.
 pub struct Json {
@@ -195,8 +182,8 @@ pub type Words = crate::handed::Handed<u32>;
 
 /// Serializes an answer as JSON: the roots as `node`, one node or the patterns of a parameter
 /// list, null when the parse failed, then `end` and what the options add.
-pub fn answer<X: Emit + Reuse>(
-	ast: &Ast<X>,
+pub fn answer(
+	ast: &Ast,
 	entry: Entry,
 	roots: Option<List>,
 	end: u32,
@@ -224,8 +211,8 @@ pub fn answer<X: Emit + Reuse>(
 	w.json.finish()
 }
 
-pub struct Writer<'a, X = ()> {
-	ast: &'a Ast<X>,
+pub struct Writer<'a> {
+	ast: &'a Ast,
 	source: &'a str,
 	pub(crate) json: Json,
 	positions: &'a Positions,
@@ -464,8 +451,8 @@ fn locate<T>(items: &[T], hint: usize, byte: u32, key: impl Fn(&T) -> u32) -> us
 	items.partition_point(|item| key(item) <= byte)
 }
 
-impl<'a, X: Emit + Reuse> Writer<'a, X> {
-	fn new(ast: &'a Ast<X>, source: &'a str, positions: &'a Positions) -> Self {
+impl<'a> Writer<'a> {
+	fn new(ast: &'a Ast, source: &'a str, positions: &'a Positions) -> Self {
 		Self {
 			ast,
 			source,
@@ -517,7 +504,9 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 		if self.ast.is_parenthesized(id) {
 			self.bool("parenthesized", true);
 		}
-		self.ast.extension.extras(self, id);
+		if self.options.typescript() {
+			self.ast.typescript.write_extras(self, id);
+		}
 		if let Some(&attached) = self.ast.attached.get(id) {
 			self.comments("leadingComments", attached.leading);
 			self.comments("trailingComments", attached.trailing);
@@ -752,7 +741,7 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 		self.json.list();
 		let ast = self.ast;
 		for item in ast.list(list) {
-			if self.options.has(Options::ERASE) && item.is_some_and(|id| ast.extension.erased(ast, id)) {
+			if self.options.has(Options::ERASE) && item.is_some_and(|id| ast.typescript.erased(ast, id)) {
 				continue;
 			}
 			match item {
@@ -945,8 +934,8 @@ impl<'a, X: Emit + Reuse> Writer<'a, X> {
 		use NodeKind::*;
 		let kind = &self.ast.nodes[id.index() as usize].kind;
 		match *kind {
-			// the extension closes its own node, since erasing may put another in its place
-			Extension(index) => return self.ast.extension.node(self, id, index),
+			// TypeScript closes its own node, since erasing may put another in its place
+			Extension(index) => return self.ast.typescript.write_node(self, id, index),
 			Host(index) => {
 				let host = self.ast.hosts[index as usize];
 				if host.ty.is_empty() {

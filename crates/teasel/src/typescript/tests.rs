@@ -1,22 +1,22 @@
-use super::ast::{Data, Extras};
+use super::ast::Extras;
 use crate::ast::{Ast, List, NodeId, NodeKind};
 use crate::layout::Ty;
-use crate::parser::tests::{Failed, dump as dump_with, expand, one};
+use crate::parser::tests::{Failed, dump as dump_with, expand, one, typescript};
 use crate::parser::{Entry, Options};
 
-fn at(entry: Entry, src: &str, offset: u32, options: Options, stop: &str) -> Result<(Ast<Data>, NodeId, u32), Failed> {
-	one(super::parse_at(src, offset, None, entry, options, stop))
+fn at(entry: Entry, src: &str, offset: u32, options: Options, stop: &str) -> Result<(Ast, NodeId, u32), Failed> {
+	one(crate::parse_at(src, offset, None, entry, typescript(options), stop))
 }
 
-fn extension(ast: &Ast<Data>, id: NodeId, index: u32) -> String {
-	let mut out = expand(ast, &format!("{:?}", ast.extension.kind(index)), &extension);
+fn typescript_node(ast: &Ast, id: NodeId, index: u32) -> String {
+	let mut out = expand(ast, &format!("{:?}", ast.typescript.kind(index)), &typescript_node);
 	out.push_str(&extras(ast, id));
 	out
 }
 
 /// The keys TypeScript added to a node, after its own rendering.
-fn extras(ast: &Ast<Data>, id: NodeId) -> String {
-	let Some(e) = ast.extension.extras(id) else {
+fn extras(ast: &Ast, id: NodeId) -> String {
+	let Some(e) = ast.typescript.extras(id) else {
 		return String::new();
 	};
 	let base = e as *const Extras as *const u8;
@@ -33,7 +33,7 @@ fn extras(ast: &Ast<Data>, id: NodeId) -> String {
 				Ty::OptList => at
 					.cast::<Option<List>>()
 					.read()
-					.map(|list| format!("{name}: {}", expand(ast, &format!("{list:?}"), &extension))),
+					.map(|list| format!("{name}: {}", expand(ast, &format!("{list:?}"), &typescript_node))),
 				Ty::OptEnum(names) => names
 					.get(usize::from(at.read()))
 					.map(|value| format!("{name}: {value}")),
@@ -47,8 +47,8 @@ fn extras(ast: &Ast<Data>, id: NodeId) -> String {
 	format!(" +{{{}}}", parts.join(", "))
 }
 
-fn dump(ast: &Ast<Data>, id: NodeId) -> String {
-	let mut out = dump_with(ast, id, &extension);
+fn dump(ast: &Ast, id: NodeId) -> String {
+	let mut out = dump_with(ast, id, &typescript_node);
 	if !matches!(ast.node(id).kind, NodeKind::Extension(_)) {
 		out.push_str(&extras(ast, id));
 	}
@@ -190,12 +190,12 @@ fn accessor_belongs_to_a_property() {
 #[test]
 fn program_in_a_range() {
 	let src = "<script>let a: number = 1;</script>{a}";
-	let (ast, root, _) = one(super::parse_at(
+	let (ast, root, _) = one(crate::parse_at(
 		src,
 		8,
 		Some(26),
 		Entry::Program,
-		Options(Options::MODULE),
+		Options(Options::MODULE | Options::TYPESCRIPT),
 		"",
 	))
 	.unwrap();
@@ -252,14 +252,14 @@ fn failed_attempts_leave_nothing() {
 	let list = (0..300).map(|i| format!("a{i} < b{i}")).collect::<Vec<_>>().join(", ");
 	let (ast, _, _) = at(Entry::Expression, &format!("[{list}]"), 0, options, "").unwrap();
 	assert!(ast.nodes.len() < 4 * 300 + 8, "{} nodes", ast.nodes.len());
-	assert!(ast.extension.nodes.is_empty());
-	assert!(ast.extension.extras.is_empty());
+	assert!(ast.typescript.nodes.is_empty());
+	assert!(ast.typescript.extras.is_empty());
 	// a generic arrow is tried first: the parens it saw go with it
 	let (ast, root, _) = at(Entry::Expression, "<T>(a)", 0, options, "").unwrap();
 	let NodeKind::Extension(index) = ast.node(root).kind else {
 		panic!()
 	};
-	let super::ast::TsKind::TypeAssertion { expression, .. } = ast.extension.kind(index) else {
+	let super::ast::TsKind::TypeAssertion { expression, .. } = ast.typescript.kind(index) else {
 		panic!()
 	};
 	assert!(ast.is_parenthesized(expression));
@@ -275,7 +275,7 @@ fn failed_attempts_leave_nothing() {
 fn failed_attempt_leaves_no_scope() {
 	let options = Options(Options::MODULE | Options::ERROR_RECOVERY);
 	let src = "let b; <T>(x) => { let a; let a; }; let b;";
-	let (ast, _, _) = one(super::parse_at(src, 0, None, Entry::Program, options, "")).unwrap();
+	let (ast, _, _) = one(crate::parse_at(src, 0, None, Entry::Program, typescript(options), "")).unwrap();
 	let redeclared: Vec<u32> = ast
 		.errors
 		.iter()
@@ -304,7 +304,7 @@ fn nested_ambiguity_is_linear() {
 		nest("a ? async (b) : c => ", "d", ""),
 	] {
 		let started = std::time::Instant::now();
-		one(super::parse_at(&src, 0, None, Entry::Program, options, "")).unwrap();
+		one(crate::parse_at(&src, 0, None, Entry::Program, typescript(options), "")).unwrap();
 		assert!(started.elapsed().as_millis() < 100, "{src}");
 	}
 }

@@ -2,7 +2,7 @@
 //! identifier resolved to the binding it names. Names are declared first, in the environment each
 //! belongs to, and every reference is resolved after, so hoisting and merging need nothing special.
 
-use crate::ast::{Ast, List, NodeId, NodeKind, VariableKind, Walk};
+use crate::ast::{Ast, List, NodeId, NodeKind, VariableKind};
 use crate::error::{Code, SyntaxError};
 use crate::handed::{Handed, Views};
 use crate::interner::{FastMap, StrId};
@@ -383,7 +383,7 @@ impl Scopes {
 
 	/// Marks the nodes with what a front end links once a node is whole, in `late`, and those with
 	/// a binding or a reference that are not identifiers, in `rare`.
-	pub fn mark<X>(&self, ast: &Ast<X>, rare: &mut crate::ast::NodeSet, late: &mut crate::ast::NodeSet) {
+	pub fn mark(&self, ast: &Ast, rare: &mut crate::ast::NodeSet, late: &mut crate::ast::NodeSet) {
 		for &(node, _) in self.declared_by.pairs.iter().chain(&self.writes_of.pairs) {
 			late.insert(node);
 		}
@@ -430,26 +430,6 @@ impl Scopes {
 	}
 }
 
-pub trait Bind: Walk {
-	fn bind(&self, binder: &mut Binder<Self>, id: NodeId, mode: Mode);
-	/// The value-space parts an extension attaches to a plain node: decorators.
-	fn bind_extras(&self, _binder: &mut Binder<Self>, _id: NodeId) {}
-	/// The expression an extension node wraps without changing its value: `x as T`, `x!`.
-	fn wrapped(&self, _ast: &Ast<Self>, _id: NodeId) -> Option<NodeId> {
-		None
-	}
-	/// Whether an import or export declaration or specifier is type-only, binding no value.
-	fn types_only(&self, _ast: &Ast<Self>, _id: NodeId) -> bool {
-		false
-	}
-}
-
-impl Bind for () {
-	fn bind(&self, _binder: &mut Binder<Self>, _id: NodeId, _mode: Mode) {
-		unreachable!("the JavaScript parser adds no extension nodes")
-	}
-}
-
 /// What a node is visited as.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mode {
@@ -459,7 +439,7 @@ pub enum Mode {
 }
 
 /// Runs an analysis under one outermost scope and puts the answer on the tree.
-fn analyze_with<X: Bind>(ast: &mut Ast<X>, kind: ScopeKind, root: Option<NodeId>, f: impl FnOnce(&mut Binder<X>)) {
+fn analyze_with(ast: &mut Ast, kind: ScopeKind, root: Option<NodeId>, f: impl FnOnce(&mut Binder)) {
 	let reused = ast.scopes.take();
 	let mut binder = Binder::new(ast, reused);
 	binder.enter(kind, root, false);
@@ -532,7 +512,7 @@ fn analyze_with<X: Bind>(ast: &mut Ast<X>, kind: ScopeKind, root: Option<NodeId>
 /// Analyzes an answer: a program opens its own scope, a parameter list a function scope whose
 /// patterns declare `param` bindings, a pattern a fragment scope whose names are `pattern`
 /// bindings, and anything else a fragment scope.
-pub fn analyze<X: Bind>(ast: &mut Ast<X>, entry: Entry, roots: List) {
+pub fn analyze(ast: &mut Ast, entry: Entry, roots: List) {
 	let root = ast.list(roots).first().copied().flatten();
 	match entry {
 		Entry::Program => {
@@ -562,8 +542,8 @@ pub fn analyze<X: Bind>(ast: &mut Ast<X>, entry: Entry, roots: List) {
 	}
 }
 
-pub struct Binder<'a, X> {
-	ast: &'a Ast<X>,
+pub struct Binder<'a> {
+	ast: &'a Ast,
 	out: Scopes,
 	envs: Vec<Env>,
 	/// The environments open here, innermost last.
@@ -589,10 +569,13 @@ pub struct Binder<'a, X> {
 	owned: FastMap<BindingId, u32>,
 	arguments: Option<StrId>,
 	this_name: Option<StrId>,
+	/// Whether TypeScript added keys to any node, decorators among them.
+	// looked up at every node of a JavaScript tree instead, a parse with scopes took 1% longer
+	extras: bool,
 }
 
-impl<'a, X: Bind> Binder<'a, X> {
-	fn new(ast: &'a Ast<X>, reused: Option<Scopes>) -> Self {
+impl<'a> Binder<'a> {
+	fn new(ast: &'a Ast, reused: Option<Scopes>) -> Self {
 		let mut out = match reused {
 			Some(mut scopes) => {
 				scopes.clear(ast.nodes.len());
@@ -633,10 +616,11 @@ impl<'a, X: Bind> Binder<'a, X> {
 			owned,
 			arguments: ast.strings.find("arguments"),
 			this_name: ast.strings.find("this"),
+			extras: !ast.typescript.extras.is_empty(),
 		}
 	}
 
-	pub fn ast(&self) -> &'a Ast<X> {
+	pub fn ast(&self) -> &'a Ast {
 		self.ast
 	}
 
@@ -1039,7 +1023,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 				NodeKind::MemberExpression { object, .. } => id = object,
 				NodeKind::ChainExpression { expression } => id = expression,
 				NodeKind::Extension(_) => {
-					id = self.ast.extension.wrapped(self.ast, id)?;
+					id = self.ast.typescript.wrapped(self.ast, id)?;
 				}
 				_ => return None,
 			}
@@ -1052,7 +1036,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 			match self.kind(id) {
 				NodeKind::MemberExpression { .. } => return true,
 				NodeKind::ChainExpression { expression } => id = expression,
-				NodeKind::Extension(_) => match self.ast.extension.wrapped(self.ast, id) {
+				NodeKind::Extension(_) => match self.ast.typescript.wrapped(self.ast, id) {
 					Some(inner) => id = inner,
 					None => return false,
 				},
@@ -1082,7 +1066,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 				}
 			}
 			NodeKind::ChainExpression { expression } => self.visit_member_target(expression, root),
-			NodeKind::Extension(_) => match self.ast.extension.wrapped(self.ast, id) {
+			NodeKind::Extension(_) => match self.ast.typescript.wrapped(self.ast, id) {
 				Some(inner) => self.visit_member_target(inner, root),
 				None => self.visit(id, Mode::Expression),
 			},
@@ -1092,8 +1076,10 @@ impl<'a, X: Bind> Binder<'a, X> {
 
 	fn function(&mut self, id: NodeId, params: List, body: NodeId, arrow: bool) {
 		// a parameter's decorators are evaluated where the function is defined
-		for &param in self.ast.list(params).iter().flatten() {
-			self.ast.extension.bind_extras(self, param);
+		if self.extras {
+			for &param in self.ast.list(params).iter().flatten() {
+				self.ast.typescript.bind_extras(self, param);
+			}
 		}
 		self.enter(ScopeKind::Function, Some(id), arrow);
 		// a TypeScript `this` parameter, first in the list, is a type position and binds nothing
@@ -1256,8 +1242,8 @@ impl<'a, X: Bind> Binder<'a, X> {
 
 	fn visit_with(&mut self, id: NodeId, mode: Mode, extras: bool) {
 		use NodeKind::*;
-		if extras {
-			self.ast.extension.bind_extras(self, id);
+		if extras && self.extras {
+			self.ast.typescript.bind_extras(self, id);
 		}
 		match self.kind(id) {
 			Host(index) => self.host(id, index),
@@ -1265,7 +1251,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 				Mode::Expression => self.reference(id, false, false),
 				Mode::Declare(kind) => self.declare(id, kind),
 			},
-			Extension(_) => self.ast.extension.bind(self, id, mode),
+			Extension(_) => self.ast.typescript.bind(self, id, mode),
 			Program { body, .. } => self.statements(body),
 			PrivateIdentifier { .. }
 			| NumberLiteral { .. }
@@ -1515,24 +1501,24 @@ impl<'a, X: Bind> Binder<'a, X> {
 				self.maybe(init, Mode::Expression);
 			}
 			ImportDeclaration { specifiers, .. } => {
-				if !self.ast.extension.types_only(self.ast, id) {
+				if !self.ast.typescript.types_only(id) {
 					self.list(specifiers, Mode::Expression);
 				}
 			}
 			ImportSpecifier { local, .. } | ImportDefaultSpecifier { local } | ImportNamespaceSpecifier { local } => {
-				if !self.ast.extension.types_only(self.ast, id) {
+				if !self.ast.typescript.types_only(id) {
 					self.declare_by(local, BindingKind::Import, id);
 				}
 			}
 			ExportDeclaration { declaration } => self.exported(|b| b.visit(declaration, Mode::Expression)),
 			ExportNamedDeclaration { specifiers, source, .. } => {
-				if source.is_none() && !self.ast.extension.types_only(self.ast, id) {
+				if source.is_none() && !self.ast.typescript.types_only(id) {
 					self.list(specifiers, Mode::Expression);
 				}
 			}
 			ExportSpecifier { local, .. } => {
 				if let Identifier { .. } = self.kind(local)
-					&& !self.ast.extension.types_only(self.ast, id)
+					&& !self.ast.typescript.types_only(id)
 				{
 					self.reference(local, false, false);
 				}
@@ -1563,7 +1549,7 @@ impl<'a, X: Bind> Binder<'a, X> {
 				}
 				self.target(value);
 			}
-			NodeKind::Extension(_) => match self.ast.extension.wrapped(self.ast, id) {
+			NodeKind::Extension(_) => match self.ast.typescript.wrapped(self.ast, id) {
 				Some(inner) => self.target(inner),
 				None => self.visit(id, Mode::Expression),
 			},
@@ -1631,7 +1617,7 @@ mod tests {
 	use crate::parser::Options;
 	use std::assert_matches;
 
-	fn analyzed<X: Bind>((mut ast, parsed): (Ast<X>, Result<(List, u32), SyntaxError>)) -> Ast<X> {
+	fn analyzed((mut ast, parsed): (Ast, Result<(List, u32), SyntaxError>)) -> Ast {
 		let (roots, _) = parsed.unwrap();
 		analyze(&mut ast, Entry::Program, roots);
 		ast
@@ -1654,17 +1640,17 @@ mod tests {
 	}
 
 	fn ts_facts(src: &str) -> String {
-		facts_of(&analyzed(crate::typescript::parse_at(
+		facts_of(&analyzed(crate::parse_at(
 			src,
 			0,
 			None,
 			Entry::Program,
-			Options(Options::MODULE),
+			Options(Options::MODULE | Options::TYPESCRIPT),
 			"",
 		)))
 	}
 
-	fn facts_of<X: Bind>(ast: &Ast<X>) -> String {
+	fn facts_of(ast: &Ast) -> String {
 		let scopes = ast.scopes.as_ref().unwrap();
 		let mut ids: Vec<_> = scopes.of_identifier.iter().collect();
 		ids.sort_by_key(|&(id, _)| ast.node(id).start);
@@ -1822,7 +1808,7 @@ mod tests {
 		)
 		.unwrap();
 		let src = "<script>let n = 1; function f() { return arguments; }</script>\n{(function () { return arguments + n; })()}";
-		let (mut ast, root) = crate::host::parse_document::<()>(src, &grammar, Options::default(), None);
+		let (mut ast, root) = crate::host::parse_document(src, &grammar, Options::default(), None);
 		let roots = ast.add_list(&[Some(root.unwrap())]);
 		analyze(&mut ast, Entry::Program, roots);
 		let scopes = ast.scopes.as_ref().unwrap();
@@ -1864,12 +1850,12 @@ mod tests {
 		);
 		{
 			let src = "(a as any).b = 1; (c!).d = 2; (e as any) = 3;";
-			let ast = analyzed(crate::typescript::parse_at(
+			let ast = analyzed(crate::parse_at(
 				src,
 				0,
 				None,
 				Entry::Program,
-				Options(Options::MODULE),
+				Options(Options::MODULE | Options::TYPESCRIPT),
 				"",
 			));
 			let scopes = ast.scopes.as_ref().unwrap();
@@ -1881,12 +1867,12 @@ mod tests {
 	#[test]
 	fn typescript_declarations() {
 		let src = "import type { X } from 'm'; import { type Y, Z } from 'm'; export { type X }; enum E { A = 1, B = A } namespace N { export const n = 1; } namespace N { n; } export function f(): void; class C { m(@dec p) {} } function dec() {} function g(this: T, a) {} enum M { this = 1 }";
-		let ast = analyzed(crate::typescript::parse_at(
+		let ast = analyzed(crate::parse_at(
 			src,
 			0,
 			None,
 			Entry::Program,
-			Options(Options::MODULE),
+			Options(Options::MODULE | Options::TYPESCRIPT),
 			"",
 		));
 		let scopes = ast.scopes.as_ref().unwrap();
@@ -1941,12 +1927,12 @@ mod tests {
 	#[test]
 	fn typescript_values_and_types() {
 		let src = "enum E { A = x } namespace N { export const n: T = y as T; } let t: T; @d class C { constructor(public p: P) {} }";
-		let ast = analyzed(crate::typescript::parse_at(
+		let ast = analyzed(crate::parse_at(
 			src,
 			0,
 			None,
 			Entry::Program,
-			Options(Options::MODULE),
+			Options(Options::MODULE | Options::TYPESCRIPT),
 			"",
 		));
 		let scopes = ast.scopes.as_ref().unwrap();

@@ -1,4 +1,4 @@
-use crate::ast::{Ast, List, NodeId, NodeKind, Walk};
+use crate::ast::{Ast, List, NodeId, NodeKind};
 
 /// How many allocations the test binary made, for the bench.
 pub(crate) static ALLOCATIONS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
@@ -17,9 +17,14 @@ unsafe impl std::alloc::GlobalAlloc for Counting {
 
 use crate::{Code, Entry, Options, SyntaxError};
 
-/// One entry of one extension, as `parse_at` reads it.
-pub(crate) type ParseAt<X> =
-	fn(&str, u32, Option<u32>, Entry, Options, &str) -> (Ast<X>, Result<(List, u32), SyntaxError>);
+/// The options of a TypeScript parse: these, read as TypeScript.
+pub(crate) fn typescript(options: Options) -> Options {
+	if options.typescript() {
+		options
+	} else {
+		options.with(Options::TYPESCRIPT)
+	}
+}
 
 /// An error with its arguments read from the strings of its parse.
 #[derive(Debug)]
@@ -37,9 +42,7 @@ impl std::fmt::Display for Failed {
 }
 
 /// The tree and roots of a parse, or its error.
-pub(crate) fn settled<X>(
-	(ast, parsed): (Ast<X>, Result<(List, u32), SyntaxError>),
-) -> Result<(Ast<X>, List, u32), Failed> {
+pub(crate) fn settled((ast, parsed): (Ast, Result<(List, u32), SyntaxError>)) -> Result<(Ast, List, u32), Failed> {
 	match parsed {
 		Ok((list, end)) => Ok((ast, list, end)),
 		Err(e) => Err(Failed {
@@ -51,9 +54,7 @@ pub(crate) fn settled<X>(
 }
 
 /// The roots of an answer as a vector.
-pub(crate) fn roots<X>(
-	parsed: (Ast<X>, Result<(List, u32), SyntaxError>),
-) -> Result<(Ast<X>, Vec<NodeId>, u32), Failed> {
+pub(crate) fn roots(parsed: (Ast, Result<(List, u32), SyntaxError>)) -> Result<(Ast, Vec<NodeId>, u32), Failed> {
 	settled(parsed).map(|(ast, list, end)| {
 		let roots = ast.list(list).iter().flatten().copied().collect();
 		(ast, roots, end)
@@ -61,7 +62,7 @@ pub(crate) fn roots<X>(
 }
 
 /// The one root of an answer.
-pub(crate) fn one<X>(parsed: (Ast<X>, Result<(List, u32), SyntaxError>)) -> Result<(Ast<X>, NodeId, u32), Failed> {
+pub(crate) fn one(parsed: (Ast, Result<(List, u32), SyntaxError>)) -> Result<(Ast, NodeId, u32), Failed> {
 	roots(parsed).map(|(ast, roots, end)| (ast, roots[0], end))
 }
 
@@ -83,18 +84,18 @@ fn whole(src: &str, options: Options) -> (Ast, List) {
 	(ast, roots)
 }
 
-/// Renders a node as its Debug form with ids, strings and lists expanded inline; `extension`
-/// renders the nodes an extension owns.
-pub(crate) fn dump<X>(ast: &Ast<X>, id: NodeId, extension: &dyn Fn(&Ast<X>, NodeId, u32) -> String) -> String {
+/// Renders a node as its Debug form with ids, strings and lists expanded inline; `typescript`
+/// renders TypeScript's nodes.
+pub(crate) fn dump(ast: &Ast, id: NodeId, typescript: &dyn Fn(&Ast, NodeId, u32) -> String) -> String {
 	let node = ast.node(id);
 	match node.kind {
-		NodeKind::Extension(index) => extension(ast, id, index),
-		kind => expand(ast, &format!("{kind:?}"), extension),
+		NodeKind::Extension(index) => typescript(ast, id, index),
+		kind => expand(ast, &format!("{kind:?}"), typescript),
 	}
 }
 
 /// Expands the ids inside a Debug rendering.
-pub(crate) fn expand<X>(ast: &Ast<X>, text: &str, extension: &dyn Fn(&Ast<X>, NodeId, u32) -> String) -> String {
+pub(crate) fn expand(ast: &Ast, text: &str, typescript: &dyn Fn(&Ast, NodeId, u32) -> String) -> String {
 	let mut out = String::new();
 	let mut rest = text;
 	while let Some(i) = rest.find(['N', 'S', 'L']) {
@@ -103,7 +104,7 @@ pub(crate) fn expand<X>(ast: &Ast<X>, text: &str, extension: &dyn Fn(&Ast<X>, No
 		if let Some(r) = tail.strip_prefix("NodeId(") {
 			let end = r.find(')').unwrap();
 			let child = NodeId::at(r[..end].parse().unwrap());
-			out.push_str(&dump(ast, child, extension));
+			out.push_str(&dump(ast, child, typescript));
 			rest = &r[end + 1..];
 		} else if let Some(r) = tail.strip_prefix("NumberLiteral { value: ") {
 			let end = r.find(" }").unwrap();
@@ -125,7 +126,7 @@ pub(crate) fn expand<X>(ast: &Ast<X>, text: &str, extension: &dyn Fn(&Ast<X>, No
 			let items: Vec<String> = ast
 				.list(list)
 				.iter()
-				.map(|c| c.map(|c| dump(ast, c, extension)).unwrap_or_else(|| "hole".into()))
+				.map(|c| c.map(|c| dump(ast, c, typescript)).unwrap_or_else(|| "hole".into()))
 				.collect();
 			out.push('[');
 			out.push_str(&items.join(", "));
@@ -141,7 +142,7 @@ pub(crate) fn expand<X>(ast: &Ast<X>, text: &str, extension: &dyn Fn(&Ast<X>, No
 }
 
 fn plain(_: &Ast, _: NodeId, _: u32) -> String {
-	unreachable!("the JavaScript parser adds no extension nodes")
+	unreachable!("a JavaScript tree holds no TypeScript nodes")
 }
 
 fn expr(src: &str) -> String {
@@ -307,13 +308,15 @@ fn entry_points() {
 	assert_eq!(ast.node(id).end, 17);
 }
 
-/// One extension's parse, with the checks tests make of recovery.
-struct Api<X>(ParseAt<X>);
+/// A parse of one language, with the checks tests make of recovery.
+struct Api {
+	typescript: bool,
+}
 
-const JS: Api<()> = Api(crate::parse_at);
-const TS: Api<crate::typescript::ast::Data> = Api(crate::typescript::parse_at);
+const JS: Api = Api { typescript: false };
+const TS: Api = Api { typescript: true };
 
-impl<X: Walk> Api<X> {
+impl Api {
 	fn run(
 		&self,
 		src: &str,
@@ -321,21 +324,15 @@ impl<X: Walk> Api<X> {
 		entry: Entry,
 		options: Options,
 		stop: &str,
-	) -> Result<(Ast<X>, Vec<NodeId>, u32), Failed> {
-		roots((self.0)(src, offset, None, entry, options, stop))
+	) -> Result<(Ast, Vec<NodeId>, u32), Failed> {
+		let options = if self.typescript { typescript(options) } else { options };
+		roots(crate::parse_at(src, offset, None, entry, options, stop))
 	}
 
 	/// Parses under recovery and checks what the recovered tree promises: it never fails, its
 	/// roots end within what was consumed, a parent contains its children, a placeholder has no
 	/// width, and there are errors exactly when the strict parse throws.
-	fn recovered(
-		&self,
-		src: &str,
-		offset: u32,
-		entry: Entry,
-		options: Options,
-		stop: &str,
-	) -> (Ast<X>, Vec<NodeId>, u32) {
+	fn recovered(&self, src: &str, offset: u32, entry: Entry, options: Options, stop: &str) -> (Ast, Vec<NodeId>, u32) {
 		let throws = self.run(src, offset, entry, options, stop).is_err();
 		let recovering = options.with(Options::ERROR_RECOVERY);
 		let (ast, roots, end) = self
@@ -389,7 +386,7 @@ impl<X: Walk> Api<X> {
 #[test]
 fn recovery() {
 	let module = Options(Options::MODULE);
-	fn codes<X>(ast: &Ast<X>) -> Vec<String> {
+	fn codes(ast: &Ast) -> Vec<String> {
 		ast.errors
 			.iter()
 			.map(|e| format!("{}@{}", e.code.name(), e.pos))

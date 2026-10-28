@@ -6,14 +6,15 @@ pub(crate) mod statement;
 #[cfg(test)]
 pub(crate) mod tests;
 
-use crate::ast::{Ast, List, MethodKind, NodeId, NodeKind, Reuse, VariableKind};
+use crate::ast::{Ast, List, MethodKind, NodeId, NodeKind};
 use crate::error::SyntaxError;
 use crate::interner::StrId;
 use crate::lexer::Lexer;
 use crate::lexer::token::{Keyword, Token, TokenKind};
+use crate::typescript::TypeScript;
 pub(crate) use expression::ForInit;
 use scope::{SCOPE_TOP, Scope};
-pub(crate) use statement::{ClassKind, Context, StatementPlace};
+pub(crate) use statement::{Context, StatementPlace};
 
 /// Errors travel boxed so every `Result` stays two words wide.
 pub(crate) type Result<T> = std::result::Result<T, Box<SyntaxError>>;
@@ -77,7 +78,7 @@ impl Options {
 	}
 }
 
-/// What a function-shaped node is, for the extension hooks around its signature.
+/// What a function-shaped node is, for TypeScript's grammar around its signature.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FunctionKind {
 	Declaration,
@@ -86,7 +87,7 @@ pub(crate) enum FunctionKind {
 	Arrow,
 }
 
-/// The check an extension node is being unwrapped for.
+/// The check a TypeScript node is being unwrapped for.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Unwrap {
 	/// `check_lval_simple`: the target of an assignment or update.
@@ -94,270 +95,6 @@ pub(crate) enum Unwrap {
 	/// `check_lval_inner_pattern`: an element of a parameter list or pattern, or the target of `=`
 	/// that may become one.
 	InnerPattern,
-}
-
-/// Grammar an extension adds to the JavaScript parser at fixed points. Every hook has a no-op
-/// default, so the plain JavaScript parser is the unit extension. State an extension keeps while
-/// parsing lives in `Self` (cloned into snapshots, so keep it small); what it hands back with the
-/// tree lives in `Data`.
-#[expect(unused_variables)]
-pub(crate) trait Extension: Default + Sized {
-	type Data: Reuse;
-	/// What a speculative parse needs to put the extension's state back.
-	type Snapshot;
-
-	/// Whether exporting the same name twice is an error.
-	const DUPLICATE_EXPORT_ERRORS: bool = true;
-	/// Whether a function's name is declared after its body, so a bodiless overload declares nothing.
-	const DECLARES_FUNCTION_NAME_AFTER_BODY: bool = false;
-	/// Whether `static` before a class member is only ever read by `class_modifiers`.
-	const STATIC_IS_A_MODIFIER: bool = false;
-
-	fn init(p: &mut Parser<Self>) {}
-	fn save(&self) -> Self::Snapshot;
-	fn restore(&mut self, snapshot: Self::Snapshot);
-
-	// Statements and modules
-
-	/// Whether the current token, one of the host's stop tokens, is one the extension's grammar
-	/// reads after an expression; it then decides where the host's syntax starts.
-	fn reads_stop(p: &Parser<Self>) -> bool {
-		false
-	}
-	/// First look at a statement; `Some` replaces it entirely.
-	fn statement(p: &mut Parser<Self>, context: Context, place: StatementPlace) -> Result<Option<NodeId>> {
-		Ok(None)
-	}
-	/// Right after `export`; `Some` is a whole export statement.
-	fn export_head(p: &mut Parser<Self>, start: u32) -> Result<Option<NodeId>> {
-		Ok(None)
-	}
-	fn export_declaration(p: &mut Parser<Self>) -> Result<Option<NodeId>> {
-		Ok(None)
-	}
-	fn export_default(p: &mut Parser<Self>) -> Result<Option<NodeId>> {
-		Ok(None)
-	}
-	fn export_end(p: &mut Parser<Self>, node: NodeId) {}
-	fn export_specifier(p: &mut Parser<Self>) -> Result<Option<NodeId>> {
-		Ok(None)
-	}
-	/// Right after `import`; `Some` is a whole import statement.
-	fn import_head(p: &mut Parser<Self>, start: u32) -> Result<Option<NodeId>> {
-		Ok(None)
-	}
-	fn import_end(p: &mut Parser<Self>, node: NodeId) -> Result<()> {
-		Ok(())
-	}
-	fn import_specifier(p: &mut Parser<Self>) -> Result<Option<NodeId>> {
-		Ok(None)
-	}
-	/// How an import's local name binds: `None` for one that binds no value.
-	fn import_binding(p: &Parser<Self>) -> scope::Binding {
-		scope::Binding::Lexical
-	}
-	/// Whether the extension declared `name` in a way that satisfies a local `export { name }`.
-	/// Whether an `export` here belongs to the extension's own scoping, a namespace body say, so
-	/// the script goal does not forbid it.
-	fn exports_in_script(p: &Parser<Self>) -> bool {
-		let _ = p;
-		false
-	}
-	/// Whether the code describes rather than defines, an ambient declaration's body, where a
-	/// definition's rules do not apply.
-	fn in_ambient(p: &Parser<Self>) -> bool {
-		let _ = p;
-		false
-	}
-	fn declares_export(p: &mut Parser<Self>, name: StrId) -> bool {
-		false
-	}
-	fn scope_exit(p: &mut Parser<Self>) {}
-
-	// Bindings
-
-	/// After the id of a variable declarator.
-	fn var_id(p: &mut Parser<Self>, id: NodeId) -> Result<()> {
-		Ok(())
-	}
-	fn var_declarator(p: &mut Parser<Self>, node: NodeId, kind: VariableKind) -> Result<()> {
-		Ok(())
-	}
-	/// Whether a declarator may go without an initializer where the plain grammar requires one.
-	fn allows_missing_initializer(p: &mut Parser<Self>) -> bool {
-		false
-	}
-	/// A whole parameter of a parameter list; `allow_modifiers` inside class methods.
-	fn parameter(p: &mut Parser<Self>, allow_modifiers: bool) -> Result<Option<NodeId>> {
-		Ok(None)
-	}
-	fn catch_param(p: &mut Parser<Self>, param: NodeId) -> Result<()> {
-		Ok(())
-	}
-	/// After a pattern read on its own, the `Pattern` entry.
-	fn pattern_annotation(p: &mut Parser<Self>, pattern: NodeId) -> Result<()> {
-		Ok(())
-	}
-
-	// Functions and classes
-
-	/// Before the parameters of a function, method or arrow.
-	fn function_start(p: &mut Parser<Self>, kind: FunctionKind) -> Result<()> {
-		Ok(())
-	}
-	/// After the parameters, before the body; `Some` is a function without a body.
-	fn function_body(
-		p: &mut Parser<Self>,
-		start: u32,
-		id: Option<NodeId>,
-		params: List,
-		is_async: bool,
-		generator: bool,
-		kind: FunctionKind,
-	) -> Result<Option<NodeId>> {
-		Ok(None)
-	}
-	fn function_end(p: &mut Parser<Self>, node: NodeId) -> Result<()> {
-		Ok(())
-	}
-	/// Whether an object literal accessor's first parameter is a `this` parameter, which does not
-	/// count.
-	fn accessor_this_param(p: &Parser<Self>, params: List) -> bool {
-		false
-	}
-	/// The parameters of a function-shaped extension node.
-	fn function_params(p: &Parser<Self>, node: NodeId) -> Option<List> {
-		None
-	}
-	fn class_start(p: &mut Parser<Self>, kind: ClassKind) -> Result<()> {
-		Ok(())
-	}
-	/// Whether the token after `class` opens a heritage clause rather than naming the class.
-	fn starts_class_heritage(p: &mut Parser<Self>) -> bool {
-		false
-	}
-	fn class_type_parameters(p: &mut Parser<Self>) -> Result<()> {
-		Ok(())
-	}
-	fn class_heritage(p: &mut Parser<Self>, has_super: bool) -> Result<()> {
-		Ok(())
-	}
-	fn class_end(p: &mut Parser<Self>, node: NodeId) {}
-	/// Modifiers before a class element; returns whether `static` was among them.
-	fn class_modifiers(p: &mut Parser<Self>) -> Result<bool> {
-		Ok(false)
-	}
-	fn class_index_signature(p: &mut Parser<Self>, start: u32) -> Result<Option<NodeId>> {
-		Ok(None)
-	}
-	/// A type parameter list `<...>` at the cursor, for the entry that parses one on its own.
-	fn type_parameters(p: &mut Parser<Self>) -> Result<NodeId> {
-		p.error(p.tok.start, Code::NotTypescript)
-	}
-	/// After the key of a class element.
-	fn class_key_end(p: &mut Parser<Self>, key: NodeId, computed: bool) -> Result<()> {
-		Ok(())
-	}
-	fn starts_class_method(p: &mut Parser<Self>) -> bool {
-		false
-	}
-	fn class_method_start(p: &mut Parser<Self>, kind: MethodKind) -> Result<()> {
-		Ok(())
-	}
-	/// After the key of a class field, before its initializer.
-	fn class_field_annotation(p: &mut Parser<Self>) -> Result<()> {
-		Ok(())
-	}
-	fn class_element_end(p: &mut Parser<Self>, node: NodeId) -> Result<()> {
-		Ok(())
-	}
-
-	// Expressions
-
-	fn maybe_assign(p: &mut Parser<Self>, for_init: ForInit, errors: &mut Errors) -> Result<Option<NodeId>> {
-		Ok(None)
-	}
-	/// A list opens; `parameters` when it may still turn out to be a function's parameters.
-	fn paren_list_start(p: &mut Parser<Self>, parameters: bool) {}
-	fn paren_list_end(p: &mut Parser<Self>) {}
-	/// An item of a parenthesized list, after its expression.
-	fn paren_item(p: &mut Parser<Self>, item: NodeId) -> Result<NodeId> {
-		Ok(item)
-	}
-	/// At `?` after an expression; `Some` replaces the conditional.
-	fn conditional(p: &mut Parser<Self>, expr: NodeId, start: u32, for_init: ForInit) -> Result<Option<NodeId>> {
-		Ok(None)
-	}
-	fn conditional_branch(p: &mut Parser<Self>, start: u32, alternate: bool, for_init: ForInit) -> Result<NodeId> {
-		p.parse_maybe_assign(if alternate { for_init } else { ForInit::No }, &mut None)
-	}
-	fn unary(p: &mut Parser<Self>, for_init: ForInit) -> Result<Option<NodeId>> {
-		Ok(None)
-	}
-	/// First look at an atom.
-	fn atom(p: &mut Parser<Self>, errors: &mut Errors, for_init: ForInit, for_new: bool) -> Result<Option<NodeId>> {
-		Ok(None)
-	}
-	/// At an operator position; `Some` is the new left operand.
-	fn expr_op(p: &mut Parser<Self>, left: NodeId, left_start: u32, min_prec: i8) -> Result<Option<NodeId>> {
-		Ok(None)
-	}
-	fn subscript(
-		p: &mut Parser<Self>,
-		base: NodeId,
-		start: u32,
-		no_calls: bool,
-		maybe_async_arrow: bool,
-		optional_chained: bool,
-		for_init: ForInit,
-	) -> Result<Option<(NodeId, bool)>> {
-		Ok(None)
-	}
-	fn arrow_start(p: &mut Parser<Self>, start: u32) {}
-	fn should_parse_arrow(p: &mut Parser<Self>, start: u32, items: &[Option<NodeId>]) -> Result<bool> {
-		Ok(!p.can_insert_semicolon())
-	}
-	fn should_parse_async_arrow(p: &mut Parser<Self>, start: u32) -> Result<bool> {
-		Ok(!p.can_insert_semicolon() && p.eat(TokenKind::Arrow)?)
-	}
-	/// A finished list of expressions: array elements, arguments, or a parenthesized expression
-	/// that did not become parameters.
-	fn list_items(p: &mut Parser<Self>, items: &[Option<NodeId>]) -> Result<()> {
-		Ok(())
-	}
-	fn new_expression(p: &mut Parser<Self>, node: NodeId) {}
-	/// An object property whose value starts unexpectedly for the plain grammar.
-	fn property_value(
-		p: &mut Parser<Self>,
-		start: u32,
-		key: NodeId,
-		computed: bool,
-		is_pattern: bool,
-		generator: bool,
-		is_async: bool,
-	) -> Result<Option<NodeId>> {
-		Ok(None)
-	}
-	fn template_expression(p: &mut Parser<Self>) -> Result<Option<NodeId>> {
-		Ok(None)
-	}
-	/// Reinterprets an extension node as a pattern; the result replaces it.
-	fn make_pattern(p: &mut Parser<Self>, id: NodeId, is_binding: bool, errors: &mut Errors) -> Result<Option<NodeId>> {
-		Ok(None)
-	}
-	/// The plain node an extension wrapper stands for in a check, if any.
-	fn unwrap(p: &Parser<Self>, id: NodeId, context: Unwrap) -> Option<NodeId> {
-		None
-	}
-}
-
-impl Extension for () {
-	type Data = ();
-	type Snapshot = ();
-
-	fn save(&self) {}
-
-	fn restore(&mut self, _: ()) {}
 }
 
 pub(crate) type Errors = Option<DestructuringErrors>;
@@ -396,23 +133,22 @@ impl Entry {
 /// program reads to `end`, where a hashbang or an HTML comment at `start` is what it would be in
 /// the middle of a file; anything else stops where its grammar ends, or at one of `stop`, the
 /// host's own tokens separated by spaces, read outside every bracket the parse opened where the
-/// expression could end (an extension may read one as its own, see `Extension::reads_stop`). Returns
+/// expression could end (TypeScript may read one as its own, see `Parser::reads_stop`). Returns
 /// the tree, its roots (one node, or the patterns of a parameter list) and the offset after
 /// everything the parse consumed. `reused` is an emptied tree from an earlier parse, its room kept.
 /// The tree, whether the parse succeeded or not, so the next parse can reuse it; with the roots
 /// read and where the parse ended.
-#[expect(clippy::type_complexity)]
-pub(crate) fn parse_at<E: Extension>(
+pub(crate) fn parse_at(
 	src: &str,
 	start: u32,
 	end: Option<u32>,
 	entry: Entry,
 	options: Options,
 	stop: &str,
-	reused: Option<Box<Ast<E::Data>>>,
-) -> (Box<Ast<E::Data>>, Result<(List, u32)>) {
+	reused: Option<Box<Ast>>,
+) -> (Box<Ast>, Result<(List, u32)>) {
 	if entry == Entry::StyleSheet {
-		let (mut ast, root) = crate::host::parse_stylesheet::<E>(src, options, reused);
+		let (mut ast, root) = crate::host::parse_stylesheet(src, options, reused);
 		let parsed = root.map(|root| (ast.add_list(&[Some(root)]), src.len() as u32));
 		return (ast, parsed);
 	}
@@ -424,7 +160,23 @@ pub(crate) fn parse_at<E: Extension>(
 		0
 	};
 	let ast = reused.unwrap_or_else(|| Box::new(Ast::sized(budget)));
-	let mut parser = Parser::<E>::new(src, start, options, stop, ast);
+	if options.typescript() {
+		read::<true>(src, start, end, entry, options, stop, ast)
+	} else {
+		read::<false>(src, start, end, entry, options, stop, ast)
+	}
+}
+
+fn read<const TS: bool>(
+	src: &str,
+	start: u32,
+	end: u32,
+	entry: Entry,
+	options: Options,
+	stop: &str,
+	ast: Box<Ast>,
+) -> (Box<Ast>, Result<(List, u32)>) {
+	let mut parser = Parser::<TS>::new(src, start, options, stop, ast);
 	let roots = parser.read_roots(entry).map(|roots| {
 		let end = if entry == Entry::Program {
 			end
@@ -436,7 +188,7 @@ pub(crate) fn parse_at<E: Extension>(
 	(parser.finish(), roots)
 }
 
-impl<E: Extension> Parser<'_, E> {
+impl<const TS: bool> Parser<'_, TS> {
 	fn read_roots(&mut self, entry: Entry) -> Result<List> {
 		self.start()?;
 		if entry == Entry::Program {
@@ -463,10 +215,12 @@ impl<E: Extension> Parser<'_, E> {
 	}
 }
 
-pub(crate) struct Parser<'a, E: Extension = ()> {
+// with the language read from the options at each point instead, a parse-only JavaScript read took 1% longer
+pub(crate) struct Parser<'a, const TS: bool> {
 	pub(crate) lexer: Lexer<'a>,
-	pub(crate) ast: Box<Ast<E::Data>>,
-	pub(crate) ext: E,
+	pub(crate) ast: Box<Ast>,
+	/// What TypeScript's grammar keeps while it reads; untouched in a JavaScript parse.
+	pub(crate) ts: Box<TypeScript>,
 	pub(crate) options: Options,
 	pub(crate) tok: Token,
 	pub(crate) prev_end: u32,
@@ -488,7 +242,7 @@ pub(crate) struct Parser<'a, E: Extension = ()> {
 	potential_arrow_in_for_await: bool,
 	/// Recovered errors; the lexer keeps its own until `finish`.
 	pub(crate) errors: Vec<SyntaxError>,
-	/// Where the extension last read a host stop word as its own, at bracket depth zero: the host
+	/// Where TypeScript last read a host stop word as its own, at bracket depth zero: the host
 	/// gets the last one, so the entry is read again with it as a stop.
 	pub(crate) stop_word_at: Option<u32>,
 	pub(crate) forced_stop: Option<u32>,
@@ -510,6 +264,10 @@ pub struct Spare {
 	errors: Vec<SyntaxError>,
 	regexp: crate::lexer::regexp::Scratch,
 	stop_ranges: Vec<(u32, u32, bool)>,
+	// built for every parse, it cost the pieces of a JavaScript document 1.5%; a plain field moved in
+	// and out of here, or held in the tree outside these buffers, read no faster: documents 1% and
+	// TypeScript apps 1 to 1.6% slower, at the 1% noise of code placement
+	typescript: Option<Box<TypeScript>>,
 }
 
 impl std::fmt::Debug for Spare {
@@ -520,7 +278,7 @@ impl std::fmt::Debug for Spare {
 
 /// Enough to unwind the parser after an error inside a statement it recovers from: what the
 /// failed parse built is forgotten with it.
-struct Mark<E: Extension> {
+struct Mark {
 	scopes: usize,
 	/// Under recovery, how many names each open scope had declared.
 	declared: Vec<u32>,
@@ -530,14 +288,16 @@ struct Mark<E: Extension> {
 	depth: u32,
 	brackets: (u32, [u32; 3]),
 	strict: bool,
-	ext: E::Snapshot,
-	ast: crate::ast::Mark<<E::Data as Reuse>::Mark>,
+	/// TypeScript's state, in a TypeScript parse.
+	// inline, it grew every JavaScript frame that holds a mark: 1% on host documents and under recovery
+	ts: Option<Box<crate::typescript::Saved>>,
+	ast: crate::ast::Mark,
 }
 
 /// Enough to retry a speculative parse from here: the mark, and the tokens back at it.
-pub(crate) struct Snapshot<E: Extension> {
+pub(crate) struct Snapshot {
 	tokens: TokenSnapshot,
-	mark: Mark<E>,
+	mark: Mark,
 }
 
 pub(crate) struct TokenSnapshot {
@@ -586,13 +346,14 @@ pub(crate) struct DestructuringErrors {
 	pub double_proto: Option<u32>,
 }
 
-impl<'a, E: Extension> Parser<'a, E> {
-	pub(crate) fn new(src: &'a str, offset: u32, options: Options, stop: &'a str, mut ast: Box<Ast<E::Data>>) -> Self {
+impl<'a, const TS: bool> Parser<'a, TS> {
+	pub(crate) fn new(src: &'a str, offset: u32, options: Options, stop: &'a str, mut ast: Box<Ast>) -> Self {
 		let mut lexer = Lexer::with(src, std::mem::take(&mut ast.strings));
 		lexer.comments = std::mem::take(&mut ast.comments);
 		lexer.set_pos(offset);
 		lexer.skip_hashbang();
 		lexer.recover = options.has(Options::ERROR_RECOVERY);
+		lexer.at_sign = options.typescript();
 		let strict = options.has(Options::MODULE);
 		lexer.strict = strict;
 		lexer.module = strict;
@@ -600,10 +361,20 @@ impl<'a, E: Extension> Parser<'a, E> {
 		lexer.regexp = spare.regexp;
 		lexer.stop_ranges = spare.stop_ranges;
 		lexer.set_stops(stop);
-		let mut parser = Self {
+		let ts = match spare.typescript {
+			Some(mut ts) => {
+				// cleared keeping the room of its stacks and tables instead, TypeScript apps read 0 to 1% slower
+				if options.typescript() {
+					*ts = TypeScript::default();
+				}
+				ts
+			}
+			None => Box::default(),
+		};
+		Self {
 			lexer,
 			ast,
-			ext: E::default(),
+			ts,
 			options,
 			tok: Token::eof(offset),
 			prev_end: offset,
@@ -626,9 +397,12 @@ impl<'a, E: Extension> Parser<'a, E> {
 			forced_stop: None,
 			speculating: 0,
 			tree_limit: 16 * src.len() + 256,
-		};
-		E::init(&mut parser);
-		parser
+		}
+	}
+
+	/// Whether the parse reads TypeScript.
+	pub(crate) fn typescript(&self) -> bool {
+		TS
 	}
 
 	/// The first token, read before anything is parsed.
@@ -639,14 +413,14 @@ impl<'a, E: Extension> Parser<'a, E> {
 		Ok(())
 	}
 
-	pub(crate) fn snapshot(&self) -> Snapshot<E> {
+	pub(crate) fn snapshot(&self) -> Snapshot {
 		Snapshot {
 			tokens: self.token_snapshot(),
 			mark: self.mark(),
 		}
 	}
 
-	pub(crate) fn restore(&mut self, snapshot: Snapshot<E>) {
+	pub(crate) fn restore(&mut self, snapshot: Snapshot) {
 		self.restore_tokens(snapshot.tokens);
 		self.unwind(snapshot.mark);
 	}
@@ -736,7 +510,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 		Ok(self.add_with_end(NodeKind::Identifier { name }, at, at))
 	}
 
-	fn mark(&self) -> Mark<E> {
+	fn mark(&self) -> Mark {
 		let declared = if self.recovering() {
 			self.scopes
 				.iter()
@@ -754,12 +528,12 @@ impl<'a, E: Extension> Parser<'a, E> {
 			depth: self.depth,
 			brackets: (self.lexer.depth, self.lexer.open),
 			strict: self.strict,
-			ext: self.ext.save(),
+			ts: self.typescript().then(|| Box::new(self.ts.save())),
 			ast: self.ast.mark(),
 		}
 	}
 
-	fn unwind(&mut self, mark: Mark<E>) {
+	fn unwind(&mut self, mark: Mark) {
 		while self.scopes.len() > mark.scopes {
 			self.exit_scope();
 		}
@@ -772,7 +546,9 @@ impl<'a, E: Extension> Parser<'a, E> {
 		self.depth = mark.depth;
 		(self.lexer.depth, self.lexer.open) = mark.brackets;
 		self.set_strict(mark.strict);
-		self.ext.restore(mark.ext);
+		if let Some(saved) = mark.ts {
+			self.ts.restore(*saved);
+		}
 		self.ast.truncate(mark.ast);
 	}
 
@@ -785,6 +561,12 @@ impl<'a, E: Extension> Parser<'a, E> {
 		if !self.recovering() {
 			return f(self).map(Some);
 		}
+		self.recover_statement(f)
+	}
+
+	// with this and the two inlined below left to the compiler, a parse-only JavaScript read took 0.9% longer
+	#[inline(never)]
+	fn recover_statement(&mut self, f: impl FnOnce(&mut Self) -> Result<NodeId>) -> Result<Option<NodeId>> {
 		let mark = self.mark();
 		let at = self.tok.start;
 		match f(self) {
@@ -833,7 +615,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 				let first = self.parse_sequence(ForInit::No, &mut None);
 				match self.stop_word_at.take() {
 					None => first?,
-					// a word both the host and the extension read is the host's at its last use
+					// a word both the host and TypeScript read is the host's at its last use
 					Some(at) => {
 						self.restore(before);
 						self.forced_stop = Some(at);
@@ -847,7 +629,8 @@ impl<'a, E: Extension> Parser<'a, E> {
 				let mut exports = statement::Exports::default();
 				self.parse_statement(statement::Context::None, StatementPlace::TopLevel, Some(&mut exports))?
 			}
-			Entry::TypeParameters => E::type_parameters(self)?,
+			Entry::TypeParameters if self.typescript() => self.type_parameters()?,
+			Entry::TypeParameters => return self.error(self.tok.start, Code::NotTypescript),
 			Entry::Program | Entry::StyleSheet => unreachable!(),
 		};
 		Ok(self.list_of(&[root]))
@@ -863,7 +646,9 @@ impl<'a, E: Extension> Parser<'a, E> {
 		};
 		let pattern = self.make_pattern(expression, false, &mut errors)?;
 		self.check_lval_pattern(pattern, scope::Binding::None, &mut None)?;
-		E::pattern_annotation(self, pattern)?;
+		if self.typescript() {
+			self.pattern_annotation(pattern)?;
+		}
 		Ok(pattern)
 	}
 
@@ -973,7 +758,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 		}
 	}
 
-	pub(crate) fn finish(self) -> Box<Ast<E::Data>> {
+	pub(crate) fn finish(self) -> Box<Ast> {
 		let mut ast = self.ast;
 		let mut lexer = self.lexer;
 		ast.comments = std::mem::take(&mut lexer.comments);
@@ -998,6 +783,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 			errors,
 			regexp: std::mem::take(&mut lexer.regexp),
 			stop_ranges: std::mem::take(&mut lexer.stop_ranges),
+			typescript: Some(self.ts),
 		};
 		ast
 	}
@@ -1154,7 +940,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 	/// Ends the parse when the current token is the host's: one of its stop tokens, after an
 	/// operand, that the grammar does not read as its own.
 	pub(crate) fn stop_after_operand(&mut self) {
-		if self.tok.stop && !E::reads_stop(self) {
+		if self.tok.stop && !(self.typescript() && self.reads_stop()) {
 			self.stop_here();
 		}
 	}
@@ -1255,6 +1041,8 @@ impl<'a, E: Extension> Parser<'a, E> {
 		Ok(false)
 	}
 
+	// with these two and recover_statement above left to the compiler, a parse-only JavaScript read took 0.9% longer
+	#[inline(always)]
 	pub(crate) fn check_expression_errors(
 		&self,
 		errors: &Option<DestructuringErrors>,
@@ -1274,6 +1062,7 @@ impl<'a, E: Extension> Parser<'a, E> {
 		Ok(false)
 	}
 
+	#[inline(always)]
 	pub(crate) fn check_pattern_errors(&self, errors: &Option<DestructuringErrors>, is_assign: bool) -> Result<()> {
 		let Some(errors) = errors else { return Ok(()) };
 		if let Some(pos) = errors.trailing_comma {
@@ -1303,9 +1092,9 @@ impl<'a, E: Extension> Parser<'a, E> {
 	pub(crate) fn is_simple_assign_target(&self, id: NodeId) -> bool {
 		match self.kind(id) {
 			NodeKind::Identifier { .. } | NodeKind::MemberExpression { .. } => true,
-			NodeKind::Extension(_) => {
-				E::unwrap(self, id, Unwrap::Simple).is_some_and(|inner| self.is_simple_assign_target(inner))
-			}
+			NodeKind::Extension(_) => self
+				.unwrap(id, Unwrap::Simple)
+				.is_some_and(|inner| self.is_simple_assign_target(inner)),
 			_ => false,
 		}
 	}
