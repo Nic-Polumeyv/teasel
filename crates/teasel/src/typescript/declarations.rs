@@ -2,8 +2,8 @@
 //! JavaScript ones.
 
 use super::ClassFrame;
-use super::ast::{Kind, TsKind};
 use super::types::{ListKind, TypeParameterModifiers};
+use crate::ast::{Kind, TsKind};
 use crate::ast::{List, NodeId, NodeKind, VariableKind};
 use crate::error::Code;
 use crate::lexer::token::{Keyword, TokenKind, word};
@@ -207,7 +207,7 @@ impl<const TS: bool> Parser<'_, TS> {
 			if p.is_contextual("intrinsic") && p.peek_token()?.kind != TokenKind::Dot {
 				let keyword_start = p.tok.start;
 				p.next()?;
-				let keyword = p.ts(TsKind::Keyword(super::ast::Keyword::Intrinsic), keyword_start);
+				let keyword = p.ts(TsKind::Keyword(crate::ast::Keyword::Intrinsic), keyword_start);
 				return Ok((type_parameters, keyword));
 			}
 			Ok((type_parameters, p.parse_type()?))

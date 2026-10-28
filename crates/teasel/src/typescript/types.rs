@@ -1,7 +1,7 @@
 //! The type grammar: everything after a `:` or inside `<...>`.
 
 use super::Modifiers;
-use super::ast::{Clause, Keyword as TsKeyword, Modifier, SignatureKind, TsKind};
+use crate::ast::{Clause, Keyword as TsKeyword, Modifier, SignatureKind, TsKind};
 use crate::ast::{List, NodeId, NodeKind};
 use crate::error::{Code, SyntaxError};
 use crate::lexer::token::{Keyword, TokenKind};

@@ -129,7 +129,7 @@ pub fn names_type(name: &str) -> bool {
 			.iter()
 			.any(|(_, ops)| ops.iter().any(|op| matches!(op, Type(t) if *t == name)))
 	};
-	if spelled(TS) || crate::typescript::ast::Keyword::NAMES.contains(&name) {
+	if spelled(TS) || crate::ast::Keyword::NAMES.contains(&name) {
 		return true;
 	}
 	spelled(JS)

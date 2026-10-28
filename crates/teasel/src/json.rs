@@ -49,9 +49,9 @@ pub fn error_json(reason: &str, pos: u32) -> String {
 /// the tree in place builds its readers from.
 pub fn layout_json() -> String {
 	use crate::ast::Node;
+	use crate::ast::{Extras, TsKind, ts_layout};
 	use crate::layout::{Field, Ty, Variant};
 	use crate::recipe::{Op, Rest};
-	use crate::typescript::ast::{Extras, TsKind, ts_layout};
 	fn field(w: &mut Json, field: &Field) {
 		w.object();
 		w.key("name");

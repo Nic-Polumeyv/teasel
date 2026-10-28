@@ -1,4 +1,4 @@
-use super::ast::Extras;
+use crate::ast::Extras;
 use crate::ast::{Ast, List, NodeId, NodeKind};
 use crate::layout::Ty;
 use crate::parser::tests::{Failed, dump as dump_with, expand, one, typescript};
@@ -259,7 +259,7 @@ fn failed_attempts_leave_nothing() {
 	let NodeKind::Extension(index) = ast.node(root).kind else {
 		panic!()
 	};
-	let super::ast::TsKind::TypeAssertion { expression, .. } = ast.typescript.kind(index) else {
+	let crate::ast::TsKind::TypeAssertion { expression, .. } = ast.typescript.kind(index) else {
 		panic!()
 	};
 	assert!(ast.is_parenthesized(expression));

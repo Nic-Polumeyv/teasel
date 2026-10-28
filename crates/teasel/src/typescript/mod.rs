@@ -1,13 +1,15 @@
 //! TypeScript's grammar where it departs from JavaScript's, and what the parser keeps to read it.
 
 use crate::error::Code;
-pub mod ast;
 mod declarations;
 #[cfg(test)]
 mod tests;
 mod types;
 
-use crate::ast::{AssignmentOperator, FieldKind, List, MethodKind, NodeId, NodeKind, UnaryOperator, VariableKind};
+use crate::ast::{
+	Accessibility, AssignmentOperator, Extras, FieldKind, Kind, List, MethodKind, NodeId, NodeKind, TsKind,
+	UnaryOperator, VariableKind,
+};
 use crate::error::SyntaxError;
 use crate::interner::FastMap;
 use crate::interner::StrId;
@@ -16,7 +18,6 @@ use crate::parser::expression::{assignment_operator, starts_expression};
 use crate::parser::scope::{SCOPE_ARROW, function_flags};
 use crate::parser::statement::{ClassKind, StatementPlace};
 use crate::parser::{Context, DestructuringErrors, Errors, ForInit, FunctionKind, Parser, Result, Unwrap};
-use ast::{Accessibility, Extras, Kind, TsKind};
 use declarations::Head;
 use types::TypeParameterModifiers;
 
@@ -1139,7 +1140,7 @@ impl<const TS: bool> Parser<'_, TS> {
 			};
 			if !matches!(
 				self.ts_kind(type_annotation),
-				Some(TsKind::Keyword(ast::Keyword::Any | ast::Keyword::Unknown))
+				Some(TsKind::Keyword(crate::ast::Keyword::Any | crate::ast::Keyword::Unknown))
 			) {
 				return self.error(self.start_of(type_annotation), Code::CatchClauseType);
 			}
