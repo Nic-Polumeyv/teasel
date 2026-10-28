@@ -380,11 +380,8 @@ impl<const TS: bool> Parser<'_, TS> {
 		inc_dec: bool,
 		for_init: ForInit,
 	) -> Result<NodeId> {
-		if self.at_lt()
-			&& self.typescript()
-			&& let Some(expr) = self.unary(for_init)?
-		{
-			return Ok(expr);
+		if self.at_lt() && self.typescript() && self.starts_with_lt() {
+			return self.parse_type_assertion(for_init);
 		}
 		let start = self.tok.start;
 		let expr;
@@ -600,7 +597,7 @@ impl<const TS: bool> Parser<'_, TS> {
 			}
 			self.check_expression_errors(&errors, true)?;
 			if self.typescript() {
-				self.list_items(&args)?;
+				self.no_type_casts(&args)?;
 			}
 			self.restore_yield_await_if_set(old);
 			let arguments = self.list_from(args);
@@ -630,7 +627,8 @@ impl<const TS: bool> Parser<'_, TS> {
 			self.tok = self.lexer.read_regex(self.tok)?;
 		}
 		if self.is(TokenKind::At) && self.typescript() {
-			return self.atom(errors, for_init, for_new);
+			self.parse_decorators(false)?;
+			return self.parse_expr_atom(errors, for_init, for_new);
 		}
 		let start = self.tok.start;
 		let can_be_arrow = self.potential_arrow_at == start;
@@ -706,7 +704,7 @@ impl<const TS: bool> Parser<'_, TS> {
 				self.next()?;
 				let elements = self.parse_item_list(false, TokenKind::BracketR, true, true, errors)?;
 				if self.typescript() {
-					self.list_items(&elements)?;
+					self.no_type_casts(&elements)?;
 				}
 				let elements = self.list_from(elements);
 				Ok(self.add(NodeKind::ArrayExpression { elements }, start))
@@ -833,7 +831,7 @@ impl<const TS: bool> Parser<'_, TS> {
 		}
 		self.check_expression_errors(&paren.errors, true)?;
 		if self.typescript() {
-			self.list_items(&paren.items)?;
+			self.no_type_casts(&paren.items)?;
 		}
 		if old_yield != 0 {
 			self.yield_pos = old_yield;
@@ -943,7 +941,7 @@ impl<const TS: bool> Parser<'_, TS> {
 		let arguments = if self.eat(TokenKind::ParenL)? {
 			let args = self.parse_item_list(false, TokenKind::ParenR, true, false, &mut None)?;
 			if self.typescript() {
-				self.list_items(&args)?;
+				self.no_type_casts(&args)?;
 			}
 			self.list_from(args)
 		} else {
@@ -982,7 +980,7 @@ impl<const TS: bool> Parser<'_, TS> {
 			self.prev_end = chunk.end + 2;
 			self.lexer.next_token_into(&mut self.tok)?;
 			let expression = if self.lexer.in_type {
-				self.template_expression()?
+				self.parse_type()?
 			} else {
 				self.parse_expression(false, &mut None)?
 			};

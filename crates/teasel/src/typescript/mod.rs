@@ -302,7 +302,7 @@ impl<const TS: bool> Parser<'_, TS> {
 	}
 
 	/// At the start of an expression the plugin reads a lone `<` whatever follows it.
-	fn starts_with_lt(&mut self) -> bool {
+	pub(crate) fn starts_with_lt(&mut self) -> bool {
 		match self.tok.kind {
 			TokenKind::Lt => true,
 			TokenKind::LtLt | TokenKind::LtEq | TokenKind::LtLtEq => {
@@ -368,7 +368,7 @@ impl<const TS: bool> Parser<'_, TS> {
 	}
 
 	/// Decorators before a class, kept until the class takes them.
-	fn parse_decorators(&mut self, allow_export: bool) -> Result<()> {
+	pub(crate) fn parse_decorators(&mut self, allow_export: bool) -> Result<()> {
 		if self
 			.ts
 			.state
@@ -523,7 +523,7 @@ impl<const TS: bool> Parser<'_, TS> {
 		Ok(())
 	}
 
-	fn parse_type_assertion(&mut self, for_init: ForInit) -> Result<NodeId> {
+	pub(crate) fn parse_type_assertion(&mut self, for_init: ForInit) -> Result<NodeId> {
 		let start = self.tok.start;
 		let assertion = self.attempt(|p| {
 			p.lexer.depth += 1;
@@ -766,7 +766,7 @@ impl<const TS: bool> Parser<'_, TS> {
 	}
 
 	/// A cast left in a list that is not becoming parameters is an error.
-	fn no_type_casts(&self, items: &[Option<NodeId>]) -> Result<()> {
+	pub(crate) fn no_type_casts(&self, items: &[Option<NodeId>]) -> Result<()> {
 		for &item in items.iter().flatten() {
 			let cast = match self.kind(item) {
 				NodeKind::AssignmentExpression { left, .. } => left,
@@ -798,12 +798,10 @@ impl TypeScript {
 
 /// TypeScript's grammar at the points where it departs from JavaScript's, each read where the parser
 /// meets one in a TypeScript parse.
-// each one cold: without it a JavaScript parse, which calls none of them, ran over 1% slower
 impl<const TS: bool> Parser<'_, TS> {
 	// Statements and modules
 
 	/// First look at a statement; `Some` replaces it entirely.
-	#[cold]
 	pub(crate) fn statement(&mut self) -> Result<Option<NodeId>> {
 		if self.is(TokenKind::At) {
 			self.parse_decorators(true)?;
@@ -818,7 +816,6 @@ impl<const TS: bool> Parser<'_, TS> {
 	}
 
 	/// Right after `export`; `Some` is a whole export statement.
-	#[cold]
 	pub(crate) fn export_head(&mut self, start: u32) -> Result<Option<NodeId>> {
 		if self.is_keyword(Keyword::Import) {
 			self.next()?;
@@ -856,7 +853,6 @@ impl<const TS: bool> Parser<'_, TS> {
 		Ok(None)
 	}
 
-	#[cold]
 	pub(crate) fn export_declaration(&mut self) -> Result<Option<NodeId>> {
 		if self.is(TokenKind::At) {
 			return self
@@ -887,7 +883,6 @@ impl<const TS: bool> Parser<'_, TS> {
 		Ok(Some(declaration))
 	}
 
-	#[cold]
 	pub(crate) fn export_default(&mut self) -> Result<Option<NodeId>> {
 		if self.is(TokenKind::At) {
 			self.parse_decorators(false)?;
@@ -912,7 +907,6 @@ impl<const TS: bool> Parser<'_, TS> {
 		Ok(None)
 	}
 
-	#[cold]
 	pub(crate) fn export_end(&mut self, node: NodeId) {
 		if let Some(kind) = self.ts.state.export_kind.take() {
 			self.extras_mut(node).export_kind = Some(kind);
@@ -920,7 +914,6 @@ impl<const TS: bool> Parser<'_, TS> {
 		self.ts.state.outer_kind = None;
 	}
 
-	#[cold]
 	pub(crate) fn export_specifier(&mut self) -> Result<Option<NodeId>> {
 		if self.is_contextual("type") {
 			return self.parse_type_only_specifier(false).map(Some);
@@ -929,7 +922,6 @@ impl<const TS: bool> Parser<'_, TS> {
 	}
 
 	/// Right after `import`; `Some` is a whole import statement.
-	#[cold]
 	pub(crate) fn import_head(&mut self, start: u32) -> Result<Option<NodeId>> {
 		self.ts.state.outer_kind = Some(Kind::Value);
 		if self.is_ident() || self.is(TokenKind::Star) || self.is(TokenKind::BraceL) {
@@ -953,7 +945,6 @@ impl<const TS: bool> Parser<'_, TS> {
 		Ok(None)
 	}
 
-	#[cold]
 	pub(crate) fn import_end(&mut self, node: NodeId) -> Result<()> {
 		let kind = self.ts.state.outer_kind.take().unwrap_or(Kind::Value);
 		self.extras_mut(node).import_kind = Some(kind);
@@ -982,7 +973,6 @@ impl<const TS: bool> Parser<'_, TS> {
 		Ok(())
 	}
 
-	#[cold]
 	pub(crate) fn import_specifier(&mut self) -> Result<Option<NodeId>> {
 		if self.is_contextual("type") {
 			return self.parse_type_only_specifier(true).map(Some);
@@ -992,7 +982,6 @@ impl<const TS: bool> Parser<'_, TS> {
 
 	// a type-only import binds no value: a value may take the name, an export may still name it
 	/// How an import's local name binds: `None` for one that binds no value.
-	#[cold]
 	pub(crate) fn import_binding(&self) -> crate::parser::scope::Binding {
 		use crate::parser::scope::Binding;
 		if self.ts.state.outer_kind == Some(Kind::Type) {
@@ -1004,20 +993,17 @@ impl<const TS: bool> Parser<'_, TS> {
 
 	/// Whether an `export` here belongs to TypeScript's own scoping, a namespace body say, so the
 	/// script goal does not forbid it.
-	#[cold]
 	pub(crate) fn exports_in_script(&self) -> bool {
 		self.ts.state.module_blocks > 0
 	}
 
 	/// Whether the code describes rather than defines, an ambient declaration's body, where a
 	/// definition's rules do not apply.
-	#[cold]
 	pub(crate) fn in_ambient(&self) -> bool {
 		self.ts.state.ambient
 	}
 
 	/// Whether TypeScript declared `name` in a way that satisfies a local `export { name }`.
-	#[cold]
 	pub(crate) fn ts_declares_export(&mut self, name: StrId) -> bool {
 		self.ts.state.module_blocks > 0
 			|| self.ts.types.contains(name)
@@ -1025,7 +1011,6 @@ impl<const TS: bool> Parser<'_, TS> {
 			|| self.ts.state.globals.contains(&name)
 	}
 
-	#[cold]
 	pub(crate) fn scope_exit(&mut self) {
 		let depth = self.scope_depth();
 		self.ts.types.exit(depth);
@@ -1035,7 +1020,6 @@ impl<const TS: bool> Parser<'_, TS> {
 	// Bindings
 
 	/// After the id of a variable declarator; whether it is definite, `!`.
-	#[cold]
 	pub(crate) fn var_id(&mut self, id: NodeId) -> Result<bool> {
 		let mut definite = false;
 		if matches!(self.kind(id), NodeKind::Identifier { .. }) && !self.tok.newline_before && self.is(TokenKind::Bang)
@@ -1051,7 +1035,6 @@ impl<const TS: bool> Parser<'_, TS> {
 		Ok(definite)
 	}
 
-	#[cold]
 	pub(crate) fn var_declarator(&mut self, node: NodeId, kind: VariableKind, definite: bool) -> Result<()> {
 		if definite {
 			self.extras_mut(node).definite = true;
@@ -1066,13 +1049,11 @@ impl<const TS: bool> Parser<'_, TS> {
 	}
 
 	/// Whether a declarator may go without an initializer where JavaScript requires one.
-	#[cold]
 	pub(crate) fn allows_missing_initializer(&mut self) -> bool {
 		self.ts.state.ambient
 	}
 
 	/// A whole parameter of a parameter list; `allow_modifiers` inside class methods.
-	#[cold]
 	pub(crate) fn parameter(&mut self, allow_modifiers: bool) -> Result<Option<NodeId>> {
 		let mut decorators = Vec::new();
 		while self.is(TokenKind::At) {
@@ -1145,7 +1126,6 @@ impl<const TS: bool> Parser<'_, TS> {
 		Ok(Some(node))
 	}
 
-	#[cold]
 	pub(crate) fn catch_param(&mut self, param: NodeId) -> Result<()> {
 		if self.is(TokenKind::Colon) {
 			let annotation = self.parse_type_annotation(true, None)?;
@@ -1165,7 +1145,6 @@ impl<const TS: bool> Parser<'_, TS> {
 	}
 
 	/// After a pattern read on its own, the `Pattern` entry.
-	#[cold]
 	pub(crate) fn pattern_annotation(&mut self, pattern: NodeId) -> Result<()> {
 		if self.is(TokenKind::Colon) {
 			let annotation = self.parse_type_annotation(true, None)?;
@@ -1178,7 +1157,6 @@ impl<const TS: bool> Parser<'_, TS> {
 	// Functions and classes
 
 	/// Before the parameters of a function, method or arrow.
-	#[cold]
 	pub(crate) fn function_start(&mut self, kind: FunctionKind) -> Result<FunctionFrame> {
 		let mut frame = FunctionFrame {
 			in_class_method: matches!(kind, FunctionKind::Method { in_class: true, .. }),
@@ -1210,7 +1188,6 @@ impl<const TS: bool> Parser<'_, TS> {
 	}
 
 	/// After the parameters, before the body; `Some` is a function without a body.
-	#[cold]
 	#[expect(clippy::too_many_arguments)]
 	pub(crate) fn function_body(
 		&mut self,
@@ -1297,7 +1274,6 @@ impl<const TS: bool> Parser<'_, TS> {
 		Ok(None)
 	}
 
-	#[cold]
 	pub(crate) fn function_end(&mut self, node: NodeId, frame: FunctionFrame) -> Result<()> {
 		if let NodeKind::ArrowFunctionExpression { params, .. } = self.kind(node) {
 			self.check_parameter_list(params, false)?;
@@ -1327,7 +1303,6 @@ impl<const TS: bool> Parser<'_, TS> {
 
 	/// Whether an object literal accessor's first parameter is a `this` parameter, which does not
 	/// count.
-	#[cold]
 	pub(crate) fn accessor_this_param(&self, params: List) -> bool {
 		self.ast
 			.list(params)
@@ -1336,7 +1311,6 @@ impl<const TS: bool> Parser<'_, TS> {
 	}
 
 	/// The parameters of a function-shaped TypeScript node.
-	#[cold]
 	pub(crate) fn function_params(&self, node: NodeId) -> Option<List> {
 		match self.ts_kind(node) {
 			Some(TsKind::DeclareFunction { params, .. } | TsKind::DeclareMethod { params, .. }) => Some(params),
@@ -1344,7 +1318,6 @@ impl<const TS: bool> Parser<'_, TS> {
 		}
 	}
 
-	#[cold]
 	pub(crate) fn class_start(&mut self, kind: ClassKind) -> Result<()> {
 		let mut frame = std::mem::take(&mut self.ts.state.next_class);
 		frame.is_declaration = kind != ClassKind::Expression;
@@ -1361,19 +1334,16 @@ impl<const TS: bool> Parser<'_, TS> {
 	}
 
 	/// Whether the token after `class` opens a heritage clause rather than naming the class.
-	#[cold]
 	pub(crate) fn starts_class_heritage(&mut self) -> bool {
 		self.is_contextual("implements")
 	}
 
-	#[cold]
 	pub(crate) fn class_type_parameters(&mut self) -> Result<()> {
 		let type_parameters = self.try_parse_type_parameters(TypeParameterModifiers::Class)?;
 		self.ts.state.classes.last_mut().unwrap().type_parameters = type_parameters;
 		Ok(())
 	}
 
-	#[cold]
 	pub(crate) fn class_heritage(&mut self, has_super: bool) -> Result<()> {
 		let mut super_type_arguments = None;
 		if has_super && (self.is(TokenKind::Lt) || self.is(TokenKind::LtLt)) {
@@ -1392,7 +1362,6 @@ impl<const TS: bool> Parser<'_, TS> {
 		Ok(())
 	}
 
-	#[cold]
 	pub(crate) fn class_end(&mut self, node: NodeId) {
 		let frame = self.ts.state.classes.pop().unwrap();
 		self.ts.state.in_abstract_class = frame.outer_abstract;
@@ -1409,7 +1378,6 @@ impl<const TS: bool> Parser<'_, TS> {
 	}
 
 	/// Modifiers before a class element; returns whether `static` was among them.
-	#[cold]
 	pub(crate) fn class_modifiers(&mut self) -> Result<bool> {
 		let mut decorators = Vec::new();
 		while self.is(TokenKind::At) {
@@ -1462,12 +1430,10 @@ impl<const TS: bool> Parser<'_, TS> {
 	}
 
 	/// A type parameter list `<...>` at the cursor, for the entry that parses one on its own.
-	#[cold]
 	pub(crate) fn type_parameters(&mut self) -> Result<NodeId> {
 		self.parse_type_parameters(TypeParameterModifiers::Const)
 	}
 
-	#[cold]
 	pub(crate) fn class_index_signature(&mut self, start: u32) -> Result<Option<NodeId>> {
 		let Some(signature) = self.try_parse_index_signature(start)? else {
 			let has_super = self.ts.state.classes.last().is_some_and(|c| c.has_super);
@@ -1501,7 +1467,6 @@ impl<const TS: bool> Parser<'_, TS> {
 	}
 
 	/// After the key of a class element.
-	#[cold]
 	pub(crate) fn class_key_end(&mut self, key: NodeId, computed: bool) -> Result<()> {
 		let element = self.ts.state.elements.last_mut().unwrap();
 		element.key = Some(key);
@@ -1525,12 +1490,10 @@ impl<const TS: bool> Parser<'_, TS> {
 		Ok(())
 	}
 
-	#[cold]
 	pub(crate) fn starts_class_method(&mut self) -> bool {
 		self.is(TokenKind::Lt)
 	}
 
-	#[cold]
 	pub(crate) fn class_method_start(&mut self, kind: MethodKind) -> Result<()> {
 		let type_parameters = self.try_parse_type_parameters(TypeParameterModifiers::Const)?;
 		if matches!(kind, MethodKind::Get | MethodKind::Set)
@@ -1557,7 +1520,6 @@ impl<const TS: bool> Parser<'_, TS> {
 	}
 
 	/// After the key of a class field, before its initializer.
-	#[cold]
 	pub(crate) fn class_field_annotation(&mut self) -> Result<()> {
 		let element = *self.ts.state.elements.last().unwrap();
 		let mut definite = false;
@@ -1598,7 +1560,6 @@ impl<const TS: bool> Parser<'_, TS> {
 		Ok(())
 	}
 
-	#[cold]
 	pub(crate) fn class_element_end(&mut self, node: NodeId) -> Result<()> {
 		let frame = self.ts.state.elements.pop().unwrap();
 		if let Some(outer) = frame.outer_ambient {
@@ -1671,7 +1632,6 @@ impl<const TS: bool> Parser<'_, TS> {
 
 	// Expressions
 
-	#[cold]
 	pub(crate) fn maybe_assign(&mut self, for_init: ForInit, _: &mut Errors) -> Result<Option<NodeId>> {
 		if !self.starts_with_lt() {
 			return Ok(None);
@@ -1681,7 +1641,6 @@ impl<const TS: bool> Parser<'_, TS> {
 
 	/// A list `read` with `parameters` saying whether it may still turn out to be a function's
 	/// parameters; what the enclosing list said holds again after it.
-	#[cold]
 	pub(crate) fn ts_list<T>(&mut self, parameters: bool, read: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
 		let outer = std::mem::replace(&mut self.ts.state.maybe_in_arrow_parameters, parameters);
 		let list = read(self)?;
@@ -1690,7 +1649,6 @@ impl<const TS: bool> Parser<'_, TS> {
 	}
 
 	/// An item of a parenthesized list, after its expression.
-	#[cold]
 	pub(crate) fn paren_item(&mut self, item: NodeId) -> Result<NodeId> {
 		let optional = self.eat(TokenKind::Question)?;
 		let type_annotation = if self.is(TokenKind::Colon) {
@@ -1719,7 +1677,6 @@ impl<const TS: bool> Parser<'_, TS> {
 	}
 
 	/// At `?` after an expression; `Some` replaces the conditional.
-	#[cold]
 	pub(crate) fn conditional(&mut self, expr: NodeId, start: u32, for_init: ForInit) -> Result<Option<NodeId>> {
 		if !self.ts.state.maybe_in_arrow_parameters {
 			return Ok(None);
@@ -1730,12 +1687,10 @@ impl<const TS: bool> Parser<'_, TS> {
 		))
 	}
 
-	#[cold]
 	pub(crate) fn arrow_start(&mut self, start: u32) {
 		self.ts.state.body_needs_colon = self.ts.state.needs_colon_at == Some(start);
 	}
 
-	#[cold]
 	pub(crate) fn conditional_branch(&mut self, start: u32, alternate: bool, for_init: ForInit) -> Result<NodeId> {
 		let old = self.ts.state.needs_colon_at;
 		if !alternate || old == Some(start) {
@@ -1746,30 +1701,13 @@ impl<const TS: bool> Parser<'_, TS> {
 		branch
 	}
 
-	#[cold]
-	pub(crate) fn unary(&mut self, for_init: ForInit) -> Result<Option<NodeId>> {
-		if self.starts_with_lt() {
-			return self.parse_type_assertion(for_init).map(Some);
-		}
-		Ok(None)
-	}
-
-	/// First look at an atom.
-	#[cold]
-	pub(crate) fn atom(&mut self, errors: &mut Errors, for_init: ForInit, for_new: bool) -> Result<NodeId> {
-		self.parse_decorators(false)?;
-		self.parse_expr_atom(errors, for_init, for_new)
-	}
-
 	/// Whether the current token, one of the host's stop tokens, is one TypeScript reads after an
 	/// expression; it then decides where the host's syntax starts.
-	#[cold]
 	pub(crate) fn reads_stop(&self) -> bool {
 		(self.is_contextual("as") || self.is_contextual("satisfies")) && self.forced_stop != Some(self.tok.start)
 	}
 
 	/// At an operator position; `Some` is the new left operand.
-	#[cold]
 	pub(crate) fn expr_op(&mut self, left: NodeId, left_start: u32) -> Result<Option<NodeId>> {
 		let is_as = self.is_contextual("as");
 		if !is_as && !self.is_contextual("satisfies") {
@@ -1786,7 +1724,6 @@ impl<const TS: bool> Parser<'_, TS> {
 		assertion(self, left, left_start, is_as).map(Some)
 	}
 
-	#[cold]
 	pub(crate) fn subscript(
 		&mut self,
 		base: NodeId,
@@ -1839,7 +1776,6 @@ impl<const TS: bool> Parser<'_, TS> {
 		Ok(Some((node, is_optional_call)))
 	}
 
-	#[cold]
 	pub(crate) fn should_parse_arrow(&mut self, start: u32, items: &[Option<NodeId>]) -> Result<bool> {
 		let should = if self.is(TokenKind::Colon) {
 			items.iter().flatten().all(|item| self.is_assignable(*item, true))
@@ -1852,7 +1788,6 @@ impl<const TS: bool> Parser<'_, TS> {
 		Ok(should && self.take_arrow_return_type()? && self.is(TokenKind::Arrow))
 	}
 
-	#[cold]
 	pub(crate) fn should_parse_async_arrow(&mut self, start: u32) -> Result<bool> {
 		if !self.return_type_fits(start, true)? {
 			return Ok(false);
@@ -1860,14 +1795,6 @@ impl<const TS: bool> Parser<'_, TS> {
 		Ok(self.take_arrow_return_type()? && !self.can_insert_semicolon() && self.eat(TokenKind::Arrow)?)
 	}
 
-	/// A finished list of expressions: array elements, arguments, or a parenthesized expression
-	/// that did not become parameters.
-	#[cold]
-	pub(crate) fn list_items(&mut self, items: &[Option<NodeId>]) -> Result<()> {
-		self.no_type_casts(items)
-	}
-
-	#[cold]
 	pub(crate) fn new_expression(&mut self, node: NodeId) {
 		let NodeKind::NewExpression { callee, arguments } = self.kind(node) else {
 			unreachable!()
@@ -1886,7 +1813,6 @@ impl<const TS: bool> Parser<'_, TS> {
 	}
 
 	/// An object property whose value starts unexpectedly for JavaScript.
-	#[cold]
 	pub(crate) fn property_value(
 		&mut self,
 		start: u32,
@@ -1913,13 +1839,7 @@ impl<const TS: bool> Parser<'_, TS> {
 		))
 	}
 
-	#[cold]
-	pub(crate) fn template_expression(&mut self) -> Result<NodeId> {
-		self.parse_type()
-	}
-
 	/// Reinterprets a TypeScript node as a pattern; the result replaces it.
-	#[cold]
 	pub(crate) fn ts_make_pattern(
 		&mut self,
 		id: NodeId,
@@ -1952,7 +1872,6 @@ impl<const TS: bool> Parser<'_, TS> {
 	}
 
 	/// The plain node a TypeScript wrapper stands for in a check, if any.
-	#[cold]
 	pub(crate) fn unwrap(&self, id: NodeId, context: Unwrap) -> Option<NodeId> {
 		match (context, self.ts_kind(id)?) {
 			(Unwrap::Simple, TsKind::NonNullExpression { expression } | TsKind::AsExpression { expression, .. }) => {
