@@ -3149,9 +3149,17 @@ impl<'a> Walker<'a> {
 	}
 
 	fn js(&mut self, entry: JsEntry, stop: &str) -> Result<List> {
+		if self.options.typescript() {
+			self.js_in::<true>(entry, stop)
+		} else {
+			self.js_in::<false>(entry, stop)
+		}
+	}
+
+	fn js_in<const TS: bool>(&mut self, entry: JsEntry, stop: &str) -> Result<List> {
 		let ast = self.ast.take().unwrap();
 		let src = &self.src[..self.limit as usize];
-		let mut parser = Parser::new(src, self.at, self.options, stop, ast);
+		let mut parser = Parser::<TS>::new(src, self.at, self.options, stop, ast);
 		let first = parser.tok.start;
 		let roots = match parser.start().and_then(|()| parser.read_entry(entry)) {
 			// the placeholder spans what was read: a host copies an expression's text by its range
@@ -3185,11 +3193,19 @@ impl<'a> Walker<'a> {
 	}
 
 	fn program(&mut self, start: u32, end: u32) -> Result<NodeId> {
+		if self.options.typescript() {
+			self.program_in::<true>(start, end)
+		} else {
+			self.program_in::<false>(start, end)
+		}
+	}
+
+	fn program_in<const TS: bool>(&mut self, start: u32, end: u32) -> Result<NodeId> {
 		let ast = self.ast.take().unwrap();
 		let src = &self.src[..end as usize];
 		// the template may declare what the script exports
 		let options = self.options.with(Options::ALLOW_UNDECLARED_EXPORTS);
-		let mut parser = Parser::new(src, start, options, "", ast);
+		let mut parser = Parser::<TS>::new(src, start, options, "", ast);
 		let program = parser.start().and_then(|()| parser.parse_program());
 		self.ast = Some(parser.finish());
 		program

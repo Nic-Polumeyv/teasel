@@ -73,7 +73,7 @@ impl Exports {
 	}
 }
 
-impl Parser<'_> {
+impl<const TS: bool> Parser<'_, TS> {
 	pub(crate) fn parse_program(&mut self) -> Result<NodeId> {
 		let start = self.prev_end;
 		let module = self.options.has(Options::MODULE);
@@ -1427,7 +1427,7 @@ pub(crate) enum ClassKind {
 	NullableId,
 }
 
-impl Parser<'_> {
+impl<const TS: bool> Parser<'_, TS> {
 	pub(crate) fn parse_class(&mut self, kind: ClassKind) -> Result<NodeId> {
 		let start = self.tok.start;
 		self.next()?;

@@ -160,7 +160,23 @@ pub(crate) fn parse_at(
 		0
 	};
 	let ast = reused.unwrap_or_else(|| Box::new(Ast::sized(budget)));
-	let mut parser = Parser::new(src, start, options, stop, ast);
+	if options.typescript() {
+		read::<true>(src, start, end, entry, options, stop, ast)
+	} else {
+		read::<false>(src, start, end, entry, options, stop, ast)
+	}
+}
+
+fn read<const TS: bool>(
+	src: &str,
+	start: u32,
+	end: u32,
+	entry: Entry,
+	options: Options,
+	stop: &str,
+	ast: Box<Ast>,
+) -> (Box<Ast>, Result<(List, u32)>) {
+	let mut parser = Parser::<TS>::new(src, start, options, stop, ast);
 	let roots = parser.read_roots(entry).map(|roots| {
 		let end = if entry == Entry::Program {
 			end
@@ -172,7 +188,7 @@ pub(crate) fn parse_at(
 	(parser.finish(), roots)
 }
 
-impl Parser<'_> {
+impl<const TS: bool> Parser<'_, TS> {
 	fn read_roots(&mut self, entry: Entry) -> Result<List> {
 		self.start()?;
 		if entry == Entry::Program {
@@ -199,7 +215,8 @@ impl Parser<'_> {
 	}
 }
 
-pub(crate) struct Parser<'a> {
+// with the language read from the options at each point instead, a parse-only JavaScript read took 1% longer
+pub(crate) struct Parser<'a, const TS: bool> {
 	pub(crate) lexer: Lexer<'a>,
 	pub(crate) ast: Box<Ast>,
 	/// What TypeScript's grammar keeps while it reads; untouched in a JavaScript parse.
@@ -329,7 +346,7 @@ pub(crate) struct DestructuringErrors {
 	pub double_proto: Option<u32>,
 }
 
-impl<'a> Parser<'a> {
+impl<'a, const TS: bool> Parser<'a, TS> {
 	pub(crate) fn new(src: &'a str, offset: u32, options: Options, stop: &'a str, mut ast: Box<Ast>) -> Self {
 		let mut lexer = Lexer::with(src, std::mem::take(&mut ast.strings));
 		lexer.comments = std::mem::take(&mut ast.comments);
@@ -386,7 +403,7 @@ impl<'a> Parser<'a> {
 
 	/// Whether the parse reads TypeScript.
 	pub(crate) fn typescript(&self) -> bool {
-		self.options.typescript()
+		TS
 	}
 
 	/// The first token, read before anything is parsed.
