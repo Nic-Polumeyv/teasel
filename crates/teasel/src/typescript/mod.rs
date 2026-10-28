@@ -574,9 +574,10 @@ impl<const TS: bool> Parser<'_, TS> {
 	}
 
 	// the head alone is tried: trying the whole expression read it again as an assertion or a call, 2x per level
+	// not cold: every list the tokens leave undecided is tried here, and marked cold the app documents
+	// took 1% longer
 	/// An arrow's head tried at `<` (`generic`) or after a list's `(` at `at`: a list a type must be
 	/// read to decide, the `:` after its closer at `colon`, or one the closer reader could not.
-	#[cold]
 	pub(crate) fn try_arrow_head(
 		&mut self,
 		start: u32,
