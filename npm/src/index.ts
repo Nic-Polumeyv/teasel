@@ -114,7 +114,9 @@ export const css: Language<HostNode> = Object.freeze({ children: stylesheet });
 
 /**
  * A source kept with its options; a parse keeps nothing of it in the engine. Offsets are UTF-16;
- * positions stay those of the whole source.
+ * positions stay those of the whole source. A lone surrogate in the text reaches the parser as
+ * U+FFFD, the way `TextEncoder` encodes it, so string values, template cooked and raw text and
+ * regex patterns carry U+FFFD there while spans and `loc` are right.
  */
 export class Source {
 	#source: string;
