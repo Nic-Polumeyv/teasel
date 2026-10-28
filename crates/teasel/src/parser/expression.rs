@@ -1669,7 +1669,7 @@ impl<const TS: bool> Parser<'_, TS> {
 				return self.error(start, Code::OptionalChainAssignment);
 			}
 			NodeKind::MemberExpression { .. } if !is_binding => {}
-			NodeKind::Extension(_) => {
+			_ if self.typescript() => {
 				return match self.ts_make_pattern(id, is_binding, errors)? {
 					Some(pattern) => Ok(pattern),
 					None => self.error(start, Code::InvalidAssignmentTarget),
@@ -1815,9 +1815,7 @@ impl<const TS: bool> Parser<'_, TS> {
 				}
 				Ok(())
 			}
-			NodeKind::Extension(_) if let Some(inner) = self.unwrap(id, Unwrap::Simple) => {
-				self.check_lval_simple(inner, binding, clashes)
-			}
+			_ if let Some(inner) = self.unwrap(id, Unwrap::Simple) => self.check_lval_simple(inner, binding, clashes),
 			_ => self.error(
 				start,
 				if is_bind {
@@ -1865,7 +1863,7 @@ impl<const TS: bool> Parser<'_, TS> {
 			NodeKind::Property { value, .. } => self.check_lval_inner_pattern(value, binding, clashes),
 			NodeKind::AssignmentPattern { left, .. } => self.check_lval_pattern(left, binding, clashes),
 			NodeKind::RestElement { argument } => self.check_lval_pattern(argument, binding, clashes),
-			NodeKind::Extension(_) if let Some(inner) = self.unwrap(id, Unwrap::InnerPattern) => {
+			_ if let Some(inner) = self.unwrap(id, Unwrap::InnerPattern) => {
 				self.check_lval_inner_pattern(inner, binding, clashes)
 			}
 			_ => self.check_lval_pattern(id, binding, clashes),

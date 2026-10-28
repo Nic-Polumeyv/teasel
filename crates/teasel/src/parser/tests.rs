@@ -84,18 +84,16 @@ fn whole(src: &str, options: Options) -> (Ast, List) {
 	(ast, roots)
 }
 
-/// Renders a node as its Debug form with ids, strings and lists expanded inline; `typescript`
-/// renders TypeScript's nodes.
-pub(crate) fn dump(ast: &Ast, id: NodeId, typescript: &dyn Fn(&Ast, NodeId, u32) -> String) -> String {
-	let node = ast.node(id);
-	match node.kind {
-		NodeKind::Extension(index) => typescript(ast, id, index),
-		kind => expand(ast, &format!("{kind:?}"), typescript),
-	}
+/// Renders a node as its Debug form with ids, strings and lists expanded inline, then what
+/// `extras` renders of the node.
+pub(crate) fn dump(ast: &Ast, id: NodeId, extras: &dyn Fn(&Ast, NodeId) -> String) -> String {
+	let mut out = expand(ast, &format!("{:?}", ast.node(id).kind), extras);
+	out.push_str(&extras(ast, id));
+	out
 }
 
 /// Expands the ids inside a Debug rendering.
-pub(crate) fn expand(ast: &Ast, text: &str, typescript: &dyn Fn(&Ast, NodeId, u32) -> String) -> String {
+pub(crate) fn expand(ast: &Ast, text: &str, extras: &dyn Fn(&Ast, NodeId) -> String) -> String {
 	let mut out = String::new();
 	let mut rest = text;
 	while let Some(i) = rest.find(['N', 'S', 'L']) {
@@ -104,7 +102,7 @@ pub(crate) fn expand(ast: &Ast, text: &str, typescript: &dyn Fn(&Ast, NodeId, u3
 		if let Some(r) = tail.strip_prefix("NodeId(") {
 			let end = r.find(')').unwrap();
 			let child = NodeId::at(r[..end].parse().unwrap());
-			out.push_str(&dump(ast, child, typescript));
+			out.push_str(&dump(ast, child, extras));
 			rest = &r[end + 1..];
 		} else if let Some(r) = tail.strip_prefix("NumberLiteral { value: ") {
 			let end = r.find(" }").unwrap();
@@ -126,7 +124,7 @@ pub(crate) fn expand(ast: &Ast, text: &str, typescript: &dyn Fn(&Ast, NodeId, u3
 			let items: Vec<String> = ast
 				.list(list)
 				.iter()
-				.map(|c| c.map(|c| dump(ast, c, typescript)).unwrap_or_else(|| "hole".into()))
+				.map(|c| c.map(|c| dump(ast, c, extras)).unwrap_or_else(|| "hole".into()))
 				.collect();
 			out.push('[');
 			out.push_str(&items.join(", "));
@@ -141,8 +139,8 @@ pub(crate) fn expand(ast: &Ast, text: &str, typescript: &dyn Fn(&Ast, NodeId, u3
 	out
 }
 
-fn plain(_: &Ast, _: NodeId, _: u32) -> String {
-	unreachable!("a JavaScript tree holds no TypeScript nodes")
+fn plain(_: &Ast, _: NodeId) -> String {
+	String::new()
 }
 
 fn expr(src: &str) -> String {

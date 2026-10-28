@@ -4,6 +4,7 @@ import { field as find, type Field, type Kind, type Layout, type RawOp as Op, ty
 
 /** From the layout the engine hands over: each type with the keys that hold nodes or lists of nodes, and the keys TypeScript may add to any node. */
 export function generate(layout: Layout): { children: Record<string, string[]>; extras: string[]; stylesheet: Record<string, string[]> } {
+	const extra_fields = layout.extras?.fields ?? [];
 	// the keys whose value is a node or a list of nodes, and the types the recipe spells: one, or one per name of an enum field
 	const keys = (ops: Op[], fields: Field[]) => {
 		const out: string[] = [];
@@ -14,6 +15,7 @@ export function generate(layout: Layout): { children: Record<string, string[]>; 
 			else if (op === 'node' || op === 'list' || op === 'optlistkey' || op === 'params' || op === 'othername') out.push(key);
 			else if ((op === 'opt' || op === 'maybe') && find(fields, path).ty === '?node') out.push(key);
 			else if (op === 'maybe' && find(fields, path).ty === '?list') out.push(key);
+			else if (op === 'extra' && find(extra_fields, path).ty !== '?enum') out.push(key);
 			else if (op === 'object' && keys(path, fields).out.length !== 0) throw new Error(`${key} nests nodes`);
 		}
 		return { types, out };
@@ -29,11 +31,10 @@ export function generate(layout: Layout): { children: Record<string, string[]>; 
 			for (const type of types) add(type, out);
 		}
 	};
-	kinds(layout.recipes.js, layout.kinds);
-	if (layout.ts !== undefined) kinds(layout.recipes.ts!, layout.ts.kinds);
-	const adds = [...(layout.recipes.adds ?? []), ...(layout.recipes.ts_adds ?? [])].flatMap(([, ops]) => ops);
+	kinds(layout.recipes.kinds, layout.kinds);
+	const adds = (layout.recipes.adds ?? []).flatMap(([, ops]) => ops);
 	const extras: string[] = [];
-	for (const field of layout.extras?.fields ?? []) {
+	for (const field of extra_fields) {
 		const add = adds.find(([op, , path]) => op === 'maybe' && path === field.name);
 		if (add !== undefined && (field.ty === '?node' || field.ty === '?list')) extras.push(add[1]);
 	}

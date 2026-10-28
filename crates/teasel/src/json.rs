@@ -48,9 +48,9 @@ pub fn error_json(reason: &str, pos: u32) -> String {
 /// The tree's layout, the names of its views and the recipes, as JSON: what a front end reading
 /// the tree in place builds its readers from.
 pub fn layout_json() -> String {
+	use crate::ast::Extras;
 	use crate::ast::Node;
-	use crate::ast::{Extras, TsKind, ts_layout};
-	use crate::layout::{Field, Ty, Variant};
+	use crate::layout::{Field, Ty};
 	use crate::recipe::{Op, Rest};
 	fn field(w: &mut Json, field: &Field) {
 		w.object();
@@ -100,23 +100,6 @@ pub fn layout_json() -> String {
 		w.int(size as u32);
 		w.key("fields");
 		fields(w, list);
-		w.end();
-	}
-	fn kinds(w: &mut Json, size: usize, variants: &[Variant]) {
-		w.object();
-		w.key("size");
-		w.int(size as u32);
-		w.key("kinds");
-		w.list();
-		for variant in variants {
-			w.object();
-			w.key("name");
-			w.text(variant.name);
-			w.key("fields");
-			fields(w, variant.fields);
-			w.end();
-		}
-		w.end();
 		w.end();
 	}
 	// an operation is its name, then its key, its field and what else it takes
@@ -185,8 +168,6 @@ pub fn layout_json() -> String {
 		w.end();
 	}
 	w.end();
-	w.key("ts");
-	kinds(&mut w, size_of::<TsKind>(), ts_layout::VARIANTS);
 	w.key("extras");
 	record(&mut w, size_of::<Extras>(), Extras::FIELDS);
 	w.key("rows");
@@ -229,16 +210,12 @@ pub fn layout_json() -> String {
 	children_table(&mut w, host::stylesheet_children());
 	w.key("recipes");
 	w.object();
-	w.key("js");
-	recipes(&mut w, crate::recipe::JS);
+	w.key("kinds");
+	recipes(&mut w, crate::recipe::KINDS);
 	w.key("rows");
 	recipes(&mut w, crate::recipe::RECIPES);
-	w.key("ts");
-	recipes(&mut w, crate::recipe::TS);
 	w.key("adds");
 	recipes(&mut w, crate::recipe::ADDS);
-	w.key("ts_adds");
-	recipes(&mut w, crate::recipe::TS_ADDS);
 	w.key("erased");
 	ops(&mut w, crate::recipe::EXTRAS_ERASED);
 	w.end();
@@ -721,7 +698,7 @@ fn prepare_tree(ast: &mut Ast, positions: &Positions, options: Options, names: &
 	if options.has(Options::ERASE) {
 		for i in 0..ast.nodes.len() as u32 {
 			let id = crate::ast::NodeId::at(i);
-			if ast.typescript.erased(ast, id) {
+			if ast.erased(id) {
 				ast.erased.insert(id);
 			}
 		}
@@ -734,7 +711,7 @@ fn prepare_tree(ast: &mut Ast, positions: &Positions, options: Options, names: &
 		rare.insert(owner);
 	}
 	if options.has(Options::ERASE) {
-		ast.typescript.rare(&mut rare);
+		ast.decorated(&mut rare);
 	}
 	if let Some(scopes) = &ast.scopes
 		&& options.has(Options::SCOPES)

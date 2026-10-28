@@ -1,9 +1,6 @@
-use crate::estree::Writer;
 use crate::handed::{Handed, Views};
 use crate::interner::{Interner, StrId, Surrogate};
 use crate::layout::{Field, Ty};
-use crate::recipe::{ADDS, EXTRAS_ERASED, Op, Slot, TS, TS_ADDS};
-use crate::scopes::{Binder, BindingKind, Mode, ScopeKind};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(C)]
@@ -205,6 +202,10 @@ pub struct Node {
 	pub end: u32,
 }
 
+// every node is as wide as JavaScript's widest kind: a TypeScript kind past that moves a field to
+// the extras record
+const _: () = assert!(size_of::<Node>() == 32);
+
 /// A node of a host's grammar: its type and its fields are the grammar's, held by name.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Host {
@@ -398,9 +399,8 @@ pub struct Ast {
 	pub errors: Vec<crate::SyntaxError>,
 	/// Whether a node was written in parentheses, when `Options::parenthesized` asks.
 	pub parenthesized: NodeSet,
-	/// TypeScript's own nodes, by the `NodeKind::Extension` payload, and the keys it adds; empty
-	/// in a JavaScript tree.
-	pub typescript: Data,
+	/// The keys TypeScript adds to a node, by the node; empty in a JavaScript tree.
+	pub extras: Slots<Extras>,
 }
 
 crate::layout::record! {
@@ -447,7 +447,7 @@ pub(crate) struct Mark {
 	nodes: usize,
 	numbers: usize,
 	lists: usize,
-	typescript: (usize, usize),
+	extras: usize,
 }
 
 impl Ast {
@@ -479,7 +479,7 @@ impl Ast {
 		self.host_rows.clear();
 		self.host_keys.clear();
 		self.host_vals.clear();
-		self.typescript.clear();
+		self.extras.clear();
 	}
 
 	pub(crate) fn mark(&self) -> Mark {
@@ -487,7 +487,7 @@ impl Ast {
 			nodes: self.nodes.len(),
 			numbers: self.numbers.len(),
 			lists: self.lists.len(),
-			typescript: self.typescript.mark(),
+			extras: self.extras.len(),
 		}
 	}
 
@@ -497,7 +497,7 @@ impl Ast {
 		self.numbers.truncate(mark.numbers);
 		self.lists.truncate(mark.lists);
 		self.parenthesized.truncate(mark.nodes);
-		self.typescript.truncate(mark.typescript);
+		self.extras.truncate(mark.extras);
 	}
 
 	/// Room for the tree of `bytes` of source: about a node per eight bytes, a list per thirty, a
@@ -541,7 +541,7 @@ impl Ast {
 			None => crate::scopes::Scopes::no_views(out),
 		}
 		if typescript {
-			self.typescript.views(out);
+			self.extras.views("extras_slots", "extras", out);
 		}
 	}
 }
@@ -570,16 +570,12 @@ impl Ast {
 		let kind = &self.node(id).kind;
 		match *kind {
 			NodeKind::Host(index) => self.host_children(index, out),
-			NodeKind::Extension(index) => {
-				let base = &self.typescript.nodes[index as usize] as *const TsKind as *const u8;
-				self.held(base, ts_layout::VARIANTS[crate::estree::tag(base)].fields, out);
-			}
 			_ => {
 				let base = kind as *const NodeKind as *const u8;
 				self.held(base, node_layout::VARIANTS[crate::estree::tag(base)].fields, out);
 			}
 		}
-		if let Some(extras) = self.typescript.extras(id) {
+		if let Some(extras) = self.extras.get(id) {
 			self.held(extras as *const Extras as *const u8, Extras::FIELDS, out);
 		}
 		if !out[from..].is_sorted_by_key(|&child| self.node(child).start) {
@@ -994,11 +990,251 @@ crate::layout::kinds! {
 			source: NodeId,
 			attributes: List,
 		},
-
-		/// A TypeScript node, indexed into `Ast::typescript`.
-		Extension(u32),
 		/// A node of the host's grammar, indexed into `Ast::hosts`.
 		Host(u32),
+
+		// Types
+		TypeAnnotation {
+			type_annotation: NodeId,
+		},
+		/// `any`, `string`, ... and `void`, `null`, `intrinsic`; the name is the ESTree type.
+		Keyword(Keyword),
+		ThisType,
+		TypePredicate {
+			parameter_name: NodeId,
+			type_annotation: Option<NodeId>,
+			asserts: bool,
+		},
+		TypeReference {
+			type_name: NodeId,
+			type_arguments: Option<NodeId>,
+		},
+		QualifiedName {
+			left: NodeId,
+			right: NodeId,
+		},
+		TypeParameterInstantiation {
+			params: List,
+		},
+		TypeParameterDeclaration {
+			params: List,
+		},
+		TypeParameter {
+			name: StrId,
+			constraint: Option<NodeId>,
+			default: Option<NodeId>,
+			is_in: bool,
+			is_out: bool,
+			is_const: bool,
+		},
+		FunctionType {
+			type_parameters: Option<NodeId>,
+			parameters: List,
+			type_annotation: NodeId,
+		},
+		ConstructorType {
+			type_parameters: Option<NodeId>,
+			parameters: List,
+			type_annotation: NodeId,
+			is_abstract: bool,
+		},
+		UnionType {
+			types: List,
+		},
+		IntersectionType {
+			types: List,
+		},
+		TypeOperator {
+			operator: StrId,
+			type_annotation: NodeId,
+		},
+		InferType {
+			type_parameter: NodeId,
+		},
+		LiteralType {
+			literal: NodeId,
+		},
+		ImportType {
+			argument: NodeId,
+			qualifier: Option<NodeId>,
+			type_arguments: Option<NodeId>,
+		},
+		TypeQuery {
+			expr_name: NodeId,
+			type_arguments: Option<NodeId>,
+		},
+		MappedType {
+			readonly: Option<Modifier>,
+			type_parameter: NodeId,
+			name_type: Option<NodeId>,
+			optional: Option<Modifier>,
+			type_annotation: Option<NodeId>,
+		},
+		TypeLiteral {
+			members: List,
+		},
+		NamedTupleMember {
+			label: NodeId,
+			optional: bool,
+			element_type: NodeId,
+		},
+		OptionalType {
+			type_annotation: NodeId,
+		},
+		RestType {
+			type_annotation: NodeId,
+		},
+		TupleType {
+			element_types: List,
+		},
+		ParenthesizedType {
+			type_annotation: NodeId,
+		},
+		ArrayType {
+			element_type: NodeId,
+		},
+		IndexedAccessType {
+			object_type: NodeId,
+			index_type: NodeId,
+		},
+		ConditionalType {
+			check_type: NodeId,
+			extends_type: NodeId,
+			true_type: NodeId,
+			false_type: NodeId,
+		},
+
+		// Type members
+		IndexSignature {
+			parameters: List,
+			type_annotation: Option<NodeId>,
+		},
+		CallSignatureDeclaration {
+			type_parameters: Option<NodeId>,
+			parameters: List,
+			type_annotation: Option<NodeId>,
+		},
+		ConstructSignatureDeclaration {
+			type_parameters: Option<NodeId>,
+			parameters: List,
+			type_annotation: Option<NodeId>,
+		},
+		/// Its type parameters are in the extras record: with them, the node would outgrow
+		/// JavaScript's widest kind and widen every node.
+		MethodSignature {
+			key: NodeId,
+			computed: bool,
+			optional: bool,
+			kind: SignatureKind,
+			parameters: List,
+			type_annotation: Option<NodeId>,
+		},
+		PropertySignature {
+			key: NodeId,
+			computed: bool,
+			optional: bool,
+			readonly: bool,
+			type_annotation: Option<NodeId>,
+		},
+
+		// Declarations
+		InterfaceDeclaration {
+			id: NodeId,
+			type_parameters: Option<NodeId>,
+			extends: List,
+			body: NodeId,
+		},
+		InterfaceBody {
+			body: List,
+		},
+		Heritage {
+			expression: NodeId,
+			type_arguments: Option<NodeId>,
+			clause: Clause,
+		},
+		EnumDeclaration {
+			id: NodeId,
+			members: List,
+			is_const: bool,
+		},
+		EnumMember {
+			id: NodeId,
+			initializer: Option<NodeId>,
+		},
+		ModuleDeclaration {
+			id: NodeId,
+			body: Option<NodeId>,
+			global: bool,
+		},
+		ModuleBlock {
+			body: List,
+		},
+		TypeAliasDeclaration {
+			id: NodeId,
+			type_parameters: Option<NodeId>,
+			type_annotation: NodeId,
+		},
+		ImportEqualsDeclaration {
+			id: NodeId,
+			module_reference: NodeId,
+			is_export: bool,
+			import_kind: Kind,
+		},
+		ExternalModuleReference {
+			expression: NodeId,
+		},
+		ExportAssignment {
+			expression: NodeId,
+		},
+		NamespaceExportDeclaration {
+			id: NodeId,
+		},
+		/// A function declaration without a body: an overload or an ambient declaration.
+		DeclareFunction {
+			id: Option<NodeId>,
+			params: List,
+			is_async: bool,
+			generator: bool,
+		},
+		/// A method without a body, the `value` of its `MethodDefinition`.
+		DeclareMethod {
+			params: List,
+			is_async: bool,
+			generator: bool,
+		},
+
+		// Expressions
+		AsExpression {
+			expression: NodeId,
+			type_annotation: NodeId,
+		},
+		SatisfiesExpression {
+			expression: NodeId,
+			type_annotation: NodeId,
+		},
+		NonNullExpression {
+			expression: NodeId,
+		},
+		TypeAssertion {
+			type_annotation: NodeId,
+			expression: NodeId,
+		},
+		/// An item of a list, or its rest, with `?`, `: type` or both, before the list is known to be parameters.
+		TypeCastExpression {
+			expression: NodeId,
+			type_annotation: Option<NodeId>,
+			optional: bool,
+		},
+		InstantiationExpression {
+			expression: NodeId,
+			type_arguments: NodeId,
+		},
+		ParameterProperty {
+			parameter: NodeId,
+		},
+		Decorator {
+			expression: NodeId,
+		},
 	}
 }
 
@@ -1146,97 +1382,58 @@ impl VariableKind {
 	}
 }
 
-/// What TypeScript hands back with a tree: its own nodes, indexed by the `NodeKind::Extension`
-/// payload, and the keys it adds to JavaScript nodes.
-#[derive(Debug, Default)]
-pub struct Data {
-	pub nodes: Handed<TsKind>,
-	pub extras: Slots<Extras>,
-}
-
-impl Data {
-	pub fn kind(&self, index: u32) -> TsKind {
-		self.nodes[index as usize]
+impl Ast {
+	pub(crate) fn extras_of(&self, id: NodeId) -> Extras {
+		self.extras.get(id).copied().unwrap_or_default()
 	}
 
-	pub fn extras(&self, id: NodeId) -> Option<&Extras> {
-		self.extras.get(id)
-	}
-}
-
-impl Data {
-	/// Forgets everything, keeping the room.
-	pub(crate) fn clear(&mut self) {
-		self.nodes.clear();
-		self.extras.clear();
-	}
-
-	/// Where the tables stood, to cut back to.
-	pub(crate) fn mark(&self) -> (usize, usize) {
-		(self.nodes.len(), self.extras.len())
-	}
-
-	pub(crate) fn truncate(&mut self, (nodes, extras): (usize, usize)) {
-		self.nodes.truncate(nodes);
-		self.extras.truncate(extras);
-	}
-
-	/// The tables' buffers, after the tree's.
-	pub(crate) fn views(&mut self, out: &mut Views<'_>) {
-		out.push("ts", &mut self.nodes);
-		self.extras.views("extras_slots", "extras", out);
-	}
-
-	/// The nodes TypeScript adds keys to when erasing.
-	pub(crate) fn rare(&self, set: &mut NodeSet) {
+	/// The nodes erasing still adds keys to: those with decorators.
+	pub(crate) fn decorated(&self, set: &mut NodeSet) {
 		for &owner in self.extras.owners() {
-			if self.extras(owner).is_some_and(|extras| extras.decorators.is_some()) {
+			if self.extras.get(owner).is_some_and(|extras| extras.decorators.is_some()) {
 				set.insert(owner);
 			}
 		}
 	}
 
-	/// Whether erasing leaves nothing of a node in a list: type-only declarations and imports.
-	pub(crate) fn erased(&self, ast: &Ast, id: NodeId) -> bool {
-		use TsKind::*;
+	/// Whether every statement of a list erases to nothing.
+	fn all_erased(&self, list: List) -> bool {
+		self.list(list).iter().all(|item| item.is_none_or(|id| self.erased(id)))
+	}
+
+	pub(crate) fn erased(&self, id: NodeId) -> bool {
+		use NodeKind::*;
 		let extras = self.extras_of(id);
 		if extras.declare {
 			return true;
 		}
-		match ast.node(id).kind {
-			NodeKind::MethodDefinition { .. } | NodeKind::PropertyDefinition { .. } if extras.is_abstract => true,
+		match self.node(id).kind {
+			MethodDefinition { .. } | PropertyDefinition { .. } if extras.is_abstract => true,
 			// an overload signature: a method without a body
-			NodeKind::MethodDefinition { value, .. } => {
-				matches!(self.ts_of(ast, value), Some(DeclareMethod { .. }))
+			MethodDefinition { value, .. } => {
+				matches!(self.node(value).kind, DeclareMethod { .. })
 			}
-			NodeKind::Extension(index) => match self.kind(index) {
-				InterfaceDeclaration { .. }
-				| TypeAliasDeclaration { .. }
-				| DeclareFunction { .. }
-				| IndexSignature { .. }
-				| NamespaceExportDeclaration { .. } => true,
-				ImportEqualsDeclaration { import_kind, .. } => import_kind == Kind::Type,
-				ModuleDeclaration { body: None, .. } => true,
-				ModuleDeclaration { body: Some(block), .. } => match self.ts_of(ast, block) {
-					Some(ModuleBlock { body }) => self.all_erased(ast, body),
-					_ => false,
-				},
+			InterfaceDeclaration { .. }
+			| TypeAliasDeclaration { .. }
+			| DeclareFunction { .. }
+			| IndexSignature { .. }
+			| NamespaceExportDeclaration { .. } => true,
+			ImportEqualsDeclaration { import_kind, .. } => import_kind == Kind::Type,
+			ModuleDeclaration { body: None, .. } => true,
+			ModuleDeclaration { body: Some(block), .. } => match self.node(block).kind {
+				ModuleBlock { body } => self.all_erased(body),
 				_ => false,
 			},
-			NodeKind::ImportDeclaration { specifiers, .. } => {
-				extras.import_kind == Some(Kind::Type) || (specifiers.len > 0 && self.all_erased(ast, specifiers))
+			ImportDeclaration { specifiers, .. } => {
+				extras.import_kind == Some(Kind::Type) || (specifiers.len > 0 && self.all_erased(specifiers))
 			}
-			NodeKind::ImportSpecifier { .. } => extras.import_kind == Some(Kind::Type),
-			NodeKind::ExportSpecifier { .. } | NodeKind::ExportAllDeclaration { .. } => {
-				extras.export_kind == Some(Kind::Type)
-			}
+			ImportSpecifier { .. } => extras.import_kind == Some(Kind::Type),
+			ExportSpecifier { .. } | ExportAllDeclaration { .. } => extras.export_kind == Some(Kind::Type),
 			// `export { type A }` keeps an `export {}`, as tsc keeps the file a module
-			NodeKind::ExportDeclaration { declaration } => {
-				extras.export_kind == Some(Kind::Type) || self.erased(ast, declaration)
-			}
-			NodeKind::ExportNamedDeclaration { .. } => extras.export_kind == Some(Kind::Type),
-			NodeKind::ExportDefaultDeclaration { declaration } => {
-				extras.export_kind == Some(Kind::Type) || self.erased(ast, declaration)
+			ExportDeclaration { declaration } => extras.export_kind == Some(Kind::Type) || self.erased(declaration),
+			ExportNamedDeclaration { .. } => extras.export_kind == Some(Kind::Type),
+			ExportDefaultDeclaration { declaration } => {
+				extras.export_kind == Some(Kind::Type) || self.erased(declaration)
 			}
 			_ => false,
 		}
@@ -1314,7 +1511,7 @@ crate::layout::record! {
 }
 
 impl Extras {
-	fn set(&self) -> impl Iterator<Item = &'static str> {
+	pub(crate) fn set(&self) -> impl Iterator<Item = &'static str> {
 		let base = self as *const Extras as *const u8;
 		Extras::FIELDS
 			.iter()
@@ -1329,253 +1526,6 @@ impl Extras {
 				}
 			})
 			.map(|field| field.name)
-	}
-}
-
-crate::layout::kinds! {
-	#[derive(Clone, Copy, Debug, PartialEq)]
-	pub enum TsKind in ts_layout {
-		// Types
-		TypeAnnotation {
-			type_annotation: NodeId,
-		},
-		/// `any`, `string`, ... and `void`, `null`, `intrinsic`; the name is the ESTree type.
-		Keyword(Keyword),
-		ThisType,
-		TypePredicate {
-			parameter_name: NodeId,
-			type_annotation: Option<NodeId>,
-			asserts: bool,
-		},
-		TypeReference {
-			type_name: NodeId,
-			type_arguments: Option<NodeId>,
-		},
-		QualifiedName {
-			left: NodeId,
-			right: NodeId,
-		},
-		TypeParameterInstantiation {
-			params: List,
-		},
-		TypeParameterDeclaration {
-			params: List,
-		},
-		TypeParameter {
-			name: StrId,
-			constraint: Option<NodeId>,
-			default: Option<NodeId>,
-			is_in: bool,
-			is_out: bool,
-			is_const: bool,
-		},
-		FunctionType {
-			type_parameters: Option<NodeId>,
-			parameters: List,
-			type_annotation: NodeId,
-		},
-		ConstructorType {
-			type_parameters: Option<NodeId>,
-			parameters: List,
-			type_annotation: NodeId,
-			is_abstract: bool,
-		},
-		UnionType {
-			types: List,
-		},
-		IntersectionType {
-			types: List,
-		},
-		TypeOperator {
-			operator: StrId,
-			type_annotation: NodeId,
-		},
-		InferType {
-			type_parameter: NodeId,
-		},
-		LiteralType {
-			literal: NodeId,
-		},
-		ImportType {
-			argument: NodeId,
-			qualifier: Option<NodeId>,
-			type_arguments: Option<NodeId>,
-		},
-		TypeQuery {
-			expr_name: NodeId,
-			type_arguments: Option<NodeId>,
-		},
-		MappedType {
-			readonly: Option<Modifier>,
-			type_parameter: NodeId,
-			name_type: Option<NodeId>,
-			optional: Option<Modifier>,
-			type_annotation: Option<NodeId>,
-		},
-		TypeLiteral {
-			members: List,
-		},
-		NamedTupleMember {
-			label: NodeId,
-			optional: bool,
-			element_type: NodeId,
-		},
-		OptionalType {
-			type_annotation: NodeId,
-		},
-		RestType {
-			type_annotation: NodeId,
-		},
-		TupleType {
-			element_types: List,
-		},
-		ParenthesizedType {
-			type_annotation: NodeId,
-		},
-		ArrayType {
-			element_type: NodeId,
-		},
-		IndexedAccessType {
-			object_type: NodeId,
-			index_type: NodeId,
-		},
-		ConditionalType {
-			check_type: NodeId,
-			extends_type: NodeId,
-			true_type: NodeId,
-			false_type: NodeId,
-		},
-
-		// Type members
-		IndexSignature {
-			parameters: List,
-			type_annotation: Option<NodeId>,
-		},
-		CallSignatureDeclaration {
-			type_parameters: Option<NodeId>,
-			parameters: List,
-			type_annotation: Option<NodeId>,
-		},
-		ConstructSignatureDeclaration {
-			type_parameters: Option<NodeId>,
-			parameters: List,
-			type_annotation: Option<NodeId>,
-		},
-		MethodSignature {
-			key: NodeId,
-			computed: bool,
-			optional: bool,
-			kind: SignatureKind,
-			type_parameters: Option<NodeId>,
-			parameters: List,
-			type_annotation: Option<NodeId>,
-		},
-		PropertySignature {
-			key: NodeId,
-			computed: bool,
-			optional: bool,
-			readonly: bool,
-			type_annotation: Option<NodeId>,
-		},
-
-		// Declarations
-		InterfaceDeclaration {
-			id: NodeId,
-			type_parameters: Option<NodeId>,
-			extends: Option<List>,
-			body: NodeId,
-		},
-		InterfaceBody {
-			body: List,
-		},
-		Heritage {
-			expression: NodeId,
-			type_arguments: Option<NodeId>,
-			clause: Clause,
-		},
-		EnumDeclaration {
-			id: NodeId,
-			members: List,
-			is_const: bool,
-		},
-		EnumMember {
-			id: NodeId,
-			initializer: Option<NodeId>,
-		},
-		ModuleDeclaration {
-			id: NodeId,
-			body: Option<NodeId>,
-			global: bool,
-		},
-		ModuleBlock {
-			body: List,
-		},
-		TypeAliasDeclaration {
-			id: NodeId,
-			type_parameters: Option<NodeId>,
-			type_annotation: NodeId,
-		},
-		ImportEqualsDeclaration {
-			id: NodeId,
-			module_reference: NodeId,
-			is_export: bool,
-			import_kind: Kind,
-		},
-		ExternalModuleReference {
-			expression: NodeId,
-		},
-		ExportAssignment {
-			expression: NodeId,
-		},
-		NamespaceExportDeclaration {
-			id: NodeId,
-		},
-		/// A function declaration without a body: an overload or an ambient declaration.
-		DeclareFunction {
-			id: Option<NodeId>,
-			params: List,
-			is_async: bool,
-			generator: bool,
-		},
-		/// A method without a body, the `value` of its `MethodDefinition`.
-		DeclareMethod {
-			params: List,
-			is_async: bool,
-			generator: bool,
-		},
-
-		// Expressions
-		AsExpression {
-			expression: NodeId,
-			type_annotation: NodeId,
-		},
-		SatisfiesExpression {
-			expression: NodeId,
-			type_annotation: NodeId,
-		},
-		NonNullExpression {
-			expression: NodeId,
-		},
-		TypeAssertion {
-			type_annotation: NodeId,
-			expression: NodeId,
-		},
-		/// An item of a list, or its rest, with `?`, `: type` or both, before the list is known to be parameters.
-		TypeCastExpression {
-			expression: NodeId,
-			type_annotation: Option<NodeId>,
-			optional: bool,
-		},
-		InstantiationExpression {
-			expression: NodeId,
-			type_arguments: NodeId,
-		},
-		ParameterProperty {
-			parameter: NodeId,
-		},
-		Decorator {
-			expression: NodeId,
-		},
 	}
 }
 
@@ -1616,110 +1566,18 @@ impl Keyword {
 	}
 }
 
-impl Data {
-	/// The TypeScript node `id` is, if it is one.
-	pub(crate) fn ts_of(&self, ast: &Ast, id: NodeId) -> Option<TsKind> {
-		match ast.node(id).kind {
-			NodeKind::Extension(index) => Some(self.kind(index)),
-			_ => None,
-		}
-	}
-
-	fn root(&self, ast: &Ast, mut id: NodeId) -> Option<NodeId> {
-		loop {
-			match ast.node(id).kind {
-				NodeKind::Identifier { .. } => return Some(id),
-				NodeKind::Extension(index) => match self.kind(index) {
-					TsKind::QualifiedName { left, .. } => id = left,
-					_ => return None,
-				},
-				_ => return None,
-			}
-		}
-	}
-}
-
-impl Data {
-	/// Binds what a TypeScript node declares and refers to.
-	pub(crate) fn bind(&self, b: &mut Binder, id: NodeId, mode: Mode) {
-		use TsKind::*;
-		let Some(kind) = self.ts_of(b.ast(), id) else { return };
-		match kind {
-			AsExpression { expression, .. }
-			| SatisfiesExpression { expression, .. }
-			| NonNullExpression { expression }
-			| TypeAssertion { expression, .. }
-			| TypeCastExpression { expression, .. }
-			| InstantiationExpression { expression, .. }
-			| ParameterProperty { parameter: expression } => b.visit(expression, mode),
-			Decorator { expression } | ExportAssignment { expression } => b.visit(expression, Mode::Expression),
-			EnumDeclaration { id: name, members, .. } => {
-				b.declare_by(name, BindingKind::Enum, id);
-				b.enter_owned(ScopeKind::Enum, id, b.declared_by(name));
-				let members: Vec<_> = b.ast().list(members).iter().flatten().copied().collect();
-				for &member in &members {
-					if let Some(EnumMember { id: name, .. }) = self.ts_of(b.ast(), member) {
-						b.declare_by(name, BindingKind::EnumMember, member);
-					}
-				}
-				for &member in &members {
-					if let Some(EnumMember {
-						initializer: Some(initializer),
-						..
-					}) = self.ts_of(b.ast(), member)
-					{
-						b.visit(initializer, Mode::Expression);
-					}
-				}
-				b.exit();
-			}
-			ModuleDeclaration { id: name, body, global } => {
-				if !global {
-					b.declare_by(name, BindingKind::Namespace, id);
-				}
-				if let Some(body) = body {
-					b.enter_owned(ScopeKind::Namespace, id, b.declared_by(name));
-					b.visit(body, Mode::Expression);
-					b.exit();
-				}
-			}
-			ModuleBlock { body } => b.statements(body),
-			ImportEqualsDeclaration {
-				id: name,
-				module_reference,
-				import_kind,
-				..
-			} if import_kind != Kind::Type => {
-				b.declare_by(name, BindingKind::Import, id);
-				if let Some(root) = self.root(b.ast(), module_reference) {
-					b.reference(root, false, false);
-				}
-			}
-			// an overload or an ambient signature names the function like its implementation would
-			DeclareFunction { id: Some(name), .. } => b.declare_by(name, BindingKind::Function, id),
-			_ => {}
-		}
-	}
-
-	/// The value-space parts TypeScript attaches to a plain node: decorators.
-	pub(crate) fn bind_extras(&self, b: &mut Binder, id: NodeId) {
-		if let Some(decorators) = self.extras(id).and_then(|e| e.decorators) {
-			for &decorator in b.ast().list(decorators).iter().flatten() {
-				b.visit(decorator, Mode::Expression);
-			}
-		}
-	}
-
+impl Ast {
 	/// Whether an import or export only names types, so it binds and refers to no value.
 	pub(crate) fn types_only(&self, id: NodeId) -> bool {
-		self.extras(id)
+		self.extras
+			.get(id)
 			.is_some_and(|e| e.import_kind == Some(Kind::Type) || e.export_kind == Some(Kind::Type))
 	}
 
 	/// The expression a TypeScript node wraps without changing its value: `x as T`, `x!`.
-	pub(crate) fn wrapped(&self, ast: &Ast, id: NodeId) -> Option<NodeId> {
-		use TsKind::*;
-		match self.ts_of(ast, id)? {
+	pub(crate) fn wrapped(&self, id: NodeId) -> Option<NodeId> {
+		use NodeKind::*;
+		match self.node(id).kind {
 			AsExpression { expression, .. }
 			| SatisfiesExpression { expression, .. }
 			| NonNullExpression { expression }
@@ -1727,84 +1585,6 @@ impl Data {
 			| TypeCastExpression { expression, .. }
 			| InstantiationExpression { expression, .. } => Some(expression),
 			_ => None,
-		}
-	}
-}
-
-// ESTree output for the TypeScript nodes and the keys TypeScript adds to every node
-struct Recipes {
-	kinds: &'static [&'static [Op<Slot>]],
-	/// By the kind's tag: the operations and the fields they read.
-	adds: Vec<(&'static [Op<Slot>], Vec<&'static str>)>,
-	ts_adds: Vec<(&'static [Op<Slot>], Vec<&'static str>)>,
-	erased: &'static [Op<Slot>],
-}
-
-fn recipes() -> &'static Recipes {
-	static RESOLVED: std::sync::OnceLock<Recipes> = std::sync::OnceLock::new();
-	let adds = |table: &[(&str, &'static [Op])], variants: &[crate::layout::Variant]| {
-		variants
-			.iter()
-			.map(|variant| match table.iter().find(|(name, _)| *name == variant.name) {
-				Some((name, ops)) => (
-					crate::recipe::resolve_ops(ops, Extras::FIELDS, name),
-					ops.iter().filter_map(|op| op.told().2).collect(),
-				),
-				None => (&[][..], Vec::new()),
-			})
-			.collect()
-	};
-	RESOLVED.get_or_init(|| Recipes {
-		kinds: crate::recipe::resolve(TS, ts_layout::VARIANTS),
-		adds: adds(ADDS, node_layout::VARIANTS),
-		ts_adds: adds(TS_ADDS, ts_layout::VARIANTS),
-		erased: crate::recipe::resolve_ops(EXTRAS_ERASED, Extras::FIELDS, "Extras"),
-	})
-}
-
-impl Data {
-	/// Whether every statement of a list erases to nothing.
-	fn all_erased(&self, ast: &Ast, list: List) -> bool {
-		ast.list(list)
-			.iter()
-			.all(|item| item.is_none_or(|id| self.erased(ast, id)))
-	}
-
-	fn extras_of(&self, id: NodeId) -> Extras {
-		self.extras(id).copied().unwrap_or_default()
-	}
-}
-
-impl Data {
-	/// Writes one of TypeScript's own nodes and closes it, or what erasing puts in its place.
-	pub(crate) fn write_node(&self, w: &mut Writer, id: NodeId, index: u32) {
-		let base = &self.nodes[index as usize] as *const TsKind as *const u8;
-		if w.run(id, recipes().kinds[crate::estree::tag(base)], base) {
-			w.end();
-		}
-	}
-
-	/// Writes the keys TypeScript adds to a node.
-	pub(crate) fn write_extras(&self, w: &mut Writer, id: NodeId) {
-		let recipes = recipes();
-		let extras = self.extras_of(id);
-		let base = &extras as *const Extras as *const u8;
-		if w.options.has(crate::Options::ERASE) {
-			w.run(id, recipes.erased, base);
-			return;
-		}
-		let (ops, read) = match w.kind(id) {
-			NodeKind::Extension(index) => {
-				&recipes.ts_adds[crate::estree::tag(&self.nodes[index as usize] as *const TsKind as *const u8)]
-			}
-			kind => &recipes.adds[crate::estree::tag(&kind as *const NodeKind as *const u8)],
-		};
-		w.run(id, ops, base);
-		// an unlisted extra is a parser bug, which a test build catches and a shipped build answers around
-		if cfg!(debug_assertions)
-			&& let Some(field) = extras.set().find(|&field| !read.contains(&field))
-		{
-			panic!("{:?} has {field}, which its kind does not list", w.kind(id));
 		}
 	}
 }
