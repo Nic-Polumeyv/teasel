@@ -31,7 +31,7 @@ function start(compiled: WebAssembly.Module, instance: WebAssembly.Instance): En
 }
 
 // synchronous: 7 ms against 13 async for the 1.1 MB module, and require() refuses a graph with top-level await
-// TODO: `import source` once node >= 22.19, tsc and bundlers accept it: no file read
+// `import source` measured slower (6.3 against 4.7 ms), needs Node 24 where it is Stability 1.2, TypeScript 7.0.2 rejects it (7.1 adds it), and no bundler handles it
 export function compile(): Engine {
 	const compiled = new WebAssembly.Module(globalThis.process.getBuiltinModule('node:fs').readFileSync(url));
 	return start(compiled, new WebAssembly.Instance(compiled, {}));
@@ -42,8 +42,19 @@ export async function instantiate(): Promise<Engine> {
 	const { module: compiled, instance } =
 		url.protocol === 'file:'
 			? await WebAssembly.instantiate(await globalThis.process.getBuiltinModule('node:fs/promises').readFile(url), {})
-			: await WebAssembly.instantiateStreaming(fetch(url), {});
+			: await fetched();
 	return start(compiled, instance);
+}
+
+// streaming refuses a file a server sends as anything but application/wasm, with a TypeError before it reads the body
+async function fetched() {
+	const response = fetch(url);
+	try {
+		return await WebAssembly.instantiateStreaming(response, {});
+	} catch (error) {
+		if (!(error instanceof TypeError)) throw error;
+		return WebAssembly.instantiate(await (await response).arrayBuffer(), {});
+	}
 }
 
 // a panic traps the instance for good: a fresh one takes over, and plans are made again in it from their grammar
@@ -126,6 +137,11 @@ function opened(handle: number) {
 
 const engine: Engine = {
 	parse(source, flags, entry, offset, end, stop, plan) {
+		// a memory never shrinks, so one a huge source grew past 256 MiB goes with its instance, which costs 0.9 ms to replace
+		if (wasm.memory.buffer.byteLength > 1 << 28) {
+			wasm = new WebAssembly.Instance(module, {}).exports as unknown as Exports;
+			generation++;
+		}
 		const grammar = plan === undefined ? 0 : (plan as Plan).handle();
 		return answer(guarded(() => wasm.parse(...bytes(source), flags, entry, offset, end ?? 0, end === undefined ? 0 : 1, ...bytes(stop), grammar)));
 	},

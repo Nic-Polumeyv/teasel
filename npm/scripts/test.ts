@@ -508,6 +508,13 @@ if (name !== 'native') {
 	assert.ok(restarted, `${name} the engine started over`);
 	assert.equal(open('<a>{x}</a>').parse(svelte).node.fragment.nodes[0].name, 'a');
 	assert.equal(open('a { b: c }').parse(css).node.children[0].type, 'Rule');
+	// a source that grows the memory past 256 MiB leaves it to the instance the next parse replaces
+	const { engine } = await import('#engine');
+	const memory = () => (engine.tree(false, true).find((view) => typeof view === 'object') as Uint32Array).buffer.byteLength;
+	assert.equal(open(`/*${'c'.repeat(1 << 27)}*/`).parse().node.body.length, 0);
+	assert.ok(memory() > 1 << 28, `${name} grew to ${memory()}`);
+	assert.equal(open('<a>{x}</a>').parse(svelte).node.fragment.nodes[0].name, 'a');
+	assert.ok(memory() < 1 << 28, `${name} shrank to ${memory()}`);
 }
 
 // the tests read the source; the published build must answer the same once its specifiers are rewritten
