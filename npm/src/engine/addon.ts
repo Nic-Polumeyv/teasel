@@ -3,10 +3,9 @@ const { existsSync, readFileSync } = process.getBuiltinModule('node:fs');
 const { createRequire } = process.getBuiltinModule('node:module');
 import type { Engine, Tree } from '../types.ts';
 
-/** `crates/teasel-node/src/lib.rs`: the operations over a prepared source and a grammar, the source as V8's bytes. */
-export interface Addon extends Omit<Engine, 'create' | 'once' | 'tree'> {
-	readonly create: (source: Uint8Array, flags: number) => object;
-	readonly once: (source: Uint8Array, flags: number, entry: number, stop: string, plan: object | undefined) => Uint32Array | string;
+/** `crates/teasel-node/src/lib.rs`: the operations over a source and a grammar, the source as V8's bytes. */
+export interface Addon extends Omit<Engine, 'parse' | 'tree'> {
+	readonly parse: (source: Uint8Array, flags: number, entry: number, offset: number, end: number | undefined, stop: string, plan: object | undefined) => Uint32Array | string;
 	/** Whether the tree is the TypeScript one, then each view as long as its buffer's room; the lengths ride in the answer's words. */
 	readonly tree: () => Tree | undefined;
 }

@@ -25,7 +25,7 @@ import { Source, referenceOf, parentOf, scopeOf } from '@teasel/parser';
 const modules = new Map();
 for (const name of ['world.js', 'player.js', 'game.js']) {
 	const text = readFileSync(`adventure/${name}`, 'utf8');
-	using source = new Source(text, { sourceType: 'module', scopes: true });
+	const source = new Source(text, { sourceType: 'module', scopes: true });
 	modules.set(name, { name, text, ...source.parse() });
 }
 
@@ -33,7 +33,6 @@ const lineOf = (module, node) =>
 	module.text.slice(0, node.start).split('\n').length;
 ```
 ```notes
-using :: Releases the `Source` at the end of each loop turn. The answer stays usable, because it is plain objects that do not depend on the `Source`. See [Getting started](/getting-started#release-a-source).
 scopes: true :: Adds `scopes`, `bindings` and `references` to the answer. Without it the answer is only the tree. See [What parse returns](/what-parse-returns#options).
 ...source.parse() :: The answer is an object: `node` is the tree, and with `scopes` on it also has `scopes`, `bindings` and `references`. Spreading it puts those on the module record, so `module.node` and `module.bindings` below come from here.
 lineOf :: A helper of this example, not part of the package. Every node has `start`, its offset in the file's text. Counting the newlines before that offset gives the line.

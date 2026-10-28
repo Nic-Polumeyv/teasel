@@ -211,15 +211,12 @@ fn program_in_a_range() {
 	assert!(crate::json::parse(src, &request).contains("is not a character boundary"));
 	request.end = Some(2);
 	assert!(crate::json::parse(src, &request).contains("is before"));
-	let prepared = crate::json::Prepared::new(src[..26].to_string(), request.options);
+	let cut = &src[..26];
+	crate::json::in_place(cut, request.options, Entry::Program, 8.0, None, "", None).unwrap();
+	assert_eq!(crate::json::words(|words| words[0]), 26);
 	assert!(
-		prepared
-			.parse(Entry::Program, 8.0, None, "", None)
-			.contains("\"end\":26")
-	);
-	assert!(
-		prepared
-			.parse(Entry::Program, 22.0, Some(8.0), "", None)
+		crate::json::in_place(cut, request.options, Entry::Program, 22.0, Some(8.0), "", None)
+			.unwrap_err()
 			.contains("is before")
 	);
 }

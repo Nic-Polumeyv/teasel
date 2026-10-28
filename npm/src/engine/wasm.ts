@@ -7,9 +7,7 @@ const utf8 = new TextDecoder();
 interface Exports {
 	readonly memory: WebAssembly.Memory;
 	alloc(len: number): number;
-	source_new(ptr: number, len: number, capacity: number, flags: number): number;
-	source_free(handle: number): void;
-	source_parse(handle: number, entry: number, offset: number, end: number, has_end: number, ptr: number, len: number, capacity: number, plan: number): number;
+	parse(ptr: number, len: number, capacity: number, flags: number, entry: number, offset: number, end: number, has_end: number, stop_ptr: number, stop_len: number, stop_capacity: number, plan: number): number;
 	plan_new(ptr: number, len: number, capacity: number): number;
 	plan_free(handle: number): void;
 	plan_children(handle: number): void;
@@ -48,7 +46,7 @@ export async function instantiate(): Promise<Engine> {
 	return start(compiled, instance);
 }
 
-// a panic traps the instance for good: a fresh one takes over, and sources and plans are made again in it from their bytes
+// a panic traps the instance for good: a fresh one takes over, and plans are made again in it from their grammar
 let generation = 0;
 
 function guarded<T>(f: () => T): T {
@@ -92,69 +90,48 @@ function layout() {
 	return layout_text;
 }
 
-// the collector cannot see the module's memory, so a source or plan it takes frees its handle here
+// the collector cannot see the module's memory, so a plan it takes frees its handle here
 interface Slot {
 	handle: number;
 	generation: number;
 }
-const sources = new FinalizationRegistry<Slot>((slot) => {
-	if (slot.generation === generation) wasm.source_free(slot.handle);
-});
 const plans = new FinalizationRegistry<Slot>((slot) => {
 	if (slot.generation === generation) wasm.plan_free(slot.handle);
 });
 
-class Held {
+class Plan {
 	readonly slot: Slot = { handle: 0, generation: -1 };
-	readonly make: () => number;
-	constructor(make: () => number, registry: FinalizationRegistry<Slot>) {
-		this.make = make;
+	readonly grammar: string;
+	constructor(grammar: string) {
+		this.grammar = grammar;
 		this.handle();
 		// the held value must not reach this, or it is never collected
-		registry.register(this, this.slot, this.slot);
+		plans.register(this, this.slot);
 	}
 	handle() {
 		const { slot } = this;
 		if (slot.generation !== generation) {
-			slot.handle = guarded(this.make);
+			slot.handle = guarded(() => opened(wasm.plan_new(...bytes(this.grammar))));
 			slot.generation = generation;
 		}
 		return slot.handle;
 	}
 }
 
-// the words outlive the source: they sit in the answer buffer until the next parse
-function read(source: number, entry: number, offset: number, end: number | undefined, stop: string, plan: object | undefined) {
-	const grammar = plan === undefined ? 0 : (plan as Held).handle();
-	return answer(guarded(() => wasm.source_parse(source, entry, offset, end ?? 0, end === undefined ? 0 : 1, ...bytes(stop), grammar)));
-}
-
-// 0 is the error answer at `text_ptr`: a source or grammar the engine cannot take
+// 0 is the error answer at `text_ptr`: a grammar the engine cannot take
 function opened(handle: number) {
 	if (handle === 0) throw new Error(JSON.parse(text()).error.args[0]);
 	return handle;
 }
 
 const engine: Engine = {
-	create: (source, flags) => new Held(() => opened(wasm.source_new(...bytes(source), flags)), sources),
-	parse: (source, entry, offset, end, stop, plan) => read((source as Held).handle(), entry, offset, end, stop, plan),
-	free(source) {
-		const { slot } = source as Held;
-		sources.unregister(slot);
-		if (slot.generation === generation) wasm.source_free(slot.handle);
+	parse(source, flags, entry, offset, end, stop, plan) {
+		const grammar = plan === undefined ? 0 : (plan as Plan).handle();
+		return answer(guarded(() => wasm.parse(...bytes(source), flags, entry, offset, end ?? 0, end === undefined ? 0 : 1, ...bytes(stop), grammar)));
 	},
-	once(source, flags, entry, stop, plan) {
-		const handle = guarded(() => opened(wasm.source_new(...bytes(source), flags)));
-		const made = generation;
-		try {
-			return read(handle, entry, 0, undefined, stop, plan);
-		} finally {
-			if (made === generation) wasm.source_free(handle);
-		}
-	},
-	plan: (grammar) => new Held(() => opened(wasm.plan_new(...bytes(grammar))), plans),
+	plan: (grammar) => new Plan(grammar),
 	children(plan) {
-		guarded(() => wasm.plan_children((plan as Held).handle()));
+		guarded(() => wasm.plan_children((plan as Plan).handle()));
 		return text();
 	},
 	layout,

@@ -17,7 +17,7 @@ const prose = (comment: string) =>
 		.trim();
 
 const body = (text: string) => {
-	using source = new Source(text, { sourceType: 'module', typescript: true, comments: true });
+	const source = new Source(text, { sourceType: 'module', typescript: true, comments: true });
 	return (source.parse() as unknown as { node: { body: Declaration[] } }).node.body;
 };
 

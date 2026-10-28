@@ -31,16 +31,6 @@ source.parse().node.type;                     // 'Program'
 source.parse(js.expression, 10).node.type; // 'CallExpression', the f(a, b)
 ```
 
-## Release a Source
-
-Release a `Source` when you are done with it. `using` releases it at the end of the block.
-
-```js parse.js
-using source = new Source(text);
-```
-
-Node versions before 24 do not have `using`: call `source[Symbol.dispose]()` in a `finally` there. A source left to the garbage collector is released only after a collection and a turn of the event loop, so a loop that never yields keeps the engine's copy of every source it parsed at an offset.
-
 ## In the browser
 
 The same import works in a browser or behind a bundler. There it is a WebAssembly build, not the native addon, with the same API.
