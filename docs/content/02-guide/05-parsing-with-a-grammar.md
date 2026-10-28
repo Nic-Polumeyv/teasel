@@ -7,7 +7,7 @@ A template language can describe its whole syntax to the parser as a grammar. Th
 ```js mini.js
 import * as g from '@teasel/parser/grammar';
 
-export const grammar = g.grammar('mini', {
+export const grammar = g.grammar({
 	document: { node: 'Root', form: [{ script: g.optional(g.doc.script) }, g.scope({ children: g.content })] },
 	fragment: { node: 'Fragment', form: [g.scope({ nodes: g.nodes })] },
 	text: { node: 'Text', form: [{ data: g.text.data }] },

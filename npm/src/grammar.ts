@@ -253,6 +253,8 @@ export interface Definition {
 	readonly verbatim?: string;
 	readonly elements: {
 		readonly fields: Fields<Always<'element'>>;
+		/** The host's own tags, by what they start with, `svelte:`, then by the name after it. A name under a prefix that its table leaves out is an error. */
+		readonly reserved?: { readonly [prefix: string]: { readonly [name: string]: Element } };
 		readonly rules?: { readonly [name: string]: Element };
 		readonly component?: Element;
 		readonly other?: Element;
@@ -275,14 +277,13 @@ export interface Definition {
 }
 
 export interface Grammar<D extends Definition = Definition> extends Language<NodeOf<D['document'], D>> {
-	readonly host: string;
 	readonly definition: D;
 	readonly [PLAN]: object;
 }
 // one literal, so every grammar has the shape of the first: a getter added after would make the rest dictionaries
-export const grammar = <const D extends Definition>(host: string, definition: D): Grammar<D> => {
-	const plan = engine.plan(JSON.stringify({ name: host, definition }));
-	return { host, definition, children: frozen({ ...builtin, ...JSON.parse(engine.children(plan)) }), [PLAN]: plan };
+export const grammar = <const D extends Definition>(definition: D): Grammar<D> => {
+	const plan = engine.plan(JSON.stringify(definition));
+	return { definition, children: frozen({ ...builtin, ...JSON.parse(engine.children(plan)) }), [PLAN]: plan };
 };
 
 // ── inference
@@ -388,7 +389,7 @@ type AttributeNode<G extends Definition> = Typed<
 
 /** What a host's content can hold; an rcdata element's, what stands in rcdata. */
 export type Content<G extends Definition> =
-	| ElementNode<Values<G['elements']['rules']> | G['elements']['component'] | G['elements']['other'], G>
+	| ElementNode<Values<Values<G['elements']['reserved']>> | Values<G['elements']['rules']> | G['elements']['component'] | G['elements']['other'], G>
 	| NodeOf<G['text'], G>
 	| NodeOf<G['comment'], G>
 	| Constructs<G, 'content'>
