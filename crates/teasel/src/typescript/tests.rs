@@ -275,6 +275,43 @@ fn failed_attempt_leaves_no_scope() {
 }
 
 #[test]
+fn an_export_list_reads_the_top_scope() {
+	let options = Options(Options::MODULE);
+	let undefined = |src: &str| match at(Entry::Program, src, 0, options, "") {
+		Ok(_) => None,
+		Err(error) if error.code == crate::error::Code::UndefinedExport => Some(error.pos),
+		Err(error) => panic!("{src}: {error}"),
+	};
+	for src in [
+		"type X = 1; export { X };",
+		"interface X {} export { X };",
+		"enum X {} export { X };",
+		"namespace X {} export { X };",
+		"import type { X } from 'x'; export { X };",
+		"import { type X } from 'x'; export { X };",
+		"declare function X(): void; export { X };",
+		"declare global { interface X {} } export { X };",
+		"declare global { var X: number; } export { X };",
+		"export { X }; type X = 1;",
+		"namespace N { type X = 1; export { X }; }",
+	] {
+		assert_eq!(undefined(src), None, "{src}");
+	}
+	for src in [
+		"function f() { type X = 1; } export { X };",
+		"{ interface X {} } export { X };",
+		"namespace N { type X = 1; } export { X };",
+		"namespace N { export enum X {} } export { X };",
+		"function f() { enum X {} } export { X };",
+		"export { X }; function f() { type X = 1; }",
+		"export { X }; { namespace X {} }",
+		"declare global { let X: number; } export { X };",
+	] {
+		assert_eq!(undefined(src), src.rfind("X }").map(|at| at as u32), "{src}");
+	}
+}
+
+#[test]
 fn nested_ambiguity_is_linear() {
 	let options = Options(Options::MODULE);
 	let n = 24;

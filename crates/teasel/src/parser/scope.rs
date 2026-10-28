@@ -36,67 +36,82 @@ pub(crate) enum Binding {
 const VAR: u8 = 1;
 const LEXICAL: u8 = 2;
 const FUNCTION: u8 = 4;
+pub(crate) const TYPE: u8 = 8;
+pub(crate) const EXPORT_ONLY: u8 = 16;
 
 pub(crate) struct Scope {
 	pub flags: u32,
-	/// The names declared here, each with how and with what the index held for it before, in
-	/// declaration order.
-	names: Vec<(StrId, u8, u8)>,
+	names: Vec<Name>,
 	/// The same by name, once the list is long enough that a scan costs more than a lookup.
 	index: Option<FastMap<StrId, u8>>,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct Name {
+	name: StrId,
+	kind: u8,
+	/// What the index held for the name before.
+	before: u8,
+	serial: u32,
 }
 
 const INDEXED: usize = 64;
 
 impl Scope {
 	pub(crate) fn declared(&self) -> impl Iterator<Item = StrId> + '_ {
-		self.names.iter().map(|&(name, ..)| name)
+		self.names.iter().map(|n| n.name)
 	}
 
-	fn has(&self, name: StrId, kinds: u8) -> bool {
+	pub(crate) fn has(&self, name: StrId, kinds: u8) -> bool {
 		match &self.index {
 			Some(index) => index.get(&name).is_some_and(|kind| kind & kinds != 0),
-			None => self.names.iter().any(|&(n, kind, _)| n == name && kind & kinds != 0),
+			None => self.names.iter().any(|n| n.name == name && n.kind & kinds != 0),
 		}
 	}
 
 	fn indexed(&self) -> FastMap<StrId, u8> {
 		let mut index = FastMap::default();
-		for &(n, k, _) in &self.names {
-			*index.entry(n).or_default() |= k;
+		for n in &self.names {
+			*index.entry(n.name).or_default() |= n.kind;
 		}
 		index
 	}
 
-	pub(crate) fn forget(&mut self, declared: usize) {
+	fn forget(&mut self, serial: u32) {
+		let kept = self.names.iter().rposition(|n| n.serial < serial).map_or(0, |i| i + 1);
 		match &mut self.index {
 			// rebuilding the index instead was quadratic in a long scope's skipped statements
-			Some(index) if declared >= INDEXED => {
-				for &(name, _, before) in self.names[declared..].iter().rev() {
-					if before == 0 {
-						index.remove(&name);
+			Some(index) if kept >= INDEXED => {
+				for n in self.names[kept..].iter().rev() {
+					if n.before == 0 {
+						index.remove(&n.name);
 					} else {
-						index.insert(name, before);
+						index.insert(n.name, n.before);
 					}
 				}
 			}
 			_ => self.index = None,
 		}
-		self.names.truncate(declared);
+		self.names.truncate(kept);
 	}
 
-	fn push(&mut self, name: StrId, kind: u8) {
-		match &mut self.index {
+	fn push(&mut self, name: StrId, kind: u8, serial: u32) {
+		debug_assert!(self.names.last().is_none_or(|n| n.serial <= serial));
+		let before = match &mut self.index {
 			Some(index) => {
 				let held = index.entry(name).or_default();
-				self.names.push((name, kind, std::mem::replace(held, *held | kind)));
+				std::mem::replace(held, *held | kind)
 			}
-			None => {
-				self.names.push((name, kind, 0));
-				if self.names.len() == INDEXED {
-					self.index = Some(self.indexed());
-				}
-			}
+			None => 0,
+		};
+		self.names.push(Name {
+			name,
+			kind,
+			before,
+			serial,
+		});
+		if self.index.is_none() && self.names.len() == INDEXED {
+			self.index = Some(self.indexed());
 		}
 	}
 }
@@ -112,9 +127,6 @@ impl<const TS: bool> Parser<'_, TS> {
 	}
 
 	pub(crate) fn exit_scope(&mut self) {
-		if self.typescript() {
-			self.scope_exit();
-		}
 		let mut scope = self.scopes.pop().unwrap();
 		scope.names.clear();
 		self.spare_names.push(scope.names);
@@ -126,6 +138,42 @@ impl<const TS: bool> Parser<'_, TS> {
 
 	fn current_scope_mut(&mut self) -> &mut Scope {
 		self.scopes.last_mut().unwrap()
+	}
+
+	pub(crate) fn declare_here(&mut self, name: StrId, kind: u8) {
+		let serial = self.serial();
+		self.current_scope_mut().push(name, kind, serial);
+	}
+
+	pub(crate) fn declare_global(&mut self, name: StrId) {
+		let serial = self.serial();
+		self.scopes[0].push(name, EXPORT_ONLY, serial);
+	}
+
+	fn serial(&mut self) -> u32 {
+		self.declarations += 1;
+		self.declarations - 1
+	}
+
+	pub(crate) fn forget_names(&mut self, serial: u32) {
+		// every open frame instead: each failed attempt cost the nesting depth, 2.4x at 900 nested blocks
+		for scope in self.scopes.iter_mut().rev() {
+			if scope.names.last().is_none_or(|n| n.serial < serial) {
+				break;
+			}
+			scope.forget(serial);
+		}
+		if let Some(top) = self.scopes.first_mut()
+			&& top.names.last().is_some_and(|n| n.serial >= serial)
+		{
+			top.forget(serial);
+		}
+		self.declarations = serial;
+		debug_assert!(
+			self.scopes
+				.iter()
+				.all(|scope| scope.names.last().is_none_or(|n| n.serial < serial))
+		);
 	}
 
 	pub(crate) fn current_var_scope(&self) -> &Scope {
@@ -206,18 +254,19 @@ impl<const TS: bool> Parser<'_, TS> {
 
 	pub(crate) fn declare_name(&mut self, name: StrId, binding: Binding, pos: u32) -> Result<()> {
 		let mut redeclared = false;
+		let serial = self.serial();
 		match binding {
 			Binding::Lexical => {
 				let scope = self.current_scope_mut();
 				redeclared = scope.has(name, LEXICAL | FUNCTION | VAR);
-				scope.push(name, LEXICAL);
+				scope.push(name, LEXICAL, serial);
 			}
-			Binding::SimpleCatch => self.current_scope_mut().push(name, LEXICAL),
+			Binding::SimpleCatch => self.current_scope_mut().push(name, LEXICAL, serial),
 			Binding::Function => {
 				let as_var = self.treat_functions_as_var();
 				let scope = self.current_scope_mut();
 				redeclared = scope.has(name, LEXICAL | if as_var { 0 } else { VAR });
-				scope.push(name, FUNCTION);
+				scope.push(name, FUNCTION, serial);
 			}
 			_ => {
 				for i in (0..self.scopes.len()).rev() {
@@ -225,12 +274,12 @@ impl<const TS: bool> Parser<'_, TS> {
 					let scope = &mut self.scopes[i];
 					// the parameter of a simple catch clause, its first name, may be redeclared by var
 					let catch_param =
-						scope.flags & SCOPE_SIMPLE_CATCH != 0 && scope.names.first().map(|n| n.0) == Some(name);
+						scope.flags & SCOPE_SIMPLE_CATCH != 0 && scope.names.first().map(|n| n.name) == Some(name);
 					if (!catch_param && scope.has(name, LEXICAL)) || (!as_var && scope.has(name, FUNCTION)) {
 						redeclared = true;
 						break;
 					}
-					scope.push(name, VAR);
+					scope.push(name, VAR, serial);
 					if scope.flags & SCOPE_VAR != 0 {
 						break;
 					}
@@ -246,7 +295,7 @@ impl<const TS: bool> Parser<'_, TS> {
 	/// Whether a simple catch clause around the current scope, inside the nearest function, binds `name`.
 	pub(crate) fn rebinds_catch_param(&self, name: StrId) -> bool {
 		for scope in self.scopes.iter().rev() {
-			if scope.flags & SCOPE_SIMPLE_CATCH != 0 && scope.names.first().map(|n| n.0) == Some(name) {
+			if scope.flags & SCOPE_SIMPLE_CATCH != 0 && scope.names.first().map(|n| n.name) == Some(name) {
 				return true;
 			}
 			if scope.flags & SCOPE_VAR != 0 {
@@ -256,8 +305,12 @@ impl<const TS: bool> Parser<'_, TS> {
 		false
 	}
 
-	pub(crate) fn declares_export(&mut self, name: StrId) -> bool {
-		(self.typescript() && self.ts_declares_export(name)) || self.scopes[0].has(name, VAR | LEXICAL | FUNCTION)
+	pub(crate) fn declares_export(&self, name: StrId) -> bool {
+		if self.typescript() && self.exports_in_script() {
+			return true;
+		}
+		debug_assert_eq!(self.scopes.len(), 1);
+		self.scopes[0].has(name, VAR | LEXICAL | FUNCTION | TYPE | EXPORT_ONLY)
 	}
 
 	pub(crate) fn check_local_export(&mut self, name: StrId, pos: u32) {
@@ -286,20 +339,23 @@ mod tests {
 		let check = |scope: &Scope| {
 			assert_eq!(scope.index, (scope.names.len() >= INDEXED).then(|| scope.indexed()));
 		};
+		let mut serial = 0;
 		for _ in 0..2000 {
 			// around the length the index starts at, names declared again with other kinds
 			while scope.names.len() < INDEXED - 4 + next(16) {
-				scope.push(StrId::at(next(40) as u32), [VAR, LEXICAL, FUNCTION][next(3)]);
+				serial += 1 + next(2) as u32;
+				scope.push(StrId::at(next(40) as u32), [VAR, LEXICAL, FUNCTION][next(3)], serial);
 			}
-			let skipped = scope.names.len();
+			let skipped = serial + 1;
 			for _ in 0..next(6) {
-				scope.push(StrId::at(next(40) as u32), [VAR, LEXICAL, FUNCTION][next(3)]);
+				serial += 1 + next(2) as u32;
+				scope.push(StrId::at(next(40) as u32), [VAR, LEXICAL, FUNCTION][next(3)], serial);
 			}
 			check(&scope);
 			scope.forget(skipped);
 			check(&scope);
 			if next(8) == 0 {
-				scope.forget(next(scope.names.len()));
+				scope.forget(scope.names[next(scope.names.len())].serial);
 				check(&scope);
 			}
 		}
