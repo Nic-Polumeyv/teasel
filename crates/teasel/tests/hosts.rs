@@ -12,7 +12,7 @@ use teasel::Entry;
 use teasel::Options;
 use teasel::host::grammar::definition::{self, Bind, Host, Node, Source};
 use teasel::host::grammar::{
-	Arena, Construct, DirectiveValue, DocField, Grammar, Item, Match, Place, Record, RootField, Unique,
+	Arena, Construct, DirectiveValue, DocField, Grammar, Item, Match, Place, Record, RootField, Slot, Unique,
 };
 use teasel::json::parse_document;
 
@@ -1044,7 +1044,7 @@ fn a_grammar_that_cannot_work_is_refused() {
 		),
 		"X: the {:else} branch ends in no body",
 	);
-	// each repeating branch fills its own list, which stands where its first branch came
+	// each repeating branch fills its own list, which stands where the grammar declares it
 	let open = list![js("e", "expression"), close(), content("body")];
 	let host = with_block(
 		open,
@@ -1061,11 +1061,51 @@ fn a_grammar_that_cannot_work_is_refused() {
 	assert_eq!(answer.matches("\"type\":\"ElseWhen\"").count(), 2, "{answer}");
 	assert_eq!(answer.matches("\"type\":\"ElseIf\"").count(), 1, "{answer}");
 	assert!(
-		answer.find("\"whens\":[").unwrap() < answer.find("\"ifs\":[").unwrap(),
+		answer.find("\"ifs\":[").unwrap() < answer.find("\"whens\":[").unwrap(),
 		"{answer}"
 	);
 	let answer = parse_document("{#x a}1{/x}", &host.json(), Options(Options::MODULE));
 	assert!(answer.contains("\"ifs\":[],\"whens\":[]"), "{answer}");
+	// what a repeating branch may not say
+	let repeating = |node: &'static str, list: &'static str, items| {
+		with_block(open, list![branch(&["{", ":else", "if"], items, Some((node, list)))])
+	};
+	refused(
+		repeating("", "ifs", open),
+		"X: the {:else if} branch names an empty node",
+	);
+	refused(repeating("ElseIf", "type", open), "X: type is a node's own key");
+	refused(repeating("ElseIf", "e", open), "X reads e twice");
+	refused(
+		repeating(
+			"ElseIf",
+			"ifs",
+			list![
+				js("f", "expression"),
+				close(),
+				fields(list![("body", source("content", "fragment", true))])
+			],
+		),
+		"X: the {:else if} branch repeats, so its body is never left out",
+	);
+	refused(
+		repeating("X", "ifs", open),
+		"X: the {:else if} branch makes X, a node type the grammar makes elsewhere",
+	);
+	refused(
+		repeating("Text", "ifs", open),
+		"X: the {:else if} branch makes Text, a node type the grammar makes elsewhere",
+	);
+	refused(
+		with_block(
+			open,
+			list![
+				branch(&["{", ":else"], list![close(), content("ifs")], None),
+				branch(&["{", ":else", "if"], open, Some(("ElseIf", "ifs"))),
+			],
+		),
+		"X reads ifs twice",
+	);
 
 	// sibling alternatives may read one field, and an alternative's body declares what was bound before the group
 	let host = with_block(
@@ -1370,10 +1410,14 @@ fn reads_the_svelte_grammar() {
 	assert_eq!(alternatives[0].body.as_ref().unwrap().field, "then");
 	assert_eq!(await_.branches[1].display, "{:catch}");
 	let if_ = construct(&grammar, "IfBlock");
-	assert_eq!(if_.lists, ["branches"]);
+	let body = |field| Slot::Body { field, omit: false };
+	assert_eq!(
+		if_.slots,
+		[body("consequent"), Slot::List("branches"), body("alternate")]
+	);
 	assert_eq!(if_.branches[0].repeats, Some(("ElseIf", "branches")));
-	assert_eq!(if_.bodies, [("consequent", false), ("alternate", false)]);
-	assert_eq!(if_.branches[0].bodies, [("consequent", false)]);
+	assert_eq!(if_.branches[0].slots, [body("consequent")]);
+	assert_eq!(await_.slots, [body("then"), body("catch"), body("pending")]);
 	assert_eq!(grammar.script.as_ref().unwrap().typescript, [("lang", Some("ts"))]);
 	assert_eq!(grammar.element("Foo.Bar").unwrap().ty, "Component");
 	assert_eq!(grammar.element("div").unwrap().ty, "RegularElement");
@@ -1447,6 +1491,85 @@ fn a_repeating_branch_is_listed() {
 			.matches(&format!(r#""code":{},"args":["{{#if}}"]"#, Code::Unclosed as u8))
 			.count() == 1
 			&& answer.contains(r#""branches":[{"type":"ElseIf","start":8,"end":21,"#),
+		"{answer}"
+	);
+	// a head that cannot be read leaves what follows it in the body still open
+	let answer = parse("{#if a}x{:else if(b)}y{/if}", true);
+	assert!(
+		answer.contains("(b)}y") && answer.contains("\"branches\":[]") && !answer.contains("\"code\":2"),
+		"{answer}"
+	);
+	let answer = parse("{#if a}x{:else if b}y{:else if}z{:else}w{/if}", true);
+	assert!(
+		answer.contains("}z")
+			&& answer.matches("\"type\":\"ElseIf\"").count() == 1
+			&& answer.contains("\"data\":\"w\""),
+		"{answer}"
+	);
+	// a block's node has one shape whatever was opened: every body and list in declared order
+	for source in ["{#if a}1{/if}", "{#if a}1{:else}2{/if}", "{#if a}1{:else if b}2{/if}"] {
+		let answer = parse(source, false);
+		let at = |key: &str| answer.find(&format!("\"{key}\":")).unwrap();
+		assert!(
+			at("test") < at("consequent") && at("consequent") < at("branches") && at("branches") < at("alternate"),
+			"{answer}"
+		);
+	}
+}
+
+// a branch may end in one of several bodies, as an open may; a repeating branch after a body the
+// open filled is no duplicate, only one after a branch read once is
+#[test]
+fn a_branch_ends_in_one_of_its_bodies() {
+	let fields = |list: &'static [(&'static str, Source)]| definition::Item::Fields(Record(list));
+	let content = |field: &'static str| fields(list![(field, source("content", "fragment", false))]);
+	let js = |field: &'static str| fields(list![(field, source("js", "expression", false))]);
+	let close = || definition::Item::Word("}");
+	let either = |a: &'static str, b: &'static str| {
+		definition::Item::OneOf(list![
+			list![definition::Item::Word("then"), close(), content(a)],
+			list![close(), content(b)],
+		])
+	};
+	let mut host = minimal();
+	host.definition.constructs = Some(Record(list![(
+		"X",
+		block(
+			"x",
+			list![js("e"), either("now", "later")],
+			list![
+				branch(
+					&["{", ":more"],
+					list![js("f"), either("soon", "late")],
+					Some(("More", "mores"))
+				),
+				branch(&["{", ":else"], list![either("done", "pending")], None),
+			],
+		),
+	)]));
+	let json = keep(host.json());
+	let parse = |text: &str| parse_document(text, json, Options(Options::MODULE));
+	let answer = parse("{#x a then}1{:more b then}2{:more c}3{:else}4{/x}");
+	assert!(
+		!answer.contains("\"code\"")
+			&& answer.matches("\"type\":\"More\"").count() == 2
+			&& [
+				"\"now\":[",
+				"\"later\":null",
+				"\"soon\":[",
+				"\"late\":null",
+				"\"soon\":null",
+				"\"late\":[",
+				"\"done\":null",
+				"\"pending\":["
+			]
+			.iter()
+			.all(|key| answer.contains(key)),
+		"{answer}"
+	);
+	let answer = parse("{#x a then}1{:else then}2{:else}3{/x}");
+	assert!(
+		answer.contains(&format!(r#""code":{},"args":["{{:else}}"]"#, Code::Duplicate as u8)),
 		"{answer}"
 	);
 }

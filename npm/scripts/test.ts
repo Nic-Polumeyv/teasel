@@ -5,7 +5,7 @@ import { registerHooks } from 'node:module';
 import { setFlagsFromString } from 'node:v8';
 import { runInNewContext } from 'node:vm';
 import type { Expression, Identifier, Pattern, Program } from 'estree';
-import type { Construct, Directive, Infer, NodeType } from '../src/grammar.ts';
+import type { Construct, Directive, Grammar, Infer, NodeType } from '../src/grammar.ts';
 import type * as api from '../src/index.ts';
 import type { Options } from '../src/index.ts';
 import type { Addon } from '../src/engine/addon.ts';
@@ -759,6 +759,24 @@ function types(source: api.Source, definition: typeof svelte) {
 	expect<Equal<NodeType<Svelte, 'IfBlock'>['branches'], NodeType<Svelte, 'ElseIf'>[]>>();
 	expect<Equal<Required<NodeType<Svelte, 'ElseIf'>>, 'type' | 'start' | 'end' | 'test' | 'consequent'>>();
 	expect<Equal<NodeType<Svelte, 'ElseIf'>['consequent'], Fragment>>();
+	// two branches naming one list share it
+	type Arm<N extends string, I extends readonly unknown[]> = { readonly marker: readonly ['{', ':case']; readonly node: N; readonly list: 'arms'; readonly form: I };
+	type Switch = Grammar<
+		typeof svelte.definition & {
+			readonly constructs: {
+				readonly Switch: {
+					readonly open: { readonly marker: readonly ['{', '#switch']; readonly form: readonly [{ readonly on: typeof svelte.definition.constructs.IfBlock.open.form[0]['test'] }, '}', { readonly body: typeof svelte.definition.constructs.IfBlock.open.form[2]['consequent'] }] };
+					readonly branches: readonly [
+						Arm<'Case', readonly [{ readonly value: typeof svelte.definition.constructs.IfBlock.open.form[0]['test'] }, '}', { readonly body: typeof svelte.definition.constructs.IfBlock.open.form[2]['consequent'] }]>,
+						Arm<'Default', readonly ['}', { readonly body: typeof svelte.definition.constructs.IfBlock.open.form[2]['consequent'] }]>,
+					];
+					readonly close: { readonly marker: readonly ['{', '/switch']; readonly form: readonly ['}'] };
+				};
+			};
+		}
+	>;
+	expect<Equal<NodeType<Switch, 'Switch'>['arms'], (NodeType<Switch, 'Case'> | NodeType<Switch, 'Default'>)[]>>();
+	expect<Equal<NodeType<Switch, 'Default'>['body'], NodeType<Switch, 'Fragment'>>>();
 	expect<Equal<NodeType<Svelte, 'AwaitBlock'>['pending'], Fragment | null>>();
 	expect<Equal<NodeType<Svelte, 'SnippetBlock'>['typeParams'], string | undefined>>();
 	expect<Equal<keyof Fragment, 'type' | 'nodes'>>();

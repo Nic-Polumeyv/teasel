@@ -363,10 +363,13 @@ type FragmentNode<G extends Definition> = G['fragment'] extends { readonly node:
 type BranchNode<B, G extends Definition> = B extends { readonly node: infer N extends string; readonly list: string }
 	? Typed<N, Shape<Collect<FormOf<B>, false>, G, false>>
 	: never;
-/** A branch adds its fields to the construct, or, repeating, the field listing its nodes. */
-type BranchMembers<B, G extends Definition> = B extends { readonly node: string; readonly list: infer F extends string }
-	? Member<F, Source<BranchNode<B, G>[], 'form', Plain>, false>
-	: Collect<FormOf<B>, true>;
+type Repeating = { readonly node: string; readonly list: string };
+/** The lists the repeating branches fill. */
+type Lists<B> = B extends { readonly node: string; readonly list: infer F extends string } ? F : never;
+/** A branch adds its fields to the construct, or, repeating, the field listing its nodes; branches naming one list share it. */
+type BranchMembers<B, G extends Definition> =
+	| { [F in Lists<B>]: Member<F, Source<BranchNode<Extract<B, { readonly list: F }>, G>[], 'form', Plain>, false> }[Lists<B>]
+	| Collect<FormOf<Exclude<B, Repeating>>, true>;
 
 type Branches<C> = C extends { readonly branches: readonly (infer B)[] } ? B : never;
 type ConstructNode<T extends string, C, G extends Definition> = C extends { readonly open: { readonly form: infer I } }
