@@ -979,7 +979,8 @@ impl<const TS: bool> Parser<'_, TS> {
 			}
 			self.prev_end = chunk.end + 2;
 			self.lexer.next_token_into(&mut self.tok)?;
-			let expression = if self.lexer.in_type {
+			// with in_type alone, the JavaScript copy kept the whole type grammar: 32 of its 130 KB
+			let expression = if self.typescript() && self.lexer.in_type {
 				self.parse_type()?
 			} else {
 				self.parse_expression(false, &mut None)?
