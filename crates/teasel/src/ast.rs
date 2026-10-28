@@ -1,6 +1,7 @@
 use crate::handed::{Handed, Views};
 use crate::interner::{Interner, StrId, Surrogate};
-use crate::layout::Field;
+use crate::layout::{Field, Ty};
+use crate::typescript::ast::{Extras, TsKind, ts_layout};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(C)]
@@ -564,12 +565,47 @@ impl Ast {
 	/// Appends the children of `id` in source order.
 	pub fn children(&self, id: NodeId, out: &mut Vec<NodeId>) {
 		let from = out.len();
-		if self.typescript.extras.is_empty() && !matches!(self.node(id).kind, NodeKind::Extension(_)) {
-			self.plain_children(id, out);
-		} else {
-			self.typescript.children(self, id, out);
+		let kind = &self.node(id).kind;
+		match *kind {
+			NodeKind::Host(index) => self.host_children(index, out),
+			NodeKind::Extension(index) => {
+				let base = &self.typescript.nodes[index as usize] as *const TsKind as *const u8;
+				self.held(base, ts_layout::VARIANTS[crate::estree::tag(base)].fields, out);
+			}
+			_ => {
+				let base = kind as *const NodeKind as *const u8;
+				self.held(base, node_layout::VARIANTS[crate::estree::tag(base)].fields, out);
+			}
 		}
-		debug_assert!(out[from..].is_sorted_by_key(|&child| self.node(child).start));
+		if let Some(extras) = self.typescript.extras(id) {
+			self.held(extras as *const Extras as *const u8, Extras::FIELDS, out);
+		}
+		if !out[from..].is_sorted_by_key(|&child| self.node(child).start) {
+			out[from..].sort_unstable_by_key(|&child| self.node(child).start);
+		}
+	}
+
+	/// The nodes the fields of the record at `base` hold.
+	fn held(&self, base: *const u8, fields: &[Field], out: &mut Vec<NodeId>) {
+		for field in fields {
+			let at = unsafe { base.add(field.at) };
+			match field.ty {
+				Ty::Node => out.push(unsafe { at.cast::<NodeId>().read_unaligned() }),
+				Ty::OptNode => out.extend(unsafe { at.cast::<Option<NodeId>>().read_unaligned() }),
+				Ty::List => out.extend(
+					self.list(unsafe { at.cast::<List>().read_unaligned() })
+						.iter()
+						.flatten(),
+				),
+				Ty::OptList => {
+					if let Some(list) = unsafe { at.cast::<Option<List>>().read_unaligned() } {
+						out.extend(self.list(list).iter().flatten());
+					}
+				}
+				Ty::Struct(inner) => self.held(at, inner, out),
+				_ => {}
+			}
+		}
 	}
 
 	/// The nodes under a host node's fields; a child that is a fragment, a node without a span
@@ -584,183 +620,6 @@ impl Ast {
 				},
 				Value::Nodes(children) => out.extend(self.list(children).iter().flatten()),
 				_ => {}
-			}
-		}
-	}
-
-	/// The children of a plain JavaScript node, without what TypeScript adds; a TypeScript node
-	/// has none here.
-	pub fn plain_children(&self, id: NodeId, out: &mut Vec<NodeId>) {
-		use NodeKind::*;
-		let list = |list: List, out: &mut Vec<NodeId>| out.extend(self.list(list).iter().flatten());
-		match self.node(id).kind {
-			Program { body, .. } | BlockStatement { body } | StaticBlock { body } | ClassBody { body } => {
-				list(body, out)
-			}
-			Identifier { .. }
-			| PrivateIdentifier { .. }
-			| NumberLiteral { .. }
-			| BigIntLiteral
-			| StringLiteral { .. }
-			| BooleanLiteral { .. }
-			| NullLiteral
-			| RegExpLiteral { .. }
-			| TemplateElement { .. }
-			| ThisExpression
-			| Super
-			| EmptyStatement
-			| DebuggerStatement
-			| Extension(_) => {}
-			Host(index) => {
-				let from = out.len();
-				self.host_children(index, out);
-				out[from..].sort_unstable_by_key(|&child| self.nodes[child.index() as usize].start);
-			}
-			TemplateLiteral { quasis, expressions } => {
-				debug_assert_eq!(quasis.len, expressions.len + 1);
-				for (i, quasi) in self.list(quasis).iter().flatten().enumerate() {
-					out.push(*quasi);
-					if (i as u32) < expressions.len {
-						out.extend(self.nth(expressions, i as u32));
-					}
-				}
-			}
-			TaggedTemplateExpression { tag, quasi } => out.extend([tag, quasi]),
-			ArrayExpression { elements } | ArrayPattern { elements } => list(elements, out),
-			ObjectExpression { properties } | ObjectPattern { properties } => list(properties, out),
-			Property { key, value, .. } => out.extend([key, value]),
-			SpreadElement { argument }
-			| RestElement { argument }
-			| UnaryExpression { argument, .. }
-			| UpdateExpression { argument, .. }
-			| AwaitExpression { argument }
-			| ThrowStatement { argument } => out.push(argument),
-			BinaryExpression { left, right, .. }
-			| LogicalExpression { left, right, .. }
-			| AssignmentExpression { left, right, .. }
-			| AssignmentPattern { left, right } => out.extend([left, right]),
-			ConditionalExpression {
-				test,
-				consequent,
-				alternate,
-			} => out.extend([test, consequent, alternate]),
-			MemberExpression { object, property, .. } => out.extend([object, property]),
-			CallExpression { callee, arguments, .. } | NewExpression { callee, arguments } => {
-				out.push(callee);
-				list(arguments, out);
-			}
-			ChainExpression { expression } | ExpressionStatement { expression, .. } => out.push(expression),
-			SequenceExpression { expressions } => list(expressions, out),
-			ArrowFunctionExpression { params, body, .. } => {
-				list(params, out);
-				out.push(body);
-			}
-			FunctionExpression { function } | FunctionDeclaration { function } => {
-				out.extend(function.id);
-				list(function.params, out);
-				out.push(function.body);
-			}
-			ClassExpression { class } | ClassDeclaration { class } => {
-				out.extend(class.id);
-				out.extend(class.super_class);
-				out.push(class.body);
-			}
-			MethodDefinition { key, value, .. } => out.extend([key, value]),
-			PropertyDefinition { key, value, .. } => {
-				out.push(key);
-				out.extend(value);
-			}
-			YieldExpression { argument, .. } | ReturnStatement { argument } => out.extend(argument),
-			MetaProperty { meta, property } => out.extend([meta, property]),
-			ImportExpression { source, options } => {
-				out.push(source);
-				out.extend(options);
-			}
-			WithStatement { object, body } => out.extend([object, body]),
-			LabeledStatement { label, body } => out.extend([label, body]),
-			BreakStatement { label } | ContinueStatement { label } => out.extend(label),
-			IfStatement {
-				test,
-				consequent,
-				alternate,
-			} => {
-				out.extend([test, consequent]);
-				out.extend(alternate);
-			}
-			SwitchStatement { discriminant, cases } => {
-				out.push(discriminant);
-				list(cases, out);
-			}
-			SwitchCase { test, consequent } => {
-				out.extend(test);
-				list(consequent, out);
-			}
-			TryStatement {
-				block,
-				handler,
-				finalizer,
-			} => {
-				out.push(block);
-				out.extend(handler);
-				out.extend(finalizer);
-			}
-			CatchClause { param, body } => {
-				out.extend(param);
-				out.push(body);
-			}
-			WhileStatement { test, body } => out.extend([test, body]),
-			DoWhileStatement { body, test } => out.extend([body, test]),
-			ForStatement {
-				init,
-				test,
-				update,
-				body,
-			} => {
-				out.extend(init);
-				out.extend(test);
-				out.extend(update);
-				out.push(body);
-			}
-			ForInStatement { left, right, body } | ForOfStatement { left, right, body, .. } => {
-				out.extend([left, right, body]);
-			}
-			VariableDeclaration { declarations, .. } => list(declarations, out),
-			VariableDeclarator { id, init } => {
-				out.push(id);
-				out.extend(init);
-			}
-			ImportDeclaration {
-				specifiers,
-				source,
-				attributes,
-			} => {
-				list(specifiers, out);
-				out.push(source);
-				list(attributes, out);
-			}
-			ImportSpecifier { imported, local } => out.extend([imported, local]),
-			ImportDefaultSpecifier { local } | ImportNamespaceSpecifier { local } => out.push(local),
-			ImportAttribute { key, value } => out.extend([key, value]),
-			ExportDeclaration { declaration } => out.push(declaration),
-			ExportNamedDeclaration {
-				specifiers,
-				source,
-				attributes,
-			} => {
-				list(specifiers, out);
-				out.extend(source);
-				list(attributes, out);
-			}
-			ExportSpecifier { local, exported } => out.extend([local, exported]),
-			ExportDefaultDeclaration { declaration } => out.push(declaration),
-			ExportAllDeclaration {
-				exported,
-				source,
-				attributes,
-			} => {
-				out.extend(exported);
-				out.push(source);
-				list(attributes, out);
 			}
 		}
 	}
