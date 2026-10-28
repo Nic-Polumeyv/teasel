@@ -2,8 +2,6 @@
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
-import { setFlagsFromString } from 'node:v8';
-import { runInNewContext } from 'node:vm';
 import type { Expression, Identifier, Pattern, Program } from 'estree';
 import type { Construct, Directive, Infer, NodeType } from '../src/grammar.ts';
 import type * as api from '../src/index.ts';
@@ -11,9 +9,9 @@ import type { Options } from '../src/index.ts';
 import type { Addon } from '../src/engine/addon.ts';
 if (process.argv.includes('interpret')) globalThis.Function = (() => { throw new EvalError('blocked'); }) as unknown as FunctionConstructor;
 const name = process.argv.includes('web') ? 'web' : process.execArgv.includes('--no-addons') ? 'wasm' : 'native';
-// a native run that fell back to WebAssembly would pass as native
+// a native run that fell back to WebAssembly would pass as native, and --no-addons takes WebAssembly without a warning
 process.on('warning', (warning) => {
-	if (name === 'native' && (warning as { code?: string }).code === 'wasm_fallback') throw warning;
+	if ((warning as { code?: string }).code === 'wasm_fallback') throw warning;
 });
 // the hook must be in place before anything imports the grammar, and the Function swap before anything imports the decoder, so those come in below
 if (name === 'web') registerHooks({ resolve: (specifier, context, next) => (specifier === '#engine' ? { url: new URL('../dist/engine/web.js', import.meta.url).href, shortCircuit: true } : next(specifier, context)) });
@@ -22,8 +20,6 @@ const { generate } = await import('./children.ts');
 const { default: svelte } = await import('./hosts/svelte.ts');
 const { default: vue } = await import('./hosts/vue.ts');
 const { load } = await import('../dist/engine/addon.js');
-setFlagsFromString('--expose-gc');
-const collect = runInNewContext('gc') as () => void;
 const m = await import('../src/index.ts');
 // the trees are poked as the recipes shape them, host nodes included, past what the types say
 type Any = any;
@@ -286,44 +282,18 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 	assert.deepEqual(half.errors.map((e: Any) => [e.code, e.pos]), [['expected', 17]]);
 	assert.deepEqual(half.node.children.map((rule: Any) => rule.end), [10]);
 	assert.equal(program('"﻿a"; "bc"; zz').body[2].expression.name, 'zz');
-	source[Symbol.dispose]();
-	assert.throws(() => source.parse(js.expression, 1), TypeError);
-	assert.throws(() => source.parse(), TypeError);
 	assert.throws(() => open(42 as Any), TypeError);
-	const late = open('x');
-	const pair = [0, 1];
-	Object.defineProperty(pair, 0, { get: () => (late[Symbol.dispose](), 0) });
-	assert.throws(() => late.parse(js.expression, pair), TypeError);
 	const twice = open('let a = 1; f(a)');
 	const whole = JSON.stringify(twice.parse().node);
 	assert.equal(twice.parse(js.expression, 11).node.type, 'CallExpression');
 	assert.equal(JSON.stringify(twice.parse().node), whole);
-	let escaped: Any;
-	{
-		using inner = open('x');
-		escaped = inner;
-		assert.equal(inner.parse(js.expression, 0).node.name, 'x');
-	}
-	assert.throws(() => escaped.parse(js.expression, 0), TypeError);
-	// a source collected after its dispose is not freed again
-	for (let i = 0; i < 100; i++) {
-		using made = open('x');
-		made.parse(js.expression, 0);
-	}
-	for (let i = 0; i < 100; i++) open('x').parse(js.expression, 0);
-	collect();
-	await new Promise(setImmediate);
-	collect();
-	await new Promise(setImmediate);
 	assert.throws(() => parse('x', { locations: 1 } as Any), TypeError);
 	assert.throws(() => parse('x', { typescript: 'yes' } as Any), TypeError);
 	assert.throws(() => open('a;b;c').parse(js, [0, -1]), (e: Any) => e.code === 'invalid_request');
 	assert.throws(() => open('a;b;c').parse(js, [0, NaN]), (e: Any) => e.code === 'invalid_request');
 	const { engine } = await import('#engine');
-	const held = engine.create('a;', 0);
-	for (const entry of [7, -1, 6.5, NaN]) assert.match(engine.parse(held, entry, 0, undefined, '', undefined) as string, / is no entry/);
-	engine.free(held);
-	if (name === 'native') assert.throws(() => (load() as Addon).create(new Uint8Array([0xff]), 0), /the source is not UTF-8/);
+	for (const entry of [7, -1, 6.5, NaN]) assert.match(engine.parse('a;', 0, entry, 0, undefined, '', undefined) as string, / is no entry/);
+	if (name === 'native') assert.throws(() => (load() as Addon).parse(new Uint8Array([0xff]), 0, 0, 0, undefined, '', undefined), /the source is not UTF-8/);
 	const wide = 'x;'.repeat(200000);
 	assert.equal(program(wide).body.length, 200000);
 	assert.equal(program('y;').body.length, 1);
@@ -538,14 +508,20 @@ if (name !== 'native') {
 	assert.ok(restarted, `${name} the engine started over`);
 	assert.equal(open('<a>{x}</a>').parse(svelte).node.fragment.nodes[0].name, 'a');
 	assert.equal(open('a { b: c }').parse(css).node.children[0].type, 'Rule');
+	// a source that grows the memory past 256 MiB leaves it to the instance the next parse replaces
+	const { engine } = await import('#engine');
+	const memory = () => (engine.tree(false, true).find((view) => typeof view === 'object') as Uint32Array).buffer.byteLength;
+	assert.equal(open(`/*${'c'.repeat(1 << 27)}*/`).parse().node.body.length, 0);
+	assert.ok(memory() > 1 << 28, `${name} grew to ${memory()}`);
+	assert.equal(open('<a>{x}</a>').parse(svelte).node.fragment.nodes[0].name, 'a');
+	assert.ok(memory() < 1 << 28, `${name} shrank to ${memory()}`);
 }
 
 // the tests read the source; the published build must answer the same once its specifiers are rewritten
 {
 	const built = await import('../dist/index.js');
 	await import('../dist/grammar.js');
-	using source = new built.Source('let x = 1');
-	assert.equal(source.parse().node.body.length, 1, `${name} dist`);
+	assert.equal(new built.Source('let x = 1').parse().node.body.length, 1, `${name} dist`);
 }
 
 // src/children.ts is written from the engine's layout by scripts/children.ts: the two must agree

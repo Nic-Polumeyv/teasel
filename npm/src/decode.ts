@@ -444,9 +444,37 @@ function facts(S: State, n: Decoded, id: number) {
 	adopted.length = 0;
 }
 
-function begin(S: State, type: string, id: number, parent: Decoded | undefined, lines: boolean): Decoded {
+// a function's `this.` assignments size the objects it makes, and V8 keeps that size when the first seven it makes use it all
+const Room = function (this: Decoded, warm: boolean) {
+	if (warm) {
+		this.a = this.b = this.c = this.d = this.e = this.f = this.g = this.h = this.i = this.j = this.k = this.l = 0;
+		this.m = this.n = this.o = this.p = this.q = this.r = this.s = this.t = this.u = this.v = this.w = this.x = 0;
+	}
+} as unknown as new (warm: boolean) => Decoded;
+Room.prototype = Object.prototype;
+for (let i = 0; i < 7; i++) new Room(true);
+
+// V8 turns a literal of three keys into a dictionary at the sixteenth key computed stores add, so a node that may have that many starts with room for 24
+function wide(S: State, id: number, P: Program): boolean {
+	if (P.extras === -1) P.extras = S.TS === null ? 0 : program(S.erase ? S.G.erased : adds_of(S, id), S.C.layout.none, !S.erase).size;
+	const slot = S.attached_slots === null ? 0 : S.attached_slots[id];
+	return 3 + (S.lines ? 1 : 0) + (S.link ? 3 : S.of_node !== null ? 5 : 0) + (S.parenthesized !== null ? 1 : 0) + P.extras + (slot > 0 ? 3 : 0) + P.size > 18;
+}
+
+function adds_of(S: State, id: number): Op[] {
+	const tag = S.N[id * S.C.words + (S.C.kind >> 2)];
+	return tag === S.C.extension ? S.G.ts_adds[S.TS![ts_record(S.C, S.N, id)]] : S.G.adds[tag];
+}
+
+function begin(S: State, type: string, id: number, parent: Decoded | undefined, lines: boolean, room = false): Decoded {
 	const at = id * S.ps + S.po;
-	const n: Decoded = { type, start: S.P[at], end: S.P[at + 1] };
+	let n: Decoded;
+	if (room) {
+		n = new Room(false);
+		n.type = type;
+		n.start = S.P[at];
+		n.end = S.P[at + 1];
+	} else n = { type, start: S.P[at], end: S.P[at + 1] };
 	if (S.link) {
 		n[PARENT] = parent;
 		n[SCOPE] = undefined;
@@ -464,8 +492,7 @@ function begin(S: State, type: string, id: number, parent: Decoded | undefined, 
 		if (S.erase) {
 			if (slot > 0) apply(S, id, n, S.G.erased, S.extras, base);
 		} else {
-			const tag = S.N[id * S.C.words + (S.C.kind >> 2)];
-			const adds = tag === S.C.extension ? S.G.ts_adds[S.TS[ts_record(S.C, S.N, id)]] : S.G.adds[tag];
+			const adds = adds_of(S, id);
 			if (adds.length !== 0) apply(S, id, n, adds, slot > 0 ? S.extras : S.C.blank, slot > 0 ? base : 0);
 		}
 	}
@@ -737,27 +764,38 @@ class Closures implements Spelling<Value, Stmt> {
 
 // a kind's operations as closures: the leads, then the keys in order
 // one program for JavaScript and one for TypeScript, whose answer gives every statement a `directive`
-const programs = new WeakMap<Op[], { slots: number; lead: Stmt[]; body: Stmt[] }[]>();
-function program(ops: Op[], none: Missing, typescript: boolean) {
+interface Program {
+	slots: number;
+	lead: Stmt[];
+	body: Stmt[];
+	/** The most keys it sets, and the most TypeScript's extras add beside them, -1 until a node of the kind is built. */
+	size: number;
+	extras: number;
+}
+const programs = new WeakMap<Op[], Program[]>();
+function program(ops: Op[], none: Missing, typescript: boolean): Program {
 	let made = programs.get(ops);
 	if (made === undefined) programs.set(ops, (made = []));
 	if (made[+typescript] !== undefined) return made[+typescript];
 	const B = new Closures();
 	const body: Stmt[] = [];
+	let size = 0;
 	for (const op of ops) {
 		if (op.op === 'type' || op.op === 'typeof' || op.op === 'keep' || op.op === 'through') continue;
+		if (op.op !== 'keepif') size++;
 		if (sometimes(op, typescript)) {
 			const set = conditional(B, op, none, true);
 			if (set !== undefined) body.push(set);
 		} else body.push(B.set(key_of(op), value(B, op, none, true)));
 	}
-	return (made[+typescript] = { slots: B.slots, lead: B.lead, body });
+	return (made[+typescript] = { slots: B.slots, lead: B.lead, body, size, extras: -1 });
 }
 
 const NO_LOCALS: unknown[] = [];
 
-function apply(S: State, id: number, n: Decoded, ops: Op[], view: Uint32Array, base: number) {
-	const { slots, lead, body } = program(ops, S.C.layout.none, S.G === S.C.ts && !S.erase);
+const apply = (S: State, id: number, n: Decoded, ops: Op[], view: Uint32Array, base: number) => fill(S, id, n, program(ops, S.C.layout.none, S.G === S.C.ts && !S.erase), view, base);
+
+function fill(S: State, id: number, n: Decoded, { slots, lead, body }: Program, view: Uint32Array, base: number) {
 	const L = slots === 0 ? NO_LOCALS : new Array<unknown>(slots);
 	for (let i = 0; i < lead.length; i++) lead[i](S, view, base, n, L, id);
 	for (let i = 0; i < body.length; i++) body[i](S, view, base, n, L, id);
@@ -783,10 +821,11 @@ function run(S: State, id: number, ops: Op[], view: Uint32Array, base: number, p
 		} else break;
 	}
 	const head = ops[at];
-	const n = begin(S, head.op === 'type' ? head.key : head.names[byte(view, base + head.at)], id, parent, S.lines);
+	const P = program(ops, S.C.layout.none, S.G === S.C.ts && !S.erase);
+	const n = begin(S, head.op === 'type' ? head.key : head.names[byte(view, base + head.at)], id, parent, S.lines, wide(S, id, P));
 	const pending = S.pending;
 	S.pending = null;
-	apply(S, id, n, ops, view, base);
+	fill(S, id, n, P, view, base);
 	settle(S, n, id, pending);
 	return n;
 }

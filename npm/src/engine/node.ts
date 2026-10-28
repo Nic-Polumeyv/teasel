@@ -1,4 +1,4 @@
-// the source goes over as bytes: V8's encoder is 14x faster than the host reading a string out
+// the source goes over as bytes because V8's encoder beat the host reading a string out 3.4x at 1 MB and 10x at 56 KB on Node 26.8.1 (2026-10-28)
 import type { Engine, Tree } from '../types.ts';
 import { load } from './addon.ts';
 import { compile } from './wasm.ts';
@@ -10,17 +10,15 @@ let scratch = new Uint8Array(1 << 16);
 
 function bytes(text: string) {
 	const size = text.length * 3;
-	if (scratch.length < size && size <= 1 << 20) scratch = new Uint8Array(size);
+	// a fresh buffer per parse cost a 1 MB source 566 µs against 264 in the kept one, which stops at 16 MiB so a huge source leaves nothing behind
+	if (scratch.length < size && size <= 1 << 24) scratch = new Uint8Array(size);
 	const room = size <= scratch.length ? scratch : new Uint8Array(size);
 	const { written } = encoder.encodeInto(text, room);
 	return room.subarray(0, written);
 }
 
 export const engine: Engine = native === undefined ? compile() : {
-	create: (source, flags) => native.create(bytes(source), flags),
-	parse: native.parse,
-	free: native.free,
-	once: (source, flags, entry, stop, plan) => native.once(bytes(source), flags, entry, stop, plan),
+	parse: (source, flags, entry, offset, end, stop, plan) => native.parse(bytes(source), flags, entry, offset, end, stop, plan),
 	plan: native.plan,
 	children: native.children,
 	layout: native.layout,
