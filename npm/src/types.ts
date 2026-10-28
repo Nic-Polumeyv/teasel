@@ -376,13 +376,8 @@ export interface Views {
 
 /** What parses: the addon or the WebAssembly module. */
 export interface Engine extends Views {
-	/** The engine's copy of a source and its position tables, for parses at a position. */
-	readonly create: (source: string, flags: number) => object;
-	/** A source `create` prepared, parsed at an entry and offset, cut at `end`, the stop tokens as one string, the whole source as a document by a grammar `plan` holds; the answer is its words, or, for a request the engine cannot take, an error as JSON. */
-	readonly parse: (source: object, entry: number, offset: number, end: number | undefined, stop: string, plan: object | undefined) => Uint32Array | string;
-	readonly free: (source: object) => void;
-	/** The whole source parsed at an entry with nothing kept, as a prepared source parses it. */
-	readonly once: (source: string, flags: number, entry: number, stop: string, plan: object | undefined) => Uint32Array | string;
+	/** A source parsed by its option word at an entry and offset, cut at `end`, the stop tokens as one string, or as a document by a grammar `plan` holds; nothing of it is kept. The answer is its words, or, for a request the engine cannot take, an error as JSON. */
+	readonly parse: (source: string, flags: number, entry: number, offset: number, end: number | undefined, stop: string, plan: object | undefined) => Uint32Array | string;
 	/** The grammar of a host language as JSON, read once and let go of when the plan is collected. */
 	readonly plan: (grammar: string) => object;
 	/** Each node type of a grammar's host with the fields that hold nodes, as JSON. */

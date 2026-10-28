@@ -275,12 +275,47 @@ pub fn parse_document(source: &str, grammar: &str, options: Options) -> String {
 	}
 }
 
-/// A source with its position tables and switches, for hosts that parse many pieces of one
-/// source: offsets come in as UTF-16, as JavaScript counts them.
-pub struct Prepared<'a> {
-	source: std::borrow::Cow<'a, str>,
-	positions: Positions,
+/// One entry at a UTF-16 offset, as JavaScript counts, the source cut at `end`; with a grammar,
+/// the whole source as a document of its language, in TypeScript when the grammar says so of a
+/// script tag. Read in place: its words at `words`; the error answer stays JSON.
+pub fn in_place(
+	source: &str,
 	options: Options,
+	entry: Entry,
+	start: f64,
+	end: Option<f64>,
+	stop: &str,
+	host: Option<&Grammar>,
+) -> Result<(), String> {
+	let positions = Positions::of(source, options);
+	let byte_offset = |utf16: f64| match positions.byte_offset(utf16) {
+		Ok(offset) if source.is_char_boundary(offset as usize) => Ok(offset),
+		Ok(_) => Err(error_json(&format!("offset {utf16} is inside a surrogate pair"), 0)),
+		Err(message) => Err(error_json(&message, 0)),
+	};
+	let offset = byte_offset(start)?;
+	let end = match end {
+		Some(utf16) => {
+			let end = byte_offset(utf16)?;
+			if end < offset {
+				return Err(error_json(&format!("offset {utf16} is before {start}"), 0));
+			}
+			Some(end)
+		}
+		None => None,
+	};
+	let request = Request {
+		entry,
+		offset,
+		end,
+		options: if host.is_some_and(|grammar| host::typescript(source, grammar)) {
+			options.with(Options::TYPESCRIPT)
+		} else {
+			options
+		},
+	};
+	to_words(source, &positions, &request, stop, host);
+	Ok(())
 }
 
 /// What every parse on a thread reuses: the trees, emptied, and the answer's buffers.
@@ -410,86 +445,6 @@ impl Names {
 		let (text, starts, _) = self.names.buffers();
 		out.push("names", text);
 		out.push("name_starts", starts);
-	}
-}
-
-impl Prepared<'static> {
-	pub fn new(source: String, options: Options) -> Prepared<'static> {
-		Prepared::of(std::borrow::Cow::Owned(source), options)
-	}
-}
-
-impl<'a> Prepared<'a> {
-	/// The same over a source the caller keeps for the parses.
-	pub fn borrowed(source: &'a str, options: Options) -> Prepared<'a> {
-		Prepared::of(std::borrow::Cow::Borrowed(source), options)
-	}
-
-	fn of(source: std::borrow::Cow<'a, str>, options: Options) -> Prepared<'a> {
-		let positions = Positions::of(&source, options);
-		Prepared {
-			source,
-			positions,
-			options,
-		}
-	}
-
-	/// The request for one entry at a UTF-16 offset, the source cut at `end`, on top of the
-	/// source's options; with a grammar, the whole source as a document of its language, in
-	/// TypeScript when the grammar says so of a script tag.
-	fn request(&self, entry: Entry, start: f64, end: Option<f64>, host: Option<&Grammar>) -> Result<Request, String> {
-		let offset = self.byte_offset(start)?;
-		let end = match end {
-			Some(utf16) => {
-				let end = self.byte_offset(utf16)?;
-				if end < offset {
-					return Err(error_json(&format!("offset {utf16} is before {start}"), 0));
-				}
-				Some(end)
-			}
-			None => None,
-		};
-		Ok(Request {
-			entry,
-			offset,
-			end,
-			options: if host.is_some_and(|grammar| host::typescript(&self.source, grammar)) {
-				self.options.with(Options::TYPESCRIPT)
-			} else {
-				self.options
-			},
-		})
-	}
-
-	/// One entry at an offset, as JSON.
-	pub fn parse(&self, entry: Entry, start: f64, end: Option<f64>, stop: &str, host: Option<&Grammar>) -> String {
-		match self.request(entry, start, end, host) {
-			Ok(request) => to_json(&self.source, &self.positions, &request, stop, host),
-			Err(error) => error,
-		}
-	}
-
-	/// One entry at an offset, read in place: its words at `words`; the error answer stays JSON.
-	pub fn in_place(
-		&self,
-		entry: Entry,
-		start: f64,
-		end: Option<f64>,
-		stop: &str,
-		host: Option<&Grammar>,
-	) -> Result<(), String> {
-		let request = self.request(entry, start, end, host)?;
-		to_words(&self.source, &self.positions, &request, stop, host);
-		Ok(())
-	}
-
-	/// A UTF-16 offset as a byte offset, or the error answer for it.
-	fn byte_offset(&self, utf16: f64) -> Result<u32, String> {
-		match self.positions.byte_offset(utf16) {
-			Ok(offset) if self.source.is_char_boundary(offset as usize) => Ok(offset),
-			Ok(_) => Err(error_json(&format!("offset {utf16} is inside a surrogate pair"), 0)),
-			Err(message) => Err(error_json(&message, 0)),
-		}
 	}
 }
 

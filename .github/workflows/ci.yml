@@ -43,8 +43,10 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
+            glibc: '2.28'
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
+            glibc: '2.28'
           - os: macos-latest
             target: aarch64-apple-darwin
           - os: macos-latest
@@ -55,12 +57,21 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: rustup target add ${{ matrix.target }}
+      # the runner's pip installs outside a venv only through a workaround GitHub said it would remove
+      - if: matrix.glibc
+        run: python3 -m venv "$RUNNER_TEMP/zig" && "$RUNNER_TEMP/zig/bin/pip" install cargo-zigbuild==0.23.4 ziglang==0.16.0 && echo "$RUNNER_TEMP/zig/bin" >> "$GITHUB_PATH"
       - uses: actions/setup-node@v7
         with:
           node-version: 26
       - run: npm ci
         working-directory: npm
-      - run: npm run build -- --target ${{ matrix.target }}
+      - run: npm run build -- --target ${{ matrix.target }} ${{ matrix.glibc && format('--glibc {0}', matrix.glibc) }}
+        working-directory: npm
+      - if: matrix.glibc
+        run: |
+          newest=$(objdump -T dist/*.node | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)
+          echo "$newest"
+          [ "$(printf '%s\n' "$newest" GLIBC_${{ matrix.glibc }} | sort -V | tail -1)" = GLIBC_${{ matrix.glibc }} ]
         working-directory: npm
       - uses: actions/upload-artifact@v7
         with:

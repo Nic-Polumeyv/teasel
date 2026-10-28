@@ -1397,8 +1397,23 @@ impl Ast {
 	}
 
 	/// Whether every statement of a list erases to nothing.
-	fn all_erased(&self, list: List) -> bool {
-		self.list(list).iter().all(|item| item.is_none_or(|id| self.erased(id)))
+	/// tsc emits a namespace that declares any value, so a `declare`d member counts here though it
+	/// erases at the top level.
+	fn instantiates(&self, id: NodeId) -> bool {
+		use NodeKind::*;
+		match self.node(id).kind {
+			InterfaceDeclaration { .. } | TypeAliasDeclaration { .. } => false,
+			ImportEqualsDeclaration { import_kind, .. } => import_kind == Kind::Value,
+			ModuleDeclaration { body, .. } => body.is_some_and(|block| self.instantiates(block)),
+			ModuleBlock { body } => self.list(body).iter().flatten().any(|&id| self.instantiates(id)),
+			ExportDeclaration { declaration } => {
+				self.extras_of(id).export_kind != Some(Kind::Type) && self.instantiates(declaration)
+			}
+			ExportNamedDeclaration { .. } | ExportAllDeclaration { .. } => {
+				self.extras_of(id).export_kind != Some(Kind::Type)
+			}
+			_ => true,
+		}
 	}
 
 	pub(crate) fn erased(&self, id: NodeId) -> bool {
@@ -1419,15 +1434,9 @@ impl Ast {
 			| IndexSignature { .. }
 			| NamespaceExportDeclaration { .. } => true,
 			ImportEqualsDeclaration { import_kind, .. } => import_kind == Kind::Type,
-			ModuleDeclaration { body: None, .. } => true,
-			ModuleDeclaration { body: Some(block), .. } => match self.node(block).kind {
-				ModuleBlock { body } => self.all_erased(body),
-				_ => false,
-			},
-			ImportDeclaration { specifiers, .. } => {
-				extras.import_kind == Some(Kind::Type) || (specifiers.len > 0 && self.all_erased(specifiers))
-			}
-			ImportSpecifier { .. } => extras.import_kind == Some(Kind::Type),
+			ModuleDeclaration { .. } => !self.instantiates(id),
+			// an import of only types still runs its module, so `import { type A } from 'x'` keeps `import {} from 'x'`
+			ImportDeclaration { .. } | ImportSpecifier { .. } => extras.import_kind == Some(Kind::Type),
 			ExportSpecifier { .. } | ExportAllDeclaration { .. } => extras.export_kind == Some(Kind::Type),
 			// `export { type A }` keeps an `export {}`, as tsc keeps the file a module
 			ExportDeclaration { declaration } => extras.export_kind == Some(Kind::Type) || self.erased(declaration),
