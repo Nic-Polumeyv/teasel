@@ -16,7 +16,8 @@
 	"exports": {
 		".": "./dist/index.js",
 		"./grammar": "./dist/grammar.js",
-		"./teasel.wasm": "./dist/teasel.wasm"
+		"./teasel.wasm": "./dist/teasel.wasm",
+		"./package.json": "./package.json"
 	},
 	"imports": {
 		"#engine": {

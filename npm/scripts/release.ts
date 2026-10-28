@@ -23,7 +23,7 @@ for (const [tag, { target, os, cpu, libc }] of Object.entries(platforms)) {
 	const dir = `artifacts/${tag}`;
 	mkdirSync(dir, { recursive: true });
 	copyFileSync(`artifacts/binding-${target}/${file}`, `${dir}/${file}`);
-	const manifest = { name, version, description, license, repository, os: [os], cpu: [cpu], ...(libc && { libc: [libc] }), main: file, files: [file] };
+	const manifest = { name, version, description, license, repository, os: [os], cpu: [cpu], ...(libc && { libc: [libc] }), main: file, files: [file], preferUnplugged: true };
 	writeFileSync(`${dir}/package.json`, JSON.stringify(manifest, null, '\t') + '\n');
 	await publish(dir, name);
 }
