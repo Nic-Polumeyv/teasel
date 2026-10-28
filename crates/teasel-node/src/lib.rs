@@ -1,5 +1,5 @@
-//! The Node addon: the same five operations as the WebAssembly module, over a handle to the
-//! prepared source.
+//! The Node addon: the same operations as the WebAssembly module, the source read where V8
+//! keeps its bytes.
 
 mod node_api;
 
@@ -12,7 +12,7 @@ use node_api::{CallbackInfo, Env, OK, Ref, Status, Value};
 use teasel::Options;
 use teasel::handed::{Allocation, Element, Raw};
 use teasel::host::Grammar;
-use teasel::json::{self, Prepared};
+use teasel::json;
 
 // RUSTFLAGS in the environment replaces .cargo/config.toml's flags, and nothing loads the addon on a Windows without the redistributable
 #[cfg(all(target_env = "msvc", not(target_feature = "crt-static")))]
@@ -119,58 +119,6 @@ fn undefined(env: Env) -> Result<Value> {
 	})
 }
 
-fn external(env: Env, value: Value, what: &str) -> Result<*mut c_void> {
-	out(null_mut(), what, |r| unsafe {
-		node_api::napi_get_value_external(env, value, r)
-	})
-}
-
-// a finalizer passed to napi_create_external cannot be cancelled, so free deletes this one's reference
-struct Held {
-	prepared: Prepared<'static>,
-	finalizer: Ref,
-}
-
-fn handle(env: Env, value: Value) -> Result<*mut Held> {
-	let data = external(env, value, "a source")?;
-	if data.is_null() {
-		return Err("a source expected".into());
-	}
-	Ok(data.cast())
-}
-
-// the bytes V8 encoded, copied; the options as one flag word
-unsafe extern "C" fn create(env: Env, info: CallbackInfo) -> Value {
-	guard(env, || {
-		let [source, flags] = args::<2>(env, info)?;
-		let prepared = Prepared::new(
-			source_text(env, source)?.to_owned(),
-			Options(number(env, flags)? as u32),
-		);
-		let held = Box::into_raw(Box::new(Held {
-			prepared,
-			finalizer: null_mut(),
-		}));
-		let result = out(null_mut(), "a source", |r| unsafe {
-			node_api::napi_create_external(env, held.cast(), None, null_mut(), r)
-		})?;
-		check(
-			unsafe {
-				node_api::napi_add_finalizer(
-					env,
-					result,
-					held.cast(),
-					Some(drop_source),
-					null_mut(),
-					&mut (*held).finalizer,
-				)
-			},
-			"a source",
-		)?;
-		Ok(result)
-	})
-}
-
 // the grammar of a host language as JSON, read once; V8 lets go of it with the external
 unsafe extern "C" fn plan(env: Env, info: CallbackInfo) -> Value {
 	guard(env, || {
@@ -203,11 +151,6 @@ unsafe extern "C" fn children(env: Env, info: CallbackInfo) -> Value {
 	})
 }
 
-unsafe extern "C" fn drop_source(env: Env, data: *mut c_void, _: *mut c_void) {
-	let held = unsafe { Box::from_raw(data.cast::<Held>()) };
-	unsafe { node_api::napi_delete_reference(env, held.finalizer) };
-}
-
 unsafe extern "C" fn drop_plan(_: Env, data: *mut c_void, _: *mut c_void) {
 	drop(unsafe { Box::from_raw(data.cast::<Rc<Grammar>>()) });
 }
@@ -221,23 +164,10 @@ fn grammar_of(env: Env, value: Value) -> Option<&'static Grammar> {
 	Some(unsafe { &**data.cast::<Rc<Grammar>>() })
 }
 
-unsafe extern "C" fn free(env: Env, info: CallbackInfo) -> Value {
-	guard(env, || {
-		let [source] = args::<1>(env, info)?;
-		let held = handle(env, source)?;
-		check(
-			unsafe { node_api::napi_delete_reference(env, (*held).finalizer) },
-			"a source",
-		)?;
-		drop(unsafe { Box::from_raw(held) });
-		undefined(env)
-	})
-}
-
 unsafe extern "C" fn parse(env: Env, info: CallbackInfo) -> Value {
 	guard(env, || {
-		let [source, entry, offset, end, stop, plan] = args::<6>(env, info)?;
-		let prepared = unsafe { &(*handle(env, source)?).prepared };
+		let [source, flags, entry, offset, end, stop, plan] = args::<7>(env, info)?;
+		let (source, options) = (source_text(env, source)?, Options(number(env, flags)? as u32));
 		let (entry, offset, end, stop) = (
 			number(env, entry)?,
 			number(env, offset)?,
@@ -246,20 +176,7 @@ unsafe extern "C" fn parse(env: Env, info: CallbackInfo) -> Value {
 		);
 		let grammar = grammar_of(env, plan);
 		answer(env, || {
-			prepared.in_place(json::entry(entry)?, offset, end, &stop, grammar)
-		})
-	})
-}
-
-// the whole source read where V8 keeps its bytes, for a source the engine holds nothing of
-unsafe extern "C" fn once(env: Env, info: CallbackInfo) -> Value {
-	guard(env, || {
-		let [source, flags, entry, stop, plan] = args::<5>(env, info)?;
-		let prepared = Prepared::borrowed(source_text(env, source)?, Options(number(env, flags)? as u32));
-		let (entry, stop) = (number(env, entry)?, string(env, stop)?);
-		let grammar = grammar_of(env, plan);
-		answer(env, || {
-			prepared.in_place(json::entry(entry)?, 0.0, None, &stop, grammar)
+			json::in_place(source, options, json::entry(entry)?, offset, end, &stop, grammar)
 		})
 	})
 }
@@ -518,12 +435,9 @@ pub unsafe extern "C" fn napi_register_module_v1(env: Env, exports: Value) -> Va
 			"environment cleanup",
 		)?;
 		for (name, callback) in [
-			(c"create", create as unsafe extern "C" fn(Env, CallbackInfo) -> Value),
-			(c"parse", parse),
-			(c"once", once),
+			(c"parse", parse as unsafe extern "C" fn(Env, CallbackInfo) -> Value),
 			(c"plan", plan),
 			(c"children", children),
-			(c"free", free),
 			(c"tree", tree),
 			(c"layout", layout),
 		] {

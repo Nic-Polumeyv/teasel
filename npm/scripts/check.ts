@@ -35,18 +35,9 @@ let checked = 0;
 let failed = 0;
 
 // what a parse answers or throws, read off the engine directly
-function outcome(engine: Engine, held: object, source: string, on: number, entry: number, at: number, end?: number) {
-	const answer = engine.parse(held, entry, at, end, '', undefined);
+function outcome(engine: Engine, source: string, on: number, entry: number, at: number, end?: number) {
+	const answer = engine.parse(source, on, entry, at, end, '', undefined);
 	return typeof answer === 'string' ? { error: JSON.parse(answer).error } : { value: decode(answer, source, engine, on, entry === 3) };
-}
-function once(engine: Engine, source: string, options: Options, entry: number, at: number) {
-	const on = flags(options);
-	const held = engine.create(source, on);
-	try {
-		return outcome(engine, held, source, on, entry, at);
-	} finally {
-		engine.free(held);
-	}
 }
 
 const show = (value: unknown) => (typeof value === 'bigint' ? `${value}n` : JSON.stringify(value));
@@ -90,9 +81,7 @@ const as_json = (key: string, value: unknown) => (value instanceof RegExp || typ
 const jobs: { name: string; source: string; header: string; tree: string }[] = [];
 function json(name: string, source: string, options: Options, entry: number, at: number) {
 	const on = flags(options);
-	const held = native.create(source, on);
-	const answer = native.parse(held, entry, at, undefined, '', undefined);
-	native.free(held);
+	const answer = native.parse(source, on, entry, at, undefined, '', undefined);
 	const tree = typeof answer === 'string' ? answer : JSON.stringify(decode(answer, source, native, on, entry === 3, false), as_json);
 	jobs.push({ name, source, header: header(entry, Buffer.byteLength(source.slice(0, at)), on), tree });
 }
@@ -100,7 +89,7 @@ function json(name: string, source: string, options: Options, entry: number, at:
 // a whole document of the host's
 function document(name: string, source: string, options: Options) {
 	const on = flags(options);
-	const answer = native.once(source, on, 0, '', plan);
+	const answer = native.parse(source, on, 0, 0, undefined, '', plan);
 	const tree = typeof answer === 'string' ? answer : JSON.stringify(decode(answer, source, native, on, false, false), as_json);
 	const switches = Object.entries(options).flatMap(([key, value]) => (value === true ? [key] : value ? [`${key}:${value}`] : []));
 	jobs.push({ name: `${name} doc ${switches.join('+')}`, source, header: header(DOCUMENT, 0, on), tree });
@@ -114,7 +103,7 @@ for (const file of files) {
 		for (const locations of [true, 'js'] as const) {
 			const options: Options = { locations, comments: true };
 			json(file, text, options, STYLESHEET, 0);
-			report(`${file} wasm`, differ(once(wasm, text, options, STYLESHEET, 0), once(native, text, options, STYLESHEET, 0)));
+			report(`${file} wasm`, differ(outcome(wasm, text, flags(options), STYLESHEET, 0), outcome(native, text, flags(options), STYLESHEET, 0)));
 		}
 		continue;
 	}
@@ -138,29 +127,25 @@ for (const file of files) {
 		];
 		for (const options of runs) {
 			json(file, source, options, 0, 0);
-			report(`${file} wasm`, differ(once(wasm, source, options, 0, 0), once(native, source, options, 0, 0)));
+			report(`${file} wasm`, differ(outcome(wasm, source, flags(options), 0, 0), outcome(native, source, flags(options), 0, 0)));
 		}
 	}
 	// every brace in a component is somewhere an expression, a pattern or a statement might start
 	if (svelte) {
 		const options: Options = { sourceType: 'module', typescript: /lang=["']?ts/.test(text), locations: true, comments: true, scopes: true };
 		const on = flags(options);
-		const held = native.create(text, on);
-		const twin = wasm.create(text, on);
 		for (const m of text.matchAll(script_re)) {
 			const start = m.index + m[0].indexOf('>') + 1;
 			const end = start + m[2].length;
-			report(`${file} script ${start} wasm`, differ(outcome(wasm, twin, text, on, 0, start, end), outcome(native, held, text, on, 0, start, end)));
+			report(`${file} script ${start} wasm`, differ(outcome(wasm, text, on, 0, start, end), outcome(native, text, on, 0, start, end)));
 		}
 		for (const match of text.matchAll(brace_re)) {
 			const at = match.index + 1;
 			for (let entry = 1; entry < MODE.length; entry++) {
 				json(`${file}@${at} ${MODE[entry]}`, text, options, entry, at);
-				report(`${file}@${at} ${MODE[entry]} wasm`, differ(outcome(wasm, twin, text, on, entry, at), outcome(native, held, text, on, entry, at)));
+				report(`${file}@${at} ${MODE[entry]} wasm`, differ(outcome(wasm, text, on, entry, at), outcome(native, text, on, entry, at)));
 			}
 		}
-		native.free(held);
-		wasm.free(twin);
 	}
 }
 {

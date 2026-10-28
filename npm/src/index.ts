@@ -113,13 +113,13 @@ export const js: Language<Program> & {
 export const css: Language<HostNode> = Object.freeze({ children: stylesheet });
 
 /**
- * A source kept with its options. A parse of the whole source keeps nothing in the engine; the
- * first at a position makes the engine's copy of the source and its position tables, which the
- * parses after it share. Offsets are UTF-16; positions stay those of the whole source.
+ * A source kept with its options; a parse keeps nothing of it in the engine. Offsets are UTF-16;
+ * positions stay those of the whole source. A lone surrogate in the text reaches the parser as
+ * U+FFFD, the way `TextEncoder` encodes it, so string values, template cooked and raw text and
+ * regex patterns carry U+FFFD there while spans and `loc` are right.
  */
 export class Source {
-	#held: object | undefined;
-	#source: string | undefined;
+	#source: string;
 	#flags: number;
 
 	constructor(source: string, options: Options = {}) {
@@ -156,11 +156,7 @@ export class Source {
 			if (at !== undefined) throw new TypeError('only `js` and its pieces take a position');
 		}
 		const source = this.#source;
-		if (source === undefined) throw new TypeError('the source is freed');
-		const answer =
-			this.#held === undefined && at === undefined
-				? engine.once(source, this.#flags, entry, stop, plan)
-				: engine.parse((this.#held ??= engine.create(source, this.#flags)), entry, offset, end, stop, plan);
+		const answer = engine.parse(source, this.#flags, entry, offset, end, stop, plan);
 		if (typeof answer === 'string') {
 			// a request the engine refused: an offset or option it cannot take
 			const error = JSON.parse(answer).error;
@@ -177,12 +173,5 @@ export class Source {
 		}
 		if (parsed.node === null) throw new ParseError(parsed.errors![0]);
 		return parsed;
-	}
-
-	// the engine frees an undisposed source when it is collected
-	[Symbol.dispose]() {
-		this.#source = undefined;
-		if (this.#held !== undefined) engine.free(this.#held);
-		this.#held = undefined;
 	}
 }

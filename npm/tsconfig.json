@@ -3,7 +3,7 @@
 		"strict": true,
 		"target": "es2022",
 		"module": "nodenext",
-		"lib": ["es2022", "dom", "esnext.disposable"],
+		"lib": ["es2022", "dom"],
 		"noEmit": true,
 		"skipLibCheck": true,
 		"types": ["node"],

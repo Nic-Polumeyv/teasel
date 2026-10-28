@@ -31,19 +31,9 @@ source.parse().node.type;                     // 'Program'
 source.parse(js.expression, 10).node.type; // 'CallExpression', the f(a, b)
 ```
 
-## Release a Source
-
-Release a `Source` when you are done with it. `using` releases it at the end of the block.
-
-```js parse.js
-using source = new Source(text);
-```
-
-Node versions before 24 do not have `using`: call `source[Symbol.dispose]()` in a `finally` there. A source left to the garbage collector is released only after a collection and a turn of the event loop, so a loop that never yields keeps the engine's copy of every source it parsed at an offset.
-
 ## In the browser
 
-The same import works in a browser or behind a bundler. There it is a WebAssembly build, not the native addon, with the same API.
+The same import works in a browser, directly or through a bundler. There it is a WebAssembly build, not the native addon, with the same API.
 
 ```js browser.js
 import { Source, js } from '@teasel/parser';
@@ -51,7 +41,9 @@ import { Source, js } from '@teasel/parser';
 const { node } = new Source('export const answer = 42').parse();
 ```
 
-The build looks for `teasel.wasm` beside the package entry, through `import.meta.url`, so a bundler includes the file without configuration. Under Node, `node --no-addons` takes the same build instead of the addon. Node also takes it where no addon loads, such as on a Linux without glibc, and warns if the platform has an addon that is not installed or does not load.
+The build looks for `teasel.wasm` beside the package entry, through `import.meta.url`, so a bundler includes the file without configuration. A bundle built for Node loads the native addon, from `@teasel/parser-<platform>` in `node_modules`, as Node does. Under Node, `node --no-addons` takes the WebAssembly build instead of the addon, without a warning. The Linux addons need glibc 2.28 or newer, as Node's own Linux builds do. Node also takes the WebAssembly build where no addon loads, such as on a Linux without glibc, and warns if the platform has an addon that is not installed or does not load.
+
+Under `node --permission`, the package needs `--allow-fs-read` for its directory, and `--allow-addons` for the native addon, which also reads `@teasel/parser-<platform>`: `--allow-fs-read=node_modules/@teasel/*` covers both. Without `--allow-addons` the WebAssembly build runs, silently.
 
 ## Next
 

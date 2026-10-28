@@ -213,7 +213,7 @@ Look at `pick(item)` at 475. It sits inside an arrow function, `() => pick(item)
 
 ## What to keep
 
-- The `Source`, for as long as the file is open. Any piece can be parsed again from it. Release it when the file closes: see [Getting started](/getting-started#release-a-source).
+- The `Source`, for as long as the file is open. Any piece can be parsed again from it.
 - `script`, the script's tree and bindings.
 - `resolved`. A compiler reads it to know which template expressions depend on which declarations; a linter reads it to find a declaration nothing uses.
 

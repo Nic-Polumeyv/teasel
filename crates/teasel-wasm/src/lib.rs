@@ -2,7 +2,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use teasel::Options;
 use teasel::host::Grammar;
-use teasel::json::{Prepared, error_json};
+use teasel::json::error_json;
 
 thread_local! {
 	static TEXT: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
@@ -21,22 +21,6 @@ pub extern "C" fn alloc(len: u32) -> *mut u8 {
 		std::alloc::handle_alloc_error(layout);
 	}
 	ptr
-}
-
-/// # Safety
-/// `ptr` is `capacity` bytes from `alloc`, `len` of them the source; they are taken over here.
-/// `flags` is the option word. The handle is 0 when the source is not UTF-8, the error as JSON at
-/// `text_ptr`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn source_new(ptr: *mut u8, len: u32, capacity: u32, flags: u32) -> u32 {
-	let source = unsafe { Vec::from_raw_parts(ptr, len as usize, capacity as usize) };
-	match String::from_utf8(source) {
-		Ok(source) => Box::into_raw(Box::new(Prepared::new(source, Options(flags)))) as u32,
-		Err(_) => {
-			text(error_json("the source is not UTF-8", 0));
-			0
-		}
-	}
 }
 
 /// # Safety
@@ -65,15 +49,6 @@ pub extern "C" fn plan_free(handle: u32) {
 	drop(unsafe { Box::from_raw(handle as *mut Rc<Grammar>) });
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn source_free(handle: u32) {
-	drop(unsafe { Box::from_raw(handle as *mut Prepared<'static>) });
-}
-
-fn source(handle: u32) -> &'static Prepared<'static> {
-	unsafe { &*(handle as *const Prepared<'static>) }
-}
-
 // 0: words at `words_ptr`; 1: an error as JSON at `text_ptr`
 fn answer(result: Result<(), String>) -> u32 {
 	match result {
@@ -86,27 +61,38 @@ fn answer(result: Result<(), String>) -> u32 {
 }
 
 /// # Safety
-/// `ptr` is `capacity` bytes from `alloc`, `len` of them the stop tokens; they are taken over here.
-/// `plan` is a handle from `plan_new`, or 0.
+/// `ptr` is `capacity` bytes from `alloc`, `len` of them the source, and `stop_ptr` is
+/// `stop_capacity` bytes from `alloc`, `stop_len` of them the stop tokens; both are taken over
+/// here. `flags` is the option word; `plan` is a handle from `plan_new`, or 0.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn source_parse(
-	handle: u32,
+pub unsafe extern "C" fn parse(
+	ptr: *mut u8,
+	len: u32,
+	capacity: u32,
+	flags: u32,
 	entry: f64,
 	offset: f64,
 	end: f64,
 	has_end: u32,
-	ptr: *mut u8,
-	len: u32,
-	capacity: u32,
+	stop_ptr: *mut u8,
+	stop_len: u32,
+	stop_capacity: u32,
 	plan: u32,
 ) -> u32 {
-	let stop = unsafe { Vec::from_raw_parts(ptr, len as usize, capacity as usize) };
+	let source = unsafe { Vec::from_raw_parts(ptr, len as usize, capacity as usize) };
+	let stop = unsafe { Vec::from_raw_parts(stop_ptr, stop_len as usize, stop_capacity as usize) };
 	let end = (has_end == 1).then_some(end);
 	let grammar = (plan != 0).then(|| unsafe { &**(plan as *const Rc<Grammar>) });
+	let Ok(source) = std::str::from_utf8(&source) else {
+		return answer(Err(error_json("the source is not UTF-8", 0)));
+	};
 	let Ok(stop) = std::str::from_utf8(&stop) else {
 		return answer(Err(error_json("the stop tokens are not UTF-8", 0)));
 	};
-	answer(teasel::json::entry(entry).and_then(|entry| source(handle).in_place(entry, offset, end, stop, grammar)))
+	answer(
+		teasel::json::entry(entry)
+			.and_then(|entry| teasel::json::in_place(source, Options(flags), entry, offset, end, stop, grammar)),
+	)
 }
 
 #[unsafe(no_mangle)]

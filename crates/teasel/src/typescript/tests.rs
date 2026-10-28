@@ -211,15 +211,12 @@ fn program_in_a_range() {
 	assert!(crate::json::parse(src, &request).contains("is not a character boundary"));
 	request.end = Some(2);
 	assert!(crate::json::parse(src, &request).contains("is before"));
-	let prepared = crate::json::Prepared::new(src[..26].to_string(), request.options);
+	let cut = &src[..26];
+	crate::json::in_place(cut, request.options, Entry::Program, 8.0, None, "", None).unwrap();
+	assert_eq!(crate::json::words(|words| words[0]), 26);
 	assert!(
-		prepared
-			.parse(Entry::Program, 8.0, None, "", None)
-			.contains("\"end\":26")
-	);
-	assert!(
-		prepared
-			.parse(Entry::Program, 22.0, Some(8.0), "", None)
+		crate::json::in_place(cut, request.options, Entry::Program, 22.0, Some(8.0), "", None)
+			.unwrap_err()
 			.contains("is before")
 	);
 }
@@ -395,5 +392,90 @@ fn a_generic_head_checks_its_defaults() {
 	assert_eq!(
 		error("async function f() { <T>(a = await 1) => 1 }"),
 		(Code::AwaitInDefaultValue, 29)
+	);
+}
+
+fn erase(src: &str) -> (String, String) {
+	let request = crate::json::Request::from_flags(Options::MODULE | Options::TYPESCRIPT | Options::ERASE);
+	let json = crate::json::parse(src, &request);
+	let (tree, kept) = json.split_once(",\"typescript\":").unwrap_or_else(|| panic!("{json}"));
+	let types: Vec<&str> = tree
+		.split("\"type\":\"")
+		.skip(1)
+		.map(|part| &part[..part.find('"').unwrap()])
+		.collect();
+	(types.join(" "), kept.trim_end_matches('}').to_owned())
+}
+
+#[test]
+fn a_namespace_erases_unless_it_instantiates() {
+	let erased = || ("Program".to_owned(), "[]".to_owned());
+	assert_eq!(erase("namespace A.B { export type T = 1 }"), erased());
+	assert_eq!(erase("namespace A.B.C { export interface I {} }"), erased());
+	assert_eq!(
+		erase("namespace N { export declare namespace M { export type T = 1 } }"),
+		erased()
+	);
+	assert_eq!(erase("namespace N { import type A = require('x'); }"), erased());
+	assert_eq!(erase("declare namespace N { export const x: number }"), erased());
+	assert_eq!(
+		erase("namespace N { export const x = 1 }"),
+		(
+			"Program TSModuleDeclaration Identifier TSModuleBlock ExportNamedDeclaration VariableDeclaration VariableDeclarator Identifier Literal".to_owned(),
+			r#"[{"type":"TSModuleDeclaration","start":0,"end":34}]"#.to_owned()
+		)
+	);
+	assert_eq!(
+		erase("namespace A.B { export const x = 1 }"),
+		(
+			"Program TSModuleDeclaration Identifier TSModuleDeclaration Identifier TSModuleBlock ExportNamedDeclaration VariableDeclaration VariableDeclarator Identifier Literal".to_owned(),
+			r#"[{"type":"TSModuleDeclaration","start":0,"end":36},{"type":"TSModuleDeclaration","start":12,"end":36}]"#.to_owned()
+		)
+	);
+	// tsc emits an empty namespace for a `declare`d member, which erases inside it
+	for src in [
+		"namespace N { export declare const x: number }",
+		"namespace N { declare function f(): void }",
+		"namespace N { export declare namespace M { const x: number } }",
+	] {
+		let end = src.len();
+		assert_eq!(
+			erase(src),
+			(
+				"Program TSModuleDeclaration Identifier TSModuleBlock".to_owned(),
+				format!(r#"[{{"type":"TSModuleDeclaration","start":0,"end":{end}}}]"#)
+			),
+			"{src}"
+		);
+	}
+}
+
+#[test]
+fn a_type_only_import_keeps_its_module() {
+	assert_eq!(
+		erase("import { type A } from 'x';"),
+		("Program ImportDeclaration Literal".to_owned(), "[]".to_owned())
+	);
+	assert_eq!(
+		erase("import type { A } from 'x';"),
+		("Program".to_owned(), "[]".to_owned())
+	);
+	assert_eq!(
+		erase("import D, { type A } from 'x';"),
+		(
+			"Program ImportDeclaration ImportDefaultSpecifier Identifier Literal".to_owned(),
+			"[]".to_owned()
+		)
+	);
+	assert_eq!(
+		erase("import { type A, B } from 'x';"),
+		(
+			"Program ImportDeclaration ImportSpecifier Identifier Identifier Literal".to_owned(),
+			"[]".to_owned()
+		)
+	);
+	assert_eq!(
+		erase("type A = 1; export { type A };"),
+		("Program ExportNamedDeclaration".to_owned(), "[]".to_owned())
 	);
 }
