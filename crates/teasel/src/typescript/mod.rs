@@ -189,7 +189,7 @@ impl<const TS: bool> Parser<'_, TS> {
 
 	fn ts_index(&self, id: NodeId) -> Option<usize> {
 		match self.kind(id) {
-			NodeKind::Extension(index) => Some(index as usize),
+			NodeKind::Extension(index) if self.typescript() => Some(index as usize),
 			_ => None,
 		}
 	}
@@ -366,6 +366,7 @@ impl<const TS: bool> Parser<'_, TS> {
 	}
 
 	/// Decorators before a class, kept until the class takes them.
+	#[cold]
 	pub(crate) fn parse_decorators(&mut self, allow_export: bool) -> Result<()> {
 		if self
 			.ts
@@ -521,6 +522,7 @@ impl<const TS: bool> Parser<'_, TS> {
 		Ok(())
 	}
 
+	#[cold]
 	pub(crate) fn parse_type_assertion(&mut self, for_init: ForInit) -> Result<NodeId> {
 		let start = self.tok.start;
 		let assertion = self.attempt(|p| {
@@ -741,10 +743,12 @@ impl TypeScript {
 
 /// TypeScript's grammar at the points where it departs from JavaScript's, each read where the parser
 /// meets one in a TypeScript parse.
+// cold where the hottest rules call in: without it JavaScript read as TypeScript took 1 to 2% longer
 impl<const TS: bool> Parser<'_, TS> {
 	// Statements and modules
 
 	/// First look at a statement; `Some` replaces it entirely.
+	#[cold]
 	pub(crate) fn statement(&mut self) -> Result<Option<NodeId>> {
 		if self.is(TokenKind::At) {
 			self.parse_decorators(true)?;
@@ -997,6 +1001,7 @@ impl<const TS: bool> Parser<'_, TS> {
 	}
 
 	/// A whole parameter of a parameter list; `allow_modifiers` inside class methods.
+	#[cold]
 	pub(crate) fn parameter(&mut self, allow_modifiers: bool) -> Result<Option<NodeId>> {
 		let mut decorators = Vec::new();
 		while self.is(TokenKind::At) {
@@ -1572,6 +1577,7 @@ impl<const TS: bool> Parser<'_, TS> {
 
 	// Expressions
 
+	#[cold]
 	pub(crate) fn maybe_assign(&mut self, for_init: ForInit, _: &mut Errors) -> Result<Option<NodeId>> {
 		if !self.starts_with_lt() {
 			return Ok(None);
@@ -1610,6 +1616,7 @@ impl<const TS: bool> Parser<'_, TS> {
 	}
 
 	/// At an operator position; `Some` is the new left operand.
+	#[cold]
 	pub(crate) fn expr_op(&mut self, left: NodeId, left_start: u32) -> Result<Option<NodeId>> {
 		let is_as = self.is_contextual("as");
 		if !is_as && !self.is_contextual("satisfies") {
@@ -1626,6 +1633,7 @@ impl<const TS: bool> Parser<'_, TS> {
 		assertion(self, left, left_start, is_as).map(Some)
 	}
 
+	#[cold]
 	pub(crate) fn subscript(
 		&mut self,
 		base: NodeId,
@@ -1696,6 +1704,7 @@ impl<const TS: bool> Parser<'_, TS> {
 	}
 
 	/// An object property whose value starts unexpectedly for JavaScript.
+	#[cold]
 	pub(crate) fn property_value(
 		&mut self,
 		start: u32,
