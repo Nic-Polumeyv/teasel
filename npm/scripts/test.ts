@@ -811,6 +811,8 @@ function types(source: api.Source, definition: typeof svelte) {
 	construct({ open: { marker: ['{'], form: [{ name: g.bind(g.js.identifier) }, '}'] } });
 	// @ts-expect-error a close reads words only
 	construct({ open: { marker: ['{#b'], form: ['}', { body: g.content }] }, close: { marker: ['{/b'], form: [{ e: g.js.expression }, '}'] } });
+	// @ts-expect-error a branch that repeats names its node and its list
+	construct({ open: { marker: ['{#b'], form: ['}', { body: g.content }] }, branches: [{ marker: ['{:c'], node: 'C', form: ['}', { body: g.content }] }], close: { marker: ['{/b'], form: ['}'] } });
 	const directive = (rule: Directive) => rule;
 	// @ts-expect-error only a block declares around itself
 	directive({ node: 'D', form: [{ name: g.bind.outside(g.js.identifier) }] });

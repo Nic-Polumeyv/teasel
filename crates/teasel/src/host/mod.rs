@@ -828,22 +828,17 @@ impl<'a> Walker<'a> {
 				}
 			}
 		}
+		// under recovery, what is open ends with the source
 		while self.frames.len() > 1 {
-			let unclosed = match self.frames.last().unwrap() {
-				Frame::Element { start, name, .. } => Some((*start, &self.src[name.0 as usize..name.1 as usize])),
-				// a repeating branch's node is listed; its block is what stands unclosed
-				Frame::Block { repeats: Some(_), .. } => None,
-				Frame::Block { start, rule, .. } => Some((*start, rule.open.display)),
-				Frame::Root { .. } => unreachable!(),
-			};
-			if let Some((start, what)) = unclosed {
-				self.report_at(start, start + 1, Code::Unclosed, Some(what))?;
-			}
-			// under recovery, what is open ends with the source
 			let end = self.len();
 			match self.frames.last().unwrap() {
-				Frame::Element { .. } => self.close_top(end),
-				_ => self.pop_block(end),
+				Frame::Element { start, name, .. } => {
+					let (start, what) = (*start, &self.src[name.0 as usize..name.1 as usize]);
+					self.report_at(start, start + 1, Code::Unclosed, Some(what))?;
+					self.close_top(end);
+				}
+				Frame::Block { .. } => self.pop_unclosed(end)?,
+				Frame::Root { .. } => unreachable!(),
 			}
 		}
 		let errors = &mut self.ast().errors;
@@ -1453,18 +1448,7 @@ impl<'a> Walker<'a> {
 					// the browser closes it here
 					self.close_top(start);
 				}
-				Some(Frame::Block {
-					start: block_start,
-					rule,
-					repeats,
-					..
-				}) if self.recovering() => {
-					let (block_start, what, listed) = (*block_start, rule.open.display, repeats.is_some());
-					if !listed {
-						self.report_at(block_start, block_start + 1, Code::Unclosed, Some(what))?;
-					}
-					self.pop_block(start);
-				}
+				Some(Frame::Block { .. }) if self.recovering() => self.pop_unclosed(start)?,
 				_ => return self.fail(start, start + 1, Code::UnexpectedClose, Some(&closed())),
 			}
 		}
@@ -2563,26 +2547,42 @@ impl<'a> Walker<'a> {
 		let Some(body) = read.body.take().or(rule.open.form.body.as_ref()) else {
 			return self.fail(start, start + 1, Code::Placement, Some("A block without a body"));
 		};
+		self.within_depth(start)?;
 		let mut outside = self.nodes.take();
 		let group = self.group_of(&read, body, &mut outside);
+		self.push_block(rule, start, read.fields, body, group, outside, None);
+		Ok(true)
+	}
+
+	/// Opens the frame of a block, or of a repeating branch's node, its first body's scope read.
+	#[expect(clippy::too_many_arguments)]
+	#[inline]
+	fn push_block(
+		&mut self,
+		rule: &'a Construct,
+		start: u32,
+		fields: Vec<(&'static str, Value)>,
+		body: &Body,
+		group: BodyGroup,
+		outside: Vec<NodeId>,
+		repeats: Option<usize>,
+	) {
 		let (nodes, done) = (self.nodes.take(), self.fields.take());
 		let mut groups = self.groups.take();
 		groups.push(group);
-		self.within_depth(start)?;
 		self.frames.push(Frame::Block {
 			start,
 			rule,
-			fields: read.fields,
+			fields,
 			body: (body.field, body.omit),
 			nodes,
 			done,
 			groups,
 			outside,
 			lists: Vec::new(),
-			repeats: None,
+			repeats,
 			branched: false,
 		});
-		Ok(true)
 	}
 
 	fn branch(&mut self, rule: &'a Construct, i: usize, start: u32, word: u32) -> Result<()> {
@@ -2604,15 +2604,15 @@ impl<'a> Walker<'a> {
 			// a repeating branch after one read once: `{:else if}` after `{:else}`
 			Some(_) => *branched,
 			None => branch
-				.slots
+				.shape
 				.iter()
 				.any(|slot| matches!(slot, Slot::Body { field, .. } if filed(field))),
 		};
 		if duplicate {
 			return self.fail(start, start + 1, Code::Duplicate, Some(branch.display));
 		}
-		// the head is read before anything closes: a head that cannot be read leaves what follows
-		// it in the body still open
+		// the head is read, and a node too deep refused, before anything closes: a branch that
+		// cannot open leaves what follows it in the body still open
 		if branch.space {
 			self.require_space()?;
 		}
@@ -2625,6 +2625,9 @@ impl<'a> Walker<'a> {
 		let Some(body) = read.body.take().or(branch.form.body.as_ref()) else {
 			return self.fail(start, start + 1, Code::Placement, Some("A branch without a body"));
 		};
+		if branch.repeats.is_some() && !listed {
+			self.within_depth(start)?;
+		}
 		// a repeating branch's node on top ends where this branch starts
 		if listed {
 			self.pop_block(start);
@@ -2652,23 +2655,7 @@ impl<'a> Walker<'a> {
 					self.lists.give(pooled);
 				}
 			}
-			let (nodes, done) = (self.nodes.take(), self.fields.take());
-			let mut groups = self.groups.take();
-			groups.push(group);
-			self.within_depth(start)?;
-			self.frames.push(Frame::Block {
-				start,
-				rule,
-				fields: read.fields,
-				body: (body.field, body.omit),
-				nodes,
-				done,
-				groups,
-				outside,
-				lists: Vec::new(),
-				repeats: Some(i),
-				branched: false,
-			});
+			self.push_block(rule, start, read.fields, body, group, outside, Some(i));
 			return Ok(());
 		}
 		let Some(Frame::Block {
@@ -2767,18 +2754,7 @@ impl<'a> Walker<'a> {
 		loop {
 			match self.frames.last() {
 				Some(frame) if ours(frame) => break,
-				Some(Frame::Block {
-					start: block_start,
-					rule,
-					repeats,
-					..
-				}) => {
-					let (block_start, what, listed) = (*block_start, rule.open.display, repeats.is_some());
-					if !listed {
-						self.report_at(block_start, block_start + 1, Code::Unclosed, Some(what))?;
-					}
-					self.pop_block(start);
-				}
+				Some(Frame::Block { .. }) => self.pop_unclosed(start)?,
 				Some(Frame::Element {
 					start: element_start,
 					name: span,
@@ -2796,6 +2772,24 @@ impl<'a> Walker<'a> {
 			self.pop_block(start);
 		}
 		self.pop_block(end);
+		Ok(())
+	}
+
+	/// Closes the block on top at `at` as unclosed: a repeating branch's node is listed as it is,
+	/// its block being what stands unclosed.
+	#[cold]
+	fn pop_unclosed(&mut self, at: u32) -> Result<()> {
+		let Some(Frame::Block {
+			start, rule, repeats, ..
+		}) = self.frames.last()
+		else {
+			unreachable!()
+		};
+		if repeats.is_none() {
+			let (start, what) = (*start, rule.open.display);
+			self.report_at(start, start + 1, Code::Unclosed, Some(what))?;
+		}
+		self.pop_block(at);
 		Ok(())
 	}
 
@@ -2817,36 +2811,19 @@ impl<'a> Walker<'a> {
 		else {
 			unreachable!()
 		};
-		let Some(i) = repeats else {
-			let node = self.block_node(
-				rule.ty,
-				&rule.entries,
-				&rule.slots,
-				block_start,
-				end,
-				fields,
-				done,
-				groups,
-				outside,
-				lists,
-			);
+		let (ty, shape, list) = match repeats {
+			None => (rule.ty, &rule.shape, None),
+			Some(i) => {
+				let branch = &rule.branches[i];
+				let (ty, list) = branch.repeats.unwrap();
+				(ty, &branch.shape, Some(list))
+			}
+		};
+		let node = self.block_node(ty, shape, block_start, end, fields, done, groups, outside, lists);
+		let Some(list) = list else {
 			self.append(node);
 			return;
 		};
-		let branch = &rule.branches[i];
-		let (ty, list) = branch.repeats.unwrap();
-		let node = self.block_node(
-			ty,
-			&branch.form.entries,
-			&branch.slots,
-			block_start,
-			end,
-			fields,
-			done,
-			groups,
-			outside,
-			lists,
-		);
 		let Some(Frame::Block { lists, .. }) = self.frames.last_mut() else {
 			unreachable!()
 		};
@@ -2860,31 +2837,31 @@ impl<'a> Walker<'a> {
 	fn block_node(
 		&mut self,
 		ty: &'static str,
-		entries: &[(&'static str, bool)],
-		slots: &[Slot],
+		shape: &[Slot],
 		start: u32,
 		end: u32,
-		mut fields: Vec<(&'static str, Value)>,
+		fields: Vec<(&'static str, Value)>,
 		done: Vec<(&'static str, Value)>,
 		mut groups: Vec<BodyGroup>,
 		outside: Vec<NodeId>,
 		mut listed: Vec<(&'static str, Vec<NodeId>)>,
 	) -> NodeId {
-		fill_unread(entries, &mut fields);
-		// the fields outside every scope first, then the slots as declared: a body's scope, its
-		// fields then the body, or a list
+		// the slots in the shape's order: a field as read or null, a body after the fields of its
+		// scope, a list
 		let mut ordered = self.fields.take();
-		ordered.extend(
-			fields
-				.iter()
-				.copied()
-				.filter(|(f, _)| !groups.iter().any(|group| group.fields.contains(f))),
-		);
 		let base = self.ast().host_fields.len() as u32;
 		let groups_at = self.ast().host_groups.len() as u32;
 		let mut count = 0;
-		for &slot in slots {
+		for &slot in shape {
 			let (body, omit) = match slot {
+				Slot::Field { field, omit } => {
+					match fields.iter().find(|(f, _)| *f == field) {
+						Some(&entry) => ordered.push(entry),
+						None if !omit => ordered.push((field, Value::Null)),
+						None => {}
+					}
+					continue;
+				}
 				Slot::List(field) => {
 					let nodes = listed
 						.iter()
@@ -2906,15 +2883,11 @@ impl<'a> Walker<'a> {
 				}
 				continue;
 			};
-			let from = ordered.len() as u32;
 			let group = groups.iter().find(|group| group.body == body);
-			if let Some(group) = group {
-				for &field in &group.fields {
-					if let Some(&entry) = fields.iter().find(|(f, _)| *f == field) {
-						ordered.push(entry);
-					}
-				}
-			}
+			// the body's scope opens at the first of its fields, which stand before it
+			let from = group
+				.and_then(|group| ordered.iter().position(|(f, _)| group.fields.contains(f)))
+				.unwrap_or(ordered.len()) as u32;
 			ordered.push((body, children));
 			let inside: &[NodeId] = group.map_or(&[], |group| &group.inside);
 			if self.grammar.fragment_scope || !inside.is_empty() {

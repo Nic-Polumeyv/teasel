@@ -302,6 +302,7 @@ fn branch(
 		space: None,
 		node: repeats.map(|(node, _)| node),
 		list: repeats.map(|(_, list)| list),
+		reopen: None,
 		form: items,
 	}
 }
@@ -1097,6 +1098,26 @@ fn a_grammar_that_cannot_work_is_refused() {
 		"X: the {:else if} branch makes Text, a node type the grammar makes elsewhere",
 	);
 	refused(
+		repeating("Attribute", "ifs", open),
+		"X: the {:else if} branch makes Attribute, a node type the grammar makes elsewhere",
+	);
+	refused(
+		with_block(
+			open,
+			list![
+				branch(&["{", ":else", "if"], open, Some(("ElseIf", "ifs"))),
+				branch(&["{", ":else", "when"], open, Some(("ElseIf", "ifs"))),
+			],
+		),
+		"X: the {:else if} branch makes ElseIf, a node type the grammar makes elsewhere",
+	);
+	let mut reopened = branch(&["{", ":else", "if"], open, None);
+	reopened.reopen = Some(("body", "elseif"));
+	refused(
+		with_block(open, list![reopened]),
+		"X: the {:else if} branch reopens the block; a branch that repeats names its node and its list",
+	);
+	refused(
 		with_block(
 			open,
 			list![
@@ -1410,14 +1431,30 @@ fn reads_the_svelte_grammar() {
 	assert_eq!(alternatives[0].body.as_ref().unwrap().field, "then");
 	assert_eq!(await_.branches[1].display, "{:catch}");
 	let if_ = construct(&grammar, "IfBlock");
+	let field = |field| Slot::Field { field, omit: false };
 	let body = |field| Slot::Body { field, omit: false };
 	assert_eq!(
-		if_.slots,
-		[body("consequent"), Slot::List("branches"), body("alternate")]
+		if_.shape,
+		[
+			field("test"),
+			body("consequent"),
+			Slot::List("branches"),
+			body("alternate")
+		]
 	);
 	assert_eq!(if_.branches[0].repeats, Some(("ElseIf", "branches")));
-	assert_eq!(if_.branches[0].slots, [body("consequent")]);
-	assert_eq!(await_.slots, [body("then"), body("catch"), body("pending")]);
+	assert_eq!(if_.branches[0].shape, [field("test"), body("consequent")]);
+	assert_eq!(
+		await_.shape,
+		[
+			field("expression"),
+			field("value"),
+			body("then"),
+			field("error"),
+			body("catch"),
+			body("pending")
+		]
+	);
 	assert_eq!(grammar.script.as_ref().unwrap().typescript, [("lang", Some("ts"))]);
 	assert_eq!(grammar.element("Foo.Bar").unwrap().ty, "Component");
 	assert_eq!(grammar.element("div").unwrap().ty, "RegularElement");
@@ -1506,14 +1543,58 @@ fn a_repeating_branch_is_listed() {
 			&& answer.contains("\"data\":\"w\""),
 		"{answer}"
 	);
-	// a block's node has one shape whatever was opened: every body and list in declared order
-	for source in ["{#if a}1{/if}", "{#if a}1{:else}2{/if}", "{#if a}1{:else if b}2{/if}"] {
-		let answer = parse(source, false);
+	// a branch whose node would stand too deep is refused before the body it follows closes
+	let deep = format!(
+		"{}x{{:else if b}}KEEP{{:else}}ALT{{/if}}{}",
+		"{#if a}".repeat(999),
+		"{/if}".repeat(999)
+	);
+	let answer = parse(&deep, true);
+	assert!(
+		answer.contains(&format!("\"code\":{}", Code::NestingDepth as u8)) && answer.contains("KEEP"),
+		"{answer}"
+	);
+}
+
+// a block's node has one shape whatever its document opened: a field where the first piece reading
+// it stands, a body after the fields of its scope, a list where its branch stands
+#[test]
+fn a_block_has_one_shape() {
+	let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+	let svelte = fs::read_to_string(root.join("tests/hosts/svelte/host.json")).unwrap();
+	let parse = |source: &str| parse_document(source, &svelte, Options(Options::MODULE | Options::SCOPES));
+	let ordered = |answer: &str, keys: &[&str]| {
 		let at = |key: &str| answer.find(&format!("\"{key}\":")).unwrap();
+		keys.windows(2).all(|pair| at(pair[0]) < at(pair[1]))
+	};
+	for source in ["{#if a}1{/if}", "{#if a}1{:else}2{/if}", "{#if a}1{:else if b}2{/if}"] {
+		let answer = parse(source);
 		assert!(
-			at("test") < at("consequent") && at("consequent") < at("branches") && at("branches") < at("alternate"),
+			ordered(&answer, &["test", "consequent", "branches", "alternate"]),
 			"{answer}"
 		);
+	}
+	for source in [
+		"{#await p}{/await}",
+		"{#await p then v}{/await}",
+		"{#await p catch e}{/await}",
+		"{#await p}1{:then v}2{/await}",
+		"{#await p}1{:then}2{:catch e}3{/await}",
+		"{#await p}{:catch}{/await}",
+	] {
+		let answer = parse(source);
+		assert!(
+			ordered(&answer, &["expression", "value", "then", "error", "catch", "pending"]),
+			"{answer}"
+		);
+	}
+	// what `value` declares is seen in `then`, before which it stands, and not in `pending`
+	let answer = parse("{#await p}{v}{:then v}{v}{/await}");
+	assert_eq!(answer.matches("\"binding\":0").count(), 1, "{answer}");
+	assert_eq!(answer.matches("\"binding\":null").count(), 2, "{answer}");
+	for source in ["{#each xs as x}1{/each}", "{#each xs as x, i (k)}1{:else}2{/each}"] {
+		let answer = parse(source);
+		assert!(ordered(&answer, &["expression", "context", "body"]), "{answer}");
 	}
 }
 

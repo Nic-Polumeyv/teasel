@@ -180,12 +180,14 @@ export interface Piece<I extends BlockForm = BlockForm> {
 	readonly form: I;
 }
 
-export interface Branch<I extends BlockForm = BlockForm> extends Piece<I> {
-	/** With `list`, the branch repeats: each one is a node of this type. */
-	readonly node?: string;
-	/** The block's field listing the nodes in the order read, empty when none came. */
-	readonly list?: string;
-}
+/** A branch that repeats: each one is a node of `node`, listed in the block's field `list`. */
+type Repeating = { readonly node: string; readonly list: string };
+/**
+ * A branch of a block. One that repeats makes a node per branch read, listed in the block's field
+ * in the order read and empty when none came, so its body is never left out. No branch that
+ * repeats may follow one read once: `{:else if}` after `{:else}` is an error.
+ */
+export type Branch<I extends BlockForm = BlockForm> = Piece<I> & (Repeating | { readonly node?: undefined; readonly list?: undefined });
 
 /** A construct without a close: it reads no content and opens no scope. */
 export interface Tag {
@@ -363,7 +365,6 @@ type FragmentNode<G extends Definition> = G['fragment'] extends { readonly node:
 type BranchNode<B, G extends Definition> = B extends { readonly node: infer N extends string; readonly list: string }
 	? Typed<N, Shape<Collect<FormOf<B>, false>, G, false>>
 	: never;
-type Repeating = { readonly node: string; readonly list: string };
 /** The lists the repeating branches fill. */
 type Lists<B> = B extends { readonly node: string; readonly list: infer F extends string } ? F : never;
 /** A branch adds its fields to the construct, or, repeating, the field listing its nodes; branches naming one list share it. */

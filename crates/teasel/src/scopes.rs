@@ -248,7 +248,8 @@ pub struct Scopes {
 	pub scopes: Handed<Scope>,
 	pub bindings: Handed<Binding>,
 	pub references: Handed<Reference>,
-	/// The pieces of JavaScript in a host's document, in source order; empty for a plain parse.
+	/// The pieces of JavaScript in a host's document, in the order a walk over the tree meets
+	/// them; empty for a plain parse.
 	pub roots: Handed<Root>,
 	pub root_of: NodeTable<u32>,
 	pub of_node: NodeTable<ScopeId>,

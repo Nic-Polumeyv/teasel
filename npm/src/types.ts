@@ -166,7 +166,7 @@ export interface Parsed<T> {
 	scopes?: Scope[];
 	bindings?: Binding[];
 	references?: Reference[];
-	/** With `scopes`, for a document read by a host grammar: its pieces of JavaScript in source order. */
+	/** With `scopes`, for a document read by a host grammar: its pieces of JavaScript in the order a walk over the tree meets them. */
 	roots?: Root[];
 }
 

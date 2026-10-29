@@ -152,7 +152,6 @@
 						"root": 5,
 						"name": "p"
 					},
-					"error": null,
 					"value": {
 						"type": "Identifier",
 						"start": 99,
@@ -180,6 +179,7 @@
 							}
 						]
 					},
+					"error": null,
 					"catch": null,
 					"pending": null
 				},
