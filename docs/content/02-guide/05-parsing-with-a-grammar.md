@@ -84,7 +84,7 @@ The scope kinds a document adds are `fragment` for what the grammar opens and `m
 
 ## Error recovery
 
-`errorRecovery` works on a document as it does on JavaScript: an unclosed element, an expression cut short, a block without its end, all come back as the tree that could be read, with `errors` listing each one. The host's errors have codes of their own, `unclosed`, `expected`, `duplicate` and the others in the [reference](/reference/parser#parseerror), beside JavaScript's. Without recovery the first one throws.
+`errorRecovery` works on a document as it does on JavaScript: an unclosed element, an expression cut short, a block without its end, all come back as the tree that could be read, with `errors` listing each one. The host's errors have codes of their own, `unclosed`, `expected`, `duplicate` and the others in [Error codes](/reference/error-codes), beside JavaScript's. Without recovery the first one throws.
 
 ```js document.js
 const { node, errors } = new Source('<p>{{ a', { errorRecovery: true }).parse(grammar);

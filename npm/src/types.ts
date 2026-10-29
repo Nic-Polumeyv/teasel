@@ -130,7 +130,15 @@ export interface Kept extends Span {
 	type: string;
 }
 
-/** A recovered error: the thrown `SyntaxError`'s code, args and position, as a plain object. */
+/**
+ * A syntax error. `code` names what went wrong, for a host to branch on, and `args` what it is
+ * about, a name or a token. An error at the token being read spans it with `pos` and `end`; one
+ * reported elsewhere, at a declaration seen earlier say, has `end` equal to `pos`.
+ * `unexpected_eof` is the end of what was parsed: the `end` the parse was given, else the end of
+ * the source. A parse throws one as a `SyntaxError` with these fields, its `message` the code then
+ * each argument in quotes, `expected '}'`; a bad offset from the host throws an `invalid_request`
+ * without `line` and `column`.
+ */
 export interface Recovered {
 	code: Code;
 	args: readonly string[];

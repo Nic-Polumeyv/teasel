@@ -23,7 +23,7 @@ const { load } = await import('../dist/engine/addon.js');
 const m = await import('../src/index.ts');
 // the trees are poked as the recipes shape them, host nodes included, past what the types say
 type Any = any;
-const { js, css, Piece, ParseError } = m;
+const { js, css, Piece } = m;
 const open = (source: string, options?: Options): Any => new m.Source(source, options);
 const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'parentOf', (node: Any) => Any> = m;
 
@@ -128,8 +128,7 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 	assert.equal(params.node.length, 2);
 	assert.equal(params.end, 10);
 
-	assert.throws(() => parse('x = ;'), (e: Any) => e.code === 'unexpected_token' && e.pos === 4 && e.end === 5 && e.column === 4 && e.message === 'unexpected_token' && e.args.length === 0 && e instanceof ParseError && e instanceof SyntaxError);
-	assert.ok(!('line' in new ParseError({ code: 'expected', args: ['}'], pos: 0, end: 0 })));
+	assert.throws(() => parse('x = ;'), (e: Any) => e.code === 'unexpected_token' && e.pos === 4 && e.end === 5 && e.column === 4 && e.message === 'unexpected_token' && e.args.length === 0 && e instanceof SyntaxError);
 	assert.throws(() => parse('x = '), (e: Any) => e.code === 'unexpected_eof' && e.pos === 4 && e.end === 4);
 	assert.throws(() => parse('/a', { locations: true }), (e: Any) => e.code === 'unterminated_regexp' && e.pos === 1);
 	assert.throws(() => parse('x', { ranges: true } as Any), TypeError);
@@ -289,7 +288,7 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 	assert.equal(JSON.stringify(twice.parse().node), whole);
 	assert.throws(() => parse('x', { locations: 1 } as Any), TypeError);
 	assert.throws(() => parse('x', { typescript: 'yes' } as Any), TypeError);
-	assert.throws(() => open('a;b;c').parse(js, [0, -1]), (e: Any) => e.code === 'invalid_request');
+	assert.throws(() => open('a;b;c').parse(js, [0, -1]), (e: Any) => e.code === 'invalid_request' && !('line' in e) && !('column' in e));
 	assert.throws(() => open('a;b;c').parse(js, [0, NaN]), (e: Any) => e.code === 'invalid_request');
 	const { engine } = await import('#engine');
 	for (const entry of [7, -1, 6.5, NaN]) assert.match(engine.parse('a;', 0, entry, 0, undefined, '', undefined) as string, / is no entry/);
