@@ -132,7 +132,7 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 	assert.equal(params.node.length, 2);
 	assert.equal(params.end, 10);
 
-	assert.throws(() => parse('x = ;'), (e: Any) => e.code === 'unexpected_token' && e.pos === 4 && e.end === 5 && e.column === 4 && e.message === 'unexpected_token' && e.args.length === 0 && e instanceof SyntaxError);
+	assert.throws(() => parse('x = ;'), (e: Any) => e.code === 'unexpected_token' && e.pos === 4 && e.end === 5 && e.column === 4 && e.message === 'unexpected_token' && e.args.length === 0 && Object.getPrototypeOf(e) === SyntaxError.prototype);
 	assert.throws(() => parse('x = '), (e: Any) => e.code === 'unexpected_eof' && e.pos === 4 && e.end === 4);
 	assert.throws(() => parse('/a', { locations: true }), (e: Any) => e.code === 'unterminated_regexp' && e.pos === 1);
 	assert.throws(() => parse('x', { ranges: true } as Any), TypeError);

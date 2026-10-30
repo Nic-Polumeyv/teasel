@@ -131,12 +131,14 @@ export interface Kept extends Span {
 }
 
 /**
- * A syntax error. `code` names what went wrong, for a host to branch on, and `args` what it is
- * about, a name or a token. An error at the token being read spans it with `pos` and `end`; one
- * reported elsewhere, at a declaration seen earlier say, has `end` equal to `pos`.
- * `unexpected_eof` is the end of what was parsed: the `end` the parse was given, else the end of
- * the source. A parse throws one as a `SyntaxError` with these fields, its `message` the code then
- * each argument in quotes, `expected '}'`.
+ * A syntax error, listed in `errors` as a plain object. `code` names what went wrong, for a host
+ * to branch on, and `args` what it is about, a name or a token. An error at the token being read
+ * spans it with `pos` and `end`; one reported elsewhere, at a declaration seen earlier say, has
+ * `end` equal to `pos`. `unexpected_eof` is the end of what was parsed: the `end` the parse was
+ * given, else the end of the source. A parse throws one as a `SyntaxError` with these fields, its
+ * `message` the code then each argument in quotes, `expected '}'`, typed `SyntaxError & Recovered`
+ * once caught. A `nesting_depth` the decoder meets, a tree deeper than the caller's stack has room
+ * for, is thrown without `line` and `column`.
  */
 export interface Recovered {
 	code: Code;
