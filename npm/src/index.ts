@@ -93,9 +93,7 @@ export const css: Language<HostNode> = Object.freeze({ [LANGUAGE]: { entry: 6 },
 export function parse<T = Program>(text: string, options?: Options, language: Language<T> = js as Language<never>): Parsed<T> {
 	const read = language?.[LANGUAGE];
 	if (read === undefined) throw new TypeError('parse takes `js`, `css`, or a grammar made by this copy of @teasel/parser/grammar; a piece goes to parseAt');
-	if (typeof text !== 'string') throw new TypeError('parse takes a string');
-	const on = flags(options);
-	return answer(engine.parse(text, on, read.entry, 0, '', read.plan), text, on, 0, false);
+	return answer(text, options, read.entry, 0, '', read.plan);
 }
 
 /**
@@ -109,16 +107,17 @@ export function parse<T = Program>(text: string, options?: Options, language: La
 export function parseAt<P extends Piece<unknown>>(text: string, piece: P, at: number, options?: Options): Parsed<P extends Piece<infer T> ? T : never> {
 	const read = piece?.[PIECE];
 	if (read === undefined) throw new TypeError('parseAt takes a piece of `js`, such as js.program or js.expression');
-	if (typeof text !== 'string') throw new TypeError('parseAt takes a string');
 	if (!Number.isInteger(at) || at < 0 || at > text.length || (at > 0 && text.codePointAt(at - 1)! > 0xffff)) throw new RangeError(`${at} is no offset between characters of the text`);
-	const on = flags(options);
-	return answer(engine.parse(text, on, read.entry, at, read.stop, undefined), text, on, at, read.entry === 3);
+	return answer(text, options, read.entry, at, read.stop, undefined);
 }
 
-function answer<T>(words: Uint32Array, text: string, on: number, offset: number, listed: boolean): Parsed<T> {
+function answer<T>(text: string, options: Options | undefined, entry: number, offset: number, stop: string, plan: object | undefined): Parsed<T> {
+	if (typeof text !== 'string') throw new TypeError('a parse takes a string');
+	const on = flags(options);
+	const words = engine.parse(text, on, entry, offset, stop, plan);
 	let error: Omit<Recovered, 'line' | 'column'>;
 	try {
-		const parsed = decode(words, text, engine, on, listed) as Parsed<T>;
+		const parsed = decode(words, text, engine, on, entry === 3) as Parsed<T>;
 		if (parsed.node !== null) return parsed;
 		error = parsed.errors![0];
 	} catch (thrown) {
