@@ -182,7 +182,7 @@ import type { NodeType } from '@teasel/parser/grammar';
 import { tpl } from './tpl.js';
 
 type Repeat = NodeType<typeof tpl, 'RepeatBlock'>;
-// { type: 'RepeatBlock'; start: number; end: number; loc?: SourceLocation;
+// { type: 'RepeatBlock'; start: number; end: number;
 //   item: Pattern; index?: Identifier; list: Expression;
 //   key?: Expression; body: Content[]; fallback?: Content[] }
 ```

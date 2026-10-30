@@ -72,7 +72,7 @@ function collect(node: unknown, spans: Span[]) {
 			if (kind !== 'call' && kind !== 'property' && kind !== 'type') return;
 		}
 	}
-	for (const key in n) if (key !== 'loc') collect(n[key], spans);
+	for (const key in n) collect(n[key], spans);
 }
 
 const escape = (text: string) => text.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!);
