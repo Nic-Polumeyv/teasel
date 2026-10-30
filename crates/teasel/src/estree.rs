@@ -50,9 +50,9 @@ impl Json {
 }
 
 impl Json {
-	pub(crate) fn ints(&mut self, values: &[u32]) {
+	pub(crate) fn ints(&mut self, values: impl IntoIterator<Item = u32>) {
 		self.list();
-		for &value in values {
+		for value in values {
 			self.int(value);
 		}
 		self.end();
@@ -471,19 +471,18 @@ impl<'a> Writer<'a> {
 		}
 		let adopted = std::mem::take(&mut self.adopted);
 		for node in adopted.iter().copied().chain([id]) {
-			if let Some(root) = scopes.root_of.get(node) {
+			let Some(facts) = scopes.facts_of(node) else { continue };
+			if let Some(root) = facts.root {
 				self.key("root");
 				self.json.int(root);
 			}
-			let bindings = scopes.declared_by.get(node);
-			if !bindings.is_empty() {
+			if facts.defines.is_some() {
 				self.key("defines");
-				self.json.ints(bindings);
+				self.json.ints(scopes.defined(facts));
 			}
-			let writes = scopes.writes_of.get(node);
-			if !writes.is_empty() {
+			if facts.writes.is_some() {
 				self.key("writes");
-				self.json.ints(writes);
+				self.json.ints(scopes.assigned(facts));
 			}
 		}
 	}
@@ -757,7 +756,7 @@ impl<'a> Writer<'a> {
 				}
 				Op::Pair(key, slot) => {
 					self.key(key);
-					self.json.ints(&get::<[u32; 2]>(base, slot));
+					self.json.ints(get::<[u32; 2]>(base, slot));
 				}
 				Op::Opt(key, slot) => match slot.ty {
 					Ty::OptU32 => {

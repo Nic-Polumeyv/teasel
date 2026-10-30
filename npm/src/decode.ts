@@ -45,7 +45,7 @@ export interface Layout {
 	/** Each table's record: its size and its fields. */
 	rows: Record<string, { size: number; fields: Field[] }>;
 	/** The records beside the nodes and the tables, by their view's name. */
-	records: Record<'comments' | 'attached' | 'errors' | 'hosts' | 'host_vals' | 'marks', { size: number; fields: Field[] }>;
+	records: Record<'comments' | 'attached' | 'errors' | 'hosts' | 'host_vals' | 'marks' | 'facts', { size: number; fields: Field[] }>;
 	none: Missing;
 	views: { js: string[]; ts?: string[] };
 	/** Each type of node a stylesheet holds with the fields that hold nodes. */
@@ -177,7 +177,7 @@ function resolve(raw: RawOp[], fields: Field[]): Op[] {
 // a literal: an object filled by computed keys turns into a dictionary, a hash lookup per read
 function places(views: string[]) {
 	const of = (name: string) => 1 + views.indexOf(name);
-	return { nodes: of('nodes'), lists: of('lists'), numbers: of('numbers'), text: of('text'), starts: of('starts'), marks: of('marks'), units: of('units'), lines: of('lines'), parenthesized: of('parenthesized'), erased: of('erased'), comments: of('comments'), attached_slots: of('attached_slots'), attached: of('attached'), errors: of('errors'), hosts: of('hosts'), host_keys: of('host_keys'), host_vals: of('host_vals'), host_strings: of('host_strings'), scopes: of('scopes'), bindings: of('bindings'), references: of('references'), roots: of('roots'), of_node: of('of_node'), of_identifier: of('of_identifier'), root_of: of('root_of'), declared_by: of('declared_by'), declared_by_at: of('declared_by_at'), writes_of: of('writes_of'), writes_of_at: of('writes_of_at'), ts: of('ts'), extras_slots: of('extras_slots'), extras: of('extras'), names: of('names'), name_starts: of('name_starts'), rare: of('rare'), late: of('late'), /** Past the last view's length in the answer's words: where the tree's buffers sit, folded into two. */ sits: 1 + views.length };
+	return { nodes: of('nodes'), lists: of('lists'), numbers: of('numbers'), text: of('text'), starts: of('starts'), marks: of('marks'), units: of('units'), lines: of('lines'), parenthesized: of('parenthesized'), erased: of('erased'), comments: of('comments'), attached_slots: of('attached_slots'), attached: of('attached'), errors: of('errors'), hosts: of('hosts'), host_keys: of('host_keys'), host_vals: of('host_vals'), host_strings: of('host_strings'), scopes: of('scopes'), bindings: of('bindings'), references: of('references'), roots: of('roots'), of_node: of('of_node'), of_identifier: of('of_identifier'), late_before: of('late_before'), facts: of('facts'), defines: of('defines'), writes: of('writes'), ts: of('ts'), extras_slots: of('extras_slots'), extras: of('extras'), names: of('names'), name_starts: of('name_starts'), rare: of('rare'), late: of('late'), /** Past the last view's length in the answer's words: where the tree's buffers sit, folded into two. */ sits: 1 + views.length };
 }
 /** Each view's place in a tree; zero for a view the tree does not have. */
 type At = ReturnType<typeof places>;
@@ -219,6 +219,7 @@ function records(layout: Layout) {
 		host: { words: words('hosts'), ty: optional('hosts', 'ty'), from: word('hosts', 'fields.start'), len: word('hosts', 'fields.len'), shape: word('hosts', 'shape'), span: of('hosts', 'span').at },
 		value: { size: R.host_vals.size, words: words('host_vals'), tag: tag.at, tags: tag.names!, value: of('host_vals', 'value').at },
 		mark: { words: words('marks'), string: word('marks', 'string'), at: word('marks', 'at'), unit: word('marks', 'unit') },
+		fact: { words: words('facts'), root: optional('facts', 'root'), defines: optional('facts', 'defines'), writes: optional('facts', 'writes') },
 	};
 }
 type Records = ReturnType<typeof records>;
@@ -304,11 +305,11 @@ interface State {
 	host_strings: Uint32Array;
 	of_node: Uint32Array | null;
 	of_identifier: Uint32Array;
-	root_of: Uint32Array;
-	declared_by: Uint32Array;
-	declared_by_at: Uint32Array;
-	writes_of: Uint32Array;
-	writes_of_at: Uint32Array;
+	/** A node in `late` has the row of `facts` that `fact_row` numbers. */
+	late_before: Uint32Array;
+	facts: Uint32Array;
+	defines: Uint32Array;
+	writes: Uint32Array;
 	TS: Uint32Array | null;
 	extras_slots: Uint32Array | null;
 	extras: Uint32Array;
@@ -389,6 +390,18 @@ function run_of_comments(S: State, n: Decoded, key: string, start: number, len: 
 	n[key] = list;
 }
 
+function popcount(x: number): number {
+	x -= (x >>> 1) & 0x55555555;
+	x = (x & 0x33333333) + ((x >>> 2) & 0x33333333);
+	return Math.imul((x + (x >>> 4)) & 0x0f0f0f0f, 0x01010101) >>> 24;
+}
+
+/** The row of a node's facts, -1 when it has none. */
+function fact_row(S: State, id: number): number {
+	const word = S.late[id >>> 5], bit = 1 << (id & 31);
+	return (word & bit) === 0 ? -1 : S.late_before[id >>> 5] + popcount(word & (bit - 1));
+}
+
 function facts(S: State, n: Decoded, id: number) {
 	const scope = S.of_node![id];
 	if (scope !== 0) {
@@ -418,13 +431,14 @@ function facts(S: State, n: Decoded, id: number) {
 		S.pending = adopted.length === 0 ? NONE_ADOPTED : adopted.splice(0);
 		return;
 	}
+	const F = S.C.R.fact, f = S.facts;
 	for (let i = 0; i <= adopted.length; i++) {
-		const node = i < adopted.length ? adopted[i] : id;
-		if (S.root_of[node] !== 0) n.root = S.root_of[node] - 1;
-		const declared = S.declared_by_at[node];
-		if (declared !== 0) n.defines = Array.from(S.declared_by.subarray(declared, declared + S.declared_by[declared - 1]));
-		const written = S.writes_of_at[node];
-		if (written !== 0) n.writes = Array.from(S.writes_of.subarray(written, written + S.writes_of[written - 1]));
+		const k = fact_row(S, i < adopted.length ? adopted[i] : id);
+		if (k === -1) continue;
+		const at = k * F.words;
+		if (f[at + F.root.tag] !== F.root.missing) n.root = f[at + F.root.value];
+		if (f[at + F.defines.tag] !== F.defines.missing) n.defines = chain(S.defines, f[at + F.defines.value]);
+		if (f[at + F.writes.tag] !== F.writes.missing) n.writes = chain(S.writes, f[at + F.writes.value]);
 	}
 	adopted.length = 0;
 }
@@ -901,18 +915,25 @@ function regexp(pattern: string, flags: string): RegExp | null {
 
 // the facts a node other than an identifier has past its scope, once it is whole
 function late(S: State, n: Decoded, id: number) {
-	const root = S.root_of[id];
-	if (root !== 0) S.roots[root - 1].node = n;
-	const declared = S.declared_by_at[id];
-	if (declared !== 0) {
-		for (let i = declared; i < declared + S.declared_by[declared - 1]; i++) {
-			const d = S.bindings[S.declared_by[i]];
+	const k = fact_row(S, id);
+	if (k === -1) return;
+	const F = S.C.R.fact, f = S.facts, at = k * F.words;
+	if (f[at + F.root.tag] !== F.root.missing) S.roots[f[at + F.root.value]].node = n;
+	if (f[at + F.defines.tag] !== F.defines.missing) {
+		for (let b = f[at + F.defines.value] + 1; b !== 0; b = S.defines[b - 1]) {
+			const d = S.bindings[b - 1];
 			d.declaration = n;
 			if (n.init !== undefined) d.writeExpr = n.init;
 		}
 	}
-	const written = S.writes_of_at[id];
-	if (written !== 0) for (let i = written; i < written + S.writes_of[written - 1]; i++) S.references[S.writes_of[i]].writeExpr = n;
+	if (f[at + F.writes.tag] !== F.writes.missing) for (let r = f[at + F.writes.value] + 1; r !== 0; r = S.writes[r - 1]) S.references[r - 1].writeExpr = n;
+}
+
+/** The ids linked from `first`, `next` holding each one's next plus one. */
+function chain(next: Uint32Array, first: number): number[] {
+	const out: number[] = [];
+	for (let id = first + 1; id !== 0; id = next[id - 1]) out.push(id - 1);
+	return out;
 }
 
 const LINK = 1, FACTS = 2, ERASE = 4;
@@ -1348,11 +1369,10 @@ export function decode(words: Uint32Array, source: string, engine: Views, flags:
 			host_strings: tree[at.host_strings] as Uint32Array,
 			of_node: null,
 			of_identifier: tree[at.of_identifier] as Uint32Array,
-			root_of: tree[at.root_of] as Uint32Array,
-			declared_by: tree[at.declared_by] as Uint32Array,
-			declared_by_at: tree[at.declared_by_at] as Uint32Array,
-			writes_of: tree[at.writes_of] as Uint32Array,
-			writes_of_at: tree[at.writes_of_at] as Uint32Array,
+			late_before: tree[at.late_before] as Uint32Array,
+			facts: tree[at.facts] as Uint32Array,
+			defines: tree[at.defines] as Uint32Array,
+			writes: tree[at.writes] as Uint32Array,
 			TS: typescript ? (tree[at.ts] as Uint32Array) : null,
 			extras_slots: null,
 			extras: typescript ? (tree[at.extras] as Uint32Array) : NO_WORDS,

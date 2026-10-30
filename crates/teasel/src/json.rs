@@ -621,9 +621,8 @@ fn prepare_tree(ast: &mut Ast, positions: &Positions, options: Options, names: &
 			}
 		}
 	}
-	let (mut rare, mut late) = (std::mem::take(&mut ast.rare), std::mem::take(&mut ast.late));
+	let mut rare = std::mem::take(&mut ast.rare);
 	rare.reset(ast.nodes.len());
-	late.reset(ast.nodes.len());
 	rare.union(&ast.parenthesized);
 	for &owner in ast.attached.owners() {
 		rare.insert(owner);
@@ -631,12 +630,7 @@ fn prepare_tree(ast: &mut Ast, positions: &Positions, options: Options, names: &
 	if options.has(Options::ERASE) {
 		ast.typescript.rare(&mut rare);
 	}
-	if let Some(scopes) = &ast.scopes
-		&& options.has(Options::SCOPES)
-	{
-		scopes.mark(ast, &mut rare, &mut late);
-	}
-	(ast.rare, ast.late) = (rare, late);
+	ast.rare = rare;
 	ast.host_rows.clear();
 	ast.host_keys.clear();
 	ast.host_vals.clear();

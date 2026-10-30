@@ -93,6 +93,26 @@ impl NodeSet {
 		}
 	}
 
+	/// How many of the set's nodes come before each run of 32, into `out`; all of them.
+	pub fn ranks(&self, out: &mut Handed<u32>) -> usize {
+		out.clear();
+		let mut before = 0;
+		for &word in self.0.iter() {
+			for half in [word as u32, (word >> 32) as u32] {
+				out.push(before);
+				before += half.count_ones();
+			}
+		}
+		before as usize
+	}
+
+	/// How many of the set's nodes come before `id`, `ranks` having counted into `before`.
+	pub fn rank(&self, before: &[u32], id: NodeId) -> usize {
+		let index = id.index() as usize;
+		let half = (self.0[index / 64] >> (index & 32)) as u32;
+		(before[index / 32] + (half & ((1 << (index % 32)) - 1)).count_ones()) as usize
+	}
+
 	/// Keeps the bits of the first `nodes` nodes.
 	pub fn truncate(&mut self, nodes: usize) {
 		self.0.truncate(nodes.div_ceil(64));
@@ -325,6 +345,7 @@ pub const RECORDS: &[(&str, usize, &[Field])] = &[
 	("hosts", size_of::<HostRow>(), HostRow::FIELDS),
 	("host_vals", size_of::<HostValue>(), HostValue::FIELDS),
 	("marks", size_of::<Surrogate>(), Surrogate::FIELDS),
+	("facts", size_of::<crate::scopes::Facts>(), crate::scopes::Facts::FIELDS),
 ];
 
 #[derive(Debug, Default)]
@@ -345,10 +366,8 @@ pub struct Ast {
 	/// Nodes erasure leaves out, when the answer erases TypeScript.
 	pub erased: NodeSet,
 	/// Nodes with what few have, for a front end that builds the rest in one piece: parentheses,
-	/// comments, TypeScript's extras, a binding or reference on what is not an identifier.
+	/// comments, TypeScript's extras.
 	pub rare: NodeSet,
-	/// Nodes that declare bindings, are assigned by references or are a root.
-	pub late: NodeSet,
 	/// The UTF-16 offset each line of the text starts at, with `locations`.
 	pub lines: Handed<u32>,
 	/// Where each interned string starts in UTF-16 units, when the text has characters past ASCII.
@@ -438,7 +457,6 @@ impl Ast {
 		self.parenthesized.clear();
 		self.erased.clear();
 		self.rare.clear();
-		self.late.clear();
 		self.comment_rows.clear();
 		self.error_rows.clear();
 		self.lines.clear();
@@ -494,7 +512,6 @@ impl Ast {
 		out.push("parenthesized", self.parenthesized.words());
 		out.push("erased", self.erased.words());
 		out.push("rare", self.rare.words());
-		out.push("late", self.late.words());
 		out.push("comments", &mut self.comment_rows);
 		self.attached.views("attached_slots", "attached", out);
 		out.push("errors", &mut self.error_rows);
