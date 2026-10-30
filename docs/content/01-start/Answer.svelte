@@ -19,7 +19,7 @@
 		<text x="124" y="132">start, end on every node</text>
 	</g>
 	<Box rect={end} tint="amber">end</Box>
-	{#each ['lines', 'comments', 'errors', 'typescript'] as table, row (table)}
+	{#each ['comments', 'errors', 'typescript'] as table, row (table)}
 		<Box rect={column(392, row)} tint="emerald" size={13}>{table}</Box>
 	{/each}
 	{#each ['scopes', 'bindings', 'references', 'roots'] as table, row (table)}
