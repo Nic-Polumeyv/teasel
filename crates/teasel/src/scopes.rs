@@ -1632,7 +1632,6 @@ mod tests {
 		facts_of(&analyzed(crate::parse_at(
 			src,
 			0,
-			None,
 			Entry::Program,
 			Options(if module { Options::MODULE } else { 0 }),
 			"",
@@ -1643,7 +1642,6 @@ mod tests {
 		facts_of(&analyzed(crate::parse_at(
 			src,
 			0,
-			None,
 			Entry::Program,
 			Options(Options::MODULE | Options::TYPESCRIPT),
 			"",
@@ -1753,7 +1751,7 @@ mod tests {
 			facts_in("function f(a) { return a; }", false),
 			"f@9 declares function in script\na@11 declares param in function\na@23 -> @11"
 		);
-		let (mut ast, parsed) = crate::parse_at("(a, b = a)", 0, None, Entry::Params, Options::default(), "");
+		let (mut ast, parsed) = crate::parse_at("(a, b = a)", 0, Entry::Params, Options::default(), "");
 		let (roots, _) = parsed.unwrap();
 		analyze(&mut ast, Entry::Params, roots);
 		assert_eq!(ast.scopes.as_ref().unwrap().bindings.len(), 2);
@@ -1794,7 +1792,7 @@ mod tests {
 		// a class field or static block cannot say `arguments` at all
 		for src in ["class C { x = arguments }", "class C { static { arguments } }"] {
 			assert!(
-				crate::parse_at(src, 0, None, Entry::Program, Options::default(), "")
+				crate::parse_at(src, 0, Entry::Program, Options::default(), "")
 					.1
 					.is_err(),
 				"{src}"
@@ -1853,7 +1851,6 @@ mod tests {
 			let ast = analyzed(crate::parse_at(
 				src,
 				0,
-				None,
 				Entry::Program,
 				Options(Options::MODULE | Options::TYPESCRIPT),
 				"",
@@ -1870,7 +1867,6 @@ mod tests {
 		let ast = analyzed(crate::parse_at(
 			src,
 			0,
-			None,
 			Entry::Program,
 			Options(Options::MODULE | Options::TYPESCRIPT),
 			"",
@@ -1930,7 +1926,6 @@ mod tests {
 		let ast = analyzed(crate::parse_at(
 			src,
 			0,
-			None,
 			Entry::Program,
 			Options(Options::MODULE | Options::TYPESCRIPT),
 			"",
@@ -1968,14 +1963,7 @@ mod tests {
 	#[test]
 	fn declarations_writes_and_top_level_await() {
 		let src = "let [a = 1, b] = c; a = b + 1; a++; for (b of c) {} function f(p) { g = p; } await c;";
-		let ast = analyzed(crate::parse_at(
-			src,
-			0,
-			None,
-			Entry::Program,
-			Options(Options::MODULE),
-			"",
-		));
+		let ast = analyzed(crate::parse_at(src, 0, Entry::Program, Options(Options::MODULE), ""));
 		let scopes = ast.scopes.as_ref().unwrap();
 		let start = |id: Option<NodeId>| id.map(|id| ast.node(id).start);
 		let declarations: Vec<_> = scopes
@@ -2018,7 +2006,6 @@ mod tests {
 		let ast = analyzed(crate::parse_at(
 			"var x; var x = 1; function x() {}",
 			0,
-			None,
 			Entry::Program,
 			Options::default(),
 			"",
@@ -2051,7 +2038,6 @@ mod tests {
 		let ast = analyzed(crate::parse_at(
 			"import { a } from 'a'; export { a as b }; function f() { return () => a; }",
 			0,
-			None,
 			Entry::Program,
 			Options(Options::MODULE),
 			"",
@@ -2076,14 +2062,8 @@ mod tests {
 		let mut pool = None;
 		let mut room = Vec::new();
 		for round in 0..12 {
-			let (mut ast, parsed) = crate::parse_at(
-				&document(5 + round % 2),
-				0,
-				None,
-				Entry::Program,
-				Options::default(),
-				"",
-			);
+			let (mut ast, parsed) =
+				crate::parse_at(&document(5 + round % 2), 0, Entry::Program, Options::default(), "");
 			let (roots, _) = parsed.unwrap();
 			ast.scopes = pool.take();
 			analyze(&mut ast, Entry::Program, roots);

@@ -6,7 +6,7 @@ This example reads a Svelte component: a `<script>` block, then a template with 
 
 At the end, every name the template uses is matched to the declaration it refers to, in the script or in an `each` block. That match is what a compiler, a linter or a rename tool for the format is built on.
 
-This page uses three things that [Embedded JavaScript](/embedded-javascript) explains: parsing at an offset, [pieces](/embedded-javascript#pieces), and [`until`](/embedded-javascript#until). It parses twelve times, and each parse copies the whole file into the parser: [Parsing with a grammar](/parsing-with-a-grammar) reads the same component in one parse.
+This page uses three things that [Embedded JavaScript](/embedded-javascript) explains: parsing at an offset, [pieces](/embedded-javascript#pieces), and [`until`](/embedded-javascript#until). [Parsing with a grammar](/parsing-with-a-grammar) reads the same component in one parse.
 
 The component:
 
@@ -50,12 +50,12 @@ scopes: true :: Makes each answer list the names it declares, `bindings`, and th
 
 ## 2. Read the script block
 
-Find where the script's text starts and ends, then parse that range as a program.
+Find where the script's text starts and ends, then read the program from its start, in the text cut at its end.
 
 ```js read-component.js
 const open = text.indexOf('<script>') + '<script>'.length;
 const close = text.indexOf('</script>');
-const script = parseAt(text, js.program, [open, close], options);
+const script = parseAt(text.slice(0, close), js.program, open, options);
 
 const topLevel = script.bindings.filter(
 	(binding) => binding.scope === scopeOf(script.node),
@@ -63,7 +63,7 @@ const topLevel = script.bindings.filter(
 ```
 ```notes
 js.program :: The piece to read. `js.program` reads statements, as a file would have them. The other pieces are `js.expression`, `js.statement`, `js.pattern`, `js.params` and `js.typeParameters`: see [Pieces](/embedded-javascript#pieces).
-[open, close] :: A pair of offsets reads only the text between them. A single number, used below, starts there and reads as far as the piece goes.
+text.slice(0, close) :: The text cut at the script's end, so the program stops there. Positions depend only on the text before them, so they stay offsets into the file.
 script.bindings :: Every declaration in the script, one entry each: `{ name, kind, scope, node, declaration }`. [What a binding knows](/reference/parser#binding).
 scopeOf(script.node) :: `scopeOf` gives the scope a node opens. `script.node` is the `Program`, which opens the script's outermost scope, so a binding whose `scope` is that one was declared at the top level. See [referenceOf, scopeOf, parentOf](/scopes#referenceof-scopeof-parentof).
 ```

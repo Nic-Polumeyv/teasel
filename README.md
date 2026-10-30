@@ -15,16 +15,16 @@ npm install @teasel/parser
 ```js
 import { parse, parseAt, js } from '@teasel/parser';
 
-const { node } = parse(text, js, { typescript: true, scopes: true });   // the whole text, as an ESTree Program
+const { node } = parse(text, { typescript: true, scopes: true });      // the whole text, as an ESTree Program
 const { node: expression } = parseAt(text, js.expression, 7);           // one expression, at offset 7
 ```
 
-The tree is plain ESTree. The options add to the answer: [what parse returns](https://teasel.dev/what-parse-returns) lists them. The scopes, bindings and references hang beside the tree, reached from a node: [scopes](https://teasel.dev/scopes). A template language hands over its whole syntax as a grammar and gets the whole document back as one tree, in one parse: [parsing with a grammar](https://teasel.dev/parsing-with-a-grammar). `parseAt` reads one piece of a text instead, stopping at the host's own tokens: [embedded JavaScript](https://teasel.dev/embedded-javascript). Every call copies the whole text into the parser, so a file read piece by piece is copied once per piece. Everything else is at [teasel.dev](https://teasel.dev).
+The tree is plain ESTree. The options add to the answer: [what parse returns](https://teasel.dev/what-parse-returns) lists them. The scopes, bindings and references hang beside the tree, reached from a node: [scopes](https://teasel.dev/scopes). A template language hands over its whole syntax as a grammar and gets the whole document back as one tree, in one parse: [parsing with a grammar](https://teasel.dev/parsing-with-a-grammar). `parseAt` reads one piece of a text instead, stopping at the host's own tokens: [embedded JavaScript](https://teasel.dev/embedded-javascript). Everything else is at [teasel.dev](https://teasel.dev).
 
 ## Rust and the command line
 
 ```rust
-let (ast, parsed) = teasel::parse_at(source, 0, None, Entry::Program, Options::default(), "");
+let (ast, parsed) = teasel::parse_at(source, 0, Entry::Program, Options::default(), "");
 ```
 
 ```

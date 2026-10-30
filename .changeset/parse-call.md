@@ -2,4 +2,4 @@
 '@teasel/parser': patch
 ---
 
-`parse(text, language, options)` and `parseAt(text, piece, at, options)` replace `Source`
+`parse` and `parseAt` replace `Source`; a bad offset throws a `RangeError`

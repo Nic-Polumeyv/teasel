@@ -20,12 +20,12 @@ The program is a text adventure: the map, the player, the game. Click a module t
 
 ```js link-modules.js
 import { readFileSync } from 'node:fs';
-import { parse, js, referenceOf, parentOf, scopeOf } from '@teasel/parser';
+import { parse, referenceOf, parentOf, scopeOf } from '@teasel/parser';
 
 const modules = new Map();
 for (const name of ['world.js', 'player.js', 'game.js']) {
 	const text = readFileSync(`adventure/${name}`, 'utf8');
-	modules.set(name, { name, text, ...parse(text, js, { sourceType: 'module', scopes: true }) });
+	modules.set(name, { name, text, ...parse(text, { sourceType: 'module', scopes: true }) });
 }
 
 const lineOf = (module, node) =>

@@ -1,6 +1,6 @@
 import type { Comment, Expression, Node, Pattern, Program, Statement } from 'estree';
 import { decode, PARENT, REFERENCE, SCOPE } from './decode.ts';
-import { CODES, LANGUAGE, PIECE, type answers, type HostNode, type Language, type Parsed, type Recovered, type Reference, type Scope } from './types.ts';
+import { LANGUAGE, PIECE, type answers, type HostNode, type Language, type Parsed, type Recovered, type Reference, type Scope } from './types.ts';
 import { flags, type Options } from './options.ts';
 import { engine } from '#engine';
 import { children, extras, stylesheet } from './children.ts';
@@ -35,7 +35,7 @@ export interface Piece<T> {
 	 * `,` ends an expression before a sequence would, and `/>` is never a division. A `then`
 	 * after `.` is a property name. A TypeScript `as` is the host's unless another `as` follows
 	 * the assertion, so `xs as T[] as item` ends after the type. A program reads to the end of
-	 * its range and takes no tokens.
+	 * the text and takes no tokens.
 	 */
 	until(...tokens: string[]): Piece<T>;
 }
@@ -45,7 +45,7 @@ const piece = <T>(entry: number, stop = ''): Piece<T> =>
 	Object.freeze({
 		[PIECE]: { entry, stop },
 		until(...tokens: string[]) {
-			if (entry === 0) throw new TypeError('a program reads to the end of its range');
+			if (entry === 0) throw new TypeError('a program reads to the end of the text');
 			if (tokens.length === 0 || !tokens.every((token) => typeof token === 'string' && token !== '' && !/\s/.test(token))) {
 				throw new TypeError('until takes words and punctuators');
 			}
@@ -55,7 +55,7 @@ const piece = <T>(entry: number, stop = ''): Piece<T> =>
 
 /** JavaScript: a parse of it reads the whole text as a program. Its members are pieces for `parseAt`. */
 export const js: Language<Program> & {
-	/** A program inside the range `parseAt` is given, or from its offset to the end of the text. */
+	/** A program from the offset `parseAt` is given to the end of the text. */
 	readonly program: Piece<Program>;
 	readonly expression: Piece<Expression>;
 	/** An assignment target: an identifier or a destructuring pattern. */
@@ -90,46 +90,41 @@ export const css: Language<HostNode> = Object.freeze({ [LANGUAGE]: { entry: 6 },
  * U+FFFD, the way `TextEncoder` encodes it, so string values, template cooked and raw text and
  * regex patterns carry U+FFFD there while spans and `loc` are right.
  */
-export function parse<T = Program>(text: string, language?: Language<T>, options?: Options): Parsed<T>;
-export function parse(text: string, language: Language<unknown> = js, options?: Options) {
+export function parse<T = Program>(text: string, options?: Options, language: Language<T> = js as Language<never>): Parsed<T> {
 	const read = language?.[LANGUAGE];
 	if (read === undefined) throw new TypeError('parse takes `js`, `css`, or a grammar made by this copy of @teasel/parser/grammar; a piece goes to parseAt');
 	if (typeof text !== 'string') throw new TypeError('parse takes a string');
 	const on = flags(options);
-	return answer(engine.parse(text, on, read.entry, read.plan), text, on, 0, false);
+	return answer(engine.parse(text, on, read.entry, 0, '', read.plan), text, on, 0, false);
 }
 
 /**
- * Part of `text`: `piece` read at `at`, a UTF-16 offset, or in `[start, end]` as if the text ended
- * at `end`, with positions of the whole text. Every call copies the whole text into the parser,
+ * `piece` read from `text` at `at`, a UTF-16 offset, with positions of the whole text; a piece
+ * inside a range is read from the text cut at the range's end, as
+ * `parseAt(text.slice(0, end), js.program, start)`. Every call copies the text into the parser,
  * however small the piece, so reading one file piece by piece costs a copy of the file per piece:
  * the parser answers a text, it does not hold a conversation about one. For a document of a host
  * language, describe it as a grammar and `parse` it once.
  */
-export function parseAt<P extends Piece<unknown>>(text: string, piece: P, at: number | [start: number, end: number], options?: Options): Parsed<P extends Piece<infer T> ? T : never> {
+export function parseAt<P extends Piece<unknown>>(text: string, piece: P, at: number, options?: Options): Parsed<P extends Piece<infer T> ? T : never> {
 	const read = piece?.[PIECE];
 	if (read === undefined) throw new TypeError('parseAt takes a piece of `js`, such as js.program or js.expression');
 	if (typeof text !== 'string') throw new TypeError('parseAt takes a string');
-	const [offset, end] = typeof at === 'number' ? [at, undefined] : Array.isArray(at) && at.length === 2 && typeof at[0] === 'number' && typeof at[1] === 'number' ? at : [];
-	if (offset === undefined) throw new TypeError('at is an offset or [start, end]');
+	if (!Number.isInteger(at) || at < 0 || at > text.length || (at > 0 && text.codePointAt(at - 1)! > 0xffff)) throw new RangeError(`${at} is no offset between characters of the text`);
 	const on = flags(options);
-	return answer(engine.parseAt(text, on, read.entry, offset, end, read.stop), text, on, offset, read.entry === 3);
+	return answer(engine.parse(text, on, read.entry, at, read.stop, undefined), text, on, at, read.entry === 3);
 }
 
-function answer<T>(words: Uint32Array | string, text: string, on: number, offset: number, listed: boolean): Parsed<T> {
+function answer<T>(words: Uint32Array, text: string, on: number, offset: number, listed: boolean): Parsed<T> {
 	let error: Omit<Recovered, 'line' | 'column'>;
-	// an offset the engine refused
-	if (typeof words === 'string') error = JSON.parse(words, (key, value) => (key === 'code' ? CODES[value] : value)).error;
-	else {
-		try {
-			const parsed = decode(words, text, engine, on, listed) as Parsed<T>;
-			if (parsed.node !== null) return parsed;
-			error = parsed.errors![0];
-		} catch (thrown) {
-			// a tree deeper than the caller's stack has room for overflowed the decoder
-			if (!(thrown instanceof RangeError)) throw thrown;
-			error = { code: 'nesting_depth', args: [], pos: offset, end: offset };
-		}
+	try {
+		const parsed = decode(words, text, engine, on, listed) as Parsed<T>;
+		if (parsed.node !== null) return parsed;
+		error = parsed.errors![0];
+	} catch (thrown) {
+		// a tree deeper than the caller's stack has room for overflowed the decoder
+		if (!(thrown instanceof RangeError)) throw thrown;
+		error = { code: 'nesting_depth', args: [], pos: offset, end: offset };
 	}
 	throw Object.assign(new SyntaxError(error.args.reduce((text: string, arg) => `${text} '${arg}'`, error.code)), error);
 }

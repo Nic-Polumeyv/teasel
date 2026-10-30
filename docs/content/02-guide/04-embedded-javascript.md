@@ -22,7 +22,7 @@ The parse started at offset 3, read an expression instead of a program, and stop
 
 ## Pieces
 
-The second argument of `parseAt` is the piece to read, and the third is where: an offset, or a `[start, end]` range.
+The second argument of `parseAt` is the piece to read, and the third is the offset it starts at. A piece inside a range reads the text cut at the range's end, since a position depends only on the text before it.
 
 ```text
 parseAt(text, js.expression, 7)        the expression starting at 7
@@ -30,7 +30,7 @@ parseAt(text, js.statement, 7)         one statement
 parseAt(text, js.pattern, 7)           a name or a destructuring pattern
 parseAt(text, js.params, 7)            the patterns inside (a, b = 1)
 parseAt(text, js.typeParameters, 7)    a <T extends U>, with typescript on
-parseAt(text, js.program, [12, 40])    the program between 12 and 40
+parseAt(text.slice(0, 40), js.program, 12)    the program between 12 and 40
 ```
 
 Positions in every answer are offsets into the whole text, so nothing has to be added to them.

@@ -20,8 +20,6 @@ pub struct Request {
 	pub entry: Entry,
 	/// Byte offset into the source; the JSON reports UTF-16 offsets.
 	pub offset: u32,
-	/// Where the source is cut, as a byte offset, for a program inside a larger source.
-	pub end: Option<u32>,
 	pub options: Options,
 }
 
@@ -268,7 +266,7 @@ fn children_table(w: &mut Json, table: Vec<(&'static str, Vec<&'static str>)>) {
 /// One entry at a byte offset, as JSON.
 pub fn parse(source: &str, request: &Request) -> String {
 	match check(source, request) {
-		Ok(()) => to_json(source, &Positions::of(source, request.options), request, "", None),
+		Ok(()) => to_json(source, request, "", None),
 		Err(error) => error,
 	}
 }
@@ -276,79 +274,35 @@ pub fn parse(source: &str, request: &Request) -> String {
 /// A whole document of a host language by its grammar, as JSON; see `host::parse_document`.
 pub fn parse_document(source: &str, grammar: &str, options: Options) -> String {
 	match self::grammar(grammar) {
-		Ok(grammar) => {
-			let options = if host::typescript(source, &grammar) {
-				options.with(Options::TYPESCRIPT)
-			} else {
-				options
-			};
-			let request = Request {
-				options,
-				..Request::default()
-			};
-			to_json(
-				source,
-				&Positions::of(source, request.options),
-				&request,
-				"",
-				Some(&grammar),
-			)
-		}
+		Ok(grammar) => to_json(source, &Request::from_flags(options.0), "", Some(&grammar)),
 		Err(message) => error_json(&message, 0),
 	}
 }
 
-/// The whole source as `entry` reads it, a program or a stylesheet; with a grammar, as a document
-/// of its language, in TypeScript when the grammar says so of a script tag. Read in place: its
-/// words at `words`.
-pub fn whole(source: &str, options: Options, entry: Entry, host: Option<&Grammar>) {
-	let request = Request {
-		entry,
-		offset: 0,
-		end: None,
-		options: if host.is_some_and(|grammar| host::typescript(source, grammar)) {
-			options.with(Options::TYPESCRIPT)
-		} else {
-			options
-		},
-	};
-	to_words(source, &Positions::of(source, options), &request, "", host);
-}
-
-/// One entry at a UTF-16 offset, as JavaScript counts, the source cut at `end`. Read in place:
-/// its words at `words`; an offset the source has no place for answers as JSON.
-pub fn at(
+/// One entry at a UTF-16 offset, as JavaScript counts; with a grammar, the whole source as a
+/// document of its language, in TypeScript when the grammar says so of a script tag. Read in
+/// place: its words at `words`; an offset the source has no place for is refused.
+pub fn in_place(
 	source: &str,
 	options: Options,
 	entry: Entry,
 	start: f64,
-	end: Option<f64>,
 	stop: &str,
+	host: Option<&Grammar>,
 ) -> Result<(), String> {
 	let positions = Positions::of(source, options);
-	let byte_offset = |utf16: f64| match positions.byte_offset(utf16) {
-		Ok(offset) if source.is_char_boundary(offset as usize) => Ok(offset),
-		Ok(_) => Err(error_json(&format!("offset {utf16} is inside a surrogate pair"), 0)),
-		Err(message) => Err(error_json(&message, 0)),
-	};
-	let offset = byte_offset(start)?;
-	let end = match end {
-		Some(utf16) => {
-			let end = byte_offset(utf16)?;
-			if end < offset {
-				return Err(error_json(&format!("offset {utf16} is before {start}"), 0));
-			}
-			Some(end)
-		}
-		None => None,
-	};
-	let request = Request {
-		entry,
-		offset,
-		end,
-		options,
-	};
-	to_words(source, &positions, &request, stop, None);
+	let offset = positions.byte_offset(start)?;
+	if !source.is_char_boundary(offset as usize) {
+		return Err(format!("offset {start} is inside a surrogate pair"));
+	}
+	answer_to(
+		source,
+		&positions,
+		&Request { entry, offset, options },
+		stop,
+		host,
+		None,
+	);
 	Ok(())
 }
 
@@ -496,14 +450,6 @@ fn check(source: &str, request: &Request) -> Result<(), String> {
 			request.offset,
 		));
 	}
-	if let Some(end) = request.end {
-		if !source.is_char_boundary(end as usize) {
-			return Err(error_json(&format!("offset {end} is not a character boundary"), end));
-		}
-		if end < request.offset {
-			return Err(error_json(&format!("offset {end} is before {}", request.offset), end));
-		}
-	}
 	Ok(())
 }
 
@@ -513,22 +459,17 @@ enum Out<'a> {
 	Words(&'a mut Words),
 }
 
-fn to_json(source: &str, positions: &Positions, request: &Request, stop: &str, host: Option<&Grammar>) -> String {
-	SESSION.with(|session| {
-		let session = &mut *session.borrow_mut();
-		session.typescript = request.options.typescript();
-		let mut json = String::new();
-		run(
-			source,
-			positions,
-			request,
-			stop,
-			host,
-			&mut session.pool,
-			Out::Json(&mut json),
-		);
-		json
-	})
+fn to_json(source: &str, request: &Request, stop: &str, host: Option<&Grammar>) -> String {
+	let mut json = String::new();
+	answer_to(
+		source,
+		&Positions::of(source, request.options),
+		request,
+		stop,
+		host,
+		Some(&mut json),
+	);
+	json
 }
 
 /// The answer's word, what the caller could not know: the parse failed, the tree is TypeScript's
@@ -536,20 +477,28 @@ fn to_json(source: &str, positions: &Positions, request: &Request, stop: &str, h
 const FAILED: u32 = 1;
 const TYPESCRIPT: u32 = 2;
 
-/// The answer read in place, its words at `words`.
-fn to_words(source: &str, positions: &Positions, request: &Request, stop: &str, host: Option<&Grammar>) {
+/// Runs a request with the session's buffers and answers it as JSON into `json`, or read in place
+/// with its words at `words`. A document is TypeScript when its grammar says so of a script tag.
+fn answer_to(
+	source: &str,
+	positions: &Positions,
+	request: &Request,
+	stop: &str,
+	host: Option<&Grammar>,
+	json: Option<&mut String>,
+) {
+	let mut request = *request;
+	if host.is_some_and(|grammar| host::typescript(source, grammar)) {
+		request.options = request.options.with(Options::TYPESCRIPT);
+	}
 	SESSION.with(|session| {
 		let session = &mut *session.borrow_mut();
 		session.typescript = request.options.typescript();
-		run(
-			source,
-			positions,
-			request,
-			stop,
-			host,
-			&mut session.pool,
-			Out::Words(&mut session.words),
-		);
+		let out = match json {
+			Some(json) => Out::Json(json),
+			None => Out::Words(&mut session.words),
+		};
+		run(source, positions, &request, stop, host, &mut session.pool, out);
 	})
 }
 
@@ -569,21 +518,14 @@ fn run(
 		ast.clear();
 		ast
 	});
-	let (mut ast, parsed) = match host {
-		Some(grammar) => {
-			let (mut ast, root) = host::parse_document(source, grammar, request.options, reused);
-			let parsed = root.map(|root| (ast.add_list(&[Some(root)]), source.len() as u32));
-			(ast, parsed)
-		}
-		None => parse_at(
-			source,
-			request.offset,
-			request.end,
-			request.entry,
-			request.options,
-			stop,
-			reused,
-		),
+	let whole = |(mut ast, root): (Box<Ast>, crate::parser::Result<crate::ast::NodeId>)| {
+		let parsed = root.map(|root| (ast.add_list(&[Some(root)]), source.len() as u32));
+		(ast, parsed)
+	};
+	let (mut ast, parsed) = match (host, request.entry) {
+		(Some(grammar), _) => whole(host::parse_document(source, grammar, options, reused)),
+		(None, Entry::StyleSheet) => whole(host::parse_stylesheet(source, options, reused)),
+		(None, entry) => parse_at(source, request.offset, entry, options, stop, reused),
 	};
 	let (mut roots, mut end) = match parsed {
 		Ok((roots, end)) => (Some(roots), end),

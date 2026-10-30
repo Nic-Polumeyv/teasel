@@ -101,12 +101,6 @@ fn number(env: Env, value: Value) -> Result<f64> {
 	})
 }
 
-// anything but a number is absent, read straight: asking V8 what the value is first costs as much as the read
-fn optional(env: Env, value: Value) -> Option<f64> {
-	let mut result = 0.0;
-	(unsafe { node_api::napi_get_value_double(env, value, &mut result) } == OK).then_some(result)
-}
-
 fn text(env: Env, text: &str) -> Result<Value> {
 	out(null_mut(), "a string", |r| unsafe {
 		node_api::napi_create_string_utf8(env, text.as_ptr().cast(), text.len(), r)
@@ -166,34 +160,14 @@ fn grammar_of(env: Env, value: Value) -> Option<&'static Grammar> {
 
 unsafe extern "C" fn parse(env: Env, info: CallbackInfo) -> Value {
 	guard(env, || {
-		let [source, flags, entry, plan] = args::<4>(env, info)?;
+		let [source, flags, entry, offset, stop, plan] = args::<6>(env, info)?;
 		let (source, options) = (source_text(env, source)?, Options(number(env, flags)? as u32));
-		let (entry, grammar) = (json::entry(number(env, entry)?)?, grammar_of(env, plan));
+		let (entry, offset) = (json::entry(number(env, entry)?)?, number(env, offset)?);
+		let (stop, grammar) = (string(env, stop)?, grammar_of(env, plan));
 		in_env(env, || {
-			json::whole(source, options, entry, grammar);
+			json::in_place(source, options, entry, offset, &stop, grammar)?;
 			view(env)
 		})
-	})
-}
-
-unsafe extern "C" fn parse_at(env: Env, info: CallbackInfo) -> Value {
-	guard(env, || {
-		let [source, flags, entry, offset, end, stop] = args::<6>(env, info)?;
-		let (source, options) = (source_text(env, source)?, Options(number(env, flags)? as u32));
-		let (entry, offset, end, stop) = (
-			json::entry(number(env, entry)?)?,
-			number(env, offset)?,
-			optional(env, end),
-			string(env, stop)?,
-		);
-		answer(env, || json::at(source, options, entry, offset, end, &stop))
-	})
-}
-
-fn answer(env: Env, parse: impl FnOnce() -> Result<()>) -> Result<Value> {
-	in_env(env, || match parse() {
-		Ok(()) => view(env),
-		Err(json) => text(env, &json),
 	})
 }
 
@@ -445,7 +419,6 @@ pub unsafe extern "C" fn napi_register_module_v1(env: Env, exports: Value) -> Va
 		)?;
 		for (name, callback) in [
 			(c"parse", parse as unsafe extern "C" fn(Env, CallbackInfo) -> Value),
-			(c"parseAt", parse_at),
 			(c"plan", plan),
 			(c"children", children),
 			(c"tree", tree),

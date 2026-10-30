@@ -21,31 +21,23 @@ const body = (text: string) => {
 	return (source.parse() as unknown as { node: { body: Declaration[] } }).node.body;
 };
 
-// the slot that types a piece's answer is no part of the surface; a function's overloads are one item
-const item = (text: string, statements: Declaration[]) => {
-	const doc = statements[0].leadingComments?.at(-1);
-	const code = statements.map((statement) => text.slice(statement.start, statement.end)).join('\n');
-	return `## ${name(statements[0])}\n\n${doc ? prose(doc.value) + '\n\n' : ''}\`\`\`ts\n${code.replace(/\n[^\n]*\[(?:answers|LANGUAGE|PIECE)\][^\n]*/g, '')}\n\`\`\``;
+// the slot that types a piece's answer is no part of the surface
+const item = (text: string, statement: Declaration) => {
+	const doc = statement.leadingComments?.at(-1);
+	return `## ${name(statement)}\n\n${doc ? prose(doc.value) + '\n\n' : ''}\`\`\`ts\n${text.slice(statement.start, statement.end).replace(/\n[^\n]*\[(?:answers|LANGUAGE|PIECE)\][^\n]*/g, '')}\n\`\`\``;
 };
-const grouped = (statements: Declaration[]) =>
-	statements.reduce<Declaration[][]>((groups, statement) => {
-		const last = groups.at(-1);
-		if (last !== undefined && name(last[0]) === name(statement)) last.push(statement);
-		else groups.push([statement]);
-		return groups;
-	}, []);
 
 // the entry declares the surface, and names what it takes from options.ts and types.ts
 function parser() {
 	const surface = body(entry);
 	const named = new Set(surface.flatMap((statement) => (statement.type === 'ExportNamedDeclaration' && statement.declaration == null ? statement.specifiers!.map((specifier) => specifier.exported.name) : [])));
-	const taken = (text: string) => grouped(body(text).filter((statement) => exported(statement) && named.has(name(statement)))).map((statements) => item(text, statements));
-	const markdown = [...taken(options), ...grouped(surface.filter(exported)).map((statements) => item(entry, statements)), ...taken(types)].join('\n\n');
+	const taken = (text: string) => body(text).filter((statement) => exported(statement) && named.has(name(statement))).map((statement) => item(text, statement));
+	const markdown = [...taken(options), ...surface.filter(exported).map((statement) => item(entry, statement)), ...taken(types)].join('\n\n');
 	return { meta: { href: '/reference/parser', title: '@teasel/parser', section: 'Reference', path: 'npm/src/index.ts' }, markdown: `Every export of the package, as its declarations say.\n\n${markdown}` };
 }
 
 function builders() {
-	const markdown = grouped(body(grammar).filter(exported)).map((statements) => item(grammar, statements)).join('\n\n');
+	const markdown = body(grammar).filter(exported).map((statement) => item(grammar, statement)).join('\n\n');
 	return { meta: { href: '/reference/grammar', title: '@teasel/parser/grammar', section: 'Reference', path: 'npm/src/grammar.ts' }, markdown: `Every export of the grammar builders, as their declarations say. A grammar crosses to the engine as \`JSON.stringify({ name, definition })\`, which is also what the Rust crate's \`parse_document\` and the command line's \`--host\` read.\n\n${markdown}` };
 }
 

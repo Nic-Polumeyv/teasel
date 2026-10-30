@@ -49,73 +49,40 @@ pub extern "C" fn plan_free(handle: u32) {
 	drop(unsafe { Box::from_raw(handle as *mut Rc<Grammar>) });
 }
 
-// 0: words at `words_ptr`; 1: an error as JSON at `text_ptr`
-fn answer(result: Result<(), String>) -> u32 {
-	match result {
-		Ok(()) => 0,
-		Err(error) => {
-			text(error);
-			1
-		}
-	}
-}
-
-/// # Safety
-/// `ptr` is `capacity` bytes from `alloc`, `len` of them the source, taken over here. `flags` is
-/// the option word; `plan` is a handle from `plan_new`, or 0.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn parse(ptr: *mut u8, len: u32, capacity: u32, flags: u32, entry: f64, plan: u32) -> u32 {
-	let source = unsafe { Vec::from_raw_parts(ptr, len as usize, capacity as usize) };
-	let grammar = (plan != 0).then(|| unsafe { &**(plan as *const Rc<Grammar>) });
-	let Ok(source) = std::str::from_utf8(&source) else {
-		return refused("the source is not UTF-8".into());
-	};
-	match teasel::json::entry(entry) {
-		Ok(entry) => {
-			teasel::json::whole(source, Options(flags), entry, grammar);
-			0
-		}
-		Err(message) => refused(message),
-	}
-}
-
 /// # Safety
 /// `ptr` is `capacity` bytes from `alloc`, `len` of them the source, and `stop_ptr` is
 /// `stop_capacity` bytes from `alloc`, `stop_len` of them the stop tokens; both are taken over
-/// here. `flags` is the option word.
+/// here. `flags` is the option word; `plan` is a handle from `plan_new`, or 0. 0: words at
+/// `words_ptr`; 1: what is wrong with the call at `text_ptr`, for the front end to throw.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn parse_at(
+pub unsafe extern "C" fn parse(
 	ptr: *mut u8,
 	len: u32,
 	capacity: u32,
 	flags: u32,
 	entry: f64,
 	offset: f64,
-	end: f64,
-	has_end: u32,
 	stop_ptr: *mut u8,
 	stop_len: u32,
 	stop_capacity: u32,
+	plan: u32,
 ) -> u32 {
 	let source = unsafe { Vec::from_raw_parts(ptr, len as usize, capacity as usize) };
 	let stop = unsafe { Vec::from_raw_parts(stop_ptr, stop_len as usize, stop_capacity as usize) };
-	let end = (has_end == 1).then_some(end);
-	let Ok(source) = std::str::from_utf8(&source) else {
-		return refused("the source is not UTF-8".into());
-	};
-	let Ok(stop) = std::str::from_utf8(&stop) else {
-		return refused("the stop tokens are not UTF-8".into());
-	};
-	match teasel::json::entry(entry) {
-		Ok(entry) => answer(teasel::json::at(source, Options(flags), entry, offset, end, stop)),
-		Err(message) => refused(message),
+	let grammar = (plan != 0).then(|| unsafe { &**(plan as *const Rc<Grammar>) });
+	let source = std::str::from_utf8(&source).map_err(|_| "the source is not UTF-8".to_string());
+	let stop = std::str::from_utf8(&stop).map_err(|_| "the stop tokens are not UTF-8".to_string());
+	let parsed = source.and_then(|source| {
+		let entry = teasel::json::entry(entry)?;
+		teasel::json::in_place(source, Options(flags), entry, offset, stop?, grammar)
+	});
+	match parsed {
+		Ok(()) => 0,
+		Err(message) => {
+			text(message);
+			1
+		}
 	}
-}
-
-// 2: what is wrong with the call itself at `text_ptr`, for the front end to throw
-fn refused(message: String) -> u32 {
-	text(message);
-	2
 }
 
 #[unsafe(no_mangle)]

@@ -5,9 +5,9 @@ title: Scopes
 Parse with `scopes` on, and every identifier in the tree can tell you what it refers to.
 
 ```js scopes.js
-import { parse, js, referenceOf } from '@teasel/parser';
+import { parse, referenceOf } from '@teasel/parser';
 
-const { node } = parse('let x = 1; x = 2', js, { scopes: true });
+const { node } = parse('let x = 1; x = 2', { scopes: true });
 const assignment = node.body[1].expression;
 
 referenceOf(assignment.left).binding;
@@ -27,10 +27,10 @@ Three functions take a node from the answer and return what the parser knows abo
 All three, on a function with a parameter:
 
 ```js scopes.js
-import { parse, js, scopeOf, referenceOf, parentOf } from '@teasel/parser';
+import { parse, scopeOf, referenceOf, parentOf } from '@teasel/parser';
 
 const text = 'let x = 1; function f(y) { x = y; }';
-const { node } = parse(text, js, { scopes: true });
+const { node } = parse(text, { scopes: true });
 const [declaration, fn] = node.body;
 const assignment = fn.body.body[0].expression;
 

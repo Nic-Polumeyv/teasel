@@ -67,20 +67,20 @@ pub(crate) fn one(parsed: (Ast, Result<(List, u32), SyntaxError>)) -> Result<(As
 }
 
 fn at(entry: Entry, src: &str, offset: u32, options: Options, stop: &str) -> Result<(Ast, NodeId, u32), Failed> {
-	one(crate::parse_at(src, offset, None, entry, options, stop))
+	one(crate::parse_at(src, offset, entry, options, stop))
 }
 
 fn params(src: &str, offset: u32, options: Options, stop: &str) -> Result<(Ast, Vec<NodeId>, u32), Failed> {
-	roots(crate::parse_at(src, offset, None, Entry::Params, options, stop))
+	roots(crate::parse_at(src, offset, Entry::Params, options, stop))
 }
 
 fn program(src: &str, options: Options) -> Result<Ast, Failed> {
-	settled(crate::parse_at(src, 0, None, Entry::Program, options, "")).map(|(ast, _, _)| ast)
+	settled(crate::parse_at(src, 0, Entry::Program, options, "")).map(|(ast, _, _)| ast)
 }
 
 /// A whole source as a program, with the list holding its root.
 fn whole(src: &str, options: Options) -> (Ast, List) {
-	let (ast, roots, _) = settled(crate::parse_at(src, 0, None, Entry::Program, options, "")).unwrap();
+	let (ast, roots, _) = settled(crate::parse_at(src, 0, Entry::Program, options, "")).unwrap();
 	(ast, roots)
 }
 
@@ -195,19 +195,19 @@ fn an_entry_is_one_of_its_numbers() {
 #[test]
 fn the_session_writes_the_same_words_again() {
 	use crate::Options;
-	use crate::json::{at, whole};
+	use crate::json::in_place;
 	let options = Options(Options::MODULE | Options::COMMENTS | Options::LOCATIONS | Options::SCOPES);
 	let source = "let x = /* a */ 1; function f(y) { return x + y; } // b";
 	let words = || crate::json::words(|words| words.to_vec());
 	// a failed parse answers words too, flagged as such; its first one settles the error buffer
-	at("a +", options, Entry::Expression, 0.0, None, "").unwrap();
+	in_place("a +", options, Entry::Expression, 0.0, "", None).unwrap();
 	let failed = words();
 	assert_eq!((failed[1], failed[2 + failed[1] as usize] & 1), (0, 1));
-	whole(source, options, Entry::Program, None);
+	in_place(source, options, Entry::Program, 0.0, "", None).unwrap();
 	let first = words();
-	let _ = at("a + b", options, Entry::Expression, 0.0, None, "");
-	let _ = at("a +", options, Entry::Expression, 0.0, None, "");
-	whole(source, options, Entry::Program, None);
+	let _ = in_place("a + b", options, Entry::Expression, 0.0, "", None);
+	let _ = in_place("a +", options, Entry::Expression, 0.0, "", None);
+	in_place(source, options, Entry::Program, 0.0, "", None).unwrap();
 	let again = words();
 	// but for the first saying its buffers are new to the front end
 	let what = 2 + first[1] as usize;
@@ -323,7 +323,7 @@ impl Api {
 		stop: &str,
 	) -> Result<(Ast, Vec<NodeId>, u32), Failed> {
 		let options = if self.typescript { typescript(options) } else { options };
-		roots(crate::parse_at(src, offset, None, entry, options, stop))
+		roots(crate::parse_at(src, offset, entry, options, stop))
 	}
 
 	/// Parses under recovery and checks what the recovered tree promises: it never fails, its
@@ -714,11 +714,11 @@ fn phases() {
 	{
 		let options = Options(Options::MODULE | Options::COMMENTS);
 		best("whole request: positions, parse, comments, encode, finish", &mut || {
-			crate::json::whole(&source, options, Entry::Program, None);
+			crate::json::in_place(&source, options, Entry::Program, 0.0, "", None).unwrap();
 		});
 		let options = Options(Options::MODULE | Options::COMMENTS | Options::SCOPES | Options::LOCATIONS);
 		best("whole request with scopes and loc", &mut || {
-			crate::json::whole(&source, options, Entry::Program, None);
+			crate::json::in_place(&source, options, Entry::Program, 0.0, "", None).unwrap();
 		});
 	}
 	let grammar = crate::json::grammar(
@@ -737,7 +737,7 @@ fn phases() {
 		),
 	] {
 		best(&format!("host: 200 each blocks, {label}"), &mut || {
-			crate::json::whole(&document, Options(flags), Entry::Program, Some(&grammar));
+			crate::json::in_place(&document, Options(flags), Entry::Program, 0.0, "", Some(&grammar)).unwrap();
 		});
 	}
 	best("Json write, loc", &mut || {
@@ -905,12 +905,15 @@ fn host_alloc_probe() {
 	.unwrap();
 	let count = |src: &str| {
 		let parse = || {
-			crate::json::whole(
+			crate::json::in_place(
 				src,
 				crate::Options(crate::Options::MODULE),
 				Entry::Program,
+				0.0,
+				"",
 				Some(&grammar),
 			)
+			.unwrap()
 		};
 		parse();
 		let before = ALLOCATIONS.load(std::sync::atomic::Ordering::Relaxed);

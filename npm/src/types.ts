@@ -136,8 +136,7 @@ export interface Kept extends Span {
  * reported elsewhere, at a declaration seen earlier say, has `end` equal to `pos`.
  * `unexpected_eof` is the end of what was parsed: the `end` the parse was given, else the end of
  * the source. A parse throws one as a `SyntaxError` with these fields, its `message` the code then
- * each argument in quotes, `expected '}'`; a bad offset from the host throws an `invalid_request`
- * without `line` and `column`.
+ * each argument in quotes, `expected '}'`.
  */
 export interface Recovered {
 	code: Code;
@@ -387,10 +386,8 @@ export interface Views {
 
 /** What parses: the addon or the WebAssembly module. */
 export interface Engine extends Views {
-	/** The whole source parsed by its option word at an entry, or as a document by a grammar `plan` holds; nothing of it is kept. The answer is its words. */
-	readonly parse: (source: string, flags: number, entry: number, plan: object | undefined) => Uint32Array;
-	/** One entry of a source read at an offset, cut at `end`, the stop tokens as one string. The answer is its words, or, for an offset the source has no place for, an error as JSON. */
-	readonly parseAt: (source: string, flags: number, entry: number, offset: number, end: number | undefined, stop: string) => Uint32Array | string;
+	/** A source parsed by its option word at an entry and offset, the stop tokens as one string, or as a document by a grammar `plan` holds; nothing of it is kept. The answer is its words. */
+	readonly parse: (source: string, flags: number, entry: number, offset: number, stop: string, plan: object | undefined) => Uint32Array;
 	/** The grammar of a host language as JSON, read once and let go of when the plan is collected. */
 	readonly plan: (grammar: string) => object;
 	/** Each node type of a grammar's host with the fields that hold nodes, as JSON. */

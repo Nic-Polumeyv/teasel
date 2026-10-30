@@ -128,9 +128,9 @@ impl Entry {
 	}
 }
 
-/// Parses one `entry` starting at `start` of a source cut at `end`, with positions of the whole:
-/// a program, or what a host embedding JavaScript in a larger syntax reads at a point of it. A
-/// program reads to `end`, where a hashbang or an HTML comment at `start` is what it would be in
+/// Parses one JavaScript `entry` starting at `start` of a source, with positions of the whole: a
+/// program, or what a host embedding JavaScript in a larger syntax reads at a point of it. A
+/// program reads to the end, where a hashbang or an HTML comment at `start` is what it would be in
 /// the middle of a file; anything else stops where its grammar ends, or at one of `stop`, the
 /// host's own tokens separated by spaces, read outside every bracket the parse opened where the
 /// expression could end (TypeScript may read one as its own, see `Parser::reads_stop`). Returns
@@ -141,19 +141,12 @@ impl Entry {
 pub(crate) fn parse_at(
 	src: &str,
 	start: u32,
-	end: Option<u32>,
 	entry: Entry,
 	options: Options,
 	stop: &str,
 	reused: Option<Box<Ast>>,
 ) -> (Box<Ast>, Result<(List, u32)>) {
-	if entry == Entry::StyleSheet {
-		let (mut ast, root) = crate::host::parse_stylesheet(src, options, reused);
-		let parsed = root.map(|root| (ast.add_list(&[Some(root)]), src.len() as u32));
-		return (ast, parsed);
-	}
-	let end = end.unwrap_or(src.len() as u32);
-	let src = &src[..end as usize];
+	let end = src.len() as u32;
 	let budget = if entry == Entry::Program {
 		(end - start) as usize
 	} else {

@@ -53,7 +53,7 @@ Run it:
 import { parse } from '@teasel/parser';
 import { tpl } from './tpl.js';
 
-parse(list, tpl);
+parse(list, {}, tpl);
 ```
 
 ![list.tpl read with the HTML grammar: the parser stops at the second }} among the card's attributes](Steps.svelte "step=1")
@@ -160,7 +160,7 @@ The same links are on the tree you get, when you ask for `scopes`:
 ```js parse.js
 import { parse, referenceOf } from '@teasel/parser';
 
-const { node } = parse(list, tpl, { scopes: true });
+const { node } = parse(list, { scopes: true }, tpl);
 const repeat = node.children[0].children[1];
 const card = repeat.body[1];
 const title = card.attributes[0].value.expression;   // item.name
