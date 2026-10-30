@@ -2,7 +2,7 @@
 //! identifier resolved to the binding it names. Names are declared first, in the environment each
 //! belongs to, and every reference is resolved after, so hoisting and merging need nothing special.
 
-use crate::ast::{Ast, List, NodeId, NodeKind, VariableKind};
+use crate::ast::{Ast, List, NodeId, NodeKind, NodeSet, VariableKind};
 use crate::error::{Code, SyntaxError};
 use crate::handed::{Handed, Views};
 use crate::interner::{FastMap, StrId};
@@ -194,12 +194,6 @@ impl Packed for Role {
 }
 
 impl<T: Packed> NodeTable<T> {
-	fn sized(nodes: usize) -> Self {
-		let mut table = NodeTable::default();
-		table.reset(nodes);
-		table
-	}
-
 	fn reset(&mut self, nodes: usize) {
 		self.0.clear();
 		self.0.resize(nodes, 0);
@@ -243,6 +237,22 @@ crate::layout::record! {
 	}
 }
 
+crate::layout::record! {
+	/// What a node is to the tables past the scope it opens and what it is as an identifier: what a
+	/// front end links once the node is whole.
+	#[derive(Clone, Copy, Debug, Default)]
+	pub struct Facts {
+		/// The root it is, by its place in `Scopes::roots`.
+		pub root: Option<u32>,
+		/// The first binding it declares, `Binding::declaration` from the node's side; `Scopes::defines`
+		/// has the next of each.
+		pub defines: Option<BindingId>,
+		/// The first write reference it is assigned by, `Reference::write_expr` from the node's side;
+		/// `Scopes::writes` has the next of each.
+		pub writes: Option<ReferenceId>,
+	}
+}
+
 #[derive(Debug, Default)]
 pub struct Scopes {
 	pub scopes: Handed<Scope>,
@@ -250,55 +260,20 @@ pub struct Scopes {
 	pub references: Handed<Reference>,
 	/// The pieces of JavaScript in a host's document, in source order; empty for a plain parse.
 	pub roots: Handed<Root>,
-	pub root_of: NodeTable<u32>,
 	pub of_node: NodeTable<ScopeId>,
 	pub of_identifier: NodeTable<Role>,
-	/// The bindings each declaring node declares, and the write references each expression is
-	/// assigned by: `Binding::declaration` and `Reference::write_expr` from the node's side.
-	pub declared_by: ByNode,
-	pub writes_of: ByNode,
+	/// The nodes with `Facts`, marked as the walk records each fact, each numbered by how many come
+	/// before it: its row of `facts`.
+	pub late: NodeSet,
+	/// How many of them come before each run of 32 nodes.
+	late_before: Handed<u32>,
+	pub facts: Handed<Facts>,
+	/// Each binding's next with the same declaration, and each reference's with the same write, plus one.
+	pub defines: Handed<u32>,
+	pub writes: Handed<u32>,
 	/// A name declared twice in one of the host's scopes, which are lexical like a block's.
 	pub errors: Vec<SyntaxError>,
 	scratch: Scratch,
-}
-
-/// Ids grouped by node: each node's run behind its length in one list, and where it starts.
-#[derive(Debug, Default)]
-pub struct ByNode {
-	pairs: Vec<(NodeId, u32)>,
-	ids: Handed<u32>,
-	starts: NodeTable<u32>,
-}
-
-impl ByNode {
-	fn finish(&mut self, nodes: usize) {
-		self.pairs.sort_unstable();
-		self.ids.clear();
-		self.starts.reset(nodes);
-		let mut i = 0;
-		while i < self.pairs.len() {
-			let node = self.pairs[i].0;
-			let len = self.pairs[i..].partition_point(|&(n, _)| n == node);
-			self.starts.insert(node, self.ids.len() as u32);
-			self.ids.push(len as u32);
-			self.ids.extend(self.pairs[i..i + len].iter().map(|&(_, id)| id));
-			i += len;
-		}
-	}
-
-	pub fn get(&self, node: NodeId) -> &[u32] {
-		let Some(at) = self.starts.get(node) else {
-			return &[];
-		};
-		let at = at as usize;
-		&self.ids[at + 1..at + 1 + self.ids[at] as usize]
-	}
-
-	fn clear(&mut self) {
-		self.pairs.clear();
-		self.ids.clear();
-		self.starts.reset(0);
-	}
 }
 
 /// The binder's working storage, kept between analyses.
@@ -353,11 +328,12 @@ impl Scopes {
 		self.bindings.clear();
 		self.references.clear();
 		self.roots.clear();
-		self.root_of.reset(nodes);
 		self.of_node.reset(nodes);
 		self.of_identifier.reset(nodes);
-		self.declared_by.clear();
-		self.writes_of.clear();
+		self.late.reset(nodes);
+		self.facts.clear();
+		self.defines.clear();
+		self.writes.clear();
 		self.errors.clear();
 		self.scratch.owned.clear();
 	}
@@ -374,30 +350,56 @@ impl Scopes {
 		out.push("roots", &mut self.roots);
 		out.push("of_node", &mut self.of_node.0);
 		out.push("of_identifier", &mut self.of_identifier.0);
-		out.push("root_of", &mut self.root_of.0);
-		out.push("declared_by", &mut self.declared_by.ids);
-		out.push("declared_by_at", &mut self.declared_by.starts.0);
-		out.push("writes_of", &mut self.writes_of.ids);
-		out.push("writes_of_at", &mut self.writes_of.starts.0);
+		out.push("late", self.late.words());
+		out.push("late_before", &mut self.late_before);
+		out.push("facts", &mut self.facts);
+		out.push("defines", &mut self.defines);
+		out.push("writes", &mut self.writes);
 	}
 
-	/// Marks the nodes with what a front end links once a node is whole, in `late`, and those with
-	/// a binding or a reference that are not identifiers, in `rare`.
-	pub fn mark(&self, ast: &Ast, rare: &mut crate::ast::NodeSet, late: &mut crate::ast::NodeSet) {
-		for &(node, _) in self.declared_by.pairs.iter().chain(&self.writes_of.pairs) {
-			late.insert(node);
+	/// A node's facts, when it has any.
+	pub fn facts_of(&self, id: NodeId) -> Option<&Facts> {
+		self.late
+			.contains(id)
+			.then(|| &self.facts[self.late.rank(&self.late_before, id)])
+	}
+
+	/// The bindings a node declares, in order.
+	pub fn defined(&self, facts: &Facts) -> impl Iterator<Item = BindingId> + '_ {
+		std::iter::successors(facts.defines, |&b| self.defines[b as usize].checked_sub(1))
+	}
+
+	/// The references a node is written by, in order.
+	pub fn assigned(&self, facts: &Facts) -> impl Iterator<Item = ReferenceId> + '_ {
+		std::iter::successors(facts.writes, |&r| self.writes[r as usize].checked_sub(1))
+	}
+
+	/// Each node's facts from what the walk recorded, a row per node in the order of the nodes.
+	fn gather(&mut self) {
+		let rows = self.late.ranks(&mut self.late_before);
+		self.facts.clear();
+		self.facts.resize(rows, Facts::default());
+		let row = |node| self.late.rank(&self.late_before, node);
+		for (i, root) in self.roots.iter().enumerate() {
+			self.facts[row(root.node)].root = Some(i as u32);
 		}
-		for root in self.roots.iter() {
-			late.insert(root.node);
+		// linked from the last, so each node's come in order
+		self.defines.clear();
+		self.defines.resize(self.bindings.len(), 0);
+		for (id, binding) in self.bindings.iter().enumerate().rev() {
+			if let Some(node) = binding.declaration {
+				let first = &mut self.facts[row(node)].defines;
+				self.defines[id] = first.map_or(0, |next| next + 1);
+				*first = Some(id as BindingId);
+			}
 		}
-		let nodes = self
-			.bindings
-			.iter()
-			.filter_map(|b| b.node)
-			.chain(self.references.iter().map(|r| r.node));
-		for node in nodes {
-			if !matches!(ast.node(node).kind, NodeKind::Identifier { .. }) {
-				rare.insert(node);
+		self.writes.clear();
+		self.writes.resize(self.references.len(), 0);
+		for (id, reference) in self.references.iter().enumerate().rev() {
+			if let Some(node) = reference.write_expr {
+				let first = &mut self.facts[row(node)].writes;
+				self.writes[id] = first.map_or(0, |next| next + 1);
+				*first = Some(id as ReferenceId);
 			}
 		}
 	}
@@ -411,11 +413,11 @@ impl Scopes {
 			"roots",
 			"of_node",
 			"of_identifier",
-			"root_of",
-			"declared_by",
-			"declared_by_at",
-			"writes_of",
-			"writes_of_at",
+			"late",
+			"late_before",
+			"facts",
+			"defines",
+			"writes",
 		] {
 			out.none(name);
 		}
@@ -471,18 +473,7 @@ fn analyze_with(ast: &mut Ast, kind: ScopeKind, root: Option<NodeId>, f: impl Fn
 		owned,
 		..
 	} = binder;
-	for (id, binding) in out.bindings.iter().enumerate() {
-		if let Some(declaration) = binding.declaration {
-			out.declared_by.pairs.push((declaration, id as BindingId));
-		}
-	}
-	for (id, reference) in out.references.iter().enumerate() {
-		if let Some(expression) = reference.write_expr {
-			out.writes_of.pairs.push((expression, id as ReferenceId));
-		}
-	}
-	out.declared_by.finish(ast.nodes.len());
-	out.writes_of.finish(ast.nodes.len());
+	out.gather();
 	let mut names = std::mem::take(&mut out.scratch.names);
 	if names.len() < envs.len() {
 		names.resize_with(envs.len(), FastMap::default);
@@ -576,18 +567,8 @@ pub struct Binder<'a> {
 
 impl<'a> Binder<'a> {
 	fn new(ast: &'a Ast, reused: Option<Scopes>) -> Self {
-		let mut out = match reused {
-			Some(mut scopes) => {
-				scopes.clear(ast.nodes.len());
-				scopes
-			}
-			None => Scopes {
-				of_node: NodeTable::sized(ast.nodes.len()),
-				of_identifier: NodeTable::sized(ast.nodes.len()),
-				root_of: NodeTable::sized(ast.nodes.len()),
-				..Scopes::default()
-			},
-		};
+		let mut out = reused.unwrap_or_default();
+		out.clear(ast.nodes.len());
 		let Scratch {
 			envs,
 			open,
@@ -822,14 +803,18 @@ impl<'a> Binder<'a> {
 
 	fn declare_in(&mut self, env: u32, name: StrId, kind: BindingKind, node: Option<NodeId>) -> BindingId {
 		let id = self.out.bindings.len() as BindingId;
+		let declaration = node.and(self.declaring);
 		self.out.bindings.push(Binding {
 			name,
 			kind,
 			scope: self.envs[env as usize].scope,
 			node,
-			declaration: node.and(self.declaring),
+			declaration,
 			write: false,
 		});
+		if let Some(declaration) = declaration {
+			self.out.late.insert(declaration);
+		}
 		self.envs[env as usize].names.insert(name, id);
 		id
 	}
@@ -864,6 +849,9 @@ impl<'a> Binder<'a> {
 			write_expr,
 			declares: true,
 		});
+		if let Some(expression) = write_expr {
+			self.out.late.insert(expression);
+		}
 		self.env_of.push(self.env());
 		self.out.of_identifier.insert(node, Role::Reference(id));
 	}
@@ -978,6 +966,7 @@ impl<'a> Binder<'a> {
 			return;
 		}
 		let id = self.out.references.len() as ReferenceId;
+		let write_expr = if write { self.writing } else { None };
 		self.out.references.push(Reference {
 			node,
 			scope: self.current(),
@@ -985,9 +974,12 @@ impl<'a> Binder<'a> {
 			write,
 			mutate,
 			read: !write || self.compound,
-			write_expr: if write { self.writing } else { None },
+			write_expr,
 			declares: false,
 		});
+		if let Some(expression) = write_expr {
+			self.out.late.insert(expression);
+		}
 		self.env_of.push(self.env());
 		if let NodeKind::Identifier { name } = self.kind(node)
 			&& Some(name) == self.arguments
@@ -1225,6 +1217,7 @@ impl<'a> Binder<'a> {
 			self.out.bindings.len() as u32,
 			self.out.references.len() as u32,
 		);
+		self.out.late.insert(node);
 		self.out.roots.push(Root {
 			node,
 			scope: self.current(),
@@ -1232,7 +1225,6 @@ impl<'a> Binder<'a> {
 			bindings: [from.1; 2],
 			references: [from.2; 2],
 		});
-		self.out.root_of.insert(node, index);
 		f(self);
 		let root = &mut self.out.roots[index as usize];
 		root.scopes[1] = self.out.scopes.len() as u32;
@@ -1588,7 +1580,8 @@ mod tests {
 	fn node_tables() {
 		use super::{NodeTable, Role};
 		use crate::ast::NodeId;
-		let mut table: NodeTable<Role> = NodeTable::sized(3);
+		let mut table: NodeTable<Role> = NodeTable::default();
+		table.reset(3);
 		assert!(table.get(NodeId::at(7)).is_none());
 		table.insert(NodeId::at(1), Role::Declares(5));
 		assert_matches!(table.get(NodeId::at(1)), Some(Role::Declares(5)));
@@ -1599,17 +1592,35 @@ mod tests {
 	}
 
 	#[test]
-	fn ids_by_node() {
-		let mut by_node = ByNode::default();
-		for (node, id) in [(5, 0), (2, 1), (5, 2), (9, 3)] {
-			by_node.pairs.push((NodeId::at(node), id));
+	fn facts_by_node() {
+		let ast = analyzed(crate::parse_at(
+			"let a = 1, b; { let c; } a = b = 2; function f(x) { x = 3 }",
+			0,
+			Entry::Program,
+			Options(Options::MODULE),
+			"",
+		));
+		let scopes = ast.scopes.as_ref().unwrap();
+		let mut seen = Vec::new();
+		for i in 0..ast.nodes.len() as u32 {
+			let id = NodeId::at(i);
+			let Some(facts) = scopes.facts_of(id) else { continue };
+			let node = ast.node(id);
+			let defines = scopes.defined(facts).count();
+			let writes = scopes.assigned(facts).count();
+			seen.push((node.start, node.end, defines, writes));
 		}
-		by_node.finish(10);
-		assert_eq!(by_node.get(NodeId::at(5)), [0, 2]);
-		assert_eq!(by_node.get(NodeId::at(2)), [1]);
-		assert_eq!(by_node.get(NodeId::at(9)), [3]);
-		assert!(by_node.get(NodeId::at(0)).is_empty());
-		assert!(by_node.get(NodeId::at(3)).is_empty());
+		seen.sort_unstable();
+		let expected = [
+			(4, 9, 1, 0),
+			(11, 12, 1, 0),
+			(20, 21, 1, 0),
+			(29, 34, 0, 1),
+			(33, 34, 0, 1),
+			(36, 59, 2, 0),
+			(56, 57, 0, 1),
+		];
+		assert_eq!(seen, expected);
 	}
 
 	use super::*;

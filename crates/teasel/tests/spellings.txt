@@ -314,11 +314,10 @@ cooked
 declaration
 declarations
 declare
-declared_by
-declared_by_at
 declares
 decorators
 default
+defines
 definite
 delegate
 delete
@@ -348,6 +347,7 @@ extendsType
 extends_type
 extras
 extras_slots
+facts
 falseType
 false_type
 fields
@@ -405,6 +405,7 @@ kind
 kinds
 label
 late
+late_before
 leading
 left
 len
@@ -483,7 +484,7 @@ regexp
 returnType
 return_type
 right
-root_of
+root
 roots
 rows
 scope
@@ -499,7 +500,6 @@ slice
 source
 sourceType
 span
-spans
 specifiers
 start
 starts
@@ -554,8 +554,7 @@ void
 with
 write
 write_expr
-writes_of
-writes_of_at
+writes
 |
 |=
 ||

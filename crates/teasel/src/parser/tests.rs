@@ -699,11 +699,11 @@ fn phases() {
 		crate::scopes::analyze(&mut ast, Entry::Program, roots);
 		let s = ast.scopes.as_ref().unwrap();
 		eprintln!(
-			"scopes {} bindings {} references {} of_node {} of_identifier {}",
+			"scopes {} bindings {} references {} facts {} of_identifier {}",
 			s.scopes.len(),
 			s.bindings.len(),
 			s.references.len(),
-			s.of_node.iter().count(),
+			s.facts.len(),
 			s.of_identifier.iter().count()
 		);
 	}

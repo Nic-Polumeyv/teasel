@@ -542,10 +542,7 @@ fn run(
 			// the tree's buffers sit folded into two words: a front end keeps its views while that holds
 			words.clear();
 			let roots = roots.map_or(&[][..], |roots| ast.list(roots));
-			words.extend_from_slice(&[
-				positions.offset(&mut crate::estree::Cursor::default(), end),
-				roots.len() as u32,
-			]);
+			words.extend_from_slice(&[positions.offset(end), roots.len() as u32]);
 			words.extend(roots.iter().map(|root| root.unwrap().index()));
 			let typescript = if options.typescript() { TYPESCRIPT } else { 0 };
 			words.push(typescript | if failed { FAILED } else { 0 });
@@ -565,9 +562,9 @@ fn run(
 	slot.tree = Some(ast);
 }
 
-/// What a front end reading the tree in place needs beside it: every node's span as JavaScript
-/// counts it, the nodes erasure leaves out, the hosts, the comments, the errors and the strings'
-/// UTF-16 starts; a failed parse prepares its error row alone, the tree it read is left as the
+/// What a front end reading the tree in place needs beside it: the nodes erasure leaves out, the
+/// hosts, the comments, the errors, the strings' UTF-16 starts, and every node's span as JavaScript
+/// counts it, in place; a failed parse prepares its error row alone, the tree it read is left as the
 /// last answer cleared it.
 fn prepare(ast: &mut Ast, source: &str, positions: &Positions, options: Options, failed: bool, names: &mut Names) {
 	if !failed {
@@ -605,10 +602,13 @@ fn prepare(ast: &mut Ast, source: &str, positions: &Positions, options: Options,
 			ast.units.push(units);
 		}
 	}
+	// last: nothing reads a node's byte offsets after this
+	if !failed {
+		positions.map_nodes(&mut ast.nodes);
+	}
 }
 
 fn prepare_tree(ast: &mut Ast, positions: &Positions, options: Options, names: &mut Names) {
-	positions.map_nodes(&ast.nodes, &mut ast.spans);
 	ast.erased.clear();
 	if options.has(Options::ERASE) {
 		for i in 0..ast.nodes.len() as u32 {
@@ -618,9 +618,8 @@ fn prepare_tree(ast: &mut Ast, positions: &Positions, options: Options, names: &
 			}
 		}
 	}
-	let (mut rare, mut late) = (std::mem::take(&mut ast.rare), std::mem::take(&mut ast.late));
+	let mut rare = std::mem::take(&mut ast.rare);
 	rare.reset(ast.nodes.len());
-	late.reset(ast.nodes.len());
 	rare.union(&ast.parenthesized);
 	for &owner in ast.attached.owners() {
 		rare.insert(owner);
@@ -628,22 +627,16 @@ fn prepare_tree(ast: &mut Ast, positions: &Positions, options: Options, names: &
 	if options.has(Options::ERASE) {
 		ast.typescript.rare(&mut rare);
 	}
-	if let Some(scopes) = &ast.scopes
-		&& options.has(Options::SCOPES)
-	{
-		scopes.mark(ast, &mut rare, &mut late);
-	}
-	(ast.rare, ast.late) = (rare, late);
+	ast.rare = rare;
 	ast.host_rows.clear();
 	ast.host_keys.clear();
 	ast.host_vals.clear();
-	let mut cursor = crate::estree::Cursor::default();
 	for i in 0..ast.host_fields.len() {
 		let (key, value) = ast.host_fields[i];
 		ast.host_keys.push(names.id(key));
 		let mut row = value.row();
 		if let crate::ast::Value::Slice(start, end) = value {
-			row.value = [positions.offset(&mut cursor, start), positions.offset(&mut cursor, end)];
+			row.value = [positions.offset(start), positions.offset(end)];
 		}
 		ast.host_vals.push(row);
 	}
