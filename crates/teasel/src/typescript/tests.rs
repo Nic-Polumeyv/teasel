@@ -433,9 +433,17 @@ fn a_namespace_erases_unless_it_instantiates() {
 }
 
 #[test]
-fn a_type_only_import_keeps_its_module() {
+fn an_import_of_only_types_erases() {
 	assert_eq!(
 		erase("import { type A } from 'x';"),
+		("Program".to_owned(), "[]".to_owned())
+	);
+	assert_eq!(
+		erase("import { type A, type B } from 'x';"),
+		("Program".to_owned(), "[]".to_owned())
+	);
+	assert_eq!(
+		erase("import {} from 'x';"),
 		("Program ImportDeclaration Literal".to_owned(), "[]".to_owned())
 	);
 	assert_eq!(

@@ -79,10 +79,17 @@ impl Data {
 				ModuleDeclaration { .. } => !self.instantiates(ast, id),
 				_ => false,
 			},
-			// an import of only types still runs its module, so `import { type A } from 'x'` keeps `import {} from 'x'`
-			NodeKind::ImportDeclaration { .. } | NodeKind::ImportSpecifier { .. } => {
+			// tsc's default: an import whose every name is a type goes with them; `import {} from 'x'` as written stays
+			NodeKind::ImportDeclaration { specifiers, .. } => {
 				extras.import_kind == Some(Kind::Type)
+					|| (specifiers.len > 0
+						&& ast
+							.list(specifiers)
+							.iter()
+							.flatten()
+							.all(|&name| self.erased(ast, name)))
 			}
+			NodeKind::ImportSpecifier { .. } => extras.import_kind == Some(Kind::Type),
 			NodeKind::ExportSpecifier { .. } | NodeKind::ExportAllDeclaration { .. } => {
 				extras.export_kind == Some(Kind::Type)
 			}
