@@ -1,6 +1,6 @@
 import type { Comment, Expression, Node, Pattern, Program, Statement } from 'estree';
 import { decode, PARENT, REFERENCE, SCOPE } from './decode.ts';
-import { CODES, PLAN, type answers, type Code, type HostNode, type Language, type Parsed, type Reference, type Scope } from './types.ts';
+import { CODES, PLAN, type answers, type HostNode, type Language, type Parsed, type Recovered, type Reference, type Scope } from './types.ts';
 import { flags, type Options } from './options.ts';
 import { engine } from '#engine';
 import { children, extras, stylesheet } from './children.ts';
@@ -8,28 +8,6 @@ import type { Grammar } from './grammar.ts';
 
 export type { Options } from './options.ts';
 export type { Arguments, Binding, Code, Comment, Declared, HostNode, Kept, Language, Parsed, Recovered, Reference, Root, Scope, Span } from './types.ts';
-
-/**
- * Thrown for a syntax error. `code` names what went wrong, for a host to branch on, and `args`
- * what it is about, a name or a token; `message` is the code then each argument in quotes,
- * `expected '}'`. An error at the token being read spans it with `pos` and `end`; one reported
- * elsewhere, at a declaration seen earlier say, has `end` equal to `pos`. `unexpected_eof` is
- * the end of what was parsed: the `end` the parse was given, else the end of the source. A bad
- * offset from the host is an `invalid_request` without a `line` and `column`.
- */
-export class ParseError extends SyntaxError {
-	declare code: Code;
-	declare args: readonly string[];
-	declare pos: number;
-	declare end: number;
-	declare line?: number;
-	declare column?: number;
-
-	constructor(fields: Pick<ParseError, 'code' | 'args' | 'pos' | 'end' | 'line' | 'column'>) {
-		super(fields.args.reduce((text: string, arg) => `${text} '${arg}'`, fields.code));
-		Object.assign(this, fields);
-	}
-}
 
 // what the decoder hangs on a node, under keys JSON and enumeration skip
 const slot = (node: object | null | undefined, key: symbol) => (node as Record<symbol, any> | null | undefined)?.[key];
@@ -157,21 +135,20 @@ export class Source {
 		}
 		const source = this.#source;
 		const answer = engine.parse(source, this.#flags, entry, offset, end, stop, plan);
-		if (typeof answer === 'string') {
-			// a request the engine refused: an offset or option it cannot take
-			const error = JSON.parse(answer).error;
-			error.code = CODES[error.code];
-			throw new ParseError(error);
+		let error: Omit<Recovered, 'line' | 'column'>;
+		// a request the engine refused: an offset or option it cannot take
+		if (typeof answer === 'string') error = JSON.parse(answer, (key, value) => (key === 'code' ? CODES[value] : value)).error;
+		else {
+			try {
+				const parsed = decode(answer, source, engine, this.#flags, entry === 3) as Parsed<unknown>;
+				if (parsed.node !== null) return parsed;
+				error = parsed.errors![0];
+			} catch (thrown) {
+				// a tree deeper than the caller's stack has room for overflowed the decoder
+				if (!(thrown instanceof RangeError)) throw thrown;
+				error = { code: 'nesting_depth', args: [], pos: offset, end: offset };
+			}
 		}
-		let parsed: Parsed<unknown>;
-		try {
-			parsed = decode(answer, source, engine, this.#flags, entry === 3) as Parsed<unknown>;
-		} catch (error) {
-			// a tree deeper than the caller's stack has room for overflowed the decoder
-			if (!(error instanceof RangeError)) throw error;
-			throw new ParseError({ code: 'nesting_depth', args: [], pos: offset, end: offset });
-		}
-		if (parsed.node === null) throw new ParseError(parsed.errors![0]);
-		return parsed;
+		throw Object.assign(new SyntaxError(error.args.reduce((text: string, arg) => `${text} '${arg}'`, error.code)), error);
 	}
 }
