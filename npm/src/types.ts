@@ -130,13 +130,21 @@ export interface Kept extends Span {
 	type: string;
 }
 
-/** A syntax error as `errors` lists it; a parse throws the first as a `SyntaxError` with these fields. An `invalid_request` for a bad offset and a `nesting_depth` for a tree too deep for the stack have no `line` or `column`. */
+/**
+ * A syntax error, as `errors` lists it. A parse that cannot answer throws the first as a
+ * `SyntaxError` with these fields, its `message` the code then each argument in quotes,
+ * `expected '}'`.
+ */
 export interface Recovered {
+	/** What went wrong, for a host to branch on; what each code means is at Error codes. */
 	code: Code;
+	/** What the error is about, a name or a token, when the code takes any. */
 	args: readonly string[];
+	/** The start of the token the parser could not accept; for `unexpected_eof`, the end of what was parsed. */
 	pos: number;
+	/** The end of that token, or `pos` when the cause is elsewhere, an earlier declaration say. */
 	end: number;
-	/** 1-based line and 0-based column of `pos`. */
+	/** 1-based line and 0-based column of `pos`; a thrown `invalid_request` for a bad offset and a thrown `nesting_depth` for a tree too deep for the stack have neither. */
 	line: number;
 	column: number;
 }
