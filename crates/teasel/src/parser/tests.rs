@@ -182,6 +182,12 @@ fn expression_ends_where_it_ends() {
 }
 
 #[test]
+fn the_crate_entry_reads_a_stylesheet() {
+	let (_, parsed) = crate::parse_at("a { b: c }", 0, Entry::StyleSheet, crate::Options::default(), "");
+	assert!(parsed.is_ok());
+}
+
+#[test]
 fn an_entry_is_one_of_its_numbers() {
 	assert_eq!(crate::json::entry(6.0), Ok(Entry::StyleSheet));
 	for index in [7.0, -1.0, 6.5, f64::NAN] {

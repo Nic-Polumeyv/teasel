@@ -265,10 +265,13 @@ fn children_table(w: &mut Json, table: Vec<(&'static str, Vec<&'static str>)>) {
 
 /// One entry at a byte offset, as JSON.
 pub fn parse(source: &str, request: &Request) -> String {
-	match check(source, request) {
-		Ok(()) => to_json(source, request, "", None),
-		Err(error) => error,
+	if !source.is_char_boundary(request.offset as usize) {
+		return error_json(
+			&format!("offset {} is not a character boundary", request.offset),
+			request.offset,
+		);
 	}
+	to_json(source, request, "", None)
 }
 
 /// A whole document of a host language by its grammar, as JSON; see `host::parse_document`.
@@ -442,17 +445,6 @@ pub fn entry(index: f64) -> Result<Entry, String> {
 		.ok_or_else(|| format!("{index} is no entry"))
 }
 
-/// The checks on a request's byte offsets, or the error answer.
-fn check(source: &str, request: &Request) -> Result<(), String> {
-	if !source.is_char_boundary(request.offset as usize) {
-		return Err(error_json(
-			&format!("offset {} is not a character boundary", request.offset),
-			request.offset,
-		));
-	}
-	Ok(())
-}
-
 /// Where an answer goes: JSON text, or the words a front end reads the tree by.
 enum Out<'a> {
 	Json(&'a mut String),
@@ -518,14 +510,13 @@ fn run(
 		ast.clear();
 		ast
 	});
-	let whole = |(mut ast, root): (Box<Ast>, crate::parser::Result<crate::ast::NodeId>)| {
-		let parsed = root.map(|root| (ast.add_list(&[Some(root)]), source.len() as u32));
-		(ast, parsed)
-	};
-	let (mut ast, parsed) = match (host, request.entry) {
-		(Some(grammar), _) => whole(host::parse_document(source, grammar, options, reused)),
-		(None, Entry::StyleSheet) => whole(host::parse_stylesheet(source, options, reused)),
-		(None, entry) => parse_at(source, request.offset, entry, options, stop, reused),
+	let (mut ast, parsed) = match host {
+		Some(grammar) => {
+			let (mut ast, root) = host::parse_document(source, grammar, options, reused);
+			let parsed = root.map(|root| (ast.add_list(&[Some(root)]), source.len() as u32));
+			(ast, parsed)
+		}
+		None => parse_at(source, request.offset, request.entry, options, stop, reused),
 	};
 	let (mut roots, mut end) = match parsed {
 		Ok((roots, end)) => (Some(roots), end),

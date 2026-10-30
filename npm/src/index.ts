@@ -43,7 +43,7 @@ export interface Piece<T> {
 // `Entry` of parser/mod.rs by index; the program is 0
 const piece = <T>(entry: number, stop = ''): Piece<T> =>
 	Object.freeze({
-		[PIECE]: { entry, stop },
+		[PIECE]: Object.freeze({ entry, stop }),
 		until(...tokens: string[]) {
 			if (entry === 0) throw new TypeError('a program reads to the end of the text');
 			if (tokens.length === 0 || !tokens.every((token) => typeof token === 'string' && token !== '' && !/\s/.test(token))) {
@@ -68,7 +68,7 @@ export const js: Language<Program> & {
 	/** The fields TypeScript may add to a node of any type, holding nodes: annotations, type parameters and arguments, what a class implements, decorators. */
 	readonly extras: readonly string[];
 } = Object.freeze({
-	[LANGUAGE]: { entry: 0 },
+	[LANGUAGE]: Object.freeze({ entry: 0 }),
 	children,
 	extras,
 	program: piece<Program>(0),
@@ -80,7 +80,7 @@ export const js: Language<Program> & {
 });
 
 /** CSS: a parse of it reads the whole text as a stylesheet, a `StyleSheet` of rules and at-rules with its comments listed. */
-export const css: Language<HostNode> = Object.freeze({ [LANGUAGE]: { entry: 6 }, children: stylesheet });
+export const css: Language<HostNode> = Object.freeze({ [LANGUAGE]: Object.freeze({ entry: 6 }), children: stylesheet });
 
 /**
  * The whole of `text`, as `language` reads it: `js` by default, a program. `css` reads it as a
@@ -107,12 +107,12 @@ export function parse<T = Program>(text: string, options?: Options, language: La
 export function parseAt<P extends Piece<unknown>>(text: string, piece: P, at: number, options?: Options): Parsed<P extends Piece<infer T> ? T : never> {
 	const read = piece?.[PIECE];
 	if (read === undefined) throw new TypeError('parseAt takes a piece of `js`, such as js.program or js.expression');
-	if (!Number.isInteger(at) || at < 0 || at > text.length || (at > 0 && text.codePointAt(at - 1)! > 0xffff)) throw new RangeError(`${at} is no offset between characters of the text`);
 	return answer(text, options, read.entry, at, read.stop, undefined);
 }
 
 function answer<T>(text: string, options: Options | undefined, entry: number, offset: number, stop: string, plan: object | undefined): Parsed<T> {
 	if (typeof text !== 'string') throw new TypeError('a parse takes a string');
+	if (!Number.isInteger(offset) || offset < 0 || offset > text.length || (offset > 0 && text.codePointAt(offset - 1)! > 0xffff)) throw new RangeError(`${offset} is no offset between characters of the text`);
 	const on = flags(options);
 	const words = engine.parse(text, on, entry, offset, stop, plan);
 	let error: Omit<Recovered, 'line' | 'column'>;

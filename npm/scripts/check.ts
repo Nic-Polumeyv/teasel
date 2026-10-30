@@ -37,7 +37,7 @@ let failed = 0;
 // what a parse answers or throws, read off the engine directly
 function outcome(engine: Engine, source: string, on: number, entry: number, at: number, end?: number) {
 	const cut = source.slice(0, end);
-	return { value: decode(engine.parse(cut, on, entry, at, '', undefined), cut, engine, on, entry === 3) };
+	return decode(engine.parse(cut, on, entry, at, '', undefined), cut, engine, on, entry === 3);
 }
 
 const show = (value: unknown) => (typeof value === 'bigint' ? `${value}n` : JSON.stringify(value));

@@ -65,7 +65,7 @@ const { bindings } = parseAt('{{ items as { id, name }, index }}', js.pattern.un
 
 ## Edge cases
 
-A `then` after a `.` is a property name, not your token. A TypeScript `as` is yours unless another `as` follows the type assertion, so `xs as T[] as item` ends after the type. `typeParameters` without `typescript` is a `not_typescript` error. And `js.program` takes no `until`: a program reads to the end of its range.
+A `then` after a `.` is a property name, not your token. A TypeScript `as` is yours unless another `as` follows the type assertion, so `xs as T[] as item` ends after the type. `typeParameters` without `typescript` is a `not_typescript` error. And `js.program` takes no `until`: a program reads to the end of the text.
 
 ## The alternative: a grammar
 

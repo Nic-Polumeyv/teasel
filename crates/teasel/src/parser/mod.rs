@@ -128,8 +128,8 @@ impl Entry {
 	}
 }
 
-/// Parses one JavaScript `entry` starting at `start` of a source, with positions of the whole: a
-/// program, or what a host embedding JavaScript in a larger syntax reads at a point of it. A
+/// Parses one `entry` starting at `start` of a source, with positions of the whole: a program, a
+/// stylesheet, or what a host embedding JavaScript in a larger syntax reads at a point of it. A
 /// program reads to the end, where a hashbang or an HTML comment at `start` is what it would be in
 /// the middle of a file; anything else stops where its grammar ends, or at one of `stop`, the
 /// host's own tokens separated by spaces, read outside every bracket the parse opened where the
@@ -146,6 +146,11 @@ pub(crate) fn parse_at(
 	stop: &str,
 	reused: Option<Box<Ast>>,
 ) -> (Box<Ast>, Result<(List, u32)>) {
+	if entry == Entry::StyleSheet {
+		let (mut ast, root) = crate::host::parse_stylesheet(src, options, reused);
+		let parsed = root.map(|root| (ast.add_list(&[Some(root)]), src.len() as u32));
+		return (ast, parsed);
+	}
 	let end = src.len() as u32;
 	let budget = if entry == Entry::Program {
 		(end - start) as usize

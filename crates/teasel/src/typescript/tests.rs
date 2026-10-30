@@ -188,7 +188,7 @@ fn accessor_belongs_to_a_property() {
 }
 
 #[test]
-fn program_in_a_range() {
+fn program_at_an_offset_of_a_cut_text() {
 	let src = "<script>let a: number = 1;</script>{a}";
 	let (ast, root, _) = one(crate::parse_at(
 		&src[..26],

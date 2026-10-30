@@ -2,7 +2,6 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use teasel::Options;
 use teasel::host::Grammar;
-use teasel::json::error_json;
 
 thread_local! {
 	static TEXT: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
@@ -25,8 +24,8 @@ pub extern "C" fn alloc(len: u32) -> *mut u8 {
 
 /// # Safety
 /// `ptr` is `capacity` bytes from `alloc`, `len` of them a host language's grammar as JSON;
-/// they are taken over here. The handle is 0 when the grammar cannot be read, the error as JSON
-/// at `text_ptr`.
+/// they are taken over here. The handle is 0 when the grammar cannot be read, what is wrong at
+/// `text_ptr`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn plan_new(ptr: *mut u8, len: u32, capacity: u32) -> u32 {
 	let grammar = unsafe { Vec::from_raw_parts(ptr, len as usize, capacity as usize) };
@@ -34,7 +33,7 @@ pub unsafe extern "C" fn plan_new(ptr: *mut u8, len: u32, capacity: u32) -> u32 
 	match grammar.and_then(teasel::json::grammar) {
 		Ok(grammar) => Box::into_raw(Box::new(grammar)) as u32,
 		Err(message) => {
-			text(error_json(&message, 0));
+			text(message);
 			0
 		}
 	}

@@ -124,7 +124,7 @@ class Plan {
 
 // 0 is the error answer at `text_ptr`: a grammar the engine cannot take
 function opened(handle: number) {
-	if (handle === 0) throw new Error(JSON.parse(text()).error.args[0]);
+	if (handle === 0) throw new Error(text());
 	return handle;
 }
 

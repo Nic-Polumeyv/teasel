@@ -366,7 +366,7 @@ codes! {
 	StatementInAmbient,
 	/// A `using` declaration in an ambient context; `args` names the declaration.
 	UsingInAmbient,
-	/// An offset or option the request cannot take; `args` says which, no `line` or `column`.
+	/// A request the JSON answer cannot take, an offset inside a character or a grammar it cannot read; `args` says which, no `line` or `column`.
 	InvalidRequest,
 	/// A property access right after an instantiation expression.
 	PropertyAfterInstantiation,

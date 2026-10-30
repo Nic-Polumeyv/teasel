@@ -85,6 +85,9 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 	assert.throws(() => js.program.until('}'), /a program reads to the end of the text/);
 	assert.throws(() => readAt('{a}', js.expression, '1' as Any), RangeError);
 	assert.throws(() => readAt('{a}', js.expression, [1] as Any), RangeError);
+	assert.throws(() => readAt(42 as Any, js.expression, 1), /a parse takes a string/);
+	assert.throws(() => { (js as Any)[Object.getOwnPropertySymbols(js)[0]].entry = 6; }, TypeError);
+	assert.throws(() => { (js.expression as Any)[Object.getOwnPropertySymbols(js.expression)[0]].stop = '+'; }, TypeError);
 	const ended = js.expression.until('as').until(',');
 	assert.deepEqual([readAt('{a as b}', ended, 1).end, readAt('{a, b}', ended, 1).end], [2, 2]);
 
@@ -298,6 +301,7 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 	for (const entry of [7, -1, 6.5, NaN]) {
 		assert.throws(() => engine.parse('a;', 0, entry, 0, '', undefined), / is no entry/);
 	}
+	assert.throws(() => engine.parse('𝒳', 0, 1, 1, '', undefined), /surrogate pair/);
 	if (name === 'native') assert.throws(() => (load() as Addon).parse(new Uint8Array([0xff]), 0, 0, 0, '', undefined), /the source is not UTF-8/);
 	const wide = 'x;'.repeat(200000);
 	assert.equal(program(wide).body.length, 200000);

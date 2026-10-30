@@ -165,7 +165,7 @@ export interface Language<T> {
 /** What a parse returns: the node, or the patterns of a parameter list, and what the options add; a key is there exactly when its option is on. */
 export interface Parsed<T> {
 	node: T;
-	/** The offset after everything the parse consumed: the node, its closing parens and the comments after it; a program's is the end it was given. */
+	/** The offset after everything the parse consumed: the node, its closing parens and the comments after it; a program's is the end of the text. */
 	end: number;
 	/** Every comment read, in source order; with `comments`. */
 	comments?: Comment[];
