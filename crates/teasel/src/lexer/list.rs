@@ -255,6 +255,8 @@ impl Lexer<'_> {
 					}
 				}
 				T::Eof => break None,
+				T::Ident(_) | T::Keyword(_) if matches!(prev, T::Dot | T::QuestionDot) => slash = Slash::Divide,
+				T::Keyword(Keyword::Void | Keyword::Const) if typescript => slash = Slash::Unsure,
 				T::Ident(word) => {
 					slash = match self.strings.get(word) {
 						"yield" | "await" | "of" | "let" => Slash::Unsure,
@@ -263,7 +265,7 @@ impl Lexer<'_> {
 				}
 				T::PlusPlus | T::MinusMinus => slash = postfix(slash, &token),
 				T::Bang if typescript => slash = postfix(slash, &token),
-				T::Gt if typescript && slash == Slash::Divide => slash = Slash::Unsure,
+				T::Gt | T::GtGt | T::GtGtGt if typescript => slash = Slash::Unsure,
 				_ => {
 					slash = if token.ends_operand() {
 						Slash::Divide

@@ -575,11 +575,25 @@ fn a_list_is_decided_before_it_is_read() {
 	// a `/` after a statement head's `)` starts a regular expression
 	assert_eq!(js("(a = function () { if (x) /[)]/.test(y) }, b) => 1").0, Parameters);
 	assert_eq!(js("(a = b.if (c) / d, e) => 1").0, Parameters);
+	assert_eq!(js("(a = async function () { for await (x of y) /[)]/.test(z) }, b) => 1").0, Parameters);
 	// after any brace's `}` only the parser knows: a block, a body or an object
 	assert_eq!(js("(a = function () {} / 1, b) => 1"), (Unsure, None));
 	assert_eq!(js("(a = function () { {} /[)]/.test(y) }, b) => 1"), (Unsure, None));
 	assert_eq!(js("(a = class extends {} {} / (b, \")\" / c)) => 1"), (Unsure, None));
 	assert_eq!(js("(a = yield / 2, b) => 1"), (Unsure, None));
+	assert_eq!(js("(a = await / 2, b) => 1"), (Unsure, None));
+	assert_eq!(js("(a = of / 2, b) => 1"), (Unsure, None));
+	assert_eq!(js("(a = let / 2, b) => 1"), (Unsure, None));
+	// a keyword after `.` or `?.` is a property name, so the `/` after it divides
+	assert_eq!(js("(a = b.default / 2, c = \"/\") => 1").0, Parameters);
+	assert_eq!(js("(a = b?.delete / 2, c = \"/\") => 1").0, Parameters);
+	assert_eq!(js("(a = void /[)]/.b, c) => 1").0, Parameters);
+	assert_eq!(list("(a = b.default! / 2, c = \"/\") => 1", true, true).0, Parameters);
+	// `void`, `const` and `>` end a type or start an operand: only the parser knows
+	assert_eq!(list("(a = b as void / 2, c) => 1", true, true), (Unsure, None));
+	assert_eq!(list("(a = [1] as const / 2, c) => 1", true, true), (Unsure, None));
+	assert_eq!(list("(a = b as A<B> / 2, c) => 1", true, true), (Unsure, None));
+	assert_eq!(list("(a = b as A<B<C>> / 2, c) => 1", true, true), (Unsure, None));
 	// a postfix `++` ends an operand, a prefix one starts one
 	assert_eq!(js("(a = x++ / 2, b) => 1").0, Parameters);
 	assert_eq!(js("(a = ++/[)]/.b, c) => 1").0, Parameters);

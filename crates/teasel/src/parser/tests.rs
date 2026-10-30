@@ -177,6 +177,30 @@ fn a_literal_keeps_its_facts() {
 	.unwrap();
 }
 
+/// A list the closer reader decides is read right, and where it is unsure the parser tries.
+#[test]
+fn a_decided_list_is_read_right() {
+	let module = Options(Options::MODULE);
+	for src in [
+		"f((a = b.default / 2, c = \"/\") => 1, \"x)\" + \"\");",
+		"x = (a = b?.delete / 2, c = \"/\") => c; y = \")\" + \"\";",
+		"f((a = b.class / 2, c) => c,\n  d);",
+		"f((a = void /[)]/.b, c) => c, \")\");",
+	] {
+		program(src, module).unwrap_or_else(|e| panic!("{src:?}: {e}"));
+		JS.recovered(src, 0, Entry::Program, module, "");
+	}
+	for src in [
+		"f((a = b as void / 2, c = \"/\") => 1, \"x)\" + \"\");",
+		"f((a = [1] as const / 2, c = \"/\") => 1, \"x)\" + \"\");",
+		"f((a = b as A<B<C>> / 2, c = \"/\") => 1, \"x)\" + \"\");",
+		"f((a = b.default! / 2, c = \"/\") => 1, \"x)\" + \"\");",
+	] {
+		program(src, typescript(module)).unwrap_or_else(|e| panic!("{src:?}: {e}"));
+		TS.recovered(src, 0, Entry::Program, module, "");
+	}
+}
+
 #[test]
 fn consumed_end() {
 	let options = Options(Options::MODULE);
