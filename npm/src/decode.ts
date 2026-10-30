@@ -894,11 +894,14 @@ function items(S: State, start: number, len: number, parent: Decoded | undefined
 	return out;
 }
 
-// erasing drops TypeScript's `this` parameter
+// erasing drops TypeScript's `this` parameter wherever it stands
 function params(S: State, start: number, len: number, parent: Decoded | undefined) {
-	if (S.erase && len > 0 && S.L[start] !== 0) {
-		const first = (S.L[start] - 1) * S.C.words * 4 + S.C.kind;
-		if (S.N[first >> 2] === S.C.identifier && S.strings[S.N[(first + S.C.name) >> 2]] === 'this') return items(S, start + 1, len - 1, parent);
+	if (S.erase) {
+		for (let i = start, end = start + len; i < end; i++) {
+			if (S.L[i] === 0) continue;
+			const at = (S.L[i] - 1) * S.C.words * 4 + S.C.kind;
+			if (S.N[at >> 2] === S.C.identifier && S.strings[S.N[(at + S.C.name) >> 2]] === 'this') return [...items(S, start, i - start, parent), ...items(S, i + 1, end - i - 1, parent)];
+		}
 	}
 	return items(S, start, len, parent);
 }
