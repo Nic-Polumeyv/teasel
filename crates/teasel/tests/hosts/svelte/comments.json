@@ -460,7 +460,7 @@
 							"name": "b"
 						}
 					],
-					"body": {
+					"fragment": {
 						"type": "Fragment",
 						"scope": 6,
 						"nodes": [

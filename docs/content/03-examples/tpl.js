@@ -1,15 +1,8 @@
 import * as g from '@teasel/parser/grammar';
 
 export const tpl = g.grammar('tpl', {
-	document: { node: 'Template', form: [{ children: g.content }] },
-	text: { node: 'Text', form: [{ data: g.text.data }] },
-	comment: { node: 'Comment', form: [{ data: g.text.data }] },
+	document: { node: 'Template' },
 	elements: {
-		fields: {
-			name: g.element.tag,
-			attributes: g.element.attributes,
-			children: g.content,
-		},
 		component: { node: 'Component' },
 		other: { node: 'Element' },
 	},

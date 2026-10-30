@@ -983,10 +983,6 @@ pub struct DirectiveSyntax {
 	pub modifier: &'static str,
 	/// The brackets of an argument that is an expression, `[` `]`.
 	pub dynamic: Option<(&'static str, &'static str)>,
-	pub name_field: Option<&'static str>,
-	pub arg_field: Option<&'static str>,
-	pub modifiers_field: Option<&'static str>,
-	pub raw_field: Option<&'static str>,
 	/// Every directive is unique by its whole attribute name.
 	pub unique: bool,
 }
@@ -1001,13 +997,21 @@ pub struct Shorthand {
 
 #[derive(Clone, Debug)]
 pub enum DirectiveValue {
-	/// The one expression of the attribute value, `on:click={handler}`; `name` makes the
-	/// directive's own argument the expression when there is no value: `bind:value`.
-	Expression { optional: bool, name: bool },
+	/// The one expression of the attribute value, `on:click={handler}`, into `field`; `name` makes
+	/// the directive's own argument the expression when there is no value: `bind:value`.
+	Expression {
+		field: &'static str,
+		optional: bool,
+		name: bool,
+	},
 	/// The one pattern of the attribute value, `let:item={{ id }}`.
-	Pattern { optional: bool, name: bool },
+	Pattern {
+		field: &'static str,
+		optional: bool,
+		name: bool,
+	},
 	/// The attribute value as it is, text and expressions.
-	Value,
+	Value(&'static str),
 	/// The attribute value read by a form, `v-for="item in items"`.
 	Form(Form),
 }
@@ -1026,6 +1030,9 @@ pub enum Unique {
 pub struct DirectiveRule {
 	pub name: Match,
 	pub ty: &'static str,
+	/// The fields that take the directive's own name and its attribute name as written.
+	pub kind: Option<&'static str>,
+	pub raw: Option<&'static str>,
 	pub value: DirectiveValue,
 	pub flags: Vec<(&'static str, bool)>,
 	pub unique: Unique,
@@ -1146,28 +1153,6 @@ pub struct DocumentRule {
 	pub fields: Vec<DocField>,
 }
 
-/// The fields of every element node.
-#[derive(Clone, Debug)]
-pub struct ElementFields {
-	pub name: &'static str,
-	pub attributes: &'static str,
-	pub children: &'static str,
-}
-
-/// The type and fields of every text node: the text as read, and as written.
-#[derive(Clone, Debug)]
-pub struct TextRule {
-	pub ty: &'static str,
-	pub data: &'static str,
-	pub raw: Option<&'static str>,
-}
-
-#[derive(Clone, Debug)]
-pub struct CommentRule {
-	pub ty: &'static str,
-	pub data: &'static str,
-}
-
 /// A host language: its document, its content, and the JavaScript inside them.
 #[derive(Clone, Debug)]
 pub struct Grammar {
@@ -1180,13 +1165,6 @@ pub struct Grammar {
 	/// Whitespace at the end of the source is not part of the document.
 	pub trim: bool,
 	pub void: Vec<&'static str>,
-	/// A node wrapping every list of children, and its field: Svelte's `Fragment`.
-	pub fragment: Option<(&'static str, &'static str)>,
-	/// Every list of children opens a scope of its own.
-	pub fragment_scope: bool,
-	pub element_fields: ElementFields,
-	pub text: TextRule,
-	pub comment: CommentRule,
 	/// The attribute that makes an element's subtree verbatim: text and plain attributes only.
 	pub verbatim: Option<&'static str>,
 	pub elements: Vec<ElementRule>,
@@ -1319,7 +1297,6 @@ pub mod definition {
 
 	wire! {
 		pub struct Elements<'a> {
-			pub fields: Record<'a, Source>,
 			pub rules: Option<Record<'a, Element<'a>>>,
 			pub component: Option<Element<'a>>,
 			pub other: Option<Element<'a>>,
@@ -1347,7 +1324,6 @@ pub mod definition {
 			pub modifier: Option<&'static str>,
 			pub dynamic: Option<(&'static str, &'static str)>,
 			pub unique: Option<Raw>,
-			pub fields: Record<'a, Source>,
 			pub shorthands: Option<Record<'a, &'a [&'static str]>>,
 			pub rules: Option<Record<'a, Directive<'a>>>,
 			pub other: Option<Directive<'a>>,
@@ -1406,15 +1382,12 @@ pub mod definition {
 		/// A host language: its document, its content, and the JavaScript inside them.
 		pub struct Definition<'a> {
 			pub document: Node<'a>,
-			pub text: Node<'a>,
-			pub comment: Node<'a>,
-			pub fragment: Option<Node<'a>>,
 			pub attributes: Option<Attributes>,
 			pub autoclose: Option<bool>,
 			pub trim: Option<bool>,
 			pub void: Option<&'a [&'static str]>,
 			pub verbatim: Option<&'static str>,
-			pub elements: Elements<'a>,
+			pub elements: Option<Elements<'a>>,
 			pub script: Option<Script<'a>>,
 			pub style: Option<&'static str>,
 			pub directives: Option<Directives<'a>>,
@@ -1536,26 +1509,6 @@ fn closed(items: &[Item], body: Option<&Body>) -> bool {
 			if alternatives.iter().all(|a| closed(&a.items, a.body.as_ref())))
 }
 
-/// The field among `fields` read by `read`.
-fn part(fields: &Record<Source>, read: &str) -> Option<&'static str> {
-	fields.0.iter().find(|(_, s)| s.read == read).map(|(field, _)| *field)
-}
-
-/// The fields of a site that reads each of them once and never leaves one out.
-fn once(what: &str, fields: &Record<Source>) -> Result<(), String> {
-	let mut reads = Vec::new();
-	for (field, s) in fields.0 {
-		if s.optional {
-			return Err(format!("{field} on {what} is never left out"));
-		}
-		if reads.contains(&s.read) {
-			return Err(format!("{what} reads {} twice", s.read));
-		}
-		reads.push(s.read);
-	}
-	Ok(())
-}
-
 fn token(what: &str, s: &str) -> Result<(), String> {
 	if s.is_empty() {
 		return Err(format!("{what} is empty"));
@@ -1563,14 +1516,18 @@ fn token(what: &str, s: &str) -> Result<(), String> {
 	Ok(())
 }
 
-/// Whether a literal stands anywhere in `items`, groups included.
-fn has_literal(items: &[definition::Item]) -> bool {
+/// Whether a flag or a directive's name stands anywhere in `items`, groups included.
+fn has_fixed(items: &[definition::Item]) -> bool {
 	items.iter().any(|item| match item {
-		definition::Item::Fields(record) => record.0.iter().any(|(_, s)| s.from == "literal"),
-		definition::Item::Opt(inner) | definition::Item::Scope(inner) => has_literal(inner),
-		definition::Item::OneOf(list) => list.iter().any(|inner| has_literal(inner)),
+		definition::Item::Fields(record) => record.0.iter().any(|(_, s)| fixed(s)),
+		definition::Item::Opt(inner) | definition::Item::Scope(inner) => has_fixed(inner),
+		definition::Item::OneOf(list) => list.iter().any(|inner| has_fixed(inner)),
 		definition::Item::Word(_) => false,
 	})
+}
+
+fn fixed(s: &Source) -> bool {
+	matches!(s.from, "literal" | "directive")
 }
 
 fn form(ty: &str, items: &[definition::Item], site: At, bound: &mut Vec<Declare>) -> Result<Form, String> {
@@ -1629,7 +1586,7 @@ fn sequence(
 			definition::Item::Fields(record) => {
 				for (field, source) in record.0 {
 					match source.from {
-						"literal" if site == At::Directive => continue,
+						"literal" | "directive" if site == At::Directive => continue,
 						"content" => {
 							if site != At::Block || at != items.len() - 1 {
 								return Err(format!("{ty}: {field} is a body, which only ends a block's form"));
@@ -1703,7 +1660,11 @@ fn holds(field: &str, source: &Source) -> Result<RootField, String> {
 		("literal", _, _) => return Err(format!("{field} on the document holds null or a list, not a boolean")),
 		(_, "script", _) => RootField::Script { module: false },
 		(_, "script:module", _) => RootField::Script { module: true },
-		(_, "fragment", _) => RootField::Fragment,
+		("content", _, _) => {
+			return Err(format!(
+				"{field} on the document: its content is its fragment, which it does not name"
+			));
+		}
 		(_, "style", _) => RootField::Style,
 		(_, "comments", _) => RootField::Comments,
 		(_, read, _) => return Err(format!("{field} on the document cannot hold {read}")),
@@ -1717,6 +1678,9 @@ fn scoped(items: &[definition::Item], reads: &mut Vec<&'static str>) -> Result<V
 			definition::Item::Scope(inner) => out.push(DocField::Scope(scoped(inner, reads)?)),
 			definition::Item::Fields(record) => {
 				for (field, source) in record.0 {
+					if *field == "fragment" {
+						return Err("fragment on the document is its content's".into());
+					}
 					if source.from != "literal" {
 						if reads.contains(&source.read) {
 							return Err(format!("the document reads {} twice", source.read));
@@ -1736,6 +1700,17 @@ fn scoped(items: &[definition::Item], reads: &mut Vec<&'static str>) -> Result<V
 	Ok(out)
 }
 
+fn fragment_last(fields: &mut Vec<DocField>) {
+	if let Some(DocField::Scope(inner)) = fields.last_mut() {
+		return fragment_last(inner);
+	}
+	fields.push(DocField::Scope(vec![DocField::Field {
+		field: "fragment",
+		holds: RootField::Fragment,
+		omit: false,
+	}]));
+}
+
 fn element(name: Match, rule: &definition::Element) -> Result<ElementRule, String> {
 	let this = match rule.form.unwrap_or_default() {
 		[] => None,
@@ -1744,6 +1719,9 @@ fn element(name: Match, rule: &definition::Element) -> Result<ElementRule, Strin
 				&& fields[0].1.from == "element"
 				&& matches!(fields[0].1.read, "this" | "this:text") =>
 		{
+			if matches!(fields[0].0, "name" | "attributes" | "fragment") {
+				return Err(format!("{}: {} is every element's own", rule.node, fields[0].0));
+			}
 			Some((fields[0].0, fields[0].1.read == "this:text"))
 		}
 		_ => {
@@ -1770,27 +1748,41 @@ fn directive(name: Match, rule: &definition::Directive) -> Result<DirectiveRule,
 	let items = rule.form.unwrap_or_default();
 	let ty = rule.node;
 	let grouped = items.iter().any(|item| match item {
-		definition::Item::Opt(inner) | definition::Item::Scope(inner) => has_literal(inner),
-		definition::Item::OneOf(list) => list.iter().any(|inner| has_literal(inner)),
+		definition::Item::Opt(inner) | definition::Item::Scope(inner) => has_fixed(inner),
+		definition::Item::OneOf(list) => list.iter().any(|inner| has_fixed(inner)),
 		_ => false,
 	});
 	if grouped {
 		return Err(format!(
-			"{ty}: a flag stands outside groups, since every node of it has one"
+			"{ty}: a flag, or what the name holds, stands outside groups, since every node of it has one"
 		));
 	}
-	let mut flags = Vec::new();
-	for (field, s) in sources(items).iter().filter(|(_, s)| s.from == "literal") {
-		match s.literal {
-			Some(Literal::True) => flags.push((*field, true)),
-			Some(Literal::False) => flags.push((*field, false)),
-			_ => return Err(format!("{ty}: {field} is a flag: true or false")),
+	if let Some(field) = fields_in(ty, items)?
+		.into_iter()
+		.find(|field| matches!(*field, "name" | "modifiers"))
+	{
+		return Err(format!("{ty}: {field} is every directive's own"));
+	}
+	let (mut flags, mut kind, mut raw) = (Vec::new(), None, None);
+	for (field, s) in sources(items) {
+		match (s.from, s.read, s.literal) {
+			("literal", _, Some(Literal::True)) => flags.push((field, true)),
+			("literal", _, Some(Literal::False)) => flags.push((field, false)),
+			("literal", ..) => return Err(format!("{ty}: {field} is a flag: true or false")),
+			("directive", read @ ("name" | "raw"), _) => {
+				let slot = if read == "name" { &mut kind } else { &mut raw };
+				if slot.replace(field).is_some() {
+					return Err(format!("{ty} reads the directive's {read} twice"));
+				}
+			}
+			("directive", read, _) => return Err(format!("{ty}: {field} reads the directive's {read}")),
+			_ => {}
 		}
 	}
 	let rest: Vec<&definition::Item> = items
 		.iter()
 		.filter(|item| match item {
-			definition::Item::Fields(record) => record.0.iter().any(|(_, s)| s.from != "literal"),
+			definition::Item::Fields(record) => record.0.iter().any(|(_, s)| !fixed(s)),
 			_ => true,
 		})
 		.collect();
@@ -1808,14 +1800,11 @@ fn directive(name: Match, rule: &definition::Directive) -> Result<DirectiveRule,
 			Some(inner) => sources(inner),
 			None => sources(std::slice::from_ref(*only)),
 		};
-		single.retain(|(_, s)| s.from != "literal");
+		single.retain(|(_, s)| !fixed(s));
 		if let [(field, s)] = single.as_slice()
 			&& s.from == "value"
 		{
-			let fixed = if s.read == "value" { "value" } else { "expression" };
-			if *field != fixed {
-				return Err(format!("{ty}: a directive's value is read into {fixed}"));
-			}
+			let field = *field;
 			if s.optional {
 				return Err(format!(
 					"{ty}: {field} is a directive's value: `opt` makes it null when missing, it is never left out"
@@ -1823,12 +1812,14 @@ fn directive(name: Match, rule: &definition::Directive) -> Result<DirectiveRule,
 			}
 			let (optional, name_too) = (wrapped.is_some() || s.or_arg, s.or_arg);
 			let value = match s.read {
-				"value" => DirectiveValue::Value,
+				"value" => DirectiveValue::Value(field),
 				"pattern" => DirectiveValue::Pattern {
+					field,
 					optional,
 					name: name_too,
 				},
 				_ => DirectiveValue::Expression {
+					field,
 					optional,
 					name: name_too,
 				},
@@ -1836,6 +1827,8 @@ fn directive(name: Match, rule: &definition::Directive) -> Result<DirectiveRule,
 			return Ok(DirectiveRule {
 				name,
 				ty,
+				kind,
+				raw,
 				value,
 				flags,
 				unique,
@@ -1849,6 +1842,8 @@ fn directive(name: Match, rule: &definition::Directive) -> Result<DirectiveRule,
 	Ok(DirectiveRule {
 		name,
 		ty,
+		kind,
+		raw,
 		value,
 		flags,
 		unique,
@@ -1944,9 +1939,27 @@ fn construct(ty: &'static str, rule: &definition::Construct) -> Result<Construct
 	}
 	let mut bound = Vec::new();
 	let site = if block { At::Block } else { At::Tag };
-	let open = piece(ty, rule.open.marker, rule.open.space, rule.open.form, site, &mut bound)?;
+	let mut open = piece(ty, rule.open.marker, rule.open.space, rule.open.form, site, &mut bound)?;
+	let mut lists = Vec::new();
+	for form in std::iter::once(&open.form).chain(branches.iter().map(|branch| &branch.form)) {
+		collect_bodies(form, &mut lists);
+	}
+	if block && lists.is_empty() {
+		if fields_in(ty, rule.open.form)?.contains(&"fragment") {
+			return Err(format!("{ty}: fragment is its content's"));
+		}
+		open.form.body = Some(Body {
+			field: "fragment",
+			omit: false,
+			chain: None,
+			declares: std::mem::take(&mut bound),
+		});
+	}
 	if block && !closed(&open.form.items, open.form.body.as_ref()) {
-		return Err(format!("{ty} ends in no body"));
+		return Err(format!("{ty} has branches, so its open names its content too"));
+	}
+	if let ([(only, _)], true) = (&lists[..], block) {
+		return Err(format!("{ty}: {only} is its one list, which is its fragment"));
 	}
 	if let Some(unread) = bound.first() {
 		return Err(format!(
@@ -1997,52 +2010,15 @@ fn construct(ty: &'static str, rule: &definition::Construct) -> Result<Construct
 
 fn lower(host: Host) -> Result<Grammar, String> {
 	let d = host.definition;
-	let texts = |node: &definition::Node,
-	             reads: &[&str]|
-	 -> Result<(&'static str, &'static str, Option<&'static str>), String> {
-		let items = node.form.unwrap_or_default();
-		let record = sources(items);
-		let fields_only = items.iter().all(|item| matches!(item, definition::Item::Fields(_)));
-		if !fields_only || record.iter().any(|(_, s)| s.from != "text" || !reads.contains(&s.read)) {
-			return Err(format!("{} holds {} and nothing else", node.node, reads.join(" and ")));
-		}
-		let by = |read: &str| record.iter().find(|(_, s)| s.read == read).map(|(field, _)| *field);
-		Ok((
-			node.node,
-			by("data").ok_or_else(|| format!("{} needs a data field", node.node))?,
-			by("raw"),
-		))
-	};
-	let (text_ty, text_data, text_raw) = texts(&d.text, &["data", "raw"])?;
-	let (comment_ty, comment_data, _) = texts(&d.comment, &["data"])?;
-	let fragment = match &d.fragment {
-		Some(node) => {
-			let (scope, items) = match node.form.unwrap_or_default() {
-				[definition::Item::Scope(inner)] => (true, *inner),
-				items => (false, items),
-			};
-			let ([(field, source)], [_]) = (&sources(items)[..], items) else {
-				return Err(format!("{} holds one field, its nodes", node.node));
-			};
-			if source.from != "nodes" {
-				return Err(format!("{} holds one field, its nodes", node.node));
-			}
-			let field = *field;
-			Some((node.node, field, scope))
-		}
-		None => None,
-	};
-	once("an element", &d.elements.fields)?;
-	let element_fields =
-		|read: &str| part(&d.elements.fields, read).ok_or_else(|| format!("elements need a field read by {read}"));
 	let mut elements = Vec::new();
-	for (name, rule) in d.elements.rules.iter().flat_map(|r| r.0) {
+	let e = d.elements.as_ref();
+	for (name, rule) in e.and_then(|e| e.rules).iter().flat_map(|r| r.0) {
 		elements.push(element(Match::Exact(name), rule)?);
 	}
-	if let Some(rule) = &d.elements.component {
+	if let Some(rule) = e.and_then(|e| e.component.as_ref()) {
 		elements.push(element(Match::Component, rule)?);
 	}
-	if let Some(rule) = &d.elements.other {
+	if let Some(rule) = e.and_then(|e| e.other.as_ref()) {
 		elements.push(element(Match::Any, rule)?);
 	}
 	for rule in &elements {
@@ -2054,7 +2030,6 @@ fn lower(host: Host) -> Result<Grammar, String> {
 	}
 	let x = d.directives.as_ref();
 	if let Some(x) = x {
-		once("a directive", &x.fields)?;
 		for (what, mark) in [
 			("prefix", x.prefix),
 			("argument mark", x.arg),
@@ -2072,10 +2047,6 @@ fn lower(host: Host) -> Result<Grammar, String> {
 		arg: x.arg.unwrap_or(":"),
 		modifier: x.modifier.unwrap_or("|"),
 		dynamic: x.dynamic,
-		name_field: part(&x.fields, "name"),
-		arg_field: part(&x.fields, "arg"),
-		modifiers_field: part(&x.fields, "modifiers"),
-		raw_field: part(&x.fields, "raw"),
 		unique: x.unique.is_some(),
 	});
 	let shorthands = x
@@ -2105,37 +2076,18 @@ fn lower(host: Host) -> Result<Grammar, String> {
 		token("the shorthand's marker", open)?;
 		token("the shorthand's closing word", close)?;
 	}
-	let mut reads = Vec::new();
-	let document = DocumentRule {
-		ty: d.document.node,
-		fields: scoped(d.document.form.unwrap_or_default(), &mut reads)?,
-	};
-	if !reads.contains(&"fragment") {
-		return Err(format!("{} holds no content", d.document.node));
-	}
+	let mut fields = scoped(d.document.form.unwrap_or_default(), &mut Vec::new())?;
+	fragment_last(&mut fields);
 	Ok(Grammar {
 		name: host.name,
-		document,
+		document: DocumentRule {
+			ty: d.document.node,
+			fields,
+		},
 		shorthand,
 		autoclose: d.autoclose == Some(true),
 		trim: d.trim == Some(true),
 		void: d.void.unwrap_or_default().to_vec(),
-		fragment: fragment.map(|(ty, field, _)| (ty, field)),
-		fragment_scope: fragment.is_some_and(|(_, _, scope)| scope),
-		element_fields: ElementFields {
-			name: element_fields("name")?,
-			attributes: element_fields("attributes")?,
-			children: element_fields("fragment")?,
-		},
-		text: TextRule {
-			ty: text_ty,
-			data: text_data,
-			raw: text_raw,
-		},
-		comment: CommentRule {
-			ty: comment_ty,
-			data: comment_data,
-		},
 		verbatim: d.verbatim,
 		elements,
 		script: d.script.as_ref().map(|s| ScriptRule {
@@ -2186,7 +2138,7 @@ impl Grammar {
 			document: DocumentRule {
 				ty: "Document",
 				fields: vec![DocField::Field {
-					field: "children",
+					field: "fragment",
 					holds: RootField::Fragment,
 					omit: false,
 				}],
@@ -2195,22 +2147,6 @@ impl Grammar {
 			autoclose: false,
 			trim: false,
 			void: Vec::new(),
-			fragment: None,
-			fragment_scope: false,
-			element_fields: ElementFields {
-				name: "name",
-				attributes: "attributes",
-				children: "children",
-			},
-			text: TextRule {
-				ty: "Text",
-				data: "data",
-				raw: None,
-			},
-			comment: CommentRule {
-				ty: "Comment",
-				data: "data",
-			},
 			verbatim: None,
 			elements: Vec::new(),
 			script: None,
@@ -2414,14 +2350,12 @@ impl Grammar {
 		let mut fields = Vec::new();
 		document(&self.document.fields, &mut fields);
 		add(self.document.ty, &fields);
-		if let Some((ty, field)) = self.fragment {
-			add(ty, &[field]);
-		}
-		add(self.text.ty, &[]);
-		add(self.comment.ty, &[]);
+		add("Fragment", &["nodes"]);
+		add("Text", &[]);
+		add("Comment", &[]);
 		for rule in &self.elements {
 			fields.clear();
-			fields.extend([self.element_fields.attributes, self.element_fields.children]);
+			fields.extend(["attributes", "fragment"]);
 			fields.extend(rule.this.map(|(field, _)| field));
 			add(rule.ty, &fields);
 		}
@@ -2433,13 +2367,14 @@ impl Grammar {
 		let dynamic = self
 			.directive_syntax
 			.as_ref()
-			.and_then(|syntax| syntax.dynamic.and(syntax.arg_field));
+			.and_then(|syntax| syntax.dynamic.and(Some("name")));
 		for rule in &self.directives {
 			fields.clear();
 			fields.extend(dynamic);
 			match &rule.value {
-				DirectiveValue::Expression { .. } | DirectiveValue::Pattern { .. } => fields.push("expression"),
-				DirectiveValue::Value => fields.push("value"),
+				DirectiveValue::Expression { field, .. }
+				| DirectiveValue::Pattern { field, .. }
+				| DirectiveValue::Value(field) => fields.push(field),
 				DirectiveValue::Form(f) => form(f, &mut fields),
 			}
 			add(rule.ty, &fields);

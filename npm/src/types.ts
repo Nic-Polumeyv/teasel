@@ -172,7 +172,7 @@ export interface Parsed<T> {
 
 /**
  * A node of a host language, as its grammar names the type and the fields; the JavaScript under
- * it is ESTree. The node a grammar wraps children in has no span.
+ * it is ESTree. A `Fragment` has no span.
  */
 export interface HostNode extends Partial<Span> {
 	type: string;

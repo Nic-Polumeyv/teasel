@@ -4,129 +4,142 @@
 		"start": 0,
 		"end": 60,
 		"scope": 0,
-		"children": [
-			{
-				"type": "Element",
-				"start": 0,
-				"end": 59,
-				"scope": 1,
-				"tag": "div",
-				"props": [
-					{
-						"type": "Directive",
-						"start": 5,
-						"end": 12,
-						"name": "bind",
-						"rawName": ":a",
-						"arg": "a",
-						"exp": {
-							"type": "MemberExpression",
-							"start": 9,
-							"end": 11,
-							"root": 1,
-							"object": {
-								"type": "Identifier",
+		"fragment": {
+			"type": "Fragment",
+			"scope": 1,
+			"nodes": [
+				{
+					"type": "Element",
+					"start": 0,
+					"end": 59,
+					"scope": 2,
+					"name": "div",
+					"attributes": [
+						{
+							"type": "Directive",
+							"start": 5,
+							"end": 12,
+							"kind": "bind",
+							"rawName": ":a",
+							"name": "a",
+							"exp": {
+								"type": "MemberExpression",
 								"start": 9,
-								"end": 10,
-								"reference": 0,
-								"name": "x"
-							},
-							"property": {
-								"type": "Identifier",
-								"start": 11,
 								"end": 11,
+								"root": 1,
+								"object": {
+									"type": "Identifier",
+									"start": 9,
+									"end": 10,
+									"reference": 0,
+									"name": "x"
+								},
+								"property": {
+									"type": "Identifier",
+									"start": 11,
+									"end": 11,
+									"name": ""
+								},
+								"computed": false,
+								"optional": false
+							},
+							"modifiers": []
+						},
+						{
+							"type": "Directive",
+							"start": 13,
+							"end": 24,
+							"kind": "on",
+							"rawName": "@click",
+							"name": "click",
+							"handler": {
+								"type": "Program",
+								"start": 21,
+								"end": 23,
+								"root": 2,
+								"body": [],
+								"sourceType": "module"
+							},
+							"modifiers": []
+						},
+						{
+							"type": "Directive",
+							"start": 25,
+							"end": 37,
+							"kind": "for",
+							"rawName": "v-for",
+							"name": null,
+							"value": {
+								"type": "Identifier",
+								"start": 32,
+								"end": 33,
+								"declares": 0,
+								"root": 0,
+								"name": "a"
+							},
+							"source": {
+								"type": "Identifier",
+								"start": 36,
+								"end": 36,
+								"root": 3,
 								"name": ""
 							},
-							"computed": false,
-							"optional": false
-						},
-						"modifiers": []
-					},
-					{
-						"type": "Directive",
-						"start": 13,
-						"end": 24,
-						"name": "on",
-						"rawName": "@click",
-						"arg": "click",
-						"handler": {
-							"type": "Program",
-							"start": 21,
-							"end": 23,
-							"root": 2,
-							"body": [],
-							"sourceType": "module"
-						},
-						"modifiers": []
-					},
-					{
-						"type": "Directive",
-						"start": 25,
-						"end": 37,
-						"name": "for",
-						"rawName": "v-for",
-						"arg": null,
-						"value": {
-							"type": "Identifier",
-							"start": 32,
-							"end": 33,
-							"declares": 0,
-							"root": 0,
-							"name": "a"
-						},
-						"source": {
-							"type": "Identifier",
-							"start": 36,
-							"end": 36,
-							"root": 3,
-							"name": ""
-						},
-						"modifiers": []
-					}
-				],
-				"children": [
-					{
-						"type": "Interpolation",
-						"start": 38,
-						"end": 47,
-						"content": {
-							"type": "BinaryExpression",
-							"start": 41,
-							"end": 45,
-							"root": 4,
-							"left": {
-								"type": "Identifier",
-								"start": 41,
-								"end": 42,
-								"reference": 1,
-								"name": "b"
-							},
-							"operator": "+",
-							"right": {
-								"type": "Identifier",
-								"start": 45,
-								"end": 45,
-								"name": ""
-							}
+							"modifiers": []
 						}
-					},
-					{
-						"type": "Element",
-						"start": 47,
-						"end": 53,
-						"tag": "span",
-						"props": [],
-						"children": []
+					],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 3,
+						"nodes": [
+							{
+								"type": "Interpolation",
+								"start": 38,
+								"end": 47,
+								"content": {
+									"type": "BinaryExpression",
+									"start": 41,
+									"end": 45,
+									"root": 4,
+									"left": {
+										"type": "Identifier",
+										"start": 41,
+										"end": 42,
+										"reference": 1,
+										"name": "b"
+									},
+									"operator": "+",
+									"right": {
+										"type": "Identifier",
+										"start": 45,
+										"end": 45,
+										"name": ""
+									}
+								}
+							},
+							{
+								"type": "Element",
+								"start": 47,
+								"end": 53,
+								"name": "span",
+								"attributes": [],
+								"fragment": {
+									"type": "Fragment",
+									"scope": 4,
+									"nodes": []
+								}
+							}
+						]
 					}
-				]
-			},
-			{
-				"type": "Text",
-				"start": 59,
-				"end": 60,
-				"content": "\n"
-			}
-		]
+				},
+				{
+					"type": "Text",
+					"start": 59,
+					"end": 60,
+					"raw": "\n",
+					"data": "\n"
+				}
+			]
+		}
 	},
 	"end": 60,
 	"comments": [],
@@ -171,8 +184,23 @@
 			"topLevelAwait": false
 		},
 		{
-			"kind": "block",
+			"kind": "fragment",
 			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "block",
+			"parent": 1,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 3,
 			"topLevelAwait": false
 		}
 	],
@@ -180,13 +208,13 @@
 		{
 			"name": "a",
 			"kind": "pattern",
-			"scope": 1,
+			"scope": 2,
 			"write": true
 		}
 	],
 	"references": [
 		{
-			"scope": 1,
+			"scope": 2,
 			"binding": null,
 			"write": false,
 			"read": true,
@@ -194,7 +222,7 @@
 			"declares": false
 		},
 		{
-			"scope": 1,
+			"scope": 3,
 			"binding": null,
 			"write": false,
 			"read": true,
@@ -204,10 +232,10 @@
 	],
 	"roots": [
 		{
-			"scope": 1,
+			"scope": 2,
 			"scopes": [
-				2,
-				2
+				3,
+				3
 			],
 			"bindings": [
 				0,
@@ -219,10 +247,10 @@
 			]
 		},
 		{
-			"scope": 1,
+			"scope": 2,
 			"scopes": [
-				2,
-				2
+				3,
+				3
 			],
 			"bindings": [
 				1,
@@ -234,10 +262,10 @@
 			]
 		},
 		{
-			"scope": 1,
+			"scope": 2,
 			"scopes": [
-				2,
-				2
+				3,
+				3
 			],
 			"bindings": [
 				1,
@@ -249,10 +277,10 @@
 			]
 		},
 		{
-			"scope": 1,
+			"scope": 2,
 			"scopes": [
-				2,
-				2
+				3,
+				3
 			],
 			"bindings": [
 				1,
@@ -264,10 +292,10 @@
 			]
 		},
 		{
-			"scope": 1,
+			"scope": 3,
 			"scopes": [
-				2,
-				2
+				4,
+				4
 			],
 			"bindings": [
 				1,

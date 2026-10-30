@@ -124,18 +124,21 @@ fn every_prefix_answers() {
 #[test]
 fn names_are_escaped() {
 	let vue = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/hosts/vue/host.json")).unwrap();
-	let grammar = vue.replacen(
-		r#""node":"Root","form":[{"children""#,
-		r#""node":"Ro\"ot","form":[{"chil\"dren""#,
+	let grammar = vue.replacen(r#""node":"Root""#, r#""node":"Ro\"ot""#, 1).replacen(
+		r#"{"content":{"from":"js""#,
+		r#"{"con\"tent":{"from":"js""#,
 		1,
 	);
-	let answer = parse_document("<div>hi</div>", &grammar, Options(Options::MODULE));
+	let answer = parse_document("<div>{{ hi }}</div>", &grammar, Options(Options::MODULE));
 	assert!(
-		answer.contains(r#""type":"Ro\"ot""#) && answer.contains(r#""chil\"dren":["#),
+		answer.contains(r#""type":"Ro\"ot""#) && answer.contains(r#""con\"tent":{"#),
 		"{answer}"
 	);
 	let children = teasel::json::children(&teasel::json::grammar(&grammar).unwrap());
-	assert!(children.contains(r#""Ro\"ot":["chil\"dren"]"#), "{children}");
+	assert!(
+		children.contains(r#""Ro\"ot":["fragment"]"#) && children.contains(r#""Interpolation":["con\"tent"]"#),
+		"{children}"
+	);
 }
 
 /// The unfinished and odd inputs the audit found panicking, and the fallback from one expression
@@ -305,6 +308,14 @@ fn construct<'g>(grammar: &'g Grammar, ty: &str) -> &'g Construct {
 	grammar.constructs.iter().find(|c| c.ty == ty).unwrap()
 }
 
+fn elements<'h>(host: &'h mut Host<'static>) -> &'h mut definition::Elements<'static> {
+	host.definition.elements.get_or_insert(definition::Elements {
+		rules: None,
+		component: None,
+		other: None,
+	})
+}
+
 fn element(ty: &'static str) -> definition::Element<'static> {
 	definition::Element {
 		node: ty,
@@ -336,32 +347,16 @@ fn expression(field: &'static str) -> definition::Construct<'static> {
 
 /// A definition with nothing but what every grammar needs.
 fn minimal() -> Host<'static> {
-	let fields = |list: &'static [(&'static str, Source)]| definition::Item::Fields(Record(list));
 	Host {
 		name: "t",
 		definition: definition::Definition {
-			document: node(
-				"Document",
-				list![fields(list![("children", source("content", "fragment", false))])],
-			),
-			text: node("Text", list![fields(list![("data", source("text", "data", false))])]),
-			comment: node("Comment", list![fields(list![("data", source("text", "data", false))])]),
-			fragment: None,
+			document: node("Document", &[]),
 			attributes: None,
 			autoclose: None,
 			trim: None,
 			void: None,
 			verbatim: None,
-			elements: definition::Elements {
-				fields: Record(list![
-					("name", source("element", "name", false)),
-					("attributes", source("element", "attributes", false)),
-					("children", source("content", "fragment", false)),
-				]),
-				rules: None,
-				component: None,
-				other: None,
-			},
+			elements: None,
 			script: None,
 			style: None,
 			directives: None,
@@ -387,7 +382,6 @@ fn a_body_declares_only_what_the_form_reads() {
 					definition::Item::Word("as"),
 					definition::Item::Fields(Record(list![(context, bound)])),
 					definition::Item::Word("}"),
-					definition::Item::Fields(Record(list![("body", source("content", "fragment", false))])),
 				],
 				&[],
 			),
@@ -395,22 +389,11 @@ fn a_body_declares_only_what_the_form_reads() {
 		keep(host.json())
 	};
 	let grammar = Grammar::read(each("context")).unwrap();
-	assert_eq!(
-		construct(&grammar, "EachBlock")
-			.open
-			.form
-			.body
-			.as_ref()
-			.unwrap()
-			.declares[0]
-			.field,
-		"context"
-	);
+	let body = construct(&grammar, "EachBlock").open.form.body.as_ref().unwrap();
+	assert_eq!((body.field, body.declares[0].field), ("fragment", "context"));
 	assert!(Grammar::read("").is_err() && Grammar::read(&each("context")[..40]).is_err());
 	let mut host = minimal();
-	let mut form = host.definition.document.form.unwrap().to_vec();
-	form.push(definition::Item::Word("x"));
-	host.definition.document.form = Some(form.leak());
+	host.definition.document.form = Some(list![definition::Item::Word("x")]);
 	assert!(Grammar::read(keep(host.json())).unwrap_err().contains("document"));
 }
 
@@ -418,11 +401,11 @@ fn a_body_declares_only_what_the_form_reads() {
 #[test]
 fn a_node_type_of_javascript_is_refused() {
 	let mut host = minimal();
-	host.definition.text.node = "Identifier";
+	host.definition.document.node = "Identifier";
 	let error = Grammar::read(keep(host.json())).unwrap_err();
 	assert!(error.contains("Identifier") && error.contains("JavaScript"), "{error}");
 	let mut host = minimal();
-	host.definition.text.node = "TSAnyKeyword";
+	elements(&mut host).other = Some(element("TSAnyKeyword"));
 	assert!(Grammar::read(keep(host.json())).is_err());
 }
 
@@ -439,6 +422,7 @@ fn a_definition_is_refused_by_name() {
 	};
 	let test = definition::Item::Fields(Record(list![("test", bound)]));
 	let consequent = definition::Item::Fields(Record(list![("consequent", source("content", "fragment", false))]));
+	let alternate = definition::Item::Fields(Record(list![("alternate", source("content", "fragment", false))]));
 	let close = definition::Item::Word("}");
 	let error = Grammar::read(with_if(
 		list![test, close, consequent],
@@ -450,8 +434,20 @@ fn a_definition_is_refused_by_name() {
 	))
 	.unwrap_err();
 	assert!(error.contains("reopens the block"), "{error}");
-	let error = Grammar::read(with_if(list![test, close], &[])).unwrap_err();
-	assert!(error.contains("IfBlock ends in no body"), "{error}");
+	let error = Grammar::read(with_if(
+		list![test, close],
+		list![branch(&["{", ":else"], list![close, alternate], None)],
+	))
+	.unwrap_err();
+	assert!(
+		error.contains("IfBlock has branches, so its open names its content too"),
+		"{error}"
+	);
+	let error = Grammar::read(with_if(list![test, close, consequent], &[])).unwrap_err();
+	assert!(
+		error.contains("IfBlock: consequent is its one list, which is its fragment"),
+		"{error}"
+	);
 	let grammar = Grammar::read(with_if(
 		list![test, close, consequent],
 		list![branch(
@@ -471,33 +467,40 @@ fn a_definition_is_refused_by_name() {
 			.field,
 		"test"
 	);
-	let mut host = minimal();
-	host.definition.directives = Some(definition::Directives {
-		prefix: None,
-		arg: None,
-		modifier: None,
-		dynamic: None,
-		unique: None,
-		fields: Record(&[]),
-		shorthands: None,
-		rules: Some(Record(list![(
-			"on",
-			definition::Directive {
-				node: "OnDirective",
-				form: Some(list![definition::Item::Fields(Record(list![(
-					"modifiers",
-					Source {
-						literal: Some(definition::Literal::List),
-						..source("literal", "literal", false)
-					},
-				)]))]),
-				unique: None,
-			},
-		)])),
-		other: None,
-	});
-	let error = Grammar::read(keep(host.json())).unwrap_err();
-	assert!(error.contains("OnDirective: modifiers is a flag"), "{error}");
+	let on = |field: &'static str| {
+		let mut host = minimal();
+		host.definition.directives = Some(definition::Directives {
+			prefix: None,
+			arg: None,
+			modifier: None,
+			dynamic: None,
+			unique: None,
+			shorthands: None,
+			rules: Some(Record(list![(
+				"on",
+				definition::Directive {
+					node: "OnDirective",
+					form: Some(list![definition::Item::Fields(Record(list![(
+						field,
+						Source {
+							literal: Some(definition::Literal::List),
+							..source("literal", "literal", false)
+						},
+					)]))]),
+					unique: None,
+				},
+			)])),
+			other: None,
+		});
+		keep(host.json())
+	};
+	let error = Grammar::read(on("flag")).unwrap_err();
+	assert!(error.contains("OnDirective: flag is a flag"), "{error}");
+	let error = Grammar::read(on("modifiers")).unwrap_err();
+	assert!(
+		error.contains("OnDirective: modifiers is every directive's own"),
+		"{error}"
+	);
 	let mut host = minimal();
 	host.definition.document.form = Some(list![definition::Item::Fields(Record(list![(
 		"js",
@@ -549,7 +552,6 @@ fn records_group_freely() {
 		modifier: None,
 		dynamic: None,
 		unique: None,
-		fields: Record(list![("name", source("directive", "arg", false))]),
 		shorthands: None,
 		rules: Some(Record(list![(
 			"transition",
@@ -570,11 +572,14 @@ fn records_group_freely() {
 		)])),
 		other: None,
 	});
-	host.definition.elements.other = Some(element("RegularElement"));
+	elements(&mut host).other = Some(element("RegularElement"));
 	host.definition.constructs = Some(Record(list![("ExpressionTag", expression("expression"))]));
 	let answer = parse(&host, "<a transition:fade={params}/>");
 	assert!(
-		!answer.contains("\"error\"") && answer.contains("\"name\":\"params\"") && answer.contains("\"intro\":true"),
+		!answer.contains("\"error\"")
+			&& answer.contains("\"name\":\"fade\",\"expression\":{")
+			&& answer.contains("\"name\":\"params\"")
+			&& answer.contains("\"modifiers\":[],\"intro\":true"),
 		"{answer}"
 	);
 }
@@ -592,7 +597,6 @@ fn a_branch_names_a_block_without_branches() {
 				list![
 					fields(list![("list", source("js", "expression", false))]),
 					definition::Item::Word("}"),
-					fields(list![("body", source("content", "fragment", false))]),
 				],
 				&[],
 			),
@@ -642,7 +646,7 @@ fn a_marker_read_halfway_is_another_word() {
 	let mut spread = tag(&["{", "..."], list![js("e"), close()]);
 	spread.r#in = Some(list![Place::Attributes]);
 	let mut host = minimal();
-	host.definition.elements.other = Some(element("Element"));
+	elements(&mut host).other = Some(element("Element"));
 	host.definition.constructs = Some(Record(list![
 		(
 			"EachBlock",
@@ -696,11 +700,7 @@ fn a_shared_close_closes_the_innermost_block() {
 		}),
 		..block(
 			name,
-			list![
-				fields(list![("e", source("js", "expression", false))]),
-				close(),
-				fields(list![("body", source("content", "fragment", false))]),
-			],
+			list![fields(list![("e", source("js", "expression", false))]), close()],
 			&[],
 		)
 	};
@@ -728,8 +728,8 @@ fn a_shared_close_closes_the_innermost_block() {
 fn markers_stand_where_they_may() {
 	let js = |field: &'static str| definition::Item::Fields(Record(list![(field, source("js", "expression", false))]));
 	let mut host = minimal();
-	host.definition.elements.other = Some(element("Element"));
-	host.definition.elements.rules = Some(Record(list![(
+	elements(&mut host).other = Some(element("Element"));
+	elements(&mut host).rules = Some(Record(list![(
 		"textarea",
 		definition::Element {
 			content: Some(definition::Content::Rcdata),
@@ -816,7 +816,6 @@ fn a_definition_says_only_what_is_read() {
 			modifier: None,
 			dynamic: None,
 			unique: None,
-			fields: Record(&[]),
 			shorthands: None,
 			rules: Some(Record(list![(
 				"on",
@@ -848,24 +847,72 @@ fn a_definition_says_only_what_is_read() {
 				},
 			),
 		])])]),
-		"a flag stands outside groups",
+		"a flag, or what the name holds, stands outside groups",
+	);
+	refused(
+		directive(list![definition::Item::Opt(list![fields(list![(
+			"kind",
+			source("directive", "name", false)
+		)])])]),
+		"what the name holds, stands outside groups",
+	);
+	refused(
+		directive(list![fields(list![("name", source("value", "expression", false))])]),
+		"OnDirective: name is every directive's own",
+	);
+	refused(
+		directive(list![fields(list![
+			("kind", source("directive", "name", false)),
+			("again", source("directive", "name", false)),
+		])]),
+		"OnDirective reads the directive's name twice",
+	);
+
+	let svelte_element = |items: &'static [definition::Item<'static>]| {
+		let mut host = minimal();
+		elements(&mut host).rules = Some(Record(list![(
+			"svelte:element",
+			definition::Element {
+				form: Some(items),
+				..element("SvelteElement")
+			},
+		)]));
+		host
+	};
+	refused(
+		svelte_element(list![fields(list![
+			("tag", source("element", "this:text", false)),
+			("other", source("element", "this", false)),
+		])]),
+		"SvelteElement reads one `this` field at most",
+	);
+	refused(
+		svelte_element(list![fields(list![("fragment", source("element", "this", false))])]),
+		"SvelteElement: fragment is every element's own",
+	);
+
+	refused(
+		with_block(list![
+			fields(list![("expression", source("js", "expression", false))]),
+			definition::Item::Word("}"),
+			fields(list![("body", source("content", "fragment", false))]),
+		]),
+		"EachBlock: body is its one list, which is its fragment",
+	);
+	refused(
+		with_block(list![
+			fields(list![("fragment", source("js", "expression", false))]),
+			definition::Item::Word("}"),
+		]),
+		"EachBlock: fragment is its content's",
 	);
 
 	let mut host = minimal();
-	host.definition.elements.rules = Some(Record(list![(
-		"svelte:element",
-		definition::Element {
-			form: Some(list![fields(list![
-				("tag", source("element", "this:text", false)),
-				("other", source("element", "this", false)),
-			])]),
-			..element("SvelteElement")
-		},
-	)]));
-	refused(host, "SvelteElement reads one `this` field at most");
+	host.definition.document.form = Some(list![fields(list![("fragment", source("doc", "comments", false))])]);
+	refused(host, "fragment on the document is its content's");
 
 	let mut host = minimal();
-	host.definition.elements.rules = Some(Record(list![
+	elements(&mut host).rules = Some(Record(list![
 		("head", element("Head")),
 		(
 			"title",
@@ -876,26 +923,6 @@ fn a_definition_says_only_what_is_read() {
 		),
 	]));
 	refused(host, "Title: inside names haed, which no element rule is");
-
-	let mut host = minimal();
-	host.definition.comment = node(
-		"Comment",
-		list![fields(list![
-			("data", source("text", "data", false)),
-			("raw", source("text", "raw", false)),
-		])],
-	);
-	refused(host, "Comment holds data and nothing else");
-
-	let mut host = minimal();
-	host.definition.fragment = Some(node(
-		"Fragment",
-		list![fields(list![
-			("nodes", source("nodes", "nodes", false)),
-			("more", source("nodes", "nodes", false)),
-		])],
-	));
-	refused(host, "Fragment holds one field, its nodes");
 }
 
 // a definition the engine could never parse with is refused when it is read, naming the rule
@@ -935,8 +962,11 @@ fn a_grammar_that_cannot_work_is_refused() {
 	refused(host, "T: a marker's form ends its tag with a word");
 
 	refused(
-		with_block(list![js("e", "expression"), close()], &[]),
-		"X ends in no body",
+		with_block(
+			list![js("e", "expression"), close()],
+			list![branch(&["{", ":else"], list![close(), content("other")], None)],
+		),
+		"X has branches, so its open names its content too",
 	);
 	refused(
 		with_block(
@@ -1089,7 +1119,7 @@ fn a_grammar_that_cannot_work_is_refused() {
 		host,
 		"T: a marker needs parts, none of them empty or holding whitespace",
 	);
-	let mut host = with_block(list![js("e", "expression"), close(), content("body")], &[]);
+	let mut host = with_block(list![js("e", "expression"), close()], &[]);
 	let mut constructs = host.definition.constructs.unwrap().0.to_vec();
 	constructs[0].1.r#in = Some(list![Place::Content, Place::Value]);
 	host.definition.constructs = Some(Record(constructs.leak()));
@@ -1119,35 +1149,28 @@ fn a_grammar_that_cannot_work_is_refused() {
 	);
 
 	let mut host = minimal();
-	let mut fields_read = host.definition.elements.fields.0.to_vec();
-	fields_read.push(("more", source("element", "name", false)));
-	host.definition.elements.fields = Record(fields_read.leak());
-	refused(host, "an element reads name twice");
+	host.definition.document.form = Some(list![content("children")]);
+	refused(
+		host,
+		"children on the document: its content is its fragment, which it does not name",
+	);
 	let mut host = minimal();
-	let mut fields_read = host.definition.elements.fields.0.to_vec();
-	fields_read[1].1.optional = true;
-	host.definition.elements.fields = Record(fields_read.leak());
-	refused(host, "attributes on an element is never left out");
-	let mut host = minimal();
-	host.definition.document.form = Some(list![fields(list![("comments", source("doc", "comments", false))])]);
-	refused(host, "Document holds no content");
-	let mut host = minimal();
-	let mut form = host.definition.document.form.unwrap().to_vec();
-	form.push(fields(list![("again", source("content", "fragment", false))]));
-	host.definition.document.form = Some(form.leak());
-	refused(host, "the document reads fragment twice");
+	host.definition.document.form = Some(list![fields(list![
+		("comments", source("doc", "comments", false)),
+		("again", source("doc", "comments", false)),
+	])]);
+	refused(host, "the document reads comments twice");
 }
 
 // the walker reads what the definition says, not a syntax of its own
 #[test]
 fn a_host_has_its_own_syntax() {
 	let fields = |list: &'static [(&'static str, Source)]| definition::Item::Fields(Record(list));
-	let content = |field: &'static str| fields(list![(field, source("content", "fragment", false))]);
 	let js = |field: &'static str, read: &'static str| fields(list![(field, source("js", read, false))]);
 	let parse = |host: &Host, text: &str| parse_document(text, &host.json(), Options(Options::MODULE));
 	let mut host = minimal();
-	host.definition.elements.other = Some(element("Element"));
-	host.definition.elements.rules = Some(Record(list![(
+	elements(&mut host).other = Some(element("Element"));
+	elements(&mut host).rules = Some(Record(list![(
 		"slot",
 		definition::Element {
 			outside: Some("data-x"),
@@ -1172,7 +1195,7 @@ fn a_host_has_its_own_syntax() {
 			open: definition::Piece {
 				marker: mark(keep(format!("#{name}"))),
 				space: Some(true),
-				form: list![js("e", "expression"), word, content("body")],
+				form: list![js("e", "expression"), word],
 			},
 			branches: None,
 			close: Some(definition::Piece {
@@ -1304,11 +1327,10 @@ fn reads_the_svelte_grammar() {
 	assert_eq!(grammar.name, "svelte");
 	assert_eq!(grammar.document.ty, "Root");
 	assert!(
-		matches!(&grammar.document.fields[5], DocField::Scope(inner) if matches!(inner[0], DocField::Field { field: "instance", holds: RootField::Script { module: false }, omit: true }))
+		matches!(&grammar.document.fields[5], DocField::Scope(inner) if matches!(inner[0], DocField::Field { field: "instance", holds: RootField::Script { module: false }, omit: true })
+			&& matches!(&inner[1], DocField::Scope(last) if matches!(last[..], [DocField::Field { field: "fragment", holds: RootField::Fragment, omit: false }])))
 	);
 	assert_eq!(grammar.directive("let").unwrap().declares, Some(vec![]));
-	assert_eq!(grammar.fragment, Some(("Fragment", "nodes")));
-	assert!(grammar.fragment_scope);
 	assert!(grammar.shorthand == Some(("{", "}")) && grammar.autoclose && grammar.trim);
 	assert_eq!(construct(&grammar, "HtmlTag").open.marker, ["{", "@html"]);
 	assert!(
@@ -1320,10 +1342,8 @@ fn reads_the_svelte_grammar() {
 	assert!(grammar.element("textarea").unwrap().rcdata);
 	assert_eq!(grammar.directives.len(), 10);
 	let syntax = grammar.directive_syntax.as_ref().unwrap();
-	assert_eq!(
-		(syntax.arg, syntax.modifier, syntax.arg_field),
-		(":", "|", Some("name"))
-	);
+	assert_eq!((syntax.arg, syntax.modifier), (":", "|"));
+	assert_eq!(grammar.directive("bind").unwrap().kind, None);
 	assert_eq!(grammar.directive("bind").unwrap().unique, Unique::Attribute);
 	assert_eq!(
 		grammar.directive("in").unwrap().flags,
@@ -1344,6 +1364,10 @@ fn reads_the_svelte_grammar() {
 	assert_eq!(alternatives.len(), 3);
 	assert_eq!(alternatives[0].body.as_ref().unwrap().field, "then");
 	assert_eq!(await_.branches[1].display, "{:catch}");
+	let snippet = construct(&grammar, "SnippetBlock").open.form.body.as_ref().unwrap();
+	let declares: Vec<_> = snippet.declares.iter().map(|d| (d.field, d.outside)).collect();
+	assert_eq!(snippet.field, "fragment");
+	assert_eq!(declares, [("expression", true), ("parameters", false)]);
 	let if_ = construct(&grammar, "IfBlock");
 	assert_eq!(if_.chain_flags, ["elseif"]);
 	assert_eq!(
@@ -1364,10 +1388,7 @@ fn reads_the_vue_grammar() {
 	))
 	.unwrap();
 	assert_eq!(construct(&grammar, "Interpolation").open.marker, ["{{"]);
-	assert!(
-		!grammar.constructs.iter().any(|c| c.stands(Place::Value)) && !grammar.autoclose && grammar.fragment.is_none()
-	);
-	assert_eq!(grammar.element_fields.children, "children");
+	assert!(!grammar.constructs.iter().any(|c| c.stands(Place::Value)) && !grammar.autoclose);
 	let syntax = grammar.directive_syntax.as_ref().unwrap();
 	assert_eq!(
 		(syntax.prefix, syntax.modifier, syntax.dynamic),
@@ -1381,6 +1402,7 @@ fn reads_the_vue_grammar() {
 	};
 	assert!(matches!(form.items[1], Item::Group { required: true, .. }));
 	assert_eq!(grammar.directive("anything").unwrap().name, Match::Any);
+	assert_eq!((for_.kind, for_.raw), (Some("kind"), Some("rawName")));
 	assert_eq!(for_.declares, Some(vec!["value", "key", "index"]));
 	assert_eq!(grammar.verbatim, Some("v-pre"));
 }
