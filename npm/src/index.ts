@@ -93,7 +93,7 @@ export const css: Language<HostNode> = Object.freeze({ [LANGUAGE]: Object.freeze
 export function parse<T = Program>(text: string, options?: Options, language: Language<T> = js as Language<never>): Parsed<T> {
 	const read = language?.[LANGUAGE];
 	if (read === undefined) throw new TypeError('parse takes `js`, `css`, or a grammar made by this copy of @teasel/parser/grammar; a piece goes to parseAt');
-	return answer(text, options, read.entry, 0, '', read.plan);
+	return answer(text, options, read.entry, 0, '', read.plan, read.names);
 }
 
 /**
@@ -107,17 +107,17 @@ export function parse<T = Program>(text: string, options?: Options, language: La
 export function parseAt<P extends Piece<unknown>>(text: string, piece: P, at: number, options?: Options): Parsed<P extends Piece<infer T> ? T : never> {
 	const read = piece?.[PIECE];
 	if (read === undefined) throw new TypeError('parseAt takes a piece of `js`, such as js.program or js.expression');
-	return answer(text, options, read.entry, at, read.stop, undefined);
+	return answer(text, options, read.entry, at, read.stop, undefined, undefined);
 }
 
-function answer<T>(text: string, options: Options | undefined, entry: number, offset: number, stop: string, plan: object | undefined): Parsed<T> {
+function answer<T>(text: string, options: Options | undefined, entry: number, offset: number, stop: string, plan: object | undefined, names: readonly string[] | undefined): Parsed<T> {
 	if (typeof text !== 'string') throw new TypeError('a parse takes a string');
 	if (!Number.isInteger(offset) || offset < 0 || offset > text.length || (offset > 0 && text.codePointAt(offset - 1)! > 0xffff)) throw new RangeError(`${offset} is no offset between characters of the text`);
 	const on = flags(options);
 	const words = engine.parse(text, on, entry, offset, stop, plan);
 	let error: Omit<Recovered, 'line' | 'column'>;
 	try {
-		const parsed = decode(words, text, engine, on, entry === 3) as Parsed<T>;
+		const parsed = decode(words, text, engine, on, entry === 3, true, names) as Parsed<T>;
 		if (parsed.node !== null) return parsed;
 		error = parsed.errors![0];
 	} catch (thrown) {

@@ -10,7 +10,7 @@ interface Exports {
 	parse(ptr: number, len: number, capacity: number, flags: number, entry: number, offset: number, stop_ptr: number, stop_len: number, stop_capacity: number, plan: number): number;
 	plan_new(ptr: number, len: number, capacity: number): number;
 	plan_free(handle: number): void;
-	plan_children(handle: number): void;
+	plan_about(handle: number): void;
 	words_ptr(): number;
 	words_len(): number;
 	text_ptr(): number;
@@ -142,9 +142,12 @@ const engine: Engine = {
 		return words();
 	},
 	plan: (grammar) => new Plan(grammar),
-	children(plan) {
-		guarded(() => wasm.plan_children((plan as Plan).handle()));
+	about(plan) {
+		guarded(() => wasm.plan_about((plan as Plan).handle()));
 		return text();
+	},
+	get generation() {
+		return generation;
 	},
 	layout,
 	// the tree sits in the module's memory until the next parse: a view is made anew when its buffer moved or the memory grew

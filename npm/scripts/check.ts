@@ -30,6 +30,7 @@ function walk(dir: string) {
 const args = process.argv.slice(2);
 const host = args[0] === '--host' ? { path: args[1], grammar: readFileSync(args[1], 'utf8'), extension: args[2] } : undefined;
 const plan = host === undefined ? undefined : native.plan(host.grammar);
+const names: string[] | undefined = plan === undefined ? undefined : JSON.parse(native.about(plan)).names;
 for (const dir of host ? args.slice(3) : args) walk(dir);
 let checked = 0;
 let failed = 0;
@@ -88,7 +89,7 @@ function json(name: string, source: string, options: Options, entry: number, at:
 // a whole document of the host's
 function document(name: string, source: string, options: Options) {
 	const on = flags(options);
-	const tree = JSON.stringify(decode(native.parse(source, on, 0, 0, '', plan), source, native, on, false, false), as_json);
+	const tree = JSON.stringify(decode(native.parse(source, on, 0, 0, '', plan), source, native, on, false, false, names), as_json);
 	const switches = Object.entries(options).flatMap(([key, value]) => (value === true ? [key] : value ? [`${key}:${value}`] : []));
 	jobs.push({ name: `${name} doc ${switches.join('+')}`, source, header: header(DOCUMENT, 0, on), tree });
 }

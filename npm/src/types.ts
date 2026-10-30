@@ -150,14 +150,14 @@ export interface Recovered {
 }
 
 export declare const answers: unique symbol;
-/** What `parse` asks the engine for, on a language: the entry by its index in `Entry` of parser/mod.rs, and a grammar's plan, what the engine made of it. Here and not in `grammar.ts`, so the entry reads the key without loading the builders and the encoder. */
+/** What `parse` asks the engine for, on a language: the entry by its index in `Entry` of parser/mod.rs, and a grammar's plan, what the engine made of it, with the names its documents' rows number. Here and not in `grammar.ts`, so the entry reads the key without loading the builders and the encoder. */
 export const LANGUAGE = Symbol('language');
 /** What `parseAt` asks the engine for, on a piece: the entry, and the host's stop tokens. */
 export const PIECE = Symbol('piece');
 /** What `parse` reads, the whole text: JavaScript, CSS, or a host language by its grammar. `T` is what its parse answers with. */
 export interface Language<T> {
 	readonly [answers]?: T;
-	readonly [LANGUAGE]: { readonly entry: number; readonly plan?: object };
+	readonly [LANGUAGE]: { readonly entry: number; readonly plan?: object; readonly names?: readonly string[] };
 	/** For every type of node a parse of the language answers with, the fields that hold a node or a list of nodes: what a walk follows. A grammar's names the JavaScript types beside the host's. */
 	readonly children: Readonly<Record<string, readonly string[]>>;
 }
@@ -383,6 +383,8 @@ export interface Views {
 	readonly layout: () => string;
 	/** The views of the last parse's tree, JavaScript's or TypeScript's; `moved` when a buffer of it has since this reader last took them. The same array as long as no view in it changed, `moved` aside. */
 	readonly tree: (typescript: boolean, moved: boolean) => Tree;
+	/** How many times the engine started over, numbering the shapes of host nodes anew; none for one that never does. */
+	readonly generation?: number;
 }
 
 /** What parses: the addon or the WebAssembly module. */
@@ -391,6 +393,6 @@ export interface Engine extends Views {
 	readonly parse: (source: string, flags: number, entry: number, offset: number, stop: string, plan: object | undefined) => Uint32Array;
 	/** The grammar of a host language as JSON, read once and let go of when the plan is collected. */
 	readonly plan: (grammar: string) => object;
-	/** Each node type of a grammar's host with the fields that hold nodes, as JSON. */
-	readonly children: (plan: object) => string;
+	/** What a plan tells of its grammar, as JSON: each node type of its host with the fields that hold nodes, and the names the rows of its documents number. */
+	readonly about: (plan: object) => string;
 }

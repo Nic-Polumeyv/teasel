@@ -223,6 +223,8 @@ pub fn layout_json() -> String {
 	w.key("ts");
 	names(&mut w, view_names(true));
 	w.end();
+	w.key("names");
+	names(&mut w, host::grammar::own::NAMES.to_vec());
 	w.key("stylesheet");
 	children_table(&mut w, host::stylesheet_children());
 	w.key("recipes");
@@ -244,11 +246,19 @@ pub fn layout_json() -> String {
 	w.finish()
 }
 
-/// Every type of node a host's documents hold, each with the fields that hold nodes, as JSON; see
-/// `Grammar::children`.
-pub fn children(grammar: &Grammar) -> String {
+/// What a front end learns of a grammar once, as JSON: every type of node its documents hold, each
+/// with the fields that hold nodes (see `Grammar::children`), and its names by the numbers the
+/// hosts' rows give them.
+pub fn about(grammar: &Grammar) -> String {
 	let mut w = Json::default();
+	w.object();
+	w.key("children");
 	children_table(&mut w, grammar.children());
+	w.key("names");
+	w.list();
+	grammar.names.iter().for_each(|name| w.text(name));
+	w.end();
+	w.end();
 	w.finish()
 }
 
@@ -312,7 +322,8 @@ pub fn in_place(
 /// What every parse on a thread reuses: the trees, emptied, and the answer's buffers.
 #[derive(Default)]
 struct Session {
-	pool: Pool,
+	/// The JavaScript tree, then the TypeScript one: a front end keeps the views of the two apart.
+	trees: [Option<Box<Ast>>; 2],
 	words: Words,
 	/// Whether the last parse used the TypeScript tree.
 	typescript: bool,
@@ -339,9 +350,9 @@ pub fn tree(f: &mut dyn FnMut(&'static str, Option<&mut dyn Raw>)) -> Option<boo
 	SESSION.with(|session| {
 		let session = &mut *session.borrow_mut();
 		let typescript = session.typescript;
-		let slot = &mut session.pool.slots[typescript as usize];
-		slot.tree.as_deref_mut()?.views(typescript, &mut Views(f));
-		slot.names.views(&mut Views(f));
+		session.trees[typescript as usize]
+			.as_deref_mut()?
+			.views(typescript, &mut Views(f));
 		Some(typescript)
 	})
 }
@@ -350,7 +361,6 @@ pub fn tree(f: &mut dyn FnMut(&'static str, Option<&mut dyn Raw>)) -> Option<boo
 fn view_names(typescript: bool) -> Vec<&'static str> {
 	let mut names = Vec::new();
 	Ast::default().views(typescript, &mut Views(&mut |name, _| names.push(name)));
-	Names::default().views(&mut Views(&mut |name, _| names.push(name)));
 	names
 }
 
@@ -366,77 +376,6 @@ pub fn grammar(text: &str) -> Result<Rc<Grammar>, String> {
 		grammars.push((text, grammar.clone()));
 		Ok(grammar)
 	})
-}
-
-/// What JavaScript answers reuse, then what TypeScript answers reuse: a front end keeps the views
-/// of the two apart.
-#[derive(Default)]
-pub struct Pool {
-	slots: [Slot; 2],
-}
-
-#[derive(Default)]
-struct Slot {
-	tree: Option<Box<Ast>>,
-	/// The names of the hosts' types and keys, numbered once for every answer of the slot.
-	names: Names,
-}
-
-/// Names a front end knows by number across answers, and the shapes of host nodes.
-#[derive(Default)]
-pub(crate) struct Names {
-	names: crate::interner::Interner,
-	/// Each name by where it sits, with its number: a grammar's names are few places, met again
-	/// and again, and the place hashes faster than the text.
-	places: Vec<((usize, usize), u32)>,
-	place_slots: crate::interner::Slots,
-	/// Each shape back to back: a host node's type, whether it has a span, and each field's key
-	/// and kind of value; nodes of one shape are built by one literal.
-	shapes: Vec<u32>,
-	shape_starts: Vec<u32>,
-	shape_slots: crate::interner::Slots,
-	shape: Vec<u32>,
-}
-
-impl Names {
-	fn id(&mut self, name: &'static str) -> u32 {
-		let place = (name.as_ptr() as usize, name.len());
-		let hash = crate::interner::hash_words(&[place.0 as u32, (place.0 as u64 >> 32) as u32, place.1 as u32]);
-		let places = &self.places;
-		let slot = match self.place_slots.probe(hash, |i| places[i as usize].0 == place) {
-			Ok(i) => return self.places[i as usize].1,
-			Err(slot) => slot,
-		};
-		let id = self.names.intern(name).index();
-		self.place_slots.insert(slot, hash, self.places.len() as u32);
-		self.places.push((place, id));
-		id
-	}
-
-	/// The number of the shape `self.shape` spells.
-	fn shape_id(&mut self) -> u32 {
-		let hash = crate::interner::hash_words(&self.shape);
-		let (shapes, starts) = (&self.shapes, &self.shape_starts);
-		let same = |id: u32| shapes[starts[id as usize] as usize..starts[id as usize + 1] as usize] == *self.shape;
-		let slot = match self.shape_slots.probe(hash, same) {
-			Ok(id) => return id,
-			Err(slot) => slot,
-		};
-		if self.shape_starts.is_empty() {
-			self.shape_starts.push(0);
-		}
-		let id = self.shape_starts.len() as u32 - 1;
-		self.shapes.extend_from_slice(&self.shape);
-		self.shape_starts.push(self.shapes.len() as u32);
-		self.shape_slots.insert(slot, hash, id);
-		id
-	}
-
-	fn views(&mut self, out: &mut Views<'_>) {
-		let (text, starts, _) = self.names.buffers();
-		out.push("names", text);
-		out.push("name_starts", starts);
-	}
 }
 
 pub fn entry(index: f64) -> Result<Entry, String> {
@@ -490,7 +429,7 @@ fn answer_to(
 			Some(json) => Out::Json(json),
 			None => Out::Words(&mut session.words),
 		};
-		run(source, positions, &request, stop, host, &mut session.pool, out);
+		run(source, positions, &request, stop, host, &mut session.trees, out);
 	})
 }
 
@@ -501,12 +440,12 @@ fn run(
 	request: &Request,
 	stop: &str,
 	host: Option<&Grammar>,
-	pool: &mut Pool,
+	trees: &mut [Option<Box<Ast>>; 2],
 	out: Out<'_>,
 ) {
 	let options = request.options;
-	let slot = &mut pool.slots[options.typescript() as usize];
-	let reused = slot.tree.take().map(|mut ast| {
+	let slot = &mut trees[options.typescript() as usize];
+	let reused = slot.take().map(|mut ast| {
 		ast.clear();
 		ast
 	});
@@ -540,11 +479,13 @@ fn run(
 		}
 	}
 	match out {
-		Out::Json(json) => *json = answer(&ast, request.entry, roots, end, source, positions, options),
+		Out::Json(json) => {
+			let names = host.map_or(host::grammar::own::NAMES, |grammar| &grammar.names);
+			*json = answer(&ast, request.entry, roots, end, source, positions, options, names);
+		}
 		Out::Words(words) => {
 			let failed = roots.is_none();
-			let names = &mut slot.names;
-			prepare(&mut ast, source, positions, options, failed, names);
+			prepare(&mut ast, source, positions, options, failed);
 			// `end`, the roots by number, a word of what the answer is, each view's length, then where
 			// the tree's buffers sit folded into two words: a front end keeps its views while that holds
 			words.clear();
@@ -565,20 +506,19 @@ fn run(
 				}
 			};
 			ast.views(options.typescript(), &mut Views(&mut note));
-			names.views(&mut Views(&mut note));
 			words.extend_from_slice(&[sits as u32, (sits >> 32) as u32]);
 		}
 	}
-	slot.tree = Some(ast);
+	*slot = Some(ast);
 }
 
 /// What a front end reading the tree in place needs beside it: every node's span and location
 /// as JavaScript counts them, the nodes erasure leaves out, the hosts, the comments, the errors
 /// and the strings' UTF-16 starts; a failed parse prepares its error row alone, the
 /// tree it read is left as the last answer cleared it.
-fn prepare(ast: &mut Ast, source: &str, positions: &Positions, options: Options, failed: bool, names: &mut Names) {
+fn prepare(ast: &mut Ast, source: &str, positions: &Positions, options: Options, failed: bool) {
 	if !failed {
-		prepare_tree(ast, positions, options, names);
+		prepare_tree(ast, positions, options);
 	}
 	ast.error_rows.clear();
 	if failed || options.has(Options::ERROR_RECOVERY) {
@@ -614,7 +554,7 @@ fn prepare(ast: &mut Ast, source: &str, positions: &Positions, options: Options,
 	}
 }
 
-fn prepare_tree(ast: &mut Ast, positions: &Positions, options: Options, names: &mut Names) {
+fn prepare_tree(ast: &mut Ast, positions: &Positions, options: Options) {
 	positions.map_nodes(&ast.nodes, &mut ast.spans, &mut ast.locs);
 	ast.erased.clear();
 	if options.has(Options::ERASE) {
@@ -641,42 +581,8 @@ fn prepare_tree(ast: &mut Ast, positions: &Positions, options: Options, names: &
 		scopes.mark(ast, &mut rare, &mut late);
 	}
 	(ast.rare, ast.late) = (rare, late);
-	ast.host_rows.clear();
-	ast.host_keys.clear();
-	ast.host_vals.clear();
-	let mut cursor = crate::estree::Cursor::default();
-	for i in 0..ast.host_fields.len() {
-		let (key, value) = ast.host_fields[i];
-		ast.host_keys.push(names.id(key));
-		let mut row = value.row();
-		if let crate::ast::Value::Slice(start, end) = value {
-			row.value = [positions.offset(&mut cursor, start), positions.offset(&mut cursor, end)];
-		}
-		ast.host_vals.push(row);
-	}
-	for i in 0..ast.hosts.len() {
-		let host = ast.hosts[i];
-		let ty = (!host.ty.is_empty()).then(|| names.id(host.ty));
-		let (from, len) = (host.fields.0 as usize, host.fields.1 as usize);
-		names.shape.clear();
-		names.shape.extend([ty.unwrap_or(u32::MAX), host.span as u32]);
-		for field in from..from + len {
-			names
-				.shape
-				.extend([ast.host_keys[field], ast.host_vals[field].tag as u32]);
-		}
-		let shape = names.shape_id();
-		ast.host_rows.push(crate::ast::HostRow {
-			ty,
-			fields: crate::ast::Run {
-				start: host.fields.0,
-				len: host.fields.1,
-			},
-			shape,
-			span: host.span,
-		});
-	}
-	if options.has(Options::COMMENTS) || !ast.hosts.is_empty() {
+	positions.map_values(&mut ast.host_vals);
+	if options.has(Options::COMMENTS) || !ast.host_rows.is_empty() {
 		positions.map_comments(&ast.comments, &mut ast.comment_rows);
 	}
 }

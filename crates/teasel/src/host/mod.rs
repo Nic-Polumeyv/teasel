@@ -8,7 +8,9 @@ pub mod grammar;
 
 use std::borrow::Cow;
 
-use crate::ast::{Ast, Comment, CommentKind, Host, HostGroup, List, NodeId, NodeKind, Opens, Value, VariableKind};
+use crate::ast::{
+	Ast, Comment, CommentKind, HostGroup, HostRow, List, NodeId, NodeKind, Opens, Run, Value, VariableKind,
+};
 use crate::error::{Code, SyntaxError};
 use crate::interner::StrId;
 use crate::lexer::scan::{find, find_pair, is_space};
@@ -16,8 +18,8 @@ use crate::lexer::unicode::{is_id_continue, is_id_start};
 use crate::parser::{Entry as JsEntry, Options, Parser, Result};
 pub use grammar::Grammar;
 use grammar::{
-	Alternative, Body, Construct, DirectiveRule, DirectiveValue, DocField, Entry, Form, Item, Match, Piece, Place,
-	RootField, Unique, Which, component_name,
+	Alternative, Body, Construct, DirectiveRule, DirectiveValue, DocField, Entry, Form, Item, Match, Name, Piece,
+	Place, RootField, Shapes, Unique, Which, component_name, own,
 };
 
 /// A whole marker at the cursor: its construct, which piece, and where its last part's word starts.
@@ -291,9 +293,9 @@ enum Frame<'a> {
 	Element {
 		start: u32,
 		name: (u32, u32),
-		ty: &'static str,
+		ty: Name,
 		attributes: Vec<NodeId>,
-		fields: Vec<(&'static str, Value)>,
+		fields: Vec<(Name, Value)>,
 		nodes: Vec<NodeId>,
 		/// The attributes on it that keep an element rule's `outside` from applying inside.
 		outside: Vec<&'static str>,
@@ -305,28 +307,28 @@ enum Frame<'a> {
 	Block {
 		start: u32,
 		rule: &'a Construct,
-		fields: Vec<(&'static str, Value)>,
+		fields: Vec<(Name, Value)>,
 		/// The open body: its field and whether it is left out of blocks that never opened it.
-		body: (&'static str, bool),
+		body: (Name, bool),
 		nodes: Vec<NodeId>,
 		/// Bodies closed so far, each as its children.
-		done: Vec<(&'static str, Value)>,
+		done: Vec<(Name, Value)>,
 		/// The scope of each body read so far.
 		groups: Vec<BodyGroup>,
 		outside: Vec<NodeId>,
 		/// The parent's field this block fills as a chained branch, `{:else if}`, and the flag set.
-		chain: Option<(&'static str, &'static str)>,
+		chain: Option<(Name, Name)>,
 	},
 }
 
 /// What a form read: its fields, and the body its alternatives chose.
 #[derive(Default)]
 struct Read<'a> {
-	fields: Vec<(&'static str, Value)>,
+	fields: Vec<(Name, Value)>,
 	body: Option<&'a Body>,
 }
 
-fn fill_unread(entries: &[(&'static str, bool)], fields: &mut Vec<(&'static str, Value)>) {
+fn fill_unread(entries: &[(Name, bool)], fields: &mut Vec<(Name, Value)>) {
 	for &(field, omit) in entries {
 		if !omit && !fields.iter().any(|(k, _)| *k == field) {
 			fields.push((field, Value::Null));
@@ -337,14 +339,14 @@ fn fill_unread(entries: &[(&'static str, bool)], fields: &mut Vec<(&'static str,
 /// A body's scope as its form read it: the body's field, the entry fields the scope holds, and
 /// the patterns declared in it.
 struct BodyGroup {
-	body: &'static str,
-	fields: Vec<&'static str>,
+	body: Name,
+	fields: Vec<Name>,
 	inside: Vec<NodeId>,
 }
 
 /// What reading an attribute gives: its node, and the kind and name it must not repeat on the
 /// element, when it has such a name.
-type Attribute = (NodeId, Option<(&'static str, StrId)>);
+type Attribute = (NodeId, Option<(Name, StrId)>);
 
 /// An attribute name read as a directive: its rule, name, argument and modifiers.
 struct Directive<'a> {
@@ -359,6 +361,7 @@ struct Walker<'a> {
 	src: &'a str,
 	full: u32,
 	grammar: &'a Grammar,
+	shapes: std::cell::RefMut<'a, Shapes>,
 	options: Options,
 	ast: Option<Box<Ast>>,
 	at: u32,
@@ -367,7 +370,7 @@ struct Walker<'a> {
 	/// The JavaScript read last ended at one of its stops.
 	stopped: bool,
 	frames: Vec<Frame<'a>>,
-	once: Vec<&'static str>,
+	once: Vec<Name>,
 	/// Where the current tag's word starts, for a declaration spelled without its keyword.
 	keyword: u32,
 	/// The word that ends the tag being read: missing, it is reported and the tag ends there.
@@ -383,12 +386,12 @@ struct Walker<'a> {
 	/// The patterns the directives of the element being read declare.
 	declared: Vec<NodeId>,
 	/// Buffers given back once used, for the next of their kind.
-	fields: Pool<(&'static str, Value)>,
+	fields: Pool<(Name, Value)>,
 	nodes: Pool<NodeId>,
-	names: Pool<&'static str>,
+	names: Pool<Name>,
 	groups: Pool<BodyGroup>,
 	/// The kinds and names the attributes of the element being read must not repeat.
-	seen: Vec<(&'static str, StrId)>,
+	seen: Vec<(Name, StrId)>,
 }
 
 struct Pool<T>(Vec<Vec<T>>);
@@ -440,12 +443,18 @@ pub(crate) fn parse_document(
 	(walker.ast.take().unwrap(), root)
 }
 
+thread_local! {
+	/// The grammar behind a stylesheet read on its own, which numbers the shapes of its nodes.
+	static SHEETS: Grammar = Grammar::empty();
+}
+
 /// The whole source as a CSS stylesheet; see `Walker::stylesheet`.
 pub(crate) fn parse_stylesheet(src: &str, options: Options, reused: Option<Box<Ast>>) -> (Box<Ast>, Result<NodeId>) {
-	let grammar = Grammar::empty();
-	let mut walker = Walker::new(src, src.len() as u32, &grammar, options, reused, Vec::new());
-	let root = walker.stylesheet();
-	(walker.ast.take().unwrap(), root)
+	SHEETS.with(|grammar| {
+		let mut walker = Walker::new(src, src.len() as u32, grammar, options, reused, Vec::new());
+		let root = walker.stylesheet();
+		(walker.ast.take().unwrap(), root)
+	})
 }
 
 impl<'a> Walker<'a> {
@@ -461,6 +470,7 @@ impl<'a> Walker<'a> {
 			src,
 			full,
 			grammar,
+			shapes: grammar.shapes.borrow_mut(),
 			options,
 			ast: Some(reused.unwrap_or_else(|| Box::new(Ast::sized(full as usize)))),
 			at: 0,
@@ -614,24 +624,32 @@ impl<'a> Walker<'a> {
 
 	fn host(
 		&mut self,
-		ty: &'static str,
+		ty: Name,
 		start: u32,
 		end: u32,
-		fields: &[(&'static str, Value)],
+		fields: &[(Name, Value)],
 		scope: Option<Opens>,
 		span: bool,
 	) -> NodeId {
-		let ast = self.ast();
-		let from = ast.host_fields.len() as u32;
-		let len = fields.len() as u32;
-		ast.host_fields.extend_from_slice(fields);
-		let index = ast.hosts.len() as u32;
-		ast.hosts.push(Host {
+		let ast = self.ast.as_deref_mut().unwrap();
+		let from = ast.host_keys.len();
+		for &(key, value) in fields {
+			ast.host_keys.push(key.0);
+			ast.host_vals.push(value.row());
+		}
+		let ty = (ty != Name::NONE).then_some(ty.0);
+		let shape = self.shapes.of(ty, span, &ast.host_keys[from..], &ast.host_vals[from..]);
+		let index = ast.host_rows.len() as u32;
+		ast.host_rows.push(HostRow {
 			ty,
-			fields: (from, len),
+			fields: Run {
+				start: from as u32,
+				len: fields.len() as u32,
+			},
+			shape,
 			span,
-			scope,
 		});
+		ast.host_scopes.push(scope);
 		ast.add(NodeKind::Host(index), start, end)
 	}
 
@@ -640,10 +658,10 @@ impl<'a> Walker<'a> {
 		let data = decode(raw, attribute);
 		let data = self.text(start, end, data);
 		self.host(
-			"Text",
+			own::Text,
 			start,
 			end,
-			&[("raw", Value::Slice(start, end)), ("data", data)],
+			&[(own::raw, Value::Slice(start, end)), (own::data, data)],
 			None,
 			true,
 		)
@@ -657,17 +675,24 @@ impl<'a> Walker<'a> {
 			_ => (self.at, self.at),
 		};
 		self.nodes.give(nodes);
-		self.host("Fragment", start, end, &[("nodes", Value::Nodes(list))], None, false)
+		self.host(
+			own::Fragment,
+			start,
+			end,
+			&[(own::nodes, Value::Nodes(list))],
+			None,
+			false,
+		)
 	}
 
 	/// The scopes an element opens, over the fields about to make its node: one for what its
 	/// directives declare, over its attributes and fragment, and its fragment's.
-	fn element_scope(&mut self, fields: &[(&'static str, Value)], declared: &[NodeId]) -> Opens {
+	fn element_scope(&mut self, fields: &[(Name, Value)], declared: &[NodeId]) -> Opens {
 		let attributes = fields.len() - 2;
 		let Value::Node(fragment) = fields[attributes + 1].1 else {
 			unreachable!()
 		};
-		let base = self.ast().host_fields.len() as u32 + attributes as u32;
+		let base = self.ast().host_keys.len() as u32 + attributes as u32;
 		let at = self.ast().host_groups.len() as u32;
 		if !declared.is_empty() {
 			let inside = self.list(declared);
@@ -700,24 +725,24 @@ impl<'a> Walker<'a> {
 		}
 	}
 
-	fn host_type(&self, id: NodeId) -> &'static str {
+	fn host_type(&self, id: NodeId) -> Option<Name> {
 		let ast = self.tree();
 		match ast.node(id).kind {
-			NodeKind::Host(index) => ast.hosts[index as usize].ty,
-			_ => "",
+			NodeKind::Host(index) => ast.host_rows[index as usize].ty.map(Name),
+			_ => None,
 		}
 	}
 
-	fn field_of(&self, id: NodeId, key: &str) -> Option<Value> {
+	fn field_of(&self, id: NodeId, key: Name) -> Option<Value> {
 		let ast = self.tree();
 		let NodeKind::Host(index) = ast.node(id).kind else {
 			return None;
 		};
-		let host = ast.hosts[index as usize];
-		ast.host_fields[host.fields.0 as usize..(host.fields.0 + host.fields.1) as usize]
-			.iter()
-			.find(|(k, _)| *k == key)
-			.map(|&(_, v)| v)
+		ast.host_rows[index as usize]
+			.fields
+			.indices()
+			.find(|&i| ast.host_keys[i as usize] == key.0)
+			.map(|i| ast.host_vals[i as usize].value())
 	}
 
 	fn string_of(&self, value: Value) -> Option<&str> {
@@ -729,12 +754,13 @@ impl<'a> Walker<'a> {
 	}
 
 	fn attribute_named(&self, id: NodeId, name: &str) -> bool {
-		self.host_type(id) == "Attribute" && self.field_of(id, "name").and_then(|v| self.string_of(v)) == Some(name)
+		self.host_type(id) == Some(own::Attribute)
+			&& self.field_of(id, own::name).and_then(|v| self.string_of(v)) == Some(name)
 	}
 
 	/// The one chunk of an attribute's value, when it has one.
 	fn attribute_chunk(&self, id: NodeId) -> Option<NodeId> {
-		match self.field_of(id, "value")? {
+		match self.field_of(id, own::value)? {
 			Value::Node(tag) => Some(tag),
 			Value::Nodes(list) => match self.tree().list(list) {
 				[Some(chunk)] => Some(*chunk),
@@ -747,7 +773,7 @@ impl<'a> Walker<'a> {
 	/// The expression node of a chunk written as one, `{expression}`.
 	fn chunk_expression(&self, chunk: NodeId) -> Option<NodeId> {
 		let rule = self.grammar.value_expression()?;
-		if self.host_type(chunk) != rule.ty {
+		if self.host_type(chunk) != Some(rule.ty) {
 			return None;
 		}
 		let (field, _) = rule.single()?;
@@ -764,19 +790,19 @@ impl<'a> Walker<'a> {
 
 	/// The text of `name="text"`.
 	fn attribute_text(&self, id: NodeId) -> Option<&str> {
-		let Value::Nodes(_) = self.field_of(id, "value")? else {
+		let Value::Nodes(_) = self.field_of(id, own::value)? else {
 			return None;
 		};
 		let chunk = self.attribute_chunk(id)?;
-		if self.host_type(chunk) != "Text" {
+		if self.host_type(chunk) != Some(own::Text) {
 			return None;
 		}
-		self.string_of(self.field_of(chunk, "data")?)
+		self.string_of(self.field_of(chunk, own::data)?)
 	}
 
 	/// An expression chunk as the node of the construct that read it.
 	fn chunk(&mut self, rule: &Construct, start: u32, end: u32, expression: NodeId) -> NodeId {
-		let field = rule.single().map_or("expression", |(field, _)| field);
+		let field = rule.single().map_or(own::expression, |(field, _)| field);
 		self.host(rule.ty, start, end, &[(field, Value::Node(expression))], None, true)
 	}
 
@@ -850,7 +876,7 @@ impl<'a> Walker<'a> {
 		fn place(
 			w: &mut Walker,
 			items: &[DocField],
-			fields: &mut Vec<(&'static str, Value)>,
+			fields: &mut Vec<(Name, Value)>,
 			scopes: &mut Vec<(usize, usize, Option<NodeId>)>,
 			held: (Value, Option<NodeId>, Option<NodeId>, Option<NodeId>),
 		) {
@@ -867,10 +893,12 @@ impl<'a> Walker<'a> {
 						// the scope belongs to the fragment it starts with, or to a script's program
 						let node = match fields[from].1 {
 							Value::Node(id) if matches!(children, Value::Node(fragment) if fragment == id) => Some(id),
-							Value::Node(id) if w.host_type(id) == "Script" => match w.field_of(id, "content") {
-								Some(Value::Node(program)) => Some(program),
-								_ => None,
-							},
+							Value::Node(id) if w.host_type(id) == Some(own::Script) => {
+								match w.field_of(id, own::content) {
+									Some(Value::Node(program)) => Some(program),
+									_ => None,
+								}
+							}
 							_ => None,
 						};
 						scopes.push((from, until, node));
@@ -915,7 +943,7 @@ impl<'a> Walker<'a> {
 			(children, instance, module, css),
 		);
 		let full = self.full;
-		let base = self.ast().host_fields.len() as u32;
+		let base = self.ast().host_keys.len() as u32;
 		let at = self.ast().host_groups.len() as u32;
 		for &(from, until, node) in &scopes {
 			self.ast().host_groups.push(HostGroup {
@@ -977,10 +1005,10 @@ impl<'a> Walker<'a> {
 			let data_start = self.at;
 			self.at += len as u32 + 3;
 			let node = self.host(
-				"Comment",
+				own::Comment,
 				start,
 				self.at,
-				&[("data", Value::Slice(data_start, self.at - 3))],
+				&[(own::data, Value::Slice(data_start, self.at - 3))],
 				None,
 				true,
 			);
@@ -1082,7 +1110,7 @@ impl<'a> Walker<'a> {
 					self.declared.clear();
 					continue;
 				}
-				if kind == "Attribute"
+				if kind == own::Attribute
 					&& ty == plain && let Some(mark) = self
 					.grammar
 					.elements
@@ -1122,11 +1150,11 @@ impl<'a> Walker<'a> {
 						None => {
 							let chunk = self
 								.attribute_chunk(this)
-								.filter(|&chunk| text && self.host_type(chunk) == "Text");
+								.filter(|&chunk| text && self.host_type(chunk) == Some(own::Text));
 							match chunk {
 								Some(chunk) => {
 									let node = *self.tree().node(chunk);
-									let value = match self.field_of(chunk, "data") {
+									let value = match self.field_of(chunk, own::data) {
 										Some(Value::Str(s)) => s,
 										Some(Value::Slice(a, b)) => self.intern(&self.src[a as usize..b as usize]),
 										_ => unreachable!(),
@@ -1181,7 +1209,7 @@ impl<'a> Walker<'a> {
 								Some(&format!("{attribute} to be \"{value}\"")),
 							)?;
 						}
-						None if !matches!(self.field_of(id, "value"), Some(Value::Bool(true))) => {
+						None if !matches!(self.field_of(id, own::value), Some(Value::Bool(true))) => {
 							let node = *self.tree().node(id);
 							self.report_at(
 								node.start,
@@ -1197,13 +1225,13 @@ impl<'a> Walker<'a> {
 			let context = self.intern(if module { "module" } else { "default" });
 			let attributes = self.list(&attributes);
 			let node = self.host(
-				"Script",
+				own::Script,
 				start,
 				self.at,
 				&[
-					("context", Value::Str(context)),
-					("content", Value::Node(program)),
-					("attributes", Value::Nodes(attributes)),
+					(own::context, Value::Str(context)),
+					(own::content, Value::Node(program)),
+					(own::attributes, Value::Nodes(attributes)),
 				],
 				None,
 				true,
@@ -1241,25 +1269,22 @@ impl<'a> Walker<'a> {
 			self.report_at(self.at, self.at, Code::Expected, Some(">"))?;
 		}
 		let name_id = self.intern(name);
-		fields.insert(0, ("name", Value::Str(name_id)));
-		let finish = |w: &mut Self,
-		              attributes: Vec<NodeId>,
-		              mut fields: Vec<(&'static str, Value)>,
-		              nodes: Vec<NodeId>,
-		              end: u32| {
-			let list = w.list(&attributes);
-			w.nodes.give(attributes);
-			fields.push(("attributes", Value::Nodes(list)));
-			let fragment = w.fragment(nodes);
-			fields.push(("fragment", Value::Node(fragment)));
-			let scope = w.element_scope(&fields, &declared);
-			let node = w.host(ty, start, end, &fields, Some(scope), true);
-			w.fields.give(fields);
-			w.append(node);
-			if verbatim_here {
-				w.verbatim -= 1;
-			}
-		};
+		fields.insert(0, (own::name, Value::Str(name_id)));
+		let finish =
+			|w: &mut Self, attributes: Vec<NodeId>, mut fields: Vec<(Name, Value)>, nodes: Vec<NodeId>, end: u32| {
+				let list = w.list(&attributes);
+				w.nodes.give(attributes);
+				fields.push((own::attributes, Value::Nodes(list)));
+				let fragment = w.fragment(nodes);
+				fields.push((own::fragment, Value::Node(fragment)));
+				let scope = w.element_scope(&fields, &declared);
+				let node = w.host(ty, start, end, &fields, Some(scope), true);
+				w.fields.give(fields);
+				w.append(node);
+				if verbatim_here {
+					w.verbatim -= 1;
+				}
+			};
 		if self_closing || unclosed {
 			let end = self.at;
 			let nodes = self.nodes.take();
@@ -1297,10 +1322,10 @@ impl<'a> Walker<'a> {
 			self.at = close;
 			let text = Value::Slice(content_start, close);
 			let node = self.host(
-				"Text",
+				own::Text,
 				content_start,
 				close,
-				&[("raw", text), ("data", text)],
+				&[(own::raw, text), (own::data, text)],
 				None,
 				true,
 			);
@@ -1387,9 +1412,9 @@ impl<'a> Walker<'a> {
 		};
 		let list = self.list(&attributes);
 		self.nodes.give(attributes);
-		fields.push(("attributes", Value::Nodes(list)));
+		fields.push((own::attributes, Value::Nodes(list)));
 		let fragment = self.fragment(nodes);
-		fields.push(("fragment", Value::Node(fragment)));
+		fields.push((own::fragment, Value::Node(fragment)));
 		let scope = self.element_scope(&fields, &declared);
 		let node = self.host(ty, start, end, &fields, Some(scope), true);
 		self.fields.give(fields);
@@ -1502,14 +1527,14 @@ impl<'a> Walker<'a> {
 		}
 		let name_id = self.intern(name);
 		let node = self.host(
-			"Attribute",
+			own::Attribute,
 			start,
 			self.at,
-			&[("name", Value::Str(name_id)), ("value", value)],
+			&[(own::name, Value::Str(name_id)), (own::value, value)],
 			None,
 			true,
 		);
-		Ok(Some((node, Some(("Attribute", name_id)))))
+		Ok(Some((node, Some((own::Attribute, name_id)))))
 	}
 
 	fn comment_between_attributes(&mut self) -> bool {
@@ -1662,14 +1687,14 @@ impl<'a> Walker<'a> {
 			}
 			let name_id = self.intern(name);
 			let node = self.host(
-				"Attribute",
+				own::Attribute,
 				start,
 				end,
-				&[("name", Value::Str(name_id)), ("value", value)],
+				&[(own::name, Value::Str(name_id)), (own::value, value)],
 				None,
 				true,
 			);
-			return Ok(Some((node, Some(("Attribute", name_id)))));
+			return Ok(Some((node, Some((own::Attribute, name_id)))));
 		};
 		let syntax = self.grammar.directive_syntax.as_ref().unwrap();
 		let rule = directive.rule;
@@ -1694,7 +1719,7 @@ impl<'a> Walker<'a> {
 			Some((text, _, _, false)) => Value::Str(self.intern(text)),
 			None => Value::Null,
 		};
-		fields.push(("name", value));
+		fields.push((own::name, value));
 		let declares = rule.declares.as_deref();
 		match &rule.value {
 			&DirectiveValue::Value(field) => {
@@ -1821,18 +1846,18 @@ impl<'a> Walker<'a> {
 			let id = self.intern(modifier);
 			self.ast().host_strings.push(id);
 		}
-		fields.push(("modifiers", Value::Strs(from, count)));
+		fields.push((own::modifiers, Value::Strs(from, count)));
 		for &(flag, on) in &rule.flags {
 			fields.push((flag, Value::Bool(on)));
 		}
 		let node = self.host(rule.ty, start, end, &fields, None, true);
 		self.fields.give(fields);
 		let key = if syntax.unique {
-			Some(("Attribute", self.intern(name)))
+			Some((own::Attribute, self.intern(name)))
 		} else {
 			match (rule.unique, directive.arg) {
 				(Unique::Kind, Some((text, ..))) => Some((rule.ty, self.intern(text))),
-				(Unique::Attribute, Some((text, ..))) => Some(("Attribute", self.intern(text))),
+				(Unique::Attribute, Some((text, ..))) => Some((own::Attribute, self.intern(text))),
 				_ => None,
 			}
 		};
@@ -1917,7 +1942,7 @@ impl<'a> Walker<'a> {
 		if quote.is_some() && self.char() == quote {
 			self.at += 1;
 		}
-		let value = if quote.is_some() || chunks.len() > 1 || self.host_type(chunks[0]) == "Text" {
+		let value = if quote.is_some() || chunks.len() > 1 || self.host_type(chunks[0]) == Some(own::Text) {
 			Value::Nodes(self.list(&chunks))
 		} else {
 			Value::Node(chunks[0])
@@ -2448,14 +2473,14 @@ impl<'a> Walker<'a> {
 		let tag = self.chunk(rule, id_start, id_end, id);
 		let name_id = self.intern(name);
 		let node = self.host(
-			"Attribute",
+			own::Attribute,
 			start,
 			self.at,
-			&[("name", Value::Str(name_id)), ("value", Value::Node(tag))],
+			&[(own::name, Value::Str(name_id)), (own::value, Value::Node(tag))],
 			None,
 			true,
 		);
-		Ok(Some(Some((node, Some(("Attribute", name_id))))))
+		Ok(Some(Some((node, Some((own::Attribute, name_id))))))
 	}
 
 	/// A tag after its marker: its node.
@@ -2579,7 +2604,7 @@ impl<'a> Walker<'a> {
 		if let Some((child_field, flag)) = body.chain {
 			// the branch opens a block of its own inside the parent's field, which closes with it
 			if let Some(Frame::Block { body: current, .. }) = self.frames.last_mut() {
-				*current = ("", true);
+				*current = (Name::NONE, true);
 			}
 			self.keyword = word;
 			if branch.space {
@@ -2686,7 +2711,7 @@ impl<'a> Walker<'a> {
 		};
 		let nodes = std::mem::take(nodes);
 		let field = body.0;
-		if field.is_empty() {
+		if field == Name::NONE {
 			return;
 		}
 		let children = Value::Node(self.fragment(nodes));
@@ -2799,11 +2824,11 @@ impl<'a> Walker<'a> {
 		rule: &Construct,
 		start: u32,
 		end: u32,
-		mut fields: Vec<(&'static str, Value)>,
-		done: Vec<(&'static str, Value)>,
+		mut fields: Vec<(Name, Value)>,
+		done: Vec<(Name, Value)>,
 		mut groups: Vec<BodyGroup>,
 		outside: Vec<NodeId>,
-		chained: Option<&'static str>,
+		chained: Option<Name>,
 	) -> NodeId {
 		fill_unread(&rule.entries, &mut fields);
 		for &flag in &rule.chain_flags {
@@ -2822,7 +2847,7 @@ impl<'a> Walker<'a> {
 				ordered.push((field, Value::Null));
 			}
 		}
-		let base = self.ast().host_fields.len() as u32;
+		let base = self.ast().host_keys.len() as u32;
 		let groups_at = self.ast().host_groups.len() as u32;
 		let mut count = 0;
 		for &(body, children) in &done {
@@ -2901,7 +2926,7 @@ impl<'a> Walker<'a> {
 				} => {
 					self.space();
 					let value = self.entry(*entry, stops)?;
-					read.fields.push((field, value));
+					read.fields.push((*field, value));
 				}
 				Item::Group {
 					alternatives,

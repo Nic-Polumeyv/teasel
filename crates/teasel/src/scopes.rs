@@ -1133,9 +1133,9 @@ impl<'a> Binder<'a> {
 
 	/// A host node: its fields in order, inside the scope it opens from `Opens::from` on.
 	fn host(&mut self, id: NodeId, index: u32) {
-		let host = self.ast.hosts[index as usize];
-		let (from, len) = host.fields;
-		let Some(opens) = host.scope else {
+		let fields = self.ast.host_rows[index as usize].fields;
+		let (from, len) = (fields.start, fields.len);
+		let Some(opens) = self.ast.host_scopes[index as usize] else {
 			for i in from..from + len {
 				self.host_field(i);
 			}
@@ -1161,7 +1161,7 @@ impl<'a> Binder<'a> {
 				let node = group.node.unwrap_or(id);
 				let kind = match self.ast.node(node).kind {
 					NodeKind::Program { .. } => ScopeKind::Script,
-					NodeKind::Host(inner) if !self.ast.hosts[inner as usize].span => ScopeKind::Fragment,
+					NodeKind::Host(inner) if !self.ast.host_rows[inner as usize].span => ScopeKind::Fragment,
 					_ => ScopeKind::Block,
 				};
 				self.enter(kind, Some(node), false);
@@ -1195,7 +1195,7 @@ impl<'a> Binder<'a> {
 				.iter()
 				.any(|list| b.ast.list(*list).contains(&Some(child)))
 		};
-		match self.ast.host_fields[i as usize].1 {
+		match self.ast.host_vals[i as usize].value() {
 			crate::ast::Value::Node(child) if !declared(self, child) => self.field_value(child),
 			crate::ast::Value::Nodes(children) => {
 				for &child in self.ast.list(children).iter().flatten() {

@@ -48,6 +48,8 @@ export interface Layout {
 	records: Record<'comments' | 'attached' | 'errors' | 'hosts' | 'host_vals' | 'spans' | 'locs' | 'marks', { size: number; fields: Field[] }>;
 	none: Missing;
 	views: { js: string[]; ts?: string[] };
+	/** The names the engine gives host nodes' types and fields itself, the first of every grammar's. */
+	names: string[];
 	/** Each type of node a stylesheet holds with the fields that hold nodes. */
 	stylesheet: Record<string, string[]>;
 	recipes: { js: RawRecipes; rows: RawRecipes; ts?: RawRecipes; adds?: RawRecipes; ts_adds?: RawRecipes; erased?: RawOp[] };
@@ -85,10 +87,6 @@ interface Language {
 	sets: Map<number, Builders>;
 	last: number;
 	builders: Builders | undefined;
-	/** The names of the hosts' types and keys, by the number the engine gave each; they only grow. */
-	names: string[];
-	/** The hosts' shapes as operations, by the number the engine gave each shape. */
-	host_ops: Map<number, Op[]>;
 	/** The state of the last answer read from `tree`, kept for the next. */
 	state: State | undefined;
 	tree: Tree | undefined;
@@ -111,10 +109,16 @@ interface Rows {
 interface Builders {
 	/** By a node's tag. */
 	js: Builder[];
-	/** The builder of each shape of the hosts' nodes, by the number the engine gave it. */
-	hosts: (HostBuilder | undefined)[];
 	/** By an extension record's tag, the record's first word given. */
 	ts: Builder[];
+}
+/** A grammar's names by number, and what is made of the shapes the engine numbers for its host nodes as it meets them. */
+interface Hosts {
+	names: readonly string[];
+	/** Each shape as operations. */
+	ops: (Op[] | undefined)[];
+	/** Each shape's builder, by the way to build. */
+	builders: (HostBuilder | undefined)[][];
 }
 
 interface Compiled {
@@ -137,6 +141,10 @@ interface Compiled {
 	js: Language;
 	/** Made on the first TypeScript answer. */
 	ts: Language | undefined;
+	/** By a grammar's names, and the stylesheet's own; dropped once the engine starts over, which numbers shapes anew. */
+	hosts: WeakMap<readonly string[], Hosts>;
+	sheet: Hosts | undefined;
+	generation: number | undefined;
 }
 
 /** A field by its path, `a` or `a.b.c`, an inner field at its offset in the record. */
@@ -176,14 +184,14 @@ function resolve(raw: RawOp[], fields: Field[]): Op[] {
 // a literal: an object filled by computed keys turns into a dictionary, a hash lookup per read
 function places(views: string[]) {
 	const of = (name: string) => 1 + views.indexOf(name);
-	return { nodes: of('nodes'), lists: of('lists'), numbers: of('numbers'), text: of('text'), starts: of('starts'), marks: of('marks'), units: of('units'), spans: of('spans'), locs: of('locs'), parenthesized: of('parenthesized'), erased: of('erased'), comments: of('comments'), attached_slots: of('attached_slots'), attached: of('attached'), errors: of('errors'), hosts: of('hosts'), host_keys: of('host_keys'), host_vals: of('host_vals'), host_strings: of('host_strings'), scopes: of('scopes'), bindings: of('bindings'), references: of('references'), roots: of('roots'), of_node: of('of_node'), of_identifier: of('of_identifier'), root_of: of('root_of'), declared_by: of('declared_by'), declared_by_at: of('declared_by_at'), writes_of: of('writes_of'), writes_of_at: of('writes_of_at'), ts: of('ts'), extras_slots: of('extras_slots'), extras: of('extras'), names: of('names'), name_starts: of('name_starts'), rare: of('rare'), late: of('late'), /** Past the last view's length in the answer's words: where the tree's buffers sit, folded into two. */ sits: 1 + views.length };
+	return { nodes: of('nodes'), lists: of('lists'), numbers: of('numbers'), text: of('text'), starts: of('starts'), marks: of('marks'), units: of('units'), spans: of('spans'), locs: of('locs'), parenthesized: of('parenthesized'), erased: of('erased'), comments: of('comments'), attached_slots: of('attached_slots'), attached: of('attached'), errors: of('errors'), hosts: of('hosts'), host_keys: of('host_keys'), host_vals: of('host_vals'), host_strings: of('host_strings'), scopes: of('scopes'), bindings: of('bindings'), references: of('references'), roots: of('roots'), of_node: of('of_node'), of_identifier: of('of_identifier'), root_of: of('root_of'), declared_by: of('declared_by'), declared_by_at: of('declared_by_at'), writes_of: of('writes_of'), writes_of_at: of('writes_of_at'), ts: of('ts'), extras_slots: of('extras_slots'), extras: of('extras'), rare: of('rare'), late: of('late'), /** Past the last view's length in the answer's words: where the tree's buffers sit, folded into two. */ sits: 1 + views.length };
 }
 /** Each view's place in a tree; zero for a view the tree does not have. */
 type At = ReturnType<typeof places>;
 
 function language(layout: Layout, views: string[], typescript: boolean): Language {
 	const by = (recipes: RawRecipes, kinds: Kind[]) => kinds.map((kind) => resolve(recipes.find(([name]) => name === kind.name)?.[1] ?? [], kind.fields));
-	const out: Language = { layout, at: places(views), recipes: new Array(layout.kinds.length), ts: [], adds: [], ts_adds: [], erased: [], sets: new Map(), last: -1, builders: undefined, names: [], host_ops: new Map(), state: undefined, tree: undefined, sat: [-1, -1] };
+	const out: Language = { layout, at: places(views), recipes: new Array(layout.kinds.length), ts: [], adds: [], ts_adds: [], erased: [], sets: new Map(), last: -1, builders: undefined, state: undefined, tree: undefined, sat: [-1, -1] };
 	if (typescript) {
 		const extras = layout.extras!.fields;
 		const adds = (recipes: RawRecipes, kinds: Kind[]) => kinds.map((kind) => resolve(recipes.find(([name]) => name === kind.name)?.[1] ?? [], extras));
@@ -255,6 +263,9 @@ function compile(engine: Views): Compiled {
 		rows: undefined,
 		js: language(layout, layout.views.js, false),
 		ts: undefined,
+		hosts: new WeakMap(),
+		sheet: undefined,
+		generation: engine.generation,
 	};
 	compiled.set(engine, made);
 	return made;
@@ -287,9 +298,10 @@ interface State {
 	G: Language;
 	/** The builder of each kind, by a node's tag. */
 	J: Builder[];
-	/** The builders of the hosts' nodes by their shape's number, and the names by number. */
+	/** The builders of the hosts' nodes by their shape's number, the shapes' operations, and the names by number. */
 	H: (HostBuilder | undefined)[];
-	names: string[];
+	ops: (Op[] | undefined)[];
+	names: readonly string[];
 	N: Uint32Array;
 	L: Uint32Array;
 	numbers: Float64Array;
@@ -841,12 +853,11 @@ const host_span = (S: State, index: number) => byte(S.hosts, index * S.C.R.host.
 function host_ops(S: State, index: number): Op[] {
 	const H = S.C.R.host, V = S.C.R.value;
 	const shape = S.hosts[index * H.words + H.shape];
-	let ops = S.G.host_ops.get(shape);
+	let ops = S.ops[shape];
 	if (ops === undefined) {
 		const from = S.hosts[index * H.words + H.from], len = S.hosts[index * H.words + H.len];
-		ops = [];
+		ops = S.ops[shape] = [];
 		for (let i = 0; i < len; i++) ops.push({ op: 'host', key: S.names[S.host_keys[from + i]], at: i * V.size + V.value, ty: '', names: [], at2: 0, value: host_tag(S, from + i), other: '', inner: [] });
-		S.G.host_ops.set(shape, ops);
 	}
 	return ops;
 }
@@ -1234,7 +1245,6 @@ function builders(C: Compiled, G: Language, config: number, typescript: boolean)
 	const set: Builders = (B = {
 		js: new Array<Builder>(C.layout.kinds.length).fill((S, id, record, parent) => (set.js[S.N[id * C.words + (C.kind >> 2)]] = js(S.N[id * C.words + (C.kind >> 2)]))(S, id, record, parent)),
 		ts: new Array<Builder>(G.ts.length).fill((S, id, record, parent) => (set.ts[S.TS![record]] = ts(S.TS![record]))(S, id, record, parent)),
-		hosts: [],
 	});
 	set.js[C.extension] = (S, id, _record, parent) => { const record = ts_record(C, S.N, id); return set.ts[S.TS![record]](S, id, record, parent); };
 	set.js[C.host] = generated
@@ -1254,20 +1264,18 @@ function comments(S: State, parent: Decoded | undefined): Decoded[] {
 	return out;
 }
 
-// the names the engine has numbered since the last answer. Once the tree moved, the names known
-// must still head the table, or an engine that started over numbered them anew, and the shapes
-// found by those numbers with them
-function names(G: Language, tree: Tree, count: number, moved: boolean): string[] {
-	if (!moved && count === G.names.length) return G.names;
-	const text = tree[G.at.names] as Uint8Array, starts = tree[G.at.name_starts] as Uint32Array;
-	const name = (i: number) => utf8.decode(text.subarray(starts[i], starts[i + 1]));
-	if (moved && (count < G.names.length || G.names.some((known, i) => known !== name(i)))) {
-		G.names = [];
-		G.host_ops.clear();
-		for (const set of G.sets.values()) set.hosts.length = 0;
+// what is made of a grammar's shapes; an engine that started over numbers them anew
+function hosts(C: Compiled, engine: Views, names: readonly string[] | undefined): Hosts {
+	if (C.generation !== engine.generation) {
+		C.generation = engine.generation;
+		C.hosts = new WeakMap();
+		C.sheet = undefined;
 	}
-	for (let i = G.names.length; i < count; i++) G.names.push(name(i));
-	return G.names;
+	const made = (names: readonly string[]): Hosts => ({ names, ops: [], builders: [] });
+	if (names === undefined) return (C.sheet ??= made(C.layout.names));
+	let known = C.hosts.get(names);
+	if (known === undefined) C.hosts.set(names, (known = made(names)));
+	return known;
 }
 
 const filled = (tree: Tree, words: Uint32Array, lens: number, at: number) => (words[lens + at] === 0 ? null : (tree[at] as Uint32Array).subarray(0, words[lens + at]));
@@ -1310,9 +1318,9 @@ function errors(S: State, view: Uint32Array, count: number): Decoded[] {
  * The answer of the last parse, asked with the options `flags` packed, `listed` for the parameter
  * list entry: `words` are `end`, the roots by number, a word of what the answer is and each
  * view's length; the tree itself is read in place. `link` replaces the scope and binding numbers
- * with the objects they index.
+ * with the objects they index. `names` are those of the grammar a document was read by.
  */
-export function decode(words: Uint32Array, source: string, engine: Views, flags: number, listed: boolean, link = true): Decoded {
+export function decode(words: Uint32Array, source: string, engine: Views, flags: number, listed: boolean, link = true, names?: readonly string[]): Decoded {
 	const C = compile(engine);
 	const lens = 2 + words[1];
 	const what = words[lens];
@@ -1331,6 +1339,7 @@ export function decode(words: Uint32Array, source: string, engine: Views, flags:
 	const rows = tree[at.errors] as Uint32Array;
 	const config = (link ? LINK : 0) | (lines ? LINES : 0) | (host_lines ? HOST_LINES : 0) | (scoped ? FACTS : 0) | (erase ? ERASE : 0);
 	const B = G.last === config ? G.builders! : builders(C, G, config, typescript);
+	const X = hosts(C, engine, names);
 	// the state stays with the tree's views, one answer at a time: only what an answer changes is set
 	let S = G.state;
 	if (S === undefined || moved || G.tree !== tree) {
@@ -1348,8 +1357,9 @@ export function decode(words: Uint32Array, source: string, engine: Views, flags:
 			C,
 			G,
 			J: B.js,
-			H: B.hosts,
-			names: G.names,
+			H: (X.builders[config] ??= []),
+			ops: X.ops,
+			names: X.names,
 			N: tree[at.nodes] as Uint32Array,
 			L: tree[at.lists] as Uint32Array,
 			numbers: tree[at.numbers] as Float64Array,
@@ -1392,8 +1402,9 @@ export function decode(words: Uint32Array, source: string, engine: Views, flags:
 	S.lines = lines;
 	S.host_lines = host_lines;
 	S.J = B.js;
-	S.H = B.hosts;
-	S.names = names(G, tree, words[lens + at.name_starts] - 1, moved);
+	S.H = X.builders[config] ??= [];
+	S.ops = X.ops;
+	S.names = X.names;
 	S.strings = failed ? strings(C, tree, words, lens, at, args_of(C.R.error, rows, 0)) : strings(C, tree, words, lens, at);
 	S.P = spans ? (tree[at.spans] as Uint32Array) : S.N;
 	S.ps = spans ? C.R.span.words : C.words;
