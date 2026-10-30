@@ -11,7 +11,7 @@ use std::borrow::Cow;
 use crate::ast::{Ast, Comment, CommentKind, Host, HostGroup, List, NodeId, NodeKind, Opens, Value, VariableKind};
 use crate::error::{Code, SyntaxError};
 use crate::interner::StrId;
-use crate::lexer::scan::is_space;
+use crate::lexer::scan::{find, find_pair, is_space};
 use crate::lexer::unicode::{is_id_continue, is_id_start};
 use crate::parser::{Entry as JsEntry, Options, Parser, Result};
 pub use grammar::Grammar;
@@ -214,19 +214,32 @@ pub fn typescript(src: &str, grammar: &Grammar) -> bool {
 	if script.typescript.is_empty() {
 		return false;
 	}
-	let mut rest = src;
-	while let Some(i) = rest.find('<') {
-		rest = &rest[i + 1..];
+	// stopping at every `<` took 1.22 ms a pass over Svelte's tests, the lexer's scan for `<` 0.64, this 0.52
+	let (bytes, first) = (src.as_bytes(), script.name.as_bytes().first().copied());
+	let mut at = 0;
+	loop {
+		at = match first {
+			Some(first) => find_pair(bytes, at, b'<', [b'!', first]),
+			None => find(bytes, at, *b"<", false),
+		};
+		if at >= src.len() {
+			return false;
+		}
+		let rest = &src[at + 1..];
 		if let Some(after) = rest.strip_prefix("!--") {
-			rest = after.find("-->").map_or("", |j| &after[j + 3..]);
+			let Some(j) = after.find("-->") else {
+				return false;
+			};
+			at = src.len() - after.len() + j + 3;
 			continue;
 		}
-		let Some(after) = rest.strip_prefix(script.name) else {
+		let Some(after) = rest
+			.strip_prefix(script.name)
+			.filter(|after| after.starts_with(is_space))
+		else {
+			at += 1;
 			continue;
 		};
-		if !after.starts_with(is_space) {
-			continue;
-		}
 		let tag_end = tag_end(after);
 		let mut attributes = after[..tag_end].trim_start_matches(is_space);
 		while !attributes.is_empty() {
@@ -251,7 +264,9 @@ pub fn typescript(src: &str, grammar: &Grammar) -> bool {
 				value = Some(text);
 				attributes = after[len..].trim_start_matches(is_space);
 			} else if name.is_empty() {
-				attributes = &attributes[1..];
+				let mut chars = attributes.chars();
+				chars.next();
+				attributes = chars.as_str();
 			}
 			if script
 				.typescript
@@ -261,9 +276,8 @@ pub fn typescript(src: &str, grammar: &Grammar) -> bool {
 				return true;
 			}
 		}
-		rest = &after[tag_end..];
+		at = src.len() - after.len() + tag_end;
 	}
-	false
 }
 
 /// What the walker is inside: the document, an element, or a block.
