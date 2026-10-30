@@ -196,7 +196,8 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 		assert.equal(parentOf(top.node.body[0]), top.node);
 		assert.equal(parentOf(top.node), undefined);
 		const commented = parse('/* a */ x', { comments: true });
-		assert.equal(parentOf(commented.comments[0]), undefined);
+		assert.equal(commented.comments[0], commented.node.body[0].leadingComments[0]);
+		assert.equal(parentOf(commented.comments[0]), commented.node.body[0]);
 		assert.equal(parentOf(program('`x${1}`').body[0].expression.quasis[0].value), undefined);
 		const literal = program('let r = /a/g, t = `x${1}y`;', { scopes: true }).body[0].declarations;
 		assert.equal(Object.getPrototypeOf(literal[0].init.regex), Object.prototype);
@@ -381,21 +382,23 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 	if (process.env.UPDATE) writeFileSync(pin, json);
 	else assert.ok(readFileSync(pin, 'utf8') === json, `${name} ${host}/host.json changed; run with UPDATE=1 once the change is meant`);
 }
-// every node's parent is the node it sits in, objects without a type passed through; a list born at its size has no holes
+// every node's parent is the node it sits in, objects without a type passed through, and a listed
+// comment's the node it is attached to; a list born at its size has no holes
 {
 	const wrong: string[] = [];
-	const walk = (holder: Any, value: Any) => {
+	const taken = (c: Any) => ['leadingComments', 'trailingComments', 'innerComments'].some((key) => parentOf(c)?.[key]?.includes(c));
+	const walk = (holder: Any, value: Any, listed = false) => {
 		if (value === null || typeof value !== 'object') return;
 		if (Array.isArray(value)) {
 			for (let i = 0; i < value.length; i++) {
 				if (!Object.hasOwn(value, i)) wrong.push(`hole at ${i}`);
-				walk(holder, value[i]);
+				walk(holder, value[i], listed);
 			}
 			return;
 		}
 		const node = typeof value.type === 'string';
-		if (node && parentOf(value) !== holder) wrong.push(`${value.type} at ${value.start}`);
-		for (const key of Object.keys(value)) walk(node ? value : holder, value[key]);
+		if (node && parentOf(value) !== holder && !(listed && taken(value))) wrong.push(`${value.type} at ${value.start}`);
+		for (const key of Object.keys(value)) walk(node ? value : holder, value[key], key === 'comments');
 	};
 	const decoder = readFileSync(new URL('../src/decode.ts', import.meta.url), 'utf8');
 	for (const typescript of [true, 'erase'] as const) walk(undefined, open(decoder, { sourceType: 'module', typescript, comments: true, scopes: true }).parse().node);

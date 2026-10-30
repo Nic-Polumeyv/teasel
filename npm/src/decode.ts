@@ -306,6 +306,8 @@ interface State {
 	erased: Uint32Array | null;
 	comments: Uint32Array;
 	comment_count: number;
+	/** Each comment's object by number once built: a comment is one object wherever it is listed. */
+	made: Decoded[];
 	attached_slots: Uint32Array | null;
 	attached: Uint32Array;
 	hosts: Uint32Array;
@@ -400,7 +402,12 @@ function comment(S: State, index: number, parent: Decoded | undefined): Decoded 
 function run_of_comments(S: State, n: Decoded, key: string, start: number, len: number) {
 	if (len === 0) return;
 	const list = new Array<Decoded>(len);
-	for (let i = 0; i < len; i++) list[i] = comment(S, start + i, n);
+	for (let i = 0; i < len; i++) {
+		let c = S.made[start + i];
+		if (c === undefined) S.made[start + i] = c = comment(S, start + i, n);
+		else if (S.link) c[PARENT] = n;
+		list[i] = c;
+	}
 	n[key] = list;
 }
 
@@ -1250,7 +1257,7 @@ function builders(C: Compiled, G: Language, config: number, typescript: boolean)
 
 function comments(S: State, parent: Decoded | undefined): Decoded[] {
 	const out = new Array<Decoded>(S.comment_count);
-	for (let i = 0; i < S.comment_count; i++) out[i] = comment(S, i, parent);
+	for (let i = 0; i < S.comment_count; i++) out[i] = S.made[i] ??= comment(S, i, parent);
 	return out;
 }
 
@@ -1364,6 +1371,7 @@ export function decode(words: Uint32Array, source: string, engine: Views, flags:
 			erased: null,
 			comments: tree[at.comments] as Uint32Array,
 			comment_count: 0,
+			made: NO_ROWS,
 			attached_slots: null,
 			attached: tree[at.attached] as Uint32Array,
 			hosts: tree[at.hosts] as Uint32Array,
@@ -1401,6 +1409,7 @@ export function decode(words: Uint32Array, source: string, engine: Views, flags:
 	S.parenthesized = filled(tree, words, lens, at.parenthesized);
 	S.erased = erase ? filled(tree, words, lens, at.erased) : null;
 	S.comment_count = words[lens + at.comments] / C.R.comment.words;
+	S.made = S.comment_count === 0 ? NO_ROWS : new Array(S.comment_count);
 	S.attached_slots = filled(tree, words, lens, at.attached_slots);
 	S.of_node = scoped ? (tree[at.of_node] as Uint32Array) : null;
 	S.extras_slots = typescript ? filled(tree, words, lens, at.extras_slots) : null;
@@ -1435,7 +1444,7 @@ export function decode(words: Uint32Array, source: string, engine: Views, flags:
 	// the state outlives the answer: it lets go of what the answer holds
 	S.source = '';
 	S.strings = NO_STRINGS;
-	S.scopes = S.bindings = S.references = S.roots = NO_ROWS;
+	S.scopes = S.bindings = S.references = S.roots = S.made = NO_ROWS;
 	return answer;
 }
 

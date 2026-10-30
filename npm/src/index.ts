@@ -12,7 +12,7 @@ export type { Arguments, Binding, Code, Comment, Declared, HostNode, Kept, Langu
 // what the decoder hangs on a node, under keys JSON and enumeration skip
 const slot = (node: object | null | undefined, key: symbol) => (node as Record<symbol, any> | null | undefined)?.[key];
 
-/** The node `node` is a child of; undefined for the root of an answer and for a comment listed in `comments`. A literal's `regex` and a template element's `value` are not nodes and have none. */
+/** The node `node` is a child of: for a comment, the node it is attached to, else the host node that lists it; undefined for the root of an answer and for a comment nothing holds. A literal's `regex` and a template element's `value` are not nodes and have none. */
 export function parentOf(node: Node | HostNode | Comment | null | undefined): Node | HostNode | undefined {
 	return slot(node, PARENT);
 }
