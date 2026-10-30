@@ -11,8 +11,8 @@
 //! followed by LENGTH bytes of source, and prints one JSON line per job. ENTRY is the entry's number as
 //! the engine takes it, or 7 for a whole document of the host language the grammar's JSON file
 //! describes; OFFSET is a byte offset into the source and FLAGS the option word as the bridges take
-//! it, with nothing added: no module or `loc` it does not ask for. The JSON output reports UTF-16
-//! offsets, as JavaScript counts them.
+//! it, with nothing added: no module it does not ask for. The JSON output reports UTF-16 offsets,
+//! as JavaScript counts them.
 
 use std::io::{self, BufRead, Read, Write};
 use std::process::ExitCode;
@@ -92,7 +92,7 @@ fn main() -> ExitCode {
 	}
 	let mut entry = Entry::Program;
 	let mut offset = None;
-	let mut flags = Options::LOCATIONS;
+	let mut flags = 0;
 	let mut host = None;
 	let mut file = None;
 	let mut args = args.into_iter();

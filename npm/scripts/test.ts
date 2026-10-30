@@ -32,17 +32,17 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 	const parse = (source: string, options?: Options): Any => read(source, options);
 	const program = (source: string, options?: Options): Any => parse(source, options).node;
 	const at = (piece: Exclude<keyof typeof js, symbol | 'children' | 'extras'>, source: string, offset: number, options?: Options, stopAt?: string[]): Any => readAt(source, stopAt === undefined ? js[piece] : js[piece].until(...stopAt), offset, options);
-	const typed = parse('let x: number = 1; // done', { sourceType: 'module', typescript: true, comments: true, locations: true });
+	const typed = parse('let x: number = 1; // done', { sourceType: 'module', typescript: true, comments: true });
 	assert.equal(typed.node.sourceType, 'module');
 	assert.equal(typed.end, 26);
 	assert.equal(typed.node.body[0].declarations[0].id.typeAnnotation.typeAnnotation.type, 'TSNumberKeyword');
 	assert.equal(typed.node.body[0].trailingComments[0].value, ' done');
-	assert.equal(typed.node.body[0].loc.end.column, 18);
 	assert.equal(typed.comments.length, 1);
-	assert.equal(typed.comments[0].loc.start.column, 19);
+	assert.deepEqual(Object.keys(typed), ['node', 'end', 'comments']);
+	assert.deepEqual(typed.locate(26), { line: 1, column: 26 });
+	assert.equal('loc' in typed.node.body[0] || 'loc' in typed.comments[0], false);
 	assert.deepEqual(Object.keys(parse('x')), ['node', 'end']);
 	assert.equal(program('with (a) {}').body[0].type, 'WithStatement');
-	assert.equal('loc' in program('x'), false);
 
 	const expression = at('expression', '{a + b}', 1);
 	assert.equal(expression.node.type, 'BinaryExpression');
@@ -104,7 +104,7 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 	assert.equal(declaration.node.type, 'VariableDeclaration');
 	assert.deepEqual(JSON.parse(JSON.stringify(declaration.node.declarations[0].id)), { type: 'Identifier', start: 5, end: 5, name: '' });
 	assert.deepEqual(at('expression', '{a b}', 1, loose, ['}']).errors, []);
-	const broken = parse('x = "abc\ny = ', { errorRecovery: true, locations: true });
+	const broken = parse('x = "abc\ny = ', { errorRecovery: true });
 	assert.deepEqual(broken.errors.map((e: Any) => [e.code, e.pos, e.line]), [['unterminated_string', 4, 1], ['unexpected_eof', 13, 2]]);
 	assert.deepEqual(parse('x', loose).errors, []);
 	assert.equal('errors' in parse('x'), false);
@@ -137,7 +137,7 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 
 	assert.throws(() => parse('x = ;'), (e: Any) => e.code === 'unexpected_token' && e.pos === 4 && e.end === 5 && e.column === 4 && e.message === 'unexpected_token' && e.args.length === 0 && Object.getPrototypeOf(e) === SyntaxError.prototype);
 	assert.throws(() => parse('x = '), (e: Any) => e.code === 'unexpected_eof' && e.pos === 4 && e.end === 4);
-	assert.throws(() => parse('/a', { locations: true }), (e: Any) => e.code === 'unterminated_regexp' && e.pos === 1);
+	assert.throws(() => parse('/a'), (e: Any) => e.code === 'unterminated_regexp' && e.pos === 1);
 	assert.throws(() => parse('x', { ranges: true } as Any), TypeError);
 	assert.throws(() => parse('x', { ecmaVersion: 2020 } as Any), TypeError);
 	assert.throws(() => parse('x', { preserveParens: true } as Any), TypeError);
@@ -255,11 +255,12 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 	const unicode = at('expression', '"é" + x', 6).node;
 	assert.equal(unicode.type, 'Identifier');
 	assert.equal(unicode.start, 6);
-	const braces = '{a} {"é"} {b /* c */}', located: Options = { locations: true, comments: true };
+	const braces = '{a} {"é"} {b /* c */}', located: Options = { comments: true };
 	assert.equal(readAt(braces, js.expression, 1, located).node.name, 'a');
 	assert.equal(readAt('{xs as x}', js.expression.until('as'), 1, ts).end, 3);
 	assert.equal(readAt(braces, js.expression, 11, located).end, 20);
-	assert.equal(readAt(braces, js.expression, 11, located).comments[0].loc.start.column, 13);
+	assert.equal(readAt(braces, js.expression, 11, located).comments[0].start, 13);
+	assert.deepEqual(readAt(braces, js.expression, 11, located).locate(13), { line: 1, column: 13 });
 	assert.throws(() => readAt(braces, js.expression, 99, located), RangeError);
 	assert.throws(() => readAt('𝒳 + y', js.expression, 1), RangeError);
 	const erased = parse('import type T from "t"; export const x: T = (1 as any)!; enum E {}', { sourceType: 'module', typescript: 'erase' });
@@ -268,12 +269,12 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 	assert.equal('typeAnnotation' in erased.node.body[0].declaration.declarations[0].id, false);
 	assert.deepEqual(erased.typescript.map((k: Any) => k.type), ['TSEnumDeclaration']);
 	assert.throws(() => parse('let x: number = 1', { typescript: true, erase: true } as Any), TypeError);
-	const template = '<script>\n  let a = 1;\n</script>\n{a}', placed: Options = { sourceType: 'module', locations: true };
+	const template = '<script>\n  let a = 1;\n</script>\n{a}', placed: Options = { sourceType: 'module' };
 	const script = readAt(template.slice(0, 22), js.program, 8, placed);
 	assert.equal(script.node.start, 8);
 	assert.equal(script.node.end, 22);
 	assert.equal(script.end, 22);
-	assert.equal(script.node.body[0].loc.start.line, 2);
+	assert.deepEqual([9, 22].map((at) => script.locate(at)), [{ line: 2, column: 0 }, { line: 3, column: 0 }]);
 	assert.throws(() => readAt(template.slice(0, 8), js.program, 22, placed), RangeError);
 	assert.equal(readAt(template, js.program, 24, placed).node.body[0].type, 'ExpressionStatement');
 	assert.equal(readAt(template.slice(0, 34), js.expression, 33, placed).node.name, 'a');
@@ -293,7 +294,7 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 	const whole = JSON.stringify(read(twice).node);
 	assert.equal(readAt(twice, js.expression, 11).node.type, 'CallExpression');
 	assert.equal(JSON.stringify(read(twice).node), whole);
-	assert.throws(() => parse('x', { locations: 1 } as Any), TypeError);
+	assert.throws(() => parse('x', { locations: true } as Any), TypeError);
 	assert.throws(() => parse('x', { typescript: 'yes' } as Any), TypeError);
 	assert.throws(() => readAt('a;b;c', js.program, 1.5), RangeError);
 	assert.throws(() => readAt('a;b;c', js.program, NaN), RangeError);
@@ -411,33 +412,45 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 	assert.deepEqual(wrong, [], `${name} parents`);
 }
 
-// `locations: 'js'`: the JavaScript located as with `true`, the host's own nodes and a stylesheet's left their span
+// `locate`: the line and column of every node, comment and error, in any order, as a scan of the text from its start finds them
 {
-	const source = '<script>\n\tlet a = 1; // one\n</script>\n<div class="x" {...b}>{a}<!-- c --></div>\n<style>\n\tp { color: red }\n</style>\n';
-	const types = new Set(Object.keys(js.children));
-	// a stylesheet's `Block` is the host's; a comment carries its text
-	const ours = (node: Any) => types.has(node.type) || ((node.type === 'Line' || node.type === 'Block') && typeof node.value === 'string');
-	const pairs: [Any, Any][] = [];
-	const walk = (all: Any, some: Any) => {
-		if (all === null || typeof all !== 'object') return;
-		if (Array.isArray(all)) return all.forEach((value, i) => walk(value, some[i]));
-		if (typeof all.type === 'string') pairs.push([all, some]);
-		for (const key of Object.keys(all)) if (key !== 'loc') walk(all[key], some[key]);
+	const scan = (text: string, offset: number) => {
+		let line = 1, start = 0;
+		for (let i = 0; i < offset; i++) {
+			const c = text[i];
+			if (c === '\n' || c === '\u2028' || c === '\u2029' || (c === '\r' && text[i + 1] !== '\n')) [line, start] = [line + 1, i + 1];
+		}
+		return { line, column: offset - start };
 	};
-	const options = { sourceType: 'module', comments: true, scopes: true } as const;
-	const all = read(source, { ...options, locations: true }, svelte);
-	const some = read(source, { ...options, locations: 'js' }, svelte);
-	walk(all.node, some.node);
-	const hosts = pairs.filter(([node]) => !ours(node));
-	assert.ok(hosts.length > 10 && hosts.length < pairs.length);
-	for (const [located, bare] of pairs) {
-		if (ours(located)) assert.deepEqual(bare.loc, located.loc, `${located.type} at ${located.start}`);
-		else assert.equal('loc' in bare, false, `${located.type} at ${located.start}`);
+	const texts: [string, Any][] = [
+		['a\r\nb\rc\u2028d\u2029e\n"𝒳" // é\r\n/* x\r\ny\u2028*/ f\r', js],
+		['<script>\r\n\tlet a = "𝒳"; // é\r\n</script>\r\n<p class="x\ry">{a}\u2028{b}<!-- c\r\n --></p>\r<style>\n\tp { color: red } /* \r */\n</style>\n', svelte],
+		['<ul :class="{ on }">\r\n\t<li v-for="(item, i) in items">{{ item.name /* 𝒳 */ }}\u2029</li>\r</ul>', vue],
+		['p {\r\n\tcolor: red;\r}\n/* 𝒳\r\n */ a { b: c }', css],
+		['a\nb\nc\nd\ne', js],
+	];
+	for (const [text, language] of texts) {
+		const answer = read(text, { sourceType: 'module', comments: true }, language);
+		const offsets: number[] = [];
+		const visit = (value: Any) => {
+			if (value === null || typeof value !== 'object') return;
+			if (Array.isArray(value)) return value.forEach(visit);
+			if (typeof value.start === 'number') offsets.push(value.start, value.end);
+			for (const key of Object.keys(value)) visit(value[key]);
+		};
+		visit(answer.node);
+		visit(answer.comments);
+		assert.ok(offsets.length > 8);
+		for (const at of [...offsets, ...offsets.reverse(), ...Array.from({ length: text.length + 1 }, (_, i) => (i * 7) % (text.length + 1))]) assert.deepEqual(answer.locate(at), scan(text, at), `${text} at ${at}`);
 	}
-	assert.deepEqual(some.comments.map((c: Any) => c.loc), all.comments.map((c: Any) => c.loc));
-	assert.equal(JSON.stringify(read('p { color: red } /* c */', { locations: 'js' }, css).node).includes('"loc"'), false);
-	const plain = 'let a = 1; // one\nf(a);';
-	assert.equal(JSON.stringify(read(plain, { comments: true, locations: 'js' })), JSON.stringify(read(plain, { comments: true, locations: true })));
+	const recovered = read('x = "a\u2028\r\ny = \r(\n', { errorRecovery: true });
+	assert.ok(recovered.errors.length > 1);
+	for (const error of recovered.errors) assert.deepEqual(recovered.locate(error.pos), { line: error.line, column: error.column });
+	const thrown = '\r\n\u2028\r = ;';
+	assert.throws(() => read(thrown), (e: Any) => e.line === 4 && JSON.stringify({ line: e.line, column: e.column }) === JSON.stringify(scan(thrown, e.pos)));
+	assert.deepEqual(readAt('{a}\n\n{b}', js.expression, 6).locate(6), { line: 3, column: 1 });
+	const answer = read('a\nb');
+	for (const offset of [-1, 4, 1.5, NaN, '1' as Any]) assert.throws(() => answer.locate(offset), RangeError);
 }
 
 // a second host: the same walker, Vue's grammar
@@ -551,7 +564,6 @@ if (name !== 'native') {
 		let lists = listed.get(value.type);
 		if (lists === undefined) listed.set(value.type, (lists = new Set()));
 		for (const key in value) {
-			if (key === 'loc') continue;
 			const v = value[key];
 			if (v === null || typeof v !== 'object') continue;
 			const node = (x: Any) => x !== null && typeof x === 'object' && typeof x.type === 'string' && !((x.type === 'Line' || x.type === 'Block') && typeof x.value === 'string');
@@ -633,7 +645,7 @@ if (name !== 'native') {
 				const keys = Object.keys(value).filter((key) => !(where as readonly string[]).includes(key)).join();
 				assert.equal(keys, shapes.get(value.type) ?? (shapes.set(value.type, keys), keys), `${dir} ${options.typescript ?? false}: a second shape of ${value.type}`);
 			}
-			for (const key in value) if (key !== 'loc') walk(value[key]);
+			for (const key in value) walk(value[key]);
 		};
 		for (const text of sources(dir)) {
 			try {
@@ -692,7 +704,7 @@ if (name !== 'native') {
 		if (Array.isArray(value)) return value.map(shape);
 		if (value === null || typeof value !== 'object') return value;
 		const out: Any = {};
-		for (const field of Object.keys(value)) if (field !== 'loc') out[field] = shape(value[field]);
+		for (const field of Object.keys(value)) out[field] = shape(value[field]);
 		const binding = value.type === 'Identifier' ? referenceOf(value)?.binding : undefined;
 		if (binding && binding.node !== value) out.refers = [binding.node.start, binding.node.end];
 		return out;

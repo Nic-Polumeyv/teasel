@@ -42,21 +42,17 @@ impl Options {
 	pub const COMMENTS: u32 = Self::at(2, 1);
 	/// Scope analysis on the answer.
 	pub const SCOPES: u32 = Self::at(3, 1);
-	/// Line and column on every node, as `loc`.
-	pub const LOCATIONS: u32 = Self::at(4, 1);
-	/// Line and column on the JavaScript nodes and comments only; a host's own nodes keep their span.
-	pub const LOCATIONS_JS: u32 = Self::at(4, 2);
 	/// The fact `parenthesized` on a node the source wraps in parens, instead of a wrapper node.
-	pub const PARENTHESIZED: u32 = Self::at(5, 1);
-	pub const ALLOW_RETURN_OUTSIDE_FUNCTION: u32 = Self::at(6, 1);
-	pub const ALLOW_AWAIT_OUTSIDE_FUNCTION: u32 = Self::at(7, 1);
-	pub const ALLOW_SUPER_OUTSIDE_METHOD: u32 = Self::at(8, 1);
-	pub const ALLOW_UNDECLARED_EXPORTS: u32 = Self::at(9, 1);
+	pub const PARENTHESIZED: u32 = Self::at(4, 1);
+	pub const ALLOW_RETURN_OUTSIDE_FUNCTION: u32 = Self::at(5, 1);
+	pub const ALLOW_AWAIT_OUTSIDE_FUNCTION: u32 = Self::at(6, 1);
+	pub const ALLOW_SUPER_OUTSIDE_METHOD: u32 = Self::at(7, 1);
+	pub const ALLOW_UNDECLARED_EXPORTS: u32 = Self::at(8, 1);
 	/// Errors are recorded on the tree instead of ending the parse: a missing operand, name or
 	/// pattern is an empty `Identifier` of no width where it was expected, and a statement or
 	/// entry that cannot be read is skipped to the next stop token or unmatched closer, an empty
 	/// `Identifier` standing for it.
-	pub const ERROR_RECOVERY: u32 = Self::at(10, 1);
+	pub const ERROR_RECOVERY: u32 = Self::at(9, 1);
 
 	/// Whether any of `bits` is on.
 	pub const fn has(self, bits: u32) -> bool {
@@ -71,10 +67,6 @@ impl Options {
 	/// On for `typescript: true` and `'erase'` alike.
 	pub const fn typescript(self) -> bool {
 		self.has(Self::TYPESCRIPT | Self::ERASE)
-	}
-	/// On for `locations: true` and `'js'` alike.
-	pub const fn locations(self) -> bool {
-		self.has(Self::LOCATIONS | Self::LOCATIONS_JS)
 	}
 }
 

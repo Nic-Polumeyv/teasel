@@ -2,7 +2,7 @@
 //! stylesheet under `tests/fixtures/css`, its answer pinned beside it as `NAME.json`: the tree
 //! with comments and scopes, or the error.
 //! A file is a module unless its name ends in `.script.js` or `.script.ts`; a name says what else is on:
-//! `locations`, `erase`, `recover` for `errorRecovery`, or `legacy` and `proposal` for decorators.
+//! `erase`, `recover` for `errorRecovery`, or `legacy` and `proposal` for decorators.
 //! `UPDATE=1` rewrites the pins once a change is meant.
 
 mod common;
@@ -43,11 +43,7 @@ fn files() {
 			if language == "ts" {
 				flags |= Options::TYPESCRIPT;
 			}
-			for (word, bit) in [
-				("locations", Options::LOCATIONS),
-				("erase", Options::ERASE),
-				("recover", Options::ERROR_RECOVERY),
-			] {
+			for (word, bit) in [("erase", Options::ERASE), ("recover", Options::ERROR_RECOVERY)] {
 				if stem.contains(word) {
 					flags |= bit;
 				}

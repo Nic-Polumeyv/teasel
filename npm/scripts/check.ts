@@ -98,30 +98,27 @@ const brace_re = /\{/g;
 for (const file of files) {
 	const text = readFileSync(file, 'utf8');
 	if (file.endsWith('.css')) {
-		for (const locations of [true, 'js'] as const) {
-			const options: Options = { locations, comments: true };
-			json(file, text, options, STYLESHEET, 0);
-			report(`${file} wasm`, differ(outcome(wasm, text, flags(options), STYLESHEET, 0), outcome(native, text, flags(options), STYLESHEET, 0)));
-		}
+		const options: Options = { comments: true };
+		json(file, text, options, STYLESHEET, 0);
+		report(`${file} wasm`, differ(outcome(wasm, text, flags(options), STYLESHEET, 0), outcome(native, text, flags(options), STYLESHEET, 0)));
 		continue;
 	}
 	if (host !== undefined && file.endsWith(host.extension)) {
 		const typescript = /lang=["']?ts/.test(text);
-		document(file, text, { sourceType: 'module', locations: true, comments: true, scopes: true });
-		document(file, text, { sourceType: 'module', typescript: typescript ? 'erase' : false, locations: true, scopes: true });
-		document(file, text, { sourceType: 'module', typescript, locations: true, errorRecovery: true, parenthesized: true });
-		document(file, text, { sourceType: 'module', typescript: typescript ? 'erase' : false, locations: 'js', comments: true, scopes: true, parenthesized: true });
+		document(file, text, { sourceType: 'module', comments: true, scopes: true });
+		document(file, text, { sourceType: 'module', typescript: typescript ? 'erase' : false, scopes: true });
+		document(file, text, { sourceType: 'module', typescript, errorRecovery: true, parenthesized: true });
+		document(file, text, { sourceType: 'module', typescript: typescript ? 'erase' : false, comments: true, scopes: true, parenthesized: true });
 		if (!/\.(js|mjs|ts|svelte)$/.test(file)) continue;
 	}
 	const svelte = file.endsWith('.svelte');
 	const sources: [string, boolean][] = svelte ? [...text.matchAll(script_re)].map((m) => [m[2], /lang=["']?ts/.test(m[1] ?? '')]) : [[text, file.endsWith('.ts')]];
 	for (const [source, typescript] of sources) {
 		const runs: Options[] = [
-			{ sourceType: 'module', typescript, locations: true, comments: true },
-			{ sourceType: 'module', typescript: typescript ? 'erase' : false, locations: true },
-			{ sourceType: 'module', typescript, locations: true, scopes: true },
-			{ typescript, locations: true, parenthesized: true },
-			{ sourceType: 'module', typescript, locations: 'js', comments: true },
+			{ sourceType: 'module', typescript, comments: true },
+			{ sourceType: 'module', typescript: typescript ? 'erase' : false },
+			{ sourceType: 'module', typescript, scopes: true },
+			{ typescript, parenthesized: true },
 		];
 		for (const options of runs) {
 			json(file, source, options, 0, 0);
@@ -130,7 +127,7 @@ for (const file of files) {
 	}
 	// every brace in a component is somewhere an expression, a pattern or a statement might start
 	if (svelte) {
-		const options: Options = { sourceType: 'module', typescript: /lang=["']?ts/.test(text), locations: true, comments: true, scopes: true };
+		const options: Options = { sourceType: 'module', typescript: /lang=["']?ts/.test(text), comments: true, scopes: true };
 		const on = flags(options);
 		for (const m of text.matchAll(script_re)) {
 			const start = m.index + m[0].indexOf('>') + 1;

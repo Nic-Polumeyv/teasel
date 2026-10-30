@@ -18,7 +18,6 @@ Each option adds one key to the answer, or one property to the nodes. A key is p
 
 ![the answer is an object with node and end, and with comments, errors, typescript, scopes, bindings, references and roots tables when their option is on](Answer.svelte)
 
-- `locations` puts `loc`, with line and column, on every node.
 - `comments` adds `comments`, every comment in source order, and puts `leadingComments`, `trailingComments` and `innerComments` on the nodes.
 - `scopes` adds `scopes`, `bindings` and `references`, and lets you ask any node what it declares or refers to. See [Scopes](/scopes).
 - `errorRecovery` adds `errors` and returns a tree instead of throwing. See [Errors](/errors).
@@ -32,3 +31,13 @@ Every option, with its type and default, is in the [reference](/reference/parser
 ## Positions
 
 Offsets are UTF-16, the way JavaScript strings count. They are offsets into the whole text, however small a piece you parsed, so nothing has to be added to them. The answer's `end` is past any closing parentheses around the node and any comment after it.
+
+A node has no line or column. The answer's `locate` method gives the line of an offset, counting from 1, and its column, counting UTF-16 units from 0:
+
+```js position.js
+const answer = parse(text);
+
+answer.locate(answer.node.start); // { line: 1, column: 0 }
+```
+
+A line ends at `\n`, `\r\n`, a lone `\r`, U+2028 or U+2029. The first call finds where each line starts and keeps the list; each later call tries the line the call before found and the next one before it searches the list, so a printer asking in source order pays least. `locate` reads the answer it is called on, so call it as `answer.locate(offset)`.

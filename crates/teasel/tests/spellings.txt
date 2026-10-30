@@ -413,9 +413,7 @@ line
 list
 lists
 literal
-loc
 local
-locs
 marks
 maybe
 members

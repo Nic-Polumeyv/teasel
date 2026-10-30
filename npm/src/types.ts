@@ -1,4 +1,4 @@
-import type { Expression, Identifier, Node, SourceLocation } from 'estree';
+import type { Expression, Identifier, Node, Position } from 'estree';
 
 /** A scope, as one of `scopes` on the answer. */
 export interface Scope {
@@ -113,11 +113,10 @@ export interface Reference {
 	declares: boolean;
 }
 
-/** A range of the source, with `loc` when `locations` is on. */
+/** A range of the source. */
 export interface Span {
 	start: number;
 	end: number;
-	loc?: SourceLocation;
 }
 
 export interface Comment extends Span {
@@ -167,6 +166,15 @@ export interface Parsed<T> {
 	node: T;
 	/** The offset after everything the parse consumed: the node, its closing parens and the comments after it; a program's is the end of the text. */
 	end: number;
+	/**
+	 * The line of `offset`, counting from 1, and its column, counting UTF-16 units from 0, in the
+	 * text parsed: all of the text `parseAt` was given. A line ends at `\n`, `\r\n`, a lone `\r`,
+	 * U+2028 or U+2029. The first call finds where each line starts; each later call tries the line
+	 * the call before found and the next one before it searches, so calls in source order cost
+	 * least. It reads the answer it is called on. An offset that is not an integer from 0 to the
+	 * text's length throws a `RangeError`.
+	 */
+	locate(offset: number): Position;
 	/** Every comment read, in source order; with `comments`. */
 	comments?: Comment[];
 	/** What erasure left in place; with `typescript: 'erase'`. */

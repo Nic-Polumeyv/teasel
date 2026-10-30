@@ -52,7 +52,7 @@ fn recovery_changes_nothing_that_parses() {
 	let Some(root) = suite() else { return };
 	let mut differ = Vec::new();
 	for (path, source, module) in parsing(&root) {
-		let flags = Options::COMMENTS | Options::SCOPES | Options::LOCATIONS;
+		let flags = Options::COMMENTS | Options::SCOPES;
 		let strict = parse(&source, &request(Entry::Program, 0, module, flags));
 		let mut recovered = parse(
 			&source,
@@ -92,10 +92,10 @@ fn an_entry_reads_what_the_program_read() {
 	let Some(root) = suite() else { return };
 	let mut differ = Vec::new();
 	for (path, source, module) in parsing(&root) {
-		let program = parse(&source, &request(Entry::Program, 0, module, Options::LOCATIONS));
+		let program = parse(&source, &request(Entry::Program, 0, module, 0));
 		let mut at = 0u32;
 		while (at as usize) < source.len() {
-			let answer = parse(&source, &request(Entry::Statement, at, module, Options::LOCATIONS));
+			let answer = parse(&source, &request(Entry::Statement, at, module, 0));
 			let Some(node) = node_of(&answer) else { break };
 			let end: u32 = answer[answer.rfind(",\"end\":").unwrap() + 7..answer.len() - 1]
 				.parse()
@@ -130,10 +130,7 @@ fn a_file_cut_anywhere_is_read_without_a_panic() {
 				continue;
 			}
 			let cut = &source[..i];
-			for flags in [
-				0,
-				Options::ERROR_RECOVERY | Options::COMMENTS | Options::SCOPES | Options::LOCATIONS,
-			] {
+			for flags in [0, Options::ERROR_RECOVERY | Options::COMMENTS | Options::SCOPES] {
 				let read = std::panic::catch_unwind(|| parse(cut, &request(Entry::Program, 0, module, flags)));
 				if read.is_err() {
 					panicked.push(format!("{path} cut at {i} with {flags:?}"));
