@@ -17,12 +17,6 @@ export interface Options {
 	 * carries no facts. TypeScript type positions bind nothing.
 	 */
 	scopes?: boolean;
-	/**
-	 * List the offset each line of the text starts at as `lines` on the answer, from which the
-	 * line and column of any offset follow.
-	 * @default false
-	 */
-	locations?: boolean;
 	/** Mark a node the source wraps in parens with `parenthesized: true`, absent otherwise. */
 	parenthesized?: boolean;
 	allowReturnOutsideFunction?: boolean;
@@ -45,7 +39,6 @@ const ACCEPTED: { [K in keyof Options]-?: readonly NonNullable<Options[K]>[] } =
 	typescript: [false, true, 'erase'],
 	comments: [false, true],
 	scopes: [false, true],
-	locations: [false, true],
 	parenthesized: [false, true],
 	allowReturnOutsideFunction: [false, true],
 	allowAwaitOutsideFunction: [false, true],

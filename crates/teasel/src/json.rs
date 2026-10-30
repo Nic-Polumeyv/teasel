@@ -562,16 +562,13 @@ fn run(
 	slot.tree = Some(ast);
 }
 
-/// What a front end reading the tree in place needs beside it: the lines, the nodes erasure leaves
-/// out, the hosts, the comments, the errors, the strings' UTF-16 starts, and every node's span as
-/// JavaScript counts it, in place; a failed parse prepares its error row alone, the tree it read is
-/// left as the last answer cleared it.
+/// What a front end reading the tree in place needs beside it: the nodes erasure leaves out, the
+/// hosts, the comments, the errors, the strings' UTF-16 starts, and every node's span as JavaScript
+/// counts it, in place; a failed parse prepares its error row alone, the tree it read is left as the
+/// last answer cleared it.
 fn prepare(ast: &mut Ast, source: &str, positions: &Positions, options: Options, failed: bool, names: &mut Names) {
 	if !failed {
 		prepare_tree(ast, positions, options, names);
-		if options.has(Options::LOCATIONS) {
-			positions.lines(source, |start| ast.lines.push(start));
-		}
 	}
 	ast.error_rows.clear();
 	if failed || options.has(Options::ERROR_RECOVERY) {

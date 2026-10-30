@@ -287,7 +287,7 @@ impl Positions {
 
 	/// The UTF-16 offset each line of `source` starts at to `line`, the first line's 0: a line
 	/// ends at `\n`, at `\r` not before `\n`, and at U+2028 and U+2029.
-	pub fn lines(&self, source: &str, mut line: impl FnMut(u32)) {
+	fn lines(&self, source: &str, mut line: impl FnMut(u32)) {
 		let bytes = source.as_bytes();
 		line(0);
 		let mut hit = |i: usize| match bytes[i] {
@@ -574,17 +574,11 @@ impl<'a> Writer<'a> {
 		self.json.end();
 	}
 
-	/// What the options add after a root: the lines, every comment, the errors recovered from,
-	/// what erasure kept, the scopes; a failed parse lists its error alone.
+	/// What the options add after a root: every comment, the errors recovered from, what erasure
+	/// kept, the scopes; a failed parse lists its error alone.
 	fn trailers(&mut self) {
 		if self.failed {
 			return self.errors();
-		}
-		if self.options.has(Options::LOCATIONS) {
-			self.key("lines");
-			self.json.list();
-			self.positions.lines(self.source, |start| self.json.int(start));
-			self.json.end();
 		}
 		if self.options.has(Options::COMMENTS) {
 			self.key("comments");

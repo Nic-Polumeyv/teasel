@@ -3,9 +3,9 @@
 //! `git clone --depth 1 https://github.com/tc39/test262-parser-tests tests/test262-parser-tests`;
 //! without it both tests are skipped.
 //!
-//! `test262.hashes` pins the whole answer for every file that parses, comments, scopes and
-//! locations included, so any change to a tree fails here naming the file; `UPDATE=1` rewrites
-//! the pins once the change is meant.
+//! `test262.hashes` pins the whole answer for every file that parses, comments and scopes
+//! included, so any change to a tree fails here naming the file; `UPDATE=1` rewrites the pins
+//! once the change is meant.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -93,7 +93,7 @@ fn pinned_answers() {
 	for dir in ["pass", "pass-explicit"] {
 		for (path, source) in files(&root, dir) {
 			let module = if is_module(&path) { Options::MODULE } else { 0 };
-			let request = Request::from_flags(module | Options::COMMENTS | Options::SCOPES | Options::LOCATIONS);
+			let request = Request::from_flags(module | Options::COMMENTS | Options::SCOPES);
 			lines.push(format!("{path} {:016x}", hash(&parse(&source, &request))));
 		}
 	}

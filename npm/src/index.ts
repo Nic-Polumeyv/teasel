@@ -88,7 +88,7 @@ export const css: Language<HostNode> = Object.freeze({ [LANGUAGE]: Object.freeze
  * host's own nodes around the JavaScript ones, in one tree, in TypeScript when the grammar says so
  * of a script tag. Positions are UTF-16 offsets. A lone surrogate in the text reaches the parser as
  * U+FFFD, the way `TextEncoder` encodes it, so string values, template cooked and raw text and
- * regex patterns carry U+FFFD there while spans and `lines` are right.
+ * regex patterns carry U+FFFD there while spans and `locate` are right.
  */
 export function parse<T = Program>(text: string, options?: Options, language: Language<T> = js as Language<never>): Parsed<T> {
 	const read = language?.[LANGUAGE];

@@ -368,8 +368,6 @@ pub struct Ast {
 	/// Nodes with what few have, for a front end that builds the rest in one piece: parentheses,
 	/// comments, TypeScript's extras.
 	pub rare: NodeSet,
-	/// The UTF-16 offset each line of the text starts at, with `locations`.
-	pub lines: Handed<u32>,
 	/// Where each interned string starts in UTF-16 units, when the text has characters past ASCII.
 	pub units: Handed<u32>,
 	pub error_rows: Handed<ErrorRow>,
@@ -459,7 +457,6 @@ impl Ast {
 		self.rare.clear();
 		self.comment_rows.clear();
 		self.error_rows.clear();
-		self.lines.clear();
 		self.units.clear();
 		self.host_rows.clear();
 		self.host_keys.clear();
@@ -508,7 +505,6 @@ impl Ast {
 		out.push("starts", starts);
 		out.push("marks", marks);
 		out.push("units", &mut self.units);
-		out.push("lines", &mut self.lines);
 		out.push("parenthesized", self.parenthesized.words());
 		out.push("erased", self.erased.words());
 		out.push("rare", self.rare.words());

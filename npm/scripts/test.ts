@@ -32,14 +32,14 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 	const parse = (source: string, options?: Options): Any => read(source, options);
 	const program = (source: string, options?: Options): Any => parse(source, options).node;
 	const at = (piece: Exclude<keyof typeof js, symbol | 'children' | 'extras'>, source: string, offset: number, options?: Options, stopAt?: string[]): Any => readAt(source, stopAt === undefined ? js[piece] : js[piece].until(...stopAt), offset, options);
-	const typed = parse('let x: number = 1; // done', { sourceType: 'module', typescript: true, comments: true, locations: true });
+	const typed = parse('let x: number = 1; // done', { sourceType: 'module', typescript: true, comments: true });
 	assert.equal(typed.node.sourceType, 'module');
 	assert.equal(typed.end, 26);
 	assert.equal(typed.node.body[0].declarations[0].id.typeAnnotation.typeAnnotation.type, 'TSNumberKeyword');
 	assert.equal(typed.node.body[0].trailingComments[0].value, ' done');
 	assert.equal(typed.comments.length, 1);
-	assert.deepEqual(Object.keys(typed), ['node', 'end', 'lines', 'comments']);
-	assert.deepEqual(typed.lines, new Uint32Array([0]));
+	assert.deepEqual(Object.keys(typed), ['node', 'end', 'comments']);
+	assert.deepEqual(typed.locate(26), { line: 1, column: 26 });
 	assert.equal('loc' in typed.node.body[0] || 'loc' in typed.comments[0], false);
 	assert.deepEqual(Object.keys(parse('x')), ['node', 'end']);
 	assert.equal(program('with (a) {}').body[0].type, 'WithStatement');
@@ -104,7 +104,7 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 	assert.equal(declaration.node.type, 'VariableDeclaration');
 	assert.deepEqual(JSON.parse(JSON.stringify(declaration.node.declarations[0].id)), { type: 'Identifier', start: 5, end: 5, name: '' });
 	assert.deepEqual(at('expression', '{a b}', 1, loose, ['}']).errors, []);
-	const broken = parse('x = "abc\ny = ', { errorRecovery: true, locations: true });
+	const broken = parse('x = "abc\ny = ', { errorRecovery: true });
 	assert.deepEqual(broken.errors.map((e: Any) => [e.code, e.pos, e.line]), [['unterminated_string', 4, 1], ['unexpected_eof', 13, 2]]);
 	assert.deepEqual(parse('x', loose).errors, []);
 	assert.equal('errors' in parse('x'), false);
@@ -137,7 +137,7 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 
 	assert.throws(() => parse('x = ;'), (e: Any) => e.code === 'unexpected_token' && e.pos === 4 && e.end === 5 && e.column === 4 && e.message === 'unexpected_token' && e.args.length === 0 && Object.getPrototypeOf(e) === SyntaxError.prototype);
 	assert.throws(() => parse('x = '), (e: Any) => e.code === 'unexpected_eof' && e.pos === 4 && e.end === 4);
-	assert.throws(() => parse('/a', { locations: true }), (e: Any) => e.code === 'unterminated_regexp' && e.pos === 1);
+	assert.throws(() => parse('/a'), (e: Any) => e.code === 'unterminated_regexp' && e.pos === 1);
 	assert.throws(() => parse('x', { ranges: true } as Any), TypeError);
 	assert.throws(() => parse('x', { ecmaVersion: 2020 } as Any), TypeError);
 	assert.throws(() => parse('x', { preserveParens: true } as Any), TypeError);
@@ -255,12 +255,12 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 	const unicode = at('expression', '"é" + x', 6).node;
 	assert.equal(unicode.type, 'Identifier');
 	assert.equal(unicode.start, 6);
-	const braces = '{a} {"é"} {b /* c */}', located: Options = { locations: true, comments: true };
+	const braces = '{a} {"é"} {b /* c */}', located: Options = { comments: true };
 	assert.equal(readAt(braces, js.expression, 1, located).node.name, 'a');
 	assert.equal(readAt('{xs as x}', js.expression.until('as'), 1, ts).end, 3);
 	assert.equal(readAt(braces, js.expression, 11, located).end, 20);
 	assert.equal(readAt(braces, js.expression, 11, located).comments[0].start, 13);
-	assert.deepEqual(readAt(braces, js.expression, 11, located).lines, new Uint32Array([0]));
+	assert.deepEqual(readAt(braces, js.expression, 11, located).locate(13), { line: 1, column: 13 });
 	assert.throws(() => readAt(braces, js.expression, 99, located), RangeError);
 	assert.throws(() => readAt('𝒳 + y', js.expression, 1), RangeError);
 	const erased = parse('import type T from "t"; export const x: T = (1 as any)!; enum E {}', { sourceType: 'module', typescript: 'erase' });
@@ -269,12 +269,12 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 	assert.equal('typeAnnotation' in erased.node.body[0].declaration.declarations[0].id, false);
 	assert.deepEqual(erased.typescript.map((k: Any) => k.type), ['TSEnumDeclaration']);
 	assert.throws(() => parse('let x: number = 1', { typescript: true, erase: true } as Any), TypeError);
-	const template = '<script>\n  let a = 1;\n</script>\n{a}', placed: Options = { sourceType: 'module', locations: true };
+	const template = '<script>\n  let a = 1;\n</script>\n{a}', placed: Options = { sourceType: 'module' };
 	const script = readAt(template.slice(0, 22), js.program, 8, placed);
 	assert.equal(script.node.start, 8);
 	assert.equal(script.node.end, 22);
 	assert.equal(script.end, 22);
-	assert.deepEqual(script.lines, new Uint32Array([0, 9, 22]));
+	assert.deepEqual([9, 22].map((at) => script.locate(at)), [{ line: 2, column: 0 }, { line: 3, column: 0 }]);
 	assert.throws(() => readAt(template.slice(0, 8), js.program, 22, placed), RangeError);
 	assert.equal(readAt(template, js.program, 24, placed).node.body[0].type, 'ExpressionStatement');
 	assert.equal(readAt(template.slice(0, 34), js.expression, 33, placed).node.name, 'a');
@@ -294,8 +294,7 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 	const whole = JSON.stringify(read(twice).node);
 	assert.equal(readAt(twice, js.expression, 11).node.type, 'CallExpression');
 	assert.equal(JSON.stringify(read(twice).node), whole);
-	assert.throws(() => parse('x', { locations: 1 } as Any), TypeError);
-	assert.throws(() => parse('x', { locations: 'js' } as Any), TypeError);
+	assert.throws(() => parse('x', { locations: true } as Any), TypeError);
 	assert.throws(() => parse('x', { typescript: 'yes' } as Any), TypeError);
 	assert.throws(() => readAt('a;b;c', js.program, 1.5), RangeError);
 	assert.throws(() => readAt('a;b;c', js.program, NaN), RangeError);
@@ -413,7 +412,7 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 	assert.deepEqual(wrong, [], `${name} parents`);
 }
 
-// `lines`: the line and column of every node and comment follow from it by a binary search, as a scan of the text from its start finds them
+// `locate`: the line and column of every node, comment and error, in any order, as a scan of the text from its start finds them
 {
 	const scan = (text: string, offset: number) => {
 		let line = 1, start = 0;
@@ -421,42 +420,37 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 			const c = text[i];
 			if (c === '\n' || c === '\u2028' || c === '\u2029' || (c === '\r' && text[i + 1] !== '\n')) [line, start] = [line + 1, i + 1];
 		}
-		return [line, offset - start];
-	};
-	const place = (lines: Uint32Array, offset: number) => {
-		let lo = 0, hi = lines.length;
-		while (lo < hi) {
-			const mid = (lo + hi) >>> 1;
-			if (lines[mid] <= offset) lo = mid + 1;
-			else hi = mid;
-		}
-		return [lo, offset - lines[lo - 1]];
+		return { line, column: offset - start };
 	};
 	const texts: [string, Any][] = [
 		['a\r\nb\rc\u2028d\u2029e\n"𝒳" // é\r\n/* x\r\ny\u2028*/ f\r', js],
 		['<script>\r\n\tlet a = "𝒳"; // é\r\n</script>\r\n<p class="x\ry">{a}\u2028{b}<!-- c\r\n --></p>\r<style>\n\tp { color: red } /* \r */\n</style>\n', svelte],
 		['<ul :class="{ on }">\r\n\t<li v-for="(item, i) in items">{{ item.name /* 𝒳 */ }}\u2029</li>\r</ul>', vue],
 		['p {\r\n\tcolor: red;\r}\n/* 𝒳\r\n */ a { b: c }', css],
+		['a\nb\nc\nd\ne', js],
 	];
 	for (const [text, language] of texts) {
-		const answer = read(text, { sourceType: 'module', comments: true, locations: true }, language);
-		let spans = 0;
+		const answer = read(text, { sourceType: 'module', comments: true }, language);
+		const offsets: number[] = [];
 		const visit = (value: Any) => {
 			if (value === null || typeof value !== 'object') return;
 			if (Array.isArray(value)) return value.forEach(visit);
-			if (typeof value.start === 'number') {
-				spans++;
-				for (const at of [value.start, value.end]) assert.deepEqual(place(answer.lines, at), scan(text, at), `${value.type} at ${at}`);
-			}
+			if (typeof value.start === 'number') offsets.push(value.start, value.end);
 			for (const key of Object.keys(value)) visit(value[key]);
 		};
 		visit(answer.node);
 		visit(answer.comments);
-		assert.ok(spans > 4);
+		assert.ok(offsets.length > 8);
+		for (const at of [...offsets, ...offsets.reverse(), ...Array.from({ length: text.length + 1 }, (_, i) => (i * 7) % (text.length + 1))]) assert.deepEqual(answer.locate(at), scan(text, at), `${text} at ${at}`);
 	}
-	assert.deepEqual(read('a\r\nb\rc\u2028d\u2029e\n𝒳\nf', { locations: true }).lines, new Uint32Array([0, 3, 5, 7, 9, 11, 14]));
-	assert.deepEqual(readAt('{a}\n\n{b}', js.expression, 6, { locations: true }).lines, new Uint32Array([0, 4, 5]));
-	assert.equal('lines' in read('a\nb'), false);
+	const recovered = read('x = "a\u2028\r\ny = \r(\n', { errorRecovery: true });
+	assert.ok(recovered.errors.length > 1);
+	for (const error of recovered.errors) assert.deepEqual(recovered.locate(error.pos), { line: error.line, column: error.column });
+	const thrown = '\r\n\u2028\r = ;';
+	assert.throws(() => read(thrown), (e: Any) => e.line === 4 && JSON.stringify({ line: e.line, column: e.column }) === JSON.stringify(scan(thrown, e.pos)));
+	assert.deepEqual(readAt('{a}\n\n{b}', js.expression, 6).locate(6), { line: 3, column: 1 });
+	const answer = read('a\nb');
+	for (const offset of [-1, 4, 1.5, NaN, '1' as Any]) assert.throws(() => answer.locate(offset), RangeError);
 }
 
 // a second host: the same walker, Vue's grammar
