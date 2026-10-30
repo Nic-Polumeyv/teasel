@@ -566,15 +566,12 @@ fn run(
 }
 
 /// What a front end reading the tree in place needs beside it: every node's span as JavaScript
-/// counts it, the lines, the nodes erasure leaves out, the hosts, the comments, the errors and the
-/// strings' UTF-16 starts; a failed parse prepares its error row alone, the tree it read is left
-/// as the last answer cleared it.
+/// counts it, the nodes erasure leaves out, the hosts, the comments, the errors and the strings'
+/// UTF-16 starts; a failed parse prepares its error row alone, the tree it read is left as the
+/// last answer cleared it.
 fn prepare(ast: &mut Ast, source: &str, positions: &Positions, options: Options, failed: bool, names: &mut Names) {
 	if !failed {
 		prepare_tree(ast, positions, options, names);
-		if options.has(Options::LOCATIONS) {
-			ast.lines.extend(positions.lines(source));
-		}
 	}
 	ast.error_rows.clear();
 	if failed || options.has(Options::ERROR_RECOVERY) {

@@ -359,8 +359,6 @@ pub struct Ast {
 	/// Each node's span in UTF-16 offsets, when the source has characters past ASCII; empty
 	/// otherwise, the node's own span being right.
 	pub spans: Handed<Span>,
-	/// The UTF-16 offset each line of the text starts at, with `locations`.
-	pub lines: Handed<u32>,
 	/// Where each interned string starts in UTF-16 units, when the text has characters past ASCII.
 	pub units: Handed<u32>,
 	pub error_rows: Handed<ErrorRow>,
@@ -452,7 +450,6 @@ impl Ast {
 		self.comment_rows.clear();
 		self.error_rows.clear();
 		self.spans.clear();
-		self.lines.clear();
 		self.units.clear();
 		self.host_rows.clear();
 		self.host_keys.clear();
@@ -502,7 +499,6 @@ impl Ast {
 		out.push("marks", marks);
 		out.push("units", &mut self.units);
 		out.push("spans", &mut self.spans);
-		out.push("lines", &mut self.lines);
 		out.push("parenthesized", self.parenthesized.words());
 		out.push("erased", self.erased.words());
 		out.push("rare", self.rare.words());

@@ -174,7 +174,7 @@ function resolve(raw: RawOp[], fields: Field[]): Op[] {
 // a literal: an object filled by computed keys turns into a dictionary, a hash lookup per read
 function places(views: string[]) {
 	const of = (name: string) => 1 + views.indexOf(name);
-	return { nodes: of('nodes'), lists: of('lists'), numbers: of('numbers'), text: of('text'), starts: of('starts'), marks: of('marks'), units: of('units'), spans: of('spans'), lines: of('lines'), parenthesized: of('parenthesized'), erased: of('erased'), comments: of('comments'), attached_slots: of('attached_slots'), attached: of('attached'), errors: of('errors'), hosts: of('hosts'), host_keys: of('host_keys'), host_vals: of('host_vals'), host_strings: of('host_strings'), scopes: of('scopes'), bindings: of('bindings'), references: of('references'), roots: of('roots'), of_node: of('of_node'), of_identifier: of('of_identifier'), root_of: of('root_of'), declared_by: of('declared_by'), declared_by_at: of('declared_by_at'), writes_of: of('writes_of'), writes_of_at: of('writes_of_at'), ts: of('ts'), extras_slots: of('extras_slots'), extras: of('extras'), names: of('names'), name_starts: of('name_starts'), rare: of('rare'), late: of('late'), /** Past the last view's length in the answer's words: where the tree's buffers sit, folded into two. */ sits: 1 + views.length };
+	return { nodes: of('nodes'), lists: of('lists'), numbers: of('numbers'), text: of('text'), starts: of('starts'), marks: of('marks'), units: of('units'), spans: of('spans'), parenthesized: of('parenthesized'), erased: of('erased'), comments: of('comments'), attached_slots: of('attached_slots'), attached: of('attached'), errors: of('errors'), hosts: of('hosts'), host_keys: of('host_keys'), host_vals: of('host_vals'), host_strings: of('host_strings'), scopes: of('scopes'), bindings: of('bindings'), references: of('references'), roots: of('roots'), of_node: of('of_node'), of_identifier: of('of_identifier'), root_of: of('root_of'), declared_by: of('declared_by'), declared_by_at: of('declared_by_at'), writes_of: of('writes_of'), writes_of_at: of('writes_of_at'), ts: of('ts'), extras_slots: of('extras_slots'), extras: of('extras'), names: of('names'), name_starts: of('name_starts'), rare: of('rare'), late: of('late'), /** Past the last view's length in the answer's words: where the tree's buffers sit, folded into two. */ sits: 1 + views.length };
 }
 /** Each view's place in a tree; zero for a view the tree does not have. */
 type At = ReturnType<typeof places>;
@@ -1255,7 +1255,7 @@ const filled = (tree: Tree, words: Uint32Array, lens: number, at: number) => (wo
 const FAILED = 1, TYPESCRIPT = 2;
 // the options the answer was asked with, as `flags` packed them
 const slot = (key: keyof Options, index = 3) => index << (2 * SLOT[key]);
-const TS_OPTION = slot('typescript'), ERASED = slot('typescript', 2), COMMENTS = slot('comments'), LOCATED = slot('locations'), RECOVERED = slot('errorRecovery');
+const TS_OPTION = slot('typescript'), ERASED = slot('typescript', 2), COMMENTS = slot('comments'), RECOVERED = slot('errorRecovery');
 
 function table(S: State, tree: Tree, words: Uint32Array, lens: number, rows: Rows, at: number): Decoded[] {
 	const build = S.link ? rows.linked : rows.plain;
@@ -1283,6 +1283,53 @@ function errors(S: State, view: Uint32Array, count: number): Decoded[] {
 		out[i] = { code: CODES[view[at + E.code]], args, pos: view[at + E.pos], end: view[at + E.end], line: view[at + E.line], column: view[at + E.column] };
 	}
 	return out;
+}
+
+// tried: the regex alone, 1.4x slower on Svelte's components; a charCodeAt scan, 1.9x there and 1.5x with CRLF; the engine's scan, the text encoded again, 2.4x there and 2.6x on CJK; a Uint32Array, 2.2x to fill and 1.15x to search
+const BREAK = /\r\n?|[\n\u2028\u2029]/g;
+function lines(text: string): number[] {
+	const starts = [0];
+	if (text.indexOf('\r') === -1 && text.indexOf('\u2028') === -1 && text.indexOf('\u2029') === -1) {
+		for (let i = text.indexOf('\n'); i !== -1; i = text.indexOf('\n', i + 1)) starts.push(i + 1);
+		return starts;
+	}
+	BREAK.lastIndex = 0;
+	while (BREAK.test(text)) starts.push(BREAK.lastIndex);
+	return starts;
+}
+
+// `starts[lo - 1]` is at or before `offset`
+function line_of(starts: number[], offset: number, lo: number, hi: number) {
+	while (lo < hi) {
+		const mid = (lo + hi) >>> 1;
+		if (starts[mid] <= offset) lo = mid + 1;
+		else hi = mid;
+	}
+	return lo - 1;
+}
+
+// tried: a closure per answer, 1.2x slower a call, and as an own property it is a key and fails structuredClone
+class Answer {
+	node: unknown;
+	end: number;
+	readonly #text: string;
+	#starts: number[] | undefined = undefined;
+	#line = 0;
+	constructor(node: unknown, end: number, text: string) {
+		this.node = node;
+		this.end = end;
+		this.#text = text;
+	}
+	locate(offset: number) {
+		if (!Number.isInteger(offset) || offset < 0 || offset > this.#text.length) throw new RangeError(`${offset} is no offset in the text`);
+		const starts = (this.#starts ??= lines(this.#text));
+		let i = this.#line;
+		// tried a search alone: 1.6x slower for a printer, which asks in source order; and the line of every 64th unit, then a scan: 1.8x faster at random on Svelte's components, 4.8x on a 9.7 MB file, but 1.3x slower for a printer once built, with twice the memory
+		if (starts[i] > offset) i = line_of(starts, offset, 0, i);
+		else if (i + 1 < starts.length && starts[i + 1] <= offset) i = i + 2 < starts.length && starts[i + 2] <= offset ? line_of(starts, offset, i + 3, starts.length) : i + 1;
+		this.#line = i;
+		return { line: i + 1, column: offset - starts[i] };
+	}
 }
 
 /**
@@ -1395,8 +1442,7 @@ export function decode(words: Uint32Array, source: string, engine: Views, flags:
 			for (let i = 2; i < lens; i++) if (S.erased === null || !bit(S.erased, words[i])) node.push(build(S, words[i], undefined));
 		} else node = build(S, words[2], undefined);
 	}
-	const answer: Decoded = { node, end: words[0] };
-	if (!failed && (flags & LOCATED) !== 0) answer.lines = (tree[at.lines] as Uint32Array).slice(0, words[lens + at.lines]);
+	const answer: Decoded = new Answer(node, words[0], source);
 	if (!failed && (flags & COMMENTS) !== 0) answer.comments = comments(S, undefined);
 	if (failed || (flags & RECOVERED) !== 0) answer.errors = errors(S, rows, words[lens + at.errors] / C.R.error.words);
 	if (!failed && erase) answer.typescript = kept(S);

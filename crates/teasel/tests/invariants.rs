@@ -52,7 +52,7 @@ fn recovery_changes_nothing_that_parses() {
 	let Some(root) = suite() else { return };
 	let mut differ = Vec::new();
 	for (path, source, module) in parsing(&root) {
-		let flags = Options::COMMENTS | Options::SCOPES | Options::LOCATIONS;
+		let flags = Options::COMMENTS | Options::SCOPES;
 		let strict = parse(&source, &request(Entry::Program, 0, module, flags));
 		let mut recovered = parse(
 			&source,
@@ -130,10 +130,7 @@ fn a_file_cut_anywhere_is_read_without_a_panic() {
 				continue;
 			}
 			let cut = &source[..i];
-			for flags in [
-				0,
-				Options::ERROR_RECOVERY | Options::COMMENTS | Options::SCOPES | Options::LOCATIONS,
-			] {
+			for flags in [0, Options::ERROR_RECOVERY | Options::COMMENTS | Options::SCOPES] {
 				let read = std::panic::catch_unwind(|| parse(cut, &request(Entry::Program, 0, module, flags)));
 				if read.is_err() {
 					panicked.push(format!("{path} cut at {i} with {flags:?}"));

@@ -1,7 +1,7 @@
 //! A document for each rule of the host grammars beside them, its answer pinned beside it as
 //! `NAME.json`: the tree with comments and scopes, the error when it has one. A name says what
-//! else is on: `locations`, `erase`, or `recover` for `errorRecovery`. `UPDATE=1` rewrites the
-//! pins once a change is meant.
+//! else is on: `erase`, or `recover` for `errorRecovery`. `UPDATE=1` rewrites the pins once a
+//! change is meant.
 
 mod common;
 
@@ -79,11 +79,7 @@ fn documents() {
 			let stem = file.file_stem().unwrap().to_str().unwrap();
 			let source = fs::read_to_string(&file).unwrap();
 			let mut flags = Options::MODULE | Options::COMMENTS | Options::SCOPES;
-			for (word, bit) in [
-				("locations", Options::LOCATIONS),
-				("erase", Options::ERASE),
-				("recover", Options::ERROR_RECOVERY),
-			] {
+			for (word, bit) in [("erase", Options::ERASE), ("recover", Options::ERROR_RECOVERY)] {
 				if stem.contains(word) {
 					flags |= bit;
 				}
@@ -216,8 +212,8 @@ fn host_phases() {
 		for (flags, label) in [
 			(Options::MODULE, "module"),
 			(
-				Options::MODULE | Options::SCOPES | Options::COMMENTS | Options::LOCATIONS,
-				"module scopes comments locations",
+				Options::MODULE | Options::SCOPES | Options::COMMENTS,
+				"module scopes comments",
 			),
 		] {
 			let mut best = f64::MAX;
