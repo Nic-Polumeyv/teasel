@@ -45,7 +45,7 @@ export interface Layout {
 	/** Each table's record: its size and its fields. */
 	rows: Record<string, { size: number; fields: Field[] }>;
 	/** The records beside the nodes and the tables, by their view's name. */
-	records: Record<'comments' | 'attached' | 'errors' | 'hosts' | 'host_vals' | 'spans' | 'locs' | 'marks', { size: number; fields: Field[] }>;
+	records: Record<'comments' | 'attached' | 'errors' | 'hosts' | 'host_vals' | 'spans' | 'marks', { size: number; fields: Field[] }>;
 	none: Missing;
 	views: { js: string[]; ts?: string[] };
 	/** Each type of node a stylesheet holds with the fields that hold nodes. */
@@ -81,7 +81,7 @@ interface Language {
 	adds: Op[][];
 	ts_adds: Op[][];
 	erased: Op[];
-	/** The builders of each way to build: linked, with lines, with facts, erasing; the last asked for kept near. */
+	/** The builders of each way to build: linked, with facts, erasing; the last asked for kept near. */
 	sets: Map<number, Builders>;
 	last: number;
 	builders: Builders | undefined;
@@ -130,8 +130,6 @@ interface Compiled {
 	R: Records;
 	/** The word of a node holding a host's or an extension's index, `Host`'s and `Extension`'s field alike. */
 	payload: number;
-	/** A node's `loc` as a literal's entry, read from its record in `locs`. */
-	LOC: string;
 	/** Each table's row builders, plain and linked, and its record's words; made on the first answer with scopes. */
 	rows: Record<keyof typeof LINKED, Rows> | undefined;
 	js: Language;
@@ -176,7 +174,7 @@ function resolve(raw: RawOp[], fields: Field[]): Op[] {
 // a literal: an object filled by computed keys turns into a dictionary, a hash lookup per read
 function places(views: string[]) {
 	const of = (name: string) => 1 + views.indexOf(name);
-	return { nodes: of('nodes'), lists: of('lists'), numbers: of('numbers'), text: of('text'), starts: of('starts'), marks: of('marks'), units: of('units'), spans: of('spans'), locs: of('locs'), parenthesized: of('parenthesized'), erased: of('erased'), comments: of('comments'), attached_slots: of('attached_slots'), attached: of('attached'), errors: of('errors'), hosts: of('hosts'), host_keys: of('host_keys'), host_vals: of('host_vals'), host_strings: of('host_strings'), scopes: of('scopes'), bindings: of('bindings'), references: of('references'), roots: of('roots'), of_node: of('of_node'), of_identifier: of('of_identifier'), root_of: of('root_of'), declared_by: of('declared_by'), declared_by_at: of('declared_by_at'), writes_of: of('writes_of'), writes_of_at: of('writes_of_at'), ts: of('ts'), extras_slots: of('extras_slots'), extras: of('extras'), names: of('names'), name_starts: of('name_starts'), rare: of('rare'), late: of('late'), /** Past the last view's length in the answer's words: where the tree's buffers sit, folded into two. */ sits: 1 + views.length };
+	return { nodes: of('nodes'), lists: of('lists'), numbers: of('numbers'), text: of('text'), starts: of('starts'), marks: of('marks'), units: of('units'), spans: of('spans'), lines: of('lines'), parenthesized: of('parenthesized'), erased: of('erased'), comments: of('comments'), attached_slots: of('attached_slots'), attached: of('attached'), errors: of('errors'), hosts: of('hosts'), host_keys: of('host_keys'), host_vals: of('host_vals'), host_strings: of('host_strings'), scopes: of('scopes'), bindings: of('bindings'), references: of('references'), roots: of('roots'), of_node: of('of_node'), of_identifier: of('of_identifier'), root_of: of('root_of'), declared_by: of('declared_by'), declared_by_at: of('declared_by_at'), writes_of: of('writes_of'), writes_of_at: of('writes_of_at'), ts: of('ts'), extras_slots: of('extras_slots'), extras: of('extras'), names: of('names'), name_starts: of('name_starts'), rare: of('rare'), late: of('late'), /** Past the last view's length in the answer's words: where the tree's buffers sit, folded into two. */ sits: 1 + views.length };
 }
 /** Each view's place in a tree; zero for a view the tree does not have. */
 type At = ReturnType<typeof places>;
@@ -212,9 +210,8 @@ function records(layout: Layout) {
 	const run = (name: keyof Layout['records'], path: string) => [word(name, `${path}.start`), word(name, `${path}.len`)];
 	const tag = of('host_vals', 'tag');
 	return {
-		loc: { words: words('locs'), start_line: word('locs', 'start.line'), start_column: word('locs', 'start.column'), end_line: word('locs', 'end.line'), end_column: word('locs', 'end.column') },
 		span: { words: words('spans'), start: word('spans', 'start'), end: word('spans', 'end') },
-		comment: { words: words('comments'), block: of('comments', 'block').at, text: word('comments', 'text.start'), text_end: word('comments', 'text.end'), start: word('comments', 'span.start'), end: word('comments', 'span.end'), loc: word('comments', 'loc') },
+		comment: { words: words('comments'), block: of('comments', 'block').at, text: word('comments', 'text.start'), text_end: word('comments', 'text.end'), start: word('comments', 'span.start'), end: word('comments', 'span.end') },
 		attached: { words: words('attached'), leading: run('attached', 'leading'), trailing: run('attached', 'trailing'), inner: run('attached', 'inner') },
 		error: { words: words('errors'), code: word('errors', 'code'), first: optional('errors', 'first'), second: optional('errors', 'second'), pos: word('errors', 'pos'), end: word('errors', 'end'), line: word('errors', 'line'), column: word('errors', 'column') },
 		host: { words: words('hosts'), ty: optional('hosts', 'ty'), from: word('hosts', 'fields.start'), len: word('hosts', 'fields.len'), shape: word('hosts', 'shape'), span: of('hosts', 'span').at },
@@ -239,7 +236,6 @@ function compile(engine: Views): Compiled {
 		else if (field.ty === '?list') blank[(field.at >> 2) + layout.none.list.tag] = layout.none.list.missing;
 	}
 	const R = records(layout);
-	const at = (field: number) => `S.locs[id * ${R.loc.words}${field === 0 ? '' : ` + ${field}`}]`;
 	const made: Compiled = {
 		layout,
 		words: layout.node.size >> 2,
@@ -251,7 +247,6 @@ function compile(engine: Views): Compiled {
 		blank,
 		R,
 		payload: (layout.node.kind + field(layout.kinds[tag('Host')].fields, '0').at) >> 2,
-		LOC: `loc: { start: { line: ${at(R.loc.start_line)}, column: ${at(R.loc.start_column)} }, end: { line: ${at(R.loc.end_line)}, column: ${at(R.loc.end_column)} } }`,
 		rows: undefined,
 		js: language(layout, layout.views.js, false),
 		ts: undefined,
@@ -279,10 +274,6 @@ interface State {
 	roots: Decoded[];
 	link: boolean;
 	erase: boolean;
-	/** Lines and columns are on: every JavaScript node and comment has a `loc`. */
-	lines: boolean;
-	/** The host's own nodes are located too, not only the JavaScript ones. */
-	host_lines: boolean;
 	C: Compiled;
 	G: Language;
 	/** The builder of each kind, by a node's tag. */
@@ -298,7 +289,6 @@ interface State {
 	P: Uint32Array;
 	ps: number;
 	po: number;
-	locs: Uint32Array;
 	/** A bit per node: those with what the literals have no room for, and those with facts linked once they are whole. */
 	rare: Uint32Array;
 	late: Uint32Array;
@@ -383,17 +373,12 @@ function strings(C: Compiled, tree: Tree, words: Uint32Array, lens: number, at: 
 const bit = (set: Uint32Array, id: number) => ((set[id >>> 5] >>> (id & 31)) & 1) === 1;
 const byte = (view: Uint32Array, at: number) => (view[at >> 2] >>> ((at & 3) << 3)) & 255;
 
-function loc(L: Records['loc'], words: Uint32Array, at: number) {
-	return { start: { line: words[at + L.start_line], column: words[at + L.start_column] }, end: { line: words[at + L.end_line], column: words[at + L.end_column] } };
-}
-
 function comment(S: State, index: number, parent: Decoded | undefined): Decoded {
 	const c = S.comments, K = S.C.R.comment;
 	const at = index * K.words;
 	const type = byte(c, at * 4 + K.block) === 1 ? 'Block' : 'Line';
 	const n: Decoded = { type, value: S.source.slice(c[at + K.text], c[at + K.text_end]), start: c[at + K.start], end: c[at + K.end] };
 	if (S.link) n[PARENT] = parent;
-	if (S.lines) n.loc = loc(S.C.R.loc, c, at + K.loc);
 	return n;
 }
 
@@ -458,7 +443,7 @@ for (let i = 0; i < 7; i++) new Room(true);
 function wide(S: State, id: number, P: Program): boolean {
 	if (P.extras === -1) P.extras = S.TS === null ? 0 : program(S.erase ? S.G.erased : adds_of(S, id), S.C.layout.none, !S.erase).size;
 	const slot = S.attached_slots === null ? 0 : S.attached_slots[id];
-	return 3 + (S.lines ? 1 : 0) + (S.link ? 3 : S.of_node !== null ? 5 : 0) + (S.parenthesized !== null ? 1 : 0) + P.extras + (slot > 0 ? 3 : 0) + P.size > 18;
+	return 3 + (S.link ? 3 : S.of_node !== null ? 5 : 0) + (S.parenthesized !== null ? 1 : 0) + P.extras + (slot > 0 ? 3 : 0) + P.size > 18;
 }
 
 function adds_of(S: State, id: number): Op[] {
@@ -466,7 +451,7 @@ function adds_of(S: State, id: number): Op[] {
 	return tag === S.C.extension ? S.G.ts_adds[S.TS![ts_record(S.C, S.N, id)]] : S.G.adds[tag];
 }
 
-function begin(S: State, type: string, id: number, parent: Decoded | undefined, lines: boolean, room = false): Decoded {
+function begin(S: State, type: string, id: number, parent: Decoded | undefined, room = false): Decoded {
 	const at = id * S.ps + S.po;
 	let n: Decoded;
 	if (room) {
@@ -480,7 +465,6 @@ function begin(S: State, type: string, id: number, parent: Decoded | undefined, 
 		n[SCOPE] = undefined;
 		if (type === 'Identifier') n[REFERENCE] = undefined;
 	}
-	if (lines) n.loc = loc(S.C.R.loc, S.locs, id * S.C.R.loc.words);
 	if (S.of_node !== null && !S.name_only) facts(S, n, id);
 	// the extras' children begin inside this one: what it declares waits past them
 	const pending = S.pending;
@@ -822,7 +806,7 @@ function run(S: State, id: number, ops: Op[], view: Uint32Array, base: number, p
 	}
 	const head = ops[at];
 	const P = program(ops, S.C.layout.none, S.G === S.C.ts && !S.erase);
-	const n = begin(S, head.op === 'type' ? head.key : head.names[byte(view, base + head.at)], id, parent, S.lines, wide(S, id, P));
+	const n = begin(S, head.op === 'type' ? head.key : head.names[byte(view, base + head.at)], id, parent, wide(S, id, P));
 	const pending = S.pending;
 	S.pending = null;
 	fill(S, id, n, P, view, base);
@@ -858,8 +842,7 @@ function host(S: State, id: number, index: number, parent: Decoded | undefined):
 		// an object of the host's without a type, positions and all
 		const at = id * S.ps + S.po;
 		n = { start: S.P[at], end: S.P[at + 1] };
-		if (S.host_lines) n.loc = loc(S.C.R.loc, S.locs, id * S.C.R.loc.words);
-	} else if (host_span(S, index)) n = begin(S, ty, id, parent, S.host_lines);
+	} else if (host_span(S, index)) n = begin(S, ty, id, parent);
 	else {
 		n = { type: ty };
 		if (S.link) {
@@ -932,7 +915,7 @@ function late(S: State, n: Decoded, id: number) {
 	if (written !== 0) for (let i = written; i < written + S.writes_of[written - 1]; i++) S.references[S.writes_of[i]].writeExpr = n;
 }
 
-const LINK = 1, LINES = 2, FACTS = 4, ERASE = 8, HOST_LINES = 16;
+const LINK = 1, FACTS = 2, ERASE = 4;
 const CONDITIONAL = new Set(['optlistkey', 'optstrkey', 'keepif']);
 /** Whether an operation sets its key on only some nodes of the kind. */
 const sometimes = (op: Op, typescript: boolean) => CONDITIONAL.has(op.op) && !(typescript && op.op === 'optstrkey');
@@ -1036,7 +1019,6 @@ function generate(C: Compiled, G: Language, config: number, ops: Op[], ts: boole
 	const type = head.op === 'type' ? JSON.stringify(head.key) : B.at(B.table(head.names), byte(head.at));
 	const identifier = head.op === 'type' && head.key === 'Identifier';
 	const props = [`type: ${type}`, 'start: S.P[p]', 'end: S.P[p + 1]'];
-	if ((config & LINES) !== 0) props.push(C.LOC);
 	if (ops.slice(at).some((op) => op.op === 'object' && op.inner.some((inner) => CONDITIONAL.has(inner.op)))) return slow;
 	// what is set once the literal exists: its nodes, then the keys some nodes of the kind leave out
 	const tail: string[] = [];
@@ -1136,10 +1118,7 @@ function generate_host(C: Compiled, config: number, type: string | null, span: b
 	const V = C.R.value;
 	const B = new Source((at) => `HV[from * ${V.words} + ${at >> 2}]`, () => '', facts, C.words, C.kind);
 	const props = type === null ? [] : [`type: ${JSON.stringify(type)}`];
-	if (type === null || span) {
-		props.push('start: S.P[p]', 'end: S.P[p + 1]');
-		if ((config & HOST_LINES) !== 0) props.push(C.LOC);
-	}
+	if (type === null || span) props.push('start: S.P[p]', 'end: S.P[p + 1]');
 	const tail: string[] = [];
 	keys.forEach((key, i) => {
 		if (host_holds(tags[i])) {
@@ -1276,7 +1255,7 @@ const filled = (tree: Tree, words: Uint32Array, lens: number, at: number) => (wo
 const FAILED = 1, TYPESCRIPT = 2;
 // the options the answer was asked with, as `flags` packed them
 const slot = (key: keyof Options, index = 3) => index << (2 * SLOT[key]);
-const TS_OPTION = slot('typescript'), ERASED = slot('typescript', 2), COMMENTS = slot('comments'), LOCATED = slot('locations'), JS_LOCATED = slot('locations', 2), RECOVERED = slot('errorRecovery');
+const TS_OPTION = slot('typescript'), ERASED = slot('typescript', 2), COMMENTS = slot('comments'), LOCATED = slot('locations'), RECOVERED = slot('errorRecovery');
 
 function table(S: State, tree: Tree, words: Uint32Array, lens: number, rows: Rows, at: number): Decoded[] {
 	const build = S.link ? rows.linked : rows.plain;
@@ -1324,12 +1303,11 @@ export function decode(words: Uint32Array, source: string, engine: Views, flags:
 	G.sat[0] = lo;
 	G.sat[1] = hi;
 	const tree = engine.tree(typescript, moved);
-	const erase = (flags & TS_OPTION) === ERASED, lines = (flags & LOCATED) !== 0, failed = (what & FAILED) !== 0;
-	const host_lines = lines && (flags & LOCATED) !== JS_LOCATED;
+	const erase = (flags & TS_OPTION) === ERASED, failed = (what & FAILED) !== 0;
 	const spans = words[lens + at.spans] !== 0;
 	const scoped = !failed && words[lens + at.scopes] !== 0;
 	const rows = tree[at.errors] as Uint32Array;
-	const config = (link ? LINK : 0) | (lines ? LINES : 0) | (host_lines ? HOST_LINES : 0) | (scoped ? FACTS : 0) | (erase ? ERASE : 0);
+	const config = (link ? LINK : 0) | (scoped ? FACTS : 0) | (erase ? ERASE : 0);
 	const B = G.last === config ? G.builders! : builders(C, G, config, typescript);
 	// the state stays with the tree's views, one answer at a time: only what an answer changes is set
 	let S = G.state;
@@ -1343,8 +1321,6 @@ export function decode(words: Uint32Array, source: string, engine: Views, flags:
 			roots: NO_ROWS,
 			link,
 			erase,
-			lines,
-			host_lines,
 			C,
 			G,
 			J: B.js,
@@ -1357,7 +1333,6 @@ export function decode(words: Uint32Array, source: string, engine: Views, flags:
 			P: NO_WORDS,
 			ps: 0,
 			po: 0,
-			locs: tree[at.locs] as Uint32Array,
 			rare: tree[at.rare] as Uint32Array,
 			late: tree[at.late] as Uint32Array,
 			parenthesized: null,
@@ -1389,8 +1364,6 @@ export function decode(words: Uint32Array, source: string, engine: Views, flags:
 	S.source = source;
 	S.link = link;
 	S.erase = erase;
-	S.lines = lines;
-	S.host_lines = host_lines;
 	S.J = B.js;
 	S.H = B.hosts;
 	S.names = names(G, tree, words[lens + at.name_starts] - 1, moved);
@@ -1423,6 +1396,7 @@ export function decode(words: Uint32Array, source: string, engine: Views, flags:
 		} else node = build(S, words[2], undefined);
 	}
 	const answer: Decoded = { node, end: words[0] };
+	if (!failed && (flags & LOCATED) !== 0) answer.lines = (tree[at.lines] as Uint32Array).slice(0, words[lens + at.lines]);
 	if (!failed && (flags & COMMENTS) !== 0) answer.comments = comments(S, undefined);
 	if (failed || (flags & RECOVERED) !== 0) answer.errors = errors(S, rows, words[lens + at.errors] / C.R.error.words);
 	if (!failed && erase) answer.typescript = kept(S);
@@ -1445,9 +1419,7 @@ function kept(S: State): Decoded[] {
 	for (let i = 0; i < S.kept.length; i += 2) {
 		const id = S.kept[i + 1] as number;
 		const at = id * S.ps + S.po;
-		const n: Decoded = { type: S.kept[i], start: S.P[at], end: S.P[at + 1] };
-		if (S.lines) n.loc = loc(S.C.R.loc, S.locs, id * S.C.R.loc.words);
-		out.push(n);
+		out.push({ type: S.kept[i], start: S.P[at], end: S.P[at + 1] });
 	}
 	// a node comes before what it contains
 	return out.sort((a, b) => a.start - b.start || b.end - a.end);

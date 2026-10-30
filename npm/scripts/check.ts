@@ -74,8 +74,8 @@ const DOCUMENT = 7;
 const header = (entry: number, offset: number, on: number) => `${entry} ${offset} ${on}`;
 
 // JSON has no RegExp or BigInt, so the writer spells a regular expression's or a BigInt's value null
-// the binary reports a code as its byte, the package as its name
-const as_json = (key: string, value: unknown) => (value instanceof RegExp || typeof value === 'bigint' ? null : key === 'code' && typeof value === 'string' ? CODES.indexOf(value as Code) : value);
+// the binary reports a code as its byte, the package as its name, and the lines as a list
+const as_json = (key: string, value: unknown) => (value instanceof RegExp || typeof value === 'bigint' ? null : key === 'code' && typeof value === 'string' ? CODES.indexOf(value as Code) : value instanceof Uint32Array ? Array.from(value) : value);
 
 // the addon's answers as JSON, each with the batch job that asks the binary for the same
 const jobs: { name: string; source: string; header: string; tree: string }[] = [];
@@ -98,7 +98,7 @@ const brace_re = /\{/g;
 for (const file of files) {
 	const text = readFileSync(file, 'utf8');
 	if (file.endsWith('.css')) {
-		for (const locations of [true, 'js'] as const) {
+		for (const locations of [true, false]) {
 			const options: Options = { locations, comments: true };
 			json(file, text, options, STYLESHEET, 0);
 			report(`${file} wasm`, differ(outcome(wasm, text, flags(options), STYLESHEET, 0), outcome(native, text, flags(options), STYLESHEET, 0)));
@@ -110,7 +110,7 @@ for (const file of files) {
 		document(file, text, { sourceType: 'module', locations: true, comments: true, scopes: true });
 		document(file, text, { sourceType: 'module', typescript: typescript ? 'erase' : false, locations: true, scopes: true });
 		document(file, text, { sourceType: 'module', typescript, locations: true, errorRecovery: true, parenthesized: true });
-		document(file, text, { sourceType: 'module', typescript: typescript ? 'erase' : false, locations: 'js', comments: true, scopes: true, parenthesized: true });
+		document(file, text, { sourceType: 'module', typescript: typescript ? 'erase' : false, comments: true, scopes: true, parenthesized: true });
 		if (!/\.(js|mjs|ts|svelte)$/.test(file)) continue;
 	}
 	const svelte = file.endsWith('.svelte');
@@ -121,7 +121,7 @@ for (const file of files) {
 			{ sourceType: 'module', typescript: typescript ? 'erase' : false, locations: true },
 			{ sourceType: 'module', typescript, locations: true, scopes: true },
 			{ typescript, locations: true, parenthesized: true },
-			{ sourceType: 'module', typescript, locations: 'js', comments: true },
+			{ sourceType: 'module', typescript, comments: true },
 		];
 		for (const options of runs) {
 			json(file, source, options, 0, 0);

@@ -293,7 +293,7 @@ pub fn in_place(
 	stop: &str,
 	host: Option<&Grammar>,
 ) -> Result<(), String> {
-	let positions = Positions::of(source, options);
+	let positions = Positions::new(source);
 	let offset = positions.byte_offset(start)?;
 	if !source.is_char_boundary(offset as usize) {
 		return Err(format!("offset {start} is inside a surrogate pair"));
@@ -453,14 +453,7 @@ enum Out<'a> {
 
 fn to_json(source: &str, request: &Request, stop: &str, host: Option<&Grammar>) -> String {
 	let mut json = String::new();
-	answer_to(
-		source,
-		&Positions::of(source, request.options),
-		request,
-		stop,
-		host,
-		Some(&mut json),
-	);
+	answer_to(source, &Positions::new(source), request, stop, host, Some(&mut json));
 	json
 }
 
@@ -572,13 +565,16 @@ fn run(
 	slot.tree = Some(ast);
 }
 
-/// What a front end reading the tree in place needs beside it: every node's span and location
-/// as JavaScript counts them, the nodes erasure leaves out, the hosts, the comments, the errors
-/// and the strings' UTF-16 starts; a failed parse prepares its error row alone, the
-/// tree it read is left as the last answer cleared it.
+/// What a front end reading the tree in place needs beside it: every node's span as JavaScript
+/// counts it, the lines, the nodes erasure leaves out, the hosts, the comments, the errors and the
+/// strings' UTF-16 starts; a failed parse prepares its error row alone, the tree it read is left
+/// as the last answer cleared it.
 fn prepare(ast: &mut Ast, source: &str, positions: &Positions, options: Options, failed: bool, names: &mut Names) {
 	if !failed {
 		prepare_tree(ast, positions, options, names);
+		if options.has(Options::LOCATIONS) {
+			ast.lines.extend(positions.lines(source));
+		}
 	}
 	ast.error_rows.clear();
 	if failed || options.has(Options::ERROR_RECOVERY) {
@@ -615,7 +611,7 @@ fn prepare(ast: &mut Ast, source: &str, positions: &Positions, options: Options,
 }
 
 fn prepare_tree(ast: &mut Ast, positions: &Positions, options: Options, names: &mut Names) {
-	positions.map_nodes(&ast.nodes, &mut ast.spans, &mut ast.locs);
+	positions.map_nodes(&ast.nodes, &mut ast.spans);
 	ast.erased.clear();
 	if options.has(Options::ERASE) {
 		for i in 0..ast.nodes.len() as u32 {

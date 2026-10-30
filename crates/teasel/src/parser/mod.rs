@@ -42,10 +42,8 @@ impl Options {
 	pub const COMMENTS: u32 = Self::at(2, 1);
 	/// Scope analysis on the answer.
 	pub const SCOPES: u32 = Self::at(3, 1);
-	/// Line and column on every node, as `loc`.
+	/// The UTF-16 offset each line starts at, as `lines` on the answer.
 	pub const LOCATIONS: u32 = Self::at(4, 1);
-	/// Line and column on the JavaScript nodes and comments only; a host's own nodes keep their span.
-	pub const LOCATIONS_JS: u32 = Self::at(4, 2);
 	/// The fact `parenthesized` on a node the source wraps in parens, instead of a wrapper node.
 	pub const PARENTHESIZED: u32 = Self::at(5, 1);
 	pub const ALLOW_RETURN_OUTSIDE_FUNCTION: u32 = Self::at(6, 1);
@@ -71,10 +69,6 @@ impl Options {
 	/// On for `typescript: true` and `'erase'` alike.
 	pub const fn typescript(self) -> bool {
 		self.has(Self::TYPESCRIPT | Self::ERASE)
-	}
-	/// On for `locations: true` and `'js'` alike.
-	pub const fn locations(self) -> bool {
-		self.has(Self::LOCATIONS | Self::LOCATIONS_JS)
 	}
 }
 

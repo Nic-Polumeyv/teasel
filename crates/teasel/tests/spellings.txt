@@ -410,12 +410,11 @@ left
 len
 let
 line
+lines
 list
 lists
 literal
-loc
 local
-locs
 marks
 maybe
 members

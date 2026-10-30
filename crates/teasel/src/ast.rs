@@ -299,30 +299,12 @@ crate::layout::record! {
 }
 
 crate::layout::record! {
-	#[derive(Clone, Copy, Debug, Default)]
-	pub struct Position {
-		pub line: u32,
-		pub column: u32,
-	}
-}
-
-crate::layout::record! {
-	#[derive(Clone, Copy, Debug, Default)]
-	pub struct Loc {
-		pub start: Position,
-		pub end: Position,
-	}
-}
-
-crate::layout::record! {
 	#[derive(Clone, Copy, Debug)]
 	pub struct CommentRow {
 		pub block: bool,
 		/// Its text, without its delimiters.
 		pub text: Span,
 		pub span: Span,
-		/// With `locations`.
-		pub loc: Loc,
 	}
 }
 
@@ -349,7 +331,6 @@ pub const RECORDS: &[(&str, usize, &[Field])] = &[
 	("hosts", size_of::<HostRow>(), HostRow::FIELDS),
 	("host_vals", size_of::<HostValue>(), HostValue::FIELDS),
 	("spans", size_of::<Span>(), Span::FIELDS),
-	("locs", size_of::<Loc>(), Loc::FIELDS),
 	("marks", size_of::<Surrogate>(), Surrogate::FIELDS),
 ];
 
@@ -378,8 +359,8 @@ pub struct Ast {
 	/// Each node's span in UTF-16 offsets, when the source has characters past ASCII; empty
 	/// otherwise, the node's own span being right.
 	pub spans: Handed<Span>,
-	/// Each node's lines and columns, with `locations`.
-	pub locs: Handed<Loc>,
+	/// The UTF-16 offset each line of the text starts at, with `locations`.
+	pub lines: Handed<u32>,
 	/// Where each interned string starts in UTF-16 units, when the text has characters past ASCII.
 	pub units: Handed<u32>,
 	pub error_rows: Handed<ErrorRow>,
@@ -471,7 +452,7 @@ impl Ast {
 		self.comment_rows.clear();
 		self.error_rows.clear();
 		self.spans.clear();
-		self.locs.clear();
+		self.lines.clear();
 		self.units.clear();
 		self.host_rows.clear();
 		self.host_keys.clear();
@@ -521,7 +502,7 @@ impl Ast {
 		out.push("marks", marks);
 		out.push("units", &mut self.units);
 		out.push("spans", &mut self.spans);
-		out.push("locs", &mut self.locs);
+		out.push("lines", &mut self.lines);
 		out.push("parenthesized", self.parenthesized.words());
 		out.push("erased", self.erased.words());
 		out.push("rare", self.rare.words());

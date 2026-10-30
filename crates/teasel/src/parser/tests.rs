@@ -707,23 +707,23 @@ fn phases() {
 			s.of_identifier.iter().count()
 		);
 	}
-	best("Positions::new, no lines", &mut || {
-		let _ = Positions::new(&source, false);
+	let positions = Positions::new(&source);
+	best("Positions::new", &mut || {
+		let _ = Positions::new(&source);
 	});
-	best("Positions::new, lines", &mut || {
-		let _ = Positions::new(&source, true);
+	best("Positions::lines", &mut || {
+		let _ = positions.lines(&source).count();
 	});
 	let (mut ast, roots) = whole(&source, options);
 	crate::comments::attach(&mut ast, &source, roots, 0);
 	let end = source.len() as u32;
-	let lines = Positions::new(&source, true);
 	{
 		let options = Options(Options::MODULE | Options::COMMENTS);
 		best("whole request: positions, parse, comments, encode, finish", &mut || {
 			crate::json::in_place(&source, options, Entry::Program, 0.0, "", None).unwrap();
 		});
 		let options = Options(Options::MODULE | Options::COMMENTS | Options::SCOPES | Options::LOCATIONS);
-		best("whole request with scopes and loc", &mut || {
+		best("whole request with scopes and lines", &mut || {
 			crate::json::in_place(&source, options, Entry::Program, 0.0, "", None).unwrap();
 		});
 	}
@@ -746,15 +746,15 @@ fn phases() {
 			crate::json::in_place(&document, Options(flags), Entry::Program, 0.0, "", Some(&grammar)).unwrap();
 		});
 	}
-	best("Json write, loc", &mut || {
+	best("Json write, lines", &mut || {
 		let _ = answer(
 			&ast,
 			Entry::Program,
 			Some(roots),
 			end,
 			&source,
-			&lines,
-			options.with(Options::COMMENTS),
+			&positions,
+			options.with(Options::COMMENTS | Options::LOCATIONS),
 		);
 	});
 	eprintln!(

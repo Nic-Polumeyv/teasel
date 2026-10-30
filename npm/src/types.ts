@@ -1,4 +1,4 @@
-import type { Expression, Identifier, Node, SourceLocation } from 'estree';
+import type { Expression, Identifier, Node } from 'estree';
 
 /** A scope, as one of `scopes` on the answer. */
 export interface Scope {
@@ -113,11 +113,10 @@ export interface Reference {
 	declares: boolean;
 }
 
-/** A range of the source, with `loc` when `locations` is on. */
+/** A range of the source. */
 export interface Span {
 	start: number;
 	end: number;
-	loc?: SourceLocation;
 }
 
 export interface Comment extends Span {
@@ -167,6 +166,12 @@ export interface Parsed<T> {
 	node: T;
 	/** The offset after everything the parse consumed: the node, its closing parens and the comments after it; a program's is the end of the text. */
 	end: number;
+	/**
+	 * With `locations`: the offset each line of the text starts at, the first line's 0. A line
+	 * ends at `\n`, `\r\n`, a lone `\r`, U+2028 and U+2029. The line of an offset is the number
+	 * of starts at or before it, and its column the offset less that line's start.
+	 */
+	lines?: Uint32Array;
 	/** Every comment read, in source order; with `comments`. */
 	comments?: Comment[];
 	/** What erasure left in place; with `typescript: 'erase'`. */

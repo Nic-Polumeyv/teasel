@@ -92,10 +92,10 @@ fn an_entry_reads_what_the_program_read() {
 	let Some(root) = suite() else { return };
 	let mut differ = Vec::new();
 	for (path, source, module) in parsing(&root) {
-		let program = parse(&source, &request(Entry::Program, 0, module, Options::LOCATIONS));
+		let program = parse(&source, &request(Entry::Program, 0, module, 0));
 		let mut at = 0u32;
 		while (at as usize) < source.len() {
-			let answer = parse(&source, &request(Entry::Statement, at, module, Options::LOCATIONS));
+			let answer = parse(&source, &request(Entry::Statement, at, module, 0));
 			let Some(node) = node_of(&answer) else { break };
 			let end: u32 = answer[answer.rfind(",\"end\":").unwrap() + 7..answer.len() - 1]
 				.parse()
