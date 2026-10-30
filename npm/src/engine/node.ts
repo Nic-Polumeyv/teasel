@@ -18,7 +18,7 @@ function bytes(text: string) {
 }
 
 export const engine: Engine = native === undefined ? compile() : {
-	parse: (source, flags, entry, offset, end, stop, plan) => native.parse(bytes(source), flags, entry, offset, end, stop, plan),
+	parse: (source, flags, entry, offset, stop, plan) => native.parse(bytes(source), flags, entry, offset, stop, plan),
 	plan: native.plan,
 	children: native.children,
 	layout: native.layout,

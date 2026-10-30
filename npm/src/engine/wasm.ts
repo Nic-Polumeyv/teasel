@@ -7,7 +7,7 @@ const utf8 = new TextDecoder();
 interface Exports {
 	readonly memory: WebAssembly.Memory;
 	alloc(len: number): number;
-	parse(ptr: number, len: number, capacity: number, flags: number, entry: number, offset: number, end: number, has_end: number, stop_ptr: number, stop_len: number, stop_capacity: number, plan: number): number;
+	parse(ptr: number, len: number, capacity: number, flags: number, entry: number, offset: number, stop_ptr: number, stop_len: number, stop_capacity: number, plan: number): number;
 	plan_new(ptr: number, len: number, capacity: number): number;
 	plan_free(handle: number): void;
 	plan_children(handle: number): void;
@@ -83,13 +83,6 @@ function bytes(text: string): [ptr: number, len: number, capacity: number] {
 const text = () => utf8.decode(new Uint8Array(wasm.memory.buffer, wasm.text_ptr(), wasm.text_len()));
 const words = () => new Uint32Array(wasm.memory.buffer, wasm.words_ptr(), wasm.words_len());
 
-// the layout comes first: writing it can grow the memory and detach a view taken before
-function answer(status: number) {
-	if (status !== 0) return text();
-	layout();
-	return words();
-}
-
 const trees: ({ buffer: ArrayBuffer; at: Uint32Array; views: Tree[number][] } | undefined)[] = [undefined, undefined];
 let layout_text: string | undefined;
 // read once, before any view of the tree: writing it can grow the memory and detach them
@@ -131,19 +124,22 @@ class Plan {
 
 // 0 is the error answer at `text_ptr`: a grammar the engine cannot take
 function opened(handle: number) {
-	if (handle === 0) throw new Error(JSON.parse(text()).error.args[0]);
+	if (handle === 0) throw new Error(text());
 	return handle;
 }
 
 const engine: Engine = {
-	parse(source, flags, entry, offset, end, stop, plan) {
+	parse(source, flags, entry, offset, stop, plan) {
 		// a memory never shrinks, so one a huge source grew past 256 MiB goes with its instance, which costs 0.9 ms to replace
 		if (wasm.memory.buffer.byteLength > 1 << 28) {
 			wasm = new WebAssembly.Instance(module, {}).exports as unknown as Exports;
 			generation++;
 		}
 		const grammar = plan === undefined ? 0 : (plan as Plan).handle();
-		return answer(guarded(() => wasm.parse(...bytes(source), flags, entry, offset, end ?? 0, end === undefined ? 0 : 1, ...bytes(stop), grammar)));
+		if (guarded(() => wasm.parse(...bytes(source), flags, entry, offset, ...bytes(stop), grammar)) !== 0) throw new Error(text());
+		// the layout comes first: writing it can grow the memory and detach a view taken before
+		layout();
+		return words();
 	},
 	plan: (grammar) => new Plan(grammar),
 	children(plan) {

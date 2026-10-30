@@ -6,7 +6,7 @@ This example reads a Svelte component: a `<script>` block, then a template with 
 
 At the end, every name the template uses is matched to the declaration it refers to, in the script or in an `each` block. That match is what a compiler, a linter or a rename tool for the format is built on.
 
-This page uses three things that [Embedded JavaScript](/embedded-javascript) explains: parsing at an offset, [pieces](/embedded-javascript#pieces), and [`until`](/embedded-javascript#until).
+This page uses three things that [Embedded JavaScript](/embedded-javascript) explains: parsing at an offset, [pieces](/embedded-javascript#pieces), and [`until`](/embedded-javascript#until). [Parsing with a grammar](/parsing-with-a-grammar) reads the same component in one parse.
 
 The component:
 
@@ -33,15 +33,15 @@ The component:
 {/if}
 ```
 
-## 1. One Source for the whole file
+## 1. Options
 
 ```js read-component.js
-import { Source, js, scopeOf } from '@teasel/parser';
+import { parseAt, js, scopeOf } from '@teasel/parser';
 
-const source = new Source(text, { sourceType: 'module', scopes: true });
+const options = { sourceType: 'module', scopes: true };
 ```
 ```notes
-Source :: Holds the text of the file. Every parse on this page reads from this one object, so every position in every answer is an offset into the file. See [Getting started](/getting-started#parse-the-same-text-again).
+options :: Every parse on this page reads `text`, the whole file, with these options, so every position in every answer is an offset into the file.
 sourceType: 'module' :: Lets the script use `import` and `export`. Every option is in the [reference](/reference/parser#options).
 scopes: true :: Makes each answer list the names it declares, `bindings`, and the names it uses, `references`. [Scopes](/scopes) explains both.
 ```
@@ -50,20 +50,20 @@ scopes: true :: Makes each answer list the names it declares, `bindings`, and th
 
 ## 2. Read the script block
 
-Find where the script's text starts and ends, then parse that range as a program.
+Find where the script's text starts and ends, then read the program from its start, in the text cut at its end.
 
 ```js read-component.js
 const open = text.indexOf('<script>') + '<script>'.length;
 const close = text.indexOf('</script>');
-const script = source.parse(js, [open, close]);
+const script = parseAt(text.slice(0, close), js.program, open, options);
 
 const topLevel = script.bindings.filter(
 	(binding) => binding.scope === scopeOf(script.node),
 );
 ```
 ```notes
-js :: The first argument says what to read. `js` reads statements, as a file would have them. Its pieces are `js.expression`, `js.statement`, `js.pattern`, `js.params` and `js.typeParameters`: see [Pieces](/embedded-javascript#pieces).
-[open, close] :: A pair of offsets reads only the text between them. A single number, used below, starts there and reads as far as the piece goes.
+js.program :: The piece to read. `js.program` reads statements, as a file would have them. The other pieces are `js.expression`, `js.statement`, `js.pattern`, `js.params` and `js.typeParameters`: see [Pieces](/embedded-javascript#pieces).
+text.slice(0, close) :: The text cut at the script's end, so the program stops there. Positions depend only on the text before them, so they stay offsets into the file.
 script.bindings :: Every declaration in the script, one entry each: `{ name, kind, scope, node, declaration }`. [What a binding knows](/reference/parser#binding).
 scopeOf(script.node) :: `scopeOf` gives the scope a node opens. `script.node` is the `Program`, which opens the script's outermost scope, so a binding whose `scope` is that one was declared at the top level. See [referenceOf, scopeOf, parentOf](/scopes#referenceof-scopeof-parentof).
 ```
@@ -86,7 +86,7 @@ const inScope = [topLevel];
 const resolved = [];
 
 function expression(from, ...stops) {
-	const answer = source.parse(js.expression.until(...stops), from);
+	const answer = parseAt(text, js.expression.until(...stops), from, options);
 	for (const reference of answer.references) {
 		if (reference.binding !== null) continue;
 		const name = reference.node.name;
@@ -128,11 +128,11 @@ const skip = (i) => {
 function each(from) {
 	const list = expression(from, 'as');
 	const afterAs = skip(skip(list.end) + 'as'.length);
-	const item = source.parse(js.pattern.until(',', '(', '}'), afterAs);
+	const item = parseAt(text, js.pattern.until(',', '(', '}'), afterAs, options);
 	const declared = [...item.bindings];
 	let next = skip(item.end);
 	if (text[next] === ',') {
-		const index = source.parse(js.pattern.until('(', '}'), skip(next + 1));
+		const index = parseAt(text, js.pattern.until('(', '}'), skip(next + 1), options);
 		declared.push(...index.bindings);
 		next = skip(index.end);
 	}
@@ -213,7 +213,6 @@ Look at `pick(item)` at 475. It sits inside an arrow function, `() => pick(item)
 
 ## What to keep
 
-- The `Source`, for as long as the file is open. Any piece can be parsed again from it.
 - `script`, the script's tree and bindings.
 - `resolved`. A compiler reads it to know which template expressions depend on which declarations; a linter reads it to find a declaration nothing uses.
 

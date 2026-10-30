@@ -17,7 +17,7 @@
 		<text x="560" y="24">Rust</text>
 		<path d="M360 8 V 188" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4 4" />
 	</g>
-	<Box rect={parse} tint="amber">source.parse(…)</Box>
+	<Box rect={parse} tint="amber">parse(…)</Box>
 	<Box rect={pass} tint="violet" />
 	<text x="562" y="68" text-anchor="middle">lex → parse → scopes</text>
 	<text x="562" y="92" text-anchor="middle" font-size="11" class="text-muted-foreground">one tree, pooled between parses</text>
