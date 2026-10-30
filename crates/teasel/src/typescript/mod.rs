@@ -15,7 +15,7 @@ use crate::lexer::token::{Keyword, TokenKind};
 use crate::parser::expression::starts_expression;
 use crate::parser::scope::{EXPORT_ONLY, SCOPE_ARROW, TYPE, function_flags};
 use crate::parser::statement::{ClassKind, StatementPlace};
-use crate::parser::{Context, DestructuringErrors, Errors, ForInit, FunctionKind, Parser, Result, Unwrap};
+use crate::parser::{Context, Errors, ForInit, FunctionKind, Parser, Result, Unwrap};
 use ast::{Accessibility, Extras, Kind, TsKind};
 use declarations::Head;
 use types::TypeParameterModifiers;
@@ -305,10 +305,7 @@ impl<const TS: bool> Parser<'_, TS> {
 			expression
 		};
 		if self.eat(TokenKind::ParenL)? {
-			let mut facts = Some(DestructuringErrors::default());
-			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut facts)?;
-			self.check_expression_errors(&facts, true)?;
-			let arguments = self.list_from(args);
+			let arguments = self.parse_arguments()?;
 			let callee_start = self.start_of(expression);
 			expression = self.add(
 				NodeKind::CallExpression {
@@ -552,13 +549,14 @@ impl<const TS: bool> Parser<'_, TS> {
 			return Ok(None);
 		}
 		let before = spine.then(|| self.snapshot());
-		let outer = (self.yield_pos, self.await_pos, self.await_ident_pos);
+		let outer = self.yield_await();
 		let mut head = self.attempt(|p| {
 			if !generic {
-				return Ok((None, p.read_arrow_params(is_async)?.0));
+				return Ok((None, p.read_arrow_params(is_async)?));
 			}
 			let type_parameters = p.parse_type_parameters(TypeParameterModifiers::Const)?;
-			Ok((Some(type_parameters), p.read_arrow_head(is_async)?.0))
+			p.expect(TokenKind::ParenL)?;
+			Ok((Some(type_parameters), p.read_arrow_params(is_async)?))
 		})?;
 		if head.is_some()
 			&& self.ts.state.arrow_return_type.is_some()
@@ -650,9 +648,7 @@ impl<const TS: bool> Parser<'_, TS> {
 			return Ok(Some(node));
 		}
 		if !no_calls && self.eat(TokenKind::ParenL)? {
-			let mut errors = Some(DestructuringErrors::default());
-			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut errors)?;
-			let arguments = self.list_from(args);
+			let arguments = self.parse_arguments()?;
 			let node = self.add(
 				NodeKind::CallExpression {
 					callee: base,
@@ -662,7 +658,6 @@ impl<const TS: bool> Parser<'_, TS> {
 				start,
 			);
 			self.extras_mut(node).type_arguments = Some(type_arguments);
-			self.check_expression_errors(&errors, true)?;
 			return Ok(Some(node));
 		}
 		if self.is(TokenKind::Gt)

@@ -92,8 +92,7 @@ pub(crate) enum FunctionKind {
 pub(crate) enum Unwrap {
 	/// `check_lval_simple`: the target of an assignment or update.
 	Simple,
-	/// `check_lval_inner_pattern`: an element of a parameter list or pattern, or the target of `=`
-	/// that may become one.
+	/// `check_lval_inner_pattern`: an element of a parameter list or pattern.
 	InnerPattern,
 }
 
@@ -676,7 +675,7 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 	/// A parenthesized parameter list on its own, read as an arrow function's would be, in the
 	/// enclosing scope.
 	fn parse_params_root(&mut self) -> Result<List> {
-		let outer = (self.yield_pos, self.await_pos, self.await_ident_pos);
+		let outer = self.yield_await();
 		self.expect(TokenKind::ParenL)?;
 		let params = self.parse_binding_list(TokenKind::ParenR, false, true, false)?;
 		self.check_arrow_head(&params, false, outer)?;
@@ -720,12 +719,17 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 			return Ok(false);
 		}
 		self.expect(TokenKind::Comma)?;
-		Ok(allow_trailing && self.after_trailing_comma(close, false)?)
+		Ok(allow_trailing && self.eat(close)?)
+	}
+
+	/// The pending yield and await positions.
+	pub(crate) fn yield_await(&self) -> (u32, u32, u32) {
+		(self.yield_pos, self.await_pos, self.await_ident_pos)
 	}
 
 	/// Clears the pending yield and await positions for a nested parameter list.
 	pub(crate) fn take_yield_await(&mut self) -> (u32, u32, u32) {
-		let old = (self.yield_pos, self.await_pos, self.await_ident_pos);
+		let old = self.yield_await();
 		(self.yield_pos, self.await_pos, self.await_ident_pos) = (0, 0, 0);
 		old
 	}
@@ -1038,16 +1042,6 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 		Ok(())
 	}
 
-	pub(crate) fn after_trailing_comma(&mut self, kind: TokenKind, not_next: bool) -> Result<bool> {
-		if self.is(kind) {
-			if !not_next {
-				self.next()?;
-			}
-			return Ok(true);
-		}
-		Ok(false)
-	}
-
 	// with these two and recover_statement above left to the compiler, a parse-only JavaScript read took 0.9% longer
 	#[inline(always)]
 	pub(crate) fn check_expression_errors(
@@ -1080,7 +1074,9 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 		let first = [
 			errors.operand,
 			errors.trailing_comma.map(|pos| (pos, Code::CommaAfterRest)),
-			errors.parenthesized_assign.map(|pos| (pos, Code::InvalidAssignmentTarget)),
+			errors
+				.parenthesized_assign
+				.map(|pos| (pos, Code::InvalidAssignmentTarget)),
 		]
 		.into_iter()
 		.flatten()

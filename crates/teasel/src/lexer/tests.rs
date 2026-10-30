@@ -575,7 +575,10 @@ fn a_list_is_decided_before_it_is_read() {
 	// a `/` after a statement head's `)` starts a regular expression
 	assert_eq!(js("(a = function () { if (x) /[)]/.test(y) }, b) => 1").0, Parameters);
 	assert_eq!(js("(a = b.if (c) / d, e) => 1").0, Parameters);
-	assert_eq!(js("(a = async function () { for await (x of y) /[)]/.test(z) }, b) => 1").0, Parameters);
+	assert_eq!(
+		js("(a = async function () { for await (x of y) /[)]/.test(z) }, b) => 1").0,
+		Parameters
+	);
 	// after any brace's `}` only the parser knows: a block, a body or an object
 	assert_eq!(js("(a = function () {} / 1, b) => 1"), (Unsure, None));
 	assert_eq!(js("(a = function () { {} /[)]/.test(y) }, b) => 1"), (Unsure, None));
@@ -601,7 +604,6 @@ fn a_list_is_decided_before_it_is_read() {
 	// a script's HTML comments
 	assert_eq!(list("(a, b <!-- )\n) => 1", false, false).0, Parameters);
 	assert_eq!(list("(a, b\n--> )\n) => 1", false, false).0, Parameters);
-	// every list passed is kept, so a nested one is not read again
 	// a scan that gives up keeps every list it opened as unknown, so none is read again
 	let mut lexer = Lexer::new("(x, (a, b = yield / 2)) + 1");
 	let open = lexer.next_token().unwrap();
@@ -609,6 +611,7 @@ fn a_list_is_decided_before_it_is_read() {
 	assert_eq!(lexer.list_role(open.start, &first, false, false), Unsure);
 	assert_eq!(lexer.roles.get(&0), Some(&Unsure));
 	assert_eq!(lexer.roles.get(&4), Some(&Unsure));
+	// every list passed is kept, so a nested one is not read again
 	let mut lexer = Lexer::new("(x, (a, b) => 1, [(c, d)]) + 1");
 	let open = lexer.next_token().unwrap();
 	let first = lexer.next_token().unwrap();

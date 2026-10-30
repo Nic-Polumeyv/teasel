@@ -67,7 +67,8 @@ pub(crate) struct Lexer<'a> {
 	/// where it holds U+FFFD, and the surrogate.
 	marks: Vec<(u32, u16)>,
 	marked: usize,
-	/// The role of each list the closer reader passed, by the offset of its `(`.
+	/// The role of each list decided so far, by the offset of its `(`: what the closer reader
+	/// found, or what trying the head as parameters found.
 	pub(crate) roles: crate::interner::FastMap<u32, list::Role>,
 	frames: Vec<list::Frame>,
 }

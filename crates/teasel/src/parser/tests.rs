@@ -171,7 +171,10 @@ fn a_literal_keeps_its_facts() {
 	// the first of the pending errors is the one reported, whichever element it came from
 	assert_eq!(module_error("[...r, {a = 1}.b] = c;"), "comma_after_rest (5)");
 	assert_eq!(module_error("x = [{c = 1}, {a = 1}.b];"), "shorthand_assignment (8)");
-	assert_eq!(module_error("x = [{__proto__: 1, __proto__: 2, a = 1}];"), "duplicate_proto (20)");
+	assert_eq!(
+		module_error("x = [{__proto__: 1, __proto__: 2, a = 1}];"),
+		"duplicate_proto (20)"
+	);
 	assert_eq!(module_error("[(a = 1), b = 2] = c;"), "invalid_assignment_target (1)");
 	assert_eq!(module_error("async (...r, a = 1) => 1;"), "comma_after_rest (11)");
 	program(
@@ -288,6 +291,15 @@ fn nesting_limits() {
 			let spine = format!("x = {}c{};", "a ? (b): T => ".repeat(334), " : d".repeat(334));
 			let error = program(&spine, typescript(Options(Options::MODULE))).unwrap_err();
 			assert_eq!((error.text.as_str(), error.pos), ("nesting_depth", 4656));
+			// a list the closer reader leaves undecided is tried once: without its outcome kept, every
+			// enclosing failure tried it again, 2x per level, and 24 levels took 15 s
+			let nest = format!(
+				"x = {}1{};",
+				"(a = function () {} / 1, b = ".repeat(28),
+				") + 1".repeat(28)
+			);
+			assert!(program(&nest, Options::default()).is_ok());
+			assert!(program(&nest, typescript(Options::default())).is_ok());
 			done.send(()).unwrap();
 		})
 		.unwrap();

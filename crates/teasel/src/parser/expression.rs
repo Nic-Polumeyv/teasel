@@ -557,10 +557,7 @@ impl<const TS: bool> Parser<'_, TS> {
 			!no_calls && self.eat(TokenKind::ParenL)?
 		};
 		if call {
-			let mut errors = Some(DestructuringErrors::default());
-			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut errors)?;
-			self.check_expression_errors(&errors, true)?;
-			let arguments = self.list_from(args);
+			let arguments = self.parse_arguments()?;
 			let node = self.add(
 				NodeKind::CallExpression {
 					callee: base,
@@ -710,11 +707,11 @@ impl<const TS: bool> Parser<'_, TS> {
 		let mut options = None;
 		if !self.eat(TokenKind::ParenR)? {
 			self.expect(TokenKind::Comma)?;
-			if !self.after_trailing_comma(TokenKind::ParenR, false)? {
+			if !self.eat(TokenKind::ParenR)? {
 				options = Some(self.parse_maybe_assign(ForInit::No, &mut None)?);
 				if !self.eat(TokenKind::ParenR)? {
 					self.expect(TokenKind::Comma)?;
-					if !self.after_trailing_comma(TokenKind::ParenR, false)? {
+					if !self.eat(TokenKind::ParenR)? {
 						return self.unexpected();
 					}
 				}
@@ -771,10 +768,10 @@ impl<const TS: bool> Parser<'_, TS> {
 				return Ok(arrow);
 			}
 		}
-		let mut facts = Some(DestructuringErrors::default());
-		let value = self.parse_expression(false, &mut facts)?;
+		let mut errors = Some(DestructuringErrors::default());
+		let value = self.parse_expression(false, &mut errors)?;
 		self.expect(TokenKind::ParenR)?;
-		self.check_expression_errors(&facts, true)?;
+		self.check_expression_errors(&errors, true)?;
 		if self.options.has(Options::PARENTHESIZED) {
 			self.ast.set_parenthesized(value);
 		}
@@ -787,7 +784,6 @@ impl<const TS: bool> Parser<'_, TS> {
 	fn plain_list(&mut self, start: u32, for_init: ForInit) -> Result<Option<NodeId>> {
 		let back = (self.token_snapshot(), self.ast.mark());
 		let mut names = self.items();
-		let mut last_end = self.prev_end;
 		let held = matches!(self.tok.kind, TokenKind::Ident(_));
 		if held {
 			self.enter()?;
@@ -804,7 +800,6 @@ impl<const TS: bool> Parser<'_, TS> {
 				break false;
 			}
 			names.push(Some(self.parse_ident(false)?));
-			last_end = self.prev_end;
 			if self.is(TokenKind::ParenR) {
 				break true;
 			}
@@ -827,8 +822,9 @@ impl<const TS: bool> Parser<'_, TS> {
 			if !names.is_empty() && !(self.is(TokenKind::Colon) && self.typescript()) {
 				let value = if names.len() > 1 {
 					let first = self.start_of(names[0].unwrap());
+					let last = self.end_of(names[names.len() - 1].unwrap());
 					let expressions = self.list_from(names);
-					self.add_with_end(NodeKind::SequenceExpression { expressions }, first, last_end)
+					self.add_with_end(NodeKind::SequenceExpression { expressions }, first, last)
 				} else {
 					let name = names[0].unwrap();
 					self.recycle(names);
@@ -852,7 +848,8 @@ impl<const TS: bool> Parser<'_, TS> {
 	/// one, decided before the list is read; otherwise the list is left to the caller.
 	fn decided_arrow(&mut self, start: u32, at: u32, is_async: bool, for_init: ForInit) -> Result<Option<NodeId>> {
 		let first = self.tok;
-		let (params, outer) = match self.lexer.list_role(at, &first, self.typescript(), is_async) {
+		let outer = self.yield_await();
+		let params = match self.lexer.list_role(at, &first, self.typescript(), is_async) {
 			Role::Parameters => self.read_arrow_params(is_async)?,
 			Role::Expression => return Ok(None),
 			// with the role alone, the JavaScript copy kept the typed arrow head and the type grammar: 33 of its 133 KB
@@ -863,7 +860,6 @@ impl<const TS: bool> Parser<'_, TS> {
 				return self.try_arrow_head(start, at, None, is_async, for_init, false);
 			}
 			Role::Typed(_) | Role::Unsure => {
-				let outer = (self.yield_pos, self.await_pos, self.await_ident_pos);
 				let head = self.attempt(|p| p.read_arrow_params(is_async))?;
 				// without the outcome kept, a list in a default was tried again after every enclosing
 				// failure: 2x per level, 24 levels took 15 s
@@ -913,10 +909,7 @@ impl<const TS: bool> Parser<'_, TS> {
 			return self.error(self.start_of(callee), Code::InvalidSuper);
 		}
 		let arguments = if self.eat(TokenKind::ParenL)? {
-			let mut facts = Some(DestructuringErrors::default());
-			let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut facts)?;
-			self.check_expression_errors(&facts, true)?;
-			self.list_from(args)
+			self.parse_arguments()?
 		} else {
 			List::EMPTY
 		};
@@ -925,6 +918,14 @@ impl<const TS: bool> Parser<'_, TS> {
 			self.new_expression(node);
 		}
 		Ok(node)
+	}
+
+	/// A call's arguments after their `(`.
+	pub(crate) fn parse_arguments(&mut self) -> Result<List> {
+		let mut errors = Some(DestructuringErrors::default());
+		let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut errors)?;
+		self.check_expression_errors(&errors, true)?;
+		Ok(self.list_from(args))
 	}
 
 	pub(crate) fn parse_template(&mut self, is_tagged: bool) -> Result<NodeId> {
@@ -1287,18 +1288,9 @@ impl<const TS: bool> Parser<'_, TS> {
 		Ok(node)
 	}
 
-	/// An arrow's head after its type parameters: the parameters through `=>`, read as bindings,
-	/// with the yield and await positions from before them.
-	#[expect(clippy::type_complexity)]
-	pub(crate) fn read_arrow_head(&mut self, is_async: bool) -> Result<(Vec<Option<NodeId>>, (u32, u32, u32))> {
-		self.expect(TokenKind::ParenL)?;
-		self.read_arrow_params(is_async)
-	}
-
-	/// The same after the `(`.
-	#[expect(clippy::type_complexity)]
-	pub(crate) fn read_arrow_params(&mut self, is_async: bool) -> Result<(Vec<Option<NodeId>>, (u32, u32, u32))> {
-		let outer = self.open_arrow_head(is_async);
+	/// An arrow's parameters after their `(`, through `=>`, read as bindings.
+	pub(crate) fn read_arrow_params(&mut self, is_async: bool) -> Result<Vec<Option<NodeId>>> {
+		self.open_arrow_head(is_async);
 		// without it the limit fell a third deeper than for an expression list: `(a = ` ×450 parsed
 		let held = !self.is(TokenKind::ParenR) && !self.is(TokenKind::Ellipsis);
 		if held {
@@ -1309,12 +1301,12 @@ impl<const TS: bool> Parser<'_, TS> {
 			self.leave();
 		}
 		self.close_arrow_head()?;
-		Ok((params, outer))
+		Ok(params)
 	}
 
 	/// The yield and await positions from before an arrow's parameters, which start with none.
 	fn open_arrow_head(&mut self, is_async: bool) -> (u32, u32, u32) {
-		let outer = (self.yield_pos, self.await_pos, self.await_ident_pos);
+		let outer = self.yield_await();
 		(self.yield_pos, self.await_pos) = (0, 0);
 		if is_async {
 			self.await_ident_pos = 0;
@@ -1348,7 +1340,9 @@ impl<const TS: bool> Parser<'_, TS> {
 		if is_async {
 			self.await_ident_pos = await_ident_pos;
 		}
-		if let Some(&this) = params.iter().flatten().find(|&&param| self.ident_is(param, "this")) {
+		if self.typescript()
+			&& let Some(&this) = params.iter().flatten().find(|&&param| self.ident_is(param, "this"))
+		{
 			return self.error(self.start_of(this), Code::InvalidAssignmentTarget);
 		}
 		Ok(())
@@ -1720,7 +1714,7 @@ impl<const TS: bool> Parser<'_, TS> {
 			}
 			if allow_empty && self.is(TokenKind::Comma) {
 				elements.push(None);
-			} else if allow_trailing_comma && self.after_trailing_comma(close, false)? {
+			} else if allow_trailing_comma && self.eat(close)? {
 				break;
 			} else {
 				let parameter = match close {
