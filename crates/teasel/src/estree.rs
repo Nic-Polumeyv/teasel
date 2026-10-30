@@ -291,19 +291,16 @@ impl Positions {
 		})
 	}
 
-	/// Every node's span as UTF-16 offsets into `spans`, when the source has gaps.
-	pub fn map_nodes(&self, nodes: &[crate::ast::Node], spans: &mut Handed<Span>) {
-		spans.clear();
+	/// Every node's span as UTF-16 offsets, in place.
+	pub fn map_nodes(&self, nodes: &mut [crate::ast::Node]) {
 		if self.gaps.is_empty() {
 			return;
 		}
-		spans.reserve(nodes.len());
 		let mut cursor = Cursor::default();
 		for node in nodes {
 			let (start, gap) = self.offset_from(cursor.gap, node.start);
 			cursor.gap = gap;
-			let (end, _) = self.offset_from(gap, node.end);
-			spans.push(Span { start, end });
+			(node.start, node.end) = (start, self.offset_from(gap, node.end).0);
 		}
 	}
 

@@ -188,12 +188,6 @@ impl List {
 	pub const EMPTY: List = List { start: 0, len: 0 };
 }
 
-// decode.ts reads a span as its start and the word after, in a node and in `Ast::spans` alike
-const _: () = assert!(
-	std::mem::offset_of!(Node, end) == std::mem::offset_of!(Node, start) + 4
-		&& std::mem::offset_of!(Span, end) == std::mem::offset_of!(Span, start) + 4
-);
-
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[repr(C)]
 pub struct Node {
@@ -330,7 +324,6 @@ pub const RECORDS: &[(&str, usize, &[Field])] = &[
 	("errors", size_of::<ErrorRow>(), ErrorRow::FIELDS),
 	("hosts", size_of::<HostRow>(), HostRow::FIELDS),
 	("host_vals", size_of::<HostValue>(), HostValue::FIELDS),
-	("spans", size_of::<Span>(), Span::FIELDS),
 	("marks", size_of::<Surrogate>(), Surrogate::FIELDS),
 ];
 
@@ -356,9 +349,6 @@ pub struct Ast {
 	pub rare: NodeSet,
 	/// Nodes that declare bindings, are assigned by references or are a root.
 	pub late: NodeSet,
-	/// Each node's span in UTF-16 offsets, when the source has characters past ASCII; empty
-	/// otherwise, the node's own span being right.
-	pub spans: Handed<Span>,
 	/// The UTF-16 offset each line of the text starts at, with `locations`.
 	pub lines: Handed<u32>,
 	/// Where each interned string starts in UTF-16 units, when the text has characters past ASCII.
@@ -451,7 +441,6 @@ impl Ast {
 		self.late.clear();
 		self.comment_rows.clear();
 		self.error_rows.clear();
-		self.spans.clear();
 		self.lines.clear();
 		self.units.clear();
 		self.host_rows.clear();
@@ -501,7 +490,6 @@ impl Ast {
 		out.push("starts", starts);
 		out.push("marks", marks);
 		out.push("units", &mut self.units);
-		out.push("spans", &mut self.spans);
 		out.push("lines", &mut self.lines);
 		out.push("parenthesized", self.parenthesized.words());
 		out.push("erased", self.erased.words());

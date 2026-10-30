@@ -45,7 +45,7 @@ export interface Layout {
 	/** Each table's record: its size and its fields. */
 	rows: Record<string, { size: number; fields: Field[] }>;
 	/** The records beside the nodes and the tables, by their view's name. */
-	records: Record<'comments' | 'attached' | 'errors' | 'hosts' | 'host_vals' | 'spans' | 'marks', { size: number; fields: Field[] }>;
+	records: Record<'comments' | 'attached' | 'errors' | 'hosts' | 'host_vals' | 'marks', { size: number; fields: Field[] }>;
 	none: Missing;
 	views: { js: string[]; ts?: string[] };
 	/** Each type of node a stylesheet holds with the fields that hold nodes. */
@@ -121,6 +121,9 @@ interface Compiled {
 	layout: Layout;
 	words: number;
 	kind: number;
+	/** A node's span: its words at these, in UTF-16 offsets. */
+	start: number;
+	end: number;
 	extension: number;
 	host: number;
 	identifier: number;
@@ -174,7 +177,7 @@ function resolve(raw: RawOp[], fields: Field[]): Op[] {
 // a literal: an object filled by computed keys turns into a dictionary, a hash lookup per read
 function places(views: string[]) {
 	const of = (name: string) => 1 + views.indexOf(name);
-	return { nodes: of('nodes'), lists: of('lists'), numbers: of('numbers'), text: of('text'), starts: of('starts'), marks: of('marks'), units: of('units'), spans: of('spans'), lines: of('lines'), parenthesized: of('parenthesized'), erased: of('erased'), comments: of('comments'), attached_slots: of('attached_slots'), attached: of('attached'), errors: of('errors'), hosts: of('hosts'), host_keys: of('host_keys'), host_vals: of('host_vals'), host_strings: of('host_strings'), scopes: of('scopes'), bindings: of('bindings'), references: of('references'), roots: of('roots'), of_node: of('of_node'), of_identifier: of('of_identifier'), root_of: of('root_of'), declared_by: of('declared_by'), declared_by_at: of('declared_by_at'), writes_of: of('writes_of'), writes_of_at: of('writes_of_at'), ts: of('ts'), extras_slots: of('extras_slots'), extras: of('extras'), names: of('names'), name_starts: of('name_starts'), rare: of('rare'), late: of('late'), /** Past the last view's length in the answer's words: where the tree's buffers sit, folded into two. */ sits: 1 + views.length };
+	return { nodes: of('nodes'), lists: of('lists'), numbers: of('numbers'), text: of('text'), starts: of('starts'), marks: of('marks'), units: of('units'), lines: of('lines'), parenthesized: of('parenthesized'), erased: of('erased'), comments: of('comments'), attached_slots: of('attached_slots'), attached: of('attached'), errors: of('errors'), hosts: of('hosts'), host_keys: of('host_keys'), host_vals: of('host_vals'), host_strings: of('host_strings'), scopes: of('scopes'), bindings: of('bindings'), references: of('references'), roots: of('roots'), of_node: of('of_node'), of_identifier: of('of_identifier'), root_of: of('root_of'), declared_by: of('declared_by'), declared_by_at: of('declared_by_at'), writes_of: of('writes_of'), writes_of_at: of('writes_of_at'), ts: of('ts'), extras_slots: of('extras_slots'), extras: of('extras'), names: of('names'), name_starts: of('name_starts'), rare: of('rare'), late: of('late'), /** Past the last view's length in the answer's words: where the tree's buffers sit, folded into two. */ sits: 1 + views.length };
 }
 /** Each view's place in a tree; zero for a view the tree does not have. */
 type At = ReturnType<typeof places>;
@@ -210,7 +213,6 @@ function records(layout: Layout) {
 	const run = (name: keyof Layout['records'], path: string) => [word(name, `${path}.start`), word(name, `${path}.len`)];
 	const tag = of('host_vals', 'tag');
 	return {
-		span: { words: words('spans'), start: word('spans', 'start'), end: word('spans', 'end') },
 		comment: { words: words('comments'), block: of('comments', 'block').at, text: word('comments', 'text.start'), text_end: word('comments', 'text.end'), start: word('comments', 'span.start'), end: word('comments', 'span.end') },
 		attached: { words: words('attached'), leading: run('attached', 'leading'), trailing: run('attached', 'trailing'), inner: run('attached', 'inner') },
 		error: { words: words('errors'), code: word('errors', 'code'), first: optional('errors', 'first'), second: optional('errors', 'second'), pos: word('errors', 'pos'), end: word('errors', 'end'), line: word('errors', 'line'), column: word('errors', 'column') },
@@ -240,6 +242,8 @@ function compile(engine: Views): Compiled {
 		layout,
 		words: layout.node.size >> 2,
 		kind: layout.node.kind,
+		start: layout.node.start >> 2,
+		end: layout.node.end >> 2,
 		extension: tag('Extension'),
 		host: tag('Host'),
 		identifier: tag('Identifier'),
@@ -285,10 +289,6 @@ interface State {
 	L: Uint32Array;
 	numbers: Float64Array;
 	strings: string[];
-	// a node's span: `P[id * ps + po]` and the word after, the nodes themselves when the source is ASCII
-	P: Uint32Array;
-	ps: number;
-	po: number;
 	/** A bit per node: those with what the literals have no room for, and those with facts linked once they are whole. */
 	rare: Uint32Array;
 	late: Uint32Array;
@@ -452,14 +452,14 @@ function adds_of(S: State, id: number): Op[] {
 }
 
 function begin(S: State, type: string, id: number, parent: Decoded | undefined, room = false): Decoded {
-	const at = id * S.ps + S.po;
+	const N = S.N, b = id * S.C.words;
 	let n: Decoded;
 	if (room) {
 		n = new Room(false);
 		n.type = type;
-		n.start = S.P[at];
-		n.end = S.P[at + 1];
-	} else n = { type, start: S.P[at], end: S.P[at + 1] };
+		n.start = N[b + S.C.start];
+		n.end = N[b + S.C.end];
+	} else n = { type, start: N[b + S.C.start], end: N[b + S.C.end] };
 	if (S.link) {
 		n[PARENT] = parent;
 		n[SCOPE] = undefined;
@@ -840,8 +840,8 @@ function host(S: State, id: number, index: number, parent: Decoded | undefined):
 	let n: Decoded;
 	if (ty === null) {
 		// an object of the host's without a type, positions and all
-		const at = id * S.ps + S.po;
-		n = { start: S.P[at], end: S.P[at + 1] };
+		const b = id * S.C.words;
+		n = { start: S.N[b + S.C.start], end: S.N[b + S.C.end] };
 	} else if (host_span(S, index)) n = begin(S, ty, id, parent);
 	else {
 		n = { type: ty };
@@ -932,12 +932,17 @@ class Source implements Spelling<string, string> {
 	readonly facts: boolean;
 	readonly words: number;
 	readonly kind: number;
-	constructor(word: (at: number) => string, byte: (at: number) => string, facts: boolean, words: number, kind: number) {
+	/** The node's span, read where `b` is its first word. */
+	readonly start: string;
+	readonly end: string;
+	constructor(word: (at: number) => string, byte: (at: number) => string, facts: boolean, C: Compiled) {
 		this.word = word;
 		this.byte = byte;
 		this.facts = facts;
-		this.words = words;
-		this.kind = kind;
+		this.words = C.words;
+		this.kind = C.kind;
+		this.start = `N[b + ${C.start}]`;
+		this.end = `N[b + ${C.end}]`;
 	}
 	lit = (value: string | number | boolean | null | undefined) => (value === undefined ? 'undefined' : JSON.stringify(value));
 	empty = () => '[]';
@@ -955,7 +960,7 @@ class Source implements Spelling<string, string> {
 	items = (start: string, len: string, params: boolean) => `${params ? 'params' : 'items'}(S, ${start}, ${len}, n)`;
 	pair = (a: string, b: string) => `[${a}, ${b}]`;
 	object = (fields: [string, string][]) => `{ ${fields.map(([key, field]) => `${JSON.stringify(key)}: ${field}`).join(', ')} }`;
-	slice = (back: number) => `S.source.slice(S.P[p], S.P[p + 1]${back === 0 ? '' : ` - ${back}`})`;
+	slice = (back: number) => `S.source.slice(${this.start}, ${this.end}${back === 0 ? '' : ` - ${back}`})`;
 	// a second text over the first's span, Text's `data` beside its `raw`, is the first's string
 	text = (start: string, end: string) => {
 		const first = this.first_text;
@@ -1007,7 +1012,7 @@ function generate(C: Compiled, G: Language, config: number, ops: Op[], ts: boole
 	if ((facts && !link) || ops.length === 0) return slow;
 	const word = (at: number) => (ts ? `T[t + ${at >> 2}]` : `N[b + ${(C.kind + at) >> 2}]`);
 	const byte = (at: number) => `(${word(at)} >>> ${(((ts ? 0 : C.kind) + at) & 3) << 3} & 255)`;
-	const B = new Source(word, byte, facts, C.words, C.kind);
+	const B = new Source(word, byte, facts, C);
 	const none = C.layout.none;
 	let at = 0;
 	for (; ops[at].op === 'keep' || ops[at].op === 'through'; at++) {
@@ -1018,7 +1023,7 @@ function generate(C: Compiled, G: Language, config: number, ops: Op[], ts: boole
 	const head = ops[at++];
 	const type = head.op === 'type' ? JSON.stringify(head.key) : B.at(B.table(head.names), byte(head.at));
 	const identifier = head.op === 'type' && head.key === 'Identifier';
-	const props = [`type: ${type}`, 'start: S.P[p]', 'end: S.P[p + 1]'];
+	const props = [`type: ${type}`, `start: ${B.start}`, `end: ${B.end}`];
 	if (ops.slice(at).some((op) => op.op === 'object' && op.inner.some((inner) => CONDITIONAL.has(inner.op)))) return slow;
 	// what is set once the literal exists: its nodes, then the keys some nodes of the kind leave out
 	const tail: string[] = [];
@@ -1084,7 +1089,7 @@ function generate(C: Compiled, G: Language, config: number, ops: Op[], ts: boole
 		if (facts) after.push(LATE);
 	}
 	const lead = B.lead;
-	const body = `const N = S.N, J = S.J, b = id * ${C.words}${ts ? ', T = S.TS' : ''}; ${lead.length !== 0 && lead[lead.length - 1].includes('return J[') ? lead.join(' ') : `if (${rare.join(' || ')}) return slow(S, id, t, parent); ${before.join(' ')} const p = id * S.ps + S.po; ${lead.join(' ')} const n = { ${props.join(', ')} }; ${slots.join(' ')} ${tail.join(' ')} ${after.join(' ')} return n;`}`;
+	const body = `const N = S.N, J = S.J, b = id * ${C.words}${ts ? ', T = S.TS' : ''}; ${lead.length !== 0 && lead[lead.length - 1].includes('return J[') ? lead.join(' ') : `if (${rare.join(' || ')}) return slow(S, id, t, parent); ${before.join(' ')} ${lead.join(' ')} const n = { ${props.join(', ')} }; ${slots.join(' ')} ${tail.join(' ')} ${after.join(' ')} return n;`}`;
 	return new Function('K', 'slow', 'items', 'params', 'finite', 'bigint', 'bigint_value', 'regexp', 'late', 'PARENT', 'SCOPE', 'REFERENCE', `return (S, id, t, parent) => { ${body} };`)(B.constants, slow, items, params, finite, bigint, bigint_value, regexp, late, PARENT, SCOPE, REFERENCE);
 }
 
@@ -1116,9 +1121,9 @@ function generate_host(C: Compiled, config: number, type: string | null, span: b
 	const link = (config & LINK) !== 0 && type !== null, facts = (config & FACTS) !== 0 && type !== null;
 	if (facts && (config & LINK) === 0) return (S, id, index, _from, parent) => host(S, id, index, parent);
 	const V = C.R.value;
-	const B = new Source((at) => `HV[from * ${V.words} + ${at >> 2}]`, () => '', facts, C.words, C.kind);
+	const B = new Source((at) => `HV[from * ${V.words} + ${at >> 2}]`, () => '', facts, C);
 	const props = type === null ? [] : [`type: ${JSON.stringify(type)}`];
-	if (type === null || span) props.push('start: S.P[p]', 'end: S.P[p + 1]');
+	if (type === null || span) props.push(`start: ${B.start}`, `end: ${B.end}`);
 	const tail: string[] = [];
 	keys.forEach((key, i) => {
 		if (host_holds(tags[i])) {
@@ -1140,7 +1145,7 @@ function generate_host(C: Compiled, config: number, type: string | null, span: b
 			after.push('if (s !== undefined) s.node = n;', LATE);
 		}
 	}
-	const body = `const N = S.N, J = S.J, HV = S.host_vals; ${rare.length === 0 ? '' : `if (${rare.join(' || ')}) return host(S, id, index, parent);`} ${before.join(' ')} const p = id * S.ps + S.po; ${B.lead.join(' ')} const n = { ${props.join(', ')} }; ${slots.join(' ')} ${tail.join(' ')} ${after.join(' ')} return n;`;
+	const body = `const N = S.N, J = S.J, HV = S.host_vals, b = id * ${C.words}; ${rare.length === 0 ? '' : `if (${rare.join(' || ')}) return host(S, id, index, parent);`} ${before.join(' ')} ${B.lead.join(' ')} const n = { ${props.join(', ')} }; ${slots.join(' ')} ${tail.join(' ')} ${after.join(' ')} return n;`;
 	return new Function('K', 'host', 'items', 'comments', 'strs', 'late', 'PARENT', 'SCOPE', `return (S, id, index, from, parent) => { ${body} };`)(B.constants, host, items, comments, strs, late, PARENT, SCOPE);
 }
 
@@ -1183,7 +1188,7 @@ function row(C: Compiled, name: Table, ops: Op[], linked: Linked | undefined): R
 			return n;
 		};
 	}
-	const B = new Source((at) => `V[b + ${at >> 2}]`, (at) => `(V[b + ${at >> 2}] >>> ${(at & 3) << 3} & 255)`, false, C.words, C.kind);
+	const B = new Source((at) => `V[b + ${at >> 2}]`, (at) => `(V[b + ${at >> 2}] >>> ${(at & 3) << 3} & 255)`, false, C);
 	const none = C.layout.none;
 	const props = ops.map((op) => {
 		const key = JSON.stringify(op.key), into = linked?.into[op.key];
@@ -1304,7 +1309,6 @@ export function decode(words: Uint32Array, source: string, engine: Views, flags:
 	G.sat[1] = hi;
 	const tree = engine.tree(typescript, moved);
 	const erase = (flags & TS_OPTION) === ERASED, failed = (what & FAILED) !== 0;
-	const spans = words[lens + at.spans] !== 0;
 	const scoped = !failed && words[lens + at.scopes] !== 0;
 	const rows = tree[at.errors] as Uint32Array;
 	const config = (link ? LINK : 0) | (scoped ? FACTS : 0) | (erase ? ERASE : 0);
@@ -1330,9 +1334,6 @@ export function decode(words: Uint32Array, source: string, engine: Views, flags:
 			L: tree[at.lists] as Uint32Array,
 			numbers: tree[at.numbers] as Float64Array,
 			strings: NO_STRINGS,
-			P: NO_WORDS,
-			ps: 0,
-			po: 0,
 			rare: tree[at.rare] as Uint32Array,
 			late: tree[at.late] as Uint32Array,
 			parenthesized: null,
@@ -1368,9 +1369,6 @@ export function decode(words: Uint32Array, source: string, engine: Views, flags:
 	S.H = B.hosts;
 	S.names = names(G, tree, words[lens + at.name_starts] - 1, moved);
 	S.strings = failed ? strings(C, tree, words, lens, at, args_of(C.R.error, rows, 0)) : strings(C, tree, words, lens, at);
-	S.P = spans ? (tree[at.spans] as Uint32Array) : S.N;
-	S.ps = spans ? C.R.span.words : C.words;
-	S.po = spans ? C.R.span.start : C.layout.node.start >> 2;
 	S.parenthesized = filled(tree, words, lens, at.parenthesized);
 	S.erased = erase ? filled(tree, words, lens, at.erased) : null;
 	S.comment_count = words[lens + at.comments] / C.R.comment.words;
@@ -1418,8 +1416,8 @@ function kept(S: State): Decoded[] {
 	const out: Decoded[] = [];
 	for (let i = 0; i < S.kept.length; i += 2) {
 		const id = S.kept[i + 1] as number;
-		const at = id * S.ps + S.po;
-		out.push({ type: S.kept[i], start: S.P[at], end: S.P[at + 1] });
+		const b = id * S.C.words;
+		out.push({ type: S.kept[i], start: S.N[b + S.C.start], end: S.N[b + S.C.end] });
 	}
 	// a node comes before what it contains
 	return out.sort((a, b) => a.start - b.start || b.end - a.end);

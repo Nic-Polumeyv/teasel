@@ -500,7 +500,6 @@ slice
 source
 sourceType
 span
-spans
 specifiers
 start
 starts
