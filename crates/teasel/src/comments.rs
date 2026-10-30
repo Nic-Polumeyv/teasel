@@ -1,9 +1,11 @@
 //! Attaches comments to nodes, for tools that read directives from them or print with them. A
 //! comment before a node leads the first node that starts after it; a comment after a node,
-//! separated from it by nothing but spaces, commas and closing parens, trails it; the last node
-//! of a block, program, array or object takes everything up to the closing bracket, and an empty
-//! one keeps what is inside it as `innerComments`; what is left trails the root. Children are
-//! visited in source order. A host's own nodes take no comments: those stay in the list alone.
+//! separated from it by nothing but spaces, commas and closing parens, trails it, unless it is
+//! past a comma with code after it on its line: that code it leads, as `/* @__PURE__ */` does.
+//! The last node of a block, program, array or object takes everything up to the closing
+//! bracket, and an empty one keeps what is inside it as `innerComments`; what is left trails the
+//! root. Children are visited in source order. A host's own nodes take no comments: those stay
+//! in the list alone.
 
 use crate::ast::{Ast, Attached, List, NodeId, NodeKind, Slots};
 
@@ -133,8 +135,34 @@ impl Attacher<'_> {
 				self.take(node, Place::Trailing);
 			}
 		} else if end <= self.start(comment) && self.only_separators(end, self.start(comment)) {
-			self.take(node, Place::Trailing);
+			let past_comma = self.source.as_bytes()[end as usize..self.start(comment) as usize].contains(&b',');
+			if !(past_comma && self.code_follows(comment)) {
+				self.take(node, Place::Trailing);
+			}
 		}
+	}
+
+	/// Whether code follows `comment` on its line, past blanks and other comments on it.
+	fn code_follows(&self, comment: u32) -> bool {
+		let bytes = self.source.as_bytes();
+		let mut at = self.ast.comments[comment as usize].end as usize;
+		let mut next = comment as usize + 1;
+		loop {
+			while bytes.get(at).is_some_and(|b| matches!(b, b' ' | b'\t')) {
+				at += 1;
+			}
+			match self.ast.comments.get(next) {
+				Some(c) if c.start as usize == at => {
+					if bytes[at..c.end as usize].iter().any(|b| matches!(b, b'\n' | b'\r')) {
+						return false;
+					}
+					at = c.end as usize;
+					next += 1;
+				}
+				_ => break,
+			}
+		}
+		!matches!(bytes.get(at), None | Some(b'\n' | b'\r' | b')' | b']' | b'}'))
 	}
 
 	fn is_host(&self, node: NodeId) -> bool {
@@ -245,11 +273,24 @@ mod tests {
 		);
 		assert_eq!(
 			module("[1, /* a */ 2 /* b */]"),
+			[r#"NumberLiteral leading=[" a "] trailing=[" b "]"#]
+		);
+	}
+
+	#[test]
+	fn past_a_comma_a_comment_leads_the_code_after_it_on_its_line() {
+		assert_eq!(
+			module("f(a, /* @__PURE__ */ g());"),
+			[r#"CallExpression leading=[" @__PURE__ "] trailing=[]"#]
+		);
+		assert_eq!(
+			module("x = {\n\ta: 1, // one\n\tb: 2, /* two */\n};"),
 			[
-				r#"NumberLiteral leading=[] trailing=[" a "]"#,
-				r#"NumberLiteral leading=[] trailing=[" b "]"#
+				r#"Property leading=[] trailing=[" one"]"#,
+				r#"Property leading=[] trailing=[" two "]"#
 			]
 		);
+		assert_eq!(module("f(a, /* a */)"), [r#"Identifier leading=[] trailing=[" a "]"#]);
 	}
 
 	#[test]
