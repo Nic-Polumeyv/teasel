@@ -542,10 +542,7 @@ fn run(
 			// the tree's buffers sit folded into two words: a front end keeps its views while that holds
 			words.clear();
 			let roots = roots.map_or(&[][..], |roots| ast.list(roots));
-			words.extend_from_slice(&[
-				positions.offset(&mut crate::estree::Cursor::default(), end),
-				roots.len() as u32,
-			]);
+			words.extend_from_slice(&[positions.offset(end), roots.len() as u32]);
 			words.extend(roots.iter().map(|root| root.unwrap().index()));
 			let typescript = if options.typescript() { TYPESCRIPT } else { 0 };
 			words.push(typescript | if failed { FAILED } else { 0 });
@@ -573,7 +570,7 @@ fn prepare(ast: &mut Ast, source: &str, positions: &Positions, options: Options,
 	if !failed {
 		prepare_tree(ast, positions, options, names);
 		if options.has(Options::LOCATIONS) {
-			ast.lines.extend(positions.lines(source));
+			positions.lines(source, |start| ast.lines.push(start));
 		}
 	}
 	ast.error_rows.clear();
@@ -643,13 +640,12 @@ fn prepare_tree(ast: &mut Ast, positions: &Positions, options: Options, names: &
 	ast.host_rows.clear();
 	ast.host_keys.clear();
 	ast.host_vals.clear();
-	let mut cursor = crate::estree::Cursor::default();
 	for i in 0..ast.host_fields.len() {
 		let (key, value) = ast.host_fields[i];
 		ast.host_keys.push(names.id(key));
 		let mut row = value.row();
 		if let crate::ast::Value::Slice(start, end) = value {
-			row.value = [positions.offset(&mut cursor, start), positions.offset(&mut cursor, end)];
+			row.value = [positions.offset(start), positions.offset(end)];
 		}
 		ast.host_vals.push(row);
 	}

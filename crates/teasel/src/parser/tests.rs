@@ -712,7 +712,9 @@ fn phases() {
 		let _ = Positions::new(&source);
 	});
 	best("Positions::lines", &mut || {
-		let _ = positions.lines(&source).count();
+		positions.lines(&source, |start| {
+			std::hint::black_box(start);
+		});
 	});
 	let (mut ast, roots) = whole(&source, options);
 	crate::comments::attach(&mut ast, &source, roots, 0);

@@ -191,7 +191,7 @@ pub fn answer(
 		Some(roots) => w.field("node", ast.list(roots)[0].unwrap()),
 	}
 	w.key("end");
-	let end = w.positions.offset(&mut w.cursor, end);
+	let end = w.positions.offset(end);
 	w.json.int(end);
 	w.trailers();
 	w.json.end();
@@ -203,7 +203,6 @@ pub struct Writer<'a> {
 	source: &'a str,
 	pub(crate) json: Json,
 	positions: &'a Positions,
-	cursor: Cursor,
 	pub(crate) options: Options,
 	/// The parse failed: `node` is null and `errors` holds the one error, nothing else is listed.
 	pub(crate) failed: bool,
@@ -218,40 +217,44 @@ pub struct Writer<'a> {
 /// Maps byte offsets to UTF-16 offsets, the positions JavaScript counts, and UTF-16 offsets back
 /// to bytes. Built once per parse.
 pub struct Positions {
-	/// After each non-ASCII character: its end byte offset and the bytes-minus-code-units gap so far.
-	gaps: Vec<(u32, u32)>,
+	/// Two words per 64 bytes of the source: a bit for each byte of the block JavaScript does not
+	/// count, the last of a character's bytes past its UTF-16 units, then how many such bytes
+	/// come before the block. Empty for an ASCII source.
+	blocks: Vec<u64>,
 	len: u32,
-}
-
-/// Where the last node's start landed: starts come in source order, and a node's end follows
-/// its start, so each lookup tries a few entries on from its hint before a binary search.
-#[derive(Default)]
-pub(crate) struct Cursor {
-	gap: usize,
 }
 
 impl Positions {
 	pub fn new(source: &str) -> Self {
 		let bytes = source.as_bytes();
-		let mut gaps = Vec::new();
-		let mut gap = 0u32;
-		let mut i = if bytes.is_ascii() { bytes.len() } else { 0 };
-		while i < bytes.len() {
-			i = crate::lexer::scan::find(bytes, i, [], true);
-			let Some(&b) = bytes.get(i) else { break };
-			let len = if b >= 0xf0 {
-				4
-			} else if b >= 0xe0 {
-				3
-			} else {
-				2
-			};
-			i += len;
-			gap += len as u32 - if len == 4 { 2 } else { 1 };
-			gaps.push((i as u32, gap));
+		let mut blocks = Vec::new();
+		if !bytes.is_ascii() {
+			blocks = vec![0u64; 2 * (bytes.len() / 64 + 1)];
+			let (words, rest) = bytes.as_chunks::<8>();
+			let mut tail = [0; 8];
+			tail[..rest.len()].copy_from_slice(rest);
+			// tried a mark per character after a scan for high bytes: 2.4x slower on Cyrillic text
+			let mut lead = 0;
+			for (k, word) in words.iter().chain([&tail]).enumerate() {
+				let w = u64::from_le_bytes(*word);
+				if w & HIGHS == 0 {
+					lead = 0;
+					continue;
+				}
+				// a 4-byte character is two units: its first continuation counts, in the next word when its lead ends this one
+				let continuation = w & !(w << 1) & HIGHS;
+				let astral = w & (w << 1) & (w << 2) & (w << 3) & HIGHS;
+				blocks[k / 8 * 2] |= gathered(continuation & !(astral << 8 | lead)) << (k % 8 * 8);
+				lead = astral >> 56;
+			}
+			let mut before = 0;
+			for [mask, at] in blocks.as_chunks_mut::<2>().0 {
+				*at = before;
+				before += u64::from(mask.count_ones());
+			}
 		}
 		Self {
-			gaps,
+			blocks,
 			len: source.len() as u32,
 		}
 	}
@@ -263,44 +266,60 @@ impl Positions {
 			return Err(format!("offset {utf16} is not a valid position"));
 		}
 		let target = utf16 as u32;
-		let total_gap = self.gaps.last().map_or(0, |g| g.1);
-		if target > self.len - total_gap {
+		if target > self.offset(self.len) {
 			return Err(format!("offset {target} is past the end of the source"));
 		}
-		let i = self.gaps.partition_point(|g| g.0 - g.1 <= target);
-		Ok(target + if i == 0 { 0 } else { self.gaps[i - 1].1 })
+		if self.blocks.is_empty() {
+			return Ok(target);
+		}
+		// the last byte at `target`: past the whole character before it, or in a surrogate pair the byte after its first
+		let (mut low, mut high) = (target, self.len);
+		while low < high {
+			let mid = high - (high - low) / 2;
+			if self.offset(mid) <= target {
+				low = mid;
+			} else {
+				high = mid - 1;
+			}
+		}
+		Ok(low)
 	}
 
-	/// The UTF-16 offset each line of `source` starts at, the first line's 0: a line ends at
-	/// `\n`, at `\r` not before `\n`, and at U+2028 and U+2029.
-	pub fn lines<'a>(&'a self, source: &'a str) -> impl Iterator<Item = u32> + 'a {
+	/// The UTF-16 offset each line of `source` starts at to `line`, the first line's 0: a line
+	/// ends at `\n`, at `\r` not before `\n`, and at U+2028 and U+2029.
+	pub fn lines(&self, source: &str, mut line: impl FnMut(u32)) {
 		let bytes = source.as_bytes();
-		let mut cursor = Cursor::default();
-		let mut next = Some(0);
-		std::iter::from_fn(move || {
-			let start = next?;
-			let end = start + crate::lexer::scan::line_end(&bytes[start..]);
-			next = bytes.get(end).map(|&b| {
-				end + match b {
-					b'\r' if bytes.get(end + 1) == Some(&b'\n') => 2,
-					b'\n' | b'\r' => 1,
-					_ => 3,
+		line(0);
+		let mut hit = |i: usize| match bytes[i] {
+			b'\r' if bytes.get(i + 1) == Some(&b'\n') => {}
+			b'\n' | b'\r' => line(self.offset(i as u32 + 1)),
+			_ => {
+				if crate::lexer::scan::is_separator(&bytes[i..]) {
+					line(self.offset(i as u32 + 3));
 				}
-			});
-			Some(self.offset(&mut cursor, start as u32))
-		})
+			}
+		};
+		// tried a scan to each line's end: 8% slower on Svelte's components
+		let (words, rest) = bytes.as_chunks::<8>();
+		let mut tail = [0; 8];
+		tail[..rest.len()].copy_from_slice(rest);
+		for (k, word) in words.iter().chain([&tail]).enumerate() {
+			let w = u64::from_le_bytes(*word);
+			let mut hits = equal(w, b'\n') | equal(w, b'\r') | equal(w, 0xe2);
+			while hits != 0 {
+				hit(k * 8 + hits.trailing_zeros() as usize / 8);
+				hits &= hits - 1;
+			}
+		}
 	}
 
 	/// Every node's span as UTF-16 offsets, in place.
 	pub fn map_nodes(&self, nodes: &mut [crate::ast::Node]) {
-		if self.gaps.is_empty() {
+		if self.blocks.is_empty() {
 			return;
 		}
-		let mut cursor = Cursor::default();
 		for node in nodes {
-			let (start, gap) = self.offset_from(cursor.gap, node.start);
-			cursor.gap = gap;
-			(node.start, node.end) = (start, self.offset_from(gap, node.end).0);
+			(node.start, node.end) = (self.offset(node.start), self.offset(node.end));
 		}
 	}
 
@@ -311,15 +330,14 @@ impl Positions {
 			return Vec::new();
 		};
 		let upto = source.ceil_char_boundary(last as usize);
-		let lines: Vec<u32> = self.lines(&source[..upto]).collect();
-		let mut cursor = Cursor::default();
+		let mut lines = Vec::new();
+		self.lines(&source[..upto], |start| lines.push(start));
 		errors
 			.iter()
 			.map(|error| {
-				let pos = self.offset(&mut cursor, error.pos);
-				let end = self.offset(&mut cursor, error.end);
+				let pos = self.offset(error.pos);
 				let line = lines.partition_point(|&start| start <= pos);
-				[pos, end, line as u32, pos - lines[line - 1]]
+				[pos, self.offset(error.end), line as u32, pos - lines[line - 1]]
 			})
 			.collect()
 	}
@@ -327,46 +345,45 @@ impl Positions {
 	/// Each comment's row.
 	pub fn map_comments(&self, comments: &[crate::ast::Comment], out: &mut Handed<CommentRow>) {
 		out.clear();
-		let mut cursor = Cursor::default();
 		for comment in comments {
 			let text = comment.text_range();
-			let start = self.offset(&mut cursor, comment.start);
-			let from = self.offset(&mut cursor, text.start as u32);
-			let to = self.offset(&mut cursor, text.end as u32);
-			let end = self.offset(&mut cursor, comment.end);
 			out.push(CommentRow {
 				block: comment.is_block(),
-				text: Span { start: from, end: to },
-				span: Span { start, end },
+				text: Span {
+					start: self.offset(text.start as u32),
+					end: self.offset(text.end as u32),
+				},
+				span: Span {
+					start: self.offset(comment.start),
+					end: self.offset(comment.end),
+				},
 			});
 		}
 	}
 
-	pub(crate) fn offset(&self, cursor: &mut Cursor, byte: u32) -> u32 {
-		let (offset, gap) = self.offset_from(cursor.gap, byte);
-		cursor.gap = gap;
-		offset
-	}
-
-	/// The UTF-16 offset of `byte` and the gap entry it lies after, looked up from `hint`.
-	fn offset_from(&self, hint: usize, byte: u32) -> (u32, usize) {
+	/// The UTF-16 offset of a byte offset at a character boundary.
+	pub(crate) fn offset(&self, byte: u32) -> u32 {
 		let byte = byte.min(self.len);
-		if self.gaps.is_empty() {
-			return (byte, 0);
+		if self.blocks.is_empty() {
+			return byte;
 		}
-		let gap = locate(&self.gaps, hint, byte, |g| g.0);
-		(byte - if gap == 0 { 0 } else { self.gaps[gap - 1].1 }, gap)
+		let at = byte as usize / 64 * 2;
+		byte - self.blocks[at + 1] as u32 - (self.blocks[at] & ((1 << (byte % 64)) - 1)).count_ones()
 	}
 }
 
-/// The number of `items` whose key is at most `byte`, trying `hint` and the few after it first.
-fn locate<T>(items: &[T], hint: usize, byte: u32, key: impl Fn(&T) -> u32) -> usize {
-	for p in hint..=(hint + 3).min(items.len()) {
-		if (p == 0 || key(&items[p - 1]) <= byte) && (p == items.len() || key(&items[p]) > byte) {
-			return p;
-		}
-	}
-	items.partition_point(|item| key(item) <= byte)
+const HIGHS: u64 = 0x8080_8080_8080_8080;
+
+/// The high bit of each byte of `word` exactly where the byte is `byte`.
+fn equal(word: u64, byte: u8) -> u64 {
+	const LOW: u64 = 0x7f7f_7f7f_7f7f_7f7f;
+	let x = word ^ (0x0101_0101_0101_0101 * byte as u64);
+	!(((x & LOW) + LOW) | x | LOW)
+}
+
+/// The high bits of the bytes of `highs`, byte i's at bit i.
+fn gathered(highs: u64) -> u64 {
+	((highs >> 7) * 0x0102_0408_1020_4080) >> 56
 }
 
 impl<'a> Writer<'a> {
@@ -376,7 +393,6 @@ impl<'a> Writer<'a> {
 			source,
 			json: Json::default(),
 			positions,
-			cursor: Cursor::default(),
 			options: Options::default(),
 			failed: false,
 			name_only: false,
@@ -568,9 +584,7 @@ impl<'a> Writer<'a> {
 		if self.options.has(Options::LOCATIONS) {
 			self.key("lines");
 			self.json.list();
-			for start in self.positions.lines(self.source) {
-				self.json.int(start);
-			}
+			self.positions.lines(self.source, |start| self.json.int(start));
 			self.json.end();
 		}
 		if self.options.has(Options::COMMENTS) {
@@ -589,10 +603,7 @@ impl<'a> Writer<'a> {
 	}
 
 	pub(crate) fn span(&mut self, start: u32, end: u32) {
-		let (start, gap) = self.positions.offset_from(self.cursor.gap, start);
-		self.cursor.gap = gap;
-		let (end, _) = self.positions.offset_from(gap, end);
-		self.json.span(start, end);
+		self.json.span(self.positions.offset(start), self.positions.offset(end));
 	}
 
 	/// The source between two byte offsets, as a string value.
@@ -1130,10 +1141,36 @@ mod tests {
 	}
 
 	#[test]
+	fn offsets_as_javascript_counts() {
+		for text in [
+			"é",
+			"€",
+			"𝒳",
+			"\u{2028}",
+			"é€𝒳é€𝒳é€𝒳é€𝒳é€𝒳é€𝒳é€𝒳é€𝒳é€𝒳é€𝒳é€𝒳é€𝒳é€𝒳é€𝒳é€𝒳é€𝒳é€𝒳é€𝒳",
+		] {
+			for pad in 0..70 {
+				let text = "x".repeat(pad) + text + &"y".repeat(pad % 9);
+				let positions = Positions::new(&text);
+				for (i, _) in text.char_indices().chain([(text.len(), ' ')]) {
+					let units = text[..i].encode_utf16().count() as u32;
+					assert_eq!(positions.offset(i as u32), units, "{text:?} at {i}");
+					assert_eq!(positions.byte_offset(units as f64), Ok(i as u32), "{text:?} at {i}");
+				}
+			}
+		}
+	}
+
+	#[test]
 	fn lines() {
-		let lines = |text: &str| Positions::new(text).lines(text).collect::<Vec<_>>();
+		let lines = |text: &str| {
+			let mut out = Vec::new();
+			Positions::new(text).lines(text, |start| out.push(start));
+			out
+		};
 		assert_eq!(lines("a\nb\r\nc\rd\u{2028}e\u{2029}f𝒳\ng"), [0, 2, 5, 7, 9, 11, 15]);
 		assert_eq!(lines(""), [0]);
 		assert_eq!(lines("\r\n\r"), [0, 2, 3]);
+		assert_eq!(lines("1234567\r\n12345678\r\n1234567\u{2028}x"), [0, 9, 19, 27]);
 	}
 }
