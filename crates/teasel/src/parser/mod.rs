@@ -361,10 +361,16 @@ impl DestructuringErrors {
 
 	/// The facts of an expression that is no pattern: only what makes it an error stays.
 	pub(crate) fn settle_as_operand(&mut self) {
-		let error = (self.shorthand_assign.map(|pos| (pos, Code::ShorthandAssignment)))
-			.or(self.double_proto.map(|pos| (pos, Code::DuplicateProto)));
+		let error = [
+			self.operand,
+			self.shorthand_assign.map(|pos| (pos, Code::ShorthandAssignment)),
+			self.double_proto.map(|pos| (pos, Code::DuplicateProto)),
+		]
+		.into_iter()
+		.flatten()
+		.min_by_key(|&(pos, _)| pos);
 		*self = DestructuringErrors {
-			operand: self.operand.or(error),
+			operand: error,
 			..DestructuringErrors::default()
 		};
 	}
@@ -1054,14 +1060,16 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 		if !and_throw {
 			return Ok(has);
 		}
-		if let Some((pos, code)) = errors.operand {
+		let first = [
+			errors.operand,
+			errors.shorthand_assign.map(|pos| (pos, Code::ShorthandAssignment)),
+			errors.double_proto.map(|pos| (pos, Code::DuplicateProto)),
+		]
+		.into_iter()
+		.flatten()
+		.min_by_key(|&(pos, _)| pos);
+		if let Some((pos, code)) = first {
 			return self.error(pos, code);
-		}
-		if let Some(pos) = errors.shorthand_assign {
-			return self.error(pos, Code::ShorthandAssignment);
-		}
-		if let Some(pos) = errors.double_proto {
-			return self.error(pos, Code::DuplicateProto);
 		}
 		Ok(false)
 	}
@@ -1069,14 +1077,16 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 	#[inline(always)]
 	pub(crate) fn check_pattern_errors(&self, errors: &Option<DestructuringErrors>) -> Result<()> {
 		let Some(errors) = errors else { return Ok(()) };
-		if let Some((pos, code)) = errors.operand {
-			return self.error(pos, code);
-		}
-		if let Some(pos) = errors.trailing_comma {
-			return self.error(pos, Code::CommaAfterRest);
-		}
-		match errors.parenthesized_assign {
-			Some(pos) => self.error(pos, Code::InvalidAssignmentTarget),
+		let first = [
+			errors.operand,
+			errors.trailing_comma.map(|pos| (pos, Code::CommaAfterRest)),
+			errors.parenthesized_assign.map(|pos| (pos, Code::InvalidAssignmentTarget)),
+		]
+		.into_iter()
+		.flatten()
+		.min_by_key(|&(pos, _)| pos);
+		match first {
+			Some((pos, code)) => self.error(pos, code),
 			None => Ok(()),
 		}
 	}

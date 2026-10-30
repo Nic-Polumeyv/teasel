@@ -168,6 +168,10 @@ fn a_literal_keeps_its_facts() {
 		"duplicate_proto (16)"
 	);
 	assert_eq!(module_error("[...r, a = 1] = b;"), "comma_after_rest (5)");
+	// the first of the pending errors is the one reported, whichever element it came from
+	assert_eq!(module_error("[...r, {a = 1}.b] = c;"), "comma_after_rest (5)");
+	assert_eq!(module_error("x = [{c = 1}, {a = 1}.b];"), "shorthand_assignment (8)");
+	assert_eq!(module_error("x = [{__proto__: 1, __proto__: 2, a = 1}];"), "duplicate_proto (20)");
 	assert_eq!(module_error("[(a = 1), b = 2] = c;"), "invalid_assignment_target (1)");
 	assert_eq!(module_error("async (...r, a = 1) => 1;"), "comma_after_rest (11)");
 	program(
