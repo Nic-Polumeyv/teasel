@@ -50,10 +50,10 @@ export const tpl = g.grammar('tpl', {
 Run it:
 
 ```js parse.js
-import { Source } from '@teasel/parser';
+import { parse } from '@teasel/parser';
 import { tpl } from './tpl.js';
 
-new Source(list).parse(tpl);
+parse(list, tpl);
 ```
 
 ![list.tpl read with the HTML grammar: the parser stops at the second }} among the card's attributes](Steps.svelte "step=1")
@@ -158,9 +158,9 @@ A branch continues the block that is open, with a marker and a form of its own. 
 The same links are on the tree you get, when you ask for `scopes`:
 
 ```js parse.js
-import { Source, referenceOf } from '@teasel/parser';
+import { parse, referenceOf } from '@teasel/parser';
 
-const { node } = new Source(list, { scopes: true }).parse(tpl);
+const { node } = parse(list, tpl, { scopes: true });
 const repeat = node.children[0].children[1];
 const card = repeat.body[1];
 const title = card.attributes[0].value.expression;   // item.name

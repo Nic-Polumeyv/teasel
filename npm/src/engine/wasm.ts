@@ -7,7 +7,8 @@ const utf8 = new TextDecoder();
 interface Exports {
 	readonly memory: WebAssembly.Memory;
 	alloc(len: number): number;
-	parse(ptr: number, len: number, capacity: number, flags: number, entry: number, offset: number, end: number, has_end: number, stop_ptr: number, stop_len: number, stop_capacity: number, plan: number): number;
+	parse(ptr: number, len: number, capacity: number, flags: number, entry: number, plan: number): number;
+	parse_at(ptr: number, len: number, capacity: number, flags: number, entry: number, offset: number, end: number, has_end: number, stop_ptr: number, stop_len: number, stop_capacity: number): number;
 	plan_new(ptr: number, len: number, capacity: number): number;
 	plan_free(handle: number): void;
 	plan_children(handle: number): void;
@@ -85,9 +86,18 @@ const words = () => new Uint32Array(wasm.memory.buffer, wasm.words_ptr(), wasm.w
 
 // the layout comes first: writing it can grow the memory and detach a view taken before
 function answer(status: number) {
-	if (status !== 0) return text();
+	if (status === 2) throw new Error(text());
+	if (status === 1) return text();
 	layout();
 	return words();
+}
+
+// a memory never shrinks, so one a huge source grew past 256 MiB goes with its instance, which costs 0.9 ms to replace
+function shed() {
+	if (wasm.memory.buffer.byteLength > 1 << 28) {
+		wasm = new WebAssembly.Instance(module, {}).exports as unknown as Exports;
+		generation++;
+	}
 }
 
 const trees: ({ buffer: ArrayBuffer; at: Uint32Array; views: Tree[number][] } | undefined)[] = [undefined, undefined];
@@ -136,14 +146,14 @@ function opened(handle: number) {
 }
 
 const engine: Engine = {
-	parse(source, flags, entry, offset, end, stop, plan) {
-		// a memory never shrinks, so one a huge source grew past 256 MiB goes with its instance, which costs 0.9 ms to replace
-		if (wasm.memory.buffer.byteLength > 1 << 28) {
-			wasm = new WebAssembly.Instance(module, {}).exports as unknown as Exports;
-			generation++;
-		}
+	parse(source, flags, entry, plan) {
+		shed();
 		const grammar = plan === undefined ? 0 : (plan as Plan).handle();
-		return answer(guarded(() => wasm.parse(...bytes(source), flags, entry, offset, end ?? 0, end === undefined ? 0 : 1, ...bytes(stop), grammar)));
+		return answer(guarded(() => wasm.parse(...bytes(source), flags, entry, grammar))) as Uint32Array;
+	},
+	parseAt(source, flags, entry, offset, end, stop) {
+		shed();
+		return answer(guarded(() => wasm.parse_at(...bytes(source), flags, entry, offset, end ?? 0, end === undefined ? 0 : 1, ...bytes(stop))));
 	},
 	plan: (grammar) => new Plan(grammar),
 	children(plan) {

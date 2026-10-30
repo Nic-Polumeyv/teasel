@@ -223,7 +223,7 @@ fn host_phases() {
 			let mut best = f64::MAX;
 			for _ in 0..300 {
 				let t = std::time::Instant::now();
-				teasel::json::in_place(source, Options(flags), Entry::Program, 0.0, None, "", Some(&grammar)).unwrap();
+				teasel::json::whole(source, Options(flags), Entry::Program, Some(&grammar));
 				best = best.min(t.elapsed().as_secs_f64() * 1e6);
 			}
 			eprintln!("{best:9.2} µs  {name} {label}");

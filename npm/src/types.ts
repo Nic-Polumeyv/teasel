@@ -150,11 +150,14 @@ export interface Recovered {
 }
 
 export declare const answers: unique symbol;
-/** What the engine holds for a grammar, on the grammar. Here and not in `grammar.ts`, so the entry reads the key without loading the builders and the encoder. */
-export const PLAN = Symbol('plan');
-/** What a parse reads as a whole and up to the end it is given: JavaScript, or a host language by its grammar. `T` is what its parse answers with. */
+/** What `parse` asks the engine for, on a language: the entry by its index in `Entry` of parser/mod.rs, and a grammar's plan, what the engine made of it. Here and not in `grammar.ts`, so the entry reads the key without loading the builders and the encoder. */
+export const LANGUAGE = Symbol('language');
+/** What `parseAt` asks the engine for, on a piece: the entry, and the host's stop tokens. */
+export const PIECE = Symbol('piece');
+/** What `parse` reads, the whole text: JavaScript, CSS, or a host language by its grammar. `T` is what its parse answers with. */
 export interface Language<T> {
 	readonly [answers]?: T;
+	readonly [LANGUAGE]: { readonly entry: number; readonly plan?: object };
 	/** For every type of node a parse of the language answers with, the fields that hold a node or a list of nodes: what a walk follows. A grammar's names the JavaScript types beside the host's. */
 	readonly children: Readonly<Record<string, readonly string[]>>;
 }
@@ -384,8 +387,10 @@ export interface Views {
 
 /** What parses: the addon or the WebAssembly module. */
 export interface Engine extends Views {
-	/** A source parsed by its option word at an entry and offset, cut at `end`, the stop tokens as one string, or as a document by a grammar `plan` holds; nothing of it is kept. The answer is its words, or, for a request the engine cannot take, an error as JSON. */
-	readonly parse: (source: string, flags: number, entry: number, offset: number, end: number | undefined, stop: string, plan: object | undefined) => Uint32Array | string;
+	/** The whole source parsed by its option word at an entry, or as a document by a grammar `plan` holds; nothing of it is kept. The answer is its words. */
+	readonly parse: (source: string, flags: number, entry: number, plan: object | undefined) => Uint32Array;
+	/** One entry of a source read at an offset, cut at `end`, the stop tokens as one string. The answer is its words, or, for an offset the source has no place for, an error as JSON. */
+	readonly parseAt: (source: string, flags: number, entry: number, offset: number, end: number | undefined, stop: string) => Uint32Array | string;
 	/** The grammar of a host language as JSON, read once and let go of when the plan is collected. */
 	readonly plan: (grammar: string) => object;
 	/** Each node type of a grammar's host with the fields that hold nodes, as JSON. */

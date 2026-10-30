@@ -298,17 +298,32 @@ pub fn parse_document(source: &str, grammar: &str, options: Options) -> String {
 	}
 }
 
-/// One entry at a UTF-16 offset, as JavaScript counts, the source cut at `end`; with a grammar,
-/// the whole source as a document of its language, in TypeScript when the grammar says so of a
-/// script tag. Read in place: its words at `words`; the error answer stays JSON.
-pub fn in_place(
+/// The whole source as `entry` reads it, a program or a stylesheet; with a grammar, as a document
+/// of its language, in TypeScript when the grammar says so of a script tag. Read in place: its
+/// words at `words`.
+pub fn whole(source: &str, options: Options, entry: Entry, host: Option<&Grammar>) {
+	let request = Request {
+		entry,
+		offset: 0,
+		end: None,
+		options: if host.is_some_and(|grammar| host::typescript(source, grammar)) {
+			options.with(Options::TYPESCRIPT)
+		} else {
+			options
+		},
+	};
+	to_words(source, &Positions::of(source, options), &request, "", host);
+}
+
+/// One entry at a UTF-16 offset, as JavaScript counts, the source cut at `end`. Read in place:
+/// its words at `words`; an offset the source has no place for answers as JSON.
+pub fn at(
 	source: &str,
 	options: Options,
 	entry: Entry,
 	start: f64,
 	end: Option<f64>,
 	stop: &str,
-	host: Option<&Grammar>,
 ) -> Result<(), String> {
 	let positions = Positions::of(source, options);
 	let byte_offset = |utf16: f64| match positions.byte_offset(utf16) {
@@ -331,13 +346,9 @@ pub fn in_place(
 		entry,
 		offset,
 		end,
-		options: if host.is_some_and(|grammar| host::typescript(source, grammar)) {
-			options.with(Options::TYPESCRIPT)
-		} else {
-			options
-		},
+		options,
 	};
-	to_words(source, &positions, &request, stop, host);
+	to_words(source, &positions, &request, stop, None);
 	Ok(())
 }
 
@@ -474,7 +485,7 @@ impl Names {
 pub fn entry(index: f64) -> Result<Entry, String> {
 	Entry::from_index(index as u32)
 		.filter(|_| f64::from(index as u32) == index)
-		.ok_or_else(|| error_json(&format!("{index} is no entry"), 0))
+		.ok_or_else(|| format!("{index} is no entry"))
 }
 
 /// The checks on a request's byte offsets, or the error answer.

@@ -195,19 +195,19 @@ fn an_entry_is_one_of_its_numbers() {
 #[test]
 fn the_session_writes_the_same_words_again() {
 	use crate::Options;
-	use crate::json::in_place;
+	use crate::json::{at, whole};
 	let options = Options(Options::MODULE | Options::COMMENTS | Options::LOCATIONS | Options::SCOPES);
 	let source = "let x = /* a */ 1; function f(y) { return x + y; } // b";
 	let words = || crate::json::words(|words| words.to_vec());
 	// a failed parse answers words too, flagged as such; its first one settles the error buffer
-	in_place("a +", options, Entry::Expression, 0.0, None, "", None).unwrap();
+	at("a +", options, Entry::Expression, 0.0, None, "").unwrap();
 	let failed = words();
 	assert_eq!((failed[1], failed[2 + failed[1] as usize] & 1), (0, 1));
-	in_place(source, options, Entry::Program, 0.0, None, "", None).unwrap();
+	whole(source, options, Entry::Program, None);
 	let first = words();
-	let _ = in_place("a + b", options, Entry::Expression, 0.0, None, "", None);
-	let _ = in_place("a +", options, Entry::Expression, 0.0, None, "", None);
-	in_place(source, options, Entry::Program, 0.0, None, "", None).unwrap();
+	let _ = at("a + b", options, Entry::Expression, 0.0, None, "");
+	let _ = at("a +", options, Entry::Expression, 0.0, None, "");
+	whole(source, options, Entry::Program, None);
 	let again = words();
 	// but for the first saying its buffers are new to the front end
 	let what = 2 + first[1] as usize;
@@ -714,11 +714,11 @@ fn phases() {
 	{
 		let options = Options(Options::MODULE | Options::COMMENTS);
 		best("whole request: positions, parse, comments, encode, finish", &mut || {
-			crate::json::in_place(&source, options, Entry::Program, 0.0, None, "", None).unwrap();
+			crate::json::whole(&source, options, Entry::Program, None);
 		});
 		let options = Options(Options::MODULE | Options::COMMENTS | Options::SCOPES | Options::LOCATIONS);
 		best("whole request with scopes and loc", &mut || {
-			crate::json::in_place(&source, options, Entry::Program, 0.0, None, "", None).unwrap();
+			crate::json::whole(&source, options, Entry::Program, None);
 		});
 	}
 	let grammar = crate::json::grammar(
@@ -737,7 +737,7 @@ fn phases() {
 		),
 	] {
 		best(&format!("host: 200 each blocks, {label}"), &mut || {
-			crate::json::in_place(&document, Options(flags), Entry::Program, 0.0, None, "", Some(&grammar)).unwrap();
+			crate::json::whole(&document, Options(flags), Entry::Program, Some(&grammar));
 		});
 	}
 	best("Json write, loc", &mut || {
@@ -905,16 +905,12 @@ fn host_alloc_probe() {
 	.unwrap();
 	let count = |src: &str| {
 		let parse = || {
-			crate::json::in_place(
+			crate::json::whole(
 				src,
 				crate::Options(crate::Options::MODULE),
 				Entry::Program,
-				0.0,
-				None,
-				"",
 				Some(&grammar),
 			)
-			.unwrap()
 		};
 		parse();
 		let before = ALLOCATIONS.load(std::sync::atomic::Ordering::Relaxed);

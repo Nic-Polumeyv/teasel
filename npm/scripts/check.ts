@@ -34,9 +34,13 @@ for (const dir of host ? args.slice(3) : args) walk(dir);
 let checked = 0;
 let failed = 0;
 
+// a whole program or stylesheet goes to `parse`, anything at a position to `parseAt`
+const ask = (engine: Engine, source: string, on: number, entry: number, at: number, end?: number) =>
+	(entry === 0 || entry === STYLESHEET) && at === 0 && end === undefined ? engine.parse(source, on, entry, undefined) : engine.parseAt(source, on, entry, at, end, '');
+
 // what a parse answers or throws, read off the engine directly
 function outcome(engine: Engine, source: string, on: number, entry: number, at: number, end?: number) {
-	const answer = engine.parse(source, on, entry, at, end, '', undefined);
+	const answer = ask(engine, source, on, entry, at, end);
 	return typeof answer === 'string' ? { error: JSON.parse(answer).error } : { value: decode(answer, source, engine, on, entry === 3) };
 }
 
@@ -81,7 +85,7 @@ const as_json = (key: string, value: unknown) => (value instanceof RegExp || typ
 const jobs: { name: string; source: string; header: string; tree: string }[] = [];
 function json(name: string, source: string, options: Options, entry: number, at: number) {
 	const on = flags(options);
-	const answer = native.parse(source, on, entry, at, undefined, '', undefined);
+	const answer = ask(native, source, on, entry, at);
 	const tree = typeof answer === 'string' ? answer : JSON.stringify(decode(answer, source, native, on, entry === 3, false), as_json);
 	jobs.push({ name, source, header: header(entry, Buffer.byteLength(source.slice(0, at)), on), tree });
 }
@@ -89,7 +93,7 @@ function json(name: string, source: string, options: Options, entry: number, at:
 // a whole document of the host's
 function document(name: string, source: string, options: Options) {
 	const on = flags(options);
-	const answer = native.parse(source, on, 0, 0, undefined, '', plan);
+	const answer = native.parse(source, on, 0, plan);
 	const tree = typeof answer === 'string' ? answer : JSON.stringify(decode(answer, source, native, on, false, false), as_json);
 	const switches = Object.entries(options).flatMap(([key, value]) => (value === true ? [key] : value ? [`${key}:${value}`] : []));
 	jobs.push({ name: `${name} doc ${switches.join('+')}`, source, header: header(DOCUMENT, 0, on), tree });

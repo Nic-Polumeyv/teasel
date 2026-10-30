@@ -5,10 +5,10 @@ title: What parse returns
 `parse` returns an object. It always has two keys: the node, and where the parse stopped.
 
 ```js parse.js
-const { node, end } = source.parse();
+const { node, end } = parse(text);
 ```
 
-`node` is the tree. Every node in it has `start` and `end`, offsets into the text you gave the `Source`. The `end` beside `node` is the offset where the parse stopped reading. For a whole program that is the end of the text.
+`node` is the tree. Every node in it has `start` and `end`, offsets into the text you parsed. The `end` beside `node` is the offset where the parse stopped reading. For a whole program that is the end of the text.
 
 These pages call that object the answer.
 

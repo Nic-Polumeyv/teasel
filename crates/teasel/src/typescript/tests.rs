@@ -212,10 +212,10 @@ fn program_in_a_range() {
 	request.end = Some(2);
 	assert!(crate::json::parse(src, &request).contains("is before"));
 	let cut = &src[..26];
-	crate::json::in_place(cut, request.options, Entry::Program, 8.0, None, "", None).unwrap();
+	crate::json::at(cut, request.options, Entry::Program, 8.0, None, "").unwrap();
 	assert_eq!(crate::json::words(|words| words[0]), 26);
 	assert!(
-		crate::json::in_place(cut, request.options, Entry::Program, 22.0, Some(8.0), "", None)
+		crate::json::at(cut, request.options, Entry::Program, 22.0, Some(8.0), "")
 			.unwrap_err()
 			.contains("is before")
 	);

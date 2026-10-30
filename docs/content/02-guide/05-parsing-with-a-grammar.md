@@ -37,10 +37,10 @@ export const grammar = g.grammar('mini', {
 `parse` takes the grammar and reads a document of it. The engine reads a grammar when `grammar` makes it, so make it once, at module level, as `mini.js` does.
 
 ```js document.js
-import { Source } from '@teasel/parser';
+import { parse } from '@teasel/parser';
 import { grammar } from './mini.js';
 
-const { node } = new Source('<p>{{ greeting }}</p>').parse(grammar);
+const { node } = parse('<p>{{ greeting }}</p>', grammar);
 node.type;                                   // 'Root'
 node.children.nodes[0].type;                 // 'Element', name 'p'
 node.children.nodes[0].children.nodes[0];
@@ -66,8 +66,7 @@ Scopes cover the template and the script together. The grammar says where a scop
 const text =
 	'<script>let names = []</script>' +
 	'{{#each names as name}}<b>{{ name }}</b>{{/each}}';
-const source = new Source(text, { sourceType: 'module', scopes: true });
-const { node, roots } = source.parse(grammar);
+const { node, roots } = parse(text, grammar, { sourceType: 'module', scopes: true });
 const block = node.children.nodes[0];
 
 referenceOf(block.list).binding;
@@ -87,7 +86,7 @@ The scope kinds a document adds are `fragment` for what the grammar opens and `m
 `errorRecovery` works on a document as it does on JavaScript: an unclosed element, an expression cut short, a block without its end, all come back as the tree that could be read, with `errors` listing each one. The host's errors have codes of their own, `unclosed`, `expected`, `duplicate` and the others in [Error codes](/reference/error-codes), beside JavaScript's. Without recovery the first one throws.
 
 ```js document.js
-const { node, errors } = new Source('<p>{{ a', { errorRecovery: true }).parse(grammar);
+const { node, errors } = parse('<p>{{ a', grammar, { errorRecovery: true });
 errors.map((e) => e.code);                   // ['unclosed', 'expected']
 node.children.nodes[0].type;                 // 'Element', read as far as it went
 ```

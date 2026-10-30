@@ -6,7 +6,7 @@ A syntax error throws a `SyntaxError`. It has a `code` to branch on, `args` sayi
 
 ```js errors.js
 try {
-	new Source('x = ;').parse();
+	parse('x = ;');
 } catch (e) {
 	e.code;    // 'unexpected_token'
 	e.args;    // []
@@ -23,7 +23,7 @@ try {
 ```js errors.js
 function complete(text) {
 	try {
-		new Source(text).parse();
+		parse(text);
 		return true;
 	} catch (e) {
 		if (e.code === 'unexpected_eof') return false;
@@ -40,7 +40,7 @@ complete('if (x) {}'); // true
 An editor or a language server needs a tree from a file that does not parse, because it runs while someone is typing. With `errorRecovery` on, the parse returns the tree and the errors together and does not throw.
 
 ```js errors.js
-const { node, errors } = new Source('x = ;', { errorRecovery: true }).parse();
+const { node, errors } = parse('x = ;', js, { errorRecovery: true });
 errors[0].code;                            // 'unexpected_token'
 node.body[0].expression.right.name;        // ''
 ```

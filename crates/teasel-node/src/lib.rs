@@ -166,18 +166,27 @@ fn grammar_of(env: Env, value: Value) -> Option<&'static Grammar> {
 
 unsafe extern "C" fn parse(env: Env, info: CallbackInfo) -> Value {
 	guard(env, || {
-		let [source, flags, entry, offset, end, stop, plan] = args::<7>(env, info)?;
+		let [source, flags, entry, plan] = args::<4>(env, info)?;
+		let (source, options) = (source_text(env, source)?, Options(number(env, flags)? as u32));
+		let (entry, grammar) = (json::entry(number(env, entry)?)?, grammar_of(env, plan));
+		in_env(env, || {
+			json::whole(source, options, entry, grammar);
+			view(env)
+		})
+	})
+}
+
+unsafe extern "C" fn parse_at(env: Env, info: CallbackInfo) -> Value {
+	guard(env, || {
+		let [source, flags, entry, offset, end, stop] = args::<6>(env, info)?;
 		let (source, options) = (source_text(env, source)?, Options(number(env, flags)? as u32));
 		let (entry, offset, end, stop) = (
-			number(env, entry)?,
+			json::entry(number(env, entry)?)?,
 			number(env, offset)?,
 			optional(env, end),
 			string(env, stop)?,
 		);
-		let grammar = grammar_of(env, plan);
-		answer(env, || {
-			json::in_place(source, options, json::entry(entry)?, offset, end, &stop, grammar)
-		})
+		answer(env, || json::at(source, options, entry, offset, end, &stop))
 	})
 }
 
@@ -436,6 +445,7 @@ pub unsafe extern "C" fn napi_register_module_v1(env: Env, exports: Value) -> Va
 		)?;
 		for (name, callback) in [
 			(c"parse", parse as unsafe extern "C" fn(Env, CallbackInfo) -> Value),
+			(c"parseAt", parse_at),
 			(c"plan", plan),
 			(c"children", children),
 			(c"tree", tree),
