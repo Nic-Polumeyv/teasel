@@ -419,7 +419,7 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 		let line = 1, start = 0;
 		for (let i = 0; i < offset; i++) {
 			const c = text[i];
-			if (c === '\n' || c === ' ' || c === ' ' || (c === '\r' && text[i + 1] !== '\n')) [line, start] = [line + 1, i + 1];
+			if (c === '\n' || c === '\u2028' || c === '\u2029' || (c === '\r' && text[i + 1] !== '\n')) [line, start] = [line + 1, i + 1];
 		}
 		return [line, offset - start];
 	};
@@ -433,9 +433,9 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 		return [lo, offset - lines[lo - 1]];
 	};
 	const texts: [string, Any][] = [
-		['a\r\nb\rc d e\n"𝒳" // é\r\n/* x\r\ny */ f\r', js],
-		['<script>\r\n\tlet a = "𝒳"; // é\r\n</script>\r\n<p class="x\ry">{a} {b}<!-- c\r\n --></p>\r<style>\n\tp { color: red } /* \r */\n</style>\n', svelte],
-		['<ul :class="{ on }">\r\n\t<li v-for="(item, i) in items">{{ item.name /* 𝒳 */ }} </li>\r</ul>', vue],
+		['a\r\nb\rc\u2028d\u2029e\n"𝒳" // é\r\n/* x\r\ny\u2028*/ f\r', js],
+		['<script>\r\n\tlet a = "𝒳"; // é\r\n</script>\r\n<p class="x\ry">{a}\u2028{b}<!-- c\r\n --></p>\r<style>\n\tp { color: red } /* \r */\n</style>\n', svelte],
+		['<ul :class="{ on }">\r\n\t<li v-for="(item, i) in items">{{ item.name /* 𝒳 */ }}\u2029</li>\r</ul>', vue],
 		['p {\r\n\tcolor: red;\r}\n/* 𝒳\r\n */ a { b: c }', css],
 	];
 	for (const [text, language] of texts) {
@@ -454,7 +454,7 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 		visit(answer.comments);
 		assert.ok(spans > 4);
 	}
-	assert.deepEqual(read('a\r\nb\rc d e\n𝒳\nf', { locations: true }).lines, new Uint32Array([0, 3, 5, 7, 9, 11, 14]));
+	assert.deepEqual(read('a\r\nb\rc\u2028d\u2029e\n𝒳\nf', { locations: true }).lines, new Uint32Array([0, 3, 5, 7, 9, 11, 14]));
 	assert.deepEqual(readAt('{a}\n\n{b}', js.expression, 6, { locations: true }).lines, new Uint32Array([0, 4, 5]));
 	assert.equal('lines' in read('a\nb'), false);
 }
