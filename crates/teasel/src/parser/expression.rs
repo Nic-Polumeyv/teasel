@@ -3,6 +3,7 @@ use super::{DestructuringErrors, Errors, FunctionKind, Parser, Result, Unwrap};
 use crate::Options;
 use crate::error::Code;
 use crate::interner::StrId;
+use crate::lexer::list::Role;
 use crate::lexer::token::{Keyword, TokenKind, word};
 
 use crate::ast::{
@@ -128,7 +129,12 @@ impl<const TS: bool> Parser<'_, TS> {
 			let mut expressions = self.items();
 			expressions.push(Some(expr));
 			while self.eat(TokenKind::Comma)? {
-				expressions.push(Some(self.parse_maybe_assign(for_init, errors)?));
+				expressions.push(Some(
+					self.element(errors, |p, facts| p.parse_maybe_assign(for_init, facts))?,
+				));
+			}
+			if let Some(e) = errors {
+				e.settle_as_operand();
 			}
 			let expressions = self.list_from(expressions);
 			return Ok(self.add(NodeKind::SequenceExpression { expressions }, start));
@@ -138,21 +144,12 @@ impl<const TS: bool> Parser<'_, TS> {
 
 	pub(crate) fn parse_maybe_assign(&mut self, for_init: ForInit, errors: &mut Errors) -> Result<NodeId> {
 		self.enter()?;
-		let result = self.parse_maybe_assign_inner(for_init, errors, false);
+		let result = self.parse_maybe_assign_inner(for_init, errors);
 		self.leave();
 		result
 	}
 
-	/// An assignment expression that is an item of a parenthesized list, which TypeScript reads
-	/// differently.
-	pub(crate) fn parse_paren_item(&mut self, for_init: ForInit, errors: &mut Errors) -> Result<NodeId> {
-		self.enter()?;
-		let result = self.parse_maybe_assign_inner(for_init, errors, true);
-		self.leave();
-		result
-	}
-
-	fn parse_maybe_assign_inner(&mut self, for_init: ForInit, errors: &mut Errors, item: bool) -> Result<NodeId> {
+	fn parse_maybe_assign_inner(&mut self, for_init: ForInit, errors: &mut Errors) -> Result<NodeId> {
 		if self.at_lt()
 			&& self.typescript()
 			&& let Some(expr) = self.maybe_assign(for_init, errors)?
@@ -162,78 +159,66 @@ impl<const TS: bool> Parser<'_, TS> {
 		if self.is_contextual("yield") && self.in_generator() {
 			return self.parse_yield(for_init);
 		}
-		let own_errors = errors.is_none();
-		let (old_paren_assign, old_trailing_comma, old_double_proto) = match errors {
-			Some(e) => {
-				let old = (e.parenthesized_assign, e.trailing_comma, e.double_proto);
-				e.parenthesized_assign = None;
-				e.trailing_comma = None;
-				old
-			}
-			None => {
-				*errors = Some(DestructuringErrors::default());
-				(None, None, None)
-			}
+		let handing = errors.is_some();
+		let mut own: Errors;
+		let facts = if handing {
+			errors
+		} else {
+			own = Some(DestructuringErrors::default());
+			&mut own
 		};
 		let start = self.tok.start;
 		if self.is(TokenKind::ParenL) || matches!(self.tok.kind, TokenKind::Ident(_)) {
 			self.potential_arrow_at = start;
 			self.potential_arrow_in_for_await = for_init == ForInit::Await;
 		}
-		let mut left = self.parse_maybe_conditional(for_init, errors)?;
-		if item && matches!(self.tok.kind, TokenKind::Question | TokenKind::Colon) && self.typescript() {
-			left = self.paren_item(left)?;
+		let mut left = self.parse_maybe_conditional(for_init, facts)?;
+		let e = facts.as_mut().unwrap();
+		let target = e.owner == Some(left);
+		if !target && e.owner.is_some() {
+			e.settle_as_operand();
 		}
 		if let Some(operator) = assignment_operator(self.tok.kind) {
 			let is_eq = operator == AssignmentOperator::Assign;
 			if is_eq {
-				left = self.make_pattern(left, false, errors)?;
-			}
-			// `a: T = 1` is checked once its list is known, as a parameter or as a stray cast
-			let inner = if self.typescript() {
-				self.unwrap(left, Unwrap::InnerPattern)
+				left = self.make_pattern(left, facts)?;
+				self.check_lval_pattern(left, Binding::None, &mut None)?;
 			} else {
-				None
-			};
-			let e = errors.as_mut().unwrap();
-			if !own_errors {
-				e.parenthesized_assign = None;
-				e.trailing_comma = None;
-				e.double_proto = None;
-			}
-			if e.shorthand_assign.is_some_and(|p| p >= self.start_of(left)) {
-				e.shorthand_assign = None;
-			}
-			if inner.is_none() {
-				if is_eq {
-					self.check_lval_pattern(left, Binding::None, &mut None)?;
-				} else {
-					self.check_lval_simple(left, Binding::None, &mut None)?;
-				}
+				self.check_lval_simple(left, Binding::None, &mut None)?;
 			}
 			self.next()?;
-			let right = self.parse_maybe_assign(for_init, &mut None)?;
-			if old_double_proto.is_some() {
-				errors.as_mut().unwrap().double_proto = old_double_proto;
+			if target {
+				*facts = Some(DestructuringErrors::default());
 			}
-			if own_errors {
-				*errors = None;
+			let mut right_facts = handing.then(DestructuringErrors::default);
+			let right = self.parse_maybe_assign(for_init, &mut right_facts)?;
+			if let Some(mut right_facts) = right_facts {
+				right_facts.settle_as_operand();
+				facts.as_mut().unwrap().merge(right_facts);
+			}
+			if !handing {
+				self.check_expression_errors(facts, true)?;
 			}
 			return Ok(self.add(NodeKind::AssignmentExpression { operator, left, right }, start));
 		}
-		if own_errors {
-			self.check_expression_errors(errors, true)?;
-			*errors = None;
-		} else {
-			let e = errors.as_mut().unwrap();
-			if old_paren_assign.is_some() {
-				e.parenthesized_assign = old_paren_assign;
-			}
-			if old_trailing_comma.is_some() {
-				e.trailing_comma = old_trailing_comma;
-			}
+		if !handing {
+			self.check_expression_errors(facts, true)?;
 		}
 		Ok(left)
+	}
+
+	/// An element of a list read with facts of its own, which join the list's.
+	fn element(
+		&mut self,
+		list: &mut Errors,
+		read: impl FnOnce(&mut Self, &mut Errors) -> Result<NodeId>,
+	) -> Result<NodeId> {
+		let mut facts = list.is_some().then(DestructuringErrors::default);
+		let node = read(self, &mut facts)?;
+		if let (Some(list), Some(facts)) = (list.as_mut(), facts) {
+			list.merge(facts);
+		}
+		Ok(node)
 	}
 
 	fn parse_maybe_conditional(&mut self, for_init: ForInit, errors: &mut Errors) -> Result<NodeId> {
@@ -246,11 +231,6 @@ impl<const TS: bool> Parser<'_, TS> {
 			return Ok(expr);
 		}
 		if self.is(TokenKind::Question) {
-			if self.typescript()
-				&& let Some(expr) = self.conditional(expr, start, for_init)?
-			{
-				return Ok(expr);
-			}
 			return self.parse_conditional(expr, start, for_init);
 		}
 		Ok(expr)
@@ -484,22 +464,7 @@ impl<const TS: bool> Parser<'_, TS> {
 		{
 			return Ok(expr);
 		}
-		let result = self.parse_subscripts(expr, start, false, for_init)?;
-		if let Some(e) = errors
-			&& matches!(self.kind(result), NodeKind::MemberExpression { .. })
-		{
-			let rs = self.start_of(result);
-			if e.parenthesized_assign.is_some_and(|p| p >= rs) {
-				e.parenthesized_assign = None;
-			}
-			if e.parenthesized_bind.is_some_and(|p| p >= rs) {
-				e.parenthesized_bind = None;
-			}
-			if e.trailing_comma.is_some_and(|p| p >= rs) {
-				e.trailing_comma = None;
-			}
-		}
-		Ok(result)
+		self.parse_subscripts(expr, start, false, for_init)
 	}
 
 	fn parse_subscripts(&mut self, mut base: NodeId, start: u32, no_calls: bool, for_init: ForInit) -> Result<NodeId> {
@@ -581,26 +546,18 @@ impl<const TS: bool> Parser<'_, TS> {
 			);
 			return Ok((node, optional));
 		}
-		if !no_calls && self.eat(TokenKind::ParenL)? {
-			let mut errors = Some(DestructuringErrors::default());
-			let old = self.take_yield_await();
-			let args = self.parse_item_list(maybe_async_arrow, TokenKind::ParenR, true, false, &mut errors)?;
-			if maybe_async_arrow && !optional && self.async_arrow_follows(start)? {
-				self.check_pattern_errors(&errors, false)?;
-				self.check_yield_await_in_default_params()?;
-				if self.await_ident_pos > 0 {
-					return self.error(self.await_ident_pos, Code::AwaitAsIdentifier);
-				}
-				self.restore_yield_await(old);
-				let arrow = self.parse_arrow_expression(start, args, true, for_init)?;
+		let call = if !no_calls && maybe_async_arrow && !optional && self.is(TokenKind::ParenL) {
+			let at = self.tok.start;
+			self.next()?;
+			if let Some(arrow) = self.decided_arrow(start, at, true, for_init)? {
 				return Ok((arrow, false));
 			}
-			self.check_expression_errors(&errors, true)?;
-			if self.typescript() {
-				self.no_type_casts(&args)?;
-			}
-			self.restore_yield_await_if_set(old);
-			let arguments = self.list_from(args);
+			true
+		} else {
+			!no_calls && self.eat(TokenKind::ParenL)?
+		};
+		if call {
+			let arguments = self.parse_arguments()?;
 			let node = self.add(
 				NodeKind::CallExpression {
 					callee: base,
@@ -671,6 +628,9 @@ impl<const TS: bool> Parser<'_, TS> {
 						if self.can_insert_semicolon() || !self.eat(TokenKind::Arrow)? {
 							return self.unexpected();
 						}
+						if self.ident_is(param, "await") {
+							return self.error(self.start_of(param), Code::AwaitAsIdentifier);
+						}
 						let mut params = self.items();
 						params.push(Some(param));
 						return self.parse_arrow_expression(start, params, true, for_init);
@@ -694,22 +654,27 @@ impl<const TS: bool> Parser<'_, TS> {
 					if e.parenthesized_assign.is_none() && !self.is_simple_assign_target(expr) {
 						e.parenthesized_assign = Some(start);
 					}
-					if e.parenthesized_bind.is_none() {
-						e.parenthesized_bind = Some(start);
-					}
+					e.owner = Some(expr);
 				}
 				Ok(expr)
 			}
 			TokenKind::BracketL => {
 				self.next()?;
-				let elements = self.parse_item_list(false, TokenKind::BracketR, true, true, errors)?;
-				if self.typescript() {
-					self.no_type_casts(&elements)?;
-				}
+				let elements = self.parse_expr_list(TokenKind::BracketR, true, true, errors)?;
 				let elements = self.list_from(elements);
-				Ok(self.add(NodeKind::ArrayExpression { elements }, start))
+				let array = self.add(NodeKind::ArrayExpression { elements }, start);
+				if let Some(e) = errors {
+					e.owner = Some(array);
+				}
+				Ok(array)
 			}
-			TokenKind::BraceL => self.parse_obj(false, errors),
+			TokenKind::BraceL => {
+				let object = self.parse_obj(false, errors)?;
+				if let Some(e) = errors {
+					e.owner = Some(object);
+				}
+				Ok(object)
+			}
 			TokenKind::Keyword(Keyword::Function) => {
 				self.next()?;
 				self.parse_function(start, 0, false, ForInit::No)
@@ -742,11 +707,11 @@ impl<const TS: bool> Parser<'_, TS> {
 		let mut options = None;
 		if !self.eat(TokenKind::ParenR)? {
 			self.expect(TokenKind::Comma)?;
-			if !self.after_trailing_comma(TokenKind::ParenR, false)? {
+			if !self.eat(TokenKind::ParenR)? {
 				options = Some(self.parse_maybe_assign(ForInit::No, &mut None)?);
 				if !self.eat(TokenKind::ParenR)? {
 					self.expect(TokenKind::Comma)?;
-					if !self.after_trailing_comma(TokenKind::ParenR, false)? {
+					if !self.eat(TokenKind::ParenR)? {
 						return self.unexpected();
 					}
 				}
@@ -792,124 +757,129 @@ impl<const TS: bool> Parser<'_, TS> {
 		)
 	}
 
-	/// Whether the arguments after `async` are an arrow's parameters, its `=>` eaten.
-	fn async_arrow_follows(&mut self, start: u32) -> Result<bool> {
-		if self.typescript() {
-			return self.should_parse_async_arrow(start);
-		}
-		Ok(!self.can_insert_semicolon() && self.eat(TokenKind::Arrow)?)
-	}
-
 	fn parse_paren_and_distinguish_expression(&mut self, can_be_arrow: bool, for_init: ForInit) -> Result<NodeId> {
 		let start = self.tok.start;
 		self.next()?;
-		// await_ident_pos stays: an `await` used as a name before the list still counts after it
-		let (old_yield, old_await) = (self.yield_pos, self.await_pos);
-		self.yield_pos = 0;
-		self.await_pos = 0;
-		let paren = self.parse_paren_items()?;
-
-		let arrow = can_be_arrow
-			&& if self.typescript() {
-				self.should_parse_arrow(start, &paren.items)?
-			} else {
-				!self.can_insert_semicolon()
-			};
-		if arrow && self.eat(TokenKind::Arrow)? {
-			self.check_pattern_errors(&paren.errors, false)?;
-			self.check_yield_await_in_default_params()?;
-			self.yield_pos = old_yield;
-			self.await_pos = old_await;
-			return self.parse_arrow_expression(start, paren.items, false, for_init);
+		if can_be_arrow {
+			if let Some(read) = self.plain_list(start, for_init)? {
+				return Ok(read);
+			}
+			if let Some(arrow) = self.decided_arrow(start, start, false, for_init)? {
+				return Ok(arrow);
+			}
 		}
-
-		if paren.items.is_empty() || paren.last_is_comma {
-			return self.unexpected_at(self.prev_end - 1);
-		}
-		if let Some(pos) = paren.spread_start {
-			return self.unexpected_at(pos);
-		}
-		self.check_expression_errors(&paren.errors, true)?;
-		if self.typescript() {
-			self.no_type_casts(&paren.items)?;
-		}
-		if old_yield != 0 {
-			self.yield_pos = old_yield;
-		}
-		if old_await != 0 {
-			self.await_pos = old_await;
-		}
-
-		let value = if paren.items.len() > 1 {
-			let expressions = self.list_from(paren.items);
-			self.add_with_end(
-				NodeKind::SequenceExpression { expressions },
-				paren.inner_start,
-				paren.inner_end,
-			)
-		} else {
-			let value = paren.items[0].unwrap();
-			self.recycle(paren.items);
-			value
-		};
+		let mut errors = Some(DestructuringErrors::default());
+		let value = self.parse_expression(false, &mut errors)?;
+		self.expect(TokenKind::ParenR)?;
+		self.check_expression_errors(&errors, true)?;
 		if self.options.has(Options::PARENTHESIZED) {
 			self.ast.set_parenthesized(value);
 		}
 		Ok(value)
 	}
 
-	/// Parses the comma-separated expressions after an opening paren through the closing one,
-	/// which may turn out to be arrow function parameters.
-	pub(crate) fn parse_paren_items(&mut self) -> Result<ParenItems> {
-		if self.typescript() {
-			return self.ts_list(true, Self::read_paren_items);
+	/// `()` or a list of plain names, read once: a name is the same `Identifier` as a parameter
+	/// and as an operand, so only what follows the list is left to decide. The arrow or the
+	/// parenthesized value; `None` for any other list, the parser back after its `(`.
+	fn plain_list(&mut self, start: u32, for_init: ForInit) -> Result<Option<NodeId>> {
+		let back = (self.token_snapshot(), self.ast.mark());
+		let mut names = self.items();
+		let held = matches!(self.tok.kind, TokenKind::Ident(_));
+		if held {
+			self.enter()?;
 		}
-		self.read_paren_items()
+		let plain = loop {
+			if self.is(TokenKind::ParenR) && names.is_empty() {
+				break true;
+			}
+			match self.tok.kind {
+				TokenKind::Ident(name) if self.lexer.word_flags(name) & (word::YIELD | word::AWAIT) == 0 => {}
+				_ => break false,
+			}
+			if !self.lexer.at_item_end() {
+				break false;
+			}
+			names.push(Some(self.parse_ident(false)?));
+			if self.is(TokenKind::ParenR) {
+				break true;
+			}
+			if !self.eat(TokenKind::Comma)? {
+				break false;
+			}
+		};
+		if held {
+			self.leave();
+		}
+		if plain {
+			self.next()?;
+			let arrow = self.is(TokenKind::Arrow) && (!self.tok.newline_before || names.is_empty());
+			if arrow {
+				let outer = self.open_arrow_head(false);
+				self.close_arrow_head()?;
+				self.check_arrow_head(&names, false, outer)?;
+				return self.parse_arrow_expression(start, names, false, for_init).map(Some);
+			}
+			if !names.is_empty() && !(self.is(TokenKind::Colon) && self.typescript()) {
+				let value = if names.len() > 1 {
+					let first = self.start_of(names[0].unwrap());
+					let last = self.end_of(names[names.len() - 1].unwrap());
+					let expressions = self.list_from(names);
+					self.add_with_end(NodeKind::SequenceExpression { expressions }, first, last)
+				} else {
+					let name = names[0].unwrap();
+					self.recycle(names);
+					name
+				};
+				if self.options.has(Options::PARENTHESIZED) {
+					self.ast.set_parenthesized(value);
+				}
+				return Ok(Some(value));
+			}
+		}
+		if plain || !names.is_empty() {
+			self.restore_tokens(back.0);
+			self.ast.truncate(back.1);
+		}
+		self.recycle(names);
+		Ok(None)
 	}
 
-	fn read_paren_items(&mut self) -> Result<ParenItems> {
-		let inner_start = self.tok.start;
-		let mut items = self.items();
-		let mut first = true;
-		let mut last_is_comma = false;
-		let mut spread_start = None;
-		let mut errors = Some(DestructuringErrors::default());
-		while !self.is(TokenKind::ParenR) {
-			if first {
-				first = false;
-			} else {
-				self.expect(TokenKind::Comma)?;
+	/// At a list that may be an arrow's parameters, its `(` at `at` read, the arrow when it is
+	/// one, decided before the list is read; otherwise the list is left to the caller.
+	fn decided_arrow(&mut self, start: u32, at: u32, is_async: bool, for_init: ForInit) -> Result<Option<NodeId>> {
+		let first = self.tok;
+		let outer = self.yield_await();
+		let params = match self.lexer.list_role(at, &first, self.typescript(), is_async) {
+			Role::Parameters => self.read_arrow_params(is_async)?,
+			Role::Expression => return Ok(None),
+			// with the role alone, the JavaScript copy kept the typed arrow head and the type grammar: 33 of its 133 KB
+			Role::Typed(colon) if self.typescript() => {
+				return self.try_arrow_head(start, at, Some(colon), is_async, for_init, false);
 			}
-			if self.after_trailing_comma(TokenKind::ParenR, true)? {
-				last_is_comma = true;
-				break;
+			Role::Unsure if self.typescript() => {
+				return self.try_arrow_head(start, at, None, is_async, for_init, false);
 			}
-			if self.is(TokenKind::Ellipsis) {
-				spread_start = Some(self.tok.start);
-				let rest = self.parse_rest_binding()?;
-				let rest = if matches!(self.tok.kind, TokenKind::Question | TokenKind::Colon) && self.typescript() {
-					self.paren_item(rest)?
+			Role::Typed(_) | Role::Unsure => {
+				let head = self.attempt(|p| p.read_arrow_params(is_async))?;
+				// without the outcome kept, a list in a default was tried again after every enclosing
+				// failure: 2x per level, 24 levels took 15 s
+				let role = if head.is_some() {
+					Role::Parameters
 				} else {
-					rest
+					Role::Expression
 				};
-				items.push(Some(rest));
-				if self.is(TokenKind::Comma) {
-					return self.error(self.tok.start, Code::CommaAfterRest);
+				self.lexer.roles.insert(at, role);
+				match head {
+					Some(head) => head,
+					None => {
+						self.restore_yield_await(outer);
+						return Ok(None);
+					}
 				}
-				break;
 			}
-			items.push(Some(self.parse_paren_item(ForInit::No, &mut errors)?));
-		}
-		let inner_end = self.prev_end;
-		self.expect(TokenKind::ParenR)?;
-		Ok(ParenItems {
-			items,
-			errors,
-			inner_start,
-			inner_end,
-			last_is_comma,
-			spread_start,
-		})
+		};
+		self.check_arrow_head(&params, is_async, outer)?;
+		self.parse_arrow_expression(start, params, is_async, for_init).map(Some)
 	}
 
 	fn parse_new(&mut self) -> Result<NodeId> {
@@ -939,11 +909,7 @@ impl<const TS: bool> Parser<'_, TS> {
 			return self.error(self.start_of(callee), Code::InvalidSuper);
 		}
 		let arguments = if self.eat(TokenKind::ParenL)? {
-			let args = self.parse_item_list(false, TokenKind::ParenR, true, false, &mut None)?;
-			if self.typescript() {
-				self.no_type_casts(&args)?;
-			}
-			self.list_from(args)
+			self.parse_arguments()?
 		} else {
 			List::EMPTY
 		};
@@ -952,6 +918,16 @@ impl<const TS: bool> Parser<'_, TS> {
 			self.new_expression(node);
 		}
 		Ok(node)
+	}
+
+	/// A call's arguments after their `(`.
+	// see `Parser::first_error`
+	#[inline(always)]
+	pub(crate) fn parse_arguments(&mut self) -> Result<List> {
+		let mut errors = Some(DestructuringErrors::default());
+		let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut errors)?;
+		self.check_expression_errors(&errors, true)?;
+		Ok(self.list_from(args))
 	}
 
 	pub(crate) fn parse_template(&mut self, is_tagged: bool) -> Result<NodeId> {
@@ -1065,7 +1041,7 @@ impl<const TS: bool> Parser<'_, TS> {
 				}
 				return Ok(self.add(NodeKind::RestElement { argument }, start));
 			}
-			let argument = self.parse_maybe_assign(ForInit::No, errors)?;
+			let argument = self.element(errors, |p, facts| p.parse_maybe_assign(ForInit::No, facts))?;
 			if self.is(TokenKind::Comma)
 				&& let Some(e) = errors
 				&& e.trailing_comma.is_none()
@@ -1130,7 +1106,7 @@ impl<const TS: bool> Parser<'_, TS> {
 				let s = self.tok.start;
 				self.parse_maybe_default(s, None)?
 			} else {
-				self.parse_maybe_assign(ForInit::No, errors)?
+				self.element(errors, |p, facts| p.parse_maybe_assign(ForInit::No, facts))?
 			};
 		} else if self.is(TokenKind::ParenL) {
 			if is_pattern {
@@ -1314,6 +1290,66 @@ impl<const TS: bool> Parser<'_, TS> {
 		Ok(node)
 	}
 
+	/// An arrow's parameters after their `(`, through `=>`, read as bindings.
+	pub(crate) fn read_arrow_params(&mut self, is_async: bool) -> Result<Vec<Option<NodeId>>> {
+		self.open_arrow_head(is_async);
+		// without it the limit fell a third deeper than for an expression list: `(a = ` ×450 parsed
+		let held = !self.is(TokenKind::ParenR) && !self.is(TokenKind::Ellipsis);
+		if held {
+			self.enter()?;
+		}
+		let params = self.parse_binding_list(TokenKind::ParenR, false, true, false)?;
+		if held {
+			self.leave();
+		}
+		self.close_arrow_head()?;
+		Ok(params)
+	}
+
+	/// The yield and await positions from before an arrow's parameters, which start with none.
+	fn open_arrow_head(&mut self, is_async: bool) -> (u32, u32, u32) {
+		let outer = self.yield_await();
+		(self.yield_pos, self.await_pos) = (0, 0);
+		if is_async {
+			self.await_ident_pos = 0;
+		}
+		outer
+	}
+
+	/// After an arrow's parameters: [TypeScript: `: T`], no line break, `=>`.
+	fn close_arrow_head(&mut self) -> Result<()> {
+		if self.typescript() {
+			self.arrow_return_type()?;
+		}
+		if self.can_insert_semicolon() {
+			return self.unexpected();
+		}
+		self.expect(TokenKind::Arrow)
+	}
+
+	/// What an arrow's parameters may not hold, checked once its head is read.
+	pub(crate) fn check_arrow_head(
+		&mut self,
+		params: &[Option<NodeId>],
+		is_async: bool,
+		(yield_pos, await_pos, await_ident_pos): (u32, u32, u32),
+	) -> Result<()> {
+		self.check_yield_await_in_default_params()?;
+		if is_async && self.await_ident_pos > 0 {
+			return self.error(self.await_ident_pos, Code::AwaitAsIdentifier);
+		}
+		(self.yield_pos, self.await_pos) = (yield_pos, await_pos);
+		if is_async {
+			self.await_ident_pos = await_ident_pos;
+		}
+		if self.typescript()
+			&& let Some(&this) = params.iter().flatten().find(|&&param| self.ident_is(param, "this"))
+		{
+			return self.error(self.start_of(this), Code::InvalidAssignmentTarget);
+		}
+		Ok(())
+	}
+
 	pub(crate) fn parse_arrow_expression(
 		&mut self,
 		start: u32,
@@ -1329,7 +1365,6 @@ impl<const TS: bool> Parser<'_, TS> {
 		} else {
 			None
 		};
-		let params = self.make_patterns(params, true)?;
 		let params = self.list_from(params);
 		let (body, expression) = self.parse_function_body(start, None, params, true, false, for_init)?;
 		self.restore_yield_await(old);
@@ -1412,24 +1447,6 @@ impl<const TS: bool> Parser<'_, TS> {
 		Ok(())
 	}
 
-	/// A list of expressions through `close`; in TypeScript, `parameters` says whether it may still
-	/// turn out to be a function's parameters.
-	pub(crate) fn parse_item_list(
-		&mut self,
-		parameters: bool,
-		close: TokenKind,
-		allow_trailing_comma: bool,
-		allow_empty: bool,
-		errors: &mut Errors,
-	) -> Result<Vec<Option<NodeId>>> {
-		if self.typescript() {
-			return self.ts_list(parameters, |p| {
-				p.parse_expr_list(close, allow_trailing_comma, allow_empty, errors)
-			});
-		}
-		self.parse_expr_list(close, allow_trailing_comma, allow_empty, errors)
-	}
-
 	pub(crate) fn parse_expr_list(
 		&mut self,
 		close: TokenKind,
@@ -1447,11 +1464,6 @@ impl<const TS: bool> Parser<'_, TS> {
 				None
 			} else if self.is(TokenKind::Ellipsis) {
 				let spread = self.parse_spread(errors)?;
-				let spread = if matches!(self.tok.kind, TokenKind::Question | TokenKind::Colon) && self.typescript() {
-					self.paren_item(spread)?
-				} else {
-					spread
-				};
 				if self.is(TokenKind::Comma)
 					&& let Some(e) = errors
 					&& e.trailing_comma.is_none()
@@ -1460,7 +1472,7 @@ impl<const TS: bool> Parser<'_, TS> {
 				}
 				Some(spread)
 			} else {
-				Some(self.parse_paren_item(ForInit::No, errors)?)
+				Some(self.element(errors, |p, facts| p.parse_maybe_assign(ForInit::No, facts))?)
 			};
 			elements.push(element);
 		}
@@ -1470,7 +1482,7 @@ impl<const TS: bool> Parser<'_, TS> {
 	fn parse_spread(&mut self, errors: &mut Errors) -> Result<NodeId> {
 		let start = self.tok.start;
 		self.next()?;
-		let argument = self.parse_maybe_assign(ForInit::No, errors)?;
+		let argument = self.element(errors, |p, facts| p.parse_maybe_assign(ForInit::No, facts))?;
 		Ok(self.add(NodeKind::SpreadElement { argument }, start))
 	}
 
@@ -1582,15 +1594,6 @@ impl<const TS: bool> Parser<'_, TS> {
 	}
 }
 
-pub(crate) struct ParenItems {
-	pub items: Vec<Option<NodeId>>,
-	pub errors: Errors,
-	pub inner_start: u32,
-	pub inner_end: u32,
-	pub last_is_comma: bool,
-	pub spread_start: Option<u32>,
-}
-
 #[derive(Clone, Copy)]
 enum Op {
 	Binary(BinaryOperator),
@@ -1599,12 +1602,7 @@ enum Op {
 }
 
 impl<const TS: bool> Parser<'_, TS> {
-	pub(crate) fn make_pattern(
-		&mut self,
-		id: NodeId,
-		is_binding: bool,
-		errors: &mut Option<DestructuringErrors>,
-	) -> Result<NodeId> {
+	pub(crate) fn make_pattern(&mut self, id: NodeId, errors: &mut Option<DestructuringErrors>) -> Result<NodeId> {
 		let start = self.start_of(id);
 		match self.kind(id) {
 			NodeKind::Identifier { name } => {
@@ -1618,10 +1616,10 @@ impl<const TS: bool> Parser<'_, TS> {
 			| NodeKind::RestElement { .. } => {}
 			NodeKind::ObjectExpression { properties } => {
 				self.ast.node_mut(id).kind = NodeKind::ObjectPattern { properties };
-				self.check_pattern_errors(errors, true)?;
+				self.check_pattern_errors(errors)?;
 				for i in 0..properties.len {
 					let prop = self.nth(properties, i).unwrap();
-					self.make_pattern(prop, is_binding, &mut None)?;
+					self.make_pattern(prop, &mut None)?;
 					if let NodeKind::RestElement { argument } = self.kind(prop)
 						&& matches!(
 							self.kind(argument),
@@ -1635,7 +1633,7 @@ impl<const TS: bool> Parser<'_, TS> {
 				if kind != PropertyKind::Init {
 					return self.error(self.start_of(key), Code::AccessorInPattern);
 				}
-				let pattern = self.make_pattern(value, is_binding, &mut None)?;
+				let pattern = self.make_pattern(value, &mut None)?;
 				if pattern != value
 					&& let NodeKind::Property { value, .. } = &mut self.ast.node_mut(id).kind
 				{
@@ -1644,15 +1642,15 @@ impl<const TS: bool> Parser<'_, TS> {
 			}
 			NodeKind::ArrayExpression { elements } => {
 				self.ast.node_mut(id).kind = NodeKind::ArrayPattern { elements };
-				self.check_pattern_errors(errors, true)?;
+				self.check_pattern_errors(errors)?;
 				for i in 0..elements.len {
 					if let Some(element) = self.nth(elements, i) {
-						self.make_pattern(element, is_binding, &mut None)?;
+						self.make_pattern(element, &mut None)?;
 					}
 				}
 			}
 			NodeKind::SpreadElement { argument } => {
-				let argument = self.make_pattern(argument, is_binding, &mut None)?;
+				let argument = self.make_pattern(argument, &mut None)?;
 				self.ast.node_mut(id).kind = NodeKind::RestElement { argument };
 				if matches!(self.kind(argument), NodeKind::AssignmentPattern { .. }) {
 					return self.error(self.start_of(argument), Code::RestWithDefault);
@@ -1662,15 +1660,15 @@ impl<const TS: bool> Parser<'_, TS> {
 				if operator != AssignmentOperator::Assign {
 					return self.error(self.end_of(left), Code::InvalidDefaultOperator);
 				}
-				let left = self.make_pattern(left, is_binding, &mut None)?;
+				let left = self.make_pattern(left, &mut None)?;
 				self.ast.node_mut(id).kind = NodeKind::AssignmentPattern { left, right };
 			}
 			NodeKind::ChainExpression { .. } => {
 				return self.error(start, Code::OptionalChainAssignment);
 			}
-			NodeKind::MemberExpression { .. } if !is_binding => {}
+			NodeKind::MemberExpression { .. } => {}
 			NodeKind::Extension(_) => {
-				return match self.ts_make_pattern(id, is_binding, errors)? {
+				return match self.ts_make_pattern(id, errors)? {
 					Some(pattern) => Ok(pattern),
 					None => self.error(start, Code::InvalidAssignmentTarget),
 				};
@@ -1678,17 +1676,6 @@ impl<const TS: bool> Parser<'_, TS> {
 			_ => return self.error(start, Code::InvalidAssignmentTarget),
 		}
 		Ok(id)
-	}
-
-	pub(crate) fn make_patterns(
-		&mut self,
-		mut items: Vec<Option<NodeId>>,
-		is_binding: bool,
-	) -> Result<Vec<Option<NodeId>>> {
-		for item in items.iter_mut().flatten() {
-			*item = self.make_pattern(*item, is_binding, &mut None)?;
-		}
-		Ok(items)
 	}
 
 	pub(crate) fn parse_binding_atom(&mut self) -> Result<NodeId> {
@@ -1729,7 +1716,7 @@ impl<const TS: bool> Parser<'_, TS> {
 			}
 			if allow_empty && self.is(TokenKind::Comma) {
 				elements.push(None);
-			} else if allow_trailing_comma && self.after_trailing_comma(close, false)? {
+			} else if allow_trailing_comma && self.eat(close)? {
 				break;
 			} else {
 				let parameter = match close {

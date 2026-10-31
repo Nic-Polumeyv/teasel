@@ -172,8 +172,6 @@ codes! {
 	InvalidBindingTarget,
 	/// A member expression where a binding is needed.
 	BindingMemberExpression,
-	/// A parenthesized pattern.
-	ParenthesizedPattern,
 	/// A parenthesized expression where a binding is needed.
 	BindingParenthesized,
 	/// An optional chain assigned to.
@@ -330,8 +328,6 @@ codes! {
 	TypeImportDefaultAndNamed,
 	/// `type` on a name of an `import type` or `export type`.
 	TypeModifierInTypeImport,
-	/// A type annotation where none can be.
-	UnexpectedTypeAnnotation,
 	/// A type annotation after a default value.
 	TypeAnnotationAfterDefault,
 	/// `<>` with no type arguments.
