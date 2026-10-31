@@ -22,7 +22,7 @@ The parse started at offset 3, read an expression instead of a program, and stop
 
 ## Pieces
 
-The second argument of `parseAt` is the piece to read, and the third is the offset it starts at. A piece inside a range reads the text cut at the range's end, since a position depends only on the text before it.
+The second argument of `parseAt` is the piece to read, and the third is the offset it starts at. A piece inside a range reads the text cut at the range's end, since a position depends only on the text before it, as long as the cut splits neither a `\r\n` nor a surrogate pair.
 
 ```text
 parseAt(text, js.expression, 7)        the expression starting at 7

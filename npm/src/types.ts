@@ -150,9 +150,8 @@ export interface Recovered {
 }
 
 export declare const answers: unique symbol;
-/** What `parse` asks the engine for, on a language: the entry by its index in `Entry` of parser/mod.rs, and a grammar's plan, what the engine made of it, with the names its documents' rows number. Here and not in `grammar.ts`, so the entry reads the key without loading the builders and the encoder. */
+/** Here and not in `grammar.ts`, so the entry reads the key without loading the builders and the encoder. */
 export const LANGUAGE = Symbol('language');
-/** What `parseAt` asks the engine for, on a piece: the entry, and the host's stop tokens. */
 export const PIECE = Symbol('piece');
 /** What `parse` reads, the whole text: JavaScript, CSS, or a host language by its grammar. `T` is what its parse answers with. */
 export interface Language<T> {

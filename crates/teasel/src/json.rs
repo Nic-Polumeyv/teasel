@@ -1,7 +1,7 @@
 //! One entry for every front end: a request describes what to parse and how, and the answer is
 //! ESTree JSON, with `node` null and the one error listed when the parse failed; a request the
 //! engine cannot take answers a JSON object with an `error`: its code, the reason as its argument,
-//! and the offset.
+//! and the offset. Read in place, it is refused with the reason.
 
 use std::rc::Rc;
 
@@ -408,8 +408,6 @@ fn to_json(source: &str, request: &Request, stop: &str, host: Option<&Grammar>) 
 const FAILED: u32 = 1;
 const TYPESCRIPT: u32 = 2;
 
-/// Runs a request with the session's buffers and answers it as JSON into `json`, or read in place
-/// with its words at `words`. A document is TypeScript when its grammar says so of a script tag.
 fn answer_to(
 	source: &str,
 	positions: &Positions,

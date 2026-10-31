@@ -45,8 +45,6 @@ node.fragment.nodes[0].fragment.nodes[0];
 
 In TypeScript, and in JavaScript checked with JSDoc, the tree is typed from the definition: `node.fragment.nodes[0]` is an `Element`, an `IfBlock` or one of the others the grammar names, and `EachBlock`'s `item` is a `Pattern`. A field named `type`, or `bind` on a source that reads an expression, is a type error. A tag that reads content is a type error too, and what the engine could not parse with is refused by `grammar` itself, with a message naming the rule. A rule written apart from the grammar, to share it, keeps its types with `as const`.
 
-A grammar reads the whole source, so `parse` takes no position with one.
-
 ## The tree
 
 The grammar names what its nodes mean: their types, and the fields a construct reads. What every markup language has is named the same in every grammar:
