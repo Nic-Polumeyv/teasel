@@ -451,7 +451,7 @@ fn a_definition_is_refused_by_name() {
 	);
 	let error = Grammar::read(with_if(list![test, close, consequent], &[])).unwrap_err();
 	assert!(
-		error.contains("IfBlock: consequent is its one list, which is its fragment"),
+		error.contains("IfBlock: its one list is teasel's fragment, not consequent"),
 		"{error}"
 	);
 	let grammar = Grammar::read(with_if(
@@ -505,10 +505,7 @@ fn a_definition_is_refused_by_name() {
 	let error = Grammar::read(on("flag")).unwrap_err();
 	assert!(error.contains("OnDirective: flag is a flag"), "{error}");
 	let error = Grammar::read(on("modifiers")).unwrap_err();
-	assert!(
-		error.contains("OnDirective: modifiers is every directive's own"),
-		"{error}"
-	);
+	assert!(error.contains("OnDirective: modifiers is teasel's"), "{error}");
 	let mut host = minimal();
 	host.definition.document.form = Some(list![definition::Item::Fields(Record(list![(
 		"js",
@@ -866,7 +863,7 @@ fn a_definition_says_only_what_is_read() {
 	);
 	refused(
 		directive(list![fields(list![("name", source("value", "expression", false))])]),
-		"OnDirective: name is every directive's own",
+		"OnDirective: name is teasel's",
 	);
 	refused(
 		directive(list![fields(list![
@@ -896,7 +893,7 @@ fn a_definition_says_only_what_is_read() {
 	);
 	refused(
 		svelte_element(list![fields(list![("fragment", source("element", "this", false))])]),
-		"SvelteElement: fragment is every element's own",
+		"SvelteElement: fragment is teasel's",
 	);
 
 	refused(
@@ -905,19 +902,19 @@ fn a_definition_says_only_what_is_read() {
 			definition::Item::Word("}"),
 			fields(list![("body", source("content", "fragment", false))]),
 		]),
-		"EachBlock: body is its one list, which is its fragment",
+		"EachBlock: its one list is teasel's fragment, not body",
 	);
 	refused(
 		with_block(list![
 			fields(list![("fragment", source("js", "expression", false))]),
 			definition::Item::Word("}"),
 		]),
-		"EachBlock: fragment is its content's",
+		"EachBlock: fragment is teasel's",
 	);
 
 	let mut host = minimal();
 	host.definition.document.form = Some(list![fields(list![("fragment", source("doc", "comments", false))])]);
-	refused(host, "fragment on the document is its content's");
+	refused(host, "the document: fragment is teasel's");
 
 	let mut host = minimal();
 	elements(&mut host).rules = Some(Record(list![
@@ -1158,10 +1155,16 @@ fn a_grammar_that_cannot_work_is_refused() {
 
 	let mut host = minimal();
 	host.definition.document.form = Some(list![content("children")]);
-	refused(
-		host,
-		"children on the document: its content is its fragment, which it does not name",
-	);
+	refused(host, "the document: its content is teasel's fragment, not children");
+	let mut host = minimal();
+	host.definition.constructs = Some(Record(list![(
+		"Text",
+		block("x", list![definition::Item::Word("}")], &[])
+	)]));
+	refused(host, "a node type named Text is teasel's");
+	let mut host = minimal();
+	host.definition.document = node("Fragment", &[]);
+	refused(host, "a node type named Fragment is teasel's");
 	let mut host = minimal();
 	host.definition.document.form = Some(list![fields(list![
 		("comments", source("doc", "comments", false)),

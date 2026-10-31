@@ -685,8 +685,6 @@ impl<'a> Walker<'a> {
 		)
 	}
 
-	/// The scopes an element opens, over the fields about to make its node: one for what its
-	/// directives declare, over its attributes and fragment, and its fragment's.
 	fn element_scope(&mut self, fields: &[(Name, Value)], declared: &[NodeId]) -> Opens {
 		let attributes = fields.len() - 2;
 		let Value::Node(fragment) = fields[attributes + 1].1 else {

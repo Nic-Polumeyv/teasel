@@ -153,7 +153,7 @@ export interface Node<T extends string = string, I extends readonly Item[] = rea
 	readonly form?: I;
 }
 
-type BlockForm = Form<Field<'form', false | 'inside' | 'outside'> | Field<'body'>>;
+type BlockForm = Form<Field<'form', false | 'inside' | 'outside'> | Field<'body'>, 'fragment'>;
 type TagForm = Form<Field<'form'>>;
 
 /** Where a construct may stand: in content, in an attribute value, among an element's attributes, in the text of an rcdata element. */

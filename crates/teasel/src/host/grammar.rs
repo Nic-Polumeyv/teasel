@@ -1107,8 +1107,8 @@ pub struct Shorthand {
 
 #[derive(Clone, Debug)]
 pub enum DirectiveValue {
-	/// The one expression of the attribute value, `on:click={handler}`, into `field`; `name` makes
-	/// the directive's own argument the expression when there is no value: `bind:value`.
+	/// The one expression of the attribute value, `on:click={handler}`; `name` makes the
+	/// directive's own argument the expression when there is no value: `bind:value`.
 	Expression { field: Name, optional: bool, name: bool },
 	/// The one pattern of the attribute value, `let:item={{ id }}`.
 	Pattern { field: Name, optional: bool, name: bool },
@@ -1132,7 +1132,6 @@ pub enum Unique {
 pub struct DirectiveRule {
 	pub name: Match,
 	pub ty: Name,
-	/// The fields that take the directive's own name and its attribute name as written.
 	pub kind: Option<Name>,
 	pub raw: Option<Name>,
 	pub value: DirectiveValue,
@@ -1566,12 +1565,11 @@ fn sources<'a>(items: &[definition::Item<'a>]) -> Vec<(&'static str, &'a Source)
 		.collect()
 }
 
-/// Whether a body stands anywhere among `items`, groups included.
-fn has_body(items: &[definition::Item]) -> bool {
+fn reads(items: &[definition::Item], what: fn(&Source) -> bool) -> bool {
 	items.iter().any(|item| match item {
-		definition::Item::Fields(record) => record.0.iter().any(|(_, s)| s.from == "content"),
-		definition::Item::Opt(inner) | definition::Item::Scope(inner) => has_body(inner),
-		definition::Item::OneOf(list) => list.iter().any(|inner| has_body(inner)),
+		definition::Item::Fields(record) => record.0.iter().any(|(_, s)| what(s)),
+		definition::Item::Opt(inner) | definition::Item::Scope(inner) => reads(inner, what),
+		definition::Item::OneOf(list) => list.iter().any(|inner| reads(inner, what)),
 		definition::Item::Word(_) => false,
 	})
 }
@@ -1621,14 +1619,8 @@ fn token(what: &str, s: &str) -> Result<(), String> {
 	Ok(())
 }
 
-/// Whether a flag or a directive's name stands anywhere in `items`, groups included.
-fn has_fixed(items: &[definition::Item]) -> bool {
-	items.iter().any(|item| match item {
-		definition::Item::Fields(record) => record.0.iter().any(|(_, s)| fixed(s)),
-		definition::Item::Opt(inner) | definition::Item::Scope(inner) => has_fixed(inner),
-		definition::Item::OneOf(list) => list.iter().any(|inner| has_fixed(inner)),
-		definition::Item::Word(_) => false,
-	})
+fn teasels(owner: &str, what: impl std::fmt::Display) -> String {
+	format!("{owner}: {what} is teasel's")
 }
 
 fn fixed(s: &Source) -> bool {
@@ -1679,7 +1671,7 @@ fn sequence(
 					_ => unreachable!(),
 				};
 				let alternatives = alternatives(ty, list, site, bound, n)?;
-				if list.iter().any(|items| has_body(items)) {
+				if list.iter().any(|items| reads(items, |s| s.from == "content")) {
 					let last = site == At::Block && at == items.len() - 1;
 					if !last || !required || !alternatives.iter().all(|a| closed(&a.items, a.body.as_ref())) {
 						return Err(format!(
@@ -1694,7 +1686,7 @@ fn sequence(
 					after: &[],
 				});
 			}
-			definition::Item::Scope(_) => return Err(format!("{ty}: a scope belongs to the document or the fragment")),
+			definition::Item::Scope(_) => return Err(format!("{ty}: a scope belongs to the document")),
 			definition::Item::Fields(record) => {
 				for (field, source) in record.0 {
 					match source.from {
@@ -1759,7 +1751,11 @@ fn alternatives(
 			}
 			// an alternative ending in a body declares what was bound before the group too
 			let mut own = bound.clone();
-			let bound = if has_body(items) { &mut own } else { &mut *bound };
+			let bound = if reads(items, |s| s.from == "content") {
+				&mut own
+			} else {
+				&mut *bound
+			};
 			let (items, body) = sequence(ty, items, site, bound, n)?;
 			Ok(Alternative { items, body })
 		})
@@ -1774,9 +1770,7 @@ fn holds(field: &str, source: &Source) -> Result<RootField, String> {
 		(_, "script", _) => RootField::Script { module: false },
 		(_, "script:module", _) => RootField::Script { module: true },
 		("content", _, _) => {
-			return Err(format!(
-				"{field} on the document: its content is its fragment, which it does not name"
-			));
+			return Err(format!("the document: its content is teasel's fragment, not {field}"));
 		}
 		(_, "style", _) => RootField::Style,
 		(_, "comments", _) => RootField::Comments,
@@ -1792,7 +1786,7 @@ fn scoped(items: &[definition::Item], reads: &mut Vec<&'static str>, n: &mut Nam
 			definition::Item::Fields(record) => {
 				for (field, source) in record.0 {
 					if *field == "fragment" {
-						return Err("fragment on the document is its content's".into());
+						return Err(teasels("the document", "fragment"));
 					}
 					if source.from != "literal" {
 						if reads.contains(&source.read) {
@@ -1833,7 +1827,7 @@ fn element(name: Match, rule: &definition::Element, n: &mut Naming) -> Result<El
 				&& matches!(fields[0].1.read, "this" | "this:text") =>
 		{
 			if matches!(fields[0].0, "name" | "attributes" | "fragment") {
-				return Err(format!("{}: {} is every element's own", rule.node, fields[0].0));
+				return Err(teasels(rule.node, fields[0].0));
 			}
 			Some((n.name(fields[0].0), fields[0].1.read == "this:text"))
 		}
@@ -1861,8 +1855,8 @@ fn directive(name: Match, rule: &definition::Directive, n: &mut Naming) -> Resul
 	let items = rule.form.unwrap_or_default();
 	let ty = rule.node;
 	let grouped = items.iter().any(|item| match item {
-		definition::Item::Opt(inner) | definition::Item::Scope(inner) => has_fixed(inner),
-		definition::Item::OneOf(list) => list.iter().any(|inner| has_fixed(inner)),
+		definition::Item::Opt(inner) | definition::Item::Scope(inner) => reads(inner, fixed),
+		definition::Item::OneOf(list) => list.iter().any(|inner| reads(inner, fixed)),
 		_ => false,
 	});
 	if grouped {
@@ -1874,7 +1868,7 @@ fn directive(name: Match, rule: &definition::Directive, n: &mut Naming) -> Resul
 		.into_iter()
 		.find(|field| matches!(*field, "name" | "modifiers"))
 	{
-		return Err(format!("{ty}: {field} is every directive's own"));
+		return Err(teasels(ty, field));
 	}
 	let (mut flags, mut kind, mut raw) = (Vec::new(), None, None);
 	for (field, s) in sources(items) {
@@ -1888,7 +1882,7 @@ fn directive(name: Match, rule: &definition::Directive, n: &mut Naming) -> Resul
 					return Err(format!("{ty} reads the directive's {read} twice"));
 				}
 			}
-			("directive", read, _) => return Err(format!("{ty}: {field} reads the directive's {read}")),
+			("directive", read, _) => return Err(teasels(ty, format!("the directive's {read}"))),
 			_ => {}
 		}
 	}
@@ -2078,7 +2072,7 @@ fn construct(ty: &'static str, rule: &definition::Construct, n: &mut Naming) -> 
 	}
 	if block && lists.is_empty() {
 		if fields_in(ty, rule.open.form)?.contains(&"fragment") {
-			return Err(format!("{ty}: fragment is its content's"));
+			return Err(teasels(ty, "fragment"));
 		}
 		open.form.body = Some(Body {
 			field: own::fragment,
@@ -2092,7 +2086,7 @@ fn construct(ty: &'static str, rule: &definition::Construct, n: &mut Naming) -> 
 	}
 	if let ([(only, _)], true) = (&lists[..], block) {
 		return Err(format!(
-			"{ty}: {} is its one list, which is its fragment",
+			"{ty}: its one list is teasel's fragment, not {}",
 			n.text(*only)
 		));
 	}
@@ -2378,6 +2372,15 @@ impl Grammar {
 			}
 		}
 		self.firsts = firsts;
+		let named = std::iter::once(self.document.ty)
+			.chain(self.elements.iter().map(|rule| rule.ty))
+			.chain(self.directives.iter().map(|rule| rule.ty))
+			.chain(self.constructs.iter().map(|rule| rule.ty));
+		for ty in named.map(|ty| self.text(ty)) {
+			if matches!(ty, "Fragment" | "Text" | "Comment" | "Attribute" | "Script") {
+				return Err(format!("a node type named {ty} is teasel's"));
+			}
+		}
 		for (ty, _) in self.own_children() {
 			if crate::recipe::names_type(ty) {
 				return Err(format!("a node type named {ty} is JavaScript's"));

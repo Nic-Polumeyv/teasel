@@ -170,7 +170,7 @@ referenceOf(repeat.list).binding;                         // null: declared outs
 
 Each color is one part of the language. Hover a part, or a line of it, to bring it forward, and follow its step to see why it is there.
 
-![the whole grammar, colored by part: the file and its text, elements and components, expressions, the repeat block and the empty branch, each keyed to its step](Whole.svelte "tpl.js")
+![the whole grammar, colored by part: the file, elements and components, expressions, the repeat block and the empty branch, each keyed to its step](Whole.svelte "tpl.js")
 
 In TypeScript, and in JavaScript checked with JSDoc, every node is typed from it:
 
