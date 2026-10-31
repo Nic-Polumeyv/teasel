@@ -19,7 +19,7 @@ Each option adds one key to the answer, or one property to the nodes. A key is p
 ![the answer is an object with node and end, and with comments, errors, typescript, scopes, bindings, references and roots tables when their option is on](Answer.svelte)
 
 - `locations` puts `loc`, with line and column, on every node.
-- `comments` adds `comments`, every comment in source order, and puts `leadingComments`, `trailingComments` and `innerComments` on the nodes.
+- `comments` adds `comments`, every comment in source order, and puts the same objects in `leadingComments`, `trailingComments` and `innerComments` on the nodes.
 - `scopes` adds `scopes`, `bindings` and `references`, and lets you ask any node what it declares or refers to. See [Scopes](/scopes).
 - `errorRecovery` adds `errors` and returns a tree instead of throwing. See [Errors](/errors).
 - `typescript` reads TypeScript. `typescript: 'erase'` also removes it, and adds `typescript`, the list of what could not be removed. See [TypeScript](/typescript).

@@ -2,7 +2,7 @@
 	"node": {
 		"type": "Root",
 		"start": 0,
-		"end": 500,
+		"end": 499,
 		"scope": 0,
 		"css": null,
 		"js": [],
@@ -88,15 +88,15 @@
 			},
 			{
 				"type": "Block",
-				"value": " trails a ",
+				"value": " leads b ",
 				"start": 437,
-				"end": 451
+				"end": 450
 			},
 			{
 				"type": "Block",
 				"value": " trails ok ",
-				"start": 478,
-				"end": 493
+				"start": 477,
+				"end": 492
 			}
 		],
 		"instance": {
@@ -417,7 +417,7 @@
 				{
 					"type": "SnippetBlock",
 					"start": 394,
-					"end": 468,
+					"end": 467,
 					"expression": {
 						"type": "Identifier",
 						"start": 404,
@@ -441,22 +441,22 @@
 									"end": 433
 								}
 							],
-							"trailingComments": [
-								{
-									"type": "Block",
-									"value": " trails a ",
-									"start": 437,
-									"end": 451
-								}
-							],
 							"name": "a"
 						},
 						{
 							"type": "Identifier",
-							"start": 452,
-							"end": 453,
+							"start": 451,
+							"end": 452,
 							"declares": 4,
 							"root": 10,
+							"leadingComments": [
+								{
+									"type": "Block",
+									"value": " leads b ",
+									"start": 437,
+									"end": 450
+								}
+							],
 							"name": "b"
 						}
 					],
@@ -466,12 +466,12 @@
 						"nodes": [
 							{
 								"type": "ExpressionTag",
-								"start": 455,
-								"end": 458,
+								"start": 454,
+								"end": 457,
 								"expression": {
 									"type": "Identifier",
-									"start": 456,
-									"end": 457,
+									"start": 455,
+									"end": 456,
 									"reference": 6,
 									"root": 11,
 									"name": "a"
@@ -482,27 +482,27 @@
 				},
 				{
 					"type": "Text",
-					"start": 468,
-					"end": 470,
+					"start": 467,
+					"end": 469,
 					"raw": "\n\n",
 					"data": "\n\n"
 				},
 				{
 					"type": "IfBlock",
-					"start": 470,
-					"end": 499,
+					"start": 469,
+					"end": 498,
 					"test": {
 						"type": "Identifier",
-						"start": 475,
-						"end": 477,
+						"start": 474,
+						"end": 476,
 						"reference": 7,
 						"root": 12,
 						"trailingComments": [
 							{
 								"type": "Block",
 								"value": " trails ok ",
-								"start": 478,
-								"end": 493
+								"start": 477,
+								"end": 492
 							}
 						],
 						"name": "ok"
@@ -518,7 +518,7 @@
 			]
 		}
 	},
-	"end": 500,
+	"end": 499,
 	"comments": [
 		{
 			"type": "Block",
@@ -600,15 +600,15 @@
 		},
 		{
 			"type": "Block",
-			"value": " trails a ",
+			"value": " leads b ",
 			"start": 437,
-			"end": 451
+			"end": 450
 		},
 		{
 			"type": "Block",
 			"value": " trails ok ",
-			"start": 478,
-			"end": 493
+			"start": 477,
+			"end": 492
 		}
 	],
 	"scopes": [
