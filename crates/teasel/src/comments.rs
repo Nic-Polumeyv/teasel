@@ -1,13 +1,14 @@
 //! Attaches comments to nodes, for tools that read directives from them or print with them. A
 //! comment before a node leads the first node that starts after it; a comment after a node,
 //! separated from it by nothing but spaces, commas and closing parens, trails it, unless it is
-//! past a comma with code after it on its line: that code it leads, as `/* @__PURE__ */` does.
+//! past a comma with code after it on its line, which it then leads.
 //! The last node of a block, program, array or object takes everything up to the closing
 //! bracket, and an empty one keeps what is inside it as `innerComments`; what is left trails the
 //! root. Children are visited in source order. A host's own nodes take no comments: those stay
 //! in the list alone.
 
 use crate::ast::{Ast, Attached, List, NodeId, NodeKind, Slots};
+use crate::lexer::scan::{is_new_line, is_space};
 
 /// Attaches the comments at or after `from` to the trees under `roots`, in order, replacing any
 /// earlier attachment; what is left trails the last one.
@@ -29,6 +30,7 @@ pub fn attach(ast: &mut Ast, source: &str, roots: List, from: u32) {
 		next: first as u32,
 		attached,
 		scratch: Vec::new(),
+		asked: (u32::MAX, false),
 	};
 	for i in 0..roots.len {
 		let root = attacher.ast.nth(roots, i).unwrap();
@@ -55,6 +57,7 @@ struct Attacher<'a> {
 	next: u32,
 	attached: Slots<Attached>,
 	scratch: Vec<NodeId>,
+	asked: (u32, bool),
 }
 
 impl Attacher<'_> {
@@ -123,14 +126,11 @@ impl Attacher<'_> {
 				self.take(node, Place::Trailing);
 			}
 		} else if parent.is_some_and(|p| self.is_host(p)) {
-			// the last JavaScript before the host's own syntax resumes takes what lies between,
-			// as long as nothing but blanks, commas and closing parens leads to it
+			// the last JavaScript before the host's own syntax resumes takes what lies between
 			let mut from = end;
 			while let Some(c) = self.peek() {
 				let at = self.start(c);
-				if at >= limit
-					|| (at >= from && !self.only_blanks_or_separators(from, at))
-					|| self.leads_past_comma(end, c)
+				if at >= limit || (at >= from && !self.only_blanks_or_separators(from, at)) || self.leads_past_comma(c)
 				{
 					break;
 				}
@@ -139,40 +139,51 @@ impl Attacher<'_> {
 			}
 		} else if end <= self.start(comment)
 			&& self.only_separators(end, self.start(comment))
-			&& !self.leads_past_comma(end, comment)
+			&& !self.leads_past_comma(comment)
 		{
 			self.take(node, Place::Trailing);
 		}
 	}
 
-	/// Whether `comment` is past a comma after `end` with code after it on its line, past blanks
-	/// and other comments on it: that code it leads. Another comma is no code: it closes a hole.
-	fn leads_past_comma(&self, end: u32, comment: u32) -> bool {
-		let bytes = self.source.as_bytes();
-		if !bytes
-			.get(end as usize..self.start(comment) as usize)
-			.is_some_and(|gap| gap.contains(&b','))
-		{
-			return false;
+	fn leads_past_comma(&mut self, comment: u32) -> bool {
+		// every ancestor asks about the same comment: without this, depth × the run of comments after it
+		if self.asked.0 == comment {
+			return self.asked.1;
 		}
+		let leads = self.past_comma(comment) && self.code_follows(comment);
+		self.asked = (comment, leads);
+		leads
+	}
+
+	fn past_comma(&self, comment: u32) -> bool {
+		let before = self.source[..self.start(comment) as usize].trim_end_matches(is_space);
+		let after_comment = comment > 0 && self.ast.comments[comment as usize - 1].end as usize >= before.len();
+		!after_comment && before.ends_with(',')
+	}
+
+	fn code_follows(&self, comment: u32) -> bool {
 		let mut at = self.ast.comments[comment as usize].end as usize;
 		let mut next = comment as usize + 1;
 		loop {
-			while bytes.get(at).is_some_and(|b| matches!(b, b' ' | b'\t')) {
-				at += 1;
-			}
+			let rest = &self.source[at..];
+			at += rest.len() - rest.trim_start_matches(|c| is_space(c) && !is_new_line(c)).len();
 			match self.ast.comments.get(next) {
 				Some(c) if c.start as usize == at => {
-					if bytes[at..c.end as usize].iter().any(|b| matches!(b, b'\n' | b'\r')) {
+					if self.source[at..c.end as usize].contains(is_new_line) {
 						return false;
 					}
 					at = c.end as usize;
 					next += 1;
 				}
-				_ => break,
+				// a comma after the comment closes an array hole, and `>` a type list
+				_ => {
+					return self.source[at..]
+						.chars()
+						.next()
+						.is_some_and(|c| !is_new_line(c) && !matches!(c, ',' | ')' | ']' | '}' | '>'));
+				}
 			}
 		}
-		!matches!(bytes.get(at), None | Some(b'\n' | b'\r' | b',' | b')' | b']' | b'}'))
 	}
 
 	fn is_host(&self, node: NodeId) -> bool {
@@ -252,15 +263,19 @@ mod tests {
 	}
 
 	fn module(src: &str) -> Vec<String> {
-		at(Entry::Program, src, 0)
+		at(Entry::Program, src, 0, 0)
+	}
+
+	fn typescript(src: &str) -> Vec<String> {
+		at(Entry::Program, src, 0, Options::TYPESCRIPT)
 	}
 
 	fn expression(src: &str, offset: u32) -> Vec<String> {
-		at(Entry::Expression, src, offset)
+		at(Entry::Expression, src, offset, 0)
 	}
 
-	fn at(entry: Entry, src: &str, offset: u32) -> Vec<String> {
-		let options = Options(Options::MODULE);
+	fn at(entry: Entry, src: &str, offset: u32, on: u32) -> Vec<String> {
+		let options = Options(Options::MODULE | on);
 		let (mut ast, parsed) = crate::parse_at(src, offset, None, entry, options, "");
 		let (roots, _) = parsed.unwrap();
 		super::attach(&mut ast, src, roots, offset);
@@ -302,6 +317,26 @@ mod tests {
 		);
 		assert_eq!(module("f(a, /* a */)"), [r#"Identifier leading=[] trailing=[" a "]"#]);
 		assert_eq!(module("[a, /* a */, ];"), [r#"Identifier leading=[] trailing=[" a "]"#]);
+		assert_eq!(
+			module("f(a, ) /* a */ + 1;"),
+			[r#"Identifier leading=[] trailing=[" a "]"#]
+		);
+		assert_eq!(
+			module("f(a, // a\u{2028});"),
+			[r#"Identifier leading=[] trailing=[" a"]"#]
+		);
+		assert_eq!(
+			module("f(a, /* a */\u{a0}\n g());"),
+			[r#"Identifier leading=[] trailing=[" a "]"#]
+		);
+		assert_eq!(
+			typescript("f<A, /* a */>(x);"),
+			[r#"Extension leading=[] trailing=[" a "]"#]
+		);
+		assert_eq!(
+			typescript("interface I { a: string, /* b */ b: number }"),
+			[r#"Extension leading=[" b "] trailing=[]"#]
+		);
 	}
 
 	#[test]
