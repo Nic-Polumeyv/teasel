@@ -305,7 +305,8 @@ interface State {
 	parenthesized: Uint32Array | null;
 	erased: Uint32Array | null;
 	comments: Uint32Array;
-	comment_count: number;
+	/** Each comment's object by number once built: a comment is one object wherever it is listed. */
+	made: Decoded[];
 	attached_slots: Uint32Array | null;
 	attached: Uint32Array;
 	hosts: Uint32Array;
@@ -400,7 +401,12 @@ function comment(S: State, index: number, parent: Decoded | undefined): Decoded 
 function run_of_comments(S: State, n: Decoded, key: string, start: number, len: number) {
 	if (len === 0) return;
 	const list = new Array<Decoded>(len);
-	for (let i = 0; i < len; i++) list[i] = comment(S, start + i, n);
+	for (let i = 0; i < len; i++) {
+		let c = S.made[start + i];
+		if (c === undefined) S.made[start + i] = c = comment(S, start + i, n);
+		else if (S.link) c[PARENT] = n;
+		list[i] = c;
+	}
 	n[key] = list;
 }
 
@@ -1249,8 +1255,8 @@ function builders(C: Compiled, G: Language, config: number, typescript: boolean)
 }
 
 function comments(S: State, parent: Decoded | undefined): Decoded[] {
-	const out = new Array<Decoded>(S.comment_count);
-	for (let i = 0; i < S.comment_count; i++) out[i] = comment(S, i, parent);
+	const out = new Array<Decoded>(S.made.length);
+	for (let i = 0; i < out.length; i++) out[i] = S.made[i] ??= comment(S, i, parent);
 	return out;
 }
 
@@ -1363,7 +1369,7 @@ export function decode(words: Uint32Array, source: string, engine: Views, flags:
 			parenthesized: null,
 			erased: null,
 			comments: tree[at.comments] as Uint32Array,
-			comment_count: 0,
+			made: NO_ROWS,
 			attached_slots: null,
 			attached: tree[at.attached] as Uint32Array,
 			hosts: tree[at.hosts] as Uint32Array,
@@ -1400,7 +1406,8 @@ export function decode(words: Uint32Array, source: string, engine: Views, flags:
 	S.po = spans ? C.R.span.start : C.layout.node.start >> 2;
 	S.parenthesized = filled(tree, words, lens, at.parenthesized);
 	S.erased = erase ? filled(tree, words, lens, at.erased) : null;
-	S.comment_count = words[lens + at.comments] / C.R.comment.words;
+	const count = words[lens + at.comments] / C.R.comment.words;
+	S.made = count === 0 ? NO_ROWS : new Array(count);
 	S.attached_slots = filled(tree, words, lens, at.attached_slots);
 	S.of_node = scoped ? (tree[at.of_node] as Uint32Array) : null;
 	S.extras_slots = typescript ? filled(tree, words, lens, at.extras_slots) : null;
@@ -1415,27 +1422,31 @@ export function decode(words: Uint32Array, source: string, engine: Views, flags:
 		S.references = table(S, tree, words, lens, rows.references, at.references);
 		S.roots = table(S, tree, words, lens, rows.roots, at.roots);
 	}
-	let node: Decoded | Decoded[] | null = null;
-	if (!failed) {
-		if (listed) {
-			node = [];
-			for (let i = 2; i < lens; i++) if (S.erased === null || !bit(S.erased, words[i])) node.push(build(S, words[i], undefined));
-		} else node = build(S, words[2], undefined);
+	let answer: Decoded;
+	try {
+		let node: Decoded | Decoded[] | null = null;
+		if (!failed) {
+			if (listed) {
+				node = [];
+				for (let i = 2; i < lens; i++) if (S.erased === null || !bit(S.erased, words[i])) node.push(build(S, words[i], undefined));
+			} else node = build(S, words[2], undefined);
+		}
+		answer = { node, end: words[0] };
+		if (!failed && (flags & COMMENTS) !== 0) answer.comments = comments(S, undefined);
+		if (failed || (flags & RECOVERED) !== 0) answer.errors = errors(S, rows, words[lens + at.errors] / C.R.error.words);
+		if (!failed && erase) answer.typescript = kept(S);
+		if (!failed && scoped) {
+			answer.scopes = S.scopes;
+			answer.bindings = S.bindings;
+			answer.references = S.references;
+			if (words[lens + at.hosts] !== 0) answer.roots = S.roots;
+		}
+	} finally {
+		// the state outlives the answer and any decode the stack cut short, so it lets go of what they hold
+		S.source = '';
+		S.strings = NO_STRINGS;
+		S.scopes = S.bindings = S.references = S.roots = S.made = NO_ROWS;
 	}
-	const answer: Decoded = { node, end: words[0] };
-	if (!failed && (flags & COMMENTS) !== 0) answer.comments = comments(S, undefined);
-	if (failed || (flags & RECOVERED) !== 0) answer.errors = errors(S, rows, words[lens + at.errors] / C.R.error.words);
-	if (!failed && erase) answer.typescript = kept(S);
-	if (!failed && scoped) {
-		answer.scopes = S.scopes;
-		answer.bindings = S.bindings;
-		answer.references = S.references;
-		if (words[lens + at.hosts] !== 0) answer.roots = S.roots;
-	}
-	// the state outlives the answer: it lets go of what the answer holds
-	S.source = '';
-	S.strings = NO_STRINGS;
-	S.scopes = S.bindings = S.references = S.roots = NO_ROWS;
 	return answer;
 }
 
