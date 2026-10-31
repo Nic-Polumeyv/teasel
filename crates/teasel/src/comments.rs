@@ -128,23 +128,33 @@ impl Attacher<'_> {
 			let mut from = end;
 			while let Some(c) = self.peek() {
 				let at = self.start(c);
-				if at >= limit || (at >= from && !self.only_blanks_or_separators(from, at)) {
+				if at >= limit
+					|| (at >= from && !self.only_blanks_or_separators(from, at))
+					|| self.leads_past_comma(end, c)
+				{
 					break;
 				}
 				from = from.max(self.ast.comments[c as usize].end);
 				self.take(node, Place::Trailing);
 			}
-		} else if end <= self.start(comment) && self.only_separators(end, self.start(comment)) {
-			let past_comma = self.source.as_bytes()[end as usize..self.start(comment) as usize].contains(&b',');
-			if !(past_comma && self.code_follows(comment)) {
-				self.take(node, Place::Trailing);
-			}
+		} else if end <= self.start(comment)
+			&& self.only_separators(end, self.start(comment))
+			&& !self.leads_past_comma(end, comment)
+		{
+			self.take(node, Place::Trailing);
 		}
 	}
 
-	/// Whether code follows `comment` on its line, past blanks and other comments on it.
-	fn code_follows(&self, comment: u32) -> bool {
+	/// Whether `comment` is past a comma after `end` with code after it on its line, past blanks
+	/// and other comments on it: that code it leads. Another comma is no code: it closes a hole.
+	fn leads_past_comma(&self, end: u32, comment: u32) -> bool {
 		let bytes = self.source.as_bytes();
+		if !bytes
+			.get(end as usize..self.start(comment) as usize)
+			.is_some_and(|gap| gap.contains(&b','))
+		{
+			return false;
+		}
 		let mut at = self.ast.comments[comment as usize].end as usize;
 		let mut next = comment as usize + 1;
 		loop {
@@ -162,7 +172,7 @@ impl Attacher<'_> {
 				_ => break,
 			}
 		}
-		!matches!(bytes.get(at), None | Some(b'\n' | b'\r' | b')' | b']' | b'}'))
+		!matches!(bytes.get(at), None | Some(b'\n' | b'\r' | b',' | b')' | b']' | b'}'))
 	}
 
 	fn is_host(&self, node: NodeId) -> bool {
@@ -291,6 +301,7 @@ mod tests {
 			]
 		);
 		assert_eq!(module("f(a, /* a */)"), [r#"Identifier leading=[] trailing=[" a "]"#]);
+		assert_eq!(module("[a, /* a */, ];"), [r#"Identifier leading=[] trailing=[" a "]"#]);
 	}
 
 	#[test]
