@@ -152,8 +152,8 @@ fn optional_marker_needs_an_arrow() {
 		let error = at(Entry::Expression, src, 0, options, "").unwrap_err();
 		(error.code, error.pos)
 	};
-	assert_eq!(error("(a, b?)"), (crate::error::Code::UnexpectedToken, 5));
-	assert_eq!(error("(a?)"), (crate::error::Code::UnexpectedToken, 2));
+	assert_eq!(error("(a, b?)"), (crate::error::Code::UnexpectedToken, 6));
+	assert_eq!(error("(a?)"), (crate::error::Code::UnexpectedEof, 4));
 	assert_eq!(error("f(a?)"), (crate::error::Code::UnexpectedToken, 4));
 	assert!(at(Entry::Expression, "(a, b?) => a", 0, options, "").is_ok());
 	assert!(at(Entry::Expression, "f((a?) => a)", 0, options, "").is_ok());
@@ -335,8 +335,8 @@ fn a_list_item_fails_where_it_stands() {
 		(error.code, error.pos)
 	};
 	use crate::error::Code;
-	assert_eq!(error("[eval: T = (b: U)];"), (Code::UnexpectedTypeAnnotation, 5));
-	assert_eq!(error("f(a as T: U = 1);"), (Code::UnexpectedTypeAnnotation, 8));
+	assert_eq!(error("[eval: T = (b: U)];"), (Code::UnexpectedToken, 5));
+	assert_eq!(error("f(a as T: U = 1);"), (Code::UnexpectedToken, 8));
 	assert_eq!(error("({a = 1} += 2);"), (Code::InvalidAssignmentTarget, 1));
 	assert_eq!(error("const g = ({ a }?) => a;"), (Code::OptionalPatternParameter, 11));
 }
@@ -345,8 +345,8 @@ fn a_list_item_fails_where_it_stands() {
 fn an_asserted_cast_is_no_parameter() {
 	let options = Options(Options::MODULE);
 	let error = |src: &str| at(Entry::Program, src, 0, options, "").unwrap_err().pos;
-	assert_eq!(error("(a as T: U = 1) => 1;"), 1);
-	assert_eq!(error("(a!: T = 1) => 1;"), 1);
+	assert_eq!(error("(a as T: U = 1) => 1;"), 7);
+	assert_eq!(error("(a!: T = 1) => 1;"), 3);
 	assert_eq!(error("(...a: T += 1) => 1;"), 9);
 }
 
@@ -359,6 +359,24 @@ fn an_async_rest_ends_after_its_annotation() {
 		.find(|&id| matches!(ast.node(id).kind, NodeKind::RestElement { .. }))
 		.unwrap();
 	assert_eq!((ast.node(rest).start, ast.node(rest).end), (24, 41));
+}
+
+#[test]
+fn a_generic_head_checks_its_defaults() {
+	let options = Options(Options::MODULE);
+	let error = |src: &str| {
+		let error = at(Entry::Program, src, 0, options, "").unwrap_err();
+		(error.code, error.pos)
+	};
+	use crate::error::Code;
+	assert_eq!(
+		error("function* g() { <T>(a = yield) => 1 }"),
+		(Code::YieldInDefaultValue, 24)
+	);
+	assert_eq!(
+		error("async function f() { <T>(a = await 1) => 1 }"),
+		(Code::AwaitInDefaultValue, 29)
+	);
 }
 
 fn erase(src: &str) -> (String, String) {
