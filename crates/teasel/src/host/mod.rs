@@ -17,7 +17,7 @@ use crate::parser::{Entry as JsEntry, Options, Parser, Result};
 pub use grammar::Grammar;
 use grammar::{
 	Alternative, Body, Construct, DirectiveRule, DirectiveValue, DocField, Entry, Form, Item, Match, Piece, Place,
-	RootField, Unique, Which, component_name,
+	RootField, Slot, Unique, Which, component_name,
 };
 
 /// A whole marker at the cursor: its construct, which piece, and where its last part's word starts.
@@ -300,8 +300,13 @@ enum Frame<'a> {
 		/// The scope of each body read so far.
 		groups: Vec<BodyGroup>,
 		outside: Vec<NodeId>,
-		/// The parent's field this block fills as a chained branch, `{:else if}`, and the flag set.
-		chain: Option<(&'static str, &'static str)>,
+		/// The nodes its repeating branches made so far, by the field listing them.
+		lists: Vec<(&'static str, Vec<NodeId>)>,
+		/// The branch of `rule` whose node this frame makes, `{:else if}`: listed in the block
+		/// below when the next branch or the close comes.
+		repeats: Option<usize>,
+		/// A branch read once came, `{:else}`: no repeating branch may follow it.
+		branched: bool,
 	},
 }
 
@@ -373,6 +378,7 @@ struct Walker<'a> {
 	nodes: Pool<NodeId>,
 	names: Pool<&'static str>,
 	groups: Pool<BodyGroup>,
+	lists: Pool<(&'static str, Vec<NodeId>)>,
 	/// The kinds and names the attributes of the element being read must not repeat.
 	seen: Vec<(&'static str, StrId)>,
 }
@@ -465,6 +471,7 @@ impl<'a> Walker<'a> {
 			nodes: Pool::default(),
 			names: Pool::default(),
 			groups: Pool::default(),
+			lists: Pool::default(),
 			seen: Vec::new(),
 		}
 	}
@@ -821,20 +828,17 @@ impl<'a> Walker<'a> {
 				}
 			}
 		}
+		// under recovery, what is open ends with the source
 		while self.frames.len() > 1 {
-			let (start, what) = match self.frames.last().unwrap() {
-				Frame::Element { start, name, .. } => (*start, &self.src[name.0 as usize..name.1 as usize]),
-				Frame::Block { start, rule, .. } => (*start, rule.open.display),
-				Frame::Root { .. } => unreachable!(),
-			};
-			self.report_at(start, start + 1, Code::Unclosed, Some(what))?;
-			// under recovery, what is open ends with the source
 			let end = self.len();
 			match self.frames.last().unwrap() {
-				Frame::Element { .. } => self.close_top(end),
-				_ => {
-					self.pop_block(end);
+				Frame::Element { start, name, .. } => {
+					let (start, what) = (*start, &self.src[name.0 as usize..name.1 as usize]);
+					self.report_at(start, start + 1, Code::Unclosed, Some(what))?;
+					self.close_top(end);
 				}
+				Frame::Block { .. } => self.pop_unclosed(end)?,
+				Frame::Root { .. } => unreachable!(),
 			}
 		}
 		let errors = &mut self.ast().errors;
@@ -1444,18 +1448,7 @@ impl<'a> Walker<'a> {
 					// the browser closes it here
 					self.close_top(start);
 				}
-				Some(Frame::Block {
-					start: block_start,
-					rule,
-					chain,
-					..
-				}) if self.recovering() => {
-					let (block_start, what, chained) = (*block_start, rule.open.display, chain.is_some());
-					if !chained {
-						self.report_at(block_start, block_start + 1, Code::Unclosed, Some(what))?;
-					}
-					self.pop_block(start);
-				}
+				Some(Frame::Block { .. }) if self.recovering() => self.pop_unclosed(start)?,
 				_ => return self.fail(start, start + 1, Code::UnexpectedClose, Some(&closed())),
 			}
 		}
@@ -2554,77 +2547,72 @@ impl<'a> Walker<'a> {
 		let Some(body) = read.body.take().or(rule.open.form.body.as_ref()) else {
 			return self.fail(start, start + 1, Code::Placement, Some("A block without a body"));
 		};
+		self.within_depth(start)?;
 		let mut outside = self.nodes.take();
 		let group = self.group_of(&read, body, &mut outside);
+		self.push_block(rule, start, read.fields, body, group, outside, None);
+		Ok(true)
+	}
+
+	/// Opens the frame of a block, or of a repeating branch's node, its first body's scope read.
+	#[expect(clippy::too_many_arguments)]
+	#[inline]
+	fn push_block(
+		&mut self,
+		rule: &'a Construct,
+		start: u32,
+		fields: Vec<(&'static str, Value)>,
+		body: &Body,
+		group: BodyGroup,
+		outside: Vec<NodeId>,
+		repeats: Option<usize>,
+	) {
 		let (nodes, done) = (self.nodes.take(), self.fields.take());
 		let mut groups = self.groups.take();
 		groups.push(group);
-		self.within_depth(start)?;
 		self.frames.push(Frame::Block {
 			start,
 			rule,
-			fields: read.fields,
+			fields,
 			body: (body.field, body.omit),
 			nodes,
 			done,
 			groups,
 			outside,
-			chain: None,
+			lists: Vec::new(),
+			repeats,
+			branched: false,
 		});
-		Ok(true)
 	}
 
 	fn branch(&mut self, rule: &'a Construct, i: usize, start: u32, word: u32) -> Result<()> {
 		let branch = &rule.branches[i];
-		let body = branch.form.body.as_ref().unwrap();
+		// the block's frame, below a repeating branch's node when one is open
+		let listed = matches!(self.frames.last(), Some(Frame::Block { repeats: Some(_), .. }));
+		let Some(Frame::Block {
+			done,
+			body: current,
+			branched,
+			..
+		}) = self.frames.get(self.frames.len() - 1 - listed as usize)
+		else {
+			unreachable!()
+		};
+		let filed = |field: &'static str| current.0 == field || done.iter().any(|(f, _)| *f == field);
 		// before the body so far is filed: filed twice, the field came out twice under recovery
-		if let Some(Frame::Block {
-			done, body: current, ..
-		}) = self.frames.last()
-			&& (current.0 == body.field || done.iter().any(|(field, _)| *field == body.field))
-		{
+		let duplicate = match branch.repeats {
+			// a repeating branch after one read once: `{:else if}` after `{:else}`
+			Some(_) => *branched,
+			None => branch
+				.shape
+				.iter()
+				.any(|slot| matches!(slot, Slot::Body { field, .. } if filed(field))),
+		};
+		if duplicate {
 			return self.fail(start, start + 1, Code::Duplicate, Some(branch.display));
 		}
-		self.finish_body();
-		if let Some((child_field, flag)) = body.chain {
-			// the branch opens a block of its own inside the parent's field, which closes with it
-			if let Some(Frame::Block { body: current, .. }) = self.frames.last_mut() {
-				*current = ("", true);
-			}
-			self.keyword = word;
-			if branch.space {
-				self.require_space()?;
-			}
-			let mut read = Read {
-				fields: self.fields.take(),
-				body: None,
-			};
-			self.piece(branch, &mut read)?;
-			let child = Body {
-				field: child_field,
-				omit: false,
-				chain: None,
-				declares: body.declares.clone(),
-			};
-			let mut outside = self.nodes.take();
-			let group = self.group_of(&read, &child, &mut outside);
-			let (nodes, done) = (self.nodes.take(), self.fields.take());
-			let mut groups = self.groups.take();
-			groups.push(group);
-			self.within_depth(start)?;
-			self.frames.push(Frame::Block {
-				start,
-				rule,
-				fields: read.fields,
-				body: (child_field, false),
-				nodes,
-				done,
-				groups,
-				outside,
-				chain: Some((body.field, flag)),
-			});
-			return Ok(());
-		}
+		// the head is read, and a node too deep refused, before anything closes: a branch that
+		// cannot open leaves what follows it in the body still open
 		if branch.space {
 			self.require_space()?;
 		}
@@ -2634,13 +2622,48 @@ impl<'a> Walker<'a> {
 			body: None,
 		};
 		self.piece(branch, &mut read)?;
+		let Some(body) = read.body.take().or(branch.form.body.as_ref()) else {
+			return self.fail(start, start + 1, Code::Placement, Some("A branch without a body"));
+		};
+		if branch.repeats.is_some() && !listed {
+			self.within_depth(start)?;
+		}
+		// a repeating branch's node on top ends where this branch starts
+		if listed {
+			self.pop_block(start);
+		}
+		self.finish_body();
 		let mut outside = self.nodes.take();
 		let group = self.group_of(&read, body, &mut outside);
+		if let Some((_, list)) = branch.repeats {
+			// the block's body stays closed while the branch's node, a block of its own, is open
+			let known = matches!(self.frames.last(), Some(Frame::Block { lists, .. }) if lists.iter().any(|(field, _)| *field == list));
+			let fresh = (!known).then(|| (self.nodes.take(), self.lists.take()));
+			let Some(Frame::Block {
+				body: current, lists, ..
+			}) = self.frames.last_mut()
+			else {
+				unreachable!()
+			};
+			*current = ("", true);
+			if let Some((nodes, mut pooled)) = fresh {
+				if lists.capacity() == 0 {
+					std::mem::swap(lists, &mut pooled);
+				}
+				lists.push((list, nodes));
+				if pooled.capacity() > 0 {
+					self.lists.give(pooled);
+				}
+			}
+			self.push_block(rule, start, read.fields, body, group, outside, Some(i));
+			return Ok(());
+		}
 		let Some(Frame::Block {
 			fields,
 			body: current,
 			groups,
 			outside: all_outside,
+			branched,
 			..
 		}) = self.frames.last_mut()
 		else {
@@ -2648,6 +2671,7 @@ impl<'a> Walker<'a> {
 		};
 		fields.extend(read.fields.iter().copied());
 		*current = (body.field, body.omit);
+		*branched = true;
 		groups.push(group);
 		all_outside.extend(outside);
 		Ok(())
@@ -2730,18 +2754,7 @@ impl<'a> Walker<'a> {
 		loop {
 			match self.frames.last() {
 				Some(frame) if ours(frame) => break,
-				Some(Frame::Block {
-					start: block_start,
-					rule,
-					chain,
-					..
-				}) => {
-					let (block_start, what, chained) = (*block_start, rule.open.display, chain.is_some());
-					if !chained {
-						self.report_at(block_start, block_start + 1, Code::Unclosed, Some(what))?;
-					}
-					self.pop_block(start);
-				}
+				Some(Frame::Block { .. }) => self.pop_unclosed(start)?,
 				Some(Frame::Element {
 					start: element_start,
 					name: span,
@@ -2754,13 +2767,35 @@ impl<'a> Walker<'a> {
 				_ => unreachable!(),
 			}
 		}
-		while !self.pop_block(end) {}
+		// a repeating branch's node ends where the close starts, its block after it
+		if matches!(self.frames.last(), Some(Frame::Block { repeats: Some(_), .. })) {
+			self.pop_block(start);
+		}
+		self.pop_block(end);
 		Ok(())
 	}
 
-	/// Closes the block on top at `end`; whether it stood on its own rather than in a chain,
-	/// whose parent is then still open.
-	fn pop_block(&mut self, end: u32) -> bool {
+	/// Closes the block on top at `at` as unclosed: a repeating branch's node is listed as it is,
+	/// its block being what stands unclosed.
+	#[cold]
+	fn pop_unclosed(&mut self, at: u32) -> Result<()> {
+		let Some(Frame::Block {
+			start, rule, repeats, ..
+		}) = self.frames.last()
+		else {
+			unreachable!()
+		};
+		if repeats.is_none() {
+			let (start, what) = (*start, rule.open.display);
+			self.report_at(start, start + 1, Code::Unclosed, Some(what))?;
+		}
+		self.pop_block(at);
+		Ok(())
+	}
+
+	/// Closes the block on top at `end`: a repeating branch's node into its block's list, a block
+	/// into the content around it.
+	fn pop_block(&mut self, end: u32) {
 		self.finish_body();
 		let Some(Frame::Block {
 			start: block_start,
@@ -2769,82 +2804,90 @@ impl<'a> Walker<'a> {
 			done,
 			groups,
 			outside,
-			chain,
+			lists,
+			repeats,
 			..
 		}) = self.frames.pop()
 		else {
 			unreachable!()
 		};
-		let node = self.block_node(
-			rule,
-			block_start,
-			end,
-			fields,
-			done,
-			groups,
-			outside,
-			chain.map(|(_, flag)| flag),
-		);
-		match chain {
-			Some((field, _)) => {
-				let mut one = self.nodes.take();
-				one.push(node);
-				let children = self.children(one);
-				let Some(Frame::Block { done, .. }) = self.frames.last_mut() else {
-					unreachable!()
-				};
-				done.push((field, children));
-				false
+		let (ty, shape, list) = match repeats {
+			None => (rule.ty, &rule.shape, None),
+			Some(i) => {
+				let branch = &rule.branches[i];
+				let (ty, list) = branch.repeats.unwrap();
+				(ty, &branch.shape, Some(list))
 			}
-			None => {
-				self.append(node);
-				true
-			}
-		}
+		};
+		let node = self.block_node(ty, shape, block_start, end, fields, done, groups, outside, lists);
+		let Some(list) = list else {
+			self.append(node);
+			return;
+		};
+		let Some(Frame::Block { lists, .. }) = self.frames.last_mut() else {
+			unreachable!()
+		};
+		let Some((_, nodes)) = lists.iter_mut().find(|(field, _)| *field == list) else {
+			unreachable!()
+		};
+		nodes.push(node);
 	}
 
 	#[expect(clippy::too_many_arguments)]
 	fn block_node(
 		&mut self,
-		rule: &Construct,
+		ty: &'static str,
+		shape: &[Slot],
 		start: u32,
 		end: u32,
-		mut fields: Vec<(&'static str, Value)>,
+		fields: Vec<(&'static str, Value)>,
 		done: Vec<(&'static str, Value)>,
 		mut groups: Vec<BodyGroup>,
 		outside: Vec<NodeId>,
-		chained: Option<&'static str>,
+		mut listed: Vec<(&'static str, Vec<NodeId>)>,
 	) -> NodeId {
-		fill_unread(&rule.entries, &mut fields);
-		for &flag in &rule.chain_flags {
-			fields.push((flag, Value::Bool(chained == Some(flag))));
-		}
-		// the fields outside every scope first, then each body's scope: its fields, then the body
+		// the slots in the shape's order: a field as read or null, a body after the fields of its
+		// scope, a list
 		let mut ordered = self.fields.take();
-		ordered.extend(
-			fields
-				.iter()
-				.copied()
-				.filter(|(f, _)| !groups.iter().any(|group| group.fields.contains(f))),
-		);
-		for &(field, omit) in &rule.bodies {
-			if !omit && !done.iter().any(|(k, _)| *k == field) {
-				ordered.push((field, Value::Null));
-			}
-		}
 		let base = self.ast().host_fields.len() as u32;
 		let groups_at = self.ast().host_groups.len() as u32;
 		let mut count = 0;
-		for &(body, children) in &done {
-			let from = ordered.len() as u32;
-			let group = groups.iter().find(|group| group.body == body);
-			if let Some(group) = group {
-				for &field in &group.fields {
-					if let Some(&entry) = fields.iter().find(|(f, _)| *f == field) {
-						ordered.push(entry);
+		for &slot in shape {
+			let (body, omit) = match slot {
+				Slot::Field { field, omit } => {
+					match fields.iter().find(|(f, _)| *f == field) {
+						Some(&entry) => ordered.push(entry),
+						None if !omit => ordered.push((field, Value::Null)),
+						None => {}
 					}
+					continue;
 				}
-			}
+				Slot::List(field) => {
+					let nodes = listed
+						.iter()
+						.find(|(list, _)| *list == field)
+						.map_or(&[][..], |(_, nodes)| nodes);
+					let list = if nodes.is_empty() {
+						List::EMPTY
+					} else {
+						self.list(nodes)
+					};
+					ordered.push((field, Value::Nodes(list)));
+					continue;
+				}
+				Slot::Body { field, omit } => (field, omit),
+			};
+			let Some(&(_, children)) = done.iter().find(|(k, _)| *k == body) else {
+				if !omit {
+					ordered.push((body, Value::Null));
+				}
+				continue;
+			};
+			let group = groups.iter().find(|group| group.body == body);
+			// the body's scope opens at the first of its fields, which stand before it
+			let from = group
+				.and_then(|group| ordered.iter().position(|(f, _)| group.fields.contains(f)))
+				.unwrap_or(ordered.len()) as u32;
 			ordered.push((body, children));
 			let inside: &[NodeId] = group.map_or(&[], |group| &group.inside);
 			if self.grammar.fragment_scope || !inside.is_empty() {
@@ -2868,7 +2911,7 @@ impl<'a> Walker<'a> {
 			outside: outside_list,
 			groups: (groups_at, count),
 		});
-		let node = self.host(rule.ty, start, end, &ordered, scope, true);
+		let node = self.host(ty, start, end, &ordered, scope, true);
 		self.fields.give(ordered);
 		self.fields.give(fields);
 		self.fields.give(done);
@@ -2877,6 +2920,13 @@ impl<'a> Walker<'a> {
 			self.nodes.give(group.inside);
 		}
 		self.groups.give(groups);
+		// most blocks never held a list: nothing to give back
+		if listed.capacity() > 0 {
+			for (_, nodes) in listed.drain(..) {
+				self.nodes.give(nodes);
+			}
+			self.lists.give(listed);
+		}
 		node
 	}
 

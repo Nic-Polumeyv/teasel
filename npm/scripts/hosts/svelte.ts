@@ -68,7 +68,7 @@ export default g.grammar('svelte', {
 		IfBlock: {
 			open: { marker: ['{', '#if'], space: true, form: [{ test: g.js.expression }, '}', { consequent: g.content }] },
 			branches: [
-				{ marker: ['{', ':else', 'if'], space: true, form: [{ test: g.js.expression }, '}', { consequent: g.content }], reopen: ['alternate', 'elseif'] },
+				{ marker: ['{', ':else', 'if'], space: true, node: 'ElseIf', list: 'branches', form: [{ test: g.js.expression }, '}', { consequent: g.content }] },
 				{ marker: ['{', ':else'], form: ['}', { alternate: g.content }] },
 			],
 			close: { marker: ['{', '/if'], form: ['}'] },

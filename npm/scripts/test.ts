@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
 import type { Expression, Identifier, Pattern, Program } from 'estree';
-import type { Construct, Directive, Infer, NodeType } from '../src/grammar.ts';
+import type { Construct, Directive, Grammar, Infer, NodeType } from '../src/grammar.ts';
 import type * as api from '../src/index.ts';
 import type { Options } from '../src/index.ts';
 import type { Addon } from '../src/engine/addon.ts';
@@ -731,7 +731,27 @@ function types(source: api.Source, definition: typeof svelte) {
 	expect<Equal<Each['fallback'], Fragment | undefined>>();
 
 	expect<Equal<NodeType<Svelte, 'IfBlock'>['alternate'], Fragment | null>>();
-	expect<Equal<NodeType<Svelte, 'IfBlock'>['elseif'], boolean>>();
+	expect<Equal<NodeType<Svelte, 'IfBlock'>['branches'], NodeType<Svelte, 'ElseIf'>[]>>();
+	expect<Equal<Required<NodeType<Svelte, 'ElseIf'>>, 'type' | 'start' | 'end' | 'test' | 'consequent'>>();
+	expect<Equal<NodeType<Svelte, 'ElseIf'>['consequent'], Fragment>>();
+	// two branches naming one list share it
+	type Arm<N extends string, I extends readonly unknown[]> = { readonly marker: readonly ['{', ':case']; readonly node: N; readonly list: 'arms'; readonly form: I };
+	type Switch = Grammar<
+		typeof svelte.definition & {
+			readonly constructs: {
+				readonly Switch: {
+					readonly open: { readonly marker: readonly ['{', '#switch']; readonly form: readonly [{ readonly on: typeof svelte.definition.constructs.IfBlock.open.form[0]['test'] }, '}', { readonly body: typeof svelte.definition.constructs.IfBlock.open.form[2]['consequent'] }] };
+					readonly branches: readonly [
+						Arm<'Case', readonly [{ readonly value: typeof svelte.definition.constructs.IfBlock.open.form[0]['test'] }, '}', { readonly body: typeof svelte.definition.constructs.IfBlock.open.form[2]['consequent'] }]>,
+						Arm<'Default', readonly ['}', { readonly body: typeof svelte.definition.constructs.IfBlock.open.form[2]['consequent'] }]>,
+					];
+					readonly close: { readonly marker: readonly ['{', '/switch']; readonly form: readonly ['}'] };
+				};
+			};
+		}
+	>;
+	expect<Equal<NodeType<Switch, 'Switch'>['arms'], (NodeType<Switch, 'Case'> | NodeType<Switch, 'Default'>)[]>>();
+	expect<Equal<NodeType<Switch, 'Default'>['body'], NodeType<Switch, 'Fragment'>>>();
 	expect<Equal<NodeType<Svelte, 'AwaitBlock'>['pending'], Fragment | null>>();
 	expect<Equal<NodeType<Svelte, 'SnippetBlock'>['typeParams'], string | undefined>>();
 	expect<Equal<keyof Fragment, 'type' | 'nodes'>>();
@@ -766,6 +786,8 @@ function types(source: api.Source, definition: typeof svelte) {
 	construct({ open: { marker: ['{'], form: [{ name: g.bind(g.js.identifier) }, '}'] } });
 	// @ts-expect-error a close reads words only
 	construct({ open: { marker: ['{#b'], form: ['}', { body: g.content }] }, close: { marker: ['{/b'], form: [{ e: g.js.expression }, '}'] } });
+	// @ts-expect-error a branch that repeats names its node and its list
+	construct({ open: { marker: ['{#b'], form: ['}', { body: g.content }] }, branches: [{ marker: ['{:c'], node: 'C', form: ['}', { body: g.content }] }], close: { marker: ['{/b'], form: ['}'] } });
 	const directive = (rule: Directive) => rule;
 	// @ts-expect-error only a block declares around itself
 	directive({ node: 'D', form: [{ name: g.bind.outside(g.js.identifier) }] });

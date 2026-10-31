@@ -507,13 +507,13 @@
 						],
 						"name": "ok"
 					},
-					"elseif": false,
-					"alternate": null,
 					"consequent": {
 						"type": "Fragment",
 						"scope": 7,
 						"nodes": []
-					}
+					},
+					"branches": [],
+					"alternate": null
 				}
 			]
 		}

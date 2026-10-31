@@ -210,7 +210,7 @@ const _: () = assert!(size_of::<Node>() == 32);
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Host {
 	pub ty: &'static str,
-	/// The node's fields, a run of `Ast::host_fields` in source order.
+	/// The node's fields, a run of `Ast::host_fields` in the grammar's order.
 	pub fields: (u32, u32),
 	/// Whether the node has a span; a fragment has none.
 	pub span: bool,

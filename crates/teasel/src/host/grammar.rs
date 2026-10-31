@@ -882,24 +882,47 @@ fn collect_alternative_bodies<'a>(items: &'a [Item], out: &mut Vec<&'a Body>) {
 	}
 }
 
-fn collect_bodies(form: &Form, out: &mut Vec<(&'static str, bool)>) {
-	let mut push = |body: &Body| {
-		if !out.iter().any(|(f, _)| *f == body.field) {
-			out.push((body.field, body.omit));
+/// A form's fields and bodies as written, each once: an alternative's body after its items.
+fn shape(form: &Form) -> Vec<Slot> {
+	fn place(out: &mut Vec<Slot>, slot: Slot) {
+		if !out.iter().any(|known| known.field() == slot.field()) {
+			out.push(slot);
 		}
-	};
-	if let Some(body) = &form.body {
-		push(body);
 	}
-	for item in &form.items {
-		if let Item::Group { alternatives, .. } = item {
-			for alternative in alternatives {
-				if let Some(body) = &alternative.body {
-					push(body);
+	fn items(list: &[Item], out: &mut Vec<Slot>) {
+		for item in list {
+			match item {
+				Item::Literal(_) => {}
+				Item::Entry { field, omit, .. } => place(out, Slot::Field { field, omit: *omit }),
+				Item::Group { alternatives, .. } => {
+					for alternative in alternatives {
+						items(&alternative.items, out);
+						if let Some(body) = &alternative.body {
+							place(
+								out,
+								Slot::Body {
+									field: body.field,
+									omit: body.omit,
+								},
+							);
+						}
+					}
 				}
 			}
 		}
 	}
+	let mut out = Vec::new();
+	items(&form.items, &mut out);
+	if let Some(body) = &form.body {
+		place(
+			&mut out,
+			Slot::Body {
+				field: body.field,
+				omit: body.omit,
+			},
+		);
+	}
+	out
 }
 
 #[derive(Clone, Debug)]
@@ -915,9 +938,6 @@ pub struct Body {
 	pub field: &'static str,
 	/// The field is left out of blocks that never opened this body; otherwise it is null there.
 	pub omit: bool,
-	/// A branch that nests a new block of the same kind into the field, `{:else if}`: the field
-	/// of the nested block that its own body fills, and the flag set on it.
-	pub chain: Option<(&'static str, &'static str)>,
 	pub declares: Vec<Declare>,
 }
 
@@ -1048,6 +1068,31 @@ pub struct Piece {
 	pub display: &'static str,
 	/// The form's last word before any body: where the piece's tag ends.
 	pub end: &'static str,
+	/// A branch that repeats: the type of the node each one makes, and the block's field listing them.
+	pub repeats: Option<(&'static str, &'static str)>,
+	/// The fields and bodies of its form, in the order written.
+	pub shape: Vec<Slot>,
+}
+
+/// A field of a block's node, in the order the node holds them: a node has one shape whatever its
+/// document opened, so a body's scope is the run of its fields up to the body.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Slot {
+	/// An entry's field; `omit` leaves it out of nodes that never read it, otherwise it is null there.
+	Field { field: &'static str, omit: bool },
+	/// A body's field; `omit` leaves it out of nodes that never opened the body, otherwise it is
+	/// null there.
+	Body { field: &'static str, omit: bool },
+	/// A repeating branch's nodes, none when none came.
+	List(&'static str),
+}
+
+impl Slot {
+	pub fn field(self) -> &'static str {
+		match self {
+			Slot::Field { field, .. } | Slot::Body { field, .. } | Slot::List(field) => field,
+		}
+	}
 }
 
 /// Which piece of a construct a marker is.
@@ -1066,12 +1111,10 @@ pub struct Construct {
 	pub open: Piece,
 	pub branches: Vec<Piece>,
 	pub close: Option<Piece>,
-	/// The boolean fields of the branches that reopen the block, each true when that branch did.
-	pub chain_flags: Vec<&'static str>,
 
-	/// Every entry the construct's forms can read, and every body they can open.
-	pub entries: Vec<(&'static str, bool)>,
-	pub bodies: Vec<(&'static str, bool)>,
+	/// The node's slots: the open's, then each branch's, or its list, where the first piece reading
+	/// a field puts it and a body after every field read before it.
+	pub shape: Vec<Slot>,
 }
 
 impl Construct {
@@ -1376,12 +1419,16 @@ pub mod definition {
 	}
 
 	wire! {
-		/// A branch of a block; `reopen` nests the block again into that field, with that flag true on it.
+		/// A branch of a block; with `node` and `list` it repeats, each one a node of that type in
+		/// that field of the block. No branch that repeats may follow one read once.
 		pub struct Branch<'a> {
 			pub marker: &'a [&'static str],
 			pub space: Option<bool>,
-			pub form: &'a [Item<'a>],
+			pub node: Option<&'static str>,
+			pub list: Option<&'static str>,
+			/// What `node` and `list` replaced; refused by name.
 			pub reopen: Option<(&'static str, &'static str)>,
+			pub form: &'a [Item<'a>],
 		}
 	}
 
@@ -1640,7 +1687,6 @@ fn sequence(
 							body = Some(Body {
 								field,
 								omit: source.optional,
-								chain: None,
 								declares: std::mem::take(bound),
 							});
 							continue;
@@ -1902,7 +1948,9 @@ fn piece(
 		marker: marker.to_vec(),
 		space: space == Some(true),
 		end,
+		shape: shape(&form),
 		form,
+		repeats: None,
 	})
 }
 
@@ -1913,29 +1961,45 @@ fn construct(ty: &'static str, rule: &definition::Construct) -> Result<Construct
 		Some(list) => list.to_vec(),
 		None => vec![Place::Content],
 	};
-	let mut chain_flags = Vec::new();
 	let mut branches = Vec::new();
 	for branch in rule.branches.unwrap_or_default() {
 		if !block {
 			return Err(format!("{ty} has branches, so it closes"));
 		}
 		let mut piece = piece(ty, branch.marker, branch.space, branch.form, At::Block, &mut Vec::new())?;
-		if let Some((field, flag)) = branch.reopen {
-			if !chain_flags.contains(&flag) {
-				chain_flags.push(flag);
-			}
-			let own = piece.form.body.take().ok_or_else(|| {
-				format!(
-					"{ty}: the {} branch reopens the block, so it reads that block's body",
+		if branch.reopen.is_some() {
+			return Err(format!(
+				"{ty}: the {} branch reopens the block; a branch that repeats names its node and its list",
+				piece.display
+			));
+		}
+		piece.repeats = match (branch.node, branch.list) {
+			(Some(node), Some(list)) => Some((node, list)),
+			(None, None) => None,
+			_ => {
+				return Err(format!(
+					"{ty}: the {} branch repeats, so it names its node and its list",
 					piece.display
-				)
-			})?;
-			piece.form.body = Some(Body {
-				field,
-				omit: false,
-				chain: Some((own.field, flag)),
-				declares: own.declares,
-			});
+				));
+			}
+		};
+		if let Some((node, list)) = piece.repeats {
+			if node.is_empty() {
+				return Err(format!("{ty}: the {} branch names an empty node", piece.display));
+			}
+			if matches!(list, "type" | "start" | "end" | "loc") {
+				return Err(format!("{ty}: {list} is a node's own key"));
+			}
+			if piece
+				.shape
+				.iter()
+				.any(|slot| matches!(slot, Slot::Body { omit: true, .. }))
+			{
+				return Err(format!(
+					"{ty}: the {} branch repeats, so its body is never left out",
+					piece.display
+				));
+			}
 		}
 		if !closed(&piece.form.items, piece.form.body.as_ref()) {
 			return Err(format!("{ty}: the {} branch ends in no body", piece.display));
@@ -1970,9 +2034,7 @@ fn construct(ty: &'static str, rule: &definition::Construct) -> Result<Construct
 		open,
 		branches,
 		close,
-		chain_flags,
-		entries: Vec::new(),
-		bodies: Vec::new(),
+		shape: Vec::new(),
 	};
 	if block && construct.places.iter().any(|place| *place != Place::Content) {
 		return Err(format!("{ty} closes, so it stands in content only"));
@@ -2247,19 +2309,39 @@ impl Grammar {
 		let mut starts = [false; 256];
 		for construct in &mut self.constructs {
 			construct.open.form.finish()?;
-			let mut entries = construct.open.form.entries.clone();
-			let mut bodies = Vec::new();
-			collect_bodies(&construct.open.form, &mut bodies);
+			let mut shape = construct.open.shape.clone();
 			for branch in &mut construct.branches {
 				branch.form.finish()?;
-				entries.extend_from_slice(&branch.form.entries);
-				collect_bodies(&branch.form, &mut bodies);
+				let own = match branch.repeats {
+					Some((_, list)) => vec![Slot::List(list)],
+					None => branch.shape.clone(),
+				};
+				// a field or a body the pieces share is one slot, where the first piece put it
+				for slot in own {
+					let known = shape.iter().position(|known| known.field() == slot.field());
+					match known.map(|at| shape[at]) {
+						Some(known) if std::mem::discriminant(&known) == std::mem::discriminant(&slot) => {}
+						Some(_) => return Err(format!("{} reads {} twice", construct.ty, slot.field())),
+						// a body stands after every field read before it: a field the branch reads
+						// before a body the open placed goes before that body
+						None => {
+							let before = |known: &Slot| {
+								matches!(known, Slot::Body { .. })
+									&& branch.shape.iter().any(|own| own.field() == known.field())
+							};
+							let at = match slot {
+								Slot::Field { .. } => shape.iter().position(before).unwrap_or(shape.len()),
+								_ => shape.len(),
+							};
+							shape.insert(at, slot);
+						}
+					}
+				}
 			}
 			if let Some(close) = &mut construct.close {
 				close.form.finish()?;
 			}
-			construct.entries = entries;
-			construct.bodies = bodies;
+			construct.shape = shape;
 			for piece in std::iter::once(&construct.open)
 				.chain(&construct.branches)
 				.chain(&construct.close)
@@ -2300,6 +2382,31 @@ impl Grammar {
 			}
 		}
 		self.firsts = firsts;
+		// a repeating branch's node type is its own, no other rule's and not the walker's: the
+		// children table would fold two shapes into one
+		let branch_types: Vec<&'static str> = self
+			.constructs
+			.iter()
+			.flat_map(|c| c.branches.iter().filter_map(|b| b.repeats.map(|(ty, _)| ty)))
+			.collect();
+		for construct in &self.constructs {
+			for branch in &construct.branches {
+				let Some((ty, _)) = branch.repeats else { continue };
+				let made = [self.document.ty, self.text.ty, self.comment.ty, "Attribute"].contains(&ty)
+					|| (self.script.is_some() && ty == "Script")
+					|| self.fragment.is_some_and(|(fragment, _)| fragment == ty)
+					|| self.constructs.iter().any(|c| c.ty == ty)
+					|| self.elements.iter().any(|e| e.ty == ty)
+					|| self.directives.iter().any(|d| d.ty == ty)
+					|| branch_types.iter().filter(|t| **t == ty).count() > 1;
+				if made {
+					return Err(format!(
+						"{}: the {} branch makes {ty}, a node type the grammar makes elsewhere",
+						construct.ty, branch.display
+					));
+				}
+			}
+		}
 		for (ty, _) in self.own_children() {
 			if crate::recipe::names_type(ty) {
 				return Err(format!("a node type named {ty} is JavaScript's"));
@@ -2373,7 +2480,6 @@ impl Grammar {
 		};
 		fn body(body: &Body, into: &mut Vec<&'static str>) {
 			into.push(body.field);
-			into.extend(body.chain.map(|(field, _)| field));
 		}
 		fn items(list: &[Item], into: &mut Vec<&'static str>) {
 			for item in list {
@@ -2447,8 +2553,20 @@ impl Grammar {
 		for rule in &self.constructs {
 			fields.clear();
 			form(&rule.open.form, &mut fields);
-			rule.branches.iter().for_each(|branch| form(&branch.form, &mut fields));
+			for branch in &rule.branches {
+				match branch.repeats {
+					Some((_, list)) => fields.push(list),
+					None => form(&branch.form, &mut fields),
+				}
+			}
 			add(rule.ty, &fields);
+			for branch in &rule.branches {
+				if let Some((ty, _)) = branch.repeats {
+					fields.clear();
+					form(&branch.form, &mut fields);
+					add(ty, &fields);
+				}
+			}
 		}
 		out
 	}
