@@ -1,5 +1,59 @@
 # @teasel/parser
 
+## 0.0.23
+
+### Patch Changes
+
+- [#235](https://github.com/Nic-Polumeyv/teasel/pull/235) [`d08dd45`](https://github.com/Nic-Polumeyv/teasel/commit/d08dd45ce71786a35009c25b2e5733de5dda5485) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - `accessor` is an error on anything but a property, or next to `readonly` or `declare`
+
+- [#242](https://github.com/Nic-Polumeyv/teasel/pull/242) [`a439986`](https://github.com/Nic-Polumeyv/teasel/commit/a439986c3d4fd1f009282796349de875cc8a9609) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - An arrow parameter that is no binding fails where it stands, or at the `=>` after its list
+
+- [#237](https://github.com/Nic-Polumeyv/teasel/pull/237) [`908c91e`](https://github.com/Nic-Polumeyv/teasel/commit/908c91e3ded6c0f281b7b2e69cafe9597758a371) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - `a as T: U = 1` is an error in arguments and in parameters, as in TypeScript
+
+- [#237](https://github.com/Nic-Polumeyv/teasel/pull/237) [`908c91e`](https://github.com/Nic-Polumeyv/teasel/commit/908c91e3ded6c0f281b7b2e69cafe9597758a371) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - A typed rest parameter of an async arrow ends after its annotation, as without `async`
+
+- [#242](https://github.com/Nic-Polumeyv/teasel/pull/242) [`a439986`](https://github.com/Nic-Polumeyv/teasel/commit/a439986c3d4fd1f009282796349de875cc8a9609) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - `async (...r, a = 1) => 1` is an error, as without `async`
+
+- [#256](https://github.com/Nic-Polumeyv/teasel/pull/256) [`a47b0f1`](https://github.com/Nic-Polumeyv/teasel/commit/a47b0f17c443fc1d96cd21f5f377a4c7db7038c9) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - A comment past a comma leads the code after it on its line: in `f(a, /* @__PURE__ */ g())` it is `g()`'s, not `a`'s
+
+- [#242](https://github.com/Nic-Polumeyv/teasel/pull/242) [`a439986`](https://github.com/Nic-Polumeyv/teasel/commit/a439986c3d4fd1f009282796349de875cc8a9609) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - `Code` no longer names `parenthesized_pattern` or `unexpected_type_annotation`, which no parse raised
+
+- [#244](https://github.com/Nic-Polumeyv/teasel/pull/244) [`0790ae8`](https://github.com/Nic-Polumeyv/teasel/commit/0790ae8ebb7ab51f2efff83078c8e02e0aa255ba) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - Erasing keeps and lists a namespace whose members are `declare`d, which tsc still emits
+
+- [#244](https://github.com/Nic-Polumeyv/teasel/pull/244) [`0790ae8`](https://github.com/Nic-Polumeyv/teasel/commit/0790ae8ebb7ab51f2efff83078c8e02e0aa255ba) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - Erasing drops a dotted namespace that holds only types
+
+- [#244](https://github.com/Nic-Polumeyv/teasel/pull/244) [`0790ae8`](https://github.com/Nic-Polumeyv/teasel/commit/0790ae8ebb7ab51f2efff83078c8e02e0aa255ba) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - Erasing keeps an import of only types as `import {} from 'x'`, which still runs the module
+
+- [#249](https://github.com/Nic-Polumeyv/teasel/pull/249) [`bb3d8f8`](https://github.com/Nic-Polumeyv/teasel/commit/bb3d8f83778d428e28f55e73b00a26f7b489e299) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - Fragments, tags, attributes, text and directive arguments have one name in every grammar
+
+- [#242](https://github.com/Nic-Polumeyv/teasel/pull/242) [`a439986`](https://github.com/Nic-Polumeyv/teasel/commit/a439986c3d4fd1f009282796349de875cc8a9609) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - A generic arrow's parameter defaults may not hold `yield` or `await`, as without type parameters
+
+- [#244](https://github.com/Nic-Polumeyv/teasel/pull/244) [`0790ae8`](https://github.com/Nic-Polumeyv/teasel/commit/0790ae8ebb7ab51f2efff83078c8e02e0aa255ba) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - The Linux addons load on glibc 2.28 and newer
+
+- [#236](https://github.com/Nic-Polumeyv/teasel/pull/236) [`ae49cde`](https://github.com/Nic-Polumeyv/teasel/commit/ae49cde6edeb050f86e798d1029fc4657ad8dd9d) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - Erasing lists a decorated accessor field before its decorators
+
+- [#242](https://github.com/Nic-Polumeyv/teasel/pull/242) [`a439986`](https://github.com/Nic-Polumeyv/teasel/commit/a439986c3d4fd1f009282796349de875cc8a9609) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - A literal used as an operand reports its first `{a = 1}` or repeated `__proto__`
+
+- [#244](https://github.com/Nic-Polumeyv/teasel/pull/244) [`0790ae8`](https://github.com/Nic-Polumeyv/teasel/commit/0790ae8ebb7ab51f2efff83078c8e02e0aa255ba) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - A bundle built for Node loads the native addon, and `--no-addons` falls back without a warning
+
+- [#255](https://github.com/Nic-Polumeyv/teasel/pull/255) [`fa056c4`](https://github.com/Nic-Polumeyv/teasel/commit/fa056c4ec975d7871d39b3bd1aea6c7cfb899029) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - A comment is one object: the one in `comments` is the one on its node, and `parentOf` answers that node
+
+- [#237](https://github.com/Nic-Polumeyv/teasel/pull/237) [`908c91e`](https://github.com/Nic-Polumeyv/teasel/commit/908c91e3ded6c0f281b7b2e69cafe9597758a371) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - `f(a?: T = 1)` fails at its colon, where TypeScript reports it
+
+- [#237](https://github.com/Nic-Polumeyv/teasel/pull/237) [`908c91e`](https://github.com/Nic-Polumeyv/teasel/commit/908c91e3ded6c0f281b7b2e69cafe9597758a371) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - An arrow's optional destructured parameter is an error, as in a function with a body
+
+- [#237](https://github.com/Nic-Polumeyv/teasel/pull/237) [`908c91e`](https://github.com/Nic-Polumeyv/teasel/commit/908c91e3ded6c0f281b7b2e69cafe9597758a371) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - In TypeScript, `(1 += 2)` and `f(1 += 2)` are errors, as in JavaScript
+
+- [#248](https://github.com/Nic-Polumeyv/teasel/pull/248) [`8673cd5`](https://github.com/Nic-Polumeyv/teasel/commit/8673cd565c7619050eb5f039918e99c96f789374) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - `parse` and `parseAt` replace `Source`; a bad offset throws a `RangeError`
+
+- [#242](https://github.com/Nic-Polumeyv/teasel/pull/242) [`a439986`](https://github.com/Nic-Polumeyv/teasel/commit/a439986c3d4fd1f009282796349de875cc8a9609) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - A later element no longer hides a pattern's error, as in `[...r, a = 1] = b`
+
+- [#237](https://github.com/Nic-Polumeyv/teasel/pull/237) [`908c91e`](https://github.com/Nic-Polumeyv/teasel/commit/908c91e3ded6c0f281b7b2e69cafe9597758a371) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - A stray `: T` or `?` in a list that cannot be parameters is an unexpected token where it stands
+
+- [#247](https://github.com/Nic-Polumeyv/teasel/pull/247) [`3dc9db5`](https://github.com/Nic-Polumeyv/teasel/commit/3dc9db52d1e4e878141bc49ba415611d9f0cfc0c) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - `ParseError` is gone: a syntax error throws a `SyntaxError` with the same fields
+
+- [#244](https://github.com/Nic-Polumeyv/teasel/pull/244) [`0790ae8`](https://github.com/Nic-Polumeyv/teasel/commit/0790ae8ebb7ab51f2efff83078c8e02e0aa255ba) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - The WebAssembly build needs no wasm-GC or tail calls, so it runs in Safari 15 and newer
+
 ## 0.0.22
 
 ### Patch Changes
