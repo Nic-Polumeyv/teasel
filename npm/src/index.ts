@@ -1,10 +1,9 @@
 import type { Comment, Expression, Node, Pattern, Program, Statement } from 'estree';
 import { decode, PARENT, REFERENCE, SCOPE } from './decode.ts';
-import { CODES, PLAN, type answers, type HostNode, type Language, type Parsed, type Recovered, type Reference, type Scope } from './types.ts';
+import { LANGUAGE, PIECE, type answers, type HostNode, type Language, type Parsed, type Recovered, type Reference, type Scope } from './types.ts';
 import { flags, type Options } from './options.ts';
 import { engine } from '#engine';
 import { children, extras, stylesheet } from './children.ts';
-import type { Grammar } from './grammar.ts';
 
 export type { Options } from './options.ts';
 export type { Arguments, Binding, Code, Comment, Declared, HostNode, Kept, Language, Parsed, Recovered, Reference, Root, Scope, Span } from './types.ts';
@@ -25,48 +24,39 @@ export function referenceOf(node: Node | null | undefined): Reference | undefine
 	return slot(node, REFERENCE);
 }
 
-let read: (piece: Piece<unknown>) => { entry: number; stop: string };
-let piece: <T>(entry: number) => Piece<T>;
-
-/**
- * One piece of JavaScript read at a position of the source, as far as it goes; `until` ends it
- * where the host's own tokens follow. A piece is built once and read at any position of any
- * source. `T` is what its parse answers with.
- */
-export class Piece<T> {
+/** One piece of JavaScript, what `parseAt` reads. A piece is built once and read in any text. `T` is what its parse answers with. */
+export interface Piece<T> {
 	// `T` is read nowhere else, so without this any piece would pass for any other
-	declare readonly [answers]?: T;
-	#entry: number;
-	#stop: string;
-
-	private constructor(entry: number, stop = '') {
-		this.#entry = entry;
-		this.#stop = stop;
-	}
-
+	readonly [answers]?: T;
+	readonly [PIECE]: { readonly entry: number; readonly stop: string };
 	/**
 	 * The same piece, ended where one of the host's own tokens, words or punctuators, follows.
 	 * One read outside every bracket the parse opened, where the expression could end, ends it:
 	 * `,` ends an expression before a sequence would, and `/>` is never a division. A `then`
 	 * after `.` is a property name. A TypeScript `as` is the host's unless another `as` follows
-	 * the assertion, so `xs as T[] as item` ends after the type.
+	 * the assertion, so `xs as T[] as item` ends after the type. A program reads to the end of
+	 * the text and takes no tokens.
 	 */
-	until(...tokens: string[]): Piece<T> {
-		if (tokens.length === 0 || !tokens.every((token) => typeof token === 'string' && token !== '' && !/\s/.test(token))) {
-			throw new TypeError('until takes words and punctuators');
-		}
-		return new Piece(this.#entry, this.#stop === '' ? tokens.join(' ') : `${this.#stop} ${tokens.join(' ')}`);
-	}
-
-	static {
-		read = (piece) => ({ entry: piece.#entry, stop: piece.#stop });
-		piece = (entry) => new Piece(entry);
-	}
+	until(...tokens: string[]): Piece<T>;
 }
 
 // `Entry` of parser/mod.rs by index; the program is 0
-/** JavaScript: a parse of it reads the whole source, or the program inside `[start, end]`. Its members read one piece. */
+const piece = <T>(entry: number, stop = ''): Piece<T> =>
+	Object.freeze({
+		[PIECE]: Object.freeze({ entry, stop }),
+		until(...tokens: string[]) {
+			if (entry === 0) throw new TypeError('a program reads to the end of the text');
+			if (tokens.length === 0 || !tokens.every((token) => typeof token === 'string' && token !== '' && !/\s/.test(token))) {
+				throw new TypeError('until takes words and punctuators');
+			}
+			return piece<T>(entry, stop === '' ? tokens.join(' ') : `${stop} ${tokens.join(' ')}`);
+		},
+	});
+
+/** JavaScript: a parse of it reads the whole text as a program. Its members are pieces for `parseAt`. */
 export const js: Language<Program> & {
+	/** A program from the offset `parseAt` is given to the end of the text. */
+	readonly program: Piece<Program>;
 	readonly expression: Piece<Expression>;
 	/** An assignment target: an identifier or a destructuring pattern. */
 	readonly pattern: Piece<Pattern>;
@@ -78,8 +68,10 @@ export const js: Language<Program> & {
 	/** The fields TypeScript may add to a node of any type, holding nodes: annotations, type parameters and arguments, what a class implements, decorators. */
 	readonly extras: readonly string[];
 } = Object.freeze({
+	[LANGUAGE]: Object.freeze({ entry: 0 }),
 	children,
 	extras,
+	program: piece<Program>(0),
 	expression: piece<Expression>(1),
 	pattern: piece<Pattern>(2),
 	params: piece<Pattern[]>(3),
@@ -87,68 +79,51 @@ export const js: Language<Program> & {
 	typeParameters: piece<Node>(5),
 });
 
-/** CSS: a parse of it reads the whole source as a stylesheet, a `StyleSheet` of rules and at-rules with its comments listed. */
-export const css: Language<HostNode> = Object.freeze({ children: stylesheet });
+/** CSS: a parse of it reads the whole text as a stylesheet, a `StyleSheet` of rules and at-rules with its comments listed. */
+export const css: Language<HostNode> = Object.freeze({ [LANGUAGE]: Object.freeze({ entry: 6 }), children: stylesheet });
 
 /**
- * A source kept with its options; a parse keeps nothing of it in the engine. Offsets are UTF-16;
- * positions stay those of the whole source. A lone surrogate in the text reaches the parser as
+ * The whole of `text`, as `language` reads it: `js` by default, a program. `css` reads it as a
+ * stylesheet, and a grammar from `@teasel/parser/grammar` as a document of its host language: the
+ * host's own nodes around the JavaScript ones, in one tree, in TypeScript when the grammar says so
+ * of a script tag. Positions are UTF-16 offsets. A lone surrogate in the text reaches the parser as
  * U+FFFD, the way `TextEncoder` encodes it, so string values, template cooked and raw text and
  * regex patterns carry U+FFFD there while spans and `loc` are right.
  */
-export class Source {
-	#source: string;
-	#flags: number;
+export function parse<T = Program>(text: string, options?: Options, language: Language<T> = js as Language<never>): Parsed<T> {
+	const read = language?.[LANGUAGE];
+	if (read === undefined) throw new TypeError('parse takes `js`, `css`, or a grammar made by this copy of @teasel/parser/grammar; a piece goes to parseAt');
+	return answer(text, options, read.entry, 0, '', read.plan, read.names);
+}
 
-	constructor(source: string, options: Options = {}) {
-		if (typeof source !== 'string') throw new TypeError('a Source takes a string');
-		this.#flags = flags(options);
-		this.#source = source;
-	}
+/**
+ * `piece` read from `text` at `at`, a UTF-16 offset, with positions of the whole text; a piece
+ * inside a range is read from the text cut at the range's end, as
+ * `parseAt(text.slice(0, end), js.program, start)`, where `end` splits neither a `\r\n` nor a
+ * surrogate pair. Every call copies the text into the parser, however small the piece, so reading
+ * one file piece by piece costs a copy of the file per piece. For a document of a host language,
+ * describe it as a grammar and `parse` it once.
+ */
+export function parseAt<P extends Piece<unknown>>(text: string, piece: P, at: number, options?: Options): Parsed<P extends Piece<infer T> ? T : never> {
+	const read = piece?.[PIECE];
+	if (read === undefined) throw new TypeError('parseAt takes a piece of `js`, such as js.program or js.expression');
+	return answer(text, options, read.entry, at, read.stop, undefined, undefined);
+}
 
-	/**
-	 * What `what` answers with: `js` by default, the whole source as a program. A piece of
-	 * JavaScript is read at `at`, a UTF-16 offset, or at `[start, end]` as if the source ended at
-	 * `end`; `js` takes the same for the program inside a range. `css` reads the whole source as a
-	 * stylesheet. A grammar from
-	 * `@teasel/parser/grammar` reads the whole source as a document of its host language: the
-	 * host's own nodes around the JavaScript ones, in one tree, in TypeScript when the grammar
-	 * says so of a script tag. The engine read the grammar when it was made.
-	 */
-	parse(): Parsed<Program>;
-	parse<T>(piece: Piece<T>, at?: number | [start: number, end: number]): Parsed<T>;
-	parse(language: typeof js, at?: number | [start: number, end: number]): Parsed<Program>;
-	parse<T>(what: Piece<T> | typeof js, at?: number | [start: number, end: number]): Parsed<T | Program>;
-	parse<T>(language: Language<T>): Parsed<T>;
-	parse(what: Piece<unknown> | Language<unknown> | Grammar = js, at?: number | [number, number]) {
-		let entry = 0, stop = '', plan: object | undefined, offset = 0, end: number | undefined;
-		if (what === js || what instanceof Piece) {
-			if (what instanceof Piece) ({ entry, stop } = read(what));
-			if (typeof at === 'number') offset = at;
-			else if (Array.isArray(at) && at.length === 2 && typeof at[0] === 'number' && typeof at[1] === 'number') [offset, end] = at;
-			else if (at !== undefined) throw new TypeError('at is an offset or [start, end]');
-		} else {
-			if (what === css) entry = 6;
-			else if (typeof what === 'object' && what !== null && PLAN in what) plan = what[PLAN];
-			else throw new TypeError('a parse takes `js`, one of its pieces, `css`, or a grammar made by this copy of @teasel/parser/grammar');
-			if (at !== undefined) throw new TypeError('only `js` and its pieces take a position');
-		}
-		const source = this.#source;
-		const answer = engine.parse(source, this.#flags, entry, offset, end, stop, plan);
-		let error: Omit<Recovered, 'line' | 'column'>;
-		// a request the engine refused: an offset or option it cannot take
-		if (typeof answer === 'string') error = JSON.parse(answer, (key, value) => (key === 'code' ? CODES[value] : value)).error;
-		else {
-			try {
-				const parsed = decode(answer, source, engine, this.#flags, entry === 3) as Parsed<unknown>;
-				if (parsed.node !== null) return parsed;
-				error = parsed.errors![0];
-			} catch (thrown) {
-				// a tree deeper than the caller's stack has room for overflowed the decoder
-				if (!(thrown instanceof RangeError)) throw thrown;
-				error = { code: 'nesting_depth', args: [], pos: offset, end: offset };
-			}
-		}
-		throw Object.assign(new SyntaxError(error.args.reduce((text: string, arg) => `${text} '${arg}'`, error.code)), error);
+function answer<T>(text: string, options: Options | undefined, entry: number, offset: number, stop: string, plan: object | undefined, names: readonly string[] | undefined): Parsed<T> {
+	if (typeof text !== 'string') throw new TypeError('a parse takes a string');
+	if (!Number.isInteger(offset) || offset < 0 || offset > text.length || (offset > 0 && text.codePointAt(offset - 1)! > 0xffff)) throw new RangeError(`${String(offset)} is no offset between characters of the text`);
+	const on = flags(options);
+	const words = engine.parse(text, on, entry, offset, stop, plan);
+	let error: Omit<Recovered, 'line' | 'column'>;
+	try {
+		const parsed = decode(words, text, engine, on, entry === 3, true, names) as Parsed<T>;
+		if (parsed.node !== null) return parsed;
+		error = parsed.errors![0];
+	} catch (thrown) {
+		// a tree deeper than the caller's stack has room for overflowed the decoder
+		if (!(thrown instanceof RangeError)) throw thrown;
+		error = { code: 'nesting_depth', args: [], pos: offset, end: offset };
 	}
+	throw Object.assign(new SyntaxError(error.args.reduce((text: string, arg) => `${text} '${arg}'`, error.code)), error);
 }

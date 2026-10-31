@@ -195,16 +195,6 @@ fn hash(s: &str) -> u32 {
 	(h ^ (h >> 32)) as u32
 }
 
-/// The same mix over `words`, two to a step.
-pub(crate) fn hash_words(words: &[u32]) -> u32 {
-	let mix = |h: u64, word: u64| (h.rotate_left(5) ^ word).wrapping_mul(SEED);
-	let mut h = mix(0, words.len() as u64);
-	for pair in words.chunks(2) {
-		h = mix(h, pair[0] as u64 | (pair.get(1).copied().unwrap_or(0) as u64) << 32);
-	}
-	(h ^ (h >> 32)) as u32
-}
-
 impl Interner {
 	/// Room for the strings of `bytes` of source, so the table grows rarely.
 	pub(crate) fn sized(bytes: usize) -> Self {

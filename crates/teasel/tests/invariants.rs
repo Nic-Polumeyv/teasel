@@ -198,7 +198,7 @@ fn no_child_ends_past_its_parent() {
 	let mut wrong = Vec::new();
 	for (path, source, module) in parsing(&root) {
 		let options = Options(if module { Options::MODULE } else { 0 });
-		if let (ast, Ok((roots, _))) = teasel::parse_at(&source, 0, None, Entry::Program, options, "") {
+		if let (ast, Ok((roots, _))) = teasel::parse_at(&source, 0, Entry::Program, options, "") {
 			escaped(&path, &ast, roots, &mut wrong);
 		}
 	}
@@ -212,7 +212,7 @@ fn no_child_ends_past_its_parent() {
 		let source = fs::read_to_string(&file).unwrap();
 		let module = if name.contains(".script.") { 0 } else { Options::MODULE };
 		let options = Options(module | Options::TYPESCRIPT);
-		if let (ast, Ok((roots, _))) = teasel::parse_at(&source, 0, None, Entry::Program, options, "") {
+		if let (ast, Ok((roots, _))) = teasel::parse_at(&source, 0, Entry::Program, options, "") {
 			escaped(name, &ast, roots, &mut wrong);
 		}
 	}

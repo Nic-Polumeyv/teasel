@@ -181,7 +181,9 @@ impl Json {
 pub type Words = crate::handed::Handed<u32>;
 
 /// Serializes an answer as JSON: the roots as `node`, one node or the patterns of a parameter
-/// list, null when the parse failed, then `end` and what the options add.
+/// list, null when the parse failed, then `end` and what the options add; `names` are the
+/// grammar's, which the hosts' rows number.
+#[expect(clippy::too_many_arguments)]
 pub fn answer(
 	ast: &Ast,
 	entry: Entry,
@@ -190,8 +192,9 @@ pub fn answer(
 	source: &str,
 	positions: &Positions,
 	options: Options,
+	names: &[&'static str],
 ) -> String {
-	let mut w = Writer::new(ast, source, positions);
+	let mut w = Writer::new(ast, source, positions, names);
 	w.options = options;
 	w.failed = roots.is_none();
 	w.json.object();
@@ -214,6 +217,7 @@ pub fn answer(
 pub struct Writer<'a> {
 	ast: &'a Ast,
 	source: &'a str,
+	names: &'a [&'static str],
 	pub(crate) json: Json,
 	positions: &'a Positions,
 	cursor: Cursor,
@@ -229,8 +233,7 @@ pub struct Writer<'a> {
 }
 
 /// Maps byte offsets to UTF-16 offsets and line/column pairs, the positions JavaScript counts,
-/// and UTF-16 offsets back to bytes. Built once per source; a host that parses many expressions out of one
-/// source keeps it.
+/// and UTF-16 offsets back to bytes.
 pub struct Positions {
 	/// After each non-ASCII character: its end byte offset and the bytes-minus-code-units gap so far.
 	gaps: Vec<(u32, u32)>,
@@ -320,6 +323,16 @@ impl Positions {
 		}
 		let i = self.gaps.partition_point(|g| g.0 - g.1 <= target);
 		Ok(target + if i == 0 { 0 } else { self.gaps[i - 1].1 })
+	}
+
+	pub(crate) fn map_values(&self, values: &mut [crate::ast::HostValue]) {
+		if self.gaps.is_empty() {
+			return;
+		}
+		let mut cursor = Cursor::default();
+		for row in values.iter_mut().filter(|row| row.tag == crate::ast::HostTag::Slice) {
+			row.value = row.value.map(|byte| self.offset(&mut cursor, byte));
+		}
 	}
 
 	/// Every node's span as UTF-16 offsets into `spans`, when the source has gaps, and its lines
@@ -452,10 +465,11 @@ fn locate<T>(items: &[T], hint: usize, byte: u32, key: impl Fn(&T) -> u32) -> us
 }
 
 impl<'a> Writer<'a> {
-	fn new(ast: &'a Ast, source: &'a str, positions: &'a Positions) -> Self {
+	fn new(ast: &'a Ast, source: &'a str, positions: &'a Positions, names: &'a [&'static str]) -> Self {
 		Self {
 			ast,
 			source,
+			names,
 			json: Json::default(),
 			positions,
 			cursor: Cursor::default(),
@@ -568,7 +582,7 @@ impl<'a> Writer<'a> {
 		self.rows("scopes", &scopes.scopes, 0);
 		self.rows("bindings", &scopes.bindings, 1);
 		self.rows("references", &scopes.references, 2);
-		if !self.ast.hosts.is_empty() {
+		if !self.ast.host_rows.is_empty() {
 			self.rows("roots", &scopes.roots, 3);
 		}
 	}
@@ -937,23 +951,24 @@ impl<'a> Writer<'a> {
 			// TypeScript closes its own node, since erasing may put another in its place
 			Extension(index) => return self.ast.typescript.write_node(self, id, index),
 			Host(index) => {
-				let host = self.ast.hosts[index as usize];
-				if host.ty.is_empty() {
-					// an object of the host's without a type, positions and all
-					let node = self.ast.node(id);
-					self.json.object();
-					self.host_span(node.start, node.end);
-				} else if host.span {
-					self.begin(host.ty, id);
-				} else {
-					self.json.escaped_begin(host.ty);
-					self.scope_facts(id);
+				let host = self.ast.host_rows[index as usize];
+				match host.ty.map(|ty| self.names[ty as usize]) {
+					None => {
+						// an object of the host's without a type, positions and all
+						let node = self.ast.node(id);
+						self.json.object();
+						self.host_span(node.start, node.end);
+					}
+					Some(ty) if host.span => self.begin(ty, id),
+					Some(ty) => {
+						self.json.escaped_begin(ty);
+						self.scope_facts(id);
+					}
 				}
-				let (from, len) = host.fields;
-				for i in from..from + len {
-					let (key, value) = self.ast.host_fields[i as usize];
-					self.json.escaped_key(key);
-					match value {
+				for i in host.fields.indices() {
+					self.json
+						.escaped_key(self.names[self.ast.host_keys[i as usize] as usize]);
+					match self.ast.host_vals[i as usize].value() {
 						Value::Node(child) => self.node(child),
 						Value::Nodes(children) => self.items(children),
 						Value::Str(string) => self.str_of(string),

@@ -202,18 +202,6 @@ pub struct Node {
 	pub end: u32,
 }
 
-/// A node of a host's grammar: its type and its fields are the grammar's, held by name.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Host {
-	pub ty: &'static str,
-	/// The node's fields, a run of `Ast::host_fields` in source order.
-	pub fields: (u32, u32),
-	/// Whether the node has a span; a fragment has none.
-	pub span: bool,
-	/// The scope the node opens, when it opens one.
-	pub scope: Option<Opens>,
-}
-
 /// The scopes a host node opens: the patterns it declares around itself, and its groups, a run
 /// of `Ast::host_groups`.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -277,14 +265,17 @@ crate::layout::record! {
 }
 
 crate::layout::record! {
+	/// A node of a host's grammar, its type and its fields named by their numbers in the grammar's
+	/// names.
 	#[derive(Clone, Copy, Debug)]
 	pub struct HostRow {
-		/// The name of its type; none for an object of the host's without one.
+		/// Its type; none for an object of the host's without one.
 		pub ty: Option<u32>,
-		/// Its fields, in `Ast::host_keys` and `Ast::host_vals`.
+		/// Its fields in source order, in `Ast::host_keys` and `Ast::host_vals`.
 		pub fields: Run,
-		/// The number of its shape: its type, whether it has a span, and its fields' keys and tags.
+		/// The number of its shape in the grammar's `Shapes`.
 		pub shape: u32,
+		/// Whether the node has a span; a fragment has none.
 		pub span: bool,
 	}
 }
@@ -359,8 +350,6 @@ pub struct Ast {
 	/// The values of the number literals, by `NumberLiteral::value`.
 	pub numbers: Handed<f64>,
 	pub lists: Handed<Option<NodeId>>,
-	pub hosts: Vec<Host>,
-	pub host_fields: Vec<(&'static str, Value)>,
 	pub host_strings: Handed<StrId>,
 	pub host_groups: Vec<HostGroup>,
 	pub strings: Interner,
@@ -384,9 +373,12 @@ pub struct Ast {
 	pub units: Handed<u32>,
 	pub error_rows: Handed<ErrorRow>,
 	pub host_rows: Handed<HostRow>,
-	/// The name id of each host field, and its value.
+	/// Each host field's name by its number, and its value; a slice of the source in bytes until
+	/// the answer maps it.
 	pub host_keys: Handed<u32>,
 	pub host_vals: Handed<HostValue>,
+	/// The scope each host node opens, when it opens one.
+	pub host_scopes: Vec<Option<Opens>>,
 	/// The buffers the last parse worked in, for the next one.
 	pub spare: crate::parser::Spare,
 	/// The scope analysis, when `scopes::analyze` ran.
@@ -450,8 +442,7 @@ pub(crate) struct Mark {
 impl Ast {
 	/// Empties the tree for the next parse; the room stays allocated.
 	pub fn clear(&mut self) {
-		self.hosts.clear();
-		self.host_fields.clear();
+		self.host_scopes.clear();
 		self.host_strings.clear();
 		self.host_groups.clear();
 		self.nodes.clear();
@@ -560,6 +551,26 @@ impl Value {
 	}
 }
 
+impl HostValue {
+	pub fn value(self) -> Value {
+		let [first, second] = self.value;
+		match self.tag {
+			HostTag::Node => Value::Node(NodeId::at(first)),
+			HostTag::Nodes => Value::Nodes(List {
+				start: first,
+				len: second,
+			}),
+			HostTag::Str => Value::Str(StrId::at(first)),
+			HostTag::Slice => Value::Slice(first, second),
+			HostTag::Strs => Value::Strs(first, second),
+			HostTag::Bool => Value::Bool(first != 0),
+			HostTag::Int => Value::Int(first),
+			HostTag::Null => Value::Null,
+			HostTag::Comments => Value::Comments,
+		}
+	}
+}
+
 impl Ast {
 	/// Appends the children of `id` in source order.
 	pub fn children(&self, id: NodeId, out: &mut Vec<NodeId>) {
@@ -575,11 +586,10 @@ impl Ast {
 	/// The nodes under a host node's fields; a child that is a fragment, a node without a span
 	/// of its own, is walked through, so a document's nodes come in source order around its scripts.
 	fn host_children(&self, index: u32, out: &mut Vec<NodeId>) {
-		let host = self.hosts[index as usize];
-		for &(_, value) in &self.host_fields[host.fields.0 as usize..(host.fields.0 + host.fields.1) as usize] {
-			match value {
+		for i in self.host_rows[index as usize].fields.indices() {
+			match self.host_vals[i as usize].value() {
 				Value::Node(child) => match self.node(child).kind {
-					NodeKind::Host(inner) if !self.hosts[inner as usize].span => self.host_children(inner, out),
+					NodeKind::Host(inner) if !self.host_rows[inner as usize].span => self.host_children(inner, out),
 					_ => out.push(child),
 				},
 				Value::Nodes(children) => out.extend(self.list(children).iter().flatten()),

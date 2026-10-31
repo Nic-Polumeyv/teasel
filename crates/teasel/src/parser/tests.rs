@@ -67,20 +67,20 @@ pub(crate) fn one(parsed: (Ast, Result<(List, u32), SyntaxError>)) -> Result<(As
 }
 
 fn at(entry: Entry, src: &str, offset: u32, options: Options, stop: &str) -> Result<(Ast, NodeId, u32), Failed> {
-	one(crate::parse_at(src, offset, None, entry, options, stop))
+	one(crate::parse_at(src, offset, entry, options, stop))
 }
 
 fn params(src: &str, offset: u32, options: Options, stop: &str) -> Result<(Ast, Vec<NodeId>, u32), Failed> {
-	roots(crate::parse_at(src, offset, None, Entry::Params, options, stop))
+	roots(crate::parse_at(src, offset, Entry::Params, options, stop))
 }
 
 fn program(src: &str, options: Options) -> Result<Ast, Failed> {
-	settled(crate::parse_at(src, 0, None, Entry::Program, options, "")).map(|(ast, _, _)| ast)
+	settled(crate::parse_at(src, 0, Entry::Program, options, "")).map(|(ast, _, _)| ast)
 }
 
 /// A whole source as a program, with the list holding its root.
 fn whole(src: &str, options: Options) -> (Ast, List) {
-	let (ast, roots, _) = settled(crate::parse_at(src, 0, None, Entry::Program, options, "")).unwrap();
+	let (ast, roots, _) = settled(crate::parse_at(src, 0, Entry::Program, options, "")).unwrap();
 	(ast, roots)
 }
 
@@ -233,6 +233,12 @@ fn expression_ends_where_it_ends() {
 }
 
 #[test]
+fn the_crate_entry_reads_a_stylesheet() {
+	let (_, parsed) = crate::parse_at("a { b: c }", 0, Entry::StyleSheet, crate::Options::default(), "");
+	assert!(parsed.is_ok());
+}
+
+#[test]
 fn an_entry_is_one_of_its_numbers() {
 	assert_eq!(crate::json::entry(6.0), Ok(Entry::StyleSheet));
 	for index in [7.0, -1.0, 6.5, f64::NAN] {
@@ -251,14 +257,14 @@ fn the_session_writes_the_same_words_again() {
 	let source = "let x = /* a */ 1; function f(y) { return x + y; } // b";
 	let words = || crate::json::words(|words| words.to_vec());
 	// a failed parse answers words too, flagged as such; its first one settles the error buffer
-	in_place("a +", options, Entry::Expression, 0.0, None, "", None).unwrap();
+	in_place("a +", options, Entry::Expression, 0.0, "", None).unwrap();
 	let failed = words();
 	assert_eq!((failed[1], failed[2 + failed[1] as usize] & 1), (0, 1));
-	in_place(source, options, Entry::Program, 0.0, None, "", None).unwrap();
+	in_place(source, options, Entry::Program, 0.0, "", None).unwrap();
 	let first = words();
-	let _ = in_place("a + b", options, Entry::Expression, 0.0, None, "", None);
-	let _ = in_place("a +", options, Entry::Expression, 0.0, None, "", None);
-	in_place(source, options, Entry::Program, 0.0, None, "", None).unwrap();
+	let _ = in_place("a + b", options, Entry::Expression, 0.0, "", None);
+	let _ = in_place("a +", options, Entry::Expression, 0.0, "", None);
+	in_place(source, options, Entry::Program, 0.0, "", None).unwrap();
 	let again = words();
 	// but for the first saying its buffers are new to the front end
 	let what = 2 + first[1] as usize;
@@ -391,7 +397,7 @@ impl Api {
 		stop: &str,
 	) -> Result<(Ast, Vec<NodeId>, u32), Failed> {
 		let options = if self.typescript { typescript(options) } else { options };
-		roots(crate::parse_at(src, offset, None, entry, options, stop))
+		roots(crate::parse_at(src, offset, entry, options, stop))
 	}
 
 	/// Parses under recovery and checks what the recovered tree promises: it never fails, its
@@ -786,11 +792,11 @@ fn phases() {
 	{
 		let options = Options(Options::MODULE | Options::COMMENTS);
 		best("whole request: positions, parse, comments, encode, finish", &mut || {
-			crate::json::in_place(&source, options, Entry::Program, 0.0, None, "", None).unwrap();
+			crate::json::in_place(&source, options, Entry::Program, 0.0, "", None).unwrap();
 		});
 		let options = Options(Options::MODULE | Options::COMMENTS | Options::SCOPES | Options::LOCATIONS);
 		best("whole request with scopes and loc", &mut || {
-			crate::json::in_place(&source, options, Entry::Program, 0.0, None, "", None).unwrap();
+			crate::json::in_place(&source, options, Entry::Program, 0.0, "", None).unwrap();
 		});
 	}
 	let grammar = crate::json::grammar(
@@ -809,7 +815,7 @@ fn phases() {
 		),
 	] {
 		best(&format!("host: 200 each blocks, {label}"), &mut || {
-			crate::json::in_place(&document, Options(flags), Entry::Program, 0.0, None, "", Some(&grammar)).unwrap();
+			crate::json::in_place(&document, Options(flags), Entry::Program, 0.0, "", Some(&grammar)).unwrap();
 		});
 	}
 	best("Json write, loc", &mut || {
@@ -821,6 +827,7 @@ fn phases() {
 			&source,
 			&lines,
 			options.with(Options::COMMENTS),
+			crate::host::grammar::own::NAMES,
 		);
 	});
 	eprintln!(
@@ -982,7 +989,6 @@ fn host_alloc_probe() {
 				crate::Options(crate::Options::MODULE),
 				Entry::Program,
 				0.0,
-				None,
 				"",
 				Some(&grammar),
 			)
@@ -1038,15 +1044,24 @@ fn layout_sizes() {
 		size_of::<crate::lexer::token::TokenKind>()
 	);
 	eprintln!(
-		"Scope {} Binding {} Reference {} Comment {} Host {} Attached {} TokenSnapshot {}",
+		"Scope {} Binding {} Reference {} Comment {} HostRow {} Attached {} TokenSnapshot {}",
 		size_of::<crate::scopes::Scope>(),
 		size_of::<crate::scopes::Binding>(),
 		size_of::<crate::scopes::Reference>(),
 		size_of::<crate::ast::Comment>(),
-		size_of::<crate::ast::Host>(),
+		size_of::<crate::ast::HostRow>(),
 		size_of::<crate::ast::Attached>(),
 		size_of::<super::TokenSnapshot>()
 	);
+}
+
+#[test]
+fn an_offset_inside_a_character_is_refused() {
+	let request = crate::json::Request {
+		offset: 1,
+		..crate::json::Request::from_flags(crate::Options::MODULE)
+	};
+	assert!(crate::json::parse("é", &request).contains("is not a character boundary"));
 }
 
 #[test]
