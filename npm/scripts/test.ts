@@ -373,7 +373,7 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 	assert.throws(() => read('<a @x="@"/>', {}, vue), (e: Any) => e instanceof SyntaxError, `${name}`);
 	assert.throws(() => readAt('<a/>', vue, 0), TypeError, `${name}`);
 	const handler = read('<button @click="let x = 1"/>', { errorRecovery: true }, vue);
-	assert.equal(handler.node.children[0].props[0].handler.type, 'Program', name);
+	assert.equal(handler.node.fragment.nodes[0].attributes[0].handler.type, 'Program', name);
 	assert.deepEqual(handler.errors, [], name);
 }
 // the grammar the Rust tests read is the typed definition as it crosses, pinned beside its documents
@@ -447,23 +447,24 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 	const source = '<ul :class="{ on }">\n\t<li v-for="(item, i) in items" :key="item.id" @click.stop="select(item)">{{ item.name }} #{{ i }}</li>\n</ul>\n';
 	const root = read(source, { sourceType: 'module' }, vue).node;
 	assert.equal(root.type, 'Root');
-	const ul = root.children[0];
-	assert.equal(ul.tag, 'ul');
-	assert.deepEqual(ul.props[0], { ...ul.props[0], type: 'Directive', name: 'bind', rawName: ':class', arg: 'class', modifiers: [] });
-	assert.equal(ul.props[0].exp.type, 'ObjectExpression');
-	const li = ul.children[1];
-	const [each, key, click] = li.props;
-	assert.equal(each.name, 'for');
+	const ul = root.fragment.nodes[0];
+	assert.equal(ul.name, 'ul');
+	assert.deepEqual(ul.attributes[0], { ...ul.attributes[0], type: 'Directive', kind: 'bind', rawName: ':class', name: 'class', modifiers: [] });
+	assert.equal(ul.attributes[0].exp.type, 'ObjectExpression');
+	const li = ul.fragment.nodes[1];
+	const [each, key, click] = li.attributes;
+	assert.equal(each.kind, 'for');
 	assert.equal(each.value.name, 'item');
 	assert.equal(each.key.name, 'i');
 	assert.equal(each.source.name, 'items');
 	assert.equal(key.exp.type, 'MemberExpression');
 	assert.deepEqual(click.modifiers, ['stop']);
 	assert.equal(click.handler.type, 'CallExpression');
-	assert.equal(li.children[0].type, 'Interpolation');
-	assert.equal(li.children[0].content.property.name, 'name');
-	assert.equal(li.children[1].content, ' #');
-	assert.equal(parentOf(li.children[2].content), li.children[2]);
+	const [interpolation, text, index] = li.fragment.nodes;
+	assert.equal(interpolation.type, 'Interpolation');
+	assert.equal(interpolation.content.property.name, 'name');
+	assert.deepEqual([text.type, text.data, text.raw], ['Text', ' #', ' #']);
+	assert.equal(parentOf(index.content), index);
 	assert.throws(() => read('<div v-for="x items">', {}, vue), { code: 'expected', args: ['in or of'], message: "expected 'in or of'" });
 }
 
@@ -651,11 +652,8 @@ if (name !== 'native') {
 {
 	const template = '<ul>\n\t{{#repeat item, i in items by item.id}}\n\t\t<Card title={{ item.name }} index={{ i }} />\n\t{{:empty}}\n\t\t<li>No items</li>\n\t{{/repeat}}\n</ul>\n';
 	const html = {
-		document: { node: 'Template', form: [{ children: g.content }] },
-		text: { node: 'Text', form: [{ data: g.text.data }] },
-		comment: { node: 'Comment', form: [{ data: g.text.data }] },
+		document: { node: 'Template' },
 		elements: {
-			fields: { name: g.element.tag, attributes: g.element.attributes, children: g.content },
 			component: { node: 'Component' },
 			other: { node: 'Element' },
 		},
@@ -665,13 +663,13 @@ if (name !== 'native') {
 	const index = g.opt(',', { index: g.optional(g.bind(g.js.identifier)) });
 	const list = { list: g.js.expression };
 	const key = g.opt('by', { key: g.optional(g.js.expression) });
-	const repeat = (head: Any[], branches: Any[] = []) => ({
+	const repeat = (head: Any[], branches?: Any[]) => ({
 		...html,
 		constructs: {
 			Expression: expression,
 			RepeatBlock: {
-				open: { marker: ['{{', '#repeat'], space: true, form: [...head, '}}', { body: g.content }] },
-				branches,
+				open: { marker: ['{{', '#repeat'], space: true, form: branches ? [...head, '}}', { body: g.content }] : [...head, '}}'] },
+				...(branches && { branches }),
 				close: { marker: ['{{', '/repeat'], form: ['}}'] },
 			},
 		},
@@ -686,7 +684,7 @@ if (name !== 'native') {
 	];
 	// a construct's second text is its own slice: only Text's `data` beside its `raw` shares a span
 	const pair = g.grammar('pair', { ...html, constructs: { Pair: { in: ['content'], open: { marker: ['{%'], form: [{ left: g.js.text }, '|', { right: g.js.text }, '%}'] } } } });
-	assert.deepEqual(read('<a>{% alpha | beta %}{%x|x%}</a>', {}, pair).node.children[0].children.map(({ left, right }: Any) => [left, right]), [['alpha', 'beta'], ['x', 'x']]);
+	assert.deepEqual(read('<a>{% alpha | beta %}{%x|x%}</a>', {}, pair).node.fragment.nodes[0].fragment.nodes.map(({ left, right }: Any) => [left, right]), [['alpha', 'beta'], ['x', 'x']]);
 	// what the engine cannot parse with is refused by `grammar` itself, naming the rule
 	assert.throws(() => g.grammar('twice', { ...html, constructs: { Pair: { in: ['content'], open: { marker: ['{%'], form: [{ left: g.js.text }, '|', { left: g.js.text }, '%}'] } } } }), /Pair reads left twice/);
 	// an identifier that refers to a binding declared elsewhere carries where that declaration is
@@ -738,7 +736,13 @@ function types(text: string, definition: typeof svelte) {
 	expect<Equal<NodeType<Svelte, 'IfBlock'>['elseif'], boolean>>();
 	expect<Equal<NodeType<Svelte, 'AwaitBlock'>['pending'], Fragment | null>>();
 	expect<Equal<NodeType<Svelte, 'SnippetBlock'>['typeParams'], string | undefined>>();
+	expect<Equal<NodeType<Svelte, 'SnippetBlock'>['fragment'], Fragment>>();
+	expect<Equal<NodeType<Svelte, 'KeyBlock'>['fragment'], Fragment>>();
+	expect<Equal<NodeType<Svelte, 'RegularElement'>['fragment'], Fragment>>();
+	expect<Equal<NodeType<Svelte, 'Text'>['raw'], string>>();
 	expect<Equal<keyof Fragment, 'type' | 'nodes'>>();
+	expect<Equal<NodeType<Svelte, 'OnDirective'>['name'], string | Expression | null>>();
+	expect<Equal<NodeType<Svelte, 'OnDirective'>['modifiers'], string[]>>();
 	expect<Equal<NodeType<Svelte, 'BindDirective'>['expression'], Expression>>();
 	expect<Equal<NodeType<Svelte, 'OnDirective'>['expression'], Expression | null>>();
 	expect<Equal<NodeType<Svelte, 'TransitionDirective'>['intro'], boolean>>();
@@ -750,8 +754,9 @@ function types(text: string, definition: typeof svelte) {
 	const f = {} as Extract<NodeType<Vue, 'Directive'>, { source: unknown }>;
 	expect<Equal<typeof f.source, Expression | null>>();
 	expect<Equal<typeof f.value, Pattern | undefined>>();
-	expect<Equal<typeof f.arg, string | Expression | null>>();
-	expect<Equal<Infer<Vue>['children'][number]['type'], 'Element' | 'Text' | 'Comment' | 'Interpolation' | 'Slot' | 'Template' | 'Component'>>();
+	expect<Equal<typeof f.name, string | Expression | null>>();
+	expect<Equal<typeof f.kind, string>>();
+	expect<Equal<Infer<Vue>['fragment']['nodes'][number]['type'], 'Element' | 'Text' | 'Comment' | 'Interpolation' | 'Slot' | 'Template' | 'Component'>>();
 
 	// @ts-expect-error a field may not be named type
 	g.opt({ type: g.js.expression });
@@ -764,56 +769,61 @@ function types(text: string, definition: typeof svelte) {
 	// @ts-expect-error an argument stands in only for a directive's value
 	g.orArg(g.js.expression);
 	const construct = (rule: Construct) => rule;
-	// @ts-expect-error a tag has no body
+	// @ts-expect-error a tag has no child list
 	construct({ open: { marker: ['{'], form: [{ body: g.content }, '}'] } });
 	// @ts-expect-error a tag opens no scope to declare in
 	construct({ open: { marker: ['{'], form: [{ name: g.bind(g.js.identifier) }, '}'] } });
 	// @ts-expect-error a close reads words only
 	construct({ open: { marker: ['{#b'], form: ['}', { body: g.content }] }, close: { marker: ['{/b'], form: [{ e: g.js.expression }, '}'] } });
+	// @ts-expect-error a block's fragment is teasel's
+	construct({ open: { marker: ['{#b'], form: ['}', { fragment: g.content }] }, close: { marker: ['{/b'], form: ['}'] } });
 	const directive = (rule: Directive) => rule;
 	// @ts-expect-error only a block declares around itself
 	directive({ node: 'D', form: [{ name: g.bind.outside(g.js.identifier) }] });
 	// @ts-expect-error a directive's flag is true or false
 	directive({ node: 'D', form: [{ flag: g.literal(null) }] });
+	// @ts-expect-error a directive's argument is its `name`, which teasel names
+	directive({ node: 'D', form: [{ name: g.value.expression }] });
+	// @ts-expect-error what a directive's name holds is never left out
+	directive({ node: 'D', form: [{ kind: g.optional(g.directive.kind) }] });
 	// @ts-expect-error `opt` needs items
 	g.opt();
 	// @ts-expect-error `oneOf` needs alternatives
 	g.oneOf();
 	// @ts-expect-error an alternative needs items
 	g.oneOf([]);
-	const base = {
-		text: { node: 'Text', form: [{ data: g.text.data }] },
-		comment: { node: 'Comment', form: [{ data: g.text.data }] },
-	};
-	const fields = { name: g.element.tag, attributes: g.element.attributes, children: g.content };
 	g.grammar('x', {
-		...base,
 		// @ts-expect-error the document's literals are null or a list
-		document: { node: 'Root', form: [{ children: g.content, flag: g.literal(true) }] },
-		elements: { fields },
+		document: { node: 'Root', form: [{ flag: g.literal(true) }] },
 	});
 	g.grammar('x', {
-		...base,
+		// @ts-expect-error the document's content is its fragment, which teasel names
 		document: { node: 'Root', form: [{ children: g.content }] },
-		// @ts-expect-error an element's fields are never left out
-		elements: { fields: { ...fields, attributes: g.optional(g.element.attributes) } },
 	});
 	g.grammar('x', {
-		...base,
-		document: { node: 'Root', form: [{ children: g.content }] },
-		elements: { fields },
-		// @ts-expect-error a directive's fields are never left out
-		directives: { fields: { arg: g.optional(g.directive.arg) } },
+		document: { node: 'Root' },
+		// @ts-expect-error an element's tag is its `name`, which teasel names
+		elements: { other: { node: 'E', form: [{ name: g.element.this }] } },
 	});
+	// a block with one list holds it as its fragment; with branches, it names each
+	const lists = g.grammar('lists', {
+		document: { node: 'Root' },
+		constructs: {
+			One: { open: { marker: ['{#one'], form: ['}'] }, close: { marker: ['{/one'], form: ['}'] } },
+			Two: { open: { marker: ['{#two'], form: ['}', { first: g.content }] }, branches: [{ marker: ['{:or'], form: ['}', { second: g.content }] }], close: { marker: ['{/two'], form: ['}'] } },
+		},
+	});
+	type Lists = typeof lists;
+	expect<Equal<keyof NodeType<Lists, 'One'>, 'type' | 'start' | 'end' | 'loc' | 'fragment'>>();
+	expect<Equal<keyof NodeType<Lists, 'Two'>, 'type' | 'start' | 'end' | 'loc' | 'first' | 'second'>>();
+	expect<Equal<NodeType<Lists, 'Two'>['second'], NodeType<Lists, 'Fragment'> | null>>();
 	// a rule written apart from the grammar keeps its types
 	const out = { in: ['content', 'value'], open: { marker: ['{{'], form: [{ value: g.js.expression }, '}}'] } } as const;
-	const apart = g.grammar('apart', { ...base, document: { node: 'Root', form: [{ children: g.content }] }, elements: { fields }, constructs: { Out: out } });
+	const apart = g.grammar('apart', { document: { node: 'Root' }, constructs: { Out: out } });
 	expect<Equal<NodeType<typeof apart, 'Out'>['value'], Expression>>();
 	// a construct only in values, or only in rcdata, is a node type too; an attribute's value holds text and what stands in values
 	const only = g.grammar('only', {
-		...base,
-		document: { node: 'Root', form: [{ children: g.content }] },
-		elements: { fields },
+		document: { node: 'Root' },
 		constructs: {
 			Interp: { in: ['value'], open: { marker: ['{{'], form: [{ value: g.js.expression }, '}}'] } },
 			Raw: { in: ['rcdata'], open: { marker: ['{%'], form: [{ value: g.js.expression }, '%}'] } },

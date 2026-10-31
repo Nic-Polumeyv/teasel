@@ -9,19 +9,15 @@ export default g.grammar('svelte', {
 		node: 'Root',
 		form: [
 			{ css: g.doc.style, js: g.literal([]), options: g.literal(null), comments: g.doc.comments, module: g.optional(g.doc.module) },
-			g.scope({ instance: g.optional(g.doc.script) }, g.scope({ fragment: g.content })),
+			g.scope({ instance: g.optional(g.doc.script) }),
 		],
 	},
-	fragment: { node: 'Fragment', form: [g.scope({ nodes: g.nodes })] },
-	text: { node: 'Text', form: [{ data: g.text.data, raw: g.text.raw }] },
-	comment: { node: 'Comment', form: [{ data: g.text.data }] },
 	attributes: { shorthand: ['{', '}'] },
 	autoclose: true,
 	trim: true,
 	void: ['area', 'base', 'br', 'col', 'command', 'embed', 'hr', 'img', 'input', 'keygen', 'link', 'meta', 'param', 'source', 'track', 'wbr'],
 
 	elements: {
-		fields: { name: g.element.tag, attributes: g.element.attributes, fragment: g.content },
 		rules: {
 			'svelte:element': { node: 'SvelteElement', form: [{ tag: g.element.thisOrText }] },
 			'svelte:component': { node: 'SvelteComponent', form: [{ expression: g.element.this }] },
@@ -49,7 +45,6 @@ export default g.grammar('svelte', {
 	directives: {
 		arg: ':',
 		modifier: '|',
-		fields: { name: g.directive.arg, modifiers: g.directive.modifiers },
 		rules: {
 			bind: { node: 'BindDirective', form: [{ expression: g.orArg(g.value.expression) }], unique: 'attributes' },
 			on: { node: 'OnDirective', form: [g.opt({ expression: g.value.expression })] },
@@ -105,7 +100,7 @@ export default g.grammar('svelte', {
 			close: { marker: ['{', '/await'], form: ['}'] },
 		},
 		KeyBlock: {
-			open: { marker: ['{', '#key'], space: true, form: [{ expression: g.js.expression }, '}', { fragment: g.content }] },
+			open: { marker: ['{', '#key'], space: true, form: [{ expression: g.js.expression }, '}'] },
 			close: { marker: ['{', '/key'], form: ['}'] },
 		},
 		SnippetBlock: {
@@ -117,7 +112,6 @@ export default g.grammar('svelte', {
 					g.opt({ typeParams: g.optional(g.js.typeParameters) }),
 					{ parameters: g.bind(g.js.params) },
 					'}',
-					{ body: g.content },
 				],
 			},
 			close: { marker: ['{', '/snippet'], form: ['}'] },
