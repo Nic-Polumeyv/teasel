@@ -921,6 +921,8 @@ impl<const TS: bool> Parser<'_, TS> {
 	}
 
 	/// A call's arguments after their `(`.
+	// see `Parser::first_error`
+	#[inline(always)]
 	pub(crate) fn parse_arguments(&mut self) -> Result<List> {
 		let mut errors = Some(DestructuringErrors::default());
 		let args = self.parse_expr_list(TokenKind::ParenR, true, false, &mut errors)?;

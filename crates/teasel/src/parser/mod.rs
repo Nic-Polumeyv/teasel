@@ -350,6 +350,8 @@ pub(crate) struct DestructuringErrors {
 
 impl DestructuringErrors {
 	/// An element's facts joining its list's: the first of each stays.
+	// see `Parser::first_error`
+	#[inline(always)]
 	pub(crate) fn merge(&mut self, element: DestructuringErrors) {
 		self.shorthand_assign = self.shorthand_assign.or(element.shorthand_assign);
 		self.trailing_comma = self.trailing_comma.or(element.trailing_comma);
@@ -360,19 +362,27 @@ impl DestructuringErrors {
 
 	/// The facts of an expression that is no pattern: only what makes it an error stays.
 	pub(crate) fn settle_as_operand(&mut self) {
-		let error = [
-			self.operand,
-			self.shorthand_assign.map(|pos| (pos, Code::ShorthandAssignment)),
-			self.double_proto.map(|pos| (pos, Code::DuplicateProto)),
-		]
-		.into_iter()
-		.flatten()
-		.min_by_key(|&(pos, _)| pos);
+		if self.operand.is_none() && self.shorthand_assign.is_none() && self.double_proto.is_none() {
+			*self = DestructuringErrors::default();
+			return;
+		}
 		*self = DestructuringErrors {
-			operand: error,
+			operand: first_pending([
+				self.operand,
+				self.shorthand_assign.map(|pos| (pos, Code::ShorthandAssignment)),
+				self.double_proto.map(|pos| (pos, Code::DuplicateProto)),
+			]),
 			..DestructuringErrors::default()
 		};
 	}
+}
+
+/// The pending error that comes first; on a tie, the one named first.
+// see `Parser::first_error`
+#[cold]
+#[inline(never)]
+fn first_pending(pending: [Option<(u32, Code)>; 3]) -> Option<(u32, Code)> {
+	pending.into_iter().flatten().min_by_key(|&(pos, _)| pos)
 }
 
 impl<'a, const TS: bool> Parser<'a, TS> {
@@ -1051,40 +1061,38 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 	) -> Result<bool> {
 		let Some(errors) = errors else { return Ok(false) };
 		let has = errors.shorthand_assign.is_some() || errors.double_proto.is_some() || errors.operand.is_some();
-		if !and_throw {
+		if !and_throw || !has {
 			return Ok(has);
 		}
-		let first = [
+		self.first_error([
 			errors.operand,
 			errors.shorthand_assign.map(|pos| (pos, Code::ShorthandAssignment)),
 			errors.double_proto.map(|pos| (pos, Code::DuplicateProto)),
-		]
-		.into_iter()
-		.flatten()
-		.min_by_key(|&(pos, _)| pos);
-		if let Some((pos, code)) = first {
-			return self.error(pos, code);
-		}
-		Ok(false)
+		])
+	}
+
+	// with this inlined at every check, and `merge` and `parse_arguments` left to the compiler, a
+	// parse-only JavaScript read took 1.5 to 2.8% longer (two code layouts, two corpora)
+	#[cold]
+	#[inline(never)]
+	fn first_error<T>(&self, pending: [Option<(u32, Code)>; 3]) -> Result<T> {
+		let (pos, code) = first_pending(pending).unwrap();
+		self.error(pos, code)
 	}
 
 	#[inline(always)]
 	pub(crate) fn check_pattern_errors(&self, errors: &Option<DestructuringErrors>) -> Result<()> {
 		let Some(errors) = errors else { return Ok(()) };
-		let first = [
+		if errors.operand.is_none() && errors.trailing_comma.is_none() && errors.parenthesized_assign.is_none() {
+			return Ok(());
+		}
+		self.first_error([
 			errors.operand,
 			errors.trailing_comma.map(|pos| (pos, Code::CommaAfterRest)),
 			errors
 				.parenthesized_assign
 				.map(|pos| (pos, Code::InvalidAssignmentTarget)),
-		]
-		.into_iter()
-		.flatten()
-		.min_by_key(|&(pos, _)| pos);
-		match first {
-			Some((pos, code)) => self.error(pos, code),
-			None => Ok(()),
-		}
+		])
 	}
 
 	pub(crate) fn check_yield_await_in_default_params(&self) -> Result<()> {
