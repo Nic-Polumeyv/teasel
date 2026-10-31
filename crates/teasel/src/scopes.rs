@@ -1082,9 +1082,9 @@ impl<'a> Binder<'a> {
 			}
 		}
 		self.enter(ScopeKind::Function, Some(id), arrow);
-		// a TypeScript `this` parameter, first in the list, is a type position and binds nothing
-		for (i, &param) in self.ast.list(params).iter().flatten().enumerate() {
-			if i == 0 && matches!(self.kind(param), NodeKind::Identifier { name } if Some(name) == self.this_name) {
+		// a TypeScript `this` parameter, wherever it stands, is a type position and binds nothing
+		for &param in self.ast.list(params).iter().flatten() {
+			if matches!(self.kind(param), NodeKind::Identifier { name } if Some(name) == self.this_name) {
 				continue;
 			}
 			self.initializing(None, |b| {

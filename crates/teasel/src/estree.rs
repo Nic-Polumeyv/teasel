@@ -734,38 +734,31 @@ impl<'a> Writer<'a> {
 
 	pub(crate) fn list(&mut self, key: &'static str, list: List) {
 		self.key(key);
-		self.items(list);
+		self.items(list, false);
 	}
 
-	fn items(&mut self, list: List) {
+	/// A parameter list; erasing drops TypeScript's `this` parameter wherever it stands.
+	pub(crate) fn params(&mut self, key: &'static str, list: List) {
+		self.key(key);
+		self.items(list, true);
+	}
+
+	fn items(&mut self, list: List, params: bool) {
 		self.json.list();
 		let ast = self.ast;
-		for item in ast.list(list) {
-			if self.options.has(Options::ERASE) && item.is_some_and(|id| ast.typescript.erased(ast, id)) {
-				continue;
-			}
+		let erase = self.options.has(Options::ERASE);
+		for &item in ast.list(list) {
 			match item {
-				Some(id) => self.node(*id),
+				Some(id) if erase && (ast.typescript.erased(ast, id) || params && self.is_this(id)) => {}
+				Some(id) => self.node(id),
 				None => self.json.null(),
 			}
 		}
 		self.json.end();
 	}
 
-	/// A parameter list; erasing drops TypeScript's `this` parameter.
-	pub(crate) fn params(&mut self, key: &'static str, list: List) {
-		if self.options.has(Options::ERASE)
-			&& let Some(&Some(first)) = self.ast.list(list).first()
-			&& let NodeKind::Identifier { name } = self.kind(first)
-			&& self.ast.str(name) == "this"
-		{
-			let rest = List {
-				start: list.start + 1,
-				len: list.len - 1,
-			};
-			return self.list(key, rest);
-		}
-		self.list(key, list)
+	fn is_this(&self, id: NodeId) -> bool {
+		matches!(self.kind(id), NodeKind::Identifier { name } if self.ast.str(name) == "this")
 	}
 
 	pub(crate) fn bool(&mut self, key: &'static str, value: bool) {
@@ -955,7 +948,7 @@ impl<'a> Writer<'a> {
 					self.json.escaped_key(key);
 					match value {
 						Value::Node(child) => self.node(child),
-						Value::Nodes(children) => self.items(children),
+						Value::Nodes(children) => self.items(children, false),
 						Value::Str(string) => self.str_of(string),
 						Value::Slice(start, end) => self.slice(start, end),
 						Value::Strs(start, len) => {

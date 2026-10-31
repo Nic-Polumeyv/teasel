@@ -12,8 +12,7 @@
 				"scope": 1,
 				"defines": [
 					0,
-					1,
-					2
+					1
 				],
 				"declare": false,
 				"id": {
@@ -52,7 +51,6 @@
 						"type": "Identifier",
 						"start": 22,
 						"end": 32,
-						"declares": 2,
 						"typeAnnotation": {
 							"type": "TSTypeAnnotation",
 							"start": 26,
@@ -101,12 +99,6 @@
 		},
 		{
 			"name": "a",
-			"kind": "param",
-			"scope": 1,
-			"write": true
-		},
-		{
-			"name": "this",
 			"kind": "param",
 			"scope": 1,
 			"write": true
