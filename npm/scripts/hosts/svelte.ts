@@ -4,7 +4,7 @@ const value = { value: g.bind(g.js.pattern) };
 const error = { error: g.bind(g.js.pattern) };
 const transition = { expression: g.value.expression };
 
-export default g.grammar('svelte', {
+export default g.grammar({
 	document: {
 		node: 'Root',
 		form: [
@@ -22,17 +22,21 @@ export default g.grammar('svelte', {
 
 	elements: {
 		fields: { name: g.element.tag, attributes: g.element.attributes, fragment: g.content },
+		reserved: {
+			'svelte:': {
+				element: { node: 'SvelteElement', form: [{ tag: g.element.thisOrText }] },
+				component: { node: 'SvelteComponent', form: [{ expression: g.element.this }] },
+				self: { node: 'SvelteSelf' },
+				window: { node: 'SvelteWindow', root: true, once: true },
+				document: { node: 'SvelteDocument', root: true, once: true },
+				body: { node: 'SvelteBody', root: true, once: true },
+				head: { node: 'SvelteHead', root: true, once: true },
+				options: { node: 'SvelteOptions', root: true, once: true },
+				fragment: { node: 'SvelteFragment' },
+				boundary: { node: 'SvelteBoundary' },
+			},
+		},
 		rules: {
-			'svelte:element': { node: 'SvelteElement', form: [{ tag: g.element.thisOrText }] },
-			'svelte:component': { node: 'SvelteComponent', form: [{ expression: g.element.this }] },
-			'svelte:self': { node: 'SvelteSelf' },
-			'svelte:window': { node: 'SvelteWindow', root: true, once: true },
-			'svelte:document': { node: 'SvelteDocument', root: true, once: true },
-			'svelte:body': { node: 'SvelteBody', root: true, once: true },
-			'svelte:head': { node: 'SvelteHead', root: true, once: true },
-			'svelte:options': { node: 'SvelteOptions', root: true, once: true },
-			'svelte:fragment': { node: 'SvelteFragment' },
-			'svelte:boundary': { node: 'SvelteBoundary' },
 			title: { node: 'TitleElement', inside: 'svelte:head' },
 			slot: { node: 'SlotElement', outside: 'shadowrootmode' },
 			textarea: { node: 'RegularElement', content: 'rcdata' },

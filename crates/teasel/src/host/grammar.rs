@@ -940,6 +940,8 @@ pub struct Form {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Match {
 	Exact(&'static str),
+	/// A prefix of the host's own and the name after it.
+	Reserved(&'static str, &'static str),
 	/// A capitalized or dotted name.
 	Component,
 	Any,
@@ -1171,7 +1173,6 @@ pub struct CommentRule {
 /// A host language: its document, its content, and the JavaScript inside them.
 #[derive(Clone, Debug)]
 pub struct Grammar {
-	pub name: &'static str,
 	pub document: DocumentRule,
 	/// `{name}` among the attributes is `name={name}`: the marker and the closing word around it.
 	pub shorthand: Option<(&'static str, &'static str)>,
@@ -1189,6 +1190,8 @@ pub struct Grammar {
 	pub comment: CommentRule,
 	/// The attribute that makes an element's subtree verbatim: text and plain attributes only.
 	pub verbatim: Option<&'static str>,
+	/// What the host's own tags start with, each a namespace: a name under one that no rule reserves is an error.
+	pub prefixes: Vec<&'static str>,
 	pub elements: Vec<ElementRule>,
 	pub script: Option<ScriptRule>,
 	pub style: Option<&'static str>,
@@ -1320,6 +1323,7 @@ pub mod definition {
 	wire! {
 		pub struct Elements<'a> {
 			pub fields: Record<'a, Source>,
+			pub reserved: Option<Record<'a, Record<'a, Element<'a>>>>,
 			pub rules: Option<Record<'a, Element<'a>>>,
 			pub component: Option<Element<'a>>,
 			pub other: Option<Element<'a>>,
@@ -1422,25 +1426,17 @@ pub mod definition {
 		}
 	}
 
-	wire! {
-		/// What crosses: the host's name and its definition.
-		pub struct Host<'a> {
-			pub name: &'static str,
-			pub definition: Definition<'a>,
-		}
-	}
-
-	impl<'a> Host<'a> {
+	impl<'a> Definition<'a> {
 		/// Every name but an escaped one is a slice of `text`, which therefore lives for the
 		/// process; every list is in `arena`.
-		pub fn read(text: &'static str, arena: &'a Arena) -> Result<Host<'a>, String> {
+		pub fn read(text: &'static str, arena: &'a Arena) -> Result<Definition<'a>, String> {
 			let mut reader = Reader::new(text, arena);
-			let host = <Host as Wire>::read(&mut reader)?;
+			let definition = <Definition as Wire>::read(&mut reader)?;
 			reader.end()?;
-			Ok(host)
+			Ok(definition)
 		}
 
-		/// The host as JSON, as the JavaScript side writes it.
+		/// The definition as JSON, as the JavaScript side writes it.
 		pub fn json(&self) -> String {
 			let mut out = String::new();
 			self.write(&mut out);
@@ -1451,7 +1447,7 @@ pub mod definition {
 
 // ── the definition lowered into the walker's rules
 
-use definition::{Bind, Host, Literal, Source};
+use definition::{Bind, Definition, Literal, Source};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum At {
@@ -1995,8 +1991,16 @@ fn construct(ty: &'static str, rule: &definition::Construct) -> Result<Construct
 	Ok(construct)
 }
 
-fn lower(host: Host) -> Result<Grammar, String> {
-	let d = host.definition;
+/// Whether the rule is the one for the tag `name`, written whole, prefix included.
+fn named(rule: &ElementRule, name: &str) -> bool {
+	match rule.name {
+		Match::Exact(exact) => exact == name,
+		Match::Reserved(prefix, reserved) => name.strip_prefix(prefix) == Some(reserved),
+		Match::Component | Match::Any => false,
+	}
+}
+
+fn lower(d: Definition) -> Result<Grammar, String> {
 	let texts = |node: &definition::Node,
 	             reads: &[&str]|
 	 -> Result<(&'static str, &'static str, Option<&'static str>), String> {
@@ -2035,8 +2039,30 @@ fn lower(host: Host) -> Result<Grammar, String> {
 	once("an element", &d.elements.fields)?;
 	let element_fields =
 		|read: &str| part(&d.elements.fields, read).ok_or_else(|| format!("elements need a field read by {read}"));
+	let mut prefixes: Vec<&'static str> = Vec::new();
 	let mut elements = Vec::new();
+	for (prefix, group) in d.elements.reserved.iter().flat_map(|r| r.0) {
+		let prefix = *prefix;
+		token("a reserved prefix", prefix)?;
+		if let Some(other) = prefixes
+			.iter()
+			.copied()
+			.find(|other| other.starts_with(prefix) || prefix.starts_with(other))
+		{
+			return Err(format!("the reserved prefixes {other} and {prefix} overlap"));
+		}
+		prefixes.push(prefix);
+		for (name, rule) in group.0 {
+			elements.push(element(Match::Reserved(prefix, name), rule)?);
+		}
+	}
 	for (name, rule) in d.elements.rules.iter().flat_map(|r| r.0) {
+		if let Some(prefix) = prefixes.iter().copied().find(|prefix| name.starts_with(prefix)) {
+			return Err(format!(
+				"{}: {name} starts with the prefix {prefix}, so it is a reserved element",
+				rule.node
+			));
+		}
 		elements.push(element(Match::Exact(name), rule)?);
 	}
 	if let Some(rule) = &d.elements.component {
@@ -2047,7 +2073,7 @@ fn lower(host: Host) -> Result<Grammar, String> {
 	}
 	for rule in &elements {
 		if let Some(inside) = rule.inside
-			&& !elements.iter().any(|other| other.name == Match::Exact(inside))
+			&& !elements.iter().any(|other| named(other, inside))
 		{
 			return Err(format!("{}: inside names {inside}, which no element rule is", rule.ty));
 		}
@@ -2114,7 +2140,6 @@ fn lower(host: Host) -> Result<Grammar, String> {
 		return Err(format!("{} holds no content", d.document.node));
 	}
 	Ok(Grammar {
-		name: host.name,
 		document,
 		shorthand,
 		autoclose: d.autoclose == Some(true),
@@ -2137,6 +2162,7 @@ fn lower(host: Host) -> Result<Grammar, String> {
 			data: comment_data,
 		},
 		verbatim: d.verbatim,
+		prefixes,
 		elements,
 		script: d.script.as_ref().map(|s| ScriptRule {
 			name: s.element,
@@ -2182,7 +2208,6 @@ impl Grammar {
 	/// A grammar with nothing in it, behind a stylesheet read on its own.
 	pub(crate) fn empty() -> Grammar {
 		Grammar {
-			name: "",
 			document: DocumentRule {
 				ty: "Document",
 				fields: vec![DocField::Field {
@@ -2212,6 +2237,7 @@ impl Grammar {
 				data: "data",
 			},
 			verbatim: None,
+			prefixes: Vec::new(),
 			elements: Vec::new(),
 			script: None,
 			style: None,
@@ -2227,15 +2253,12 @@ impl Grammar {
 	/// Reads a grammar off its JSON, kept for the process: the definition as the builders made it,
 	/// lowered.
 	pub fn read(text: &'static str) -> Result<Grammar, String> {
-		let mut grammar = lower(Host::read(text, &Arena::default())?)?;
+		let mut grammar = lower(Definition::read(text, &Arena::default())?)?;
 		grammar.finish()?;
 		Ok(grammar)
 	}
 
 	fn finish(&mut self) -> Result<(), String> {
-		if self.name.is_empty() {
-			return Err("a grammar names its host".into());
-		}
 		if self.shorthand.is_some() && self.value_expression().is_none() {
 			return Err("the attribute shorthand needs a tag in value that reads one expression".into());
 		}
@@ -2311,9 +2334,19 @@ impl Grammar {
 		Ok(())
 	}
 
+	/// The rule of an element by its tag; none for a name under a prefix that no rule reserves.
 	pub fn element(&self, name: &str) -> Option<&ElementRule> {
+		for prefix in &self.prefixes {
+			if let Some(rest) = name.strip_prefix(prefix) {
+				return self
+					.elements
+					.iter()
+					.find(|rule| matches!(rule.name, Match::Reserved(p, r) if p == *prefix && r == rest));
+			}
+		}
 		self.elements.iter().find(|rule| match rule.name {
 			Match::Exact(exact) => exact == name,
+			Match::Reserved(..) => false,
 			Match::Component => component_name(name),
 			Match::Any => true,
 		})
@@ -2472,15 +2505,15 @@ mod tests {
 			}
 			println!("{label}: {:?}", t.elapsed() / 1000);
 		};
-		time("Host::read", &|| {
-			std::hint::black_box(Host::read(text, &Arena::default()).unwrap());
+		time("Definition::read", &|| {
+			std::hint::black_box(Definition::read(text, &Arena::default()).unwrap());
 		});
 		let arena = Arena::default();
-		let host = Host::read(text, &arena).unwrap();
+		let d = Definition::read(text, &arena).unwrap();
 		time("lower", &|| {
-			std::hint::black_box(lower(host).unwrap());
+			std::hint::black_box(lower(d).unwrap());
 		});
-		let grammar = lower(host).unwrap();
+		let grammar = lower(d).unwrap();
 		time("finish", &|| {
 			let mut g = grammar.clone();
 			g.finish().unwrap();

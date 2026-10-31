@@ -373,11 +373,15 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 	const handler = open('<button @click="let x = 1"/>', { errorRecovery: true }).parse(vue);
 	assert.equal(handler.node.children[0].props[0].handler.type, 'Program', name);
 	assert.deepEqual(handler.errors, [], name);
+	// a tag under the host's prefix is one it reserves or no tag at all; a host without a prefix reserves none
+	assert.throws(() => open('<svelte:foo/>').parse(svelte), { code: 'invalid_name' }, name);
+	assert.equal(open('<svelte:head/>').parse(svelte).node.fragment.nodes[0].type, 'SvelteHead', name);
+	assert.equal(open('<vue:foo/>').parse(vue).node.children[0].type, 'Element', name);
 }
 // the grammar the Rust tests read is the typed definition as it crosses, pinned beside its documents
 for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 	const pin = new URL(`../../crates/teasel/tests/hosts/${host}/host.json`, import.meta.url);
-	const json = JSON.stringify({ name: host, definition: definition.definition });
+	const json = JSON.stringify(definition.definition);
 	if (process.env.UPDATE) writeFileSync(pin, json);
 	else assert.ok(readFileSync(pin, 'utf8') === json, `${name} ${host}/host.json changed; run with UPDATE=1 once the change is meant`);
 }
@@ -681,10 +685,16 @@ if (name !== 'native') {
 		repeat([item, index, 'in', list, key], [{ marker: ['{{', ':empty'], form: ['}}', { fallback: g.optional(g.content) }] }]),
 	];
 	// a construct's second text is its own slice: only Text's `data` beside its `raw` shares a span
-	const pair = g.grammar('pair', { ...html, constructs: { Pair: { in: ['content'], open: { marker: ['{%'], form: [{ left: g.js.text }, '|', { right: g.js.text }, '%}'] } } } });
+	const pair = g.grammar({ ...html, constructs: { Pair: { in: ['content'], open: { marker: ['{%'], form: [{ left: g.js.text }, '|', { right: g.js.text }, '%}'] } } } });
 	assert.deepEqual(open('<a>{% alpha | beta %}{%x|x%}</a>').parse(pair).node.children[0].children.map(({ left, right }: Any) => [left, right]), [['alpha', 'beta'], ['x', 'x']]);
 	// what the engine cannot parse with is refused by `grammar` itself, naming the rule
-	assert.throws(() => g.grammar('twice', { ...html, constructs: { Pair: { in: ['content'], open: { marker: ['{%'], form: [{ left: g.js.text }, '|', { left: g.js.text }, '%}'] } } } }), /Pair reads left twice/);
+	assert.throws(() => g.grammar({ ...html, constructs: { Pair: { in: ['content'], open: { marker: ['{%'], form: [{ left: g.js.text }, '|', { left: g.js.text }, '%}'] } } } }), /Pair reads left twice/);
+	assert.throws(() => g.grammar({ ...html, elements: { ...html.elements, reserved: { 't:': { x: { node: 'X' } }, 't:u:': { y: { node: 'Y' } } } } }), /the reserved prefixes t: and t:u: overlap/);
+	assert.throws(() => g.grammar({ ...html, elements: { ...html.elements, reserved: { 't:': { y: { node: 'Y' } } }, rules: { 't:x': { node: 'X' } } } }), /X: t:x starts with the prefix t:/);
+	// each prefix is a namespace of its own, whatever character ends it
+	const spaces = g.grammar({ ...html, elements: { ...html.elements, reserved: { 'a:': { x: { node: 'AX' } }, 'b-': { y: { node: 'BY' } } } } });
+	assert.deepEqual(open('<a:x/><b-y/>').parse(spaces).node.children.map((n: Any) => n.type), ['AX', 'BY']);
+	for (const text of ['<a:y/>', '<b-x/>']) assert.throws(() => open(text).parse(spaces), { code: 'invalid_name' }, text);
 	// an identifier that refers to a binding declared elsewhere carries where that declaration is
 	const shape = (value: Any): Any => {
 		if (Array.isArray(value)) return value.map(shape);
@@ -697,7 +707,7 @@ if (name !== 'native') {
 	};
 	const answers = steps.map((definition) => {
 		try {
-			return { tree: shape(open(template, { scopes: true }).parse(g.grammar('tpl', definition)).node) };
+			return { tree: shape(open(template, { scopes: true }).parse(g.grammar(definition)).node) };
 		} catch (e) {
 			const { code, message, pos, end } = e as Any;
 			return { error: { code, message, pos, end } };
@@ -782,19 +792,19 @@ function types(source: api.Source, definition: typeof svelte) {
 		comment: { node: 'Comment', form: [{ data: g.text.data }] },
 	};
 	const fields = { name: g.element.tag, attributes: g.element.attributes, children: g.content };
-	g.grammar('x', {
+	g.grammar({
 		...base,
 		// @ts-expect-error the document's literals are null or a list
 		document: { node: 'Root', form: [{ children: g.content, flag: g.literal(true) }] },
 		elements: { fields },
 	});
-	g.grammar('x', {
+	g.grammar({
 		...base,
 		document: { node: 'Root', form: [{ children: g.content }] },
 		// @ts-expect-error an element's fields are never left out
 		elements: { fields: { ...fields, attributes: g.optional(g.element.attributes) } },
 	});
-	g.grammar('x', {
+	g.grammar({
 		...base,
 		document: { node: 'Root', form: [{ children: g.content }] },
 		elements: { fields },
@@ -803,10 +813,10 @@ function types(source: api.Source, definition: typeof svelte) {
 	});
 	// a rule written apart from the grammar keeps its types
 	const out = { in: ['content', 'value'], open: { marker: ['{{'], form: [{ value: g.js.expression }, '}}'] } } as const;
-	const apart = g.grammar('apart', { ...base, document: { node: 'Root', form: [{ children: g.content }] }, elements: { fields }, constructs: { Out: out } });
+	const apart = g.grammar({ ...base, document: { node: 'Root', form: [{ children: g.content }] }, elements: { fields }, constructs: { Out: out } });
 	expect<Equal<NodeType<typeof apart, 'Out'>['value'], Expression>>();
 	// a construct only in values, or only in rcdata, is a node type too; an attribute's value holds text and what stands in values
-	const only = g.grammar('only', {
+	const only = g.grammar({
 		...base,
 		document: { node: 'Root', form: [{ children: g.content }] },
 		elements: { fields },

@@ -6,7 +6,7 @@ const aliases = g.seq(
 	g.opt(',', g.opt({ key: g.optional(g.bind(g.js.pattern)) }), g.opt(',', g.opt({ index: g.optional(g.bind(g.js.pattern)) }))),
 );
 
-export default g.grammar('vue', {
+export default g.grammar({
 	document: { node: 'Root', form: [{ children: g.content }] },
 	text: { node: 'Text', form: [{ content: g.text.data }] },
 	comment: { node: 'Comment', form: [{ content: g.text.data }] },
