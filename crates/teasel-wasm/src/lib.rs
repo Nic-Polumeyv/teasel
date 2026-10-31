@@ -2,7 +2,6 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use teasel::Options;
 use teasel::host::Grammar;
-use teasel::json::error_json;
 
 thread_local! {
 	static TEXT: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
@@ -25,8 +24,8 @@ pub extern "C" fn alloc(len: u32) -> *mut u8 {
 
 /// # Safety
 /// `ptr` is `capacity` bytes from `alloc`, `len` of them a host language's grammar as JSON;
-/// they are taken over here. The handle is 0 when the grammar cannot be read, the error as JSON
-/// at `text_ptr`.
+/// they are taken over here. The handle is 0 when the grammar cannot be read, what is wrong at
+/// `text_ptr`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn plan_new(ptr: *mut u8, len: u32, capacity: u32) -> u32 {
 	let grammar = unsafe { Vec::from_raw_parts(ptr, len as usize, capacity as usize) };
@@ -34,7 +33,7 @@ pub unsafe extern "C" fn plan_new(ptr: *mut u8, len: u32, capacity: u32) -> u32 
 	match grammar.and_then(teasel::json::grammar) {
 		Ok(grammar) => Box::into_raw(Box::new(grammar)) as u32,
 		Err(message) => {
-			text(error_json(&message, 0));
+			text(message);
 			0
 		}
 	}
@@ -49,21 +48,11 @@ pub extern "C" fn plan_free(handle: u32) {
 	drop(unsafe { Box::from_raw(handle as *mut Rc<Grammar>) });
 }
 
-// 0: words at `words_ptr`; 1: an error as JSON at `text_ptr`
-fn answer(result: Result<(), String>) -> u32 {
-	match result {
-		Ok(()) => 0,
-		Err(error) => {
-			text(error);
-			1
-		}
-	}
-}
-
 /// # Safety
 /// `ptr` is `capacity` bytes from `alloc`, `len` of them the source, and `stop_ptr` is
 /// `stop_capacity` bytes from `alloc`, `stop_len` of them the stop tokens; both are taken over
-/// here. `flags` is the option word; `plan` is a handle from `plan_new`, or 0.
+/// here. `flags` is the option word; `plan` is a handle from `plan_new`, or 0. 0: words at
+/// `words_ptr`; 1: what is wrong with the call at `text_ptr`, for the front end to throw.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn parse(
 	ptr: *mut u8,
@@ -72,8 +61,6 @@ pub unsafe extern "C" fn parse(
 	flags: u32,
 	entry: f64,
 	offset: f64,
-	end: f64,
-	has_end: u32,
 	stop_ptr: *mut u8,
 	stop_len: u32,
 	stop_capacity: u32,
@@ -81,18 +68,20 @@ pub unsafe extern "C" fn parse(
 ) -> u32 {
 	let source = unsafe { Vec::from_raw_parts(ptr, len as usize, capacity as usize) };
 	let stop = unsafe { Vec::from_raw_parts(stop_ptr, stop_len as usize, stop_capacity as usize) };
-	let end = (has_end == 1).then_some(end);
 	let grammar = (plan != 0).then(|| unsafe { &**(plan as *const Rc<Grammar>) });
-	let Ok(source) = std::str::from_utf8(&source) else {
-		return answer(Err(error_json("the source is not UTF-8", 0)));
-	};
-	let Ok(stop) = std::str::from_utf8(&stop) else {
-		return answer(Err(error_json("the stop tokens are not UTF-8", 0)));
-	};
-	answer(
-		teasel::json::entry(entry)
-			.and_then(|entry| teasel::json::in_place(source, Options(flags), entry, offset, end, stop, grammar)),
-	)
+	let source = std::str::from_utf8(&source).map_err(|_| "the source is not UTF-8".to_string());
+	let stop = std::str::from_utf8(&stop).map_err(|_| "the stop tokens are not UTF-8".to_string());
+	let parsed = source.and_then(|source| {
+		let entry = teasel::json::entry(entry)?;
+		teasel::json::in_place(source, Options(flags), entry, offset, stop?, grammar)
+	});
+	match parsed {
+		Ok(()) => 0,
+		Err(message) => {
+			text(message);
+			1
+		}
+	}
 }
 
 #[unsafe(no_mangle)]

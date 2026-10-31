@@ -276,7 +276,7 @@ mod tests {
 
 	fn at(entry: Entry, src: &str, offset: u32, on: u32) -> Vec<String> {
 		let options = Options(Options::MODULE | on);
-		let (mut ast, parsed) = crate::parse_at(src, offset, None, entry, options, "");
+		let (mut ast, parsed) = crate::parse_at(src, offset, entry, options, "");
 		let (roots, _) = parsed.unwrap();
 		super::attach(&mut ast, src, roots, offset);
 		attached(&ast, src)
@@ -343,7 +343,7 @@ mod tests {
 	fn an_async_rest_takes_the_comment_after_its_annotation() {
 		let src = "async (...a: T[] /* c */) => {}";
 		let options = Options(Options::MODULE | Options::TYPESCRIPT);
-		let (mut ast, parsed) = crate::parse_at(src, 0, None, Entry::Program, options, "");
+		let (mut ast, parsed) = crate::parse_at(src, 0, Entry::Program, options, "");
 		let (roots, _) = parsed.unwrap();
 		super::attach(&mut ast, src, roots, 0);
 		assert_eq!(attached(&ast, src), [r#"RestElement leading=[] trailing=[" c "]"#]);
