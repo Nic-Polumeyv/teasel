@@ -138,7 +138,6 @@ export const children = frozen({
 	TSSatisfiesExpression: ['expression', 'typeAnnotation'],
 	TSNonNullExpression: ['expression'],
 	TSTypeAssertion: ['typeAnnotation', 'expression'],
-	TSTypeCastExpression: ['expression', 'typeAnnotation'],
 	TSInstantiationExpression: ['expression', 'typeArguments'],
 	TSParameterProperty: ['parameter'],
 	Decorator: ['expression'],

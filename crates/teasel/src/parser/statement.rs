@@ -543,7 +543,10 @@ impl<const TS: bool> Parser<'_, TS> {
 			if starts_with_let && is_for_of {
 				return self.error(self.start_of(init), Code::ForOfLet);
 			}
-			let init = self.make_pattern(init, false, &mut errors)?;
+			if errors.is_some_and(|e| e.owner != Some(init)) {
+				self.check_expression_errors(&errors, true)?;
+			}
+			let init = self.make_pattern(init, &mut errors)?;
 			self.check_lval_pattern(init, Binding::None, &mut None)?;
 			return self.parse_for_in(start, init, is_await);
 		}
