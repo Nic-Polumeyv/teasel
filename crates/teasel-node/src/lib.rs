@@ -101,12 +101,6 @@ fn number(env: Env, value: Value) -> Result<f64> {
 	})
 }
 
-// anything but a number is absent, read straight: asking V8 what the value is first costs as much as the read
-fn optional(env: Env, value: Value) -> Option<f64> {
-	let mut result = 0.0;
-	(unsafe { node_api::napi_get_value_double(env, value, &mut result) } == OK).then_some(result)
-}
-
 fn text(env: Env, text: &str) -> Result<Value> {
 	out(null_mut(), "a string", |r| unsafe {
 		node_api::napi_create_string_utf8(env, text.as_ptr().cast(), text.len(), r)
@@ -166,25 +160,14 @@ fn grammar_of(env: Env, value: Value) -> Option<&'static Grammar> {
 
 unsafe extern "C" fn parse(env: Env, info: CallbackInfo) -> Value {
 	guard(env, || {
-		let [source, flags, entry, offset, end, stop, plan] = args::<7>(env, info)?;
+		let [source, flags, entry, offset, stop, plan] = args::<6>(env, info)?;
 		let (source, options) = (source_text(env, source)?, Options(number(env, flags)? as u32));
-		let (entry, offset, end, stop) = (
-			number(env, entry)?,
-			number(env, offset)?,
-			optional(env, end),
-			string(env, stop)?,
-		);
-		let grammar = grammar_of(env, plan);
-		answer(env, || {
-			json::in_place(source, options, json::entry(entry)?, offset, end, &stop, grammar)
+		let (entry, offset) = (json::entry(number(env, entry)?)?, number(env, offset)?);
+		let (stop, grammar) = (string(env, stop)?, grammar_of(env, plan));
+		in_env(env, || {
+			json::in_place(source, options, entry, offset, &stop, grammar)?;
+			view(env)
 		})
-	})
-}
-
-fn answer(env: Env, parse: impl FnOnce() -> Result<()>) -> Result<Value> {
-	in_env(env, || match parse() {
-		Ok(()) => view(env),
-		Err(json) => text(env, &json),
 	})
 }
 

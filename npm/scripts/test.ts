@@ -4,7 +4,6 @@ import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
 import type { Expression, Identifier, Pattern, Program } from 'estree';
 import type { Construct, Directive, Infer, NodeType } from '../src/grammar.ts';
-import type * as api from '../src/index.ts';
 import type { Options } from '../src/index.ts';
 import type { Addon } from '../src/engine/addon.ts';
 if (process.argv.includes('interpret')) globalThis.Function = (() => { throw new EvalError('blocked'); }) as unknown as FunctionConstructor;
@@ -23,14 +22,15 @@ const { load } = await import('../dist/engine/addon.js');
 const m = await import('../src/index.ts');
 // the trees are poked as the recipes shape them, host nodes included, past what the types say
 type Any = any;
-const { js, css, Piece } = m;
-const open = (source: string, options?: Options): Any => new m.Source(source, options);
+const { js, css } = m;
+const read: (text: string, options?: Any, language?: Any) => Any = m.parse;
+const readAt: (text: string, piece: Any, at: Any, options?: Any) => Any = m.parseAt;
 const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'parentOf', (node: Any) => Any> = m;
 
 {
-	const parse = (source: string, options?: Options): Any => open(source, options).parse();
+	const parse = (source: string, options?: Options): Any => read(source, options);
 	const program = (source: string, options?: Options): Any => parse(source, options).node;
-	const at = (piece: Exclude<keyof typeof js, symbol | 'children' | 'extras'>, source: string, offset: number, options?: Options, stopAt?: string[]): Any => open(source, options).parse(stopAt === undefined ? js[piece] : js[piece].until(...stopAt), offset);
+	const at = (piece: Exclude<keyof typeof js, symbol | 'children' | 'extras'>, source: string, offset: number, options?: Options, stopAt?: string[]): Any => readAt(source, stopAt === undefined ? js[piece] : js[piece].until(...stopAt), offset, options);
 	const typed = parse('let x: number = 1; // done', { sourceType: 'module', typescript: true, comments: true, locations: true });
 	assert.equal(typed.node.sourceType, 'module');
 	assert.equal(typed.end, 26);
@@ -68,7 +68,7 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 	assert.equal(at('expression', '{p.then(f) then r}', 1, undefined, ['then', 'catch']).end, 10);
 	assert.equal(at('expression', '{xs as [a, b = 1]}', 1, ts, ['as']).end, 3);
 	assert.equal(at('expression', '{f<A, B>(), i}', 1, ts, ['as', ',']).end, 10);
-	assert.throws(() => at('expression', 'éé𝒳x', 3), (e: Any) => e.code === 'invalid_request' && e.args[0] === 'offset 3 is inside a surrogate pair' && e.message === "invalid_request 'offset 3 is inside a surrogate pair'");
+	assert.throws(() => at('expression', 'éé𝒳x', 3), RangeError);
 	assert.equal(at('expression', '{obj. as item}', 1, undefined, ['as']).end, 8);
 	assert.equal(at('expression', '{x. then y}', 1, ts).end, 8);
 	assert.equal(at('expression', '{items, i}', 1, undefined, ['as', ',']).end, 6);
@@ -79,10 +79,16 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 	assert.equal(at('pattern', '{[a, b], i}', 1, undefined, [',']).end, 7);
 	assert.throws(() => js.expression.until('a s'), TypeError);
 	assert.throws(() => js.expression.until(), TypeError);
-	assert.throws(() => open('{a}').parse('expression' as Any, 1), /a parse takes `js`, one of its pieces, `css`, or a grammar/);
-	assert.throws(() => open('{a}').parse(js.expression, '1' as Any), TypeError);
-	assert.throws(() => open('{a}').parse(js.expression, [1] as Any), TypeError);
-	assert.equal(js.expression.until('as').until(',').constructor, Piece);
+	assert.throws(() => readAt('{a}', 'expression' as Any, 1), /parseAt takes a piece of `js`/);
+	assert.throws(() => read('{a}', {}, js.expression), /a piece goes to parseAt/);
+	assert.throws(() => js.program.until('}'), /a program reads to the end of the text/);
+	assert.throws(() => readAt('{a}', js.expression, '1' as Any), RangeError);
+	assert.throws(() => readAt('{a}', js.expression, [1] as Any), RangeError);
+	assert.throws(() => readAt(42 as Any, js.expression, 1), /a parse takes a string/);
+	assert.throws(() => { (js as Any)[Object.getOwnPropertySymbols(js)[0]].entry = 6; }, TypeError);
+	assert.throws(() => { (js.expression as Any)[Object.getOwnPropertySymbols(js.expression)[0]].stop = '+'; }, TypeError);
+	const ended = js.expression.until('as').until(',');
+	assert.deepEqual([readAt('{a as b}', ended, 1).end, readAt('{a, b}', ended, 1).end], [2, 2]);
 
 	const loose = { errorRecovery: true };
 	const recovered = at('expression', '{obj.}', 1, loose, ['}']);
@@ -144,7 +150,7 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 	assert.equal(program('export { x }', { sourceType: 'module', allowUndeclaredExports: true }).body[0].type, 'ExportNamedDeclaration');
 	{
 		// a document's answer lists each piece of JavaScript the host read, with its share of the tables
-		const answer = open('<script>let a = 1;</script>{a + b}', { sourceType: 'module', scopes: true }).parse(svelte);
+		const answer = read('<script>let a = 1;</script>{a + b}', { sourceType: 'module', scopes: true }, svelte);
 		const [script, expression] = answer.roots;
 		assert.equal(answer.roots.length, 2);
 		assert.equal(script.node.type, 'Program');
@@ -242,58 +248,61 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 		assert.equal(list.scopes[0].node, null);
 	}
 	assert.throws(() => parse('x', { sourceType: 'nonsense' } as Any), TypeError);
-	assert.throws(() => at('expression', '𝒳 + y', 1), (e: Any) => /surrogate/.test(e.message) && e instanceof SyntaxError);
-	assert.throws(() => at('expression', 'a + b', -1), SyntaxError);
-	assert.throws(() => at('expression', 'a + b', 99), SyntaxError);
+	assert.throws(() => at('expression', '𝒳 + y', 1), RangeError);
+	assert.throws(() => at('expression', 'a + b', -1), RangeError);
+	assert.throws(() => at('expression', 'a + b', 99), RangeError);
 
 	const unicode = at('expression', '"é" + x', 6).node;
 	assert.equal(unicode.type, 'Identifier');
 	assert.equal(unicode.start, 6);
-	const source = open('{a} {"é"} {b /* c */}', { locations: true, comments: true });
-	assert.equal(source.parse(js.expression, 1).node.name, 'a');
-	assert.equal(open('{xs as x}', ts).parse(js.expression.until('as'), 1).end, 3);
-	assert.equal(source.parse(js.expression, 11).end, 20);
-	assert.equal(source.parse(js.expression, 11).comments[0].loc.start.column, 13);
-	assert.throws(() => source.parse(js.expression, 99), SyntaxError);
-	assert.throws(() => open('𝒳 + y').parse(js.expression, 1), (e: Any) => /surrogate/.test(e.message));
+	const braces = '{a} {"é"} {b /* c */}', located: Options = { locations: true, comments: true };
+	assert.equal(readAt(braces, js.expression, 1, located).node.name, 'a');
+	assert.equal(readAt('{xs as x}', js.expression.until('as'), 1, ts).end, 3);
+	assert.equal(readAt(braces, js.expression, 11, located).end, 20);
+	assert.equal(readAt(braces, js.expression, 11, located).comments[0].loc.start.column, 13);
+	assert.throws(() => readAt(braces, js.expression, 99, located), RangeError);
+	assert.throws(() => readAt('𝒳 + y', js.expression, 1), RangeError);
 	const erased = parse('import type T from "t"; export const x: T = (1 as any)!; enum E {}', { sourceType: 'module', typescript: 'erase' });
 	assert.equal(erased.node.body.length, 2);
 	assert.equal(erased.node.body[0].declaration.declarations[0].init.type, 'Literal');
 	assert.equal('typeAnnotation' in erased.node.body[0].declaration.declarations[0].id, false);
 	assert.deepEqual(erased.typescript.map((k: Any) => k.type), ['TSEnumDeclaration']);
 	assert.throws(() => parse('let x: number = 1', { typescript: true, erase: true } as Any), TypeError);
-	const template = open('<script>\n  let a = 1;\n</script>\n{a}', { sourceType: 'module', locations: true });
-	const script = template.parse(js, [8, 22]);
+	const template = '<script>\n  let a = 1;\n</script>\n{a}', placed: Options = { sourceType: 'module', locations: true };
+	const script = readAt(template.slice(0, 22), js.program, 8, placed);
 	assert.equal(script.node.start, 8);
 	assert.equal(script.node.end, 22);
 	assert.equal(script.end, 22);
 	assert.equal(script.node.body[0].loc.start.line, 2);
-	assert.throws(() => template.parse(js, [22, 8]), SyntaxError);
-	assert.equal(template.parse(js, 24).node.body[0].type, 'ExpressionStatement');
-	assert.equal(template.parse(js.expression, [33, 34]).node.name, 'a');
-	const sheet = open('/* top */ div, span { color: red; }').parse(css);
+	assert.throws(() => readAt(template.slice(0, 8), js.program, 22, placed), RangeError);
+	assert.equal(readAt(template, js.program, 24, placed).node.body[0].type, 'ExpressionStatement');
+	assert.equal(readAt(template.slice(0, 34), js.expression, 33, placed).node.name, 'a');
+	const sheet = read('/* top */ div, span { color: red; }', {}, css);
 	assert.equal(sheet.node.type, 'StyleSheet');
 	assert.equal(sheet.node.end, 35);
 	assert.deepEqual(sheet.node.children.map((rule: Any) => rule.type), ['Rule']);
 	assert.deepEqual(JSON.parse(JSON.stringify(sheet.node.comments)), [{ type: 'CSSComment', value: ' top ', start: 0, end: 9 }]);
-	assert.throws(() => open('div { }').parse(css, 1), TypeError);
-	assert.throws(() => open('div { color: }').parse(css), (e: Any) => e.code === 'expected' && e.pos === 6);
-	const half = open('a { b: c } div { color: } p { q: r }', { errorRecovery: true }).parse(css);
+	assert.throws(() => readAt('div { }', css, 1), TypeError);
+	assert.throws(() => read('div { color: }', {}, css), (e: Any) => e.code === 'expected' && e.pos === 6);
+	const half = read('a { b: c } div { color: } p { q: r }', { errorRecovery: true }, css);
 	assert.deepEqual(half.errors.map((e: Any) => [e.code, e.pos]), [['expected', 17]]);
 	assert.deepEqual(half.node.children.map((rule: Any) => rule.end), [10]);
 	assert.equal(program('"﻿a"; "bc"; zz').body[2].expression.name, 'zz');
-	assert.throws(() => open(42 as Any), TypeError);
-	const twice = open('let a = 1; f(a)');
-	const whole = JSON.stringify(twice.parse().node);
-	assert.equal(twice.parse(js.expression, 11).node.type, 'CallExpression');
-	assert.equal(JSON.stringify(twice.parse().node), whole);
+	assert.throws(() => read(42 as Any), TypeError);
+	const twice = 'let a = 1; f(a)';
+	const whole = JSON.stringify(read(twice).node);
+	assert.equal(readAt(twice, js.expression, 11).node.type, 'CallExpression');
+	assert.equal(JSON.stringify(read(twice).node), whole);
 	assert.throws(() => parse('x', { locations: 1 } as Any), TypeError);
 	assert.throws(() => parse('x', { typescript: 'yes' } as Any), TypeError);
-	assert.throws(() => open('a;b;c').parse(js, [0, -1]), (e: Any) => e.code === 'invalid_request' && !('line' in e) && !('column' in e));
-	assert.throws(() => open('a;b;c').parse(js, [0, NaN]), (e: Any) => e.code === 'invalid_request');
+	assert.throws(() => readAt('a;b;c', js.program, 1.5), RangeError);
+	assert.throws(() => readAt('a;b;c', js.program, NaN), RangeError);
 	const { engine } = await import('#engine');
-	for (const entry of [7, -1, 6.5, NaN]) assert.match(engine.parse('a;', 0, entry, 0, undefined, '', undefined) as string, / is no entry/);
-	if (name === 'native') assert.throws(() => (load() as Addon).parse(new Uint8Array([0xff]), 0, 0, 0, undefined, '', undefined), /the source is not UTF-8/);
+	for (const entry of [7, -1, 6.5, NaN]) {
+		assert.throws(() => engine.parse('a;', 0, entry, 0, '', undefined), / is no entry/);
+	}
+	assert.throws(() => engine.parse('𝒳', 0, 1, 1, '', undefined), /surrogate pair/);
+	if (name === 'native') assert.throws(() => (load() as Addon).parse(new Uint8Array([0xff]), 0, 0, 0, '', undefined), /the source is not UTF-8/);
 	const wide = 'x;'.repeat(200000);
 	assert.equal(program(wide).body.length, 200000);
 	assert.equal(program('y;').body.length, 1);
@@ -308,7 +317,7 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 // a document of a host language: the host's nodes around the JavaScript ones, one tree
 {
 	const source = '<script lang="ts">\n\tlet items: string[] = [];\n</script>\n\n{#each items as item, i (item)}\n\t<p class:odd={i % 2} on:click={() => item}>{item}</p>\n{:else}\n\tnone\n{/each}\n';
-	const doc = open(source, { sourceType: 'module', scopes: true, comments: true }).parse(svelte);
+	const doc = read(source, { sourceType: 'module', scopes: true, comments: true }, svelte);
 	const root = doc.node;
 	assert.equal(root.type, 'Root');
 	assert.equal(root.end, source.length);
@@ -342,11 +351,11 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 	assert.equal(scopeOf(root.fragment).parent, scopeOf(root.instance.content));
 	assert.equal(scopeOf(root.instance.content).parent, scopeOf(root));
 	assert.equal(scopeOf(each.fallback).parent, scopeOf(root.fragment));
-	assert.throws(() => open('<div>').parse('host x' as Any), TypeError);
-	assert.throws(() => open('<div>').parse({ wire: 'host x' } as Any), TypeError);
-	assert.throws(() => open('<div>').parse(svelte), { code: 'unclosed', pos: 0 });
+	assert.throws(() => read('<div>', {}, 'host x' as Any), TypeError);
+	assert.throws(() => read('<div>', {}, { wire: 'host x' } as Any), TypeError);
+	assert.throws(() => read('<div>', {}, svelte), { code: 'unclosed', pos: 0 });
 	// under recovery the tree is what could be read, the errors listed with it
-	const loose = open('<div>{#if }<Comp foo={bar}\n</div>', { errorRecovery: true }).parse(svelte);
+	const loose = read('<div>{#if }<Comp foo={bar}\n</div>', { errorRecovery: true }, svelte);
 	assert.deepEqual(loose.errors.map((e: Any) => e.code), ['unclosed', 'unexpected_token', 'expected']);
 	const div = loose.node.fragment.nodes[0];
 	assert.equal(div.end, 33);
@@ -356,22 +365,14 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 	assert.equal(block.consequent.nodes[0].end, 27);
 }
 
-// the answer follows the options the source was prepared with
-{
-	const options: Options = {};
-	const source = open('x}', options);
-	options.locations = true;
-	assert.equal('loc' in source.parse(js.expression, 0).node, false, name);
-}
-
 // unfinished input under recovery is an answer, never a panic; a strict error is a SyntaxError
 {
 	for (const text of ['<a x="', '<a /*', '<script>"</script>', '{#if', '<div class="{a']) {
-		assert.equal(open(text, { errorRecovery: true, comments: true, scopes: true }).parse(svelte).node.type, 'Root', `${name} ${text}`);
+		assert.equal(read(text, { errorRecovery: true, comments: true, scopes: true }, svelte).node.type, 'Root', `${name} ${text}`);
 	}
-	assert.throws(() => open('<a @x="@"/>').parse(vue), (e: Any) => e instanceof SyntaxError, `${name}`);
-	assert.throws(() => open('<a/>').parse(vue, 0), TypeError, `${name}`);
-	const handler = open('<button @click="let x = 1"/>', { errorRecovery: true }).parse(vue);
+	assert.throws(() => read('<a @x="@"/>', {}, vue), (e: Any) => e instanceof SyntaxError, `${name}`);
+	assert.throws(() => readAt('<a/>', vue, 0), TypeError, `${name}`);
+	const handler = read('<button @click="let x = 1"/>', { errorRecovery: true }, vue);
 	assert.equal(handler.node.children[0].props[0].handler.type, 'Program', name);
 	assert.deepEqual(handler.errors, [], name);
 }
@@ -401,12 +402,12 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 		for (const key of Object.keys(value)) walk(node ? value : holder, value[key], key === 'comments');
 	};
 	const decoder = readFileSync(new URL('../src/decode.ts', import.meta.url), 'utf8');
-	for (const typescript of [true, 'erase'] as const) walk(undefined, open(decoder, { sourceType: 'module', typescript, comments: true, scopes: true }).parse().node);
-	walk(undefined, open('[1, , 3]; function f(this: T, a: number, b?: string) {} /* c */ // d', { typescript: 'erase', comments: true }).parse().node);
+	for (const typescript of [true, 'erase'] as const) walk(undefined, read(decoder, { sourceType: 'module', typescript, comments: true, scopes: true }).node);
+	walk(undefined, read('[1, , 3]; function f(this: T, a: number, b?: string) {} /* c */ // d', { typescript: 'erase', comments: true }).node);
 	for (const [host, grammar] of [['svelte', svelte], ['vue', vue]] as const) {
 		const dir = new URL(`../../crates/teasel/tests/hosts/${host}/`, import.meta.url);
 		for (const file of readdirSync(dir).filter((f) => !f.endsWith('.json'))) {
-			walk(undefined, open(readFileSync(new URL(file, dir), 'utf8'), { sourceType: 'module', comments: true, scopes: true, errorRecovery: true }).parse(grammar).node);
+			walk(undefined, read(readFileSync(new URL(file, dir), 'utf8'), { sourceType: 'module', comments: true, scopes: true, errorRecovery: true }, grammar).node);
 		}
 	}
 	assert.deepEqual(wrong, [], `${name} parents`);
@@ -426,8 +427,8 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 		for (const key of Object.keys(all)) if (key !== 'loc') walk(all[key], some[key]);
 	};
 	const options = { sourceType: 'module', comments: true, scopes: true } as const;
-	const all = open(source, { ...options, locations: true }).parse(svelte);
-	const some = open(source, { ...options, locations: 'js' }).parse(svelte);
+	const all = read(source, { ...options, locations: true }, svelte);
+	const some = read(source, { ...options, locations: 'js' }, svelte);
 	walk(all.node, some.node);
 	const hosts = pairs.filter(([node]) => !ours(node));
 	assert.ok(hosts.length > 10 && hosts.length < pairs.length);
@@ -436,15 +437,15 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 		else assert.equal('loc' in bare, false, `${located.type} at ${located.start}`);
 	}
 	assert.deepEqual(some.comments.map((c: Any) => c.loc), all.comments.map((c: Any) => c.loc));
-	assert.equal(JSON.stringify(open('p { color: red } /* c */', { locations: 'js' }).parse(css).node).includes('"loc"'), false);
+	assert.equal(JSON.stringify(read('p { color: red } /* c */', { locations: 'js' }, css).node).includes('"loc"'), false);
 	const plain = 'let a = 1; // one\nf(a);';
-	assert.equal(JSON.stringify(open(plain, { comments: true, locations: 'js' }).parse()), JSON.stringify(open(plain, { comments: true, locations: true }).parse()));
+	assert.equal(JSON.stringify(read(plain, { comments: true, locations: 'js' })), JSON.stringify(read(plain, { comments: true, locations: true })));
 }
 
 // a second host: the same walker, Vue's grammar
 {
 	const source = '<ul :class="{ on }">\n\t<li v-for="(item, i) in items" :key="item.id" @click.stop="select(item)">{{ item.name }} #{{ i }}</li>\n</ul>\n';
-	const root = open(source, { sourceType: 'module' }).parse(vue).node;
+	const root = read(source, { sourceType: 'module' }, vue).node;
 	assert.equal(root.type, 'Root');
 	const ul = root.children[0];
 	assert.equal(ul.tag, 'ul');
@@ -463,31 +464,31 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 	assert.equal(li.children[0].content.property.name, 'name');
 	assert.equal(li.children[1].content, ' #');
 	assert.equal(parentOf(li.children[2].content), li.children[2]);
-	assert.throws(() => open('<div v-for="x items">').parse(vue), { code: 'expected', args: ['in or of'], message: "expected 'in or of'" });
+	assert.throws(() => read('<div v-for="x items">', {}, vue), { code: 'expected', args: ['in or of'], message: "expected 'in or of'" });
 }
 
 // a lone surrogate escape is the code unit it names, as JavaScript keeps it
 {
-	const values = (source: string) => open(source, { sourceType: 'module' }).parse().node.body.map((s: Any) => s.expression.value ?? s.expression.quasis.map((q: Any) => q.value.cooked).join('|'));
+	const values = (source: string) => read(source, { sourceType: 'module' }).node.body.map((s: Any) => s.expression.value ?? s.expression.quasis.map((q: Any) => q.value.cooked).join('|'));
 	assert.deepEqual(values("'\\ud83d'; '\\ude00x\\u{dbff}'; '\\ufffd'; '\\ud83d\\ude00'; `a\\ud83d${b}\\udc00`;"), ['\ud83d', '\ude00x\udbff', '�', '😀', 'a\ud83d|\udc00']);
 	assert.deepEqual(values("'\\ud83d'; '\\ufffd'; 'é\\udc00'; '\\ud83d';"), ['\ud83d', '�', 'é\udc00', '\ud83d']);
 	assert.deepEqual(values("'\\ud800😀\\ud800é\\udc00 \\udc00'; 'a\\ud800';"), ['\ud800😀\ud800é\udc00 \udc00', 'a\ud800']);
-	assert.throws(() => open("export { x as '\\ud800' };", { sourceType: 'module' }).parse(), { code: 'lone_surrogate_in_module_name', pos: 14 });
-	assert.throws(() => open("import { '\\udc00' as y } from 'm';", { sourceType: 'module' }).parse(), { code: 'lone_surrogate_in_module_name', pos: 9 });
+	assert.throws(() => read("export { x as '\\ud800' };", { sourceType: 'module' }), { code: 'lone_surrogate_in_module_name', pos: 14 });
+	assert.throws(() => read("import { '\\udc00' as y } from 'm';", { sourceType: 'module' }), { code: 'lone_surrogate_in_module_name', pos: 9 });
 }
 
 // a tree too deep for a walk is a parse error on every backend, and the engine reads the next source
 {
 	const deep = { code: 'nesting_depth' };
 	for (const scopes of [false, true]) {
-		assert.throws(() => open('a' + '.b'.repeat(9_999), { scopes }).parse(), deep);
-		assert.throws(() => open('new '.repeat(9_999) + 'x', { scopes }).parse(), deep);
-		assert.throws(() => open('type A = ' + 'B<'.repeat(999) + 'C' + '>'.repeat(999), { scopes, typescript: true }).parse(), deep);
-		assert.throws(() => open('<a>'.repeat(40_000) + '</a>'.repeat(40_000), { scopes }).parse(svelte), deep);
-		assert.equal(open('x', { scopes }).parse().node.body.length, 1);
+		assert.throws(() => read('a' + '.b'.repeat(9_999), { scopes }), deep);
+		assert.throws(() => read('new '.repeat(9_999) + 'x', { scopes }), deep);
+		assert.throws(() => read('type A = ' + 'B<'.repeat(999) + 'C' + '>'.repeat(999), { scopes, typescript: true }), deep);
+		assert.throws(() => read('<a>'.repeat(40_000) + '</a>'.repeat(40_000), { scopes }, svelte), deep);
+		assert.equal(read('x', { scopes }).node.body.length, 1);
 	}
 	const sheets = `<style>${'a {'.repeat(501)}</style><style>${'a {'.repeat(501)}${'}'.repeat(501)}</style>`;
-	assert.deepEqual(open(sheets, { errorRecovery: true }).parse(svelte).errors.map((e: Any) => e.code), ['expected', 'unexpected_close']);
+	assert.deepEqual(read(sheets, { errorRecovery: true }, svelte).errors.map((e: Any) => e.code), ['expected', 'unexpected_close']);
 }
 
 // a grammar made before the engine started over parses after it: the fresh instance reads its plan again
@@ -500,7 +501,7 @@ if (name !== 'native') {
 		} catch {
 			if (!restarted) {
 				try {
-					open('<a>{x}</a>').parse(svelte);
+					read('<a>{x}</a>', {}, svelte);
 				} catch (e: Any) {
 					restarted = /started over/.test(e.message);
 				}
@@ -508,14 +509,14 @@ if (name !== 'native') {
 		}
 	})();
 	assert.ok(restarted, `${name} the engine started over`);
-	assert.equal(open('<a>{x}</a>').parse(svelte).node.fragment.nodes[0].name, 'a');
-	assert.equal(open('a { b: c }').parse(css).node.children[0].type, 'Rule');
+	assert.equal(read('<a>{x}</a>', {}, svelte).node.fragment.nodes[0].name, 'a');
+	assert.equal(read('a { b: c }', {}, css).node.children[0].type, 'Rule');
 	// a source that grows the memory past 256 MiB leaves it to the instance the next parse replaces
 	const { engine } = await import('#engine');
 	const memory = () => (engine.tree(false, true).find((view) => typeof view === 'object') as Uint32Array).buffer.byteLength;
-	assert.equal(open(`/*${'c'.repeat(1 << 27)}*/`).parse().node.body.length, 0);
+	assert.equal(read(`/*${'c'.repeat(1 << 27)}*/`).node.body.length, 0);
 	assert.ok(memory() > 1 << 28, `${name} grew to ${memory()}`);
-	assert.equal(open('<a>{x}</a>').parse(svelte).node.fragment.nodes[0].name, 'a');
+	assert.equal(read('<a>{x}</a>', {}, svelte).node.fragment.nodes[0].name, 'a');
 	assert.ok(memory() < 1 << 28, `${name} shrank to ${memory()}`);
 }
 
@@ -523,7 +524,7 @@ if (name !== 'native') {
 {
 	const built = await import('../dist/index.js');
 	await import('../dist/grammar.js');
-	assert.equal(new built.Source('let x = 1').parse().node.body.length, 1, `${name} dist`);
+	assert.equal(built.parse('let x = 1').node.body.length, 1, `${name} dist`);
 }
 
 // src/children.ts is written from the engine's layout by scripts/children.ts: the two must agree
@@ -576,7 +577,7 @@ if (name !== 'native') {
 	};
 	const parses = (text: string, options: Options) => {
 		try {
-			return open(text, options).parse().node;
+			return read(text, options).node;
 		} catch (e) {
 			if (e instanceof SyntaxError) return null;
 			throw e;
@@ -590,7 +591,7 @@ if (name !== 'native') {
 		const plan = { svelte, vue }[host];
 		for (const text of files(`hosts/${host}/`, ext)) {
 			try {
-				observe(open(text, { comments: true, scopes: true, errorRecovery: true }).parse(plan).node);
+				observe(read(text, { comments: true, scopes: true, errorRecovery: true }, plan).node);
 			} catch (e) {
 				if (!(e instanceof SyntaxError)) throw e;
 			}
@@ -599,7 +600,7 @@ if (name !== 'native') {
 	}
 	for (const text of files('fixtures/css/', '.css')) {
 		try {
-			observe(open(text, { comments: true }).parse(css).node);
+			observe(read(text, { comments: true }, css).node);
 		} catch (e) {
 			if (!(e instanceof SyntaxError)) throw e;
 		}
@@ -612,7 +613,7 @@ if (name !== 'native') {
 	// a grammar is plain data: no getter the engine answers, nothing of what crossed kept on it
 	assert.ok(Object.getOwnPropertyDescriptor(svelte, 'children')!.get === undefined && !('wire' in svelte));
 	assert.deepEqual([css.children.StyleSheet, svelte.children.StyleSheet], [['children', 'comments'], ['attributes', 'children', 'comments']]);
-	const cut = open('<script lang="ts"></script>{#snippet x<T,}{/snippet}', { errorRecovery: true }).parse(svelte).node.fragment.nodes[0];
+	const cut = read('<script lang="ts"></script>{#snippet x<T,}{/snippet}', { errorRecovery: true }, svelte).node.fragment.nodes[0];
 	assert.equal(cut.typeParams, 'T,');
 }
 
@@ -638,7 +639,7 @@ if (name !== 'native') {
 		};
 		for (const text of sources(dir)) {
 			try {
-				walk(open(text, options).parse().node);
+				walk(read(text, options).node);
 			} catch (e) {
 				if (!(e instanceof SyntaxError)) throw e;
 			}
@@ -685,7 +686,7 @@ if (name !== 'native') {
 	];
 	// a construct's second text is its own slice: only Text's `data` beside its `raw` shares a span
 	const pair = g.grammar('pair', { ...html, constructs: { Pair: { in: ['content'], open: { marker: ['{%'], form: [{ left: g.js.text }, '|', { right: g.js.text }, '%}'] } } } });
-	assert.deepEqual(open('<a>{% alpha | beta %}{%x|x%}</a>').parse(pair).node.children[0].children.map(({ left, right }: Any) => [left, right]), [['alpha', 'beta'], ['x', 'x']]);
+	assert.deepEqual(read('<a>{% alpha | beta %}{%x|x%}</a>', {}, pair).node.children[0].children.map(({ left, right }: Any) => [left, right]), [['alpha', 'beta'], ['x', 'x']]);
 	// what the engine cannot parse with is refused by `grammar` itself, naming the rule
 	assert.throws(() => g.grammar('twice', { ...html, constructs: { Pair: { in: ['content'], open: { marker: ['{%'], form: [{ left: g.js.text }, '|', { left: g.js.text }, '%}'] } } } }), /Pair reads left twice/);
 	// an identifier that refers to a binding declared elsewhere carries where that declaration is
@@ -700,7 +701,7 @@ if (name !== 'native') {
 	};
 	const answers = steps.map((definition) => {
 		try {
-			return { tree: shape(open(template, { scopes: true }).parse(g.grammar('tpl', definition)).node) };
+			return { tree: shape(read(template, { scopes: true }, g.grammar('tpl', definition)).node) };
 		} catch (e) {
 			const { code, message, pos, end } = e as Any;
 			return { error: { code, message, pos, end } };
@@ -718,7 +719,7 @@ if (name !== 'native') {
 }
 
 // tsc checks what the types promise here and node never calls it, since the refused definitions throw at runtime
-function types(source: api.Source, definition: typeof svelte) {
+function types(text: string, definition: typeof svelte) {
 	type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
 	const expect = <T extends true>() => {};
 	type Required<T> = { [K in keyof T]-?: {} extends Pick<T, K> ? never : K }[keyof T];
@@ -825,17 +826,19 @@ function types(source: api.Source, definition: typeof svelte) {
 	expect<Equal<Extract<Value, { type: 'Interp' }>, Interp>>();
 	expect<Equal<Extract<Extract<Value, unknown[]>[number], { type: 'Interp' }>, Interp>>();
 
-	const doc = source.parse(definition);
+	const doc = m.parse(text, {}, definition);
 	expect<Equal<typeof doc.node, Infer<Svelte>>>();
 	// the accessors take an attached comment and a host node, and a piece's root has a host node for a parent
-	m.parentOf(source.parse().node.body[0].leadingComments![0]);
+	m.parentOf(m.parse(text).node.body[0].leadingComments![0]);
 	m.scopeOf(doc.node);
 	m.parentOf(doc.node.instance!.content)?.type === 'Script';
-	expect<Equal<ReturnType<typeof source.parse<Infer<Svelte>>>['node'], Infer<Svelte>>>();
+	expect<Equal<ReturnType<typeof m.parse<Infer<Svelte>>>['node'], Infer<Svelte>>>();
 	// @ts-expect-error only a piece ends at the host's tokens
 	js.until('as');
-	// @ts-expect-error a grammar reads the whole source
-	source.parse(definition, 1);
-	const either = source.parse(Math.random() < 0.5 ? js : js.expression, 0);
+	// @ts-expect-error a grammar is no piece
+	m.parseAt(text, definition, 1);
+	// @ts-expect-error a piece is read by parseAt
+	m.parse(text, {}, js.expression);
+	const either = m.parseAt(text, Math.random() < 0.5 ? js.program : js.expression, 0);
 	expect<Equal<typeof either.node, Program | Expression>>();
 }

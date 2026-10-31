@@ -5,7 +5,7 @@ use crate::parser::tests::{Failed, dump as dump_with, expand, one, typescript};
 use crate::parser::{Entry, Options};
 
 fn at(entry: Entry, src: &str, offset: u32, options: Options, stop: &str) -> Result<(Ast, NodeId, u32), Failed> {
-	one(crate::parse_at(src, offset, None, entry, typescript(options), stop))
+	one(crate::parse_at(src, offset, entry, typescript(options), stop))
 }
 
 fn typescript_node(ast: &Ast, id: NodeId, index: u32) -> String {
@@ -188,12 +188,11 @@ fn accessor_belongs_to_a_property() {
 }
 
 #[test]
-fn program_in_a_range() {
+fn program_at_an_offset_of_a_cut_text() {
 	let src = "<script>let a: number = 1;</script>{a}";
 	let (ast, root, _) = one(crate::parse_at(
-		src,
+		&src[..26],
 		8,
-		Some(26),
 		Entry::Program,
 		Options(Options::MODULE | Options::TYPESCRIPT),
 		"",
@@ -201,24 +200,9 @@ fn program_in_a_range() {
 	.unwrap();
 	assert_eq!((ast.node(root).start, ast.node(root).end), (8, 26));
 	assert_eq!(ast.comments.len(), 0);
-	use crate::Options;
-	use crate::json::Request;
-	let mut request = Request {
-		offset: 8,
-		..Request::from_flags(Options::MODULE | Options::TYPESCRIPT)
-	};
-	request.end = Some(1000);
-	assert!(crate::json::parse(src, &request).contains("is not a character boundary"));
-	request.end = Some(2);
-	assert!(crate::json::parse(src, &request).contains("is before"));
-	let cut = &src[..26];
-	crate::json::in_place(cut, request.options, Entry::Program, 8.0, None, "", None).unwrap();
+	let options = Options(Options::MODULE | Options::TYPESCRIPT);
+	crate::json::in_place(&src[..26], options, Entry::Program, 8.0, "", None).unwrap();
 	assert_eq!(crate::json::words(|words| words[0]), 26);
-	assert!(
-		crate::json::in_place(cut, request.options, Entry::Program, 22.0, Some(8.0), "", None)
-			.unwrap_err()
-			.contains("is before")
-	);
 }
 
 /// A host's own syntax may carry a type parameter list, as a generic snippet does.
@@ -234,7 +218,7 @@ fn type_parameters_entry() {
 		crate::error::Code::EmptyTypeParameters
 	);
 	assert_eq!(
-		crate::parse_at("foo<T>", 3, None, Entry::TypeParameters, options, "")
+		crate::parse_at("foo<T>", 3, Entry::TypeParameters, options, "")
 			.1
 			.unwrap_err()
 			.code,
@@ -272,7 +256,7 @@ fn failed_attempts_leave_nothing() {
 fn failed_attempt_leaves_no_scope() {
 	let options = Options(Options::MODULE | Options::ERROR_RECOVERY);
 	let src = "let b; <T>(x) => { let a; let a; }; let b;";
-	let (ast, _, _) = one(crate::parse_at(src, 0, None, Entry::Program, typescript(options), "")).unwrap();
+	let (ast, _, _) = one(crate::parse_at(src, 0, Entry::Program, typescript(options), "")).unwrap();
 	let redeclared: Vec<u32> = ast
 		.errors
 		.iter()
@@ -338,7 +322,7 @@ fn nested_ambiguity_is_linear() {
 		nest("a ? async (b) : c => ", "d", ""),
 	] {
 		let started = std::time::Instant::now();
-		one(crate::parse_at(&src, 0, None, Entry::Program, typescript(options), "")).unwrap();
+		one(crate::parse_at(&src, 0, Entry::Program, typescript(options), "")).unwrap();
 		assert!(started.elapsed().as_millis() < 100, "{src}");
 	}
 }
