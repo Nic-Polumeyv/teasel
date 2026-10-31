@@ -1270,7 +1270,6 @@ impl<'a> Binder<'a> {
 			| SatisfiesExpression { expression, .. }
 			| NonNullExpression { expression }
 			| TypeAssertion { expression, .. }
-			| TypeCastExpression { expression, .. }
 			| InstantiationExpression { expression, .. }
 			| ParameterProperty { parameter: expression } => self.visit(expression, mode),
 			Decorator { expression } | ExportAssignment { expression } => self.visit(expression, Mode::Expression),

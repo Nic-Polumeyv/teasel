@@ -220,7 +220,6 @@ TSTupleType
 TSTypeAliasDeclaration
 TSTypeAnnotation
 TSTypeAssertion
-TSTypeCastExpression
 TSTypeLiteral
 TSTypeOperator
 TSTypeParameter
@@ -244,7 +243,6 @@ TupleType
 TypeAliasDeclaration
 TypeAnnotation
 TypeAssertion
-TypeCastExpression
 TypeLiteral
 TypeOperator
 TypeParameter
