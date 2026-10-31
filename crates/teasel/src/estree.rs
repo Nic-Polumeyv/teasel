@@ -325,8 +325,6 @@ impl Positions {
 		Ok(target + if i == 0 { 0 } else { self.gaps[i - 1].1 })
 	}
 
-	/// Every slice of the source among host fields' values in UTF-16 offsets, as the answer reads
-	/// them.
 	pub(crate) fn map_values(&self, values: &mut [crate::ast::HostValue]) {
 		if self.gaps.is_empty() {
 			return;

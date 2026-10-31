@@ -154,11 +154,6 @@ pub fn layout_json() -> String {
 		}
 		w.end();
 	}
-	fn names(w: &mut Json, list: Vec<&str>) {
-		w.list();
-		list.into_iter().for_each(|name| w.text(name));
-		w.end();
-	}
 	let mut w = Json::default();
 	w.object();
 	w.key("node");
@@ -219,12 +214,12 @@ pub fn layout_json() -> String {
 	w.key("views");
 	w.object();
 	w.key("js");
-	names(&mut w, view_names(false));
+	texts(&mut w, view_names(false));
 	w.key("ts");
-	names(&mut w, view_names(true));
+	texts(&mut w, view_names(true));
 	w.end();
 	w.key("names");
-	names(&mut w, host::grammar::own::NAMES.to_vec());
+	texts(&mut w, host::grammar::own::NAMES.iter().copied());
 	w.key("stylesheet");
 	children_table(&mut w, host::stylesheet_children());
 	w.key("recipes");
@@ -255,9 +250,7 @@ pub fn about(grammar: &Grammar) -> String {
 	w.key("children");
 	children_table(&mut w, grammar.children());
 	w.key("names");
-	w.list();
-	grammar.names.iter().for_each(|name| w.text(name));
-	w.end();
+	texts(&mut w, grammar.names.iter().copied());
 	w.end();
 	w.finish()
 }
@@ -266,10 +259,14 @@ fn children_table(w: &mut Json, table: Vec<(&'static str, Vec<&'static str>)>) {
 	w.object();
 	for (ty, fields) in table {
 		w.escaped_key(ty);
-		w.list();
-		fields.into_iter().for_each(|field| w.text(field));
-		w.end();
+		texts(w, fields);
 	}
+	w.end();
+}
+
+fn texts<'a>(w: &mut Json, list: impl IntoIterator<Item = &'a str>) {
+	w.list();
+	list.into_iter().for_each(|text| w.text(text));
 	w.end();
 }
 

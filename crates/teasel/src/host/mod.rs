@@ -685,11 +685,28 @@ impl<'a> Walker<'a> {
 		)
 	}
 
-	fn element_scope(&mut self, fields: &[(Name, Value)], declared: &[NodeId]) -> Opens {
-		let attributes = fields.len() - 2;
-		let Value::Node(fragment) = fields[attributes + 1].1 else {
-			unreachable!()
-		};
+	fn element_node(
+		&mut self,
+		ty: Name,
+		(start, end): (u32, u32),
+		attributes: Vec<NodeId>,
+		mut fields: Vec<(Name, Value)>,
+		nodes: Vec<NodeId>,
+		declared: &[NodeId],
+	) {
+		let list = self.list(&attributes);
+		self.nodes.give(attributes);
+		let at = fields.len();
+		fields.push((own::attributes, Value::Nodes(list)));
+		let fragment = self.fragment(nodes);
+		fields.push((own::fragment, Value::Node(fragment)));
+		let scope = self.element_scope(at, fragment, declared);
+		let node = self.host(ty, start, end, &fields, Some(scope), true);
+		self.fields.give(fields);
+		self.append(node);
+	}
+
+	fn element_scope(&mut self, attributes: usize, fragment: NodeId, declared: &[NodeId]) -> Opens {
 		let base = self.ast().host_keys.len() as u32 + attributes as u32;
 		let at = self.ast().host_groups.len() as u32;
 		if !declared.is_empty() {
@@ -1269,16 +1286,8 @@ impl<'a> Walker<'a> {
 		let name_id = self.intern(name);
 		fields.insert(0, (own::name, Value::Str(name_id)));
 		let finish =
-			|w: &mut Self, attributes: Vec<NodeId>, mut fields: Vec<(Name, Value)>, nodes: Vec<NodeId>, end: u32| {
-				let list = w.list(&attributes);
-				w.nodes.give(attributes);
-				fields.push((own::attributes, Value::Nodes(list)));
-				let fragment = w.fragment(nodes);
-				fields.push((own::fragment, Value::Node(fragment)));
-				let scope = w.element_scope(&fields, &declared);
-				let node = w.host(ty, start, end, &fields, Some(scope), true);
-				w.fields.give(fields);
-				w.append(node);
+			|w: &mut Self, attributes: Vec<NodeId>, fields: Vec<(Name, Value)>, nodes: Vec<NodeId>, end: u32| {
+				w.element_node(ty, (start, end), attributes, fields, nodes, &declared);
 				if verbatim_here {
 					w.verbatim -= 1;
 				}
@@ -1399,7 +1408,7 @@ impl<'a> Walker<'a> {
 			start,
 			ty,
 			attributes,
-			mut fields,
+			fields,
 			nodes,
 			verbatim,
 			declared,
@@ -1408,15 +1417,7 @@ impl<'a> Walker<'a> {
 		else {
 			unreachable!()
 		};
-		let list = self.list(&attributes);
-		self.nodes.give(attributes);
-		fields.push((own::attributes, Value::Nodes(list)));
-		let fragment = self.fragment(nodes);
-		fields.push((own::fragment, Value::Node(fragment)));
-		let scope = self.element_scope(&fields, &declared);
-		let node = self.host(ty, start, end, &fields, Some(scope), true);
-		self.fields.give(fields);
-		self.append(node);
+		self.element_node(ty, (start, end), attributes, fields, nodes, &declared);
 		if verbatim {
 			self.verbatim -= 1;
 		}

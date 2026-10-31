@@ -115,9 +115,7 @@ interface Builders {
 /** A grammar's names by number, and what is made of the shapes the engine numbers for its host nodes as it meets them. */
 interface Hosts {
 	names: readonly string[];
-	/** Each shape as operations. */
 	ops: (Op[] | undefined)[];
-	/** Each shape's builder, by the way to build. */
 	builders: (HostBuilder | undefined)[][];
 }
 

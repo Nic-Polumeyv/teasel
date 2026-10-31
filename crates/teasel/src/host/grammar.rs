@@ -730,6 +730,10 @@ pub struct Name(pub u32);
 impl Name {
 	/// No name: a node of the host's without a type, a block whose body is not filed.
 	pub const NONE: Name = Name(u32::MAX);
+
+	pub fn text(self, names: &[&'static str]) -> &'static str {
+		names[self.0 as usize]
+	}
 }
 
 /// The names the walker writes itself, spelled as they are written: the same numbers in every grammar.
@@ -755,7 +759,6 @@ pub mod own {
 	}
 }
 
-/// A grammar's names as its definition is lowered: each numbered where it is first read.
 struct Naming {
 	names: Vec<&'static str>,
 	numbers: crate::interner::FastMap<&'static str, u32>,
@@ -778,7 +781,7 @@ impl Naming {
 	}
 
 	fn text(&self, name: Name) -> &'static str {
-		self.names[name.0 as usize]
+		name.text(&self.names)
 	}
 }
 
@@ -797,13 +800,10 @@ pub struct Shapes {
 struct Shape {
 	id: u32,
 	span: bool,
-	/// Each field's name, then its kind of value in the low byte.
 	fields: Vec<u64>,
 }
 
 impl Shapes {
-	/// The number of the shape of a node of type `ty`, with a span or not, whose fields are named
-	/// `keys` and hold `values`.
 	pub(crate) fn of(&mut self, ty: Option<u32>, span: bool, keys: &[u32], values: &[HostValue]) -> u32 {
 		let at = ty.map_or(0, |ty| ty as usize + 1);
 		if self.of.len() <= at {
@@ -2212,6 +2212,9 @@ fn lower(host: Host) -> Result<Grammar, String> {
 	let mut fields = scoped(d.document.form.unwrap_or_default(), &mut Vec::new(), n)?;
 	fragment_last(&mut fields);
 	let ty = n.name(d.document.node);
+	if n.names.contains(&"") {
+		return Err("a node type or a field needs a name".into());
+	}
 	Ok(Grammar {
 		name: host.name,
 		names: std::mem::take(&mut n.names),
@@ -2239,7 +2242,7 @@ fn lower(host: Host) -> Result<Grammar, String> {
 }
 
 impl Form {
-	fn finish(&mut self, names: &[&str]) -> Result<(), String> {
+	fn finish(&mut self, names: &[&'static str]) -> Result<(), String> {
 		resolve(&mut self.items, &[]);
 		let mut entries = Vec::new();
 		collect_entries(&self.items, &mut entries);
@@ -2253,7 +2256,8 @@ impl Form {
 				if !entries.iter().any(|(field, _)| *field == declare.field) {
 					return Err(format!(
 						"`{}` declares `{}`, which no entry of the form reads",
-						names[body.field.0 as usize], names[declare.field.0 as usize]
+						body.field.text(names),
+						declare.field.text(names)
 					));
 				}
 			}
@@ -2424,7 +2428,7 @@ impl Grammar {
 	}
 
 	pub fn text(&self, name: Name) -> &'static str {
-		self.names[name.0 as usize]
+		name.text(&self.names)
 	}
 }
 

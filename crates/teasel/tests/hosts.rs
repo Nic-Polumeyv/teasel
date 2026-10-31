@@ -1166,6 +1166,9 @@ fn a_grammar_that_cannot_work_is_refused() {
 	host.definition.document = node("Fragment", &[]);
 	refused(host, "a node type named Fragment is teasel's");
 	let mut host = minimal();
+	host.definition.document = node("", &[]);
+	refused(host, "a node type or a field needs a name");
+	let mut host = minimal();
 	host.definition.document.form = Some(list![fields(list![
 		("comments", source("doc", "comments", false)),
 		("again", source("doc", "comments", false)),
