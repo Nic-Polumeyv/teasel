@@ -1,12 +1,12 @@
 //! Serializes an `Ast` to ESTree as JSON text, and maps its positions to what JavaScript counts.
 
 use crate::Options;
-use crate::ast::{Ast, CommentRow, List, Loc, NodeId, NodeKind, Position, Span, Value};
+use crate::ast::{Ast, CommentRow, Extras, List, Loc, NodeId, NodeKind, Position, Span, Value, node_layout};
 use crate::handed::Handed;
 use crate::interner::StrId;
 use crate::layout::Ty;
 use crate::parser::Entry;
-use crate::recipe::{Op, Slot};
+use crate::recipe::{ADDS, EXTRAS_ERASED, KINDS, Op, Slot, resolve_ops};
 use crate::scopes::Role;
 use std::fmt::Write;
 
@@ -505,7 +505,7 @@ impl<'a> Writer<'a> {
 			self.bool("parenthesized", true);
 		}
 		if self.options.typescript() {
-			self.ast.typescript.write_extras(self, id);
+			self.extras(id);
 		}
 		if let Some(&attached) = self.ast.attached.get(id) {
 			self.comments("leadingComments", attached.leading);
@@ -741,7 +741,7 @@ impl<'a> Writer<'a> {
 		self.json.list();
 		let ast = self.ast;
 		for item in ast.list(list) {
-			if self.options.has(Options::ERASE) && item.is_some_and(|id| ast.typescript.erased(ast, id)) {
+			if self.options.has(Options::ERASE) && item.is_some_and(|id| ast.erased(id)) {
 				continue;
 			}
 			match item {
@@ -793,10 +793,10 @@ impl<'a> Writer<'a> {
 		self.slice(node.start, node.end);
 	}
 
-	/// The recipes of the JavaScript kinds, resolved once.
-	fn js_recipes() -> &'static [&'static [Op<Slot>]] {
+	/// The recipes of the kinds, resolved once.
+	fn recipes() -> &'static [&'static [Op<Slot>]] {
 		static RESOLVED: std::sync::OnceLock<&'static [&'static [Op<Slot>]]> = std::sync::OnceLock::new();
-		RESOLVED.get_or_init(|| crate::recipe::resolve(crate::recipe::JS, crate::ast::node_layout::VARIANTS))
+		RESOLVED.get_or_init(|| crate::recipe::resolve(KINDS, node_layout::VARIANTS))
 	}
 
 	/// Follows a kind's recipe over the record at `base`, a `repr(C, u32)` enum's payload; the
@@ -867,6 +867,10 @@ impl<'a> Writer<'a> {
 					}
 					_ => self.opt_key(key, get(base, slot)),
 				},
+				Op::Extra(key, slot) => {
+					let extras = self.ast.extras_of(id);
+					self.run(id, &[Op::Maybe(key, slot)], &extras as *const Extras as *const u8);
+				}
 				Op::List(key, slot) => self.list(key, get(base, slot)),
 				Op::OptListKey(key, slot) => {
 					if let Some(list) = get::<Option<List>>(base, slot) {
@@ -934,8 +938,6 @@ impl<'a> Writer<'a> {
 		use NodeKind::*;
 		let kind = &self.ast.nodes[id.index() as usize].kind;
 		match *kind {
-			// TypeScript closes its own node, since erasing may put another in its place
-			Extension(index) => return self.ast.typescript.write_node(self, id, index),
 			Host(index) => {
 				let host = self.ast.hosts[index as usize];
 				if host.ty.is_empty() {
@@ -972,13 +974,72 @@ impl<'a> Writer<'a> {
 					}
 				}
 			}
+			// erasing may put a child in the node's place, which closes itself
 			_ => {
 				let base = kind as *const NodeKind as *const u8;
-				self.run(id, Self::js_recipes()[tag(base)], base);
+				if !self.run(id, Self::recipes()[tag(base)], base) {
+					return;
+				}
 			}
 		}
 		self.end();
 	}
+
+	/// Writes the keys TypeScript adds to a node.
+	fn extras(&mut self, id: NodeId) {
+		let adds = Self::adds();
+		let extras = self.ast.extras_of(id);
+		let base = &extras as *const Extras as *const u8;
+		if self.options.has(Options::ERASE) {
+			self.run(id, adds.erased, base);
+			return;
+		}
+		let (ops, read) = &adds.by_kind[tag(&self.kind(id) as *const NodeKind as *const u8)];
+		self.run(id, ops, base);
+		// an unlisted extra is a parser bug, which a test build catches and a shipped build answers around
+		if cfg!(debug_assertions)
+			&& let Some(field) = extras.set().find(|&field| !read.contains(&field))
+		{
+			panic!("{:?} has {field}, which its kind does not list", self.kind(id));
+		}
+	}
+
+	/// The keys TypeScript adds from the extras record, resolved once.
+	fn adds() -> &'static Adds {
+		static RESOLVED: std::sync::OnceLock<Adds> = std::sync::OnceLock::new();
+		RESOLVED.get_or_init(|| {
+			let of = |table: &[(&str, &'static [Op])], name: &str| {
+				table
+					.iter()
+					.find(|(known, _)| *known == name)
+					.map_or(&[][..], |(_, ops)| *ops)
+			};
+			Adds {
+				by_kind: node_layout::VARIANTS
+					.iter()
+					.map(|variant| {
+						let ops = of(ADDS, variant.name);
+						let read = ops
+							.iter()
+							.filter_map(|op| op.told().2)
+							.chain(of(KINDS, variant.name).iter().filter_map(|op| match op {
+								Op::Extra(_, field) => Some(*field),
+								_ => None,
+							}))
+							.collect();
+						(resolve_ops(ops, Extras::FIELDS, variant.name), read)
+					})
+					.collect(),
+				erased: resolve_ops(EXTRAS_ERASED, Extras::FIELDS, "Extras"),
+			}
+		})
+	}
+}
+
+/// What TypeScript adds to each kind: by the kind's tag, the operations and the fields they read.
+struct Adds {
+	by_kind: Vec<(&'static [Op<Slot>], Vec<&'static str>)>,
+	erased: &'static [Op<Slot>],
 }
 
 /// The tag of a `repr(C, u32)` enum at `base`: its first word.

@@ -1,6 +1,6 @@
 use crate::handed::{Handed, Views};
 use crate::interner::{Interner, StrId, Surrogate};
-use crate::layout::Field;
+use crate::layout::{Field, Ty};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(C)]
@@ -202,6 +202,10 @@ pub struct Node {
 	pub end: u32,
 }
 
+// every node is as wide as JavaScript's widest kind: a TypeScript kind past that moves a field to
+// the extras record
+const _: () = assert!(size_of::<Node>() == 32);
+
 /// A node of a host's grammar: its type and its fields are the grammar's, held by name.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Host {
@@ -395,9 +399,8 @@ pub struct Ast {
 	pub errors: Vec<crate::SyntaxError>,
 	/// Whether a node was written in parentheses, when `Options::parenthesized` asks.
 	pub parenthesized: NodeSet,
-	/// TypeScript's own nodes, by the `NodeKind::Extension` payload, and the keys it adds; empty
-	/// in a JavaScript tree.
-	pub typescript: crate::typescript::ast::Data,
+	/// The keys TypeScript adds to a node, by the node; empty in a JavaScript tree.
+	pub extras: Slots<Extras>,
 }
 
 crate::layout::record! {
@@ -444,7 +447,7 @@ pub(crate) struct Mark {
 	nodes: usize,
 	numbers: usize,
 	lists: usize,
-	typescript: (usize, usize),
+	extras: usize,
 }
 
 impl Ast {
@@ -476,7 +479,7 @@ impl Ast {
 		self.host_rows.clear();
 		self.host_keys.clear();
 		self.host_vals.clear();
-		self.typescript.clear();
+		self.extras.clear();
 	}
 
 	pub(crate) fn mark(&self) -> Mark {
@@ -484,7 +487,7 @@ impl Ast {
 			nodes: self.nodes.len(),
 			numbers: self.numbers.len(),
 			lists: self.lists.len(),
-			typescript: self.typescript.mark(),
+			extras: self.extras.len(),
 		}
 	}
 
@@ -494,7 +497,7 @@ impl Ast {
 		self.numbers.truncate(mark.numbers);
 		self.lists.truncate(mark.lists);
 		self.parenthesized.truncate(mark.nodes);
-		self.typescript.truncate(mark.typescript);
+		self.extras.truncate(mark.extras);
 	}
 
 	/// Room for the tree of `bytes` of source: about a node per eight bytes, a list per thirty, a
@@ -538,7 +541,7 @@ impl Ast {
 			None => crate::scopes::Scopes::no_views(out),
 		}
 		if typescript {
-			self.typescript.views(out);
+			self.extras.views("extras_slots", "extras", out);
 		}
 	}
 }
@@ -564,12 +567,43 @@ impl Ast {
 	/// Appends the children of `id` in source order.
 	pub fn children(&self, id: NodeId, out: &mut Vec<NodeId>) {
 		let from = out.len();
-		if self.typescript.extras.is_empty() && !matches!(self.node(id).kind, NodeKind::Extension(_)) {
-			self.plain_children(id, out);
-		} else {
-			self.typescript.children(self, id, out);
+		let kind = &self.node(id).kind;
+		match *kind {
+			NodeKind::Host(index) => self.host_children(index, out),
+			_ => {
+				let base = kind as *const NodeKind as *const u8;
+				self.held(base, node_layout::VARIANTS[crate::estree::tag(base)].fields, out);
+			}
 		}
-		debug_assert!(out[from..].is_sorted_by_key(|&child| self.node(child).start));
+		if let Some(extras) = self.extras.get(id) {
+			self.held(extras as *const Extras as *const u8, Extras::FIELDS, out);
+		}
+		if !out[from..].is_sorted_by_key(|&child| self.node(child).start) {
+			out[from..].sort_unstable_by_key(|&child| self.node(child).start);
+		}
+	}
+
+	/// The nodes the fields of the record at `base` hold.
+	fn held(&self, base: *const u8, fields: &[Field], out: &mut Vec<NodeId>) {
+		for field in fields {
+			let at = unsafe { base.add(field.at) };
+			match field.ty {
+				Ty::Node => out.push(unsafe { at.cast::<NodeId>().read_unaligned() }),
+				Ty::OptNode => out.extend(unsafe { at.cast::<Option<NodeId>>().read_unaligned() }),
+				Ty::List => out.extend(
+					self.list(unsafe { at.cast::<List>().read_unaligned() })
+						.iter()
+						.flatten(),
+				),
+				Ty::OptList => {
+					if let Some(list) = unsafe { at.cast::<Option<List>>().read_unaligned() } {
+						out.extend(self.list(list).iter().flatten());
+					}
+				}
+				Ty::Struct(inner) => self.held(at, inner, out),
+				_ => {}
+			}
+		}
 	}
 
 	/// The nodes under a host node's fields; a child that is a fragment, a node without a span
@@ -584,183 +618,6 @@ impl Ast {
 				},
 				Value::Nodes(children) => out.extend(self.list(children).iter().flatten()),
 				_ => {}
-			}
-		}
-	}
-
-	/// The children of a plain JavaScript node, without what TypeScript adds; a TypeScript node
-	/// has none here.
-	pub fn plain_children(&self, id: NodeId, out: &mut Vec<NodeId>) {
-		use NodeKind::*;
-		let list = |list: List, out: &mut Vec<NodeId>| out.extend(self.list(list).iter().flatten());
-		match self.node(id).kind {
-			Program { body, .. } | BlockStatement { body } | StaticBlock { body } | ClassBody { body } => {
-				list(body, out)
-			}
-			Identifier { .. }
-			| PrivateIdentifier { .. }
-			| NumberLiteral { .. }
-			| BigIntLiteral
-			| StringLiteral { .. }
-			| BooleanLiteral { .. }
-			| NullLiteral
-			| RegExpLiteral { .. }
-			| TemplateElement { .. }
-			| ThisExpression
-			| Super
-			| EmptyStatement
-			| DebuggerStatement
-			| Extension(_) => {}
-			Host(index) => {
-				let from = out.len();
-				self.host_children(index, out);
-				out[from..].sort_unstable_by_key(|&child| self.nodes[child.index() as usize].start);
-			}
-			TemplateLiteral { quasis, expressions } => {
-				debug_assert_eq!(quasis.len, expressions.len + 1);
-				for (i, quasi) in self.list(quasis).iter().flatten().enumerate() {
-					out.push(*quasi);
-					if (i as u32) < expressions.len {
-						out.extend(self.nth(expressions, i as u32));
-					}
-				}
-			}
-			TaggedTemplateExpression { tag, quasi } => out.extend([tag, quasi]),
-			ArrayExpression { elements } | ArrayPattern { elements } => list(elements, out),
-			ObjectExpression { properties } | ObjectPattern { properties } => list(properties, out),
-			Property { key, value, .. } => out.extend([key, value]),
-			SpreadElement { argument }
-			| RestElement { argument }
-			| UnaryExpression { argument, .. }
-			| UpdateExpression { argument, .. }
-			| AwaitExpression { argument }
-			| ThrowStatement { argument } => out.push(argument),
-			BinaryExpression { left, right, .. }
-			| LogicalExpression { left, right, .. }
-			| AssignmentExpression { left, right, .. }
-			| AssignmentPattern { left, right } => out.extend([left, right]),
-			ConditionalExpression {
-				test,
-				consequent,
-				alternate,
-			} => out.extend([test, consequent, alternate]),
-			MemberExpression { object, property, .. } => out.extend([object, property]),
-			CallExpression { callee, arguments, .. } | NewExpression { callee, arguments } => {
-				out.push(callee);
-				list(arguments, out);
-			}
-			ChainExpression { expression } | ExpressionStatement { expression, .. } => out.push(expression),
-			SequenceExpression { expressions } => list(expressions, out),
-			ArrowFunctionExpression { params, body, .. } => {
-				list(params, out);
-				out.push(body);
-			}
-			FunctionExpression { function } | FunctionDeclaration { function } => {
-				out.extend(function.id);
-				list(function.params, out);
-				out.push(function.body);
-			}
-			ClassExpression { class } | ClassDeclaration { class } => {
-				out.extend(class.id);
-				out.extend(class.super_class);
-				out.push(class.body);
-			}
-			MethodDefinition { key, value, .. } => out.extend([key, value]),
-			PropertyDefinition { key, value, .. } => {
-				out.push(key);
-				out.extend(value);
-			}
-			YieldExpression { argument, .. } | ReturnStatement { argument } => out.extend(argument),
-			MetaProperty { meta, property } => out.extend([meta, property]),
-			ImportExpression { source, options } => {
-				out.push(source);
-				out.extend(options);
-			}
-			WithStatement { object, body } => out.extend([object, body]),
-			LabeledStatement { label, body } => out.extend([label, body]),
-			BreakStatement { label } | ContinueStatement { label } => out.extend(label),
-			IfStatement {
-				test,
-				consequent,
-				alternate,
-			} => {
-				out.extend([test, consequent]);
-				out.extend(alternate);
-			}
-			SwitchStatement { discriminant, cases } => {
-				out.push(discriminant);
-				list(cases, out);
-			}
-			SwitchCase { test, consequent } => {
-				out.extend(test);
-				list(consequent, out);
-			}
-			TryStatement {
-				block,
-				handler,
-				finalizer,
-			} => {
-				out.push(block);
-				out.extend(handler);
-				out.extend(finalizer);
-			}
-			CatchClause { param, body } => {
-				out.extend(param);
-				out.push(body);
-			}
-			WhileStatement { test, body } => out.extend([test, body]),
-			DoWhileStatement { body, test } => out.extend([body, test]),
-			ForStatement {
-				init,
-				test,
-				update,
-				body,
-			} => {
-				out.extend(init);
-				out.extend(test);
-				out.extend(update);
-				out.push(body);
-			}
-			ForInStatement { left, right, body } | ForOfStatement { left, right, body, .. } => {
-				out.extend([left, right, body]);
-			}
-			VariableDeclaration { declarations, .. } => list(declarations, out),
-			VariableDeclarator { id, init } => {
-				out.push(id);
-				out.extend(init);
-			}
-			ImportDeclaration {
-				specifiers,
-				source,
-				attributes,
-			} => {
-				list(specifiers, out);
-				out.push(source);
-				list(attributes, out);
-			}
-			ImportSpecifier { imported, local } => out.extend([imported, local]),
-			ImportDefaultSpecifier { local } | ImportNamespaceSpecifier { local } => out.push(local),
-			ImportAttribute { key, value } => out.extend([key, value]),
-			ExportDeclaration { declaration } => out.push(declaration),
-			ExportNamedDeclaration {
-				specifiers,
-				source,
-				attributes,
-			} => {
-				list(specifiers, out);
-				out.extend(source);
-				list(attributes, out);
-			}
-			ExportSpecifier { local, exported } => out.extend([local, exported]),
-			ExportDefaultDeclaration { declaration } => out.push(declaration),
-			ExportAllDeclaration {
-				exported,
-				source,
-				attributes,
-			} => {
-				out.extend(exported);
-				out.push(source);
-				list(attributes, out);
 			}
 		}
 	}
@@ -1133,11 +990,245 @@ crate::layout::kinds! {
 			source: NodeId,
 			attributes: List,
 		},
-
-		/// A TypeScript node, indexed into `Ast::typescript`.
-		Extension(u32),
 		/// A node of the host's grammar, indexed into `Ast::hosts`.
 		Host(u32),
+
+		// Types
+		TypeAnnotation {
+			type_annotation: NodeId,
+		},
+		/// `any`, `string`, ... and `void`, `null`, `intrinsic`; the name is the ESTree type.
+		Keyword(Keyword),
+		ThisType,
+		TypePredicate {
+			parameter_name: NodeId,
+			type_annotation: Option<NodeId>,
+			asserts: bool,
+		},
+		TypeReference {
+			type_name: NodeId,
+			type_arguments: Option<NodeId>,
+		},
+		QualifiedName {
+			left: NodeId,
+			right: NodeId,
+		},
+		TypeParameterInstantiation {
+			params: List,
+		},
+		TypeParameterDeclaration {
+			params: List,
+		},
+		TypeParameter {
+			name: StrId,
+			constraint: Option<NodeId>,
+			default: Option<NodeId>,
+			is_in: bool,
+			is_out: bool,
+			is_const: bool,
+		},
+		FunctionType {
+			type_parameters: Option<NodeId>,
+			parameters: List,
+			type_annotation: NodeId,
+		},
+		ConstructorType {
+			type_parameters: Option<NodeId>,
+			parameters: List,
+			type_annotation: NodeId,
+			is_abstract: bool,
+		},
+		UnionType {
+			types: List,
+		},
+		IntersectionType {
+			types: List,
+		},
+		TypeOperator {
+			operator: StrId,
+			type_annotation: NodeId,
+		},
+		InferType {
+			type_parameter: NodeId,
+		},
+		LiteralType {
+			literal: NodeId,
+		},
+		ImportType {
+			argument: NodeId,
+			qualifier: Option<NodeId>,
+			type_arguments: Option<NodeId>,
+		},
+		TypeQuery {
+			expr_name: NodeId,
+			type_arguments: Option<NodeId>,
+		},
+		MappedType {
+			readonly: Option<Modifier>,
+			type_parameter: NodeId,
+			name_type: Option<NodeId>,
+			optional: Option<Modifier>,
+			type_annotation: Option<NodeId>,
+		},
+		TypeLiteral {
+			members: List,
+		},
+		NamedTupleMember {
+			label: NodeId,
+			optional: bool,
+			element_type: NodeId,
+		},
+		OptionalType {
+			type_annotation: NodeId,
+		},
+		RestType {
+			type_annotation: NodeId,
+		},
+		TupleType {
+			element_types: List,
+		},
+		ParenthesizedType {
+			type_annotation: NodeId,
+		},
+		ArrayType {
+			element_type: NodeId,
+		},
+		IndexedAccessType {
+			object_type: NodeId,
+			index_type: NodeId,
+		},
+		ConditionalType {
+			check_type: NodeId,
+			extends_type: NodeId,
+			true_type: NodeId,
+			false_type: NodeId,
+		},
+
+		// Type members
+		IndexSignature {
+			parameters: List,
+			type_annotation: Option<NodeId>,
+		},
+		CallSignatureDeclaration {
+			type_parameters: Option<NodeId>,
+			parameters: List,
+			type_annotation: Option<NodeId>,
+		},
+		ConstructSignatureDeclaration {
+			type_parameters: Option<NodeId>,
+			parameters: List,
+			type_annotation: Option<NodeId>,
+		},
+		/// Its type parameters are in the extras record: with them, the node would outgrow
+		/// JavaScript's widest kind and widen every node.
+		MethodSignature {
+			key: NodeId,
+			computed: bool,
+			optional: bool,
+			kind: SignatureKind,
+			parameters: List,
+			type_annotation: Option<NodeId>,
+		},
+		PropertySignature {
+			key: NodeId,
+			computed: bool,
+			optional: bool,
+			readonly: bool,
+			type_annotation: Option<NodeId>,
+		},
+
+		// Declarations
+		InterfaceDeclaration {
+			id: NodeId,
+			type_parameters: Option<NodeId>,
+			extends: List,
+			body: NodeId,
+		},
+		InterfaceBody {
+			body: List,
+		},
+		Heritage {
+			expression: NodeId,
+			type_arguments: Option<NodeId>,
+			clause: Clause,
+		},
+		EnumDeclaration {
+			id: NodeId,
+			members: List,
+			is_const: bool,
+		},
+		EnumMember {
+			id: NodeId,
+			initializer: Option<NodeId>,
+		},
+		ModuleDeclaration {
+			id: NodeId,
+			body: Option<NodeId>,
+			global: bool,
+		},
+		ModuleBlock {
+			body: List,
+		},
+		TypeAliasDeclaration {
+			id: NodeId,
+			type_parameters: Option<NodeId>,
+			type_annotation: NodeId,
+		},
+		ImportEqualsDeclaration {
+			id: NodeId,
+			module_reference: NodeId,
+			is_export: bool,
+			import_kind: Kind,
+		},
+		ExternalModuleReference {
+			expression: NodeId,
+		},
+		ExportAssignment {
+			expression: NodeId,
+		},
+		NamespaceExportDeclaration {
+			id: NodeId,
+		},
+		/// A function declaration without a body: an overload or an ambient declaration.
+		DeclareFunction {
+			id: Option<NodeId>,
+			params: List,
+			is_async: bool,
+			generator: bool,
+		},
+		/// A method without a body, the `value` of its `MethodDefinition`.
+		DeclareMethod {
+			params: List,
+			is_async: bool,
+			generator: bool,
+		},
+
+		// Expressions
+		AsExpression {
+			expression: NodeId,
+			type_annotation: NodeId,
+		},
+		SatisfiesExpression {
+			expression: NodeId,
+			type_annotation: NodeId,
+		},
+		NonNullExpression {
+			expression: NodeId,
+		},
+		TypeAssertion {
+			type_annotation: NodeId,
+			expression: NodeId,
+		},
+		InstantiationExpression {
+			expression: NodeId,
+			type_arguments: NodeId,
+		},
+		ParameterProperty {
+			parameter: NodeId,
+		},
+		Decorator {
+			expression: NodeId,
+		},
 	}
 }
 
@@ -1282,6 +1373,221 @@ crate::layout::names! {
 impl VariableKind {
 	pub(crate) fn is_using(self) -> bool {
 		matches!(self, Self::Using | Self::AwaitUsing)
+	}
+}
+
+impl Ast {
+	pub(crate) fn extras_of(&self, id: NodeId) -> Extras {
+		self.extras.get(id).copied().unwrap_or_default()
+	}
+
+	/// The nodes erasing still adds keys to: those with decorators.
+	pub(crate) fn decorated(&self, set: &mut NodeSet) {
+		for &owner in self.extras.owners() {
+			if self.extras.get(owner).is_some_and(|extras| extras.decorators.is_some()) {
+				set.insert(owner);
+			}
+		}
+	}
+
+	/// Whether every statement of a list erases to nothing.
+	/// tsc emits a namespace that declares any value, so a `declare`d member counts here though it
+	/// erases at the top level.
+	fn instantiates(&self, id: NodeId) -> bool {
+		use NodeKind::*;
+		match self.node(id).kind {
+			InterfaceDeclaration { .. } | TypeAliasDeclaration { .. } => false,
+			ImportEqualsDeclaration { import_kind, .. } => import_kind == Kind::Value,
+			ModuleDeclaration { body, .. } => body.is_some_and(|block| self.instantiates(block)),
+			ModuleBlock { body } => self.list(body).iter().flatten().any(|&id| self.instantiates(id)),
+			ExportDeclaration { declaration } => {
+				self.extras_of(id).export_kind != Some(Kind::Type) && self.instantiates(declaration)
+			}
+			ExportNamedDeclaration { .. } | ExportAllDeclaration { .. } => {
+				self.extras_of(id).export_kind != Some(Kind::Type)
+			}
+			_ => true,
+		}
+	}
+
+	pub(crate) fn erased(&self, id: NodeId) -> bool {
+		use NodeKind::*;
+		let extras = self.extras_of(id);
+		if extras.declare {
+			return true;
+		}
+		match self.node(id).kind {
+			MethodDefinition { .. } | PropertyDefinition { .. } if extras.is_abstract => true,
+			// an overload signature: a method without a body
+			MethodDefinition { value, .. } => {
+				matches!(self.node(value).kind, DeclareMethod { .. })
+			}
+			InterfaceDeclaration { .. }
+			| TypeAliasDeclaration { .. }
+			| DeclareFunction { .. }
+			| IndexSignature { .. }
+			| NamespaceExportDeclaration { .. } => true,
+			ImportEqualsDeclaration { import_kind, .. } => import_kind == Kind::Type,
+			ModuleDeclaration { .. } => !self.instantiates(id),
+			// an import of only types still runs its module, so `import { type A } from 'x'` keeps `import {} from 'x'`
+			ImportDeclaration { .. } | ImportSpecifier { .. } => extras.import_kind == Some(Kind::Type),
+			ExportSpecifier { .. } | ExportAllDeclaration { .. } => extras.export_kind == Some(Kind::Type),
+			// `export { type A }` keeps an `export {}`, as tsc keeps the file a module
+			ExportDeclaration { declaration } => extras.export_kind == Some(Kind::Type) || self.erased(declaration),
+			ExportNamedDeclaration { .. } => extras.export_kind == Some(Kind::Type),
+			ExportDefaultDeclaration { declaration } => {
+				extras.export_kind == Some(Kind::Type) || self.erased(declaration)
+			}
+			_ => false,
+		}
+	}
+}
+
+crate::layout::names! {
+	/// Whether an import or export carries values or only types.
+	#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+	pub enum Kind {
+		Value = "value",
+		Type = "type",
+	}
+}
+
+crate::layout::names! {
+	/// An interface's `extends` or a class's `implements`.
+	#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+	pub enum Clause {
+		Extends = "TSInterfaceHeritage",
+		Implements = "TSClassImplements",
+	}
+}
+
+crate::layout::names! {
+	#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+	pub enum Accessibility {
+		Public = "public",
+		Private = "private",
+		Protected = "protected",
+	}
+}
+
+crate::layout::names! {
+	/// A `readonly` or `?` modifier of a mapped type: bare, or with a `+`/`-` prefix.
+	#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+	pub enum Modifier {
+		Plus = "+",
+		Minus = "-",
+		True = "true",
+	}
+}
+
+crate::layout::names! {
+	#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+	pub enum SignatureKind {
+		Method = "method",
+		Get = "get",
+		Set = "set",
+	}
+}
+
+crate::layout::record! {
+	/// Keys TypeScript adds to a JavaScript node, or modifiers on one of its own.
+	#[derive(Clone, Copy, Debug, Default, PartialEq)]
+	pub struct Extras {
+		pub type_annotation: Option<NodeId>,
+		pub return_type: Option<NodeId>,
+		pub type_parameters: Option<NodeId>,
+		pub type_arguments: Option<NodeId>,
+		pub super_type_arguments: Option<NodeId>,
+		pub implements: Option<List>,
+		pub decorators: Option<List>,
+		pub accessibility: Option<Accessibility>,
+		pub import_kind: Option<Kind>,
+		pub export_kind: Option<Kind>,
+		pub optional: bool,
+		pub definite: bool,
+		pub declare: bool,
+		pub is_abstract: bool,
+		pub readonly: bool,
+		pub is_override: bool,
+		pub is_static: bool,
+	}
+}
+
+impl Extras {
+	pub(crate) fn set(&self) -> impl Iterator<Item = &'static str> {
+		let base = self as *const Extras as *const u8;
+		Extras::FIELDS
+			.iter()
+			.filter(move |field| unsafe {
+				let at = base.add(field.at);
+				match field.ty {
+					Ty::Bool => at.cast::<bool>().read(),
+					Ty::OptNode => at.cast::<Option<NodeId>>().read().is_some(),
+					Ty::OptList => at.cast::<Option<List>>().read().is_some(),
+					Ty::OptEnum(names) => usize::from(at.read()) < names.len(),
+					_ => unreachable!(),
+				}
+			})
+			.map(|field| field.name)
+	}
+}
+
+crate::layout::names! {
+	#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+	pub enum Keyword {
+		Any = "TSAnyKeyword",
+		Boolean = "TSBooleanKeyword",
+		BigInt = "TSBigIntKeyword",
+		Never = "TSNeverKeyword",
+		Number = "TSNumberKeyword",
+		Object = "TSObjectKeyword",
+		String = "TSStringKeyword",
+		Symbol = "TSSymbolKeyword",
+		Undefined = "TSUndefinedKeyword",
+		Unknown = "TSUnknownKeyword",
+		Void = "TSVoidKeyword",
+		Null = "TSNullKeyword",
+		Intrinsic = "TSIntrinsicKeyword",
+	}
+}
+
+impl Keyword {
+	pub(crate) fn from_name(name: &str) -> Option<Keyword> {
+		Some(match name {
+			"any" => Keyword::Any,
+			"boolean" => Keyword::Boolean,
+			"bigint" => Keyword::BigInt,
+			"never" => Keyword::Never,
+			"number" => Keyword::Number,
+			"object" => Keyword::Object,
+			"string" => Keyword::String,
+			"symbol" => Keyword::Symbol,
+			"undefined" => Keyword::Undefined,
+			"unknown" => Keyword::Unknown,
+			_ => return None,
+		})
+	}
+}
+
+impl Ast {
+	/// Whether an import or export only names types, so it binds and refers to no value.
+	pub(crate) fn types_only(&self, id: NodeId) -> bool {
+		self.extras
+			.get(id)
+			.is_some_and(|e| e.import_kind == Some(Kind::Type) || e.export_kind == Some(Kind::Type))
+	}
+
+	/// The expression a TypeScript node wraps without changing its value: `x as T`, `x!`.
+	pub(crate) fn wrapped(&self, id: NodeId) -> Option<NodeId> {
+		use NodeKind::*;
+		match self.node(id).kind {
+			AsExpression { expression, .. }
+			| SatisfiesExpression { expression, .. }
+			| NonNullExpression { expression }
+			| TypeAssertion { expression, .. }
+			| InstantiationExpression { expression, .. } => Some(expression),
+			_ => None,
+		}
 	}
 }
 

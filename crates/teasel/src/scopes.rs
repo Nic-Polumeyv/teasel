@@ -2,7 +2,7 @@
 //! identifier resolved to the binding it names. Names are declared first, in the environment each
 //! belongs to, and every reference is resolved after, so hoisting and merging need nothing special.
 
-use crate::ast::{Ast, List, NodeId, NodeKind, VariableKind};
+use crate::ast::{Ast, Kind, List, NodeId, NodeKind, VariableKind};
 use crate::error::{Code, SyntaxError};
 use crate::handed::{Handed, Views};
 use crate::interner::{FastMap, StrId};
@@ -616,7 +616,18 @@ impl<'a> Binder<'a> {
 			owned,
 			arguments: ast.strings.find("arguments"),
 			this_name: ast.strings.find("this"),
-			extras: !ast.typescript.extras.is_empty(),
+			extras: !ast.extras.is_empty(),
+		}
+	}
+
+	/// The identifier a qualified name starts from.
+	fn leftmost(&self, mut id: NodeId) -> Option<NodeId> {
+		loop {
+			match self.kind(id) {
+				NodeKind::Identifier { .. } => return Some(id),
+				NodeKind::QualifiedName { left, .. } => id = left,
+				_ => return None,
+			}
 		}
 	}
 
@@ -1022,10 +1033,7 @@ impl<'a> Binder<'a> {
 				NodeKind::Identifier { .. } => return Some(id),
 				NodeKind::MemberExpression { object, .. } => id = object,
 				NodeKind::ChainExpression { expression } => id = expression,
-				NodeKind::Extension(_) => {
-					id = self.ast.typescript.wrapped(self.ast, id)?;
-				}
-				_ => return None,
+				_ => id = self.ast.wrapped(id)?,
 			}
 		}
 	}
@@ -1036,11 +1044,10 @@ impl<'a> Binder<'a> {
 			match self.kind(id) {
 				NodeKind::MemberExpression { .. } => return true,
 				NodeKind::ChainExpression { expression } => id = expression,
-				NodeKind::Extension(_) => match self.ast.typescript.wrapped(self.ast, id) {
+				_ => match self.ast.wrapped(id) {
 					Some(inner) => id = inner,
 					None => return false,
 				},
-				_ => return false,
 			}
 		}
 	}
@@ -1066,11 +1073,10 @@ impl<'a> Binder<'a> {
 				}
 			}
 			NodeKind::ChainExpression { expression } => self.visit_member_target(expression, root),
-			NodeKind::Extension(_) => match self.ast.typescript.wrapped(self.ast, id) {
+			_ => match self.ast.wrapped(id) {
 				Some(inner) => self.visit_member_target(inner, root),
 				None => self.visit(id, Mode::Expression),
 			},
-			_ => self.visit(id, Mode::Expression),
 		}
 	}
 
@@ -1078,7 +1084,11 @@ impl<'a> Binder<'a> {
 		// a parameter's decorators are evaluated where the function is defined
 		if self.extras {
 			for &param in self.ast.list(params).iter().flatten() {
-				self.ast.typescript.bind_extras(self, param);
+				if let Some(decorators) = self.ast.extras.get(param).and_then(|e| e.decorators) {
+					for &decorator in self.ast.list(decorators).iter().flatten() {
+						self.visit(decorator, Mode::Expression);
+					}
+				}
 			}
 		}
 		self.enter(ScopeKind::Function, Some(id), arrow);
@@ -1242,8 +1252,13 @@ impl<'a> Binder<'a> {
 
 	fn visit_with(&mut self, id: NodeId, mode: Mode, extras: bool) {
 		use NodeKind::*;
-		if extras && self.extras {
-			self.ast.typescript.bind_extras(self, id);
+		if extras
+			&& self.extras
+			&& let Some(decorators) = self.ast.extras.get(id).and_then(|e| e.decorators)
+		{
+			for &decorator in self.ast.list(decorators).iter().flatten() {
+				self.visit(decorator, Mode::Expression);
+			}
 		}
 		match self.kind(id) {
 			Host(index) => self.host(id, index),
@@ -1251,7 +1266,100 @@ impl<'a> Binder<'a> {
 				Mode::Expression => self.reference(id, false, false),
 				Mode::Declare(kind) => self.declare(id, kind),
 			},
-			Extension(_) => self.ast.typescript.bind(self, id, mode),
+			AsExpression { expression, .. }
+			| SatisfiesExpression { expression, .. }
+			| NonNullExpression { expression }
+			| TypeAssertion { expression, .. }
+			| InstantiationExpression { expression, .. }
+			| ParameterProperty { parameter: expression } => self.visit(expression, mode),
+			Decorator { expression } | ExportAssignment { expression } => self.visit(expression, Mode::Expression),
+			EnumDeclaration { id: name, members, .. } => {
+				self.declare_by(name, BindingKind::Enum, id);
+				self.enter_owned(ScopeKind::Enum, id, self.declared_by(name));
+				for &member in self.ast.list(members).iter().flatten() {
+					if let EnumMember { id: name, .. } = self.kind(member) {
+						self.declare_by(name, BindingKind::EnumMember, member);
+					}
+				}
+				for &member in self.ast.list(members).iter().flatten() {
+					if let EnumMember {
+						initializer: Some(initializer),
+						..
+					} = self.kind(member)
+					{
+						self.visit(initializer, Mode::Expression);
+					}
+				}
+				self.exit();
+			}
+			ModuleDeclaration { id: name, body, global } => {
+				if !global {
+					self.declare_by(name, BindingKind::Namespace, id);
+				}
+				if let Some(body) = body {
+					self.enter_owned(ScopeKind::Namespace, id, self.declared_by(name));
+					self.visit(body, Mode::Expression);
+					self.exit();
+				}
+			}
+			ModuleBlock { body } => self.statements(body),
+			ImportEqualsDeclaration {
+				id: name,
+				module_reference,
+				import_kind,
+				..
+			} if import_kind != Kind::Type => {
+				self.declare_by(name, BindingKind::Import, id);
+				if let Some(root) = self.leftmost(module_reference) {
+					self.reference(root, false, false);
+				}
+			}
+			// an overload or an ambient signature names the function like its implementation would
+			DeclareFunction { id: Some(name), .. } => self.declare_by(name, BindingKind::Function, id),
+			// types, signatures and what the arms above leave: nothing to bind
+			TypeAnnotation { .. }
+			| Keyword(_)
+			| ThisType
+			| TypePredicate { .. }
+			| TypeReference { .. }
+			| QualifiedName { .. }
+			| TypeParameterInstantiation { .. }
+			| TypeParameterDeclaration { .. }
+			| TypeParameter { .. }
+			| FunctionType { .. }
+			| ConstructorType { .. }
+			| UnionType { .. }
+			| IntersectionType { .. }
+			| TypeOperator { .. }
+			| InferType { .. }
+			| LiteralType { .. }
+			| ImportType { .. }
+			| TypeQuery { .. }
+			| MappedType { .. }
+			| TypeLiteral { .. }
+			| NamedTupleMember { .. }
+			| OptionalType { .. }
+			| RestType { .. }
+			| TupleType { .. }
+			| ParenthesizedType { .. }
+			| ArrayType { .. }
+			| IndexedAccessType { .. }
+			| ConditionalType { .. }
+			| IndexSignature { .. }
+			| CallSignatureDeclaration { .. }
+			| ConstructSignatureDeclaration { .. }
+			| MethodSignature { .. }
+			| PropertySignature { .. }
+			| InterfaceDeclaration { .. }
+			| InterfaceBody { .. }
+			| Heritage { .. }
+			| EnumMember { .. }
+			| TypeAliasDeclaration { .. }
+			| ImportEqualsDeclaration { .. }
+			| ExternalModuleReference { .. }
+			| NamespaceExportDeclaration { .. }
+			| DeclareFunction { .. }
+			| DeclareMethod { .. } => {}
 			Program { body, .. } => self.statements(body),
 			PrivateIdentifier { .. }
 			| NumberLiteral { .. }
@@ -1501,24 +1609,24 @@ impl<'a> Binder<'a> {
 				self.maybe(init, Mode::Expression);
 			}
 			ImportDeclaration { specifiers, .. } => {
-				if !self.ast.typescript.types_only(id) {
+				if !self.ast.types_only(id) {
 					self.list(specifiers, Mode::Expression);
 				}
 			}
 			ImportSpecifier { local, .. } | ImportDefaultSpecifier { local } | ImportNamespaceSpecifier { local } => {
-				if !self.ast.typescript.types_only(id) {
+				if !self.ast.types_only(id) {
 					self.declare_by(local, BindingKind::Import, id);
 				}
 			}
 			ExportDeclaration { declaration } => self.exported(|b| b.visit(declaration, Mode::Expression)),
 			ExportNamedDeclaration { specifiers, source, .. } => {
-				if source.is_none() && !self.ast.typescript.types_only(id) {
+				if source.is_none() && !self.ast.types_only(id) {
 					self.list(specifiers, Mode::Expression);
 				}
 			}
 			ExportSpecifier { local, .. } => {
 				if let Identifier { .. } = self.kind(local)
-					&& !self.ast.typescript.types_only(id)
+					&& !self.ast.types_only(id)
 				{
 					self.reference(local, false, false);
 				}
@@ -1549,11 +1657,10 @@ impl<'a> Binder<'a> {
 				}
 				self.target(value);
 			}
-			NodeKind::Extension(_) => match self.ast.typescript.wrapped(self.ast, id) {
+			_ => match self.ast.wrapped(id) {
 				Some(inner) => self.target(inner),
 				None => self.visit(id, Mode::Expression),
 			},
-			_ => self.visit(id, Mode::Expression),
 		}
 	}
 

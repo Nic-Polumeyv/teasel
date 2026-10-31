@@ -89,7 +89,6 @@ ExportDefaultDeclaration
 ExportNamedDeclaration
 ExportSpecifier
 ExpressionStatement
-Extension
 ExternalModuleReference
 ForInStatement
 ForOfStatement
@@ -344,6 +343,7 @@ expressions
 extends
 extendsType
 extends_type
+extra
 extras
 extras_slots
 falseType
@@ -527,7 +527,6 @@ true
 trueType
 true_type
 ts
-ts_adds
 ty
 type
 typeAnnotation

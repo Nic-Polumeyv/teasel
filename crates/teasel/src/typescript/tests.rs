@@ -1,4 +1,4 @@
-use super::ast::Extras;
+use crate::ast::Extras;
 use crate::ast::{Ast, List, NodeId, NodeKind};
 use crate::layout::Ty;
 use crate::parser::tests::{Failed, dump as dump_with, expand, one, typescript};
@@ -8,15 +8,9 @@ fn at(entry: Entry, src: &str, offset: u32, options: Options, stop: &str) -> Res
 	one(crate::parse_at(src, offset, None, entry, typescript(options), stop))
 }
 
-fn typescript_node(ast: &Ast, id: NodeId, index: u32) -> String {
-	let mut out = expand(ast, &format!("{:?}", ast.typescript.kind(index)), &typescript_node);
-	out.push_str(&extras(ast, id));
-	out
-}
-
 /// The keys TypeScript added to a node, after its own rendering.
 fn extras(ast: &Ast, id: NodeId) -> String {
-	let Some(e) = ast.typescript.extras(id) else {
+	let Some(e) = ast.extras.get(id) else {
 		return String::new();
 	};
 	let base = e as *const Extras as *const u8;
@@ -33,7 +27,7 @@ fn extras(ast: &Ast, id: NodeId) -> String {
 				Ty::OptList => at
 					.cast::<Option<List>>()
 					.read()
-					.map(|list| format!("{name}: {}", expand(ast, &format!("{list:?}"), &typescript_node))),
+					.map(|list| format!("{name}: {}", expand(ast, &format!("{list:?}"), &extras))),
 				Ty::OptEnum(names) => names
 					.get(usize::from(at.read()))
 					.map(|value| format!("{name}: {value}")),
@@ -48,11 +42,7 @@ fn extras(ast: &Ast, id: NodeId) -> String {
 }
 
 fn dump(ast: &Ast, id: NodeId) -> String {
-	let mut out = dump_with(ast, id, &typescript_node);
-	if !matches!(ast.node(id).kind, NodeKind::Extension(_)) {
-		out.push_str(&extras(ast, id));
-	}
-	out
+	dump_with(ast, id, &extras)
 }
 
 fn expr(src: &str) -> String {
@@ -67,7 +57,7 @@ fn expr(src: &str) -> String {
 fn expression_entry_point() {
 	assert_eq!(
 		expr(r#"(a: number, b?: string) => a"#),
-		r#"ArrowFunctionExpression { params: [Identifier { name: "a" }, Identifier { name: "b" }], body: Identifier { name: "a" }, expression: true, is_async: false }"#
+		r#"ArrowFunctionExpression { params: [Identifier { name: "a" } +{type_annotation: TypeAnnotation { type_annotation: Keyword(Number) }}, Identifier { name: "b" } +{type_annotation: TypeAnnotation { type_annotation: Keyword(String) }, optional}], body: Identifier { name: "a" }, expression: true, is_async: false }"#
 	);
 	assert_eq!(
 		expr(r#"a as B<C>"#),
@@ -79,23 +69,23 @@ fn expression_entry_point() {
 	);
 	assert_eq!(
 		expr(r#"<T>(x: T) => x"#),
-		r#"ArrowFunctionExpression { params: [Identifier { name: "x" }], body: Identifier { name: "x" }, expression: true, is_async: false } +{type_parameters: TypeParameterDeclaration { params: [TypeParameter { name: "T", constraint: None, default: None, is_in: false, is_out: false, is_const: false }] }}"#
+		r#"ArrowFunctionExpression { params: [Identifier { name: "x" } +{type_annotation: TypeAnnotation { type_annotation: TypeReference { type_name: Identifier { name: "T" }, type_arguments: None } }}], body: Identifier { name: "x" }, expression: true, is_async: false } +{type_parameters: TypeParameterDeclaration { params: [TypeParameter { name: "T", constraint: None, default: None, is_in: false, is_out: false, is_const: false }] }}"#
 	);
 	assert_eq!(
 		expr(r#"async <T>(x: T) => x"#),
-		r#"ArrowFunctionExpression { params: [Identifier { name: "x" }], body: Identifier { name: "x" }, expression: true, is_async: true } +{type_parameters: TypeParameterDeclaration { params: [TypeParameter { name: "T", constraint: None, default: None, is_in: false, is_out: false, is_const: false }] }}"#
+		r#"ArrowFunctionExpression { params: [Identifier { name: "x" } +{type_annotation: TypeAnnotation { type_annotation: TypeReference { type_name: Identifier { name: "T" }, type_arguments: None } }}], body: Identifier { name: "x" }, expression: true, is_async: true } +{type_parameters: TypeParameterDeclaration { params: [TypeParameter { name: "T", constraint: None, default: None, is_in: false, is_out: false, is_const: false }] }}"#
 	);
 	assert_eq!(
 		expr(r#"(x?: number) => x"#),
-		r#"ArrowFunctionExpression { params: [Identifier { name: "x" }], body: Identifier { name: "x" }, expression: true, is_async: false }"#
+		r#"ArrowFunctionExpression { params: [Identifier { name: "x" } +{type_annotation: TypeAnnotation { type_annotation: Keyword(Number) }, optional}], body: Identifier { name: "x" }, expression: true, is_async: false }"#
 	);
 	assert_eq!(
 		expr(r#"({ a, b }: T) => a"#),
-		r#"ArrowFunctionExpression { params: [ObjectPattern { properties: [Property { key: Identifier { name: "a" }, value: Identifier { name: "a" }, kind: Init, computed: false, method: false, shorthand: true }, Property { key: Identifier { name: "b" }, value: Identifier { name: "b" }, kind: Init, computed: false, method: false, shorthand: true }] }], body: Identifier { name: "a" }, expression: true, is_async: false }"#
+		r#"ArrowFunctionExpression { params: [ObjectPattern { properties: [Property { key: Identifier { name: "a" }, value: Identifier { name: "a" }, kind: Init, computed: false, method: false, shorthand: true }, Property { key: Identifier { name: "b" }, value: Identifier { name: "b" }, kind: Init, computed: false, method: false, shorthand: true }] } +{type_annotation: TypeAnnotation { type_annotation: TypeReference { type_name: Identifier { name: "T" }, type_arguments: None } }}], body: Identifier { name: "a" }, expression: true, is_async: false }"#
 	);
 	assert_eq!(
 		expr(r#"(...args: number[]) => args"#),
-		r#"ArrowFunctionExpression { params: [RestElement { argument: Identifier { name: "args" } }], body: Identifier { name: "args" }, expression: true, is_async: false }"#
+		r#"ArrowFunctionExpression { params: [RestElement { argument: Identifier { name: "args" } } +{type_annotation: TypeAnnotation { type_annotation: ArrayType { element_type: Keyword(Number) } }}], body: Identifier { name: "args" }, expression: true, is_async: false }"#
 	);
 	assert_eq!(
 		expr(r#"f<T>(x)"#),
@@ -115,7 +105,7 @@ fn expression_entry_point() {
 	);
 	assert_eq!(
 		expr(r#"(a?) => a"#),
-		r#"ArrowFunctionExpression { params: [Identifier { name: "a" }], body: Identifier { name: "a" }, expression: true, is_async: false }"#
+		r#"ArrowFunctionExpression { params: [Identifier { name: "a" } +{optional}], body: Identifier { name: "a" }, expression: true, is_async: false }"#
 	);
 }
 
@@ -249,14 +239,10 @@ fn failed_attempts_leave_nothing() {
 	let list = (0..300).map(|i| format!("a{i} < b{i}")).collect::<Vec<_>>().join(", ");
 	let (ast, _, _) = at(Entry::Expression, &format!("[{list}]"), 0, options, "").unwrap();
 	assert!(ast.nodes.len() < 4 * 300 + 8, "{} nodes", ast.nodes.len());
-	assert!(ast.typescript.nodes.is_empty());
-	assert!(ast.typescript.extras.is_empty());
+	assert!(ast.extras.is_empty());
 	// a generic arrow is tried first: the parens it saw go with it
 	let (ast, root, _) = at(Entry::Expression, "<T>(a)", 0, options, "").unwrap();
-	let NodeKind::Extension(index) = ast.node(root).kind else {
-		panic!()
-	};
-	let super::ast::TsKind::TypeAssertion { expression, .. } = ast.typescript.kind(index) else {
+	let NodeKind::TypeAssertion { expression, .. } = ast.node(root).kind else {
 		panic!()
 	};
 	assert!(ast.is_parenthesized(expression));

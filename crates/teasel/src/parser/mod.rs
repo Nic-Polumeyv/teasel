@@ -1108,10 +1108,9 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 	pub(crate) fn is_simple_assign_target(&self, id: NodeId) -> bool {
 		match self.kind(id) {
 			NodeKind::Identifier { .. } | NodeKind::MemberExpression { .. } => true,
-			NodeKind::Extension(_) => self
+			_ => self
 				.unwrap(id, Unwrap::Simple)
 				.is_some_and(|inner| self.is_simple_assign_target(inner)),
-			_ => false,
 		}
 	}
 }

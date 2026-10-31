@@ -2,8 +2,8 @@
 //! JavaScript ones.
 
 use super::ClassFrame;
-use super::ast::{Kind, TsKind};
 use super::types::{ListKind, TypeParameterModifiers};
+use crate::ast::Kind;
 use crate::ast::{List, NodeId, NodeKind, VariableKind};
 use crate::error::Code;
 use crate::lexer::token::{Keyword, TokenKind, word};
@@ -51,7 +51,7 @@ impl<const TS: bool> Parser<'_, TS> {
 		let members = self.parse_delimited_list(ListKind::EnumMembers, |p| p.parse_enum_member())?;
 		self.expect(TokenKind::BraceR)?;
 		let members = self.list_of(&members);
-		Ok(self.ts(TsKind::EnumDeclaration { id, members, is_const }, start))
+		Ok(self.add(NodeKind::EnumDeclaration { id, members, is_const }, start))
 	}
 
 	fn parse_enum_member(&mut self) -> Result<NodeId> {
@@ -69,7 +69,7 @@ impl<const TS: bool> Parser<'_, TS> {
 		} else {
 			None
 		};
-		Ok(self.ts(TsKind::EnumMember { id, initializer }, start))
+		Ok(self.add(NodeKind::EnumMember { id, initializer }, start))
 	}
 
 	// Namespaces
@@ -108,7 +108,14 @@ impl<const TS: bool> Parser<'_, TS> {
 				| NodeKind::ExportNamedDeclaration { .. }
 				| NodeKind::ExportDefaultDeclaration { .. }
 				| NodeKind::ExportAllDeclaration { .. }
-				| NodeKind::Extension(_)
+				| NodeKind::InterfaceDeclaration { .. }
+				| NodeKind::TypeAliasDeclaration { .. }
+				| NodeKind::EnumDeclaration { .. }
+				| NodeKind::ModuleDeclaration { .. }
+				| NodeKind::DeclareFunction { .. }
+				| NodeKind::ImportEqualsDeclaration { .. }
+				| NodeKind::ExportAssignment { .. }
+				| NodeKind::NamespaceExportDeclaration { .. }
 		)
 	}
 
@@ -137,7 +144,7 @@ impl<const TS: bool> Parser<'_, TS> {
 		self.ts.state.in_namespace = in_namespace;
 		self.exit_scope();
 		let body = self.list_of(&body);
-		Ok(self.ts(TsKind::ModuleBlock { body }, start))
+		Ok(self.add(NodeKind::ModuleBlock { body }, start))
 	}
 
 	fn parse_ambient_external_module_declaration(&mut self, start: u32) -> Result<NodeId> {
@@ -160,7 +167,7 @@ impl<const TS: bool> Parser<'_, TS> {
 		} else {
 			Some(self.parse_module_body(false)?)
 		};
-		Ok(self.ts(TsKind::ModuleDeclaration { id, body, global }, start))
+		Ok(self.add(NodeKind::ModuleDeclaration { id, body, global }, start))
 	}
 
 	fn parse_module_or_namespace_declaration(&mut self, start: u32, nested: bool) -> Result<NodeId> {
@@ -187,8 +194,8 @@ impl<const TS: bool> Parser<'_, TS> {
 		} else {
 			self.parse_module_body(true)?
 		};
-		Ok(self.ts(
-			TsKind::ModuleDeclaration {
+		Ok(self.add(
+			NodeKind::ModuleDeclaration {
 				id,
 				body: Some(body),
 				global: false,
@@ -209,14 +216,14 @@ impl<const TS: bool> Parser<'_, TS> {
 			if p.is_contextual("intrinsic") && p.peek_token()?.kind != TokenKind::Dot {
 				let keyword_start = p.tok.start;
 				p.next()?;
-				let keyword = p.ts(TsKind::Keyword(super::ast::Keyword::Intrinsic), keyword_start);
+				let keyword = p.add(NodeKind::Keyword(crate::ast::Keyword::Intrinsic), keyword_start);
 				return Ok((type_parameters, keyword));
 			}
 			Ok((type_parameters, p.parse_type()?))
 		})?;
 		self.semicolon()?;
-		Ok(self.ts(
-			TsKind::TypeAliasDeclaration {
+		Ok(self.add(
+			NodeKind::TypeAliasDeclaration {
 				id,
 				type_parameters,
 				type_annotation,
@@ -235,18 +242,18 @@ impl<const TS: bool> Parser<'_, TS> {
 		let type_parameters = self.try_parse_type_parameters(TypeParameterModifiers::InOut)?;
 		let extends = if self.eat_keyword(Keyword::Extends)? {
 			let clause = self.parse_heritage_clause("extends")?;
-			Some(self.list_of(&clause))
+			self.list_of(&clause)
 		} else {
-			None
+			List::EMPTY
 		};
 		let body_start = self.tok.start;
 		self.expect(TokenKind::BraceL)?;
 		let members = self.in_type(|p| p.parse_list(ListKind::TypeMembers, |p| p.parse_type_member()))?;
 		self.expect(TokenKind::BraceR)?;
 		let members = self.list_of(&members);
-		let body = self.ts(TsKind::InterfaceBody { body: members }, body_start);
-		Ok(self.ts(
-			TsKind::InterfaceDeclaration {
+		let body = self.add(NodeKind::InterfaceBody { body: members }, body_start);
+		Ok(self.add(
+			NodeKind::InterfaceDeclaration {
 				id,
 				type_parameters,
 				extends,
@@ -264,11 +271,7 @@ impl<const TS: bool> Parser<'_, TS> {
 		let NodeKind::VariableDeclarator { id, init: Some(init) } = self.kind(declarator) else {
 			return Ok(());
 		};
-		let annotated = self
-			.ast
-			.typescript
-			.extras(id)
-			.is_some_and(|e| e.type_annotation.is_some());
+		let annotated = self.ast.extras.get(id).is_some_and(|e| e.type_annotation.is_some());
 		if kind != VariableKind::Const || annotated {
 			return self.error(self.start_of(init), Code::InitializerInAmbient);
 		}
@@ -482,7 +485,7 @@ impl<const TS: bool> Parser<'_, TS> {
 			}
 			let expression = self.parse_expr_atom(&mut None, ForInit::No, false)?;
 			self.expect(TokenKind::ParenR)?;
-			self.ts(TsKind::ExternalModuleReference { expression }, reference_start)
+			self.add(NodeKind::ExternalModuleReference { expression }, reference_start)
 		} else {
 			let reference = self.parse_entity_name(false)?;
 			if import_kind == Kind::Type {
@@ -492,8 +495,8 @@ impl<const TS: bool> Parser<'_, TS> {
 		};
 		self.semicolon()?;
 		self.ts.state.outer_kind = None;
-		Ok(self.ts(
-			TsKind::ImportEqualsDeclaration {
+		Ok(self.add(
+			NodeKind::ImportEqualsDeclaration {
 				id,
 				module_reference,
 				is_export,
