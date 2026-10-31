@@ -229,7 +229,7 @@ pub struct Writer<'a> {
 }
 
 /// Maps byte offsets to UTF-16 offsets and line/column pairs, the positions JavaScript counts,
-/// and UTF-16 offsets back to bytes. Built once per parse.
+/// and UTF-16 offsets back to bytes.
 pub struct Positions {
 	/// After each non-ASCII character: its end byte offset and the bytes-minus-code-units gap so far.
 	gaps: Vec<(u32, u32)>,

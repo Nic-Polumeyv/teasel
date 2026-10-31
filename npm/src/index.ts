@@ -99,10 +99,10 @@ export function parse<T = Program>(text: string, options?: Options, language: La
 /**
  * `piece` read from `text` at `at`, a UTF-16 offset, with positions of the whole text; a piece
  * inside a range is read from the text cut at the range's end, as
- * `parseAt(text.slice(0, end), js.program, start)`. Every call copies the text into the parser,
- * however small the piece, so reading one file piece by piece costs a copy of the file per piece:
- * the parser answers a text, it does not hold a conversation about one. For a document of a host
- * language, describe it as a grammar and `parse` it once.
+ * `parseAt(text.slice(0, end), js.program, start)`, where `end` splits neither a `\r\n` nor a
+ * surrogate pair. Every call copies the text into the parser, however small the piece, so reading
+ * one file piece by piece costs a copy of the file per piece. For a document of a host language,
+ * describe it as a grammar and `parse` it once.
  */
 export function parseAt<P extends Piece<unknown>>(text: string, piece: P, at: number, options?: Options): Parsed<P extends Piece<infer T> ? T : never> {
 	const read = piece?.[PIECE];
@@ -112,7 +112,7 @@ export function parseAt<P extends Piece<unknown>>(text: string, piece: P, at: nu
 
 function answer<T>(text: string, options: Options | undefined, entry: number, offset: number, stop: string, plan: object | undefined): Parsed<T> {
 	if (typeof text !== 'string') throw new TypeError('a parse takes a string');
-	if (!Number.isInteger(offset) || offset < 0 || offset > text.length || (offset > 0 && text.codePointAt(offset - 1)! > 0xffff)) throw new RangeError(`${offset} is no offset between characters of the text`);
+	if (!Number.isInteger(offset) || offset < 0 || offset > text.length || (offset > 0 && text.codePointAt(offset - 1)! > 0xffff)) throw new RangeError(`${String(offset)} is no offset between characters of the text`);
 	const on = flags(options);
 	const words = engine.parse(text, on, entry, offset, stop, plan);
 	let error: Omit<Recovered, 'line' | 'column'>;

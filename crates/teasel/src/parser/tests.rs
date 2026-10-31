@@ -1055,6 +1055,15 @@ fn layout_sizes() {
 }
 
 #[test]
+fn an_offset_inside_a_character_is_refused() {
+	let request = crate::json::Request {
+		offset: 1,
+		..crate::json::Request::from_flags(crate::Options::MODULE)
+	};
+	assert!(crate::json::parse("é", &request).contains("is not a character boundary"));
+}
+
+#[test]
 fn parenthesized_bits() {
 	let request = crate::json::Request::from_flags(crate::Options::MODULE | crate::Options::PARENTHESIZED);
 	let json = crate::json::parse("(a).b; (x, y); c; ((d));", &request);

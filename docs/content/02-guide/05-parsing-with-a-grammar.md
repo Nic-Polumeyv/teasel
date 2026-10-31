@@ -49,8 +49,6 @@ node.children.nodes[0].children.nodes[0];
 
 In TypeScript, and in JavaScript checked with JSDoc, the tree is typed from the definition: `node.children.nodes[0]` is an `Element`, an `IfBlock` or one of the others the grammar names, and `EachBlock`'s `item` is a `Pattern`. A field named `type`, or `bind` on a source that reads an expression, is a type error. A tag that reads content is a type error too, and what the engine could not parse with is refused by `grammar` itself, with a message naming the rule. A rule written apart from the grammar, to share it, keeps its types with `as const`.
 
-A grammar reads the whole source, so `parse` takes no position with one.
-
 ## The tree
 
 The tree's nodes are the ones the grammar names. Every node has the `type` the grammar names, `start` and `end` into the text, `loc` with `locations: true`, and the fields the grammar's rule lists; `locations: 'js'` puts `loc` on the JavaScript nodes and comments alone. Where a field holds JavaScript, it holds ESTree: the expression of an `{{ }}`, the program of a `<script>`, the pattern an `each` head declares. Offsets are offsets into the whole document, so nothing has to be added to them.
