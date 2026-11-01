@@ -127,12 +127,10 @@ impl Op {
 
 /// Whether a JavaScript or TypeScript node has this `type`.
 pub fn names_type(name: &str) -> bool {
-	let spelled = |table: &[(&str, &[Op])]| {
-		table
-			.iter()
-			.any(|(_, ops)| ops.iter().any(|op| matches!(op, Type(t) if *t == name)))
-	};
-	spelled(KINDS) || crate::ast::Keyword::NAMES.contains(&name)
+	KINDS
+		.iter()
+		.any(|(_, ops)| ops.iter().any(|op| matches!(op, Type(t) if *t == name)))
+		|| crate::ast::Keyword::NAMES.contains(&name)
 }
 
 /// Every kind by the variant's name; `Host` has none, the writer spells it itself.
@@ -290,7 +288,7 @@ pub fn resolve(recipes: &[(&str, &[Op])], variants: &[Variant]) -> &'static [&'s
 }
 
 pub(crate) fn resolve_ops(ops: &[Op], fields: &[Field], kind: &str) -> &'static [Op<Slot>] {
-	let slot = |path: Path, wanted: &[fn(&Ty) -> bool]| -> Slot {
+	let slot_in = |fields: &[Field], path: Path, wanted: &[fn(&Ty) -> bool]| -> Slot {
 		let (head, rest) = path.split_once('.').map_or((path, None), |(h, r)| (h, Some(r)));
 		let field = fields
 			.iter()
@@ -316,16 +314,8 @@ pub(crate) fn resolve_ops(ops: &[Op], fields: &[Field], kind: &str) -> &'static 
 		);
 		slot
 	};
-	let extra = |path: Path| -> Slot {
-		let field = crate::ast::Extras::FIELDS
-			.iter()
-			.find(|f| f.name == path)
-			.unwrap_or_else(|| panic!("the extras have no field {path}"));
-		Slot {
-			at: field.at,
-			ty: field.ty,
-		}
-	};
+	let slot = |path: Path, wanted: &[fn(&Ty) -> bool]| slot_in(fields, path, wanted);
+	let maybe: &[fn(&Ty) -> bool] = &[|t| matches!(t, Ty::OptNode | Ty::OptList | Ty::OptEnum(_))];
 	let resolved: Vec<Op<Slot>> = ops
 		.iter()
 		.map(|op| match *op {
@@ -333,11 +323,8 @@ pub(crate) fn resolve_ops(ops: &[Op], fields: &[Field], kind: &str) -> &'static 
 			TypeOf(f) => TypeOf(slot(f, &[|t| matches!(t, Ty::Enum(_))])),
 			Node(k, f) => Node(k, slot(f, &[|t| matches!(t, Ty::Node)])),
 			Opt(k, f) => Opt(k, slot(f, &[|t| matches!(t, Ty::OptNode | Ty::OptStr | Ty::OptU32)])),
-			Maybe(k, f) => Maybe(
-				k,
-				slot(f, &[|t| matches!(t, Ty::OptNode | Ty::OptList | Ty::OptEnum(_))]),
-			),
-			Extra(k, f) => Extra(k, extra(f)),
+			Maybe(k, f) => Maybe(k, slot(f, maybe)),
+			Extra(k, f) => Extra(k, slot_in(crate::ast::Extras::FIELDS, f, maybe)),
 			List(k, f) => List(k, slot(f, &[|t| matches!(t, Ty::List)])),
 			OptListKey(k, f) => OptListKey(k, slot(f, &[|t| matches!(t, Ty::OptList)])),
 			Params(k, f) => Params(k, slot(f, &[|t| matches!(t, Ty::List)])),

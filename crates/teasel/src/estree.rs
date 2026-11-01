@@ -4,7 +4,7 @@ use crate::Options;
 use crate::ast::{Ast, CommentRow, Extras, List, Loc, NodeId, NodeKind, Position, Span, Value, node_layout};
 use crate::handed::Handed;
 use crate::interner::StrId;
-use crate::layout::Ty;
+use crate::layout::{Ty, tag};
 use crate::parser::Entry;
 use crate::recipe::{ADDS, EXTRAS_ERASED, KINDS, Op, Slot, resolve_ops};
 use crate::scopes::Role;
@@ -217,7 +217,7 @@ pub struct Writer<'a> {
 	pub(crate) json: Json,
 	positions: &'a Positions,
 	cursor: Cursor,
-	pub(crate) options: Options,
+	options: Options,
 	/// The parse failed: `node` is null and `errors` holds the one error, nothing else is listed.
 	pub(crate) failed: bool,
 	/// The node being written names something bound by another node: no scope facts on it.
@@ -713,7 +713,7 @@ impl<'a> Writer<'a> {
 		self.name_only = was;
 	}
 
-	pub(crate) fn kind(&self, id: NodeId) -> NodeKind {
+	fn kind(&self, id: NodeId) -> NodeKind {
 		self.ast.node(id).kind
 	}
 
@@ -801,7 +801,7 @@ impl<'a> Writer<'a> {
 
 	/// Follows a kind's recipe over the record at `base`, a `repr(C, u32)` enum's payload; the
 	/// caller ends the node, unless a child stood in for it: false then.
-	pub(crate) fn run(&mut self, id: NodeId, ops: &[Op<Slot>], base: *const u8) -> bool {
+	fn run(&mut self, id: NodeId, ops: &[Op<Slot>], base: *const u8) -> bool {
 		for op in ops {
 			match *op {
 				Op::Keep(name) => {
@@ -1040,11 +1040,6 @@ impl<'a> Writer<'a> {
 struct Adds {
 	by_kind: Vec<(&'static [Op<Slot>], Vec<&'static str>)>,
 	erased: &'static [Op<Slot>],
-}
-
-/// The tag of a `repr(C, u32)` enum at `base`: its first word.
-pub(crate) fn tag(base: *const u8) -> usize {
-	unsafe { base.cast::<u32>().read() as usize }
 }
 
 /// The field at `slot` of the record at `base`, as the type the recipe reads it by.

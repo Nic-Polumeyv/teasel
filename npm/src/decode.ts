@@ -93,8 +93,8 @@ interface Language {
 	sat: [number, number];
 }
 
-/** A node from its id, a host node's record, and the node it sits in. */
-type Builder = (S: State, id: number, record: number, parent: Decoded | undefined) => Decoded;
+/** A node from its id and the node it sits in. */
+type Builder = (S: State, id: number, parent: Decoded | undefined) => Decoded;
 type Table = 'scopes' | 'bindings' | 'references' | 'roots';
 /** A table's row from its record, `b` words into the view, and the table it joins: a linked row reads the rows before it. */
 type Row = (S: State, view: Uint32Array, b: number, table: Decoded[]) => Decoded;
@@ -134,7 +134,7 @@ interface Compiled {
 }
 
 /** A field by its path, `a` or `a.b.c`, an inner field at its offset in the record. */
-export function field(fields: Field[], path: string): Field {
+function field(fields: Field[], path: string): Field {
 	let found: Field | undefined, at = 0;
 	for (const name of path.split('.')) {
 		found = (found === undefined ? fields : found.fields!).find((f) => f.name === name)!;
@@ -143,7 +143,7 @@ export function field(fields: Field[], path: string): Field {
 	return { ...found!, at };
 }
 
-function resolve(raw: RawOp[], fields: Field[], extras: Field[] = []): Op[] {
+export function resolve(raw: RawOp[], fields: Field[], extras: Field[] = []): Op[] {
 	const find = (path: string, of = fields) => field(of, path);
 	return raw.map(([op, ...rest]) => {
 		const out: Op = { op, key: '', at: 0, ty: '', names: [], at2: 0, value: null, other: '', inner: [] };
@@ -555,7 +555,7 @@ const child = <E, St>(B: Spelling<E, St>, word: E, typescript = false): E => {
 };
 
 /** Whether an operation's value holds nodes, which are built into the node once it exists. */
-const holds_nodes = (op: Op) =>
+export const holds_nodes = (op: Op) =>
 	op.op === 'node' ||
 	op.op === 'list' ||
 	op.op === 'params' ||
@@ -894,7 +894,7 @@ function host(S: State, id: number, index: number, parent: Decoded | undefined):
 
 
 function build(S: State, id: number, parent: Decoded | undefined): Decoded {
-	return S.J[S.N[id * S.C.words + (S.C.kind >> 2)]](S, id, 0, parent);
+	return S.J[S.N[id * S.C.words + (S.C.kind >> 2)]](S, id, parent);
 }
 
 function items(S: State, start: number, len: number, parent: Decoded | undefined): (Decoded | null)[] {
@@ -904,7 +904,7 @@ function items(S: State, start: number, len: number, parent: Decoded | undefined
 	for (let i = start, end = start + len; i < end; i++) {
 		const word = L[i];
 		if (word === 0) out[n++] = null;
-		else if (erased === null || !bit(erased, word - 1)) out[n++] = J[N[(word - 1) * words + kind]](S, word - 1, 0, parent);
+		else if (erased === null || !bit(erased, word - 1)) out[n++] = J[N[(word - 1) * words + kind]](S, word - 1, parent);
 	}
 	if (n !== len) out.length = n;
 	return out;
@@ -986,7 +986,7 @@ class Source implements Spelling<string, string> {
 	table = (list: (string | true)[]) => `K[${this.constants.push(list) - 1}]`;
 	at = (table: string, index: string) => `${table}[${index}]`;
 	// a child's builder is looked up where the child is read: each site sees its own few kinds
-	built = (id: string, into = 'n') => `J[N[${id} * ${this.words} + ${this.kind >> 2}]](S, ${id}, 0, ${into})`;
+	built = (id: string, into = 'n') => `J[N[${id} * ${this.words} + ${this.kind >> 2}]](S, ${id}, ${into})`;
 	items = (start: string, len: string, params: boolean) => `${params ? 'params' : 'items'}(S, ${start}, ${len}, n)`;
 	pair = (a: string, b: string) => `[${a}, ${b}]`;
 	object = (fields: [string, string][]) => `{ ${fields.map(([key, field]) => `${JSON.stringify(key)}: ${field}`).join(', ')} }`;
@@ -1036,7 +1036,7 @@ const LATE = 'if ((S.late[id >>> 5] >>> (id & 31) & 1) === 1) late(S, n, id);';
 // born with its parent. Keys a kind may leave out are set after, in the recipe's order, and a node
 // with anything the literal has no room for goes to `run`.
 function generate(C: Compiled, G: Language, config: number, ops: Op[], adds: Op[]): Builder {
-	const slow: Builder = (S, id, record, parent) => run(S, id, ops, S.N, id * C.words * 4 + C.kind, parent);
+	const slow: Builder = (S, id, parent) => run(S, id, ops, S.N, id * C.words * 4 + C.kind, parent);
 	const link = (config & LINK) !== 0, facts = (config & FACTS) !== 0, erase = (config & ERASE) !== 0;
 	// facts as keys, in the writer's order: only `run` spells them
 	if ((facts && !link) || ops.length === 0) return slow;
@@ -1068,8 +1068,7 @@ function generate(C: Compiled, G: Language, config: number, ops: Op[], adds: Op[
 	if (adds.length !== 0 || ops.some((op) => op.op === 'extra')) B.lead.push(`const xs = S.extras_slots, x = xs !== null && id < xs.length ? xs[id] : 0, X = x === 0 ? S.C.blank : S.extras, xb = x === 0 ? 0 : (x - 1) * ${C.layout.extras!.size >> 2};`);
 	if (adds.length !== 0) {
 		const own = [B.word, B.byte];
-		B.word = (at) => `X[xb + ${at >> 2}]`;
-		B.byte = (at) => `(X[xb + ${at >> 2}] >>> ${(at & 3) << 3} & 255)`;
+		[B.word, B.byte] = [B.extra, B.extrabyte];
 		for (const op of adds) {
 			if (holds_nodes(op)) {
 				props.push(`${JSON.stringify(key_of(op))}: undefined`);
@@ -1120,8 +1119,8 @@ function generate(C: Compiled, G: Language, config: number, ops: Op[], adds: Op[
 		if (facts) after.push(LATE);
 	}
 	const lead = B.lead;
-	const body = `const N = S.N, J = S.J, b = id * ${C.words}; ${lead.length !== 0 && lead[lead.length - 1].includes('return J[') ? lead.join(' ') : `if (${rare.join(' || ')}) return slow(S, id, t, parent); ${before.join(' ')} const p = id * S.ps + S.po; ${lead.join(' ')} const n = { ${props.join(', ')} }; ${slots.join(' ')} ${tail.join(' ')} ${after.join(' ')} return n;`}`;
-	return new Function('K', 'slow', 'items', 'params', 'finite', 'bigint', 'bigint_value', 'regexp', 'late', 'PARENT', 'SCOPE', 'REFERENCE', `return (S, id, t, parent) => { ${body} };`)(B.constants, slow, items, params, finite, bigint, bigint_value, regexp, late, PARENT, SCOPE, REFERENCE);
+	const body = `const N = S.N, J = S.J, b = id * ${C.words}; ${lead.length !== 0 && lead[lead.length - 1].includes('return J[') ? lead.join(' ') : `if (${rare.join(' || ')}) return slow(S, id, parent); ${before.join(' ')} const p = id * S.ps + S.po; ${lead.join(' ')} const n = { ${props.join(', ')} }; ${slots.join(' ')} ${tail.join(' ')} ${after.join(' ')} return n;`}`;
+	return new Function('K', 'slow', 'items', 'params', 'finite', 'bigint', 'bigint_value', 'regexp', 'late', 'PARENT', 'SCOPE', 'REFERENCE', `return (S, id, parent) => { ${body} };`)(B.constants, slow, items, params, finite, bigint, bigint_value, regexp, late, PARENT, SCOPE, REFERENCE);
 }
 
 function strs(S: State, start: number, len: number): string[] {
@@ -1246,19 +1245,19 @@ function builders(C: Compiled, G: Language, config: number, typescript: boolean)
 	// one closure stands in for every kind not met yet: it makes the kind's builder and takes its place
 	const js = (tag: number): Builder => {
 		const ops = recipe(G, tag);
-		return generated ? generate(C, G, config, ops, typescript && (config & ERASE) === 0 ? G.adds[tag] : NO_OPS) : (S, id, record, parent) => run(S, id, ops, S.N, id * C.words * 4 + C.kind, parent);
+		return generated ? generate(C, G, config, ops, typescript && (config & ERASE) === 0 ? G.adds[tag] : NO_OPS) : (S, id, parent) => run(S, id, ops, S.N, id * C.words * 4 + C.kind, parent);
 	};
 	const set: Builders = (B = {
-		js: new Array<Builder>(C.layout.kinds.length).fill((S, id, record, parent) => (set.js[S.N[id * C.words + (C.kind >> 2)]] = js(S.N[id * C.words + (C.kind >> 2)]))(S, id, record, parent)),
+		js: new Array<Builder>(C.layout.kinds.length).fill((S, id, parent) => (set.js[S.N[id * C.words + (C.kind >> 2)]] = js(S.N[id * C.words + (C.kind >> 2)]))(S, id, parent)),
 		hosts: [],
 	});
 	set.js[C.host] = generated
-		? (S, id, _record, parent) => {
+		? (S, id, parent) => {
 				const index = S.N[id * C.words + C.payload], H = C.R.host;
 				const build = S.H[S.hosts[index * H.words + H.shape]];
 				return build === undefined ? host_by_shape(S, id, index, config, parent) : build(S, id, index, S.hosts[index * H.words + H.from], parent);
 			}
-		: (S, id, _record, parent) => host(S, id, S.N[id * C.words + C.payload], parent);
+		: (S, id, parent) => host(S, id, S.N[id * C.words + C.payload], parent);
 	G.sets.set(config, set);
 	return (G.builders = set);
 }

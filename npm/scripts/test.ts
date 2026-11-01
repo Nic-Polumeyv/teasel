@@ -604,7 +604,7 @@ if (name !== 'native') {
 	check(css.children, 'css fixtures', true);
 	assert.equal(svelte.children, svelte.children, 'a grammar keeps its table');
 	assert.ok('Rule' in svelte.children && 'Identifier' in svelte.children && 'EachBlock' in svelte.children);
-	assert.ok(!('Host' in js.children) && !('Extension' in js.children));
+	assert.ok(!('Host' in js.children));
 	assert.ok(Object.isFrozen(svelte.children.Program) && Object.isFrozen(css.children.Rule));
 	// a grammar is plain data: no getter the engine answers, nothing of what crossed kept on it
 	assert.ok(Object.getOwnPropertyDescriptor(svelte, 'children')!.get === undefined && !('wire' in svelte));

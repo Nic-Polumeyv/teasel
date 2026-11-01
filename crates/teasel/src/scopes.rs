@@ -1080,15 +1080,19 @@ impl<'a> Binder<'a> {
 		}
 	}
 
+	fn decorators(&mut self, id: NodeId) {
+		if let Some(decorators) = self.ast.extras.get(id).and_then(|e| e.decorators) {
+			for &decorator in self.ast.list(decorators).iter().flatten() {
+				self.visit(decorator, Mode::Expression);
+			}
+		}
+	}
+
 	fn function(&mut self, id: NodeId, params: List, body: NodeId, arrow: bool) {
 		// a parameter's decorators are evaluated where the function is defined
 		if self.extras {
 			for &param in self.ast.list(params).iter().flatten() {
-				if let Some(decorators) = self.ast.extras.get(param).and_then(|e| e.decorators) {
-					for &decorator in self.ast.list(decorators).iter().flatten() {
-						self.visit(decorator, Mode::Expression);
-					}
-				}
+				self.decorators(param);
 			}
 		}
 		self.enter(ScopeKind::Function, Some(id), arrow);
@@ -1252,13 +1256,8 @@ impl<'a> Binder<'a> {
 
 	fn visit_with(&mut self, id: NodeId, mode: Mode, extras: bool) {
 		use NodeKind::*;
-		if extras
-			&& self.extras
-			&& let Some(decorators) = self.ast.extras.get(id).and_then(|e| e.decorators)
-		{
-			for &decorator in self.ast.list(decorators).iter().flatten() {
-				self.visit(decorator, Mode::Expression);
-			}
+		if extras && self.extras {
+			self.decorators(id);
 		}
 		match self.kind(id) {
 			Host(index) => self.host(id, index),

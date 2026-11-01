@@ -1,37 +1,23 @@
 // `node scripts/children.ts` writes src/children.ts from the engine's layout: for every node type, the fields that hold nodes; the tests check they agree
 import { writeFileSync } from 'node:fs';
-import { field as find, type Field, type Kind, type Layout, type RawOp as Op, type RawRecipes as Recipes } from '../src/decode.ts';
+import { holds_nodes, resolve, type Layout } from '../src/decode.ts';
 
 /** From the layout the engine hands over: each type with the keys that hold nodes or lists of nodes, and the keys TypeScript may add to any node. */
 export function generate(layout: Layout): { children: Record<string, string[]>; extras: string[]; stylesheet: Record<string, string[]> } {
 	const extra_fields = layout.extras?.fields ?? [];
-	// the keys whose value is a node or a list of nodes, and the types the recipe spells: one, or one per name of an enum field
-	const keys = (ops: Op[], fields: Field[]) => {
-		const out: string[] = [];
-		let types: string[] = [];
-		for (const [op, key, path] of ops) {
-			if (op === 'type') types = [key];
-			else if (op === 'typeof') types = find(fields, key).names!;
-			else if (op === 'node' || op === 'list' || op === 'optlistkey' || op === 'params' || op === 'othername') out.push(key);
-			else if ((op === 'opt' || op === 'maybe') && find(fields, path).ty === '?node') out.push(key);
-			else if (op === 'maybe' && find(fields, path).ty === '?list') out.push(key);
-			else if (op === 'extra' && find(extra_fields, path).ty !== '?enum') out.push(key);
-			else if (op === 'object' && keys(path, fields).out.length !== 0) throw new Error(`${key} nests nodes`);
-		}
-		return { types, out };
-	};
 	const children: Record<string, string[]> = {};
-	const add = (type: string, fields: string[]) => {
-		const list = (children[type] ??= []);
-		for (const field of fields) if (!list.includes(field)) list.push(field);
-	};
-	const kinds = (recipes: Recipes, of: Kind[]) => {
-		for (const [name, ops] of recipes) {
-			const { types, out } = keys(ops, of.find((kind) => kind.name === name)!.fields);
-			for (const type of types) add(type, out);
+	for (const [name, raw] of layout.recipes.kinds) {
+		const ops = resolve(raw, layout.kinds.find((kind) => kind.name === name)!.fields, extra_fields);
+		const keys = ops.filter(holds_nodes).map((op) => {
+			if (op.op === 'object') throw new Error(`${op.key} nests nodes`);
+			return op.key;
+		});
+		// the types the recipe spells: one, or one per name of an enum field
+		for (const type of ops.flatMap((op) => (op.op === 'type' ? [op.key] : op.op === 'typeof' ? op.names : []))) {
+			const list = (children[type] ??= []);
+			for (const key of keys) if (!list.includes(key)) list.push(key);
 		}
-	};
-	kinds(layout.recipes.kinds, layout.kinds);
+	}
 	const adds = (layout.recipes.adds ?? []).flatMap(([, ops]) => ops);
 	const extras: string[] = [];
 	for (const field of extra_fields) {

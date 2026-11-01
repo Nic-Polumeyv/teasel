@@ -1,6 +1,6 @@
 use crate::handed::{Handed, Views};
 use crate::interner::{Interner, StrId, Surrogate};
-use crate::layout::{Field, Ty};
+use crate::layout::{Field, Ty, tag};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(C)]
@@ -572,7 +572,7 @@ impl Ast {
 			NodeKind::Host(index) => self.host_children(index, out),
 			_ => {
 				let base = kind as *const NodeKind as *const u8;
-				self.held(base, node_layout::VARIANTS[crate::estree::tag(base)].fields, out);
+				self.held(base, node_layout::VARIANTS[tag(base)].fields, out);
 			}
 		}
 		if let Some(extras) = self.extras.get(id) {
@@ -1390,7 +1390,6 @@ impl Ast {
 		}
 	}
 
-	/// Whether every statement of a list erases to nothing.
 	/// tsc emits a namespace that declares any value, so a `declare`d member counts here though it
 	/// erases at the top level.
 	fn instantiates(&self, id: NodeId) -> bool {

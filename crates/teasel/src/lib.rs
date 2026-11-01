@@ -13,7 +13,7 @@ pub(crate) mod lexer;
 pub mod parser;
 pub mod recipe;
 pub mod scopes;
-pub mod typescript;
+mod typescript;
 
 pub use error::{Code, SyntaxError};
 pub use interner::{Interner, StrId};
