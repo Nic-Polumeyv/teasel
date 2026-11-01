@@ -266,7 +266,7 @@ fn the_session_writes_the_same_words_again() {
 	let _ = parse("a +", options, Entry::Expression, 0.0, "", None);
 	parse(source, options, Entry::Program, 0.0, "", None).unwrap();
 	let again = words();
-	// but for the first saying its buffers are new to the front end
+	// but for the first saying its buffers are new to the decoder
 	let what = 2 + first[1] as usize;
 	assert_eq!(first[what] & !1, again[what] & !1);
 	assert_eq!(

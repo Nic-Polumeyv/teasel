@@ -10,10 +10,10 @@ use crate::parser::{Entry, parse_at};
 use crate::positions::{Cursor, Positions};
 use crate::scopes;
 
-/// The answer's words, read in place by a front end that takes the allocation over.
+/// The answer's words, read in place by the decoder that takes the allocation over.
 pub type Words = crate::handed::Handed<u32>;
 
-/// The tree's layout, the names of its views and the recipes, as JSON: what a front end reading
+/// The tree's layout, the names of its views and the recipes, as JSON: what the decoder reading
 /// the tree in place builds its readers from.
 pub fn layout_json() -> String {
 	use crate::ast::Node;
@@ -211,7 +211,7 @@ pub fn layout_json() -> String {
 	w.finish()
 }
 
-/// What a front end learns of a grammar once, as JSON: every type of node its documents hold, each
+/// What the decoder learns of a grammar once, as JSON: every type of node its documents hold, each
 /// with the fields that hold nodes (see `Grammar::children`), and its names by the numbers the
 /// hosts' rows give them.
 pub fn about(grammar: &Grammar) -> String {
@@ -266,7 +266,7 @@ pub fn parse(
 			let failed = roots.is_none();
 			prepare(ast, source, &positions, options, failed);
 			// `end`, the roots by number, a word of what the answer is, each view's length, then where
-			// the tree's buffers sit folded into two words: a front end keeps its views while that holds
+			// the tree's buffers sit folded into two words: the decoder keeps its views while that holds
 			words.clear();
 			let roots = roots.map_or(&[][..], |roots| ast.list(roots));
 			words.extend_from_slice(&[positions.offset(&mut Cursor::default(), end), roots.len() as u32]);
@@ -291,7 +291,7 @@ pub fn parse(
 /// What every parse on a thread reuses: the trees, emptied, and the answer's buffers.
 #[derive(Default)]
 struct Session {
-	/// The JavaScript tree, then the TypeScript one: a front end keeps the views of the two apart.
+	/// The JavaScript tree, then the TypeScript one: the decoder keeps the views of the two apart.
 	trees: [Option<Box<Ast>>; 2],
 	words: Words,
 	/// Whether the last parse used the TypeScript tree.
@@ -392,7 +392,7 @@ pub(crate) fn read<R>(
 		};
 		let (mut roots, mut end) = match parsed {
 			Ok((roots, end)) => (Some(roots), end),
-			Err(error) => (fail(&mut ast, *error), error.pos),
+			Err(error) => (None, fail(&mut ast, *error)),
 		};
 		if let Some(list) = roots {
 			if options.has(Options::COMMENTS) {
@@ -406,7 +406,7 @@ pub(crate) fn read<R>(
 						ast.errors.extend(errors);
 						ast.errors.sort_by_key(|error| error.pos);
 					} else {
-						(roots, end) = (fail(&mut ast, errors[0]), errors[0].pos);
+						(roots, end) = (None, fail(&mut ast, errors[0]));
 					}
 				}
 			}
@@ -417,7 +417,7 @@ pub(crate) fn read<R>(
 	})
 }
 
-/// What a front end reading the tree in place needs beside it: every node's span and location
+/// What the decoder reading the tree in place needs beside it: every node's span and location
 /// as JavaScript counts them, the nodes erasure leaves out, the hosts, the comments, the errors
 /// and the strings' UTF-16 starts; a failed parse prepares its error row alone, the
 /// tree it read is left as the last answer cleared it.
@@ -494,8 +494,8 @@ fn prepare_tree(ast: &mut Ast, positions: &Positions, options: Options) {
 
 /// A parse that failed answers as one that recovered from nothing but its error: no roots,
 /// `end` at the error, the error alone in `errors`, and nothing else listed.
-fn fail(ast: &mut Ast, error: crate::SyntaxError) -> Option<crate::ast::List> {
+fn fail(ast: &mut Ast, error: crate::SyntaxError) -> u32 {
 	ast.errors.clear();
 	ast.errors.push(error);
-	None
+	error.pos
 }

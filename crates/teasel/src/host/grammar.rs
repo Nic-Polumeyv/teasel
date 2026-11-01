@@ -786,7 +786,7 @@ impl Naming {
 }
 
 /// The shapes of a grammar's host nodes, numbered for good as the walker meets them: a node's
-/// type, whether it has a span, and each field's name and kind of value. A front end builds the
+/// type, whether it has a span, and each field's name and kind of value. The decoder builds the
 /// nodes of one shape by one literal.
 #[derive(Clone, Debug, Default)]
 pub struct Shapes {

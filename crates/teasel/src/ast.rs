@@ -332,7 +332,7 @@ crate::layout::record! {
 	}
 }
 
-/// Every record a front end reads beside the nodes and the tables, by the name of its view.
+/// Every record the decoder reads beside the nodes and the tables, by the name of its view.
 pub const RECORDS: &[(&str, usize, &[Field])] = &[
 	("comments", size_of::<CommentRow>(), CommentRow::FIELDS),
 	("attached", size_of::<Attached>(), Attached::FIELDS),
@@ -359,7 +359,7 @@ pub struct Ast {
 	pub attached: Slots<Attached>,
 	/// Nodes erasure leaves out, when the answer erases TypeScript.
 	pub erased: NodeSet,
-	/// Nodes with what few have, for a front end that builds the rest in one piece: parentheses,
+	/// Nodes with what few have, for the decoder that builds the rest in one piece: parentheses,
 	/// comments, TypeScript's extras, a binding or reference on what is not an identifier.
 	pub rare: NodeSet,
 	/// Nodes that declare bindings, are assigned by references or are a root.
@@ -500,7 +500,7 @@ impl Ast {
 		}
 	}
 
-	/// The tree's buffers a front end reads in place, by the names `layout::json` lists; a
+	/// The tree's buffers the decoder reads in place, by the names `engine::layout_json` lists; a
 	/// TypeScript tree's tables last.
 	pub fn views(&mut self, typescript: bool, out: &mut Views<'_>) {
 		out.push("nodes", &mut self.nodes);

@@ -282,7 +282,7 @@ impl Interner {
 		self.starts.len().saturating_sub(1)
 	}
 
-	/// The text of every string, where each starts and the lone surrogates, for a front end
+	/// The text of every string, where each starts and the lone surrogates, for the decoder
 	/// reading them in place.
 	pub(crate) fn buffers(&mut self) -> (&mut Handed<u8>, &mut Handed<u32>, &mut Handed<Surrogate>) {
 		(&mut self.text, &mut self.starts, &mut self.marks)

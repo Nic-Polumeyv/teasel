@@ -1,4 +1,4 @@
-//! Command line front end: one file, or a batch of jobs, answered as JSON.
+//! The command line: one file, or a batch of jobs, answered as JSON.
 //!
 //! `teasel [--module] [--typescript] [--comments] [--scopes] [--expression|--pattern|--params|--statement|--type-parameters]
 //! [--parenthesized] [--erase] [--offset N] FILE` prints

@@ -47,7 +47,7 @@ pub extern "C" fn grammar_about(handle: u32) {
 /// `ptr` is `capacity` bytes from `alloc`, `len` of them the source, and `stop_ptr` is
 /// `stop_capacity` bytes from `alloc`, `stop_len` of them the stop tokens; both are taken over
 /// here. `flags` is the option word; `grammar` is a handle from `grammar_new`, or 0. 0: words at
-/// `words_ptr`; 1: what is wrong with the call at `text_ptr`, for the front end to throw.
+/// `words_ptr`; 1: what is wrong with the call at `text_ptr`, for JavaScript to throw.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn parse(
 	ptr: *mut u8,

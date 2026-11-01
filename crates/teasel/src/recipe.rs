@@ -1,6 +1,6 @@
 //! How each kind of node, each table's rows and what TypeScript adds are spelled in ESTree: a
 //! recipe of operations over the fields the layout describes, followed by the JSON writer and by
-//! a front end building objects from the tree in place, so the two cannot drift.
+//! the decoder building objects from the tree in place, so the two cannot drift.
 
 use crate::layout::{Field, Ty, Variant};
 use crate::scopes::{Binding, Reference, Root, Scope};

@@ -366,7 +366,7 @@ impl Scopes {
 		&self.scopes[id as usize]
 	}
 
-	/// The per-node tables a front end reads in place.
+	/// The per-node tables the decoder reads in place.
 	pub fn views(&mut self, out: &mut Views<'_>) {
 		out.push("scopes", &mut self.scopes);
 		out.push("bindings", &mut self.bindings);
@@ -381,7 +381,7 @@ impl Scopes {
 		out.push("writes_of_at", &mut self.writes_of.starts.0);
 	}
 
-	/// Marks the nodes with what a front end links once a node is whole, in `late`, and those with
+	/// Marks the nodes with what the decoder links once a node is whole, in `late`, and those with
 	/// a binding or a reference that are not identifiers, in `rare`.
 	pub fn mark(&self, ast: &Ast, rare: &mut crate::ast::NodeSet, late: &mut crate::ast::NodeSet) {
 		for &(node, _) in self.declared_by.pairs.iter().chain(&self.writes_of.pairs) {
