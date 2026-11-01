@@ -9,7 +9,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use teasel::json::{Request, parse};
+use teasel::engine::{Request, parse};
 use teasel::{Entry, Options, parse_at};
 
 /// Where the suite predates the language: `\8` and `\9` in sloppy strings (Annex B, ES2021),

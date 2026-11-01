@@ -10,11 +10,11 @@ use std::path::Path;
 use teasel::Code;
 use teasel::Entry;
 use teasel::Options;
+use teasel::engine::parse_document;
 use teasel::host::grammar::definition::{self, Bind, Host, Node, Source};
 use teasel::host::grammar::{
 	Arena, Construct, DirectiveValue, DocField, Grammar, Item, Match, Place, Record, RootField, Unique,
 };
-use teasel::json::parse_document;
 
 /// A list of a definition, kept for the process.
 macro_rules! list {
@@ -134,7 +134,7 @@ fn names_are_escaped() {
 		answer.contains(r#""type":"Ro\"ot""#) && answer.contains(r#""con\"tent":{"#),
 		"{answer}"
 	);
-	let children = teasel::json::about(&teasel::json::grammar(&grammar).unwrap());
+	let children = teasel::engine::about(&teasel::engine::grammar(&grammar).unwrap());
 	assert!(
 		children.contains(r#""Ro\"ot":["fragment"]"#) && children.contains(r#""Interpolation":["con\"tent"]"#),
 		"{children}"
@@ -207,7 +207,7 @@ fn tags_fill_unread() {
 fn host_phases() {
 	let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
 	let grammar =
-		teasel::json::grammar(&fs::read_to_string(root.join("tests/hosts/svelte/host.json")).unwrap()).unwrap();
+		teasel::engine::grammar(&fs::read_to_string(root.join("tests/hosts/svelte/host.json")).unwrap()).unwrap();
 	let mut documents = vec![(
 		"200 each blocks".to_string(),
 		format!(
@@ -229,7 +229,7 @@ fn host_phases() {
 			let mut best = f64::MAX;
 			for _ in 0..300 {
 				let t = std::time::Instant::now();
-				teasel::json::in_place(source, Options(flags), Entry::Program, 0.0, "", Some(&grammar)).unwrap();
+				teasel::engine::in_place(source, Options(flags), Entry::Program, 0.0, "", Some(&grammar)).unwrap();
 				best = best.min(t.elapsed().as_secs_f64() * 1e6);
 			}
 			eprintln!("{best:9.2} µs  {name} {label}");

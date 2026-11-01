@@ -16,8 +16,8 @@
 
 use std::io::{self, BufRead, Read, Write};
 use std::process::ExitCode;
-use teasel::json::Request;
-use teasel::{Entry, Options, json};
+use teasel::engine::Request;
+use teasel::{Entry, Options, engine};
 
 const DOCUMENT: u32 = 7;
 
@@ -52,7 +52,7 @@ fn batch(grammar: Option<String>) -> io::Result<()> {
 		}
 		let source = String::from_utf8_lossy(&bytes);
 		let json = match (Entry::from_index(entry), &grammar) {
-			(Some(entry), _) => json::parse(
+			(Some(entry), _) => engine::parse(
 				&source,
 				&Request {
 					entry,
@@ -60,7 +60,7 @@ fn batch(grammar: Option<String>) -> io::Result<()> {
 					..Request::from_flags(flags)
 				},
 			),
-			(None, Some(grammar)) if entry == DOCUMENT => json::parse_document(&source, grammar, Options(flags)),
+			(None, Some(grammar)) if entry == DOCUMENT => engine::parse_document(&source, grammar, Options(flags)),
 			(None, _) => {
 				return Err(io::Error::new(
 					io::ErrorKind::InvalidData,
@@ -146,7 +146,7 @@ fn main() -> ExitCode {
 				return ExitCode::FAILURE;
 			}
 		};
-		println!("{}", json::parse_document(&source, &grammar, Options(flags)));
+		println!("{}", engine::parse_document(&source, &grammar, Options(flags)));
 		return ExitCode::SUCCESS;
 	}
 	let request = Request {
@@ -154,6 +154,6 @@ fn main() -> ExitCode {
 		offset: offset.unwrap_or(0),
 		..Request::from_flags(flags)
 	};
-	println!("{}", json::parse(&source, &request));
+	println!("{}", engine::parse(&source, &request));
 	ExitCode::SUCCESS
 }

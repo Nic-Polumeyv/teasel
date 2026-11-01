@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use teasel::Options;
-use teasel::json::{Request, parse};
+use teasel::engine::{Request, parse};
 
 /// Grammar diagnostics (`TS1xxx`) only the checker can see, or where ECMAScript decides otherwise.
 const CHECKER: &[(&str, &str)] = &[

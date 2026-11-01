@@ -240,10 +240,10 @@ fn the_crate_entry_reads_a_stylesheet() {
 
 #[test]
 fn an_entry_is_one_of_its_numbers() {
-	assert_eq!(crate::json::entry(6.0), Ok(Entry::StyleSheet));
+	assert_eq!(crate::engine::entry(6.0), Ok(Entry::StyleSheet));
 	for index in [7.0, -1.0, 6.5, f64::NAN] {
 		assert!(
-			crate::json::entry(index).unwrap_err().contains(" is no entry"),
+			crate::engine::entry(index).unwrap_err().contains(" is no entry"),
 			"{index}"
 		);
 	}
@@ -252,10 +252,10 @@ fn an_entry_is_one_of_its_numbers() {
 #[test]
 fn the_session_writes_the_same_words_again() {
 	use crate::Options;
-	use crate::json::in_place;
+	use crate::engine::in_place;
 	let options = Options(Options::MODULE | Options::COMMENTS | Options::LOCATIONS | Options::SCOPES);
 	let source = "let x = /* a */ 1; function f(y) { return x + y; } // b";
-	let words = || crate::json::words(|words| words.to_vec());
+	let words = || crate::engine::words(|words| words.to_vec());
 	// a failed parse answers words too, flagged as such; its first one settles the error buffer
 	in_place("a +", options, Entry::Expression, 0.0, "", None).unwrap();
 	let failed = words();
@@ -792,14 +792,14 @@ fn phases() {
 	{
 		let options = Options(Options::MODULE | Options::COMMENTS);
 		best("whole request: positions, parse, comments, encode, finish", &mut || {
-			crate::json::in_place(&source, options, Entry::Program, 0.0, "", None).unwrap();
+			crate::engine::in_place(&source, options, Entry::Program, 0.0, "", None).unwrap();
 		});
 		let options = Options(Options::MODULE | Options::COMMENTS | Options::SCOPES | Options::LOCATIONS);
 		best("whole request with scopes and loc", &mut || {
-			crate::json::in_place(&source, options, Entry::Program, 0.0, "", None).unwrap();
+			crate::engine::in_place(&source, options, Entry::Program, 0.0, "", None).unwrap();
 		});
 	}
-	let grammar = crate::json::grammar(
+	let grammar = crate::engine::grammar(
 		&std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/host.json")).unwrap(),
 	)
 	.unwrap();
@@ -815,7 +815,7 @@ fn phases() {
 		),
 	] {
 		best(&format!("host: 200 each blocks, {label}"), &mut || {
-			crate::json::in_place(&document, Options(flags), Entry::Program, 0.0, "", Some(&grammar)).unwrap();
+			crate::engine::in_place(&document, Options(flags), Entry::Program, 0.0, "", Some(&grammar)).unwrap();
 		});
 	}
 	best("Json write, loc", &mut || {
@@ -978,13 +978,13 @@ fn alloc_probe() {
 #[test]
 #[ignore]
 fn host_alloc_probe() {
-	let grammar = crate::json::grammar(
+	let grammar = crate::engine::grammar(
 		&std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/host.json")).unwrap(),
 	)
 	.unwrap();
 	let count = |src: &str| {
 		let parse = || {
-			crate::json::in_place(
+			crate::engine::in_place(
 				src,
 				crate::Options(crate::Options::MODULE),
 				Entry::Program,
@@ -1057,18 +1057,18 @@ fn layout_sizes() {
 
 #[test]
 fn an_offset_inside_a_character_is_refused() {
-	let request = crate::json::Request {
+	let request = crate::engine::Request {
 		offset: 1,
-		..crate::json::Request::from_flags(crate::Options::MODULE)
+		..crate::engine::Request::from_flags(crate::Options::MODULE)
 	};
-	assert!(crate::json::parse("é", &request).contains("is not a character boundary"));
+	assert!(crate::engine::parse("é", &request).contains("is not a character boundary"));
 }
 
 #[test]
 fn parenthesized_bits() {
-	let request = crate::json::Request::from_flags(crate::Options::MODULE | crate::Options::PARENTHESIZED);
-	let json = crate::json::parse("(a).b; (x, y); c; ((d));", &request);
+	let request = crate::engine::Request::from_flags(crate::Options::MODULE | crate::Options::PARENTHESIZED);
+	let json = crate::engine::parse("(a).b; (x, y); c; ((d));", &request);
 	assert_eq!(json.matches("\"parenthesized\":true").count(), 3, "{json}");
-	let json = crate::json::parse("(a, b) => a; (c);", &request);
+	let json = crate::engine::parse("(a, b) => a; (c);", &request);
 	assert_eq!(json.matches("\"parenthesized\":true").count(), 1, "{json}");
 }

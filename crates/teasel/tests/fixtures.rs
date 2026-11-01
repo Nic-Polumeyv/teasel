@@ -9,13 +9,13 @@ mod common;
 
 use std::fs;
 use std::path::Path;
-use teasel::json::{Request, parse};
+use teasel::engine::{Request, parse};
 use teasel::{Entry, Options};
 
 // a misspelled or new type, key or enum text is a line of this pin's diff, as `c!` once failed the build on one
 #[test]
 fn spellings() {
-	let layout = teasel::json::layout_json();
+	let layout = teasel::engine::layout_json();
 	assert!(!layout.contains('\\'), "a string the split below would cut");
 	let mut names: Vec<&str> = layout.split('"').skip(1).step_by(2).collect();
 	names.sort_unstable();

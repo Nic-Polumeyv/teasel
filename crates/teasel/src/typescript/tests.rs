@@ -201,8 +201,8 @@ fn program_at_an_offset_of_a_cut_text() {
 	assert_eq!((ast.node(root).start, ast.node(root).end), (8, 26));
 	assert_eq!(ast.comments.len(), 0);
 	let options = Options(Options::MODULE | Options::TYPESCRIPT);
-	crate::json::in_place(&src[..26], options, Entry::Program, 8.0, "", None).unwrap();
-	assert_eq!(crate::json::words(|words| words[0]), 26);
+	crate::engine::in_place(&src[..26], options, Entry::Program, 8.0, "", None).unwrap();
+	assert_eq!(crate::engine::words(|words| words[0]), 26);
 }
 
 /// A host's own syntax may carry a type parameter list, as a generic snippet does.
@@ -380,8 +380,8 @@ fn a_generic_head_checks_its_defaults() {
 }
 
 fn erase(src: &str) -> (String, String) {
-	let request = crate::json::Request::from_flags(Options::MODULE | Options::TYPESCRIPT | Options::ERASE);
-	let json = crate::json::parse(src, &request);
+	let request = crate::engine::Request::from_flags(Options::MODULE | Options::TYPESCRIPT | Options::ERASE);
+	let json = crate::engine::parse(src, &request);
 	let (tree, kept) = json.split_once(",\"typescript\":").unwrap_or_else(|| panic!("{json}"));
 	let types: Vec<&str> = tree
 		.split("\"type\":\"")

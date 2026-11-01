@@ -1,7 +1,4 @@
-//! One entry for every front end: a request describes what to parse and how, and the answer is
-//! ESTree JSON, with `node` null and the one error listed when the parse failed; a request the
-//! engine cannot take answers a JSON object with an `error`: its code, the reason as its argument,
-//! and the offset. Read in place, it is refused with the reason.
+//! What the Node addon and the WebAssembly module call.
 
 use std::rc::Rc;
 
