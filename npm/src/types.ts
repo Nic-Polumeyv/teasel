@@ -388,7 +388,7 @@ export interface Views {
 export interface Engine extends Views {
 	/** A source parsed by its option word at an entry and offset, the stop tokens as one string, or as a document by a grammar `plan` holds; nothing of it is kept. The answer is its words. */
 	readonly parse: (source: string, flags: number, entry: number, offset: number, stop: string, plan: object | undefined) => Uint32Array;
-	/** The grammar of a host language as JSON, read once and let go of when the plan is collected. */
+	/** The grammar of a host language as JSON, read once. */
 	readonly plan: (grammar: string) => object;
 	/** What a plan tells of its grammar, as JSON: each node type of its host with the fields that hold nodes, and the names the rows of its documents number. */
 	readonly about: (plan: object) => string;

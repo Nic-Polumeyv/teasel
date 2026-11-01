@@ -1,5 +1,4 @@
 use std::cell::{Cell, RefCell};
-use std::rc::Rc;
 use teasel::Options;
 use teasel::host::Grammar;
 
@@ -31,7 +30,7 @@ pub unsafe extern "C" fn plan_new(ptr: *mut u8, len: u32, capacity: u32) -> u32 
 	let grammar = unsafe { Vec::from_raw_parts(ptr, len as usize, capacity as usize) };
 	let grammar = std::str::from_utf8(&grammar).map_err(|_| "the grammar is not UTF-8".to_string());
 	match grammar.and_then(teasel::engine::grammar) {
-		Ok(grammar) => Box::into_raw(Box::new(grammar)) as u32,
+		Ok(grammar) => std::ptr::from_ref(grammar) as u32,
 		Err(message) => {
 			text(message);
 			0
@@ -41,11 +40,7 @@ pub unsafe extern "C" fn plan_new(ptr: *mut u8, len: u32, capacity: u32) -> u32 
 
 #[unsafe(no_mangle)]
 pub extern "C" fn plan_about(handle: u32) {
-	text(teasel::engine::about(unsafe { &*(handle as *const Rc<Grammar>) }));
-}
-#[unsafe(no_mangle)]
-pub extern "C" fn plan_free(handle: u32) {
-	drop(unsafe { Box::from_raw(handle as *mut Rc<Grammar>) });
+	text(teasel::engine::about(unsafe { &*(handle as *const Grammar) }));
 }
 
 /// # Safety
@@ -68,7 +63,7 @@ pub unsafe extern "C" fn parse(
 ) -> u32 {
 	let source = unsafe { Vec::from_raw_parts(ptr, len as usize, capacity as usize) };
 	let stop = unsafe { Vec::from_raw_parts(stop_ptr, stop_len as usize, stop_capacity as usize) };
-	let grammar = (plan != 0).then(|| unsafe { &**(plan as *const Rc<Grammar>) });
+	let grammar = (plan != 0).then(|| unsafe { &*(plan as *const Grammar) });
 	let source = std::str::from_utf8(&source).map_err(|_| "the source is not UTF-8".to_string());
 	let stop = std::str::from_utf8(&stop).map_err(|_| "the stop tokens are not UTF-8".to_string());
 	let parsed = source.and_then(|source| {

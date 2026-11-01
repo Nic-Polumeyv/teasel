@@ -134,7 +134,7 @@ fn names_are_escaped() {
 		answer.contains(r#""type":"Ro\"ot""#) && answer.contains(r#""con\"tent":{"#),
 		"{answer}"
 	);
-	let children = teasel::engine::about(&teasel::engine::grammar(&grammar).unwrap());
+	let children = teasel::engine::about(teasel::engine::grammar(&grammar).unwrap());
 	assert!(
 		children.contains(r#""Ro\"ot":["fragment"]"#) && children.contains(r#""Interpolation":["con\"tent"]"#),
 		"{children}"
@@ -229,7 +229,7 @@ fn host_phases() {
 			let mut best = f64::MAX;
 			for _ in 0..300 {
 				let t = std::time::Instant::now();
-				teasel::engine::parse(source, Options(flags), Entry::Program, 0.0, "", Some(&grammar)).unwrap();
+				teasel::engine::parse(source, Options(flags), Entry::Program, 0.0, "", Some(grammar)).unwrap();
 				best = best.min(t.elapsed().as_secs_f64() * 1e6);
 			}
 			eprintln!("{best:9.2} µs  {name} {label}");

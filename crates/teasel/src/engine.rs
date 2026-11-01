@@ -1,7 +1,5 @@
 //! What the Node addon and the WebAssembly module call.
 
-use std::rc::Rc;
-
 use crate::Options;
 use crate::ast::{Ast, List};
 use crate::comments::attach;
@@ -303,7 +301,7 @@ struct Session {
 thread_local! {
 	static SESSION: std::cell::RefCell<Session> = std::cell::RefCell::new(Session::default());
 	/// Grammars by their JSON, read once each.
-	static GRAMMARS: std::cell::RefCell<Vec<(&'static str, Rc<Grammar>)>> = const { std::cell::RefCell::new(Vec::new()) };
+	static GRAMMARS: std::cell::RefCell<Vec<(&'static str, &'static Grammar)>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
 pub fn reset_session() {
@@ -335,16 +333,16 @@ fn view_names(typescript: bool) -> Vec<&'static str> {
 	names
 }
 
-/// The grammar its JSON describes, read once per thread.
-pub fn grammar(text: &str) -> Result<Rc<Grammar>, String> {
+/// The grammar its JSON describes, read once per thread and kept for good, as its names are.
+pub fn grammar(text: &str) -> Result<&'static Grammar, String> {
 	GRAMMARS.with(|grammars| {
 		let mut grammars = grammars.borrow_mut();
 		if let Some((_, grammar)) = grammars.iter().find(|(known, _)| *known == text) {
-			return Ok(grammar.clone());
+			return Ok(*grammar);
 		}
 		let text = crate::host::grammar::keep(text);
-		let grammar = Rc::new(Grammar::read(text)?);
-		grammars.push((text, grammar.clone()));
+		let grammar: &'static Grammar = Box::leak(Box::new(Grammar::read(text)?));
+		grammars.push((text, grammar));
 		Ok(grammar)
 	})
 }

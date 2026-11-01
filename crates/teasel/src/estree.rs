@@ -24,7 +24,7 @@ pub fn parse(source: &str, entry: Entry, offset: u32, options: Options) -> Strin
 /// A whole document of a host language by its grammar, as JSON; see `host::parse_document`.
 pub fn parse_document(source: &str, grammar: &str, options: Options) -> String {
 	match engine::grammar(grammar) {
-		Ok(grammar) => written(source, Entry::Program, 0, options, Some(&grammar)),
+		Ok(grammar) => written(source, Entry::Program, 0, options, Some(grammar)),
 		Err(message) => error_json(&message, 0),
 	}
 }

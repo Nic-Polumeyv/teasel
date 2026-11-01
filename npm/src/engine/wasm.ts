@@ -9,7 +9,6 @@ interface Exports {
 	alloc(len: number): number;
 	parse(ptr: number, len: number, capacity: number, flags: number, entry: number, offset: number, stop_ptr: number, stop_len: number, stop_capacity: number, plan: number): number;
 	plan_new(ptr: number, len: number, capacity: number): number;
-	plan_free(handle: number): void;
 	plan_about(handle: number): void;
 	words_ptr(): number;
 	words_len(): number;
@@ -94,31 +93,20 @@ function layout() {
 	return layout_text;
 }
 
-// the collector cannot see the module's memory, so a plan it takes frees its handle here
-interface Slot {
-	handle: number;
-	generation: number;
-}
-const plans = new FinalizationRegistry<Slot>((slot) => {
-	if (slot.generation === generation) wasm.plan_free(slot.handle);
-});
-
 class Plan {
-	readonly slot: Slot = { handle: 0, generation: -1 };
 	readonly grammar: string;
+	at = 0;
+	generation = -1;
 	constructor(grammar: string) {
 		this.grammar = grammar;
 		this.handle();
-		// the held value must not reach this, or it is never collected
-		plans.register(this, this.slot);
 	}
 	handle() {
-		const { slot } = this;
-		if (slot.generation !== generation) {
-			slot.handle = guarded(() => opened(wasm.plan_new(...bytes(this.grammar))));
-			slot.generation = generation;
+		if (this.generation !== generation) {
+			this.at = guarded(() => opened(wasm.plan_new(...bytes(this.grammar))));
+			this.generation = generation;
 		}
-		return slot.handle;
+		return this.at;
 	}
 }
 

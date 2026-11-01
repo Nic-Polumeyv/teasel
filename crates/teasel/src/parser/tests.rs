@@ -816,7 +816,7 @@ fn phases() {
 		),
 	] {
 		best(&format!("host: 200 each blocks, {label}"), &mut || {
-			crate::engine::parse(&document, Options(flags), Entry::Program, 0.0, "", Some(&grammar)).unwrap();
+			crate::engine::parse(&document, Options(flags), Entry::Program, 0.0, "", Some(grammar)).unwrap();
 		});
 	}
 	best("Json write, loc", &mut || {
@@ -987,7 +987,7 @@ fn host_alloc_probe() {
 				Entry::Program,
 				0.0,
 				"",
-				Some(&grammar),
+				Some(grammar),
 			)
 			.unwrap()
 		};

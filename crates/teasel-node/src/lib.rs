@@ -6,7 +6,6 @@ mod node_api;
 use std::cell::Cell;
 use std::ffi::{CString, c_void};
 use std::ptr::null_mut;
-use std::rc::Rc;
 
 use node_api::{CallbackInfo, Env, OK, Ref, Status, Value};
 use teasel::Options;
@@ -113,7 +112,6 @@ fn undefined(env: Env) -> Result<Value> {
 	})
 }
 
-// the grammar of a host language as JSON, read once; V8 lets go of it with the external
 unsafe extern "C" fn plan(env: Env, info: CallbackInfo) -> Value {
 	guard(env, || {
 		let [definition] = args::<1>(env, info)?;
@@ -123,8 +121,8 @@ unsafe extern "C" fn plan(env: Env, info: CallbackInfo) -> Value {
 			unsafe {
 				node_api::napi_create_external(
 					env,
-					Box::into_raw(Box::new(grammar)).cast(),
-					Some(drop_plan),
+					std::ptr::from_ref(grammar).cast_mut().cast(),
+					None,
 					null_mut(),
 					&mut result,
 				)
@@ -145,17 +143,13 @@ unsafe extern "C" fn about(env: Env, info: CallbackInfo) -> Value {
 	})
 }
 
-unsafe extern "C" fn drop_plan(_: Env, data: *mut c_void, _: *mut c_void) {
-	drop(unsafe { Box::from_raw(data.cast::<Rc<Grammar>>()) });
-}
-
 // the grammar a parse reads a document by; anything else is none
 fn grammar_of(env: Env, value: Value) -> Option<&'static Grammar> {
 	let mut data = null_mut();
 	if unsafe { node_api::napi_get_value_external(env, value, &mut data) } != OK || data.is_null() {
 		return None;
 	}
-	Some(unsafe { &**data.cast::<Rc<Grammar>>() })
+	Some(unsafe { &*data.cast::<Grammar>() })
 }
 
 unsafe extern "C" fn parse(env: Env, info: CallbackInfo) -> Value {
