@@ -26,7 +26,7 @@ pub extern "C" fn alloc(len: u32) -> *mut u8 {
 /// they are taken over here. The handle is 0 when the grammar cannot be read, what is wrong at
 /// `text_ptr`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn plan_new(ptr: *mut u8, len: u32, capacity: u32) -> u32 {
+pub unsafe extern "C" fn grammar_new(ptr: *mut u8, len: u32, capacity: u32) -> u32 {
 	let grammar = unsafe { Vec::from_raw_parts(ptr, len as usize, capacity as usize) };
 	let grammar = std::str::from_utf8(&grammar).map_err(|_| "the grammar is not UTF-8".to_string());
 	match grammar.and_then(teasel::engine::grammar) {
@@ -39,14 +39,14 @@ pub unsafe extern "C" fn plan_new(ptr: *mut u8, len: u32, capacity: u32) -> u32 
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn plan_about(handle: u32) {
+pub extern "C" fn grammar_about(handle: u32) {
 	text(teasel::engine::about(unsafe { &*(handle as *const Grammar) }));
 }
 
 /// # Safety
 /// `ptr` is `capacity` bytes from `alloc`, `len` of them the source, and `stop_ptr` is
 /// `stop_capacity` bytes from `alloc`, `stop_len` of them the stop tokens; both are taken over
-/// here. `flags` is the option word; `plan` is a handle from `plan_new`, or 0. 0: words at
+/// here. `flags` is the option word; `grammar` is a handle from `grammar_new`, or 0. 0: words at
 /// `words_ptr`; 1: what is wrong with the call at `text_ptr`, for the front end to throw.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn parse(
@@ -59,11 +59,11 @@ pub unsafe extern "C" fn parse(
 	stop_ptr: *mut u8,
 	stop_len: u32,
 	stop_capacity: u32,
-	plan: u32,
+	grammar: u32,
 ) -> u32 {
 	let source = unsafe { Vec::from_raw_parts(ptr, len as usize, capacity as usize) };
 	let stop = unsafe { Vec::from_raw_parts(stop_ptr, stop_len as usize, stop_capacity as usize) };
-	let grammar = (plan != 0).then(|| unsafe { &*(plan as *const Grammar) });
+	let grammar = (grammar != 0).then(|| unsafe { &*(grammar as *const Grammar) });
 	let source = std::str::from_utf8(&source).map_err(|_| "the source is not UTF-8".to_string());
 	let stop = std::str::from_utf8(&stop).map_err(|_| "the stop tokens are not UTF-8".to_string());
 	let parsed = source.and_then(|source| {

@@ -18,8 +18,8 @@ function bytes(text: string) {
 }
 
 export const engine: Engine = native === undefined ? compile() : {
-	parse: (source, flags, entry, offset, stop, plan) => native.parse(bytes(source), flags, entry, offset, stop, plan),
-	plan: native.plan,
+	parse: (source, flags, entry, offset, stop, grammar) => native.parse(bytes(source), flags, entry, offset, stop, grammar),
+	grammar: native.grammar,
 	about: native.about,
 	layout: native.layout,
 	// the addon keeps one array of views a tree and sets what moved: asked only then

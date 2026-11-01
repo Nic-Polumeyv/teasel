@@ -112,7 +112,7 @@ fn undefined(env: Env) -> Result<Value> {
 	})
 }
 
-unsafe extern "C" fn plan(env: Env, info: CallbackInfo) -> Value {
+unsafe extern "C" fn grammar(env: Env, info: CallbackInfo) -> Value {
 	guard(env, || {
 		let [definition] = args::<1>(env, info)?;
 		let grammar = teasel::engine::grammar(&string(env, definition)?)?;
@@ -127,7 +127,7 @@ unsafe extern "C" fn plan(env: Env, info: CallbackInfo) -> Value {
 					&mut result,
 				)
 			},
-			"a plan",
+			"a grammar",
 		)?;
 		Ok(result)
 	})
@@ -135,10 +135,10 @@ unsafe extern "C" fn plan(env: Env, info: CallbackInfo) -> Value {
 
 unsafe extern "C" fn about(env: Env, info: CallbackInfo) -> Value {
 	guard(env, || {
-		let [plan] = args::<1>(env, info)?;
+		let [grammar] = args::<1>(env, info)?;
 		text(
 			env,
-			&teasel::engine::about(grammar_of(env, plan).ok_or("a plan expected")?),
+			&teasel::engine::about(grammar_of(env, grammar).ok_or("a grammar expected")?),
 		)
 	})
 }
@@ -154,10 +154,10 @@ fn grammar_of(env: Env, value: Value) -> Option<&'static Grammar> {
 
 unsafe extern "C" fn parse(env: Env, info: CallbackInfo) -> Value {
 	guard(env, || {
-		let [source, flags, entry, offset, stop, plan] = args::<6>(env, info)?;
+		let [source, flags, entry, offset, stop, grammar] = args::<6>(env, info)?;
 		let (source, options) = (source_text(env, source)?, Options(number(env, flags)? as u32));
 		let (entry, offset) = (engine::entry(number(env, entry)?)?, number(env, offset)?);
-		let (stop, grammar) = (string(env, stop)?, grammar_of(env, plan));
+		let (stop, grammar) = (string(env, stop)?, grammar_of(env, grammar));
 		in_env(env, || {
 			engine::parse(source, options, entry, offset, &stop, grammar)?;
 			view(env)
@@ -413,7 +413,7 @@ pub unsafe extern "C" fn napi_register_module_v1(env: Env, exports: Value) -> Va
 		)?;
 		for (name, callback) in [
 			(c"parse", parse as unsafe extern "C" fn(Env, CallbackInfo) -> Value),
-			(c"plan", plan),
+			(c"grammar", grammar),
 			(c"about", about),
 			(c"tree", tree),
 			(c"layout", layout),

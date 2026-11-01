@@ -29,7 +29,7 @@ pub fn parse_document(source: &str, grammar: &str, options: Options) -> String {
 	}
 }
 
-fn written(source: &str, entry: Entry, offset: u32, options: Options, host: Option<&Grammar>) -> String {
+fn written(source: &str, entry: Entry, offset: u32, options: Options, grammar: Option<&Grammar>) -> String {
 	let positions = Positions::of(source, options);
 	engine::read(
 		source,
@@ -37,9 +37,9 @@ fn written(source: &str, entry: Entry, offset: u32, options: Options, host: Opti
 		entry,
 		offset,
 		"",
-		host,
+		grammar,
 		|ast, roots, end, options, _| {
-			let names = host.map_or(host::grammar::own::NAMES, |grammar| &grammar.names);
+			let names = grammar.map_or(host::grammar::own::NAMES, |grammar| &grammar.names);
 			Writer::new(ast, source, &positions, names).answer(entry, roots, end, options)
 		},
 	)

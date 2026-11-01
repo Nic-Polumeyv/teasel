@@ -248,7 +248,7 @@ pub fn parse(
 	entry: Entry,
 	start: f64,
 	stop: &str,
-	host: Option<&Grammar>,
+	grammar: Option<&Grammar>,
 ) -> Result<(), String> {
 	let positions = Positions::of(source, options);
 	let offset = positions.byte_offset(start)?;
@@ -261,7 +261,7 @@ pub fn parse(
 		entry,
 		offset,
 		stop,
-		host,
+		grammar,
 		|ast, roots, end, options, words| {
 			let failed = roots.is_none();
 			prepare(ast, source, &positions, options, failed);
@@ -366,10 +366,10 @@ pub(crate) fn read<R>(
 	entry: Entry,
 	offset: u32,
 	stop: &str,
-	host: Option<&Grammar>,
+	grammar: Option<&Grammar>,
 	finish: impl FnOnce(&mut Ast, Option<List>, u32, Options, &mut Words) -> R,
 ) -> R {
-	let options = if host.is_some_and(|grammar| host::typescript(source, grammar)) {
+	let options = if grammar.is_some_and(|grammar| host::typescript(source, grammar)) {
 		options.with(Options::TYPESCRIPT)
 	} else {
 		options
@@ -382,7 +382,7 @@ pub(crate) fn read<R>(
 			ast.clear();
 			ast
 		});
-		let (mut ast, parsed) = match host {
+		let (mut ast, parsed) = match grammar {
 			Some(grammar) => {
 				let (mut ast, root) = host::parse_document(source, grammar, options, reused);
 				let parsed = root.map(|root| (ast.add_list(&[Some(root)]), source.len() as u32));

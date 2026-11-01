@@ -274,9 +274,9 @@ export interface Grammar<D extends Definition = Definition> extends Language<Doc
 }
 // one literal, so every grammar has the shape of the first: a getter added after would make the rest dictionaries
 export const grammar = <const D extends Definition>(host: string, definition: D): Grammar<D> => {
-	const plan = engine.plan(JSON.stringify({ name: host, definition }));
-	const about: { children: Record<string, string[]>; names: string[] } = JSON.parse(engine.about(plan));
-	return { host, definition, children: frozen({ ...builtin, ...about.children }), [LANGUAGE]: Object.freeze({ entry: 0, plan, names: Object.freeze(about.names) }) };
+	const read = engine.grammar(JSON.stringify({ name: host, definition }));
+	const about: { children: Record<string, string[]>; names: string[] } = JSON.parse(engine.about(read));
+	return { host, definition, children: frozen({ ...builtin, ...about.children }), [LANGUAGE]: Object.freeze({ entry: 0, grammar: read, names: Object.freeze(about.names) }) };
 };
 
 // ── inference

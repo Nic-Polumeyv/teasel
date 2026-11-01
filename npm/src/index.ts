@@ -93,7 +93,7 @@ export const css: Language<HostNode> = Object.freeze({ [LANGUAGE]: Object.freeze
 export function parse<T = Program>(text: string, options?: Options, language: Language<T> = js as Language<never>): Parsed<T> {
 	const read = language?.[LANGUAGE];
 	if (read === undefined) throw new TypeError('parse takes `js`, `css`, or a grammar made by this copy of @teasel/parser/grammar; a piece goes to parseAt');
-	return answer(text, options, read.entry, 0, '', read.plan, read.names);
+	return answer(text, options, read.entry, 0, '', read.grammar, read.names);
 }
 
 /**
@@ -110,11 +110,11 @@ export function parseAt<P extends Piece<unknown>>(text: string, piece: P, at: nu
 	return answer(text, options, read.entry, at, read.stop, undefined, undefined);
 }
 
-function answer<T>(text: string, options: Options | undefined, entry: number, offset: number, stop: string, plan: object | undefined, names: readonly string[] | undefined): Parsed<T> {
+function answer<T>(text: string, options: Options | undefined, entry: number, offset: number, stop: string, grammar: object | undefined, names: readonly string[] | undefined): Parsed<T> {
 	if (typeof text !== 'string') throw new TypeError('a parse takes a string');
 	if (!Number.isInteger(offset) || offset < 0 || offset > text.length || (offset > 0 && text.codePointAt(offset - 1)! > 0xffff)) throw new RangeError(`${String(offset)} is no offset between characters of the text`);
 	const on = flags(options);
-	const words = engine.parse(text, on, entry, offset, stop, plan);
+	const words = engine.parse(text, on, entry, offset, stop, grammar);
 	let error: Omit<Recovered, 'line' | 'column'>;
 	try {
 		const parsed = decode(words, text, engine, on, entry === 3, true, names) as Parsed<T>;

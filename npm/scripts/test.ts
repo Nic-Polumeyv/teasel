@@ -492,7 +492,7 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 	assert.deepEqual(read(sheets, { errorRecovery: true }, svelte).errors.map((e: Any) => e.code), ['expected', 'unexpected_close']);
 }
 
-// a grammar made before the engine started over parses after it: the fresh instance reads its plan again
+// a grammar made before the engine started over parses after it: the fresh instance reads it again
 if (name !== 'native') {
 	let restarted = false;
 	// a RangeError inside the engine is taken for a wasm stack overflow: exhaust the stack, then parse on the way back up
@@ -589,15 +589,15 @@ if (name !== 'native') {
 	for (const text of files('fixtures/ts/', '.ts')) observe(parses(text, { sourceType: 'module', typescript: true, comments: true, errorRecovery: true }));
 	check(js.children, 'ts fixtures');
 	for (const [host, ext] of [['svelte', '.svelte'], ['vue', '.html']] as const) {
-		const plan = { svelte, vue }[host];
+		const language = { svelte, vue }[host];
 		for (const text of files(`hosts/${host}/`, ext)) {
 			try {
-				observe(read(text, { comments: true, scopes: true, errorRecovery: true }, plan).node);
+				observe(read(text, { comments: true, scopes: true, errorRecovery: true }, language).node);
 			} catch (e) {
 				if (!(e instanceof SyntaxError)) throw e;
 			}
 		}
-		check(plan.children, `${host} fixtures`, true);
+		check(language.children, `${host} fixtures`, true);
 	}
 	for (const text of files('fixtures/css/', '.css')) {
 		try {
