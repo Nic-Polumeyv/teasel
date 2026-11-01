@@ -9,17 +9,17 @@ pub(crate) struct Positions {
 	/// Each line's start as a byte offset and a UTF-16 offset; only with `lines`.
 	line_starts: Vec<(u32, u32)>,
 	len: u32,
-	pub(crate) lines: bool,
+	lines: bool,
 	/// Whether a host's own nodes are located too, or only the JavaScript ones.
-	pub(crate) hosts: bool,
+	hosts: bool,
 }
 
 /// Where the last node's start landed: starts come in source order, and a node's end follows
 /// its start, so each lookup tries a few entries on from its hint before a binary search.
 #[derive(Default)]
 pub(crate) struct Cursor {
-	pub(crate) gap: usize,
-	pub(crate) line: usize,
+	gap: usize,
+	line: usize,
 }
 
 impl Positions {
@@ -136,6 +136,15 @@ impl Positions {
 		}
 	}
 
+	/// One span as JavaScript counts it, with its lines and columns when they are on for its kind of node.
+	pub(crate) fn span(&self, cursor: &mut Cursor, start: u32, end: u32, host: bool) -> (Span, Option<Loc>) {
+		let (from, gap) = self.offset_from(cursor.gap, start);
+		cursor.gap = gap;
+		let (to, _) = self.offset_from(gap, end);
+		let loc = (self.lines && (self.hosts || !host)).then(|| self.loc(cursor, start, from, end, to));
+		(Span { start: from, end: to }, loc)
+	}
+
 	/// The lines and columns of a span whose offsets `offset` already mapped.
 	fn loc(&self, cursor: &mut Cursor, from: u32, start: u32, to: u32, end: u32) -> Loc {
 		let (sl, sc) = self.line_column(cursor.line, from, start);
@@ -206,7 +215,7 @@ impl Positions {
 	}
 
 	/// The UTF-16 offset of `byte` and the gap entry it lies after, looked up from `hint`.
-	pub(crate) fn offset_from(&self, hint: usize, byte: u32) -> (u32, usize) {
+	fn offset_from(&self, hint: usize, byte: u32) -> (u32, usize) {
 		let byte = byte.min(self.len);
 		if self.gaps.is_empty() {
 			return (byte, 0);
@@ -216,7 +225,7 @@ impl Positions {
 	}
 
 	/// The line of `byte` and its column, given `byte` already mapped by `offset`.
-	pub(crate) fn line_column(&self, hint: usize, byte: u32, offset: u32) -> (usize, u32) {
+	fn line_column(&self, hint: usize, byte: u32, offset: u32) -> (usize, u32) {
 		let byte = byte.min(self.len);
 		let line = locate(&self.line_starts, hint.max(1), byte, |l| l.0);
 		(line, offset - self.line_starts[line - 1].1)

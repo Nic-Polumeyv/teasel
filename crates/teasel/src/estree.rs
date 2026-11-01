@@ -309,26 +309,20 @@ impl<'a> Writer<'a> {
 	}
 
 	pub(crate) fn span(&mut self, start: u32, end: u32) {
-		self.located(start, end, self.positions.lines);
+		self.located(start, end, false);
 	}
 
-	/// A host node's span, with `loc` when host nodes are located.
 	fn host_span(&mut self, start: u32, end: u32) {
-		self.located(start, end, self.positions.lines && self.positions.hosts);
+		self.located(start, end, true);
 	}
 
-	fn located(&mut self, start: u32, end: u32, lines: bool) {
-		let (start_offset, gap) = self.positions.offset_from(self.cursor.gap, start);
-		self.cursor.gap = gap;
-		let (end_offset, _) = self.positions.offset_from(gap, end);
-		self.json.span(start_offset, end_offset);
-		if !lines {
-			return;
+	fn located(&mut self, start: u32, end: u32, host: bool) {
+		let (span, loc) = self.positions.span(&mut self.cursor, start, end, host);
+		self.json.span(span.start, span.end);
+		if let Some(loc) = loc {
+			self.json
+				.loc(loc.start.line, loc.start.column, loc.end.line, loc.end.column);
 		}
-		let (sl, sc) = self.positions.line_column(self.cursor.line, start, start_offset);
-		self.cursor.line = sl;
-		let (el, ec) = self.positions.line_column(sl, end, end_offset);
-		self.json.loc(sl as u32, sc, el as u32, ec);
 	}
 
 	/// The source between two byte offsets, as a string value.
