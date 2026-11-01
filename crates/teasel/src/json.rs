@@ -37,9 +37,7 @@ impl Json {
 		self.stack.push(list);
 		self.first = true;
 	}
-}
 
-impl Json {
 	pub(crate) fn ints(&mut self, values: &[u32]) {
 		self.list();
 		for &value in values {
@@ -50,17 +48,8 @@ impl Json {
 
 	pub(crate) fn begin(&mut self, ty: &str) {
 		self.open(false);
-		self.out.push_str("\"type\":\"");
-		self.out.push_str(ty);
-		self.out.push('"');
-		self.first = false;
-	}
-
-	pub(crate) fn escaped_begin(&mut self, ty: &str) {
-		self.open(false);
-		self.out.push_str("\"type\":");
-		write_json_string(&mut self.out, ty);
-		self.first = false;
+		self.key("type");
+		self.text(ty);
 	}
 
 	pub(crate) fn object(&mut self) {
@@ -78,15 +67,6 @@ impl Json {
 
 	pub(crate) fn key(&mut self, key: &str) {
 		self.sep();
-		self.out.push('"');
-		self.out.push_str(key);
-		self.out.push_str("\":");
-		self.first = true;
-	}
-
-	// escaping every key and type made a JSON answer 13% slower, so only a grammar's are escaped
-	pub(crate) fn escaped_key(&mut self, key: &str) {
-		self.sep();
 		write_json_string(&mut self.out, key);
 		self.out.push(':');
 		self.first = true;
@@ -94,7 +74,7 @@ impl Json {
 
 	pub(crate) fn int(&mut self, value: u32) {
 		self.sep();
-		push_int(&mut self.out, value);
+		write!(self.out, "{value}").unwrap();
 	}
 
 	pub(crate) fn float(&mut self, value: f64) {
@@ -143,53 +123,6 @@ impl Json {
 		escape_json(&mut self.out, &value[from..]);
 		self.out.push('"');
 	}
-
-	// the two entries every node has, written in one piece: a measurable share of the text
-	pub(crate) fn span(&mut self, start: u32, end: u32) {
-		self.sep();
-		self.out.push_str("\"start\":");
-		push_int(&mut self.out, start);
-		self.out.push_str(",\"end\":");
-		push_int(&mut self.out, end);
-	}
-
-	pub(crate) fn loc(&mut self, start_line: u32, start_column: u32, end_line: u32, end_column: u32) {
-		self.sep();
-		self.out.push_str("\"loc\":{\"start\":{\"line\":");
-		push_int(&mut self.out, start_line);
-		self.out.push_str(",\"column\":");
-		push_int(&mut self.out, start_column);
-		self.out.push_str("},\"end\":{\"line\":");
-		push_int(&mut self.out, end_line);
-		self.out.push_str(",\"column\":");
-		push_int(&mut self.out, end_column);
-		self.out.push_str("}}");
-	}
-}
-
-pub(crate) fn push_int(out: &mut String, mut value: u32) {
-	const DIGITS: &[u8; 200] = b"0001020304050607080910111213141516171819\
-2021222324252627282930313233343536373839\
-4041424344454647484950515253545556575859\
-6061626364656667686970717273747576777879\
-8081828384858687888990919293949596979899";
-	let mut buf = [0u8; 10];
-	let mut i = buf.len();
-	while value >= 100 {
-		let pair = (value % 100) as usize * 2;
-		i -= 2;
-		buf[i..i + 2].copy_from_slice(&DIGITS[pair..pair + 2]);
-		value /= 100;
-	}
-	if value >= 10 {
-		let pair = value as usize * 2;
-		i -= 2;
-		buf[i..i + 2].copy_from_slice(&DIGITS[pair..pair + 2]);
-	} else {
-		i -= 1;
-		buf[i] = b'0' + value as u8;
-	}
-	out.push_str(std::str::from_utf8(&buf[i..]).unwrap());
 }
 
 fn write_number(out: &mut String, value: f64) {
@@ -201,17 +134,12 @@ fn write_number(out: &mut String, value: f64) {
 		out.push('0');
 		return;
 	}
-	let mut formatted = Digits::<32>::new();
-	write!(formatted, "{value:e}").unwrap();
-	let (mantissa, exponent) = formatted.as_str().split_once('e').unwrap();
+	let formatted = format!("{value:e}");
+	let (mantissa, exponent) = formatted.split_once('e').unwrap();
 	let (sign, mantissa) = mantissa.strip_prefix('-').map_or(("", mantissa), |m| ("-", m));
-	let mut digits = Digits::<32>::new();
-	for byte in mantissa.bytes().filter(|b| *b != b'.') {
-		digits.buf[digits.len] = byte;
-		digits.len += 1;
-	}
-	even_on_tie(value.abs(), &mut digits.buf[..digits.len]);
-	let digits = digits.as_str();
+	let mut digits: Vec<u8> = mantissa.bytes().filter(|b| *b != b'.').collect();
+	even_on_tie(value.abs(), &mut digits);
+	let digits = std::str::from_utf8(&digits).unwrap();
 	let k = digits.len() as i32;
 	let n = exponent.parse::<i32>().unwrap() + 1;
 	out.push_str(sign);
@@ -234,35 +162,7 @@ fn write_number(out: &mut String, value: f64) {
 		}
 		out.push('e');
 		out.push(if n > 1 { '+' } else { '-' });
-		push_int(out, (n - 1).unsigned_abs());
-	}
-}
-
-/// The digits of one number, written on the stack.
-struct Digits<const N: usize> {
-	buf: [u8; N],
-	len: usize,
-}
-
-impl<const N: usize> Digits<N> {
-	fn new() -> Self {
-		Digits { buf: [0; N], len: 0 }
-	}
-
-	fn as_str(&self) -> &str {
-		std::str::from_utf8(&self.buf[..self.len]).unwrap()
-	}
-}
-
-impl<const N: usize> std::fmt::Write for Digits<N> {
-	fn write_str(&mut self, s: &str) -> std::fmt::Result {
-		let end = self.len + s.len();
-		if end > N {
-			return Err(std::fmt::Error);
-		}
-		self.buf[self.len..end].copy_from_slice(s.as_bytes());
-		self.len = end;
-		Ok(())
+		write!(out, "{}", (n - 1).unsigned_abs()).unwrap();
 	}
 }
 

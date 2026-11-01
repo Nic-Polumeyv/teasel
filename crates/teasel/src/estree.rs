@@ -138,11 +138,10 @@ impl<'a> Writer<'a> {
 
 	pub(crate) fn begin(&mut self, ty: &'static str, id: NodeId) {
 		let node = self.ast.node(id);
+		self.json.begin(ty);
 		if matches!(self.ast.nodes[id.index() as usize].kind, NodeKind::Host(_)) {
-			self.json.escaped_begin(ty);
 			self.host_span(node.start, node.end);
 		} else {
-			self.json.begin(ty);
 			self.span(node.start, node.end);
 		}
 		self.scope_facts(id);
@@ -318,10 +317,23 @@ impl<'a> Writer<'a> {
 
 	fn located(&mut self, start: u32, end: u32, host: bool) {
 		let (span, loc) = self.positions.span(&mut self.cursor, start, end, host);
-		self.json.span(span.start, span.end);
+		self.json.key("start");
+		self.json.int(span.start);
+		self.json.key("end");
+		self.json.int(span.end);
 		if let Some(loc) = loc {
-			self.json
-				.loc(loc.start.line, loc.start.column, loc.end.line, loc.end.column);
+			self.json.key("loc");
+			self.json.object();
+			for (key, at) in [("start", loc.start), ("end", loc.end)] {
+				self.json.key(key);
+				self.json.object();
+				self.json.key("line");
+				self.json.int(at.line);
+				self.json.key("column");
+				self.json.int(at.column);
+				self.json.end();
+			}
+			self.json.end();
 		}
 	}
 
@@ -586,13 +598,12 @@ impl<'a> Writer<'a> {
 					}
 					Some(ty) if host.span => self.begin(ty, id),
 					Some(ty) => {
-						self.json.escaped_begin(ty);
+						self.json.begin(ty);
 						self.scope_facts(id);
 					}
 				}
 				for i in host.fields.indices() {
-					self.json
-						.escaped_key(self.names[self.ast.host_keys[i as usize] as usize]);
+					self.json.key(self.names[self.ast.host_keys[i as usize] as usize]);
 					match self.ast.host_vals[i as usize].value() {
 						Value::Node(child) => self.node(child),
 						Value::Nodes(children) => self.items(children),

@@ -228,7 +228,7 @@ pub fn about(grammar: &Grammar) -> String {
 fn children_table(w: &mut Json, table: Vec<(&'static str, Vec<&'static str>)>) {
 	w.object();
 	for (ty, fields) in table {
-		w.escaped_key(ty);
+		w.key(ty);
 		texts(w, fields);
 	}
 	w.end();
