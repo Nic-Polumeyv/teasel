@@ -473,7 +473,7 @@ impl<'a> Wire<'a> for &'static str {
 	}
 
 	fn write(&self, out: &mut String) {
-		crate::estree::write_json_string(out, self);
+		crate::json::write_json_string(out, self);
 	}
 }
 
@@ -486,7 +486,7 @@ pub(crate) fn entry<'a>(out: &mut String, key: &str, value: &impl Wire<'a>) {
 	if !out.ends_with('{') {
 		out.push(',');
 	}
-	crate::estree::write_json_string(out, key);
+	crate::json::write_json_string(out, key);
 	out.push(':');
 	value.write(out);
 }

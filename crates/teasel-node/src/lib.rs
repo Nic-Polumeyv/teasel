@@ -165,7 +165,7 @@ unsafe extern "C" fn parse(env: Env, info: CallbackInfo) -> Value {
 		let (entry, offset) = (engine::entry(number(env, entry)?)?, number(env, offset)?);
 		let (stop, grammar) = (string(env, stop)?, grammar_of(env, plan));
 		in_env(env, || {
-			engine::in_place(source, options, entry, offset, &stop, grammar)?;
+			engine::parse(source, options, entry, offset, &stop, grammar)?;
 			view(env)
 		})
 	})

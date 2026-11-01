@@ -16,7 +16,7 @@
 
 use std::io::{self, BufRead, Read, Write};
 use std::process::ExitCode;
-use teasel::{Entry, Options, engine};
+use teasel::{Entry, Options, estree};
 
 const DOCUMENT: u32 = 7;
 
@@ -51,8 +51,8 @@ fn batch(grammar: Option<String>) -> io::Result<()> {
 		}
 		let source = String::from_utf8_lossy(&bytes);
 		let json = match (Entry::from_index(entry), &grammar) {
-			(Some(entry), _) => engine::parse(&source, entry, offset, Options(flags)),
-			(None, Some(grammar)) if entry == DOCUMENT => engine::parse_document(&source, grammar, Options(flags)),
+			(Some(entry), _) => estree::parse(&source, entry, offset, Options(flags)),
+			(None, Some(grammar)) if entry == DOCUMENT => estree::parse_document(&source, grammar, Options(flags)),
 			(None, _) => {
 				return Err(io::Error::new(
 					io::ErrorKind::InvalidData,
@@ -138,9 +138,9 @@ fn main() -> ExitCode {
 				return ExitCode::FAILURE;
 			}
 		};
-		println!("{}", engine::parse_document(&source, &grammar, Options(flags)));
+		println!("{}", estree::parse_document(&source, &grammar, Options(flags)));
 		return ExitCode::SUCCESS;
 	}
-	println!("{}", engine::parse(&source, entry, offset.unwrap_or(0), Options(flags)));
+	println!("{}", estree::parse(&source, entry, offset.unwrap_or(0), Options(flags)));
 	ExitCode::SUCCESS
 }

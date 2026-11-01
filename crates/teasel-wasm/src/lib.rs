@@ -73,7 +73,7 @@ pub unsafe extern "C" fn parse(
 	let stop = std::str::from_utf8(&stop).map_err(|_| "the stop tokens are not UTF-8".to_string());
 	let parsed = source.and_then(|source| {
 		let entry = teasel::engine::entry(entry)?;
-		teasel::engine::in_place(source, Options(flags), entry, offset, stop?, grammar)
+		teasel::engine::parse(source, Options(flags), entry, offset, stop?, grammar)
 	});
 	match parsed {
 		Ok(()) => 0,

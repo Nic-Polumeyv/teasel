@@ -10,7 +10,7 @@ use std::path::Path;
 use teasel::Code;
 use teasel::Entry;
 use teasel::Options;
-use teasel::engine::parse_document;
+use teasel::estree::parse_document;
 use teasel::host::grammar::definition::{self, Bind, Host, Node, Source};
 use teasel::host::grammar::{
 	Arena, Construct, DirectiveValue, DocField, Grammar, Item, Match, Place, Record, RootField, Unique,
@@ -229,7 +229,7 @@ fn host_phases() {
 			let mut best = f64::MAX;
 			for _ in 0..300 {
 				let t = std::time::Instant::now();
-				teasel::engine::in_place(source, Options(flags), Entry::Program, 0.0, "", Some(&grammar)).unwrap();
+				teasel::engine::parse(source, Options(flags), Entry::Program, 0.0, "", Some(&grammar)).unwrap();
 				best = best.min(t.elapsed().as_secs_f64() * 1e6);
 			}
 			eprintln!("{best:9.2} µs  {name} {label}");

@@ -12,7 +12,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use teasel::engine::parse;
+use teasel::estree::parse;
 use teasel::{Entry, Options};
 
 /// Grammar diagnostics (`TS1xxx`) only the checker can see, or where ECMAScript decides otherwise.

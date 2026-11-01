@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use teasel::Entry;
 use teasel::Options;
 use teasel::ast::{Ast, List};
-use teasel::engine::parse;
+use teasel::estree::parse;
 
 fn suite() -> Option<PathBuf> {
 	let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/test262-parser-tests");

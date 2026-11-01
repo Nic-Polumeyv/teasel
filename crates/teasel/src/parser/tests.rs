@@ -252,19 +252,19 @@ fn an_entry_is_one_of_its_numbers() {
 #[test]
 fn the_session_writes_the_same_words_again() {
 	use crate::Options;
-	use crate::engine::in_place;
+	use crate::engine::parse;
 	let options = Options(Options::MODULE | Options::COMMENTS | Options::LOCATIONS | Options::SCOPES);
 	let source = "let x = /* a */ 1; function f(y) { return x + y; } // b";
 	let words = || crate::engine::words(|words| words.to_vec());
 	// a failed parse answers words too, flagged as such; its first one settles the error buffer
-	in_place("a +", options, Entry::Expression, 0.0, "", None).unwrap();
+	parse("a +", options, Entry::Expression, 0.0, "", None).unwrap();
 	let failed = words();
 	assert_eq!((failed[1], failed[2 + failed[1] as usize] & 1), (0, 1));
-	in_place(source, options, Entry::Program, 0.0, "", None).unwrap();
+	parse(source, options, Entry::Program, 0.0, "", None).unwrap();
 	let first = words();
-	let _ = in_place("a + b", options, Entry::Expression, 0.0, "", None);
-	let _ = in_place("a +", options, Entry::Expression, 0.0, "", None);
-	in_place(source, options, Entry::Program, 0.0, "", None).unwrap();
+	let _ = parse("a + b", options, Entry::Expression, 0.0, "", None);
+	let _ = parse("a +", options, Entry::Expression, 0.0, "", None);
+	parse(source, options, Entry::Program, 0.0, "", None).unwrap();
 	let again = words();
 	// but for the first saying its buffers are new to the front end
 	let what = 2 + first[1] as usize;
@@ -703,9 +703,10 @@ fn undeclared_exports_can_be_allowed() {
 #[ignore]
 fn phases() {
 	use crate::Options;
-	use crate::estree::{Positions, Writer};
+	use crate::estree::Writer;
 	use crate::lexer::Lexer;
 	use crate::lexer::token::TokenKind;
+	use crate::positions::Positions;
 	let Ok(path) = std::env::var("TEASEL_BENCH") else {
 		return;
 	};
@@ -792,11 +793,11 @@ fn phases() {
 	{
 		let options = Options(Options::MODULE | Options::COMMENTS);
 		best("whole request: positions, parse, comments, encode, finish", &mut || {
-			crate::engine::in_place(&source, options, Entry::Program, 0.0, "", None).unwrap();
+			crate::engine::parse(&source, options, Entry::Program, 0.0, "", None).unwrap();
 		});
 		let options = Options(Options::MODULE | Options::COMMENTS | Options::SCOPES | Options::LOCATIONS);
 		best("whole request with scopes and loc", &mut || {
-			crate::engine::in_place(&source, options, Entry::Program, 0.0, "", None).unwrap();
+			crate::engine::parse(&source, options, Entry::Program, 0.0, "", None).unwrap();
 		});
 	}
 	let grammar = crate::engine::grammar(
@@ -815,7 +816,7 @@ fn phases() {
 		),
 	] {
 		best(&format!("host: 200 each blocks, {label}"), &mut || {
-			crate::engine::in_place(&document, Options(flags), Entry::Program, 0.0, "", Some(&grammar)).unwrap();
+			crate::engine::parse(&document, Options(flags), Entry::Program, 0.0, "", Some(&grammar)).unwrap();
 		});
 	}
 	best("Json write, loc", &mut || {
@@ -980,7 +981,7 @@ fn host_alloc_probe() {
 	.unwrap();
 	let count = |src: &str| {
 		let parse = || {
-			crate::engine::in_place(
+			crate::engine::parse(
 				src,
 				crate::Options(crate::Options::MODULE),
 				Entry::Program,
@@ -1054,14 +1055,14 @@ fn layout_sizes() {
 #[test]
 fn an_offset_inside_a_character_is_refused() {
 	let options = crate::Options(crate::Options::MODULE);
-	assert!(crate::engine::parse("é", Entry::Program, 1, options).contains("is not a character boundary"));
+	assert!(crate::estree::parse("é", Entry::Program, 1, options).contains("is not a character boundary"));
 }
 
 #[test]
 fn parenthesized_bits() {
 	let options = crate::Options(crate::Options::MODULE | crate::Options::PARENTHESIZED);
-	let json = crate::engine::parse("(a).b; (x, y); c; ((d));", Entry::Program, 0, options);
+	let json = crate::estree::parse("(a).b; (x, y); c; ((d));", Entry::Program, 0, options);
 	assert_eq!(json.matches("\"parenthesized\":true").count(), 3, "{json}");
-	let json = crate::engine::parse("(a, b) => a; (c);", Entry::Program, 0, options);
+	let json = crate::estree::parse("(a, b) => a; (c);", Entry::Program, 0, options);
 	assert_eq!(json.matches("\"parenthesized\":true").count(), 1, "{json}");
 }

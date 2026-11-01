@@ -5,21 +5,15 @@ use std::rc::Rc;
 use crate::Options;
 use crate::ast::{Ast, List};
 use crate::comments::attach;
-use crate::error::Code;
-use crate::estree::{Json, Positions, Words, Writer};
 use crate::handed::{Raw, Views};
 use crate::host::{self, Grammar};
+use crate::json::Json;
 use crate::parser::{Entry, parse_at};
+use crate::positions::{Cursor, Positions};
 use crate::scopes;
 
-/// The error answer for a parse that never ran, what is wrong as the one argument.
-pub fn error_json(reason: &str, pos: u32) -> String {
-	use std::fmt::Write;
-	let mut out = format!("{{\"error\":{{\"code\":{},\"args\":[", Code::InvalidRequest as u8);
-	crate::estree::write_json_string(&mut out, reason);
-	write!(out, "],\"pos\":{pos},\"end\":{pos}}}}}").unwrap();
-	out
-}
+/// The answer's words, read in place by a front end that takes the allocation over.
+pub type Words = crate::handed::Handed<u32>;
 
 /// The tree's layout, the names of its views and the recipes, as JSON: what a front end reading
 /// the tree in place builds its readers from.
@@ -248,41 +242,9 @@ fn texts<'a>(w: &mut Json, list: impl IntoIterator<Item = &'a str>) {
 	w.end();
 }
 
-/// One entry at a byte offset, as JSON.
-pub fn parse(source: &str, entry: Entry, offset: u32, options: Options) -> String {
-	if !source.is_char_boundary(offset as usize) {
-		return error_json(&format!("offset {offset} is not a character boundary"), offset);
-	}
-	written(source, entry, offset, options, None)
-}
-
-/// A whole document of a host language by its grammar, as JSON; see `host::parse_document`.
-pub fn parse_document(source: &str, grammar: &str, options: Options) -> String {
-	match self::grammar(grammar) {
-		Ok(grammar) => written(source, Entry::Program, 0, options, Some(&grammar)),
-		Err(message) => error_json(&message, 0),
-	}
-}
-
-fn written(source: &str, entry: Entry, offset: u32, options: Options, host: Option<&Grammar>) -> String {
-	let positions = Positions::of(source, options);
-	read(
-		source,
-		options,
-		entry,
-		offset,
-		"",
-		host,
-		|ast, roots, end, options, _| {
-			let names = host.map_or(host::grammar::own::NAMES, |grammar| &grammar.names);
-			Writer::new(ast, source, &positions, names).answer(entry, roots, end, options)
-		},
-	)
-}
-
 /// One entry at a UTF-16 offset, as JavaScript counts; with a grammar, the whole source as a
 /// document of its language. Its words at `words`; an offset the source has no place for is refused.
-pub fn in_place(
+pub fn parse(
 	source: &str,
 	options: Options,
 	entry: Entry,
@@ -309,10 +271,7 @@ pub fn in_place(
 			// the tree's buffers sit folded into two words: a front end keeps its views while that holds
 			words.clear();
 			let roots = roots.map_or(&[][..], |roots| ast.list(roots));
-			words.extend_from_slice(&[
-				positions.offset(&mut crate::estree::Cursor::default(), end),
-				roots.len() as u32,
-			]);
+			words.extend_from_slice(&[positions.offset(&mut Cursor::default(), end), roots.len() as u32]);
 			words.extend(roots.iter().map(|root| root.unwrap().index()));
 			let typescript = if options.typescript() { TYPESCRIPT } else { 0 };
 			words.push(typescript | if failed { FAILED } else { 0 });
@@ -403,7 +362,7 @@ const TYPESCRIPT: u32 = 2;
 
 /// Parses with the session's tree of its language, in TypeScript when the grammar says so of a
 /// script tag; `finish` gets the tree, its roots, `end`, the options as they ended up and the words.
-fn read<R>(
+pub(crate) fn read<R>(
 	source: &str,
 	options: Options,
 	entry: Entry,

@@ -9,7 +9,7 @@ mod common;
 
 use std::fs;
 use std::path::Path;
-use teasel::engine::parse;
+use teasel::estree::parse;
 use teasel::{Entry, Options};
 
 // a misspelled or new type, key or enum text is a line of this pin's diff, as `c!` once failed the build on one
