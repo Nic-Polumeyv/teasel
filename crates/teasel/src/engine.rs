@@ -3,35 +3,16 @@
 use std::rc::Rc;
 
 use crate::Options;
-use crate::ast::Ast;
+use crate::ast::{Ast, List};
 use crate::comments::attach;
 use crate::error::Code;
-use crate::estree::{Json, Positions, Words, answer};
+use crate::estree::{Json, Positions, Words, Writer};
 use crate::handed::{Raw, Views};
 use crate::host::{self, Grammar};
 use crate::parser::{Entry, parse_at};
 use crate::scopes;
 
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Request {
-	pub entry: Entry,
-	/// Byte offset into the source; the JSON reports UTF-16 offsets.
-	pub offset: u32,
-	pub options: Options,
-}
-
-impl Request {
-	/// The whole source as a program, from its option word.
-	pub fn from_flags(flags: u32) -> Request {
-		Request {
-			options: Options(flags),
-			..Request::default()
-		}
-	}
-}
-
-/// The error answer for a request the parser never ran: a host's offsets or switches, what is
-/// wrong with them as the one argument.
+/// The error answer for a parse that never ran, what is wrong as the one argument.
 pub fn error_json(reason: &str, pos: u32) -> String {
 	use std::fmt::Write;
 	let mut out = format!("{{\"error\":{{\"code\":{},\"args\":[", Code::InvalidRequest as u8);
@@ -268,27 +249,39 @@ fn texts<'a>(w: &mut Json, list: impl IntoIterator<Item = &'a str>) {
 }
 
 /// One entry at a byte offset, as JSON.
-pub fn parse(source: &str, request: &Request) -> String {
-	if !source.is_char_boundary(request.offset as usize) {
-		return error_json(
-			&format!("offset {} is not a character boundary", request.offset),
-			request.offset,
-		);
+pub fn parse(source: &str, entry: Entry, offset: u32, options: Options) -> String {
+	if !source.is_char_boundary(offset as usize) {
+		return error_json(&format!("offset {offset} is not a character boundary"), offset);
 	}
-	to_json(source, request, "", None)
+	written(source, entry, offset, options, None)
 }
 
 /// A whole document of a host language by its grammar, as JSON; see `host::parse_document`.
 pub fn parse_document(source: &str, grammar: &str, options: Options) -> String {
 	match self::grammar(grammar) {
-		Ok(grammar) => to_json(source, &Request::from_flags(options.0), "", Some(&grammar)),
+		Ok(grammar) => written(source, Entry::Program, 0, options, Some(&grammar)),
 		Err(message) => error_json(&message, 0),
 	}
 }
 
+fn written(source: &str, entry: Entry, offset: u32, options: Options, host: Option<&Grammar>) -> String {
+	let positions = Positions::of(source, options);
+	read(
+		source,
+		options,
+		entry,
+		offset,
+		"",
+		host,
+		|ast, roots, end, options, _| {
+			let names = host.map_or(host::grammar::own::NAMES, |grammar| &grammar.names);
+			Writer::new(ast, source, &positions, names).answer(entry, roots, end, options)
+		},
+	)
+}
+
 /// One entry at a UTF-16 offset, as JavaScript counts; with a grammar, the whole source as a
-/// document of its language, in TypeScript when the grammar says so of a script tag. Read in
-/// place: its words at `words`; an offset the source has no place for is refused.
+/// document of its language. Its words at `words`; an offset the source has no place for is refused.
 pub fn in_place(
 	source: &str,
 	options: Options,
@@ -302,13 +295,38 @@ pub fn in_place(
 	if !source.is_char_boundary(offset as usize) {
 		return Err(format!("offset {start} is inside a surrogate pair"));
 	}
-	answer_to(
+	read(
 		source,
-		&positions,
-		&Request { entry, offset, options },
+		options,
+		entry,
+		offset,
 		stop,
 		host,
-		None,
+		|ast, roots, end, options, words| {
+			let failed = roots.is_none();
+			prepare(ast, source, &positions, options, failed);
+			// `end`, the roots by number, a word of what the answer is, each view's length, then where
+			// the tree's buffers sit folded into two words: a front end keeps its views while that holds
+			words.clear();
+			let roots = roots.map_or(&[][..], |roots| ast.list(roots));
+			words.extend_from_slice(&[
+				positions.offset(&mut crate::estree::Cursor::default(), end),
+				roots.len() as u32,
+			]);
+			words.extend(roots.iter().map(|root| root.unwrap().index()));
+			let typescript = if options.typescript() { TYPESCRIPT } else { 0 };
+			words.push(typescript | if failed { FAILED } else { 0 });
+			let mut sits = 0u64;
+			let mut note = |_, buffer: Option<&mut dyn Raw>| {
+				words.push(buffer.as_ref().map_or(0, |buffer| buffer.elements() as u32));
+				if let Some(buffer) = buffer {
+					sits = (sits ^ buffer.as_ptr() as u64 ^ (buffer.capacity_bytes() as u64) << 32)
+						.wrapping_mul(0x9e37_79b9_7f4a_7c15);
+				}
+			};
+			ast.views(options.typescript(), &mut Views(&mut note));
+			words.extend_from_slice(&[sits as u32, (sits >> 32) as u32]);
+		},
 	);
 	Ok(())
 }
@@ -378,130 +396,68 @@ pub fn entry(index: f64) -> Result<Entry, String> {
 		.ok_or_else(|| format!("{index} is no entry"))
 }
 
-/// Where an answer goes: JSON text, or the words a front end reads the tree by.
-enum Out<'a> {
-	Json(&'a mut String),
-	Words(&'a mut Words),
-}
-
-fn to_json(source: &str, request: &Request, stop: &str, host: Option<&Grammar>) -> String {
-	let mut json = String::new();
-	answer_to(
-		source,
-		&Positions::of(source, request.options),
-		request,
-		stop,
-		host,
-		Some(&mut json),
-	);
-	json
-}
-
 /// The answer's word, what the caller could not know: the parse failed, the tree is TypeScript's
 /// (a document's language is the grammar's to tell).
 const FAILED: u32 = 1;
 const TYPESCRIPT: u32 = 2;
 
-fn answer_to(
+/// Parses with the session's tree of its language, in TypeScript when the grammar says so of a
+/// script tag; `finish` gets the tree, its roots, `end`, the options as they ended up and the words.
+fn read<R>(
 	source: &str,
-	positions: &Positions,
-	request: &Request,
+	options: Options,
+	entry: Entry,
+	offset: u32,
 	stop: &str,
 	host: Option<&Grammar>,
-	json: Option<&mut String>,
-) {
-	let mut request = *request;
-	if host.is_some_and(|grammar| host::typescript(source, grammar)) {
-		request.options = request.options.with(Options::TYPESCRIPT);
-	}
+	finish: impl FnOnce(&mut Ast, Option<List>, u32, Options, &mut Words) -> R,
+) -> R {
+	let options = if host.is_some_and(|grammar| host::typescript(source, grammar)) {
+		options.with(Options::TYPESCRIPT)
+	} else {
+		options
+	};
 	SESSION.with(|session| {
 		let session = &mut *session.borrow_mut();
-		session.typescript = request.options.typescript();
-		let out = match json {
-			Some(json) => Out::Json(json),
-			None => Out::Words(&mut session.words),
+		session.typescript = options.typescript();
+		let slot = &mut session.trees[options.typescript() as usize];
+		let reused = slot.take().map(|mut ast| {
+			ast.clear();
+			ast
+		});
+		let (mut ast, parsed) = match host {
+			Some(grammar) => {
+				let (mut ast, root) = host::parse_document(source, grammar, options, reused);
+				let parsed = root.map(|root| (ast.add_list(&[Some(root)]), source.len() as u32));
+				(ast, parsed)
+			}
+			None => parse_at(source, offset, entry, options, stop, reused),
 		};
-		run(source, positions, &request, stop, host, &mut session.trees, out);
-	})
-}
-
-/// Runs a request and answers it at `out`.
-fn run(
-	source: &str,
-	positions: &Positions,
-	request: &Request,
-	stop: &str,
-	host: Option<&Grammar>,
-	trees: &mut [Option<Box<Ast>>; 2],
-	out: Out<'_>,
-) {
-	let options = request.options;
-	let slot = &mut trees[options.typescript() as usize];
-	let reused = slot.take().map(|mut ast| {
-		ast.clear();
-		ast
-	});
-	let (mut ast, parsed) = match host {
-		Some(grammar) => {
-			let (mut ast, root) = host::parse_document(source, grammar, options, reused);
-			let parsed = root.map(|root| (ast.add_list(&[Some(root)]), source.len() as u32));
-			(ast, parsed)
-		}
-		None => parse_at(source, request.offset, request.entry, options, stop, reused),
-	};
-	let (mut roots, mut end) = match parsed {
-		Ok((roots, end)) => (Some(roots), end),
-		Err(error) => (fail(&mut ast, *error), error.pos),
-	};
-	if let Some(list) = roots {
-		if options.has(Options::COMMENTS) {
-			attach(&mut ast, source, list, request.offset);
-		}
-		if options.has(Options::SCOPES) {
-			scopes::analyze(&mut ast, request.entry, list);
-			let errors = std::mem::take(&mut ast.scopes.as_mut().unwrap().errors);
-			if !errors.is_empty() {
-				if options.has(Options::ERROR_RECOVERY) {
-					ast.errors.extend(errors);
-					ast.errors.sort_by_key(|error| error.pos);
-				} else {
-					(roots, end) = (fail(&mut ast, errors[0]), errors[0].pos);
+		let (mut roots, mut end) = match parsed {
+			Ok((roots, end)) => (Some(roots), end),
+			Err(error) => (fail(&mut ast, *error), error.pos),
+		};
+		if let Some(list) = roots {
+			if options.has(Options::COMMENTS) {
+				attach(&mut ast, source, list, offset);
+			}
+			if options.has(Options::SCOPES) {
+				scopes::analyze(&mut ast, entry, list);
+				let errors = std::mem::take(&mut ast.scopes.as_mut().unwrap().errors);
+				if !errors.is_empty() {
+					if options.has(Options::ERROR_RECOVERY) {
+						ast.errors.extend(errors);
+						ast.errors.sort_by_key(|error| error.pos);
+					} else {
+						(roots, end) = (fail(&mut ast, errors[0]), errors[0].pos);
+					}
 				}
 			}
 		}
-	}
-	match out {
-		Out::Json(json) => {
-			let names = host.map_or(host::grammar::own::NAMES, |grammar| &grammar.names);
-			*json = answer(&ast, request.entry, roots, end, source, positions, options, names);
-		}
-		Out::Words(words) => {
-			let failed = roots.is_none();
-			prepare(&mut ast, source, positions, options, failed);
-			// `end`, the roots by number, a word of what the answer is, each view's length, then where
-			// the tree's buffers sit folded into two words: a front end keeps its views while that holds
-			words.clear();
-			let roots = roots.map_or(&[][..], |roots| ast.list(roots));
-			words.extend_from_slice(&[
-				positions.offset(&mut crate::estree::Cursor::default(), end),
-				roots.len() as u32,
-			]);
-			words.extend(roots.iter().map(|root| root.unwrap().index()));
-			let typescript = if options.typescript() { TYPESCRIPT } else { 0 };
-			words.push(typescript | if failed { FAILED } else { 0 });
-			let mut sits = 0u64;
-			let mut note = |_, buffer: Option<&mut dyn Raw>| {
-				words.push(buffer.as_ref().map_or(0, |buffer| buffer.elements() as u32));
-				if let Some(buffer) = buffer {
-					sits = (sits ^ buffer.as_ptr() as u64 ^ (buffer.capacity_bytes() as u64) << 32)
-						.wrapping_mul(0x9e37_79b9_7f4a_7c15);
-				}
-			};
-			ast.views(options.typescript(), &mut Views(&mut note));
-			words.extend_from_slice(&[sits as u32, (sits >> 32) as u32]);
-		}
-	}
-	*slot = Some(ast);
+		let answer = finish(&mut ast, roots, end, options, &mut session.words);
+		*slot = Some(ast);
+		answer
+	})
 }
 
 /// What a front end reading the tree in place needs beside it: every node's span and location

@@ -180,40 +180,6 @@ impl Json {
 /// The answer's words, read in place by a front end that takes the allocation over.
 pub type Words = crate::handed::Handed<u32>;
 
-/// Serializes an answer as JSON: the roots as `node`, one node or the patterns of a parameter
-/// list, null when the parse failed, then `end` and what the options add; `names` are the
-/// grammar's, which the hosts' rows number.
-#[expect(clippy::too_many_arguments)]
-pub fn answer(
-	ast: &Ast,
-	entry: Entry,
-	roots: Option<List>,
-	end: u32,
-	source: &str,
-	positions: &Positions,
-	options: Options,
-	names: &[&'static str],
-) -> String {
-	let mut w = Writer::new(ast, source, positions, names);
-	w.options = options;
-	w.failed = roots.is_none();
-	w.json.object();
-	match roots {
-		None => {
-			w.key("node");
-			w.json.null();
-		}
-		Some(roots) if entry == Entry::Params => w.list("node", roots),
-		Some(roots) => w.field("node", ast.list(roots)[0].unwrap()),
-	}
-	w.key("end");
-	let end = w.positions.offset(&mut w.cursor, end);
-	w.json.int(end);
-	w.trailers();
-	w.json.end();
-	w.json.finish()
-}
-
 pub struct Writer<'a> {
 	ast: &'a Ast,
 	source: &'a str,
@@ -465,7 +431,8 @@ fn locate<T>(items: &[T], hint: usize, byte: u32, key: impl Fn(&T) -> u32) -> us
 }
 
 impl<'a> Writer<'a> {
-	fn new(ast: &'a Ast, source: &'a str, positions: &'a Positions, names: &'a [&'static str]) -> Self {
+	/// `names` are the grammar's, which the hosts' rows number.
+	pub(crate) fn new(ast: &'a Ast, source: &'a str, positions: &'a Positions, names: &'a [&'static str]) -> Self {
 		Self {
 			ast,
 			source,
@@ -479,6 +446,28 @@ impl<'a> Writer<'a> {
 			kept: Vec::new(),
 			adopted: Vec::new(),
 		}
+	}
+
+	/// An answer as JSON: the roots as `node`, one node or the patterns of a parameter list, null
+	/// when the parse failed, then `end` and what the options add.
+	pub(crate) fn answer(mut self, entry: Entry, roots: Option<List>, end: u32, options: Options) -> String {
+		self.options = options;
+		self.failed = roots.is_none();
+		self.json.object();
+		match roots {
+			None => {
+				self.key("node");
+				self.json.null();
+			}
+			Some(roots) if entry == Entry::Params => self.list("node", roots),
+			Some(roots) => self.field("node", self.ast.list(roots)[0].unwrap()),
+		}
+		self.key("end");
+		let end = self.positions.offset(&mut self.cursor, end);
+		self.json.int(end);
+		self.trailers();
+		self.json.end();
+		self.json.finish()
 	}
 
 	/// Records a node erasure had to leave in place.

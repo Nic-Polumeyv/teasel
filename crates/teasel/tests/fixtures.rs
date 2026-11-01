@@ -9,7 +9,7 @@ mod common;
 
 use std::fs;
 use std::path::Path;
-use teasel::engine::{Request, parse};
+use teasel::engine::parse;
 use teasel::{Entry, Options};
 
 // a misspelled or new type, key or enum text is a line of this pin's diff, as `c!` once failed the build on one
@@ -52,15 +52,12 @@ fn files() {
 					flags |= bit;
 				}
 			}
-			let request = Request {
-				entry: if language == "css" {
-					Entry::StyleSheet
-				} else {
-					Entry::Program
-				},
-				..Request::from_flags(flags)
+			let entry = if language == "css" {
+				Entry::StyleSheet
+			} else {
+				Entry::Program
 			};
-			let answer = common::pretty(&parse(&source, &request));
+			let answer = common::pretty(&parse(&source, entry, 0, Options(flags)));
 			if !common::pinned(&file.with_extension("json"), &answer) {
 				wrong.push(format!("{language}/{name}"));
 			}

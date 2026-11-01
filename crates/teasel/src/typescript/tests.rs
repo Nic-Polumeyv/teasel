@@ -380,8 +380,8 @@ fn a_generic_head_checks_its_defaults() {
 }
 
 fn erase(src: &str) -> (String, String) {
-	let request = crate::engine::Request::from_flags(Options::MODULE | Options::TYPESCRIPT | Options::ERASE);
-	let json = crate::engine::parse(src, &request);
+	let options = Options(Options::MODULE | Options::TYPESCRIPT | Options::ERASE);
+	let json = crate::engine::parse(src, Entry::Program, 0, options);
 	let (tree, kept) = json.split_once(",\"typescript\":").unwrap_or_else(|| panic!("{json}"));
 	let types: Vec<&str> = tree
 		.split("\"type\":\"")

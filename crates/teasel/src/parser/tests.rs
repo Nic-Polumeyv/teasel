@@ -703,7 +703,7 @@ fn undeclared_exports_can_be_allowed() {
 #[ignore]
 fn phases() {
 	use crate::Options;
-	use crate::estree::{Positions, answer};
+	use crate::estree::{Positions, Writer};
 	use crate::lexer::Lexer;
 	use crate::lexer::token::TokenKind;
 	let Ok(path) = std::env::var("TEASEL_BENCH") else {
@@ -819,15 +819,11 @@ fn phases() {
 		});
 	}
 	best("Json write, loc", &mut || {
-		let _ = answer(
-			&ast,
+		let _ = Writer::new(&ast, &source, &lines, crate::host::grammar::own::NAMES).answer(
 			Entry::Program,
 			Some(roots),
 			end,
-			&source,
-			&lines,
 			options.with(Options::COMMENTS),
-			crate::host::grammar::own::NAMES,
 		);
 	});
 	eprintln!(
@@ -1057,18 +1053,15 @@ fn layout_sizes() {
 
 #[test]
 fn an_offset_inside_a_character_is_refused() {
-	let request = crate::engine::Request {
-		offset: 1,
-		..crate::engine::Request::from_flags(crate::Options::MODULE)
-	};
-	assert!(crate::engine::parse("é", &request).contains("is not a character boundary"));
+	let options = crate::Options(crate::Options::MODULE);
+	assert!(crate::engine::parse("é", Entry::Program, 1, options).contains("is not a character boundary"));
 }
 
 #[test]
 fn parenthesized_bits() {
-	let request = crate::engine::Request::from_flags(crate::Options::MODULE | crate::Options::PARENTHESIZED);
-	let json = crate::engine::parse("(a).b; (x, y); c; ((d));", &request);
+	let options = crate::Options(crate::Options::MODULE | crate::Options::PARENTHESIZED);
+	let json = crate::engine::parse("(a).b; (x, y); c; ((d));", Entry::Program, 0, options);
 	assert_eq!(json.matches("\"parenthesized\":true").count(), 3, "{json}");
-	let json = crate::engine::parse("(a, b) => a; (c);", &request);
+	let json = crate::engine::parse("(a, b) => a; (c);", Entry::Program, 0, options);
 	assert_eq!(json.matches("\"parenthesized\":true").count(), 1, "{json}");
 }
