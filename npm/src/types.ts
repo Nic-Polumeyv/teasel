@@ -361,7 +361,6 @@ export const CODES = [
 	'declare_in_ambient',
 	'statement_in_ambient',
 	'using_in_ambient',
-	'invalid_request',
 	'property_after_instantiation',
 	'accessor_placement',
 ] as const;

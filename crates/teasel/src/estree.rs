@@ -3,7 +3,6 @@
 use crate::Options;
 use crate::ast::{Ast, Extras, List, NodeId, NodeKind, Value, node_layout};
 use crate::engine;
-use crate::error::Code;
 use crate::host::{self, Grammar};
 use crate::interner::StrId;
 use crate::json::{Json, write_json_string};
@@ -45,12 +44,12 @@ fn written(source: &str, entry: Entry, offset: u32, options: Options, grammar: O
 	)
 }
 
-/// The error answer for a parse that never ran, what is wrong as the one argument.
+/// The error answer for a parse that never ran, what is wrong as its reason.
 fn error_json(reason: &str, pos: u32) -> String {
 	use std::fmt::Write;
-	let mut out = format!("{{\"error\":{{\"code\":{},\"args\":[", Code::InvalidRequest as u8);
+	let mut out = String::from("{\"error\":{\"reason\":");
 	write_json_string(&mut out, reason);
-	write!(out, "],\"pos\":{pos},\"end\":{pos}}}}}").unwrap();
+	write!(out, ",\"pos\":{pos}}}}}").unwrap();
 	out
 }
 
