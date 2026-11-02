@@ -9,7 +9,7 @@
 //! value. The text is kept for the process, and every name is a slice of it unless it was
 //! escaped; every list is a slice of the arena the definition is read into.
 
-use crate::ast::HostValue;
+use crate::ast::Value;
 
 /// Reads a definition's JSON in one pass, each value straight into its type.
 pub(crate) struct Reader<'a> {
@@ -803,7 +803,7 @@ struct Shape {
 }
 
 impl Shapes {
-	pub(crate) fn of(&mut self, ty: Option<u32>, keys: &[u32], values: &[HostValue]) -> u32 {
+	pub(crate) fn of(&mut self, ty: Option<u32>, keys: &[u32], values: &[Value]) -> u32 {
 		let at = ty.map_or(0, |ty| ty as usize + 1);
 		if self.of.len() <= at {
 			self.of.resize_with(at + 1, Vec::new);
@@ -811,7 +811,7 @@ impl Shapes {
 		let fields = keys
 			.iter()
 			.zip(values)
-			.map(|(&key, value)| (key as u64) << 8 | value.tag as u64);
+			.map(|(&key, value)| (key as u64) << 8 | crate::layout::tag(std::ptr::from_ref(value).cast()) as u64);
 		let shapes = &mut self.of[at];
 		if let Some(shape) = shapes
 			.iter()

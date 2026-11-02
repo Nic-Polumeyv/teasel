@@ -1209,7 +1209,7 @@ impl<'a> Binder<'a> {
 				.iter()
 				.any(|list| b.ast.list(*list).contains(&Some(child)))
 		};
-		match self.ast.host_vals[i as usize].value() {
+		match self.ast.host_vals[i as usize] {
 			crate::ast::Value::Node(child) if !declared(self, child) => self.field_value(child),
 			crate::ast::Value::Nodes(children) => {
 				for &child in self.ast.list(children).iter().flatten() {

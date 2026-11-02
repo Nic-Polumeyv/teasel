@@ -679,7 +679,7 @@ function host_value<E, St>(B: Spelling<E, St>, tag: string, at: number): E {
 	const a = B.word(at), b = B.word(at + 4);
 	switch (tag) {
 		case 'node':
-			return B.built(a);
+			return B.built(B.dec(a));
 		case 'nodes':
 			return B.items(a, b, false);
 		case 'comments':
@@ -691,7 +691,7 @@ function host_value<E, St>(B: Spelling<E, St>, tag: string, at: number): E {
 		case 'strs':
 			return B.strs(a, b);
 		case 'bool':
-			return B.eq(a, B.lit(1));
+			return B.eq(B.byte(at), B.lit(1));
 		case 'int':
 			return a;
 		case 'null':
@@ -1161,7 +1161,7 @@ function generate_host(C: Compiled, config: number, type: string | null, span: b
 	const link = (config & LINK) !== 0 && type !== null, facts = (config & FACTS) !== 0 && type !== null;
 	if (facts && (config & LINK) === 0) return (S, id, index, _from, parent) => host(S, id, index, parent);
 	const V = C.R.value;
-	const B = new Source((at) => `HV[from * ${V.words} + ${at >> 2}]`, () => '', facts, C.words, C.kind);
+	const B = new Source((at) => `HV[from * ${V.words} + ${at >> 2}]`, (at) => `(HV[from * ${V.words} + ${at >> 2}] >>> ${(at & 3) << 3} & 255)`, facts, C.words, C.kind);
 	const props = type === null ? [] : [`type: ${JSON.stringify(type)}`];
 	if (type === null || span) {
 		props.push('start: S.P[p]', 'end: S.P[p + 1]');

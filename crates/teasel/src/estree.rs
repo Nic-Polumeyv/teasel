@@ -325,13 +325,16 @@ impl Positions {
 		Ok(target + if i == 0 { 0 } else { self.gaps[i - 1].1 })
 	}
 
-	pub(crate) fn map_values(&self, values: &mut [crate::ast::HostValue]) {
+	pub(crate) fn map_values(&self, values: &mut [Value]) {
 		if self.gaps.is_empty() {
 			return;
 		}
 		let mut cursor = Cursor::default();
-		for row in values.iter_mut().filter(|row| row.tag == crate::ast::HostTag::Slice) {
-			row.value = row.value.map(|byte| self.offset(&mut cursor, byte));
+		for value in values {
+			if let Value::Slice(start, end) = value {
+				*start = self.offset(&mut cursor, *start);
+				*end = self.offset(&mut cursor, *end);
+			}
 		}
 	}
 
@@ -970,7 +973,7 @@ impl<'a> Writer<'a> {
 				for i in host.fields.indices() {
 					self.json
 						.escaped_key(self.names[self.ast.host_keys[i as usize] as usize]);
-					match self.ast.host_vals[i as usize].value() {
+					match self.ast.host_vals[i as usize] {
 						Value::Node(child) => self.node(child),
 						Value::Nodes(children) => self.items(children),
 						Value::Str(string) => self.str_of(string),

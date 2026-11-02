@@ -632,7 +632,7 @@ impl<'a> Walker<'a> {
 		let from = ast.host_keys.len();
 		for &(key, value) in fields {
 			ast.host_keys.push(key.0);
-			ast.host_vals.push(value.row());
+			ast.host_vals.push(value);
 		}
 		let ty = (ty != Name::NONE).then_some(ty.0);
 		let shape = self.shapes.of(ty, &ast.host_keys[from..], &ast.host_vals[from..]);
@@ -745,7 +745,7 @@ impl<'a> Walker<'a> {
 			.fields
 			.indices()
 			.find(|&i| ast.host_keys[i as usize] == key.0)
-			.map(|i| ast.host_vals[i as usize].value())
+			.map(|i| ast.host_vals[i as usize])
 	}
 
 	fn string_of(&self, value: Value) -> Option<&str> {
