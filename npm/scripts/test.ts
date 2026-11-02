@@ -247,6 +247,12 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 		assert.equal(referenceOf(list.node[1]).binding.kind, 'param');
 		assert.equal(list.scopes[0].node, null);
 	}
+	{
+		// a namespace declared twice reopens its scope: both read it, and it names the last
+		const [first, second] = read('namespace A { let a; } namespace A { let b; }', { sourceType: 'module', typescript: true, scopes: true }).node.body;
+		assert.equal(scopeOf(first), scopeOf(second));
+		assert.equal(scopeOf(second).node, second);
+	}
 	assert.throws(() => parse('x', { sourceType: 'nonsense' } as Any), TypeError);
 	assert.throws(() => at('expression', '𝒳 + y', 1), RangeError);
 	assert.throws(() => at('expression', 'a + b', -1), RangeError);
