@@ -59,7 +59,7 @@ Every node has its `type` and fields, and every node but a `Fragment` has `start
 
 The options work as they do on JavaScript, with two additions.
 
-- `scopes` adds `roots`: one entry per piece of JavaScript the parser read, in source order, with the piece's `node`, the `scope` it sits in, and the `scopes`, `bindings` and `references` inside it. A host that keeps tables per piece takes them from here; `scopes`, `bindings` and `references` on the answer cover the whole file.
+- `scopes` adds `roots`: one entry per piece of JavaScript the parser read, in the order a walk over the tree meets them, with the piece's `node`, the `scope` it sits in, and the `scopes`, `bindings` and `references` inside it. A host that keeps tables per piece takes them from here; `scopes`, `bindings` and `references` on the answer cover the whole file.
 - `typescript` turns on by itself when the grammar says a script tag can ask for it, as `<script lang="ts">` does, and `'erase'` still applies: give `typescript: 'erase'` and the scripts come back as JavaScript, with the answer's `typescript` list of what could not be erased.
 
 Scopes cover the template and the script together. Every `Fragment` opens a scope; a block's opens at the first name the block declares, the `each` item here. What a script declares lands in the scope around the template, so an identifier in the template resolves to a binding in the script.

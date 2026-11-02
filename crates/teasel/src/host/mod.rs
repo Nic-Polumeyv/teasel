@@ -19,7 +19,7 @@ use crate::parser::{Entry as JsEntry, Options, Parser, Result};
 pub use grammar::Grammar;
 use grammar::{
 	Alternative, Body, Construct, DirectiveRule, DirectiveValue, DocField, Entry, Form, Item, Match, Name, Piece,
-	Place, RootField, Shapes, Unique, Which, component_name, own,
+	Place, RootField, Shapes, Slot, Unique, Which, component_name, own,
 };
 
 /// A whole marker at the cursor: its construct, which piece, and where its last part's word starts.
@@ -307,17 +307,16 @@ enum Frame<'a> {
 	Block {
 		start: u32,
 		rule: &'a Construct,
+		/// The repeating branch this frame's node is, under its block's frame.
+		branch: Option<&'a Piece>,
+		/// What was read so far, the bodies closed so far among it.
 		fields: Vec<(Name, Value)>,
-		/// The open body: its field and whether it is left out of blocks that never opened it.
-		body: (Name, bool),
+		/// The field `nodes` will fill: a body, or `branches` while a repeating branch's nodes come.
+		body: Name,
 		nodes: Vec<NodeId>,
-		/// Bodies closed so far, each as its children.
-		done: Vec<(Name, Value)>,
 		/// The scope of each body read so far.
 		groups: Vec<BodyGroup>,
 		outside: Vec<NodeId>,
-		/// The parent's field this block fills as a chained branch, `{:else if}`, and the flag set.
-		chain: Option<(Name, Name)>,
 	},
 }
 
@@ -842,19 +841,16 @@ impl<'a> Walker<'a> {
 			}
 		}
 		while self.frames.len() > 1 {
-			let (start, what) = match self.frames.last().unwrap() {
-				Frame::Element { start, name, .. } => (*start, &self.src[name.0 as usize..name.1 as usize]),
-				Frame::Block { start, rule, .. } => (*start, rule.open.display),
-				Frame::Root { .. } => unreachable!(),
-			};
-			self.report_at(start, start + 1, Code::Unclosed, Some(what))?;
 			// under recovery, what is open ends with the source
 			let end = self.len();
 			match self.frames.last().unwrap() {
-				Frame::Element { .. } => self.close_top(end),
-				_ => {
-					self.pop_block(end);
+				Frame::Element { start, name, .. } => {
+					let (start, what) = (*start, &self.src[name.0 as usize..name.1 as usize]);
+					self.report_at(start, start + 1, Code::Unclosed, Some(what))?;
+					self.close_top(end);
 				}
+				Frame::Block { .. } => self.pop_unclosed(end)?,
+				Frame::Root { .. } => unreachable!(),
 			}
 		}
 		let errors = &mut self.ast().errors;
@@ -1434,18 +1430,7 @@ impl<'a> Walker<'a> {
 					// the browser closes it here
 					self.close_top(start);
 				}
-				Some(Frame::Block {
-					start: block_start,
-					rule,
-					chain,
-					..
-				}) if self.recovering() => {
-					let (block_start, what, chained) = (*block_start, rule.open.display, chain.is_some());
-					if !chained {
-						self.report_at(block_start, block_start + 1, Code::Unclosed, Some(what))?;
-					}
-					self.pop_block(start);
-				}
+				Some(Frame::Block { .. }) if self.recovering() => self.pop_unclosed(start)?,
 				_ => return self.fail(start, start + 1, Code::UnexpectedClose, Some(&closed())),
 			}
 		}
@@ -2536,77 +2521,55 @@ impl<'a> Walker<'a> {
 		let Some(body) = read.body.take().or(rule.open.form.body.as_ref()) else {
 			return self.fail(start, start + 1, Code::Placement, Some("A block without a body"));
 		};
+		self.within_depth(start)?;
+		self.push_block(rule, None, start, read, body);
+		Ok(true)
+	}
+
+	/// Opens the frame of a block, or of a repeating branch's node, as its head read it.
+	fn push_block(&mut self, rule: &'a Construct, branch: Option<&'a Piece>, start: u32, read: Read<'a>, body: &Body) {
 		let mut outside = self.nodes.take();
 		let group = self.group_of(&read, body, &mut outside);
-		let (nodes, done) = (self.nodes.take(), self.fields.take());
+		let nodes = self.nodes.take();
 		let mut groups = self.groups.take();
 		groups.push(group);
-		self.within_depth(start)?;
 		self.frames.push(Frame::Block {
 			start,
 			rule,
+			branch,
 			fields: read.fields,
-			body: (body.field, body.omit),
+			body: body.field,
 			nodes,
-			done,
 			groups,
 			outside,
-			chain: None,
 		});
-		Ok(true)
 	}
 
 	fn branch(&mut self, rule: &'a Construct, i: usize, start: u32, word: u32) -> Result<()> {
 		let branch = &rule.branches[i];
-		let body = branch.form.body.as_ref().unwrap();
+		// the block's frame, under a repeating branch's node when one is open
+		let listed = matches!(self.frames.last(), Some(Frame::Block { branch: Some(_), .. }));
+		let Some(Frame::Block {
+			fields,
+			body: current,
+			groups,
+			..
+		}) = self.frames.get(self.frames.len() - 1 - listed as usize)
+		else {
+			unreachable!()
+		};
 		// before the body so far is filed: filed twice, the field came out twice under recovery
-		if let Some(Frame::Block {
-			done, body: current, ..
-		}) = self.frames.last()
-			&& (current.0 == body.field || done.iter().any(|(field, _)| *field == body.field))
-		{
+		let filed = |field: Name| *current == field || fields.iter().any(|(known, _)| *known == field);
+		let duplicate = match branch.node {
+			// a branch read once adds a scope to its block's: `{:else if}` after `{:else}`
+			Some(_) => groups.len() > 1,
+			None => branch.shape.iter().any(|slot| slot.body && filed(slot.field)),
+		};
+		if duplicate {
 			return self.fail(start, start + 1, Code::Duplicate, Some(branch.display));
 		}
-		self.finish_body();
-		if let Some((child_field, flag)) = body.chain {
-			// the branch opens a block of its own inside the parent's field, which closes with it
-			if let Some(Frame::Block { body: current, .. }) = self.frames.last_mut() {
-				*current = (Name::NONE, true);
-			}
-			self.keyword = word;
-			if branch.space {
-				self.require_space()?;
-			}
-			let mut read = Read {
-				fields: self.fields.take(),
-				body: None,
-			};
-			self.piece(branch, &mut read)?;
-			let child = Body {
-				field: child_field,
-				omit: false,
-				chain: None,
-				declares: body.declares.clone(),
-			};
-			let mut outside = self.nodes.take();
-			let group = self.group_of(&read, &child, &mut outside);
-			let (nodes, done) = (self.nodes.take(), self.fields.take());
-			let mut groups = self.groups.take();
-			groups.push(group);
-			self.within_depth(start)?;
-			self.frames.push(Frame::Block {
-				start,
-				rule,
-				fields: read.fields,
-				body: (child_field, false),
-				nodes,
-				done,
-				groups,
-				outside,
-				chain: Some((body.field, flag)),
-			});
-			return Ok(());
-		}
+		// the head is read, and a node too deep refused, before anything closes: a branch that
+		// cannot open leaves what follows it in the body still open
 		if branch.space {
 			self.require_space()?;
 		}
@@ -2616,11 +2579,29 @@ impl<'a> Walker<'a> {
 			body: None,
 		};
 		self.piece(branch, &mut read)?;
+		let Some(body) = read.body.take().or(branch.form.body.as_ref()) else {
+			return self.fail(start, start + 1, Code::Placement, Some("A branch without a body"));
+		};
+		if branch.node.is_some() && !listed {
+			self.within_depth(start)?;
+		}
+		if listed {
+			self.pop_block(start);
+		}
+		if branch.node.is_some() {
+			if !listed {
+				self.finish_body();
+				self.next_body(own::branches);
+			}
+			self.push_block(rule, Some(branch), start, read, body);
+			return Ok(());
+		}
+		self.finish_body();
+		self.next_body(body.field);
 		let mut outside = self.nodes.take();
 		let group = self.group_of(&read, body, &mut outside);
 		let Some(Frame::Block {
 			fields,
-			body: current,
 			groups,
 			outside: all_outside,
 			..
@@ -2628,11 +2609,22 @@ impl<'a> Walker<'a> {
 		else {
 			unreachable!()
 		};
-		fields.extend(read.fields.iter().copied());
-		*current = (body.field, body.omit);
+		fields.extend_from_slice(&read.fields);
 		groups.push(group);
-		all_outside.extend(outside);
+		all_outside.extend_from_slice(&outside);
+		self.nodes.give(outside);
+		self.fields.give(read.fields);
 		Ok(())
+	}
+
+	/// Starts the body `field` of the block on top, its last one filed.
+	fn next_body(&mut self, field: Name) {
+		let next = self.nodes.take();
+		let Some(Frame::Block { body, nodes, .. }) = self.frames.last_mut() else {
+			unreachable!()
+		};
+		*body = field;
+		*nodes = next;
 	}
 
 	/// The patterns a body declares, by the fields that hold them.
@@ -2671,21 +2663,23 @@ impl<'a> Walker<'a> {
 		group
 	}
 
-	/// Closes the open body of the block on top: its nodes become the children under its field.
+	/// Files the open body of the block on top: its nodes are a fragment, or the list of `branches`.
 	fn finish_body(&mut self) {
 		let Some(Frame::Block { nodes, body, .. }) = self.frames.last_mut() else {
 			unreachable!()
 		};
-		let nodes = std::mem::take(nodes);
-		let field = body.0;
-		if field == Name::NONE {
-			return;
-		}
-		let children = Value::Node(self.fragment(nodes));
-		let Some(Frame::Block { done, .. }) = self.frames.last_mut() else {
+		let (nodes, field) = (std::mem::take(nodes), *body);
+		let children = if field == own::branches {
+			let list = self.list(&nodes);
+			self.nodes.give(nodes);
+			Value::Nodes(list)
+		} else {
+			Value::Node(self.fragment(nodes))
+		};
+		let Some(Frame::Block { fields, .. }) = self.frames.last_mut() else {
 			unreachable!()
 		};
-		done.push((field, children));
+		fields.push((field, children));
 	}
 
 	fn close_block(&mut self, construct: &'a Construct, start: u32, word: u32) -> Result<()> {
@@ -2712,18 +2706,7 @@ impl<'a> Walker<'a> {
 		loop {
 			match self.frames.last() {
 				Some(frame) if ours(frame) => break,
-				Some(Frame::Block {
-					start: block_start,
-					rule,
-					chain,
-					..
-				}) => {
-					let (block_start, what, chained) = (*block_start, rule.open.display, chain.is_some());
-					if !chained {
-						self.report_at(block_start, block_start + 1, Code::Unclosed, Some(what))?;
-					}
-					self.pop_block(start);
-				}
+				Some(Frame::Block { .. }) => self.pop_unclosed(start)?,
 				Some(Frame::Element {
 					start: element_start,
 					name: span,
@@ -2736,122 +2719,104 @@ impl<'a> Walker<'a> {
 				_ => unreachable!(),
 			}
 		}
-		while !self.pop_block(end) {}
+		// a repeating branch's node ends where the close starts, its block after it
+		if matches!(self.frames.last(), Some(Frame::Block { branch: Some(_), .. })) {
+			self.pop_block(start);
+		}
+		self.pop_block(end);
 		Ok(())
 	}
 
-	/// Closes the block on top at `end`; whether it stood on its own rather than in a chain,
-	/// whose parent is then still open.
-	fn pop_block(&mut self, end: u32) -> bool {
+	/// Closes the block on top at `at` as unclosed: a repeating branch's node is listed as it is,
+	/// its block being what stands unclosed.
+	#[cold]
+	fn pop_unclosed(&mut self, at: u32) -> Result<()> {
+		let Some(Frame::Block {
+			start, rule, branch, ..
+		}) = self.frames.last()
+		else {
+			unreachable!()
+		};
+		if branch.is_none() {
+			let (start, what) = (*start, rule.open.display);
+			self.report_at(start, start + 1, Code::Unclosed, Some(what))?;
+		}
+		self.pop_block(at);
+		Ok(())
+	}
+
+	/// Closes the block on top at `end`: a repeating branch's node goes into its block's `nodes`,
+	/// a block's into the content around it.
+	fn pop_block(&mut self, end: u32) {
 		self.finish_body();
 		let Some(Frame::Block {
-			start: block_start,
+			start,
 			rule,
+			branch,
 			fields,
-			done,
 			groups,
 			outside,
-			chain,
 			..
 		}) = self.frames.pop()
 		else {
 			unreachable!()
 		};
-		let node = self.block_node(
-			rule,
-			block_start,
-			end,
-			fields,
-			done,
-			groups,
-			outside,
-			chain.map(|(_, flag)| flag),
-		);
-		match chain {
-			Some((field, _)) => {
-				let mut one = self.nodes.take();
-				one.push(node);
-				let children = Value::Node(self.fragment(one));
-				let Some(Frame::Block { done, .. }) = self.frames.last_mut() else {
-					unreachable!()
-				};
-				done.push((field, children));
-				false
-			}
-			None => {
-				self.append(node);
-				true
-			}
-		}
+		let (ty, shape) = match branch {
+			Some(piece) => (piece.node.unwrap(), &piece.shape),
+			None => (rule.ty, &rule.shape),
+		};
+		let node = self.block_node(ty, shape, start, end, fields, groups, outside);
+		self.append(node);
 	}
 
 	#[expect(clippy::too_many_arguments)]
 	fn block_node(
 		&mut self,
-		rule: &Construct,
+		ty: Name,
+		shape: &[Slot],
 		start: u32,
 		end: u32,
-		mut fields: Vec<(Name, Value)>,
-		done: Vec<(Name, Value)>,
+		fields: Vec<(Name, Value)>,
 		mut groups: Vec<BodyGroup>,
 		outside: Vec<NodeId>,
-		chained: Option<Name>,
 	) -> NodeId {
-		fill_unread(&rule.entries, &mut fields);
-		for &flag in &rule.chain_flags {
-			fields.push((flag, Value::Bool(chained == Some(flag))));
-		}
-		// the fields outside every scope first, then each body's scope: its fields, then the body
 		let mut ordered = self.fields.take();
-		ordered.extend(
-			fields
-				.iter()
-				.copied()
-				.filter(|(f, _)| !groups.iter().any(|group| group.fields.contains(f))),
-		);
-		for &(field, omit) in &rule.bodies {
-			if !omit && !done.iter().any(|(k, _)| *k == field) {
-				ordered.push((field, Value::Null));
+		for slot in shape {
+			match fields.iter().find(|(field, _)| *field == slot.field) {
+				Some(&read) => ordered.push(read),
+				None => ordered.extend(slot.absent.map(|absent| (slot.field, absent))),
 			}
 		}
 		let base = self.ast().host_keys.len() as u32;
 		let groups_at = self.ast().host_groups.len() as u32;
-		let mut count = 0;
-		for &(body, children) in &done {
-			let from = ordered.len() as u32;
-			let group = groups.iter().find(|group| group.body == body);
-			if let Some(group) = group {
-				for &field in &group.fields {
-					if let Some(&entry) = fields.iter().find(|(f, _)| *f == field) {
-						ordered.push(entry);
-					}
-				}
-			}
-			ordered.push((body, children));
-			let inside: &[NodeId] = group.map_or(&[], |group| &group.inside);
-			let inside = self.list(inside);
-			let node = match children {
+		for group in &groups {
+			let until = ordered.iter().position(|(field, _)| *field == group.body).unwrap();
+			// the body's scope opens at the first of its fields, which stand before it
+			let from = ordered
+				.iter()
+				.position(|(field, _)| group.fields.contains(field))
+				.unwrap_or(until);
+			let inside = self.list(&group.inside);
+			let node = match ordered[until].1 {
 				Value::Node(fragment) => Some(fragment),
 				_ => None,
 			};
 			self.ast().host_groups.push(HostGroup {
 				inside,
-				from: base + from,
-				until: base + ordered.len() as u32,
+				from: base + from as u32,
+				until: base + until as u32 + 1,
 				node,
 			});
-			count += 1;
 		}
 		let outside_list = self.list(&outside);
 		self.nodes.give(outside);
 		let scope = Some(Opens {
 			outside: outside_list,
-			groups: (groups_at, count),
+			groups: (groups_at, groups.len() as u32),
 		});
-		let node = self.opening(rule.ty, start, end, &ordered, scope);
+		let node = self.opening(ty, start, end, &ordered, scope);
 		self.fields.give(ordered);
 		self.fields.give(fields);
-		self.fields.give(done);
 		for group in groups.drain(..) {
 			self.names.give(group.fields);
 			self.nodes.give(group.inside);
