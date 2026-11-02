@@ -964,19 +964,6 @@ fn first_groups(items: &[Item], follow: &[&'static str]) -> Vec<Vec<&'static str
 	out
 }
 
-fn collect_alternative_bodies<'a>(items: &'a [Item], out: &mut Vec<&'a Body>) {
-	for item in items {
-		if let Item::Group { alternatives, .. } = item {
-			for alternative in alternatives {
-				if let Some(body) = &alternative.body {
-					out.push(body);
-				}
-				collect_alternative_bodies(&alternative.items, out);
-			}
-		}
-	}
-}
-
 #[derive(Clone, Debug)]
 pub struct Alternative {
 	pub items: Vec<Item>,
@@ -1129,6 +1116,8 @@ pub struct Slot {
 	/// What it holds when the document read nothing there; left out when none.
 	pub absent: Option<Value>,
 	pub body: bool,
+	/// A walk follows it: text and type parameters are answered as text.
+	pub walked: bool,
 }
 
 /// Which piece of a construct a marker is.
@@ -1975,6 +1964,9 @@ fn piece(
 
 fn construct(ty: &'static str, rule: &definition::Construct, n: &mut Naming) -> Result<Construct, String> {
 	let block = rule.close.is_some();
+	if rule.open.node.is_some() || rule.close.as_ref().is_some_and(|close| close.node.is_some()) {
+		return Err(format!("{ty}: a branch makes a node, not an open or a close"));
+	}
 	let places = match rule.r#in {
 		Some([]) => return Err(format!("{ty} stands nowhere")),
 		Some(list) => list.to_vec(),
@@ -1989,8 +1981,8 @@ fn construct(ty: &'static str, rule: &definition::Construct, n: &mut Naming) -> 
 		if let Some(node) = branch.node {
 			piece.node = Some(n.name(node));
 		}
-		if !closed(&piece.form.items, piece.form.body.as_ref()) {
-			return Err(format!("{ty}: the {} branch ends in no body", piece.display));
+		if piece.form.body.is_none() || piece.form.paths().len() > 1 {
+			return Err(format!("{ty}: the {} branch ends in one body", piece.display));
 		}
 		branches.push(piece);
 	}
@@ -1999,7 +1991,7 @@ fn construct(ty: &'static str, rule: &definition::Construct, n: &mut Naming) -> 
 	let mut open = piece(ty, &rule.open, site, &mut bound, n)?;
 	let mut lists = Vec::new();
 	for form in std::iter::once(&open.form).chain(branches.iter().map(|branch| &branch.form)) {
-		for slot in form.reads() {
+		for slot in form.paths().iter().flat_map(|(path, _)| path) {
 			if slot.body && !lists.contains(&slot.field) {
 				lists.push(slot.field);
 			}
@@ -2174,82 +2166,102 @@ fn lower(host: Host) -> Result<Grammar, String> {
 	})
 }
 
-/// Adds a piece's fields to its node's shape: a field or a body the pieces share is one slot, where
-/// the first piece put it, and a body stands after every field read before it.
-fn place(ty: &str, shape: &mut Vec<Slot>, reads: &[Slot], names: &[&'static str]) -> Result<(), String> {
+/// Adds what a path reads to a shape: a field read twice is one slot, where it was first read, left
+/// out when unread only if every read says so.
+fn merge(shape: &mut Vec<Slot>, reads: &[Slot]) -> Result<(), Name> {
 	for slot in reads {
-		match shape.iter().find(|known| known.field == slot.field) {
-			Some(known) if known.body != slot.body => {
-				return Err(format!("{ty} reads {} twice", slot.field.text(names)));
-			}
-			Some(_) => {}
-			None => {
-				let read_after = |known: &Slot| known.body && reads.iter().any(|own| own.field == known.field);
-				let at = if slot.body {
-					None
-				} else {
-					shape.iter().position(read_after)
-				};
-				shape.insert(at.unwrap_or(shape.len()), *slot);
-			}
+		match shape.iter_mut().find(|known| known.field == slot.field) {
+			Some(known) if known.body != slot.body => return Err(slot.field),
+			Some(known) => known.absent = known.absent.or(slot.absent),
+			None => shape.push(*slot),
 		}
 	}
 	Ok(())
 }
 
-impl Form {
-	/// Its fields and bodies as written, each once: an alternative's body after its items. A field
-	/// is left out when unread only if every place that reads it says so.
-	fn reads(&self) -> Vec<Slot> {
-		fn add(out: &mut Vec<Slot>, field: Name, omit: bool, body: bool) {
-			let absent = (!omit).then_some(Value::Null);
-			match out.iter_mut().find(|known| known.field == field) {
-				Some(known) => known.absent = known.absent.or(absent),
-				None => out.push(Slot { field, absent, body }),
-			}
+/// A body's scope runs from the first field it declares to the body, so what stands there is the
+/// scope's or holds nothing when that body was read: `quiet` lists what is read only elsewhere.
+fn scopes_hold(form: &Form, shape: &[Slot], quiet: &[Slot], ty: &str, names: &[&'static str]) -> Result<(), String> {
+	let has = |list: &[Slot], field: Name| list.iter().any(|slot| slot.field == field);
+	for (path, body) in form.paths() {
+		let Some(body) = body else { continue };
+		let declared = |slot: &Slot| body.declares.iter().any(|d| !d.outside && d.field == slot.field);
+		let Some(first) = path.iter().position(declared) else {
+			continue;
+		};
+		let (before, inside) = path.split_at(first);
+		let at = |slot: &Slot| shape.iter().position(|known| known.field == slot.field).unwrap();
+		let holds = inside.windows(2).all(|pair| at(&pair[0]) < at(&pair[1]))
+			&& shape[at(&inside[0])..at(&inside[inside.len() - 1])]
+				.iter()
+				.all(|slot| has(inside, slot.field) || (has(quiet, slot.field) && !has(before, slot.field)));
+		if !holds {
+			return Err(format!(
+				"{ty}: what {} declares does not stand together before it",
+				body.field.text(names)
+			));
 		}
-		fn items(list: &[Item], out: &mut Vec<Slot>) {
-			for item in list {
+	}
+	Ok(())
+}
+
+impl Body {
+	fn slot(&self) -> Slot {
+		Slot {
+			field: self.field,
+			absent: (!self.omit).then_some(Value::Null),
+			body: true,
+			walked: true,
+		}
+	}
+}
+
+impl Form {
+	/// Every way through it to a body, what it reads on the way first; the last is the form's own,
+	/// which reads what no alternative with a body does.
+	fn paths(&self) -> Vec<(Vec<Slot>, Option<&Body>)> {
+		fn walk<'a>(items: &'a [Item], path: &mut Vec<Slot>, out: &mut Vec<(Vec<Slot>, Option<&'a Body>)>) {
+			for item in items {
 				match item {
 					Item::Literal(_) => {}
-					Item::Entry { field, omit, .. } => add(out, *field, *omit, false),
+					Item::Entry { field, entry, omit, .. } => {
+						if !path.iter().any(|known| known.field == *field) {
+							path.push(Slot {
+								field: *field,
+								absent: (!omit).then_some(Value::Null),
+								body: false,
+								walked: !matches!(entry, Entry::Text | Entry::TypeParameters),
+							});
+						}
+					}
 					Item::Group { alternatives, .. } => {
 						for alternative in alternatives {
-							items(&alternative.items, out);
-							if let Some(body) = &alternative.body {
-								add(out, body.field, body.omit, true);
-							}
+							let Some(body) = &alternative.body else {
+								walk(&alternative.items, path, out);
+								continue;
+							};
+							let mut own = path.clone();
+							walk(&alternative.items, &mut own, out);
+							own.push(body.slot());
+							out.push((own, Some(body)));
 						}
 					}
 				}
 			}
 		}
-		let mut out = Vec::new();
-		items(&self.items, &mut out);
-		if let Some(body) = &self.body {
-			add(&mut out, body.field, body.omit, true);
-		}
+		let (mut path, mut out) = (Vec::new(), Vec::new());
+		walk(&self.items, &mut path, &mut out);
+		path.extend(self.body.iter().map(Body::slot));
+		out.push((path, self.body.as_ref()));
 		out
 	}
 
 	fn finish(&mut self, names: &[&'static str]) -> Result<(), String> {
 		resolve(&mut self.items, &[]);
-		let shape = self.reads();
-		let mut bodies = Vec::new();
-		if let Some(body) = &self.body {
-			bodies.push(body);
-		}
-		collect_alternative_bodies(&self.items, &mut bodies);
-		for body in bodies {
-			for declare in &body.declares {
-				if !shape.iter().any(|slot| !slot.body && slot.field == declare.field) {
-					return Err(format!(
-						"`{}` declares `{}`, which no entry of the form reads",
-						body.field.text(names),
-						declare.field.text(names)
-					));
-				}
-			}
+		let mut shape = Vec::new();
+		for (path, _) in self.paths() {
+			merge(&mut shape, &path)
+				.map_err(|field| format!("{} is read as a field and as a body", field.text(names)))?;
 		}
 		self.shape = shape;
 		Ok(())
@@ -2312,23 +2324,56 @@ impl Grammar {
 		let mut starts = [false; 256];
 		for construct in &mut self.constructs {
 			construct.open.form.finish(names)?;
+			let ty = construct.ty.text(names);
+			let twice = |field: Name| format!("{ty} reads {} twice", field.text(names));
 			let mut shape = construct.open.form.shape.clone();
-			let listed = [Slot {
+			let list = [Slot {
 				field: own::branches,
 				absent: Some(Value::Nodes(List::EMPTY)),
-				body: false,
+				body: true,
+				walked: true,
 			}];
 			for branch in &mut construct.branches {
 				branch.form.finish(names)?;
-				let reads = if branch.node.is_some() {
-					&listed[..]
-				} else {
-					&branch.form.shape[..]
-				};
-				place(construct.ty.text(names), &mut shape, reads, names)?;
+				if branch.node.is_some() {
+					merge(&mut shape, &list).map_err(twice)?;
+					continue;
+				}
+				// pieces that fill one body are never both read; any others would lose a read
+				let known = |slot: &Slot| shape.iter().any(|known| known.field == slot.field);
+				let reads = &branch.form.shape;
+				if !reads.iter().any(|slot| slot.body && known(slot))
+					&& let Some(slot) = reads.iter().find(|slot| known(slot))
+				{
+					return Err(twice(slot.field));
+				}
+				merge(&mut shape, reads).map_err(twice)?;
 			}
 			if let Some(close) = &mut construct.close {
 				close.form.finish(names)?;
+			}
+			let once = |field: Name| {
+				let branches = construct.branches.iter().filter(|branch| branch.node.is_none());
+				branches
+					.flat_map(|branch| &branch.form.shape)
+					.any(|slot| slot.field == field)
+			};
+			let quiet: Vec<Slot> = construct
+				.open
+				.form
+				.shape
+				.iter()
+				.filter(|slot| !once(slot.field))
+				.copied()
+				.collect();
+			scopes_hold(&construct.open.form, &shape, &quiet, ty, names)?;
+			for branch in &construct.branches {
+				let holder = if branch.node.is_some() {
+					&branch.form.shape
+				} else {
+					&shape
+				};
+				scopes_hold(&branch.form, holder, &[], ty, names)?;
 			}
 			construct.shape = shape;
 			for piece in std::iter::once(&construct.open)
@@ -2374,7 +2419,12 @@ impl Grammar {
 		let named = std::iter::once(self.document.ty)
 			.chain(self.elements.iter().map(|rule| rule.ty))
 			.chain(self.directives.iter().map(|rule| rule.ty))
-			.chain(self.constructs.iter().map(|rule| rule.ty));
+			.chain(self.constructs.iter().map(|rule| rule.ty))
+			.chain(
+				self.constructs
+					.iter()
+					.flat_map(|rule| rule.branches.iter().filter_map(|b| b.node)),
+			);
 		for ty in named.map(|ty| self.text(ty)) {
 			if matches!(ty, "Fragment" | "Text" | "Comment" | "Attribute" | "Script") {
 				return Err(format!("a node type named {ty} is teasel's"));
@@ -2457,29 +2507,6 @@ impl Grammar {
 				}
 			}
 		};
-		fn items(list: &[Item], into: &mut Vec<Name>) {
-			for item in list {
-				match item {
-					Item::Literal(_) => {}
-					// text and type parameters are answered as text
-					Item::Entry { field, entry, .. } => {
-						if !matches!(entry, Entry::Text | Entry::TypeParameters) {
-							into.push(*field);
-						}
-					}
-					Item::Group { alternatives, .. } => {
-						for alternative in alternatives {
-							items(&alternative.items, into);
-							into.extend(alternative.body.iter().map(|body| body.field));
-						}
-					}
-				}
-			}
-		}
-		fn form(form: &Form, into: &mut Vec<Name>) {
-			items(&form.items, into);
-			into.extend(form.body.iter().map(|body| body.field));
-		}
 		fn document(fields: &[DocField], into: &mut Vec<Name>) {
 			for field in fields {
 				match field {
@@ -2493,6 +2520,8 @@ impl Grammar {
 				}
 			}
 		}
+		let walked =
+			|shape: &[Slot]| -> Vec<Name> { shape.iter().filter(|slot| slot.walked).map(|slot| slot.field).collect() };
 		let mut fields = Vec::new();
 		document(&self.document.fields, &mut fields);
 		add(self.document.ty, &fields);
@@ -2521,25 +2550,17 @@ impl Grammar {
 				DirectiveValue::Expression { field, .. }
 				| DirectiveValue::Pattern { field, .. }
 				| DirectiveValue::Value(field) => fields.push(*field),
-				DirectiveValue::Form(f) => form(f, &mut fields),
+				DirectiveValue::Form(f) => fields.extend(walked(&f.shape)),
 			}
 			add(rule.ty, &fields);
 		}
 		for rule in &self.constructs {
-			fields.clear();
-			form(&rule.open.form, &mut fields);
 			for branch in &rule.branches {
-				match branch.node {
-					Some(ty) => {
-						let mut own = Vec::new();
-						form(&branch.form, &mut own);
-						add(ty, &own);
-						fields.push(own::branches);
-					}
-					None => form(&branch.form, &mut fields),
+				if let Some(ty) = branch.node {
+					add(ty, &walked(&branch.form.shape));
 				}
 			}
-			add(rule.ty, &fields);
+			add(rule.ty, &walked(&rule.shape));
 		}
 		out
 	}

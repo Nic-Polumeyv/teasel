@@ -153,7 +153,7 @@ export interface Node<T extends string = string, I extends readonly Item[] = rea
 	readonly form?: I;
 }
 
-type BlockForm = Form<Field<'form', false | 'inside' | 'outside'> | Field<'body'>, 'fragment'>;
+type BlockForm = Form<Field<'form', false | 'inside' | 'outside'> | Field<'body'>, 'fragment' | 'branches'>;
 type TagForm = Form<Field<'form'>>;
 
 /** Where a construct may stand: in content, in an attribute value, among an element's attributes, in the text of an rcdata element. */
@@ -188,7 +188,8 @@ export interface Tag {
 
 /**
  * A construct with a close. Its content, up to the close, is its `fragment`; with branches, the open
- * and every branch end in a list each names with `content`.
+ * and every branch end in a list each names with `content`, and the nodes of the branches that name
+ * one are its `branches`. What a body's form declares stands together before that body.
  */
 export interface Block {
 	/** Content when left out. */
@@ -235,6 +236,7 @@ type Marker = readonly [attribute: string] | readonly [attribute: string, value:
  * A host language: its document, its content, and the JavaScript inside them. The definition names
  * what the host's nodes mean; what every markup language has is named the same in every host: a
  * list of child nodes is a `Fragment` holding them as `nodes`, a node's one list is its `fragment`,
+ * the nodes of a block's repeating branches are its `branches`,
  * an element's tag is `name` and its attributes `attributes`, a `Text` holds `data` and `raw`, a
  * `Comment` holds `data`, and a directive's argument is `name` and its modifiers `modifiers`.
  */

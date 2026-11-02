@@ -844,16 +844,7 @@ impl<'a> Walker<'a> {
 		}
 		while self.frames.len() > 1 {
 			// under recovery, what is open ends with the source
-			let end = self.len();
-			match self.frames.last().unwrap() {
-				Frame::Element { start, name, .. } => {
-					let (start, what) = (*start, &self.src[name.0 as usize..name.1 as usize]);
-					self.report_at(start, start + 1, Code::Unclosed, Some(what))?;
-					self.close_top(end);
-				}
-				Frame::Block { .. } => self.pop_unclosed(end)?,
-				Frame::Root { .. } => unreachable!(),
-			}
+			self.pop_unclosed(self.len())?;
 		}
 		let errors = &mut self.ast().errors;
 		errors.sort_by_key(|error| error.pos);
@@ -2549,6 +2540,7 @@ impl<'a> Walker<'a> {
 
 	fn branch(&mut self, rule: &'a Construct, i: usize, start: u32, word: u32) -> Result<()> {
 		let branch = &rule.branches[i];
+		let body = branch.form.body.as_ref().unwrap();
 		// the block's frame, under a repeating branch's node when one is open
 		let listed = matches!(self.frames.last(), Some(Frame::Block { branch: Some(_), .. }));
 		let Some(Frame::Block {
@@ -2561,11 +2553,10 @@ impl<'a> Walker<'a> {
 			unreachable!()
 		};
 		// before the body so far is filed: filed twice, the field came out twice under recovery
-		let filed = |field: Name| *current == field || fields.iter().any(|(known, _)| *known == field);
 		let duplicate = match branch.node {
 			// a branch read once adds a scope to its block's: `{:else if}` after `{:else}`
 			Some(_) => groups.len() > 1,
-			None => branch.form.shape.iter().any(|slot| slot.body && filed(slot.field)),
+			None => *current == body.field || fields.iter().any(|(known, _)| *known == body.field),
 		};
 		if duplicate {
 			return self.fail(start, start + 1, Code::Duplicate, Some(branch.display));
@@ -2581,9 +2572,6 @@ impl<'a> Walker<'a> {
 			body: None,
 		};
 		self.piece(branch, &mut read)?;
-		let Some(body) = read.body.take().or(branch.form.body.as_ref()) else {
-			return self.fail(start, start + 1, Code::Placement, Some("A branch without a body"));
-		};
 		if branch.node.is_some() && !listed {
 			self.within_depth(start)?;
 		}
@@ -2693,21 +2681,8 @@ impl<'a> Walker<'a> {
 				_ => return self.report_at(start, start + 1, Code::UnexpectedClose, Some(close.display)),
 			}
 		}
-		loop {
-			match self.frames.last() {
-				Some(frame) if ours(frame) => break,
-				Some(Frame::Block { .. }) => self.pop_unclosed(start)?,
-				Some(Frame::Element {
-					start: element_start,
-					name: span,
-					..
-				}) => {
-					let (element_start, what) = (*element_start, &self.src[span.0 as usize..span.1 as usize]);
-					self.report_at(element_start, element_start + 1, Code::Unclosed, Some(what))?;
-					self.close_top(start);
-				}
-				_ => unreachable!(),
-			}
+		while !self.frames.last().is_some_and(ours) {
+			self.pop_unclosed(start)?;
 		}
 		// a repeating branch's node ends where the close starts, its block after it
 		if matches!(self.frames.last(), Some(Frame::Block { branch: Some(_), .. })) {
@@ -2717,21 +2692,27 @@ impl<'a> Walker<'a> {
 		Ok(())
 	}
 
-	/// Closes the block on top at `at` as unclosed: a repeating branch's node is listed as it is,
-	/// its block being what stands unclosed.
+	/// Closes what is on top at `at` as unclosed: a repeating branch's node is listed as it is, its
+	/// block being what stands unclosed.
 	#[cold]
 	fn pop_unclosed(&mut self, at: u32) -> Result<()> {
-		let Some(Frame::Block {
-			start, rule, branch, ..
-		}) = self.frames.last()
-		else {
-			unreachable!()
-		};
-		if branch.is_none() {
-			let (start, what) = (*start, rule.open.display);
-			self.report_at(start, start + 1, Code::Unclosed, Some(what))?;
+		match self.frames.last().unwrap() {
+			Frame::Element { start, name, .. } => {
+				let (start, what) = (*start, &self.src[name.0 as usize..name.1 as usize]);
+				self.report_at(start, start + 1, Code::Unclosed, Some(what))?;
+				self.close_top(at);
+			}
+			Frame::Block {
+				start, rule, branch, ..
+			} => {
+				if branch.is_none() {
+					let (start, what) = (*start, rule.open.display);
+					self.report_at(start, start + 1, Code::Unclosed, Some(what))?;
+				}
+				self.pop_block(at);
+			}
+			Frame::Root { .. } => unreachable!(),
 		}
-		self.pop_block(at);
 		Ok(())
 	}
 
@@ -2745,7 +2726,7 @@ impl<'a> Walker<'a> {
 			branch,
 			fields,
 			nodes,
-			groups,
+			mut groups,
 			outside,
 			..
 		}) = self.frames.pop()
@@ -2757,21 +2738,6 @@ impl<'a> Walker<'a> {
 			Some(piece) => (piece.node.unwrap(), &piece.form.shape),
 			None => (rule.ty, &rule.shape),
 		};
-		let node = self.block_node(ty, shape, start, end, fields, groups, outside);
-		self.append(node);
-	}
-
-	#[expect(clippy::too_many_arguments)]
-	fn block_node(
-		&mut self,
-		ty: Name,
-		shape: &[Slot],
-		start: u32,
-		end: u32,
-		fields: Vec<(Name, Value)>,
-		mut groups: Vec<BodyGroup>,
-		outside: Vec<NodeId>,
-	) -> NodeId {
 		let mut ordered = self.fields.take();
 		for slot in shape {
 			match fields.iter().find(|(field, _)| *field == slot.field) {
@@ -2814,7 +2780,7 @@ impl<'a> Walker<'a> {
 			self.nodes.give(group.inside);
 		}
 		self.groups.give(groups);
-		node
+		self.append(node);
 	}
 
 	/// Runs a form at the cursor: every literal in place, every entry read, the first fitting

@@ -1198,6 +1198,7 @@ impl<'a> Binder<'a> {
 				self.host_declared.pop();
 			}
 		}
+		debug_assert_eq!(self.open_groups.len(), open_base, "a host's scope groups must nest");
 		self.open_groups.truncate(open_base);
 		self.host_groups.truncate(base);
 		self.host_declared.truncate(depth);

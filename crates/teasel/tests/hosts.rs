@@ -447,7 +447,7 @@ fn a_definition_is_refused_by_name() {
 		list![branch(&["{", ":else", "if"], list![test, close], Some("ElseIf"))],
 	))
 	.unwrap_err();
-	assert!(error.contains("ends in no body"), "{error}");
+	assert!(error.contains("ends in one body"), "{error}");
 	let error = Grammar::read(with_if(
 		list![test, close],
 		list![branch(&["{", ":else"], list![close, alternate], None)],
@@ -1053,7 +1053,7 @@ fn a_grammar_that_cannot_work_is_refused() {
 			list![js("e", "expression"), close(), content("body")],
 			list![branch(&["{", ":else"], list![js("f", "expression"), close()], None)],
 		),
-		"X: the {:else} branch ends in no body",
+		"X: the {:else} branch ends in one body",
 	);
 	refused(
 		with_block(list![js("branches", "expression"), close(), content("body")], &[]),
@@ -1066,6 +1066,95 @@ fn a_grammar_that_cannot_work_is_refused() {
 		),
 		"X reads e twice",
 	);
+	// one key order cannot hold these: a read would be lost, or a scope run over what is not its own
+	let word = |w: &'static str| definition::Item::Word(w);
+	refused(
+		with_block(
+			list![js("e", "expression"), close(), content("o")],
+			list![branch(
+				&["{", ":b"],
+				list![js("e", "expression"), close(), content("bb")],
+				None
+			)],
+		),
+		"X reads e twice",
+	);
+	refused(
+		with_block(
+			list![bound("a"), word(","), bound("b"), close(), content("o")],
+			list![branch(&["{", ":b"], list![bound("b"), close(), content("bb")], None)],
+		),
+		"X reads b twice",
+	);
+	refused(
+		with_block(
+			list![definition::Item::OneOf(list![
+				list![word("a"), close(), content("b")],
+				list![word("c"), bound("v"), close(), content("b")],
+				list![word("d"), close(), content("d")],
+			])],
+			&[],
+		),
+		"X: what b declares does not stand together before it",
+	);
+	refused(
+		with_block(
+			list![definition::Item::OneOf(list![
+				list![word("as"), bound("a"), close(), content("b")],
+				list![
+					word("of"),
+					js("z", "expression"),
+					word("as"),
+					bound("a"),
+					close(),
+					content("c")
+				],
+			])],
+			&[],
+		),
+		"X: what c declares does not stand together before it",
+	);
+	refused(
+		with_block(
+			list![definition::Item::OneOf(list![
+				list![word("p"), js("x", "expression"), close(), content("y")],
+				list![word("q"), close(), content("x")],
+			])],
+			&[],
+		),
+		"x is read as a field and as a body",
+	);
+	// a branch has one body, which no alternative chooses
+	refused(
+		with_block(
+			list![js("e", "expression"), close(), content("o")],
+			list![branch(
+				&["{", ":m"],
+				list![definition::Item::OneOf(list![
+					list![word("p"), close(), content("y")],
+					list![word("q"), close(), content("x")],
+				])],
+				None,
+			)],
+		),
+		"X: the {:m} branch ends in one body",
+	);
+	refused(
+		with_block(
+			list![js("e", "expression"), close(), content("o")],
+			list![branch(
+				&["{", ":n"],
+				list![js("e", "expression"), close(), content("o")],
+				Some("Fragment"),
+			)],
+		),
+		"a node type named Fragment is teasel's",
+	);
+	let mut rule = block("x", list![js("e", "expression"), close(), content("o")], &[]);
+	rule.open.node = Some("Y");
+	let mut opened = minimal();
+	opened.definition.constructs = Some(Record(list![("X", rule)]));
+	refused(opened, "X: a branch makes a node, not an open or a close");
 	// the branches that repeat share one list, each node in its place
 	let open = list![js("e", "expression"), close(), content("body")];
 	let host = with_block(
@@ -1565,65 +1654,4 @@ fn a_block_has_one_shape() {
 		let answer = parse(source);
 		assert!(ordered(&answer, &["expression", "context", "body"]), "{answer}");
 	}
-}
-
-// a branch may end in one of several bodies, as an open may; a repeating branch after a body the
-// open filled is no duplicate, only one after a branch read once is; a field a branch reads stands
-// before the body it reads after it, wherever the open put that body
-#[test]
-fn a_branch_ends_in_one_of_its_bodies() {
-	let fields = |list: &'static [(&'static str, Source)]| definition::Item::Fields(Record(list));
-	let content = |field: &'static str| fields(list![(field, source("content", "fragment", false))]);
-	let js = |field: &'static str| fields(list![(field, source("js", "expression", false))]);
-	let close = || definition::Item::Word("}");
-	let either = |a: &'static str, b: &'static str| {
-		definition::Item::OneOf(list![
-			list![definition::Item::Word("then"), close(), content(a)],
-			list![close(), content(b)],
-		])
-	};
-	let mut host = minimal();
-	host.definition.constructs = Some(Record(list![(
-		"X",
-		block(
-			"x",
-			list![js("e"), either("now", "later")],
-			list![
-				branch(&["{", ":more"], list![js("f"), either("soon", "late")], Some("More")),
-				branch(&["{", ":over"], list![js("g"), close(), content("later")], None),
-				branch(&["{", ":else"], list![either("done", "pending")], None),
-			],
-		),
-	)]));
-	let json = keep(host.json());
-	let parse = |text: &str| parse_document(text, json, Options(Options::MODULE));
-	let answer = parse("{#x a then}1{:more b then}2{:more c}3{:else}4{/x}");
-	assert!(
-		!answer.contains("\"code\"")
-			&& answer.matches("\"type\":\"More\"").count() == 2
-			&& [
-				"\"now\":{",
-				"\"later\":null",
-				"\"soon\":{",
-				"\"late\":null",
-				"\"soon\":null",
-				"\"late\":{",
-				"\"done\":null",
-				"\"pending\":{"
-			]
-			.iter()
-			.all(|key| answer.contains(key)),
-		"{answer}"
-	);
-	let answer = parse("{#x a then}1{:else then}2{:else}3{/x}");
-	assert!(
-		answer.contains(&format!(r#""code":{},"args":["{{:else}}"]"#, Code::Duplicate as u8)),
-		"{answer}"
-	);
-	let answer = parse("{#x a then}1{:over b}2{/x}");
-	let at = |key: &str| answer.find(&format!("\"{key}\":")).unwrap();
-	assert!(
-		at("e") < at("g") && at("g") < at("later") && at("now") < at("g"),
-		"{answer}"
-	);
 }

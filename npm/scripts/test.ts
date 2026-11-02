@@ -806,6 +806,8 @@ function types(text: string, definition: typeof svelte) {
 	const directive = (rule: Directive) => rule;
 	// @ts-expect-error only a block declares around itself
 	directive({ node: 'D', form: [{ name: g.bind.outside(g.js.identifier) }] });
+	// @ts-expect-error a block's `branches` is teasel's
+	construct({ open: { marker: ['{#b'], form: [{ branches: g.js.expression }, '}', { body: g.content }] }, close: { marker: ['{/b'], form: ['}'] } });
 	// @ts-expect-error a directive's flag is true or false
 	directive({ node: 'D', form: [{ flag: g.literal(null) }] });
 	// @ts-expect-error a directive's argument is its `name`, which teasel names

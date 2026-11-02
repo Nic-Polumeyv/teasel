@@ -50,7 +50,8 @@ In TypeScript, and in JavaScript checked with JSDoc, the tree is typed from the 
 The grammar names what its nodes mean: their types, and the fields a construct reads. What every markup language has is named the same in every grammar:
 
 - a list of child nodes is a `Fragment`, which holds them as `nodes`;
-- the document, every element and a block with one list hold that list as `fragment`; a block with several, like `IfBlock` above, names each;
+- the document, every element and a block with one list hold that list as `fragment`; a block with several, like `IfBlock` above, or with a branch that has `node`, names each;
+- a branch with `node` makes a node of that type each time it is read, and its block holds those nodes in order as `branches`, an empty list when none was read;
 - an element's tag is `name`, and its attributes are `attributes`, each an `Attribute` with `name` and `value`;
 - text is a `Text` with `data`, as read, and `raw`, as written; a comment is a `Comment` with `data`;
 - a directive's argument is `name`, and its modifiers are `modifiers`.
