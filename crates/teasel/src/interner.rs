@@ -7,7 +7,7 @@ use std::hash::{BuildHasherDefault, Hasher};
 #[derive(Default)]
 pub struct FastHasher(u64);
 
-pub(crate) const SEED: u64 = 0x51_7c_c1_b7_27_22_0a_95;
+const SEED: u64 = 0x51_7c_c1_b7_27_22_0a_95;
 
 impl FastHasher {
 	fn add(&mut self, word: u64) {
@@ -70,14 +70,14 @@ impl StrId {
 /// plus one in the low, zero when empty, so a probe passes a key without reading it. Always a
 /// power of two, at most half full.
 #[derive(Debug, Default)]
-pub(crate) struct Slots {
+struct Slots {
 	table: Vec<u64>,
 	/// Slots written since the last clear, so clearing costs what was used, not the table.
 	touched: Vec<u32>,
 }
 
 impl Slots {
-	pub(crate) fn sized(slots: usize) -> Self {
+	fn sized(slots: usize) -> Self {
 		debug_assert!(slots.is_power_of_two(), "a probe masks with the size");
 		Slots {
 			table: vec![0; slots],
@@ -87,7 +87,7 @@ impl Slots {
 
 	/// The id hashed `hash` that `is` accepts, or the empty slot a new one would take.
 	#[inline]
-	pub(crate) fn probe(&self, hash: u32, is: impl Fn(u32) -> bool) -> Result<u32, usize> {
+	fn probe(&self, hash: u32, is: impl Fn(u32) -> bool) -> Result<u32, usize> {
 		if self.table.is_empty() {
 			return Err(0);
 		}
@@ -106,7 +106,7 @@ impl Slots {
 	}
 
 	/// `id`, the next id, at the `slot` a probe for its hash returned.
-	pub(crate) fn insert(&mut self, mut slot: usize, hash: u32, id: u32) {
+	fn insert(&mut self, mut slot: usize, hash: u32, id: u32) {
 		if self.table.len() < 2 * id as usize + 2 {
 			self.grow();
 			slot = self.probe(hash, |_| false).unwrap_err();
@@ -130,7 +130,7 @@ impl Slots {
 		}
 	}
 
-	pub(crate) fn clear(&mut self) {
+	fn clear(&mut self) {
 		// scattered writes lose to a fill past an eighth of the table
 		if self.touched.len() * 8 < self.table.len() {
 			for &slot in &self.touched {

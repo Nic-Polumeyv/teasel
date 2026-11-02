@@ -265,14 +265,19 @@ crate::layout::record! {
 	/// names.
 	#[derive(Clone, Copy, Debug)]
 	pub struct HostRow {
-		/// Its type; none for an object of the host's without one.
-		pub ty: Option<u32>,
+		/// Its type, `Name::NONE` for an object of the host's without one.
+		pub ty: u32,
 		/// Its fields in source order, in `Ast::host_keys` and `Ast::host_vals`.
 		pub fields: Run,
 		/// The number of its shape in the grammar's `Shapes`.
 		pub shape: u32,
-		/// Whether the node has a span; a fragment has none.
-		pub span: bool,
+	}
+}
+
+impl HostRow {
+	/// A fragment has no span, and only teasel makes one.
+	pub fn spanned(&self) -> bool {
+		self.ty != crate::host::grammar::own::Fragment.0
 	}
 }
 
@@ -578,7 +583,9 @@ impl Ast {
 		for i in self.host_rows[index as usize].fields.indices() {
 			match self.host_vals[i as usize] {
 				Value::Node(child) => match self.node(child).kind {
-					NodeKind::Host(inner) if !self.host_rows[inner as usize].span => self.host_children(inner, out),
+					NodeKind::Host(inner) if !self.host_rows[inner as usize].spanned() => {
+						self.host_children(inner, out)
+					}
 					_ => out.push(child),
 				},
 				Value::Nodes(children) => out.extend(self.list(children).iter().flatten()),

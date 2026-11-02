@@ -803,8 +803,8 @@ struct Shape {
 }
 
 impl Shapes {
-	pub(crate) fn of(&mut self, ty: Option<u32>, keys: &[u32], values: &[Value]) -> u32 {
-		let at = ty.map_or(0, |ty| ty as usize + 1);
+	pub(crate) fn of(&mut self, ty: Name, keys: &[u32], values: &[Value]) -> u32 {
+		let at = ty.0.wrapping_add(1) as usize;
 		if self.of.len() <= at {
 			self.of.resize_with(at + 1, Vec::new);
 		}

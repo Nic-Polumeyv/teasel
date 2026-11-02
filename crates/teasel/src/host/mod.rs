@@ -627,24 +627,21 @@ impl<'a> Walker<'a> {
 	}
 
 	fn opening(&mut self, ty: Name, start: u32, end: u32, fields: &[(Name, Value)], scope: Option<Opens>) -> NodeId {
-		let span = ty != own::Fragment;
 		let ast = self.ast.as_deref_mut().unwrap();
 		let from = ast.host_keys.len();
 		for &(key, value) in fields {
 			ast.host_keys.push(key.0);
 			ast.host_vals.push(value);
 		}
-		let ty = (ty != Name::NONE).then_some(ty.0);
 		let shape = self.shapes.of(ty, &ast.host_keys[from..], &ast.host_vals[from..]);
 		let index = ast.host_rows.len() as u32;
 		ast.host_rows.push(HostRow {
-			ty,
+			ty: ty.0,
 			fields: Run {
 				start: from as u32,
 				len: fields.len() as u32,
 			},
 			shape,
-			span,
 		});
 		ast.host_scopes.push(scope);
 		ast.add(NodeKind::Host(index), start, end)
@@ -731,7 +728,7 @@ impl<'a> Walker<'a> {
 	fn host_type(&self, id: NodeId) -> Option<Name> {
 		let ast = self.tree();
 		match ast.node(id).kind {
-			NodeKind::Host(index) => ast.host_rows[index as usize].ty.map(Name),
+			NodeKind::Host(index) => Some(Name(ast.host_rows[index as usize].ty)),
 			_ => None,
 		}
 	}

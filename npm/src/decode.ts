@@ -209,7 +209,7 @@ function records(layout: Layout) {
 		comment: { words: words('comments'), block: of('comments', 'block').at, text: word('comments', 'text.start'), text_end: word('comments', 'text.end'), start: word('comments', 'span.start'), end: word('comments', 'span.end'), loc: word('comments', 'loc') },
 		attached: { words: words('attached'), leading: run('attached', 'leading'), trailing: run('attached', 'trailing'), inner: run('attached', 'inner') },
 		error: { words: words('errors'), code: word('errors', 'code'), first: optional('errors', 'first'), second: optional('errors', 'second'), pos: word('errors', 'pos'), end: word('errors', 'end'), line: word('errors', 'line'), column: word('errors', 'column') },
-		host: { words: words('hosts'), ty: optional('hosts', 'ty'), from: word('hosts', 'fields.start'), len: word('hosts', 'fields.len'), shape: word('hosts', 'shape'), span: of('hosts', 'span').at },
+		host: { words: words('hosts'), ty: word('hosts', 'ty'), from: word('hosts', 'fields.start'), len: word('hosts', 'fields.len'), shape: word('hosts', 'shape') },
 		value: { size: R.host_vals.size, words: words('host_vals'), tag: tag.at, tags: tag.names!, value: of('host_vals', 'value').at },
 		mark: { words: words('marks'), string: word('marks', 'string'), at: word('marks', 'at'), unit: word('marks', 'unit') },
 	};
@@ -859,11 +859,8 @@ function run(S: State, id: number, ops: Op[], view: Uint32Array, base: number, p
 }
 
 const host_tag = (S: State, field: number) => S.C.R.value.tags[byte(S.host_vals, field * S.C.R.value.size + S.C.R.value.tag)];
-const host_type = (S: State, index: number) => {
-	const { ty, words } = S.C.R.host, at = index * words;
-	return S.hosts[at + ty.tag] === ty.missing ? null : S.X.names[S.hosts[at + ty.value]];
-};
-const host_span = (S: State, index: number) => byte(S.hosts, index * S.C.R.host.words * 4 + S.C.R.host.span) === 1;
+const host_type = (S: State, index: number) => S.X.names[S.hosts[index * S.C.R.host.words + S.C.R.host.ty]] ?? null;
+const host_span = (S: State, index: number) => host_type(S, index) !== 'Fragment';
 
 // a host node's fields as operations, one list per shape the engine numbers
 function host_ops(S: State, index: number): Op[] {

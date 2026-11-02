@@ -1175,7 +1175,7 @@ impl<'a> Binder<'a> {
 				let node = group.node.unwrap_or(id);
 				let kind = match self.ast.node(node).kind {
 					NodeKind::Program { .. } => ScopeKind::Script,
-					NodeKind::Host(inner) if !self.ast.host_rows[inner as usize].span => ScopeKind::Fragment,
+					NodeKind::Host(inner) if !self.ast.host_rows[inner as usize].spanned() => ScopeKind::Fragment,
 					_ => ScopeKind::Block,
 				};
 				self.enter(kind, Some(node), false);
