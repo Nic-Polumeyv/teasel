@@ -82,9 +82,9 @@ type Decoded = ReturnType<typeof decode>;
 
 // the binary prints as numbers what the decoder links as objects, beside each node's position
 function numbered(answer: Decoded) {
-	const number = new Map<object, number>();
-	for (const table of Object.keys(LINKED)) answer[table]?.forEach((row: Decoded, i: number) => number.set(row, i));
-	const bindings = new Set<object>(answer.bindings);
+	const tables = Object.keys(LINKED) as (keyof typeof LINKED)[];
+	const number = Object.fromEntries(tables.map((table) => [table, new Map<object, number>((answer[table] ?? []).map((row: Decoded, i: number) => [row, i]))])) as Record<keyof typeof LINKED, Map<object, number>>;
+	const last = new Map<object, object>(), first = new Map<object, object>();
 	const root = new Map<object, number>();
 	const listed = (by: Map<object, number[]>, node: object, i: number) => by.set(node, [...(by.get(node) ?? []), i]);
 	const defines = new Map<object, number[]>(), writes = new Map<object, number[]>();
@@ -92,8 +92,15 @@ function numbered(answer: Decoded) {
 	answer.bindings?.forEach((row: Decoded, i: number) => row.declaration !== null && listed(defines, row.declaration, i));
 	answer.references?.forEach((row: Decoded, i: number) => row.writeExpr !== null && listed(writes, row.writeExpr, i));
 	const facts = (out: Decoded, n: Decoded) => {
-		if (n[SCOPE] !== undefined) out.scope = number.get(n[SCOPE]);
-		if (n[REFERENCE] !== undefined) out[bindings.has(n[REFERENCE]) ? 'declares' : 'reference'] = number.get(n[REFERENCE]);
+		if (n[SCOPE] !== undefined) {
+			out.scope = number.scopes.get(n[SCOPE]);
+			last.set(n[SCOPE], n);
+		}
+		if (n[REFERENCE] !== undefined) {
+			const declares = number.bindings.has(n[REFERENCE]);
+			out[declares ? 'declares' : 'reference'] = (declares ? number.bindings : number.references).get(n[REFERENCE]);
+			if (!first.has(n[REFERENCE])) first.set(n[REFERENCE], n);
+		}
 		if (root.has(n)) out.root = root.get(n);
 		if (defines.has(n)) out.defines = defines.get(n);
 		if (writes.has(n)) out.writes = writes.get(n);
@@ -115,13 +122,19 @@ function numbered(answer: Decoded) {
 			if (key in LINKED[table].held) continue;
 			const v = n[key];
 			if (!(key in LINKED[table].into)) out[key] = v;
-			else if (!Array.isArray(v)) out[key] = v === null ? null : number.get(v);
-			else out[key] = v.length === 0 ? [] : [number.get(v[0]), number.get(v[v.length - 1])! + 1];
+			else {
+				const into = number[LINKED[table].into[key]];
+				if (!Array.isArray(v)) out[key] = v === null ? null : into.get(v);
+				else out[key] = v.length === 0 ? [] : [into.get(v[0]), into.get(v[v.length - 1])! + 1];
+			}
 		}
 		return out;
 	};
 	const out: Decoded = {};
 	for (const key of Object.keys(answer)) out[key] = key in LINKED ? answer[key].map((n: Decoded) => row(key as keyof typeof LINKED, n)) : value(answer[key]);
+	// the binary does not print a row's own links to its node: they read off the nodes that link to the row
+	const held = (answer.scopes ?? []).some((s: Decoded) => s.node !== (last.get(s) ?? null)) || [...(answer.bindings ?? []), ...(answer.references ?? [])].some((r: Decoded) => r.node !== (first.get(r) ?? null)) || (answer.bindings ?? []).some((b: Decoded) => b.binding !== b);
+	if (held) out.wrong = 'a row and its node disagree';
 	return out;
 }
 
