@@ -40,8 +40,8 @@ pub unsafe extern "C" fn plan_new(ptr: *mut u8, len: u32, capacity: u32) -> u32 
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn plan_children(handle: u32) {
-	text(teasel::json::children(unsafe { &*(handle as *const Rc<Grammar>) }));
+pub extern "C" fn plan_about(handle: u32) {
+	text(teasel::json::about(unsafe { &*(handle as *const Rc<Grammar>) }));
 }
 #[unsafe(no_mangle)]
 pub extern "C" fn plan_free(handle: u32) {

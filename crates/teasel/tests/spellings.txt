@@ -49,6 +49,7 @@ AsExpression
 AssignmentExpression
 AssignmentPattern
 Atrule
+Attribute
 AttributeSelector
 AwaitExpression
 BigIntLiteral
@@ -67,6 +68,7 @@ ClassDeclaration
 ClassExpression
 ClassSelector
 Combinator
+Comment
 ComplexSelector
 ConditionalExpression
 ConditionalType
@@ -93,6 +95,7 @@ ExternalModuleReference
 ForInStatement
 ForOfStatement
 ForStatement
+Fragment
 FunctionDeclaration
 FunctionExpression
 FunctionType
@@ -157,6 +160,7 @@ RestType
 ReturnStatement
 Rule
 SatisfiesExpression
+Script
 SelectorList
 SequenceExpression
 SpreadElement
@@ -235,6 +239,7 @@ TSVoidKeyword
 TaggedTemplateExpression
 TemplateElement
 TemplateLiteral
+Text
 ThisExpression
 ThisType
 ThrowStatement
@@ -300,6 +305,7 @@ clause
 code
 column
 combinator
+comment
 comments
 computed
 consequent
@@ -307,7 +313,10 @@ const
 constbool
 constraint
 constructor
+content
+context
 cooked
+data
 declaration
 declarations
 declare
@@ -415,19 +424,20 @@ loc
 local
 locs
 marks
+matcher
 maybe
 members
 meta
 method
 missing
 modifier
+modifiers
 module
 moduleReference
 module_reference
 mutate
 name
 nameType
-name_starts
 name_type
 names
 namespace
@@ -461,6 +471,7 @@ parent
 parenthesized
 pattern
 pos
+position
 prefix
 prelude
 private
@@ -509,6 +520,7 @@ str
 string
 strs
 struct
+styles
 stylesheet
 superClass
 superTypeArguments

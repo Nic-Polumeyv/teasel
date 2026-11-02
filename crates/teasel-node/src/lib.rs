@@ -135,12 +135,12 @@ unsafe extern "C" fn plan(env: Env, info: CallbackInfo) -> Value {
 	})
 }
 
-unsafe extern "C" fn children(env: Env, info: CallbackInfo) -> Value {
+unsafe extern "C" fn about(env: Env, info: CallbackInfo) -> Value {
 	guard(env, || {
 		let [plan] = args::<1>(env, info)?;
 		text(
 			env,
-			&teasel::json::children(grammar_of(env, plan).ok_or("a plan expected")?),
+			&teasel::json::about(grammar_of(env, plan).ok_or("a plan expected")?),
 		)
 	})
 }
@@ -420,7 +420,7 @@ pub unsafe extern "C" fn napi_register_module_v1(env: Env, exports: Value) -> Va
 		for (name, callback) in [
 			(c"parse", parse as unsafe extern "C" fn(Env, CallbackInfo) -> Value),
 			(c"plan", plan),
-			(c"children", children),
+			(c"about", about),
 			(c"tree", tree),
 			(c"layout", layout),
 		] {
