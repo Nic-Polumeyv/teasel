@@ -651,7 +651,7 @@ function conditional<E, St>(B: Spelling<E, St>, op: Op, none: Missing, erase: bo
 	return undefined;
 }
 
-// the engine tags a host node's field by the kind of value, `HostTag` names each
+// the engine tags a host node's field by the kind of value, `VALUE_FIELDS` names each
 const host_holds = (tag: string) => tag === 'node' || tag === 'nodes' || tag === 'comments';
 
 /** A host node's field from the two words of its value at `at`. */
