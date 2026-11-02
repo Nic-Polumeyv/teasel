@@ -1,7 +1,5 @@
 use std::cell::{Cell, RefCell};
-use std::rc::Rc;
 use teasel::Options;
-use teasel::host::Grammar;
 
 thread_local! {
 	static TEXT: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
@@ -27,11 +25,11 @@ pub extern "C" fn alloc(len: u32) -> *mut u8 {
 /// they are taken over here. The handle is 0 when the grammar cannot be read, what is wrong at
 /// `text_ptr`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn plan_new(ptr: *mut u8, len: u32, capacity: u32) -> u32 {
+pub unsafe extern "C" fn grammar_new(ptr: *mut u8, len: u32, capacity: u32) -> u32 {
 	let grammar = unsafe { Vec::from_raw_parts(ptr, len as usize, capacity as usize) };
 	let grammar = std::str::from_utf8(&grammar).map_err(|_| "the grammar is not UTF-8".to_string());
-	match grammar.and_then(teasel::json::grammar) {
-		Ok(grammar) => Box::into_raw(Box::new(grammar)) as u32,
+	match grammar.and_then(teasel::engine::grammar) {
+		Ok(grammar) => grammar,
 		Err(message) => {
 			text(message);
 			0
@@ -40,19 +38,15 @@ pub unsafe extern "C" fn plan_new(ptr: *mut u8, len: u32, capacity: u32) -> u32 
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn plan_about(handle: u32) {
-	text(teasel::json::about(unsafe { &*(handle as *const Rc<Grammar>) }));
-}
-#[unsafe(no_mangle)]
-pub extern "C" fn plan_free(handle: u32) {
-	drop(unsafe { Box::from_raw(handle as *mut Rc<Grammar>) });
+pub extern "C" fn grammar_about(handle: u32) {
+	text(teasel::engine::grammar_at(handle).map_or_else(String::new, teasel::engine::about));
 }
 
 /// # Safety
 /// `ptr` is `capacity` bytes from `alloc`, `len` of them the source, and `stop_ptr` is
 /// `stop_capacity` bytes from `alloc`, `stop_len` of them the stop tokens; both are taken over
-/// here. `flags` is the option word; `plan` is a handle from `plan_new`, or 0. 0: words at
-/// `words_ptr`; 1: what is wrong with the call at `text_ptr`, for the front end to throw.
+/// here. `flags` is the option word; `grammar` is a handle from `grammar_new`, or 0. 0: words at
+/// `words_ptr`; 1: what is wrong with the call at `text_ptr`, for JavaScript to throw.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn parse(
 	ptr: *mut u8,
@@ -64,16 +58,16 @@ pub unsafe extern "C" fn parse(
 	stop_ptr: *mut u8,
 	stop_len: u32,
 	stop_capacity: u32,
-	plan: u32,
+	grammar: u32,
 ) -> u32 {
 	let source = unsafe { Vec::from_raw_parts(ptr, len as usize, capacity as usize) };
 	let stop = unsafe { Vec::from_raw_parts(stop_ptr, stop_len as usize, stop_capacity as usize) };
-	let grammar = (plan != 0).then(|| unsafe { &**(plan as *const Rc<Grammar>) });
+	let grammar = teasel::engine::grammar_at(grammar);
 	let source = std::str::from_utf8(&source).map_err(|_| "the source is not UTF-8".to_string());
 	let stop = std::str::from_utf8(&stop).map_err(|_| "the stop tokens are not UTF-8".to_string());
 	let parsed = source.and_then(|source| {
-		let entry = teasel::json::entry(entry)?;
-		teasel::json::in_place(source, Options(flags), entry, offset, stop?, grammar)
+		let entry = teasel::engine::entry(entry)?;
+		teasel::engine::parse(source, Options(flags), entry, offset, stop?, grammar)
 	});
 	match parsed {
 		Ok(()) => 0,
@@ -86,12 +80,12 @@ pub unsafe extern "C" fn parse(
 
 #[unsafe(no_mangle)]
 pub extern "C" fn words_ptr() -> *const u32 {
-	teasel::json::words(|w| w.as_ptr())
+	teasel::engine::words(|w| w.as_ptr())
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn words_len() -> u32 {
-	teasel::json::words(|w| w.len() as u32)
+	teasel::engine::words(|w| w.len() as u32)
 }
 
 #[unsafe(no_mangle)]
@@ -117,7 +111,7 @@ fn text(json: String) {
 pub extern "C" fn tree() -> *const u32 {
 	let mut out = [0u32; 148];
 	let mut count = 0;
-	let found = teasel::json::tree(&mut |_, buffer| {
+	let found = teasel::engine::tree(&mut |_, buffer| {
 		if let Some(buffer) = buffer {
 			out[1 + 3 * count..][..3].copy_from_slice(&[
 				buffer.as_ptr() as u32,
@@ -136,5 +130,5 @@ pub extern "C" fn tree() -> *const u32 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn layout() {
-	text(teasel::json::layout_json());
+	text(teasel::engine::layout_json());
 }

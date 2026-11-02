@@ -238,10 +238,10 @@ fn the_crate_entry_reads_a_stylesheet() {
 
 #[test]
 fn an_entry_is_one_of_its_numbers() {
-	assert_eq!(crate::json::entry(6.0), Ok(Entry::StyleSheet));
+	assert_eq!(crate::engine::entry(6.0), Ok(Entry::StyleSheet));
 	for index in [7.0, -1.0, 6.5, f64::NAN] {
 		assert!(
-			crate::json::entry(index).unwrap_err().contains(" is no entry"),
+			crate::engine::entry(index).unwrap_err().contains(" is no entry"),
 			"{index}"
 		);
 	}
@@ -250,21 +250,21 @@ fn an_entry_is_one_of_its_numbers() {
 #[test]
 fn the_session_writes_the_same_words_again() {
 	use crate::Options;
-	use crate::json::in_place;
+	use crate::engine::parse;
 	let options = Options(Options::MODULE | Options::COMMENTS | Options::LOCATIONS | Options::SCOPES);
 	let source = "let x = /* a */ 1; function f(y) { return x + y; } // b";
-	let words = || crate::json::words(|words| words.to_vec());
+	let words = || crate::engine::words(|words| words.to_vec());
 	// a failed parse answers words too, flagged as such; its first one settles the error buffer
-	in_place("a +", options, Entry::Expression, 0.0, "", None).unwrap();
+	parse("a +", options, Entry::Expression, 0.0, "", None).unwrap();
 	let failed = words();
 	assert_eq!((failed[1], failed[2 + failed[1] as usize] & 1), (0, 1));
-	in_place(source, options, Entry::Program, 0.0, "", None).unwrap();
+	parse(source, options, Entry::Program, 0.0, "", None).unwrap();
 	let first = words();
-	let _ = in_place("a + b", options, Entry::Expression, 0.0, "", None);
-	let _ = in_place("a +", options, Entry::Expression, 0.0, "", None);
-	in_place(source, options, Entry::Program, 0.0, "", None).unwrap();
+	let _ = parse("a + b", options, Entry::Expression, 0.0, "", None);
+	let _ = parse("a +", options, Entry::Expression, 0.0, "", None);
+	parse(source, options, Entry::Program, 0.0, "", None).unwrap();
 	let again = words();
-	// but for the first saying its buffers are new to the front end
+	// but for the first saying its buffers are new to the decoder
 	let what = 2 + first[1] as usize;
 	assert_eq!(first[what] & !1, again[what] & !1);
 	assert_eq!(
@@ -701,9 +701,10 @@ fn undeclared_exports_can_be_allowed() {
 #[ignore]
 fn phases() {
 	use crate::Options;
-	use crate::estree::{Positions, answer};
+	use crate::estree::Writer;
 	use crate::lexer::Lexer;
 	use crate::lexer::token::TokenKind;
+	use crate::positions::Positions;
 	let Ok(path) = std::env::var("TEASEL_BENCH") else {
 		return;
 	};
@@ -789,18 +790,19 @@ fn phases() {
 	let lines = Positions::new(&source, true);
 	{
 		let options = Options(Options::MODULE | Options::COMMENTS);
-		best("whole request: positions, parse, comments, encode, finish", &mut || {
-			crate::json::in_place(&source, options, Entry::Program, 0.0, "", None).unwrap();
+		best("whole parse: positions, parse, comments, encode, finish", &mut || {
+			crate::engine::parse(&source, options, Entry::Program, 0.0, "", None).unwrap();
 		});
 		let options = Options(Options::MODULE | Options::COMMENTS | Options::SCOPES | Options::LOCATIONS);
-		best("whole request with scopes and loc", &mut || {
-			crate::json::in_place(&source, options, Entry::Program, 0.0, "", None).unwrap();
+		best("whole parse with scopes and loc", &mut || {
+			crate::engine::parse(&source, options, Entry::Program, 0.0, "", None).unwrap();
 		});
 	}
-	let grammar = crate::json::grammar(
+	let grammar = crate::engine::grammar(
 		&std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/host.json")).unwrap(),
 	)
 	.unwrap();
+	let grammar = crate::engine::grammar_at(grammar);
 	let document = format!(
 		"<script>let items = [1,2,3];</script>\n{}",
 		"{#each items as item}<p class=\"row\" onclick={() => f(item)}>{item + 1}</p>{/each}\n".repeat(200)
@@ -813,19 +815,15 @@ fn phases() {
 		),
 	] {
 		best(&format!("host: 200 each blocks, {label}"), &mut || {
-			crate::json::in_place(&document, Options(flags), Entry::Program, 0.0, "", Some(&grammar)).unwrap();
+			crate::engine::parse(&document, Options(flags), Entry::Program, 0.0, "", grammar).unwrap();
 		});
 	}
 	best("Json write, loc", &mut || {
-		let _ = answer(
-			&ast,
+		let names = crate::host::grammar::own::NAMES;
+		let _ = Writer::new(&ast, &source, &lines, names, options.with(Options::COMMENTS)).answer(
 			Entry::Program,
 			Some(roots),
 			end,
-			&source,
-			&lines,
-			options.with(Options::COMMENTS),
-			crate::host::grammar::own::NAMES,
 		);
 	});
 	eprintln!(
@@ -976,19 +974,20 @@ fn alloc_probe() {
 #[test]
 #[ignore]
 fn host_alloc_probe() {
-	let grammar = crate::json::grammar(
+	let grammar = crate::engine::grammar(
 		&std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/host.json")).unwrap(),
 	)
 	.unwrap();
+	let grammar = crate::engine::grammar_at(grammar);
 	let count = |src: &str| {
 		let parse = || {
-			crate::json::in_place(
+			crate::engine::parse(
 				src,
 				crate::Options(crate::Options::MODULE),
 				Entry::Program,
 				0.0,
 				"",
-				Some(&grammar),
+				grammar,
 			)
 			.unwrap()
 		};
@@ -1054,19 +1053,16 @@ fn layout_sizes() {
 }
 
 #[test]
+#[should_panic(expected = "is not a character boundary")]
 fn an_offset_inside_a_character_is_refused() {
-	let request = crate::json::Request {
-		offset: 1,
-		..crate::json::Request::from_flags(crate::Options::MODULE)
-	};
-	assert!(crate::json::parse("é", &request).contains("is not a character boundary"));
+	crate::estree::parse("é", Entry::Program, 1, crate::Options(crate::Options::MODULE));
 }
 
 #[test]
 fn parenthesized_bits() {
-	let request = crate::json::Request::from_flags(crate::Options::MODULE | crate::Options::PARENTHESIZED);
-	let json = crate::json::parse("(a).b; (x, y); c; ((d));", &request);
+	let options = crate::Options(crate::Options::MODULE | crate::Options::PARENTHESIZED);
+	let json = crate::estree::parse("(a).b; (x, y); c; ((d));", Entry::Program, 0, options);
 	assert_eq!(json.matches("\"parenthesized\":true").count(), 3, "{json}");
-	let json = crate::json::parse("(a, b) => a; (c);", &request);
+	let json = crate::estree::parse("(a, b) => a; (c);", Entry::Program, 0, options);
 	assert_eq!(json.matches("\"parenthesized\":true").count(), 1, "{json}");
 }

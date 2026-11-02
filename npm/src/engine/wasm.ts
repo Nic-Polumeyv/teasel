@@ -7,10 +7,9 @@ const utf8 = new TextDecoder();
 interface Exports {
 	readonly memory: WebAssembly.Memory;
 	alloc(len: number): number;
-	parse(ptr: number, len: number, capacity: number, flags: number, entry: number, offset: number, stop_ptr: number, stop_len: number, stop_capacity: number, plan: number): number;
-	plan_new(ptr: number, len: number, capacity: number): number;
-	plan_free(handle: number): void;
-	plan_about(handle: number): void;
+	parse(ptr: number, len: number, capacity: number, flags: number, entry: number, offset: number, stop_ptr: number, stop_len: number, stop_capacity: number, grammar: number): number;
+	grammar_new(ptr: number, len: number, capacity: number): number;
+	grammar_about(handle: number): void;
 	words_ptr(): number;
 	words_len(): number;
 	text_ptr(): number;
@@ -57,7 +56,7 @@ async function fetched() {
 	}
 }
 
-// a panic traps the instance for good: a fresh one takes over, and plans are made again in it from their grammar
+// a panic traps the instance for good: a fresh one takes over, and grammars are read again in it
 let generation = 0;
 
 function guarded<T>(f: () => T): T {
@@ -94,31 +93,20 @@ function layout() {
 	return layout_text;
 }
 
-// the collector cannot see the module's memory, so a plan it takes frees its handle here
-interface Slot {
-	handle: number;
-	generation: number;
-}
-const plans = new FinalizationRegistry<Slot>((slot) => {
-	if (slot.generation === generation) wasm.plan_free(slot.handle);
-});
-
-class Plan {
-	readonly slot: Slot = { handle: 0, generation: -1 };
-	readonly grammar: string;
-	constructor(grammar: string) {
-		this.grammar = grammar;
+class Grammar {
+	readonly definition: string;
+	at = 0;
+	generation = -1;
+	constructor(definition: string) {
+		this.definition = definition;
 		this.handle();
-		// the held value must not reach this, or it is never collected
-		plans.register(this, this.slot);
 	}
 	handle() {
-		const { slot } = this;
-		if (slot.generation !== generation) {
-			slot.handle = guarded(() => opened(wasm.plan_new(...bytes(this.grammar))));
-			slot.generation = generation;
+		if (this.generation !== generation) {
+			this.at = guarded(() => opened(wasm.grammar_new(...bytes(this.definition))));
+			this.generation = generation;
 		}
-		return slot.handle;
+		return this.at;
 	}
 }
 
@@ -129,21 +117,21 @@ function opened(handle: number) {
 }
 
 const engine: Engine = {
-	parse(source, flags, entry, offset, stop, plan) {
+	parse(source, flags, entry, offset, stop, grammar) {
 		// a memory never shrinks, so one a huge source grew past 256 MiB goes with its instance, which costs 0.9 ms to replace
 		if (wasm.memory.buffer.byteLength > 1 << 28) {
 			wasm = new WebAssembly.Instance(module, {}).exports as unknown as Exports;
 			generation++;
 		}
-		const grammar = plan === undefined ? 0 : (plan as Plan).handle();
-		if (guarded(() => wasm.parse(...bytes(source), flags, entry, offset, ...bytes(stop), grammar)) !== 0) throw new Error(text());
+		const handle = grammar === undefined ? 0 : (grammar as Grammar).handle();
+		if (guarded(() => wasm.parse(...bytes(source), flags, entry, offset, ...bytes(stop), handle)) !== 0) throw new Error(text());
 		// the layout comes first: writing it can grow the memory and detach a view taken before
 		layout();
 		return words();
 	},
-	plan: (grammar) => new Plan(grammar),
-	about(plan) {
-		guarded(() => wasm.plan_about((plan as Plan).handle()));
+	grammar: (definition) => new Grammar(definition),
+	about(grammar) {
+		guarded(() => wasm.grammar_about((grammar as Grammar).handle()));
 		return text();
 	},
 	get generation() {

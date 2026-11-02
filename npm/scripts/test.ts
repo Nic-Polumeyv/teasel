@@ -247,6 +247,12 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 		assert.equal(referenceOf(list.node[1]).binding.kind, 'param');
 		assert.equal(list.scopes[0].node, null);
 	}
+	{
+		// a namespace declared twice reopens its scope: both read it, and it names the last
+		const [first, second] = read('namespace A { let a; } namespace A { let b; }', { sourceType: 'module', typescript: true, scopes: true }).node.body;
+		assert.equal(scopeOf(first), scopeOf(second));
+		assert.equal(scopeOf(second).node, second);
+	}
 	assert.throws(() => parse('x', { sourceType: 'nonsense' } as Any), TypeError);
 	assert.throws(() => at('expression', '𝒳 + y', 1), RangeError);
 	assert.throws(() => at('expression', 'a + b', -1), RangeError);
@@ -302,7 +308,7 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 		assert.throws(() => engine.parse('a;', 0, entry, 0, '', undefined), / is no entry/);
 	}
 	assert.throws(() => engine.parse('𝒳', 0, 1, 1, '', undefined), /surrogate pair/);
-	if (name === 'native') assert.throws(() => (load() as Addon).parse(new Uint8Array([0xff]), 0, 0, 0, '', undefined), /the source is not UTF-8/);
+	if (name === 'native') assert.throws(() => (load() as Addon).parse(new Uint8Array([0xff]), 0, 0, 0, '', 0), /the source is not UTF-8/);
 	const wide = 'x;'.repeat(200000);
 	assert.equal(program(wide).body.length, 200000);
 	assert.equal(program('y;').body.length, 1);
@@ -492,7 +498,7 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 	assert.deepEqual(read(sheets, { errorRecovery: true }, svelte).errors.map((e: Any) => e.code), ['expected', 'unexpected_close']);
 }
 
-// a grammar made before the engine started over parses after it: the fresh instance reads its plan again
+// a grammar made before the engine started over parses after it: the fresh instance reads it again
 if (name !== 'native') {
 	let restarted = false;
 	// a RangeError inside the engine is taken for a wasm stack overflow: exhaust the stack, then parse on the way back up
@@ -589,15 +595,15 @@ if (name !== 'native') {
 	for (const text of files('fixtures/ts/', '.ts')) observe(parses(text, { sourceType: 'module', typescript: true, comments: true, errorRecovery: true }));
 	check(js.children, 'ts fixtures');
 	for (const [host, ext] of [['svelte', '.svelte'], ['vue', '.html']] as const) {
-		const plan = { svelte, vue }[host];
+		const language = { svelte, vue }[host];
 		for (const text of files(`hosts/${host}/`, ext)) {
 			try {
-				observe(read(text, { comments: true, scopes: true, errorRecovery: true }, plan).node);
+				observe(read(text, { comments: true, scopes: true, errorRecovery: true }, language).node);
 			} catch (e) {
 				if (!(e instanceof SyntaxError)) throw e;
 			}
 		}
-		check(plan.children, `${host} fixtures`, true);
+		check(language.children, `${host} fixtures`, true);
 	}
 	for (const text of files('fixtures/css/', '.css')) {
 		try {

@@ -1,567 +1,257 @@
-//! One entry for every front end: a request describes what to parse and how, and the answer is
-//! ESTree JSON, with `node` null and the one error listed when the parse failed; a request the
-//! engine cannot take answers a JSON object with an `error`: its code, the reason as its argument,
-//! and the offset. Read in place, it is refused with the reason.
+use std::fmt::Write;
 
-use std::rc::Rc;
-
-use crate::Options;
-use crate::ast::Ast;
-use crate::comments::attach;
-use crate::error::Code;
-use crate::estree::{Json, Positions, Words, answer};
-use crate::handed::{Raw, Views};
-use crate::host::{self, Grammar};
-use crate::parser::{Entry, parse_at};
-use crate::scopes;
-
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Request {
-	pub entry: Entry,
-	/// Byte offset into the source; the JSON reports UTF-16 offsets.
-	pub offset: u32,
-	pub options: Options,
+/// JSON text.
+pub(crate) struct Json {
+	out: String,
+	/// Whether the next entry of the open container is its first.
+	first: bool,
+	/// The open containers, `true` for a list.
+	stack: Vec<bool>,
 }
 
-impl Request {
-	/// The whole source as a program, from its option word.
-	pub fn from_flags(flags: u32) -> Request {
-		Request {
-			options: Options(flags),
-			..Request::default()
+impl Default for Json {
+	fn default() -> Self {
+		Json {
+			out: String::new(),
+			first: true,
+			stack: Vec::new(),
 		}
 	}
 }
 
-/// The error answer for a request the parser never ran: a host's offsets or switches, what is
-/// wrong with them as the one argument.
-pub fn error_json(reason: &str, pos: u32) -> String {
-	use std::fmt::Write;
-	let mut out = format!("{{\"error\":{{\"code\":{},\"args\":[", Code::InvalidRequest as u8);
-	crate::estree::write_json_string(&mut out, reason);
-	write!(out, "],\"pos\":{pos},\"end\":{pos}}}}}").unwrap();
-	out
-}
+impl Json {
+	pub(crate) fn finish(self) -> String {
+		self.out
+	}
 
-/// The tree's layout, the names of its views and the recipes, as JSON: what a front end reading
-/// the tree in place builds its readers from.
-pub fn layout_json() -> String {
-	use crate::ast::Extras;
-	use crate::ast::Node;
-	use crate::layout::{Field, Ty};
-	use crate::recipe::{Op, Rest};
-	fn field(w: &mut Json, field: &Field) {
-		w.object();
-		w.key("name");
-		w.text(field.name);
-		w.key("at");
-		w.int(field.at as u32);
-		w.key("ty");
-		w.text(match field.ty {
-			Ty::Node => "node",
-			Ty::OptNode => "?node",
-			Ty::List => "list",
-			Ty::OptList => "?list",
-			Ty::Str => "str",
-			Ty::OptStr => "?str",
-			Ty::Bool => "bool",
-			Ty::U32 => "u32",
-			Ty::OptU32 => "?u32",
-			Ty::Pair => "pair",
-			Ty::Enum(_) => "enum",
-			Ty::OptEnum(_) => "?enum",
-			Ty::Struct(_) => "struct",
-		});
-		match field.ty {
-			Ty::Enum(names) | Ty::OptEnum(names) => {
-				w.key("names");
-				w.list();
-				names.iter().for_each(|name| w.text(name));
-				w.end();
-			}
-			Ty::Struct(inner) => {
-				w.key("fields");
-				fields(w, inner);
-			}
-			_ => {}
+	fn sep(&mut self) {
+		if !self.first {
+			self.out.push(',');
 		}
-		w.end();
+		self.first = false;
 	}
-	fn fields(w: &mut Json, list: &[Field]) {
-		w.list();
-		list.iter().for_each(|f| field(w, f));
-		w.end();
+
+	fn open(&mut self, list: bool) {
+		self.sep();
+		self.out.push(if list { '[' } else { '{' });
+		self.stack.push(list);
+		self.first = true;
 	}
-	fn record(w: &mut Json, size: usize, list: &[Field]) {
-		w.object();
-		w.key("size");
-		w.int(size as u32);
-		w.key("fields");
-		fields(w, list);
-		w.end();
-	}
-	// an operation is its name, then its key, its field and what else it takes
-	fn ops(w: &mut Json, list: &[Op]) {
-		w.list();
-		for op in list {
-			let (name, key, field, rest) = op.told();
-			w.list();
-			w.text(name);
-			if let Some(key) = key {
-				w.text(key);
-			}
-			if let Some(field) = field {
-				w.text(field);
-			}
-			match rest {
-				Rest::Nothing => {}
-				Rest::Names(yes, no) => {
-					w.text(yes);
-					w.text(no);
-				}
-				Rest::Bool(value) => w.bool(value),
-				Rest::Text(text) => w.text(text),
-				Rest::Ops(inner) => ops(w, inner),
-			}
-			w.end();
+
+	pub(crate) fn ints(&mut self, values: &[u32]) {
+		self.list();
+		for &value in values {
+			self.int(value);
 		}
-		w.end();
+		self.end();
 	}
-	fn recipes(w: &mut Json, table: &[(&str, &[Op])]) {
-		w.list();
-		for (name, list) in table {
-			w.list();
-			w.text(name);
-			ops(w, list);
-			w.end();
+
+	pub(crate) fn begin(&mut self, ty: &str) {
+		self.open(false);
+		self.key("type");
+		self.text(ty);
+	}
+
+	pub(crate) fn object(&mut self) {
+		self.open(false);
+	}
+
+	pub(crate) fn list(&mut self) {
+		self.open(true);
+	}
+
+	pub(crate) fn end(&mut self) {
+		self.out.push(if self.stack.pop() == Some(true) { ']' } else { '}' });
+		self.first = false;
+	}
+
+	pub(crate) fn key(&mut self, key: &str) {
+		self.sep();
+		write_json_string(&mut self.out, key);
+		self.out.push(':');
+		self.first = true;
+	}
+
+	pub(crate) fn int(&mut self, value: u32) {
+		self.sep();
+		write!(self.out, "{value}").unwrap();
+	}
+
+	pub(crate) fn float(&mut self, value: f64) {
+		self.sep();
+		write_number(&mut self.out, value);
+	}
+
+	pub(crate) fn bool(&mut self, value: bool) {
+		self.sep();
+		self.out.push_str(if value { "true" } else { "false" });
+	}
+
+	pub(crate) fn null(&mut self) {
+		self.sep();
+		self.out.push_str("null");
+	}
+
+	pub(crate) fn text(&mut self, value: &str) {
+		self.sep();
+		write_json_string(&mut self.out, value);
+	}
+
+	/// A string with lone surrogates at `marks`, as the interner keeps them: each written as
+	/// the escape JSON has for it.
+	pub(crate) fn marked(&mut self, value: &str, marks: &[crate::interner::Surrogate]) {
+		if marks.is_empty() {
+			return self.text(value);
 		}
-		w.end();
-	}
-	let mut w = Json::default();
-	w.object();
-	w.key("node");
-	w.object();
-	w.key("size");
-	w.int(size_of::<Node>() as u32);
-	w.key("start");
-	w.int(std::mem::offset_of!(Node, start) as u32);
-	w.key("end");
-	w.int(std::mem::offset_of!(Node, end) as u32);
-	w.key("kind");
-	w.int(std::mem::offset_of!(Node, kind) as u32);
-	w.end();
-	w.key("kinds");
-	w.list();
-	for variant in crate::ast::node_layout::VARIANTS {
-		w.object();
-		w.key("name");
-		w.text(variant.name);
-		w.key("fields");
-		fields(&mut w, variant.fields);
-		w.end();
-	}
-	w.end();
-	w.key("extras");
-	record(&mut w, size_of::<Extras>(), Extras::FIELDS);
-	w.key("rows");
-	w.object();
-	for (name, size, list) in crate::recipe::ROWS {
-		w.key(name);
-		record(&mut w, *size, list);
-	}
-	w.end();
-	w.key("records");
-	w.object();
-	for (name, size, list) in crate::ast::RECORDS {
-		w.key(name);
-		record(&mut w, *size, list);
-	}
-	w.end();
-	let none = crate::layout::missing();
-	w.key("none");
-	w.object();
-	w.key("enum");
-	w.int(none.r#enum as u32);
-	for (name, tagged) in [("list", none.list), ("str", none.str), ("int", none.int)] {
-		w.key(name);
-		w.object();
-		w.key("tag");
-		w.int(tagged.tag as u32);
-		w.key("missing");
-		w.int(tagged.missing);
-		w.end();
-	}
-	w.end();
-	w.key("views");
-	w.object();
-	w.key("js");
-	texts(&mut w, view_names(false));
-	w.key("ts");
-	texts(&mut w, view_names(true));
-	w.end();
-	w.key("names");
-	texts(&mut w, host::grammar::own::NAMES.iter().copied());
-	w.key("stylesheet");
-	children_table(&mut w, host::stylesheet_children());
-	w.key("recipes");
-	w.object();
-	w.key("kinds");
-	recipes(&mut w, crate::recipe::KINDS);
-	w.key("rows");
-	recipes(&mut w, crate::recipe::RECIPES);
-	w.key("adds");
-	recipes(&mut w, crate::recipe::ADDS);
-	w.key("erased");
-	ops(&mut w, crate::recipe::EXTRAS_ERASED);
-	w.end();
-	w.end();
-	w.finish()
-}
-
-/// What a front end learns of a grammar once, as JSON: every type of node its documents hold, each
-/// with the fields that hold nodes (see `Grammar::children`), and its names by the numbers the
-/// hosts' rows give them.
-pub fn about(grammar: &Grammar) -> String {
-	let mut w = Json::default();
-	w.object();
-	w.key("children");
-	children_table(&mut w, grammar.children());
-	w.key("names");
-	texts(&mut w, grammar.names.iter().copied());
-	w.end();
-	w.finish()
-}
-
-fn children_table(w: &mut Json, table: Vec<(&'static str, Vec<&'static str>)>) {
-	w.object();
-	for (ty, fields) in table {
-		w.escaped_key(ty);
-		texts(w, fields);
-	}
-	w.end();
-}
-
-fn texts<'a>(w: &mut Json, list: impl IntoIterator<Item = &'a str>) {
-	w.list();
-	list.into_iter().for_each(|text| w.text(text));
-	w.end();
-}
-
-/// One entry at a byte offset, as JSON.
-pub fn parse(source: &str, request: &Request) -> String {
-	if !source.is_char_boundary(request.offset as usize) {
-		return error_json(
-			&format!("offset {} is not a character boundary", request.offset),
-			request.offset,
-		);
-	}
-	to_json(source, request, "", None)
-}
-
-/// A whole document of a host language by its grammar, as JSON; see `host::parse_document`.
-pub fn parse_document(source: &str, grammar: &str, options: Options) -> String {
-	match self::grammar(grammar) {
-		Ok(grammar) => to_json(source, &Request::from_flags(options.0), "", Some(&grammar)),
-		Err(message) => error_json(&message, 0),
-	}
-}
-
-/// One entry at a UTF-16 offset, as JavaScript counts; with a grammar, the whole source as a
-/// document of its language, in TypeScript when the grammar says so of a script tag. Read in
-/// place: its words at `words`; an offset the source has no place for is refused.
-pub fn in_place(
-	source: &str,
-	options: Options,
-	entry: Entry,
-	start: f64,
-	stop: &str,
-	host: Option<&Grammar>,
-) -> Result<(), String> {
-	let positions = Positions::of(source, options);
-	let offset = positions.byte_offset(start)?;
-	if !source.is_char_boundary(offset as usize) {
-		return Err(format!("offset {start} is inside a surrogate pair"));
-	}
-	answer_to(
-		source,
-		&positions,
-		&Request { entry, offset, options },
-		stop,
-		host,
-		None,
-	);
-	Ok(())
-}
-
-/// What every parse on a thread reuses: the trees, emptied, and the answer's buffers.
-#[derive(Default)]
-struct Session {
-	/// The JavaScript tree, then the TypeScript one: a front end keeps the views of the two apart.
-	trees: [Option<Box<Ast>>; 2],
-	words: Words,
-	/// Whether the last parse used the TypeScript tree.
-	typescript: bool,
-}
-
-thread_local! {
-	static SESSION: std::cell::RefCell<Session> = std::cell::RefCell::new(Session::default());
-	/// Grammars by their JSON, read once each.
-	static GRAMMARS: std::cell::RefCell<Vec<(&'static str, Rc<Grammar>)>> = const { std::cell::RefCell::new(Vec::new()) };
-}
-
-pub fn reset_session() {
-	SESSION.with(|session| *session.borrow_mut() = Session::default());
-}
-
-/// The words of the last answer read in place on this thread, where they were written.
-pub fn words<R>(f: impl FnOnce(&mut Words) -> R) -> R {
-	SESSION.with(|session| f(&mut session.borrow_mut().words))
-}
-
-/// Visits the buffers of the last parse's tree on this thread, kept until the next parse takes
-/// it, in the order `layout_json` names them; whether it is the TypeScript tree, None before any.
-pub fn tree(f: &mut dyn FnMut(&'static str, Option<&mut dyn Raw>)) -> Option<bool> {
-	SESSION.with(|session| {
-		let session = &mut *session.borrow_mut();
-		let typescript = session.typescript;
-		session.trees[typescript as usize]
-			.as_deref_mut()?
-			.views(typescript, &mut Views(f));
-		Some(typescript)
-	})
-}
-
-/// The names of a tree's views in order.
-fn view_names(typescript: bool) -> Vec<&'static str> {
-	let mut names = Vec::new();
-	Ast::default().views(typescript, &mut Views(&mut |name, _| names.push(name)));
-	names
-}
-
-/// The grammar its JSON describes, read once per thread.
-pub fn grammar(text: &str) -> Result<Rc<Grammar>, String> {
-	GRAMMARS.with(|grammars| {
-		let mut grammars = grammars.borrow_mut();
-		if let Some((_, grammar)) = grammars.iter().find(|(known, _)| *known == text) {
-			return Ok(grammar.clone());
-		}
-		let text = crate::host::grammar::keep(text);
-		let grammar = Rc::new(Grammar::read(text)?);
-		grammars.push((text, grammar.clone()));
-		Ok(grammar)
-	})
-}
-
-pub fn entry(index: f64) -> Result<Entry, String> {
-	Entry::from_index(index as u32)
-		.filter(|_| f64::from(index as u32) == index)
-		.ok_or_else(|| format!("{index} is no entry"))
-}
-
-/// Where an answer goes: JSON text, or the words a front end reads the tree by.
-enum Out<'a> {
-	Json(&'a mut String),
-	Words(&'a mut Words),
-}
-
-fn to_json(source: &str, request: &Request, stop: &str, host: Option<&Grammar>) -> String {
-	let mut json = String::new();
-	answer_to(
-		source,
-		&Positions::of(source, request.options),
-		request,
-		stop,
-		host,
-		Some(&mut json),
-	);
-	json
-}
-
-/// The answer's word, what the caller could not know: the parse failed, the tree is TypeScript's
-/// (a document's language is the grammar's to tell).
-const FAILED: u32 = 1;
-const TYPESCRIPT: u32 = 2;
-
-fn answer_to(
-	source: &str,
-	positions: &Positions,
-	request: &Request,
-	stop: &str,
-	host: Option<&Grammar>,
-	json: Option<&mut String>,
-) {
-	let mut request = *request;
-	if host.is_some_and(|grammar| host::typescript(source, grammar)) {
-		request.options = request.options.with(Options::TYPESCRIPT);
-	}
-	SESSION.with(|session| {
-		let session = &mut *session.borrow_mut();
-		session.typescript = request.options.typescript();
-		let out = match json {
-			Some(json) => Out::Json(json),
-			None => Out::Words(&mut session.words),
-		};
-		run(source, positions, &request, stop, host, &mut session.trees, out);
-	})
-}
-
-/// Runs a request and answers it at `out`.
-fn run(
-	source: &str,
-	positions: &Positions,
-	request: &Request,
-	stop: &str,
-	host: Option<&Grammar>,
-	trees: &mut [Option<Box<Ast>>; 2],
-	out: Out<'_>,
-) {
-	let options = request.options;
-	let slot = &mut trees[options.typescript() as usize];
-	let reused = slot.take().map(|mut ast| {
-		ast.clear();
-		ast
-	});
-	let (mut ast, parsed) = match host {
-		Some(grammar) => {
-			let (mut ast, root) = host::parse_document(source, grammar, options, reused);
-			let parsed = root.map(|root| (ast.add_list(&[Some(root)]), source.len() as u32));
-			(ast, parsed)
-		}
-		None => parse_at(source, request.offset, request.entry, options, stop, reused),
-	};
-	let (mut roots, mut end) = match parsed {
-		Ok((roots, end)) => (Some(roots), end),
-		Err(error) => (fail(&mut ast, *error), error.pos),
-	};
-	if let Some(list) = roots {
-		if options.has(Options::COMMENTS) {
-			attach(&mut ast, source, list, request.offset);
-		}
-		if options.has(Options::SCOPES) {
-			scopes::analyze(&mut ast, request.entry, list);
-			let errors = std::mem::take(&mut ast.scopes.as_mut().unwrap().errors);
-			if !errors.is_empty() {
-				if options.has(Options::ERROR_RECOVERY) {
-					ast.errors.extend(errors);
-					ast.errors.sort_by_key(|error| error.pos);
-				} else {
-					(roots, end) = (fail(&mut ast, errors[0]), errors[0].pos);
-				}
-			}
-		}
-	}
-	match out {
-		Out::Json(json) => {
-			let names = host.map_or(host::grammar::own::NAMES, |grammar| &grammar.names);
-			*json = answer(&ast, request.entry, roots, end, source, positions, options, names);
-		}
-		Out::Words(words) => {
-			let failed = roots.is_none();
-			prepare(&mut ast, source, positions, options, failed);
-			// `end`, the roots by number, a word of what the answer is, each view's length, then where
-			// the tree's buffers sit folded into two words: a front end keeps its views while that holds
-			words.clear();
-			let roots = roots.map_or(&[][..], |roots| ast.list(roots));
-			words.extend_from_slice(&[
-				positions.offset(&mut crate::estree::Cursor::default(), end),
-				roots.len() as u32,
-			]);
-			words.extend(roots.iter().map(|root| root.unwrap().index()));
-			let typescript = if options.typescript() { TYPESCRIPT } else { 0 };
-			words.push(typescript | if failed { FAILED } else { 0 });
-			let mut sits = 0u64;
-			let mut note = |_, buffer: Option<&mut dyn Raw>| {
-				words.push(buffer.as_ref().map_or(0, |buffer| buffer.elements() as u32));
-				if let Some(buffer) = buffer {
-					sits = (sits ^ buffer.as_ptr() as u64 ^ (buffer.capacity_bytes() as u64) << 32)
-						.wrapping_mul(0x9e37_79b9_7f4a_7c15);
-				}
-			};
-			ast.views(options.typescript(), &mut Views(&mut note));
-			words.extend_from_slice(&[sits as u32, (sits >> 32) as u32]);
-		}
-	}
-	*slot = Some(ast);
-}
-
-/// What a front end reading the tree in place needs beside it: every node's span and location
-/// as JavaScript counts them, the nodes erasure leaves out, the comments, the errors and the
-/// strings' UTF-16 starts; a failed parse prepares its error row alone.
-fn prepare(ast: &mut Ast, source: &str, positions: &Positions, options: Options, failed: bool) {
-	if !failed {
-		prepare_tree(ast, positions, options);
-	}
-	ast.error_rows.clear();
-	if failed || options.has(Options::ERROR_RECOVERY) {
-		let places = positions.of_errors(source, &ast.errors);
-		for (error, [pos, end, line, column]) in ast.errors.iter().zip(places) {
-			let [first, second] = error.args;
-			ast.error_rows.push(crate::ast::ErrorRow {
-				code: error.code as u32,
-				first,
-				second,
-				pos,
-				end,
-				line,
-				column,
-			});
-		}
-	}
-	ast.units.clear();
-	let (text, starts, _) = ast.strings.buffers();
-	if !failed && !text.is_ascii() {
-		ast.units.reserve(starts.len());
+		self.sep();
+		self.out.push('"');
+		let mut marks = marks.iter();
+		let mut next = marks.next();
 		let mut units = 0u32;
 		let mut from = 0usize;
-		for &start in starts.iter() {
-			units += text[from..start as usize]
-				.iter()
-				.filter(|&&b| b & 0xc0 != 0x80)
-				.map(|&b| if b >= 0xf0 { 2 } else { 1 })
-				.sum::<u32>();
-			from = start as usize;
-			ast.units.push(units);
-		}
-	}
-}
-
-fn prepare_tree(ast: &mut Ast, positions: &Positions, options: Options) {
-	positions.map_nodes(&ast.nodes, &mut ast.spans, &mut ast.locs);
-	ast.erased.clear();
-	if options.has(Options::ERASE) {
-		for i in 0..ast.nodes.len() as u32 {
-			let id = crate::ast::NodeId::at(i);
-			if ast.erased(id) {
-				ast.erased.insert(id);
+		for (i, c) in value.char_indices() {
+			if let Some(mark) = next
+				&& mark.at == units
+			{
+				escape_json(&mut self.out, &value[from..i]);
+				write!(self.out, "\\u{:04x}", mark.unit).unwrap();
+				from = i + c.len_utf8();
+				next = marks.next();
 			}
+			units += c.len_utf16() as u32;
 		}
-	}
-	let (mut rare, mut late) = (std::mem::take(&mut ast.rare), std::mem::take(&mut ast.late));
-	rare.reset(ast.nodes.len());
-	late.reset(ast.nodes.len());
-	rare.union(&ast.parenthesized);
-	for &owner in ast.attached.owners() {
-		rare.insert(owner);
-	}
-	if options.has(Options::ERASE) {
-		ast.decorated(&mut rare);
-	}
-	if let Some(scopes) = &ast.scopes
-		&& options.has(Options::SCOPES)
-	{
-		scopes.mark(ast, &mut rare, &mut late);
-	}
-	(ast.rare, ast.late) = (rare, late);
-	positions.map_values(&mut ast.host_vals);
-	if options.has(Options::COMMENTS) || !ast.host_rows.is_empty() {
-		positions.map_comments(&ast.comments, &mut ast.comment_rows);
+		escape_json(&mut self.out, &value[from..]);
+		self.out.push('"');
 	}
 }
 
-/// A parse that failed answers as one that recovered from nothing but its error: no roots,
-/// `end` at the error, the error alone in `errors`, and nothing else listed.
-fn fail(ast: &mut Ast, error: crate::SyntaxError) -> Option<crate::ast::List> {
-	ast.errors.clear();
-	ast.errors.push(error);
-	None
+fn write_number(out: &mut String, value: f64) {
+	if !value.is_finite() {
+		out.push_str("null");
+		return;
+	}
+	if value == 0.0 {
+		out.push('0');
+		return;
+	}
+	let formatted = format!("{value:e}");
+	let (mantissa, exponent) = formatted.split_once('e').unwrap();
+	let (sign, mantissa) = mantissa.strip_prefix('-').map_or(("", mantissa), |m| ("-", m));
+	let mut digits: Vec<u8> = mantissa.bytes().filter(|b| *b != b'.').collect();
+	even_on_tie(value.abs(), &mut digits);
+	let digits = std::str::from_utf8(&digits).unwrap();
+	let k = digits.len() as i32;
+	let n = exponent.parse::<i32>().unwrap() + 1;
+	out.push_str(sign);
+	if k <= n && n <= 21 {
+		out.push_str(digits);
+		out.extend(std::iter::repeat_n('0', (n - k) as usize));
+	} else if 0 < n && n <= 21 {
+		out.push_str(&digits[..n as usize]);
+		out.push('.');
+		out.push_str(&digits[n as usize..]);
+	} else if -6 < n && n <= 0 {
+		out.push_str("0.");
+		out.extend(std::iter::repeat_n('0', (-n) as usize));
+		out.push_str(digits);
+	} else {
+		out.push_str(&digits[..1]);
+		if k > 1 {
+			out.push('.');
+			out.push_str(&digits[1..]);
+		}
+		out.push('e');
+		out.push(if n > 1 { '+' } else { '-' });
+		write!(out, "{}", (n - 1).unsigned_abs()).unwrap();
+	}
+}
+
+/// Rust rounds the shortest digits away from zero on an exact tie; JavaScript takes the even ones.
+fn even_on_tie(value: f64, digits: &mut [u8]) {
+	let k = digits.len();
+	// two shortest forms sit at the same distance only at the edge of what a double resolves
+	if k < 16 || digits[k - 1].is_multiple_of(2) {
+		return;
+	}
+	let exact = format!("{value:.*e}", 1100);
+	let all: Vec<u8> = exact
+		.split_once('e')
+		.unwrap()
+		.0
+		.bytes()
+		.filter(|b| *b != b'.')
+		.collect();
+	if all[k] != b'5' || all[k + 1..].iter().any(|&b| b != b'0') {
+		return;
+	}
+	let mut lower = digits.to_vec();
+	lower[k - 1] -= 1;
+	let lower = std::str::from_utf8(&lower).unwrap();
+	let exponent = exact.split_once('e').unwrap().1;
+	if let Ok(back) = format!("{}.{}e{exponent}", &lower[..1], &lower[1..]).parse::<f64>()
+		&& back == value
+	{
+		digits[k - 1] -= 1;
+	}
+}
+
+pub(crate) fn write_json_string(out: &mut String, s: &str) {
+	out.push('"');
+	escape_json(out, s);
+	out.push('"');
+}
+
+fn escape_json(out: &mut String, s: &str) {
+	let mut from = 0;
+	for (i, b) in s.bytes().enumerate() {
+		if b >= 0x20 && b != b'"' && b != b'\\' {
+			continue;
+		}
+		out.push_str(&s[from..i]);
+		match b {
+			b'"' => out.push_str("\\\""),
+			b'\\' => out.push_str("\\\\"),
+			b'\n' => out.push_str("\\n"),
+			b'\r' => out.push_str("\\r"),
+			b'\t' => out.push_str("\\t"),
+			8 => out.push_str("\\b"),
+			12 => out.push_str("\\f"),
+			_ => write!(out, "\\u{b:04x}").unwrap(),
+		}
+		from = i + 1;
+	}
+	out.push_str(&s[from..]);
+}
+
+#[cfg(test)]
+mod tests {
+	#[test]
+	#[expect(clippy::excessive_precision)]
+	fn numbers_as_javascript_writes_them() {
+		for (value, text) in [
+			(1e-14, "1e-14"),
+			(1e-7, "1e-7"),
+			(0.000001, "0.000001"),
+			(0.1, "0.1"),
+			(1.5, "1.5"),
+			(123.456, "123.456"),
+			(100.0, "100"),
+			(1e20, "100000000000000000000"),
+			(1e21, "1e+21"),
+			(1.5e300, "1.5e+300"),
+			(5e-324, "5e-324"),
+			(-0.0, "0"),
+			(-2.5e-8, "-2.5e-8"),
+			(132405809496.45312, "132405809496.45312"),
+			(0.3, "0.3"),
+			(9007199254740993.0, "9007199254740992"),
+			(1658206780088562.25, "1658206780088562.2"),
+			(662936471232937.25, "662936471232937.2"),
+			(f64::INFINITY, "null"),
+		] {
+			let mut out = String::new();
+			super::write_number(&mut out, value);
+			assert_eq!(out, text, "{value:?}");
+		}
+	}
 }

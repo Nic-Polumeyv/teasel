@@ -1,5 +1,5 @@
 //! The tree's memory layout: every kind's fields by byte offset and type, and how the compiler
-//! spells a missing optional. `json::layout_json` tells it to a front end.
+//! spells a missing optional. `engine::layout_json` tells it to the decoder.
 
 use std::mem::MaybeUninit;
 

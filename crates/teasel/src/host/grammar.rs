@@ -473,7 +473,7 @@ impl<'a> Wire<'a> for &'static str {
 	}
 
 	fn write(&self, out: &mut String) {
-		crate::estree::write_json_string(out, self);
+		crate::json::write_json_string(out, self);
 	}
 }
 
@@ -486,7 +486,7 @@ pub(crate) fn entry<'a>(out: &mut String, key: &str, value: &impl Wire<'a>) {
 	if !out.ends_with('{') {
 		out.push(',');
 	}
-	crate::estree::write_json_string(out, key);
+	crate::json::write_json_string(out, key);
 	out.push(':');
 	value.write(out);
 }
@@ -786,7 +786,7 @@ impl Naming {
 }
 
 /// The shapes of a grammar's host nodes, numbered for good as the walker meets them: a node's
-/// type and each field's name and kind of value. A front end builds the
+/// type and each field's name and kind of value. The decoder builds the
 /// nodes of one shape by one literal.
 #[derive(Clone, Debug, Default)]
 pub struct Shapes {

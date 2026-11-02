@@ -156,7 +156,7 @@ export const PIECE = Symbol('piece');
 /** What `parse` reads, the whole text: JavaScript, CSS, or a host language by its grammar. `T` is what its parse answers with. */
 export interface Language<T> {
 	readonly [answers]?: T;
-	readonly [LANGUAGE]: { readonly entry: number; readonly plan?: object; readonly names?: readonly string[] };
+	readonly [LANGUAGE]: { readonly entry: number; readonly grammar?: object; readonly names?: readonly string[] };
 	/** For every type of node a parse of the language answers with, the fields that hold a node or a list of nodes: what a walk follows. A grammar's names the JavaScript types beside the host's. */
 	readonly children: Readonly<Record<string, readonly string[]>>;
 }
@@ -361,7 +361,6 @@ export const CODES = [
 	'declare_in_ambient',
 	'statement_in_ambient',
 	'using_in_ambient',
-	'invalid_request',
 	'property_after_instantiation',
 	'accessor_placement',
 ] as const;
@@ -386,10 +385,10 @@ export interface Views {
 
 /** What parses: the addon or the WebAssembly module. */
 export interface Engine extends Views {
-	/** A source parsed by its option word at an entry and offset, the stop tokens as one string, or as a document by a grammar `plan` holds; nothing of it is kept. The answer is its words. */
-	readonly parse: (source: string, flags: number, entry: number, offset: number, stop: string, plan: object | undefined) => Uint32Array;
-	/** The grammar of a host language as JSON, read once and let go of when the plan is collected. */
-	readonly plan: (grammar: string) => object;
-	/** What a plan tells of its grammar, as JSON: each node type of its host with the fields that hold nodes, and the names the rows of its documents number. */
-	readonly about: (plan: object) => string;
+	/** A source parsed by its option word at an entry and offset, the stop tokens as one string, or as a document by a `grammar`; nothing of it is kept. The answer is its words. */
+	readonly parse: (source: string, flags: number, entry: number, offset: number, stop: string, grammar: object | undefined) => Uint32Array;
+	/** The grammar of a host language as JSON, read once. */
+	readonly grammar: (definition: string) => object;
+	/** What a grammar tells of itself, as JSON: each node type of its host with the fields that hold nodes, and the names the rows of its documents number. */
+	readonly about: (grammar: object) => string;
 }
