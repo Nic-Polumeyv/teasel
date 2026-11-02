@@ -30,9 +30,9 @@ jobs:
       - run: cargo test --release
       - run: npm ci
         working-directory: npm
-      - run: npm run build && npm run types && npm run build:wasm && npm run test && node scripts/check.ts ../crates/teasel/tests/test262-parser-tests/pass ../crates/teasel/tests/test262-parser-tests/pass-explicit ../crates/teasel/tests/fixtures
+      - run: npm run build && npm run types && npm run build:wasm && npm run test && node scripts/check.ts ../crates/teasel/tests/test262-parser-tests/pass ../crates/teasel/tests/test262-parser-tests/pass-explicit ../crates/teasel/tests/fixtures && node --disallow-code-generation-from-strings scripts/check.ts ../crates/teasel/tests/test262-parser-tests/pass ../crates/teasel/tests/test262-parser-tests/pass-explicit ../crates/teasel/tests/fixtures
         working-directory: npm
-      - run: node scripts/check.ts --host ../crates/teasel/tests/hosts/svelte/host.json .svelte ../crates/teasel/tests/hosts/svelte && node scripts/check.ts --host ../crates/teasel/tests/hosts/vue/host.json .html ../crates/teasel/tests/hosts/vue
+      - run: node scripts/check.ts --host ../crates/teasel/tests/hosts/svelte/host.json .svelte ../crates/teasel/tests/hosts/svelte && node scripts/check.ts --host ../crates/teasel/tests/hosts/vue/host.json .html ../crates/teasel/tests/hosts/vue && node --disallow-code-generation-from-strings scripts/check.ts --host ../crates/teasel/tests/hosts/svelte/host.json .svelte ../crates/teasel/tests/hosts/svelte && node --disallow-code-generation-from-strings scripts/check.ts --host ../crates/teasel/tests/hosts/vue/host.json .html ../crates/teasel/tests/hosts/vue
         working-directory: npm
 
   build:
@@ -43,8 +43,10 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
+            glibc: '2.28'
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
+            glibc: '2.28'
           - os: macos-latest
             target: aarch64-apple-darwin
           - os: macos-latest
@@ -55,12 +57,21 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: rustup target add ${{ matrix.target }}
+      # the runner's pip installs outside a venv only through a workaround GitHub said it would remove
+      - if: matrix.glibc
+        run: python3 -m venv "$RUNNER_TEMP/zig" && "$RUNNER_TEMP/zig/bin/pip" install cargo-zigbuild==0.23.4 ziglang==0.16.0 && echo "$RUNNER_TEMP/zig/bin" >> "$GITHUB_PATH"
       - uses: actions/setup-node@v7
         with:
           node-version: 26
       - run: npm ci
         working-directory: npm
-      - run: npm run build -- --target ${{ matrix.target }}
+      - run: npm run build -- --target ${{ matrix.target }} ${{ matrix.glibc && format('--glibc {0}', matrix.glibc) }}
+        working-directory: npm
+      - if: matrix.glibc
+        run: |
+          newest=$(objdump -T dist/*.node | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)
+          echo "$newest"
+          [ "$(printf '%s\n' "$newest" GLIBC_${{ matrix.glibc }} | sort -V | tail -1)" = GLIBC_${{ matrix.glibc }} ]
         working-directory: npm
       - uses: actions/upload-artifact@v7
         with:
@@ -85,12 +96,12 @@ jobs:
       # each require must parse and warn once, with the reason: the build missing, then an empty file that fails to dlopen
       - run: |
           npm run build:js
-          probe() { node --input-type=commonjs -e "let seen = false; process.on('warning', (w) => { if (w.code !== 'wasm_fallback' || !w.message.includes(process.argv[1])) process.exit(1); seen = true; }); process.on('exit', () => { if (!seen) process.exitCode = 1; }); new (require('@teasel/parser').Source)('x').parse()" "$1"; }
+          probe() { node --input-type=commonjs -e "let seen = false; process.on('warning', (w) => { if (w.code !== 'wasm_fallback' || !w.message.includes(process.argv[1])) process.exit(1); seen = true; }); process.on('exit', () => { if (!seen) process.exitCode = 1; }); require('@teasel/parser').parse('x')" "$1"; }
           probe 'Cannot find module'
           truncate -s 0 dist/teasel.linux-x64-gnu.node
           probe 'too short'
         working-directory: npm
-      - run: docker run --rm -v "$PWD:/p" -w /p node:26-alpine node --input-type=commonjs -e "process.on('warning', () => process.exit(1)); new (require('./dist/index.js').Source)('x').parse()"
+      - run: docker run --rm -v "$PWD:/p" -w /p node:26-alpine node --input-type=commonjs -e "process.on('warning', () => process.exit(1)); require('./dist/index.js').parse('x')"
         working-directory: npm
       - uses: actions/upload-artifact@v7
         with:

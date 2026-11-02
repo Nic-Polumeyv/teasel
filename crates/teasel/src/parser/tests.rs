@@ -67,20 +67,20 @@ pub(crate) fn one(parsed: (Ast, Result<(List, u32), SyntaxError>)) -> Result<(As
 }
 
 fn at(entry: Entry, src: &str, offset: u32, options: Options, stop: &str) -> Result<(Ast, NodeId, u32), Failed> {
-	one(crate::parse_at(src, offset, None, entry, options, stop))
+	one(crate::parse_at(src, offset, entry, options, stop))
 }
 
 fn params(src: &str, offset: u32, options: Options, stop: &str) -> Result<(Ast, Vec<NodeId>, u32), Failed> {
-	roots(crate::parse_at(src, offset, None, Entry::Params, options, stop))
+	roots(crate::parse_at(src, offset, Entry::Params, options, stop))
 }
 
 fn program(src: &str, options: Options) -> Result<Ast, Failed> {
-	settled(crate::parse_at(src, 0, None, Entry::Program, options, "")).map(|(ast, _, _)| ast)
+	settled(crate::parse_at(src, 0, Entry::Program, options, "")).map(|(ast, _, _)| ast)
 }
 
 /// A whole source as a program, with the list holding its root.
 fn whole(src: &str, options: Options) -> (Ast, List) {
-	let (ast, roots, _) = settled(crate::parse_at(src, 0, None, Entry::Program, options, "")).unwrap();
+	let (ast, roots, _) = settled(crate::parse_at(src, 0, Entry::Program, options, "")).unwrap();
 	(ast, roots)
 }
 
@@ -155,6 +155,57 @@ fn module_error(src: &str) -> String {
 	}
 }
 
+/// A literal's facts are its own: used as an operand it keeps them, and no sibling clears them.
+#[test]
+fn a_literal_keeps_its_facts() {
+	assert_eq!(module_error("({a = 1}.b = 2);"), "shorthand_assignment (4)");
+	assert_eq!(module_error("f({a = 1}.b = 2);"), "shorthand_assignment (5)");
+	assert_eq!(module_error("for ({a = 1}.b of c);"), "shorthand_assignment (8)");
+	assert_eq!(
+		module_error("({__proto__: a, __proto__: b}.c = 1);"),
+		"duplicate_proto (16)"
+	);
+	assert_eq!(module_error("[...r, a = 1] = b;"), "comma_after_rest (5)");
+	// the first of the pending errors is the one reported, whichever element it came from
+	assert_eq!(module_error("[...r, {a = 1}.b] = c;"), "comma_after_rest (5)");
+	assert_eq!(module_error("x = [{c = 1}, {a = 1}.b];"), "shorthand_assignment (8)");
+	assert_eq!(
+		module_error("x = [{__proto__: 1, __proto__: 2, a = 1}];"),
+		"duplicate_proto (20)"
+	);
+	assert_eq!(module_error("[(a = 1), b = 2] = c;"), "invalid_assignment_target (1)");
+	assert_eq!(module_error("async (...r, a = 1) => 1;"), "comma_after_rest (11)");
+	program(
+		"({a = 1} = b); [{a = 1}] = b; for ({a = 1} of b);",
+		Options(Options::MODULE),
+	)
+	.unwrap();
+}
+
+/// A list the closer reader decides is read right, and where it is unsure the parser tries.
+#[test]
+fn a_decided_list_is_read_right() {
+	let module = Options(Options::MODULE);
+	for src in [
+		"f((a = b.default / 2, c = \"/\") => 1, \"x)\" + \"\");",
+		"x = (a = b?.delete / 2, c = \"/\") => c; y = \")\" + \"\";",
+		"f((a = b.class / 2, c) => c,\n  d);",
+		"f((a = void /[)]/.b, c) => c, \")\");",
+	] {
+		program(src, module).unwrap_or_else(|e| panic!("{src:?}: {e}"));
+		JS.recovered(src, 0, Entry::Program, module, "");
+	}
+	for src in [
+		"f((a = b as void / 2, c = \"/\") => 1, \"x)\" + \"\");",
+		"f((a = [1] as const / 2, c = \"/\") => 1, \"x)\" + \"\");",
+		"f((a = b as A<B<C>> / 2, c = \"/\") => 1, \"x)\" + \"\");",
+		"f((a = b.default! / 2, c = \"/\") => 1, \"x)\" + \"\");",
+	] {
+		program(src, typescript(module)).unwrap_or_else(|e| panic!("{src:?}: {e}"));
+		TS.recovered(src, 0, Entry::Program, module, "");
+	}
+}
+
 #[test]
 fn consumed_end() {
 	let options = Options(Options::MODULE);
@@ -180,11 +231,17 @@ fn expression_ends_where_it_ends() {
 }
 
 #[test]
+fn the_crate_entry_reads_a_stylesheet() {
+	let (_, parsed) = crate::parse_at("a { b: c }", 0, Entry::StyleSheet, crate::Options::default(), "");
+	assert!(parsed.is_ok());
+}
+
+#[test]
 fn an_entry_is_one_of_its_numbers() {
-	assert_eq!(crate::json::entry(6.0), Ok(Entry::StyleSheet));
+	assert_eq!(crate::engine::entry(6.0), Ok(Entry::StyleSheet));
 	for index in [7.0, -1.0, 6.5, f64::NAN] {
 		assert!(
-			crate::json::entry(index).unwrap_err().contains(" is no entry"),
+			crate::engine::entry(index).unwrap_err().contains(" is no entry"),
 			"{index}"
 		);
 	}
@@ -193,24 +250,21 @@ fn an_entry_is_one_of_its_numbers() {
 #[test]
 fn the_session_writes_the_same_words_again() {
 	use crate::Options;
-	use crate::json::Prepared;
+	use crate::engine::parse;
 	let options = Options(Options::MODULE | Options::COMMENTS | Options::LOCATIONS | Options::SCOPES);
 	let source = "let x = /* a */ 1; function f(y) { return x + y; } // b";
-	let prepared = Prepared::borrowed(source, options);
-	let words = || crate::json::words(|words| words.to_vec());
+	let words = || crate::engine::words(|words| words.to_vec());
 	// a failed parse answers words too, flagged as such; its first one settles the error buffer
-	Prepared::borrowed("a +", options)
-		.in_place(Entry::Expression, 0.0, None, "", None)
-		.unwrap();
+	parse("a +", options, Entry::Expression, 0.0, "", None).unwrap();
 	let failed = words();
 	assert_eq!((failed[1], failed[2 + failed[1] as usize] & 1), (0, 1));
-	prepared.in_place(Entry::Program, 0.0, None, "", None).unwrap();
+	parse(source, options, Entry::Program, 0.0, "", None).unwrap();
 	let first = words();
-	let _ = Prepared::borrowed("a + b", options).in_place(Entry::Expression, 0.0, None, "", None);
-	let _ = Prepared::borrowed("a +", options).in_place(Entry::Expression, 0.0, None, "", None);
-	prepared.in_place(Entry::Program, 0.0, None, "", None).unwrap();
+	let _ = parse("a + b", options, Entry::Expression, 0.0, "", None);
+	let _ = parse("a +", options, Entry::Expression, 0.0, "", None);
+	parse(source, options, Entry::Program, 0.0, "", None).unwrap();
 	let again = words();
-	// but for the first saying its buffers are new to the front end
+	// but for the first saying its buffers are new to the decoder
 	let what = 2 + first[1] as usize;
 	assert_eq!(first[what] & !1, again[what] & !1);
 	assert_eq!(
@@ -221,9 +275,10 @@ fn the_session_writes_the_same_words_again() {
 
 #[test]
 fn nesting_limits() {
-	std::thread::Builder::new()
+	let (done, finished) = std::sync::mpsc::channel();
+	let limits = std::thread::Builder::new()
 		.stack_size(64 << 20)
-		.spawn(|| {
+		.spawn(move || {
 			let deep = format!("{}1{}", "(".repeat(2000), ")".repeat(2000));
 			assert_eq!(module_error(&deep).as_str(), "nesting_depth (499)");
 			assert!(program(&format!("{}1{}", "(".repeat(400), ")".repeat(400)), Options::default()).is_ok());
@@ -231,10 +286,32 @@ fn nesting_limits() {
 			assert!(program(&chain, Options::default()).is_ok());
 			let chain = format!("x = 1{}", " + 1".repeat(20000));
 			assert_eq!(module_error(&chain).as_str(), "nesting_depth (40006)");
+			// an arrow's parameters hold the depth an expression list's items do
+			let arrows = format!("x = {}x{};", "(a = ".repeat(450), ") => a".repeat(450));
+			assert_eq!(module_error(&arrows).as_str(), "nesting_depth (1665)");
+			let typed = format!("x = {}x{};", "(a = ".repeat(450), "): T => a".repeat(450));
+			let error = program(&typed, typescript(Options(Options::MODULE))).unwrap_err();
+			assert_eq!((error.text.as_str(), error.pos), ("nesting_depth", 1665));
+			let spine = format!("x = {}c{};", "a ? (b): T => ".repeat(334), " : d".repeat(334));
+			let error = program(&spine, typescript(Options(Options::MODULE))).unwrap_err();
+			assert_eq!((error.text.as_str(), error.pos), ("nesting_depth", 4656));
+			// a list the closer reader leaves undecided is tried once: without its outcome kept, every
+			// enclosing failure tried it again, 2x per level, and 24 levels took 15 s
+			let nest = format!(
+				"x = {}1{};",
+				"(a = function () {} / 1, b = ".repeat(28),
+				") + 1".repeat(28)
+			);
+			assert!(program(&nest, Options::default()).is_ok());
+			assert!(program(&nest, typescript(Options::default())).is_ok());
+			done.send(()).unwrap();
 		})
-		.unwrap()
-		.join()
 		.unwrap();
+	// the spine above ran past ten minutes when a limit met in the type read ahead of a list was
+	// taken for an arrow: each level read the levels under it again
+	let waited = finished.recv_timeout(std::time::Duration::from_secs(20));
+	assert_ne!(waited, Err(std::sync::mpsc::RecvTimeoutError::Timeout));
+	limits.join().unwrap();
 }
 
 #[test]
@@ -266,19 +343,13 @@ fn entry_points() {
 		params("{#snippet row(a, a)}", 13, options, "").unwrap_err().text,
 		"duplicate_parameter"
 	);
-	// Parameters are read as expressions first, so the errors are an arrow's.
+	// Parameters are read as bindings, as an arrow's are.
 	let params_error = |src: &str| {
 		let e = params(src, 13, options, "").unwrap_err();
 		(e.text, e.pos)
 	};
-	assert_eq!(
-		params_error("{#snippet row(a.b)}"),
-		("invalid_assignment_target".into(), 14)
-	);
-	assert_eq!(
-		params_error("{#snippet row((a))}"),
-		("parenthesized_pattern".into(), 14)
-	);
+	assert_eq!(params_error("{#snippet row(a.b)}"), ("unexpected_token".into(), 15));
+	assert_eq!(params_error("{#snippet row((a))}"), ("unexpected_token".into(), 14));
 	assert_eq!(
 		params_error("{#snippet row(a = await x)}"),
 		("await_in_default_value".into(), 18)
@@ -291,7 +362,7 @@ fn entry_points() {
 		.spawn(move || {
 			let deep = format!("({}a{})", "[".repeat(20_000), "]".repeat(20_000));
 			assert_eq!(params(&deep, 0, options, "").unwrap_err().code, Code::NestingDepth);
-			let news = format!("({}a)", "new ".repeat(20_000));
+			let news = format!("(a = {}a)", "new ".repeat(20_000));
 			assert_eq!(params(&news, 0, options, "").unwrap_err().code, Code::NestingDepth);
 		})
 		.unwrap()
@@ -324,7 +395,7 @@ impl Api {
 		stop: &str,
 	) -> Result<(Ast, Vec<NodeId>, u32), Failed> {
 		let options = if self.typescript { typescript(options) } else { options };
-		roots(crate::parse_at(src, offset, None, entry, options, stop))
+		roots(crate::parse_at(src, offset, entry, options, stop))
 	}
 
 	/// Parses under recovery and checks what the recovered tree promises: it never fails, its
@@ -463,6 +534,10 @@ fn recovery() {
 	let (ast, _, _) = JS.recovered("/* c", 0, Entry::Program, module, "");
 	assert_eq!(codes(&ast), ["unterminated_comment@0"]);
 	assert_eq!(ast.comments.len(), 1);
+	// a character no token starts, inside an arrow's parameters: the arrow is read around it
+	let (ast, _, _) = JS.recovered("f((a, b = #) => a);", 0, Entry::Program, module, "");
+	assert_eq!(codes(&ast), ["unexpected_token@11", "unexpected_character@11"]);
+	assert!(script_body(&ast)[0].contains("ArrowFunctionExpression"));
 
 	// a missing semicolon is recorded and the statement kept; a statement that fails is skipped
 	// to `;`, the closing brace or a keyword on a new line
@@ -626,9 +701,10 @@ fn undeclared_exports_can_be_allowed() {
 #[ignore]
 fn phases() {
 	use crate::Options;
-	use crate::estree::{Positions, answer};
+	use crate::estree::Writer;
 	use crate::lexer::Lexer;
 	use crate::lexer::token::TokenKind;
+	use crate::positions::Positions;
 	let Ok(path) = std::env::var("TEASEL_BENCH") else {
 		return;
 	};
@@ -713,20 +789,20 @@ fn phases() {
 	let end = source.len() as u32;
 	let lines = Positions::new(&source, true);
 	{
-		let prepared = crate::json::Prepared::borrowed(&source, Options(Options::MODULE | Options::COMMENTS));
-		best("whole request: positions, parse, comments, encode, finish", &mut || {
-			prepared.in_place(Entry::Program, 0.0, None, "", None).unwrap();
+		let options = Options(Options::MODULE | Options::COMMENTS);
+		best("whole parse: positions, parse, comments, encode, finish", &mut || {
+			crate::engine::parse(&source, options, Entry::Program, 0.0, "", None).unwrap();
 		});
 		let options = Options(Options::MODULE | Options::COMMENTS | Options::SCOPES | Options::LOCATIONS);
-		let prepared = crate::json::Prepared::borrowed(&source, options);
-		best("whole request with scopes and loc", &mut || {
-			prepared.in_place(Entry::Program, 0.0, None, "", None).unwrap();
+		best("whole parse with scopes and loc", &mut || {
+			crate::engine::parse(&source, options, Entry::Program, 0.0, "", None).unwrap();
 		});
 	}
-	let grammar = crate::json::grammar(
+	let grammar = crate::engine::grammar(
 		&std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/host.json")).unwrap(),
 	)
 	.unwrap();
+	let grammar = crate::engine::grammar_at(grammar);
 	let document = format!(
 		"<script>let items = [1,2,3];</script>\n{}",
 		"{#each items as item}<p class=\"row\" onclick={() => f(item)}>{item + 1}</p>{/each}\n".repeat(200)
@@ -738,22 +814,16 @@ fn phases() {
 			"module scopes comments locations",
 		),
 	] {
-		let prepared = crate::json::Prepared::borrowed(&document, Options(flags));
 		best(&format!("host: 200 each blocks, {label}"), &mut || {
-			prepared
-				.in_place(Entry::Program, 0.0, None, "", Some(&grammar))
-				.unwrap();
+			crate::engine::parse(&document, Options(flags), Entry::Program, 0.0, "", grammar).unwrap();
 		});
 	}
 	best("Json write, loc", &mut || {
-		let _ = answer(
-			&ast,
+		let names = crate::host::grammar::own::NAMES;
+		let _ = Writer::new(&ast, &source, &lines, names, options.with(Options::COMMENTS)).answer(
 			Entry::Program,
 			Some(roots),
 			end,
-			&source,
-			&lines,
-			options.with(Options::COMMENTS),
 		);
 	});
 	eprintln!(
@@ -904,19 +974,26 @@ fn alloc_probe() {
 #[test]
 #[ignore]
 fn host_alloc_probe() {
-	let grammar = crate::json::grammar(
+	let grammar = crate::engine::grammar(
 		&std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/host.json")).unwrap(),
 	)
 	.unwrap();
+	let grammar = crate::engine::grammar_at(grammar);
 	let count = |src: &str| {
-		let prepared = crate::json::Prepared::borrowed(src, crate::Options(crate::Options::MODULE));
-		prepared
-			.in_place(Entry::Program, 0.0, None, "", Some(&grammar))
-			.unwrap();
+		let parse = || {
+			crate::engine::parse(
+				src,
+				crate::Options(crate::Options::MODULE),
+				Entry::Program,
+				0.0,
+				"",
+				grammar,
+			)
+			.unwrap()
+		};
+		parse();
 		let before = ALLOCATIONS.load(std::sync::atomic::Ordering::Relaxed);
-		prepared
-			.in_place(Entry::Program, 0.0, None, "", Some(&grammar))
-			.unwrap();
+		parse();
 		ALLOCATIONS.load(std::sync::atomic::Ordering::Relaxed) - before
 	};
 	let base = count("");
@@ -964,22 +1041,28 @@ fn layout_sizes() {
 		size_of::<crate::lexer::token::TokenKind>()
 	);
 	eprintln!(
-		"Scope {} Binding {} Reference {} Comment {} Host {} Attached {} TokenSnapshot {}",
+		"Scope {} Binding {} Reference {} Comment {} HostRow {} Attached {} TokenSnapshot {}",
 		size_of::<crate::scopes::Scope>(),
 		size_of::<crate::scopes::Binding>(),
 		size_of::<crate::scopes::Reference>(),
 		size_of::<crate::ast::Comment>(),
-		size_of::<crate::ast::Host>(),
+		size_of::<crate::ast::HostRow>(),
 		size_of::<crate::ast::Attached>(),
 		size_of::<super::TokenSnapshot>()
 	);
 }
 
 #[test]
+#[should_panic(expected = "is not a character boundary")]
+fn an_offset_inside_a_character_is_refused() {
+	crate::estree::parse("é", Entry::Program, 1, crate::Options(crate::Options::MODULE));
+}
+
+#[test]
 fn parenthesized_bits() {
-	let request = crate::json::Request::from_flags(crate::Options::MODULE | crate::Options::PARENTHESIZED);
-	let json = crate::json::parse("(a).b; (x, y); c; ((d));", &request);
+	let options = crate::Options(crate::Options::MODULE | crate::Options::PARENTHESIZED);
+	let json = crate::estree::parse("(a).b; (x, y); c; ((d));", Entry::Program, 0, options);
 	assert_eq!(json.matches("\"parenthesized\":true").count(), 3, "{json}");
-	let json = crate::json::parse("(a, b) => a; (c);", &request);
+	let json = crate::estree::parse("(a, b) => a; (c);", Entry::Program, 0, options);
 	assert_eq!(json.matches("\"parenthesized\":true").count(), 1, "{json}");
 }

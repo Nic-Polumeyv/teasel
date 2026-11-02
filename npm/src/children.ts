@@ -1,5 +1,5 @@
 // written by scripts/children.ts from the engine's layout
-/** For every type of node a built-in plan answers with, the fields that hold a node or a list of nodes: what a walk follows. A document plan's `children` adds the host's. */
+/** For every type of node a built-in language answers with, the fields that hold a node or a list of nodes: what a walk follows. A grammar's `children` adds the host's. */
 export const children = frozen({
 	Program: ['body'],
 	Identifier: [],
@@ -138,7 +138,6 @@ export const children = frozen({
 	TSSatisfiesExpression: ['expression', 'typeAnnotation'],
 	TSNonNullExpression: ['expression'],
 	TSTypeAssertion: ['typeAnnotation', 'expression'],
-	TSTypeCastExpression: ['expression', 'typeAnnotation'],
 	TSInstantiationExpression: ['expression', 'typeArguments'],
 	TSParameterProperty: ['parameter'],
 	Decorator: ['expression'],

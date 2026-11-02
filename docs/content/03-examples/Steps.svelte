@@ -31,10 +31,16 @@
 	// the smallest node over a character of the text
 	const under = (at: number) => spanned.filter((n) => n.start <= at && at < n.end).sort((a, b) => a.end - a.start - (b.end - b.start))[0] ?? null;
 	const inside = (at: number, range?: [number, number] | null) => range != null && range[0] <= at && at < range[1];
+	// a fragment has no span of its own: it covers its nodes
+	const span = (node: Node): [number, number] | null => {
+		if ('start' in node) return [node.start, node.end];
+		const nodes = node.nodes as Node[];
+		return nodes.length > 0 ? [nodes[0].start, nodes[nodes.length - 1].end] : null;
+	};
 	const tone = (at: number) => {
 		const error = answer.error;
 		if (error) return at < error.pos ? colours[at] : at < Math.max(error.end, error.pos + 1) ? 'rounded-xs bg-[#e67e80]/25 text-[#e67e80]' : `${colours[at]} opacity-35`;
-		if (active && inside(at, [active.start, active.end])) return `${colours[at]} bg-[#7fbbb3]/25`;
+		if (active && inside(at, span(active))) return `${colours[at]} bg-[#7fbbb3]/25`;
 		if (inside(at, active?.refers)) return `${colours[at]} bg-[#dbbc7f]/30`;
 		return colours[at];
 	};

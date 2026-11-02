@@ -1,0 +1,268 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 72,
+		"scope": 0,
+		"body": [
+			{
+				"type": "TSModuleDeclaration",
+				"start": 0,
+				"end": 22,
+				"scope": 1,
+				"defines": [
+					0
+				],
+				"declare": false,
+				"global": false,
+				"id": {
+					"type": "Identifier",
+					"start": 10,
+					"end": 11,
+					"declares": 0,
+					"decorators": [],
+					"optional": false,
+					"name": "A"
+				},
+				"body": {
+					"type": "TSModuleBlock",
+					"start": 12,
+					"end": 22,
+					"body": [
+						{
+							"type": "VariableDeclaration",
+							"start": 14,
+							"end": 20,
+							"declare": false,
+							"declarations": [
+								{
+									"type": "VariableDeclarator",
+									"start": 18,
+									"end": 19,
+									"defines": [
+										1
+									],
+									"definite": false,
+									"id": {
+										"type": "Identifier",
+										"start": 18,
+										"end": 19,
+										"declares": 1,
+										"decorators": [],
+										"optional": false,
+										"name": "a"
+									},
+									"init": null
+								}
+							],
+							"kind": "let"
+						}
+					]
+				}
+			},
+			{
+				"type": "TSModuleDeclaration",
+				"start": 23,
+				"end": 45,
+				"scope": 1,
+				"declare": false,
+				"global": false,
+				"id": {
+					"type": "Identifier",
+					"start": 33,
+					"end": 34,
+					"reference": 0,
+					"decorators": [],
+					"optional": false,
+					"name": "A"
+				},
+				"body": {
+					"type": "TSModuleBlock",
+					"start": 35,
+					"end": 45,
+					"body": [
+						{
+							"type": "VariableDeclaration",
+							"start": 37,
+							"end": 43,
+							"declare": false,
+							"declarations": [
+								{
+									"type": "VariableDeclarator",
+									"start": 41,
+									"end": 42,
+									"defines": [
+										2
+									],
+									"definite": false,
+									"id": {
+										"type": "Identifier",
+										"start": 41,
+										"end": 42,
+										"declares": 2,
+										"decorators": [],
+										"optional": false,
+										"name": "b"
+									},
+									"init": null
+								}
+							],
+							"kind": "let"
+						}
+					]
+				}
+			},
+			{
+				"type": "TSEnumDeclaration",
+				"start": 46,
+				"end": 58,
+				"scope": 2,
+				"defines": [
+					3
+				],
+				"declare": false,
+				"const": false,
+				"id": {
+					"type": "Identifier",
+					"start": 51,
+					"end": 52,
+					"declares": 3,
+					"decorators": [],
+					"optional": false,
+					"name": "E"
+				},
+				"members": [
+					{
+						"type": "TSEnumMember",
+						"start": 55,
+						"end": 56,
+						"defines": [
+							4
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 55,
+							"end": 56,
+							"declares": 4,
+							"decorators": [],
+							"optional": false,
+							"name": "x"
+						}
+					}
+				]
+			},
+			{
+				"type": "TSEnumDeclaration",
+				"start": 59,
+				"end": 71,
+				"scope": 2,
+				"declare": false,
+				"const": false,
+				"id": {
+					"type": "Identifier",
+					"start": 64,
+					"end": 65,
+					"reference": 1,
+					"decorators": [],
+					"optional": false,
+					"name": "E"
+				},
+				"members": [
+					{
+						"type": "TSEnumMember",
+						"start": 68,
+						"end": 69,
+						"defines": [
+							5
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 68,
+							"end": 69,
+							"declares": 5,
+							"decorators": [],
+							"optional": false,
+							"name": "y"
+						}
+					}
+				]
+			}
+		],
+		"sourceType": "module"
+	},
+	"end": 72,
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "namespace",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "enum",
+			"parent": 0,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "A",
+			"kind": "namespace",
+			"scope": 0,
+			"write": true
+		},
+		{
+			"name": "a",
+			"kind": "let",
+			"scope": 1,
+			"write": false
+		},
+		{
+			"name": "b",
+			"kind": "let",
+			"scope": 1,
+			"write": false
+		},
+		{
+			"name": "E",
+			"kind": "enum",
+			"scope": 0,
+			"write": true
+		},
+		{
+			"name": "x",
+			"kind": "enum-member",
+			"scope": 2,
+			"write": true
+		},
+		{
+			"name": "y",
+			"kind": "enum-member",
+			"scope": 2,
+			"write": true
+		}
+	],
+	"references": [
+		{
+			"scope": 0,
+			"binding": 0,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		},
+		{
+			"scope": 0,
+			"binding": 3,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": true
+		}
+	]
+}

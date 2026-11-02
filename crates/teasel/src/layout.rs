@@ -1,5 +1,5 @@
 //! The tree's memory layout: every kind's fields by byte offset and type, and how the compiler
-//! spells a missing optional. `json::layout_json` tells it to a front end.
+//! spells a missing optional. `engine::layout_json` tells it to the decoder.
 
 use std::mem::MaybeUninit;
 
@@ -38,6 +38,11 @@ pub struct Variant {
 	pub name: &'static str,
 	/// Offsets from the start of the enum: past its tag word.
 	pub fields: &'static [Field],
+}
+
+/// The tag of a `repr(C, u32)` enum at `base`: its first word.
+pub(crate) fn tag(base: *const u8) -> usize {
+	unsafe { base.cast::<u32>().read() as usize }
 }
 
 /// What a field's type is on the wire.

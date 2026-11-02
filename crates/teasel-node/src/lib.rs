@@ -1,18 +1,16 @@
-//! The Node addon: the same five operations as the WebAssembly module, over a handle to the
-//! prepared source.
+//! The Node addon: the same operations as the WebAssembly module, the source read where V8
+//! keeps its bytes.
 
 mod node_api;
 
 use std::cell::Cell;
 use std::ffi::{CString, c_void};
 use std::ptr::null_mut;
-use std::rc::Rc;
 
 use node_api::{CallbackInfo, Env, OK, Ref, Status, Value};
 use teasel::Options;
+use teasel::engine;
 use teasel::handed::{Allocation, Element, Raw};
-use teasel::host::Grammar;
-use teasel::json::{self, Prepared};
 
 // RUSTFLAGS in the environment replaces .cargo/config.toml's flags, and nothing loads the addon on a Windows without the redistributable
 #[cfg(all(target_env = "msvc", not(target_feature = "crt-static")))]
@@ -101,12 +99,6 @@ fn number(env: Env, value: Value) -> Result<f64> {
 	})
 }
 
-// anything but a number is absent, read straight: asking V8 what the value is first costs as much as the read
-fn optional(env: Env, value: Value) -> Option<f64> {
-	let mut result = 0.0;
-	(unsafe { node_api::napi_get_value_double(env, value, &mut result) } == OK).then_some(result)
-}
-
 fn text(env: Env, text: &str) -> Result<Value> {
 	out(null_mut(), "a string", |r| unsafe {
 		node_api::napi_create_string_utf8(env, text.as_ptr().cast(), text.len(), r)
@@ -119,155 +111,31 @@ fn undefined(env: Env) -> Result<Value> {
 	})
 }
 
-fn external(env: Env, value: Value, what: &str) -> Result<*mut c_void> {
-	out(null_mut(), what, |r| unsafe {
-		node_api::napi_get_value_external(env, value, r)
-	})
-}
-
-// a finalizer passed to napi_create_external cannot be cancelled, so free deletes this one's reference
-struct Held {
-	prepared: Prepared<'static>,
-	finalizer: Ref,
-}
-
-fn handle(env: Env, value: Value) -> Result<*mut Held> {
-	let data = external(env, value, "a source")?;
-	if data.is_null() {
-		return Err("a source expected".into());
-	}
-	Ok(data.cast())
-}
-
-// the bytes V8 encoded, copied; the options as one flag word
-unsafe extern "C" fn create(env: Env, info: CallbackInfo) -> Value {
-	guard(env, || {
-		let [source, flags] = args::<2>(env, info)?;
-		let prepared = Prepared::new(
-			source_text(env, source)?.to_owned(),
-			Options(number(env, flags)? as u32),
-		);
-		let held = Box::into_raw(Box::new(Held {
-			prepared,
-			finalizer: null_mut(),
-		}));
-		let result = out(null_mut(), "a source", |r| unsafe {
-			node_api::napi_create_external(env, held.cast(), None, null_mut(), r)
-		})?;
-		check(
-			unsafe {
-				node_api::napi_add_finalizer(
-					env,
-					result,
-					held.cast(),
-					Some(drop_source),
-					null_mut(),
-					&mut (*held).finalizer,
-				)
-			},
-			"a source",
-		)?;
-		Ok(result)
-	})
-}
-
-// the grammar of a host language as JSON, read once; V8 lets go of it with the external
-unsafe extern "C" fn plan(env: Env, info: CallbackInfo) -> Value {
+unsafe extern "C" fn grammar(env: Env, info: CallbackInfo) -> Value {
 	guard(env, || {
 		let [definition] = args::<1>(env, info)?;
-		let grammar = teasel::json::grammar(&string(env, definition)?)?;
-		let mut result = null_mut();
-		check(
-			unsafe {
-				node_api::napi_create_external(
-					env,
-					Box::into_raw(Box::new(grammar)).cast(),
-					Some(drop_plan),
-					null_mut(),
-					&mut result,
-				)
-			},
-			"a plan",
-		)?;
-		Ok(result)
+		uint32(env, engine::grammar(&string(env, definition)?)?)
 	})
 }
 
-unsafe extern "C" fn children(env: Env, info: CallbackInfo) -> Value {
+unsafe extern "C" fn about(env: Env, info: CallbackInfo) -> Value {
 	guard(env, || {
-		let [plan] = args::<1>(env, info)?;
-		text(
-			env,
-			&teasel::json::children(grammar_of(env, plan).ok_or("a plan expected")?),
-		)
-	})
-}
-
-unsafe extern "C" fn drop_source(env: Env, data: *mut c_void, _: *mut c_void) {
-	let held = unsafe { Box::from_raw(data.cast::<Held>()) };
-	unsafe { node_api::napi_delete_reference(env, held.finalizer) };
-}
-
-unsafe extern "C" fn drop_plan(_: Env, data: *mut c_void, _: *mut c_void) {
-	drop(unsafe { Box::from_raw(data.cast::<Rc<Grammar>>()) });
-}
-
-// the grammar a parse reads a document by; anything else is none
-fn grammar_of(env: Env, value: Value) -> Option<&'static Grammar> {
-	let mut data = null_mut();
-	if unsafe { node_api::napi_get_value_external(env, value, &mut data) } != OK || data.is_null() {
-		return None;
-	}
-	Some(unsafe { &**data.cast::<Rc<Grammar>>() })
-}
-
-unsafe extern "C" fn free(env: Env, info: CallbackInfo) -> Value {
-	guard(env, || {
-		let [source] = args::<1>(env, info)?;
-		let held = handle(env, source)?;
-		check(
-			unsafe { node_api::napi_delete_reference(env, (*held).finalizer) },
-			"a source",
-		)?;
-		drop(unsafe { Box::from_raw(held) });
-		undefined(env)
+		let [grammar] = args::<1>(env, info)?;
+		let grammar = engine::grammar_at(number(env, grammar)? as u32).ok_or("a grammar expected")?;
+		text(env, &engine::about(grammar))
 	})
 }
 
 unsafe extern "C" fn parse(env: Env, info: CallbackInfo) -> Value {
 	guard(env, || {
-		let [source, entry, offset, end, stop, plan] = args::<6>(env, info)?;
-		let prepared = unsafe { &(*handle(env, source)?).prepared };
-		let (entry, offset, end, stop) = (
-			number(env, entry)?,
-			number(env, offset)?,
-			optional(env, end),
-			string(env, stop)?,
-		);
-		let grammar = grammar_of(env, plan);
-		answer(env, || {
-			prepared.in_place(json::entry(entry)?, offset, end, &stop, grammar)
+		let [source, flags, entry, offset, stop, grammar] = args::<6>(env, info)?;
+		let (source, options) = (source_text(env, source)?, Options(number(env, flags)? as u32));
+		let (entry, offset) = (engine::entry(number(env, entry)?)?, number(env, offset)?);
+		let (stop, grammar) = (string(env, stop)?, engine::grammar_at(number(env, grammar)? as u32));
+		in_env(env, || {
+			engine::parse(source, options, entry, offset, &stop, grammar)?;
+			view(env)
 		})
-	})
-}
-
-// the whole source read where V8 keeps its bytes, for a source the engine holds nothing of
-unsafe extern "C" fn once(env: Env, info: CallbackInfo) -> Value {
-	guard(env, || {
-		let [source, flags, entry, stop, plan] = args::<5>(env, info)?;
-		let prepared = Prepared::borrowed(source_text(env, source)?, Options(number(env, flags)? as u32));
-		let (entry, stop) = (number(env, entry)?, string(env, stop)?);
-		let grammar = grammar_of(env, plan);
-		answer(env, || {
-			prepared.in_place(json::entry(entry)?, 0.0, None, &stop, grammar)
-		})
-	})
-}
-
-fn answer(env: Env, parse: impl FnOnce() -> Result<()>) -> Result<Value> {
-	in_env(env, || match parse() {
-		Ok(()) => view(env),
-		Err(json) => text(env, &json),
 	})
 }
 
@@ -279,7 +147,7 @@ unsafe extern "C" fn tree(env: Env, _: CallbackInfo) -> Value {
 		in_env(env, || {
 			let mut moved = Vec::new();
 			let mut count = 0;
-			let typescript = teasel::json::tree(&mut |_, buffer| {
+			let typescript = teasel::engine::tree(&mut |_, buffer| {
 				count += 1;
 				if let Some(buffer) = buffer {
 					moved.push((count, buffer_view(env, buffer)));
@@ -339,7 +207,7 @@ fn uint32(env: Env, value: u32) -> Result<Value> {
 }
 
 unsafe extern "C" fn layout(env: Env, _: CallbackInfo) -> Value {
-	guard(env, || text(env, &teasel::json::layout_json()))
+	guard(env, || text(env, &teasel::engine::layout_json()))
 }
 
 // a panic must not cross into the host; it and any error become a thrown Error
@@ -354,7 +222,7 @@ fn guard(env: Env, f: impl FnOnce() -> Result<Value> + std::panic::UnwindSafe) -
 				.unwrap_or_else(|| "panic".into());
 			// a payload's drop can panic again, and a second panic aborts
 			std::mem::forget(panic);
-			teasel::json::reset_session();
+			teasel::engine::reset_session();
 			Err(message)
 		}
 	};
@@ -468,7 +336,7 @@ fn view_of(env: Env, slot: usize, buffer: &mut dyn Raw) -> Result<Value> {
 
 // the answer is written into the words in place; one the words outgrew stays with the view that shows it
 fn view(env: Env) -> Result<Value> {
-	teasel::json::words(|words| {
+	teasel::engine::words(|words| {
 		let value = view_of(env, 0, words)?;
 		// past 256 KB, a buffer four times too big is left to its view
 		if words.capacity() > 1 << 16 && words.capacity() > 4 * words.len() {
@@ -481,7 +349,7 @@ fn view(env: Env) -> Result<Value> {
 fn fresh(env: Env) {
 	let (view_env, refs) = VIEW.get();
 	if view_env != env {
-		teasel::json::reset_session();
+		teasel::engine::reset_session();
 		for reference in refs {
 			if !reference.is_null() {
 				unsafe { node_api::napi_delete_reference(view_env, reference) };
@@ -518,12 +386,9 @@ pub unsafe extern "C" fn napi_register_module_v1(env: Env, exports: Value) -> Va
 			"environment cleanup",
 		)?;
 		for (name, callback) in [
-			(c"create", create as unsafe extern "C" fn(Env, CallbackInfo) -> Value),
-			(c"parse", parse),
-			(c"once", once),
-			(c"plan", plan),
-			(c"children", children),
-			(c"free", free),
+			(c"parse", parse as unsafe extern "C" fn(Env, CallbackInfo) -> Value),
+			(c"grammar", grammar),
+			(c"about", about),
 			(c"tree", tree),
 			(c"layout", layout),
 		] {

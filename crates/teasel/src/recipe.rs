@@ -1,6 +1,6 @@
 //! How each kind of node, each table's rows and what TypeScript adds are spelled in ESTree: a
 //! recipe of operations over the fields the layout describes, followed by the JSON writer and by
-//! a front end building objects from the tree in place, so the two cannot drift.
+//! the decoder building objects from the tree in place, so the two cannot drift.
 
 use crate::layout::{Field, Ty, Variant};
 use crate::scopes::{Binding, Reference, Root, Scope};
@@ -127,12 +127,10 @@ impl Op {
 
 /// Whether a JavaScript or TypeScript node has this `type`.
 pub fn names_type(name: &str) -> bool {
-	let spelled = |table: &[(&str, &[Op])]| {
-		table
-			.iter()
-			.any(|(_, ops)| ops.iter().any(|op| matches!(op, Type(t) if *t == name)))
-	};
-	spelled(KINDS) || crate::ast::Keyword::NAMES.contains(&name)
+	KINDS
+		.iter()
+		.any(|(_, ops)| ops.iter().any(|op| matches!(op, Type(t) if *t == name)))
+		|| crate::ast::Keyword::NAMES.contains(&name)
 }
 
 /// Every kind by the variant's name; `Host` has none, the writer spells it itself.
@@ -268,7 +266,6 @@ pub const KINDS: &[(&str, &[Op])] = &[
 	("SatisfiesExpression", &[Through("expression"), Type("TSSatisfiesExpression"), Node("expression", "expression"), Node("typeAnnotation", "type_annotation")]),
 	("NonNullExpression", &[Through("expression"), Type("TSNonNullExpression"), Node("expression", "expression")]),
 	("TypeAssertion", &[Through("expression"), Type("TSTypeAssertion"), Node("typeAnnotation", "type_annotation"), Node("expression", "expression")]),
-	("TypeCastExpression", &[Through("expression"), Type("TSTypeCastExpression"), Node("expression", "expression"), Maybe("typeAnnotation", "type_annotation")]),
 	("InstantiationExpression", &[Through("expression"), Type("TSInstantiationExpression"), Node("expression", "expression"), Node("typeArguments", "type_arguments")]),
 	("ParameterProperty", &[Keep("TSParameterProperty"), Through("parameter"), Type("TSParameterProperty"), Node("parameter", "parameter")]),
 	("Decorator", &[Keep("Decorator"), Type("Decorator"), Node("expression", "expression")]),
@@ -291,7 +288,7 @@ pub fn resolve(recipes: &[(&str, &[Op])], variants: &[Variant]) -> &'static [&'s
 }
 
 pub(crate) fn resolve_ops(ops: &[Op], fields: &[Field], kind: &str) -> &'static [Op<Slot>] {
-	let slot = |path: Path, wanted: &[fn(&Ty) -> bool]| -> Slot {
+	let slot_in = |fields: &[Field], path: Path, wanted: &[fn(&Ty) -> bool]| -> Slot {
 		let (head, rest) = path.split_once('.').map_or((path, None), |(h, r)| (h, Some(r)));
 		let field = fields
 			.iter()
@@ -317,16 +314,8 @@ pub(crate) fn resolve_ops(ops: &[Op], fields: &[Field], kind: &str) -> &'static 
 		);
 		slot
 	};
-	let extra = |path: Path| -> Slot {
-		let field = crate::ast::Extras::FIELDS
-			.iter()
-			.find(|f| f.name == path)
-			.unwrap_or_else(|| panic!("the extras have no field {path}"));
-		Slot {
-			at: field.at,
-			ty: field.ty,
-		}
-	};
+	let slot = |path: Path, wanted: &[fn(&Ty) -> bool]| slot_in(fields, path, wanted);
+	let maybe: &[fn(&Ty) -> bool] = &[|t| matches!(t, Ty::OptNode | Ty::OptList | Ty::OptEnum(_))];
 	let resolved: Vec<Op<Slot>> = ops
 		.iter()
 		.map(|op| match *op {
@@ -334,11 +323,8 @@ pub(crate) fn resolve_ops(ops: &[Op], fields: &[Field], kind: &str) -> &'static 
 			TypeOf(f) => TypeOf(slot(f, &[|t| matches!(t, Ty::Enum(_))])),
 			Node(k, f) => Node(k, slot(f, &[|t| matches!(t, Ty::Node)])),
 			Opt(k, f) => Opt(k, slot(f, &[|t| matches!(t, Ty::OptNode | Ty::OptStr | Ty::OptU32)])),
-			Maybe(k, f) => Maybe(
-				k,
-				slot(f, &[|t| matches!(t, Ty::OptNode | Ty::OptList | Ty::OptEnum(_))]),
-			),
-			Extra(k, f) => Extra(k, extra(f)),
+			Maybe(k, f) => Maybe(k, slot(f, maybe)),
+			Extra(k, f) => Extra(k, slot_in(crate::ast::Extras::FIELDS, f, maybe)),
 			List(k, f) => List(k, slot(f, &[|t| matches!(t, Ty::List)])),
 			OptListKey(k, f) => OptListKey(k, slot(f, &[|t| matches!(t, Ty::OptList)])),
 			Params(k, f) => Params(k, slot(f, &[|t| matches!(t, Ty::List)])),

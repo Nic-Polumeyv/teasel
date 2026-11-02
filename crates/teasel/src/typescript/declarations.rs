@@ -89,7 +89,9 @@ impl<const TS: bool> Parser<'_, TS> {
 		let body = self.parse_module_block(false);
 		self.ts.state.global_depth -= 1;
 		let declared: Vec<_> = self.current_scope().declared().collect();
-		self.ts.state.globals.extend(declared);
+		for name in declared {
+			self.declare_global(name);
+		}
 		self.exit_scope();
 		body
 	}

@@ -95,23 +95,18 @@ function between(text: string) {
 }
 
 function script(code: string, typescript: boolean) {
-	const source = new Source(code, { sourceType: 'module', typescript, comments: true, errorRecovery: true });
-	try {
-		const { node, comments = [] } = source.parse();
-		const spans: Span[] = comments.map((c) => ({ start: c.start, end: c.end, kind: 'comment' as const }));
-		collect(node, spans);
-		spans.sort((a, b) => a.start - b.start || b.end - a.end);
-		let html = '';
-		let at = 0;
-		for (const span of spans) {
-			if (span.start < at) continue;
-			html += between(code.slice(at, span.start)) + paint(code.slice(span.start, span.end), span.kind);
-			at = span.end;
-		}
-		return html + between(code.slice(at));
-	} finally {
-		source[Symbol.dispose]();
+	const { node, comments = [] } = new Source(code, { sourceType: 'module', typescript, comments: true, errorRecovery: true }).parse();
+	const spans: Span[] = comments.map((c) => ({ start: c.start, end: c.end, kind: 'comment' as const }));
+	collect(node, spans);
+	spans.sort((a, b) => a.start - b.start || b.end - a.end);
+	let html = '';
+	let at = 0;
+	for (const span of spans) {
+		if (span.start < at) continue;
+		html += between(code.slice(at, span.start)) + paint(code.slice(span.start, span.end), span.kind);
+		at = span.end;
 	}
+	return html + between(code.slice(at));
 }
 
 function shell(code: string) {

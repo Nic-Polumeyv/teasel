@@ -12,9 +12,6 @@ pub(crate) type Ref = *mut c_void;
 pub(crate) type Status = i32;
 /// `napi_callback`
 pub(crate) type Callback = Option<unsafe extern "C" fn(Env, CallbackInfo) -> Value>;
-/// `napi_finalize`: runs when V8 frees an external
-pub(crate) type Finalize = Option<unsafe extern "C" fn(Env, *mut c_void, *mut c_void)>;
-
 // Node's enum numbers
 pub(crate) const OK: Status = 0;
 pub(crate) const UINT8_ARRAY: i32 = 1;
@@ -92,9 +89,6 @@ api! {
 	fn napi_get_typedarray_info(env: Env, array: Value, kind: *mut i32, length: *mut usize, data: *mut *mut c_void, buffer: *mut Value, offset: *mut usize) -> Status;
 	fn napi_get_value_string_utf8(env: Env, value: Value, buffer: *mut c_char, size: usize, length: *mut usize) -> Status;
 	fn napi_get_value_double(env: Env, value: Value, result: *mut f64) -> Status;
-	fn napi_create_external(env: Env, data: *mut c_void, finalize: Finalize, hint: *mut c_void, result: *mut Value) -> Status;
-	fn napi_get_value_external(env: Env, value: Value, result: *mut *mut c_void) -> Status;
-	fn napi_add_finalizer(env: Env, object: Value, data: *mut c_void, finalize: Finalize, hint: *mut c_void, result: *mut Ref) -> Status;
 	fn napi_create_buffer(env: Env, bytes: usize, data: *mut *mut c_void, result: *mut Value) -> Status;
 	fn napi_add_env_cleanup_hook(env: Env, hook: unsafe extern "C" fn(*mut c_void), data: *mut c_void) -> Status;
 	fn napi_create_typedarray(env: Env, kind: i32, length: usize, buffer: Value, offset: usize, result: *mut Value) -> Status;

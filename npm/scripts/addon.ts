@@ -1,4 +1,4 @@
-// node scripts/addon.ts [--target TRIPLE]: builds the addon for this machine, or for the target given, into dist/teasel.<platform>.node; `npm run build:js` first
+// node scripts/addon.ts [--target TRIPLE] [--glibc VERSION]: builds the addon for this machine, or for the target given, into dist/teasel.<platform>.node, through cargo-zigbuild against the glibc given; `npm run build:js` first
 import { copyFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -11,8 +11,10 @@ const found = Object.entries(platforms).find(([, p]) => p.target === wanted);
 if (found === undefined) throw new Error(`no platform builds for ${wanted}`);
 const [tag, { target, os }] = found;
 
+const glibc = process.argv.indexOf('--glibc');
+const [build, triple] = glibc === -1 ? ['build', target] : ['zigbuild', `${target}.${process.argv[glibc + 1]}`];
 const root = fileURLToPath(new URL('../../', import.meta.url));
-const run = spawnSync('cargo', ['build', '--release', '-p', 'teasel-node', '--target', target], { stdio: 'inherit', cwd: root });
+const run = spawnSync('cargo', [build, '--release', '-p', 'teasel-node', '--target', triple], { stdio: 'inherit', cwd: root });
 if (run.error) throw run.error;
 if (run.status !== 0) process.exit(run.status ?? 1);
 const lib = os === 'win32' ? 'teasel_node.dll' : os === 'darwin' ? 'libteasel_node.dylib' : 'libteasel_node.so';

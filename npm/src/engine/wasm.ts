@@ -7,12 +7,9 @@ const utf8 = new TextDecoder();
 interface Exports {
 	readonly memory: WebAssembly.Memory;
 	alloc(len: number): number;
-	source_new(ptr: number, len: number, capacity: number, flags: number): number;
-	source_free(handle: number): void;
-	source_parse(handle: number, entry: number, offset: number, end: number, has_end: number, ptr: number, len: number, capacity: number, plan: number): number;
-	plan_new(ptr: number, len: number, capacity: number): number;
-	plan_free(handle: number): void;
-	plan_children(handle: number): void;
+	parse(ptr: number, len: number, capacity: number, flags: number, entry: number, offset: number, stop_ptr: number, stop_len: number, stop_capacity: number, grammar: number): number;
+	grammar_new(ptr: number, len: number, capacity: number): number;
+	grammar_about(handle: number): void;
 	words_ptr(): number;
 	words_len(): number;
 	text_ptr(): number;
@@ -33,7 +30,7 @@ function start(compiled: WebAssembly.Module, instance: WebAssembly.Instance): En
 }
 
 // synchronous: 7 ms against 13 async for the 1.1 MB module, and require() refuses a graph with top-level await
-// TODO: `import source` once node >= 22.19, tsc and bundlers accept it: no file read
+// `import source` measured slower (6.3 against 4.7 ms), needs Node 24 where it is Stability 1.2, TypeScript 7.0.2 rejects it (7.1 adds it), and no bundler handles it
 export function compile(): Engine {
 	const compiled = new WebAssembly.Module(globalThis.process.getBuiltinModule('node:fs').readFileSync(url));
 	return start(compiled, new WebAssembly.Instance(compiled, {}));
@@ -44,11 +41,22 @@ export async function instantiate(): Promise<Engine> {
 	const { module: compiled, instance } =
 		url.protocol === 'file:'
 			? await WebAssembly.instantiate(await globalThis.process.getBuiltinModule('node:fs/promises').readFile(url), {})
-			: await WebAssembly.instantiateStreaming(fetch(url), {});
+			: await fetched();
 	return start(compiled, instance);
 }
 
-// a panic traps the instance for good: a fresh one takes over, and sources and plans are made again in it from their bytes
+// streaming refuses a file a server sends as anything but application/wasm, with a TypeError before it reads the body
+async function fetched() {
+	const response = fetch(url);
+	try {
+		return await WebAssembly.instantiateStreaming(response, {});
+	} catch (error) {
+		if (!(error instanceof TypeError)) throw error;
+		return WebAssembly.instantiate(await (await response).arrayBuffer(), {});
+	}
+}
+
+// a panic traps the instance for good: a fresh one takes over, and grammars are read again in it
 let generation = 0;
 
 function guarded<T>(f: () => T): T {
@@ -74,13 +82,6 @@ function bytes(text: string): [ptr: number, len: number, capacity: number] {
 const text = () => utf8.decode(new Uint8Array(wasm.memory.buffer, wasm.text_ptr(), wasm.text_len()));
 const words = () => new Uint32Array(wasm.memory.buffer, wasm.words_ptr(), wasm.words_len());
 
-// the layout comes first: writing it can grow the memory and detach a view taken before
-function answer(status: number) {
-	if (status !== 0) return text();
-	layout();
-	return words();
-}
-
 const trees: ({ buffer: ArrayBuffer; at: Uint32Array; views: Tree[number][] } | undefined)[] = [undefined, undefined];
 let layout_text: string | undefined;
 // read once, before any view of the tree: writing it can grow the memory and detach them
@@ -92,70 +93,49 @@ function layout() {
 	return layout_text;
 }
 
-// the collector cannot see the module's memory, so a source or plan it takes frees its handle here
-interface Slot {
-	handle: number;
-	generation: number;
-}
-const sources = new FinalizationRegistry<Slot>((slot) => {
-	if (slot.generation === generation) wasm.source_free(slot.handle);
-});
-const plans = new FinalizationRegistry<Slot>((slot) => {
-	if (slot.generation === generation) wasm.plan_free(slot.handle);
-});
-
-class Held {
-	readonly slot: Slot = { handle: 0, generation: -1 };
-	readonly make: () => number;
-	constructor(make: () => number, registry: FinalizationRegistry<Slot>) {
-		this.make = make;
+class Grammar {
+	readonly definition: string;
+	at = 0;
+	generation = -1;
+	constructor(definition: string) {
+		this.definition = definition;
 		this.handle();
-		// the held value must not reach this, or it is never collected
-		registry.register(this, this.slot, this.slot);
 	}
 	handle() {
-		const { slot } = this;
-		if (slot.generation !== generation) {
-			slot.handle = guarded(this.make);
-			slot.generation = generation;
+		if (this.generation !== generation) {
+			this.at = guarded(() => opened(wasm.grammar_new(...bytes(this.definition))));
+			this.generation = generation;
 		}
-		return slot.handle;
+		return this.at;
 	}
 }
 
-// the words outlive the source: they sit in the answer buffer until the next parse
-function read(source: number, entry: number, offset: number, end: number | undefined, stop: string, plan: object | undefined) {
-	const grammar = plan === undefined ? 0 : (plan as Held).handle();
-	return answer(guarded(() => wasm.source_parse(source, entry, offset, end ?? 0, end === undefined ? 0 : 1, ...bytes(stop), grammar)));
-}
-
-// 0 is the error answer at `text_ptr`: a source or grammar the engine cannot take
+// 0 is the error answer at `text_ptr`: a grammar the engine cannot take
 function opened(handle: number) {
-	if (handle === 0) throw new Error(JSON.parse(text()).error.args[0]);
+	if (handle === 0) throw new Error(text());
 	return handle;
 }
 
 const engine: Engine = {
-	create: (source, flags) => new Held(() => opened(wasm.source_new(...bytes(source), flags)), sources),
-	parse: (source, entry, offset, end, stop, plan) => read((source as Held).handle(), entry, offset, end, stop, plan),
-	free(source) {
-		const { slot } = source as Held;
-		sources.unregister(slot);
-		if (slot.generation === generation) wasm.source_free(slot.handle);
-	},
-	once(source, flags, entry, stop, plan) {
-		const handle = guarded(() => opened(wasm.source_new(...bytes(source), flags)));
-		const made = generation;
-		try {
-			return read(handle, entry, 0, undefined, stop, plan);
-		} finally {
-			if (made === generation) wasm.source_free(handle);
+	parse(source, flags, entry, offset, stop, grammar) {
+		// a memory never shrinks, so one a huge source grew past 256 MiB goes with its instance, which costs 0.9 ms to replace
+		if (wasm.memory.buffer.byteLength > 1 << 28) {
+			wasm = new WebAssembly.Instance(module, {}).exports as unknown as Exports;
+			generation++;
 		}
+		const handle = grammar === undefined ? 0 : (grammar as Grammar).handle();
+		if (guarded(() => wasm.parse(...bytes(source), flags, entry, offset, ...bytes(stop), handle)) !== 0) throw new Error(text());
+		// the layout comes first: writing it can grow the memory and detach a view taken before
+		layout();
+		return words();
 	},
-	plan: (grammar) => new Held(() => opened(wasm.plan_new(...bytes(grammar))), plans),
-	children(plan) {
-		guarded(() => wasm.plan_children((plan as Held).handle()));
+	grammar: (definition) => new Grammar(definition),
+	about(grammar) {
+		guarded(() => wasm.grammar_about((grammar as Grammar).handle()));
 		return text();
+	},
+	get generation() {
+		return generation;
 	},
 	layout,
 	// the tree sits in the module's memory until the next parse: a view is made anew when its buffer moved or the memory grew

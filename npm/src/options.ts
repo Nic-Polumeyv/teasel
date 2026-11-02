@@ -39,7 +39,7 @@ export interface Options {
 	errorRecovery?: boolean;
 }
 
-// the engine's word: two bits per option, in this order, holding the index of its value; `flag` in json.rs lays it out the same way
+// the engine's word: two bits per option, in this order, holding the index of its value; `Options` in parser/mod.rs lays it out the same way
 const ACCEPTED: { [K in keyof Options]-?: readonly NonNullable<Options[K]>[] } = {
 	sourceType: ['script', 'module'],
 	typescript: [false, true, 'erase'],

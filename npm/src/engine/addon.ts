@@ -3,10 +3,12 @@ const { existsSync, readFileSync } = process.getBuiltinModule('node:fs');
 const { createRequire } = process.getBuiltinModule('node:module');
 import type { Engine, Tree } from '../types.ts';
 
-/** `crates/teasel-node/src/lib.rs`: the operations over a prepared source and a grammar, the source as V8's bytes. */
-export interface Addon extends Omit<Engine, 'create' | 'once' | 'tree'> {
-	readonly create: (source: Uint8Array, flags: number) => object;
-	readonly once: (source: Uint8Array, flags: number, entry: number, stop: string, plan: object | undefined) => Uint32Array | string;
+/** `crates/teasel-node/src/lib.rs`: the operations over a source and a grammar, the source as V8's bytes. */
+export interface Addon extends Omit<Engine, 'parse' | 'tree' | 'grammar' | 'about'> {
+	readonly parse: (source: Uint8Array, flags: number, entry: number, offset: number, stop: string, grammar: number) => Uint32Array;
+	/** The number of a grammar read from its JSON, from 1; 0 is none. */
+	readonly grammar: (definition: string) => number;
+	readonly about: (grammar: number) => string;
 	/** Whether the tree is the TypeScript one, then each view as long as its buffer's room; the lengths ride in the answer's words. */
 	readonly tree: () => Tree | undefined;
 }
@@ -30,6 +32,8 @@ function libc() {
 
 // a build linked against a newer glibc than the system's fails to dlopen: WebAssembly parses there, as it does without a build
 export function load(): Addon | undefined {
+	// the permission model refuses a read of the platform package before it refuses the build
+	if (process.permission?.has('addon') === false) return;
 	const require = createRequire(import.meta.url);
 	let why: NodeJS.ErrnoException | undefined;
 	for (const [tag, p] of Object.entries(platforms)) {
@@ -40,6 +44,8 @@ export function load(): Addon | undefined {
 			return require(existsSync(new URL(own, import.meta.url)) ? own : `@teasel/parser-${tag}/teasel.${tag}.node`);
 		} catch (e) {
 			why = e as NodeJS.ErrnoException;
+			// --no-addons asks for WebAssembly
+			if (why.code === 'ERR_DLOPEN_DISABLED') return;
 		}
 	}
 	// where no build exists there is nothing to fix

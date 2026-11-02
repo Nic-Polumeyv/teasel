@@ -5,16 +5,14 @@ const aliases = g.seq(
 	g.opt({ value: g.optional(g.bind(g.js.pattern)) }),
 	g.opt(',', g.opt({ key: g.optional(g.bind(g.js.pattern)) }), g.opt(',', g.opt({ index: g.optional(g.bind(g.js.pattern)) }))),
 );
+const named = { kind: g.directive.kind, rawName: g.directive.raw };
 
 export default g.grammar('vue', {
-	document: { node: 'Root', form: [{ children: g.content }] },
-	text: { node: 'Text', form: [{ content: g.text.data }] },
-	comment: { node: 'Comment', form: [{ content: g.text.data }] },
+	document: { node: 'Root' },
 	void: ['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr'],
 	verbatim: 'v-pre',
 
 	elements: {
-		fields: { tag: g.element.tag, props: g.element.attributes, children: g.content },
 		rules: {
 			slot: { node: 'Slot' },
 			template: { node: 'Template' },
@@ -34,14 +32,13 @@ export default g.grammar('vue', {
 		modifier: '.',
 		dynamic: ['[', ']'],
 		unique: 'raw',
-		fields: { name: g.directive.kind, arg: g.directive.arg, modifiers: g.directive.modifiers, rawName: g.directive.raw },
 		shorthands: { ':': ['bind'], '@': ['on'], '#': ['slot'], '.': ['bind', 'prop'] },
 		rules: {
-			for: { node: 'Directive', form: [g.opt(g.oneOf(['(', ...aliases, ')'], aliases)), g.oneOf(['in'], ['of']), { source: g.js.expression }] },
-			slot: { node: 'Directive', form: [{ props: g.optional(g.js.pattern) }] },
-			on: { node: 'Directive', form: [{ handler: g.optional(g.js.code) }] },
+			for: { node: 'Directive', form: [named, g.opt(g.oneOf(['(', ...aliases, ')'], aliases)), g.oneOf(['in'], ['of']), { source: g.js.expression }] },
+			slot: { node: 'Directive', form: [named, { props: g.optional(g.js.pattern) }] },
+			on: { node: 'Directive', form: [named, { handler: g.optional(g.js.code) }] },
 		},
-		other: { node: 'Directive', form: [{ exp: g.optional(g.js.expression) }] },
+		other: { node: 'Directive', form: [named, { exp: g.optional(g.js.expression) }] },
 	},
 
 	constructs: {

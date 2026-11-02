@@ -4,68 +4,78 @@
 		"start": 0,
 		"end": 32,
 		"scope": 0,
-		"children": [
-			{
-				"type": "Element",
-				"start": 0,
-				"end": 31,
-				"tag": "p",
-				"props": [],
-				"children": [
-					{
-						"type": "Interpolation",
-						"start": 3,
-						"end": 14,
-						"content": {
-							"type": "BinaryExpression",
-							"start": 6,
-							"end": 11,
-							"root": 0,
-							"left": {
-								"type": "Identifier",
-								"start": 6,
-								"end": 7,
-								"reference": 0,
-								"name": "a"
+		"fragment": {
+			"type": "Fragment",
+			"scope": 1,
+			"nodes": [
+				{
+					"type": "Element",
+					"start": 0,
+					"end": 31,
+					"name": "p",
+					"attributes": [],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 2,
+						"nodes": [
+							{
+								"type": "Interpolation",
+								"start": 3,
+								"end": 14,
+								"content": {
+									"type": "BinaryExpression",
+									"start": 6,
+									"end": 11,
+									"root": 0,
+									"left": {
+										"type": "Identifier",
+										"start": 6,
+										"end": 7,
+										"reference": 0,
+										"name": "a"
+									},
+									"operator": "+",
+									"right": {
+										"type": "Identifier",
+										"start": 10,
+										"end": 11,
+										"reference": 1,
+										"name": "b"
+									}
+								}
 							},
-							"operator": "+",
-							"right": {
-								"type": "Identifier",
-								"start": 10,
-								"end": 11,
-								"reference": 1,
-								"name": "b"
+							{
+								"type": "Text",
+								"start": 14,
+								"end": 20,
+								"raw": " text ",
+								"data": " text "
+							},
+							{
+								"type": "Interpolation",
+								"start": 20,
+								"end": 27,
+								"content": {
+									"type": "Identifier",
+									"start": 23,
+									"end": 24,
+									"reference": 2,
+									"root": 1,
+									"name": "c"
+								}
 							}
-						}
-					},
-					{
-						"type": "Text",
-						"start": 14,
-						"end": 20,
-						"content": " text "
-					},
-					{
-						"type": "Interpolation",
-						"start": 20,
-						"end": 27,
-						"content": {
-							"type": "Identifier",
-							"start": 23,
-							"end": 24,
-							"reference": 2,
-							"root": 1,
-							"name": "c"
-						}
+						]
 					}
-				]
-			},
-			{
-				"type": "Text",
-				"start": 31,
-				"end": 32,
-				"content": "\n"
-			}
-		]
+				},
+				{
+					"type": "Text",
+					"start": 31,
+					"end": 32,
+					"raw": "\n",
+					"data": "\n"
+				}
+			]
+		}
 	},
 	"end": 32,
 	"comments": [],
@@ -74,12 +84,22 @@
 			"kind": "module",
 			"parent": null,
 			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 1,
+			"topLevelAwait": false
 		}
 	],
 	"bindings": [],
 	"references": [
 		{
-			"scope": 0,
+			"scope": 2,
 			"binding": null,
 			"write": false,
 			"read": true,
@@ -87,7 +107,7 @@
 			"declares": false
 		},
 		{
-			"scope": 0,
+			"scope": 2,
 			"binding": null,
 			"write": false,
 			"read": true,
@@ -95,7 +115,7 @@
 			"declares": false
 		},
 		{
-			"scope": 0,
+			"scope": 2,
 			"binding": null,
 			"write": false,
 			"read": true,
@@ -105,10 +125,10 @@
 	],
 	"roots": [
 		{
-			"scope": 0,
+			"scope": 2,
 			"scopes": [
-				1,
-				1
+				3,
+				3
 			],
 			"bindings": [
 				0,
@@ -120,10 +140,10 @@
 			]
 		},
 		{
-			"scope": 0,
+			"scope": 2,
 			"scopes": [
-				1,
-				1
+				3,
+				3
 			],
 			"bindings": [
 				0,

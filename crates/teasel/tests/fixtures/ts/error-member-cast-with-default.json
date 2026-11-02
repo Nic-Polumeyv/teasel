@@ -3,10 +3,10 @@
 	"end": 5,
 	"errors": [
 		{
-			"code": 154,
+			"code": 0,
 			"args": [],
 			"pos": 5,
-			"end": 5,
+			"end": 6,
 			"line": 1,
 			"column": 5
 		}

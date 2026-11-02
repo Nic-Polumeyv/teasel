@@ -4,11 +4,11 @@ title: How it works
 
 A parse crosses from JavaScript into Rust once, and back once. This page follows the text in, through the parse, and back out.
 
-![JavaScript on the left, Rust on the right; the text crosses as bytes when the Source is made; a parse runs lexer, parser and scope analysis in Rust and leaves one tree; the reader on the JavaScript side builds ESTree objects from that tree in place](HowItWorks.svelte)
+![JavaScript on the left, Rust on the right; a parse hands the text over as bytes, runs lexer, parser and scope analysis in Rust and leaves one tree; the reader on the JavaScript side builds ESTree objects from that tree in place](HowItWorks.svelte)
 
 ## The text goes in
 
-The JavaScript engine encodes your text to UTF-8, which it does faster than Rust could read a JavaScript string, and the bytes are copied into the engine once, when the `Source` is made. Every parse of that source reads the copy. Nothing about the text crosses again. Offsets in the answer are UTF-16, the way JavaScript counts, converted from byte positions on the Rust side so you never see a byte offset.
+The JavaScript engine encodes your text to UTF-8, which it does faster than Rust could read a JavaScript string, and each parse hands those bytes to the engine, which keeps nothing of them after the parse. Offsets in the answer are UTF-16, the way JavaScript counts, converted from byte positions on the Rust side so you never see a byte offset.
 
 ## The parse
 

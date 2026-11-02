@@ -5,7 +5,7 @@ use crate::parser::tests::{Failed, dump as dump_with, expand, one, typescript};
 use crate::parser::{Entry, Options};
 
 fn at(entry: Entry, src: &str, offset: u32, options: Options, stop: &str) -> Result<(Ast, NodeId, u32), Failed> {
-	one(crate::parse_at(src, offset, None, entry, typescript(options), stop))
+	one(crate::parse_at(src, offset, entry, typescript(options), stop))
 }
 
 /// The keys TypeScript added to a node, after its own rendering.
@@ -142,8 +142,8 @@ fn optional_marker_needs_an_arrow() {
 		let error = at(Entry::Expression, src, 0, options, "").unwrap_err();
 		(error.code, error.pos)
 	};
-	assert_eq!(error("(a, b?)"), (crate::error::Code::UnexpectedToken, 5));
-	assert_eq!(error("(a?)"), (crate::error::Code::UnexpectedToken, 2));
+	assert_eq!(error("(a, b?)"), (crate::error::Code::UnexpectedToken, 6));
+	assert_eq!(error("(a?)"), (crate::error::Code::UnexpectedEof, 4));
 	assert_eq!(error("f(a?)"), (crate::error::Code::UnexpectedToken, 4));
 	assert!(at(Entry::Expression, "(a, b?) => a", 0, options, "").is_ok());
 	assert!(at(Entry::Expression, "f((a?) => a)", 0, options, "").is_ok());
@@ -178,12 +178,11 @@ fn accessor_belongs_to_a_property() {
 }
 
 #[test]
-fn program_in_a_range() {
+fn program_at_an_offset_of_a_cut_text() {
 	let src = "<script>let a: number = 1;</script>{a}";
 	let (ast, root, _) = one(crate::parse_at(
-		src,
+		&src[..26],
 		8,
-		Some(26),
 		Entry::Program,
 		Options(Options::MODULE | Options::TYPESCRIPT),
 		"",
@@ -191,27 +190,9 @@ fn program_in_a_range() {
 	.unwrap();
 	assert_eq!((ast.node(root).start, ast.node(root).end), (8, 26));
 	assert_eq!(ast.comments.len(), 0);
-	use crate::Options;
-	use crate::json::Request;
-	let mut request = Request {
-		offset: 8,
-		..Request::from_flags(Options::MODULE | Options::TYPESCRIPT)
-	};
-	request.end = Some(1000);
-	assert!(crate::json::parse(src, &request).contains("is not a character boundary"));
-	request.end = Some(2);
-	assert!(crate::json::parse(src, &request).contains("is before"));
-	let prepared = crate::json::Prepared::new(src[..26].to_string(), request.options);
-	assert!(
-		prepared
-			.parse(Entry::Program, 8.0, None, "", None)
-			.contains("\"end\":26")
-	);
-	assert!(
-		prepared
-			.parse(Entry::Program, 22.0, Some(8.0), "", None)
-			.contains("is before")
-	);
+	let options = Options(Options::MODULE | Options::TYPESCRIPT);
+	crate::engine::parse(&src[..26], options, Entry::Program, 8.0, "", None).unwrap();
+	assert_eq!(crate::engine::words(|words| words[0]), 26);
 }
 
 /// A host's own syntax may carry a type parameter list, as a generic snippet does.
@@ -227,7 +208,7 @@ fn type_parameters_entry() {
 		crate::error::Code::EmptyTypeParameters
 	);
 	assert_eq!(
-		crate::parse_at("foo<T>", 3, None, Entry::TypeParameters, options, "")
+		crate::parse_at("foo<T>", 3, Entry::TypeParameters, options, "")
 			.1
 			.unwrap_err()
 			.code,
@@ -261,7 +242,7 @@ fn failed_attempts_leave_nothing() {
 fn failed_attempt_leaves_no_scope() {
 	let options = Options(Options::MODULE | Options::ERROR_RECOVERY);
 	let src = "let b; <T>(x) => { let a; let a; }; let b;";
-	let (ast, _, _) = one(crate::parse_at(src, 0, None, Entry::Program, typescript(options), "")).unwrap();
+	let (ast, _, _) = one(crate::parse_at(src, 0, Entry::Program, typescript(options), "")).unwrap();
 	let redeclared: Vec<u32> = ast
 		.errors
 		.iter()
@@ -272,6 +253,43 @@ fn failed_attempt_leaves_no_scope() {
 		redeclared,
 		[src.rfind("a;").unwrap() as u32, src.rfind("b;").unwrap() as u32]
 	);
+}
+
+#[test]
+fn an_export_list_reads_the_top_scope() {
+	let options = Options(Options::MODULE);
+	let undefined = |src: &str| match at(Entry::Program, src, 0, options, "") {
+		Ok(_) => None,
+		Err(error) if error.code == crate::error::Code::UndefinedExport => Some(error.pos),
+		Err(error) => panic!("{src}: {error}"),
+	};
+	for src in [
+		"type X = 1; export { X };",
+		"interface X {} export { X };",
+		"enum X {} export { X };",
+		"namespace X {} export { X };",
+		"import type { X } from 'x'; export { X };",
+		"import { type X } from 'x'; export { X };",
+		"declare function X(): void; export { X };",
+		"declare global { interface X {} } export { X };",
+		"declare global { var X: number; } export { X };",
+		"export { X }; type X = 1;",
+		"namespace N { type X = 1; export { X }; }",
+	] {
+		assert_eq!(undefined(src), None, "{src}");
+	}
+	for src in [
+		"function f() { type X = 1; } export { X };",
+		"{ interface X {} } export { X };",
+		"namespace N { type X = 1; } export { X };",
+		"namespace N { export enum X {} } export { X };",
+		"function f() { enum X {} } export { X };",
+		"export { X }; function f() { type X = 1; }",
+		"export { X }; { namespace X {} }",
+		"declare global { let X: number; } export { X };",
+	] {
+		assert_eq!(undefined(src), src.rfind("X }").map(|at| at as u32), "{src}");
+	}
 }
 
 #[test]
@@ -290,7 +308,7 @@ fn nested_ambiguity_is_linear() {
 		nest("a ? async (b) : c => ", "d", ""),
 	] {
 		let started = std::time::Instant::now();
-		one(crate::parse_at(&src, 0, None, Entry::Program, typescript(options), "")).unwrap();
+		one(crate::parse_at(&src, 0, Entry::Program, typescript(options), "")).unwrap();
 		assert!(started.elapsed().as_millis() < 100, "{src}");
 	}
 }
@@ -303,8 +321,8 @@ fn a_list_item_fails_where_it_stands() {
 		(error.code, error.pos)
 	};
 	use crate::error::Code;
-	assert_eq!(error("[eval: T = (b: U)];"), (Code::UnexpectedTypeAnnotation, 5));
-	assert_eq!(error("f(a as T: U = 1);"), (Code::UnexpectedTypeAnnotation, 8));
+	assert_eq!(error("[eval: T = (b: U)];"), (Code::UnexpectedToken, 5));
+	assert_eq!(error("f(a as T: U = 1);"), (Code::UnexpectedToken, 8));
 	assert_eq!(error("({a = 1} += 2);"), (Code::InvalidAssignmentTarget, 1));
 	assert_eq!(error("const g = ({ a }?) => a;"), (Code::OptionalPatternParameter, 11));
 }
@@ -313,8 +331,8 @@ fn a_list_item_fails_where_it_stands() {
 fn an_asserted_cast_is_no_parameter() {
 	let options = Options(Options::MODULE);
 	let error = |src: &str| at(Entry::Program, src, 0, options, "").unwrap_err().pos;
-	assert_eq!(error("(a as T: U = 1) => 1;"), 1);
-	assert_eq!(error("(a!: T = 1) => 1;"), 1);
+	assert_eq!(error("(a as T: U = 1) => 1;"), 7);
+	assert_eq!(error("(a!: T = 1) => 1;"), 3);
 	assert_eq!(error("(...a: T += 1) => 1;"), 9);
 }
 
@@ -327,4 +345,107 @@ fn an_async_rest_ends_after_its_annotation() {
 		.find(|&id| matches!(ast.node(id).kind, NodeKind::RestElement { .. }))
 		.unwrap();
 	assert_eq!((ast.node(rest).start, ast.node(rest).end), (24, 41));
+}
+
+#[test]
+fn a_generic_head_checks_its_defaults() {
+	let options = Options(Options::MODULE);
+	let error = |src: &str| {
+		let error = at(Entry::Program, src, 0, options, "").unwrap_err();
+		(error.code, error.pos)
+	};
+	use crate::error::Code;
+	assert_eq!(
+		error("function* g() { <T>(a = yield) => 1 }"),
+		(Code::YieldInDefaultValue, 24)
+	);
+	assert_eq!(
+		error("async function f() { <T>(a = await 1) => 1 }"),
+		(Code::AwaitInDefaultValue, 29)
+	);
+}
+
+fn erase(src: &str) -> (String, String) {
+	let options = Options(Options::MODULE | Options::TYPESCRIPT | Options::ERASE);
+	let json = crate::estree::parse(src, Entry::Program, 0, options);
+	let (tree, kept) = json.split_once(",\"typescript\":").unwrap_or_else(|| panic!("{json}"));
+	let types: Vec<&str> = tree
+		.split("\"type\":\"")
+		.skip(1)
+		.map(|part| &part[..part.find('"').unwrap()])
+		.collect();
+	(types.join(" "), kept.trim_end_matches('}').to_owned())
+}
+
+#[test]
+fn a_namespace_erases_unless_it_instantiates() {
+	let erased = || ("Program".to_owned(), "[]".to_owned());
+	assert_eq!(erase("namespace A.B { export type T = 1 }"), erased());
+	assert_eq!(erase("namespace A.B.C { export interface I {} }"), erased());
+	assert_eq!(
+		erase("namespace N { export declare namespace M { export type T = 1 } }"),
+		erased()
+	);
+	assert_eq!(erase("namespace N { import type A = require('x'); }"), erased());
+	assert_eq!(erase("declare namespace N { export const x: number }"), erased());
+	assert_eq!(
+		erase("namespace N { export const x = 1 }"),
+		(
+			"Program TSModuleDeclaration Identifier TSModuleBlock ExportNamedDeclaration VariableDeclaration VariableDeclarator Identifier Literal".to_owned(),
+			r#"[{"type":"TSModuleDeclaration","start":0,"end":34}]"#.to_owned()
+		)
+	);
+	assert_eq!(
+		erase("namespace A.B { export const x = 1 }"),
+		(
+			"Program TSModuleDeclaration Identifier TSModuleDeclaration Identifier TSModuleBlock ExportNamedDeclaration VariableDeclaration VariableDeclarator Identifier Literal".to_owned(),
+			r#"[{"type":"TSModuleDeclaration","start":0,"end":36},{"type":"TSModuleDeclaration","start":12,"end":36}]"#.to_owned()
+		)
+	);
+	// tsc emits an empty namespace for a `declare`d member, which erases inside it
+	for src in [
+		"namespace N { export declare const x: number }",
+		"namespace N { declare function f(): void }",
+		"namespace N { export declare namespace M { const x: number } }",
+	] {
+		let end = src.len();
+		assert_eq!(
+			erase(src),
+			(
+				"Program TSModuleDeclaration Identifier TSModuleBlock".to_owned(),
+				format!(r#"[{{"type":"TSModuleDeclaration","start":0,"end":{end}}}]"#)
+			),
+			"{src}"
+		);
+	}
+}
+
+#[test]
+fn a_type_only_import_keeps_its_module() {
+	assert_eq!(
+		erase("import { type A } from 'x';"),
+		("Program ImportDeclaration Literal".to_owned(), "[]".to_owned())
+	);
+	assert_eq!(
+		erase("import type { A } from 'x';"),
+		("Program".to_owned(), "[]".to_owned())
+	);
+	assert_eq!(
+		erase("import D, { type A } from 'x';"),
+		(
+			"Program ImportDeclaration ImportDefaultSpecifier Identifier Literal".to_owned(),
+			"[]".to_owned()
+		)
+	);
+	assert_eq!(
+		erase("import { type A, B } from 'x';"),
+		(
+			"Program ImportDeclaration ImportSpecifier Identifier Identifier Literal".to_owned(),
+			"[]".to_owned()
+		)
+	);
+	assert_eq!(
+		erase("type A = 1; export { type A };"),
+		("Program ExportNamedDeclaration".to_owned(), "[]".to_owned())
+	);
 }

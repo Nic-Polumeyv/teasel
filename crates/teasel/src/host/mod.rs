@@ -8,16 +8,18 @@ pub mod grammar;
 
 use std::borrow::Cow;
 
-use crate::ast::{Ast, Comment, CommentKind, Host, HostGroup, List, NodeId, NodeKind, Opens, Value, VariableKind};
+use crate::ast::{
+	Ast, Comment, CommentKind, HostGroup, HostRow, List, NodeId, NodeKind, Opens, Run, Value, VariableKind,
+};
 use crate::error::{Code, SyntaxError};
 use crate::interner::StrId;
-use crate::lexer::scan::is_space;
+use crate::lexer::scan::{find, find_pair, is_space};
 use crate::lexer::unicode::{is_id_continue, is_id_start};
 use crate::parser::{Entry as JsEntry, Options, Parser, Result};
 pub use grammar::Grammar;
 use grammar::{
-	Alternative, Body, Construct, DirectiveRule, DirectiveValue, DocField, Entry, Form, Item, Match, Piece, Place,
-	RootField, Slot, Unique, Which, component_name,
+	Alternative, Body, Construct, DirectiveRule, DirectiveValue, DocField, Entry, Form, Item, Match, Name, Piece,
+	Place, RootField, Shapes, Unique, Which, component_name, own,
 };
 
 /// A whole marker at the cursor: its construct, which piece, and where its last part's word starts.
@@ -214,19 +216,32 @@ pub fn typescript(src: &str, grammar: &Grammar) -> bool {
 	if script.typescript.is_empty() {
 		return false;
 	}
-	let mut rest = src;
-	while let Some(i) = rest.find('<') {
-		rest = &rest[i + 1..];
+	// stopping at every `<` took 1.22 ms a pass over Svelte's tests, the lexer's scan for `<` 0.64, this 0.52
+	let (bytes, first) = (src.as_bytes(), script.name.as_bytes().first().copied());
+	let mut at = 0;
+	loop {
+		at = match first {
+			Some(first) => find_pair(bytes, at, b'<', [b'!', first]),
+			None => find(bytes, at, *b"<", false),
+		};
+		if at >= src.len() {
+			return false;
+		}
+		let rest = &src[at + 1..];
 		if let Some(after) = rest.strip_prefix("!--") {
-			rest = after.find("-->").map_or("", |j| &after[j + 3..]);
+			let Some(j) = after.find("-->") else {
+				return false;
+			};
+			at = src.len() - after.len() + j + 3;
 			continue;
 		}
-		let Some(after) = rest.strip_prefix(script.name) else {
+		let Some(after) = rest
+			.strip_prefix(script.name)
+			.filter(|after| after.starts_with(is_space))
+		else {
+			at += 1;
 			continue;
 		};
-		if !after.starts_with(is_space) {
-			continue;
-		}
 		let tag_end = tag_end(after);
 		let mut attributes = after[..tag_end].trim_start_matches(is_space);
 		while !attributes.is_empty() {
@@ -251,7 +266,9 @@ pub fn typescript(src: &str, grammar: &Grammar) -> bool {
 				value = Some(text);
 				attributes = after[len..].trim_start_matches(is_space);
 			} else if name.is_empty() {
-				attributes = &attributes[1..];
+				let mut chars = attributes.chars();
+				chars.next();
+				attributes = chars.as_str();
 			}
 			if script
 				.typescript
@@ -261,9 +278,8 @@ pub fn typescript(src: &str, grammar: &Grammar) -> bool {
 				return true;
 			}
 		}
-		rest = &after[tag_end..];
+		at = src.len() - after.len() + tag_end;
 	}
-	false
 }
 
 /// What the walker is inside: the document, an element, or a block.
@@ -277,9 +293,9 @@ enum Frame<'a> {
 	Element {
 		start: u32,
 		name: (u32, u32),
-		ty: &'static str,
+		ty: Name,
 		attributes: Vec<NodeId>,
-		fields: Vec<(&'static str, Value)>,
+		fields: Vec<(Name, Value)>,
 		nodes: Vec<NodeId>,
 		/// The attributes on it that keep an element rule's `outside` from applying inside.
 		outside: Vec<&'static str>,
@@ -291,33 +307,28 @@ enum Frame<'a> {
 	Block {
 		start: u32,
 		rule: &'a Construct,
-		fields: Vec<(&'static str, Value)>,
+		fields: Vec<(Name, Value)>,
 		/// The open body: its field and whether it is left out of blocks that never opened it.
-		body: (&'static str, bool),
+		body: (Name, bool),
 		nodes: Vec<NodeId>,
 		/// Bodies closed so far, each as its children.
-		done: Vec<(&'static str, Value)>,
+		done: Vec<(Name, Value)>,
 		/// The scope of each body read so far.
 		groups: Vec<BodyGroup>,
 		outside: Vec<NodeId>,
-		/// The nodes its repeating branches made so far, by the field listing them.
-		lists: Vec<(&'static str, Vec<NodeId>)>,
-		/// The branch of `rule` whose node this frame makes, `{:else if}`: listed in the block
-		/// below when the next branch or the close comes.
-		repeats: Option<usize>,
-		/// A branch read once came, `{:else}`: no repeating branch may follow it.
-		branched: bool,
+		/// The parent's field this block fills as a chained branch, `{:else if}`, and the flag set.
+		chain: Option<(Name, Name)>,
 	},
 }
 
 /// What a form read: its fields, and the body its alternatives chose.
 #[derive(Default)]
 struct Read<'a> {
-	fields: Vec<(&'static str, Value)>,
+	fields: Vec<(Name, Value)>,
 	body: Option<&'a Body>,
 }
 
-fn fill_unread(entries: &[(&'static str, bool)], fields: &mut Vec<(&'static str, Value)>) {
+fn fill_unread(entries: &[(Name, bool)], fields: &mut Vec<(Name, Value)>) {
 	for &(field, omit) in entries {
 		if !omit && !fields.iter().any(|(k, _)| *k == field) {
 			fields.push((field, Value::Null));
@@ -328,14 +339,14 @@ fn fill_unread(entries: &[(&'static str, bool)], fields: &mut Vec<(&'static str,
 /// A body's scope as its form read it: the body's field, the entry fields the scope holds, and
 /// the patterns declared in it.
 struct BodyGroup {
-	body: &'static str,
-	fields: Vec<&'static str>,
+	body: Name,
+	fields: Vec<Name>,
 	inside: Vec<NodeId>,
 }
 
 /// What reading an attribute gives: its node, and the kind and name it must not repeat on the
 /// element, when it has such a name.
-type Attribute = (NodeId, Option<(&'static str, StrId)>);
+type Attribute = (NodeId, Option<(Name, StrId)>);
 
 /// An attribute name read as a directive: its rule, name, argument and modifiers.
 struct Directive<'a> {
@@ -350,6 +361,7 @@ struct Walker<'a> {
 	src: &'a str,
 	full: u32,
 	grammar: &'a Grammar,
+	shapes: std::cell::RefMut<'a, Shapes>,
 	options: Options,
 	ast: Option<Box<Ast>>,
 	at: u32,
@@ -358,7 +370,7 @@ struct Walker<'a> {
 	/// The JavaScript read last ended at one of its stops.
 	stopped: bool,
 	frames: Vec<Frame<'a>>,
-	once: Vec<&'static str>,
+	once: Vec<Name>,
 	/// Where the current tag's word starts, for a declaration spelled without its keyword.
 	keyword: u32,
 	/// The word that ends the tag being read: missing, it is reported and the tag ends there.
@@ -374,13 +386,12 @@ struct Walker<'a> {
 	/// The patterns the directives of the element being read declare.
 	declared: Vec<NodeId>,
 	/// Buffers given back once used, for the next of their kind.
-	fields: Pool<(&'static str, Value)>,
+	fields: Pool<(Name, Value)>,
 	nodes: Pool<NodeId>,
-	names: Pool<&'static str>,
+	names: Pool<Name>,
 	groups: Pool<BodyGroup>,
-	lists: Pool<(&'static str, Vec<NodeId>)>,
 	/// The kinds and names the attributes of the element being read must not repeat.
-	seen: Vec<(&'static str, StrId)>,
+	seen: Vec<(Name, StrId)>,
 }
 
 struct Pool<T>(Vec<Vec<T>>);
@@ -432,12 +443,18 @@ pub(crate) fn parse_document(
 	(walker.ast.take().unwrap(), root)
 }
 
+thread_local! {
+	/// The grammar behind a stylesheet read on its own, which numbers the shapes of its nodes.
+	static SHEETS: Grammar = Grammar::empty();
+}
+
 /// The whole source as a CSS stylesheet; see `Walker::stylesheet`.
 pub(crate) fn parse_stylesheet(src: &str, options: Options, reused: Option<Box<Ast>>) -> (Box<Ast>, Result<NodeId>) {
-	let grammar = Grammar::empty();
-	let mut walker = Walker::new(src, src.len() as u32, &grammar, options, reused, Vec::new());
-	let root = walker.stylesheet();
-	(walker.ast.take().unwrap(), root)
+	SHEETS.with(|grammar| {
+		let mut walker = Walker::new(src, src.len() as u32, grammar, options, reused, Vec::new());
+		let root = walker.stylesheet();
+		(walker.ast.take().unwrap(), root)
+	})
 }
 
 impl<'a> Walker<'a> {
@@ -453,6 +470,7 @@ impl<'a> Walker<'a> {
 			src,
 			full,
 			grammar,
+			shapes: grammar.shapes.borrow_mut(),
 			options,
 			ast: Some(reused.unwrap_or_else(|| Box::new(Ast::sized(full as usize)))),
 			at: 0,
@@ -471,7 +489,6 @@ impl<'a> Walker<'a> {
 			nodes: Pool::default(),
 			names: Pool::default(),
 			groups: Pool::default(),
-			lists: Pool::default(),
 			seen: Vec::new(),
 		}
 	}
@@ -605,26 +622,28 @@ impl<'a> Walker<'a> {
 		}
 	}
 
-	fn host(
-		&mut self,
-		ty: &'static str,
-		start: u32,
-		end: u32,
-		fields: &[(&'static str, Value)],
-		scope: Option<Opens>,
-		span: bool,
-	) -> NodeId {
-		let ast = self.ast();
-		let from = ast.host_fields.len() as u32;
-		let len = fields.len() as u32;
-		ast.host_fields.extend_from_slice(fields);
-		let index = ast.hosts.len() as u32;
-		ast.hosts.push(Host {
-			ty,
-			fields: (from, len),
-			span,
-			scope,
+	fn host(&mut self, ty: Name, start: u32, end: u32, fields: &[(Name, Value)]) -> NodeId {
+		self.opening(ty, start, end, fields, None)
+	}
+
+	fn opening(&mut self, ty: Name, start: u32, end: u32, fields: &[(Name, Value)], scope: Option<Opens>) -> NodeId {
+		let ast = self.ast.as_deref_mut().unwrap();
+		let from = ast.host_keys.len();
+		for &(key, value) in fields {
+			ast.host_keys.push(key.0);
+			ast.host_vals.push(value);
+		}
+		let shape = self.shapes.of(ty, &ast.host_keys[from..], &ast.host_vals[from..]);
+		let index = ast.host_rows.len() as u32;
+		ast.host_rows.push(HostRow {
+			ty: ty.0,
+			fields: Run {
+				start: from as u32,
+				len: fields.len() as u32,
+			},
+			shape,
 		});
+		ast.host_scopes.push(scope);
 		ast.add(NodeKind::Host(index), start, end)
 	}
 
@@ -632,75 +651,68 @@ impl<'a> Walker<'a> {
 		let raw = &self.src[start as usize..end as usize];
 		let data = decode(raw, attribute);
 		let data = self.text(start, end, data);
-		let rule = &self.grammar.text;
-		match rule.raw {
-			Some(raw) => self.host(
-				rule.ty,
-				start,
-				end,
-				&[(raw, Value::Slice(start, end)), (rule.data, data)],
-				None,
-				true,
-			),
-			None => self.host(rule.ty, start, end, &[(rule.data, data)], None, true),
-		}
+		self.host(
+			own::Text,
+			start,
+			end,
+			&[(own::raw, Value::Slice(start, end)), (own::data, data)],
+		)
 	}
 
-	/// A list of nodes as the grammar holds one: wrapped in its fragment node, or bare.
-	fn children(&mut self, nodes: Vec<NodeId>) -> Value {
+	fn fragment(&mut self, nodes: Vec<NodeId>) -> NodeId {
 		let list = self.list(&nodes);
-		let value = match self.grammar.fragment {
-			Some((ty, field)) => {
-				// positions for the walks that order nodes, though none are written
-				let (start, end) = match (nodes.first(), nodes.last()) {
-					(Some(&first), Some(&last)) => (self.tree().node(first).start, self.tree().node(last).end),
-					_ => (self.at, self.at),
-				};
-				Value::Node(self.host(ty, start, end, &[(field, Value::Nodes(list))], None, false))
-			}
-			None => Value::Nodes(list),
+		// positions for the walks that order nodes, though none are written
+		let (start, end) = match (nodes.first(), nodes.last()) {
+			(Some(&first), Some(&last)) => (self.tree().node(first).start, self.tree().node(last).end),
+			_ => (self.at, self.at),
 		};
 		self.nodes.give(nodes);
-		value
+		self.host(own::Fragment, start, end, &[(own::nodes, Value::Nodes(list))])
 	}
 
-	/// The scopes an element opens, over the fields about to make its node: one for what its
-	/// directives declare, over its attributes and children, and one for its children when the
-	/// grammar says every fragment is a scope.
-	fn element_scope(&mut self, fields: &[(&'static str, Value)], declared: &[NodeId]) -> Option<Opens> {
-		let names = &self.grammar.element_fields;
-		let attributes = fields.iter().position(|(f, _)| *f == names.attributes);
-		let children = fields.iter().position(|(f, _)| *f == names.children);
-		let base = self.ast().host_fields.len() as u32;
+	fn element_node(
+		&mut self,
+		ty: Name,
+		(start, end): (u32, u32),
+		attributes: Vec<NodeId>,
+		mut fields: Vec<(Name, Value)>,
+		nodes: Vec<NodeId>,
+		declared: &[NodeId],
+	) {
+		let list = self.list(&attributes);
+		self.nodes.give(attributes);
+		let at = fields.len();
+		fields.push((own::attributes, Value::Nodes(list)));
+		let fragment = self.fragment(nodes);
+		fields.push((own::fragment, Value::Node(fragment)));
+		let scope = self.element_scope(at, fragment, declared);
+		let node = self.opening(ty, start, end, &fields, Some(scope));
+		self.fields.give(fields);
+		self.append(node);
+	}
+
+	fn element_scope(&mut self, attributes: usize, fragment: NodeId, declared: &[NodeId]) -> Opens {
+		let base = self.ast().host_keys.len() as u32 + attributes as u32;
 		let at = self.ast().host_groups.len() as u32;
-		let mut count = 0;
-		if let (false, Some(attributes), Some(children)) = (declared.is_empty(), attributes, children) {
+		if !declared.is_empty() {
 			let inside = self.list(declared);
 			self.ast().host_groups.push(HostGroup {
 				inside,
-				from: base + attributes as u32,
-				until: base + children as u32 + 1,
+				from: base,
+				until: base + 2,
 				node: None,
 			});
-			count += 1;
 		}
-		if let (true, Some(children)) = (self.grammar.fragment_scope, children) {
-			let node = match fields[children].1 {
-				Value::Node(fragment) => Some(fragment),
-				_ => None,
-			};
-			self.ast().host_groups.push(HostGroup {
-				inside: List::EMPTY,
-				from: base + children as u32,
-				until: base + children as u32 + 1,
-				node,
-			});
-			count += 1;
-		}
-		(count > 0).then_some(Opens {
+		self.ast().host_groups.push(HostGroup {
+			inside: List::EMPTY,
+			from: base + 1,
+			until: base + 2,
+			node: Some(fragment),
+		});
+		Opens {
 			outside: List::EMPTY,
-			groups: (at, count),
-		})
+			groups: (at, self.ast().host_groups.len() as u32 - at),
+		}
 	}
 
 	fn list(&mut self, nodes: &[NodeId]) -> List {
@@ -713,24 +725,24 @@ impl<'a> Walker<'a> {
 		}
 	}
 
-	fn host_type(&self, id: NodeId) -> &'static str {
+	fn host_type(&self, id: NodeId) -> Option<Name> {
 		let ast = self.tree();
 		match ast.node(id).kind {
-			NodeKind::Host(index) => ast.hosts[index as usize].ty,
-			_ => "",
+			NodeKind::Host(index) => Some(Name(ast.host_rows[index as usize].ty)),
+			_ => None,
 		}
 	}
 
-	fn field_of(&self, id: NodeId, key: &str) -> Option<Value> {
+	fn field_of(&self, id: NodeId, key: Name) -> Option<Value> {
 		let ast = self.tree();
 		let NodeKind::Host(index) = ast.node(id).kind else {
 			return None;
 		};
-		let host = ast.hosts[index as usize];
-		ast.host_fields[host.fields.0 as usize..(host.fields.0 + host.fields.1) as usize]
-			.iter()
-			.find(|(k, _)| *k == key)
-			.map(|&(_, v)| v)
+		ast.host_rows[index as usize]
+			.fields
+			.indices()
+			.find(|&i| ast.host_keys[i as usize] == key.0)
+			.map(|i| ast.host_vals[i as usize])
 	}
 
 	fn string_of(&self, value: Value) -> Option<&str> {
@@ -742,12 +754,13 @@ impl<'a> Walker<'a> {
 	}
 
 	fn attribute_named(&self, id: NodeId, name: &str) -> bool {
-		self.host_type(id) == "Attribute" && self.field_of(id, "name").and_then(|v| self.string_of(v)) == Some(name)
+		self.host_type(id) == Some(own::Attribute)
+			&& self.field_of(id, own::name).and_then(|v| self.string_of(v)) == Some(name)
 	}
 
 	/// The one chunk of an attribute's value, when it has one.
 	fn attribute_chunk(&self, id: NodeId) -> Option<NodeId> {
-		match self.field_of(id, "value")? {
+		match self.field_of(id, own::value)? {
 			Value::Node(tag) => Some(tag),
 			Value::Nodes(list) => match self.tree().list(list) {
 				[Some(chunk)] => Some(*chunk),
@@ -760,7 +773,7 @@ impl<'a> Walker<'a> {
 	/// The expression node of a chunk written as one, `{expression}`.
 	fn chunk_expression(&self, chunk: NodeId) -> Option<NodeId> {
 		let rule = self.grammar.value_expression()?;
-		if self.host_type(chunk) != rule.ty {
+		if self.host_type(chunk) != Some(rule.ty) {
 			return None;
 		}
 		let (field, _) = rule.single()?;
@@ -777,20 +790,20 @@ impl<'a> Walker<'a> {
 
 	/// The text of `name="text"`.
 	fn attribute_text(&self, id: NodeId) -> Option<&str> {
-		let Value::Nodes(_) = self.field_of(id, "value")? else {
+		let Value::Nodes(_) = self.field_of(id, own::value)? else {
 			return None;
 		};
 		let chunk = self.attribute_chunk(id)?;
-		if self.host_type(chunk) != self.grammar.text.ty {
+		if self.host_type(chunk) != Some(own::Text) {
 			return None;
 		}
-		self.string_of(self.field_of(chunk, self.grammar.text.data)?)
+		self.string_of(self.field_of(chunk, own::data)?)
 	}
 
 	/// An expression chunk as the node of the construct that read it.
 	fn chunk(&mut self, rule: &Construct, start: u32, end: u32, expression: NodeId) -> NodeId {
-		let field = rule.single().map_or("expression", |(field, _)| field);
-		self.host(rule.ty, start, end, &[(field, Value::Node(expression))], None, true)
+		let field = rule.single().map_or(own::expression, |(field, _)| field);
+		self.host(rule.ty, start, end, &[(field, Value::Node(expression))])
 	}
 
 	/// Whether a `<` at `i` starts a tag: a name, a closing tag or a comment follows.
@@ -828,17 +841,20 @@ impl<'a> Walker<'a> {
 				}
 			}
 		}
-		// under recovery, what is open ends with the source
 		while self.frames.len() > 1 {
+			let (start, what) = match self.frames.last().unwrap() {
+				Frame::Element { start, name, .. } => (*start, &self.src[name.0 as usize..name.1 as usize]),
+				Frame::Block { start, rule, .. } => (*start, rule.open.display),
+				Frame::Root { .. } => unreachable!(),
+			};
+			self.report_at(start, start + 1, Code::Unclosed, Some(what))?;
+			// under recovery, what is open ends with the source
 			let end = self.len();
 			match self.frames.last().unwrap() {
-				Frame::Element { start, name, .. } => {
-					let (start, what) = (*start, &self.src[name.0 as usize..name.1 as usize]);
-					self.report_at(start, start + 1, Code::Unclosed, Some(what))?;
-					self.close_top(end);
+				Frame::Element { .. } => self.close_top(end),
+				_ => {
+					self.pop_block(end);
 				}
-				Frame::Block { .. } => self.pop_unclosed(end)?,
-				Frame::Root { .. } => unreachable!(),
 			}
 		}
 		let errors = &mut self.ast().errors;
@@ -853,14 +869,14 @@ impl<'a> Walker<'a> {
 		else {
 			unreachable!()
 		};
-		let children = self.children(nodes);
+		let children = Value::Node(self.fragment(nodes));
 		let mut fields = self.fields.take();
 		// (from, until, node) of each scope the document line opens, over the fields it holds
 		let mut scopes: Vec<(usize, usize, Option<NodeId>)> = Vec::new();
 		fn place(
 			w: &mut Walker,
 			items: &[DocField],
-			fields: &mut Vec<(&'static str, Value)>,
+			fields: &mut Vec<(Name, Value)>,
 			scopes: &mut Vec<(usize, usize, Option<NodeId>)>,
 			held: (Value, Option<NodeId>, Option<NodeId>, Option<NodeId>),
 		) {
@@ -877,10 +893,12 @@ impl<'a> Walker<'a> {
 						// the scope belongs to the fragment it starts with, or to a script's program
 						let node = match fields[from].1 {
 							Value::Node(id) if matches!(children, Value::Node(fragment) if fragment == id) => Some(id),
-							Value::Node(id) if w.host_type(id) == "Script" => match w.field_of(id, "content") {
-								Some(Value::Node(program)) => Some(program),
-								_ => None,
-							},
+							Value::Node(id) if w.host_type(id) == Some(own::Script) => {
+								match w.field_of(id, own::content) {
+									Some(Value::Node(program)) => Some(program),
+									_ => None,
+								}
+							}
 							_ => None,
 						};
 						scopes.push((from, until, node));
@@ -925,7 +943,7 @@ impl<'a> Walker<'a> {
 			(children, instance, module, css),
 		);
 		let full = self.full;
-		let base = self.ast().host_fields.len() as u32;
+		let base = self.ast().host_keys.len() as u32;
 		let at = self.ast().host_groups.len() as u32;
 		for &(from, until, node) in &scopes {
 			self.ast().host_groups.push(HostGroup {
@@ -939,7 +957,7 @@ impl<'a> Walker<'a> {
 			outside: List::EMPTY,
 			groups: (at, scopes.len() as u32),
 		});
-		let node = self.host(self.grammar.document.ty, 0, full, &fields, scope, true);
+		let node = self.opening(self.grammar.document.ty, 0, full, &fields, scope);
 		self.fields.give(fields);
 		Ok(node)
 	}
@@ -986,14 +1004,11 @@ impl<'a> Walker<'a> {
 			};
 			let data_start = self.at;
 			self.at += len as u32 + 3;
-			let rule = &self.grammar.comment;
 			let node = self.host(
-				rule.ty,
+				own::Comment,
 				start,
 				self.at,
-				&[(rule.data, Value::Slice(data_start, self.at - 3))],
-				None,
-				true,
+				&[(own::data, Value::Slice(data_start, self.at - 3))],
 			);
 			self.append(node);
 			return Ok(());
@@ -1093,7 +1108,7 @@ impl<'a> Walker<'a> {
 					self.declared.clear();
 					continue;
 				}
-				if kind == "Attribute"
+				if kind == own::Attribute
 					&& ty == plain && let Some(mark) = self
 					.grammar
 					.elements
@@ -1133,11 +1148,11 @@ impl<'a> Walker<'a> {
 						None => {
 							let chunk = self
 								.attribute_chunk(this)
-								.filter(|&chunk| text && self.host_type(chunk) == self.grammar.text.ty);
+								.filter(|&chunk| text && self.host_type(chunk) == Some(own::Text));
 							match chunk {
 								Some(chunk) => {
 									let node = *self.tree().node(chunk);
-									let value = match self.field_of(chunk, self.grammar.text.data) {
+									let value = match self.field_of(chunk, own::data) {
 										Some(Value::Str(s)) => s,
 										Some(Value::Slice(a, b)) => self.intern(&self.src[a as usize..b as usize]),
 										_ => unreachable!(),
@@ -1192,7 +1207,7 @@ impl<'a> Walker<'a> {
 								Some(&format!("{attribute} to be \"{value}\"")),
 							)?;
 						}
-						None if !matches!(self.field_of(id, "value"), Some(Value::Bool(true))) => {
+						None if !matches!(self.field_of(id, own::value), Some(Value::Bool(true))) => {
 							let node = *self.tree().node(id);
 							self.report_at(
 								node.start,
@@ -1208,16 +1223,14 @@ impl<'a> Walker<'a> {
 			let context = self.intern(if module { "module" } else { "default" });
 			let attributes = self.list(&attributes);
 			let node = self.host(
-				"Script",
+				own::Script,
 				start,
 				self.at,
 				&[
-					("context", Value::Str(context)),
-					("content", Value::Node(program)),
-					("attributes", Value::Nodes(attributes)),
+					(own::context, Value::Str(context)),
+					(own::content, Value::Node(program)),
+					(own::attributes, Value::Nodes(attributes)),
 				],
-				None,
-				true,
 			);
 			let Some(Frame::Root {
 				instance,
@@ -1252,26 +1265,14 @@ impl<'a> Walker<'a> {
 			self.report_at(self.at, self.at, Code::Expected, Some(">"))?;
 		}
 		let name_id = self.intern(name);
-		let names = &self.grammar.element_fields;
-		fields.insert(0, (names.name, Value::Str(name_id)));
-		let finish = |w: &mut Self,
-		              attributes: Vec<NodeId>,
-		              mut fields: Vec<(&'static str, Value)>,
-		              nodes: Vec<NodeId>,
-		              end: u32| {
-			let list = w.list(&attributes);
-			w.nodes.give(attributes);
-			fields.push((names.attributes, Value::Nodes(list)));
-			let children = w.children(nodes);
-			fields.push((names.children, children));
-			let scope = w.element_scope(&fields, &declared);
-			let node = w.host(ty, start, end, &fields, scope, true);
-			w.fields.give(fields);
-			w.append(node);
-			if verbatim_here {
-				w.verbatim -= 1;
-			}
-		};
+		fields.insert(0, (own::name, Value::Str(name_id)));
+		let finish =
+			|w: &mut Self, attributes: Vec<NodeId>, fields: Vec<(Name, Value)>, nodes: Vec<NodeId>, end: u32| {
+				w.element_node(ty, (start, end), attributes, fields, nodes, &declared);
+				if verbatim_here {
+					w.verbatim -= 1;
+				}
+			};
 		if self_closing || unclosed {
 			let end = self.at;
 			let nodes = self.nodes.take();
@@ -1307,14 +1308,8 @@ impl<'a> Walker<'a> {
 				close += 2;
 			}
 			self.at = close;
-			let rule = &self.grammar.text;
-			let mut text_fields = self.fields.take();
-			if let Some(raw) = rule.raw {
-				text_fields.push((raw, Value::Slice(content_start, close)));
-			}
-			text_fields.push((rule.data, Value::Slice(content_start, close)));
-			let node = self.host(rule.ty, content_start, close, &text_fields, None, true);
-			self.fields.give(text_fields);
+			let text = Value::Slice(content_start, close);
+			let node = self.host(own::Text, content_start, close, &[(own::raw, text), (own::data, text)]);
 			match closing_tag(self.rest(), name) {
 				Some(len) => self.at += len as u32,
 				None => self.report_at(self.len(), self.len(), Code::Unclosed, Some(name))?,
@@ -1387,7 +1382,7 @@ impl<'a> Walker<'a> {
 			start,
 			ty,
 			attributes,
-			mut fields,
+			fields,
 			nodes,
 			verbatim,
 			declared,
@@ -1396,16 +1391,7 @@ impl<'a> Walker<'a> {
 		else {
 			unreachable!()
 		};
-		let names = &self.grammar.element_fields;
-		let list = self.list(&attributes);
-		self.nodes.give(attributes);
-		fields.push((names.attributes, Value::Nodes(list)));
-		let children = self.children(nodes);
-		fields.push((names.children, children));
-		let scope = self.element_scope(&fields, &declared);
-		let node = self.host(ty, start, end, &fields, scope, true);
-		self.fields.give(fields);
-		self.append(node);
+		self.element_node(ty, (start, end), attributes, fields, nodes, &declared);
 		if verbatim {
 			self.verbatim -= 1;
 		}
@@ -1448,7 +1434,18 @@ impl<'a> Walker<'a> {
 					// the browser closes it here
 					self.close_top(start);
 				}
-				Some(Frame::Block { .. }) if self.recovering() => self.pop_unclosed(start)?,
+				Some(Frame::Block {
+					start: block_start,
+					rule,
+					chain,
+					..
+				}) if self.recovering() => {
+					let (block_start, what, chained) = (*block_start, rule.open.display, chain.is_some());
+					if !chained {
+						self.report_at(block_start, block_start + 1, Code::Unclosed, Some(what))?;
+					}
+					self.pop_block(start);
+				}
 				_ => return self.fail(start, start + 1, Code::UnexpectedClose, Some(&closed())),
 			}
 		}
@@ -1503,14 +1500,12 @@ impl<'a> Walker<'a> {
 		}
 		let name_id = self.intern(name);
 		let node = self.host(
-			"Attribute",
+			own::Attribute,
 			start,
 			self.at,
-			&[("name", Value::Str(name_id)), ("value", value)],
-			None,
-			true,
+			&[(own::name, Value::Str(name_id)), (own::value, value)],
 		);
-		Ok(Some((node, Some(("Attribute", name_id)))))
+		Ok(Some((node, Some((own::Attribute, name_id)))))
 	}
 
 	fn comment_between_attributes(&mut self) -> bool {
@@ -1663,44 +1658,40 @@ impl<'a> Walker<'a> {
 			}
 			let name_id = self.intern(name);
 			let node = self.host(
-				"Attribute",
+				own::Attribute,
 				start,
 				end,
-				&[("name", Value::Str(name_id)), ("value", value)],
-				None,
-				true,
+				&[(own::name, Value::Str(name_id)), (own::value, value)],
 			);
-			return Ok(Some((node, Some(("Attribute", name_id)))));
+			return Ok(Some((node, Some((own::Attribute, name_id)))));
 		};
 		let syntax = self.grammar.directive_syntax.as_ref().unwrap();
 		let rule = directive.rule;
 		let mut fields = self.fields.take();
-		if let Some(field) = syntax.name_field {
+		if let Some(field) = rule.kind {
 			let id = self.intern(directive.name);
 			fields.push((field, Value::Str(id)));
 		}
-		if let Some(field) = syntax.raw_field {
+		if let Some(field) = rule.raw {
 			fields.push((field, Value::Slice(start, name_end)));
 		}
-		if let Some(field) = syntax.arg_field {
-			let value = match directive.arg {
-				Some((_, arg_start, arg_end, true)) => {
-					let (at, limit) = (self.at, self.limit);
-					self.at = arg_start;
-					self.limit = arg_end;
-					let expression = self.expression("");
-					self.at = at;
-					self.limit = limit;
-					Value::Node(expression?)
-				}
-				Some((text, _, _, false)) => Value::Str(self.intern(text)),
-				None => Value::Null,
-			};
-			fields.push((field, value));
-		}
+		let value = match directive.arg {
+			Some((_, arg_start, arg_end, true)) => {
+				let (at, limit) = (self.at, self.limit);
+				self.at = arg_start;
+				self.limit = arg_end;
+				let expression = self.expression("");
+				self.at = at;
+				self.limit = limit;
+				Value::Node(expression?)
+			}
+			Some((text, _, _, false)) => Value::Str(self.intern(text)),
+			None => Value::Null,
+		};
+		fields.push((own::name, value));
 		let declares = rule.declares.as_deref();
 		match &rule.value {
-			DirectiveValue::Value => {
+			&DirectiveValue::Value(field) => {
 				let value = if has_value {
 					self.plain_value()?
 				} else {
@@ -1709,13 +1700,15 @@ impl<'a> Walker<'a> {
 				if has_value {
 					end = self.at;
 				}
-				fields.push(("value", value));
+				fields.push((field, value));
 			}
-			DirectiveValue::Expression {
+			&DirectiveValue::Expression {
+				field,
 				optional,
 				name: own_name,
 			}
-			| DirectiveValue::Pattern {
+			| &DirectiveValue::Pattern {
+				field,
 				optional,
 				name: own_name,
 			} => {
@@ -1755,20 +1748,20 @@ impl<'a> Walker<'a> {
 				};
 				let expression = match expression {
 					Some(e) => Value::Node(e),
-					None if *own_name => match directive.arg {
+					None if own_name => match directive.arg {
 						Some((text, arg_start, _, _)) => {
 							let id = self.intern(text);
 							Value::Node(self.ast().add(NodeKind::Identifier { name: id }, arg_start, end))
 						}
 						None => return self.fail(start, end, Code::Expected, Some("a value")),
 					},
-					None if *optional => Value::Null,
+					None if optional => Value::Null,
 					None => return self.fail(start, end, Code::Expected, Some("a value")),
 				};
 				if let (Some([]), Value::Node(pattern)) = (declares, expression) {
 					self.declared.push(pattern);
 				}
-				fields.push(("expression", expression));
+				fields.push((field, expression));
 			}
 			DirectiveValue::Form(form) => {
 				let mut read = Read {
@@ -1816,26 +1809,24 @@ impl<'a> Walker<'a> {
 				fields.extend(read.fields);
 			}
 		}
-		if let Some(field) = syntax.modifiers_field {
-			let from = self.ast().host_strings.len() as u32;
-			let count = directive.modifiers.len() as u32;
-			for modifier in &directive.modifiers {
-				let id = self.intern(modifier);
-				self.ast().host_strings.push(id);
-			}
-			fields.push((field, Value::Strs(from, count)));
+		let from = self.ast().host_strings.len() as u32;
+		let count = directive.modifiers.len() as u32;
+		for modifier in &directive.modifiers {
+			let id = self.intern(modifier);
+			self.ast().host_strings.push(id);
 		}
+		fields.push((own::modifiers, Value::Strs(from, count)));
 		for &(flag, on) in &rule.flags {
 			fields.push((flag, Value::Bool(on)));
 		}
-		let node = self.host(rule.ty, start, end, &fields, None, true);
+		let node = self.host(rule.ty, start, end, &fields);
 		self.fields.give(fields);
 		let key = if syntax.unique {
-			Some(("Attribute", self.intern(name)))
+			Some((own::Attribute, self.intern(name)))
 		} else {
 			match (rule.unique, directive.arg) {
 				(Unique::Kind, Some((text, ..))) => Some((rule.ty, self.intern(text))),
-				(Unique::Attribute, Some((text, ..))) => Some(("Attribute", self.intern(text))),
+				(Unique::Attribute, Some((text, ..))) => Some((own::Attribute, self.intern(text))),
 				_ => None,
 			}
 		};
@@ -1920,7 +1911,7 @@ impl<'a> Walker<'a> {
 		if quote.is_some() && self.char() == quote {
 			self.at += 1;
 		}
-		let value = if quote.is_some() || chunks.len() > 1 || self.host_type(chunks[0]) == self.grammar.text.ty {
+		let value = if quote.is_some() || chunks.len() > 1 || self.host_type(chunks[0]) == Some(own::Text) {
 			Value::Nodes(self.list(&chunks))
 		} else {
 			Value::Node(chunks[0])
@@ -2451,14 +2442,12 @@ impl<'a> Walker<'a> {
 		let tag = self.chunk(rule, id_start, id_end, id);
 		let name_id = self.intern(name);
 		let node = self.host(
-			"Attribute",
+			own::Attribute,
 			start,
 			self.at,
-			&[("name", Value::Str(name_id)), ("value", Value::Node(tag))],
-			None,
-			true,
+			&[(own::name, Value::Str(name_id)), (own::value, Value::Node(tag))],
 		);
-		Ok(Some(Some((node, Some(("Attribute", name_id))))))
+		Ok(Some(Some((node, Some((own::Attribute, name_id))))))
 	}
 
 	/// A tag after its marker: its node.
@@ -2472,7 +2461,7 @@ impl<'a> Walker<'a> {
 		};
 		self.piece(&rule.open, &mut read)?;
 		fill_unread(&rule.open.form.entries, &mut read.fields);
-		let node = self.host(rule.ty, start, self.at, &read.fields, None, true);
+		let node = self.host(rule.ty, start, self.at, &read.fields);
 		self.fields.give(read.fields);
 		Ok(node)
 	}
@@ -2503,7 +2492,7 @@ impl<'a> Walker<'a> {
 				self.space();
 				self.expect(rule.open.end)?;
 				let (field, _) = rule.single().unwrap();
-				let node = self.host(rule.ty, start, self.at, &[(field, Value::Node(statement))], None, true);
+				let node = self.host(rule.ty, start, self.at, &[(field, Value::Node(statement))]);
 				self.append(node);
 				Ok(true)
 			}
@@ -2547,72 +2536,77 @@ impl<'a> Walker<'a> {
 		let Some(body) = read.body.take().or(rule.open.form.body.as_ref()) else {
 			return self.fail(start, start + 1, Code::Placement, Some("A block without a body"));
 		};
-		self.within_depth(start)?;
 		let mut outside = self.nodes.take();
 		let group = self.group_of(&read, body, &mut outside);
-		self.push_block(rule, start, read.fields, body, group, outside, None);
-		Ok(true)
-	}
-
-	/// Opens the frame of a block, or of a repeating branch's node, its first body's scope read.
-	#[expect(clippy::too_many_arguments)]
-	#[inline]
-	fn push_block(
-		&mut self,
-		rule: &'a Construct,
-		start: u32,
-		fields: Vec<(&'static str, Value)>,
-		body: &Body,
-		group: BodyGroup,
-		outside: Vec<NodeId>,
-		repeats: Option<usize>,
-	) {
 		let (nodes, done) = (self.nodes.take(), self.fields.take());
 		let mut groups = self.groups.take();
 		groups.push(group);
+		self.within_depth(start)?;
 		self.frames.push(Frame::Block {
 			start,
 			rule,
-			fields,
+			fields: read.fields,
 			body: (body.field, body.omit),
 			nodes,
 			done,
 			groups,
 			outside,
-			lists: Vec::new(),
-			repeats,
-			branched: false,
+			chain: None,
 		});
+		Ok(true)
 	}
 
 	fn branch(&mut self, rule: &'a Construct, i: usize, start: u32, word: u32) -> Result<()> {
 		let branch = &rule.branches[i];
-		// the block's frame, below a repeating branch's node when one is open
-		let listed = matches!(self.frames.last(), Some(Frame::Block { repeats: Some(_), .. }));
-		let Some(Frame::Block {
-			done,
-			body: current,
-			branched,
-			..
-		}) = self.frames.get(self.frames.len() - 1 - listed as usize)
-		else {
-			unreachable!()
-		};
-		let filed = |field: &'static str| current.0 == field || done.iter().any(|(f, _)| *f == field);
+		let body = branch.form.body.as_ref().unwrap();
 		// before the body so far is filed: filed twice, the field came out twice under recovery
-		let duplicate = match branch.repeats {
-			// a repeating branch after one read once: `{:else if}` after `{:else}`
-			Some(_) => *branched,
-			None => branch
-				.shape
-				.iter()
-				.any(|slot| matches!(slot, Slot::Body { field, .. } if filed(field))),
-		};
-		if duplicate {
+		if let Some(Frame::Block {
+			done, body: current, ..
+		}) = self.frames.last()
+			&& (current.0 == body.field || done.iter().any(|(field, _)| *field == body.field))
+		{
 			return self.fail(start, start + 1, Code::Duplicate, Some(branch.display));
 		}
-		// the head is read, and a node too deep refused, before anything closes: a branch that
-		// cannot open leaves what follows it in the body still open
+		self.finish_body();
+		if let Some((child_field, flag)) = body.chain {
+			// the branch opens a block of its own inside the parent's field, which closes with it
+			if let Some(Frame::Block { body: current, .. }) = self.frames.last_mut() {
+				*current = (Name::NONE, true);
+			}
+			self.keyword = word;
+			if branch.space {
+				self.require_space()?;
+			}
+			let mut read = Read {
+				fields: self.fields.take(),
+				body: None,
+			};
+			self.piece(branch, &mut read)?;
+			let child = Body {
+				field: child_field,
+				omit: false,
+				chain: None,
+				declares: body.declares.clone(),
+			};
+			let mut outside = self.nodes.take();
+			let group = self.group_of(&read, &child, &mut outside);
+			let (nodes, done) = (self.nodes.take(), self.fields.take());
+			let mut groups = self.groups.take();
+			groups.push(group);
+			self.within_depth(start)?;
+			self.frames.push(Frame::Block {
+				start,
+				rule,
+				fields: read.fields,
+				body: (child_field, false),
+				nodes,
+				done,
+				groups,
+				outside,
+				chain: Some((body.field, flag)),
+			});
+			return Ok(());
+		}
 		if branch.space {
 			self.require_space()?;
 		}
@@ -2622,48 +2616,13 @@ impl<'a> Walker<'a> {
 			body: None,
 		};
 		self.piece(branch, &mut read)?;
-		let Some(body) = read.body.take().or(branch.form.body.as_ref()) else {
-			return self.fail(start, start + 1, Code::Placement, Some("A branch without a body"));
-		};
-		if branch.repeats.is_some() && !listed {
-			self.within_depth(start)?;
-		}
-		// a repeating branch's node on top ends where this branch starts
-		if listed {
-			self.pop_block(start);
-		}
-		self.finish_body();
 		let mut outside = self.nodes.take();
 		let group = self.group_of(&read, body, &mut outside);
-		if let Some((_, list)) = branch.repeats {
-			// the block's body stays closed while the branch's node, a block of its own, is open
-			let known = matches!(self.frames.last(), Some(Frame::Block { lists, .. }) if lists.iter().any(|(field, _)| *field == list));
-			let fresh = (!known).then(|| (self.nodes.take(), self.lists.take()));
-			let Some(Frame::Block {
-				body: current, lists, ..
-			}) = self.frames.last_mut()
-			else {
-				unreachable!()
-			};
-			*current = ("", true);
-			if let Some((nodes, mut pooled)) = fresh {
-				if lists.capacity() == 0 {
-					std::mem::swap(lists, &mut pooled);
-				}
-				lists.push((list, nodes));
-				if pooled.capacity() > 0 {
-					self.lists.give(pooled);
-				}
-			}
-			self.push_block(rule, start, read.fields, body, group, outside, Some(i));
-			return Ok(());
-		}
 		let Some(Frame::Block {
 			fields,
 			body: current,
 			groups,
 			outside: all_outside,
-			branched,
 			..
 		}) = self.frames.last_mut()
 		else {
@@ -2671,7 +2630,6 @@ impl<'a> Walker<'a> {
 		};
 		fields.extend(read.fields.iter().copied());
 		*current = (body.field, body.omit);
-		*branched = true;
 		groups.push(group);
 		all_outside.extend(outside);
 		Ok(())
@@ -2720,10 +2678,10 @@ impl<'a> Walker<'a> {
 		};
 		let nodes = std::mem::take(nodes);
 		let field = body.0;
-		if field.is_empty() {
+		if field == Name::NONE {
 			return;
 		}
-		let children = self.children(nodes);
+		let children = Value::Node(self.fragment(nodes));
 		let Some(Frame::Block { done, .. }) = self.frames.last_mut() else {
 			unreachable!()
 		};
@@ -2754,7 +2712,18 @@ impl<'a> Walker<'a> {
 		loop {
 			match self.frames.last() {
 				Some(frame) if ours(frame) => break,
-				Some(Frame::Block { .. }) => self.pop_unclosed(start)?,
+				Some(Frame::Block {
+					start: block_start,
+					rule,
+					chain,
+					..
+				}) => {
+					let (block_start, what, chained) = (*block_start, rule.open.display, chain.is_some());
+					if !chained {
+						self.report_at(block_start, block_start + 1, Code::Unclosed, Some(what))?;
+					}
+					self.pop_block(start);
+				}
 				Some(Frame::Element {
 					start: element_start,
 					name: span,
@@ -2767,35 +2736,13 @@ impl<'a> Walker<'a> {
 				_ => unreachable!(),
 			}
 		}
-		// a repeating branch's node ends where the close starts, its block after it
-		if matches!(self.frames.last(), Some(Frame::Block { repeats: Some(_), .. })) {
-			self.pop_block(start);
-		}
-		self.pop_block(end);
+		while !self.pop_block(end) {}
 		Ok(())
 	}
 
-	/// Closes the block on top at `at` as unclosed: a repeating branch's node is listed as it is,
-	/// its block being what stands unclosed.
-	#[cold]
-	fn pop_unclosed(&mut self, at: u32) -> Result<()> {
-		let Some(Frame::Block {
-			start, rule, repeats, ..
-		}) = self.frames.last()
-		else {
-			unreachable!()
-		};
-		if repeats.is_none() {
-			let (start, what) = (*start, rule.open.display);
-			self.report_at(start, start + 1, Code::Unclosed, Some(what))?;
-		}
-		self.pop_block(at);
-		Ok(())
-	}
-
-	/// Closes the block on top at `end`: a repeating branch's node into its block's list, a block
-	/// into the content around it.
-	fn pop_block(&mut self, end: u32) {
+	/// Closes the block on top at `end`; whether it stood on its own rather than in a chain,
+	/// whose parent is then still open.
+	fn pop_block(&mut self, end: u32) -> bool {
 		self.finish_body();
 		let Some(Frame::Block {
 			start: block_start,
@@ -2804,106 +2751,96 @@ impl<'a> Walker<'a> {
 			done,
 			groups,
 			outside,
-			lists,
-			repeats,
+			chain,
 			..
 		}) = self.frames.pop()
 		else {
 			unreachable!()
 		};
-		let (ty, shape, list) = match repeats {
-			None => (rule.ty, &rule.shape, None),
-			Some(i) => {
-				let branch = &rule.branches[i];
-				let (ty, list) = branch.repeats.unwrap();
-				(ty, &branch.shape, Some(list))
+		let node = self.block_node(
+			rule,
+			block_start,
+			end,
+			fields,
+			done,
+			groups,
+			outside,
+			chain.map(|(_, flag)| flag),
+		);
+		match chain {
+			Some((field, _)) => {
+				let mut one = self.nodes.take();
+				one.push(node);
+				let children = Value::Node(self.fragment(one));
+				let Some(Frame::Block { done, .. }) = self.frames.last_mut() else {
+					unreachable!()
+				};
+				done.push((field, children));
+				false
 			}
-		};
-		let node = self.block_node(ty, shape, block_start, end, fields, done, groups, outside, lists);
-		let Some(list) = list else {
-			self.append(node);
-			return;
-		};
-		let Some(Frame::Block { lists, .. }) = self.frames.last_mut() else {
-			unreachable!()
-		};
-		let Some((_, nodes)) = lists.iter_mut().find(|(field, _)| *field == list) else {
-			unreachable!()
-		};
-		nodes.push(node);
+			None => {
+				self.append(node);
+				true
+			}
+		}
 	}
 
 	#[expect(clippy::too_many_arguments)]
 	fn block_node(
 		&mut self,
-		ty: &'static str,
-		shape: &[Slot],
+		rule: &Construct,
 		start: u32,
 		end: u32,
-		fields: Vec<(&'static str, Value)>,
-		done: Vec<(&'static str, Value)>,
+		mut fields: Vec<(Name, Value)>,
+		done: Vec<(Name, Value)>,
 		mut groups: Vec<BodyGroup>,
 		outside: Vec<NodeId>,
-		mut listed: Vec<(&'static str, Vec<NodeId>)>,
+		chained: Option<Name>,
 	) -> NodeId {
-		// the slots in the shape's order: a field as read or null, a body after the fields of its
-		// scope, a list
+		fill_unread(&rule.entries, &mut fields);
+		for &flag in &rule.chain_flags {
+			fields.push((flag, Value::Bool(chained == Some(flag))));
+		}
+		// the fields outside every scope first, then each body's scope: its fields, then the body
 		let mut ordered = self.fields.take();
-		let base = self.ast().host_fields.len() as u32;
+		ordered.extend(
+			fields
+				.iter()
+				.copied()
+				.filter(|(f, _)| !groups.iter().any(|group| group.fields.contains(f))),
+		);
+		for &(field, omit) in &rule.bodies {
+			if !omit && !done.iter().any(|(k, _)| *k == field) {
+				ordered.push((field, Value::Null));
+			}
+		}
+		let base = self.ast().host_keys.len() as u32;
 		let groups_at = self.ast().host_groups.len() as u32;
 		let mut count = 0;
-		for &slot in shape {
-			let (body, omit) = match slot {
-				Slot::Field { field, omit } => {
-					match fields.iter().find(|(f, _)| *f == field) {
-						Some(&entry) => ordered.push(entry),
-						None if !omit => ordered.push((field, Value::Null)),
-						None => {}
-					}
-					continue;
-				}
-				Slot::List(field) => {
-					let nodes = listed
-						.iter()
-						.find(|(list, _)| *list == field)
-						.map_or(&[][..], |(_, nodes)| nodes);
-					let list = if nodes.is_empty() {
-						List::EMPTY
-					} else {
-						self.list(nodes)
-					};
-					ordered.push((field, Value::Nodes(list)));
-					continue;
-				}
-				Slot::Body { field, omit } => (field, omit),
-			};
-			let Some(&(_, children)) = done.iter().find(|(k, _)| *k == body) else {
-				if !omit {
-					ordered.push((body, Value::Null));
-				}
-				continue;
-			};
+		for &(body, children) in &done {
+			let from = ordered.len() as u32;
 			let group = groups.iter().find(|group| group.body == body);
-			// the body's scope opens at the first of its fields, which stand before it
-			let from = group
-				.and_then(|group| ordered.iter().position(|(f, _)| group.fields.contains(f)))
-				.unwrap_or(ordered.len()) as u32;
+			if let Some(group) = group {
+				for &field in &group.fields {
+					if let Some(&entry) = fields.iter().find(|(f, _)| *f == field) {
+						ordered.push(entry);
+					}
+				}
+			}
 			ordered.push((body, children));
 			let inside: &[NodeId] = group.map_or(&[], |group| &group.inside);
-			if self.grammar.fragment_scope || !inside.is_empty() {
-				let inside = self.list(inside);
-				let node = match children {
-					Value::Node(fragment) if self.grammar.fragment.is_some() => Some(fragment),
-					_ => None,
-				};
-				self.ast().host_groups.push(HostGroup {
-					inside,
-					from: base + from,
-					until: base + ordered.len() as u32,
-					node,
-				});
-				count += 1;
-			}
+			let inside = self.list(inside);
+			let node = match children {
+				Value::Node(fragment) => Some(fragment),
+				_ => None,
+			};
+			self.ast().host_groups.push(HostGroup {
+				inside,
+				from: base + from,
+				until: base + ordered.len() as u32,
+				node,
+			});
+			count += 1;
 		}
 		let outside_list = self.list(&outside);
 		self.nodes.give(outside);
@@ -2911,7 +2848,7 @@ impl<'a> Walker<'a> {
 			outside: outside_list,
 			groups: (groups_at, count),
 		});
-		let node = self.host(ty, start, end, &ordered, scope, true);
+		let node = self.opening(rule.ty, start, end, &ordered, scope);
 		self.fields.give(ordered);
 		self.fields.give(fields);
 		self.fields.give(done);
@@ -2920,13 +2857,6 @@ impl<'a> Walker<'a> {
 			self.nodes.give(group.inside);
 		}
 		self.groups.give(groups);
-		// most blocks never held a list: nothing to give back
-		if listed.capacity() > 0 {
-			for (_, nodes) in listed.drain(..) {
-				self.nodes.give(nodes);
-			}
-			self.lists.give(listed);
-		}
 		node
 	}
 
@@ -2963,7 +2893,7 @@ impl<'a> Walker<'a> {
 				} => {
 					self.space();
 					let value = self.entry(*entry, stops)?;
-					read.fields.push((field, value));
+					read.fields.push((*field, value));
 				}
 				Item::Group {
 					alternatives,

@@ -3,7 +3,7 @@
 	"end": 27,
 	"errors": [
 		{
-			"code": 112,
+			"code": 111,
 			"args": [
 				"private",
 				"abstract"

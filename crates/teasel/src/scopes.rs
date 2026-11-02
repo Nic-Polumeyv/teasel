@@ -248,8 +248,7 @@ pub struct Scopes {
 	pub scopes: Handed<Scope>,
 	pub bindings: Handed<Binding>,
 	pub references: Handed<Reference>,
-	/// The pieces of JavaScript in a host's document, in the order a walk over the tree meets
-	/// them; empty for a plain parse.
+	/// The pieces of JavaScript in a host's document, in source order; empty for a plain parse.
 	pub roots: Handed<Root>,
 	pub root_of: NodeTable<u32>,
 	pub of_node: NodeTable<ScopeId>,
@@ -367,7 +366,7 @@ impl Scopes {
 		&self.scopes[id as usize]
 	}
 
-	/// The per-node tables a front end reads in place.
+	/// The per-node tables the decoder reads in place.
 	pub fn views(&mut self, out: &mut Views<'_>) {
 		out.push("scopes", &mut self.scopes);
 		out.push("bindings", &mut self.bindings);
@@ -382,7 +381,7 @@ impl Scopes {
 		out.push("writes_of_at", &mut self.writes_of.starts.0);
 	}
 
-	/// Marks the nodes with what a front end links once a node is whole, in `late`, and those with
+	/// Marks the nodes with what the decoder links once a node is whole, in `late`, and those with
 	/// a binding or a reference that are not identifiers, in `rare`.
 	pub fn mark(&self, ast: &Ast, rare: &mut crate::ast::NodeSet, late: &mut crate::ast::NodeSet) {
 		for &(node, _) in self.declared_by.pairs.iter().chain(&self.writes_of.pairs) {
@@ -1081,15 +1080,19 @@ impl<'a> Binder<'a> {
 		}
 	}
 
+	fn decorators(&mut self, id: NodeId) {
+		if let Some(decorators) = self.ast.extras.get(id).and_then(|e| e.decorators) {
+			for &decorator in self.ast.list(decorators).iter().flatten() {
+				self.visit(decorator, Mode::Expression);
+			}
+		}
+	}
+
 	fn function(&mut self, id: NodeId, params: List, body: NodeId, arrow: bool) {
 		// a parameter's decorators are evaluated where the function is defined
 		if self.extras {
 			for &param in self.ast.list(params).iter().flatten() {
-				if let Some(decorators) = self.ast.extras.get(param).and_then(|e| e.decorators) {
-					for &decorator in self.ast.list(decorators).iter().flatten() {
-						self.visit(decorator, Mode::Expression);
-					}
-				}
+				self.decorators(param);
 			}
 		}
 		self.enter(ScopeKind::Function, Some(id), arrow);
@@ -1144,9 +1147,9 @@ impl<'a> Binder<'a> {
 
 	/// A host node: its fields in order, inside the scope it opens from `Opens::from` on.
 	fn host(&mut self, id: NodeId, index: u32) {
-		let host = self.ast.hosts[index as usize];
-		let (from, len) = host.fields;
-		let Some(opens) = host.scope else {
+		let fields = self.ast.host_rows[index as usize].fields;
+		let (from, len) = (fields.start, fields.len);
+		let Some(opens) = self.ast.host_scopes[index as usize] else {
 			for i in from..from + len {
 				self.host_field(i);
 			}
@@ -1172,7 +1175,7 @@ impl<'a> Binder<'a> {
 				let node = group.node.unwrap_or(id);
 				let kind = match self.ast.node(node).kind {
 					NodeKind::Program { .. } => ScopeKind::Script,
-					NodeKind::Host(inner) if !self.ast.hosts[inner as usize].span => ScopeKind::Fragment,
+					NodeKind::Host(inner) if !self.ast.host_rows[inner as usize].spanned() => ScopeKind::Fragment,
 					_ => ScopeKind::Block,
 				};
 				self.enter(kind, Some(node), false);
@@ -1206,7 +1209,7 @@ impl<'a> Binder<'a> {
 				.iter()
 				.any(|list| b.ast.list(*list).contains(&Some(child)))
 		};
-		match self.ast.host_fields[i as usize].1 {
+		match self.ast.host_vals[i as usize] {
 			crate::ast::Value::Node(child) if !declared(self, child) => self.field_value(child),
 			crate::ast::Value::Nodes(children) => {
 				for &child in self.ast.list(children).iter().flatten() {
@@ -1253,13 +1256,8 @@ impl<'a> Binder<'a> {
 
 	fn visit_with(&mut self, id: NodeId, mode: Mode, extras: bool) {
 		use NodeKind::*;
-		if extras
-			&& self.extras
-			&& let Some(decorators) = self.ast.extras.get(id).and_then(|e| e.decorators)
-		{
-			for &decorator in self.ast.list(decorators).iter().flatten() {
-				self.visit(decorator, Mode::Expression);
-			}
+		if extras && self.extras {
+			self.decorators(id);
 		}
 		match self.kind(id) {
 			Host(index) => self.host(id, index),
@@ -1271,7 +1269,6 @@ impl<'a> Binder<'a> {
 			| SatisfiesExpression { expression, .. }
 			| NonNullExpression { expression }
 			| TypeAssertion { expression, .. }
-			| TypeCastExpression { expression, .. }
 			| InstantiationExpression { expression, .. }
 			| ParameterProperty { parameter: expression } => self.visit(expression, mode),
 			Decorator { expression } | ExportAssignment { expression } => self.visit(expression, Mode::Expression),
@@ -1741,7 +1738,6 @@ mod tests {
 		facts_of(&analyzed(crate::parse_at(
 			src,
 			0,
-			None,
 			Entry::Program,
 			Options(if module { Options::MODULE } else { 0 }),
 			"",
@@ -1752,7 +1748,6 @@ mod tests {
 		facts_of(&analyzed(crate::parse_at(
 			src,
 			0,
-			None,
 			Entry::Program,
 			Options(Options::MODULE | Options::TYPESCRIPT),
 			"",
@@ -1862,7 +1857,7 @@ mod tests {
 			facts_in("function f(a) { return a; }", false),
 			"f@9 declares function in script\na@11 declares param in function\na@23 -> @11"
 		);
-		let (mut ast, parsed) = crate::parse_at("(a, b = a)", 0, None, Entry::Params, Options::default(), "");
+		let (mut ast, parsed) = crate::parse_at("(a, b = a)", 0, Entry::Params, Options::default(), "");
 		let (roots, _) = parsed.unwrap();
 		analyze(&mut ast, Entry::Params, roots);
 		assert_eq!(ast.scopes.as_ref().unwrap().bindings.len(), 2);
@@ -1903,7 +1898,7 @@ mod tests {
 		// a class field or static block cannot say `arguments` at all
 		for src in ["class C { x = arguments }", "class C { static { arguments } }"] {
 			assert!(
-				crate::parse_at(src, 0, None, Entry::Program, Options::default(), "")
+				crate::parse_at(src, 0, Entry::Program, Options::default(), "")
 					.1
 					.is_err(),
 				"{src}"
@@ -1962,7 +1957,6 @@ mod tests {
 			let ast = analyzed(crate::parse_at(
 				src,
 				0,
-				None,
 				Entry::Program,
 				Options(Options::MODULE | Options::TYPESCRIPT),
 				"",
@@ -1979,7 +1973,6 @@ mod tests {
 		let ast = analyzed(crate::parse_at(
 			src,
 			0,
-			None,
 			Entry::Program,
 			Options(Options::MODULE | Options::TYPESCRIPT),
 			"",
@@ -2039,7 +2032,6 @@ mod tests {
 		let ast = analyzed(crate::parse_at(
 			src,
 			0,
-			None,
 			Entry::Program,
 			Options(Options::MODULE | Options::TYPESCRIPT),
 			"",
@@ -2077,14 +2069,7 @@ mod tests {
 	#[test]
 	fn declarations_writes_and_top_level_await() {
 		let src = "let [a = 1, b] = c; a = b + 1; a++; for (b of c) {} function f(p) { g = p; } await c;";
-		let ast = analyzed(crate::parse_at(
-			src,
-			0,
-			None,
-			Entry::Program,
-			Options(Options::MODULE),
-			"",
-		));
+		let ast = analyzed(crate::parse_at(src, 0, Entry::Program, Options(Options::MODULE), ""));
 		let scopes = ast.scopes.as_ref().unwrap();
 		let start = |id: Option<NodeId>| id.map(|id| ast.node(id).start);
 		let declarations: Vec<_> = scopes
@@ -2127,7 +2112,6 @@ mod tests {
 		let ast = analyzed(crate::parse_at(
 			"var x; var x = 1; function x() {}",
 			0,
-			None,
 			Entry::Program,
 			Options::default(),
 			"",
@@ -2160,7 +2144,6 @@ mod tests {
 		let ast = analyzed(crate::parse_at(
 			"import { a } from 'a'; export { a as b }; function f() { return () => a; }",
 			0,
-			None,
 			Entry::Program,
 			Options(Options::MODULE),
 			"",
@@ -2185,14 +2168,8 @@ mod tests {
 		let mut pool = None;
 		let mut room = Vec::new();
 		for round in 0..12 {
-			let (mut ast, parsed) = crate::parse_at(
-				&document(5 + round % 2),
-				0,
-				None,
-				Entry::Program,
-				Options::default(),
-				"",
-			);
+			let (mut ast, parsed) =
+				crate::parse_at(&document(5 + round % 2), 0, Entry::Program, Options::default(), "");
 			let (roots, _) = parsed.unwrap();
 			ast.scopes = pool.take();
 			analyze(&mut ast, Entry::Program, roots);
