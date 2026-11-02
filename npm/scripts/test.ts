@@ -308,7 +308,7 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 		assert.throws(() => engine.parse('a;', 0, entry, 0, '', undefined), / is no entry/);
 	}
 	assert.throws(() => engine.parse('𝒳', 0, 1, 1, '', undefined), /surrogate pair/);
-	if (name === 'native') assert.throws(() => (load() as Addon).parse(new Uint8Array([0xff]), 0, 0, 0, '', undefined), /the source is not UTF-8/);
+	if (name === 'native') assert.throws(() => (load() as Addon).parse(new Uint8Array([0xff]), 0, 0, 0, '', 0), /the source is not UTF-8/);
 	const wide = 'x;'.repeat(200000);
 	assert.equal(program(wide).body.length, 200000);
 	assert.equal(program('y;').body.length, 1);

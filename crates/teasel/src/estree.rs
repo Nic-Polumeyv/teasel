@@ -5,7 +5,7 @@ use crate::ast::{Ast, Extras, List, NodeId, NodeKind, Value, node_layout};
 use crate::engine;
 use crate::host::{self, Grammar};
 use crate::interner::StrId;
-use crate::json::{Json, write_json_string};
+use crate::json::Json;
 use crate::layout::{Ty, tag};
 use crate::parser::Entry;
 use crate::positions::{Cursor, Positions};
@@ -14,18 +14,17 @@ use crate::scopes::Role;
 
 /// One entry at a byte offset, as JSON.
 pub fn parse(source: &str, entry: Entry, offset: u32, options: Options) -> String {
-	if !source.is_char_boundary(offset as usize) {
-		return error_json(&format!("offset {offset} is not a character boundary"), offset);
-	}
+	assert!(
+		source.is_char_boundary(offset as usize),
+		"offset {offset} is not a character boundary"
+	);
 	written(source, entry, offset, options, None)
 }
 
 /// A whole document of a host language by its grammar, as JSON; see `host::parse_document`.
 pub fn parse_document(source: &str, grammar: &str, options: Options) -> String {
-	match engine::grammar(grammar) {
-		Ok(grammar) => written(source, Entry::Program, 0, options, Some(grammar)),
-		Err(message) => error_json(&message, 0),
-	}
+	let grammar = engine::grammar(grammar).unwrap_or_else(|why| panic!("{why}"));
+	written(source, Entry::Program, 0, options, engine::grammar_at(grammar))
 }
 
 fn written(source: &str, entry: Entry, offset: u32, options: Options, grammar: Option<&Grammar>) -> String {
@@ -39,18 +38,9 @@ fn written(source: &str, entry: Entry, offset: u32, options: Options, grammar: O
 		grammar,
 		|ast, roots, end, options, _| {
 			let names = grammar.map_or(host::grammar::own::NAMES, |grammar| &grammar.names);
-			Writer::new(ast, source, &positions, names).answer(entry, roots, end, options)
+			Writer::new(ast, source, &positions, names, options).answer(entry, roots, end)
 		},
 	)
-}
-
-/// The error answer for a parse that never ran, what is wrong as its reason.
-fn error_json(reason: &str, pos: u32) -> String {
-	use std::fmt::Write;
-	let mut out = String::from("{\"error\":{\"reason\":");
-	write_json_string(&mut out, reason);
-	write!(out, ",\"pos\":{pos}}}}}").unwrap();
-	out
 }
 
 pub struct Writer<'a> {
@@ -61,8 +51,6 @@ pub struct Writer<'a> {
 	positions: &'a Positions,
 	cursor: Cursor,
 	options: Options,
-	/// The parse failed: `node` is null and `errors` holds the one error, nothing else is listed.
-	pub(crate) failed: bool,
 	/// The node being written names something bound by another node: no scope facts on it.
 	name_only: bool,
 	/// What erasure left in place, in emission order.
@@ -73,7 +61,13 @@ pub struct Writer<'a> {
 
 impl<'a> Writer<'a> {
 	/// `names` are the grammar's, which the hosts' rows number.
-	pub(crate) fn new(ast: &'a Ast, source: &'a str, positions: &'a Positions, names: &'a [&'static str]) -> Self {
+	pub(crate) fn new(
+		ast: &'a Ast,
+		source: &'a str,
+		positions: &'a Positions,
+		names: &'a [&'static str],
+		options: Options,
+	) -> Self {
 		Self {
 			ast,
 			source,
@@ -81,8 +75,7 @@ impl<'a> Writer<'a> {
 			json: Json::default(),
 			positions,
 			cursor: Cursor::default(),
-			options: Options::default(),
-			failed: false,
+			options,
 			name_only: false,
 			kept: Vec::new(),
 			adopted: Vec::new(),
@@ -91,9 +84,7 @@ impl<'a> Writer<'a> {
 
 	/// An answer as JSON: the roots as `node`, one node or the patterns of a parameter list, null
 	/// when the parse failed, then `end` and what the options add.
-	pub(crate) fn answer(mut self, entry: Entry, roots: Option<List>, end: u32, options: Options) -> String {
-		self.options = options;
-		self.failed = roots.is_none();
+	pub(crate) fn answer(mut self, entry: Entry, roots: Option<List>, end: u32) -> String {
 		self.json.object();
 		match roots {
 			None => {
@@ -106,7 +97,7 @@ impl<'a> Writer<'a> {
 		self.key("end");
 		let end = self.positions.offset(&mut self.cursor, end);
 		self.json.int(end);
-		self.trailers();
+		self.trailers(roots.is_none());
 		self.json.end();
 		self.json.finish()
 	}
@@ -287,8 +278,9 @@ impl<'a> Writer<'a> {
 
 	/// What the options add after a root: every comment, the errors recovered from, what erasure
 	/// kept, the scopes; a failed parse lists its error alone.
-	fn trailers(&mut self) {
-		if self.failed {
+	/// A failed parse has its one error and nothing else listed.
+	fn trailers(&mut self, failed: bool) {
+		if failed {
 			return self.errors();
 		}
 		if self.options.has(Options::COMMENTS) {

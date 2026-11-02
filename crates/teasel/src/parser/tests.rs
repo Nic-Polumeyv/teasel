@@ -790,11 +790,11 @@ fn phases() {
 	let lines = Positions::new(&source, true);
 	{
 		let options = Options(Options::MODULE | Options::COMMENTS);
-		best("whole request: positions, parse, comments, encode, finish", &mut || {
+		best("whole parse: positions, parse, comments, encode, finish", &mut || {
 			crate::engine::parse(&source, options, Entry::Program, 0.0, "", None).unwrap();
 		});
 		let options = Options(Options::MODULE | Options::COMMENTS | Options::SCOPES | Options::LOCATIONS);
-		best("whole request with scopes and loc", &mut || {
+		best("whole parse with scopes and loc", &mut || {
 			crate::engine::parse(&source, options, Entry::Program, 0.0, "", None).unwrap();
 		});
 	}
@@ -802,6 +802,7 @@ fn phases() {
 		&std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/host.json")).unwrap(),
 	)
 	.unwrap();
+	let grammar = crate::engine::grammar_at(grammar);
 	let document = format!(
 		"<script>let items = [1,2,3];</script>\n{}",
 		"{#each items as item}<p class=\"row\" onclick={() => f(item)}>{item + 1}</p>{/each}\n".repeat(200)
@@ -814,15 +815,15 @@ fn phases() {
 		),
 	] {
 		best(&format!("host: 200 each blocks, {label}"), &mut || {
-			crate::engine::parse(&document, Options(flags), Entry::Program, 0.0, "", Some(grammar)).unwrap();
+			crate::engine::parse(&document, Options(flags), Entry::Program, 0.0, "", grammar).unwrap();
 		});
 	}
 	best("Json write, loc", &mut || {
-		let _ = Writer::new(&ast, &source, &lines, crate::host::grammar::own::NAMES).answer(
+		let names = crate::host::grammar::own::NAMES;
+		let _ = Writer::new(&ast, &source, &lines, names, options.with(Options::COMMENTS)).answer(
 			Entry::Program,
 			Some(roots),
 			end,
-			options.with(Options::COMMENTS),
 		);
 	});
 	eprintln!(
@@ -977,6 +978,7 @@ fn host_alloc_probe() {
 		&std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/host.json")).unwrap(),
 	)
 	.unwrap();
+	let grammar = crate::engine::grammar_at(grammar);
 	let count = |src: &str| {
 		let parse = || {
 			crate::engine::parse(
@@ -985,7 +987,7 @@ fn host_alloc_probe() {
 				Entry::Program,
 				0.0,
 				"",
-				Some(grammar),
+				grammar,
 			)
 			.unwrap()
 		};
@@ -1051,9 +1053,9 @@ fn layout_sizes() {
 }
 
 #[test]
+#[should_panic(expected = "is not a character boundary")]
 fn an_offset_inside_a_character_is_refused() {
-	let options = crate::Options(crate::Options::MODULE);
-	assert!(crate::estree::parse("é", Entry::Program, 1, options).contains("is not a character boundary"));
+	crate::estree::parse("é", Entry::Program, 1, crate::Options(crate::Options::MODULE));
 }
 
 #[test]

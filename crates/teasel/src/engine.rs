@@ -310,17 +310,26 @@ fn view_names(typescript: bool) -> Vec<&'static str> {
 	names
 }
 
-/// The grammar its JSON describes, read once per thread and kept for good, as its names are.
-pub fn grammar(text: &str) -> Result<&'static Grammar, String> {
+/// The number of the grammar its JSON describes, from 1: read once per thread and kept for good,
+/// as its names are.
+pub fn grammar(text: &str) -> Result<u32, String> {
 	GRAMMARS.with(|grammars| {
 		let mut grammars = grammars.borrow_mut();
-		if let Some((_, grammar)) = grammars.iter().find(|(known, _)| *known == text) {
-			return Ok(*grammar);
+		if let Some(at) = grammars.iter().position(|(known, _)| *known == text) {
+			return Ok(at as u32 + 1);
 		}
 		let text = crate::host::grammar::keep(text);
 		let grammar: &'static Grammar = Box::leak(Box::new(Grammar::read(text)?));
 		grammars.push((text, grammar));
-		Ok(grammar)
+		Ok(grammars.len() as u32)
+	})
+}
+
+/// The grammar of that number on this thread.
+pub fn grammar_at(number: u32) -> Option<&'static Grammar> {
+	GRAMMARS.with(|grammars| {
+		let at = (number as usize).wrapping_sub(1);
+		grammars.borrow().get(at).map(|&(_, grammar)| grammar)
 	})
 }
 

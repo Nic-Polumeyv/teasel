@@ -17,10 +17,14 @@ function bytes(text: string) {
 	return room.subarray(0, written);
 }
 
+interface Read {
+	at: number;
+}
+
 export const engine: Engine = native === undefined ? compile() : {
-	parse: (source, flags, entry, offset, stop, grammar) => native.parse(bytes(source), flags, entry, offset, stop, grammar),
-	grammar: native.grammar,
-	about: native.about,
+	parse: (source, flags, entry, offset, stop, grammar) => native.parse(bytes(source), flags, entry, offset, stop, grammar === undefined ? 0 : (grammar as Read).at),
+	grammar: (definition) => ({ at: native.grammar(definition) }),
+	about: (grammar) => native.about((grammar as Read).at),
 	layout: native.layout,
 	// the addon keeps one array of views a tree and sets what moved: asked only then
 	tree: (typescript, moved) => (moved || trees[+typescript] === undefined ? (trees[+typescript] = native.tree()!) : trees[+typescript]!),

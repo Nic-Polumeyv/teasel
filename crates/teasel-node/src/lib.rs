@@ -11,7 +11,6 @@ use node_api::{CallbackInfo, Env, OK, Ref, Status, Value};
 use teasel::Options;
 use teasel::engine;
 use teasel::handed::{Allocation, Element, Raw};
-use teasel::host::Grammar;
 
 // RUSTFLAGS in the environment replaces .cargo/config.toml's flags, and nothing loads the addon on a Windows without the redistributable
 #[cfg(all(target_env = "msvc", not(target_feature = "crt-static")))]
@@ -115,41 +114,16 @@ fn undefined(env: Env) -> Result<Value> {
 unsafe extern "C" fn grammar(env: Env, info: CallbackInfo) -> Value {
 	guard(env, || {
 		let [definition] = args::<1>(env, info)?;
-		let grammar = teasel::engine::grammar(&string(env, definition)?)?;
-		let mut result = null_mut();
-		check(
-			unsafe {
-				node_api::napi_create_external(
-					env,
-					std::ptr::from_ref(grammar).cast_mut().cast(),
-					None,
-					null_mut(),
-					&mut result,
-				)
-			},
-			"a grammar",
-		)?;
-		Ok(result)
+		uint32(env, engine::grammar(&string(env, definition)?)?)
 	})
 }
 
 unsafe extern "C" fn about(env: Env, info: CallbackInfo) -> Value {
 	guard(env, || {
 		let [grammar] = args::<1>(env, info)?;
-		text(
-			env,
-			&teasel::engine::about(grammar_of(env, grammar).ok_or("a grammar expected")?),
-		)
+		let grammar = engine::grammar_at(number(env, grammar)? as u32).ok_or("a grammar expected")?;
+		text(env, &engine::about(grammar))
 	})
-}
-
-// the grammar a parse reads a document by; anything else is none
-fn grammar_of(env: Env, value: Value) -> Option<&'static Grammar> {
-	let mut data = null_mut();
-	if unsafe { node_api::napi_get_value_external(env, value, &mut data) } != OK || data.is_null() {
-		return None;
-	}
-	Some(unsafe { &*data.cast::<Grammar>() })
 }
 
 unsafe extern "C" fn parse(env: Env, info: CallbackInfo) -> Value {
@@ -157,7 +131,7 @@ unsafe extern "C" fn parse(env: Env, info: CallbackInfo) -> Value {
 		let [source, flags, entry, offset, stop, grammar] = args::<6>(env, info)?;
 		let (source, options) = (source_text(env, source)?, Options(number(env, flags)? as u32));
 		let (entry, offset) = (engine::entry(number(env, entry)?)?, number(env, offset)?);
-		let (stop, grammar) = (string(env, stop)?, grammar_of(env, grammar));
+		let (stop, grammar) = (string(env, stop)?, engine::grammar_at(number(env, grammar)? as u32));
 		in_env(env, || {
 			engine::parse(source, options, entry, offset, &stop, grammar)?;
 			view(env)
