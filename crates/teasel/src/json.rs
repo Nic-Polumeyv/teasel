@@ -485,9 +485,8 @@ fn run(
 }
 
 /// What a front end reading the tree in place needs beside it: every node's span and location
-/// as JavaScript counts them, the nodes erasure leaves out, the hosts, the comments, the errors
-/// and the strings' UTF-16 starts; a failed parse prepares its error row alone, the
-/// tree it read is left as the last answer cleared it.
+/// as JavaScript counts them, the nodes erasure leaves out, the comments, the errors and the
+/// strings' UTF-16 starts; a failed parse prepares its error row alone.
 fn prepare(ast: &mut Ast, source: &str, positions: &Positions, options: Options, failed: bool) {
 	if !failed {
 		prepare_tree(ast, positions, options);

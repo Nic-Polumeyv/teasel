@@ -81,9 +81,9 @@ interface Language {
 	adds: Op[][];
 	erased: Op[];
 	/** The builders of each way to build: linked, with lines, with facts, erasing; the last asked for kept near. */
-	sets: Map<number, Builders>;
+	sets: Map<number, Builder[]>;
 	last: number;
-	builders: Builders | undefined;
+	builders: Builder[] | undefined;
 	/** The state of the last answer read from `tree`, kept for the next. */
 	state: State | undefined;
 	tree: Tree | undefined;
@@ -102,10 +102,6 @@ interface Rows {
 	plain: Row;
 	linked: Row;
 	words: number;
-}
-interface Builders {
-	/** By a node's tag. */
-	js: Builder[];
 }
 /** A grammar's names by number, and what is made of the shapes the engine numbers for its host nodes as it meets them. */
 interface Hosts {
@@ -287,8 +283,7 @@ interface State {
 	J: Builder[];
 	/** The builders of the hosts' nodes by their shape's number, the shapes' operations, and the names by number. */
 	H: (HostBuilder | undefined)[];
-	ops: (Op[] | undefined)[];
-	names: readonly string[];
+	X: Hosts;
 	N: Uint32Array;
 	L: Uint32Array;
 	numbers: Float64Array;
@@ -866,7 +861,7 @@ function run(S: State, id: number, ops: Op[], view: Uint32Array, base: number, p
 const host_tag = (S: State, field: number) => S.C.R.value.tags[byte(S.host_vals, field * S.C.R.value.size + S.C.R.value.tag)];
 const host_type = (S: State, index: number) => {
 	const { ty, words } = S.C.R.host, at = index * words;
-	return S.hosts[at + ty.tag] === ty.missing ? null : S.names[S.hosts[at + ty.value]];
+	return S.hosts[at + ty.tag] === ty.missing ? null : S.X.names[S.hosts[at + ty.value]];
 };
 const host_span = (S: State, index: number) => byte(S.hosts, index * S.C.R.host.words * 4 + S.C.R.host.span) === 1;
 
@@ -874,11 +869,11 @@ const host_span = (S: State, index: number) => byte(S.hosts, index * S.C.R.host.
 function host_ops(S: State, index: number): Op[] {
 	const H = S.C.R.host, V = S.C.R.value;
 	const shape = S.hosts[index * H.words + H.shape];
-	let ops = S.ops[shape];
+	let ops = S.X.ops[shape];
 	if (ops === undefined) {
 		const from = S.hosts[index * H.words + H.from], len = S.hosts[index * H.words + H.len];
-		ops = S.ops[shape] = [];
-		for (let i = 0; i < len; i++) ops.push({ op: 'host', key: S.names[S.host_keys[from + i]], at: i * V.size + V.value, ty: '', names: [], at2: 0, value: host_tag(S, from + i), other: '', inner: [] });
+		ops = S.X.ops[shape] = [];
+		for (let i = 0; i < len; i++) ops.push({ op: 'host', key: S.X.names[S.host_keys[from + i]], at: i * V.size + V.value, ty: '', names: [], at2: 0, value: host_tag(S, from + i), other: '', inner: [] });
 	}
 	return ops;
 }
@@ -1154,7 +1149,7 @@ function host_by_shape(S: State, id: number, index: number, config: number, pare
 		const len = S.hosts[index * H.words + H.len];
 		const keys: string[] = [], tags: string[] = [];
 		for (let i = from; i < from + len; i++) {
-			keys.push(S.names[S.host_keys[i]]);
+			keys.push(S.X.names[S.host_keys[i]]);
 			tags.push(host_tag(S, i));
 		}
 		build = S.H[shape] = generate_host(S.C, config, host_type(S, index), host_span(S, index), keys, tags);
@@ -1253,8 +1248,8 @@ function row(C: Compiled, name: Table, ops: Op[], linked: Linked | undefined): R
 }
 
 // each builder is made the first time its kind is met
-function builders(C: Compiled, G: Language, config: number, typescript: boolean): Builders {
-	let B = G.sets.get(config);
+function builders(C: Compiled, G: Language, config: number, typescript: boolean): Builder[] {
+	const B = G.sets.get(config);
 	G.last = config;
 	if (B !== undefined) return (G.builders = B);
 	// one closure stands in for every kind not met yet: it makes the kind's builder and takes its place
@@ -1262,10 +1257,8 @@ function builders(C: Compiled, G: Language, config: number, typescript: boolean)
 		const ops = recipe(G, tag);
 		return generated ? generate(C, G, config, ops, typescript && (config & ERASE) === 0 ? G.adds[tag] : NO_OPS) : (S, id, parent) => run(S, id, ops, S.N, id * C.words * 4 + C.kind, parent);
 	};
-	const set: Builders = (B = {
-		js: new Array<Builder>(C.layout.kinds.length).fill((S, id, parent) => (set.js[S.N[id * C.words + (C.kind >> 2)]] = js(S.N[id * C.words + (C.kind >> 2)]))(S, id, parent)),
-	});
-	set.js[C.host] = generated
+	const set: Builder[] = new Array<Builder>(C.layout.kinds.length).fill((S, id, parent) => (set[S.N[id * C.words + (C.kind >> 2)]] = js(S.N[id * C.words + (C.kind >> 2)]))(S, id, parent));
+	set[C.host] = generated
 		? (S, id, parent) => {
 				const index = S.N[id * C.words + C.payload], H = C.R.host;
 				const build = S.H[S.hosts[index * H.words + H.shape]];
@@ -1374,10 +1367,9 @@ export function decode(words: Uint32Array, source: string, engine: Views, flags:
 			host_lines,
 			C,
 			G,
-			J: B.js,
+			J: B,
 			H: (X.builders[config] ??= []),
-			ops: X.ops,
-			names: X.names,
+			X,
 			N: tree[at.nodes] as Uint32Array,
 			L: tree[at.lists] as Uint32Array,
 			numbers: tree[at.numbers] as Float64Array,
@@ -1418,10 +1410,9 @@ export function decode(words: Uint32Array, source: string, engine: Views, flags:
 	S.erase = erase;
 	S.lines = lines;
 	S.host_lines = host_lines;
-	S.J = B.js;
+	S.J = B;
 	S.H = X.builders[config] ??= [];
-	S.ops = X.ops;
-	S.names = X.names;
+	S.X = X;
 	S.strings = failed ? strings(C, tree, words, lens, at, args_of(C.R.error, rows, 0)) : strings(C, tree, words, lens, at);
 	S.P = spans ? (tree[at.spans] as Uint32Array) : S.N;
 	S.ps = spans ? C.R.span.words : C.words;
