@@ -786,7 +786,7 @@ impl Naming {
 }
 
 /// The shapes of a grammar's host nodes, numbered for good as the walker meets them: a node's
-/// type, whether it has a span, and each field's name and kind of value. A front end builds the
+/// type and each field's name and kind of value. A front end builds the
 /// nodes of one shape by one literal.
 #[derive(Clone, Debug, Default)]
 pub struct Shapes {
@@ -799,12 +799,11 @@ pub struct Shapes {
 #[derive(Clone, Debug)]
 struct Shape {
 	id: u32,
-	span: bool,
 	fields: Vec<u64>,
 }
 
 impl Shapes {
-	pub(crate) fn of(&mut self, ty: Option<u32>, span: bool, keys: &[u32], values: &[HostValue]) -> u32 {
+	pub(crate) fn of(&mut self, ty: Option<u32>, keys: &[u32], values: &[HostValue]) -> u32 {
 		let at = ty.map_or(0, |ty| ty as usize + 1);
 		if self.of.len() <= at {
 			self.of.resize_with(at + 1, Vec::new);
@@ -816,7 +815,7 @@ impl Shapes {
 		let shapes = &mut self.of[at];
 		if let Some(shape) = shapes
 			.iter()
-			.find(|shape| shape.span == span && shape.fields.iter().copied().eq(fields.clone()))
+			.find(|shape| shape.fields.iter().copied().eq(fields.clone()))
 		{
 			return shape.id;
 		}
@@ -824,7 +823,6 @@ impl Shapes {
 		self.count += 1;
 		shapes.push(Shape {
 			id,
-			span,
 			fields: fields.collect(),
 		});
 		id
