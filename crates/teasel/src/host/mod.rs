@@ -327,10 +327,12 @@ struct Read<'a> {
 	body: Option<&'a Body>,
 }
 
-fn fill_unread(entries: &[(Name, bool)], fields: &mut Vec<(Name, Value)>) {
-	for &(field, omit) in entries {
-		if !omit && !fields.iter().any(|(k, _)| *k == field) {
-			fields.push((field, Value::Null));
+fn fill_unread(shape: &[Slot], fields: &mut Vec<(Name, Value)>) {
+	for slot in shape {
+		if let Some(absent) = slot.absent
+			&& !fields.iter().any(|(k, _)| *k == slot.field)
+		{
+			fields.push((slot.field, absent));
 		}
 	}
 }
@@ -1775,7 +1777,7 @@ impl<'a> Walker<'a> {
 					self.at = after;
 					end = after;
 				}
-				fill_unread(&form.entries, &mut read.fields);
+				fill_unread(&form.shape, &mut read.fields);
 				if let Some(names) = declares {
 					for &(field, value) in &read.fields {
 						if !names.contains(&field) {
@@ -2445,7 +2447,7 @@ impl<'a> Walker<'a> {
 			body: None,
 		};
 		self.piece(&rule.open, &mut read)?;
-		fill_unread(&rule.open.form.entries, &mut read.fields);
+		fill_unread(&rule.open.form.shape, &mut read.fields);
 		let node = self.host(rule.ty, start, self.at, &read.fields);
 		self.fields.give(read.fields);
 		Ok(node)
@@ -2563,7 +2565,7 @@ impl<'a> Walker<'a> {
 		let duplicate = match branch.node {
 			// a branch read once adds a scope to its block's: `{:else if}` after `{:else}`
 			Some(_) => groups.len() > 1,
-			None => branch.shape.iter().any(|slot| slot.body && filed(slot.field)),
+			None => branch.form.shape.iter().any(|slot| slot.body && filed(slot.field)),
 		};
 		if duplicate {
 			return self.fail(start, start + 1, Code::Duplicate, Some(branch.display));
@@ -2590,14 +2592,12 @@ impl<'a> Walker<'a> {
 		}
 		if branch.node.is_some() {
 			if !listed {
-				self.finish_body();
-				self.next_body(own::branches);
+				self.finish_body(own::branches);
 			}
 			self.push_block(rule, Some(branch), start, read, body);
 			return Ok(());
 		}
-		self.finish_body();
-		self.next_body(body.field);
+		self.finish_body(body.field);
 		let mut outside = self.nodes.take();
 		let group = self.group_of(&read, body, &mut outside);
 		let Some(Frame::Block {
@@ -2617,17 +2617,6 @@ impl<'a> Walker<'a> {
 		Ok(())
 	}
 
-	/// Starts the body `field` of the block on top, its last one filed.
-	fn next_body(&mut self, field: Name) {
-		let next = self.nodes.take();
-		let Some(Frame::Block { body, nodes, .. }) = self.frames.last_mut() else {
-			unreachable!()
-		};
-		*body = field;
-		*nodes = next;
-	}
-
-	/// The patterns a body declares, by the fields that hold them.
 	/// The scope a body opens, as its form read it: the patterns the body declares, those the
 	/// block declares around itself, and the entries read after the first declared one, a key
 	/// after the context of an each block, which the scope holds too.
@@ -2663,12 +2652,13 @@ impl<'a> Walker<'a> {
 		group
 	}
 
-	/// Files the open body of the block on top: its nodes are a fragment, or the list of `branches`.
-	fn finish_body(&mut self) {
+	/// Files the open body of the block on top, a fragment or the list of `branches`, and starts `next`.
+	fn finish_body(&mut self, next: Name) {
+		let empty = self.nodes.take();
 		let Some(Frame::Block { nodes, body, .. }) = self.frames.last_mut() else {
 			unreachable!()
 		};
-		let (nodes, field) = (std::mem::take(nodes), *body);
+		let (nodes, field) = (std::mem::replace(nodes, empty), std::mem::replace(body, next));
 		let children = if field == own::branches {
 			let list = self.list(&nodes);
 			self.nodes.give(nodes);
@@ -2748,12 +2738,13 @@ impl<'a> Walker<'a> {
 	/// Closes the block on top at `end`: a repeating branch's node goes into its block's `nodes`,
 	/// a block's into the content around it.
 	fn pop_block(&mut self, end: u32) {
-		self.finish_body();
+		self.finish_body(Name::NONE);
 		let Some(Frame::Block {
 			start,
 			rule,
 			branch,
 			fields,
+			nodes,
 			groups,
 			outside,
 			..
@@ -2761,8 +2752,9 @@ impl<'a> Walker<'a> {
 		else {
 			unreachable!()
 		};
+		self.nodes.give(nodes);
 		let (ty, shape) = match branch {
-			Some(piece) => (piece.node.unwrap(), &piece.shape),
+			Some(piece) => (piece.node.unwrap(), &piece.form.shape),
 			None => (rule.ty, &rule.shape),
 		};
 		let node = self.block_node(ty, shape, start, end, fields, groups, outside);
