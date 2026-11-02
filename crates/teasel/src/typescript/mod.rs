@@ -1,13 +1,14 @@
 //! TypeScript's grammar where it departs from JavaScript's, and what the parser keeps to read it.
 
 use crate::error::Code;
-pub mod ast;
 mod declarations;
 #[cfg(test)]
 mod tests;
 mod types;
 
-use crate::ast::{FieldKind, List, MethodKind, NodeId, NodeKind, UnaryOperator, VariableKind};
+use crate::ast::{
+	Accessibility, Extras, FieldKind, Kind, List, MethodKind, NodeId, NodeKind, UnaryOperator, VariableKind,
+};
 use crate::error::SyntaxError;
 use crate::interner::FastMap;
 use crate::interner::StrId;
@@ -16,7 +17,6 @@ use crate::parser::expression::starts_expression;
 use crate::parser::scope::{EXPORT_ONLY, SCOPE_ARROW, TYPE, function_flags};
 use crate::parser::statement::{ClassKind, StatementPlace};
 use crate::parser::{Context, Errors, ForInit, FunctionKind, Parser, Result, Unwrap};
-use ast::{Accessibility, Extras, Kind, TsKind};
 use declarations::Head;
 use types::TypeParameterModifiers;
 
@@ -139,25 +139,14 @@ modifiers! {
 }
 
 impl<const TS: bool> Parser<'_, TS> {
-	pub(crate) fn ts(&mut self, kind: TsKind, start: u32) -> NodeId {
-		let index = self.ast.typescript.nodes.len() as u32;
-		self.ast.typescript.nodes.push(kind);
-		self.add(NodeKind::Extension(index), start)
-	}
-
-	fn ts_index(&self, id: NodeId) -> Option<usize> {
-		match self.kind(id) {
-			NodeKind::Extension(index) if self.typescript() => Some(index as usize),
-			_ => None,
-		}
-	}
-
-	fn ts_kind(&self, id: NodeId) -> Option<TsKind> {
-		Some(self.ast.typescript.nodes[self.ts_index(id)?])
+	/// The node's kind when the parser is TypeScript's: the JavaScript copy then compiles no arm
+	/// over TypeScript's kinds, which it never builds.
+	fn ts_kind(&self, id: NodeId) -> Option<NodeKind> {
+		self.typescript().then(|| self.kind(id))
 	}
 
 	fn extras_mut(&mut self, id: NodeId) -> &mut Extras {
-		self.ast.typescript.extras.entry(id)
+		self.ast.extras.entry(id)
 	}
 
 	fn check_parameter_list(&self, params: List, signature: bool) -> Result<()> {
@@ -171,11 +160,7 @@ impl<const TS: bool> Parser<'_, TS> {
 			if self.ident_is(binding, "this") {
 				continue;
 			}
-			let optional = self
-				.ast
-				.typescript
-				.extras(binding)
-				.is_some_and(|extras| extras.optional);
+			let optional = self.ast.extras.get(binding).is_some_and(|extras| extras.optional);
 			let rest = matches!(self.kind(param), NodeKind::RestElement { .. });
 			if rest && optional {
 				return self.error(self.start_of(param), Code::OptionalRest);
@@ -317,7 +302,7 @@ impl<const TS: bool> Parser<'_, TS> {
 			);
 		}
 		self.ts.state.decorators.pop();
-		Ok(self.ts(TsKind::Decorator { expression }, start))
+		Ok(self.add(NodeKind::Decorator { expression }, start))
 	}
 
 	/// Decorators before a class, kept until the class takes them.
@@ -432,7 +417,7 @@ impl<const TS: bool> Parser<'_, TS> {
 		}
 		self.next()?;
 		let reference = self.parse_type_reference(true)?;
-		if let Some(TsKind::TypeReference {
+		if let Some(NodeKind::TypeReference {
 			type_arguments: Some(_),
 			type_name,
 		}) = self.ts_kind(reference)
@@ -443,7 +428,7 @@ impl<const TS: bool> Parser<'_, TS> {
 	}
 
 	fn check_const_assertion(&self, expression: NodeId, type_annotation: NodeId) -> Result<()> {
-		if !matches!(self.ts_kind(type_annotation), Some(TsKind::TypeReference { type_name, .. }) if self.ident_is(type_name, "const"))
+		if !matches!(self.ts_kind(type_annotation), Some(NodeKind::TypeReference { type_name, .. }) if self.ident_is(type_name, "const"))
 		{
 			return Ok(());
 		}
@@ -483,8 +468,8 @@ impl<const TS: bool> Parser<'_, TS> {
 			p.lexer.depth -= 1;
 			p.expect(TokenKind::Gt)?;
 			let expression = p.parse_maybe_unary(&mut None, false, false, for_init)?;
-			Ok(p.ts(
-				TsKind::TypeAssertion {
+			Ok(p.add(
+				NodeKind::TypeAssertion {
 					type_annotation,
 					expression,
 				},
@@ -493,7 +478,7 @@ impl<const TS: bool> Parser<'_, TS> {
 		})?;
 		match assertion {
 			Some(node) => {
-				let Some(TsKind::TypeAssertion {
+				let Some(NodeKind::TypeAssertion {
 					expression,
 					type_annotation,
 				}) = self.ts_kind(node)
@@ -668,8 +653,8 @@ impl<const TS: bool> Parser<'_, TS> {
 		{
 			return Ok(None);
 		}
-		Ok(Some(self.ts(
-			TsKind::InstantiationExpression {
+		Ok(Some(self.add(
+			NodeKind::InstantiationExpression {
 				expression: base,
 				type_arguments,
 			},
@@ -729,13 +714,13 @@ impl<const TS: bool> Parser<'_, TS> {
 			}
 			let expression = self.parse_expression(false, &mut None)?;
 			self.semicolon()?;
-			return Ok(Some(self.ts(TsKind::ExportAssignment { expression }, start)));
+			return Ok(Some(self.add(NodeKind::ExportAssignment { expression }, start)));
 		}
 		if self.eat_contextual("as")? {
 			self.expect_contextual("namespace")?;
 			let id = self.parse_ident(false)?;
 			self.semicolon()?;
-			return Ok(Some(self.ts(TsKind::NamespaceExportDeclaration { id }, start)));
+			return Ok(Some(self.add(NodeKind::NamespaceExportDeclaration { id }, start)));
 		}
 		if self.is_contextual("type") && matches!(self.peek_token()?.kind, TokenKind::BraceL | TokenKind::Star) {
 			self.next()?;
@@ -765,12 +750,12 @@ impl<const TS: bool> Parser<'_, TS> {
 			return Ok(None);
 		};
 		let declaration = self.parse_opened(start, opened)?;
-		if let Some(TsKind::ModuleDeclaration { global: true, id, .. }) = self.ts_kind(declaration) {
+		if let Some(NodeKind::ModuleDeclaration { global: true, id, .. }) = self.ts_kind(declaration) {
 			return self.error(self.start_of(id), Code::ExportDeclareWithoutDeclaration);
 		}
 		if matches!(
 			self.ts_kind(declaration),
-			Some(TsKind::InterfaceDeclaration { .. } | TsKind::TypeAliasDeclaration { .. })
+			Some(NodeKind::InterfaceDeclaration { .. } | NodeKind::TypeAliasDeclaration { .. })
 		) {
 			self.ts.state.export_kind = Some(Kind::Type);
 		}
@@ -1002,7 +987,7 @@ impl<const TS: bool> Parser<'_, TS> {
 		if !matches!(self.kind(left), NodeKind::Identifier { .. }) {
 			return self.error(start, Code::ParameterPropertyPattern);
 		}
-		let node = self.ts(TsKind::ParameterProperty { parameter: item }, start);
+		let node = self.add(NodeKind::ParameterProperty { parameter: item }, start);
 		*self.extras_mut(node) = extras;
 		Ok(Some(node))
 	}
@@ -1010,12 +995,14 @@ impl<const TS: bool> Parser<'_, TS> {
 	pub(crate) fn catch_param(&mut self, param: NodeId) -> Result<()> {
 		if self.is(TokenKind::Colon) {
 			let annotation = self.parse_type_annotation(true, None)?;
-			let Some(TsKind::TypeAnnotation { type_annotation }) = self.ts_kind(annotation) else {
+			let Some(NodeKind::TypeAnnotation { type_annotation }) = self.ts_kind(annotation) else {
 				unreachable!()
 			};
 			if !matches!(
 				self.ts_kind(type_annotation),
-				Some(TsKind::Keyword(ast::Keyword::Any | ast::Keyword::Unknown))
+				Some(NodeKind::Keyword(
+					crate::ast::Keyword::Any | crate::ast::Keyword::Unknown
+				))
 			) {
 				return self.error(self.start_of(type_annotation), Code::CatchClauseType);
 			}
@@ -1089,7 +1076,7 @@ impl<const TS: bool> Parser<'_, TS> {
 				if self.ident_is(*param, "this") {
 					continue;
 				}
-				if self.ast.typescript.extras(*param).is_some_and(|extras| extras.optional) {
+				if self.ast.extras.get(*param).is_some_and(|extras| extras.optional) {
 					return self.error(self.start_of(*param), Code::SetterOptionalParameter);
 				}
 				if matches!(self.kind(*param), NodeKind::AssignmentPattern { .. }) {
@@ -1123,13 +1110,13 @@ impl<const TS: bool> Parser<'_, TS> {
 			frame.return_type = Some(return_type);
 		}
 		let bodiless = match kind {
-			FunctionKind::Declaration => Some(TsKind::DeclareFunction {
+			FunctionKind::Declaration => Some(NodeKind::DeclareFunction {
 				id,
 				params,
 				is_async,
 				generator,
 			}),
-			FunctionKind::Method { in_class: true, .. } => Some(TsKind::DeclareMethod {
+			FunctionKind::Method { in_class: true, .. } => Some(NodeKind::DeclareMethod {
 				params,
 				is_async,
 				generator,
@@ -1145,7 +1132,7 @@ impl<const TS: bool> Parser<'_, TS> {
 			if generator {
 				return self.error(start, Code::GeneratorSignature);
 			}
-			return Ok(Some(self.ts(kind, start)));
+			return Ok(Some(self.add(kind, start)));
 		}
 		if self.ts.state.ambient && bodiless.is_some() {
 			return self.error(start, Code::ImplementationInAmbient);
@@ -1157,7 +1144,7 @@ impl<const TS: bool> Parser<'_, TS> {
 		if let NodeKind::ArrowFunctionExpression { params, .. } = self.kind(node) {
 			self.check_parameter_list(params, false)?;
 		}
-		if let Some(TsKind::DeclareFunction { id: Some(id), .. }) = self.ts_kind(node) {
+		if let Some(NodeKind::DeclareFunction { id: Some(id), .. }) = self.ts_kind(node) {
 			self.declare_export_only(id);
 		}
 		if frame.type_parameters.is_some() || frame.return_type.is_some() {
@@ -1191,7 +1178,7 @@ impl<const TS: bool> Parser<'_, TS> {
 	/// The parameters of a function-shaped TypeScript node.
 	pub(crate) fn function_params(&self, node: NodeId) -> Option<List> {
 		match self.ts_kind(node) {
-			Some(TsKind::DeclareFunction { params, .. } | TsKind::DeclareMethod { params, .. }) => Some(params),
+			Some(NodeKind::DeclareFunction { params, .. } | NodeKind::DeclareMethod { params, .. }) => Some(params),
 			_ => None,
 		}
 	}
@@ -1478,11 +1465,11 @@ impl<const TS: bool> Parser<'_, TS> {
 				if kind == MethodKind::Constructor {
 					return self.error(start, Code::DecoratorOnConstructor);
 				}
-				if matches!(self.ts_kind(value), Some(TsKind::DeclareMethod { .. })) {
+				if matches!(self.ts_kind(value), Some(NodeKind::DeclareMethod { .. })) {
 					return self.error(start, Code::DecoratorWithoutBody);
 				}
 			}
-			if matches!(self.ts_kind(node), Some(TsKind::IndexSignature { .. })) {
+			if matches!(self.ts_kind(node), Some(NodeKind::IndexSignature { .. })) {
 				return self.error(start, Code::DecoratorPlacement);
 			}
 		}
@@ -1494,14 +1481,14 @@ impl<const TS: bool> Parser<'_, TS> {
 			if !has_body || kind == MethodKind::Get || !self.ts.state.classes.last().unwrap().is_declaration {
 				for &param in self.ast.list(params).iter().flatten() {
 					let param = self.unwrap(param, Unwrap::InnerPattern).unwrap_or(param);
-					if let Some(decorators) = self.ast.typescript.extras(param).and_then(|extras| extras.decorators) {
+					if let Some(decorators) = self.ast.extras.get(param).and_then(|extras| extras.decorators) {
 						return self.parameter_decorator_error(decorators);
 					}
 				}
 			}
 		}
 		let mut extras = frame.extras;
-		extras.is_static &= matches!(self.kind(node), NodeKind::Extension(_));
+		extras.is_static &= matches!(self.kind(node), NodeKind::IndexSignature { .. });
 		if extras != Extras::default() {
 			*self.extras_mut(node) = extras;
 		}
@@ -1582,7 +1569,7 @@ impl<const TS: bool> Parser<'_, TS> {
 			}
 			self.next()?;
 			self.stop_after_operand();
-			let node = self.ts(TsKind::NonNullExpression { expression: base }, start);
+			let node = self.add(NodeKind::NonNullExpression { expression: base }, start);
 			return Ok(Some((node, false)));
 		}
 		let optional_call = self.is(TokenKind::QuestionDot);
@@ -1611,7 +1598,7 @@ impl<const TS: bool> Parser<'_, TS> {
 				SyntaxError::new(at, Code::OptionalChainInTaggedTemplate).to(at + 1),
 			));
 		}
-		if matches!(self.ts_kind(node), Some(TsKind::InstantiationExpression { .. }))
+		if matches!(self.ts_kind(node), Some(NodeKind::InstantiationExpression { .. }))
 			&& (self.is(TokenKind::Dot) || (self.is(TokenKind::QuestionDot) && self.peek_char().0 != Some('(')))
 		{
 			return self.error(self.tok.start, Code::PropertyAfterInstantiation);
@@ -1623,7 +1610,7 @@ impl<const TS: bool> Parser<'_, TS> {
 		let NodeKind::NewExpression { callee, arguments } = self.kind(node) else {
 			unreachable!()
 		};
-		if let Some(TsKind::InstantiationExpression {
+		if let Some(NodeKind::InstantiationExpression {
 			expression,
 			type_arguments,
 		}) = self.ts_kind(callee)
@@ -1668,10 +1655,10 @@ impl<const TS: bool> Parser<'_, TS> {
 	pub(crate) fn ts_make_pattern(&mut self, id: NodeId, errors: &mut Errors) -> Result<Option<NodeId>> {
 		match self.ts_kind(id) {
 			Some(
-				TsKind::AsExpression { expression, .. }
-				| TsKind::SatisfiesExpression { expression, .. }
-				| TsKind::NonNullExpression { expression }
-				| TsKind::TypeAssertion { expression, .. },
+				NodeKind::AsExpression { expression, .. }
+				| NodeKind::SatisfiesExpression { expression, .. }
+				| NodeKind::NonNullExpression { expression }
+				| NodeKind::TypeAssertion { expression, .. },
 			) => self.make_pattern(expression, errors).map(Some),
 			_ => Ok(None),
 		}
@@ -1680,10 +1667,11 @@ impl<const TS: bool> Parser<'_, TS> {
 	/// The plain node a TypeScript wrapper stands for in a check, if any.
 	pub(crate) fn unwrap(&self, id: NodeId, context: Unwrap) -> Option<NodeId> {
 		match (context, self.ts_kind(id)?) {
-			(Unwrap::Simple, TsKind::NonNullExpression { expression } | TsKind::AsExpression { expression, .. }) => {
-				Some(expression)
-			}
-			(Unwrap::InnerPattern, TsKind::ParameterProperty { parameter: inner }) => Some(inner),
+			(
+				Unwrap::Simple,
+				NodeKind::NonNullExpression { expression } | NodeKind::AsExpression { expression, .. },
+			) => Some(expression),
+			(Unwrap::InnerPattern, NodeKind::ParameterProperty { parameter: inner }) => Some(inner),
 			_ => None,
 		}
 	}
@@ -1697,17 +1685,17 @@ fn assertion<const TS: bool>(p: &mut Parser<'_, TS>, left: NodeId, left_start: u
 	};
 	let kind = if is_as {
 		p.check_const_assertion(left, type_annotation)?;
-		TsKind::AsExpression {
+		NodeKind::AsExpression {
 			expression: left,
 			type_annotation,
 		}
 	} else {
-		TsKind::SatisfiesExpression {
+		NodeKind::SatisfiesExpression {
 			expression: left,
 			type_annotation,
 		}
 	};
-	let node = p.ts(kind, left_start);
+	let node = p.add(kind, left_start);
 	p.rescan_lt_gt()?;
 	Ok(node)
 }

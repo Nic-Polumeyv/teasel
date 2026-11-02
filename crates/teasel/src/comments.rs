@@ -331,11 +331,11 @@ mod tests {
 		);
 		assert_eq!(
 			typescript("f<A, /* a */>(x);"),
-			[r#"Extension leading=[] trailing=[" a "]"#]
+			[r#"TypeReference leading=[] trailing=[" a "]"#]
 		);
 		assert_eq!(
 			typescript("interface I { a: string, /* b */ b: number }"),
-			[r#"Extension leading=[" b "] trailing=[]"#]
+			[r#"PropertySignature leading=[" b "] trailing=[]"#]
 		);
 	}
 

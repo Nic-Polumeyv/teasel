@@ -40,6 +40,11 @@ pub struct Variant {
 	pub fields: &'static [Field],
 }
 
+/// The tag of a `repr(C, u32)` enum at `base`: its first word.
+pub(crate) fn tag(base: *const u8) -> usize {
+	unsafe { base.cast::<u32>().read() as usize }
+}
+
 /// What a field's type is on the wire.
 pub trait Described {
 	const TY: Ty;
