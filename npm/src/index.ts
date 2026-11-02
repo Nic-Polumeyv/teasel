@@ -117,7 +117,7 @@ function answer<T>(text: string, options: Options | undefined, entry: number, of
 	const words = engine.parse(text, on, entry, offset, stop, grammar);
 	let error: Omit<Recovered, 'line' | 'column'>;
 	try {
-		const parsed = decode(words, text, engine, on, entry === 3, true, names) as Parsed<T>;
+		const parsed = decode(words, text, engine, on, entry === 3, names) as Parsed<T>;
 		if (parsed.node !== null) return parsed;
 		error = parsed.errors![0];
 	} catch (thrown) {

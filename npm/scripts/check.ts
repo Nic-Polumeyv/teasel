@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { load } from '../dist/engine/addon.js';
 import { engine as native } from '../dist/engine/node.js';
 import { compile } from '../dist/engine/wasm.js';
-import { decode } from '../dist/decode.js';
+import { decode, LINKED, REFERENCE, SCOPE } from '../dist/decode.js';
 import { CODES, type Code } from '../dist/types.js';
 import type { Engine } from '../dist/types.js';
 import { flags, type Options } from '../dist/options.js';
@@ -78,18 +78,65 @@ const header = (entry: number, offset: number, on: number) => `${entry} ${offset
 // the binary reports a code as its byte, the package as its name
 const as_json = (key: string, value: unknown) => (value instanceof RegExp || typeof value === 'bigint' ? null : key === 'code' && typeof value === 'string' ? CODES.indexOf(value as Code) : value);
 
+type Decoded = ReturnType<typeof decode>;
+
+// the binary prints as numbers what the decoder links as objects, beside each node's position
+function numbered(answer: Decoded) {
+	const number = new Map<object, number>();
+	for (const table of Object.keys(LINKED)) answer[table]?.forEach((row: Decoded, i: number) => number.set(row, i));
+	const bindings = new Set<object>(answer.bindings);
+	const root = new Map<object, number>();
+	const listed = (by: Map<object, number[]>, node: object, i: number) => by.set(node, [...(by.get(node) ?? []), i]);
+	const defines = new Map<object, number[]>(), writes = new Map<object, number[]>();
+	answer.roots?.forEach((row: Decoded, i: number) => row.node !== null && root.set(row.node, i));
+	answer.bindings?.forEach((row: Decoded, i: number) => row.declaration !== null && listed(defines, row.declaration, i));
+	answer.references?.forEach((row: Decoded, i: number) => row.writeExpr !== null && listed(writes, row.writeExpr, i));
+	const facts = (out: Decoded, n: Decoded) => {
+		if (n[SCOPE] !== undefined) out.scope = number.get(n[SCOPE]);
+		if (n[REFERENCE] !== undefined) out[bindings.has(n[REFERENCE]) ? 'declares' : 'reference'] = number.get(n[REFERENCE]);
+		if (root.has(n)) out.root = root.get(n);
+		if (defines.has(n)) out.defines = defines.get(n);
+		if (writes.has(n)) out.writes = writes.get(n);
+	};
+	const value = (v: unknown): unknown => {
+		if (Array.isArray(v)) return v.map(value);
+		if (typeof v !== 'object' || v === null || v instanceof RegExp) return v;
+		const n = v as Decoded, keys = Object.keys(n), out: Decoded = {};
+		const head = keys[0] === 'type' && keys[1] === 'start' && keys[2] === 'end' ? (keys[3] === 'loc' ? 'loc' : 'end') : 'type';
+		for (const key of keys) {
+			out[key] = value(n[key]);
+			if (key === head) facts(out, n);
+		}
+		return out;
+	};
+	const row = (table: keyof typeof LINKED, n: Decoded) => {
+		const out: Decoded = {};
+		for (const key of Object.keys(n)) {
+			if (key in LINKED[table].held) continue;
+			const v = n[key];
+			if (!(key in LINKED[table].into)) out[key] = v;
+			else if (!Array.isArray(v)) out[key] = v === null ? null : number.get(v);
+			else out[key] = v.length === 0 ? [] : [number.get(v[0]), number.get(v[v.length - 1])! + 1];
+		}
+		return out;
+	};
+	const out: Decoded = {};
+	for (const key of Object.keys(answer)) out[key] = key in LINKED ? answer[key].map((n: Decoded) => row(key as keyof typeof LINKED, n)) : value(answer[key]);
+	return out;
+}
+
 // the addon's answers as JSON, each with the batch job that asks the binary for the same
 const jobs: { name: string; source: string; header: string; tree: string }[] = [];
 function json(name: string, source: string, options: Options, entry: number, at: number) {
 	const on = flags(options);
-	const tree = JSON.stringify(decode(native.parse(source, on, entry, at, '', undefined), source, native, on, entry === 3, false), as_json);
+	const tree = JSON.stringify(numbered(decode(native.parse(source, on, entry, at, '', undefined), source, native, on, entry === 3)), as_json);
 	jobs.push({ name, source, header: header(entry, Buffer.byteLength(source.slice(0, at)), on), tree });
 }
 
 // a whole document of the host's
 function document(name: string, source: string, options: Options) {
 	const on = flags(options);
-	const tree = JSON.stringify(decode(native.parse(source, on, 0, 0, '', grammar), source, native, on, false, false, names), as_json);
+	const tree = JSON.stringify(numbered(decode(native.parse(source, on, 0, 0, '', grammar), source, native, on, false, names)), as_json);
 	const switches = Object.entries(options).flatMap(([key, value]) => (value === true ? [key] : value ? [`${key}:${value}`] : []));
 	jobs.push({ name: `${name} doc ${switches.join('+')}`, source, header: header(DOCUMENT, 0, on), tree });
 }
@@ -154,7 +201,9 @@ for (const file of files) {
 	if (run.status !== 0) throw new Error(`${binary}: ${run.stderr}`);
 	const lines = run.stdout.toString().split('\n');
 	for (const [i, job] of jobs.entries()) {
-		const text = lines[i];
+		// a linked root's empty range has lost where it stood
+		const roots = lines[i].lastIndexOf(',"roots":[');
+		const text = roots === -1 ? lines[i] : lines[i].slice(0, roots) + lines[i].slice(roots).replace(/\[(\d+),\1\]/g, '[]');
 		report(job.name, job.tree === text ? null : `differs from the JSON at ${[...job.tree].findIndex((c, i) => c !== text[i])}`);
 	}
 }
