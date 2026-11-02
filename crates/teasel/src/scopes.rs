@@ -1175,7 +1175,7 @@ impl<'a> Binder<'a> {
 				let node = group.node.unwrap_or(id);
 				let kind = match self.ast.node(node).kind {
 					NodeKind::Program { .. } => ScopeKind::Script,
-					NodeKind::Host(inner) if !self.ast.host_rows[inner as usize].span => ScopeKind::Fragment,
+					NodeKind::Host(inner) if !self.ast.host_rows[inner as usize].spanned() => ScopeKind::Fragment,
 					_ => ScopeKind::Block,
 				};
 				self.enter(kind, Some(node), false);
@@ -1209,7 +1209,7 @@ impl<'a> Binder<'a> {
 				.iter()
 				.any(|list| b.ast.list(*list).contains(&Some(child)))
 		};
-		match self.ast.host_vals[i as usize].value() {
+		match self.ast.host_vals[i as usize] {
 			crate::ast::Value::Node(child) if !declared(self, child) => self.field_value(child),
 			crate::ast::Value::Nodes(children) => {
 				for &child in self.ast.list(children).iter().flatten() {

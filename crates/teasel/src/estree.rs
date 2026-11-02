@@ -591,14 +591,14 @@ impl<'a> Writer<'a> {
 		match *kind {
 			Host(index) => {
 				let host = self.ast.host_rows[index as usize];
-				match host.ty.map(|ty| self.names[ty as usize]) {
+				match self.names.get(host.ty as usize).copied() {
 					None => {
 						// an object of the host's without a type, positions and all
 						let node = self.ast.node(id);
 						self.json.object();
 						self.host_span(node.start, node.end);
 					}
-					Some(ty) if host.span => self.begin(ty, id),
+					Some(ty) if host.spanned() => self.begin(ty, id),
 					Some(ty) => {
 						self.json.begin(ty);
 						self.scope_facts(id);
@@ -606,7 +606,7 @@ impl<'a> Writer<'a> {
 				}
 				for i in host.fields.indices() {
 					self.json.key(self.names[self.ast.host_keys[i as usize] as usize]);
-					match self.ast.host_vals[i as usize].value() {
+					match self.ast.host_vals[i as usize] {
 						Value::Node(child) => self.node(child),
 						Value::Nodes(children) => self.items(children),
 						Value::Str(string) => self.str_of(string),

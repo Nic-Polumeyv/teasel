@@ -94,13 +94,16 @@ impl Positions {
 		Ok(target + if i == 0 { 0 } else { self.gaps[i - 1].1 })
 	}
 
-	pub(crate) fn map_values(&self, values: &mut [crate::ast::HostValue]) {
+	pub(crate) fn map_values(&self, values: &mut [crate::ast::Value]) {
 		if self.gaps.is_empty() {
 			return;
 		}
 		let mut cursor = Cursor::default();
-		for row in values.iter_mut().filter(|row| row.tag == crate::ast::HostTag::Slice) {
-			row.value = row.value.map(|byte| self.offset(&mut cursor, byte));
+		for value in values {
+			if let crate::ast::Value::Slice(start, end) = value {
+				*start = self.offset(&mut cursor, *start);
+				*end = self.offset(&mut cursor, *end);
+			}
 		}
 	}
 

@@ -179,8 +179,6 @@ impl<'a> Walker<'a> {
 				(own::styles, Value::Slice(content_start, content_end)),
 				(own::comment, Value::Null),
 			],
-			None,
-			true,
 		);
 		Ok(self.host(
 			own::StyleSheet,
@@ -192,8 +190,6 @@ impl<'a> Walker<'a> {
 				(own::comments, Value::Nodes(comments)),
 				(own::content, Value::Node(content)),
 			],
-			None,
-			true,
 		))
 	}
 
@@ -212,8 +208,6 @@ impl<'a> Walker<'a> {
 				(own::children, Value::Nodes(children)),
 				(own::comments, Value::Nodes(comments)),
 			],
-			None,
-			true,
 		))
 	}
 
@@ -234,10 +228,8 @@ impl<'a> Walker<'a> {
 						comment.start,
 						comment.end,
 						&[value, (own::position, Value::Int(position))],
-						None,
-						true,
 					),
-					None => self.host(own::CSSComment, comment.start, comment.end, &[value], None, true),
+					None => self.host(own::CSSComment, comment.start, comment.end, &[value]),
 				}
 			})
 			.collect();
@@ -315,8 +307,6 @@ impl<'a> Walker<'a> {
 				(own::prelude, Value::Str(prelude)),
 				(own::block, block),
 			],
-			None,
-			true,
 		))
 	}
 
@@ -329,8 +319,6 @@ impl<'a> Walker<'a> {
 			start,
 			self.at,
 			&[(own::prelude, Value::Node(prelude)), (own::block, Value::Node(block))],
-			None,
-			true,
 		))
 	}
 
@@ -358,8 +346,6 @@ impl<'a> Walker<'a> {
 					start,
 					end,
 					&[(own::children, Value::Nodes(children))],
-					None,
-					true,
 				));
 			}
 			self.expect(",")?;
@@ -379,14 +365,7 @@ impl<'a> Walker<'a> {
 			let start = self.at;
 			if self.eat("&") {
 				let name = self.intern("&");
-				selectors.push(self.host(
-					own::NestingSelector,
-					start,
-					self.at,
-					&[(own::name, Value::Str(name))],
-					None,
-					true,
-				));
+				selectors.push(self.host(own::NestingSelector, start, self.at, &[(own::name, Value::Str(name))]));
 			} else if self.eat("*") {
 				let mut fields = Vec::new();
 				let mut name = String::from("*");
@@ -401,29 +380,15 @@ impl<'a> Walker<'a> {
 				}
 				let name = self.intern(&name);
 				fields.insert(0, (own::name, Value::Str(name)));
-				selectors.push(self.host(own::TypeSelector, start, self.at, &fields, None, true));
+				selectors.push(self.host(own::TypeSelector, start, self.at, &fields));
 			} else if self.eat("#") {
 				let name = self.css_identifier()?;
 				let name = self.intern(&name);
-				selectors.push(self.host(
-					own::IdSelector,
-					start,
-					self.at,
-					&[(own::name, Value::Str(name))],
-					None,
-					true,
-				));
+				selectors.push(self.host(own::IdSelector, start, self.at, &[(own::name, Value::Str(name))]));
 			} else if self.eat(".") {
 				let name = self.css_identifier()?;
 				let name = self.intern(&name);
-				selectors.push(self.host(
-					own::ClassSelector,
-					start,
-					self.at,
-					&[(own::name, Value::Str(name))],
-					None,
-					true,
-				));
+				selectors.push(self.host(own::ClassSelector, start, self.at, &[(own::name, Value::Str(name))]));
 			} else if self.eat("::") {
 				let name = self.css_identifier()?;
 				let name = self.intern(&name);
@@ -435,11 +400,9 @@ impl<'a> Walker<'a> {
 						start,
 						self.at,
 						&[name, (own::args, Value::Node(args))],
-						None,
-						true,
 					)
 				} else {
-					self.host(own::PseudoElementSelector, start, self.at, &[name], None, true)
+					self.host(own::PseudoElementSelector, start, self.at, &[name])
 				};
 				selectors.push(node);
 			} else if self.eat(":") {
@@ -456,8 +419,6 @@ impl<'a> Walker<'a> {
 					start,
 					self.at,
 					&[(own::name, Value::Str(name)), (own::args, args)],
-					None,
-					true,
 				));
 			} else if self.eat("[") {
 				self.space();
@@ -504,19 +465,10 @@ impl<'a> Walker<'a> {
 						(own::value, value),
 						(own::flags, flags),
 					],
-					None,
-					true,
 				));
 			} else if let Some(len) = nth_of(self.rest()).filter(|_| inside_pseudo) {
 				self.at += len as u32;
-				selectors.push(self.host(
-					own::Nth,
-					start,
-					self.at,
-					&[(own::value, Value::Slice(start, self.at))],
-					None,
-					true,
-				));
+				selectors.push(self.host(own::Nth, start, self.at, &[(own::value, Value::Slice(start, self.at))]));
 			} else if let Some(len) = percentage(self.rest()) {
 				self.at += len as u32;
 				selectors.push(self.host(
@@ -524,8 +476,6 @@ impl<'a> Walker<'a> {
 					start,
 					self.at,
 					&[(own::value, Value::Slice(start, self.at))],
-					None,
-					true,
 				));
 			} else if combinator(self.rest()).is_none() {
 				let mut name = self.css_identifier()?;
@@ -541,7 +491,7 @@ impl<'a> Walker<'a> {
 				}
 				let name = self.intern(&name);
 				fields.insert(0, (own::name, Value::Str(name)));
-				selectors.push(self.host(own::TypeSelector, start, self.at, &fields, None, true));
+				selectors.push(self.host(own::TypeSelector, start, self.at, &fields));
 			}
 			let index = self.at;
 			self.css_space(comments, false)?;
@@ -555,8 +505,6 @@ impl<'a> Walker<'a> {
 					list_start,
 					index,
 					&[(own::children, Value::Nodes(children))],
-					None,
-					true,
 				));
 			}
 			self.at = index;
@@ -587,8 +535,6 @@ impl<'a> Walker<'a> {
 				(own::combinator, combinator.map_or(Value::Null, Value::Node)),
 				(own::selectors, Value::Nodes(selectors)),
 			],
-			None,
-			true,
 		)
 	}
 
@@ -606,8 +552,6 @@ impl<'a> Walker<'a> {
 				index,
 				end,
 				&[(own::name, Value::Str(name))],
-				None,
-				true,
 			)));
 		}
 		if self.at != start {
@@ -617,8 +561,6 @@ impl<'a> Walker<'a> {
 				start,
 				self.at,
 				&[(own::name, Value::Str(name))],
-				None,
-				true,
 			)));
 		}
 		Ok(None)
@@ -648,14 +590,7 @@ impl<'a> Walker<'a> {
 		self.expect("}")?;
 		self.nesting -= 1;
 		let children = self.list(&children);
-		Ok(self.host(
-			own::Block,
-			start,
-			self.at,
-			&[(own::children, Value::Nodes(children))],
-			None,
-			true,
-		))
+		Ok(self.host(own::Block, start, self.at, &[(own::children, Value::Nodes(children))]))
 	}
 
 	/// A declaration, a rule or an at-rule: a look ahead to the next `{` or `;` tells which.
@@ -703,8 +638,6 @@ impl<'a> Walker<'a> {
 				(own::property, Value::Slice(start, start + len as u32)),
 				(own::value, Value::Str(value)),
 			],
-			None,
-			true,
 		))
 	}
 

@@ -622,32 +622,26 @@ impl<'a> Walker<'a> {
 		}
 	}
 
-	fn host(
-		&mut self,
-		ty: Name,
-		start: u32,
-		end: u32,
-		fields: &[(Name, Value)],
-		scope: Option<Opens>,
-		span: bool,
-	) -> NodeId {
+	fn host(&mut self, ty: Name, start: u32, end: u32, fields: &[(Name, Value)]) -> NodeId {
+		self.opening(ty, start, end, fields, None)
+	}
+
+	fn opening(&mut self, ty: Name, start: u32, end: u32, fields: &[(Name, Value)], scope: Option<Opens>) -> NodeId {
 		let ast = self.ast.as_deref_mut().unwrap();
 		let from = ast.host_keys.len();
 		for &(key, value) in fields {
 			ast.host_keys.push(key.0);
-			ast.host_vals.push(value.row());
+			ast.host_vals.push(value);
 		}
-		let ty = (ty != Name::NONE).then_some(ty.0);
-		let shape = self.shapes.of(ty, span, &ast.host_keys[from..], &ast.host_vals[from..]);
+		let shape = self.shapes.of(ty, &ast.host_keys[from..], &ast.host_vals[from..]);
 		let index = ast.host_rows.len() as u32;
 		ast.host_rows.push(HostRow {
-			ty,
+			ty: ty.0,
 			fields: Run {
 				start: from as u32,
 				len: fields.len() as u32,
 			},
 			shape,
-			span,
 		});
 		ast.host_scopes.push(scope);
 		ast.add(NodeKind::Host(index), start, end)
@@ -662,8 +656,6 @@ impl<'a> Walker<'a> {
 			start,
 			end,
 			&[(own::raw, Value::Slice(start, end)), (own::data, data)],
-			None,
-			true,
 		)
 	}
 
@@ -675,14 +667,7 @@ impl<'a> Walker<'a> {
 			_ => (self.at, self.at),
 		};
 		self.nodes.give(nodes);
-		self.host(
-			own::Fragment,
-			start,
-			end,
-			&[(own::nodes, Value::Nodes(list))],
-			None,
-			false,
-		)
+		self.host(own::Fragment, start, end, &[(own::nodes, Value::Nodes(list))])
 	}
 
 	fn element_node(
@@ -701,7 +686,7 @@ impl<'a> Walker<'a> {
 		let fragment = self.fragment(nodes);
 		fields.push((own::fragment, Value::Node(fragment)));
 		let scope = self.element_scope(at, fragment, declared);
-		let node = self.host(ty, start, end, &fields, Some(scope), true);
+		let node = self.opening(ty, start, end, &fields, Some(scope));
 		self.fields.give(fields);
 		self.append(node);
 	}
@@ -743,7 +728,7 @@ impl<'a> Walker<'a> {
 	fn host_type(&self, id: NodeId) -> Option<Name> {
 		let ast = self.tree();
 		match ast.node(id).kind {
-			NodeKind::Host(index) => ast.host_rows[index as usize].ty.map(Name),
+			NodeKind::Host(index) => Some(Name(ast.host_rows[index as usize].ty)),
 			_ => None,
 		}
 	}
@@ -757,7 +742,7 @@ impl<'a> Walker<'a> {
 			.fields
 			.indices()
 			.find(|&i| ast.host_keys[i as usize] == key.0)
-			.map(|i| ast.host_vals[i as usize].value())
+			.map(|i| ast.host_vals[i as usize])
 	}
 
 	fn string_of(&self, value: Value) -> Option<&str> {
@@ -818,7 +803,7 @@ impl<'a> Walker<'a> {
 	/// An expression chunk as the node of the construct that read it.
 	fn chunk(&mut self, rule: &Construct, start: u32, end: u32, expression: NodeId) -> NodeId {
 		let field = rule.single().map_or(own::expression, |(field, _)| field);
-		self.host(rule.ty, start, end, &[(field, Value::Node(expression))], None, true)
+		self.host(rule.ty, start, end, &[(field, Value::Node(expression))])
 	}
 
 	/// Whether a `<` at `i` starts a tag: a name, a closing tag or a comment follows.
@@ -972,7 +957,7 @@ impl<'a> Walker<'a> {
 			outside: List::EMPTY,
 			groups: (at, scopes.len() as u32),
 		});
-		let node = self.host(self.grammar.document.ty, 0, full, &fields, scope, true);
+		let node = self.opening(self.grammar.document.ty, 0, full, &fields, scope);
 		self.fields.give(fields);
 		Ok(node)
 	}
@@ -1024,8 +1009,6 @@ impl<'a> Walker<'a> {
 				start,
 				self.at,
 				&[(own::data, Value::Slice(data_start, self.at - 3))],
-				None,
-				true,
 			);
 			self.append(node);
 			return Ok(());
@@ -1248,8 +1231,6 @@ impl<'a> Walker<'a> {
 					(own::content, Value::Node(program)),
 					(own::attributes, Value::Nodes(attributes)),
 				],
-				None,
-				true,
 			);
 			let Some(Frame::Root {
 				instance,
@@ -1328,14 +1309,7 @@ impl<'a> Walker<'a> {
 			}
 			self.at = close;
 			let text = Value::Slice(content_start, close);
-			let node = self.host(
-				own::Text,
-				content_start,
-				close,
-				&[(own::raw, text), (own::data, text)],
-				None,
-				true,
-			);
+			let node = self.host(own::Text, content_start, close, &[(own::raw, text), (own::data, text)]);
 			match closing_tag(self.rest(), name) {
 				Some(len) => self.at += len as u32,
 				None => self.report_at(self.len(), self.len(), Code::Unclosed, Some(name))?,
@@ -1530,8 +1504,6 @@ impl<'a> Walker<'a> {
 			start,
 			self.at,
 			&[(own::name, Value::Str(name_id)), (own::value, value)],
-			None,
-			true,
 		);
 		Ok(Some((node, Some((own::Attribute, name_id)))))
 	}
@@ -1690,8 +1662,6 @@ impl<'a> Walker<'a> {
 				start,
 				end,
 				&[(own::name, Value::Str(name_id)), (own::value, value)],
-				None,
-				true,
 			);
 			return Ok(Some((node, Some((own::Attribute, name_id)))));
 		};
@@ -1849,7 +1819,7 @@ impl<'a> Walker<'a> {
 		for &(flag, on) in &rule.flags {
 			fields.push((flag, Value::Bool(on)));
 		}
-		let node = self.host(rule.ty, start, end, &fields, None, true);
+		let node = self.host(rule.ty, start, end, &fields);
 		self.fields.give(fields);
 		let key = if syntax.unique {
 			Some((own::Attribute, self.intern(name)))
@@ -2476,8 +2446,6 @@ impl<'a> Walker<'a> {
 			start,
 			self.at,
 			&[(own::name, Value::Str(name_id)), (own::value, Value::Node(tag))],
-			None,
-			true,
 		);
 		Ok(Some(Some((node, Some((own::Attribute, name_id))))))
 	}
@@ -2493,7 +2461,7 @@ impl<'a> Walker<'a> {
 		};
 		self.piece(&rule.open, &mut read)?;
 		fill_unread(&rule.open.form.entries, &mut read.fields);
-		let node = self.host(rule.ty, start, self.at, &read.fields, None, true);
+		let node = self.host(rule.ty, start, self.at, &read.fields);
 		self.fields.give(read.fields);
 		Ok(node)
 	}
@@ -2524,7 +2492,7 @@ impl<'a> Walker<'a> {
 				self.space();
 				self.expect(rule.open.end)?;
 				let (field, _) = rule.single().unwrap();
-				let node = self.host(rule.ty, start, self.at, &[(field, Value::Node(statement))], None, true);
+				let node = self.host(rule.ty, start, self.at, &[(field, Value::Node(statement))]);
 				self.append(node);
 				Ok(true)
 			}
@@ -2880,7 +2848,7 @@ impl<'a> Walker<'a> {
 			outside: outside_list,
 			groups: (groups_at, count),
 		});
-		let node = self.host(rule.ty, start, end, &ordered, scope, true);
+		let node = self.opening(rule.ty, start, end, &ordered, scope);
 		self.fields.give(ordered);
 		self.fields.give(fields);
 		self.fields.give(done);

@@ -260,6 +260,7 @@ fn piece(marker: &[&'static str], items: &'static [definition::Item<'static>]) -
 		marker: marker.to_vec().leak(),
 		space: Some(true),
 		form: items,
+		reopen: None,
 	}
 }
 
@@ -276,7 +277,7 @@ fn tag(marker: &[&'static str], items: &'static [definition::Item<'static>]) -> 
 fn block(
 	name: &'static str,
 	items: &'static [definition::Item<'static>],
-	branches: &'static [definition::Branch<'static>],
+	branches: &'static [definition::Piece<'static>],
 ) -> definition::Construct<'static> {
 	definition::Construct {
 		r#in: None,
@@ -286,6 +287,7 @@ fn block(
 			marker: list!["{", keep(format!("/{name}"))],
 			space: None,
 			form: list![definition::Item::Word("}")],
+			reopen: None,
 		}),
 	}
 }
@@ -294,8 +296,8 @@ fn branch(
 	marker: &[&'static str],
 	items: &'static [definition::Item<'static>],
 	reopen: Option<(&'static str, &'static str)>,
-) -> definition::Branch<'static> {
-	definition::Branch {
+) -> definition::Piece<'static> {
+	definition::Piece {
 		marker: marker.to_vec().leak(),
 		space: None,
 		form: items,
@@ -342,6 +344,7 @@ fn expression(field: &'static str) -> definition::Construct<'static> {
 				definition::Item::Fields(Record(list![(field, source("js", "expression", false))])),
 				definition::Item::Word("}"),
 			],
+			reopen: None,
 		},
 		branches: None,
 		close: None,
@@ -417,7 +420,7 @@ fn a_node_type_of_javascript_is_refused() {
 
 #[test]
 fn a_definition_is_refused_by_name() {
-	let with_if = |items: &'static [definition::Item<'static>], branches: &'static [definition::Branch<'static>]| {
+	let with_if = |items: &'static [definition::Item<'static>], branches: &'static [definition::Piece<'static>]| {
 		let mut host = minimal();
 		host.definition.constructs = Some(Record(list![("IfBlock", block("if", items, branches))]));
 		keep(host.json())
@@ -702,6 +705,7 @@ fn a_shared_close_closes_the_innermost_block() {
 			marker: list!["{", "end"],
 			space: None,
 			form: list![close()],
+			reopen: None,
 		}),
 		..block(
 			name,
@@ -950,7 +954,7 @@ fn a_grammar_that_cannot_work_is_refused() {
 		let error = Grammar::read(keep(host.json())).unwrap_err();
 		assert!(error.contains(says), "expected an error naming {says:?}, got {error:?}");
 	};
-	let with_block = |items: &'static [definition::Item<'static>], branches: &'static [definition::Branch<'static>]| {
+	let with_block = |items: &'static [definition::Item<'static>], branches: &'static [definition::Piece<'static>]| {
 		let mut host = minimal();
 		host.definition.constructs = Some(Record(list![("X", block("x", items, branches))]));
 		host
@@ -1200,6 +1204,7 @@ fn a_host_has_its_own_syntax() {
 				marker,
 				space: space.then_some(true),
 				form: items,
+				reopen: None,
 			},
 			branches: None,
 			close: None,
@@ -1210,12 +1215,14 @@ fn a_host_has_its_own_syntax() {
 				marker: mark(keep(format!("#{name}"))),
 				space: Some(true),
 				form: list![js("e", "expression"), word],
+				reopen: None,
 			},
 			branches: None,
 			close: Some(definition::Piece {
 				marker: mark(keep(format!("/{name}"))),
 				space: None,
 				form: list![word],
+				reopen: None,
 			}),
 		};
 		Record(list![

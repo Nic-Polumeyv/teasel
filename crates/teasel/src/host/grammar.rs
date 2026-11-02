@@ -9,7 +9,7 @@
 //! value. The text is kept for the process, and every name is a slice of it unless it was
 //! escaped; every list is a slice of the arena the definition is read into.
 
-use crate::ast::HostValue;
+use crate::ast::Value;
 
 /// Reads a definition's JSON in one pass, each value straight into its type.
 pub(crate) struct Reader<'a> {
@@ -786,7 +786,7 @@ impl Naming {
 }
 
 /// The shapes of a grammar's host nodes, numbered for good as the walker meets them: a node's
-/// type, whether it has a span, and each field's name and kind of value. The decoder builds the
+/// type and each field's name and kind of value. The decoder builds the
 /// nodes of one shape by one literal.
 #[derive(Clone, Debug, Default)]
 pub struct Shapes {
@@ -799,24 +799,23 @@ pub struct Shapes {
 #[derive(Clone, Debug)]
 struct Shape {
 	id: u32,
-	span: bool,
 	fields: Vec<u64>,
 }
 
 impl Shapes {
-	pub(crate) fn of(&mut self, ty: Option<u32>, span: bool, keys: &[u32], values: &[HostValue]) -> u32 {
-		let at = ty.map_or(0, |ty| ty as usize + 1);
+	pub(crate) fn of(&mut self, ty: Name, keys: &[u32], values: &[Value]) -> u32 {
+		let at = ty.0.wrapping_add(1) as usize;
 		if self.of.len() <= at {
 			self.of.resize_with(at + 1, Vec::new);
 		}
 		let fields = keys
 			.iter()
 			.zip(values)
-			.map(|(&key, value)| (key as u64) << 8 | value.tag as u64);
+			.map(|(&key, value)| (key as u64) << 8 | crate::layout::tag(std::ptr::from_ref(value).cast()) as u64);
 		let shapes = &mut self.of[at];
 		if let Some(shape) = shapes
 			.iter()
-			.find(|shape| shape.span == span && shape.fields.iter().copied().eq(fields.clone()))
+			.find(|shape| shape.fields.iter().copied().eq(fields.clone()))
 		{
 			return shape.id;
 		}
@@ -824,7 +823,6 @@ impl Shapes {
 		self.count += 1;
 		shapes.push(Shape {
 			id,
-			span,
 			fields: fields.collect(),
 		});
 		id
@@ -1452,15 +1450,7 @@ pub mod definition {
 			/// Whitespace must follow the marker.
 			pub space: Option<bool>,
 			pub form: &'a [Item<'a>],
-		}
-	}
-
-	wire! {
-		/// A branch of a block; `reopen` nests the block again into that field, with that flag true on it.
-		pub struct Branch<'a> {
-			pub marker: &'a [&'static str],
-			pub space: Option<bool>,
-			pub form: &'a [Item<'a>],
+			/// On a branch of a block, `reopen` nests the block again into that field, with that flag true on it.
 			pub reopen: Option<(&'static str, &'static str)>,
 		}
 	}
@@ -1470,7 +1460,7 @@ pub mod definition {
 		pub struct Construct<'a> {
 			pub r#in: Option<&'a [Place]>,
 			pub open: Piece<'a>,
-			pub branches: Option<&'a [Branch<'a>]>,
+			pub branches: Option<&'a [Piece<'a>]>,
 			pub close: Option<Piece<'a>>,
 		}
 	}
@@ -1983,13 +1973,12 @@ fn display(marker: &[&str], end: &str) -> String {
 
 fn piece(
 	ty: &str,
-	marker: &[&'static str],
-	space: Option<bool>,
-	items: &[definition::Item],
+	written: &definition::Piece,
 	site: At,
 	bound: &mut Vec<Declare>,
 	n: &mut Naming,
 ) -> Result<Piece, String> {
+	let marker = written.marker;
 	if marker.is_empty()
 		|| marker
 			.iter()
@@ -1999,12 +1988,12 @@ fn piece(
 			"{ty}: a marker needs parts, none of them empty or holding whitespace"
 		));
 	}
-	let form = form(ty, items, site, bound, n)?;
+	let form = form(ty, written.form, site, bound, n)?;
 	let end = last_word(&form.items).ok_or_else(|| format!("{ty}: a marker's form ends its tag with a word"))?;
 	Ok(Piece {
 		display: keep(&display(marker, end)),
 		marker: marker.to_vec(),
-		space: space == Some(true),
+		space: written.space == Some(true),
 		end,
 		form,
 	})
@@ -2023,15 +2012,7 @@ fn construct(ty: &'static str, rule: &definition::Construct, n: &mut Naming) -> 
 		if !block {
 			return Err(format!("{ty} has branches, so it closes"));
 		}
-		let mut piece = piece(
-			ty,
-			branch.marker,
-			branch.space,
-			branch.form,
-			At::Block,
-			&mut Vec::new(),
-			n,
-		)?;
+		let mut piece = piece(ty, branch, At::Block, &mut Vec::new(), n)?;
 		if let Some((field, flag)) = branch.reopen {
 			let (field, flag) = (n.name(field), n.name(flag));
 			if !chain_flags.contains(&flag) {
@@ -2057,15 +2038,7 @@ fn construct(ty: &'static str, rule: &definition::Construct, n: &mut Naming) -> 
 	}
 	let mut bound = Vec::new();
 	let site = if block { At::Block } else { At::Tag };
-	let mut open = piece(
-		ty,
-		rule.open.marker,
-		rule.open.space,
-		rule.open.form,
-		site,
-		&mut bound,
-		n,
-	)?;
+	let mut open = piece(ty, &rule.open, site, &mut bound, n)?;
 	let mut lists = Vec::new();
 	for form in std::iter::once(&open.form).chain(branches.iter().map(|branch| &branch.form)) {
 		collect_bodies(form, &mut lists);
@@ -2098,7 +2071,7 @@ fn construct(ty: &'static str, rule: &definition::Construct, n: &mut Naming) -> 
 	}
 	let close = match &rule.close {
 		Some(close) => {
-			let piece = piece(ty, close.marker, close.space, close.form, At::Tag, &mut Vec::new(), n)?;
+			let piece = piece(ty, close, At::Tag, &mut Vec::new(), n)?;
 			if !piece.form.items.iter().all(|item| matches!(item, Item::Literal(_))) {
 				return Err(format!("{ty}: a close reads words only"));
 			}
@@ -2445,8 +2418,9 @@ impl Grammar {
 	}
 
 	fn own_children(&self) -> Vec<(&'static str, Vec<&'static str>)> {
-		let mut out: Vec<(Name, Vec<Name>)> = Vec::new();
+		let mut out: Vec<(&'static str, Vec<&'static str>)> = Vec::new();
 		let mut add = |ty: Name, fields: &[Name]| {
+			let ty = self.text(ty);
 			let at = match out.iter().position(|(known, _)| *known == ty) {
 				Some(at) => at,
 				None => {
@@ -2455,6 +2429,7 @@ impl Grammar {
 				}
 			};
 			for &field in fields {
+				let field = self.text(field);
 				if !out[at].1.contains(&field) {
 					out[at].1.push(field);
 				}
@@ -2538,14 +2513,7 @@ impl Grammar {
 			rule.branches.iter().for_each(|branch| form(&branch.form, &mut fields));
 			add(rule.ty, &fields);
 		}
-		out.into_iter()
-			.map(|(ty, fields)| {
-				(
-					self.text(ty),
-					fields.into_iter().map(|field| self.text(field)).collect(),
-				)
-			})
-			.collect()
+		out
 	}
 }
 
