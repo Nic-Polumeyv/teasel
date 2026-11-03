@@ -290,6 +290,7 @@ block
 body
 bool
 boolnames
+branches
 callee
 cases
 catch

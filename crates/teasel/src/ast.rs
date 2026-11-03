@@ -267,7 +267,7 @@ crate::layout::record! {
 	pub struct HostRow {
 		/// Its type, `Name::NONE` for an object of the host's without one.
 		pub ty: u32,
-		/// Its fields in source order, in `Ast::host_keys` and `Ast::host_vals`.
+		/// Its fields, in `Ast::host_keys` and `Ast::host_vals`.
 		pub fields: Run,
 		/// The number of its shape in the grammar's `Shapes`.
 		pub shape: u32,

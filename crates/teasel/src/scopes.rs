@@ -248,7 +248,8 @@ pub struct Scopes {
 	pub scopes: Handed<Scope>,
 	pub bindings: Handed<Binding>,
 	pub references: Handed<Reference>,
-	/// The pieces of JavaScript in a host's document, in source order; empty for a plain parse.
+	/// The pieces of JavaScript in a host's document, in the order a walk over the tree meets them;
+	/// empty for a plain parse.
 	pub roots: Handed<Root>,
 	pub root_of: NodeTable<u32>,
 	pub of_node: NodeTable<ScopeId>,
@@ -1197,6 +1198,7 @@ impl<'a> Binder<'a> {
 				self.host_declared.pop();
 			}
 		}
+		debug_assert_eq!(self.open_groups.len(), open_base, "a host's scope groups must nest");
 		self.open_groups.truncate(open_base);
 		self.host_groups.truncate(base);
 		self.host_declared.truncate(depth);

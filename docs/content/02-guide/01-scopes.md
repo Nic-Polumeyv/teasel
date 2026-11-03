@@ -67,7 +67,7 @@ A binding knows its `name`, its `kind`, the scope it lives in, the identifier th
 
 ## The tables
 
-The answer's `scopes`, `bindings` and `references` list every scope, binding and reference in source order, so none of this needs a walk of the tree.
+The answer's `scopes`, `bindings` and `references` list every scope, binding and reference in the order a walk over the tree meets them, so none of this needs a walk of the tree.
 
 ## Limits
 

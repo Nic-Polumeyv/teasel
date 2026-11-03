@@ -50,7 +50,8 @@ In TypeScript, and in JavaScript checked with JSDoc, the tree is typed from the 
 The grammar names what its nodes mean: their types, and the fields a construct reads. What every markup language has is named the same in every grammar:
 
 - a list of child nodes is a `Fragment`, which holds them as `nodes`;
-- the document, every element and a block with one list hold that list as `fragment`; a block with several, like `IfBlock` above, names each;
+- the document, every element and a block with one list hold that list as `fragment`; a block with several, like `IfBlock` above, or with a branch that has `node`, names each;
+- a branch with `node` makes a node of that type each time it is read, and its block holds those nodes in order as `branches`, an empty list when none was read;
 - an element's tag is `name`, and its attributes are `attributes`, each an `Attribute` with `name` and `value`;
 - text is a `Text` with `data`, as read, and `raw`, as written; a comment is a `Comment` with `data`;
 - a directive's argument is `name`, and its modifiers are `modifiers`.
@@ -59,7 +60,7 @@ Every node has its `type` and fields, and every node but a `Fragment` has `start
 
 The options work as they do on JavaScript, with two additions.
 
-- `scopes` adds `roots`: one entry per piece of JavaScript the parser read, in source order, with the piece's `node`, the `scope` it sits in, and the `scopes`, `bindings` and `references` inside it. A host that keeps tables per piece takes them from here; `scopes`, `bindings` and `references` on the answer cover the whole file.
+- `scopes` adds `roots`: one entry per piece of JavaScript the parser read, in the order a walk over the tree meets them, with the piece's `node`, the `scope` it sits in, and the `scopes`, `bindings` and `references` inside it. A host that keeps tables per piece takes them from here; `scopes`, `bindings` and `references` on the answer cover the whole file.
 - `typescript` turns on by itself when the grammar says a script tag can ask for it, as `<script lang="ts">` does, and `'erase'` still applies: give `typescript: 'erase'` and the scripts come back as JavaScript, with the answer's `typescript` list of what could not be erased.
 
 Scopes cover the template and the script together. Every `Fragment` opens a scope; a block's opens at the first name the block declares, the `each` item here. What a script declares lands in the scope around the template, so an identifier in the template resolves to a binding in the script.

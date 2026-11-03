@@ -153,7 +153,7 @@ export interface Node<T extends string = string, I extends readonly Item[] = rea
 	readonly form?: I;
 }
 
-type BlockForm = Form<Field<'form', false | 'inside' | 'outside'> | Field<'body'>, 'fragment'>;
+type BlockForm = Form<Field<'form', false | 'inside' | 'outside'> | Field<'body'>, 'fragment' | 'branches'>;
 type TagForm = Form<Field<'form'>>;
 
 /** Where a construct may stand: in content, in an attribute value, among an element's attributes, in the text of an rcdata element. */
@@ -173,8 +173,8 @@ export interface Piece<I extends BlockForm = BlockForm> {
 }
 
 export interface Branch<I extends BlockForm = BlockForm> extends Piece<I> {
-	/** The branch opens the construct again inside this field, with this flag true on the one it opens. */
-	readonly reopen?: readonly [field: string, flag: string];
+	/** Each one makes a node of this type, in its block's `branches`. None may follow a branch read once. */
+	readonly node?: string;
 }
 
 /** A construct without a close: it reads no content and opens no scope. */
@@ -188,7 +188,8 @@ export interface Tag {
 
 /**
  * A construct with a close. Its content, up to the close, is its `fragment`; with branches, the open
- * and every branch end in a list each names with `content`.
+ * and every branch end in a list each names with `content`, and the nodes of the branches that name
+ * one are its `branches`. What a body's form declares stands together before that body.
  */
 export interface Block {
 	/** Content when left out. */
@@ -235,6 +236,7 @@ type Marker = readonly [attribute: string] | readonly [attribute: string, value:
  * A host language: its document, its content, and the JavaScript inside them. The definition names
  * what the host's nodes mean; what every markup language has is named the same in every host: a
  * list of child nodes is a `Fragment` holding them as `nodes`, a node's one list is its `fragment`,
+ * the nodes of a block's repeating branches are its `branches`,
  * an element's tag is `name` and its attributes `attributes`, a `Text` holds `data` and `raw`, a
  * `Comment` holds `data`, and a directive's argument is `name` and its modifiers `modifiers`.
  */
@@ -352,17 +354,23 @@ type TextNode = Typed<'Text', { raw: string; data: string }>;
 type CommentNode = Typed<'Comment', { data: string }>;
 type DocumentNode<G extends Definition> = NodeOf<G['document'], G, Fixed<'fragment', Children>>;
 
-/** A branch adds its fields to the construct, or, reopening it, the field it reopens into and its flag. */
-type BranchMembers<B> = B extends { readonly reopen: readonly [infer F extends string, infer Flag extends string] }
-	? Member<F, Source<Children, 'form', Plain>, true> | Member<Flag, Source<boolean, 'form', Plain>, false>
-	: Collect<FormOf<B>, true>;
+type Repeating = { readonly node: string };
+/** The node a repeating branch makes. */
+type BranchNode<B, G extends Definition> = B extends { readonly node: infer N extends string } ? Typed<N, Shape<Collect<FormOf<B>, false>, G, false>> : never;
+/** A branch adds its fields to the construct; a repeating one, its node to `branches`. */
+type BranchMembers<B, G extends Definition> =
+	| Collect<FormOf<Exclude<B, Repeating>>, true>
+	| ([Extract<B, Repeating>] extends [never] ? never : Fixed<'branches', BranchNode<B, G>[]>);
 
+type Branches<C> = C extends { readonly branches: readonly (infer B)[] } ? B : never;
 type Lists<E> = E extends Member<any, infer S> ? (Out<S> extends Children ? true : never) : never;
 type Single<C, E> = C extends { readonly close: object } ? (true extends Lists<E> ? never : Fixed<'fragment', Children>) : never;
 
 type ConstructNode<T extends string, C, G extends Definition> = C extends { readonly open: { readonly form: infer I } }
-	? Typed<T, Shape<Collect<I, false> | Single<C, Collect<I, false>> | BranchMembers<C extends { readonly branches: readonly (infer B)[] } ? B : never>, G, false>>
+	? Typed<T, Shape<Collect<I, false> | Single<C, Collect<I, false>> | BranchMembers<Branches<C>, G>, G, false>>
 	: never;
+/** The nodes of every construct's repeating branches. */
+type BranchNodes<G extends Definition> = BranchNode<Branches<Values<G['constructs']>>, G>;
 /** Whether a construct stands in `P`, content when it says nowhere. */
 type Stands<C, P extends Place> = C extends { readonly in: readonly (infer In)[] } ? P extends In ? true : false : P extends 'content' ? true : false;
 /** The nodes of the constructs that stand in `P`. */
@@ -398,5 +406,5 @@ export type Attribute<G extends Definition> =
 export type Infer<Gr extends Grammar> = Gr extends Grammar<infer G> ? DocumentNode<G> : never;
 /** A node type of the grammar, by name. */
 export type NodeType<Gr extends Grammar, T extends string> = Gr extends Grammar<infer G>
-	? Extract<Content<G> | Attribute<G> | Constructs<G, 'value'> | FragmentNode<G> | ScriptNode<G>, { type: T }>
+	? Extract<Content<G> | Attribute<G> | Constructs<G, 'value'> | BranchNodes<G> | FragmentNode<G> | ScriptNode<G>, { type: T }>
 	: never;

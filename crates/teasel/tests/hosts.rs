@@ -162,8 +162,8 @@ fn unfinished_input() {
 	}
 	assert!(parse("<a @x=\"@\"/>", &vue, false).contains("\"node\":null"));
 	let elements = format!("{}x{}", "<a>".repeat(40_000), "</a>".repeat(40_000));
-	let branches = format!("{{#if a}}{}{{/if}}", "{:else if a}".repeat(40_000));
-	for deep in [elements, branches] {
+	let blocks = format!("{}{}", "{#if a}".repeat(40_000), "{/if}".repeat(40_000));
+	for deep in [elements, blocks] {
 		assert!(parse(&deep, &svelte, false).contains(&format!("\"code\":{},", Code::NestingDepth as u8)));
 	}
 	let program = parse("<button @click=\"let x = 1\"/>", &vue, true);
@@ -269,7 +269,7 @@ fn piece(marker: &[&'static str], items: &'static [definition::Item<'static>]) -
 		marker: marker.to_vec().leak(),
 		space: Some(true),
 		form: items,
-		reopen: None,
+		node: None,
 	}
 }
 
@@ -296,7 +296,7 @@ fn block(
 			marker: list!["{", keep(format!("/{name}"))],
 			space: None,
 			form: list![definition::Item::Word("}")],
-			reopen: None,
+			node: None,
 		}),
 	}
 }
@@ -304,13 +304,13 @@ fn block(
 fn branch(
 	marker: &[&'static str],
 	items: &'static [definition::Item<'static>],
-	reopen: Option<(&'static str, &'static str)>,
+	node: Option<&'static str>,
 ) -> definition::Piece<'static> {
 	definition::Piece {
 		marker: marker.to_vec().leak(),
 		space: None,
 		form: items,
-		reopen,
+		node,
 	}
 }
 
@@ -353,7 +353,7 @@ fn expression(field: &'static str) -> definition::Construct<'static> {
 				definition::Item::Fields(Record(list![(field, source("js", "expression", false))])),
 				definition::Item::Word("}"),
 			],
-			reopen: None,
+			node: None,
 		},
 		branches: None,
 		close: None,
@@ -444,14 +444,10 @@ fn a_definition_is_refused_by_name() {
 	let close = definition::Item::Word("}");
 	let error = Grammar::read(with_if(
 		list![test, close, consequent],
-		list![branch(
-			&["{", ":else", "if"],
-			list![test, close],
-			Some(("alternate", "elseif")),
-		)],
+		list![branch(&["{", ":else", "if"], list![test, close], Some("ElseIf"))],
 	))
 	.unwrap_err();
-	assert!(error.contains("reopens the block"), "{error}");
+	assert!(error.contains("ends in one body"), "{error}");
 	let error = Grammar::read(with_if(
 		list![test, close],
 		list![branch(&["{", ":else"], list![close, alternate], None)],
@@ -471,7 +467,7 @@ fn a_definition_is_refused_by_name() {
 		list![branch(
 			&["{", ":else", "if"],
 			list![test, close, consequent],
-			Some(("alternate", "elseif")),
+			Some("ElseIf")
 		)],
 	))
 	.unwrap();
@@ -550,15 +546,11 @@ fn records_group_freely() {
 	];
 	host.definition.constructs = Some(Record(list![(
 		"IfBlock",
-		block(
-			"if",
-			open,
-			list![branch(&["{", ":else", "if"], open, Some(("alternate", "elseif")))],
-		),
+		block("if", open, list![branch(&["{", ":else", "if"], open, Some("ElseIf"))],),
 	)]));
 	let answer = parse(&host, "{#if a}x{:else if b}y{/if}");
 	assert!(
-		!answer.contains("\"error\"") && answer.contains("\"elseif\":true") && answer.contains("\"name\":\"b\""),
+		!answer.contains("\"error\"") && answer.contains("\"type\":\"ElseIf\"") && answer.contains("\"name\":\"b\""),
 		"{answer}"
 	);
 
@@ -714,7 +706,7 @@ fn a_shared_close_closes_the_innermost_block() {
 			marker: list!["{", "end"],
 			space: None,
 			form: list![close()],
-			reopen: None,
+			node: None,
 		}),
 		..block(
 			name,
@@ -1061,15 +1053,115 @@ fn a_grammar_that_cannot_work_is_refused() {
 			list![js("e", "expression"), close(), content("body")],
 			list![branch(&["{", ":else"], list![js("f", "expression"), close()], None)],
 		),
-		"X: the {:else} branch ends in no body",
+		"X: the {:else} branch ends in one body",
 	);
-	// each branch that reopens the block has its own flag, true on the block it opened
+	refused(
+		with_block(list![js("branches", "expression"), close(), content("body")], &[]),
+		"X: branches is teasel's",
+	);
+	refused(
+		with_block(
+			list![js("e", "expression"), close(), content("body")],
+			list![branch(&["{", ":else"], list![close(), content("e")], None)],
+		),
+		"X reads e twice",
+	);
+	// one key order cannot hold these: a read would be lost, or a scope run over what is not its own
+	let word = |w: &'static str| definition::Item::Word(w);
+	refused(
+		with_block(
+			list![js("e", "expression"), close(), content("o")],
+			list![branch(
+				&["{", ":b"],
+				list![js("e", "expression"), close(), content("bb")],
+				None
+			)],
+		),
+		"X reads e twice",
+	);
+	refused(
+		with_block(
+			list![bound("a"), word(","), bound("b"), close(), content("o")],
+			list![branch(&["{", ":b"], list![bound("b"), close(), content("bb")], None)],
+		),
+		"X reads b twice",
+	);
+	refused(
+		with_block(
+			list![definition::Item::OneOf(list![
+				list![word("a"), close(), content("b")],
+				list![word("c"), bound("v"), close(), content("b")],
+				list![word("d"), close(), content("d")],
+			])],
+			&[],
+		),
+		"X: what b declares does not stand together before it",
+	);
+	refused(
+		with_block(
+			list![definition::Item::OneOf(list![
+				list![word("as"), bound("a"), close(), content("b")],
+				list![
+					word("of"),
+					js("z", "expression"),
+					word("as"),
+					bound("a"),
+					close(),
+					content("c")
+				],
+			])],
+			&[],
+		),
+		"X: what c declares does not stand together before it",
+	);
+	refused(
+		with_block(
+			list![definition::Item::OneOf(list![
+				list![word("p"), js("x", "expression"), close(), content("y")],
+				list![word("q"), close(), content("x")],
+			])],
+			&[],
+		),
+		"x is read as a field and as a body",
+	);
+	// a branch has one body, which no alternative chooses
+	refused(
+		with_block(
+			list![js("e", "expression"), close(), content("o")],
+			list![branch(
+				&["{", ":m"],
+				list![definition::Item::OneOf(list![
+					list![word("p"), close(), content("y")],
+					list![word("q"), close(), content("x")],
+				])],
+				None,
+			)],
+		),
+		"X: the {:m} branch ends in one body",
+	);
+	refused(
+		with_block(
+			list![js("e", "expression"), close(), content("o")],
+			list![branch(
+				&["{", ":n"],
+				list![js("e", "expression"), close(), content("o")],
+				Some("Fragment"),
+			)],
+		),
+		"a node type named Fragment is teasel's",
+	);
+	let mut rule = block("x", list![js("e", "expression"), close(), content("o")], &[]);
+	rule.open.node = Some("Y");
+	let mut opened = minimal();
+	opened.definition.constructs = Some(Record(list![("X", rule)]));
+	refused(opened, "X: a branch makes a node, not an open or a close");
+	// the branches that repeat share one list, each node in its place
 	let open = list![js("e", "expression"), close(), content("body")];
 	let host = with_block(
 		open,
 		list![
-			branch(&["{", ":else", "if"], open, Some(("alternate", "elseif"))),
-			branch(&["{", ":else", "when"], open, Some(("alternate", "elsewhen"))),
+			branch(&["{", ":else", "if"], open, Some("ElseIf")),
+			branch(&["{", ":else", "when"], open, Some("ElseWhen")),
 		],
 	);
 	let answer = parse_document(
@@ -1077,16 +1169,9 @@ fn a_grammar_that_cannot_work_is_refused() {
 		&host.json(),
 		Options(Options::MODULE),
 	);
-	let flags: Vec<&str> = answer
-		.match_indices("\"elseif\":")
-		.chain(answer.match_indices("\"elsewhen\":"))
-		.map(|(at, _)| &answer[at..at + 18])
-		.collect();
-	assert_eq!(flags.len(), 6, "{answer}");
 	assert!(
-		answer.contains("\"elseif\":false,\"elsewhen\":false")
-			&& answer.contains("\"elseif\":false,\"elsewhen\":true")
-			&& answer.contains("\"elseif\":true,\"elsewhen\":false"),
+		answer.contains(r#""branches":[{"type":"ElseWhen","start":7,"end":22,"#)
+			&& answer.contains(r#"{"type":"ElseIf","start":22,"end":35,"#),
 		"{answer}"
 	);
 
@@ -1213,7 +1298,7 @@ fn a_host_has_its_own_syntax() {
 				marker,
 				space: space.then_some(true),
 				form: items,
-				reopen: None,
+				node: None,
 			},
 			branches: None,
 			close: None,
@@ -1224,14 +1309,14 @@ fn a_host_has_its_own_syntax() {
 				marker: mark(keep(format!("#{name}"))),
 				space: Some(true),
 				form: list![js("e", "expression"), word],
-				reopen: None,
+				node: None,
 			},
 			branches: None,
 			close: Some(definition::Piece {
 				marker: mark(keep(format!("/{name}"))),
 				space: None,
 				form: list![word],
-				reopen: None,
+				node: None,
 			}),
 		};
 		Record(list![
@@ -1404,19 +1489,10 @@ fn reads_the_svelte_grammar() {
 	assert_eq!(text(snippet.field), "fragment");
 	assert_eq!(declares, [("expression", true), ("parameters", false)]);
 	let if_ = construct(&grammar, "IfBlock");
+	assert_eq!(if_.branches[0].node.map(text), Some("ElseIf"));
 	assert_eq!(
-		if_.chain_flags.iter().map(|&flag| text(flag)).collect::<Vec<_>>(),
-		["elseif"]
-	);
-	assert_eq!(
-		if_.branches[0]
-			.form
-			.body
-			.as_ref()
-			.unwrap()
-			.chain
-			.map(|(field, flag)| (text(field), text(flag))),
-		Some(("consequent", "elseif"))
+		if_.shape.iter().map(|slot| text(slot.field)).collect::<Vec<_>>(),
+		["test", "consequent", "branches", "alternate"]
 	);
 	assert_eq!(grammar.script.as_ref().unwrap().typescript, [("lang", Some("ts"))]);
 	assert_eq!(text(grammar.element("Foo.Bar").unwrap().ty), "Component");
@@ -1458,4 +1534,124 @@ fn reads_the_vue_grammar() {
 		Some(vec!["value", "key", "index"])
 	);
 	assert_eq!(grammar.verbatim, Some("v-pre"));
+}
+
+// a repeating branch's node ends where the next branch or the close starts; after a branch read
+// once it is a duplicate; what it leaves open at the end is its block
+#[test]
+fn a_repeating_branch_is_listed() {
+	let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+	let svelte = fs::read_to_string(root.join("tests/hosts/svelte/host.json")).unwrap();
+	let parse = |source: &str, recover: bool| {
+		let recovery = if recover { Options::ERROR_RECOVERY } else { 0 };
+		parse_document(source, &svelte, Options(Options::MODULE | recovery))
+	};
+	let answer = parse("{#if a}1{:else if b}2{:else if c}3{:else}4{/if}", false);
+	assert!(
+		answer.contains(r#""branches":[{"type":"ElseIf","start":8,"end":21,"#)
+			&& answer.contains(r#"{"type":"ElseIf","start":21,"end":34,"#)
+			&& answer.contains(r#"}],"alternate":{"type":"Fragment""#),
+		"{answer}"
+	);
+	let answer = parse("{#if a}1{:else if b}{#if c}2{:else if d}3{/if}4{:else}5{/if}", false);
+	assert!(
+		!answer.contains("\"code\"") && answer.matches("\"type\":\"ElseIf\"").count() == 2,
+		"{answer}"
+	);
+	for (source, duplicate) in [
+		("{#if a}1{:else}2{:else if b}3{/if}", "{:else if}"),
+		("{#if a}1{:else if b}2{:else}3{:else}4{/if}", "{:else}"),
+	] {
+		let answer = parse(source, false);
+		assert!(
+			answer.contains(&format!(r#""code":{},"args":["{duplicate}"]"#, Code::Duplicate as u8)),
+			"{answer}"
+		);
+	}
+	let answer = parse("{#if a}1{:else if b}2", true);
+	assert!(
+		answer
+			.matches(&format!(r#""code":{},"args":["{{#if}}"]"#, Code::Unclosed as u8))
+			.count() == 1
+			&& answer.contains(r#""branches":[{"type":"ElseIf","start":8,"end":21,"#),
+		"{answer}"
+	);
+	// a head that cannot be read leaves what follows it in the body still open
+	let answer = parse("{#if a}x{:else if(b)}y{/if}", true);
+	assert!(
+		answer.contains("(b)}y") && answer.contains("\"branches\":[]"),
+		"{answer}"
+	);
+	let answer = parse("{#if a}x{:else if b}y{:else if}z{:else}w{/if}", true);
+	assert!(
+		answer.contains("}z")
+			&& answer.matches("\"type\":\"ElseIf\"").count() == 1
+			&& answer.contains("\"data\":\"w\""),
+		"{answer}"
+	);
+	// a branch whose node would stand too deep is refused before the body it follows closes
+	let deep = format!(
+		"{}x{{:else if b}}KEEP{{:else}}ALT{{/if}}{}",
+		"{#if a}".repeat(999),
+		"{/if}".repeat(999)
+	);
+	let answer = parse(&deep, true);
+	assert!(
+		answer.contains(&format!("\"code\":{}", Code::NestingDepth as u8)) && answer.contains("KEEP"),
+		"{answer}"
+	);
+	// a chain's length is no depth
+	let long = format!("{{#if a}}{}{{/if}}", "{:else if b}x".repeat(5000));
+	let answer = parse(&long, false);
+	assert!(
+		!answer.contains("\"code\"") && answer.matches("\"type\":\"ElseIf\"").count() == 5000,
+		"{}",
+		&answer[..200]
+	);
+}
+
+// a block's node has one shape whatever its document opened: a field where the first piece reading
+// it stands, a body after the fields of its scope, a list where its branch stands
+#[test]
+fn a_block_has_one_shape() {
+	let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+	let svelte = fs::read_to_string(root.join("tests/hosts/svelte/host.json")).unwrap();
+	let parse = |source: &str| parse_document(source, &svelte, Options(Options::MODULE | Options::SCOPES));
+	let ordered = |answer: &str, keys: &[&str]| {
+		let at = |key: &str| {
+			answer
+				.find(&format!("\"{key}\":"))
+				.unwrap_or_else(|| panic!("{key}: {answer}"))
+		};
+		keys.windows(2).all(|pair| at(pair[0]) < at(pair[1]))
+	};
+	for source in ["{#if a}1{/if}", "{#if a}1{:else}2{/if}", "{#if a}1{:else if b}2{/if}"] {
+		let answer = parse(source);
+		assert!(
+			ordered(&answer, &["test", "consequent", "branches", "alternate"]),
+			"{answer}"
+		);
+	}
+	for source in [
+		"{#await p}{/await}",
+		"{#await p then v}{/await}",
+		"{#await p catch e}{/await}",
+		"{#await p}1{:then v}2{/await}",
+		"{#await p}1{:then}2{:catch e}3{/await}",
+		"{#await p}{:catch}{/await}",
+	] {
+		let answer = parse(source);
+		assert!(
+			ordered(&answer, &["expression", "value", "then", "error", "catch", "pending"]),
+			"{answer}"
+		);
+	}
+	// what `value` declares is seen in `then`, before which it stands, and not in `pending`
+	let answer = parse("{#await p}{v}{:then v}{v}{/await}");
+	assert_eq!(answer.matches("\"binding\":0").count(), 1, "{answer}");
+	assert_eq!(answer.matches("\"binding\":null").count(), 2, "{answer}");
+	for source in ["{#each xs as x}1{/each}", "{#each xs as x, i (k)}1{:else}2{/each}"] {
+		let answer = parse(source);
+		assert!(ordered(&answer, &["expression", "context", "body"]), "{answer}");
+	}
 }

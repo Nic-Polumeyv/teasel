@@ -9,7 +9,7 @@
 //! value. The text is kept for the process, and every name is a slice of it unless it was
 //! escaped; every list is a slice of the arena the definition is read into.
 
-use crate::ast::Value;
+use crate::ast::{List, Value};
 
 /// Reads a definition's JSON in one pass, each value straight into its type.
 pub(crate) struct Reader<'a> {
@@ -756,6 +756,7 @@ pub mod own {
 		prelude block Rule SelectorList ComplexSelector RelativeSelector combinator selectors Combinator
 		TypeSelector namespace IdSelector ClassSelector NestingSelector PseudoClassSelector
 		PseudoElementSelector args AttributeSelector matcher flags Nth Percentage Block Declaration property
+		branches
 	}
 }
 
@@ -963,53 +964,6 @@ fn first_groups(items: &[Item], follow: &[&'static str]) -> Vec<Vec<&'static str
 	out
 }
 
-fn collect_entries(items: &[Item], out: &mut Vec<(Name, bool)>) {
-	for item in items {
-		match item {
-			Item::Entry { field, omit, .. } => out.push((*field, *omit)),
-			Item::Group { alternatives, .. } => {
-				for alternative in alternatives {
-					collect_entries(&alternative.items, out);
-				}
-			}
-			Item::Literal(_) => {}
-		}
-	}
-}
-
-fn collect_alternative_bodies<'a>(items: &'a [Item], out: &mut Vec<&'a Body>) {
-	for item in items {
-		if let Item::Group { alternatives, .. } = item {
-			for alternative in alternatives {
-				if let Some(body) = &alternative.body {
-					out.push(body);
-				}
-				collect_alternative_bodies(&alternative.items, out);
-			}
-		}
-	}
-}
-
-fn collect_bodies(form: &Form, out: &mut Vec<(Name, bool)>) {
-	let mut push = |body: &Body| {
-		if !out.iter().any(|(f, _)| *f == body.field) {
-			out.push((body.field, body.omit));
-		}
-	};
-	if let Some(body) = &form.body {
-		push(body);
-	}
-	for item in &form.items {
-		if let Item::Group { alternatives, .. } = item {
-			for alternative in alternatives {
-				if let Some(body) = &alternative.body {
-					push(body);
-				}
-			}
-		}
-	}
-}
-
 #[derive(Clone, Debug)]
 pub struct Alternative {
 	pub items: Vec<Item>,
@@ -1023,9 +977,6 @@ pub struct Body {
 	pub field: Name,
 	/// The field is left out of blocks that never opened this body; otherwise it is null there.
 	pub omit: bool,
-	/// A branch that nests a new block of the same kind into the field, `{:else if}`: the field
-	/// of the nested block that its own body fills, and the flag set on it.
-	pub chain: Option<(Name, Name)>,
 	pub declares: Vec<Declare>,
 }
 
@@ -1041,8 +992,8 @@ pub struct Form {
 	pub items: Vec<Item>,
 	pub body: Option<Body>,
 
-	/// Every entry the form can read, and whether its field is left out when it was not.
-	pub entries: Vec<(Name, bool)>,
+	/// Every field and body the form can read.
+	pub shape: Vec<Slot>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1154,6 +1105,19 @@ pub struct Piece {
 	pub display: &'static str,
 	/// The form's last word before any body: where the piece's tag ends.
 	pub end: &'static str,
+	/// A branch that repeats: the type of the node each one makes, in its block's `branches`.
+	pub node: Option<Name>,
+}
+
+/// A field of a block's node, where every document's node holds it.
+#[derive(Clone, Copy, Debug)]
+pub struct Slot {
+	pub field: Name,
+	/// What it holds when the document read nothing there; left out when none.
+	pub absent: Option<Value>,
+	pub body: bool,
+	/// A walk follows it: text and type parameters are answered as text.
+	pub walked: bool,
 }
 
 /// Which piece of a construct a marker is.
@@ -1172,12 +1136,7 @@ pub struct Construct {
 	pub open: Piece,
 	pub branches: Vec<Piece>,
 	pub close: Option<Piece>,
-	/// The boolean fields of the branches that reopen the block, each true when that branch did.
-	pub chain_flags: Vec<Name>,
-
-	/// Every entry the construct's forms can read, and every body they can open.
-	pub entries: Vec<(Name, bool)>,
-	pub bodies: Vec<(Name, bool)>,
+	pub shape: Vec<Slot>,
 }
 
 impl Construct {
@@ -1450,8 +1409,9 @@ pub mod definition {
 			/// Whitespace must follow the marker.
 			pub space: Option<bool>,
 			pub form: &'a [Item<'a>],
-			/// On a branch of a block, `reopen` nests the block again into that field, with that flag true on it.
-			pub reopen: Option<(&'static str, &'static str)>,
+			/// On a branch of a block, `node` makes each one a node of that type, in the block's
+			/// `branches`. None may follow a branch read once.
+			pub node: Option<&'static str>,
 		}
 	}
 
@@ -1629,7 +1589,7 @@ fn form(
 	Ok(Form {
 		items,
 		body,
-		entries: Vec::new(),
+		shape: Vec::new(),
 	})
 }
 
@@ -1691,7 +1651,6 @@ fn sequence(
 							body = Some(Body {
 								field: n.name(field),
 								omit: source.optional,
-								chain: None,
 								declares: std::mem::take(bound),
 							});
 							continue;
@@ -1988,6 +1947,9 @@ fn piece(
 			"{ty}: a marker needs parts, none of them empty or holding whitespace"
 		));
 	}
+	if site == At::Block && fields_in(ty, written.form)?.contains(&"branches") {
+		return Err(teasels(ty, "branches"));
+	}
 	let form = form(ty, written.form, site, bound, n)?;
 	let end = last_word(&form.items).ok_or_else(|| format!("{ty}: a marker's form ends its tag with a word"))?;
 	Ok(Piece {
@@ -1996,43 +1958,31 @@ fn piece(
 		space: written.space == Some(true),
 		end,
 		form,
+		node: None,
 	})
 }
 
 fn construct(ty: &'static str, rule: &definition::Construct, n: &mut Naming) -> Result<Construct, String> {
 	let block = rule.close.is_some();
+	if rule.open.node.is_some() || rule.close.as_ref().is_some_and(|close| close.node.is_some()) {
+		return Err(format!("{ty}: a branch makes a node, not an open or a close"));
+	}
 	let places = match rule.r#in {
 		Some([]) => return Err(format!("{ty} stands nowhere")),
 		Some(list) => list.to_vec(),
 		None => vec![Place::Content],
 	};
-	let mut chain_flags = Vec::new();
 	let mut branches = Vec::new();
 	for branch in rule.branches.unwrap_or_default() {
 		if !block {
 			return Err(format!("{ty} has branches, so it closes"));
 		}
 		let mut piece = piece(ty, branch, At::Block, &mut Vec::new(), n)?;
-		if let Some((field, flag)) = branch.reopen {
-			let (field, flag) = (n.name(field), n.name(flag));
-			if !chain_flags.contains(&flag) {
-				chain_flags.push(flag);
-			}
-			let own = piece.form.body.take().ok_or_else(|| {
-				format!(
-					"{ty}: the {} branch reopens the block, so it reads that block's body",
-					piece.display
-				)
-			})?;
-			piece.form.body = Some(Body {
-				field,
-				omit: false,
-				chain: Some((own.field, flag)),
-				declares: own.declares,
-			});
+		if let Some(node) = branch.node {
+			piece.node = Some(n.name(node));
 		}
-		if !closed(&piece.form.items, piece.form.body.as_ref()) {
-			return Err(format!("{ty}: the {} branch ends in no body", piece.display));
+		if piece.form.body.is_none() || piece.form.paths().len() > 1 {
+			return Err(format!("{ty}: the {} branch ends in one body", piece.display));
 		}
 		branches.push(piece);
 	}
@@ -2041,7 +1991,11 @@ fn construct(ty: &'static str, rule: &definition::Construct, n: &mut Naming) -> 
 	let mut open = piece(ty, &rule.open, site, &mut bound, n)?;
 	let mut lists = Vec::new();
 	for form in std::iter::once(&open.form).chain(branches.iter().map(|branch| &branch.form)) {
-		collect_bodies(form, &mut lists);
+		for slot in form.paths().iter().flat_map(|(path, _)| path) {
+			if slot.body && !lists.contains(&slot.field) {
+				lists.push(slot.field);
+			}
+		}
 	}
 	if block && lists.is_empty() {
 		if fields_in(ty, rule.open.form)?.contains(&"fragment") {
@@ -2050,14 +2004,14 @@ fn construct(ty: &'static str, rule: &definition::Construct, n: &mut Naming) -> 
 		open.form.body = Some(Body {
 			field: own::fragment,
 			omit: false,
-			chain: None,
 			declares: std::mem::take(&mut bound),
 		});
 	}
 	if block && !closed(&open.form.items, open.form.body.as_ref()) {
 		return Err(format!("{ty} has branches, so its open names its content too"));
 	}
-	if let ([(only, _)], true) = (&lists[..], block) {
+	let repeats = branches.iter().any(|branch| branch.node.is_some());
+	if let ([only], true) = (&lists[..], block && !repeats) {
 		return Err(format!(
 			"{ty}: its one list is teasel's fragment, not {}",
 			n.text(*only)
@@ -2085,9 +2039,7 @@ fn construct(ty: &'static str, rule: &definition::Construct, n: &mut Naming) -> 
 		open,
 		branches,
 		close,
-		chain_flags,
-		entries: Vec::new(),
-		bodies: Vec::new(),
+		shape: Vec::new(),
 	};
 	if block && construct.places.iter().any(|place| *place != Place::Content) {
 		return Err(format!("{ty} closes, so it stands in content only"));
@@ -2214,28 +2166,104 @@ fn lower(host: Host) -> Result<Grammar, String> {
 	})
 }
 
-impl Form {
-	fn finish(&mut self, names: &[&'static str]) -> Result<(), String> {
-		resolve(&mut self.items, &[]);
-		let mut entries = Vec::new();
-		collect_entries(&self.items, &mut entries);
-		let mut bodies = Vec::new();
-		if let Some(body) = &self.body {
-			bodies.push(body);
+/// Adds what a path reads to a shape: a field read twice is one slot, where it was first read, left
+/// out when unread only if every read says so.
+fn merge(shape: &mut Vec<Slot>, reads: &[Slot]) -> Result<(), Name> {
+	for slot in reads {
+		match shape.iter_mut().find(|known| known.field == slot.field) {
+			Some(known) if known.body != slot.body => return Err(slot.field),
+			Some(known) => known.absent = known.absent.or(slot.absent),
+			None => shape.push(*slot),
 		}
-		collect_alternative_bodies(&self.items, &mut bodies);
-		for body in bodies {
-			for declare in &body.declares {
-				if !entries.iter().any(|(field, _)| *field == declare.field) {
-					return Err(format!(
-						"`{}` declares `{}`, which no entry of the form reads",
-						body.field.text(names),
-						declare.field.text(names)
-					));
+	}
+	Ok(())
+}
+
+/// A body's scope runs from the first field it declares to the body, so what stands there is the
+/// scope's or holds nothing when that body was read: `quiet` lists what is read only elsewhere.
+fn scopes_hold(form: &Form, shape: &[Slot], quiet: &[Slot], ty: &str, names: &[&'static str]) -> Result<(), String> {
+	let has = |list: &[Slot], field: Name| list.iter().any(|slot| slot.field == field);
+	for (path, body) in form.paths() {
+		let Some(body) = body else { continue };
+		let declared = |slot: &Slot| body.declares.iter().any(|d| !d.outside && d.field == slot.field);
+		let Some(first) = path.iter().position(declared) else {
+			continue;
+		};
+		let (before, inside) = path.split_at(first);
+		let at = |slot: &Slot| shape.iter().position(|known| known.field == slot.field).unwrap();
+		let holds = inside.windows(2).all(|pair| at(&pair[0]) < at(&pair[1]))
+			&& shape[at(&inside[0])..at(&inside[inside.len() - 1])]
+				.iter()
+				.all(|slot| has(inside, slot.field) || (has(quiet, slot.field) && !has(before, slot.field)));
+		if !holds {
+			return Err(format!(
+				"{ty}: what {} declares does not stand together before it",
+				body.field.text(names)
+			));
+		}
+	}
+	Ok(())
+}
+
+impl Body {
+	fn slot(&self) -> Slot {
+		Slot {
+			field: self.field,
+			absent: (!self.omit).then_some(Value::Null),
+			body: true,
+			walked: true,
+		}
+	}
+}
+
+impl Form {
+	/// Every way through it to a body, what it reads on the way first; the last is the form's own,
+	/// which reads what no alternative with a body does.
+	fn paths(&self) -> Vec<(Vec<Slot>, Option<&Body>)> {
+		fn walk<'a>(items: &'a [Item], path: &mut Vec<Slot>, out: &mut Vec<(Vec<Slot>, Option<&'a Body>)>) {
+			for item in items {
+				match item {
+					Item::Literal(_) => {}
+					Item::Entry { field, entry, omit, .. } => {
+						if !path.iter().any(|known| known.field == *field) {
+							path.push(Slot {
+								field: *field,
+								absent: (!omit).then_some(Value::Null),
+								body: false,
+								walked: !matches!(entry, Entry::Text | Entry::TypeParameters),
+							});
+						}
+					}
+					Item::Group { alternatives, .. } => {
+						for alternative in alternatives {
+							let Some(body) = &alternative.body else {
+								walk(&alternative.items, path, out);
+								continue;
+							};
+							let mut own = path.clone();
+							walk(&alternative.items, &mut own, out);
+							own.push(body.slot());
+							out.push((own, Some(body)));
+						}
+					}
 				}
 			}
 		}
-		self.entries = entries;
+		let (mut path, mut out) = (Vec::new(), Vec::new());
+		walk(&self.items, &mut path, &mut out);
+		path.extend(self.body.iter().map(Body::slot));
+		out.push((path, self.body.as_ref()));
+		out
+	}
+
+	fn finish(&mut self, names: &[&'static str]) -> Result<(), String> {
+		resolve(&mut self.items, &[]);
+		let mut shape = Vec::new();
+		for (path, _) in self.paths() {
+			merge(&mut shape, &path)
+				.map_err(|field| format!("{} is read as a field and as a body", field.text(names)))?;
+		}
+		self.shape = shape;
 		Ok(())
 	}
 }
@@ -2296,19 +2324,58 @@ impl Grammar {
 		let mut starts = [false; 256];
 		for construct in &mut self.constructs {
 			construct.open.form.finish(names)?;
-			let mut entries = construct.open.form.entries.clone();
-			let mut bodies = Vec::new();
-			collect_bodies(&construct.open.form, &mut bodies);
+			let ty = construct.ty.text(names);
+			let twice = |field: Name| format!("{ty} reads {} twice", field.text(names));
+			let mut shape = construct.open.form.shape.clone();
+			let list = [Slot {
+				field: own::branches,
+				absent: Some(Value::Nodes(List::EMPTY)),
+				body: true,
+				walked: true,
+			}];
 			for branch in &mut construct.branches {
 				branch.form.finish(names)?;
-				entries.extend_from_slice(&branch.form.entries);
-				collect_bodies(&branch.form, &mut bodies);
+				if branch.node.is_some() {
+					merge(&mut shape, &list).map_err(twice)?;
+					continue;
+				}
+				// pieces that fill one body are never both read; any others would lose a read
+				let known = |slot: &Slot| shape.iter().any(|known| known.field == slot.field);
+				let reads = &branch.form.shape;
+				if !reads.iter().any(|slot| slot.body && known(slot))
+					&& let Some(slot) = reads.iter().find(|slot| known(slot))
+				{
+					return Err(twice(slot.field));
+				}
+				merge(&mut shape, reads).map_err(twice)?;
 			}
 			if let Some(close) = &mut construct.close {
 				close.form.finish(names)?;
 			}
-			construct.entries = entries;
-			construct.bodies = bodies;
+			let once = |field: Name| {
+				let branches = construct.branches.iter().filter(|branch| branch.node.is_none());
+				branches
+					.flat_map(|branch| &branch.form.shape)
+					.any(|slot| slot.field == field)
+			};
+			let quiet: Vec<Slot> = construct
+				.open
+				.form
+				.shape
+				.iter()
+				.filter(|slot| !once(slot.field))
+				.copied()
+				.collect();
+			scopes_hold(&construct.open.form, &shape, &quiet, ty, names)?;
+			for branch in &construct.branches {
+				let holder = if branch.node.is_some() {
+					&branch.form.shape
+				} else {
+					&shape
+				};
+				scopes_hold(&branch.form, holder, &[], ty, names)?;
+			}
+			construct.shape = shape;
 			for piece in std::iter::once(&construct.open)
 				.chain(&construct.branches)
 				.chain(&construct.close)
@@ -2352,7 +2419,12 @@ impl Grammar {
 		let named = std::iter::once(self.document.ty)
 			.chain(self.elements.iter().map(|rule| rule.ty))
 			.chain(self.directives.iter().map(|rule| rule.ty))
-			.chain(self.constructs.iter().map(|rule| rule.ty));
+			.chain(self.constructs.iter().map(|rule| rule.ty))
+			.chain(
+				self.constructs
+					.iter()
+					.flat_map(|rule| rule.branches.iter().filter_map(|b| b.node)),
+			);
 		for ty in named.map(|ty| self.text(ty)) {
 			if matches!(ty, "Fragment" | "Text" | "Comment" | "Attribute" | "Script") {
 				return Err(format!("a node type named {ty} is teasel's"));
@@ -2435,33 +2507,6 @@ impl Grammar {
 				}
 			}
 		};
-		fn body(body: &Body, into: &mut Vec<Name>) {
-			into.push(body.field);
-			into.extend(body.chain.map(|(field, _)| field));
-		}
-		fn items(list: &[Item], into: &mut Vec<Name>) {
-			for item in list {
-				match item {
-					Item::Literal(_) => {}
-					// text and type parameters are answered as text
-					Item::Entry { field, entry, .. } => {
-						if !matches!(entry, Entry::Text | Entry::TypeParameters) {
-							into.push(*field);
-						}
-					}
-					Item::Group { alternatives, .. } => {
-						for alternative in alternatives {
-							items(&alternative.items, into);
-							alternative.body.iter().for_each(|b| body(b, into));
-						}
-					}
-				}
-			}
-		}
-		fn form(form: &Form, into: &mut Vec<Name>) {
-			items(&form.items, into);
-			form.body.iter().for_each(|b| body(b, into));
-		}
 		fn document(fields: &[DocField], into: &mut Vec<Name>) {
 			for field in fields {
 				match field {
@@ -2475,6 +2520,8 @@ impl Grammar {
 				}
 			}
 		}
+		let walked =
+			|shape: &[Slot]| -> Vec<Name> { shape.iter().filter(|slot| slot.walked).map(|slot| slot.field).collect() };
 		let mut fields = Vec::new();
 		document(&self.document.fields, &mut fields);
 		add(self.document.ty, &fields);
@@ -2503,15 +2550,17 @@ impl Grammar {
 				DirectiveValue::Expression { field, .. }
 				| DirectiveValue::Pattern { field, .. }
 				| DirectiveValue::Value(field) => fields.push(*field),
-				DirectiveValue::Form(f) => form(f, &mut fields),
+				DirectiveValue::Form(f) => fields.extend(walked(&f.shape)),
 			}
 			add(rule.ty, &fields);
 		}
 		for rule in &self.constructs {
-			fields.clear();
-			form(&rule.open.form, &mut fields);
-			rule.branches.iter().for_each(|branch| form(&branch.form, &mut fields));
-			add(rule.ty, &fields);
+			for branch in &rule.branches {
+				if let Some(ty) = branch.node {
+					add(ty, &walked(&branch.form.shape));
+				}
+			}
+			add(rule.ty, &walked(&rule.shape));
 		}
 		out
 	}
