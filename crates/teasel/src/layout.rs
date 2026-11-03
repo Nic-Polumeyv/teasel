@@ -38,6 +38,8 @@ pub struct Variant {
 	pub name: &'static str,
 	/// Offsets from the start of the enum: past its tag word.
 	pub fields: &'static [Field],
+	/// Whether the kind is one TypeScript adds.
+	pub typescript: bool,
 }
 
 /// The tag of a `repr(C, u32)` enum at `base`: its first word.
@@ -136,59 +138,68 @@ macro_rules! record {
 pub(crate) use record;
 
 /// A `repr(C, u32)` enum of node kinds: a tag word, then the variant's fields as a `repr(C)`
-/// record. The module named after `in` holds one such record per variant, for the offsets, and
-/// `VARIANTS` in tag order.
+/// record; JavaScript's kinds, then under `typescript` the ones TypeScript adds. The module
+/// named after `in` holds one such record per variant, for the offsets, and `VARIANTS` in tag
+/// order.
 macro_rules! kinds {
 	(
 		$(#[$m:meta])* $vis:vis enum $E:ident in $layout:ident {
 			$( $(#[$vm:meta])* $V:ident $( { $( $(#[$fm:meta])* $f:ident : $t:ty ),* $(,)? } )? $( ( $tt:ty ) )? ),* $(,)?
 		}
+		typescript {
+			$( $(#[$wm:meta])* $W:ident $( { $( $(#[$gm:meta])* $g:ident : $u:ty ),* $(,)? } )? $( ( $uu:ty ) )? ),* $(,)?
+		}
 	) => {
 		$(#[$m])*
 		#[repr(C, u32)]
 		$vis enum $E {
-			$( $(#[$vm])* $V $( { $( $(#[$fm])* $f: $t ),* } )? $( ( $tt ) )? ),*
+			$( $(#[$vm])* $V $( { $( $(#[$fm])* $f: $t ),* } )? $( ( $tt ) )? , )*
+			$( $(#[$wm])* $W $( { $( $(#[$gm])* $g: $u ),* } )? $( ( $uu ) )? ),*
 		}
 
 		#[allow(dead_code, non_snake_case)]
 		pub mod $layout {
 			use $crate::layout::Variant;
 
-			// a module per variant: its record, and the fields with the enum's types in scope
-			$(
-				#[allow(unused_imports)]
-				pub mod $V {
-					use super::super::*;
-					use $crate::layout::{Described, Field};
+			$( $crate::layout::variant! { $V $( { $( $f: $t ),* } )? $( ( $tt ) )? } )*
+			$( $crate::layout::variant! { $W $( { $( $g: $u ),* } )? $( ( $uu ) )? } )*
 
-					#[repr(C)]
-					pub struct Record { $( $( pub $f: $t ),* )? $( pub f0: $tt )? }
-
-					pub const FIELDS: &[Field] = &[
-						$( $( Field {
-							name: stringify!($f),
-							at: 4 + std::mem::offset_of!(Record, $f),
-							ty: <$t as Described>::TY,
-						} ),* )?
-						$( Field {
-							name: "0",
-							at: 4 + std::mem::offset_of!(Record, f0),
-							ty: <$tt as Described>::TY,
-						} )?
-					];
-				}
-			)*
-
-			pub const VARIANTS: &[Variant] = &[ $(
-				Variant {
-					name: stringify!($V),
-					fields: $V::FIELDS,
-				}
-			),* ];
+			pub const VARIANTS: &[Variant] = &[
+				$( Variant { name: stringify!($V), fields: $V::FIELDS, typescript: false }, )*
+				$( Variant { name: stringify!($W), fields: $W::FIELDS, typescript: true }, )*
+			];
 		}
 	};
 }
 pub(crate) use kinds;
+
+/// A variant's module: its record, and the fields with the enum's types in scope.
+macro_rules! variant {
+	($V:ident $( { $( $f:ident : $t:ty ),* } )? $( ( $tt:ty ) )?) => {
+		#[allow(unused_imports)]
+		pub mod $V {
+			use super::super::*;
+			use $crate::layout::{Described, Field};
+
+			#[repr(C)]
+			pub struct Record { $( $( pub $f: $t ),* )? $( pub f0: $tt )? }
+
+			pub const FIELDS: &[Field] = &[
+				$( $( Field {
+					name: stringify!($f),
+					at: 4 + std::mem::offset_of!(Record, $f),
+					ty: <$t as Described>::TY,
+				} ),* )?
+				$( Field {
+					name: "0",
+					at: 4 + std::mem::offset_of!(Record, f0),
+					ty: <$tt as Described>::TY,
+				} )?
+			];
+		}
+	};
+}
+pub(crate) use variant;
 
 /// How the compiler spells a missing optional: the byte of a missing enum, and for a
 /// list or a string id, which word of the field is the tag and what it holds when missing; the

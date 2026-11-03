@@ -9,7 +9,7 @@ use crate::json::Json;
 use crate::layout::{Ty, tag};
 use crate::parser::Entry;
 use crate::positions::{Cursor, Positions};
-use crate::recipe::{ADDS, EXTRAS_ERASED, KINDS, Op, Slot, resolve_ops};
+use crate::recipe::{ADDS, EXTRAS_ERASED, Op, Slot, kinds, resolve_ops};
 use crate::scopes::Role;
 
 /// One entry at a byte offset, as JSON.
@@ -438,7 +438,7 @@ impl<'a> Writer<'a> {
 	/// The recipes of the kinds, resolved once.
 	fn recipes() -> &'static [&'static [Op<Slot>]] {
 		static RESOLVED: std::sync::OnceLock<&'static [&'static [Op<Slot>]]> = std::sync::OnceLock::new();
-		RESOLVED.get_or_init(|| crate::recipe::resolve(KINDS, node_layout::VARIANTS))
+		RESOLVED.get_or_init(|| crate::recipe::resolve(kinds(), node_layout::VARIANTS))
 	}
 
 	/// Follows a kind's recipe over the record at `base`, a `repr(C, u32)` enum's payload; the
@@ -664,7 +664,7 @@ impl<'a> Writer<'a> {
 						let read = ops
 							.iter()
 							.filter_map(|op| op.told().2)
-							.chain(of(KINDS, variant.name).iter().filter_map(|op| match op {
+							.chain(of(kinds(), variant.name).iter().filter_map(|op| match op {
 								Op::Extra(_, field) => Some(*field),
 								_ => None,
 							}))

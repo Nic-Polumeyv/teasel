@@ -176,7 +176,7 @@ pub fn layout_json() -> String {
 	w.key("recipes");
 	w.object();
 	w.key("kinds");
-	recipes(&mut w, crate::recipe::KINDS);
+	recipes(&mut w, crate::recipe::kinds());
 	w.key("rows");
 	recipes(&mut w, crate::recipe::RECIPES);
 	w.key("adds");
