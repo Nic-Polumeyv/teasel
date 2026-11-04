@@ -1399,6 +1399,16 @@ impl Ast {
 		}
 	}
 
+	/// Whether a clause lost every name to erasure; one written empty had none to lose.
+	fn all_erased(&self, names: List) -> bool {
+		names.len > 0
+			&& self
+				.list(names)
+				.iter()
+				.flatten()
+				.all(|&name| self.erased.contains(name))
+	}
+
 	fn erases(&self, id: NodeId) -> bool {
 		use NodeKind::*;
 		let extras = self.extras_of(id);
@@ -1419,13 +1429,7 @@ impl Ast {
 			ImportEqualsDeclaration { import_kind, .. } => import_kind == Kind::Type,
 			ModuleDeclaration { .. } => !self.instantiates(id),
 			ImportDeclaration { specifiers, .. } => {
-				extras.import_kind == Some(Kind::Type)
-					|| (specifiers.len > 0
-						&& self
-							.list(specifiers)
-							.iter()
-							.flatten()
-							.all(|&name| self.erased.contains(name)))
+				extras.import_kind == Some(Kind::Type) || self.all_erased(specifiers)
 			}
 			ImportSpecifier { .. } => extras.import_kind == Some(Kind::Type),
 			ExportSpecifier { .. } => extras.export_kind == Some(Kind::Type) || self.type_exports.contains(id),
@@ -1435,14 +1439,7 @@ impl Ast {
 				extras.export_kind == Some(Kind::Type) || self.erased.contains(declaration)
 			}
 			ExportNamedDeclaration { specifiers, source, .. } => {
-				extras.export_kind == Some(Kind::Type)
-					|| (source.is_some()
-						&& specifiers.len > 0
-						&& self
-							.list(specifiers)
-							.iter()
-							.flatten()
-							.all(|&name| self.erased.contains(name)))
+				extras.export_kind == Some(Kind::Type) || (source.is_some() && self.all_erased(specifiers))
 			}
 			ExportDefaultDeclaration { declaration } => {
 				extras.export_kind == Some(Kind::Type)
