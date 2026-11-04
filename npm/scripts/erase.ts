@@ -103,7 +103,7 @@ function erased(src: string): { body: any[]; written_empty: number } | { skipped
 	const read = new Set(answer.references!.map((reference) => reference.binding));
 	let written_empty = 0;
 	const body = [];
-	for (const node of answer.node.body) {
+	for (const node of answer.node.body as any[]) {
 		if ((node.type === 'ImportDeclaration' || node.type === 'ExportNamedDeclaration') && WRITTEN_EMPTY.test(src.slice(node.start, node.end))) {
 			written_empty++;
 			continue;
