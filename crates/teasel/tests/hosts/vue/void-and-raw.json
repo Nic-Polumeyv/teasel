@@ -4,97 +4,125 @@
 		"start": 0,
 		"end": 98,
 		"scope": 0,
-		"children": [
-			{
-				"type": "Element",
-				"start": 0,
-				"end": 4,
-				"tag": "br",
-				"props": [],
-				"children": []
-			},
-			{
-				"type": "Element",
-				"start": 4,
-				"end": 17,
-				"tag": "img",
-				"props": [
-					{
-						"type": "Attribute",
-						"start": 9,
-						"end": 16,
-						"name": "src",
-						"value": [
+		"fragment": {
+			"type": "Fragment",
+			"scope": 1,
+			"nodes": [
+				{
+					"type": "Element",
+					"start": 0,
+					"end": 4,
+					"name": "br",
+					"attributes": [],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 2,
+						"nodes": []
+					}
+				},
+				{
+					"type": "Element",
+					"start": 4,
+					"end": 17,
+					"name": "img",
+					"attributes": [
+						{
+							"type": "Attribute",
+							"start": 9,
+							"end": 16,
+							"name": "src",
+							"value": [
+								{
+									"type": "Text",
+									"start": 14,
+									"end": 15,
+									"raw": "x",
+									"data": "x"
+								}
+							]
+						}
+					],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 3,
+						"nodes": []
+					}
+				},
+				{
+					"type": "Element",
+					"start": 17,
+					"end": 45,
+					"name": "textarea",
+					"attributes": [],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 4,
+						"nodes": [
 							{
-								"type": "Text",
-								"start": 14,
-								"end": 15,
-								"content": "x"
+								"type": "Interpolation",
+								"start": 27,
+								"end": 34,
+								"content": {
+									"type": "Identifier",
+									"start": 30,
+									"end": 31,
+									"reference": 0,
+									"root": 0,
+									"name": "a"
+								}
 							}
 						]
 					}
-				],
-				"children": []
-			},
-			{
-				"type": "Element",
-				"start": 17,
-				"end": 45,
-				"tag": "textarea",
-				"props": [],
-				"children": [
-					{
-						"type": "Interpolation",
-						"start": 27,
-						"end": 34,
-						"content": {
-							"type": "Identifier",
-							"start": 30,
-							"end": 31,
-							"reference": 0,
-							"root": 0,
-							"name": "a"
-						}
+				},
+				{
+					"type": "Element",
+					"start": 45,
+					"end": 78,
+					"name": "script",
+					"attributes": [],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 5,
+						"nodes": [
+							{
+								"type": "Text",
+								"start": 53,
+								"end": 69,
+								"raw": "let x = \"<div>\";",
+								"data": "let x = \"<div>\";"
+							}
+						]
 					}
-				]
-			},
-			{
-				"type": "Element",
-				"start": 45,
-				"end": 78,
-				"tag": "script",
-				"props": [],
-				"children": [
-					{
-						"type": "Text",
-						"start": 53,
-						"end": 69,
-						"content": "let x = \"<div>\";"
+				},
+				{
+					"type": "Element",
+					"start": 78,
+					"end": 97,
+					"name": "style",
+					"attributes": [],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 6,
+						"nodes": [
+							{
+								"type": "Text",
+								"start": 85,
+								"end": 89,
+								"raw": ".a{}",
+								"data": ".a{}"
+							}
+						]
 					}
-				]
-			},
-			{
-				"type": "Element",
-				"start": 78,
-				"end": 97,
-				"tag": "style",
-				"props": [],
-				"children": [
-					{
-						"type": "Text",
-						"start": 85,
-						"end": 89,
-						"content": ".a{}"
-					}
-				]
-			},
-			{
-				"type": "Text",
-				"start": 97,
-				"end": 98,
-				"content": "\n"
-			}
-		]
+				},
+				{
+					"type": "Text",
+					"start": 97,
+					"end": 98,
+					"raw": "\n",
+					"data": "\n"
+				}
+			]
+		}
 	},
 	"end": 98,
 	"comments": [],
@@ -103,12 +131,42 @@
 			"kind": "module",
 			"parent": null,
 			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 1,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 1,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 1,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 1,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 1,
+			"topLevelAwait": false
 		}
 	],
 	"bindings": [],
 	"references": [
 		{
-			"scope": 0,
+			"scope": 4,
 			"binding": null,
 			"write": false,
 			"read": true,
@@ -118,10 +176,10 @@
 	],
 	"roots": [
 		{
-			"scope": 0,
+			"scope": 4,
 			"scopes": [
-				1,
-				1
+				5,
+				5
 			],
 			"bindings": [
 				0,

@@ -99,7 +99,7 @@
 				</div>
 				<div class="[&_p:first-child]:mt-0">
 					<p>A parser written in Rust has to get its tree to JavaScript, and that is usually done one of two ways. Write the tree out as text and parse that text again on the other side: you paid for one tree and built two, with a string in between that grows with your file. Or keep the tree where it was built and hand JavaScript a handle: every question you ask a node, its type, its children, where it starts, is a trip across the boundary and back.</p>
-					<p>teasel does neither. Your text goes in once, when you make the <code>Source</code>. What you want read, a whole program, an expression at some offset, a piece of a template that stops at your own token, is the slot the engine reads it through. The engine lexes, parses and resolves scopes in one pass and answers with a compact stream of words. The decoder on the JavaScript side turns that stream into ESTree objects, one per node, and nothing in them points back at the engine. You can walk the tree, change it and serialize it without the engine.</p>
+					<p>teasel does neither. Your text goes in once per parse, with what you want read: a whole program, a document of your template language by its grammar, or one expression at an offset that stops at your own token. The engine lexes, parses and resolves scopes in one pass and answers with a compact stream of words. The decoder on the JavaScript side turns that stream into ESTree objects, one per node, and nothing in them points back at the engine. You can walk the tree, change it and serialize it without the engine.</p>
 				</div>
 			</div>
 		</div>

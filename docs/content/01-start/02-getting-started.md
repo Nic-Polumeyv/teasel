@@ -2,17 +2,16 @@
 title: Getting started
 ---
 
-Install the package, make a `Source` from your text, and call `parse`.
+Install the package and call `parse` on your text.
 
 ```bash
 npm install @teasel/parser
 ```
 
 ```js parse.js
-import { Source, js } from '@teasel/parser';
+import { parse, parseAt, js } from '@teasel/parser';
 
-const source = new Source('let answer = 42', { sourceType: 'module' });
-const { node } = source.parse();
+const { node } = parse('let answer = 42', { sourceType: 'module' });
 
 node.type;                 // 'Program'
 node.body[0].type;         // 'VariableDeclaration'
@@ -20,15 +19,13 @@ node.body[0].type;         // 'VariableDeclaration'
 
 `node` is an ESTree `Program`, made of plain objects.
 
-## Parse the same text again
+## Parse part of the text
 
-The `Source` keeps your text, so you can parse it any number of times: the whole text, or one piece that starts at an offset.
+`parseAt` reads one piece of the text, starting at an offset: see [Embedded JavaScript](/embedded-javascript).
 
 ```js parse.js
-const source = new Source('const x = f(a, b)');
-
-source.parse().node.type;                     // 'Program'
-source.parse(js.expression, 10).node.type; // 'CallExpression', the f(a, b)
+parse('const x = f(a, b)').node.type;                     // 'Program'
+parseAt('const x = f(a, b)', js.expression, 10).node.type; // 'CallExpression', the f(a, b)
 ```
 
 ## In the browser
@@ -36,9 +33,9 @@ source.parse(js.expression, 10).node.type; // 'CallExpression', the f(a, b)
 The same import works in a browser, directly or through a bundler. There it is a WebAssembly build, not the native addon, with the same API.
 
 ```js browser.js
-import { Source, js } from '@teasel/parser';
+import { parse } from '@teasel/parser';
 
-const { node } = new Source('export const answer = 42').parse();
+const { node } = parse('export const answer = 42', { sourceType: 'module' });
 ```
 
 The build looks for `teasel.wasm` beside the package entry, through `import.meta.url`, so a bundler includes the file without configuration. A bundle built for Node loads the native addon, from `@teasel/parser-<platform>` in `node_modules`, as Node does. Under Node, `node --no-addons` takes the WebAssembly build instead of the addon, without a warning. The Linux addons need glibc 2.28 or newer, as Node's own Linux builds do. Node also takes the WebAssembly build where no addon loads, such as on a Linux without glibc, and warns if the platform has an addon that is not installed or does not load.

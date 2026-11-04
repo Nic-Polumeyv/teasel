@@ -6,7 +6,7 @@ A syntax error throws a `SyntaxError`. It has a `code` to branch on, `args` sayi
 
 ```js errors.js
 try {
-	new Source('x = ;').parse();
+	parse('x = ;');
 } catch (e) {
 	e.code;    // 'unexpected_token'
 	e.args;    // []
@@ -23,7 +23,7 @@ try {
 ```js errors.js
 function complete(text) {
 	try {
-		new Source(text).parse();
+		parse(text);
 		return true;
 	} catch (e) {
 		if (e.code === 'unexpected_eof') return false;
@@ -40,7 +40,7 @@ complete('if (x) {}'); // true
 An editor or a language server needs a tree from a file that does not parse, because it runs while someone is typing. With `errorRecovery` on, the parse returns the tree and the errors together and does not throw.
 
 ```js errors.js
-const { node, errors } = new Source('x = ;', { errorRecovery: true }).parse();
+const { node, errors } = parse('x = ;', { errorRecovery: true });
 errors[0].code;                            // 'unexpected_token'
 node.body[0].expression.right.name;        // ''
 ```
@@ -60,4 +60,4 @@ A compiler that must reject the file leaves recovery off and catches the throw.
 
 ## Error positions
 
-`pos` and `end` span the token the parser could not accept. When the cause is elsewhere, an earlier declaration of the same name for instance, `end` equals `pos`. `unexpected_eof` points at the end of what was parsed. An offset you pass that is outside the text is `invalid_request`, with no `line` and `column`, as is a `nesting_depth` for a tree deeper than your stack has room for. Every code is in the type [`Code`](/reference/parser#code), so a comparison against one is type-checked once the caught error is typed `SyntaxError & Recovered`, and [Error codes](/reference/error-codes) says what each code means.
+`pos` and `end` span the token the parser could not accept. When the cause is elsewhere, an earlier declaration of the same name for instance, `end` equals `pos`. `unexpected_eof` points at the end of what was parsed. An offset `parseAt` cannot start at, outside the text or inside a surrogate pair, throws a `RangeError`. A `nesting_depth` for a tree deeper than your stack has room for has no `line` and `column`. Every code is in the type [`Code`](/reference/parser#code), so a comparison against one is type-checked once the caught error is typed `SyntaxError & Recovered`, and [Error codes](/reference/error-codes) says what each code means.

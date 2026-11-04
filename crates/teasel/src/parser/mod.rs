@@ -92,8 +92,7 @@ pub(crate) enum FunctionKind {
 pub(crate) enum Unwrap {
 	/// `check_lval_simple`: the target of an assignment or update.
 	Simple,
-	/// `check_lval_inner_pattern`: an element of a parameter list or pattern, or the target of `=`
-	/// that may become one.
+	/// `check_lval_inner_pattern`: an element of a parameter list or pattern.
 	InnerPattern,
 }
 
@@ -128,9 +127,9 @@ impl Entry {
 	}
 }
 
-/// Parses one `entry` starting at `start` of a source cut at `end`, with positions of the whole:
-/// a program, or what a host embedding JavaScript in a larger syntax reads at a point of it. A
-/// program reads to `end`, where a hashbang or an HTML comment at `start` is what it would be in
+/// Parses one `entry` starting at `start` of a source, with positions of the whole: a program, a
+/// stylesheet, or what a host embedding JavaScript in a larger syntax reads at a point of it. A
+/// program reads to the end, where a hashbang or an HTML comment at `start` is what it would be in
 /// the middle of a file; anything else stops where its grammar ends, or at one of `stop`, the
 /// host's own tokens separated by spaces, read outside every bracket the parse opened where the
 /// expression could end (TypeScript may read one as its own, see `Parser::reads_stop`). Returns
@@ -141,7 +140,6 @@ impl Entry {
 pub(crate) fn parse_at(
 	src: &str,
 	start: u32,
-	end: Option<u32>,
 	entry: Entry,
 	options: Options,
 	stop: &str,
@@ -152,8 +150,7 @@ pub(crate) fn parse_at(
 		let parsed = root.map(|root| (ast.add_list(&[Some(root)]), src.len() as u32));
 		return (ast, parsed);
 	}
-	let end = end.unwrap_or(src.len() as u32);
-	let src = &src[..end as usize];
+	let end = src.len() as u32;
 	let budget = if entry == Entry::Program {
 		(end - start) as usize
 	} else {
@@ -342,8 +339,48 @@ pub(crate) struct DestructuringErrors {
 	pub shorthand_assign: Option<u32>,
 	pub trailing_comma: Option<u32>,
 	pub parenthesized_assign: Option<u32>,
-	pub parenthesized_bind: Option<u32>,
 	pub double_proto: Option<u32>,
+	/// The literal or parenthesized expression the facts are of.
+	pub owner: Option<NodeId>,
+	/// The first error of a literal used as an operand, raised where its list closes.
+	pub operand: Option<(u32, Code)>,
+}
+
+impl DestructuringErrors {
+	/// An element's facts joining its list's: the first of each stays.
+	// see `Parser::first_error`
+	#[inline(always)]
+	pub(crate) fn merge(&mut self, element: DestructuringErrors) {
+		self.shorthand_assign = self.shorthand_assign.or(element.shorthand_assign);
+		self.trailing_comma = self.trailing_comma.or(element.trailing_comma);
+		self.parenthesized_assign = self.parenthesized_assign.or(element.parenthesized_assign);
+		self.double_proto = self.double_proto.or(element.double_proto);
+		self.operand = self.operand.or(element.operand);
+	}
+
+	/// The facts of an expression that is no pattern: only what makes it an error stays.
+	pub(crate) fn settle_as_operand(&mut self) {
+		if self.operand.is_none() && self.shorthand_assign.is_none() && self.double_proto.is_none() {
+			*self = DestructuringErrors::default();
+			return;
+		}
+		*self = DestructuringErrors {
+			operand: first_pending([
+				self.operand,
+				self.shorthand_assign.map(|pos| (pos, Code::ShorthandAssignment)),
+				self.double_proto.map(|pos| (pos, Code::DuplicateProto)),
+			]),
+			..DestructuringErrors::default()
+		};
+	}
+}
+
+/// The pending error that comes first; on a tie, the one named first.
+// see `Parser::first_error`
+#[cold]
+#[inline(never)]
+fn first_pending(pending: [Option<(u32, Code)>; 3]) -> Option<(u32, Code)> {
+	pending.into_iter().flatten().min_by_key(|&(pos, _)| pos)
 }
 
 impl<'a, const TS: bool> Parser<'a, TS> {
@@ -635,7 +672,7 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 			TokenKind::BraceL | TokenKind::BracketL => self.parse_expr_atom(&mut errors, ForInit::No, false)?,
 			_ => self.parse_ident(false)?,
 		};
-		let pattern = self.make_pattern(expression, false, &mut errors)?;
+		let pattern = self.make_pattern(expression, &mut errors)?;
 		self.check_lval_pattern(pattern, scope::Binding::None, &mut None)?;
 		if self.typescript() {
 			self.pattern_annotation(pattern)?;
@@ -643,15 +680,14 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 		Ok(pattern)
 	}
 
-	/// A parenthesized parameter list on its own, read as an arrow function's would be: as
-	/// expressions in the enclosing scope, reinterpreted as patterns once the list is complete.
+	/// A parenthesized parameter list on its own, read as an arrow function's would be, in the
+	/// enclosing scope.
 	fn parse_params_root(&mut self) -> Result<List> {
+		let outer = self.yield_await();
 		self.expect(TokenKind::ParenL)?;
-		let paren = self.parse_paren_items()?;
-		self.check_pattern_errors(&paren.errors, false)?;
-		self.check_yield_await_in_default_params()?;
+		let params = self.parse_binding_list(TokenKind::ParenR, false, true, false)?;
+		self.check_arrow_head(&params, false, outer)?;
 		self.enter_scope(scope::function_flags(false, false) | scope::SCOPE_ARROW);
-		let params = self.make_patterns(paren.items, true)?;
 		let list = self.list_from(params);
 		self.check_params(list, false)?;
 		Ok(list)
@@ -691,31 +727,23 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 			return Ok(false);
 		}
 		self.expect(TokenKind::Comma)?;
-		Ok(allow_trailing && self.after_trailing_comma(close, false)?)
+		Ok(allow_trailing && self.eat(close)?)
+	}
+
+	/// The pending yield and await positions.
+	pub(crate) fn yield_await(&self) -> (u32, u32, u32) {
+		(self.yield_pos, self.await_pos, self.await_ident_pos)
 	}
 
 	/// Clears the pending yield and await positions for a nested parameter list.
 	pub(crate) fn take_yield_await(&mut self) -> (u32, u32, u32) {
-		let old = (self.yield_pos, self.await_pos, self.await_ident_pos);
+		let old = self.yield_await();
 		(self.yield_pos, self.await_pos, self.await_ident_pos) = (0, 0, 0);
 		old
 	}
 
 	pub(crate) fn restore_yield_await(&mut self, (yield_pos, await_pos, await_ident_pos): (u32, u32, u32)) {
 		(self.yield_pos, self.await_pos, self.await_ident_pos) = (yield_pos, await_pos, await_ident_pos);
-	}
-
-	/// Restores what was set before; what the nested list found stays otherwise.
-	pub(crate) fn restore_yield_await_if_set(&mut self, (yield_pos, await_pos, await_ident_pos): (u32, u32, u32)) {
-		if yield_pos != 0 {
-			self.yield_pos = yield_pos;
-		}
-		if await_pos != 0 {
-			self.await_pos = await_pos;
-		}
-		if await_ident_pos != 0 {
-			self.await_ident_pos = await_ident_pos;
-		}
 	}
 
 	pub(crate) fn nth(&self, list: List, i: u32) -> Option<NodeId> {
@@ -1022,16 +1050,6 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 		Ok(())
 	}
 
-	pub(crate) fn after_trailing_comma(&mut self, kind: TokenKind, not_next: bool) -> Result<bool> {
-		if self.is(kind) {
-			if !not_next {
-				self.next()?;
-			}
-			return Ok(true);
-		}
-		Ok(false)
-	}
-
 	// with these two and recover_statement above left to the compiler, a parse-only JavaScript read took 0.9% longer
 	#[inline(always)]
 	pub(crate) fn check_expression_errors(
@@ -1040,34 +1058,39 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 		and_throw: bool,
 	) -> Result<bool> {
 		let Some(errors) = errors else { return Ok(false) };
-		let has = errors.shorthand_assign.is_some() || errors.double_proto.is_some();
-		if !and_throw {
+		let has = errors.shorthand_assign.is_some() || errors.double_proto.is_some() || errors.operand.is_some();
+		if !and_throw || !has {
 			return Ok(has);
 		}
-		if let Some(pos) = errors.shorthand_assign {
-			return self.error(pos, Code::ShorthandAssignment);
-		}
-		if let Some(pos) = errors.double_proto {
-			return self.error(pos, Code::DuplicateProto);
-		}
-		Ok(false)
+		self.first_error([
+			errors.operand,
+			errors.shorthand_assign.map(|pos| (pos, Code::ShorthandAssignment)),
+			errors.double_proto.map(|pos| (pos, Code::DuplicateProto)),
+		])
+	}
+
+	// with this inlined at every check, and `merge` and `parse_arguments` left to the compiler, a
+	// parse-only JavaScript read took 1.5 to 2.8% longer (two code layouts, two corpora)
+	#[cold]
+	#[inline(never)]
+	fn first_error<T>(&self, pending: [Option<(u32, Code)>; 3]) -> Result<T> {
+		let (pos, code) = first_pending(pending).unwrap();
+		self.error(pos, code)
 	}
 
 	#[inline(always)]
-	pub(crate) fn check_pattern_errors(&self, errors: &Option<DestructuringErrors>, is_assign: bool) -> Result<()> {
+	pub(crate) fn check_pattern_errors(&self, errors: &Option<DestructuringErrors>) -> Result<()> {
 		let Some(errors) = errors else { return Ok(()) };
-		if let Some(pos) = errors.trailing_comma {
-			return self.error(pos, Code::CommaAfterRest);
+		if errors.operand.is_none() && errors.trailing_comma.is_none() && errors.parenthesized_assign.is_none() {
+			return Ok(());
 		}
-		let (parens, code) = if is_assign {
-			(errors.parenthesized_assign, Code::InvalidAssignmentTarget)
-		} else {
-			(errors.parenthesized_bind, Code::ParenthesizedPattern)
-		};
-		match parens {
-			Some(pos) => self.error(pos, code),
-			None => Ok(()),
-		}
+		self.first_error([
+			errors.operand,
+			errors.trailing_comma.map(|pos| (pos, Code::CommaAfterRest)),
+			errors
+				.parenthesized_assign
+				.map(|pos| (pos, Code::InvalidAssignmentTarget)),
+		])
 	}
 
 	pub(crate) fn check_yield_await_in_default_params(&self) -> Result<()> {
@@ -1083,10 +1106,9 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 	pub(crate) fn is_simple_assign_target(&self, id: NodeId) -> bool {
 		match self.kind(id) {
 			NodeKind::Identifier { .. } | NodeKind::MemberExpression { .. } => true,
-			NodeKind::Extension(_) => self
+			_ => self
 				.unwrap(id, Unwrap::Simple)
 				.is_some_and(|inner| self.is_simple_assign_target(inner)),
-			_ => false,
 		}
 	}
 }

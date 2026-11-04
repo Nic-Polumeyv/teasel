@@ -272,7 +272,7 @@
 							"name": "b"
 						}
 					],
-					"body": {
+					"fragment": {
 						"type": "Fragment",
 						"scope": 7,
 						"nodes": [

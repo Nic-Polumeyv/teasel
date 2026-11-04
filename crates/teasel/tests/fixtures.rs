@@ -9,13 +9,13 @@ mod common;
 
 use std::fs;
 use std::path::Path;
-use teasel::json::{Request, parse};
+use teasel::estree::parse;
 use teasel::{Entry, Options};
 
 // a misspelled or new type, key or enum text is a line of this pin's diff, as `c!` once failed the build on one
 #[test]
 fn spellings() {
-	let layout = teasel::json::layout_json();
+	let layout = teasel::engine::layout_json();
 	assert!(!layout.contains('\\'), "a string the split below would cut");
 	let mut names: Vec<&str> = layout.split('"').skip(1).step_by(2).collect();
 	names.sort_unstable();
@@ -52,15 +52,12 @@ fn files() {
 					flags |= bit;
 				}
 			}
-			let request = Request {
-				entry: if language == "css" {
-					Entry::StyleSheet
-				} else {
-					Entry::Program
-				},
-				..Request::from_flags(flags)
+			let entry = if language == "css" {
+				Entry::StyleSheet
+			} else {
+				Entry::Program
 			};
-			let answer = common::pretty(&parse(&source, &request));
+			let answer = common::pretty(&parse(&source, entry, 0, Options(flags)));
 			if !common::pinned(&file.with_extension("json"), &answer) {
 				wrong.push(format!("{language}/{name}"));
 			}

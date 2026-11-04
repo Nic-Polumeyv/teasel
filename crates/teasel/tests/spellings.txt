@@ -49,6 +49,7 @@ AsExpression
 AssignmentExpression
 AssignmentPattern
 Atrule
+Attribute
 AttributeSelector
 AwaitExpression
 BigIntLiteral
@@ -67,6 +68,7 @@ ClassDeclaration
 ClassExpression
 ClassSelector
 Combinator
+Comment
 ComplexSelector
 ConditionalExpression
 ConditionalType
@@ -89,11 +91,11 @@ ExportDefaultDeclaration
 ExportNamedDeclaration
 ExportSpecifier
 ExpressionStatement
-Extension
 ExternalModuleReference
 ForInStatement
 ForOfStatement
 ForStatement
+Fragment
 FunctionDeclaration
 FunctionExpression
 FunctionType
@@ -158,6 +160,7 @@ RestType
 ReturnStatement
 Rule
 SatisfiesExpression
+Script
 SelectorList
 SequenceExpression
 SpreadElement
@@ -221,7 +224,6 @@ TSTupleType
 TSTypeAliasDeclaration
 TSTypeAnnotation
 TSTypeAssertion
-TSTypeCastExpression
 TSTypeLiteral
 TSTypeOperator
 TSTypeParameter
@@ -237,6 +239,7 @@ TSVoidKeyword
 TaggedTemplateExpression
 TemplateElement
 TemplateLiteral
+Text
 ThisExpression
 ThisType
 ThrowStatement
@@ -245,7 +248,6 @@ TupleType
 TypeAliasDeclaration
 TypeAnnotation
 TypeAssertion
-TypeCastExpression
 TypeLiteral
 TypeOperator
 TypeParameter
@@ -288,6 +290,7 @@ block
 body
 bool
 boolnames
+branches
 callee
 cases
 catch
@@ -303,6 +306,7 @@ clause
 code
 column
 combinator
+comment
 comments
 computed
 consequent
@@ -310,7 +314,10 @@ const
 constbool
 constraint
 constructor
+content
+context
 cooked
+data
 declaration
 declarations
 declare
@@ -346,6 +353,7 @@ expressions
 extends
 extendsType
 extends_type
+extra
 extras
 extras_slots
 falseType
@@ -417,19 +425,20 @@ loc
 local
 locs
 marks
+matcher
 maybe
 members
 meta
 method
 missing
 modifier
+modifiers
 module
 moduleReference
 module_reference
 mutate
 name
 nameType
-name_starts
 name_type
 names
 namespace
@@ -463,6 +472,7 @@ parent
 parenthesized
 pattern
 pos
+position
 prefix
 prelude
 private
@@ -511,6 +521,7 @@ str
 string
 strs
 struct
+styles
 stylesheet
 superClass
 superTypeArguments
@@ -529,7 +540,6 @@ true
 trueType
 true_type
 ts
-ts_adds
 ty
 type
 typeAnnotation

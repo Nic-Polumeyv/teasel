@@ -9,7 +9,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use teasel::json::{Request, parse};
+use teasel::estree::parse;
 use teasel::{Entry, Options, parse_at};
 
 /// Where the suite predates the language: `\8` and `\9` in sloppy strings (Annex B, ES2021),
@@ -66,7 +66,7 @@ fn verdicts() {
 	for dir in ["pass", "pass-explicit", "fail", "early"] {
 		for (path, source) in files(&root, dir) {
 			let options = Options(if is_module(&path) { Options::MODULE } else { 0 });
-			let parses = parse_at(&source, 0, None, Entry::Program, options, "").1.is_ok();
+			let parses = parse_at(&source, 0, Entry::Program, options, "").1.is_ok();
 			let superseded = SUPERSEDED.contains(&path.as_str());
 			if parses != dir.starts_with("pass") && !superseded {
 				wrong.push(path);
@@ -93,8 +93,11 @@ fn pinned_answers() {
 	for dir in ["pass", "pass-explicit"] {
 		for (path, source) in files(&root, dir) {
 			let module = if is_module(&path) { Options::MODULE } else { 0 };
-			let request = Request::from_flags(module | Options::COMMENTS | Options::SCOPES | Options::LOCATIONS);
-			lines.push(format!("{path} {:016x}", hash(&parse(&source, &request))));
+			let options = Options(module | Options::COMMENTS | Options::SCOPES | Options::LOCATIONS);
+			lines.push(format!(
+				"{path} {:016x}",
+				hash(&parse(&source, Entry::Program, 0, options))
+			));
 		}
 	}
 	let now = lines.join("\n") + "\n";

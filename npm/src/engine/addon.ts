@@ -4,8 +4,11 @@ const { createRequire } = process.getBuiltinModule('node:module');
 import type { Engine, Tree } from '../types.ts';
 
 /** `crates/teasel-node/src/lib.rs`: the operations over a source and a grammar, the source as V8's bytes. */
-export interface Addon extends Omit<Engine, 'parse' | 'tree'> {
-	readonly parse: (source: Uint8Array, flags: number, entry: number, offset: number, end: number | undefined, stop: string, plan: object | undefined) => Uint32Array | string;
+export interface Addon extends Omit<Engine, 'parse' | 'tree' | 'grammar' | 'about'> {
+	readonly parse: (source: Uint8Array, flags: number, entry: number, offset: number, stop: string, grammar: number) => Uint32Array;
+	/** The number of a grammar read from its JSON, from 1; 0 is none. */
+	readonly grammar: (definition: string) => number;
+	readonly about: (grammar: number) => string;
 	/** Whether the tree is the TypeScript one, then each view as long as its buffer's room; the lengths ride in the answer's words. */
 	readonly tree: () => Tree | undefined;
 }

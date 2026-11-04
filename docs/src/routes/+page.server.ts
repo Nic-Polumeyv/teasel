@@ -1,8 +1,8 @@
 import { fence } from '#lib/content.ts';
 
-const facts = `import { Source, referenceOf } from '@teasel/parser';
+const facts = `import { parse, referenceOf } from '@teasel/parser';
 
-const { node, scopes } = new Source('let x = 1; x++', { scopes: true }).parse();
+const { node, scopes } = parse('let x = 1; x++', { scopes: true });
 
 node.type;                                   // 'Program'
 referenceOf(node.body[0].declarations[0].id).binding;  // { name: 'x', kind: 'let', scope, … }
