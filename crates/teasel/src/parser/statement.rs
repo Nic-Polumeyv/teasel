@@ -99,6 +99,14 @@ impl<const TS: bool> Parser<'_, TS> {
 			}
 			self.ensure_progress(at)?;
 		}
+		if self.typescript() {
+			let locals = std::mem::take(&mut self.local_exports);
+			for &(name, node) in &locals {
+				if self.declares_only_types(name) {
+					self.ast.type_exports.insert(node);
+				}
+			}
+		}
 		if module && !self.options.has(Options::ALLOW_UNDECLARED_EXPORTS) {
 			let undeclared = std::mem::take(&mut self.undeclared_exports);
 			let mut last = FastMap::default();
@@ -1241,6 +1249,11 @@ impl<const TS: bool> Parser<'_, TS> {
 			self.check_export_name(exports, name, default_start)?;
 			let declaration = self.parse_export_default_declaration()?;
 			let node = self.add(NodeKind::ExportDefaultDeclaration { declaration }, start);
+			if self.typescript()
+				&& let NodeKind::Identifier { name } = self.kind(declaration)
+			{
+				self.local_exports.push((name, node));
+			}
 			if self.typescript() {
 				self.export_end(node);
 			}
@@ -1300,7 +1313,12 @@ impl<const TS: bool> Parser<'_, TS> {
 				};
 				self.check_unreserved(local)?;
 				match self.kind(local) {
-					NodeKind::Identifier { name } => self.check_local_export(name, self.start_of(local)),
+					NodeKind::Identifier { name } => {
+						self.check_local_export(name, self.start_of(local));
+						if self.typescript() {
+							self.local_exports.push((name, spec));
+						}
+					}
 					_ => {
 						return self.error(self.start_of(local), Code::StringExportWithoutFrom);
 					}

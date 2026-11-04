@@ -360,6 +360,9 @@ pub struct Ast {
 	pub attached: Slots<Attached>,
 	/// Nodes erasure leaves out, when the answer erases TypeScript.
 	pub erased: NodeSet,
+	/// Exports of a name the module declares only as a type, `export { I }` or `export default I` of
+	/// an interface, an alias or an import of a type: erasure leaves them out, as TypeScript does.
+	pub type_exports: NodeSet,
 	/// Nodes with what few have, for the decoder that builds the rest in one piece: parentheses,
 	/// comments, TypeScript's extras, a binding or reference on what is not an identifier.
 	pub rare: NodeSet,
@@ -457,6 +460,7 @@ impl Ast {
 		self.errors.clear();
 		self.parenthesized.clear();
 		self.erased.clear();
+		self.type_exports.clear();
 		self.rare.clear();
 		self.late.clear();
 		self.comment_rows.clear();
@@ -1381,7 +1385,21 @@ impl Ast {
 		}
 	}
 
-	pub(crate) fn erased(&self, id: NodeId) -> bool {
+	/// Marks what erasing leaves out. A node's id comes after its children's, so each node is
+	/// decided with its children already marked: a declaration left without a value name goes
+	/// with the names, as TypeScript emits without `verbatimModuleSyntax`. One written empty
+	/// stays, the tree not telling `import {} from 'x'` from `import 'x'`.
+	pub(crate) fn mark_erased(&mut self) {
+		self.erased.reset(self.nodes.len());
+		for i in 0..self.nodes.len() as u32 {
+			let id = NodeId::at(i);
+			if self.erases(id) {
+				self.erased.insert(id);
+			}
+		}
+	}
+
+	fn erases(&self, id: NodeId) -> bool {
 		use NodeKind::*;
 		let extras = self.extras_of(id);
 		if extras.declare {
@@ -1400,24 +1418,36 @@ impl Ast {
 			| NamespaceExportDeclaration { .. } => true,
 			ImportEqualsDeclaration { import_kind, .. } => import_kind == Kind::Type,
 			ModuleDeclaration { .. } => !self.instantiates(id),
-			// tsc's default: an import whose every name is a type goes with them; `import {} from 'x'` as written stays
 			ImportDeclaration { specifiers, .. } => {
 				extras.import_kind == Some(Kind::Type)
-					|| (specifiers.len > 0 && self.list(specifiers).iter().flatten().all(|&name| self.erased(name)))
+					|| (specifiers.len > 0
+						&& self
+							.list(specifiers)
+							.iter()
+							.flatten()
+							.all(|&name| self.erased.contains(name)))
 			}
 			ImportSpecifier { .. } => extras.import_kind == Some(Kind::Type),
-			ExportSpecifier { .. } | ExportAllDeclaration { .. } => extras.export_kind == Some(Kind::Type),
+			ExportSpecifier { .. } => extras.export_kind == Some(Kind::Type) || self.type_exports.contains(id),
+			ExportAllDeclaration { .. } => extras.export_kind == Some(Kind::Type),
 			// `export { type A }` keeps an `export {}`, as tsc keeps the file a module
-			ExportDeclaration { declaration } => extras.export_kind == Some(Kind::Type) || self.erased(declaration),
-			// a re-export whose every name is a type goes with them, as tsc emits by default; `export {} from 'x'` as written stays
+			ExportDeclaration { declaration } => {
+				extras.export_kind == Some(Kind::Type) || self.erased.contains(declaration)
+			}
 			ExportNamedDeclaration { specifiers, source, .. } => {
 				extras.export_kind == Some(Kind::Type)
 					|| (source.is_some()
 						&& specifiers.len > 0
-						&& self.list(specifiers).iter().flatten().all(|&name| self.erased(name)))
+						&& self
+							.list(specifiers)
+							.iter()
+							.flatten()
+							.all(|&name| self.erased.contains(name)))
 			}
 			ExportDefaultDeclaration { declaration } => {
-				extras.export_kind == Some(Kind::Type) || self.erased(declaration)
+				extras.export_kind == Some(Kind::Type)
+					|| self.erased.contains(declaration)
+					|| self.type_exports.contains(id)
 			}
 			_ => false,
 		}

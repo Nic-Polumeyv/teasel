@@ -233,6 +233,8 @@ pub(crate) struct Parser<'a, const TS: bool> {
 	labels: Vec<Label>,
 	private_names: Vec<PrivateNameScope>,
 	pub(crate) undeclared_exports: Vec<(StrId, u32)>,
+	/// A local export and the name it exports, in TypeScript, for the ones of only a type.
+	pub(crate) local_exports: Vec<(StrId, NodeId)>,
 	pub(crate) yield_pos: u32,
 	pub(crate) await_pos: u32,
 	pub(crate) await_ident_pos: u32,
@@ -282,6 +284,7 @@ struct Mark {
 	labels: usize,
 	private_names: usize,
 	undeclared_exports: usize,
+	local_exports: usize,
 	depth: u32,
 	brackets: (u32, [u32; 3]),
 	strict: bool,
@@ -425,6 +428,7 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 			labels: spare.labels,
 			private_names: spare.private_names,
 			undeclared_exports: Vec::new(),
+			local_exports: Vec::new(),
 			yield_pos: 0,
 			await_pos: 0,
 			await_ident_pos: 0,
@@ -555,6 +559,7 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 			labels: self.labels.len(),
 			private_names: self.private_names.len(),
 			undeclared_exports: self.undeclared_exports.len(),
+			local_exports: self.local_exports.len(),
 			depth: self.depth,
 			brackets: (self.lexer.depth, self.lexer.open),
 			strict: self.strict,
@@ -571,6 +576,7 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 		self.labels.truncate(mark.labels);
 		self.private_names.truncate(mark.private_names);
 		self.undeclared_exports.truncate(mark.undeclared_exports);
+		self.local_exports.truncate(mark.local_exports);
 		self.depth = mark.depth;
 		(self.lexer.depth, self.lexer.open) = mark.brackets;
 		self.set_strict(mark.strict);

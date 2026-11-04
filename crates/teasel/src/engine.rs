@@ -397,6 +397,11 @@ pub(crate) fn read<R>(
 				}
 			}
 		}
+		if options.has(Options::ERASE) && roots.is_some() {
+			ast.mark_erased();
+		} else {
+			ast.erased.clear();
+		}
 		let answer = finish(&mut ast, roots, end, options, &mut session.words);
 		*slot = Some(ast);
 		answer
@@ -446,15 +451,6 @@ fn prepare(ast: &mut Ast, source: &str, positions: &Positions, options: Options,
 
 fn prepare_tree(ast: &mut Ast, positions: &Positions, options: Options) {
 	positions.map_nodes(&ast.nodes, &mut ast.spans, &mut ast.locs);
-	ast.erased.clear();
-	if options.has(Options::ERASE) {
-		for i in 0..ast.nodes.len() as u32 {
-			let id = crate::ast::NodeId::at(i);
-			if ast.erased(id) {
-				ast.erased.insert(id);
-			}
-		}
-	}
 	let (mut rare, mut late) = (std::mem::take(&mut ast.rare), std::mem::take(&mut ast.late));
 	rare.reset(ast.nodes.len());
 	late.reset(ast.nodes.len());

@@ -2,4 +2,4 @@
 '@teasel/parser': patch
 ---
 
-An import or re-export of only types erases with its names, as tsc emits by default
+An import or export left without a value name by erasure goes with the names, as TypeScript emits without `verbatimModuleSyntax`

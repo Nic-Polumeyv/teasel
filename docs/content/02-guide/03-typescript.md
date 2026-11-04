@@ -13,6 +13,8 @@ node.body[0].declarations[0].id.typeAnnotation.type; // 'TSTypeAnnotation'
 
 `typescript: 'erase'` reads TypeScript and returns JavaScript, with the types removed, in the same pass. Positions are positions in the text you gave it.
 
+What goes is what TypeScript itself leaves out without `verbatimModuleSyntax`, from a file on its own: `import { type A, B } from './m'` keeps `B`, and an import or export left without a value name goes with the names. One written empty, `import {} from './m'`, stays. An import nothing reads stays too: erasure removes syntax and does not look at how a name is used.
+
 ```js typescript.js
 const { node, typescript } = parse('let n: number = 1', { typescript: 'erase' });
 node.body[0].declarations[0].id.typeAnnotation; // undefined
