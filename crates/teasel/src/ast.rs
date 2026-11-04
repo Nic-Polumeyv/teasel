@@ -360,9 +360,6 @@ pub struct Ast {
 	pub attached: Slots<Attached>,
 	/// Nodes erasure leaves out, when the answer erases TypeScript.
 	pub erased: NodeSet,
-	/// Exports of a name the module declares only as a type, `export { I }` or `export default I` of
-	/// an interface, an alias or an import of a type: erasure leaves them out, as TypeScript does.
-	pub type_exports: NodeSet,
 	/// Nodes with what few have, for the decoder that builds the rest in one piece: parentheses,
 	/// comments, TypeScript's extras, a binding or reference on what is not an identifier.
 	pub rare: NodeSet,
@@ -460,7 +457,6 @@ impl Ast {
 		self.errors.clear();
 		self.parenthesized.clear();
 		self.erased.clear();
-		self.type_exports.clear();
 		self.rare.clear();
 		self.late.clear();
 		self.comment_rows.clear();
@@ -1432,8 +1428,7 @@ impl Ast {
 				extras.import_kind == Some(Kind::Type) || self.all_erased(specifiers)
 			}
 			ImportSpecifier { .. } => extras.import_kind == Some(Kind::Type),
-			ExportSpecifier { .. } => extras.export_kind == Some(Kind::Type) || self.type_exports.contains(id),
-			ExportAllDeclaration { .. } => extras.export_kind == Some(Kind::Type),
+			ExportSpecifier { .. } | ExportAllDeclaration { .. } => extras.export_kind == Some(Kind::Type),
 			// `export { type A }` keeps an `export {}`, as tsc keeps the file a module
 			ExportDeclaration { declaration } => {
 				extras.export_kind == Some(Kind::Type) || self.erased.contains(declaration)
@@ -1442,9 +1437,7 @@ impl Ast {
 				extras.export_kind == Some(Kind::Type) || (source.is_some() && self.all_erased(specifiers))
 			}
 			ExportDefaultDeclaration { declaration } => {
-				extras.export_kind == Some(Kind::Type)
-					|| self.erased.contains(declaration)
-					|| self.type_exports.contains(id)
+				extras.export_kind == Some(Kind::Type) || self.erased.contains(declaration)
 			}
 			_ => false,
 		}
