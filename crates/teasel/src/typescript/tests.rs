@@ -457,3 +457,30 @@ fn an_import_of_only_types_erases() {
 		("Program ExportNamedDeclaration".to_owned(), "[]".to_owned())
 	);
 }
+
+#[test]
+fn a_re_export_of_only_types_erases() {
+	assert_eq!(
+		erase("export { type A } from 'x';"),
+		("Program".to_owned(), "[]".to_owned())
+	);
+	assert_eq!(
+		erase("export { type A, type B } from 'x';"),
+		("Program".to_owned(), "[]".to_owned())
+	);
+	assert_eq!(
+		erase("export { type A, B } from 'x';"),
+		(
+			"Program ExportNamedDeclaration ExportSpecifier Identifier Identifier Literal".to_owned(),
+			"[]".to_owned()
+		)
+	);
+	assert_eq!(
+		erase("export {} from 'x';"),
+		("Program ExportNamedDeclaration Literal".to_owned(), "[]".to_owned())
+	);
+	assert_eq!(
+		erase("export type { A } from 'x';"),
+		("Program".to_owned(), "[]".to_owned())
+	);
+}

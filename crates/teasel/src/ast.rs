@@ -1409,7 +1409,13 @@ impl Ast {
 			ExportSpecifier { .. } | ExportAllDeclaration { .. } => extras.export_kind == Some(Kind::Type),
 			// `export { type A }` keeps an `export {}`, as tsc keeps the file a module
 			ExportDeclaration { declaration } => extras.export_kind == Some(Kind::Type) || self.erased(declaration),
-			ExportNamedDeclaration { .. } => extras.export_kind == Some(Kind::Type),
+			// a re-export whose every name is a type goes with them, as tsc emits by default; `export {} from 'x'` as written stays
+			ExportNamedDeclaration { specifiers, source, .. } => {
+				extras.export_kind == Some(Kind::Type)
+					|| (source.is_some()
+						&& specifiers.len > 0
+						&& self.list(specifiers).iter().flatten().all(|&name| self.erased(name)))
+			}
 			ExportDefaultDeclaration { declaration } => {
 				extras.export_kind == Some(Kind::Type) || self.erased(declaration)
 			}
