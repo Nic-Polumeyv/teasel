@@ -99,6 +99,9 @@ impl<const TS: bool> Parser<'_, TS> {
 			}
 			self.ensure_progress(at)?;
 		}
+		if self.typescript() && self.options.has(Options::ERASE) {
+			self.mark_type_exports(&body);
+		}
 		if module && !self.options.has(Options::ALLOW_UNDECLARED_EXPORTS) {
 			let undeclared = std::mem::take(&mut self.undeclared_exports);
 			let mut last = FastMap::default();

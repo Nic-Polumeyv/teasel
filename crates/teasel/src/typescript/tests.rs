@@ -421,9 +421,17 @@ fn a_namespace_erases_unless_it_instantiates() {
 }
 
 #[test]
-fn a_type_only_import_keeps_its_module() {
+fn an_import_of_only_types_erases() {
 	assert_eq!(
 		erase("import { type A } from 'x';"),
+		("Program".to_owned(), "[]".to_owned())
+	);
+	assert_eq!(
+		erase("import { type A, type B } from 'x';"),
+		("Program".to_owned(), "[]".to_owned())
+	);
+	assert_eq!(
+		erase("import {} from 'x';"),
 		("Program ImportDeclaration Literal".to_owned(), "[]".to_owned())
 	);
 	assert_eq!(
@@ -447,5 +455,67 @@ fn a_type_only_import_keeps_its_module() {
 	assert_eq!(
 		erase("type A = 1; export { type A };"),
 		("Program ExportNamedDeclaration".to_owned(), "[]".to_owned())
+	);
+}
+
+#[test]
+fn an_export_of_only_a_type_erases() {
+	let export_nothing = || ("Program ExportNamedDeclaration".to_owned(), "[]".to_owned());
+	assert_eq!(erase("interface I {} export { I };"), export_nothing());
+	assert_eq!(erase("type T = 1; export { T as U };"), export_nothing());
+	assert_eq!(erase("import type { A } from 'x'; export { A };"), export_nothing());
+	assert_eq!(erase("import { type A } from 'x'; export { A };"), export_nothing());
+	assert_eq!(erase("export { I }; interface I {}"), export_nothing());
+	assert_eq!(
+		erase("interface I {} export default I;"),
+		("Program".to_owned(), "[]".to_owned())
+	);
+	assert_eq!(
+		erase("interface A {} const A = 1; export { A };"),
+		(
+			"Program VariableDeclaration VariableDeclarator Identifier Literal ExportNamedDeclaration ExportSpecifier Identifier Identifier".to_owned(),
+			"[]".to_owned()
+		)
+	);
+	assert_eq!(
+		erase("declare const x: number; export { x };"),
+		(
+			"Program ExportNamedDeclaration ExportSpecifier Identifier Identifier".to_owned(),
+			"[]".to_owned()
+		)
+	);
+	assert_eq!(
+		erase("import A from 'a'; import type { B } from 'a'; export { A, B };"),
+		(
+			"Program ImportDeclaration ImportDefaultSpecifier Identifier Literal ExportNamedDeclaration ExportSpecifier Identifier Identifier".to_owned(),
+			"[]".to_owned()
+		)
+	);
+}
+
+#[test]
+fn a_re_export_of_only_types_erases() {
+	assert_eq!(
+		erase("export { type A } from 'x';"),
+		("Program".to_owned(), "[]".to_owned())
+	);
+	assert_eq!(
+		erase("export { type A, type B } from 'x';"),
+		("Program".to_owned(), "[]".to_owned())
+	);
+	assert_eq!(
+		erase("export { type A, B } from 'x';"),
+		(
+			"Program ExportNamedDeclaration ExportSpecifier Identifier Identifier Literal".to_owned(),
+			"[]".to_owned()
+		)
+	);
+	assert_eq!(
+		erase("export {} from 'x';"),
+		("Program ExportNamedDeclaration Literal".to_owned(), "[]".to_owned())
+	);
+	assert_eq!(
+		erase("export type { A } from 'x';"),
+		("Program".to_owned(), "[]".to_owned())
 	);
 }

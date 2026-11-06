@@ -1381,7 +1381,31 @@ impl Ast {
 		}
 	}
 
-	pub(crate) fn erased(&self, id: NodeId) -> bool {
+	/// Marks what erasing leaves out. A node's id comes after its children's, so each node is
+	/// decided with its children already marked: a declaration left without a value name goes
+	/// with the names, as TypeScript emits without `verbatimModuleSyntax`. One written empty
+	/// stays, the tree not telling `import {} from 'x'` from `import 'x'`.
+	pub(crate) fn mark_erased(&mut self) {
+		self.erased.reset(self.nodes.len());
+		for i in 0..self.nodes.len() as u32 {
+			let id = NodeId::at(i);
+			if self.erases(id) {
+				self.erased.insert(id);
+			}
+		}
+	}
+
+	/// Whether a clause lost every name to erasure; one written empty had none to lose.
+	fn all_erased(&self, names: List) -> bool {
+		names.len > 0
+			&& self
+				.list(names)
+				.iter()
+				.flatten()
+				.all(|&name| self.erased.contains(name))
+	}
+
+	fn erases(&self, id: NodeId) -> bool {
 		use NodeKind::*;
 		let extras = self.extras_of(id);
 		if extras.declare {
@@ -1400,14 +1424,20 @@ impl Ast {
 			| NamespaceExportDeclaration { .. } => true,
 			ImportEqualsDeclaration { import_kind, .. } => import_kind == Kind::Type,
 			ModuleDeclaration { .. } => !self.instantiates(id),
-			// an import of only types still runs its module, so `import { type A } from 'x'` keeps `import {} from 'x'`
-			ImportDeclaration { .. } | ImportSpecifier { .. } => extras.import_kind == Some(Kind::Type),
+			ImportDeclaration { specifiers, .. } => {
+				extras.import_kind == Some(Kind::Type) || self.all_erased(specifiers)
+			}
+			ImportSpecifier { .. } => extras.import_kind == Some(Kind::Type),
 			ExportSpecifier { .. } | ExportAllDeclaration { .. } => extras.export_kind == Some(Kind::Type),
 			// `export { type A }` keeps an `export {}`, as tsc keeps the file a module
-			ExportDeclaration { declaration } => extras.export_kind == Some(Kind::Type) || self.erased(declaration),
-			ExportNamedDeclaration { .. } => extras.export_kind == Some(Kind::Type),
+			ExportDeclaration { declaration } => {
+				extras.export_kind == Some(Kind::Type) || self.erased.contains(declaration)
+			}
+			ExportNamedDeclaration { specifiers, source, .. } => {
+				extras.export_kind == Some(Kind::Type) || (source.is_some() && self.all_erased(specifiers))
+			}
 			ExportDefaultDeclaration { declaration } => {
-				extras.export_kind == Some(Kind::Type) || self.erased(declaration)
+				extras.export_kind == Some(Kind::Type) || self.erased.contains(declaration)
 			}
 			_ => false,
 		}

@@ -786,6 +786,40 @@ impl<const TS: bool> Parser<'_, TS> {
 		Ok(None)
 	}
 
+	/// An export of a name the module declares only as a type is an export of a type, which erasing
+	/// leaves out as TypeScript does: `export { I }` of an interface, an alias or an import of a type
+	/// keeps an `export {}`, `export default I` goes. Marked once the module's declarations are all known.
+	pub(crate) fn mark_type_exports(&mut self, statements: &[Option<NodeId>]) {
+		for &statement in statements.iter().flatten() {
+			match self.kind(statement) {
+				NodeKind::ExportNamedDeclaration {
+					specifiers,
+					source: None,
+					..
+				} => {
+					for spec in self.ast.list(specifiers).to_vec().into_iter().flatten() {
+						let NodeKind::ExportSpecifier { local, .. } = self.kind(spec) else {
+							unreachable!()
+						};
+						if let NodeKind::Identifier { name } = self.kind(local)
+							&& self.declares_only_types(name)
+						{
+							self.extras_mut(spec).export_kind = Some(Kind::Type);
+						}
+					}
+				}
+				NodeKind::ExportDefaultDeclaration { declaration } => {
+					if let NodeKind::Identifier { name } = self.kind(declaration)
+						&& self.declares_only_types(name)
+					{
+						self.extras_mut(statement).export_kind = Some(Kind::Type);
+					}
+				}
+				_ => {}
+			}
+		}
+	}
+
 	pub(crate) fn export_end(&mut self, node: NodeId) {
 		if let Some(kind) = self.ts.state.export_kind.take() {
 			self.extras_mut(node).export_kind = Some(kind);

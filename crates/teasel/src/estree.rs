@@ -383,7 +383,7 @@ impl<'a> Writer<'a> {
 		self.json.list();
 		let ast = self.ast;
 		for item in ast.list(list) {
-			if self.options.has(Options::ERASE) && item.is_some_and(|id| ast.erased(id)) {
+			if item.is_some_and(|id| ast.erased.contains(id)) {
 				continue;
 			}
 			match item {
