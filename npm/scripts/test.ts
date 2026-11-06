@@ -448,6 +448,8 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 	assert.equal(JSON.stringify(read(plain, { comments: true, locations: 'js' })), JSON.stringify(read(plain, { comments: true, locations: true })));
 }
 
+// no definition is refused as any other text the engine cannot read is
+assert.throws(() => g.grammar(undefined as Any), /the grammar ends early/);
 // a tag under a prefix the grammar reserves needs a rule of its own; a grammar that reserves none reads it as any other
 assert.throws(() => read('<svelte:foo></svelte:foo>', {}, svelte), (e: Any) => e.code === 'invalid_name' && e.pos === 1);
 assert.equal(read('<svelte:head></svelte:head>', {}, svelte).node.fragment.nodes[0].type, 'SvelteHead');
