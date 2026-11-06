@@ -1,5 +1,15 @@
 # @teasel/parser
 
+## 0.0.24
+
+### Patch Changes
+
+- [#253](https://github.com/Nic-Polumeyv/teasel/pull/253) [`1ca6ebd`](https://github.com/Nic-Polumeyv/teasel/commit/1ca6ebdab4c49984c2b954b2866edf127b53a4dd) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - An import or export left without a value name by erasure goes with the names, as TypeScript emits without `verbatimModuleSyntax`
+
+- [#261](https://github.com/Nic-Polumeyv/teasel/pull/261) [`6720478`](https://github.com/Nic-Polumeyv/teasel/commit/67204789cd28f5f5fc54baf10724448fbf08b363) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - `g.grammar` takes the definition alone: the prefixes of a host's own tags are listed in `elements.reserved`, no longer read off the grammar's name
+
+- [#260](https://github.com/Nic-Polumeyv/teasel/pull/260) [`757db46`](https://github.com/Nic-Polumeyv/teasel/commit/757db4630701c6528d518eed3a557d478061213c) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - TypeScript parses faster
+
 ## 0.0.23
 
 ### Patch Changes
