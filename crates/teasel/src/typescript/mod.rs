@@ -230,7 +230,16 @@ impl<const TS: bool> Parser<'_, TS> {
 		Ok(self.eat(TokenKind::Semi)? || self.can_insert_semicolon())
 	}
 
+	// peeking the token after every `const` and `import` read it twice: 0.5 ms of a 31 ms parse of 726 files
 	fn peek_is_contextual(&mut self, name: &str) -> Result<bool> {
+		if self
+			.lexer
+			.peek_char()
+			.0
+			.is_some_and(|next| next != '\\' && !name.starts_with(next))
+		{
+			return Ok(false);
+		}
 		Ok(matches!(self.peek_token()?.kind, TokenKind::Ident(n) if self.str(n) == name))
 	}
 
@@ -837,7 +846,9 @@ impl<const TS: bool> Parser<'_, TS> {
 	/// Right after `import`; `Some` is a whole import statement.
 	pub(crate) fn import_head(&mut self, start: u32) -> Result<Option<NodeId>> {
 		self.ts.state.outer_kind = Some(Kind::Value);
-		if self.is_ident() || self.is(TokenKind::Star) || self.is(TokenKind::BraceL) {
+		if self.is_ident()
+			&& (self.is_contextual("type") || matches!(self.lexer.peek_char().0, None | Some('=' | '\\')))
+		{
 			let mut ahead = self.peek_token()?;
 			let ahead_is_from = matches!(ahead.kind, TokenKind::Ident(n) if self.str(n) == "from");
 			if self.is_contextual("type")
