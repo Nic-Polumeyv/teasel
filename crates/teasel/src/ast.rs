@@ -358,7 +358,7 @@ pub struct Ast {
 	pub comment_rows: Handed<CommentRow>,
 	/// Comments attached to nodes by `comments::attach`, as indices into `comments`.
 	pub attached: Slots<Attached>,
-	/// Nodes erasure leaves out, when the answer erases TypeScript.
+	/// The items of lists erasure leaves out, when the answer erases TypeScript.
 	pub erased: NodeSet,
 	/// Nodes with what few have, for the decoder that builds the rest in one piece: parentheses,
 	/// comments, TypeScript's extras, a binding or reference on what is not an identifier.
