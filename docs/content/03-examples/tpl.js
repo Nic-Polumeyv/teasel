@@ -1,6 +1,6 @@
 import * as g from '@teasel/parser/grammar';
 
-export const tpl = g.grammar('tpl', {
+export const tpl = g.grammar({
 	document: { node: 'Template' },
 	elements: {
 		component: { node: 'Component' },
