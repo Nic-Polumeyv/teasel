@@ -4,7 +4,7 @@ const value = { value: g.bind(g.js.pattern) };
 const error = { error: g.bind(g.js.pattern) };
 const transition = { expression: g.value.expression };
 
-export default g.grammar('svelte', {
+export default g.grammar({
 	document: {
 		node: 'Root',
 		form: [
@@ -18,6 +18,7 @@ export default g.grammar('svelte', {
 	void: ['area', 'base', 'br', 'col', 'command', 'embed', 'hr', 'img', 'input', 'keygen', 'link', 'meta', 'param', 'source', 'track', 'wbr'],
 
 	elements: {
+		reserved: ['svelte:'],
 		rules: {
 			'svelte:element': { node: 'SvelteElement', form: [{ tag: g.element.thisOrText }] },
 			'svelte:component': { node: 'SvelteComponent', form: [{ expression: g.element.this }] },

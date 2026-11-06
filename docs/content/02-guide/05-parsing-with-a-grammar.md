@@ -7,7 +7,7 @@ A template language can describe its whole syntax to the parser as a grammar. Th
 ```js mini.js
 import * as g from '@teasel/parser/grammar';
 
-export const grammar = g.grammar('mini', {
+export const grammar = g.grammar({
 	document: { node: 'Root', form: [{ script: g.optional(g.doc.script) }] },
 	void: ['br', 'hr', 'img', 'input'],
 	elements: {
@@ -83,6 +83,24 @@ roots.map((piece) => piece.node.type);
 ```
 
 The scope kinds a document adds are `fragment` for its lists and `module` or `script` for the document itself; a script block of its own has the kind of its program.
+
+## The host's own tags
+
+A host can give the tags it adds one prefix, so that none of them is also the name of an HTML element or a component. Each tag has a rule under its whole name, and `reserved` lists the prefix:
+
+```js mini.js
+elements: {
+	reserved: ['mini:'],
+	rules: {
+		'mini:head': { node: 'Head', root: true, once: true },
+		'mini:slot': { node: 'Slot' },
+		script: { node: 'Element', content: 'raw' },
+	},
+	other: { node: 'Element' },
+},
+```
+
+A tag that starts with a reserved prefix is read only by a rule of its own: `<mini:head>` has one and is a `Head`, and `<mini:hed>` has none and is the error `invalid_name`. Without `reserved`, `<mini:hed>` is an `Element`.
 
 ## Error recovery
 

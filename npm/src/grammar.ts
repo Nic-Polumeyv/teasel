@@ -249,6 +249,8 @@ export interface Definition {
 	readonly void?: readonly string[];
 	readonly verbatim?: string;
 	readonly elements?: {
+		/** Prefixes of the host's own tags. A tag that starts with one is read only by a rule of its own in `rules`: with none it is the error `invalid_name`. */
+		readonly reserved?: readonly string[];
 		readonly rules?: { readonly [name: string]: Element };
 		readonly component?: Element;
 		readonly other?: Element;
@@ -271,14 +273,13 @@ export interface Definition {
 }
 
 export interface Grammar<D extends Definition = Definition> extends Language<DocumentNode<D>> {
-	readonly host: string;
 	readonly definition: D;
 }
 // one literal, so every grammar has the shape of the first: a getter added after would make the rest dictionaries
-export const grammar = <const D extends Definition>(host: string, definition: D): Grammar<D> => {
-	const read = engine.grammar(JSON.stringify({ name: host, definition }));
+export const grammar = <const D extends Definition>(definition: D): Grammar<D> => {
+	const read = engine.grammar(JSON.stringify(definition) ?? '');
 	const about: { children: Record<string, string[]>; names: string[] } = JSON.parse(engine.about(read));
-	return { host, definition, children: frozen({ ...builtin, ...about.children }), [LANGUAGE]: Object.freeze({ entry: 0, grammar: read, names: Object.freeze(about.names) }) };
+	return { definition, children: frozen({ ...builtin, ...about.children }), [LANGUAGE]: Object.freeze({ entry: 0, grammar: read, names: Object.freeze(about.names) }) };
 };
 
 // ── inference

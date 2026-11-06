@@ -385,7 +385,7 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 // the grammar the Rust tests read is the typed definition as it crosses, pinned beside its documents
 for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 	const pin = new URL(`../../crates/teasel/tests/hosts/${host}/host.json`, import.meta.url);
-	const json = JSON.stringify({ name: host, definition: definition.definition });
+	const json = JSON.stringify(definition.definition);
 	if (process.env.UPDATE) writeFileSync(pin, json);
 	else assert.ok(readFileSync(pin, 'utf8') === json, `${name} ${host}/host.json changed; run with UPDATE=1 once the change is meant`);
 }
@@ -447,6 +447,13 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 	const plain = 'let a = 1; // one\nf(a);';
 	assert.equal(JSON.stringify(read(plain, { comments: true, locations: 'js' })), JSON.stringify(read(plain, { comments: true, locations: true })));
 }
+
+// no definition is refused as any other text the engine cannot read is
+assert.throws(() => g.grammar(undefined as Any), /the grammar ends early/);
+// a tag under a prefix the grammar reserves needs a rule of its own; a grammar that reserves none reads it as any other
+assert.throws(() => read('<svelte:foo></svelte:foo>', {}, svelte), (e: Any) => e.code === 'invalid_name' && e.pos === 1);
+assert.equal(read('<svelte:head></svelte:head>', {}, svelte).node.fragment.nodes[0].type, 'SvelteHead');
+assert.equal(read('<vue:foo></vue:foo>', {}, vue).node.fragment.nodes[0].type, 'Element');
 
 // a second host: the same walker, Vue's grammar
 {
@@ -689,10 +696,10 @@ if (name !== 'native') {
 		repeat([item, index, 'in', list, key], [{ marker: ['{{', ':empty'], form: ['}}', { fallback: g.optional(g.content) }] }]),
 	];
 	// a construct's second text is its own slice: only Text's `data` beside its `raw` shares a span
-	const pair = g.grammar('pair', { ...html, constructs: { Pair: { in: ['content'], open: { marker: ['{%'], form: [{ left: g.js.text }, '|', { right: g.js.text }, '%}'] } } } });
+	const pair = g.grammar({ ...html, constructs: { Pair: { in: ['content'], open: { marker: ['{%'], form: [{ left: g.js.text }, '|', { right: g.js.text }, '%}'] } } } });
 	assert.deepEqual(read('<a>{% alpha | beta %}{%x|x%}</a>', {}, pair).node.fragment.nodes[0].fragment.nodes.map(({ left, right }: Any) => [left, right]), [['alpha', 'beta'], ['x', 'x']]);
 	// what the engine cannot parse with is refused by `grammar` itself, naming the rule
-	assert.throws(() => g.grammar('twice', { ...html, constructs: { Pair: { in: ['content'], open: { marker: ['{%'], form: [{ left: g.js.text }, '|', { left: g.js.text }, '%}'] } } } }), /Pair reads left twice/);
+	assert.throws(() => g.grammar({ ...html, constructs: { Pair: { in: ['content'], open: { marker: ['{%'], form: [{ left: g.js.text }, '|', { left: g.js.text }, '%}'] } } } }), /Pair reads left twice/);
 	// an identifier that refers to a binding declared elsewhere carries where that declaration is
 	const shape = (value: Any): Any => {
 		if (Array.isArray(value)) return value.map(shape);
@@ -705,7 +712,7 @@ if (name !== 'native') {
 	};
 	const answers = steps.map((definition) => {
 		try {
-			return { tree: shape(read(template, { scopes: true }, g.grammar('tpl', definition)).node) };
+			return { tree: shape(read(template, { scopes: true }, g.grammar(definition)).node) };
 		} catch (e) {
 			const { code, message, pos, end } = e as Any;
 			return { error: { code, message, pos, end } };
@@ -820,21 +827,21 @@ function types(text: string, definition: typeof svelte) {
 	g.oneOf();
 	// @ts-expect-error an alternative needs items
 	g.oneOf([]);
-	g.grammar('x', {
+	g.grammar({
 		// @ts-expect-error the document's literals are null or a list
 		document: { node: 'Root', form: [{ flag: g.literal(true) }] },
 	});
-	g.grammar('x', {
+	g.grammar({
 		// @ts-expect-error the document's content is its fragment, which teasel names
 		document: { node: 'Root', form: [{ children: g.content }] },
 	});
-	g.grammar('x', {
+	g.grammar({
 		document: { node: 'Root' },
 		// @ts-expect-error an element's tag is its `name`, which teasel names
 		elements: { other: { node: 'E', form: [{ name: g.element.this }] } },
 	});
 	// a block with one list holds it as its fragment; with branches, it names each
-	const lists = g.grammar('lists', {
+	const lists = g.grammar({
 		document: { node: 'Root' },
 		constructs: {
 			One: { open: { marker: ['{#one'], form: ['}'] }, close: { marker: ['{/one'], form: ['}'] } },
@@ -847,10 +854,10 @@ function types(text: string, definition: typeof svelte) {
 	expect<Equal<NodeType<Lists, 'Two'>['second'], NodeType<Lists, 'Fragment'> | null>>();
 	// a rule written apart from the grammar keeps its types
 	const out = { in: ['content', 'value'], open: { marker: ['{{'], form: [{ value: g.js.expression }, '}}'] } } as const;
-	const apart = g.grammar('apart', { document: { node: 'Root' }, constructs: { Out: out } });
+	const apart = g.grammar({ document: { node: 'Root' }, constructs: { Out: out } });
 	expect<Equal<NodeType<typeof apart, 'Out'>['value'], Expression>>();
 	// a construct only in values, or only in rcdata, is a node type too; an attribute's value holds text and what stands in values
-	const only = g.grammar('only', {
+	const only = g.grammar({
 		document: { node: 'Root' },
 		constructs: {
 			Interp: { in: ['value'], open: { marker: ['{{'], form: [{ value: g.js.expression }, '}}'] } },

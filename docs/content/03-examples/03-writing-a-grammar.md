@@ -26,12 +26,12 @@ Most of the file is HTML, so start there. Every kind of element gets a type, and
 
 ![list.tpl above the pieces of an HTML grammar: document, other and component, each with arrows to the part of the file it reads](Html.svelte "start=document")
 
-Put together, with the language's name:
+Put together:
 
 ```js tpl.js
 import * as g from '@teasel/parser/grammar';
 
-export const tpl = g.grammar('tpl', {
+export const tpl = g.grammar({
 	document: { node: 'Template' },
 	elements: {
 		component: { node: 'Component' },

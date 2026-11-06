@@ -7,7 +7,7 @@ const aliases = g.seq(
 );
 const named = { kind: g.directive.kind, rawName: g.directive.raw };
 
-export default g.grammar('vue', {
+export default g.grammar({
 	document: { node: 'Root' },
 	void: ['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr'],
 	verbatim: 'v-pre',

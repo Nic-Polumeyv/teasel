@@ -1214,7 +1214,6 @@ pub struct DocumentRule {
 /// A host language: its document, its content, and the JavaScript inside them.
 #[derive(Clone, Debug)]
 pub struct Grammar {
-	pub name: &'static str,
 	/// Every name of a type or field its documents' nodes have, by number, the walker's own first.
 	pub names: Vec<&'static str>,
 	pub shapes: std::cell::RefCell<Shapes>,
@@ -1228,6 +1227,9 @@ pub struct Grammar {
 	pub void: Vec<&'static str>,
 	/// The attribute that makes an element's subtree verbatim: text and plain attributes only.
 	pub verbatim: Option<&'static str>,
+	/// What the host's own tags start with: a tag that starts with one and has no rule of its
+	/// own is an error.
+	pub reserved: Vec<&'static str>,
 	pub elements: Vec<ElementRule>,
 	pub script: Option<ScriptRule>,
 	pub style: Option<&'static str>,
@@ -1358,6 +1360,7 @@ pub mod definition {
 
 	wire! {
 		pub struct Elements<'a> {
+			pub reserved: Option<&'a [&'static str]>,
 			pub rules: Option<Record<'a, Element<'a>>>,
 			pub component: Option<Element<'a>>,
 			pub other: Option<Element<'a>>,
@@ -1449,25 +1452,17 @@ pub mod definition {
 		}
 	}
 
-	wire! {
-		/// What crosses: the host's name and its definition.
-		pub struct Host<'a> {
-			pub name: &'static str,
-			pub definition: Definition<'a>,
-		}
-	}
-
-	impl<'a> Host<'a> {
+	impl<'a> Definition<'a> {
 		/// Every name but an escaped one is a slice of `text`, which therefore lives for the
 		/// process; every list is in `arena`.
-		pub fn read(text: &'static str, arena: &'a Arena) -> Result<Host<'a>, String> {
+		pub fn read(text: &'static str, arena: &'a Arena) -> Result<Definition<'a>, String> {
 			let mut reader = Reader::new(text, arena);
-			let host = <Host as Wire>::read(&mut reader)?;
+			let definition = <Definition as Wire>::read(&mut reader)?;
 			reader.end()?;
-			Ok(host)
+			Ok(definition)
 		}
 
-		/// The host as JSON, as the JavaScript side writes it.
+		/// The definition as JSON, as the JavaScript side writes it.
 		pub fn json(&self) -> String {
 			let mut out = String::new();
 			self.write(&mut out);
@@ -1478,7 +1473,7 @@ pub mod definition {
 
 // ── the definition lowered into the walker's rules
 
-use definition::{Bind, Host, Literal, Source};
+use definition::{Bind, Definition, Literal, Source};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum At {
@@ -2062,11 +2057,14 @@ fn construct(ty: &'static str, rule: &definition::Construct, n: &mut Naming) -> 
 	Ok(construct)
 }
 
-fn lower(host: Host) -> Result<Grammar, String> {
-	let d = host.definition;
+fn lower(d: Definition) -> Result<Grammar, String> {
 	let n = &mut Naming::new();
 	let mut elements = Vec::new();
 	let e = d.elements.as_ref();
+	let reserved = e.and_then(|e| e.reserved).unwrap_or_default().to_vec();
+	for prefix in &reserved {
+		token("a reserved prefix", prefix)?;
+	}
 	for (name, rule) in e.and_then(|e| e.rules).iter().flat_map(|r| r.0) {
 		elements.push(element(Match::Exact(name), rule, n)?);
 	}
@@ -2141,7 +2139,6 @@ fn lower(host: Host) -> Result<Grammar, String> {
 		return Err("a node type or a field needs a name".into());
 	}
 	Ok(Grammar {
-		name: host.name,
 		names: std::mem::take(&mut n.names),
 		shapes: Default::default(),
 		document: DocumentRule { ty, fields },
@@ -2149,6 +2146,7 @@ fn lower(host: Host) -> Result<Grammar, String> {
 		autoclose: d.autoclose == Some(true),
 		trim: d.trim == Some(true),
 		void: d.void.unwrap_or_default().to_vec(),
+		reserved,
 		verbatim: d.verbatim,
 		elements,
 		script: d.script.as_ref().map(|s| ScriptRule {
@@ -2272,7 +2270,6 @@ impl Grammar {
 	/// A grammar with nothing in it, behind a stylesheet read on its own.
 	pub(crate) fn empty() -> Grammar {
 		Grammar {
-			name: "",
 			names: own::NAMES.to_vec(),
 			shapes: Default::default(),
 			document: DocumentRule {
@@ -2287,6 +2284,7 @@ impl Grammar {
 			autoclose: false,
 			trim: false,
 			void: Vec::new(),
+			reserved: Vec::new(),
 			verbatim: None,
 			elements: Vec::new(),
 			script: None,
@@ -2303,15 +2301,12 @@ impl Grammar {
 	/// Reads a grammar off its JSON, kept for the process: the definition as the builders made it,
 	/// lowered.
 	pub fn read(text: &'static str) -> Result<Grammar, String> {
-		let mut grammar = lower(Host::read(text, &Arena::default())?)?;
+		let mut grammar = lower(Definition::read(text, &Arena::default())?)?;
 		grammar.finish()?;
 		Ok(grammar)
 	}
 
 	fn finish(&mut self) -> Result<(), String> {
-		if self.name.is_empty() {
-			return Err("a grammar names its host".into());
-		}
 		if self.shorthand.is_some() && self.value_expression().is_none() {
 			return Err("the attribute shorthand needs a tag in value that reads one expression".into());
 		}
@@ -2584,15 +2579,15 @@ mod tests {
 			}
 			println!("{label}: {:?}", t.elapsed() / 1000);
 		};
-		time("Host::read", &|| {
-			std::hint::black_box(Host::read(text, &Arena::default()).unwrap());
+		time("Definition::read", &|| {
+			std::hint::black_box(Definition::read(text, &Arena::default()).unwrap());
 		});
 		let arena = Arena::default();
-		let host = Host::read(text, &arena).unwrap();
+		let definition = Definition::read(text, &arena).unwrap();
 		time("lower", &|| {
-			std::hint::black_box(lower(host).unwrap());
+			std::hint::black_box(lower(definition).unwrap());
 		});
-		let grammar = lower(host).unwrap();
+		let grammar = lower(definition).unwrap();
 		time("finish", &|| {
 			let mut g = grammar.clone();
 			g.finish().unwrap();
