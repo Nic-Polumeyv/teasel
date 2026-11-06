@@ -201,7 +201,7 @@ impl<const TS: bool> Parser<'_, TS> {
 					start,
 				)
 			} else {
-				let variable = if p.is_ident() && matches!(p.peek_char().0, Some('i' | '\\')) {
+				let variable = if p.is_ident() && matches!(p.next_start(), None | Some('i' | '\\')) {
 					p.try_parse(|p| p.parse_type_predicate_prefix())?
 				} else {
 					None
