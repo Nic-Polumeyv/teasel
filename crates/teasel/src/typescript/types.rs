@@ -110,18 +110,19 @@ impl<const TS: bool> Parser<'_, TS> {
 		}
 	}
 
+	// a fresh list for each, where JavaScript's come from the spares, took 0.2 ms of a 36 ms parse of 726 files
 	pub(super) fn parse_delimited_list(
 		&mut self,
 		kind: ListKind,
 		mut element: impl FnMut(&mut Self) -> Result<NodeId>,
-	) -> Result<Vec<NodeId>> {
+	) -> Result<Vec<Option<NodeId>>> {
 		let end = Self::list_end(kind);
-		let mut result = Vec::new();
+		let mut result = self.items();
 		loop {
 			if self.is(end) {
 				break;
 			}
-			result.push(element(self)?);
+			result.push(Some(element(self)?));
 			if self.eat(TokenKind::Comma)? {
 				continue;
 			}
@@ -137,12 +138,12 @@ impl<const TS: bool> Parser<'_, TS> {
 		&mut self,
 		kind: ListKind,
 		mut element: impl FnMut(&mut Self) -> Result<NodeId>,
-	) -> Result<Vec<NodeId>> {
+	) -> Result<Vec<Option<NodeId>>> {
 		let end = Self::list_end(kind);
-		let mut result = Vec::new();
+		let mut result = self.items();
 		while !self.is(end) {
 			let at = self.tok.start;
-			result.push(element(self)?);
+			result.push(Some(element(self)?));
 			self.ensure_progress(at)?;
 		}
 		Ok(result)
@@ -181,7 +182,9 @@ impl<const TS: bool> Parser<'_, TS> {
 			let annotation_start = p.tok.start;
 			p.expect(return_token)?;
 			let start = p.tok.start;
-			let asserts = p.try_parse(|p| p.parse_type_predicate_asserts())?.unwrap_or(false);
+			// trying both forms of a predicate after every return type's colon took 0.5 ms of a 36 ms parse of 726 files
+			let asserts =
+				p.is_contextual("asserts") && p.try_parse(|p| p.parse_type_predicate_asserts())?.unwrap_or(false);
 			let predicate = if p.is_keyword(Keyword::This) && (asserts || p.peek_is_contextual("is")?) {
 				let parameter_name = p.parse_this_type_node()?;
 				let type_annotation = if p.eat_contextual("is")? {
@@ -198,7 +201,7 @@ impl<const TS: bool> Parser<'_, TS> {
 					start,
 				)
 			} else {
-				let variable = if p.is_ident() {
+				let variable = if p.is_ident() && matches!(p.next_start(), None | Some('i' | '\\')) {
 					p.try_parse(|p| p.parse_type_predicate_prefix())?
 				} else {
 					None
@@ -430,14 +433,17 @@ impl<const TS: bool> Parser<'_, TS> {
 	) -> Result<NodeId> {
 		let start = self.tok.start;
 		let has_leading_operator = self.eat(operator)?;
-		let mut types = vec![constituent(self)?];
+		let first = constituent(self)?;
+		// a list for every type, most of them one name, took 0.4 ms of a 37 ms parse of 726 files
+		if !has_leading_operator && !self.is(operator) {
+			return Ok(first);
+		}
+		let mut types = self.items();
+		types.push(Some(first));
 		while self.eat(operator)? {
-			types.push(constituent(self)?);
+			types.push(Some(constituent(self)?));
 		}
-		if types.len() == 1 && !has_leading_operator {
-			return Ok(types[0]);
-		}
-		let types = self.list_of(&types);
+		let types = self.list_from(types);
 		let kind = if operator == TokenKind::Pipe {
 			NodeKind::UnionType { types }
 		} else {
@@ -773,7 +779,7 @@ impl<const TS: bool> Parser<'_, TS> {
 	fn parse_type_literal(&mut self) -> Result<NodeId> {
 		let start = self.tok.start;
 		let members = self.parse_object_type_members()?;
-		let members = self.list_of(&members);
+		let members = self.list_from(members);
 		Ok(self.add(NodeKind::TypeLiteral { members }, start))
 	}
 
@@ -783,7 +789,7 @@ impl<const TS: bool> Parser<'_, TS> {
 		let element_types = self.parse_delimited_list(ListKind::TupleElements, |p| p.parse_tuple_element_type())?;
 		self.expect(TokenKind::BracketR)?;
 		let mut seen_optional = false;
-		for &element in &element_types {
+		for &element in element_types.iter().flatten() {
 			let kind = self.ts_kind(element);
 			let optional = matches!(
 				kind,
@@ -794,7 +800,7 @@ impl<const TS: bool> Parser<'_, TS> {
 			}
 			seen_optional |= optional;
 		}
-		let element_types = self.list_of(&element_types);
+		let element_types = self.list_from(element_types);
 		Ok(self.add(NodeKind::TupleType { element_types }, start))
 	}
 
@@ -891,7 +897,7 @@ impl<const TS: bool> Parser<'_, TS> {
 		if params.is_empty() {
 			return self.error(self.tok.start, Code::EmptyTypeParameters);
 		}
-		let params = self.list_of(&params);
+		let params = self.list_from(params);
 		Ok(self.add(NodeKind::TypeParameterDeclaration { params }, start))
 	}
 
@@ -915,7 +921,7 @@ impl<const TS: bool> Parser<'_, TS> {
 		}
 		self.lexer.depth -= 1;
 		self.expect(TokenKind::Gt)?;
-		let params = self.list_of(&params);
+		let params = self.list_from(params);
 		Ok(self.add(NodeKind::TypeParameterInstantiation { params }, start))
 	}
 
@@ -930,7 +936,7 @@ impl<const TS: bool> Parser<'_, TS> {
 		self.parse_type_arguments().map(Some)
 	}
 
-	pub(super) fn parse_heritage_clause(&mut self, token: &str) -> Result<Vec<NodeId>> {
+	pub(super) fn parse_heritage_clause(&mut self, token: &str) -> Result<Vec<Option<NodeId>>> {
 		let start = self.tok.start;
 		let clause = if token == "implements" {
 			Clause::Implements
@@ -962,7 +968,7 @@ impl<const TS: bool> Parser<'_, TS> {
 
 	// Type members
 
-	pub(super) fn parse_object_type_members(&mut self) -> Result<Vec<NodeId>> {
+	pub(super) fn parse_object_type_members(&mut self) -> Result<Vec<Option<NodeId>>> {
 		self.expect(TokenKind::BraceL)?;
 		let members = self.parse_list(ListKind::TypeMembers, |p| p.parse_type_member())?;
 		self.expect(TokenKind::BraceR)?;

@@ -50,7 +50,7 @@ impl<const TS: bool> Parser<'_, TS> {
 		self.expect(TokenKind::BraceL)?;
 		let members = self.parse_delimited_list(ListKind::EnumMembers, |p| p.parse_enum_member())?;
 		self.expect(TokenKind::BraceR)?;
-		let members = self.list_of(&members);
+		let members = self.list_from(members);
 		Ok(self.add(NodeKind::EnumDeclaration { id, members, is_const }, start))
 	}
 
@@ -125,7 +125,7 @@ impl<const TS: bool> Parser<'_, TS> {
 		self.ts.state.module_blocks += 1;
 		let in_namespace = std::mem::replace(&mut self.ts.state.in_namespace, namespace);
 		self.expect(TokenKind::BraceL)?;
-		let mut body = Vec::new();
+		let mut body = self.items();
 		let mut exports = Exports::default();
 		while !self.is(TokenKind::BraceR) {
 			let at = self.tok.start;
@@ -135,7 +135,7 @@ impl<const TS: bool> Parser<'_, TS> {
 				if self.ts.state.ambient && !self.is_declaration(statement) {
 					return self.error(at, Code::StatementInAmbient);
 				}
-				body.push(statement);
+				body.push(Some(statement));
 			}
 			self.ensure_progress(at)?;
 		}
@@ -143,7 +143,7 @@ impl<const TS: bool> Parser<'_, TS> {
 		self.ts.state.module_blocks -= 1;
 		self.ts.state.in_namespace = in_namespace;
 		self.exit_scope();
-		let body = self.list_of(&body);
+		let body = self.list_from(body);
 		Ok(self.add(NodeKind::ModuleBlock { body }, start))
 	}
 
@@ -242,7 +242,7 @@ impl<const TS: bool> Parser<'_, TS> {
 		let type_parameters = self.try_parse_type_parameters(TypeParameterModifiers::InOut)?;
 		let extends = if self.eat_keyword(Keyword::Extends)? {
 			let clause = self.parse_heritage_clause("extends")?;
-			self.list_of(&clause)
+			self.list_from(clause)
 		} else {
 			List::EMPTY
 		};
@@ -250,7 +250,7 @@ impl<const TS: bool> Parser<'_, TS> {
 		self.expect(TokenKind::BraceL)?;
 		let members = self.in_type(|p| p.parse_list(ListKind::TypeMembers, |p| p.parse_type_member()))?;
 		self.expect(TokenKind::BraceR)?;
-		let members = self.list_of(&members);
+		let members = self.list_from(members);
 		let body = self.add(NodeKind::InterfaceBody { body: members }, body_start);
 		Ok(self.add(
 			NodeKind::InterfaceDeclaration {

@@ -256,6 +256,21 @@ fn failed_attempt_leaves_no_scope() {
 }
 
 #[test]
+fn a_predicate_recovers_past_a_bad_character() {
+	let options = Options(Options::MODULE | Options::ERROR_RECOVERY);
+	for src in ["function f(x): x ¬ is X {}", "function f(x): asserts x ¬ is X {}"] {
+		let (ast, _, _) = one(crate::parse_at(src, 0, Entry::Program, typescript(options), "")).unwrap();
+		assert!(
+			ast.nodes
+				.iter()
+				.any(|node| matches!(node.kind, NodeKind::TypePredicate { .. })),
+			"{src}"
+		);
+		assert_eq!(ast.errors.len(), 1, "{src}");
+	}
+}
+
+#[test]
 fn an_export_list_reads_the_top_scope() {
 	let options = Options(Options::MODULE);
 	let undefined = |src: &str| match at(Entry::Program, src, 0, options, "") {
