@@ -50,7 +50,7 @@ impl<const TS: bool> Parser<'_, TS> {
 		self.expect(TokenKind::BraceL)?;
 		let members = self.parse_delimited_list(ListKind::EnumMembers, |p| p.parse_enum_member())?;
 		self.expect(TokenKind::BraceR)?;
-		let members = self.list_of(&members);
+		let members = self.list_from(members);
 		Ok(self.add(NodeKind::EnumDeclaration { id, members, is_const }, start))
 	}
 
@@ -242,7 +242,7 @@ impl<const TS: bool> Parser<'_, TS> {
 		let type_parameters = self.try_parse_type_parameters(TypeParameterModifiers::InOut)?;
 		let extends = if self.eat_keyword(Keyword::Extends)? {
 			let clause = self.parse_heritage_clause("extends")?;
-			self.list_of(&clause)
+			self.list_from(clause)
 		} else {
 			List::EMPTY
 		};
@@ -250,7 +250,7 @@ impl<const TS: bool> Parser<'_, TS> {
 		self.expect(TokenKind::BraceL)?;
 		let members = self.in_type(|p| p.parse_list(ListKind::TypeMembers, |p| p.parse_type_member()))?;
 		self.expect(TokenKind::BraceR)?;
-		let members = self.list_of(&members);
+		let members = self.list_from(members);
 		let body = self.add(NodeKind::InterfaceBody { body: members }, body_start);
 		Ok(self.add(
 			NodeKind::InterfaceDeclaration {

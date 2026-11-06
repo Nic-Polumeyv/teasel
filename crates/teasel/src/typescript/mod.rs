@@ -1261,7 +1261,7 @@ impl<const TS: bool> Parser<'_, TS> {
 		}
 		let implements = if self.eat_contextual("implements")? {
 			let clause = self.parse_heritage_clause("implements")?;
-			Some(self.list_of(&clause))
+			Some(self.list_from(clause))
 		} else {
 			None
 		};
