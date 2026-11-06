@@ -125,7 +125,7 @@ impl<const TS: bool> Parser<'_, TS> {
 		self.ts.state.module_blocks += 1;
 		let in_namespace = std::mem::replace(&mut self.ts.state.in_namespace, namespace);
 		self.expect(TokenKind::BraceL)?;
-		let mut body = Vec::new();
+		let mut body = self.items();
 		let mut exports = Exports::default();
 		while !self.is(TokenKind::BraceR) {
 			let at = self.tok.start;
@@ -135,7 +135,7 @@ impl<const TS: bool> Parser<'_, TS> {
 				if self.ts.state.ambient && !self.is_declaration(statement) {
 					return self.error(at, Code::StatementInAmbient);
 				}
-				body.push(statement);
+				body.push(Some(statement));
 			}
 			self.ensure_progress(at)?;
 		}
@@ -143,7 +143,7 @@ impl<const TS: bool> Parser<'_, TS> {
 		self.ts.state.module_blocks -= 1;
 		self.ts.state.in_namespace = in_namespace;
 		self.exit_scope();
-		let body = self.list_of(&body);
+		let body = self.list_from(body);
 		Ok(self.add(NodeKind::ModuleBlock { body }, start))
 	}
 
