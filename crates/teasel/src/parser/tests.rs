@@ -320,7 +320,7 @@ fn entry_points() {
 	let (ast, id, _) = at(Entry::Pattern, "{#each items as {a, b = 1}, i}", 16, options, "").unwrap();
 	assert_eq!(
 		dump(&ast, id, &plain),
-		r#"ObjectPattern { properties: [Property { key: Identifier { name: "a" }, value: Identifier { name: "a" }, kind: Init, computed: false, method: false, shorthand: true }, Property { key: Identifier { name: "b" }, value: AssignmentPattern { left: Identifier { name: "b" }, right: NumberLiteral { value: 1.0 } }, kind: Init, computed: false, method: false, shorthand: true }] }"#
+		r#"ObjectPattern { properties: [Property { method: false, shorthand: true, computed: false, key: Identifier { name: "a" }, value: Identifier { name: "a" }, kind: Init }, Property { method: false, shorthand: true, computed: false, key: Identifier { name: "b" }, value: AssignmentPattern { left: Identifier { name: "b" }, right: NumberLiteral { value: 1.0 } }, kind: Init }] }"#
 	);
 	assert_eq!(ast.node(id).end, 26);
 	let (ast, id, _) = at(Entry::Pattern, "{#each items as item (item.id)}", 16, options, "").unwrap();
@@ -334,7 +334,7 @@ fn entry_points() {
 		dumped,
 		[
 			r#"Identifier { name: "a" }"#,
-			r#"ObjectPattern { properties: [Property { key: Identifier { name: "b" }, value: Identifier { name: "b" }, kind: Init, computed: false, method: false, shorthand: true }] }"#,
+			r#"ObjectPattern { properties: [Property { method: false, shorthand: true, computed: false, key: Identifier { name: "b" }, value: Identifier { name: "b" }, kind: Init }] }"#,
 			r#"RestElement { argument: Identifier { name: "rest" } }"#
 		]
 	);
@@ -372,7 +372,7 @@ fn entry_points() {
 	let (ast, id, _) = at(Entry::Statement, "{@const x = a + 1}", 2, options, "").unwrap();
 	assert_eq!(
 		dump(&ast, id, &plain),
-		r#"VariableDeclaration { declarations: [VariableDeclarator { id: Identifier { name: "x" }, init: Some(BinaryExpression { operator: Add, left: Identifier { name: "a" }, right: NumberLiteral { value: 1.0 } }) }], kind: Const }"#
+		r#"VariableDeclaration { declarations: [VariableDeclarator { id: Identifier { name: "x" }, init: Some(BinaryExpression { left: Identifier { name: "a" }, operator: Add, right: NumberLiteral { value: 1.0 } }) }], kind: Const }"#
 	);
 	assert_eq!(ast.node(id).end, 17);
 }
@@ -479,7 +479,7 @@ fn recovery() {
 	assert_eq!(
 		expr("{a + }", "}"),
 		(
-			r#"BinaryExpression { operator: Add, left: Identifier { name: "a" }, right: Identifier { name: "" } }"#
+			r#"BinaryExpression { left: Identifier { name: "a" }, operator: Add, right: Identifier { name: "" } }"#
 				.into(),
 			5,
 			vec!["unexpected_token@5".into()],

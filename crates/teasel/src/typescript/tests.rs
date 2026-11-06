@@ -69,11 +69,11 @@ fn expression_entry_point() {
 	);
 	assert_eq!(
 		expr(r#"<T>(x: T) => x"#),
-		r#"ArrowFunctionExpression { params: [Identifier { name: "x" } +{type_annotation: TypeAnnotation { type_annotation: TypeReference { type_name: Identifier { name: "T" }, type_arguments: None } }}], body: Identifier { name: "x" }, expression: true, is_async: false } +{type_parameters: TypeParameterDeclaration { params: [TypeParameter { name: "T", constraint: None, default: None, is_in: false, is_out: false, is_const: false }] }}"#
+		r#"ArrowFunctionExpression { params: [Identifier { name: "x" } +{type_annotation: TypeAnnotation { type_annotation: TypeReference { type_name: Identifier { name: "T" }, type_arguments: None } }}], body: Identifier { name: "x" }, expression: true, is_async: false } +{type_parameters: TypeParameterDeclaration { params: [TypeParameter { is_in: false, is_out: false, is_const: false, name: "T", constraint: None, default: None }] }}"#
 	);
 	assert_eq!(
 		expr(r#"async <T>(x: T) => x"#),
-		r#"ArrowFunctionExpression { params: [Identifier { name: "x" } +{type_annotation: TypeAnnotation { type_annotation: TypeReference { type_name: Identifier { name: "T" }, type_arguments: None } }}], body: Identifier { name: "x" }, expression: true, is_async: true } +{type_parameters: TypeParameterDeclaration { params: [TypeParameter { name: "T", constraint: None, default: None, is_in: false, is_out: false, is_const: false }] }}"#
+		r#"ArrowFunctionExpression { params: [Identifier { name: "x" } +{type_annotation: TypeAnnotation { type_annotation: TypeReference { type_name: Identifier { name: "T" }, type_arguments: None } }}], body: Identifier { name: "x" }, expression: true, is_async: true } +{type_parameters: TypeParameterDeclaration { params: [TypeParameter { is_in: false, is_out: false, is_const: false, name: "T", constraint: None, default: None }] }}"#
 	);
 	assert_eq!(
 		expr(r#"(x?: number) => x"#),
@@ -81,7 +81,7 @@ fn expression_entry_point() {
 	);
 	assert_eq!(
 		expr(r#"({ a, b }: T) => a"#),
-		r#"ArrowFunctionExpression { params: [ObjectPattern { properties: [Property { key: Identifier { name: "a" }, value: Identifier { name: "a" }, kind: Init, computed: false, method: false, shorthand: true }, Property { key: Identifier { name: "b" }, value: Identifier { name: "b" }, kind: Init, computed: false, method: false, shorthand: true }] } +{type_annotation: TypeAnnotation { type_annotation: TypeReference { type_name: Identifier { name: "T" }, type_arguments: None } }}], body: Identifier { name: "a" }, expression: true, is_async: false }"#
+		r#"ArrowFunctionExpression { params: [ObjectPattern { properties: [Property { method: false, shorthand: true, computed: false, key: Identifier { name: "a" }, value: Identifier { name: "a" }, kind: Init }, Property { method: false, shorthand: true, computed: false, key: Identifier { name: "b" }, value: Identifier { name: "b" }, kind: Init }] } +{type_annotation: TypeAnnotation { type_annotation: TypeReference { type_name: Identifier { name: "T" }, type_arguments: None } }}], body: Identifier { name: "a" }, expression: true, is_async: false }"#
 	);
 	assert_eq!(
 		expr(r#"(...args: number[]) => args"#),
@@ -93,7 +93,7 @@ fn expression_entry_point() {
 	);
 	assert_eq!(
 		expr(r#"a < b"#),
-		r#"BinaryExpression { operator: Lt, left: Identifier { name: "a" }, right: Identifier { name: "b" } }"#
+		r#"BinaryExpression { left: Identifier { name: "a" }, operator: Lt, right: Identifier { name: "b" } }"#
 	);
 	assert_eq!(
 		expr(r#"a<b>(c)"#),

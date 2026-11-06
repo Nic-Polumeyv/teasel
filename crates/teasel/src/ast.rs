@@ -687,8 +687,8 @@ crate::layout::kinds! {
 			flags: StrId,
 		},
 		TemplateLiteral {
-			quasis: List,
 			expressions: List,
+			quasis: List,
 		},
 		TemplateElement {
 			cooked: Option<StrId>,
@@ -708,12 +708,12 @@ crate::layout::kinds! {
 			properties: List,
 		},
 		Property {
+			method: bool,
+			shorthand: bool,
+			computed: bool,
 			key: NodeId,
 			value: NodeId,
 			kind: PropertyKind,
-			computed: bool,
-			method: bool,
-			shorthand: bool,
 		},
 		SpreadElement {
 			argument: NodeId,
@@ -728,13 +728,13 @@ crate::layout::kinds! {
 			argument: NodeId,
 		},
 		BinaryExpression {
-			operator: BinaryOperator,
 			left: NodeId,
+			operator: BinaryOperator,
 			right: NodeId,
 		},
 		LogicalExpression {
-			operator: LogicalOperator,
 			left: NodeId,
+			operator: LogicalOperator,
 			right: NodeId,
 		},
 		AssignmentExpression {
@@ -790,11 +790,11 @@ crate::layout::kinds! {
 			body: List,
 		},
 		MethodDefinition {
-			key: NodeId,
-			value: NodeId,
-			kind: MethodKind,
-			computed: bool,
 			is_static: bool,
+			computed: bool,
+			key: NodeId,
+			kind: MethodKind,
+			value: NodeId,
 		},
 		PropertyDefinition {
 			key: NodeId,
@@ -807,8 +807,8 @@ crate::layout::kinds! {
 			body: List,
 		},
 		YieldExpression {
-			argument: Option<NodeId>,
 			delegate: bool,
+			argument: Option<NodeId>,
 		},
 		AwaitExpression {
 			argument: NodeId,
@@ -853,8 +853,8 @@ crate::layout::kinds! {
 			argument: Option<NodeId>,
 		},
 		LabeledStatement {
-			label: NodeId,
 			body: NodeId,
+			label: NodeId,
 		},
 		BreakStatement {
 			label: Option<NodeId>,
@@ -872,8 +872,8 @@ crate::layout::kinds! {
 			cases: List,
 		},
 		SwitchCase {
-			test: Option<NodeId>,
 			consequent: List,
+			test: Option<NodeId>,
 		},
 		ThrowStatement {
 			argument: NodeId,
@@ -907,10 +907,10 @@ crate::layout::kinds! {
 			body: NodeId,
 		},
 		ForOfStatement {
+			is_await: bool,
 			left: NodeId,
 			right: NodeId,
 			body: NodeId,
-			is_await: bool,
 		},
 		VariableDeclaration {
 			declarations: List,
@@ -964,7 +964,8 @@ crate::layout::kinds! {
 		},
 		/// A node of the host's grammar, indexed into `Ast::hosts`.
 		Host(u32),
-
+	}
+	typescript {
 		// Types
 		TypeAnnotation {
 			type_annotation: NodeId,
@@ -992,12 +993,12 @@ crate::layout::kinds! {
 			params: List,
 		},
 		TypeParameter {
-			name: StrId,
-			constraint: Option<NodeId>,
-			default: Option<NodeId>,
 			is_in: bool,
 			is_out: bool,
 			is_const: bool,
+			name: StrId,
+			constraint: Option<NodeId>,
+			default: Option<NodeId>,
 		},
 		FunctionType {
 			type_parameters: Option<NodeId>,
@@ -1005,10 +1006,10 @@ crate::layout::kinds! {
 			type_annotation: NodeId,
 		},
 		ConstructorType {
+			is_abstract: bool,
 			type_parameters: Option<NodeId>,
 			parameters: List,
 			type_annotation: NodeId,
-			is_abstract: bool,
 		},
 		UnionType {
 			types: List,
@@ -1046,8 +1047,8 @@ crate::layout::kinds! {
 			members: List,
 		},
 		NamedTupleMember {
-			label: NodeId,
 			optional: bool,
+			label: NodeId,
 			element_type: NodeId,
 		},
 		OptionalType {

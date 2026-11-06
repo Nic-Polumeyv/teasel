@@ -1,7 +1,9 @@
 //! How each kind of node, each table's rows and what TypeScript adds are spelled in ESTree: a
-//! recipe of operations over the fields the layout describes, followed by the JSON writer and by
-//! the decoder building objects from the tree in place, so the two cannot drift.
+//! recipe of operations over the fields the layout describes, read off a kind's row unless ESTree
+//! says more, followed by the JSON writer and by the decoder building objects from the tree in
+//! place, so the two cannot drift.
 
+use crate::ast::node_layout::VARIANTS;
 use crate::layout::{Field, Ty, Variant};
 use crate::scopes::{Binding, Reference, Root, Scope};
 
@@ -127,139 +129,116 @@ impl Op {
 
 /// Whether a JavaScript or TypeScript node has this `type`.
 pub fn names_type(name: &str) -> bool {
-	KINDS
+	kinds()
 		.iter()
 		.any(|(_, ops)| ops.iter().any(|op| matches!(op, Type(t) if *t == name)))
 		|| crate::ast::Keyword::NAMES.contains(&name)
 }
 
-/// Every kind by the variant's name; `Host` has none, the writer spells it itself.
+/// Every kind by the variant's name: its recipe in `OWN` where ESTree says more than the kind's
+/// row, else what the row spells.
+pub fn kinds() -> &'static [(&'static str, &'static [Op])] {
+	static TABLE: std::sync::OnceLock<Vec<(&'static str, &'static [Op])>> = std::sync::OnceLock::new();
+	TABLE.get_or_init(|| {
+		VARIANTS
+			.iter()
+			.map(|variant| {
+				let own = OWN.iter().find(|(name, _)| *name == variant.name);
+				(variant.name, own.map_or_else(|| of_row(variant), |(_, ops)| *ops))
+			})
+			.collect()
+	})
+}
+
+/// A kind's recipe read off its row: the name is the `type`, `TS` first for a kind TypeScript
+/// adds; each field is a key of its name in camel case, `is_` dropped from the front, a record's
+/// fields in its place; a missing node is `null`, or `undefined` in TypeScript, where a missing
+/// list is empty and a missing enum `undefined` as well.
+fn of_row(variant: &Variant) -> &'static [Op] {
+	fn spell(ops: &mut Vec<Op>, fields: &[Field], at: &str, typescript: bool, kind: &str) {
+		for field in fields {
+			let path: Path = leak(format!("{at}{}", field.name));
+			if let Ty::Struct(inner) = field.ty {
+				spell(ops, inner, &format!("{path}."), typescript, kind);
+				continue;
+			}
+			let key = leak(camel(field.name.strip_prefix("is_").unwrap_or(field.name)));
+			ops.push(match (field.ty, typescript) {
+				(Ty::Node, _) => Node(key, path),
+				(Ty::OptNode, false) => Opt(key, path),
+				(Ty::OptNode | Ty::OptList | Ty::OptEnum(_), true) => Maybe(key, path),
+				(Ty::List, _) => List(key, path),
+				(Ty::Str, _) => Str(key, path),
+				(Ty::Bool, _) => Bool(key, path),
+				(Ty::Enum(_), _) => Enum(key, path),
+				_ => panic!("{kind}: {path} needs a recipe of its own"),
+			});
+		}
+	}
+	let name = variant.name;
+	let ty = if variant.typescript {
+		leak(format!("TS{name}"))
+	} else {
+		name
+	};
+	let mut ops = vec![Type(ty)];
+	spell(&mut ops, variant.fields, "", variant.typescript, name);
+	Box::leak(ops.into_boxed_slice())
+}
+
+fn leak(text: String) -> &'static str {
+	Box::leak(text.into_boxed_str())
+}
+
+/// `type_annotation` as `typeAnnotation`.
+fn camel(name: &str) -> String {
+	let mut out = String::with_capacity(name.len());
+	let mut up = false;
+	for c in name.chars() {
+		if c == '_' {
+			up = true;
+		} else {
+			out.push(if up { c.to_ascii_uppercase() } else { c });
+			up = false;
+		}
+	}
+	out
+}
+
+/// The kinds ESTree spells past their rows: a `Literal`, a constant key, a key renamed or left
+/// out, what erasing keeps or sees through, a `type` by an enum, a field of the extras record;
+/// `Host` has no recipe, the writer spells it itself.
 #[rustfmt::skip]
-pub const KINDS: &[(&str, &[Op])] = &[
+const OWN: &[(&str, &[Op])] = &[
 	("Program", &[Type("Program"), List("body", "body"), BoolNames("sourceType", "module", "module", "script")]),
-	("Identifier", &[Type("Identifier"), Str("name", "name")]),
-	("PrivateIdentifier", &[Type("PrivateIdentifier"), Str("name", "name")]),
 	("NumberLiteral", &[Type("Literal"), Float("value", "value"), Raw]),
 	("BigIntLiteral", &[Type("Literal"), BigIntValue("value"), Raw, BigInt]),
 	("StringLiteral", &[Type("Literal"), Str("value", "value"), Raw]),
 	("BooleanLiteral", &[Type("Literal"), Bool("value", "value"), Raw]),
 	("NullLiteral", &[Type("Literal"), Null("value"), Raw]),
 	("RegExpLiteral", &[Type("Literal"), RegExp("value", "pattern", "flags"), Raw, Object("regex", &[Str("pattern", "pattern"), Str("flags", "flags")])]),
-	("TemplateLiteral", &[Type("TemplateLiteral"), List("expressions", "expressions"), List("quasis", "quasis")]),
 	("TemplateElement", &[Type("TemplateElement"), Object("value", &[Str("raw", "raw"), Opt("cooked", "cooked")]), Bool("tail", "tail")]),
-	("TaggedTemplateExpression", &[Type("TaggedTemplateExpression"), Node("tag", "tag"), Node("quasi", "quasi")]),
-	("ThisExpression", &[Type("ThisExpression")]),
-	("Super", &[Type("Super")]),
-	("ArrayExpression", &[Type("ArrayExpression"), List("elements", "elements")]),
-	("ObjectExpression", &[Type("ObjectExpression"), List("properties", "properties")]),
-	("Property", &[Type("Property"), Bool("method", "method"), Bool("shorthand", "shorthand"), Bool("computed", "computed"), Node("key", "key"), Node("value", "value"), Enum("kind", "kind")]),
-	("SpreadElement", &[Type("SpreadElement"), Node("argument", "argument")]),
 	("UnaryExpression", &[Type("UnaryExpression"), Enum("operator", "operator"), ConstBool("prefix", true), Node("argument", "argument")]),
-	("UpdateExpression", &[Type("UpdateExpression"), Enum("operator", "operator"), Bool("prefix", "prefix"), Node("argument", "argument")]),
-	("BinaryExpression", &[Type("BinaryExpression"), Node("left", "left"), Enum("operator", "operator"), Node("right", "right")]),
-	("LogicalExpression", &[Type("LogicalExpression"), Node("left", "left"), Enum("operator", "operator"), Node("right", "right")]),
-	("AssignmentExpression", &[Type("AssignmentExpression"), Enum("operator", "operator"), Node("left", "left"), Node("right", "right")]),
-	("ConditionalExpression", &[Type("ConditionalExpression"), Node("test", "test"), Node("consequent", "consequent"), Node("alternate", "alternate")]),
-	("MemberExpression", &[Type("MemberExpression"), Node("object", "object"), Node("property", "property"), Bool("computed", "computed"), Bool("optional", "optional")]),
-	("CallExpression", &[Type("CallExpression"), Node("callee", "callee"), List("arguments", "arguments"), Bool("optional", "optional")]),
-	("ChainExpression", &[Type("ChainExpression"), Node("expression", "expression")]),
-	("NewExpression", &[Type("NewExpression"), Node("callee", "callee"), List("arguments", "arguments")]),
-	("SequenceExpression", &[Type("SequenceExpression"), List("expressions", "expressions")]),
 	("ArrowFunctionExpression", &[Type("ArrowFunctionExpression"), Null("id"), Bool("expression", "expression"), ConstBool("generator", false), Bool("async", "is_async"), Params("params", "params"), Node("body", "body")]),
 	("FunctionExpression", &[Type("FunctionExpression"), Opt("id", "function.id"), ConstBool("expression", false), Bool("generator", "function.generator"), Bool("async", "function.is_async"), Params("params", "function.params"), Node("body", "function.body")]),
 	("FunctionDeclaration", &[Type("FunctionDeclaration"), Opt("id", "function.id"), ConstBool("expression", false), Bool("generator", "function.generator"), Bool("async", "function.is_async"), Params("params", "function.params"), Node("body", "function.body")]),
-	("ClassExpression", &[Type("ClassExpression"), Opt("id", "class.id"), Opt("superClass", "class.super_class"), Node("body", "class.body")]),
-	("ClassDeclaration", &[Type("ClassDeclaration"), Opt("id", "class.id"), Opt("superClass", "class.super_class"), Node("body", "class.body")]),
-	("ClassBody", &[Type("ClassBody"), List("body", "body")]),
-	("MethodDefinition", &[Type("MethodDefinition"), Bool("static", "is_static"), Bool("computed", "computed"), Node("key", "key"), Enum("kind", "kind"), Node("value", "value")]),
 	("PropertyDefinition", &[TypeOf("kind"), Bool("static", "is_static"), Bool("computed", "computed"), Node("key", "key"), Opt("value", "value"), KeepIf("AccessorProperty", "kind")]),
-	("StaticBlock", &[Type("StaticBlock"), List("body", "body")]),
-	("YieldExpression", &[Type("YieldExpression"), Bool("delegate", "delegate"), Opt("argument", "argument")]),
-	("AwaitExpression", &[Type("AwaitExpression"), Node("argument", "argument")]),
-	("MetaProperty", &[Type("MetaProperty"), Node("meta", "meta"), Node("property", "property")]),
-	("ImportExpression", &[Type("ImportExpression"), Node("source", "source"), Opt("options", "options")]),
-	("ObjectPattern", &[Type("ObjectPattern"), List("properties", "properties")]),
-	("ArrayPattern", &[Type("ArrayPattern"), List("elements", "elements")]),
-	("RestElement", &[Type("RestElement"), Node("argument", "argument")]),
-	("AssignmentPattern", &[Type("AssignmentPattern"), Node("left", "left"), Node("right", "right")]),
 	("ExpressionStatement", &[Type("ExpressionStatement"), Node("expression", "expression"), OptStrKey("directive", "directive")]),
-	("BlockStatement", &[Type("BlockStatement"), List("body", "body")]),
-	("EmptyStatement", &[Type("EmptyStatement")]),
-	("DebuggerStatement", &[Type("DebuggerStatement")]),
-	("WithStatement", &[Type("WithStatement"), Node("object", "object"), Node("body", "body")]),
-	("ReturnStatement", &[Type("ReturnStatement"), Opt("argument", "argument")]),
-	("LabeledStatement", &[Type("LabeledStatement"), Node("body", "body"), Node("label", "label")]),
-	("BreakStatement", &[Type("BreakStatement"), Opt("label", "label")]),
-	("ContinueStatement", &[Type("ContinueStatement"), Opt("label", "label")]),
-	("IfStatement", &[Type("IfStatement"), Node("test", "test"), Node("consequent", "consequent"), Opt("alternate", "alternate")]),
-	("SwitchStatement", &[Type("SwitchStatement"), Node("discriminant", "discriminant"), List("cases", "cases")]),
-	("SwitchCase", &[Type("SwitchCase"), List("consequent", "consequent"), Opt("test", "test")]),
-	("ThrowStatement", &[Type("ThrowStatement"), Node("argument", "argument")]),
-	("TryStatement", &[Type("TryStatement"), Node("block", "block"), Opt("handler", "handler"), Opt("finalizer", "finalizer")]),
-	("CatchClause", &[Type("CatchClause"), Opt("param", "param"), Node("body", "body")]),
-	("WhileStatement", &[Type("WhileStatement"), Node("test", "test"), Node("body", "body")]),
-	("DoWhileStatement", &[Type("DoWhileStatement"), Node("body", "body"), Node("test", "test")]),
-	("ForStatement", &[Type("ForStatement"), Opt("init", "init"), Opt("test", "test"), Opt("update", "update"), Node("body", "body")]),
-	("ForInStatement", &[Type("ForInStatement"), Node("left", "left"), Node("right", "right"), Node("body", "body")]),
-	("ForOfStatement", &[Type("ForOfStatement"), Bool("await", "is_await"), Node("left", "left"), Node("right", "right"), Node("body", "body")]),
-	("VariableDeclaration", &[Type("VariableDeclaration"), List("declarations", "declarations"), Enum("kind", "kind")]),
-	("VariableDeclarator", &[Type("VariableDeclarator"), Node("id", "id"), Opt("init", "init")]),
-	("ImportDeclaration", &[Type("ImportDeclaration"), List("specifiers", "specifiers"), Node("source", "source"), List("attributes", "attributes")]),
 	("ImportSpecifier", &[Type("ImportSpecifier"), OtherName("imported", "imported", "local"), Node("local", "local")]),
-	("ImportDefaultSpecifier", &[Type("ImportDefaultSpecifier"), Node("local", "local")]),
-	("ImportNamespaceSpecifier", &[Type("ImportNamespaceSpecifier"), Node("local", "local")]),
-	("ImportAttribute", &[Type("ImportAttribute"), Node("key", "key"), Node("value", "value")]),
 	("ExportDeclaration", &[Type("ExportNamedDeclaration"), Node("declaration", "declaration"), EmptyList("specifiers"), Null("source"), EmptyList("attributes")]),
 	("ExportNamedDeclaration", &[Type("ExportNamedDeclaration"), Null("declaration"), List("specifiers", "specifiers"), Opt("source", "source"), List("attributes", "attributes")]),
 	("ExportSpecifier", &[Type("ExportSpecifier"), Node("local", "local"), OtherName("exported", "exported", "local")]),
-	("ExportDefaultDeclaration", &[Type("ExportDefaultDeclaration"), Node("declaration", "declaration")]),
-	("ExportAllDeclaration", &[Type("ExportAllDeclaration"), Opt("exported", "exported"), Node("source", "source"), List("attributes", "attributes")]),
 	("Host", &[]),
-	("TypeAnnotation", &[Type("TSTypeAnnotation"), Node("typeAnnotation", "type_annotation")]),
 	("Keyword", &[TypeOf("0")]),
-	("ThisType", &[Type("TSThisType")]),
 	("TypePredicate", &[Type("TSTypePredicate"), Node("parameterName", "parameter_name"), Opt("typeAnnotation", "type_annotation"), Bool("asserts", "asserts")]),
-	("TypeReference", &[Type("TSTypeReference"), Node("typeName", "type_name"), Maybe("typeArguments", "type_arguments")]),
-	("QualifiedName", &[Type("TSQualifiedName"), Node("left", "left"), Node("right", "right")]),
-	("TypeParameterInstantiation", &[Type("TSTypeParameterInstantiation"), List("params", "params")]),
-	("TypeParameterDeclaration", &[Type("TSTypeParameterDeclaration"), List("params", "params")]),
-	("TypeParameter", &[Type("TSTypeParameter"), Bool("in", "is_in"), Bool("out", "is_out"), Bool("const", "is_const"), Str("name", "name"), Maybe("constraint", "constraint"), Maybe("default", "default")]),
-	("FunctionType", &[Type("TSFunctionType"), Maybe("typeParameters", "type_parameters"), List("parameters", "parameters"), Node("typeAnnotation", "type_annotation")]),
-	("ConstructorType", &[Type("TSConstructorType"), Bool("abstract", "is_abstract"), Maybe("typeParameters", "type_parameters"), List("parameters", "parameters"), Node("typeAnnotation", "type_annotation")]),
-	("UnionType", &[Type("TSUnionType"), List("types", "types")]),
-	("IntersectionType", &[Type("TSIntersectionType"), List("types", "types")]),
-	("TypeOperator", &[Type("TSTypeOperator"), Str("operator", "operator"), Node("typeAnnotation", "type_annotation")]),
-	("InferType", &[Type("TSInferType"), Node("typeParameter", "type_parameter")]),
-	("LiteralType", &[Type("TSLiteralType"), Node("literal", "literal")]),
 	("ImportType", &[Type("TSImportType"), Node("argument", "argument"), Opt("qualifier", "qualifier"), Opt("typeArguments", "type_arguments")]),
-	("TypeQuery", &[Type("TSTypeQuery"), Node("exprName", "expr_name"), Maybe("typeArguments", "type_arguments")]),
 	("MappedType", &[Type("TSMappedType"), Modifier("readonly", "readonly"), Node("typeParameter", "type_parameter"), Opt("nameType", "name_type"), Modifier("optional", "optional"), Maybe("typeAnnotation", "type_annotation")]),
-	("TypeLiteral", &[Type("TSTypeLiteral"), List("members", "members")]),
-	("NamedTupleMember", &[Type("TSNamedTupleMember"), Bool("optional", "optional"), Node("label", "label"), Node("elementType", "element_type")]),
-	("OptionalType", &[Type("TSOptionalType"), Node("typeAnnotation", "type_annotation")]),
-	("RestType", &[Type("TSRestType"), Node("typeAnnotation", "type_annotation")]),
-	("TupleType", &[Type("TSTupleType"), List("elementTypes", "element_types")]),
-	("ParenthesizedType", &[Type("TSParenthesizedType"), Node("typeAnnotation", "type_annotation")]),
-	("ArrayType", &[Type("TSArrayType"), Node("elementType", "element_type")]),
-	("IndexedAccessType", &[Type("TSIndexedAccessType"), Node("objectType", "object_type"), Node("indexType", "index_type")]),
-	("ConditionalType", &[Type("TSConditionalType"), Node("checkType", "check_type"), Node("extendsType", "extends_type"), Node("trueType", "true_type"), Node("falseType", "false_type")]),
-	("IndexSignature", &[Type("TSIndexSignature"), List("parameters", "parameters"), Maybe("typeAnnotation", "type_annotation")]),
-	("CallSignatureDeclaration", &[Type("TSCallSignatureDeclaration"), Maybe("typeParameters", "type_parameters"), List("parameters", "parameters"), Maybe("typeAnnotation", "type_annotation")]),
-	("ConstructSignatureDeclaration", &[Type("TSConstructSignatureDeclaration"), Maybe("typeParameters", "type_parameters"), List("parameters", "parameters"), Maybe("typeAnnotation", "type_annotation")]),
 	("MethodSignature", &[Type("TSMethodSignature"), Node("key", "key"), Bool("computed", "computed"), Bool("optional", "optional"), Enum("kind", "kind"), Extra("typeParameters", "type_parameters"), List("parameters", "parameters"), Maybe("typeAnnotation", "type_annotation")]),
-	("PropertySignature", &[Type("TSPropertySignature"), Node("key", "key"), Bool("computed", "computed"), Bool("optional", "optional"), Bool("readonly", "readonly"), Maybe("typeAnnotation", "type_annotation")]),
-	("InterfaceDeclaration", &[Type("TSInterfaceDeclaration"), Node("id", "id"), Maybe("typeParameters", "type_parameters"), List("extends", "extends"), Node("body", "body")]),
-	("InterfaceBody", &[Type("TSInterfaceBody"), List("body", "body")]),
 	("Heritage", &[TypeOf("clause"), Node("expression", "expression"), Maybe("typeArguments", "type_arguments")]),
 	("EnumDeclaration", &[Keep("TSEnumDeclaration"), Type("TSEnumDeclaration"), Bool("const", "is_const"), Node("id", "id"), List("members", "members")]),
-	("EnumMember", &[Type("TSEnumMember"), Node("id", "id"), Maybe("initializer", "initializer")]),
 	("ModuleDeclaration", &[Keep("TSModuleDeclaration"), Type("TSModuleDeclaration"), Bool("global", "global"), Node("id", "id"), Maybe("body", "body")]),
-	("ModuleBlock", &[Type("TSModuleBlock"), List("body", "body")]),
-	("TypeAliasDeclaration", &[Type("TSTypeAliasDeclaration"), Node("id", "id"), Maybe("typeParameters", "type_parameters"), Node("typeAnnotation", "type_annotation")]),
 	("ImportEqualsDeclaration", &[Keep("TSImportEqualsDeclaration"), Type("TSImportEqualsDeclaration"), Enum("importKind", "import_kind"), Bool("isExport", "is_export"), Node("id", "id"), Node("moduleReference", "module_reference")]),
-	("ExternalModuleReference", &[Type("TSExternalModuleReference"), Node("expression", "expression")]),
 	("ExportAssignment", &[Keep("TSExportAssignment"), Type("TSExportAssignment"), Node("expression", "expression")]),
-	("NamespaceExportDeclaration", &[Type("TSNamespaceExportDeclaration"), Node("id", "id")]),
 	("DeclareFunction", &[Type("TSDeclareFunction"), Opt("id", "id"), Bool("generator", "generator"), Bool("async", "is_async"), ConstBool("expression", false), List("params", "params")]),
 	("DeclareMethod", &[Type("TSDeclareMethod"), Null("id"), Bool("generator", "generator"), Bool("async", "is_async"), ConstBool("expression", false), List("params", "params")]),
 	("AsExpression", &[Through("expression"), Type("TSAsExpression"), Node("expression", "expression"), Node("typeAnnotation", "type_annotation")]),
