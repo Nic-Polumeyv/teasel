@@ -249,7 +249,7 @@ export interface Definition {
 	readonly void?: readonly string[];
 	readonly verbatim?: string;
 	readonly elements?: {
-		/** Prefixes of the host's own tags. A tag that starts with one is not read by `other`: without a rule of its own it is the error `invalid_name`. */
+		/** Prefixes of the host's own tags. A tag that starts with one is read only by a rule of its own in `rules`: with none it is the error `invalid_name`. */
 		readonly reserved?: readonly string[];
 		readonly rules?: { readonly [name: string]: Element };
 		readonly component?: Element;

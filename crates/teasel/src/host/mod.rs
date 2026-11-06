@@ -1019,8 +1019,11 @@ impl<'a> Walker<'a> {
 		let name = self.tag_name(false)?;
 		let name_span = (start + 1, self.at);
 		let rule = self.grammar.element(name);
-		let reserved = self.grammar.reserved.iter().any(|prefix| name.starts_with(prefix));
-		let rule = rule.filter(|rule| rule.name != Match::Any || (!reserved && valid_name(name)));
+		let own = rule.is_some_and(|rule| matches!(rule.name, Match::Exact(_)));
+		if !own && self.grammar.reserved.iter().any(|prefix| name.starts_with(prefix)) {
+			return self.fail(name_span.0, name_span.1, Code::InvalidName, Some(name));
+		}
+		let rule = rule.filter(|rule| rule.name != Match::Any || valid_name(name));
 		let typing = self.recovering() && name.ends_with('.') && component_name(&format!("{name}_"));
 		let Some(rule) = rule.or_else(|| typing.then(|| self.grammar.component()).flatten()) else {
 			return self.fail(name_span.0, name_span.1, Code::InvalidName, Some(name));

@@ -783,9 +783,15 @@ fn a_reserved_prefix_needs_a_rule() {
 		answer.contains(&format!(r#""code":{},"args":["x:foo"]"#, Code::InvalidName as u8)),
 		"{answer}"
 	);
-	elements(&mut host).reserved = Some(list![""]);
-	let error = Grammar::read(keep(host.json())).unwrap_err();
-	assert!(error.contains("a reserved prefix is empty"), "{error}");
+	elements(&mut host).component = Some(element("Component"));
+	elements(&mut host).reserved = Some(list!["x:", "Mini"]);
+	let answer = parse(&host, "<Maxi></Maxi>");
+	assert!(answer.contains("\"type\":\"Component\""), "{answer}");
+	let answer = parse(&host, "<MiniFoo></MiniFoo>");
+	assert!(
+		answer.contains(&format!(r#""code":{},"args":["MiniFoo"]"#, Code::InvalidName as u8)),
+		"{answer}"
+	);
 }
 
 // what a definition says that the engine would not read is refused, naming the field
@@ -983,6 +989,9 @@ fn a_grammar_that_cannot_work_is_refused() {
 		host
 	};
 
+	let mut host = minimal();
+	elements(&mut host).reserved = Some(list![""]);
+	refused(host, "a reserved prefix is empty");
 	let mut host = minimal();
 	host.constructs = Some(Record(list![("T", tag(&[], list![close()]))]));
 	refused(host, "T: a marker needs parts, none of them empty");

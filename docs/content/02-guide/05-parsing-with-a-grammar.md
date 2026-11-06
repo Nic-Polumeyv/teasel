@@ -100,7 +100,7 @@ elements: {
 },
 ```
 
-A tag that starts with a reserved prefix is not read by `other`: `<mini:head>` has a rule and is a `Head`, and `<mini:hed>` has none and is the error `invalid_name`. Without `reserved`, `<mini:hed>` is an `Element`.
+A tag that starts with a reserved prefix is read only by a rule of its own: `<mini:head>` has one and is a `Head`, and `<mini:hed>` has none and is the error `invalid_name`. Without `reserved`, `<mini:hed>` is an `Element`.
 
 ## Error recovery
 
