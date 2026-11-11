@@ -20,10 +20,6 @@ export interface Field {
 	names?: string[];
 	fields?: Field[];
 }
-export interface Kind {
-	name: string;
-	fields: Field[];
-}
 interface Tagged {
 	tag: number;
 	missing: number;
@@ -38,8 +34,10 @@ interface Missing {
 export type RawOp = [string, ...any[]];
 export type RawRecipes = [string, RawOp[]][];
 export interface Layout {
-	node: { size: number; start: number; end: number; kind: number };
-	kinds: Kind[];
+	/** A node's record: its size and where its span and its kind sit; `payload` is the word of a host's index, `Host`'s field. */
+	node: { size: number; start: number; end: number; kind: number; payload: number };
+	/** The kinds' names, by tag. */
+	kinds: string[];
 	extras?: { size: number; fields: Field[] };
 	/** Each table's record: its size and its fields. */
 	rows: Record<string, { size: number; fields: Field[] }>;
@@ -51,7 +49,8 @@ export interface Layout {
 	names: string[];
 	/** Each type of node a stylesheet holds with the fields that hold nodes. */
 	stylesheet: Record<string, string[]>;
-	recipes: { kinds: RawRecipes; rows: RawRecipes; adds?: RawRecipes; erased?: RawOp[] };
+	/** How each kind is spelled and what TypeScript adds to it, by tag; each table's rows by name. */
+	recipes: { kinds: RawOp[][]; rows: RawRecipes; adds?: RawOp[][]; erased?: RawOp[] };
 }
 
 // one class for every operation: the interpreter's switch stays monomorphic
@@ -144,28 +143,9 @@ function field(fields: Field[], path: string): Field {
 	return { ...found!, at };
 }
 
-export function resolve(raw: RawOp[], fields: Field[], extras: Field[] = []): Op[] {
-	const find = (path: string, of = fields) => field(of, path);
-	return raw.map(([op, ...rest]) => {
-		const out: Op = { op, key: '', at: 0, ty: '', names: [], at2: 0, value: null, other: '', inner: [] };
-		let field: string | undefined;
-		if (op === 'typeof' || op === 'through') [field] = rest;
-		else if (op === 'object') [out.key, out.inner] = [rest[0], resolve(rest[1], fields, extras)];
-		else if (op === 'constbool') [out.key, out.value] = rest;
-		else if (op === 'boolnames') [out.key, field, out.value, out.other] = rest;
-		else if (op === 'enumor') [out.key, field, out.other] = rest;
-		else if (op === 'othername' || op === 'regexp') {
-			[out.key, field] = rest;
-			out.at2 = find(rest[2]).at;
-		} else [out.key, field] = rest;
-		if (field !== undefined) {
-			const found = find(field, op === 'extra' ? extras : fields);
-			out.at = found.at;
-			out.ty = found.ty;
-			out.names = found.names ?? [];
-		}
-		return out;
-	});
+/** The operations as the engine tells them, each field already found. */
+export function operations(raw: RawOp[]): Op[] {
+	return raw.map(([op, key, at, ty, names, at2, value, other, inner]) => ({ op, key, at, ty, names, at2, value, other, inner: operations(inner) }));
 }
 
 // a literal: an object filled by computed keys turns into a dictionary, a hash lookup per read
@@ -179,9 +159,8 @@ type At = ReturnType<typeof places>;
 function language(layout: Layout, views: string[], typescript: boolean): Language {
 	const out: Language = { layout, at: places(views), recipes: new Array(layout.kinds.length), adds: [], erased: [], sets: new Map(), last: -1, builders: undefined, state: undefined, tree: undefined, sat: [-1, -1] };
 	if (typescript) {
-		const extras = layout.extras!.fields;
-		out.adds = layout.kinds.map((kind) => resolve(layout.recipes.adds!.find(([name]) => name === kind.name)?.[1] ?? [], extras));
-		out.erased = resolve(layout.recipes.erased!, extras);
+		out.adds = layout.recipes.adds!.map(operations);
+		out.erased = operations(layout.recipes.erased!);
 	}
 	return out;
 }
@@ -215,7 +194,7 @@ function records(layout: Layout) {
 }
 type Records = ReturnType<typeof records>;
 
-const recipe = (G: Language, tag: number): Op[] => (G.recipes[tag] ??= resolve(G.layout.recipes.kinds.find(([name]) => name === G.layout.kinds[tag].name)?.[1] ?? [], G.layout.kinds[tag].fields, G.layout.extras?.fields));
+const recipe = (G: Language, tag: number): Op[] => (G.recipes[tag] ??= operations(G.layout.recipes.kinds[tag]));
 
 const compiled = new WeakMap<object, Compiled>();
 
@@ -223,7 +202,7 @@ function compile(engine: Views): Compiled {
 	const known = compiled.get(engine);
 	if (known !== undefined) return known;
 	const layout: Layout = JSON.parse(engine.layout());
-	const tag = (name: string) => layout.kinds.findIndex((kind) => kind.name === name);
+	const tag = (name: string) => layout.kinds.indexOf(name);
 	const blank = new Uint32Array((layout.extras?.size ?? 0) >> 2);
 	for (const field of layout.extras?.fields ?? []) {
 		if (field.ty === '?enum') blank[field.at >> 2] |= layout.none.enum << ((field.at & 3) << 3);
@@ -237,10 +216,10 @@ function compile(engine: Views): Compiled {
 		kind: layout.node.kind,
 		host: tag('Host'),
 		identifier: tag('Identifier'),
-		name: layout.kinds[tag('Identifier')].fields[0].at,
+		name: operations(layout.recipes.kinds[tag('Identifier')]).find((op) => op.key === 'name')!.at,
 		blank,
 		R,
-		payload: (layout.node.kind + field(layout.kinds[tag('Host')].fields, '0').at) >> 2,
+		payload: layout.node.payload >> 2,
 		LOC: `loc: { start: { line: ${at(R.loc.start_line)}, column: ${at(R.loc.start_column)} }, end: { line: ${at(R.loc.end_line)}, column: ${at(R.loc.end_column)} } }`,
 		rows: undefined,
 		js: language(layout, layout.views.js, false),
@@ -256,7 +235,7 @@ function compile(engine: Views): Compiled {
 function tables(C: Compiled): NonNullable<Compiled['rows']> {
 	const { layout } = C;
 	const rows = (name: Table): Rows => {
-		const ops = resolve(layout.recipes.rows.find(([table]) => table === name)![1], layout.rows[name].fields);
+		const ops = operations(layout.recipes.rows.find(([table]) => table === name)![1]);
 		return { build: row(C, name, ops, LINKED[name]), words: layout.rows[name].size >> 2 };
 	};
 	return (C.rows = { scopes: rows('scopes'), bindings: rows('bindings'), references: rows('references'), roots: rows('roots') });

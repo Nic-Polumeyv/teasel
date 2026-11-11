@@ -9,7 +9,7 @@ use crate::json::Json;
 use crate::layout::{Ty, tag};
 use crate::parser::Entry;
 use crate::positions::{Cursor, Positions};
-use crate::recipe::{ADDS, EXTRAS_ERASED, KINDS, Op, Slot, resolve_ops};
+use crate::recipe::{ADDS, EXTRAS_ERASED, KINDS, Op, RECIPES, Slot};
 use crate::scopes::Role;
 
 /// One entry at a byte offset, as JSON.
@@ -209,14 +209,7 @@ impl<'a> Writer<'a> {
 
 	/// A table, each row spelled by its recipe of `recipe::RECIPES`.
 	fn rows<T>(&mut self, key: &'static str, rows: &[T], table: usize) {
-		static RESOLVED: std::sync::OnceLock<Vec<&'static [Op<Slot>]>> = std::sync::OnceLock::new();
-		let ops = RESOLVED.get_or_init(|| {
-			crate::recipe::RECIPES
-				.iter()
-				.zip(crate::recipe::ROWS)
-				.map(|((name, ops), (_, _, fields))| crate::recipe::resolve_ops(ops, fields, name))
-				.collect()
-		})[table];
+		let ops = RECIPES[table].1;
 		self.key(key);
 		self.json.list();
 		for row in rows {
@@ -435,15 +428,9 @@ impl<'a> Writer<'a> {
 		self.slice(node.start, node.end);
 	}
 
-	/// The recipes of the kinds, resolved once.
-	fn recipes() -> &'static [&'static [Op<Slot>]] {
-		static RESOLVED: std::sync::OnceLock<&'static [&'static [Op<Slot>]]> = std::sync::OnceLock::new();
-		RESOLVED.get_or_init(|| crate::recipe::resolve(KINDS, node_layout::VARIANTS))
-	}
-
 	/// Follows a kind's recipe over the record at `base`, a `repr(C, u32)` enum's payload; the
 	/// caller ends the node, unless a child stood in for it: false then.
-	fn run(&mut self, id: NodeId, ops: &[Op<Slot>], base: *const u8) -> bool {
+	fn run(&mut self, id: NodeId, ops: &[Op], base: *const u8) -> bool {
 		for op in ops {
 			match *op {
 				Op::Keep(name) => {
@@ -541,7 +528,7 @@ impl<'a> Writer<'a> {
 						}
 					}
 				}
-				Op::BoolNames(key, slot, yes, no) => self.text(key, if get::<bool>(base, slot) { yes } else { no }),
+				Op::BoolNames(key, slot, &[yes, no]) => self.text(key, if get::<bool>(base, slot) { yes } else { no }),
 				Op::Float(key, slot) => {
 					let value = self.ast.numbers[get::<u32>(base, slot) as usize];
 					self.key(key);
@@ -619,7 +606,7 @@ impl<'a> Writer<'a> {
 			// erasing may put a child in the node's place, which closes itself
 			_ => {
 				let base = kind as *const NodeKind as *const u8;
-				if !self.run(id, Self::recipes()[tag(base)], base) {
+				if !self.run(id, KINDS[tag(base)].1, base) {
 					return;
 				}
 			}
@@ -640,48 +627,46 @@ impl<'a> Writer<'a> {
 		self.run(id, ops, base);
 		// an unlisted extra is a parser bug, which a test build catches and a shipped build answers around
 		if cfg!(debug_assertions)
-			&& let Some(field) = extras.set().find(|&field| !read.contains(&field))
+			&& let Some(field) = extras.set().find(|field| !read.contains(&field.at))
 		{
-			panic!("{:?} has {field}, which its kind does not list", self.kind(id));
+			panic!("{:?} has {}, which its kind does not list", self.kind(id), field.name);
 		}
 	}
 
-	/// The keys TypeScript adds from the extras record, resolved once.
+	/// The keys TypeScript adds from the extras record, by the kind's tag.
 	fn adds() -> &'static Adds {
-		static RESOLVED: std::sync::OnceLock<Adds> = std::sync::OnceLock::new();
-		RESOLVED.get_or_init(|| {
-			let of = |table: &[(&str, &'static [Op])], name: &str| {
-				table
-					.iter()
-					.find(|(known, _)| *known == name)
-					.map_or(&[][..], |(_, ops)| *ops)
-			};
-			Adds {
-				by_kind: node_layout::VARIANTS
-					.iter()
-					.map(|variant| {
-						let ops = of(ADDS, variant.name);
-						let read = ops
-							.iter()
-							.filter_map(|op| op.told().2)
-							.chain(of(KINDS, variant.name).iter().filter_map(|op| match op {
-								Op::Extra(_, field) => Some(*field),
-								_ => None,
-							}))
-							.collect();
-						(resolve_ops(ops, Extras::FIELDS, variant.name), read)
-					})
-					.collect(),
-				erased: resolve_ops(EXTRAS_ERASED, Extras::FIELDS, "Extras"),
-			}
+		static BY_KIND: std::sync::OnceLock<Adds> = std::sync::OnceLock::new();
+		BY_KIND.get_or_init(|| Adds {
+			by_kind: node_layout::VARIANTS
+				.iter()
+				.zip(KINDS)
+				.map(|(variant, (_, kind))| {
+					let ops = ADDS
+						.iter()
+						.find(|(known, _)| *known == variant.name)
+						.map_or(&[][..], |(_, ops)| *ops);
+					let read = ops
+						.iter()
+						.filter_map(|op| op.told().2)
+						.chain(kind.iter().filter_map(|op| match op {
+							Op::Extra(_, slot) => Some(*slot),
+							_ => None,
+						}))
+						.map(|slot| slot.at)
+						.collect();
+					(ops, read)
+				})
+				.collect(),
+			erased: EXTRAS_ERASED,
 		})
 	}
 }
 
-/// What TypeScript adds to each kind: by the kind's tag, the operations and the fields they read.
+/// What TypeScript adds to each kind: by the kind's tag, the operations and where the fields they
+/// read sit.
 struct Adds {
-	by_kind: Vec<(&'static [Op<Slot>], Vec<&'static str>)>,
-	erased: &'static [Op<Slot>],
+	by_kind: Vec<(&'static [Op], Vec<usize>)>,
+	erased: &'static [Op],
 }
 
 /// The field at `slot` of the record at `base`, as the type the recipe reads it by.

@@ -1,16 +1,19 @@
 //! How each kind of node, each table's rows and what TypeScript adds are spelled in ESTree: a
-//! recipe of operations over the fields the layout describes, followed by the JSON writer and by
-//! the decoder building objects from the tree in place, so the two cannot drift.
+//! recipe of operations over the fields the layout describes, each field found as the crate
+//! compiles. The JSON writer follows them, and the decoder building objects from the tree in
+//! place, so the two cannot drift.
 
-use crate::layout::{Field, Ty, Variant};
+use crate::ast::Extras;
+use crate::ast::node_layout::VARIANTS;
+use crate::layout::{Field, Ty};
 use crate::scopes::{Binding, Reference, Root, Scope};
 
-/// A field of the kind's record by name, `function.id` for one inside a record; a `Slot` once
-/// resolved against the layout.
+/// A field of the kind's record by name, `function.id` for one inside a record: how a recipe is
+/// written. Compiled, it is the field's `Slot`.
 pub type Path = &'static str;
 
 #[derive(Clone, Copy)]
-pub enum Op<F: Copy + 'static = Path> {
+pub enum Op<F: Copy + 'static = Slot> {
 	/// The node's `type`, first.
 	Type(&'static str),
 	/// The `type` is the enum field's name: a keyword type.
@@ -36,7 +39,7 @@ pub enum Op<F: Copy + 'static = Path> {
 	/// A mapped type's modifier: `+` or `-` as a string, bare as `true`, undefined when missing.
 	Modifier(&'static str, F),
 	/// One of two names by a bool: the first when true.
-	BoolNames(&'static str, F, &'static str, &'static str),
+	BoolNames(&'static str, F, &'static [&'static str; 2]),
 	/// A word as a number.
 	Int(&'static str, F),
 	/// Two words as a list of two numbers.
@@ -54,7 +57,8 @@ pub enum Op<F: Copy + 'static = Path> {
 	ConstBool(&'static str, bool),
 	Null(&'static str),
 	EmptyList(&'static str),
-	Object(&'static str, &'static [Op<F>]),
+	/// An object of its own under the key.
+	Object(&'static str, &'static [Op]),
 	/// A specifier's other name: names only when it is the binding node, the second field.
 	OtherName(&'static str, F, F),
 	/// Erasing lists the node under `typescript` by this name.
@@ -67,60 +71,67 @@ pub enum Op<F: Copy + 'static = Path> {
 	EnumOr(&'static str, F, &'static str),
 }
 
-/// A field resolved: its byte offset from the record's start and its type.
+/// A field's place: its byte offset from the record's start and its type.
 #[derive(Clone, Copy)]
 pub struct Slot {
 	pub at: usize,
-	pub ty: Ty,
+	pub ty: &'static Ty,
 }
 
 use Op::*;
 
+/// Recipes by name.
+pub type Table = &'static [(&'static str, &'static [Op])];
+
 /// What else an operation carries, past its key and field, as the layout tells it.
 pub enum Rest {
 	Nothing,
+	/// The binding's field of `othername`, the flags' of `regexp`.
+	Second(Slot),
+	Bool(bool),
 	/// The names for true and false.
 	Names(&'static str, &'static str),
-	Bool(bool),
-	Text(&'static str),
+	/// What `enumor` spells for no name.
+	Other(&'static str),
 	Ops(&'static [Op]),
 }
 
 impl Op {
 	/// The operation as the layout tells it: its name, its key, its field and the rest.
-	pub fn told(&self) -> (&'static str, Option<&'static str>, Option<Path>, Rest) {
+	#[rustfmt::skip]
+	pub fn told(&self) -> (&'static str, &'static str, Option<Slot>, Rest) {
 		match *self {
-			Type(t) => ("type", Some(t), None, Rest::Nothing),
-			TypeOf(f) => ("typeof", None, Some(f), Rest::Nothing),
-			Node(k, f) => ("node", Some(k), Some(f), Rest::Nothing),
-			Opt(k, f) => ("opt", Some(k), Some(f), Rest::Nothing),
-			Maybe(k, f) => ("maybe", Some(k), Some(f), Rest::Nothing),
-			Extra(k, f) => ("extra", Some(k), Some(f), Rest::Nothing),
-			List(k, f) => ("list", Some(k), Some(f), Rest::Nothing),
-			OptListKey(k, f) => ("optlistkey", Some(k), Some(f), Rest::Nothing),
-			Params(k, f) => ("params", Some(k), Some(f), Rest::Nothing),
-			Bool(k, f) => ("bool", Some(k), Some(f), Rest::Nothing),
-			Str(k, f) => ("str", Some(k), Some(f), Rest::Nothing),
-			OptStrKey(k, f) => ("optstrkey", Some(k), Some(f), Rest::Nothing),
-			Enum(k, f) => ("enum", Some(k), Some(f), Rest::Nothing),
-			Modifier(k, f) => ("modifier", Some(k), Some(f), Rest::Nothing),
-			BoolNames(k, f, yes, no) => ("boolnames", Some(k), Some(f), Rest::Names(yes, no)),
-			Int(k, f) => ("int", Some(k), Some(f), Rest::Nothing),
-			Pair(k, f) => ("pair", Some(k), Some(f), Rest::Nothing),
-			Float(k, f) => ("float", Some(k), Some(f), Rest::Nothing),
-			Raw => ("raw", None, None, Rest::Nothing),
-			BigInt => ("bigint", None, None, Rest::Nothing),
-			BigIntValue(k) => ("bigintvalue", Some(k), None, Rest::Nothing),
-			RegExp(k, pattern, flags) => ("regexp", Some(k), Some(pattern), Rest::Text(flags)),
-			ConstBool(k, value) => ("constbool", Some(k), None, Rest::Bool(value)),
-			Null(k) => ("null", Some(k), None, Rest::Nothing),
-			EmptyList(k) => ("emptylist", Some(k), None, Rest::Nothing),
-			Object(k, inner) => ("object", Some(k), None, Rest::Ops(inner)),
-			OtherName(k, f, binding) => ("othername", Some(k), Some(f), Rest::Text(binding)),
-			Keep(name) => ("keep", Some(name), None, Rest::Nothing),
-			KeepIf(name, f) => ("keepif", Some(name), Some(f), Rest::Nothing),
-			Through(f) => ("through", None, Some(f), Rest::Nothing),
-			EnumOr(k, f, other) => ("enumor", Some(k), Some(f), Rest::Text(other)),
+			Type(t) => ("type", t, None, Rest::Nothing),
+			TypeOf(f) => ("typeof", "", Some(f), Rest::Nothing),
+			Node(k, f) => ("node", k, Some(f), Rest::Nothing),
+			Opt(k, f) => ("opt", k, Some(f), Rest::Nothing),
+			Maybe(k, f) => ("maybe", k, Some(f), Rest::Nothing),
+			Extra(k, f) => ("extra", k, Some(f), Rest::Nothing),
+			List(k, f) => ("list", k, Some(f), Rest::Nothing),
+			OptListKey(k, f) => ("optlistkey", k, Some(f), Rest::Nothing),
+			Params(k, f) => ("params", k, Some(f), Rest::Nothing),
+			Bool(k, f) => ("bool", k, Some(f), Rest::Nothing),
+			Str(k, f) => ("str", k, Some(f), Rest::Nothing),
+			OptStrKey(k, f) => ("optstrkey", k, Some(f), Rest::Nothing),
+			Enum(k, f) => ("enum", k, Some(f), Rest::Nothing),
+			Modifier(k, f) => ("modifier", k, Some(f), Rest::Nothing),
+			BoolNames(k, f, &[yes, no]) => ("boolnames", k, Some(f), Rest::Names(yes, no)),
+			Int(k, f) => ("int", k, Some(f), Rest::Nothing),
+			Pair(k, f) => ("pair", k, Some(f), Rest::Nothing),
+			Float(k, f) => ("float", k, Some(f), Rest::Nothing),
+			Raw => ("raw", "", None, Rest::Nothing),
+			BigInt => ("bigint", "", None, Rest::Nothing),
+			BigIntValue(k) => ("bigintvalue", k, None, Rest::Nothing),
+			RegExp(k, pattern, flags) => ("regexp", k, Some(pattern), Rest::Second(flags)),
+			ConstBool(k, value) => ("constbool", k, None, Rest::Bool(value)),
+			Null(k) => ("null", k, None, Rest::Nothing),
+			EmptyList(k) => ("emptylist", k, None, Rest::Nothing),
+			Object(k, inner) => ("object", k, None, Rest::Ops(inner)),
+			OtherName(k, f, binding) => ("othername", k, Some(f), Rest::Second(binding)),
+			Keep(name) => ("keep", name, None, Rest::Nothing),
+			KeepIf(name, f) => ("keepif", name, Some(f), Rest::Nothing),
+			Through(f) => ("through", "", Some(f), Rest::Nothing),
+			EnumOr(k, f, other) => ("enumor", k, Some(f), Rest::Other(other)),
 		}
 	}
 }
@@ -133,10 +144,132 @@ pub fn names_type(name: &str) -> bool {
 		|| crate::ast::Keyword::NAMES.contains(&name)
 }
 
-/// Every kind by the variant's name; `Host` has none, the writer spells it itself.
-#[rustfmt::skip]
-pub const KINDS: &[(&str, &[Op])] = &[
-	("Program", &[Type("Program"), List("body", "body"), BoolNames("sourceType", "module", "module", "script")]),
+const fn same(a: &[u8], b: &[u8]) -> bool {
+	let mut i = 0;
+	while i < a.len() && i < b.len() && a[i] == b[i] {
+		i += 1;
+	}
+	i == a.len() && i == b.len()
+}
+
+/// The field at a path in a record's fields.
+const fn slot(mut fields: &'static [Field], path: Path) -> Slot {
+	let (mut path, mut at) = (path.as_bytes(), 0);
+	loop {
+		let mut dot = 0;
+		while dot < path.len() && path[dot] != b'.' {
+			dot += 1;
+		}
+		let (name, rest) = path.split_at(dot);
+		let mut i = 0;
+		while i < fields.len() && !same(fields[i].name.as_bytes(), name) {
+			i += 1;
+		}
+		assert!(i < fields.len(), "a recipe names a field its record does not have");
+		at += fields[i].at;
+		match (rest, &fields[i].ty) {
+			([], ty) => return Slot { at, ty },
+			([_, inner @ ..], Ty::Struct(inside)) => (path, fields) = (inner, inside),
+			_ => panic!("a recipe's path goes through a field that is not a record"),
+		}
+	}
+}
+
+/// An operation with its fields found; one whose type its operation cannot read does not compile.
+const fn resolved(op: Op<Path>, fields: &'static [Field]) -> Op {
+	macro_rules! at {
+		($path:expr, $ty:pat) => {
+			at!($path, $ty, fields)
+		};
+		($path:expr, $ty:pat, $fields:expr) => {{
+			let slot = slot($fields, $path);
+			assert!(matches!(slot.ty, $ty), "a field has the wrong type for its recipe");
+			slot
+		}};
+	}
+	match op {
+		Type(name) => Type(name),
+		TypeOf(f) => TypeOf(at!(f, Ty::Enum(_))),
+		Node(k, f) => Node(k, at!(f, Ty::Node)),
+		Opt(k, f) => Opt(k, at!(f, Ty::OptNode | Ty::OptStr | Ty::OptU32)),
+		Maybe(k, f) => Maybe(k, at!(f, Ty::OptNode | Ty::OptList | Ty::OptEnum(_))),
+		Extra(k, f) => Extra(k, at!(f, Ty::OptNode | Ty::OptList | Ty::OptEnum(_), Extras::FIELDS)),
+		List(k, f) => List(k, at!(f, Ty::List)),
+		OptListKey(k, f) => OptListKey(k, at!(f, Ty::OptList)),
+		Params(k, f) => Params(k, at!(f, Ty::List)),
+		Bool(k, f) => Bool(k, at!(f, Ty::Bool)),
+		Str(k, f) => Str(k, at!(f, Ty::Str)),
+		OptStrKey(k, f) => OptStrKey(k, at!(f, Ty::OptStr)),
+		Enum(k, f) => Enum(k, at!(f, Ty::Enum(_))),
+		Modifier(k, f) => Modifier(k, at!(f, Ty::OptEnum(_))),
+		BoolNames(k, f, names) => BoolNames(k, at!(f, Ty::Bool), names),
+		Int(k, f) => Int(k, at!(f, Ty::U32)),
+		Pair(k, f) => Pair(k, at!(f, Ty::Pair)),
+		Float(k, f) => Float(k, at!(f, Ty::U32)),
+		Raw => Raw,
+		BigInt => BigInt,
+		BigIntValue(k) => BigIntValue(k),
+		RegExp(k, f, g) => RegExp(k, at!(f, Ty::Str), at!(g, Ty::Str)),
+		ConstBool(k, value) => ConstBool(k, value),
+		Null(k) => Null(k),
+		EmptyList(k) => EmptyList(k),
+		Object(k, inner) => Object(k, inner),
+		OtherName(k, f, g) => OtherName(k, at!(f, Ty::Node), at!(g, Ty::Node)),
+		Keep(name) => Keep(name),
+		KeepIf(name, f) => KeepIf(name, at!(f, Ty::Enum([_, _]))),
+		Through(f) => Through(at!(f, Ty::Node)),
+		EnumOr(k, f, other) => EnumOr(k, at!(f, Ty::OptEnum(_)), other),
+	}
+}
+
+const fn compiled<const N: usize>(raw: &[Op<Path>], fields: &'static [Field]) -> [Op; N] {
+	let (mut out, mut i) = ([Raw; N], 0);
+	while i < N {
+		out[i] = resolved(raw[i], fields);
+		i += 1;
+	}
+	out
+}
+
+/// Recipes written with paths, each compiled against the fields `$of` finds for its name.
+macro_rules! recipes {
+	($of:ident: $( ($name:literal, $ops:expr) ),* $(,)?) => {
+		&[ $( ($name, {
+			const RAW: &[Op<Path>] = $ops;
+			const OPS: [Op; RAW.len()] = compiled(RAW, $of($name));
+			&OPS as &[Op]
+		}) ),* ]
+	};
+}
+
+/// A kind's fields.
+const fn kind(name: &str) -> &'static [Field] {
+	let mut v = 0;
+	while !same(VARIANTS[v].name.as_bytes(), name.as_bytes()) {
+		v += 1;
+		assert!(v < VARIANTS.len(), "a recipe names a kind there is none of");
+	}
+	VARIANTS[v].fields
+}
+
+/// The extras record, for a kind there is.
+const fn extras(name: &str) -> &'static [Field] {
+	kind(name);
+	Extras::FIELDS
+}
+
+/// A table's record.
+const fn row(name: &str) -> &'static [Field] {
+	let mut i = 0;
+	while !same(ROWS[i].0.as_bytes(), name.as_bytes()) {
+		i += 1;
+	}
+	ROWS[i].2
+}
+
+/// Every kind in tag order, by the variant's name; `Host` has none, the writer spells it itself.
+pub const KINDS: Table = recipes! { kind:
+	("Program", &[Type("Program"), List("body", "body"), BoolNames("sourceType", "module", &["module", "script"])]),
 	("Identifier", &[Type("Identifier"), Str("name", "name")]),
 	("PrivateIdentifier", &[Type("PrivateIdentifier"), Str("name", "name")]),
 	("NumberLiteral", &[Type("Literal"), Float("value", "value"), Raw]),
@@ -144,9 +277,9 @@ pub const KINDS: &[(&str, &[Op])] = &[
 	("StringLiteral", &[Type("Literal"), Str("value", "value"), Raw]),
 	("BooleanLiteral", &[Type("Literal"), Bool("value", "value"), Raw]),
 	("NullLiteral", &[Type("Literal"), Null("value"), Raw]),
-	("RegExpLiteral", &[Type("Literal"), RegExp("value", "pattern", "flags"), Raw, Object("regex", &[Str("pattern", "pattern"), Str("flags", "flags")])]),
+	("RegExpLiteral", &[Type("Literal"), RegExp("value", "pattern", "flags"), Raw, Object("regex", REGEX)]),
 	("TemplateLiteral", &[Type("TemplateLiteral"), List("expressions", "expressions"), List("quasis", "quasis")]),
-	("TemplateElement", &[Type("TemplateElement"), Object("value", &[Str("raw", "raw"), Opt("cooked", "cooked")]), Bool("tail", "tail")]),
+	("TemplateElement", &[Type("TemplateElement"), Object("value", VALUE), Bool("tail", "tail")]),
 	("TaggedTemplateExpression", &[Type("TaggedTemplateExpression"), Node("tag", "tag"), Node("quasi", "quasi")]),
 	("ThisExpression", &[Type("ThisExpression")]),
 	("Super", &[Type("Super")]),
@@ -269,103 +402,32 @@ pub const KINDS: &[(&str, &[Op])] = &[
 	("InstantiationExpression", &[Through("expression"), Type("TSInstantiationExpression"), Node("expression", "expression"), Node("typeArguments", "type_arguments")]),
 	("ParameterProperty", &[Keep("TSParameterProperty"), Through("parameter"), Type("TSParameterProperty"), Node("parameter", "parameter")]),
 	("Decorator", &[Keep("Decorator"), Type("Decorator"), Node("expression", "expression")]),
+};
+
+// a node's tag finds its recipe
+const _: () = {
+	assert!(KINDS.len() == VARIANTS.len(), "every kind has one recipe");
+	let mut v = 0;
+	while v < KINDS.len() {
+		assert!(
+			same(KINDS[v].0.as_bytes(), VARIANTS[v].name.as_bytes()),
+			"the recipes follow the kinds' order"
+		);
+		v += 1;
+	}
+};
+
+const VALUE: &[Op] = &[
+	resolved(Str("raw", "raw"), kind("TemplateElement")),
+	resolved(Opt("cooked", "cooked"), kind("TemplateElement")),
+];
+const REGEX: &[Op] = &[
+	resolved(Str("pattern", "pattern"), kind("RegExpLiteral")),
+	resolved(Str("flags", "flags"), kind("RegExpLiteral")),
 ];
 
-/// The recipes in tag order with their fields resolved, leaked once: the writer indexes them by
-/// a node's tag.
-pub fn resolve(recipes: &[(&str, &[Op])], variants: &[Variant]) -> &'static [&'static [Op<Slot>]] {
-	let table: Vec<&'static [Op<Slot>]> = variants
-		.iter()
-		.map(|variant| {
-			let (_, ops) = recipes
-				.iter()
-				.find(|(name, _)| *name == variant.name)
-				.unwrap_or_else(|| panic!("no recipe for {}", variant.name));
-			resolve_ops(ops, variant.fields, variant.name)
-		})
-		.collect();
-	Box::leak(table.into_boxed_slice())
-}
-
-pub(crate) fn resolve_ops(ops: &[Op], fields: &[Field], kind: &str) -> &'static [Op<Slot>] {
-	let slot_in = |fields: &[Field], path: Path, wanted: &[fn(&Ty) -> bool]| -> Slot {
-		let (head, rest) = path.split_once('.').map_or((path, None), |(h, r)| (h, Some(r)));
-		let field = fields
-			.iter()
-			.find(|f| f.name == head)
-			.unwrap_or_else(|| panic!("{kind} has no field {path}"));
-		let slot = match (rest, field.ty) {
-			(None, ty) => Slot { at: field.at, ty },
-			(Some(rest), Ty::Struct(inner)) => {
-				let f = inner
-					.iter()
-					.find(|f| f.name == rest)
-					.unwrap_or_else(|| panic!("{kind} has no field {path}"));
-				Slot {
-					at: field.at + f.at,
-					ty: f.ty,
-				}
-			}
-			_ => panic!("{kind}: {path} is not inside a record"),
-		};
-		assert!(
-			wanted.iter().any(|ok| ok(&slot.ty)),
-			"{kind}: {path} has the wrong type for its recipe"
-		);
-		slot
-	};
-	let slot = |path: Path, wanted: &[fn(&Ty) -> bool]| slot_in(fields, path, wanted);
-	let maybe: &[fn(&Ty) -> bool] = &[|t| matches!(t, Ty::OptNode | Ty::OptList | Ty::OptEnum(_))];
-	let resolved: Vec<Op<Slot>> = ops
-		.iter()
-		.map(|op| match *op {
-			Type(name) => Type(name),
-			TypeOf(f) => TypeOf(slot(f, &[|t| matches!(t, Ty::Enum(_))])),
-			Node(k, f) => Node(k, slot(f, &[|t| matches!(t, Ty::Node)])),
-			Opt(k, f) => Opt(k, slot(f, &[|t| matches!(t, Ty::OptNode | Ty::OptStr | Ty::OptU32)])),
-			Maybe(k, f) => Maybe(k, slot(f, maybe)),
-			Extra(k, f) => Extra(k, slot_in(crate::ast::Extras::FIELDS, f, maybe)),
-			List(k, f) => List(k, slot(f, &[|t| matches!(t, Ty::List)])),
-			OptListKey(k, f) => OptListKey(k, slot(f, &[|t| matches!(t, Ty::OptList)])),
-			Params(k, f) => Params(k, slot(f, &[|t| matches!(t, Ty::List)])),
-			Bool(k, f) => Bool(k, slot(f, &[|t| matches!(t, Ty::Bool)])),
-			Str(k, f) => Str(k, slot(f, &[|t| matches!(t, Ty::Str)])),
-			OptStrKey(k, f) => OptStrKey(k, slot(f, &[|t| matches!(t, Ty::OptStr)])),
-			Enum(k, f) => Enum(k, slot(f, &[|t| matches!(t, Ty::Enum(_))])),
-			Modifier(k, f) => Modifier(k, slot(f, &[|t| matches!(t, Ty::OptEnum(_))])),
-			BoolNames(k, f, a, b) => BoolNames(k, slot(f, &[|t| matches!(t, Ty::Bool)]), a, b),
-			Int(k, f) => Int(k, slot(f, &[|t| matches!(t, Ty::U32)])),
-			Pair(k, f) => Pair(k, slot(f, &[|t| matches!(t, Ty::Pair)])),
-			Float(k, f) => Float(k, slot(f, &[|t| matches!(t, Ty::U32)])),
-			Raw => Raw,
-			BigInt => BigInt,
-			BigIntValue(k) => BigIntValue(k),
-			RegExp(k, f, g) => RegExp(
-				k,
-				slot(f, &[|t| matches!(t, Ty::Str)]),
-				slot(g, &[|t| matches!(t, Ty::Str)]),
-			),
-			ConstBool(k, v) => ConstBool(k, v),
-			Null(k) => Null(k),
-			EmptyList(k) => EmptyList(k),
-			Object(k, inner) => Object(k, resolve_ops(inner, fields, kind)),
-			OtherName(k, f, g) => OtherName(
-				k,
-				slot(f, &[|t| matches!(t, Ty::Node)]),
-				slot(g, &[|t| matches!(t, Ty::Node)]),
-			),
-			Keep(name) => Keep(name),
-			KeepIf(name, f) => KeepIf(name, slot(f, &[|t| matches!(t, Ty::Enum([_, _]))])),
-			Through(f) => Through(slot(f, &[|t| matches!(t, Ty::Node)])),
-			EnumOr(k, f, other) => EnumOr(k, slot(f, &[|t| matches!(t, Ty::OptEnum(_))]), other),
-		})
-		.collect();
-	Box::leak(resolved.into_boxed_slice())
-}
-
 /// What TypeScript adds to every node of a kind from its extras record, by the kind's name.
-#[rustfmt::skip]
-pub const ADDS: &[(&str, &[Op])] = &[
+pub const ADDS: Table = recipes! { extras:
 	("Identifier", PATTERN),
 	("ArrayPattern", PATTERN),
 	("ObjectPattern", PATTERN),
@@ -401,27 +463,26 @@ pub const ADDS: &[(&str, &[Op])] = &[
 	("DeclareFunction", &[Maybe("returnType", "return_type"), Maybe("typeParameters", "type_parameters"), Bool("declare", "declare")]),
 	("DeclareMethod", &[Maybe("returnType", "return_type")]),
 	("ParameterProperty", &[Maybe("accessibility", "accessibility"), Bool("readonly", "readonly"), Bool("override", "is_override"), Bool("static", "is_static")]),
-];
+};
 
 #[rustfmt::skip]
-const PATTERN: &[Op] = &[Maybe("typeAnnotation", "type_annotation"), Maybe("decorators", "decorators"), Bool("optional", "optional")];
+const PATTERN: &[Op<Path>] = &[Maybe("typeAnnotation", "type_annotation"), Maybe("decorators", "decorators"), Bool("optional", "optional")];
 #[rustfmt::skip]
-const FUNCTION: &[Op] = &[Maybe("returnType", "return_type"), Maybe("typeParameters", "type_parameters"), Bool("declare", "declare")];
+const FUNCTION: &[Op<Path>] = &[Maybe("returnType", "return_type"), Maybe("typeParameters", "type_parameters"), Bool("declare", "declare")];
 #[rustfmt::skip]
-const CLASS: &[Op] = &[Maybe("typeParameters", "type_parameters"), Maybe("superTypeArguments", "super_type_arguments"), Maybe("implements", "implements"), Maybe("decorators", "decorators"), Bool("declare", "declare"), Bool("abstract", "is_abstract")];
+const CLASS: &[Op<Path>] = &[Maybe("typeParameters", "type_parameters"), Maybe("superTypeArguments", "super_type_arguments"), Maybe("implements", "implements"), Maybe("decorators", "decorators"), Bool("declare", "declare"), Bool("abstract", "is_abstract")];
 
 /// The same when erasing: decorators, a proposal JavaScript itself has.
-pub const EXTRAS_ERASED: &[Op] = &[OptListKey("decorators", "decorators")];
+pub const EXTRAS_ERASED: &[Op] = &[resolved(OptListKey("decorators", "decorators"), Extras::FIELDS)];
 
 /// How each table's rows are spelled: the recipes of the answer's `scopes`, `bindings`,
 /// `references` and `roots`.
-#[rustfmt::skip]
-pub const RECIPES: &[(&str, &[Op])] = &[
+pub const RECIPES: Table = recipes! { row:
 	("scopes", &[Enum("kind", "kind"), Opt("parent", "parent"), Bool("topLevelAwait", "top_level_await")]),
 	("bindings", &[Str("name", "name"), Enum("kind", "kind"), Int("scope", "scope"), Bool("write", "write")]),
 	("references", &[Int("scope", "scope"), Opt("binding", "binding"), Bool("write", "write"), Bool("read", "read"), Bool("mutate", "mutate"), Bool("declares", "declares")]),
 	("roots", &[Int("scope", "scope"), Pair("scopes", "scopes"), Pair("bindings", "bindings"), Pair("references", "references")]),
-];
+};
 
 /// Each table's name, its record's size and fields, in the order of `RECIPES`.
 pub const ROWS: &[(&str, usize, &[Field])] = &[
