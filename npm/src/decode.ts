@@ -32,15 +32,12 @@ interface Missing {
 	int: Tagged;
 }
 export type RawOp = [string, ...any[]];
-export type RawRecipes = [string, RawOp[]][];
 export interface Layout {
 	/** A node's record: its size and where its span and its kind sit; `payload` is the word of a host's index, `Host`'s field. */
 	node: { size: number; start: number; end: number; kind: number; payload: number };
 	/** The kinds' names, by tag. */
 	kinds: string[];
 	extras?: { size: number; fields: Field[] };
-	/** Each table's record: its size and its fields. */
-	rows: Record<string, { size: number; fields: Field[] }>;
 	/** The records beside the nodes and the tables, by their view's name. */
 	records: Record<'comments' | 'attached' | 'errors' | 'hosts' | 'host_vals' | 'spans' | 'locs' | 'marks', { size: number; fields: Field[] }>;
 	none: Missing;
@@ -49,8 +46,8 @@ export interface Layout {
 	names: string[];
 	/** Each type of node a stylesheet holds with the fields that hold nodes. */
 	stylesheet: Record<string, string[]>;
-	/** How each kind is spelled and what TypeScript adds to it, by tag; each table's rows by name. */
-	recipes: { kinds: RawOp[][]; rows: RawRecipes; adds?: RawOp[][]; erased?: RawOp[] };
+	/** How each kind is spelled and what TypeScript adds to it, by tag; each table's name, its record's size and how its rows are spelled. */
+	recipes: { kinds: RawOp[][]; rows: [name: string, size: number, ops: RawOp[]][]; adds?: RawOp[][]; erased?: RawOp[] };
 }
 
 // one class for every operation: the interpreter's switch stays monomorphic
@@ -235,8 +232,8 @@ function compile(engine: Views): Compiled {
 function tables(C: Compiled): NonNullable<Compiled['rows']> {
 	const { layout } = C;
 	const rows = (name: Table): Rows => {
-		const ops = operations(layout.recipes.rows.find(([table]) => table === name)![1]);
-		return { build: row(C, name, ops, LINKED[name]), words: layout.rows[name].size >> 2 };
+		const [, size, ops] = layout.recipes.rows.find(([table]) => table === name)!;
+		return { build: row(C, name, operations(ops), LINKED[name]), words: size >> 2 };
 	};
 	return (C.rows = { scopes: rows('scopes'), bindings: rows('bindings'), references: rows('references'), roots: rows('roots') });
 }

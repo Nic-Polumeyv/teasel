@@ -9,7 +9,7 @@ use crate::json::Json;
 use crate::layout::{Ty, tag};
 use crate::parser::Entry;
 use crate::positions::{Cursor, Positions};
-use crate::recipe::{ADDS, EXTRAS_ERASED, KINDS, Op, RECIPES, Slot};
+use crate::recipe::{ADDS, EXTRAS_ERASED, KINDS, Op, ROWS, Slot};
 use crate::scopes::Role;
 
 /// One entry at a byte offset, as JSON.
@@ -207,9 +207,9 @@ impl<'a> Writer<'a> {
 		}
 	}
 
-	/// A table, each row spelled by its recipe of `recipe::RECIPES`.
+	/// A table, each row spelled by its recipe of `recipe::ROWS`.
 	fn rows<T>(&mut self, key: &'static str, rows: &[T], table: usize) {
-		let ops = RECIPES[table].1;
+		let ops = ROWS[table].2;
 		self.key(key);
 		self.json.list();
 		for row in rows {

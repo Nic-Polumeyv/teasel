@@ -115,16 +115,6 @@ pub fn layout_json() -> String {
 		}
 		w.end();
 	}
-	fn recipes(w: &mut Json, table: &[(&str, &[Op])]) {
-		w.list();
-		for (name, list) in table {
-			w.list();
-			w.text(name);
-			ops(w, list);
-			w.end();
-		}
-		w.end();
-	}
 	let mut w = Json::default();
 	w.object();
 	w.key("node");
@@ -144,13 +134,6 @@ pub fn layout_json() -> String {
 	texts(&mut w, VARIANTS.iter().map(|variant| variant.name));
 	w.key("extras");
 	record(&mut w, size_of::<Extras>(), Extras::FIELDS);
-	w.key("rows");
-	w.object();
-	for (name, size, list) in crate::recipe::ROWS {
-		w.key(name);
-		record(&mut w, *size, list);
-	}
-	w.end();
 	w.key("records");
 	w.object();
 	for (name, size, list) in crate::ast::RECORDS {
@@ -191,8 +174,17 @@ pub fn layout_json() -> String {
 	w.list();
 	crate::recipe::KINDS.iter().for_each(|list| ops(&mut w, list));
 	w.end();
+	// each table's name, its record's size and its rows' recipe
 	w.key("rows");
-	recipes(&mut w, crate::recipe::RECIPES);
+	w.list();
+	for (name, size, list) in crate::recipe::ROWS {
+		w.list();
+		w.text(name);
+		w.int(*size as u32);
+		ops(&mut w, list);
+		w.end();
+	}
+	w.end();
 	w.key("adds");
 	w.list();
 	crate::recipe::ADDS.iter().for_each(|list| ops(&mut w, list));

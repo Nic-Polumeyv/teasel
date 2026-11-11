@@ -357,7 +357,6 @@ for
 fragment
 function
 function-name
-function_depth
 generator
 get
 global
@@ -508,7 +507,6 @@ test
 text
 through
 topLevelAwait
-top_level_await
 trailing
 true
 trueType
@@ -536,7 +534,6 @@ views
 void
 with
 write
-write_expr
 writes_of
 writes_of_at
 |

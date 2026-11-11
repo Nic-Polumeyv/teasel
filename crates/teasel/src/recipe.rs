@@ -5,7 +5,7 @@
 
 use crate::ast::Extras;
 use crate::ast::node_layout::{Tag, VARIANTS};
-use crate::layout::{Described, Field, Ty};
+use crate::layout::{Described, Ty};
 use crate::scopes::{Binding, Reference, Root, Scope};
 
 #[derive(Clone, Copy)]
@@ -401,31 +401,12 @@ const CLASS: &[Op] = of!(Extras; &[Maybe("typeParameters", at!(type_parameters))
 /// The same when erasing: decorators, a proposal JavaScript itself has.
 pub const EXTRAS_ERASED: &[Op] = of!(Extras; &[OptListKey("decorators", at!(decorators))]);
 
-/// How each table's rows are spelled: the recipes of the answer's `scopes`, `bindings`,
-/// `references` and `roots`.
-pub const RECIPES: &[(&str, &[Op])] = &[
-	(
-		"scopes",
-		of!(Scope; &[Enum("kind", at!(kind)), Opt("parent", at!(parent)), Bool("topLevelAwait", at!(top_level_await))]),
-	),
-	(
-		"bindings",
-		of!(Binding; &[Str("name", at!(name)), Enum("kind", at!(kind)), Int("scope", at!(scope)), Bool("write", at!(write))]),
-	),
-	(
-		"references",
-		of!(Reference; &[Int("scope", at!(scope)), Opt("binding", at!(binding)), Bool("write", at!(write)), Bool("read", at!(read)), Bool("mutate", at!(mutate)), Bool("declares", at!(declares))]),
-	),
-	(
-		"roots",
-		of!(Root; &[Int("scope", at!(scope)), Pair("scopes", at!(scopes)), Pair("bindings", at!(bindings)), Pair("references", at!(references))]),
-	),
-];
-
-/// Each table's name, its record's size and fields, in the order of `RECIPES`.
-pub const ROWS: &[(&str, usize, &[Field])] = &[
-	("scopes", size_of::<Scope>(), Scope::FIELDS),
-	("bindings", size_of::<Binding>(), Binding::FIELDS),
-	("references", size_of::<Reference>(), Reference::FIELDS),
-	("roots", size_of::<Root>(), Root::FIELDS),
+/// Each table of the answer, its `scopes`, `bindings`, `references` and `roots`: its name, its
+/// record's size and how its rows are spelled.
+#[rustfmt::skip]
+pub const ROWS: &[(&str, usize, &[Op])] = &[
+	("scopes", size_of::<Scope>(), of!(Scope; &[Enum("kind", at!(kind)), Opt("parent", at!(parent)), Bool("topLevelAwait", at!(top_level_await))])),
+	("bindings", size_of::<Binding>(), of!(Binding; &[Str("name", at!(name)), Enum("kind", at!(kind)), Int("scope", at!(scope)), Bool("write", at!(write))])),
+	("references", size_of::<Reference>(), of!(Reference; &[Int("scope", at!(scope)), Opt("binding", at!(binding)), Bool("write", at!(write)), Bool("read", at!(read)), Bool("mutate", at!(mutate)), Bool("declares", at!(declares))])),
+	("roots", size_of::<Root>(), of!(Root; &[Int("scope", at!(scope)), Pair("scopes", at!(scopes)), Pair("bindings", at!(bindings)), Pair("references", at!(references))])),
 ];
