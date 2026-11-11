@@ -189,16 +189,13 @@ pub fn layout_json() -> String {
 	// by a kind's tag
 	w.key("kinds");
 	w.list();
-	crate::recipe::KINDS.iter().for_each(|(_, list)| ops(&mut w, list));
+	crate::recipe::KINDS.iter().for_each(|list| ops(&mut w, list));
 	w.end();
 	w.key("rows");
 	recipes(&mut w, crate::recipe::RECIPES);
 	w.key("adds");
 	w.list();
-	for variant in VARIANTS {
-		let adds = crate::recipe::ADDS.iter().find(|(name, _)| *name == variant.name);
-		ops(&mut w, adds.map_or(&[], |(_, list)| list));
-	}
+	crate::recipe::ADDS.iter().for_each(|list| ops(&mut w, list));
 	w.end();
 	w.key("erased");
 	ops(&mut w, crate::recipe::EXTRAS_ERASED);

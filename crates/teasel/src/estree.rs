@@ -1,7 +1,7 @@
 //! Serializes an `Ast` to ESTree as JSON text: what `cargo test` and `scripts/check.ts` read.
 
 use crate::Options;
-use crate::ast::{Ast, Extras, List, NodeId, NodeKind, Value, node_layout};
+use crate::ast::{Ast, Extras, List, NodeId, NodeKind, Value};
 use crate::engine;
 use crate::host::{self, Grammar};
 use crate::interner::StrId;
@@ -606,7 +606,7 @@ impl<'a> Writer<'a> {
 			// erasing may put a child in the node's place, which closes itself
 			_ => {
 				let base = kind as *const NodeKind as *const u8;
-				if !self.run(id, KINDS[tag(base)].1, base) {
+				if !self.run(id, KINDS[tag(base)], base) {
 					return;
 				}
 			}
@@ -616,57 +616,23 @@ impl<'a> Writer<'a> {
 
 	/// Writes the keys TypeScript adds to a node.
 	fn extras(&mut self, id: NodeId) {
-		let adds = Self::adds();
 		let extras = self.ast.extras_of(id);
 		let base = &extras as *const Extras as *const u8;
 		if self.options.has(Options::ERASE) {
-			self.run(id, adds.erased, base);
+			self.run(id, EXTRAS_ERASED, base);
 			return;
 		}
-		let (ops, read) = &adds.by_kind[tag(&self.kind(id) as *const NodeKind as *const u8)];
-		self.run(id, ops, base);
+		let kind = tag(&self.kind(id) as *const NodeKind as *const u8);
+		self.run(id, ADDS[kind], base);
 		// an unlisted extra is a parser bug, which a test build catches and a shipped build answers around
-		if cfg!(debug_assertions)
-			&& let Some(field) = extras.set().find(|field| !read.contains(&field.at))
-		{
-			panic!("{:?} has {}, which its kind does not list", self.kind(id), field.name);
+		if cfg!(debug_assertions) {
+			let own = KINDS[kind].iter().filter(|op| matches!(op, Op::Extra(..)));
+			let read: Vec<Slot> = ADDS[kind].iter().chain(own).filter_map(|op| op.told().2).collect();
+			if let Some(field) = extras.set().find(|field| read.iter().all(|slot| slot.at != field.at)) {
+				panic!("{:?} has {}, which its kind does not list", self.kind(id), field.name);
+			}
 		}
 	}
-
-	/// The keys TypeScript adds from the extras record, by the kind's tag.
-	fn adds() -> &'static Adds {
-		static BY_KIND: std::sync::OnceLock<Adds> = std::sync::OnceLock::new();
-		BY_KIND.get_or_init(|| Adds {
-			by_kind: node_layout::VARIANTS
-				.iter()
-				.zip(KINDS)
-				.map(|(variant, (_, kind))| {
-					let ops = ADDS
-						.iter()
-						.find(|(known, _)| *known == variant.name)
-						.map_or(&[][..], |(_, ops)| *ops);
-					let read = ops
-						.iter()
-						.filter_map(|op| op.told().2)
-						.chain(kind.iter().filter_map(|op| match op {
-							Op::Extra(_, slot) => Some(*slot),
-							_ => None,
-						}))
-						.map(|slot| slot.at)
-						.collect();
-					(ops, read)
-				})
-				.collect(),
-			erased: EXTRAS_ERASED,
-		})
-	}
-}
-
-/// What TypeScript adds to each kind: by the kind's tag, the operations and where the fields they
-/// read sit.
-struct Adds {
-	by_kind: Vec<(&'static [Op], Vec<usize>)>,
-	erased: &'static [Op],
 }
 
 /// The field at `slot` of the record at `base`, as the type the recipe reads it by.
