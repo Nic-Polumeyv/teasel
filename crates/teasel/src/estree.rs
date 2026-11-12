@@ -9,7 +9,7 @@ use crate::json::Json;
 use crate::layout::{Ty, tag};
 use crate::parser::Entry;
 use crate::positions::{Cursor, Positions};
-use crate::recipe::{ADDS, EXTRAS_ERASED, KINDS, Op, ROWS, Slot};
+use crate::recipe::{ADDS, EXTRAS_ERASED, ExtraSlot, KINDS, Op, ROWS, Slot};
 use crate::scopes::Role;
 
 /// One entry at a byte offset, as JSON.
@@ -496,7 +496,7 @@ impl<'a> Writer<'a> {
 					}
 					_ => self.opt_key(key, get(base, slot)),
 				},
-				Op::Extra(key, slot) => {
+				Op::Extra(key, ExtraSlot(slot)) => {
 					let extras = self.ast.extras_of(id);
 					self.run(id, &[Op::Maybe(key, slot)], &extras as *const Extras as *const u8);
 				}

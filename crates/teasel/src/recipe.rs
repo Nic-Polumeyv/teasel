@@ -20,7 +20,7 @@ pub enum Op {
 	/// What TypeScript adds: undefined when missing, a list empty.
 	Maybe(&'static str, Slot),
 	/// A key TypeScript adds, read from the node's extras record where the kind's own has no room.
-	Extra(&'static str, Slot),
+	Extra(&'static str, ExtraSlot),
 	List(&'static str, Slot),
 	/// Left out when missing.
 	OptListKey(&'static str, Slot),
@@ -74,6 +74,10 @@ pub struct Slot {
 	pub ty: &'static Ty,
 }
 
+/// A field's place in the extras record.
+#[derive(Clone, Copy)]
+pub struct ExtraSlot(pub Slot);
+
 use Op::*;
 
 /// A recipe for each kind, by tag.
@@ -102,7 +106,7 @@ impl Op {
 			Node(k, f) => ("node", k, Some(f), Rest::Nothing),
 			Opt(k, f) => ("opt", k, Some(f), Rest::Nothing),
 			Maybe(k, f) => ("maybe", k, Some(f), Rest::Nothing),
-			Extra(k, f) => ("extra", k, Some(f), Rest::Nothing),
+			Extra(k, ExtraSlot(f)) => ("extra", k, Some(f), Rest::Nothing),
 			List(k, f) => ("list", k, Some(f), Rest::Nothing),
 			OptListKey(k, f) => ("optlistkey", k, Some(f), Rest::Nothing),
 			Params(k, f) => ("params", k, Some(f), Rest::Nothing),
@@ -144,17 +148,21 @@ const fn ty_of<R, T: Described>(_: fn(&R) -> &T) -> &'static Ty {
 	&T::TY
 }
 
-/// A field's place in `Record`, the record in scope, or in the one named.
+/// A field's place in `Record`, the record in scope.
 macro_rules! at {
-	($record:ty: $($field:tt).+) => {
+	($($field:tt).+) => {
 		Slot {
-			at: std::mem::offset_of!($record, $($field).+),
-			ty: ty_of(|record: &$record| &record.$($field).+),
+			at: std::mem::offset_of!(Record, $($field).+),
+			ty: ty_of(|record: &Record| &record.$($field).+),
 		}
 	};
-	($($field:tt).+) => {
-		at!(Record: $($field).+)
-	};
+}
+
+macro_rules! extra {
+	($field:ident) => {{
+		type Record = Extras;
+		ExtraSlot(at!($field))
+	}};
 }
 
 /// A recipe over the fields of a record; a field of a type its operation cannot read does not compile.
@@ -174,7 +182,7 @@ const fn fits(ops: &'static [Op]) -> &'static [Op] {
 			Node(_, slot) | Through(slot) => matches!(slot.ty, Ty::Node),
 			OtherName(_, slot, binding) => matches!((slot.ty, binding.ty), (Ty::Node, Ty::Node)),
 			Opt(_, slot) => matches!(slot.ty, Ty::OptNode | Ty::OptStr | Ty::OptU32),
-			Maybe(_, slot) | Extra(_, slot) => matches!(slot.ty, Ty::OptNode | Ty::OptList | Ty::OptEnum(_)),
+			Maybe(_, slot) | Extra(_, ExtraSlot(slot)) => matches!(slot.ty, Ty::OptNode | Ty::OptList | Ty::OptEnum(_)),
 			List(_, slot) | Params(_, slot) => matches!(slot.ty, Ty::List),
 			OptListKey(_, slot) => matches!(slot.ty, Ty::OptList),
 			Bool(_, slot) | BoolNames(_, slot, _) => matches!(slot.ty, Ty::Bool),
@@ -197,13 +205,25 @@ const fn fits(ops: &'static [Op]) -> &'static [Op] {
 	ops
 }
 
+/// How many kinds are named, each once.
+const fn once(tags: &[usize]) -> usize {
+	let mut seen = [false; VARIANTS.len()];
+	let mut i = 0;
+	while i < tags.len() {
+		assert!(!seen[tags[i]], "a kind has two recipes");
+		seen[tags[i]] = true;
+		i += 1;
+	}
+	tags.len()
+}
+
 /// A recipe by tag for each kind named and how many were named; the fields are those of the
 /// kind's own record, or of the record named first.
 macro_rules! by_kind {
 	(@ $( $kind:ident: $ops:expr ),*) => {{
 		let mut out: ByKind = [&[]; VARIANTS.len()];
 		$( out[Tag::$kind as usize] = $ops; )*
-		(out, [$( Tag::$kind ),*].len())
+		(out, once(&[$( Tag::$kind as usize ),*]))
 	}};
 	($record:ty; $( $kind:ident: $ops:expr ),* $(,)?) => {
 		by_kind!(@ $( $kind: of!($record; $ops) ),*)
@@ -326,7 +346,7 @@ pub static KINDS: ByKind = {
 		IndexSignature: &[Type("TSIndexSignature"), List("parameters", at!(parameters)), Maybe("typeAnnotation", at!(type_annotation))],
 		CallSignatureDeclaration: &[Type("TSCallSignatureDeclaration"), Maybe("typeParameters", at!(type_parameters)), List("parameters", at!(parameters)), Maybe("typeAnnotation", at!(type_annotation))],
 		ConstructSignatureDeclaration: &[Type("TSConstructSignatureDeclaration"), Maybe("typeParameters", at!(type_parameters)), List("parameters", at!(parameters)), Maybe("typeAnnotation", at!(type_annotation))],
-		MethodSignature: &[Type("TSMethodSignature"), Node("key", at!(key)), Bool("computed", at!(computed)), Bool("optional", at!(optional)), Enum("kind", at!(kind)), Extra("typeParameters", at!(Extras: type_parameters)), List("parameters", at!(parameters)), Maybe("typeAnnotation", at!(type_annotation))],
+		MethodSignature: &[Type("TSMethodSignature"), Node("key", at!(key)), Bool("computed", at!(computed)), Bool("optional", at!(optional)), Enum("kind", at!(kind)), Extra("typeParameters", extra!(type_parameters)), List("parameters", at!(parameters)), Maybe("typeAnnotation", at!(type_annotation))],
 		PropertySignature: &[Type("TSPropertySignature"), Node("key", at!(key)), Bool("computed", at!(computed)), Bool("optional", at!(optional)), Bool("readonly", at!(readonly)), Maybe("typeAnnotation", at!(type_annotation))],
 		InterfaceDeclaration: &[Type("TSInterfaceDeclaration"), Node("id", at!(id)), Maybe("typeParameters", at!(type_parameters)), List("extends", at!(extends)), Node("body", at!(body))],
 		InterfaceBody: &[Type("TSInterfaceBody"), List("body", at!(body))],

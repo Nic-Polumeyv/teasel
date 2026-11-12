@@ -1,5 +1,5 @@
-// Builds ESTree objects from the parser's own tree, read in place: the layout says where each
-// kind's fields sit, the recipes how the kind is spelled.
+// Builds ESTree objects from the parser's own tree, read in place: the recipes say how each kind
+// is spelled and where its fields sit.
 
 import type { Tree, Views } from './types.ts';
 import { CODES } from './types.ts';
@@ -31,7 +31,7 @@ interface Missing {
 	str: Tagged;
 	int: Tagged;
 }
-export type RawOp = [string, ...any[]];
+export type RawOp = [op: string, key: string, at: number, ty: string, names: string[], at2: number, value: string | boolean | null, other: string, inner: RawOp[]];
 export interface Layout {
 	/** A node's record: its size and where its span and its kind sit; `payload` is the word of a host's index, `Host`'s field. */
 	node: { size: number; start: number; end: number; kind: number; payload: number };

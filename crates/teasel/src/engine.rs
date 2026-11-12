@@ -169,12 +169,10 @@ pub fn layout_json() -> String {
 	children_table(&mut w, host::stylesheet_children());
 	w.key("recipes");
 	w.object();
-	// by a kind's tag
 	w.key("kinds");
 	w.list();
 	crate::recipe::KINDS.iter().for_each(|list| ops(&mut w, list));
 	w.end();
-	// each table's name, its record's size and its rows' recipe
 	w.key("rows");
 	w.list();
 	for (name, size, list) in crate::recipe::ROWS {
