@@ -1,5 +1,11 @@
 # @teasel/parser
 
+## 0.0.25
+
+### Patch Changes
+
+- [#262](https://github.com/Nic-Polumeyv/teasel/pull/262) [`513b766`](https://github.com/Nic-Polumeyv/teasel/commit/513b766aca2a963a774d51fa0700f79a65c89f72) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - The first parse in a process is faster
+
 ## 0.0.24
 
 ### Patch Changes
