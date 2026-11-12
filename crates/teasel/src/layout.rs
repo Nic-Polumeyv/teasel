@@ -136,8 +136,8 @@ macro_rules! record {
 pub(crate) use record;
 
 /// A `repr(C, u32)` enum of node kinds: a tag word, then the variant's fields as a `repr(C)`
-/// record. The module named after `in` holds one such record per variant, for the offsets, and
-/// `VARIANTS` in tag order.
+/// record. The module named after `in` holds one such record per variant with its tag word, for
+/// the offsets, `VARIANTS` in tag order, and the tags alone as `Tag`.
 macro_rules! kinds {
 	(
 		$(#[$m:meta])* $vis:vis enum $E:ident in $layout:ident {
@@ -162,22 +162,26 @@ macro_rules! kinds {
 					use $crate::layout::{Described, Field};
 
 					#[repr(C)]
-					pub struct Record { $( $( pub $f: $t ),* )? $( pub f0: $tt )? }
+					pub struct Record { pub _tag: u32, $( $( pub $f: $t ),* )? $( pub f0: $tt )? }
 
 					pub const FIELDS: &[Field] = &[
 						$( $( Field {
 							name: stringify!($f),
-							at: 4 + std::mem::offset_of!(Record, $f),
+							at: std::mem::offset_of!(Record, $f),
 							ty: <$t as Described>::TY,
 						} ),* )?
 						$( Field {
 							name: "0",
-							at: 4 + std::mem::offset_of!(Record, f0),
+							at: std::mem::offset_of!(Record, f0),
 							ty: <$tt as Described>::TY,
 						} )?
 					];
 				}
 			)*
+
+			/// A kind's tag, without its fields.
+			#[repr(u32)]
+			pub enum Tag { $( $V ),* }
 
 			pub const VARIANTS: &[Variant] = &[ $(
 				Variant {

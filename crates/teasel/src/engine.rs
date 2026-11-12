@@ -18,16 +18,11 @@ pub type Words = crate::handed::Handed<u32>;
 pub fn layout_json() -> String {
 	use crate::ast::Extras;
 	use crate::ast::Node;
+	use crate::ast::node_layout::VARIANTS;
 	use crate::layout::{Field, Ty};
-	use crate::recipe::{Op, Rest};
-	fn field(w: &mut Json, field: &Field) {
-		w.object();
-		w.key("name");
-		w.text(field.name);
-		w.key("at");
-		w.int(field.at as u32);
-		w.key("ty");
-		w.text(match field.ty {
+	use crate::recipe::{Op, Rest, Slot};
+	fn ty(ty: Ty) -> &'static str {
+		match ty {
 			Ty::Node => "node",
 			Ty::OptNode => "?node",
 			Ty::List => "list",
@@ -41,7 +36,16 @@ pub fn layout_json() -> String {
 			Ty::Enum(_) => "enum",
 			Ty::OptEnum(_) => "?enum",
 			Ty::Struct(_) => "struct",
-		});
+		}
+	}
+	fn field(w: &mut Json, field: &Field) {
+		w.object();
+		w.key("name");
+		w.text(field.name);
+		w.key("at");
+		w.int(field.at as u32);
+		w.key("ty");
+		w.text(ty(field.ty));
 		match field.ty {
 			Ty::Enum(names) | Ty::OptEnum(names) => {
 				w.key("names");
@@ -70,39 +74,43 @@ pub fn layout_json() -> String {
 		fields(w, list);
 		w.end();
 	}
-	// an operation is its name, then its key, its field and what else it takes
+	// an operation is its name, its key, where its field sits, the field's type and an enum's
+	// names, where its second field sits, what a constant spells or the name for true, the name
+	// for false or for none, and the operations inside it
 	fn ops(w: &mut Json, list: &[Op]) {
 		w.list();
 		for op in list {
-			let (name, key, field, rest) = op.told();
+			let (name, key, slot, rest) = op.told();
 			w.list();
 			w.text(name);
-			if let Some(key) = key {
-				w.text(key);
-			}
-			if let Some(field) = field {
-				w.text(field);
-			}
-			match rest {
-				Rest::Nothing => {}
-				Rest::Names(yes, no) => {
-					w.text(yes);
-					w.text(no);
-				}
-				Rest::Bool(value) => w.bool(value),
-				Rest::Text(text) => w.text(text),
-				Rest::Ops(inner) => ops(w, inner),
+			w.text(key);
+			w.int(slot.map_or(0, |slot| slot.at as u32));
+			w.text(slot.map_or("", |slot| ty(*slot.ty)));
+			w.list();
+			if let Some(Slot {
+				ty: Ty::Enum(names) | Ty::OptEnum(names),
+				..
+			}) = slot
+			{
+				names.iter().for_each(|name| w.text(name));
 			}
 			w.end();
-		}
-		w.end();
-	}
-	fn recipes(w: &mut Json, table: &[(&str, &[Op])]) {
-		w.list();
-		for (name, list) in table {
-			w.list();
-			w.text(name);
-			ops(w, list);
+			w.int(if let Rest::Second(slot) = rest {
+				slot.at as u32
+			} else {
+				0
+			});
+			match rest {
+				Rest::Bool(value) => w.bool(value),
+				Rest::Names(yes, _) => w.text(yes),
+				_ => w.null(),
+			}
+			w.text(if let Rest::Names(_, other) | Rest::Other(other) = rest {
+				other
+			} else {
+				""
+			});
+			ops(w, if let Rest::Ops(inner) = rest { inner } else { &[] });
 			w.end();
 		}
 		w.end();
@@ -119,27 +127,13 @@ pub fn layout_json() -> String {
 	w.int(std::mem::offset_of!(Node, end) as u32);
 	w.key("kind");
 	w.int(std::mem::offset_of!(Node, kind) as u32);
+	w.key("payload");
+	w.int((std::mem::offset_of!(Node, kind) + crate::ast::node_layout::Host::FIELDS[0].at) as u32);
 	w.end();
 	w.key("kinds");
-	w.list();
-	for variant in crate::ast::node_layout::VARIANTS {
-		w.object();
-		w.key("name");
-		w.text(variant.name);
-		w.key("fields");
-		fields(&mut w, variant.fields);
-		w.end();
-	}
-	w.end();
+	texts(&mut w, VARIANTS.iter().map(|variant| variant.name));
 	w.key("extras");
 	record(&mut w, size_of::<Extras>(), Extras::FIELDS);
-	w.key("rows");
-	w.object();
-	for (name, size, list) in crate::recipe::ROWS {
-		w.key(name);
-		record(&mut w, *size, list);
-	}
-	w.end();
 	w.key("records");
 	w.object();
 	for (name, size, list) in crate::ast::RECORDS {
@@ -176,11 +170,23 @@ pub fn layout_json() -> String {
 	w.key("recipes");
 	w.object();
 	w.key("kinds");
-	recipes(&mut w, crate::recipe::KINDS);
+	w.list();
+	crate::recipe::KINDS.iter().for_each(|list| ops(&mut w, list));
+	w.end();
 	w.key("rows");
-	recipes(&mut w, crate::recipe::RECIPES);
+	w.list();
+	for (name, size, list) in crate::recipe::ROWS {
+		w.list();
+		w.text(name);
+		w.int(*size as u32);
+		ops(&mut w, list);
+		w.end();
+	}
+	w.end();
 	w.key("adds");
-	recipes(&mut w, crate::recipe::ADDS);
+	w.list();
+	crate::recipe::ADDS.iter().for_each(|list| ops(&mut w, list));
+	w.end();
 	w.key("erased");
 	ops(&mut w, crate::recipe::EXTRAS_ERASED);
 	w.end();

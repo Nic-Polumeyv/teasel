@@ -1,13 +1,13 @@
 // `node scripts/children.ts` writes src/children.ts from the engine's layout: for every node type, the fields that hold nodes; the tests check they agree
 import { writeFileSync } from 'node:fs';
-import { holds_nodes, resolve, type Layout } from '../src/decode.ts';
+import { holds_nodes, operations, type Layout } from '../src/decode.ts';
 
 /** From the layout the engine hands over: each type with the keys that hold nodes or lists of nodes, and the keys TypeScript may add to any node. */
 export function generate(layout: Layout): { children: Record<string, string[]>; extras: string[]; stylesheet: Record<string, string[]> } {
 	const extra_fields = layout.extras?.fields ?? [];
 	const children: Record<string, string[]> = {};
-	for (const [name, raw] of layout.recipes.kinds) {
-		const ops = resolve(raw, layout.kinds.find((kind) => kind.name === name)!.fields, extra_fields);
+	for (const raw of layout.recipes.kinds) {
+		const ops = operations(raw);
 		const keys = ops.filter(holds_nodes).map((op) => {
 			if (op.op === 'object') throw new Error(`${op.key} nests nodes`);
 			return op.key;
@@ -18,10 +18,10 @@ export function generate(layout: Layout): { children: Record<string, string[]>; 
 			for (const key of keys) if (!list.includes(key)) list.push(key);
 		}
 	}
-	const adds = (layout.recipes.adds ?? []).flatMap(([, ops]) => ops);
+	const adds = (layout.recipes.adds ?? []).flat();
 	const extras: string[] = [];
 	for (const field of extra_fields) {
-		const add = adds.find(([op, , path]) => op === 'maybe' && path === field.name);
+		const add = adds.find(([op, , at]) => op === 'maybe' && at === field.at);
 		if (add !== undefined && (field.ty === '?node' || field.ty === '?list')) extras.push(add[1]);
 	}
 	return { children, extras, stylesheet: layout.stylesheet };

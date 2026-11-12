@@ -1510,21 +1510,18 @@ crate::layout::record! {
 }
 
 impl Extras {
-	pub(crate) fn set(&self) -> impl Iterator<Item = &'static str> {
+	pub(crate) fn set(&self) -> impl Iterator<Item = &'static Field> {
 		let base = self as *const Extras as *const u8;
-		Extras::FIELDS
-			.iter()
-			.filter(move |field| unsafe {
-				let at = base.add(field.at);
-				match field.ty {
-					Ty::Bool => at.cast::<bool>().read(),
-					Ty::OptNode => at.cast::<Option<NodeId>>().read().is_some(),
-					Ty::OptList => at.cast::<Option<List>>().read().is_some(),
-					Ty::OptEnum(names) => usize::from(at.read()) < names.len(),
-					_ => unreachable!(),
-				}
-			})
-			.map(|field| field.name)
+		Extras::FIELDS.iter().filter(move |field| unsafe {
+			let at = base.add(field.at);
+			match field.ty {
+				Ty::Bool => at.cast::<bool>().read(),
+				Ty::OptNode => at.cast::<Option<NodeId>>().read().is_some(),
+				Ty::OptList => at.cast::<Option<List>>().read().is_some(),
+				Ty::OptEnum(names) => usize::from(at.read()) < names.len(),
+				_ => unreachable!(),
+			}
+		})
 	}
 }
 
