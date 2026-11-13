@@ -398,6 +398,7 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 		lexer.regexp = spare.regexp;
 		lexer.stop_ranges = spare.stop_ranges;
 		lexer.set_stops(stop);
+		lexer.counting = lexer.recover || !stop.is_empty();
 		let ts = match spare.typescript {
 			Some(mut ts) => {
 				// cleared keeping the room of its stacks and tables instead, TypeScript apps read 0 to 1% slower
@@ -947,10 +948,11 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 
 	pub(crate) fn next_liberal(&mut self) -> Result<()> {
 		self.within_limit()?;
-		let boundary = self.tok.ends_operand();
+		let before = self.tok;
 		self.prev_end = self.tok.end;
 		self.lexer.next_token_into(&mut self.tok)?;
-		if boundary {
+		// with the last token asked whether it ends an operand before every read, a JavaScript program took 3% longer
+		if self.tok.stop && before.ends_operand() {
 			self.stop_after_operand();
 		}
 		Ok(())

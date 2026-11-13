@@ -56,6 +56,8 @@ pub(crate) struct Lexer<'a> {
 	pub(crate) stopped: bool,
 	/// The last token read closes a bracket nothing opened.
 	pub(crate) unmatched: bool,
+	/// Brackets are counted and stops looked for: the parse has stops or recovers.
+	pub(crate) counting: bool,
 	/// Errors are recorded and reading goes on: an unterminated token runs to the end of its line
 	/// or of the source, anything else unreadable is skipped.
 	pub(crate) recover: bool,
@@ -99,6 +101,7 @@ impl<'a> Lexer<'a> {
 			open: [0; 3],
 			stopped: false,
 			unmatched: false,
+			counting: false,
 			recover: false,
 			errors: Vec::new(),
 			unclosed: false,
@@ -216,8 +219,10 @@ impl<'a> Lexer<'a> {
 	pub(crate) fn next_token_into(&mut self, token: &mut Token) -> Result<()> {
 		token.newline_before = self.skip_space()?;
 		token.stop = false;
-		self.stopped = false;
-		self.unmatched = false;
+		if self.counting {
+			self.stopped = false;
+			self.unmatched = false;
+		}
 		loop {
 			let start = self.pos;
 			self.escaped = false;
@@ -258,25 +263,28 @@ impl<'a> Lexer<'a> {
 				}
 				Err(error) => return Err(error),
 			};
-			let closes = match kind {
-				TokenKind::ParenR => Some(0),
-				TokenKind::BracketR => Some(1),
-				TokenKind::BraceR => Some(2),
-				_ => None,
-			};
-			let outside = closes.map_or(self.depth == 0, |kind| self.open[kind] == 0);
-			token.stop = outside && !self.stops.is_empty() && self.stops_at(start, kind);
-			match kind {
-				TokenKind::ParenL => self.open_bracket(0),
-				TokenKind::BracketL => self.open_bracket(1),
-				TokenKind::BraceL => self.open_bracket(2),
-				_ => {}
-			}
-			if let Some(kind) = closes {
-				self.unmatched = self.open[kind] == 0;
-				if !self.unmatched {
-					self.open[kind] -= 1;
-					self.depth -= 1;
+			// with the brackets counted in every parse, a JavaScript program took 1.5 to 2.3% longer
+			if self.counting {
+				let closes = match kind {
+					TokenKind::ParenR => Some(0),
+					TokenKind::BracketR => Some(1),
+					TokenKind::BraceR => Some(2),
+					_ => None,
+				};
+				let outside = closes.map_or(self.depth == 0, |kind| self.open[kind] == 0);
+				token.stop = outside && !self.stops.is_empty() && self.stops_at(start, kind);
+				match kind {
+					TokenKind::ParenL => self.open_bracket(0),
+					TokenKind::BracketL => self.open_bracket(1),
+					TokenKind::BraceL => self.open_bracket(2),
+					_ => {}
+				}
+				if let Some(kind) = closes {
+					self.unmatched = self.open[kind] == 0;
+					if !self.unmatched {
+						self.open[kind] -= 1;
+						self.depth -= 1;
+					}
 				}
 			}
 			token.kind = kind;
