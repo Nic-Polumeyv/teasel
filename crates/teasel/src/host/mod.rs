@@ -969,7 +969,7 @@ impl<'a> Walker<'a> {
 
 	/// Whether the nearest element around the cursor, past blocks and meta elements, is `name`.
 	fn nearest_element_is(&self, name: &str) -> bool {
-		let plain = self.grammar.element("*").map(|any| any.ty);
+		let plain = self.grammar.other().map(|any| any.ty);
 		let component = self.grammar.component().map(|rule| rule.ty);
 		for frame in self.frames.iter().rev() {
 			if let Frame::Element { name: span, ty, .. } = frame {
@@ -1038,7 +1038,7 @@ impl<'a> Walker<'a> {
 				self.once.push(rule.ty);
 			}
 		}
-		let plain = self.grammar.element("*").map_or(rule.ty, |any| any.ty);
+		let plain = self.grammar.other().map_or(rule.ty, |any| any.ty);
 		let mut ty = rule.ty;
 		if let Some(inside) = rule.inside
 			&& !self.nearest_element_is(inside)
@@ -1388,7 +1388,7 @@ impl<'a> Walker<'a> {
 	}
 
 	fn close_element(&mut self, start: u32, name: &str) -> Result<()> {
-		let plain = self.grammar.element("*").map(|any| any.ty);
+		let plain = self.grammar.other().map(|any| any.ty);
 		if let Some((_, _, depth)) = self.autoclosed
 			&& self.frames.len() < depth
 		{
