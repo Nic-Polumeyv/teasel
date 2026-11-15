@@ -3,7 +3,7 @@
 use crate::Options;
 use crate::ast::{Ast, List};
 use crate::comments::attach;
-use crate::handed::{Raw, Views};
+use crate::handed::Raw;
 use crate::host::{self, Grammar};
 use crate::json::Json;
 use crate::parser::{Entry, parse_at};
@@ -257,14 +257,14 @@ pub fn parse(
 			let typescript = if options.typescript() { TYPESCRIPT } else { 0 };
 			words.push(typescript | if failed { FAILED } else { 0 });
 			let mut sits = 0u64;
-			let mut note = |_, buffer: Option<&mut dyn Raw>| {
+			let mut note = |_: &'static str, buffer: Option<&mut dyn Raw>| {
 				words.push(buffer.as_ref().map_or(0, |buffer| buffer.elements() as u32));
 				if let Some(buffer) = buffer {
 					sits = (sits ^ buffer.as_ptr() as u64 ^ (buffer.capacity_bytes() as u64) << 32)
 						.wrapping_mul(0x9e37_79b9_7f4a_7c15);
 				}
 			};
-			ast.views(options.typescript(), &mut Views(&mut note));
+			ast.views(options.typescript(), &mut note);
 			words.extend_from_slice(&[sits as u32, (sits >> 32) as u32]);
 		},
 	);
@@ -302,9 +302,7 @@ pub fn tree(f: &mut dyn FnMut(&'static str, Option<&mut dyn Raw>)) -> Option<boo
 	SESSION.with(|session| {
 		let session = &mut *session.borrow_mut();
 		let typescript = session.typescript;
-		session.trees[typescript as usize]
-			.as_deref_mut()?
-			.views(typescript, &mut Views(f));
+		session.trees[typescript as usize].as_deref_mut()?.views(typescript, f);
 		Some(typescript)
 	})
 }
@@ -312,7 +310,9 @@ pub fn tree(f: &mut dyn FnMut(&'static str, Option<&mut dyn Raw>)) -> Option<boo
 /// The names of a tree's views in order.
 fn view_names(typescript: bool) -> Vec<&'static str> {
 	let mut names = Vec::new();
-	Ast::default().views(typescript, &mut Views(&mut |name, _| names.push(name)));
+	Ast::default().views(typescript, &mut |name: &'static str, _: Option<&mut dyn Raw>| {
+		names.push(name)
+	});
 	names
 }
 
