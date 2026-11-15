@@ -368,7 +368,7 @@ impl Scopes {
 	}
 
 	/// The per-node tables the decoder reads in place.
-	pub fn views(&mut self, out: &mut (impl Views + ?Sized)) {
+	pub fn views(&mut self, out: &mut impl Views) {
 		out.push("scopes", &mut self.scopes);
 		out.push("bindings", &mut self.bindings);
 		out.push("references", &mut self.references);
@@ -404,7 +404,7 @@ impl Scopes {
 	}
 
 	/// The same names over nothing, for a tree without analysis.
-	pub fn no_views(out: &mut (impl Views + ?Sized)) {
+	pub fn no_views(out: &mut impl Views) {
 		for name in [
 			"scopes",
 			"bindings",

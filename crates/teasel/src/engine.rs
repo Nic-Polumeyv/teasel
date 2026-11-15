@@ -257,7 +257,7 @@ pub fn parse(
 			let typescript = if options.typescript() { TYPESCRIPT } else { 0 };
 			words.push(typescript | if failed { FAILED } else { 0 });
 			let mut sits = 0u64;
-			let mut note = |_: &'static str, buffer: Option<&mut dyn Raw>| {
+			let mut note = |_, buffer: Option<&mut dyn Raw>| {
 				words.push(buffer.as_ref().map_or(0, |buffer| buffer.elements() as u32));
 				if let Some(buffer) = buffer {
 					sits = (sits ^ buffer.as_ptr() as u64 ^ (buffer.capacity_bytes() as u64) << 32)
@@ -298,11 +298,13 @@ pub fn words<R>(f: impl FnOnce(&mut Words) -> R) -> R {
 
 /// Visits the buffers of the last parse's tree on this thread, kept until the next parse takes
 /// it, in the order `layout_json` names them; whether it is the TypeScript tree, None before any.
-pub fn tree(f: &mut dyn FnMut(&'static str, Option<&mut dyn Raw>)) -> Option<bool> {
+pub fn tree(mut f: &mut dyn FnMut(&'static str, Option<&mut dyn Raw>)) -> Option<bool> {
 	SESSION.with(|session| {
 		let session = &mut *session.borrow_mut();
 		let typescript = session.typescript;
-		session.trees[typescript as usize].as_deref_mut()?.views(typescript, f);
+		session.trees[typescript as usize]
+			.as_deref_mut()?
+			.views(typescript, &mut f);
 		Some(typescript)
 	})
 }
@@ -310,9 +312,7 @@ pub fn tree(f: &mut dyn FnMut(&'static str, Option<&mut dyn Raw>)) -> Option<boo
 /// The names of a tree's views in order.
 fn view_names(typescript: bool) -> Vec<&'static str> {
 	let mut names = Vec::new();
-	Ast::default().views(typescript, &mut |name: &'static str, _: Option<&mut dyn Raw>| {
-		names.push(name)
-	});
+	Ast::default().views(typescript, &mut |name, _| names.push(name));
 	names
 }
 

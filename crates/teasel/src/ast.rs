@@ -164,7 +164,7 @@ impl<T: Copy + 'static> Slots<T> {
 		self.owners.truncate(len);
 	}
 
-	pub fn views(&mut self, name: &'static str, records: &'static str, out: &mut (impl Views + ?Sized)) {
+	pub fn views(&mut self, name: &'static str, records: &'static str, out: &mut impl Views) {
 		out.push(name, &mut self.slots);
 		out.push(records, &mut self.list);
 	}
@@ -502,7 +502,7 @@ impl Ast {
 
 	/// The tree's buffers the decoder reads in place, by the names `engine::layout_json` lists; a
 	/// TypeScript tree's tables last.
-	pub fn views(&mut self, typescript: bool, out: &mut (impl Views + ?Sized)) {
+	pub fn views(&mut self, typescript: bool, out: &mut impl Views) {
 		out.push("nodes", &mut self.nodes);
 		out.push("lists", &mut self.lists);
 		out.push("numbers", &mut self.numbers);

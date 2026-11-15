@@ -256,4 +256,4 @@ pub trait Views: FnMut(&'static str, Option<&mut dyn Raw>) {
 	}
 }
 
-impl<F: FnMut(&'static str, Option<&mut dyn Raw>) + ?Sized> Views for F {}
+impl<F: FnMut(&'static str, Option<&mut dyn Raw>)> Views for F {}
