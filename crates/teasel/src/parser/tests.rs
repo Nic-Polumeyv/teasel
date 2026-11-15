@@ -251,7 +251,7 @@ fn an_entry_is_one_of_its_numbers() {
 fn the_session_writes_the_same_words_again() {
 	use crate::Options;
 	use crate::engine::parse;
-	let options = Options(Options::MODULE | Options::COMMENTS | Options::LOCATIONS | Options::SCOPES);
+	let options = Options(Options::MODULE | Options::COMMENTS | Options::SCOPES);
 	let source = "let x = /* a */ 1; function f(y) { return x + y; } // b";
 	let words = || crate::engine::words(|words| words.to_vec());
 	// a failed parse answers words too, flagged as such; its first one settles the error buffer
@@ -778,23 +778,20 @@ fn phases() {
 			s.of_identifier.iter().count()
 		);
 	}
-	best("Positions::new, no lines", &mut || {
-		let _ = Positions::new(&source, false);
-	});
-	best("Positions::new, lines", &mut || {
-		let _ = Positions::new(&source, true);
+	let positions = Positions::new(&source);
+	best("Positions::new", &mut || {
+		let _ = Positions::new(&source);
 	});
 	let (mut ast, roots) = whole(&source, options);
 	crate::comments::attach(&mut ast, &source, roots, 0);
 	let end = source.len() as u32;
-	let lines = Positions::new(&source, true);
 	{
 		let options = Options(Options::MODULE | Options::COMMENTS);
 		best("whole parse: positions, parse, comments, encode, finish", &mut || {
 			crate::engine::parse(&source, options, Entry::Program, 0.0, "", None).unwrap();
 		});
-		let options = Options(Options::MODULE | Options::COMMENTS | Options::SCOPES | Options::LOCATIONS);
-		best("whole parse with scopes and loc", &mut || {
+		let options = Options(Options::MODULE | Options::COMMENTS | Options::SCOPES);
+		best("whole parse with scopes", &mut || {
 			crate::engine::parse(&source, options, Entry::Program, 0.0, "", None).unwrap();
 		});
 	}
@@ -810,17 +807,17 @@ fn phases() {
 	for (flags, label) in [
 		(Options::MODULE, "module"),
 		(
-			Options::MODULE | Options::SCOPES | Options::COMMENTS | Options::LOCATIONS,
-			"module scopes comments locations",
+			Options::MODULE | Options::SCOPES | Options::COMMENTS,
+			"module scopes comments",
 		),
 	] {
 		best(&format!("host: 200 each blocks, {label}"), &mut || {
 			crate::engine::parse(&document, Options(flags), Entry::Program, 0.0, "", grammar).unwrap();
 		});
 	}
-	best("Json write, loc", &mut || {
+	best("Json write", &mut || {
 		let names = crate::host::grammar::own::NAMES;
-		let _ = Writer::new(&ast, &source, &lines, names, options.with(Options::COMMENTS)).answer(
+		let _ = Writer::new(&ast, &source, &positions, names, options.with(Options::COMMENTS)).answer(
 			Entry::Program,
 			Some(roots),
 			end,

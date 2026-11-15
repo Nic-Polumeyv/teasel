@@ -398,9 +398,7 @@ line
 list
 lists
 literal
-loc
 local
-locs
 marks
 matcher
 maybe

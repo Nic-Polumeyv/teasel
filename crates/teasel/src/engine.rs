@@ -233,7 +233,7 @@ pub fn parse(
 	stop: &str,
 	grammar: Option<&Grammar>,
 ) -> Result<(), String> {
-	let positions = Positions::of(source, options);
+	let positions = Positions::new(source);
 	let offset = positions.byte_offset(start)?;
 	if !source.is_char_boundary(offset as usize) {
 		return Err(format!("offset {start} is inside a surrogate pair"));
@@ -414,9 +414,9 @@ pub(crate) fn read<R>(
 	})
 }
 
-/// What the decoder reading the tree in place needs beside it: every node's span and location
-/// as JavaScript counts them, the nodes erasure leaves out, the comments, the errors and the
-/// strings' UTF-16 starts; a failed parse prepares its error row alone.
+/// What the decoder reading the tree in place needs beside it: every node's span as JavaScript
+/// counts it, the nodes erasure leaves out, the comments, the errors and the strings' UTF-16
+/// starts; a failed parse prepares its error row alone.
 fn prepare(ast: &mut Ast, source: &str, positions: &Positions, options: Options, failed: bool) {
 	if !failed {
 		prepare_tree(ast, positions, options);
@@ -456,7 +456,7 @@ fn prepare(ast: &mut Ast, source: &str, positions: &Positions, options: Options,
 }
 
 fn prepare_tree(ast: &mut Ast, positions: &Positions, options: Options) {
-	positions.map_nodes(&ast.nodes, &mut ast.spans, &mut ast.locs);
+	positions.map_nodes(&ast.nodes, &mut ast.spans);
 	let (mut rare, mut late) = (std::mem::take(&mut ast.rare), std::mem::take(&mut ast.late));
 	rare.reset(ast.nodes.len());
 	late.reset(ast.nodes.len());

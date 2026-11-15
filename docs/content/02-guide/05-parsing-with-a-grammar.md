@@ -56,7 +56,7 @@ The grammar names what its nodes mean: their types, and the fields a construct r
 - text is a `Text` with `data`, as read, and `raw`, as written; a comment is a `Comment` with `data`;
 - a directive's argument is `name`, and its modifiers are `modifiers`.
 
-Every node has its `type` and fields, and every node but a `Fragment` has `start` and `end` into the text, and `loc` with `locations: true`; `locations: 'js'` puts `loc` on the JavaScript nodes and comments alone. Where a field holds JavaScript, it holds ESTree: the expression of an `{{ }}`, the program of a `<script>`, the pattern an `each` head declares. Offsets are offsets into the whole document, so nothing has to be added to them.
+Every node has its `type` and fields, and every node but a `Fragment` has `start` and `end` into the text. Where a field holds JavaScript, it holds ESTree: the expression of an `{{ }}`, the program of a `<script>`, the pattern an `each` head declares. Offsets are offsets into the whole document, so nothing has to be added to them.
 
 The options work as they do on JavaScript, with two additions.
 
