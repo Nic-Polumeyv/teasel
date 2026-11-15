@@ -3,7 +3,7 @@
 use crate::Options;
 use crate::ast::{Ast, List};
 use crate::comments::attach;
-use crate::handed::{Raw, Views};
+use crate::handed::Raw;
 use crate::host::{self, Grammar};
 use crate::json::Json;
 use crate::parser::{Entry, parse_at};
@@ -264,7 +264,7 @@ pub fn parse(
 						.wrapping_mul(0x9e37_79b9_7f4a_7c15);
 				}
 			};
-			ast.views(options.typescript(), &mut Views(&mut note));
+			ast.views(options.typescript(), &mut note);
 			words.extend_from_slice(&[sits as u32, (sits >> 32) as u32]);
 		},
 	);
@@ -298,13 +298,13 @@ pub fn words<R>(f: impl FnOnce(&mut Words) -> R) -> R {
 
 /// Visits the buffers of the last parse's tree on this thread, kept until the next parse takes
 /// it, in the order `layout_json` names them; whether it is the TypeScript tree, None before any.
-pub fn tree(f: &mut dyn FnMut(&'static str, Option<&mut dyn Raw>)) -> Option<bool> {
+pub fn tree(mut f: &mut dyn FnMut(&'static str, Option<&mut dyn Raw>)) -> Option<bool> {
 	SESSION.with(|session| {
 		let session = &mut *session.borrow_mut();
 		let typescript = session.typescript;
 		session.trees[typescript as usize]
 			.as_deref_mut()?
-			.views(typescript, &mut Views(f));
+			.views(typescript, &mut f);
 		Some(typescript)
 	})
 }
@@ -312,7 +312,7 @@ pub fn tree(f: &mut dyn FnMut(&'static str, Option<&mut dyn Raw>)) -> Option<boo
 /// The names of a tree's views in order.
 fn view_names(typescript: bool) -> Vec<&'static str> {
 	let mut names = Vec::new();
-	Ast::default().views(typescript, &mut Views(&mut |name, _| names.push(name)));
+	Ast::default().views(typescript, &mut |name, _| names.push(name));
 	names
 }
 

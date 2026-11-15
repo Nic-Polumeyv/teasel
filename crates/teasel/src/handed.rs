@@ -243,17 +243,3 @@ impl<T: Copy + 'static> Raw for Handed<T> {
 		Some(self.token.expect("a view needs an allocation hook"))
 	}
 }
-
-/// Visits the buffers of a tree the decoder reads in place, by name; None for a table the parse
-/// did not fill.
-pub struct Views<'f>(pub &'f mut dyn FnMut(&'static str, Option<&mut dyn Raw>));
-
-impl Views<'_> {
-	pub fn push(&mut self, name: &'static str, buffer: &mut dyn Raw) {
-		(self.0)(name, Some(buffer));
-	}
-
-	pub fn none(&mut self, name: &'static str) {
-		(self.0)(name, None);
-	}
-}
