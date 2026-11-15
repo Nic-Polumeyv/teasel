@@ -1000,14 +1000,11 @@ pub struct Form {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Match {
 	Exact(&'static str),
-	/// A capitalized or dotted name.
-	Component,
 	Any,
 }
 
 #[derive(Clone, Debug)]
 pub struct ElementRule {
-	pub name: Match,
 	pub ty: Name,
 	/// The field that takes the expression of a `this` attribute, which leaves the attributes,
 	/// and whether text is accepted there as a string.
@@ -1225,15 +1222,18 @@ pub struct Grammar {
 	pub autoclose: bool,
 	/// Whitespace at the end of the source is not part of the document.
 	pub trim: bool,
-	pub void: Vec<&'static str>,
 	/// The attribute that makes an element's subtree verbatim: text and plain attributes only.
 	pub verbatim: Option<&'static str>,
 	/// What the host's own tags start with: a tag that starts with one and has no rule of its
 	/// own is an error.
 	pub reserved: Vec<&'static str>,
-	/// The rules with a name, then the component's, then the one for any other element.
+	/// The rule of each name that has its own.
 	pub elements: Vec<ElementRule>,
-	pub by_name: FastMap<&'static str, u32>,
+	/// The rule of a capitalized or dotted name, and the one of any other.
+	pub component: Option<ElementRule>,
+	pub other: Option<ElementRule>,
+	/// By a tag's name, where its own rule is among the elements and whether the element is void.
+	tags: FastMap<&'static str, (Option<u32>, bool)>,
 	pub script: Option<ScriptRule>,
 	pub style: Option<&'static str>,
 	pub directive_syntax: Option<DirectiveSyntax>,
@@ -1765,7 +1765,7 @@ fn fragment_last(fields: &mut Vec<DocField>) {
 	}]));
 }
 
-fn element(name: Match, rule: &definition::Element, n: &mut Naming) -> Result<ElementRule, String> {
+fn element(rule: &definition::Element, n: &mut Naming) -> Result<ElementRule, String> {
 	let this = match rule.form.unwrap_or_default() {
 		[] => None,
 		[definition::Item::Fields(Record(fields))]
@@ -1786,7 +1786,6 @@ fn element(name: Match, rule: &definition::Element, n: &mut Naming) -> Result<El
 		}
 	};
 	Ok(ElementRule {
-		name,
 		ty: n.name(rule.node),
 		this,
 		root: rule.root == Some(true),
@@ -2063,31 +2062,36 @@ fn construct(ty: &'static str, rule: &definition::Construct, n: &mut Naming) -> 
 fn lower(d: Definition) -> Result<Grammar, String> {
 	let n = &mut Naming::new();
 	let mut elements = Vec::new();
-	let mut by_name = FastMap::default();
+	let mut tags: FastMap<&'static str, (Option<u32>, bool)> = FastMap::default();
 	let e = d.elements.as_ref();
 	let reserved = e.and_then(|e| e.reserved).unwrap_or_default().to_vec();
 	for prefix in &reserved {
 		token("a reserved prefix", prefix)?;
 	}
 	for (name, rule) in e.and_then(|e| e.rules).iter().flat_map(|r| r.0) {
-		by_name.entry(*name).or_insert(elements.len() as u32);
-		elements.push(element(Match::Exact(name), rule, n)?);
+		tags.entry(*name).or_default().0.get_or_insert(elements.len() as u32);
+		elements.push(element(rule, n)?);
 	}
-	if let Some(rule) = e.and_then(|e| e.component.as_ref()) {
-		elements.push(element(Match::Component, rule, n)?);
-	}
-	if let Some(rule) = e.and_then(|e| e.other.as_ref()) {
-		elements.push(element(Match::Any, rule, n)?);
-	}
-	for rule in &elements {
+	let component = e
+		.and_then(|e| e.component.as_ref())
+		.map(|rule| element(rule, n))
+		.transpose()?;
+	let other = e
+		.and_then(|e| e.other.as_ref())
+		.map(|rule| element(rule, n))
+		.transpose()?;
+	for rule in elements.iter().chain(&component).chain(&other) {
 		if let Some(inside) = rule.inside
-			&& !elements.iter().any(|other| other.name == Match::Exact(inside))
+			&& !tags.get(inside).is_some_and(|(rule, _)| rule.is_some())
 		{
 			return Err(format!(
 				"{}: inside names {inside}, which no element rule is",
 				n.text(rule.ty)
 			));
 		}
+	}
+	for name in d.void.unwrap_or_default() {
+		tags.entry(*name).or_default().1 = true;
 	}
 	let x = d.directives.as_ref();
 	if let Some(x) = x {
@@ -2150,11 +2154,12 @@ fn lower(d: Definition) -> Result<Grammar, String> {
 		shorthand,
 		autoclose: d.autoclose == Some(true),
 		trim: d.trim == Some(true),
-		void: d.void.unwrap_or_default().to_vec(),
 		reserved,
 		verbatim: d.verbatim,
 		elements,
-		by_name,
+		component,
+		other,
+		tags,
 		script: d.script.as_ref().map(|s| ScriptRule {
 			name: s.element,
 			module: s.module.unwrap_or_default().to_vec(),
@@ -2289,11 +2294,12 @@ impl Grammar {
 			shorthand: None,
 			autoclose: false,
 			trim: false,
-			void: Vec::new(),
 			reserved: Vec::new(),
 			verbatim: None,
 			elements: Vec::new(),
-			by_name: FastMap::default(),
+			component: None,
+			other: None,
+			tags: FastMap::default(),
 			script: None,
 			style: None,
 			directive_syntax: None,
@@ -2419,7 +2425,7 @@ impl Grammar {
 		}
 		self.firsts = firsts;
 		let named = std::iter::once(self.document.ty)
-			.chain(self.elements.iter().map(|rule| rule.ty))
+			.chain(self.rules().map(|rule| rule.ty))
 			.chain(self.directives.iter().map(|rule| rule.ty))
 			.chain(self.constructs.iter().map(|rule| rule.ty))
 			.chain(
@@ -2443,24 +2449,17 @@ impl Grammar {
 		Ok(())
 	}
 
-	// with the rules tried in order for every element, a pass over Svelte's tests took 2.5% longer
-	pub fn element(&self, name: &str) -> Option<&ElementRule> {
-		if let Some(&at) = self.by_name.get(name) {
-			return Some(&self.elements[at as usize]);
-		}
-		self.component().filter(|_| component_name(name)).or(self.other())
+	/// The rule of a tag's own name, and whether the element is void.
+	// with the rules tried in order and the void names searched for every tag, a pass over Svelte's tests took 2% longer
+	pub fn tag(&self, name: &str) -> (Option<&ElementRule>, bool) {
+		let (rule, void) = self.tags.get(name).copied().unwrap_or_default();
+		let rule = rule.map(|at| &self.elements[at as usize]);
+		(rule, void || name.starts_with('!'))
 	}
 
-	pub fn component(&self) -> Option<&ElementRule> {
-		self.elements
-			.iter()
-			.rev()
-			.take(2)
-			.find(|rule| rule.name == Match::Component)
-	}
-
-	pub fn other(&self) -> Option<&ElementRule> {
-		self.elements.last().filter(|rule| rule.name == Match::Any)
+	/// Every element rule: those of a name, the component's, the one of any other element.
+	pub fn rules(&self) -> impl Iterator<Item = &ElementRule> {
+		self.elements.iter().chain(&self.component).chain(&self.other)
 	}
 
 	/// The rule of a directive by its name; `*` when the grammar takes any.
@@ -2479,7 +2478,7 @@ impl Grammar {
 	}
 
 	pub fn is_void(&self, name: &str) -> bool {
-		name.starts_with('!') || self.void.contains(&name)
+		self.tag(name).1
 	}
 
 	pub fn text(&self, name: Name) -> &'static str {
@@ -2538,7 +2537,7 @@ impl Grammar {
 		add(own::Fragment, &[own::nodes]);
 		add(own::Text, &[]);
 		add(own::Comment, &[]);
-		for rule in &self.elements {
+		for rule in self.rules() {
 			fields.clear();
 			fields.extend([own::attributes, own::fragment]);
 			fields.extend(rule.this.map(|(field, _)| field));

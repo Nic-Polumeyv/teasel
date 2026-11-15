@@ -1485,8 +1485,8 @@ fn reads_the_svelte_grammar() {
 			&& !construct(&grammar, "HtmlTag").stands(Place::Attributes)
 	);
 	assert!(grammar.is_void("br") && grammar.is_void("!DOCTYPE") && !grammar.is_void("div"));
-	assert_eq!(grammar.elements.len(), 17);
-	assert!(grammar.element("textarea").unwrap().rcdata);
+	assert_eq!(grammar.elements.len(), 15);
+	assert!(grammar.tag("textarea").0.unwrap().rcdata);
 	assert_eq!(grammar.directives.len(), 10);
 	let syntax = grammar.directive_syntax.as_ref().unwrap();
 	assert_eq!((syntax.arg, syntax.modifier), (":", "|"));
@@ -1526,9 +1526,10 @@ fn reads_the_svelte_grammar() {
 		["test", "consequent", "branches", "alternate"]
 	);
 	assert_eq!(grammar.script.as_ref().unwrap().typescript, [("lang", Some("ts"))]);
-	assert_eq!(text(grammar.element("Foo.Bar").unwrap().ty), "Component");
-	assert_eq!(text(grammar.element("div").unwrap().ty), "RegularElement");
-	assert_eq!(text(grammar.element("svelte:head").unwrap().ty), "SvelteHead");
+	assert_eq!(text(grammar.component.as_ref().unwrap().ty), "Component");
+	assert_eq!(text(grammar.other.as_ref().unwrap().ty), "RegularElement");
+	assert_eq!(text(grammar.tag("svelte:head").0.unwrap().ty), "SvelteHead");
+	assert!(grammar.tag("div").0.is_none());
 }
 
 #[test]

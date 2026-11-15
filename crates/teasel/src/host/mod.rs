@@ -18,8 +18,8 @@ use crate::lexer::unicode::{is_id_continue, is_id_start};
 use crate::parser::{Entry as JsEntry, Options, Parser, Result};
 pub use grammar::Grammar;
 use grammar::{
-	Alternative, Body, Construct, DirectiveRule, DirectiveValue, DocField, Entry, Form, Item, Match, Name, Piece,
-	Place, RootField, Shapes, Slot, Unique, Which, component_name, own,
+	Alternative, Body, Construct, DirectiveRule, DirectiveValue, DocField, Entry, Form, Item, Name, Piece, Place,
+	RootField, Shapes, Slot, Unique, Which, component_name, own,
 };
 
 /// A whole marker at the cursor: its construct, which piece, and where its last part's word starts.
@@ -969,8 +969,8 @@ impl<'a> Walker<'a> {
 
 	/// Whether the nearest element around the cursor, past blocks and meta elements, is `name`.
 	fn nearest_element_is(&self, name: &str) -> bool {
-		let plain = self.grammar.other().map(|any| any.ty);
-		let component = self.grammar.component().map(|rule| rule.ty);
+		let plain = self.grammar.other.as_ref().map(|any| any.ty);
+		let component = self.grammar.component.as_ref().map(|rule| rule.ty);
 		for frame in self.frames.iter().rev() {
 			if let Frame::Element { name: span, ty, .. } = frame {
 				if &self.src[span.0 as usize..span.1 as usize] == name {
@@ -1006,7 +1006,12 @@ impl<'a> Walker<'a> {
 			let name = self.tag_name(false)?;
 			self.space();
 			self.expect(">")?;
-			if self.grammar.is_void(name) {
+			// a void element is never open; asked of every closing tag, a pass over Svelte's tests took 0.1 ms longer
+			let open = match self.frames.last() {
+				Some(Frame::Element { name: span, .. }) => &self.src[span.0 as usize..span.1 as usize] == name,
+				_ => false,
+			};
+			if !open && self.grammar.is_void(name) {
 				return self.report_at(
 					start,
 					start + 1,
@@ -1018,14 +1023,15 @@ impl<'a> Walker<'a> {
 		}
 		let name = self.tag_name(false)?;
 		let name_span = (start + 1, self.at);
-		let rule = self.grammar.element(name);
-		let own = rule.is_some_and(|rule| matches!(rule.name, Match::Exact(_)));
-		if !own && self.grammar.reserved.iter().any(|prefix| name.starts_with(prefix)) {
+		let (own, void) = self.grammar.tag(name);
+		if own.is_none() && self.grammar.reserved.iter().any(|prefix| name.starts_with(prefix)) {
 			return self.fail(name_span.0, name_span.1, Code::InvalidName, Some(name));
 		}
-		let rule = rule.filter(|rule| rule.name != Match::Any || valid_name(name));
+		let rule = own
+			.or_else(|| self.grammar.component.as_ref().filter(|_| component_name(name)))
+			.or_else(|| self.grammar.other.as_ref().filter(|_| valid_name(name)));
 		let typing = self.recovering() && name.ends_with('.') && component_name(&format!("{name}_"));
-		let Some(rule) = rule.or_else(|| typing.then(|| self.grammar.component()).flatten()) else {
+		let Some(rule) = rule.or(self.grammar.component.as_ref().filter(|_| typing)) else {
 			return self.fail(name_span.0, name_span.1, Code::InvalidName, Some(name));
 		};
 		if rule.root && self.frames.len() > 1 {
@@ -1038,7 +1044,7 @@ impl<'a> Walker<'a> {
 				self.once.push(rule.ty);
 			}
 		}
-		let plain = self.grammar.other().map_or(rule.ty, |any| any.ty);
+		let plain = self.grammar.other.as_ref().map_or(rule.ty, |any| any.ty);
 		let mut ty = rule.ty;
 		if let Some(inside) = rule.inside
 			&& !self.nearest_element_is(inside)
@@ -1099,11 +1105,8 @@ impl<'a> Walker<'a> {
 					continue;
 				}
 				if kind == own::Attribute
-					&& ty == plain && let Some(mark) = self
-					.grammar
-					.elements
-					.iter()
-					.find_map(|r| r.outside.filter(|o| *o == text))
+					&& ty == plain && let Some(mark) =
+					self.grammar.rules().find_map(|r| r.outside.filter(|o| *o == text))
 				{
 					outside.push(mark);
 				}
@@ -1249,7 +1252,7 @@ impl<'a> Walker<'a> {
 			}
 			return self.report_at(start, start + 1, Code::Duplicate, Some(name));
 		}
-		let self_closing = self.eat("/") || self.grammar.is_void(name);
+		let self_closing = self.eat("/") || void;
 		let unclosed = !self.eat(">");
 		if unclosed {
 			self.report_at(self.at, self.at, Code::Expected, Some(">"))?;
@@ -1388,7 +1391,7 @@ impl<'a> Walker<'a> {
 	}
 
 	fn close_element(&mut self, start: u32, name: &str) -> Result<()> {
-		let plain = self.grammar.other().map(|any| any.ty);
+		let plain = self.grammar.other.as_ref().map(|any| any.ty);
 		if let Some((_, _, depth)) = self.autoclosed
 			&& self.frames.len() < depth
 		{
