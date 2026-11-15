@@ -174,13 +174,15 @@ pub(crate) mod word {
 	pub(crate) const EVAL: u8 = 64;
 
 	pub(crate) fn flags(word: &str) -> u8 {
-		let mut flags = match word {
-			"yield" => YIELD | STRICT,
-			"await" => AWAIT,
-			"arguments" => ARGUMENTS,
-			"eval" => EVAL,
-			"enum" => ENUM,
-			"implements" | "interface" | "let" | "package" | "private" | "protected" | "public" | "static" => STRICT,
+		let mut flags = match word.as_bytes() {
+			b"yield" => YIELD | STRICT,
+			b"await" => AWAIT,
+			b"arguments" => ARGUMENTS,
+			b"eval" => EVAL,
+			b"enum" => ENUM,
+			b"implements" | b"interface" | b"let" | b"package" | b"private" | b"protected" | b"public" | b"static" => {
+				STRICT
+			}
 			_ => 0,
 		};
 		if super::Keyword::from_word(word).is_some() {
@@ -191,69 +193,46 @@ pub(crate) mod word {
 }
 
 impl Keyword {
-	// a hashed index measured +2.6%: the length switch stays
+	// as bytes: a `str` pattern is compared through memcmp, one call for each word of its length
+	// a hashed index measured +2.6%
 	pub(crate) fn from_word(word: &str) -> Option<Keyword> {
 		use Keyword::*;
-		Some(match word.len() {
-			2 => match word {
-				"do" => Do,
-				"if" => If,
-				"in" => In,
-				_ => return None,
-			},
-			3 => match word {
-				"for" => For,
-				"new" => New,
-				"try" => Try,
-				"var" => Var,
-				_ => return None,
-			},
-			4 => match word {
-				"case" => Case,
-				"else" => Else,
-				"null" => Null,
-				"this" => This,
-				"true" => True,
-				"void" => Void,
-				"with" => With,
-				_ => return None,
-			},
-			5 => match word {
-				"break" => Break,
-				"catch" => Catch,
-				"class" => Class,
-				"const" => Const,
-				"false" => False,
-				"super" => Super,
-				"throw" => Throw,
-				"while" => While,
-				_ => return None,
-			},
-			6 => match word {
-				"delete" => Delete,
-				"export" => Export,
-				"import" => Import,
-				"return" => Return,
-				"switch" => Switch,
-				"typeof" => Typeof,
-				_ => return None,
-			},
-			7 => match word {
-				"default" => Default,
-				"extends" => Extends,
-				"finally" => Finally,
-				_ => return None,
-			},
-			8 => match word {
-				"continue" => Continue,
-				"debugger" => Debugger,
-				"function" => Function,
-				_ => return None,
-			},
-			10 => match word {
-				"instanceof" => Instanceof,
-				_ => return None,
-			},
+		Some(match word.as_bytes() {
+			b"do" => Do,
+			b"if" => If,
+			b"in" => In,
+			b"for" => For,
+			b"new" => New,
+			b"try" => Try,
+			b"var" => Var,
+			b"case" => Case,
+			b"else" => Else,
+			b"null" => Null,
+			b"this" => This,
+			b"true" => True,
+			b"void" => Void,
+			b"with" => With,
+			b"break" => Break,
+			b"catch" => Catch,
+			b"class" => Class,
+			b"const" => Const,
+			b"false" => False,
+			b"super" => Super,
+			b"throw" => Throw,
+			b"while" => While,
+			b"delete" => Delete,
+			b"export" => Export,
+			b"import" => Import,
+			b"return" => Return,
+			b"switch" => Switch,
+			b"typeof" => Typeof,
+			b"default" => Default,
+			b"extends" => Extends,
+			b"finally" => Finally,
+			b"continue" => Continue,
+			b"debugger" => Debugger,
+			b"function" => Function,
+			b"instanceof" => Instanceof,
 			_ => return None,
 		})
 	}
