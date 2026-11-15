@@ -1328,18 +1328,22 @@ impl<'a> Walker<'a> {
 
 	/// `</name`, optional space and `>`, from the cursor.
 	fn find_closing(&self, name: &str) -> Option<u32> {
-		let rest = self.rest();
-		let mut from = 0;
-		while let Some(i) = rest[from..].find("</") {
-			let at = from + i + 2;
-			if let Some(after) = rest[at..].strip_prefix(name)
+		let bytes = self.src.as_bytes();
+		let mut at = self.at as usize;
+		// found by `str::find`, a pass over Svelte's tests took 1% longer
+		loop {
+			at = find_pair(bytes, at, b'<', *b"/");
+			if at >= bytes.len() {
+				return None;
+			}
+			if bytes.get(at + 1) == Some(&b'/')
+				&& let Some(after) = self.src[at + 2..].strip_prefix(name)
 				&& after.trim_start_matches(is_space).starts_with('>')
 			{
-				return Some(self.at + (from + i) as u32);
+				return Some(at as u32);
 			}
-			from = at;
+			at += 1;
 		}
-		None
 	}
 
 	fn close_tag(&mut self, name: &str) -> Result<()> {
