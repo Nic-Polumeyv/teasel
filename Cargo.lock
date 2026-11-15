@@ -588,7 +588,6 @@ name = "teasel"
 version = "0.0.24"
 dependencies = [
  "pprof",
- "rustc-demangle",
 ]
 
 [[package]]

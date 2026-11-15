@@ -840,8 +840,8 @@ fn phases() {
 	);
 }
 
-// TEASEL_BENCH=file cargo test --release profile -- --ignored --nocapture; writes target/parse.svg
-#[cfg(target_os = "linux")]
+// TEASEL_BENCH=file RUSTFLAGS="--cfg teasel_profile" cargo test --profile profiling profile -- --ignored --nocapture; writes target/parse.svg
+#[cfg(all(target_os = "linux", teasel_profile))]
 #[test]
 #[ignore]
 fn profile() {
@@ -868,17 +868,13 @@ fn profile() {
 	let mut total = 0usize;
 	for (frames, count) in &report.data {
 		total += *count as usize;
+		// pprof keeps one sampled instruction per function, so an inlined name is where that one sample fell, not where
+		// the time went; only the compiled function, the last symbol of a frame, is real
 		let names: Vec<String> = frames
 			.frames
 			.iter()
-			.flat_map(|f| {
-				f.iter().map(|s| {
-					s.name
-						.as_deref()
-						.map(|n| rustc_demangle::demangle(&String::from_utf8_lossy(n)).to_string())
-						.unwrap_or_default()
-				})
-			})
+			.filter_map(|f| f.last())
+			.map(|s| s.name())
 			.collect();
 		if let Some(top) = names.first() {
 			by_frame.entry(top.clone()).or_default().0 += *count as usize;
