@@ -11,6 +11,7 @@ repository = "https://github.com/Nic-Polumeyv/teasel"
 
 [workspace.lints.rust]
 unreachable_pub = "warn"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(teasel_profile)'] }
 
 [profile.release]
 lto = "fat"
