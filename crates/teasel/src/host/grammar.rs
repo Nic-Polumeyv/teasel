@@ -997,15 +997,12 @@ pub struct Form {
 	pub shape: Vec<Slot>,
 }
 
-/// A grammar's elements: the rules of their names, and what else it says of a tag.
 #[derive(Clone, Debug, Default)]
 pub struct Elements {
 	/// What the host's own tags start with: a tag that starts with one and has no rule of its
 	/// own is an error.
 	pub reserved: Vec<&'static str>,
-	/// The rule of each name that has its own.
 	pub rules: Vec<ElementRule>,
-	/// The rule of a capitalized or dotted name, and the one of any other.
 	pub component: Option<ElementRule>,
 	pub other: Option<ElementRule>,
 	/// By a tag's name, where its own rule is among the rules and whether the element is void.
@@ -1027,7 +1024,6 @@ impl Elements {
 		self.tag(name).1
 	}
 
-	/// Every rule: those of a name, the component's, the one of any other element.
 	pub fn all(&self) -> impl Iterator<Item = &ElementRule> {
 		self.rules.iter().chain(&self.component).chain(&self.other)
 	}
@@ -1059,8 +1055,8 @@ pub struct ScriptRule {
 	pub typescript: Vec<(&'static str, Option<&'static str>)>,
 }
 
-/// A grammar's directives: the rules of their names, and how a directive's attribute name is
-/// spelled, `prefix name arg modifiers`, the name being the directive's own when there is no prefix.
+/// How a directive's attribute name is spelled: `prefix name arg modifiers`, the name being the
+/// directive's own when there is no prefix.
 #[derive(Clone, Debug)]
 pub struct Directives {
 	pub prefix: Option<&'static str>,
@@ -1073,15 +1069,12 @@ pub struct Directives {
 	/// Every directive is unique by its whole attribute name.
 	pub unique: bool,
 	pub shorthands: Vec<Shorthand>,
-	/// The rule of each name that has its own, and the one of any other.
 	pub rules: Vec<DirectiveRule>,
 	pub other: Option<DirectiveRule>,
-	/// By a directive's name, where its rule is among the rules.
 	names: FastMap<&'static str, u32>,
 }
 
 impl Directives {
-	/// The rule of a directive by its name: its own, or the one of any other.
 	pub fn rule(&self, name: &str) -> Option<&DirectiveRule> {
 		match self.names.get(name) {
 			Some(&at) => Some(&self.rules[at as usize]),
@@ -1089,7 +1082,6 @@ impl Directives {
 		}
 	}
 
-	/// Every rule: those of a name, then the one of any other directive.
 	pub fn all(&self) -> impl Iterator<Item = &DirectiveRule> {
 		self.rules.iter().chain(&self.other)
 	}
